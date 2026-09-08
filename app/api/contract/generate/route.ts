@@ -26,7 +26,9 @@ import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 import { documentName, isForeignForDocuments, registrationHeadPair } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
-import { translationDisplayVars } from '@/lib/contractTranslation'
+import {
+  translationDisplayVars, asTranslationLang, resolveContractTranslationFor, translationDigest,
+} from '@/lib/contractTranslation'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { foreignRegNoFact, readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -102,6 +104,22 @@ type Body = {
   archivePrevious?: boolean
   /** 동의서 서명이 빈 채로 발급하는 것을 운영자가 승낙했다는 사실의 운반체(신고 2026-09-03). */
   disposalUnsignedAck?: boolean
+  /**
+   * 이 종이가 근거로 삼는 참고용 번역본의 **언어 코드**(2026-09-08, 대면 서명).
+   *
+   * **번역 내용은 받지 않는다.** 서버가 이 코드로 사전을 다시 해석한다 — 클라이언트가 보낸 종이
+   * 내용을 믿으면 이 API 를 직접 불러 아무 문안이나 박을 수 있다(성명·금액 봉인과 같은 규칙).
+   * 안 실으면 종전 경로 그대로다. 서명이 끝난 계약(SNAPSHOT)에서는 무시된다 — 그 종이의 번역본은
+   * 서명 시점에 얼었다.
+   */
+  lang?: string | null
+  /**
+   * 화면이 받아 그린 해석본의 지문. 서버가 재해석본과 대조해 다르면 거절한다.
+   *
+   * 로드와 발급 사이에 다른 자리에서 사전을 고칠 수 있고, 그러면 입주자가 건네받아 읽은 문안과
+   * 종이에 박히는 문안이 갈린다 — 그 갈림은 아무 소리도 안 낸다. 이 값이 그 창을 닫는다.
+   */
+  translationDigest?: string | null
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
@@ -177,6 +195,8 @@ export async function POST(req: Request) {
           shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
           // 파생 판본을 만들 수 있는 영업장인가 — 발급 목적 게이트가 이 값을 본다.
           multiContractVersions: true,
+          // 참고용 번역본 사전 — 화면이 보낸 언어 코드로 **서버가 다시 해석하는** 원천이다.
+          contractTranslations: true,
         },
       }),
     ])
@@ -235,6 +255,46 @@ export async function POST(req: Request) {
     const rateAddendum = contractRateAddendum(lease, body_, shortPolicy.enabled,
       { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum })
     const shortRateTable = shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? ''
+    // 거주 호실 일정 — 종이에도 실리고 번역 대상 절을 고르는 입력이기도 하다. 한 번만 짓는다.
+    const scheduleText = await contractRoomScheduleText(lease, propertyId)
+    const roomScheduleAddendum = resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum)
+    /**
+     * 참고용 번역본 — **서명이 끝난 계약은 동결본, 그 밖에는 화면이 보낸 언어로 서버가 다시 해석**한다.
+     *
+     * 대면 서명은 서명 저장과 박제가 이 요청 한 번이라, 여기서 해석한 것이 곧 그 종이의 근거가 된다.
+     * 인자 조립은 정본 헬퍼 하나다(resolveContractTranslationFor) — 화면·링크 발급과 같은 규칙이라야
+     * 종이에 실린 절과 번역본이 세운 절이 갈리지 않는다(조항 번호를 자리로 매기므로 갈리면 밀린다).
+     * lang 이 없으면 null 이라 이 종이는 이 기능 전과 문자 단위로 같다.
+     */
+    const liveTranslation = body_.source === 'SNAPSHOT' ? null : resolveContractTranslationFor(
+      property?.contractTranslations,
+      {
+        template,
+        refundClauseInContract: body_.refundClauseInContract,
+        subLeaseAddendum, rateAddendum,
+        roomScheduleText: scheduleText, roomScheduleAddendum,
+      },
+      asTranslationLang(body.lang),
+    )
+    /**
+     * 로드와 발급 사이의 창 — 화면이 그린 해석본과 방금 재해석한 것이 다르면 **거절한다.**
+     *
+     * 막다른 거절이 아니라 안내다(DUE_DAY_REQUIRED 문법). 새로고침이 곧 해결이고, 화면이 그 길을
+     * 토스트 안에 둔다. 지금 화면의 번역본을 그대로 실어 주는 길은 두지 않는다 — 그것이 곧 입주자가
+     * 읽은 것과 다른 문안을 종이에 박는 길이다.
+     *
+     * 지문이 안 왔으면 대조가 성립하지 않으므로 같은 거절이다. 언어를 실었으면 지문도 실어야 한다.
+     * 서명이 끝난 계약(SNAPSHOT)은 검사 자체를 안 한다 — 그 종이는 동결본이라 사전과 무관하다.
+     * 채번보다 **먼저** 선다. 뒤에 두면 거절할 요청이 계약번호 한 자리를 먹고 지워진다.
+     */
+    if (asTranslationLang(body.lang) && body_.source !== 'SNAPSHOT'
+      && translationDigest(liveTranslation) !== (body.translationDigest ?? null)) {
+      return NextResponse.json({
+        ok: false,
+        code: 'TRANSLATION_STALE',
+        error: '화면을 연 뒤 번역본이 바뀌었습니다. 새로고침해 바뀐 번역본을 확인한 뒤 다시 발급해 주세요.',
+      }, { status: 409 })
+    }
     // 표기는 화면과 같은 정본이 정한다(lib/contractData). 종전에는 여기서 병합값으로 따로
     // 계산해 화면이 영문인데 종이가 한글로 나갔다(신고 2026-09-04, 413호).
     // 종이와 태그가 **같은 변수**에서 나와야 둘이 갈리지 않는다.
@@ -475,14 +535,15 @@ export async function POST(req: Request) {
       shortStayRateTable: shortRateTable,
       // 거주 호실 일정 — 화면(buildContractData)이 만든 문장을 그대로 싣는다. 종이와 화면이
       // 다른 일정을 적을 수 없다. 일정이 없으면 null 이라 인쇄물이 종전과 문자 단위로 같다.
-      roomScheduleText: await contractRoomScheduleText(lease, propertyId),
+      roomScheduleText: scheduleText,
       // 그 절의 문안도 함께 — 영업장이 고친 것을 종이가 그대로 쓴다(2026-08-31).
-      roomScheduleAddendum: resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum),
-      // 참고용 번역본 — **박제본이 들고 있는 것을 그대로 읽는다**(resolveSignedBody 가 정한다).
+      roomScheduleAddendum,
+      // 참고용 번역본 — 서명이 끝난 계약은 **박제본이 들고 있는 것 그대로**(resolveSignedBody),
+      // 그 밖에는 화면이 보낸 언어로 서버가 다시 해석한 것이다(위 liveTranslation).
       // 번역문 자체는 이 종이에 안 실린다. 우선 조항('번역본과 언어') 하나가 붙을지만 가른다 —
       // 서명은 한국어 정본에만 받으므로 종이에 번역을 실으면 무엇에 서명한 것인지 흐려진다.
-      // 번역본이 없던 계약(전건)은 null 이라 이 종이가 이 기능 전과 문자 단위로 같다.
-      translation: body_.translation,
+      // 번역본이 없으면 null 이라 이 종이가 이 기능 전과 문자 단위로 같다.
+      translation: body_.translation ?? liveTranslation,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -754,6 +815,13 @@ export async function POST(req: Request) {
               printedName: printedTenantName,
               // 병기 원천도 동결 — 서명 뒤 고객 정보 수정이 서명본 병기를 못 바꾼다(원격과 같은 규칙).
               nativeName: tenant.nativeName ?? null,
+              // 이 화면에 떠 있던 참고용 번역본도 동결한다 — **대면 서명의 유일한 박제 자리**다.
+              // 원격은 링크 스냅샷이 이미 들고 있고 제출이 그것을 승계하는데(sign/actions), 대면은
+              // 서명 저장과 박제가 이 요청 한 번이라 여기서 안 담으면 그 사람이 무엇을 읽었는지
+              // 어디에도 안 남는다. 그러면 재발급에서 우선 조항도 통째로 사라진다.
+              // **없으면 칸 자체를 안 만든다.** null 을 담으면 번역본을 안 쓰는 대면 서명 전건의
+              // 박제 바이트가 이 칸 이전과 달라진다(형제 절들과 같은 조건부 담기 규칙).
+              ...(printData.translation ? { translation: printData.translation as unknown as object } : {}),
             } } : {}),
           },
         })

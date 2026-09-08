@@ -13,14 +13,17 @@ import {
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow, type RegistrationStatusLabel } from '@/lib/contractFieldOverrides'
-import { type DocNameStyle, documentName, asDocNameStyle, docNameStyles, resolveDocNameStyle, signedDocNameStyle } from '@/lib/documentName'
+import { type DocNameStyle, documentName, asDocNameStyle, docNameStyles, isForeignForDocuments, resolveDocNameStyle, signedDocNameStyle } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { parseRoomSchedule, hasRoomSchedule, roomScheduleText } from '@/lib/roomSchedule'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
-import { asResolvedContractTranslation, type ResolvedContractTranslation } from '@/lib/contractTranslation'
+import {
+  asResolvedContractTranslation, asTranslationLang, contractTranslationLangFor, resolveContractTranslationFor,
+  type ResolvedContractTranslation,
+} from '@/lib/contractTranslation'
 
 /**
  * 이 계약서가 서야 할 성명 표기 — **화면과 발급 API 가 같은 함수를 쓴다.**
@@ -280,7 +283,18 @@ export async function contractRoomScheduleText(
   return roomScheduleText(schedule, id => rooms.find(r => r.id === id)?.roomNo ?? null)
 }
 
-export async function buildContractData(tenantId: string, propertyId: string, leaseTermId?: string | null): Promise<ContractData | null> {
+/**
+ * @param translation 참고용 번역본을 **이 호출에서 세울 것인가.** 객체를 넘긴 호출만 세운다 —
+ *   운영자 계약서 페이지 하나뿐이다. 안 넘기면 서명 전 계약에는 번역본 칸이 아예 안 생겨
+ *   링크 발급 스냅샷·드리프트 비교·변수 미리보기가 이 기능 전과 **바이트로 같다**(ⓛ 무회귀 급소).
+ *   객체 안의 `lang` 은 페이지의 `?lang=` 이고, 없으면 국적 기본값이다.
+ *   **서명이 끝난 계약(SNAPSHOT)에서는 무시된다** — 그 종이의 번역본은 서명 시점에 얼었고,
+ *   지금 고른 언어가 이미 서명된 계약의 문안을 바꿀 수는 없다.
+ */
+export async function buildContractData(
+  tenantId: string, propertyId: string, leaseTermId?: string | null,
+  translation?: { lang?: string | null },
+): Promise<ContractData | null> {
   const [tenant, property] = await Promise.all([
     prisma.tenant.findFirst({
       where: { id: tenantId, propertyId },
@@ -310,6 +324,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
         signDocuments: true,
         roomScheduleAddendum: true,
         shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
+        // 참고용 번역본 사전 — 서명 전(LIVE) 계약에서 이 화면의 언어로 해석할 때만 읽는다.
+        contractTranslations: true,
       },
     }),
   ])
@@ -368,6 +384,32 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   }
   // 서명 당시 화면에 뜬 번역본. 모양이 아닌 저장값은 null 이고 그때는 번역본이 없는 것으로 다뤄진다.
   const translationFrozen = asResolvedContractTranslation(body.translation)
+  // 가변 절 셋을 여기서 한 번만 짓는다. 아래 반환값과 번역 해석이 **같은 객체**를 봐야, 화면이
+  // 세운 절과 번역본이 세운 절이 갈릴 수 없다(조항 번호를 자리로 매기므로 갈리면 번호가 밀린다).
+  const subLeaseAddendum = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body, property?.subLeaseAddendum)
+  const rateAddendum = contractRateAddendum(lease, body, shortPolicy.enabled,
+    { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum })
+  const roomScheduleAddendum = resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum)
+  /**
+   * 서명 전(LIVE) 계약의 번역본 — **이 화면의 언어로 지금 해석한다**(운영자 오더 2026-09-08).
+   *
+   * **SNAPSHOT 이면 동결본이 이기고 언어 지목은 무시된다.** 서명이 끝난 계약의 종이는 불변이다 —
+   * 그때 입주자가 읽은 문안이 증거이고, 지금 사전을 다시 해석하면 그 증거가 무너진다.
+   *
+   * 해석 인자 조립은 정본 헬퍼 하나다(resolveContractTranslationFor) — 링크 발급·발급 API 와
+   * 같은 규칙이라야 화면·종이·박제가 같은 절을 싣는다.
+   */
+  const translationLive = (!translation || body.source === 'SNAPSHOT') ? null : resolveContractTranslationFor(
+    property?.contractTranslations,
+    {
+      template: body.template,
+      refundClauseInContract: body.refundClauseInContract,
+      subLeaseAddendum, rateAddendum,
+      roomScheduleText: scheduleText, roomScheduleAddendum,
+    },
+    asTranslationLang(contractTranslationLangFor(tenant, translation.lang)),
+  )
+  const translationOut = translationFrozen ?? translationLive
   const signedAlready = !!(lease as { signatureSignedAt?: Date | null } | null)?.signatureSignedAt
   const signedSnap = (lease as { signedContractSnapshot?: unknown } | null)
     ?.signedContractSnapshot as { nameStyle?: unknown } | null
@@ -446,17 +488,17 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
     // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
-    subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body, property?.subLeaseAddendum),
-    roomScheduleAddendum: resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum),
-    rateAddendum: contractRateAddendum(lease, body, shortPolicy.enabled,
-      { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum }),
+    subLeaseAddendum,
+    roomScheduleAddendum,
+    rateAddendum,
     shortStayRateTable: shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? '',
     // 호실 일정 — 이 계약의 방 이름은 그 사람의 다른 계약 목록에서 찾는다(같은 영업장이라
     // 일정에 실린 방이 그 목록 밖일 수 있어 방 조회를 따로 한다).
     roomScheduleText: scheduleText,
-    // 참고용 번역본 — **박제본이 들고 있는 것을 그대로 읽는다**(지금 사전을 다시 해석하지 않는다).
+    // 참고용 번역본 — 서명이 끝난 계약은 **박제본이 들고 있는 것 그대로**이고, 서명 전 계약만
+    // 이 화면의 언어로 해석한 것이 선다(위 translationLive).
     // 없으면 칸 자체를 안 만든다. 이 값이 링크 발급의 templateSnapshot 으로 그대로 흘러가므로,
     // null 을 담으면 번역본을 안 쓰는 영업장의 링크 스냅샷이 이 기능 전과 달라진다(타입 주석).
-    ...(translationFrozen ? { translation: translationFrozen } : {}),
+    ...(translationOut ? { translation: translationOut } : {}),
   }
 }

@@ -8,6 +8,7 @@ import {
   translationPlaceholders, missingTranslationPlaceholders, translationPlaceholderMessage,
   RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
   REFUND_VAR_PLACEHOLDER, REFUND_VAR_NAME, translationDisplayVars,
+  resolveContractTranslationFor, translationDigest, contractTranslationLangFor, translationStaleAfterEdit,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
 import {
@@ -904,6 +905,216 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   eq('번역 축은 해석 완료본 그대로다(모양을 안 바꾼다)', facts.translation, JSON.stringify(t))
   eq('번역본이 없으면 축 자체가 없다(옛 박제 무회귀)',
     printedFacts({ template: DEFAULT_CONTRACT_TEMPLATE } as Parameters<typeof printedFacts>[0]).translation, undefined)
+}
+
+// ── 6단계 ⑪ 화면 언어 기본값 — 건네기 전에 이미 맞아 있어야 한다 ──
+//
+// 운영자가 제 기기를 그대로 건네 대면으로 서명받는 운용이 있다. 그때 이 화면이 곧 입주자가 읽는
+// 화면이라, 열리는 순간 언어가 맞아 있어야 한다. 외국인 판정은 **서명 요청과 같은 축**이다.
+{
+  const KR = { nationality: '대한민국' }
+  const VN = { nationality: '베트남' }
+  eq('내국인은 지목해도 한국어다(내국인 계약서는 이 기능 전과 같아야 한다)',
+    contractTranslationLangFor(KR, 'en'), 'ko')
+  eq('내국인은 기본값도 한국어', contractTranslationLangFor(KR, null), 'ko')
+  eq('빈 국적은 내국인으로 본다(서류 판정 축 그대로)',
+    contractTranslationLangFor({ nationality: '' }, 'en'), 'ko')
+  // 등록번호가 있으면 외국인이라 셀렉트는 서지만, 국적이 비면 **기본값은 한국어**다.
+  // signLangForNationality 가 빈 국적을 ko 로 답하기 때문이고, 서명 요청 피커의 기본값도 같다 —
+  // 추정으로 남의 언어를 세우지 않고 운영자가 고르게 한다.
+  eq('등록번호만 있고 국적이 비면 기본값은 한국어다(서명 요청 피커와 같은 답)',
+    contractTranslationLangFor({ nationality: '', foreignRegNoEnc: 'x' }, null), 'ko')
+  eq('그래도 고르면 그 언어가 선다(외국인 판정은 지났다)',
+    contractTranslationLangFor({ nationality: '', foreignRegNoEnc: 'x' }, 'en'), 'en')
+  eq('외국인 기본값은 국적에서 온다', contractTranslationLangFor(VN, null), 'vi')
+  eq('외국인이 지목하면 그것이 이긴다', contractTranslationLangFor(VN, 'ja'), 'ja')
+  eq('모르는 코드는 국적 기본값으로 떨어진다', contractTranslationLangFor(VN, 'xx'), 'vi')
+  eq('한국어를 지목하면 한국어다(번역본 없음과 같은 상태)', contractTranslationLangFor(VN, 'ko'), 'ko')
+  // 한국어는 asTranslationLang 을 못 지난다 — 카드도 우선 조항도 안 선다는 것이 그 뜻이다.
+  eq('지목한 한국어는 번역 언어가 아니다', asTranslationLang(contractTranslationLangFor(VN, 'ko')), undefined)
+}
+
+// ── 6단계 ⑫ 해석 정본 헬퍼 — 인자 조립이 한 자리다 ─────────────────
+//
+// 해석 호출부가 링크 발급·화면·발급 API 셋이 됐다. 각자 인자를 조립하면 언젠가 한 곳만 가변 절이나
+// 환불 토글을 빠뜨리고, 그때는 종이에 없는 절이 번역본에 서서 조항 번호가 통째로 밀린다.
+{
+  const A: SubLeaseAddendum = { title: '추가 호실 특약', items: ['보관 용도로만 씁니다.'] }
+  const R: ContractTemplate = { ...T, sections: [...T.sections, { id: 'r', title: '환불', items: ['{{환불규정}} 에 따릅니다.'] }] }
+  const raw = { enabled: true, langs: { en: { published: true, dict: { 단기숙소계약서: 'Contract', '추가 호실 특약': 'Storage' } } } }
+  const d = {
+    template: T, refundClauseInContract: false,
+    subLeaseAddendum: A, rateAddendum: null, roomScheduleText: null, roomScheduleAddendum: null,
+  }
+
+  eq('언어가 없으면 해석하지 않는다(한국어 계약서는 이 기능 전과 같다)',
+    resolveContractTranslationFor(raw, d, undefined), null)
+  eq('null 언어도 마찬가지', resolveContractTranslationFor(raw, d, null), null)
+  /**
+   * 헬퍼가 고른 절이 종이가 싣는 절과 **같은 정본**에서 나온다는 증명이자, 링크 발급 박제의
+   * 무회귀 증명이다 — 발급이 손으로 적던 그 식과 헬퍼가 모든 모양에서 같은 JSON 을 낸다.
+   */
+  {
+    const shapes = [
+      { subLeaseAddendum: null, rateAddendum: null, roomScheduleText: null, roomScheduleAddendum: null },
+      { subLeaseAddendum: A, rateAddendum: null, roomScheduleText: null, roomScheduleAddendum: null },
+      { subLeaseAddendum: null, rateAddendum: A, roomScheduleText: null, roomScheduleAddendum: null },
+      { subLeaseAddendum: null, rateAddendum: null, roomScheduleText: '3월까지 301호', roomScheduleAddendum: A },
+      { subLeaseAddendum: A, rateAddendum: A, roomScheduleText: '3월까지 301호', roomScheduleAddendum: A },
+    ]
+    const mismatches: string[] = []
+    for (const s of shapes) {
+      for (const tpl of [T, R]) {
+        for (const refund of [true, false]) {
+          for (const lang of ['en', 'vi'] as const) {
+            const now = JSON.stringify(resolveContractTranslationFor(raw, { template: tpl, refundClauseInContract: refund, ...s }, lang))
+            // 발급이 손으로 적던 그 식 그대로.
+            const then = JSON.stringify(resolveContractTranslation(raw, tpl, lang, contractAddendaForTranslation(s), refund))
+            if (now !== then) mismatches.push(`${JSON.stringify(s)}/${refund}/${lang}`)
+          }
+        }
+      }
+    }
+    eq('헬퍼의 결과가 종전 직접 해석과 40가지 모양에서 모두 같다(링크 박제 무회귀)', mismatches, [])
+  }
+  eq('그 계약에 실린 특약이 번역본에 선다',
+    resolveContractTranslationFor(raw, d, 'en')?.addenda?.[0]?.title, 'Storage')
+  eq('특약이 없으면 칸 자체가 없다',
+    resolveContractTranslationFor(raw, { ...d, subLeaseAddendum: null }, 'en')?.addenda, undefined)
+  // 환불 조항 토글이 변수 줄을 세우거나 안 세운다 — 종이와 같은 조건이라야 한다.
+  const refundOn = { template: R, refundClauseInContract: true }
+  const refundOff = { template: R, refundClauseInContract: false }
+  eq('토글이 켜지면 변수 줄이 서서 값이 담긴다',
+    typeof resolveContractTranslationFor(raw, refundOn, 'en')?.vars?.환불규정, 'string')
+  eq('꺼지면 그 칸이 없다', resolveContractTranslationFor(raw, refundOff, 'en')?.vars, undefined)
+  eq('분모도 토글을 따라 하나 갈린다',
+    (resolveContractTranslationFor(raw, refundOn, 'en')?.totalCount ?? 0)
+      - (resolveContractTranslationFor(raw, refundOff, 'en')?.totalCount ?? 0), 1)
+  // 꺼진 영업장은 언어를 지목해도 null 이다 — '번역본 없음'으로 착지하는 길이 하나뿐이다.
+  eq('운영 스위치가 꺼져 있으면 지목해도 null',
+    resolveContractTranslationFor({ ...raw, enabled: false }, d, 'en'), null)
+  eq('미공개 언어도 null',
+    resolveContractTranslationFor({ enabled: true, langs: { en: { published: false, dict: {} } } }, d, 'en'), null)
+  // 카드와 우선 조항이 같은 값을 본다 — 한국어면 절 배열이 **같은 객체**로 돌아온다(무회귀 급소).
+  const secs = [{ title: '1. 입실 계약', items: ['a'] }]
+  eq('한국어면 우선 조항이 안 붙는다(받은 배열 그대로)',
+    appendSubLeaseAddendum(secs, contractTranslationAddendum(resolveContractTranslationFor(raw, d, undefined))) === secs, true)
+  eq('번역본이 서면 우선 조항이 붙는다',
+    appendSubLeaseAddendum(secs, contractTranslationAddendum(resolveContractTranslationFor(raw, d, 'en'))).length, 2)
+}
+
+// ── 6단계 ⑬ 지문 — 로드와 발급 사이에 사전이 바뀌었는지 ────────────
+//
+// 대면 서명은 화면 로드와 발급 사이에 창이 있다. 그 사이 사전이 바뀌면 입주자가 건네받아 읽은
+// 문안과 종이에 박히는 문안이 갈리는데, 그 갈림은 아무 소리도 안 낸다.
+{
+  const base = { enabled: true, langs: { en: { published: true, dict: { 단기숙소계약서: 'Contract' } } } }
+  const d = { template: T, refundClauseInContract: false }
+  const a = resolveContractTranslationFor(base, d, 'en')
+
+  eq('번역본이 없으면 지문도 없다', translationDigest(null), null)
+  eq('undefined 도 마찬가지', translationDigest(undefined), null)
+  eq('같은 사전을 두 번 해석하면 같은 지문',
+    translationDigest(a), translationDigest(resolveContractTranslationFor(base, d, 'en')))
+  // 한 줄만 고쳐도 달라야 한다 — 이 검사가 잡아야 할 사고가 정확히 그것이다.
+  const edited = { enabled: true, langs: { en: { published: true, dict: { 단기숙소계약서: 'Agreement' } } } }
+  eq('한 줄이 바뀌면 지문이 다르다',
+    translationDigest(a) === translationDigest(resolveContractTranslationFor(edited, d, 'en')), false)
+  // 번역을 지운 것도 사전 변경이다(그 줄이 한국어 원문으로 돌아간다).
+  const cleared = { enabled: true, langs: { en: { published: true, dict: {} } } }
+  eq('번역이 지워져도 지문이 다르다',
+    translationDigest(a) === translationDigest(resolveContractTranslationFor(cleared, d, 'en')), false)
+  // 언어가 다르면 내용이 같아도 다른 종이다.
+  const viRaw = { enabled: true, langs: { vi: { published: true, dict: { 단기숙소계약서: 'Contract' } } } }
+  eq('언어가 다르면 지문도 다르다',
+    translationDigest(a) === translationDigest(resolveContractTranslationFor(viRaw, d, 'vi')), false)
+  // 박제를 다시 읽은 값도 같은 지문이라야 한다. 두 조립이 갈리면 멀쩡한 발급이 거절된다.
+  eq('박제 파서를 한 번 태워도 같은 지문',
+    translationDigest(a), translationDigest(asResolvedContractTranslation(JSON.parse(JSON.stringify(a)))))
+  /**
+   * 열쇠 순서에 안 기댄다는 계약.
+   *
+   * **파서를 태우면 안 된다** — asResolvedContractTranslation 은 제 순서로 다시 조립하므로
+   * 순서 차이를 지워 버린다. 그러면 지문이 JSON.stringify(t) 여도 통과해 이 진리표가 죽는다
+   * (역주입 ㉓로 실측). 손으로 세운 객체를 그대로 넘겨야 실제로 재는 것이 된다.
+   */
+  {
+    const shuffled = {
+      totalCount: a?.totalCount, fallbackCount: a?.fallbackCount, oathText: a?.oathText,
+      sections: a?.sections, title: a?.title, lang: a?.lang,
+    } as unknown as NonNullable<typeof a>
+    eq('열쇠 순서가 달라도 같은 지문', translationDigest(a), translationDigest(shuffled))
+  }
+  // 계수 축도 지문에 든다 — 박제가 통비교하는 JSON 의 일부라, 여기서 빼면 '몇 줄이 원문으로
+  // 남았나'가 달라진 해석본을 같은 것으로 통과시킨다.
+  {
+    const one = { lang: 'en', title: 'T', sections: [], oathText: '', fallbackCount: 0, totalCount: 3 } as unknown as NonNullable<typeof a>
+    const two = { ...one, fallbackCount: 1 }
+    const three = { ...one, totalCount: 4 }
+    eq('폴백 수가 다르면 지문이 다르다', translationDigest(one) === translationDigest(two), false)
+    eq('총수가 다르면 지문이 다르다', translationDigest(one) === translationDigest(three), false)
+  }
+  eq('지문은 짧은 16진 문자열이다(요청 몸통에 실린다)', /^[0-9a-f]{16}$/.test(translationDigest(a) ?? ''), true)
+}
+
+// ── 6단계 ⑭ 본문 수정이 비운 번역 계수 — 0 이면 침묵 ───────────────
+//
+// 열쇠가 한국어 문장 자체라, 본문 한 줄을 고치면 그 줄의 번역이 저절로 '없음'이 되어 종이에 원문이
+// 남는다. 설계대로지만 아무도 말해 주지 않아, 다 번역해 둔 계약서가 조용히 반쪽이 됐다.
+{
+  const dict = {
+    단기숙소계약서: 'Contract',
+    '1. 입실 계약': '1. Lease',
+    '1인 1실을 원칙으로 합니다.': 'One person per room.',
+  }
+  const raw = { enabled: true, langs: {
+    en: { published: true, dict: { ...dict } },
+    vi: { published: true, dict: { ...dict } },
+    ja: { published: false, dict: { 단기숙소계약서: 'Contract' } },
+  } }
+
+  eq('안 고쳤으면 아무 말도 안 한다', translationStaleAfterEdit(raw, T, T), { langs: 0, lines: 0 })
+
+  // 항목 한 줄을 고친다 — 그 줄의 번역이 en·vi 두 언어에서 갈 곳을 잃는다.
+  const editedOne: ContractTemplate = {
+    ...T,
+    sections: [{ ...T.sections[0], items: ['1인 1실을 원칙으로 합니다. 예외는 없습니다.', T.sections[0].items[1]] }, T.sections[1]],
+  }
+  eq('한 줄을 고치면 두 언어에서 한 줄씩 잃는다',
+    translationStaleAfterEdit(raw, T, editedOne), { langs: 2, lines: 1 })
+
+  // 두 줄을 고치면 잃은 줄 가짓수가 둘이다. 언어 수는 **그 줄의 번역을 갖고 있던 언어 수**라,
+  // 제목만 번역해 둔 ja 까지 셋이 된다 — 언어 수는 '한 줄이라도 잃은 언어'의 수다.
+  const editedTwo: ContractTemplate = { ...editedOne, title: '단기 숙소 계약서' }
+  eq('제목까지 고치면 제목만 번역해 둔 언어도 함께 센다',
+    translationStaleAfterEdit(raw, T, editedTwo), { langs: 3, lines: 2 })
+
+  // 번역이 없던 줄은 잃은 것이 아니다 — 원래부터 원문으로 나가던 자리다.
+  const editedUntranslated: ContractTemplate = {
+    ...T, sections: [T.sections[0], { ...T.sections[1], items: ['퇴실 14일 전에 알려주어야 합니다.'] }],
+  }
+  eq('번역이 없던 줄을 고치면 침묵한다', translationStaleAfterEdit(raw, T, editedUntranslated), { langs: 0, lines: 0 })
+
+  // 미공개 언어도 센다 — 운영자가 채워 둔 번역이고, 잃은 것은 잃은 것이다.
+  eq('미공개 언어의 손실도 센다',
+    translationStaleAfterEdit(raw, T, { ...T, title: '단기 숙소 계약서' }), { langs: 3, lines: 1 })
+
+  // 사전이 아예 없으면 셀 것이 없다 — 번역본을 안 쓰는 영업장은 이 기능 전과 같은 저장이다.
+  eq('사전이 없으면 침묵한다', translationStaleAfterEdit(null, T, editedTwo), { langs: 0, lines: 0 })
+  eq('운영 스위치가 꺼져 있어도 채워 둔 번역의 손실은 센다(사전은 운영자의 일이다)',
+    translationStaleAfterEdit({ ...raw, enabled: false }, T, editedOne), { langs: 2, lines: 1 })
+
+  // 절을 통째로 지우면 그 절 제목의 번역도 함께 잃는다.
+  const removed: ContractTemplate = { ...T, sections: [T.sections[1]] }
+  eq('절을 지우면 그 절의 번역을 잃는다', translationStaleAfterEdit(raw, T, removed), { langs: 2, lines: 2 })
+
+  // 되돌리면 다시 0 이다 — 고아를 안 지운다는 구조 규칙이 여기서 눈에 보인다.
+  eq('되돌리면 잃은 것이 없다', translationStaleAfterEdit(raw, editedTwo, T), { langs: 0, lines: 0 })
+
+  // 분모(가변 절)를 넘겨도 저장 전후가 같아 계수는 안 흔들린다.
+  const A2: SubLeaseAddendum = { title: '추가 호실 특약', items: ['보관 용도로만 씁니다.'] }
+  eq('가변 절을 넘겨도 계수가 같다',
+    translationStaleAfterEdit(raw, T, editedOne, [A2], false), { langs: 2, lines: 1 })
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

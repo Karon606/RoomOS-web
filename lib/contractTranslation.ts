@@ -19,8 +19,12 @@
 // 언어 코드는 lib/signGuideText 의 SignLang 을 재사용한다. 안내 언어와 번역 언어가 갈리면
 // 발급 피커에서 고른 언어의 번역본이 없는 상태가 생긴다. **ko 는 정본이라 번역 대상이 아니다.**
 
-import { type SignLang, SIGN_LANGS } from '@/lib/signGuideText'
-import { stripClauseBullet, buildRefundClause, type ContractTemplate, type SubLeaseAddendum } from '@/lib/contract'
+import { type SignLang, SIGN_LANGS, asSignLang, signLangForNationality } from '@/lib/signGuideText'
+import { isForeignForDocuments } from '@/lib/documentName'
+import {
+  stripClauseBullet, buildRefundClause, contractAddendaForTranslation,
+  type ContractTemplate, type SubLeaseAddendum,
+} from '@/lib/contract'
 
 /** 번역 대상 언어. 한국어는 정본이므로 여기서 빠진다. */
 export type TranslationLang = Exclude<SignLang, 'ko'>
@@ -515,6 +519,102 @@ export function resolveContractTranslation(
 }
 
 /**
+ * 그 계약서 한 장의 번역본을 해석한다 — **해석 호출부 셋의 정본**이다.
+ *
+ * 왜 하나여야 하나(운영자 오더 2026-09-08). 종전에는 링크 발급 한 자리뿐이라 규칙이 한 벌이었는데,
+ * 대면 서명이 열리면서 화면(buildContractData)과 발급 API 가 같은 해석을 하게 됐다. 세 곳이 각자
+ * 인자를 조립하면 언젠가 한 곳만 가변 절을 빠뜨리거나 환불 토글을 안 넘긴다 — 그때는 운영자가
+ * 건넨 화면과 종이·박제가 서로 다른 문안을 말한다.
+ *
+ * 두 인자를 이 함수가 대신 만든다. 가변 절은 종이와 같은 정본으로 고르고
+ * (contractAddendaForTranslation), 환불 조항 토글은 그 계약서의 값을 그대로 쓴다.
+ *
+ * **언어가 없으면 null 이다.** 한국어(ko)는 asTranslationLang 을 못 지나므로 부르는 쪽에서
+ * 이미 undefined 가 되어 여기 들어온다 — '번역본 없음'과 같은 착지다.
+ */
+export function resolveContractTranslationFor(
+  stored: unknown,
+  d: {
+    template: ContractTemplate
+    refundClauseInContract: boolean
+    subLeaseAddendum?: SubLeaseAddendum | null
+    rateAddendum?: SubLeaseAddendum | null
+    roomScheduleText?: string | null
+    roomScheduleAddendum?: SubLeaseAddendum | null
+  },
+  lang: TranslationLang | null | undefined,
+): ResolvedContractTranslation | null {
+  if (!lang) return null
+  return resolveContractTranslation(
+    stored, d.template, lang, contractAddendaForTranslation(d), d.refundClauseInContract)
+}
+
+/**
+ * 계약서 화면에 세울 번역본 언어 — **화면을 여는 순간 정해진다**(운영자 오더 2026-09-08).
+ *
+ * 왜 기본값이 국적인가. 운영자가 제 휴대폰·태블릿을 그대로 건네 대면으로 서명받는 운용이 있어서다.
+ * 그때 운영자 화면이 곧 입주자가 읽는 화면인데, 건네고 나서 언어를 고르게 하면 이미 늦다.
+ * 그래서 열리는 순간 맞아 있고, 다르면 **건네기 전에** 툴바에서 바꾼다.
+ *
+ * **외국인 판정은 서명 요청과 같은 축이다**(isForeignForDocuments). 그 판정을 못 지나면 언어를
+ * 지목해도 한국어다 — 내국인 계약서의 화면·종이는 이 기능 전과 문자 단위로 같아야 하고, 그 사실이
+ * URL 을 손으로 고친 경우에도 참이어야 한다. 서명 요청이 내국인에게 언어 피커를 아예 안 여는 것과
+ * 같은 자리다.
+ *
+ * ko 는 asTranslationLang 을 못 지나므로 부르는 쪽에서 '번역본 없음'이 된다.
+ */
+export function contractTranslationLangFor(
+  tenant: { nationality?: string | null; foreignRegNoEnc?: unknown },
+  wanted: string | null | undefined,
+): SignLang {
+  const foreign = isForeignForDocuments({
+    nationality: tenant.nationality ?? null, hasForeignRegNo: !!tenant.foreignRegNoEnc,
+  })
+  if (!foreign) return 'ko'
+  return asSignLang(wanted) ?? signLangForNationality(tenant.nationality)
+}
+
+/**
+ * 해석 완료본의 지문 — 화면이 받은 번역본과 서버가 지금 해석한 것이 같은지 견주는 열쇠다.
+ *
+ * 왜 있나(운영자 오더 2026-09-08). 대면 서명은 **화면을 로드한 뒤 발급을 누르기까지** 창이 있고,
+ * 그 사이에 다른 자리에서 사전을 고칠 수 있다. 그러면 입주자가 건네받아 읽은 문안과 종이에 박히는
+ * 문안이 갈리는데, 그 갈림은 아무 소리도 내지 않는다. 화면이 제 지문을 함께 보내고 서버가 재해석본과
+ * 대조하면 그 창이 닫힌다.
+ *
+ * **열쇠 순서에 안 기댄다.** 해석과 박제 파서가 각각 객체를 조립하므로, 언젠가 한쪽 필드 순서가
+ * 바뀌면 내용이 같은데도 지문이 갈려 멀쩡한 발급이 거절된다. 그래서 값만 뽑아 배열로 눕힌다.
+ *
+ * 암호학적 해시가 아니다. 여기서 막는 것은 '그 사이 사전이 바뀌었다'는 사고지 위조가 아니다 —
+ * 종이에 실릴 문안은 **서버가 다시 해석한 것**이고 클라이언트가 보낸 내용은 어디에도 안 쓰인다.
+ */
+export function translationDigest(t: ResolvedContractTranslation | null | undefined): string | null {
+  if (!t) return null
+  const canon = JSON.stringify([
+    t.lang,
+    t.title,
+    (t.sections ?? []).map(s => [s.title, s.items]),
+    (t.addenda ?? []).map(s => [s.title, s.items]),
+    t.oathText,
+    t.vars ? t.vars.환불규정 : null,
+    t.customVars ?? [],
+    t.fallbackCount,
+    t.totalCount,
+  ])
+  // FNV-1a 를 서로 다른 씨앗으로 두 번 돌려 32비트씩 잇는다. 한 벌만 쓰면 32비트라
+  // 우연 충돌이 실무에서도 보일 만큼 흔해진다.
+  const fnv = (seed: number): string => {
+    let h = seed
+    for (let i = 0; i < canon.length; i++) {
+      h ^= canon.charCodeAt(i)
+      h = Math.imul(h, 0x01000193)
+    }
+    return (h >>> 0).toString(16).padStart(8, '0')
+  }
+  return fnv(0x811c9dc5) + fnv(0x9e3779b9)
+}
+
+/**
  * 박제된 해석 완료본을 안전하게 읽는다. **다시 해석하지 않는다.**
  *
  * 링크 스냅샷·서명 동결본에 얼어 있는 JSON 이 입력이다. 여기서 사전을 다시 조회하면 입주자가
@@ -641,6 +741,51 @@ export function orphanTranslationKeys(
   if (!entry) return []
   const live = new Set(translationSourceLines(template, addenda, refundClauseInContract).map(l => l.text))
   return Object.keys(entry.dict).filter(k => !live.has(k))
+}
+
+/**
+ * 본문을 고쳤을 때 **원문으로 돌아간 줄**을 언어별로 센다(운영자 지적 2026-09-08).
+ *
+ * 왜 있나. 열쇠가 한국어 문장 자체라, 본문 한 줄을 고치면 그 줄의 번역이 저절로 '없음'이 되어
+ * 종이에 원문이 남는다. 그것이 설계대로 동작하는 모습이지만 **아무도 말해 주지 않는다** —
+ * 운영자는 다 번역해 둔 계약서가 조용히 반쪽이 된 것을 모른다. 저장 액션이 이 함수로 세어
+ * 그 자리에서 알린다.
+ *
+ * 계수는 정본을 재사용한다(translationSourceLines · parseContractTranslations). 규칙을 베끼면
+ * 여기만 특약 줄을 빠뜨리거나 자리표시자뿐인 줄을 세는 날이 온다.
+ *
+ * 가변 절·환불 토글은 저장 전후에 **같은 값**이라 세는 결과에서 저절로 상쇄된다. 그래도 넘기는
+ * 이유는 분모를 좁히면 그 절의 번역이 잃은 줄로 안 잡히기 때문이다.
+ *
+ * `langs` 는 한 줄이라도 잃은 언어 수, `lines` 는 잃은 **원문 줄**의 가짓수다. 대개 여러 언어가
+ * 같은 줄을 함께 잃으므로 "6개 언어에서 2줄"이 되고, 그것이 운영자가 고쳐야 할 일의 크기다.
+ * 둘 다 0 이면 아무 말도 안 한다 — 종전과 같은 저장이다.
+ */
+export function translationStaleAfterEdit(
+  stored: unknown,
+  before: ContractTemplate,
+  after: ContractTemplate,
+  addenda?: readonly SubLeaseAddendum[],
+  refundClauseInContract?: boolean,
+): { langs: number; lines: number } {
+  const beforeLines = translationSourceLines(before, addenda, refundClauseInContract)
+  const afterKeys = new Set(translationSourceLines(after, addenda, refundClauseInContract).map(l => l.text))
+  const parsed = parseContractTranslations(stored)
+  const lost = new Set<string>()
+  let langs = 0
+  for (const lang of TRANSLATION_LANGS) {
+    const dict = parsed.langs[lang]?.dict
+    if (!dict) continue
+    let n = 0
+    for (const l of beforeLines) {
+      // 살아남은 열쇠는 번역도 그대로 붙어 있다. 번역이 없던 줄은 원래부터 원문이라 잃은 것이 아니다.
+      if (afterKeys.has(l.text) || dict[l.text] === undefined) continue
+      n++
+      lost.add(l.text)
+    }
+    if (n > 0) langs++
+  }
+  return { langs, lines: lost.size }
 }
 
 // ── 저장 병합 ───────────────────────────────────────────────────────

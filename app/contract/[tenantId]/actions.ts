@@ -25,6 +25,7 @@ import {
 import { hasLiveRealContract, liveRealContracts } from '@/lib/contractCurrentIssue'
 import { withEffectivePurpose } from '@/lib/contractPurpose'
 import { bodyLockMessage, fieldLockMessage } from '@/lib/contractLockMessage'
+import { TRANSLATION_LANGS, parseContractTranslations, type TranslationLang } from '@/lib/contractTranslation'
 
 // ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
 // 기존 소비처(ContractView 등)의 import 경로 유지를 위해 타입만 재수출.
@@ -35,19 +36,48 @@ async function requireAuthAndProperty() {
   return { userId, propertyId }
 }
 
-export async function getContractData(tenantId: string, leaseTermId?: string | null) {
+/**
+ * @param lang 이 화면에 세울 참고용 번역본 언어(페이지의 `?lang=`). **이 출구만 번역본을 세운다** —
+ *   링크 발급·드리프트 비교는 buildContractData 를 그대로 불러 종전과 바이트로 같다.
+ *   서명이 끝난 계약은 동결본이 이겨 이 값이 무시된다.
+ */
+export async function getContractData(tenantId: string, leaseTermId?: string | null, lang?: string | null) {
   // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
   // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
   const role = await getMyRole()
   if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
   const { propertyId } = await requireAuthAndProperty()
-  const data = await buildContractData(tenantId, propertyId, leaseTermId)
+  const data = await buildContractData(tenantId, propertyId, leaseTermId, { lang })
   // 신원번호를 볼 수 없는 역할에는 마스킹을 그린다. 칸을 생년월일로 되돌리지 않는 이유는,
   // 그러면 화면과 실제 인쇄물이 서로 다른 서류가 되어 무엇이 나갔는지 화면으로 알 수 없어서다.
   if (data && data.tenant.foreignRegNo && !canReadScope(role, 'identity')) {
     return { ...data, tenant: { ...data.tenant, foreignRegNo: maskForeignRegNo(data.tenant.foreignRegNo) } }
   }
   return data
+}
+
+/**
+ * 계약서 화면의 번역본 셀렉트가 세울 언어 — **영업장이 공개로 켠 것만**이다.
+ *
+ * 왜 화면이 이 목록을 따로 받나. 목록을 ContractData 에 실으면 그 값이 링크 발급의
+ * templateSnapshot 으로 그대로 흘러가, 번역본과 아무 상관 없는 링크의 박제 바이트가 달라진다
+ * (ⓛ 무회귀 급소와 같은 자리). 그래서 화면에만 가는 별도 출구로 둔다.
+ *
+ * 미공개 언어를 안 세우는 이유. 골라 봐야 해석이 null 이라 카드가 안 서고, 운영자는 고장으로
+ * 읽는다. 운영 스위치가 꺼져 있으면 빈 배열이라 셀렉트 자체가 안 선다.
+ *
+ * 게이트는 계약서 화면과 같다 — 이 목록이 더 넓은 문을 열 이유가 없다.
+ */
+export async function getContractTranslationLangs(): Promise<TranslationLang[]> {
+  const role = await getMyRole()
+  if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
+  const { propertyId } = await requireAuthAndProperty()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { contractTranslations: true },
+  })
+  const parsed = parseContractTranslations(property?.contractTranslations)
+  if (!parsed.enabled) return []
+  return TRANSLATION_LANGS.filter(l => parsed.langs[l]?.published === true)
 }
 
 /**

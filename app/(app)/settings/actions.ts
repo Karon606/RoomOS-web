@@ -37,7 +37,7 @@ import {
 import { buildPropertySettingsPatch, normalizePublicSlug } from '@/lib/propertySettingsPatch'
 import {
   asTranslationLang, parseContractTranslations, withTranslationEnabled, mergeTranslationLang,
-  translationPlaceholderMessage,
+  translationPlaceholderMessage, translationStaleAfterEdit,
   type ContractTranslations, type TranslationLang,
 } from '@/lib/contractTranslation'
 
@@ -1238,18 +1238,52 @@ export async function getContractSettings(): Promise<ContractSettings> {
   }
 }
 
-export async function saveContractTemplate(template: ContractTemplate): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * 계약서 본문 저장.
+ *
+ * **저장 직후 그 자리에서 번역 손실을 알린다**(운영자 지적 2026-09-08 — "한국어 계약서 내용을
+ * 바꾸면 번역부분도 수정하라는 알림이 있어야 할듯"). 번역 사전의 열쇠가 한국어 문장 자체라,
+ * 본문 한 줄을 고치면 그 줄의 번역이 저절로 '없음'이 되어 종이에 원문이 남는다. 설계대로 동작하는
+ * 모습이지만 아무도 말해 주지 않아, 다 번역해 둔 계약서가 조용히 반쪽이 됐다.
+ *
+ * **사전은 한 글자도 안 건드린다.** 세기만 한다 — 고아를 지우면 조항을 되돌렸을 때 손번역이
+ * 되살아나지 않는다(lib/contractTranslation 구조 규칙 4).
+ * 계수는 정본 하나다(translationStaleAfterEdit). 0 이면 반환에 칸이 없어 화면은 종전과 같이
+ * '계약서 본문 저장됨' 한 줄만 띄운다.
+ */
+export async function saveContractTemplate(template: ContractTemplate): Promise<
+  { ok: true; translationLost?: { langs: number; lines: number } } | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!template.title?.trim()) return { ok: false, error: '계약서 제목을 입력하세요.' }
     if (!Array.isArray(template.sections)) return { ok: false, error: '섹션 형식이 올바르지 않습니다.' }
+    // 저장 **전** 본문과 사전을 함께 읽는다. 저장 뒤에 읽으면 견줄 이전 상태가 이미 없다.
+    // 가변 절·환불 토글은 저장 전후가 같아 계수에서 상쇄되지만, 분모를 좁히면 그 절의 번역이
+    // 잃은 줄로 안 잡히므로 편집기와 **같은 집합**을 넘긴다(getContractTranslationSettings 와 같다).
+    const before = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: {
+        contractTemplate: true, contractTranslations: true,
+        subLeaseAddendum: true, roomScheduleAddendum: true,
+        shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
+        refundClauseInContract: true,
+      },
+    })
     await prisma.property.update({
       where: { id: propertyId },
       data: { contractTemplate: template as unknown as object },
     })
+    const lost = translationStaleAfterEdit(
+      before?.contractTranslations,
+      (before?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE,
+      template,
+      propertyContractAddenda(before, parseShortStayPolicy(before?.shortStayPolicy).enabled),
+      before?.refundClauseInContract ?? true,
+    )
     revalidatePath('/settings')
-    return { ok: true }
+    return lost.lines > 0 ? { ok: true, translationLost: lost } : { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }

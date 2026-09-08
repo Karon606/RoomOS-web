@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef, useMemo } from 'react'
+import { useState, useTransition, useEffect, useRef, useMemo, useCallback } from 'react'
 import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -49,7 +49,7 @@ import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
   translationCopyLine, translationCopyText, applyTranslationPaste,
-  translationPlaceholderMisses, translationPlaceholderMessage,
+  translationPlaceholderMisses, translationPlaceholderMessage, translationProgress,
   RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
   type TranslationLang, type TranslationLineKind, type ContractTranslations,
 } from '@/lib/contractTranslation'
@@ -1958,6 +1958,9 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
   const [bizCert, setBizCert]           = useState(initial.bizCert)
   const [savingTpl, setSavingTpl]       = useState(false)
+  // 본문 저장 신호 — 아래 번역본 카드가 이 값이 오를 때 제 데이터를 다시 읽는다. 그 카드는
+  // 마운트 때 한 번만 읽어서, 신호가 없으면 방금 고친 본문 기준의 진행·폴백을 못 보여 준다.
+  const [tplSavedAt, setTplSavedAt]     = useState(0)
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
   const [certUploading, setCertUploading]   = useState(false)
@@ -2031,7 +2034,18 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     try {
       const res = await saveContractTemplate(template)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '계약서 본문 저장됨')
+      // 잃은 줄이 0 이어도 올린다 — 분모(번역 대상 줄)는 본문을 고치면 늘 움직인다.
+      setTplSavedAt(Date.now())
+      // 번역 사전의 열쇠가 한국어 문장 자체라, 고친 줄의 번역은 저절로 '없음'이 되어 종이에
+      // 원문이 남는다. 그 사실을 **저장한 그 자리에서** 말하고, 고칠 자리로 가는 길을 함께 둔다
+      // (운영자 지적 2026-09-08). 잃은 줄이 없으면 서버가 칸을 안 실어 보내 종전과 같은 한 줄이다.
+      const lost = res.translationLost
+      if (!lost) { pushToast('success', '계약서 본문 저장됨'); return }
+      pushToast('success', '계약서 본문 저장됨', {
+        detail: `번역본 ${lost.langs}개 언어에서 ${lost.lines}줄이 원문으로 돌아갔습니다. 번역을 다시 채워 주세요.`,
+        // 같은 화면 안이라 그 카드로 데려가면 된다 — 탭 이동이 없어 jumpTo 를 안 쓴다.
+        action: { label: '번역 채우기', run: () => document.getElementById('dv-contract-translation')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+      })
     } finally { release(); setSavingTpl(false) }
   }
   const handleSaveBusinessInfo = async () => {
@@ -2385,7 +2399,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           그 본문을 무슨 언어로 보여줄지를 정하는 순서다. 카드가 제 데이터를 직접 읽는다
           (서류 메일 문안 카드와 같은 문법) — 본문 저장본이 필요한데 이 탭의 폼 상태는 편집 중일 수 있다. */}
       <span id="dv-contract-translation" className="scroll-mt-4" />
-      <ContractTranslationCard />
+      <ContractTranslationCard reloadKey={tplSavedAt} />
 
       {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
           그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
@@ -3109,8 +3123,13 @@ const TRANSLATION_KIND_LABEL: Record<TranslationLineKind, string> = {
  *
  * 언어 목록에 한국어가 없다. 정본이라 번역 대상이 아니다(TRANSLATION_LANGS).
  * 본문은 **저장본**을 읽는다 — 종이에 실리는 그것이라야 사전의 열쇠(한국어 원문)가 맞는다.
+ *
+ * @param reloadKey 본문 카드가 저장할 때마다 올라간다. 이 카드는 마운트할 때 한 번만 읽으므로,
+ *   신호가 없으면 방금 고친 본문 기준의 진행·폴백을 못 보여 준다 — 저장 토스트가 "번역을 다시
+ *   채워 주세요"라며 데려온 자리에서 옛 숫자를 보이는 셈이다. 두 카드가 같은 트리라 모듈 신호
+ *   (lib/contractFilesBus)까지 갈 것 없이 부모가 값 하나를 내린다.
  */
-function ContractTranslationCard() {
+function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
   const [loaded, setLoaded] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [template, setTemplate] = useState<ContractTemplate | null>(null)
@@ -3130,7 +3149,9 @@ function ContractTranslationCard() {
   const [pasteText, setPasteText] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
 
-  useEffect(() => {
+  // 다시 읽을 때 **편집 중인 언어·입력칸은 안 건드린다.** 본문 저장이 운영자가 치던 번역을
+  // 지우면 안 된다 — 그러면 알림이 사고를 만든다.
+  const load = useCallback((initial: boolean) => {
     getContractTranslationSettings()
       .then(r => {
         setTemplate(r.template)
@@ -3138,14 +3159,19 @@ function ContractTranslationCard() {
         setRefundClauseInContract(r.refundClauseInContract)
         setStored(r.translations)
         setEnabled(r.translations.enabled)
-        // 첫 언어는 영어다. 사전에 고아 열쇠가 있으면 그것도 함께 담긴다 — 화면에 칸이 없어도
-        // 저장 때 되실어 보내야 서버가 안 보이는 번역을 지우지 않는다.
-        setDraft({ ...(r.translations.langs.en?.dict ?? {}) })
-        setPublished(r.translations.langs.en?.published ?? false)
+        if (initial) {
+          // 첫 언어는 영어다. 사전에 고아 열쇠가 있으면 그것도 함께 담긴다 — 화면에 칸이 없어도
+          // 저장 때 되실어 보내야 서버가 안 보이는 번역을 지우지 않는다.
+          setDraft({ ...(r.translations.langs.en?.dict ?? {}) })
+          setPublished(r.translations.langs.en?.published ?? false)
+        }
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
   }, [])
+  useEffect(() => { load(true) }, [load])
+  // 본문이 저장될 때마다 분모(번역 대상 줄)와 고아가 바뀐다. 첫 렌더는 위 효과가 이미 읽었다.
+  useEffect(() => { if (reloadKey > 0) load(false) }, [reloadKey, load])
 
   const lines = useMemo(
     () => (template ? translationSourceLines(template, addenda, refundClauseInContract) : []),
@@ -3173,6 +3199,26 @@ function ContractTranslationCard() {
   }, [draft])
   // 문장 안 줄바꿈이 있는 항목 수. 복사할 때 한 줄로 눕히므로 그 사실을 안내에 적는다.
   const flattened = useMemo(() => lines.filter(l => l.text !== translationCopyLine(l.text)).length, [lines])
+  /**
+   * **원문으로 돌아간 줄이 있는 언어** — 본문을 고치면 그 줄의 번역이 저절로 '없음'이 되어
+   * 종이에 한국어 원문이 남는다(운영자 지적 2026-09-08). 지금 보고 있는 한 언어의 진행만으로는
+   * 그 사실이 다른 언어에서 어떻게 됐는지 알 수 없어, 언어를 하나씩 눌러 봐야 했다.
+   *
+   * 계수는 해석·피커와 **같은 정본**이다(translationProgress) — 변수 줄은 비어도 번역이 서므로
+   * 여기서 따로 세면 다 채운 언어가 영영 미완으로 보인다.
+   * 지금 편집 중인 언어만 화면 입력칸(draft) 기준으로 센다. 저장본으로 세면 방금 채운 칸이
+   * 이 줄에서는 아직 빈 것으로 남아 한 카드가 두 말을 한다.
+   * 사전이 아예 빈 언어는 뺀다 — 시작도 안 한 언어를 '되돌아갔다'고 부를 수 없다.
+   */
+  const fallbackLangs = useMemo(() => {
+    if (!template) return []
+    return TRANSLATION_LANGS.map(l => {
+      const dict = stored.langs[l]?.dict ?? {}
+      const p = translationProgress(stored, template, l, addenda, refundClauseInContract)
+      const left = l === lang ? lines.length - translated : p.total - p.done
+      return { lang: l, left, started: Object.keys(l === lang ? draft : dict).length > 0 }
+    }).filter(x => x.started && x.left > 0)
+  }, [template, stored, addenda, refundClauseInContract, lang, lines.length, translated, draft])
 
   // 저장 안 한 입력이 있는가. 언어를 바꿀 때 그것을 조용히 버리지 않으려고 센다(§27.5).
   const dirty = useMemo(() => {
@@ -3300,6 +3346,16 @@ function ContractTranslationCard() {
                   {TRANSLATION_LANGS.map(l => <option key={l} value={l}>{SIGN_LANG_LABEL[l]}</option>)}
                 </select>
               </label>
+
+              {/* 원문으로 돌아간 줄이 있는 언어를 **한자리에서** 말한다. 언어를 하나씩 눌러 보지
+                  않으면 본문 수정이 어느 번역을 비웠는지 알 길이 없었다(운영자 지적 2026-09-08).
+                  경고 문법은 같은 카드의 '권장과 다름'과 한 벌이다(면을 깔지 않는 글자 경고). */}
+              {fallbackLangs.length > 0 && (
+                <p className="text-[0.65625rem] leading-relaxed text-[var(--warning-fg)]">
+                  한국어 원문이 그대로 나가는 줄이 있습니다. {fallbackLangs.map(x => `${SIGN_LANG_LABEL[x.lang]} ${x.left}줄`).join(' · ')}.
+                  계약서 본문을 고치면 그 줄의 번역이 빈 칸이 되니 다시 채워 주세요.
+                </p>
+              )}
 
               {/* 편집 면. 위 '사용' 토글은 누르는 즉시 저장이고 이 안은 저장 버튼이 한다 —
                   두 축이 한 면에 섞이면 어느 것이 즉시 반영인지 알 수 없다(§27.1, 추가 서류 카드

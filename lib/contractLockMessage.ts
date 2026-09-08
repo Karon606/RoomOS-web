@@ -37,6 +37,20 @@ export function signDateLockMessage(multiVersion: boolean, where: LockHintWhere)
 }
 
 /**
+ * 참고용 번역본 언어 잠금 — 서명이 들어온 뒤에는 **그 사람이 무엇을 읽고 서명했는지**가 사실로 굳는다.
+ *
+ * 길이 둘로 갈린다. 계약서 서명이 확정된 화면에는 '이 계약서 폐기' 가 실제로 서 있지만, 동반
+ * 서류에만 서명이 들어온 화면에는 그 버튼이 없다 — 그때 폐기를 가리키면 없는 버튼을 찾게 된다
+ * (이 파일이 생긴 이유가 정확히 그 사고다).
+ */
+export function translationLockMessage(multiVersion: boolean, where: LockHintWhere, bodyLocked: boolean): string {
+  const head = '서명이 들어온 계약서라 참고용 번역본 언어를 바꿀 수 없습니다. 입주자가 읽고 서명한 문안이 그대로 남아야 합니다.'
+  return bodyLocked
+    ? `${head} 바꾸려면 ${exitTail(multiVersion, where)} ${KEEP}`
+    : `${head} 서명란의 X 버튼으로 받아 둔 서명을 지우면 다시 고를 수 있습니다.`
+}
+
+/**
  * 발급본이 있는 계약의 '다음 할 일' 안내 — 입주자 상세 계약서 칸(주 버튼이 내려간 자리).
  *
  * 잠금 안내와 문장은 다르지만 **가리켜야 할 길은 같다.** 그래서 같은 파일에 둔다.

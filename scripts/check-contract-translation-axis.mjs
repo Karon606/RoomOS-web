@@ -47,8 +47,9 @@ function fnBody(src, at) {
   const issue = fnBody(src, src.indexOf('export async function issueContractShareLink'))
   if (issue.length < 500) violations.push(`${f} — issueContractShareLink 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
   else {
-    if (!/resolveContractTranslation\(/.test(issue) || !/asTranslationLang\(signLang\)/.test(issue)) {
-      violations.push(`${f} — ⓐ 발급이 그 링크의 언어로 번역본을 해석하지 않는다. 서명 화면이 읽을 근거가 스냅샷에 안 남는다.`)
+    // 해석 인자 조립은 정본 헬퍼 하나다(6단계) — 직접 부르면 화면·발급 API 와 규칙이 갈린다.
+    if (!/resolveContractTranslationFor\(/.test(issue) || !/asTranslationLang\(signLang\)/.test(issue)) {
+      violations.push(`${f} — ⓐ 발급이 그 링크의 언어로 번역본을 정본 헬퍼로 해석하지 않는다. 서명 화면이 읽을 근거가 스냅샷에 안 남는다.`)
     }
     // 조건부 스프레드여야 한다. `translation,` 이나 `translation: translation` 은 null 을 박는다.
     if (!/\.\.\.\(translation \? \{ translation \} : \{\}\)/.test(issue)) {
@@ -59,8 +60,8 @@ function fnBody(src, at) {
   const drift = fnBody(src, src.indexOf('export async function checkContractShareDrift'))
   if (drift.length < 300) violations.push(`${f} — checkContractShareDrift 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
   else {
-    if (!/resolveContractTranslation\(/.test(drift) || !/translation: currentTranslation/.test(drift)) {
-      violations.push(`${f} — ⓓ 드리프트 비교가 지금 번역본을 다시 해석해 넣지 않는다. 번역본이 실린 링크 전건이 오경보로 뜬다.`)
+    if (!/resolveContractTranslationFor\(/.test(drift) || !/translation: currentTranslation/.test(drift)) {
+      violations.push(`${f} — ⓓ 드리프트 비교가 지금 번역본을 정본 헬퍼로 다시 해석해 넣지 않는다. 번역본이 실린 링크 전건이 오경보로 뜬다.`)
     }
   }
 }
@@ -157,8 +158,14 @@ function fnBody(src, at) {
   if (!/const translation = asResolvedContractTranslation\(data\.translation\)/.test(src)) {
     violations.push(`${f} — ⓗ 박제를 파서 정본으로 안 읽는다. 원격 화면의 data 는 공개 링크 JSON 을 통째로 캐스팅한 것이라, 모양이 아닌 값에서 화면이 깨진다.`)
   }
-  if (!/remote && translation &&/.test(src) || !/<ContractTranslationCard/.test(src)) {
-    violations.push(`${f} — ⓗ 번역본 카드가 원격 화면에서 박제를 조건으로 서지 않는다. 카드가 안 뜨거나 번역본 없는 링크에도 빈 카드가 선다.`)
+  // 6단계에서 `remote &&` 를 걷었다 — 대면 서명은 운영자 화면이 곧 입주자가 읽는 화면이다.
+  // 조건은 translation 하나뿐이라야 한다. 다시 화면을 가르면 대면에서 카드가 사라지고,
+  // 조건을 지우면 번역본 없는 계약에 빈 카드가 선다(무회귀 급소).
+  if (!/\{translation && \(\n/.test(src) || !/<ContractTranslationCard/.test(src)) {
+    violations.push(`${f} — ⓗ 번역본 카드가 'translation 이 있으면 선다' 하나로 서지 않는다. 대면 서명에서 카드가 사라지거나 번역본 없는 계약에 빈 카드가 선다.`)
+  }
+  if (/remote && translation/.test(src)) {
+    violations.push(`${f} — ⓗ 카드 조건에 원격 갈림이 되살아났다. 운영자가 기기를 건네 받는 대면 서명에서 번역본이 안 뜬다(2026-09-08 오더).`)
   }
   if (/resolveContractTranslation\(/.test(src)) {
     violations.push(`${f} — ⓗ 화면이 사전을 다시 해석한다. 표시 원천은 박제 하나여야 한다(입주자가 본 문안과 갈리면 증거가 무너진다).`)
@@ -219,8 +226,13 @@ function fnBody(src, at) {
     violations.push(`${f} — ⓛ 박제본의 번역본을 안 읽는다. 서명이 끝난 계약서의 화면과 종이가 갈린다.`)
   }
   // 조건부 스프레드여야 한다. `translation,` 이나 `translation: x ?? null` 은 칸을 만든다.
-  if (!/\.\.\.\(translationFrozen \? \{ translation: translationFrozen \} : \{\}\)/.test(src)) {
+  if (!/\.\.\.\(translationOut \? \{ translation: translationOut \} : \{\}\)/.test(src)) {
     violations.push(`${f} — ⓛ 번역본을 조건부로 안 담는다. 이 값이 링크 스냅샷으로 흘러가므로, 번역본 없는 영업장의 스냅샷이 이 기능 전과 달라진다.`)
+  }
+  // 6단계 — 동결본이 라이브 해석을 **이긴다**. 순서가 뒤집히면 서명이 끝난 계약의 문안이
+  // 지금 사전으로 바뀌어, 입주자가 서명한 종이와 화면이 갈린다.
+  if (!/const translationOut = translationFrozen \?\? translationLive/.test(src)) {
+    violations.push(`${f} — ⓛ 동결본이 라이브 해석을 안 이긴다. 서명이 끝난 계약의 번역본이 지금 사전으로 덮인다.`)
   }
 }
 
@@ -228,8 +240,10 @@ function fnBody(src, at) {
 {
   const f = 'app/api/contract/generate/route.ts'
   const src = read(f)
-  if (!/translation: body_\.translation/.test(src)) {
-    violations.push(`${f} — ⓜ 인쇄 데이터에 번역본이 안 실린다. 발급 PDF 에만 우선 조항이 빠진다.`)
+  // 6단계 — 서명 전 계약은 화면이 보낸 언어로 서버가 다시 해석한 것이 선다(대면 서명).
+  // 박제본이 있으면 그것이 이긴다(`??` 의 왼쪽) — 서명이 끝난 종이는 사전과 무관하다.
+  if (!/translation: body_\.translation \?\? liveTranslation/.test(src)) {
+    violations.push(`${f} — ⓜ 인쇄 데이터에 번역본이 안 실리거나 동결본이 안 이긴다. 발급 PDF 에만 우선 조항이 빠지거나, 서명이 끝난 종이의 문안이 지금 사전으로 바뀐다.`)
   }
   if (!/translation: printData\.translation/.test(src)) {
     violations.push(`${f} — ⓜ 발급본 박제에 번역 축이 안 실린다. 발급 상세가 읽을 기록이 없어 '전문 보기'가 영영 안 뜬다.`)
@@ -272,7 +286,7 @@ function fnBody(src, at) {
 {
   const f = 'app/(app)/settings/SettingsForm.tsx'
   const src = read(f)
-  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
   if (card.length < 1000) {
     violations.push(`${f} — ContractTranslationCard 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
   } else {
@@ -360,17 +374,30 @@ function fnBody(src, at) {
   }
 }
 
-// ⓦ — 발급과 드리프트가 그 계약에 실린 절만 넘긴다
+// ⓦ — 그 계약에 실린 절만 번역본에 선다
+//
+// 6단계에서 이 규칙이 **정본 헬퍼 안으로 들어갔다.** 종전에는 호출부마다 손으로 넘겨서
+// 발급·드리프트 둘이 각자 같은 줄을 적고 있었고, 화면·발급 API 가 늘면 넷이 될 참이었다.
+// 규칙이 갈리면 종이에 없는 절이 번역본에 서서 조항 번호가 통째로 밀린다(번호는 자리로 매긴다).
 {
-  const f = 'app/(app)/tenants/contractShare.ts'
+  const f = 'lib/contractTranslation.ts'
   const src = read(f)
-  const issue = fnBody(src, src.indexOf('export async function issueContractShareLink'))
-  if (issue.length >= 500 && !/contractAddendaForTranslation\(snapshot\)/.test(issue)) {
-    violations.push(`${f} — ⓦ 발급이 그 계약의 가변 절을 안 넘긴다. 특약 번역이 박제에서 통째로 빠져 서명 화면에 한국어 원문으로 뜬다.`)
-  }
-  const drift = fnBody(src, src.indexOf('export async function checkContractShareDrift'))
-  if (drift.length >= 300 && !/contractAddendaForTranslation\(current\)/.test(drift)) {
-    violations.push(`${f} — ⓦ 드리프트 비교가 가변 절을 안 넘긴다. 특약이 붙은 계약 전건이 "특약 번역이 사라졌다"로 뜬다.`)
+  // fnBody 를 못 쓴다 — 이 함수는 인자 타입이 `d: {` 로 시작해서, 그 여는 괄호를 본문으로
+  // 착각한다. 최상위 닫는 괄호(줄머리 `}`)까지 자른다.
+  const helperAt = src.indexOf('export function resolveContractTranslationFor')
+  const helper = helperAt < 0 ? '' : src.slice(helperAt, src.indexOf('\n}', helperAt) + 2)
+  if (helper.length < 100) violations.push(`${f} — ⓦ resolveContractTranslationFor 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/contractAddendaForTranslation\(d\)/.test(helper)) {
+      violations.push(`${f} — ⓦ 정본 헬퍼가 그 계약의 가변 절을 종이와 같은 정본으로 안 고른다. 특약 번역이 박제에서 빠지거나 없는 절이 번역본에 선다.`)
+    }
+    if (!/d\.refundClauseInContract/.test(helper)) {
+      violations.push(`${f} — ⓦ 정본 헬퍼가 환불 조항 토글을 안 넘긴다. 종이에 안 실리는 문장이 번역본에 서거나, 실리는데 한국어로만 남는다.`)
+    }
+    // 언어가 없으면 해석 자체를 안 한다 — 한국어 계약서가 이 기능 전과 문자 단위로 같아야 한다.
+    if (!/if \(!lang\) return null/.test(helper)) {
+      violations.push(`${f} — ⓦ 언어가 없을 때 null 로 안 떨어진다. 한국어를 고른 계약서에 카드와 우선 조항이 선다.`)
+    }
   }
 }
 
@@ -423,7 +450,7 @@ function fnBody(src, at) {
 {
   const f = 'app/(app)/settings/SettingsForm.tsx'
   const src = read(f)
-  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
   if (card.length >= 1000) {
     if (!/translationSourceLines\(template, addenda, refundClauseInContract\)/.test(card)) {
       violations.push(`${f} — ⓨ 편집기가 가변 절·환불 조항 토글을 분모에 안 넣는다. 종이에 실리는데 번역할 칸이 아예 안 선다.`)
@@ -550,7 +577,7 @@ function fnBody(src, at) {
 {
   const f = 'app/(app)/settings/SettingsForm.tsx'
   const src = read(f)
-  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
   if (card.length >= 1000) {
     // 미리 채우면 검토 없이 저장된다(운영자 오더) — placeholder 로만 보인다.
     if (!/placeholder=\{l\.kind === 'var'[\s\S]{0,120}RECOMMENDED_REFUND_TRANSLATION\[lang\]/.test(card)) {
@@ -584,9 +611,230 @@ function fnBody(src, at) {
   }
 }
 
+// ── 6단계 배선(대면 서명 · 본문 수정 알림) ──────────────────────────
+//
+//   ㉮ 운영자 계약서 페이지가 `?lang` 을 받아 그 출구로만 넘긴다. 언어 목록은 ContractData 에
+//     안 싣는다 — 그 값이 링크 발급 스냅샷으로 흘러가 번역본과 무관한 링크의 바이트가 달라진다.
+//   ㉯ 번역본을 세우는 것은 **옵션을 넘긴 호출뿐**이다. 안 넘긴 호출(링크 발급·드리프트·변수
+//     미리보기)은 이 기능 전과 바이트로 같다. 무회귀 급소가 여기로 옮겨 왔다.
+//   ㉰ 해석 호출부가 정본 헬퍼만 쓴다. lib 밖에서 resolveContractTranslation 을 직접 부르면
+//     규칙이 네 벌이 된다.
+//   ㉱ 발급 API 가 **번역 내용을 안 받는다.** 언어 코드와 지문만 받고 서버가 다시 해석한다 —
+//     받으면 API 를 직접 불러 아무 문안이나 종이에 박을 수 있다(성명·금액 봉인과 같은 규칙).
+//   ㉲ 지문 게이트가 **채번보다 먼저** 선다. 뒤에 두면 거절할 요청이 계약번호 한 자리를 먹는다.
+//     서명이 끝난 계약(SNAPSHOT)은 예외다 — 그 종이는 동결본이라 사전과 무관하다.
+//   ㉳ 대면 박제가 번역본을 **조건부로** 담는다. 대면은 서명 저장과 박제가 이 요청 한 번이라
+//     여기서 안 담으면 그 사람이 무엇을 읽었는지 어디에도 안 남는다.
+//   ㉴ 툴바 셀렉트가 외국인·공개 언어일 때만 서고, 서명이 들어오면 잠긴다. 언어를 바꿀 때
+//     토스트를 안 띄운다(저장이 아니라 보기 상태다).
+//   ㉵ 본문 저장이 정본 계수를 쓰고 **사전을 한 글자도 안 건드린다.**
+
+// ㉮ — 페이지의 ?lang 과 언어 목록의 자리
+{
+  const f = 'app/contract/[tenantId]/page.tsx'
+  const src = read(f)
+  if (!/searchParams: Promise<\{[^}]*lang\?: string[^}]*\}>/.test(src)) {
+    violations.push(`${f} — ㉮ 페이지가 ?lang 을 안 받는다. 운영자가 건네기 전에 언어를 맞출 길이 없다.`)
+  }
+  if (!/getContractData\(tenantId, leaseTermId \?\? null, lang \?\? null\)/.test(src)) {
+    violations.push(`${f} — ㉮ 페이지가 언어를 계약서 출구에 안 넘긴다. 셀렉트를 바꿔도 화면이 안 바뀐다.`)
+  }
+  if (!/getContractTranslationLangs\(\)/.test(src) || !/translationLangs=\{translationLangs\}/.test(src)) {
+    violations.push(`${f} — ㉮ 셀렉트가 세울 언어 목록을 화면에 안 내린다. 목록을 ContractData 에 실으면 링크 스냅샷 바이트가 달라진다.`)
+  }
+}
+{
+  const f = 'lib/contractData.ts'
+  const src = readFileSync(f, 'utf8')
+  // 목록을 ContractData 에 실으면 그 값이 링크 발급 스프레드를 타고 스냅샷으로 흘러간다.
+  if (/translationLangs/.test(src)) {
+    violations.push(`${f} — ㉮ ContractData 가 언어 목록을 들었다. 그 값이 링크 스냅샷으로 흘러가 번역본과 무관한 링크의 박제 바이트가 달라진다.`)
+  }
+}
+
+// ㉯ — 번역본은 옵션을 넘긴 호출만 세운다
+{
+  const f = 'lib/contractData.ts'
+  const src = read(f)
+  const build = fnBody(src, src.indexOf('export async function buildContractData'))
+  if (build.length < 1000) violations.push(`${f} — buildContractData 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else if (!/\(!translation \|\| body\.source === 'SNAPSHOT'\) \? null : resolveContractTranslationFor\(/.test(build)) {
+    violations.push(`${f} — ㉯ 번역 해석이 '옵션을 넘긴 LIVE 호출' 조건을 안 지킨다. 옵션 없는 호출까지 세우면 링크 발급 스냅샷이 이 기능 전과 달라지고, SNAPSHOT 에서 세우면 서명이 끝난 종이의 문안이 바뀐다.`)
+  }
+  // 링크 발급·드리프트는 옵션을 안 넘긴다. 넘기는 순간 그 스냅샷에 번역본이 두 경로로 들어간다.
+  const share = read('app/(app)/tenants/contractShare.ts')
+  if (/buildContractData\([^)]*,\s*\{\s*lang/.test(share)) {
+    violations.push(`app/(app)/tenants/contractShare.ts — ㉯ 링크 발급·드리프트가 번역 옵션을 넘긴다. 스냅샷에 번역본이 두 경로로 들어가 한국어 링크에도 번역본이 실린다.`)
+  }
+  // 외국인 판정은 서명 요청과 같은 축이다. 다른 축을 쓰면 같은 사람이 두 화면에서 갈린다.
+  const langForSrc = read('lib/contractTranslation.ts')
+  const langFor = fnBody(langForSrc, langForSrc.indexOf('export function contractTranslationLangFor'))
+  if (langFor.length < 50) violations.push(`lib/contractTranslation.ts — contractTranslationLangFor 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/isForeignForDocuments\(/.test(langFor) || !/if \(!foreign\) return 'ko'/.test(langFor)) {
+      violations.push(`lib/contractTranslation.ts — ㉯ 외국인 판정을 서명 요청과 같은 축으로 안 한다(또는 내국인에게 언어가 선다). 내국인 계약서의 화면·종이가 이 기능 전과 달라진다.`)
+    }
+    if (!/signLangForNationality\(/.test(langFor)) {
+      violations.push(`lib/contractTranslation.ts — ㉯ 기본값이 국적에서 안 온다. 건네기 전에 이미 맞아 있어야 한다는 것이 이 기능의 전제다.`)
+    }
+  }
+}
+
+// ㉰ — 해석 호출부는 정본 헬퍼만 쓴다
+{
+  for (const f of [
+    'app/(app)/tenants/contractShare.ts',
+    'lib/contractData.ts',
+    'app/api/contract/generate/route.ts',
+    'app/contract/[tenantId]/ContractView.tsx',
+  ]) {
+    const src = read(f)
+    if (/resolveContractTranslation\(/.test(src)) {
+      violations.push(`${f} — ㉰ 해석 정본을 직접 부른다. 인자 조립이 호출부마다 흩어지면 언젠가 한 곳만 가변 절이나 환불 토글을 빠뜨린다(헬퍼 resolveContractTranslationFor 를 쓴다).`)
+    }
+  }
+}
+
+// ㉱·㉲·㉳ — 발급 API 의 언어 코드 · 지문 게이트 · 대면 박제
+{
+  const f = 'app/api/contract/generate/route.ts'
+  const src = read(f)
+  const post = fnBody(src, src.indexOf('export async function POST'))
+  if (post.length < 2000) violations.push(`${f} — POST 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    // ㉱ — 언어 코드만 받는다. **해석에 넘기는 그 자리**를 본다 — 파일 어딘가에 있기만 하면
+    // 되는 검사는 지문 게이트 쪽 호출이 대신 걸려 눈을 감는다(역주입 ⑪로 실측).
+    if (!/asTranslationLang\(body\.lang\),\s*\n\s*\)/.test(post)) {
+      violations.push(`${f} — ㉱ 해석에 넘기는 언어가 화이트리스트를 안 지난다. 한국어나 아무 문자열이 해석 경로로 들어간다.`)
+    }
+    if (/body\.lang as /.test(post)) {
+      violations.push(`${f} — ㉱ 언어 코드를 캐스트로 통과시킨다. 화이트리스트 파서 하나만 지나야 한다.`)
+    }
+    // 번역 문안을 몸통으로 받으면 API 를 직접 불러 아무 문안이나 종이에 박을 수 있다.
+    if (/body\.translation\b/.test(post)) {
+      violations.push(`${f} — ㉱ 발급 몸통에서 번역 **내용**을 읽는다. 클라이언트가 보낸 종이 내용을 믿으면 API 를 직접 불러 아무 문안이나 박을 수 있다(성명 봉인과 같은 규칙).`)
+    }
+    // ㉲ — 지문 게이트. SNAPSHOT 예외가 없으면 서명본 재발급이 통째로 막힌다.
+    const gate = /if \(asTranslationLang\(body\.lang\) && body_\.source !== 'SNAPSHOT'\s*\n?\s*&& translationDigest\(liveTranslation\) !== \(body\.translationDigest \?\? null\)\)/
+    if (!gate.test(post)) {
+      violations.push(`${f} — ㉲ 지문 게이트가 없거나 조건이 다르다. 로드와 발급 사이에 사전이 바뀌면 입주자가 읽은 것과 다른 문안이 조용히 종이에 박힌다.`)
+    }
+    if (!/code: 'TRANSLATION_STALE'/.test(post)) {
+      violations.push(`${f} — ㉲ 거절에 코드가 없다. 화면이 새로고침 안내를 못 골라내고 막다른 실패로 보인다(DUE_DAY_REQUIRED 문법).`)
+    }
+    // 게이트가 채번보다 앞이어야 한다. 뒤면 거절할 요청이 계약번호 한 자리를 먹고 지워진다.
+    const gateAt = post.search(gate)
+    const reserveAt = post.indexOf('contractNo: no')
+    if (gateAt >= 0 && reserveAt >= 0 && gateAt > reserveAt) {
+      violations.push(`${f} — ㉲ 지문 게이트가 채번 뒤에 선다. 거절할 요청이 계약번호를 먹고 지워져 번호가 건너뛴다(신고 e7c09f2d 와 같은 클래스).`)
+    }
+    // ㉳ — 대면 박제. 조건부여야 한다. `translation: x` 는 번역본 없는 대면 서명 전건의 바이트를 바꾼다.
+    if (!/\.\.\.\(printData\.translation \? \{ translation: printData\.translation as unknown as object \} : \{\}\)/.test(post)) {
+      violations.push(`${f} — ㉳ 대면 서명 박제에 번역본을 조건부로 안 담는다. 그 사람이 무엇을 읽고 서명했는지가 안 남거나(재발급에서 우선 조항까지 사라진다), 번역본 없는 대면 서명 전건의 박제 바이트가 달라진다.`)
+    }
+  }
+}
+
+// ㉴ — 툴바 셀렉트
+{
+  const f = 'app/contract/[tenantId]/ContractView.tsx'
+  const src = read(f)
+  // 한 정규식으로 **이어서** 본다. 외국인 판정을 따로 찾으면 같은 파일의 서명 요청 쪽 호출이
+  // 대신 걸려, 셀렉트에서 그 판정을 빼도 그물이 눈을 감는다(역주입 ②로 실측).
+  if (!/const canPickTranslation = !remote && !signedSnapshot && translationLangs\.length > 0\s*\n?\s*&& isForeignForDocuments\(\{ nationality: data\.tenant\.nationality, hasForeignRegNo: data\.tenant\.hasForeignRegNo \}\)/.test(src)) {
+    violations.push(`${f} — ㉴ 셀렉트가 '외국인이고 공개 언어가 있을 때만' 서지 않는다. 내국인·번역본 끈 영업장의 화면이 이 기능 전과 달라진다.`)
+  }
+  if (!/const translationLocked = bodyLocked \|\| docSlots\.some\(x => x\.signed\)/.test(src)) {
+    violations.push(`${f} — ㉴ 서명이 들어온 화면에서 셀렉트가 안 잠긴다. 이미 서명한 사람이 읽은 문안이 바뀌고, 소프트 내비가 정보 표 폼과 조항 작업본을 서버 값으로 되돌린다.`)
+  }
+  // 버튼 모양을 통째로 못박는다. '토스트를 부르는가'만 보면 클래스를 갈아도 안 걸린다(역주입 ⑥).
+  if (!/translationLocked \?/.test(src)
+    || !/<button type="button" className="toolbar-locked" onClick=\{\(\) => pushToast\(\s*\n?\s*'info', translationLockMessage\(/.test(src)) {
+    violations.push(`${f} — ㉴ 잠긴 셀렉트가 형제 문법(toolbar-locked + 이유 토스트)을 안 쓴다. 눌러도 아무 일이 없으면 화면이 고장난 것으로 읽힌다.`)
+  }
+  const pick = fnBody(src, src.indexOf('const pickTranslationLang ='))
+  if (pick.length < 50) violations.push(`${f} — pickTranslationLang 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    // 저장이 아니라 보기 상태다. 카드가 서는 것 자체가 피드백이라 토스트를 띄우면 소음이다.
+    if (/pushToast\(/.test(pick)) {
+      violations.push(`${f} — ㉴ 언어를 바꿀 때 토스트를 띄운다. 저장이 아니라 보기 상태이고, 카드가 서는 것 자체가 피드백이다(운영자 오더).`)
+    }
+    // 한국어도 명시해 남긴다. 지우는 갈래를 함께 막는다 — set 만 보면 'ko 일 때만 지운다' 를
+    // 덧붙여도 안 걸리고, 그 한 줄이 정확히 이 규칙을 깨는 방식이다(역주입 ⑤로 실측).
+    if (!/params\.set\('lang', v\)/.test(pick) || /params\.delete\(/.test(pick)) {
+      violations.push(`${f} — ㉴ 고른 언어를 URL 에 명시해 안 남긴다. 한국어를 고르면 국적 기본값으로 되돌아가 선택이 저절로 풀린다.`)
+    }
+    // 발화 시점의 실제 URL 로 재구성한다(형제 useUrlState 규칙) — 스냅샷을 쓰면 그 사이 붙은
+    // 파라미터(?leaseTermId 등)를 지워 다른 계약의 계약서로 착지한다.
+    if (!/new URLSearchParams\(window\.location\.search\)/.test(pick)) {
+      violations.push(`${f} — ㉴ URL 을 발화 시점 값으로 재구성하지 않는다. 캡처해 둔 스냅샷을 쓰면 ?leaseTermId 가 지워져 다른 계약의 계약서로 착지한다.`)
+    }
+  }
+}
+
+// ㉵ — 본문 저장이 알리기만 한다
+{
+  const f = 'app/(app)/settings/actions.ts'
+  const src = read(f)
+  const save = fnBody(src, src.indexOf('export async function saveContractTemplate'))
+  if (save.length < 300) violations.push(`${f} — saveContractTemplate 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/translationStaleAfterEdit\(/.test(save)) {
+      violations.push(`${f} — ㉵ 본문 저장이 번역 손실을 안 센다. 다 번역해 둔 계약서가 조용히 반쪽이 된다(운영자 지적 2026-09-08).`)
+    }
+    // **세기만 한다.** 사전을 건드리면 조항을 되돌렸을 때 손번역이 안 되살아난다(구조 규칙 4).
+    // 쓰는 자리는 update 의 data 하나뿐이라 그것이 본문만 담는지 본다(select 의 조회는 무해하다).
+    if (!/data: \{ contractTemplate: template as unknown as object \},/.test(save)) {
+      violations.push(`${f} — ㉵ 본문 저장이 번역 사전에 쓴다. 고아는 세고 알리기만 한다 — 지우면 조항을 되돌려도 손번역이 안 되살아난다.`)
+    }
+    // 0 이면 칸 자체가 없다 — 화면이 종전과 같은 한 줄 토스트를 띄운다.
+    if (!/lost\.lines > 0 \? \{ ok: true, translationLost: lost \} : \{ ok: true \}/.test(save)) {
+      violations.push(`${f} — ㉵ 잃은 줄이 0 일 때도 칸을 만든다(또는 안 돌려준다). 0 이면 아무 말도 안 하는 것이 종전과 같은 저장이다.`)
+    }
+    // 분모는 편집기와 같은 집합이다. 좁히면 특약 줄의 번역이 잃은 줄로 안 잡힌다.
+    if (!/propertyContractAddenda\(before,/.test(save)) {
+      violations.push(`${f} — ㉵ 계수 분모가 편집기와 다른 집합이다. 특약 줄의 번역이 사라져도 계수가 침묵한다.`)
+    }
+  }
+}
+{
+  const f = 'app/(app)/settings/SettingsForm.tsx'
+  const src = read(f)
+  const save = fnBody(src, src.indexOf('const handleSaveTemplate ='))
+  if (save.length < 200) violations.push(`${f} — handleSaveTemplate 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/res\.translationLost/.test(save)) {
+      violations.push(`${f} — ㉵ 저장 화면이 번역 손실을 안 말한다. 서버가 세어 보내도 운영자는 못 본다.`)
+    }
+    // 알리기만 하고 길이 없으면 "그래서 어디서 고치나"가 남는다. 같은 화면 안이라 스크롤이면 된다.
+    if (!/dv-contract-translation/.test(save)) {
+      violations.push(`${f} — ㉵ 알림에서 번역 편집으로 가는 길이 없다. 알림은 고칠 자리를 함께 말해야 한다.`)
+    }
+  }
+  // 카드가 본문 저장 뒤 제 데이터를 다시 읽는다. 안 읽으면 "번역을 다시 채워 주세요"가 데려온
+  // 자리에서 옛 숫자를 보인다(카드는 마운트 때 한 번만 읽는다).
+  if (!/<ContractTranslationCard reloadKey=/.test(src)) {
+    violations.push(`${f} — ㉵ 번역본 카드가 본문 저장 신호를 안 받는다. 알림이 데려온 자리가 저장 전 숫자를 보인다.`)
+  }
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
+  if (card.length >= 1000) {
+    // 다시 읽을 때 편집 중인 입력칸을 덮으면 알림이 사고를 만든다.
+    if (!/if \(initial\) \{/.test(card)) {
+      violations.push(`${f} — ㉵ 다시 읽기가 편집 중인 언어·입력칸을 덮는다. 본문 저장이 운영자가 치던 번역을 지운다.`)
+    }
+    // 원문 폴백이 생긴 언어를 한자리에서 말한다. 계수는 해석·피커와 같은 정본이다.
+    if (!/translationProgress\(stored, template, l, addenda, refundClauseInContract\)/.test(card)) {
+      violations.push(`${f} — ㉵ 언어별 원문 폴백을 정본으로 안 센다. 변수 줄을 따로 세면 다 채운 언어가 영영 미완으로 보인다.`)
+    }
+    if (!/fallbackLangs\.length > 0 &&/.test(card) || !/--warning-fg/.test(card)) {
+      violations.push(`${f} — ㉵ 원문 폴백이 생긴 언어가 눈에 안 띈다. 언어를 하나씩 눌러 봐야 본문 수정이 어느 번역을 비웠는지 알 수 있다.`)
+    }
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림)')

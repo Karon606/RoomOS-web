@@ -12,7 +12,7 @@ import Link from 'next/link'
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
 import SignaturePad from 'signature_pad'
 import { isSignatureInkEnough } from '@/lib/signatureInk'
-import { signLangForNationality, smsBodyFor, t, bi, biLine, subLangOf, type SignLang } from '@/lib/signGuideText'
+import { signLangForNationality, smsBodyFor, t, bi, biLine, subLangOf, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { SendDocButton } from '@/components/ui/SendDocButton'
@@ -25,7 +25,7 @@ import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNam
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, contractAddendaForTranslation, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
-import { asResolvedContractTranslation, contractTranslationAddendum, translationDisplayVars } from '@/lib/contractTranslation'
+import { asResolvedContractTranslation, contractTranslationAddendum, translationDisplayVars, translationDigest, type TranslationLang } from '@/lib/contractTranslation'
 import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
@@ -33,7 +33,7 @@ import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { toSlots, signStageSlots, missingSlots } from '@/lib/disposalSignGate'
 import { parseSignDocuments } from '@/lib/signDocuments'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
-import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
+import { bodyLockMessage, fieldLockMessage, signDateLockMessage, translationLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 
 const fmtDate = (d: string | null) => {
@@ -177,7 +177,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
 }
 
 
-export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko' }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [] }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
@@ -185,6 +185,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   signatureErased?: boolean
   // 이 링크의 안내 언어(스냅샷 박제값). 원격 모드에서만 뜻이 있다 — 운영자 화면은 한국어다.
   signLang?: SignLang
+  /**
+   * 툴바 번역본 셀렉트에 세울 언어 — 영업장이 **공개로 켠 것만**이다(운영자 페이지에서만 온다).
+   *
+   * ContractData 에 안 싣는 이유는 그 값이 링크 발급 스냅샷으로 흘러가기 때문이다. 빈 배열이면
+   * 셀렉트가 아예 안 서고, 그때 이 화면은 이 기능 전과 문자 단위로 같다.
+   */
+  translationLangs?: TranslationLang[]
 }) {
   const remote = mode === 'remote'
   const router = useRouter()
@@ -1326,13 +1333,25 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 추가 서류의 대면 서명 — 서버가 key·형식·크기를 검증해 인쇄하고 영구 저장한다.
           documentSignatures: Object.fromEntries(Object.entries(customSigs).map(([k, image]) =>
             [k, { image, capturedAt: customCapturedAt[k] }])),
+          // 참고용 번역본 — **언어 코드와 지문만** 보낸다. 번역 내용은 서버가 그 코드로 다시
+          // 해석한다(성명 봉인과 같은 이유 — 클라이언트가 보낸 종이 내용을 믿으면 이 API 를 직접
+          // 불러 아무 문안이나 박을 수 있다). 지문은 로드와 발급 사이에 사전이 바뀌었는지를
+          // 서버가 알아보는 열쇠다. 번역본이 안 선 화면은 이 두 칸을 안 싣는다(종전 몸통 그대로).
+          ...(translation ? { lang: translation.lang, translationDigest: translationDigest(translation) } : {}),
         }),
       })
       const text = await res.text()
-      let json: { ok: boolean; error?: string; archivedCount?: number; file?: { id: string } } | null = null
+      let json: { ok: boolean; error?: string; code?: string; archivedCount?: number; file?: { id: string } } | null = null
       try { json = JSON.parse(text) } catch { /* not JSON */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
+        // 번역본이 화면 로드 뒤에 바뀌었다 — 막다른 거절이 아니라 안내다(DUE_DAY_REQUIRED 문법).
+        // 새로고침이 곧 해결이라 그 길을 토스트 안에 둔다. 지금 화면의 번역본을 그대로 발급하는
+        // 길은 두지 않는다 — 그것이 곧 낡은 문안을 종이에 박는 길이다.
+        if (json?.code === 'TRANSLATION_STALE') {
+          pushToast('error', msg, { action: { label: '새로고침', run: () => router.refresh() } })
+          return
+        }
         pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
         return
       }
@@ -1395,6 +1414,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         emergencyContactText,
         // 미리보기도 같은 문안을 봐야 한다 — 여기서 갈리면 보고 보낸 종이와 보관본이 다르다.
         subLeaseAddendum: subLeaseView,
+        // 번역본 언어·지문도 같은 이유로 함께 싣는다. 안 실으면 우선 조항이 미리보기에만 빠져
+        // 보고 보낸 종이와 발급본이 갈린다.
+        ...(translation ? { lang: translation.lang, translationDigest: translationDigest(translation) } : {}),
         preview: true,
       }),
     })
@@ -1426,6 +1448,45 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 이 저장소 규칙 그대로다(asSignLang 과 같은 자리). 모양이 아니면 null 이고, 그때는
   // 카드도 안 서고 우선 조항도 안 붙는다 — 번역본이 없는 것과 같은 착지다.
   const translation = asResolvedContractTranslation(data.translation)
+
+  // ── 툴바 번역본 셀렉트 — 대면 서명 ────────────────────────────────
+  //
+  // 왜 운영자 화면에 서나(운영자 지적 2026-09-08). "휴대폰이나 태블릿을 건네주면서 서명할 수 있게
+  // 하는 경우도 있어서" — 그때는 이 화면이 곧 입주자가 읽는 화면이다. 서명 직전에 묻는 안은
+  // 기각됐다. 서명란은 종이 아래라 그때는 이미 건넨 뒤다.
+  //
+  // 목록이 비면 셀렉트 자체가 없다(내국인 · 번역본을 안 켠 영업장 · 공개한 언어 0). 그때 이
+  // 화면은 이 기능 전과 문자 단위로 같다. 외국인 판정은 서명 요청과 같은 축이다.
+  // 원격 화면에는 안 선다 — 그쪽 언어는 링크에 박제된 사실이라 입주자가 고를 것이 아니다.
+  const canPickTranslation = !remote && !signedSnapshot && translationLangs.length > 0
+    && isForeignForDocuments({ nationality: data.tenant.nationality, hasForeignRegNo: data.tenant.hasForeignRegNo })
+  // 지금 선 언어는 **실제로 해석된 것**을 읽는다. URL 이 공개 안 한 언어를 가리키면 카드가 안 서므로
+  // 셀렉트도 '없음' 이라야 화면이 제 상태를 정직하게 말한다.
+  const translationLangNow: SignLang = translation?.lang ?? 'ko'
+  /**
+   * 서명이 하나라도 들어온 화면에서는 못 바꾼다.
+   *
+   * 두 가지를 함께 막는다. ① 이미 서명한 사람이 읽은 문안이 바뀌는 것. ② 소프트 내비가 서버
+   * 값을 다시 실어 올 때 정보 표 폼(fields)과 조항 작업본(draft)이 서버 값으로 되돌아가는 것 —
+   * 그 둘만 props 동기화가 걸려 있어서다(같은 파일 :313 · :223). 서명 이미지·계약일·흡연·
+   * 비상연락망은 props 파생이지만 동기화가 없어 그대로 남는다(:717 주석이 사실로 적어 둔 것).
+   */
+  const translationLocked = bodyLocked || docSlots.some(x => x.signed)
+  /**
+   * 언어를 URL 에 쓴다 — **정본이 URL 이다.** 화면 state 로 들고 있으면 서버가 그 언어로 해석한
+   * 종이와 화면이 갈릴 수 있고, 새로고침 한 번에 언어가 되돌아간다.
+   *
+   * 한국어도 `lang=ko` 로 명시해 남긴다. 지우면 국적 기본값으로 되돌아가, 한국어를 고른 것이
+   * 다음 렌더에서 저절로 풀린다.
+   * 발화 시점의 실제 URL 로 재구성한다(형제 useUrlState 규칙) — 캡처해 둔 스냅샷을 쓰면 그 사이
+   * 다른 코드가 붙인 파라미터를 지운다.
+   * **토스트를 안 띄운다.** 저장이 아니라 보기 상태이고, 카드가 서는 것 자체가 피드백이다.
+   */
+  const pickTranslationLang = (v: string) => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('lang', v)
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false })
+  }
 
   // 인플로우 제출 CTA — 마지막 서명이 끝나면 각 서명란 바로 아래(문서 흐름 안)에 노출한다.
   // 이 화면은 핀치줌이 열려 있어(layout.tsx viewport) fixed·sticky 는 확대 시 시야 밖으로 밀린다.
@@ -1539,6 +1600,28 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                 <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} />
               </label>
             )}
+            {/* 참고용 번역본 — 대면 서명에서는 이 화면이 곧 입주자가 읽는 화면이다.
+                건네기 전에 맞춰 두는 자리라 서명란이 아니라 툴바에 선다(계약일과 같은 문법). */}
+            {canPickTranslation && (
+              translationLocked ? (
+                // 잠긴 값은 입력칸 모양을 벗는다 — disabled select 는 눌러도 아무 일이 없고
+                // 이유도 안 말한다(바로 위 계약일과 같은 규칙).
+                <button type="button" className="toolbar-locked" onClick={() => pushToast(
+                  'info', translationLockMessage(versionCtx?.multiVersion === true, 'here', bodyLocked))}>
+                  <span>번역본</span>
+                  <strong>{translationLangNow === 'ko' ? '없음(한국어)' : SIGN_LANG_LABEL[translationLangNow]}</strong>
+                </button>
+              ) : (
+                <label className="toolbar-field">
+                  <span>번역본</span>
+                  <select value={translationLangNow} onChange={e => pickTranslationLang(e.target.value)}>
+                    {/* 한국어는 '번역본 없음' 과 같은 상태다 — 카드도 우선 조항도 안 선다. */}
+                    <option value="ko">없음(한국어)</option>
+                    {translationLangs.map(l => <option key={l} value={l}>{SIGN_LANG_LABEL[l]}</option>)}
+                  </select>
+                </label>
+              )
+            )}
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
             <button onClick={handleResetAuto} className="toolbar-btn-secondary">
               자동값 복원
@@ -1614,12 +1697,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       )}
 
       {/* 참고용 번역본 — 계약서 종이 **위**에 선다. 입주자가 종이를 읽기 전에 만나야 한다.
-          원격 화면에서만 그린다(운영자 화면은 한국어로 종이를 읽는 자리다).
-          원천은 링크 스냅샷에 박힌 해석 완료본 하나다 — 지금 사전을 다시 해석하지 않는다.
-          스냅샷에 그 칸이 없으면(한국어 링크·번역본 안 쓰는 영업장·이 칸 이전의 옛 링크)
-          카드를 아예 안 그린다. 그 화면은 이 기능 전과 문자 단위로 같다.
+          **원격·운영자 화면 둘 다 그린다**(운영자 지적 2026-09-08). 운영자가 제 기기를 건네
+          대면으로 서명받는 운용이 있어, 그때는 운영자 화면이 곧 입주자가 읽는 화면이다.
+          원천은 `data.translation` 하나다 — 원격은 링크 스냅샷의 박제, 운영자 화면은 서버가
+          그 언어로 해석한 것이고, 서명이 끝난 계약은 어느 쪽이든 동결본이 이긴다.
+          그 칸이 없으면(한국어 · 번역본 안 쓰는 영업장 · 이 칸 이전의 옛 링크) 카드를 아예 안
+          그린다. 그 화면은 이 기능 전과 문자 단위로 같다.
           읽음 확인은 없다 — 서명 진행 슬롯·제출 게이트와 무관하다(ContractTranslationView 머리 주석). */}
-      {remote && translation && (
+      {translation && (
         // 조항 치환값은 **바로 아래 종이가 쓰는 그 객체**다. 카드가 종이와 다른 값을 보이면
         // 자리표시자가 글자 그대로 뜨는 것보다 나쁘다 — 같은 화면 위아래에서 두 금액이 싸운다.
         // {{일정}} 만 여기서 더한다. 종이는 그 절을 buildRoomScheduleAddendum 이 미리 치환해
