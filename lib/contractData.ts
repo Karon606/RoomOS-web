@@ -8,8 +8,8 @@ import { driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   type SubLeaseAddendum, type ResolvedBody,
-  DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, resolveDisposalConsent,
-  resolveRoomScheduleAddendum,
+  DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveDisposalConsent,
+  resolveRoomScheduleAddendum, rateAddendumFor,
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow, type RegistrationStatusLabel } from '@/lib/contractFieldOverrides'
@@ -135,10 +135,10 @@ export function contractRateAddendum(
   saved: { shortStay?: unknown; earlyCheckout?: unknown },
 ): SubLeaseAddendum | null {
   if (body.source === 'SNAPSHOT') return body.rateAddendum
-  if (!lease || !policyEnabled) return null
-  return lease.isShortTerm
-    ? resolveShortStayAddendum(saved.shortStay)
-    : resolveEarlyCheckoutAddendum(saved.earlyCheckout)
+  if (!lease) return null
+  // 정책 판정과 두 절의 갈림은 lib/contract 의 rateAddendumFor 한 자리다 — 영업장 목록
+  // (propertyContractAddenda)이 같은 함수를 보므로 두 곳이 갈릴 수 없다.
+  return rateAddendumFor(!!lease.isShortTerm, policyEnabled, saved)
 }
 
 export type ContractData = {

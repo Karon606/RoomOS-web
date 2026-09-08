@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
-import { type ContractTemplate } from '@/lib/contract'
+import { type ContractTemplate, type SubLeaseAddendum, contractAddendaForTranslation } from '@/lib/contract'
 import { buildContractData } from '@/lib/contractData'
 import { maskForeignRegNo } from '@/lib/foreignRegNo'
 import {
@@ -48,6 +48,31 @@ export async function getContractData(tenantId: string, leaseTermId?: string | n
     return { ...data, tenant: { ...data.tenant, foreignRegNo: maskForeignRegNo(data.tenant.foreignRegNo) } }
   }
   return data
+}
+
+/**
+ * 그 계약서에 실릴 가변 절 — 발급 피커의 번역 진행 캡션이 쓰는 **계약 기준** 분모다.
+ *
+ * 왜 여기 있나. 조립은 buildContractData 하나여야 캡션이 센 수와 링크에 실제로 실리는 수가
+ * 갈리지 않는데, 그 조립을 환경설정 액션 파일로 끌어오면 finance/actions 를 거쳐
+ * /api/import 라우트 번들까지 계약서 렌더가 딸려 들어간다. 그래서 이미 buildContractData 를
+ * 쥐고 있는 이 파일에 둔다(감지망: scripts/check-print-selfcontained.ts 축 2).
+ *
+ * 절 문안만 돌려준다 — 캡션에 필요한 것이 그것뿐이고, 금액·인적사항을 실어 보낼 이유가 없다.
+ *
+ * **못 읽으면 던진다.** 빈 목록으로 돌려주면 "이 계약에 특약이 없다"와 "알 수 없다"가 같은
+ * 답이 되어 분모가 조용히 좁아진다. 던지면 부르는 쪽이 영업장 기준으로 떨어져, 캡션이 실제보다
+ * 미완으로 보일 뿐 거짓을 말하지는 않는다(형제 getContractData 와 같은 문법).
+ */
+export async function getContractTranslationAddenda(
+  tenantId: string, leaseTermId?: string | null,
+): Promise<SubLeaseAddendum[]> {
+  const role = await getMyRole()
+  // 링크 발급과 같은 게이트다 — 캡션이 발급보다 넓은 문을 열면 안 된다.
+  if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
+  const { propertyId } = await requireAuthAndProperty()
+  const data = await buildContractData(tenantId, propertyId, leaseTermId)
+  return data ? contractAddendaForTranslation(data) : []
 }
 
 // ── 입실자별 본문 오버라이드 저장/리셋 ─────────────────────────────

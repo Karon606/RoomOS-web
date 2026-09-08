@@ -31,11 +31,13 @@ import {
   ownedDriveFileMime,
 } from '@/lib/google-drive'
 import {
-  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
+  type ContractTemplate, type BusinessInfo, type SubLeaseAddendum,
+  DEFAULT_CONTRACT_TEMPLATE, propertyContractAddenda,
 } from '@/lib/contract'
 import { buildPropertySettingsPatch, normalizePublicSlug } from '@/lib/propertySettingsPatch'
 import {
   asTranslationLang, parseContractTranslations, withTranslationEnabled, mergeTranslationLang,
+  translationPlaceholderMessage,
   type ContractTranslations, type TranslationLang,
 } from '@/lib/contractTranslation'
 
@@ -1082,19 +1084,40 @@ export async function setSignDocumentRetired(key: string, retired: boolean): Pro
 // 판정·병합은 lib/contractTranslation 정본만 지난다 — 사전 병합에 삭제 경로가 없어
 // "원문에서 사라진 번역(고아)은 안 지운다"가 화면 규칙이 아니라 구조다.
 
-/** 편집 카드가 마운트하며 한 번 읽는다. 계약서 본문은 **저장본**이다 — 종이에 실리는 그것이라야 열쇠가 맞는다. */
-export async function getContractTranslationSettings(): Promise<{
+export type ContractTranslationSettings = {
   template: ContractTemplate
   translations: ContractTranslations
-}> {
+  /** 번역 대상 목록에 함께 넣을 가변 절. 무엇이 담기는지는 아래 함수 주석의 분모 규칙을 본다. */
+  addenda: SubLeaseAddendum[]
+}
+
+/**
+ * 편집 카드와 발급 피커가 마운트하며 한 번 읽는다. 계약서 본문은 **저장본**이다 — 종이에
+ * 실리는 그것이라야 열쇠가 맞는다.
+ *
+ * 여기가 내주는 가변 절 목록은 **영업장이 쓸 수 있는 전부**다(편집기의 분모). 계약이 오기 전에
+ * 미리 번역을 채워 두는 자리라, 어느 한 계약 기준으로 좁히면 다른 계약에 붙는 절은 칸조차
+ * 안 서서 영영 번역되지 않는다.
+ *
+ * 그 계약에 실릴 것만 세는 쪽(피커 캡션)은 **다른 출구**다 — app/contract/[tenantId]/actions 의
+ * getContractTranslationAddenda. 계약 조립(buildContractData)을 이 파일로 끌어오면
+ * finance/actions 를 거쳐 /api/import 라우트 번들까지 계약서 렌더가 딸려 들어간다
+ * (scripts/check-print-selfcontained.ts 축 2 가 그 회귀를 잡는다).
+ */
+export async function getContractTranslationSettings(): Promise<ContractTranslationSettings> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { contractTemplate: true, contractTranslations: true },
+    select: {
+      contractTemplate: true, contractTranslations: true,
+      subLeaseAddendum: true, roomScheduleAddendum: true,
+      shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
+    },
   })
   return {
     template: (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE,
     translations: parseContractTranslations(property?.contractTranslations),
+    addenda: propertyContractAddenda(property, parseShortStayPolicy(property?.shortStayPolicy).enabled),
   }
 }
 
@@ -1107,6 +1130,7 @@ export async function setContractTranslationEnabled(enabled: boolean): Promise<
     const propertyId = await getPropertyId()
     await prisma.$transaction(async tx => {
       const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } })
+      // 운영 스위치는 사전을 안 건드리므로 자리표시자 검사가 없다(withTranslationEnabled).
       const next = withTranslationEnabled(cur?.contractTranslations, enabled)
       await tx.property.update({
         where: { id: propertyId },
@@ -1140,16 +1164,22 @@ export async function saveContractTranslationLang(input: { lang: string; publish
     if (!input.dict || typeof input.dict !== 'object' || Array.isArray(input.dict)) {
       return { ok: false, error: '번역 내용을 읽지 못했습니다.' }
     }
+    // 자리표시자가 빠진 번역은 **여기서 막는다**(병합 정본이 거부한다). 화면 검증만 두면
+    // 화면을 안 지나는 저장 경로가 하나만 생겨도 값 없는 조항이 종이에 실린다 — 그 실패는
+    // 아무 소리도 안 내는 종류라 최종 벽이 서버여야 한다.
+    let rejected: string | null = null
     await prisma.$transaction(async tx => {
       const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } })
-      const next = mergeTranslationLang(cur?.contractTranslations, lang, {
+      const merged = mergeTranslationLang(cur?.contractTranslations, lang, {
         published: input.published, dict: input.dict,
       })
+      if (!merged.ok) { rejected = translationPlaceholderMessage(merged.missing); return }
       await tx.property.update({
         where: { id: propertyId },
-        data: { contractTranslations: next as unknown as Prisma.InputJsonValue },
+        data: { contractTranslations: merged.next as unknown as Prisma.InputJsonValue },
       })
     }, { isolationLevel: 'Serializable' })
+    if (rejected) return { ok: false, error: rejected }
     revalidatePath('/settings')
     revalidatePath('/contract')
     return { ok: true }

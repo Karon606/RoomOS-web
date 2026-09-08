@@ -24,7 +24,7 @@ import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments, registrationHeadPair, showsForeignFields } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
-import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, contractAddendaForTranslation, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { asResolvedContractTranslation, contractTranslationAddendum } from '@/lib/contractTranslation'
 import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -1620,7 +1620,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           카드를 아예 안 그린다. 그 화면은 이 기능 전과 문자 단위로 같다.
           읽음 확인은 없다 — 서명 진행 슬롯·제출 게이트와 무관하다(ContractTranslationView 머리 주석). */}
       {remote && translation && (
-        <ContractTranslationCard translation={translation} source={data.template} />
+        // 조항 치환값은 **바로 아래 종이가 쓰는 그 객체**다. 카드가 종이와 다른 값을 보이면
+        // 자리표시자가 글자 그대로 뜨는 것보다 나쁘다 — 같은 화면 위아래에서 두 금액이 싸운다.
+        // {{일정}} 만 여기서 더한다. 종이는 그 절을 buildRoomScheduleAddendum 이 미리 치환해
+        // 싣지만, 번역본은 치환 전 문안을 열쇠로 쥐고 있어 이 자리에서 채워야 한다(같은 값이다).
+        // 본문 vars 에 넣지 않는 이유는 운영자가 본문 조항에 {{일정}} 을 박아 둔 경우
+        // 종이의 치환 결과가 바뀌기 때문이다 — 이 기능이 종이를 건드리면 안 된다.
+        <ContractTranslationCard
+          translation={translation}
+          source={data.template}
+          sourceAddenda={contractAddendaForTranslation(data)}
+          vars={{ ...vars, 일정: data.roomScheduleText ?? '' }}
+        />
       )}
 
       {/* 인쇄 영역. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
@@ -2054,6 +2065,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {langPick && (
         <SignRequestLangPicker
           defaultLang={langPick.def}
+          // 캡션의 분모를 그 계약 기준으로 좁히는 지목. 링크 발급이 보는 계약과 같은 둘이다.
+          tenantId={data.tenant.id}
+          leaseTermId={data.lease?.id ?? null}
           onPick={l => { langPick.resolve(l); setLangPick(null) }}
           onClose={() => { langPick.resolve(null); setLangPick(null) }}
         />

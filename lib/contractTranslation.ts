@@ -20,7 +20,7 @@
 // 발급 피커에서 고른 언어의 번역본이 없는 상태가 생긴다. **ko 는 정본이라 번역 대상이 아니다.**
 
 import { type SignLang, SIGN_LANGS } from '@/lib/signGuideText'
-import type { ContractTemplate, SubLeaseAddendum } from '@/lib/contract'
+import { stripClauseBullet, type ContractTemplate, type SubLeaseAddendum } from '@/lib/contract'
 
 /** 번역 대상 언어. 한국어는 정본이므로 여기서 빠진다. */
 export type TranslationLang = Exclude<SignLang, 'ko'>
@@ -100,17 +100,71 @@ export type TranslationSourceLine = {
 }
 
 /**
+ * 그 문자열이 품은 자리표시자({{...}}) — 순서대로, 중복 없이.
+ *
+ * **왜 정본이 하나여야 하나(운영자 오더 2026-09-08).** 번역기에 문장을 넘기면 `{{청소비조항}}`
+ * 이 통째로 번역되거나 조용히 사라진다. 그러면 종이에 값이 안 들어가고, 그 실패는 아무 소리도
+ * 내지 않는다 — 자리표시자가 글자 그대로 뜨거나 문장에 구멍이 뚫린 채 계약서가 나간다.
+ * 붙여넣기·편집기·저장 병합이 **이 함수 하나**를 봐야 세 곳의 판정이 갈리지 않는다.
+ */
+export function translationPlaceholders(text: string): string[] {
+  if (typeof text !== 'string') return []
+  const out: string[] = []
+  for (const m of text.matchAll(/\{\{([^}]+)\}\}/g)) {
+    const key = `{{${String(m[1]).trim()}}}`
+    if (!out.includes(key)) out.push(key)
+  }
+  return out
+}
+
+/** 번역문이 잃어버린 자리표시자. 빈 배열이면 통과다(열쇠에 자리표시자가 없어도 빈 배열). */
+export function missingTranslationPlaceholders(source: string, translated: string): string[] {
+  const has = new Set(translationPlaceholders(translated))
+  return translationPlaceholders(source).filter(p => !has.has(p))
+}
+
+/** 열쇠 하나와 그 번역문이 잃은 자리표시자. 거부 사유를 사람이 읽을 문장으로 만드는 재료다. */
+export type TranslationPlaceholderMiss = {
+  /** 한국어 원문(사전의 열쇠). */
+  text: string
+  /** 번역문에서 사라진 자리표시자. */
+  placeholders: string[]
+}
+
+/**
+ * 그 줄에 번역할 글자가 있는가. 자리표시자와 글머리를 걷고 남는 것이 있어야 한다.
+ *
+ * `{{청소비조항}}` 처럼 줄 전체가 자리표시자인 항목이 실재한다(제기역점 실측 2026-09-08).
+ * 그 줄은 종이에 코드가 만든 한국어 문장이 통째로 들어가는 자리라 번역할 글자가 애초에 없다.
+ * 칸을 세우면 운영자가 거기에 번역을 적고, 그 번역은 자리표시자를 잃어 값이 안 들어간다.
+ */
+function hasTranslatableText(text: string): boolean {
+  return stripClauseBullet(text).replace(/\{\{[^}]+\}\}/g, '').trim() !== ''
+}
+
+/**
  * 한국어 템플릿에서 번역할 문자열을 **종이 순서대로** 뽑는다(제목 · 절 제목 · 항목 · 서약문).
  *
  * 같은 문장이 두 번 나오면 첫 자리만 남긴다. 열쇠가 문장이라 번역도 하나뿐이고, 칸을 두 번
  * 세우면 같은 열쇠에 값을 두 번 쓰게 되어 나중 것이 앞 것을 조용히 덮는다.
  * 빈 문자열은 번역할 것이 없어 뺀다 — 해석 쪽은 그 자리를 그대로 두므로 줄 수는 안 어긋난다.
+ * 자리표시자뿐인 줄도 같은 이유로 뺀다(hasTranslatableText).
+ *
+ * @param addenda 그 목록에 함께 넣을 가변 절(추가 호실 · 요금 · 거주 호실 일정). 본문 절 **뒤**에
+ *   종이 순서대로 선다. 넘기는 문안은 **치환 전 저장 문안**이다 — 자리표시자를 품은 그대로가
+ *   열쇠다(lib/contract 의 contractAddendaForTranslation 이 그 목록의 정본이다).
+ *   무엇을 넘길지는 부르는 쪽이 정한다. 편집기는 영업장이 쓸 수 있는 전부를, 발급·피커는
+ *   그 계약에 실릴 것만 넘긴다 — **세는 함수는 하나이고 입력만 다르다.**
  */
-export function translationSourceLines(template: ContractTemplate): TranslationSourceLine[] {
+export function translationSourceLines(
+  template: ContractTemplate,
+  addenda?: readonly SubLeaseAddendum[],
+): TranslationSourceLine[] {
   const out: TranslationSourceLine[] = []
   const seen = new Set<string>()
   const push = (kind: TranslationLineKind, text: string, sectionIndex?: number) => {
     if (typeof text !== 'string' || !text.trim() || seen.has(text)) return
+    if (!hasTranslatableText(text)) return
     seen.add(text)
     out.push(sectionIndex === undefined ? { kind, text } : { kind, text, sectionIndex })
   }
@@ -121,6 +175,13 @@ export function translationSourceLines(template: ContractTemplate): TranslationS
     push('sectionTitle', s?.title, i)
     const items = Array.isArray(s?.items) ? s.items : []
     for (const line of items) push('item', line, i)
+  })
+  // 가변 절 — 절 순번은 본문 절 뒤로 이어진다. 종이가 절을 그 자리에 붙이기 때문이다
+  // (lib/contract 의 appendSubLeaseAddendum). 서약문은 절이 아니라 맨 끝에 그대로 선다.
+  ;(addenda ?? []).forEach((a, k) => {
+    if (!a) return
+    push('sectionTitle', a.title, sections.length + k)
+    for (const line of Array.isArray(a.items) ? a.items : []) push('item', line, sections.length + k)
   })
   push('oath', template.oathText)
   return out
@@ -162,9 +223,14 @@ export function translationCopyText(lines: readonly TranslationSourceLine[]): st
   return lines.map(l => translationCopyLine(l.text)).join('\n')
 }
 
-/** 되붙이기 판정. 거부는 채울 값을 아예 안 만든다 — 부분 반영이 없다는 뜻이다. */
+/**
+ * 되붙이기 판정. 거부는 채울 값을 아예 안 만든다 — 부분 반영이 없다는 뜻이다.
+ *
+ * 거부 사유가 둘이고 한 모양에 담긴다. 줄 수가 어긋나면 expected ≠ got 이고, 줄 수는 맞는데
+ * 번역이 자리표시자를 잃었으면 expected = got 에 missing 이 찬다. 화면이 그 둘을 갈라 말한다.
+ */
 export type TranslationPasteResult =
-  | { ok: false; expected: number; got: number }
+  | { ok: false; expected: number; got: number; missing: TranslationPlaceholderMiss[] }
   | { ok: true; filled: Record<string, string>; filledCount: number; blankCount: number; sameCount: number }
 
 /**
@@ -182,6 +248,11 @@ export type TranslationPasteResult =
  * 꼬리 개행은 잡음이라 걷는다. 클립보드가 덧붙이는 것이라 거부의 사유가 못 된다. 다만 마지막
  * 줄이 실제로 비어 돌아온 경우도 함께 걷혀 개수가 모자라는데, 그때는 **거부**로 착지하므로
  * 안전한 쪽이다(모르는 채 덜 채우는 일이 없다).
+ *
+ * 자리표시자를 잃은 줄이 하나라도 있으면 **통째로 거부한다.** 줄 수 거부와 같은 클래스다 —
+ * 번역기가 `{{청소비조항}}` 을 번역해 버리면 그 조항은 종이에서 값을 잃는데, 채워 두면
+ * 저장이 다시 거부하고 운영자는 그때 가서 어느 칸인지 다시 찾아야 한다. 여기서 어느 줄이
+ * 무엇을 잃었는지 말해 주는 편이 고치기 쉽다.
  */
 export function applyTranslationPaste(
   lines: readonly TranslationSourceLine[],
@@ -192,7 +263,7 @@ export function applyTranslationPaste(
     .replace(/[^\S\n]+$/gm, '')
     .replace(/\n+$/, '')
   const got = body === '' ? [] : body.split('\n')
-  if (got.length !== lines.length) return { ok: false, expected: lines.length, got: got.length }
+  if (got.length !== lines.length) return { ok: false, expected: lines.length, got: got.length, missing: [] }
 
   const filled: Record<string, string> = {}
   let blankCount = 0
@@ -204,7 +275,26 @@ export function applyTranslationPaste(
     if (v === translationCopyLine(l.text)) { sameCount++; return }
     filled[l.text] = v
   })
+  const missing = translationPlaceholderMisses(filled)
+  if (missing.length > 0) return { ok: false, expected: lines.length, got: got.length, missing }
   return { ok: true, filled, filledCount: Object.keys(filled).length, blankCount, sameCount }
+}
+
+/**
+ * 사전에서 자리표시자를 잃은 항목을 모은다. 되붙이기와 저장이 **이 함수 하나**를 본다 —
+ * 두 곳이 각자 세면 붙여넣기는 통과시키고 저장은 거부하는(또는 그 반대) 상태가 된다.
+ *
+ * 빈 값은 번역 취소라 건너뛴다(그 열쇠를 걷는 것이지 잘못된 번역이 아니다).
+ */
+export function translationPlaceholderMisses(dict: Record<string, unknown>): TranslationPlaceholderMiss[] {
+  const out: TranslationPlaceholderMiss[] = []
+  for (const [text, v] of Object.entries(dict)) {
+    if (typeof text !== 'string' || !text.trim()) continue
+    if (typeof v !== 'string' || !v.trim()) continue
+    const placeholders = missingTranslationPlaceholders(text, v)
+    if (placeholders.length > 0) out.push({ text, placeholders })
+  }
+  return out
 }
 
 // ── 해석 ────────────────────────────────────────────────────────────
@@ -215,6 +305,18 @@ export type ResolvedContractTranslation = {
   title: string
   sections: { title: string; items: string[] }[]
   oathText: string
+  /**
+   * 이 계약서에 실린 가변 절의 번역(추가 호실 · 요금 · 거주 호실 일정). 문안은 **치환 전**이라
+   * 그리는 쪽이 종이와 같은 vars 로 채운다.
+   *
+   * **비면 칸 자체가 없다**(옵셔널). 인쇄 사실 축이 이 객체를 통비교하는 JSON 이라, 특약이
+   * 없을 때 빈 배열을 담으면 이미 나간 링크·발급본 전건이 내용 변화 없이 드리프트로 뜬다
+   * (ContractData 의 조건부 담기·printedFacts 의 '없으면 축도 없다'와 같은 규칙이다).
+   *
+   * **그 계약에 실제로 실린 절만이다.** 조항 번호를 자리로 매기므로(appendSubLeaseAddendum),
+   * 종이에 없는 절이 번역본에 서면 그 아래 번호가 통째로 밀려 증거가 거짓이 된다.
+   */
+  addenda?: { title: string; items: string[] }[]
   /** 사전에 값이 없어 한국어 원문이 그대로 남은 문자열 수. */
   fallbackCount: number
   /** 번역 대상 문자열 총수. fallbackCount 만으로는 그 종이가 얼마나 번역됐는지 알 수 없다. */
@@ -231,11 +333,15 @@ export type ResolvedContractTranslation = {
  *
  * 부르는 쪽은 null 하나만 보면 된다. 그것이 "끈 영업장은 이 기능 전과 문자 단위로 같다"를
  * 한 줄로 지키는 방법이다.
+ *
+ * @param addenda **그 계약에 실린** 가변 절의 치환 전 문안. 넘긴 것만 번역본에 선다 —
+ *   종이에 없는 절을 세우면 조항 번호가 밀린다(위 ResolvedContractTranslation 주석).
  */
 export function resolveContractTranslation(
   raw: unknown,
   template: ContractTemplate,
   lang: TranslationLang,
+  addenda?: readonly SubLeaseAddendum[],
 ): ResolvedContractTranslation | null {
   const parsed = parseContractTranslations(raw)
   if (!parsed.enabled) return null
@@ -244,7 +350,7 @@ export function resolveContractTranslation(
 
   const dict = entry.dict
   // 총수·미번역 수는 편집기가 세는 것과 **같은 집합**에서 나온다(translationSourceLines).
-  const lines = translationSourceLines(template)
+  const lines = translationSourceLines(template, addenda)
   let fallbackCount = 0
   for (const l of lines) if (dict[l.text] === undefined) fallbackCount++
 
@@ -256,11 +362,18 @@ export function resolveContractTranslation(
     // 빈 항목도 자리를 지킨다 — 감추면 조항 번호 대응이 깨진다.
     items: (Array.isArray(s?.items) ? s.items : []).map(tr),
   }))
+  const live = (addenda ?? []).filter((a): a is SubLeaseAddendum => !!a)
+  const addendaOut = live.map(a => ({
+    title: tr(a.title),
+    items: (Array.isArray(a.items) ? a.items : []).map(tr),
+  }))
 
   return {
     lang,
     title: tr(template.title),
     sections,
+    // 비면 칸을 안 만든다 — 늘 담으면 특약 없는 링크 전건이 허위 드리프트가 된다.
+    ...(addendaOut.length ? { addenda: addendaOut } : {}),
     oathText: tr(template.oathText),
     fallbackCount,
     totalCount: lines.length,
@@ -280,7 +393,7 @@ export function resolveContractTranslation(
 export function asResolvedContractTranslation(raw: unknown): ResolvedContractTranslation | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const s = raw as {
-    lang?: unknown; title?: unknown; sections?: unknown; oathText?: unknown
+    lang?: unknown; title?: unknown; sections?: unknown; addenda?: unknown; oathText?: unknown
     fallbackCount?: unknown; totalCount?: unknown
   }
   const lang = asTranslationLang(s.lang)
@@ -288,17 +401,21 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
   const str = (v: unknown): string => (typeof v === 'string' ? v : '')
   const cnt = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
   // 절·항목은 자리를 그대로 지킨다 — 빈 줄을 걷으면 조항 번호 대응이 깨진다(위 구조 규칙 2).
-  const sections = (Array.isArray(s.sections) ? s.sections : []).map(x => {
+  const secs = (v: unknown) => (Array.isArray(v) ? v : []).map(x => {
     const sec = (x && typeof x === 'object' && !Array.isArray(x) ? x : {}) as { title?: unknown; items?: unknown }
     return {
       title: str(sec.title),
       items: (Array.isArray(sec.items) ? sec.items : []).map(str),
     }
   })
+  const addenda = secs(s.addenda)
   return {
     lang,
     title: str(s.title),
-    sections,
+    sections: secs(s.sections),
+    // 칸이 없던 박제(특약 없는 계약·이 칸 이전의 옛 기록)는 여기서도 칸이 안 생긴다 —
+    // 빈 배열을 만들면 그 박제를 다시 직렬화할 때 바이트가 달라진다.
+    ...(addenda.length ? { addenda } : {}),
     oathText: str(s.oathText),
     fallbackCount: cnt(s.fallbackCount),
     totalCount: cnt(s.totalCount),
@@ -313,15 +430,20 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
  *
  * 고르는 것을 막는 데 쓰지 마라(운영자 오더 2026-09-08) — 미완인 언어로 보낼지는 운영자가
  * 정한다. 이 값은 그 판단에 필요한 사실을 눈앞에 두는 것이 전부다.
+ *
+ * @param addenda **그 계약에 실릴** 가변 절. 피커는 링크를 보낼 계약이 정해진 자리라 분모가
+ *   그 계약 기준이다 — 영업장이 쓸 수 있는 전부로 세면 그 계약에 안 붙는 절까지 분모에 들어가
+ *   다 번역한 언어가 영영 '26/34' 로 보인다. 편집기는 반대로 전부를 넘긴다(B-4 규칙).
  */
 export function translationProgress(
   raw: unknown,
   template: ContractTemplate,
   lang: TranslationLang,
+  addenda?: readonly SubLeaseAddendum[],
 ): { total: number; done: number; published: boolean; hasEntry: boolean } {
   const entry = parseContractTranslations(raw).langs[lang]
   const dict = entry?.dict ?? {}
-  const lines = translationSourceLines(template)
+  const lines = translationSourceLines(template, addenda)
   let done = 0
   for (const l of lines) if (dict[l.text] !== undefined) done++
   return { total: lines.length, done, published: entry?.published === true, hasEntry: !!entry }
@@ -337,10 +459,11 @@ export function orphanTranslationKeys(
   raw: unknown,
   template: ContractTemplate,
   lang: TranslationLang,
+  addenda?: readonly SubLeaseAddendum[],
 ): string[] {
   const entry = parseContractTranslations(raw).langs[lang]
   if (!entry) return []
-  const live = new Set(translationSourceLines(template).map(l => l.text))
+  const live = new Set(translationSourceLines(template, addenda).map(l => l.text))
   return Object.keys(entry.dict).filter(k => !live.has(k))
 }
 
@@ -355,18 +478,31 @@ export function withTranslationEnabled(stored: unknown, enabled: boolean): Contr
   return { ...parseContractTranslations(stored), enabled }
 }
 
+/** 병합 판정. 거부는 저장할 값을 아예 안 만든다 — 반쪽 저장이 없다는 뜻이다. */
+export type TranslationMergeResult =
+  | { ok: false; missing: TranslationPlaceholderMiss[] }
+  | { ok: true; next: ContractTranslations }
+
 /**
  * 한 언어의 공개 여부·사전을 덮는다.
  *
  * 사전 병합에 **삭제 경로가 없다** — payload 에 없는 열쇠(고아)는 그대로 남는다. 값이 빈
  * 문자열로 온 것만 그 열쇠를 걷는다(운영자가 칸을 비운 것 = 번역 취소). 화면이 무엇을 보내든
  * 서버가 안 보이는 번역을 지우지 않는다는 뜻이다.
+ *
+ * **자리표시자가 빠진 번역은 여기서 거부한다 — 저장이 최종 벽이다.** 번역기가 `{{청소비조항}}`
+ * 을 통째로 번역해 버리면 그 조항은 종이에서 값을 잃는데, 그 실패는 아무 소리도 내지 않는다.
+ * 화면 검증만으로는 못 막는다 — 화면이 무엇을 보내든 통과시키면 결국 통과하는 길이 남는다.
+ * 판정은 붙여넣기와 **같은 함수**를 쓴다(translationPlaceholderMisses).
  */
 export function mergeTranslationLang(
   stored: unknown,
   lang: TranslationLang,
   patch: { published?: boolean; dict?: Record<string, unknown> },
-): ContractTranslations {
+): TranslationMergeResult {
+  const missing = translationPlaceholderMisses(patch.dict ?? {})
+  if (missing.length > 0) return { ok: false, missing }
+
   const base = parseContractTranslations(stored)
   const prev = base.langs[lang] ?? { published: false, dict: {} }
   const dict: Record<string, string> = { ...prev.dict }
@@ -379,12 +515,26 @@ export function mergeTranslationLang(
     }
   }
   return {
-    ...base,
-    langs: {
-      ...base.langs,
-      [lang]: { published: patch.published ?? prev.published, dict },
+    ok: true,
+    next: {
+      ...base,
+      langs: {
+        ...base.langs,
+        [lang]: { published: patch.published ?? prev.published, dict },
+      },
     },
   }
+}
+
+/**
+ * 거부 사유를 운영자가 읽을 한 문장으로. 화면 둘(되붙이기 창·저장 실패 토스트)이 같은 문장을
+ * 쓴다 — 같은 사고를 두 화면이 다른 말로 설명하면 운영자가 다른 일로 읽는다.
+ *
+ * 몇 건인지와 **무엇이 빠졌는지**를 함께 말한다. 자리표시자 이름이 곧 고칠 자리라서다.
+ */
+export function translationPlaceholderMessage(missing: readonly TranslationPlaceholderMiss[]): string {
+  const names = [...new Set(missing.flatMap(m => m.placeholders))].join(' · ')
+  return `번역문에서 ${names} 가 사라졌습니다(${missing.length}건). 이 표시는 계약서에 실제 값이 들어가는 자리라 번역하거나 지우면 안 됩니다. 원문에 있는 그대로 남겨 주세요.`
 }
 
 // ── 우선 조항 ───────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
 import { asSignLang, signLangForNationality, type SignLang } from '@/lib/signGuideText'
 import { asTranslationLang, resolveContractTranslation } from '@/lib/contractTranslation'
+import { contractAddendaForTranslation } from '@/lib/contract'
 import { isForeignForDocuments } from '@/lib/documentName'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
@@ -396,9 +397,14 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     // 전 언어를 담으면 스냅샷이 8배로 무거워지는데, 입주자가 안 본 언어는 증거도 아니다.
     // 한국어 링크에는 번역본이 없다(asTranslationLang 이 ko 를 안 통과시킨다) — 정본을 읽는 사람에게
     // 참고용 번역본은 뜻이 없고, 그 계약서의 종이는 이 기능 전과 문자 단위로 같아야 한다.
+    //
+    // 가변 절은 **그 계약에 실린 것만** 넘긴다(contractAddendaForTranslation 이 종이와 같은
+    // 정본으로 고른다). 종이에 없는 절이 번역본에 서면 조항 번호가 통째로 밀려, 입주자가 읽은
+    // "3조 2항"이 종이의 다른 줄을 가리킨다 — 그 순간 이 박제는 증거이기를 그만둔다.
     const translationLang = asTranslationLang(signLang)
     const translation = translationLang
-      ? resolveContractTranslation(property?.contractTranslations, snapshot.template, translationLang)
+      ? resolveContractTranslation(property?.contractTranslations, snapshot.template, translationLang,
+        contractAddendaForTranslation(snapshot))
       : null
 
     // 활성 링크 재사용(getOrCreate) — 같은 계약(leaseTermId)만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
@@ -600,10 +606,12 @@ export async function checkContractShareDrift(tenantId: string, leaseTermId?: st
     // buildContractData 가 모르는데, 안 채우면 curFacts 쪽이 늘 undefined 라 번역본이 실린 링크
     // 전건이 "번역이 사라졌다"로 뜬다. 링크 언어가 한국어면 번역본 자체가 없어 조회도 안 한다.
     const translationLang = asTranslationLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang)
+    // 가변 절도 **지금 그 계약에 실릴 것**으로 다시 고른다(발급이 담은 것과 같은 정본).
+    // 여기서 안 넘기면 특약이 붙은 계약 전건이 "특약 번역이 사라졌다"로 뜬다.
     const currentTranslation = translationLang
       ? resolveContractTranslation(
         (await prisma.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } }))?.contractTranslations,
-        current.template, translationLang)
+        current.template, translationLang, contractAddendaForTranslation(current))
       : null
 
     // 인쇄 사실 사영끼리 통비교 — 계약서에 찍히는 값이 하나라도 다르면 드리프트다.

@@ -63,15 +63,31 @@ for (const f of CONSUMERS) {
   if (!fn) {
     violations.push(`${f} — contractRateAddendum 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
   } else {
-    // 파라미터 선언(lease: { isShortTerm?: boolean })이 아니라 **몸통에서 실제로 갈리는지**를 본다.
-    // 종전 패턴은 타입 선언에 걸려, 갈래를 통째로 지워도 통과했다(역주입 실측).
-    if (!/lease\.isShortTerm\s*\n?\s*\?/.test(fn[0])) {
-      violations.push(`${f} — 요금 절이 isShortTerm 으로 안 갈린다. 두 절이 함께 설 수 있다.`)
+    // 갈림 자체는 lib/contract 의 rateAddendumFor 로 옮겼다(2026-09-08). 참고용 번역본의
+    // **영업장 기준** 목록이 같은 규칙을 필요로 하는데, 그 목록을 만드는 자리가 계약 조립
+    // 모듈을 못 부르기 때문이다(무거운 의존이 /api/import 번들까지 번진다). 규칙은 여전히
+    // 한 자리이고, 이 그물은 계약 쪽이 그 정본을 지나는지만 본다.
+    if (!/rateAddendumFor\(/.test(fn[0])) {
+      violations.push(`${f} — 요금 절이 정본(lib/contract 의 rateAddendumFor)을 안 지난다. 갈림 규칙이 두 벌이 되면 언젠가 갈린다.`)
     }
     if (!/source === 'SNAPSHOT'/.test(fn[0])) {
       violations.push(`${f} — 서명본에도 지금 조건으로 다시 판정한다. 서명 뒤에 요금 조항이 생기거나 사라진다.`)
     }
-    // 같은 이유로 이름 등장이 아니라 **가드로 쓰이는지**를 본다.
+  }
+}
+
+// ⓓ-2 갈림 규칙의 정본 자체 — 이름 등장이 아니라 **몸통에서 실제로 갈리는지**를 본다.
+//     종전 패턴은 타입 선언에 걸려, 갈래를 통째로 지워도 통과했다(역주입 실측).
+{
+  const f = 'lib/contract.ts'
+  const src = read(f)
+  const fn = src.match(/export function rateAddendumFor[\s\S]*?\n\}/)
+  if (!fn) {
+    violations.push(`${f} — rateAddendumFor 를 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  } else {
+    if (!/isShortTerm\s*\n?\s*\?/.test(fn[0])) {
+      violations.push(`${f} — 요금 절이 isShortTerm 으로 안 갈린다. 두 절이 함께 설 수 있다.`)
+    }
     if (!/!policyEnabled/.test(fn[0])) {
       violations.push(`${f} — 단기 정책이 꺼진 영업장에도 절이 붙는다. 가리킬 요금표가 없는 조항이 종이에 남는다.`)
     }

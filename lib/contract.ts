@@ -219,6 +219,21 @@ export function resolveEarlyCheckoutAddendum(raw: unknown): SubLeaseAddendum | n
   return resolveAddendum(raw, DEFAULT_EARLY_CHECKOUT_ADDENDUM)
 }
 
+/**
+ * 그 영업장의 요금 절 문안 — 단기면 단기 특약, 아니면 조기 퇴실. **정책이 꺼지면 어느 것도 없다.**
+ *
+ * 계약 판정(lib/contractData 의 contractRateAddendum)과 영업장 목록(propertyContractAddenda)이
+ * 이 한 자리를 함께 본다. 두 곳이 각자 적으면 정책을 껐는데 편집기에만 절이 남는 식으로 갈린다.
+ */
+export function rateAddendumFor(
+  isShortTerm: boolean,
+  policyEnabled: boolean,
+  saved: { shortStay?: unknown; earlyCheckout?: unknown },
+): SubLeaseAddendum | null {
+  if (!policyEnabled) return null
+  return isShortTerm ? resolveShortStayAddendum(saved.shortStay) : resolveEarlyCheckoutAddendum(saved.earlyCheckout)
+}
+
 // ── 거주 호실 일정 절 ────────────────────────────────────────────────
 //
 // 계약 호실이 빌 때까지 다른 방에 머무는 계약에만 붙는 절이다. 운영자 요구 그대로다 —
@@ -258,6 +273,65 @@ export function buildRoomScheduleAddendum(
     title: t.title,
     items: t.items.map(line => line.replaceAll('{{일정}}', scheduleText)),
   }
+}
+
+/**
+ * 이 **영업장**이 계약서에 세울 수 있는 가변 절 전부 — 참고용 번역본 편집기의 분모다.
+ *
+ * 계약 기준(아래 contractAddendaForTranslation)과 일부러 다른 집합이다. 운영자는 계약이 오기
+ * 전에 미리 번역을 채워 두는데, 그때 분모가 어느 한 계약 기준이면 다른 계약에 붙는 절은
+ * 편집기에 칸조차 안 서서 영영 번역되지 않는다.
+ *
+ * **판정을 여기서 다시 적지 않는다.** 단기·조기 퇴실이 배타적이라는 것은 계약의 규칙이고
+ * 영업장은 둘 다 쓴다 — 그래서 같은 정본(rateAddendumFor)을 isShortTerm 만 바꿔 두 번 부른다.
+ * 정책이 꺼진 영업장에서는 그 정본이 둘 다 null 을 내므로 목록에서 저절로 빠진다.
+ * 순서는 종이 순서 그대로다(추가 호실 · 요금 · 거주 호실 일정).
+ *
+ * 단기 정책 해석을 인자로 받는 이유는 **의존을 가볍게 두기 위해서다.** 이 함수를 부르는
+ * 환경설정 서버 액션은 /api/import 까지 이어지는 큰 그래프 안에 있어, 여기서 계약 조립 모듈을
+ * 끌어오면 그 라우트 번들에 계약서 렌더가 통째로 딸려 들어간다.
+ */
+export function propertyContractAddenda(
+  property: {
+    subLeaseAddendum?: unknown
+    shortStayAddendum?: unknown
+    earlyCheckoutAddendum?: unknown
+    roomScheduleAddendum?: unknown
+  } | null | undefined,
+  shortStayPolicyEnabled: boolean,
+): SubLeaseAddendum[] {
+  const saved = { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum }
+  return [
+    resolveSubLeaseAddendum(property?.subLeaseAddendum),
+    rateAddendumFor(true, shortStayPolicyEnabled, saved),
+    rateAddendumFor(false, shortStayPolicyEnabled, saved),
+    resolveRoomScheduleAddendum(property?.roomScheduleAddendum),
+  ].filter((a): a is SubLeaseAddendum => !!a)
+}
+
+/**
+ * 그 계약서에 실릴 가변 절의 **치환 전 저장 문안** — 참고용 번역본의 열쇠가 이것이다.
+ *
+ * 종이는 buildRoomScheduleAddendum 이 {{일정}} 을 미리 채운 절을 싣지만, 번역 사전의 열쇠는
+ * 치환 전이라야 한다. 일정 문자열은 계약마다 달라서, 치환 후를 열쇠로 삼으면 그 사전은
+ * 어느 계약에서도 한 번도 안 맞는다. 자리표시자를 품은 그대로가 열쇠다.
+ *
+ * **실릴지 아닐지는 종이와 같은 정본이 정한다.** 여기서 조건을 다시 적으면 언젠가 갈리고,
+ * 그때는 종이에 없는 절이 번역본에 서서 조항 번호가 통째로 밀린다(번호는 자리로 매긴다).
+ * 순서도 종이 그대로다 — 추가 호실 · 요금 · 거주 호실 일정.
+ */
+export function contractAddendaForTranslation(d: {
+  subLeaseAddendum?: SubLeaseAddendum | null
+  rateAddendum?: SubLeaseAddendum | null
+  roomScheduleText?: string | null
+  roomScheduleAddendum?: SubLeaseAddendum | null
+}): SubLeaseAddendum[] {
+  const schedule = d.roomScheduleAddendum ?? null
+  return [
+    d.subLeaseAddendum ?? null,
+    d.rateAddendum ?? null,
+    buildRoomScheduleAddendum(d.roomScheduleText, schedule) ? schedule : null,
+  ].filter((a): a is SubLeaseAddendum => !!a)
 }
 
 /**

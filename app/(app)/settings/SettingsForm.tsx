@@ -41,7 +41,7 @@ import {
   getAiSettings, saveAiSettings,
 } from './actions'
 import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
-import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
+import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum } from '@/lib/contract'
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
@@ -49,6 +49,7 @@ import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
   translationCopyLine, translationCopyText, applyTranslationPaste,
+  translationPlaceholderMisses, translationPlaceholderMessage,
   type TranslationLang, type TranslationLineKind, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
@@ -3105,6 +3106,9 @@ function ContractTranslationCard() {
   const [loaded, setLoaded] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [template, setTemplate] = useState<ContractTemplate | null>(null)
+  // 이 영업장이 쓸 수 있는 가변 절 전부. 편집기의 분모는 **계약이 아니라 영업장** 기준이다 —
+  // 계약이 오기 전에 미리 채워 두는 자리라, 좁히면 다른 계약의 절이 영영 번역되지 않는다.
+  const [addenda, setAddenda] = useState<SubLeaseAddendum[]>([])
   const [stored, setStored] = useState<ContractTranslations>(EMPTY_CONTRACT_TRANSLATIONS)
   const [lang, setLang] = useState<TranslationLang>('en')
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -3119,6 +3123,7 @@ function ContractTranslationCard() {
     getContractTranslationSettings()
       .then(r => {
         setTemplate(r.template)
+        setAddenda(r.addenda)
         setStored(r.translations)
         setEnabled(r.translations.enabled)
         // 첫 언어는 영어다. 사전에 고아 열쇠가 있으면 그것도 함께 담긴다 — 화면에 칸이 없어도
@@ -3130,14 +3135,22 @@ function ContractTranslationCard() {
       .catch(() => setLoaded(true))
   }, [])
 
-  const lines = useMemo(() => (template ? translationSourceLines(template) : []), [template])
+  const lines = useMemo(() => (template ? translationSourceLines(template, addenda) : []), [template, addenda])
   // 열쇠와 그 번역을 함께 쥔다 — 목록이 "어떤 번역이 고아인지"를 보여주려면 둘 다 있어야 한다.
+  // 고아 판정도 **같은 집합**을 본다. 안 맞추면 특약 번역이 전부 고아로 잡힌다.
   const orphans = useMemo(() => {
     if (!template) return []
     const dict = stored.langs[lang]?.dict ?? {}
-    return orphanTranslationKeys(stored, template, lang).map(k => ({ key: k, text: dict[k] ?? '' }))
-  }, [template, stored, lang])
+    return orphanTranslationKeys(stored, template, lang, addenda).map(k => ({ key: k, text: dict[k] ?? '' }))
+  }, [template, addenda, stored, lang])
   const translated = lines.filter(l => (draft[l.text] ?? '').trim()).length
+  // 자리표시자를 잃은 칸. 저장이 거부할 것을 **누르기 전에** 그 칸 옆에서 말한다(§27.2) —
+  // 판정은 저장·되붙이기와 같은 함수라 세 곳의 답이 갈릴 수 없다.
+  const missingPh = useMemo(() => {
+    const out = new Map<string, string[]>()
+    for (const m of translationPlaceholderMisses(draft)) out.set(m.text, m.placeholders)
+    return out
+  }, [draft])
   // 문장 안 줄바꿈이 있는 항목 수. 복사할 때 한 줄로 눕히므로 그 사실을 안내에 적는다.
   const flattened = useMemo(() => lines.filter(l => l.text !== translationCopyLine(l.text)).length, [lines])
 
@@ -3180,9 +3193,11 @@ function ContractTranslationCard() {
   const applyPaste = () => {
     const res = applyTranslationPaste(lines, pasteText)
     if (!res.ok) {
-      // 검증 실패는 인라인이다(§27.2). 몇 줄이어야 하는데 몇 줄인지 그대로 말한다 — 번역기가
-      // 줄을 합치거나 나눈 것이라, 개수만 알면 운영자가 어디를 볼지 안다.
-      setPasteError(`${res.expected}줄이어야 하는데 ${res.got}줄입니다. 줄이 합쳐지거나 나뉜 것이라 아무 칸도 채우지 않았습니다. 번역기 결과에서 줄을 맞춘 뒤 다시 붙여 주세요.`)
+      // 검증 실패는 인라인이다(§27.2). 사유 둘을 갈라 말한다 — 줄 수가 어긋난 것과 자리표시자를
+      // 잃은 것은 운영자가 손볼 자리가 다르다. 문안은 저장 거부와 같은 정본을 쓴다.
+      setPasteError(res.missing.length > 0
+        ? `${translationPlaceholderMessage(res.missing)} 아무 칸도 채우지 않았습니다.`
+        : `${res.expected}줄이어야 하는데 ${res.got}줄입니다. 줄이 합쳐지거나 나뉜 것이라 아무 칸도 채우지 않았습니다. 번역기 결과에서 줄을 맞춘 뒤 다시 붙여 주세요.`)
       return
     }
     // **화면 상태만 채운다.** 저장은 아래 저장 버튼이 한다 — 기계 번역이 옮겨 놓은 문안을
@@ -3341,6 +3356,13 @@ function ContractTranslationCard() {
                           onChange={e => setDraft(p => ({ ...p, [l.text]: e.target.value }))}
                           placeholder="비워 두면 이 줄은 한국어 원문 그대로 보입니다."
                           className={taCls} />
+                        {/* 자리표시자를 잃은 칸은 그 자리에서 말한다 — 저장이 어차피 거부하는데,
+                            토스트로만 알리면 스물몇 칸 중 어디인지 운영자가 다시 찾아야 한다. */}
+                        {missingPh.has(l.text) && (
+                          <p className="text-[0.65625rem] leading-relaxed text-[var(--danger-fg)]">
+                            {missingPh.get(l.text)?.join(' · ')} 가 빠졌습니다. 계약서에 실제 값이 들어가는 자리라 원문 그대로 남겨 주세요.
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3350,6 +3372,13 @@ function ContractTranslationCard() {
                     저장이 남았다는 사실은 여기 남는다(디자이너 지적 2026-09-08). */}
                 {dirty && (
                   <p className="text-xs text-[var(--warm-mid)]">저장하지 않은 변경이 있습니다.</p>
+                )}
+                {/* 막지 않고 알린다 — 눌러도 아무 일이 없는 버튼은 화면이 고장난 증거로 읽힌다.
+                    누르면 서버가 같은 판정으로 거부하고 같은 문장을 돌려준다(최종 벽은 저장이다). */}
+                {missingPh.size > 0 && (
+                  <p className="text-xs leading-relaxed text-[var(--danger-fg)]">
+                    자리표시자가 빠진 칸이 {missingPh.size}건 있어 저장되지 않습니다. 위 표시된 칸을 고쳐 주세요.
+                  </p>
                 )}
                 <Btn type="button" variant="primary" size="md" className="w-full" onClick={() => void save()} disabled={saving}>
                   {saving ? '저장 중…' : '저장'}

@@ -812,6 +812,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       {langPick && (
         <SignRequestLangPicker
           defaultLang={langPick.def}
+          // 캡션의 분모를 그 계약 기준으로 좁히는 지목. 링크를 실제로 내는 아래 호출과 **같은
+          // 두 값**이라, 캡션이 센 것과 링크에 실리는 것이 갈릴 수 없다.
+          tenantId={tenantId}
+          leaseTermId={leaseTermId ?? null}
           onPick={l => { langPick.resolve(l); setLangPick(null) }}
           onClose={() => { langPick.resolve(null); setLangPick(null) }}
         />

@@ -310,9 +310,147 @@ function fnBody(src, at) {
   }
 }
 
+// ── 4단계 배선(자리표시자 치환·가변 절·보호) ────────────────────────
+//
+//   ⓣ 번역본 본문이 조항의 {{변수}} 를 **종이와 같은 정본·같은 순서로** 치환한다.
+//     이것이 배포돼 있던 결함이다 — 카드가 stripClauseBullet 만 불러 `{{청소비조항}}` 이
+//     글자 그대로 떴다(제기역점 저장 본문에 실재). 순서도 축이다: 치환이 먼저, 글머리 제거가
+//     나중이라야 값이 글머리로 시작하는 조항에서 종이와 안 갈린다.
+//   ⓤ 절 번호를 **손으로 세지 않는다.** 종이와 같은 정본(appendSubLeaseAddendum)이 매겨야
+//     "몇 조 몇 항"이 두 종이에서 같은 줄을 가리킨다.
+//   ⓥ 서명 화면이 카드에 **종이가 쓰는 그 vars** 를 넘긴다. 다른 값을 만들어 넘기면 같은
+//     화면 위아래에서 두 금액이 싸운다.
+//   ⓦ 발급·드리프트가 **그 계약에 실린 절만** 넘긴다. 안 넘기면 특약 번역이 박제에서 통째로
+//     빠지고, 한쪽만 넘기면 특약 붙은 계약 전건이 오경보로 뜬다.
+//   ⓧ 저장이 병합의 **거부를 실제로 읽는다.** 안 읽으면 자리표시자 빠진 번역이 그대로 저장돼
+//     값 없는 조항이 종이에 실린다 — 조용히 실패하는 종류다.
+//   ⓨ 분모 둘이 서로 다른 입력을 받는다. 편집기는 영업장 기준, 피커는 그 계약 기준이다.
+
+// ⓣ·ⓤ — 번역본 본문의 치환과 절 번호
+{
+  const f = 'components/doc/ContractTranslationView.tsx'
+  const src = read(f)
+  if (!/renderContractText\(/.test(src)) {
+    violations.push(`${f} — ⓣ 카드가 조항의 {{변수}} 를 안 채운다. 자리표시자가 글자 그대로 뜬다(2026-09-08 배포 결함의 재발).`)
+  }
+  // 종이(lib/contractPrintHtml)의 순서 그대로여야 한다 — stripClauseBullet(renderContractText(..)).
+  if (!/stripClauseBullet\(render\(/.test(src)) {
+    violations.push(`${f} — ⓣ 치환과 글머리 제거의 순서가 종이와 다르다. 값이 글머리로 시작하는 조항에서 카드와 종이가 갈린다.`)
+  }
+  if (!/appendSubLeaseAddendum\(translation\.sections/.test(src)) {
+    violations.push(`${f} — ⓤ 절 번호를 종이와 같은 정본으로 안 매긴다. 번역본만 번호가 밀려 "몇 조 몇 항"이 다른 줄을 가리킨다.`)
+  }
+  // 원문 쪽도 **같은 함수로** 세워야 표식 판정의 index 가 1:1 로 맞는다.
+  if (!/srcSections = appendSubLeaseAddendum\(/.test(src)) {
+    violations.push(`${f} — ⓤ 표식 대조용 원문을 같은 정본으로 안 세운다. 특약 절에서 '원문' 표식이 엉뚱한 줄에 붙는다.`)
+  }
+}
+
+// ⓥ — 서명 화면이 종이의 vars 를 그대로 넘긴다
+{
+  const f = 'app/contract/[tenantId]/ContractView.tsx'
+  const src = read(f)
+  // 종이가 쓰는 그 객체(vars)를 펼쳐 넘긴다. 새로 조립하면 종이와 갈린다.
+  if (!/vars=\{\{ \.\.\.vars,/.test(src)) {
+    violations.push(`${f} — ⓥ 카드에 종이의 vars 를 안 넘긴다. 카드가 자리표시자를 그대로 보이거나 종이와 다른 값을 보인다.`)
+  }
+  if (!/sourceAddenda=\{contractAddendaForTranslation\(data\)\}/.test(src)) {
+    violations.push(`${f} — ⓥ 표식 대조용 특약 원문을 정본으로 안 넘긴다. 특약 절이 늘 '원문'으로 표시되거나 표식이 안 붙는다.`)
+  }
+}
+
+// ⓦ — 발급과 드리프트가 그 계약에 실린 절만 넘긴다
+{
+  const f = 'app/(app)/tenants/contractShare.ts'
+  const src = read(f)
+  const issue = fnBody(src, src.indexOf('export async function issueContractShareLink'))
+  if (issue.length >= 500 && !/contractAddendaForTranslation\(snapshot\)/.test(issue)) {
+    violations.push(`${f} — ⓦ 발급이 그 계약의 가변 절을 안 넘긴다. 특약 번역이 박제에서 통째로 빠져 서명 화면에 한국어 원문으로 뜬다.`)
+  }
+  const drift = fnBody(src, src.indexOf('export async function checkContractShareDrift'))
+  if (drift.length >= 300 && !/contractAddendaForTranslation\(current\)/.test(drift)) {
+    violations.push(`${f} — ⓦ 드리프트 비교가 가변 절을 안 넘긴다. 특약이 붙은 계약 전건이 "특약 번역이 사라졌다"로 뜬다.`)
+  }
+}
+
+// ⓧ·ⓨ — 저장의 거부와 분모 둘
+{
+  const f = 'app/(app)/settings/actions.ts'
+  const src = read(f)
+
+  const saveLang = fnBody(src, src.indexOf('export async function saveContractTranslationLang'))
+  if (saveLang.length >= 200) {
+    // 거부를 실제로 읽고 **쓰기를 건너뛴다**. `merged.next` 만 꺼내 쓰면 거부가 죽은 값이 된다.
+    if (!/if \(!merged\.ok\)/.test(saveLang) || !/merged\.next/.test(saveLang)) {
+      violations.push(`${f} — ⓧ 저장이 병합의 거부를 안 읽는다. 자리표시자가 빠진 번역이 그대로 저장돼 값 없는 조항이 종이에 실린다.`)
+    }
+    if (!/return \{ ok: false, error: rejected \}/.test(saveLang)) {
+      violations.push(`${f} — ⓧ 거부를 화면에 안 돌려준다. 저장이 조용히 실패해 운영자가 저장된 줄 안다.`)
+    }
+  }
+
+  const get = fnBody(src, src.indexOf('export async function getContractTranslationSettings'))
+  if (get.length < 200) violations.push(`${f} — getContractTranslationSettings 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else if (!/propertyContractAddenda\(property,/.test(get)) {
+    violations.push(`${f} — ⓨ 편집기 분모가 영업장 기준이 아니다. 계약 기준으로 좁히면 다른 계약에 붙는 절은 칸조차 안 서서 영영 번역되지 않는다.`)
+  }
+  // 계약 조립을 이 파일로 끌어오면 finance/actions 를 거쳐 /api/import 번들에 계약서 렌더가
+  // 딸려 들어간다(2026-09-08 실측 — check-print-selfcontained 축 2 가 걸렸다).
+  // **원문을 본다** — read() 는 import 줄을 지우므로 그 위에서는 이 검사가 영영 안 걸린다.
+  if (/from '@\/lib\/contractData'/.test(readFileSync(f, 'utf8'))) {
+    violations.push(`${f} — ⓨ 환경설정 액션이 계약 조립 모듈을 끌어온다. /api/import 번들이 무거워지고 폰트 자립 감지망이 깨진다. 계약 기준 목록은 app/contract/[tenantId]/actions 의 출구를 쓴다.`)
+  }
+}
+
+// ⓨ — 계약 기준 분모는 발급과 같은 조립을 지난다
+{
+  const f = 'app/contract/[tenantId]/actions.ts'
+  const src = read(f)
+  const fn = fnBody(src, src.indexOf('export async function getContractTranslationAddenda'))
+  if (fn.length < 100) violations.push(`${f} — getContractTranslationAddenda 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/buildContractData\(tenantId, propertyId, leaseTermId\)/.test(fn) || !/contractAddendaForTranslation\(data\)/.test(fn)) {
+      violations.push(`${f} — ⓨ 계약 기준 목록이 발급과 같은 조립을 안 지난다. 캡션이 센 수와 링크에 실리는 수가 갈린다.`)
+    }
+    if (!/canReadScope\(role, 'money'\)/.test(fn)) {
+      violations.push(`${f} — ⓨ 캡션 출구가 발급보다 넓은 문을 연다. 같은 게이트를 지나야 한다.`)
+    }
+  }
+}
+
+// ⓨ — 편집기와 피커가 각자의 분모를 실제로 쓴다
+{
+  const f = 'app/(app)/settings/SettingsForm.tsx'
+  const src = read(f)
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  if (card.length >= 1000) {
+    if (!/translationSourceLines\(template, addenda\)/.test(card)) {
+      violations.push(`${f} — ⓨ 편집기가 가변 절을 분모에 안 넣는다. 특약은 종이에 실리는데 번역할 칸이 아예 안 선다.`)
+    }
+    if (!/orphanTranslationKeys\(stored, template, lang, addenda\)/.test(card)) {
+      violations.push(`${f} — ⓨ 고아 판정이 분모와 다른 집합을 본다. 특약 번역 전건이 고아로 잡힌다.`)
+    }
+    // 자리표시자 경고는 저장·되붙이기와 **같은 함수**로 낸다. 손으로 세면 세 곳의 답이 갈린다.
+    if (!/translationPlaceholderMisses\(draft\)/.test(card)) {
+      violations.push(`${f} — ⓧ 편집기가 자리표시자 검사를 정본으로 안 한다. 저장이 거부할 것을 화면이 미리 말하지 못한다.`)
+    }
+  }
+}
+{
+  const f = 'components/doc/SignRequestLangPicker.tsx'
+  const src = read(f)
+  // 계약 기준(mine)이 있으면 그것, 없으면 영업장 기준으로 떨어진다.
+  if (!/translationProgress\(r\.translations, r\.template, lang, mine \?\? r\.addenda\)/.test(src)) {
+    violations.push(`${f} — ⓨ 피커 캡션이 가변 절을 분모에 안 넣는다. 특약까지 다 번역한 언어가 영영 미완으로 보인다.`)
+  }
+  if (!/getContractTranslationAddenda\(tenantId, leaseTermId\)/.test(src)) {
+    violations.push(`${f} — ⓨ 피커가 계약 지목으로 분모를 안 좁힌다. 그 계약에 안 붙는 절까지 세어 다 번역한 언어가 영영 미완으로 보인다.`)
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘)')

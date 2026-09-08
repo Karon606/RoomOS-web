@@ -9,6 +9,11 @@
 //
 // 그래서 여기에 **없는 것들**이 이 파일의 절반이다.
 //   · 헤더 밴드·정보표·서명란·워드마크가 없다. 이름도 금액도 안 싣는다 — 조항만이다.
+//     **이것은 조판의 규칙이지 조항 안의 값을 지우라는 말이 아니다**(2026-09-08 정정). 조항이
+//     제 문장 안에서 말하는 금액은 그 조항의 뜻 자체다. 지우면 "청소비 은 퇴실 후 청소 용역의
+//     대가입니다" 같은 비문이 되고(2026-08-03 사고와 같은 클래스), 금액을 뺀 조항은 애초에
+//     이 카드가 하려는 일 — 계약 내용을 이해시키는 것 — 을 못 한다. 그래서 조항 치환은
+//     종이가 쓰는 vars 를 **그대로** 받는다(아래 ContractTranslationBody 의 vars).
 //   · 읽음 확인이 없다. 체크박스도 버튼도 서명도 두지 마라(법률 관점 판정). 번역본에 효력을
 //     준 것처럼 읽히면 안 되고, 서명 진행 판정과도 무관해야 한다.
 //   · 워터마크가 없다(§29 장식 0). '참고용'은 배지와 고지 문구가 말한다.
@@ -18,7 +23,10 @@
 
 import { useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
-import { stripClauseBullet, type ContractTemplate } from '@/lib/contract'
+import {
+  appendSubLeaseAddendum, renderContractText, stripClauseBullet,
+  type ContractTemplate, type SubLeaseAddendum,
+} from '@/lib/contract'
 import {
   TRANSLATION_LANG_ENDONYM, translationNoticeBi,
   type ResolvedContractTranslation,
@@ -51,12 +59,31 @@ function SourceMark() {
  * 번역본 본문. 카드 껍데기가 없어 모달 안에도 그대로 들어간다.
  *
  * @param source 같은 스냅샷의 한국어 본문. 원문으로 남은 줄에 표식을 달 때만 쓴다.
+ * @param sourceAddenda 그 계약에 실린 가변 절의 **치환 전** 한국어 문안. 위와 같이 표식용이다.
+ * @param vars 조항의 {{변수}} 를 채울 값. **종이가 쓰는 그 객체를 그대로 받는다** — 카드가
+ *   종이와 다른 값을 보이면 자리표시자가 글자 그대로 뜨는 것보다 나쁘다. 안 주면 종전대로
+ *   저장 문안이 그대로 보인다(값을 지어내지 않는다).
  */
-export function ContractTranslationBody({ translation, source }: {
+export function ContractTranslationBody({ translation, source, sourceAddenda, vars }: {
   translation: ResolvedContractTranslation
   source?: ContractTemplate | null
+  sourceAddenda?: readonly SubLeaseAddendum[]
+  vars?: Record<string, string>
 }) {
-  const srcSections = Array.isArray(source?.sections) ? source.sections : []
+  // 절 번호는 **종이와 같은 정본이 매긴다**(appendSubLeaseAddendum). 여기서 손으로 세면
+  // 형제 절이 하나 늘 때마다 번역본만 번호가 밀려, "몇 조 몇 항"이 두 종이에서 다른 곳을 가리킨다.
+  // 번역본과 원문을 **같은 함수로** 세워 인덱스가 1:1 로 맞는다 — 표식 판정이 그 위에 선다.
+  const sections = appendSubLeaseAddendum(translation.sections, ...(translation.addenda ?? []))
+  const srcSections = appendSubLeaseAddendum(
+    Array.isArray(source?.sections) ? source.sections : [],
+    ...(sourceAddenda ?? []),
+  )
+  // 우선 조항('번역본과 언어')은 여기 안 세운다. 카드 머리의 고지가 이미 그 말을 하고 있어
+  // 절로 또 세우면 같은 문장이 한 화면에 두 번 선다(그 절은 종이에만 붙는다).
+  //
+  // 치환 순서는 종이와 같다 — renderContractText 먼저, 글머리 제거가 나중이다(contractPrintHtml).
+  // 뒤집으면 '- {{청소비조항}}' 처럼 값이 글머리로 시작하는 조항에서 결과가 갈린다.
+  const render = (s: string): string => (vars ? renderContractText(s, vars) : s)
   return (
     <div className="space-y-4">
       {/* 머리 — 무엇인지 먼저 말한다. 배지는 pale-neutral 고정이다(§11). 강조색을 쓰면
@@ -92,10 +119,13 @@ export function ContractTranslationBody({ translation, source }: {
           절 번호는 제목 문자열 안에 있고(운영자가 '1. 입실 계약'처럼 적는다), 항목 번호는
           종이의 CSS 카운터와 같은 규칙으로 절마다 1부터 센다. 글머리 제거도 종이와 같은
           정본 함수를 쓴다(stripClauseBullet) — 규칙이 두 벌이면 언젠가 갈린다. */}
-      {translation.sections.map((sec, si) => (
+      {sections.map((sec, si) => (
         <section key={si} className="space-y-1.5">
           <h3 className="text-sm font-bold leading-normal text-[var(--warm-dark)] break-keep">
-            {sec.title}
+            {render(sec.title)}
+            {/* 표식 판정은 **치환 전 문자열끼리** 견준다. 뜻이 "사전에 번역이 없어 원문이 남았다"
+                이고 그 사실은 치환과 무관하다 — 치환 후로 견주면 값이 같아진 두 문장이 우연히
+                원문으로 표시될 수 있다. */}
             {sameAsSource(sec.title, srcSections[si]?.title) && <SourceMark />}
           </h3>
           <ol className="space-y-1.5">
@@ -103,7 +133,7 @@ export function ContractTranslationBody({ translation, source }: {
               <li key={ii} className="flex gap-2 text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)] break-keep">
                 <span className="num shrink-0 text-[var(--warm-muted)]">{ii + 1}.</span>
                 <span className="min-w-0 whitespace-pre-line">
-                  {stripClauseBullet(item)}
+                  {stripClauseBullet(render(item))}
                   {sameAsSource(item, srcSections[si]?.items?.[ii]) && <SourceMark />}
                 </span>
               </li>
@@ -114,7 +144,7 @@ export function ContractTranslationBody({ translation, source }: {
 
       {translation.oathText && (
         <p className="text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)] break-keep">
-          {translation.oathText}
+          {render(translation.oathText)}
           {sameAsSource(translation.oathText, source?.oathText) && <SourceMark />}
         </p>
       )}
@@ -131,9 +161,11 @@ export function ContractTranslationBody({ translation, source }: {
  *
  * 여기에 읽음 확인을 붙이지 마라. 체크박스·버튼·서명 어느 것도 없다(파일 머리 주석).
  */
-export function ContractTranslationCard({ translation, source }: {
+export function ContractTranslationCard({ translation, source, sourceAddenda, vars }: {
   translation: ResolvedContractTranslation
   source?: ContractTemplate | null
+  sourceAddenda?: readonly SubLeaseAddendum[]
+  vars?: Record<string, string>
 }) {
   const [open, setOpen] = useState(true)
   return (
@@ -168,7 +200,7 @@ export function ContractTranslationCard({ translation, source }: {
         </svg>
       </button>
       {open && <div className="mt-3">
-        <ContractTranslationBody translation={translation} source={source} />
+        <ContractTranslationBody translation={translation} source={source} sourceAddenda={sourceAddenda} vars={vars} />
       </div>}
     </div>
   )

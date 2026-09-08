@@ -18,13 +18,22 @@ import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { SIGN_LANGS, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
 import { getContractTranslationSettings } from '@/app/(app)/settings/actions'
+import { getContractTranslationAddenda } from '@/app/contract/[tenantId]/actions'
 import { asTranslationLang, translationProgress } from '@/lib/contractTranslation'
 
 /** 언어별 캡션. 번역본을 안 쓰는 영업장에서는 통째로 비어 이 피커가 종전과 같은 화면이다. */
 type LangCaptions = Partial<Record<SignLang, string>>
 
-export function SignRequestLangPicker({ defaultLang, onPick, onClose }: {
+/**
+ * @param tenantId 링크를 보낼 계약의 입주자. 캡션의 분모를 **그 계약에 실릴 절**로 좁히는 데
+ *   쓴다 — 영업장이 쓸 수 있는 전부로 세면 다 번역한 언어가 영영 '26/34' 로 보인다.
+ *   안 주면 영업장 기준으로 떨어진다(캡션은 보조 정보라 못 세는 상황에서 막지 않는다).
+ * @param leaseTermId 그 계약 지목. 없으면 서버가 링크 발급과 **같은 추론**으로 고른다.
+ */
+export function SignRequestLangPicker({ defaultLang, tenantId, leaseTermId, onPick, onClose }: {
   defaultLang: SignLang
+  tenantId?: string
+  leaseTermId?: string | null
   onPick: (lang: SignLang) => void
   onClose: () => void
 }) {
@@ -32,8 +41,13 @@ export function SignRequestLangPicker({ defaultLang, onPick, onClose }: {
 
   useEffect(() => {
     let alive = true
-    getContractTranslationSettings()
-      .then(r => {
+    // 분모는 **그 계약에 실릴 절**이라 발급과 같은 조립에서 따로 가져온다. 지목이 없으면
+    // 영업장이 쓸 수 있는 전부로 떨어진다 — 캡션이 실제보다 미완으로 보일 뿐 막지는 않는다.
+    Promise.all([
+      getContractTranslationSettings(),
+      tenantId ? getContractTranslationAddenda(tenantId, leaseTermId).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([r, mine]) => {
         if (!alive) return
         // 운영 스위치가 꺼져 있으면 어느 언어에도 번역본이 안 실린다. 그때 언어마다 '번역본 없음'을
         // 다는 것은 안 쓰는 기능을 일곱 줄로 광고하는 것이라, 캡션 자체를 안 만든다.
@@ -42,7 +56,8 @@ export function SignRequestLangPicker({ defaultLang, onPick, onClose }: {
         for (const l of SIGN_LANGS) {
           const lang = asTranslationLang(l)
           if (!lang) continue   // 한국어는 정본이라 번역 대상이 아니다
-          const p = translationProgress(r.translations, r.template, lang)
+          // 분모는 **그 계약에 실릴 것**이다. 서버가 링크 발급과 같은 조립으로 골라 준다.
+          const p = translationProgress(r.translations, r.template, lang, mine ?? r.addenda)
           // 세 상태를 갈라 말한다. '비공개'와 '없음'을 한 문장으로 묶으면, 다 번역해 두고
           // 공개만 안 켠 언어에 대해 화면이 "없다"고 거짓을 말한다.
           next[l] = !p.hasEntry ? '번역본 없음'
@@ -53,7 +68,7 @@ export function SignRequestLangPicker({ defaultLang, onPick, onClose }: {
       })
       .catch(() => { /* 캡션은 보조 정보다 — 못 읽어도 언어 선택은 그대로 된다 */ })
     return () => { alive = false }
-  }, [])
+  }, [tenantId, leaseTermId])
 
   return (
     <Modal open onClose={onClose} z={280} width="sm" title="안내를 무슨 언어로 보낼까요">
