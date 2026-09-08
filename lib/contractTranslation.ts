@@ -126,6 +126,87 @@ export function translationSourceLines(template: ContractTemplate): TranslationS
   return out
 }
 
+// ── 외부 번역기 왕복 ────────────────────────────────────────────────
+//
+// 왜 있나(운영자 오더 2026-09-08). 본문이 4절 23항목이라 한 언어당 26칸 안팎이고 8언어면
+// 200칸이 넘는다. 손으로 다 치는 구조면 영업장이 끝내 안 쓴다. 그래서 전문을 한 번에 복사해
+// 번역기에 붙이고, 돌아온 결과를 줄 맞춰 되붙이는 길을 낸다.
+//
+// **짝을 맞추는 근거가 줄 번호뿐이다.** 한 줄이라도 어긋나면 번역이 통째로 밀려 엉뚱한 조항에
+// 들어간다. 종이에 실릴 문안이 밀리는 것이라 부분 반영이 가장 나쁜 결말이다. 그래서 개수가
+// 다르면 **아무것도 안 채우고 거부한다.**
+//
+// 줄바꿈을 품은 원문(2026-09-08 실측). 기본 템플릿 '3. 생활 수칙'의 항목 둘에 문장 안 줄바꿈이
+// 있다(lib/contract). 그대로 내보내면 한 문자열이 두 줄을 차지해 줄 대조가 아예 성립하지 않는다.
+// 그래서 **복사할 때 문장 안 줄바꿈을 한 칸으로 눕힌다** — 한 문자열이 반드시 한 줄이 되게 만드는
+// 것이 이 왕복의 전제다. 잃는 것은 참고용 번역본 안의 줄바꿈 하나뿐이고, 얻는 것은 조항이
+// 밀리지 않는다는 보장이다. 열쇠는 여전히 원문 문자열 그 자체라 되붙인 값은 제자리에 들어간다.
+
+/**
+ * 복사·대조에 쓰는 한 줄. 문장 안 줄바꿈을 앞뒤 들여쓰기까지 묶어 한 칸으로 눕히고 앞뒤를 다듬는다.
+ *
+ * **반환값에 줄바꿈이 없다는 것이 이 함수의 계약이다.** 줄 대조가 그 위에 선다.
+ */
+export function translationCopyLine(text: string): string {
+  return typeof text === 'string' ? text.replace(/\s*[\r\n]+\s*/g, ' ').trim() : ''
+}
+
+/**
+ * 그 언어의 번역 대상 전문 — 종이 순서대로 한 줄에 하나.
+ *
+ * 번호·머리말·빈 줄을 넣지 마라. 줄 수가 곧 열쇠라 장식 한 줄이 붙는 순간 되붙이기가 거부된다.
+ * 기대 줄 수도 여기서 나온다(applyTranslationPaste 가 같은 lines 를 센다) — 두 벌로 세면
+ * "26줄이어야 합니다"라고 적어 놓고 27줄을 복사해 주는 상태가 된다.
+ */
+export function translationCopyText(lines: readonly TranslationSourceLine[]): string {
+  return lines.map(l => translationCopyLine(l.text)).join('\n')
+}
+
+/** 되붙이기 판정. 거부는 채울 값을 아예 안 만든다 — 부분 반영이 없다는 뜻이다. */
+export type TranslationPasteResult =
+  | { ok: false; expected: number; got: number }
+  | { ok: true; filled: Record<string, string>; filledCount: number; blankCount: number; sameCount: number }
+
+/**
+ * 붙여넣은 덩어리를 줄 맞춰 판정해 **채울 값만** 돌려준다.
+ *
+ * **저장하지 않는다.** 이 함수도, 부르는 화면도 마찬가지다 — 운영자가 눈으로 보고 저장 버튼을
+ * 눌러야 반영이다. 기계 번역이 조항 자리를 옮겨 놓은 것을 사람이 한 번은 봐야 한다.
+ *
+ * 건너뛰는 줄 둘.
+ *   · **빈 줄** — 번역기가 못 옮긴 줄을 빈 줄로 두는 일이 잦다. 그것으로 이미 있는 번역을
+ *     지우면 손번역이 기계 번역의 실수로 날아간다. 그 항목의 기존 값을 그대로 둔다.
+ *   · **원문과 글자가 같은 줄** — 번역이 아니라 원문이 되돌아온 것이다. 채워 두면 '번역 없음'
+ *     폴백과 구분이 안 되어 진행 계수가 거짓말을 한다(fallbackCount 는 값이 없는 줄만 센다).
+ *
+ * 꼬리 개행은 잡음이라 걷는다. 클립보드가 덧붙이는 것이라 거부의 사유가 못 된다. 다만 마지막
+ * 줄이 실제로 비어 돌아온 경우도 함께 걷혀 개수가 모자라는데, 그때는 **거부**로 착지하므로
+ * 안전한 쪽이다(모르는 채 덜 채우는 일이 없다).
+ */
+export function applyTranslationPaste(
+  lines: readonly TranslationSourceLine[],
+  raw: string,
+): TranslationPasteResult {
+  const body = (typeof raw === 'string' ? raw : '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+$/gm, '')
+    .replace(/\n+$/, '')
+  const got = body === '' ? [] : body.split('\n')
+  if (got.length !== lines.length) return { ok: false, expected: lines.length, got: got.length }
+
+  const filled: Record<string, string> = {}
+  let blankCount = 0
+  let sameCount = 0
+  lines.forEach((l, i) => {
+    const v = (got[i] ?? '').trim()
+    if (!v) { blankCount++; return }
+    // 내보낸 그 줄과 견준다 — 원문을 눕힌 모양이 운영자가 번역기에 넘긴 실제 문자열이다.
+    if (v === translationCopyLine(l.text)) { sameCount++; return }
+    filled[l.text] = v
+  })
+  return { ok: true, filled, filledCount: Object.keys(filled).length, blankCount, sameCount }
+}
+
 // ── 해석 ────────────────────────────────────────────────────────────
 
 /** 한 언어의 해석 완료본. 사전 전체가 아니라 **결과물**이라 그대로 박제할 수 있다. */

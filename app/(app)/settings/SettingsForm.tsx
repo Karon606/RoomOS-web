@@ -48,6 +48,7 @@ import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
+  translationCopyLine, translationCopyText, applyTranslationPaste,
   type TranslationLang, type TranslationLineKind, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
@@ -62,7 +63,7 @@ import { ViewTabs } from '@/components/ui/ViewTabs'
 import type { SiteRoomCandidates } from '@/lib/siteCandidates'
 import DataButtons from '@/components/DataButtons'
 import { deactivateProperty, deletePropertyPermanently, getPropertyDeletionImpact } from '@/app/property-select/actions'
-import { Modal } from '@/components/ui/Modal'
+import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { DocVariablesOverviewCard } from './DocVariablesPanel'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
@@ -3109,6 +3110,10 @@ function ContractTranslationCard() {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [published, setPublished] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showOrphans, setShowOrphans] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteError, setPasteError] = useState<string | null>(null)
 
   useEffect(() => {
     getContractTranslationSettings()
@@ -3126,10 +3131,15 @@ function ContractTranslationCard() {
   }, [])
 
   const lines = useMemo(() => (template ? translationSourceLines(template) : []), [template])
-  const orphans = useMemo(
-    () => (template ? orphanTranslationKeys(stored, template, lang).length : 0),
-    [template, stored, lang])
+  // 열쇠와 그 번역을 함께 쥔다 — 목록이 "어떤 번역이 고아인지"를 보여주려면 둘 다 있어야 한다.
+  const orphans = useMemo(() => {
+    if (!template) return []
+    const dict = stored.langs[lang]?.dict ?? {}
+    return orphanTranslationKeys(stored, template, lang).map(k => ({ key: k, text: dict[k] ?? '' }))
+  }, [template, stored, lang])
   const translated = lines.filter(l => (draft[l.text] ?? '').trim()).length
+  // 문장 안 줄바꿈이 있는 항목 수. 복사할 때 한 줄로 눕히므로 그 사실을 안내에 적는다.
+  const flattened = useMemo(() => lines.filter(l => l.text !== translationCopyLine(l.text)).length, [lines])
 
   // 저장 안 한 입력이 있는가. 언어를 바꿀 때 그것을 조용히 버리지 않으려고 센다(§27.5).
   const dirty = useMemo(() => {
@@ -3150,6 +3160,44 @@ function ContractTranslationCard() {
     setLang(next)
     setDraft({ ...(stored.langs[next]?.dict ?? {}) })
     setPublished(stored.langs[next]?.published ?? false)
+  }
+
+  // 외부 번역기 왕복. 복사가 내보내는 줄 수와 되붙이기가 세는 줄 수가 **같은 정본**에서 나온다
+  // (lib/contractTranslation 의 translationCopyText · applyTranslationPaste 가 같은 lines 를 받는다).
+  const copyAll = async () => {
+    try {
+      await navigator.clipboard.writeText(translationCopyText(lines))
+      pushToast('success', '한국어 전문 복사됨', {
+        detail: `${lines.length}줄입니다. 번역기에 붙여 넣고 결과를 그대로 복사해 '번역 붙여넣기'에 붙여 주세요.`,
+      })
+    } catch {
+      pushToast('error', '복사하지 못했습니다. 브라우저가 클립보드를 막았습니다.')
+    }
+  }
+
+  const closePaste = () => { setPasteOpen(false); setPasteText(''); setPasteError(null) }
+
+  const applyPaste = () => {
+    const res = applyTranslationPaste(lines, pasteText)
+    if (!res.ok) {
+      // 검증 실패는 인라인이다(§27.2). 몇 줄이어야 하는데 몇 줄인지 그대로 말한다 — 번역기가
+      // 줄을 합치거나 나눈 것이라, 개수만 알면 운영자가 어디를 볼지 안다.
+      setPasteError(`${res.expected}줄이어야 하는데 ${res.got}줄입니다. 줄이 합쳐지거나 나뉜 것이라 아무 칸도 채우지 않았습니다. 번역기 결과에서 줄을 맞춘 뒤 다시 붙여 주세요.`)
+      return
+    }
+    // **화면 상태만 채운다.** 저장은 아래 저장 버튼이 한다 — 기계 번역이 옮겨 놓은 문안을
+    // 사람이 한 번은 보고 눌러야 종이에 실린다.
+    const prev = draft
+    setDraft(p => ({ ...p, ...res.filled }))
+    closePaste()
+    const skipped = [
+      res.blankCount > 0 ? `빈 줄 ${res.blankCount}건` : '',
+      res.sameCount > 0 ? `원문 그대로인 줄 ${res.sameCount}건` : '',
+    ].filter(Boolean).join(' · ')
+    pushToast('success', `${res.filledCount}칸 채움`, {
+      detail: `아직 저장 전입니다. 확인한 뒤 저장을 눌러 주세요.${skipped ? ` 건너뛴 줄: ${skipped}.` : ''}`,
+      action: { label: '적용취소', run: () => setDraft(prev) },
+    })
   }
 
   const toggleEnabled = async (on: boolean): Promise<void> => {
@@ -3220,7 +3268,7 @@ function ContractTranslationCard() {
                   <p className="text-xs font-semibold text-[var(--warm-dark)]">{SIGN_LANG_LABEL[lang]} 번역</p>
                   <p className="text-[0.6875rem] text-[var(--warm-muted)]">
                     번역 <span className="num">{translated}/{lines.length}</span>
-                    {orphans > 0 && <> · 고아 <span className="num">{orphans}</span>건</>}
+                    {orphans.length > 0 && <> · 본문에 없는 번역 <span className="num">{orphans.length}</span>건</>}
                   </p>
                 </div>
 
@@ -3235,11 +3283,49 @@ function ContractTranslationCard() {
                   </p>
                 </div>
 
-                {orphans > 0 && (
-                  // 지우지 않는다 — 조항을 되돌리면 그 번역이 저절로 되살아나야 한다(lib/contractTranslation).
-                  <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
-                    본문에서 사라진 문장의 번역이 {orphans}건 남아 있습니다. 지우지 않고 두므로 그 조항을 되돌리면 다시 쓰입니다.
-                  </p>
+                {orphans.length > 0 && (
+                  // 지우는 길을 두지 않는다 — 조항을 되돌리면 그 번역이 저절로 되살아나야 하고,
+                  // 지우면 그 되돌림이 손번역을 다시 치는 일이 된다(lib/contractTranslation 구조 규칙 4).
+                  <div className="space-y-1">
+                    <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                      계약서 본문을 고치면 그 문장의 번역이 갈 곳을 잃습니다. 지금 {orphans.length}건이 그런 번역입니다.
+                      지우지 않고 두므로 그 조항을 되돌리면 다시 쓰입니다.
+                    </p>
+                    {/* 접힘 목록 문법은 같은 파일의 '사용 중지된 서류 N건 보기'와 한 벌이다. */}
+                    <button type="button" onClick={() => setShowOrphans(v => !v)} aria-expanded={showOrphans}
+                      className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+                      {showOrphans ? '숨기기' : `본문에 없는 번역 ${orphans.length}건 보기`}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showOrphans ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
+                    {showOrphans && (
+                      <div className="divide-y divide-[var(--warm-border)]">
+                        {orphans.map(o => (
+                          <div key={o.key} className="py-2 space-y-1">
+                            <p className="text-[0.65625rem] text-[var(--warm-muted)]">본문에서 사라진 문장</p>
+                            <p className="text-xs text-[var(--warm-mid)] leading-relaxed whitespace-pre-wrap break-keep">{o.key}</p>
+                            <p className="text-xs text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap break-keep">{o.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {lines.length > 0 && (
+                  // 외부 번역기 동선. 한 언어당 26칸 안팎이라 손으로 다 치는 구조면 영업장이 안 쓴다.
+                  // 면을 하나 더 깔지 않는다 — 이 자리는 이미 --cream-soft 편집 면 안이고, 다크에서
+                  // --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28, 같은 파일 사업자등록증 미리보기 선례).
+                  <div className="space-y-2">
+                    <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                      한국어 전문을 복사해 번역기에 붙이고, 번역 결과를 그대로 복사해 되붙이면 아래 칸이 한 번에 채워집니다.
+                      줄 수가 <span className="num">{lines.length}</span>줄로 같아야 하며 다르면 아무 칸도 채우지 않습니다.
+                      {flattened > 0 && ' 문장 안에서 줄이 바뀌는 항목은 한 줄로 이어 복사합니다.'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Btn type="button" variant="secondary" size="sm" onClick={() => void copyAll()}>한국어 전문 복사</Btn>
+                      <Btn type="button" variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>번역 붙여넣기</Btn>
+                    </div>
+                  </div>
                 )}
 
                 {lines.length === 0 ? (
@@ -3260,6 +3346,11 @@ function ContractTranslationCard() {
                   </div>
                 )}
 
+                {/* 붙여넣기로 칸이 한꺼번에 차면 저장된 줄 알기 쉽다. 토스트는 6초 뒤 사라지므로
+                    저장이 남았다는 사실은 여기 남는다(디자이너 지적 2026-09-08). */}
+                {dirty && (
+                  <p className="text-xs text-[var(--warm-mid)]">저장하지 않은 변경이 있습니다.</p>
+                )}
                 <Btn type="button" variant="primary" size="md" className="w-full" onClick={() => void save()} disabled={saving}>
                   {saving ? '저장 중…' : '저장'}
                 </Btn>
@@ -3268,6 +3359,31 @@ function ContractTranslationCard() {
           )}
         </div>
       )}
+
+      {/* 되붙이기 창. 채우기만 하고 **저장은 하지 않는다** — 저장은 카드 안 저장 버튼 하나가 진다. */}
+      <Modal open={pasteOpen} onClose={closePaste} width="md" title="번역 붙여넣기"
+        subtitle={`${SIGN_LANG_LABEL[lang]} · ${lines.length}줄이어야 합니다`}
+        dirty={!!pasteText.trim()}
+        footer={(
+          <ModalFooterActions onCancel={closePaste}>
+            <Btn type="button" variant="primary" size="md" onClick={applyPaste} disabled={!pasteText.trim()}>칸 채우기</Btn>
+          </ModalFooterActions>
+        )}>
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed text-[var(--warm-muted)]">
+            번역 결과를 그대로 붙여 넣어 주세요. 줄 수가 <span className="num">{lines.length}</span>줄이어야 하며,
+            다르면 아무 칸도 채우지 않습니다. 빈 줄은 건너뛰고 그 항목의 기존 번역을 그대로 둡니다.
+            채우기만 하고 저장은 하지 않으니 확인한 뒤 저장을 눌러 주세요.
+          </p>
+          {/* 접기를 끈다 — 긴 조항이 접히면 보이는 행 수와 실제 줄 수가 달라, 몇 줄인지 눈으로
+              셀 수 없다(디자이너 지적 2026-09-08). 가로 스크롤이 생기지만 줄 수가 곧 열쇠다. */}
+          <textarea value={pasteText} rows={12} wrap="off" aria-label="번역 결과"
+            onChange={e => { setPasteText(e.target.value); setPasteError(null) }}
+            placeholder={`한 줄에 한 문장씩 ${lines.length}줄`}
+            className={`${taCls} leading-relaxed whitespace-pre overflow-x-auto`} />
+          {pasteError && <p className="text-xs leading-relaxed text-[var(--danger-fg)]">{pasteError}</p>}
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -260,9 +260,59 @@ function fnBody(src, at) {
   }
 }
 
+// ── 3단계 배선(외부 번역기 왕복·고아 목록) ──────────────────────────
+//
+//   ⓟ 복사와 되붙이기가 **같은 lines 한 벌**을 판정 정본에 넘긴다. 두 벌로 세면 창은
+//     "26줄이어야 합니다"라 적어 놓고 복사는 27줄을 내주는 상태가 된다.
+//   ⓠ 화면이 줄을 손으로 나누지 않는다. 인라인으로 두면 역주입이 안 잡히는 죽은 테스트가 된다.
+//   ⓡ 되붙이기가 **저장을 안 부른다**. 화면 상태만 채우고 운영자가 눈으로 본 뒤 저장을 눌러야
+//     종이에 실린다 — 기계 번역이 조항 자리를 옮겨 놓은 것을 사람이 한 번은 봐야 한다.
+//   ⓢ 고아 목록에 **지우는 길이 없다**. 조항을 되돌리면 그 번역이 저절로 되살아나야 하고,
+//     지우면 그 되돌림이 손번역을 다시 치는 일이 된다(1단계 결정).
+{
+  const f = 'app/(app)/settings/SettingsForm.tsx'
+  const src = read(f)
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  if (card.length < 1000) {
+    violations.push(`${f} — ContractTranslationCard 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  } else {
+    // ⓟ — 두 방향이 같은 집합을 센다.
+    if (!/translationCopyText\(lines\)/.test(card)) {
+      violations.push(`${f} — ⓟ 복사가 판정 정본에 화면과 같은 lines 를 안 넘긴다. 복사 줄 수와 기대 줄 수가 갈린다.`)
+    }
+    if (!/applyTranslationPaste\(lines,/.test(card)) {
+      violations.push(`${f} — ⓟ 되붙이기가 판정 정본에 화면과 같은 lines 를 안 넘긴다. 기대 줄 수가 복사한 줄 수와 갈린다.`)
+    }
+    // ⓠ — 손 파싱 금지. 줄 나누기·개수 대조는 lib/contractTranslation 한 자리에만 있다.
+    if (/\.split\(\s*['"`]\\n/.test(card)) {
+      violations.push(`${f} — ⓠ 화면이 줄을 손으로 나눈다. 판정은 순수 함수 정본에만 두어야 역주입이 잡힌다.`)
+    }
+    // ⓢ — 고아를 보여 주기만 한다.
+    if (!/orphanTranslationKeys\(/.test(card)) {
+      violations.push(`${f} — ⓢ 고아 목록이 정본으로 안 뽑힌다. 어떤 번역이 갈 곳을 잃었는지 화면이 말하지 못한다.`)
+    }
+    if (/삭제|\bdelete\b/.test(card)) {
+      violations.push(`${f} — ⓢ 번역본 카드에 지우는 길이 있다. 고아는 세고 보여 주기만 한다(조항을 되돌리면 되살아나야 한다).`)
+    }
+  }
+
+  // ⓡ — 되붙이기가 저장을 안 부른다.
+  const applyPaste = fnBody(src, src.indexOf('const applyPaste ='))
+  if (applyPaste.length < 200) {
+    violations.push(`${f} — applyPaste 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  } else {
+    if (/saveContractTranslationLang|setContractTranslationEnabled/.test(applyPaste)) {
+      violations.push(`${f} — ⓡ 되붙이기가 저장을 부른다. 확인 없이 종이에 실릴 문안이 바뀐다.`)
+    }
+    if (!/setDraft\(/.test(applyPaste)) {
+      violations.push(`${f} — ⓡ 되붙이기가 화면 입력칸을 안 채운다. 채우는 것이 이 창의 유일한 일이다.`)
+    }
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0)')

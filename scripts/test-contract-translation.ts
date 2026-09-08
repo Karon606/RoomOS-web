@@ -4,9 +4,10 @@ import {
   resolveContractTranslation, orphanTranslationKeys, withTranslationEnabled, mergeTranslationLang,
   TRANSLATION_NOTICE, translationNoticeBi, TRANSLATION_NOTICE_ADDENDUM, contractTranslationAddendum,
   asResolvedContractTranslation, translationProgress, TRANSLATION_LANG_ENDONYM,
+  translationCopyLine, translationCopyText, applyTranslationPaste,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
-import { appendSubLeaseAddendum, type ContractTemplate } from '../lib/contract'
+import { appendSubLeaseAddendum, DEFAULT_CONTRACT_TEMPLATE, type ContractTemplate } from '../lib/contract'
 import { printedFacts } from '../lib/contractPrintedFacts'
 
 let pass = 0
@@ -334,6 +335,90 @@ eq('한국어는 없다(정본이라 번역 대상이 아니다)',
   Object.keys(TRANSLATION_LANG_ENDONYM).includes('ko'), false)
 // 운영자용 라벨을 쪼개 쓰지 않는다는 근거 — 자기 이름은 라벨의 부분 문자열일 뿐 규칙이 아니다.
 eq('베트남어 자기 이름', TRANSLATION_LANG_ENDONYM.vi, 'Tiếng Việt')
+
+// ── 3단계. 외부 번역기 왕복 ─────────────────────────────────
+//
+// 짝을 맞추는 근거가 줄 번호뿐이라 이 블록이 지키는 것은 하나다 — **어긋나면 아무것도 안 채운다.**
+// 부분 반영이 가장 나쁜 결말이다. 번역이 통째로 한 칸 밀려 엉뚱한 조항에 들어가고, 그 종이가
+// 나간 뒤에는 어디서부터 밀렸는지 아무도 모른다.
+
+// 한 줄로 눕히는 규칙 자체.
+eq('문장 안 줄바꿈은 한 칸으로 눕는다', translationCopyLine('앞줄입니다.\n  뒷줄입니다.'), '앞줄입니다. 뒷줄입니다.')
+eq('빈 줄이 겹쳐도 한 칸', translationCopyLine('가\n\n나'), '가 나')
+eq('CRLF 도 한 칸', translationCopyLine('가\r\n나'), '가 나')
+eq('앞뒤 공백은 다듬는다', translationCopyLine('  가운데  '), '가운데')
+eq('문장 안 여러 칸은 그대로 둔다(원문 대조의 기준이라 건드리면 안 된다)',
+  translationCopyLine('가  나'), '가  나')
+
+{
+  const lines = translationSourceLines(T)
+  const copyLines = translationCopyText(lines).split('\n')
+  const paste = (raw: string) => applyTranslationPaste(lines, raw)
+  /** 성공만 골라 읽는다 — 거부인데 값을 읽으면 크래시가 아니라 undefined 로 실패해야 보인다. */
+  const okOf = (r: ReturnType<typeof applyTranslationPaste>) => (r.ok ? r : null)
+  const notOk = (r: ReturnType<typeof applyTranslationPaste>) => (r.ok ? null : r)
+
+  // 복사 문자열의 줄 수가 곧 기대 줄 수다. 둘이 갈리면 "7줄이어야 합니다"라 적어 놓고 8줄을
+  // 복사해 주는 상태가 된다 — 같은 lines 한 벌에서 나온다는 것을 여기서 못박는다.
+  eq('복사 줄 수 = 번역 대상 수', copyLines.length, lines.length)
+  eq('기대 줄 수도 같은 정본에서 나온다', notOk(paste(''))?.expected, copyLines.length)
+  eq('번호·머리말·빈 줄이 없다', copyLines.filter(s => !s.trim()).length, 0)
+  eq('첫 줄은 계약서 제목', copyLines[0], T.title)
+  eq('마지막 줄은 서약문(종이 순서 그대로)', copyLines[6], T.oathText)
+
+  // 거부. 모자라도 남아도 아무것도 안 채운다.
+  const short = paste(copyLines.slice(0, 6).map((_, i) => `T${i}`).join('\n'))
+  eq('줄이 모자라면 거부', short.ok, false)
+  eq('몇 줄이어야 하는데 몇 줄인지 말한다', [notOk(short)?.expected, notOk(short)?.got], [7, 6])
+  eq('거부는 채울 값을 아예 안 만든다', 'filled' in short, false)
+  const long = paste([...copyLines.map((_, i) => `T${i}`), '남는 줄'].join('\n'))
+  eq('줄이 남아도 거부', long.ok, false)
+  eq('남는 개수도 그대로', [notOk(long)?.expected, notOk(long)?.got], [7, 8])
+  eq('빈 덩어리는 0줄로 거부(빈 사전으로 덮지 않는다)', notOk(paste('   '))?.got, 0)
+
+  // 줄 수가 맞으면 채운다. 열쇠는 눕히기 전 원문이라 값이 제자리에 들어간다.
+  const all = paste(copyLines.map((_, i) => `T${i}`).join('\n'))
+  eq('줄 수가 맞으면 채운다', okOf(all)?.filledCount, 7)
+  eq('열쇠는 눕히기 전 원문이다', okOf(all)?.filled[T.title], 'T0')
+  eq('마지막 줄도 제자리', okOf(all)?.filled[T.oathText], 'T6')
+  eq('앞뒤 공백은 다듬어 담는다',
+    okOf(paste(copyLines.map((_, i) => `  T${i}\t`).join('\n')))?.filled[T.title], 'T0')
+  eq('꼬리 개행은 잡음이라 거부 사유가 아니다',
+    okOf(paste(copyLines.map((_, i) => `T${i}`).join('\n') + '\n'))?.filledCount, 7)
+  eq('CRLF 로 와도 같은 판정', okOf(paste(copyLines.map((_, i) => `T${i}`).join('\r\n')))?.filledCount, 7)
+
+  // 빈 줄은 건너뛴다 — 번역기가 못 옮긴 줄로 이미 있는 손번역을 지우면 안 된다.
+  const blank = paste(copyLines.map((_, i) => (i === 1 ? '' : `T${i}`)).join('\n'))
+  eq('빈 줄은 채우지 않는다(그 항목의 기존 값을 유지)', okOf(blank)?.filled[lines[1]?.text ?? ''], undefined)
+  eq('빈 줄을 센다', okOf(blank)?.blankCount, 1)
+  eq('나머지는 채운다', okOf(blank)?.filledCount, 6)
+  eq('공백만 있는 줄도 빈 줄이다',
+    okOf(paste(copyLines.map((_, i) => (i === 1 ? '   ' : `T${i}`)).join('\n')))?.blankCount, 1)
+
+  // 원문과 글자가 같은 줄은 번역이 아니다. 채워 두면 '번역 없음' 폴백과 구분이 안 된다.
+  const same = paste(copyLines.map((s, i) => (i === 0 ? s : `T${i}`)).join('\n'))
+  eq('원문과 같은 줄은 안 채운다', okOf(same)?.filled[T.title], undefined)
+  eq('그 줄을 원문으로 센다', okOf(same)?.sameCount, 1)
+  eq('나머지 여섯은 채운다', okOf(same)?.filledCount, 6)
+  eq('빈 줄과 원문 줄을 따로 센다',
+    [okOf(paste(['', copyLines[1] ?? '', 'T2', 'T3', 'T4', 'T5', 'T6'].join('\n')))?.blankCount,
+      okOf(paste(['', copyLines[1] ?? '', 'T2', 'T3', 'T4', 'T5', 'T6'].join('\n')))?.sameCount], [1, 1])
+}
+
+// 줄바꿈을 품은 원문(2026-09-08 실측 — 기본 템플릿 '3. 생활 수칙'의 항목 둘).
+// 이 왕복의 전제가 '한 문자열 = 한 줄'이라, 그 전제가 실제 종이에서도 서는지 여기서 본다.
+{
+  const lines = translationSourceLines(DEFAULT_CONTRACT_TEMPLATE)
+  eq('기본 템플릿에 줄바꿈을 품은 항목이 있다', lines.filter(l => /[\r\n]/.test(l.text)).length > 0, true)
+  const copyLines = translationCopyText(lines).split('\n')
+  eq('그래도 복사는 한 문자열이 한 줄', copyLines.length, lines.length)
+  eq('복사한 줄에 줄바꿈이 하나도 없다', copyLines.filter(s => /[\r\n]/.test(s)).length, 0)
+  eq('빈 줄도 안 생긴다', copyLines.filter(s => !s.trim()).length, 0)
+  // 왕복 항등 — 내보낸 그대로 되붙이면 한 칸도 안 채운다(전부 '원문 그대로'로 걸린다).
+  const back = applyTranslationPaste(lines, copyLines.join('\n'))
+  eq('전문을 그대로 되붙이면 한 칸도 안 채운다', back.ok ? back.filledCount : -1, 0)
+  eq('전부 원문 그대로로 센다', back.ok ? back.sameCount : -1, lines.length)
+}
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.error(`  - ${f}`)
