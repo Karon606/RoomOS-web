@@ -141,23 +141,20 @@ const stripBullet = stripClauseBullet
 // **강조** → terracotta hl (escape 후 적용)
 const highlight = (s: string) => escape(s).replace(/\*\*(.+?)\*\*/g, '<span class="hl">$1</span>')
 
-export function buildContractPrintHtml(d: PrintContractData): string {
-  // 보증금/청소비 동적 라벨 — ContractView 와 동일 규칙
-  const dep = d.lease?.depositAmount ?? 0
+/**
+ * 이 계약서의 조항 치환 재료 — `{{변수}}` 에 들어갈 값들.
+ *
+ * **인쇄 조판 밖으로 뽑아 둔 이유**(2026-09-08). 발급 박제가 같은 재료를 들고 있어야 발급 상세의
+ * '전문 보기'가 종이와 같은 값으로 조항을 그린다. 종전에는 이 블록이 buildContractPrintHtml 안에
+ * 인라인이라 박제 쪽에서 쓸 길이 없었고, 그래서 전문 보기에 `{{청소비조항}}` 이 글자 그대로 떴다.
+ * **규칙을 베끼면 갈린다** — 종이와 박제가 이 함수 하나를 함께 쓴다.
+ *
+ * 담기는 값은 종전과 한 글자도 다르지 않다. 여기에 새 열쇠를 더하지 마라 — 본문에 그 이름을
+ * 적어 둔 영업장의 종이가 이 기능 전과 달라진다(지금 그 자리는 자리표시자가 그대로 찍힌다).
+ */
+export function contractPrintVars(d: PrintContractData): Record<string, string> {
   const cln = d.lease?.cleaningFee ?? 0
-  let depositLabel = '입실 보증금'
-  let depositEn = 'Deposit'
-  let depositValue = ''
-  if (dep === 0 && cln > 0) {
-    depositLabel = '청소비'; depositEn = 'Cleaning Fee'
-    depositValue = `${cln.toLocaleString()}원`
-  } else if (dep > 0 && cln > 0) {
-    depositValue = `${dep.toLocaleString()}원<span class="sub"> (중 청소비 ${cln.toLocaleString()}원)</span>`
-  } else if (dep > 0) {
-    depositValue = `${dep.toLocaleString()}원`
-  }
-
-  const vars: Record<string, string> = {
+  return {
     name: d.tenant.name,
     phone: d.tenant.primaryPhone ?? '',
     birth: fmtDate(d.tenant.birthdate),
@@ -177,6 +174,27 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     // 애초에 그 경우 절 자체가 안 붙는다.
     단기요금표: d.shortStayRateTable ?? '',
   }
+}
+
+export function buildContractPrintHtml(d: PrintContractData): string {
+  // 보증금/청소비 동적 라벨 — ContractView 와 동일 규칙
+  const dep = d.lease?.depositAmount ?? 0
+  const cln = d.lease?.cleaningFee ?? 0
+  let depositLabel = '입실 보증금'
+  let depositEn = 'Deposit'
+  let depositValue = ''
+  if (dep === 0 && cln > 0) {
+    depositLabel = '청소비'; depositEn = 'Cleaning Fee'
+    depositValue = `${cln.toLocaleString()}원`
+  } else if (dep > 0 && cln > 0) {
+    depositValue = `${dep.toLocaleString()}원<span class="sub"> (중 청소비 ${cln.toLocaleString()}원)</span>`
+  } else if (dep > 0) {
+    depositValue = `${dep.toLocaleString()}원`
+  }
+
+  // 치환 재료는 발급 박제와 **같은 함수**에서 나온다(contractPrintVars) — 두 벌이면 종이와
+  // 발급 상세 전문 보기가 언젠가 다른 값을 그린다.
+  const vars: Record<string, string> = contractPrintVars(d)
 
   // 조항은 **문서 순서 그대로 한 흐름**으로 뱉고, 2단 나눔은 CSS(column-count)가 한다.
   //

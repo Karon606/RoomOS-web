@@ -1089,6 +1089,12 @@ export type ContractTranslationSettings = {
   translations: ContractTranslations
   /** 번역 대상 목록에 함께 넣을 가변 절. 무엇이 담기는지는 아래 함수 주석의 분모 규칙을 본다. */
   addenda: SubLeaseAddendum[]
+  /**
+   * 환불 조항 자동 표시 토글. 환불 규정은 절이 아니라 **변수값**이라(lib/contract 의
+   * buildRefundClause) 이 값이 켜져 있고 본문에 자리가 있을 때만 번역 대상 줄이 선다.
+   * 넘기지 않으면 종이에 실리는 문장을 번역할 칸이 아예 안 서서 그 문단만 한국어로 남는다.
+   */
+  refundClauseInContract: boolean
 }
 
 /**
@@ -1112,12 +1118,15 @@ export async function getContractTranslationSettings(): Promise<ContractTranslat
       contractTemplate: true, contractTranslations: true,
       subLeaseAddendum: true, roomScheduleAddendum: true,
       shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
+      refundClauseInContract: true,
     },
   })
   return {
     template: (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE,
     translations: parseContractTranslations(property?.contractTranslations),
     addenda: propertyContractAddenda(property, parseShortStayPolicy(property?.shortStayPolicy).enabled),
+    // 미설정은 켜짐이다 — 종이가 그 값을 읽는 규칙과 같다(lib/contract 의 resolveSignedBody).
+    refundClauseInContract: property?.refundClauseInContract ?? true,
   }
 }
 

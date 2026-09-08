@@ -5267,6 +5267,17 @@ export type IssuedContractSnapshot = {
     disposalSignedAt: string | null
   }
   facts: Record<string, unknown>        // lib/contractPrintedFacts 15축 사영
+  /**
+   * 이 종이가 조항의 `{{변수}}` 에 넣은 값들 — 발급 상세의 '전문 보기'가 번역본 조항을 종이와
+   * 같은 값으로 그리는 재료다(lib/contractPrintHtml 의 contractPrintVars).
+   *
+   * **facts 밖이다.** 그 축은 드리프트 비교가 통째로 견주는 JSON 이라, 모양이 바뀌면 이미 나간
+   * 링크와 발급본 전건이 내용 변화 없이 드리프트로 뜬다. 이 값은 비교에 안 쓰고 표시에만 쓴다.
+   *
+   * **번역본이 실린 발급본에만 있다**(옵셔널). 없으면 옛 발급본이거나 번역본을 안 쓴 발급본이고,
+   * 그때는 치환할 재료가 없다는 사실을 화면이 한 줄로 말한다(지어내지 않는다).
+   */
+  translationVars?: Record<string, string>
 }
 
 export type IssuedContractDetail = {

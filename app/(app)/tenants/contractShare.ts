@@ -401,10 +401,14 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     // 가변 절은 **그 계약에 실린 것만** 넘긴다(contractAddendaForTranslation 이 종이와 같은
     // 정본으로 고른다). 종이에 없는 절이 번역본에 서면 조항 번호가 통째로 밀려, 입주자가 읽은
     // "3조 2항"이 종이의 다른 줄을 가리킨다 — 그 순간 이 박제는 증거이기를 그만둔다.
+    //
+    // 환불 조항 토글도 **그 계약서의 값 그대로** 넘긴다. 환불 규정은 절이 아니라 변수값이라
+    // 종이가 그 문장을 넣을 때만 번역 대상 줄이 서고 번역된 문안이 박제에 담긴다 — 조건이
+    // 갈리면 종이에 안 실리는 문장이 번역본에 서거나, 실리는데 한국어로만 남는다.
     const translationLang = asTranslationLang(signLang)
     const translation = translationLang
       ? resolveContractTranslation(property?.contractTranslations, snapshot.template, translationLang,
-        contractAddendaForTranslation(snapshot))
+        contractAddendaForTranslation(snapshot), snapshot.refundClauseInContract)
       : null
 
     // 활성 링크 재사용(getOrCreate) — 같은 계약(leaseTermId)만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
@@ -611,7 +615,8 @@ export async function checkContractShareDrift(tenantId: string, leaseTermId?: st
     const currentTranslation = translationLang
       ? resolveContractTranslation(
         (await prisma.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } }))?.contractTranslations,
-        current.template, translationLang, contractAddendaForTranslation(current))
+        current.template, translationLang, contractAddendaForTranslation(current),
+        current.refundClauseInContract)
       : null
 
     // 인쇄 사실 사영끼리 통비교 — 계약서에 찍히는 값이 하나라도 다르면 드리프트다.

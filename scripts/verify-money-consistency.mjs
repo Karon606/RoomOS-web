@@ -581,10 +581,13 @@ if (!/roomStillOccupied\(/.test(tenantsActions)) {
   // 'const vars' 부터 객체 리터럴이 닫힐 때까지를 중괄호 깊이로 떠낸다.
   // 처음엔 정규식으로 잡으려다 ContractView 의 useMemo<Record<string,string>> 제네릭에서 빗나가
   // **null 을 돌려주고 대조 자체가 조용히 건너뛰어졌다**(역주입에서 발견). 깊이 추적이 안전하다.
-  const keysOf = (src) => {
-    const at = src.indexOf('const vars')
+  // 표가 서로 다른 자리에 산다. 인쇄 쪽은 2026-09-08 조판 밖으로 나갔다(contractPrintVars) —
+  // 발급 박제가 같은 재료를 써야 발급 상세의 '전문 보기'가 종이와 같은 값을 그린다.
+  // 대조하는 것은 종전과 같이 **화면과 종이의 치환 열쇠 집합**이다.
+  const keysOf = (src, anchor, from) => {
+    const at = src.indexOf(anchor)
     if (at < 0) return null
-    const open = src.indexOf('{', src.indexOf('=', at))
+    const open = src.indexOf('{', src.indexOf(from, at))
     if (open < 0) return null
     let lvl = 0, end = -1
     for (let i = open; i < src.length; i++) {
@@ -598,7 +601,8 @@ if (!/roomStillOccupied\(/.test(tenantsActions)) {
     if (/cleaningFeeVars\(/.test(body)) for (const k of ['청소비', '청소비조항', '청소비공제']) set.add(k)
     return set
   }
-  const pk = keysOf(printSrc), vk = keysOf(viewSrc)
+  const pk = keysOf(printSrc, 'export function contractPrintVars', 'return')
+  const vk = keysOf(viewSrc, 'const vars', '=')
   // 못 읽었으면 통과가 아니라 위반이다 — 조용히 건너뛰는 그물은 없는 것과 같다
   if (!pk || !vk) violations.push('[소스] 계약서 변수 표를 읽지 못했다 — 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
   if (pk && vk) {

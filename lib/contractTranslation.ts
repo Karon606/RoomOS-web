@@ -20,7 +20,7 @@
 // 발급 피커에서 고른 언어의 번역본이 없는 상태가 생긴다. **ko 는 정본이라 번역 대상이 아니다.**
 
 import { type SignLang, SIGN_LANGS } from '@/lib/signGuideText'
-import { stripClauseBullet, type ContractTemplate, type SubLeaseAddendum } from '@/lib/contract'
+import { stripClauseBullet, buildRefundClause, type ContractTemplate, type SubLeaseAddendum } from '@/lib/contract'
 
 /** 번역 대상 언어. 한국어는 정본이므로 여기서 빠진다. */
 export type TranslationLang = Exclude<SignLang, 'ko'>
@@ -88,8 +88,13 @@ export function parseContractTranslations(raw: unknown): ContractTranslations {
 // 편집기가 펼치는 목록이자 사전의 열쇠 집합이다. **두 벌을 만들지 마라** — 편집기가 보여준 칸과
 // 해석이 세는 칸이 갈리면 "번역 3/5" 인데 종이에는 넷이 원문으로 남는 상태가 된다.
 
-/** 한 줄의 성격. 편집기가 원문 위에 무엇인지 적어 주는 데 쓴다. */
-export type TranslationLineKind = 'title' | 'sectionTitle' | 'item' | 'oath'
+/**
+ * 한 줄의 성격. 편집기가 원문 위에 무엇인지 적어 주는 데 쓴다.
+ *
+ * 'var' 만 규칙이 다르다. 다른 넷은 **빈 칸 = 한국어 원문**인데 'var' 는 **빈 칸 = 권장 번역**이다
+ * (아래 '변수 줄' 절). 화면이 그 차이를 말해야 하므로 성격이 따로 서 있다.
+ */
+export type TranslationLineKind = 'title' | 'sectionTitle' | 'item' | 'oath' | 'var'
 
 export type TranslationSourceLine = {
   kind: TranslationLineKind
@@ -142,6 +147,95 @@ function hasTranslatableText(text: string): boolean {
   return stripClauseBullet(text).replace(/\{\{[^}]+\}\}/g, '').trim() !== ''
 }
 
+// ── 변수 줄(환불 규정) ──────────────────────────────────────────────
+//
+// 왜 있나(운영자 오더 2026-09-08). 환불 규정은 절도 항목도 아니고 **변수값**이다 —
+// 본문에는 `{{환불규정}}` 자리만 있고 문장은 코드가 만든다(lib/contract 의 buildRefundClause,
+// 종이가 lib/contractPrintHtml 의 vars 로 넣는다). 그래서 번역 대상 목록에 문장으로 서 있지
+// 않았고, 다 번역한 계약서에서도 그 한 문단만 한국어로 남았다.
+//
+// **막지 않고 유도한다**(운영자 오더 — "우선 추천이나 유도하도록 하고 만약 다르게 한다면 경고").
+// 권장 문안을 코드가 들고 있고 빈 칸이면 그것이 쓰인다. 운영자가 제 문안을 적으면 그대로 나가되
+// 경고가 선다. 미리 채우지 않는 이유는 검토 없이 저장되기 때문이다.
+//
+// **이 줄만 '빈 칸 = 권장 번역'이다.** 다른 줄은 빈 칸이면 한국어 원문이 남는다. 규칙이 갈리므로
+// 화면이 그 차이를 라벨과 캡션으로 말해야 한다(TranslationLineKind 의 'var').
+
+/** 종이가 이 문장을 넣는 자리. 본문에 이 자리가 없으면 토글을 켜도 아무 데도 안 나온다. */
+export const REFUND_VAR_PLACEHOLDER = '{{환불규정}}'
+
+/** 그 변수의 이름 — 박제 표식(customVars)과 종이 vars 의 열쇠가 같은 문자열이다. */
+export const REFUND_VAR_NAME = '환불규정'
+
+/** 이 줄의 사전 열쇠. 다른 줄과 같은 규칙이다 — 열쇠는 한국어 원문 문자열 그 자체다. */
+export function refundTranslationKey(): string {
+  return buildRefundClause()
+}
+
+/**
+ * 권장 번역. **코드 사전이다** — 운영자 입력이 아니다.
+ *
+ * 공정거래위원회 기준 문구라 뜻이 어긋나면 분쟁에서 설명 부담이 생긴다. 그래서 문안을 코드가
+ * 들고 있고, 빈 칸이면 이것이 쓰인다. ko 는 원문(buildRefundClause)이라 여기 없다.
+ *
+ * Record 전량 선언이다(TRANSLATION_NOTICE 와 같은 이유) — 언어가 늘었는데 문안을 안 채우면
+ * tsc 가 컴파일을 막는다. 그것이 누락 감지망이다.
+ */
+export const RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string> = {
+  en: 'Early move-out refund = total paid − (daily rate × days stayed) − penalty (10% of the remainder); daily rate = monthly fee / 30.',
+  vi: 'Hoàn trả sớm = tổng đã trả − (phí ngày × số ngày ở) − phạt (10% phần còn lại); phí ngày = phí tháng / 30.',
+  bn: 'ফেরত = মোট পরিশোধ − (দৈনিক হার × থাকার দিন) − জরিমানা (অবশিষ্টের ১০%); দৈনিক হার = মাসিক ফি / ৩০।',
+  ru: 'Возврат = оплачено − (дневная ставка × прожитые дни) − неустойка (10% остатка); ставка = месячная плата / 30.',
+  ja: '返金額 = 総支払額 −（1日利用料 × 実利用日数）− 違約金（残余金額の10%）、1日利用料 = 月額 / 30。',
+  zh: '退款 = 总付款额 −（每日费用 × 实际入住天数）− 违约金（剩余金额的10%）；每日费用 = 月费 / 30。',
+  zht: '退款 = 總付款額 −（每日費用 × 實際入住天數）− 違約金（剩餘金額的10%）；每日費用 = 月費 / 30。',
+}
+
+/**
+ * 그 값이 '직접 번역'인가 — 값이 있고 권장 문안과 다르다.
+ *
+ * **글자 비교·유사도 판정을 만들지 마라**(운영자 오더). 여기 있는 것은 권장 문안과의 동일성
+ * 하나뿐이다. 뜻이 얼마나 비슷한지 재려 들면 오탈자마다 소음이 나고, 정작 뜻이 뒤집힌 번역은
+ * 글자가 비슷해 통과한다.
+ *
+ * 편집기 경고·저장 비우기·박제 표식이 **이 함수 하나**를 본다. 세 곳이 각자 재면 화면은
+ * "권장과 다르다"고 경고하는데 저장은 권장과 같다고 칸을 비우는 상태가 된다.
+ */
+export function isCustomRefundTranslation(lang: TranslationLang, value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false
+  return value.trim() !== RECOMMENDED_REFUND_TRANSLATION[lang]
+}
+
+/**
+ * 본문 어딘가에 `{{환불규정}}` 자리가 있는가.
+ *
+ * **걷어낸 줄까지 본다.** 줄 전체가 자리표시자인 항목은 번역 대상에서 빠지지만
+ * (hasTranslatableText) 종이에는 그 값이 그대로 들어간다. 대상 목록만 훑으면 그런 본문에서
+ * 칸이 안 서고, 종이의 그 문단만 영영 한국어로 남는다.
+ */
+function hasRefundVarSlot(template: ContractTemplate, addenda?: readonly SubLeaseAddendum[]): boolean {
+  const all: unknown[] = [template?.title, template?.oathText]
+  for (const s of Array.isArray(template?.sections) ? template.sections : []) {
+    all.push(s?.title, ...(Array.isArray(s?.items) ? s.items : []))
+  }
+  for (const a of addenda ?? []) {
+    if (!a) continue
+    all.push(a.title, ...(Array.isArray(a.items) ? a.items : []))
+  }
+  return all.some(s => typeof s === 'string' && translationPlaceholders(s).includes(REFUND_VAR_PLACEHOLDER))
+}
+
+/**
+ * 번역본이 `{{환불규정}}` 자리에 넣을 값 — **종이와 같은 모양**이다.
+ *
+ * 앞 한 칸이 문장을 잇는다(lib/contractPrintHtml 의 `' ' + buildRefundClause()`). 칸을 빼면
+ * 앞 문장에 그대로 붙어 "…따릅니다.Early move-out refund" 가 된다. 조판 규칙이 두 벌이면
+ * 종이와 카드가 그 한 칸에서 갈린다.
+ */
+function refundVarValue(text: string): string {
+  return ' ' + text
+}
+
 /**
  * 한국어 템플릿에서 번역할 문자열을 **종이 순서대로** 뽑는다(제목 · 절 제목 · 항목 · 서약문).
  *
@@ -155,10 +249,14 @@ function hasTranslatableText(text: string): boolean {
  *   열쇠다(lib/contract 의 contractAddendaForTranslation 이 그 목록의 정본이다).
  *   무엇을 넘길지는 부르는 쪽이 정한다. 편집기는 영업장이 쓸 수 있는 전부를, 발급·피커는
  *   그 계약에 실릴 것만 넘긴다 — **세는 함수는 하나이고 입력만 다르다.**
+ * @param refundClauseInContract 환불 조항 자동 표시 토글. 종이가 그 문장을 넣는 조건과
+ *   **같은 조건**일 때만 변수 줄이 선다(토글 + 본문에 자리). 조건이 갈리면 종이에 안 실리는
+ *   문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.
  */
 export function translationSourceLines(
   template: ContractTemplate,
   addenda?: readonly SubLeaseAddendum[],
+  refundClauseInContract?: boolean,
 ): TranslationSourceLine[] {
   const out: TranslationSourceLine[] = []
   const seen = new Set<string>()
@@ -184,6 +282,9 @@ export function translationSourceLines(
     for (const line of Array.isArray(a.items) ? a.items : []) push('item', line, sections.length + k)
   })
   push('oath', template.oathText)
+  // 변수 줄은 맨 끝이다. 절이 아니라 조항 **안에** 들어가는 값이라 종이 순서에 제 자리가 없고,
+  // 절 사이에 끼우면 그 뒤 줄이 밀려 복사·되붙이기의 줄 대조가 흔들린다.
+  if (refundClauseInContract && hasRefundVarSlot(template, addenda)) push('var', refundTranslationKey())
   return out
 }
 
@@ -317,6 +418,24 @@ export type ResolvedContractTranslation = {
    * 종이에 없는 절이 번역본에 서면 그 아래 번호가 통째로 밀려 증거가 거짓이 된다.
    */
   addenda?: { title: string; items: string[] }[]
+  /**
+   * 이 번역본이 조항 안 `{{변수}}` 자리에 덮어 쓸 값. 지금은 환불 규정 하나다.
+   *
+   * 본문 컴포넌트가 **종이 vars 위에** 이것을 얹는다 — 안 얹으면 번역본 안에서 그 문단만
+   * 한국어로 남는다. 값은 종이와 같은 모양이라 앞 한 칸이 붙어 있다(refundVarValue).
+   *
+   * **비면 칸 자체가 없다**(옵셔널). addenda 칸과 같은 규칙이다 — 인쇄 사실 축이 이 객체를
+   * 통비교하는 JSON 이라, 늘 담으면 이 칸을 모르는 옛 박제가 내용 변화 없이 드리프트로 뜬다.
+   */
+  vars?: { 환불규정: string }
+  /**
+   * 그중 운영자가 **직접 번역한** 변수 이름. 권장 문안을 그대로 쓴 것과 가르는 표식이다.
+   *
+   * 발급 상세가 이 표식으로 "환불 규정 직접 번역"을 한 줄 덧붙인다 — 나중에 "그 종이의
+   * 환불 문구가 왜 공정위 기준과 다른가"를 물을 때 답이 박제 안에 있어야 한다.
+   * 위와 같은 이유로 **비면 칸이 없다.**
+   */
+  customVars?: '환불규정'[]
   /** 사전에 값이 없어 한국어 원문이 그대로 남은 문자열 수. */
   fallbackCount: number
   /** 번역 대상 문자열 총수. fallbackCount 만으로는 그 종이가 얼마나 번역됐는지 알 수 없다. */
@@ -336,12 +455,15 @@ export type ResolvedContractTranslation = {
  *
  * @param addenda **그 계약에 실린** 가변 절의 치환 전 문안. 넘긴 것만 번역본에 선다 —
  *   종이에 없는 절을 세우면 조항 번호가 밀린다(위 ResolvedContractTranslation 주석).
+ * @param refundClauseInContract 그 계약서의 환불 조항 자동 표시 여부. 종이와 같은 조건일 때만
+ *   변수 줄이 서고 vars 가 담긴다(translationSourceLines).
  */
 export function resolveContractTranslation(
   raw: unknown,
   template: ContractTemplate,
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
+  refundClauseInContract?: boolean,
 ): ResolvedContractTranslation | null {
   const parsed = parseContractTranslations(raw)
   if (!parsed.enabled) return null
@@ -350,9 +472,11 @@ export function resolveContractTranslation(
 
   const dict = entry.dict
   // 총수·미번역 수는 편집기가 세는 것과 **같은 집합**에서 나온다(translationSourceLines).
-  const lines = translationSourceLines(template, addenda)
+  const lines = translationSourceLines(template, addenda, refundClauseInContract)
   let fallbackCount = 0
-  for (const l of lines) if (dict[l.text] === undefined) fallbackCount++
+  // 변수 줄은 비어 있어도 한국어가 안 남는다 — 권장 번역이 그 자리에 선다. 폴백으로 세면
+  // 다 번역한 종이가 영영 "원문 한 줄 남음"으로 보이고, 그 숫자가 박제에 그대로 얼어붙는다.
+  for (const l of lines) if (l.kind !== 'var' && dict[l.text] === undefined) fallbackCount++
 
   // 문자열 치환은 사전 조회 하나뿐이다. {{변수}} 는 원문 모양 그대로 남는다 — 이 함수는
   // 무엇을 보여줄지를 정하고, 변수 값을 넣는 것은 종이를 그리는 쪽의 일이다.
@@ -368,12 +492,22 @@ export function resolveContractTranslation(
     items: (Array.isArray(a.items) ? a.items : []).map(tr),
   }))
 
+  // 변수 줄의 결과. **빈 칸이면 권장 번역이다** — 다른 줄과 규칙이 갈리는 유일한 자리다.
+  // 줄이 안 섰으면(토글 꺼짐·본문에 자리 없음) 종이에도 그 문장이 안 들어가므로 칸도 안 만든다.
+  const refundLine = lines.find(l => l.kind === 'var')
+  const refundSaved = refundLine ? dict[refundLine.text] : undefined
+  const refundText = refundLine ? refundSaved ?? RECOMMENDED_REFUND_TRANSLATION[lang] : undefined
+
   return {
     lang,
     title: tr(template.title),
     sections,
     // 비면 칸을 안 만든다 — 늘 담으면 특약 없는 링크 전건이 허위 드리프트가 된다.
     ...(addendaOut.length ? { addenda: addendaOut } : {}),
+    // 실제로 나간 문안을 담는다(권장이든 직접 번역이든). 위와 같은 이유로 없으면 칸도 없다.
+    ...(refundText !== undefined ? { vars: { 환불규정: refundVarValue(refundText) } } : {}),
+    // 직접 번역일 때만 표식을 남긴다 — 권장을 그대로 쓴 것과 갈라 말해야 나중에 답할 수 있다.
+    ...(isCustomRefundTranslation(lang, refundSaved) ? { customVars: ['환불규정' as const] } : {}),
     oathText: tr(template.oathText),
     fallbackCount,
     totalCount: lines.length,
@@ -394,6 +528,7 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const s = raw as {
     lang?: unknown; title?: unknown; sections?: unknown; addenda?: unknown; oathText?: unknown
+    vars?: unknown; customVars?: unknown
     fallbackCount?: unknown; totalCount?: unknown
   }
   const lang = asTranslationLang(s.lang)
@@ -409,6 +544,13 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
     }
   })
   const addenda = secs(s.addenda)
+  // 변수 값·표식도 **얼어 있는 그대로** 읽는다. 지금 권장 문안으로 채우면 그 발급본이 실제로
+  // 보여준 문안과 화면이 갈리고, 그 순간 박제는 증거이기를 그만둔다.
+  const varsRaw = (s.vars && typeof s.vars === 'object' && !Array.isArray(s.vars)
+    ? (s.vars as { 환불규정?: unknown }) : null)
+  const refundVar = typeof varsRaw?.환불규정 === 'string' ? varsRaw.환불규정 : undefined
+  const customVars = (Array.isArray(s.customVars) ? s.customVars : [])
+    .filter((x): x is '환불규정' => x === '환불규정')
   return {
     lang,
     title: str(s.title),
@@ -416,10 +558,32 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
     // 칸이 없던 박제(특약 없는 계약·이 칸 이전의 옛 기록)는 여기서도 칸이 안 생긴다 —
     // 빈 배열을 만들면 그 박제를 다시 직렬화할 때 바이트가 달라진다.
     ...(addenda.length ? { addenda } : {}),
+    ...(refundVar !== undefined ? { vars: { 환불규정: refundVar } } : {}),
+    ...(customVars.length ? { customVars } : {}),
     oathText: str(s.oathText),
     fallbackCount: cnt(s.fallbackCount),
     totalCount: cnt(s.totalCount),
   }
+}
+
+/**
+ * 번역본을 그릴 때 쓰는 치환 재료 — **종이 vars 에 `{{일정}}` 하나를 더한 것**이다.
+ *
+ * 종이에는 그 값이 필요 없다. 거주 호실 일정 절은 buildRoomScheduleAddendum 이 이미 채운 절을
+ * 싣기 때문이다. 그런데 번역 사전의 열쇠는 **치환 전** 문안이라 번역본 쪽에는 `{{일정}}` 이
+ * 그대로 남아 있다 — 그래서 이 한 값만 여기서 더한다.
+ *
+ * **종이 vars 에 넣지 마라.** 본문에 `{{일정}}` 을 적은 영업장의 종이가 이 기능 전과 달라진다
+ * (지금 그 자리는 자리표시자가 그대로 찍히는 자리다).
+ *
+ * 서명 화면 카드와 발급 상세 전문 열람이 이 함수 하나를 본다. 두 곳이 각자 이으면 한쪽만
+ * `{{일정}}` 이 글자 그대로 뜨는 상태가 된다(2026-09-08 배포 결함과 같은 클래스).
+ */
+export function translationDisplayVars(
+  printVars: Record<string, string>,
+  roomScheduleText: string | null | undefined,
+): Record<string, string> {
+  return { ...printVars, 일정: roomScheduleText ?? '' }
 }
 
 /**
@@ -440,13 +604,24 @@ export function translationProgress(
   template: ContractTemplate,
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
-): { total: number; done: number; published: boolean; hasEntry: boolean } {
+  refundClauseInContract?: boolean,
+): { total: number; done: number; published: boolean; hasEntry: boolean; refundCustom: boolean } {
   const entry = parseContractTranslations(raw).langs[lang]
   const dict = entry?.dict ?? {}
-  const lines = translationSourceLines(template, addenda)
+  const lines = translationSourceLines(template, addenda, refundClauseInContract)
   let done = 0
-  for (const l of lines) if (dict[l.text] !== undefined) done++
-  return { total: lines.length, done, published: entry?.published === true, hasEntry: !!entry }
+  // 변수 줄은 비어 있어도 번역이 선다(권장 번역). 안 세면 다 번역한 언어가 영영 '29/30' 이다 —
+  // 해석 쪽 fallbackCount 와 같은 규칙이라 캡션과 박제의 숫자가 안 갈린다.
+  for (const l of lines) if (l.kind === 'var' || dict[l.text] !== undefined) done++
+  const refundLine = lines.find(l => l.kind === 'var')
+  return {
+    total: lines.length,
+    done,
+    published: entry?.published === true,
+    hasEntry: !!entry,
+    // 피커가 "환불 규정 직접 번역"을 캡션에 덧붙이는 근거. 판정은 정본 하나다.
+    refundCustom: !!refundLine && isCustomRefundTranslation(lang, dict[refundLine.text]),
+  }
 }
 
 /**
@@ -460,10 +635,11 @@ export function orphanTranslationKeys(
   template: ContractTemplate,
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
+  refundClauseInContract?: boolean,
 ): string[] {
   const entry = parseContractTranslations(raw).langs[lang]
   if (!entry) return []
-  const live = new Set(translationSourceLines(template, addenda).map(l => l.text))
+  const live = new Set(translationSourceLines(template, addenda, refundClauseInContract).map(l => l.text))
   return Object.keys(entry.dict).filter(k => !live.has(k))
 }
 
@@ -508,9 +684,13 @@ export function mergeTranslationLang(
   const dict: Record<string, string> = { ...prev.dict }
 
   if (patch.dict) {
+    const refundKey = refundTranslationKey()
     for (const [k, v] of Object.entries(patch.dict)) {
       if (typeof k !== 'string' || !k.trim()) continue
       if (typeof v !== 'string' || !v.trim()) { delete dict[k]; continue }
+      // 권장 문안과 **같은 값**은 들고 있을 이유가 없다 — 빈 칸이 곧 권장이다. 남겨 두면
+      // 나가는 문안은 권장과 똑같은데 '직접 번역' 표식이 서고 경고가 뜬다(사실이 아닌 경고).
+      if (k === refundKey && !isCustomRefundTranslation(lang, v)) { delete dict[k]; continue }
       dict[k] = v
     }
   }

@@ -6,14 +6,17 @@ import {
   asResolvedContractTranslation, translationProgress, TRANSLATION_LANG_ENDONYM,
   translationCopyLine, translationCopyText, applyTranslationPaste,
   translationPlaceholders, missingTranslationPlaceholders, translationPlaceholderMessage,
+  RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
+  REFUND_VAR_PLACEHOLDER, REFUND_VAR_NAME, translationDisplayVars,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
 import {
-  appendSubLeaseAddendum, buildRoomScheduleAddendum, cleaningFeeVars, contractAddendaForTranslation,
-  renderContractText, stripClauseBullet,
+  appendSubLeaseAddendum, buildRoomScheduleAddendum, buildRefundClause, cleaningFeeVars,
+  contractAddendaForTranslation, renderContractText, stripClauseBullet,
   DEFAULT_CONTRACT_TEMPLATE, type ContractTemplate, type SubLeaseAddendum,
 } from '../lib/contract'
 import { printedFacts } from '../lib/contractPrintedFacts'
+import { contractPrintVars, type PrintContractData } from '../lib/contractPrintHtml'
 
 let pass = 0
 const fails: string[] = []
@@ -685,6 +688,222 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   // 전문을 그대로 되붙이는 왕복은 여전히 통과해야 한다(원문 그대로라 채울 것이 없다).
   const back = applyTranslationPaste(lines, copyLines.join('\n'))
   eq('되붙이기 항등은 그대로 산다', back.ok && back.sameCount, lines.length)
+}
+
+// ── 5단계 ① 환불 규정은 '변수 줄'이다 ───────────────────────────
+//
+// 환불 규정은 절도 항목도 아니고 **변수값**이다. 본문에는 {{환불규정}} 자리만 있고 문장은
+// 코드가 만든다. 그래서 종이가 그 값을 넣는 조건과 **같은 조건**일 때만 번역 대상 줄이 선다.
+{
+  const R: ContractTemplate = {
+    title: '계약서',
+    sections: [{ id: 'out', title: '2. 퇴실 및 환불', items: ['환불은 기준에 따릅니다.{{환불규정}}', '평범한 줄'] }],
+    oathText: '서약',
+  }
+  const N: ContractTemplate = { ...R, sections: [{ id: 'out', title: '2. 퇴실 및 환불', items: ['환불은 기준에 따릅니다.', '평범한 줄'] }] }
+  const key = refundTranslationKey()
+
+  eq('열쇠는 종이가 넣는 그 문장이다(사본 금지)', key, buildRefundClause())
+  eq('자리표시자 이름은 종이의 vars 열쇠와 같다', REFUND_VAR_PLACEHOLDER, `{{${REFUND_VAR_NAME}}}`)
+
+  eq('토글 켜짐 + 본문에 자리 = 변수 줄이 선다',
+    translationSourceLines(R, undefined, true).map(l => l.kind),
+    ['title', 'sectionTitle', 'item', 'item', 'oath', 'var'])
+  eq('변수 줄은 맨 끝이다(절 사이에 끼우면 줄 대조가 밀린다)',
+    translationSourceLines(R, undefined, true).at(-1)?.text, key)
+  eq('토글 꺼짐이면 안 선다(종이에도 그 문장이 안 들어간다)',
+    translationSourceLines(R, undefined, false).some(l => l.kind === 'var'), false)
+  eq('토글을 안 넘겨도 안 선다(기본은 안 세움)',
+    translationSourceLines(R).some(l => l.kind === 'var'), false)
+  eq('본문에 자리가 없으면 토글을 켜도 안 선다',
+    translationSourceLines(N, undefined, true).some(l => l.kind === 'var'), false)
+  // 급소 — 줄 전체가 자리표시자인 항목은 번역 대상에서 빠지지만 종이에는 값이 들어간다.
+  // 대상 목록만 훑으면 그런 본문에서 칸이 안 서고 그 문단만 영영 한국어로 남는다.
+  {
+    const only: ContractTemplate = { ...R, sections: [{ id: 'out', title: '2. 퇴실', items: ['{{환불규정}}'] }] }
+    eq('줄 전체가 자리표시자여도 변수 줄은 선다(걷어낸 줄까지 본다)',
+      translationSourceLines(only, undefined, true).some(l => l.kind === 'var'), true)
+    eq('그 줄 자체는 여전히 번역 대상이 아니다',
+      translationSourceLines(only, undefined, true).some(l => l.text === '{{환불규정}}'), false)
+  }
+  // 가변 절에만 자리가 있어도 선다 — 종이가 그 절에도 같은 vars 로 치환한다.
+  eq('가변 절의 자리도 본다',
+    translationSourceLines(N, [{ title: '요금', items: ['{{환불규정}} 를 따릅니다.'] }], true)
+      .some(l => l.kind === 'var'), true)
+
+  // ── 5단계 ② 빈 칸 = 권장 번역 (이 줄만 규칙이 갈린다) ──────────
+  const rawEmpty = { enabled: true, langs: { en: { published: true, dict: {} } } }
+  const rEmpty = resolveContractTranslation(rawEmpty, R, 'en', undefined, true)
+  eq('빈 칸이면 권장 번역이 나간다',
+    rEmpty?.vars?.환불규정, ' ' + RECOMMENDED_REFUND_TRANSLATION.en)
+  eq('값이 종이와 같은 모양이다(앞 한 칸이 문장을 잇는다)',
+    rEmpty?.vars?.환불규정.startsWith(' '), true)
+  eq('권장을 쓴 것은 직접 번역이 아니다(표식 없음)', rEmpty?.customVars, undefined)
+  eq('변수 줄은 폴백으로 안 센다(한국어가 안 남는다)', rEmpty?.fallbackCount, 5)
+  eq('그래도 분모에는 선다', rEmpty?.totalCount, 6)
+
+  const rawCustom = { enabled: true, langs: { en: { published: true, dict: { [key]: 'MY OWN REFUND RULE' } } } }
+  const rCustom = resolveContractTranslation(rawCustom, R, 'en', undefined, true)
+  eq('값이 있으면 그 값이 나간다', rCustom?.vars?.환불규정, ' MY OWN REFUND RULE')
+  eq('직접 번역이면 표식이 남는다', rCustom?.customVars, ['환불규정'])
+  eq('직접 번역도 폴백은 아니다', rCustom?.fallbackCount, 5)
+
+  const rawSame = { enabled: true, langs: { en: { published: true, dict: { [key]: RECOMMENDED_REFUND_TRANSLATION.en } } } }
+  eq('권장과 같은 값은 직접 번역이 아니다(사실이 아닌 경고를 막는다)',
+    resolveContractTranslation(rawSame, R, 'en', undefined, true)?.customVars, undefined)
+
+  eq('토글이 꺼지면 vars 칸 자체가 없다',
+    resolveContractTranslation(rawCustom, R, 'en', undefined, false)?.vars, undefined)
+  eq('그때는 표식도 없다',
+    resolveContractTranslation(rawCustom, R, 'en', undefined, false)?.customVars, undefined)
+  // 급소 — 늘 담으면 이 칸을 모르는 옛 박제 전건이 내용 변화 없이 드리프트로 뜬다.
+  eq('변수 줄이 없는 번역본에는 vars·customVars 키가 아예 없다',
+    Object.keys(resolveContractTranslation(rawEmpty, N, 'en', undefined, true) ?? {}).filter(k => k === 'vars' || k === 'customVars'),
+    [])
+
+  // ── 5단계 ③ 직접 번역 판정은 '권장과 다른 값' 하나뿐 ──────────
+  eq('빈 값은 직접 번역이 아니다', isCustomRefundTranslation('en', ''), false)
+  eq('공백뿐인 값도 아니다', isCustomRefundTranslation('en', '   '), false)
+  eq('없는 값도 아니다', isCustomRefundTranslation('en', undefined), false)
+  eq('권장과 같으면 아니다', isCustomRefundTranslation('en', RECOMMENDED_REFUND_TRANSLATION.en), false)
+  eq('앞뒤 공백만 다른 것도 아니다', isCustomRefundTranslation('en', `  ${RECOMMENDED_REFUND_TRANSLATION.en}  `), false)
+  eq('다른 문안이면 직접 번역이다', isCustomRefundTranslation('en', 'something else'), true)
+  eq('언어가 다르면 권장도 다르다(en 권장을 vi 에 넣으면 직접 번역)',
+    isCustomRefundTranslation('vi', RECOMMENDED_REFUND_TRANSLATION.en), true)
+
+  // ── 5단계 ④ 저장이 권장과 같은 값을 비운다 ────────────────────
+  {
+    const stored = { enabled: true, langs: { en: { published: true, dict: {} } } }
+    const same = mergeTranslationLang(stored, 'en', { dict: { [key]: RECOMMENDED_REFUND_TRANSLATION.en } })
+    eq('권장과 같은 값은 저장에서 걷힌다(빈 칸이 곧 권장이다)',
+      same.ok ? same.next.langs.en?.dict[key] : 'REJECTED', undefined)
+    const mine = mergeTranslationLang(stored, 'en', { dict: { [key]: 'MY OWN' } })
+    eq('다른 문안은 그대로 저장된다', mine.ok ? mine.next.langs.en?.dict[key] : 'REJECTED', 'MY OWN')
+    // 정밀 판정 — 다른 열쇠가 우연히 같은 글자를 담아도 걷지 않는다.
+    const other = mergeTranslationLang(stored, 'en', { dict: { 다른열쇠: RECOMMENDED_REFUND_TRANSLATION.en } })
+    eq('환불 열쇠가 아니면 안 걷는다', other.ok ? other.next.langs.en?.dict['다른열쇠'] : 'REJECTED',
+      RECOMMENDED_REFUND_TRANSLATION.en)
+    // 이미 저장돼 있던 직접 번역을 권장으로 되돌리는 길(칸 비우기)도 그대로 산다.
+    const had = { enabled: true, langs: { en: { published: true, dict: { [key]: 'OLD' } } } }
+    eq('칸을 비우면 그 열쇠가 걷힌다', (m => (m.ok ? m.next.langs.en?.dict[key] : 'REJECTED'))(
+      mergeTranslationLang(had, 'en', { dict: { [key]: '' } })), undefined)
+    eq('권장을 그대로 적어도 걷힌다(같은 결과)', (m => (m.ok ? m.next.langs.en?.dict[key] : 'REJECTED'))(
+      mergeTranslationLang(had, 'en', { dict: { [key]: RECOMMENDED_REFUND_TRANSLATION.en } })), undefined)
+  }
+
+  // ── 5단계 ⑤ 진행 계수·고아 판정이 같은 집합을 본다 ────────────
+  {
+    const p = translationProgress(rawEmpty, R, 'en', undefined, true)
+    eq('변수 줄은 비어도 번역으로 센다(다 채운 언어가 미완으로 안 보인다)', [p.total, p.done], [6, 1])
+    eq('빈 칸이면 직접 번역이 아니다', p.refundCustom, false)
+    const pc = translationProgress(rawCustom, R, 'en', undefined, true)
+    eq('직접 번역이면 피커가 그 사실을 안다', pc.refundCustom, true)
+    eq('토글이 꺼지면 분모에서도 빠진다',
+      translationProgress(rawEmpty, R, 'en', undefined, false).total, 5)
+    eq('그때는 직접 번역 표식도 안 뜬다(종이에 안 실리는 문장이다)',
+      translationProgress(rawCustom, R, 'en', undefined, false).refundCustom, false)
+    // 고아 판정이 분모와 다른 집합을 보면 환불 번역 전건이 고아로 잡힌다.
+    eq('변수 줄이 선 상태에서 그 번역은 고아가 아니다',
+      orphanTranslationKeys(rawCustom, R, 'en', undefined, true), [])
+    eq('토글이 꺼지면 그 번역은 갈 곳이 없다(고아로 잡힌다)',
+      orphanTranslationKeys(rawCustom, R, 'en', undefined, false), [key])
+  }
+
+  // ── 5단계 ⑥ 외부 번역기 왕복도 변수 줄을 함께 나른다 ──────────
+  {
+    const lines = translationSourceLines(R, undefined, true)
+    const copy = translationCopyText(lines).split('\n')
+    eq('복사 전문에 변수 줄이 함께 나간다', copy.length, 6)
+    eq('마지막 줄이 환불 규정 원문이다', copy[5], translationCopyLine(key))
+    const back = applyTranslationPaste(lines, copy.join('\n'))
+    eq('되붙이기 항등은 변수 줄이 늘어도 그대로다', back.ok && back.sameCount, 6)
+    // 3번째 줄은 원문에 {{환불규정}} 을 품고 있어 번역문도 그것을 지켜야 통과한다(자리표시자 보호).
+    const filled = applyTranslationPaste(lines, ['T', 'S', 'I1{{환불규정}}', 'I2', 'O', 'REFUND EN'].join('\n'))
+    eq('번역기가 채운 변수 줄은 그 열쇠로 들어간다', filled.ok && filled.filled[key], 'REFUND EN')
+    // 변수 줄 자체에는 자리표시자가 없다 — 그 줄은 보호 규칙에 안 걸린다.
+    eq('변수 줄은 자리표시자 보호 대상이 아니다', translationPlaceholders(key), [])
+  }
+
+  // ── 5단계 ⑦ 박제 파서 — 얼어 있는 값만 읽는다 ─────────────────
+  {
+    const frozen = JSON.parse(JSON.stringify(rCustom)) as unknown
+    eq('박제한 vars 가 그대로 나온다', asResolvedContractTranslation(frozen)?.vars, { 환불규정: ' MY OWN REFUND RULE' })
+    eq('박제한 표식도 그대로', asResolvedContractTranslation(frozen)?.customVars, ['환불규정'])
+    // 급소 — 빈 칸을 만들면 그 박제를 다시 직렬화할 때 바이트가 달라진다(옛 발급본 전건이 드리프트).
+    const old = { lang: 'en', title: 'T', sections: [], oathText: '', fallbackCount: 0, totalCount: 0 }
+    eq('vars 칸이 없던 옛 박제는 여기서도 칸이 안 생긴다',
+      Object.keys(asResolvedContractTranslation(old) ?? {}).filter(k => k === 'vars' || k === 'customVars'), [])
+    eq('옛 박제를 다시 직렬화하면 바이트가 같다',
+      JSON.stringify(asResolvedContractTranslation(old)), JSON.stringify(old))
+    eq('모양 아닌 vars 는 버린다', asResolvedContractTranslation({ ...old, vars: [1, 2] })?.vars, undefined)
+    eq('문자열 아닌 값도 버린다', asResolvedContractTranslation({ ...old, vars: { 환불규정: 3 } })?.vars, undefined)
+    eq('모르는 표식은 걸러낸다',
+      asResolvedContractTranslation({ ...old, customVars: ['환불규정', '아무거나', 7] })?.customVars, ['환불규정'])
+    eq('표식만 남고 남는 것이 없으면 칸을 안 만든다',
+      asResolvedContractTranslation({ ...old, customVars: ['아무거나'] })?.customVars, undefined)
+  }
+
+  // ── 5단계 ⑧ 권장 문안 사전 — 8언어 전량, ko 없음 ──────────────
+  eq('번역 언어 전부에 권장 문안이 있다',
+    TRANSLATION_LANGS.filter(l => !RECOMMENDED_REFUND_TRANSLATION[l]?.trim()), [])
+  eq('ko 는 원문이라 권장 문안이 없다',
+    Object.keys(RECOMMENDED_REFUND_TRANSLATION).includes('ko'), false)
+  eq('권장 문안 수가 번역 언어 수와 같다',
+    Object.keys(RECOMMENDED_REFUND_TRANSLATION).length, TRANSLATION_LANGS.length)
+  eq('권장 문안에는 자리표시자가 없다(저장·붙여넣기 거부 대상이 될 수 없다)',
+    TRANSLATION_LANGS.filter(l => translationPlaceholders(RECOMMENDED_REFUND_TRANSLATION[l]).length > 0), [])
+}
+
+// ── 5단계 ⑨ 인쇄 조판 vars 정본 — 종이와 발급 박제가 같은 재료 ──
+//
+// 이 함수가 인쇄 조판 밖으로 나온 이유는 발급 박제가 같은 재료를 들어야 발급 상세의 '전문 보기'가
+// 종이와 같은 값으로 조항을 그리기 때문이다. **여기에 새 열쇠를 더하면 종이가 달라진다.**
+{
+  const base: PrintContractData = {
+    template: DEFAULT_CONTRACT_TEMPLATE,
+    businessInfo: { name: '스테이음', registrationNo: null, ceoName: '홍길동', address: null } as PrintContractData['businessInfo'],
+    phone: null, contractNo: '20260908-001', logoImageUrl: null, stampImageUrl: null,
+    refundClauseInContract: true,
+    disposalConsent: { enabled: false, days: 30, title: '동의서', body: '' },
+    tenant: { name: '김입주', birthdate: '1990-01-01', foreignRegNo: null, gender: '남', job: null, primaryPhone: '010-0000-0000' },
+    lease: { moveInDate: '2026-09-01', expectedMoveOut: null, rentAmount: 400000, depositAmount: 100000,
+      cleaningFee: 50000, dueDay: '1', roomNo: '301', registrationStatus: '미신고' },
+    smoking: '비흡연', emergencyContactText: '', signDate: '2026년 9월 8일',
+    signatureImageDataUrl: '', pretendardBase64: '',
+  }
+  const on = contractPrintVars(base)
+  const off = contractPrintVars({ ...base, refundClauseInContract: false })
+  eq('토글이 켜지면 종이에 환불 문장이 들어간다', on.환불규정, ' ' + buildRefundClause())
+  eq('꺼지면 빈 문자열이다(문장이 안 붙는다)', off.환불규정, '')
+  eq('번역본의 값과 같은 모양이다(앞 한 칸)', on.환불규정.startsWith(' '), true)
+  // 열쇠 집합이 곧 종이의 치환 규칙이다. 늘리면 본문에 그 이름을 적어 둔 영업장의 종이가 바뀐다.
+  eq('종이의 치환 열쇠 목록', Object.keys(on).sort().join(','),
+    ['name', 'phone', 'birth', 'job', 'gender', 'smoking', 'deposit', 'checkInDate', 'checkOutDate',
+      'roomNo', 'rentFee', 'emergencyContact', '환불규정', '단기요금표',
+      ...Object.keys(cleaningFeeVars(50000))].sort().join(','))
+  eq('꺼진 계약서도 열쇠 집합은 같다(값만 다르다)', Object.keys(off).sort().join(','), Object.keys(on).sort().join(','))
+
+  // 번역본 쪽에만 {{일정}} 이 더해진다. 종이 vars 에 넣으면 본문에 그 이름을 적어 둔
+  // 영업장의 종이가 이 기능 전과 달라진다.
+  eq('종이 vars 에는 일정이 없다', on['일정'], undefined)
+  eq('표시 재료에는 일정이 더해진다', translationDisplayVars(on, '3월까지 301호')['일정'], '3월까지 301호')
+  eq('일정이 없으면 빈 문자열이다(자리표시자를 그대로 두지 않는다)',
+    translationDisplayVars(on, null)['일정'], '')
+  eq('나머지 열쇠는 그대로 통과한다', translationDisplayVars(on, null).환불규정, on.환불규정)
+  eq('원본 객체를 안 건드린다(같은 객체를 두 곳이 쓴다)', Object.keys(on).includes('일정'), false)
+}
+
+// ── 5단계 ⑩ 인쇄 사실 축은 무접촉 ───────────────────────────────
+//
+// 치환 재료는 **facts 밖**에 산다. 이 축은 드리프트가 통째로 견주는 JSON 이라, 모양이 바뀌면
+// 조항을 한 글자도 안 고친 발급본 전건이 허위 드리프트로 뜬다.
+{
+  const t = { lang: 'en', title: 'T', sections: [], oathText: '', vars: { 환불규정: ' X' }, customVars: ['환불규정'], fallbackCount: 0, totalCount: 1 }
+  const facts = printedFacts({ template: DEFAULT_CONTRACT_TEMPLATE, translation: t } as Parameters<typeof printedFacts>[0])
+  eq('사실 축에 치환 재료 칸이 없다', Object.keys(facts).includes('translationVars'), false)
+  eq('번역 축은 해석 완료본 그대로다(모양을 안 바꾼다)', facts.translation, JSON.stringify(t))
+  eq('번역본이 없으면 축 자체가 없다(옛 박제 무회귀)',
+    printedFacts({ template: DEFAULT_CONTRACT_TEMPLATE } as Parameters<typeof printedFacts>[0]).translation, undefined)
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

@@ -69,12 +69,18 @@ function factText(key: PrintedFactKey, v: unknown): string {
  */
 function translationFactText(v: unknown): string {
   try {
-    const t = JSON.parse(String(v)) as { lang?: unknown; fallbackCount?: unknown; totalCount?: unknown }
+    const t = JSON.parse(String(v)) as {
+      lang?: unknown; fallbackCount?: unknown; totalCount?: unknown; customVars?: unknown
+    }
     const lang = asSignLang(t.lang)
     const label = lang ? SIGN_LANG_LABEL[lang] : '알 수 없는 언어'
-    return typeof t.totalCount === 'number' && typeof t.fallbackCount === 'number'
+    const head = typeof t.totalCount === 'number' && typeof t.fallbackCount === 'number'
       ? `${label} · 번역 ${t.totalCount - t.fallbackCount}/${t.totalCount}`
       : label
+    // 환불 규정은 공정거래위원회 기준 문구라 권장 번역이 따로 있다. 운영자가 제 문안을 적어
+    // 내보낸 발급본이면 그 사실을 여기 남긴다 — 나중에 "왜 기준과 다른가"를 물을 때의 답이다.
+    const custom = Array.isArray(t.customVars) && t.customVars.includes('환불규정')
+    return custom ? `${head} · 환불 규정 직접 번역` : head
   } catch { return '있음' }
 }
 
@@ -229,7 +235,17 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
         <Modal open onClose={() => setViewTranslation(false)} z={280} width="md"
           title="참고용 번역본"
           subtitle="이 발급본이 근거로 삼은 서명 시점 문안입니다. 계약 내용은 한국어 원본에 따릅니다.">
-          <ContractTranslationBody translation={frozen} source={frozenTemplate(snap?.facts.template)} />
+          {/* 치환 재료가 없는 발급본(이 칸 이전에 발급된 것)은 조항에 {{청소비조항}} 같은 표시가
+              글자 그대로 남는다. 값을 지금 계산해 채우면 그것은 증거가 아니라 오늘의 값이므로,
+              **무엇이 없는지 한 줄로 말하고** 조항은 그대로 둔다(줄을 감추면 조항 번호가 밀린다).
+              문법은 위 '기록이 없습니다' 줄과 한 벌이다. */}
+          {!snap?.translationVars && (
+            <p className="mb-3 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs text-[var(--warm-muted)]">
+              값 치환 기록이 없는 발급본입니다. 조항 안의 {'{{ }}'} 표시는 종이에 실제 값이 들어간 자리입니다.
+            </p>
+          )}
+          <ContractTranslationBody translation={frozen} source={frozenTemplate(snap?.facts.template)}
+            vars={snap?.translationVars} />
         </Modal>
       )}
     </Modal>

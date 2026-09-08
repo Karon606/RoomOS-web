@@ -63,6 +63,10 @@ function SourceMark() {
  * @param vars 조항의 {{변수}} 를 채울 값. **종이가 쓰는 그 객체를 그대로 받는다** — 카드가
  *   종이와 다른 값을 보이면 자리표시자가 글자 그대로 뜨는 것보다 나쁘다. 안 주면 종전대로
  *   저장 문안이 그대로 보인다(값을 지어내지 않는다).
+ *
+ * 박제가 제 값을 들고 있으면(translation.vars) 그것이 **종이 vars 위에 덮인다.** 환불 규정이
+ * 그 자리다 — 종이는 한국어 정본 문장을 넣지만 번역본에는 번역된 문장이 서야 한다. 순서를
+ * 뒤집어 종이가 이기면 다 번역한 번역본에서 그 문단만 한국어로 남는다.
  */
 export function ContractTranslationBody({ translation, source, sourceAddenda, vars }: {
   translation: ResolvedContractTranslation
@@ -83,7 +87,11 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
   //
   // 치환 순서는 종이와 같다 — renderContractText 먼저, 글머리 제거가 나중이다(contractPrintHtml).
   // 뒤집으면 '- {{청소비조항}}' 처럼 값이 글머리로 시작하는 조항에서 결과가 갈린다.
-  const render = (s: string): string => (vars ? renderContractText(s, vars) : s)
+  //
+  // 박제가 든 값이 종이 값을 **덮는다**(환불 규정). 둘 다 없으면 재료가 아예 없는 것이라
+  // 저장 문안을 그대로 보인다 — 없는 값을 지어내지 않는다.
+  const renderVars = vars || translation.vars ? { ...(vars ?? {}), ...(translation.vars ?? {}) } : null
+  const render = (s: string): string => (renderVars ? renderContractText(s, renderVars) : s)
   return (
     <div className="space-y-4">
       {/* 머리 — 무엇인지 먼저 말한다. 배지는 pale-neutral 고정이다(§11). 강조색을 쓰면

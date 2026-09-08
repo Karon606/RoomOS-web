@@ -50,6 +50,7 @@ import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
   translationCopyLine, translationCopyText, applyTranslationPaste,
   translationPlaceholderMisses, translationPlaceholderMessage,
+  RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
   type TranslationLang, type TranslationLineKind, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
@@ -3081,12 +3082,19 @@ function SignDocumentsCard({ initial }: { initial: SignDocument[] }) {
   )
 }
 
-/** 번역 입력 줄이 본문 어디에서 왔는지 — 운영자가 "몇 조 몇 항"을 짚을 수 있게 성격을 적어 준다. */
+/**
+ * 번역 입력 줄이 본문 어디에서 왔는지 — 운영자가 "몇 조 몇 항"을 짚을 수 있게 성격을 적어 준다.
+ *
+ * 'var' 라벨만 규칙을 함께 적는다. 다른 넷은 **빈 칸 = 한국어 원문**인데 이 줄만
+ * **빈 칸 = 권장 번역**이라, 같은 모양의 칸이 다르게 동작한다. 라벨이 그것을 말하지 않으면
+ * 운영자는 다른 줄과 같은 줄로 읽고 빈 칸을 '미번역'으로 센다.
+ */
 const TRANSLATION_KIND_LABEL: Record<TranslationLineKind, string> = {
   title: '계약서 제목',
   sectionTitle: '절 제목',
   item: '조항',
   oath: '서약문',
+  var: '환불 규정 · 권장 번역 있음',
 }
 
 /**
@@ -3109,6 +3117,9 @@ function ContractTranslationCard() {
   // 이 영업장이 쓸 수 있는 가변 절 전부. 편집기의 분모는 **계약이 아니라 영업장** 기준이다 —
   // 계약이 오기 전에 미리 채워 두는 자리라, 좁히면 다른 계약의 절이 영영 번역되지 않는다.
   const [addenda, setAddenda] = useState<SubLeaseAddendum[]>([])
+  // 환불 조항 자동 표시. 환불 규정은 절이 아니라 변수값이라, 이 값이 번역 대상 줄 하나를
+  // 세우거나 안 세운다(lib/contractTranslation 의 변수 줄). 미설정은 켜짐이다.
+  const [refundClauseInContract, setRefundClauseInContract] = useState(true)
   const [stored, setStored] = useState<ContractTranslations>(EMPTY_CONTRACT_TRANSLATIONS)
   const [lang, setLang] = useState<TranslationLang>('en')
   const [draft, setDraft] = useState<Record<string, string>>({})
@@ -3124,6 +3135,7 @@ function ContractTranslationCard() {
       .then(r => {
         setTemplate(r.template)
         setAddenda(r.addenda)
+        setRefundClauseInContract(r.refundClauseInContract)
         setStored(r.translations)
         setEnabled(r.translations.enabled)
         // 첫 언어는 영어다. 사전에 고아 열쇠가 있으면 그것도 함께 담긴다 — 화면에 칸이 없어도
@@ -3135,15 +3147,23 @@ function ContractTranslationCard() {
       .catch(() => setLoaded(true))
   }, [])
 
-  const lines = useMemo(() => (template ? translationSourceLines(template, addenda) : []), [template, addenda])
+  const lines = useMemo(
+    () => (template ? translationSourceLines(template, addenda, refundClauseInContract) : []),
+    [template, addenda, refundClauseInContract])
   // 열쇠와 그 번역을 함께 쥔다 — 목록이 "어떤 번역이 고아인지"를 보여주려면 둘 다 있어야 한다.
   // 고아 판정도 **같은 집합**을 본다. 안 맞추면 특약 번역이 전부 고아로 잡힌다.
   const orphans = useMemo(() => {
     if (!template) return []
     const dict = stored.langs[lang]?.dict ?? {}
-    return orphanTranslationKeys(stored, template, lang, addenda).map(k => ({ key: k, text: dict[k] ?? '' }))
-  }, [template, addenda, stored, lang])
-  const translated = lines.filter(l => (draft[l.text] ?? '').trim()).length
+    return orphanTranslationKeys(stored, template, lang, addenda, refundClauseInContract)
+      .map(k => ({ key: k, text: dict[k] ?? '' }))
+  }, [template, addenda, refundClauseInContract, stored, lang])
+  // 변수 줄은 비어 있어도 번역이 선다(권장 번역) — 해석·피커가 세는 규칙과 같다. 안 맞추면
+  // 여기만 "29/30"이라 다 채운 운영자가 못 찾을 한 칸을 찾아 헤맨다.
+  const translated = lines.filter(l => l.kind === 'var' || (draft[l.text] ?? '').trim()).length
+  // 환불 규정을 직접 번역한 칸인가. 저장 비우기·박제 표식과 **같은 정본**이 판정한다.
+  const refundKey = refundTranslationKey()
+  const refundCustom = isCustomRefundTranslation(lang, draft[refundKey])
   // 자리표시자를 잃은 칸. 저장이 거부할 것을 **누르기 전에** 그 칸 옆에서 말한다(§27.2) —
   // 판정은 저장·되붙이기와 같은 함수라 세 곳의 답이 갈릴 수 없다.
   const missingPh = useMemo(() => {
@@ -3237,8 +3257,14 @@ function ContractTranslationCard() {
       const res = await saveContractTranslationLang({ lang, published, dict: draft })
       if (!res.ok) { pushToast('error', res.error); return }
       // 화면 저장본을 서버 병합과 같은 규칙으로 맞춘다 — 빈 칸은 그 열쇠를 걷는다(번역 취소).
-      const cleaned = Object.fromEntries(Object.entries(draft).filter(([, v]) => v.trim()))
+      // 환불 규정이 **권장 문안과 같으면** 서버가 그 열쇠를 걷는다(빈 칸이 곧 권장이라 들고 있을
+      // 이유가 없다). 화면이 그 규칙을 안 따르면 저장 직후에도 '저장하지 않은 변경'이 남는다.
+      const cleaned = Object.fromEntries(Object.entries(draft)
+        .filter(([k, v]) => v.trim() && (k !== refundKey || isCustomRefundTranslation(lang, v))))
       setStored(prev => ({ ...prev, langs: { ...prev.langs, [lang]: { published, dict: cleaned } } }))
+      // 걷힌 칸은 화면에서도 비운다 — 비어야 placeholder 가 권장 문안을 보이고, 그 칸이 실제로
+      // 무엇을 내보내는지 화면과 저장본이 같은 말을 한다.
+      setDraft(cleaned)
       pushToast('success', '저장됨', {
         detail: '새로 보내는 서명 링크부터 이 번역본이 실립니다. 이미 보낸 링크와 발급본은 바뀌지 않습니다.',
       })
@@ -3349,13 +3375,42 @@ function ContractTranslationCard() {
                   <div className="divide-y divide-[var(--warm-border)]">
                     {lines.map(l => (
                       <div key={l.text} className="py-3 space-y-1.5 first:pt-0">
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">{TRANSLATION_KIND_LABEL[l.kind]}</p>
+                        {/* 변수 줄만 라벨 옆에 '권장 문안으로'를 둔다 — 값이 있을 때만 선다.
+                            문법은 같은 파일 조건부 특약 카드(AddendumCard)의 되돌리기와 한 벌이고,
+                            여기서도 **화면 값만 비운다** — 서버 쓰기는 아래 저장 버튼 하나가 진다. */}
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">{TRANSLATION_KIND_LABEL[l.kind]}</p>
+                          {l.kind === 'var' && (draft[l.text] ?? '').trim() && (
+                            <button type="button" onClick={() => setDraft(p => ({ ...p, [l.text]: '' }))}
+                              className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">권장 문안으로</button>
+                          )}
+                        </div>
                         {/* 원문은 읽기 전용이다. 여기서 본문을 고치면 열쇠가 바뀌어 다른 언어의 번역까지 통째로 고아가 된다. */}
                         <p className="text-xs text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap break-keep">{l.text}</p>
+                        {/* 변수 줄은 **미리 채우지 않는다**(운영자 오더) — 채워 두면 검토 없이 저장된다.
+                            대신 placeholder 에 권장 전문을 보여, 비워 둔 칸이 무엇을 내보내는지 눈으로 읽힌다. */}
                         <textarea value={draft[l.text] ?? ''} rows={2}
                           onChange={e => setDraft(p => ({ ...p, [l.text]: e.target.value }))}
-                          placeholder="비워 두면 이 줄은 한국어 원문 그대로 보입니다."
+                          placeholder={l.kind === 'var'
+                            ? RECOMMENDED_REFUND_TRANSLATION[lang]
+                            : '비워 두면 이 줄은 한국어 원문 그대로 보입니다.'}
                           className={taCls} />
+                        {/* **이 줄만 규칙이 다르다.** 다른 칸은 비우면 한국어 원문이 남는데 여기는
+                            권장 번역이 나간다. 그 차이를 칸 바로 아래에서 말한다 — 라벨만으로는
+                            같은 모양의 칸 스물몇 개 사이에서 안 읽힌다. */}
+                        {l.kind === 'var' && (
+                          <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                            비워 두면 권장 번역이 쓰입니다. 다른 줄과 달리 한국어 원문이 남지 않습니다.
+                          </p>
+                        )}
+                        {/* 막지 않고 알린다(운영자 오더 2026-09-08 — "우선 추천이나 유도하도록 하고
+                            만약 다르게 한다면 경고"). 확인창도 저장 거부도 없다. 판정은 '권장과 다른
+                            값이 있다' 하나뿐이고 뜻이 얼마나 다른지는 재지 않는다. */}
+                        {l.kind === 'var' && refundCustom && (
+                          <p className="text-[0.65625rem] leading-relaxed text-[var(--warning-fg)]">
+                            권장 번역과 다른 문안입니다. 환불 규정은 공정거래위원회 기준 문구라 뜻이 어긋나면 분쟁에서 설명 부담이 생깁니다. 권장으로 돌리려면 칸을 비우세요.
+                          </p>
+                        )}
                         {/* 자리표시자를 잃은 칸은 그 자리에서 말한다 — 저장이 어차피 거부하는데,
                             토스트로만 알리면 스물몇 칸 중 어디인지 운영자가 다시 찾아야 한다. */}
                         {missingPh.has(l.text) && (

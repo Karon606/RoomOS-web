@@ -350,8 +350,9 @@ function fnBody(src, at) {
 {
   const f = 'app/contract/[tenantId]/ContractView.tsx'
   const src = read(f)
-  // 종이가 쓰는 그 객체(vars)를 펼쳐 넘긴다. 새로 조립하면 종이와 갈린다.
-  if (!/vars=\{\{ \.\.\.vars,/.test(src)) {
+  // 종이가 쓰는 그 객체(vars)를 정본으로 이어 넘긴다. 손으로 조립하면 종이와 갈리고,
+  // 발급 상세의 전문 보기와도 갈린다(둘이 같은 정본을 쓴다 — 5단계 ⓩ).
+  if (!/vars=\{translationDisplayVars\(vars, data\.roomScheduleText\)\}/.test(src)) {
     violations.push(`${f} — ⓥ 카드에 종이의 vars 를 안 넘긴다. 카드가 자리표시자를 그대로 보이거나 종이와 다른 값을 보인다.`)
   }
   if (!/sourceAddenda=\{contractAddendaForTranslation\(data\)\}/.test(src)) {
@@ -424,10 +425,10 @@ function fnBody(src, at) {
   const src = read(f)
   const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
   if (card.length >= 1000) {
-    if (!/translationSourceLines\(template, addenda\)/.test(card)) {
-      violations.push(`${f} — ⓨ 편집기가 가변 절을 분모에 안 넣는다. 특약은 종이에 실리는데 번역할 칸이 아예 안 선다.`)
+    if (!/translationSourceLines\(template, addenda, refundClauseInContract\)/.test(card)) {
+      violations.push(`${f} — ⓨ 편집기가 가변 절·환불 조항 토글을 분모에 안 넣는다. 종이에 실리는데 번역할 칸이 아예 안 선다.`)
     }
-    if (!/orphanTranslationKeys\(stored, template, lang, addenda\)/.test(card)) {
+    if (!/orphanTranslationKeys\(stored, template, lang, addenda, refundClauseInContract\)/.test(card)) {
       violations.push(`${f} — ⓨ 고아 판정이 분모와 다른 집합을 본다. 특약 번역 전건이 고아로 잡힌다.`)
     }
     // 자리표시자 경고는 저장·되붙이기와 **같은 함수**로 낸다. 손으로 세면 세 곳의 답이 갈린다.
@@ -439,12 +440,147 @@ function fnBody(src, at) {
 {
   const f = 'components/doc/SignRequestLangPicker.tsx'
   const src = read(f)
-  // 계약 기준(mine)이 있으면 그것, 없으면 영업장 기준으로 떨어진다.
-  if (!/translationProgress\(r\.translations, r\.template, lang, mine \?\? r\.addenda\)/.test(src)) {
-    violations.push(`${f} — ⓨ 피커 캡션이 가변 절을 분모에 안 넣는다. 특약까지 다 번역한 언어가 영영 미완으로 보인다.`)
+  // 계약 기준(mine)이 있으면 그것, 없으면 영업장 기준으로 떨어진다. 두 축(가변 절·환불 조항
+  // 토글) 다 그렇게 떨어져야 한다 — 한 축만 좁히면 분모가 두 기준을 섞는다.
+  if (!/translationProgress\(r\.translations, r\.template, lang,\s*mine\?\.addenda \?\? r\.addenda, mine\?\.refundClauseInContract \?\? r\.refundClauseInContract\)/.test(src)) {
+    violations.push(`${f} — ⓨ 피커 캡션이 가변 절·환불 조항 토글을 분모에 안 넣는다. 다 번역한 언어가 영영 미완으로 보인다.`)
   }
   if (!/getContractTranslationAddenda\(tenantId, leaseTermId\)/.test(src)) {
     violations.push(`${f} — ⓨ 피커가 계약 지목으로 분모를 안 좁힌다. 그 계약에 안 붙는 절까지 세어 다 번역한 언어가 영영 미완으로 보인다.`)
+  }
+}
+
+// ── 5단계 배선(발급 박제 vars · 환불 규정 변수 줄) ──────────────────
+//
+//   ⓩ 발급 박제가 치환 재료를 **facts 밖에** 담고, 재료는 종이와 같은 함수에서 나온다.
+//     facts 안에 넣으면 그 축은 드리프트가 통비교하는 JSON 이라, 조항을 한 글자도 안 고친
+//     발급본 전건이 허위 드리프트로 뜬다(1~4단계가 지켜 온 규칙).
+//   ① 조판 vars 가 인쇄와 박제의 **한 정본**이다. 인라인으로 되돌리면 박제가 쓸 길이 없어져
+//     전문 보기에 자리표시자가 다시 글자 그대로 뜬다(4단계 잔존 결함의 재발).
+//   ② 발급 상세가 그 재료를 본문에 넘기고, **없는 발급본에는 사실을 한 줄로 말한다.**
+//     지금 값을 계산해 채우면 그것은 증거가 아니라 오늘의 값이다.
+//   ③ 환불 규정 변수 줄이 **종이와 같은 조건**으로 선다(토글 + 본문에 자리). 그리고 화면이
+//     '빈 칸 = 권장'을 말하고, 경고가 막지 않는다(운영자 오더 — 유도하되 막지 않는다).
+
+// ⓩ·① — 발급 박제의 치환 재료와 조판 정본
+{
+  const f = 'lib/contractPrintHtml.ts'
+  const src = read(f)
+  if (!/export function contractPrintVars\(/.test(src)) {
+    violations.push(`${f} — ① 조판 vars 가 함수로 안 서 있다. 발급 박제가 같은 재료를 못 써서 전문 보기에 자리표시자가 글자 그대로 뜬다.`)
+  }
+  const build = fnBody(src, src.indexOf('export function buildContractPrintHtml'))
+  if (build.length < 500) violations.push(`${f} — buildContractPrintHtml 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else if (!/const vars: Record<string, string> = contractPrintVars\(d\)/.test(build)) {
+    violations.push(`${f} — ① 인쇄가 그 정본을 안 쓴다. 종이와 박제가 두 벌의 재료를 갖게 되어 언젠가 다른 값을 그린다.`)
+  }
+}
+{
+  const f = 'app/api/contract/generate/route.ts'
+  const src = read(f)
+  const post = fnBody(src, src.indexOf('export async function POST'))
+  if (post.length < 2000) violations.push(`${f} — POST 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    // 조건부 스프레드여야 한다. `translationVars: x` 는 번역본 없는 발급본에도 칸을 만든다.
+    if (!/\.\.\.\(printData\.translation\s*\?\s*\{ translationVars: translationDisplayVars\(contractPrintVars\(printData\), printData\.roomScheduleText\) \}\s*:\s*\{\}\)/.test(post)) {
+      violations.push(`${f} — ⓩ 발급 박제가 치환 재료를 조건부로 안 담는다(또는 정본을 안 쓴다). 전문 보기가 자리표시자를 그대로 보이거나, 번역본 없는 발급본의 박제가 이 칸 이전과 달라진다.`)
+    }
+    // facts 안에 들어가면 안 된다 — 그 축은 통비교라 모양이 바뀌면 전건이 드리프트다.
+    const facts = fnBody(post, post.indexOf('facts: printedFacts('))
+    if (facts.length > 0 && /translationVars/.test(facts)) {
+      violations.push(`${f} — ⓩ 치환 재료가 printedFacts 축 안에 있다. 인쇄 사실 축이 바뀌어 이미 나간 링크·발급본 전건이 허위 드리프트로 뜬다.`)
+    }
+  }
+}
+{
+  const f = 'lib/contractPrintedFacts.ts'
+  const src = readFileSync(f, 'utf8')
+  // 축은 15개 그대로다. 재료가 사실 축으로 새어 들어가면 통비교가 흔들린다.
+  if (/translationVars/.test(src)) {
+    violations.push(`${f} — ⓩ 인쇄 사실 사영이 치환 재료를 축으로 들었다. 이 축은 JSON 통비교라 모양이 바뀌면 옛 박제 전건이 드리프트로 뜬다.`)
+  }
+}
+
+// ② — 발급 상세가 재료를 넘기고, 없으면 사실을 말한다
+{
+  const f = 'components/doc/IssuedContractSheet.tsx'
+  const src = read(f)
+  if (!/vars=\{snap\?\.translationVars\}/.test(src)) {
+    violations.push(`${f} — ② 전문 보기가 박제된 치환 재료를 본문에 안 넘긴다. {{청소비조항}} 같은 표시가 글자 그대로 뜬다.`)
+  }
+  if (!/!snap\?\.translationVars &&/.test(src)) {
+    violations.push(`${f} — ② 재료가 없는 옛 발급본에 사실을 안 말한다. 자리표시자만 덩그러니 남아 화면이 고장난 것으로 읽힌다.`)
+  }
+  // 지금 값을 계산해 채우면 그것은 증거가 아니라 오늘의 값이다.
+  if (/contractPrintVars\(|buildContractData\(/.test(src)) {
+    violations.push(`${f} — ② 발급 상세가 치환 재료를 지금 다시 만든다. 박제는 얼어 있는 값만 보여야 한다.`)
+  }
+  // 이름만 있는지 보지 않는다 — 표식을 **실제로 읽어 그 언어의 줄에 붙이는지**를 본다.
+  if (!/Array\.isArray\(t\.customVars\) && t\.customVars\.includes\('환불규정'\)/.test(src)
+    || !/환불 규정 직접 번역/.test(src)) {
+    violations.push(`${f} — ③ 발급 상세가 '환불 규정 직접 번역' 표식을 안 읽는다. 왜 공정위 기준과 다른 문구가 나갔는지 답할 자리가 없다.`)
+  }
+}
+
+// ③ — 환불 규정 변수 줄: 종이와 같은 조건 · 빈 칸은 권장 · 막지 않는다
+{
+  const f = 'lib/contractTranslation.ts'
+  const src = read(f)
+  // 열쇠는 종이가 넣는 그 문장이다. 사본을 만들면 문구가 바뀔 때 조용히 갈린다.
+  if (!/export function refundTranslationKey\(\): string \{\s*return buildRefundClause\(\)/.test(src)) {
+    violations.push(`${f} — ③ 변수 줄의 열쇠가 종이의 정본 문장이 아니다. 문구가 바뀌면 저장된 번역이 통째로 고아가 된다.`)
+  }
+  // 조건이 둘이다 — 토글과 본문의 자리. 하나만 보면 종이와 갈린다.
+  if (!/if \(refundClauseInContract && hasRefundVarSlot\(template, addenda\)\) push\('var', refundTranslationKey\(\)\)/.test(src)) {
+    violations.push(`${f} — ③ 변수 줄이 종이와 같은 조건으로 안 선다. 종이에 안 실리는 문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.`)
+  }
+  // 빈 칸 = 권장. 이 폴백이 없으면 이 줄만 한국어 원문으로 남는다.
+  if (!/dict\[refundLine\.text\] : undefined[\s\S]{0,200}RECOMMENDED_REFUND_TRANSLATION\[lang\]/.test(src)) {
+    violations.push(`${f} — ③ 빈 칸일 때 권장 번역으로 안 떨어진다. 유도하려고 만든 줄이 정작 아무것도 안 내보낸다.`)
+  }
+  // 권장과 같은 값은 저장에서 걷는다 — 안 걷으면 사실이 아닌 '직접 번역' 경고가 계속 선다.
+  if (!/if \(k === refundKey && !isCustomRefundTranslation\(lang, v\)\) \{ delete dict\[k\]/.test(src)) {
+    violations.push(`${f} — ③ 권장과 같은 값을 저장에서 안 비운다. 나가는 문안은 권장과 같은데 '직접 번역' 표식이 서고 경고가 뜬다.`)
+  }
+  // 8언어 전량 선언이 누락 감지망이다(Partial 금지 — TRANSLATION_NOTICE 와 같은 규칙).
+  if (!/RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string>/.test(src)) {
+    violations.push(`${f} — ③ 권장 문안이 Record 전량 선언이 아니다. 언어가 늘었을 때 tsc 가 누락을 못 잡는다.`)
+  }
+}
+{
+  const f = 'app/(app)/settings/SettingsForm.tsx'
+  const src = read(f)
+  const card = fnBody(src, src.indexOf('function ContractTranslationCard()'))
+  if (card.length >= 1000) {
+    // 미리 채우면 검토 없이 저장된다(운영자 오더) — placeholder 로만 보인다.
+    if (!/placeholder=\{l\.kind === 'var'[\s\S]{0,120}RECOMMENDED_REFUND_TRANSLATION\[lang\]/.test(card)) {
+      violations.push(`${f} — ③ 권장 전문을 placeholder 로 안 보인다. 비워 둔 칸이 무엇을 내보내는지 화면에서 읽을 수 없다.`)
+    }
+    if (/setDraft\(p => \(\{ \.\.\.p, \[refundKey\]: RECOMMENDED_REFUND_TRANSLATION/.test(card)) {
+      violations.push(`${f} — ③ 편집기가 권장 문안을 칸에 미리 채운다. 검토 없이 저장되는 길이라 운영자 오더로 금지된 방식이다.`)
+    }
+    // '빈 칸 = 권장'을 그 칸 아래에서 말한다 — 다른 줄은 '빈 칸 = 원문'이라 규칙이 갈린다.
+    if (!/비워 두면 권장 번역이 쓰입니다/.test(card)) {
+      violations.push(`${f} — ③ '빈 칸 = 권장'을 화면이 말하지 않는다. 다른 줄과 규칙이 갈리는데 같은 모양의 칸이라 운영자가 미번역으로 읽는다.`)
+    }
+    // 경고는 알리기만 한다. 저장을 막거나 확인창을 세우면 운영자의 방식을 앱이 가로막는다.
+    if (!/refundCustom &&/.test(card)) {
+      violations.push(`${f} — ③ 직접 번역 경고가 칸 옆에 안 선다. 권장과 다른 문안이 아무 말 없이 종이로 나간다.`)
+    }
+    if (/refundCustom[\s\S]{0,200}confirmDialog|disabled=\{[^}]*refundCustom/.test(card)) {
+      violations.push(`${f} — ③ 경고가 확인창을 세우거나 저장을 막는다. 운영자의 방식이 있을 수 있어 유도만 한다(막지 않는다).`)
+    }
+    // 화면과 서버가 같은 정본으로 판정해야 저장 뒤에도 '저장 안 함'이 안 남는다.
+    if (!/isCustomRefundTranslation\(lang, v\)/.test(card)) {
+      violations.push(`${f} — ③ 화면 저장본이 서버 병합과 다른 규칙으로 칸을 걷는다. 저장 직후에도 '저장하지 않은 변경'이 남는다.`)
+    }
+  }
+}
+{
+  const f = 'components/doc/SignRequestLangPicker.tsx'
+  const src = read(f)
+  if (!/refundCustom \? `\$\{head\} · 환불 규정 직접 번역`/.test(src)) {
+    violations.push(`${f} — ③ 피커 캡션이 '환불 규정 직접 번역'을 안 덧붙인다. 보내기 직전에 그 사실을 볼 자리가 없다.`)
   }
 }
 
@@ -453,4 +589,4 @@ if (violations.length) {
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단)')

@@ -19,9 +19,12 @@ const diff = (a: Set<string>, b: Set<string>) => [...a].filter(k => !b.has(k))
 // ── (가)(나) 계약서 본문 {{영문·한글}} — 인쇄 정본의 vars 블록과 대조
 {
   const printSrc = src('lib/contractPrintHtml.ts')
-  const block = printSrc.match(/const vars: Record<string, string> = \{([\s\S]*?)\n {2}\}/)
+  // 블록은 2026-09-08 에 조판 밖으로 나왔다(contractPrintVars) — 발급 박제가 같은 재료를 써야
+  // 발급 상세의 '전문 보기'가 종이와 같은 값으로 조항을 그리기 때문이다. 사전 대조의 대상은
+  // 그대로 **인쇄 정본의 치환 열쇠 집합**이고, 읽는 자리만 그 함수 안으로 옮겼다.
+  const block = printSrc.match(/export function contractPrintVars\([\s\S]*?\n {2}return \{([\s\S]*?)\n {2}\}/)
   if (!block) {
-    violations.push('lib/contractPrintHtml.ts — 계약서 변수 블록(const vars)을 못 찾았다. 감지망을 고칠 것.')
+    violations.push('lib/contractPrintHtml.ts — 계약서 변수 블록(contractPrintVars)을 못 찾았다. 감지망을 고칠 것.')
   } else {
     const extracted = new Set([...block[1].matchAll(/^\s{4}([A-Za-z가-힣][\w가-힣]*):/gm)].map(m => m[1]))
     // 스프레드(...cleaningFeeVars)와 치환 지점이 다른 키 — lib/contract 에서 확인한다.

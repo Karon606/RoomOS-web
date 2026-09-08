@@ -25,7 +25,7 @@ import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNam
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, contractAddendaForTranslation, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
-import { asResolvedContractTranslation, contractTranslationAddendum } from '@/lib/contractTranslation'
+import { asResolvedContractTranslation, contractTranslationAddendum, translationDisplayVars } from '@/lib/contractTranslation'
 import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
@@ -1626,11 +1626,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         // 싣지만, 번역본은 치환 전 문안을 열쇠로 쥐고 있어 이 자리에서 채워야 한다(같은 값이다).
         // 본문 vars 에 넣지 않는 이유는 운영자가 본문 조항에 {{일정}} 을 박아 둔 경우
         // 종이의 치환 결과가 바뀌기 때문이다 — 이 기능이 종이를 건드리면 안 된다.
+        // 그 이음은 정본 하나다(translationDisplayVars) — 발급 상세의 전문 보기가 같은 함수를
+        // 쓴다. 두 곳이 각자 이으면 한쪽만 {{일정}} 이 글자 그대로 뜬다.
         <ContractTranslationCard
           translation={translation}
           source={data.template}
           sourceAddenda={contractAddendaForTranslation(data)}
-          vars={{ ...vars, 일정: data.roomScheduleText ?? '' }}
+          vars={translationDisplayVars(vars, data.roomScheduleText)}
         />
       )}
 

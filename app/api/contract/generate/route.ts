@@ -13,7 +13,7 @@ import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, driveImageDataUrl } from '@/lib/google-drive'
-import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
+import { buildContractPrintHtml, contractPrintVars, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, resolveSubLeaseAddendum,
   resolveRoomScheduleAddendum,
@@ -26,6 +26,7 @@ import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 import { documentName, isForeignForDocuments, registrationHeadPair } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
+import { translationDisplayVars } from '@/lib/contractTranslation'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { foreignRegNoFact, readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -653,6 +654,18 @@ export async function POST(req: Request) {
         // 박제는 이 축이 생기기 전과 바이트가 같다.
         translation: printData.translation,
       }),
+      // 치환 재료. 발급 상세의 '전문 보기'가 번역본 조항을 **종이와 같은 값**으로 그리려면
+      // 이것이 있어야 한다 — 없으면 `{{청소비조항}}` 이 글자 그대로 뜬다(4단계 잔존 결함).
+      //
+      // **facts 밖에 둔다.** 그 축은 드리프트가 통째로 견주는 JSON 이라, 모양이 바뀌면 조항을
+      // 한 글자도 안 고친 발급본 전건이 허위 드리프트로 뜬다(1~4단계가 지켜 온 규칙).
+      //
+      // 번역본이 있을 때만 담는다. 번역본을 안 쓰는 발급본의 박제는 이 칸이 생기기 전과 같다.
+      // 재료는 종이와 **같은 함수**에서 나오고(contractPrintVars), 번역본 쪽에만 필요한
+      // {{일정}} 을 정본이 얹는다(translationDisplayVars) — 서명 화면 카드와 한 벌이다.
+      ...(printData.translation
+        ? { translationVars: translationDisplayVars(contractPrintVars(printData), printData.roomScheduleText) }
+        : {}),
     }
 
     // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
