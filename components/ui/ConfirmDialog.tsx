@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { useSettleEntrance } from '@/lib/useSettleEntrance'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 
 export type ConfirmLevel = 'normal' | 'caution' | 'danger'
@@ -65,6 +66,8 @@ export function ConfirmHost() {
   const overlayRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: !!pending, overlayRef, panelRef })
+  // 등장 모션 마감 정본 — 숨은 채 뜨면 첫 프레임에 굳어 막이 거의 투명한 채 남는다(신고 2026-09-08).
+  useSettleEntrance({ active: !!pending, overlayRef, panelRef })
 
   useEffect(() => {
     listener = setPending

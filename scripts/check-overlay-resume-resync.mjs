@@ -74,6 +74,50 @@ for (const root of ROOTS) {
   }
 }
 
+// ── 등장도 본다(2026-09-08) ────────────────────────────────────────
+// 이 그물은 여태 **퇴장만** 봤다. 위에 "등장이 멎으면 오버레이가 안 뜨고 말지 화면에 막이 남지
+// 않는다"고 적었는데, 그 전제가 참이 아닌 경로가 있었다 — 문서가 숨은 채(document.hidden)
+// 마운트되면 등장 모션이 첫 프레임에서 굳는다. 그 첫 프레임이 막 opacity 0, 패널
+// translateY(10px) scale(.97) 이라, 걷히는 것이 아니라 **거의 투명한 막**이 남는다. 뒤 목록이
+// 비치고 제목이 앱 헤더 위로 겹쳐 보인 그 모습이다(신고 2026-09-08 "일부가 깨져보이는 현상").
+//
+// 규칙: 등장 모션 클래스를 붙이는 전체 화면 오버레이는 정본 훅(useSettleEntrance)으로 마감한다.
+// 시간 추정으로 지우는 것은 이 그물이 막는 벽시계 퇴장과 같은 함정이라 여기서도 안 받는다.
+// **주석을 지우고 본다.** 설명 주석이 코드와 같은 낱말을 쓰므로(이 절만 해도 document.hidden 을
+// 두 번 적는다), 원문 그대로 보면 코드에서 처리를 빼도 설명만으로 통과한다 — 이 그물을 세울 때
+// 역주입으로 실제로 그랬다. '://' 는 URL 이라 예외로 둔다.
+const stripComments = s => s
+  .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+  .replace(/(^|[^:])\/\/[^\n]*/g, (_, p) => p)
+
+const ENTRANCE = /anim-(overlay|panel)-in/
+for (const root of ROOTS) {
+  for (const f of walk(root)) {
+    const src = stripComments(readFileSync(f, 'utf8'))
+    if (!src.includes('fixed inset-0') || !ENTRANCE.test(src)) continue
+    if (!/useSettleEntrance\(/.test(src)) {
+      violations.push(`${f} — 등장 모션을 붙여 놓고 마감이 없다. 숨은 채 뜨면 첫 프레임에 굳어 반투명 막이 남는다(lib/useSettleEntrance)`)
+    }
+  }
+}
+// 정본 자체가 살아 있는지 — 소비자만 검사하면 알맹이가 빠져도 전부 통과한다.
+try {
+  const hook = stripComments(readFileSync('lib/useSettleEntrance.ts', 'utf8'))
+  if (!/addEventListener\(\s*'animationend'/.test(hook)) {
+    violations.push('lib/useSettleEntrance.ts — animationend 를 안 듣는다. 모션이 끝난 것을 확인할 길이 없어진다')
+  }
+  // 마운트 시점의 생략 분기를 콕 집어 본다. 그냥 document.hidden 을 찾으면 복귀 쓸이의
+  // `!document.hidden` 이 대신 걸려, 정작 생략을 빼도 통과한다(역주입으로 확인).
+  if (!/if\s*\(\s*document\.hidden\s*\)/.test(hook)) {
+    violations.push('lib/useSettleEntrance.ts — 숨은 채 마운트되는 경우를 안 본다. 그 자리가 이번 신고의 유력한 경로다')
+  }
+  if (!/addEventListener\(\s*'visibilitychange'/.test(hook)) {
+    violations.push('lib/useSettleEntrance.ts — 복귀 쓸이가 없다. 숨은 사이 멎은 모션이 그대로 남는다')
+  }
+} catch {
+  violations.push('lib/useSettleEntrance.ts 를 읽을 수 없음 — 등장 마감 정본이 사라졌다')
+}
+
 console.log(`[오버레이 복귀] 전체화면 오버레이 ${overlays}개 검사 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')

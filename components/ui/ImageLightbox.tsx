@@ -13,6 +13,7 @@
 // transform 이 아니라 **폭을 직접 늘린다.** 레이아웃이 실제로 넓어져 스크롤 범위가 저절로 따라온다.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSettleEntrance } from '@/lib/useSettleEntrance'
 
 const Z_MIN = 1
 const Z_MAX = 5
@@ -25,8 +26,12 @@ export function ImageLightbox({ src, alt = '이미지', onClose }: {
   onClose: () => void
 }) {
   const [z, setZ] = useState(1)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
+  // 등장 모션 마감 정본 — 숨은 채 뜨면 첫 프레임(opacity 0)에 굳어 검은 막이 통째로 사라진다
+  // (신고 2026-09-08 계열). 이 컴포넌트는 부모가 조건부로 마운트하므로 떠 있는 동안이 곧 active 다.
+  useSettleEntrance({ active: true, overlayRef })
   // 배율의 정본은 ref 다. 제스처 중에는 리렌더를 기다릴 수 없고, 스크롤 보정이 같은 프레임에서
   // 끝나야 보던 자리가 안 튄다. state 는 표시용이다.
   const zRef = useRef(1)
@@ -111,7 +116,7 @@ export function ImageLightbox({ src, alt = '이미지', onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 anim-overlay-in" style={{ zIndex: 'var(--z-modal)' as unknown as number, background: 'rgba(0,0,0,.88)' }}>
+    <div ref={overlayRef} className="fixed inset-0 anim-overlay-in" style={{ zIndex: 'var(--z-modal)' as unknown as number, background: 'rgba(0,0,0,.88)' }}>
       {/* 닫기는 항상 같은 자리에 있다. 확대해도 안 밀린다 — 우리 확대는 이미지 폭만 키운다. */}
       <button type="button" onClick={onClose} aria-label="닫기"
         style={{

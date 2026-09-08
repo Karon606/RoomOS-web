@@ -37,6 +37,7 @@
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
 import { keyboardOpen, overlapInset, shouldRestore, revealDelta, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { isEditableTarget, editableFocused } from '@/lib/editableTarget'
 
 const KBD_INSET = '--kbd-inset'
 // 키보드가 올라와 있는 동안 루트에 찍는 표식. **판정은 여기 한 곳에서만 한다**(§12) — 화면마다
@@ -61,12 +62,8 @@ function scrollParent(el: Element): HTMLElement | null {
   return null
 }
 
-function isEditable(t: EventTarget | null): t is HTMLElement {
-  return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement
-    // select 도 포함한다 — iOS 피커 휠도 visual viewport 를 줄인다
-    || t instanceof HTMLSelectElement
-    || (t instanceof HTMLElement && t.isContentEditable)
-}
+// 편집 요소 판정은 lib/editableTarget 정본을 쓴다 — 복귀 재동기화도 같은 물음을 물어서,
+// 여기 사본으로 두면 두 소유자가 갈린다(2026-09-08).
 
 export default function ViewportOffsetGuard() {
   // aligned 는 음수(아래로 내리는) 정렬을 포커스당 1회로 제한하는 래치다. revealDelta 주석 참조.
@@ -149,11 +146,22 @@ export default function ViewportOffsetGuard() {
     // 재평가된다(줌 중 앱 전환 복귀가 낡은 배율로 남지 않게, 패널 조건부).
     // rAF 로 한 박자 더 도는 이유 — 복귀·회전 직후 프레임의 visualViewport 는 아직 옛 값을 낼 수
     // 있다. 그 자리에서 한 번만 읽고 끝내면 오염된 값을 그대로 다시 쓰게 된다.
-    const resync = () => { onResize(); requestAnimationFrame(onResize) }
+    //
+    // **낡은 스냅샷이 유령 인셋을 그리는 길을 여기서 막는다(신고 2026-09-08).** 돌아온 직후의
+    // vv 가 아직 작으면 onResize 는 '키보드가 열려 있다'로 읽고 인셋을 적고 표식을 찍는다.
+    // 그런데 아무 칸에도 포커스가 없으면 키보드도 없다 — 그때는 재는 대신 인셋을 0 으로 지우고
+    // 표식을 떼고 잔존 오프셋을 복원한다. 포커스가 있으면 종전 경로 그대로다.
+    const resyncPass = () => {
+      if (editableFocused()) { onResize(); return }
+      root.style.setProperty(KBD_INSET, '0px')
+      root.removeAttribute(KBD_OPEN_ATTR)
+      restore()
+    }
+    const resync = () => { resyncPass(); requestAnimationFrame(resyncPass) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
     const onFocusIn = (e: FocusEvent) => {
-      if (!isEditable(e.target)) return
+      if (!isEditableTarget(e.target)) return
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }
       // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다.

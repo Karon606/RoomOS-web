@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from 'react'
 import { submitErrorReport, createErrorReportImageSession } from '@/app/(app)/errorReports'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
+import { viewportProbe } from '@/lib/viewportProbe'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -159,6 +160,9 @@ export default function ErrorReportButton() {
 
   const submit = async () => {
     setPending(true)
+    // 화면 기하는 **첫 await 전에** 잰다. 사진 업로드는 초 단위라 그 사이 키보드가 닫히면
+    // 정작 알고 싶은 그 순간의 기하가 아니라 업로드가 끝난 뒤의 기하가 담긴다.
+    const probe = viewportProbe()
     try {
       // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
       const imageFileIds: string[] = []
@@ -176,12 +180,17 @@ export default function ErrorReportButton() {
         } catch { failedImages++ }
       }
 
+      // 계측을 메모 **뒤에** 덧붙인다(2026-09-08). 운영자가 읽는 문장이 먼저고 계측은 뒤다 —
+      // 메모가 길어 서버에서 잘리더라도 밀려나는 것은 계측 쪽이다.
+      // 담는 것과 안 담는 것(개인정보 경계)은 lib/viewportProbe 머리말에 있다. 값은 안 담는다.
+      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${probe}`].filter(Boolean).join('\n\n')
+
       const res = await submitErrorReport({
         url: snapshot.url,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
         breadcrumbs: snapshot.crumbs,
         errorText: snapshot.err ?? undefined,
-        userNote: note || undefined,
+        userNote: noteWithProbe || undefined,
         imageFileIds: imageFileIds.length > 0 ? imageFileIds : undefined,
       })
       if (res.ok) {

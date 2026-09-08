@@ -64,3 +64,22 @@ export function shouldWriteVvHeight(next: number, lastGood: number, fromResize: 
   if (lastGood <= 0) return true
   return fromResize || next >= lastGood
 }
+
+/**
+ * 복귀 재동기화의 이 패스가 **줄이는 값**을 받아도 되는가 — 첫 패스는 안 받는다.
+ *
+ * 앱 전환·잠금·bfcache 에서 돌아온 직후 프레임의 visualViewport 는 아직 옛 값을 낸다. 그래서
+ * 재동기화는 두 패스를 돈다(그 자리 + requestAnimationFrame). 그런데 종전에는 **첫 패스도
+ * 줄이는 값을 받아** 낡은 스냅샷 한 장이 그대로 박혔다. 짧은 창이 남거나, 인셋이 어긋난 채
+ * 모달 조각만 뜨던 자리다(신고 2026-09-08).
+ *
+ * 두 번째 조건은 "편집 요소에 포커스가 있는가"다. 아무 칸에도 서 있지 않으면 키보드도 없으니,
+ * 그때 오는 작은 띠는 실재가 아니라 낡은 값이다.
+ *
+ * **2026-08-29 의 두 규칙은 그대로다.** 커지는 값은 아무 이벤트에서나 받고, 줄이는 값은
+ * resize 에서만 받는다 — 이것은 그 위에 얹는 관문일 뿐이고, 진짜 축소(키보드가 서서 띠가 주는
+ * 경우)는 visualViewport 의 resize 로 들어와 이 함수를 지나지 않는다.
+ */
+export function resumeAllowsShrink(pass: 1 | 2, editableFocused: boolean): boolean {
+  return pass === 2 && editableFocused
+}

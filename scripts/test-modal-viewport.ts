@@ -5,7 +5,7 @@
 //   · **위 여백에도 상한이 있다** — 아래에만 0 하한이 있고 위에 짝이 없어서, 어긋난 스냅샷 한 장에
 //     패널이 내려가며 작아졌다. 32px 만 넘어도 발동한다.
 //   · **불가능값은 버리고 직전 값을 유지한다** — 0 으로 떨구면 레이아웃이 통째로 흔들린다.
-import { overlayInsets, usableVvHeight, shouldWriteVvHeight, MIN_VV_HEIGHT } from '../lib/modalViewport'
+import { overlayInsets, usableVvHeight, shouldWriteVvHeight, resumeAllowsShrink, MIN_VV_HEIGHT } from '../lib/modalViewport'
 
 let pass = 0
 const fails: string[] = []
@@ -69,6 +69,34 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   eq('resize 면 커지는 값도 쓴다', w(874, 538, true), true)
   // 아직 한 번도 못 읽었으면 무엇이든 받는다(첫 프레임).
   eq('첫 값은 무조건 쓴다', w(300, 0, false), true)
+}
+
+// ── 복귀 재동기화 · 낡은 스냅샷 ────────────────────────────────────
+// 앱 전환·잠금·bfcache 에서 돌아온 직후 프레임의 vv 는 아직 옛 값을 낸다. 재동기화는 두 패스를
+// 도는데(그 자리 + rAF), 종전에는 첫 패스도 줄이는 값을 받아 낡은 한 장이 그대로 박혔다
+// (신고 2026-09-08 — 짧은 창·어긋난 인셋으로 모달 조각만 뜨던 자리).
+{
+  const r = resumeAllowsShrink
+  eq('복귀 첫 패스는 포커스가 있어도 축소를 안 받는다', r(1, true), false)
+  eq('복귀 첫 패스는 포커스가 없으면 더욱 아니다', r(1, false), false)
+  eq('두 번째 패스 + 편집 포커스면 축소를 받는다', r(2, true), true)
+  // 아무 칸에도 안 서 있으면 키보드가 없다 — 그때 오는 작은 띠는 실재가 아니라 낡은 값이다.
+  eq('두 번째 패스라도 포커스가 없으면 안 받는다', r(2, false), false)
+
+  // 합성 — 훅이 실제로 부르는 모양 그대로(shouldWriteVvHeight 의 fromResize 자리에 넣는다).
+  const w = shouldWriteVvHeight
+  eq('낡은 작은 값은 첫 패스에서 안 박힌다', w(400, 874, r(1, true)), false)
+  eq('두 번째 패스 + 포커스면 진짜 축소가 들어온다', w(538, 874, r(2, true)), true)
+  eq('포커스 없는 복귀에서는 두 패스 다 안 줄인다', w(400, 874, r(2, false)), false)
+  // 복원(커지는 값)은 8-29 규칙대로 패스·포커스와 무관하게 통과한다 — 이 관문이 복구를 막으면
+  // 앱에서 돌아와 짧게 남던 창이 되살아난다.
+  eq('커지는 값은 첫 패스에서도 들어온다', w(874, 400, r(1, false)), true)
+  eq('커지는 값은 두 번째 패스에서도 들어온다', w(874, 400, r(2, false)), true)
+
+  // **8-29 봉합 불변** — 이 관문은 복귀 경로에만 얹힌다. vv 의 resize·scroll 경로는 그대로다.
+  eq('vv resize 는 여전히 축소를 받는다', w(538, 874, true), true)
+  eq('팬(scroll)은 여전히 축소를 안 받는다', w(400, 538, false), false)
+  eq('팬에서 커지는 값은 여전히 받는다', w(874, 400, false), true)
 }
 
 console.log(`\n모달 기하 회귀: ${pass} 통과 / ${fails.length} 실패`)

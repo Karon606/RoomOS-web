@@ -11,7 +11,8 @@
 // 불가능값은 직전 유효값 유지, 복귀 재동기(pageshow·회전·visibilitychange + rAF 한 박자).
 
 import { useEffect, type RefObject } from 'react'
-import { overlayInsets, usableVvHeight, shouldWriteVvHeight } from '@/lib/modalViewport'
+import { overlayInsets, usableVvHeight, shouldWriteVvHeight, resumeAllowsShrink } from '@/lib/modalViewport'
+import { editableFocused } from '@/lib/editableTarget'
 
 export function useVisibleBand(opts: {
   active: boolean
@@ -55,12 +56,19 @@ export function useVisibleBand(opts: {
       if (top !== lastTop) { ov.style.setProperty(varTop, top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty(varBottom, bottom); lastBottom = bottom }
     }
-    // 복귀 재동기(오류신고 734ea211·e97f4b2b) — 앱 전환·bfcache·회전은 vv 이벤트가 안 온다.
-    // 크기·위치를 둘 다 다시 적고, rAF 한 박자를 더 돈다(직후 프레임의 vv 는 옛 값을 낼 수 있다).
+    // vv 의 resize — 키보드가 서서 띠가 진짜 주는 길이다. 여기서는 줄이는 값을 받는다(8-29 규칙).
     const both = () => { syncSize(true); sync() }
     // 팬은 위치만 옮긴다. 크기는 커지는 쪽만 받아 복귀 직후 작게 찍힌 값이 여기서 씻긴다.
     const onPan = () => { syncSize(false); sync() }
-    const resync = () => { both(); requestAnimationFrame(both) }
+    // 복귀 재동기(오류신고 734ea211·e97f4b2b) — 앱 전환·bfcache·회전은 vv 이벤트가 안 온다.
+    // 크기·위치를 둘 다 다시 적고, rAF 한 박자를 더 돈다(직후 프레임의 vv 는 옛 값을 낼 수 있다).
+    //
+    // **그런데 첫 패스는 줄이는 값을 안 받는다**(신고 2026-09-08). 그 자리에서 읽은 vv 가 아직 옛
+    // 값이면 낡은 스냅샷이 그대로 박혀 짧은 창·어긋난 인셋이 남는다. 두 번째 패스에서만, 그것도
+    // 편집 요소에 포커스가 있을 때만 받는다 — 판정은 정본 resumeAllowsShrink 가 한다.
+    // 커지는 값(복원)은 두 패스 모두 종전 그대로 들어오고, 진짜 축소는 위 both 로 들어온다.
+    const resyncPass = (pass: 1 | 2) => { syncSize(resumeAllowsShrink(pass, editableFocused())); sync() }
+    const resync = () => { resyncPass(1); requestAnimationFrame(() => resyncPass(2)) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
     both()
     vv.addEventListener('resize', both)

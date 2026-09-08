@@ -5,6 +5,7 @@ import { confirmDialog } from './ConfirmDialog'
 import { PeekSheet } from './PeekSheet'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { useSettleEntrance } from '@/lib/useSettleEntrance'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -113,6 +114,10 @@ export function Modal({
     active: open, overlayRef, panelRef,
     vars: { top: '--modal-vv-top', bottom: '--modal-vv-bottom', height: '--modal-vvh' },
   })
+  // 등장 모션 마감 — 끝났음을 animationend 로 확인하고 클래스를 뗀다. 숨은 채 마운트되면 생략한다.
+  // 숨은 동안 모션이 안 돌아 첫 프레임(막 opacity 0, 패널 scale .97)에 굳으면 70% 막이 없는
+  // 반투명 모달이 남아 뒤 목록이 비치고 제목이 앱 헤더 위로 겹친다(신고 2026-09-08). 경위는 훅 주석.
+  useSettleEntrance({ active: open, overlayRef, panelRef })
   const dirtyRef = React.useRef(dirty)
   dirtyRef.current = dirty
   const askingRef = React.useRef(false)
@@ -163,6 +168,9 @@ export function Modal({
   return (
     <div
       ref={overlayRef}
+      // 계측 손잡이 — 오류신고가 제출 시점의 모달 상태를 함께 담을 때 이 두 표식으로 찾는다
+      // (lib/viewportProbe, 2026-09-08). 스타일은 붙지 않는다.
+      data-modal-overlay=""
       className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center anim-overlay-in`}
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
@@ -184,6 +192,7 @@ export function Modal({
     >
       <div
         ref={panelRef}
+        data-modal-panel=""
         className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col anim-panel-in`}
         // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 만으로는 2rem 여유가 안 생긴다)
         // --modal-vvh 는 키보드가 열렸을 때의 실제 보이는 높이. 위 이펙트가 명령형으로 기록한다.

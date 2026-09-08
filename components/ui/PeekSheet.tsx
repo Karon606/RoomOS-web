@@ -7,6 +7,7 @@
 
 import { useRef, useState } from 'react'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { useSettleEntrance } from '@/lib/useSettleEntrance'
 
 const PAGES = [
   { href: '/dashboard', label: '홈' },
@@ -32,6 +33,8 @@ export function PeekSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const overlayRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: open, overlayRef, panelRef })
+  // 등장 모션 마감 정본 — 숨은 채 뜨면 첫 프레임에 굳어 막이 거의 투명한 채 남는다(신고 2026-09-08).
+  useSettleEntrance({ active: open, overlayRef, panelRef })
   if (!open) return null
   return (
     // 하단 시트라 위·아래 인셋이 시트를 '키보드 위 보이는 띠' 안으로 밀어 올린다(정본

@@ -71,6 +71,71 @@ for (const f of ALLOW.keys()) {
   if (!declaring.has(f)) violations.push(`${f} — ALLOW 에 있는데 fixed inset-0 선언이 없다. 목록에서 내릴 것`)
 }
 
+// 3) 복귀 재동기화 관문(2026-09-08) — 첫 패스가 낡은 스냅샷으로 화면을 줄이지 못하게 한다.
+//
+// 앱 전환·잠금에서 돌아온 직후 프레임의 vv 는 아직 옛 값이다. 그 값을 첫 패스가 받으면 짧은
+// 창·어긋난 인셋이 그대로 박힌다. 판정은 정본 resumeAllowsShrink 가 하고 소비자는 두 패스를
+// 그 함수로만 나눠야 한다 — 한쪽이 syncSize(true) 로 되돌아가면 이 관문이 통째로 없어진다.
+const need = (file, res, why) => {
+  let src
+  try { src = strip(readFileSync(file, 'utf8')) } catch { violations.push(`${file} — 읽을 수 없음`); return }
+  for (const [re, msg] of res) if (!re.test(src)) violations.push(`${file} — ${msg}${why ? ` (${why})` : ''}`)
+}
+need('lib/modalViewport.ts', [
+  [/export function resumeAllowsShrink\(/, '정본 resumeAllowsShrink 가 사라짐. 복귀 첫 패스의 축소 금지가 없어진다'],
+])
+need('lib/useVisibleBand.ts', [
+  [/resumeAllowsShrink\(/, '복귀 재동기가 정본 관문(resumeAllowsShrink)을 안 지난다'],
+  [/editableFocused\(\)/, '복귀 재동기가 포커스를 묻지 않는다. 포커스가 없으면 작은 띠는 낡은 값이다'],
+  [/resyncPass\(\s*1\s*\)/, '복귀 첫 패스(1)가 사라짐'],
+  [/requestAnimationFrame\([^\n]*resyncPass\(\s*2\s*\)/, '복귀 두 번째 패스(rAF 안의 2)가 사라짐'],
+])
+// 편집 포커스 판정은 한 곳에서만 한다 — 두 소유자가 생기면 한쪽만 참인 구간에서 어긋난다.
+need('lib/editableTarget.ts', [
+  [/export function isEditableTarget\(/, '편집 요소 판정 정본이 사라짐'],
+  [/export function editableFocused\(/, '포커스 여부 정본이 사라짐'],
+])
+need('components/layout/ViewportOffsetGuard.tsx', [
+  [/from '@\/lib\/editableTarget'/, '편집 요소 판정을 정본에서 안 가져온다'],
+  [/editableFocused\(\)/, '복귀 재동기가 포커스를 묻지 않는다. 키보드가 없는데 인셋이 남는다'],
+])
+// 판정 사본이 되살아나면 두 소유자가 갈린다 — 여기서만 막는다(정본은 lib/editableTarget).
+try {
+  const guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8'))
+  if (/function isEditable\s*\(/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — 편집 요소 판정 사본이 되살아났다. lib/editableTarget 만 쓸 것')
+  }
+} catch { /* 위에서 이미 신고됨 */ }
+
+// 4) 계측 배선과 개인정보 경계(2026-09-08) — 다음 재현 한 번을 사실로 바꾸는 자리다.
+need('lib/viewportProbe.ts', [
+  [/export function viewportProbe\(/, '계측 정본이 사라짐'],
+  [/visualViewport/, '보이는 띠를 안 담는다. 이 신고 축은 그 숫자가 없으면 또 추측이 된다'],
+  [/--modal-vvh/, '모달 띠 높이 변수를 안 담는다'],
+  [/--kbd-inset/, '키보드 인셋 변수를 안 담는다'],
+])
+// 값·본문 텍스트는 절대 담지 않는다. 신고는 운영자 기기를 떠나 저장되고, 거기 입주자의 이름·
+// 연락처가 실려 있으면 그 자체가 사고다(첨부 공개권한 사건과 같은 클래스).
+{
+  let src = ''
+  try { src = strip(readFileSync('lib/viewportProbe.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const leaks = [
+    [/\.value\b/, '입력값(.value)'],
+    [/placeholder/, 'placeholder'],
+    [/textContent|innerText|innerHTML|outerHTML/, '본문 텍스트'],
+  ]
+  for (const [re, what] of leaks) {
+    if (re.test(src)) violations.push(`lib/viewportProbe.ts — ${what} 을 읽는다. 계측은 기하와 요소의 종류만 담는다`)
+  }
+}
+need('components/ErrorReportButton.tsx', [
+  [/viewportProbe\(\)/, '신고 제출이 화면 계측을 안 담는다'],
+  [/note\.trim\(\)/, '메모가 계측보다 앞에 오는 조립이 사라짐. 운영자가 읽는 문장이 먼저다'],
+])
+need('components/ui/Modal.tsx', [
+  [/data-modal-panel/, '계측이 모달을 찾을 손잡이가 사라짐(lib/viewportProbe 가 이 표식으로 읽는다)'],
+])
+
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exit(1)
