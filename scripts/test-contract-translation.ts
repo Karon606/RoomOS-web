@@ -9,6 +9,7 @@ import {
   RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
   REFUND_VAR_PLACEHOLDER, REFUND_VAR_NAME, translationDisplayVars,
   resolveContractTranslationFor, translationDigest, contractTranslationLangFor, translationStaleAfterEdit,
+  signRequestDefaultLang,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
 import {
@@ -1115,6 +1116,44 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   const A2: SubLeaseAddendum = { title: '추가 호실 특약', items: ['보관 용도로만 씁니다.'] }
   eq('가변 절을 넘겨도 계수가 같다',
     translationStaleAfterEdit(raw, T, editedOne, [A2], false), { langs: 2, lines: 1 })
+}
+
+// ── 7단계 ⑮ 서명 요청 피커 기본값 — 툴바에서 고른 것이 이어진다 ─────
+//
+// 언어를 고르는 자리가 둘이 됐는데(툴바 번역본 셀렉트 · 서명 요청 피커) 안 이어져 있었다.
+// 베트남어 번역본을 보다가 그대로 서명 요청을 누르면 피커 기본값이 국적값으로 돌아갔다.
+// **갈림은 URL 파라미터의 유무 하나다** — 툴바는 URL 이 정본이고 한국어도 lang=ko 로 남긴다.
+{
+  eq('파라미터가 없으면 국적 기본값이다(이 기능 전과 같은 착지)',
+    signRequestDefaultLang(null, '베트남'), { lang: 'vi', fromView: false })
+  eq('파라미터 칸 자체가 없어도 국적 기본값이다',
+    signRequestDefaultLang(undefined, '방글라데시'), { lang: 'bn', fromView: false })
+  eq('빈 문자열은 고른 것이 아니다', signRequestDefaultLang('', '중국'), { lang: 'zh', fromView: false })
+  // 급소 — 툴바에서 고른 언어가 그대로 이어진다. 국적과 다른 것이 이 진리표의 요점이다.
+  eq('툴바에서 고른 언어가 기본값이 된다',
+    signRequestDefaultLang('vi', '방글라데시'), { lang: 'vi', fromView: true })
+  // 급소 — 한국어도 '고른 것'이다. 여기서 국적값으로 되돌리면 툴바에서 '없음(한국어)'을 고른
+  // 운영자에게 베트남어가 다시 선다(툴바가 lang=ko 를 지우지 않는 것과 같은 이유).
+  eq('한국어를 고른 것도 이어진다', signRequestDefaultLang('ko', '베트남'), { lang: 'ko', fromView: true })
+  // 화이트리스트 밖은 고른 적이 없는 것과 같다 — URL 은 손으로 고칠 수 있다.
+  eq('모르는 코드는 국적 기본값으로 떨어진다',
+    signRequestDefaultLang('fr', '베트남'), { lang: 'vi', fromView: false })
+  eq('코드처럼 생긴 아무 문자열도 마찬가지다',
+    signRequestDefaultLang('vi-VN', '베트남'), { lang: 'vi', fromView: false })
+  // 급소 — 이 판정은 **URL 문자열**만 본다. 화면이 해석한 언어(translation.lang)를 읽으면
+  // 비공개 언어에서 ko 로 떨어져, 운영자가 고른 것과 다른 언어가 기본값이 된다.
+  // 공개 여부를 인자로 받지도 않으므로 미공개 언어도 고른 그대로 이어진다.
+  eq('공개 안 한 언어를 골라도 그 언어가 이어진다(ko 로 안 떨어진다)',
+    signRequestDefaultLang('ja', '베트남'), { lang: 'ja', fromView: true })
+  // 국적 갈래는 종전 매핑 그대로다 — 이 함수가 새로 정하는 것은 '이어받는가' 하나다.
+  eq('국적 매핑은 종전 그대로다(카자흐스탄은 러시아어)',
+    signRequestDefaultLang(null, '카자흐스탄'), { lang: 'ru', fromView: false })
+  eq('국적이 비면 한국어가 기본값이다(추정으로 남의 언어를 세우지 않는다)',
+    signRequestDefaultLang(null, ''), { lang: 'ko', fromView: false })
+  // 이 값은 피커 기본값까지만 간다. 링크에 박히는 언어는 서버가 같은 화이트리스트로 다시 정한다.
+  for (const l of SIGN_LANGS) {
+    eq(`고른 ${l} 이 그대로 이어진다`, signRequestDefaultLang(l, '베트남'), { lang: l, fromView: true })
+  }
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

@@ -855,9 +855,69 @@ function fnBody(src, at) {
   }
 }
 
+// ── 7단계 배선(툴바 선택을 서명 요청으로 잇기) ──────────────────────
+//
+//   ㉷ 서명 요청 피커의 기본값이 **툴바에서 보고 있는 번역본**에서 온다. 판정은 정본 하나
+//     (signRequestDefaultLang)이고 값은 **발화 시점의 URL** 에서 읽는다. 화면이 해석한 언어
+//     (translationLangNow)를 읽으면 비공개 언어에서 ko 로 떨어져, 운영자가 고른 것과 다른
+//     언어가 기본값이 된다.
+//   ㉸ 그 값은 **피커 기본값까지만** 간다. URL 값을 issueContractShareLink 에 직접 넘기면
+//     피커를 건너뛰는 길이 생긴다 — 화면이 필요로 하는 값과 종이가 지고 갈 값은 같지 않다.
+//     서버로 가는 것은 피커가 돌려준 pickedLang 뿐이라야 한다.
+//   ㉹ 왜 이 언어가 기본으로 잡혔는지 캡션이 말한다. 기존 '국적 기본값'과 **같은 슬롯**이라
+//     줄이 늘지 않는다(카드 높이가 그 언어만 달라지던 지적과 같은 자리).
+{
+  const f = 'app/contract/[tenantId]/ContractView.tsx'
+  const src = read(f)
+  const h = fnBody(src, src.indexOf('const handleSignRequest ='))
+  if (h.length < 500) violations.push(`${f} — handleSignRequest 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    // ㉷ — 정본 판정 + 발화 시점 URL. 둘을 **이어서** 본다. 따로 찾으면 같은 파일의
+    // pickTranslationLang 쪽 URL 재구성이 대신 걸려, 여기서 URL 을 안 읽어도 눈을 감는다.
+    if (!/signRequestDefaultLang\(\s*\n?\s*new URLSearchParams\(window\.location\.search\)\.get\('lang'\), data\.tenant\.nationality\)/.test(h)) {
+      violations.push(`${f} — ㉷ 서명 요청이 툴바에서 보고 있는 번역본을 정본 판정으로 안 이어받는다(또는 발화 시점 URL 을 안 읽는다). 방금 고른 언어가 다음 화면에서 사라진다.`)
+    }
+    if (/translationLangNow/.test(h)) {
+      violations.push(`${f} — ㉷ 기본값을 화면이 해석한 언어에서 읽는다. 비공개 언어면 ko 로 떨어져 운영자가 고른 것과 다른 언어가 기본값이 된다.`)
+    }
+    if (!/askSignLang\(def\.lang, def\.fromView\)/.test(h)) {
+      violations.push(`${f} — ㉷ 피커에 기본값과 그 출처를 안 넘긴다. 캡션이 왜 이 언어인지 말할 근거가 없다.`)
+    }
+    // ㉸ — 서버로 가는 값은 피커가 돌려준 것 하나뿐이다.
+    for (const m of h.matchAll(/issueContractShareLink\(([^)]*)\)/g)) {
+      if (!/,\s*pickedLang\s*$/.test(m[1])) {
+        violations.push(`${f} — ㉸ 발급 호출이 피커가 돌려준 값(pickedLang) 말고 다른 언어를 넘긴다: ${m[0]}. URL 값이 곧장 가면 피커를 건너뛰는 길이 생긴다.`)
+      }
+    }
+    for (const m of h.matchAll(/(?<!let )pickedLang\s*=\s*([^\n]+)/g)) {
+      if (m[1].trim() !== 'pick') {
+        violations.push(`${f} — ㉸ pickedLang 에 피커의 답이 아닌 값이 들어간다: ${m[0].trim()}. 서버로 가는 언어는 운영자가 실제로 고른 것 하나여야 한다.`)
+      }
+    }
+    if (!/let pickedLang: SignLang \| undefined/.test(h) || !/pickedLang = pick/.test(h)) {
+      violations.push(`${f} — ㉸ 고른 값을 담는 자리가 없다. 내국인 발급이 언어 없이 종전 호출 그대로 지나가는 구조가 이 두 줄이다.`)
+    }
+  }
+  // ㉹ — 화면이 출처를 넘긴다.
+  if (!/defaultFromView=\{langPick\.fromView\}/.test(src)) {
+    violations.push(`${f} — ㉹ 피커에 기본값의 출처를 안 넘긴다. 툴바에서 고른 언어인데도 캡션이 '국적 기본값'이라 거짓을 말한다.`)
+  }
+}
+{
+  const f = 'components/doc/SignRequestLangPicker.tsx'
+  const src = read(f)
+  // 문구를 못박는다. 같은 슬롯·같은 join 이라야 줄이 안 늘고 자릿수도 안 흔들린다(§11 tnum).
+  if (!/defaultFromView \? '지금 보는 번역본' : '국적 기본값'/.test(src)) {
+    violations.push(`${f} — ㉹ 기본값의 이유를 캡션이 안 가른다. 툴바에서 고른 언어에도 '국적 기본값'이라 적힌다.`)
+  }
+  if (!/\.filter\(Boolean\)\.join\(' · '\)/.test(src) || !/tabular-nums/.test(src)) {
+    violations.push(`${f} — ㉹ 캡션이 한 줄 병기 문법을 벗었다(가운뎃점 병기 · tnum). 기본값 언어만 카드 높이가 달라지거나 숫자 세로줄이 흔들린다.`)
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림 · 피커 기본값 이어받기 · 발급 직접 전달 0 · 기본값 캡션)')

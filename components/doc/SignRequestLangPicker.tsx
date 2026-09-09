@@ -5,6 +5,7 @@
 // 국적으로 계산한 기본값이 미리 표시되고, 운영자가 바꿔 보낼 수 있다. 김명화님처럼 국적은
 // 중국이어도 한국어가 편한 분이 있어서다(운영자 지시 2026-09-06). 고른 언어는 링크 스냅샷에
 // 박제돼 입주자가 여는 화면·문자·오류 안내가 전부 그 언어로 병기된다(한국어 정본 줄 + 그 언어).
+// 계약서 툴바에서 번역본을 이미 골랐으면 그 언어가 기본값으로 이어진다(2026-09-09, defaultFromView).
 //
 // 카드 리스트 문법은 발급 용도 피커(ContractIssuePurposePicker)와 같다 — 고를 것이 일곱이라
 // 확인창에 안 들어간다. 탭 즉시 진행하는 이유는 그쪽과 다르다. 언어 선택은 파괴적이지 않고
@@ -29,9 +30,12 @@ type LangCaptions = Partial<Record<SignLang, string>>
  *   쓴다 — 영업장이 쓸 수 있는 전부로 세면 다 번역한 언어가 영영 '26/34' 로 보인다.
  *   안 주면 영업장 기준으로 떨어진다(캡션은 보조 정보라 못 세는 상황에서 막지 않는다).
  * @param leaseTermId 그 계약 지목. 없으면 서버가 링크 발급과 **같은 추론**으로 고른다.
+ * @param defaultFromView 기본값이 툴바에서 보고 있는 번역본에서 왔는가. 캡션이 이유를 그렇게
+ *   말할 뿐이고, 고르는 것도 보내는 것도 달라지지 않는다.
  */
-export function SignRequestLangPicker({ defaultLang, tenantId, leaseTermId, onPick, onClose }: {
+export function SignRequestLangPicker({ defaultLang, defaultFromView, tenantId, leaseTermId, onPick, onClose }: {
   defaultLang: SignLang
+  defaultFromView?: boolean
   tenantId?: string
   leaseTermId?: string | null
   onPick: (lang: SignLang) => void
@@ -91,10 +95,13 @@ export function SignRequestLangPicker({ defaultLang, tenantId, leaseTermId, onPi
                   <span className="block text-sm font-semibold text-[var(--warm-dark)]">{SIGN_LANG_LABEL[l]}</span>
                   {/* 캡션은 한 줄로 잇는다. 기본값 언어에 번역 진행까지 있으면 두 줄로 쌓여
                       카드 높이가 그 언어만 달라진다(디자이너 지적 2026-09-08).
-                      숫자는 tabular-nums — 언어마다 자릿수가 달라 세로줄이 흔들린다(§11). */}
+                      숫자는 tabular-nums — 언어마다 자릿수가 달라 세로줄이 흔들린다(§11).
+                      기본값이 왜 이 언어인지 한 줄로 말한다 — 툴바에서 고른 것을 이어받았으면
+                      '지금 보는 번역본'이다(2026-09-09). 같은 자리·같은 크기라 줄이 안 는다. */}
                   {(l === defaultLang || captions[l]) && (
                     <span className="mt-0.5 block text-[0.6875rem] text-[var(--warm-muted)] tabular-nums">
-                      {[l === defaultLang ? '국적 기본값' : '', captions[l] ?? ''].filter(Boolean).join(' · ')}
+                      {[l === defaultLang ? (defaultFromView ? '지금 보는 번역본' : '국적 기본값') : '',
+                        captions[l] ?? ''].filter(Boolean).join(' · ')}
                     </span>
                   )}
                 </span>

@@ -575,6 +575,37 @@ export function contractTranslationLangFor(
 }
 
 /**
+ * 서명 요청 피커의 기본 언어 — **툴바에서 지금 보고 있는 번역본**이 있으면 그것, 없으면 국적이다.
+ *
+ * 왜 잇나(2026-09-09). 언어를 고르는 자리가 둘이 됐는데 안 이어져 있었다. 툴바에서 베트남어
+ * 번역본을 세워 두고 그대로 서명 요청을 누르면 피커 기본값은 여전히 국적값이라, 방금 고른
+ * 선택이 다음 화면에서 사라졌다. 링크의 signLang 은 안내 언어이자 **박제되는 번역본의 언어**라
+ * (issueContractShareLink), 툴바와 피커는 둘 다 '입주자가 읽을 번역본'이고 채널만 다르다 —
+ * 하나는 건네는 화면, 하나는 원격 링크다.
+ *
+ * **고른 적이 있는가는 URL 파라미터의 유무로 가른다.** 툴바는 URL 이 정본이고 한국어도
+ * `lang=ko` 로 명시해 남기므로, 파라미터가 없다는 것은 아무도 안 골랐다는 뜻이다. 그때는
+ * 종전대로 국적 기본값이라 이 기능 전과 문자 단위로 같다.
+ *
+ * **화면이 해석한 언어를 읽으면 안 된다.** 그 값은 비공개 언어에서 ko 로 떨어지므로(카드가
+ * 안 서는 것이 정직한 표시라 그렇게 둔 것이다), 운영자가 고른 것과 **다른 언어**가 기본값이 된다.
+ *
+ * **여기까지가 이 값의 끝이다.** 고른 결과는 피커가 돌려주고, 링크에 박히는 언어는 서버가 같은
+ * 게이트에서 다시 정한다 — 화면이 필요로 하는 값과 종이가 지고 갈 값은 같지 않다.
+ *
+ * @param viewLang 계약서 화면 URL 의 `?lang` 값. 화이트리스트를 못 지나면 없는 것과 같다.
+ * @returns fromView 는 캡션이 이유를 말하는 데만 쓴다('지금 보는 번역본' · '국적 기본값').
+ */
+export function signRequestDefaultLang(
+  viewLang: string | null | undefined,
+  nationality: string | null | undefined,
+): { lang: SignLang; fromView: boolean } {
+  const picked = asSignLang(viewLang)
+  if (picked) return { lang: picked, fromView: true }
+  return { lang: signLangForNationality(nationality), fromView: false }
+}
+
+/**
  * 해석 완료본의 지문 — 화면이 받은 번역본과 서버가 지금 해석한 것이 같은지 견주는 열쇠다.
  *
  * 왜 있나(운영자 오더 2026-09-08). 대면 서명은 **화면을 로드한 뒤 발급을 누르기까지** 창이 있고,

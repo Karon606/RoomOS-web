@@ -12,7 +12,7 @@ import Link from 'next/link'
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
 import SignaturePad from 'signature_pad'
 import { isSignatureInkEnough } from '@/lib/signatureInk'
-import { signLangForNationality, smsBodyFor, t, bi, biLine, subLangOf, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
+import { smsBodyFor, t, bi, biLine, subLangOf, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { SendDocButton } from '@/components/ui/SendDocButton'
@@ -26,7 +26,7 @@ import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNam
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, contractAddendaForTranslation, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
-import { asResolvedContractTranslation, contractTranslationAddendum, translationDisplayVars, translationDigest, type TranslationLang } from '@/lib/contractTranslation'
+import { asResolvedContractTranslation, contractTranslationAddendum, translationDisplayVars, translationDigest, signRequestDefaultLang, type TranslationLang } from '@/lib/contractTranslation'
 import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
@@ -263,9 +263,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const askIssuePurpose = (count: number) =>
     new Promise<IssuePurposePick | null>(resolve => setPurposePick({ count, resolve }))
   // 안내 언어 피커 — 외국인 발급에서만 선다(isForeignForDocuments, 본국 표기 칸과 같은 판정 축).
-  const [langPick, setLangPick] = useState<{ def: SignLang; resolve: (v: SignLang | null) => void } | null>(null)
-  const askSignLang = (def: SignLang) =>
-    new Promise<SignLang | null>(resolve => setLangPick({ def, resolve }))
+  // fromView 는 캡션이 이유를 말하는 데만 쓴다 — 기본값이 국적에서 왔는지 툴바에서 왔는지.
+  const [langPick, setLangPick] = useState<
+    { def: SignLang; fromView: boolean; resolve: (v: SignLang | null) => void } | null
+  >(null)
+  const askSignLang = (def: SignLang, fromView: boolean) =>
+    new Promise<SignLang | null>(resolve => setLangPick({ def, fromView, resolve }))
 
   // ── 납부일 채움 창(설계 D) — 언어 피커와 같은 프로미스 다리 ──
   // 원천(lease.dueDay)이 빈 계약은 서명 요청·발급·미리보기 어디서든 이 창이 먼저 선다.
@@ -692,11 +695,21 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const handleSignRequest = async () => {
     if (signReqPending) return
     if (!(await confirmForeignRegNoLink(data.tenant.hasForeignRegNo))) return
-    // 외국인 발급이면 안내 언어를 먼저 고른다. 국적 기본값이 미리 선택돼 있고 바꿀 수 있다
+    // 외국인 발급이면 안내 언어를 먼저 고른다. 기본값이 미리 선택돼 있고 바꿀 수 있다
     // (김명화님처럼 한국어가 편한 분은 한국어로). 내국인 발급 흐름은 이 기능 전과 같다.
+    //
+    // 기본값은 **툴바에서 지금 보고 있는 번역본**이다(2026-09-09). 언어를 고르는 자리가 둘이라
+    // 툴바에서 고르고 그대로 서명 요청을 누르면 방금 고른 선택이 다음 화면에서 사라졌다.
+    // 툴바는 URL 이 정본이라 '고른 적이 있는가'는 파라미터의 유무로 갈린다 — 없으면 종전대로
+    // 국적 기본값이다. 발화 시점의 실제 URL 을 읽는다(pickTranslationLang 과 같은 규칙).
+    // 화면이 해석한 언어(translationLangNow)를 쓰면 안 된다 — 비공개 언어에서 ko 로 떨어져
+    // 운영자가 고른 것과 다른 언어가 기본값이 된다.
     let pickedLang: SignLang | undefined
     if (isForeignForDocuments({ nationality: data.tenant.nationality, hasForeignRegNo: data.tenant.hasForeignRegNo })) {
-      const pick = await askSignLang(signLangForNationality(data.tenant.nationality))
+      const def = signRequestDefaultLang(
+        new URLSearchParams(window.location.search).get('lang'), data.tenant.nationality)
+      // 고른 값만 서버로 간다 — URL 값을 발급에 직접 넘기면 피커를 건너뛰는 길이 생긴다.
+      const pick = await askSignLang(def.lang, def.fromView)
       if (!pick) return
       pickedLang = pick
     }
@@ -2249,6 +2262,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {langPick && (
         <SignRequestLangPicker
           defaultLang={langPick.def}
+          defaultFromView={langPick.fromView}
           // 캡션의 분모를 그 계약 기준으로 좁히는 지목. 링크 발급이 보는 계약과 같은 둘이다.
           tenantId={data.tenant.id}
           leaseTermId={data.lease?.id ?? null}
