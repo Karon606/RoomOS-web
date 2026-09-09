@@ -1,7 +1,16 @@
 {
-  "regions": ["icn1"],
+  "ignoreCommand": "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- . ':(exclude)*.md' ':(exclude)knowledge/' ':(exclude)docs/' ':(exclude).claude/'",
+  "regions": [
+    "icn1"
+  ],
   "crons": [
-    { "path": "/api/cron/push-alerts", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/apply-rents", "schedule": "0 15 * * *" }
+    {
+      "path": "/api/cron/push-alerts",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/apply-rents",
+      "schedule": "0 15 * * *"
+    }
   ]
 }
