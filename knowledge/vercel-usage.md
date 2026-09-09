@@ -34,3 +34,14 @@ Hobby 플랜에서 함수별 CPU 는 **API·CLI 로 못 본다.** `vercel usage`
 ## 배포 정리
 `node scripts/prune-vercel-deployments.mjs --apply` (안전 확인 `check-live-share-links` 가 세트).
 보존 정책 30일은 우리 속도에서 무의미하고 기간 단축은 API 가 거부한다(대시보드 확인).
+
+## 결정과 적용 (2026-09-09 운영자 확정)
+- **문서 커밋 배포 제외 — 적용됨.** vercel.json `ignoreCommand`:
+  `git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- . ':(exclude)*.md' ':(exclude)knowledge/' ':(exclude)docs/' ':(exclude).claude/'`
+  exit 0 이면 건너뛰고 그 외(1, 128)면 빌드한다. 기준을 마지막 성공 배포 SHA 로 둔 이유는 묶음
+  푸시다 — HEAD^ 만 보면 마지막 커밋만 문서일 때 앞선 코드 커밋까지 건너뛴다. 실패 방향은 늘 "빌드".
+  실제 커밋 쌍 검증: 문서 0 · 코드 1 · 묶음(코드+문서) 1 · 없는 SHA 128.
+- **푸시는 묶는다.** 커밋은 작업마다 바로, 푸시는 하루 몇 번·긴급 건·실기 확인 직전에만.
+  6-19 "바로 커밋·푸시"의 푸시 절반이 개정됐다.
+- 대시보드 Observability 확인은 운영자 몫으로 남아 있다. Cold/Warm 비율과 경로별 CPU 두 화면이
+  위 모형의 검증이다. Pro 전환은 그 뒤 판단.
