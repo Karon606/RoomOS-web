@@ -2144,7 +2144,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         pushToast('success', '입수 기록 수정됨', {
           ...(ask.result.adjust && ask.result.count > 0 ? { detail: `점검 ${ask.result.count}건의 잔량도 함께 옮겼습니다.` } : {}),
           action: { label: '적용취소', run: () => { void undoUpdateStockAddition(res.undo).then(r => {
-            if (r.ok) { pushToast('info', '입수 기록을 되돌렸습니다'); onChanged() }
+            if (r.ok) { pushToast('info', '입수 기록 수정을 적용취소했습니다 · 이전 기록으로 복귀'); onChanged() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
         })
@@ -5148,7 +5148,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         pushToast('success', '입수 기록 저장됨', {
           detail: `점검 ${ask.result.count}건의 잔량도 함께 옮겼습니다.`,
           action: { label: '적용취소', run: () => { void deleteStockAddition(newId, { adjustFollowing: true }).then(r => {
-            if (r.ok) { pushToast('info', '입수 기록을 되돌렸습니다'); onDone() }
+            if (r.ok) { pushToast('info', '입수 기록 저장을 적용취소했습니다 · 저장 전으로 복귀'); onDone() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
         })

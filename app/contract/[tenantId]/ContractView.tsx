@@ -459,7 +459,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   const handleResetOverride = async () => {
     if (!data.lease?.id) return
-    if (!(await confirmDialog({ title: '이 입실자 계약서를 영업장 공통 템플릿으로 되돌릴까요?', message: '현재 입실자에게 저장된 수정 내용은 사라집니다.', level: 'caution', confirmLabel: '되돌리기' }))) return
+    if (!(await confirmDialog({ title: '이 입실자 계약서를 영업장 공통 템플릿으로 되돌릴까요?', message: '현재 입실자에게 저장된 수정 내용은 사라집니다.', level: 'caution', confirmLabel: '적용취소' }))) return
     const leaseId = data.lease.id
     startTransition(async () => {
       const release = trackSave()
@@ -666,7 +666,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     if (!(await confirmDialog({
       title: '자동값으로 되돌릴까요?',
       message: '직접 수정한 내용이 모두 사라지고 입실자 정보에 저장된 값으로 복원됩니다.',
-      confirmLabel: '되돌리기', level: 'caution',
+      confirmLabel: '적용취소', level: 'caution',
     }))) return
     // 표시값을 통째로 지우면 성명 표기도 기본(한글)으로 돌아간다 — 서명란도 그 이름으로 맞춘다.
     setEmergencyContactText(initialEmergencyText())
@@ -682,11 +682,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
     // 계약일은 서명이 확정되면 사실의 기록이라 폼 값이 아니다. 건너뛰되 그 사실을 밝힌다.
     if (signDateLocked) {
-      pushToast('info', '자동값으로 되돌렸습니다 · 계약일은 서명한 날로 고정되어 있어 그대로 둡니다' + linkNote)
+      pushToast('info', '직접 입력한 값을 모두 적용취소했습니다 · 자동값으로 복귀. 계약일은 서명한 날로 고정되어 있어 그대로 둡니다' + linkNote)
       return
     }
     setSignDate(today)
-    pushToast('info', '자동값으로 되돌렸습니다' + linkNote)
+    pushToast('info', '직접 입력한 값을 모두 적용취소했습니다 · 자동값으로 복귀' + linkNote)
   }
 
   // 서명 요청 — 링크를 만들고 문자 앱으로 넘긴다. 규칙 4 가 "서명 요청·서명본 발급은 계약서 버튼으로
@@ -1460,7 +1460,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               if (r.restored === 0) {
                 pushToast('info', '되돌릴 것이 없습니다', { detail: '이미 다른 곳에서 용도를 바꾸셨습니다.' })
               } else {
-                pushToast('info', '보관용으로 바뀐 것을 되돌렸습니다', { detail: `이 계약에 실계약이 ${r.restored + 1}부입니다.` })
+                pushToast('info', '보관용 전환을 적용취소했습니다 · 실계약으로 복귀', { detail: `이 계약에 실계약이 ${r.restored + 1}부입니다.` })
               }
               // 발급 뒤 이미 열려 있는 계약서 파일 목록이 옛 값을 들고 있다 — 다시 읽게 한다(§27.1).
               notifyContractFilesChanged()

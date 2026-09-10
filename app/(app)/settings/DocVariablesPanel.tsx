@@ -152,7 +152,7 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
           action: { label: '적용취소', run: () => runSave(row, prev, { silent: true }) },
         })
       } else {
-        pushToast('info', `${row.label}을(를) 되돌렸습니다.`)
+        pushToast('info', `${row.label} 저장을 적용취소했습니다 · 이전 값으로 복귀`)
       }
     })
   }

@@ -281,7 +281,7 @@ export function RoomWorkRowBody({
                       // 연결부터 되돌리고 완료를 무른다 — 순서가 반대면 되돌린 작업에 지출이 남는다.
                       if (linked.length > 0) await unlinkExpensesFromWork(linked)
                       const res = await reopenRoomWork(r.id)
-                      if (res.ok) { pushToast('info', '완료를 취소했습니다'); onChanged() }
+                      if (res.ok) { pushToast('info', '완료를 적용취소했습니다 · 예정으로 복귀'); onChanged() }
                       else pushToast('error', res.error)
                     })().catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
                 )

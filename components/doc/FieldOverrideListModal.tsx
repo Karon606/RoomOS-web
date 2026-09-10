@@ -39,7 +39,7 @@ function hasFinalConsonant(label: string): boolean {
  * 두 화면이 같은 문장을 쓰게 문장을 여기 둔다 — 각자 조립하면 한쪽만 칸 이름을 바꿔도 갈린다.
  */
 export function fieldUndoneMessage(label: string): string {
-  return `${label}${hasFinalConsonant(label) ? '을' : '를'} 자동값으로 되돌렸습니다`
+  return `${label}${hasFinalConsonant(label) ? '을' : '를'} 적용취소했습니다 · 자동값으로 복귀`
 }
 
 /**

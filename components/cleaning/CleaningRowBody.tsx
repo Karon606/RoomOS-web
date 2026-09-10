@@ -299,9 +299,15 @@ export function CleaningRowBody({
                 }
                 const fromFund = useFund && r.reason === 'CHECKOUT' && c > 0
                 // 비용을 넣은 건은 지출 date 도 이 날짜를 따라간다(completeCleaning 이 생성·수정 양쪽에서 doneDate 를 쓴다).
+                // 완료 직후 토스트에 §16 진입점 1 을 단다 — reopenCleaning 하나가 부담 표식(fromCleaningFund)까지
+                // 함께 되돌리므로 여기서 따로 풀 것이 없다. 편집 모드 뒤의 원위치 버튼은 진입점 2 로 그대로 남는다.
                 run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund }),
                   fromFund ? '청소 완료 · 받은 청소비에서 부담으로 기록됨'
-                    : c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨')
+                    : c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨',
+                  { label: '적용취소', run: () => { void reopenCleaning(r.id).then(res => {
+                    if (res.ok) { pushToast('info', '완료를 적용취소했습니다 · 예정으로 복귀'); onChanged() }
+                    else pushToast('error', res.error)
+                  }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } })
                 setDoneOpen(false); setPerformerName(''); setCost(''); setUseFund(false)
               }}>
               완료

@@ -70,7 +70,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
             if (!u.ok) { pushToast('error', u.error); return }
             const bu = boundaryUndo ? await undoChangeRoomMoveDate(boundaryUndo) : { ok: true as const }
             pushToast('info', bu.ok
-              ? `이사를 되돌렸습니다.${withCleaning ? ' 만들어 둔 청소 예정은 남습니다. 필요 없으면 청소 관리에서 지워 주세요.' : ''}`
+              ? `이사를 적용취소했습니다${withCleaning ? ' · 만들어 둔 청소 예정은 남습니다. 필요 없으면 청소 관리에서 지워 주세요' : ''}`
               : '이사는 되돌렸지만 이사일이 오늘로 남았습니다. 홈 알림에서 다시 확인하거나 이사일 바꾸기로 고쳐 주세요.')
             onDone()
           })() },
@@ -107,7 +107,7 @@ export function UndoRoomMoveButton({ leaseTermId, movedYmd, onDone }: {
     startTransition(async () => {
       const u = await undoRoomMove({ leaseTermId, moveYmd: movedYmd })
       if (!u.ok) { pushToast('error', u.error); return }
-      pushToast('info', '이사를 되돌렸습니다. 청소 예정을 만들었다면 남습니다.')
+      pushToast('info', '이사를 적용취소했습니다 · 청소 예정을 만들었다면 남습니다')
       onDone()
     })
   }

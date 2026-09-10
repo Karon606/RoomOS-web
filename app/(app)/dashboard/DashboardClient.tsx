@@ -684,7 +684,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
                     label: '적용취소',
                     run: () => { void undoRoomMove({ leaseTermId: alert.scheduleMoveLeaseId!, moveYmd: movedYmd }).then(u => {
                       if (!u.ok) { pushToast('error', u.error); return }
-                      pushToast('info', '이사를 되돌렸습니다. 만들어 둔 청소 예정은 남습니다.')
+                      pushToast('info', `이사를 적용취소했습니다${withCleaning ? ' · 만들어 둔 청소 예정은 남습니다' : ''}`)
                       router.refresh()
                     }) },
                   },

@@ -142,8 +142,8 @@ console.log('\n⑤ 칸 이름 — 두 맵이 검증 문구와 갈리지 않는�
       `'${CONTRACT_FIELD_LABEL[k]}' vs '${CONTRACT_FIELD_ERROR[k]}'`)
   }
   // 토스트 문장 — 받침에 따라 을/를 이 갈린다. 라벨이 늘어도 이 함수 하나만 지나면 된다.
-  ok('받침 있는 이름은 을', fieldUndoneMessage('보증금') === '보증금을 자동값으로 되돌렸습니다')
-  ok('받침 없는 이름은 를', fieldUndoneMessage('입실료') === '입실료를 자동값으로 되돌렸습니다')
+  ok('받침 있는 이름은 을', fieldUndoneMessage('보증금') === '보증금을 적용취소했습니다 · 자동값으로 복귀')
+  ok('받침 없는 이름은 를', fieldUndoneMessage('입실료') === '입실료를 적용취소했습니다 · 자동값으로 복귀')
   for (const k of CONTRACT_FIELD_KEYS) {
     ok(`토스트가 '${CONTRACT_FIELD_LABEL[k]}' 를 온전히 담는다`,
       fieldUndoneMessage(CONTRACT_FIELD_LABEL[k]).startsWith(CONTRACT_FIELD_LABEL[k]))
@@ -186,6 +186,26 @@ console.log('\n⑥ 배선 그물 — 두 화면이 같은 모달·같은 문구�
   ok('모달은 Btn 안에서 그 아이콘을 쓴다',
     /<Btn variant="subtle" size="sm"[\s\S]{0,300}<RotateCcw \/>[\s\S]{0,120}적용취소/.test(modal))
   ok('모달이 아이콘을 인라인 SVG 로 다시 베끼지 않았다', !/M3 3v5h5/.test(modal))
+  // 사용처 전수. 종전에는 check-checkout-side-effects 가 TenantStatusTransitions 한 곳만 봐서,
+  // 다른 자리를 옛 경로로 되돌려도 그물이 초록이었다(2026-09-11 역주입 실측). 정본의 집인 여기서 전부 본다.
+  const ICON_USERS = [
+    'components/entity-modal/widgets/TenantRequestsTab.tsx',
+    'app/(app)/requests/RequestsClient.tsx',
+    'components/entity-modal/widgets/CheckoutRevertRow.tsx',
+    'components/entity-modal/widgets/TenantStatusTransitions.tsx',
+    'components/entity-modal/widgets/RentSettlementPanel.tsx',
+    'components/entity-modal/widgets/DepositStatusPanel.tsx',
+    'components/doc/FieldOverrideListModal.tsx',
+  ]
+  for (const p of ICON_USERS) {
+    const s = code(p)
+    ok(`${p} 는 아이콘 정본 경로에서 가져온다`,
+      /import \{[^}]*\bRotateCcw\b[^}]*\} from '@\/components\/ui\/RotateCcw'/.test(s))
+    // 모달의 재export 줄은 예외로 두되, 그 옛 경로로 **가져가는** 자리는 더 없어야 한다.
+    ok(`${p} 에 옛 경로 import 가 없다`,
+      !/import \{[^}]*\bRotateCcw\b[^}]*\} from '@\/components\/doc\/FieldOverrideListModal'/.test(s))
+    ok(`${p} 가 아이콘을 인라인 SVG 로 다시 베끼지 않았다`, !/M3 3v5h5/.test(s))
+  }
   ok("모달은 정본 Modal 을 size xs 로 쓴다", /<Modal[\s\S]{0,200}width="xs"/.test(modal))
   ok('본문 배지 라벨이 조항 쪽으로 갈렸다', cv.includes('본문 수정본') && !cv.includes('개별 수정본'))
 }
