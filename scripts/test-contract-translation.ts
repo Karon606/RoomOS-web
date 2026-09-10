@@ -1156,6 +1156,39 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   }
 }
 
+// ── 8단계 ⑯ 설정 미리보기 — 저장 전 창과 저장 후 종이가 같은 문안이다 ──
+//
+// 미리보기는 화면 입력칸(draft)을 **공개 켜진 사전 모양으로 싸서** 해석 정본에 그대로 넣는다.
+// 그 창이 보이는 문안이 저장 뒤 종이에 실릴 문안과 갈리면, 운영자는 확인한 적 없는 종이를
+// 확인했다고 믿고 내보낸다. 갈릴 만한 자리는 **저장이 사전을 손보는 규칙**이다 — 빈 칸·공백
+// 칸을 걷는 그 규칙을 파서가 똑같이 걷는지가 이 진리표의 전부다.
+{
+  const draft: Record<string, string> = {
+    단기숙소계약서: 'Short-stay Accommodation Contract',
+    '1. 입실 계약': '1. Move-in',
+    '1인 1실을 원칙으로 합니다.': 'One person per room as a rule.',
+    // 운영자가 지웠거나 아직 안 친 칸. 저장은 이 열쇠를 걷고, 파서도 같이 걷어야 한다.
+    '입실료는 매월 선납합니다.': '   ',
+    '2. 퇴실 및 환불': '',
+  }
+  // 창이 보이는 것.
+  const preview = resolveContractTranslation(
+    { enabled: true, langs: { en: { published: true, dict: draft } } }, T, 'en')
+  // 종이가 싣는 것 — 같은 사전을 저장 정본으로 병합한 뒤 그 저장본을 해석한다.
+  const merged = mergeTranslationLang(withTranslationEnabled(null, true), 'en', { published: true, dict: draft })
+  const saved = merged.ok ? resolveContractTranslation(merged.next, T, 'en') : null
+
+  eq('저장이 거부되지 않는 사전이다', merged.ok, true)
+  // 급소 — 두 해석이 통째로 같다. 문안·계수·절 구조 어느 하나라도 갈리면 여기서 선다.
+  eq('저장 전 미리보기 = 저장 후 해석', preview, saved)
+  eq('미리보기가 빈 칸이 아니다(창이 실제로 섰다)', preview === null, false)
+  eq('공백만 친 칸은 미리보기에서도 한국어 원문이다', preview?.sections[0]?.items[1], '입실료는 매월 선납합니다.')
+  eq('빈 칸도 한국어 원문이다', preview?.sections[1]?.title, '2. 퇴실 및 환불')
+  eq('창의 계수가 종이의 계수와 같다', [preview?.fallbackCount, saved?.fallbackCount], [4, 4])
+  // 창은 값을 지어내지 않는다 — 환불 줄이 없는 본문이라 vars 칸 자체가 안 선다.
+  eq('창이 vars 를 지어내지 않는다', preview?.vars, undefined)
+}
+
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.error(`  - ${f}`)
 process.exit(fails.length > 0 ? 1 : 0)

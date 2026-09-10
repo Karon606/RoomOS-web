@@ -915,9 +915,62 @@ function fnBody(src, at) {
   }
 }
 
+// ── 8단계 배선(설정의 저장 전 미리보기) ─────────────────────────────
+//
+//   ㉺ 환경설정 미리보기가 **입주자에게 나가는 그 두 정본**으로만 선다 — 해석은
+//     resolveContractTranslation, 본문은 ContractTranslationBody 다. 해석이든 본문이든 한 벌
+//     더 세우면 운영자가 보고 확인한 문안과 입주자가 실제로 받는 문안이 갈리고, 그 순간 이
+//     창은 확인이 아니라 착각이 된다. 원천도 화면 입력칸(draft)이라야 한다 — 저장본을 읽으면
+//     '저장 전에 본다'는 이 창의 이유가 사라진다.
+//   ㉻ 그 본문에 **vars 를 넘기지 않는다.** 계약이 없는 자리라 넘길 값은 지어낸 값뿐이고,
+//     미리보기가 오늘 지어낸 금액을 보이면 종이보다 나쁘다(ContractTranslationView 의 vars 규칙).
+//     환불 규정만 해석이 제 값을 들고 오고 나머지 자리표시자는 글자 그대로 남아야 한다.
+{
+  const f = 'app/(app)/settings/SettingsForm.tsx'
+  const raw = readFileSync(f, 'utf8')
+  const src = read(f)
+
+  // 정본 둘을 불러오는지부터 본다. import 줄은 read 가 걷으므로 원본에서 찾는다.
+  if (!/import\s*\{[^}]*\bContractTranslationBody\b[^}]*\}\s*from\s*'@\/components\/doc\/ContractTranslationView'/.test(raw)) {
+    violations.push(`${f} — ㉺ 미리보기가 본문 정본(ContractTranslationBody)을 안 불러온다. 본문이 두 벌이면 운영자가 본 문안과 입주자가 받는 문안이 갈린다.`)
+  }
+
+  const memo = fnBody(src, src.indexOf('const preview = useMemo('))
+  if (memo.length < 100) {
+    violations.push(`${f} — ㉺ 미리보기 해석(preview useMemo) 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  } else {
+    if (!/resolveContractTranslation\(/.test(memo)) {
+      violations.push(`${f} — ㉺ 미리보기가 해석 정본(resolveContractTranslation)을 안 쓴다. 자체 해석을 세우면 창과 종이의 규칙이 두 벌이 된다.`)
+    }
+    // 화면 입력칸을 공개 켜진 사전 모양으로 싸서 그대로 넣는다.
+    if (!/published:\s*true,\s*dict:\s*draft/.test(memo)) {
+      violations.push(`${f} — ㉺ 미리보기가 화면 입력칸(draft)을 공개 켠 사전으로 싸서 넣지 않는다. 저장 전 문안을 보는 창인데 저장본을 보인다.`)
+    }
+    // 정본을 부르는 창은 사전을 직접 훑을 일이 없다. 훑고 있으면 해석이 한 벌 더 선 것이다.
+    if (/\.map\(/.test(memo) || /\bdict\[/.test(memo)) {
+      violations.push(`${f} — ㉺ 미리보기가 사전·조항을 직접 훑는다. 해석은 정본 하나가 진다.`)
+    }
+  }
+
+  // ㉻ — 이 파일에서 본문이 서는 자리는 미리보기 하나뿐이고, 거기에 vars 가 붙으면 안 된다.
+  const uses = src.match(/<ContractTranslationBody[^>]*>/g) ?? []
+  if (uses.length !== 1) {
+    violations.push(`${f} — ㉻ 미리보기 본문이 ${uses.length}곳에 선다. 이 파일에서 그 자리는 하나여야 한다.`)
+  }
+  for (const u of uses) {
+    if (/\bvars=/.test(u)) {
+      violations.push(`${f} — ㉻ 미리보기가 본문에 vars 를 넘긴다: ${u.trim()}. 계약이 없는 자리라 그 값은 지어낸 값이고, 미리보기가 거짓을 보인다.`)
+    }
+    // 원문으로 남은 줄의 회색 표식은 원문 두 벌을 넘겨야 선다(표식이 없으면 다 번역된 것처럼 읽힌다).
+    if (!/source=\{template\}/.test(u) || !/sourceAddenda=\{addenda\}/.test(u)) {
+      violations.push(`${f} — ㉻ 미리보기가 원문(source·sourceAddenda)을 안 넘긴다. 한국어로 남는 줄에 '원문' 표식이 안 서서 다 번역된 것처럼 보인다.`)
+    }
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림 · 피커 기본값 이어받기 · 발급 직접 전달 0 · 기본값 캡션)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림 · 피커 기본값 이어받기 · 발급 직접 전달 0 · 기본값 캡션 · 설정 미리보기 정본 · 미리보기 vars 0)')

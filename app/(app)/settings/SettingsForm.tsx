@@ -51,8 +51,10 @@ import {
   translationCopyLine, translationCopyText, applyTranslationPaste,
   translationPlaceholderMisses, translationPlaceholderMessage, translationProgress,
   RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
+  resolveContractTranslation,
   type TranslationLang, type TranslationLineKind, type ContractTranslations,
 } from '@/lib/contractTranslation'
+import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -3148,6 +3150,7 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   // 다시 읽을 때 **편집 중인 언어·입력칸은 안 건드린다.** 본문 저장이 운영자가 치던 번역을
   // 지우면 안 된다 — 그러면 알림이 사고를 만든다.
@@ -3199,6 +3202,24 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
   }, [draft])
   // 문장 안 줄바꿈이 있는 항목 수. 복사할 때 한 줄로 눕히므로 그 사실을 안내에 적는다.
   const flattened = useMemo(() => lines.filter(l => l.text !== translationCopyLine(l.text)).length, [lines])
+  /**
+   * 미리보기의 해석 결과 — **원천은 저장본이 아니라 화면 입력칸(draft)이다.** 저장 전에 무엇이
+   * 나가는지 보는 것이 이 창의 전부라, 저장본을 읽으면 방금 채운 칸이 창에서만 안 보인다.
+   *
+   * 해석은 **입주자에게 나가는 그 정본**이 한다(resolveContractTranslation). draft 를 공개 켜진
+   * 사전 모양으로 싸서 그대로 넣으면, 파서가 빈 칸을 걷는 것도 환불 줄 빈 칸=권장도 저쪽 규칙
+   * 그대로 적용된다 — 여기에 새로 세울 규칙이 0 이라야 창과 종이가 갈리지 않는다.
+   *
+   * **vars 는 만들지 않는다.** 계약이 없는 자리라 값을 지어내면 그것은 미리보기가 아니라 거짓이다
+   * (ContractTranslationView 의 vars 규칙). 환불 규정만 해석이 제 값을 들고 오고 나머지 {{ }} 는
+   * 글자 그대로 남는다 — 그 사실은 창 머리의 안내가 말한다.
+   */
+  const preview = useMemo(() => {
+    if (!template) return null
+    return resolveContractTranslation(
+      { enabled: true, langs: { [lang]: { published: true, dict: draft } } },
+      template, lang, addenda, refundClauseInContract)
+  }, [template, lang, draft, addenda, refundClauseInContract])
   /**
    * **원문으로 돌아간 줄이 있는 언어** — 본문을 고치면 그 줄의 번역이 저절로 '없음'이 되어
    * 종이에 한국어 원문이 남는다(운영자 지적 2026-09-08). 지금 보고 있는 한 언어의 진행만으로는
@@ -3421,6 +3442,10 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                     <div className="flex flex-wrap gap-2">
                       <Btn type="button" variant="secondary" size="sm" onClick={() => void copyAll()}>한국어 전문 복사</Btn>
                       <Btn type="button" variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>번역 붙여넣기</Btn>
+                      {/* 셋째 자리다. 앞의 둘과 같이 **저장하지 않는 도구**라 한 벌로 묶인다 —
+                          저장 축(아래 저장 버튼)과 섞이면 어느 것이 종이에 실리는지 흐려진다.
+                          보는 언어는 위 셀렉트가 정한다(원천이 lang state 라 저절로 따라간다). */}
+                      <Btn type="button" variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>미리보기</Btn>
                     </div>
                   </div>
                 )}
@@ -3524,6 +3549,36 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
           {pasteError && <p className="text-xs leading-relaxed text-[var(--danger-fg)]">{pasteError}</p>}
         </div>
       </Modal>
+
+      {/* 미리보기 창. 본문은 **입주자가 보는 그 컴포넌트**다(ContractTranslationBody) — 발급 상세의
+          '전문 보기'와 같은 자리, 같은 폭(md)이다. 여기에 본문을 한 벌 더 만들면 운영자가 확인한
+          문안과 입주자가 받는 문안이 언젠가 갈리고, 그때 이 창은 확인이 아니라 착각이 된다.
+          source·sourceAddenda 를 넘겨 번역이 없어 한국어가 남는 줄에 회색 '원문' 표식이 선다. */}
+      {previewOpen && preview && (
+        <Modal open onClose={() => setPreviewOpen(false)} width="md"
+          title="번역본 미리보기"
+          subtitle={`${SIGN_LANG_LABEL[lang]} · 저장 전 입력값 기준`}>
+          {/* 안내 문법은 발급 시트의 같은 줄과 한 벌이다. 계약이 없는 자리라 조항 안의 값은
+              지어내지 않고 자리표시자가 글자 그대로 선다 — 그것이 고장이 아니라는 말을 여기서 한다.
+              둘째 줄은 원문으로 남는 줄이 있을 때만 선다(0 이면 할 말이 없다). */}
+          <div className="mb-3 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 space-y-1.5">
+            <p className="text-xs leading-relaxed text-[var(--warm-muted)]">
+              입주자가 서명 링크에서 보는 모양입니다. 조항 안의 {'{{ }}'} 표시는 계약서에 실제 값이 들어가는 자리입니다.
+            </p>
+            {!published && (
+              <p className="text-xs leading-relaxed text-[var(--warm-muted)]">
+                지금은 비공개라 서명 링크에 실리지 않습니다. 공개로 바꿔 저장하면 이 모양으로 실립니다.
+              </p>
+            )}
+            {preview.fallbackCount > 0 && (
+              <p className="text-xs leading-relaxed text-[var(--warm-muted)]">
+                한국어 원문으로 남는 줄이 <span className="num">{preview.fallbackCount}</span>줄 있습니다. 회색 원문 표식이 붙은 줄입니다.
+              </p>
+            )}
+          </div>
+          <ContractTranslationBody translation={preview} source={template} sourceAddenda={addenda} />
+        </Modal>
+      )}
     </div>
   )
 }
