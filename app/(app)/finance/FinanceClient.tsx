@@ -4096,7 +4096,7 @@ export default function FinanceClient({
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
                       className="min-h-[44px] px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-ring)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
-                      정산 취소
+                      정산 적용취소
                     </button>
                   )}
                   <div className="flex-1" />

@@ -10,6 +10,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { settleCardExpenses, unsettleExpenses } from '../finance/actions'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -153,9 +154,29 @@ export default function CardSettlementClient({
   const pendingG   = settleGroups.filter(g => !g.isFinalized)
   const prepRows   = buildPrepRows(finalizedG)
 
+  // 정산 상태를 되돌리는 두 걸음. settleStatus 는 표시 플래그라 돈도 집계도 안 건드린다 —
+  // 따라오는 것은 미정산 그룹 복귀·준비 금액·완료 합계·지출 배지의 재계산이고 전부 파생이라
+  // 적용취소에는 확인창을 안 세운다(§16 진입점 1·2, §14 는 잃을 것이 있을 때만).
+  const undoSettle = (ids: string[]) =>
+    startTransition(async () => {
+      await unsettleExpenses(ids)
+      router.refresh()
+      pushToast('info', '정산을 적용취소했습니다 · 미정산으로 복귀', {
+        action: { label: '적용취소', run: () => { startTransition(async () => { await settleCardExpenses(ids); router.refresh() }) } },
+      })
+    })
+
+  const handleUnsettleOne = (id: string) => undoSettle([id])
+
   const handleSettle = async (ids: string[], name: string, billMonth: string) => {
     if (!(await confirmDialog({ title: `'${name}' ${billMonth} 청구분 ${ids.length}건을 정산 완료로 처리할까요?`, confirmLabel: '정산 완료' }))) return
-    startTransition(async () => { await settleCardExpenses(ids); router.refresh() })
+    startTransition(async () => {
+      await settleCardExpenses(ids)
+      router.refresh()
+      pushToast('success', '정산 완료로 처리됨', {
+        action: { label: '적용취소', run: () => undoSettle(ids) },
+      })
+    })
   }
 
   const copy = async (text: string, message: string) => {
@@ -385,9 +406,14 @@ export default function CardSettlementClient({
                     <div className="text-xs text-[var(--warm-mid)]">청구기간: {g.billingPeriodStr}</div>
                     <div className="space-y-1">
                       {g.items.map(item => (
-                        <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
-                          <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
-                          <span>{fmtWon(item.amount)}</span>
+                        <div key={item.id} className="flex items-center justify-between gap-2 text-xs text-[var(--warm-muted)]">
+                          <span className="min-w-0 truncate">{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
+                          <span className="shrink-0">{fmtWon(item.amount)}</span>
+                          {/* §16 진입점 2 — 그룹 전체가 아니라 이 한 건만 미정산으로 돌린다. */}
+                          <RowActionBtn tone="neutral" className="shrink-0" disabled={isPending}
+                            onClick={() => handleUnsettleOne(item.id)}>
+                            정산 적용취소
+                          </RowActionBtn>
                         </div>
                       ))}
                     </div>
@@ -402,7 +428,7 @@ export default function CardSettlementClient({
                     }}
                     disabled={isPending}
                     className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-3 py-1.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] rounded-lg transition-colors disabled:opacity-40">
-                    전체 정산 취소
+                    전체 정산 적용취소
                   </button>
                 </div>
               </div>

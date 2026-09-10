@@ -1955,10 +1955,13 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
   }
 }
 
+// 영업장 스코프 — 종전 where 에 propertyId 가 없어 다른 영업장의 지출 id 를 넘기면 그대로 바뀌었다.
+// settleStatus 는 표시 플래그라 돈이 움직이지는 않지만, 남의 영업장 정산 상태를 뒤집는 것은 그 자체가 사고다(§4).
 export async function settleCardExpenses(ids: string[]) {
   await requireEdit()
+  const propertyId = await getPropertyId()
   await prisma.expense.updateMany({
-    where: { id: { in: ids }, settleStatus: 'UNSETTLED' },
+    where: { id: { in: ids }, propertyId, settleStatus: 'UNSETTLED' },
     data: { settleStatus: 'SETTLED' },
   })
   revalidatePath('/finance')
@@ -1966,8 +1969,9 @@ export async function settleCardExpenses(ids: string[]) {
 
 export async function unsettleExpenses(ids: string[]) {
   await requireEdit()
+  const propertyId = await getPropertyId()
   await prisma.expense.updateMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, propertyId },
     data: { settleStatus: 'UNSETTLED' },
   })
   revalidatePath('/finance')
