@@ -127,9 +127,10 @@ console.log('\n④ 배선 그물 — 완료를 부르는 두 화면이 모두 �
     ok(`${name}: 원위치 버튼이 btn-subtle sm 이다`,
       /<Btn variant="subtle" size="sm"[\s\S]{0,400}완료 적용취소/.test(s))
     // 아이콘은 공용 RotateCcw 하나다 — 인라인 SVG 를 다시 손으로 베끼면 여기서 걸린다.
-    // (기존 세 자리는 이 그물의 범위가 아니다. 새로 생긴 두 화면만 공용을 탄다.)
+    // 정본은 components/ui/RotateCcw 이고, 옛 경로(components/doc/FieldOverrideListModal)는
+    // 같은 이름을 다시 내보내기만 한다. 새 자리는 정본 경로로 가져간다.
     ok(`${name}: 공용 RotateCcw 를 import 한다`,
-      /import \{ RotateCcw \} from '@\/components\/doc\/FieldOverrideListModal'/.test(s))
+      /import \{ RotateCcw \} from '@\/components\/ui\/RotateCcw'/.test(s))
     ok(`${name}: 원위치 버튼 안에서 그 아이콘을 쓴다`,
       /<Btn variant="subtle" size="sm"[\s\S]{0,300}<RotateCcw \/>[\s\S]{0,120}완료 적용취소/.test(s))
     ok(`${name}: 되돌리기 아이콘을 인라인 SVG 로 베끼지 않았다`,

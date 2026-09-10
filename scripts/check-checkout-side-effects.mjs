@@ -635,8 +635,12 @@ for (const [name, re] of callers) {
     violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 투어 완료·입실 처리 직후 토스트에 적용취소 액션이 없다(§16 진입점 1).')
   }
   // §16 되돌리기 버튼에는 rotate-ccw 가 선다 — 다른 원위치 진입점과 같은 문법이라야 같은 것으로 읽힌다.
-  if (!/def\.undo && <RotateCcw \/>/.test(tst3) || !/import \{ RotateCcw \}/.test(tst3)) {
-    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 되돌리기 버튼에 rotate-ccw 아이콘이 없다(§16).')
+  // 아이콘은 components/ui/RotateCcw 정본 하나를 탄다. 손으로 다시 베낀 SVG 는 그 자리만 조용히 갈린다.
+  if (!/def\.undo && <RotateCcw \/>/.test(tst3) || !/import \{ RotateCcw \} from '@\/components\/ui\/RotateCcw'/.test(tst3)) {
+    violations.push("components/entity-modal/widgets/TenantStatusTransitions.tsx — 되돌리기 버튼에 rotate-ccw 아이콘이 없다(§16). 정본은 '@/components/ui/RotateCcw' 다.")
+  }
+  if (/M3 3v5h5/.test(tst3)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — rotate-ccw 를 인라인 SVG 로 다시 베꼈다. 정본 components/ui/RotateCcw 를 import 해 쓴다.')
   }
   if ((tst3.match(/undo: true/g) || []).length < 3) {
     violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 되돌리기 표식(undo)이 붙은 버튼이 셋보다 적다(투어 완료·입실·예약 확정).')

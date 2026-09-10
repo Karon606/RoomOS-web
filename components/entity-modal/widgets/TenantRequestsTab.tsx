@@ -10,7 +10,7 @@ import {
   createTenantRequest, resolveTenantRequest, unresolveTenantRequest, deleteTenantRequest, getTenantRequests,
 } from '@/app/(app)/tenants/actions'
 import { pushToast } from '@/lib/saveStatus'
-import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'

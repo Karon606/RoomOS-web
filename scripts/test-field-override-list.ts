@@ -174,7 +174,18 @@ console.log('\n⑥ 배선 그물 — 두 화면이 같은 모달·같은 문구�
   }
   ok('모달 제목은 한 곳에만 있다', modal.includes('직접 입력한 표시값'))
   ok('행 라벨은 §16 단일 라벨', modal.includes('적용취소'))
-  ok('되돌리기 아이콘은 rotate-ccw 14px', /width="14"[^>]*height="14"[\s\S]{0,200}M3 3v5h5/.test(modal))
+  // 아이콘 정본은 components/ui/RotateCcw 하나다. 모달은 그것을 import 해 쓰고 같은 이름으로 다시
+  // 내보낸다 — 옛 경로(@/components/doc/FieldOverrideListModal)로 가져가던 자리가 그대로 돌아야 한다.
+  // 마지막 줄이 인라인 SVG 로 다시 베끼는 길을 막는다.
+  const icon = code('components/ui/RotateCcw.tsx')
+  ok('아이콘 정본 파일에 rotate-ccw 14px SVG 가 있다',
+    /width="14"[^>]*height="14"[\s\S]{0,200}M3 3v5h5/.test(icon))
+  ok('모달은 아이콘 정본을 import 한다',
+    /import \{ RotateCcw \} from '@\/components\/ui\/RotateCcw'/.test(modal))
+  ok('모달은 아이콘을 같은 이름으로 다시 내보낸다', /export \{[^}]*\bRotateCcw\b[^}]*\}/.test(modal))
+  ok('모달은 Btn 안에서 그 아이콘을 쓴다',
+    /<Btn variant="subtle" size="sm"[\s\S]{0,300}<RotateCcw \/>[\s\S]{0,120}적용취소/.test(modal))
+  ok('모달이 아이콘을 인라인 SVG 로 다시 베끼지 않았다', !/M3 3v5h5/.test(modal))
   ok("모달은 정본 Modal 을 size xs 로 쓴다", /<Modal[\s\S]{0,200}width="xs"/.test(modal))
   ok('본문 배지 라벨이 조항 쪽으로 갈렸다', cv.includes('본문 수정본') && !cv.includes('개별 수정본'))
 }

@@ -12,6 +12,7 @@
 
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 
 /** 목록 한 줄 — 어떤 칸이, 지금 무엇으로 찍히고, 안 고쳤다면 무엇이었을지. */
 export type FieldOverrideRow = {
@@ -41,13 +42,11 @@ export function fieldUndoneMessage(label: string): string {
   return `${label}${hasFinalConsonant(label) ? '을' : '를'} 자동값으로 되돌렸습니다`
 }
 
-/** §16 적용취소 아이콘 — rotate-ccw 14px. Btn 안에 넣으면 BASE 의 gap-1.5 가 §16 의 6px 간격이다. */
-export const RotateCcw = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" />
-  </svg>
-)
+/**
+ * §16 적용취소 아이콘은 components/ui/RotateCcw 가 정본이다. 여기서 다시 export 하는 것은
+ * 이 경로로 import 하던 자리들이 그대로 돌게 두기 위함이고, 새 자리는 정본 경로를 쓴다.
+ */
+export { RotateCcw }
 
 export function FieldOverrideListModal({
   open, onClose, rows, onUndo, undoingKey = null, lockMessage,

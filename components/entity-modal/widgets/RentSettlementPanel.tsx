@@ -20,6 +20,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
@@ -278,7 +279,7 @@ export function RentSettlementPanel({
           {canEdit && formMode === null && (
             <div className="flex gap-2 flex-wrap">
               <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void undo(refund) }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                <RotateCcw />
                 적용취소
               </Btn>
               {expectedMoveOut && <Btn variant="subtle" size="sm" disabled={pending} onClick={openRevise}>금액 수정</Btn>}

@@ -14,7 +14,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 // §16 되돌리기 아이콘 공용 export — 다른 원위치 진입점(요청 탭·/requests·서류 목록)이 쓰는 그것이다.
 // components/ui 로 올리지 않는다: 기존 그물이 이 파일 소스의 인라인 SVG 를 본다(별건).
-import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'

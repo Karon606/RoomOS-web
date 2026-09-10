@@ -14,7 +14,7 @@
 
 import { useState, useTransition } from 'react'
 import { Btn } from '@/components/ui/Btn'
-import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { roomNoWithI } from '@/lib/roomNo'
