@@ -41,7 +41,8 @@ export function fieldUndoneMessage(label: string): string {
   return `${label}${hasFinalConsonant(label) ? '을' : '를'} 자동값으로 되돌렸습니다`
 }
 
-const RotateCcw = () => (
+/** §16 적용취소 아이콘 — rotate-ccw 14px. Btn 안에 넣으면 BASE 의 gap-1.5 가 §16 의 6px 간격이다. */
+export const RotateCcw = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" />

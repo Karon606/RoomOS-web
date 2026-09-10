@@ -1,14 +1,16 @@
 'use client'
 
 // 고객 요청·컴플레인 CRUD. 자체 fetch (getTenantRequests).
-// 등록(생성) + 완료 처리 + 삭제 + 처리 이력 펼침/접힘.
+// 등록(생성) + 완료 처리 + 완료 적용취소 + 삭제 + 처리 이력 펼침/접힘.
 
 import { useEffect, useState, useTransition } from 'react'
 import { fmtMD as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests,
+  createTenantRequest, resolveTenantRequest, unresolveTenantRequest, deleteTenantRequest, getTenantRequests,
 } from '@/app/(app)/tenants/actions'
+import { pushToast } from '@/lib/saveStatus'
+import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -62,8 +64,30 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
       await reload()
     })
   }
+  // 되돌리기는 새 액션을 세우지 않고 /requests 와 같은 unresolveTenantRequest 하나를 쓴다.
+  // resolvedAt 만 null 이 되고 처리 메모는 남으므로, 다시 완료해도 적어 둔 메모가 그대로다.
+  const handleUnresolve = (id: string) => {
+    startTransition(async () => {
+      const res = await unresolveTenantRequest(id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      // 버튼이 '적용취소'니 결과도 같은 동사여야 한다 — 형제 DueDayPermanentChangeWidget 과 같은 문법.
+      pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀')
+      await reload()
+    })
+  }
   const handleResolve = (id: string) => {
-    startTransition(async () => { await resolveTenantRequest(id); await reload() })
+    startTransition(async () => {
+      const res = await resolveTenantRequest(id)
+      // 조용한 실패 금지 — 종전에는 결과를 안 보고 목록만 다시 읽어, 권한이 없으면 아무 일도
+      // 안 일어난 것처럼 보였다.
+      if (!res.ok) { pushToast('error', res.error); return }
+      // §16 진입점 1 — 토스트 액션(액션이 붙으면 pushToast 가 6초 TOAST_DUR_ACTION 을 고른다).
+      const opts: { action: { label: string; run: () => void }; detail?: string } = {
+        action: { label: '적용취소', run: () => handleUnresolve(id) },
+      }
+      pushToast('success', '완료로 처리했습니다', opts)
+      await reload()
+    })
   }
   const handleDelete = async (id: string) => {
     if (!(await confirmDialog({ title: '이 요청을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
@@ -177,20 +201,34 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
               <div className="mt-2 space-y-2">
                 {resolved.map(r => (
                   <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                    <div className="flex items-start justify-between gap-1 mb-1">
-                      <div className="flex items-center gap-2 text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
+                    {/* 44px Btn 이 들어오면서 이 행의 정렬·넘침 규칙이 바뀐다. items-start 면 10.5px
+                        메타가 버튼 윗변에 붙고, 왼쪽에 flex-wrap·min-w-0 이 없으면 360px 폰에서
+                        삭제 아이콘이 카드 밖으로 밀린다(칸 넘침 신고와 같은 클래스). */}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0 text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                         <span className="font-medium text-[var(--success-fg)]">완료</span>
                         <span>{fmtDate(r.resolvedAt)}</span>
                         <span>·</span>
                         <span>요청 {fmtDate(r.requestDate)}</span>
                       </div>
-                      <button onClick={() => handleDelete(r.id)} disabled={pending}
-                        className="shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors disabled:opacity-40"
-                        style={{ color: 'var(--warm-muted)' }} title="삭제">
-                        <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3" />
-                        </svg>
-                      </button>
+                      {/* §16 진입점 2 원위치 — 토스트가 사라진 뒤에도 되돌릴 자리가 있어야 한다.
+                          삭제와 나란히 서므로 '적용취소' 단독으로는 무엇을 취소하는지 갈린다
+                          (삭제 취소로 읽힌다). §16 "모호하면 명사 보강"에 따라 명사를 붙인다. */}
+                      <div className="shrink-0 flex items-center gap-1">
+                        <Btn variant="subtle" size="sm" disabled={pending} onClick={() => handleUnresolve(r.id)}>
+                          <RotateCcw />
+                          완료 적용취소
+                        </Btn>
+                        {/* 히트만 44px 로 키운다(§10) — 아이콘 11px 과 조밀한 이력 행 여백은 그대로 두려고
+                            음수 마진으로 자리를 되돌린다. 옆 Btn 이 44px 이라 여기만 20px 이면 손끝이 갈린다. */}
+                        <button onClick={() => handleDelete(r.id)} disabled={pending}
+                          className="shrink-0 w-11 h-11 -my-3 -mr-2 flex items-center justify-center rounded transition-colors disabled:opacity-40"
+                          style={{ color: 'var(--warm-muted)' }} title="삭제">
+                          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
                   </div>

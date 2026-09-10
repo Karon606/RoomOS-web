@@ -25,6 +25,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
 import { kstYmdStr } from '@/lib/kstDate'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -200,7 +201,9 @@ export default function RequestsClient({
       try {
         const res = await unresolveTenantRequest(id)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('info', '완료를 해제했습니다 (미완료로 복귀)')
+        // 문안은 입주자 정보 › 요청·컴플레인 탭과 문자 단위로 같다(§29 부연은 가운뎃점).
+        // 동사는 버튼과 같은 '적용취소' 로 맞춘다 — 한 동작에 두 동사를 쓰지 않는다.
+        pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀')
         router.refresh()
       } finally { setBusyId(null) }
     })
@@ -273,7 +276,7 @@ export default function RequestsClient({
               label: '적용취소',
               run: () => { void updateTenantRequest(targetId, prev).then(r => {
                 if (!r.ok) { pushToast('error', r.error); return }
-                pushToast('info', '수정을 되돌렸습니다')
+                pushToast('info', '수정을 적용취소했습니다')
                 router.refresh()
               }) },
             },
@@ -562,15 +565,18 @@ export default function RequestsClient({
                   {resolved && (
                     <span className="text-[0.65625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
                   )}
+                  {/* §16 진입점 2 원위치 — btn-subtle sm + rotate-ccw 14px. 라벨은 '적용취소' 단일이되
+                      옆에 '수정'·'삭제'가 서므로 무엇을 취소하는지 갈리지 않게 명사를 보강한다. */}
                   {resolved && (
-                    <button type="button" disabled={busyId === r.id}
-                      onClick={() => handleUnresolve(r.id)}
-                      className="min-h-[40px] inline-flex items-center text-xs px-2.5 py-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] disabled:opacity-50 transition-colors">완료 해제</button>
+                    <Btn variant="subtle" size="sm" disabled={busyId === r.id} onClick={() => handleUnresolve(r.id)}>
+                      <RotateCcw />
+                      완료 적용취소
+                    </Btn>
                   )}
+                  {/* 옆에 44px subtle Btn 이 서므로 이 버튼도 정본을 탄다 — 40px raw 텍스트 버튼이
+                      남으면 나란한 두 액션의 높이·손끝이 갈린다(§10). */}
                   {resolved && (
-                    <button type="button" disabled={busyId === r.id}
-                      onClick={() => openEdit(r)}
-                      className="min-h-[40px] inline-flex items-center text-xs px-2.5 py-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] disabled:opacity-50 transition-colors">수정</button>
+                    <Btn variant="ghost" size="sm" disabled={busyId === r.id} onClick={() => openEdit(r)}>수정</Btn>
                   )}
                 </div>
 

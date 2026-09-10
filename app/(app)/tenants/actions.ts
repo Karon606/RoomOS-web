@@ -4105,7 +4105,11 @@ export async function resolveTenantRequest(id: string, memo?: string): Promise<{
       where: { id },
       data: {
         resolvedAt: new Date(),
-        resolutionMemo: memo?.trim() || null,
+        // memo 를 안 실어 보낸 호출(입주자 정보 › 요청·컴플레인 탭)은 기존 메모를 그대로 둔다.
+        // 종전에는 undefined 도 null 로 덮어, 완료 › 적용취소 › 재완료 세 걸음에 /requests 에서
+        // 적어 둔 처리 메모가 소리 없이 사라졌다. 비우기 경로는 남긴다 — 빈 문자열을 실어 보내면
+        // 그때는 지운다(undefined = 안 건드림, '' = 지움).
+        ...(memo === undefined ? {} : { resolutionMemo: memo.trim() || null }),
       },
     })
     revalidatePath('/tenants')
@@ -4121,6 +4125,8 @@ export async function resolveTenantRequest(id: string, memo?: string): Promise<{
 // 요청 완료 해제 — 실수로 완료 처리한 요청을 미완료로 복귀(감사 2026-07-10: 삭제만 있던 문제)
 export async function unresolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    // 완료 쪽과 대칭 — 완료가 편집 권한을 요구하는데 되돌리기가 안 요구하면 뷰어가 상태를 바꾼다.
+    await requireEdit()
     await getPropertyId()
     await prisma.tenantRequest.update({ where: { id }, data: { resolvedAt: null } })
     revalidatePath('/tenants'); revalidatePath('/requests'); revalidatePath('/dashboard')
