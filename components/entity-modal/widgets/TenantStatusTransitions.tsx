@@ -12,6 +12,9 @@ import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordD
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
+// §16 되돌리기 아이콘 공용 export — 다른 원위치 진입점(요청 탭·/requests·서류 목록)이 쓰는 그것이다.
+// components/ui 로 올리지 않는다: 기존 그물이 이 파일 소스의 인라인 SVG 를 본다(별건).
+import { RotateCcw } from '@/components/doc/FieldOverrideListModal'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
@@ -52,22 +55,54 @@ type TransitionDef = {
   confirm?: string
   // 신고 9b974be0: 예약 확정/해제 — 상태는 그대로(RESERVED) 두고 reservationConfirmedAt만 토글
   kind?: 'confirm' | 'unconfirm'
+  /** 되돌리는 전이의 결과 문장 — 있으면 '~ 완료' 대신 이 말을 한다(§16 동사 '적용취소했습니다'). */
+  doneToast?: string
+  /**
+   * 앞으로 가는 전이의 결과 문장 — 라벨에 '완료'가 이미 들어 있어 '~ 완료'를 붙이면 겹치는 자리용.
+   * '투어 완료' + ' 완료' 가 "투어 완료 완료"로 나가던 것을 여기서 끊는다.
+   */
+  successToast?: string
+  /** §16 되돌리기 버튼 — rotate-ccw 아이콘을 앞세운다(다른 원위치 진입점과 같은 문법). */
+  undo?: boolean
+}
+
+/**
+ * 방금 한 전이를 6초 안에 되돌릴 문 — §16 진입점 1(토스트 액션).
+ *
+ * **상태 한 칸만 되돌아가는 전이에만 둔다.** 돈·서류·청소가 함께 움직인 전이(퇴실 처리·입실 취소)는
+ * 6초 되감기가 그 셋을 같이 되감아야 해서 토스트로 열지 않는다 — 그쪽 상시 자리는 수납 정보다.
+ * 투어 완료·입실 처리는 공실도 돈도 안 움직여(각각 호실 무변경·예약 복귀) 상태 한 칸이 전부다.
+ *
+ * 문장은 아래 되돌림 전이 버튼과 한 벌이다. 토스트로 누른 사람과 버튼으로 누른 사람이
+ * 다른 말을 들으면 같은 일을 두 이름으로 배우게 된다.
+ */
+const UNDO_AFTER: Record<string, { toStatus: string; toast: string }> = {
+  tourDone: { toStatus: 'WAITING_TOUR', toast: '투어 완료를 적용취소했습니다 · 투어 대기로 복귀' },
+  moveIn:   { toStatus: 'RESERVED',     toast: '입실 처리를 적용취소했습니다 · 입실 예약으로 복귀' },
 }
 // isShortTerm: 단기는 '퇴실일 변경'이 아니라 연장 모달로 라우팅되므로 라벨도 그 창 이름('단기 연장')으로 맞춘다.
 function transitionsFor(status: string, confirmed = false, isShortTerm = false): TransitionDef[] {
   switch (status) {
     case 'WAITING_TOUR': return [
-      { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
+      // 라벨에 이미 '완료'가 있어 '~ 완료' 를 붙이면 "투어 완료 완료" 가 된다. 6초 액션이 붙어
+      // 더 오래 서 있게 됐으니 이 자리에서 문장을 끊는다(다른 키는 종전 문법 그대로).
+      { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?', successToast: '투어 완료 처리' },
       { key: 'reserve',  label: '입실 예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'TOUR_DONE': return [
       { key: 'reserve',  label: '입실 예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
+      // §16 진입점 2 원위치 — 토스트가 사라진 뒤에도 되돌릴 자리가 있어야 한다. 서버 전이표는
+      // 이 되돌림을 이미 허용하는데(lib/leaseTransitions) 화면에만 문이 없었다.
+      // 파괴적인 '입실 취소' 앞에 둔다 — 되돌리기는 취소가 아니고, 위험한 것이 줄 끝이다.
+      { key: 'undoTourDone', label: '투어 완료 적용취소', toStatus: 'WAITING_TOUR', undo: true,
+        confirm: '투어 대기로 되돌릴까요?', doneToast: UNDO_AFTER.tourDone.toast },
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'RESERVED': return [
       confirmed
-        ? { key: 'unconfirm', label: '확정 해제', toStatus: 'RESERVED', tone: 'secondary', kind: 'unconfirm' }
+        // §16 라벨은 '적용취소' 하나다. 예약 확정을 무르는 이 버튼만 '해제' 로 남아 있었다.
+        ? { key: 'unconfirm', label: '확정 적용취소', toStatus: 'RESERVED', tone: 'secondary', kind: 'unconfirm', undo: true }
         : { key: 'confirm',   label: '예약 확정', toStatus: 'RESERVED', tone: 'primary',   kind: 'confirm' },
       { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
       // 입주일에 계약 호실이 아직 안 빌 때 머물 방을 미리 정해 두는 자리. 계약서를 서명 전에
@@ -79,6 +114,11 @@ function transitionsFor(status: string, confirmed = false, isShortTerm = false):
     case 'ACTIVE': return [
       { key: 'checkoutPending', label: '퇴실 예정 처리', toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'primary' },
       { key: 'nonResident',     label: '비거주 전환',    toStatus: 'NON_RESIDENT', field: 'rentAmount', fieldLabel: '비거주 월 이용료', tone: 'secondary' },
+      // §16 진입점 2 원위치 — 입실 처리를 잘못 눌렀을 때 돌아갈 자리. 되돌림이 하는 일은
+      // 열린 거주 구간을 지우는 것이 전부다(예약은 점유가 아니라 구간을 안 만든다, lib/roomStay
+      // 자격 게이트). 호실은 예약이 그대로 잡고 있어 공실도 안 움직인다.
+      { key: 'undoMoveIn', label: '입실 적용취소', toStatus: 'RESERVED', undo: true,
+        confirm: '입실 예약으로 되돌릴까요?', doneToast: UNDO_AFTER.moveIn.toast },
     ]
     case 'CHECKOUT_PENDING': return [
       { key: 'checkout',       label: '퇴실 처리',    toStatus: 'CHECKED_OUT', field: 'moveOutDate', fieldLabel: '퇴실일', withDeposit: true, tone: 'primary' },
@@ -221,11 +261,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       runTransition(def, { reservationConfirmedAt: kstYmdStr() })
       return
     }
-    // 신고 9b974be0: 확정 해제(적용취소 원칙)
+    // 신고 9b974be0: 확정 적용취소(적용취소 원칙)
     if (def.kind === 'unconfirm') {
       const ok = await confirmDialog({
-        title: `${tenantName}님 · 예약 확정을 해제할까요?`,
-        confirmLabel: '확정 해제',
+        title: `${tenantName}님 · 예약 확정을 적용취소할까요?`,
+        confirmLabel: '확정 적용취소',
       })
       if (!ok) return
       runTransition(def, { reservationConfirmedAt: null })
@@ -339,6 +379,23 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       // 계약에는 보증금이 적혀 있는데 받은 기록이 없는 상태 — 서버가 환불·몰취 기록을 거절하는 자리다.
       // 기준액이 0 이라 환불 칸이 아예 안 뜨므로, 왜 없는지는 말해 줘야 한다(조용히 넘어가면 정산 누락).
       noBasisContract: !!comp && comp.basisSource === 'none' && comp.contract > 0 ? comp.contract : 0,
+    })
+  }
+
+  /**
+   * 토스트 액션의 되돌리기 — 버튼 줄의 되돌림 전이와 **같은 서버 호출·같은 문장**을 쓴다.
+   * 여기만 따로 액션을 두면 6초 안에 누른 사람과 나중에 버튼으로 누른 사람이 다른 결과를 본다.
+   * 확인창은 없다 — 토스트 액션은 방금 한 일을 무르는 자리라 되묻는 것이 도리어 마찰이다.
+   */
+  const runUndoAfter = (u: { toStatus: string; toast: string }) => {
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await applyStatusTransition({ leaseTermId: lease.id, tenantId, toStatus: u.toStatus })
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('info', `${tenantName}님 · ${u.toast}`)
+        onChange?.()
+      } finally { release() }
     })
   }
 
@@ -471,7 +528,17 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           // 서버가 돌려준 안내를 안 써서, 현금영수증 취소를 알리는 말이 여기서만 사라졌다.
           if (rr.ok) for (const line of refundTaxNoticeLines(rr.taxNotice)) pushToast('info', line)
         }
-        pushToast('success', `${tenantName}님 · ${def.label} 완료`)
+        // 되돌리는 전이는 '완료'가 아니라 '적용취소했습니다'라고 말한다(§16 Do — 적용취소 후에도 결과 토스트).
+        // 앞으로 가는 전이 중 되돌릴 자리가 있는 것은 6초 액션을 함께 낸다(액션이 붙으면 pushToast 가
+        // TOAST_DUR_ACTION 6000 을 고른다). 토스트는 보조라 사라져도 버튼 줄에서 언제든 되돌릴 수 있다.
+        if (def.doneToast) {
+          pushToast('info', `${tenantName}님 · ${def.doneToast}`)
+        } else {
+          const undoable = UNDO_AFTER[def.key]
+          pushToast('success', `${tenantName}님 · ${def.successToast ?? `${def.label} 완료`}`, undoable
+            ? { action: { label: '적용취소', run: () => runUndoAfter(undoable) } }
+            : undefined)
+        }
         if (deferNow && depoBase > 0) pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
@@ -521,6 +588,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         {transitions.map(def => (
           <Btn key={def.key} type="button" variant={def.tone ?? 'secondary'} size="sm"
             disabled={pending || opening} onClick={() => handleClick(def)} className="font-semibold">
+            {/* 되돌리기에는 rotate-ccw 를 앞세운다(§16). 변형은 줄 형제를 따라 secondary 그대로 —
+                아이콘만 더하고 색을 바꾸면 이 줄에서 혼자 다른 무게로 선다. */}
+            {def.undo && <RotateCcw />}
             {def.label}
           </Btn>
         ))}

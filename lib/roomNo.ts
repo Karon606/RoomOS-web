@@ -49,6 +49,29 @@ export function roomNoWithRo(no: string | null | undefined, empty = '—'): stri
 }
 
 /**
+ * 호실번호에 주격 조사를 붙인 조각 — '508호가' · '사무실이' · '옥탑방이' · 'A동-3이'.
+ *
+ * roomNoWithRo 와 같은 이유로 함수가 필요하다. 호실번호가 다 숫자로 끝난다는 보장이 없고,
+ * 숫자로 끝나도 읽는 소리에 종성이 있는 것과 없는 것이 갈린다. 문장 안에서 '사무실가'가
+ * 나오는 자리를 만들지 않는 것이 이 파일의 몫이다.
+ *
+ * 판정은 마지막 글자의 종성이다. 있으면 '이', 없으면 '가'.
+ * 숫자로 끝나면 그 숫자를 읽는 소리로 본다 — 영·일·삼·육·칠·팔이 종성을 갖는다.
+ */
+export function roomNoWithI(no: string | null | undefined, empty = '—'): string {
+  const label = fmtRoomNo(no, empty)
+  const last = label.slice(-1)
+  const code = last.codePointAt(0) ?? 0
+  let hasJong = false
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    hasJong = (code - 0xac00) % 28 !== 0
+  } else if (/\d/.test(last)) {
+    hasJong = '013678'.includes(last)
+  }
+  return `${label}${hasJong ? '이' : '가'}`
+}
+
+/**
  * 호실 여럿을 문장 안에 세우는 한 줄 — '601호' · '601호·602호' · '601호·602호 외 1건'.
  *
  * 딸린 계약 경고가 두 화면(수정 폼·상태전환 미니폼)에서 같은 말을 해야 해서 여기 둔다.

@@ -17,6 +17,7 @@ import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/ac
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DepositStatusPanel } from '../widgets/DepositStatusPanel'
 import { RentSettlementPanel } from '../widgets/RentSettlementPanel'
+import { CheckoutRevertRow } from '../widgets/CheckoutRevertRow'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
@@ -178,6 +179,18 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         reloadSignal={reloadKey}
         onChanged={refresh}
         onAdjust={() => { setMode('full'); setAdjustKey(k => k + 1) }}
+      />
+      {/* 퇴실 적용취소 — §16 상시 진입점. 퇴실 완료 계약에만 서고 그 밖의 화면은 픽셀이 안 움직인다.
+          두 정산 카드 아래인 것은 순서가 곧 손 순서라서다. 돈이 이미 나갔으면 위 두 카드에서 그
+          기록을 먼저 되돌려야 이 문이 열린다(서버 술어가 같은 말로 막는다). */}
+      <CheckoutRevertRow
+        leaseTermId={leaseTermId}
+        tenantId={settlement.tenantId}
+        tenantName={settlement.tenantName}
+        status={settlement.status}
+        roomNo={settlement.roomNo}
+        canEdit={canEdit}
+        onChanged={refresh}
       />
       </div>
 

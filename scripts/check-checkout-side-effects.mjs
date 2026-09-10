@@ -542,7 +542,154 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 · ⓠ 환불 확정 뒤 청구·스냅샷 쓰기 거부 / 위반 ${violations.length}건`)
+// ⓡ 퇴실 적용취소 (2026-09-10 운영자 승인 설계).
+//
+//    서버 전이표는 퇴실 되돌리기를 이미 허용하는데 화면에만 문이 없었다. 문을 내면서 규칙이 셋이다.
+//    ① 목적지도 차단도 **서버 술어 한 벌**(lib/checkoutRevert)이 정한다. 화면이 목적지를 고르면
+//       같은 계약이 어느 화면에서 눌렀느냐에 따라 다른 상태로 간다.
+//    ② 되돌리는 길이 둘이다(전환 액션 · 수정 폼이 퇴실일을 지우는 뒷문). 두 길이 같은 차단 술어를
+//       지나야 한다 — 한쪽에만 걸면 막힌 사람이 다른 길로 들어온다.
+//    ③ 되돌림이 남기는 자국. 퇴실일을 비우고(안 비우면 캘린더가 계속 퇴실로 읽는다), 거주중으로
+//       갈 때는 퇴실 예정일까지 걷고(안 걷으면 크론이 다음 날 다시 퇴실 예정으로 돌린다),
+//       퇴실 예정으로 갈 때는 퇴실 완료 행의 사유를 되돌림 행에 싣는다(안 실으면 사유가 끊긴다).
+//    새 컬럼은 없다 — 상태·퇴실일·이력만으로 서는 기능이다.
+{
+  const LIB = 'lib/checkoutRevert.ts'
+  let lib = ''
+  try { lib = readFileSync(LIB, 'utf8') } catch { violations.push(`${LIB} — 퇴실 적용취소 술어 정본이 없다.`) }
+  if (lib) {
+    for (const [needle, what] of [
+      ['export function checkoutRevertTarget', '목적지 술어'],
+      ['export function checkoutRevertBlock', '차단 술어'],
+      ['CHECKOUT_REVERT_LABEL', '되돌아간 상태의 이름'],
+    ]) {
+      if (!lib.includes(needle)) violations.push(`${LIB} — ${what}(${needle})가 없다.`)
+    }
+    if (!/RENT_REFUND_LOCKED/.test(lib)) {
+      violations.push(`${LIB} — 이용료 환불 차단이 기존 잠금 문장(RENT_REFUND_LOCKED)을 안 쓴다. 같은 막힘이 화면마다 달리 불린다.`)
+    }
+    // 이중 점유 판정은 규칙을 새로 적지 않는다 — 어떤 상태가 방을 잡는가는 OCCUPYING_STATUSES,
+    // 그 집합의 대표를 고르는 일은 primaryRoomLease 다. 손으로 상태를 나열하면 정본이 바뀌는 날 갈린다.
+    if (!/OCCUPYING_STATUSES/.test(lib) || !/primaryRoomLease\(/.test(lib)) {
+      violations.push(`${LIB} — 이중 점유 판정이 점유 정본(OCCUPYING_STATUSES·primaryRoomLease)을 안 쓴다. 규칙이 두 벌이 된다.`)
+    }
+    if (/'ACTIVE'\s*,\s*'CHECKOUT_PENDING'/.test(lib)) {
+      violations.push(`${LIB} — 점유 상태를 손으로 나열한다. lib/leaseStatus 정본을 그대로 쓴다.`)
+    }
+  }
+
+  const ast = src.match(/export async function applyStatusTransition[\s\S]*?\n\}\n/)
+  if (!ast) violations.push(`${FILE} — applyStatusTransition 을 못 찾았다.`)
+  else {
+    const body = ast[0]
+    if (!/checkoutRevertBlock\(/.test(body)) {
+      violations.push(`${FILE} — applyStatusTransition 이 퇴실 적용취소의 차단 술어를 안 부른다. 보증금 반환·이용료 환불이 기록된 계약도 상태만 되돌아간다.`)
+    }
+    // 인자 이름만 보면 빈 배열을 실어 조용히 끄는 길이 남는다. **조회를 실제로 지나는지**를 본다.
+    if (!/checkoutRevertBlock\(\{[\s\S]{0,400}roomLeases: await roomLeasesFor\(/.test(body)) {
+      violations.push(`${FILE} — applyStatusTransition 이 차단 술어에 호실 계약 목록을 조회해 넘기지 않는다. 되돌린 사이 그 방에 들어온 계약을 못 보고 한 방에 거주 계약이 둘이 된다.`)
+    }
+    if (!/input\.toStatus = checkoutRevertTarget\(/.test(body)) {
+      violations.push(`${FILE} — applyStatusTransition 이 목적지를 술어로 덮어쓰지 않는다. 화면이 지정한 상태가 그대로 저장돼 두 화면의 답이 갈린다.`)
+    }
+    if (!/input\.moveOutDate = null/.test(body)) {
+      violations.push(`${FILE} — 퇴실 적용취소가 퇴실일을 안 비운다. 캘린더(lib/moveCalendar stayEnd)가 이 계약을 계속 '나간 사람'으로 읽는다.`)
+    }
+    // 거주중으로 돌아올 때의 정리 블록이 CHECKED_OUT 출발까지 넓혀졌는가.
+    const gate = body.indexOf("if (input.toStatus === 'ACTIVE'")
+    const clear = body.indexOf('data.expectedMoveOut = null')
+    if (gate < 0 || clear < 0 || clear < gate) {
+      violations.push(`${FILE} — 거주중 복귀의 정리 블록을 못 찾았다. 이 그물의 기대 모양을 같이 고친다.`)
+    } else if (!body.slice(gate, clear).includes("lease.status === 'CHECKED_OUT'")) {
+      violations.push(`${FILE} — 거주중 복귀 정리가 CHECKED_OUT 출발을 안 태운다. 퇴실 예정일이 남아 크론이 다음 날 다시 퇴실 예정으로 돌린다.`)
+    }
+    // 되돌림 행의 사유 — 퇴실 완료 행에서 이어받아, **이력 생성이 실제로 그 값을 쓴다.**
+    // 읽어만 두고 create 에 안 실으면 사유가 조용히 끊긴다(그 자국은 다음 퇴실에서야 보인다).
+    if (!/toStatus: 'CHECKED_OUT'[\s\S]{0,200}orderBy: \{ changedAt: 'desc' \}/.test(body)) {
+      violations.push(`${FILE} — 되돌림 이력이 퇴실 완료 행의 사유를 안 읽는다. inheritableCheckoutReason 이 CHECKED_OUT 행에서 멈춰 다음 퇴실의 사유가 빈 채 굳는다.`)
+    }
+    if (!/reason: revertReason \?\?/.test(body)) {
+      violations.push(`${FILE} — 이력 생성이 되돌림 사유(revertReason)를 안 싣는다. 읽어만 두면 다음 퇴실이 사유를 못 이어받는다.`)
+    }
+  }
+
+  const upd = src.match(/export async function updateTenant[\s\S]*?\n\}\n/)
+  if (!upd) violations.push(`${FILE} — updateTenant 를 못 찾았다.`)
+  else {
+    if (!/prevStatus === 'CHECKED_OUT'[\s\S]{0,400}checkoutRevertBlock\(/.test(upd[0])) {
+      violations.push(`${FILE} — 수정 폼의 퇴실 되돌림 뒷문에 차단 술어가 없다. 전환 액션에서 막힌 계약이 폼으로 들어와 퇴실일만 지워진다.`)
+    }
+    if (!/prevStatus === 'CHECKED_OUT'[\s\S]{0,900}roomLeases: await roomLeasesFor\(/.test(upd[0])) {
+      violations.push(`${FILE} — 수정 폼 뒷문이 차단 술어에 호실 계약 목록을 조회해 넘기지 않는다. 두 경로가 같은 술어를 부르되 인자가 갈리면 한쪽만 이중 점유를 본다.`)
+    }
+  }
+
+  // 화면 — 상태 전환 위젯의 세 자리 중 둘(투어 완료·입실 처리)과 수납 정보의 퇴실 적용취소.
+  const tst3 = readFileSync('components/entity-modal/widgets/TenantStatusTransitions.tsx', 'utf8')
+  for (const [key, what] of [['undoTourDone', '투어 완료'], ['undoMoveIn', '입실 처리']]) {
+    if (!tst3.includes(`key: '${key}'`)) {
+      violations.push(`components/entity-modal/widgets/TenantStatusTransitions.tsx — ${what} 되돌림 버튼(${key})이 없다. 서버 전이표는 허용하는데 화면에만 문이 없는 그 상태로 돌아간다.`)
+    }
+  }
+  if (!/UNDO_AFTER\[def\.key\]/.test(tst3) || !/action: \{ label: '적용취소'/.test(tst3)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 투어 완료·입실 처리 직후 토스트에 적용취소 액션이 없다(§16 진입점 1).')
+  }
+  // §16 되돌리기 버튼에는 rotate-ccw 가 선다 — 다른 원위치 진입점과 같은 문법이라야 같은 것으로 읽힌다.
+  if (!/def\.undo && <RotateCcw \/>/.test(tst3) || !/import \{ RotateCcw \}/.test(tst3)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 되돌리기 버튼에 rotate-ccw 아이콘이 없다(§16).')
+  }
+  if ((tst3.match(/undo: true/g) || []).length < 3) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 되돌리기 표식(undo)이 붙은 버튼이 셋보다 적다(투어 완료·입실·예약 확정).')
+  }
+  // 라벨은 '적용취소' 하나다(§16). '해제'·'되돌리기' 가 남으면 같은 일이 두 이름으로 배워진다.
+  if (/'확정 해제'/.test(tst3)) {
+    violations.push("components/entity-modal/widgets/TenantStatusTransitions.tsx — '확정 해제' 가 남아 있다. §16 라벨은 '적용취소' 하나다.")
+  }
+  // 라벨에 '완료'가 든 전이는 결과 문장을 따로 준다 — 안 그러면 "투어 완료 완료" 로 나간다.
+  if (!/successToast: '투어 완료 처리'/.test(tst3)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 투어 완료의 성공 토스트가 겹말("투어 완료 완료")로 나간다.')
+  }
+  const pb2 = readFileSync('components/entity-modal/bodies/PaymentBody.tsx', 'utf8')
+  if (!/<CheckoutRevertRow\b/.test(pb2)) {
+    violations.push('components/entity-modal/bodies/PaymentBody.tsx — 수납 정보에 퇴실 적용취소 진입점이 없다. 퇴실 완료 계약은 상태 전환 위젯이 안 서므로 되돌릴 자리가 통째로 사라진다.')
+  }
+  const crr = readFileSync('components/entity-modal/widgets/CheckoutRevertRow.tsx', 'utf8')
+  if (!/getCheckoutRevertInfo\(/.test(crr)) {
+    violations.push('components/entity-modal/widgets/CheckoutRevertRow.tsx — 확인창을 세우기 전에 서버에 묻지 않는다. 막힌 계약에도 확인창이 뜨고, 무엇이 될지도 화면이 짐작한다.')
+  }
+  if (/CHECKOUT_PENDING/.test(crr)) {
+    violations.push('components/entity-modal/widgets/CheckoutRevertRow.tsx — 화면이 목적지를 직접 지정한다. 목적지는 서버 술어(checkoutRevertTarget)의 몫이다.')
+  }
+  for (const [needle, what] of [
+    ['퇴실을 적용취소할까요?', '확인창 제목'],
+    ['잡힌 퇴실 청소 예정은 지웁니다', '확인창의 지우는 것'],
+    ['예약 이용료는 되돌리지 않습니다', '확인창의 안 되돌리는 것'],
+    ["level: 'caution'", '§14 주의 등급'],
+    ["confirmLabel: '퇴실 적용취소'", '동사 라벨'],
+    ['퇴실을 적용취소했습니다', '결과 토스트(§16 Do)'],
+  ]) {
+    if (!crr.includes(needle)) {
+      violations.push(`components/entity-modal/widgets/CheckoutRevertRow.tsx — ${what} 문구가 없다("${needle}").`)
+    }
+  }
+  // 화면에 쓰는 말은 화면의 말이라야 한다 — '걷습니다'는 저장소 주석 은어고 '예약가'는 화면 이름이 아니다.
+  for (const [bad, why] of [
+    ['청소는 걷습니다', "'걷다'는 주석에서 쓰는 말이지 운영자가 화면에서 배운 말이 아니다"],
+    ['예약가', "화면 이름은 '예약 이용료'다(호실 관리)"],
+  ]) {
+    if (crr.includes(bad)) {
+      violations.push(`components/entity-modal/widgets/CheckoutRevertRow.tsx — 확인창에 "${bad}" 가 있다. ${why}.`)
+    }
+  }
+
+  // 새 컬럼 없이 서는 기능이다 — 상태·퇴실일·이력만 쓴다.
+  const schema = readFileSync('prisma/schema.prisma', 'utf8')
+  if (/checkoutRevert|revertedAt|checkoutUndoneAt/.test(schema)) {
+    violations.push('prisma/schema.prisma — 퇴실 적용취소가 칼럼을 새로 들었다. 이 기능은 상태·퇴실일·이력만으로 선다(설계 확정).')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 · ⓠ 환불 확정 뒤 청구·스냅샷 쓰기 거부 · ⓡ 퇴실 적용취소 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

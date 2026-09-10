@@ -65,6 +65,8 @@ import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { RENT_REFUND_MEMO_PREFIX, RENT_REFUND_LOCKED, isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
+import { checkoutRevertTarget, checkoutRevertBlock, checkoutRevertBlockMessage,
+  CHECKOUT_REVERT_LABEL, CHECKOUT_REVERT_REASON } from '@/lib/checkoutRevert'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
   plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
@@ -1221,6 +1223,26 @@ export async function updateTenant(formData: FormData): Promise<
     )
     prorationPatch = pr.data
     prorationNotice = pr.notice
+  }
+
+  /**
+   * 퇴실 적용취소의 **뒷문** — 이 폼도 상태를 바꿔 퇴실을 무를 수 있고, 그때 아래 저장이 퇴실일을 지운다.
+   * 전환 액션과 **같은 차단 술어**를 여기에도 건다. 한쪽에만 걸면 막힌 사람이 다른 길로 들어온다.
+   *
+   * 종전에는 이 경로에 아무 문이 없어서, 보증금 반환을 기록한 계약도 상태만 바꾸면 퇴실일이
+   * 조용히 지워졌다(반환 기록은 남고 되돌릴 근거만 사라진다). 상태가 무엇으로 바뀌든 퇴실일을
+   * 지우는 것은 같으므로 목적지를 가리지 않는다 — 문은 '퇴실일을 지우는 저장'에 걸린다.
+   */
+  if (prevStatus === 'CHECKED_OUT' && status !== 'CHECKED_OUT') {
+    const revertBlocked = checkoutRevertBlock({
+      leaseTermId,
+      hasDepositRefund: await hasDepositRefundFor(propertyId, leaseTermId),
+      checkoutProrationUndo: currentLease.checkoutProrationUndo,
+      // 이 저장이 끝난 뒤 이 계약이 설 방으로 본다 — 폼은 상태와 호실을 한 번에 바꿀 수 있고,
+      // 옮겨 갈 방이 이미 찼는지가 물음이지 떠나온 방이 찼는지가 아니다.
+      roomLeases: await roomLeasesFor(propertyId, newRoomId ?? null),
+    })
+    if (revertBlocked) return { ok: false, error: checkoutRevertBlockMessage(revertBlocked) }
   }
 
   // 입주자 정보 수정
@@ -3329,6 +3351,31 @@ async function roomStillOccupied(roomId: string, exceptLeaseId?: string): Promis
   return !!other
 }
 
+// 이 계약에 보증금 반환이 기록돼 있는가 — 퇴실 적용취소의 차단 술어가 읽는 한 축.
+// 조회를 여기 한 벌로 두는 이유는 되돌리는 길이 둘이기 때문이다(전환 액션·수정 폼 뒷문).
+// 두 곳이 각자 where 를 쓰면 한쪽만 영업장 조건을 빠뜨리는 날이 온다.
+async function hasDepositRefundFor(propertyId: string, leaseTermId: string): Promise<boolean> {
+  const r = await prisma.depositRefund.findFirst({
+    where: { leaseTermId, propertyId },
+    select: { id: true },
+  })
+  return !!r
+}
+
+// 이 호실의 계약 전부 — 퇴실 적용취소의 이중 점유 판정에 넘긴다. **거르지 않고 통째로 넘긴다.**
+// 어떤 상태가 방을 잡고 있는지는 술어가 정본(OCCUPYING_STATUSES)으로 판정하고 자기 자신도 거기서
+// 뺀다. 여기서 미리 걸러 두면 그 규칙이 조회부에 한 벌 더 생겨, 정본이 바뀌는 날 한쪽만 따라간다.
+// 호실이 없는 계약은 빈 배열이다 — 방이 없으면 겹칠 방도 없다.
+async function roomLeasesFor(propertyId: string, roomId: string | null): Promise<
+  { id: string; status: string; moveInDate: Date | null }[]
+> {
+  if (!roomId) return []
+  return prisma.leaseTerm.findMany({
+    where: { roomId, propertyId },
+    select: { id: true, status: true, moveInDate: true },
+  })
+}
+
 // 명시적 상태 전환 — 상태 + 그 전환에 필요한 필드만 변경하고 호실 공실·이력 자동 처리.
 // 상세 모달의 전환 버튼(투어 완료/예약 전환/입실 처리/퇴실 예정/퇴실/비거주 전환 등)이 사용.
 export async function applyStatusTransition(input: {
@@ -3366,6 +3413,31 @@ export async function applyStatusTransition(input: {
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    /**
+     * 퇴실 적용취소 — 퇴실 완료에서 거주계로 돌아오는 전이다. **목적지도 차단도 서버가 술어로 정한다.**
+     *
+     * 화면이 목적지를 지정하면 같은 계약이 어느 화면에서 눌렀느냐에 따라 다른 상태로 간다. 그래서
+     * 여기서 덮어쓴다 — 화면은 라벨만 받아 확인창 문장에 넣는다(lib/checkoutRevert 정본).
+     * 차단 술어는 수정 폼의 뒷문도 같은 것을 부른다. 한쪽에만 걸면 막힌 사람이 다른 길로 들어온다.
+     *
+     * 퇴실일을 비우는 것이 이 분기의 몫이다. 남겨 두면 캘린더가 이 계약을 계속 '나간 사람'으로
+     * 읽고(lib/moveCalendar 의 stayEnd 가 moveOutDate 를 먼저 본다) 되돌린 것이 화면에 안 나온다.
+     * 비거주 전환(CHECKED_OUT → NON_RESIDENT)은 되돌리기가 아니라 다른 뜻이라 이 분기 밖이다.
+     */
+    const isCheckoutRevert = lease.status === 'CHECKED_OUT'
+      && (input.toStatus === 'ACTIVE' || input.toStatus === 'CHECKOUT_PENDING')
+    if (isCheckoutRevert) {
+      const blocked = checkoutRevertBlock({
+        leaseTermId: input.leaseTermId,
+        hasDepositRefund: await hasDepositRefundFor(propertyId, input.leaseTermId),
+        checkoutProrationUndo: lease.checkoutProrationUndo,
+        roomLeases: await roomLeasesFor(propertyId, lease.roomId),
+      })
+      if (blocked) return { ok: false, error: checkoutRevertBlockMessage(blocked) }
+      input.toStatus = checkoutRevertTarget({ expectedMoveOut: ymdOf(lease.expectedMoveOut) }, kstYmdStr())
+      input.moveOutDate = null
+    }
 
     // 전이표 검사 — 서버가 from/to 를 검증하지 않아 8x8 전부가 통과했다(B페이즈 조사).
     // 상태를 바꾸는 경로가 넷(전환 버튼·수정 폼·홈 알림·cron)이라 경로마다 규칙이 갈렸다.
@@ -3435,7 +3507,11 @@ export async function applyStatusTransition(input: {
     // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 + 퇴실 일할 정산(+롤백 스냅샷) 정리.
     // 신고 aae0ab38: CHECKOUT_PENDING발 복귀일 때만 초기화 — RESERVED발 입실 처리에서는
     // 단기 예약자가 미리 넣은 퇴실 예정일·정산이 지워지지 않도록 보존한다.
-    if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined && lease.status === 'CHECKOUT_PENDING') {
+    // 퇴실 적용취소가 거주중으로 돌아올 때도 이 정리를 탄다(2026-09-10). 안 걷으면 퇴실 예정일이
+    // 남아 크론이 다음 날 아침 같은 계약을 다시 퇴실 예정으로 집는다 — 되돌린 것이 하루짜리가 된다.
+    // 퇴실 예정으로 돌아가는 갈래는 여기 안 들어온다(예정일이 남아 있는 것이 그 갈래의 근거다).
+    if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined
+        && (lease.status === 'CHECKOUT_PENDING' || lease.status === 'CHECKED_OUT')) {
       // 환불 확정 계약은 복귀 전에 환불 적용취소부터(수정 폼·단기 연장과 같은 문장, 2026-09-03).
       if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) return { ok: false, error: RENT_REFUND_LOCKED }
       data.expectedMoveOut = null
@@ -3514,6 +3590,25 @@ export async function applyStatusTransition(input: {
     // 신고 9b974be0: 예약 확정·해제(RESERVED→RESERVED)는 상태 변화가 아니므로 이력 미기록.
     // 확정 시각은 reservationConfirmedAt 컬럼 자체가 기록한다(이력 오염 방지).
     const isReservationToggle = input.toStatus === lease.status && input.reservationConfirmedAt !== undefined
+    /**
+     * 퇴실 적용취소의 이력 — **새 전환 행**으로 남긴다(무효화는 '잘못 입력했다'라 뜻이 다르다).
+     * 선례는 자동 전환 되돌리기의 '자동 전환 되돌림' 행이다. changedAt 은 손대지 않는다(누른 날이 축이다).
+     *
+     * 퇴실 예정으로 돌아갈 때는 **퇴실 완료 행의 사유를 이 행에 싣는다.** 안 실으면 다음 퇴실이
+     * 사유를 못 이어받는다 — inheritableCheckoutReason 은 최신부터 거슬러 오다 CHECKED_OUT 행을
+     * 만나면 거기서 null 로 멈추므로, 되돌림 행이 사유를 들고 있지 않으면 예정 구간이 끊긴 것으로 읽힌다.
+     */
+    let revertReason: string | null = null
+    if (isCheckoutRevert) {
+      const doneRow = input.toStatus === 'CHECKOUT_PENDING'
+        ? await prisma.tenantStatusLog.findFirst({
+            where: { leaseTermId: input.leaseTermId, toStatus: 'CHECKED_OUT', deletedAt: null },
+            orderBy: { changedAt: 'desc' },
+            select: { reason: true },
+          })
+        : null
+      revertReason = doneRow?.reason || CHECKOUT_REVERT_REASON
+    }
     if (!isReservationToggle) {
       await prisma.tenantStatusLog.create({
         data: {
@@ -3522,7 +3617,7 @@ export async function applyStatusTransition(input: {
           propertyId,
           fromStatus: lease.status,
           toStatus: input.toStatus as LeaseStatus,
-          reason: input.reason || null,
+          reason: revertReason ?? (input.reason || null),
           changedById: user.sub,
         },
       })
@@ -4983,6 +5078,42 @@ export async function undoAutoCheckout(
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '되돌리는 중 오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 퇴실 적용취소가 지금 가능한가, 가능하면 무엇이 되는가 — 확인창이 문장을 짓기 전에 묻는 문.
+ *
+ * **목적지 자체는 화면에 안 내린다.** 화면은 라벨만 받아 문장에 넣고, 무엇이 될지는 저장할 때
+ * 서버가 같은 술어로 다시 정한다(lib/checkoutRevert). 둘이 갈릴 자리를 안 만드는 것이 규칙이다.
+ *
+ * 차단은 문장으로 내린다. 화면이 사유 코드를 받아 제 문장을 지으면 같은 막힘이 화면마다 달리 불린다.
+ */
+export async function getCheckoutRevertInfo(leaseTermId: string): Promise<
+  { ok: true; label: string; blocked: string | null } | { ok: false; error: string }
+> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { status: true, expectedMoveOut: true, checkoutProrationUndo: true, roomId: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (lease.status !== 'CHECKED_OUT') return { ok: false, error: '퇴실 완료 계약이 아닙니다.' }
+    const blocked = checkoutRevertBlock({
+      leaseTermId,
+      hasDepositRefund: await hasDepositRefundFor(propertyId, leaseTermId),
+      checkoutProrationUndo: lease.checkoutProrationUndo,
+      roomLeases: await roomLeasesFor(propertyId, lease.roomId),
+    })
+    const target = checkoutRevertTarget({ expectedMoveOut: ymdOf(lease.expectedMoveOut) }, kstYmdStr())
+    return {
+      ok: true,
+      label: CHECKOUT_REVERT_LABEL[target],
+      blocked: blocked ? checkoutRevertBlockMessage(blocked) : null,
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '확인 중 오류가 발생했습니다.' }
   }
 }
 
