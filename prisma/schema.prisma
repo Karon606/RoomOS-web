@@ -1780,6 +1780,9 @@ model StockCheckLocation {
   restockedQty      Float?  // 이번 점검에서 이 위치에 보충한 양 (NULL = 보충 없음)
   fromHubQty        Float?  // (레거시) 명시적 이동 유입 수량
   fromLocationId    String? @db.Uuid  // (레거시) 이동 유입 출처
+  // 이월/실측 표식(2026-09-11). true=직전 점검에서 이월된 행(파생 박제, 앞 점검이 바뀌면 전파 대상),
+  // false=이번 점검에서 실측한 행(절대값, 전파가 멈추는 자리), null=표식 이전의 구식 행(휴리스틱으로 판정).
+  carried           Boolean?
 
   stockCheck      StockCheck       @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
   storageLocation StorageLocation  @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
