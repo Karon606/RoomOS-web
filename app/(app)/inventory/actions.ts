@@ -2190,6 +2190,10 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
         propertyId,
         category: { in: trackedCats },
         itemLabel: onlyLabels && onlyLabels.length ? { in: onlyLabels } : { not: null },
+        // 재고 제외(서비스·무형)로 등록한 지출은 재고 카드를 만들지 않는다. 이 조건이 없어
+        // 9/5 '옥상 폐기물처리'(폐기물 처리비·서비스)가 재고 카드로 섰다. 잔량 집계 쪽은
+        // 이미 같은 조건을 걸고 있어(같은 파일 74·125·192·706행) 카드만 반대편에 서 있었다.
+        excludeFromInventory: false,
       },
       select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
     })

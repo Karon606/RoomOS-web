@@ -9,6 +9,7 @@ import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlia
 import { computeSetHint } from '@/lib/setHint'
 import { resolveSingleItemFields } from '@/lib/expenseItemSource'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
+import { splitQuickPickRows } from '@/lib/itemQuickPicks'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -2925,7 +2926,10 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
 // ① 유형(물품/서비스·무형)별 이력만 ② 카테고리 선택 시 그 카테고리 이력으로 좁힘.
 // 각 단계에서 후보가 10개 미만이면 바로 위 단계(유형 전체) 이력으로 부족분만 보충 — 항상 10개 유지.
 // 서비스·무형은 서비스로 등록된 항목(도배·시공 등)만 추천된다(물품과 완전 분리).
-export async function getItemQuickPicks(category: string, opts?: { service?: boolean }): Promise<string[]> {
+// 반대 유형 건수(otherTypeCount)도 함께 돌려준다 — 분리는 그대로 두되, 반대편에 이력이 있다는
+// 사실은 화면이 말해야 한다(신고 "최근 내역을 여기서 고를 수 있게 하는게 아니었나?"). 1단계 질의의
+// groupBy 키에 유형을 더해 세므로 질의 수는 종전과 같다.
+export async function getItemQuickPicks(category: string, opts?: { service?: boolean }): Promise<{ picks: string[]; otherTypeCount: number }> {
   const propertyId = await getPropertyId()
   const service = !!opts?.service
   const rank = (rows: { itemLabel: string | null; _count: { _all: number }; _max: { date: Date | null } }[]) => {
@@ -2937,14 +2941,16 @@ export async function getItemQuickPicks(category: string, opts?: { service?: boo
   const picks: string[] = []
   const push = (l: string | null | undefined) => { if (l && !picks.includes(l) && picks.length < 10) picks.push(l) }
 
-  // 1단계: 유형 + 카테고리
+  // 1단계: 유형 + 카테고리. 양쪽 유형을 한 번에 받아 유형별로 가른다 — 칩은 같은 유형만,
+  // 반대 유형은 건수만 센다(질의 추가 없음).
   const catRows = await prisma.expense.groupBy({
-    by: ['itemLabel'],
-    where: { propertyId, category, itemLabel: { not: null }, isShipping: false, excludeFromInventory: service },
+    by: ['itemLabel', 'excludeFromInventory'],
+    where: { propertyId, category, itemLabel: { not: null }, isShipping: false },
     _count: { _all: true },
     _max: { date: true },
   })
-  const cat = rank(catRows)
+  const { same: catSame, otherTypeCount } = splitQuickPickRows(catRows, service)
+  const cat = rank(catSame)
   cat.byRecent.slice(0, 5).forEach(r => push(r.itemLabel))
   cat.byCount.forEach(r => push(r.itemLabel))
 
@@ -2963,7 +2969,7 @@ export async function getItemQuickPicks(category: string, opts?: { service?: boo
 
   // 3단계 보충: 물품이면 카테고리 기본 프리셋(서비스는 이력만)
   if (!service) for (const p of (ITEM_PRESETS[category] ?? [])) push(p)
-  return picks
+  return { picks, otherTypeCount }
 }
 
 

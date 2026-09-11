@@ -7,6 +7,7 @@
 //     '개' 지출은 '박스' 카드에 영원히 못 붙는다. 지출 단위를 덮어쓰면 수량이 왜곡되므로 카드를 연다.
 import { resolveSingleItemFields, type SingleItemFields } from '../lib/expenseItemSource'
 import { shouldLoosenTargetUnit } from '../lib/mergeUnitScope'
+import { splitQuickPickRows } from '../lib/itemQuickPicks'
 
 let pass = 0
 const fails: string[] = []
@@ -115,6 +116,48 @@ eq('단위 안 실려 온 결정도 카드와 다르면 연다', shouldLoosenTar
 // 이미 열린 카드(다양한 포장 합산)는 두 번 열 것이 없다 — 원복할 원래 단위도 없다.
 eq('이미 단위 무시 카드면 그대로', shouldLoosenTargetUnit('개', null), false)
 eq('양쪽 다 단위가 없으면 그대로', shouldLoosenTargetUnit(null, null), false)
+
+// ── 품목 빠른선택 칩의 유형 분리 ──────────────────────────────────
+// 신고 "최근 내역을 여기서 고를 수 있게 하는게 아니었나?" — 9/5 '옥상 폐기물처리'(서비스)를
+// 다음날 물품 폼에서 못 찾은 자리다. 칩이 유형별로 갈린 것은 운영자 확정 규칙이라 그대로 두고,
+// 반대편에 이력이 있다는 사실만 한 질의에서 함께 세어 온다.
+// 여기서 고정하는 것은 그 가르기 하나다 — 순위·보충(2·3단계)은 이 함수 밖이고 손대지 않았다.
+type QPRow = Parameters<typeof splitQuickPickRows>[0][number]
+const qp = (itemLabel: string, excl: boolean, count: number, day: number): QPRow =>
+  ({ itemLabel, excludeFromInventory: excl, _count: { _all: count }, _max: { date: new Date(2026, 8, day) } })
+const labels = (rows: QPRow[]) => rows.map(r => r.itemLabel)
+// 종전 질의의 where 가 하던 일 — 같은 유형만 남기기. 2·3단계에 들어가는 입력의 정의다.
+const oldWhere = (rows: QPRow[], service: boolean) => rows.filter(r => r.excludeFromInventory === service)
+
+// 폐기물 처리비 한 카테고리 — 물품 둘(봉투)과 서비스 하나(옥상 폐기물처리)가 섞여 있다.
+const mixed: QPRow[] = [
+  qp('종량제쓰레기봉투 50L', false, 3, 1),
+  qp('옥상 폐기물처리', true, 1, 5),
+  qp('음식물쓰레기봉투 10L', false, 2, 3),
+]
+eq('물품 모드 칩은 물품 이력만', labels(splitQuickPickRows(mixed, false).same), ['종량제쓰레기봉투 50L', '음식물쓰레기봉투 10L'])
+eq('물품 모드는 서비스 건수를 센다', splitQuickPickRows(mixed, false).otherTypeCount, 1)
+eq('서비스 모드 칩은 서비스 이력만', labels(splitQuickPickRows(mixed, true).same), ['옥상 폐기물처리'])
+eq('서비스 모드는 물품 건수를 센다', splitQuickPickRows(mixed, true).otherTypeCount, 5)
+// 건수는 행 수가 아니라 지출 건수 합이다 — 화면이 '{n}건' 이라고 말한다.
+eq('반대편 건수는 행 수가 아니라 건수 합', splitQuickPickRows([qp('벽지도배', true, 14, 2), qp('장판 시공', true, 7, 4)], false).otherTypeCount, 21)
+
+// 같은 이름이 양쪽에 다 있으면 — 칩은 같은 유형 행만, 반대편은 건수로만 잡힌다.
+const both: QPRow[] = [qp('종량제쓰레기봉투 50L', false, 3, 1), qp('종량제쓰레기봉투 50L', true, 1, 6)]
+eq('같은 이름이 양쪽에 있어도 칩은 같은 유형 행만', labels(splitQuickPickRows(both, false).same), ['종량제쓰레기봉투 50L'])
+eq('같은 이름이어도 반대편 건수는 잡힌다', splitQuickPickRows(both, false).otherTypeCount, 1)
+
+// ── 무회귀 — 반대편이 없으면 지금과 같아야 한다 ────────────────────
+const goodsOnly: QPRow[] = [qp('쌀', false, 4, 2), qp('김치', false, 9, 7)]
+eq('물품만 있는 카테고리는 안내 줄이 설 데이터가 없다', splitQuickPickRows(goodsOnly, false).otherTypeCount, 0)
+eq('물품만 있는 카테고리의 칩 입력은 종전 그대로', splitQuickPickRows(goodsOnly, false).same, oldWhere(goodsOnly, false))
+const serviceOnly: QPRow[] = [qp('벽지도배', true, 14, 2), qp('실리콘 제거 및 재시공', true, 5, 8)]
+eq('서비스만 있는 카테고리는 안내 줄이 설 데이터가 없다', splitQuickPickRows(serviceOnly, true).otherTypeCount, 0)
+eq('서비스만 있는 카테고리의 칩 입력은 종전 그대로', splitQuickPickRows(serviceOnly, true).same, oldWhere(serviceOnly, true))
+eq('빈 이력은 양쪽 0', splitQuickPickRows([], false), { same: [], otherTypeCount: 0 })
+// 반환 모양이 넓어져도 2·3단계가 보는 것은 same 하나다 — 그 값이 종전 where 결과와 원소·순서까지 같다.
+eq('섞여 있어도 2·3단계 입력은 종전 where 결과와 같다', splitQuickPickRows(mixed, false).same, oldWhere(mixed, false))
+eq('서비스 쪽도 2·3단계 입력이 종전 where 결과와 같다', splitQuickPickRows(mixed, true).same, oldWhere(mixed, true))
 
 console.log(`\n품목 단위 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

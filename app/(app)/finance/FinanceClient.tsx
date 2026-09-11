@@ -300,7 +300,7 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
   return best?.name ?? null
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false, onSwitchType }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
@@ -309,13 +309,23 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   detailSuggestions?: string[]               // 과거 품목명 자동완성(구매처와 동일 방식)
   isService?: boolean                        // 서비스·무형 — 추천이 서비스 이력으로 분리(신고 99c30054)
   isDurable?: boolean                        // 내구재(비품·자재) — 세트 승인 시 규격 흡수 대신 개수 환산(신고 91b812ce)
+  // 유형을 바꿀 수 있는 화면만 넘긴다. 넘어오면 반대 유형 이력이 있을 때 칩 줄 아래 안내가 선다.
+  // 수정 폼은 유형이 고정이라 안 넘긴다 — 거기서는 이 줄이 아예 없다.
+  onSwitchType?: () => void
 }) {
   // 품목 빠른 선택 — 유형(물품/서비스)→카테고리 계층 추천, 부족분은 상위 단계로 보충해 항상 10개(신고 6b79c725).
   const [presets, setPresets] = useState<string[]>(isService ? [] : (ITEM_PRESETS[category] ?? []))
+  // 이 카테고리에서 반대 유형으로 등록된 지출 건수 — 칩 목록은 안 바꾸고 안내 한 줄만 세운다.
+  const [otherTypeCount, setOtherTypeCount] = useState(0)
   useEffect(() => {
     let alive = true
     setPresets(isService ? [] : (ITEM_PRESETS[category] ?? []))
-    getItemQuickPicks(category, { service: isService }).then(p => { if (alive && p.length) setPresets(p) }).catch(() => {})
+    setOtherTypeCount(0)   // 카테고리·유형이 바뀌면 옛 건수가 새 칩 밑에 남지 않게 먼저 비운다
+    getItemQuickPicks(category, { service: isService }).then(r => {
+      if (!alive) return
+      if (r.picks.length) setPresets(r.picks)
+      setOtherTypeCount(r.otherTypeCount)
+    }).catch(() => {})
     return () => { alive = false }
   }, [category, isService])
   const items = value
@@ -1025,6 +1035,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
       {/* 품목 추가 버튼들 — 다중 모드면 항상, 단일 모드면 비어있을 때만 */}
       {!activeLabel && (allowMulti || items.length === 0) && (
+        <>
         <div className="flex flex-wrap gap-1.5">
           {presets.map(label => (
             <button key={label} type="button" onClick={() => openPreset(label)}
@@ -1037,6 +1048,22 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             + 직접 입력
           </button>
         </div>
+        {/* 반대 유형 이력 안내 — 칩 목록은 유형별로 갈린 채 두고(운영자 확정 2026-07-08),
+            반대편에 이력이 있다는 사실만 말한다. 없으면 줄 자체가 서지 않는다. */}
+        {onSwitchType && otherTypeCount > 0 && (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+            {isService
+              ? `물품 이력이 ${otherTypeCount}건 있습니다.`
+              : `서비스·무형 이력이 ${otherTypeCount}건 있습니다.`}
+            {/* 44px 터치 타겟 변형 — 글자 높이 15.8px 라 상자를 -my-2 로 넓힌다(형제 여섯 곳과 같은 문법).
+                보조 테라코타 텍스트는 --tc-text 다. --coral 은 다크 카드 위 2.78:1 로 §28 본문 대비에 못 미친다. */}
+            <button type="button" onClick={onSwitchType}
+              className="ml-1.5 -my-2 min-h-[44px] inline-flex items-center text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] rounded-sm">
+              {isService ? '물품으로 바꾸기' : '서비스·무형으로 바꾸기'}
+            </button>
+          </p>
+        )}
+        </>
       )}
 
       {activeLabel && activeLabel !== '__custom__' && (
@@ -1591,6 +1618,30 @@ export default function FinanceClient({
   const isTrackedCat = (cat: string) => trackedCategories.includes(cat)
   const addIsDurable = !addIsService && !isTrackedCat(addExpCategory)
   const editIsDurable = editItems.length > 0 && !isTrackedCat(editExpCategory) && !detailExp?.excludeFromInventory
+
+  // 등록 폼 유형 전환 — 세그먼트와 품목 칩 줄 아래 안내가 같은 한 곳을 부른다.
+  // 두 벌로 두면 서비스로 갈 때 비우는 칸이 한쪽에만 늘어난다.
+  //
+  // 지워질 값이 있으면 먼저 묻는다. 안내 줄은 설명문으로 읽혀 세그먼트보다 잘못 눌리기 쉽고,
+  // 그때 조용히 비우면 되돌릴 길이 없다. 판정은 방향이 아니라 **이 전환이 실제로 지우는 값**으로
+  // 한다 — 물품으로 돌아올 때는 비우는 칸이 없어 묻지 않는다(본문이 거짓이 되면 안 된다).
+  const switchAddType = async (service: boolean) => {
+    const clearingItems = service ? addItems.length : 0
+    const clearingShip  = service && (addHasShipping || addShipping != null || addOrderMode || addOrderShipping != null)
+    if (clearingItems > 0 || clearingShip) {
+      // 조사가 갈려 한 문장으로 못 짠다 — '건이' 와 '배송비가' 는 받침이 다르다.
+      const message = clearingItems > 0 && clearingShip ? `입력한 품목 ${clearingItems}건과 배송비가 지워집니다.`
+        : clearingItems > 0 ? `입력한 품목 ${clearingItems}건이 지워집니다.`
+        : '입력한 배송비가 지워집니다.'
+      const ok = await confirmDialog({
+        title: service ? '서비스·무형으로 바꿀까요?' : '물품으로 바꿀까요?',
+        message, level: 'caution', confirmLabel: '바꾸기',
+      })
+      if (!ok) return
+    }
+    if (!service) { setAddIsService(false); return }
+    setAddIsService(true); setAddItems([]); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined)
+  }
 
   // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
   // 저장 전 미리보기는 **로컬 이미지**를 쓴다. 업로드가 돌려주는 주소는 로그인 검사를 거치는
@@ -4513,9 +4564,9 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>
                   <div className="inline-flex w-full rounded-lg border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-                    <button type="button" onClick={() => setAddIsService(false)}
+                    <button type="button" onClick={() => void switchAddType(false)}
                       className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
-                    <button type="button" onClick={() => { setAddIsService(true); setAddItems([]); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined) }}
+                    <button type="button" onClick={() => void switchAddType(true)}
                       className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
                   </div>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">
@@ -4551,7 +4602,7 @@ export default function FinanceClient({
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{addIsService ? '세부 항목' : '품목 선택'}{addIsService && DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) ? '' : ' *'} <span className="text-[var(--warm-muted)] font-normal">{addIsService ? '(시공·작업별로 금액을 쪼개세요)' : '(여러 품목 추가 가능)'}</span></label>
-                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} />
+                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} onSwitchType={() => void switchAddType(!addIsService)} />
                   {addIsDurable && (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   )}
