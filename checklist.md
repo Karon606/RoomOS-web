@@ -334,3 +334,26 @@
 - [x] 진리표 47건(이중 점유 축 신설: 없음·거주·예약·퇴실 예정·비거주·퇴실 완료·취소·본인만·중복 id)
 - [x] 그물 축 ⓡ 확장 — 점유 정본 사용·손수 나열 금지·두 경로의 `roomLeases` 조회 인자·아이콘·
       라벨·겹말·확인창 금지어. 역주입 20건 전부 발화
+
+## 점검 수정이 뒤 점검에 안 딸려간다 (2026-09-11 김치, 운영자 승인 설계 시공)
+- [x] ① 순수 함수 `lib/stockLedger.planCheckPropagation` — 이월 연쇄·위치별 정지·보정 전체 정지·
+      행 생성·음수 거부·총량 재계산. 진리표 `scripts/test-check-propagation.ts` 62건(김치 실제 값 포함)
+- [x] ② 표식 `carried` 쓰기 — `applyLocationCheck`(점검 위치 false·나머지 true), createStockCheck
+      carryOver true·입력 false, updateStockCheck 동일. 삭제 스냅샷에도 carried 동봉
+- [x] ② 서버 액션 — `previewStockCheckPropagation`(쓰기 없음), `updateStockCheck(propagate)` 게이트,
+      수정+전파 한 트랜잭션, `undoUpdateStockCheck` 한 스냅샷
+- [x] ③ 화면 — CheckEditForm 저장 전 §14 3지선다(함께 조정/이 기록만/취소), §16 토스트 6초 적용취소
+- [x] ④ 허브 자기 마커 봉합 두 겹(화면 '채우기 전' + 서버 isHubChecked) · 감지
+      `check-restock-hub-drift` 절 추가 · 정리 `scripts/fix-hub-restock-marker.ts`(예행)
+- [x] ④ 백필 `scripts/backfill-check-propagation.ts`(예행) — 같은 정본·같은 적용 함수, `--revert` 동봉
+- [x] 감지망 `check-stock-ledger-parity` — 소스 가드 12축 + 이월 행 대조. 역주입 7건 전부 발화
+- [x] 표식 후속(운영자 오더) — 덮어쓴 행 true·정지 행 false·새 행 true, 값 같아도 표식 다르면 계획에
+      행으로. 되돌리기 스냅샷에 표식 이전 값. 진리표 77건(표식만 케이스 신설)
+- [x] 웹디자이너 패스 4건 — 확인창 본문 4단화, §29 화살표 표기(stockShiftAsk 2자리 포함),
+      물음형 제목 + fmtDateKor, 주석 이모지 2곳 제거
+- [x] 백필 둘 운영자 적용 완료 — verify:db 전 구간 통과(허브 마커 0건, 이월 행 대조 2건)
+- [ ] **운영자 실행 대기** — `backfill-check-propagation.ts 83f2089a-… --apply` 한 번 더.
+      9/11 의 값은 이미 옳고 표식만 2행(5층 하단 이월 · 5층 상단 실측)이 비어 있다.
+      안 돌려도 장부는 정확하고 그 두 행만 구식(null)으로 남아 다음 수정 때 휴리스틱을 탄다
+- [x] 체인 등록 — `test-check-propagation.ts` 를 verify:fast 에(운영자 반영, test-stock-ledger 뒤).
+      신규 두 백필·정리 스크립트는 일회성이라 미등록

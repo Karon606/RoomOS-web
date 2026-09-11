@@ -261,3 +261,52 @@ itemsJson 을 읽고 단일 품목은 낱개 필드를 읽어서, 1품목 저장
   보고 후−전을 보충으로 셈했고, `applyLocationCheck` 가 허브에도 마커를 붙였다. 9/11 김치 허브 +17 이
   그것이며 DB 전체 241 마커 행 중 1건. 허브 행의 restockedQty>0 은 뜻이 없으므로 감지 대상이다.
 - **재발 감지**: `check-stock-ledger-parity` 에 carried=true 행 대조 절, `check-restock-hub-drift`(허브 마커).
+
+## 이월 행은 파생 박제, 실측 행만 절대값 (2026-09-11, 김치 · 운영자 승인 설계)
+
+운영자 신고 — "9/10 점검을 나중에 고쳐(4층 상단 4·하단 6) 9/11에도 자동 반영돼야 하는데 안 딸려간다."
+
+`StockCheckLocation` 한 행은 두 종류다. **이월 행**은 "직전 같은 위치 값 + 사이 입수 − 이번 점검의
+허브 차감"을 저장해 둔 **파생 박제**고, **실측 행**은 그날 실제로 센 **절대값**이다. 종전에는 둘이
+구분 없이 같은 칸에 들어가 있었고, `updateStockCheck` 은 뒤 점검을 아예 보지 않았으며 이월 경로
+(`createStockCheck` 의 base·carryOver)는 qty 만 복사해 "이 값이 어디서 왔는가"를 버렸다.
+
+- **표식 `StockCheckLocation.carried`**(Boolean?). true=이월, false=실측, null=표식 이전 구식 행.
+  찍는 자리는 저장 경로다 — `applyLocationCheck` 이 점검한 위치만 false·나머지 전부 true(허브 자동
+  차감 행도 파생이라 true), `carryOver` 행 true, 폼이 보낸 `locationQtys` 는 전부 false.
+  **클라가 보낸 carried 는 쓰지 않는다** — 실측 선언은 저장 경로가 아는 사실이다.
+- **구식 행(null)은 휴리스틱** — 저장값이 파생식과 같으면 이월로 본다(행이 없으면 값 0). 애매하면
+  실측으로 보는 쪽이 안전하다(덜 옮긴다).
+- **전파 정본 `lib/stockLedger.planCheckPropagation`**(순수, 쿼리 0). 위치별로 걷다가 실측을 만나면
+  **그 위치만** 멈추고 다른 위치는 계속 간다. 보정(isReconcile)·위치 내역 없는 점검에서는 전체 정지
+  (planStockShift 의 정지 규칙과 같은 축). 총량 `remainingQty` 도 **위치 합으로 다시 센다** —
+  overview 가 총량과 위치 행을 둘 다 읽어서 한쪽만 옮기면 화면 두 경로가 갈라진다.
+  뒤 점검에 없는 위치는 새 값 > 0 일 때만 행을 만든다(링크 불변식은 applyShiftRows 가 지킨다).
+  음수는 0 클램프가 아니라 거부이고 **어느 점검의 어느 위치인지** 이름으로 알린다.
+- **자동 적용하지 않는다.** `previewStockCheckPropagation` 이 계획만 만들고 §14 확인창이 행 단위
+  숫자를 나열한 뒤 '함께 조정'/'이 기록만'/'취소' 를 가른다. 게이트는 `updateStockCheck(propagate)`.
+  수정과 전파는 **한 트랜잭션**이고 되돌리기는 **한 스냅샷**(`StockCheckEditUndo` — 점검 자체 +
+  `LedgerShiftUndo`)이다. 따로 되돌리면 '수정만 원복, 전파는 남음' 이라는 중간 상태가 장부에 남는다.
+- **표식은 계획이 판정한 행 전부에 박는다**(운영자 후속 오더). 덮어쓴 행은 true, 실측으로 보고 그
+  위치에서 멈춘 행은 false, 새로 만든 행은 true. **값이 같아도 표식이 다르면 계획에 행으로 나온다** —
+  조용히 넘기면 그 행은 영원히 구식(null)으로 남아 다음 수정 때 또 휴리스틱으로 추측된다.
+  그래서 값이 안 바뀐 위치도 판정 대상(live)이다. 되돌리기 스냅샷은 표식의 **이전 값**도 담는다
+  (null 도 유효한 이전 값이라 '없음'의 기준은 undefined 뿐이다).
+- 확인창은 **값이 바뀌는 행만** 나열한다. 표식만 찍는 행을 '17kg 에서 17kg 으로' 라고 적으면
+  확인창이 제 말을 못 한다. 표식은 '함께 조정' 을 고른 뒤 서버가 계획을 다시 세워 같이 찍는다.
+- 확인창 문법은 공용 정본(lib/stockShiftAsk)과 같은 4단이다 — 유지 한 줄 · 영향 한 줄 · 행 · 안내.
+  값 전환은 §29 화살표 표기(`17kg → 7kg`)다. 조사를 붙이면 단위 없는 품목에서 '4개으로' 가 된다
+  (같은 결함이 있던 lib/stockShiftAsk 두 자리도 같이 고쳤다).
+- 회귀: `scripts/test-check-propagation.ts`(62건 — 김치 3점검 실제 값 박제),
+  `check-stock-ledger-parity` 에 소스 가드 + 이월 행 대조(carried=true 행이 파생식과 다르면 붉게).
+
+### 허브 자기 행의 보충 마커는 언제나 버그다 (같은 날 봉합)
+보충 마커(`restockedQty`)는 '창고에서 이 위치로 옮긴 양'이라 창고 자신에게는 뜻이 없다. 그런데
+위치별 재고확인 탭의 허브 칸이 `afterQtys`('채운 후')에 묶여 있어 `calcLocMove` 가 후 − 전(빈칸=0)
+= 잔량 전체를 보충으로 셈했고, `applyLocationCheck` 이 허브에도 마커를 붙였다(9/11 5층 하단 +17,
+DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월 판정의 허브 차감을 흔든다.
+- 봉합은 **두 겹** — 화면은 허브 칸을 '채우기 전'(`beforeQtys`)에 묶고(저장 잔량은
+  `finalN = afterN ?? beforeN` 이라 그대로), 서버 `applyLocationCheck` 은 `isHubChecked` 면 마커 0.
+  한쪽만 막으면 다른 경로로 다시 들어온다.
+- 정리 `scripts/fix-hub-restock-marker.ts`(예행 기본, `--apply`) — 마커만 null 로, 잔량은 안 건드린다.
+  감지 `check-restock-hub-drift`(verify:db)에 '허브 행 마커 > 0' 절 추가.
