@@ -60,3 +60,7 @@ Hobby 플랜에서 함수별 CPU 는 **API·CLI 로 못 본다.** `vercel usage`
 프로덕션은 마지막 성공 배포가 계속 서비스돼 장애는 없었다. 고친 명령은 기준 커밋이 없으면
 `git fetch --deepen=40` 으로 한 번 깊여 보고, 그래도 없거나 diff 가 실패하면 **명시적으로 `exit 1`**
 을 낸다. 실패 방향이 "빌드"가 되려면 exit 1 을 직접 내야지 fatal 에 기대면 안 된다.
+두 번째 사고(같은 날): 고친 명령이 **256자 제한**에 걸려 스키마 검증 실패로 또 ERROR. 로직을
+`scripts/vercel-ignore.sh` 로 옮기고 `ignoreCommand` 는 `bash scripts/vercel-ignore.sh` 한 줄이다.
+빌드 로그가 아예 없는 ERROR 는 빌드 전 단계(스키마·Ignored Build Step)에서 죽은 것이다 — 이유는
+배포 상세의 `errorMessage` 에 있다.

@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "b=\"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\"; git cat-file -e \"$b^{commit}\" 2>/dev/null || git fetch -q --deepen=40 origin 2>/dev/null; git cat-file -e \"$b^{commit}\" 2>/dev/null && git diff --quiet \"$b\" HEAD -- . ':(exclude)*.md' ':(exclude)knowledge/' ':(exclude)docs/' ':(exclude).claude/' || exit 1",
+  "ignoreCommand": "bash scripts/vercel-ignore.sh",
   "regions": [
     "icn1"
   ],
