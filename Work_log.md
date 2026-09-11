@@ -5952,3 +5952,15 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   제한(스키마 검증)에 걸려 또 ERROR. 빌드 로그가 아예 없는 ERROR 는 빌드 전 단계에서 죽은 것이고
   이유는 배포 상세 `errorMessage` 에 있었다. 로직을 `scripts/vercel-ignore.sh` 로 옮기고
   ignoreCommand 는 한 줄. 기준 커밋이 없으면 `--deepen=40` 후 그래도 없으면 명시적 exit 1.
+
+## 2026-09-11 (계속) — 김치 신고: 과거 점검 수정이 뒤 점검에 안 딸려간다
+- 원문: "9/10 점검 때 4층 김치냉장고 상·하단 분류를 안 했고, 9/11 오늘 0kg 인 걸 보고 9/10 내역을
+  고쳐 상단 4·하단 6 으로 했는데 9/11 에 자동 반영이 안 된다."
+- DB 실측: 9/11 위치별 점검은 행 둘(5층 하단 17 **restockedQty=17**, 5층 상단 1.5)뿐, 4층 행 없음.
+  생성 시점의 9/10 사본을 얼린 것. `updateStockCheck` 는 뒤 점검을 안 본다. 생성 경로는 위치별
+  재고확인 탭(`InventoryClient.tsx:3990~4037` locationPatch).
+- 패널(관점 넷) 설계 → 운영자 승인(진행 + carried 컬럼 §4 승인). 규칙 전문은 knowledge/domain-inventory.md.
+  DDL 은 내가 직접(`stock_check_locations.carried boolean null`, 매핑 이름 확인 후 적용) + schema.prisma.
+  첫 시도는 모델명으로 ALTER 해 relation 없음으로 실패 — 이 스키마는 @@map snake_case 다.
+- 허브 +17 은 이월 탓이 아니라 허브 자기 점검 칸의 빈 '전'=0 규칙 버그(패널이 DB 241행 중 1건 확인).
+- 시공 중(Opus): 순수 전파 함수·미리보기·확인창·되돌림·표식·허브 마커 봉합·백필 예행·감지망.
