@@ -9,15 +9,24 @@
 // 조정은 자동이 아니다 — 서버는 계획만 만들고 운영자가 고른 경우에만 적용한다. 적용분은
 // 스냅샷(LedgerShiftUndo)으로 되돌린다(§16).
 import prisma, { type PrismaDb } from '@/lib/prisma'
-import { planStockShift, type LedgerCheck, type LedgerDelta, type PurchaseDelta, type ShiftRow } from '@/lib/stockLedger'
+import {
+  planStockShift, planCheckPropagation,
+  type LedgerCheck, type LedgerDelta, type PurchaseDelta, type ShiftRow,
+  type PropagationCheck, type CheckSnapshot,
+} from '@/lib/stockLedger'
 import { specMultiplier } from '@/lib/units'
 
 // 트랜잭션 클라이언트 타입 — lib/prisma 가 $extends 로 확장한 클라이언트라 Prisma.TransactionClient 와 다르다.
 export type InventoryTx = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
+// locs[].carried — 표식의 **이전 값**. 키가 있을 때만 되돌린다(null 도 유효한 이전 값이라
+// '없음'의 기준은 undefined 뿐이다). 입수·구매 조정은 표식을 안 건드리므로 키 자체가 없다.
 export type LedgerShiftUndo = {
   trackedItemId: string
-  checks: { id: string; remainingQty: number; locs: { storageLocationId: string; remainingQty: number | null }[] }[]
+  checks: {
+    id: string; remainingQty: number
+    locs: { storageLocationId: string; remainingQty: number | null; carried?: boolean | null }[]
+  }[]
   createdLinks: string[]   // 이 조정이 새로 만든 (품목,위치) 링크
 }
 
@@ -150,18 +159,118 @@ export async function buildPurchaseShiftPlan(
   return { ok: true, rows: plan.rows }
 }
 
+// ── 점검 수정의 뒤 점검 전파(2026-09-11 김치) ─────────────────────────────
+// 계산 정본은 lib/stockLedger planCheckPropagation. 여기는 조회와 조립만 한다.
+
+// 이월/실측 표식과 보충 마커까지 실어 온다 — 표식 없는 구식 행은 마커로 허브 차감을 되짚어야
+// 휴리스틱이 성립한다(loadLedgerChecks 는 조정용이라 그 두 칸을 안 읽는다).
+export async function loadPropagationChecks(trackedItemId: string): Promise<PropagationCheck[]> {
+  const rows = await prisma.stockCheck.findMany({
+    where: { trackedItemId },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    include: {
+      locationBreakdown: {
+        select: { storageLocationId: true, remainingQty: true, restockedQty: true, carried: true },
+      },
+    },
+  })
+  return rows.map(c => ({
+    id: c.id,
+    dateMs: c.date.getTime(),
+    createdAtMs: c.createdAt.getTime(),
+    isReconcile: c.isReconcile,
+    total: c.remainingQty,
+    hasBreakdown: c.locationBreakdown.length > 0,
+    byLoc: c.locationBreakdown.map(lb => ({
+      locationId: lb.storageLocationId,
+      qty: lb.remainingQty,
+      carried: lb.carried,
+      restockedQty: lb.restockedQty,
+    })),
+  }))
+}
+
+// 무상 입수(+)와 폐기(−)를 하나의 델타 목록으로. 위치 미지정은 품목 허브로 —
+// actions.additionsSinceCheckByLocation(이월을 실제로 만드는 코드)과 같은 폴백이라야
+// 휴리스틱이 그 이월값을 되짚는다.
+export async function loadLedgerDeltas(
+  item: { id: string; hubLocationId: string | null },
+  propertyId: string,
+): Promise<LedgerDelta[]> {
+  const [adds, disposals] = await Promise.all([
+    prisma.stockAddition.findMany({
+      where: { trackedItemId: item.id },
+      select: { date: true, createdAt: true, addedQty: true, storageLocationId: true },
+    }),
+    prisma.stockDisposal.findMany({
+      where: { trackedItemId: item.id },
+      select: { date: true, createdAt: true, disposedQty: true, storageLocationId: true },
+    }),
+  ])
+  const needsHub = adds.some(a => !a.storageLocationId) || disposals.some(d => !d.storageLocationId)
+  const hub = needsHub ? await resolveItemHubLocationId(item.id, item.hubLocationId, propertyId) : null
+  return [
+    ...adds.map(a => ({
+      dateMs: a.date.getTime(), createdAtMs: a.createdAt.getTime(),
+      qty: a.addedQty, locationId: a.storageLocationId ?? hub,
+    })),
+    ...disposals.map(d => ({
+      dateMs: d.date.getTime(), createdAtMs: d.createdAt.getTime(),
+      qty: -d.disposedQty, locationId: d.storageLocationId ?? hub,
+    })),
+  ]
+}
+
+// 계획 실패 사유를 운영자 문구로. 어느 점검의 어느 위치인지 이름으로 말한다(0 클램프 금지).
+export function propagationPlanError(dateMs: number, locationName: string): string {
+  const d = new Date(dateMs).toISOString().slice(0, 10)
+  return `함께 조정하면 ${d} 점검의 ${locationName} 잔량이 0 보다 작아집니다. 그 점검을 먼저 확인해 주세요.`
+}
+
+export async function buildCheckPropagationPlan(
+  item: { id: string; hubLocationId: string | null },
+  propertyId: string,
+  editedCheckId: string,
+  before: CheckSnapshot,
+  after: CheckSnapshot,
+): Promise<{ ok: true; rows: ShiftRow[] } | { ok: false; error: string }> {
+  const [checks, deltas, hubLocationId] = await Promise.all([
+    loadPropagationChecks(item.id),
+    loadLedgerDeltas(item, propertyId),
+    resolveItemHubLocationId(item.id, item.hubLocationId, propertyId),
+  ])
+  const plan = planCheckPropagation(checks, editedCheckId, before, after, { hubLocationId, deltas })
+  if (!plan.ok) {
+    const loc = await prisma.storageLocation.findUnique({ where: { id: plan.locationId }, select: { name: true } })
+    return { ok: false, error: propagationPlanError(plan.dateMs, loc?.name ?? '알 수 없는 위치') }
+  }
+  return { ok: true, rows: plan.rows }
+}
+
 // 계획 적용 — 총량과 위치별 잔량만 쓴다. 보충 마커(restockedQty)·createdAt 은 건드리지 않는다
 // (마커는 이동량이지 잔량이 아니고, createdAt 을 밀면 구간 귀속 순서가 조용히 바뀐다).
+// markCarried — 점검 전파가 새로 만드는 행은 정의상 이월 행이라 표식을 찍는다. 무상 입수·구매
+// 전파는 귀속 행이라 표식 없이 둔다(종전 동작 그대로).
 export async function applyShiftRows(
-  tx: InventoryTx, trackedItemId: string, rows: ShiftRow[],
+  tx: InventoryTx, trackedItemId: string, rows: ShiftRow[], opts?: { markCarried?: boolean },
 ): Promise<LedgerShiftUndo> {
   const undo: LedgerShiftUndo = { trackedItemId, checks: [], createdLinks: [] }
   const links = await tx.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true } })
   const linked = new Set(links.map(l => l.storageLocationId))
   for (const r of rows) {
     const snapshot: LedgerShiftUndo['checks'][number]['locs'] = []
+    // 표식을 찍는 경로에서는 **이전 표식**을 먼저 읽어 스냅샷에 담는다 — 안 담으면 되돌려도
+    // 표식만 새 값으로 남아, 값은 옛날인데 표식은 새 판정인 행이 생긴다.
+    const wasCarried = opts?.markCarried
+      ? new Map((await tx.stockCheckLocation.findMany({
+          where: { stockCheckId: r.checkId }, select: { storageLocationId: true, carried: true },
+        })).map(x => [x.storageLocationId, x.carried]))
+      : null
     for (const l of r.locs) {
-      snapshot.push({ storageLocationId: l.locationId, remainingQty: l.storedQty })
+      snapshot.push({
+        storageLocationId: l.locationId, remainingQty: l.storedQty,
+        ...(wasCarried ? { carried: wasCarried.get(l.locationId) ?? null } : {}),
+      })
       if (l.storedQty == null) {
         // 쓰기 계약 — 링크 없이 StockCheckLocation 행을 만들지 않는다(knowledge/domain-inventory.md 불변식).
         if (!linked.has(l.locationId)) {
@@ -170,12 +279,19 @@ export async function applyShiftRows(
           undo.createdLinks.push(l.locationId)
         }
         await tx.stockCheckLocation.create({
-          data: { stockCheckId: r.checkId, storageLocationId: l.locationId, remainingQty: l.nextQty },
+          data: {
+            stockCheckId: r.checkId, storageLocationId: l.locationId, remainingQty: l.nextQty,
+            ...(opts?.markCarried ? { carried: l.carried ?? true } : {}),
+          },
         })
       } else {
+        // 덮어쓴 행·정지 행 모두 계획이 판정한 표식을 그대로 박는다.
         await tx.stockCheckLocation.updateMany({
           where: { stockCheckId: r.checkId, storageLocationId: l.locationId },
-          data: { remainingQty: l.nextQty },
+          data: {
+            remainingQty: l.nextQty,
+            ...(opts?.markCarried && l.carried !== undefined ? { carried: l.carried } : {}),
+          },
         })
       }
     }
@@ -202,7 +318,11 @@ export async function revertShiftRows(tx: InventoryTx, undo: LedgerShiftUndo): P
         } else {
           await tx.stockCheckLocation.updateMany({
             where: { stockCheckId: c.id, storageLocationId: l.storageLocationId },
-            data: { remainingQty: l.remainingQty },
+            data: {
+              remainingQty: l.remainingQty,
+              // 키가 있을 때만 표식을 되돌린다 — null 도 유효한 이전 값이라 '없음'은 undefined 뿐이다.
+              ...(l.carried !== undefined ? { carried: l.carried } : {}),
+            },
           })
         }
       }

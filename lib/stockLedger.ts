@@ -69,7 +69,9 @@ export type ShiftRow = {
   storedTotal: number
   nextTotal: number
   // storedQty null = 그 점검 breakdown 에 그 위치 행이 없었음(새로 만들어야 함)
-  locs: { locationId: string; storedQty: number | null; nextQty: number }[]
+  // carried = 이 행에 박을 이월/실측 표식. planCheckPropagation 만 채운다(입수·구매 조정은 판정하지
+  //   않으므로 비워 둔다). 값이 그대로여도 표식이 다르면 행으로 나온다 — 표식만 찍는 자리다.
+  locs: { locationId: string; storedQty: number | null; nextQty: number; carried?: boolean }[]
 }
 
 export type ShiftPlan =
@@ -191,6 +193,164 @@ export function planStockShift(
     }
 
     rows.push({ checkId: c.id, dateMs: c.dateMs, storedTotal: c.total, nextTotal, locs })
+  }
+
+  return { ok: true, rows }
+}
+
+// ── 점검 수정의 뒤 점검 전파 (운영자 신고 2026-09-11, 김치) ─────────────────
+//
+// 증상. 9/10 점검을 나중에 고쳐(4층 상단 4·하단 6) 창고 몫을 나눠 적었는데 9/11 점검이 안 딸려갔다.
+// updateStockCheck 이 뒤 점검을 아예 안 보고, 이월 경로(createStockCheck 의 base·carryOver)는
+// qty 만 복사해 "이 값이 어디서 왔는가"를 버렸기 때문이다.
+//
+// 채택 의미론(운영자 승인).
+//   · **이월 행은 파생 박제다.** "직전 같은 위치 값 + 사이 입수 − 이번 점검의 허브 차감" 을 저장해
+//     둔 것뿐이므로, 앞 점검이 바뀌면 따라간다.
+//   · **실측 행만 절대값이다.** 그 위치에서 전파가 멈춘다(그 위치만 — 다른 위치는 계속 간다).
+//   · 총량(StockCheck.remainingQty)도 위치 합으로 다시 세운다. overview 가 총량과 위치 행을
+//     둘 다 읽어서, 한쪽만 옮기면 화면 두 경로가 갈라진다.
+//   · 전체 보정(isReconcile)·위치 내역 없는 점검을 만나면 **전체 정지**. 보정은 실측 리셋 선언이고
+//     내역 없는 점검은 위치 축이 없어 이을 자리가 없다(planStockShift 의 정지 규칙과 같은 축).
+//   · 음수는 0 클램프가 아니라 거부다. 어느 점검의 어느 위치인지 이름으로 알린다.
+//
+// 이월/실측 판정. 2026-09-11 부터 쓰는 행은 StockCheckLocation.carried 에 표식이 있다.
+// 그 이전 구식 행(null)은 휴리스틱 — 저장값이 "직전 같은 위치 값 + 사이 입수 − 그 점검의 허브 차감"
+// 과 같으면 이월로 본다(행이 없으면 값 0). 애매하면 실측으로 보는 쪽이 안전하다(덜 옮긴다).
+
+// 뒤 점검 한 행. carried 는 표식(2026-09-11~), null 은 구식 행(휴리스틱 판정 대상).
+export type PropagationLoc = {
+  locationId: string
+  qty: number
+  carried: boolean | null
+  restockedQty: number | null
+}
+
+export type PropagationCheck = {
+  id: string
+  dateMs: number
+  createdAtMs: number
+  isReconcile: boolean
+  total: number
+  hasBreakdown: boolean
+  byLoc: PropagationLoc[]
+}
+
+// 수정된 점검의 위치별 절대값(수정 전 / 수정 후). 없는 위치는 0 으로 본다.
+export type CheckSnapshot = { locationId: string; qty: number }[]
+
+export type CheckPropagationPlan =
+  | { ok: true; rows: ShiftRow[] }
+  | { ok: false; code: 'NEGATIVE'; checkId: string; dateMs: number; locationId: string; value: number }
+
+// 두 점검 사이에 들어온 델타(무상 입수 +, 폐기 −)를 위치별로 합산.
+// 경계는 정본 deltaAfterCheck — actions.additionsSinceCheckByLocation(이월을 실제로 만드는 코드)과
+// 같은 규칙이라야 휴리스틱이 그 이월값을 되짚을 수 있다.
+// 알려진 비대칭: 이월 코드는 합이 음수면 0 클램프하는데 여기서는 클램프하지 않는다. 클램프된 행은
+// 휴리스틱이 어긋나 실측으로 보이고, 그 위치에서 전파가 멈춘다(보수 방향이라 그대로 둔다).
+function deltasBetween(
+  deltas: LedgerDelta[],
+  from: { dateMs: number; createdAtMs: number },
+  to: { dateMs: number; createdAtMs: number },
+): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const d of deltas) {
+    if (d.locationId == null) continue
+    if (!deltaAfterCheck(d, from)) continue
+    if (deltaAfterCheck(d, to)) continue
+    m.set(d.locationId, r6((m.get(d.locationId) ?? 0) + d.qty))
+  }
+  return m
+}
+
+export function planCheckPropagation(
+  checks: PropagationCheck[],
+  editedCheckId: string,
+  before: CheckSnapshot,
+  after: CheckSnapshot,
+  ctx: { hubLocationId: string | null; deltas: LedgerDelta[] },
+): CheckPropagationPlan {
+  const sorted = [...checks].sort((a, b) => a.dateMs - b.dateMs || a.createdAtMs - b.createdAtMs)
+  const at = sorted.findIndex(c => c.id === editedCheckId)
+  if (at < 0) return { ok: true, rows: [] }
+
+  const toMap = (s: CheckSnapshot) => new Map(s.map(l => [l.locationId, l.qty]))
+  // prevOld = 바뀌기 전 세계의 앞 점검 값, prevNew = 바뀐 뒤 세계의 앞 점검 값.
+  let prevOld = toMap(before)
+  let prevNew = toMap(after)
+  let prev: { dateMs: number; createdAtMs: number } = sorted[at]
+
+  // live = 아직 전파 중인 위치. 값이 안 바뀐 위치도 판정 대상이다 — 옮길 값은 없어도
+  // '이 행이 이월인가 실측인가' 라는 판정은 똑같이 서고, 그 판정을 표식으로 박아 두면
+  // 다음 수정부터 휴리스틱이 아니라 표식으로 갈린다(운영자 후속 오더 2026-09-11).
+  const live = new Set<string>([...prevOld.keys(), ...prevNew.keys()])
+
+  const rows: ShiftRow[] = []
+  for (let i = at + 1; i < sorted.length && live.size > 0; i++) {
+    const c = sorted[i]
+    if (c.isReconcile || !c.hasBreakdown) break   // 전체 정지
+
+    const add = deltasBetween(ctx.deltas, prev, c)
+    // 이번 점검의 허브 차감 = **비허브 행의 보충 마커 합**. 허브 자기 점검이 남긴 제 마커는 세지
+    // 않는다(그건 차감이 아니라 표시 버그의 흔적 — scripts/fix-hub-restock-marker).
+    const hubDeduct = ctx.hubLocationId == null ? 0 : r6(
+      c.byLoc.reduce((s, l) => s + (l.locationId === ctx.hubLocationId ? 0 : (l.restockedQty ?? 0)), 0),
+    )
+
+    const nextOld = new Map<string, number>()
+    const nextNew = new Map<string, number>()
+    const locs: ShiftRow['locs'] = []
+    const seen = new Set<string>()
+    for (const locationId of [...c.byLoc.map(l => l.locationId), ...live]) {
+      if (seen.has(locationId)) continue
+      seen.add(locationId)
+      const row = c.byLoc.find(l => l.locationId === locationId) ?? null
+      const storedQty = row ? row.qty : null
+      // 바뀌기 전 세계에서 이 점검의 그 위치 값은 저장값 그대로다(우리가 안 건드린 세계).
+      nextOld.set(locationId, storedQty ?? 0)
+      if (!live.has(locationId)) { nextNew.set(locationId, storedQty ?? 0); continue }
+
+      const dedu = locationId === ctx.hubLocationId ? hubDeduct : 0
+      const carriedExpected = r6((prevOld.get(locationId) ?? 0) + (add.get(locationId) ?? 0) - dedu)
+      const isCarried = row?.carried === true ? true
+        : row?.carried === false ? false
+        : Math.abs((storedQty ?? 0) - carriedExpected) < LEDGER_EPS
+      if (!isCarried) {
+        // 실측 — 그 위치만 정지. 다른 위치는 계속 간다.
+        // 값은 그대로 두되 **판정은 표식으로 박는다** — 이 행이 전파가 멈추는 자리라는 사실이
+        // 다음 수정 때 다시 휴리스틱으로 추측되지 않도록.
+        live.delete(locationId)
+        nextNew.set(locationId, storedQty ?? 0)
+        if (row != null && row.carried !== false) {
+          locs.push({ locationId, storedQty: row.qty, nextQty: row.qty, carried: false })
+        }
+        continue
+      }
+
+      const nextQty = r6((prevNew.get(locationId) ?? 0) + (add.get(locationId) ?? 0) - dedu)
+      if (nextQty < -LEDGER_EPS) {
+        return { ok: false, code: 'NEGATIVE', checkId: c.id, dateMs: c.dateMs, locationId, value: nextQty }
+      }
+      nextNew.set(locationId, nextQty)
+      if (row == null) {
+        if (nextQty <= LEDGER_EPS) continue                       // 없던 행을 0 으로 만들지 않는다
+        locs.push({ locationId, storedQty: null, nextQty, carried: true })
+        continue
+      }
+      // 값이 같아도 표식이 다르면 행으로 낸다 — 표식만 찍는 자리다(조용히 넘기지 않는다).
+      if (Math.abs(nextQty - row.qty) < LEDGER_EPS && row.carried === true) continue
+      locs.push({ locationId, storedQty, nextQty, carried: true })
+    }
+
+    if (locs.length > 0) {
+      // 총량은 위치 합으로 다시 센다(설계 A) — 행을 안 만드는 0 위치는 0 을 더할 뿐이라 무해.
+      let nextTotal = 0
+      for (const v of nextNew.values()) nextTotal += v
+      rows.push({ checkId: c.id, dateMs: c.dateMs, storedTotal: c.total, nextTotal: r6(nextTotal), locs })
+    }
+    prevOld = nextOld
+    prevNew = nextNew
+    prev = c
   }
 
   return { ok: true, rows }

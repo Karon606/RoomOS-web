@@ -31,7 +31,7 @@ export async function askShiftRows(input: {
 }): Promise<ShiftAskResult> {
   if (input.rows.length === 0) return { adjust: false, asked: false, count: 0 }
   const shown = input.rows.slice(0, 4)
-  const lines = shown.map(r => `· ${fmtDateDot(r.date)} 점검 ${fmtShiftQty(r.storedTotal, input.unit)} 에서 ${fmtShiftQty(r.nextTotal, input.unit)} 으로`)
+  const lines = shown.map(r => `· ${fmtDateDot(r.date)} 점검 ${fmtShiftQty(r.storedTotal, input.unit)} → ${fmtShiftQty(r.nextTotal, input.unit)}`)
   if (input.rows.length > shown.length) lines.push(`· 그 밖에 ${input.rows.length - shown.length}건`)
   const choice = await choiceDialog({
     title: input.title,
@@ -64,7 +64,7 @@ export async function askShiftRowsRequired(input: {
 }): Promise<{ count: number } | null> {
   if (input.rows.length === 0) return { count: 0 }
   const shown = input.rows.slice(0, 4)
-  const lines = shown.map(r => `· ${fmtDateDot(r.date)} 점검 ${fmtShiftQty(r.storedTotal, input.unit)} 에서 ${fmtShiftQty(r.nextTotal, input.unit)} 으로`)
+  const lines = shown.map(r => `· ${fmtDateDot(r.date)} 점검 ${fmtShiftQty(r.storedTotal, input.unit)} → ${fmtShiftQty(r.nextTotal, input.unit)}`)
   if (input.rows.length > shown.length) lines.push(`· 그 밖에 ${input.rows.length - shown.length}건`)
   const ok = await confirmDialog({
     title: input.title,

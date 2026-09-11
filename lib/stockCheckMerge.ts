@@ -12,30 +12,39 @@ export type LocCheckPatch = {
   restockedQty: number        // 보충량(후-전), 0이면 보충 없음
   hubLocationId: string | null
 }
-export type LocQtyOut = { storageLocationId: string; qty: number; restockedQty?: number }
+// carried — 이월/실측 표식(2026-09-11). 점검한 위치만 실측(false)이고 나머지는 전부 이월(true)이다.
+// 허브 자동 차감 행도 이월이다 — 그 값은 실측이 아니라 '허브 이전 − 보충합' 파생값이다
+// (knowledge/domain-inventory.md '허브 칸은 파생값이고 주방 칸이 유일한 실측이다').
+export type LocQtyOut = { storageLocationId: string; qty: number; restockedQty?: number; carried?: boolean }
 
 // base(머지 대상 점검의 현재 상태 또는 직전 점검)에 한 위치 점검을 적용:
 //  - 점검 위치 qty = afterQty (+ restockedQty 마커, 같은 위치 재점검은 마지막 값으로 덮어씀)
 //  - 비허브 위치에 보충(restockedQty>0)이면 허브 위치 qty에서 그만큼 자동 차감(0 미만 방지)
 //  - 그 외 위치는 현재 값 그대로 이월 — 기존 보충 마커 포함(같은 날 연속 위치 점검이 앞 위치의 +N을 지우던 신고 8319ba10)
+//
+// **허브 자기 점검에는 마커를 붙이지 않는다**(2026-09-11 김치). 보충 마커는 '창고에서 이 위치로
+// 옮긴 양'이라 허브 자신에게는 뜻이 없다. 그런데 위치 패널의 허브 칸이 '채운 후'에 묶여 있어
+// 후−전 = +17 이 보충으로 셈해졌고, 그 값이 허브 행에 마커로 박혀 이월 판정을 통째로 흔들었다.
+// 화면 쪽(입력칸을 '전'으로)과 여기 두 겹으로 막는다 — 한쪽만 막으면 다른 경로로 다시 들어온다.
 export function applyLocationCheck(base: LocBreakdown[], patch: LocCheckPatch): LocQtyOut[] {
   const isHubChecked = patch.hubLocationId != null && patch.checkedLocationId === patch.hubLocationId
   const out: LocQtyOut[] = []
   let hasChecked = false
   const keepMarker = (lb: LocBreakdown) => (lb.restockedQty != null && lb.restockedQty > 0 ? { restockedQty: lb.restockedQty } : {})
+  const checkedMarker = (patch.restockedQty > 0 && !isHubChecked) ? { restockedQty: patch.restockedQty } : {}
   for (const lb of base) {
     if (lb.locationId === patch.checkedLocationId) {
       hasChecked = true
-      out.push({ storageLocationId: lb.locationId, qty: patch.afterQty, ...(patch.restockedQty > 0 ? { restockedQty: patch.restockedQty } : {}) })
+      out.push({ storageLocationId: lb.locationId, qty: patch.afterQty, ...checkedMarker, carried: false })
     } else if (!isHubChecked && patch.restockedQty > 0 && patch.hubLocationId && lb.locationId === patch.hubLocationId) {
-      out.push({ storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - patch.restockedQty), ...keepMarker(lb) })
+      out.push({ storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - patch.restockedQty), ...keepMarker(lb), carried: true })
     } else {
-      out.push({ storageLocationId: lb.locationId, qty: lb.qty, ...keepMarker(lb) })
+      out.push({ storageLocationId: lb.locationId, qty: lb.qty, ...keepMarker(lb), carried: true })
     }
   }
   // base에 점검 위치가 없으면 추가 (그 위치 첫 점검)
   if (!hasChecked) {
-    out.push({ storageLocationId: patch.checkedLocationId, qty: patch.afterQty, ...(patch.restockedQty > 0 ? { restockedQty: patch.restockedQty } : {}) })
+    out.push({ storageLocationId: patch.checkedLocationId, qty: patch.afterQty, ...checkedMarker, carried: false })
   }
   return out
 }

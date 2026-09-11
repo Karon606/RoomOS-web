@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
 import { overbookExcess, calcLocMove } from '@/lib/stockLedger'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
@@ -87,6 +87,7 @@ import {
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
   previewStockAdditionShift, undoUpdateStockAddition,
+  previewStockCheckPropagation, undoUpdateStockCheck,
   previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
@@ -152,6 +153,49 @@ async function askLedgerShift(input: {
     rows: pre.rows, title: input.title, keepLine: input.keepLine, impactLine: input.impactLine, unit: input.unit,
   })
   return { result }
+}
+
+// ── 과거 점검 수정이 뒤 점검에 미치는 영향 묻기 (운영자 신고 2026-09-11, 김치)
+// 이월 행은 "직전 같은 위치 값 + 사이 입수 − 허브 차감"의 파생 박제라 앞 점검이 바뀌면 따라가야
+// 하는데, 종전 updateStockCheck 은 뒤 점검을 아예 안 봤다. 자동으로 옮기지는 않는다 — 실측을
+// 시스템이 조용히 덮으면 실사라는 행위가 무의미해진다(무상 입수 물음과 같은 원칙).
+// 어긋나는 행이 0 건이면 아무것도 묻지 않는다.
+async function askCheckPropagation(input: {
+  checkId: string
+  checkDate: Date | string
+  locationQtys?: { storageLocationId: string; qty: number; restockedQty?: number }[]
+  remainingQty?: number
+}): Promise<{ propagate: boolean; count: number } | { error: string } | null> {
+  const pre = await previewStockCheckPropagation(input.checkId, {
+    locationQtys: input.locationQtys, remainingQty: input.remainingQty,
+  })
+  if (!pre.ok) return { error: pre.error }
+  if (pre.rows.length === 0) return { propagate: false, count: 0 }
+  const q = (n: number) => `${Math.round(n * 100) / 100}${pre.unit ?? ''}`
+  const shown = pre.rows.slice(0, 4)
+  // 값 전환은 화살표 표기로 쓴다(§29 '화살표는 값의 전환 표시에만', 같은 파일 단위 변경 확인창과
+  // 같은 문법). 조사를 붙이면 단위 없는 품목에서 '4개으로' 가 된다.
+  const lines = shown.map(r =>
+    `· ${fmtDate(r.date)} 점검 · ${r.locationName} ${r.storedQty == null ? '기록 없음' : q(r.storedQty)} → ${q(r.nextQty)}`)
+  if (pre.rows.length > shown.length) lines.push(`· 그 밖에 ${pre.rows.length - shown.length}건`)
+  const choice = await choiceDialog({
+    // 같은 파일의 확인창 제목은 전부 물음형이고 날짜는 fmtDateKor 이다.
+    title: `${fmtDateKor(input.checkDate)} 점검 수정을 뒤 점검에도 반영할까요?`,
+    level: 'caution',
+    // 본문은 공용 정본(lib/stockShiftAsk)과 같은 4단 — 유지 한 줄 · 영향 한 줄 · 행 · 안내.
+    // 행부터 시작하면 '무엇이 몇 곳 어긋났는지' 를 말하지 않는 확인창이 된다.
+    message: [
+      '이 점검은 입력한 대로 저장됩니다.',
+      `이 점검 값을 이어받은 이월 위치 ${pre.rows.length}곳이 뒤 점검에 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+      lines.join('\n'),
+      '실측한 위치는 그대로 두고 이월된 위치만 맞춥니다.',
+    ].join('\n'),
+    confirmLabel: '함께 조정',
+    altLabel: '이 기록만',
+    cancelLabel: '취소',
+  })
+  if (choice === null || choice === 'back') return null
+  return { propagate: choice === 'confirm', count: pre.rows.length }
 }
 
 // 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
@@ -1855,10 +1899,26 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         onCancel={() => { setEditing(false); setEditError('') }}
         onSave={async (data) => {
           setSavePending(true); setEditError('')
-          const res = await updateStockCheck(entry.id, data)
+          // 뒤 점검의 이월 행은 이 점검에서 파생된 값이라 함께 옮겨야 한다 — 먼저 숫자로 보여주고 묻는다.
+          const ask = await askCheckPropagation({
+            checkId: entry.id, checkDate: entry.date,
+            locationQtys: data.locationQtys, remainingQty: data.remainingQty,
+          })
+          if (ask && 'error' in ask) { setSavePending(false); setEditError(ask.error); return }
+          if (!ask) { setSavePending(false); return }
+          const res = await updateStockCheck(entry.id, { ...data, propagate: ask.propagate })
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          setEditing(false); onChanged()
+          setEditing(false)
+          const undo = res.undo
+          pushToast('success', '점검 수정을 적용했습니다', {
+            ...(ask.propagate && ask.count > 0 ? { detail: `뒤 점검의 이월 위치 ${ask.count}곳도 함께 맞췄습니다.` } : {}),
+            ...(undo ? { action: { label: '적용취소', run: () => { void undoUpdateStockCheck(undo).then(r => {
+              if (r.ok) { pushToast('info', '점검 수정을 적용취소했습니다 · 이전 값으로 복귀'); onChanged() }
+              else pushToast('error', r.error)
+            }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } } } : {}),
+          })
+          onChanged()
         }}
         pending={savePending}
         error={editError}
@@ -2719,7 +2779,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   const hasLocations = locationSources.length > 0
 
   // 기존 데이터에서 전/후 역산: 보충 전 = 보충 후 − 창고이동(restockedQty).
-  // ⚠️ restocked 가 0(보충 없이 그냥 센 위치)이면 '보충 전 = 보충 후' 여야 한다.
+  // 주의 — restocked 가 0(보충 없이 그냥 센 위치)이면 '보충 전 = 보충 후' 여야 한다.
   //   이전엔 restocked>0 일 때만 보충 전을 채우고 아니면 빈칸(=0)으로 둬서, 수정 폼을 열면
   //   보충 안 한 위치의 보충 전이 0 으로 보이고(사라진 것처럼) → 그대로 저장하면
   //   restock = 보충후 − 0 = 보충후 전체로 계산돼 창고가 그만큼 또 차감되는 드리프트 발생
@@ -4274,17 +4334,22 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                     </div>
                   )}
                   {rowIsHub ? (
-                    // 허브 위치 점검 — 잔량 1칸
+                    // 허브 위치 점검 — 잔량 1칸.
+                    // 주의 — '채우기 전'(beforeQtys)에 묶는다. 종전엔 '채운 후'(afterQtys)라 calcLocMove 가
+                    //    후 − 전(빈칸=0) = 잔량 전체를 **보충량**으로 셈했고, 그 값이 허브 자기 행에
+                    //    +N 마커로 박혔다(2026-09-11 김치 5층 하단 17kg, DB 전체 1건). 창고에서
+                    //    창고로 옮기는 일은 없으므로 허브 칸은 실측 한 값이지 옮김이 아니다.
+                    //    computeRow 의 finalN = afterN ?? beforeN 이라 저장 잔량은 그대로 이 값이다.
                     <div className="flex items-center gap-1.5">
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
                       <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
-                        value={afterStr}
-                        onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                        value={beforeStr}
+                        onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                         className={qtyInputCls} />
                       <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                       {prev != null && (
                         <button type="button"
-                          onClick={() => setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))}
+                          onClick={() => setBeforeQtys(p => ({ ...p, [r.id]: String(prev.qty) }))}
                           className="shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
                           직전값
                         </button>

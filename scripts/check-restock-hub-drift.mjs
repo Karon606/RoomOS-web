@@ -24,18 +24,27 @@ async function main() {
   })
 
   const violations = []
+  // 허브 자기 마커 — 창고에서 창고로 옮기는 일은 없으므로 허브 행의 restockedQty 는 항상 뜻이 없다.
+  // 위치 패널의 허브 칸이 '채운 후'에 묶여 있던 시절 후 − 전 = 잔량 전체가 보충으로 셈해져 박혔다
+  // (2026-09-11 김치 5층 하단 +17). 그 마커는 타임라인에 없던 이동을 그리고, 이월/실측 판정의
+  // 허브 차감을 흔들며, 바로 아래 미차감 판정까지 오염시킨다. 정리는 scripts/fix-hub-restock-marker.
+  const hubMarkers = []
   for (const c of checks) {
     const hubId = c.trackedItem.hubLocationId ?? defaultHubByProperty.get(c.trackedItem.propertyId) ?? null
     if (!hubId) continue   // 허브 자체가 없는 구성 — 차감 대상이 없어 판정 불가(위반 아님)
-    if (!c.locationBreakdown.some(lb => lb.storageLocationId === hubId)) {
+    const hubRow = c.locationBreakdown.find(lb => lb.storageLocationId === hubId)
+    if (!hubRow) {
       const restockSum = c.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
       violations.push(`${c.date.toISOString().slice(0, 10)} ${c.trackedItem.label} — 옮김 ${restockSum} 기록됐는데 허브 행 없음(미차감 의심)`)
+    } else if ((hubRow.restockedQty ?? 0) > 0) {
+      hubMarkers.push(`${c.date.toISOString().slice(0, 10)} ${c.trackedItem.label} — 허브 행에 옮김 마커 +${hubRow.restockedQty}(창고→창고 이동은 없다)`)
     }
   }
+  for (const m of hubMarkers) violations.push(m)
 
-  console.log(`\n[옮김 기록인데 허브 미차감 의심] ${violations.length}건`)
+  console.log(`\n[옮김-허브 정합] 위반 ${violations.length}건`)
   for (const v of violations) console.log(`  - ${v}`)
-  console.log(`\n옮김 기록 점검 ${checks.length}건 검사 · 위반 ${violations.length}건`)
+  console.log(`\n옮김 기록 점검 ${checks.length}건 검사 · 허브 자기 마커 ${hubMarkers.length}건 · 위반 ${violations.length}건`)
   await prisma.$disconnect()
   if (violations.length > 0) process.exit(1)
 }

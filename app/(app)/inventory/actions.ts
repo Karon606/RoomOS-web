@@ -20,7 +20,7 @@ import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
-import { buildAdditionShiftPlan, buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
+import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
@@ -733,12 +733,16 @@ export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | {
 //               허브 자동 차감은 UI 단계에서 합계 restockedQty 만큼 허브 위치의 qty에서
 //               빼서 보낸다(서버는 받은 값을 그대로 저장만 함 — 동시성 안전 + 운영자 보정 가능).
 // fromHubQty/fromLocationId: 레거시 명시적 이동 — 신규 UI 미사용, 기존 점검 호환용.
+// carried: 이월/실측 표식(2026-09-11 김치). true = 직전 점검에서 물려받은 파생 박제(앞 점검이
+//   바뀌면 따라간다), false = 이번에 센 절대값(전파가 여기서 멈춘다). 서버가 경로별로 찍는다 —
+//   클라가 보낸 값은 쓰지 않는다(실측 선언은 저장 경로가 아는 사실이다).
 type LocQty = {
   storageLocationId: string
   qty: number
   restockedQty?: number
   fromHubQty?: number
   fromLocationId?: string
+  carried?: boolean
 }
 
 // 허브 부족 감지 응답 — 보충량이 허브(창고) 잔량을 넘으면 저장하지 않고 이 값을 돌려준다.
@@ -924,7 +928,10 @@ export async function createStockCheck(data: {
         }
       }
     }
-    let effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    // 표식(2026-09-11) — patchedQtys 는 applyLocationCheck 가 이미 찍었고, 폼이 직접 보낸
+    // 위치수량은 전부 실측 선언이다(그 화면은 위치별 절대값을 손으로 적는 자리).
+    let effectiveLocationQtys: LocQty[] | undefined =
+      patchedQtys ?? data.locationQtys?.map(lq => ({ ...lq, carried: false }))
     // #4 carryOver — locationQtys 가 일부 위치만 담고 있으면 나머지는 직전 점검에서 보존.
     if (data.carryOverFromLastCheck && effectiveLocationQtys && effectiveLocationQtys.length > 0) {
       const lastCheck = await prisma.stockCheck.findFirst({
@@ -936,13 +943,13 @@ export async function createStockCheck(data: {
         const inputLocIds = new Set(effectiveLocationQtys.map(lq => lq.storageLocationId))
         // 직전 점검 이후 입수분을 이월값에 반영 — 사용자가 실측한 위치는 제외(실측 우선)
         const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
-        const carryOver = lastCheck.locationBreakdown
+        const carryOver: LocQty[] = lastCheck.locationBreakdown
           .filter(lb => !inputLocIds.has(lb.storageLocationId))
-          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: Math.max(0, lb.remainingQty + (addMap.get(lb.storageLocationId) ?? 0)) }))
+          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: Math.max(0, lb.remainingQty + (addMap.get(lb.storageLocationId) ?? 0)), carried: true }))
         // 직전 점검에 없던 위치로 입수가 들어온 경우 — 실측에도 없으면 이월 항목으로 추가
         for (const [loc, q] of addMap) {
           if (q > 0 && !inputLocIds.has(loc) && !carryOver.some(co => co.storageLocationId === loc)) {
-            carryOver.push({ storageLocationId: loc, qty: q })
+            carryOver.push({ storageLocationId: loc, qty: q, carried: true })
           }
         }
         effectiveLocationQtys = [...effectiveLocationQtys, ...carryOver]
@@ -979,6 +986,7 @@ export async function createStockCheck(data: {
               restockedQty: lq.restockedQty ?? null,
               fromHubQty: lq.fromHubQty ?? null,
               fromLocationId: lq.fromLocationId ?? null,
+              carried: lq.carried ?? null,
             })),
           },
         } : {}),
@@ -1077,7 +1085,11 @@ export async function updateStockCheck(id: string, data: {
   allowHubClamp?: boolean
   // 경로 B — 클라(CheckEditForm)가 실제로 차감한 허브 위치 id. 검출·차감 허브 일치용.
   restockHubLocationId?: string
-}): Promise<{ ok: true } | { ok: false; error: string } | HubShortResponse> {
+  // 뒤 점검 전파 게이트(2026-09-11 김치) — 기본은 안 건드린다. 화면이 previewStockCheckPropagation
+  // 으로 영향을 보여주고 운영자가 '함께 조정'을 고른 경우에만 true 가 온다. 계획은 여기서 다시
+  // 세운다(클라가 보낸 행을 믿지 않는다) — 미리보기와 저장 사이에 장부가 바뀌었을 수 있다.
+  propagate?: boolean
+}): Promise<{ ok: true; undo?: StockCheckEditUndo; propagated?: number } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1144,13 +1156,45 @@ export async function updateStockCheck(id: string, data: {
         }
       }
     }
-    const effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    // 표식 — patchedQtys 는 applyLocationCheck 가 찍었고, 수정 폼이 보낸 위치수량은 전부 실측이다.
+    const effectiveLocationQtys: LocQty[] | undefined =
+      patchedQtys ?? data.locationQtys?.map(lq => ({ ...lq, carried: false }))
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const finalQty = adjusted ? adjusted.reduce((s, lq) => s + lq.qty, 0) : data.remainingQty
 
     if (finalQty !== undefined && finalQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
     // #3 머지 시 점검 시각을 마지막 점검 시각(지금)으로 갱신 (locationPatch 사용 시)
     const bumpTime = !!data.locationPatch
+
+    // 뒤 점검 전파 계획 — 쓰기 전에 세운다(수정 전 값이 필요하다). 게이트가 꺼져 있으면 계산 자체를 안 한다.
+    let shiftRows: ShiftRow[] = []
+    if (data.propagate && adjusted) {
+      const plan = await buildCheckPropagationPlan(
+        { id: c.trackedItemId, hubLocationId: c.trackedItem.hubLocationId }, propertyId, id,
+        c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty })),
+        adjusted.map(lq => ({ locationId: lq.storageLocationId, qty: lq.qty })),
+      )
+      if (!plan.ok) return { ok: false, error: plan.error }
+      shiftRows = plan.rows
+    }
+
+    // 적용취소(§16) 스냅샷 — 이 점검의 수정과 뒤 점검 전파를 **한 덩어리**로 되돌린다.
+    // 둘을 따로 되돌리면 중간 상태(수정은 원복, 전파는 남음)가 장부에 남는다.
+    const undo: StockCheckEditUndo = {
+      checkId: id,
+      trackedItemId: c.trackedItemId,
+      date: c.date.toISOString().slice(0, 10),
+      memo: c.memo,
+      remainingQty: c.remainingQty,
+      createdAtMs: c.createdAt.getTime(),
+      hadBreakdown: c.locationBreakdown.length > 0,
+      locations: c.locationBreakdown.map(lb => ({
+        storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty,
+        restockedQty: lb.restockedQty, fromHubQty: lb.fromHubQty, fromLocationId: lb.fromLocationId,
+        carried: lb.carried,
+      })),
+      shift: null,
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.stockCheck.update({
@@ -1172,6 +1216,70 @@ export async function updateStockCheck(id: string, data: {
             restockedQty: lq.restockedQty ?? null,
             fromHubQty: lq.fromHubQty ?? null,
             fromLocationId: lq.fromLocationId ?? null,
+            carried: lq.carried ?? null,
+          })),
+        })
+      }
+      if (shiftRows.length > 0) {
+        undo.shift = await applyShiftRows(tx, c.trackedItemId, shiftRows, { markCarried: true })
+      }
+    })
+    revalidatePath('/inventory')
+    return { ok: true, undo, ...(shiftRows.length > 0 ? { propagated: shiftRows.length } : {}) }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 점검 수정 + 뒤 점검 전파의 한 덩어리 스냅샷(§16). 수정만 되돌리고 전파가 남으면 장부에
+// 중간 상태가 생기므로 둘을 한 페이로드로 묶는다. 페이로드는 클라이언트발이라 되돌릴 때
+// 점검 id 를 품목 스코프로 다시 검증한다(B1 선례, revertShiftRows 와 같은 규칙).
+export type StockCheckEditUndo = {
+  checkId: string
+  trackedItemId: string
+  date: string
+  memo: string | null
+  remainingQty: number
+  createdAtMs: number
+  hadBreakdown: boolean
+  locations: {
+    storageLocationId: string; remainingQty: number; restockedQty: number | null
+    fromHubQty: number | null; fromLocationId: string | null; carried: boolean | null
+  }[]
+  shift: LedgerShiftUndo | null
+}
+
+export async function undoUpdateStockCheck(undo: StockCheckEditUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const c = await prisma.stockCheck.findUnique({ where: { id: undo.checkId }, include: { trackedItem: true } })
+    if (!c || c.trackedItem.propertyId !== propertyId || c.trackedItemId !== undo.trackedItemId) {
+      return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+    }
+    await prisma.$transaction(async (tx) => {
+      if (undo.shift) await revertShiftRows(tx, undo.shift)
+      await tx.stockCheck.update({
+        where: { id: undo.checkId },
+        data: {
+          date: ymdToDbDate(undo.date),
+          memo: undo.memo,
+          remainingQty: undo.remainingQty,
+          createdAt: new Date(undo.createdAtMs),
+        },
+      })
+      await tx.stockCheckLocation.deleteMany({ where: { stockCheckId: undo.checkId } })
+      if (undo.hadBreakdown && undo.locations.length > 0) {
+        await tx.stockCheckLocation.createMany({
+          data: undo.locations.map(l => ({
+            stockCheckId: undo.checkId,
+            storageLocationId: l.storageLocationId,
+            remainingQty: l.remainingQty,
+            restockedQty: l.restockedQty,
+            fromHubQty: l.fromHubQty,
+            fromLocationId: l.fromLocationId,
+            carried: l.carried,
           })),
         })
       }
@@ -1179,7 +1287,70 @@ export async function updateStockCheck(id: string, data: {
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
-    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 점검 수정이 뒤 점검에 미치는 영향 미리보기 — 쓰기 없음. 화면이 §14 확인창에 실제 숫자를
+// 띄우는 데 쓴다. 자동 적용은 하지 않는다(실측을 시스템이 조용히 덮으면 실사가 무의미해진다).
+export type CheckPropagationPreview =
+  | {
+      ok: true
+      unit: string | null
+      rows: { date: string; locationName: string; storedQty: number | null; nextQty: number }[]
+    }
+  | { ok: false; error: string }
+
+export async function previewStockCheckPropagation(
+  checkId: string,
+  patch: { locationQtys?: LocQty[]; remainingQty?: number },
+): Promise<CheckPropagationPreview> {
+  try {
+    const propertyId = await getPropertyId()
+    const c = await prisma.stockCheck.findUnique({
+      where: { id: checkId },
+      include: { trackedItem: true, locationBreakdown: true },
+    })
+    if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+    const unit = c.trackedItem.trackUnit === 'qty'
+      ? c.trackedItem.qtyUnit
+      : (c.trackedItem.specUnit ?? c.trackedItem.qtyUnit)
+    // 위치 축이 없는 점검(총량만)은 이 전파의 대상이 아니다 — 이을 자리가 없다.
+    if (!patch.locationQtys || patch.locationQtys.length === 0 || c.locationBreakdown.length === 0) {
+      return { ok: true, unit, rows: [] }
+    }
+    const adjusted = applyTransfers(patch.locationQtys)
+    const plan = await buildCheckPropagationPlan(
+      { id: c.trackedItemId, hubLocationId: c.trackedItem.hubLocationId }, propertyId, checkId,
+      c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty })),
+      adjusted.map(lq => ({ locationId: lq.storageLocationId, qty: lq.qty })),
+    )
+    if (!plan.ok) return { ok: false, error: plan.error }
+    // 물음은 **값이 바뀌는 자리**에 대한 것이다. 계획에는 값은 그대로 두고 표식만 박는 행도
+    // 들어 있는데(이월/실측 판정의 박제), 그걸 '17kg 에서 17kg 으로' 라고 나열하면 확인창이
+    // 제 말을 못 한다. 표식은 함께 조정을 고른 뒤 서버가 계획을 다시 세워 같이 찍는다.
+    const changed = plan.rows.flatMap(r => r.locs
+      .filter(l => l.storedQty == null || Math.abs(l.storedQty - l.nextQty) > 0.001)
+      .map(l => ({ dateMs: r.dateMs, l })))
+    const ids = [...new Set(changed.map(x => x.l.locationId))]
+    const locs = ids.length > 0
+      ? await prisma.storageLocation.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+      : []
+    const nameOf = new Map(locs.map(l => [l.id, l.name]))
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    return {
+      ok: true,
+      unit,
+      rows: changed.map(({ dateMs, l }) => ({
+        date: new Date(dateMs).toISOString().slice(0, 10),
+        locationName: nameOf.get(l.locationId) ?? '알 수 없는 위치',
+        storedQty: l.storedQty == null ? null : r2(l.storedQty),
+        nextQty: r2(l.nextQty),
+      })),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -1188,7 +1359,8 @@ export async function updateStockCheck(id: string, data: {
 export type StockCheckUndo = {
   id: string; trackedItemId: string; date: string; remainingQty: number
   memo: string | null; isReconcile: boolean; sourceExpenseId: string | null
-  locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null; fromHubQty: number | null; fromLocationId: string | null }[]
+  // carried 도 담는다 — 표식이 빠지면 복원된 행이 구식(null)으로 되살아나 전파 판정이 휴리스틱으로 후퇴한다.
+  locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null; fromHubQty: number | null; fromLocationId: string | null; carried?: boolean | null }[]
 }
 
 export async function deleteStockCheck(id: string): Promise<{ ok: true; undo: StockCheckUndo } | { ok: false; error: string }> {
@@ -1203,6 +1375,7 @@ export async function deleteStockCheck(id: string): Promise<{ ok: true; undo: St
       locations: c.locationBreakdown.map(lb => ({
         storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty,
         restockedQty: lb.restockedQty, fromHubQty: lb.fromHubQty, fromLocationId: lb.fromLocationId,
+        carried: lb.carried,
       })),
     }
     await prisma.stockCheck.delete({ where: { id } })
