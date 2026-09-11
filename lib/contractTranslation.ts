@@ -240,8 +240,8 @@ export const RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string> = {
   bn: 'ফেরত = মোট পরিশোধ − (দৈনিক হার × থাকার দিন) − জরিমানা (অবশিষ্টের ১০%); দৈনিক হার = মাসিক ফি / ৩০।',
   ru: 'Возврат = оплачено − (дневная ставка × прожитые дни) − неустойка (10% остатка); ставка = месячная плата / 30.',
   ja: '返金額 = 総支払額 −（1日利用料 × 実利用日数）− 違約金（残余金額の10%）、1日利用料 = 月額 / 30。',
-  zh: '退款 = 总付款额 −（每日费用 × 实际入住天数）− 违约金（剩余金额的10%）；每日费用 = 月费 / 30。',
-  zht: '退款 = 總付款額 −（每日費用 × 實際入住天數）− 違約金（剩餘金額的10%）；每日費用 = 月費 / 30。',
+  zh: '退款 = 总付款额 −（每日使用费 × 实际入住天数）− 违约金（剩余金额的10%）；每日使用费 = 月使用费 / 30。',
+  zht: '退款 = 總付款額 −（每日使用費 × 實際入住天數）− 違約金（剩餘金額的10%）；每日使用費 = 月使用費 / 30。',
 }
 
 /**
@@ -252,16 +252,20 @@ export const RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string> = {
  * 그 강제는 저장·되붙이기가 이미 열쇠 기준으로 세므로 여기 새 규칙을 두지 않는다
  * (translationPlaceholderMisses).
  *
- * **지금은 전 언어가 빈 칸이다**(2026-09-11). 종이에 나가는 계약 문안이라 기계 번역으로 채우지
- * 않고 번역가 패널이 따로 낸다. 빈 칸인 동안은 이 줄이 아무 값도 안 내보내고, 그러면 종이 vars
- * 의 한국어 문장이 그대로 선다 — 이 기능 전과 문자 단위로 같은 상태다. 채워 넣는 순간부터
- * 그 언어의 빈 칸이 권장 번역으로 나간다.
+ * **7언어 전부 채워져 있다**(번역가 패널, 2026-09-11). 종이에 나가는 계약 문안이라 기계 번역으로
+ * 안 채운다. 비우면 그 줄이 아무 값도 안 내보내고 종이 vars 의 한국어 문장이 그대로 서므로,
+ * 빈 칸이 사고를 내지는 않는다 — 다만 그 언어 계약서의 그 조항만 한국어로 남는다.
+ *
+ * **용어는 영업장 사전을 따른다.** '이용료'를 사전이 옮긴 그 말과 같아야 한다(ja 利用料 ·
+ * zh 使用费 · zht 使用費 · en room fee · vi tiền phòng). 처음 넣을 때 CJK 셋이 옛 용어
+ * '입실료'를 옮긴 말(入室料·入住费·入住費)을 써서, 한국어만 통일하고 외국인이 읽는 문장은
+ * 두 이름으로 남을 뻔했다. 진리표가 이 짝을 못박는다.
  *
  * Record 전량 선언이다(RECOMMENDED_REFUND_TRANSLATION 과 같은 이유) — 언어가 늘었는데 칸을
  * 안 만들면 tsc 가 컴파일을 막는다.
  */
 export const RECOMMENDED_CLEANING_TRANSLATION: Record<'clause' | 'none' | 'deduct', Record<TranslationLang, string>> = {
-  clause: { en: '[Cleaning Fee] The cleaning fee of {{청소비}} is consideration for the indoor cleaning service performed after move-out. If there is a deposit, it is deducted from the deposit at the move-out settlement; if there is no deposit, it is collected at move-in together with the room fee.', vi: '[Phí vệ sinh] Phí vệ sinh {{청소비}} là khoản đối giá cho dịch vụ vệ sinh bên trong phòng sau khi trả phòng. Trường hợp có tiền đặt cọc, khoản này được khấu trừ từ tiền đặt cọc khi quyết toán trả phòng; trường hợp không có tiền đặt cọc, khoản này được thu cùng với tiền phòng khi vào ở.', bn: '[পরিষ্কার ফি] পরিষ্কার ফি {{청소비}} হলো কক্ষ ত্যাগের পর কক্ষের ভেতরে পরিষ্কারের সেবার বিনিময় মূল্য। জামানত থাকলে কক্ষ ত্যাগের হিসাব নিষ্পত্তির সময় জামানত থেকে কেটে নেওয়া হয়, আর জামানত না থাকলে প্রবেশের সময় বসবাস ফি-এর সঙ্গে নেওয়া হয়।', ru: '[Плата за уборку] Плата за уборку в размере {{청소비}} является вознаграждением за услуги по уборке помещения после выселения. При наличии залога она удерживается из залога при расчёте на момент выселения, при отсутствии залога она взимается при заселении вместе с платой за проживание.', ja: '[清掃費] 清掃費 {{청소비}} は、退室後の室内清掃役務の対価です。保証金がある場合は退室精算時に保証金から控除し、保証金がない場合は入室時に入室料と併せて受領します。', zh: '【清洁费】清洁费 {{청소비}} 为退房后室内清洁服务的对价。有押金的，于退房结算时从押金中扣除；无押金的，于入住时与入住费一并收取。', zht: '【清潔費】清潔費 {{청소비}} 為退住後室內清潔服務之對價。有押金者，於退住結算時自押金中扣除；無押金者，於入住時與入住費一併收取。' },
+  clause: { en: '[Cleaning Fee] The cleaning fee of {{청소비}} is consideration for the indoor cleaning service performed after move-out. If there is a deposit, it is deducted from the deposit at the move-out settlement; if there is no deposit, it is collected at move-in together with the room fee.', vi: '[Phí vệ sinh] Phí vệ sinh {{청소비}} là khoản đối giá cho dịch vụ vệ sinh bên trong phòng sau khi trả phòng. Trường hợp có tiền đặt cọc, khoản này được khấu trừ từ tiền đặt cọc khi quyết toán trả phòng; trường hợp không có tiền đặt cọc, khoản này được thu cùng với tiền phòng khi vào ở.', bn: '[পরিষ্কার ফি] পরিষ্কার ফি {{청소비}} হলো কক্ষ ত্যাগের পর কক্ষের ভেতরে পরিষ্কারের সেবার বিনিময় মূল্য। জামানত থাকলে কক্ষ ত্যাগের হিসাব নিষ্পত্তির সময় জামানত থেকে কেটে নেওয়া হয়, আর জামানত না থাকলে প্রবেশের সময় বসবাস ফি-এর সঙ্গে নেওয়া হয়।', ru: '[Плата за уборку] Плата за уборку в размере {{청소비}} является вознаграждением за услуги по уборке помещения после выселения. При наличии залога она удерживается из залога при расчёте на момент выселения, при отсутствии залога она взимается при заселении вместе с платой за проживание.', ja: '[清掃費] 清掃費 {{청소비}} は、退室後の室内清掃役務の対価です。保証金がある場合は退室精算時に保証金から控除し、保証金がない場合は入室時に利用料と併せて受領します。', zh: '【清洁费】清洁费 {{청소비}} 为退房后室内清洁服务的对价。有押金的，于退房结算时从押金中扣除；无押金的，于入住时与使用费一并收取。', zht: '【清潔費】清潔費 {{청소비}} 為退住後室內清潔服務之對價。有押金者，於退住結算時自押金中扣除；無押金者，於入住時與使用費一併收取。' },
   none: { en: '[Cleaning Fee] This Agreement has no cleaning fee. No amount is deducted as a cleaning fee at move-out.', vi: '[Phí vệ sinh] Hợp đồng này không có phí vệ sinh. Khi trả phòng không khấu trừ bất kỳ khoản nào với danh nghĩa phí vệ sinh.', bn: '[পরিষ্কার ফি] এই চুক্তিতে কোনো পরিষ্কার ফি নেই। কক্ষ ত্যাগের সময় পরিষ্কার ফি বাবদ কোনো কর্তন করা হয় না।', ru: '[Плата за уборку] Настоящий договор не предусматривает платы за уборку. При выселении удержание в счёт платы за уборку не производится.', ja: '[清掃費] 本契約に清掃費はありません。退室時に清掃費名目での控除は行いません。', zh: '【清洁费】本合同无清洁费。退房时不以清洁费名义扣除。', zht: '【清潔費】本契約無清潔費。退住時不以清潔費名義扣除。' },
   deduct: { en: '(cleaning fee of {{청소비}} within the deposit deducted separately)', vi: '(khấu trừ riêng phí vệ sinh {{청소비}} trong tiền đặt cọc)', bn: '(জামানতের মধ্যে পরিষ্কার ফি {{청소비}} পৃথকভাবে কর্তন)', ru: '(плата за уборку {{청소비}} в составе залога удерживается отдельно)', ja: '(保証金内の清掃費 {{청소비}} を別途控除)', zh: '（押金内清洁费 {{청소비}} 另行扣除）', zht: '（押金內清潔費 {{청소비}} 另行扣除）' },
 }

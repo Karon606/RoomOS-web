@@ -13,7 +13,7 @@ import {
   cleaningTranslationKeys, RECOMMENDED_CLEANING_TRANSLATION, translationVarSpecs, translationVarSpecByKey,
   translationLineDone,
   CLEANING_CLAUSE_PLACEHOLDER, CLEANING_DEDUCT_PLACEHOLDER, TRANSLATION_VAR_NAMES, TRANSLATION_VAR_LABEL,
-  type TranslationVarSpec,
+  type TranslationVarSpec, type TranslationLang,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
 import {
@@ -1596,6 +1596,64 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   eq('환불 규정의 열쇠는 안 바뀌었다(그 줄에는 옛 용어가 없었다)',
     buildRefundClause(), refundTranslationKey())
   console.log(`  [실측] 코드 기본 문안 ${bodies.length}줄 · '입실료' 0회 · '이용료' ${bodies.filter(b => b.includes('이용료')).length}줄`)
+}
+
+// ── 11단계 권장 번역도 용어 통일을 진다 (2026-09-11 번역가 패널) ──────────────────
+//
+// **뚫린 자리다.** 10단계는 한국어 문안만 본다. 그래서 한국어를 '이용료'로 통일하고도 코드 권장
+// 번역 셋(ja·zh·zht)이 옛 용어 '입실료'를 옮긴 말(入室料·入住费·入住費)을 그대로 쓰고 있었다.
+// 한국어만 통일하고 **외국인이 읽는 문장은 여전히 두 이름**인 상태 — 고치라고 한 그 문제가
+// 번역본으로 자리를 옮긴 것뿐이다. 영업장 사전 실측으로 잡았고 진리표는 한 마디도 안 했다.
+//
+// 그래서 짝을 못박는다. '이용료'가 나오는 한국어 문안의 권장 번역은 **그 언어 사전이 이용료를
+// 옮긴 그 말**을 쓰고, 옛 용어를 옮긴 말은 안 쓴다.
+//
+// **왜 낱말 표를 코드에 두나.** 사전은 DB 에 있고 이 진리표는 verify:fast 체인이라 DB 를 안 읽는다.
+// 표를 두면 사전 용어가 바뀔 때 이 줄도 같이 고쳐야 하는데, 그것이 이 그물의 목적이다 — 둘은
+// 함께 움직여야 하는 한 쌍이고, 한쪽만 바뀌면 종이 한 장에 이름이 둘이 된다.
+{
+  // 사전 실측값(제기역점, 2026-09-11). use = 이용료를 옮긴 말, avoid = 옛 용어 '입실료'를 옮긴 말.
+  // ru 는 격변화가 있어(плата/платой) 변하지 않는 쪽을 앵커로 잡는다.
+  const FEE_TERM: Record<TranslationLang, { use: string; avoid?: string }> = {
+    en:  { use: 'room fee' },
+    vi:  { use: 'tiền phòng' },
+    bn:  { use: 'বসবাস ফি' },
+    ru:  { use: 'проживание' },
+    ja:  { use: '利用料', avoid: '入室料' },
+    zh:  { use: '使用费', avoid: '入住费' },
+    zht: { use: '使用費', avoid: '入住費' },
+  }
+
+  // 이용료를 입에 올리는 권장 문안은 청소비 '있음' 갈래다. '없음'·'공제 꼬리'에는 그 말이 없다
+  // (한국어 원문에도 없다) — 없는 말을 있으라고 하면 번역가가 문장을 늘리게 된다.
+  eq('한국어 청소비 조항은 이용료를 입에 올린다(아래 단언의 전제)',
+    CLEANING_FEE_SOURCE.clause.includes('이용료'), true)
+  eq('없음·공제 갈래는 이용료를 안 부른다',
+    [CLEANING_FEE_SOURCE.none, CLEANING_FEE_SOURCE.deduct].filter(s => s.includes('이용료')), [])
+
+  const missing: string[] = []
+  const stale: string[] = []
+  for (const lang of TRANSLATION_LANGS) {
+    const { use, avoid } = FEE_TERM[lang]
+    const clause = RECOMMENDED_CLEANING_TRANSLATION.clause[lang]
+    if (!clause.includes(use)) missing.push(`${lang}(청소비 조항)`)
+    if (avoid && clause.includes(avoid)) stale.push(`${lang}(청소비 조항: ${avoid})`)
+    // 환불 권장은 산식 줄이라 문장이 아니다. 옛 용어만 막고 있으라고는 안 한다 —
+    // ru 는 'дневная ставка·месячная плата' 처럼 산식 어휘를 쓰는 것이 옳다.
+    const refund = RECOMMENDED_REFUND_TRANSLATION[lang]
+    if (avoid && refund.includes(avoid)) stale.push(`${lang}(환불 규정: ${avoid})`)
+  }
+  eq('권장 번역이 사전의 이용료를 그대로 쓴다', missing, [])
+  eq('권장 번역에 옛 용어를 옮긴 말이 안 남았다', stale, [])
+
+  // 금액 자리(`{{청소비}}`)는 여기서 안 잰다 — check-contract-translation-axis 의 권장 축이
+  // 이미 전 언어를 훑는다. 둘이 갈라져 서야 무엇이 깨졌는지가 구별된다. 용어가 어긋난 것과
+  // 금액을 잃은 것은 다른 사고이고, 고치는 사람도 다르다(번역가 대 시공).
+
+  const cjk = TRANSLATION_LANGS.filter(l => FEE_TERM[l].avoid)
+  // 실측 줄은 **잰 값**을 찍는다. 0 을 글자로 박아 두면 단언이 붉게 선 회차에도 "어긋남 0"
+  // 이라고 말해, 로그만 보는 사람에게 거짓을 준다.
+  console.log(`  [실측] 권장 번역 용어 정합: ${TRANSLATION_LANGS.length}언어 · 옛 용어 후보 ${cjk.length}(${cjk.join('·')}) · 빠진 용어 ${missing.length} · 옛 용어 잔존 ${stale.length}`)
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
