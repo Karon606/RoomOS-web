@@ -46,7 +46,7 @@ const blockAt = (src, openIdx) => {
 const violations = []
 
 // ⓐ 끈 알림 목록에 미는 줄은 켜는 키를 갖는다.
-const PAGE = 'app/(app)/dashboard/page.tsx'
+const PAGE = 'app/(app)/dashboard/getDashboardData.ts'
 {
   const src = strip(readFileSync(PAGE, 'utf8'))
   const pushes = [...src.matchAll(/mutedAlerts\.push\s*\(/g)]
@@ -109,7 +109,7 @@ for (const f of walk('app', walk('components', walk('lib', [])))) {
 
 // ⓔ 알림 조립이 컷오프를 실제로 태우는가. import 만으로는 통과 못 한다.
 {
-  const f = 'app/(app)/dashboard/page.tsx'
+  const f = 'app/(app)/dashboard/getDashboardData.ts'
   const src = strip(readFileSync(f, 'utf8')).replace(/^\s*import\s[^\n]*$/gm, '')
   // **필터 블록만 떠서 본다.** 창을 넉넉히 잡았더니 아래 wouldRestoreCount 의 호출까지
   // 들어와, 필터를 통째로 지운 역주입이 그 호출에 걸려 통과했다(2026-09-06 드릴에서 실제로 놓쳤다).

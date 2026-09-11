@@ -37,22 +37,22 @@ const SKIP_FILE = /(^|\/)lib\/kstDate\.ts$/
 // 줄 번호는 무관한 편집에도 밀리고, 코드가 바뀌면 다시 판단해야 하기 때문이다.
 const ALLOW = [
   {
-    file: 'app/(app)/dashboard/page.tsx',
+    file: 'app/(app)/dashboard/getDashboardData.ts',
     code: 'const today = new Date(kst.year, kst.month - 1, kst.day)',
     why: "daysUntil — 같은 줄 아래에서 로컬 자정으로 만든 targetDay 와만 뺀다(로컬끼리라 상쇄)",
   },
   {
-    file: 'app/(app)/dashboard/page.tsx',
+    file: 'app/(app)/dashboard/getDashboardData.ts',
     code: 'const today     = new Date(kstToday.year, kstToday.month - 1, kstToday.day)',
     why: '납부 예정일·요청 기한·소진 예상일의 in-JS 일수 계산 전용(전부 로컬 자정끼리). DB 창은 같은 k 에서 뽑은 todayDb 가 따로 맡는다',
   },
   {
-    file: 'app/(app)/dashboard/page.tsx',
+    file: 'app/(app)/dashboard/getDashboardData.ts',
     code: 'const todayCopy = new Date(ty, tm - 1, td)',
     why: '연체일 계산 — 같은 함수 안에서 로컬 자정으로 만든 dueDate 와만 뺀다',
   },
   {
-    file: 'app/(app)/dashboard/page.tsx',
+    file: 'app/(app)/dashboard/getDashboardData.ts',
     code: 'const today = new Date(ty, tm - 1, td)',
     why: '납부일 유예 경과일 — overrideAbsDate 가 만든 로컬 자정과만 뺀다',
   },

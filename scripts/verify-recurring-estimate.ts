@@ -15,7 +15,7 @@ import { effectiveRecurringAmount, recurringAmountLabel, recurringEstimate } fro
 import { kstMonthStr } from '../lib/kstDate'
 
 const HELPER_FILE = 'lib/recurringEstimate.ts'
-const ALERT_FILE = 'app/(app)/dashboard/page.tsx'
+const ALERT_FILE = 'app/(app)/dashboard/getDashboardData.ts'
 const FINANCE_FILE = 'app/(app)/finance/FinanceClient.tsx'
 // 정본식을 손으로 다시 쓴 자리 — 사다리의 두 항이 한 줄에서 ?? 로 이어지면 복제다.
 const INLINE_RES = [

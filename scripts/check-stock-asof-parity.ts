@@ -26,7 +26,9 @@ if (/receivedAt:\s*\{[^}]*gt:\s*baseDate/.test(purchaseWhere)) {
 
 // 정본 쪽이 createdAt 을 유지하는가
 const ov = readFileSync('app/(app)/inventory/overview.ts', 'utf8')
-if (!/sumPurchases\([^)]*last\.createdAt/.test(ov)) {
+// sumPurchasesMem 은 조회를 메모리 합산으로 바꾼 같은 술어의 판이다(2026-09-11 N+1 수술).
+// 보는 것은 함수 이름이 아니라 **경계가 last.createdAt 인가** 하나다.
+if (!/sumPurchases(?:Mem)?\([^)]*last\.createdAt/.test(ov)) {
   violations.push('overview 의 현재고 계산이 점검 생성 시각 기준을 잃었다')
 }
 

@@ -18,7 +18,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const PAGE = 'app/(app)/dashboard/page.tsx'
+const PAGE = 'app/(app)/dashboard/getDashboardData.ts'
 const violations = []
 // 줄 수를 보존한다(`\s*` 는 m 플래그에서 줄바꿈을 먹는다).
 const stripComments = s => s

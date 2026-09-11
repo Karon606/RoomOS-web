@@ -217,7 +217,7 @@ if (!/:\s*FORFEIT_CATEGORY/.test(tenantsActions)) {
   }
   // 청소비 몫을 세는 자리가 퇴실 정산 파생분까지 '입실 수령' 으로 읽으면 either/or 가 뒤집힌다.
   for (const f of ['app/(app)/tenants/actions.ts', 'app/(app)/finance/actions.ts', 'app/(app)/rooms/actions.ts',
-                   'app/(app)/dashboard/page.tsx', 'app/rent-receipt/[tenantId]/actions.ts']) {
+                   'app/(app)/dashboard/getDashboardData.ts', 'app/rent-receipt/[tenantId]/actions.ts']) {
     const src = readFileSync(f, 'utf8')
     // 전개 형태로 본다 — 이름만 스치는 오탐/오통과(예: 접미사 붙은 변수)를 피한다.
     if (!src.includes('...CLEANING_FEE_RECEIVED_WHERE')) {
@@ -830,7 +830,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //   화면에서 통째로 빠진 날에도 위반 0으로 통과했다. 그래서 여기서는 **행 생성 규칙을 소스에서 읽어**
 //   그대로 모델링하고, 그 위에 '청구 대상인데 행이 없는 계약'을 직접 센다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   if (!/\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
     violations.push('[소스] 홈 totalExpected 의 구성(청구 + 퇴실 귀속 + 예약 확정)이 바뀌었다 — 수납 관리 캡션의 등식이 거짓이 된다')
   }
@@ -847,7 +847,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
   // 두 화면이 같은 헬퍼를 불러야 한다. 한쪽이 자기 식을 만들면 같은 이름의 항이 다른 값이 된다.
   const roomsPage = readFileSync('app/(app)/rooms/page.tsx', 'utf8')
-  for (const [name, src] of [['dashboard/page', dash], ['rooms/page', roomsPage]]) {
+  for (const [name, src] of [['dashboard/getDashboardData', dash], ['rooms/page', roomsPage]]) {
     for (const fn of ['getReservedFullMonthRevenue', 'getCheckedOutRecognizedRevenue']) {
       if (!src.includes(`${fn}(prisma, propertyId, targetMonth)`)) {
         violations.push(`[소스] ${name} 이 ${fn} 정본을 안 쓴다 — 홈과 수납 관리의 같은 항이 다른 값이 된다`)
@@ -1249,7 +1249,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //   '건수가 안 맞는 것' 자체가 정상인 상태가 없다(규칙 10 주석과 같은 판단). 감시할 것은
 //   **코드가 다시 자기 축·자기 분모를 만드는 것**이다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
   const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
   const aiRoute = readFileSync('app/api/ai-analysis/route.ts', 'utf8')
@@ -1301,7 +1301,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //   같은 화면에서 같은 달을 두 식이 말했다(오늘 실데이터로는 6개월 전부 차 0원인 잠복 상태였다).
 //   막대 모드만 수렴한다 — 일간·주간은 납부일 축이라 '그 달 청구 캡'이라는 개념이 성립하지 않는다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
   const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
   const leaseStatusSrc = readFileSync('lib/leaseStatus.ts', 'utf8')
@@ -1353,7 +1353,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //     (c) 퍼센트 분모가 expectedExpense 다 — 기록분으로 나누면 합이 100% 를 넘는다.
 //   (d) 는 데이터 축이다: 카테고리로 모은 합이 그 달 지출 총액과 같아야 한다(어느 행도 새지 않음).
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
   if (!/if \(!isPastMonth\) \{\s*\n\s*for \(const r of recurringWithStatus\)/.test(dash)) {
     violations.push('[소스] 홈 지출 카테고리 예정분에 과거월 가드(isPastMonth)가 없다 — 지난달 도넛 합계가 예상 지출보다 커진다')
@@ -1419,7 +1419,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //   구조로 먼저 지킨다 — 세그먼트는 billedThisMonth 를 만든 **그 배열**(billedContributors)을
 //   **그 함수**(billThisMonth)로 다시 훑는다. 여기서는 그 구조가 유지되는지를 본다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
 
   // (a) 합계와 세그먼트가 같은 배열에서 나온다. 배열이 갈리면 항등은 그 순간 우연이 된다.
   if (!/const billedContributors = billableLeases\.filter\(l => !prevOwnerLeaseIds\.has\(l\.id\)\)/.test(dash)
@@ -1489,11 +1489,11 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //       Σ 버킷 금액 === overdueAmount (= 누적 미납)
 //   가 정의상 성립한다. 성립을 깨는 길은 하나뿐이다 — 부산물이 그 분기 밖으로 나가는 것.
 //
-//   그리고 이 루프는 **두 벌**이다(dashboard/page.tsx · dashboard/unpaid.ts). 한쪽은 홈 화면이,
+//   그리고 이 루프는 **두 벌**이다(dashboard/getDashboardData.ts · dashboard/unpaid.ts). 한쪽은 홈 화면이,
 //   한쪽은 푸시 크론이 쓴다. 종전에는 둘을 잇는 그물이 하나도 없었고 잠금은 unpaid.ts 머리의
 //   "한쪽을 고치면 양쪽을 함께" 라는 **주석 문장**뿐이었다. 주석은 그물이 아니다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const unpaidSrc = readFileSync('app/(app)/dashboard/unpaid.ts', 'utf8')
 
   // (a) 부산물이 도래 분기 안에 있는가. 밖으로 나가면 미도래분까지 버킷에 담겨 항등이 깨진다.
@@ -1522,7 +1522,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     if (!a || !b) {
       violations.push(`[소스] 미납 루프의 ${name} 블록을 두 파일에서 찾지 못했다 — 대조 그물이 무력해졌다`)
     } else if (normLoop(a) !== normLoop(b)) {
-      violations.push(`[소스] dashboard/page.tsx 와 dashboard/unpaid.ts 의 ${name} 이 갈렸다 — ${harm}`)
+      violations.push(`[소스] dashboard/getDashboardData.ts 와 dashboard/unpaid.ts 의 ${name} 이 갈렸다 — ${harm}`)
     }
   }
   // (d) 표시용 부산물은 홈에만 둔다. unpaid.ts 는 푸시 전용이라 소비처가 없어 죽은 코드가 된다.
@@ -1539,7 +1539,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 //   적은 완납 계약이 정상적으로 존재한다(2026-04 3건 사건의 정체). 완납 줄 옆에 청구보다 작은
 //   수납액이 서면 카드가 자기 분류를 반박한다.
 {
-  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
   const leaseStatusSrc3 = readFileSync('lib/leaseStatus.ts', 'utf8')
 
@@ -1688,7 +1688,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     'components/entity-modal/widgets/TenantStatusTransitions.tsx',
     'app/(app)/tenants/TenantClient.tsx',
     'app/(app)/tenants/actions.ts',
-    'app/(app)/dashboard/page.tsx',
+    'app/(app)/dashboard/getDashboardData.ts',
     'app/(app)/finance/actions.ts',
     'app/(app)/rooms/actions.ts',
     'app/rent-receipt/[tenantId]/actions.ts',

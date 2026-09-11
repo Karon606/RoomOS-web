@@ -259,7 +259,11 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   // KST 기기에서 하루 앞으로 밀려 8개월 전 말일 점검이 창에 딸려 들어왔다. 창 정본은 lib/kstDate.
   const monthsAgo7 = monthDbRange(shiftMonth(kstMonthStr(), -7)).gte
   const itemIds = items.map(i => i.id)
-  const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, defaultHub] = await Promise.all([
+  // 구매 일괄 조회의 창 — 카드가 실제로 쓰는 (카테고리, 품명) 축. 교차곱으로 남의 짝이 딸려 와도
+  // 아래 메모리 필터가 쌍으로 다시 거른다(영업장 격리는 propertyId 가 이미 하고 있다).
+  const itemCategories = [...new Set(items.map(i => i.category))]
+  const itemLabels = [...new Set(items.map(i => i.label))]
+  const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, defaultHub, allPurchases] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId: { in: itemIds }, date: { gte: monthsAgo7 } },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -295,12 +299,117 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       select: { trackedItemId: true, storageLocationId: true, disposedQty: true, date: true, createdAt: true },
     }),
     prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } }),
+    // 구매(지출) 일괄 조회 — 종전에는 품목마다, 구간마다 왕복했다(품목 28 × 구간 최대 80 × 3회).
+    // receivedAt 조건을 여기서 걸지 않는 이유: 아래 규격 자동 반영은 수령 전 구매도 본다.
+    // 정렬 date desc — 단가 목록(orderBy date desc)과 규격 폴백(findFirst date desc)이 이 순서를 쓴다.
+    prisma.expense.findMany({
+      where: {
+        propertyId,
+        category: { in: itemCategories },
+        itemLabel: { in: itemLabels },
+        excludeFromInventory: false,
+      },
+      select: { category: true, itemLabel: true, qtyUnit: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true, date: true, amount: true },
+      orderBy: { date: 'desc' },
+    }),
   ])
   const addsByItem = new Map<string, typeof allAdditions>()
   for (const a of allAdditions) { const arr = addsByItem.get(a.trackedItemId) ?? []; arr.push(a); addsByItem.set(a.trackedItemId, arr) }
   const dispByItem = new Map<string, typeof allDisposals>()
   for (const d of allDisposals) { const arr = dispByItem.get(d.trackedItemId) ?? []; arr.push(d); dispByItem.set(d.trackedItemId, arr) }
   const defaultHubId = defaultHub?.id ?? null
+
+  // ── 메모리 합산 ──────────────────────────────────────────────
+  // 아래 넷은 위 sumPurchases·sumAdditions·sumDisposals·resolveUnitHint·resolveSpecHint 의
+  // 술어를 **한 조건도 빼지 않고** 그대로 옮긴 것이다. 조회를 없애는 것이 목적이지 규칙을
+  // 바꾸는 것이 아니다 — 두 벌이 갈리면 화면과 알림이 다른 잔량을 말한다.
+  //
+  // ⚠️ @db.Date 칸(StockAddition.date·StockDisposal.date·Expense.date)은 Prisma 가 인자를
+  //   **UTC 날짜로 잘라** 보낸다(실측 2026-09-11). 그래서 effTime(시각이 붙은 값)으로 잡은
+  //   구간 경계도 SQL 에서는 그 날짜로 비교됐다. 메모리 비교도 같은 절단을 거쳐야 답이 같다.
+  const dbDateMs = (d: Date) => Math.floor(d.getTime() / 86400000) * 86400000
+  const purchaseKey = (category: string, label: string) => `${category} ${label}`
+  const purchasesByItem = new Map<string, typeof allPurchases>()
+  for (const p of allPurchases) {
+    if (p.itemLabel == null) continue
+    const k = purchaseKey(p.category, p.itemLabel)
+    const arr = purchasesByItem.get(k) ?? []
+    arr.push(p)
+    purchasesByItem.set(k, arr)
+  }
+  // qtyUnit 느슨 매칭 — sumPurchases 머리말의 그 규칙(null 이거나 같으면 같은 품목).
+  const unitMatches = (rowUnit: string | null, itemUnit: string | null) =>
+    itemUnit ? (rowUnit == null || rowUnit === itemUnit) : true
+
+  const sumPurchasesMem = (
+    rows: typeof allPurchases, qtyUnit: string | null,
+    afterReceivedAt: Date | null, beforeReceivedAt: Date | null,
+    useSpecBase: boolean, itemUnit: string | null,
+  ): number => {
+    let s = 0
+    for (const r of rows) {
+      if (r.receivedAt == null) continue
+      if (!unitMatches(r.qtyUnit, qtyUnit)) continue
+      if (afterReceivedAt && !(r.receivedAt.getTime() > afterReceivedAt.getTime())) continue
+      if (beforeReceivedAt && !(r.receivedAt.getTime() <= beforeReceivedAt.getTime())) continue
+      const q = r.qtyValue ?? 0
+      if (!useSpecBase) { s += q; continue }
+      const spec = specMultiplier(r.specValue, r.specUnit, itemUnit)
+      s += spec != null ? q * spec : q
+    }
+    return s
+  }
+
+  // sumAdditions·sumDisposals 의 date·createdAt 경계 규칙(오류신고 a1e048e8) 그대로.
+  const sumLedgerMem = <T extends { date: Date; createdAt: Date }>(
+    rows: T[], qtyOf: (r: T) => number,
+    from: Date | null, to: Date | null, fromCreatedAt?: Date | null,
+  ): number => {
+    const toMs = to ? dbDateMs(to) : null
+    const fromMs = from != null ? dbDateMs(from) : null
+    let s = 0
+    for (const r of rows) {
+      const d = r.date.getTime()
+      if (toMs != null && !(d <= toMs)) continue
+      if (fromMs != null) {
+        const ok = fromCreatedAt != null
+          ? (d > fromMs || (d === fromMs && r.createdAt.getTime() > fromCreatedAt.getTime()))
+          : d > fromMs
+        if (!ok) continue
+      }
+      s += qtyOf(r)
+    }
+    return s
+  }
+
+  const resolveUnitHintMem = (rows: typeof allPurchases, qtyUnit: string | null): string | null => {
+    const units = new Set(
+      rows
+        .filter(r => r.receivedAt != null && unitMatches(r.qtyUnit, qtyUnit))
+        .map(r => r.qtyUnit?.trim() ?? '')
+        .filter(u => u !== ''),
+    )
+    return units.size === 1 ? [...units][0] : null
+  }
+
+  const resolveSpecHintMem = (
+    rows: typeof allPurchases, qtyUnit: string | null, trackUnit: string, label: string,
+  ): string | null => {
+    if (trackUnit !== 'qty') return null
+    if (/\d/.test(label)) return null
+    const specs = rows
+      .filter(r => r.receivedAt != null && r.specValue != null && r.specValue > 0 && r.specUnit != null && unitMatches(r.qtyUnit, qtyUnit))
+      .map(r => ({ value: r.specValue as number, unit: (r.specUnit ?? '').trim(), itemUnit: r.qtyUnit ?? qtyUnit }))
+      .filter(s => s.unit !== '')
+    if (!specs.length) return null
+    if (specs.some(s => specMultiplier(s.value, s.unit, s.itemUnit) != null)) return null
+    const head = specs[0]
+    const allSame = specs.every(s => {
+      const c = convertUnit(s.value, s.unit, head.unit)
+      return c != null && Math.abs(c - head.value) < 1e-9
+    })
+    return allSame ? `${Number(head.value.toFixed(6))}${head.unit}` : null
+  }
 
   const today = new Date()
   today.setHours(23, 59, 59, 999)
@@ -317,22 +426,25 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   //
   // 단위 변경의 정본은 changeTrackedItemUnit — scaleStockValues 로 이력을 배율 환산한다.
   // 여기서는 **이번 계산에만** 쓰는 임시 추정치로 두고 저장하지 않는다.
-  await Promise.all(items.map(async it => {
-    if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) return
-    const withSpec = await prisma.expense.findFirst({
-      where: { propertyId, category: it.category, itemLabel: it.label, specUnit: { not: null }, specValue: { not: null, gt: 0 }, excludeFromInventory: false },
-      orderBy: { date: 'desc' },
-      select: { specUnit: true },
-    })
+  for (const it of items) {
+    if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) continue
+    // 일괄 조회가 date desc 라 첫 일치가 findFirst(orderBy date desc)가 고르던 그 행이다.
+    const withSpec = (purchasesByItem.get(purchaseKey(it.category, it.label)) ?? [])
+      .find(p => p.specUnit != null && p.specValue != null && p.specValue > 0)
     if (withSpec?.specUnit) it.specUnit = withSpec.specUnit   // 메모리에만 — DB 쓰기 없음
-  }))
+  }
 
-  // 품목별 계산 병렬화 — 품목 간 공유 상태 없음(각자 자기 행만 만들어 반환), 순서는 map이 보존.
-  const rows: InventoryRow[] = await Promise.all(items.map(async (it): Promise<InventoryRow> => {
+  // 품목별 계산 — 품목 간 공유 상태 없음(각자 자기 행만 만들어 반환), 순서는 map이 보존.
+  // 조회가 남아 있지 않아 동시 실행할 것도 없다(전부 위 일괄 조회의 메모리 합산).
+  const rows: InventoryRow[] = items.map((it): InventoryRow => {
     // 같은 날 dedup 후 가장 최신 / 그 직전 점검 추출
     const dedupedRecentChecks = dedupSameDay([...it.stockChecks]).reverse()  // 최신 우선
     const last = dedupedRecentChecks[0] ?? null
     const prev = dedupedRecentChecks[1] ?? null
+    // 이 품목 몫의 일괄 조회 결과 — 아래 모든 합산이 이 세 배열 위에서 돈다.
+    const itemPurchases = purchasesByItem.get(purchaseKey(it.category, it.label)) ?? []
+    const itemAdds = addsByItem.get(it.id) ?? []
+    const itemDisps = dispByItem.get(it.id) ?? []
     // trackUnit='spec' (default): 규격 환산 (qtyValue × specValue, unit=specUnit)
     // trackUnit='qty':            수량 그대로 (qtyValue, unit=qtyUnit) — 폐기물 봉투 등
     const useSpec = it.trackUnit !== 'qty' && !!(it.specUnit && it.specUnit.trim())
@@ -341,11 +453,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     if (last) {
       // 승인일(receivedAt) 기준: 점검 기록이 생성된 이후 승인된 구매만 반영
       // → 구매일이 과거여도 승인 전에 실사한 재고 수량이 currentStock에 포함되지 않도록 방지
-      const [incomingPurchases, incomingAdditions, incomingDisposals] = await Promise.all([
-        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit),
-        sumAdditions(it.id, last.date, today, last.createdAt),
-        sumDisposals(it.id, last.date, today, last.createdAt),
-      ])
+      const incomingPurchases = sumPurchasesMem(itemPurchases, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit)
+      const incomingAdditions = sumLedgerMem(itemAdds, a => a.addedQty, last.date, today, last.createdAt)
+      const incomingDisposals = sumLedgerMem(itemDisps, d => d.disposedQty, last.date, today, last.createdAt)
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions - incomingDisposals
     }
 
@@ -359,35 +469,28 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
       //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
       //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
-      const [purchases, additions, disposals] = await Promise.all([
-        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit),
-        sumAdditions(it.id, effTime(prev), effTime(last)),
-        sumDisposals(it.id, effTime(prev), effTime(last)),
-      ])
+      const purchases = sumPurchasesMem(itemPurchases, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit)
+      const additions = sumLedgerMem(itemAdds, a => a.addedQty, effTime(prev), effTime(last))
+      const disposals = sumLedgerMem(itemDisps, d => d.disposedQty, effTime(prev), effTime(last))
       lastPeriodConsumption = (prev.remainingQty + purchases + additions - disposals) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
     } else if (last && !prev) {
       // 점검 1회만 있는 경우: 최초 승인 구매일을 기준점으로 소모량 추정
-      const firstPurchase = await prisma.expense.findFirst({
-        where: {
-          propertyId, category: it.category, itemLabel: it.label,
-          // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산 sumPurchases 와 동일 규칙).
-          ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
-          receivedAt: { not: null, lte: last.createdAt },
-          excludeFromInventory: false, qtyValue: { gt: 0 },
-        },
-        orderBy: { receivedAt: 'asc' },
-        select: { receivedAt: true },
-      })
-      if (firstPurchase?.receivedAt) {
+      // orderBy receivedAt asc 의 첫 행 = 최소 receivedAt. 동률이어도 값이 같아 최소로 뽑는다.
+      const firstReceivedAt = itemPurchases.reduce<Date | null>((min, p) => {
+        // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산 sumPurchases 와 동일 규칙).
+        if (!unitMatches(p.qtyUnit, it.qtyUnit)) return min
+        if (p.receivedAt == null || p.receivedAt.getTime() > last.createdAt.getTime()) return min
+        if (p.qtyValue == null || !(p.qtyValue > 0)) return min
+        return min == null || p.receivedAt.getTime() < min.getTime() ? p.receivedAt : min
+      }, null)
+      if (firstReceivedAt) {
         // 최초 구매 승인 ~ 실사 사이의 총 입수량
-        const [totalPurchases, totalAdditions, totalDisposals] = await Promise.all([
-          sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit),
-          sumAdditions(it.id, null, last.date),
-          sumDisposals(it.id, null, last.date),
-        ])
+        const totalPurchases = sumPurchasesMem(itemPurchases, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit)
+        const totalAdditions = sumLedgerMem(itemAdds, a => a.addedQty, null, last.date)
+        const totalDisposals = sumLedgerMem(itemDisps, d => d.disposedQty, null, last.date)
         const consumed = totalPurchases + totalAdditions - totalDisposals - last.remainingQty
-        const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
+        const days = Math.max(1, Math.round((last.date.getTime() - firstReceivedAt.getTime()) / 86400000))
         // 최소 관측 7일 — 구매 직후 점검 1회로는 소모율 신뢰 불가(구매 당일 500ml 사용이
         // '하루 0.5L 소모'로 일반화돼 D-3 소진임박 오탐 나던 리클린 사례). 7일 전엔 추정 보류.
         if (consumed > 0 && days >= 7) {
@@ -415,13 +518,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     }
     // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
     // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
-    // 구간 간 의존 없음 → 동시 조회, 합산은 원래 순서대로(결과 동일).
-    const intervalConsumed = await Promise.all(intervalPairs.map(async ({ prev, curr }) => {
-      const [purchases, additions, disposals] = await Promise.all([
-        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit),
-        sumAdditions(it.id, effTime(prev), effTime(curr)),
-        sumDisposals(it.id, effTime(prev), effTime(curr)),
-      ])
+    // 구간 간 의존 없음. 조회 없이 위 일괄 조회분을 구간 술어로 걸러 더한다(구간 하나에 3회씩
+    // 왕복하던 자리 — 품목 28개에 구간 최대 80이면 렌더 한 번에 수천 쿼리였다).
+    const intervalConsumed = intervalPairs.map(({ prev, curr }) => {
+      const purchases = sumPurchasesMem(itemPurchases, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit)
+      const additions = sumLedgerMem(itemAdds, a => a.addedQty, effTime(prev), effTime(curr))
+      const disposals = sumLedgerMem(itemDisps, d => d.disposedQty, effTime(prev), effTime(curr))
       return {
         curr,
         consumed: (prev.remainingQty + purchases + additions - disposals) - curr.remainingQty,
@@ -429,7 +531,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         // date 는 @db.Date(그 날의 UTC 자정)라 이 나눗셈은 반올림 오차 없는 정수.
         days: Math.max(1, Math.round((curr.date.getTime() - prev.date.getTime()) / 86400000)),
       }
-    }))
+    })
 
     // ── 평균 소모율 — 최근 30일 '합산' 기준 (단일 구간 추정 폐기, 2026-07-17).
     // 종전엔 마지막 두 점검 사이 한 구간만으로 냈다. 점검 간격이 1~3일이라 표본이 1개뿐이었고,
@@ -483,27 +585,19 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 예: 쌀 20kg × 1포대 60,000원 → 60,000 / (1 × 20) = 3,000원/kg
     //     물티슈 100매 × 2팩 10,000원 → 10,000 / (2 × 100) = 50원/매
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-    // unitHint·specHint 는 단가와 무관하지만 같은 왕복에 태워 조회 지연을 늘리지 않는다.
-    const [recentPurchases, unitHint, specHint] = await Promise.all([
-      prisma.expense.findMany({
-        where: {
-          propertyId,
-          category: it.category,
-          itemLabel: it.label,
-          // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(단가도 누락 없이 집계).
-          ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
-          date: { gte: oneYearAgo },
-          qtyValue: { gt: 0 },
-          amount: { gt: 0 },
-          receivedAt: { not: null },
-          excludeFromInventory: false,
-        },
-        select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true },
-        orderBy: { date: 'desc' },
-      }),
-      resolveUnitHint(propertyId, it.category, it.label, it.qtyUnit),
-      resolveSpecHint(propertyId, it.category, it.label, it.qtyUnit, it.trackUnit),
-    ])
+    // date 는 @db.Date — Prisma 가 gte 인자를 UTC 날짜로 잘라 보내므로 여기서도 같이 자른다.
+    const oneYearAgoMs = dbDateMs(oneYearAgo)
+    // 일괄 조회분이 이미 date desc 라 filter 가 그 순서를 그대로 물려준다(최근 단가·리드타임이 순서를 쓴다).
+    const recentPurchases = itemPurchases.filter(p =>
+      // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(단가도 누락 없이 집계).
+      unitMatches(p.qtyUnit, it.qtyUnit)
+      && p.date.getTime() >= oneYearAgoMs
+      && p.qtyValue != null && p.qtyValue > 0
+      && p.amount > 0
+      && p.receivedAt != null,
+    )
+    const unitHint = resolveUnitHintMem(itemPurchases, it.qtyUnit)
+    const specHint = resolveSpecHintMem(itemPurchases, it.qtyUnit, it.trackUnit, it.label)
 
     // 실효 알림 임계값(신고 edffb4a7) — 재주문 리드타임(주문일→수령일)을 반영해 알림이 주문 여유를 갖게.
     // 리드타임 = 최근 수령 구매 최대 6건의 (receivedAt − date) 일수 중앙값(0~30일 클램프), 없으면 미반영.
@@ -676,6 +770,6 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       })) satisfies LocationQtyEntry[],
       monthlyConsumption,
     }
-  }))
+  })
   return rows
 }

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/lib/auth/propertyAccess": ["./dashboard-access-stub.ts"],
+      "@/lib/role": ["./dashboard-role-stub.ts"],
+      "@/*": ["../*"],
+      "server-only": ["./server-only-stub.ts"]
+    }
+  }
+}

@@ -186,10 +186,10 @@ for (const [name, re] of callers) {
   // **화면만 봐서는 성글다.** 홈은 알림 데이터로 방 id 를 받는데, 그 값을 안 실으면 조회가 아예
   // 안 돌아 화면이 고쳐져 있어도 '미정'으로 뜬다(2026-08-31 실기에서 실제로 그랬다).
   {
-    const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+    const page = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
     const block = page.match(/moveOutHasRoom:[\s\S]{0,900}?\}\)/)
     if (!block || !/roomId:/.test(block[0])) {
-      violations.push("app/(app)/dashboard/page.tsx — 퇴실 알림이 방 id 를 안 싣는다. 홈 퇴실 창이 이미 잡힌 청소를 물어볼 수 없다.")
+      violations.push("app/(app)/dashboard/getDashboardData.ts — 퇴실 알림이 방 id 를 안 싣는다. 홈 퇴실 창이 이미 잡힌 청소를 물어볼 수 없다.")
     }
   }
 }
@@ -238,9 +238,9 @@ for (const [name, re] of callers) {
     }
   }
   // 알림이 예정일을 안 실으면 홈은 정본을 불러도 늘 오늘로 떨어진다.
-  const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const page = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   if (!/moveOutExpectedYmd:/.test(page)) {
-    violations.push('app/(app)/dashboard/page.tsx — 퇴실 알림이 예정일을 안 싣는다. 홈 퇴실 창의 기본값이 늘 오늘이 된다.')
+    violations.push('app/(app)/dashboard/getDashboardData.ts — 퇴실 알림이 예정일을 안 싣는다. 홈 퇴실 창의 기본값이 늘 오늘이 된다.')
   }
 }
 
@@ -392,13 +392,13 @@ for (const [name, re] of callers) {
     violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 미룸 판정이 예약 취소 계열을 제외하지 않는다. 취소 몰취가 조용히 잊힌다.')
   }
   // 홈 — 대기 알림과 KPI 합산. 이 둘이 없으면 미룸은 그냥 잊는 기능이다.
-  const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const page = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   if (!/category:\s*'depositReturn'/.test(page) || !/pendingDepositReturns/.test(page)) {
-    violations.push("app/(app)/dashboard/page.tsx — 보증금 반환 대기 알림이 없다. '나중에'가 곧 '영영'이 된다.")
+    violations.push("app/(app)/dashboard/getDashboardData.ts — 보증금 반환 대기 알림이 없다. '나중에'가 곧 '영영'이 된다.")
   }
   // [^)]* 는 화살표 인자 (sum, l) 의 닫는 괄호를 못 넘는다 — 합산이 있어도 없다고 읽었다(실제 오탐).
   if (!/pendingDepositReturns\.reduce\([^;]*l\.basis/.test(page)) {
-    violations.push('app/(app)/dashboard/page.tsx — 보유 보증금 KPI 가 반환 대기분을 안 더한다. 부채가 집계에서 사라진다.')
+    violations.push('app/(app)/dashboard/getDashboardData.ts — 보유 보증금 KPI 가 반환 대기분을 안 더한다. 부채가 집계에서 사라진다.')
   }
   // 판정 정본 공유 — 알림·감지망·서버가 같은 기준액 식을 써야 한 쪽만 우는 상태가 안 생긴다.
   if (!/depositBasisOf\(/.test(page) || !/depositBasisOf\(/.test(src)) {
