@@ -1281,6 +1281,9 @@ export async function saveContractTemplate(template: ContractTemplate): Promise<
       template,
       propertyContractAddenda(before, parseShortStayPolicy(before?.shortStayPolicy).enabled),
       before?.refundClauseInContract ?? true,
+      // 청소비 줄도 편집기와 같은 영업장 기준이다. 좁히면 `- {{청소비조항}}` 을 지운 저장이
+      // 그 번역을 잃고도 아무 말을 안 한다.
+      'property',
     )
     revalidatePath('/settings')
     return lost.lines > 0 ? { ok: true, translationLost: lost } : { ok: true }

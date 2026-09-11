@@ -17,7 +17,10 @@ import { PRINTED_FACT_KEYS, PRINTED_FACT_LABEL, type PrintedFactKey } from '@/li
 import { getContractIssuedSnapshot, type IssuedContractDetail } from '@/app/(app)/tenants/actions'
 import { contractPurposeOf } from '@/lib/contractPurpose'
 import { asSignLang, SIGN_LANG_LABEL } from '@/lib/signGuideText'
-import { asResolvedContractTranslation, type ResolvedContractTranslation } from '@/lib/contractTranslation'
+import {
+  asResolvedContractTranslation, TRANSLATION_VAR_NAMES, TRANSLATION_VAR_LABEL,
+  type ResolvedContractTranslation,
+} from '@/lib/contractTranslation'
 import type { ContractTemplate } from '@/lib/contract'
 import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
 
@@ -77,10 +80,13 @@ function translationFactText(v: unknown): string {
     const head = typeof t.totalCount === 'number' && typeof t.fallbackCount === 'number'
       ? `${label} · 번역 ${t.totalCount - t.fallbackCount}/${t.totalCount}`
       : label
-    // 환불 규정은 공정거래위원회 기준 문구라 권장 번역이 따로 있다. 운영자가 제 문안을 적어
-    // 내보낸 발급본이면 그 사실을 여기 남긴다 — 나중에 "왜 기준과 다른가"를 물을 때의 답이다.
-    const custom = Array.isArray(t.customVars) && t.customVars.includes('환불규정')
-    return custom ? `${head} · 환불 규정 직접 번역` : head
+    // 환불 규정·청소비 문장은 권장 번역이 따로 있다. 운영자가 제 문안을 적어 내보낸 발급본이면
+    // 그 사실을 여기 남긴다 — 나중에 "왜 기준과 다른가"를 물을 때의 답이다.
+    // **얼어 있는 이름만 읽는다.** 지금 사전으로 다시 재면 그것은 증거가 아니라 오늘의 값이다.
+    // 이름은 정본 한 벌을 쓰고 중복은 접는다(청소비 두 줄이 같은 이름이다).
+    const frozen = new Set(Array.isArray(t.customVars) ? (t.customVars as unknown[]) : [])
+    const customNames = [...new Set(TRANSLATION_VAR_NAMES.filter(n => frozen.has(n)).map(n => TRANSLATION_VAR_LABEL[n]))]
+    return customNames.length > 0 ? `${head} · ${customNames.join(' · ')} 직접 번역` : head
   } catch { return '있음' }
 }
 

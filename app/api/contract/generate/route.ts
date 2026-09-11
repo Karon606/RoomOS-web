@@ -273,6 +273,9 @@ export async function POST(req: Request) {
         refundClauseInContract: body_.refundClauseInContract,
         subLeaseAddendum, rateAddendum,
         roomScheduleText: scheduleText, roomScheduleAddendum,
+        // 청소비는 종이가 쓰는 그 병합값이다(leaseFields = contractLeaseFields). 몸통으로 안 받는다 —
+        // 금액을 클라이언트가 보내면 API 를 직접 불러 다른 갈래의 조항을 종이에 박을 수 있다.
+        lease: leaseFields,
       },
       asTranslationLang(body.lang),
     )

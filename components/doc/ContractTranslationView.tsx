@@ -88,9 +88,20 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
   // 치환 순서는 종이와 같다 — renderContractText 먼저, 글머리 제거가 나중이다(contractPrintHtml).
   // 뒤집으면 '- {{청소비조항}}' 처럼 값이 글머리로 시작하는 조항에서 결과가 갈린다.
   //
-  // 박제가 든 값이 종이 값을 **덮는다**(환불 규정). 둘 다 없으면 재료가 아예 없는 것이라
-  // 저장 문안을 그대로 보인다 — 없는 값을 지어내지 않는다.
-  const renderVars = vars || translation.vars ? { ...(vars ?? {}), ...(translation.vars ?? {}) } : null
+  // 박제가 든 값이 종이 값을 **덮는다**(환불 규정 · 청소비 문장). 둘 다 없으면 재료가 아예
+  // 없는 것이라 저장 문안을 그대로 보인다 — 없는 값을 지어내지 않는다.
+  //
+  // **덮기 전에 그 값 안의 자리표시자를 종이 vars 로 한 번 채운다**(2026-09-11 봉합). 치환이
+  // 한 패스라, 주입한 값이 제 안에 `{{청소비}}` 를 품고 있으면 그 자리표시자는 **두 번째 패스를
+  // 못 만나 글자 그대로 종이 아닌 화면에 찍힌다.** 환불 규정은 값 안에 자리표시자가 없어 이 결함이
+  // 드러나지 않았을 뿐이고, 번역문이 금액 자리를 지켜야 하는 청소비 문장에서는 곧바로 나온다.
+  // 순서는 이것뿐이라야 한다 — 종이 vars 를 나중에 얹으면 번역문이 한국어 문장에 도로 덮인다.
+  const paperVars = vars ?? {}
+  const injected: Record<string, string> = {}
+  for (const [k, v] of Object.entries(translation.vars ?? {})) {
+    if (typeof v === 'string') injected[k] = renderContractText(v, paperVars)
+  }
+  const renderVars = vars || translation.vars ? { ...paperVars, ...injected } : null
   const render = (s: string): string => (renderVars ? renderContractText(s, renderVars) : s)
 
   // 줄바꿈 규칙은 언어가 정한다(운영자 긴급 신고 2026-09-08 — 일본어 조항이 칸을 넘어 잘렸다).

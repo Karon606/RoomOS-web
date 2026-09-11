@@ -22,7 +22,7 @@
 import { type SignLang, SIGN_LANGS, asSignLang, signLangForNationality } from '@/lib/signGuideText'
 import { isForeignForDocuments } from '@/lib/documentName'
 import {
-  stripClauseBullet, buildRefundClause, contractAddendaForTranslation,
+  stripClauseBullet, buildRefundClause, contractAddendaForTranslation, CLEANING_FEE_SOURCE,
   type ContractTemplate, type SubLeaseAddendum,
 } from '@/lib/contract'
 
@@ -106,6 +106,13 @@ export type TranslationSourceLine = {
   text: string
   /** 절 제목·항목일 때 그 절의 순번(0부터). 편집기가 묶어 보여주는 데 쓴다. */
   sectionIndex?: number
+  /**
+   * 'var' 줄일 때 그 변수의 이름. 편집기가 라벨·권장 문안·경고를 그 줄에 맞게 고르는 근거다.
+   *
+   * 종전에는 변수 줄이 환불 규정 하나뿐이라 이름이 필요 없었고, 화면이 `kind === 'var'` 하나로
+   * 환불 문안을 꺼내 썼다. 줄이 여럿이 된 지금 그 방식은 청소비 칸에 환불 권장 문안을 보인다.
+   */
+  varName?: TranslationVarName
 }
 
 /**
@@ -171,9 +178,51 @@ export const REFUND_VAR_PLACEHOLDER = '{{환불규정}}'
 /** 그 변수의 이름 — 박제 표식(customVars)과 종이 vars 의 열쇠가 같은 문자열이다. */
 export const REFUND_VAR_NAME = '환불규정'
 
+/** 청소비 문장이 본문에 들어가는 두 자리. 조항 본체와, 환불 항목 꼬리에 붙는 공제 문구다. */
+export const CLEANING_CLAUSE_PLACEHOLDER = '{{청소비조항}}'
+export const CLEANING_DEDUCT_PLACEHOLDER = '{{청소비공제}}'
+
+/**
+ * 번역본이 제 값을 갖는 변수 이름들. **이 배열의 순서가 곧 직렬화·지문 순서다.**
+ *
+ * 순서를 못박는 이유. `vars` 객체는 인쇄 사실 축이 통비교하는 JSON 이라 열쇠 순서가 바뀌면
+ * 내용이 같은 박제가 바이트로 달라진다. 그래서 담는 쪽도 읽는 쪽도 이 배열을 돌며 채운다 —
+ * 환불 규정 하나만 있는 옛 박제는 지금도 `{"환불규정":…}` 그대로다.
+ */
+export type TranslationVarName = '환불규정' | '청소비조항' | '청소비공제'
+export const TRANSLATION_VAR_NAMES: readonly TranslationVarName[] =
+  ['환불규정', '청소비조항', '청소비공제']
+
+/**
+ * 운영자가 그 **변수**를 부르는 이름 — 피커·발급 상세의 '직접 번역' 캡션이 이 한 벌을 쓴다.
+ *
+ * 박제에 남는 것은 변수 이름뿐이라(customVars) 캡션이 알 수 있는 것도 여기까지다.
+ * 편집기의 **줄** 라벨은 갈래까지 가르므로 그쪽은 명세의 label 을 쓴다(TranslationVarSpec).
+ */
+export const TRANSLATION_VAR_LABEL: Record<TranslationVarName, string> = {
+  환불규정: '환불 규정',
+  청소비조항: '청소비 조항',
+  청소비공제: '청소비 공제 문구',
+}
+
 /** 이 줄의 사전 열쇠. 다른 줄과 같은 규칙이다 — 열쇠는 한국어 원문 문자열 그 자체다. */
 export function refundTranslationKey(): string {
   return buildRefundClause()
+}
+
+/**
+ * 청소비 문장의 사전 열쇠 셋 — **치환 전 문안이 열쇠다**(lib/contract 의 CLEANING_FEE_SOURCE).
+ *
+ * 왜 완성 문장이 열쇠가 아닌가. 청소비는 계약마다 다르고 계약서 표시값으로 덮을 수도 있다
+ * (contractFieldOverrides). "청소비 20,000원은…" 을 열쇠로 삼으면 금액이 다른 계약에서는 그
+ * 사전이 한 번도 안 맞아, 번역을 다 채운 영업장에서도 그 조항만 한국어로 남는다. `{{일정}}` 을
+ * 치환 전 문안으로 두는 규칙과 같은 자리다(lib/contract 의 contractAddendaForTranslation).
+ *
+ * 셋인 이유. 조항이 청소비 유무로 갈리고(있음·없음), 있음 갈래에만 환불 항목 꼬리에 붙는 공제
+ * 문구가 하나 더 선다. 없음 갈래의 공제는 빈 문자열이라 종이에 아무것도 안 들어가므로 줄도 없다.
+ */
+export function cleaningTranslationKeys(): { clause: string; none: string; deduct: string } {
+  return { clause: CLEANING_FEE_SOURCE.clause, none: CLEANING_FEE_SOURCE.none, deduct: CLEANING_FEE_SOURCE.deduct }
 }
 
 /**
@@ -196,28 +245,87 @@ export const RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string> = {
 }
 
 /**
- * 그 값이 '직접 번역'인가 — 값이 있고 권장 문안과 다르다.
+ * 청소비 문장의 권장 번역. **코드 사전이다** — 운영자 입력이 아니다.
+ *
+ * 갈래 셋이 각각 제 표를 갖는다(cleaningTranslationKeys 와 같은 셋). 금액이 들어가는 둘은
+ * 번역문 안에 `{{청소비}}` 를 **그대로 지녀야 한다** — 지우면 종이의 그 문장이 금액을 잃는다.
+ * 그 강제는 저장·되붙이기가 이미 열쇠 기준으로 세므로 여기 새 규칙을 두지 않는다
+ * (translationPlaceholderMisses).
+ *
+ * **지금은 전 언어가 빈 칸이다**(2026-09-11). 종이에 나가는 계약 문안이라 기계 번역으로 채우지
+ * 않고 번역가 패널이 따로 낸다. 빈 칸인 동안은 이 줄이 아무 값도 안 내보내고, 그러면 종이 vars
+ * 의 한국어 문장이 그대로 선다 — 이 기능 전과 문자 단위로 같은 상태다. 채워 넣는 순간부터
+ * 그 언어의 빈 칸이 권장 번역으로 나간다.
+ *
+ * Record 전량 선언이다(RECOMMENDED_REFUND_TRANSLATION 과 같은 이유) — 언어가 늘었는데 칸을
+ * 안 만들면 tsc 가 컴파일을 막는다.
+ */
+export const RECOMMENDED_CLEANING_TRANSLATION: Record<'clause' | 'none' | 'deduct', Record<TranslationLang, string>> = {
+  clause: { en: '[Cleaning Fee] The cleaning fee of {{청소비}} is consideration for the indoor cleaning service performed after move-out. If there is a deposit, it is deducted from the deposit at the move-out settlement; if there is no deposit, it is collected at move-in together with the room fee.', vi: '[Phí vệ sinh] Phí vệ sinh {{청소비}} là khoản đối giá cho dịch vụ vệ sinh bên trong phòng sau khi trả phòng. Trường hợp có tiền đặt cọc, khoản này được khấu trừ từ tiền đặt cọc khi quyết toán trả phòng; trường hợp không có tiền đặt cọc, khoản này được thu cùng với tiền phòng khi vào ở.', bn: '[পরিষ্কার ফি] পরিষ্কার ফি {{청소비}} হলো কক্ষ ত্যাগের পর কক্ষের ভেতরে পরিষ্কারের সেবার বিনিময় মূল্য। জামানত থাকলে কক্ষ ত্যাগের হিসাব নিষ্পত্তির সময় জামানত থেকে কেটে নেওয়া হয়, আর জামানত না থাকলে প্রবেশের সময় বসবাস ফি-এর সঙ্গে নেওয়া হয়।', ru: '[Плата за уборку] Плата за уборку в размере {{청소비}} является вознаграждением за услуги по уборке помещения после выселения. При наличии залога она удерживается из залога при расчёте на момент выселения, при отсутствии залога она взимается при заселении вместе с платой за проживание.', ja: '[清掃費] 清掃費 {{청소비}} は、退室後の室内清掃役務の対価です。保証金がある場合は退室精算時に保証金から控除し、保証金がない場合は入室時に入室料と併せて受領します。', zh: '【清洁费】清洁费 {{청소비}} 为退房后室内清洁服务的对价。有押金的，于退房结算时从押金中扣除；无押金的，于入住时与入住费一并收取。', zht: '【清潔費】清潔費 {{청소비}} 為退住後室內清潔服務之對價。有押金者，於退住結算時自押金中扣除；無押金者，於入住時與入住費一併收取。' },
+  none: { en: '[Cleaning Fee] This Agreement has no cleaning fee. No amount is deducted as a cleaning fee at move-out.', vi: '[Phí vệ sinh] Hợp đồng này không có phí vệ sinh. Khi trả phòng không khấu trừ bất kỳ khoản nào với danh nghĩa phí vệ sinh.', bn: '[পরিষ্কার ফি] এই চুক্তিতে কোনো পরিষ্কার ফি নেই। কক্ষ ত্যাগের সময় পরিষ্কার ফি বাবদ কোনো কর্তন করা হয় না।', ru: '[Плата за уборку] Настоящий договор не предусматривает платы за уборку. При выселении удержание в счёт платы за уборку не производится.', ja: '[清掃費] 本契約に清掃費はありません。退室時に清掃費名目での控除は行いません。', zh: '【清洁费】本合同无清洁费。退房时不以清洁费名义扣除。', zht: '【清潔費】本契約無清潔費。退住時不以清潔費名義扣除。' },
+  deduct: { en: '(cleaning fee of {{청소비}} within the deposit deducted separately)', vi: '(khấu trừ riêng phí vệ sinh {{청소비}} trong tiền đặt cọc)', bn: '(জামানতের মধ্যে পরিষ্কার ফি {{청소비}} পৃথকভাবে কর্তন)', ru: '(плата за уборку {{청소비}} в составе залога удерживается отдельно)', ja: '(保証金内の清掃費 {{청소비}} を別途控除)', zh: '（押金内清洁费 {{청소비}} 另行扣除）', zht: '（押金內清潔費 {{청소비}} 另行扣除）' },
+}
+
+/**
+ * 변수 줄 한 벌의 명세 — 열쇠·권장 문안·경고 문안이 **한 자리에 묶여 다닌다.**
+ *
+ * 종전에는 이 셋이 환불 규정 전용 상수 세 개로 흩어져 있었고, 화면이 `kind === 'var'` 하나로
+ * 그것을 꺼내 썼다. 줄이 여럿이 된 지금 그 방식은 청소비 칸에 환불 권장 문안을 보이고 환불
+ * 경고를 세운다. 줄마다 제 명세를 들고 다니면 그 갈림이 구조적으로 안 생긴다.
+ */
+export type TranslationVarSpec = {
+  name: TranslationVarName
+  /** 사전 열쇠이자 편집기가 보여줄 한국어 원문. */
+  key: string
+  /**
+   * 편집기 줄 라벨. **갈래까지 가른다** — 청소비 조항은 있음·없음 두 줄이 서는데 이름이 같으면
+   * 운영자는 같은 칸이 두 번 선 것으로 읽는다(디자이너 차단 2026-09-11).
+   * 변수 이름 수준의 라벨(TRANSLATION_VAR_LABEL)과 다른 층이다 — 그쪽은 박제가 이름만 들고
+   * 있는 자리(피커·발급 상세 캡션)가 쓴다.
+   */
+  label: string
+  /** 그 언어의 권장 번역. **빈 문자열은 '권장 문안이 아직 없다'** 이고 그때는 한국어가 남는다. */
+  recommended: Record<TranslationLang, string>
+  /** 값 앞에 한 칸을 붙이는가 — 앞 문장에 이어 붙는 꼬리라야 참이다(종이 vars 와 같은 모양). */
+  inline: boolean
+  /** 권장과 다른 문안일 때 칸 옆에 서는 경고. 왜 조심해야 하는지는 줄마다 이유가 다르다. */
+  warning: string
+}
+
+/**
+ * 그 값이 '직접 번역'인가 — **권장 문안이 있고** 값이 있고 그와 다르다.
  *
  * **글자 비교·유사도 판정을 만들지 마라**(운영자 오더). 여기 있는 것은 권장 문안과의 동일성
  * 하나뿐이다. 뜻이 얼마나 비슷한지 재려 들면 오탈자마다 소음이 나고, 정작 뜻이 뒤집힌 번역은
  * 글자가 비슷해 통과한다.
  *
+ * **권장 문안이 빈 줄은 언제나 거짓이다.** 견줄 기준이 없으면 '권장과 다르다'는 말 자체가
+ * 성립하지 않는다. 그 상태에서 참을 돌려주면 경고가 "권장으로 돌리려면 칸을 비우세요" 라고
+ * 하는데 비우면 한국어가 남고, 박제에는 있지도 않은 기준에서 벗어났다는 표식이 남는다.
+ *
  * 편집기 경고·저장 비우기·박제 표식이 **이 함수 하나**를 본다. 세 곳이 각자 재면 화면은
  * "권장과 다르다"고 경고하는데 저장은 권장과 같다고 칸을 비우는 상태가 된다.
  */
-export function isCustomRefundTranslation(lang: TranslationLang, value: unknown): boolean {
+export function isCustomVarTranslation(
+  lang: TranslationLang, spec: TranslationVarSpec, value: unknown,
+): boolean {
+  const rec = spec.recommended[lang]
+  if (!rec) return false
   if (typeof value !== 'string' || !value.trim()) return false
-  return value.trim() !== RECOMMENDED_REFUND_TRANSLATION[lang]
+  return value.trim() !== rec
 }
 
 /**
- * 본문 어딘가에 `{{환불규정}}` 자리가 있는가.
+ * 본문 어딘가에 그 `{{자리표시자}}` 가 있는가.
  *
  * **걷어낸 줄까지 본다.** 줄 전체가 자리표시자인 항목은 번역 대상에서 빠지지만
  * (hasTranslatableText) 종이에는 그 값이 그대로 들어간다. 대상 목록만 훑으면 그런 본문에서
- * 칸이 안 서고, 종이의 그 문단만 영영 한국어로 남는다.
+ * 칸이 안 서고, 종이의 그 문단만 영영 한국어로 남는다. 청소비 조항이 정확히 그 모양이다
+ * (기본 템플릿의 `- {{청소비조항}}`).
  */
-function hasRefundVarSlot(template: ContractTemplate, addenda?: readonly SubLeaseAddendum[]): boolean {
+function templateHasPlaceholder(
+  template: ContractTemplate, addenda: readonly SubLeaseAddendum[] | undefined, placeholder: string,
+): boolean {
   const all: unknown[] = [template?.title, template?.oathText]
   for (const s of Array.isArray(template?.sections) ? template.sections : []) {
     all.push(s?.title, ...(Array.isArray(s?.items) ? s.items : []))
@@ -226,18 +334,114 @@ function hasRefundVarSlot(template: ContractTemplate, addenda?: readonly SubLeas
     if (!a) continue
     all.push(a.title, ...(Array.isArray(a.items) ? a.items : []))
   }
-  return all.some(s => typeof s === 'string' && translationPlaceholders(s).includes(REFUND_VAR_PLACEHOLDER))
+  return all.some(s => typeof s === 'string' && translationPlaceholders(s).includes(placeholder))
 }
 
 /**
- * 번역본이 `{{환불규정}}` 자리에 넣을 값 — **종이와 같은 모양**이다.
+ * 번역본이 그 자리에 넣을 값 — **종이와 같은 모양**이다.
  *
- * 앞 한 칸이 문장을 잇는다(lib/contractPrintHtml 의 `' ' + buildRefundClause()`). 칸을 빼면
- * 앞 문장에 그대로 붙어 "…따릅니다.Early move-out refund" 가 된다. 조판 규칙이 두 벌이면
- * 종이와 카드가 그 한 칸에서 갈린다.
+ * 꼬리 줄은 앞 한 칸이 문장을 잇는다(lib/contractPrintHtml 의 `' ' + buildRefundClause()`,
+ * lib/contract 의 청소비공제). 칸을 빼면 앞 문장에 그대로 붙어 "…따릅니다.Early move-out refund"
+ * 가 된다. 조판 규칙이 두 벌이면 종이와 카드가 그 한 칸에서 갈린다.
+ * 줄을 통째로 차지하는 값(청소비 조항)은 앞 칸이 없다 — 붙이면 글머리 뒤가 두 칸이 된다.
  */
-function refundVarValue(text: string): string {
-  return ' ' + text
+function translationVarValue(spec: TranslationVarSpec, text: string): string {
+  return spec.inline ? ' ' + text : text
+}
+
+/**
+ * 청소비 줄을 어느 기준으로 세울지.
+ *   · **숫자** = 그 계약의 청소비(표시값 오버라이드까지 얹은 값). 종이에 실리는 한 갈래만 선다.
+ *   · **'property'** = 환경설정 편집기. 두 갈래를 다 세운다 — 청소비는 계약별이라 한 영업장에
+ *     0원 계약과 유료 계약이 실제로 공존한다(거주 계약 41건 중 29건이 0원, 2026-08-03 실측).
+ *     미리 채워 두는 자리라 한 갈래로 좁히면 다른 갈래 계약의 조항이 영영 번역되지 않는다.
+ *   · **안 넘김** = 청소비 줄을 아예 안 세운다. 넘기기를 잊은 호출부가 조용히 **다른 갈래**의
+ *     번역을 종이에 얹는 것보다, 종전처럼 한국어가 남는 쪽이 안전하다.
+ */
+export type CleaningVarScope = number | 'property'
+
+/**
+ * 이 계약서에 설 변수 줄의 명세 목록 — **종이가 그 값을 넣는 조건과 같은 조건**으로 고른다.
+ *
+ * 조건이 갈리면 종이에 안 실리는 문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.
+ * 환불은 토글 + 본문의 자리, 청소비는 본문의 자리 + 그 계약의 금액 갈래다.
+ */
+export function translationVarSpecs(
+  template: ContractTemplate,
+  addenda?: readonly SubLeaseAddendum[],
+  refundClauseInContract?: boolean,
+  cleaning?: CleaningVarScope,
+): TranslationVarSpec[] {
+  const all = allTranslationVarSpecs()
+  const out: TranslationVarSpec[] = []
+  if (refundClauseInContract && templateHasPlaceholder(template, addenda, REFUND_VAR_PLACEHOLDER)) {
+    out.push(all.refund)
+  }
+  if (cleaning !== undefined) {
+    const everyBranch = cleaning === 'property'
+    const paid = everyBranch || cleaning > 0
+    if (templateHasPlaceholder(template, addenda, CLEANING_CLAUSE_PLACEHOLDER)) {
+      if (paid) out.push(all.cleaningClause)
+      if (everyBranch || cleaning <= 0) out.push(all.cleaningNone)
+    }
+    // 공제 꼬리는 **있음 갈래에만** 값이 있다. 없음 갈래의 종이 값은 빈 문자열이라 넣을 것이 없고,
+    // 칸을 세우면 종이에 안 나가는 문장을 번역하라고 하는 셈이다.
+    if (paid && templateHasPlaceholder(template, addenda, CLEANING_DEDUCT_PLACEHOLDER)) {
+      out.push(all.cleaningDeduct)
+    }
+  }
+  return out
+}
+
+/**
+ * 변수 줄 명세의 **전량**. 본문과 무관하게 문안만으로 정해지므로 템플릿 없이도 답할 수 있다.
+ *
+ * 저장 병합이 이것을 쓴다 — 그 자리에는 템플릿도 계약도 없고 열쇠와 값만 온다. 병합이 제 사본을
+ * 들면 화면은 "권장과 같다"며 칸을 비우는데 저장은 그 값을 들고 있는 상태가 된다.
+ */
+function allTranslationVarSpecs(): Record<'refund' | 'cleaningClause' | 'cleaningNone' | 'cleaningDeduct', TranslationVarSpec> {
+  const keys = cleaningTranslationKeys()
+  const cleaningWarning = '권장 번역과 다른 문안입니다. 청소비 문장은 그 돈의 성격과 받는 방식을 정하는 자리라 뜻이 어긋나면 퇴실 정산에서 다툼이 됩니다. 권장으로 돌리려면 칸을 비우세요.'
+  return {
+    refund: {
+      name: '환불규정',
+      key: refundTranslationKey(),
+      // 이 줄의 라벨만 종전 그대로다 — 환불은 권장 문안이 8언어 다 있어 화면이 안 바뀐다(무회귀).
+      label: '환불 규정',
+      recommended: RECOMMENDED_REFUND_TRANSLATION,
+      inline: true,
+      warning: '권장 번역과 다른 문안입니다. 환불 규정은 공정거래위원회 기준 문구라 뜻이 어긋나면 분쟁에서 설명 부담이 생깁니다. 권장으로 돌리려면 칸을 비우세요.',
+    },
+    cleaningClause: { name: '청소비조항', key: keys.clause, label: '청소비 조항(있음)', recommended: RECOMMENDED_CLEANING_TRANSLATION.clause, inline: false, warning: cleaningWarning },
+    cleaningNone: { name: '청소비조항', key: keys.none, label: '청소비 조항(없음)', recommended: RECOMMENDED_CLEANING_TRANSLATION.none, inline: false, warning: cleaningWarning },
+    cleaningDeduct: { name: '청소비공제', key: keys.deduct, label: '청소비 공제 문구', recommended: RECOMMENDED_CLEANING_TRANSLATION.deduct, inline: true, warning: cleaningWarning },
+  }
+}
+
+/**
+ * 그 줄이 **번역 완료로 세어지는가** — 진행 계수의 정본이다.
+ *
+ * 값이 있으면 완료다. 값이 없어도 변수 줄은 완료인데, **그 언어의 권장 문안이 있을 때만** 그렇다.
+ * 권장이 없는 변수 줄은 비워 두면 종이에 한국어가 그대로 나가므로 완료가 아니다
+ * (디자이너 차단 2026-09-11 — 종전에는 `kind === 'var'` 를 무조건 완료로 세어, 한국어로 나가는
+ * 청소비 세 문장이 번역 완료로 잡히고 다 채운 언어가 '0줄 남음'이라 거짓을 말했다).
+ *
+ * 해석의 fallbackCount · 피커 진행 · 편집기 계수가 **이 함수 하나**를 본다. 세 곳이 각자 세면
+ * 캡션은 완료라는데 종이에는 원문이 남는 상태가 다시 생긴다.
+ *
+ * 환불 규정은 권장이 7언어 전부 있어 이 규칙에서도 종전과 같은 답이다(무회귀).
+ */
+export function translationLineDone(
+  lang: TranslationLang, line: TranslationSourceLine, value: unknown,
+): boolean {
+  if (typeof value === 'string' && value.trim()) return true
+  if (line.kind !== 'var') return false
+  return !!translationVarSpecByKey(line.text)?.recommended[lang]
+}
+
+/** 열쇠 하나로 그 변수 명세를 찾는다. 저장 병합처럼 템플릿이 없는 자리가 쓴다. */
+export function translationVarSpecByKey(key: string): TranslationVarSpec | undefined {
+  return Object.values(allTranslationVarSpecs()).find(s => s.key === key)
 }
 
 /**
@@ -256,11 +460,14 @@ function refundVarValue(text: string): string {
  * @param refundClauseInContract 환불 조항 자동 표시 토글. 종이가 그 문장을 넣는 조건과
  *   **같은 조건**일 때만 변수 줄이 선다(토글 + 본문에 자리). 조건이 갈리면 종이에 안 실리는
  *   문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.
+ * @param cleaning 청소비 줄의 기준(CleaningVarScope). 편집기는 'property', 계약이 정해진
+ *   자리는 그 계약의 금액, 안 넘기면 청소비 줄이 안 선다.
  */
 export function translationSourceLines(
   template: ContractTemplate,
   addenda?: readonly SubLeaseAddendum[],
   refundClauseInContract?: boolean,
+  cleaning?: CleaningVarScope,
 ): TranslationSourceLine[] {
   const out: TranslationSourceLine[] = []
   const seen = new Set<string>()
@@ -269,6 +476,12 @@ export function translationSourceLines(
     if (!hasTranslatableText(text)) return
     seen.add(text)
     out.push(sectionIndex === undefined ? { kind, text } : { kind, text, sectionIndex })
+  }
+  const pushVar = (spec: TranslationVarSpec) => {
+    if (typeof spec.key !== 'string' || !spec.key.trim() || seen.has(spec.key)) return
+    if (!hasTranslatableText(spec.key)) return
+    seen.add(spec.key)
+    out.push({ kind: 'var', text: spec.key, varName: spec.name })
   }
 
   push('title', template.title)
@@ -288,7 +501,9 @@ export function translationSourceLines(
   push('oath', template.oathText)
   // 변수 줄은 맨 끝이다. 절이 아니라 조항 **안에** 들어가는 값이라 종이 순서에 제 자리가 없고,
   // 절 사이에 끼우면 그 뒤 줄이 밀려 복사·되붙이기의 줄 대조가 흔들린다.
-  if (refundClauseInContract && hasRefundVarSlot(template, addenda)) push('var', refundTranslationKey())
+  // 여럿일 때의 순서도 명세 목록 하나가 정한다 — 두 벌로 세면 복사한 줄 수와 되붙이기가 세는
+  // 순서가 갈려, 번역이 통째로 한 칸씩 밀린 채 종이로 나간다.
+  for (const spec of translationVarSpecs(template, addenda, refundClauseInContract, cleaning)) pushVar(spec)
   return out
 }
 
@@ -423,23 +638,26 @@ export type ResolvedContractTranslation = {
    */
   addenda?: { title: string; items: string[] }[]
   /**
-   * 이 번역본이 조항 안 `{{변수}}` 자리에 덮어 쓸 값. 지금은 환불 규정 하나다.
+   * 이 번역본이 조항 안 `{{변수}}` 자리에 덮어 쓸 값(환불 규정 · 청소비 조항 · 청소비 공제).
    *
    * 본문 컴포넌트가 **종이 vars 위에** 이것을 얹는다 — 안 얹으면 번역본 안에서 그 문단만
-   * 한국어로 남는다. 값은 종이와 같은 모양이라 앞 한 칸이 붙어 있다(refundVarValue).
+   * 한국어로 남는다. 값은 종이와 같은 모양이라 꼬리 줄에는 앞 한 칸이 붙어 있다
+   * (translationVarValue). 값 안의 `{{청소비}}` 같은 자리표시자는 **여전히 치환 전**이다 —
+   * 그리는 쪽이 종이 vars 로 한 번 더 채운다(ContractTranslationBody).
    *
-   * **비면 칸 자체가 없다**(옵셔널). addenda 칸과 같은 규칙이다 — 인쇄 사실 축이 이 객체를
-   * 통비교하는 JSON 이라, 늘 담으면 이 칸을 모르는 옛 박제가 내용 변화 없이 드리프트로 뜬다.
+   * **비면 칸 자체가 없고, 담기는 순서는 TRANSLATION_VAR_NAMES 가 정한다.** addenda 칸과 같은
+   * 규칙이다 — 인쇄 사실 축이 이 객체를 통비교하는 JSON 이라, 늘 담거나 순서가 흔들리면 내용이
+   * 안 바뀐 옛 박제가 통째로 드리프트로 뜬다.
    */
-  vars?: { 환불규정: string }
+  vars?: Partial<Record<TranslationVarName, string>>
   /**
    * 그중 운영자가 **직접 번역한** 변수 이름. 권장 문안을 그대로 쓴 것과 가르는 표식이다.
    *
    * 발급 상세가 이 표식으로 "환불 규정 직접 번역"을 한 줄 덧붙인다 — 나중에 "그 종이의
    * 환불 문구가 왜 공정위 기준과 다른가"를 물을 때 답이 박제 안에 있어야 한다.
-   * 위와 같은 이유로 **비면 칸이 없다.**
+   * 위와 같은 이유로 **비면 칸이 없고** 순서도 TRANSLATION_VAR_NAMES 가 정한다.
    */
-  customVars?: '환불규정'[]
+  customVars?: TranslationVarName[]
   /** 사전에 값이 없어 한국어 원문이 그대로 남은 문자열 수. */
   fallbackCount: number
   /** 번역 대상 문자열 총수. fallbackCount 만으로는 그 종이가 얼마나 번역됐는지 알 수 없다. */
@@ -468,6 +686,7 @@ export function resolveContractTranslation(
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
   refundClauseInContract?: boolean,
+  cleaning?: CleaningVarScope,
 ): ResolvedContractTranslation | null {
   const parsed = parseContractTranslations(raw)
   if (!parsed.enabled) return null
@@ -476,11 +695,12 @@ export function resolveContractTranslation(
 
   const dict = entry.dict
   // 총수·미번역 수는 편집기가 세는 것과 **같은 집합**에서 나온다(translationSourceLines).
-  const lines = translationSourceLines(template, addenda, refundClauseInContract)
+  const lines = translationSourceLines(template, addenda, refundClauseInContract, cleaning)
   let fallbackCount = 0
-  // 변수 줄은 비어 있어도 한국어가 안 남는다 — 권장 번역이 그 자리에 선다. 폴백으로 세면
-  // 다 번역한 종이가 영영 "원문 한 줄 남음"으로 보이고, 그 숫자가 박제에 그대로 얼어붙는다.
-  for (const l of lines) if (l.kind !== 'var' && dict[l.text] === undefined) fallbackCount++
+  // 권장 번역이 있는 변수 줄은 비어 있어도 한국어가 안 남는다 — 그 문안이 자리를 채운다.
+  // 권장이 없는 변수 줄은 반대로 한국어가 그대로 나가므로 폴백으로 센다. 판정은 정본 하나다
+  // (translationLineDone) — 여기서 따로 세면 캡션과 박제의 숫자가 갈린다.
+  for (const l of lines) if (!translationLineDone(lang, l, dict[l.text])) fallbackCount++
 
   // 문자열 치환은 사전 조회 하나뿐이다. {{변수}} 는 원문 모양 그대로 남는다 — 이 함수는
   // 무엇을 보여줄지를 정하고, 변수 값을 넣는 것은 종이를 그리는 쪽의 일이다.
@@ -497,10 +717,24 @@ export function resolveContractTranslation(
   }))
 
   // 변수 줄의 결과. **빈 칸이면 권장 번역이다** — 다른 줄과 규칙이 갈리는 유일한 자리다.
-  // 줄이 안 섰으면(토글 꺼짐·본문에 자리 없음) 종이에도 그 문장이 안 들어가므로 칸도 안 만든다.
-  const refundLine = lines.find(l => l.kind === 'var')
-  const refundSaved = refundLine ? dict[refundLine.text] : undefined
-  const refundText = refundLine ? refundSaved ?? RECOMMENDED_REFUND_TRANSLATION[lang] : undefined
+  // 줄이 안 섰으면(토글 꺼짐·본문에 자리 없음·청소비 기준 미지정) 종이에도 그 문장이 안 들어가므로
+  // 칸도 안 만든다. **권장 문안이 아직 빈 언어도 칸을 안 만든다** — 빈 값을 얹으면 종이의 한국어
+  // 문장을 빈 문자열로 덮어 그 조항이 통째로 사라진다(한국어로 남는 것보다 나쁘다).
+  //
+  // 담는 순서는 TRANSLATION_VAR_NAMES 하나가 정한다. 명세 순서나 Object 삽입 순서에 기대면
+  // 환불 하나만 있는 옛 박제의 JSON 바이트가 언젠가 달라져 전건이 허위 드리프트로 뜬다.
+  const specs = translationVarSpecs(template, addenda, refundClauseInContract, cleaning)
+  const vars: Partial<Record<TranslationVarName, string>> = {}
+  const customVars: TranslationVarName[] = []
+  for (const name of TRANSLATION_VAR_NAMES) {
+    const spec = specs.find(s => s.name === name)
+    if (!spec) continue
+    const saved = dict[spec.key]
+    const text = saved ?? (spec.recommended[lang] || undefined)
+    if (text !== undefined) vars[name] = translationVarValue(spec, text)
+    // 직접 번역일 때만 표식을 남긴다 — 권장을 그대로 쓴 것과 갈라 말해야 나중에 답할 수 있다.
+    if (isCustomVarTranslation(lang, spec, saved)) customVars.push(name)
+  }
 
   return {
     lang,
@@ -509,9 +743,8 @@ export function resolveContractTranslation(
     // 비면 칸을 안 만든다 — 늘 담으면 특약 없는 링크 전건이 허위 드리프트가 된다.
     ...(addendaOut.length ? { addenda: addendaOut } : {}),
     // 실제로 나간 문안을 담는다(권장이든 직접 번역이든). 위와 같은 이유로 없으면 칸도 없다.
-    ...(refundText !== undefined ? { vars: { 환불규정: refundVarValue(refundText) } } : {}),
-    // 직접 번역일 때만 표식을 남긴다 — 권장을 그대로 쓴 것과 갈라 말해야 나중에 답할 수 있다.
-    ...(isCustomRefundTranslation(lang, refundSaved) ? { customVars: ['환불규정' as const] } : {}),
+    ...(Object.keys(vars).length ? { vars } : {}),
+    ...(customVars.length ? { customVars } : {}),
     oathText: tr(template.oathText),
     fallbackCount,
     totalCount: lines.length,
@@ -541,12 +774,23 @@ export function resolveContractTranslationFor(
     rateAddendum?: SubLeaseAddendum | null
     roomScheduleText?: string | null
     roomScheduleAddendum?: SubLeaseAddendum | null
+    /**
+     * 그 계약의 청소비 — **표시값 오버라이드까지 얹은 병합값**이라야 한다(contractLeaseFields).
+     * 종이가 그 값으로 조항을 고르므로(cleaningFeeVars), 여기서 원천을 보면 관 제출용으로 금액을
+     * 고친 계약에서 종이는 '있음' 조항을 찍는데 번역본은 '없음' 조항을 세운다.
+     *
+     * **필수 칸이다.** 옵셔널로 두면 넘기기를 잊은 호출부가 조용히 청소비 줄을 빠뜨려 그 문단만
+     * 한국어로 남고, 그 결손은 아무 소리도 안 낸다. 계약이 없으면 null 이고 그때는 종이도
+     * '청소비 없음' 갈래다(cleaningFeeVars 가 undefined 를 0 으로 읽는 규칙과 같다).
+     */
+    lease: { cleaningFee: number } | null
   },
   lang: TranslationLang | null | undefined,
 ): ResolvedContractTranslation | null {
   if (!lang) return null
   return resolveContractTranslation(
-    stored, d.template, lang, contractAddendaForTranslation(d), d.refundClauseInContract)
+    stored, d.template, lang, contractAddendaForTranslation(d), d.refundClauseInContract,
+    d.lease?.cleaningFee ?? 0)
 }
 
 /**
@@ -627,7 +871,9 @@ export function translationDigest(t: ResolvedContractTranslation | null | undefi
     (t.sections ?? []).map(s => [s.title, s.items]),
     (t.addenda ?? []).map(s => [s.title, s.items]),
     t.oathText,
-    t.vars ? t.vars.환불규정 : null,
+    // 변수 값은 **이름 순서를 못박아** 눕힌다. 객체를 그대로 넣으면 열쇠 순서가 지문에 새어 들어와,
+    // 내용이 같은데도 담는 순서가 다른 쪽에서 멀쩡한 발급이 거절된다(위 '열쇠 순서에 안 기댄다').
+    TRANSLATION_VAR_NAMES.map(n => t.vars?.[n] ?? null),
     t.customVars ?? [],
     t.fallbackCount,
     t.totalCount,
@@ -677,11 +923,18 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
   const addenda = secs(s.addenda)
   // 변수 값·표식도 **얼어 있는 그대로** 읽는다. 지금 권장 문안으로 채우면 그 발급본이 실제로
   // 보여준 문안과 화면이 갈리고, 그 순간 박제는 증거이기를 그만둔다.
+  //
+  // 없는 이름은 칸을 안 만든다. 환불 하나만 얼어 있는 옛 박제는 여기서도 그 하나만 나오고,
+  // 이름 순서를 고정해 채우므로 다시 직렬화해도 바이트가 그대로다(:689 의 addenda 규칙과 같다).
   const varsRaw = (s.vars && typeof s.vars === 'object' && !Array.isArray(s.vars)
-    ? (s.vars as { 환불규정?: unknown }) : null)
-  const refundVar = typeof varsRaw?.환불규정 === 'string' ? varsRaw.환불규정 : undefined
-  const customVars = (Array.isArray(s.customVars) ? s.customVars : [])
-    .filter((x): x is '환불규정' => x === '환불규정')
+    ? (s.vars as Partial<Record<TranslationVarName, unknown>>) : null)
+  const vars: Partial<Record<TranslationVarName, string>> = {}
+  for (const n of TRANSLATION_VAR_NAMES) {
+    const v = varsRaw?.[n]
+    if (typeof v === 'string') vars[n] = v
+  }
+  const frozenCustom = new Set((Array.isArray(s.customVars) ? s.customVars : []) as unknown[])
+  const customVars = TRANSLATION_VAR_NAMES.filter(n => frozenCustom.has(n))
   return {
     lang,
     title: str(s.title),
@@ -689,7 +942,7 @@ export function asResolvedContractTranslation(raw: unknown): ResolvedContractTra
     // 칸이 없던 박제(특약 없는 계약·이 칸 이전의 옛 기록)는 여기서도 칸이 안 생긴다 —
     // 빈 배열을 만들면 그 박제를 다시 직렬화할 때 바이트가 달라진다.
     ...(addenda.length ? { addenda } : {}),
-    ...(refundVar !== undefined ? { vars: { 환불규정: refundVar } } : {}),
+    ...(Object.keys(vars).length ? { vars } : {}),
     ...(customVars.length ? { customVars } : {}),
     oathText: str(s.oathText),
     fallbackCount: cnt(s.fallbackCount),
@@ -736,22 +989,25 @@ export function translationProgress(
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
   refundClauseInContract?: boolean,
-): { total: number; done: number; published: boolean; hasEntry: boolean; refundCustom: boolean } {
+  cleaning?: CleaningVarScope,
+): { total: number; done: number; published: boolean; hasEntry: boolean; customVars: TranslationVarName[] } {
   const entry = parseContractTranslations(raw).langs[lang]
   const dict = entry?.dict ?? {}
-  const lines = translationSourceLines(template, addenda, refundClauseInContract)
+  const lines = translationSourceLines(template, addenda, refundClauseInContract, cleaning)
   let done = 0
-  // 변수 줄은 비어 있어도 번역이 선다(권장 번역). 안 세면 다 번역한 언어가 영영 '29/30' 이다 —
-  // 해석 쪽 fallbackCount 와 같은 규칙이라 캡션과 박제의 숫자가 안 갈린다.
-  for (const l of lines) if (l.kind === 'var' || dict[l.text] !== undefined) done++
-  const refundLine = lines.find(l => l.kind === 'var')
+  // 권장 번역이 있는 변수 줄은 비어 있어도 번역이 선다. 안 세면 다 번역한 언어가 영영 '29/30' 이다.
+  // 권장이 없는 변수 줄은 한국어가 나가므로 안 센다 — 해석 쪽 fallbackCount 와 **같은 정본**이라
+  // 캡션과 박제의 숫자가 안 갈린다.
+  for (const l of lines) if (translationLineDone(lang, l, dict[l.text])) done++
+  const specs = translationVarSpecs(template, addenda, refundClauseInContract, cleaning)
   return {
     total: lines.length,
     done,
     published: entry?.published === true,
     hasEntry: !!entry,
-    // 피커가 "환불 규정 직접 번역"을 캡션에 덧붙이는 근거. 판정은 정본 하나다.
-    refundCustom: !!refundLine && isCustomRefundTranslation(lang, dict[refundLine.text]),
+    // 피커가 "… 직접 번역"을 캡션에 덧붙이는 근거. 판정은 정본 하나이고 순서도 이름 배열이 정한다.
+    customVars: TRANSLATION_VAR_NAMES.filter(n =>
+      specs.some(s => s.name === n && isCustomVarTranslation(lang, s, dict[s.key]))),
   }
 }
 
@@ -767,10 +1023,11 @@ export function orphanTranslationKeys(
   lang: TranslationLang,
   addenda?: readonly SubLeaseAddendum[],
   refundClauseInContract?: boolean,
+  cleaning?: CleaningVarScope,
 ): string[] {
   const entry = parseContractTranslations(raw).langs[lang]
   if (!entry) return []
-  const live = new Set(translationSourceLines(template, addenda, refundClauseInContract).map(l => l.text))
+  const live = new Set(translationSourceLines(template, addenda, refundClauseInContract, cleaning).map(l => l.text))
   return Object.keys(entry.dict).filter(k => !live.has(k))
 }
 
@@ -798,9 +1055,10 @@ export function translationStaleAfterEdit(
   after: ContractTemplate,
   addenda?: readonly SubLeaseAddendum[],
   refundClauseInContract?: boolean,
+  cleaning?: CleaningVarScope,
 ): { langs: number; lines: number } {
-  const beforeLines = translationSourceLines(before, addenda, refundClauseInContract)
-  const afterKeys = new Set(translationSourceLines(after, addenda, refundClauseInContract).map(l => l.text))
+  const beforeLines = translationSourceLines(before, addenda, refundClauseInContract, cleaning)
+  const afterKeys = new Set(translationSourceLines(after, addenda, refundClauseInContract, cleaning).map(l => l.text))
   const parsed = parseContractTranslations(stored)
   const lost = new Set<string>()
   let langs = 0
@@ -860,13 +1118,15 @@ export function mergeTranslationLang(
   const dict: Record<string, string> = { ...prev.dict }
 
   if (patch.dict) {
-    const refundKey = refundTranslationKey()
     for (const [k, v] of Object.entries(patch.dict)) {
       if (typeof k !== 'string' || !k.trim()) continue
       if (typeof v !== 'string' || !v.trim()) { delete dict[k]; continue }
       // 권장 문안과 **같은 값**은 들고 있을 이유가 없다 — 빈 칸이 곧 권장이다. 남겨 두면
       // 나가는 문안은 권장과 똑같은데 '직접 번역' 표식이 서고 경고가 뜬다(사실이 아닌 경고).
-      if (k === refundKey && !isCustomRefundTranslation(lang, v)) { delete dict[k]; continue }
+      // 권장 문안이 아직 빈 줄은 걷지 않는다 — 그 값이 곧 그 언어의 유일한 번역이라, 걷으면
+      // 운영자가 손으로 친 문안이 저장 한 번에 사라진다(isCustomVarTranslation 이 거짓을 답한다).
+      const spec = translationVarSpecByKey(k)
+      if (spec && spec.recommended[lang] && !isCustomVarTranslation(lang, spec, v)) { delete dict[k]; continue }
       dict[k] = v
     }
   }

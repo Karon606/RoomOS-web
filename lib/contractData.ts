@@ -426,6 +426,9 @@ export async function buildContractData(
       refundClauseInContract: body.refundClauseInContract,
       subLeaseAddendum, rateAddendum,
       roomScheduleText: scheduleText, roomScheduleAddendum,
+      // 청소비는 **병합값**이다(fields = contractLeaseFields). 종이가 그 값으로 조항을 고르므로
+      // 원천을 보면 관 제출용으로 금액을 고친 계약에서 종이와 번역본이 다른 조항을 싣는다.
+      lease: fields,
     },
     asTranslationLang(contractTranslationLangFor(tenant, translation.lang)),
   )

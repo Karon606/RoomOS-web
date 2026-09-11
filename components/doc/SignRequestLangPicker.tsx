@@ -20,7 +20,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SIGN_LANGS, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
 import { getContractTranslationSettings } from '@/app/(app)/settings/actions'
 import { getContractTranslationAddenda } from '@/app/contract/[tenantId]/actions'
-import { asTranslationLang, translationProgress } from '@/lib/contractTranslation'
+import { asTranslationLang, translationProgress, TRANSLATION_VAR_LABEL } from '@/lib/contractTranslation'
 
 /** 언어별 캡션. 번역본을 안 쓰는 영업장에서는 통째로 비어 이 피커가 종전과 같은 화면이다. */
 type LangCaptions = Partial<Record<SignLang, string>>
@@ -62,17 +62,24 @@ export function SignRequestLangPicker({ defaultLang, defaultFromView, tenantId, 
           if (!lang) continue   // 한국어는 정본이라 번역 대상이 아니다
           // 분모는 **그 계약에 실릴 것**이다. 서버가 링크 발급과 같은 조립으로 골라 준다.
           // 환불 조항 토글도 같은 출구에서 온다 — 못 정했으면 영업장 값으로 떨어진다.
+          // 청소비도 같은 규칙이다 — 그 계약의 금액이 있으면 그 갈래, 없으면(못 읽었으면)
+          // 영업장 기준 두 갈래로 떨어진다. 캡션이 실제보다 미완으로 보일 뿐 거짓은 아니다.
           const p = translationProgress(r.translations, r.template, lang,
-            mine?.addenda ?? r.addenda, mine?.refundClauseInContract ?? r.refundClauseInContract)
+            mine?.addenda ?? r.addenda, mine?.refundClauseInContract ?? r.refundClauseInContract,
+            mine?.cleaningFee ?? 'property')
           // 세 상태를 갈라 말한다. '비공개'와 '없음'을 한 문장으로 묶으면, 다 번역해 두고
           // 공개만 안 켠 언어에 대해 화면이 "없다"고 거짓을 말한다.
           const head = !p.hasEntry ? '번역본 없음'
             : p.published ? `번역 ${p.done}/${p.total}`
             : `비공개 · 번역 ${p.done}/${p.total}`
-          // 환불 규정을 직접 번역한 언어면 그 사실을 덧붙인다(운영자 오더 2026-09-08).
-          // 공정거래위원회 기준 문구라 권장 번역이 따로 있고, 다르게 나가는 것을 **막지는 않되**
-          // 보내기 직전 화면에서 한 번은 보이게 한다. 번역본이 없는 언어에는 덧붙일 말이 없다.
-          next[l] = p.hasEntry && p.refundCustom ? `${head} · 환불 규정 직접 번역` : head
+          // 권장 문안이 따로 있는 줄을 직접 번역한 언어면 그 사실을 덧붙인다(운영자 오더 2026-09-08).
+          // 기준 문구가 있는 자리라 다르게 나가는 것을 **막지는 않되** 보내기 직전 화면에서 한 번은
+          // 보이게 한다. 번역본이 없는 언어에는 덧붙일 말이 없다. 이름은 정본 한 벌을 쓰고 중복은
+          // 접는다 — 청소비 두 줄이 같은 이름이라 안 접으면 '청소비 · 청소비'가 된다.
+          const customNames = [...new Set(p.customVars.map(v => TRANSLATION_VAR_LABEL[v]))]
+          next[l] = p.hasEntry && customNames.length > 0
+            ? `${head} · ${customNames.join(' · ')} 직접 번역`
+            : head
         }
         setCaptions(next)
       })

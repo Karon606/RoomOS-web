@@ -452,10 +452,10 @@ function fnBody(src, at) {
   const src = read(f)
   const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
   if (card.length >= 1000) {
-    if (!/translationSourceLines\(template, addenda, refundClauseInContract\)/.test(card)) {
-      violations.push(`${f} — ⓨ 편집기가 가변 절·환불 조항 토글을 분모에 안 넣는다. 종이에 실리는데 번역할 칸이 아예 안 선다.`)
+    if (!/translationSourceLines\(template, addenda, refundClauseInContract, 'property'\)/.test(card)) {
+      violations.push(`${f} — ⓨ 편집기가 가변 절·환불 조항 토글·청소비 갈래를 분모에 안 넣는다. 종이에 실리는데 번역할 칸이 아예 안 선다. 청소비는 **영업장 전부**('property')라야 한다 — 한 갈래로 좁히면 다른 갈래 계약의 조항이 영영 번역되지 않는다.`)
     }
-    if (!/orphanTranslationKeys\(stored, template, lang, addenda, refundClauseInContract\)/.test(card)) {
+    if (!/orphanTranslationKeys\(stored, template, lang, addenda, refundClauseInContract, 'property'\)/.test(card)) {
       violations.push(`${f} — ⓨ 고아 판정이 분모와 다른 집합을 본다. 특약 번역 전건이 고아로 잡힌다.`)
     }
     // 자리표시자 경고는 저장·되붙이기와 **같은 함수**로 낸다. 손으로 세면 세 곳의 답이 갈린다.
@@ -469,7 +469,7 @@ function fnBody(src, at) {
   const src = read(f)
   // 계약 기준(mine)이 있으면 그것, 없으면 영업장 기준으로 떨어진다. 두 축(가변 절·환불 조항
   // 토글) 다 그렇게 떨어져야 한다 — 한 축만 좁히면 분모가 두 기준을 섞는다.
-  if (!/translationProgress\(r\.translations, r\.template, lang,\s*mine\?\.addenda \?\? r\.addenda, mine\?\.refundClauseInContract \?\? r\.refundClauseInContract\)/.test(src)) {
+  if (!/translationProgress\(r\.translations, r\.template, lang,\s*mine\?\.addenda \?\? r\.addenda, mine\?\.refundClauseInContract \?\? r\.refundClauseInContract,\s*mine\?\.cleaningFee \?\? 'property'\)/.test(src)) {
     violations.push(`${f} — ⓨ 피커 캡션이 가변 절·환불 조항 토글을 분모에 안 넣는다. 다 번역한 언어가 영영 미완으로 보인다.`)
   }
   if (!/getContractTranslationAddenda\(tenantId, leaseTermId\)/.test(src)) {
@@ -543,9 +543,10 @@ function fnBody(src, at) {
     violations.push(`${f} — ② 발급 상세가 치환 재료를 지금 다시 만든다. 박제는 얼어 있는 값만 보여야 한다.`)
   }
   // 이름만 있는지 보지 않는다 — 표식을 **실제로 읽어 그 언어의 줄에 붙이는지**를 본다.
-  if (!/Array\.isArray\(t\.customVars\) && t\.customVars\.includes\('환불규정'\)/.test(src)
-    || !/환불 규정 직접 번역/.test(src)) {
-    violations.push(`${f} — ③ 발급 상세가 '환불 규정 직접 번역' 표식을 안 읽는다. 왜 공정위 기준과 다른 문구가 나갔는지 답할 자리가 없다.`)
+  // 순서는 이름 배열이 정하고 이름은 정본 한 벌에서 온다(피커 캡션과 같은 문법).
+  if (!/TRANSLATION_VAR_NAMES\.filter\(n => frozen\.has\(n\)\)\.map\(n => TRANSLATION_VAR_LABEL\[n\]\)/.test(src)
+    || !/\$\{customNames\.join\(' · '\)\} 직접 번역/.test(src)) {
+    violations.push(`${f} — ③ 발급 상세가 '… 직접 번역' 표식을 안 읽는다. 왜 기준 문구와 다른 문안이 나갔는지 답할 자리가 없다.`)
   }
 }
 
@@ -557,17 +558,26 @@ function fnBody(src, at) {
   if (!/export function refundTranslationKey\(\): string \{\s*return buildRefundClause\(\)/.test(src)) {
     violations.push(`${f} — ③ 변수 줄의 열쇠가 종이의 정본 문장이 아니다. 문구가 바뀌면 저장된 번역이 통째로 고아가 된다.`)
   }
+  // 변수 줄은 **명세 목록 하나**를 돌며 선다. 이름별 분기를 손으로 적으면 줄이 늘 때마다
+  // 조건이 늘고, 언젠가 한 줄만 조건이 갈려 종이와 다른 칸이 선다.
+  if (!/for \(const spec of translationVarSpecs\(template, addenda, refundClauseInContract, cleaning\)\) pushVar\(spec\)/.test(src)) {
+    violations.push(`${f} — ③ 변수 줄이 명세 목록으로 안 돈다. 이름마다 손 분기를 두면 종이와 같은 조건이라는 보장이 한 줄씩 흩어진다.`)
+  }
   // 조건이 둘이다 — 토글과 본문의 자리. 하나만 보면 종이와 갈린다.
-  if (!/if \(refundClauseInContract && hasRefundVarSlot\(template, addenda\)\) push\('var', refundTranslationKey\(\)\)/.test(src)) {
-    violations.push(`${f} — ③ 변수 줄이 종이와 같은 조건으로 안 선다. 종이에 안 실리는 문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.`)
+  if (!/if \(refundClauseInContract && templateHasPlaceholder\(template, addenda, REFUND_VAR_PLACEHOLDER\)\)/.test(src)) {
+    violations.push(`${f} — ③ 환불 변수 줄이 종이와 같은 조건으로 안 선다. 종이에 안 실리는 문장을 번역하라고 칸이 서거나, 실리는데 칸이 안 선다.`)
   }
   // 빈 칸 = 권장. 이 폴백이 없으면 이 줄만 한국어 원문으로 남는다.
-  if (!/dict\[refundLine\.text\] : undefined[\s\S]{0,200}RECOMMENDED_REFUND_TRANSLATION\[lang\]/.test(src)) {
-    violations.push(`${f} — ③ 빈 칸일 때 권장 번역으로 안 떨어진다. 유도하려고 만든 줄이 정작 아무것도 안 내보낸다.`)
+  // **권장이 빈 언어는 칸을 안 만든다** — 빈 값을 얹으면 종이의 한국어 문장을 빈 문자열로 덮어
+  // 그 조항이 통째로 사라진다(한국어로 남는 것보다 나쁘다).
+  if (!/const text = saved \?\? \(spec\.recommended\[lang\] \|\| undefined\)/.test(src)
+    || !/if \(text !== undefined\) vars\[name\] = translationVarValue\(spec, text\)/.test(src)) {
+    violations.push(`${f} — ③ 빈 칸일 때 권장 번역으로 안 떨어지거나, 권장이 빈 언어에서 빈 값을 얹는다. 앞은 유도하려고 만든 줄이 아무것도 안 내보내는 것이고, 뒤는 종이의 한국어 조항을 빈 문자열로 지우는 것이다.`)
   }
   // 권장과 같은 값은 저장에서 걷는다 — 안 걷으면 사실이 아닌 '직접 번역' 경고가 계속 선다.
-  if (!/if \(k === refundKey && !isCustomRefundTranslation\(lang, v\)\) \{ delete dict\[k\]/.test(src)) {
-    violations.push(`${f} — ③ 권장과 같은 값을 저장에서 안 비운다. 나가는 문안은 권장과 같은데 '직접 번역' 표식이 서고 경고가 뜬다.`)
+  // 권장이 빈 줄은 걷지 않는다 — 그 값이 그 언어의 유일한 번역이라 걷으면 손문안이 사라진다.
+  if (!/const spec = translationVarSpecByKey\(k\)\s*\n\s*if \(spec && spec\.recommended\[lang\] && !isCustomVarTranslation\(lang, spec, v\)\) \{ delete dict\[k\]/.test(src)) {
+    violations.push(`${f} — ③ 권장과 같은 값을 저장에서 안 비우거나, 권장이 없는 줄의 손문안까지 비운다. 앞은 사실이 아닌 '직접 번역' 경고를 남기고, 뒤는 운영자가 친 문안을 저장 한 번에 지운다.`)
   }
   // 8언어 전량 선언이 누락 감지망이다(Partial 금지 — TRANSLATION_NOTICE 와 같은 규칙).
   if (!/RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string>/.test(src)) {
@@ -579,26 +589,61 @@ function fnBody(src, at) {
   const src = read(f)
   const card = fnBody(src, src.indexOf('function ContractTranslationCard('))
   if (card.length >= 1000) {
-    // 미리 채우면 검토 없이 저장된다(운영자 오더) — placeholder 로만 보인다.
-    if (!/placeholder=\{l\.kind === 'var'[\s\S]{0,120}RECOMMENDED_REFUND_TRANSLATION\[lang\]/.test(card)) {
-      violations.push(`${f} — ③ 권장 전문을 placeholder 로 안 보인다. 비워 둔 칸이 무엇을 내보내는지 화면에서 읽을 수 없다.`)
+    // 명세를 **실제로 계산하는지**부터 본다. 아래 검사들은 전부 '그 문자열이 소스에 있는가'라,
+    // 호출만 지우고 빈 배열을 두면(import 는 남겨 둔 채) 전부 통과하면서 권장 문안·경고가
+    // 조용히 사라진다 — 2026-09-11 역주입 ⑤ 로 실제로 뚫렸다(체크리스트 F 가 경고한 수법).
+    // 한 정규식으로 **이어서** 본다. 따로 찾으면 같은 파일 다른 자리의 호출이 대신 걸린다.
+    if (!/const varSpecs = useMemo\(\s*\n?\s*\(\) => \(template \? translationVarSpecs\(template, addenda, refundClauseInContract, 'property'\) : \[\]\),/.test(card)) {
+      violations.push(`${f} — ③ 편집기가 변수 줄 명세를 정본으로 안 만든다(또는 영업장 기준이 아니다). 권장 문안·경고·되돌리기가 한꺼번에 조용히 사라진다.`)
     }
-    if (/setDraft\(p => \(\{ \.\.\.p, \[refundKey\]: RECOMMENDED_REFUND_TRANSLATION/.test(card)) {
+    // 줄마다 **제 명세**를 찾아 쓴다. 이름으로 문안을 고르면 줄이 늘 때마다 분기가 늘고,
+    // 언젠가 청소비 칸에 환불 권장 번역이 선다.
+    if (!/const spec = l\.kind === 'var' \? varSpecs\.find\(s => s\.key === l\.text\) : undefined/.test(card)
+      || !/const recommended = spec\?\.recommended\[lang\] \?\? ''/.test(card)) {
+      violations.push(`${f} — ③ 줄이 제 명세를 안 찾는다. 권장 문안·경고가 다른 줄의 것으로 서거나 아예 안 선다.`)
+    }
+    // 미리 채우면 검토 없이 저장된다(운영자 오더) — placeholder 로만 보인다.
+    // **그 줄의 권장 문안이라야 한다.** 변수 줄이 여럿인데 한 문안을 쓰면 청소비 칸에 환불
+    // 권장 번역이 보이고, 운영자는 그것을 지우거나 그대로 저장한다.
+    if (!/placeholder=\{recommended\s*\n?\s*\|\| \(l\.kind === 'var' \? '비워 두면 이 줄은 한국어 원문 그대로 나갑니다\.' : '비워 두면 이 줄은 한국어 원문 그대로 보입니다\.'\)\}/.test(card)) {
+      violations.push(`${f} — ③ 그 줄의 권장 전문을 placeholder 로 안 보인다. 비워 둔 칸이 무엇을 내보내는지 화면에서 읽을 수 없거나, 다른 줄의 문안이 보인다.`)
+    }
+    // 라벨이 갈래를 가르고, `· 권장 번역 있음` 은 **그 언어에 권장이 있을 때만** 붙는다.
+    // 무조건 붙이면 바로 아래 캡션의 '권장 번역은 아직 없습니다' 와 한 줄 사이로 모순된다
+    // (디자이너 차단 2026-09-11). 청소비 세 줄이 같은 라벨로 서는 문제도 여기서 함께 풀린다.
+    if (!/return recommended \? `\$\{spec\.label\} · \$\{TRANSLATION_KIND_LABEL\.var\}` : spec\.label/.test(src)) {
+      violations.push(`${f} — A 변수 줄 라벨이 갈래를 안 가르거나, 권장이 없는 줄에도 '권장 번역 있음'을 붙인다. 라벨과 바로 아래 캡션이 서로 다른 말을 한다.`)
+    }
+    // 금액 캡션의 조건은 일반(translationPlaceholders)인데 문안만 한 이름으로 박으면, 다른
+    // 자리표시자를 품은 줄에서 화면이 없는 이름을 말한다.
+    if (!/\{translationPlaceholders\(l\.text\)\.join\(' · '\)\} 자리에 금액이 들어갑니다/.test(card)) {
+      violations.push(`${f} — 금액 캡션이 그 줄의 실제 자리표시자를 안 말한다. 조건은 일반인데 문안만 고정이면 다른 표시를 품은 줄에서 거짓을 말한다.`)
+    }
+    // 계수는 정본 하나다. 여기서 손으로 세면 화면은 '0줄 남음'인데 종이에 한국어가 남는다.
+    if (!/const translated = lines\.filter\(l => translationLineDone\(lang, l, draft\[l\.text\]\)\)\.length/.test(card)) {
+      violations.push(`${f} — B 편집기 계수가 정본(translationLineDone)을 안 쓴다. 권장 없는 변수 줄이 완료로 잡혀 다 채운 언어가 거짓으로 100% 가 된다.`)
+    }
+    if (/setDraft\(p => \(\{ \.\.\.p, \[[^\]]+\]: (RECOMMENDED_|spec\.recommended)/.test(card)) {
       violations.push(`${f} — ③ 편집기가 권장 문안을 칸에 미리 채운다. 검토 없이 저장되는 길이라 운영자 오더로 금지된 방식이다.`)
     }
     // '빈 칸 = 권장'을 그 칸 아래에서 말한다 — 다른 줄은 '빈 칸 = 원문'이라 규칙이 갈린다.
+    // 권장이 아직 없는 언어에는 **그 사실**을 말한다. 같은 문장을 쓰면 화면이 거짓을 말한다.
     if (!/비워 두면 권장 번역이 쓰입니다/.test(card)) {
       violations.push(`${f} — ③ '빈 칸 = 권장'을 화면이 말하지 않는다. 다른 줄과 규칙이 갈리는데 같은 모양의 칸이라 운영자가 미번역으로 읽는다.`)
     }
-    // 경고는 알리기만 한다. 저장을 막거나 확인창을 세우면 운영자의 방식을 앱이 가로막는다.
-    if (!/refundCustom &&/.test(card)) {
-      violations.push(`${f} — ③ 직접 번역 경고가 칸 옆에 안 선다. 권장과 다른 문안이 아무 말 없이 종이로 나간다.`)
+    if (!/recommended\s*\n?\s*\? '비워 두면 권장 번역이 쓰입니다[\s\S]{0,200}권장 번역은 아직 없습니다/.test(card)) {
+      violations.push(`${f} — ③ 권장 문안이 아직 없는 언어에도 '비워 두면 권장 번역이 쓰입니다'라고 말한다. 비우면 한국어가 남는데 번역이 나간다고 거짓을 말하는 것이다.`)
     }
-    if (/refundCustom[\s\S]{0,200}confirmDialog|disabled=\{[^}]*refundCustom/.test(card)) {
+    // 경고는 알리기만 한다. 저장을 막거나 확인창을 세우면 운영자의 방식을 앱이 가로막는다.
+    // 문안도 **그 줄의 것**이라야 한다 — 청소비 칸에 공정위 기준 설명이 서면 이유가 거짓이다.
+    if (!/customVarKeys\.has\(l\.text\) &&/.test(card) || !/\{spec\.warning\}/.test(card)) {
+      violations.push(`${f} — ③ 직접 번역 경고가 칸 옆에 안 서거나 그 줄의 이유를 안 말한다. 권장과 다른 문안이 아무 말 없이 종이로 나간다.`)
+    }
+    if (/customVarKeys[\s\S]{0,200}confirmDialog|disabled=\{[^}]*customVarKeys/.test(card)) {
       violations.push(`${f} — ③ 경고가 확인창을 세우거나 저장을 막는다. 운영자의 방식이 있을 수 있어 유도만 한다(막지 않는다).`)
     }
     // 화면과 서버가 같은 정본으로 판정해야 저장 뒤에도 '저장 안 함'이 안 남는다.
-    if (!/isCustomRefundTranslation\(lang, v\)/.test(card)) {
+    if (!/const spec = translationVarSpecByKey\(k\)\s*\n\s*return !\(spec && spec\.recommended\[lang\] && !isCustomVarTranslation\(lang, spec, v\)\)/.test(card)) {
       violations.push(`${f} — ③ 화면 저장본이 서버 병합과 다른 규칙으로 칸을 걷는다. 저장 직후에도 '저장하지 않은 변경'이 남는다.`)
     }
   }
@@ -606,8 +651,11 @@ function fnBody(src, at) {
 {
   const f = 'components/doc/SignRequestLangPicker.tsx'
   const src = read(f)
-  if (!/refundCustom \? `\$\{head\} · 환불 규정 직접 번역`/.test(src)) {
-    violations.push(`${f} — ③ 피커 캡션이 '환불 규정 직접 번역'을 안 덧붙인다. 보내기 직전에 그 사실을 볼 자리가 없다.`)
+  // 이름은 정본 한 벌(TRANSLATION_VAR_LABEL)에서 오고 중복은 접는다 — 청소비 두 줄이 같은
+  // 이름이라 안 접으면 '청소비 · 청소비 직접 번역'이 된다.
+  if (!/const customNames = \[\.\.\.new Set\(p\.customVars\.map\(v => TRANSLATION_VAR_LABEL\[v\]\)\)\]/.test(src)
+    || !/\$\{customNames\.join\(' · '\)\} 직접 번역/.test(src)) {
+    violations.push(`${f} — ③ 피커 캡션이 '… 직접 번역'을 정본 이름으로 안 덧붙인다. 보내기 직전에 그 사실을 볼 자리가 없거나, 같은 이름이 두 번 선다.`)
   }
 }
 
@@ -823,7 +871,7 @@ function fnBody(src, at) {
       violations.push(`${f} — ㉵ 다시 읽기가 편집 중인 언어·입력칸을 덮는다. 본문 저장이 운영자가 치던 번역을 지운다.`)
     }
     // 원문 폴백이 생긴 언어를 한자리에서 말한다. 계수는 해석·피커와 같은 정본이다.
-    if (!/translationProgress\(stored, template, l, addenda, refundClauseInContract\)/.test(card)) {
+    if (!/translationProgress\(stored, template, l, addenda, refundClauseInContract, 'property'\)/.test(card)) {
       violations.push(`${f} — ㉵ 언어별 원문 폴백을 정본으로 안 센다. 변수 줄을 따로 세면 다 채운 언어가 영영 미완으로 보인다.`)
     }
     if (!/fallbackLangs\.length > 0 &&/.test(card) || !/--warning-fg/.test(card)) {
@@ -968,9 +1016,82 @@ function fnBody(src, at) {
   }
 }
 
+// ── 9단계 배선(청소비 변수 줄 · 치환 두 겹) ─────────────────────────
+//
+//   ㉼ 청소비 열쇠는 **치환 전 문안**이다. 종이가 쓰는 완성 문장을 열쇠로 삼으면 금액이 다른
+//     계약에서 그 사전이 한 번도 안 맞아, 다 번역한 영업장에서도 그 조항만 한국어로 남는다.
+//     그리고 종이 문장과 열쇠가 **같은 상수 하나**에서 나와야 한다 — 두 벌이면 문안을 고칠 때
+//     종이만 바뀌고 사전은 옛 문장에 묶인 채 번역이 통째로 고아가 된다.
+//   ㉽ 편집기가 **줄 셋을 세운다**(있음 · 없음 · 공제 꼬리). 청소비는 계약별이라 한 영업장에
+//     두 갈래가 실제로 공존하고, 한 갈래만 세우면 다른 갈래 계약이 영영 번역되지 않는다.
+//   ㉾ 번역본 본문의 치환이 **두 겹**이다. 주입한 값 안의 자리표시자를 종이 vars 로 먼저 채운
+//     뒤 덮어야 한다. 한 패스면 번역문이 지킨 `{{청소비}}` 가 두 번째 패스를 못 만나 글자
+//     그대로 화면에 찍힌다(2026-09-11 봉합 — 환불은 값에 자리표시자가 없어 안 드러났을 뿐이다).
+{
+  const f = 'lib/contract.ts'
+  const src = read(f)
+  // 상수가 자리표시자를 품은 그대로여야 한다. 금액을 박아 두면 그 순간 계약별 열쇠가 된다.
+  if (!/clause: '\[청소비\] 청소비 \{\{청소비\}\}은/.test(src) || !/deduct: '\(보증금 내 청소비 \{\{청소비\}\} 별도 공제\)'/.test(src)) {
+    violations.push(`${f} — ㉼ 청소비 치환 전 문안에 금액 자리(\`{{청소비}}\`)가 없다. 열쇠가 계약별로 갈려 그 사전은 어느 계약에서도 안 맞는다.`)
+  }
+  // 종이 문장이 그 상수에서 나온다 — 문자열을 다시 적으면 두 벌이 되어 언젠가 갈린다.
+  // fnBody 도 최상위 `}` 찾기도 못 쓴다 — 이 함수는 반환 타입 주석이 `{` 로 열리고 `\n} {` 로
+  // 닫혀, 둘 다 그 한 줄에서 멈춘다. 짧은 함수라 선언 자리부터 넉넉히 잘라 본다.
+  const varsAt = src.indexOf('export function cleaningFeeVars')
+  const vars = varsAt < 0 ? '' : src.slice(varsAt, varsAt + 1200)
+  if (vars.length < 100) violations.push(`${f} — cleaningFeeVars 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else if (!/청소비조항: CLEANING_FEE_SOURCE\.none/.test(vars)
+    || !/청소비조항: fill\(CLEANING_FEE_SOURCE\.clause\)/.test(vars)
+    || !/청소비공제: ` \$\{fill\(CLEANING_FEE_SOURCE\.deduct\)\}`/.test(vars)) {
+    violations.push(`${f} — ㉼ 종이 문장이 치환 전 문안 정본에서 안 나온다. 두 벌이 되면 문안을 고칠 때 종이만 바뀌고 저장된 번역이 통째로 고아가 된다.`)
+  }
+}
+{
+  const f = 'lib/contractTranslation.ts'
+  const src = read(f)
+  // 열쇠는 lib/contract 의 상수 그대로다. 여기서 문자열을 다시 적으면 사본이 하나 더 선다.
+  if (!/return \{ clause: CLEANING_FEE_SOURCE\.clause, none: CLEANING_FEE_SOURCE\.none, deduct: CLEANING_FEE_SOURCE\.deduct \}/.test(src)) {
+    violations.push(`${f} — ㉼ 청소비 열쇠가 종이의 정본 상수가 아니다. 문구가 바뀌면 저장된 번역이 통째로 고아가 된다.`)
+  }
+  // 해석 헬퍼는 **그 계약의 금액**을 넘긴다. 편집기 기준('property')을 넘기면 두 갈래가 다 서고
+  // 앞선 갈래가 이겨, 청소비 0원 계약의 번역본에 '청소비 20,000원은…' 조항이 실린다
+  // (2026-09-11 역주입 ⑥ 으로 실제로 뚫렸다). 한 정규식으로 이어서 본다.
+  if (!/return resolveContractTranslation\(\s*\n?\s*stored, d\.template, lang, contractAddendaForTranslation\(d\), d\.refundClauseInContract,\s*\n?\s*d\.lease\?\.cleaningFee \?\? 0\)/.test(src)) {
+    violations.push(`${f} — ㉽ 해석 정본 헬퍼가 그 계약의 청소비를 안 넘긴다. 편집기 기준이 들어가면 종이와 다른 갈래의 조항이 번역본에 실린다.`)
+  }
+  // 줄 셋 — 있음·없음·공제 꼬리. 공제는 **있음 갈래에만** 선다(없음 갈래의 종이 값은 빈 문자열).
+  const specs = fnBody(src, src.indexOf('export function translationVarSpecs'))
+  if (specs.length < 200) violations.push(`${f} — translationVarSpecs 본문을 못 떴다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  else {
+    if (!/if \(paid\) out\.push\(all\.cleaningClause\)/.test(specs)
+      || !/if \(everyBranch \|\| cleaning <= 0\) out\.push\(all\.cleaningNone\)/.test(specs)) {
+      violations.push(`${f} — ㉽ 청소비 조항 두 갈래가 안 선다. 영업장 편집기는 둘 다, 계약은 그 계약 갈래만이라야 종이와 안 갈린다.`)
+    }
+    if (!/if \(paid && templateHasPlaceholder\(template, addenda, CLEANING_DEDUCT_PLACEHOLDER\)\) \{\s*\n\s*out\.push\(all\.cleaningDeduct\)/.test(specs)) {
+      violations.push(`${f} — ㉽ 공제 꼬리가 '있음 갈래 + 본문에 자리' 조건으로 안 선다. 종이에 아무것도 안 나가는 문장을 번역하라고 칸이 서거나, 나가는데 칸이 안 선다.`)
+    }
+    // 본문에 자리가 없으면 종이에 안 들어간다 — 조건을 빼면 그 영업장에 헛칸이 선다.
+    if (!/templateHasPlaceholder\(template, addenda, CLEANING_CLAUSE_PLACEHOLDER\)/.test(specs)) {
+      violations.push(`${f} — ㉽ 청소비 조항 줄이 본문의 자리를 안 본다. 그 조항을 지운 영업장에 번역할 칸이 선다.`)
+    }
+  }
+}
+{
+  const f = 'components/doc/ContractTranslationView.tsx'
+  const src = read(f)
+  // 두 겹 치환. 주입값을 **먼저** 종이 vars 로 채우고 그 다음에 덮는다. 순서를 뒤집으면
+  // 종이의 한국어 문장이 번역문을 도로 덮는다.
+  if (!/for \(const \[k, v\] of Object\.entries\(translation\.vars \?\? \{\}\)\) \{\s*\n\s*if \(typeof v === 'string'\) injected\[k\] = renderContractText\(v, paperVars\)/.test(src)) {
+    violations.push(`${f} — ㉾ 주입값 안의 자리표시자를 종이 vars 로 안 채운다. 치환이 한 패스라 번역문이 지킨 {{청소비}} 가 글자 그대로 찍힌다.`)
+  }
+  if (!/const renderVars = vars \|\| translation\.vars \? \{ \.\.\.paperVars, \.\.\.injected \} : null/.test(src)) {
+    violations.push(`${f} — ㉾ 번역본 값이 종이 값을 안 덮거나, 종이 값이 나중에 얹혀 번역문을 도로 덮는다. 다 번역한 번역본에서 그 문단만 한국어로 남는다.`)
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림 · 피커 기본값 이어받기 · 발급 직접 전달 0 · 기본값 캡션 · 설정 미리보기 정본 · 미리보기 vars 0)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션 · 왕복 정본 · 손 파싱 0 · 되붙이기 저장 0 · 고아 삭제 0 · 카드 치환 · 절 번호 정본 · 종이 vars · 계약분 특약 · 저장 거부 · 분모 둘 · 박제 vars 조건부 · facts 무접촉 · 조판 정본 · 옛 발급본 안내 · 변수 줄 조건 · 빈 칸=권장 · 미리채움 0 · 경고 비차단 · 페이지 lang · 옵션 옵트인 · 국적 기본값 · 해석 헬퍼 단일 · 언어 코드만 · 지문 게이트 · 대면 박제 · 툴바 셀렉트 · 본문 저장 알림 · 피커 기본값 이어받기 · 발급 직접 전달 0 · 기본값 캡션 · 설정 미리보기 정본 · 미리보기 vars 0 · 청소비 열쇠 치환 전 · 청소비 줄 셋 · 치환 두 겹)')

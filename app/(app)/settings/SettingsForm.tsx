@@ -50,9 +50,10 @@ import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
   translationCopyLine, translationCopyText, applyTranslationPaste,
   translationPlaceholderMisses, translationPlaceholderMessage, translationProgress,
-  RECOMMENDED_REFUND_TRANSLATION, isCustomRefundTranslation, refundTranslationKey,
+  translationPlaceholders,
+  translationVarSpecs, translationVarSpecByKey, isCustomVarTranslation, translationLineDone,
   resolveContractTranslation,
-  type TranslationLang, type TranslationLineKind, type ContractTranslations,
+  type TranslationLang, type TranslationLineKind, type TranslationVarSpec, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
@@ -3104,13 +3105,31 @@ function SignDocumentsCard({ initial }: { initial: SignDocument[] }) {
  * 'var' 라벨만 규칙을 함께 적는다. 다른 넷은 **빈 칸 = 한국어 원문**인데 이 줄만
  * **빈 칸 = 권장 번역**이라, 같은 모양의 칸이 다르게 동작한다. 라벨이 그것을 말하지 않으면
  * 운영자는 다른 줄과 같은 줄로 읽고 빈 칸을 '미번역'으로 센다.
+ *
+ * 'var' 값은 자리를 지키는 껍데기다 — 변수 줄이 여럿이 된 뒤로는 그 줄의 변수 이름이 앞에 서므로
+ * (translationVarLabel) 이 문자열이 화면에 그대로 나오지 않는다.
  */
 const TRANSLATION_KIND_LABEL: Record<TranslationLineKind, string> = {
   title: '계약서 제목',
   sectionTitle: '절 제목',
   item: '조항',
   oath: '서약문',
-  var: '환불 규정 · 권장 번역 있음',
+  var: '권장 번역 있음',
+}
+
+/**
+ * 변수 줄의 라벨 — **무엇의 변수인지**가 앞에 서고, 권장 문안이 실제로 있을 때만 그 말을 붙인다.
+ *
+ * 줄이 하나뿐일 때는 상수 한 줄로 충분했다. 청소비까지 서면서 같은 모양의 칸이 셋 더 생겼고,
+ * 이름이 없으면 운영자는 어느 칸이 무엇인지 원문을 다 읽어야 안다. 갈래(있음·없음)는 명세가
+ * 들고 있다(TranslationVarSpec.label).
+ *
+ * **`· 권장 번역 있음` 은 그 언어에 권장이 있을 때만 붙는다**(디자이너 차단 2026-09-11).
+ * 종전에는 무조건 붙어서, 바로 아래 캡션의 '권장 번역은 아직 없습니다' 와 한 줄 사이로 모순됐다.
+ */
+function translationVarLabel(l: { kind: TranslationLineKind }, spec: TranslationVarSpec | undefined, recommended: string): string {
+  if (!spec) return TRANSLATION_KIND_LABEL[l.kind]
+  return recommended ? `${spec.label} · ${TRANSLATION_KIND_LABEL.var}` : spec.label
 }
 
 /**
@@ -3176,23 +3195,35 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
   // 본문이 저장될 때마다 분모(번역 대상 줄)와 고아가 바뀐다. 첫 렌더는 위 효과가 이미 읽었다.
   useEffect(() => { if (reloadKey > 0) load(false) }, [reloadKey, load])
 
+  // 청소비 줄은 **영업장 전부**('property')로 센다 — 청소비는 계약별이라 한 영업장에 0원 계약과
+  // 유료 계약이 함께 산다(실측 41건 중 29건 0원). 여기서 한 갈래로 좁히면 다른 갈래 계약의
+  // 조항은 칸조차 안 서서 영영 번역되지 않는다. 가변 절을 영업장 기준으로 넘기는 것과 같은 규칙이다.
   const lines = useMemo(
-    () => (template ? translationSourceLines(template, addenda, refundClauseInContract) : []),
+    () => (template ? translationSourceLines(template, addenda, refundClauseInContract, 'property') : []),
+    [template, addenda, refundClauseInContract])
+  // 줄마다 제 명세(권장 문안·경고 문안)를 찾는다. 화면이 변수 이름으로 문안을 고르면 줄이
+  // 늘 때마다 분기가 늘고, 언젠가 청소비 칸에 환불 권장 문안이 선다.
+  const varSpecs = useMemo(
+    () => (template ? translationVarSpecs(template, addenda, refundClauseInContract, 'property') : []),
     [template, addenda, refundClauseInContract])
   // 열쇠와 그 번역을 함께 쥔다 — 목록이 "어떤 번역이 고아인지"를 보여주려면 둘 다 있어야 한다.
   // 고아 판정도 **같은 집합**을 본다. 안 맞추면 특약 번역이 전부 고아로 잡힌다.
   const orphans = useMemo(() => {
     if (!template) return []
     const dict = stored.langs[lang]?.dict ?? {}
-    return orphanTranslationKeys(stored, template, lang, addenda, refundClauseInContract)
+    return orphanTranslationKeys(stored, template, lang, addenda, refundClauseInContract, 'property')
       .map(k => ({ key: k, text: dict[k] ?? '' }))
   }, [template, addenda, refundClauseInContract, stored, lang])
-  // 변수 줄은 비어 있어도 번역이 선다(권장 번역) — 해석·피커가 세는 규칙과 같다. 안 맞추면
-  // 여기만 "29/30"이라 다 채운 운영자가 못 찾을 한 칸을 찾아 헤맨다.
-  const translated = lines.filter(l => l.kind === 'var' || (draft[l.text] ?? '').trim()).length
-  // 환불 규정을 직접 번역한 칸인가. 저장 비우기·박제 표식과 **같은 정본**이 판정한다.
-  const refundKey = refundTranslationKey()
-  const refundCustom = isCustomRefundTranslation(lang, draft[refundKey])
+  // 계수는 해석·피커와 **같은 정본**이 판정한다(translationLineDone). 권장 번역이 있는 변수 줄만
+  // 빈 칸이어도 완료이고, 권장이 없는 줄은 한국어가 그대로 나가므로 완료가 아니다. 여기서 따로
+  // 세면 화면은 '0줄 남음'인데 종이에는 한국어 문장이 남는다(디자이너 차단 2026-09-11).
+  const translated = lines.filter(l => translationLineDone(lang, l, draft[l.text])).length
+  // 권장과 다른 문안을 넣은 변수 열쇠. 저장 비우기·박제 표식과 **같은 정본**이 판정한다.
+  const customVarKeys = useMemo(() => {
+    const out = new Set<string>()
+    for (const s of varSpecs) if (isCustomVarTranslation(lang, s, draft[s.key])) out.add(s.key)
+    return out
+  }, [varSpecs, lang, draft])
   // 자리표시자를 잃은 칸. 저장이 거부할 것을 **누르기 전에** 그 칸 옆에서 말한다(§27.2) —
   // 판정은 저장·되붙이기와 같은 함수라 세 곳의 답이 갈릴 수 없다.
   const missingPh = useMemo(() => {
@@ -3235,7 +3266,7 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
     if (!template) return []
     return TRANSLATION_LANGS.map(l => {
       const dict = stored.langs[l]?.dict ?? {}
-      const p = translationProgress(stored, template, l, addenda, refundClauseInContract)
+      const p = translationProgress(stored, template, l, addenda, refundClauseInContract, 'property')
       const left = l === lang ? lines.length - translated : p.total - p.done
       return { lang: l, left, started: Object.keys(l === lang ? draft : dict).length > 0 }
     }).filter(x => x.started && x.left > 0)
@@ -3324,10 +3355,14 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
       const res = await saveContractTranslationLang({ lang, published, dict: draft })
       if (!res.ok) { pushToast('error', res.error); return }
       // 화면 저장본을 서버 병합과 같은 규칙으로 맞춘다 — 빈 칸은 그 열쇠를 걷는다(번역 취소).
-      // 환불 규정이 **권장 문안과 같으면** 서버가 그 열쇠를 걷는다(빈 칸이 곧 권장이라 들고 있을
+      // 변수 줄이 **권장 문안과 같으면** 서버가 그 열쇠를 걷는다(빈 칸이 곧 권장이라 들고 있을
       // 이유가 없다). 화면이 그 규칙을 안 따르면 저장 직후에도 '저장하지 않은 변경'이 남는다.
-      const cleaned = Object.fromEntries(Object.entries(draft)
-        .filter(([k, v]) => v.trim() && (k !== refundKey || isCustomRefundTranslation(lang, v))))
+      // 판정은 서버 병합과 **같은 두 정본**이다(translationVarSpecByKey · isCustomVarTranslation).
+      const cleaned = Object.fromEntries(Object.entries(draft).filter(([k, v]) => {
+        if (!v.trim()) return false
+        const spec = translationVarSpecByKey(k)
+        return !(spec && spec.recommended[lang] && !isCustomVarTranslation(lang, spec, v))
+      }))
       setStored(prev => ({ ...prev, langs: { ...prev.langs, [lang]: { published, dict: cleaned } } }))
       // 걷힌 칸은 화면에서도 비운다 — 비어야 placeholder 가 권장 문안을 보이고, 그 칸이 실제로
       // 무엇을 내보내는지 화면과 저장본이 같은 말을 한다.
@@ -3454,14 +3489,24 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                   <p className="text-sm text-[var(--warm-muted)] text-center py-3">계약서 본문이 비어 있어 번역할 문장이 없습니다.</p>
                 ) : (
                   <div className="divide-y divide-[var(--warm-border)]">
-                    {lines.map(l => (
+                    {lines.map(l => {
+                      // 그 줄의 명세. 권장 문안·경고 문안이 여기서 나오므로 화면에 변수별 분기가 없다.
+                      const spec = l.kind === 'var' ? varSpecs.find(s => s.key === l.text) : undefined
+                      // 그 언어의 권장 문안. **빈 문자열이면 아직 권장 번역이 없다** — 그때는 빈 칸이
+                      // 권장이 아니라 한국어 원문이라, 아래 안내가 다른 말을 해야 한다(거짓 금지).
+                      const recommended = spec?.recommended[lang] ?? ''
+                      // 금액이 들어가는 줄인가. 번역문이 그 자리를 지켜야 종이가 값을 잃지 않는다.
+                      const hasAmount = l.kind === 'var' && translationPlaceholders(l.text).length > 0
+                      return (
                       <div key={l.text} className="py-3 space-y-1.5 first:pt-0">
-                        {/* 변수 줄만 라벨 옆에 '권장 문안으로'를 둔다 — 값이 있을 때만 선다.
+                        {/* 변수 줄만 라벨 옆에 '권장 문안으로'를 둔다 — 권장 문안이 있고 값이 있을
+                            때만 선다. 권장이 없는 줄에서는 비우기가 '권장으로'가 아니라 '한국어로'라
+                            라벨이 거짓이 된다.
                             문법은 같은 파일 조건부 특약 카드(AddendumCard)의 되돌리기와 한 벌이고,
                             여기서도 **화면 값만 비운다** — 서버 쓰기는 아래 저장 버튼 하나가 진다. */}
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">{TRANSLATION_KIND_LABEL[l.kind]}</p>
-                          {l.kind === 'var' && (draft[l.text] ?? '').trim() && (
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">{translationVarLabel(l, spec, recommended)}</p>
+                          {recommended && (draft[l.text] ?? '').trim() && (
                             <button type="button" onClick={() => setDraft(p => ({ ...p, [l.text]: '' }))}
                               className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">권장 문안으로</button>
                           )}
@@ -3472,24 +3517,35 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                             대신 placeholder 에 권장 전문을 보여, 비워 둔 칸이 무엇을 내보내는지 눈으로 읽힌다. */}
                         <textarea value={draft[l.text] ?? ''} rows={2}
                           onChange={e => setDraft(p => ({ ...p, [l.text]: e.target.value }))}
-                          placeholder={l.kind === 'var'
-                            ? RECOMMENDED_REFUND_TRANSLATION[lang]
-                            : '비워 두면 이 줄은 한국어 원문 그대로 보입니다.'}
+                          placeholder={recommended
+                            || (l.kind === 'var' ? '비워 두면 이 줄은 한국어 원문 그대로 나갑니다.' : '비워 두면 이 줄은 한국어 원문 그대로 보입니다.')}
                           className={taCls} />
                         {/* **이 줄만 규칙이 다르다.** 다른 칸은 비우면 한국어 원문이 남는데 여기는
                             권장 번역이 나간다. 그 차이를 칸 바로 아래에서 말한다 — 라벨만으로는
-                            같은 모양의 칸 스물몇 개 사이에서 안 읽힌다. */}
+                            같은 모양의 칸 스물몇 개 사이에서 안 읽힌다.
+                            권장 문안이 아직 없는 언어에는 그 사실을 그대로 말한다. 같은 문장을 쓰면
+                            비워 둔 칸이 번역을 내보낸다고 거짓을 말하게 된다. */}
                         {l.kind === 'var' && (
                           <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
-                            비워 두면 권장 번역이 쓰입니다. 다른 줄과 달리 한국어 원문이 남지 않습니다.
+                            {recommended
+                              ? '비워 두면 권장 번역이 쓰입니다. 다른 줄과 달리 한국어 원문이 남지 않습니다.'
+                              : '이 언어의 권장 번역은 아직 없습니다.'}
+                          </p>
+                        )}
+                        {/* 금액 자리를 지키라고 말한다 — 번역기가 이 표시를 통째로 옮기거나 지우면
+                            종이의 그 문장이 값을 잃는다. 막는 것은 저장이 하고(자리표시자 검사),
+                            여기서는 지우기 전에 알린다. */}
+                        {hasAmount && (
+                          <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                            {translationPlaceholders(l.text).join(' · ')} 자리에 금액이 들어갑니다. 지우지 말고 자기 언어 어순에 맞는 자리에 두세요.
                           </p>
                         )}
                         {/* 막지 않고 알린다(운영자 오더 2026-09-08 — "우선 추천이나 유도하도록 하고
                             만약 다르게 한다면 경고"). 확인창도 저장 거부도 없다. 판정은 '권장과 다른
                             값이 있다' 하나뿐이고 뜻이 얼마나 다른지는 재지 않는다. */}
-                        {l.kind === 'var' && refundCustom && (
+                        {spec && customVarKeys.has(l.text) && (
                           <p className="text-[0.65625rem] leading-relaxed text-[var(--warning-fg)]">
-                            권장 번역과 다른 문안입니다. 환불 규정은 공정거래위원회 기준 문구라 뜻이 어긋나면 분쟁에서 설명 부담이 생깁니다. 권장으로 돌리려면 칸을 비우세요.
+                            {spec.warning}
                           </p>
                         )}
                         {/* 자리표시자를 잃은 칸은 그 자리에서 말한다 — 저장이 어차피 거부하는데,
@@ -3500,7 +3556,8 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                           </p>
                         )}
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
 

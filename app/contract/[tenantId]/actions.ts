@@ -100,6 +100,15 @@ export type ContractTranslationScope = {
   addenda: SubLeaseAddendum[]
   /** 그 계약서의 환불 조항 자동 표시. **null 은 '못 정했다'**라서 부르는 쪽이 영업장 값으로 떨어진다. */
   refundClauseInContract: boolean | null
+  /**
+   * 그 계약서의 청소비(표시값 오버라이드까지 얹은 병합값). 청소비 문장은 절이 아니라 **변수값**
+   * 이고 금액 유무로 조항이 갈려, 이 값이 분모에 한 줄을 세우거나 다른 줄을 세운다.
+   * **null 은 '못 정했다'** 라서 부르는 쪽이 영업장 기준(두 갈래 전부)으로 떨어진다.
+   *
+   * 금액이 실려 오지만 이 계약서에 이미 찍히는 그 금액이고, 문은 발급과 같은 게이트다
+   * (canReadScope money). 캡션이 갈래를 타는데 금액을 안 주면 분모가 조용히 틀린다.
+   */
+  cleaningFee: number | null
 }
 
 export async function getContractTranslationAddenda(
@@ -111,8 +120,12 @@ export async function getContractTranslationAddenda(
   const { propertyId } = await requireAuthAndProperty()
   const data = await buildContractData(tenantId, propertyId, leaseTermId)
   return data
-    ? { addenda: contractAddendaForTranslation(data), refundClauseInContract: data.refundClauseInContract }
-    : { addenda: [], refundClauseInContract: null }
+    ? {
+      addenda: contractAddendaForTranslation(data),
+      refundClauseInContract: data.refundClauseInContract,
+      cleaningFee: data.lease?.cleaningFee ?? null,
+    }
+    : { addenda: [], refundClauseInContract: null, cleaningFee: null }
 }
 
 // ── 입실자별 본문 오버라이드 저장/리셋 ─────────────────────────────
