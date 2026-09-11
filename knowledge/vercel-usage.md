@@ -32,7 +32,9 @@ Hobby 플랜에서 함수별 CPU 는 **API·CLI 로 못 본다.** `vercel usage`
    34% 가 즉시 빠진다.
 2. **푸시를 묶는다.** 작업마다 즉시 푸시하는 지금 규칙(2026-06-19)은 배포 = 콜드 스타트를 곱한다.
    운영자 결정 사항.
-3. 재고 개요 N+1 을 걷는다(overview.ts 메모리 합산, 2,280 → 약 7 쿼리) + page.tsx 꼬리 병렬화.
+3. **재고 개요 N+1 — 2026-09-11 완료.** 렌더 1회 2,482 → 134 쿼리, 약 2.4초 → 0.25초(하네스 실측,
+   JSON 바이트 동일). 재발 감지는 `check-query-fanout`(verify:fast). 대조는
+   `PARITY_NOW=<ISO> npx tsx --tsconfig scripts/tsconfig.dashboard.json --env-file=.env.local scripts/verify-dashboard-parity.ts`.
 4. 그래도 차면 Pro. 초과분 종량제라 멈추지 않는다.
 
 ## 배포 정리
