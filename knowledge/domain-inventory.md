@@ -310,3 +310,20 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
   한쪽만 막으면 다른 경로로 다시 들어온다.
 - 정리 `scripts/fix-hub-restock-marker.ts`(예행 기본, `--apply`) — 마커만 null 로, 잔량은 안 건드린다.
   감지 `check-restock-hub-drift`(verify:db)에 '허브 행 마커 > 0' 절 추가.
+
+## 재고 대조 셋은 '필터 통째 결손'을 못 잡는다 (2026-09-11 탐침)
+
+`app/(app)/inventory/overview.ts` 의 `excludeFromInventory: false` 를 지우고 재고 대조 셋
+(verify-overview-parity · check-stock-ledger-parity · check-stock-asof-parity)을 돌리면 **전부
+초록으로 지나간다.** 같은 코드 경로를 서로 견주거나 내부 정합을 보기 때문에 필터가 통째로 빠지면
+양쪽이 똑같이 틀려 차이가 안 난다. 오늘 만든 대시보드 대조(`verify-dashboard-parity`)는 잡지만
+기준 JSON 이 있어야 돌아 상시 그물이 못 된다.
+
+그래서 소스 가드 `scripts/check-inventory-exclude-filter.mjs`(verify:fast)를 뒀다. 규칙은
+**잔량 정본에서 prisma.expense 를 만지는 함수는 그 몸통에 `excludeFromInventory` 를 갖는다**
+(지금 sumPurchases·resolveUnitHint·resolveSpecHint·dedupSameDay 넷). 주석은 걷고 본다.
+
+**한계를 알고 쓴다.** 이 가드는 필터의 존재만 보지 의미는 못 본다. 값을 뒤집거나 조건을 다른 곳으로
+옮기는 변경은 못 잡는다. 그 몫을 질 데이터 대조가 아직 없다는 것이 남은 빈자리다.
+덧붙여 `getMonthlyInflow`(actions.ts) 같은 **이력 표시** 질의의 필터를 지우는 것은 잔량을 안 바꾸므로
+대조가 초록인 것이 옳다 — 두 축을 섞어 보면 안 된다.
