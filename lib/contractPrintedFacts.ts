@@ -100,7 +100,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'lease.roomNo': '호실',
   'lease.moveInDate': '입실일',
   'lease.expectedMoveOut': '퇴실 예정일',
-  'lease.rentAmount': '입실료',
+  'lease.rentAmount': '이용료',
   'lease.depositAmount': '보증금',
   'lease.cleaningFee': '청소비',
   'lease.dueDay': '매월 납부일',

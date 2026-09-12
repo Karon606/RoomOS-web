@@ -227,11 +227,11 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   const subRowsHtml = subs.length === 0 ? '' : `
         ${subs.map(s => `<tr>
           <th>추가 호실<span class="en">Additional Room</span></th><td class="num">${escape(fmtRoom(s.roomNo))}</td>
-          <th>추가 입실료<span class="en">Rent / month</span></th><td class="amt">${s.rentAmount.toLocaleString()}원</td>
+          <th>추가 이용료<span class="en">Rent / month</span></th><td class="amt">${s.rentAmount.toLocaleString()}원</td>
         </tr>`).join('\n        ')}
         <tr>
           <th>호실 합계<span class="en">Rooms</span></th><td class="num">${escape([d.lease?.roomNo, ...subs.map(s => s.roomNo)].map(r => fmtRoom(r)).filter(Boolean).join(' · '))}</td>
-          <th>입실료 합계<span class="en">Total Rent</span></th><td class="amt">${((d.lease?.rentAmount ?? 0) + subs.reduce((s, x) => s + x.rentAmount, 0)).toLocaleString()}원</td>
+          <th>이용료 합계<span class="en">Total Rent</span></th><td class="amt">${((d.lease?.rentAmount ?? 0) + subs.reduce((s, x) => s + x.rentAmount, 0)).toLocaleString()}원</td>
         </tr>`
 
   const biz = d.businessInfo
@@ -474,7 +474,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
           <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt">${depositValue}</td>
         </tr>
         <tr>
-          <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
+          <th>이용료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
           <th>매월 납부일<span class="en">Payment Day</span></th><td class="num">${d.lease?.dueDay ? (d.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(d.lease.dueDay, 10)}일`) : '—'}</td>
         </tr>${subRowsHtml}
       </tbody>

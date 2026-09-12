@@ -23,7 +23,8 @@ import {
   DEFAULT_EARLY_CHECKOUT_ADDENDUM, DEFAULT_ROOM_SCHEDULE_ADDENDUM, DEFAULT_DISPOSAL_CONSENT,
   type ContractTemplate, type SubLeaseAddendum,
 } from '../lib/contract'
-import { printedFacts } from '../lib/contractPrintedFacts'
+import { printedFacts, PRINTED_FACT_LABEL } from '../lib/contractPrintedFacts'
+import { CONTRACT_FIELD_LABEL, CONTRACT_FIELD_ERROR } from '../lib/contractFieldOverrides'
 import { contractPrintVars, type PrintContractData } from '../lib/contractPrintHtml'
 
 let pass = 0
@@ -1596,6 +1597,24 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   eq('환불 규정의 열쇠는 안 바뀌었다(그 줄에는 옛 용어가 없었다)',
     buildRefundClause(), refundTranslationKey())
   console.log(`  [실측] 코드 기본 문안 ${bodies.length}줄 · '입실료' 0회 · '이용료' ${bodies.filter(b => b.includes('이용료')).length}줄`)
+
+  // **조판과 라벨도 같은 종이다**(2026-09-12 증설). 10단계는 조항 문안만 봤는데, 그 사이 계약서
+  // 표 머리글과 표시값 수정 모달의 칸 이름이 '입실료'로 남아 한 장 안에서 다시 두 이름이 섰다.
+  // 조항은 이용료인데 바로 위 표는 입실료였다 — 고치라던 그 문제가 문안에서 조판으로 옮겨간 것뿐이다.
+  //
+  // 여기도 상수값을 읽는다. `PRINTED_FACT_LABEL` 은 **표시 전용**이고 드리프트 비교는 키로 하므로
+  // 라벨을 바꿔도 박제는 안 흔들린다. 표 머리글은 상수가 아니라 JSX·템플릿 문자열이라 못 읽는데,
+  // 그 자리는 `check-contract-fee-term-typeset` 이 소스에서 본다(주석을 걷고 본다).
+  const labelMaps: [string, Record<string, string>][] = [
+    ['표시값 수정 칸 이름', CONTRACT_FIELD_LABEL],
+    ['표시값 수정 오류 문구', CONTRACT_FIELD_ERROR],
+    ['박제 축 이름', PRINTED_FACT_LABEL],
+  ]
+  eq('사람이 읽는 라벨에도 옛 용어가 없다',
+    labelMaps.flatMap(([where, m]) =>
+      Object.entries(m).filter(([, v]) => v.includes('입실료')).map(([k]) => `${where}.${k}`)), [])
+  eq('그 자리에 새 용어가 실제로 섰다', CONTRACT_FIELD_LABEL.rentAmount, '이용료')
+  eq('박제 축 이름도 같다', PRINTED_FACT_LABEL['lease.rentAmount'], '이용료')
 }
 
 // ── 11단계 권장 번역도 용어 통일을 진다 (2026-09-11 번역가 패널) ──────────────────
