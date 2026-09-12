@@ -1769,7 +1769,23 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   eq('코드 문안에 임대차·숙박업 낱말이 없다', hits, [])
 
   // 급소 — 위 단언은 문장을 통째로 지워도 통과한다. 고친 자리에 새 말이 실제로 섰는지 못박는다.
-  eq('ru 문서 이름이 проживание 축이다', signText('ru', 'doc.contract'), 'Договор о проживании')
+  //
+  // **문서 이름은 종이 제목과 같아야 한다.** 화면이 부르는 이름과 입주자가 손에 든 종이의 제목이
+  // 다르면, 서명 패드 보조줄이 "방금 읽은 그것과 다른 서류"에 서명하라는 말이 된다. 2026-09-12
+  // 실측에서 다섯 언어가 갈려 있었다(ru 는 종이가 이미 중립인데 화면만 임대차라 부르고 있었다).
+  // 한국어는 아직 갈려 있다 — 안내는 '입실계약서', 종이는 '단기숙소계약서'. 이름 축은
+  // [[doc-name-style]] 소관이라 별건으로 뒀고, 그래서 여기 표에 ko 가 없다.
+  const DOC_NAME: Record<string, string> = {
+    en: 'Room Occupancy Agreement',
+    vi: 'Hợp đồng sử dụng phòng',
+    ru: 'Договор о проживании',
+    ja: '入居契約書',
+    zh: '入住合同书',
+    zht: '入住契約書',
+  }
+  eq('문서 이름이 종이 제목과 같다',
+    Object.entries(DOC_NAME).filter(([l, want]) => signText(l as never, 'doc.contract') !== want).map(([l]) => l), [])
+  eq('bn 문서 이름이 কক্ষ 축이다', signText('bn', 'doc.contract').includes('কক্ষে বসবাসের'), true)
   eq('en 서명 패드가 Occupant 를 쓴다', signText('en', 'pad.titleContract'), 'Occupant signature')
   eq('bn 서명 패드가 বাসিন্দা 를 쓴다', signText('bn', 'pad.titleContract').includes('বাসিন্দা'), true)
 
