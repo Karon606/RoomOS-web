@@ -1938,8 +1938,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               </td>
             </tr>
             <tr>
-              <th>입실료<span className="en">Rent / month</span></th>
-              <td className="amt">{fieldCell(data.lease ? `${fieldRent.toLocaleString()}원` : '', fieldInput('rentAmount', '입실료', { amount: true }))}</td>
+              <th>이용료<span className="en">Rent / month</span></th>
+              <td className="amt">{fieldCell(data.lease ? `${fieldRent.toLocaleString()}원` : '', fieldInput('rentAmount', '이용료', { amount: true }))}</td>
               <th>매월 납부일<span className="en">Payment Day</span></th>
               <td className="num">{fieldCell(dueDayLabel(fields.dueDay), fieldInput('dueDay', '매월 납부일'))}</td>
             </tr>
@@ -1954,14 +1954,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                   <tr key={s.id}>
                     <th>추가 호실<span className="en">Additional Room</span></th>
                     <td className="num">{roomLabel(s.roomNo)}</td>
-                    <th>추가 입실료<span className="en">Rent / month</span></th>
+                    <th>추가 이용료<span className="en">Rent / month</span></th>
                     <td className="amt">{s.rentAmount.toLocaleString()}원</td>
                   </tr>
                 ))}
                 <tr>
                   <th>호실 합계<span className="en">Rooms</span></th>
                   <td className="num">{[fields.roomNo, ...subLeases.map(s => s.roomNo)].map(r => roomLabel(r)).filter(Boolean).join(' · ')}</td>
-                  <th>입실료 합계<span className="en">Total Rent</span></th>
+                  <th>이용료 합계<span className="en">Total Rent</span></th>
                   <td className="amt">{(fieldRent + subLeases.reduce((s, x) => s + x.rentAmount, 0)).toLocaleString()}원</td>
                 </tr>
               </>
