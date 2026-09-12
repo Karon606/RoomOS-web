@@ -15,7 +15,7 @@ import {
   CLEANING_CLAUSE_PLACEHOLDER, CLEANING_DEDUCT_PLACEHOLDER, TRANSLATION_VAR_NAMES, TRANSLATION_VAR_LABEL,
   type TranslationVarSpec, type TranslationLang,
 } from '../lib/contractTranslation'
-import { SIGN_LANGS } from '../lib/signGuideText'
+import { SIGN_LANGS, SIGN_KEYS, t as signText } from '../lib/signGuideText'
 import {
   appendSubLeaseAddendum, buildRoomScheduleAddendum, buildRefundClause, cleaningFeeVars,
   contractAddendaForTranslation, renderContractText, stripClauseBullet, CLEANING_FEE_SOURCE,
@@ -1660,6 +1660,46 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   // 실측 줄은 **잰 값**을 찍는다. 0 을 글자로 박아 두면 단언이 붉게 선 회차에도 "어긋남 0"
   // 이라고 말해, 로그만 보는 사람에게 거짓을 준다.
   console.log(`  [실측] 권장 번역 용어 정합: ${TRANSLATION_LANGS.length}언어 · 옛 용어 후보 ${cjk.length}(${cjk.join('·')}) · 빠진 용어 ${missing.length} · 옛 용어 잔존 ${stale.length}`)
+}
+
+// ── 12단계 일본어의 입주·퇴거는 동작이 아니다 (2026-09-12 원어민 확인) ──────────────
+//
+// **한자가 그대로 안 건너간 자리다.** 일본어 `入室` 은 방에 들어가는 **동작**이고 `退室` 은 나가는
+// 동작이라, 이사 오고 나가는 뜻이 없다. 일본 월세 계약은 `入居`·`退去` 를 쓴다. 요금 이름
+// '이용료'는 `利用料` 로 그대로 건너갔는데 '입실'은 안 건너갔고, 그 차이를 아무도 안 보고 있었다.
+// 번역가 패널과 운영자가 직접 물은 일본인 원어민이 **독립적으로 같은 지적**을 했다.
+//
+// **왜 진리표가 이걸 못 잡았나.** 10단계는 한국어만 보고 11단계는 요금 낱말만 본다. 한국어 '입실'은
+// 그대로 두는 것이 맞으므로(날짜·호칭·계약 형태를 가리킨다) 한국어 쪽 그물은 여기서 침묵하는 것이
+// 옳다. 번역이 제 언어의 말을 골랐는지는 **번역 쪽에서만** 잴 수 있다.
+//
+// 코드 사전 둘을 지킨다. 영업장 사전(DB)은 여기서 못 본다 — verify:fast 는 DB 를 안 읽는다.
+// 그쪽은 `scripts/fix-ja-residency-term.ts` 가 옮겼고, 되돌아가면 이 그물이 아니라 그 스크립트를
+// 다시 돌려야 한다.
+{
+  const jaTexts: { where: string; text: string }[] = [
+    { where: '청소비 권장(있음)', text: RECOMMENDED_CLEANING_TRANSLATION.clause.ja },
+    { where: '청소비 권장(없음)', text: RECOMMENDED_CLEANING_TRANSLATION.none.ja },
+    { where: '청소비 권장(공제)', text: RECOMMENDED_CLEANING_TRANSLATION.deduct.ja },
+    { where: '환불 권장', text: RECOMMENDED_REFUND_TRANSLATION.ja },
+    ...SIGN_KEYS.map(k => ({ where: `서명 안내 ${k}`, text: signText('ja', k) })),
+  ]
+
+  eq('일본어 코드 문안에 入室·退室 이 없다',
+    jaTexts.filter(t => /[入退]室/.test(t.text)).map(t => t.where), [])
+
+  // 급소 — 위 단언은 문장을 통째로 지워도 통과한다. 새 낱말이 실제로 그 자리에 섰는지 함께 센다.
+  eq('청소비 권장(있음)이 入居 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.ja.includes('入居'), true)
+  eq('청소비 권장(있음)이 退去 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.ja.includes('退去'), true)
+  eq('서명 안내가 入居契約書 라 부른다', signText('ja', 'doc.contract'), '入居契約書')
+
+  // 요금 이름은 이 결정에 안 딸려간다. 원어민은 賃料 를 권했으나 운영자가 利用料 유지로 정했다
+  // (借家 관행의 기대가 1개월·즉시 퇴실 구조와 어긋나 약관규제법 설명의무 쪽에서 불리해진다).
+  eq('요금 이름은 여전히 利用料 다', RECOMMENDED_CLEANING_TRANSLATION.clause.ja.includes('利用料'), true)
+  eq('賃料·家賃 로 넘어가지 않았다',
+    jaTexts.filter(t => /賃料|家賃|宿泊料/.test(t.text)).map(t => t.where), [])
+
+  console.log(`  [실측] 일본어 코드 문안 ${jaTexts.length}자리 · 入室/退室 0 · 入居/退去 정착 · 요금 이름 利用料 유지`)
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

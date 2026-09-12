@@ -403,7 +403,7 @@ const RU: Record<SignKey, string> = {
 }
 
 const JA: Record<SignKey, string> = {
-  'gate.title': '入室契約書の確認',
+  'gate.title': '入居契約書の確認',
   'gate.hint': '本人確認のため生年月日を入力してください。確認後、契約内容を読んで署名できます。',
   'gate.birthLabel': '生年月日',
   'gate.placeholder': '例: 19700928',
@@ -438,7 +438,7 @@ const JA: Record<SignKey, string> = {
   'cta.submit': '提出する',
   'cta.submitting': '提出中…',
   'pill.allDone': 'すべての署名が完了しました',
-  'pad.titleContract': '入室者署名',
+  'pad.titleContract': '入居者署名',
   'pad.titleDoc': '{title}の署名',
   'pad.subRemote': '下の枠内に署名してください。確認を押すと{title}に署名が適用されます。',
   'pad.clear': '消す',
@@ -463,11 +463,11 @@ const JA: Record<SignKey, string> = {
   'done.body': 'このリンクは閉じられ、再び開けません。このウィンドウは閉じて構いません。',
   'native.label': '氏名(母国語表記・任意)',
   'native.hint': 'パスポートや本国の身分証の表記どおりに記入してください。空欄でも構いません。',
-  'doc.contract': '入室契約書',
+  'doc.contract': '入居契約書',
   'doc.disposal': '同意書',
   'doc.generic': '書類',
   'common.cancel': 'キャンセル',
-  'sms.body': '[{biz}] 入室契約書です。下のリンクから内容を確認して署名してください。確認のため生年月日の入力が必要です。提出するとリンクは閉じ、未提出でも24時間後に期限切れになります。',
+  'sms.body': '[{biz}] 入居契約書です。下のリンクから内容を確認して署名してください。確認のため生年月日の入力が必要です。提出するとリンクは閉じ、未提出でも24時間後に期限切れになります。',
 }
 
 const ZH: Record<SignKey, string> = {
@@ -608,6 +608,13 @@ const ZHT: Record<SignKey, string> = {
 }
 
 const DICT: Record<SignLang, Record<SignKey, string>> = { ko: KO, en: EN, vi: VI, bn: BN, ru: RU, ja: JA, zh: ZH, zht: ZHT }
+
+/**
+ * 모든 문장 열쇠. **그물이 한 언어의 문장을 전수로 훑으려면 런타임 목록이 필요하다** —
+ * `SignKey` 는 타입이라 셀 수 없고, 소스를 정규식으로 훑으면 주석의 인용 글자에 걸린다.
+ * 열쇠가 늘면 이 배열도 저절로 늘어 새 문장이 그물 밖으로 새지 않는다.
+ */
+export const SIGN_KEYS = Object.keys(KO) as SignKey[]
 
 function fill(s: string, vars?: Record<string, string | number>): string {
   if (!vars) return s
