@@ -1702,6 +1702,61 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   console.log(`  [실측] 일본어 코드 문안 ${jaTexts.length}자리 · 入室/退室 0 · 入居/退去 정착 · 요금 이름 利用料 유지`)
 }
 
+// ── 13단계 임대차 낱말은 어느 언어에서도 안 선다 (2026-09-12 언어별 패널) ──────────
+//
+// **왜 늘리나.** 12단계는 일본어만 지킨다. 여섯 언어 패널이 전수로 훑으니 같은 클래스가 다섯
+// 언어에 더 있었고, 하필 **전부 서명 화면 쪽**이었다. 본문 48줄이 한 번도 안 쓴 낱말이 입주자가
+// 가장 먼저 보는 자리에 남아 있었다 — ru `Договор аренды`(문서 이름·게이트 제목·문자 본문),
+// bn `ভাড়াটিয়া`(서명 패드 제목, 사인 직전에 읽힌다), en `Tenant signature`.
+//
+// **왜 이 낱말들이 금지인가.** 운영자 결정이다. 그 말을 쓰면 독자가 자국 임대차 관행을 기대하는데
+// 이 계약은 기본 1개월에 즉시 퇴실 조항이 있어 어긋나고, 그 어긋남이 약관규제법 제3조 제3항
+// 설명의무 쪽에서 사업자에게 돌아온다([[glossary]] '그 돈의 이름은 이용료다').
+//
+// **숙박업 낱말도 함께 막는다.** 고시원은 공중위생관리법 제3조 신고를 안 하므로, 사업자가 스스로
+// '숙박'이라 부른 문서는 미신고 숙박업 시비에서 불리한 자리에 선다.
+//
+// **한계를 정직하게 적는다.** 여기 목록은 패널이 실측한 낱말이지 그 언어의 임대차 어휘 전부가
+// 아니다. 새 번역을 넣을 때 이 그물이 침묵한다고 안전한 것이 아니다. 그리고 **영업장 사전(DB)은
+// 못 본다** — verify:fast 가 DB 를 안 읽는다. 그쪽은 `scripts/fix-contract-translation-text.ts`
+// 가 옮겼다.
+//
+// vi 는 여기 없다. 본문이 사람을 `người thuê`(임차인)라 부르고 있어 화면만 고치면 문서 안에서
+// 어긋난다 — 본문 18건과 한 덩어리로 가야 해서 운영자가 원어민 확인 뒤로 미뤘다.
+{
+  // 언어별 금지 낱말. 어간으로 잡는다(굴절·합성어를 함께 문다).
+  const FORBIDDEN: Record<string, { word: string; why: string }[]> = {
+    ru:  [{ word: 'аренд', why: '임대차' }, { word: 'наём', why: '임대차' }, { word: 'найм', why: '임대차' }],
+    bn:  [{ word: 'ভাড়াটিয়া', why: '세입자' }, { word: 'বাড়িভাড়া', why: '집세' }],
+    en:  [{ word: 'Tenant', why: '임차인' }, { word: 'tenant', why: '임차인' }, { word: 'landlord', why: '임대인' }],
+    ja:  [{ word: '賃料', why: '임대차' }, { word: '家賃', why: '임대차' }, { word: '宿泊料', why: '숙박업' }],
+    zh:  [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿费', why: '숙박업' }],
+    zht: [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿費', why: '숙박업' }],
+  }
+
+  const hits: string[] = []
+  for (const [lang, words] of Object.entries(FORBIDDEN)) {
+    const texts: { where: string; text: string }[] = [
+      { where: '청소비 권장(있음)', text: RECOMMENDED_CLEANING_TRANSLATION.clause[lang as TranslationLang] },
+      { where: '청소비 권장(없음)', text: RECOMMENDED_CLEANING_TRANSLATION.none[lang as TranslationLang] },
+      { where: '청소비 권장(공제)', text: RECOMMENDED_CLEANING_TRANSLATION.deduct[lang as TranslationLang] },
+      { where: '환불 권장', text: RECOMMENDED_REFUND_TRANSLATION[lang as TranslationLang] },
+      ...SIGN_KEYS.map(k => ({ where: `서명 안내 ${k}`, text: signText(lang as never, k) })),
+    ]
+    for (const t of texts)
+      for (const w of words)
+        if (t.text.includes(w.word)) hits.push(`${lang} ${t.where}: '${w.word}'(${w.why})`)
+  }
+  eq('코드 문안에 임대차·숙박업 낱말이 없다', hits, [])
+
+  // 급소 — 위 단언은 문장을 통째로 지워도 통과한다. 고친 자리에 새 말이 실제로 섰는지 못박는다.
+  eq('ru 문서 이름이 проживание 축이다', signText('ru', 'doc.contract'), 'Договор о проживании')
+  eq('en 서명 패드가 Occupant 를 쓴다', signText('en', 'pad.titleContract'), 'Occupant signature')
+  eq('bn 서명 패드가 বাসিন্দা 를 쓴다', signText('bn', 'pad.titleContract').includes('বাসিন্দা'), true)
+
+  console.log(`  [실측] 임대차·숙박업 낱말: ${Object.keys(FORBIDDEN).length}언어 × (권장 4 + 안내 ${SIGN_KEYS.length}) 자리 · 위반 ${hits.length}`)
+}
+
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.error(`  - ${f}`)
 process.exit(fails.length > 0 ? 1 : 0)

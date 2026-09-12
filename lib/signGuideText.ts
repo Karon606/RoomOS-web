@@ -166,7 +166,7 @@ const EN: Record<SignKey, string> = {
   'cta.submit': 'Submit',
   'cta.submitting': 'Submitting…',
   'pill.allDone': 'All signatures completed',
-  'pad.titleContract': 'Tenant signature',
+  'pad.titleContract': 'Occupant signature',
   'pad.titleDoc': '{title} signature',
   'pad.subRemote': 'Sign in the area below. Tap Confirm to apply your signature to {title}.',
   'pad.clear': 'Clear',
@@ -274,7 +274,7 @@ const BN: Record<SignKey, string> = {
   'gate.submit': 'নিশ্চিত করুন',
   'gate.submitting': 'যাচাই চলছে…',
   'gate.netFail': 'যাচাই ব্যর্থ হয়েছে। একটু পরে আবার চেষ্টা করুন।',
-  'gate.privacy': 'আপনার জন্মতারিখ শুধু পরিচয় যাচাইয়ে ব্যবহৃত হয়, সংরক্ষণ করা হয় না। চুক্তিতে লেখা তথ্য চুক্তি সম্পাদনের জন্য প্রতিষ্ঠান সংরক্ষণ করে।',
+  'gate.privacy': 'আপনার জন্মতারিখ শুধু পরিচয় যাচাইয়ে ব্যবহৃত হয়, সংরক্ষণ করা হয় না। চুক্তিতে লেখা তথ্য চুক্তি সম্পাদন ও বাস্তবায়নের জন্য প্রতিষ্ঠান সংরক্ষণ করে।',
   'inactive.title': 'লিংকটি ব্যবহারযোগ্য নয়',
   'inactive.body': 'লিংকের মেয়াদ শেষ বা ব্যবহারযোগ্য নয়। ম্যানেজারকে আবার পাঠাতে বলুন।',
   'submitted.title': 'চুক্তি জমা হয়েছে',
@@ -302,7 +302,7 @@ const BN: Record<SignKey, string> = {
   'cta.submit': 'জমা দিন',
   'cta.submitting': 'জমা হচ্ছে…',
   'pill.allDone': 'সব সই সম্পন্ন',
-  'pad.titleContract': 'ভাড়াটিয়ার সই',
+  'pad.titleContract': 'বাসিন্দার সই',
   'pad.titleDoc': '{title} সই',
   'pad.subRemote': 'নিচের ঘরে সই করুন। নিশ্চিত চাপলে {title} এ সই বসবে।',
   'pad.clear': 'মুছুন',
@@ -335,7 +335,7 @@ const BN: Record<SignKey, string> = {
 }
 
 const RU: Record<SignKey, string> = {
-  'gate.title': 'Проверка договора аренды',
+  'gate.title': 'Проверка договора о проживании',
   'gate.hint': 'Введите дату рождения для подтверждения личности. После проверки вы сможете прочитать и подписать договор.',
   'gate.birthLabel': 'Дата рождения',
   'gate.placeholder': 'Например: 19700928',
@@ -395,11 +395,11 @@ const RU: Record<SignKey, string> = {
   'done.body': 'Ссылка закрыта и больше не открывается. Это окно можно закрыть.',
   'native.label': 'ФИО на родном языке (необязательно)',
   'native.hint': 'Напишите точно как в паспорте или документах вашей страны. Можно оставить пустым.',
-  'doc.contract': 'Договор аренды',
+  'doc.contract': 'Договор о проживании',
   'doc.disposal': 'Согласие',
   'doc.generic': 'Документ',
   'common.cancel': 'Отмена',
-  'sms.body': '[{biz}] Ваш договор аренды. Откройте ссылку ниже, прочитайте и подпишите. Для проверки понадобится дата рождения. После отправки ссылка закроется, срок действия 24 часа.',
+  'sms.body': '[{biz}] Ваш договор о проживании. Откройте ссылку ниже, прочитайте и подпишите. Для проверки понадобится дата рождения. После отправки ссылка закроется, срок действия 24 часа.',
 }
 
 const JA: Record<SignKey, string> = {
