@@ -195,7 +195,7 @@ const EN: Record<SignKey, string> = {
   'doc.disposal': 'Consent form',
   'doc.generic': 'Document',
   'common.cancel': 'Cancel',
-  'sms.body': '[{biz}] Your room contract. Open the link below to read and sign it. You will need your date of birth for verification. The link closes after submission and expires in 24 hours.',
+  'sms.body': '[{biz}] Your Room Occupancy Agreement. Open the link below to read and sign it. You will need your date of birth for verification. The link closes after submission and expires in 24 hours.',
 }
 
 const VI: Record<SignKey, string> = {
@@ -234,7 +234,7 @@ const VI: Record<SignKey, string> = {
   'cta.submit': 'Nộp',
   'cta.submitting': 'Đang nộp…',
   'pill.allDone': 'Đã ký xong tất cả',
-  'pad.titleContract': 'Chữ ký người vào ở',
+  'pad.titleContract': 'Chữ ký người sử dụng phòng',
   'pad.titleDoc': 'Chữ ký {title}',
   'pad.subRemote': 'Ký vào vùng bên dưới. Bấm Xác nhận để áp dụng chữ ký vào {title}.',
   'pad.clear': 'Xóa',
@@ -331,7 +331,7 @@ const BN: Record<SignKey, string> = {
   'doc.disposal': 'সম্মতিপত্র',
   'doc.generic': 'কাগজ',
   'common.cancel': 'বাতিল',
-  'sms.body': '[{biz}] আপনার কক্ষে বসবাসের চুক্তিপত্র। নিচের লিংক খুলে পড়ে সই করুন। যাচাইয়ের জন্য জন্মতারিখ লাগবে। জমার পর লিংক বন্ধ হবে, না দিলেও 24 ঘণ্টা পর মেয়াদ শেষ।',
+  'sms.body': '[{biz}] কক্ষে বসবাসের চুক্তিপত্র আপনার জন্য প্রস্তুত। নিচের লিংক খুলে পড়ে সই করুন। যাচাইয়ের জন্য জন্মতারিখ লাগবে। জমার পর লিংক বন্ধ হবে, না দিলেও 24 ঘণ্টা পর মেয়াদ শেষ।',
 }
 
 const RU: Record<SignKey, string> = {
@@ -385,7 +385,7 @@ const RU: Record<SignKey, string> = {
   'toast.signedDoc': 'Подпись добавлена: {title}',
   'remain.title1': 'Подписано {n} / {total}. Осталось: {title}',
   'remain.titleN': 'Подписано {n} / {total}. Осталось документов: {left}',
-  'remain.msg': 'В этой ссылке документов: {total}. Подпишите оставшиеся {left}, чтобы отправить.',
+  'remain.msg': 'По этой ссылке документов: {total}. Подпишите оставшиеся документы ({left}), чтобы отправить их.',
   'remain.go': 'Перейти к подписи',
   'submit.confirmTitle': 'Отправить договор?',
   'submit.confirmMsg': 'После отправки ссылка закроется. Открыть или изменить ее будет нельзя.\nЧтобы изменить подпись, распишитесь заново до отправки.',
@@ -471,7 +471,7 @@ const JA: Record<SignKey, string> = {
 }
 
 const ZH: Record<SignKey, string> = {
-  'gate.title': '入住合同书确认',
+  'gate.title': '入住合同确认',
   'gate.hint': '请输入出生日期以验证身份。验证后即可阅读并签署合同。',
   'gate.birthLabel': '出生日期',
   'gate.placeholder': '例: 19700928',
@@ -531,11 +531,11 @@ const ZH: Record<SignKey, string> = {
   'done.body': '此链接已关闭,无法再次打开。您可以关闭此窗口。',
   'native.label': '姓名(母语原文,可选)',
   'native.hint': '请与护照或本国证件上的写法一致。可以留空。',
-  'doc.contract': '入住合同书',
+  'doc.contract': '入住合同',
   'doc.disposal': '同意书',
   'doc.generic': '文件',
   'common.cancel': '取消',
-  'sms.body': '[{biz}] 您的入住合同书。请打开下方链接阅读并签名。验证需要输入出生日期。提交后链接将关闭,未提交也将在24小时后过期。',
+  'sms.body': '[{biz}] 您的入住合同。请打开下方链接阅读并签名。验证需要输入出生日期。提交后链接将关闭,未提交也将在24小时后过期。',
 }
 
 
@@ -547,7 +547,7 @@ const ZHT: Record<SignKey, string> = {
   'gate.submit': '確認',
   'gate.submitting': '驗證中…',
   'gate.netFail': '驗證失敗。請稍後再試。',
-  'gate.privacy': '您輸入的出生日期僅用於身分驗證,不會被保存。契約中的資訊由經營方保管,用於簽訂與履行契約。',
+  'gate.privacy': '您輸入的出生日期僅用於身分驗證,不會被保存。契約中的資訊由經營者保管,用於簽訂與履行契約。',
   'inactive.title': '連結無法使用',
   'inactive.body': '連結已過期或無法使用。請聯絡管理員重新發送。',
   'submitted.title': '契約已提交',

@@ -237,8 +237,8 @@ export function cleaningTranslationKeys(): { clause: string; none: string; deduc
 export const RECOMMENDED_REFUND_TRANSLATION: Record<TranslationLang, string> = {
   en: 'Early move-out refund = total paid − (daily rate × days stayed) − penalty (10% of the remainder); daily rate = monthly fee / 30.',
   vi: 'Hoàn tiền khi trả phòng sớm = tổng đã trả − (tiền phòng theo ngày × số ngày ở) − phạt (10% phần còn lại); tiền phòng theo ngày = tiền phòng tháng / 30.',
-  bn: 'ফেরত = মোট পরিশোধ − (দৈনিক হার × থাকার দিন) − জরিমানা (অবশিষ্টের 10%); দৈনিক হার = মাসিক বসবাস ফি / 30।',
-  ru: 'Возврат = оплачено − (дневная ставка × прожитые дни) − неустойка (10% остатка); ставка = месячная плата за проживание / 30.',
+  bn: 'ফেরত = মোট পরিশোধিত অর্থ − (দৈনিক হার × থাকার দিন) − জরিমানা (অবশিষ্টের 10%); দৈনিক হার = মাসিক বসবাস ফি / 30।',
+  ru: 'Возврат = уплаченная сумма − (дневная ставка × прожитые дни) − неустойка (10% от остатка); ставка = месячная плата за проживание / 30.',
   ja: '返金額 = 総支払額 −（1日利用料 × 実利用日数）− 違約金（残余金額の10%）、1日利用料 = 月額 / 30。',
   zh: '退款 = 总付款额 −（每日使用费 × 实际使用天数）− 违约金（剩余金额的10%）；每日使用费 = 月使用费 / 30。',
   zht: '退費 = 總付款額 −（每日使用費 × 實際使用日數）− 違約金（剩餘金額的10%）；每日使用費 = 月使用費 / 30。',
