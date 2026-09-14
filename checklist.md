@@ -357,3 +357,29 @@
       안 돌려도 장부는 정확하고 그 두 행만 구식(null)으로 남아 다음 수정 때 휴리스틱을 탄다
 - [x] 체인 등록 — `test-check-propagation.ts` 를 verify:fast 에(운영자 반영, test-stock-ledger 뒤).
       신규 두 백필·정리 스크립트는 일회성이라 미등록
+
+## 보관 위치 계층화 — 트리 (2026-09-14, 운영자 승인 설계 시공)
+
+운영자 요청. "4층 주방에 김치냉장고가 있고 상단·하단이 있는데 각각 개별로 놔버리니 한번에
+체크를 못 해. 레이어가 하나 밖에 없어서." 9/11 김치 점검에서 냉장고 상단·하단 분류를 깜빡해
+9/10 내역을 나중에 고쳐야 했던 사고가 근거다.
+
+결정(운영자, 전부 권장안). 스키마 `parentId` 자기참조 + 유니크 교체 · 모든 노드가 자기 재고 보유 ·
+깊이 상한 4 · 표기는 공백 결합(`4층 김치냉장고 상단`, 오늘 이름과 글자 동일) · 다중 위치 저장은
+체인(서버 무변경)으로 시작 · 같은 저장에 허브 실측이 있으면 비허브 부족 게이트 건너뜀 · 옮길 때
+앞부분 떼기 제안 기본 켬 · 접힘 비영속·기본 펼침 · 하위 있는 삭제 거부 · 가이드 §22 트리 그룹 헤더 등재.
+
+**선행.** `carried` 승계 결함(같은 날 연속 점검이 앞 위치 실측 표식을 지움)을 먼저 닫는다.
+verify:db 가 그것으로 붉어 이 작업의 게이트가 못 선다.
+
+- [ ] 0. `scripts/migrate-location-tree.mjs` 예행 · 6축 참조 지문 JSON → 검증: 14행, 건수 실측 일치
+- [ ] 1. `--apply`(비파괴 DDL) + `schema.prisma` + generate → 검증: 지문 동일 · tsc 0 · overview 스냅샷 diff 0
+- [ ] 2. `lib/locationTree.ts`(순수) + `scripts/test-location-tree.ts` → 검증: DFS·pathName·순환 거부·깊이 4 거부·루트 중복 거부·떼기 제안, 역주입
+- [ ] 3. 서버 읽기: `getStorageLocations` 가 parentId·depth·pathName 을 DFS 로, 표시 자리 전부 pathName → 검증: 트리 없는 상태에서 화면 문자열 diff 0, check-query-fanout
+- [ ] 4. 서버 쓰기: create(parentId) · move(parentId, stripPrefix) · reorder(형제 전체성) · delete 하위 거부 · undo → 검증: 타 영업장 부모 거부, 자기 서브트리 이동 거부, 형제 중복 거부, 적용취소 원복
+- [ ] 5. 위치 관리 모달 트리화(DFS·들여쓰기·RowActionBtn 메뉴·옮기기 Modal) → 검증: 402px 실기, 웹디자이너 패스
+- [ ] 6. 점검 패널: 트리 드롭다운·서브트리 그룹·체인 저장·허브 마지막+allowHubClamp·(품목,위치) 재시도 → 검증: 김치 실데이터 시나리오, parity·hub-drift·propagation 초록, 임시저장 복원
+- [ ] 7. `scripts/check-location-tree-drift.ts`(verify:db): 순환·깊이·중복·영업장 불일치·6축 래칫 → 검증: 순환 주입 시 빨강
+- [ ] 8. `scripts/check-location-name-axis.mjs`(verify:fast): 표시 자리가 pathName 을 쓰는가 → 검증: 한 자리 되돌리면 빨강
+- [ ] 9. 문서: domain-inventory 절 신설 · 가이드 §22 등재 · Work_log · INDEX
+- [ ] 10. 커밋 단위: DDL+스키마 / 헬퍼+진리표 / 읽기 / 쓰기 / 관리 모달 / 점검 패널 / 감지망 / 문서. 푸시는 묶어서
