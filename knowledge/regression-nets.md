@@ -34,6 +34,10 @@ tsc 가 중복 식별자 오류로 실패한다. pre-push 가 먼저 지운다(`
 - **test-contract-void**(31) 계약서 버전 폐기 — 증거 보존(서명 2장·시각 2개·격리본·오버라이드)·폐기 왕복 항등(적용취소가 손실을 안 만든다)·폐기 대상 판정(격리본만 남은 반쪽도 포함)·대조 기준 링크(`isCurrentSignatureLink`). 자세히는 [[domain-contracts]]
 - **check-standalone-scroll** 셸 밖 라우트의 스크롤 계약(A/B) + **정본 컴포넌트 알맹이**
   (DocumentScroll 의 클래스 토글, Modal 의 배경 잠금 호출, globals 의 잠금 규칙)
+- **check-tenant-room-clear**(2026-09-14 신설, 신고 c120bd32) 호실을 떼는 저장 3축 — `updateTenant` 의
+  `formData.has('roomId')` 가드 · 폼이 `name="roomId"` 를 **조건 없이** 그리는가(중괄호 깊이로 JSX
+  조건부 컨테이너를 가른다) · 희망 초기화가 `newRoomId` 진릿값을 함께 보는가. 데이터로는 못 잡는다 —
+  리드에 호실이 붙은 것 자체는 위반이 아니다. 역주입 3종 발화 확인. 자세히는 [[form-clear-vs-absent]]
 - **check-public-tracking** 공개 페이지 트래킹 참조 유지
 - **check-settings-slug-guard** 소개 페이지 주소 무회귀 — 통짜 저장(updatePropertySettings)이
   `formData.has('publicSlug')` 가드를 쥐고 있는가 · 전용 출구(updatePublicSlug)가 살아 있는가 ·

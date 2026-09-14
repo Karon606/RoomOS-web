@@ -69,7 +69,7 @@ import { checkoutRevertTarget, checkoutRevertBlock, checkoutRevertBlockMessage,
   CHECKOUT_REVERT_LABEL, CHECKOUT_REVERT_REASON } from '@/lib/checkoutRevert'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
-  plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
+  plannedStayDenial, roomRequiredDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
@@ -685,8 +685,9 @@ async function subordinationDenial(
  *   그때는 딸릴 대상이 없어 종속 지목이 성립할 수 없고, 단독 계약 불가 방은 그대로 막힌다.
  */
 async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: string | null): Promise<string | null> {
-  const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
-  if (!f.roomId && !roomOptionalStatuses.includes(f.status)) return '호실을 선택해주세요.'
+  // 호실 필수 판정은 lib/roomAssignment 한 벌이다 — updateTenant 도 같은 문장을 부른다(신고 c120bd32).
+  const roomDenial = roomRequiredDenial({ roomId: f.roomId || null, status: f.status })
+  if (roomDenial) return roomDenial
   if (f.isReservedConfirmed) {
     if (!f.roomId) return '예약 확정 시 호실은 필수입니다.'
     if (!f.rentAmount) return '예약 확정 시 월 이용료는 필수입니다.'
@@ -1093,7 +1094,17 @@ export async function updateTenant(formData: FormData): Promise<
 
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
-  const newRoomId  = roomId || prevRoomId
+  // 폼이 호실 칸을 안 그린 저장만 이전 방을 보존한다. 칸이 있는데 비워 보낸 것은 '뗐다'는 뜻이므로
+  // 그대로 null 이 된다 — 같은 파일의 parentLeaseTermId(:1016)·contractUrl(:1036)·homeCountryContact
+  // 와 같은 규약이다("undefined = 안 건드림, '' = 지움"). 종전의 `roomId || prevRoomId` 는 빈 값이
+  // falsy 라 방을 떼는 저장이 조용히 옛 방으로 되돌아갔다(신고 c120bd32, 박효림 님 건).
+  const roomFieldPresent = formData.has('roomId')
+  const newRoomId  = roomFieldPresent ? (roomId || null) : prevRoomId
+  // 빈 값이 진짜로 방을 떼게 된 이상, 필수 검사도 서버에 있어야 한다 — 종전에는 화면의 required
+  // 하나뿐이라 액션 직접 호출이나 칸 조작으로 거주계 계약이 방 없이 남을 수 있었다.
+  // 등록(addTenant)의 leaseSaveDenial 과 **같은 한 벌**(lib/roomAssignment.roomRequiredDenial)이다.
+  const roomDenial = roomRequiredDenial({ roomId: newRoomId, status })
+  if (roomDenial) return { ok: false, error: roomDenial }
   // 이 저장으로 확정될 납부일. 딸린 계약 전파가 같은 값을 봐야 해서 저장 데이터 밖으로 꺼내 둔다.
   // 거주 전 상태는 **있는 값을 보존**한다(설계 D, 2026-09-07). 예약 단계에서도 계약서 문이
   // 납부일을 원천에 채우므로(setDueDayForContract), 여기서 비우면 서명받은 종이의 납부일이
@@ -1510,9 +1521,12 @@ export async function updateTenant(formData: FormData): Promise<
         contractUrl,
         // undefined 면 이 저장은 종속을 편집하지 않는 것이다(contractUrl 과 같은 관행).
         parentLeaseTermId,
-        // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
-        wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
-        wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
+        // 방이 **새로 정해지면** 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
+        // 방을 **떼는** 저장(newRoomId=null)은 뺀다. 빈 값이 진짜로 방을 떼게 된 뒤로는
+        // `newRoomId !== prevRoomId` 가 떼는 순간에도 참이라, "조건만 남기고 호실은 지운다"는
+        // 바로 그 저장이 남기려던 조건까지 함께 지웠을 자리다(신고 c120bd32).
+        wishRooms:      (newRoomId && newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
+        wishConditions: (newRoomId && newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
         keepAlertAfterInquiry,
         // 리드를 떠나는 저장(비리드 상태·예약 확정)은 조절 여부를 접는다 — 잔존은 거짓 표시(감지망 축 3)
         ...(leavesWishLead(status, isReservedConfirmed ? new Date() : null)

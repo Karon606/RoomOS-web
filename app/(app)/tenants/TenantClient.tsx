@@ -1290,11 +1290,16 @@ export default function TenantClient({
     // 조용히 지나가지 않게 알린다. 서버가 같은 사실을 이미 고지한 경우(거주중 복귀)는 겹치지 않게 건너뛴다.
     const clearsMoveOut = !!(fd.get('prevExpectedMoveOut') as string | null)
       && (fd.get('expectedMoveOut') as string | null) === ''
+    // 이 저장으로 호실 배정이 떨어지는가 — 방을 떼면 이용료도 함께 비는데(handleRoomChange)
+    // 저장 뒤 목록에서야 알게 되던 자리다. 퇴실 예정일과 같은 문법으로 알린다.
+    const clearsRoom = !!(fd.get('prevRoomId') as string | null)
+      && (fd.get('roomId') as string | null) === ''
     startTransition(async () => {
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (res.notice) pushToast('info', res.notice)
       else if (clearsMoveOut) pushToast('info', '퇴실 예정일도 함께 지웠습니다')
+      else if (clearsRoom) pushToast('info', '호실 배정을 해제했습니다', { detail: '이용료도 함께 비웠습니다' })
       // 단기 청구가 함께 조정된 저장 — 결과를 알리고 되돌릴 길을 같이 준다(적용취소 원칙).
       if (res.shortSync) {
         const { leaseTermId, diff, newRent, kind } = res.shortSync
@@ -3785,6 +3790,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
   // 호실 입력 강제 여부 — 예약확정이라도 RESERVED 면 '미지정' 허용(만실 맞바꾸기 임시 파킹용). 라벨·날짜 로직은 roomIsOptional 그대로.
   const roomCanBeEmpty = roomIsOptional || statusVal === 'RESERVED'
+  // 리드 단계에서는 이 폼에 '호실'이 둘이다 — 여기(실제 배정)와 추가 정보의 '입실 희망 호실'.
+  // 그 자리에서만 라벨을 갈라 어느 쪽이 배정인지 말한다. 거주계 상태는 '호실' 그대로다(운영자 결정
+  // 2026-09-14) — 이미 사는 사람에게 '배정'은 군말이고, 희망 쪽 라벨은 그대로 둔다.
+  const roomFieldLabel = roomCanBeEmpty ? '배정 호실' : '호실'
   // ACTIVE, CHECKOUT_PENDING + 예약 확정 → 입주중/퇴실예정 방만 비활성화 (공실 + 퇴실예정만 선택 가능)
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal) || (statusVal === 'RESERVED' && reservationConfirmed)
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
@@ -4418,6 +4427,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         {/* 연장 확인용 이전 값 — 제출 핸들러가 '퇴실 예정인데 퇴실일만 미래로 변경'을 감지 */}
         {lease && <input type="hidden" name="prevStatus" value={lease.status} />}
         {lease && <input type="hidden" name="prevExpectedMoveOut" value={toDateInput(lease.expectedMoveOut)} />}
+        {/* 방을 떼는 저장을 제출 핸들러가 알아보게 — 안내(호실 배정 해제)의 판정 입력이다 */}
+        {lease && <input type="hidden" name="prevRoomId" value={lease.room?.id ?? ''} />}
         {/* 상태별 단계 정보 — 상태에 따라 관련 입력이 상태 바로 아래에 표시됨 */}
         {/* 입실 문의 일시 (예약/투어/취소 — 예약자 순번 기준. 취소자도 이력 보존·열람) */}
         {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE' || statusVal === 'CANCELLED') && (
@@ -4684,7 +4695,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         {/* 호실 — 상태에 따라 선택 규칙 다름 */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">
-            호실{roomCanBeEmpty ? '' : ' *'}
+            {roomFieldLabel}{roomCanBeEmpty ? '' : ' *'}
             {!roomIsOptional && statusVal === 'RESERVED' && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)] font-normal">(맞바꿈 시 잠시 비워둘 수 있음)</span>}
           </label>
           <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomCanBeEmpty}

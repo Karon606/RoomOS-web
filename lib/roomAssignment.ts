@@ -16,6 +16,17 @@ export const RESIDENT_STATUSES: readonly string[] = ['ACTIVE', 'RESERVED', 'CHEC
 /** 방 배정 가드가 읽어야 할 그 방의 다른 계약 상태 — 점유계 + 명의. */
 export const ROOM_GUARD_STATUSES: readonly string[] = [...RESIDENT_STATUSES, 'NON_RESIDENT']
 
+/**
+ * 호실을 안 정한 채로 저장할 수 있는 상태 — 리드 단계(문의·투어·미확정 예약)와 입실 취소.
+ * 그 밖의 상태는 방이 있어야 성립한다(거주계는 사람이 실제로 그 방을 쓰고, 명의는 그 방의 명의다).
+ */
+export const ROOM_OPTIONAL_STATUSES: readonly string[] = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED']
+
+/** 호실 미배정 저장이 성립하는가 — 막히면 문구, 되면 null. 등록·수정 두 경로가 이 한 벌을 쓴다. */
+export function roomRequiredDenial(input: { roomId: string | null; status: string }): string | null {
+  return !input.roomId && !ROOM_OPTIONAL_STATUSES.includes(input.status) ? '호실을 선택해주세요.' : null
+}
+
 // 집계 제외 방에 걸렸을 때의 안내. 계약 쪽 필드로는 풀 수 없는 상태라(비거주 계약에 퇴실 예정일을
 // 넣는 것은 뜻이 안 맞는다) 유일한 출구인 방 설정을 지목한다. 문구는 호실 관리 편집의 체크박스 라벨 그대로다.
 export const NON_RESIDENT_ROOM_ERROR =
