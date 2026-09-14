@@ -175,8 +175,14 @@ function sourceGuards() {
   const merge = readFileSync('lib/stockCheckMerge.ts', 'utf8')
   const applyLoc = block(merge, 'export function applyLocationCheck(', '\n}\n', 'applyLocationCheck')
   if (applyLoc) {
-    if (!/carried:\s*false/.test(applyLoc) || !/carried:\s*true/.test(applyLoc)) {
-      violations.push('applyLocationCheck 이 이월/실측 표식(carried)을 안 찍는다 — 전파 판정이 통째로 휴리스틱으로 후퇴한다')
+    if (!/carried:\s*false/.test(applyLoc)) {
+      violations.push('applyLocationCheck 이 점검 행에 실측 표식(carried: false)을 안 찍는다 — 전파 판정이 통째로 휴리스틱으로 후퇴한다')
+    }
+    // 비점검 행의 표식은 **승계**다. 리터럴 true 를 박으면 같은 날 연속 위치 점검의 두 번째 머지가
+    // 앞 위치의 실측 표식을 이월로 뒤집는다(2026-09-14 4층/5층 주방, 6품목). base 의 값을 읽어야 한다.
+    const carryBranches = applyLoc.match(/carried:\s*[^,\n}]+/g)?.filter(s => !/carried:\s*false/.test(s)) ?? []
+    if (carryBranches.length === 0 || carryBranches.some(s => /carried:\s*true\b/.test(s)) || !carryBranches.every(s => /lb\.carried/.test(s))) {
+      violations.push('applyLocationCheck 의 비점검 가지가 base 의 표식(lb.carried)을 승계하지 않고 이월(true)을 하드코딩한다 — 앞 위치의 실측이 뒤집힌다')
     }
     // 창고에서 창고로 옮기는 일은 없다. 허브 자기 점검에 마커가 붙으면 허브 차감 계산이 흔들린다.
     if (!/restockedQty:\s*patch\.restockedQty[\s\S]{0,80}\}/.test(applyLoc) || !/!isHubChecked\s*\)\s*\?\s*\{\s*restockedQty/.test(applyLoc)) {
@@ -218,6 +224,20 @@ function sourceGuards() {
     if (!/carried:\s*lq\.carried/.test(create)) {
       violations.push('createStockCheck 이 표식을 breakdown 에 저장하지 않는다 — 계산해 놓고 버린다')
     }
+    // 비대칭(의도) — 여기 base 는 **직전 점검**이라 그 행의 마커·표식은 어제의 사실이다. 실으면
+    // 어제의 보충 +N 이 오늘 새 점검에 되살아나고(신고 8319ba10), 어제의 실측 표식이 오늘의 이월 행에
+    // 박혀 그 위치의 전파가 영구히 멈춘다. 값은 안 바뀌므로 아래 데이터 절도 침묵한다.
+    const createBase = create.match(/const base[^\n]*locationBreakdown[^\n]*/)?.[0]
+    if (!createBase) {
+      violations.push('createStockCheck 의 위치 머지 base 조립문을 못 찾았다 — 비대칭 가드가 겨눌 자리를 잃었다')
+    } else {
+      if (/restockedQty/.test(createBase)) {
+        violations.push('createStockCheck 의 base(직전 점검)가 보충 마커를 싣는다 — 어제 보충이 오늘 새 점검에 되살아난다')
+      }
+      if (/carried/.test(createBase)) {
+        violations.push('createStockCheck 의 base(직전 점검)가 이월/실측 표식을 싣는다 — 어제 실측이 오늘 이월 행에 박혀 그 위치의 전파가 영구히 멈춘다')
+      }
+    }
   }
   const update = block(actions, 'export async function updateStockCheck(', '\n}\n', 'updateStockCheck')
   if (update) {
@@ -230,6 +250,20 @@ function sourceGuards() {
     }
     if (!/carried:\s*false/.test(update)) {
       violations.push('updateStockCheck 의 수정 입력 행이 실측 표식(carried: false)을 안 찍는다')
+    }
+    // 비대칭의 반대쪽 — 여기 base 는 **이 점검의 현재 상태**라 앞 위치가 방금 남긴 마커·표식을
+    // 그대로 들고 가야 한다. 빠지면 같은 날 연속 위치 점검의 두 번째 머지가 앞 위치의 +N 을 지우거나
+    // (신고 8319ba10) 실측을 이월로 뒤집는다(2026-09-14 4층/5층 주방, 6품목).
+    const updateBase = update.match(/const base[^\n]*locationBreakdown[^\n]*/)?.[0]
+    if (!updateBase) {
+      violations.push('updateStockCheck 의 위치 머지 base 조립문을 못 찾았다 — 비대칭 가드가 겨눌 자리를 잃었다')
+    } else {
+      if (!/restockedQty:\s*lb\.restockedQty/.test(updateBase)) {
+        violations.push('updateStockCheck 의 base 가 보충 마커를 안 싣는다 — 연속 위치 점검 머지가 앞 위치의 +N 을 지운다(신고 8319ba10)')
+      }
+      if (!/carried:\s*lb\.carried/.test(updateBase)) {
+        violations.push('updateStockCheck 의 base 가 이월/실측 표식을 안 싣는다 — 연속 위치 점검 머지가 앞 위치의 실측을 이월로 뒤집는다')
+      }
     }
     // 수정과 전파가 한 트랜잭션이 아니면 중간 상태(수정만 반영)가 장부에 남는다.
     const tx = block(update, 'await prisma.$transaction(', '\n    })\n', 'updateStockCheck 트랜잭션')

@@ -17,7 +17,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
-import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
+import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
@@ -742,7 +742,8 @@ type LocQty = {
   restockedQty?: number
   fromHubQty?: number
   fromLocationId?: string
-  carried?: boolean
+  // null 도 실린다 — applyLocationCheck 이 구식 행의 표식(null)을 true 로 접지 않고 그대로 승계한다.
+  carried?: boolean | null
 }
 
 // 허브 부족 감지 응답 — 보충량이 허브(창고) 잔량을 넘으면 저장하지 않고 이 값을 돌려준다.
@@ -870,6 +871,11 @@ export async function createStockCheck(data: {
           return { ok: true, id: lastCheck.id }
         }
       }
+      // base 에 restockedQty·carried 를 **싣지 않는 것이 의도다**(updateStockCheck 의 base 와 비대칭).
+      // 여기 base 는 직전 점검(어제)이라 그 행의 마커·표식은 어제의 사실이다. 실으면 어제의 보충 +N 이
+      // 오늘 새 점검에 되살아나고, 어제의 실측 표식(false)이 오늘 새 점검의 이월 행에 박혀 그 위치의
+      // 전파가 영구히 멈춘다(값은 안 바뀌어 감지망도 침묵한다). 표식 없음(undefined) = 전부 이월이
+      // applyLocationCheck 과의 계약이다.
       const base = (lastCheck?.locationBreakdown ?? []).map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
       // 직전 점검 이후 입수분을 base 에 반영 — 실측한 위치(checkedLocationId)는
       // applyLocationCheck 가 실측값으로 덮어쓰므로 영향 없음(실측 우선)
@@ -1106,7 +1112,9 @@ export async function updateStockCheck(id: string, data: {
         return { ok: true }
       }
       // restockedQty 포함 — 같은 날 연속 위치 점검 머지가 앞 위치의 보충 +N 마커를 지우던 버그(신고 8319ba10)
-      const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty, restockedQty: lb.restockedQty }))
+      // carried 포함 — 같은 머지가 앞 위치의 실측 표식(false)을 이월로 뒤집던 버그(2026-09-14 4층/5층 주방).
+      // base 가 '이 점검의 현재 상태'라서 싣는다. createStockCheck 의 base(직전 점검)에는 싣지 않는다.
+      const base: LocBreakdown[] = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty, restockedQty: lb.restockedQty, carried: lb.carried }))
       // 이 점검 생성 이후 들어온 입수분을 base 에 반영 (createStockCheck 와 동일 규칙)
       const addMap = await additionsSinceCheckByLocation(c.trackedItemId, c, c.trackedItem.hubLocationId, propertyId)
       for (const [loc, q] of addMap) {

@@ -5,7 +5,9 @@
 
 // restockedQty(선택): base가 '같은 점검 행의 현재 상태'일 때 기존 보충 마커. 머지 시 비점검 위치의
 // +N 마커가 지워지던 버그(신고 8319ba10) 방지용 — 새 점검 생성 base(전날 점검)는 넣지 않아 이월 안 됨.
-export type LocBreakdown = { locationId: string; qty: number; restockedQty?: number | null }
+// carried(선택): 같은 규칙이다. base 가 '같은 점검 행의 현재 상태'일 때 기존 이월/실측 표식.
+// 없으면(undefined) base 가 다른 점검에서 온 것이라 이번 점검의 비점검 행은 전부 이월이다.
+export type LocBreakdown = { locationId: string; qty: number; restockedQty?: number | null; carried?: boolean | null }
 export type LocCheckPatch = {
   checkedLocationId: string   // 이번에 점검한 위치
   afterQty: number            // 보충 후 잔량(실측)
@@ -15,13 +17,23 @@ export type LocCheckPatch = {
 // carried — 이월/실측 표식(2026-09-11). 점검한 위치만 실측(false)이고 나머지는 전부 이월(true)이다.
 // 허브 자동 차감 행도 이월이다 — 그 값은 실측이 아니라 '허브 이전 − 보충합' 파생값이다
 // (knowledge/domain-inventory.md '허브 칸은 파생값이고 주방 칸이 유일한 실측이다').
-export type LocQtyOut = { storageLocationId: string; qty: number; restockedQty?: number; carried?: boolean }
+export type LocQtyOut = { storageLocationId: string; qty: number; restockedQty?: number; carried?: boolean | null }
 
 // base(머지 대상 점검의 현재 상태 또는 직전 점검)에 한 위치 점검을 적용:
 //  - 점검 위치 qty = afterQty (+ restockedQty 마커, 같은 위치 재점검은 마지막 값으로 덮어씀)
 //  - 비허브 위치에 보충(restockedQty>0)이면 허브 위치 qty에서 그만큼 자동 차감(0 미만 방지)
 //  - 그 외 위치는 현재 값 그대로 이월 — 기존 보충 마커 포함(같은 날 연속 위치 점검이 앞 위치의 +N을 지우던 신고 8319ba10)
 //
+// **비점검 행의 carried 는 무조건 true 가 아니라 승계다**(2026-09-14). 종전에는 여기서 true 를 박아,
+// 같은 날 연속 위치 점검의 두 번째 머지가 앞 위치의 실측 표식(false)을 이월로 뒤집었다(4층 주방 다음
+// 5층 주방을 점검하자 4층 6품목의 실측이 이월이 된 사고). 뒤집힌 행은 전파가 덮어써도 되는 행으로
+// 보여 실측값이 조용히 사라진다. 규칙은 restockedQty 와 정확히 같다 — base 가 '같은 점검의 현재 상태'
+// 면 그 행이 이미 가진 표식을 그대로 들고 가고, base 가 다른 점검(직전 점검)에서 왔으면 표식이 없어
+// (undefined) 전부 이월(true)이다. 그래서 호출부도 같은 비대칭을 지킨다 — updateStockCheck 의 base 만
+// carried 를 싣고 createStockCheck 의 base(직전 점검)는 싣지 않는다.
+// **null 은 null 로 남긴다.** null 은 '표식 이전 구식 행'이라 모르는 것이고, true 로 접으면 모르는 것을
+// '파생이다'로 단정하는 것이다. planCheckPropagation(lib/stockLedger)이 null 에만 걸어 둔 휴리스틱
+// (저장값이 파생식과 같은가)이 그 순간 무력화된다.
 // **허브 자기 점검에는 마커를 붙이지 않는다**(2026-09-11 김치). 보충 마커는 '창고에서 이 위치로
 // 옮긴 양'이라 허브 자신에게는 뜻이 없다. 그런데 위치 패널의 허브 칸이 '채운 후'에 묶여 있어
 // 후−전 = +17 이 보충으로 셈해졌고, 그 값이 허브 행에 마커로 박혀 이월 판정을 통째로 흔들었다.
@@ -37,9 +49,9 @@ export function applyLocationCheck(base: LocBreakdown[], patch: LocCheckPatch): 
       hasChecked = true
       out.push({ storageLocationId: lb.locationId, qty: patch.afterQty, ...checkedMarker, carried: false })
     } else if (!isHubChecked && patch.restockedQty > 0 && patch.hubLocationId && lb.locationId === patch.hubLocationId) {
-      out.push({ storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - patch.restockedQty), ...keepMarker(lb), carried: true })
+      out.push({ storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - patch.restockedQty), ...keepMarker(lb), carried: lb.carried === undefined ? true : lb.carried })
     } else {
-      out.push({ storageLocationId: lb.locationId, qty: lb.qty, ...keepMarker(lb), carried: true })
+      out.push({ storageLocationId: lb.locationId, qty: lb.qty, ...keepMarker(lb), carried: lb.carried === undefined ? true : lb.carried })
     }
   }
   // base에 점검 위치가 없으면 추가 (그 위치 첫 점검)
