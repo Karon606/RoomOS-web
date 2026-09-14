@@ -1544,8 +1544,10 @@ export async function getLocationDrafts(
     const cur = merged.get(r.trackedItemId)
     if (!cur || savedAt > cur.savedAt) merged.set(r.trackedItemId, { before, after, savedAt })
   }
+  // savedAt 을 함께 돌려준다 — 행마다 '이 숫자는 임시저장본'을 말하려면 그 품목의 저장 시각이
+  // 필요하다(스키마 무변경, 값은 이미 data JSON 안에 있었다). 0 이면 시각 미상.
   return Array.from(merged.entries()).map(([trackedItemId, v]) => ({
-    trackedItemId, data: { before: v.before, after: v.after },
+    trackedItemId, data: { before: v.before, after: v.after, savedAt: v.savedAt },
   }))
 }
 

@@ -1,0 +1,214 @@
+// 점검 임시저장(드래프트) 수명주기 배선 감지 — 실행: node scripts/check-draft-lifecycle.mjs
+//
+// 왜 필요한가. 2026-09-14 운영자 신고 — "임시저장 후 실저장을 눌렀는데 임시저장이 남아 있었고,
+// 그 뒤 어느 숫자가 임시저장본이고 어느 것이 저장본인지 헷갈렸다". 근원은 기능이 아니라 **침묵**
+// 이었다. 위치별 점검 패널의 doSave 가 실패를 setError 로만 적고 그대로 onClose 를 불렀는데,
+// 인라인 모드의 onClose 는 화면 전환(changeView)이라 에러가 한 프레임도 안 그려졌다. 실패한
+// 품목의 드래프트만 남아 '임시저장 남음' 으로 보였다.
+//
+// 잡는 것 다섯.
+//   ① doSave 의 onClose 는 실패 0 조건 아래에만 선다.
+//   ② 드래프트 삭제·저장의 반환값을 읽는다(양 화면 모두).
+//   ③ 두 화면(아이템별 폼 · 위치 패널)의 임시저장 분기가 대칭이다.
+//   ④ currentLocationBreakdown 이 restockedQty 를 싣는다(죽은 '지난 옮김' 표시의 근원).
+//   ⑤ 이중 차감 확인창이 저장 경로에 꽂혀 있다.
+import { readFileSync } from 'node:fs'
+
+const client   = readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8')
+const actions  = readFileSync('app/(app)/inventory/actions.ts', 'utf8')
+const overview = readFileSync('app/(app)/inventory/overview.ts', 'utf8')
+
+const fails = []
+const need = (name, cond, hint) => { if (!cond) fails.push(`${name}${hint ? ` — ${hint}` : ''}`) }
+
+// 함수 하나만 잘라 본다 — 파일 전체로는 형제 함수의 코드가 섞여 판정이 무의미해진다.
+function fnBody(src, header, from = 0) {
+  const start = src.indexOf(header, from)
+  if (start < 0) return ''
+  let i = src.indexOf('{', start + header.length - 1)
+  if (i < 0) return ''
+  let depth = 0
+  for (let j = i; j < src.length; j++) {
+    if (src[j] === '{') depth++
+    else if (src[j] === '}') { depth--; if (depth === 0) return src.slice(start, j + 1) }
+  }
+  return ''
+}
+const before = (s, a, b) => s.indexOf(a) >= 0 && s.indexOf(b) >= 0 && s.indexOf(a) < s.indexOf(b)
+
+// ── ① 실패하면 닫지 않는다 ─────────────────────────────────────────
+const doSave = fnBody(client, "const doSave = async (forceMerge?: boolean, dupDecision?: 'keep' | 'skip') => {")
+need('doSave 를 찾음', doSave.length > 0)
+need('doSave 가 onClose 를 한 번만 부른다',
+  (doSave.match(/onClose\(\)/g) ?? []).length === 1,
+  '닫는 자리가 둘이면 한쪽이 조건을 비껴간다')
+need('저장 실패 목록을 모은다', /const failed: \{ id: string; label: string; error: string \}\[\] = \[\]/.test(doSave))
+// §27.2 이중 통지 금지 — 채널은 인라인 하나다. 저장 실패에 토스트를 다시 얹으면 같은 사건을
+// 두 번 알리는 것이고, 사라지는 토스트는 다시 시도할 자리를 못 남긴다(§18 영속·리스트형).
+need('저장 실패를 토스트로 알리지 않는다',
+  !/pushToast\('error'/.test(doSave),
+  '실패 채널은 버튼 줄 위 고정 영역의 인라인 목록 하나다')
+need('실패가 있으면 닫지 않고 끝낸다',
+  /if \(failed\.length > 0 \|\| cleanupFailed\.length > 0\) return/.test(doSave),
+  'return 이 없으면 그대로 닫힌다')
+need('실패 분기가 onClose 앞에 있다',
+  before(doSave, 'if (failed.length > 0 || cleanupFailed.length > 0) return', 'onClose()'),
+  '뒤에 있으면 실패해도 패널이 먼저 닫힌다(이 신고의 근원)')
+need('실패가 있어도 성공분은 반영한다',
+  before(doSave, 'onDone()', 'if (failed.length > 0 || cleanupFailed.length > 0) return'))
+need('오류 문구는 humanError 를 탄다',
+  (doSave.match(/humanError\(/g) ?? []).length === 2,
+  '영어 프레임워크 메시지가 한국어 폴백을 이기고 화면에 뜬다')
+need('허브 부족 큐는 종전대로 모달을 유지한다',
+  /if \(shorts\.length > 0\) \{ setHubShortQueue\(shorts\); return \}/.test(doSave))
+// 허브 부족 팝업이 마감할 때도 같은 규칙을 탄다 — 여기만 무조건 닫으면 실패가 다시 사라진다.
+const hubResolved = fnBody(client, 'const onHubShortResolved = async () => {')
+need('onHubShortResolved 를 찾음', hubResolved.length > 0)
+need('팝업 마감도 실패 0 일 때만 닫는다',
+  /if \(saveFailed\.length === 0 && draftCleanupFailed\.length === 0 && !cleanupFailedLabel\) onClose\(\)/.test(hubResolved))
+// 실패 목록은 **스크롤 밖 고정 영역**이다 — 스크롤 안에 두면 품목이 열일 때 뷰포트 밖으로 밀린다.
+need('패널에 실패 목록이 그려진다',
+  /\{saveFailed\.length > 0 && \(/.test(client) && /\{saveFailed\.map\(f => \(/.test(client))
+need('패널에 정리 실패 안내가 그려진다', /\{draftCleanupFailed\.length > 0 && \(/.test(client))
+need('실패 영역이 스크롤 밖 shrink-0 이다',
+  /\{\(saveFailed\.length > 0 \|\| draftCleanupFailed\.length > 0 \|\| error\) && \([\s\S]{0,120}?shrink-0/.test(client),
+  '스크롤 컨테이너 안에 있으면 10품목에서 뷰포트 밖으로 밀린다')
+need('실패 문안이 남은 임시저장 유무로 갈린다',
+  /saveFailed\.some\(f => rowDrafts\[f\.id\] != null\)/.test(client),
+  "드래프트가 없는데 '임시저장은 그대로 남아 있습니다' 는 거짓이다")
+need('정리 실패 문안이 목록을 문장 끝에 둔다',
+  /실패한 품목이 있습니다\. \{draftCleanupFailed\.join\(', '\)\}\./.test(client),
+  '라벨 뒤에 조사를 붙이면 이름에 따라 는/은 이 갈린다')
+
+// ── ② 삭제·저장 반환값을 읽는다 ────────────────────────────────────
+need('저장은 allSettled 로 받는다',
+  /const settled = await Promise\.allSettled\(toSave\.map\(r => saveItem\(r\)\)\)/.test(doSave),
+  'Promise.all 은 한 품목의 거부로 통째로 터져 드래프트 정리를 통째로 건너뛴다')
+need('드래프트 삭제도 allSettled 로 받는다',
+  /const cleaned = await Promise\.allSettled\(savedOk\.map\(r => deleteStockCheckDraft\(r\.id, locId\)\)\)/.test(doSave))
+need('삭제 반환값을 실제로 검사한다',
+  /const cleanedOk = cleaned\.map\(c => c\.status === 'fulfilled' && c\.value\.ok\)/.test(doSave),
+  'deleteStockCheckDraft 는 { ok:false } 를 돌려줄 수 있다')
+need('검사 안 하는 드래프트 삭제가 남아 있지 않다',
+  !/await Promise\.all\(savedOk\.map\(r => deleteStockCheckDraft/.test(client) &&
+  !/^\s*(await|void) deleteItemDrafts\(/m.test(client),
+  '반환값을 안 읽으면 정리 실패가 그대로 다음 진입의 유령 임시저장이 된다')
+const clearAfterSave = fnBody(client, 'const clearDraftsAfterSave = async () => {')
+need('아이템별 폼의 저장 후 정리가 정본 한 곳이다', clearAfterSave.length > 0)
+need('그 정본이 반환값을 읽는다', /if \(!del\.ok\)/.test(clearAfterSave))
+const clearDraft = fnBody(client, 'const handleClearDraft = () => {')
+need('아이템별 비우기도 반환값을 읽는다', /if \(!res\.ok\) \{ pushToast\('error', res\.error\); return \}/.test(clearDraft))
+
+// ── ③ 두 화면의 임시저장 분기가 대칭 ───────────────────────────────
+const itemDraft = fnBody(client, 'const handleSaveDraft = () => {')          // 아이템별 폼
+const locDraft  = fnBody(client, 'const handleSaveDraft = async () => {')    // 위치 패널
+need('아이템별 임시저장을 찾음', itemDraft.length > 0)
+need('위치별 임시저장을 찾음', locDraft.length > 0)
+need('아이템별은 실패면 성공 토스트를 안 띄운다',
+  before(itemDraft, "if (!res.ok) { pushToast('error', res.error); return }", "pushToast('success', '임시저장됨')"))
+need('위치별도 실패면 성공 토스트를 안 띄운다',
+  before(locDraft, 'if (failed.length > 0)', "pushToast('success', `${dirty.length}품목 임시저장됨`)"),
+  '형제가 갈리면 한쪽만 조용히 거짓말을 한다')
+need('위치별은 실패면 칩·시각을 안 세운다',
+  before(locDraft, 'if (failed.length > 0)', 'setLocDraftSavedAt(savedAt)'))
+need('위치별 임시저장이 반환값을 읽는다',
+  /const okFlags = settled\.map\(s => s\.status === 'fulfilled' && s\.value\.ok\)/.test(locDraft))
+// 비우기 — 두 화면 모두 같은 자리·라벨, 확인창 없이.
+need('위치 패널에도 임시저장 비우기가 있다',
+  /const handleClearLocDrafts = async \(\) => \{/.test(client) &&
+  /onClick=\{\(\) => \{ void handleClearLocDrafts\(\) \}\}/.test(client))
+need('비우기 라벨이 두 화면에서 같다', (client.match(/>비우기<\/button>/g) ?? []).length === 2)
+// 히트영역 — 글자만이면 27x13px 이다. §25 유사요소 확장을 두 화면 모두에.
+need('비우기 히트영역이 두 화면 모두 44px 로 넓혀져 있다',
+  (client.match(/before:absolute before:content-\[''\] before:-inset-x-3 before:-inset-y-\[15px\]/g) ?? []).length === 2)
+const clearLoc = fnBody(client, 'const handleClearLocDrafts = async () => {')
+need('위치 비우기도 반환값을 읽는다', /if \(okFlags\.some\(v => !v\)\)/.test(clearLoc))
+// 일괄 비우기는 확인창 + 적용취소다(운영자 결정 2026-09-14). 아이템별 폼(1품목)은 즉시 —
+// 규모가 달라서지 형제가 갈린 것이 아니다.
+need('위치 일괄 비우기는 §14 확인창을 거친다',
+  /await confirmDialog\(\{/.test(clearLoc) && /level: 'caution'/.test(clearLoc) && /confirmLabel: '비우기'/.test(clearLoc),
+  '여러 품목이 한 번에 사라지는 동작이다 — 묻지 않으면 되돌릴 자리도 없다')
+need('확인창 제목이 물음형이다', /임시저장을 비울까요\?/.test(clearLoc))
+need('취소는 무해하다', /if \(!ok\) return/.test(clearLoc))
+need('비운 뒤 §16 적용취소를 노출한다',
+  /pushToast\('success', '임시저장 비움', \{[\s\S]{0,120}?action: \{ label: '적용취소', run:/.test(clearLoc),
+  '적용취소 없이 지우면 6초 안에 되돌릴 길이 사라진다')
+need('되돌릴 값을 지우기 전에 붙잡는다',
+  before(clearLoc, 'const snapshot = await getLocationDrafts(locId)', 'deleteStockCheckDraft(id, locId)'),
+  '지운 뒤에는 서버에 물어볼 자리가 없다')
+need('적용취소가 붙잡은 값을 그대로 되쓴다',
+  /Promise\.allSettled\(snapshot\.map\(d => saveStockCheckDraft\(\{/.test(clearLoc))
+need('되쓰기 실패를 삼키지 않는다', /if \(failedBack > 0\)/.test(clearLoc))
+need('되돌린 뒤 칩·행 캡션·배지를 다시 세운다',
+  /setRowDrafts\(restored\)/.test(clearLoc) && /setLocDraftSavedAt\(latest\)/.test(clearLoc) &&
+  (clearLoc.match(/onDraftChange\?\.\(\)/g) ?? []).length >= 2)
+// 행 단위 표시 — 어느 숫자가 임시저장본인지 행마다 말한다.
+need('행 캡션 기준값을 들고 있다', /const \[rowDrafts, setRowDrafts\] = useState</.test(client))
+need('행 캡션이 3상태로 갈린다',
+  /rowDraftEdited\s*\n?\s*\? '임시저장 후 수정됨'/.test(client) && /`임시저장 \$\{fmtTime\(new Date\(rowDraft\.savedAt\)\)\}`/.test(client))
+need('행 캡션이 정본 Badge 다',
+  /<Badge tone="inspect">\s*\n?\s*\{rowDraftEdited/.test(client),
+  '손 배지를 다시 그리면 같은 사실을 말하는 형제와 모양이 갈린다')
+need('재진입 복원본을 기준 스냅샷으로 시딩한다',
+  /const restoredOnly = locDraftSavedAt != null && locDraftSnapRef\.current == null/.test(client) &&
+  /if \(restoredOnly\) locDraftSnapRef\.current = curSnap/.test(client),
+  '안 세우면 판정식이 영원히 거짓이라 재진입 뒤 3상태가 안 뜬다')
+need('행 캡션에 좌측 립이 없다', !/border-left[^\n]*inspect/.test(client), '§18 — 립은 예외 상태 전용이다')
+need('getLocationDrafts 가 savedAt 을 함께 돌려준다',
+  /trackedItemId, data: \{ before: v\.before, after: v\.after, savedAt: v\.savedAt \}/.test(actions),
+  '시각이 없으면 행 캡션이 "언제"를 말할 수 없다')
+need("참고줄이 '저장된 잔량' 이라고 말한다",
+  (client.match(/>저장된 잔량 <strong/g) ?? []).length === 2 && !/>직전 잔량 <strong/.test(client),
+  "'직전'은 임시저장본과 구별이 안 된다 — 두 화면 모두 바꿔야 한다")
+
+// ── ④ 죽은 '지난 옮김' 표시를 살린다 ───────────────────────────────
+need('currentLocationBreakdown 이 restockedQty 를 싣는다',
+  /const restockedOf = new Map<string, number>\(\)/.test(overview) &&
+  /\.\.\.\(rq != null \? \{ restockedQty: rq \} : \{\}\)/.test(overview),
+  '안 실으면 소비처 두 곳이 항상 undefined 라 이중 차감 신호가 구조적으로 안 뜬다')
+need('마커는 표시 전용이다 — 잔량 맵(cur)에 안 들어간다',
+  !/cur\.set\([^\n]*restocked/.test(overview))
+// 한 줄에 같은 +N 이 두 번 뜨지 않게 축을 가른다 — 저장본 대 이번 입력.
+need('소비처 두 곳이 같은 문구다',
+  (client.match(/· 저장된 옮김 <strong/g) ?? []).length === 2 &&
+  !/· 지난 옮김/.test(client) && !/이 점검에 반영된 옮김/.test(client))
+need('이번 입력 축이 두 곳 다 갈렸다',
+  (client.match(/>이번 입력 <strong/g) ?? []).length === 2 && !/>창고에서 <strong/.test(client))
+
+// ── ⑤ 이중 차감 물음 ───────────────────────────────────────────────
+const dupFn = fnBody(client, 'const doubleRestockOf = (r: InventoryRow, forceMerge?: boolean) => {')
+need('이중 차감 판정 함수를 찾음', dupFn.length > 0)
+need('마커가 있을 때만 묻는다', /if \(prevRestocked <= 0\) return null/.test(dupFn))
+need('보충이 계산될 때만 묻는다', /if \(restocked <= 0\) return null/.test(dupFn))
+need('머지되는 저장에서만 묻는다',
+  /if \(!\(date === kstYmdStr\(\) && \(forceMerge \|\| \(sameDay && within6h\)\)\)\) return null/.test(dupFn),
+  '새 점검으로 저장되면 마커가 안 겹쳐 물을 일이 없다')
+need('저장 경로에 물음이 꽂혀 있다',
+  /const dups = dirty\.filter\(r => doubleRestockOf\(r, forceMerge\) != null\)/.test(doSave) &&
+  /if \(dups\.length > 0 && !dupDecision\) \{ setDupItems\(dups\); return \}/.test(doSave))
+need('품목마다 모달을 띄우지 않는다',
+  !/confirmDialog/.test(doSave),
+  '품목 수만큼 모달을 연타하면 묻는 것이 아니라 막는 것이 된다')
+need('물음은 형제 바와 같은 자리의 인라인 바다',
+  /\{dupItems\.length > 0 && \(/.test(client) &&
+  /border-t border-\[var\(--honey\)\]\/40 bg-\[var\(--honey\)\]\/10 px-5 py-3 shrink-0 space-y-2/.test(client))
+need('제목이 물음형이고 라벨 뒤 조사가 없다',
+  /이미 옮긴 기록이 있습니다\. 더 옮길까요\?/.test(client))
+need('대상 목록이 §14 영향 목록 박스 문법이다',
+  /<li key=\{r\.id\} className="text-\[12\.5px\] text-\[var\(--ink-s\)\]">/.test(client) &&
+  /font-semibold" style=\{\{ fontFeatureSettings: "'tnum'" \}\}/.test(client))
+need('두 갈래가 인자로 흐른다(상태 지연 함정 회피)',
+  /doSave\(mergeChoice === 'merge', 'skip'\)/.test(client) &&
+  /doSave\(mergeChoice === 'merge', 'keep'\)/.test(client))
+need("'빼고 저장'은 그 품목만 뺀다",
+  /const skipIds = dupDecision === 'skip' \? new Set\(dups\.map\(r => r\.id\)\) : new Set<string>\(\)/.test(doSave) &&
+  /const toSave = dirty\.filter\(r => !skipIds\.has\(r\.id\)\)/.test(doSave),
+  '저장 전체를 중단시키면 나머지 품목의 실측이 버려진다')
+need('다 빠지면 조용히 끝나지 않는다',
+  /if \(toSave\.length === 0\) \{ setError\('저장할 품목이 없습니다\.'\); return \}/.test(doSave))
+need('서버 규칙은 안 건드렸다 — 물음은 클라이언트에만 있다',
+  !/doubleRestockOf|더 옮길까요/.test(actions))
+
+console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
+for (const f of fails) console.log('  - ' + f)
+if (fails.length > 0) process.exit(1)

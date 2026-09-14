@@ -701,10 +701,24 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       locations.find(l => l.id === id)?.name
       ?? last?.locationBreakdown.find(lb => lb.storageLocationId === id)?.storageLocation.name
       ?? ''
+    // 마지막 점검이 이 위치에 실은 보충 마커(+N). **표시 전용이고 잔량 수학(cur)에 일절 안 들어간다.**
+    // 이 값을 안 실어서 점검 폼 두 곳의 '지난 옮김' 표시가 항상 undefined 였다 — 같은 점검에 보충을
+    // 또 적으면 허브가 두 번 빠지는데, 그것을 막을 유일한 화면 신호가 구조적으로 안 떴다
+    // (2026-09-14 위치별 점검 조용한 실패 조사). 소비처는 InventoryClient 참고줄 2곳.
+    const restockedOf = new Map<string, number>()
+    for (const lb of last?.locationBreakdown ?? []) {
+      if (lb.restockedQty != null && lb.restockedQty > 0) restockedOf.set(lb.storageLocationId, lb.restockedQty)
+    }
     const currentLocationBreakdown: LocationQtyEntry[] = [
       ...locations.filter(l => cur.has(l.id)).map(l => l.id),
       ...[...cur.keys()].filter(id => !locations.some(l => l.id === id)),
-    ].map(id => ({ locationId: id, locationName: locNameOf(id), qty: Math.max(0, cur.get(id) ?? 0) }))
+    ].map(id => {
+      const rq = restockedOf.get(id)
+      return {
+        locationId: id, locationName: locNameOf(id), qty: Math.max(0, cur.get(id) ?? 0),
+        ...(rq != null ? { restockedQty: rq } : {}),
+      }
+    })
 
     // 숨김 판정 — 숨긴(closedAt) 위치 중 현재 잔량이 비어 있으면(< 0.001) 화면에서 가린다.
     // 재고가 들어오면(어느 경로든) 잔량이 살아나 자동으로 다시 보인다 — 조용히 사라지지 않는다.
