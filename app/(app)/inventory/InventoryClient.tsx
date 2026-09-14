@@ -929,7 +929,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       )}
 
       {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); refreshArchivedCount(); router.refresh() }} />}
-      {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
+      {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} onChanged={() => router.refresh()} />}
       {mergeDecisions.length > 0 && (
         <MergeDecisionModal
           decisions={mergeDecisions}
@@ -4636,8 +4636,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             </div>
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검일</p>
+              {/* 높이·radius 는 왼쪽 위치 선택기 트리거와 같은 한 벌이다(§12 한 폼 안 입력 통일). */}
               <DatePicker value={date} onChange={setDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)]" />
             </div>
           </div>
           {/* 위치 간 이동 — 점검(허브 자동 차감)과 별개의 명시적 이동·맞바꿈 */}
@@ -4716,9 +4717,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                         }
                         count={`${items.length}품목`}
                         trailing={isCollapsed && typedIn > 0
-                          ? <span className="mono text-[0.6875rem] text-[var(--coral)]">입력 {typedIn}</span>
+                          ? <span className="mono text-[0.6875rem] text-[var(--tc-text)]">입력 {typedIn}</span>
                           : undefined}
-                        collapsible
+                        collapsible={items.length > 0}
                         collapsed={isCollapsed}
                         onToggle={() => setCollapsed(prev => {
                           const next = new Set(prev)
@@ -4794,11 +4795,13 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                                 onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
                                 className={qtyInputCls} />
                               <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
+                              {/* 참고줄의 '저장된 잔량' 과 같은 축의 말이다 — 채워 넣는 값이 그것이다.
+                                  글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
                               {prev != null && (
                                 <button type="button"
                                   onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}
-                                  className="shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                                  직전값
+                                  className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px]">
+                                  저장된 값
                                 </button>
                               )}
                             </div>
@@ -4832,7 +4835,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                                       setAfterQtys(p => ({ ...p, [k]: v }))
                                     }
                                   }}
-                                  className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                                  // 히트영역 44px — 위로는 mt-1 여백(4px)까지만 늘리고 나머지는 아래로 뻗는다.
+                                  // 위로 더 뻗으면 바로 위 입력칸의 아래 끝을 가려 오조작이 난다.
+                                  className="relative text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11">
                                   옮김 없음
                                 </button>
                               </div>
@@ -4856,7 +4861,11 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               // 체인이 어디까지 갔는가 — 비원자 저장이라 이 문장이 값이다.
               <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
                 <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
-                  전체 <span className="tabular-nums">{saveProgress.total}</span>건 중 <span className="tabular-nums">{saveProgress.done}</span>건까지 저장하고 멈췄습니다. 멈춘 자리는 {saveProgress.stoppedAt} 입니다. 저장된 행의 임시저장은 비워졌고 남은 행은 그대로입니다.
+                  {/* 0건은 '0건까지 저장하고' 가 아니라 '한 건도 저장하지 못하고' 다 — 세는 말과 사실이 갈린다. */}
+                  {saveProgress.done === 0
+                    ? <>전체 <span className="tabular-nums">{saveProgress.total}</span>건 중 한 건도 저장하지 못하고 멈췄습니다.</>
+                    : <>전체 <span className="tabular-nums">{saveProgress.total}</span>건 중 <span className="tabular-nums">{saveProgress.done}</span>건까지 저장하고 멈췄습니다.</>}
+                  {' '}멈춘 자리는 {`'${saveProgress.stoppedAt}'`}입니다. 저장된 행의 임시저장은 비워졌고 남은 행은 그대로입니다.
                 </p>
               </div>
             )}
@@ -4974,7 +4983,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || scopeItemCount === 0}>
             {draftPending ? '저장 중…' : '임시저장'}
           </Btn>
-          <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0}>
+          {/* 입력이 한 칸도 없으면 '0건 저장' 은 누를 데가 아니다 — 눌러도 아무 일이 없는 버튼은 오조작이다. */}
+          <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0 || dirtyUnitCount === 0}>
             {pending ? '저장 중…' : `${dirtyUnitCount}건 저장`}
           </Btn>
         </div>
@@ -5032,34 +5042,39 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
         className="w-full flex items-center gap-1.5 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-left min-h-[var(--input-h-touch)] outline-none focus:border-[var(--coral)] transition-colors">
         {/* truncate — 좁은 칸에서 넘칠 때 줄바꿈 대신 말줄임으로 받는다(§12·CountrySelect 와 같은 규칙). */}
         <span className={`flex-1 min-w-0 truncate ${selected ? 'text-[var(--warm-dark)]' : 'text-[var(--warm-muted)]'}`}>
-          {selected ? selected.pathName : '위치 선택…'}
+          {selected ? selected.pathName : '위치 선택'}
         </span>
         <span className="text-[var(--warm-muted)] shrink-0">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
         </span>
       </button>
       {open && typeof window !== 'undefined' && createPortal(
-        <div ref={panelRef}
-          className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-1.5"
-          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '320px', overflowY: 'auto' }}>
-          {locs.length === 0 && <p className="px-3 py-4 text-sm text-[var(--warm-muted)] text-center">등록된 위치가 없습니다.</p>}
-          {locs.map(node => {
-            const isSel = node.id === value
-            return (
-              <button key={node.id} type="button"
-                onClick={() => { onChange(node.id); setOpen(false) }}
-                style={{ paddingLeft: 10 + (node.depth - 1) * LOC_INDENT_PX }}
-                className={`w-full flex items-center gap-2 min-h-[44px] pr-2.5 py-1.5 rounded-lg text-left transition-colors ${isSel ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]'}`}>
-                {isSel && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                )}
-                <span className="flex-1 min-w-0 truncate text-sm">{node.name}</span>
-                {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
-                <span className="mono text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{itemCountOf(node.id)}품목</span>
-              </button>
-            )
-          })}
-        </div>,
+        <>
+          {/* 외부 클릭 닫기 backdrop — DatePicker 정본 문법. 뒤 스크롤러를 덮어 패널만 남긴 채
+              목록이 움직이는 것을 막고, 아무 데나 눌러도 닫힌다. */}
+          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={() => setOpen(false)} />
+          <div ref={panelRef}
+            className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
+            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '320px', overflowY: 'auto' }}>
+            {locs.length === 0 && <p className="px-3 py-4 text-sm text-[var(--warm-muted)] text-center">등록된 위치가 없습니다.</p>}
+            {locs.map(node => {
+              const isSel = node.id === value
+              return (
+                <button key={node.id} type="button"
+                  onClick={() => { onChange(node.id); setOpen(false) }}
+                  style={{ paddingLeft: 10 + (node.depth - 1) * LOC_INDENT_PX }}
+                  className={`w-full flex items-center gap-2 min-h-[44px] pr-2.5 py-1.5 rounded-lg text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] ${isSel ? 'text-[var(--tc-text)] font-semibold' : 'text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]'}`}>
+                  {isSel && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  )}
+                  <span className="flex-1 min-w-0 truncate text-sm">{node.name}</span>
+                  {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
+                  <span className="mono text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{itemCountOf(node.id)}품목</span>
+                </button>
+              )
+            })}
+          </div>
+        </>,
         document.body,
       )}
     </div>
@@ -5313,12 +5328,12 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
 // 순서 편집은 **형제 안에서만** 이다. 목록이 DFS 라 화면상 이웃 행이 형제가 아닐 수 있으므로,
 // ▲▼도 드래그도 형제 집합 위에서 자리를 센다. 부모를 바꾸는 일은 '옮기기' 모달이 맡는다 —
 // 402px 에서 드래그로 부모까지 바꾸면 오조작이 잦다(설계 결정 2026-09-14).
-function LocationSettingsModal({ onClose }: { onClose: () => void }) {
+function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
   const [locs, setLocs]           = useState<StorageLocationNode[]>([])
   const [newName, setNewName]     = useState('')
   const [editId, setEditId]       = useState<string | null>(null)
   const [editName, setEditName]   = useState('')
-  const [childOf, setChildOf]     = useState<string | null>(null)   // 하위 추가 입력칸이 열린 부모 id
+  const [childOf, setChildOf]     = useState<string | null>(null)   // 아래 칸 추가 입력칸이 열린 부모 id
   const [childName, setChildName] = useState('')
   const [moveId, setMoveId]       = useState<string | null>(null)   // 옮기기 모달 대상
   const [menuId, setMenuId]       = useState<string | null>(null)   // 행 액션 메뉴가 열린 행
@@ -5469,20 +5484,23 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   // 이름을 먼저 옛 이름으로 되돌려 놓고 옮기면 그 충돌이 서지 않는다(검수 지적 2026-09-14).
   // siblingIds 를 다시 넘기지 않으면 옛 자리가 아니라 형제 맨 뒤로 돌아간다.
   //
-  // 중간에 실패하면 **어디까지 되돌렸는지**를 인라인에 남긴다 — 토스트는 사라지고, 절반만 돌아간
-  // 상태를 화면이 말하지 않으면 운영자가 무엇을 손으로 고쳐야 하는지 알 수 없다.
+  // 중간에 실패하면 **어디까지 되돌렸는지**를 토스트로 말한다 — 적용취소는 모달을 닫은 뒤에도
+  // 눌릴 수 있고, 그때 인라인 자리는 화면에 없다. 실패가 어디에도 안 뜨면 절반만 돌아간 상태를
+  // 운영자가 영영 모른다(검수 지적 2026-09-14). 순서·이름 적용취소가 이미 이 문법이다.
   const onMoved = (undo: LocationMoveUndo, renameLabel?: string) => {
     setMoveId(null); reload()
     pushToast('success', '위치를 옮겼습니다', {
       ...(renameLabel ? { detail: renameLabel } : {}),
       action: { label: '적용취소', run: () => { void (async () => {
         const nameBack = await updateStorageLocation(undo.id, undo.name)
-        if (!nameBack.ok) { setError(`적용취소가 이름 되돌리기에서 멈췄습니다. ${nameBack.error}`); reload(); return }
+        if (!nameBack.ok) { pushToast('error', `적용취소가 이름 되돌리기에서 멈췄습니다. ${nameBack.error}`); reload(); return }
         const back = await moveStorageLocation(undo.id, undo.parentId, false)
-        if (!back.ok) { setError(`이름은 되돌렸지만 자리 되돌리기에서 멈췄습니다. ${back.error}`); reload(); return }
+        if (!back.ok) { pushToast('error', `이름은 되돌렸지만 자리 되돌리기에서 멈췄습니다. ${back.error}`); reload(); return }
         const orderBack = await reorderStorageLocations(undo.parentId, undo.siblingIds)
-        if (!orderBack.ok) { setError(`이름과 자리는 되돌렸지만 순서 되돌리기에서 멈췄습니다. ${orderBack.error}`); reload(); return }
+        if (!orderBack.ok) { pushToast('error', `이름과 자리는 되돌렸지만 순서 되돌리기에서 멈췄습니다. ${orderBack.error}`); reload(); return }
         reload()
+        // 모달이 닫힌 뒤라면 reload 로 되살아나는 목록이 없다 — 뒤 화면을 부모가 다시 그리게 한다.
+        onChanged?.()
         pushToast('info', '위치 이동을 적용취소했습니다')
       })() } },
     })
@@ -5499,15 +5517,18 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     setPending(false)
     if (res.ok) { reload(); return }
     if (!res.impact) { setError(res.error); return }
+    // 건수는 문장이 아니라 §14 영향 목록 박스로 센다 — 숫자가 문장에 섞이면 몇 건이 걸린
+    // 삭제인지 한눈에 안 들어온다. 박스는 danger 에서만 서므로 level 은 danger 그대로다.
     const { checkRows, linkedItems, addRows, dispRows } = res.impact
-    const parts = [
-      checkRows > 0 ? `위치별 점검 기록 ${checkRows}건이 함께 삭제됩니다` : null,
-      linkedItems > 0 ? `${linkedItems}개 품목의 위치 연결이 풀립니다` : null,
-      addRows + dispRows > 0 ? `입수·폐기 기록 ${addRows + dispRows}건에서 위치 표시가 사라집니다` : null,
-    ].filter(Boolean).join('. ')
+    const impact = [
+      checkRows > 0 ? { label: '함께 지워지는 위치별 점검 기록', count: checkRows } : null,
+      linkedItems > 0 ? { label: '위치 연결이 풀리는 품목', count: linkedItems } : null,
+      addRows + dispRows > 0 ? { label: '위치 표시가 사라지는 입수·폐기 기록', count: addRows + dispRows } : null,
+    ].filter((x): x is { label: string; count: number } => x != null)
     const go = await confirmDialog({
       title: `'${name}' 위치에 기록이 있습니다`,
-      message: `${parts}. 지워진 점검 내역만큼 다음 위치별 점검에서 총량이 줄어들 수 있습니다. 지난 기록을 남기려면 삭제 대신 품목별 '숨김'을 쓰세요. 그래도 삭제할까요?`,
+      message: `지워진 점검 내역만큼 다음 위치별 점검에서 총량이 줄어들 수 있습니다. 지난 기록을 남기려면 삭제 대신 품목별 '숨김'을 쓰세요. 그래도 삭제할까요?`,
+      impact,
       level: 'danger', confirmLabel: '그래도 삭제',
     })
     if (!go) return
@@ -5522,16 +5543,34 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   const menuSibs = menuNode ? siblingsOf(menuNode.parentId) : []
   const menuIdx  = menuNode ? menuSibs.findIndex(s => s.id === menuNode.id) : -1
   const moveNode = moveId ? locs.find(n => n.id === moveId) ?? null : null
-  const MENU_ROW = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm text-[var(--warm-dark)] hover:bg-[var(--cream-soft)] disabled:opacity-40 transition-colors'
+  const MENU_ROW = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm text-[var(--warm-dark)] hover:bg-[var(--cream-soft)] disabled:opacity-40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]'
 
   return (
     <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 · 4층 주방 같은 보관 장소를 등록하고, 냉장고 상단처럼 아래 칸을 둘 수 있습니다" width="sm"
-      // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
-      bodyClassName="">
+      // 풀블리드 — 본문 여백은 children 이 직접 준다(폭 전체 구분선 띠는 Modal 의 footer 가 맡는다).
+      bodyClassName=""
+      // 오류는 스크롤 밖 고정 띠의 첫 줄이다 — 스크롤 본문 맨 위에 두면 위치가 여럿일 때
+      // 아래쪽 행에서 난 실패가 뷰포트 밖으로 밀려 "눌렀는데 아무 말이 없다" 가 된다
+      // (임시저장 패널의 실패 박스와 같은 문법).
+      footer={
+        <div className="space-y-2">
+          {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+            <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
+          </p>
+          <ModalFooterActions onCancel={onClose}>
+            <Btn variant="primary" onClick={onClose}>완료</Btn>
+          </ModalFooterActions>
+        </div>
+      }>
       <div className="px-5 sm:px-6 py-4 space-y-4">
-        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {locs.length === 0 && !pending && (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
+        )}
+        {/* 손잡이가 형제 안에서만 듣는다는 것을 목록 위에서 미리 말한다 — 다른 부모 행 위로 끌어
+            보고 나서야 무반응임을 알게 하면 그것이 곧 오조작이다(비품 순서 편집과 같은 자리·문법). */}
+        {locs.length > 0 && (
+          <p className="text-xs text-[var(--warm-muted)]">손잡이는 같은 부모 아래에서만 순서를 바꿉니다. 다른 위치 아래로 옮기려면 관리 &gt; 옮기기를 쓰세요.</p>
         )}
         <ul ref={locListRef} className="space-y-1.5">
           {locs.map(node => (
@@ -5546,10 +5585,11 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                     onChange={e => setEditName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleUpdate(node.id); if (e.key === 'Escape') setEditId(null) }}
                     className="flex-1 min-w-0 bg-transparent text-sm text-[var(--warm-dark)] outline-none border-b border-[var(--coral)]" />
+                  {/* 글자만으로는 24px 이라 §25 유사요소 확장으로 히트영역만 44px 로 넓힌다(보이는 크기는 그대로). */}
                   <button type="button" onClick={() => handleUpdate(node.id)} disabled={pending}
-                    className="text-xs font-semibold text-[var(--coral)] disabled:opacity-40 px-2 py-1">저장</button>
+                    className="relative text-xs font-semibold text-[var(--coral)] disabled:opacity-40 px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[10px]">저장</button>
                   <button type="button" onClick={() => setEditId(null)}
-                    className="text-xs text-[var(--warm-muted)] px-2 py-1">취소</button>
+                    className="relative text-xs text-[var(--warm-muted)] px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[10px]">취소</button>
                 </>
               ) : (
                 <>
@@ -5557,7 +5597,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                   <button type="button" aria-label={`${node.name} 순서 이동`}
                     onPointerDown={onLocHandleDown(node.id)} onPointerMove={onLocHandleMove} onPointerUp={onLocHandleUp} onPointerCancel={onLocHandleUp}
                     style={{ touchAction: 'none' }}
-                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 -ml-2 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 -ml-2 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
                     </svg>
@@ -5582,7 +5622,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
             </li>
           ))}
         </ul>
-        {/* 하위 추가 입력칸 — 고른 부모 바로 아래 한 칸만 열린다. */}
+        {/* 아래 칸 추가 입력칸 — 고른 부모 바로 아래 한 칸만 열린다. */}
         {childOf && (
           <div className="flex gap-2 items-center" style={{ marginLeft: ((locs.find(n => n.id === childOf)?.depth ?? 1)) * LOC_INDENT_PX }}>
             <input
@@ -5603,70 +5643,72 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
           <Btn type="submit" variant="primary" size="sm" disabled={pending || !newName.trim()}>추가</Btn>
         </form>
       </div>
-      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 space-y-2">
-        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-          <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
-        </p>
-        <ModalFooterActions onCancel={onClose}>
-          <Btn variant="primary" onClick={onClose}>완료</Btn>
-        </ModalFooterActions>
-      </div>
 
       {/* 행 액션 메뉴 — body 로 옮겨 화면 기준으로 띄운다(모달 본문 스크롤에서 잘리지 않게). */}
       {menuNode && typeof window !== 'undefined' && createPortal(
-        <div ref={menuPanelRef}
-          className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
-          style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width, maxHeight: '70vh', overflowY: 'auto' }}>
-          <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{menuNode.pathName}</p>
-          <button type="button" className={MENU_ROW} disabled={menuNode.depth >= MAX_DEPTH}
-            onClick={() => { setChildOf(menuNode.id); setChildName(''); setMenuId(null) }}>
-            하위 추가
-          </button>
-          {menuNode.depth >= MAX_DEPTH && (
-            <p className="px-2 pb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">{MAX_DEPTH}단계가 상한이라 더 만들 수 없습니다.</p>
-          )}
-          <button type="button" className={MENU_ROW}
-            onClick={() => { setEditId(menuNode.id); setEditName(menuNode.name); setMenuId(null) }}>
-            이름 바꾸기
-          </button>
-          <button type="button" className={MENU_ROW}
-            onClick={() => { setMoveId(menuNode.id); setMenuId(null) }}>
-            옮기기
-          </button>
-          <button type="button" className={MENU_ROW} disabled={menuIdx <= 0 || pending}
-            onClick={() => nudge(menuNode, -1)}>
-            위로
-          </button>
-          <button type="button" className={MENU_ROW} disabled={menuIdx < 0 || menuIdx >= menuSibs.length - 1 || pending}
-            onClick={() => nudge(menuNode, 1)}>
-            아래로
-          </button>
-          <button type="button" className={MENU_ROW} disabled={pending}
-            onClick={async () => {
-              // 기본 창고를 바꾸면 품목별 창고를 지정 안 한 품목 전부의 미지정 입수 귀속처와
-              // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
-              setMenuId(null)
-              if (!menuNode.isHub && !(await confirmDialog({
-                title: `${menuNode.pathName}을(를) 기본 창고로 지정할까요?`,
-                message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
-                level: 'caution', confirmLabel: '기본 창고로',
-              }))) return
-              setPending(true)
-              await toggleStorageLocationHub(menuNode.id, !menuNode.isHub)
-              pushToast('success', menuNode.isHub ? '기본 창고 해제됨' : `${menuNode.pathName}이(가) 기본 창고가 되었습니다`, {
-                action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(() => reload()) } },
-              })
-              reload()
-              setPending(false)
-            }}>
-            {menuNode.isHub ? '기본 창고 해제' : '기본 창고로 지정'}
-          </button>
-          <button type="button" disabled={pending}
-            className={`${MENU_ROW} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`}
-            onClick={() => { setMenuId(null); void handleDelete(menuNode.id, menuNode.name) }}>
-            삭제
-          </button>
-        </div>,
+        <>
+          {/* 외부 클릭 닫기 backdrop — DatePicker 정본 문법. 뒤 목록이 스크롤로 움직이면 메뉴가
+              엉뚱한 행 위에 남는다. 아무 데나 눌러도 닫힌다. */}
+          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={() => setMenuId(null)} />
+          <div ref={menuPanelRef}
+            className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
+            style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width, maxHeight: '70vh', overflowY: 'auto' }}>
+            <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{menuNode.pathName}</p>
+            <button type="button" className={MENU_ROW} disabled={menuNode.depth >= MAX_DEPTH}
+              onClick={() => { setChildOf(menuNode.id); setChildName(''); setMenuId(null) }}>
+              아래 칸 추가
+            </button>
+            {menuNode.depth >= MAX_DEPTH && (
+              <p className="px-2 pb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">{MAX_DEPTH}단계가 상한이라 더 만들 수 없습니다.</p>
+            )}
+            <button type="button" className={MENU_ROW}
+              onClick={() => { setEditId(menuNode.id); setEditName(menuNode.name); setMenuId(null) }}>
+              이름 바꾸기
+            </button>
+            <button type="button" className={MENU_ROW}
+              onClick={() => { setMoveId(menuNode.id); setMenuId(null) }}>
+              옮기기
+            </button>
+            <button type="button" className={MENU_ROW} disabled={menuIdx <= 0 || pending}
+              onClick={() => nudge(menuNode, -1)}>
+              위로
+            </button>
+            <button type="button" className={MENU_ROW} disabled={menuIdx < 0 || menuIdx >= menuSibs.length - 1 || pending}
+              onClick={() => nudge(menuNode, 1)}>
+              아래로
+            </button>
+            <button type="button" className={MENU_ROW} disabled={pending}
+              onClick={async () => {
+                // 기본 창고를 바꾸면 품목별 창고를 지정 안 한 품목 전부의 미지정 입수 귀속처와
+                // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
+                // 이름 뒤에 조사를 손으로 붙이면 받침에 따라 '창고가/창고이' 가 갈린다 — 이름은
+                // 따옴표 안에 두고 조사는 뒤따르는 명사가 받는다.
+                setMenuId(null)
+                if (!menuNode.isHub && !(await confirmDialog({
+                  title: `'${menuNode.pathName}' 위치를 기본 창고로 지정할까요?`,
+                  message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
+                  level: 'caution', confirmLabel: '기본 창고로',
+                }))) return
+                setPending(true)
+                // 결과를 읽는다 — 안 읽으면 서버가 거부해도 '기본 창고가 되었습니다' 가 뜨고
+                // 적용취소까지 달려 나간다.
+                const res = await toggleStorageLocationHub(menuNode.id, !menuNode.isHub)
+                if (!res.ok) { setPending(false); pushToast('error', res.error); return }
+                pushToast('success', menuNode.isHub ? '기본 창고 해제됨' : `'${menuNode.pathName}' 위치가 기본 창고가 되었습니다`, {
+                  action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(r => { if (!r.ok) { pushToast('error', r.error); return } reload(); pushToast('info', '기본 창고 변경을 적용취소했습니다') }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                })
+                reload()
+                setPending(false)
+              }}>
+              {menuNode.isHub ? '기본 창고 해제' : '기본 창고로 지정'}
+            </button>
+            <button type="button" disabled={pending}
+              className={`${MENU_ROW} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`}
+              onClick={() => { setMenuId(null); void handleDelete(menuNode.id, menuNode.pathName) }}>
+              삭제
+            </button>
+          </div>
+        </>,
         document.body,
       )}
 
@@ -5700,7 +5742,7 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
   const reasonOf = (target: StorageLocationNode | null): string | null => {
     const targetId = target?.id ?? null
     if (targetId === node.parentId) return '지금 있는 자리입니다'
-    if (targetId != null && blocked.has(targetId)) return '자기 자신이나 하위 위치입니다'
+    if (targetId != null && blocked.has(targetId)) return '지금 옮기는 위치이거나 그 아래 위치입니다'
     if ((target?.depth ?? 0) + 1 + span > MAX_DEPTH) return `${MAX_DEPTH}단계를 넘습니다`
     return null
   }
@@ -5719,14 +5761,16 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
     onDone(res.undo, res.renameLabel)
   }
 
+  // 흐리게 하는 것은 **이름뿐**이다. 행 전체에 opacity 를 걸면 왜 못 고르는지 말해 주는 이유
+  // 캡션까지 45% 로 흐려져, 정작 읽어야 할 한 줄이 가장 안 읽힌다(검수 지적 2026-09-14).
   const rowCls = (disabled: boolean, selected: boolean) =>
-    `w-full flex items-center gap-2 min-h-[44px] px-2.5 py-1.5 rounded-lg text-left transition-colors ${
-      disabled ? 'opacity-45 cursor-not-allowed'
-      : selected ? 'bg-[var(--cream-soft)] text-[var(--coral)] font-semibold'
+    `w-full flex items-center gap-2 min-h-[44px] px-2.5 py-1.5 rounded-lg text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] ${
+      disabled ? 'cursor-not-allowed'
+      : selected ? 'bg-[var(--cream-soft)] text-[var(--tc-text)] font-semibold'
       : 'hover:bg-[var(--cream-soft)] text-[var(--warm-dark)]'}`
 
   return (
-    <Modal open onClose={onClose} title={`'${node.name}' 옮기기`} subtitle="옮길 자리를 고르세요. 되돌리기는 저장 뒤 토스트의 적용취소입니다" width="sm" z={260}>
+    <Modal open onClose={onClose} title={`'${node.pathName}' 옮기기`} subtitle="옮길 자리를 고르세요. 옮긴 뒤 6초 안에 적용취소할 수 있습니다" width="sm" z={260}>
       <div className="space-y-3">
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         <div className="max-h-[46vh] overflow-y-auto overscroll-contain border border-[var(--warm-border)] rounded-xl p-1.5 bg-[var(--canvas)]">
@@ -5736,7 +5780,7 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
               <button type="button" disabled={reason != null}
                 onClick={() => setDest({ id: null })}
                 className={rowCls(reason != null, dest?.id === null && dest !== null)}>
-                <span className="flex-1 min-w-0 truncate text-sm">최상위</span>
+                <span className={`flex-1 min-w-0 truncate text-sm ${reason ? 'opacity-45' : ''}`}>최상위</span>
                 {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason}</span>}
               </button>
             )
@@ -5748,20 +5792,22 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
                 onClick={() => setDest({ id: target.id })}
                 style={{ paddingLeft: 10 + (target.depth - 1) * LOC_INDENT_PX }}
                 className={rowCls(reason != null, dest?.id === target.id)}>
-                <span className="flex-1 min-w-0 truncate text-sm">{target.name}</span>
+                <span className={`flex-1 min-w-0 truncate text-sm ${reason ? 'opacity-45' : ''}`}>{target.name}</span>
                 {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason}</span>}
               </button>
             )
           })}
         </div>
-        {/* 앞부분 떼기 — §29 값의 전환 표기(화살표는 이 한 자리에만 쓴다). */}
-        <label className="flex items-start gap-2.5 min-h-[44px] items-center cursor-pointer">
+        {/* 앞부분 떼기 — §29 값의 전환 표기(화살표는 이 한 자리에만 쓴다).
+            미리보기는 긴 경로 두 벌이라 반드시 자기 칸 안에서 줄어야 한다(flex-1 min-w-0 truncate).
+            라벨이 줄어들면 안 되므로 shrink-0 으로 고정한다 — 종전엔 둘 다 안 죄어 모달 밖으로 넘쳤다. */}
+        <label className="flex items-center gap-2.5 min-h-[44px] cursor-pointer">
           <input type="checkbox" checked={strip} onChange={e => setStrip(e.target.checked)}
             className="w-4 h-4 accent-[var(--coral)] shrink-0" />
-          <span className="text-sm text-[var(--warm-dark)]">앞부분 떼기</span>
+          <span className="text-sm text-[var(--warm-dark)] shrink-0">앞부분 떼기</span>
           {stripPreview
-            ? <span className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{stripPreview}</span>
-            : <span className="text-[0.65625rem] text-[var(--warm-muted)]">뗄 앞부분이 없습니다</span>}
+            ? <span className="flex-1 min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{stripPreview}</span>
+            : <span className="flex-1 min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{dest === null ? '옮길 자리를 고르면 새 이름을 미리 보여 줍니다' : '뗄 앞부분이 없습니다'}</span>}
         </label>
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" disabled={pending || dest === null} onClick={() => { void submit() }}>
