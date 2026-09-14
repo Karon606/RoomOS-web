@@ -6,6 +6,8 @@
 - **예약 인상(scheduledRent)** — 방의 미래 인상 예약(rentUpdateDate에 적용). '그 달 이용료부터' 반영. [[rent-increase-month-based]]
 - **확정/예정 (카드 정산)** — 확정=청구 마감일(cutOffDay) 지남=금액 고정·출금 대상. 예정=마감 전·금액 더 늘 수 있음. [[domain-inventory]]는 별개(재고).
 - **허브(hub)** — 품목의 창고 위치(hubLocationId, 없으면 영업장 기본 isHub). 수령 시 기본 배치처. [[domain-inventory]]
+- **표기 경로(pathName)** — 보관 위치의 조상 이름을 **공백으로** 이은 이름(`4층 김치냉장고` 아래 `상단` = `4층 김치냉장고 상단`). 화면에 찍는 위치 이름과 점검 memo 는 전부 이것이다. 노드 한 칸의 이름은 `name` 이고 그 축은 **트리 행(위치 관리 행·점검 그룹 헤더·위치 드롭다운)에서만** 쓴다 — 조상은 들여쓰기가 말한다. 정본 `lib/locationTree.flattenDfs`. [[domain-inventory]]
+- **체인 저장** — 위치별 점검이 고른 위치의 **서브트리 전체**를 (품목, 위치) 쌍 단위로 **하나씩 순차** 저장하는 방식. 같은 품목의 두 번째 칸부터는 그 저장에서 만든 점검에 이어 붙이고, **허브 행은 맨 마지막**이다. 서버 무변경(같은 날 병합 정본을 그대로 탄다)이고 비원자라 실패하면 거기서 멈추고 어디까지 갔는지를 남긴다. [[domain-inventory]]
 - **수령확정(confirmReceipt)** — 구매를 재고 입고로 확정. receivedAt 설정 + 허브 배치 + 자동 점검.
 - **양도인(prevOwner)** — 영업장 인수 전 점유자 몫. 인수일(acquisitionDate)·cutoff로 분리.
 - **CHECKOUT_PENDING / RESERVED / ACTIVE / NON_RESIDENT** — lease 상태. 거주성·청구 대상 판정에 사용.

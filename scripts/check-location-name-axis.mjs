@@ -136,8 +136,15 @@ function mustNot(file, block, label, pattern) {
 }
 
 // ── 3. 재고 화면 — 표시 자리마다 pathName 을 읽는가 ───────────────────────────────────
-//   위치 관리 모달(LocationSettingsModal)만 예외다. 거기서 고치는 것이 name(한 칸) 자체이고,
-//   구조는 트리 화면이 들여쓰기로 말한다.
+//   **트리 행만 예외다.** 위치 관리 모달(LocationSettingsModal)의 행과 점검 패널의 그룹 헤더·
+//   위치 드롭다운 행은 그 노드 한 칸의 이름(`name`)을 찍는다 — 조상 경로를 들여쓰기가 말하기
+//   때문이고, 거기서 고치는 대상이 그 한 칸 자체이기 때문이다. `4층 김치냉장고 김치냉장고 상단`
+//   처럼 접두가 두 번 보이면 트리가 오히려 읽기 어려워진다.
+//
+//   그 예외가 새는 것을 막는 방법은 둘이다. (1) 아래 금지 식별자 목록 — 평면 표시 자리에서
+//   쓰이던 이름들이 되살아나면 빨강. (2) 아래 4'항 — 트리 행이 **실제로 들여쓰기를 그리는가**.
+//   들여쓰기가 사라지면 `상단` 이 어느 냉장고인지 화면이 말을 못 하므로, 그때는 name 축 자체가
+//   근거를 잃는다. 예외의 전제를 검사하는 것이다.
 {
   const f = 'app/(app)/inventory/InventoryClient.tsx'
   const BLOCKS = [
@@ -161,8 +168,41 @@ function mustNot(file, block, label, pattern) {
     const block = slice(f, start, end)
     must(f, block, label, /\.pathName\b/g, min)
     // 같은 블록에 위치 이름의 평면 축이 남아 있으면 두 이름이 한 화면에서 섞인다.
-    mustNot(f, block, label, /\b(loc|l|hubLoc|itemHub|fromLoc|toLoc|src|hubStock)\.name\b/)
+    // selectedLoc — 점검 패널이 고른 위치. 저장 memo 문자열(`위치별 점검 (…)`)이 여기서 나오고
+    // 그 문자열은 백필 매칭 키라 표기 경로여야 한다(독립 검수 지적 2026-09-14).
+    // `?.` 로 한 글자만 비켜 가면 그물이 조용히 뚫린다 — 옵셔널 체이닝까지 같이 본다.
+    mustNot(f, block, label, /\b(loc|l|hubLoc|itemHub|fromLoc|toLoc|src|hubStock|selectedLoc)\??\.name\b/)
   }
+}
+
+// ── 3'. 점검 패널 저장 memo — 표기 경로인가 ──────────────────────────────────────────
+//   memo 는 화면 글자가 아니라 **저장 문자열**이다. 평면 이름으로 적히면 같은 이름의 칸이 둘
+//   생기는 순간 어느 칸의 점검인지 기록만으로는 영원히 복원할 수 없다.
+{
+  const f = 'app/(app)/inventory/InventoryClient.tsx'
+  const block = slice(f, 'function LocationBatchCheckModal(', 'function LocationTreePicker(')
+  must(f, block, '체인 저장 memo', /memo: `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/)
+}
+
+// ── 4'. 트리 행의 전제 — 들여쓰기를 실제로 그리는가 ───────────────────────────────────
+//   위 3항이 트리 행에 `name` 을 허용하는 근거가 '구조는 들여쓰기가 말한다' 하나뿐이다.
+//   들여쓰기가 빠지면 `상단` 이 어느 냉장고인지 화면이 말을 못 하므로 예외가 무너진다.
+//   세 자리(관리 모달 행·옮기기 목적지 목록·점검 패널 그룹 헤더와 드롭다운)를 전부 본다.
+{
+  const f = 'app/(app)/inventory/InventoryClient.tsx'
+  const INDENT = /LOC_INDENT_PX/g
+  for (const [label, start, end, min] of [
+    ['LocationSettingsModal(트리 행 들여쓰기)', 'function LocationSettingsModal(', 'function LocationMoveModal(', 2],
+    ['LocationMoveModal(목적지 들여쓰기)', 'function LocationMoveModal(', 'function BatchLocationModal(', 1],
+    ['LocationBatchCheckModal(그룹 들여쓰기)', 'function LocationBatchCheckModal(', 'const LocPinMarker', 1],
+    ['LocationTreePicker(드롭다운 들여쓰기)', 'function LocationTreePicker(', 'function MergeDecisionModal(', 1],
+  ]) {
+    must(f, slice(f, start, end), label, INDENT, min)
+  }
+  // 점검 패널은 그룹 헤더와 **그 아래 품목 행**이 같은 자리에 서야 트리로 읽힌다.
+  // 헤더만 들여쓰면 품목이 전부 왼쪽 벽에 붙어 어느 칸의 입력인지 다시 모호해진다.
+  must(f, slice(f, 'function LocationBatchCheckModal(', 'const LocPinMarker'),
+    'LocationBatchCheckModal(그룹·품목 같은 들여쓰기)', /marginLeft: indent/g, 2)
 }
 
 // ── 4. 비품(공용부) — 배정 select·이력 라벨·그룹 순서 ────────────────────────────────

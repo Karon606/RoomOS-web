@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -15,6 +16,8 @@ import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/s
 import { overbookExcess, calcLocMove } from '@/lib/stockLedger'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
+import { usePopoverAnchor } from '@/components/ui/usePopoverAnchor'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -65,6 +68,7 @@ import {
   getStorageLocations, reorderStorageLocations,
   createStorageLocation,
   updateStorageLocation,
+  moveStorageLocation, type LocationMoveUndo,
   deleteStorageLocation,
   toggleStorageLocationHub,
   setItemHub,
@@ -91,10 +95,64 @@ import {
   previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
-import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
+import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
+// 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
+// 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
+import { MAX_DEPTH, stripPrefixSuggestion } from '@/lib/locationTree'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
 const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
+
+// ── 보관 위치 트리 화면 공용 (2026-09-14 5·6단계) ────────────────────────────────────
+//
+// 서버(getStorageLocations)가 이미 DFS 순으로 주고 각 행이 depth·parentId 를 들고 있다.
+// 화면은 트리를 **다시 엮지 않는다** — 두 벌을 만들면 순서가 언젠가 갈린다. 자리(들여쓰기)와
+// 구간(서브트리)만 여기서 센다.
+const LOC_INDENT_PX = 12   // 승인 목업(402px) 기준 — 한 단계당 12px
+
+/** 자기 + 자손을 DFS 순 그대로. 목록이 DFS 라 '자기 다음부터 depth 가 자기보다 깊은 동안'이 자손 전체다. */
+function locSubtree(all: StorageLocationNode[], id: string): StorageLocationNode[] {
+  const start = all.findIndex(n => n.id === id)
+  if (start < 0) return []
+  const root = all[start]
+  const out: StorageLocationNode[] = [root]
+  for (let i = start + 1; i < all.length && all[i].depth > root.depth; i++) out.push(all[i])
+  return out
+}
+
+/** 서브트리의 상대 깊이(자기=0). 옮길 때 자손까지 상한 안인가를 화면이 서버와 같은 규칙으로 센다. */
+function locSubtreeSpan(all: StorageLocationNode[], id: string): number {
+  const sub = locSubtree(all, id)
+  if (sub.length === 0) return 0
+  return Math.max(...sub.map(n => n.depth)) - sub[0].depth
+}
+
+/**
+ * DFS 목록에서 idx 행이 속한 **형제 블록의 주인**(parentId 를 부모로 둔 조상 또는 자기).
+ * 다른 가지 위면 null — 드래그가 부모를 바꾸지 못하게 막는 판정이다.
+ */
+function locOwnerAt(all: StorageLocationNode[], idx: number, parentId: string | null): StorageLocationNode | null {
+  for (let i = idx; i >= 0; i--) {
+    if (all[i].parentId !== parentId) continue
+    // 그 형제의 블록이 실제로 idx 를 품고 있어야 한다(앞 가지의 마지막 형제를 집지 않게).
+    const span = locSubtree(all, all[i].id).length
+    return idx < i + span ? all[i] : null
+  }
+  return null
+}
+
+/** dragId 의 블록을 targetId 블록 자리로 옮긴 새 DFS 목록(화면 반영용 — 저장은 형제 id 배열이 한다). */
+function locReflow(all: StorageLocationNode[], dragId: string, targetId: string): StorageLocationNode[] {
+  const origDrag = all.findIndex(n => n.id === dragId)
+  const origTarget = all.findIndex(n => n.id === targetId)
+  if (origDrag < 0 || origTarget < 0) return all
+  const block = locSubtree(all, dragId)
+  const rest = [...all.slice(0, origDrag), ...all.slice(origDrag + block.length)]
+  const t = rest.findIndex(n => n.id === targetId)
+  if (t < 0) return all
+  const at = origDrag < origTarget ? t + locSubtree(rest, targetId).length : t
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)]
+}
 
 // v2.0 §04 — 카테고리 마커 색은 viz 팔레트 토큰만(새 hue 금지·v2.0 §04). 틴트 bg는 color-mix 10%.
 const vizTint = (v: string): { bg: string; fg: string } =>
@@ -4003,6 +4061,29 @@ function HubShortDialog({ pending, onResolved, onExit }: {
   )
 }
 
+// ── 위치별 점검 패널 — 서브트리 한 덩어리 점검 (2026-09-14 6단계)
+//
+// 고른 위치의 **자손까지 한 화면**에 펼친다. 9/11 김치 사고가 "냉장고 상단·하단을 따로 놔서
+// 한 번에 체크를 못 한" 사고였고, 그 분류를 깜빡한 대가로 전날 내역을 나중에 고쳐야 했다.
+//
+// 저장은 **체인**이다. (품목, 위치) 쌍을 DFS 순으로 하나씩 병합 저장하고, 같은 품목의 **허브 행은
+// 맨 마지막**에 둔다. 서버는 무변경이다 — 같은 날 연속 점검 병합 정본(applyLocationCheck)을
+// 그대로 타므로 마커 보존·이월 표식(carried)·허브 게이트 규칙이 한 줄도 안 바뀐다.
+//
+// 왜 순차인가. 한 품목의 두 번째 위치부터는 **이 저장에서 만든 점검**에 이어 붙여야 한다.
+// 병렬로 쏘면 위치마다 새 점검이 서고, 그 각각이 직전 점검을 base 로 잡아 앞 위치의 실측이
+// 조용히 사라진다. 비원자성(상단 저장 후 하단 실패)은 체인을 멈추고 **어디까지 저장됐는지**를
+// 남기는 것으로 받는다(설계 결정 2026-09-14, 원자 저장은 후속).
+type LocSaveUnit = {
+  r: InventoryRow
+  locId: string
+  locName: string        // 표기 경로(pathName) — 실패·물음 목록이 어느 칸인지 말해야 한다
+  isHubUnit: boolean     // 이 위치가 그 품목의 허브인가(허브 실측 행)
+}
+
+// (품목, 위치) 쌍의 입력칸·드래프트 키. id 에 '|' 가 없으므로 되쪼갤 수 있다.
+const locPairKey = (itemId: string, locId: string) => `${itemId}|${locId}`
+
 function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
   rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
@@ -4010,8 +4091,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const overlayRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: !inline, overlayRef, panelRef })   // 인라인 모드는 오버레이가 없어 쉰다
-  const [locs, setLocs] = useState<StorageLocationItem[]>([])
-  const [locId, setLocId] = useState('')
+  const [locs, setLocs] = useState<StorageLocationNode[]>([])
+  const [locId, setLocId] = useState('')                    // 고른 서브트리의 루트
   const [transferOpen, setTransferOpen] = useState(false)   // 위치 간 이동·맞바꿈(운영자 요청 2026-07-08)
   const [date, setDate] = useState(kstYmdStr())
   const [pending, setPending] = useState(false)
@@ -4026,23 +4107,32 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   // 더블클릭/중복 제출 동기 차단 — setPending 은 리렌더 후에야 버튼을 disabled 하므로,
   // 그 사이 두 번째 클릭이 doSave 에 재진입해 보충(허브 차감)이 2번 적용되던 심각한 버그 방지.
   const savingRef = useRef(false)
-  // 허브 부족 감지 시 처리 대기 품목 큐(품목별). 큐가 비면 저장을 최종 마감한다.
+  // 허브 부족 감지 시 처리 대기 큐. 체인은 **한 건에서 멈추고** 팝업이 그 건을 처리한 뒤 이어 달린다.
   const [hubShortQueue, setHubShortQueue] = useState<HubShortPending[]>([])
-  // 저장 실패 품목 — 하나라도 있으면 패널을 닫지 않는다(§27.2). 종전엔 setError 만 하고 그대로
+  // 저장 실패 행 — 하나라도 있으면 패널을 닫지 않는다(§27.2). 종전엔 setError 만 하고 그대로
   // 닫아서(인라인 모드의 onClose = 화면 전환) 에러가 한 프레임도 안 그려졌고, 실패한 품목의
   // 임시저장만 남아 "실저장을 눌렀는데 임시저장이 남아 있다"가 됐다(운영자 신고 2026-09-14).
   const [saveFailed, setSaveFailed] = useState<{ id: string; label: string; error: string }[]>([])
-  // 저장은 됐는데 임시저장 정리에 실패한 품목 — 남은 드래프트가 다음 진입에서 실저장분과 섞인다.
+  // 체인이 어디까지 갔는가 — 비원자 저장의 값이다. 멈춘 자리를 말하지 않으면 운영자는 무엇을
+  // 다시 눌러야 하는지 알 수 없다(스크롤 밖 고정 영역이 그린다).
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number; stoppedAt: string } | null>(null)
+  // 저장은 됐는데 임시저장 정리에 실패한 행 — 남은 드래프트가 다음 진입에서 실저장분과 섞인다.
   const [draftCleanupFailed, setDraftCleanupFailed] = useState<string[]>([])
-  // 품목별 드래프트 기준값 — 행 캡션('임시저장 HH:MM' / '임시저장 후 수정됨')의 판정 근거.
-  // 행 단위로 "이 숫자는 임시저장본" 이라고 말할 자리가 없던 것이 운영자 혼선의 직접 원인이다.
-  const [rowDrafts, setRowDrafts] = useState<Record<string, { savedAt: number; before: string; after: string }>>({})
+  // (품목,위치)별 드래프트 기준값 — 행 캡션('임시저장 HH:MM' / '임시저장 후 수정됨')의 판정 근거.
+  const [rowDrafts, setRowDrafts] = useState<Record<string, { savedAt: number; before: string; after: string; itemId: string; locId: string }>>({})
   // 이중 차감 물음 대상 — 형제 confirmItems 와 같은 자리의 인라인 바가 한 번만 묻는다.
-  const [dupItems, setDupItems] = useState<InventoryRow[]>([])
+  const [dupUnits, setDupUnits] = useState<LocSaveUnit[]>([])
+  // 접힘은 비영속·기본 펼침이다(설계 결정) — 9/11 사고가 '칸을 깜빡한' 사고라 접힌 채 다음 날
+  // 열리면 같은 사고가 난다. 접힌 그룹에 입력값이 있으면 헤더에 '입력 N' 캡션이 선다.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   // 비우기 적용취소는 6초 뒤에 눌릴 수 있다 — 그때의 '지금 위치'를 봐야 다른 위치의 패널에
   // 엉뚱한 칩·캡션을 세우지 않는다. 렌더마다 최신값으로 맞춘다(쓰기만 하는 ref).
   const locIdRef = useRef(locId)
   locIdRef.current = locId
+  const locsRef = useRef(locs)
+  locsRef.current = locs
+  const rowDraftsRef = useRef(rowDrafts)
+  rowDraftsRef.current = rowDrafts
 
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
   // 위치 미선택 상태로 돌아올 때마다 갱신 — 임시저장 직후 재진입도 최신으로
@@ -4050,11 +4140,14 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
 
   const selectedLoc = locs.find(l => l.id === locId) ?? null
 
-  const locItems = locId
-    ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId) && !r.hiddenLocationIds.includes(locId))
-    : []
+  // 점검 대상 = 고른 위치의 **서브트리 전체**(자기 포함), DFS 순 그대로.
+  const scope = locId ? locSubtree(locs, locId) : []
+  const itemsAt = (id: string) =>
+    rows.filter(r => !r.isArchived && r.locations.some(l => l.id === id) && !r.hiddenLocationIds.includes(id))
+  const groups = scope.map(node => ({ node, items: itemsAt(node.id) }))
+  const scopeItemCount = groups.reduce((s, g) => s + g.items.length, 0)
 
-  // 위치별 "보충 전" + "보충 후" — 비허브 위치는 두 칸, 허브 위치는 후만 의미 있음
+  // 위치별 "보충 전" + "보충 후" — 키는 (품목, 위치) 쌍이다. 한 품목이 여러 칸에 서기 때문이다.
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
 
@@ -4069,45 +4162,50 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     // 위치를 바꾸면 앞 위치의 실패·드래프트 표시는 전부 초기화한다 — 남으면 다른 위치의 사실을
     // 이 위치의 것처럼 말하게 된다.
     setSaveFailed([])
+    setSaveProgress(null)
     setDraftCleanupFailed([])
     setRowDrafts({})
-    setDupItems([])
+    setDupUnits([])
+    setCollapsed(new Set())
     setLocDraftSavedAt(null)
     locDraftSnapRef.current = null
-    // 임시저장(드래프트) 복원 — 이 위치에 저장된 품목별 보충 전/후가 있으면 덮어씀
-    getLocationDrafts(locId).then(drafts => {
-      if (drafts.length === 0) return
-      // 행 캡션 기준값 — 복원 직후에는 '수정됨'이 아니어야 하므로 실제로 칸에 들어간 값 그대로 담는다.
-      const base: Record<string, { savedAt: number; before: string; after: string }> = {}
+    // 임시저장(드래프트) 복원 — 서브트리의 **모든 위치**를 읽는다. 한 칸만 읽으면 아래 칸에
+    // 임시저장해 둔 값이 사라진 것처럼 보인다.
+    const ids = locSubtree(locsRef.current, locId).map(n => n.id)
+    void Promise.all(ids.map(id =>
+      getLocationDrafts(id).then(ds => [id, ds] as const).catch(() => [id, [] as { trackedItemId: string; data: { before?: string; after?: string; savedAt?: number } }[]] as const),
+    )).then(pairs => {
+      const base: Record<string, { savedAt: number; before: string; after: string; itemId: string; locId: string }> = {}
+      const nextBefore: Record<string, string> = {}
+      const nextAfter: Record<string, string> = {}
       let latest = 0
-      drafts.forEach(d => {
-        const before = d.data?.before != null ? String(d.data.before) : ''
-        const after  = d.data?.after  != null ? String(d.data.after)  : ''
-        const savedAt = typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0
-        base[d.trackedItemId] = { savedAt, before, after }
-        if (savedAt > latest) latest = savedAt
-      })
+      for (const [lid, ds] of pairs) {
+        for (const d of ds) {
+          const before = d.data?.before != null ? String(d.data.before) : ''
+          const after  = d.data?.after  != null ? String(d.data.after)  : ''
+          const savedAt = typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0
+          const k = locPairKey(d.trackedItemId, lid)
+          base[k] = { savedAt, before, after, itemId: d.trackedItemId, locId: lid }
+          if (d.data?.before != null) nextBefore[k] = before
+          if (d.data?.after  != null) nextAfter[k]  = after
+          if (savedAt > latest) latest = savedAt
+        }
+      }
+      if (Object.keys(base).length === 0) return
       setRowDrafts(base)
       // 재진입 시에도 칩을 세운다 — 아이템별 폼(CheckForm)은 복원값으로 칩을 세우는데 여기만
       // 안 세워서, 임시저장이 남아 있어도 비울 길이 화면에 없었다(형제 갈림).
       if (latest > 0) setLocDraftSavedAt(latest)
-      setBeforeQtys(prev => {
-        const next = { ...prev }
-        drafts.forEach(d => { if (d.data?.before != null) next[d.trackedItemId] = String(d.data.before) })
-        return next
-      })
-      setAfterQtys(prev => {
-        const next = { ...prev }
-        drafts.forEach(d => { if (d.data?.after != null) next[d.trackedItemId] = String(d.data.after) })
-        return next
-      })
+      setBeforeQtys(prev => ({ ...prev, ...nextBefore }))
+      setAfterQtys(prev => ({ ...prev, ...nextAfter }))
     })
   }, [locId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 점검 위치가 비허브일 때, 각 품목당 보충량은 후-전, 합계만큼 그 품목의 허브 위치 잔량 자동 차감
-  const computeRow = (r: InventoryRow) => {
-    const beforeStr = beforeQtys[r.id] ?? ''
-    const afterStr  = afterQtys[r.id] ?? ''
+  const computeRow = (r: InventoryRow, lid: string) => {
+    const k = locPairKey(r.id, lid)
+    const beforeStr = beforeQtys[k] ?? ''
+    const afterStr  = afterQtys[k] ?? ''
     // calcLocMove 단일 규칙 — 채운 후만 입력하면 빈 '채우기 전'은 0(옮김량 = 채운 후 전체)
     const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
     // 최종 잔량 = 채운 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
@@ -4115,130 +4213,198 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     return { beforeStr, afterStr, beforeN, afterN, finalN, restocked }
   }
 
-  const isItemDirty = (r: InventoryRow) => {
-    const { beforeStr, afterStr } = computeRow(r)
+  const isPairDirty = (r: InventoryRow, lid: string) => {
+    const { beforeStr, afterStr } = computeRow(r, lid)
     return beforeStr !== '' || afterStr !== ''
   }
 
-  const totalRestock = locItems.reduce((s, r) => s + computeRow(r).restocked, 0)
+  // 저장 단위 — DFS 순으로 훑고, 같은 품목의 **허브 행을 맨 뒤로** 민다.
+  // Array.prototype.sort 는 안정 정렬이라 나머지 순서는 DFS 그대로다.
+  const buildUnits = (dirtyOnly = true): LocSaveUnit[] => {
+    const units: LocSaveUnit[] = []
+    for (const g of groups) {
+      for (const r of g.items) {
+        if (dirtyOnly && !isPairDirty(r, g.node.id)) continue
+        units.push({
+          r, locId: g.node.id, locName: g.node.pathName,
+          isHubUnit: r.locations.find(l => l.id === g.node.id)?.isHub ?? false,
+        })
+      }
+    }
+    return units.sort((a, b) => (a.isHubUnit ? 1 : 0) - (b.isHubUnit ? 1 : 0))
+  }
+
+  const dirtyUnitCount = buildUnits().length
+  const totalRestock = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + computeRow(r, g.node.id).restocked, 0), 0)
 
   // 같은 점검에 이미 보충 마커가 있는데 이번에도 보충이 계산되는가 — 이중 차감의 유일한 입구다.
-  // 판정 축은 아래 saveItem 의 머지 조건과 같아야 한다(새 점검으로 저장되면 마커가 안 겹친다).
-  const doubleRestockOf = (r: InventoryRow, forceMerge?: boolean) => {
-    const { restocked } = computeRow(r)
+  // 판정 축은 아래 saveUnit 의 머지 조건과 같아야 한다(새 점검으로 저장되면 마커가 안 겹친다).
+  const doubleRestockOf = (r: InventoryRow, lid: string, forceMerge?: boolean) => {
+    const { restocked } = computeRow(r, lid)
     if (restocked <= 0) return null
     const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
     const within6h = r.lastCheckCreatedAt && (Date.now() - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
     if (!(date === kstYmdStr() && (forceMerge || (sameDay && within6h)))) return null
-    const prevRestocked = r.currentLocationBreakdown.find(lb => lb.locationId === locId)?.restockedQty ?? 0
+    const prevRestocked = r.currentLocationBreakdown.find(lb => lb.locationId === lid)?.restockedQty ?? 0
     if (prevRestocked <= 0) return null
     return { prevRestocked, restocked }
   }
 
-  // dupDecision — 이중 차감 물음의 답. 'keep' 더 옮긴 것으로 저장 / 'skip' 그 품목만 빼고 저장.
+  // ── 체인 상태 — 팝업으로 끊겼다가 이어 달리려면 렌더 밖에 들고 있어야 한다.
+  const chainIdsRef   = useRef<Map<string, string>>(new Map())   // 품목 id → 이 저장에서 쓴 점검 id
+  const clampRef      = useRef<Set<string>>(new Set())           // 부족 게이트를 건너뛸 (품목,위치) 쌍
+  const restUnitsRef  = useRef<LocSaveUnit[]>([])                // 멈춘 지점 다음부터의 나머지
+  const chainCtxRef   = useRef<{ forceMerge: boolean; done: number; total: number; stoppedAt: string }>({ forceMerge: false, done: 0, total: 0, stoppedAt: '' })
+  const stoppedUnitRef = useRef<LocSaveUnit | null>(null)
+  const cleanupRef    = useRef<string[]>([])
+  const cleanedKeysRef = useRef<Set<string>>(new Set())
+
+  // 한 (품목,위치) 쌍을 서버에 저장한다. 허브 부족 재시도(이동 후·강행)에서도 재사용한다.
+  const saveUnit = (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {
+    const { finalN, restocked } = computeRow(u.r, u.locId)
+    // 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
+    //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
+    const hubLoc = u.r.locations.find(l => l.isHub)
+    const locationPatch = {
+      checkedLocationId: u.locId,
+      afterQty: finalN ?? 0,
+      restockedQty: restocked,
+      hubLocationId: hubLoc?.id ?? null,
+    }
+    const now = Date.now()
+    // 6h 이내 같은 날 기존 점검 존재 → 자동 머지. 과거 날짜 백필은 머지 안 함(고른 날짜 무시 방지).
+    const dateIsToday = date === kstYmdStr()
+    const sameDay = u.r.lastCheckId && u.r.lastCheckCreatedAt && isSameKstDay(new Date(u.r.lastCheckCreatedAt), new Date())
+    const within6h = u.r.lastCheckCreatedAt && (now - new Date(u.r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
+    // 체인 — 같은 품목의 두 번째 칸부터는 **이 저장에서 만든/쓴 점검**에 이어 붙인다.
+    // 안 이어 붙이면 칸마다 새 점검이 서고 그 각각이 직전 점검을 base 로 잡아 앞 칸의 실측이 사라진다.
+    const chained = chainIdsRef.current.get(u.r.id) ?? null
+    const shouldMerge = !opts?.forceNew && (chained != null || (dateIsToday && (forceMerge || (sameDay && within6h))))
+    const targetId = chained ?? u.r.lastCheckId
+    if (shouldMerge && targetId) {
+      return updateStockCheck(targetId, { locationPatch, allowHubClamp: opts?.allowHubClamp })
+        .then(res => { if (res.ok) chainIdsRef.current.set(u.r.id, targetId); return res })
+    }
+    // memo 는 저장 문자열이자 백필 매칭 키다 — 표기 경로(pathName)를 적는다.
+    // 서브트리를 한 번에 저장하므로 **고른 루트**의 경로가 그 저장의 이름이다.
+    return createStockCheck({
+      trackedItemId: u.r.id, date, remainingQty: 0, locationPatch,
+      memo: `위치별 점검 (${selectedLoc?.pathName ?? ''})`, allowHubClamp: opts?.allowHubClamp,
+    }).then(res => { if (res.ok) chainIdsRef.current.set(u.r.id, res.id); return res })
+  }
+
+  // 체인 실행. 성공하면 그 행의 드래프트를 정리하고 다음으로, 실패·허브부족이면 **멈춘다**.
+  const runChain = async (units: LocSaveUnit[], forceMerge: boolean, doneBefore: number, total: number):
+    Promise<{ stopped: 'hubShort' | 'failed' | null; done: number }> => {
+    let done = doneBefore
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i]
+      const label = `${u.r.label} · ${u.locName}`
+      let res: Awaited<ReturnType<typeof saveUnit>> | { ok: false; error: string }
+      try { res = await saveUnit(u, forceMerge, { allowHubClamp: clampRef.current.has(locPairKey(u.r.id, u.locId)) }) }
+      // humanError — 프레임워크가 던지는 영어 메시지가 폴백을 이기고 화면에 뜨는 것을 막는다.
+      catch (e) { res = { ok: false as const, error: humanError(e, '저장 중 오류가 발생했습니다.') } }
+      if (res.ok) {
+        // **반환값을 읽는다** — 지운 줄 알았는데 남아 있으면 다음 진입에서 그 값이 되살아나
+        // 실저장분과 섞인다. 그것이 신고 2026-09-14 의 증상 그 자체다.
+        const del = await deleteStockCheckDraft(u.r.id, u.locId).catch(() => ({ ok: false as const, error: '' }))
+        if (del.ok) cleanedKeysRef.current.add(locPairKey(u.r.id, u.locId))
+        else cleanupRef.current.push(label)
+        done++
+        continue
+      }
+      if ('code' in res && res.code === 'HUB_SHORT') {
+        restUnitsRef.current = units.slice(i + 1)
+        stoppedUnitRef.current = u
+        chainCtxRef.current = { forceMerge, done, total, stoppedAt: label }
+        setHubShortQueue([{
+          trackedItemId: u.r.id, itemLabel: label, unit: rowUnit(u.r), info: res,
+          // forceNew 라 항상 createStockCheck 경로(새 점검, id 반환) — 적용취소가 깔끔.
+          retry: async (o) => {
+            const rr = await saveUnit(u, forceMerge, { forceNew: true, allowHubClamp: o.allowHubClamp })
+            return rr as { ok: true; id: string } | { ok: false; error: string } | HubShortResponse
+          },
+        }])
+        return { stopped: 'hubShort', done }
+      }
+      setSaveFailed([{ id: locPairKey(u.r.id, u.locId), label, error: humanError(res.error, '저장 중 오류가 발생했습니다.') }])
+      setSaveProgress({ done, total, stoppedAt: label })
+      chainCtxRef.current = { forceMerge, done, total, stoppedAt: label }
+      return { stopped: 'failed', done }
+    }
+    return { stopped: null, done }
+  }
+
+  // 체인이 멈추거나 끝난 뒤 화면 상태를 한 번에 맞춘다(정리된 드래프트·칩·정리 실패 목록).
+  const settleChain = () => {
+    const cleaned = cleanedKeysRef.current
+    if (cleaned.size > 0) {
+      setRowDrafts(prev => {
+        const next = { ...prev }
+        cleaned.forEach(k => { delete next[k] })
+        return next
+      })
+      if (Object.keys(rowDraftsRef.current).every(k => cleaned.has(k))) {
+        setLocDraftSavedAt(null)
+        locDraftSnapRef.current = null
+      }
+    }
+    setDraftCleanupFailed([...cleanupRef.current])
+    onDraftChange?.()
+  }
+
+  // dupDecision — 이중 차감 물음의 답. 'keep' 더 옮긴 것으로 저장 / 'skip' 그 행만 빼고 저장.
   // 상태가 아니라 인자로 흐른다(형제 mergeChoice 바와 같은 문법 — setState 는 이 호출에 안 보인다).
   const doSave = async (forceMerge?: boolean, dupDecision?: 'keep' | 'skip') => {
     if (savingRef.current) return   // 이미 저장 진행 중 — 중복 제출(더블클릭) 차단
     savingRef.current = true
     try {
-      const dirty = locItems.filter(isItemDirty)
-      if (dirty.length === 0) { setError('저장할 수량이 없습니다.'); return }
+      let units = buildUnits()
+      if (units.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
-      // 이중 차감 물음 — 품목마다 모달을 N연타로 띄우지 않고, 형제 '기존에 합치기' 바와 같은
-      // 자리에서 한 번만 묻는다. 서버 규칙은 안 건드린다. 허브가 두 번 빠지는 길은
-      // '헷갈린 채 보충을 다시 적는 것' 하나뿐이라 이미 옮긴 양을 숫자로 보여주고 한 번 묻는다.
-      const dups = dirty.filter(r => doubleRestockOf(r, forceMerge) != null)
-      if (dups.length > 0 && !dupDecision) { setDupItems(dups); return }
-      const skipIds = dupDecision === 'skip' ? new Set(dups.map(r => r.id)) : new Set<string>()
-      const toSave = dirty.filter(r => !skipIds.has(r.id))
-      setDupItems([])
-      if (toSave.length === 0) { setError('저장할 품목이 없습니다.'); return }
+      // 이중 차감 물음 — 행마다 모달을 N연타로 띄우지 않고, 형제 '기존에 합치기' 바와 같은
+      // 자리에서 한 번만 묻는다. 서버 규칙은 안 건드린다.
+      const dups = units.filter(u => doubleRestockOf(u.r, u.locId, forceMerge) != null)
+      if (dups.length > 0 && !dupDecision) { setDupUnits(dups); return }
+      const skip = dupDecision === 'skip' ? new Set(dups.map(u => locPairKey(u.r.id, u.locId))) : new Set<string>()
+      units = units.filter(u => !skip.has(locPairKey(u.r.id, u.locId)))
+      setDupUnits([])
+      if (units.length === 0) { setError('저장할 행이 없습니다.'); return }
 
       setPending(true); setError('')
-      setSaveFailed([]); setDraftCleanupFailed([])
-      const locName = selectedLoc?.name ?? ''
-      const now = Date.now()
+      setSaveFailed([]); setDraftCleanupFailed([]); setSaveProgress(null)
+      chainIdsRef.current = new Map()
+      cleanupRef.current = []
+      cleanedKeysRef.current = new Set()
+      restUnitsRef.current = []
+      stoppedUnitRef.current = null
 
-      // 한 품목의 이 위치 점검을 서버에 저장하는 클로저 — 허브 부족 재시도(이동 후/강행)에서도 재사용.
-      // forceNew: 팝업 경유 재저장은 항상 새 점검으로 만든다(이동 점검과 함께 적용취소 LIFO 가 깔끔해짐).
-      const saveItem = (r: InventoryRow, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {
-        const { finalN, restocked } = computeRow(r)
-        // #3 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
-        //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
-        const hubLoc = r.locations.find(l => l.isHub)
-        const locationPatch = {
-          checkedLocationId: locId!,
-          afterQty: finalN ?? 0,
-          restockedQty: restocked,
-          hubLocationId: hubLoc?.id ?? null,
-        }
-        // 6h 이내 같은 날 기존 점검 존재 → 자동 머지. 과거 날짜 백필은 머지 안 함(고른 날짜 무시 방지).
-        const dateIsToday = date === kstYmdStr()
-        const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
-        const within6h = r.lastCheckCreatedAt && (now - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
-        const shouldMerge = !opts?.forceNew && dateIsToday && (forceMerge || (sameDay && within6h))
-        if (shouldMerge && r.lastCheckId) {
-          return updateStockCheck(r.lastCheckId, { locationPatch, allowHubClamp: opts?.allowHubClamp })
-        }
-        return createStockCheck({
-          trackedItemId: r.id, date, remainingQty: 0, locationPatch,
-          memo: `위치별 점검 (${locName})`, allowHubClamp: opts?.allowHubClamp,
-        })
+      // 같은 저장에 그 품목의 **허브 실측**이 있으면 비허브 행의 부족 게이트를 건너뛴다.
+      // 지금 세는 허브 값이 곧 정답이라 부족 판정이 뜻이 없고, 허브 행이 마지막에 그 값을 덮는다
+      // (HubShortDialog 의 '허브 실측' 선택지를 앞당겨 적용한 것이다). 허브 실측이 없으면
+      // 게이트는 오늘과 똑같이 선다.
+      const measuredHubs = new Map<string, Set<string>>()
+      for (const u of units) {
+        if (!u.isHubUnit) continue
+        const s = measuredHubs.get(u.r.id) ?? new Set<string>()
+        s.add(u.locId)
+        measuredHubs.set(u.r.id, s)
       }
+      clampRef.current = new Set(units.filter(u => {
+        if (u.isHubUnit) return false
+        const hubId = u.r.locations.find(l => l.isHub)?.id
+        return hubId != null && (measuredHubs.get(u.r.id)?.has(hubId) ?? false)
+      }).map(u => locPairKey(u.r.id, u.locId)))
 
-      // allSettled — 한 품목의 거부가 Promise.all 로 통째로 터지면 이미 저장된 품목의
-      // 드래프트 정리(아래)가 실행조차 안 된다. 품목마다 revalidatePath 를 부르는 동시 호출이라
-      // 일부 실패가 상시 조건이다.
-      const settled = await Promise.allSettled(toSave.map(r => saveItem(r)))
-      const savedOk: InventoryRow[] = []
-      const shorts: HubShortPending[] = []
-      const failed: { id: string; label: string; error: string }[] = []
-      settled.forEach((s, i) => {
-        const r = toSave[i]
-        // humanError — 프레임워크가 던지는 영어 메시지가 폴백을 이기고 화면에 뜨는 것을 막는다.
-        if (s.status === 'rejected') { failed.push({ id: r.id, label: r.label, error: humanError(s.reason, '저장 중 오류가 발생했습니다.') }); return }
-        const res = s.value
-        if (res.ok) { savedOk.push(r); return }
-        if ('code' in res && res.code === 'HUB_SHORT') {
-          shorts.push({
-            trackedItemId: r.id, itemLabel: r.label, unit: rowUnit(r), info: res,
-            // forceNew 라 항상 createStockCheck 경로(새 점검, id 반환) — 적용취소가 깔끔.
-            retry: async (o) => {
-              const rr = await saveItem(r, { forceNew: true, allowHubClamp: o.allowHubClamp })
-              return rr as { ok: true; id: string } | { ok: false; error: string } | HubShortResponse
-            },
-          })
-          return
-        }
-        failed.push({ id: r.id, label: r.label, error: humanError(res.error, '저장 중 오류가 발생했습니다.') })
-      })
-      // 정상 저장된 품목의 이 위치 드래프트만 정리(부족 품목은 처리 후 정리).
-      // **반환값을 읽는다** — 지운 줄 알았는데 남아 있으면 다음 진입에서 그 값이 되살아나
-      // 실저장분과 섞인다. 그것이 이 신고의 증상 그 자체다.
-      const cleaned = await Promise.allSettled(savedOk.map(r => deleteStockCheckDraft(r.id, locId)))
-      const cleanedOk = cleaned.map(c => c.status === 'fulfilled' && c.value.ok)
-      const cleanupFailed = savedOk.filter((_, i) => !cleanedOk[i]).map(r => r.label)
-      const cleanedIds = new Set(savedOk.filter((_, i) => cleanedOk[i]).map(r => r.id))
-      setRowDrafts(prev => {
-        const next = { ...prev }
-        cleanedIds.forEach(id => { delete next[id] })
-        return next
-      })
-      if (Object.keys(rowDrafts).every(id => cleanedIds.has(id))) {
-        setLocDraftSavedAt(null)
-        locDraftSnapRef.current = null
-      }
-      setSaveFailed(failed)
-      setDraftCleanupFailed(cleanupFailed)
-      onDraftChange?.()
-      if (shorts.length > 0) { setHubShortQueue(shorts); return }  // 팝업이 이어받음(모달 유지)
+      const out = await runChain(units, !!forceMerge, 0, units.length)
+      settleChain()
+      if (out.stopped === 'hubShort') return   // 팝업이 이어받음(모달 유지)
       onDone()   // 성공분은 언제나 화면에 반영한다
       // §27.2 이중 통지 금지 — 채널은 **인라인 하나**다. 저장 실패는 다시 시도할 자리가 남아야
       // 하는 지속 상태라 사라지는 토스트가 아니라 §18 영속·리스트형으로 말한다. 그 목록은 아래
-      // 버튼 줄 위 고정 영역이 그린다(스크롤 밖 — 10품목이면 뷰포트 밖으로 밀린다).
-      // 실패가 있으면 닫지 않는다 — 닫으면 실패 사실도 남은 임시저장도 화면에서 사라진다.
-      if (failed.length > 0 || cleanupFailed.length > 0) return
-      onClose()   // #4: 위치별 최종 저장 후 점검 창(위치 패널) 닫기 — 실패 0 일 때만.
+      // 버튼 줄 위 고정 영역이 그린다(스크롤 밖 — 10행이면 뷰포트 밖으로 밀린다).
+      if (out.stopped === 'failed' || cleanupRef.current.length > 0) return
+      onClose()   // 위치별 최종 저장 후 점검 창(위치 패널) 닫기 — 실패 0 일 때만.
     } catch {
       setError('저장 중 오류가 발생했습니다.')
     } finally {
@@ -4247,44 +4413,59 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     }
   }
 
-  // 팝업이 한 품목을 처리(저장)했을 때 — 드래프트 정리 후 큐를 한 칸 당기고, 비면 최종 마감.
+  // 팝업이 멈춘 한 건을 처리(저장)했을 때 — 그 행의 드래프트를 정리하고 **체인을 이어 달린다**.
   const onHubShortResolved = async () => {
-    const cur = hubShortQueue[0]
-    let cleanupFailedLabel: string | null = null
-    if (cur) {
-      // 여기도 반환값을 읽는다 — 정리 실패를 삼키면 그 품목만 임시저장이 남아 다음 진입에서 섞인다.
-      const del = await deleteStockCheckDraft(cur.trackedItemId, locId).catch(() => ({ ok: false as const, error: '' }))
-      if (del.ok) setRowDrafts(prev => { const next = { ...prev }; delete next[cur.trackedItemId]; return next })
-      else cleanupFailedLabel = cur.itemLabel
-    }
-    if (cleanupFailedLabel) setDraftCleanupFailed(prev => [...prev, cleanupFailedLabel!])
-    const rest = hubShortQueue.slice(1)
-    setHubShortQueue(rest)
-    if (rest.length === 0) {
-      onDraftChange?.()
-      onDone()
-      // 실패가 남아 있으면 닫지 않는다 — doSave 의 마감 규칙과 같은 축이다.
-      if (saveFailed.length === 0 && draftCleanupFailed.length === 0 && !cleanupFailedLabel) onClose()
-    }
-  }
-  // 보충으로 돌아가기 / 창고 재고 확인 — 남은 큐 전체 중단(무저장), 폼으로 복귀(모달 유지).
-  const onHubShortExit = (reason: 'back' | 'reconcile') => {
+    const cur = stoppedUnitRef.current
+    stoppedUnitRef.current = null
     setHubShortQueue([])
-    onDone()   // 이미 저장된 정상 품목 반영
+    let done = chainCtxRef.current.done
+    if (cur) {
+      const del = await deleteStockCheckDraft(cur.r.id, cur.locId).catch(() => ({ ok: false as const, error: '' }))
+      if (del.ok) cleanedKeysRef.current.add(locPairKey(cur.r.id, cur.locId))
+      else cleanupRef.current.push(`${cur.r.label} · ${cur.locName}`)
+      done++
+    }
+    const rest = restUnitsRef.current
+    restUnitsRef.current = []
+    const out = rest.length > 0
+      ? await runChain(rest, chainCtxRef.current.forceMerge, done, chainCtxRef.current.total)
+      : { stopped: null as 'hubShort' | 'failed' | null, done }
+    settleChain()
+    if (out.stopped === 'hubShort') return
+    onDone()
+    // 실패가 남아 있으면 닫지 않는다 — doSave 의 마감 규칙과 같은 축이다.
+    if (out.stopped === 'failed' || cleanupRef.current.length > 0) return
+    onClose()
+  }
+  // 보충으로 돌아가기 / 창고 재고 확인 — 남은 체인 전체 중단(무저장), 폼으로 복귀(모달 유지).
+  const onHubShortExit = (reason: 'back' | 'reconcile') => {
+    const ctx = chainCtxRef.current
+    const hadRest = restUnitsRef.current.length > 0 || stoppedUnitRef.current != null
+    setHubShortQueue([])
+    restUnitsRef.current = []
+    stoppedUnitRef.current = null
+    settleChain()
+    onDone()   // 이미 저장된 정상 행 반영
+    if (hadRest) setSaveProgress({ done: ctx.done, total: ctx.total, stoppedAt: ctx.stoppedAt })
     if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.')
   }
 
   const handleSave = async () => {
-    const toSave = locItems.filter(isItemDirty)
-    if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
+    const units = buildUnits()
+    if (units.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
-    // 같은 날, 6h 초과 → 사용자 확인 필요 (과거 날짜 백필이면 머지 자체가 없으므로 확인 불필요)
+    // 같은 날, 6h 초과 → 사용자 확인 필요 (과거 날짜 백필이면 머지 자체가 없으므로 확인 불필요).
+    // 물음은 **품목 단위**다 — 한 품목이 여러 칸에 서도 합칠 점검은 하나다.
     const now = Date.now()
-    const needsConfirm = date === kstYmdStr() ? toSave.filter(r =>
-      r.lastCheckId && r.lastCheckCreatedAt &&
-      isSameKstDay(new Date(r.lastCheckCreatedAt), new Date()) &&
-      (now - new Date(r.lastCheckCreatedAt).getTime()) >= 6 * 3600_000
-    ) : []
+    const seen = new Set<string>()
+    const needsConfirm = date === kstYmdStr() ? units.filter(u => {
+      if (seen.has(u.r.id)) return false
+      const hit = !!(u.r.lastCheckId && u.r.lastCheckCreatedAt &&
+        isSameKstDay(new Date(u.r.lastCheckCreatedAt), new Date()) &&
+        (now - new Date(u.r.lastCheckCreatedAt).getTime()) >= 6 * 3600_000)
+      if (hit) seen.add(u.r.id)
+      return hit
+    }).map(u => u.r) : []
     if (needsConfirm.length > 0 && mergeChoice === null) {
       setConfirmItems(needsConfirm)
       return
@@ -4292,32 +4473,31 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     await doSave(mergeChoice === 'merge')
   }
 
-  // 위치별 임시저장 — 입력값이 있는 품목별로 (품목, 이 위치) 드래프트 저장.
-  // 반환값을 읽는 문법은 아이템별 폼(CheckForm.handleSaveDraft)과 같다 — 종전엔 여기만
-  // 검사가 없어 실패해도 'N품목 임시저장됨' 이라고 말했다(형제가 갈려 있었다).
+  // 위치별 임시저장 — 입력값이 있는 (품목, 위치) 쌍마다 드래프트 저장.
+  // 반환값을 읽는 문법은 아이템별 폼(CheckForm.handleSaveDraft)과 같다.
   const handleSaveDraft = async () => {
     if (!locId) return
-    const dirty = locItems.filter(isItemDirty)
-    if (dirty.length === 0) { setError('임시저장할 수량이 없습니다.'); return }
+    const units = buildUnits()
+    if (units.length === 0) { setError('임시저장할 수량이 없습니다.'); return }
     setDraftPending(true); setError('')
     const savedAt = Date.now()
     try {
-      const settled = await Promise.allSettled(dirty.map(r => {
-        const { beforeStr, afterStr } = computeRow(r)
+      const settled = await Promise.allSettled(units.map(u => {
+        const { beforeStr, afterStr } = computeRow(u.r, u.locId)
         return saveStockCheckDraft({
-          trackedItemId: r.id, locationId: locId,
+          trackedItemId: u.r.id, locationId: u.locId,
           data: { before: beforeStr, after: afterStr, date, savedAt },
         })
       }))
       const okFlags = settled.map(s => s.status === 'fulfilled' && s.value.ok)
-      const failed = dirty.filter((_, i) => !okFlags[i]).map(r => r.label)
+      const failed = units.filter((_, i) => !okFlags[i]).map(u => `${u.r.label} · ${u.locName}`)
       // 행 캡션 기준은 실제로 저장된 행만 새로 세운다.
       setRowDrafts(prev => {
         const next = { ...prev }
-        dirty.forEach((r, i) => {
+        units.forEach((u, i) => {
           if (!okFlags[i]) return
-          const { beforeStr, afterStr } = computeRow(r)
-          next[r.id] = { savedAt, before: beforeStr, after: afterStr }
+          const { beforeStr, afterStr } = computeRow(u.r, u.locId)
+          next[locPairKey(u.r.id, u.locId)] = { savedAt, before: beforeStr, after: afterStr, itemId: u.r.id, locId: u.locId }
         })
         return next
       })
@@ -4325,41 +4505,50 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
       if (failed.length > 0) {
         // 실패면 칩·시각을 안 세운다 — 전부 저장된 것처럼 보이면 안 된다.
         // detail 은 라벨 하나 + 나머지 건수 — 라벨이 길면 세 개만 해도 §15 3줄을 넘긴다.
-        pushToast('error', `${failed.length}품목 임시저장에 실패했습니다`, {
+        pushToast('error', `${failed.length}건 임시저장에 실패했습니다`, {
           detail: failed.length === 1 ? failed[0] : `${failed[0]} 외 ${failed.length - 1}건`,
         })
         return
       }
       setLocDraftSavedAt(savedAt)
-      locDraftSnapRef.current = JSON.stringify({ locId, date, rows: locItems.map(r => computeRow(r)) })
-      pushToast('success', `${dirty.length}품목 임시저장됨`)
+      locDraftSnapRef.current = snapshotOfInputs()
+      pushToast('success', `${units.length}건 임시저장됨`)
     } finally {
       setDraftPending(false)
     }
   }
 
-  // 임시저장 비우기 — 여러 품목을 한 번에 지우므로 §14 확인창을 거치고, 지운 뒤 §16 적용취소를
+  // §12 3상태 칩의 기준 스냅샷 — 서브트리 전체 입력값을 한 문자열로.
+  const snapshotOfInputs = () => JSON.stringify({
+    locId, date,
+    rows: groups.flatMap(g => g.items.map(r => ({ k: locPairKey(r.id, g.node.id), ...computeRow(r, g.node.id) }))),
+  })
+
+  // 임시저장 비우기 — 여러 행을 한 번에 지우므로 §14 확인창을 거치고, 지운 뒤 §16 적용취소를
   // 노출한다(운영자 결정 2026-09-14). 아이템별 폼(1품목)은 종전대로 즉시다 — 규모가 달라서지
   // 형제가 갈린 것이 아니다.
   const handleClearLocDrafts = async () => {
     if (!locId) return
-    const targets = Object.keys(rowDrafts)
+    const targets = Object.values(rowDrafts)
     if (targets.length === 0) { setLocDraftSavedAt(null); locDraftSnapRef.current = null; return }
     const ok = await confirmDialog({
-      title: `${targets.length}품목의 임시저장을 비울까요?`,
+      title: `${targets.length}건의 임시저장을 비울까요?`,
       message: '입력한 숫자는 화면에 남지만 임시저장은 사라집니다. 비운 뒤 6초 안에 되돌릴 수 있습니다.',
       level: 'caution',
       confirmLabel: '비우기',
     })
     if (!ok) return
     // 되돌릴 값은 지우기 전에 붙잡는다 — 지운 뒤에는 서버에 물어볼 자리가 없다.
-    const snapshot = await getLocationDrafts(locId)
-      .catch(() => [] as { trackedItemId: string; data: { before?: string; after?: string; savedAt?: number } }[])
-    const settled = await Promise.allSettled(targets.map(id => deleteStockCheckDraft(id, locId)))
+    const snapLocIds = [...new Set(targets.map(t => t.locId))]
+    const snapshot = (await Promise.all(snapLocIds.map(id =>
+      getLocationDrafts(id).then(ds => ds.map(d => ({ ...d, locId: id })))
+        .catch(() => [] as { trackedItemId: string; data: { before?: string; after?: string; savedAt?: number }; locId: string }[]),
+    ))).flat()
+    const settled = await Promise.allSettled(targets.map(t => deleteStockCheckDraft(t.itemId, t.locId)))
     const okFlags = settled.map(s => s.status === 'fulfilled' && s.value.ok)
     setRowDrafts(prev => {
       const next = { ...prev }
-      targets.forEach((id, i) => { if (okFlags[i]) delete next[id] })
+      targets.forEach((t, i) => { if (okFlags[i]) delete next[locPairKey(t.itemId, t.locId)] })
       return next
     })
     setDraftCleanupFailed([])
@@ -4372,7 +4561,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     pushToast('success', '임시저장 비움', {
       action: { label: '적용취소', run: () => { void (async () => {
         const back = await Promise.allSettled(snapshot.map(d => saveStockCheckDraft({
-          trackedItemId: d.trackedItemId, locationId: restoreLocId,
+          trackedItemId: d.trackedItemId, locationId: d.locId,
           data: {
             before: d.data?.before != null ? String(d.data.before) : '',
             after:  d.data?.after  != null ? String(d.data.after)  : '',
@@ -4381,19 +4570,20 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           },
         })))
         const failedBack = back.filter(b => !(b.status === 'fulfilled' && b.value.ok)).length
-        if (failedBack > 0) { pushToast('error', `${failedBack}품목을 되돌리지 못했습니다`); onDraftChange?.(); return }
+        if (failedBack > 0) { pushToast('error', `${failedBack}건을 되돌리지 못했습니다`); onDraftChange?.(); return }
         onDraftChange?.()   // 카드 '점검 중' 배지
         // 칩·행 캡션도 다시 세운다 — 화면이 서버와 갈리면 '되돌렸다'가 말뿐이 된다.
         // 늦게 눌러 위치를 옮긴 뒤라면 이 패널 상태는 안 건드린다(다른 위치의 사실이 된다).
         if (locIdRef.current === restoreLocId) {
-          const restored: Record<string, { savedAt: number; before: string; after: string }> = {}
+          const restored: Record<string, { savedAt: number; before: string; after: string; itemId: string; locId: string }> = {}
           let latest = 0
           for (const d of snapshot) {
             const savedAt = typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0
-            restored[d.trackedItemId] = {
+            restored[locPairKey(d.trackedItemId, d.locId)] = {
               savedAt,
               before: d.data?.before != null ? String(d.data.before) : '',
               after:  d.data?.after  != null ? String(d.data.after)  : '',
+              itemId: d.trackedItemId, locId: d.locId,
             }
             if (savedAt > latest) latest = savedAt
           }
@@ -4406,7 +4596,6 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     })
   }
 
-  const selectCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
@@ -4431,7 +4620,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
-              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. (이 위치가 허브인 품목은 현재 잔량만 입력)
+              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. 아래 위치까지 한 번에 입력할 수 있습니다.
             </p>
           </div>
           {!inline && (
@@ -4443,10 +4632,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검 위치</p>
-              <select value={locId} onChange={e => setLocId(e.target.value)} className={selectCls}>
-                <option value="">위치 선택…</option>
-                {locs.map(l => <option key={l.id} value={l.id}>{l.pathName}{l.isHub ? ' (허브)' : ''}</option>)}
-              </select>
+              <LocationTreePicker locs={locs} value={locId} onChange={setLocId} itemCountOf={id => itemsAt(id).length} />
             </div>
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검일</p>
@@ -4495,151 +4681,190 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                   })}
                 </div>
               )}
-              <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 해당 위치에 보관된 품목이 표시됩니다.</p>
+              <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 그 위치와 아래 위치에 보관된 품목이 표시됩니다.</p>
             </>
-          ) : locItems.length === 0 ? (
-            <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치에 배정된 품목이 없습니다.</p>
+          ) : scopeItemCount === 0 ? (
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치와 아래 위치에 배정된 품목이 없습니다.</p>
           ) : (
             <>
-              {/* 이 위치 품목들의 마지막 점검 기록 시각 중 최댓값 */}
+              {/* 이 범위 품목들의 마지막 점검 기록 시각 중 최댓값 */}
               {(() => {
-                const times = locItems
+                const times = groups.flatMap(g => g.items)
                   .map(r => r.lastCheckCreatedAt ? new Date(r.lastCheckCreatedAt).getTime() : null)
                   .filter((t): t is number => t != null)
                 if (times.length === 0) return null
                 const latest = new Date(Math.max(...times))
                 return <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">이 위치 최근 점검 {fmtDate(latest)} <span className="tabular-nums">{fmtTime(latest)}</span></p>
               })()}
-              {locItems.map(r => {
-              const stockUnit = r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint)
-              const prev = r.currentLocationBreakdown.find(lb => lb.locationId === locId)
-              const { beforeStr, afterStr, restocked } = computeRow(r)
-              // 선택한 위치가 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
-              const rowIsHub = r.locations.find(l => l.id === locId)?.isHub ?? false
-              // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
-              const hubLoc = r.locations.find(l => l.isHub)
-              const hubStock = hubLoc
-                ? { pathName: hubLoc.pathName, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
-                : null
-              // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
-              const rowDraft = rowDrafts[r.id]
-              const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
-              return (
-                <div key={r.id} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
+              {groups.map(({ node, items }, gi) => {
+                // 들여쓰기는 **고른 루트 기준 상대 깊이**다 — 4층 주방을 고르면 그것이 0단이다.
+                const indent = (node.depth - (selectedLoc?.depth ?? node.depth)) * LOC_INDENT_PX
+                const isCollapsed = collapsed.has(node.id)
+                const typedIn = items.filter(r => isPairDirty(r, node.id)).length
+                return (
+                  <div key={node.id} className="space-y-1">
+                    <div style={{ marginLeft: indent }}>
+                      <SectionHeader
+                        first={gi === 0}
+                        marker={<LocPinMarker />}
+                        name={
+                          <span className="inline-flex items-center gap-1.5">
+                            {/* 트리 행은 그 노드 한 칸의 이름이다 — 조상 경로는 들여쓰기가 말한다. */}
+                            <span className={items.length === 0 ? 'font-semibold text-[var(--warm-muted)]' : undefined}>{node.name}</span>
+                            {node.isHub && <Badge tone="pale-amber">기본 창고</Badge>}
+                          </span>
+                        }
+                        count={`${items.length}품목`}
+                        trailing={isCollapsed && typedIn > 0
+                          ? <span className="mono text-[0.6875rem] text-[var(--coral)]">입력 {typedIn}</span>
+                          : undefined}
+                        collapsible
+                        collapsed={isCollapsed}
+                        onToggle={() => setCollapsed(prev => {
+                          const next = new Set(prev)
+                          if (next.has(node.id)) next.delete(node.id); else next.add(node.id)
+                          return next
+                        })}
+                      />
                     </div>
+                    {!isCollapsed && items.map(r => {
+                      const stockUnit = r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint)
+                      const prev = r.currentLocationBreakdown.find(lb => lb.locationId === node.id)
+                      const k = locPairKey(r.id, node.id)
+                      const { beforeStr, afterStr, restocked } = computeRow(r, node.id)
+                      // 이 칸이 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
+                      const rowIsHub = r.locations.find(l => l.id === node.id)?.isHub ?? false
+                      // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
+                      const hubLoc = r.locations.find(l => l.isHub)
+                      const hubStock = hubLoc
+                        ? { pathName: hubLoc.pathName, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
+                        : null
+                      // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
+                      const rowDraft = rowDrafts[k]
+                      const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
+                      return (
+                        <div key={k} style={{ marginLeft: indent }} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
+                              <p className="text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
+                            </div>
+                          </div>
+                          {/* 참고줄 — 저장된 잔량·저장된 옮김·창고 잔량. 창고 잔량만 있어도 띄운다(보충 판단의 전제).
+                              '직전'이 아니라 '저장된' 이다 — 입력칸에는 임시저장본이 들어 있을 수 있어서,
+                              어느 숫자가 실제로 저장된 값인지 행마다 말해야 한다(운영자 신고 2026-09-14). */}
+                          {(prev != null || (restocked > 0 && !rowIsHub) || (!rowIsHub && !!hubStock)) && (
+                            <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
+                              {prev != null && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
+                              {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                              {/* 창고 잔량 — 기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
+                              {!rowIsHub && hubStock && (
+                                <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
+                                  · {hubStock.pathName} 남음{' '}
+                                  {hubStock.qty == null
+                                    ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
+                                    : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
+                                </span>
+                              )}
+                              {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                            </div>
+                          )}
+                          {/* 임시저장 캡션 — 입력칸 위에, 그 행에만. 어느 숫자가 임시저장본이고 어느 것이
+                              저장본인지 행 단위로 가른다. 같은 파일의 '점검 중' 과 같은 정본 Badge·같은 톤이다. */}
+                          {rowDraft != null && (
+                            <div>
+                              <Badge tone="inspect">
+                                {rowDraftEdited
+                                  ? '임시저장 후 수정됨'
+                                  : rowDraft.savedAt > 0 ? `임시저장 ${fmtTime(new Date(rowDraft.savedAt))}` : '임시저장됨'}
+                              </Badge>
+                            </div>
+                          )}
+                          {rowIsHub ? (
+                            // 허브 위치 점검 — 잔량 1칸.
+                            // 주의 — '채우기 전'(beforeQtys)에 묶는다. 종전엔 '채운 후'(afterQtys)라 calcLocMove 가
+                            //    후 − 전(빈칸=0) = 잔량 전체를 **보충량**으로 셈했고, 그 값이 허브 자기 행에
+                            //    +N 마커로 박혔다(2026-09-11 김치 5층 하단 17kg, DB 전체 1건). 창고에서
+                            //    창고로 옮기는 일은 없으므로 허브 칸은 실측 한 값이지 옮김이 아니다.
+                            //    computeRow 의 finalN = afterN ?? beforeN 이라 저장 잔량은 그대로 이 값이다.
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
+                              <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                                value={beforeStr}
+                                onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                                className={qtyInputCls} />
+                              <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
+                              {prev != null && (
+                                <button type="button"
+                                  onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}
+                                  className="shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                                  직전값
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택) */}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
+                                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                                    value={beforeStr}
+                                    onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                                    className={qtyInputCls} />
+                                </div>
+                                <div>
+                                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
+                                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
+                                    value={afterStr}
+                                    onChange={e => setAfterQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                                    className={qtyInputCls} />
+                                </div>
+                              </div>
+                              {/* 보충 없음 — 추가 보충 없이 센 값 그대로 확정(보충 후=현재 잔량). 안 셌으면 직전 잔량으로 채움 */}
+                              <div className="flex justify-end mt-1">
+                                <button type="button"
+                                  onClick={() => {
+                                    if (beforeStr !== '') setAfterQtys(p => ({ ...p, [k]: beforeStr }))
+                                    else if (prev != null) {
+                                      const v = String(prev.qty)
+                                      setBeforeQtys(p => ({ ...p, [k]: v }))
+                                      setAfterQtys(p => ({ ...p, [k]: v }))
+                                    }
+                                  }}
+                                  className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                                  옮김 없음
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                  {/* 참고줄 — 저장된 잔량·저장된 옮김·창고 잔량. 창고 잔량만 있어도 띄운다(보충 판단의 전제).
-                      '직전'이 아니라 '저장된' 이다 — 입력칸에는 임시저장본이 들어 있을 수 있어서,
-                      어느 숫자가 실제로 저장된 값인지 행마다 말해야 한다(운영자 신고 2026-09-14). */}
-                  {(prev != null || (restocked > 0 && !rowIsHub) || (!rowIsHub && !!hubStock)) && (
-                    <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
-                      {/* 저장 시각 칩은 행마다 달지 않는다 — 참고줄 컨테이너가 이미 --canvas 라
-                          같은 면의 칩이 테두리만 남은 빈 상자로 찍히고, 이 모달은 위쪽에서
-                          '이 위치 최근 점검' 을 이미 평문으로 한 번 말한다(디자이너 패스 1-b). */}
-                      {prev != null && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
-                      {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                      {/* 창고 잔량 — 지금까지는 저장을 눌러 부족 경고가 떠야 알 수 있었다(사후 차단).
-                          기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
-                      {!rowIsHub && hubStock && (
-                        <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
-                          · {hubStock.pathName} 남음{' '}
-                          {hubStock.qty == null
-                            ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
-                            : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
-                        </span>
-                      )}
-                      {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                    </div>
-                  )}
-                  {/* 임시저장 캡션 — 입력칸 위에, 그 행에만. 어느 숫자가 임시저장본이고 어느 것이
-                      저장본인지 행 단위로 가른다. 같은 파일의 '점검 중' 과 같은 정본 Badge·같은 톤이다. */}
-                  {rowDraft != null && (
-                    <div>
-                      <Badge tone="inspect">
-                        {rowDraftEdited
-                          ? '임시저장 후 수정됨'
-                          : rowDraft.savedAt > 0 ? `임시저장 ${fmtTime(new Date(rowDraft.savedAt))}` : '임시저장됨'}
-                      </Badge>
-                    </div>
-                  )}
-                  {rowIsHub ? (
-                    // 허브 위치 점검 — 잔량 1칸.
-                    // 주의 — '채우기 전'(beforeQtys)에 묶는다. 종전엔 '채운 후'(afterQtys)라 calcLocMove 가
-                    //    후 − 전(빈칸=0) = 잔량 전체를 **보충량**으로 셈했고, 그 값이 허브 자기 행에
-                    //    +N 마커로 박혔다(2026-09-11 김치 5층 하단 17kg, DB 전체 1건). 창고에서
-                    //    창고로 옮기는 일은 없으므로 허브 칸은 실측 한 값이지 옮김이 아니다.
-                    //    computeRow 의 finalN = afterN ?? beforeN 이라 저장 잔량은 그대로 이 값이다.
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
-                      <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
-                        value={beforeStr}
-                        onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                        className={qtyInputCls} />
-                      <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
-                      {prev != null && (
-                        <button type="button"
-                          onClick={() => setBeforeQtys(p => ({ ...p, [r.id]: String(prev.qty) }))}
-                          className="shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                          직전값
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택) */}
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <div>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
-                          <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
-                            value={beforeStr}
-                            onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                            className={qtyInputCls} />
-                        </div>
-                        <div>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                          <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
-                            value={afterStr}
-                            onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                            className={qtyInputCls} />
-                        </div>
-                      </div>
-                      {/* 보충 없음 — 추가 보충 없이 센 값 그대로 확정(보충 후=현재 잔량). 안 셌으면 직전 잔량으로 채움 */}
-                      <div className="flex justify-end mt-1">
-                        <button type="button"
-                          onClick={() => {
-                            if (beforeStr !== '') setAfterQtys(p => ({ ...p, [r.id]: beforeStr }))
-                            else if (prev != null) {
-                              const v = String(prev.qty)
-                              setBeforeQtys(p => ({ ...p, [r.id]: v }))
-                              setAfterQtys(p => ({ ...p, [r.id]: v }))
-                            }
-                          }}
-                          className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                          옮김 없음
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )
-            })}
+                )
+              })}
             </>
           )}
         </div>
 
-        {/* 실패·안내는 스크롤 밖 고정 영역이다 — 품목이 열이면 스크롤 안의 박스는 뷰포트 밖으로
+        {/* 실패·안내는 스크롤 밖 고정 영역이다 — 행이 열이면 스크롤 안의 박스는 뷰포트 밖으로
             밀려 "눌렀는데 아무 말이 없다"가 다시 난다. 채널은 여기 하나(§27.2 이중 통지 금지). */}
-        {(saveFailed.length > 0 || draftCleanupFailed.length > 0 || error) && (
+        {(saveFailed.length > 0 || draftCleanupFailed.length > 0 || saveProgress || error) && (
           <div className="border-t border-[var(--warm-border)] px-5 py-3 shrink-0 space-y-2">
+            {saveProgress && (
+              // 체인이 어디까지 갔는가 — 비원자 저장이라 이 문장이 값이다.
+              <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
+                <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
+                  전체 <span className="tabular-nums">{saveProgress.total}</span>건 중 <span className="tabular-nums">{saveProgress.done}</span>건까지 저장하고 멈췄습니다. 멈춘 자리는 {saveProgress.stoppedAt} 입니다. 저장된 행의 임시저장은 비워졌고 남은 행은 그대로입니다.
+                </p>
+              </div>
+            )}
             {saveFailed.length > 0 && (
               <div className="rounded-lg px-3 py-2 space-y-1" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--danger-fg)' }}>
                   {/* 임시저장이 실제로 남아 있을 때만 그렇게 말한다 — 없는데 말하면 거짓이 된다. */}
-                  {saveFailed.length}품목이 저장되지 않았습니다.{' '}
+                  {saveFailed.length}건이 저장되지 않았습니다.{' '}
                   {saveFailed.some(f => rowDrafts[f.id] != null)
                     ? '임시저장은 그대로 남아 있습니다.'
                     : '입력한 값은 화면에 그대로 있습니다.'}
@@ -4657,7 +4882,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
                 {/* 목록은 문장 끝에 둔다 — 라벨 뒤에 조사를 붙이면 이름에 따라 '세제는/세제은' 이 갈린다. */}
                 <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
-                  저장됐지만 임시저장 정리에 실패한 품목이 있습니다. {draftCleanupFailed.join(', ')}. 아래 칩의 비우기로 지워 주세요.
+                  저장됐지만 임시저장 정리에 실패한 행이 있습니다. {draftCleanupFailed.join(', ')}. 아래 칩의 비우기로 지워 주세요.
                 </p>
               </div>
             )}
@@ -4665,7 +4890,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           </div>
         )}
 
-        {locId && locItems.length > 0 && totalRestock > 0 && (
+        {locId && scopeItemCount > 0 && totalRestock > 0 && (
           <div className="border-t border-[var(--coral)]/20 bg-[var(--coral)]/5 px-5 py-2 shrink-0">
             <p className="text-[0.6875rem] text-[var(--warm-mid)]">
               채운 만큼 각 품목의 창고(허브) 잔량에서 자동 차감됩니다.
@@ -4684,39 +4909,39 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             </div>
           </div>
         )}
-        {/* 이중 차감 물음 — 형제 '기존에 합치기' 바와 같은 자리·같은 문법. 품목마다 모달을
+        {/* 이중 차감 물음 — 형제 '기존에 합치기' 바와 같은 자리·같은 문법. 행마다 모달을
             N연타로 띄우지 않고 한 번만 묻는다. 대상은 §14 영향 목록 박스 문법으로 센다. */}
-        {dupItems.length > 0 && (
+        {dupUnits.length > 0 && (
           <div className="border-t border-[var(--honey)]/40 bg-[var(--honey)]/10 px-5 py-3 shrink-0 space-y-2">
             <p className="text-xs font-medium text-[var(--ink)]">
               이미 옮긴 기록이 있습니다. 더 옮길까요?
             </p>
             <div className="rounded-lg px-3.5 py-3" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
               <ul className="space-y-0.5">
-                {dupItems.map(r => {
-                  const d = doubleRestockOf(r, mergeChoice === 'merge')
+                {dupUnits.map(u => {
+                  const d = doubleRestockOf(u.r, u.locId, mergeChoice === 'merge')
                   if (!d) return null
-                  const u = rowUnit(r)
+                  const unit = rowUnit(u.r)
                   return (
-                    <li key={r.id} className="text-[12.5px] text-[var(--ink-s)]">
-                      · {r.label} 저장된 옮김{' '}
-                      <span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{fmtQty(d.prevRestocked, u)}</span>
+                    <li key={locPairKey(u.r.id, u.locId)} className="text-[12.5px] text-[var(--ink-s)]">
+                      · {u.r.label} · {u.locName} 저장된 옮김{' '}
+                      <span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{fmtQty(d.prevRestocked, unit)}</span>
                       {' '}· 이번 입력{' '}
-                      <span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{fmtQty(d.restocked, u)}</span>
+                      <span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{fmtQty(d.restocked, unit)}</span>
                     </li>
                   )
                 })}
               </ul>
             </div>
             <div className="flex gap-2">
-              <Btn variant="secondary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'skip')}>이 품목은 빼고 저장</Btn>
+              <Btn variant="secondary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'skip')}>이 행은 빼고 저장</Btn>
               <Btn variant="primary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'keep')}>더 옮긴 것으로 저장</Btn>
             </div>
           </div>
         )}
         {(draftPending || locDraftSavedAt) && (() => {
           // §12 임시저장 칩 정본 — 아이템별 점검 폼과 동일 3상태
-          const curSnap = JSON.stringify({ locId, date, rows: locItems.map(r => computeRow(r)) })
+          const curSnap = snapshotOfInputs()
           // 재진입으로 복원된 드래프트를 기준 스냅샷으로 시딩한다(아이템별 폼과 같은 문법).
           // 안 세우면 판정식이 영원히 거짓이라 '임시저장 후 수정됨' 이 재진입 뒤 절대 안 뜬다.
           const restoredOnly = locDraftSavedAt != null && locDraftSnapRef.current == null
@@ -4734,7 +4959,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
                   <span className="truncate" style={{ color: textColor }}>{label}</span>
                 </span>
-                {/* 비우기 — 아이템별 폼과 같은 자리·라벨, 확인창 없이 바로.
+                {/* 비우기 — 아이템별 폼과 같은 자리·라벨.
                     글자만으로는 27x13px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
                 {!draftPending && locDraftSavedAt && (
                   <button type="button" onClick={() => { void handleClearLocDrafts() }}
@@ -4746,14 +4971,97 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
         })()}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
           {!inline && <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>}
-          <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || locItems.length === 0}>
+          <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || scopeItemCount === 0}>
             {draftPending ? '저장 중…' : '임시저장'}
           </Btn>
-          <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
-            {pending ? '저장 중…' : `${locItems.filter(isItemDirty).length}품목 저장`}
+          <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0}>
+            {pending ? '저장 중…' : `${dirtyUnitCount}건 저장`}
           </Btn>
         </div>
       </div>
+    </div>
+  )
+}
+
+// 위치 그룹 헤더의 마커 — §22 SectionHeader 의 '위치=아이콘 14px --ink-m' 슬롯.
+const LocPinMarker = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round" className="text-[var(--warm-muted)]" aria-hidden="true">
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" />
+  </svg>
+)
+
+// ── 점검 위치 선택기 — 트리 드롭다운 (2026-09-14 6단계)
+//
+// 네이티브 select 로는 구조를 못 그린다(들여쓰기·품목 수·기본 창고 배지). 패널은 화면 기준
+// (fixed)으로 띄운다 — 모달 본문이 세로 스크롤 컨테이너라 형제로 두면 바닥에서 잘린다.
+// 자리 산수는 정본 하나(usePopoverAnchor)를 쓴다.
+//
+// 트리거는 **표기 경로(pathName)** 다(고른 칸 하나만 보이는 자리라 조상을 글자로 말해야 한다).
+// 목록 행은 그 노드 한 칸의 이름이다 — 조상은 들여쓰기가 말한다.
+function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
+  locs: StorageLocationNode[]
+  value: string
+  onChange: (id: string) => void
+  itemCountOf: (id: string) => number
+}) {
+  const [open, setOpen] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const { pos, triggerRef, measure } = usePopoverAnchor<HTMLButtonElement>({ minWidth: 240, estimatedHeight: 320 })
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (panelRef.current?.contains(t)) return
+      if (triggerRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+    // triggerRef 는 훅이 만든 ref 객체라 정체성이 안 바뀐다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const selected = locs.find(l => l.id === value) ?? null
+
+  return (
+    <div className="relative">
+      <button type="button" ref={triggerRef}
+        onClick={() => { if (!open) measure(); setOpen(v => !v) }}
+        aria-expanded={open}
+        className="w-full flex items-center gap-1.5 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-left min-h-[var(--input-h-touch)] outline-none focus:border-[var(--coral)] transition-colors">
+        {/* truncate — 좁은 칸에서 넘칠 때 줄바꿈 대신 말줄임으로 받는다(§12·CountrySelect 와 같은 규칙). */}
+        <span className={`flex-1 min-w-0 truncate ${selected ? 'text-[var(--warm-dark)]' : 'text-[var(--warm-muted)]'}`}>
+          {selected ? selected.pathName : '위치 선택…'}
+        </span>
+        <span className="text-[var(--warm-muted)] shrink-0">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
+        </span>
+      </button>
+      {open && typeof window !== 'undefined' && createPortal(
+        <div ref={panelRef}
+          className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-1.5"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '320px', overflowY: 'auto' }}>
+          {locs.length === 0 && <p className="px-3 py-4 text-sm text-[var(--warm-muted)] text-center">등록된 위치가 없습니다.</p>}
+          {locs.map(node => {
+            const isSel = node.id === value
+            return (
+              <button key={node.id} type="button"
+                onClick={() => { onChange(node.id); setOpen(false) }}
+                style={{ paddingLeft: 10 + (node.depth - 1) * LOC_INDENT_PX }}
+                className={`w-full flex items-center gap-2 min-h-[44px] pr-2.5 py-1.5 rounded-lg text-left transition-colors ${isSel ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]'}`}>
+                {isSel && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                )}
+                <span className="flex-1 min-w-0 truncate text-sm">{node.name}</span>
+                {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
+                <span className="mono text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{itemCountOf(node.id)}품목</span>
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
@@ -4996,72 +5304,124 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
 }
 
 // ── 위치 관리 모달 — property-level CRUD
+// ── 보관 위치 관리 모달 — 트리(2026-09-14 5단계)
+//
+// 표시 이름이 `name`(그 노드 한 칸)인 자리는 여기와 아래 트리 행들뿐이다. 고치는 대상이 그 한
+// 칸이고 조상 경로는 들여쓰기가 말한다. 그 밖의 모든 표시 자리는 pathName 이다
+// (정본 lib/locationTree.flattenDfs, 그물 scripts/check-location-name-axis.mjs).
+//
+// 순서 편집은 **형제 안에서만** 이다. 목록이 DFS 라 화면상 이웃 행이 형제가 아닐 수 있으므로,
+// ▲▼도 드래그도 형제 집합 위에서 자리를 센다. 부모를 바꾸는 일은 '옮기기' 모달이 맡는다 —
+// 402px 에서 드래그로 부모까지 바꾸면 오조작이 잦다(설계 결정 2026-09-14).
 function LocationSettingsModal({ onClose }: { onClose: () => void }) {
-  const [locs, setLocs]     = useState<StorageLocationItem[]>([])
-  const [newName, setNewName] = useState('')
-  const [editId, setEditId]   = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [pending, setPending]   = useState(false)
-  const [error, setError]       = useState('')
+  const [locs, setLocs]           = useState<StorageLocationNode[]>([])
+  const [newName, setNewName]     = useState('')
+  const [editId, setEditId]       = useState<string | null>(null)
+  const [editName, setEditName]   = useState('')
+  const [childOf, setChildOf]     = useState<string | null>(null)   // 하위 추가 입력칸이 열린 부모 id
+  const [childName, setChildName] = useState('')
+  const [moveId, setMoveId]       = useState<string | null>(null)   // 옮기기 모달 대상
+  const [menuId, setMenuId]       = useState<string | null>(null)   // 행 액션 메뉴가 열린 행
+  const [pending, setPending]     = useState(false)
+  const [error, setError]         = useState('')
   const reload = () => getStorageLocations().then(setLocs)
   useEffect(() => { reload() }, [])
 
-  // 순서 이동(▲▼) — 이웃과 자리 교체 후 전체 id 순서를 서버 저장. 낙관적 반영, 실패 시 원복.
-  const move = async (idx: number, dir: -1 | 1) => {
-    const target = idx + dir
-    if (target < 0 || target >= locs.length) return
-    const next = [...locs]
-    ;[next[idx], next[target]] = [next[target], next[idx]]
-    setLocs(next)
-    setPending(true)
-    // 순서는 형제 집합 단위다. 이 목록은 아직 평면(전부 루트)이라 parentId=null 로 넘긴다 — 트리 화면은 5단계.
-    const res = await reorderStorageLocations(null, next.map(l => l.id))
+  // 행 액션 메뉴는 화면 기준(fixed)으로 띄운다 — 모달 본문이 세로 스크롤 컨테이너라 아래쪽 행에서
+  // 열면 바닥에서 잘린다. 자리 산수는 정본 하나(usePopoverAnchor)를 쓴다.
+  const { pos: menuPos, triggerRef: menuAnchorRef, measure: measureMenu } =
+    usePopoverAnchor<HTMLElement>({ minWidth: 208, estimatedHeight: 340 })
+  const menuPanelRef = useRef<HTMLDivElement>(null)
+  const rowAnchors = useRef<Map<string, HTMLElement>>(new Map())
+  useEffect(() => {
+    if (!menuId) return
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (menuPanelRef.current?.contains(t)) return
+      if (menuAnchorRef.current?.contains(t)) return
+      setMenuId(null)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+    // menuAnchorRef 는 훅이 만든 ref 객체라 정체성이 안 바뀐다(CountrySelect 와 같은 주석).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuId])
+
+  const siblingsOf = (parentId: string | null) => locs.filter(n => n.parentId === parentId)
+
+  // 순서 저장 + §16 적용취소. 되돌리기 전용 액션은 없다 — 이전 순서 배열을 같은 액션에 다시 넘긴다.
+  const saveOrder = async (parentId: string | null, ids: string[]) => {
+    setPending(true); setError('')
+    const res = await reorderStorageLocations(parentId, ids)
     setPending(false)
-    if (!res.ok) { pushToast('error', res.error); reload(); return }
-    pushToast('success', '위치 순서 저장됨')
+    if (!res.ok) { setError(res.error); reload(); return }
+    const undo = res.undo
+    reload()
+    pushToast('success', '위치 순서 저장됨', {
+      action: { label: '적용취소', run: () => { void (async () => {
+        const back = await reorderStorageLocations(undo.parentId, undo.ids)
+        if (!back.ok) { pushToast('error', back.error); reload(); return }
+        reload()
+        pushToast('info', '순서를 적용취소했습니다')
+      })() } },
+    })
   }
 
-  // 손잡이 드래그 — 설정 옵션 리스트·순서 편집 모드와 동일 문법(오른쪽 44pt 핸들, 놓을 때 1회 저장).
-  // ▲▼만 있어 다른 순서 편집 표면과 어긋나던 것 통일(운영자 지적 2026-07-22). ▲▼는 보조로 유지(설정 리스트와 동일).
-  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  // ▲▼ — 형제 안에서만. 화면 이웃이 아니라 형제 배열에서 자리를 맞바꾼다.
+  const nudge = (node: StorageLocationNode, dir: -1 | 1) => {
+    const sibs = siblingsOf(node.parentId)
+    const i = sibs.findIndex(s => s.id === node.id)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= sibs.length) return
+    const ids = sibs.map(s => s.id)
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    setMenuId(null)
+    void saveOrder(node.parentId, ids)
+  }
+
+  // 손잡이 드래그 — 형제 안에서만. 옮기는 것은 행 하나가 아니라 **그 서브트리 한 덩어리**다.
+  const [dragId, setDragId] = useState<string | null>(null)
   const locListRef = useRef<HTMLUListElement | null>(null)
   const locsRef = useRef(locs)
   useEffect(() => { locsRef.current = locs }, [locs])
   const dragChanged = useRef(false)
-  const onLocHandleDown = (idx: number) => (e: React.PointerEvent) => {
+
+  const onLocHandleDown = (id: string) => (e: React.PointerEvent) => {
     e.preventDefault()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     dragChanged.current = false
-    setDragIdx(idx)
+    setDragId(id)
   }
   const onLocHandleMove = (e: React.PointerEvent) => {
-    if (dragIdx == null || !locListRef.current) return
+    if (dragId == null || !locListRef.current) return
     const rows = Array.from(locListRef.current.children) as HTMLElement[]
     if (rows.length === 0) return
     let over = -1
     if (e.clientY < rows[0].getBoundingClientRect().top) over = 0
     else if (e.clientY > rows[rows.length - 1].getBoundingClientRect().bottom) over = rows.length - 1
     else for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break } }
-    if (over < 0 || over === dragIdx) return
+    if (over < 0) return
+    // 최신 목록 위에서 센다 — 포인터 이동은 한 프레임에 여러 번 오므로 ref 사본을 쓰면
+    // 직전 이동이 아직 안 반영된 배열 위에서 자리를 계산해 행이 두 칸씩 튄다.
     setLocs(prev => {
-      const next = [...prev]
-      const [m] = next.splice(dragIdx, 1)
-      next.splice(over, 0, m)
-      return next
+      if (prev.length !== rows.length) return prev
+      const self = prev.find(n => n.id === dragId)
+      if (!self) return prev
+      // 포인터가 앉은 행이 속한 **형제 블록의 주인**을 찾는다. 다른 가지 위면 아무 것도 안 한다 —
+      // 부모를 바꾸는 것은 드래그의 일이 아니다.
+      const owner = locOwnerAt(prev, over, self.parentId)
+      if (!owner || owner.id === dragId) return prev
+      dragChanged.current = true
+      return locReflow(prev, dragId, owner.id)
     })
-    setDragIdx(over)
-    dragChanged.current = true
   }
-  const onLocHandleUp = async () => {
-    if (dragIdx == null) return
-    setDragIdx(null)
-    if (!dragChanged.current) return
+  const onLocHandleUp = () => {
+    if (dragId == null) return
+    const self = locsRef.current.find(n => n.id === dragId)
+    setDragId(null)
+    if (!dragChanged.current || !self) return
     dragChanged.current = false
-    setPending(true)
-    const res = await reorderStorageLocations(null, locsRef.current.map(l => l.id))
-    setPending(false)
-    if (!res.ok) { pushToast('error', res.error); reload(); return }
-    pushToast('success', '위치 순서 저장됨')
+    void saveOrder(self.parentId, locsRef.current.filter(n => n.parentId === self.parentId).map(n => n.id))
   }
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -5074,21 +5434,67 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     setNewName(''); reload()
   }
 
+  const handleAddChild = async (parentId: string) => {
+    if (!childName.trim()) return
+    setPending(true); setError('')
+    const res = await createStorageLocation(childName, parentId)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    setChildName(''); setChildOf(null); reload()
+  }
+
+  // 이름 바꾸기 — 서버가 이전 이름을 undo 로 돌려주므로 같은 액션을 다시 불러 되돌린다(§16).
   const handleUpdate = async (id: string) => {
     if (!editName.trim()) return
     setPending(true); setError('')
     const res = await updateStorageLocation(id, editName)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
+    const undo = res.undo
     setEditId(null); reload()
+    pushToast('success', '위치 이름 저장됨', {
+      action: { label: '적용취소', run: () => { void (async () => {
+        const back = await updateStorageLocation(undo.id, undo.name)
+        if (!back.ok) { pushToast('error', back.error); reload(); return }
+        reload()
+        pushToast('info', '이름 바꾸기를 적용취소했습니다')
+      })() } },
+    })
+  }
+
+  // 옮기기 성공 — §16 적용취소는 **rename → move → reorder** 세 번이다(되돌리기 전용 액션 없음).
+  //
+  // 순서가 중요하다. 앞부분 떼기로 `4층 김치냉장고 상단` 이 `상단` 이 된 노드를 **먼저 옛 부모로**
+  // 되돌리면, 옛 형제 집합에 이미 `상단` 이 있을 때 형제 이름 중복에 걸려 원복이 통째로 멈춘다.
+  // 이름을 먼저 옛 이름으로 되돌려 놓고 옮기면 그 충돌이 서지 않는다(검수 지적 2026-09-14).
+  // siblingIds 를 다시 넘기지 않으면 옛 자리가 아니라 형제 맨 뒤로 돌아간다.
+  //
+  // 중간에 실패하면 **어디까지 되돌렸는지**를 인라인에 남긴다 — 토스트는 사라지고, 절반만 돌아간
+  // 상태를 화면이 말하지 않으면 운영자가 무엇을 손으로 고쳐야 하는지 알 수 없다.
+  const onMoved = (undo: LocationMoveUndo, renameLabel?: string) => {
+    setMoveId(null); reload()
+    pushToast('success', '위치를 옮겼습니다', {
+      ...(renameLabel ? { detail: renameLabel } : {}),
+      action: { label: '적용취소', run: () => { void (async () => {
+        const nameBack = await updateStorageLocation(undo.id, undo.name)
+        if (!nameBack.ok) { setError(`적용취소가 이름 되돌리기에서 멈췄습니다. ${nameBack.error}`); reload(); return }
+        const back = await moveStorageLocation(undo.id, undo.parentId, false)
+        if (!back.ok) { setError(`이름은 되돌렸지만 자리 되돌리기에서 멈췄습니다. ${back.error}`); reload(); return }
+        const orderBack = await reorderStorageLocations(undo.parentId, undo.siblingIds)
+        if (!orderBack.ok) { setError(`이름과 자리는 되돌렸지만 순서 되돌리기에서 멈췄습니다. ${orderBack.error}`); reload(); return }
+        reload()
+        pushToast('info', '위치 이동을 적용취소했습니다')
+      })() } },
+    })
   }
 
   // 삭제 정책(운영자 확정 2026-07-18): 기록 없는 위치(실수 생성)는 확인 1회로 삭제.
   // 기록이 있으면 서버가 impact 를 돌려주고, 실제 결과(이력 삭제·추후 총량 감소)를 명시한
   // 두 번째 확인을 통과해야 강제 삭제. 일상적 정리는 품목별 '숨김' 안내.
+  // 하위가 있는 위치는 force 로도 서버가 거부한다 — 그 문구를 **인라인 그대로** 보여준다(§27.2).
   const handleDelete = async (id: string, name: string) => {
     if (!(await confirmDialog({ title: `'${name}' 위치를 삭제할까요?`, message: '기록이 있는 위치면 삭제 전에 한 번 더 확인합니다.', level: 'caution', confirmLabel: '삭제' }))) return
-    setPending(true)
+    setPending(true); setError('')
     const res = await deleteStorageLocation(id)
     setPending(false)
     if (res.ok) { reload(); return }
@@ -5112,8 +5518,14 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     reload()
   }
 
+  const menuNode = menuId ? locs.find(n => n.id === menuId) ?? null : null
+  const menuSibs = menuNode ? siblingsOf(menuNode.parentId) : []
+  const menuIdx  = menuNode ? menuSibs.findIndex(s => s.id === menuNode.id) : -1
+  const moveNode = moveId ? locs.find(n => n.id === moveId) ?? null : null
+  const MENU_ROW = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm text-[var(--warm-dark)] hover:bg-[var(--cream-soft)] disabled:opacity-40 transition-colors'
+
   return (
-    <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 / 4층 주방 / 손님실 등 보관 장소를 등록하세요" width="sm"
+    <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 · 4층 주방 같은 보관 장소를 등록하고, 냉장고 상단처럼 아래 칸을 둘 수 있습니다" width="sm"
       // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
       bodyClassName="">
       <div className="px-5 sm:px-6 py-4 space-y-4">
@@ -5122,90 +5534,239 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
         )}
         <ul ref={locListRef} className="space-y-1.5">
-          {locs.map((loc, idx) => (
-            <li key={loc.id} className={`flex items-center gap-2 bg-[var(--canvas)] border rounded-xl px-3 py-2 ${dragIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]/60'}`}>
-              {editId !== loc.id && (
-                <div className="flex flex-col gap-0.5 shrink-0">
-                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0 || pending} aria-label="위로 이동"
-                    className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors leading-none">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
-                  </button>
-                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === locs.length - 1 || pending} aria-label="아래로 이동"
-                    className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors leading-none">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-                  </button>
-                </div>
-              )}
-              {editId === loc.id ? (
+          {locs.map(node => (
+            <li key={node.id}
+              style={{ marginLeft: (node.depth - 1) * LOC_INDENT_PX }}
+              className={`flex items-center gap-2 bg-[var(--canvas)] border rounded-xl px-3 py-2 ${dragId === node.id ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]/60'}`}>
+              {editId === node.id ? (
                 <>
                   <input
                     autoFocus
                     type="text" value={editName}
                     onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleUpdate(loc.id); if (e.key === 'Escape') setEditId(null) }}
-                    className="flex-1 bg-transparent text-sm text-[var(--warm-dark)] outline-none border-b border-[var(--coral)]" />
-                  <button type="button" onClick={() => handleUpdate(loc.id)} disabled={pending}
+                    onKeyDown={e => { if (e.key === 'Enter') handleUpdate(node.id); if (e.key === 'Escape') setEditId(null) }}
+                    className="flex-1 min-w-0 bg-transparent text-sm text-[var(--warm-dark)] outline-none border-b border-[var(--coral)]" />
+                  <button type="button" onClick={() => handleUpdate(node.id)} disabled={pending}
                     className="text-xs font-semibold text-[var(--coral)] disabled:opacity-40 px-2 py-1">저장</button>
                   <button type="button" onClick={() => setEditId(null)}
                     className="text-xs text-[var(--warm-muted)] px-2 py-1">취소</button>
                 </>
               ) : (
                 <>
-                  <span className="flex-1 text-sm text-[var(--warm-dark)]">{loc.name}</span>
-                  {/* 오른쪽 44pt 드래그 손잡이 — 설정 옵션 리스트와 동일 문법 */}
-                  <button type="button" aria-label={`${loc.name} 순서 이동`}
-                    onPointerDown={onLocHandleDown(idx)} onPointerMove={onLocHandleMove} onPointerUp={onLocHandleUp} onPointerCancel={onLocHandleUp}
+                  {/* 왼쪽 44pt 드래그 손잡이 — 형제 안 순서 전용. 설정 옵션 리스트와 같은 문법이다. */}
+                  <button type="button" aria-label={`${node.name} 순서 이동`}
+                    onPointerDown={onLocHandleDown(node.id)} onPointerMove={onLocHandleMove} onPointerUp={onLocHandleUp} onPointerCancel={onLocHandleUp}
                     style={{ touchAction: 'none' }}
-                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 -ml-2 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
                     </svg>
                   </button>
-                  <button
-                    type="button"
-                    title={loc.isHub ? '기본 창고 해제' : '기본 창고로 지정 (품목별로 지정 안 한 경우의 기본값)'}
-                    onClick={async () => {
-                      // 기본 창고를 바꾸면 품목별 창고를 지정 안 한 품목 전부의 미지정 입수 귀속처와
-                      // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
-                      if (!loc.isHub && !(await confirmDialog({
-                        title: `${loc.name}을(를) 기본 창고로 지정할까요?`,
-                        message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 버튼을 다시 눌러 해제할 수 있습니다.',
-                        level: 'caution', confirmLabel: '기본 창고로',
-                      }))) return
-                      setPending(true)
-                      await toggleStorageLocationHub(loc.id, !loc.isHub)
-                      pushToast('success', loc.isHub ? '기본 창고 해제됨' : `${loc.name}이(가) 기본 창고가 되었습니다`, {
-                        action: { label: '적용취소', run: () => { void toggleStorageLocationHub(loc.id, loc.isHub).then(() => reload()) } },
-                      })
-                      reload()
-                      setPending(false)
-                    }}
-                    className={`text-[0.65625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-[var(--warning-bg)] border-[var(--warning-ring)] text-[var(--warning-fg)]' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--warning-ring)] hover:text-[var(--warning-fg)]'}`}>
-                    {loc.isHub ? <>기본 창고 <svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></> : '기본 창고'}
-                  </button>
-                  <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
-                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
-                  <button type="button" onClick={() => handleDelete(loc.id, loc.name)} disabled={pending}
-                    className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+                  <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{node.name}</span>
+                  {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
+                  {/* 메뉴가 뜰 자리의 기준점 — RowActionBtn 은 히트영역과 크롬을 나눈 정본이라
+                      이벤트를 내주지 않는다. 행마다 감싼 span 을 앵커로 쓴다. */}
+                  <span className="shrink-0" ref={el => { if (el) rowAnchors.current.set(node.id, el); else rowAnchors.current.delete(node.id) }}>
+                    <RowActionBtn
+                      onClick={() => {
+                        if (menuId === node.id) { setMenuId(null); return }
+                        menuAnchorRef.current = rowAnchors.current.get(node.id) ?? null
+                        measureMenu()
+                        setMenuId(node.id)
+                      }}>
+                      관리
+                    </RowActionBtn>
+                  </span>
                 </>
               )}
             </li>
           ))}
         </ul>
+        {/* 하위 추가 입력칸 — 고른 부모 바로 아래 한 칸만 열린다. */}
+        {childOf && (
+          <div className="flex gap-2 items-center" style={{ marginLeft: ((locs.find(n => n.id === childOf)?.depth ?? 1)) * LOC_INDENT_PX }}>
+            <input
+              autoFocus
+              type="text" value={childName} onChange={e => setChildName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAddChild(childOf); if (e.key === 'Escape') { setChildOf(null); setChildName('') } }}
+              placeholder={`${locs.find(n => n.id === childOf)?.name ?? ''} 아래에 만들 이름 (예: 상단)`}
+              className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            <Btn variant="primary" size="sm" disabled={pending || !childName.trim()} onClick={() => handleAddChild(childOf)}>추가</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => { setChildOf(null); setChildName('') }}>취소</Btn>
+          </div>
+        )}
         <form onSubmit={handleAdd} className="flex gap-2">
           <input
             type="text" value={newName} onChange={e => setNewName(e.target.value)}
             placeholder="새 위치 이름 (예: 창고)"
-            className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           <Btn type="submit" variant="primary" size="sm" disabled={pending || !newName.trim()}>추가</Btn>
         </form>
       </div>
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 space-y-2">
         <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-          <strong className="text-[var(--warning-fg)]">허브</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 "이동 수량" 입력란이 표시됩니다.
+          <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
         </p>
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" onClick={onClose}>완료</Btn>
+        </ModalFooterActions>
+      </div>
+
+      {/* 행 액션 메뉴 — body 로 옮겨 화면 기준으로 띄운다(모달 본문 스크롤에서 잘리지 않게). */}
+      {menuNode && typeof window !== 'undefined' && createPortal(
+        <div ref={menuPanelRef}
+          className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
+          style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width, maxHeight: '70vh', overflowY: 'auto' }}>
+          <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{menuNode.pathName}</p>
+          <button type="button" className={MENU_ROW} disabled={menuNode.depth >= MAX_DEPTH}
+            onClick={() => { setChildOf(menuNode.id); setChildName(''); setMenuId(null) }}>
+            하위 추가
+          </button>
+          {menuNode.depth >= MAX_DEPTH && (
+            <p className="px-2 pb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">{MAX_DEPTH}단계가 상한이라 더 만들 수 없습니다.</p>
+          )}
+          <button type="button" className={MENU_ROW}
+            onClick={() => { setEditId(menuNode.id); setEditName(menuNode.name); setMenuId(null) }}>
+            이름 바꾸기
+          </button>
+          <button type="button" className={MENU_ROW}
+            onClick={() => { setMoveId(menuNode.id); setMenuId(null) }}>
+            옮기기
+          </button>
+          <button type="button" className={MENU_ROW} disabled={menuIdx <= 0 || pending}
+            onClick={() => nudge(menuNode, -1)}>
+            위로
+          </button>
+          <button type="button" className={MENU_ROW} disabled={menuIdx < 0 || menuIdx >= menuSibs.length - 1 || pending}
+            onClick={() => nudge(menuNode, 1)}>
+            아래로
+          </button>
+          <button type="button" className={MENU_ROW} disabled={pending}
+            onClick={async () => {
+              // 기본 창고를 바꾸면 품목별 창고를 지정 안 한 품목 전부의 미지정 입수 귀속처와
+              // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
+              setMenuId(null)
+              if (!menuNode.isHub && !(await confirmDialog({
+                title: `${menuNode.pathName}을(를) 기본 창고로 지정할까요?`,
+                message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
+                level: 'caution', confirmLabel: '기본 창고로',
+              }))) return
+              setPending(true)
+              await toggleStorageLocationHub(menuNode.id, !menuNode.isHub)
+              pushToast('success', menuNode.isHub ? '기본 창고 해제됨' : `${menuNode.pathName}이(가) 기본 창고가 되었습니다`, {
+                action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(() => reload()) } },
+              })
+              reload()
+              setPending(false)
+            }}>
+            {menuNode.isHub ? '기본 창고 해제' : '기본 창고로 지정'}
+          </button>
+          <button type="button" disabled={pending}
+            className={`${MENU_ROW} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`}
+            onClick={() => { setMenuId(null); void handleDelete(menuNode.id, menuNode.name) }}>
+            삭제
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      {moveNode && (
+        <LocationMoveModal all={locs} node={moveNode} onClose={() => setMoveId(null)} onDone={onMoved} />
+      )}
+    </Modal>
+  )
+}
+
+// ── 위치 옮기기 모달 (2026-09-14 5단계)
+// 목적지를 고르는 자리다. 자기 서브트리·깊이 초과는 **서버 거부에 기대지 않고** 여기서 비활성 +
+// 이유 캡션으로 먼저 말한다. 눌러 보고 나서야 왜 안 되는지 알게 하면 그것이 곧 오조작이다.
+// 판정은 서버와 같은 순수 함수(lib/locationTree)를 쓴다 — 사본을 만들면 언젠가 갈린다.
+function LocationMoveModal({ all, node, onClose, onDone }: {
+  all: StorageLocationNode[]
+  node: StorageLocationNode
+  onClose: () => void
+  onDone: (undo: LocationMoveUndo, renameLabel?: string) => void
+}) {
+  // 기본 목적지는 '고르지 않음'이다 — 최상위(null)를 기본으로 두면 한 번 잘못 눌러 루트로 튄다.
+  const [dest, setDest] = useState<{ id: string | null } | null>(null)
+  // 앞부분 떼기 제안 기본 켬(운영자 결정 2026-09-14).
+  const [strip, setStrip] = useState(true)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  const blocked = new Set(locSubtree(all, node.id).map(n => n.id))
+  const span = locSubtreeSpan(all, node.id)   // 자손까지 세야 상한 판정이 맞는다
+
+  const reasonOf = (target: StorageLocationNode | null): string | null => {
+    const targetId = target?.id ?? null
+    if (targetId === node.parentId) return '지금 있는 자리입니다'
+    if (targetId != null && blocked.has(targetId)) return '자기 자신이나 하위 위치입니다'
+    if ((target?.depth ?? 0) + 1 + span > MAX_DEPTH) return `${MAX_DEPTH}단계를 넘습니다`
+    return null
+  }
+
+  const chosen = dest === null ? null : (dest.id === null ? null : all.find(n => n.id === dest.id) ?? null)
+  const chosenPath = dest === null ? '' : (chosen?.pathName ?? '')
+  const nextName = strip && chosenPath ? stripPrefixSuggestion(node.name, chosenPath) : node.name
+  const stripPreview = nextName !== node.name ? `${node.name} → ${nextName}` : null
+
+  const submit = async () => {
+    if (dest === null) return
+    setPending(true); setError('')
+    const res = await moveStorageLocation(node.id, dest.id, strip)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    onDone(res.undo, res.renameLabel)
+  }
+
+  const rowCls = (disabled: boolean, selected: boolean) =>
+    `w-full flex items-center gap-2 min-h-[44px] px-2.5 py-1.5 rounded-lg text-left transition-colors ${
+      disabled ? 'opacity-45 cursor-not-allowed'
+      : selected ? 'bg-[var(--cream-soft)] text-[var(--coral)] font-semibold'
+      : 'hover:bg-[var(--cream-soft)] text-[var(--warm-dark)]'}`
+
+  return (
+    <Modal open onClose={onClose} title={`'${node.name}' 옮기기`} subtitle="옮길 자리를 고르세요. 되돌리기는 저장 뒤 토스트의 적용취소입니다" width="sm" z={260}>
+      <div className="space-y-3">
+        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
+        <div className="max-h-[46vh] overflow-y-auto overscroll-contain border border-[var(--warm-border)] rounded-xl p-1.5 bg-[var(--canvas)]">
+          {(() => {
+            const reason = reasonOf(null)
+            return (
+              <button type="button" disabled={reason != null}
+                onClick={() => setDest({ id: null })}
+                className={rowCls(reason != null, dest?.id === null && dest !== null)}>
+                <span className="flex-1 min-w-0 truncate text-sm">최상위</span>
+                {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason}</span>}
+              </button>
+            )
+          })()}
+          {all.map(target => {
+            const reason = reasonOf(target)
+            return (
+              <button key={target.id} type="button" disabled={reason != null}
+                onClick={() => setDest({ id: target.id })}
+                style={{ paddingLeft: 10 + (target.depth - 1) * LOC_INDENT_PX }}
+                className={rowCls(reason != null, dest?.id === target.id)}>
+                <span className="flex-1 min-w-0 truncate text-sm">{target.name}</span>
+                {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason}</span>}
+              </button>
+            )
+          })}
+        </div>
+        {/* 앞부분 떼기 — §29 값의 전환 표기(화살표는 이 한 자리에만 쓴다). */}
+        <label className="flex items-start gap-2.5 min-h-[44px] items-center cursor-pointer">
+          <input type="checkbox" checked={strip} onChange={e => setStrip(e.target.checked)}
+            className="w-4 h-4 accent-[var(--coral)] shrink-0" />
+          <span className="text-sm text-[var(--warm-dark)]">앞부분 떼기</span>
+          {stripPreview
+            ? <span className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{stripPreview}</span>
+            : <span className="text-[0.65625rem] text-[var(--warm-muted)]">뗄 앞부분이 없습니다</span>}
+        </label>
+        <ModalFooterActions onCancel={onClose}>
+          <Btn variant="primary" disabled={pending || dest === null} onClick={() => { void submit() }}>
+            {pending ? '옮기는 중…' : '옮기기'}
+          </Btn>
         </ModalFooterActions>
       </div>
     </Modal>

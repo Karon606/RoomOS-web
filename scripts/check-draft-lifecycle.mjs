@@ -6,12 +6,20 @@
 // 인라인 모드의 onClose 는 화면 전환(changeView)이라 에러가 한 프레임도 안 그려졌다. 실패한
 // 품목의 드래프트만 남아 '임시저장 남음' 으로 보였다.
 //
-// 잡는 것 다섯.
+// 잡는 것 여섯.
 //   ① doSave 의 onClose 는 실패 0 조건 아래에만 선다.
 //   ② 드래프트 삭제·저장의 반환값을 읽는다(양 화면 모두).
 //   ③ 두 화면(아이템별 폼 · 위치 패널)의 임시저장 분기가 대칭이다.
 //   ④ currentLocationBreakdown 이 restockedQty 를 싣는다(죽은 '지난 옮김' 표시의 근원).
 //   ⑤ 이중 차감 확인창이 저장 경로에 꽂혀 있다.
+//   ⑥ (2026-09-14 6단계) 서브트리 체인 저장의 세 축 — 순차·허브 마지막·이어 붙이기.
+//
+// ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
+// 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
+//   · 순차가 아니면(Promise.all) 같은 품목의 칸마다 새 점검이 서고, 그 각각이 직전 점검을
+//     base 로 잡아 앞 칸의 실측이 사라진다. 화면에는 '저장됨' 만 뜬다.
+//   · 허브 행이 마지막이 아니면 허브 실측을 먼저 쓰고 그 위에서 다시 차감해 이중으로 빠진다.
+//   · 이어 붙이기(chainIds)가 없으면 두 번째 칸이 props 의 stale 한 lastCheckId 를 다시 집는다.
 import { readFileSync } from 'node:fs'
 
 const client   = readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8')
@@ -42,55 +50,79 @@ need('doSave 를 찾음', doSave.length > 0)
 need('doSave 가 onClose 를 한 번만 부른다',
   (doSave.match(/onClose\(\)/g) ?? []).length === 1,
   '닫는 자리가 둘이면 한쪽이 조건을 비껴간다')
-need('저장 실패 목록을 모은다', /const failed: \{ id: string; label: string; error: string \}\[\] = \[\]/.test(doSave))
+// 체인이 멈춘 그 한 행을 실패 목록으로 세운다 — 뒤 행은 아예 시도하지 않았으므로 실패가 아니다.
+// 반환 타입이 줄을 넘기므로 화살표 뒤 여는 괄호를 머리로 삼는다 — 타입 리터럴의 중괄호를
+// 본문으로 오인하면 슬라이스가 한 줄짜리가 되고 아래 검사가 전부 거짓으로 통과한다.
+need('runChain 선언을 찾음',
+  /const runChain = async \(units: LocSaveUnit\[\], forceMerge: boolean, doneBefore: number, total: number\):/.test(client))
+const runChain = fnBody(client, "    Promise<{ stopped: 'hubShort' | 'failed' | null; done: number }> => {")
+need('runChain 본문을 찾음', runChain.length > 200)
+need('저장 실패 행을 목록으로 세운다',
+  /setSaveFailed\(\[\{ id: locPairKey\(u\.r\.id, u\.locId\), label, error: humanError\(res\.error/.test(runChain))
+need('멈춘 자리를 남긴다',
+  /setSaveProgress\(\{ done, total, stoppedAt: label \}\)/.test(runChain),
+  '비원자 저장이라 어디까지 갔는지를 말하지 않으면 무엇을 다시 눌러야 하는지 알 수 없다')
 // §27.2 이중 통지 금지 — 채널은 인라인 하나다. 저장 실패에 토스트를 다시 얹으면 같은 사건을
 // 두 번 알리는 것이고, 사라지는 토스트는 다시 시도할 자리를 못 남긴다(§18 영속·리스트형).
 need('저장 실패를 토스트로 알리지 않는다',
-  !/pushToast\('error'/.test(doSave),
+  !/pushToast\('error'/.test(doSave) && !/pushToast\('error'/.test(runChain),
   '실패 채널은 버튼 줄 위 고정 영역의 인라인 목록 하나다')
 need('실패가 있으면 닫지 않고 끝낸다',
-  /if \(failed\.length > 0 \|\| cleanupFailed\.length > 0\) return/.test(doSave),
+  /if \(out\.stopped === 'failed' \|\| cleanupRef\.current\.length > 0\) return/.test(doSave),
   'return 이 없으면 그대로 닫힌다')
 need('실패 분기가 onClose 앞에 있다',
-  before(doSave, 'if (failed.length > 0 || cleanupFailed.length > 0) return', 'onClose()'),
+  before(doSave, "if (out.stopped === 'failed' || cleanupRef.current.length > 0) return", 'onClose()'),
   '뒤에 있으면 실패해도 패널이 먼저 닫힌다(이 신고의 근원)')
 need('실패가 있어도 성공분은 반영한다',
-  before(doSave, 'onDone()', 'if (failed.length > 0 || cleanupFailed.length > 0) return'))
+  before(doSave, 'onDone()', "if (out.stopped === 'failed' || cleanupRef.current.length > 0) return"))
 need('오류 문구는 humanError 를 탄다',
-  (doSave.match(/humanError\(/g) ?? []).length === 2,
+  (runChain.match(/humanError\(/g) ?? []).length === 2,
   '영어 프레임워크 메시지가 한국어 폴백을 이기고 화면에 뜬다')
-need('허브 부족 큐는 종전대로 모달을 유지한다',
-  /if \(shorts\.length > 0\) \{ setHubShortQueue\(shorts\); return \}/.test(doSave))
+need('허브 부족이면 체인을 멈추고 모달을 유지한다',
+  /setHubShortQueue\(\[\{/.test(runChain) && /return \{ stopped: 'hubShort', done \}/.test(runChain) &&
+  /if \(out\.stopped === 'hubShort'\) return/.test(doSave))
+need('허브 부족은 나머지 행을 버리지 않는다',
+  /restUnitsRef\.current = units\.slice\(i \+ 1\)/.test(runChain),
+  '버리면 팝업을 처리한 뒤 아래 칸의 실측이 조용히 사라진다')
 // 허브 부족 팝업이 마감할 때도 같은 규칙을 탄다 — 여기만 무조건 닫으면 실패가 다시 사라진다.
 const hubResolved = fnBody(client, 'const onHubShortResolved = async () => {')
 need('onHubShortResolved 를 찾음', hubResolved.length > 0)
+need('팝업 처리 뒤 체인을 이어 달린다',
+  /await runChain\(rest, chainCtxRef\.current\.forceMerge, done, chainCtxRef\.current\.total\)/.test(hubResolved))
 need('팝업 마감도 실패 0 일 때만 닫는다',
-  /if \(saveFailed\.length === 0 && draftCleanupFailed\.length === 0 && !cleanupFailedLabel\) onClose\(\)/.test(hubResolved))
+  before(hubResolved, "if (out.stopped === 'failed' || cleanupRef.current.length > 0) return", 'onClose()'))
 // 실패 목록은 **스크롤 밖 고정 영역**이다 — 스크롤 안에 두면 품목이 열일 때 뷰포트 밖으로 밀린다.
 need('패널에 실패 목록이 그려진다',
   /\{saveFailed\.length > 0 && \(/.test(client) && /\{saveFailed\.map\(f => \(/.test(client))
 need('패널에 정리 실패 안내가 그려진다', /\{draftCleanupFailed\.length > 0 && \(/.test(client))
 need('실패 영역이 스크롤 밖 shrink-0 이다',
-  /\{\(saveFailed\.length > 0 \|\| draftCleanupFailed\.length > 0 \|\| error\) && \([\s\S]{0,120}?shrink-0/.test(client),
-  '스크롤 컨테이너 안에 있으면 10품목에서 뷰포트 밖으로 밀린다')
+  /\{\(saveFailed\.length > 0 \|\| draftCleanupFailed\.length > 0 \|\| saveProgress \|\| error\) && \([\s\S]{0,120}?shrink-0/.test(client),
+  '스크롤 컨테이너 안에 있으면 10행에서 뷰포트 밖으로 밀린다')
+need('멈춘 자리 안내가 같은 고정 영역에 그려진다', /\{saveProgress && \(/.test(client))
 need('실패 문안이 남은 임시저장 유무로 갈린다',
   /saveFailed\.some\(f => rowDrafts\[f\.id\] != null\)/.test(client),
   "드래프트가 없는데 '임시저장은 그대로 남아 있습니다' 는 거짓이다")
 need('정리 실패 문안이 목록을 문장 끝에 둔다',
-  /실패한 품목이 있습니다\. \{draftCleanupFailed\.join\(', '\)\}\./.test(client),
+  /실패한 행이 있습니다\. \{draftCleanupFailed\.join\(', '\)\}\./.test(client),
   '라벨 뒤에 조사를 붙이면 이름에 따라 는/은 이 갈린다')
 
 // ── ② 삭제·저장 반환값을 읽는다 ────────────────────────────────────
-need('저장은 allSettled 로 받는다',
-  /const settled = await Promise\.allSettled\(toSave\.map\(r => saveItem\(r\)\)\)/.test(doSave),
-  'Promise.all 은 한 품목의 거부로 통째로 터져 드래프트 정리를 통째로 건너뛴다')
-need('드래프트 삭제도 allSettled 로 받는다',
-  /const cleaned = await Promise\.allSettled\(savedOk\.map\(r => deleteStockCheckDraft\(r\.id, locId\)\)\)/.test(doSave))
+// 체인은 **순차**다. 병렬로 쏘면 같은 품목의 칸마다 새 점검이 서고 그 각각이 직전 점검을
+// base 로 잡아 앞 칸의 실측이 사라진다 — 저장은 성공하고 장부만 틀어지는 종류의 결함이다.
+need('저장이 순차 체인이다',
+  /for \(let i = 0; i < units\.length; i\+\+\)/.test(runChain) && /await saveUnit\(u, forceMerge/.test(runChain),
+  '병렬이면 같은 품목의 칸마다 새 점검이 서서 앞 칸의 실측이 사라진다')
+need('저장 경로에 병렬 발사가 없다',
+  !/Promise\.all(Settled)?\([^\n]*saveUnit/.test(client),
+  '한 품목의 여러 칸은 같은 점검에 차례로 얹혀야 한다')
+need('한 행씩 드래프트를 정리한다',
+  /const del = await deleteStockCheckDraft\(u\.r\.id, u\.locId\)\.catch\(\(\) => \(\{ ok: false as const, error: '' \}\)\)/.test(runChain))
 need('삭제 반환값을 실제로 검사한다',
-  /const cleanedOk = cleaned\.map\(c => c\.status === 'fulfilled' && c\.value\.ok\)/.test(doSave),
+  /if \(del\.ok\) cleanedKeysRef\.current\.add\(locPairKey\(u\.r\.id, u\.locId\)\)/.test(runChain) &&
+  /else cleanupRef\.current\.push\(label\)/.test(runChain),
   'deleteStockCheckDraft 는 { ok:false } 를 돌려줄 수 있다')
 need('검사 안 하는 드래프트 삭제가 남아 있지 않다',
-  !/await Promise\.all\(savedOk\.map\(r => deleteStockCheckDraft/.test(client) &&
+  !/await Promise\.all\((savedOk|units)\.map\([^\n]*deleteStockCheckDraft/.test(client) &&
   !/^\s*(await|void) deleteItemDrafts\(/m.test(client),
   '반환값을 안 읽으면 정리 실패가 그대로 다음 진입의 유령 임시저장이 된다')
 const clearAfterSave = fnBody(client, 'const clearDraftsAfterSave = async () => {')
@@ -107,7 +139,7 @@ need('위치별 임시저장을 찾음', locDraft.length > 0)
 need('아이템별은 실패면 성공 토스트를 안 띄운다',
   before(itemDraft, "if (!res.ok) { pushToast('error', res.error); return }", "pushToast('success', '임시저장됨')"))
 need('위치별도 실패면 성공 토스트를 안 띄운다',
-  before(locDraft, 'if (failed.length > 0)', "pushToast('success', `${dirty.length}품목 임시저장됨`)"),
+  before(locDraft, 'if (failed.length > 0)', "pushToast('success', `${units.length}건 임시저장됨`)"),
   '형제가 갈리면 한쪽만 조용히 거짓말을 한다')
 need('위치별은 실패면 칩·시각을 안 세운다',
   before(locDraft, 'if (failed.length > 0)', 'setLocDraftSavedAt(savedAt)'))
@@ -134,7 +166,7 @@ need('비운 뒤 §16 적용취소를 노출한다',
   /pushToast\('success', '임시저장 비움', \{[\s\S]{0,120}?action: \{ label: '적용취소', run:/.test(clearLoc),
   '적용취소 없이 지우면 6초 안에 되돌릴 길이 사라진다')
 need('되돌릴 값을 지우기 전에 붙잡는다',
-  before(clearLoc, 'const snapshot = await getLocationDrafts(locId)', 'deleteStockCheckDraft(id, locId)'),
+  before(clearLoc, 'const snapshot = (await Promise.all(snapLocIds.map(id =>', 'deleteStockCheckDraft(t.itemId, t.locId)'),
   '지운 뒤에는 서버에 물어볼 자리가 없다')
 need('적용취소가 붙잡은 값을 그대로 되쓴다',
   /Promise\.allSettled\(snapshot\.map\(d => saveStockCheckDraft\(\{/.test(clearLoc))
@@ -176,7 +208,7 @@ need('이번 입력 축이 두 곳 다 갈렸다',
   (client.match(/>이번 입력 <strong/g) ?? []).length === 2 && !/>창고에서 <strong/.test(client))
 
 // ── ⑤ 이중 차감 물음 ───────────────────────────────────────────────
-const dupFn = fnBody(client, 'const doubleRestockOf = (r: InventoryRow, forceMerge?: boolean) => {')
+const dupFn = fnBody(client, 'const doubleRestockOf = (r: InventoryRow, lid: string, forceMerge?: boolean) => {')
 need('이중 차감 판정 함수를 찾음', dupFn.length > 0)
 need('마커가 있을 때만 묻는다', /if \(prevRestocked <= 0\) return null/.test(dupFn))
 need('보충이 계산될 때만 묻는다', /if \(restocked <= 0\) return null/.test(dupFn))
@@ -184,30 +216,63 @@ need('머지되는 저장에서만 묻는다',
   /if \(!\(date === kstYmdStr\(\) && \(forceMerge \|\| \(sameDay && within6h\)\)\)\) return null/.test(dupFn),
   '새 점검으로 저장되면 마커가 안 겹쳐 물을 일이 없다')
 need('저장 경로에 물음이 꽂혀 있다',
-  /const dups = dirty\.filter\(r => doubleRestockOf\(r, forceMerge\) != null\)/.test(doSave) &&
-  /if \(dups\.length > 0 && !dupDecision\) \{ setDupItems\(dups\); return \}/.test(doSave))
-need('품목마다 모달을 띄우지 않는다',
+  /const dups = units\.filter\(u => doubleRestockOf\(u\.r, u\.locId, forceMerge\) != null\)/.test(doSave) &&
+  /if \(dups\.length > 0 && !dupDecision\) \{ setDupUnits\(dups\); return \}/.test(doSave))
+need('행마다 모달을 띄우지 않는다',
   !/confirmDialog/.test(doSave),
-  '품목 수만큼 모달을 연타하면 묻는 것이 아니라 막는 것이 된다')
+  '행 수만큼 모달을 연타하면 묻는 것이 아니라 막는 것이 된다')
 need('물음은 형제 바와 같은 자리의 인라인 바다',
-  /\{dupItems\.length > 0 && \(/.test(client) &&
+  /\{dupUnits\.length > 0 && \(/.test(client) &&
   /border-t border-\[var\(--honey\)\]\/40 bg-\[var\(--honey\)\]\/10 px-5 py-3 shrink-0 space-y-2/.test(client))
 need('제목이 물음형이고 라벨 뒤 조사가 없다',
   /이미 옮긴 기록이 있습니다\. 더 옮길까요\?/.test(client))
 need('대상 목록이 §14 영향 목록 박스 문법이다',
-  /<li key=\{r\.id\} className="text-\[12\.5px\] text-\[var\(--ink-s\)\]">/.test(client) &&
+  /<li key=\{locPairKey\(u\.r\.id, u\.locId\)\} className="text-\[12\.5px\] text-\[var\(--ink-s\)\]">/.test(client) &&
   /font-semibold" style=\{\{ fontFeatureSettings: "'tnum'" \}\}/.test(client))
 need('두 갈래가 인자로 흐른다(상태 지연 함정 회피)',
   /doSave\(mergeChoice === 'merge', 'skip'\)/.test(client) &&
   /doSave\(mergeChoice === 'merge', 'keep'\)/.test(client))
-need("'빼고 저장'은 그 품목만 뺀다",
-  /const skipIds = dupDecision === 'skip' \? new Set\(dups\.map\(r => r\.id\)\) : new Set<string>\(\)/.test(doSave) &&
-  /const toSave = dirty\.filter\(r => !skipIds\.has\(r\.id\)\)/.test(doSave),
-  '저장 전체를 중단시키면 나머지 품목의 실측이 버려진다')
+need("'빼고 저장'은 그 행만 뺀다",
+  /const skip = dupDecision === 'skip' \? new Set\(dups\.map\(u => locPairKey\(u\.r\.id, u\.locId\)\)\) : new Set<string>\(\)/.test(doSave) &&
+  /units = units\.filter\(u => !skip\.has\(locPairKey\(u\.r\.id, u\.locId\)\)\)/.test(doSave),
+  '저장 전체를 중단시키면 나머지 행의 실측이 버려진다')
 need('다 빠지면 조용히 끝나지 않는다',
-  /if \(toSave\.length === 0\) \{ setError\('저장할 품목이 없습니다\.'\); return \}/.test(doSave))
+  /if \(units\.length === 0\) \{ setError\('저장할 행이 없습니다\.'\); return \}/.test(doSave))
 need('서버 규칙은 안 건드렸다 — 물음은 클라이언트에만 있다',
   !/doubleRestockOf|더 옮길까요/.test(actions))
+
+// ── ⑥ 서브트리 체인 저장 (2026-09-14 6단계) ────────────────────────
+// 저장 단위는 (품목, 위치) 쌍이다. 셋 다 값 대조로는 안 잡히는 축이다.
+const buildUnits = fnBody(client, '  const buildUnits = (dirtyOnly = true): LocSaveUnit[] => {')
+need('저장 단위를 만드는 자리를 찾음', buildUnits.length > 0)
+need('점검 대상이 서브트리 전체다',
+  /const scope = locId \? locSubtree\(locs, locId\) : \[\]/.test(client),
+  '고른 칸만 담으면 트리를 만든 이유가 사라진다')
+need('허브 행이 체인의 마지막이다',
+  /return units\.sort\(\(a, b\) => \(a\.isHubUnit \? 1 : 0\) - \(b\.isHubUnit \? 1 : 0\)\)/.test(buildUnits),
+  '허브 실측을 먼저 쓰면 그 위에서 다시 차감돼 이중으로 빠진다')
+const saveUnit = fnBody(client, '  const saveUnit = (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {')
+need('saveUnit 을 찾음', saveUnit.length > 0)
+need('같은 품목의 두 번째 칸부터 이어 붙인다',
+  /const chained = chainIdsRef\.current\.get\(u\.r\.id\) \?\? null/.test(saveUnit) &&
+  /const targetId = chained \?\? u\.r\.lastCheckId/.test(saveUnit),
+  'props 의 stale 한 lastCheckId 를 다시 집으면 칸마다 새 점검이 선다')
+need('이어 붙일 점검 id 를 실제로 기억한다',
+  (saveUnit.match(/chainIdsRef\.current\.set\(u\.r\.id/g) ?? []).length === 2,
+  '머지 경로와 생성 경로 둘 다 기억해야 세 번째 칸이 갈리지 않는다')
+need('같은 저장에 허브 실측이 있을 때만 부족 게이트를 건너뛴다',
+  /clampRef\.current = new Set\(units\.filter\(u => \{/.test(doSave) &&
+  /if \(u\.isHubUnit\) return false/.test(doSave) &&
+  /return hubId != null && \(measuredHubs\.get\(u\.r\.id\)\?\.has\(hubId\) \?\? false\)/.test(doSave),
+  '조건 없이 통과시키면 쌀 사건의 조용한 0 클램프가 되살아난다')
+need('클램프 판정이 서버로 실제로 간다',
+  /allowHubClamp: clampRef\.current\.has\(locPairKey\(u\.r\.id, u\.locId\)\)/.test(runChain))
+need('저장 memo 는 고른 루트의 표기 경로다',
+  /memo: `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/.test(saveUnit),
+  'memo 는 저장 문자열이자 백필 매칭 키다 — 평면 이름이면 같은 이름의 칸이 둘일 때 복원할 수 없다')
+need('임시저장 복원이 서브트리 전체를 읽는다',
+  /const ids = locSubtree\(locsRef\.current, locId\)\.map\(n => n\.id\)/.test(client),
+  '한 칸만 읽으면 아래 칸에 임시저장한 값이 사라진 것처럼 보인다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

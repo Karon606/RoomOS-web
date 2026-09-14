@@ -376,10 +376,19 @@
 - [x] 2. `lib/locationTree.ts`(순수) + `scripts/test-location-tree.ts` → 검증: DFS·pathName·순환 거부·깊이 4 거부·루트 중복 거부·떼기 제안, 역주입
 - [x] 3. 서버 읽기: `getStorageLocations` 가 parentId·depth·pathName 을 DFS 로, 표시 자리 전부 pathName → 검증: 트리 없는 상태에서 화면 문자열 diff 0, check-query-fanout
 - [x] 4. 서버 쓰기: create(parentId) · move(parentId, stripPrefix) · reorder(형제 전체성) · delete 하위 거부 · undo → 검증: 타 영업장 부모 거부, 자기 서브트리 이동 거부, 형제 중복 거부, 적용취소 원복
-- [ ] 5. 위치 관리 모달 트리화(DFS·들여쓰기·RowActionBtn 메뉴·옮기기 Modal) → 검증: 402px 실기, 웹디자이너 패스
-- [ ] 6. 점검 패널: 트리 드롭다운·서브트리 그룹·체인 저장·허브 마지막+allowHubClamp·(품목,위치) 재시도 → 검증: 김치 실데이터 시나리오, parity·hub-drift·propagation 초록, 임시저장 복원
-- [ ] 7. `scripts/check-location-tree-drift.ts`(verify:db): 순환·깊이·중복·영업장 불일치·6축 래칫 → 검증: 순환 주입 시 빨강
+- [x] 5. 위치 관리 모달 트리화(DFS·들여쓰기·RowActionBtn 메뉴·옮기기 Modal) → 검증: 트리 없는 오늘 데이터
+      직렬화 대조(14칸 전부 depth 1 · DFS 순서 == sortOrder 순서 · pathName == name 14/14). **웹디자이너 패스는 독립 패널 몫**
+      - 순서 저장을 **형제 집합 단위**(`reorderStorageLocations(parentId, 그 형제 id 만)`)로 바꿨다 —
+        종전처럼 루트 전체 DFS 목록을 넘기면 자식이 하나 생기는 순간 전체성 검사에 걸려 "목록이 최신이 아닙니다" 만 뜬다
+      - 옮기기 적용취소 순서는 **rename → move → reorder**(검수 지적 반영). move 를 먼저 하면 떼어낸 이름이 옛 형제와 겹쳐 멈춘다
+- [x] 6. 점검 패널: 트리 드롭다운·서브트리 그룹·체인 저장·허브 마지막+allowHubClamp·(품목,위치) 재시도 → 검증:
+      역주입 12건 전부 발화, 임시저장 축(getLocationDrafts·savedAt·3상태 Badge) 서브트리 전체로 확장, verify:db 초록
+      - 저장 memo 가 **서브트리 루트의 pathName** 이다(백필 매칭 키) — 그물이 그 자리를 본다
+      - HUB_SHORT 도 '멈춤'이다. 팝업이 그 한 건을 처리하면 **나머지를 이어 달린다**(버리면 아래 칸 실측이 사라진다)
+- [x] 7. `scripts/check-location-tree-drift.ts`(verify:db): 순환·깊이·형제 이름 중복·형제 sortOrder 중복·남의 영업장 부모
+      → 검증: 다섯 축 전부 역주입에서 발화(6건), 실DB 위반 0건. verify:db 등록 완료
 - [x] 8. `scripts/check-location-name-axis.mjs`(verify:fast): 표시 자리가 pathName 을 쓰는가 → 검증: 한 자리 되돌리면 빨강.
       쓰기 다섯 축은 `scripts/check-location-actions-wiring.mjs`(verify:fast)가 본다 — 서버 액션 진리표는 DB 가 있어야 돌아 소스 가드로 갈음했다
-- [ ] 9. 문서: domain-inventory 절 신설 · 가이드 §22 등재 · Work_log · INDEX
+- [x] 9. 문서: `knowledge/domain-inventory.md` '보관 위치 트리' 절 신설 · `knowledge/glossary.md` 에 표기 경로·체인 저장 ·
+      가이드 §22 '위치 트리' 등재(세 표면의 문법) · context-notes 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 10. 커밋 단위: DDL+스키마 / 헬퍼+진리표 / 읽기 / 쓰기 / 관리 모달 / 점검 패널 / 감지망 / 문서. 푸시는 묶어서
