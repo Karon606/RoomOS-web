@@ -16,7 +16,7 @@ const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 // 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
-import { loadLocationPaths, indexLocations } from './locationPaths'
+import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
 import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
@@ -2706,6 +2706,12 @@ async function loadLocationRows(propertyId: string): Promise<LocationRow[]> {
   })
 }
 
+// 전체 이름(pathName) 충돌 거부 문구 — 셋(생성·이름 바꾸기·이동)이 같은 문장을 쓴다.
+// 어느 위치와 겹치는지 그 전체 이름을 그대로 보여 준다(`상단` 만으로는 어느 칸인지 못 찾는다).
+function pathNameTakenError(pathName: string): string {
+  return `'${pathName}' 과 같은 전체 이름의 위치가 이미 있습니다. 기존 위치를 옮기거나 이름을 바꾸세요.`
+}
+
 // 옮기는 노드 **서브트리 전체**의 상대 깊이 — 잎만 보면 자손 둘을 단 노드가 상한을 넘겨 앉는다.
 function subtreeRelativeDepth(rows: readonly LocationRow[], id: string): number {
   const own = depthOf(rows, id)
@@ -2757,7 +2763,9 @@ export async function reorderStorageLocations(parentId: string | null, ids: stri
 //   · 형제 중복 거부(siblingNameTaken) — 루트(NULL)끼리도 본다. DB 유니크가 NULL 을 구분 못 하므로 여기가 1차.
 //   · stripPrefix=true 면 `4층 김치냉장고 상단` 을 `4층 김치냉장고` 아래로 넣을 때 이름을 `상단` 으로 떼서 저장한다.
 // undo(§16): 이전 parentId·name·sortOrder 와 옛 형제 순서를 돌려준다 — 화면은 같은 함수를
-//   (moveStorageLocation → updateStorageLocation → reorderStorageLocations) 다시 불러 되돌린다.
+//   (updateStorageLocation → moveStorageLocation → reorderStorageLocations) 다시 불러 되돌린다.
+//   **이름이 먼저다.** 떼기로 `4층 김치냉장고 상단` 이 `상단` 이 된 노드를 먼저 옛 부모로 되돌리면
+//   옛 형제의 `상단` 과 겹쳐 서버가 거부하고 원복이 통째로 멈춘다(화면이 그 순서로 부른다).
 export type LocationMoveUndo = {
   id: string
   parentId: string | null
@@ -2794,6 +2802,9 @@ export async function moveStorageLocation(id: string, parentId: string | null, s
     if (siblingNameTaken(rows, parentId, nextName, id)) {
       return { ok: false, error: `'${nextName}' 은 그 위치에 이미 있습니다.` }
     }
+    // 옮기면 자손의 전체 이름이 통째로 바뀐다 — 떼기 적용 후 이름과 서브트리 자손까지 영업장 안에서 본다.
+    const clash = conflictingPathName(rows, id, parentId, nextName)
+    if (clash) return { ok: false, error: pathNameTakenError(clash) }
 
     const siblingsBefore = rows.filter(r => r.parentId === self.parentId).map(r => r.id)
     const undo: LocationMoveUndo = {
@@ -2884,6 +2895,10 @@ export async function createStorageLocation(name: string, parentId: string | nul
     if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
     if (parentDepth + 1 > MAX_DEPTH) return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
     if (siblingNameTaken(rows, parentId, trimmed)) return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
+    // 영업장 전체 pathName 유일 — 형제 검사는 같은 부모 안만 본다. 루트 `4층 김치냉장고 상단` 과
+    // `4층 김치냉장고` 아래 `상단` 은 둘 다 형제 검사를 통과하면서 전체 이름이 글자까지 같아진다.
+    const clash = conflictingPathName(rows, null, parentId, trimmed)
+    if (clash) return { ok: false, error: pathNameTakenError(clash) }
     // sortOrder 는 '영업장 전체'가 아니라 '형제 사이' 순서다 — 같은 부모 아래 최댓값 다음.
     const maxOrder = rows.filter(r => r.parentId === parentId).reduce((m, r) => Math.max(m, r.sortOrder), -1)
     const r = await prisma.storageLocation.create({
@@ -2913,6 +2928,9 @@ export async function updateStorageLocation(id: string, name: string): Promise<
     if (siblingNameTaken(rows, self.parentId, trimmed, id)) {
       return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
     }
+    // 이름이 바뀌면 자손의 전체 이름도 통째로 바뀐다 — 서브트리까지 보고 영업장 안 유일을 지킨다.
+    const clash = conflictingPathName(rows, id, self.parentId, trimmed)
+    if (clash) return { ok: false, error: pathNameTakenError(clash) }
     await prisma.storageLocation.update({ where: { id }, data: { name: trimmed } })
     revalidatePath('/inventory')
     return { ok: true, undo: { id, name: self.name } }
@@ -2941,7 +2959,10 @@ export async function deleteStorageLocation(id: string, force = false): Promise<
     // 루트로 튀어 오르고, 그 순간 자식의 표기 경로(pathName)가 통째로 바뀌어 화면에서 딴 위치가 된다.
     const childCount = await prisma.storageLocation.count({ where: { propertyId, parentId: id } })
     if (childCount > 0) {
-      return { ok: false, error: `'${loc.name}' 아래에 위치 ${childCount}개가 있습니다. 먼저 옮기거나 삭제하세요.` }
+      // 이름은 표기 경로다 — `상단 아래에 위치 2개` 로는 어느 냉장고의 상단인지 화면이 말을 못 한다.
+      // 거부할 때만 읽어 성공 경로의 왕복은 그대로 둔다.
+      const locPaths = await loadLocationPaths(propertyId)
+      return { ok: false, error: `'${locPaths.pathName(id) ?? loc.name}' 아래에 위치 ${childCount}개가 있습니다. 먼저 옮기거나 삭제하세요.` }
     }
     const [checkRows, linkedItems, addRows, dispRows] = await Promise.all([
       prisma.stockCheckLocation.count({ where: { storageLocationId: id } }),

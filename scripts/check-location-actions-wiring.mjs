@@ -1,16 +1,18 @@
-// 보관 위치 트리 쓰기 액션의 배선 감지망 — 다섯 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
+// 보관 위치 트리 쓰기 액션의 배선 감지망 — 여섯 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 소스 가드인가. 이동·생성·삭제·순서의 거부 규칙은 DB 가 있어야 실행되는 서버 액션이라
 // 순수 진리표(scripts/test-location-tree.ts)로 덮을 수 없다. 순수 판정 함수는 이미 그 진리표가
 // 지키고 있으므로, 여기서는 **액션이 그 판정 함수를 실제로 부르는가**를 본다. 판정이 멀쩡해도
 // 호출이 빠지면 순환·깊이 초과·형제 중복이 그대로 저장된다 — 값 대조로는 안 잡히는 구멍이다.
 //
-// 다섯 축.
+// 여섯 축.
 //   ⓐ 이동이 wouldCycle·depthOf·siblingNameTaken 셋을 다 부른다(하나라도 빠지면 그 축이 뚫린다).
 //   ⓑ 생성이 형제 중복을 본다(루트끼리는 Postgres 유니크가 NULL 을 구분 못 해 서버가 유일한 관문이다).
 //   ⓒ 삭제가 하위를 센다(parentId 는 SetNull 이라 지우면 자식이 조용히 루트로 튀어 오른다).
 //   ⓓ 순서가 형제 집합 전체성을 본다(부분 배열이면 안 보낸 형제의 상대 순서가 흔들린다).
 //   ⓔ 모든 쓰기가 소속 영업장을 확인한다(남의 영업장 위치를 옮기거나 지우지 못하게).
+//   ⓕ 쓰기 셋(생성·이름 바꾸기·이동)이 영업장 안 pathName 유일 검사를 부른다 — 형제 유일은 같은
+//     부모 안만 보므로 루트 `4층 김치냉장고 상단` 과 `4층 김치냉장고` 아래 `상단` 이 둘 다 통과한다.
 //
 // 실행: node scripts/check-location-actions-wiring.mjs
 import { readFileSync } from 'node:fs'
@@ -68,9 +70,9 @@ function must(b, label, pattern, why) {
 }
 
 // ── 공통 전제: 순수 판정 함수를 실제로 import 하고 있는가 ────────────────────────────
-for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSuggestion', 'subtreeIds', 'MAX_DEPTH']) {
+for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSuggestion', 'subtreeIds', 'MAX_DEPTH', 'conflictingPathName']) {
   if (!new RegExp(`\\b${fn}\\b`).test(src.slice(0, src.indexOf('async function getPropertyId')))) {
-    violations.push(`import 에 ${fn} 이 없다 — 판정 정본(lib/locationTree)을 안 쓰고 있다.`)
+    violations.push(`import 에 ${fn} 이 없다 — 판정 정본(lib/locationTree · lib/locationPaths)을 안 쓰고 있다.`)
   }
 }
 
@@ -87,6 +89,8 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
   must(b, '이동', /undo: LocationMoveUndo/, '적용취소 페이로드(이전 parentId·name·sortOrder)가 없다')
   must(b, '이동', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다 — 소속 검사의 전제다')
   must(b, '이동', /상위 위치를 찾을 수 없습니다/, '다른 영업장 부모를 거부하지 않는다')
+  // ⓕ 떼기 적용 **후** 이름으로 봐야 한다. self.name 으로 보면 `상단` 으로 떼어 놓고 옛 이름을 검사한다.
+  must(b, '이동', /conflictingPathName\(rows, id, parentId, nextName\)/, '영업장 안 전체 이름 유일을 안 본다 — 자손 경로까지 겹칠 수 있다')
 }
 
 // ⓑ 생성 — 형제 중복 + 깊이 + 소속.
@@ -96,6 +100,7 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
   must(b, '생성', /depthOf\(rows, parentId\)/, '부모 깊이를 안 센다')
   must(b, '생성', /> MAX_DEPTH/, '깊이 상한 비교가 없다')
   must(b, '생성', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다 — 소속 검사의 전제다')
+  must(b, '생성', /conflictingPathName\(rows, null, parentId, trimmed\)/, '영업장 안 전체 이름 유일을 안 본다 — 형제 유일은 같은 부모 안만 본다')
 }
 
 // ⓑ' 이름 바꾸기 — 형제 중복 보강 + 적용취소.
@@ -104,6 +109,7 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
   must(b, '이름 바꾸기', /siblingNameTaken\(rows, self\.parentId, trimmed, id\)/, '형제 중복을 안 본다')
   must(b, '이름 바꾸기', /undo: \{ id, name: self\.name \}/, '적용취소용 이전 이름을 안 돌려준다')
   must(b, '이름 바꾸기', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다')
+  must(b, '이름 바꾸기', /conflictingPathName\(rows, id, self\.parentId, trimmed\)/, '영업장 안 전체 이름 유일을 안 본다 — 이름이 바뀌면 자손 경로도 통째로 바뀐다')
 }
 
 // ⓒ 삭제 — 하위 거부.
@@ -142,4 +148,4 @@ if (violations.length > 0) {
   console.error(`\n위치 트리 쓰기 배선 위반 ${violations.length}건. 판정 정본은 lib/locationTree, 진리표는 scripts/test-location-tree.ts.`)
   process.exit(1)
 }
-console.log('OK    위치 트리 쓰기 다섯 축(순환·깊이·형제 중복·하위 거부·형제 전체성)이 배선돼 있다.')
+console.log('OK    위치 트리 쓰기 여섯 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일)이 배선돼 있다.')

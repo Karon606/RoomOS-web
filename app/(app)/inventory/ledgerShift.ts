@@ -9,6 +9,8 @@
 // 조정은 자동이 아니다 — 서버는 계획만 만들고 운영자가 고른 경우에만 적용한다. 적용분은
 // 스냅샷(LedgerShiftUndo)으로 되돌린다(§16).
 import prisma, { type PrismaDb } from '@/lib/prisma'
+// 허브 3순위의 '화면 순서'는 표기 경로 색인(DFS 랭크)이 정한다 — 순수, 쿼리 0.
+import { indexLocations } from '@/lib/locationPaths'
 import {
   planStockShift, planCheckPropagation,
   type LedgerCheck, type LedgerDelta, type PurchaseDelta, type ShiftRow,
@@ -35,6 +37,12 @@ export type LedgerShiftUndo = {
 // 품목별 선언이 아니다. 링크 안 된 위치를 고르면 그 수량이 위치별 화면·보정 폼에서 증발한다
 // (orphan — 601303c5 김치와 같은 클래스). 링크 집합 밖이면 다음 후보로 넘어간다.
 // 폴백 허브에 링크를 만들어주는 방식은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
+//
+// 우선순위 셋. 1순위 hubLocationId(열림) · 2순위 영업장 기본 허브(열림) ·
+// 3순위 **화면에 먼저 보이는 열린 링크**(DFS 랭크 첫 번째).
+// 3순위가 sortOrder 첫 링크였는데 트리(2026-09-14)에서 sortOrder 는 **형제 사이** 순서가 됐다 —
+// 다른 부모의 값끼리 비교하면 뜻이 없고, 화면(overview.resolveHubSync)이 DFS 로 보이는 것과 갈린다.
+// 쌍둥이 두 정의를 같은 날 함께 바꿨다. 갈리면 미지정 입수 귀속이 화면과 서버에서 달라진다.
 export async function resolveItemHubLocationId(
   trackedItemId: string,
   hubLocationId: string | null,
@@ -48,21 +56,21 @@ export async function resolveItemHubLocationId(
     const links = await prisma.trackedItemLocation.findMany({
       where: { trackedItemId, closedAt: null },
       select: { storageLocationId: true },
-      orderBy: { storageLocation: { sortOrder: 'asc' } },
     })
     ids = new Set(links.map(l => l.storageLocationId))
   }
   if (ids.size === 0) return null
   if (hubLocationId && ids.has(hubLocationId)) return hubLocationId
-  const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
-  if (def && ids.has(def.id)) return def.id
-  // 첫 링크 — sortOrder 로 결정화(비결정적 '첫 위치' 방지)
-  const first = await prisma.trackedItemLocation.findFirst({
-    where: { trackedItemId, closedAt: null },
-    select: { storageLocationId: true },
-    orderBy: { storageLocation: { sortOrder: 'asc' } },
+  // 기본 허브와 DFS 랭크를 **한 번 읽은 같은 행 목록**에서 뽑는다. 종전은 기본 허브 findFirst +
+  // 첫 링크 findFirst 두 쿼리였다 — 하나로 줄었고 트리 구조(parentId)까지 여기서 나온다.
+  const locs = await prisma.storageLocation.findMany({
+    where: { propertyId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
   })
-  return first?.storageLocationId ?? null
+  const def = locs.find(l => l.isHub)
+  if (def && ids.has(def.id)) return def.id
+  return indexLocations(locs).rows.find(r => ids.has(r.id))?.id ?? null
 }
 
 export async function loadLedgerChecks(trackedItemId: string): Promise<LedgerCheck[]> {

@@ -69,6 +69,35 @@ function sourceGuards() {
     violations.push('재고 액션이 조정 공용층(ledgerShift)을 쓰지 않는다')
   }
 
+  // ── 허브 쌍둥이 — 3순위는 화면 순서(DFS)다 ────────────────────────────
+  // 위치 미지정 입수의 귀속처를 정하는 정의가 둘이다(화면 overview.resolveHubSync ·
+  // 서버 ledgerShift.resolveItemHubLocationId). 갈리면 카드가 먼저 보여 주는 칸과 수량이 실제로
+  // 들어가는 칸이 달라진다. 종전 3순위는 'sortOrder 첫 열린 링크' 였는데 트리(2026-09-14)에서
+  // sortOrder 는 **형제 사이** 순서가 됐다 — 다른 부모의 값끼리 비교하면 뜻이 없다.
+  // 오늘 데이터는 전부 루트라 DFS 순 == sortOrder 순이어서 **데이터 대조로는 영원히 안 잡힌다**.
+  // 트리를 만든 영업장이 생기는 날 처음 드러나므로 소스로 본다.
+  const overview = readFileSync('app/(app)/inventory/overview.ts', 'utf8')
+  if (!/\.sort\(\(a, b\) => locIndex\.rank\(a\.id\) - locIndex\.rank\(b\.id\)/.test(overview)) {
+    violations.push('overview 의 locations 가 DFS 랭크 순이 아니다 — 허브 3순위가 딛고 선 순서가 무너진다')
+  }
+  if (!/resolveHubSync\(it\.hubLocationId, openLinkIds, locations, defaultHubId\)/.test(overview)) {
+    violations.push('overview 가 허브 판정에 DFS 순 locations 를 안 넘긴다 — sortOrder 사본을 다시 세우면 쌍둥이가 갈린다')
+  }
+  const hubResolver = block(shiftDb, 'export async function resolveItemHubLocationId(', '\n}\n', 'resolveItemHubLocationId')
+  if (hubResolver) {
+    if (!/indexLocations\(locs\)\.rows\.find\(r => ids\.has\(r\.id\)\)/.test(hubResolver)) {
+      violations.push('resolveItemHubLocationId 의 3순위가 DFS 랭크 첫 열린 링크가 아니다 — 화면 쪽 정의와 갈린다')
+    }
+    // 종전 두 쿼리(기본 허브 findFirst + 첫 링크 findFirst)의 자리. 되살아나면 3순위가 다시
+    // sortOrder 로 돌아간 것이고 쿼리도 늘어난다. select 의 sortOrder 는 트리를 엮는 재료라 정상이다.
+    if (/trackedItemLocation\.findFirst/.test(hubResolver)) {
+      violations.push('resolveItemHubLocationId 가 첫 링크를 sortOrder 로 다시 조회한다 — 트리에서 형제 사이 값끼리 비교하는 셈이다')
+    }
+    if (/storageLocation\.findFirst/.test(hubResolver)) {
+      violations.push('resolveItemHubLocationId 가 기본 허브를 따로 조회한다 — 영업장 위치 한 번 읽기로 합쳐야 DFS 랭크가 같은 목록에서 나온다')
+    }
+  }
+
   // ── 적용부 ────────────────────────────────────────────────────────────
   const apply = block(shiftDb, 'async function applyShiftRows', '\n}\n', 'applyShiftRows')
   if (apply) {

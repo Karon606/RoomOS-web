@@ -46,7 +46,9 @@
   - 주의: 재고 카드에서 여는 보정(`expectedFor`)은 차액을 허브에 얹어 diff 0 이라 안전. **두 보정 화면의 동작이 다르다.**
 - **쓰기 계약**: 어떤 코드도 링크 없이 `StockCheckLocation` 행을 쓰지 않는다. 쓰려면 같은 트랜잭션에서 링크를 먼저 만든다.
 - **막은 생성기 4개**: (1) `transferLocationStock` — 점검만 만들고 링크 미생성. 이동 대상은 영업장 전체 위치(`getItemLocationStock`)라 미링크 선택이 정상 경로이고, 김치 orphan 의 유일한 출처였다. **양쪽(from·to) 링크한다** — 맞바꿈은 재고를 양쪽에 넣으므로 도착지만 링크하면 출발지에 새 orphan 이 생긴다(06585a5, 적대검증 지적). (2)(3) `confirmReceipt` 폴백·지정위치 — 영업장 기본 허브(`isHub`)를 무검사로 썼다. **`isHub` 는 영업장 기본값이지 품목별 선언이 아니다.** (4) `additionsSinceCheckByLocation` — 같은 깨진 체인. (5) `mergeTrackedItems` — 링크를 안 옮기고 source delete 로 cascade 소멸시켜 이전된 breakdown 을 전부 orphan 으로 만들었다. 합집합 병합 + undo payload 에 `sourceLocationIds`·`targetLocationIdsBefore`.
-- **정본 리졸버 `resolveItemHubLocationId`** — 위치 미지정 배치는 반드시 **링크된 위치 중에서** 고른다(hubLocationId 우선 → 영업장 isHub 가 링크됐을 때만 → sortOrder 첫 링크 → null). 폴백 허브에 링크를 만들어주는 안은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
+- **정본 리졸버 `resolveItemHubLocationId`** — 위치 미지정 배치는 반드시 **링크된 위치 중에서** 고른다(hubLocationId 우선 → 영업장 isHub 가 링크됐을 때만 → **화면에 먼저 보이는 열린 링크(DFS 랭크 첫 번째)** → null). 폴백 허브에 링크를 만들어주는 안은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
+  - **3순위가 sortOrder 였다가 DFS 로 바뀌었다(2026-09-14 트리).** 트리에서 sortOrder 는 **형제 사이** 순서라 다른 부모의 값끼리 비교하면 뜻이 없다 — 루트 `4층 주방`(1)과 그 자식 `선반`(0)에만 링크된 품목은 미지정 입수가 `선반` 으로 가는데 카드는 `4층 주방` 을 먼저 보였다. 화면에 먼저 보이는 칸이 곧 귀속처다.
+  - **쌍둥이가 둘이다** — 화면 `overview.resolveHubSync`(순수, 쿼리 0)와 서버 `ledgerShift.resolveItemHubLocationId`. 갈리면 카드가 보여 주는 칸과 수량이 들어가는 칸이 달라진다. 전부 루트인 데이터에선 DFS 순 == sortOrder 순이라 **데이터 대조로는 안 잡힌다** — `check-stock-ledger-parity` 의 소스 가드가 두 정의를 함께 본다.
 - **아직 안 막은 생성기 2개(2단계)**: `setItemLocations`·`batchSetItemLocations` 가 재고 유무를 안 보고 링크를 `deleteMany` 한다. **품목 설정에서 재고 든 위치 체크를 풀고 저장하면 그 수량이 즉시 증발한다.** 옮기기가 잔량 0 출발지 링크까지 보존하는 것과 정면 비대칭. 고치려면 "재고 있는 위치를 떼면 어떻게 되나"를 정해야 하므로 위치 닫기(2단계) 계약에 묶는다. 영업장 소속 검증 공백도 같이.
 - **백필**: `scripts/backfill-orphan-item-locations.mjs` (드라이런 기본, `--apply`, 멱등). 대상 = 마지막 점검 breakdown 중 잔량>0 + 링크 없음. 전 이력이 아니라 **현재시제**로 좁힌다 — 과거 0 행까지 링크하면 의도적으로 해제했던 위치가 부활한다. 2026-07-17 실행 = 김치 2행.
 - **검증**: orphan 4소스(StockCheckLocation·StockAddition·StockDisposal·Expense.receivedLocationId) 전부 0행 + 전 품목 `total == byLoc 합`. 커밋 메시지 참조.
@@ -359,7 +361,7 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
 `storageLocationId` 집합 위에서 돌고 그 집합은 트리와 무관하게 평면**이다. 트리는 표시·그룹핑
 층이다. 판정 정본은 `lib/locationTree.ts`(순수, 쿼리 0), 진리표는 `scripts/test-location-tree.ts`.
 
-불변식 셋이 전부다. **"재고는 잎에만"이 아니다 — 모든 노드가 자기 재고를 가진다**(잎만 허용하면
+불변식 넷이 전부다. **"재고는 잎에만"이 아니다 — 모든 노드가 자기 재고를 가진다**(잎만 허용하면
 김치냉장고를 4층 주방 아래로 넣는 순간 4층 주방의 9품목을 새 잎으로 옮기는 이관 점검이 필요해진다).
 1. **순환 없음** — 자기 자신·자손 아래로 못 옮긴다(`wouldCycle`).
 2. **깊이 상한 4**(`MAX_DEPTH`) — 루트가 1단계. 옮길 때는 **서브트리 최대 깊이까지** 세야 자손을
@@ -367,6 +369,12 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
 3. **형제 이름 유일** — 루트(parentId NULL)끼리도 본다. Postgres 유니크는 NULL 을 서로 다르게
    보므로 루트는 부분 유니크 인덱스가 맡는데 **그 인덱스는 Prisma 스키마 밖에 산다**(db push 한 번에
    사라진다). 서버 검사가 1차 관문이다.
+4. **영업장 안 전체 이름(pathName) 유일** — 형제 유일(3)은 같은 부모 안만 본다. 루트
+   `4층 김치냉장고 상단`(오늘의 평면 데이터)과 트리 `4층 김치냉장고` 아래 `상단` 은 부모가 달라
+   둘 다 통과하면서 전체 이름이 글자까지 같아진다 — **이관 과도기에 실제로 생기는 모양**이다.
+   그러면 화면에 같은 칩이 둘 뜨고 비품 배정 이력 역조회(`byPathName`)가 중복이라 아무것도 못 찍어
+   되돌리기가 멈춘다. 판정은 `conflictingPathName`(lib/locationPaths, 순수)이고 쓰기 셋(생성·이름
+   바꾸기·이동)이 부른다. 이동·이름 바꾸기는 **서브트리 자손의 새 경로까지** 본다.
 
 ### pathName — 표기는 공백 결합
 `4층 김치냉장고` 아래 `상단` 의 표기 경로는 `4층 김치냉장고 상단`. **오늘의 평면 이름과 글자가
@@ -422,9 +430,11 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
 
 ### 감지망
 - `scripts/test-location-tree.ts`(verify:fast) — 순수 판정 진리표.
-- `scripts/check-location-actions-wiring.mjs`(verify:fast) — 액션이 그 판정을 실제로 부르는가 다섯 축.
+- `scripts/test-location-paths.ts`(verify:fast) — 표기 경로 색인 진리표(pathName·DFS 랭크·역조회·전체 이름 유일).
+  색인이 prisma 를 물고 있으면 이 자리가 비어, `pathName` 을 `name` 으로 되돌려도 전부 초록이다.
+- `scripts/check-location-actions-wiring.mjs`(verify:fast) — 액션이 그 판정을 실제로 부르는가 여섯 축.
 - `scripts/check-location-name-axis.mjs`(verify:fast) — 표시·저장 이름이 pathName 인가 + 트리 행 들여쓰기.
 - `scripts/check-draft-lifecycle.mjs`(verify:fast) — 체인 저장 세 축(순차·허브 마지막·이어 붙이기) 포함.
-- `scripts/check-location-tree-drift.ts`(verify:db) — DB 무결성 다섯 축(순환·깊이·형제 이름·형제
-  sortOrder·남의 영업장 부모). **값 대조로는 절대 안 잡힌다** — 수량은 내내 맞고 구조만 틀리며,
+- `scripts/check-location-tree-drift.ts`(verify:db) — DB 무결성 여섯 축(순환·깊이·형제 이름·형제
+  sortOrder·남의 영업장 부모·영업장 안 pathName 중복). **값 대조로는 절대 안 잡힌다** — 수량은 내내 맞고 구조만 틀리며,
   화면은 `buildTree` 가 고리를 끊어 루트로 올려 정상처럼 보여 준다(한 행도 안 잃기 위한 설계다).

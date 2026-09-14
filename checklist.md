@@ -392,3 +392,17 @@
 - [x] 9. 문서: `knowledge/domain-inventory.md` '보관 위치 트리' 절 신설 · `knowledge/glossary.md` 에 표기 경로·체인 저장 ·
       가이드 §22 '위치 트리' 등재(세 표면의 문법) · context-notes 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 10. 커밋 단위: DDL+스키마 / 헬퍼+진리표 / 읽기 / 쓰기 / 관리 모달 / 점검 패널 / 감지망 / 문서. 푸시는 묶어서
+- [x] 11. 독립 검수 반영(서버 몫, 2026-09-14). 화면 몫은 다른 패널이 검수 중이라 손대지 않았다
+      - [x] A. **영업장 전체 pathName 유일** — `conflictingPathName`(lib/locationPaths, 순수)을 생성·이름 바꾸기·이동 셋이 부른다.
+            이동·이름 바꾸기는 **서브트리 자손의 새 경로까지** 본다. 그물은 드리프트 ⓕ축 + 배선 ⓕ축
+            → 검증: 실DB 행으로 과도기 4단계 판정 확인(루트 `4층 김치냉장고` 생성 통과 · 그 아래 `상단` 신설 거부 ·
+            평면 루트를 떼기로 이관 통과 · 이관 후 `상단` 신설 거부), 역주입 3곳 전부 발화
+      - [x] B. **허브 3순위를 DFS 로, 쌍둥이 둘 다** — `overview.resolveHubSync` 는 DFS 순 `locations` 를 그대로 받고,
+            `ledgerShift.resolveItemHubLocationId` 는 두 findFirst 를 영업장 위치 **한 번 읽기**로 합쳤다(쿼리 −1)
+            → 검증: 전 품목 허브 판정 직렬화 **바이트 동일**(개요 36행 + 리졸버 36 + 부분집합 계약 72), 한쪽만 되돌리면 빨강
+      - [x] C. 삭제 거부 문구를 pathName 으로(거부할 때만 색인을 읽어 성공 경로 왕복 불변)
+      - [x] D. **색인 순수 테스트** — 색인을 `lib/locationPaths.ts`(prisma 미의존)로 내리고 `scripts/test-location-paths.ts`
+            신설(37단언, verify:fast 에 `test-location-tree` 뒤) → 검증: 검수가 설계한 우회(`pathName` 을 `name` 으로)를
+            역주입하면 **화면 축 그물은 초록인 채** 진리표만 4건 빨강
+      - [x] E. 이동 적용취소 주석을 실제 순서(rename → move → reorder)로 정정
+

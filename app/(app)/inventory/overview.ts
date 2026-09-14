@@ -171,21 +171,26 @@ export async function sumDisposals(
   return r._sum.disposedQty ?? 0
 }
 
-// 이 품목의 '기본 배치 위치'(허브) — 순수(쿼리 0). actions.ts resolveItemHubLocationId 의 복제.
+// 이 품목의 '기본 배치 위치'(허브) — 순수(쿼리 0). ledgerShift.resolveItemHubLocationId 의 복제.
 // ⚠️ 두 정의가 갈리면 위치 미지정 입수 귀속이 화면과 서버에서 달라진다. 검증에서 전 품목 대조로 일치를 증명한다.
-// openIds = 열린 링크만(숨긴 위치는 미지정 입수 귀속처가 될 수 없다). sortedLocations = sortOrder 오름차순.
-// 우선순위: hubLocationId(열림) → 영업장 기본 허브(열림) → sortOrder 첫 열린 링크.
+// openIds = 열린 링크만(숨긴 위치는 미지정 입수 귀속처가 될 수 없다). dfsLocations = 화면 순서(DFS).
+// 우선순위 셋.
+//   1순위 hubLocationId(열려 있을 때)   2순위 영업장 기본 허브(열려 있을 때)
+//   3순위 **화면에 먼저 보이는 열린 링크**(DFS 랭크 첫 번째).
+// 3순위가 sortOrder 였는데 트리(2026-09-14)에서 sortOrder 는 **형제 사이** 순서가 됐다. 다른 부모의
+// 값끼리 비교하면 뜻이 없다 — 루트 `4층 주방`(1)과 그 자식 `선반`(0)에만 링크된 품목의 미지정 입수가
+// `선반` 으로 가는데 카드는 `4층 주방` 을 먼저 보인다. 화면이 먼저 보이는 칸이 곧 귀속처여야 한다.
 function resolveHubSync(
   hubLocationId: string | null,
   openIds: string[],
-  sortedLocations: { id: string }[],
+  dfsLocations: { id: string }[],
   defaultHubId: string | null,
 ): string | null {
   if (openIds.length === 0) return null
   const open = new Set(openIds)
   if (hubLocationId && open.has(hubLocationId)) return hubLocationId
   if (defaultHubId && open.has(defaultHubId)) return defaultHubId
-  return sortedLocations.find(l => open.has(l.id))?.id ?? null
+  return dfsLocations.find(l => open.has(l.id))?.id ?? null
 }
 
 // ── 추적 품목 목록 + 계산된 지표
@@ -695,11 +700,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 종전엔 숨김 판정용으로만 계산해 화면(위치 칩·점검 폼 기준선)이 점검 시점 값에 머물렀다 —
     // 입수 직후 위치 잔량이 0 으로 보이던 신고 e48ca8ac(김치 20kg)의 원인. 전 품목 산출로 승격.
     const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
-    // ⚠️ 허브 폴백은 **sortOrder 순 첫 열린 링크**다(머리말 참조). locations 의 정렬을 DFS 로 바꿨으니
-    //    여기엔 sortOrder 로 다시 세운 사본을 넘긴다 — 쌍둥이 정의(actions.resolveItemHubLocationId)와
-    //    갈리면 미지정 입수 귀속이 화면과 서버에서 달라진다.
-    const sortedForHub = [...locations].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
-    const hubId = resolveHubSync(it.hubLocationId, openLinkIds, sortedForHub, defaultHubId)
+    // ⚠️ 허브 폴백 3순위는 **화면 순서(DFS) 첫 열린 링크**다(머리말 참조). locations 가 이미 DFS 라
+    //    그대로 넘긴다 — 사본을 sortOrder 로 다시 세우면 다른 부모의 값끼리 비교해 뜻을 잃는다.
+    //    쌍둥이 정의(ledgerShift.resolveItemHubLocationId)와 갈리면 미지정 입수 귀속이 화면과 서버에서 달라진다.
+    const hubId = resolveHubSync(it.hubLocationId, openLinkIds, locations, defaultHubId)
     const cur = new Map<string, number>()
     for (const lb of last?.locationBreakdown ?? []) cur.set(lb.storageLocationId, lb.remainingQty)
     if (last) {
