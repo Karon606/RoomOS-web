@@ -8,6 +8,8 @@
 //   (1) 표식 — memo 가 `위치별 점검 (X)` 인 점검에서 위치 X 의 행이 carried=true 면 false 로.
 //       memo 는 createStockCheck(첫 저장)에서만 박히므로 X = 먼저 잰 위치 = 실측이다. 구조적으로
 //       건전하다. `restockedQty > 0` 같은 휴리스틱은 보충 없이 잰 위치를 못 가려 쓰지 않는다.
+//       X 는 위치 트리(2026-09-14) 뒤로 전체 경로 이름(pathName)이다. 트리 전에 박힌 memo 는 평면
+//       이름인데 그때는 전부 루트라 pathName 과 같다. 옮겨진 뒤라 안 맞으면 이름이 유일할 때만 폴백.
 //   (2) 마커 — 같은 점검에서 나중에 잰 위치(carried=false)를 운영자가 전=후로 다시 저장하면
 //       "같은 위치 재점검은 마지막 값으로 덮어씀" 한계로 보충 마커가 사라진다. 허브 차감은 이미
 //       실제로 일어났으므로 마커 = 직전 허브 − 지금 허브 − 다른 행의 마커 합 으로 역산한다.
@@ -24,6 +26,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { buildTree, flattenDfs } from '../lib/locationTree'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL }) })
 const APPLY = process.argv.includes('--apply')
@@ -59,6 +62,11 @@ async function main() {
     orderBy: { createdAt: 'asc' },
   })
   console.log(`${dateArg} 위치별 점검 ${checks.length}건 · ${APPLY ? '적용' : '예행'}\n`)
+  // memo 의 X 를 되찾는 축은 pathName 이다. 위치 전체를 한 번 읽어 id 별 경로 이름을 만든다.
+  const locRows = await prisma.storageLocation.findMany({ select: { id: true, parentId: true, name: true, sortOrder: true } })
+  const pathById = new Map(flattenDfs(buildTree(locRows)).map(r => [r.id, r.pathName]))
+  const pathOf = (l: { storageLocationId: string; storageLocation: { name: string } }) =>
+    pathById.get(l.storageLocationId) ?? l.storageLocation.name
 
   const snap: Snap[] = []
   const flags: { id: string; label: string; loc: string }[] = []
@@ -73,7 +81,11 @@ async function main() {
       l.storageLocation.isHub || l.storageLocationId === c.trackedItem.hubLocationId
 
     // (1) 표식 — 먼저 잰 위치
-    const first = c.locationBreakdown.find(l => l.storageLocation.name === firstName)
+    let first = c.locationBreakdown.find(l => pathOf(l) === firstName)
+    if (!first) {
+      const byName = c.locationBreakdown.filter(l => l.storageLocation.name === firstName)
+      if (byName.length === 1) first = byName[0]
+    }
     if (!first) { notes.push(`${c.trackedItem.label}: memo 위치 '${firstName}' 행이 없다`); continue }
     if (first.carried === true) {
       flags.push({ id: first.id, label: c.trackedItem.label, loc: firstName })
@@ -104,7 +116,7 @@ async function main() {
       continue
     }
     const t = cands[0]
-    markers.push({ id: t.id, label: c.trackedItem.label, loc: t.storageLocation.name, qty: delta })
+    markers.push({ id: t.id, label: c.trackedItem.label, loc: pathOf(t), qty: delta })
     snap.push({ id: t.id, carried: t.carried, restockedQty: t.restockedQty })
   }
 

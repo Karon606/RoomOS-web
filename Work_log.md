@@ -6273,3 +6273,17 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   로 실체를 확인하고 DROP/CREATE INDEX 와 존재 검사를 고쳐 재적용. 지문 바이트 동일, 데이터 이동 0행.
   `schema.prisma` 반영·generate. 스키마 교체로 깨진 참조는 `createStorageLocation` 의 루트 이름
   중복 검사 하나뿐이라 형제 집합(parentId null) 검사로 바꿨다 — 오늘 전부 루트라 뜻이 같다.
+- **위치 계층 3·4·8단계 시공(eebaaa06).** 위치 이름 표시 자리 13곳이 평면 `name` 에서 전체 경로
+  `pathName`(DFS) 으로. 오늘은 전부 루트라 overview 전 영업장 직렬화 전후 대조 — 지운 줄 0·바뀐
+  줄 0, 더해진 pathName 43줄 걷으면 sha256 동일. `resolveHubSync` 3순위(첫 열린 링크)는
+  `ledgerShift` 에 쌍둥이가 있어 판정에는 sortOrder 사본을 넘기고 표시만 DFS. 쓰기 액션
+  create(parentId)·move(stripPrefix, renameLabel)·reorder(형제 전체성)·delete(하위 거부) + 세
+  undo 페이로드(move undo 에 siblingIds — 안 실으면 형제 맨 뒤로 돌아간다). 감지망 둘 verify:fast.
+  독립 검수(Fable)와 5·6·7·9단계 시공(Opus)을 동시에 띄웠다.
+- **3·4·8 독립 검수(Fable) 결과.** 차단 1 — 위치별 점검 memo 가 아직 평면 `name` 으로 저장(저장
+  문자열이자 백필 매칭 키). 권고 — 영업장 전체 pathName 비유일(`byPathName` 첫 히트 반환·비품 이력
+  오귀속), 이동 undo 순서(rename 이 move 보다 먼저여야 형제 중복에 안 걸림), 허브 3순위 sortOrder
+  가 트리에서 뜻을 잃음(쌍둥이 둘 다 DFS 로), 모달 순서 편집이 전체 목록을 루트 reorder 로 보냄,
+  삭제 거부 문구 name. 가드 우회 역주입 설계 — `indexLocations` 의 pathName 정의를 name 으로
+  바꾸면 감지망 전부 초록(순수 픽스처 테스트 필요). memo·undo·모달 순서는 5·6단계 시공자에게
+  전달했고, 백필 스크립트 매처는 pathName 축으로 고쳤다(예행 9건 전부 매칭). 나머지는 후속 시공.
