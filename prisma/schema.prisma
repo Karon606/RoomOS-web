@@ -1735,6 +1735,14 @@ model StorageLocation {
   sortOrder  Int      @default(0)
   isHub      Boolean  @default(false)  // true = 창고/허브 역할 (위치별 점검 시 이동 수량 추적용)
   createdAt  DateTime @default(now())
+  // 트리(2026-09-14). null = 루트. 트리는 표시·그룹핑 층일 뿐 — 재고·허브·숨김·박제·전파는 전부 위치 id 단위로
+  // 그대로 돈다. 모든 노드가 자기 재고를 가진다(잎 전용 아님). 깊이 상한 4 는 lib/locationTree.MAX_DEPTH.
+  // 표기(pathName)는 조상 이름을 공백으로 이어 붙여 오늘 평면 이름과 글자가 같다. 순환·깊이·형제 중복은 서버가 막는다.
+  // 루트끼리의 이름 중복은 Postgres 유니크가 NULL 을 구분하지 못해 부분 유니크 인덱스
+  // storage_locations_propertyId_name_root_key (WHERE "parentId" IS NULL) 가 따로 막는다 — 이 스키마 밖에 산다.
+  parentId   String?  @db.Uuid
+  parent     StorageLocation?  @relation("StorageLocationTree", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  children   StorageLocation[] @relation("StorageLocationTree")
 
   trackedItems        TrackedItemLocation[]
   stockCheckLocations StockCheckLocation[]
@@ -1744,8 +1752,9 @@ model StorageLocation {
   stockAdditions      StockAddition[]
   stockDisposals      StockDisposal[]
 
-  @@unique([propertyId, name])
+  @@unique([propertyId, parentId, name])
   @@index([propertyId, sortOrder])
+  @@index([propertyId, parentId, sortOrder])
   @@map("storage_locations")
 }
 

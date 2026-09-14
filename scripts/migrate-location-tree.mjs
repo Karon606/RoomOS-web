@@ -28,7 +28,9 @@ const prisma = new PrismaClient({ adapter })
 
 const FINGERPRINT_PATH = '/private/tmp/claude-501/-Users-gimgeon-uuimacbookpro-Library-Mobile-Documents-com-apple-CloudDocs-stayeum-Code/b5db17a2-b767-47e6-9096-8df6c49cfc0c/scratchpad/location-tree-fingerprint.json'
 
-// 종전/신규 제약·인덱스 이름 — Prisma 기본 명명 규칙 그대로.
+// 종전/신규 인덱스 이름 — Prisma 기본 명명 규칙 그대로.
+// **전부 인덱스다, 제약이 아니다.** Prisma 의 @@unique 는 UNIQUE INDEX 로 내려온다(pg_constraint 에 없다).
+// 첫 --apply 가 DROP CONSTRAINT 로 짜여 안전장치에 걸려 멈췄다(2026-09-14) — 실체를 pg_indexes 로 확인했다.
 const OLD_UNIQUE = 'storage_locations_propertyId_name_key'
 const NEW_UNIQUE = 'storage_locations_propertyId_parentId_name_key'
 const ROOT_UNIQUE = 'storage_locations_propertyId_name_root_key'
@@ -37,8 +39,8 @@ const TREE_INDEX = 'storage_locations_propertyId_parentId_sortOrder_idx'
 // ── DDL 전문 ────────────────────────────────────────────────────────────────
 const DDL_APPLY = [
   `ALTER TABLE "storage_locations" ADD COLUMN "parentId" uuid NULL REFERENCES "storage_locations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
-  `ALTER TABLE "storage_locations" DROP CONSTRAINT "${OLD_UNIQUE}"`,
-  `ALTER TABLE "storage_locations" ADD CONSTRAINT "${NEW_UNIQUE}" UNIQUE ("propertyId", "parentId", "name")`,
+  `DROP INDEX "${OLD_UNIQUE}"`,
+  `CREATE UNIQUE INDEX "${NEW_UNIQUE}" ON "storage_locations" ("propertyId", "parentId", "name")`,
   `CREATE UNIQUE INDEX "${ROOT_UNIQUE}" ON "storage_locations" ("propertyId", "name") WHERE "parentId" IS NULL`,
   `CREATE INDEX "${TREE_INDEX}" ON "storage_locations" ("propertyId", "parentId", "sortOrder")`,
 ]
@@ -46,11 +48,11 @@ const DDL_APPLY = [
 const DDL_REVERT_DROP = [
   `DROP INDEX IF EXISTS "${ROOT_UNIQUE}"`,
   `DROP INDEX IF EXISTS "${TREE_INDEX}"`,
-  `ALTER TABLE "storage_locations" DROP CONSTRAINT IF EXISTS "${NEW_UNIQUE}"`,
+  `DROP INDEX IF EXISTS "${NEW_UNIQUE}"`,
 ]
 const DDL_REVERT_TAIL = [
   `ALTER TABLE "storage_locations" DROP COLUMN IF EXISTS "parentId"`,
-  `ALTER TABLE "storage_locations" ADD CONSTRAINT "${OLD_UNIQUE}" UNIQUE ("propertyId", "name")`,
+  `CREATE UNIQUE INDEX "${OLD_UNIQUE}" ON "storage_locations" ("propertyId", "name")`,
 ]
 
 // ── 지문 ────────────────────────────────────────────────────────────────────
@@ -165,12 +167,13 @@ async function apply() {
   }
   const before = readFileSync(FINGERPRINT_PATH, 'utf8')
 
+  // 유니크는 인덱스로 산다(pg_indexes). pg_constraint 로 찾으면 항상 '없다'가 나와 안전장치가 헛돈다.
   const has = await prisma.$queryRawUnsafe(
-    `SELECT conname FROM pg_constraint WHERE conname = '${OLD_UNIQUE}'`)
+    `SELECT indexname FROM pg_indexes WHERE tablename = 'storage_locations' AND indexname = '${OLD_UNIQUE}'`)
   if (has.length === 0) {
     const all = await prisma.$queryRawUnsafe(
-      `SELECT conname FROM pg_constraint WHERE conrelid = '"storage_locations"'::regclass ORDER BY conname`)
-    console.error(`종전 유니크 "${OLD_UNIQUE}" 가 없다 — 중단한다. 현재 제약: ${all.map(c => c.conname).join(', ')}`)
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'storage_locations' ORDER BY indexname`)
+    console.error(`종전 유니크 인덱스 "${OLD_UNIQUE}" 가 없다 — 중단한다. 현재 인덱스: ${all.map(c => c.indexname).join(', ')}`)
     process.exit(1)
   }
 

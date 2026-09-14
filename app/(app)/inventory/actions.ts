@@ -2759,11 +2759,15 @@ export async function createStorageLocation(name: string): Promise<{ ok: true; i
     const propertyId = await getPropertyId()
     const trimmed = name.trim()
     if (!trimmed) return { ok: false, error: '위치 이름을 입력해주세요.' }
-    const existing = await prisma.storageLocation.findUnique({
-      where: { propertyId_name: { propertyId, name: trimmed } },
+    // 트리(2026-09-14) 뒤 유니크는 (propertyId, parentId, name) 이고 이 액션은 아직 루트만 만든다.
+    // 루트끼리의 이름 중복은 DB 가 못 막으므로(NULL 은 서로 다르다) 여기서 형제 집합 안에서 검사한다.
+    // sortOrder 도 '영업장 전체'가 아니라 '형제 사이' 순서라 루트 형제 안에서 최댓값을 잡는다.
+    const existing = await prisma.storageLocation.findFirst({
+      where: { propertyId, name: trimmed, parentId: null },
+      select: { id: true },
     })
     if (existing) return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
-    const maxOrder = await prisma.storageLocation.aggregate({ where: { propertyId }, _max: { sortOrder: true } })
+    const maxOrder = await prisma.storageLocation.aggregate({ where: { propertyId, parentId: null }, _max: { sortOrder: true } })
     const r = await prisma.storageLocation.create({
       data: { propertyId, name: trimmed, sortOrder: (maxOrder._max.sortOrder ?? 0) + 1 },
     })

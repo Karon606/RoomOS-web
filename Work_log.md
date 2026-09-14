@@ -6267,3 +6267,9 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   1품목 폼과 규모가 다르고 적용취소도 없어 §16 원칙에 걸린다고 했다. 운영자가 **확인창 + 적용취소
   토스트**로 바꿨다. 그물이 시공자 재량("확인창 없음")을 규칙으로 굳혀 둔 두 단언은 걷었다 —
   그물은 규칙을 고정하는 물건이지 재량을 고정하는 물건이 아니다.
+- **위치 계층 0~2단계 시공·DDL 적용.** 마이그레이션 스크립트·순수 헬퍼(`lib/locationTree`)·진리표
+  11절 61단언. 첫 `--apply` 가 안전장치에 걸려 멈췄다 — 스크립트가 종전 유니크를 **CONSTRAINT** 로
+  전제했는데 Prisma `@@unique` 는 **UNIQUE INDEX** 로 내려온다(pg_constraint 에 없다). pg_indexes
+  로 실체를 확인하고 DROP/CREATE INDEX 와 존재 검사를 고쳐 재적용. 지문 바이트 동일, 데이터 이동 0행.
+  `schema.prisma` 반영·generate. 스키마 교체로 깨진 참조는 `createStorageLocation` 의 루트 이름
+  중복 검사 하나뿐이라 형제 집합(parentId null) 검사로 바꿨다 — 오늘 전부 루트라 뜻이 같다.
