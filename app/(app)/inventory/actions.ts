@@ -13,8 +13,11 @@ import { redirect } from 'next/navigation'
 // 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
 import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
-import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
+// 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
+import { loadLocationPaths, indexLocations } from './locationPaths'
+import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
@@ -161,7 +164,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   })
   if (!item) return null
 
-  const [checks, additions, disposals, purchases, unitHint] = await Promise.all([
+  const [checks, additions, disposals, purchases, unitHint, locPaths] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -192,10 +195,12 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocation: { select: { name: true } } },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocationId: true, receivedLocation: { select: { name: true } } },
     }),
     // 목록(overview)과 같은 헬퍼 한 벌 — 카드와 상세의 단위 표시가 갈라지지 않게.
     resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
+    // 표기 경로 — 타임라인·위치 칩에 찍는 이름은 전부 pathName 이다(카드와 같은 글자).
+    loadLocationPaths(propertyId),
   ])
 
   const timeline: TimelineEntry[] = [
@@ -204,7 +209,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile,
       locationBreakdown: c.locationBreakdown.map(lb => ({
         locationId: lb.storageLocationId,
-        locationName: lb.storageLocation.name,
+        locationName: locPaths.pathName(lb.storageLocationId) ?? lb.storageLocation.name,
         qty: lb.remainingQty,
         restockedQty: lb.restockedQty ?? undefined,
         fromHubQty: lb.fromHubQty ?? undefined,
@@ -215,13 +220,13 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       type: 'addition' as const,
       id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo,
       storageLocationId: a.storageLocationId,
-      storageLocationName: a.storageLocation?.name ?? null,
+      storageLocationName: a.storageLocationId ? (locPaths.pathName(a.storageLocationId) ?? a.storageLocation?.name ?? null) : null,
     })),
     ...disposals.map(d => ({
       type: 'disposal' as const,
       id: d.id, date: d.date, createdAt: d.createdAt, disposedQty: d.disposedQty, reason: d.reason, memo: d.memo,
       storageLocationId: d.storageLocationId,
-      storageLocationName: d.storageLocation?.name ?? null,
+      storageLocationName: d.storageLocationId ? (locPaths.pathName(d.storageLocationId) ?? d.storageLocation?.name ?? null) : null,
     })),
     // 수량 미입력 구매도 타임라인에 포함(qtyValue 0 으로) — 입고 수학엔 0 기여라 무해, 수령 확인 진입점은 보존
     ...purchases.map(p => ({
@@ -230,7 +235,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       specValue: p.specValue, specUnit: p.specUnit,
       amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
       brand: p.brand, productName: p.productName,
-      receivedLocationName: p.receivedLocation?.name ?? null,
+      receivedLocationName: p.receivedLocationId ? (locPaths.pathName(p.receivedLocationId) ?? p.receivedLocation?.name ?? null) : null,
     })),
   ].sort((a, b) => {
     // 모든 entry 를 '실제 발생 시각'(시:분 포함) 단일 기준으로 정렬한다.
@@ -266,7 +271,16 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       specUnit: item.specUnit, qtyUnit: item.qtyUnit, unitHint, memo: item.memo,
       trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
       hubLocationId: item.hubLocationId,
-      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: item.hubLocationId ? l.storageLocation.id === item.hubLocationId : l.storageLocation.isHub })),
+      // 이름은 pathName, 순서는 DFS — 카드(overview)와 같은 글자·같은 차례.
+      locations: item.locations
+        .map(l => ({
+          id: l.storageLocation.id,
+          name: l.storageLocation.name,
+          pathName: locPaths.pathName(l.storageLocation.id) ?? l.storageLocation.name,
+          sortOrder: l.storageLocation.sortOrder,
+          isHub: item.hubLocationId ? l.storageLocation.id === item.hubLocationId : l.storageLocation.isHub,
+        }))
+        .sort((a, b) => locPaths.rank(a.id) - locPaths.rank(b.id) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
     },
     timeline,
   }
@@ -760,14 +774,11 @@ export type HubShortResponse = {
 }
 
 // detectHubShort 의 others(id·qty)에 위치 이름을 채워 팝업 목록에 쓰게 한다.
+// 이름은 표기 경로(pathName) — 팝업에서 `상단`·`하단` 두 줄만 뜨면 어느 냉장고인지 알 수 없다.
 async function withOtherNames(propertyId: string, others: { locationId: string; qty: number }[]): Promise<{ locationId: string; name: string; qty: number }[]> {
   if (others.length === 0) return []
-  const locs = await prisma.storageLocation.findMany({
-    where: { propertyId, id: { in: others.map(o => o.locationId) } },
-    select: { id: true, name: true },
-  })
-  const nameOf = new Map(locs.map(l => [l.id, l.name]))
-  return others.map(o => ({ locationId: o.locationId, name: nameOf.get(o.locationId) ?? '알 수 없는 위치', qty: o.qty }))
+  const locPaths = await loadLocationPaths(propertyId)
+  return others.map(o => ({ locationId: o.locationId, name: locPaths.pathName(o.locationId) ?? '알 수 없는 위치', qty: o.qty }))
 }
 
 // (레거시) 명시적 위치 간 이동 보정 — fromHubQty 선언이 있으면 같은 점검 안에서 출처 수량 차감.
@@ -1342,17 +1353,15 @@ export async function previewStockCheckPropagation(
       .filter(l => l.storedQty == null || Math.abs(l.storedQty - l.nextQty) > 0.001)
       .map(l => ({ dateMs: r.dateMs, l })))
     const ids = [...new Set(changed.map(x => x.l.locationId))]
-    const locs = ids.length > 0
-      ? await prisma.storageLocation.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
-      : []
-    const nameOf = new Map(locs.map(l => [l.id, l.name]))
+    // 미리보기 행의 이름도 표기 경로(pathName) — 확인창이 카드·점검 폼과 다른 이름을 말하면 안 된다.
+    const locPaths = ids.length > 0 ? await loadLocationPaths(propertyId) : null
     const r2 = (n: number) => Math.round(n * 100) / 100
     return {
       ok: true,
       unit,
       rows: changed.map(({ dateMs, l }) => ({
         date: new Date(dateMs).toISOString().slice(0, 10),
-        locationName: nameOf.get(l.locationId) ?? '알 수 없는 위치',
+        locationName: locPaths?.pathName(l.locationId) ?? '알 수 없는 위치',
         storedQty: l.storedQty == null ? null : r2(l.storedQty),
         nextQty: r2(l.nextQty),
       })),
@@ -2666,36 +2675,142 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
 }
 
 // ── 보관 위치 CRUD
-export async function getStorageLocations(): Promise<StorageLocationItem[]> {
+// 목록은 **DFS 순**으로, 각 행에 parentId·depth·pathName 을 얹어 돌려준다. 트리를 안 만든
+// 영업장(전부 루트)에선 DFS 가 sortOrder 순과 같고 pathName 이 name 과 같아 오늘과 한 글자도 안 다르다.
+export async function getStorageLocations(): Promise<StorageLocationNode[]> {
   const propertyId = await getPropertyId()
   const locs = await prisma.storageLocation.findMany({
     where: { propertyId },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, name: true, sortOrder: true, isHub: true },
+    select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
   })
-  return locs
+  const hubOf = new Map(locs.map(l => [l.id, l.isHub]))
+  return indexLocations(locs).rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    pathName: r.pathName,
+    sortOrder: r.sortOrder,
+    isHub: hubOf.get(r.id) ?? false,
+    parentId: r.parentId,
+    depth: r.depth,
+  }))
 }
 
-// 보관위치 순서 재정렬 — 드래그 정렬(운영자 요청 a5e258c3). 전체 id 배열을 받아 인덱스대로 sortOrder 를 다시 쓴다.
+// ── 트리 쓰기의 공통 전제 — 이 영업장 위치 전체 행(순수 판정 함수의 첫 인자).
+//   소속 영업장 검사를 여기서 한 번에 한다: 목록에 없는 id 는 남의 영업장이거나 없는 위치다.
+async function loadLocationRows(propertyId: string): Promise<LocationRow[]> {
+  return prisma.storageLocation.findMany({
+    where: { propertyId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, parentId: true, name: true, sortOrder: true },
+  })
+}
+
+// 옮기는 노드 **서브트리 전체**의 상대 깊이 — 잎만 보면 자손 둘을 단 노드가 상한을 넘겨 앉는다.
+function subtreeRelativeDepth(rows: readonly LocationRow[], id: string): number {
+  const own = depthOf(rows, id)
+  if (own === 0) return 0
+  const deepest = Math.max(...subtreeIds(rows, id).map(s => depthOf(rows, s)))
+  return deepest > own ? deepest - own : 0
+}
+
+// 보관위치 순서 재정렬 — 드래그 정렬(운영자 요청 a5e258c3). **한 형제 집합의** 전체 id 배열을 받아
+// 인덱스대로 sortOrder 를 다시 쓴다. parentId=null 이면 루트 형제들.
 // 전체 배열 방식 = 설정의 reorderOptions 와 동일 문법. 부분 배열이면 빠진 위치의 상대 순서가 흔들리므로 거부.
-export async function reorderStorageLocations(ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+// 되돌리기(§16)는 이전 순서 배열을 그대로 다시 넘기면 된다 — 별도 액션이 없다.
+export async function reorderStorageLocations(parentId: string | null, ids: string[]): Promise<
+  { ok: true; undo: { parentId: string | null; ids: string[] } } | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (ids.length === 0) return { ok: false, error: '정렬할 위치가 없습니다.' }
     if (new Set(ids).size !== ids.length) return { ok: false, error: '중복된 위치가 있습니다.' }
-    // 소유 검증 + 전체성 검증 — 이 영업장의 위치 전부가 정확히 한 번씩 와야 한다
-    const total = await prisma.storageLocation.count({ where: { propertyId } })
-    const owned = await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId } })
+    // 부모도 이 영업장 것이어야 한다 — 남의 영업장 부모 아래로 순서를 쓰게 두면 안 된다.
+    if (parentId !== null) {
+      const parent = await prisma.storageLocation.findFirst({ where: { id: parentId, propertyId }, select: { id: true } })
+      if (!parent) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    }
+    // 소유 검증 + 형제 집합 전체성 검증 — 이 부모 아래 위치 전부가 정확히 한 번씩 와야 한다
+    const total = await prisma.storageLocation.count({ where: { propertyId, parentId } })
+    const owned = await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId, parentId } })
     if (owned !== ids.length || total !== ids.length) return { ok: false, error: '위치 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    const before = await prisma.storageLocation.findMany({
+      where: { propertyId, parentId },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true },
+    })
     await prisma.$transaction(ids.map((id, i) =>
       prisma.storageLocation.update({ where: { id }, data: { sortOrder: i } })
     ))
     revalidatePath('/inventory')
-    return { ok: true }
+    return { ok: true, undo: { parentId, ids: before.map(b => b.id) } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '순서 저장에 실패했습니다.' }
+  }
+}
+
+// 위치를 다른 부모 아래로 옮긴다(트리, 2026-09-14).
+//   · 순환 거부(wouldCycle) — 자기 자신·자기 자손 아래로는 못 간다.
+//   · 깊이 상한 거부(depthOf + MAX_DEPTH) — 서브트리 최대 깊이까지 세서 자손도 상한 안이어야 한다.
+//   · 형제 중복 거부(siblingNameTaken) — 루트(NULL)끼리도 본다. DB 유니크가 NULL 을 구분 못 하므로 여기가 1차.
+//   · stripPrefix=true 면 `4층 김치냉장고 상단` 을 `4층 김치냉장고` 아래로 넣을 때 이름을 `상단` 으로 떼서 저장한다.
+// undo(§16): 이전 parentId·name·sortOrder 와 옛 형제 순서를 돌려준다 — 화면은 같은 함수를
+//   (moveStorageLocation → updateStorageLocation → reorderStorageLocations) 다시 불러 되돌린다.
+export type LocationMoveUndo = {
+  id: string
+  parentId: string | null
+  name: string
+  sortOrder: number
+  siblingIds: string[]     // 옛 부모 아래 형제 순서(자기 포함) — 자리까지 되돌리려면 필요하다
+}
+export async function moveStorageLocation(id: string, parentId: string | null, stripPrefix: boolean): Promise<
+  { ok: true; undo: LocationMoveUndo; renameLabel?: string } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rows = await loadLocationRows(propertyId)
+    const self = rows.find(r => r.id === id)
+    if (!self) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    const parent = parentId === null ? null : rows.find(r => r.id === parentId)
+    // 목록에 없는 부모 = 다른 영업장이거나 삭제된 위치. 소속이 다르면 여기서 걸린다.
+    if (parentId !== null && !parent) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    if (self.parentId === parentId) return { ok: false, error: '이미 그 위치 아래에 있습니다.' }
+
+    if (wouldCycle(rows, id, parentId)) return { ok: false, error: '자기 자신이나 하위 위치 아래로는 옮길 수 없습니다.' }
+
+    const parentDepth = parentId === null ? 0 : depthOf(rows, parentId)
+    if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
+    const newDepth = parentDepth + 1
+    if (newDepth + subtreeRelativeDepth(rows, id) > MAX_DEPTH) {
+      return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
+    }
+
+    // 이름 떼기 제안 — 새 부모의 표기 경로가 앞에 그대로 붙어 있으면 그만큼 뗀다.
+    const parentPath = parentId === null ? '' : (indexLocations(rows).pathName(parentId) ?? '')
+    const nextName = stripPrefix ? stripPrefixSuggestion(self.name, parentPath) : self.name
+    if (siblingNameTaken(rows, parentId, nextName, id)) {
+      return { ok: false, error: `'${nextName}' 은 그 위치에 이미 있습니다.` }
+    }
+
+    const siblingsBefore = rows.filter(r => r.parentId === self.parentId).map(r => r.id)
+    const undo: LocationMoveUndo = {
+      id, parentId: self.parentId, name: self.name, sortOrder: self.sortOrder, siblingIds: siblingsBefore,
+    }
+    // 새 형제들 맨 뒤로. 자리는 옮긴 뒤 순서 편집(reorderStorageLocations)이 정한다.
+    const maxOrder = rows.filter(r => r.parentId === parentId).reduce((m, r) => Math.max(m, r.sortOrder), -1)
+    await prisma.storageLocation.update({
+      where: { id },
+      data: { parentId, name: nextName, sortOrder: maxOrder + 1 },
+    })
+    revalidatePath('/inventory')
+    // §29 — 화살표는 '값의 전환' 한 자리에만 쓴다. 이름이 실제로 바뀐 경우에만 붙인다.
+    return { ok: true, undo, ...(nextName !== self.name ? { renameLabel: `${self.name} → ${nextName}` } : {}) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '위치 이동에 실패했습니다.' }
   }
 }
 
@@ -2753,23 +2868,26 @@ export async function toggleStorageLocationHub(id: string, isHub: boolean): Prom
   }
 }
 
-export async function createStorageLocation(name: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+// parentId 를 주면 그 아래 자식으로 만든다(생략·null = 루트).
+// 형제 이름 유일 검사는 루트(NULL)까지 포함해 서버가 한다 — Postgres 유니크는 NULL 을 서로 다르게 보고,
+// 루트 부분 유니크 인덱스는 Prisma 스키마 밖에 살아 db push 한 번에 사라질 수 있다.
+export async function createStorageLocation(name: string, parentId: string | null = null): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const trimmed = name.trim()
     if (!trimmed) return { ok: false, error: '위치 이름을 입력해주세요.' }
-    // 트리(2026-09-14) 뒤 유니크는 (propertyId, parentId, name) 이고 이 액션은 아직 루트만 만든다.
-    // 루트끼리의 이름 중복은 DB 가 못 막으므로(NULL 은 서로 다르다) 여기서 형제 집합 안에서 검사한다.
-    // sortOrder 도 '영업장 전체'가 아니라 '형제 사이' 순서라 루트 형제 안에서 최댓값을 잡는다.
-    const existing = await prisma.storageLocation.findFirst({
-      where: { propertyId, name: trimmed, parentId: null },
-      select: { id: true },
-    })
-    if (existing) return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
-    const maxOrder = await prisma.storageLocation.aggregate({ where: { propertyId, parentId: null }, _max: { sortOrder: true } })
+    const rows = await loadLocationRows(propertyId)
+    // 목록에 없는 부모 = 다른 영업장이거나 없는 위치.
+    if (parentId !== null && !rows.some(r => r.id === parentId)) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    const parentDepth = parentId === null ? 0 : depthOf(rows, parentId)
+    if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
+    if (parentDepth + 1 > MAX_DEPTH) return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
+    if (siblingNameTaken(rows, parentId, trimmed)) return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
+    // sortOrder 는 '영업장 전체'가 아니라 '형제 사이' 순서다 — 같은 부모 아래 최댓값 다음.
+    const maxOrder = rows.filter(r => r.parentId === parentId).reduce((m, r) => Math.max(m, r.sortOrder), -1)
     const r = await prisma.storageLocation.create({
-      data: { propertyId, name: trimmed, sortOrder: (maxOrder._max.sortOrder ?? 0) + 1 },
+      data: { propertyId, name: trimmed, parentId, sortOrder: maxOrder + 1 },
     })
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
@@ -2779,17 +2897,25 @@ export async function createStorageLocation(name: string): Promise<{ ok: true; i
   }
 }
 
-export async function updateStorageLocation(id: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 이름 바꾸기. 형제 중복 검사만 보강했다(구조는 안 건드린다).
+// undo(§16): 이전 이름을 돌려주므로 화면이 같은 함수를 다시 불러 되돌린다.
+export async function updateStorageLocation(id: string, name: string): Promise<
+  { ok: true; undo: { id: string; name: string } } | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const trimmed = name.trim()
     if (!trimmed) return { ok: false, error: '위치 이름을 입력해주세요.' }
-    const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
-    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    const rows = await loadLocationRows(propertyId)
+    const self = rows.find(r => r.id === id)
+    if (!self) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    if (siblingNameTaken(rows, self.parentId, trimmed, id)) {
+      return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
+    }
     await prisma.storageLocation.update({ where: { id }, data: { name: trimmed } })
     revalidatePath('/inventory')
-    return { ok: true }
+    return { ok: true, undo: { id, name: self.name } }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2811,6 +2937,12 @@ export async function deleteStorageLocation(id: string, force = false): Promise<
     const propertyId = await getPropertyId()
     const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
     if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    // 하위가 있으면 강제 삭제(force)로도 거부한다 — parentId 는 onDelete: SetNull 이라 자식이 조용히
+    // 루트로 튀어 오르고, 그 순간 자식의 표기 경로(pathName)가 통째로 바뀌어 화면에서 딴 위치가 된다.
+    const childCount = await prisma.storageLocation.count({ where: { propertyId, parentId: id } })
+    if (childCount > 0) {
+      return { ok: false, error: `'${loc.name}' 아래에 위치 ${childCount}개가 있습니다. 먼저 옮기거나 삭제하세요.` }
+    }
     const [checkRows, linkedItems, addRows, dispRows] = await Promise.all([
       prisma.stockCheckLocation.count({ where: { storageLocationId: id } }),
       prisma.trackedItemLocation.count({ where: { storageLocationId: id } }),
@@ -2872,7 +3004,10 @@ export async function setItemLocations(trackedItemId: string, locationIds: strin
     const openIds = new Set(links.filter(l => l.closedAt == null).map(l => l.storageLocationId))
     const effHub = await resolveItemHubLocationId(trackedItemId, it.hubLocationId, propertyId, openIds)
     const breakdown = await currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId)
-    const locName = async (id: string) => (await prisma.storageLocation.findUnique({ where: { id }, select: { name: true } }))?.name ?? '해당 위치'
+    // 안내 문구의 위치 이름도 표기 경로(pathName) — `상단에 재고가 남아 있어` 로는 어느 칸인지 모른다.
+    // 루프 밖에서 한 번 읽는다(종전엔 빠진 위치마다 조회가 돌았다).
+    const locPaths = await loadLocationPaths(propertyId)
+    const locName = (id: string) => locPaths.pathName(id) ?? '해당 위치'
 
     // 이력 있는 빠진 위치 판별(숨김 대상). 이력 없으면 삭제.
     const histRows = missing.length > 0
@@ -2886,8 +3021,8 @@ export async function setItemLocations(trackedItemId: string, locationIds: strin
     const toClose: string[] = [], toDelete: string[] = []
     for (const m of missing) {
       const qty = Math.max(0, breakdown.get(m.storageLocationId) ?? 0)
-      if (qty >= 0.001) return { ok: false, error: `${await locName(m.storageLocationId)}에 재고가 남아 있어 뗄 수 없습니다. 먼저 위치 이동으로 재고를 옮겨 비워주세요.` }
-      if (m.storageLocationId === effHub) return { ok: false, error: `${await locName(m.storageLocationId)}은 이 품목의 창고입니다. 먼저 다른 위치를 창고로 지정해주세요.` }
+      if (qty >= 0.001) return { ok: false, error: `${locName(m.storageLocationId)}에 재고가 남아 있어 뗄 수 없습니다. 먼저 위치 이동으로 재고를 옮겨 비워주세요.` }
+      if (m.storageLocationId === effHub) return { ok: false, error: `${locName(m.storageLocationId)}은 이 품목의 창고입니다. 먼저 다른 위치를 창고로 지정해주세요.` }
       if (hasHistory.has(m.storageLocationId)) toClose.push(m.storageLocationId)
       else toDelete.push(m.storageLocationId)
     }
@@ -3437,7 +3572,8 @@ export async function setItemHub(trackedItemId: string, locationId: string | nul
 // 허브 자동 차감(점검 폼)과 별개의 명시적 이동. 총량 불변 점검을 만들어 기록하므로
 // 소모량 통계에 영향이 없다(§4 — 이동은 소모가 아님). 기존 점검·허브 UX 는 불변.
 
-export type ItemLocationStock = { id: string; name: string; isHub: boolean; qty: number; closed: boolean }
+// name = 트리 원본 한 칸, pathName = 화면에 찍는 표기 경로(이동 모달 칩·허브 부족 팝업이 쓴다).
+export type ItemLocationStock = { id: string; name: string; pathName: string; isHub: boolean; qty: number; closed: boolean }
 
 // 품목의 위치별 현재 수량 — 직전 점검 breakdown + 이후 입수분(점검 base 계산과 동일 규칙)
 async function currentLocationBreakdown(trackedItemId: string, propertyId: string, hubLocationId: string | null) {
@@ -3473,13 +3609,30 @@ export async function getItemLocationStock(trackedItemId: string): Promise<{ ok:
     const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { hubLocationId: true } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const [allLocs, breakdown, links] = await Promise.all([
-      prisma.storageLocation.findMany({ where: { propertyId }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, isHub: true } }),
+      prisma.storageLocation.findMany({
+        where: { propertyId },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
+      }),
       currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId),
       prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true } }),
     ])
     // closed = 이 품목에서 숨긴 위치. 이동 모달에서 목적지 후보 제외에 쓴다(출발지는 재고 있으면 보여야 함).
     const closedIds = new Set(links.filter(l => l.closedAt != null).map(l => l.storageLocationId))
-    return { ok: true, locations: allLocs.map(l => ({ ...l, qty: Math.max(0, breakdown.get(l.id) ?? 0), closed: closedIds.has(l.id) })) }
+    // 칩 이름은 표기 경로, 차례는 DFS — 부모 밑에 자식이 붙어야 어느 냉장고의 상단인지 보인다.
+    const locPaths = indexLocations(allLocs)
+    const hubOf = new Map(allLocs.map(l => [l.id, l.isHub]))
+    return {
+      ok: true,
+      locations: locPaths.rows.map(l => ({
+        id: l.id,
+        name: l.name,
+        pathName: l.pathName,
+        isHub: hubOf.get(l.id) ?? false,
+        qty: Math.max(0, breakdown.get(l.id) ?? 0),
+        closed: closedIds.has(l.id),
+      })),
+    }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3499,9 +3652,11 @@ export async function transferLocationStock(data: {
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (data.fromLocationId === data.toLocationId) return { ok: false, error: '같은 위치로는 옮길 수 없습니다.' }
-    const locs = await prisma.storageLocation.findMany({ where: { propertyId, id: { in: [data.fromLocationId, data.toLocationId] } }, select: { id: true, name: true } })
-    const fromLoc = locs.find(l => l.id === data.fromLocationId)
-    const toLoc = locs.find(l => l.id === data.toLocationId)
+    // 메모·안내 문구의 위치 이름은 표기 경로(pathName) — 장부에 `이동: 상단 → 하단` 만 남으면
+    // 나중에 어느 냉장고였는지 알 길이 없다. 소속 영업장 검사는 색인에 있는지로 겸한다.
+    const locPaths = await loadLocationPaths(propertyId)
+    const fromLoc = locPaths.pathName(data.fromLocationId)
+    const toLoc = locPaths.pathName(data.toLocationId)
     if (!fromLoc || !toLoc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
 
     const breakdown = await currentLocationBreakdown(data.trackedItemId, propertyId, it.hubLocationId)
@@ -3513,14 +3668,14 @@ export async function transferLocationStock(data: {
       if (fromQty === 0 && toQty === 0) return { ok: false, error: '두 위치 모두 재고가 없습니다.' }
       breakdown.set(data.fromLocationId, toQty)
       breakdown.set(data.toLocationId, fromQty)
-      memo = `맞바꿈: ${fromLoc.name} ↔ ${toLoc.name}`
+      memo = `맞바꿈: ${fromLoc} ↔ ${toLoc}`
     } else {
       const move = data.qty != null ? data.qty : fromQty
       if (!(move > 0)) return { ok: false, error: '옮길 수량을 입력해주세요.' }
-      if (move > fromQty) return { ok: false, error: `${fromLoc.name}의 재고(${fromQty})보다 많이 옮길 수 없습니다.` }
+      if (move > fromQty) return { ok: false, error: `${fromLoc}의 재고(${fromQty})보다 많이 옮길 수 없습니다.` }
       breakdown.set(data.fromLocationId, fromQty - move)
       breakdown.set(data.toLocationId, toQty + move)
-      memo = `이동: ${fromLoc.name} → ${toLoc.name} ${move}`
+      memo = `이동: ${fromLoc} → ${toLoc} ${move}`
     }
 
     // 이 이동이 재고를 넣는 위치는 전부 같은 트랜잭션에서 링크를 보장한다 — 종전엔 점검만 만들어,
@@ -3576,6 +3731,8 @@ export async function closeItemLocation(data: {
       include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
       orderBy: { storageLocation: { sortOrder: 'asc' } },
     })
+    // 이관 메모·안내에 찍는 이름은 표기 경로(pathName) — 장부에 남는 문자열이라 더더욱 경로여야 한다.
+    const locPaths = await loadLocationPaths(propertyId)
     const target = links.find(l => l.storageLocationId === data.storageLocationId)
     if (!target) return { ok: false, error: '이 품목의 보관 위치가 아닙니다.' }
     if (target.closedAt != null) return { ok: true, undo: null }   // 멱등 — 이미 숨김
@@ -3587,7 +3744,7 @@ export async function closeItemLocation(data: {
     const qty = Math.max(0, breakdown.get(data.storageLocationId) ?? 0)
     let dest: (typeof links)[number] | undefined
     if (qty >= 0.001) {
-      if (!data.moveToLocationId) return { ok: false, error: `${target.storageLocation.name}에 남은 재고가 있습니다. 옮길 위치를 선택해주세요.` }
+      if (!data.moveToLocationId) return { ok: false, error: `${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에 남은 재고가 있습니다. 옮길 위치를 선택해주세요.` }
       if (data.moveToLocationId === data.storageLocationId) return { ok: false, error: '같은 위치로는 옮길 수 없습니다.' }
       dest = links.find(l => l.storageLocationId === data.moveToLocationId && l.closedAt == null)
       if (!dest) return { ok: false, error: '옮길 위치를 찾을 수 없습니다.' }
@@ -3610,7 +3767,7 @@ export async function closeItemLocation(data: {
     if (qty >= 0.001 && dest) {
       breakdown.set(data.storageLocationId, 0)
       breakdown.set(data.moveToLocationId!, (breakdown.get(data.moveToLocationId!) ?? 0) + qty)
-      const memo = `위치 숨김: ${target.storageLocation.name}에서 ${dest.storageLocation.name}로 ${qty} 이관`
+      const memo = `위치 숨김: ${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에서 ${locPaths.pathName(dest.storageLocationId) ?? dest.storageLocation.name}로 ${qty} 이관`
       const check = await prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo), select: { id: true } })
       transferCheckId = check.id
     }

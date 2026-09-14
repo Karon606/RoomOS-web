@@ -73,7 +73,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   targetMonth: string
   data: AssetsData
   rooms: { id: string; roomNo: string }[]
-  locations: { id: string; name: string }[]
+  // pathName = 표기 경로(트리) — select·라벨에 찍는 이름은 전부 이것이다. name 은 트리 원본 한 칸.
+  locations: { id: string; name: string; pathName: string }[]
 }) {
   const canEditUi = useCanEditScope('inventory')   // 재고 편집 — OWNER·MANAGER + 제한 스태프(재고 쓰기). 서버가 최종 방어
   const router = useRouter()
@@ -450,7 +451,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     const [k, id] = v.split(':')
     const label = k === 'room'
       ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '')
-      : (locations.find(l => l.id === id)?.name ?? '')
+      : (locations.find(l => l.id === id)?.pathName ?? '')
     setBatchAssign({
       target: { kind: k === 'room' ? 'room' : 'location', id },
       label,
@@ -524,7 +525,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 위치 이름 헬퍼
   const placeName = (v: string) => {
     const [k, id] = v.split(':')
-    return k === 'room' ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '') : (locations.find(l => l.id === id)?.name ?? '')
+    return k === 'room' ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '') : (locations.find(l => l.id === id)?.pathName ?? '')
   }
   const curPlace = (it: AssetItem) =>
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : '미배정(여분)')
@@ -1059,7 +1060,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </optgroup>
                 {locations.length > 0 && (
                   <optgroup label="공용부">
-                    {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                    {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
                   </optgroup>
                 )}
               </select>
@@ -1184,7 +1185,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   )}
                   {freeLocs.length > 0 && (
                     <optgroup label="공용부">
-                      {freeLocs.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                      {freeLocs.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
                     </optgroup>
                   )}
                 </select>
@@ -1555,7 +1556,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   </optgroup>
                   {locations.length > 0 && (
                     <optgroup label="공용부">
-                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
                     </optgroup>
                   )}
                 </select>

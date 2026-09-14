@@ -1085,7 +1085,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                 )
               })
             : row.locations.filter(loc => !hidden.has(loc.id)).map(loc => (
-                <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">{loc.name}</span>
+                <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">{loc.pathName}</span>
               ))
           }
         </div>
@@ -1497,7 +1497,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                   <button type="button" onClick={() => setHubOpen(o => !o)} disabled={pending}
                     className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.name ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
+                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.pathName ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
                     <span className="text-[var(--warm-muted)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
                   </button>
                   {hubOpen && (
@@ -1509,7 +1509,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                         {row.locations.filter(l => l.closedAt == null).map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
                             className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
-                            {l.name}{l.isHub && <span className="text-[var(--honey)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 현재</span>}
+                            {l.pathName}{l.isHub && <span className="text-[var(--honey)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 현재</span>}
                           </button>
                         ))}
                         <button type="button" disabled={pending} onClick={() => changeItemHub(null)}
@@ -2134,7 +2134,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                 <button key={loc.id} type="button" disabled={pending}
                   onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
                   className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
-                  {loc.name}
+                  {loc.pathName}
                 </button>
               ))}
               <button type="button" disabled={pending}
@@ -2426,7 +2426,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
               {tlLocations.map(l => (
                 <div key={l.id}>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">
-                    {l.name}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
+                    {l.pathName}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
                   </p>
                   <input type="text" inputMode="decimal" autoComplete="off" value={actuals[l.id] ?? ''}
                     onChange={e => setActuals(p => ({ ...p, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -2723,7 +2723,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">
                           {vLocs(r).map(l => (
                             <div key={l.id}>
-                              <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.name}{l.isHub ? ' (창고)' : ''}</p>
+                              <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.pathName}{l.isHub ? ' (창고)' : ''}</p>
                               <input type="text" inputMode="decimal" autoComplete="off" disabled={!restockDone}
                                 value={actuals[r.id]?.[l.id] ?? ''} onChange={e => setVal(r.id, l.id, e.target.value)}
                                 className={`w-full ${inputCls}`} />
@@ -2768,11 +2768,12 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   //   기존엔 그 점검의 breakdown 위치만 렌더해서, 나중에 추가된 위치(예: 5층/4층 화장실)를
   //   과거 점검 수정 시 입력할 수 없었음(2026-06-09 사용자 보고). 이제 전체 위치 + 점검에만
   //   있고 현재 미연결된 위치(orphan)까지 합쳐 보여준다. 값은 아래 initial 로 프리필.
-  const locationSources: { id: string; name: string; isHub: boolean }[] = (() => {
-    const base = itemLocations.map(l => ({ id: l.id, name: l.name, isHub: l.isHub }))
+  // 이름은 표기 경로(pathName) — orphan 은 점검이 들고 있던 locationName 이고 그것도 서버가 pathName 으로 채운다.
+  const locationSources: { id: string; pathName: string; isHub: boolean }[] = (() => {
+    const base = itemLocations.map(l => ({ id: l.id, pathName: l.pathName, isHub: l.isHub }))
     const orphan = entry.locationBreakdown
       .filter(lb => !base.some(b => b.id === lb.locationId))
-      .map(lb => ({ id: lb.locationId, name: lb.locationName, isHub: false }))
+      .map(lb => ({ id: lb.locationId, pathName: lb.locationName, isHub: false }))
     return [...base, ...orphan]
   })()
 
@@ -2883,7 +2884,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
               return (
                 <div key={l.id} className="bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-lg px-2 py-1.5 space-y-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{l.name} <span className="text-[var(--warm-muted)]">(허브)</span></span>
+                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{l.pathName} <span className="text-[var(--warm-muted)]">(허브)</span></span>
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">이전 {Math.round(hubBefore * 100) / 100}{stockUnit ?? ''}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -2907,7 +2908,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
             return (
               <div key={l.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.name}</span>
+                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.pathName}</span>
                   <div className="flex items-baseline gap-1.5 shrink-0">
                     <button type="button"
                       onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
@@ -3006,7 +3007,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={inputCls}>
             <option value="">위치 없이 기록</option>
             {itemLocations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.name}{loc.isHub ? ' (허브)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (허브)' : ''}</option>
             ))}
           </select>
         </div>
@@ -3463,7 +3464,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
               return (
                 <div key={loc.id} className="space-y-1 bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-xl px-3 py-2">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{loc.name} <span className="text-[var(--warm-muted)]">(허브)</span></span>
+                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{loc.pathName} <span className="text-[var(--warm-muted)]">(허브)</span></span>
                     {prevQty !== undefined && <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">이전 {prevQty}{stockUnit ?? ''}</span>}
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -3488,7 +3489,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
             return (
               <div key={loc.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
+                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.pathName}</span>
                 </div>
                 {/* 참고줄 — 입력 중에도 저장된 잔량·저장된 옮김이 계속 보이게. 축을 '저장본'과
                     '이번 입력'으로 갈라 같은 +N 이 한 줄에 두 번 뜨지 않게 한다. */}
@@ -3555,7 +3556,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
             const isPrefilled = !isTouched && prevMap[loc.id] != null
             return (
               <div key={loc.id} className="flex items-center gap-2">
-                <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.name}</span>
+                <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.pathName}</span>
                 <div className="flex-1 relative">
                   <input
                     type="text" inputMode="decimal" autoComplete="off"
@@ -3707,8 +3708,8 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
       {
         const checkId = res.checkId
         pushToast('success', swapMode
-          ? `${fromLoc!.name} ↔ ${toLoc!.name} 맞바꿈 완료`
-          : `${fromLoc!.name} → ${toLoc!.name} ${moveQty}${unit} 이동 완료`, {
+          ? `${fromLoc!.pathName} ↔ ${toLoc!.pathName} 맞바꿈 완료`
+          : `${fromLoc!.pathName} → ${toLoc!.pathName} ${moveQty}${unit} 이동 완료`, {
           // 이동은 '총량 불변 점검'으로 기록되므로, 그 점검을 지우면 직전 배치로 복원(v2.0 §16)
           action: { label: '적용취소', run: () => { void deleteStockCheck(checkId).then(r => { if (r.ok) pushToast('info', '이동을 적용취소했습니다 (이전 배치로 복원)'); else pushToast('error', r.error) }) } },
         })
@@ -3738,7 +3739,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
                 {locStock.filter(l => l.qty > 0 || swapMode).map(l => (
                   <button key={l.id} type="button" className={chip(fromId === l.id)}
                     onClick={() => { setFromId(l.id); if (toId === l.id) setToId('') }}>
-                    {l.name}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.pathName}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -3754,7 +3755,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
                 {locStock.filter(l => l.id !== fromId && !l.closed).map(l => (
                   <button key={l.id} type="button" className={chip(toId === l.id)}
                     onClick={() => setToId(l.id)}>
-                    {l.name}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.pathName}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -3779,7 +3780,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
                   <Btn type="button" variant="secondary" size="sm" onClick={() => setQtyStr(String(fromLoc.qty))}>전부</Btn>
                 </div>
                 {moveQty > (fromLoc.qty ?? 0) && (
-                  <p className="text-[0.65625rem] text-[var(--danger-fg)]">{fromLoc.name}에 있는 {fmtQty(fromLoc.qty, unit)}보다 많이 옮길 수 없어요.</p>
+                  <p className="text-[0.65625rem] text-[var(--danger-fg)]">{fromLoc.pathName}에 있는 {fmtQty(fromLoc.qty, unit)}보다 많이 옮길 수 없어요.</p>
                 )}
               </div>
             )}
@@ -3789,13 +3790,13 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
                 <p className="font-semibold text-[var(--warm-mid)]">이렇게 바뀝니다</p>
                 {swapMode ? (
                   <>
-                    <p>{fromLoc.name}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty, unit)}</strong></p>
-                    <p>{toLoc.name}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty, unit)}</strong></p>
+                    <p>{fromLoc.pathName}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty, unit)}</strong></p>
+                    <p>{toLoc.pathName}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty, unit)}</strong></p>
                   </>
                 ) : (
                   <>
-                    <p>{fromLoc.name}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty - moveQty, unit)}</strong></p>
-                    <p>{toLoc.name}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty + moveQty, unit)}</strong></p>
+                    <p>{fromLoc.pathName}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty - moveQty, unit)}</strong></p>
+                    <p>{toLoc.pathName}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty + moveQty, unit)}</strong></p>
                   </>
                 )}
               </div>
@@ -3969,14 +3970,14 @@ function HubShortDialog({ pending, onResolved, onExit }: {
               <div className="flex flex-wrap gap-1.5">
                 {donors.map(l => (
                   <button key={l.id} type="button" className={chip(fromId === l.id)} onClick={() => setFromId(l.id)} disabled={busy}>
-                    {l.name} · {fmtQty(l.qty, unit)}
+                    {l.pathName} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
             )}
             {fromLoc && moveQty > 0 && (
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">
-                {fromLoc.name}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
+                {fromLoc.pathName}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
               </p>
             )}
           </div>
@@ -4444,7 +4445,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검 위치</p>
               <select value={locId} onChange={e => setLocId(e.target.value)} className={selectCls}>
                 <option value="">위치 선택…</option>
-                {locs.map(l => <option key={l.id} value={l.id}>{l.name}{l.isHub ? ' (허브)' : ''}</option>)}
+                {locs.map(l => <option key={l.id} value={l.id}>{l.pathName}{l.isHub ? ' (허브)' : ''}</option>)}
               </select>
             </div>
             <div>
@@ -4483,7 +4484,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                         style={{ background: 'var(--cream-2)' }}>
                         <span className="flex items-center gap-1.5 min-w-0">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
-                          <span className="truncate text-xs font-medium text-[var(--warm-dark)]">{loc.name}</span>
+                          <span className="truncate text-xs font-medium text-[var(--warm-dark)]">{loc.pathName}</span>
                           <span className="text-[var(--warm-muted)] shrink-0">{d.itemCount}품목</span>
                         </span>
                         <span className="shrink-0" style={{ color: 'var(--success-fg)' }}>
@@ -4518,7 +4519,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
               const hubLoc = r.locations.find(l => l.isHub)
               const hubStock = hubLoc
-                ? { name: hubLoc.name, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
+                ? { pathName: hubLoc.pathName, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
                 : null
               // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
               const rowDraft = rowDrafts[r.id]
@@ -4545,7 +4546,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                           기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
                       {!rowIsHub && hubStock && (
                         <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
-                          · {hubStock.name} 남음{' '}
+                          · {hubStock.pathName} 남음{' '}
                           {hubStock.qty == null
                             ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
                             : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
@@ -5013,7 +5014,8 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     ;[next[idx], next[target]] = [next[target], next[idx]]
     setLocs(next)
     setPending(true)
-    const res = await reorderStorageLocations(next.map(l => l.id))
+    // 순서는 형제 집합 단위다. 이 목록은 아직 평면(전부 루트)이라 parentId=null 로 넘긴다 — 트리 화면은 5단계.
+    const res = await reorderStorageLocations(null, next.map(l => l.id))
     setPending(false)
     if (!res.ok) { pushToast('error', res.error); reload(); return }
     pushToast('success', '위치 순서 저장됨')
@@ -5056,7 +5058,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     if (!dragChanged.current) return
     dragChanged.current = false
     setPending(true)
-    const res = await reorderStorageLocations(locsRef.current.map(l => l.id))
+    const res = await reorderStorageLocations(null, locsRef.current.map(l => l.id))
     setPending(false)
     if (!res.ok) { pushToast('error', res.error); reload(); return }
     pushToast('success', '위치 순서 저장됨')
@@ -5255,7 +5257,7 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
                     ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
                     : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
                   {chosen.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
-                  {loc.name}
+                  {loc.pathName}
                 </button>
               ))}
             </div>
@@ -5344,7 +5346,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
               ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
               : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
             {selected.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
-            {loc.name}
+            {loc.pathName}
           </button>
         ))}
       </div>
@@ -5368,7 +5370,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">숨긴 위치</p>
           {closedLocs.map(loc => (
             <div key={loc.id} className="flex items-center justify-between gap-2">
-              <span className="text-xs text-[var(--warm-muted)]">{loc.name}</span>
+              <span className="text-xs text-[var(--warm-muted)]">{loc.pathName}</span>
               <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
             </div>
@@ -5445,7 +5447,7 @@ function DisposalForm({ item, onCancel, onDone }: {
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
             <option value="">위치 없음 (전체에서 차감)</option>
-            {item.locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {item.locations.map(l => <option key={l.id} value={l.id}>{l.pathName}</option>)}
           </select>
         </div>
       )}
@@ -5593,7 +5595,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
             {item.locations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.name}{loc.isHub ? ' (허브)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (허브)' : ''}</option>
             ))}
           </select>
         </div>

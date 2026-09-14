@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
+import { indexLocations } from './locationPaths'
 import { specMultiplier, convertUnit } from '@/lib/units'
 import { kstMonthStr, monthDbRange } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -263,7 +264,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   // 아래 메모리 필터가 쌍으로 다시 거른다(영업장 격리는 propertyId 가 이미 하고 있다).
   const itemCategories = [...new Set(items.map(i => i.category))]
   const itemLabels = [...new Set(items.map(i => i.label))]
-  const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, defaultHub, allPurchases] = await Promise.all([
+  const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, allLocationRows, allPurchases] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId: { in: itemIds }, date: { gte: monthsAgo7 } },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -298,7 +299,13 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       where: { trackedItemId: { in: itemIds } },
       select: { trackedItemId: true, storageLocationId: true, disposedQty: true, date: true, createdAt: true },
     }),
-    prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } }),
+    // 영업장 위치 전체 — 기본 허브 한 줄만 뽑던 findFirst 를 넓혔다(쿼리 수 불변).
+    // 표기 경로(pathName)는 조상까지 있어야 만들 수 있는데 조상이 이 품목에 링크돼 있으리란 보장이 없다.
+    prisma.storageLocation.findMany({
+      where: { propertyId },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
+    }),
     // 구매(지출) 일괄 조회 — 종전에는 품목마다, 구간마다 왕복했다(품목 28 × 구간 최대 80 × 3회).
     // receivedAt 조건을 여기서 걸지 않는 이유: 아래 규격 자동 반영은 수령 전 구매도 본다.
     // 정렬 date desc — 단가 목록(orderBy date desc)과 규격 폴백(findFirst date desc)이 이 순서를 쓴다.
@@ -317,7 +324,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   for (const a of allAdditions) { const arr = addsByItem.get(a.trackedItemId) ?? []; arr.push(a); addsByItem.set(a.trackedItemId, arr) }
   const dispByItem = new Map<string, typeof allDisposals>()
   for (const d of allDisposals) { const arr = dispByItem.get(d.trackedItemId) ?? []; arr.push(d); dispByItem.set(d.trackedItemId, arr) }
-  const defaultHubId = defaultHub?.id ?? null
+  // 영업장 기본 허브 — 종전 findFirst 와 같은 값(한 영업장 허브는 setStorageHub 가 1개로 묶는다).
+  const defaultHubId = allLocationRows.find(l => l.isHub)?.id ?? null
+  // 표기 경로 색인 — 카드 칩·점검 폼·위치 이름이 전부 여기서 나온 pathName 을 쓴다.
+  const locIndex = indexLocations(allLocationRows)
 
   // ── 메모리 합산 ──────────────────────────────────────────────
   // 아래 넷은 위 sumPurchases·sumAdditions·sumDisposals·resolveUnitHint·resolveSpecHint 의
@@ -666,9 +676,18 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
 
     // isHub 는 '이 품목의 허브' — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
     const itemLinks = allItemLocations.filter(l => l.trackedItemId === it.id)
+    // 순서는 DFS — 점검 폼이 부모 밑에 자식을 붙여 보여야 `상단`·`하단`을 한 번에 센다(9/11 사고).
+    // 트리를 안 만든 영업장에선 DFS 랭크가 sortOrder 순과 같아 순서가 그대로다.
     const locations: StorageLocationItem[] = itemLinks
-      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub, closedAt: l.closedAt ? l.closedAt.toISOString() : null }))
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+      .map(l => ({
+        id: l.storageLocation.id,
+        name: l.storageLocation.name,
+        pathName: locIndex.pathName(l.storageLocation.id) ?? l.storageLocation.name,
+        sortOrder: l.storageLocation.sortOrder,
+        isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub,
+        closedAt: l.closedAt ? l.closedAt.toISOString() : null,
+      }))
+      .sort((a, b) => locIndex.rank(a.id) - locIndex.rank(b.id) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
     // 위치별 현재 잔량 (B 계열) — 마지막 점검 breakdown + 그 이후 입수·폐기(위치별).
     // actions.ts currentLocationBreakdown 정본과 동일 규칙(경계 date+createdAt, 미지정분은 허브 귀속,
@@ -676,7 +695,11 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 종전엔 숨김 판정용으로만 계산해 화면(위치 칩·점검 폼 기준선)이 점검 시점 값에 머물렀다 —
     // 입수 직후 위치 잔량이 0 으로 보이던 신고 e48ca8ac(김치 20kg)의 원인. 전 품목 산출로 승격.
     const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
-    const hubId = resolveHubSync(it.hubLocationId, openLinkIds, locations, defaultHubId)
+    // ⚠️ 허브 폴백은 **sortOrder 순 첫 열린 링크**다(머리말 참조). locations 의 정렬을 DFS 로 바꿨으니
+    //    여기엔 sortOrder 로 다시 세운 사본을 넘긴다 — 쌍둥이 정의(actions.resolveItemHubLocationId)와
+    //    갈리면 미지정 입수 귀속이 화면과 서버에서 달라진다.
+    const sortedForHub = [...locations].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    const hubId = resolveHubSync(it.hubLocationId, openLinkIds, sortedForHub, defaultHubId)
     const cur = new Map<string, number>()
     for (const lb of last?.locationBreakdown ?? []) cur.set(lb.storageLocationId, lb.remainingQty)
     if (last) {
@@ -697,8 +720,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       }
     }
     // 위치 순서는 sortOrder(locations 정렬) 우선, 링크 밖 위치(과거 점검 잔재)는 뒤에. 음수는 0 클램프(표시 관례).
+    // 칩에 찍히는 이름 = 표기 경로(pathName). 색인에 없는 id(삭제분 잔재)만 점검 breakdown 의 이름으로 폴백.
     const locNameOf = (id: string) =>
-      locations.find(l => l.id === id)?.name
+      locIndex.pathName(id)
       ?? last?.locationBreakdown.find(lb => lb.storageLocationId === id)?.storageLocation.name
       ?? ''
     // 마지막 점검이 이 위치에 실은 보충 마커(+N). **표시 전용이고 잔량 수학(cur)에 일절 안 들어간다.**
@@ -779,7 +803,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       currentLocationBreakdown,
       lastCheckLocationBreakdown: (last?.locationBreakdown ?? []).map(lb => ({
         locationId: lb.storageLocationId,
-        locationName: lb.storageLocation.name,
+        locationName: locIndex.pathName(lb.storageLocationId) ?? lb.storageLocation.name,
         qty: lb.remainingQty,
       })) satisfies LocationQtyEntry[],
       monthlyConsumption,

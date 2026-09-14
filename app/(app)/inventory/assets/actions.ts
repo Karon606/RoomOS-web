@@ -16,6 +16,8 @@ import { getMyRole } from '@/lib/role'
 import { getTrackedCategories } from '../categoryConfig'
 import { canonicalUnit } from '@/lib/units'
 import { fmtRoomNo } from '@/lib/roomNo'
+// 공용부(위치) 이름은 재고와 같은 표기 경로(pathName)를 쓴다 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
+import { loadLocationPaths } from '../locationPaths'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
@@ -173,12 +175,16 @@ export async function getDurableItems(): Promise<AssetsData> {
     },
   })
 
+  // 위치 표기 경로 색인 — 카드·그룹 헤더·배지에 찍는 공용부 이름이 전부 여기서 나온다.
+  const locPaths = await loadLocationPaths(propertyId)
+
   const raws: RawAsset[] = rows.map(r => ({
     id: r.id, date: r.date.toISOString().slice(0, 10), itemLabel: r.itemLabel ?? '',
     amount: r.amount, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText,
     category: r.category, vendor: r.vendor,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
-    locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
+    locationId: r.assignedLocationId,
+    locationName: r.assignedLocationId ? (locPaths.pathName(r.assignedLocationId) ?? r.assignedLocation?.name ?? null) : null,
     isCommon: r.isCommonAsset, received: r.receivedAt != null, isService: r.excludeFromInventory,
     assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null,
   }))
@@ -218,15 +224,14 @@ export async function getDurableItems(): Promise<AssetsData> {
     return { roomId, roomNo: list[0].roomNo!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
-  // 공용부 그룹 순서 = 보관 위치 관리에서 정한 sortOrder(순서 편집 반영, 운영자 지적 2026-07-22).
+  // 공용부 그룹 순서 = 보관 위치 관리에서 정한 차례(순서 편집 반영, 운영자 지적 2026-07-22).
+  // 트리(2026-09-14) 뒤로는 **DFS 랭크** — 부모 밑에 자식이 붙어야 위치 관리 화면과 같은 차례가 된다.
   // 종전 이름 가나다순은 위치 순서를 바꿔도 비품 화면이 안 따라오는 어긋남이 있었다. 미등록 위치는 이름순 폴백.
-  const locRankRows = await prisma.storageLocation.findMany({ where: { propertyId }, select: { id: true, sortOrder: true } })
-  const locRank = new Map(locRankRows.map(l => [l.id, l.sortOrder]))
   const locations = [...locBuckets.entries()].map(([locationId, list]) => {
     const items = aggregateAssets(list, orderMaps)
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) =>
-    (locRank.get(a.locationId) ?? Number.MAX_SAFE_INTEGER) - (locRank.get(b.locationId) ?? Number.MAX_SAFE_INTEGER)
+    locPaths.rank(a.locationId) - locPaths.rank(b.locationId)
     || a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
   const pending = aggregateAssets(pendingRaw, orderMaps)
@@ -602,13 +607,18 @@ export async function getAssignableRooms(): Promise<{ id: string; roomNo: string
 }
 
 // 공용부 배정 후보 = 위치 관리의 StorageLocation 중 창고(허브) 제외(허브=여분 보관 = 미배정 성격).
-export async function getAssignableLocations(): Promise<{ id: string; name: string }[]> {
+// 이름은 표기 경로(pathName), 차례는 DFS — select 에 `상단`·`하단` 만 뜨면 어느 냉장고인지 알 수 없다.
+// 허브가 빠져도 그 자손은 후보로 남는다(허브 아래 칸에 비품을 둘 수 있다). 경로에는 허브 이름이 그대로 붙는다.
+export async function getAssignableLocations(): Promise<{ id: string; name: string; pathName: string }[]> {
   const propertyId = await getPropertyId()
-  return prisma.storageLocation.findMany({
-    where: { propertyId, isHub: false },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, name: true },
-  })
+  const [locPaths, hubs] = await Promise.all([
+    loadLocationPaths(propertyId),
+    prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } }),
+  ])
+  const hubIds = new Set(hubs.map(h => h.id))
+  return locPaths.rows
+    .filter(r => !hubIds.has(r.id))
+    .map(r => ({ id: r.id, name: r.name, pathName: r.pathName }))
 }
 
 // 배정 대상 — 방 / 공용부(위치) / 해제(none)
@@ -646,8 +656,10 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
     return { kind: 'room', label: no ? (fmtRoomNo(no, '')) : '방' }
   }
   if (locId) {
-    const l = await prisma.storageLocation.findFirst({ where: { id: locId, propertyId }, select: { name: true } })
-    return { kind: 'location', label: l?.name ?? '공용부' }
+    // 이력에 박히는 라벨도 표기 경로(pathName) — 되돌리기(resolvePlace)가 이 문자열로 위치를 되찾으므로
+    // 형제끼리 이름이 겹치는 순간 평면 name 은 어느 쪽인지 말하지 못한다.
+    const locPaths = await loadLocationPaths(propertyId)
+    return { kind: 'location', label: locPaths.pathName(locId) ?? '공용부' }
   }
   if (isCommon) return { kind: 'common', label: '공용 자재' }
   return { kind: 'none', label: '미배정' }
@@ -884,9 +896,14 @@ async function resolvePlace(propertyId: string, kind: string, label: string | nu
     return { roomId: room.id, locationId: null, isCommon: false }
   }
   if (kind === 'location') {
-    const loc = await prisma.storageLocation.findFirst({ where: { propertyId, name: label ?? '' }, select: { id: true } })
-    if (!loc) return { error: `'${label}' 공용부를 찾을 수 없습니다.` }
-    return { roomId: null, locationId: loc.id, isCommon: false }
+    // 표기 경로(pathName)로 역조회한다 — 평면 name 으로 findFirst 하면 형제 중복 이름(`상단` 이 냉장고마다
+    // 하나씩)이 생긴 순간 되돌리기가 엉뚱한 위치로 비품을 보낸다. 표시 오염이 아니라 데이터 오염이다.
+    // 트리 만들기 전에 쓰인 옛 이력은 라벨이 평면 이름이라 pathName 으로 못 찾는다 —
+    // 그때만 이름으로 폴백하되 **이름이 유일할 때만** 받는다(둘이면 찍지 않고 실패시킨다).
+    const locPaths = await loadLocationPaths(propertyId)
+    const hit = locPaths.byPathName(label ?? '') ?? locPaths.byName(label ?? '')
+    if (!hit) return { error: `'${label}' 공용부를 찾을 수 없습니다.` }
+    return { roomId: null, locationId: hit.id, isCommon: false }
   }
   return { roomId: null, locationId: null, isCommon: kind === 'common' }
 }

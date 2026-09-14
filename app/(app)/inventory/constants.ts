@@ -101,12 +101,23 @@ export type MonthlyInflowRow = {
 
 export type StorageLocationItem = {
   id: string
+  // 트리 편집용 원본 이름(그 노드 한 칸). 화면에 찍지 않는다 — 표시는 전부 pathName 이다.
   name: string
+  // 표기 경로(2026-09-14 트리) — 조상 이름을 공백으로 이어 붙인 값. 루트면 name 과 글자가 같다.
+  // `4층 김치냉장고` 아래 `상단` 이면 `4층 김치냉장고 상단`. 정본은 lib/locationTree.flattenDfs.
+  pathName: string
   sortOrder: number
   isHub: boolean
   // null/미정의 = 표시(열림). 값 = 이 품목에서 이 위치를 숨긴 시점.
   // 영업장 위치 목록(getStorageLocations)에선 항상 미정의 — 숨김은 (품목,위치) 쌍의 속성이라 영업장 위치엔 없다.
   closedAt?: string | null
+}
+
+// 위치 관리·할당 화면이 쓰는 트리 행 — 목록 순서가 DFS 이고 들여쓰기 단계를 depth 가 말한다.
+// 재고 카드가 쓰는 StorageLocationItem 에는 구조 칸을 싣지 않는다(카드는 이름만 그린다).
+export type StorageLocationNode = StorageLocationItem & {
+  parentId: string | null
+  depth: number          // 루트가 1
 }
 
 export type LocationQtyEntry = {
