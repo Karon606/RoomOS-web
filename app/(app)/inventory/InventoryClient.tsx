@@ -5018,18 +5018,18 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const { pos, triggerRef, measure } = usePopoverAnchor<HTMLButtonElement>({ minWidth: 240, estimatedHeight: 320 })
+  // 외부 클릭 닫기는 백드롭 하나가 맡는다(DatePicker 정본). mousedown 리스너를 겹치면 패널이
+  // mousedown 에서 사라지고 mouseup 이 그 아래 요소에 떨어진다 — 독립 검수 지적. 여기서는
+  // Esc 만 받아 바깥 Modal 의 escStack 보다 먼저(capture) 패널을 닫고 전파를 멈춘다.
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (panelRef.current?.contains(t)) return
-      if (triggerRef.current?.contains(t)) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
       setOpen(false)
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-    // triggerRef 는 훅이 만든 ref 객체라 정체성이 안 바뀐다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [open])
 
   const selected = locs.find(l => l.id === value) ?? null
@@ -5348,18 +5348,17 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     usePopoverAnchor<HTMLElement>({ minWidth: 208, estimatedHeight: 340 })
   const menuPanelRef = useRef<HTMLDivElement>(null)
   const rowAnchors = useRef<Map<string, HTMLElement>>(new Map())
+  // 외부 클릭 닫기는 백드롭 하나가 맡는다(위치 선택기와 같은 이유). Esc 는 메뉴만 닫고
+  // 바깥 Modal 까지 내려가지 않게 capture 에서 잡아 전파를 멈춘다.
   useEffect(() => {
     if (!menuId) return
-    const h = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (menuPanelRef.current?.contains(t)) return
-      if (menuAnchorRef.current?.contains(t)) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
       setMenuId(null)
     }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-    // menuAnchorRef 는 훅이 만든 ref 객체라 정체성이 안 바뀐다(CountrySelect 와 같은 주석).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [menuId])
 
   const siblingsOf = (parentId: string | null) => locs.filter(n => n.parentId === parentId)
@@ -5377,6 +5376,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         const back = await reorderStorageLocations(undo.parentId, undo.ids)
         if (!back.ok) { pushToast('error', back.error); reload(); return }
         reload()
+        onChanged?.()
         pushToast('info', '순서를 적용취소했습니다')
       })() } },
     })
@@ -5472,6 +5472,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         const back = await updateStorageLocation(undo.id, undo.name)
         if (!back.ok) { pushToast('error', back.error); reload(); return }
         reload()
+        onChanged?.()
         pushToast('info', '이름 바꾸기를 적용취소했습니다')
       })() } },
     })
@@ -5522,7 +5523,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     const { checkRows, linkedItems, addRows, dispRows } = res.impact
     const impact = [
       checkRows > 0 ? { label: '함께 지워지는 위치별 점검 기록', count: checkRows } : null,
-      linkedItems > 0 ? { label: '위치 연결이 풀리는 품목', count: linkedItems } : null,
+      linkedItems > 0 ? { label: '풀리는 품목 위치 연결', count: linkedItems } : null,
       addRows + dispRows > 0 ? { label: '위치 표시가 사라지는 입수·폐기 기록', count: addRows + dispRows } : null,
     ].filter((x): x is { label: string; count: number } => x != null)
     const go = await confirmDialog({
@@ -5695,7 +5696,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 const res = await toggleStorageLocationHub(menuNode.id, !menuNode.isHub)
                 if (!res.ok) { setPending(false); pushToast('error', res.error); return }
                 pushToast('success', menuNode.isHub ? '기본 창고 해제됨' : `'${menuNode.pathName}' 위치가 기본 창고가 되었습니다`, {
-                  action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(r => { if (!r.ok) { pushToast('error', r.error); return } reload(); pushToast('info', '기본 창고 변경을 적용취소했습니다') }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                  action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(r => { if (!r.ok) { pushToast('error', r.error); return } reload(); onChanged?.(); pushToast('info', '기본 창고 변경을 적용취소했습니다') }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
                 })
                 reload()
                 setPending(false)
