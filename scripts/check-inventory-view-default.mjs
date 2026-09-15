@@ -82,13 +82,15 @@ need('세그먼트 첫 원소가 위치별이다',
 // ── ④ 인라인은 저장 후 닫지 않는다 ─────────────────────────────────
 const doSave = fnBody(client, "const doSave = async (forceMerge?: boolean, dupDecision?: 'keep' | 'skip') => {")
 need('doSave 를 찾음', doSave.length > 0)
+// 인라인 마감은 '닫지 않는' 대신 **입력을 전부 비우는** 자리다. confirmItems 가 빠지면
+// '기존 기록에 합칠까요?' 바가 저장 성공 직후 유령으로 되살아난다(표시 조건이 다시 참이 된다).
 need('doSave 의 onClose 가 else 아래에 있다',
-  /if \(inline\) \{ setBeforeQtys\(\{\}\); setAfterQtys\(\{\}\); setMergeChoice\(null\) \}\s*\n?\s*else onClose\(\)/.test(doSave),
-  '인라인에서 닫으면 기본 보기를 떠나고 changeView 가 저장 키를 item 으로 덮어쓴다')
+  /if \(inline\) \{ setBeforeQtys\(\{\}\); setAfterQtys\(\{\}\); setMergeChoice\(null\); setConfirmItems\(\[\]\) \}\s*\n?\s*else onClose\(\)/.test(doSave),
+  '인라인에서 닫으면 기본 보기를 떠나고 changeView 가 저장 키를 item 으로 덮어쓴다 · confirmItems 를 안 비우면 물음 바가 되살아난다')
 const hubResolved = fnBody(client, 'const onHubShortResolved = async () => {')
 need('onHubShortResolved 를 찾음', hubResolved.length > 0)
 need('팝업 마감도 같은 모양이다',
-  /if \(inline\) \{ setBeforeQtys\(\{\}\); setAfterQtys\(\{\}\); setMergeChoice\(null\) \}\s*\n?\s*else onClose\(\)/.test(hubResolved),
+  /if \(inline\) \{ setBeforeQtys\(\{\}\); setAfterQtys\(\{\}\); setMergeChoice\(null\); setConfirmItems\(\[\]\) \}\s*\n?\s*else onClose\(\)/.test(hubResolved),
   '두 마감이 갈리면 허브 부족을 거친 저장만 화면을 떠난다')
 need('성공 토스트가 두 마감에 다 있다',
   (client.match(/pushToast\('success', `\$\{out\.done\}건 저장됨`\)/g) ?? []).length === 2,

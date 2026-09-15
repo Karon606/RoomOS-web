@@ -21,6 +21,7 @@ import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, subtreeIds
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
+import { transferCheckCreateData } from '@/lib/transferCheck'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
@@ -1116,10 +1117,14 @@ export async function updateStockCheck(id: string, data: {
     // #3: locationPatch가 오면 이 점검의 현재 위치별 잔량을 base로 서버에서 적용(연속 위치점검 머지 정확)
     let patchedQtys: LocQty[] | null = null
     if (data.locationPatch) {
-      // 멱등 — 이 점검이 '같은 patch'(점검위치=보충후·같은 보충량)를 이미 반영 중이면 재적용하지 않는다.
-      // 더블클릭/재시도로 같은 머지가 두 번 오면 허브가 보충량만큼 또 차감되던(2배) 버그 방지.
+      // 멱등 — 이 점검이 '같은 patch'(점검위치=보충후·같은 보충량·이미 실측 표식)를 이미 반영
+      // 중이면 재적용하지 않는다. 더블클릭/재시도로 같은 머지가 두 번 오면 허브가 보충량만큼
+      // 또 차감되던(2배) 버그 방지.
+      // carried 를 판정에 넣는다 — 잔량·마커만 보면, 이동 점검 위에 얹히는 실측이 마침 장부 − N
+      // 그대로일 때(흔하다) no-op 으로 빠져 그 행에 실측 표식(carried: false)이 영영 안 박힌다.
+      // 표식이 없으면 전파가 휴리스틱으로 후퇴하고, 그 행은 파생으로 덮여도 되는 행이 된다.
       const cur = c.locationBreakdown.find(b => b.storageLocationId === data.locationPatch!.checkedLocationId)
-      if (cur && cur.remainingQty === data.locationPatch.afterQty && (cur.restockedQty ?? 0) === data.locationPatch.restockedQty) {
+      if (cur && cur.remainingQty === data.locationPatch.afterQty && (cur.restockedQty ?? 0) === data.locationPatch.restockedQty && cur.carried === false) {
         return { ok: true }
       }
       // restockedQty 포함 — 같은 날 연속 위치 점검 머지가 앞 위치의 보충 +N 마커를 지우던 버그(신고 8319ba10)
@@ -1380,12 +1385,26 @@ export type StockCheckUndo = {
   locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null; fromHubQty: number | null; fromLocationId: string | null; carried?: boolean | null }[]
 }
 
-export async function deleteStockCheck(id: string): Promise<{ ok: true; undo: StockCheckUndo } | { ok: false; error: string }> {
+// expect — 적용취소가 '내가 만든 그 점검' 을 지우는지 확인하는 기대값(2026-09-15).
+// 이동 점검은 같은 날·6시간 안이면 뒤따르는 위치 점검의 머지 대상이 된다(lastCheckId 가 이 점검).
+// 그러면 토스트 6초 안의 적용취소가 방금 저장한 **실측까지** 지운다. 기대값이 오면 지우기 전에
+// 다시 읽어 세 축(만든 시각·행 수·보충 마커 합)이 그대로인지 보고, 달라졌으면 지우지 않는다.
+// 안 넘기면 종전과 완전히 같다 — 다른 호출부(헤더 이동 토스트·위치 숨김 적용취소)는 무변경이다.
+export type DeleteCheckExpect = { createdAtMs: number; rowCount: number; markerSum: number }
+
+export async function deleteStockCheck(id: string, expect?: DeleteCheckExpect): Promise<{ ok: true; undo: StockCheckUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true, locationBreakdown: true } })
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+    if (expect) {
+      const markerSum = c.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
+      const same = c.createdAt.getTime() === expect.createdAtMs
+        && c.locationBreakdown.length === expect.rowCount
+        && Math.abs(markerSum - expect.markerSum) < 1e-6
+      if (!same) return { ok: false, error: '이 이동 위에 점검이 얹혀 되돌릴 수 없습니다.' }
+    }
     const undo: StockCheckUndo = {
       id: c.id, trackedItemId: c.trackedItemId, date: c.date.toISOString(), remainingQty: c.remainingQty,
       memo: c.memo, isReconcile: c.isReconcile, sourceExpenseId: c.sourceExpenseId,
@@ -3661,33 +3680,8 @@ async function currentLocationBreakdown(trackedItemId: string, propertyId: strin
   return base
 }
 
-// 이동/숨김 이관 점검의 StockCheck.create data — breakdown 전체(0 포함)를 담아 새 baseline 을 만든다.
-// ⚠️ 부분 breakdown 을 만들면 total != byLoc 합 불변식이 깨진다. transferLocationStock·closeItemLocation 공유.
-//
-// `measuredLocationId` 는 **그 자리에서 직접 센 위치 하나**다(위치별 점검 패널의 '다른 곳으로',
-// 2026-09-15). 그 행만 실측(`carried: false`)이고 나머지는 표식을 안 찍는다(null).
-// ⚠️ 이동 행에 `carried: true` 를 찍으면 안 된다 — 이동 행은 이월도 실측도 아닌 '이월 + 델타' 라,
-//   이월로 선언하는 순간 planCheckPropagation 이 파생식으로 덮어써 옮긴 델타를 지운다.
-function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, number>, memo: string, measuredLocationId?: string) {
-  const entries = [...breakdown.entries()]
-  const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
-  return {
-    trackedItemId,
-    // 오늘(KST)의 @db.Date 표현(lib/kstDate 정본). 종전 `new Date()` 는 서버 UTC 날짜라 KST 00~09시에
-    // 만든 이동 점검이 어제 날짜로 박혀 (date desc, createdAt desc) 정렬에서 같은 날 폼 점검 뒤로
-    // 밀렸다 — 토스트는 완료인데 장부에는 이동이 안 보인다. createStockCheck 가 받는 축과 같게 맞춘다.
-    date: ymdToDbDate(kstYmdStr()),
-    remainingQty: total,   // 행 합 — 실측이 없으면 총량 불변(이동은 소모가 아님)
-    memo,
-    locationBreakdown: {
-      create: entries.map(([storageLocationId, q]) => ({
-        storageLocationId,
-        remainingQty: Math.max(0, q),
-        ...(storageLocationId === measuredLocationId ? { carried: false } : {}),
-      })),
-    },
-  }
-}
+// 이동/숨김 이관 점검의 StockCheck.create data 는 순수 조립이라 lib/transferCheck.ts 정본이다
+// (진리표 회귀는 scripts/test-transfer-check.ts). 여기서는 부르기만 한다.
 
 export async function getItemLocationStock(trackedItemId: string): Promise<{ ok: true; locations: ItemLocationStock[] } | { ok: false; error: string }> {
   try {
@@ -3734,7 +3728,10 @@ export async function transferLocationStock(data: {
   // 옮긴 뒤 출발지에 남은 양을 **직접 세어 왔을 때**의 실측값(선택, 맞바꿈에는 뜻이 없다).
   // 없으면 종전과 같이 장부 − N 으로 둔다.
   sourceRemainingQty?: number
-}): Promise<{ ok: true; checkId: string } | { ok: false; error: string }> {
+  // 적용취소 기대값(createdAtMs·rowCount·markerSum)을 함께 돌려준다 — 이동 점검은 뒤따르는
+  // 위치 점검의 머지 대상이 될 수 있어서, 호출부가 이 세 축을 deleteStockCheck 에 되넘겨
+  // '내가 만든 그 점검 그대로' 일 때만 지우게 한다(얹힌 실측 보호).
+}): Promise<{ ok: true; checkId: string; createdAtMs: number; rowCount: number; markerSum: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -3801,7 +3798,9 @@ export async function transferLocationStock(data: {
       prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo, measuredFromId) }),
     ])
     revalidatePath('/inventory')
-    return { ok: true, checkId: created.id }
+    // 이동 점검은 보충 마커를 안 찍으므로 markerSum 은 0 이다 — 뒤에 위치 점검이 머지되면
+    // 그 자리에 +N 이 생기고, 그 차이가 곧 '얹혔다' 는 신호가 된다.
+    return { ok: true, checkId: created.id, createdAtMs: created.createdAt.getTime(), rowCount: breakdown.size, markerSum: 0 }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '이동에 실패했습니다.' }

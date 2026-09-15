@@ -79,7 +79,6 @@ import {
   deleteStockCheckDraft,
   deleteItemDrafts,
   getItemDrafts,
-  getLocationDrafts,
   getLocationDraftsFor,
   getDraftLocationSummary,
   getDraftItemIds,
@@ -350,6 +349,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   // v2.0 §23 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
   // 초기값은 전역 통합 검색의 ?q= 딥링크 시딩(있을 때만).
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
+  // 검색 오버레이는 router.push('/inventory?q=…') 로 보낸다. 이미 /inventory 에 있으면 그건
+  // 소프트 내비다 — 컴포넌트가 산 채로 파라미터만 바뀌므로 위 초기값 식도, 마운트 1회 복원도
+  // 다시 돌지 않는다(deepLinkedRef 는 마운트 값으로 굳어 있다). 그 회차를 이 효과가 받는다.
+  // 초기값 식은 그대로라 첫 렌더는 서버와 같다 — 하이드레이션 축은 안 건드린다.
+  const qParam = searchParams.get('q')
+  useEffect(() => {
+    if (!qParam) return
+    // URL 이 바뀐 이 회차의 의도다 — 검색어를 다시 시딩하고 아이템별로 연다(연쇄 렌더 아님).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSearch(qParam)
+    setViewMode('item')
+  }, [qParam])
   const q = search.trim().toLowerCase()
   const visibleRows = q
     ? rows.filter(r => r.label.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || (r.memo ?? '').toLowerCase().includes(q))
@@ -3582,7 +3593,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                   </div>
                   <div>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
+                    <input type="text" inputMode="decimal" autoComplete="off"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
@@ -3736,20 +3747,27 @@ type TransferDone = {
   toId: string
   qty: number        // 맞바꿈이면 0 — 옮긴 양이라는 개념이 없다
   swap: boolean
+  // 적용취소 기대값 — 이동 점검 위에 뒤따르는 위치 점검이 머지되면 세 축이 달라진다.
+  // deleteStockCheck 가 그때는 지우지 않고 거절한다(얹힌 실측 보호).
+  createdAtMs: number
+  rowCount: number
+  markerSum: number
 }
 
 // ── 위치별 일괄 점검 — 모달(inline=false) / 인라인 패널(inline=true) 양용
 // 위치 간 재고 이동·맞바꿈 (운영자 요청 2026-07-08) — "무엇을 → 어디서 → 어디로 → 얼마나" 한 화면.
 // 총량 불변 점검으로 기록되어 소모 통계에 영향 없음. 점검 폼의 허브 자동 차감 UX 는 그대로.
-function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromId, lockItem, z }: {
+function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromId, lockItem, silent, z }: {
   rows: InventoryRow[]
   onClose: () => void
   onDone: (result?: TransferDone) => void
   initialItemId?: string   // 품목 상세에서 진입 시 그 품목 프리셀렉트(신고 0d911b19)
   initialFromId?: string   // 점검 패널 행에서 진입 시 그 위치를 출발지로(2026-09-15)
-  // 품목 고정 — 행에서 연 이동이라 무엇을 옮기는지는 이미 정해져 있다. 완료 통지도 호출부의 몫이다
-  // (패널이 두 칸을 비우고 그 사실까지 한 토스트로 말한다 — §27.2 이중 통지 금지).
+  // 품목 고정 — 행에서 연 이동이라 무엇을 옮기는지는 이미 정해져 있다.
   lockItem?: boolean
+  // 완료 통지를 호출부에 넘긴다 — 점검 패널의 두 진입(헤더 '위치 이동' · 행 '다른 곳으로')은
+  // 패널이 두 칸을 비운 사실까지 한 토스트로 말한다(§27.2 이중 통지 금지). 다른 진입은 종전대로.
+  silent?: boolean
   z?: 260                  // 패널 위에 띄울 때(위치 관리의 옮기기 모달과 같은 층)
 }) {
   const [itemId, setItemId] = useState('')
@@ -3803,9 +3821,9 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
       })
       if (!res.ok) { pushToast('error', res.error); return }
       const checkId = res.checkId
-      // 행 진입(lockItem)은 호출부가 두 칸을 비우고 그 사실까지 한 토스트로 말한다 — 여기서 또
-      // 띄우면 같은 사건을 두 번 알리는 것이다(§27.2). 일반 진입은 종전대로 여기가 마감한다.
-      if (!lockItem) {
+      // 패널 진입(silent)은 호출부가 두 칸을 비우고 그 사실까지 한 토스트로 말한다 — 여기서 또
+      // 띄우면 같은 사건을 두 번 알리는 것이다(§27.2). 다른 진입은 종전대로 여기가 마감한다.
+      if (!silent) {
         pushToast('success', swapMode
           ? `${fromLoc!.pathName} ↔ ${toLoc!.pathName} 맞바꿈 완료`
           : `${fromLoc!.pathName} → ${toLoc!.pathName} ${moveQty}${unit} 이동 완료`, {
@@ -3813,22 +3831,32 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
           action: { label: '적용취소', run: () => { void deleteStockCheck(checkId).then(r => { if (r.ok) pushToast('info', '이동을 적용취소했습니다 (이전 배치로 복원)'); else pushToast('error', r.error) }) } },
         })
       }
-      onDone({ checkId, trackedItemId: item.id, fromId, toId, qty: moveQty, swap: swapMode })
+      onDone({
+        checkId, trackedItemId: item.id, fromId, toId, qty: moveQty, swap: swapMode,
+        createdAtMs: res.createdAtMs, rowCount: res.rowCount, markerSum: res.markerSum,
+      })
     } finally { release(); setBusy(false) }
   }
 
   return (
     <Modal open onClose={onClose} title="위치 이동" width="sm" z={z}
+      dirty={qtyStr !== '' || srcLeftStr !== ''}
       subtitle="위치에서 위치로 옮기거나 두 위치를 통째로 맞바꿉니다. 총 재고는 변하지 않아요.">
       <div className="space-y-4">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">1. 무엇을 옮길까요?</label>
-          {/* 행에서 열면 무엇을 옮기는지는 이미 정해져 있다 — 고정해서 보여만 준다. */}
-          <select value={itemId} onChange={e => pickItem(e.target.value)} disabled={lockItem}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-50 disabled:cursor-not-allowed">
+          {/* 행에서 열면 무엇을 옮기는지는 이미 정해져 있다 — 고를 수 없는 셀렉트를 흐려 두는
+              대신 §12 읽기전용 표시로 보여만 준다(비활성 컨트롤은 '고를 수 있는데 지금은 막힘'
+              으로 읽힌다). 셀렉트 쪽 높이는 옆 입력과 같은 44px 한 벌이다. */}
+          {lockItem ? (
+            <div className="w-full bg-[var(--sand-s)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] flex items-center">{item ? `${item.label} (${item.category})` : ''}</div>
+          ) : (
+          <select value={itemId} onChange={e => pickItem(e.target.value)}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]">
             <option value="">품목 선택…</option>
             {rows.map(r => <option key={r.id} value={r.id}>{r.label} ({r.category})</option>)}
           </select>
+          )}
         </div>
 
         {item && locStock && (
@@ -3883,26 +3911,24 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                 {moveQty > (fromLoc.qty ?? 0) && (
                   <p className="text-[0.65625rem] text-[var(--danger-fg)]">{fromLoc.pathName}에 있는 {fmtQty(fromLoc.qty, unit)}보다 많이 옮길 수 없어요.</p>
                 )}
-              </div>
-            )}
-
-            {/* 옮긴 뒤 출발지 남은 양 — 선택이다. 적으면 그 값이 출발지의 실측이 되고(장부 − N 이라는
-                추정을 이긴다), 차이만큼 총량이 변해 그 구간의 소모로 잡힌다. 맞바꿈에는 뜻이 없어 숨긴다.
-                placeholder 는 빈칸이다 — 0 을 미리 보이면 '남은 게 없다' 는 실측으로 읽힌다. */}
-            {!swapMode && fromLoc && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--warm-mid)]">옮긴 뒤 {fromLoc.pathName} 남은 양 (선택)</label>
-                <div className="flex items-center gap-1.5">
-                  <input value={srcLeftStr} inputMode="decimal" autoComplete="off"
-                    onChange={e => setSrcLeftStr(e.target.value.replace(/[^0-9.]/g, ''))}
-                    placeholder=""
-                    className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
-                  <span className="text-xs text-[var(--warm-muted)]">{unit}</span>
+                {/* 옮긴 뒤 출발지 남은 양 — 선택이다. 적으면 그 값이 출발지의 실측이 되고(장부 − N 이라는
+                    추정을 이긴다), 차이만큼 총량이 변해 그 구간의 소모로 잡힌다. 맞바꿈에는 뜻이 없어 숨긴다.
+                    placeholder 는 빈칸이다 — 0 을 미리 보이면 '남은 게 없다' 는 실측으로 읽힌다.
+                    4단계 안에 붙여 둔다 — 독립 단계가 아니라 '얼마나 옮길까요'의 부속이다. */}
+                <div className="mt-2 space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">옮긴 뒤 {fromLoc.pathName} 남은 양 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+                  <div className="flex items-center gap-1.5">
+                    <input value={srcLeftStr} inputMode="decimal" autoComplete="off"
+                      onChange={e => setSrcLeftStr(e.target.value.replace(/[^0-9.]/g, ''))}
+                      placeholder=""
+                      className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
+                    <span className="text-xs text-[var(--warm-muted)]">{unit}</span>
+                  </div>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">안 적으면 장부에서 뺀 값으로 둡니다.</p>
+                  {!srcLeftValid && (
+                    <p className="text-[0.65625rem] text-[var(--danger-fg)]">남은 양은 0 이상의 숫자로 적어주세요.</p>
+                  )}
                 </div>
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">안 적으면 장부에서 뺀 값으로 둡니다</p>
-                {!srcLeftValid && (
-                  <p className="text-[0.65625rem] text-[var(--danger-fg)]">남은 양은 0 이상의 숫자로 적어주세요.</p>
-                )}
               </div>
             )}
 
@@ -3925,7 +3951,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                         <p className="text-[var(--warm-mid)]">
                           {diff < 0
                             ? `장부보다 ${fmtQty(-diff, unit)} 적음 · 소모로 기록`
-                            : `장부보다 ${fmtQty(diff, unit)} 많음 · 입수 기록 누락일 수 있습니다`}
+                            : `장부보다 ${fmtQty(diff, unit)} 많음 · 입수 기록이 빠졌을 수 있음`}
                         </p>
                       )}
                       <p>{toLoc.pathName}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty + moveQty, unit)}</strong></p>
@@ -4501,7 +4527,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
       // 인라인은 닫지 않는다 — 기본 보기라 닫을 뒤가 없다. 대신 입력을 반드시 비운다. 안 비우면
       // dirty 가 남아 'N건 저장' 이 다시 켜지고, 값을 조금만 고쳐도 두 번째 저장이 선다
       // (createStockCheck 의 멱등창은 20초, updateStockCheck 는 같은 patch 만 무시한다).
-      if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null) }
+      // confirmItems 도 함께 비운다 — 안 비우면 '기존 기록에 합칠까요?' 바의 표시 조건
+      // (confirmItems.length > 0 && mergeChoice === null)이 성공 직후 다시 참이 되어, 닫히지
+      // 않는 인라인 패널에서 이미 답한 물음이 유령으로 되살아난다.
+      if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null); setConfirmItems([]) }
       else onClose()   // 모달 모드는 종전대로 최종 저장 후 닫는다 — 실패 0 일 때만.
     } catch {
       setError('저장 중 오류가 발생했습니다.')
@@ -4535,8 +4564,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     // 실패가 남아 있으면 닫지 않는다 — doSave 의 마감 규칙과 같은 축이다.
     if (out.stopped === 'failed' || cleanupRef.current.length > 0) return
     pushToast('success', `${out.done}건 저장됨`)
-    // 마감 모양도 doSave 와 같다 — 인라인은 입력만 비우고 그 자리에 머문다.
-    if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null) }
+    // 마감 모양도 doSave 와 같다 — 인라인은 입력만 비우고 그 자리에 머문다(confirmItems 까지).
+    if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null); setConfirmItems([]) }
     else onClose()
   }
   // 보충으로 돌아가기 / 창고 재고 확인 — 남은 체인 전체 중단(무저장), 폼으로 복귀(모달 유지).
@@ -4641,11 +4670,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     })
     if (!ok) return
     // 되돌릴 값은 지우기 전에 붙잡는다 — 지운 뒤에는 서버에 물어볼 자리가 없다.
+    // 위치마다 부르면 '전체'(18칸)에서 36 왕복이 된다 — 복원 효과와 같은 한 호출로 읽는다
+    // (getLocationDraftsFor, 위치 수와 무관하게 쿼리 2개).
     const snapLocIds = [...new Set(targets.map(t => t.locId))]
-    const snapshot = (await Promise.all(snapLocIds.map(id =>
-      getLocationDrafts(id).then(ds => ds.map(d => ({ ...d, locId: id })))
-        .catch(() => [] as { trackedItemId: string; data: { before?: string; after?: string; savedAt?: number }; locId: string }[]),
-    ))).flat()
+    const snapshot = (await getLocationDraftsFor(snapLocIds)
+      .catch(() => [] as { locationId: string; trackedItemId: string; data: { before?: string; after?: string; savedAt: number } }[]))
+      .map(d => ({ trackedItemId: d.trackedItemId, data: d.data, locId: d.locationId }))
     const settled = await Promise.allSettled(targets.map(t => deleteStockCheckDraft(t.itemId, t.locId)))
     const okFlags = settled.map(s => s.status === 'fulfilled' && s.value.ok)
     setRowDrafts(prev => {
@@ -4708,12 +4738,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
       { itemId: res.trackedItemId, locId: res.fromId },
       { itemId: res.trackedItemId, locId: res.toId },
     ]
-    // 지우기 전에 붙잡는다 — 지운 뒤에는 물어볼 자리가 없다.
-    const snapshot = pairs.map(p => {
+    // 지우기 전에 붙잡는다 — 지운 뒤에는 물어볼 자리가 없다. 화면 입력값은 메모리에서 잡는다.
+    const mem = pairs.map(p => {
       const k = locPairKey(p.itemId, p.locId)
-      return { ...p, k, before: beforeQtys[k] ?? '', after: afterQtys[k] ?? '', draft: rowDrafts[k] ?? null }
+      return { ...p, k, before: beforeQtys[k] ?? '', after: afterQtys[k] ?? '' }
     })
-    const keys = snapshot.map(s => s.k)
+    const keys = mem.map(s => s.k)
     const dropKeys = (prev: Record<string, string>) => {
       const next = { ...prev }
       for (const k of keys) delete next[k]
@@ -4721,6 +4751,23 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     }
     setBeforeQtys(dropKeys)
     setAfterQtys(dropKeys)
+    // 임시저장 스냅샷은 **서버에서** 읽는다(handleClearLocDrafts 와 같은 문법). 메모리 rowDrafts 는
+    // 지금 범위의 쌍만 담는데 지우기는 (품목, 위치) 키로 무조건 간다 — 4층 범위에서 5층으로
+    // 옮기면 (품목, 5층) 드래프트가 지워지고 되돌릴 값이 화면에 없었다. deleteStockCheckDraft 는
+    // 아이템별(null) 드래프트의 그 위치 값도 함께 벗기므로, 둘을 합쳐 주는 getLocationDraftsFor 로 읽는다.
+    const serverDrafts = await getLocationDraftsFor([res.fromId, res.toId])
+      .catch(() => [] as { locationId: string; trackedItemId: string; data: { before?: string; after?: string; savedAt: number } }[])
+    const draftAt = (lid: string) => {
+      const d = serverDrafts.find(x => x.trackedItemId === res.trackedItemId && x.locationId === lid)
+      if (!d) return null
+      return {
+        savedAt: typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0,
+        before: d.data?.before != null ? String(d.data.before) : '',
+        after:  d.data?.after  != null ? String(d.data.after)  : '',
+        itemId: res.trackedItemId, locId: lid,
+      }
+    }
+    const snapshot = mem.map(s => ({ ...s, draft: draftAt(s.locId) }))
     // 서버 임시저장도 같이 — 화면만 비우면 다음 진입에서 옮기기 전의 값이 되살아난다.
     const settled = await Promise.allSettled(pairs.map(p => deleteStockCheckDraft(p.itemId, p.locId)))
     const okFlags = settled.map(s => s.status === 'fulfilled' && s.value.ok)
@@ -4729,6 +4776,9 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
       snapshot.forEach((s, i) => { if (okFlags[i]) delete next[s.k] })
       return next
     })
+    // 남은 드래프트가 없으면 발끝 칩도 내린다 — settleChain 의 규칙과 같은 축이다(전수 대조).
+    // 안 내리면 임시저장이 하나도 없는데 칩이 '임시저장 후 수정됨' 으로 남아 유령이 된다.
+    if (Object.keys(rowDraftsRef.current).every(k => keys.includes(k) && okFlags[keys.indexOf(k)])) { setLocDraftSavedAt(null); locDraftSnapRef.current = null }
     onDraftChange?.()
     onDone()   // 참고줄 '저장된 잔량' 이 새 값으로
     // 임시저장 정리에 실패해도 **적용취소는 남는다** — 옮기기는 이미 적용됐고, 되돌릴 길이 정리
@@ -4742,16 +4792,21 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     const unitLabel = movedRow ? rowUnit(movedRow) : ''
     const restoreLocId = locId
     const restoreDate = date
+    // 비운 것이 실제로 있을 때만 그렇게 말한다 — 두 칸이 모두 비어 있었는데 '두 칸 입력 비움'
+    // 이라고 적으면 하지 않은 일을 한 것으로 알린다.
+    const cleared = snapshot.some(s => s.before !== '' || s.after !== '' || s.draft != null)
     // 문구는 형제 토스트(헤더 '위치 이동')와 같은 한 벌이다 — 자리 전환은 §29 전환 표기로 적는다.
     // 조사로 이으면 이름 끝 받침에 따라 '5층 주방로' 가 되고, 같은 이유로 이 파일에는 그 보간
     // 형태를 통째로 막는 그물이 서 있다(check-stock-ledger-parity §29 절).
     pushToast('success', res.swap
-      ? `${fromName} ↔ ${toName} 맞바꿈 완료 · 두 칸 입력 비움`
-      : `${fromName} → ${toName} ${fmtQty(res.qty, unitLabel)} 옮김 완료 · 두 칸 입력 비움`, {
+      ? `${fromName} ↔ ${toName} 맞바꿈 완료${cleared ? ' · 두 칸 입력 비움' : ''}`
+      : `${fromName} → ${toName} ${fmtQty(res.qty, unitLabel)} 옮김 완료${cleared ? ' · 두 칸 입력 비움' : ''}`, {
       ...(cleanupFailed ? { detail: '임시저장을 다 비우지 못했습니다. 다시 열면 옮기기 전 값이 보일 수 있습니다' } : {}),
       action: { label: '적용취소', run: () => { void (async () => {
         // 이동은 '점검' 으로 기록되므로 그 점검을 지우면 직전 배치로 돌아간다(§16).
-        const d = await deleteStockCheck(res.checkId)
+        // 기대값을 함께 넘긴다 — 이동 점검은 같은 날·6시간 안이면 뒤따르는 위치 점검의 머지
+        // 대상이 된다(lastCheckId 가 이 점검). 그대로 지우면 방금 저장한 실측까지 사라진다.
+        const d = await deleteStockCheck(res.checkId, { createdAtMs: res.createdAtMs, rowCount: res.rowCount, markerSum: res.markerSum })
         if (!d.ok) { pushToast('error', d.error); return }
         // 있었던 임시저장만 되쓴다 — 없던 행까지 만들면 없던 임시저장이 생긴다.
         const had = snapshot.filter(s => s.draft != null)
@@ -4763,13 +4818,17 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         const failedBack = backOk.filter(v => !v).length
         // 늦게 눌려 위치를 옮긴 뒤라면 이 패널 상태는 안 건드린다(다른 위치의 사실이 된다).
         if (locIdRef.current === restoreLocId) {
-          setBeforeQtys(prev => { const n = { ...prev }; for (const s of snapshot) n[s.k] = s.before; return n })
-          setAfterQtys(prev => { const n = { ...prev }; for (const s of snapshot) n[s.k] = s.after; return n })
+          // **빈 칸만** 되돌린다 — 적용취소는 6초 뒤에 눌릴 수 있고, 그 사이 옮긴 뒤의 값을 새로
+          // 적었다면 그것이 최신 실측이다. 덮어쓰면 방금 센 숫자가 옮기기 전 값으로 되돌아간다.
+          setBeforeQtys(prev => { const n = { ...prev }; for (const s of snapshot) if ((n[s.k] ?? '') === '') n[s.k] = s.before; return n })
+          setAfterQtys(prev => { const n = { ...prev }; for (const s of snapshot) if ((n[s.k] ?? '') === '') n[s.k] = s.after; return n })
           setRowDrafts(prev => {
             const n = { ...prev }
             had.forEach((s, i) => { if (backOk[i]) n[s.k] = s.draft! })
             return n
           })
+          // 되쓴 드래프트가 하나라도 있으면 내렸던 칩을 다시 세운다(§12 3상태 재시딩).
+          if (had.some((_, i) => backOk[i])) { setLocDraftSavedAt(Math.max(...had.map(s => s.draft!.savedAt || Date.now()))); locDraftSnapRef.current = null }
         }
         onDraftChange?.()
         onDone()
@@ -4832,13 +4891,15 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
             <Btn type="button" variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>위치 이동</Btn>
           </div>
         </div>
+        {/* 헤더 진입도 같은 구멍을 연다 — 여기서 옮겨도 그 두 쌍의 미저장 입력은 무효다.
+            행 진입과 같은 완료 핸들러를 타고, 통지의 주인도 패널 하나다(silent). */}
         {transferOpen && (
-          <TransferStockModal rows={rows} onClose={() => setTransferOpen(false)}
-            onDone={() => { setTransferOpen(false); onDone() }} />
+          <TransferStockModal rows={rows} silent onClose={() => setTransferOpen(false)}
+            onDone={result => { setTransferOpen(false); if (result) void handleTransferDone(result) }} />
         )}
         {/* 행에서 연 옮기기 — 품목 고정·출발지 프리셀렉트. 패널 위 층(위치 관리의 옮기기 모달과 같다). */}
         {rowTransfer && (
-          <TransferStockModal rows={rows} z={260} lockItem
+          <TransferStockModal rows={rows} z={260} lockItem silent
             initialItemId={rowTransfer.itemId} initialFromId={rowTransfer.fromId}
             onClose={() => setRowTransfer(null)}
             onDone={result => { setRowTransfer(null); if (result) void handleTransferDone(result) }} />
@@ -4996,7 +5057,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               {prev != null && (
                                 <button type="button"
                                   onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}
-                                  className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px]">
+                                  className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                                   저장된 값
                                 </button>
                               )}
@@ -5014,7 +5075,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                 </div>
                                 <div>
                                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
+                                  <input type="text" inputMode="decimal" autoComplete="off"
                                     value={afterStr}
                                     onChange={e => setAfterQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
                                     className={qtyInputCls} />
@@ -5024,12 +5085,17 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                   허브(창고) 행에는 '다른 곳으로'를 두지 않는다 — 창고에서 나가는 이동은
                                   도착지 행의 '채운 후' 가 정본이다(§27.1 같은 일을 두 입구로 만들지 않는다). */}
                               <div className="flex items-center justify-between mt-1">
+                                {/* 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이 없다 — 눌러도 막다른
+                                    모달이라 아예 그리지 않는다. 그때는 오른쪽 버튼이 ml-auto 로 제 자리를
+                                    지킨다(한 쪽만 남았다고 줄이 왼쪽으로 쏠리지 않게). */}
+                                {prev != null && prev.qty !== 0 && (
                                 <button type="button"
                                   onClick={() => setRowTransfer({ itemId: r.id, fromId: node.id })}
                                   // 히트영역·색·보더는 오른쪽 버튼과 같은 한 벌이다(§25 유사요소 확장).
-                                  className="relative text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11">
+                                  className="relative text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                                   다른 곳으로
                                 </button>
+                                )}
                                 <button type="button"
                                   onClick={() => {
                                     if (beforeStr !== '') setAfterQtys(p => ({ ...p, [k]: beforeStr }))
@@ -5041,7 +5107,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                   }}
                                   // 히트영역 44px — 위로는 mt-1 여백(4px)까지만 늘리고 나머지는 아래로 뻗는다.
                                   // 위로 더 뻗으면 바로 위 입력칸의 아래 끝을 가려 오조작이 난다.
-                                  className="relative text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11">
+                                  className="relative ml-auto text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                                   옮김 없음
                                 </button>
                               </div>
@@ -5059,16 +5125,13 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
 
         {/* 실패·안내는 스크롤 밖 고정 영역이다 — 행이 열이면 스크롤 안의 박스는 뷰포트 밖으로
             밀려 "눌렀는데 아무 말이 없다"가 다시 난다. 채널은 여기 하나(§27.2 이중 통지 금지). */}
-        {(saveFailed.length > 0 || draftCleanupFailed.length > 0 || saveProgress || error) && (
+        {(saveFailed.length > 0 || draftCleanupFailed.length > 0 || (saveProgress && saveProgress.stoppedAt !== '') || error) && (
           <div className="border-t border-[var(--warm-border)] px-5 py-3 shrink-0 space-y-2">
-            {saveProgress && (saveProgress.stoppedAt === '' ? (
-              // 아직 달리는 중 — 멈춘 자리가 없으니 경고 톤이 아니라 중립 톤이다.
-              <div className="rounded-lg px-3 py-2" style={{ background: 'var(--cream-2)' }}>
-                <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
-                  저장 중 · <span className="tabular-nums">{saveProgress.done}</span>/<span className="tabular-nums">{saveProgress.total}</span>
-                </p>
-              </div>
-            ) : (
+            {/* 달리는 중(stoppedAt === '')에는 이 자리에 아무것도 세우지 않는다. 인라인 패널은
+                스크롤 컨테이너가 없어 '고정 영역' 이 곧 문서 흐름이라, 진행 박스가 서는 순간
+                발끝 버튼을 아래로 밀어낸다. 진행은 §29 진행형 하나 — 버튼 라벨의 '저장 중… n/N'
+                이 말한다(같은 상태를 박스와 라벨이 두 문형으로 말하지 않는다). */}
+            {saveProgress && saveProgress.stoppedAt !== '' && (
               // 체인이 어디까지 갔는가 — 비원자 저장이라 이 문장이 값이다.
               <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
                 <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
@@ -5079,7 +5142,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                   {' '}멈춘 자리는 {`'${saveProgress.stoppedAt}'`}입니다. 저장된 행의 임시저장은 비워졌고 남은 행은 그대로입니다.
                 </p>
               </div>
-            ))}
+            )}
             {saveFailed.length > 0 && (
               <div className="rounded-lg px-3 py-2 space-y-1" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--danger-fg)' }}>
@@ -5161,7 +5224,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
               </ul>
             </div>
             <div className="flex gap-2">
-              <Btn variant="secondary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'skip')}>이 행은 빼고 저장</Btn>
+              <Btn variant="secondary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'skip')}>해당 행은 빼고 저장</Btn>
               <Btn variant="primary" size="sm" fullWidth onClick={() => doSave(mergeChoice === 'merge', 'keep')}>더 옮긴 것으로 저장</Btn>
             </div>
           </div>

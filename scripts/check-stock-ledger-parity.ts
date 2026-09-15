@@ -341,6 +341,11 @@ function sourceGuards() {
   // 도착지 행에 true 를 찍으면 planCheckPropagation 이 파생식으로 덮어써 옮긴 델타를 지우고,
   // false 를 찍으면 세지도 않은 값이 실측으로 선언돼 그 위치의 전파가 영구히 멈춘다.
   // 값 대조로는 안 잡힌다 — 수량은 내내 맞고 표식만 틀리다.
+  //
+  // 표식 없음(null)은 '문을 열어 두는' 것이 아니다 — planCheckPropagation 의 휴리스틱은 저장값이
+  // 파생식과 같을 때만 이월로 보는데 이동 행은 옮긴 N 만큼 달라 항상 실측 판정이 나고, 그 행은
+  // **첫 전파에서 carried: false 로 확정**된다(lib/stockLedger 314~325). 지금 규칙이 맞다는 근거는
+  // '나중에 정한다' 가 아니라 '확정되는 값이 실측으로도 맞다' 다.
   const transfer = block(actions, 'export async function transferLocationStock(', '\n}\n', 'transferLocationStock')
   if (transfer) {
     if (!/sourceRemainingQty\?: number/.test(transfer)) {
@@ -356,8 +361,19 @@ function sourceGuards() {
     if (!/measuredFromId = data\.fromLocationId/.test(transfer) || !/transferCheckCreateData\(data\.trackedItemId, breakdown, memo, measuredFromId\)/.test(transfer)) {
       violations.push('transferLocationStock 이 실측 행을 점검 조립부에 알리지 않는다 — 실측이 구식 행(null)으로 저장된다')
     }
+    // 진리표(scripts/test-transfer-check)는 조립부만 본다. 그래서 `measuredFromId = data.toLocationId`
+    // 한 글자 우회는 테스트가 전부 초록인 채로 통과한다 — 대입의 우변을 여기서 못 박는다.
+    const assigns = transfer.match(/measuredFromId\s*=\s*[^\n;]+/g) ?? []
+    if (assigns.length === 0 || assigns.some(s => !/measuredFromId\s*=\s*data\.fromLocationId\b/.test(s))) {
+      violations.push('measuredFromId 에 출발지(data.fromLocationId) 말고 다른 위치가 대입된다 — 세지도 않은 행이 실측으로 박힌다')
+    }
   }
-  const tCreate = block(actions, 'function transferCheckCreateData(', '\n}\n', 'transferCheckCreateData')
+  // 조립 정본은 lib/transferCheck.ts 다(actions 는 부르기만 한다) — 파일이 갈리면 아래 축이 조용히 꺼진다.
+  const transferLib = readFileSync('lib/transferCheck.ts', 'utf8')
+  if (!/import \{ transferCheckCreateData \} from '@\/lib\/transferCheck'/.test(actions)) {
+    violations.push('actions 가 이동 점검 조립 정본(lib/transferCheck)을 import 하지 않는다 — 조립이 두 벌로 갈린다')
+  }
+  const tCreate = block(transferLib, 'export function transferCheckCreateData(', '\n}\n', 'transferCheckCreateData')
   if (tCreate) {
     if (!/storageLocationId === measuredLocationId \? \{ carried: false \} : \{\}/.test(tCreate)) {
       violations.push('이동 점검이 출발지 실측 행에만 carried: false 를 찍지 않는다 — 도착지 행은 이월도 실측도 아닌 델타라 표식이 없어야 한다')

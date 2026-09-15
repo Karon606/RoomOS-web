@@ -99,9 +99,18 @@ need('패널에 실패 목록이 그려진다',
   /\{saveFailed\.length > 0 && \(/.test(client) && /\{saveFailed\.map\(f => \(/.test(client))
 need('패널에 정리 실패 안내가 그려진다', /\{draftCleanupFailed\.length > 0 && \(/.test(client))
 need('실패 영역이 스크롤 밖 shrink-0 이다',
-  /\{\(saveFailed\.length > 0 \|\| draftCleanupFailed\.length > 0 \|\| saveProgress \|\| error\) && \([\s\S]{0,120}?shrink-0/.test(client),
+  /\{\(saveFailed\.length > 0 \|\| draftCleanupFailed\.length > 0 \|\| \(saveProgress && saveProgress\.stoppedAt !== ''\) \|\| error\) && \([\s\S]{0,120}?shrink-0/.test(client),
   '스크롤 컨테이너 안에 있으면 10행에서 뷰포트 밖으로 밀린다')
-need('멈춘 자리 안내가 같은 고정 영역에 그려진다', /\{saveProgress && \(/.test(client))
+// 달리는 중(stoppedAt === '')에는 이 영역을 아예 세우지 않는다 — 인라인 패널은 스크롤 컨테이너가
+// 없어 '고정 영역' 이 문서 흐름이라, 진행 박스가 서면 발끝 버튼을 아래로 밀어낸다. 진행은 §29
+// 진행형 하나(버튼 라벨 '저장 중… n/N')로만 말한다.
+need('멈춘 자리 안내가 같은 고정 영역에 그려진다',
+  /\{saveProgress && saveProgress\.stoppedAt !== '' && \(/.test(client))
+need('달리는 중 진행 박스를 따로 세우지 않는다',
+  !/저장 중 · <span className="tabular-nums">/.test(client),
+  "박스와 버튼 라벨이 같은 상태를 두 문형으로 말하고, 박스가 발끝 버튼을 민다")
+need('진행은 버튼 라벨의 §29 진행형 하나다',
+  /저장 중… <span className="tabular-nums">\{saveProgress\.done\}\/\{saveProgress\.total\}<\/span>/.test(client))
 need('실패 문안이 남은 임시저장 유무로 갈린다',
   /saveFailed\.some\(f => rowDrafts\[f\.id\] != null\)/.test(client),
   "드래프트가 없는데 '임시저장은 그대로 남아 있습니다' 는 거짓이다")
@@ -169,7 +178,7 @@ need('비운 뒤 §16 적용취소를 노출한다',
   /pushToast\('success', '임시저장 비움', \{[\s\S]{0,120}?action: \{ label: '적용취소', run:/.test(clearLoc),
   '적용취소 없이 지우면 6초 안에 되돌릴 길이 사라진다')
 need('되돌릴 값을 지우기 전에 붙잡는다',
-  before(clearLoc, 'const snapshot = (await Promise.all(snapLocIds.map(id =>', 'deleteStockCheckDraft(t.itemId, t.locId)'),
+  before(clearLoc, 'const snapshot = (await getLocationDraftsFor(snapLocIds)', 'deleteStockCheckDraft(t.itemId, t.locId)'),
   '지운 뒤에는 서버에 물어볼 자리가 없다')
 need('적용취소가 붙잡은 값을 그대로 되쓴다',
   /Promise\.allSettled\(snapshot\.map\(d => saveStockCheckDraft\(\{/.test(clearLoc))
@@ -293,6 +302,11 @@ need('드래프트 읽기가 위치마다 왕복하지 않는다',
   "'전체'는 위치 수 × 2 회 왕복이 된다 — 위치 목록을 통째로 넘기는 한 호출로 읽는다")
 need('한 번에 읽는 액션을 부른다',
   /getLocationDraftsFor\(ids\)/.test(locEffect))
+// 비우기 적용취소의 스냅샷도 같은 축이다 — 여기만 위치마다 돌면 '전체'에서 비우기 한 번에
+// 36 왕복이 되고, 그 왕복이 끝나야 삭제가 시작된다.
+need('비우기 스냅샷도 한 호출로 읽는다',
+  /getLocationDraftsFor\(snapLocIds\)/.test(clearLoc) && !/getLocationDrafts\(/.test(clearLoc),
+  '되돌릴 값을 붙잡는 자리가 위치 수만큼 왕복하면 비우기가 그만큼 늦어진다')
 need('그 액션이 쿼리 두 개다',
   /export async function getLocationDraftsFor\(/.test(actions) &&
   /const \[locRows, nullRows\] = await Promise\.all\(\[\s*\n\s*prisma\.stockCheckDraft\.findMany\(\{ where: \{ locationId: \{ in: locationIds \}/.test(actions),
@@ -316,12 +330,22 @@ need('완료 핸들러가 그 쌍의 서버 임시저장도 지운다',
   '화면만 비우면 다음 진입에서 옮기기 전의 값이 되살아난다')
 need('임시저장 삭제 반환값을 읽는다',
   /const okFlags = settled\.map\(s => s\.status === 'fulfilled' && s\.value\.ok\)/.test(tDone))
+// 스냅샷은 **서버에서** 읽는다. 메모리 rowDrafts 는 지금 범위의 쌍만 담는데 지우기는 (품목, 위치)
+// 키로 무조건 가므로, 범위 밖 도착지 드래프트는 지워지기만 하고 되돌릴 값이 없었다.
 need('지우기 전에 스냅샷을 잡는다',
-  before(tDone, 'const snapshot = pairs.map(p => {', 'deleteStockCheckDraft('),
+  before(tDone, 'const serverDrafts = await getLocationDraftsFor([res.fromId, res.toId])', 'deleteStockCheckDraft('),
   '지운 뒤에는 서버에 물어볼 자리가 없다')
+need('스냅샷이 범위 밖 도착지까지 서버에서 읽는다',
+  /getLocationDraftsFor\(\[res\.fromId, res\.toId\]\)/.test(tDone) && !/draft: rowDrafts\[/.test(tDone),
+  '메모리 rowDrafts 로 잡으면 범위 밖 도착지 드래프트는 지워지고 되돌릴 값이 없다')
+// 이동 점검은 같은 날·6시간 안이면 뒤따르는 위치 점검의 머지 대상이다 — 그대로 지우면 그 위에
+// 얹힌 실측까지 사라진다. 기대값 셋을 되넘겨 '내가 만든 그 점검 그대로' 일 때만 지운다.
 need('적용취소가 이동 점검을 지운다',
-  /deleteStockCheck\(res\.checkId\)/.test(tDone),
-  '이동은 점검으로 기록된다 — 그 점검을 지우는 것이 적용취소다(§16)')
+  /deleteStockCheck\(res\.checkId, \{ createdAtMs: res\.createdAtMs, rowCount: res\.rowCount, markerSum: res\.markerSum \}\)/.test(tDone),
+  '이동은 점검으로 기록된다 — 그 점검을 지우는 것이 적용취소다(§16), 단 얹힌 점검이 없을 때만')
+need('적용취소가 옮긴 뒤 새로 적은 입력을 덮지 않는다',
+  (tDone.match(/if \(\(n\[s\.k\] \?\? ''\) === ''\) n\[s\.k\] = s\.(before|after)/g) ?? []).length === 2,
+  '6초 사이에 새로 센 값이 옮기기 전 값으로 되돌아간다')
 need('적용취소가 §16 토스트 액션에 달려 있다',
   /action: \{ label: '적용취소', run: \(\) => \{ void \(async \(\) => \{/.test(tDone))
 need('적용취소가 있었던 임시저장만 되쓴다',
@@ -332,6 +356,14 @@ need('적용취소가 입력 문자열도 되돌린다',
 need('늦게 눌린 적용취소는 다른 위치의 패널을 안 건드린다',
   /if \(locIdRef\.current === restoreLocId\)/.test(tDone),
   'handleClearLocDrafts 와 같은 갈림 — 안 가르면 다른 위치의 사실을 이 위치의 것처럼 말한다')
+// 남은 드래프트가 없으면 발끝 칩도 내린다 — settleChain 의 규칙과 같은 축이다(전수 대조).
+// 안 내리면 임시저장이 하나도 없는데 칩이 '임시저장 후 수정됨' 으로 남아 유령이 된다.
+need('두 쌍을 비운 뒤 발끝 칩도 내린다',
+  /Object\.keys\(rowDraftsRef\.current\)\.every\(k => keys\.includes\(k\) && okFlags\[keys\.indexOf\(k\)\]\)/.test(tDone) &&
+  /setLocDraftSavedAt\(null\); locDraftSnapRef\.current = null/.test(tDone))
+need('적용취소가 내렸던 칩을 다시 세운다',
+  /if \(had\.some\(\(_, i\) => backOk\[i\]\)\) \{ setLocDraftSavedAt\(/.test(tDone),
+  '되쓴 드래프트가 있는데 칩이 없으면 비울 길이 화면에서 사라진다')
 need('완료 토스트는 하나다',
   (tDone.match(/pushToast\('success'/g) ?? []).length === 1,
   '§27.2 이중 통지 금지 — 모달이 또 띄우면 같은 사건을 두 번 알린다')
@@ -342,11 +374,14 @@ need('임시저장 정리 실패가 적용취소를 빼앗지 않는다',
   '옮기기는 이미 적용됐다 — 정리 실패로 되돌릴 길이 사라지면 그게 더 큰 사고다(§16)')
 const tSubmit = fnBody(client, '  const submit = async () => {')
 need('옮기기 모달의 submit 을 찾음', tSubmit.length > 0)
-need('행 진입에서는 모달이 제 토스트를 띄우지 않는다',
-  /if \(!lockItem\) \{[\s\S]{0,400}?pushToast\('success'/.test(tSubmit),
-  '완료 통지의 주인은 하나다 — 행 진입은 패널이 두 칸을 비운 사실까지 함께 말한다')
+need('패널 진입에서는 모달이 제 토스트를 띄우지 않는다',
+  /if \(!silent\) \{[\s\S]{0,400}?pushToast\('success'/.test(tSubmit),
+  '완료 통지의 주인은 하나다 — 패널이 두 칸을 비운 사실까지 함께 말한다')
 need('모달이 결과를 호출부에 넘긴다',
-  /onDone\(\{ checkId, trackedItemId: item\.id, fromId, toId, qty: moveQty, swap: swapMode \}\)/.test(tSubmit))
+  /onDone\(\{\s*\n?\s*checkId, trackedItemId: item\.id, fromId, toId, qty: moveQty, swap: swapMode,/.test(tSubmit))
+// 적용취소 기대값 — 옮기기 결과에 실어야 호출부가 '얹힌 점검' 을 가려낼 수 있다.
+need('모달이 적용취소 기대값도 함께 넘긴다',
+  /createdAtMs: res\.createdAtMs, rowCount: res\.rowCount, markerSum: res\.markerSum/.test(tSubmit))
 // 행 버튼 — 좌 '다른 곳으로' / 우 '옮김 없음' 한 줄. 허브 행에는 두지 않는다(§27.1).
 need('비허브 행에 다른 곳으로가 있다',
   (client.match(/>\s*다른 곳으로\s*</g) ?? []).length === 1)
@@ -359,6 +394,10 @@ const rowBtnRow = (() => {
 need('두 버튼이 한 줄에 마주 선다',
   rowBtnRow.length > 0 && /다른 곳으로/.test(rowBtnRow),
   '좌 다른 곳으로 · 우 옮김 없음 — justify-between 한 줄이 목업이다')
+// 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이 없다 — 열어도 출발지 칩이 하나도 없는 막다른 모달이다.
+need('잔량 0 행에는 다른 곳으로가 없다',
+  /\{prev != null && prev\.qty !== 0 && \(/.test(client),
+  '눌러도 고를 출발지가 없는 모달이 뜬다')
 need('히트영역 문법이 옮김 없음과 같다',
   (client.match(/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/g) ?? []).length === 2,
   '글자만이면 19px 이다 — §25 유사요소 확장으로 44px 를 낸다')
@@ -372,9 +411,16 @@ need('허브 행에는 다른 곳으로가 없다',
   !/다른 곳으로/.test(hubBranch),
   "창고에서 나가는 이동은 도착지 행의 '채운 후' 가 정본이다 — 같은 일에 입구를 둘 만들지 않는다")
 need('행 진입이 품목 고정·출발지 프리셀렉트로 연다',
-  /<TransferStockModal rows=\{rows\} z=\{260\} lockItem\s*\n\s*initialItemId=\{rowTransfer\.itemId\} initialFromId=\{rowTransfer\.fromId\}/.test(client))
-need('행 진입만 완료 결과를 소비한다',
-  /onDone=\{result => \{ setRowTransfer\(null\); if \(result\) void handleTransferDone\(result\) \}\}/.test(client))
+  /<TransferStockModal rows=\{rows\} z=\{260\} lockItem silent\s*\n\s*initialItemId=\{rowTransfer\.itemId\} initialFromId=\{rowTransfer\.fromId\}/.test(client))
+// 헤더 '위치 이동' 도 같은 구멍을 연다 — 두 진입이 같은 완료 핸들러를 타야 옆 버튼에 같은
+// 결함이 남지 않는다. 통지의 주인도 둘 다 패널이다(silent).
+need('패널의 두 진입이 모두 완료 결과를 소비한다',
+  /onDone=\{result => \{ setRowTransfer\(null\); if \(result\) void handleTransferDone\(result\) \}\}/.test(client) &&
+  /onDone=\{result => \{ setTransferOpen\(false\); if \(result\) void handleTransferDone\(result\) \}\}/.test(client),
+  '헤더 진입만 빠지면 거기서 옮긴 뒤 옮기기 전 값이 그대로 저장된다')
+need('패널의 두 진입이 모두 모달 토스트를 끈다',
+  /<TransferStockModal rows=\{rows\} silent onClose=/.test(client) &&
+  /<TransferStockModal rows=\{rows\} z=\{260\} lockItem silent/.test(client))
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
