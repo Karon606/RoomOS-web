@@ -87,3 +87,40 @@ export function detectHubShort(base: LocBreakdown[], patch: LocCheckPatch, allow
     .map(lb => ({ locationId: lb.locationId, qty: lb.qty }))
   return { code: 'HUB_SHORT', hubLocationId: patch.hubLocationId, hubQty, shortfall: patch.restockedQty - hubQty, others }
 }
+
+// 여러 위치를 한 번에 적용(순수) — 아이템별 점검 폼의 원자 저장이 쓴다(2026-09-15 운영자 결정 (c)).
+//
+// 왜 접기인가. 위치 패널(경로 A)은 (품목, 위치) 쌍마다 서버를 한 번씩 부르고 그 결과 위에 다음
+// 쌍을 얹는다. 아이템별 폼은 한 품목의 여러 칸을 **한 번에** 보내므로, 그 '얹기'를 서버 안에서
+// 그대로 반복해야 두 화면의 장부가 한 글자도 안 갈린다. 그래서 여기서 하는 일은 패널이 왕복으로
+// 하던 것과 정확히 같다 — 패치마다 detectHubShort 로 게이트를 지나고 applyLocationCheck 로 접는다.
+//
+// 표식(carried)이 저절로 맞는 이유. 첫 패치의 base 는 직전 점검이라 표식이 없고(undefined),
+// 그래서 비점검 행은 전부 이월(true)로 찍힌다. 두 번째 패치부터는 base 가 '이 점검의 현재 상태'라
+// 앞 패치가 남긴 실측(false)·마커를 승계한다 — updateStockCheck 의 base 와 같은 자리가 된다.
+// 결과적으로 안 적은 행 true / 적은 행 false / 허브 미입력 + 옮김 있음은 차감된 파생 true /
+// 허브를 적었으면 그 패치가 마지막에 덮어 false 다. 허브 패치를 맨 뒤에 두는 것은 **호출부의 몫**이다
+// (패널의 buildUnits 가 허브 행을 맨 뒤로 미는 것과 같은 규칙 — 먼저 쓰면 그 위에서 또 차감된다).
+//
+// 원자성. 한 패치라도 허브 부족에 걸리면 **몇 번째 패치**인지를 실어 돌려주고 아무것도 내지 않는다.
+// 부분 반영으로 끝나면 화면은 '저장됨'인데 장부는 절반이 되고, 그 절반이 다음 base 가 된다.
+export type LocChecksResult =
+  | { ok: true; out: LocQtyOut[] }
+  | { ok: false; index: number; short: HubShort }
+export function applyLocationChecks(base: LocBreakdown[], patches: LocCheckPatch[], allowHubClamp?: boolean): LocChecksResult {
+  let cur: LocBreakdown[] = base
+  // 패치가 0건이면 접을 것이 없다 — 그때의 결과는 '전부 이월'이다(한 행도 실측이 아니다).
+  let out: LocQtyOut[] = base.map(lb => ({
+    storageLocationId: lb.locationId, qty: lb.qty,
+    ...(lb.restockedQty != null && lb.restockedQty > 0 ? { restockedQty: lb.restockedQty } : {}),
+    carried: lb.carried === undefined ? true : lb.carried,
+  }))
+  for (let i = 0; i < patches.length; i++) {
+    const short = detectHubShort(cur, patches[i], allowHubClamp)
+    if (short) return { ok: false, index: i, short }
+    out = applyLocationCheck(cur, patches[i])
+    // 다음 패치의 base = 이 패치까지 반영된 현재 상태. 마커·표식을 그대로 들고 간다.
+    cur = out.map(o => ({ locationId: o.storageLocationId, qty: o.qty, restockedQty: o.restockedQty ?? null, carried: o.carried ?? null }))
+  }
+  return { ok: true, out }
+}

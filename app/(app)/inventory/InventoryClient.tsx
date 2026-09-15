@@ -14,6 +14,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
 import { overbookExcess, calcLocMove } from '@/lib/stockLedger'
+import type { LocCheckPatch } from '@/lib/stockCheckMerge'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -110,6 +111,10 @@ const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); 
 // 화면은 트리를 **다시 엮지 않는다** — 두 벌을 만들면 순서가 언젠가 갈린다. 자리(들여쓰기)와
 // 구간(서브트리)만 여기서 센다.
 const LOC_INDENT_PX = 12   // 승인 목업(402px) 기준 — 한 단계당 12px
+
+// 점검 입력칸 — 아이템별 폼(CheckForm)과 위치 패널(LocationBatchCheckModal)이 **한 벌**로 쓴다.
+// 같은 일을 하는 두 화면이 각자 문자열을 들면 언젠가 한쪽만 바뀐다(§12 한 폼 안 입력 통일).
+const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
 /** 자기 + 자손을 DFS 순 그대로. 목록이 DFS 라 '자기 다음부터 depth 가 자기보다 깊은 동안'이 자손 전체다. */
 function locSubtree(all: StorageLocationNode[], id: string): StorageLocationNode[] {
@@ -220,6 +225,7 @@ type LocDragView = {
   id: string
   ids: Set<string>
   height: number
+  rowHeight: number             // 머리 행 한 줄의 실측 높이 — 고스트 카드의 min-height
   head: StorageLocationNode[]
   more: number
   rootDepth: number
@@ -280,7 +286,11 @@ function locHitOf(s: LocDragSession, y: number, all: StorageLocationNode[]): Loc
       const capped = y < mid
         ? make(self.parentId, at, r.depth, r.id, 'before', top)
         : make(self.parentId, at + 1, r.depth, r.id, 'after', afterY)
-      return { ...capped, note: `${MAX_DEPTH}단계를 넘어 아래로 넣을 수 없습니다` }
+      // note 는 **몸통 자리에서만** 뜬다(재검수 2026-09-16). 위·아래 12px 은 다른 행에서와 똑같이
+      // 앞/뒤 형제로 서는 유효한 자리라, 거기서 '못 넣는다' 고 말하면 눈앞의 실선과 말이 어긋난다.
+      // 몸통에서만 말하면 캡션('행 가운데에 놓으면 그 위치 아래로')이 거짓이 되는 그 구간만 메운다.
+      const inBody = y >= top + LOC_EDGE_PX && y < bottom - LOC_EDGE_PX
+      return inBody ? { ...capped, note: `${MAX_DEPTH}단계를 넘어 아래로 넣을 수 없습니다` } : capped
     }
     if (y < top + LOC_EDGE_PX) return make(self.parentId, at, r.depth, r.id, 'before', top)
     if (y >= bottom - LOC_EDGE_PX) return make(self.parentId, at + 1, r.depth, r.id, 'after', afterY)
@@ -466,7 +476,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [detailId, setDetailId]           = useState<string | null>(null)
   // 상세 진입 시 시작 모드 — 기본은 보기, '다음 품목' 이어가기로 열면 점검 폼부터(아이템별 연속 점검)
   const [detailInitialMode, setDetailInitialMode] = useState<'view' | 'check'>('view')
-  const openDetail = (id: string, m: 'view' | 'check' = 'view') => { setDetailInitialMode(m); setDetailId(id) }
+  // 이번 진입에서 점검을 저장한 품목 — 그 품목의 보기 화면 맨 위에만 '다음 품목' 한 줄이 선다.
+  // 상태를 모달 안에 두지 않는 이유는 그 함수가 `if (!row) return null` 뒤에 훅을 세우는 자리라,
+  // 훅을 하나 더 얹으면 react-hooks/rules-of-hooks 경고가 한 건 늘기 때문이다(델타 0 규칙).
+  const [checkSavedId, setCheckSavedId] = useState<string | null>(null)
+  const openDetail = (id: string, m: 'view' | 'check' = 'view') => { setCheckSavedId(null); setDetailInitialMode(m); setDetailId(id) }
   const [error, setError]                 = useState('')
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
@@ -1152,15 +1166,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         // 아이템별 연속 점검 — 현재 보이는(검색·탭 스코프) 목록 순서에서 다음 품목 id
         const navRows = grouped.flatMap(g => g.rows)
         const curIdx = navRows.findIndex(r => r.id === detailId)
-        const nextId = curIdx >= 0 && curIdx < navRows.length - 1 ? navRows[curIdx + 1].id : null
+        const nextRow = curIdx >= 0 && curIdx < navRows.length - 1 ? navRows[curIdx + 1] : null
         return (
           <DetailModal
             key={detailId}
             row={rows.find(r => r.id === detailId) ?? null}
             initialMode={detailInitialMode}
-            nextId={nextId}
+            nextId={nextRow?.id ?? null}
+            nextLabel={nextRow?.label ?? null}
+            checkSaved={checkSavedId === detailId}
+            onCheckSaved={() => setCheckSavedId(detailId)}
             onGoToItem={id => openDetail(id, 'check')}
-            onClose={() => setDetailId(null)}
+            onClose={() => { setCheckSavedId(null); setDetailId(null) }}
             onChange={() => { router.refresh(); refreshDrafts() }}
             onDraftChange={refreshDrafts}
             targetMonth={targetMonth}
@@ -1498,10 +1515,69 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   )
 }
 
-function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth, initialMode = 'view', nextId = null, onGoToItem }: {
+// 재고 상세 모달의 골격 — **자기 여백을 직접 갖는다**. 이 모달은 풀블리드(bodyClassName='')라
+// 하위 폼마다 제 여백을 세우는데, 골격만 맨몸 SkeletonRows 였다. 그래서 첫 페인트가 모달 벽에
+// 붙어 뜨고 로디드 순간 좌우 20/24px·상하 16px 이 한꺼번에 밀려 들어왔다.
+// 골격은 **열릴 모드의 모양**을 본뜬다(§21 결정표 5 — 모달 내부는 인라인 스켈레톤). '다음 품목'
+// 으로 이어 열면 점검 폼부터 뜨므로, 그때 보기 골격을 그리면 로디드에서 통째로 갈아엎히는 점프가 된다.
+// 막대 색은 재고 loading.tsx 와 같은 --canvas 다(§17 최대 8 — 여기서는 최상단 블록 8).
+function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
+  const bar = 'rounded-md bg-[var(--canvas)] animate-pulse'
+  return (
+    <div className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback" aria-busy="true" aria-label="불러오는 중">
+      {mode === 'check' ? (
+        <>
+          {/* 점검일 라벨 + 입력(44px) */}
+          <div className="space-y-1.5">
+            <div className={`h-3 w-12 ${bar}`} />
+            <div className={`h-11 ${bar}`} />
+          </div>
+          {/* '위치별 잔량' 라벨줄 */}
+          <div className={`h-3 w-24 ${bar}`} />
+          {/* 위치 행 두 개 — 제목 + 참고줄 + 2열 입력 */}
+          {[0, 1].map(i => (
+            <div key={i} className="space-y-1">
+              <div className={`h-3 w-28 ${bar}`} />
+              <div className={`h-5 ${bar}`} />
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className={`h-9 ${bar}`} />
+                <div className={`h-9 ${bar}`} />
+              </div>
+            </div>
+          ))}
+          {/* 요약줄 · 메모 · 전체 보정 */}
+          <div className={`h-7 ${bar}`} />
+          <div className={`h-11 ${bar}`} />
+          <div className={`h-14 ${bar}`} />
+          {/* 발끝 3칸 — 취소 · 임시저장 · 저장 */}
+          <div className="flex gap-2 pt-2">
+            <div className={`h-11 w-16 ${bar}`} />
+            <div className={`h-11 flex-1 ${bar}`} />
+            <div className={`h-11 flex-1 ${bar}`} />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* 마지막 점검 캡션 · 탭 세그먼트 · 창고(허브) 칩 */}
+          <div className={`h-3 w-40 ${bar}`} />
+          <div className={`h-8 ${bar}`} />
+          <div className={`h-7 w-44 ${bar}`} />
+          {/* 타임라인 행 */}
+          <div className="space-y-2">
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className={`h-12 ${bar}`} />)}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth, initialMode = 'view', nextId = null, nextLabel = null, checkSaved = false, onCheckSaved, onGoToItem }: {
   row: InventoryRow | null; onClose: () => void; onChange: () => void; onDraftChange?: () => void
   targetMonth: string; onChangeMonth: (delta: number) => void
-  initialMode?: 'view' | 'check'; nextId?: string | null; onGoToItem?: (id: string) => void
+  initialMode?: 'view' | 'check'; nextId?: string | null; nextLabel?: string | null; onGoToItem?: (id: string) => void
+  // 이번 진입에서 점검을 저장했는가 — 호출부가 들고 있다(여기 훅을 하나 더 세우지 않으려고).
+  checkSaved?: boolean; onCheckSaved?: () => void
 }) {
   if (!row) return null
   const trackedItemId = row.id
@@ -1514,6 +1590,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const [pending, startTransition] = useTransition()
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [hubOpen, setHubOpen] = useState(false)
+
   const changeItemHub = (locId: string | null) => {
     setHubOpen(false)
     startTransition(async () => {
@@ -1667,15 +1744,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {/* 렌더 오류가 모달을 조용히 닫던 문제 방지 — 안내+자취 기록(오류신고 0861b35f). resetKey=mode로 모드 전환 시 재시도 */}
       <ErrorBoundary label="재고 상세" resetKey={mode}>
       {!data ? (
-        <SkeletonRows rows={5} className="py-1" />
+        <DetailModalSkeleton mode={initialMode} />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} lastCheckCreatedAt={row.lastCheckCreatedAt} hiddenLocationIds={row.hiddenLocationIds}
           currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
           onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
-          setMode('view'); reload(); onChange()
-          pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
-            ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
-            : undefined)
+          // 성공 토스트의 주인은 CheckForm 하나다 — 여기서 또 띄우면 같은 사건을 두 번 알리고
+          // (§27.2), 그 토스트의 '다음 품목' 은 6초 뒤 사라져 이어갈 자리를 잃는다.
+          setMode('view'); onCheckSaved?.(); reload(); onChange()
         }} onDraftChange={onDraftChange} />
       ) : mode === 'reconcile' ? (
         <TimelineReconcileForm
@@ -1706,6 +1782,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                 </p>
               )
             })()}
+            {/* 연속 점검 이어가기 — 저장한 뒤 모달이 닫힐 때까지 남는다(§16·§18 영속 자리).
+                히트영역은 §25 유사요소 확장으로 44px — 글자만으로는 16px 이다. */}
+            {checkSaved && nextId && nextLabel && onGoToItem && (
+              <button type="button" onClick={() => onGoToItem(nextId)}
+                className="relative block mb-2 text-[13px] text-[var(--tc-text)] hover:underline before:absolute before:content-[''] before:-inset-x-2 before:-inset-y-[14px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                다음 품목: {nextLabel} ›
+              </button>
+            )}
             <SegmentedControl
               size="sm"
               ariaLabel="품목 상세 탭"
@@ -3376,28 +3460,33 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   const prevRestockedMap = Object.fromEntries(lastCheckBreakdown.map(lb => [lb.locationId, lb.restockedQty]))
   const hasPrev = lastCheckBreakdown.length > 0
 
-  // 첫 허브 위치 (다중 허브면 첫 번째 — 보충량 자동 차감 대상)
-  const hubLoc = chkLocations.find(l => l.isHub)
+  // 이 품목의 창고(허브). **숨김 필터 전의 목록에서 찾는다** — 위치 패널(`r.locations.find(l => l.isHub)`)과
+  // 같은 규칙이다. 숨긴 허브를 못 찾으면 옮김이 계산돼도 차감할 자리가 없어 그 이동이 조용히 사라진다.
+  // 입력 행은 그래도 안 선다(렌더는 chkLocations 를 돈다) — 안 적히니 실측 패치도 안 실린다.
+  const hubLoc = item.locations.find(l => l.isHub)
   const hubPrev = hubLoc ? (prevMap[hubLoc.id] ?? 0) : 0
 
   // 보충 모드: 이전 점검이 있을 때만. 첫 점검은 단순 잔량 입력.
   const restockMode = hasPrev && hasLocations
 
-  // 단순 모드 — 위치별 잔량 1칸 (첫 점검 또는 위치 없음)
-  const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(chkLocations.map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']))
-  )
+  // 단순 모드 — 위치별 잔량 1칸 (첫 점검 또는 위치 없음). **프리필 없음** — 직전 점검이 없는
+  // 자리라 채워 넣을 '이전' 이 애초에 없다(있으면 restockMode 로 간다).
+  const [locationQtys, setLocationQtys] = useState<Record<string, string>>({})
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
-  // 보충 모드 — 위치별 "보충 전" + "보충 후"
-  // "보충 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
-  // 동일하게, "보충 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
-  // 현재 잔량은 빈칸으로 시작 — 직접 세어 입력(미리 채운 값 수정이 번거로움). 미변경 위치는 '직전값 유지'로 채움.
-  // 보충 후만 입력하고 현재 잔량을 비운 경우 빈칸은 0 이다(자리표시자 그대로, 운영자 확정 2026-09-01) — 옮김량 = 채운 후 전체.
+  // 보충 모드 — 위치별 "채우기 전" + "채운 후". 위치 패널(LocationBatchCheckModal)과 같은 축이다.
+  // **허브 행도 beforeQtys 에 묶는다**(2026-09-15 통일). 허브를 afterQtys 에 묶으면 calcLocMove 가
+  // 후 − 전(빈칸=0) = 잔량 전체를 옮김량으로 셈해 허브 자기 행에 +N 마커가 박힌다(2026-09-11 김치).
+  // 창고에서 창고로 옮기는 일은 없으므로 허브 칸은 실측 한 값이지 옮김이 아니다.
+  // 두 칸 모두 빈칸으로 시작 — 직접 세어 입력한다. 안 적은 행은 저장에서 빠져 직전값이 이월된다.
+  // 채운 후만 입력하고 채우기 전을 비운 경우 빈칸은 0 이다(운영자 확정 2026-09-01) — 옮김량 = 채운 후 전체.
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
-  // 허브 사용자 보정 여부 — true 면 자동 차감값을 덮어쓰지 않음
-  const [hubTouched, setHubTouched] = useState(false)
+  // 허브 실측 여부 = beforeQtys[허브] 가 비어 있지 않은가. 따로 든 플래그(hubTouched)는 폐기했다 —
+  // 같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다.
+  const hubMeasured = hubLoc ? (beforeQtys[hubLoc.id] ?? '') !== '' : false
+  // (품목, 위치) 행 캡션의 기준값 — 어느 숫자가 임시저장본인지 행마다 말한다(위치 패널과 같은 문법).
+  const [rowDrafts, setRowDrafts] = useState<Record<string, { savedAt: number; before: string; after: string }>>({})
 
   const [qty, setQty]   = useState('')
   const [memo, setMemo] = useState('')
@@ -3433,12 +3522,16 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
         if (typeof main.memo === 'string') setMemo(main.memo)
         if (main.locationQtys) setLocationQtys(prev => ({ ...prev, ...main.locationQtys }))
       }
-      // 보충 전/후 — main 값 + 위치별 드래프트 cross-merge (위치별 savedAt 더 최신이면 우선).
+      // 채우기 전/후 — main 값 + 위치별 드래프트 cross-merge (위치별 savedAt 더 최신이면 우선).
       // 두 모드(아이템별/위치별)에서 임시저장한 값이 폼에 함께 반영되도록.
+      // **허브 특례는 없다** — 두 화면 모두 허브를 before 에 묶으므로 키가 그대로 맞아떨어진다.
       const beforeOv: Record<string, string> = { ...(main?.beforeQtys ?? {}) }
       const afterOv:  Record<string, string> = { ...(main?.afterQtys ?? {}) }
-      const hubIds = new Set(chkLocations.filter(l => l.isHub).map(l => l.id))
-      let hubTouched = !!main?.hubTouched
+      // 구 문서 호환 — 허브 입력이 '채운 후'에 묶여 있던 시절의 드래프트는 '잔량'(before)으로 옮긴다.
+      if (main?.hubTouched && hubLoc && main.afterQtys?.[hubLoc.id] != null) { beforeOv[hubLoc.id] = String(main.afterQtys[hubLoc.id]); delete afterOv[hubLoc.id] }
+      // 행 캡션의 기준 시각 — 그 행의 값이 어느 저장본에서 왔는가.
+      const savedAtOf: Record<string, number> = {}
+      for (const id of [...Object.keys(beforeOv), ...Object.keys(afterOv)]) savedAtOf[id] = mainSavedAt
       let latestSavedAt = mainSavedAt
       for (const dr of drafts) {
         if (dr.locationId == null) continue
@@ -3446,17 +3539,15 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
         if (!dd) continue
         const sv = typeof dd.savedAt === 'number' ? dd.savedAt : 0
         const newer = sv >= mainSavedAt
-        if (dd.before != null && (newer || beforeOv[dr.locationId] == null)) beforeOv[dr.locationId] = String(dd.before)
-        if (dd.after != null && (newer || afterOv[dr.locationId] == null)) {
-          afterOv[dr.locationId] = String(dd.after)
-          if (hubIds.has(dr.locationId)) hubTouched = true
-        }
+        if (dd.before != null && (newer || beforeOv[dr.locationId] == null)) { beforeOv[dr.locationId] = String(dd.before); savedAtOf[dr.locationId] = Math.max(savedAtOf[dr.locationId] ?? 0, sv) }
+        if (dd.after != null && (newer || afterOv[dr.locationId] == null)) { afterOv[dr.locationId] = String(dd.after); savedAtOf[dr.locationId] = Math.max(savedAtOf[dr.locationId] ?? 0, sv) }
         if (sv > latestSavedAt) latestSavedAt = sv
       }
-      // 초기 prefill 위에 병합 (드래프트 없는 위치는 prefill 유지)
       if (Object.keys(beforeOv).length) setBeforeQtys(prev => ({ ...prev, ...beforeOv }))
       if (Object.keys(afterOv).length)  setAfterQtys(prev => ({ ...prev, ...afterOv }))
-      setHubTouched(hubTouched)
+      const restoredRows: Record<string, { savedAt: number; before: string; after: string }> = {}
+      for (const [id, sv] of Object.entries(savedAtOf)) restoredRows[id] = { savedAt: sv, before: beforeOv[id] ?? '', after: afterOv[id] ?? '' }
+      if (Object.keys(restoredRows).length) setRowDrafts(restoredRows)
       if (latestSavedAt > 0) setDraftSavedAt(latestSavedAt)
     })
     return () => { active = false }
@@ -3466,15 +3557,25 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     setError('')
     const savedAt = Date.now()
     setDraftPending(true)
-    const snapAtSave = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched })
+    const snapAtSave = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys })
     saveStockCheckDraft({
       trackedItemId: item.id, locationId: null,
-      data: { date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched, savedAt },
+      data: { date, qty, memo, locationQtys, beforeQtys, afterQtys, savedAt },
     }).then(res => {
       setDraftPending(false)
       if (!res.ok) { pushToast('error', res.error); return }
       setDraftSavedAt(savedAt)
       draftSavedSnapRef.current = snapAtSave
+      // 행 캡션 기준도 이 저장본으로 새로 세운다 — 값이 든 행만(위치 패널과 같은 규칙).
+      setRowDrafts(() => {
+        const next: Record<string, { savedAt: number; before: string; after: string }> = {}
+        for (const l of chkLocations) {
+          const b = beforeQtys[l.id] ?? '', a = afterQtys[l.id] ?? ''
+          if (b === '' && a === '') continue
+          next[l.id] = { savedAt, before: b, after: a }
+        }
+        return next
+      })
       pushToast('success', '임시저장됨')
       onDraftChange?.()
     })
@@ -3488,6 +3589,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       if (!res.ok) { pushToast('error', res.error); return }
       setDraftSavedAt(null)
       draftSavedSnapRef.current = null
+      setRowDrafts({})
       pushToast('success', '임시저장 비움')
     })
   }
@@ -3506,9 +3608,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     setLocationQtys(prev => ({ ...prev, [id]: val.replace(/[^0-9.]/g, '') }))
     setTouched(prev => new Set([...prev, id]))
   }
-  const confirmAll = () => setTouched(new Set(chkLocations.map(l => l.id)))
 
-  // 비허브 위치들의 옮김량 합계 — calcLocMove 단일 규칙(저장 buildLocationData 와 동일).
+  // 비허브 위치들의 옮김량 합계 — calcLocMove 단일 규칙(저장 buildLocationPatches 와 동일).
   // 기준선(직전 잔량 = 현재 잔량 기준선)이 신뢰 가능해져 후만 입력해도 화면·허브 차감이 즉시 반영된다.
   const restockSum = restockMode
     ? chkLocations
@@ -3516,43 +3617,40 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
         .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
     : 0
 
-  // 허브의 "보충 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
-  const hubAutoAfter = Math.max(0, hubPrev - restockSum)
-
-  // 저장용 위치별 데이터 계산.
-  // entered = 사용자가 실제로 값을 입력한 행 — 0 을 명시 입력해도 저장되게 구분.
-  // (이전엔 qty>0 필터만 있어 명시적 0 이 걸러지고 carryOver 가 이전 잔량으로 되살렸음)
-  const buildLocationData = (): { storageLocationId: string; qty: number; restockedQty?: number; entered: boolean }[] => {
-    if (!hasLocations) return []
-    if (restockMode) {
-      return chkLocations.map(l => {
-        if (l.isHub) {
-          const userVal = afterQtys[l.id]
-          const finalQty = (hubTouched && userVal !== undefined && userVal !== '') ? Number(userVal) : hubAutoAfter
-          // 허브는 자동 차감(restockSum>0)이 일어났으면 0 이어도 반드시 저장 — 안 하면 carryOver 가 차감 전 값으로 복원
-          return { storageLocationId: l.id, qty: finalQty, entered: (hubTouched && userVal !== undefined && userVal !== '') || restockSum > 0 }
-        }
-        const beforeStr = beforeQtys[l.id] ?? ''
-        const afterStr  = afterQtys[l.id] ?? ''
-        // 전·후 모두 입력 → 옮김량 = max(0, 후-전) / 전만 입력 → 옮김 없이 잔량 = 전
-        // 후만 입력 → 빈 전은 0(옮김량 = 후 전체) / 모두 비움 → entered=false(저장 제외, carryOver 보존)
-        const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
-        const finalQty = afterN ?? beforeN ?? 0
-        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked > 0 ? restocked : undefined, entered: beforeStr !== '' || afterStr !== '' }
-      })
+  // 저장 패치 — 서버(applyLocationChecks)가 이 순서대로 접는다. **비허브 먼저, 허브는 맨 뒤**다
+  // (허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 위치 패널 buildUnits 와 같은 규칙).
+  // 안 적은 행은 패치에 안 실린다 — 서버가 base(직전 점검)에서 그대로 이월한다.
+  const buildLocationPatches = (): LocCheckPatch[] => {
+    const patches: LocCheckPatch[] = []
+    const hubId = hubLoc?.id ?? null
+    for (const l of chkLocations) {
+      if (l.isHub) continue
+      const beforeStr = beforeQtys[l.id] ?? ''
+      const afterStr  = afterQtys[l.id] ?? ''
+      if (beforeStr === '' && afterStr === '') continue
+      // 전·후 모두 입력 → 옮김량 = max(0, 후-전) / 전만 입력 → 옮김 없이 잔량 = 전
+      // 후만 입력 → 빈 전은 0(옮김량 = 후 전체) / 모두 비움 → 패치 없음(직전값 이월)
+      const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
+      patches.push({ checkedLocationId: l.id, afterQty: afterN ?? beforeN ?? 0, restockedQty: restocked, hubLocationId: hubId })
     }
-    // 단순 모드 — 첫 점검
-    return chkLocations.map(l => ({
-      storageLocationId: l.id,
-      qty: Number(locationQtys[l.id]) || 0,
-      entered: String(locationQtys[l.id] ?? '').trim() !== '',
-    }))
+    // 허브는 **적었을 때만** 실린다. 안 적었으면 서버가 옮김 합만큼 차감한 파생값을 이월로 남긴다.
+    if (hubLoc && hubMeasured) {
+      patches.push({ checkedLocationId: hubLoc.id, afterQty: Number(beforeQtys[hubLoc.id]) || 0, restockedQty: 0, hubLocationId: hubId })
+    }
+    return patches
   }
 
-  // 미입력 위치는 저장 시 carryOver 로 직전 값이 보존되므로, 화면 합계도 직전 잔량으로 세어야
-  // '점검 후 잔량'이 저장 결과와 일치한다(예: 안 건드린 5층 상단 1kg 이 0 으로 빠지면 합계가 준다).
+  // 화면 합계 — 서버가 저장할 값과 같은 규칙으로 센다. 적은 행은 그 값, 안 적은 비허브는 직전 잔량
+  // (이월), 허브는 적었으면 그 값이고 안 적었으면 '직전 − 이번 옮김 합'(서버 자동 차감분)이다.
   const computed = restockMode
-    ? buildLocationData().reduce((s, lq) => s + (lq.entered ? lq.qty : (prevMap[lq.storageLocationId] ?? 0)), 0)
+    ? chkLocations.reduce((s, l) => {
+        if (l.isHub) return s + (hubMeasured ? (Number(beforeQtys[l.id]) || 0) : Math.max(0, hubPrev - restockSum))
+        const beforeStr = beforeQtys[l.id] ?? ''
+        const afterStr  = afterQtys[l.id] ?? ''
+        if (beforeStr === '' && afterStr === '') return s + (prevMap[l.id] ?? 0)
+        const { beforeN, afterN } = calcLocMove(beforeStr, afterStr)
+        return s + (afterN ?? beforeN ?? 0)
+      }, 0)
     : (hasLocations
         ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
         : 0)
@@ -3563,7 +3661,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   // 시작 재고 선언이라 장부(0 또는 구매 합)보다 큰 것이 정상이다.
   const enteredAny = hasLocations
     ? (restockMode
-        ? hubTouched || Object.values(beforeQtys).some(v => v !== '') || Object.values(afterQtys).some(v => v !== '')
+        ? Object.values(beforeQtys).some(v => v !== '') || Object.values(afterQtys).some(v => v !== '')
         : touched.size > 0)
     : qty !== ''
   const measuredTotal = hasLocations ? computed : (Number(qty) || 0)
@@ -3588,55 +3686,86 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
           })
           if (!res.ok) { setError(res.error); return }
           await clearDraftsAfterSave()
-          // 같은 날 중복 앵커 안내(백로그 3번) — 저장은 됐고, 지울지는 운영자 몫(자동 삭제 절대 없음).
-          if (res.sameDayNotice) {
-            pushToast('info', '같은 날 점검이 이미 있습니다', {
-              detail: '잔량은 마지막에 저장한 값으로 계산됩니다. 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.',
-            })
-          }
+          // 성공 토스트의 주인은 이 폼 하나다 — 세 갈래 모두 같은 문장·같은 §16 적용취소를 낸다.
+          // 같은 날 중복 앵커(백로그 3번)는 이 토스트의 부연으로 안내한다(토스트를 겹쳐 쌓지 않는다).
+          pushToast('success', '재고 점검 저장됨', {
+            ...(res.sameDayNotice ? { detail: '같은 날 점검이 이미 있습니다. 잔량은 마지막에 저장한 값으로 계산되고, 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.' } : {}),
+            action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
+              if (r.ok) { onDraftChange?.(); onDone() } else pushToast('error', r.error)
+            }) } },
+          })
           onDone()
         } finally { submittingRef.current = false }
       })
       return
     }
 
-    // 입력된 행(0 포함)·보충 행만 저장 — 빈칸 위치는 제외해 carryOver 가 직전 점검값을 보존
-    const locationData = buildLocationData()
-      .filter(lq => lq.entered || lq.qty > 0 || lq.restockedQty != null)
+    if (restockMode) {
+      // 경로 A — 위치 패널과 같은 규칙으로 서버가 접는다(applyLocationChecks). 클라는 허브를
+      // 차감하지 않는다. 차감은 서버의 몫이고, 그래야 두 화면의 장부가 한 글자도 안 갈린다.
+      const locationPatches = buildLocationPatches()
+      if (locationPatches.length === 0) { setError('입력한 위치가 없습니다.'); return }
+      submittingRef.current = true
+      // remainingQty 는 서버가 접은 결과의 합으로 덮인다 — 클라의 셈이 장부가 되지 않는다.
+      const saveArgs = {
+        trackedItemId: item.id, date, remainingQty: 0, memo: memo || undefined,
+        locationPatches, isReconcile: reconcileMode,
+      }
+      // 허브 부족 팝업이 이동으로 채운 뒤 재저장하면 새 점검 id 가 여기로 돌아온다 — 그 id 가
+      // 팝업 마감 뒤 §16 적용취소의 대상이다(팝업의 onResolved 는 id 를 들고 오지 않는다).
+      startTransition(async () => {
+        try {
+          const res = await createStockCheck(saveArgs)
+          if (!res.ok) {
+            if ('code' in res && res.code === 'HUB_SHORT') {
+              // 허브 부족 — 이동 유도 팝업으로 넘긴다. 재저장 시 이동 출처 위치의 패치는 뺀다
+              // (그 위치는 이동 점검이 이미 새 잔량을 썼다 — 옮기기 전에 센 값으로 덮으면 유령 재고).
+              setHubShort({
+                trackedItemId: item.id, itemLabel: '', unit: stockUnit, info: res,
+                retry: (o) => {
+                  const exclude = new Set(o.excludeLocationIds ?? [])
+                  const patches = saveArgs.locationPatches.filter(p => !exclude.has(p.checkedLocationId))
+                  return createStockCheck({ ...saveArgs, locationPatches: patches, allowHubClamp: o.allowHubClamp })
+                },
+              })
+              return
+            }
+            setError(res.error); return
+          }
+          await clearDraftsAfterSave()
+          // 점검 저장에 적용취소가 없었다 — 삭제·입수·폐기·수령에는 다 있는데 **제일 자주 쓰는 저장**에만
+          // 없었다(C페이즈 조사 2026-08-03). 잘못 센 값이 기준선으로 박히면 되돌릴 방법이 없었다.
+          pushToast('success', '재고 점검 저장됨', {
+            ...(res.sameDayNotice ? { detail: '같은 날 점검이 이미 있습니다. 잔량은 마지막에 저장한 값으로 계산되고, 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.' } : {}),
+            action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
+              if (r.ok) { onDraftChange?.(); onDone() } else pushToast('error', r.error)
+            }) } },
+          })
+          onDone()
+        } finally { submittingRef.current = false }
+      })
+      return
+    }
+
+    // 경로 B — 첫 점검 단순 모드. 위치별 절대값을 손으로 적는 자리라 옮김(허브 차감)이라는 개념이 없다.
+    const locationData = chkLocations
+      .map(l => ({ storageLocationId: l.id, qty: Number(locationQtys[l.id]) || 0, entered: String(locationQtys[l.id] ?? '').trim() !== '' }))
+      .filter(lq => lq.entered || lq.qty > 0)
       .map(({ entered: _e, ...rest }) => rest)
     const total = locationData.reduce((s, lq) => s + lq.qty, 0)
     if (total < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
 
     submittingRef.current = true
     // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존(2026-06-01 사용량 왜곡 버그 fix).
-    // restockHubLocationId — 클라가 실제 차감한 허브를 서버 검출과 일치시켜 오탐/미탐 방지.
     const saveArgs = {
       trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
       locationQtys: locationData, carryOverFromLastCheck: true, isReconcile: reconcileMode,
-      restockHubLocationId: hubLoc?.id,
     }
     startTransition(async () => {
       try {
         const res = await createStockCheck(saveArgs)
-        if (!res.ok) {
-          if ('code' in res && res.code === 'HUB_SHORT') {
-            // 허브 부족 — 이동 유도 팝업으로 넘긴다. 재저장 시 이동 출처 위치는 locationQtys 에서 제거(유령 재고 방지).
-            setHubShort({
-              trackedItemId: item.id, itemLabel: '', unit: stockUnit, info: res,
-              retry: (o) => {
-                const exclude = new Set(o.excludeLocationIds ?? [])
-                const locationQtys = saveArgs.locationQtys.filter(lq => !exclude.has(lq.storageLocationId))
-                return createStockCheck({ ...saveArgs, locationQtys, allowHubClamp: o.allowHubClamp })
-              },
-            })
-            return
-          }
-          setError(res.error); return
-        }
+        if (!res.ok) { setError(res.error); return }
         await clearDraftsAfterSave()
-        // 점검 저장에 적용취소가 없었다 — 삭제·입수·폐기·수령에는 다 있는데 **제일 자주 쓰는 저장**에만
-        // 없었다(C페이즈 조사 2026-08-03). 잘못 센 값이 기준선으로 박히면 되돌릴 방법이 없었다.
-        // 같은 날 중복 앵커(백로그 3번)는 이 토스트의 부연으로 안내 — 토스트를 겹쳐 쌓지 않는다.
         pushToast('success', '재고 점검 저장됨', {
           ...(res.sameDayNotice ? { detail: '같은 날 점검이 이미 있습니다. 잔량은 마지막에 저장한 값으로 계산되고, 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.' } : {}),
           action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
@@ -3648,13 +3777,12 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     })
   }
 
-  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+      {/* 안내문 — 위치 패널 헤더와 같은 한 문장이다(같은 일을 두 문형으로 말하지 않는다). */}
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
-          ? '각 위치의 채우기 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 옮겨진 것으로 자동 차감됩니다. (새 입수 기록이 아니라 창고→위치 이동)'
+          ? '채우기 전·후를 입력하면 늘어난 만큼 이 품목의 창고(허브)에서 자동 차감됩니다.'
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
       </p>
       {/* 폐기 바로가기 — 점검을 먼저 저장하면 폐기분이 소모로 잡히므로 순서를 안내(오류신고 a1e048e8) */}
@@ -3668,144 +3796,160 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
+        {/* 높이·radius 는 위치 패널의 점검일과 같은 한 벌이다(§12 한 폼 안 입력 높이 혼용 금지). */}
         <DatePicker value={date} onChange={setDate}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)]" />
       </div>
 
       {hasLocations && restockMode ? (
         <div className="space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
-            {/* 저장 시각 — 아래 참고줄의 '저장된 잔량'이 언제 저장된 값인지. §11 메타 칩 정본.
-                행마다 같은 값이라 폼에 한 번만 세운다(칩을 줄마다 늘리지 않는다). */}
-            {lastCheckCreatedAt && (
-              <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
-                저장 {fmtDate(new Date(lastCheckCreatedAt))} <span className="tabular-nums">{fmtTime(lastCheckCreatedAt)}</span>
-              </span>
-            )}
-          </div>
+          <label className="text-xs font-medium text-[var(--warm-mid)] block">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
+          {/* 저장 시각 — 아래 참고줄의 '저장된 잔량'이 언제 저장된 값인지. 행마다 같은 값이라
+              폼에 한 번만 세운다. 위치 패널의 '이 위치 최근 점검' 캡션과 같은 문법이다(칩 아님). */}
+          {lastCheckCreatedAt && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">
+              최근 점검 {fmtDate(new Date(lastCheckCreatedAt))} <span className="tabular-nums">{fmtTime(lastCheckCreatedAt)}</span>
+            </p>
+          )}
           {chkLocations.map(loc => {
+            // 행 문법은 위치 패널(LocationBatchCheckModal)의 정본을 그대로 쓴다 — 같은 일을 하는
+            // 두 화면이 다른 모양이면 어느 쪽이 맞는지 화면이 말을 못 한다.
             const prevQty = prevMap[loc.id]
-            if (loc.isHub) {
-              // 허브 행 — 후 자동 prefill
-              const userVal = afterQtys[loc.id]
-              const displayAfter = hubTouched && userVal !== undefined ? userVal : String(hubAutoAfter)
-              return (
-                <div key={loc.id} className="space-y-1 bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-xl px-3 py-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{loc.pathName} <span className="text-[var(--warm-muted)]">(허브)</span></span>
-                    {prevQty !== undefined && <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">이전 {prevQty}{stockUnit ?? ''}</span>}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-[var(--warm-muted)] shrink-0">자동 차감 후</span>
-                    <input type="text" inputMode="decimal" autoComplete="off"
-                      value={displayAfter}
-                      onChange={e => { setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }}
-                      className={`w-20 ${inputCls}`} />
-                    <span className="text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
-                    {restockSum > 0 && (
-                      <span className="ml-auto text-[0.65625rem] text-[var(--persimmon-d)] shrink-0">-{Math.round(restockSum * 100) / 100}{stockUnit ?? ''} 차감</span>
-                    )}
-                  </div>
-                </div>
-              )
-            }
-            // 비허브 위치 행 — 전 → 후 (grid 2cols, 라벨은 input 위). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[loc.id] ?? ''
             const afterStr  = afterQtys[loc.id] ?? ''
             const { restocked } = calcLocMove(beforeStr, afterStr)
             const lastRestocked = prevRestockedMap[loc.id]
+            const rowIsHub = loc.isHub
+            // 이 품목의 창고와 그 잔량 — 비허브 행에서 '옮겨올 데가 있는가'의 전제다.
+            const hubStock = !rowIsHub && hubLoc ? { pathName: hubLoc.pathName, qty: prevMap[hubLoc.id] ?? null } : null
+            const rowDraft = rowDrafts[loc.id]
+            const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
             return (
-              <div key={loc.id} className="space-y-1">
+              <div key={loc.id} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.pathName}</span>
+                  <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{loc.pathName}{rowIsHub && <span className="font-normal text-[var(--warm-muted)]"> (창고)</span>}</p>
                 </div>
                 {/* 참고줄 — 입력 중에도 저장된 잔량·저장된 옮김이 계속 보이게. 축을 '저장본'과
                     '이번 입력'으로 갈라 같은 +N 이 한 줄에 두 번 뜨지 않게 한다. */}
-                {(prevQty !== undefined || lastRestocked != null || restocked > 0) && (
+                {(prevQty !== undefined || (lastRestocked != null && lastRestocked > 0) || (!rowIsHub && !!hubStock) || restocked > 0 || (rowIsHub && restockSum > 0)) && (
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                     {prevQty !== undefined && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prevQty}{stockUnit ?? ''}</strong></span>}
                     {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                    {restocked > 0 && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {/* 창고 잔량 — 기록이 없으면 0 이 아니라 '모름'이라 숫자를 만들어내지 않는다. */}
+                    {!rowIsHub && hubStock && (
+                      <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
+                        · {hubStock.pathName} 남음{' '}
+                        {hubStock.qty == null
+                          ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
+                          : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
+                      </span>
+                    )}
+                    {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {/* 허브를 안 적으면 서버가 옮김 합만큼 깎는다 — 그 파생값을 미리 말해 준다.
+                        적는 순간 사라진다(적은 값이 그 자리의 진실이 되므로). */}
+                    {rowIsHub && restockSum > 0 && !hubMeasured && (
+                      <span className="text-[var(--coral)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, hubPrev - restockSum) * 100) / 100}{stockUnit ?? ''}</strong></span>
+                    )}
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-1.5">
+                {/* 임시저장 캡션 — 입력칸 위에, 그 행에만. 어느 숫자가 임시저장본이고 어느 것이
+                    저장본인지 행 단위로 가른다. 위치 패널과 같은 정본 Badge·같은 톤이다. */}
+                {rowDraft != null && (
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
+                    <Badge tone="inspect">
+                      {rowDraftEdited
+                        ? '임시저장 후 수정됨'
+                        : rowDraft.savedAt > 0 ? `임시저장 ${fmtTime(new Date(rowDraft.savedAt))}` : '임시저장됨'}
+                    </Badge>
+                  </div>
+                )}
+                {rowIsHub ? (
+                  // 허브(창고) 행 — 잔량 1칸. **'채우기 전'(beforeQtys)에 묶는다** — '채운 후'에 묶으면
+                  // calcLocMove 가 후 − 전(빈칸=0) = 잔량 전체를 옮김량으로 셈해 허브 자기 행에 +N
+                  // 마커가 박힌다(2026-09-11 김치). 창고에서 창고로 옮기는 일은 없다.
+                  // 빈칸으로 둔다 — 안 적으면 서버가 '직전 − 옮김 합'을 파생으로 남긴다(참고줄이 그 값을 말한다).
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
                     <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                       value={beforeStr}
-                      onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      className={`w-full min-w-0 ${inputCls}`} />
+                      onChange={e => setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      className={qtyInputCls} />
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
+                    {/* 참고줄의 '저장된 잔량' 과 같은 축의 말이다 — 채워 넣는 값이 그것이다.
+                        글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
+                    {prevQty !== undefined && (
+                      <button type="button"
+                        onClick={() => setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) }))}
+                        className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                        저장된 값
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                    <input type="text" inputMode="decimal" autoComplete="off"
-                      value={afterStr}
-                      onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      className={`w-full min-w-0 ${inputCls}`} />
-                  </div>
-                </div>
-                {/* 보충 없음 — 추가 보충 없이 센 값 그대로 확정(보충 후=현재 잔량). 안 셌으면 직전 잔량으로 채움 */}
-                <div className="flex justify-end">
-                  <button type="button"
-                    onClick={() => {
-                      if (beforeStr !== '') setAfterQtys(p => ({ ...p, [loc.id]: beforeStr }))
-                      else if (prevQty !== undefined) {
-                        const v = String(prevQty)
-                        setBeforeQtys(p => ({ ...p, [loc.id]: v }))
-                        setAfterQtys(p => ({ ...p, [loc.id]: v }))
-                      }
-                    }}
-                    className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                    옮김 없음
-                  </button>
-                </div>
+                ) : (
+                  <>
+                    {/* 비허브 위치 점검 — 현재 잔량 / 채운 후(선택). 두 칸 모두 빈칸으로 시작한다. */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
+                        <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                          value={beforeStr}
+                          onChange={e => setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                          className={qtyInputCls} />
+                      </div>
+                      <div>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
+                        <input type="text" inputMode="decimal" autoComplete="off"
+                          value={afterStr}
+                          onChange={e => setAfterQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                          className={qtyInputCls} />
+                      </div>
+                    </div>
+                    {/* 옮김 없음 — 더 옮기지 않고 센 값 그대로 확정(채운 후=현재 잔량). 안 셌으면 저장된 잔량으로 채움.
+                        히트영역 44px — 위로는 mt-1 여백(4px)까지만 늘리고 나머지는 아래로 뻗는다(위치 패널과 같은 한 벌). */}
+                    <div className="flex justify-end mt-1">
+                      <button type="button"
+                        onClick={() => {
+                          if (beforeStr !== '') setAfterQtys(p => ({ ...p, [loc.id]: beforeStr }))
+                          else if (prevQty !== undefined) {
+                            const v = String(prevQty)
+                            setBeforeQtys(p => ({ ...p, [loc.id]: v }))
+                            setAfterQtys(p => ({ ...p, [loc.id]: v }))
+                          }
+                        }}
+                        className="relative text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-2 before:-top-1 before:h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                        옮김 없음
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )
           })}
           <div className="flex justify-between text-[0.65625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-            <span className="text-[var(--warm-mid)]">창고 → 이동 합계 <strong className="text-[var(--coral)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
-            <span className="text-[var(--warm-mid)]">점검 후 잔량 <strong className="text-[var(--coral)]">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">이번 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">점검 후 잔량 <strong className="text-[var(--coral)] tabular-nums">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
       ) : hasLocations ? (
-        // 단순 모드 — 첫 점검 (이전 데이터 없음)
+        // 단순 모드 — 첫 점검 (직전 점검이 없다). 프리필·'이전' 접미·'모두 이전 수량으로 확인'은
+        // 여기서 영영 성립하지 않는 조건(hasPrev && !restockMode)에 달려 있던 죽은 코드였다 — 걷었다.
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
-            {hasPrev && touched.size < chkLocations.length && (
-              <button type="button" onClick={confirmAll}
-                className="text-[0.65625rem] text-[var(--coral)] hover:underline">
-                모두 이전 수량으로 확인
-              </button>
-            )}
-          </div>
-          {chkLocations.map(loc => {
-            const isTouched = touched.has(loc.id)
-            const isPrefilled = !isTouched && prevMap[loc.id] != null
-            return (
-              <div key={loc.id} className="flex items-center gap-2">
-                <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.pathName}</span>
-                <div className="flex-1 relative">
-                  <input
-                    type="text" inputMode="decimal" autoComplete="off"
-                    value={locationQtys[loc.id] ?? ''}
-                    onChange={e => handleLocChange(loc.id, e.target.value)}
-                    placeholder="0"
-                    className={`w-full bg-[var(--canvas)] border rounded-sm px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
-                      isPrefilled
-                        ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]'
-                        : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
-                    }`} />
-                  {isPrefilled && (
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[0.65625rem] text-[var(--ink-mute)] bg-[var(--canvas)] pl-1">이전</span>
-                  )}
-                </div>
+          <label className="text-xs font-medium text-[var(--warm-mid)] block">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
+          {chkLocations.map(loc => (
+            <div key={loc.id} className="flex items-center gap-2">
+              <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.pathName}</span>
+              <div className="flex-1">
+                <input
+                  type="text" inputMode="decimal" autoComplete="off"
+                  value={locationQtys[loc.id] ?? ''}
+                  onChange={e => handleLocChange(loc.id, e.target.value)}
+                  placeholder="0"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               </div>
-            )
-          })}
+            </div>
+          ))}
           <p className="text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-            → 합계 <strong>{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong>
+            합계 <strong className="tabular-nums">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong>
           </p>
         </div>
       ) : (
@@ -3842,7 +3986,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       </label>
       {(draftPending || draftSavedAt) && (() => {
         // §12 임시저장 칩 정본 — 저장 중(카멜) / 임시저장됨 시각(성공 점) / 저장 후 수정됨(뮤트)
-        const curSnap = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched })
+        const curSnap = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys })
         const dirtySinceSave = !draftPending && draftSavedAt != null && draftSavedSnapRef.current != null && draftSavedSnapRef.current !== curSnap
         const restoredOnly = draftSavedAt != null && draftSavedSnapRef.current == null
         if (restoredOnly && draftSavedAt) draftSavedSnapRef.current = curSnap   // 폼 열며 복원된 드래프트를 기준 스냅샷으로
@@ -4984,8 +5128,6 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     })
   }
 
-  const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-
   return (
     <div
       ref={overlayRef}
@@ -5966,6 +6108,8 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     setDrag({
       id, ids: ctx.blocked,
       height: rects[first + block.length - 1].bottom - rects[first].top,
+      // 고스트 카드 한 장의 최소 높이 — 실측이다. 상수로 박으면 행 높이가 바뀌는 날 고스트만 남는다.
+      rowHeight: rects[first].height,
       // 자손이 셋을 넘으면 고스트는 머리 두 줄만 담고 나머지는 숫자로 말한다.
       head: block.length - 1 > 3 ? block.slice(0, 2) : block,
       more: block.length - 1 > 3 ? block.length - 2 : 0,
@@ -6164,21 +6308,17 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
       // (임시저장 패널의 실패 박스와 같은 문법).
       footer={
         <div className="space-y-2">
-          {/* 막힌 드롭의 이유는 여기 한 줄로만 선다 — 행을 흐리면 정작 읽어야 할 그 한 줄이 가장
-              안 읽히고(옮기기 모달에서 이미 겪은 지적), 스크롤 본문에 두면 아래쪽 행에서 난 판정이
-              뷰포트 밖으로 밀린다.
-              **드래그 중에만 마운트하면 안 된다**(디자이너 지적 2026-09-16) — 잡는 순간 footer 가
-              23px 자라고, 오버레이가 items-center 라 패널이 통째로 재정렬되며 행이 11~12px 위로
-              튄다. 그 전에 잰 rect·grabDy 는 옛 좌표라 고스트가 자리표보다 아래에 뜬 채 따라온다.
-              그래서 목록이 있으면 **늘 서 있고** 문구만 드나든다. */}
-          {locs.length > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] min-h-[15px]">
-              {drag != null ? (drop?.reason ?? drop?.note ?? '') : ''}
-            </p>
-          )}
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
+          {/* 캡션 상자는 **하나다**(재검수 2026-09-16). 막힌 이유·깊이 안내·저장 중을 여기서 함께
+              말한다. 종전엔 그 몫이 전용 빈 줄이었고, 드래그 밖에서도 23px 짜리 빈 띠가 늘 서 있었다
+              (드래그 중에만 마운트하면 잡는 순간 footer 가 자라고 오버레이가 items-center 라 패널이
+              재정렬돼 행이 11~12px 튄다 — 그래서 빈 채로라도 세워 두고 있었다).
+              드롭이 유효하면 할 말이 없으므로 평시 문장이 그대로 서 있는다 — 그래야 드래그를 잡는
+              순간에도 상자 높이가 안 바뀐다. 셋 다 같은 10.5px --warm-muted 한 자리다. */}
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-            <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
+            {placing ? '저장 중…' : (drag != null ? (drop?.reason ?? drop?.note ?? null) : null) ?? (
+              <><strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.</>
+            )}
           </p>
           <ModalFooterActions onCancel={onClose}>
             <Btn variant="primary" onClick={onClose}>완료</Btn>
@@ -6191,11 +6331,12 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         )}
         {/* 손잡이가 무엇을 하는지 목록 위에서 미리 말한다 — 몸통 구간(그 위치 아래로 넣기)은
             끌어 보기 전에는 안 보이는 자리라, 모르면 평생 안 쓰는 기능이 된다.
-            상자 높이를 **두 줄로 고정**한다 — `저장 중…` 한 줄로 줄면 목록이 16px 당겨 올라갔다가
-            응답 뒤 다시 내려온다(디자이너 지적 2026-09-16). 바뀌는 것은 글자뿐이어야 한다. */}
+            **글자가 고정이다**(재검수 2026-09-16). 여기서 `저장 중…` 으로 갈아 끼우면 목록 위
+            상자가 두 줄에서 한 줄로 줄어 목록이 통째로 당겨 올라간다. 그래서 높이를 억지로 잡아
+            두고 있었는데(min-h), 진행 상태를 footer 한 상자로 옮긴 지금은 잡아 둘 것도 없다. */}
         {locs.length > 0 && (
-          <p className="text-xs text-[var(--warm-muted)] min-h-[2lh]">
-            {placing ? '저장 중…' : '손잡이를 잡아 끌어 순서와 상위 위치를 바꿉니다. 행 가운데에 놓으면 그 위치 아래로 들어갑니다.'}
+          <p className="text-xs text-[var(--warm-muted)]">
+            손잡이를 잡아 끌어 순서와 상위 위치를 바꿉니다. 행 가운데에 놓으면 그 위치 아래로 들어갑니다.
           </p>
         )}
         {/* 표시선은 목록 위에 겹쳐 뜬다 — 흐름에 끼워 넣으면 그 2px 만큼 아래 행이 밀려 내려가
@@ -6381,18 +6522,22 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 바꾸려면 관리 &gt; 옮기기. */}
             {drop && !drop.blocked && drop.nextPath !== drag.head[0].pathName && (
               <div className="absolute bottom-full left-0 right-0 mb-1.5 flex items-center gap-1.5 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-1.5">
-                <span className="shrink-0 text-[0.65625rem] text-[var(--warm-dark)]">
-                  {drop.nextName === drag.head[0].name ? '전체 이름 바뀜' : locPreserveLabel(drag.head[0].name, drop.nextName)}
-                </span>
+                {/* 라벨은 **고정**이다(재검수 2026-09-16). 삼항이 죽어 있었다 — `preserveName` 은
+                    pathName 을 보존하므로 이름이 바뀌는 드롭은 전체 이름도 같이 바뀌어 미리보기
+                    조건(`nextPath !== pathName`)에 걸리지 않고, 이 줄이 실제로 뜨는 경우(접두 불일치·
+                    최상위로 빼기)는 언제나 `nextName === name` 이라 한쪽 가지만 살아 있었다.
+                    앞부분 떼기/붙이기는 **옮기기 모달의 체크박스 라벨**(locPreserveLabel)로 남는다. */}
+                <span className="shrink-0 text-[0.65625rem] text-[var(--warm-dark)]">전체 이름</span>
                 <span aria-hidden className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">·</span>
                 <span className="flex-1 min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{drag.head[0].pathName} → {drop.nextPath}</span>
               </div>
             )}
-            {/* 카드는 이름만 담은 압축판이라 그냥 두면 38px 이고 자리표 구멍(54px)보다 작다 —
-                실측 행 높이를 min-h 로 줘 들린 것과 남은 구멍의 크기를 맞춘다. */}
+            {/* 카드는 이름만 담은 압축판이라 그냥 두면 38px 이고 자리표 구멍보다 작다 — **세션이 잰
+                머리 행 높이**를 min-h 로 준다. 54px 을 박아 두면 행 높이를 바꾸는 날(글꼴·패딩·배지
+                한 줄) 고스트만 그대로 남아 들린 것과 남은 구멍이 어긋난다(재검수 2026-09-16). */}
             {drag.head.map(n => (
-              <div key={n.id} style={{ marginLeft: (n.depth - drag.rootDepth) * LOC_INDENT_PX }}
-                className="flex items-center gap-2 min-h-[54px] bg-[var(--canvas)] border border-[var(--coral)] shadow-lift select-none rounded-xl px-3 py-2">
+              <div key={n.id} style={{ marginLeft: (n.depth - drag.rootDepth) * LOC_INDENT_PX, minHeight: drag.rowHeight }}
+                className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--coral)] shadow-lift select-none rounded-xl px-3 py-2">
                 <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{n.name}</span>
               </div>
             ))}

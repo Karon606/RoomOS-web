@@ -6458,3 +6458,10 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   자리로 옮겨 amend. 교훈: 훅에 tsc 가 없다(별건 고려). HEIC 업로드 노출은 open-issues 운영자 결정.
 - **드래그 재검수(18646c9c) 차단 0·권고 5** — 제안 라벨 삼항 죽음(전체 이름 상수), 캡션 글자 고정 + footer
   한 상자, 2lh 대신 min-h-8, note 몸통 띠에서만, 고스트 높이 실측. 아이템별 폼 시공자에게 같은 파일 몫으로.
+- **아이템별 점검 폼 통일 시공 완료 + 드래그 재검수 권고 5.** beforeQtys/afterQtys 빈칸, 허브 `저장된 값`·
+  `차감 후 N` 캡션, 행 문법 패널 복제, qtyInputCls 공용, 서버 원자 `locationPatches`(applyLocationChecks,
+  같은 base 한 줄, HUB_SHORT patchIndex, 멱등 every), 경로 B 는 첫 점검·CheckEditForm 만, hubLoc 을
+  item.locations 의 isHub 로(숨긴 허브 옮김 소실 축), 성공 토스트 CheckForm 하나(HubShort 갈래는
+  HubShortDialog 가 주인이라 예외), 다음 품목 영속 줄(호출부 상태), DetailModalSkeleton, 그물 ⑨ 22축·⑥ 6축,
+  진리표 62, 감사 예행 의심 0건. 드래그 — 제안 라벨 상수, 캡션 글자 고정 + footer 한 상자, 2lh 제거,
+  note 몸통 띠, 고스트 실측 높이. 게이트 전부 초록(내가 재확인). 독립 검수 둘 붙임.

@@ -568,3 +568,46 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] C5. `test-doc-bundle` 에 "문이 서는 docType ⊆ DOC_WRITE_NEW_LABEL 키" 단언(83케이스)
 - [x] C6. `check-doc-write-gate` ⓔ 완화 — 대입은 `(true|!!cert)`, 라벨은 JSX 텍스트 노드만
 - [x] C7. 시트 기기 경로 파일명이 표기를 안 따르는 것(커밋 전부터) → `knowledge/open-issues.md` 별건
+
+## 아이템별 점검 폼 통일 · 토스트 이중 · 모달 스켈레톤 (2026-09-15, 운영자 결정 (c)안)
+
+설계 패널 A~C. 파일 범위 — `InventoryClient.tsx`·`inventory/actions.ts`·`lib/stockCheckMerge.ts`·
+점검 스크립트 넷·`knowledge/domain-inventory.md`·`glossary.md`. **서류 시트 파일 무접촉.**
+
+- [x] A-1. 상태 — `beforeQtys`(허브 포함 전 행)·`afterQtys`(비허브만), 초기값 `{}`.
+      `hubTouched`·`hubAutoAfter` 바인딩 제거, 허브 실측 여부 = `beforeQtys[hub] !== ''`
+- [x] A-2. 드래프트 — 문서에서 `hubTouched` 폐기(읽기 한 줄만 호환), cross-mode 병합의 허브 특례 제거,
+      `rowDrafts[locId]` 복원 + `Badge tone="inspect"` 3상태
+- [x] A-3. 행 문법 — 위치 패널 정본 복제(참고줄 공통·허브 honey 상자 제거·`저장된 값`·`옮김 없음`·
+      허브 `차감 후 N`), `qtyInputCls` 공용 상수로 승격, 점검일 44px, 안내문 화살표 삭제,
+      칩 → `최근 점검` 캡션, 요약줄 `이번 옮김`, 단순 모드 죽은 코드(프리필·`이전`·`모두 이전 수량으로 확인`) 제거
+- [x] A-4. 저장 (c) — `lib/stockCheckMerge.applyLocationChecks(base, patches, allowHubClamp)` 신설,
+      `createStockCheck` 에 `locationPatches` 갈래(같은 `const base` 한 줄 재사용), HUB_SHORT 는
+      `patchIndex` 를 싣고 한 건도 저장 안 함, 멱등창은 전 패치 일치 시에만
+      → 검증: `test-stock-check-merge` 62 통과, `check-stock-ledger-parity` 소스 가드 초록
+- [x] B. 토스트 — 상세 모달의 `점검을 저장했습니다` 삭제, CheckForm 이 두 갈래 모두
+      `재고 점검 저장됨 [적용취소]`(같은 날 안내는 detail), `다음 품목` 은 보기 화면 맨 위 영속 한 줄.
+      HubShort 갈래는 `HubShortDialog` 의 §16 토스트가 그대로 주인(이중 통지 금지 — 보고서 참조)
+- [x] C. 스켈레톤 — `DetailModalSkeleton({ mode })` 신설, 래퍼 `px-5 sm:px-6 py-4 space-y-3 delayed-fallback`,
+      맨몸 `SkeletonRows rows={5}` 제거
+- [x] 감지망 — `check-draft-lifecycle` ⑨(대칭 22축)·`check-inventory-view-default` ⑥(골격 6축)·
+      `test-stock-check-merge` 7~10장. 역주입 4종 전부 빨강
+- [x] 6단계 감사 — `scripts/audit-item-check-hub-carried.ts` 예행 **0건**(적용은 별도 승인 대기)
+- [x] 문서 — `knowledge/domain-inventory.md` 한 절, `glossary.md` 2항, `context-notes.md` 결정 근거
+- [ ] 운영자 실기 확인 5건(아래 보고서)
+- [ ] 독립 디자이너 검수(시공 담당 몫 아님)
+
+### 드래그 재검수 권고 5건 (2026-09-16, 차단 0 · 위 작업과 별건)
+
+파일 — `InventoryClient.tsx`·`docs/brand-guide-v2.0.md` 둘뿐.
+
+- [x] R1. 고스트 제안 줄 라벨을 상수 `전체 이름` 으로. 삼항이 죽어 있었다 — `preserveName` 이
+      pathName 을 보존하므로 이름이 바뀌는 드롭은 미리보기 조건(`nextPath !== pathName`)에 안 걸리고,
+      뜨는 경우(접두 불일치·최상위)는 언제나 `nextName === name` 이다. §22 등재문도 실제 화면 예시로
+- [x] R2. 목록 위 캡션 글자 고정(`placing` 삼항 제거 → `min-h` 불필요). `저장 중…`·reason·note 는
+      footer 의 **기본 창고 캡션 상자 한 곳**이 맡는다(평시 문장 / 드래그 중 `reason ?? note` /
+      저장 중 `저장 중…`). 전용 빈 줄 23px 이 사라졌다
+- [x] R3. `min-h-[2lh]` 제거(Firefox 111~119 미지원·선례 0). 남긴 자리 없음 — 저장소 전체 `lh` 0
+- [x] R4. 깊이 상한 행의 note 를 **몸통 띠**(`top+12 <= y < bottom-12`)에서만. 위·아래 12px 은 유효
+      실선이 서는 자리라 '못 넣는다' 가 거짓이 된다. §22 등재문 '그 구간에서는' → '몸통 자리에서는'
+- [x] R5. 고스트 `min-h-[54px]` → 세션 실측 `rects[first].height` 를 `LocDragView.rowHeight` 로 실어 씀

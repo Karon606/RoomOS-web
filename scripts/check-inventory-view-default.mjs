@@ -4,12 +4,13 @@
 // 값 하나가 아니라 **다섯 자리가 같이 서야** 성립하고, 하나만 되돌아가도 화면은 조용히 옛 모양이
 // 된다(테스트로는 안 잡힌다 — 전부 렌더 기본값·저장 키·스켈레톤이라 돌려도 초록이다).
 //
-// 잡는 것 다섯.
+// 잡는 것 여섯.
 //   ① 초기값 식이 딥링크 아닐 때 'location' 으로 떨어진다.
 //   ② 마운트 후 복원이 'item' 만 되살린다(옛 축 '=== location' 으로 돌아가면 기본이 뒤집힌다).
 //   ③ 세그먼트 옵션의 첫 원소가 'location' 이다(§23 — 기본값이 첫 칸).
 //   ④ doSave 성공 가지의 onClose() 가 else 아래에 있다(인라인이면 안 불린다).
 //   ⑤ loading.tsx 본문이 패널 골격이다.
+//   ⑥ (2026-09-15) 상세 모달 골격도 제 여백을 갖고, 열릴 모드의 모양을 본뜬다.
 //
 // ④ 를 왜 여기서 또 보나. check-draft-lifecycle 은 onClose 가 **실패 0 일 때만** 서는지를 본다.
 // 여기서 보는 것은 다른 축이다 — 인라인(기본 보기)에서는 아예 안 서야 한다. 되돌아가면 체인 저장에
@@ -114,6 +115,29 @@ need('스켈레톤이 2열 그리드 두 칸이다',
 need('카드 5장 모형이 남아 있지 않다',
   !/Array\.from\(\{ length: 5 \}\)/.test(loading),
   '아이템별 목록 모형이 남으면 로딩에서 로디드로 갈 때 목록이 패널로 바뀌는 점프가 된다')
+
+// ── ⑥ 상세 모달 골격도 제 여백을 갖는다 (2026-09-15) ────────────────────────────
+// 같은 축의 다른 자리다. 이 모달은 풀블리드(bodyClassName='')라 하위 폼마다 제 여백을 세우는데,
+// 골격만 맨몸 SkeletonRows 였다. 첫 페인트가 모달 벽에 붙어 뜨고, 로디드 순간 좌우 20/24px·
+// 상하 16px 이 한꺼번에 밀려 들어왔다. 세로 길이도 실제 본문의 몇 분의 일이라 통째로 늘어났다.
+need('상세 모달 골격 컴포넌트가 있다',
+  /function DetailModalSkeleton\(\{ mode \}: \{ mode: 'view' \| 'check' \}\)/.test(client),
+  '골격이 함수 한 채여야 모드별 모양을 가를 수 있다')
+need('골격이 모달 본문 여백을 직접 낸다',
+  /className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback"/.test(client),
+  "bodyClassName='' 인 모달의 children 은 자기 여백을 갖는 것이 규칙이다(§13 풀블리드)")
+need('골격에 표시 지연이 걸려 있다',
+  /delayed-fallback/.test(client),
+  '300ms 안에 끝나는 전환에서 골격이 한 프레임 번쩍이면 그게 더 산만하다(§21 임계)')
+need('맨몸 SkeletonRows rows={5} 가 남아 있지 않다',
+  !/<SkeletonRows rows=\{5\}/.test(client),
+  '모달 벽에 붙은 막대 다섯 줄로 돌아가면 로디드 순간 여백이 통째로 밀려 들어온다')
+need('골격이 열릴 모드를 따라간다',
+  /<DetailModalSkeleton mode=\{initialMode\} \/>/.test(client),
+  "'다음 품목' 으로 이어 열면 점검 폼부터 뜬다 — 그때 보기 골격을 그리면 로디드에서 갈아엎힌다")
+need('골격 막대가 loading.tsx 와 같은 색이다',
+  /rounded-md bg-\[var\(--canvas\)\] animate-pulse/.test(client),
+  '같은 화면의 두 골격이 다른 색이면 어느 쪽이 정본인지 알 수 없다')
 
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

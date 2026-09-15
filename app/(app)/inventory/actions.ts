@@ -20,7 +20,7 @@ import { loadLocationPaths, indexLocations, conflictingPathName } from './locati
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
-import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
+import { applyLocationCheck, applyLocationChecks, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { transferCheckCreateData } from '@/lib/transferCheck'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
@@ -772,6 +772,9 @@ export type HubShortResponse = {
   shortfall: number
   others: { locationId: string; name: string; qty: number }[]
   error: string
+  // 복수 패치(아이템별 폼의 원자 저장)에서 **몇 번째 패치**가 걸렸는지. 한 건도 저장하지 않으므로
+  // 클라는 이 인덱스로 어느 위치에서 멈췄는지 말할 수 있다. 단일 패치 경로에서는 언제나 0 이다.
+  patchIndex?: number
 }
 
 // detectHubShort 의 others(id·qty)에 위치 이름을 채워 팝업 목록에 쓰게 한다.
@@ -849,6 +852,11 @@ export async function createStockCheck(data: {
   locationQtys?: LocQty[]
   // #3 위치별 점검 — 서버가 직전 점검(carry-over) 기준으로 허브 차감·이월을 계산(stale 방지).
   locationPatch?: LocCheckPatch
+  // 아이템별 점검 폼의 원자 저장(2026-09-15 운영자 결정 (c)) — 한 품목의 여러 칸을 한 번에 보낸다.
+  // 서버가 applyLocationChecks 로 **순서대로 접는다**. 순서는 비허브 먼저, 허브는 맨 뒤다
+  // (허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 패널 buildUnits 와 같은 규칙).
+  // 한 패치라도 허브 부족에 걸리면 한 건도 저장하지 않고 걸린 인덱스를 실어 돌려준다.
+  locationPatches?: LocCheckPatch[]
   // #4 (2026-06-01): 품목별 점검 폼에서 위치 일부만 입력했을 때 나머지 위치의 잔량을
   // 직전 점검에서 자동 보존. 안 하면 입력 안 한 위치가 0 으로 처리되어 다음 점검과의
   // 차이가 큰 "소모"로 잘못 계산 (라면 187 / 쌀 159 / 주방세제 6330 등 사용량 왜곡).
@@ -866,9 +874,15 @@ export async function createStockCheck(data: {
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    // #3: locationPatch가 오면 직전 점검의 위치별 잔량을 base로 서버에서 적용
+    // #3: locationPatch(한 칸) 또는 locationPatches(아이템별 폼의 여러 칸)가 오면
+    // 직전 점검의 위치별 잔량을 base 로 서버에서 적용한다. 두 갈래는 **같은 한 줄의 base** 를 쓴다 —
+    // 갈라 놓으면 비대칭 가드(check-stock-ledger-parity)가 한쪽만 보게 된다.
     let patchedQtys: LocQty[] | null = null
-    if (data.locationPatch) {
+    const patches: LocCheckPatch[] | null =
+      data.locationPatches && data.locationPatches.length > 0 ? data.locationPatches
+      : data.locationPatch ? [data.locationPatch]
+      : null
+    if (patches) {
       const lastCheck = await prisma.stockCheck.findFirst({
         where: { trackedItemId: data.trackedItemId },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -877,9 +891,14 @@ export async function createStockCheck(data: {
       // 멱등 — 직전 점검이 '같은 patch'(같은 위치=보충후·같은 보충량)를 방금(20초 내) 반영했다면
       // 중복 제출(더블클릭·다중 탭·재시도)로 보고 새 점검을 만들지 않는다. 안 그러면 그 점검을 base로
       // 보충이 또 적용돼 허브가 2배 차감됨.
+      // 복수 패치는 **전부** 일치할 때만 같은 제출이다 — 하나라도 다르면 새로 적은 값이 섞인 제출이고,
+      // 그걸 멱등으로 삼키면 그 값이 저장되지 않은 채 '저장됨' 이 된다.
       if (lastCheck && (Date.now() - lastCheck.createdAt.getTime()) < 20_000) {
-        const lb = lastCheck.locationBreakdown.find(b => b.storageLocationId === data.locationPatch!.checkedLocationId)
-        if (lb && lb.remainingQty === data.locationPatch.afterQty && (lb.restockedQty ?? 0) === data.locationPatch.restockedQty) {
+        const allSame = patches.every(p => {
+          const lb = lastCheck.locationBreakdown.find(b => b.storageLocationId === p.checkedLocationId)
+          return lb != null && lb.remainingQty === p.afterQty && (lb.restockedQty ?? 0) === p.restockedQty
+        })
+        if (allSame) {
           return { ok: true, id: lastCheck.id }
         }
       }
@@ -899,20 +918,25 @@ export async function createStockCheck(data: {
         else if (q > 0) base.push({ locationId: loc, qty: q })
       }
       // 허브 부족 게이트 — 조용한 0 클램프 대신 팝업 유도(allowHubClamp 면 통과).
-      const short = detectHubShort(base, data.locationPatch, data.allowHubClamp)
-      if (short) {
+      // 복수 패치는 걸린 자리에서 멈추고 **한 건도 저장하지 않는다**(원자). 부분 반영으로 끝나면
+      // 화면은 '저장됨' 인데 장부는 절반이 되고, 그 절반이 다음 점검의 base 가 된다.
+      const applied = applyLocationChecks(base, patches, data.allowHubClamp)
+      if (!applied.ok) {
+        const short = applied.short
         return {
           ok: false, code: 'HUB_SHORT', trackedItemId: data.trackedItemId,
           hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
           others: await withOtherNames(propertyId, short.others),
           error: '창고(허브) 재고가 보충량보다 부족합니다.',
+          patchIndex: applied.index,
         }
       }
-      patchedQtys = applyLocationCheck(base, data.locationPatch)
+      patchedQtys = applied.out
     }
     // 경로 B — 품목 점검 폼(CheckForm)이 보낸 절대 위치수량. restockedQty 마커 합을 서버가 구한 허브 잔량과 대조.
     // (클라가 이미 허브를 차감해 보냈으므로 그 값을 믿지 않고, 경로 A 와 같은 base 규칙으로 서버가 다시 판정.)
-    if (!data.locationPatch && !data.allowHubClamp && data.locationQtys && data.locationQtys.length > 0) {
+    // 2026-09-15 이후 아이템별 폼은 경로 A(locationPatches)를 탄다 — 여기 남는 것은 첫 점검 단순 모드뿐이다.
+    if (!patches && !data.allowHubClamp && data.locationQtys && data.locationQtys.length > 0) {
       // 보충 마커가 하나라도 있을 때만 허브 해석(비보충 점검은 추가 쿼리 0)
       const markerSum = data.locationQtys.reduce((s, lq) => s + (lq.restockedQty ?? 0), 0)
       // 클라가 실제 차감한 허브를 우선 사용(검출·차감 일치). 없으면 품목 허브로 폴백.

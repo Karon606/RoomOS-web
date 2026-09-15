@@ -6,7 +6,7 @@
 // 인라인 모드의 onClose 는 화면 전환(changeView)이라 에러가 한 프레임도 안 그려졌다. 실패한
 // 품목의 드래프트만 남아 '임시저장 남음' 으로 보였다.
 //
-// 잡는 것 일곱.
+// 잡는 것 아홉.
 //   ① doSave 의 onClose 는 실패 0 조건 아래에만 선다.
 //   ② 드래프트 삭제·저장의 반환값을 읽는다(양 화면 모두).
 //   ③ 두 화면(아이템별 폼 · 위치 패널)의 임시저장 분기가 대칭이다.
@@ -16,6 +16,8 @@
 //   ⑦ (2026-09-15 '전체') 드래프트 읽기가 위치 수만큼 왕복하지 않는다.
 //   ⑧ (2026-09-15 패널 안 옮기기) 완료 핸들러가 두 쌍의 입력·임시저장을 비우고, 적용취소가
 //      이동 점검을 지우고 비운 값을 되쓴다.
+//   ⑨ (2026-09-15 아이템별 폼 통일) 아이템별 점검 폼이 위치 패널과 같은 축·같은 행 문법·같은
+//      저장 경로(서버 패치 접기)를 쓴다. 성공 통지의 주인도 그 폼 하나다.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -398,8 +400,10 @@ need('두 버튼이 한 줄에 마주 선다',
 need('잔량 0 행에는 다른 곳으로가 없다',
   /\{prev != null && prev\.qty !== 0 && \(/.test(client),
   '눌러도 고를 출발지가 없는 모달이 뜬다')
+// 셋이다 — 패널의 '다른 곳으로'·'옮김 없음' 과 아이템별 폼의 '옮김 없음'(2026-09-15 통일).
+// 세 자리가 같은 확장 문법을 쓰는지를 본다(한 벌이 아니면 같은 버튼이 화면마다 다른 크기가 된다).
 need('히트영역 문법이 옮김 없음과 같다',
-  (client.match(/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/g) ?? []).length === 2,
+  (client.match(/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/g) ?? []).length === 3,
   '글자만이면 19px 이다 — §25 유사요소 확장으로 44px 를 낸다')
 const hubBranch = (() => {
   const a = client.indexOf('허브 위치 점검 — 잔량 1칸')
@@ -421,6 +425,122 @@ need('패널의 두 진입이 모두 완료 결과를 소비한다',
 need('패널의 두 진입이 모두 모달 토스트를 끈다',
   /<TransferStockModal rows=\{rows\} silent onClose=/.test(client) &&
   /<TransferStockModal rows=\{rows\} z=\{260\} lockItem silent/.test(client))
+
+// ── ⑨ 아이템별 폼이 위치 패널과 대칭이다 (2026-09-15 운영자 승인 설계) ────────────────
+// 같은 일(한 품목의 위치별 잔량을 적는다)을 두 화면이 서로 다른 축으로 하고 있었다.
+//   · 허브 입력이 '채운 후'(afterQtys)에 묶여 있었다 — calcLocMove 가 후 − 전(빈칸=0)을 옮김량으로
+//     셈해 **허브 자기 행에 +N 마커**가 박히는 입구였다(2026-09-11 김치). 패널은 이미 '잔량'(before)
+//     으로 옮겼는데 이쪽만 남아 있었다.
+//   · 허브 칸이 '자동 차감 후' 파생값으로 프리필돼 있었다 — 안 세어도 숫자가 든 칸이라, 그 파생값이
+//     매번 **실측 선언(carried:false)** 으로 저장됐다.
+//   · 단순 모드 입력칸이 직전 잔량으로 프리필돼 있었다 — 그 조건(hasPrev && !restockMode)은 성립할
+//     수 없어 '이전' 접미까지 통째로 죽은 코드였다.
+// 그리고 저장 경로가 갈려 있었다 — 클라가 허브를 미리 깎아 절대값으로 보내는 경로 B 였다.
+// 지금은 두 화면 모두 서버에 패치를 보내고 서버가 접는다(경로 A). 아래는 그 대칭의 그물이다.
+// 최상위 함수 한 채를 통째로 잘라 본다. fnBody 는 헤더 뒤 첫 '{' 를 몸통으로 잡는데, 이 함수들은
+// 그 자리가 props **타입 주석**이라 타입만 잘려 나온다(판정이 통째로 무의미해진다).
+function topFn(src, header) {
+  const start = src.indexOf(header)
+  if (start < 0) return ''
+  const end = src.indexOf('\nfunction ', start + header.length)
+  return end < 0 ? src.slice(start) : src.slice(start, end)
+}
+const itemForm = topFn(client, 'function CheckForm({ item, lastCheckBreakdown')
+const locPanel = topFn(client, 'function LocationBatchCheckModal({ rows, onClose')
+need('아이템별 점검 폼을 찾음', itemForm.length > 2000)
+need('위치별 점검 패널을 찾음', locPanel.length > 2000)
+// 허브 가지 — 입력은 beforeQtys 에 묶이고, 그 가지 안에 afterQtys 가 없다.
+const itemHubBranch = (() => {
+  const a = itemForm.indexOf('{rowIsHub ? (')
+  const b = itemForm.indexOf(') : (', a)
+  return a >= 0 && b > a ? itemForm.slice(a, b) : ''
+})()
+need('아이템별 폼의 허브 행 가지를 찾음', itemHubBranch.length > 0)
+need('허브 입력이 beforeQtys 에 묶인다',
+  /value=\{beforeStr\}/.test(itemHubBranch) && /setBeforeQtys\(p => \(\{ \.\.\.p, \[loc\.id\]/.test(itemHubBranch),
+  "'채운 후'에 묶으면 후 − 전(빈칸=0)이 옮김량으로 셈해져 허브 자기 행에 +N 마커가 박힌다")
+need('허브 가지에 afterQtys 가 없다',
+  !/afterQtys|setAfterQtys/.test(itemHubBranch),
+  '창고에서 창고로 옮기는 일은 없다 — 허브 칸은 실측 한 값이지 옮김이 아니다')
+need('허브 보정 플래그(hubTouched) 상태가 아이템별 폼에서 사라졌다',
+  !/setHubTouched|const \[hubTouched/.test(itemForm) && /const hubMeasured = /.test(itemForm),
+  "허브 실측 여부는 beforeQtys[허브] 가 비었는가 하나로 말한다 — 같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다")
+// 폐기한 플래그는 **읽기만** 남는다 — 그 시절 문서를 복원할 때 허브 값이 '채운 후'에 들어 있다.
+// 이 한 줄이 없으면 어제 임시저장한 허브 값이 오늘 폼에서 빈칸으로 열린다.
+need('구 드래프트 문서의 허브 값이 잔량 칸으로 옮겨온다',
+  /if \(main\?\.hubTouched && hubLoc && main\.afterQtys\?\.\[hubLoc\.id\] != null\)/.test(itemForm),
+  '구 문서 호환 한 줄 — 없으면 옛 임시저장의 허브 값이 조용히 사라진다')
+need('임시저장 문서에 hubTouched 를 더는 쓰지 않는다',
+  !/hubTouched, savedAt/.test(itemForm) && /data: \{ date, qty, memo, locationQtys, beforeQtys, afterQtys, savedAt \}/.test(itemForm),
+  '쓰면서 읽으면 폐기가 아니다 — 새 문서는 허브도 beforeQtys 에 든다')
+need('입력 상태가 빈 맵으로 시작한다(프리필 0)',
+  (itemForm.match(/useState<Record<string, string>>\(\{\}\)/g) ?? []).length === 3,
+  'locationQtys·beforeQtys·afterQtys 셋 다 — prevMap 으로 미리 채우면 안 센 값이 실측으로 저장된다')
+need('아이템별 폼에 prevMap 프리필 시딩이 없다',
+  !/prevMap\[l\.id\] != null \? String\(prevMap\[l\.id\]\) : ''/.test(itemForm),
+  "채워 둔 값은 '세었다'는 뜻이 되어 버린다 — 빈칸이 정본이다")
+// 행 문법 — 두 화면이 같은 버튼·같은 말을 쓴다. (타임라인 편집 폼 CheckEditForm 은 이 대칭의
+// 대상이 아니다 — 저장된 점검 한 건을 고치는 다른 일이고 경로 B 에 남는다.)
+need("'저장된 값' 버튼이 두 화면 모두에 있다",
+  (itemForm.match(/>\s*저장된 값\s*</g) ?? []).length === 1 &&
+  (locPanel.match(/>\s*저장된 값\s*</g) ?? []).length === 1,
+  '참고줄의 저장된 잔량을 칸에 채워 넣는 자리 — 한쪽만 있으면 같은 일에 입구가 갈린다')
+need("'옮김 없음' 버튼이 두 화면 모두에 있다",
+  (itemForm.match(/>\s*옮김 없음\s*</g) ?? []).length === 1 &&
+  (locPanel.match(/>\s*옮김 없음\s*</g) ?? []).length === 1)
+need("죽은 '이전' 접미가 아이템별 폼에서 사라졌다",
+  !/>이전 \{/.test(itemForm),
+  '프리필이 없으니 이전 값을 가리키는 접미도 성립하지 않는다')
+need("'자동 차감 후' 라벨이 아이템별 폼에서 사라졌다",
+  !/자동 차감 후/.test(itemForm),
+  '허브 칸은 파생값 표시 자리가 아니라 실측 입력 자리다 — 파생은 참고줄이 말한다')
+need("요약줄이 '창고 → 이동 합계' 가 아니다",
+  !/창고 → 이동 합계/.test(itemForm),
+  '§29 — 화살표는 값의 전환 표시에만 쓴다')
+// 토스트 — 성공 통지의 주인은 CheckForm 하나다(§27.2 이중 통지 금지).
+need('상세 모달이 저장 토스트를 다시 띄우지 않는다',
+  !/점검을 저장했습니다/.test(client),
+  '같은 사건을 두 번 알리고, 그 토스트의 액션은 6초 뒤 사라져 이어갈 자리를 잃는다')
+const itemSubmit = fnBody(itemForm, '  const handleSubmit = (e: React.FormEvent) => {')
+need('아이템별 폼의 제출 함수를 찾음', itemSubmit.length > 1000)
+need('저장 성공 토스트마다 §16 적용취소가 달려 있다',
+  (itemSubmit.match(/pushToast\('success'/g) ?? []).length ===
+  (itemSubmit.match(/action: \{ label: '적용취소'/g) ?? []).length &&
+  (itemSubmit.match(/pushToast\('success'/g) ?? []).length >= 2,
+  '잘못 센 값이 기준선으로 박히면 되돌릴 자리가 토스트뿐이다 — 한 갈래라도 빠지면 그 갈래만 못 되돌린다')
+need('세 갈래가 같은 문장이다',
+  (itemSubmit.match(/pushToast\('success', '재고 점검 저장됨'/g) ?? []).length ===
+  (itemSubmit.match(/pushToast\('success'/g) ?? []).length,
+  '위치 있음·위치 없음이 다른 말을 하면 같은 저장이 화면마다 다른 사건처럼 보인다')
+need('같은 날 안내는 별도 토스트가 아니라 detail 이다',
+  !/pushToast\('info', '같은 날 점검이 이미 있습니다'/.test(client),
+  '§15 — 토스트를 겹쳐 쌓지 않는다')
+// 저장 경로 — 클라가 허브를 깎지 않는다.
+need('아이템별 폼이 패치로 저장한다',
+  /const buildLocationPatches = \(\): LocCheckPatch\[\] => \{/.test(itemForm) &&
+  /locationPatches, isReconcile: reconcileMode,/.test(itemForm),
+  '절대값(locationQtys)으로 보내면 클라가 미리 깎은 허브 파생값이 실측 선언으로 박힌다')
+need('허브 패치는 적었을 때만, 맨 뒤에 실린다',
+  /if \(hubLoc && hubMeasured\) \{[\s\S]{0,260}?patches\.push\(\{ checkedLocationId: hubLoc\.id/.test(itemForm),
+  '허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 패널 buildUnits 와 같은 규칙')
+need('허브 부족 재시도가 패치를 거른다',
+  /const patches = saveArgs\.locationPatches\.filter\(p => !exclude\.has\(p\.checkedLocationId\)\)/.test(itemForm),
+  '이동 출처 칸을 그대로 다시 보내면 옮기기 전에 센 값이 이동 점검을 덮어 유령 재고가 된다')
+const serverPatches = (() => {
+  const s = actions.indexOf('export async function createStockCheck(data: {')
+  if (s < 0) return ''
+  const e = actions.indexOf('\nexport ', s + 40)
+  return e < 0 ? actions.slice(s) : actions.slice(s, e)
+})()
+need('createStockCheck 를 찾음', serverPatches.length > 2000)
+need('서버가 두 갈래를 한 자리로 모은다',
+  /const patches: LocCheckPatch\[\] \| null =/.test(serverPatches),
+  'base 조립문이 갈리면 비대칭 가드(check-stock-ledger-parity)가 한쪽만 겨눈다')
+need('서버가 복수 패치를 순서대로 접는다',
+  /applyLocationChecks\(base, patches, data\.allowHubClamp\)/.test(serverPatches))
+need('멱등창이 모든 패치의 일치를 본다',
+  /const allSame = patches\.every\(p => \{/.test(serverPatches),
+  '하나라도 다르면 새로 적은 값이 섞인 제출이다 — 삼키면 그 값이 저장되지 않은 채 저장됨이 된다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
