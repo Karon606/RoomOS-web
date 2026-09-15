@@ -362,8 +362,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 
         {!bundle && !failed && <SkeletonRows rows={4} />}
         {failed && <p className="text-xs text-[var(--danger-fg)]">서류 목록을 불러오지 못했습니다.</p>}
+        {/* 제목의 주어를 이 사람으로 좁힌다 — 계약이 없고 영업장 서류(사업자등록증)만 있는 사람에게는 이 카드
+            바로 아래에 보낼 수 있는 행이 서므로 '보낼 서류가 없습니다' 는 그 자리에서 거짓이다(재검수). */}
         {bundle && !hasTenantRow && (
-          <EmptyState title="보낼 서류가 없습니다" description="계약이 진행되면 여기에 서류 칸이 생깁니다." />
+          <EmptyState title="이 입주자의 서류가 없습니다" description="계약이 진행되면 여기에 서류 칸이 생깁니다." />
         )}
 
         {/* key 에 leaseTermId 를 그대로 쓰면 안 된다 — 영업장 서류 그룹과 중립 그룹이 **둘 다**
