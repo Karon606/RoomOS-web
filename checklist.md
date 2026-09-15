@@ -455,3 +455,33 @@
 - [x] 10. 문서 — `knowledge/domain-inventory.md` 체인 저장 8항 · `knowledge/glossary.md` 체인 저장 ·
       `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 11. 운영자 실기 확인 5건(아래 보고서) — 45쌍 저장 시간은 실기에서 잰다
+
+
+## 패널 안 옮기기 (2026-09-15)
+
+위치별 점검 패널의 품목 행에서 바로 위치 이동을 연다. 설계 패널 "요청 3 (c)안" 그대로 — 확대 없음.
+저장 경로·체인·허브 게이트·거부 규칙 무변경. 바뀌는 것은 진입 자리 하나, 서버 인자 하나, 그리고
+'옮긴 순간 두 쌍의 미저장 입력은 무효' 라는 규칙 하나다.
+
+- [x] 1. 서버 `transferLocationStock(sourceRemainingQty?)` — 있으면 출발지 행을 `장부 − N` 대신
+      그 값으로(실측), 그 행만 `carried: false`. 도착지 행은 표식 없음(null). memo 에 `· A 실측 R`.
+      0 이상 유한수 검증, 거부 규칙·`closeItemLocation` 무변경
+      → 검증: tsc 0, `check-stock-ledger-parity` 소스 가드 초록, 역주입 3종 빨강
+- [x] 2. 모달 `TransferStockModal` — `initialFromId` · `lockItem`(품목 셀렉트 고정) · `z={260}` ·
+      `onDone(result)`. 4단계 아래 `옮긴 뒤 {출발지} 남은 양 (선택)`(§12 라벨 12/500 · 입력 44px ·
+      placeholder 빈칸 · 캡션 `안 적으면 장부에서 뺀 값으로 둡니다`). 미리보기 박스에 실측값과
+      장부 차이 한 줄. 맞바꿈이면 숨김. 일반 진입(헤더 `위치 이동`)은 종전대로
+      → 검증: tsc 0, 목업 대조
+- [x] 3. 패널 행 — 비허브 행 하단 줄 좌측 `다른 곳으로`(우측 `옮김 없음` 과 같은 한 벌,
+      `justify-between` 한 줄). 허브 행에는 없음(§27.1)
+      → 검증: `check-draft-lifecycle` ⑧ 허브 가지 단언 초록
+- [x] 4. 완료 처리 `handleTransferDone` — 두 쌍의 `beforeQtys`·`afterQtys` 키 삭제 + 그 쌍의 서버
+      드래프트 삭제(반환값 읽음), 삭제 전 스냅샷, `onDone()` 갱신, 토스트 **하나**(success·액션 6초)
+      + §16 적용취소(`deleteStockCheck` → 입력 복원 → 있었던 드래프트 재저장 → `onDone()` → info)
+      → 검증: ⑧ 전 축 초록, 키 미삭제 역주입 빨강
+- [x] 5. 감지망 — `check-draft-lifecycle` ⑧ 신설, `check-stock-ledger-parity` 소스 가드에 이동
+      점검 표식 절 신설 → 검증: 역주입 4종 전부 발화, 백업 cp 원복 cmp 동일(git 미사용)
+- [x] 6. 문서 — `knowledge/domain-inventory.md` '패널 안 옮기기' 절 · `knowledge/glossary.md` 2항 ·
+      `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
+- [ ] 7. 운영자 실기 확인 4건(아래 보고서)
+- [ ] 8. 독립 디자이너 검수(시공 담당 몫 아님)

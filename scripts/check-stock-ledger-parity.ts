@@ -335,6 +335,41 @@ function sourceGuards() {
       violations.push(`${f} 의 원장 확인창이 값 전환에 조사를 붙인다 — 단위 없는 품목에서 '4개으로' 가 된다(§29 화살표 표기)`)
     }
   }
+  // ── 위치 이동의 출발지 실측 (2026-09-15, 패널 안 옮기기) ──────────────
+  // 이동 점검의 행은 세 종류가 아니라 둘이다. 옮긴 뒤 출발지를 **직접 세어 왔으면** 그 행만
+  // 실측(carried: false)이고, 나머지 행은 이월도 실측도 아닌 '이월 + 델타' 라 표식이 없다(null).
+  // 도착지 행에 true 를 찍으면 planCheckPropagation 이 파생식으로 덮어써 옮긴 델타를 지우고,
+  // false 를 찍으면 세지도 않은 값이 실측으로 선언돼 그 위치의 전파가 영구히 멈춘다.
+  // 값 대조로는 안 잡힌다 — 수량은 내내 맞고 표식만 틀리다.
+  const transfer = block(actions, 'export async function transferLocationStock(', '\n}\n', 'transferLocationStock')
+  if (transfer) {
+    if (!/sourceRemainingQty\?: number/.test(transfer)) {
+      violations.push('transferLocationStock 에 출발지 실측 인자(sourceRemainingQty)가 없다 — 옮긴 뒤 센 값을 적을 자리가 사라졌다')
+    }
+    if (!/breakdown\.set\(data\.fromLocationId, measured\)/.test(transfer)) {
+      violations.push('transferLocationStock 이 출발지 실측을 받고도 장부 − N 을 쓴다 — 그 자리에서 센 숫자가 추정에 진다')
+    }
+    // 완화 미채택(운영자 결정) — 실측을 적어 와도 장부보다 많이 옮기는 것은 거부한다.
+    if (!/if \(move > fromQty\) return \{ ok: false/.test(transfer)) {
+      violations.push('transferLocationStock 이 장부 출발지보다 많이 옮기는 것을 거부하지 않는다')
+    }
+    if (!/measuredFromId = data\.fromLocationId/.test(transfer) || !/transferCheckCreateData\(data\.trackedItemId, breakdown, memo, measuredFromId\)/.test(transfer)) {
+      violations.push('transferLocationStock 이 실측 행을 점검 조립부에 알리지 않는다 — 실측이 구식 행(null)으로 저장된다')
+    }
+  }
+  const tCreate = block(actions, 'function transferCheckCreateData(', '\n}\n', 'transferCheckCreateData')
+  if (tCreate) {
+    if (!/storageLocationId === measuredLocationId \? \{ carried: false \} : \{\}/.test(tCreate)) {
+      violations.push('이동 점검이 출발지 실측 행에만 carried: false 를 찍지 않는다 — 도착지 행은 이월도 실측도 아닌 델타라 표식이 없어야 한다')
+    }
+    if (/carried:\s*true/.test(tCreate)) {
+      violations.push('이동 점검이 carried: true 를 찍는다 — 이동 행을 이월로 선언하면 전파가 옮긴 델타를 지운다')
+    }
+    const marks = tCreate.match(/carried:\s*[^,\n}]+/g) ?? []
+    if (marks.some(s => !/carried: false/.test(s))) {
+      violations.push('이동 점검이 실측 말고 다른 표식을 찍는다 — 이동 행의 표식은 실측 하나뿐이다')
+    }
+  }
   // 허브 칸은 실측이지 옮김이 아니다 — 위치 패널의 허브 입력이 '채운 후'로 돌아가면 마커가 다시 박힌다.
   if (!/허브 위치 점검 — 잔량 1칸[\s\S]{0,1400}value=\{beforeStr\}/.test(client)) {
     violations.push('위치 패널의 허브 잔량 칸이 채우기 전(beforeQtys)에 묶여 있지 않다 — 후 − 전이 보충으로 셈해진다')

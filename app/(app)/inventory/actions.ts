@@ -3663,7 +3663,12 @@ async function currentLocationBreakdown(trackedItemId: string, propertyId: strin
 
 // 이동/숨김 이관 점검의 StockCheck.create data — breakdown 전체(0 포함)를 담아 새 baseline 을 만든다.
 // ⚠️ 부분 breakdown 을 만들면 total != byLoc 합 불변식이 깨진다. transferLocationStock·closeItemLocation 공유.
-function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, number>, memo: string) {
+//
+// `measuredLocationId` 는 **그 자리에서 직접 센 위치 하나**다(위치별 점검 패널의 '다른 곳으로',
+// 2026-09-15). 그 행만 실측(`carried: false`)이고 나머지는 표식을 안 찍는다(null).
+// ⚠️ 이동 행에 `carried: true` 를 찍으면 안 된다 — 이동 행은 이월도 실측도 아닌 '이월 + 델타' 라,
+//   이월로 선언하는 순간 planCheckPropagation 이 파생식으로 덮어써 옮긴 델타를 지운다.
+function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, number>, memo: string, measuredLocationId?: string) {
   const entries = [...breakdown.entries()]
   const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
   return {
@@ -3672,9 +3677,15 @@ function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, n
     // 만든 이동 점검이 어제 날짜로 박혀 (date desc, createdAt desc) 정렬에서 같은 날 폼 점검 뒤로
     // 밀렸다 — 토스트는 완료인데 장부에는 이동이 안 보인다. createStockCheck 가 받는 축과 같게 맞춘다.
     date: ymdToDbDate(kstYmdStr()),
-    remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
+    remainingQty: total,   // 행 합 — 실측이 없으면 총량 불변(이동은 소모가 아님)
     memo,
-    locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
+    locationBreakdown: {
+      create: entries.map(([storageLocationId, q]) => ({
+        storageLocationId,
+        remainingQty: Math.max(0, q),
+        ...(storageLocationId === measuredLocationId ? { carried: false } : {}),
+      })),
+    },
   }
 }
 
@@ -3720,6 +3731,9 @@ export async function transferLocationStock(data: {
   toLocationId: string
   qty?: number        // 미지정 = 전량 이동
   swap?: boolean      // true = 두 위치 수량을 통째로 맞바꿈(qty 무시)
+  // 옮긴 뒤 출발지에 남은 양을 **직접 세어 왔을 때**의 실측값(선택, 맞바꿈에는 뜻이 없다).
+  // 없으면 종전과 같이 장부 − N 으로 둔다.
+  sourceRemainingQty?: number
 }): Promise<{ ok: true; checkId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -3739,6 +3753,8 @@ export async function transferLocationStock(data: {
     const toQty = Math.max(0, breakdown.get(data.toLocationId) ?? 0)
 
     let memo: string
+    // 출발지 실측 행 — 있으면 그 행만 carried: false 로 박는다(아래 transferCheckCreateData).
+    let measuredFromId: string | undefined
     if (data.swap) {
       if (fromQty === 0 && toQty === 0) return { ok: false, error: '두 위치 모두 재고가 없습니다.' }
       breakdown.set(data.fromLocationId, toQty)
@@ -3747,10 +3763,22 @@ export async function transferLocationStock(data: {
     } else {
       const move = data.qty != null ? data.qty : fromQty
       if (!(move > 0)) return { ok: false, error: '옮길 수량을 입력해주세요.' }
+      // 거부 규칙은 그대로다 — 장부 출발지보다 많이 옮기는 것은 실측을 적어 와도 막는다(운영자 결정).
       if (move > fromQty) return { ok: false, error: `${fromLoc}의 재고(${fromQty})보다 많이 옮길 수 없습니다.` }
-      breakdown.set(data.fromLocationId, fromQty - move)
+      const measured = data.sourceRemainingQty
+      if (measured != null) {
+        // 그 자리에서 센 숫자가 장부 − N 이라는 추정을 이긴다. 차이만큼 총량이 변하고
+        // (행 합으로 다시 세므로) 그 구간의 소모로 잡힌다.
+        if (!Number.isFinite(measured) || measured < 0) return { ok: false, error: '남은 양은 0 이상의 숫자로 적어주세요.' }
+        breakdown.set(data.fromLocationId, measured)
+        measuredFromId = data.fromLocationId
+      } else {
+        breakdown.set(data.fromLocationId, fromQty - move)
+      }
       breakdown.set(data.toLocationId, toQty + move)
-      memo = `이동: ${fromLoc} → ${toLoc} ${move}`
+      memo = measured != null
+        ? `이동: ${fromLoc} → ${toLoc} ${move} · ${fromLoc} 실측 ${measured}`
+        : `이동: ${fromLoc} → ${toLoc} ${move}`
     }
 
     // 이 이동이 재고를 넣는 위치는 전부 같은 트랜잭션에서 링크를 보장한다 — 종전엔 점검만 만들어,
@@ -3770,7 +3798,7 @@ export async function transferLocationStock(data: {
         ],
         skipDuplicates: true,
       }),
-      prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo) }),
+      prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo, measuredFromId) }),
     ])
     revalidatePath('/inventory')
     return { ok: true, checkId: created.id }

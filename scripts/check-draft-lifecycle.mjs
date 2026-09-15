@@ -14,6 +14,8 @@
 //   ⑤ 이중 차감 확인창이 저장 경로에 꽂혀 있다.
 //   ⑥ (2026-09-14 6단계) 서브트리 체인 저장의 세 축 — 순차·허브 마지막·이어 붙이기.
 //   ⑦ (2026-09-15 '전체') 드래프트 읽기가 위치 수만큼 왕복하지 않는다.
+//   ⑧ (2026-09-15 패널 안 옮기기) 완료 핸들러가 두 쌍의 입력·임시저장을 비우고, 적용취소가
+//      이동 점검을 지우고 비운 값을 되쓴다.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -295,6 +297,84 @@ need('그 액션이 쿼리 두 개다',
   /export async function getLocationDraftsFor\(/.test(actions) &&
   /const \[locRows, nullRows\] = await Promise\.all\(\[\s*\n\s*prisma\.stockCheckDraft\.findMany\(\{ where: \{ locationId: \{ in: locationIds \}/.test(actions),
   '안에서 위치마다 도는 순간 호출부만 한 줄이고 왕복 수는 그대로다')
+
+// ── ⑧ 패널 안 옮기기 (2026-09-15) ──────────────────────────────────
+// 옮긴 순간 그 두 쌍(품목×출발지, 품목×도착지)의 **미저장 입력은 무효**다. 점검 시점 정렬은
+// 옮김이 점검 전이든 후든 정합인데, 깨지는 경우가 딱 하나 있다 — '옮기기 전에 센 값을 옮긴 뒤에
+// 저장'. 화면이 그 한 경우를 막지 않으면 값은 저장되고 장부만 조용히 틀어진다(⑥ 과 같은 종류).
+// 비우기만 하고 되돌릴 길이 없으면 그것대로 사고이므로 적용취소까지 한 벌로 본다(§16).
+const tDone = fnBody(client, 'const handleTransferDone = async (res: TransferDone) => {')
+need('패널 이동 완료 핸들러를 찾음', tDone.length > 0)
+need('완료 핸들러가 두 쌍을 대상으로 삼는다',
+  /locId: res\.fromId/.test(tDone) && /locId: res\.toId/.test(tDone),
+  '출발지만 비우면 도착지 칸에 옮기기 전에 센 값이 남는다')
+need('완료 핸들러가 두 칸의 입력값을 지운다',
+  /setBeforeQtys\(dropKeys\)/.test(tDone) && /setAfterQtys\(dropKeys\)/.test(tDone),
+  '화면 입력을 그대로 두면 그 값이 다음 저장에서 옮긴 뒤의 실측으로 박힌다')
+need('완료 핸들러가 그 쌍의 서버 임시저장도 지운다',
+  /deleteStockCheckDraft\(p\.itemId, p\.locId\)/.test(tDone),
+  '화면만 비우면 다음 진입에서 옮기기 전의 값이 되살아난다')
+need('임시저장 삭제 반환값을 읽는다',
+  /const okFlags = settled\.map\(s => s\.status === 'fulfilled' && s\.value\.ok\)/.test(tDone))
+need('지우기 전에 스냅샷을 잡는다',
+  before(tDone, 'const snapshot = pairs.map(p => {', 'deleteStockCheckDraft('),
+  '지운 뒤에는 서버에 물어볼 자리가 없다')
+need('적용취소가 이동 점검을 지운다',
+  /deleteStockCheck\(res\.checkId\)/.test(tDone),
+  '이동은 점검으로 기록된다 — 그 점검을 지우는 것이 적용취소다(§16)')
+need('적용취소가 §16 토스트 액션에 달려 있다',
+  /action: \{ label: '적용취소', run: \(\) => \{ void \(async \(\) => \{/.test(tDone))
+need('적용취소가 있었던 임시저장만 되쓴다',
+  /const had = snapshot\.filter\(s => s\.draft != null\)/.test(tDone) && /saveStockCheckDraft\(\{/.test(tDone),
+  '없던 행까지 되쓰면 없던 임시저장이 생긴다')
+need('적용취소가 입력 문자열도 되돌린다',
+  /n\[s\.k\] = s\.before/.test(tDone) && /n\[s\.k\] = s\.after/.test(tDone))
+need('늦게 눌린 적용취소는 다른 위치의 패널을 안 건드린다',
+  /if \(locIdRef\.current === restoreLocId\)/.test(tDone),
+  'handleClearLocDrafts 와 같은 갈림 — 안 가르면 다른 위치의 사실을 이 위치의 것처럼 말한다')
+need('완료 토스트는 하나다',
+  (tDone.match(/pushToast\('success'/g) ?? []).length === 1,
+  '§27.2 이중 통지 금지 — 모달이 또 띄우면 같은 사건을 두 번 알린다')
+need('임시저장 정리 실패가 적용취소를 빼앗지 않는다',
+  /const cleanupFailed = okFlags\.some\(v => !v\)/.test(tDone) &&
+  /\.\.\.\(cleanupFailed \? \{ detail: /.test(tDone) &&
+  !/if \(okFlags\.some\(v => !v\)\) \{ pushToast\('error'/.test(tDone),
+  '옮기기는 이미 적용됐다 — 정리 실패로 되돌릴 길이 사라지면 그게 더 큰 사고다(§16)')
+const tSubmit = fnBody(client, '  const submit = async () => {')
+need('옮기기 모달의 submit 을 찾음', tSubmit.length > 0)
+need('행 진입에서는 모달이 제 토스트를 띄우지 않는다',
+  /if \(!lockItem\) \{[\s\S]{0,400}?pushToast\('success'/.test(tSubmit),
+  '완료 통지의 주인은 하나다 — 행 진입은 패널이 두 칸을 비운 사실까지 함께 말한다')
+need('모달이 결과를 호출부에 넘긴다',
+  /onDone\(\{ checkId, trackedItemId: item\.id, fromId, toId, qty: moveQty, swap: swapMode \}\)/.test(tSubmit))
+// 행 버튼 — 좌 '다른 곳으로' / 우 '옮김 없음' 한 줄. 허브 행에는 두지 않는다(§27.1).
+need('비허브 행에 다른 곳으로가 있다',
+  (client.match(/>\s*다른 곳으로\s*</g) ?? []).length === 1)
+const rowBtnRow = (() => {
+  const a = client.indexOf('<div className="flex items-center justify-between mt-1">')
+  if (a < 0) return ''
+  const b = client.indexOf('옮김 없음', a)
+  return b < 0 ? '' : client.slice(a, b)
+})()
+need('두 버튼이 한 줄에 마주 선다',
+  rowBtnRow.length > 0 && /다른 곳으로/.test(rowBtnRow),
+  '좌 다른 곳으로 · 우 옮김 없음 — justify-between 한 줄이 목업이다')
+need('히트영역 문법이 옮김 없음과 같다',
+  (client.match(/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/g) ?? []).length === 2,
+  '글자만이면 19px 이다 — §25 유사요소 확장으로 44px 를 낸다')
+const hubBranch = (() => {
+  const a = client.indexOf('허브 위치 점검 — 잔량 1칸')
+  const b = client.indexOf('비허브 위치 점검', a)
+  return a >= 0 && b > a ? client.slice(a, b) : ''
+})()
+need('허브 행 가지를 찾음', hubBranch.length > 0)
+need('허브 행에는 다른 곳으로가 없다',
+  !/다른 곳으로/.test(hubBranch),
+  "창고에서 나가는 이동은 도착지 행의 '채운 후' 가 정본이다 — 같은 일에 입구를 둘 만들지 않는다")
+need('행 진입이 품목 고정·출발지 프리셀렉트로 연다',
+  /<TransferStockModal rows=\{rows\} z=\{260\} lockItem\s*\n\s*initialItemId=\{rowTransfer\.itemId\} initialFromId=\{rowTransfer\.fromId\}/.test(client))
+need('행 진입만 완료 결과를 소비한다',
+  /onDone=\{result => \{ setRowTransfer\(null\); if \(result\) void handleTransferDone\(result\) \}\}/.test(client))
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
