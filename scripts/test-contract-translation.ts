@@ -1738,7 +1738,8 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
 // **한계를 정직하게 적는다.** 여기 목록은 패널이 실측한 낱말이지 그 언어의 임대차 어휘 전부가
 // 아니다. 새 번역을 넣을 때 이 그물이 침묵한다고 안전한 것이 아니다. 그리고 **영업장 사전(DB)은
 // 못 본다** — verify:fast 가 DB 를 안 읽는다. 그쪽은 `scripts/fix-contract-translation-text.ts`
-// 가 옮겼다.
+// 가 옮겼고, 지금은 `scripts/check-contract-dict-terms.ts`(verify:db)가 같은 낱말 표로 지킨다 —
+// **아래 표에 낱말을 더하면 그쪽 표도 함께 고쳐라.** 입력이 달라 한 상수로 못 묶은 쌍둥이다.
 //
 // vi 는 여기 없다. 본문이 사람을 `người thuê`(임차인)라 부르고 있어 화면만 고치면 문서 안에서
 // 어긋난다 — 본문 18건과 한 덩어리로 가야 해서 운영자가 원어민 확인 뒤로 미뤘다.
@@ -1749,7 +1750,9 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
     bn:  [{ word: 'ভাড়াটিয়া', why: '세입자' }, { word: 'বাড়িভাড়া', why: '집세' }],
     en:  [{ word: 'Tenant', why: '임차인' }, { word: 'tenant', why: '임차인' }, { word: 'landlord', why: '임대인' }],
     ja:  [{ word: '賃料', why: '임대차' }, { word: '家賃', why: '임대차' }, { word: '宿泊料', why: '숙박업' }],
-    zh:  [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿费', why: '숙박업' }],
+    // `退租` 는 두 표기가 같은 글자라 본토에도 그대로 선다. zht 에만 두면 같은 낱말이 한쪽에서만
+    // 금지인 비대칭이 되고, 本土 住房租赁 시범문본도 그 말을 쓰는 임대차 실무어다.
+    zh:  [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿费', why: '숙박업' }, { word: '退租', why: '임대차' }],
     zht: [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿費', why: '숙박업' }, { word: '退租', why: '임대차' }],
   }
 
@@ -1792,7 +1795,7 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   console.log(`  [실측] 임대차·숙박업 낱말: ${Object.keys(FORBIDDEN).length}언어 × (권장 4 + 안내 ${SIGN_KEYS.length}) 자리 · 위반 ${hits.length}`)
 }
 
-// ── 14단계 중국어 둘의 퇴실 낱말은 그 언어의 실무어다 (2026-09-17 운영자 결정) ──────────
+// ── 14단계 중국어 둘의 퇴실 낱말은 그 언어의 실무어다 (2026-09-16 운영자 결정) ──────────
 //
 // **13단계와 축이 다르다. 섞지 마라.** 13은 "그 낱말이 임대차·숙박업 프레임을 끌고 오는가"라는
 // **법 프레임** 축이고, 여기는 "그 언어의 실무 문서가 실제로 그 말을 쓰는가"라는 축이다. 서로를
@@ -1813,7 +1816,8 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
 //
 // **영업장 사전(DB)은 여기서 못 본다** — verify:fast 가 DB 를 안 읽는다. 그쪽은
 // `scripts/fix-contract-translation-text.ts` 가 zht 17줄·zh 17줄을 옮겼고, 되돌아가면 이 그물이
-// 아니라 그 스크립트를 다시 돌려야 한다.
+// 아니라 그 스크립트를 다시 돌려야 한다. 사전이 다시 옛 낱말로 돌아가는지는
+// `scripts/check-contract-dict-terms.ts`(verify:db)가 본다 — **낱말을 더하면 그쪽도 함께 고쳐라.**
 {
   const zhTexts = (lang: 'zh' | 'zht'): { where: string; text: string }[] => [
     { where: '청소비 권장(있음)', text: RECOMMENDED_CLEANING_TRANSLATION.clause[lang] },
@@ -1830,21 +1834,36 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   // 급소 둘 — 새 낱말이 실제로 그 자리에 섰다.
   eq('청소비 권장(있음) zht 가 遷出 을 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.zht.includes('遷出'), true)
   eq('청소비 권장(없음) zht 가 遷出 을 쓴다', RECOMMENDED_CLEANING_TRANSLATION.none.zht.includes('遷出'), true)
-  eq('zht 코드 문안에 退房·退租 가 없다',
-    zht.filter(t => /退房|退租/.test(t.text)).map(t => t.where), [])
+  eq('zht 코드 문안에 退房·退租·退宿·迁出 이 없다',
+    zht.filter(t => /退房|退租|退宿|迁出/.test(t.text)).map(t => t.where), [])
 
   // zh — 같은 꼴.
   eq('zh 코드 문안에 退住 가 없다', zh.filter(t => t.text.includes('退住')).map(t => t.where), [])
   eq('청소비 권장(있음) zh 가 搬离 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.zh.includes('搬离'), true)
   eq('청소비 권장(없음) zh 가 搬离 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.none.zh.includes('搬离'), true)
-  eq('zh 코드 문안에 退房·退租 가 없다',
-    zh.filter(t => /退房|退租/.test(t.text)).map(t => t.where), [])
+  eq('zh 코드 문안에 退房·退租·退宿·迁出 이 없다',
+    zh.filter(t => /退房|退租|退宿|迁出/.test(t.text)).map(t => t.where), [])
+
+  // 자형 순도 — 낱말 단언만으로는 **우회가 남는다.** zht 자리에 간체 본문을 통째로 넣고
+  // `遷出`·`使用費` 두 글자만 번체로 남기면 위 여덟 단언이 전부 초록이다(낱말은 맞고 옛 낱말도
+  // 없으니까). 그런데 대만 입주자가 받는 종이는 간체로 나간다. 낱말 축과 **자형 축은 다르다.**
+  //
+  // 표는 두 문안이 실제로 쓰는 글자에서 뽑은 짝이다(같은 순서로 1:1). 간체 전용 글자가 zht 에
+  // 있으면, 번체 전용 글자가 zh 에 있으면 빨강. 지금 네 자리 + 안내 문안이 이미 이 표를
+  // 만족하므로 새로 고칠 문안은 없다 — 이 단언은 **다음 회차의 우회**를 막는 자리다.
+  const SIMP_ONLY = '费洁对价结离时与无内后务为'
+  const TRAD_ONLY = '費潔對價結離時與無內後務為'
+  const glyphHits = (rows: { where: string; text: string }[], bad: string) =>
+    rows.flatMap(t => [...bad].filter(ch => t.text.includes(ch)).map(ch => `${t.where}:${ch}`))
+  eq('zht 문안에 간체 전용 글자가 없다', glyphHits(zht, SIMP_ONLY), [])
+  eq('zh 문안에 번체 전용 글자가 없다', glyphHits(zh, TRAD_ONLY), [])
 
   // 실측 줄은 **잰 값**을 찍는다(11·12단계와 같은 규칙). 0 을 글자로 박으면 붉게 선 회차에도
   // 거짓을 말한다.
-  const stale = [...zht, ...zh].filter(t => /退住|退房|退租/.test(t.text)).length
+  const stale = [...zht, ...zh].filter(t => /退住|退房|退租|退宿|迁出/.test(t.text)).length
   const fresh = [...zht.filter(t => t.text.includes('遷出')), ...zh.filter(t => t.text.includes('搬离'))].length
-  console.log(`  [실측] 중국어 퇴실 낱말: zht ${zht.length}자리 · zh ${zh.length}자리 · 옛 낱말 잔존 ${stale} · 새 낱말 선 자리 ${fresh}`)
+  const mixed = glyphHits(zht, SIMP_ONLY).length + glyphHits(zh, TRAD_ONLY).length
+  console.log(`  [실측] 중국어 퇴실 낱말: zht ${zht.length}자리 · zh ${zh.length}자리 · 옛 낱말 잔존 ${stale} · 새 낱말 선 자리 ${fresh} · 자형 섞임 ${mixed}`)
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

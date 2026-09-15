@@ -114,7 +114,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
                 ? <span className="tabular-nums"> · {ctx.phone.value}</span>
                 : <span className="text-[var(--danger-fg)]"> · 전화번호가 없습니다 (입주자 연락처를 먼저 등록하세요)</span>}
               {/* 대체 고지 — 이 번호의 주인이 입주자가 아니라는 사실은 누르기 **전에** 서야 한다.
-                  붉게 안 칠한다: 오류가 아니라 운영자가 고른 대체다(2026-09-17 결정). 형제 모달
+                  붉게 안 칠한다: 오류가 아니라 운영자가 고른 대체다(2026-09-16 결정). 형제 모달
                   (UnpaidSmsModal)과 같은 문장·같은 자리다. */}
               {ctx.phone?.source === 'emergency' && (
                 <span className="block mt-[5px] text-[0.6875rem] text-[var(--warm-mid)] leading-relaxed">

@@ -45,7 +45,7 @@ export type TenantDocBundleMail = { enabled: boolean; to: string | null }
  * 켤 키도 끌 스위치도 없다(형제 문자 모달 셋이 기기를 가리지 않는 것과 같은 이유).
  */
 // to 는 번호 하나가 아니라 **주인까지** 묶인 값이다(PickedPhone) — 본인 번호가 없으면 비상
-// 연락처로 대체되고, 시트가 그 사실을 고지해야 한다(2026-09-17 운영자 결정).
+// 연락처로 대체되고, 시트가 그 사실을 고지해야 한다(2026-09-16 운영자 결정).
 export type TenantDocBundleSms = { to: PickedPhone | null; propertyName: string }
 
 export async function getTenantDocBundle(

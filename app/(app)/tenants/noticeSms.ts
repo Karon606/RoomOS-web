@@ -26,7 +26,7 @@ export type NoticeSmsTarget = {
   name: string
   roomNo: string
   // null = 보낼 번호 없음(발송 불가, 목록에 회색 표시). source 가 'emergency' 면 본인이 아니라
-  // 비상 연락처로 가는 행이다 — 기본 선택에서 빠지고 번호 뒤에 꼬리표가 붙는다(2026-09-17).
+  // 비상 연락처로 가는 행이다 — 기본 선택에서 빠지고 번호 뒤에 꼬리표가 붙는다(2026-09-16).
   phone: PickedPhone | null
   // 조건 축 원값 — 방 정보
   floor: string          // '' = 유추 불가
