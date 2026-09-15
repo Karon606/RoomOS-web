@@ -65,3 +65,114 @@ export function pickTenantPhone(
     ?? home.find(c => c.isPrimary) ?? home[0]
   return hit?.contactValue ?? null
 }
+
+// ============================================================
+// 대체(비상 연락처) — 위 정본이 null 을 답한 사람에게만 열리는 두 번째 문
+//
+// **왜 위를 안 고치고 밑에 다는가.** 위 함수의 `!c.isEmergency` 는 "그 번호의 주인은 입주자가
+// 아니다"라는 사실이고, 그것이 종이(계약서·실거주 확인서)의 규칙이다. 관청에 내는 종이에
+// 남의 번호를 대신 적을 수는 없다. 그래서 축을 가른다 — **종이는 위 문, 문자는 아래 문.**
+//
+// 문자는 사정이 다르다. 본인 번호가 아예 없는 사람에게 미납 안내를 못 보내는 것보다, 비상
+// 연락처(가족)에게 가는 편이 낫다는 것이 운영자 결정(2026-09-17)이다. 다만 **누구에게 가는지**
+// 화면이 반드시 말해야 한다 — 그래서 값만 돌려주지 않고 `source`·`ownerLabel` 을 같이 묶는다.
+// 호출부가 `.value` 를 꺼낼 때 그 옆에 주인이 같이 보이는 것이 이 타입의 유일한 목적이다.
+// ============================================================
+
+/** 비상 연락처의 주인을 적으려면 두 칸이 더 필요하다(TenantContact 의 emergencyName·emergencyRelation). */
+export type TenantPhoneContactWithOwner = TenantPhoneContact & {
+  emergencyName?: string | null
+  emergencyRelation?: string | null
+}
+
+/**
+ * 고른 번호 하나와 **그 번호의 주인**.
+ *
+ * `source: 'emergency'` 면 이 번호는 입주자 본인 것이 아니다. 문자열 하나만 돌려주면 그 사실이
+ * 호출부에서 증발하고, 화면은 본인에게 보내는 줄 안다. 묶어서 돌려주는 것이 유일한 방어다.
+ */
+export type PickedPhone = {
+  value: string
+  source: 'self' | 'emergency'
+  /** 비상 연락처일 때 그 번호의 주인 — '김철수(부모님)' · '김철수' · '부모님' · null(둘 다 없음). */
+  ownerLabel: string | null
+}
+
+/** 비상 연락처 주인 표기 네 갈래. 이름만·관계만·둘 다·없음. */
+function emergencyOwnerLabel(c: TenantPhoneContactWithOwner): string | null {
+  const name = (c.emergencyName ?? '').trim()
+  const relation = (c.emergencyRelation ?? '').trim()
+  if (name && relation) return `${name}(${relation})`
+  return name || relation || null
+}
+
+/**
+ * 문자가 갈 번호 — 본인 번호가 없으면 비상 연락처로 대체한다. 없으면 null.
+ *
+ * 본인 갈래는 위 정본(pickTenantPhone)을 그대로 부른다. 여기서 다시 세우지 않는다 — 두 벌이면
+ * 문자와 종이가 같은 사람에게 다른 본인 번호를 답하게 된다.
+ * 대체 갈래의 순서 규칙도 정본과 같다 — createdAt 오름차순, 동률은 id, kinds 안.
+ * (비상 연락처는 폼이 한 사람에 하나만 만들지만, 엑셀 가져오기·옛 데이터에는 둘이 있다.)
+ */
+export function pickTenantPhoneWithFallback(
+  contacts: readonly TenantPhoneContactWithOwner[],
+  kinds: readonly string[] = PHONE_CONTACT_KINDS,
+): PickedPhone | null {
+  const self = pickTenantPhone(contacts, kinds)
+  if (self != null) return { value: self, source: 'self', ownerLabel: null }
+  const byAge = [...contacts].sort((a, b) =>
+    (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const hit = byAge.find(c => c.isEmergency && kinds.includes(c.contactType))
+  if (!hit) return null
+  return { value: hit.contactValue, source: 'emergency', ownerLabel: emergencyOwnerLabel(hit) }
+}
+
+/**
+ * 앞뒤 공백을 걷고, 그러고 나서 빈 값이면 null — 문자 갈래 넷이 쓰던 `?.trim() || null` 한 벌이다.
+ * 옛 데이터에 공백이 섞인 번호가 있고 그대로 sms: 링크에 실리면 번호가 깨진다.
+ */
+export function trimPickedPhone(picked: PickedPhone | null): PickedPhone | null {
+  const value = picked?.value.trim()
+  return picked && value ? { ...picked, value } : null
+}
+
+/**
+ * 예약을 확정해도 되는가 — 본인 전화번호가 없으면 문구, 있으면 null.
+ *
+ * **왜 문이 필요한가.** 예약 확정은 방을 잡아 두고 다른 손님을 돌려보내는 결정이다. 그 사람에게
+ * 연락할 길이 본인 번호로 없으면, 입주일에 안 오는 것을 당일에야 안다. 메신저 아이디만 있는
+ * 경우도 막는다(운영자 결정 2026-09-17) — 문자·전화가 안 되는 아이디는 연락 수단으로 안 센다.
+ * 유선전화와 해외 번호는 통과다. 전화가 걸리는 번호이기 때문이고, 문자가 안 가는 사정은
+ * 폼 안내가 따로 말한다.
+ *
+ * **비상 연락처는 여기서 대체가 안 된다.** 문자는 대체해도 되지만(위 함수), 방을 잡아 두는
+ * 결정의 근거로 남의 번호를 세울 수는 없다.
+ *
+ * @param alreadyConfirmed 이미 확정된 계약이면 통과 — 소급해서 막지 않는다. 옛 데이터에는 본인
+ *   번호 없이 확정된 사람이 있고, 그 사람 이름을 고치려다 저장이 막히면 문이 일을 방해한다.
+ */
+export function reservationConfirmPhoneDenial(input: {
+  contacts: readonly TenantPhoneContact[]
+  alreadyConfirmed: boolean
+}): string | null {
+  if (input.alreadyConfirmed) return null
+  if (pickTenantPhone(input.contacts, PHONE_CONTACT_KINDS) != null) return null
+  // 본인 연락처 칸에 뭔가 적혀 있는데 전화가 아닌 경우 — 카카오 아이디만 적어 둔 사람이다.
+  if (input.contacts.some(c => !c.isEmergency)) {
+    return `${RESERVATION_PHONE_DENIAL_PREFIX} 전화번호는 필수입니다. 지금은 메신저 연락처만 등록돼 있습니다.`
+  }
+  if (input.contacts.length > 0) {
+    return `${RESERVATION_PHONE_DENIAL_PREFIX} 연락처는 필수입니다. 지금은 비상 연락처만 등록돼 있습니다.`
+  }
+  return `${RESERVATION_PHONE_DENIAL_PREFIX} 연락처는 필수입니다. 등록된 연락처가 없습니다.`
+}
+
+/**
+ * 위 세 문구의 공통 머리 — **화면이 이 거부를 알아보는 표식이다.**
+ *
+ * 문구로 갈래를 알아보는 것은 약한 방법이지만, 여기서 문구를 만들고 여기서 머리를 내주므로
+ * 둘이 갈릴 수 없다(호출부가 제 손으로 적은 문자열과 맞추던 시절의 문제는 안 생긴다).
+ * 이 표식을 보고 폼은 연락처 칸으로 데려가고, 전환 창은 '입주자 정보' 액션을 단다 —
+ * 두 화면 다 고칠 칸이 그 창 안에 없어서 문구만으로는 갈 곳을 모른다.
+ */
+export const RESERVATION_PHONE_DENIAL_PREFIX = '예약 확정 시 본인'

@@ -5,6 +5,7 @@
 // transitionsFor() 정의 그대로 이주.
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, finalizeRentRefund,
@@ -34,6 +35,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
 import { CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { fmtRoomList } from '@/lib/roomNo'
+import { RESERVATION_PHONE_DENIAL_PREFIX } from '@/lib/tenantContact'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
@@ -186,6 +188,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   onChange?: () => void
 }) {
   const entityModal = useEntityModal()
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   /**
    * 창을 여는 중 — **버튼을 누른 뒤 모달이 뜨기까지의 서버 왕복**을 덮는다.
@@ -497,6 +500,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               confirmLabel: '일정 짜기',
             })
             if (go) { setActive(null); setEarlyOpen(true) }
+            return
+          }
+          // 본인 연락처가 없어 막힌 것이면 고칠 자리로 가는 문을 함께 낸다(§15 액션).
+          // 이 창에는 연락처 칸이 없어서 문구만으로는 어디를 고칠지 알 수 없다.
+          if (res.error.startsWith(RESERVATION_PHONE_DENIAL_PREFIX)) {
+            pushToast('error', res.error, {
+              action: { label: '입주자 정보', run: () => router.push(`/tenants?tenantId=${tenantId}&edit=1`) },
+            })
             return
           }
           pushToast('error', res.error); return

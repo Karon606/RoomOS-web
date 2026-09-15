@@ -1315,16 +1315,24 @@ export async function saveBusinessInfo(info: BusinessInfo): Promise<{ ok: true }
   }
 }
 
-// ── 사업자등록증 사본 (도장과 같은 업로드 축, 이미지·PDF 둘 다 받음) ──────
+// ── 사업자등록증 사본 (도장과 같은 업로드 축, 저장 형식은 PDF) ──────
 //
-// 상담 중 문자·메일 첨부로 그대로 나가는 원본이라 변환하지 않고 올린 형식 그대로 둔다.
+// 상담 중 문자·메일 첨부로 그대로 나가는 원본이라 서버는 변환하지 않는다. **정규화는 올리기
+// 전에 브라우저가 한다**(lib/uploadImage 의 fileToUploadPdf, 운영자 결정 2026-09-16) — 사진은
+// PDF 한 장이 되어 도착하고, 서버는 그 형식만 받는다.
+//
 // 도장처럼 공개 읽기 권한을 붙이지 않는다 — 사업자등록증은 상호·대표자·소재지가 한 장에 모인
 // 서류라 링크만 알면 열리는 상태로 두면 안 된다. 화면도 전송도 /api/biz-cert 인증 프록시를 쓴다.
 //
 // 4MB 상한의 사정: 이 파일은 서버리스 함수가 바이트를 통째로 실어 응답한다(그 경로의 실질 한도가
 // 4.5MB). 도장·로고의 5MB 를 그대로 쓰면 경계 부근 파일이 업로드는 되고 전송에서만 터진다.
+// **이 상한은 변환 뒤 크기 기준이다** — 클라이언트가 변환한 File 의 size 로 재고, 화면 안내도 그렇게 적는다.
 const MAX_BIZ_CERT_BYTES = 4 * 1024 * 1024
-const BIZ_CERT_MIME_OK = (m: string) => m.startsWith('image/') || m === 'application/pdf'
+// JPEG·PNG 를 함께 받는 것은 안전망이다. 변환 정본을 못 태운 낡은 화면이 남아 있어도 첨부·미리보기가
+// 도는 형식이라 조용히 깨지지 않는다. **HEIC/HEIF 는 여기서 끝난다** — 그 바이트가 저장되면
+// 상담 첨부도 서류 묶음도 열리지 않는 파일을 내보낸다(그게 이 좁히기의 이유다).
+const BIZ_CERT_MIME_OK = (m: string) => m === 'application/pdf' || m === 'image/jpeg' || m === 'image/png'
+const BIZ_CERT_MIME_ERROR = 'PDF 또는 JPG·PNG 파일만 업로드 가능합니다.'
 
 export async function createBizCertUploadSession(input: {
   fileName: string
@@ -1334,7 +1342,7 @@ export async function createBizCertUploadSession(input: {
 }): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    if (!BIZ_CERT_MIME_OK(input.mimeType)) return { ok: false, error: '이미지 또는 PDF 파일만 업로드 가능합니다.' }
+    if (!BIZ_CERT_MIME_OK(input.mimeType)) return { ok: false, error: BIZ_CERT_MIME_ERROR }
     if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
     if (input.fileSize > MAX_BIZ_CERT_BYTES) return { ok: false, error: `파일 크기는 ${MAX_BIZ_CERT_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
     if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
@@ -1365,7 +1373,7 @@ export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; 
     if (!mimeType) return { ok: false, error: '업로드된 파일을 확인하지 못했습니다.' }
     if (!BIZ_CERT_MIME_OK(mimeType)) {
       try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
-      return { ok: false, error: '이미지 또는 PDF 파일만 업로드 가능합니다.' }
+      return { ok: false, error: BIZ_CERT_MIME_ERROR }
     }
     const prev = await prisma.property.findUnique({
       where: { id: propertyId },

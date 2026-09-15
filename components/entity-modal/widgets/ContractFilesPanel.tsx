@@ -34,6 +34,7 @@ import {
   type ContractShareLinkInfo,
 } from '@/app/(app)/tenants/contractShare'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { fileToUploadPdf } from '@/lib/uploadImage'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
@@ -269,13 +270,17 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     setUploading(true)
     const release = trackSave()
     try {
+      // 사진은 올리기 전에 PDF 한 장이 된다(lib/uploadImage, 2026-09-16). 스캔본은 종이가 되는
+      // 자리라 소비처 전부가 아는 형식이어야 하고, 아이폰 HEIC 를 그대로 저장하면 보기·메일 첨부가
+      // 열리지 않는 파일로 나간다. 변환 실패는 던지므로 원본이 조용히 올라가는 분기가 없다.
+      const { file: upFile } = await fileToUploadPdf(file)
       const session = await createContractScanUploadSession({
-        tenantId, fileName: file.name, mimeType: file.type || 'application/octet-stream', fileSize: file.size,
+        tenantId, fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
         origin: window.location.origin,
       })
       if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
-      const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name, decision })
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, upFile)
+      const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: upFile.name, decision })
       if (!fin.ok) { pushToast('error', fin.error); return }
       // 화면이 낡아 못 물었을 때의 그물 — 서버가 안전한 쪽(보관용)으로 넣고 여기서 되묻는다.
       let promoted = false

@@ -21,6 +21,8 @@ import { digitsToIso } from '@/lib/birthdate'
 import { NATIVE_NAME_MAX, showsForeignFields, isForeignForDocuments, docNameStyles, asDocNameStyle, DOC_NAME_STYLE_LABEL, type DocNameStyle } from '@/lib/documentName'
 import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { pickTenantPhone, pickTenantPhoneWithFallback, reservationConfirmPhoneDenial,
+  RESERVATION_PHONE_DENIAL_PREFIX, type TenantPhoneContactWithOwner } from '@/lib/tenantContact'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
   batchUpdateTenants, finalizeRentRefund, undoRentRefund,
@@ -724,6 +726,20 @@ export default function TenantClient({
   const [detailEditLeaseId, setDetailEditLeaseId] = useState<string | null>(null)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
+  /**
+   * 저장 거부를 화면에 앉힌다 — 연락처 문이면 **그 칸으로 데려간다**.
+   *
+   * 문구만 띄우면 고칠 칸이 스크롤 밖이라 안 보인다. 포커스가 곧 이동이다 — 보이는 띠의
+   * 35% 목표선까지 데려가는 일은 정본(ViewportOffsetGuard·lib/keyboardViewport)이 포커스를
+   * 보고 한다. 여기서 스크롤을 또 적으면 같은 규칙이 두 벌이 된다(§30).
+   * 폼이 여럿 떠 있을 수 있어 마지막 칸을 고른다 — 나중에 열린 창이 위에 있다.
+   */
+  const showSaveDenial = (message: string) => {
+    setError(message)
+    if (!message.startsWith(RESERVATION_PHONE_DENIAL_PREFIX)) return
+    const all = document.querySelectorAll<HTMLInputElement>('input[name="contactValue"]')
+    all[all.length - 1]?.focus()
+  }
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string; compositionLabel: string | null } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   // '나중에 반환' — 아무것도 기록하지 않고 홈 알림(보증금 반환 대기)에 남긴다(운영자 승인 2026-09-01).
@@ -1186,7 +1202,7 @@ export default function TenantClient({
     }
     startTransition(async () => {
       const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
-      if (!res.ok) { setError(res.error); return }
+      if (!res.ok) { showSaveDenial(res.error); return }
       setShowAdd(false); refresh()
     })
   }
@@ -1198,7 +1214,7 @@ export default function TenantClient({
     if (!await confirmRoomOverlap(fd)) return
     startTransition(async () => {
       const res = await withSave(() => addLeaseToTenant(fd), { success: '계약 추가됨' })
-      if (!res.ok) { setError(res.error); return }
+      if (!res.ok) { showSaveDenial(res.error); return }
       setAddLeaseTenant(null); setAddLeaseDirty(false); refresh()
     })
   }
@@ -1296,7 +1312,7 @@ export default function TenantClient({
       && (fd.get('roomId') as string | null) === ''
     startTransition(async () => {
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
-      if (!res.ok) { setError(res.error); return }
+      if (!res.ok) { showSaveDenial(res.error); return }
       if (res.notice) pushToast('info', res.notice)
       else if (clearsMoveOut) pushToast('info', '퇴실 예정일도 함께 지웠습니다')
       else if (clearsRoom) pushToast('info', '호실 배정을 해제했습니다', { detail: '이용료도 함께 비웠습니다' })
@@ -3701,6 +3717,60 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [cancelReasonPrefill, setCancelReasonPrefill] = useState<string | null>(null)
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(해외 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
+  // 연락처 세 칸의 **지금 입력값**. 저장값이 아니라 이 값으로 아래 안내를 판정한다 —
+  // 번호를 방금 적었으면 안내가 그 자리에서 사라져야 한다(저장을 기다리면 안내가 거짓말을 한다).
+  // 칸 자체는 그대로 자기 상태를 쥔다. 여기 셋은 안내 판정에만 쓰이고 저장은 폼이 한다.
+  const [contactVal, setContactVal] = useState(primary?.contactValue ?? '')
+  const [emergencyVal, setEmergencyVal] = useState(emergency?.contactValue ?? '')
+  const [homeCountryVal, setHomeCountryVal] = useState(homeCountry?.contactValue ?? '')
+  /**
+   * 이 저장이 끝난 뒤 이 사람에게 남을 전화 연락처 — 아래 안내와 확정 캡션의 입력이다.
+   *
+   * 판정(무엇이 본인 번호인가·비상으로 언제 넘어가는가)은 lib/tenantContact 정본이 하고,
+   * 여기서는 그 **입력만** 조립한다. 조립 규칙은 서버의 저장 규칙 그대로여야 화면과 서버가
+   * 같은 답을 낸다(updateTenant :1283~).
+   *   · 본인 칸을 비운 저장은 저장된 번호를 **안 지운다**(서버가 값이 있을 때만 갱신한다).
+   *   · 비상 칸은 비우면 그 뜻대로 지워진다.
+   *   · 해외 칸은 국적이 대한민국이면 안 그려지고, 그런 저장은 기존 값을 보존한다.
+   */
+  const contactPreview = useMemo<TenantPhoneContactWithOwner[]>(() => {
+    const rows: TenantPhoneContactWithOwner[] = []
+    // 만든 순서를 id 로 재현한다 — 정본이 createdAt 동률에서 id 로 가른다.
+    const base = (i: number) => ({ id: String(i), createdAt: new Date(0), isPrimary: false, isHomeCountry: false })
+    const self = contactVal.trim()
+    if (self) rows.push({ ...base(0), contactType: contactTypeVal, contactValue: self, isPrimary: true, isEmergency: false })
+    else if (primary) rows.push({ ...base(0), contactType: primary.contactType, contactValue: primary.contactValue, isPrimary: true, isEmergency: false })
+    const emg = emergencyVal.trim()
+    if (emg) rows.push({ ...base(1), contactType: 'PHONE', contactValue: emg, isEmergency: true })
+    const home = showsForeignFields(natVal) ? homeCountryVal.trim() : (homeCountry?.contactValue ?? '')
+    if (home) rows.push({ ...base(2), contactType: 'PHONE', contactValue: home, isEmergency: false, isHomeCountry: true })
+    return rows
+  }, [contactVal, contactTypeVal, primary, emergencyVal, homeCountryVal, homeCountry, natVal])
+
+  // 문자가 어디로 가는가(유선 제외) · 방을 잡아 둬도 되는가(유선·해외 포함) · 국내 번호가 있는가.
+  // 셋 다 정본 함수가 답한다 — 서버의 문과 같은 함수라 화면이 통과를 약속하고 서버가 막는 일이 없다.
+  const smsPick = pickTenantPhoneWithFallback(contactPreview, ['PHONE'])
+  const confirmPhoneDenial = reservationConfirmPhoneDenial({
+    contacts: contactPreview, alreadyConfirmed: isConfirmedReservation(lease),
+  })
+  const hasLocalSmsPhone = pickTenantPhone(contactPreview.filter(c => !c.isHomeCountry), ['PHONE']) != null
+
+  /**
+   * 연락처 칸 아래 안내 두 줄 — 첫 줄은 "문자가 어디로 가는가", 둘째 줄은 "확정이 되는가".
+   * 확인창이 아니라 **폼 안 안내**다(§18 틴트만, 좌측 팁 없음). 지속 사실이라 토스트로 안 띄운다.
+   */
+  const contactNote = (() => {
+    const dest = smsPick == null
+      ? (contactPreview.length === 0
+        ? '등록된 연락처가 없어 문자를 보낼 수 없습니다.'
+        : '문자를 보낼 수 있는 번호가 없습니다.')
+      : smsPick.source === 'emergency'
+        ? '본인 연락처가 없어 문자가 비상 연락처로 나갑니다.'
+        : !hasLocalSmsPhone ? '국내 번호가 없어 문자가 해외 번호로 나갑니다.' : null
+    if (!dest) return confirmPhoneDenial ? '예약 확정에는 본인 연락처가 필요합니다.' : null
+    return `${dest}\n${confirmPhoneDenial ? '예약 확정에는 본인 연락처가 필요합니다.' : '예약 확정은 이대로 가능합니다.'}`
+  })()
+
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   // '메인 계약' 선택 — 창고류 방(공실 집계 제외)이 묶일 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
   const [parentVal, setParentVal] = useState(lease?.parentLeaseTermId ?? '')
@@ -4253,7 +4323,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           </SelectField>
           <div className="col-span-2 space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
-            <ContactValueInput name="contactValue" defaultValue={primary?.contactValue ?? ''} contactType={contactTypeVal} />
+            <ContactValueInput name="contactValue" defaultValue={primary?.contactValue ?? ''} contactType={contactTypeVal}
+              onValueChange={setContactVal} />
           </div>
         </div>
         <Field label="이메일" name="email" type="email" defaultValue={tenant?.email ?? ''} placeholder="example@email.com" />
@@ -4267,7 +4338,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         </div>
         <div className="space-y-1.5 -mt-1">
           <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
-          <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
+          <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} onValueChange={setEmergencyVal} />
         </div>
         {/* 해외 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
             낱말은 2026-08-24 운영자 확정. '본국'은 국적국을 뜻해 국적 미국·거주 일본 같은 경우와
@@ -4290,8 +4361,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             defaultCountry={homeCountry?.countryCode ?? codeByName(natVal) ?? 'KR'}
             syncCountry={homeCountry ? undefined : codeByName(natVal)}
             placeholder="국가 선택 후 번호 입력"
+            onValueChange={setHomeCountryVal}
           />
         </div>
+        )}
+        {/* 폼 안 안내 — 확인창이 아니다(§18 틴트만, 좌측 팁 없음). 지속 사실이라 토스트로 안 띄운다.
+            판정은 **지금 입력값**으로 한다 — 번호를 방금 적으면 그 자리에서 사라져야 한다.
+            문자가 어디로 가는지와 확정이 되는지는 축이 다르므로 두 줄로 나눠 적는다. */}
+        {contactNote && (
+          <p className="rounded-lg bg-[var(--warning-bg)] px-[14px] py-[10px] text-xs leading-relaxed text-[var(--warm-mid)] whitespace-pre-line">
+            {contactNote}
+          </p>
         )}
       </FormSection>
       </>
@@ -4538,9 +4618,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
               )}
             </label>
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
-              체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
-            </p>
+            {/* 확정을 켜 둔 채 본인 번호가 없으면, 캡션 자리가 그 사실을 말한다 — 저장을 눌러야
+                알게 되면 폼을 한참 채운 뒤에 막힌다. 판정은 서버 문과 **같은 함수**다. */}
+            {reservationConfirmed && confirmPhoneDenial ? (
+              <p className="text-[0.6875rem] text-[var(--danger-fg)] leading-relaxed pl-6">
+                본인 연락처가 없어 지금은 확정할 수 없습니다. 위 연락처 칸을 채워 주세요.
+              </p>
+            ) : (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
+                체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
+              </p>
+            )}
           </div>
         )}
         {/* 입주 희망일 — 예약/투어 단계는 상태 클러스터 안(상태 바로 아래)에 표시 */}
@@ -5268,7 +5356,11 @@ const CONTACT_PLACEHOLDER: Record<string, string> = {
 // 연락처 입력 — 연락수단(contactType)에 따라 전화계열이면 자동 하이픈 포맷, 메신저면 아이디 원문.
 // 전환 시 기존 값은 재포맷하지 않고 보존한다(전에는 마운트 이펙트가 하이픈·문자 든 메신저 ID를
 // 조용히 훼손했다 — 전문가 패널 지적). 초기값만 현재 타입에 맞춰 표시하고, 이후 입력부터 새 포맷 적용.
-function ContactValueInput({ name, defaultValue, contactType }: { name: string; defaultValue?: string; contactType: string }) {
+function ContactValueInput({ name, defaultValue, contactType, onValueChange }: {
+  name: string; defaultValue?: string; contactType: string
+  /** 지금 값을 밖에서도 알아야 할 때만 준다 — 폼 안 안내가 저장값이 아니라 이 값으로 판정한다. */
+  onValueChange?: (v: string) => void
+}) {
   const isPhone = contactType === 'PHONE' || contactType === 'LANDLINE'
   const [value, setValue] = useState(defaultValue ? (isPhone ? formatPhone(defaultValue) : defaultValue) : '')
   return (
@@ -5276,7 +5368,11 @@ function ContactValueInput({ name, defaultValue, contactType }: { name: string; 
       type={isPhone ? 'tel' : 'text'}
       name={name}
       value={value}
-      onChange={e => setValue(isPhone ? formatPhone(e.target.value) : e.target.value)}
+      onChange={e => {
+        const next = isPhone ? formatPhone(e.target.value) : e.target.value
+        setValue(next)
+        onValueChange?.(next)
+      }}
       placeholder={CONTACT_PLACEHOLDER[contactType] ?? ''}
       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
     />

@@ -84,13 +84,24 @@ export async function fillResidenceCertSeoul(
     }
   }
 
-  // 도장 — 인쇄된 '(인)' 을 흰 박스로 덮고 그 자리에 도장 합성
+  // 도장 — 인쇄된 '(인)' 을 흰 박스로 덮고 그 자리에 도장 합성.
+  //
+  // **도장이 깨져도 서류는 나간다**(형제 정본 lib/rentReceiptPdf 와 같은 규칙, 2026-09-16).
+  // 종전에는 embed 를 맨몸으로 불러, HEIC 처럼 pdf-lib 이 모르는 바이트가 도장으로 저장돼 있으면
+  // 던진 예외가 그대로 올라가 **실거주 확인서 발급 자체가 실패**했다. 도장은 얹는 것이고
+  // 본문은 이미 다 그려졌다 — 못 얹으면 안 얹은 종이가 나가고, 사실은 서버 로그에 남는다.
+  //
+  // 흰 박스도 embed 성공 뒤에 친다. 먼저 덮고 실패하면 '(인)' 마저 지워진 빈칸이 남는다.
   if (stampPng && stampPng.length > 0) {
-    const c = RC_STAMP.cover
-    page.drawRectangle({ x: c.x, y: c.y, width: c.w, height: c.h, color: white })
-    const isPng = stampPng[0] === 0x89 && stampPng[1] === 0x50
-    const img = isPng ? await doc.embedPng(stampPng) : await doc.embedJpg(stampPng)
-    page.drawImage(img, { x: RC_STAMP.cx - RC_STAMP.size / 2, y: RC_STAMP.cy - RC_STAMP.size / 2, width: RC_STAMP.size, height: RC_STAMP.size })
+    try {
+      const isPng = stampPng[0] === 0x89 && stampPng[1] === 0x50
+      const img = isPng ? await doc.embedPng(stampPng) : await doc.embedJpg(stampPng)
+      const c = RC_STAMP.cover
+      page.drawRectangle({ x: c.x, y: c.y, width: c.w, height: c.h, color: white })
+      page.drawImage(img, { x: RC_STAMP.cx - RC_STAMP.size / 2, y: RC_STAMP.cy - RC_STAMP.size / 2, width: RC_STAMP.size, height: RC_STAMP.size })
+    } catch (err) {
+      console.error('[실거주확인서] 도장 임베드 실패 — 도장 없이 발급', err)
+    }
   }
 
   return await doc.save()

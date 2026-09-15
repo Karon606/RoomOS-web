@@ -6,7 +6,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
-import { pickTenantPhone } from '@/lib/tenantContact'
+import { pickTenantPhoneWithFallback, trimPickedPhone, type PickedPhone } from '@/lib/tenantContact'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -25,7 +25,9 @@ export type NoticeSmsTarget = {
   leaseTermId: string
   name: string
   roomNo: string
-  phone: string | null   // null = 연락처 미등록(발송 불가, 목록에 회색 표시)
+  // null = 보낼 번호 없음(발송 불가, 목록에 회색 표시). source 가 'emergency' 면 본인이 아니라
+  // 비상 연락처로 가는 행이다 — 기본 선택에서 빠지고 번호 뒤에 꼬리표가 붙는다(2026-09-17).
+  phone: PickedPhone | null
   // 조건 축 원값 — 방 정보
   floor: string          // '' = 유추 불가
   windowType: string | null
@@ -68,10 +70,12 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
             name: true, gender: true, nationality: true, smoking: true, job: true, isBasicRecipient: true,
             // 받는 번호 — 형제 문자 셋과 **같은 정본**(lib/tenantContact)이 고른다. 종전
             // `첫 PHONE` 은 본국 번호·비상 연락처를 골랐다(2026-09-16 드라이런). 문자라 유선 제외.
+            // 본인 번호가 없으면 비상 연락처로 대체한다 — 주인 표기 두 칸도 같이 읽는다.
             contacts: {
               select: {
                 id: true, contactType: true, contactValue: true,
                 isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+                emergencyName: true, emergencyRelation: true,
               },
             },
           },
@@ -94,7 +98,7 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
         leaseTermId: l.id,
         name: l.tenant.name,
         roomNo: l.room!.roomNo,
-        phone: pickTenantPhone(l.tenant.contacts, ['PHONE'])?.trim() || null,
+        phone: trimPickedPhone(pickTenantPhoneWithFallback(l.tenant.contacts, ['PHONE'])),
         floor: (l.room!.floor ?? '').trim() || deriveFloor(l.room!.roomNo),
         windowType: l.room!.windowType,
         direction: l.room!.direction?.trim() || null,

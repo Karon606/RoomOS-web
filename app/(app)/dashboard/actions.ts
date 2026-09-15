@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getPaidRevenueByMonths, primaryTenantLease } from '@/lib/leaseStatus'
-import { pickTenantPhone } from '@/lib/tenantContact'
+import { pickTenantPhoneWithFallback, trimPickedPhone, type PickedPhone } from '@/lib/tenantContact'
 import { dbDateMonthKey, monthDbRange, monthsDbRange, ymdToDbDate, type DbDateRange } from '@/lib/kstDate'
 import { daysInMonth, shiftMonth } from '@/lib/moveCalendar'
 import type { DashboardData } from './DashboardClient'
@@ -301,7 +301,10 @@ ${trendText}
 // ============================================================
 export type UnpaidSmsContext = {
   ok: true
-  phone: string | null          // 없으면 발송 불가 안내
+  // 번호 하나가 아니라 **주인까지** 묶어서 온다(PickedPhone). 본인 번호가 없으면 비상 연락처로
+  // 대체되는데, 문자열만 건네면 화면이 본인에게 보내는 줄 안다 — `.value` 를 꺼낼 때 `source` 가
+  // 눈에 들어오게 하는 것이 이 타입의 목적이다. 없으면 발송 불가 안내.
+  phone: PickedPhone | null
   tenantName: string
   roomNo: string
   dueDayLabel: string           // "15일" | "말일" | ''
@@ -322,6 +325,8 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
         // 받는 번호 — 서류 시트 문자 탭·입주자 문자와 **같은 정본**(lib/tenantContact)이 고른다.
         // 종전 `첫 PHONE` 은 실측에서 본국 번호와 비상 연락처를 골라 미납 안내를 엉뚱한 곳으로
         // 보냈다(2026-09-16 드라이런 6건). 문자라 유선전화는 뺀다.
+        // 본인 번호가 없으면 비상 연락처로 대체한다(2026-09-17 운영자 결정) — 주인 이름·관계를
+        // 화면이 고지해야 하므로 그 두 칸도 같이 읽는다.
         tenant: {
           select: {
             name: true,
@@ -329,6 +334,7 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
               select: {
                 id: true, contactType: true, contactValue: true,
                 isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+                emergencyName: true, emergencyRelation: true,
               },
             },
           },
@@ -344,7 +350,7 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
     const dueDayLabel = rawDue ? (/^\d+$/.test(rawDue) ? `${rawDue}일` : rawDue) : ''
     return {
       ok: true,
-      phone: pickTenantPhone(lease.tenant.contacts, ['PHONE'])?.trim() || null,
+      phone: trimPickedPhone(pickTenantPhoneWithFallback(lease.tenant.contacts, ['PHONE'])),
       tenantName: lease.tenant.name,
       roomNo: lease.room?.roomNo ?? '',
       dueDayLabel,
@@ -384,7 +390,9 @@ export async function getTenantUnpaidTarget(tenantId: string): Promise<TenantUnp
 // ============================================================
 export type PersonalSmsContext = {
   ok: true
-  phone: string | null          // 없으면 발송 불가 안내
+  // 미납 독촉과 같은 모양(PickedPhone) — 본인 번호가 없으면 비상 연락처로 대체되고, 그 사실은
+  // `source`·`ownerLabel` 이 지고 다닌다. 없으면 발송 불가 안내.
+  phone: PickedPhone | null
   tenantName: string
   roomNo: string                // 현재/최근 방 배정 (없으면 '')
   bankAccount: string           // 환경설정 입금 계좌 (없으면 '')
@@ -403,10 +411,12 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
         // 받는 번호 — 고르는 규칙은 lib/tenantContact 정본이다(주 연락처 우선 · 비상 제외 ·
         // 본국 번호는 마지막 폴백). 종전 `첫 PHONE` 은 주 연락처로 찍어 둔 번호를 무시했고,
         // 서류 시트의 문자 탭과 같은 사람에게 다른 번호를 답할 수 있었다.
+        // 본인 번호가 하나도 없으면 비상 연락처로 대체한다 — 주인 표기 두 칸도 같이 읽는다.
         contacts: {
           select: {
             id: true, contactType: true, contactValue: true,
             isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+            emergencyName: true, emergencyRelation: true,
           },
         },
         // take: 1 을 뺐다 — 방을 둘 쓰는 사람에게 문자 머리말이 창고 호실을 적으면 안 된다.
@@ -426,7 +436,7 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
     return {
       ok: true,
       // 문자는 유선전화로 안 간다 — 갈래를 휴대폰으로 좁힌다(서류 칸은 유선도 번호로 받는다).
-      phone: pickTenantPhone(tenant.contacts, ['PHONE'])?.trim() || null,
+      phone: trimPickedPhone(pickTenantPhoneWithFallback(tenant.contacts, ['PHONE'])),
       tenantName: tenant.name,
       roomNo: primaryTenantLease(tenant.leaseTerms)?.room?.roomNo ?? '',
       bankAccount: prop?.bankAccount ?? '',

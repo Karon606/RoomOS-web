@@ -47,6 +47,60 @@ const DIMS: Dim[] = [
   { key: 'pay', label: '결제수단', get: t => t.payMethod },
 ]
 
+/**
+ * 기본으로 체크되는 사람 — **본인 번호가 있는 사람만**(운영자 결정 2026-09-17).
+ *
+ * 본인 번호가 없으면 정본이 비상 연락처로 대체해 주지만, 그 번호의 주인은 입주자가 아니다.
+ * 한 사람에게 보내는 문자(미납·개인)는 운영자가 받는 사람을 눈으로 확인하고 누르지만, 단체
+ * 공지는 스무 명이 한 줄로 나가서 그 확인이 없다. 그래서 대체는 **직접 고를 때만** 들어간다.
+ * 빠진 사람은 아래 패널이 이름으로 말하고, 문구를 복사해 다른 메신저로 보낼 수 있다.
+ */
+const defaultPick = (t: NoticeSmsTarget) => t.phone?.source === 'self'
+
+/**
+ * 기본 선택에서 빠진 사람들 — 누가 빠졌는지 보여 주고, 문구를 복사해 다른 길로 보내게 한다.
+ * 고르는 화면과 쓰는 화면 양쪽에 서므로 한 벌로 둔다(문구 복사는 본문이 있는 쪽에서만).
+ */
+function FallbackExcludedPanel({ rows, body, onCopy }: {
+  rows: NoticeSmsTarget[]
+  body?: string
+  onCopy?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-xl bg-[var(--warning-bg)] px-3 py-2.5 space-y-1.5">
+      <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)] whitespace-pre-line">
+        {onCopy
+          ? `비상 연락처만 있는 ${rows.length}명에게는 이 문자가 안 갑니다.\n문구를 복사해 카카오톡 등 다른 메신저로 보내세요.`
+          : `비상 연락처만 있는 ${rows.length}명은 기본 선택에서 빠져 있습니다.\n보내려면 직접 선택하거나 아래에서 문구를 복사해 다른 메신저로 보내세요.`}
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setOpen(v => !v)}
+          className="text-[0.6875rem] font-medium text-[var(--warm-mid)] underline underline-offset-2 hover:text-[var(--warm-dark)]">
+          빠진 사람 {rows.length}명 {open ? '접기' : '보기'}
+        </button>
+        {onCopy && (
+          <Btn type="button" variant="secondary" size="sm" disabled={!body?.trim()} onClick={onCopy}>문구 복사</Btn>
+        )}
+      </div>
+      {open && (
+        <ul className="divide-y divide-[var(--warm-border)] rounded-lg border border-[var(--warm-border)] bg-[var(--cream)]">
+          {rows.map(t => (
+            <li key={t.leaseTermId} className="flex items-center gap-2.5 px-3 py-1.5 text-xs">
+              <span className="font-medium text-[var(--warm-dark)] shrink-0">{fmtRoomNo(t.roomNo, '')}</span>
+              <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
+              <span className="ml-auto text-[var(--warm-muted)] shrink-0">
+                {t.phone?.ownerLabel ?? '비상 연락처'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // 작성 드래프트 — 문자앱으로 전환하면 모바일에선 페이지가 리로드돼 상태가 날아간다.
 // 조건·수신자 보정·본문·발송한 묶음을 localStorage에 보관해 돌아오면 이어서 재발송. 48시간 지나면 무시.
 const DRAFT_KEY = 'stayeum-notice-sms-draft'
@@ -105,7 +159,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           setStep(d.step)
           setDraftRestored(true)
         } else {
-          setChecked(new Set(r.targets.filter(t => t.phone).map(t => t.leaseTermId)))
+          setChecked(new Set(r.targets.filter(defaultPick).map(t => t.leaseTermId)))
         }
       })
       .catch(() => setLoadError('대상을 불러오지 못했습니다. 다시 열어 주세요.'))
@@ -151,7 +205,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   // 조건 적용/삭제 — 바꿀 때마다 수신자 체크를 조건 일치자(번호 있는)로 재설정
   const applySel = (next: Record<string, Set<string>>) => {
     setSel(next)
-    setChecked(new Set((targets ?? []).filter(t => t.phone && matches(t, next)).map(t => t.leaseTermId)))
+    setChecked(new Set((targets ?? []).filter(t => defaultPick(t) && matches(t, next)).map(t => t.leaseTermId)))
   }
   const applyDraft = (dimKey: string) => {
     const next = { ...sel }
@@ -179,6 +233,20 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     : '전체'
 
   const shownTargets = (targets ?? []).filter(t => matches(t, sel))
+  // 기본 선택에서 빠진 대체(비상) 행 — 지금 조건에 맞는 사람 중 아직 체크가 안 된 사람이다.
+  // 운영자가 직접 체크하면 이 목록에서 사라진다(그때는 문자가 그 번호로 나간다).
+  const fallbackExcluded = shownTargets.filter(t => t.phone?.source === 'emergency' && !checked.has(t.leaseTermId))
+
+  // 공지 문구를 클립보드로 — 빠진 사람에게는 운영자가 카카오톡 등으로 직접 보낸다.
+  // 문법은 lib/useDocShare 의 클립보드 호출과 같다(막히면 그 사실만 말한다).
+  const copyBody = async () => {
+    try {
+      await navigator.clipboard.writeText(body)
+      pushToast('success', '공지 문구를 복사했습니다.')
+    } catch {
+      pushToast('error', '문구를 복사하지 못했습니다. 본문을 직접 선택해 복사해 주세요.')
+    }
+  }
 
   const toggle = (t: NoticeSmsTarget) => {
     if (!t.phone) return
@@ -215,7 +283,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     setBody('')
     setPrevDraft(null)
     setLoggedBatches(new Set())
-    setChecked(new Set((targets ?? []).filter(t => t.phone).map(t => t.leaseTermId)))
+    setChecked(new Set((targets ?? []).filter(defaultPick).map(t => t.leaseTermId)))
     setStep('pick')
     setDraftRestored(false)
   }
@@ -233,10 +301,10 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     const isApple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
     const enc = encodeURIComponent(body)
     if (isApple) {
-      const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(',')
+      const nums = list.map(t => (t.phone?.value ?? '').replace(/[^0-9+]/g, '')).join(',')
       return `sms://open?addresses=${nums}&body=${enc}`
     }
-    const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(';')
+    const nums = list.map(t => (t.phone?.value ?? '').replace(/[^0-9+]/g, '')).join(';')
     return `sms:${nums}?body=${enc}`
   }
 
@@ -402,6 +470,8 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                   조건이 여러 개면 모두 만족하는 사람에게만 보냅니다.
                 </p>
               )}
+              {/* 누가 왜 빠졌는지 목록 위에서 먼저 말한다 — 체크가 안 된 이유를 세는 것이 이 줄의 용건이다. */}
+              <FallbackExcludedPanel rows={fallbackExcluded} />
               <ul className="max-h-60 overflow-y-auto overscroll-contain divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
                 {shownTargets.map(t => (
                   <li key={t.leaseTermId}>
@@ -411,7 +481,8 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                       <span className="font-medium text-[var(--warm-dark)] shrink-0">{fmtRoomNo(t.roomNo, '')}</span>
                       <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
                       <span className="ml-auto text-xs text-[var(--warm-muted)] tabular-nums shrink-0">
-                        {t.phone ?? '연락처 없음'}
+                        {/* 대체 행은 번호 뒤에 꼬리표가 선다 — 이 번호의 주인이 입주자가 아니다. */}
+                        {t.phone ? `${t.phone.value}${t.phone.source === 'emergency' ? ' · 비상' : ''}` : '연락처 없음'}
                       </span>
                     </label>
                   </li>
@@ -489,6 +560,8 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             {tplSaving ? '저장 중…' : '이 내용을 템플릿으로 저장'}
           </button>
         </div>
+        {/* 문자로 못 가는 사람 — 보내기 버튼 바로 위에서 말하고, 여기서 문구를 복사해 간다. */}
+        <FallbackExcludedPanel rows={fallbackExcluded} body={body} onCopy={copyBody} />
         <div className="space-y-1.5">
           {batches.map((list, i) => (
             <a key={i} href={body.trim() ? smsHref(list) : undefined} onClick={e => { if (blockSmsIfStaging(e)) return; if (body.trim()) logBatch(i, list) }}

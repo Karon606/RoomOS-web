@@ -24,6 +24,7 @@ import { singleSmsHref, blockSmsIfStaging } from '@/lib/smsHref'
 import { photoSaveNeedsShareSheet } from '@/lib/shareFile'
 import { DOC_SMS_DEFAULT_BODY, renderDocSms } from '@/lib/docSms'
 import { logDocSmsAttempt } from '@/app/(app)/tenants/docBundle'
+import type { PickedPhone } from '@/lib/tenantContact'
 
 // 브라우저 다중 공유 하드 리밋 — 형제 알약(DocMultiShareBar)·서류 보내기 시트와 같은 숫자다.
 const MAX_SHARE_FILES = 10
@@ -34,8 +35,8 @@ export function TenantDocSmsComposeSheet({
   tenantId: string
   tenantName: string
   propertyName: string
-  /** 받는 번호. 없으면 부모가 이 시트를 열지 않는다(알약이 잠긴다). */
-  phone: string
+  /** 받는 번호와 그 주인. 없으면 부모가 이 시트를 열지 않는다(알약이 잠긴다). */
+  phone: PickedPhone
   /** 고른 서류 이름들 — 문구의 {서류목록} 이 된다. */
   docTitles: string[]
   /** 부모가 쥔 준비 큐 — 사진 저장이 이 손을 그대로 쓴다(같은 선택, 같은 파일명). */
@@ -79,7 +80,7 @@ export function TenantDocSmsComposeSheet({
         <div className="flex items-center justify-end gap-2">
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
           {canSend ? (
-            <BtnLink variant="primary" size="md" href={singleSmsHref(phone, body)}
+            <BtnLink variant="primary" size="md" href={singleSmsHref(phone.value, body)}
               onClick={e => { if (blockSmsIfStaging(e)) return; handOff() }}>
               문자앱으로 보내기
             </BtnLink>
@@ -94,8 +95,14 @@ export function TenantDocSmsComposeSheet({
         <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
           <p className="text-[0.65625rem] text-[var(--warm-mid)]">받는 사람</p>
           <p className="mt-0.5 text-sm text-[var(--warm-dark)]">
-            {tenantName} · <span className="tabular-nums">{phone}</span>
+            {tenantName} · <span className="tabular-nums">{phone.value}</span>
           </p>
+          {/* 대체 고지 — 형제 문자 모달 둘과 같은 문장이다. 붉게 안 칠한다(운영자가 고른 대체). */}
+          {phone.source === 'emergency' && (
+            <p className="mt-[5px] text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+              본인 연락처가 없어 비상 연락처로 보냅니다.{phone.ownerLabel ? ` 받는 분은 ${phone.ownerLabel}.` : ''}
+            </p>
+          )}
         </div>
 
         {/* 못 하는 일을 먼저 말한다 — 순서대로 하면 빠뜨릴 수 없게 저장 버튼이 바로 아래 선다.

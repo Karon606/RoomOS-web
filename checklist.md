@@ -662,3 +662,93 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 우회 봉합(구조) — `entered` 집합을 `onChange`·드래프트 복원 둘에서만 채우고, 복원은
       **서버 문서의 키**(`draftedIds`)에서만 가져온다. 조립부·`hubMeasured`·과잉 입고 신호 셋 다 그 집합을 술어로
 - [x] 별건 2건은 `knowledge/open-issues.md` 에만(고치지 않음)
+
+### HEIC 업로드 정규화 (2026-09-17)
+
+아이폰 사진(HEIC)이 그대로 저장돼 첨부·발급이 깨지던 입구 넷을 **올리기 전에 브라우저에서**
+정규화한다. 운영자 결정: 등록증은 PDF 한 장으로 저장, 같은 부류(도장·로고·스캔 계약서)를
+함께 고침, 업로드 카드에 PDF 권장 문구.
+
+- [x] 1. `lib/uploadImage.ts` 신설 — `fileToUploadPdf`(종이) · `fileToUploadImage`(그림).
+      디코드는 `ocrImage` 정본 문법(EXIF 회전 픽셀 박기 · 비트맵·캔버스 즉시 반납),
+      **디코드 실패는 던진다**(조용한 원본 통과 금지). 이미지→PDF 는 pdf-lib dynamic import,
+      1장 고정, 용지 비율 = 사진 비율
+- [x] 2. 사업자등록증 배선 — `handleBizCertSelect` 가 변환 File 을 싣고, `accept` 는 그대로,
+      서버 `BIZ_CERT_MIME_OK` 를 `application/pdf` + JPEG·PNG 안전망으로 축소(HEIC 거절).
+      4MB 가 **변환 후 기준**임을 주석·안내 문구에 명시. 변환했으면 토스트 detail 로 사실을 말함
+- [x] 3. 같은 부류 — 도장·계약서용 로고는 PNG 로 정규화(알파 보존), 스캔 계약서는
+      **mime 화이트리스트 신설**(종전에는 크기만 봤다) + `finalizeContractScan` 이 Drive 판정
+      mime 도 함께 검사
+- [x] 4. 발급 방어 — `residenceCertOverlay` 도장 임베드에 형제(`rentReceiptPdf`)와 같은 try/catch
+      (서류는 나가고 사실은 서버 로그에). `google-drive.sniffImageMime` 을 `docMime` 위임으로
+      묶어 쌍둥이 제거(옛 논리는 mp4 까지 image/heic 이라 답했다)
+- [x] 5. 감지망·진리표 — `scripts/test-upload-image.ts`(31축) verify:fast 등재,
+      `check-upload-hygiene.mjs` 에 업로드 입구 축 ⓖⓗⓘ 신설, `test-doc-mime.ts` 에 두 sniff 가
+      같은 바이트에 같은 답을 한다는 단언 10건
+- [x] 6. 기존 데이터 — `scripts/audit-heic-uploads.ts`(읽기 전용) 예행 **0건**.
+      서버 변환이 불가하므로 백필은 재업로드 요청뿐이라는 사실을 `knowledge/open-issues.md` 에
+- [x] 7. 문서 — `doc-file-format` 의 "이미지를 PDF 로 싸지 않는다" 를 **내보내기** 규칙으로
+      좁히고 업로드 정규화를 예외 절로, `property-public-facts` 등록증 절 갱신
+- [ ] 8. 운영자 실기 확인 — 아이폰에서 HEIC 등록증 업로드(1번), 도장, 스캔본, 실거주 확인서 발급
+
+### 퇴실 낱말 zht·zh (2026-09-17)
+
+번체 `退住` → `遷出`, 간체 `退住`·`退房` → `搬离`. 운영자 확정(대만 정형화계약 원문 실측으로
+退住 유지 근거가 무너졌고, 간체는 迁出 의 户口 색 때문에 搬离 로 갈렸다).
+
+- [x] 1. DB 사전 실값을 줄 전문으로 뜸(설정 > 계약서 > 번역이 쓰는 `parseContractTranslations`
+      경로). zht 17줄 · zh 17줄 — 두 언어 다 살아있는 13줄 + 옛 '입실료' 열쇠 고아 4줄
+- [x] 2. 문안표를 **세션 scratchpad** 에만 두고(저장소 금지) 모든 줄에 `ko` 열쇠를 담음.
+      `forbid` 는 줄마다 하나씩(zht 退住 17 · zh 退住 13 · 退房 4)
+- [x] 3. 예행 34줄(zht 17 · zh 17) 무차단 → 적용 34줄, 줄 수 일치. 적용 뒤 재실측
+      zht 遷出 17 · zh 搬离 17 · 退住/退房/退租 0. `退費`·`退款` 은 손 안 댐
+- [x] 4. 코드 사전 4자리 — `lib/contractTranslation.ts` 268행 `clause.zht`·`clause.zh`,
+      269행 `none.zht`·`none.zh`. `deduct` 무변경, `{{청소비}}` 보존,
+      `入住時`·`入住时`·`使用費`·`使用费` 무접촉
+- [x] 5. 진리표 **14단계 신설**(13단계와 섞지 않음 — 13은 법 프레임 축, 14는 실무어 축).
+      단언 8 + 실측 줄. 13단계 `FORBIDDEN.zht` 에 `退租` 추가
+- [x] 6. 역주입 둘 다 빨강 — ⓐ 되돌리기(zht clause 遷出→退住) 1실패, ⓑ 문장 통째 삭제
+      (none.zht·none.zh) 2실패(급소 단언이 잡음). 원복은 백업 파일 복사로만
+- [ ] 7. 운영자 실기 확인 — 계약서 화면에서 번체·간체 미리보기에 새 낱말, 발급 직전 드리프트
+      경고 없음. **적용 시점에 열려 있던 계약서 화면은 새로고침 필요**
+
+### 연락처 대체·예약 확정 게이트 (2026-09-17)
+
+본인 전화번호가 없는 사람에게 문자가 안 가던 것을 비상 연락처로 돌리고, 대신 그 상태로는
+예약을 확정하지 못하게 막는다. **종이(계약서·실거주 확인서)는 대체하지 않는다.**
+운영자 확정: 본인 전화(국내·유선·해외 모두 인정)가 있어야 확정 · 메신저 아이디만이면 거부 ·
+단체 공지는 대체 대상을 기본 선택에서 빼되 누가 빠졌는지 보여 주고 문구를 복사하게 한다 ·
+저장 후 토스트는 안 띄운다(폼 안 안내가 지속 사실을 진다).
+
+- [x] 1. 정본 추가 + 진리표 먼저 — `lib/tenantContact.ts` 의 `pickTenantPhone`(55~67)은
+      **한 글자도 안 고침**. 밑에 `PickedPhone`·`TenantPhoneContactWithOwner`·
+      `pickTenantPhoneWithFallback`·`trimPickedPhone`·`reservationConfirmPhoneDenial`·
+      `RESERVATION_PHONE_DENIAL_PREFIX` 추가. `scripts/test-tenant-phone.ts` 26 → **44건**
+      (대체 9 · 게이트 8 + 주인 표기 네 갈래). 빨강 확인 4종(kinds 무시 2실패 · 정렬 제거 2실패 ·
+      주인 표기 갈래 소실 3실패 · 소급 통과 제거 2실패)
+- [x] 2. 게이트 배선 셋 — `leaseSaveDenial`(등록·계약 추가, 새 입주자는 폼 연락처로 판정) ·
+      `updateTenant`(연락처 저장 **뒤**, `alreadyConfirmed: !!currentLease.reservationConfirmedAt`) ·
+      `applyStatusTransition`(`!!lease.reservationConfirmedAt`, 계약의 주인으로 조회).
+      셋 다 정본 한 함수를 부른다(`roomRequiredDenial` 전례). 폼 경로는 인라인 `setError` +
+      연락처 칸 포커스(§30 목표선은 정본 ViewportOffsetGuard 가 진다), 전환 경로는 §15 error
+      토스트 + 액션 `입주자 정보`
+- [x] 3. 폼 안 안내 — `TenantClient.tsx` 연락처 섹션 맨 아래, **지금 입력값**으로 판정
+      (`contactPreview` → 정본 두 함수). 틴트만(`--warning-bg`) · 좌측 팁 없음 · 12px
+      `--warm-mid` · r-md 8 · 패딩 10/14. 확정 토글을 켠 채 막히면 확정 캡션 자리가
+      11px `--danger-fg` 로 바뀜
+- [x] 4. 문자 넷 대체 + 받는 사람 고지 — 컨텍스트 타입 넷을 `phone: PickedPhone | null` 로
+      (타입 변경이 읽는 자리 10곳을 전부 드러냄). 고지 줄은 `TenantSmsModal`·`UnpaidSmsModal`·
+      `TenantDocBundleSheet`·`TenantDocSmsComposeSheet` 넷, 11px `--warm-mid`, 위 5px, 안 붉음
+- [x] 5. 단체 공지 — 기본 선택 세 자리를 `defaultPick`(본인 번호만)으로, 행 꼬리표 `· 비상`,
+      빠진 사람 패널(접었다 펴기 + `문구 복사`)을 고르는 화면·쓰는 화면 양쪽에. 복사 성공은
+      §15 토스트 한 장(액션 없음), 실패도 말한다
+- [x] 6. 실거주 확인서 발급 화면 안내 한 줄 — 전화 칸이 빈 경우에만
+- [x] 7. 실태 스크립트 `scripts/check-tenant-own-phone.ts`(.ts — 정본 import, 조회 한 번,
+      번호 마스킹). 실측 127명 중 본인 전화 123 · 비상만 2 · 연락처 없음 2 · 메신저만 0 ·
+      **게이트가 지금 막는 사람 0명**(넷 다 거주도 예약도 아님) · 대체로 새로 문자 갈 사람 2명 ·
+      실거주 확인서 연락처가 빌 사람 4명
+- [x] 8. 감지망 — `check-tenant-phone-axis.mjs` 에 ⓓ(종이 넷에 대체 이름 금지)·ⓔ(확정 세 자리가
+      정본을 부르고 `reservationConfirmedAt` 을 읽는가) 신설, ⓐ 확장(대체 갈래의
+      `isEmergency`·`kinds`), ⓑ 를 두 함수 이름으로 일반화. **ALLOW 7 무변경**
+- [x] 9. 문서 — `knowledge/tenant-own-phone-fallback.md` 신설 + INDEX 등재
+- [ ] 10. 운영자 실기 확인 6건 — 아래 보고의 실기 목록

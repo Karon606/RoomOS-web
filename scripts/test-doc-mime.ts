@@ -6,10 +6,16 @@
 //     가짜 확장자를 붙이는 것이 이번 사고의 실체였다.
 //   · **화이트리스트 밖은 octet-stream** — text/html·image/svg+xml 을 절대 만들지 않는다
 //     (/api/doc-file 인라인 렌더의 스크립트 실행 면 차단).
+//
+// 2026-09-16 추가: **판정하는 곳이 둘이면 언젠가 갈린다.** lib/google-drive 의 sniffImageMime 이
+// 같은 논리를 따로 적고 있었고, docMime 이 ftyp 브랜드를 보는 사이 그쪽은 ftyp 만 보고 mp4 까지
+// image/heic 이라 답했다. 이제 그 함수는 sniffDocMime 에 위임한다 — 같은 바이트에 같은 답을
+// 하는지 여기서 못 박는다(위임이 풀리면 이 절이 먼저 빨개진다).
 import {
   sniffDocMime, extForDocMime, docMimeLabel, isImageDocMime, guessDocMimeByName,
   DOC_MIME_PDF, DOC_MIME_UNKNOWN,
 } from '../lib/docMime'
+import { sniffImageMime } from '../lib/google-drive'
 
 let pass = 0
 const fails: string[] = []
@@ -65,6 +71,27 @@ eq('이름 추정 jpg', guessDocMimeByName('scan.JPG'), 'image/jpeg')
 eq('이름 추정 pdf', guessDocMimeByName('계약서_20260825.pdf'), DOC_MIME_PDF)
 eq('확장자 없으면 pdf 로 본다(앱 발급본 기본)', guessDocMimeByName('계약서'), DOC_MIME_PDF)
 eq('빈 이름도 pdf', guessDocMimeByName(null), DOC_MIME_PDF)
+
+// ── 두 판정기가 같은 바이트에 같은 답을 한다 ────────────────────────
+// sniffImageMime 의 계약은 '이미지면 그 mime, 아니면 octet-stream' 이다. 그 밖의 차이는
+// 곧 쌍둥이 논리가 되살아났다는 뜻이다.
+const SAMPLES: [string, Uint8Array][] = [
+  ['JPEG', bytes(0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10)],
+  ['PNG', bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00)],
+  ['WebP', new Uint8Array([...asciiBytes('RIFF'), 0, 0, 0, 0, ...asciiBytes('WEBP')])],
+  ['GIF', asciiBytes('GIF89a')],
+  ['HEIC', new Uint8Array([0, 0, 0, 0x18, ...asciiBytes('ftyp'), ...asciiBytes('heic')])],
+  ['HEIC(mif1)', new Uint8Array([0, 0, 0, 0x18, ...asciiBytes('ftyp'), ...asciiBytes('mif1')])],
+  // mp4 다. 옛 sniffImageMime 은 이걸 image/heic 이라 답해 동영상 바이트가 도장 자리로 갔다.
+  ['mp4(isom)', new Uint8Array([0, 0, 0, 0x18, ...asciiBytes('ftyp'), ...asciiBytes('isom')])],
+  ['PDF', asciiBytes('%PDF-1.7\n...')],
+  ['알 수 없는 바이트', bytes(0x01, 0x02, 0x03, 0x04, 0x05)],
+  ['빈 바이트', new Uint8Array(0)],
+]
+for (const [name, b] of SAMPLES) {
+  const doc = sniffDocMime(b)
+  eq(`두 판정 일치 — ${name}`, sniffImageMime(Buffer.from(b)), isImageDocMime(doc) ? doc : DOC_MIME_UNKNOWN)
+}
 
 console.log(`\n서류 형식 판정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

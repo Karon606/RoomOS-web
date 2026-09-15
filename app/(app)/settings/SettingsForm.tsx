@@ -44,6 +44,7 @@ import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoin
 import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum } from '@/lib/contract'
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { fileToUploadPdf, fileToUploadImage } from '@/lib/uploadImage'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
@@ -189,6 +190,7 @@ export default function SettingsForm({
   const [logoUrl, setLogoUrl]         = useState<string | null>(property?.logoThumbnailUrl ?? null)
   const [logoUploading, setLogoUploading] = useState(false)
 
+  // 계약서용 로고 — 도장과 같은 자리다(종이에 그림으로 얹힌다). PNG·JPEG 가 아니면 PNG 로 바꿔 올린다.
   const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -196,16 +198,18 @@ export default function SettingsForm({
     setLogoUploading(true)
     const release = trackSave()
     try {
+      const { file: upFile, converted } = await fileToUploadImage(file)
       const session = await createLogoUploadSession({
-        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
         origin: window.location.origin,
       })
       if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, upFile)
       const fin = await finalizeLogo(driveFileId)
       if (!fin.ok) { pushToast('error', fin.error); return }
       setLogoUrl(fin.thumbnailUrl)
-      pushToast('success', '로고 업로드됨')
+      pushToast('success', '로고 업로드됨',
+        converted ? { detail: '사진을 PNG 로 바꿔 저장했습니다.' } : undefined)
     } catch (err) {
       pushToast('error', humanError(err, '로고 업로드 실패'))
     } finally { release(); setLogoUploading(false) }
@@ -2062,7 +2066,11 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   }
 
   // 사업자등록증 — 업로드 축은 도장과 같다(세션 발급 → Drive 직접 PUT → 마무리).
-  // 다른 점은 둘뿐이다. 이미지 말고 PDF 도 받는다는 것과, mime 을 서버가 판정해 함께 저장한다는 것.
+  // 다른 점은 둘뿐이다. 저장 형식이 PDF 하나라는 것과, mime 을 서버가 판정해 함께 저장한다는 것.
+  //
+  // **사진은 올리기 전에 PDF 한 장으로 바뀐다**(lib/uploadImage, 운영자 결정 2026-09-16).
+  // 아이폰 HEIC 를 그대로 저장하면 상담 문자·메일 첨부가 열리지 않는 파일로 나간다. 변환에
+  // 실패하면 던지므로 원본이 조용히 올라가는 분기가 없고, 그 문구는 아래 catch 가 띄운다.
   const handleBizCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -2070,16 +2078,18 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     setCertUploading(true)
     const release = trackSave()
     try {
+      const { file: upFile, converted } = await fileToUploadPdf(file)
       const session = await createBizCertUploadSession({
-        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
         origin: window.location.origin,
       })
       if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, upFile)
       const fin = await finalizeBizCert(driveFileId)
       if (!fin.ok) { pushToast('error', fin.error); return }
       setBizCert({ driveFileId, mimeType: fin.mimeType })
-      pushToast('success', '사업자등록증 업로드됨')
+      pushToast('success', '사업자등록증 업로드됨',
+        converted ? { detail: '사진을 PDF 한 장으로 바꿔 저장했습니다.' } : undefined)
     } catch (err) {
       pushToast('error', humanError(err, '사업자등록증 업로드 실패'))
     } finally { release(); setCertUploading(false) }
@@ -2095,6 +2105,9 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     } finally { release() }
   }
 
+  // 도장 — PNG·JPEG 가 아닌 사진은 올리기 전에 PNG 로 바꾼다(lib/uploadImage).
+  // 여기는 종이가 아니라 **그림으로 얹히는 자리**라 PDF 가 아니라 이미지여야 한다. HEIC 도장을
+  // 그대로 저장하면 실거주 확인서 발급이 통째로 실패하고(pdf-lib embed), 계약서는 도장 없이 나간다.
   const handleStampSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -2102,16 +2115,18 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     setStampUploading(true)
     const release = trackSave()
     try {
+      const { file: upFile, converted } = await fileToUploadImage(file)
       const session = await createStampUploadSession({
-        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
         origin: window.location.origin,
       })
       if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, upFile)
       const fin = await finalizeStamp(driveFileId)
       if (!fin.ok) { pushToast('error', fin.error); return }
       setStampUrl(fin.thumbnailUrl)
-      pushToast('success', '도장 업로드됨')
+      pushToast('success', '도장 업로드됨',
+        converted ? { detail: '사진을 PNG 로 바꿔 저장했습니다.' } : undefined)
     } catch (err) {
       pushToast('error', humanError(err, '도장 업로드 실패'))
     } finally { release(); setStampUploading(false) }
@@ -2160,7 +2175,9 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
             쓰이는 파일인지 등록하는 자리가 말해 주지 않으면 운영자가 두 화면을 각각 발견해야 한다.
             **두 자리를 한 문장에 넣는다** — 문장을 둘로 나누면 어미가 '보낼 수 있습니다'로 겹친다(§29).
             '시트'는 개발 용어라 안 쓰고([[doc-vocabulary]]) 운영자가 밟는 경로를 그대로 적는다. */}
-        <p className="text-xs text-[var(--warm-muted)] -mt-1">이미지 또는 PDF, 4MB 이하. 상담 도구의 문자·메일 첨부와 입주자 정보 &gt; 서류에서 보낼 수 있습니다.</p>
+        {/* 형식 안내는 도장('투명 배경 PNG 권장.')·로고와 같은 자리·같은 톤이다. 사진을 올려도
+            되지만 저장되는 것은 PDF 한 장이라는 사실을 먼저 말한다 — 4MB 는 그 변환 뒤 크기다. */}
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">PDF 권장. 사진은 올릴 때 PDF 한 장으로 바뀝니다(변환 후 4MB 이하). 상담 도구의 문자·메일 첨부와 입주자 정보 &gt; 서류에서 보낼 수 있습니다.</p>
         <div className="flex items-center gap-4">
           {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
           <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">

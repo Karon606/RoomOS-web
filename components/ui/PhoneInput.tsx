@@ -12,16 +12,24 @@ export function PhoneInput({
   defaultValue,
   placeholder = '010-0000-0000',
   className,
+  onValueChange,
 }: {
   name: string
   defaultValue?: string
   placeholder?: string
   className?: string
+  /**
+   * 지금 값을 밖에서도 알아야 할 때만 준다(칸은 그대로 uncontrolled 다).
+   * 폼 안 안내가 "방금 적은 번호"로 판정하려면 저장값이 아니라 이 값을 봐야 한다.
+   */
+  onValueChange?: (v: string) => void
 }) {
   const [value, setValue] = useState(defaultValue ? formatPhone(defaultValue) : '')
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(formatPhone(e.target.value))
+    const next = formatPhone(e.target.value)
+    setValue(next)
+    onValueChange?.(next)
   }
 
   return (

@@ -320,8 +320,14 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">받는 사람</p>
               <p className="mt-0.5 text-sm text-[var(--warm-dark)]">
-                {bundle?.tenantName} · <span className="tabular-nums">{smsTo}</span>
+                {bundle?.tenantName} · <span className="tabular-nums">{smsTo.value}</span>
               </p>
+              {/* 대체 고지 — 형제 문자 모달 둘과 같은 문장이다. 붉게 안 칠한다(운영자가 고른 대체). */}
+              {smsTo.source === 'emergency' && (
+                <p className="mt-[5px] text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+                  본인 연락처가 없어 비상 연락처로 보냅니다.{smsTo.ownerLabel ? ` 받는 분은 ${smsTo.ownerLabel}.` : ''}
+                </p>
+              )}
             </div>
           ) : (
             <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] text-[var(--warning-fg)]">

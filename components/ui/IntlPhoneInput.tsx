@@ -16,6 +16,7 @@ export function IntlPhoneInput({
   syncCountry,
   placeholder = '전화번호',
   className,
+  onValueChange,
 }: {
   name: string                 // 전화번호 hidden input name
   countryName: string          // ISO code hidden input name
@@ -26,6 +27,11 @@ export function IntlPhoneInput({
   syncCountry?: string
   placeholder?: string
   className?: string
+  /**
+   * 지금 값(e.164 시도값)을 밖에서도 알아야 할 때만 준다. 칸은 그대로 자기 상태를 쥔다 —
+   * 폼 안 안내가 "방금 적은 번호"로 판정하려면 저장값이 아니라 이 값을 봐야 한다.
+   */
+  onValueChange?: (v: string) => void
 }) {
   // defaultValue가 e.164면 country 추론, 아니면 defaultCountry 사용
   const initial = (() => {
@@ -90,6 +96,15 @@ export function IntlPhoneInput({
     const formatter = new AsYouType(country as CountryCode)
     setDisplay(formatter.input(e.target.value))
   }
+
+  // 밖에 알릴 값은 hidden 이 싣는 것과 **같은 값**이어야 한다(e164). 렌더마다 알리되 값이
+  // 바뀔 때만 — 국가 변경 재포맷·동기화 이펙트로도 e164 가 움직인다.
+  const notifiedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!onValueChange || notifiedRef.current === e164) return
+    notifiedRef.current = e164
+    onValueChange(e164)
+  })
 
   return (
     <div className="space-y-1.5">

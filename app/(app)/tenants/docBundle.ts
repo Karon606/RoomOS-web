@@ -16,7 +16,7 @@ import {
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
 import { asDocNameStyle, documentName, DEFAULT_DOC_NAME_STYLE } from '@/lib/documentName'
-import { pickTenantPhone } from '@/lib/tenantContact'
+import { pickTenantPhoneWithFallback, trimPickedPhone, type PickedPhone } from '@/lib/tenantContact'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
 import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
@@ -44,7 +44,9 @@ export type TenantDocBundleMail = { enabled: boolean; to: string | null }
  * 메일과 달리 켜짐 여부가 없다. 문자는 서버가 보내지 않고 운영자 폰의 문자앱이 보내므로
  * 켤 키도 끌 스위치도 없다(형제 문자 모달 셋이 기기를 가리지 않는 것과 같은 이유).
  */
-export type TenantDocBundleSms = { to: string | null; propertyName: string }
+// to 는 번호 하나가 아니라 **주인까지** 묶인 값이다(PickedPhone) — 본인 번호가 없으면 비상
+// 연락처로 대체되고, 시트가 그 사실을 고지해야 한다(2026-09-17 운영자 결정).
+export type TenantDocBundleSms = { to: PickedPhone | null; propertyName: string }
 
 export async function getTenantDocBundle(
   tenantId: string,
@@ -59,10 +61,12 @@ export async function getTenantDocBundle(
       // 문자 받을 번호 — 입주자 문자(getPersonalSmsContext)와 **같은 자를 쓴다**. 그 '자'가 이제
       // lib/tenantContact 정본이라, 전 연락처를 넘기고 거기서 고른다(주 연락처 우선 · 비상 제외 ·
       // 본국 번호는 마지막 폴백). 종전 `첫 PHONE` 은 주 연락처로 찍어 둔 번호를 무시했다.
+      // 본인 번호가 없으면 비상 연락처로 대체한다 — 주인 표기 두 칸도 같이 읽는다.
       contacts: {
         select: {
           id: true, contactType: true, contactValue: true,
           isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+          emergencyName: true, emergencyRelation: true,
         },
       },
     },
@@ -174,17 +178,17 @@ export async function getTenantDocBundle(
       : undefined,
     now: new Date(),
     // 문자는 유선전화로 안 간다 — 갈래를 휴대폰으로 좁힌다(서류 칸은 유선도 번호로 받는다).
-  }), tenant.email, pickTenantPhone(tenant.contacts, ['PHONE']), property?.name ?? '')
+  }), tenant.email, pickTenantPhoneWithFallback(tenant.contacts, ['PHONE']), property?.name ?? '')
 }
 
 /** 규칙 정본이 만든 묶음에 보낼 곳 정보만 얹는다 — lib/docBundle 은 발송을 모른다(순수 규칙). */
 function withMail(
-  bundle: TenantDocBundle, email: string | null, phone: string | null, propertyName: string,
+  bundle: TenantDocBundle, email: string | null, phone: PickedPhone | null, propertyName: string,
 ): TenantDocBundle & { mail: TenantDocBundleMail; sms: TenantDocBundleSms } {
   return {
     ...bundle,
     mail: { enabled: isMailConfigured(), to: email?.trim() || null },
-    sms: { to: phone?.trim() || null, propertyName },
+    sms: { to: trimPickedPhone(phone), propertyName },
   }
 }
 

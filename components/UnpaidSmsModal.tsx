@@ -122,7 +122,7 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
         <div className="flex items-center gap-2 justify-end">
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
           {ctx?.ok && ctx.phone && body.trim() ? (
-            <a href={smsHref(ctx.phone)} onClick={e => { if (blockSmsIfStaging(e)) return; onSend() }}
+            <a href={smsHref(ctx.phone.value)} onClick={e => { if (blockSmsIfStaging(e)) return; onSend() }}
               className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold hover:opacity-90 transition-opacity">
               문자앱으로 보내기
             </a>
@@ -141,8 +141,15 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
             <p className="text-xs text-[var(--warm-mid)]">
               받는 사람: <span className="font-semibold text-[var(--warm-dark)]">{target.tenantName}</span>
               {ctx.phone
-                ? <span className="tabular-nums"> · {ctx.phone}</span>
+                ? <span className="tabular-nums"> · {ctx.phone.value}</span>
                 : <span className="text-[var(--danger-fg)]"> · 전화번호가 없습니다 (입주자 연락처를 먼저 등록하세요)</span>}
+              {/* 대체 고지 — 받는 사람이 입주자 본인이 아니라는 사실을 누르기 전에 말한다.
+                  붉게 안 칠한다: 오류가 아니라 운영자가 고른 대체다(형제 TenantSmsModal 과 같은 문장). */}
+              {ctx.phone?.source === 'emergency' && (
+                <span className="block mt-[5px] text-[0.6875rem] text-[var(--warm-mid)] leading-relaxed">
+                  본인 연락처가 없어 비상 연락처로 보냅니다.{ctx.phone.ownerLabel ? ` 받는 분은 ${ctx.phone.ownerLabel}.` : ''}
+                </span>
+              )}
             </p>
             {ctx.templates.length > 0 ? (
               <label className="block">

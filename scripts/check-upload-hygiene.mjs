@@ -23,6 +23,21 @@
 //   ⓔ AI 인식 액션 호출의 첫 인자는 ocrForm(...) 이다.
 //   ⓕ lib/ocrImage 는 base64 문자열을 만들지 않는다(toDataURL·readAsDataURL 금지).
 //
+// 2026-09-16 에 축이 셋 더 늘었다. 위 여섯은 **AI 에게 보내는** 사진만 보고 있었는데, 같은 종류의
+// 사고가 **저장하는** 사진에서 따로 터졌다. 아이폰 HEIC 를 그대로 올리면 사업자등록증은 열리지
+// 않는 첨부로 나가고, 도장은 pdf-lib 이 못 읽어 실거주 확인서 발급을 통째로 실패시키며, 계약서는
+// 도장 없이 조용히 나간다. 정본은 lib/uploadImage 이고 대상은 AI 호출부가 아니라 **업로드 입구**다.
+//
+//   ⓖ 업로드 세션을 부르는 화면은 lib/uploadImage 를 거친다.
+//   ⓗ 그 화면이 **고른 파일 원본을 그대로** 세션·PUT 에 싣지 않는다(변환 건너뛰기 차단).
+//   ⓘ lib/uploadImage 는 디코드 실패에 원본을 돌려주지 않는다(조용한 원본 통과 차단).
+//   ⓙ 그 세션을 받는 서버 액션은 mime 화이트리스트를 지난다(HEIC 가 저장되는 길 차단).
+//   ⓚ 저장된 도장이 깨져도 서류 발급은 산다(embed 가 try 안에 있다).
+//
+// ⓚ 가 이 그물에 있는 이유: 사진이 들어오는 문과 그 사진이 쓰이는 문은 같은 사고의 양쪽 끝이다.
+// HEIC 도장 하나가 실거주 확인서 발급을 통째로 실패시켰고, 그건 입구를 막아도 이미 저장된
+// 파일에는 소용이 없다. 두 문을 같은 자리에서 본다.
+//
 // 실행: node scripts/check-upload-hygiene.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,6 +59,12 @@ const strip = s => s
 
 // AI 가 사진을 읽는 액션들 — 이것을 부르는 화면이 이 그물의 대상이다.
 const AI_CALLS = /analyze(?:IdCard|Contract|Receipt)WithGemini\(|parseFloorPlanImage\(|uploadPendingReceipt\(/
+// 파일을 Drive 에 올리는 입구들(ⓖ~ⓗ). 앱 로고(createAppLogoUploadSession)는 뺀다 — 크롭 모달이
+// 캔버스로 다시 그려 PNG 로만 내보내므로 이미 정규화된 자리다.
+const UPLOAD_SESSIONS = /create(?:BizCert|Stamp|Logo|ContractScan)UploadSession\s*\(/
+// 고른 파일 원본이 그대로 실리는 모양 — 이번에 고친 네 입구가 전부 이 모양이었다.
+// (PUT 인자까지 보려면 앱 로고 경로의 지역 변수 이름과 부딪혀 그 자리는 세션 인자로 잰다.)
+const RAW_IN_SESSION = /create(?:BizCert|Stamp|Logo|ContractScan)UploadSession\s*\(\s*\{[^}]*fileName:\s*file\.name/
 // 파일 헤더 몇 바이트만 읽는 자리는 대상이 아니다(lib/docMime 의 매직넘버 판독).
 const LOOP_ALLOW = ['lib/docMime.ts']
 
@@ -64,6 +85,16 @@ for (const f of files) {
   // ⓐ 바이트 루프 금지.
   if (/String\.fromCharCode/.test(src) && !LOOP_ALLOW.includes(f)) {
     violations.push(`${f} 사진을 바이트 루프로 base64 로 만든다. lib/ocrImage 의 fileToOcrImage 를 쓴다(큰 사진에서 탭이 죽는다).`)
+  }
+
+  // ⓖ·ⓗ 업로드 입구 — 밖으로 나갈 파일을 만드는 자리는 변환 정본을 거친다.
+  if (UPLOAD_SESSIONS.test(src) && /'use client'|"use client"/.test(src)) {
+    if (!/from '@\/lib\/uploadImage'/.test(src)) {
+      violations.push(`${f} 업로드 세션을 부르면서 lib/uploadImage 를 안 거친다. 아이폰 HEIC 가 그대로 저장돼 첨부·발급이 깨진다.`)
+    }
+    if (RAW_IN_SESSION.test(src)) {
+      violations.push(`${f} 고른 파일 원본을 그대로 업로드 세션에 싣는다. fileToUploadPdf·fileToUploadImage 가 돌려준 File 을 써야 한다.`)
+    }
   }
 
   if (!AI_CALLS.test(src)) continue
@@ -96,6 +127,18 @@ for (const f of files) {
     violations.push(`${f} base64 문자열을 만든다. 사진 바이트는 FormData 파일로만 싣는다(ocrForm).`)
   }
 
+  // ⓘ 변환 정본이 디코드 실패에 원본을 돌려주지 않는가.
+  //    lib/ocrImage 는 실패해도 원본을 그대로 보내는 것이 옳다(Gemini 가 HEIC 를 읽는다).
+  //    여기는 반대다 — 그 바이트가 **저장**되면 첨부·발급이 깨지므로 던져야 한다.
+  if (f === 'lib/uploadImage.ts') {
+    if (/catch\s*(?:\([^)]*\))?\s*\{[^}]*return/.test(src)) {
+      violations.push(`${f} 디코드 실패 분기에서 원본을 돌려준다. 저장되는 파일이라 실패는 던져야 한다.`)
+    }
+    if (!/throw new Error\(UPLOAD_DECODE_FAIL\)/.test(src)) {
+      violations.push(`${f} 디코드 실패에 사람 말로 던지는 자리가 없다(UPLOAD_DECODE_FAIL).`)
+    }
+  }
+
   // ⓓ 서버 액션 시그니처에 사진 base64 문자열 파라미터가 있는가.
   if (!isUseServer(src)) continue
   for (const m of src.matchAll(/export\s+async\s+function\s+([A-Za-z0-9_]+)\s*\(/g)) {
@@ -110,6 +153,38 @@ for (const f of files) {
     if (IMG_PARAM.test(params) && !SIG_ALLOW.includes(`${f}#${m[1]}`)) {
       violations.push(`${f} ${m[1]} 이 사진 base64 를 문자열 인자로 받는다. FormData 로 받고 readOcrImageForm 으로 되읽는다.`)
     }
+  }
+}
+
+// ⓙ 업로드 세션 서버 액션의 mime 문 — 지목한 자리만 본다(파일이 크고 문이 정확히 둘이다).
+//    스캔 계약서는 **종전에 이 문이 아예 없어** 크기만 보고 HEIC 를 통과시켰다.
+const MIME_GATES = [
+  ['app/(app)/settings/actions.ts', 'createBizCertUploadSession', 'BIZ_CERT_MIME_OK'],
+  ['app/(app)/tenants/actions.ts', 'createContractScanUploadSession', 'SCAN_MIME_OK'],
+]
+for (const [file, fn, gate] of MIME_GATES) {
+  let src
+  try { src = strip(readFileSync(file, 'utf8')) } catch { violations.push(`${file} 를 못 읽는다(ⓙ 대상 파일이 옮겨졌나).`); continue }
+  const def = src.match(new RegExp(`const\\s+${gate}\\s*=\\s*\\(([^)]*)\\)\\s*=>([^\\n]*)`))
+  if (!def) { violations.push(`${file} ${gate} 정의가 없다. 업로드 mime 화이트리스트가 사라지면 HEIC 가 저장된다.`); continue }
+  // 'image/' 전체 허용은 HEIC 를 그대로 들여보낸다 — 이번 사고의 원래 모양이다.
+  if (/startsWith\(\s*['"]image\//.test(def[2])) {
+    violations.push(`${file} ${gate} 가 image/* 를 통째로 받는다. HEIC 가 저장되면 첨부·발급이 깨진다.`)
+  }
+  const body = src.slice(src.indexOf(`export async function ${fn}`))
+  if (!new RegExp(`${gate}\\s*\\(`).test(body.slice(0, 2000))) {
+    violations.push(`${file} ${fn} 이 ${gate} 를 안 지난다. 문을 만들어 두고 안 지나면 없는 것과 같다.`)
+  }
+}
+
+// ⓚ 저장된 도장이 깨져도 서류는 나가는가 — embed 가 try 안에 있어야 한다.
+//    HEIC 도장 하나로 실거주 확인서 발급이 통째로 실패했다(형제 rentReceiptPdf 에는 이미 있던 방어).
+for (const file of ['lib/residenceCertOverlay.ts', 'lib/rentReceiptPdf.ts']) {
+  let src
+  try { src = strip(readFileSync(file, 'utf8')) } catch { violations.push(`${file} 를 못 읽는다(ⓚ 대상 파일이 옮겨졌나).`); continue }
+  if (!/embed(?:Png|Jpg)\s*\(/.test(src)) continue   // 도장을 안 얹게 됐으면 볼 것이 없다
+  if (!/try\s*\{[^}]*embed(?:Png|Jpg)\s*\(/.test(src)) {
+    violations.push(`${file} 도장 임베드가 try 밖에 있다. 도장 하나가 깨지면 서류 발급 전체가 실패한다.`)
   }
 }
 

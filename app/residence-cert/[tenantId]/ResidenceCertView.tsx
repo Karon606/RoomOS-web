@@ -416,6 +416,16 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
         <p className="no-print rc-note">계약이 없어 여기서 고친 값은 저장되지 않습니다. 이번 발급에만 반영됩니다.</p>
       )}
 
+      {/* 연락처 칸이 비어 나가는 이유를 말한다(2026-09-17). 문자 갈래는 본인 번호가 없으면 비상
+          연락처로 대체하는데, **이 종이는 대체하지 않는다** — 관청에 내는 서류에 남의 번호를
+          임차인 연락처로 적을 수는 없다(lib/tenantContact 의 두 문이 갈리는 자리가 여기다).
+          그 사정을 안 적으면 빈 칸이 앱의 누락으로 보인다. 손으로 채워 넣은 발급에는 안 뜬다. */}
+      {!f.tenantPhone.trim() && (
+        <p className="no-print rc-note">
+          연락처 칸이 빈 채로 발급됩니다. 관청 제출 서류라 비상 연락처를 대신 쓰지 않습니다. 본인 연락처를 등록하면 채워집니다.
+        </p>
+      )}
+
       {!hasStamp && (
         <p className="no-print rc-warn">영업장 도장이 등록되지 않아 도장 없이 발급됩니다. 영업장 설정에서 도장을 등록하세요.</p>
       )}

@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import { Readable } from 'stream'
+import { sniffDocMime, isImageDocMime, DOC_MIME_UNKNOWN } from './docMime'
 
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID!
 
@@ -166,13 +167,18 @@ export function buildReceiptImageUrl(fileId: string): string {
 }
 
 // 이미지 바이트의 매직 넘버로 mime 을 판정한다. Drive 메타 조회를 한 번 더 하지 않으려는 것.
+//
+// **판정 자체는 lib/docMime 하나뿐이다**(2026-09-16). 종전에는 여기 같은 논리가 따로 적혀 있었고
+// 둘이 갈렸다 — docMime 은 ftyp 브랜드(heic·heix·hevc·mif1)를 보는데 여기는 ftyp 만 보고 전부
+// image/heic 이라 **mp4(isom)까지 이미지라고 답했다.** 그 답이 driveImageDataUrl 을 지나면
+// 동영상 바이트가 계약서 도장 자리에 data:image/heic 으로 실린다.
+//
+// 이 함수의 계약은 그대로다 — **이미지가 아니면 application/octet-stream**. 부르는 쪽(도장 data URI,
+// /api/biz-cert)이 이미지 여부로 갈라지므로 PDF 를 PDF 라고 답해 주면 안 된다(그 자리들은 PDF 를
+// 이미 따로 가려낸다).
 export function sniffImageMime(buf: Buffer): string {
-  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50) return 'image/png'
-  if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8) return 'image/jpeg'
-  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
-  if (buf.length >= 6 && buf.toString('ascii', 0, 3) === 'GIF') return 'image/gif'
-  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp') return 'image/heic'
-  return 'application/octet-stream'
+  const mime = sniffDocMime(buf)
+  return isImageDocMime(mime) ? mime : DOC_MIME_UNKNOWN
 }
 
 // Drive 이미지를 data: URI 로 — 공개 권한 없이 어디서나 쓰기 위한 것 (D페이즈 2026-08-03).

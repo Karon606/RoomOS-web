@@ -5,10 +5,18 @@
 // 사람)로 가거나, 서류 시트의 문자 탭과 입주자 문자가 같은 사람에게 다른 번호를 답한다.
 // 정본은 lib/tenantContact 의 pickTenantPhone 하나다.
 //
-//   ⓐ 정본이 살아 있는가(pickTenantPhone · TenantPhoneContact).
+//   ⓐ 정본이 살아 있는가(pickTenantPhone · TenantPhoneContact · 대체 갈래).
 //   ⓑ 옮긴 호출부가 정본을 부르고 **그 결과를 쓰는가.** import 만 남기는 역주입이 2026-09-04 에
 //      실제로 뚫렸고, 검수가 더 얄궂은 우회를 설계했다 — 호출은 남기고 결과를 안 읽는 판.
 //      그래서 'import 가 있다'도 '호출이 있다'도 통과 조건이 못 된다.
+//   ⓓ **종이 축이 대체로 오염되지 않았는가**(2026-09-17 신설). 문자는 본인 번호가 없으면 비상
+//      연락처로 대체하지만, 계약서와 실거주 확인서는 대체하지 않는다 — 관청에 내는 종이에 남의
+//      번호를 임차인 연락처로 적을 수는 없다. 두 문이 갈리는 자리라 한쪽이 다른 쪽으로 새는
+//      것을 이름으로 막는다. 종이 넷에 pickTenantPhoneWithFallback 이 나타나면 그 자체가 위반이다.
+//   ⓔ **예약 확정 세 자리가 정본 문을 부르고 답을 읽는가**(2026-09-17 신설). 등록·수정 폼·상태
+//      전환 셋이 각자 판정을 적으면 한 길만 막히고 나머지로 들어온다(roomRequiredDenial 전례).
+//      수정 폼·상태 전환은 **이미 확정된 계약을 소급으로 막지 않아야** 하므로 그 인자가
+//      reservationConfirmedAt 을 읽는지도 함께 본다 — 빼면 옛 데이터의 이름 수정이 막힌다.
 //   ⓒ 정본 밖에서 옛 손규칙이 새로 생기지 않는가. 이름과 괄호 모양은 손으로 바꿀 수 있으니
 //      **꼴**을 본다(아래 OLD_PATTERNS·PICK_WHERE 여섯 + 둘).
 //      **아직 안 옮긴 자리는 ALLOW 에 근거와 수를 적는다.** 수까지 적는 이유는 하나다 —
@@ -73,31 +81,68 @@ const ALLOW = new Map([
   if (!/!c\.isEmergency/.test(lib)) {
     violations.push(`${LIB} — 비상 제외가 사라졌다. 본인이 아닌 사람에게 문자가 간다.`)
   }
+  // 대체 갈래(2026-09-17) — 본인 번호가 없을 때만 열리는 두 번째 문.
+  if (!/export function pickTenantPhoneWithFallback\b/.test(lib)) {
+    violations.push(`${LIB} — pickTenantPhoneWithFallback 이 사라졌다. 문자 갈래 넷이 이 함수를 부른다.`)
+  }
+  if (!/export function reservationConfirmPhoneDenial\b/.test(lib)) {
+    violations.push(`${LIB} — reservationConfirmPhoneDenial 이 사라졌다. 예약 확정 문 세 자리가 이 함수를 부른다.`)
+  }
+  // 대체 함수 **안**에서 비상 갈래를 고르는 줄이 급소다. 이 조건이 빠지면 '본인 번호 없음'과
+  // '비상 연락처' 사이의 구분이 무너지고, 화면이 다는 꼬리표(· 비상)가 거짓이 된다.
+  {
+    const at = lib.indexOf('export function pickTenantPhoneWithFallback')
+    const body = at >= 0 ? lib.slice(at, at + 1200) : ''
+    if (at >= 0 && !/c\.isEmergency/.test(body)) {
+      violations.push(`${LIB} — 대체 갈래에서 isEmergency 판정이 사라졌다. 본인 번호와 비상 번호가 한 통이 된다.`)
+    }
+    if (at >= 0 && !/kinds\.includes/.test(body)) {
+      violations.push(`${LIB} — 대체 갈래가 kinds 를 안 본다. 문자가 안 가는 유선·메신저가 수신자로 선다.`)
+    }
+  }
+}
+
+// ⓓ 종이 축은 대체를 안 쓴다 — 관청 종이·계약서에 남의 번호를 임차인 연락처로 적을 수 없다.
+const PAPER_FILES = [
+  'app/residence-cert/[tenantId]/actions.ts',
+  'lib/contractData.ts',
+  'app/(app)/tenants/contractShare.ts',
+  'app/api/contract/generate/route.ts',
+]
+for (const f of PAPER_FILES) {
+  const lines = strip(read(f)).split('\n')
+  lines.forEach((l, i) => {
+    if (/pickTenantPhoneWithFallback/.test(l)) {
+      violations.push(`${f}:${i + 1} — 종이에 비상 연락처 대체가 흘렀다. 이 축은 pickTenantPhone(대체 없음)만 쓴다.`)
+    }
+  })
 }
 
 // ⓑ 옮긴 호출부는 정본을 부르고 **그 결과를 쓴다.**
 //    검수가 설계한 우회가 이것이다 — 호출은 남기고 결과를 안 읽는 판
 //    (`const tenantPhone = pickTenantPhone(...)` 는 그대로 두고 `tenantPhone: 손규칙` 으로 채우기).
 //    그래서 'import 가 있다'도 '호출이 있다'도 통과 조건이 못 된다.
-for (const f of CANON_CALLERS) {
-  const src = strip(read(f))
-  if (!/from '@\/lib\/tenantContact'/.test(src)) {
-    violations.push(`${f} — 번호 고르기를 lib/tenantContact 에서 안 가져온다. 사본이 검증하는 것은 사본 자신이다.`)
-    continue
-  }
-  const lines = src.split('\n')
-  const calls = lines.map((l, i) => ({ l, at: i + 1 })).filter(x => /pickTenantPhone\s*\(/.test(x.l))
+/**
+ * 이 줄 묶음 안에서 `fn(...)` 이 **불리고 그 결과가 읽히는가.**
+ * ⓑ·ⓔ 가 같은 문법을 쓴다 — 두 벌로 적으면 한쪽 우회만 막힌다.
+ * where 는 위반 문구에 찍을 자리 이름(파일 또는 파일#함수).
+ */
+function assertConsumedCall(lines, fn, where, offset = 0, label = fn) {
+  const callRe = new RegExp(`${fn}\\s*\\(`)
+  const bindRe = new RegExp(`^\\s*(?:const|let|var)\\s+(\\w+)\\s*=\\s*${fn}\\s*\\(`)
+  const bareRe = new RegExp(`^\\s*(?:void\\s+)?${fn}\\s*\\(`)
+  const calls = lines.map((l, i) => ({ l, at: i + 1 })).filter(x => callRe.test(x.l))
   if (calls.length === 0) {
-    violations.push(`${f} — 정본을 import 만 하고 부르지 않는다. 옛 손규칙이 그대로 살아 있는 판이다.`)
-    continue
+    violations.push(`${where} — ${label} 을 부르지 않는다. 옛 손규칙이 그대로 살아 있는 판이다.`)
+    return false
   }
   let consumed = false
   for (const { l, at } of calls) {
-    const bound = l.match(/^\s*(?:const|let|var)\s+(\w+)\s*=\s*pickTenantPhone\s*\(/)
+    const bound = l.match(bindRe)
     if (!bound) {
       // 결과를 버리는 맨 호출문이면 소비가 아니다. 그 밖은 인자·속성값 자리라 구조적으로 소비된다.
-      if (/^\s*(?:void\s+)?pickTenantPhone\s*\(/.test(l)) {
-        violations.push(`${f}:${at} — pickTenantPhone 결과를 버린다. 고른 번호가 어디에도 안 실린다.`)
+      if (bareRe.test(l)) {
+        violations.push(`${where}:${offset + at} — ${label} 결과를 버린다. 고른 답이 어디에도 안 실린다.`)
         continue
       }
       consumed = true
@@ -108,10 +153,55 @@ for (const f of CANON_CALLERS) {
     const name = bound[1]
     const used = new RegExp(`\\b${name}\\b(?!\\s*:)`)
     if (lines.some((x, i) => i + 1 !== at && used.test(x))) consumed = true
-    else violations.push(`${f}:${at} — pickTenantPhone 결과(${name})를 아무도 안 읽는다. 값 자리에 닿는지 확인하라.`)
+    else violations.push(`${where}:${offset + at} — ${label} 결과(${name})를 아무도 안 읽는다. 값 자리에 닿는지 확인하라.`)
   }
-  if (!consumed) {
-    violations.push(`${f} — 정본을 불렀지만 결과가 소비되는 자리가 없다.`)
+  if (!consumed) violations.push(`${where} — ${label} 을 불렀지만 결과가 소비되는 자리가 없다.`)
+  return consumed
+}
+
+// 문자 갈래 셋은 대체 문(pickTenantPhoneWithFallback)을, 종이 하나는 대체 없는 문을 부른다.
+// 어느 쪽이든 **정본 함수**여야 하므로 이름 하나로 묶어 본다(어느 쪽인지는 ⓓ 가 가른다).
+const CANON_FN = 'pickTenantPhone(?:WithFallback)?'
+for (const f of CANON_CALLERS) {
+  const src = strip(read(f))
+  if (!/from '@\/lib\/tenantContact'/.test(src)) {
+    violations.push(`${f} — 번호 고르기를 lib/tenantContact 에서 안 가져온다. 사본이 검증하는 것은 사본 자신이다.`)
+    continue
+  }
+  assertConsumedCall(src.split('\n'), CANON_FN, f, 0, 'pickTenantPhone / pickTenantPhoneWithFallback')
+}
+
+// ⓔ 예약 확정 문 세 자리 — 한 함수를 부르고 답을 읽는다. 소급 차단은 reservationConfirmedAt 이 가른다.
+{
+  const f = 'app/(app)/tenants/actions.ts'
+  const src = strip(read(f))
+  const lines = src.split('\n')
+  // 최상위 함수 경계 — 다음 최상위 선언 전까지가 그 함수의 몸이다.
+  const topDecl = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/
+  const regionOf = name => {
+    const start = lines.findIndex(l => (l.match(topDecl) ?? [])[1] === name)
+    if (start < 0) return null
+    let end = lines.length
+    for (let i = start + 1; i < lines.length; i++) {
+      if (topDecl.test(lines[i])) { end = i; break }
+    }
+    return { start, lines: lines.slice(start, end) }
+  }
+  // 등록(생성 경로)은 확정된 과거가 없어 소급 인자가 상수다. 나머지 둘은 저장값을 읽어야 한다.
+  for (const [name, needsPast] of [['leaseSaveDenial', false], ['updateTenant', true], ['applyStatusTransition', true]]) {
+    const region = regionOf(name)
+    if (!region) {
+      violations.push(`${f} — ${name} 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+      continue
+    }
+    assertConsumedCall(region.lines, 'reservationConfirmPhoneDenial', `${f}#${name}`, region.start)
+    if (!needsPast) continue
+    // 호출 인자에 저장값이 들어가는가 — 호출 줄부터 다섯 줄 안을 본다(인자가 여러 줄로 선다).
+    const callAt = region.lines.findIndex(l => /reservationConfirmPhoneDenial\s*\(/.test(l))
+    const window = callAt >= 0 ? region.lines.slice(callAt, callAt + 5).join('\n') : ''
+    if (!/alreadyConfirmed:\s*!!\w+(?:\.\w+)*\.reservationConfirmedAt/.test(window)) {
+      violations.push(`${f}#${name} — 확정 문이 reservationConfirmedAt 을 안 읽는다. 이미 확정된 계약의 이름 수정까지 막힌다.`)
+    }
   }
 }
 
@@ -183,6 +273,6 @@ for (const [f, allow] of ALLOW) {
   }
 }
 
-console.log(`[입주자 전화번호 축] 정본 호출부 ${CANON_CALLERS.length}곳 · 미이전 예외 ${ALLOW.size}파일 / 위반 ${violations.length}건`)
+console.log(`[입주자 전화번호 축] 정본 호출부 ${CANON_CALLERS.length}곳 · 대체 금지 종이 ${PAPER_FILES.length}곳 · 확정 문 3곳 · 미이전 예외 ${ALLOW.size}파일 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)

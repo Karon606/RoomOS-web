@@ -71,6 +71,7 @@ import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
   plannedStayDenial, roomRequiredDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
+import { reservationConfirmPhoneDenial, type TenantPhoneContact } from '@/lib/tenantContact'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -678,13 +679,33 @@ async function subordinationDenial(
 }
 
 /**
+ * 예약 확정 문이 볼 연락처 — lib/tenantContact 정본이 요구하는 일곱 칸만 읽는다.
+ * 세 진입점(등록·수정 폼·상태 전환)이 같은 조회를 쓴다. 문 자체는 정본 한 함수다.
+ */
+async function phoneContactsOf(tenantId: string): Promise<TenantPhoneContact[]> {
+  return prisma.tenantContact.findMany({
+    where: { tenantId },
+    select: {
+      id: true, contactType: true, contactValue: true,
+      isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+    },
+  })
+}
+
+/**
  * 계약 하나를 저장해도 되는가 — 필수 칸과 방 배정 가드. 통과하면 null, 막히면 문구.
  * 두 진입점이 이 한 함수를 부른다. 방 배정 판정 자체는 lib/roomAssignment 정본이다.
  *
  * @param tenantId 이 계약의 주인. 새 입주자 등록(addTenant)은 아직 없으므로 null 이다 —
  *   그때는 딸릴 대상이 없어 종속 지목이 성립할 수 없고, 단독 계약 불가 방은 그대로 막힌다.
+ * @param newContacts 아직 저장 안 된 새 입주자의 연락처(등록 폼이 방금 적은 값). tenantId 가
+ *   null 일 때만 쓴다 — 예약 확정 문이 볼 것이 이것뿐이기 때문이다.
  */
-async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: string | null): Promise<string | null> {
+async function leaseSaveDenial(
+  f: ReturnType<typeof readLeaseFields>,
+  tenantId: string | null,
+  newContacts: readonly TenantPhoneContact[] = [],
+): Promise<string | null> {
   // 호실 필수 판정은 lib/roomAssignment 한 벌이다 — updateTenant 도 같은 문장을 부른다(신고 c120bd32).
   const roomDenial = roomRequiredDenial({ roomId: f.roomId || null, status: f.status })
   if (roomDenial) return roomDenial
@@ -692,6 +713,14 @@ async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: 
     if (!f.roomId) return '예약 확정 시 호실은 필수입니다.'
     if (!f.rentAmount) return '예약 확정 시 월 이용료는 필수입니다.'
     if (!f.moveInDate) return '예약 확정 시 입주 희망일은 필수입니다.'
+    // 본인 전화번호 문 — 예약 확정은 방을 잡아 두고 다른 손님을 돌려보내는 결정이다. 판정은
+    // lib/tenantContact 정본 한 벌이고 수정 폼·상태 전환도 같은 문장을 부른다(roomRequiredDenial 전례).
+    // 생성 경로라 '이미 확정됨'이 있을 수 없다 — 이 계약은 이 저장에서 처음 만들어진다.
+    const phoneDenial = reservationConfirmPhoneDenial({
+      contacts: tenantId ? await phoneContactsOf(tenantId) : newContacts,
+      alreadyConfirmed: false,
+    })
+    if (phoneDenial) return phoneDenial
   }
   // 청구 발생 상태(unpaid.ts unpaidLeasesRaw 필터와 동일: ACTIVE·CHECKOUT_PENDING·NON_RESIDENT + rentAmount>0)로
   // 저장할 땐 입주일 필수. 비우면 leaseStartMonth가 인수 컷오프월로 앵커되어 과거월이 한꺼번에 미납으로 잡힌다.
@@ -873,17 +902,6 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const f = readLeaseFields(formData)
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
-  // 새 입주자라 tenantId 가 아직 없다 — 딸릴 대상이 없으므로 종속 지목은 성립할 수 없고,
-  // 단독 계약 불가 방은 여기서 막혀 운영자를 '계약 추가' 경로로 보낸다.
-  const denial = await leaseSaveDenial(f, null)
-  if (denial) return { ok: false, error: denial }
-
-  // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 입주자를 만드는 순간 그 사람은 앱 안에서
-  // 조용히 두 사람이 된다. 확인창을 지나온 폼만 통과시킨다(화면이 '계약 추가' 경로를 권한다).
-  if (formData.get(DUPLICATE_ACK) !== '1') {
-    const dup = await findDuplicateTenant(name, contactValue)
-    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세에서 '계약 추가'를 써 주세요.` }
-  }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -912,6 +930,32 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       isHomeCountry: true,
       countryCode: homeCountryCode || null,
     })
+  }
+
+  // 새 입주자라 tenantId 가 아직 없다 — 딸릴 대상이 없으므로 종속 지목은 성립할 수 없고,
+  // 단독 계약 불가 방은 여기서 막혀 운영자를 '계약 추가' 경로로 보낸다.
+  //
+  // 연락처 조립을 이 문 **위**로 올린 이유는 예약 확정 문 하나다(2026-09-17). 새 입주자는 아직
+  // DB 에 연락처 행이 없어 폼이 방금 적은 값 말고는 볼 것이 없다. 조립은 순수 계산이라 순서를
+  // 올려도 저장 순서·중복 확인창 순서는 그대로다.
+  // 만든 순서가 곧 createdAt 순서다 — 한 트랜잭션에 들어가 값이 같아지므로 정본의 2차 키(id)를
+  // 순번으로 매겨 같은 순서를 재현한다.
+  const denial = await leaseSaveDenial(f, null, contactsToCreate.map((x, i) => ({
+    id: String(i).padStart(3, '0'),
+    contactType: x.contactType,
+    contactValue: x.contactValue,
+    isPrimary: x.isPrimary,
+    isEmergency: x.isEmergency,
+    isHomeCountry: x.isHomeCountry ?? false,
+    createdAt: new Date(),
+  })))
+  if (denial) return { ok: false, error: denial }
+
+  // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 입주자를 만드는 순간 그 사람은 앱 안에서
+  // 조용히 두 사람이 된다. 확인창을 지나온 폼만 통과시킨다(화면이 '계약 추가' 경로를 권한다).
+  if (formData.get(DUPLICATE_ACK) !== '1') {
+    const dup = await findDuplicateTenant(name, contactValue)
+    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세에서 '계약 추가'를 써 주세요.` }
   }
 
   // 암호문 AAD 가 이 행의 id 라 id 를 먼저 정해 둔다. 만들고 나서 두 번째 문으로 채우면
@@ -1365,6 +1409,25 @@ export async function updateTenant(formData: FormData): Promise<
     } else if (existingHome) {
       await prisma.tenantContact.delete({ where: { id: existingHome.id } })
     }
+  }
+
+  /**
+   * 예약 확정 문 — 본인 전화번호가 없으면 방을 잡아 두지 않는다(운영자 결정 2026-09-17).
+   * 판정은 lib/tenantContact 정본 한 벌이고 등록·상태 전환도 같은 문장을 부른다.
+   *
+   * **자리가 여기인 이유.** 이 액션은 바로 위(:1283~)에서 연락처를 저장한다. 문을 저장 앞에
+   * 두면 폼에 방금 적은 번호가 판정에 안 보여서, 번호를 채우고 확정을 켠 저장이 그 저장에서는
+   * 막히고 한 번 더 눌러야 통과한다. 저장 뒤 값이 곧 '이 사람에게 남을 연락처'다.
+   *
+   * 이미 확정된 계약은 소급해서 막지 않는다 — 옛 데이터에는 본인 번호 없이 확정된 사람이 있고,
+   * 그 사람 이름만 고치는 저장까지 막으면 문이 일을 방해한다.
+   */
+  if (isReservedConfirmed) {
+    const phoneDenial = reservationConfirmPhoneDenial({
+      contacts: await phoneContactsOf(tenantId),
+      alreadyConfirmed: !!currentLease.reservationConfirmedAt,
+    })
+    if (phoneDenial) return { ok: false, error: phoneDenial }
   }
 
   // 신고 d3ea25f0 근본 수정: 단기 청구 동기화 판정은 '날짜'가 아니라 '청구 락'이 기준이다.
@@ -3421,6 +3484,8 @@ export async function applyStatusTransition(input: {
       where: { id: input.leaseTermId },
       select: {
         roomId: true, status: true, dueDay: true, rentAmount: true, moveInDate: true, reservationConfirmedAt: true,
+        // 예약 확정 문이 볼 사람 — 인자로 온 tenantId 가 아니라 **이 계약의 주인**을 본다.
+        tenantId: true,
         roomSchedule: true,
         expectedMoveOut: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -3483,6 +3548,14 @@ export async function applyStatusTransition(input: {
       const rentOk    = input.rentAmount != null ? input.rentAmount > 0 : lease.rentAmount > 0
       const moveInOk  = input.moveInDate ? true : lease.moveInDate != null
       if (!rentOk || !moveInOk) return { ok: false, error: '예약 확정에는 월 이용료와 입주 희망일이 필요합니다.' }
+      // 본인 전화번호 문 — 등록 폼·수정 폼과 **같은 한 벌**이다(lib/tenantContact 정본).
+      // 이 경로는 연락처를 안 건드리므로 저장된 값이 곧 판정 입력이다. 이미 확정된 계약을
+      // 다시 저장하는 호출(대시보드 알림의 재확정 등)은 소급으로 안 막는다.
+      const phoneDenial = reservationConfirmPhoneDenial({
+        contacts: await phoneContactsOf(lease.tenantId),
+        alreadyConfirmed: !!lease.reservationConfirmedAt,
+      })
+      if (phoneDenial) return { ok: false, error: phoneDenial }
     }
 
     // 백스톱 — 최종 저장값 기준으로 청구 상태(ACTIVE·CHECKOUT_PENDING·NON_RESIDENT) + rentAmount>0 인데
@@ -5679,8 +5752,15 @@ export async function changeContractPurpose(
   }
 }
 
-// 스캔 업로드 — 종이로 서명받은 계약서를 사진/PDF로 첨부
+// 스캔 업로드 — 종이로 서명받은 계약서를 PDF로 첨부
 const MAX_SCAN_BYTES = 25 * 1024 * 1024  // 25MB
+
+// 받을 형식 — 종전에는 **크기만 보고 mime 은 아예 안 봤다.** 그래서 아이폰 HEIC 가 그대로
+// 들어와 보기 화면도 메일 첨부도 열지 못하는 계약서가 됐다. 사진은 올리기 전에 브라우저가
+// PDF 한 장으로 바꾼다(lib/uploadImage). JPEG·PNG 는 안전망이다 — 변환 정본을 못 태운 낡은
+// 화면이 남아 있어도 [[doc-file-format]] 이 이미 다룰 줄 아는 형식이라 조용히 깨지지 않는다.
+const SCAN_MIME_OK = (m: string) => m === 'application/pdf' || m === 'image/jpeg' || m === 'image/png'
+const SCAN_MIME_ERROR = 'PDF 또는 JPG·PNG 파일만 업로드 가능합니다.'
 
 export async function createContractScanUploadSession(input: {
   tenantId: string
@@ -5692,6 +5772,7 @@ export async function createContractScanUploadSession(input: {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
+    if (!SCAN_MIME_OK(input.mimeType)) return { ok: false, error: SCAN_MIME_ERROR }
     if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
     if (input.fileSize > MAX_SCAN_BYTES) return { ok: false, error: `파일 크기는 ${MAX_SCAN_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
     if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
@@ -5728,7 +5809,7 @@ export async function finalizeContractScan(input: {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    const { deleteFromDrive, isOwnedByApp } = await import('@/lib/google-drive')
+    const { deleteFromDrive, ownedDriveFileMime } = await import('@/lib/google-drive')
     const tenant = await prisma.tenant.findFirst({
       where: { id: input.tenantId, propertyId },
       include: {
@@ -5750,8 +5831,15 @@ export async function finalizeContractScan(input: {
     // 공개 권한을 주지 않는다 — 앱은 /api/doc-file(로그인·영업장 검증)로만 연다.
     // 종전에는 anyone:reader 라서 링크만 알면 로그인 없이 성명·생년월일·서명이 보였다(E페이즈 2026-08-03).
     // 이 앱이 올린 파일인지도 확인한다. 임의 ID 를 밀어 넣으면 남의 파일이 우리 레코드가 된다.
-    if (!(await isOwnedByApp(input.driveFileId))) {
+    // 같은 왕복에서 Drive 가 판정한 형식도 받는다 — 세션의 mime 은 클라이언트가 부른 값이라
+    // 실제로 올라온 바이트와 다를 수 있다(사업자등록증이 이미 쓰는 문법).
+    const scanMime = await ownedDriveFileMime(input.driveFileId)
+    if (!scanMime) {
       return { ok: false, error: '업로드된 파일을 찾을 수 없습니다. 다시 시도해 주세요.' }
+    }
+    if (!SCAN_MIME_OK(scanMime)) {
+      try { await deleteFromDrive(input.driveFileId) } catch {}
+      return { ok: false, error: SCAN_MIME_ERROR }
     }
     const lease = primaryTenantLease(tenant.leaseTerms) ?? null
     // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀 KST 기기에서
