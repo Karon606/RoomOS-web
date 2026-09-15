@@ -12,6 +12,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { driveImageDataUrl } from '@/lib/google-drive'
 import { pickDocumentLease } from '@/lib/documentLease'
+import { pickTenantPhone } from '@/lib/tenantContact'
 import {
   type ResidenceCertFieldValues, type ResidenceCertOverrides, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_ERROR, deriveResidenceCertFields, normalizeResidenceCertOverrides,
@@ -86,7 +87,8 @@ export async function getResidenceCertData(tenantId: string, leaseTermId?: strin
     prisma.tenant.findFirst({
       where: { id: tenantId, propertyId },
       include: {
-        contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+        // 정렬을 여기서 안 건다 — 고르는 규칙은 lib/tenantContact 정본이 쥐고 제 안에서 다시 세운다.
+        contacts: true,
         // 비거주 등록자·퇴실 예정자도 발급 대상(신고 ace54135). 같은 입주자가 거주·비거주 계약을
         // 같은 방에 동시 보유할 수 있어 단순 take 1 이 아니라 조회 후 JS 에서 우선순위로 고른다.
         leaseTerms: {
@@ -111,8 +113,9 @@ export async function getResidenceCertData(tenantId: string, leaseTermId?: strin
   // 선택 규칙은 lib/documentLease 정본 하나다(계약서·납부 확인서와 같은 함수).
   // (여기서 고른 lease 로 저장된 표시값을 다시 조회한다 — 계약이 정해져야 행을 찾을 수 있다.)
   const lease = pickDocumentLease(tenant.leaseTerms, leaseTermId)
-  const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
-                       ?? tenant.contacts.find(c => !c.isEmergency)
+  // 종이에 찍히는 번호 — 규칙은 lib/tenantContact 정본 하나다. 종전 두 줄은 본국 번호(+998 등)를
+  // 주 연락처로 등록한 외국인에게서 그 번호를 그대로 골라 관청 제출 서류에 실었다.
+  const tenantPhone = pickTenantPhone(tenant.contacts)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
 
   // 소재지·임차인 주소 = 영업장 주소 + 방번호. 방번호 없이 제출했다가 관청에서 연락을 받았다
@@ -158,7 +161,7 @@ export async function getResidenceCertData(tenantId: string, leaseTermId?: strin
     tenantDocNameStyle: asDocNameStyle(tenant.docNameStyle) ?? null,
     lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
     tenantBirth: ymd(tenant.birthdate),
-    tenantPhone: primaryContact?.contactValue ?? '',
+    tenantPhone: tenantPhone ?? '',
     autoFields,
     overrides,
     overrideSavedDaysAgo,

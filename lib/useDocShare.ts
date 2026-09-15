@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DocShareQueue, shareFileNames } from './docShareQueue'
 import { shareFiles, saveFiles } from './shareFile'
 import { extForDocMime } from './docMime'
-import { pushToast, TOAST_DUR_LONG } from './saveStatus'
+import { pushToast } from './saveStatus'
 
 export type DocShareEntry = {
   id: string                          // driveFileId
@@ -95,8 +95,10 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     } else {
       retryCount.current = 0
       if (result === 'unsupported') pushToast('error', '이 기기에서는 파일 공유를 지원하지 않습니다.')
-      // 창이 뜬 뒤에 알리면 그 창에 가려 안 보인다. 시트가 닫힌 뒤(shared·cancelled)에 말한다.
-      else if (copied) pushToast('info', '보낼 문구를 복사했습니다. 메시지 칸에 붙여넣기 하세요.', { duration: TOAST_DUR_LONG })
+      // 복사 사실은 호출부가 누르기 전에 인라인으로 말한다(TenantDocBundleSheet). 시트가 닫힌 뒤에는
+      // 무엇을 골랐는지(프린트·에어드롭·메신저) 알 길이 없어 붙여넣기 안내가 인쇄 사용자에게 헛말이 된다.
+      // 취소는 무반응(§27.5). 복사가 막혔을 때만 말한다 — 캡션이 한 약속이 거짓이 되는 자리라서다.
+      else if (result === 'shared' && text && !copied) pushToast('info', '함께 보낼 문구를 복사하지 못했습니다.')
     }
   }, [mode, queue, onChange, toItems])
 

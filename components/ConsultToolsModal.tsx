@@ -20,6 +20,7 @@ import { shareOrDownloadFile, shareFiles } from '@/lib/shareFile'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { getConsultInfo, type ConsultInfo } from '@/app/(app)/consultInfo'
+import { docFileLabel } from '@/lib/docBundle'
 
 // 행 하나. value 가 비면 목록에서 빠진다 — '미설정' 을 띄우면 탭해도 복사할 것이 없어
 // '행 = 복사' 규칙이 깨진다.
@@ -165,7 +166,10 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
       const pending = certRef.current ?? prepareBizCert(info.bizCertMimeType)
       certRef.current = pending
       const prep = await pending
-      const base = info.propertyName ? `${info.propertyName}_사업자등록증` : '사업자등록증'
+      // 서류 이름은 정본에서 가져온다 — 같은 등록증이 입주자 서류에서도 나가게 된 뒤로(2026-09-16)
+      // 이름이 두 자리에 손으로 적혀 있으면 한쪽만 고쳐지는 날 받는 쪽이 다른 서류로 읽는다.
+      const docName = docFileLabel('bizcert', 'ko')
+      const base = info.propertyName ? `${info.propertyName}_${docName}` : docName
       let asImage = true
       if (prep.originalMime === 'application/pdf') {
         const format = await choiceDialog({

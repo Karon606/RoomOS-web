@@ -113,8 +113,10 @@ eq('보증금 영수증 영문', docFileLabel('deposit', 'en'), 'Deposit Receipt
 // 계약서와 실거주 확인서가 앞 낱말까지 같으면 파일 목록에서 얼핏 안 갈린다.
 eq('계약서와 실거주 확인서는 첫 낱말이 다르다',
   DOC_TYPE_FILE_LABEL_EN.contract.split(' ')[0] === DOC_TYPE_FILE_LABEL_EN.residence.split(' ')[0], false)
-eq('네 서류 영문 이름이 서로 다르다',
-  new Set(Object.values(DOC_TYPE_FILE_LABEL_EN)).size, 4)
+// 수를 박아 두지 않는다 — 축은 '겹치는 이름이 없다' 이지 '넷이다' 가 아니다. 2026-09-16 에
+// 사업자등록증이 들어오면서 넷이 다섯이 됐고, 그때 이 줄이 겹침과 무관한 이유로 붉게 섰다.
+eq('서류 영문 이름은 서로 겹치지 않는다',
+  new Set(Object.values(DOC_TYPE_FILE_LABEL_EN)).size, Object.keys(DOC_TYPE_FILE_LABEL_EN).length)
 eq('한글 이름은 그대로다', DOC_TYPE_FILE_LABEL.rent, '입실료납부확인서')
 
 

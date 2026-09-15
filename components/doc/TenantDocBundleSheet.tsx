@@ -41,8 +41,9 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { getTenantDocBundle, type TenantDocBundleMail, type TenantDocBundleSms } from '@/app/(app)/tenants/docBundle'
 import { TenantDocMailComposeSheet } from '@/components/doc/TenantDocMailComposeSheet'
 import { TenantDocSmsComposeSheet } from '@/components/doc/TenantDocSmsComposeSheet'
+import { docMimeLabel } from '@/lib/docMime'
 import {
-  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE,
+  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE, DOC_WRITE_NEW_LABEL,
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
 } from '@/lib/docBundle'
 import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
@@ -77,6 +78,8 @@ const FILE_LABEL = DOC_TYPE_FILE_LABEL
 // 붙이면 모든 머리가 길어지기만 한다). 상태 이름은 목록 화면과 같은 STATUS_LABEL 정본이다.
 function groupName(g: DocBundleGroup): string {
   if (g.kind === 'other') return '그 밖의 보관본'
+  // 영업장에 걸린 종이 — 계약이 아니라 이 가게의 서류라는 것을 머리가 말한다.
+  if (g.kind === 'property') return '영업장 서류'
   const room = `${fmtRoomNo(g.roomNo, '호실 미지정')} 계약`
   if (!g.status || g.status === 'ACTIVE') return room
   return `${room} (${STATUS_LABEL[g.status] ?? g.status})`
@@ -178,7 +181,9 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     .filter(({ p }) => p.driveFileId && selected.has(p.key))
     .map(({ r, p }) => ({
       id: p.driveFileId as string,
-      personName: bundle?.tenantName ?? '',
+      // 등록증은 사람의 서류가 아니라 영업장의 서류다 — 이름 자리에 영업장 이름이 선다
+      // (`{영업장명}_사업자등록증`, 상담 도구·메일 첨부와 같은 한 벌).
+      personName: (r.docType === 'bizcert' ? bundle?.propertyName : bundle?.tenantName) ?? '',
       docLabel: p.label && p.label !== '실계약' && r.versions
         ? `${FILE_LABEL[r.docType]}(${r.versions.find(v => v.contractFileId === pickedVersion[r.key])?.purposeLabel ?? ''})`
           .replace('()', '')
@@ -213,10 +218,9 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   // 형식 토글도 그래서 안 세운다. 준비 큐는 하나뿐이라 여기서 정한 형식이 곧 저장될 형식이다.
   const effMode: 'png' | 'pdf' = effDest === 'sms' ? 'png' : mode
 
-  // 공유 시트에 함께 넘길 본문 — 받는 앱이 채워진 채로 열리는지 보는 실험이다(2026-08-26).
-  // 파일이 함께 있으면 텍스트를 버리는 앱이 많아 될지 안 될지는 실기로만 안다. 무시되면
-  // 종전과 같은 결과(파일만 첨부)라 잃는 것이 없다. 문구는 메일과 같은 축으로 짧게 짓는다 —
-  // 문자·메신저는 짧은 매체라 메일 본문을 그대로 옮기면 길다.
+  // 공유 갈래에 함께 건넬 본문 — 공유 창은 파일과 텍스트를 같이 못 받아 **클립보드로** 간다
+  // (lib/useDocShare, 2026-08-26 실기 확정). 복사된다는 사실은 위 안내 줄이 누르기 전에 말한다.
+  // 문구는 메일과 같은 축으로 짧게 짓는다 — 문자·메신저는 짧은 매체라 메일 본문을 그대로 옮기면 길다.
   const docTitles = useMemo(
     () => rows.filter(r => selected.has(pickedOf(r, pickedVersion).key)).map(r => TITLE[r.docType]),
     [rows, selected, pickedVersion],
@@ -292,6 +296,15 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
           </p>
         )}
 
+        {/* 공유 갈래는 문구를 클립보드로 건넨다(lib/useDocShare). 시트가 닫힌 뒤에는 무엇을 골랐는지
+            모르니 누르기 전에 말한다. 위 아이폰 저장 안내와 같은 이유, 같은 표면이다. 선택 여부와
+            무관하게 세워 체크할 때 줄이 뛰지 않게 한다(저장 안내와 같은 조건 문법). */}
+        {effDest === 'share' && (
+          <p className="rounded-lg bg-[var(--cream-soft)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+            공유를 누르면 함께 보낼 문구가 복사됩니다. 메신저로 보낼 때 붙여넣어 쓰세요.
+          </p>
+        )}
+
         {/* 받는 사람 — 고칠 수 없는 표시다. 번호를 바꾸려면 입주자 정보에서 고치고 다시 연다.
             메일 상자와 한 벌이다(같은 표면·같은 라벨 토큰). 두 갈래가 같은 질문에 답하기 때문이다. */}
         {effDest === 'sms' && (
@@ -351,6 +364,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             <ul className="space-y-1.5">
               {g.rows.map(r => (
                 <DocRow key={r.key} row={r} tenantId={tenantId}
+                  propertyName={bundle?.propertyName ?? ''}
                   picked={pickedOf(r, pickedVersion)}
                   selected={selected.has(pickedOf(r, pickedVersion).key)}
                   onToggle={() => toggle(r)}
@@ -457,9 +471,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 
 // 행 하나 — 발급본이 있으면 체크할 수 있고 [보기]가 열린다. 없으면 체크가 잠기고 [작성]으로 나간다.
 // 계약서 판본이 여럿이거나 대표가 공석이면 보조줄 아래에 판본 줄이 하나 더 선다(419호 봉합).
-function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: {
+function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onChangeVersion }: {
   row: DocBundleRow
   tenantId: string
+  /** 영업장 이름 — 등록증 행의 보조줄이 쓴다(그 행에는 발급일이 없다). */
+  propertyName: string
   picked: { driveFileId: string | null; issuedAt: string | null; key: string; label: string | null }
   selected: boolean
   onToggle: () => void
@@ -511,23 +527,31 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">{TITLE[row.docType]}</p>
           <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">
-            {issued
-              ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
-              : versions.length > 0 ? '보낼 판본을 고르세요' : '아직 만든 서류가 없습니다'}
+            {/* 등록증에는 우리가 아는 날짜가 없다 — 종이에 찍힌 날은 발급기관 것이고 업로드 시각을
+                그 자리에 넣으면 종이의 날짜인 척하는 값이 된다. 대신 '누구 것 · 무슨 형식'을 적는다.
+                형식은 정본 docMimeLabel 이 말한다(사진으로 올린 등록증을 PDF 라 부르면 안 된다). */}
+            {row.docType === 'bizcert'
+              ? `${propertyName} · ${docMimeLabel(row.mime)}`
+              : issued
+                ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
+                : versions.length > 0 ? '보낼 판본을 고르세요' : '아직 만든 서류가 없습니다'}
           </p>
           {noteText && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{noteText}</p>}
-          {/* 이번 달 확인서를 새로 쓰는 문 — 지난달 발급본이 있으면 행이 '발급됨'이라 [보기]만
-              서고 새로 만들 길이 없었다(운영자 2026-09-03). 버튼을 하나 더 두지 않는 이유는
-              위 [보기]와 다투면 320px 에서 제목이 먼저 잘리기 때문이다. 같은 시트의 '판본 바꾸기'가
-              쓰는 보조줄 링크 문법을 그대로 쓴다. [보기]는 남는다 — 지난달 종이도 계속 보고 보낸다.
+          {/* 지금 사실로 다시 만드는 문 — 발급본이 있으면 행이 '발급됨'이라 [보기]만 서고 새로
+              만들 길이 없었다(납부 2026-09-03 · 실거주 2026-09-16). 버튼을 하나 더 두지 않는
+              이유는 위 [보기]와 다투면 320px 에서 제목이 먼저 잘리기 때문이다. 같은 시트의
+              '판본 바꾸기'가 쓰는 보조줄 링크 문법을 그대로 쓴다. [보기]는 남는다 — 지난 종이도
+              계속 보고 보낸다.
+              **라벨은 정본 상수다**(DOC_WRITE_NEW_LABEL). 서류마다 문장이 다른데 여기 리터럴로
+              적으면 문 규칙과 라벨이 각자 자리에서 갈린다.
               **간격은 감싸는 div 가 준다.** 앵커에 `-my-2` 와 `mt-0.5` 를 함께 얹으면 둘이 같은
               마진을 다퉈 위쪽 음수 마진이 죽고 링크가 제 보조줄에서 8px 떠 버린다(디자이너 실측
               2026-09-03). 아래 판본 줄이 이미 그 문법이다. */}
-          {row.canWriteNew === true && (
+          {row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType] && (
             <div className="mt-0.5">
               <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
                 className="-my-2 inline-flex min-h-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
-                이번 달 확인서 작성
+                {DOC_WRITE_NEW_LABEL[row.docType]}
               </a>
             </div>
           )}

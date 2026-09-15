@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 // 서류 이름을 파일명에 박으면 안 되는 낱말 — DOC_TYPE_FILE_LABEL 의 한글 값들.
-const DOC_WORDS = ['계약서', '실거주확인서', '입실료납부확인서', '보증금영수증']
+const DOC_WORDS = ['계약서', '실거주확인서', '입실료납부확인서', '보증금영수증', '사업자등록증']
 
 // 표기와 무관하게 고정하기로 한 자리. 근거 없이 늘리지 마라.
 const ALLOW = new Map([

@@ -92,6 +92,29 @@ const CONSUMERS = ['app/rent-receipt/[tenantId]/actions.ts', 'app/(app)/tenants/
   }
 }
 
+// ⓔ 실거주 확인서의 '다시 작성' 문도 정본이 세우고, 라벨은 상수 하나다 (2026-09-16).
+//    납부와 실거주는 여는 방식이 달라(조건부 대 상시) 화면이 "발급본이 있으면 링크" 정도로
+//    제 규칙을 세우기 쉬운 자리다. 그러면 '그 밖의 보관본' 그룹 실거주에도 문이 서서, 어느
+//    계약인지 말할 수 없는 행이 작성 화면을 열고 도착 화면이 엉뚱한 계약을 추론한다.
+{
+  const bundle = strip(read(BUNDLE))
+  if (!/if \(cert\) certRow\.canWriteNew = true/.test(bundle)) {
+    violations.push(`${BUNDLE} — 실거주 '다시 작성' 문을 정본이 안 세운다. 화면이 세우면 중립 그룹 행에도 문이 선다.`)
+  }
+  if (!/export const DOC_WRITE_NEW_LABEL\b/.test(bundle)) {
+    violations.push(`${BUNDLE} — DOC_WRITE_NEW_LABEL 상수가 사라졌다. 라벨 정의처가 둘이면 반드시 갈린다.`)
+  }
+  const sheet = strip(read(SHEET))
+  if (!/DOC_WRITE_NEW_LABEL\[row\.docType\]/.test(sheet)) {
+    violations.push(`${SHEET} — 문 라벨을 정본 상수에서 안 읽는다.`)
+  }
+  for (const lit of ['이번 달 확인서 작성', '다시 작성']) {
+    if (sheet.includes(lit)) {
+      violations.push(`${SHEET} — 문 라벨 '${lit}' 을 리터럴로 적었다. DOC_WRITE_NEW_LABEL 을 쓴다.`)
+    }
+  }
+}
+
 console.log(`[서류 발급 문] 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)

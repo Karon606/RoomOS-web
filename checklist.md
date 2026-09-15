@@ -516,3 +516,36 @@
       이 파일 · `context-notes.md`. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 9. 운영자 실기 확인 6건(보고서)
 - [ ] 10. 독립 디자이너 검수(시공 담당 몫 아님)
+
+
+## 서류 시트 실거주·사업자등록증 (2026-09-16)
+
+설계 패널 "서류 시트 — 실거주 확인서 다시 작성 문 · 전화번호 정본 · 사업자등록증 행" 그대로.
+운영자 결정 A(실거주 상시 문)·C(등록증 한 행, 미등록이면 없음)·D(09-08 발급본 보존)·
+B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
+
+- [x] 1. 진리표 먼저 — `test-doc-bundle` 에 케이스 ①~⑧(무회귀·등록증 행·다호실 1행·미등록·
+      형식·실거주 상시·중립 그룹 제외), 218~222 의 "residence 도 undefined" 단언을 **의도된
+      규칙 변경으로 뒤집고 주석**. `test-tenant-phone` 신설 18케이스
+      → 검증: 둘 다 처음에 빨강 확인, 지금 81 + 18 통과
+- [x] 2. `lib/tenantContact.ts` 신설 `pickTenantPhone(contacts, kinds=['PHONE','LANDLINE'])` —
+      주 연락처 → 국내 → 본국 폴백, 비상 전면 제외. 호출부 셋(실거주 발급 · 서류 시트 문자 ·
+      입주자 문자)만 옮기고 계약서 경로 셋은 안 건드림
+      → 검증: `check-tenant-phone-axis` 신설·verify:fast 등록, 역주입 2종 빨강
+- [x] 3. 드라이런(읽기 전용, 커밋 안 함) — 서류 축 0명 / 문자 축 6명. 결과는 보고서에
+- [x] 4. A — `lib/docBundle` 이 실거주 발급본에 `canWriteNew = true`('other' 제외),
+      `DOC_WRITE_NEW_LABEL` 상수, 229~231 주석 교체. 시트 라벨을 상수로
+      → 검증: `check-doc-write-gate` ⓔ 신설, ⓑ `canWriteNew = paidThisMonth.has(` 생존 확인
+- [x] 5. C — `DocBundleDocType` 'bizcert' · `DocBundleInput.bizCert` · `TenantDocBundle.propertyName` ·
+      `DocBundleGroup.kind` 'property'(계약 다음, 중립 앞, 키 `property:bizcert`, 다호실도 1행).
+      조회부가 `bizCertDriveFileId·bizCertMimeType·name` 을 넘기고, 시트 보조줄 `{영업장명} · {형식}`,
+      메일 `personName` 분기, `/api/doc-file`·`/doc/[fileId]` 네 번째 소유 가지 **양쪽 함께**
+      → 검증: tsc 0, `check-doc-file-label` DOC_WORDS 에 '사업자등록증' 추가 후 0건
+- [x] 6. 공유 갈래 사후 토스트 회수(운영자 지적) — `lib/useDocShare` 는 `shared && text && !copied`
+      일 때만 한 줄, 시트에 인라인 사전 안내. 형제 3화면은 shareText 미전달이라 무변경
+      → 검증: `test-doc-share-queue` 38 통과, 형제 호출부 전수 확인
+- [x] 7. 문서 — `knowledge/doc-issue-history.md` 표 12행 + '다시 만드는 문의 기준' · '영업장 서류
+      동봉' 두 절, `property-public-facts.md` 등록증 절, `doc-vocabulary.md` 행 액션,
+      `glossary.md` 3항, `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
+- [ ] 8. 운영자 실기 확인 3건(아래 보고서)
+- [ ] 9. 독립 디자이너 검수(시공 담당 몫 아님)

@@ -16,7 +16,9 @@ import { kstMonthOf } from '@/lib/fmtDate'
 import { DOC_MIME_PDF } from '@/lib/docMime'
 import type { DocumentNameSource } from '@/lib/documentName'
 
-export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence'
+// 'bizcert' 는 영업장 사업자등록증이다. 앞 넷과 달리 **우리가 만든 종이가 아니라 받아 둔 원본**이고
+// 계약이 아니라 영업장에 걸린다 — 그래서 발급도 판본도 없고 행도 사람마다 하나뿐이다.
+export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence' | 'bizcert'
 
 // 서류 이름은 두 벌이다 — 화면에 서는 이름과 파일·메일에 적히는 이름. 파일 쪽은 형제 3화면이
 // 이미 쓰고 있는 문자열 그대로여야 같은 서류가 어디로 나가든 같은 이름으로 도착한다.
@@ -26,12 +28,16 @@ export const DOC_TYPE_TITLE: Record<DocBundleDocType, string> = {
   rent: '입실료 납부 확인서',
   deposit: '보증금 영수증',
   residence: '실거주 확인서',
+  bizcert: '사업자등록증',
 }
 export const DOC_TYPE_FILE_LABEL: Record<DocBundleDocType, string> = {
   contract: '계약서',
   rent: '입실료납부확인서',
   deposit: '보증금영수증',
   residence: '실거주확인서',
+  // 상담 도구가 이미 쓰고 있는 이름 그대로다(`{영업장명}_사업자등록증`). 같은 파일이 두 입구에서
+  // 다른 이름으로 나가면 받는 쪽이 다른 서류로 읽는다.
+  bizcert: '사업자등록증',
 }
 
 /**
@@ -55,6 +61,10 @@ export const DOC_TYPE_FILE_LABEL_EN: Record<DocBundleDocType, string> = {
   rent: 'Rent Payment Certificate',
   deposit: 'Deposit Receipt',
   residence: 'Proof of Residence',
+  // 등록증의 이름 앞에는 사람 이름이 아니라 **영업장 이름**(한글)이 붙으므로 이 값은 실제로는
+  // 안 쓰인다. 그래도 비워 두지 않는 이유는 지도에 구멍을 내지 않기 위해서다 — 나중에 누군가
+  // 표기를 실어 부르면 조용히 undefined 가 파일 이름에 섞인다.
+  bizcert: 'Business Registration Certificate',
 }
 
 /** 표기에 맞는 파일용 서류 이름. 영문 표기일 때만 영문 이름을 쓴다(현지 표기는 한글 이름 그대로). */
@@ -77,14 +87,21 @@ export type DocBundleRow = {
   /** 이 행이 지금 보낼 종이의 성명 표기 — 파일 이름이 그 종이를 따라간다(docFileLabel·documentName). */
   nameStyle?: string | null
   /**
-   * 이번 달 납부 확인서를 새로 쓸 수 있는가 — 납부 확인서 행에만 선다.
+   * 지금 사실로 다시 만들 수 있는가 — **납부 확인서와 실거주 확인서 행에만 선다.**
    *
-   * 지난달 발급본이 있으면 행은 '발급됨'이라 종전에는 [보기]만 서고 새로 만들 길이 없었다.
+   * 발급본이 있으면 행은 '발급됨'이라 종전에는 [보기]만 서고 새로 만들 길이 없었다.
    * 이 시트가 발급의 유일한 입구가 된 뒤로(2026-08-29) 그 길이 곧 막힌 길이었다.
-   * 조건은 둘의 곱이다. 최신 발급본이 이번 달 것이 아니고, 그 계약에 이번 달 실입금이 있다.
-   * 납부 전에 확인서를 만들면 허위 서류라 문을 안 연다 — 다만 **발급 능력이 사라지는 것은
-   * 아니다.** 기록 없는 달의 수동 발급은 발급 화면의 월 스테퍼와 전역 발급 이력의 '다시 작성'이
-   * 그대로 감당한다. 이 문은 매월 반복되는 정상 흐름의 지름길이다(운영자 요청 2026-09-03).
+   *
+   * · 납부 확인서는 **조건부**다. 최신 발급본이 이번 달 것이 아니고, 그 계약에 이번 달 실입금이
+   *   있을 때만 연다. 납부 전에 확인서를 만들면 허위 서류다 — 다만 **발급 능력이 사라지는 것은
+   *   아니다.** 기록 없는 달의 수동 발급은 발급 화면의 월 스테퍼와 전역 발급 이력의 '다시 작성'이
+   *   그대로 감당한다. 이 문은 매월 반복되는 정상 흐름의 지름길이다(운영자 요청 2026-09-03).
+   * · 실거주 확인서는 **상시**다(운영자 결정 2026-09-16). 귀속월 같은 축이 없어 낡음을 판정할
+   *   근거가 없다 — 어제 뽑은 종이도 오늘 이사를 갔으면 거짓이고, 석 달 전 종이도 여태 살고
+   *   있으면 참이다. 판정할 수 없으므로 낡음 배지를 세우지 않고 문만 상시 연다.
+   *
+   * false 는 '문이 있는 서류인데 지금은 닫혀 있다'는 뜻이라 화면이 부재 이유를 말한다.
+   * undefined 는 '이 행에는 문 자체가 없다'로, 둘은 다른 상태다.
    */
   canWriteNew?: boolean
   /** 파일 형식 추정(파일명 기준) — 첨부 표기·파일명 확장자의 기본값이다.
@@ -119,8 +136,12 @@ export type DocBundleContractVersion = {
 }
 
 export type DocBundleGroup = {
-  /** 'lease' = 진행 중 계약 하나 · 'other' = 그 계약들에 걸리지 않은 보관본 */
-  kind: 'lease' | 'other'
+  /**
+   * 'lease' = 진행 중 계약 하나 · 'property' = 영업장에 걸린 서류(사업자등록증) ·
+   * 'other' = 그 계약들에 걸리지 않은 보관본.
+   * 순서도 이 순서다 — 영업장 서류가 '그 밖의 보관본' 뒤로 밀리면 눈에 안 띈다.
+   */
+  kind: 'lease' | 'property' | 'other'
   leaseTermId: string | null
   roomNo: string | null
   status: string | null
@@ -136,6 +157,11 @@ export type TenantDocBundle = {
    * (한 사람이 계약서는 한글, 확인서는 영문으로 받을 수 있다) 이름은 그 표기를 따라가야 한다.
    */
   nameSource: DocumentNameSource
+  /**
+   * 영업장 이름 — 등록증 행의 보조줄과 파일 이름이 쓴다(사람 이름 자리에 이 이름이 선다).
+   * 등록증이 없으면 실리지 않는다. 시트가 이 값을 안 받으면 `{영업장명}_사업자등록증` 을 지을 수 없다.
+   */
+  propertyName?: string
   groups: DocBundleGroup[]
 }
 
@@ -182,6 +208,15 @@ export type DocBundleFile = {
   mime?: string | null
 }
 
+/** 조회가 넘기는 영업장 등록증 한 건. 영업장당 하나라 배열이 아니다. */
+export type DocBundleBizCert = {
+  driveFileId: string
+  /** Drive 가 판정해 저장해 둔 형식(Property.bizCertMimeType). 비어 있으면 PDF 로 본다. */
+  mime?: string | null
+  /** 파일 이름·보조줄에 설 영업장 이름. 이 행에서는 이것이 '사람 이름' 자리를 대신한다. */
+  propertyName: string
+}
+
 export type DocBundleInput = {
   tenantName: string
   /** 파일 이름용 성명 원천(한글·영문·현지). 없으면 한글 이름만으로 짓는다(옛 호출부 보호). */
@@ -195,6 +230,13 @@ export type DocBundleInput = {
   rents: DocBundleFile[]
   deposits: DocBundleFile[]
   certs: DocBundleFile[]
+  /**
+   * 영업장 사업자등록증 사본 — **없으면 안 넘긴다**(미등록 영업장에는 그룹 자체가 서지 않는다).
+   *
+   * 빈 행을 세우고 '작성'으로 보내지 않는 이유는 이것이 우리가 만드는 종이가 아니어서다.
+   * 등록하는 자리는 환경설정 하나뿐이고, 이 시트는 있는 것을 보낼 뿐이다.
+   */
+  bizCert?: DocBundleBizCert
   /**
    * 이번 달 귀속 실입금이 있는 계약 id 들 — 납부 확인서를 새로 쓸 문을 열지 가른다.
    *
@@ -220,14 +262,33 @@ const latestFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile |
  */
 export const DOC_STALE_NOTE = '이번 달 발급본이 아닙니다'
 
+/**
+ * '다시 만드는 문'의 라벨 — 서류마다 문장이 다르다.
+ *
+ * 납부 확인서는 **어느 달**을 만드는지가 용건이라 '이번 달'이 라벨에 든다. 실거주 확인서는
+ * 달 축이 없어 그 말을 쓰면 거짓이 된다 — 그냥 지금 사실로 다시 쓰는 것이다.
+ * 여기 두는 이유는 하나다. 라벨이 화면에만 있으면 문 규칙과 라벨이 각자 자리에서 갈린다.
+ */
+export const DOC_WRITE_NEW_LABEL: Partial<Record<DocBundleDocType, string>> = {
+  rent: '이번 달 확인서 작성',
+  residence: '다시 작성',
+}
+
 export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   const { tenantName, leases, contracts, contractVersions = [], rents, deposits, certs, now } = input
   const paidThisMonth = new Set(input.rentPaidLeaseIds ?? [])
   // 그룹 순서 정본 — 거주 · 예약 · 비거주(호실 면·프리즘과 같은 한 벌).
   const ordered = roomLeaseRowOrder(leases)
 
-  // 이번 달 발급본인가 — 납부 확인서에만 붙이는 보조 문구다. 그 서류만 '그 달의 사실'을 증명하고,
-  // 계약서·보증금 영수증·실거주 확인서는 달과 무관해 오래됐다는 말 자체가 성립하지 않는다.
+  // 다시 만드는 문은 **현재 사실을 증명하는 서류**(납부·실거주)에만 있고, 사건 증빙(보증금
+  // 영수증)과 서명 서류(계약서)에는 없다. 그 둘은 지난 사건을 증명하는 종이라 '지금 사실로
+  // 다시' 라는 말 자체가 성립하지 않는다.
+  //
+  // 같은 문이라도 여는 방식이 다르다. **납부는 귀속월이 있어 낡음을 판정할 수 있으므로 조건부**이고
+  // (낡았고 이번 달을 받았을 때), **실거주는 판정 근거가 없어 상시**다(발급본이 있으면 언제나).
+  //
+  // 아래 stale 판정은 그래서 납부 확인서에만 붙는 보조 문구다 — 달과 무관한 서류에 '이번 달
+  // 발급본이 아닙니다'를 달면 없는 사실을 지어내는 것이다.
   //
   // **판정 축은 귀속월이지 발행일이 아니다**(2026-09-03). 8월에 9월분을 선납받아 미리 발급하면
   // 발행일 기준으로는 9월에 그 종이가 stale 로 뜨고, 9월 납부 기록도 있어 '이번 달 확인서 작성'
@@ -291,10 +352,43 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     // 서류가 메뉴에서는 되고 입주자 시트에서는 안 되는 갈림이 된다.
     // 이미 발급된 건이 있으면 상태와 무관하게 행으로 세운다(보증금과 같은 이유).
     const cert = latestFor(certs, l.id)
-    if (residing.includes(l.status) || l.status === 'NON_RESIDENT' || cert) rows.push(row('residence', l.id, cert))
+    if (residing.includes(l.status) || l.status === 'NON_RESIDENT' || cert) {
+      const certRow = row('residence', l.id, cert)
+      // 발급본이 있으면 상시 다시 쓴다(운영자 결정 2026-09-16). 미발급 행은 이미 [작성]이 서므로
+      // 여기서 다시 열 것이 없다 — 납부 확인서의 문과 같은 규칙이다.
+      if (cert) certRow.canWriteNew = true
+      rows.push(certRow)
+    }
 
     return { kind: 'lease' as const, leaseTermId: l.id, roomNo: l.roomNo, status: l.status, rows }
   })
+
+  // 영업장 서류 — 계약이 아니라 영업장에 걸린 종이다(사업자등록증, 운영자 결정 2026-09-16).
+  //
+  // 계약 축으로 눕히지 않는 이유. 방을 둘 쓰는 사람의 시트에 같은 파일이 두 번 서고, "어느 계약의
+  // 등록증이냐"는 물음 자체가 성립하지 않는다. 그래서 그룹 하나·행 하나이고 leaseTermId 는 null 이다.
+  // 계약 그룹 **다음**, '그 밖의 보관본' **앞**이다 — 계약이 이 화면의 주인공이고, 중립 그룹은
+  // 말할 수 없는 것들의 자리라 그 뒤에 두면 영업장 서류가 함께 묻힌다.
+  //
+  // 발급일을 안 적는다. 등록증에 찍힌 날은 **발급기관의 날짜**이고 우리는 그것을 읽지 않는다.
+  // 업로드 시각을 그 자리에 넣으면 종이의 날짜인 척하는 값이 된다(날짜 지어내기 금지).
+  if (input.bizCert) {
+    groups.push({
+      kind: 'property',
+      leaseTermId: null,
+      roomNo: null,
+      status: null,
+      rows: [{
+        key: 'property:bizcert',
+        docType: 'bizcert',
+        leaseTermId: null,
+        driveFileId: input.bizCert.driveFileId,
+        issuedAt: null,
+        note: null,
+        mime: input.bizCert.mime || DOC_MIME_PDF,
+      }],
+    })
+  }
 
   // 위 계약들에 걸리지 않은 보관본 — 계약 연결이 끊긴 옛 파일(null)과 끝난 계약의 발급본.
   // 어느 계약의 것인지 단정하지 않고 중립 그룹에 세운다. 파일이 있는 것만 담는다(작성 왕복 없음).
@@ -322,5 +416,10 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     groups.push({ kind: 'other', leaseTermId: null, roomNo: null, status: null, rows: otherRows })
   }
 
-  return { tenantName, nameSource: input.nameSource ?? { name: tenantName }, groups }
+  return {
+    tenantName,
+    nameSource: input.nameSource ?? { name: tenantName },
+    propertyName: input.bizCert?.propertyName,
+    groups,
+  }
 }

@@ -7,7 +7,11 @@
 //   · 실거주 확인서는 거주 + 비거주(NON_RESIDENT) 계약에 선다(운영자 오더 2026-09-07).
 //   · 계약을 말할 수 없는 파일은 중립 그룹 — 없는 계약에 갖다 붙이지 않는다.
 
-import { buildDocBundle, type DocBundleFile, type DocBundleLease, type TenantDocBundle, type DocBundleContractVersion } from '../lib/docBundle'
+import {
+  buildDocBundle,
+  type DocBundleFile, type DocBundleLease, type TenantDocBundle,
+  type DocBundleContractVersion, type DocBundleBizCert,
+} from '../lib/docBundle'
 
 let pass = 0
 let fail = 0
@@ -215,9 +219,14 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
   const d = build([lease({ id: '402' })], {}, paid)
   eq('작성 문 · 미발급 행에는 플래그가 없다', rentRow(d).canWriteNew, undefined)
 
-  // 다른 종류에는 절대 서지 않는다 — 그 서류들은 달과 무관하다.
+  // 사건 증빙(보증금)과 서명 서류(계약서)에는 다시 만드는 문이 없다 — 그 종이들은 지난 사건을
+  // 증명하므로 '지금 사실로 다시' 라는 말 자체가 성립하지 않는다.
+  //
+  // **실거주는 2026-09-16 에 이 목록에서 빠졌다(의도된 규칙 변경).** 종전 단언은 "residence 도
+  // undefined" 였는데, 실거주 확인서는 '지금 여기 산다'를 증명하는 서류라 발급본이 있으면 상시
+  // 다시 쓸 수 있어야 한다. 아래 ⑥ 케이스가 그 새 규칙을 못 박는다.
   const e = build([lease({ id: '402' })], { rents: [file('402', '2026-07-20')], deposits: [file('402', '2026-07-20')], certs: [file('402', '2026-07-20')], contracts: [file('402', '2026-07-20')] }, paid)
-  for (const t of ['contract', 'deposit', 'residence'] as const) {
+  for (const t of ['contract', 'deposit'] as const) {
     eq(`작성 문 · ${t} 행에는 플래그가 없다`, e.groups[0].rows.find(r => r.docType === t)!.canWriteNew, undefined)
   }
 
@@ -255,6 +264,112 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
   // 귀속월이 없는 옛 발급본은 종전대로 발행일로 읽는다.
   const d = build([lease({ id: '402' })], { rents: [file('402', '2026-07-20')] }, ['402'])
   eq('선납 · 귀속월이 없으면 발행일 폴백', rentRow(d).note, '이번 달 발급본이 아닙니다')
+}
+
+// ── 실거주 확인서 '다시 작성' 문 (2026-09-16 운영자 결정 A) ───────────
+//
+// 납부 확인서의 문은 **조건부**다 — 귀속월이 있어 낡음을 판정할 수 있으니 낡았을 때만 연다.
+// 실거주 확인서에는 그 축이 없다. 어제 뽑은 종이도 오늘 이사를 갔으면 거짓이고, 반대로 석 달
+// 전 종이도 여태 살고 있으면 참이다. 판정할 근거가 없으므로 **발급본이 있으면 상시** 연다.
+// 낡음 배지도 세우지 않는다(근거 없는 낡음 표시는 없는 사실을 지어내는 것이다).
+{
+  const certRow = (b: TenantDocBundle, gi = 0) => b.groups[gi].rows.find(r => r.docType === 'residence')!
+
+  // ⑥ 발급본이 있으면 상시 열린다 — 이번 달이든 반년 전이든 같다.
+  const a = build([lease({ id: '402' })], { certs: [file('402', '2026-08-10')] })
+  eq('실거주 문 · 발급본이 있으면 열린다', certRow(a).canWriteNew, true)
+  const b = build([lease({ id: '402' })], { certs: [file('402', '2026-02-10')] })
+  eq('실거주 문 · 반년 전 발급본도 같다(낡음 판정 축이 없다)', certRow(b).canWriteNew, true)
+  eq('실거주 문 · 낡음 보조 문구는 안 붙는다', certRow(b).note, null)
+
+  // 미발급 행에는 이미 [작성]이 서므로 문을 또 열 것이 없다(납부 확인서와 같은 규칙).
+  const c = build([lease({ id: '402' })])
+  eq('실거주 문 · 미발급 행에는 플래그가 없다', certRow(c).canWriteNew, undefined)
+
+  // 납부 기록과 무관하다 — 실거주는 돈의 사실이 아니다.
+  const d = build([lease({ id: '402' })], { certs: [file('402', '2026-08-10')] }, [])
+  eq('실거주 문 · 이번 달 납부가 없어도 열린다', certRow(d).canWriteNew, true)
+
+  // 단기 계약 제외는 납부 확인서만의 사정이다(발급 화면이 대상월을 입주월로 고정한다).
+  const sh = build([lease({ id: '402', isShortTerm: true })], { certs: [file('402', '2026-08-10')] })
+  eq('실거주 문 · 단기 계약에도 선다', certRow(sh).canWriteNew, true)
+
+  // 비거주 계약도 같다 — 그 계약의 실거주 확인서가 실무에서 나간다(2026-09-07 오더).
+  const nr = build([
+    lease({ id: '509', roomNo: '509' }),
+    lease({ id: '601', status: 'NON_RESIDENT', roomNo: '601', depositAmount: 0, parentLeaseTermId: '509' }),
+  ], { certs: [file('601', '2026-05-02')] })
+  eq('실거주 문 · 비거주 계약에도 선다', certRow(nr, 1).canWriteNew, true)
+
+  // ⑦ 중립 그룹에는 문이 없다 — 어느 계약의 종이인지 앱이 말할 수 없으면 어느 계약으로
+  //    다시 쓸지도 말할 수 없다. 작성 화면이 계약 없이 열리면 추론이 엉뚱한 계약을 고른다.
+  const o = build([lease({ id: '509', roomNo: '509' })], { certs: [file('끝난계약', '2026-01-03')] })
+  eq('실거주 문 · 중립 그룹인가', o.groups[1].kind, 'other')
+  eq('실거주 문 · 중립 그룹 실거주에는 문이 없다',
+    o.groups[1].rows.find(r => r.docType === 'residence')!.canWriteNew, undefined)
+}
+
+// ── 영업장 서류(사업자등록증) 그룹 (2026-09-16 운영자 결정 C) ──────────
+//
+// 등록증은 **계약이 아니라 영업장에 걸린 종이**다. 계약 축으로 눕히면 방을 둘 쓰는 사람의
+// 시트에 같은 파일이 두 번 서고, 어느 계약의 등록증이냐는 물음 자체가 성립하지 않는다.
+// 그래서 그룹 하나·행 하나이고 leaseTermId 는 null 이다. 미등록 영업장에는 그룹 자체가 없다.
+// 화살표가 아니라 function 인 이유 — `(o: T = {}) => ({...})` 뒤에 블록 `{` 이 바로 오면
+// eslint 파서(typescript-eslint)가 구문 오류를 낸다(tsc·tsx 는 통과하는데 린트만 붉게 선다).
+// 위 `ver` 는 기본값이 없어 안 걸린다. 형태만 바꾼 것이라 값은 한 글자도 안 다르다.
+function bizCert(o: Partial<DocBundleBizCert> = {}): DocBundleBizCert {
+  return { driveFileId: 'drive-bizcert', mime: null, propertyName: '제기역점', ...o }
+}
+{
+  // ① 무회귀 — bizCert 를 안 넘기면 행 모양이 종전과 완전히 같다.
+  const b = build([lease({ id: '402' })])
+  eq('등록증 · 인자 없으면 그룹이 안 는다', b.groups.length, 1)
+  eq('등록증 · 인자 없으면 행도 종전 그대로',
+    b.groups[0].rows.map(r => r.docType), ['contract', 'rent', 'deposit', 'residence'])
+  eq('등록증 · 인자 없으면 영업장 이름도 안 실린다', b.propertyName, undefined)
+
+  // ② 등록이면 그룹 하나·행 하나.
+  const c = buildDocBundle({ tenantName: '테스트', ...empty, leases: [lease({ id: '402' })], bizCert: bizCert(), now: NOW })
+  eq('등록증 · 그룹이 하나 는다', c.groups.map(g => g.kind), ['lease', 'property'])
+  eq('등록증 · 행은 하나', c.groups[1].rows.length, 1)
+  eq('등록증 · 행 종류', c.groups[1].rows[0].docType, 'bizcert')
+  eq('등록증 · 선택 키', c.groups[1].rows[0].key, 'property:bizcert')
+  eq('등록증 · 계약을 지어내지 않는다', c.groups[1].rows[0].leaseTermId, null)
+  eq('등록증 · 파일을 들고 있다', c.groups[1].rows[0].driveFileId, 'drive-bizcert')
+  eq('등록증 · 발급일을 지어내지 않는다', c.groups[1].rows[0].issuedAt, null)
+  eq('등록증 · 다시 만드는 문이 없다(우리가 그린 서류가 아니다)', c.groups[1].rows[0].canWriteNew, undefined)
+  eq('등록증 · 영업장 이름이 실린다', c.propertyName, '제기역점')
+
+  // ③ 다호실이어도 한 행 — 계약 수와 무관하다.
+  const d = buildDocBundle({
+    tenantName: '테스트', ...empty, bizCert: bizCert(), now: NOW,
+    leases: [
+      lease({ id: '509', roomNo: '509' }),
+      lease({ id: '601', status: 'NON_RESIDENT', roomNo: '601', depositAmount: 0, parentLeaseTermId: '509' }),
+    ],
+  })
+  eq('등록증 · 다호실이어도 한 행',
+    d.groups.flatMap(g => g.rows).filter(r => r.docType === 'bizcert').length, 1)
+  eq('등록증 · 계약 그룹 다음에 선다', d.groups.map(g => g.kind), ['lease', 'lease', 'property'])
+
+  // 중립 그룹보다 앞이다 — 영업장 서류가 '그 밖의 보관본' 뒤로 밀리면 안 보인다.
+  const e2 = buildDocBundle({
+    tenantName: '테스트', ...empty, leases: [lease({ id: '509', roomNo: '509' })],
+    rents: [file(null, '2026-02-03')], bizCert: bizCert(), now: NOW,
+  })
+  eq('등록증 · 그 밖의 보관본보다 앞', e2.groups.map(g => g.kind), ['lease', 'property', 'other'])
+
+  // ④ 미등록이면 그룹이 없다 — 빈 행을 세우고 '작성'으로 보내지 않는다(우리가 만드는 종이가 아니다).
+  const f2 = buildDocBundle({ tenantName: '테스트', ...empty, leases: [lease({ id: '402' })], now: NOW })
+  eq('등록증 · 미등록이면 그룹 없음', f2.groups.some(g => g.kind === 'property'), false)
+
+  // ⑤ 형식은 저장값 그대로 — 이미지로 올린 등록증을 PDF 라 부르면 첨부가 깨진다.
+  const g2 = buildDocBundle({
+    tenantName: '테스트', ...empty, leases: [lease({ id: '402' })],
+    bizCert: bizCert({ mime: 'image/jpeg' }), now: NOW,
+  })
+  eq('등록증 · 이미지 형식 그대로', g2.groups[1].rows[0].mime, 'image/jpeg')
+  eq('등록증 · 형식이 비면 PDF 로 본다', c.groups[1].rows[0].mime, 'application/pdf')
 }
 
 console.log(`\n서류 보내기 행 규칙 회귀: ${pass} 통과 / ${fail} 실패`)

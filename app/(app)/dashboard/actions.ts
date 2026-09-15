@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getPaidRevenueByMonths, primaryTenantLease } from '@/lib/leaseStatus'
+import { pickTenantPhone } from '@/lib/tenantContact'
 import { dbDateMonthKey, monthDbRange, monthsDbRange, ymdToDbDate, type DbDateRange } from '@/lib/kstDate'
 import { daysInMonth, shiftMonth } from '@/lib/moveCalendar'
 import type { DashboardData } from './DashboardClient'
@@ -386,7 +387,15 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
       where: { id: tenantId, propertyId },
       select: {
         name: true,
-        contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 },
+        // 받는 번호 — 고르는 규칙은 lib/tenantContact 정본이다(주 연락처 우선 · 비상 제외 ·
+        // 본국 번호는 마지막 폴백). 종전 `첫 PHONE` 은 주 연락처로 찍어 둔 번호를 무시했고,
+        // 서류 시트의 문자 탭과 같은 사람에게 다른 번호를 답할 수 있었다.
+        contacts: {
+          select: {
+            contactType: true, contactValue: true,
+            isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+          },
+        },
         // take: 1 을 뺐다 — 방을 둘 쓰는 사람에게 문자 머리말이 창고 호실을 적으면 안 된다.
         // 메인 계약(primaryTenantLease)의 호실이 그 사람의 호실이다.
         leaseTerms: {
@@ -403,7 +412,8 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
     ])
     return {
       ok: true,
-      phone: tenant.contacts[0]?.contactValue?.trim() || null,
+      // 문자는 유선전화로 안 간다 — 갈래를 휴대폰으로 좁힌다(서류 칸은 유선도 번호로 받는다).
+      phone: pickTenantPhone(tenant.contacts, ['PHONE'])?.trim() || null,
       tenantName: tenant.name,
       roomNo: primaryTenantLease(tenant.leaseTerms)?.room?.roomNo ?? '',
       bankAccount: prop?.bankAccount ?? '',

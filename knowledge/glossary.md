@@ -12,6 +12,9 @@
 - **출발지 실측(sourceRemainingQty)** — 옮긴 뒤 출발지에 남은 양을 **직접 세어 적은 값**(선택). 적으면 출발지 행이 `장부 − N` 이 아니라 그 값이 되고 그 행만 `carried: false`(실측)다. 차이만큼 총량이 변해 그 구간의 소모로 잡힌다. 안 적으면 종전과 같다. 이동 점검의 나머지 행은 '이월 + 델타' 라 표식이 **null** 이다. [[domain-inventory]]
 - **이름 보존(preserveName)** — 위치를 옮길 때 **표기 경로를 그대로 두는** 이름 제안 한 규칙(2026-09-16). 옛 pathName 에서 새 부모의 pathName 접두를 떼고 남은 나머지가 새 `name` 이다. 깊어지면 이름이 줄고(앞부분 떼기) 얕아지면 늘어난다(앞부분 붙이기) — 규칙은 하나고 방향은 그 결과다. 접두 불일치면 제안 없음(현재 이름 유지), 최상위로 빼면 옛 pathName 전체. `stripPrefixSuggestion` 은 첫 인자로 `name` 을 받는 얇은 래퍼로 남아 있다(옮기기 모달·`moveStorageLocation` 경로). 정본 `lib/locationTree`. [[domain-inventory]]
 - **원자 배치(placeStorageLocation)** — 위치의 **부모와 형제 안 자리를 한 트랜잭션으로** 정하는 쓰기(2026-09-16, 부모를 넘나드는 드래그의 서버). 거부 규칙 다섯은 `moveStorageLocation` 과 글자까지 같은 호출이고 이름 제안만 `preserveName` 이다. move + reorder 2연타로 치면 앞이 성공하고 뒤가 실패할 때 **부모만 바뀌고 자리는 맨 뒤인 반쪽**이 남는데 화면은 이미 놓은 자리를 보여 주니 아무도 모른다. 같은 부모 안 순서만 바뀐 드롭은 여기로 오지 않고 `reorderStorageLocations` 가 맡는다. [[domain-inventory]]
+- **대표 전화번호(pickTenantPhone)** — 이 사람에게 연락할 번호 하나를 고르는 정본(2026-09-16). 주 연락처 → 그 밖의 국내 번호(먼저 만든 것) → 본국 번호(먼저 만든 것) 순이고 **비상 연락처는 어떤 갈래로도 안 잡는다**. 문자 갈래는 `kinds=['PHONE']` 로 유선전화를 뺀다. 서류 칸은 기본값(PHONE·LANDLINE). [[doc-issue-history]]
+- **영업장 서류(서류 시트의 property 그룹)** — 계약이 아니라 영업장에 걸린 종이. 지금은 사업자등록증 한 행뿐이고 `leaseTermId` 는 null, 키는 `property:bizcert` 다. 미등록이면 그룹 자체가 없다(우리가 만드는 종이가 아니라 받아 둔 원본이라 '작성' 왕복이 없다). [[property-public-facts]]
+- **다시 만드는 문(canWriteNew)** — 발급본이 있는 행에서 지금 사실로 새로 쓰러 가는 보조줄 링크. **납부 확인서는 조건부**(낡았고 이번 달 실입금이 있을 때), **실거주 확인서는 상시**(낡음을 판정할 축이 없다). 보증금·계약서·등록증에는 없다. `false`='문은 있는데 지금 닫혔다', `undefined`='문 자체가 없다'. [[doc-issue-history]]
 - **수령확정(confirmReceipt)** — 구매를 재고 입고로 확정. receivedAt 설정 + 허브 배치 + 자동 점검.
 - **양도인(prevOwner)** — 영업장 인수 전 점유자 몫. 인수일(acquisitionDate)·cutoff로 분리.
 - **CHECKOUT_PENDING / RESERVED / ACTIVE / NON_RESIDENT** — lease 상태. 거주성·청구 대상 판정에 사용.

@@ -16,6 +16,7 @@ import {
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
 import { asDocNameStyle, documentName, DEFAULT_DOC_NAME_STYLE } from '@/lib/documentName'
+import { pickTenantPhone } from '@/lib/tenantContact'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
 import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
@@ -55,17 +56,23 @@ export async function getTenantDocBundle(
       name: true, email: true,
       // 파일 이름이 발급본의 표기를 따라가려면 세 칸이 다 필요하다(lib/documentName).
       englishName: true, nativeName: true,
-      // 문자 받을 번호 — 입주자 문자(getPersonalSmsContext)와 **같은 자를 쓴다**. 거기는 첫
-      // PHONE 연락처를 쓰고 여기만 다른 번호를 고르면 같은 사람에게 두 번호로 문자가 간다.
+      // 문자 받을 번호 — 입주자 문자(getPersonalSmsContext)와 **같은 자를 쓴다**. 그 '자'가 이제
+      // lib/tenantContact 정본이라, 전 연락처를 넘기고 거기서 고른다(주 연락처 우선 · 비상 제외 ·
+      // 본국 번호는 마지막 폴백). 종전 `첫 PHONE` 은 주 연락처로 찍어 둔 번호를 무시했다.
       contacts: {
-        where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' },
-        select: { contactValue: true }, take: 1,
+        select: {
+          contactType: true, contactValue: true,
+          isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+        },
       },
     },
   })
   if (!tenant) return null
   const property = await prisma.property.findUnique({
-    where: { id: propertyId }, select: { name: true },
+    where: { id: propertyId },
+    // 등록증은 영업장당 한 건이라 여기서 함께 읽는다(조회가 늘지 않는다). 형식은 저장값이
+    // 정본이다 — 업로드 마무리가 Drive 판정값을 박아 둔다([[property-public-facts]]).
+    select: { name: true, bizCertDriveFileId: true, bizCertMimeType: true },
   })
 
   const [leases, contractRows, receiptRows, certRows] = await Promise.all([
@@ -157,8 +164,17 @@ export async function getTenantDocBundle(
     rentPaidLeaseIds,
     deposits: receipt('deposit'),
     certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, nameStyle: r.nameStyle })),
+    // 미등록 영업장에는 안 넘긴다 — 정본이 그룹 자체를 안 세운다(빈 행·작성 왕복 없음).
+    bizCert: property?.bizCertDriveFileId
+      ? {
+        driveFileId: property.bizCertDriveFileId,
+        mime: property.bizCertMimeType,
+        propertyName: property.name,
+      }
+      : undefined,
     now: new Date(),
-  }), tenant.email, tenant.contacts[0]?.contactValue ?? null, property?.name ?? '')
+    // 문자는 유선전화로 안 간다 — 갈래를 휴대폰으로 좁힌다(서류 칸은 유선도 번호로 받는다).
+  }), tenant.email, pickTenantPhone(tenant.contacts, ['PHONE']), property?.name ?? '')
 }
 
 /** 규칙 정본이 만든 묶음에 보낼 곳 정보만 얹는다 — lib/docBundle 은 발송을 모른다(순수 규칙). */
@@ -286,7 +302,11 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     const st = asDocNameStyle(r.nameStyle) ?? DEFAULT_DOC_NAME_STYLE
     const docName = docFileLabel(r.docType, st)
     return {
-      personName: documentName(bundle.nameSource, st),
+      // 등록증은 사람의 서류가 아니라 영업장의 서류다 — 이름 자리에 영업장 이름이 선다
+      // (`{영업장명}_사업자등록증`, 상담 도구가 이미 쓰는 이름과 같은 한 벌).
+      personName: r.docType === 'bizcert'
+        ? bundle.propertyName ?? ''
+        : documentName(bundle.nameSource, st),
       docLabel: label ? `${docName}(${label})` : docName,
       dateStr: fmtDateDot(r.issuedAt),
     }
