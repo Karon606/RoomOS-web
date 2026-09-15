@@ -17,7 +17,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 // 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
 import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
-import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
+import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
@@ -2778,8 +2778,15 @@ async function loadLocationRows(propertyId: string): Promise<LocationRow[]> {
 
 // 전체 이름(pathName) 충돌 거부 문구 — 셋(생성·이름 바꾸기·이동)이 같은 문장을 쓴다.
 // 어느 위치와 겹치는지 그 전체 이름을 그대로 보여 준다(`상단` 만으로는 어느 칸인지 못 찾는다).
+// 이름 **뒤에 조사를 붙이지 않는다** — 받침에 따라 `'창고' 과` 가 된다. 따옴표 이름은 문장
+// 가운데 값으로 두고 조사는 뒤따르는 명사(`위치가`)가 받는다(§29, 디자이너 지적 2026-09-16).
 function pathNameTakenError(pathName: string): string {
-  return `'${pathName}' 과 같은 전체 이름의 위치가 이미 있습니다. 기존 위치를 옮기거나 이름을 바꾸세요.`
+  return `전체 이름이 '${pathName}' 인 위치가 이미 있습니다. 기존 위치를 옮기거나 이름을 바꾸세요.`
+}
+
+// 형제 이름 충돌 거부 문구 — 이동·배치·적용취소 셋이 같은 문장을 쓴다(같은 이유로 조사를 안 붙인다).
+function siblingNameTakenError(name: string): string {
+  return `같은 이름('${name}')이 이미 있습니다.`
 }
 
 // 옮기는 노드 **서브트리 전체**의 상대 깊이 — 잎만 보면 자손 둘을 단 노드가 상한을 넘겨 앉는다.
@@ -2831,11 +2838,13 @@ export async function reorderStorageLocations(parentId: string | null, ids: stri
 //   · 순환 거부(wouldCycle) — 자기 자신·자기 자손 아래로는 못 간다.
 //   · 깊이 상한 거부(depthOf + MAX_DEPTH) — 서브트리 최대 깊이까지 세서 자손도 상한 안이어야 한다.
 //   · 형제 중복 거부(siblingNameTaken) — 루트(NULL)끼리도 본다. DB 유니크가 NULL 을 구분 못 하므로 여기가 1차.
-//   · stripPrefix=true 면 `4층 김치냉장고 상단` 을 `4층 김치냉장고` 아래로 넣을 때 이름을 `상단` 으로 떼서 저장한다.
-// undo(§16): 이전 parentId·name·sortOrder 와 옛 형제 순서를 돌려준다 — 화면은 같은 함수를
-//   (updateStorageLocation → moveStorageLocation → reorderStorageLocations) 다시 불러 되돌린다.
-//   **이름이 먼저다.** 떼기로 `4층 김치냉장고 상단` 이 `상단` 이 된 노드를 먼저 옛 부모로 되돌리면
-//   옛 형제의 `상단` 과 겹쳐 서버가 거부하고 원복이 통째로 멈춘다(화면이 그 순서로 부른다).
+//   · stripPrefix=true 면 이름 제안(preserveName)을 적용한다 — `4층 김치냉장고 상단` 을
+//     `4층 김치냉장고` 아래로 넣으면 `상단`, 거꾸로 `4층 주방` 아래로 올리면 `김치냉장고 상단`.
+//     배치(placeStorageLocation)와 **같은 한 규칙**이다(pathName 보존).
+// undo(§16): 이전 parentId·name·sortOrder 와 옛 형제 순서를 돌려준다 — 되돌리기는
+//   `restoreStorageLocation(undo)` **한 번**이다(2026-09-16 검수). 종전의 rename → move → reorder
+//   3연타는 넓히는 방향에서 1단계부터 막혔다: 늘어난 이름(`김치냉장고 상단`)을 얕은 부모에 놓은 뒤
+//   그 층에서 옛 이름(`상단`)으로 먼저 되돌리려 하면, 이름을 늘린 이유였던 그 층의 `상단` 과 겹친다.
 export type LocationMoveUndo = {
   id: string
   parentId: string | null
@@ -2866,11 +2875,16 @@ export async function moveStorageLocation(id: string, parentId: string | null, s
       return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
     }
 
-    // 이름 떼기 제안 — 새 부모의 표기 경로가 앞에 그대로 붙어 있으면 그만큼 뗀다.
-    const parentPath = parentId === null ? '' : (indexLocations(rows).pathName(parentId) ?? '')
-    const nextName = stripPrefix ? stripPrefixSuggestion(self.name, parentPath) : self.name
+    // 이름 제안 — 배치(placeStorageLocation)와 **같은 한 규칙**이다(검수 지적 2026-09-16).
+    // 종전엔 여기만 `stripPrefixSuggestion(self.name, ...)` 이라 얕아지는 방향에서 이름이 안 늘고
+    // (`상단` 이 `상단` 인 채로 `4층 주방` 아래에 앉아 pathName 이 `4층 주방 상단` 으로 바뀌었다),
+    // 두 입구가 같은 자리에 다른 이름을 놓았다. 운영자 결정은 "옮기기 모달도 같은 규칙" 이다.
+    const locIndex = indexLocations(rows)
+    const oldPath = locIndex.pathName(id) ?? self.name
+    const parentPath = parentId === null ? null : (locIndex.pathName(parentId) ?? '')
+    const nextName = stripPrefix ? (preserveName(oldPath, parentPath) ?? self.name) : self.name
     if (siblingNameTaken(rows, parentId, nextName, id)) {
-      return { ok: false, error: `'${nextName}' 은 그 위치에 이미 있습니다.` }
+      return { ok: false, error: siblingNameTakenError(nextName) }
     }
     // 옮기면 자손의 전체 이름이 통째로 바뀐다 — 떼기 적용 후 이름과 서브트리 자손까지 영업장 안에서 본다.
     const clash = conflictingPathName(rows, id, parentId, nextName)
@@ -2905,12 +2919,11 @@ export async function moveStorageLocation(id: string, parentId: string | null, s
 //
 // 거부 규칙 다섯은 `moveStorageLocation` 과 **글자까지 같은 호출**이다 — 사본을 만들면 두 입구가
 // 허용하는 자리가 언젠가 갈린다(감지망 check-location-actions-wiring ⓖ 가 그 축을 본다).
-// 이름 제안만 다르다. 여기는 `preserveName` — 옛 pathName 에서 새 부모 접두를 뗀 나머지라
-// 얕아지는 방향에서는 이름이 **늘어난다**(앞부분 붙이기). 옮기기 모달은 종전 규칙 그대로다.
+// 이름 제안(`preserveName`)도 이제 두 입구가 같다 — 옛 pathName 에서 새 부모 접두를 뗀 나머지라
+// 얕아지는 방향에서는 이름이 **늘어난다**(앞부분 붙이기).
 //
 // 같은 부모 안 순서만 바뀐 드롭은 여기로 오지 않는다 — 화면이 `reorderStorageLocations` 로 보낸다.
-// (§16 적용취소가 rename → move → reorder 순인데 `moveStorageLocation` 이 같은 부모를 거부하므로,
-//  같은 부모 place 를 허용하면 되돌릴 수 없는 쓰기가 생긴다.)
+// (그쪽은 §16 적용취소가 이전 순서 배열 한 번이라 되돌리기 규칙이 더 얇다.)
 export async function placeStorageLocation(id: string, parentId: string | null, index: number, preserve: boolean): Promise<
   { ok: true; undo: LocationMoveUndo; renameLabel?: string } | { ok: false; error: string }
 > {
@@ -2941,7 +2954,7 @@ export async function placeStorageLocation(id: string, parentId: string | null, 
     const parentPath = parentId === null ? null : (locIndex.pathName(parentId) ?? '')
     const nextName = preserve ? (preserveName(oldPath, parentPath) ?? self.name) : self.name
     if (siblingNameTaken(rows, parentId, nextName, id)) {
-      return { ok: false, error: `'${nextName}' 은 그 위치에 이미 있습니다.` }
+      return { ok: false, error: siblingNameTakenError(nextName) }
     }
     // 옮기면 자손의 전체 이름이 통째로 바뀐다 — 제안 적용 후 이름과 서브트리 자손까지 영업장 안에서 본다.
     const clash = conflictingPathName(rows, id, parentId, nextName)
@@ -2969,6 +2982,68 @@ export async function placeStorageLocation(id: string, parentId: string | null, 
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '위치 이동에 실패했습니다.' }
+  }
+}
+
+// 옮기기·배치의 **적용취소 한 걸음** (2026-09-16 검수 지적).
+//
+// 왜 세 걸음이면 안 되나. 종전 적용취소는 rename → move → reorder 였는데, 이름 제안이 pathName
+// 보존이 된 뒤로 **넓히는 방향에서 1단계부터 막힌다**. `4층 주방 김치냉장고` 아래 `상단` 을
+// `4층 주방` 아래로 올리면 이름이 `김치냉장고 상단` 으로 늘어나는데(그 층에 이미 `상단` 이 있어서
+// 늘린 것이다), 되돌리기가 그 층에 선 채로 `상단` 이라는 짧은 이름을 먼저 세우려 하니 형제 중복에
+// 걸린다. 순서를 뒤집으면(move 먼저) 깊어지는 방향이 같은 이유로 깨진다 — 어느 순서로도 세 걸음은
+// **중간 상태가 규칙을 위반**한다. 그래서 되돌리기를 한 트랜잭션으로 모으고 **최종 상태에 대해서만**
+// 규칙(순환·깊이·형제 중복·전체 이름 유일·소속)을 본다.
+//
+// 자리까지 되돌린다. `siblingIds` 는 옛 부모 아래 형제 순서(자기 포함)이고, 그 배열 인덱스가 곧
+// sortOrder 다 — 같은 트랜잭션에서 그 형제 전부를 다시 쓴다(`undo.sortOrder` 의 절대값이 아니라
+// 그 **순서**가 불변식이다. reorderStorageLocations 도 0..n-1 로 정규화한다).
+export async function restoreStorageLocation(undo: LocationMoveUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rows = await loadLocationRows(propertyId)
+    const { id, parentId } = undo
+    const name = undo.name.trim()
+    const self = rows.find(r => r.id === id)
+    if (!self) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    if (!name) return { ok: false, error: '되돌릴 이름이 비어 있습니다.' }
+    // 목록에 없는 부모 = 다른 영업장이거나 그새 삭제된 위치.
+    if (parentId !== null && !rows.some(r => r.id === parentId)) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+
+    if (wouldCycle(rows, id, parentId)) return { ok: false, error: '자기 자신이나 하위 위치 아래로는 옮길 수 없습니다.' }
+
+    const parentDepth = parentId === null ? 0 : depthOf(rows, parentId)
+    if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
+    if (parentDepth + 1 + subtreeRelativeDepth(rows, id) > MAX_DEPTH) {
+      return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
+    }
+    if (siblingNameTaken(rows, parentId, name, id)) return { ok: false, error: siblingNameTakenError(name) }
+    const clash = conflictingPathName(rows, id, parentId, name)
+    if (clash) return { ok: false, error: pathNameTakenError(clash) }
+
+    // 옛 형제 집합 전체성 — 자기를 뺀 나머지가 지금 그 부모 아래 있는 것과 정확히 같아야 한다.
+    // 그새 형제가 하나 생기거나 지워졌으면 옛 순서 배열은 더 이상 그 층의 전부가 아니다
+    // (부분 집합 위에 sortOrder 를 다시 쓰면 안 보낸 형제의 상대 순서가 흔들린다).
+    const order = undo.siblingIds
+    if (new Set(order).size !== order.length || !order.includes(id)) {
+      return { ok: false, error: '되돌릴 순서 정보가 올바르지 않습니다.' }
+    }
+    const others = rows.filter(r => r.parentId === parentId && r.id !== id).map(r => r.id)
+    const want = order.filter(s => s !== id)
+    if (others.length !== want.length || !want.every(s => others.includes(s))) {
+      return { ok: false, error: '위치 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    }
+
+    await prisma.$transaction([
+      prisma.storageLocation.update({ where: { id }, data: { parentId, name } }),
+      ...order.map((sid, i) => prisma.storageLocation.update({ where: { id: sid }, data: { sortOrder: i } })),
+    ])
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }
 

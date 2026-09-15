@@ -68,7 +68,7 @@ import {
   getStorageLocations, reorderStorageLocations,
   createStorageLocation,
   updateStorageLocation,
-  moveStorageLocation, placeStorageLocation, type LocationMoveUndo,
+  moveStorageLocation, placeStorageLocation, restoreStorageLocation, type LocationMoveUndo,
   deleteStorageLocation,
   toggleStorageLocationHub,
   setItemHub,
@@ -98,7 +98,7 @@ import {
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
-import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, stripPrefixSuggestion, preserveName } from '@/lib/locationTree'
+import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
 import { conflictingPathName } from '@/lib/locationPaths'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
@@ -156,9 +156,11 @@ function reasonOf(
   if (parentId != null && ctx.blocked.has(parentId)) return { text: '지금 옮기는 위치이거나 그 아래 위치입니다', clash: null }
   const parentDepth = parentId === null ? 0 : depthOf(ctx.all, parentId)
   if (parentDepth + 1 + ctx.span > MAX_DEPTH) return { text: `${MAX_DEPTH}단계를 넘습니다`, clash: null }
-  if (siblingNameTaken(ctx.all, parentId, nextName, ctx.node.id)) return { text: `'${nextName}' 이 이미 있습니다`, clash: nextName }
+  // 이름 **뒤에 조사를 붙이지 않는다** — 받침에 따라 `'창고' 이` 가 된다. 따옴표 이름은 값으로
+  // 두고 조사는 뒤따르는 명사가 받는다(서버 문구와 한 벌, 디자이너 지적 2026-09-16).
+  if (siblingNameTaken(ctx.all, parentId, nextName, ctx.node.id)) return { text: `같은 이름('${nextName}')이 이미 있습니다`, clash: nextName }
   const clash = conflictingPathName(ctx.all, ctx.node.id, parentId, nextName)
-  if (clash) return { text: `'${clash}' 과 같은 전체 이름의 위치가 이미 있습니다`, clash }
+  if (clash) return { text: `전체 이름이 '${clash}' 인 위치가 이미 있습니다`, clash }
   return null
 }
 
@@ -177,7 +179,7 @@ const locDestLabel = (parentPath: string | null, index: number, siblingCount: nu
     index <= 0 ? '맨 위로' : index >= siblingCount ? '맨 뒤로' : `${index + 1}번째로`}`
 
 // ── 손잡이 드래그의 자리 산수 (2026-09-16) ─────────────────────────────────────────────
-const LOC_EDGE_PX = 12        // 한 행 50px 중 위·아래 형제 경계
+const LOC_EDGE_PX = 12        // 슬롯 60px(행 54 + 간격 6) 중 위·아래 형제 경계(가운데 몸통 36px)
 const LOC_GAP_PX = 6          // space-y-1.5 — 슬롯은 행 rect 를 간격 절반씩 넓힌 구간이다
 const LOC_SCROLL_BAND = 48    // 가장자리 자동 스크롤 감지대
 const LOC_SCROLL_MAX = 420    // 초당 최대 픽셀
@@ -191,8 +193,10 @@ type LocDrop = {
   mode: 'before' | 'after' | 'inside' | 'end' | 'same'
   blocked: boolean
   reason: string | null
+  note: string | null           // 막히지는 않았지만 그 구간에서 말해야 하는 한 줄(깊이 상한 행의 몸통)
   clash: string | null          // 이름이 걸렸을 때 그 이름(토스트가 쓴다)
   nextName: string
+  nextPath: string              // 놓이면 갖게 될 **전체 이름** — 미리보기는 이것이 바뀔 때만 뜬다
   y: number                     // 표시선 y(목록 기준)
   left: number                  // 표시선 좌측 여백
 }
@@ -225,13 +229,16 @@ type LocDragView = {
 const locDropEq = (a: LocDrop | null, b: LocDrop | null) =>
   a === b || (a != null && b != null && a.parentId === b.parentId && a.index === b.index && a.depth === b.depth
     && a.anchorId === b.anchorId && a.mode === b.mode && a.blocked === b.blocked && a.reason === b.reason
-    && a.clash === b.clash && a.nextName === b.nextName && a.y === b.y && a.left === b.left)
+    && a.note === b.note && a.clash === b.clash && a.nextName === b.nextName && a.nextPath === b.nextPath
+    && a.y === b.y && a.left === b.left)
 
 /**
  * 세로 한 점이 어느 자리인가. 한 행의 슬롯(행 rect ± 간격 절반)을 위 경계 12px = 그 행 앞 형제 /
  * 몸통 = 그 행의 자식 맨 뒤 / 아래 경계 12px = 그 행 뒤 형제로 가른다.
  * 몸통은 그 행이 **유효한 부모일 때만** 산다 — 깊이 상한에 걸린 행은 슬롯 전체가 형제 구간이다
- * (위 절반 앞, 아래 절반 뒤). 눌러 봐야 아무 일도 안 나는 구간을 26px 이나 두지 않는다.
+ * (위 절반 앞, 아래 절반 뒤). 눌러 봐야 아무 일도 안 나는 구간을 36px 이나 두지 않는다. 그 대신
+ * `note` 한 줄이 왜 그 행 아래로는 못 들어가는지 말한다 — 캡션은 '행 가운데에 놓으면 그 위치
+ * 아래로' 라고 말하고 있으니, 안 되는 행에서 침묵하면 캡션이 그 행에서 거짓이 된다.
  */
 function locHitOf(s: LocDragSession, y: number, all: StorageLocationNode[]): LocDrop | null {
   const { ctx, rows } = s
@@ -251,8 +258,9 @@ function locHitOf(s: LocDragSession, y: number, all: StorageLocationNode[]): Loc
     const bad = reasonOf(ctx, parentId, nextName, samePlace)
     return {
       parentId, index, depth, anchorId, mode,
-      blocked: bad != null, reason: bad?.text ?? null, clash: bad?.clash ?? null,
-      nextName, y: lineY, left: (depth - 1) * LOC_INDENT_PX,
+      blocked: bad != null, reason: bad?.text ?? null, note: null, clash: bad?.clash ?? null,
+      nextName, nextPath: parentPath ? `${parentPath} ${nextName}` : nextName,
+      y: lineY, left: (depth - 1) * LOC_INDENT_PX,
     }
   }
 
@@ -263,14 +271,19 @@ function locHitOf(s: LocDragSession, y: number, all: StorageLocationNode[]): Loc
     const self = all.find(n => n.id === r.id)
     if (!self) continue
     const at = sibsOf(self.parentId).indexOf(r.id)
+    // 뒤 형제로 서는 드롭의 표시선은 그 행 자기 바닥이 아니라 **서브트리 뒤**다 — 자식을 단 행의
+    // 바로 아래에 선을 그으면 그 선이 '첫 자식 앞' 으로 읽히는데 실제로 놓이는 자리는 그 자식들
+    // 전부의 뒤다(검수 지적 2026-09-16). 들여쓰기는 그대로 그 행의 깊이다.
+    const afterY = r.subtreeBottom + half
     if (r.depth + 1 + ctx.span > MAX_DEPTH) {
       const mid = (top + bottom) / 2
-      return y < mid
+      const capped = y < mid
         ? make(self.parentId, at, r.depth, r.id, 'before', top)
-        : make(self.parentId, at + 1, r.depth, r.id, 'after', bottom)
+        : make(self.parentId, at + 1, r.depth, r.id, 'after', afterY)
+      return { ...capped, note: `${MAX_DEPTH}단계를 넘어 아래로 넣을 수 없습니다` }
     }
     if (y < top + LOC_EDGE_PX) return make(self.parentId, at, r.depth, r.id, 'before', top)
-    if (y >= bottom - LOC_EDGE_PX) return make(self.parentId, at + 1, r.depth, r.id, 'after', bottom)
+    if (y >= bottom - LOC_EDGE_PX) return make(self.parentId, at + 1, r.depth, r.id, 'after', afterY)
     return make(r.id, sibsOf(r.id).length, r.depth + 1, r.id, 'inside', r.subtreeBottom + half)
   }
 
@@ -5835,10 +5848,10 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
 
   // ── 손잡이 드래그 — 부모를 넘나든다 (2026-09-16 운영자 승인) ─────────────────────────
   //
-  // 옮기는 것은 행 하나가 아니라 **그 서브트리 한 덩어리**다. 한 행 50px(44 + 간격 6)을 세로로
-  // 가른다 — 위 경계 12px = 그 행 **앞** 형제 / 몸통 = 그 행의 **자식 맨 뒤** / 아래 경계 12px =
-  // 그 행 **뒤** 형제. 아래 경계는 언제나 '그 행의 뒤 형제' 다(한 단 올라가려면 다음 얕은 행의
-  // 위 경계로 간다 — 아래 경계에 '한 단 올리기' 까지 얹으면 같은 12px 이 두 뜻이 된다).
+  // 옮기는 것은 행 하나가 아니라 **그 서브트리 한 덩어리**다. 한 슬롯 60px(행 54 + 간격 6)을
+  // 세로로 가른다 — 위 경계 12px = 그 행 **앞** 형제 / 몸통 36px = 그 행의 **자식 맨 뒤** /
+  // 아래 경계 12px = 그 행 **뒤** 형제. 아래 경계는 언제나 '그 행의 뒤 형제' 다(한 단 올라가려면
+  // 다음 얕은 행의 위 경계로 간다 — 아래 경계에 '한 단 올리기' 까지 얹으면 같은 12px 이 두 뜻이 된다).
   //
   // **낙관 반영이 없다.** 포인터 이동에서 목록 state 를 건드리면 한 프레임에 여러 번 오는 이동마다
   // 트리를 다시 엮게 되고 402px 에서 행이 눈에 띄게 튄다. 목록은 드롭 전까지 한 칸도 안 움직이고
@@ -5854,6 +5867,9 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
   const dragRef = useRef<LocDragSession | null>(null)
   const dropRef = useRef<LocDrop | null>(null)
   const rafRef = useRef<number | null>(null)
+  // settle(150ms) 타이머 — **id 를 쥔다.** 안 쥐면 그 안에 다시 잡았을 때 옛 타이머가 새 드래그의
+  // drag·drop 을 지워 손에는 아무것도 안 붙은 채 포인터만 잡혀 있는 유령 드래그가 된다.
+  const settleRef = useRef<number | null>(null)
 
   // 표시선 자리를 다시 센다 — 포인터가 움직였을 때와 자동 스크롤이 실제로 스크롤했을 때만.
   const updateLocDrop = (clientY: number) => {
@@ -5895,13 +5911,23 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     cancelAnimationFrame(rafRef.current)
     rafRef.current = null
   }
-  useEffect(() => stopLocAutoScroll, [])
+  const clearLocSettle = () => {
+    if (settleRef.current == null) return
+    window.clearTimeout(settleRef.current)
+    settleRef.current = null
+  }
+  useEffect(() => () => { stopLocAutoScroll(); clearLocSettle() }, [])
 
   const onLocHandleDown = (id: string) => (e: React.PointerEvent) => {
     const ul = locListRef.current
     const all = locsRef.current
     const node = all.find(n => n.id === id)
     if (!ul || !node) return
+    // 저장 응답을 기다리는 동안은 손잡이를 안 받는다 — 그 사이 목록은 아직 옛 트리라, 거기서
+    // 잰 rect 와 형제 배열 위에 또 한 번 놓으면 서버가 이미 옮긴 자리를 모르는 채 자리를 센다.
+    if (placing || pending) return
+    // 앉는 중(150ms)에 다시 잡으면 옛 타이머부터 끈다.
+    clearLocSettle()
     const lis = Array.from(ul.children) as HTMLElement[]
     if (lis.length !== all.length) return
     e.preventDefault()
@@ -5973,12 +5999,13 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     }
     dragRef.current = null
     dropRef.current = null
-    window.setTimeout(() => { setDrag(null); setDrop(null) }, 150)
+    clearLocSettle()
+    settleRef.current = window.setTimeout(() => { settleRef.current = null; setDrag(null); setDrop(null) }, 150)
     if (!d || d.mode === 'same') return
     if (d.blocked) {
       // 이름이 걸린 드롭만 말한다 — 순환·깊이는 표시선과 이유 줄이 이미 말했고, 거기에 토스트까지
       // 얹으면 같은 사실을 두 번 말하는 것이다(§27.2).
-      if (d.clash) pushToast('info', `'${d.clash}' 이 이미 있어 옮기지 못했습니다`, {
+      if (d.clash) pushToast('info', `'${d.clash}' 이름이 이미 있어 옮기지 못했습니다`, {
         action: { label: '이름 바꾸기', run: () => { setEditId(dragNode.id); setEditName(dragNode.name) } },
       })
       return
@@ -6015,7 +6042,9 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
       if (!res.ok) { setError(res.error); reload(); return }
       const parentPath = d.parentId === null ? null : (locsRef.current.find(n => n.id === d.parentId)?.pathName ?? '')
       const sibCount = locsRef.current.filter(n => n.parentId === d.parentId && n.id !== node.id).length
-      onMoved(res.undo, res.renameLabel, `'${node.name}' 위치를 ${locDestLabel(parentPath, d.index, sibCount)} 옮겼습니다`)
+      // 제목의 이름은 **옛 pathName** 이다 — §22 "행에 찍는 이름만 name, 그 밖은 전부 pathName".
+      // 토스트는 목록 밖(들여쓰기가 없는 자리)이라 `상단` 만으로는 어느 칸을 옮겼는지 못 찾는다.
+      onMoved(res.undo, res.renameLabel, `'${node.pathName}' 위치를 ${locDestLabel(parentPath, d.index, sibCount)} 옮겼습니다`)
     } finally {
       setPlacing(false)
     }
@@ -6060,16 +6089,14 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     })
   }
 
-  // 옮기기 성공 — §16 적용취소는 **rename → move → reorder** 세 번이다(되돌리기 전용 액션 없음).
+  // 옮기기 성공 — §16 적용취소는 `restoreStorageLocation(undo)` **한 번**이다(검수 지적 2026-09-16).
   //
-  // 순서가 중요하다. 앞부분 떼기로 `4층 김치냉장고 상단` 이 `상단` 이 된 노드를 **먼저 옛 부모로**
-  // 되돌리면, 옛 형제 집합에 이미 `상단` 이 있을 때 형제 이름 중복에 걸려 원복이 통째로 멈춘다.
-  // 이름을 먼저 옛 이름으로 되돌려 놓고 옮기면 그 충돌이 서지 않는다(검수 지적 2026-09-14).
-  // siblingIds 를 다시 넘기지 않으면 옛 자리가 아니라 형제 맨 뒤로 돌아간다.
-  //
-  // 중간에 실패하면 **어디까지 되돌렸는지**를 토스트로 말한다 — 적용취소는 모달을 닫은 뒤에도
-  // 눌릴 수 있고, 그때 인라인 자리는 화면에 없다. 실패가 어디에도 안 뜨면 절반만 돌아간 상태를
-  // 운영자가 영영 모른다(검수 지적 2026-09-14). 순서·이름 적용취소가 이미 이 문법이다.
+  // 종전엔 rename → move → reorder 세 번이었다. 이름 제안이 pathName 보존이 된 뒤로 그 순서는
+  // **넓히는 방향에서 1단계부터 막힌다** — `4층 주방 김치냉장고` 아래 `상단` 을 `4층 주방` 아래로
+  // 올리면 이름이 `김치냉장고 상단` 으로 늘어나는데(그 층에 이미 `상단` 이 있어서 늘린 것이다),
+  // 되돌리기가 그 층에 선 채로 `상단` 을 먼저 세우려 하니 형제 중복에 걸린다. 순서를 뒤집으면
+  // 깊어지는 방향이 같은 이유로 깨진다 — 어느 순서로도 중간 상태가 규칙을 위반한다. 그래서
+  // 서버가 한 트랜잭션으로 되돌리고 **최종 상태에 대해서만** 규칙을 본다. 반쪽 원복도 사라졌다.
   //
   // 제목은 입구마다 다르다. 모달은 목적지를 방금 골라 본 직후라 '위치를 옮겼습니다' 로 충분하지만,
   // 드래그는 손이 지나간 자리를 눈이 못 따라가는 경우가 있어 **무엇을 어디로** 놓았는지 토스트가
@@ -6079,12 +6106,8 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     pushToast('success', title ?? '위치를 옮겼습니다', {
       ...(renameLabel ? { detail: renameLabel } : {}),
       action: { label: '적용취소', run: () => { void (async () => {
-        const nameBack = await updateStorageLocation(undo.id, undo.name)
-        if (!nameBack.ok) { pushToast('error', `적용취소가 이름 되돌리기에서 멈췄습니다. ${nameBack.error}`); reload(); return }
-        const back = await moveStorageLocation(undo.id, undo.parentId, false)
-        if (!back.ok) { pushToast('error', `이름은 되돌렸지만 자리 되돌리기에서 멈췄습니다. ${back.error}`); reload(); return }
-        const orderBack = await reorderStorageLocations(undo.parentId, undo.siblingIds)
-        if (!orderBack.ok) { pushToast('error', `이름과 자리는 되돌렸지만 순서 되돌리기에서 멈췄습니다. ${orderBack.error}`); reload(); return }
+        const back = await restoreStorageLocation(undo)
+        if (!back.ok) { pushToast('error', `적용취소가 멈췄습니다. ${back.error}`); reload(); return }
         reload()
         // 모달이 닫힌 뒤라면 reload 로 되살아나는 목록이 없다 — 뒤 화면을 부모가 다시 그리게 한다.
         onChanged?.()
@@ -6143,9 +6166,15 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         <div className="space-y-2">
           {/* 막힌 드롭의 이유는 여기 한 줄로만 선다 — 행을 흐리면 정작 읽어야 할 그 한 줄이 가장
               안 읽히고(옮기기 모달에서 이미 겪은 지적), 스크롤 본문에 두면 아래쪽 행에서 난 판정이
-              뷰포트 밖으로 밀린다. 자리를 늘 비워 두어 문구가 뜰 때 footer 가 안 흔들린다. */}
-          {drag != null && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] min-h-[15px]">{drop?.reason ?? ''}</p>
+              뷰포트 밖으로 밀린다.
+              **드래그 중에만 마운트하면 안 된다**(디자이너 지적 2026-09-16) — 잡는 순간 footer 가
+              23px 자라고, 오버레이가 items-center 라 패널이 통째로 재정렬되며 행이 11~12px 위로
+              튄다. 그 전에 잰 rect·grabDy 는 옛 좌표라 고스트가 자리표보다 아래에 뜬 채 따라온다.
+              그래서 목록이 있으면 **늘 서 있고** 문구만 드나든다. */}
+          {locs.length > 0 && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] min-h-[15px]">
+              {drag != null ? (drop?.reason ?? drop?.note ?? '') : ''}
+            </p>
           )}
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
@@ -6161,9 +6190,11 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
         )}
         {/* 손잡이가 무엇을 하는지 목록 위에서 미리 말한다 — 몸통 구간(그 위치 아래로 넣기)은
-            끌어 보기 전에는 안 보이는 자리라, 모르면 평생 안 쓰는 기능이 된다. */}
+            끌어 보기 전에는 안 보이는 자리라, 모르면 평생 안 쓰는 기능이 된다.
+            상자 높이를 **두 줄로 고정**한다 — `저장 중…` 한 줄로 줄면 목록이 16px 당겨 올라갔다가
+            응답 뒤 다시 내려온다(디자이너 지적 2026-09-16). 바뀌는 것은 글자뿐이어야 한다. */}
         {locs.length > 0 && (
-          <p className="text-xs text-[var(--warm-muted)]">
+          <p className="text-xs text-[var(--warm-muted)] min-h-[2lh]">
             {placing ? '저장 중…' : '손잡이를 잡아 끌어 순서와 상위 위치를 바꿉니다. 행 가운데에 놓으면 그 위치 아래로 들어갑니다.'}
           </p>
         )}
@@ -6183,7 +6214,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
               style={{ marginLeft: (node.depth - 1) * LOC_INDENT_PX }}
               className={`flex items-center gap-2 bg-[var(--canvas)] border rounded-xl px-3 py-2 ${
                 drop != null && !drop.blocked && drop.mode === 'inside' && drop.anchorId === node.id
-                  ? 'border-[var(--warm-border)]/60 ring-2 ring-[var(--coral)]/40 ring-inset'
+                  ? 'border-[var(--warm-border)]/60 ring-2 ring-[var(--tc-text)] ring-inset'
                   : 'border-[var(--warm-border)]/60'}`}>
               {editId === node.id ? (
                 <>
@@ -6232,12 +6263,14 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
             </li>
           ))}
         </ul>
-        {/* 표시선 — 유효하면 코랄 2px, 막히면 점선. 좌측 여백이 곧 '놓으면 몇 단이 되는가' 다. */}
+        {/* 표시선 — 유효하면 2px 실선, 막히면 점선. 좌측 여백이 곧 '놓으면 몇 단이 되는가' 다.
+            색은 --coral 이 아니라 --tc-text 다(§12 상태 지시자) — 코랄은 다크에서 3:1 에 못 미쳐
+            어두운 바탕 위 2px 선이 거의 안 보인다(디자이너 지적 2026-09-16). */}
         {drag != null && drop != null && (
           <div aria-hidden
             className={`absolute pointer-events-none ${drop.blocked
               ? 'border-t border-dashed border-[var(--warm-border)]'
-              : 'h-[2px] rounded-full bg-[var(--coral)]'}`}
+              : 'h-[2px] rounded-full bg-[var(--tc-text)]'}`}
             style={{ top: drop.y, left: (drop.depth - 1) * LOC_INDENT_PX, right: 0 }} />
         )}
         </div>
@@ -6336,28 +6369,35 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
           움직임은 ref 로 transform 한 줄만 쓴다(state 를 안 탄다). */}
       {drag && typeof window !== 'undefined' && createPortal(
         <div ref={ghostRef} aria-hidden
-          className="fixed z-[calc(var(--z-lightbox)+2)] pointer-events-none"
+          className="fixed z-[var(--z-drag-ghost)] pointer-events-none"
           style={{ left: drag.left, top: 0, width: drag.width, transform: `translate3d(0, ${drag.y0}px, 0)`, willChange: 'transform', transition: 'none' }}>
-          <div className="space-y-1.5" style={{ transform: 'scale(0.98)', transformOrigin: 'top left' }}>
+          <div className="relative space-y-1.5" style={{ transform: 'scale(0.98)', transformOrigin: 'top left' }}>
+            {/* 이름 미리보기 한 줄 — **고스트 위쪽**이다. 아래에 두면 잡은 손 바로 아래 43px 이라
+                엄지에 묻혀 읽을 수가 없다(디자이너 지적 2026-09-16). bottom-full 로 올려 두어
+                고스트 머리 카드와 포인터의 자리 관계는 그대로다.
+                뜨는 조건은 이름이 아니라 **전체 이름(pathName)이 바뀔 때**다 — 옆 가지로 옮기면
+                이름은 그대로인데 전체 이름이 통째로 바뀐다(검수 지적 2026-09-16). §29 값의 전환.
+                눌리는 자리가 아니라 **읽는 자리**라 체크박스 모양을 걷고 글자만 남겼다. 그때그때
+                바꾸려면 관리 &gt; 옮기기. */}
+            {drop && !drop.blocked && drop.nextPath !== drag.head[0].pathName && (
+              <div className="absolute bottom-full left-0 right-0 mb-1.5 flex items-center gap-1.5 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-1.5">
+                <span className="shrink-0 text-[0.65625rem] text-[var(--warm-dark)]">
+                  {drop.nextName === drag.head[0].name ? '전체 이름 바뀜' : locPreserveLabel(drag.head[0].name, drop.nextName)}
+                </span>
+                <span aria-hidden className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">·</span>
+                <span className="flex-1 min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{drag.head[0].pathName} → {drop.nextPath}</span>
+              </div>
+            )}
+            {/* 카드는 이름만 담은 압축판이라 그냥 두면 38px 이고 자리표 구멍(54px)보다 작다 —
+                실측 행 높이를 min-h 로 줘 들린 것과 남은 구멍의 크기를 맞춘다. */}
             {drag.head.map(n => (
               <div key={n.id} style={{ marginLeft: (n.depth - drag.rootDepth) * LOC_INDENT_PX }}
-                className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--coral)] shadow-lift select-none rounded-xl px-3 py-2">
+                className="flex items-center gap-2 min-h-[54px] bg-[var(--canvas)] border border-[var(--coral)] shadow-lift select-none rounded-xl px-3 py-2">
                 <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{n.name}</span>
               </div>
             ))}
             {drag.more > 0 && (
               <p className="pl-3 text-[0.65625rem] text-[var(--warm-muted)]">외 {drag.more}칸</p>
-            )}
-            {/* 이름 제안 한 줄 — 놓기 직전에 새 이름을 미리 본다(§29 값의 전환 표기).
-                드래그 중에는 누를 손이 없어 **읽는 자리**다. 그때그때 바꾸려면 관리 &gt; 옮기기. */}
-            {drop && !drop.blocked && drop.nextName !== drag.head[0].name && (
-              <div className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-1.5">
-                <span aria-hidden className="shrink-0 w-4 h-4 rounded-[4px] bg-[var(--coral)] flex items-center justify-center">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--on-solid)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                </span>
-                <span className="shrink-0 text-[0.65625rem] text-[var(--warm-dark)]">{locPreserveLabel(drag.head[0].name, drop.nextName)}</span>
-                <span className="flex-1 min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{drag.head[0].name} → {drop.nextName}</span>
-              </div>
             )}
           </div>
         </div>,
@@ -6395,15 +6435,18 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
   const ctx = locDropCtx(all, node)
   const stripFor = (targetId: string | null) =>
     (dest !== null && dest.id === targetId && stripOverride !== null) ? stripOverride : locPreserveDefault(targetId)
-  // 이 모달의 이름 제안은 종전 그대로 **현재 name 에서 앞부분을 뗀다**(서버 moveStorageLocation 이
-  // 그렇게 본다). 드래그는 옛 pathName 을 보존하는 placeStorageLocation 을 타므로 얕아지는 방향에서
-  // 이름이 늘 수 있다 — 두 입구의 서버 액션이 다르기 때문이고, 미리보기는 각자 제 서버를 따른다.
-  const nameFor = (target: StorageLocationNode | null) => {
-    const path = target?.pathName ?? ''
-    return stripFor(target?.id ?? null) && path ? stripPrefixSuggestion(node.name, path) : node.name
-  }
+  // 이름 제안은 드래그와 **같은 한 규칙**이다(pathName 보존, 검수 지적 2026-09-16). 종전엔 이쪽만
+  // 현재 name 에서 앞부분을 떼서, 같은 자리에 두 입구가 다른 이름을 놓았다. 최상위(target null)에
+  // 체크를 켜면 옛 pathName 전체가 이름이 된다 — 규칙 그대로의 '붙이기' 다(기본값은 꺼짐).
+  const nameFor = (target: StorageLocationNode | null) =>
+    stripFor(target?.id ?? null) ? (preserveName(node.pathName, target?.pathName ?? null) ?? node.name) : node.name
   const reasonFor = (target: StorageLocationNode | null) =>
     reasonOf(ctx, target?.id ?? null, nameFor(target), (target?.id ?? null) === node.parentId)
+  // 회색으로 **잠그는 것은 자리 자체가 안 되는 경우뿐**이다(순환·깊이·지금 있는 자리). 이름 충돌은
+  // 체크박스를 끄면 열리는 자리라 잠그면 안 된다 — 종전엔 기본값 이름이 겹친다는 이유만으로 행이
+  // 죽어, 끌 수 있는 체크박스를 두고도 그 자리를 못 골랐다(검수 지적 2026-09-16).
+  // 고른 뒤 여전히 겹치면 `chosenReason` 이 버튼을 막는다.
+  const lockedBy = (r: { clash: string | null } | null) => r != null && r.clash == null
 
   const chosen = dest === null ? null : (dest.id === null ? null : all.find(n => n.id === dest.id) ?? null)
   const strip = stripFor(dest?.id ?? null)
@@ -6437,23 +6480,25 @@ function LocationMoveModal({ all, node, onClose, onDone }: {
         <div className="max-h-[46vh] overflow-y-auto overscroll-contain border border-[var(--warm-border)] rounded-xl p-1.5 bg-[var(--canvas)]">
           {(() => {
             const reason = reasonFor(null)
+            const locked = lockedBy(reason)
             return (
-              <button type="button" disabled={reason != null}
+              <button type="button" disabled={locked}
                 onClick={() => chooseDest(null)}
-                className={rowCls(reason != null, dest?.id === null && dest !== null)}>
-                <span className={`flex-1 min-w-0 truncate text-sm ${reason ? 'opacity-45' : ''}`}>최상위</span>
+                className={rowCls(locked, dest?.id === null && dest !== null)}>
+                <span className={`flex-1 min-w-0 truncate text-sm ${locked ? 'opacity-45' : ''}`}>최상위</span>
                 {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason.text}</span>}
               </button>
             )
           })()}
           {all.map(target => {
             const reason = reasonFor(target)
+            const locked = lockedBy(reason)
             return (
-              <button key={target.id} type="button" disabled={reason != null}
+              <button key={target.id} type="button" disabled={locked}
                 onClick={() => chooseDest(target.id)}
                 style={{ paddingLeft: 10 + (target.depth - 1) * LOC_INDENT_PX }}
-                className={rowCls(reason != null, dest?.id === target.id)}>
-                <span className={`flex-1 min-w-0 truncate text-sm ${reason ? 'opacity-45' : ''}`}>{target.name}</span>
+                className={rowCls(locked, dest?.id === target.id)}>
+                <span className={`flex-1 min-w-0 truncate text-sm ${locked ? 'opacity-45' : ''}`}>{target.name}</span>
                 {reason && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">{reason.text}</span>}
               </button>
             )

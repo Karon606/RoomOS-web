@@ -6428,3 +6428,20 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   (509·402 본국 번호, 503·422 비상 번호로 가던 결함 넷 + 비상 연락처만 있는 둘은 이제 문자 대상 없음).
   시공자 판단 — 설정 문구 '시트' 회피, ConsultToolsModal 라벨 정본화, test-doc-name-style 단언을 '겹치지
   않는다' 축으로. verify:db 안내 — 발급본 박제 축 B 실측 25 vs 기준선 22(계약 발급 데이터 드리프트, 별건).
+- **서류 시트 디자이너 독립 검수(903e6528).** 차단 2 — 그룹 key 가 `leaseTermId ?? 'other'` 라 새 property
+  그룹과 other 그룹이 같은 key(React 중복 key, 재렌더마다 리마운트·포커스 소실), 설정 문구 어미 반복 +
+  화면에 없는 이름('입주자 서류' → `입주자 정보 > 서류`). 권고 4 — `다시 작성` 링크 폭 44 미달, docMime
+  image/heif 라벨 없음, bizcert 큐 dateStr em dash, 계약 그룹 0 인 퇴실자의 등록증 단독 행. 코드 검수
+  결과와 묶어 같은 시공자에게 전달 예정.
+- **서류 시트 규칙·코드 독립 검수(903e6528).** 가장 미심쩍은 것은 디자이너와 같은 그룹 key 충돌. 권고 —
+  그물 ⓒ 정규식이 변형(`where: { isPrimary: true }, take: 1` rooms/actions 3곳·export 260, contacts[0]
+  등)을 못 봄, 미납 안내 문자 발신자 둘(getUnpaidSmsContext·noticeSms)이 옛 '첫 PHONE' 그대로라 결함
+  넷이 거기서 살아 있음(종이 위험 없어 지금 옮김), createdAt 동률 2차 키, 본국 둘 중 주 연락처 우선,
+  라벨 이중 게이트 단언, ⓔ 리터럴 취약, 시트 파일명 축 별건. 가드 우회 — 호출만 남기고 결과 안 읽기
+  (ⓑ 를 결과 사용 단언으로). 13건 같은 시공자에게 전달.
+- **드래그 검수 지적 18건 반영 시공 완료.** restoreStorageLocation(undo) 한 트랜잭션(최종 상태만 검사),
+  moveStorageLocation·모달 nameFor 도 preserveName, after 표시선 서브트리 아래, nextPath 미리보기, 저장 중
+  재드래그 차단, 모달 이름 충돌은 캡션만, 진리표 73, 그물 ⓖ 강화(트랜잭션 배열 안 재기록·at 산식)·ⓗ 신설.
+  디자인 — 이유 줄 상시 마운트 + 캡션 2lh 로 높이 고정, 토스트 pathName·조사, 제안 줄 글자만·고스트 위,
+  §22 수치 정정(54/60/12·36·12, §09), 지시자 tc-text, --z-drag-ghost 토큰, 서버 문구 조사 통일, 깊이 상한
+  note, settle 타이머 취소. 잔여물 — stripPrefixSuggestion 래퍼(호출부 0)·LocationMoveUndo.sortOrder 미사용.

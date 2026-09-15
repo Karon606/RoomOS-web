@@ -1,4 +1,4 @@
-// 보관 위치 트리 쓰기 액션의 배선 감지망 — 일곱 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
+// 보관 위치 트리 쓰기 액션의 배선 감지망 — 여덟 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 소스 가드인가. 이동·생성·삭제·순서의 거부 규칙은 DB 가 있어야 실행되는 서버 액션이라
 // 순수 진리표(scripts/test-location-tree.ts)로 덮을 수 없다. 순수 판정 함수는 이미 그 진리표가
@@ -19,6 +19,11 @@
 //     그래서 (1) placeStorageLocation 이 이동과 **글자까지 같은** 다섯 규칙을 부르고 한
 //     트랜잭션으로 쓰는가, (2) 화면 드롭 핸들러가 2연타 대신 그 액션을 부르는가, (3) 드래그와
 //     옮기기 모달이 **같은 reasonOf** 를 부르는가(막은 자리와 서버가 거부하는 자리가 갈리지 않게).
+//   ⓗ 적용취소도 **원자**인가(2026-09-16 검수). 이름 제안이 pathName 보존이 된 뒤로 rename → move
+//     → reorder 3연타는 넓히는 방향에서 1단계부터 막힌다 — 늘어난 이름(`김치냉장고 상단`)을 얕은
+//     부모에 놓은 뒤 그 층에서 짧은 옛 이름(`상단`)을 먼저 세우려 하면, 이름을 늘린 이유였던 그
+//     형제와 겹친다. 순서를 뒤집으면 깊어지는 방향이 깨진다. 그래서 되돌리기도 한 트랜잭션이고
+//     규칙은 **최종 상태에 대해서만** 본다.
 //
 // 실행: node scripts/check-location-actions-wiring.mjs
 import { readFileSync } from 'node:fs'
@@ -86,7 +91,7 @@ function mustNot(b, label, pattern, why) {
 }
 
 // ── 공통 전제: 순수 판정 함수를 실제로 import 하고 있는가 ────────────────────────────
-for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSuggestion', 'preserveName', 'subtreeIds', 'MAX_DEPTH', 'conflictingPathName']) {
+for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'preserveName', 'subtreeIds', 'MAX_DEPTH', 'conflictingPathName']) {
   if (!new RegExp(`\\b${fn}\\b`).test(src.slice(0, src.indexOf('async function getPropertyId')))) {
     violations.push(`import 에 ${fn} 이 없다 — 판정 정본(lib/locationTree · lib/locationPaths)을 안 쓰고 있다.`)
   }
@@ -100,7 +105,9 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
   must(b, '이동', /subtreeRelativeDepth\(rows, id\)/, '서브트리 깊이까지 안 센다 — 자손 단 노드가 상한을 넘겨 앉는다')
   must(b, '이동', /> MAX_DEPTH/, '깊이 상한(MAX_DEPTH) 비교가 없다')
   must(b, '이동', /siblingNameTaken\(rows, parentId, nextName, id\)/, '형제 중복 거부(siblingNameTaken)를 안 부른다')
-  must(b, '이동', /stripPrefixSuggestion\(self\.name, parentPath\)/, '앞부분 떼기(stripPrefixSuggestion)를 안 쓴다')
+  // 이름 제안은 두 입구가 **한 규칙**이다(2026-09-16). 여기만 name 에서 떼면 같은 자리에 드래그와
+  // 모달이 다른 이름을 놓는다 — 얕아지는 방향에서 이쪽만 이름이 안 늘어 pathName 이 깨진다.
+  must(b, '이동', /preserveName\(oldPath, parentPath\)/, '이름 제안이 pathName 보존 정본(preserveName)이 아니다')
   must(b, '이동', /renameLabel: `\$\{self\.name\} → \$\{nextName\}`/, '이름 전환 미리보기 문자열을 서버가 안 돌려준다')
   must(b, '이동', /undo: LocationMoveUndo/, '적용취소 페이로드(이전 parentId·name·sortOrder)가 없다')
   must(b, '이동', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다 — 소속 검사의 전제다')
@@ -151,7 +158,8 @@ for (const fn of [
   ['createStorageLocation', 'export async function updateStorageLocation'],
   ['updateStorageLocation', 'export type LocationDeleteImpact'],
   ['moveStorageLocation', 'export async function placeStorageLocation'],
-  ['placeStorageLocation', 'export async function reorderTrackedItems'],
+  ['placeStorageLocation', 'export async function restoreStorageLocation'],
+  ['restoreStorageLocation', 'export async function reorderTrackedItems'],
   ['reorderStorageLocations', 'export type LocationMoveUndo'],
   ['deleteStorageLocation', 'export async function setItemLocations'],
 ]) {
@@ -162,7 +170,7 @@ for (const fn of [
 
 // ⓖ 부모를 넘나드는 드래그 — 원자 배치(placeStorageLocation)와 화면 배선.
 {
-  const b = block('export async function placeStorageLocation', 'export async function reorderTrackedItems')
+  const b = block('export async function placeStorageLocation', 'export async function restoreStorageLocation')
   // (1) 거부 규칙은 이동과 **글자까지 같은 호출**이다. 한 줄이라도 사본이 되면 두 입구가 허용하는
   //     자리가 언젠가 갈리고, 그날 화면이 놓게 해 준 자리를 서버가 거부한다.
   must(b, '배치', /wouldCycle\(rows, id, parentId\)/, '자기 서브트리 이동 거부(wouldCycle)를 안 부른다')
@@ -175,10 +183,35 @@ for (const fn of [
   must(b, '배치', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다 — 소속 검사의 전제다')
   must(b, '배치', /상위 위치를 찾을 수 없습니다/, '다른 영업장 부모를 거부하지 않는다')
   // (2) 쓰기는 한 트랜잭션이다. 나뉘면 부모만 바뀌고 자리는 맨 뒤인 반쪽이 남는다.
-  must(b, '배치', /prisma\.\$transaction\(/, '부모 갱신과 형제 sortOrder 재기록이 한 트랜잭션이 아니다')
+  //     `$transaction(` 이 있는지만 보면 sortOrder 재기록을 그 **배열 밖** for 루프로 빼도 초록이다.
+  //     그래서 형제 재기록이 그 배열 **안에** 있는지를 본다(`[^\]]*` 라 배열을 못 벗어난다).
+  must(b, '배치', /prisma\.\$transaction\(\[[^\]]*nextIds\.map\(/,
+    '형제 sortOrder 재기록이 그 트랜잭션 배열 안에 없다 — 부모만 바뀌고 자리는 맨 뒤인 반쪽이 다시 생긴다')
   must(b, '배치', /count\(\{ where: \{ propertyId, parentId \} \}\)/, '새 형제 집합 전체 개수를 안 센다')
   must(b, '배치', /total !== siblings\.length/, '형제 전체성 비교가 없다 — 부분 집합 위에 순서를 다시 쓴다')
+  // 자리 산수도 못 물러선다. `at = siblings.length` 로 바꾸면 어디에 놓아도 맨 뒤로 가는데,
+  // 화면은 놓은 자리를 이미 보여 주고 있어 그 어긋남이 조용하다.
+  must(b, '배치', /const at = Math\.min\(index, siblings\.length\)/, '놓을 자리 산수가 index 를 안 쓴다 — 전부 맨 뒤로 간다')
   must(b, '배치', /undo: LocationMoveUndo/, '적용취소 페이로드(이전 parentId·name·sortOrder·형제 순서)가 없다')
+}
+
+// ⓗ 적용취소는 **한 걸음**이다 — 서버 한 트랜잭션 + 화면 한 호출.
+{
+  const b = block('export async function restoreStorageLocation', 'export async function reorderTrackedItems')
+  must(b, '적용취소', /wouldCycle\(rows, id, parentId\)/, '되돌린 자리의 순환을 안 본다')
+  must(b, '적용취소', /> MAX_DEPTH/, '되돌린 자리의 깊이 상한 비교가 없다')
+  must(b, '적용취소', /siblingNameTaken\(rows, parentId, name, id\)/, '되돌린 이름의 형제 중복을 안 본다')
+  must(b, '적용취소', /conflictingPathName\(rows, id, parentId, name\)/, '되돌린 이름의 전체 이름 유일을 안 본다')
+  must(b, '적용취소', /prisma\.\$transaction\(\[[^\]]*order\.map\(/,
+    'parentId·name 되돌리기와 옛 형제 순서 재기록이 한 트랜잭션 배열 안에 있지 않다')
+
+  // 화면 — 3연타가 돌아오면 넓히는 방향에서 1단계(rename)부터 막힌다. 늘어난 이름을 얕은 부모에
+  // 놓은 뒤 그 층에서 짧은 옛 이름을 먼저 세우려 하면, 이름을 늘린 이유였던 그 형제와 겹친다.
+  const undoBlock = block('const onMoved = (', 'const handleDelete = async (', ui)
+  must(undoBlock, '적용취소 배선', /restoreStorageLocation\(/, '한 걸음 되돌리기 액션을 안 부른다')
+  mustNot(undoBlock, '적용취소 배선', /updateStorageLocation\(/, 'rename → move → reorder 3연타로 돌아갔다 — 넓히는 방향에서 1단계부터 막힌다')
+  mustNot(undoBlock, '적용취소 배선', /moveStorageLocation\(/, 'rename → move → reorder 3연타로 돌아갔다 — 넓히는 방향에서 1단계부터 막힌다')
+  mustNot(undoBlock, '적용취소 배선', /reorderStorageLocations\(/, 'rename → move → reorder 3연타로 돌아갔다 — 넓히는 방향에서 1단계부터 막힌다')
 }
 
 // ⓖ' 화면 — 드롭 핸들러가 2연타를 안 하고, 드래그와 모달이 같은 판정을 부른다.
@@ -217,4 +250,4 @@ if (violations.length > 0) {
   console.error(`\n위치 트리 쓰기 배선 위반 ${violations.length}건. 판정 정본은 lib/locationTree, 진리표는 scripts/test-location-tree.ts.`)
   process.exit(1)
 }
-console.log('OK    위치 트리 쓰기 일곱 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치)이 배선돼 있다.')
+console.log('OK    위치 트리 쓰기 여덟 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치·원자 적용취소)이 배선돼 있다.')
