@@ -644,3 +644,21 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] L9. `sameDayNotice` 술어 — **`locationPatch` 인 것이 의도**임을 이름과 주석으로 명시(아래 사유)
 - [x] 가드 우회 봉합 — ⑨ 에 '안 적은 행은 패치에 안 실린다' 세 축(조립부 `continue` · 허브는
       `hubMeasured` 일 때만 · 조립부에 `prevMap` 없음) + 진리표 '실측 행 수 == 패치 수'
+
+### 재검수 반영 — 차단 1 + 권고 6 + 우회 봉합 (2026-09-16, a8789ed7 대상)
+
+- [x] A. `HubShortDialog` 의 적용취소 둘이 `deduped` 를 본다. `retry` 타입에 `deduped?: boolean`,
+      '옮기고 채움 완료' 는 **이동만** 되돌리고(보충은 내 것이 아니다), '부족한 채로 저장' 은
+      적용취소를 안 붙인다. 그물 축도 팝업 두 자리를 본다
+- [x] B. ④ 죽은 분기 — 지우지 않고 그물을 **"두 조건이 배타다"** 로 바꿈.
+      `allowHubClamp` 는 `saveArgs.allowHubClamp || !!o.allowHubClamp`(undefined 덮어쓰기 제거)
+- [x] C. footer 겹친 `<p>` 에 `overflow-hidden` 두 겹 — 사용자 이름이 긴 이유 문구가 버튼 위로 흐르지 않게
+- [x] D. 폼 `차감 후` 술어를 패널과 같게(`restockSum > 0 && beforeStr === '' && prevQty !== undefined`).
+      참고줄 표시 조건에서도 `rowIsHub && restockSum > 0` 항 제거
+- [x] E. `check-inventory-view-default` ⑥ 가 주석이 아니라 **마크업**을 겨눈다(골격 함수 본문에서
+      안내문 두 줄 + 점검일 라벨 순서, 입력 44px 개수)
+- [x] F. 진리표 13번의 주석을 정정 — 봉합의 근거가 아니라 **서버 쪽 결함**(이월 행을 실측으로 찍는 변경)을 잡는 축
+- [x] G. 멱등창에 `patches.length === lastMeasured` — 진부분집합 삼킴 차단
+- [x] 우회 봉합(구조) — `entered` 집합을 `onChange`·드래프트 복원 둘에서만 채우고, 복원은
+      **서버 문서의 키**(`draftedIds`)에서만 가져온다. 조립부·`hubMeasured`·과잉 입고 신호 셋 다 그 집합을 술어로
+- [x] 별건 2건은 `knowledge/open-issues.md` 에만(고치지 않음)

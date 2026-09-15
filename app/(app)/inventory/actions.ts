@@ -905,9 +905,14 @@ export async function createStockCheck(data: {
       // `carried === false` 도 본다 — 그 행이 이월(파생)이면 '방금 내가 실측으로 쓴 그 행' 이 아니다
       // (updateStockCheck 은 이미 이 축을 보고 있었고 create 만 빠져 있었다).
       if (lastCheck && (Date.now() - lastCheck.createdAt.getTime()) < 20_000) {
+        // **개수까지 본다**(재검수 2026-09-16). `every` 는 진부분집합에도 참이라, 두 번째 제출이
+        // 더 적은 패치를 실으면(칸 하나를 지우고 다시 저장) 전부 일치로 읽혀 통째로 삼켜진다.
+        // 기준은 그 점검의 **실측 행 수** — 이월 행은 이 제출이 만든 것이 아니다.
+        const lastMeasured = lastCheck.locationBreakdown.filter(b => b.carried === false).length
         const sameMeta = lastCheck.date.getTime() === ymdToDbDate(data.date).getTime()
           && (lastCheck.memo ?? '') === (data.memo ?? '')
           && lastCheck.isReconcile === !!data.isReconcile
+          && patches.length === lastMeasured
         const allSame = sameMeta && patches.every(p => {
           const lb = lastCheck.locationBreakdown.find(b => b.storageLocationId === p.checkedLocationId)
           return lb != null && lb.remainingQty === p.afterQty && (lb.restockedQty ?? 0) === p.restockedQty && lb.carried === false

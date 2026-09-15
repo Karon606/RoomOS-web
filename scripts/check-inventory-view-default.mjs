@@ -133,9 +133,17 @@ need('보기 골격 여백이 보기 화면과 같다',
   /className="px-5 sm:px-6 pt-3 space-y-3 delayed-fallback"/.test(client) &&
   /<div className="px-5 sm:px-6 pt-3">/.test(client),
   '보기 화면은 sm 에서 24px 이고 위 여백이 pt-3 이다 — 골격이 py-4 면 로디드에서 아래로 밀린다')
-need('점검 골격에 안내문 블록이 있다',
-  /안내문 두 줄 — 실제 폼의 첫 블록이다/.test(readFileSync(CLIENT, 'utf8')),
-  '실제 폼의 첫 블록을 빼면 골격이 통째로 위로 당겨 붙는다')
+// **주석이 아니라 마크업을 겨눈다**(재검수 2026-09-16). 이 파일의 client 는 주석을 걷은 소스라,
+// 블록을 지우고 설명만 남기면 초록이 되는 축을 세우면 안 된다. 골격의 첫 블록은 안내문 두 줄
+// (h-4 + h-4 w-2/3)이고, 그 아래에 점검일 라벨(h-3 w-12)이 온다 — 그 순서를 그대로 본다.
+const checkSkeleton = fnBody(client, "function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' })")
+need('점검 골격 본문을 찾음', checkSkeleton.length > 200)
+need('점검 골격의 첫 블록이 안내문 두 줄이다',
+  /<div className={`h-4 \$\{bar\}`} \/>\s*\n\s*<div className={`h-4 w-2\/3 \$\{bar\}`} \/>[\s\S]{0,400}?<div className={`h-3 w-12 \$\{bar\}`} \/>/.test(checkSkeleton),
+  '실제 폼의 첫 블록(안내문)을 빼면 골격이 통째로 위로 당겨 붙는다')
+need('행 골격 입력칸이 실제와 같은 44px 다',
+  (checkSkeleton.match(/<div className={`h-11 \$\{bar\}`} \/>/g) ?? []).length >= 4,
+  '입력칸이 34px 모형이면 행마다 10px 씩 짧아 로디드에서 세로가 늘어난다')
 need('골격에 표시 지연이 걸려 있다',
   /delayed-fallback/.test(client),
   '300ms 안에 끝나는 전환에서 골격이 한 프레임 번쩍이면 그게 더 산만하다(§21 임계)')

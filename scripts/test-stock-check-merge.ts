@@ -250,9 +250,11 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
   eq('중복 패치: 어느 위치인지 말한다', !r.ok && 'duplicate' in r ? r.duplicate : null, A)
 }
 
-// ── 13. 실측 표식이 선 행 수 == 패치 수 (가드 우회 봉합의 장부 쪽 축) ──────────────
-// 화면이 '안 적은 행' 을 패치로 섞어 보내면 여기서 실측 행이 그만큼 는다. 값은 안 바뀌므로
-// 데이터 대조는 침묵하지만 이 축은 즉시 빨강이 된다.
+// ── 13. 실측 표식이 선 행 수 == 패치 수 ───────────────────────────────────
+// **이것은 우회 봉합의 근거가 아니다**(재검수 2026-09-16 정정). 순수 함수의 항등식이라, 화면이
+// 패치를 더 실어 보내면 실측 행도 같이 늘어 이 축은 그대로 초록이다. 우회를 막는 것은 화면 쪽
+// 구조(entered 집합)이고 그 그물은 check-draft-lifecycle ⑨ 에 있다. 여기서 지키는 것은 **접기가
+// 패치 밖의 행을 실측으로 뒤집지 않는다** 는 것 — 서버 쪽 결함(이월 행을 실측으로 찍는 변경)을 잡는다.
 {
   const base: LocBreakdown[] = [{ locationId: H, qty: 12 }, { locationId: A, qty: 2 }, { locationId: B, qty: 1 }]
   const r = applyLocationChecks(base, [patch({ checkedLocationId: A, afterQty: 6, restockedQty: 4 })])

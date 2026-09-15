@@ -578,6 +578,9 @@ need('멱등창이 날짜·메모·보정 여부도 본다',
 need('멱등창이 그 행이 실측인지도 본다',
   /lb\.carried === false/.test(serverPatches),
   "이월(파생) 행은 '방금 내가 실측으로 쓴 그 행' 이 아니다")
+need('멱등창이 패치 개수까지 본다',
+  /patches\.length === lastMeasured/.test(serverPatches),
+  'every 는 진부분집합에도 참이다 — 칸 하나를 지우고 다시 저장하면 전부 일치로 읽혀 통째로 삼켜진다')
 need('삼킨 저장은 표식을 달고 돌아온다',
   /return \{ ok: true, id: lastCheck\.id, deduped: true \}/.test(serverPatches),
   '호출부가 이 표식을 봐야 §16 적용취소를 안 붙인다')
@@ -585,21 +588,64 @@ need('복수 패치의 순서·중복을 서버가 지킨다',
   /const ordered = \[\.\.\.patches\]\.sort\(/.test(merge) && /return \{ ok: false, duplicate: p\.checkedLocationId \}/.test(merge),
   "'허브는 맨 뒤' 는 장부의 정합 조건이지 호출부의 예의가 아니다 — 먼저 쓰면 그 실측 위에서 또 차감된다")
 
-// ── 가드 우회 봉합 — 프리필이 state 가 아니라 **조립부**로 숨어드는 길 ─────────────────
-// 검수가 설계한 우회: `useState({})` 는 그대로 두고 buildLocationPatches 안에서 빈 칸을 직전값으로
-// 채우면 위 22축이 전부 초록인 채 **안 센 위치가 전부 실측 패치로 나간다**. 값은 안 바뀌므로
-// 데이터 대조도 침묵한다. 그래서 '안 적은 행은 패치에 안 실린다' 를 조립부에서 직접 본다.
+// ── 가드 우회 봉합 — '적었다' 를 값이 아니라 **집합**으로 든다 ─────────────────────────
+// 검수가 설계한 변형 둘. ⓐ `useState({})` 는 두고 buildLocationPatches 안에서 빈 칸을 직전값으로
+// 채운다. ⓑ 더 나쁜 것 — **드래프트 복원 이펙트**에서 beforeOv 를 프리필로 채워 setBeforeQtys 로
+// 민다. 둘 다 위 축들이 전부 초록인 채 안 센 위치가 실측 패치로 나가고, ⓑ 는 부수로 hubMeasured 가
+// 항상 참이 되어 **허브 부족 게이트까지 통째로 꺼진다**. 값은 안 바뀌므로 데이터 대조도 침묵한다.
+//
+// 봉합은 정규식을 늘리는 쪽이 아니라 **구조**다. '적었다' 는 사실을 값과 따로 든 집합(entered)이
+// 말하고, 그 집합을 채우는 자리는 onChange 와 드래프트 복원 둘뿐이며, 복원조차 병합 결과가 아니라
+// **서버 문서의 키**(draftedIds)에서만 가져온다. 그러면 프리필이 어느 자리로 숨어도 집합이 안 늘고
+// 패치 수도 안 는다. 아래 축들은 그 구조가 서 있는지를 본다.
+need("'적었다' 를 값과 따로 든 집합이 있다",
+  /const \[entered, setEntered\] = useState<Set<string>>\(new Set\(\)\)/.test(itemForm) &&
+  /const markEntered = \(id: string\) =>/.test(itemForm),
+  "'문자열이 비었는가' 로 물으면 프리필이 어느 자리로 숨어도 그 값이 실측 패치로 나간다")
+need('그 집합을 채우는 자리가 둘뿐이다',
+  (itemForm.match(/setEntered\(/g) ?? []).length === 2,
+  'onChange(markEntered)와 드래프트 복원 — 세 번째 자리가 생기면 그것이 다음 우회로가 된다')
+need('복원이 **서버 문서의 키**에서만 가져온다',
+  /const draftedIds = new Set<string>\(\)/.test(itemForm) &&
+  /for \(const dr of drafts\) if \(dr\.locationId != null\) draftedIds\.add\(dr\.locationId\)/.test(itemForm) &&
+  /setEntered\(new Set\(\[\.\.\.draftedIds\]\.filter\(/.test(itemForm),
+  '병합 결과(beforeOv)에서 가져오면 그 앞에 끼워 넣은 프리필이 그대로 집합을 불린다')
 const buildPatches = fnBody(itemForm, '  const buildLocationPatches = (): LocCheckPatch[] => {')
 need('패치 조립부를 찾음', buildPatches.length > 200)
-need('안 적은 비허브 행은 패치에 안 실린다',
-  /if \(beforeStr === '' && afterStr === ''\) continue/.test(buildPatches),
+need('조립부의 술어가 그 집합이다',
+  /if \(!entered\.has\(l\.id\)\) continue/.test(buildPatches),
   '안 적은 행을 실으면 아무도 안 센 값이 실측 선언(carried:false)으로 장부에 박혀 그 위치의 전파가 영구히 멈춘다')
-need('안 적은 허브 행도 패치에 안 실린다',
+need('허브 실측 판정도 그 집합을 본다',
+  /const hubMeasured = hubLoc \? entered\.has\(hubLoc\.id\) &&/.test(itemForm),
+  '값으로만 물으면 프리필 하나로 허브 부족 게이트가 통째로 꺼진다')
+need('과잉 입고 신호도 그 집합을 본다',
+  /restockMode \? entered\.size > 0 :/.test(itemForm),
+  '값으로 물으면 아무것도 안 적었는데 경고가 뜬다')
+need('안 적은 허브 행은 패치에 안 실린다',
   /if \(hubLoc && hubMeasured\)/.test(buildPatches),
   '허브를 안 적었으면 서버가 차감한 파생값을 이월로 남긴다 — 실측으로 박으면 안 된다')
 need('조립부가 직전값(prevMap)을 끌어다 쓰지 않는다',
   !/prevMap/.test(buildPatches),
   '프리필이 state 에서 조립부로 자리만 옮긴 우회다 — 빈칸이 정본이라는 규칙은 저장 직전까지 살아야 한다')
+// ④의 허브 제외 가지는 지금 닿지 않는다 — 지키는 것은 '분기가 있는가' 가 아니라 **두 조건이 배타인가** 다.
+need('허브 패치 조건과 부족 게이트 조건이 배타다',
+  /allowHubClamp: hubMeasured/.test(itemForm) && /if \(hubLoc && hubMeasured\)/.test(buildPatches),
+  '허브를 적으면 게이트가 꺼지고, 게이트가 서면 허브 패치가 없다 — 이 배타가 깨지면 이동 뒤 재저장의 허브 제외 가지가 살아나야 한다')
+need('재시도가 saveArgs 의 clamp 를 덮지 않는다',
+  /allowHubClamp: saveArgs\.allowHubClamp \|\| !!o\.allowHubClamp/.test(itemForm),
+  "팝업의 '옮겨서 채우기' 는 그 인자를 안 넘긴다 — 그대로 펴면 undefined 가 saveArgs 값을 덮는다")
+// 차단 A — 팝업의 두 성공 토스트도 같은 규칙을 탄다.
+const hubDialog = topFn(client, 'function HubShortDialog({ pending, onResolved, onExit }')
+need('허브 부족 팝업을 찾음', hubDialog.length > 1000)
+need('팝업의 retry 가 deduped 를 읽을 수 있다',
+  /retry: \(opts: \{ allowHubClamp\?: boolean; excludeLocationIds\?: string\[\] \}\) => Promise<\{ ok: true; id: string; deduped\?: boolean \}/.test(client),
+  '타입에 없으면 읽을 수조차 없어 같은 결함이 이 두 자리에 남는다')
+need('삼켜진 재저장은 보충 점검을 적용취소 대상에서 뺀다',
+  /const undoIds = res\.deduped \? \[\.\.\.moves\]\.reverse\(\) : \[restockId, \.\.\.\[\.\.\.moves\]\.reverse\(\)\]/.test(hubDialog),
+  '그 id 는 이 제출의 결과가 아니라 20초 안에 있던 다른 저장이다 — 지우면 남의 기록을 지운다')
+need('강행 저장 토스트도 같은 규칙이다',
+  /pushToast\('success', '부족한 채로 저장했습니다', res\.deduped/.test(hubDialog),
+  '두 자리 중 하나만 고치면 다른 경로로 같은 사고가 난다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

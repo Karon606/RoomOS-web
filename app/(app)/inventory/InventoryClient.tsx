@@ -432,7 +432,10 @@ type HubShortPending = {
   info: HubShortResponse
   // allowHubClamp:true 면 강행 저장, 아니면 이동으로 허브를 채운 뒤 재저장. 성공 시 새 점검 id 반환.
   // excludeLocationIds — 경로 B 에서 이동 출처 위치를 절대 locationQtys 에서 제거해 유령 재고(총량 과다) 방지.
-  retry: (opts: { allowHubClamp?: boolean; excludeLocationIds?: string[] }) => Promise<{ ok: true; id: string } | { ok: false; error: string } | HubShortResponse>
+  // deduped — 20초 멱등창이 이 재저장을 중복으로 보고 **새 점검을 만들지 않았다**. 그때 돌아온 id 는
+  // 이 제출의 결과가 아니라 20초 안에 있던 다른 저장이라, 팝업의 두 성공 토스트도 적용취소를 안 붙인다
+  // (재검수 2026-09-16 — L2 가 닫은 결함이 이 두 자리에 그대로 남아 있었다).
+  retry: (opts: { allowHubClamp?: boolean; excludeLocationIds?: string[] }) => Promise<{ ok: true; id: string; deduped?: boolean } | { ok: false; error: string } | HubShortResponse>
 }
 
 
@@ -3511,9 +3514,18 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   // 채운 후만 입력하고 채우기 전을 비운 경우 빈칸은 0 이다(운영자 확정 2026-09-01) — 옮김량 = 채운 후 전체.
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
-  // 허브 실측 여부 = beforeQtys[허브] 가 비어 있지 않은가. 따로 든 플래그(hubTouched)는 폐기했다 —
-  // 같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다.
-  const hubMeasured = hubLoc ? (beforeQtys[hubLoc.id] ?? '') !== '' : false
+  // **적었다는 사실을 값과 따로 든다**(재검수 2026-09-16 우회 봉합). '문자열이 비었는가' 로
+  // 판정하면 프리필이 어느 자리로 숨어들든 — state 초기값이든 조립부든 **드래프트 복원 이펙트든** —
+  // 그 값이 그대로 실측 패치로 나가고, 부수로 hubMeasured 가 항상 참이 되어 허브 부족 게이트까지
+  // 통째로 꺼진다. 값은 안 바뀌므로 데이터 대조도 침묵한다.
+  // 이 집합을 채우는 자리는 **둘뿐**이다 — 입력칸의 onChange(markEntered)와 드래프트 복원.
+  // 복원조차 병합 결과가 아니라 **서버 문서의 키**(draftedIds)에서만 가져온다. 그래서 어느 자리에
+  // 프리필을 넣어도 이 집합은 안 늘고, 패치 수도 안 는다.
+  const [entered, setEntered] = useState<Set<string>>(new Set())
+  const markEntered = (id: string) => setEntered(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
+  // 허브 실측 여부 — 적은 적이 있고 그 칸이 비어 있지 않을 때만 참. 따로 든 플래그(hubTouched)는
+  // 폐기했다(같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다).
+  const hubMeasured = hubLoc ? entered.has(hubLoc.id) && (beforeQtys[hubLoc.id] ?? '') !== '' : false
   // (품목, 위치) 행 캡션의 기준값 — 어느 숫자가 임시저장본인지 행마다 말한다(위치 패널과 같은 문법).
   const [rowDrafts, setRowDrafts] = useState<Record<string, { savedAt: number; before: string; after: string }>>({})
 
@@ -3555,6 +3567,12 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       // 두 모드(아이템별/위치별)에서 임시저장한 값이 폼에 함께 반영되도록.
       // **허브 특례는 없다** — 두 화면 모두 허브를 before 에 묶으므로 키가 그대로 맞아떨어진다.
       // 다만 **옛 문서**는 양쪽 다 허브 값을 after 에 들고 있어서, 읽는 자리마다 hubDraftToBefore 를 지난다.
+      // **'적었다' 의 근거는 서버 문서의 키뿐이다**(우회 봉합). 아래 병합 결과(beforeOv/afterOv)가
+      // 아니라 문서에서 직접 모은다 — 병합 뒤에 프리필을 끼워 넣어도 이 집합은 안 늘어난다.
+      const draftedIds = new Set<string>()
+      for (const id of Object.keys(main?.beforeQtys ?? {})) draftedIds.add(id)
+      for (const id of Object.keys(main?.afterQtys ?? {})) draftedIds.add(id)
+      for (const dr of drafts) if (dr.locationId != null) draftedIds.add(dr.locationId)
       const beforeOv: Record<string, string> = { ...(main?.beforeQtys ?? {}) }
       const afterOv:  Record<string, string> = { ...(main?.afterQtys ?? {}) }
       // 구 문서 호환(아이템별 문서) — 허브 입력이 '채운 후'에 묶여 있던 시절의 드래프트.
@@ -3585,6 +3603,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       }
       if (Object.keys(beforeOv).length) setBeforeQtys(prev => ({ ...prev, ...beforeOv }))
       if (Object.keys(afterOv).length)  setAfterQtys(prev => ({ ...prev, ...afterOv }))
+      // 복원한 행만 '적은 행' 으로 친다 — 키는 위에서 문서에서 직접 모은 것이고, 값이 빈 행은 뺀다.
+      setEntered(new Set([...draftedIds].filter(id => (beforeOv[id] ?? '') !== '' || (afterOv[id] ?? '') !== '')))
       // 행 배지는 **값이 든 행에만** 선다 — 저장 경로(handleSaveDraft)가 빈 행을 거르는 것과 같은
       // 규칙이다. 안 거르면 빈 칸 위에 '임시저장 HH:MM' 이 뜨고, 그 행을 처음 적는 순간 '수정됨'
       // 으로 바뀐다(검수 지적 2026-09-16 — 두 경로가 갈려 있었다).
@@ -3666,12 +3686,15 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
 
   // 저장 패치 — 서버(applyLocationChecks)가 이 순서대로 접는다. **비허브 먼저, 허브는 맨 뒤**다
   // (허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 위치 패널 buildUnits 와 같은 규칙).
-  // 안 적은 행은 패치에 안 실린다 — 서버가 base(직전 점검)에서 그대로 이월한다.
+  // **술어는 `entered` 집합 하나다** — '문자열이 비었는가' 로 물으면 어느 자리에 프리필이 숨어들든
+  // 안 센 행이 실측 패치로 나간다(우회 봉합 2026-09-16). 값이 비었는지는 그 뒤의 좁히기일 뿐이다
+  // (적었다가 지운 칸은 '안 셌다' 로 본다 — 서버가 직전값을 그대로 이월한다).
   const buildLocationPatches = (): LocCheckPatch[] => {
     const patches: LocCheckPatch[] = []
     const hubId = hubLoc?.id ?? null
     for (const l of chkLocations) {
       if (l.isHub) continue
+      if (!entered.has(l.id)) continue
       const beforeStr = beforeQtys[l.id] ?? ''
       const afterStr  = afterQtys[l.id] ?? ''
       if (beforeStr === '' && afterStr === '') continue
@@ -3706,10 +3729,9 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   // 수령 확인·무상 입수 기록이 빠졌다는 신호다. 판정 정본은 lib/stockLedger overbookExcess.
   // 안내 전용(자동 수정 없음). 무언가 입력한 뒤에만, 직전 점검이 있을 때만 — 첫 점검은
   // 시작 재고 선언이라 장부(0 또는 구매 합)보다 큰 것이 정상이다.
+  // 여기도 '적었는가' 는 집합이 말한다 — 값으로 물으면 프리필이 그대로 과잉 입고 신호를 켠다.
   const enteredAny = hasLocations
-    ? (restockMode
-        ? Object.values(beforeQtys).some(v => v !== '') || Object.values(afterQtys).some(v => v !== '')
-        : touched.size > 0)
+    ? (restockMode ? entered.size > 0 : touched.size > 0)
     : qty !== ''
   const measuredTotal = hasLocations ? computed : (Number(qty) || 0)
   const overbook = hasPriorCheck && currentStock != null && enteredAny
@@ -3792,6 +3814,16 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
               // 허브 부족 — 이동 유도 팝업으로 넘긴다. 재저장 시 **이동 출처 위치와 허브 패치를 함께** 뺀다.
               // 출처 위치는 이동 점검이 이미 새 잔량을 썼고, **허브 패치는 이동 전에 센 값**이라
               // 그대로 다시 보내면 방금 옮겨 온 양이 덮여 사라진다(검수 재현 B, 2026-09-16).
+              //
+              // 허브 제외 가지는 **지금은 닿지 않는다**(재검수 2026-09-16 지적). 허브 패치가 실리는
+              // 조건은 `hubMeasured` 참이고, 이 자리(HUB_SHORT)가 서는 조건은 `allowHubClamp` 가
+              // falsy — 곧 `hubMeasured` 거짓이라 **두 조건이 배타**다. 그래도 지우지 않는다. 술어가
+              // 바뀌는 날(예: 허브 실측이 있어도 게이트를 켜기로 하면) 이 가지가 없으면 옮겨 온 양이
+              // 조용히 증발한다. 그물은 '분기가 있는가' 가 아니라 **'두 조건이 배타인가'** 를 지킨다.
+              //
+              // allowHubClamp 는 `o.allowHubClamp` 가 아니라 **saveArgs 값과 OR** 로 넘긴다. 팝업의
+              // '옮겨서 채우기' 는 그 인자를 안 넘겨 undefined 라, 그대로 펴면 saveArgs 의 값이 덮여
+              // 사라진다(지금은 배타라 티가 안 나지만 술어가 바뀌면 조용히 틀어진다).
               setHubShort({
                 trackedItemId: item.id, itemLabel: stuckName, unit: stockUnit, info: res,
                 retry: (o) => {
@@ -3799,7 +3831,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                   const moved = exclude.size > 0
                   const patches = saveArgs.locationPatches.filter(p =>
                     !exclude.has(p.checkedLocationId) && !(moved && hubLoc != null && p.checkedLocationId === hubLoc.id))
-                  return createStockCheck({ ...saveArgs, locationPatches: patches, allowHubClamp: o.allowHubClamp })
+                  return createStockCheck({ ...saveArgs, locationPatches: patches, allowHubClamp: saveArgs.allowHubClamp || !!o.allowHubClamp })
                 },
               })
               return
@@ -3898,7 +3930,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                 </div>
                 {/* 참고줄 — 입력 중에도 저장된 잔량·저장된 옮김이 계속 보이게. 축을 '저장본'과
                     '이번 입력'으로 갈라 같은 +N 이 한 줄에 두 번 뜨지 않게 한다. */}
-                {(prevQty !== undefined || (lastRestocked != null && lastRestocked > 0) || (!rowIsHub && !!hubStock) || restocked > 0 || (rowIsHub && restockSum > 0)) && (
+                {(prevQty !== undefined || (lastRestocked != null && lastRestocked > 0) || (!rowIsHub && !!hubStock) || restocked > 0) && (
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                     {prevQty !== undefined && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prevQty}{stockUnit ?? ''}</strong></span>}
                     {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
@@ -3914,7 +3946,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                     {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     {/* 허브를 안 적으면 서버가 옮김 합만큼 깎는다 — 그 파생값을 미리 말해 준다.
                         적는 순간 사라진다(적은 값이 그 자리의 진실이 되므로). */}
-                    {rowIsHub && restockSum > 0 && !hubMeasured && (
+                    {rowIsHub && restockSum > 0 && beforeStr === '' && prevQty !== undefined && (
                       <span className="text-[var(--coral)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, hubPrev - restockSum) * 100) / 100}{stockUnit ?? ''}</strong></span>
                     )}
                   </div>
@@ -3939,14 +3971,14 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
                     <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                       value={beforeStr}
-                      onChange={e => setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }}
                       className={qtyInputCls} />
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                     {/* 참고줄의 '저장된 잔량' 과 같은 축의 말이다 — 채워 넣는 값이 그것이다.
                         글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
                     {prevQty !== undefined && (
                       <button type="button"
-                        onClick={() => setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) }))}
+                        onClick={() => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) })) }}
                         className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                         저장된 값
                       </button>
@@ -3960,14 +3992,14 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                         <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
                         <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                           value={beforeStr}
-                          onChange={e => setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                          onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }}
                           className={qtyInputCls} />
                       </div>
                       <div>
                         <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
                         <input type="text" inputMode="decimal" autoComplete="off"
                           value={afterStr}
-                          onChange={e => setAfterQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                          onChange={e => { markEntered(loc.id); setAfterQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }}
                           className={qtyInputCls} />
                       </div>
                     </div>
@@ -3976,6 +4008,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                     <div className="flex justify-end mt-1">
                       <button type="button"
                         onClick={() => {
+                          markEntered(loc.id)
                           if (beforeStr !== '') setAfterQtys(p => ({ ...p, [loc.id]: beforeStr }))
                           else if (prevQty !== undefined) {
                             const v = String(prevQty)
@@ -4392,13 +4425,17 @@ function HubShortDialog({ pending, onResolved, onExit }: {
         })
         return
       }
-      // 성공 — 이동 + 보충 통합 적용취소(LIFO: 보충 먼저, 이동 나중)
+      // 성공 — 이동 + 보충 통합 적용취소(LIFO: 보충 먼저, 이동 나중).
+      // **삼켜진 제출(deduped)이면 보충 점검은 내 것이 아니다** — 지우면 남의 저장을 지운다.
+      // 이동은 내가 방금 만든 것이 맞으므로 그것만 되돌린다(적용취소 자체를 없애지는 않는다).
       const restockId = res.id
       const moves = [...transferChecksRef.current]
+      const undoIds = res.deduped ? [...moves].reverse() : [restockId, ...[...moves].reverse()]
       pushToast('success', '옮기고 채움 완료', {
+        ...(res.deduped ? { detail: '보충은 방금 저장한 것과 같은 내용이라 기존 기록을 그대로 두었습니다.' } : {}),
         action: {
           label: '적용취소', run: () => { void (async () => {
-            for (const id of [restockId, ...[...moves].reverse()]) {
+            for (const id of undoIds) {
               const d = await deleteStockCheck(id)
               if (!d.ok) { pushToast('error', d.error); return }
             }
@@ -4418,9 +4455,10 @@ function HubShortDialog({ pending, onResolved, onExit }: {
       const res = await pending.retry({ allowHubClamp: true, excludeLocationIds: movedFromIdsRef.current })
       if (!res.ok) { pushToast('error', res.error ?? '저장 중 오류가 발생했습니다'); return }
       const restockId = res.id
-      pushToast('success', '부족한 채로 저장했습니다', {
-        action: { label: '적용취소', run: () => { void deleteStockCheck(restockId).then(d => { if (d.ok) pushToast('info', '저장을 적용취소했습니다'); else pushToast('error', d.error) }) } },
-      })
+      // 삼켜진 제출이면 되돌릴 내 저장이 없다 — 적용취소를 붙이지 않고 무엇이 일어났는지만 말한다.
+      pushToast('success', '부족한 채로 저장했습니다', res.deduped
+        ? { detail: '방금 저장한 것과 같은 내용이라 기존 기록을 그대로 두었습니다.' }
+        : { action: { label: '적용취소', run: () => { void deleteStockCheck(restockId).then(d => { if (d.ok) pushToast('info', '저장을 적용취소했습니다'); else pushToast('error', d.error) }) } } })
       onResolved()
     } finally { actingRef.current = false; setBusy(false) }
   }
@@ -6410,12 +6448,16 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
               min-h 에 px 을 박는 길은 안 된다 — 폭마다 줄 수가 달라 또 어긋나고, `lh` 단위는
               Firefox 111~119 미지원이라 앞선 재검수에서 이미 기각했다. 그래서 평시 문장을 **자리만
               남기고**(invisible) 그 위에 겹쳐 쓴다. 어느 폭에서도 세 상태 높이가 같다. */}
-          <div className="relative">
+          {/* overflow-hidden 은 **겹쳐 쓰기의 짝**이다(재검수 2026-09-16). 이유 문구 중
+              `전체 이름이 '…' 인 위치가 이미 있습니다` 는 사용자가 지은 이름이라 길이가 무제한이고,
+              평시 문장보다 줄이 많아지면 상자를 넘어 아래 버튼 위로 글자가 흘러 찍힌다(320px·4단
+              경로 60자에서 재현). 잘린 꼬리는 이름 일부라 판정 자체는 첫 줄에서 읽힌다. */}
+          <div className="relative overflow-hidden">
             <p className={`text-[0.65625rem] text-[var(--warm-muted)] ${locFooterMsg != null ? 'invisible' : ''}`} aria-hidden={locFooterMsg != null}>
               <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
             </p>
             {locFooterMsg != null && (
-              <p className="absolute inset-0 text-[0.65625rem] text-[var(--warm-muted)]">{locFooterMsg}</p>
+              <p className="absolute inset-0 overflow-hidden text-[0.65625rem] text-[var(--warm-muted)]">{locFooterMsg}</p>
             )}
           </div>
           <ModalFooterActions onCancel={onClose}>
