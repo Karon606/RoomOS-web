@@ -549,3 +549,22 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
       `glossary.md` 3항, `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 8. 운영자 실기 확인 3건(아래 보고서)
 - [ ] 9. 독립 디자이너 검수(시공 담당 몫 아님)
+
+### 검수 반영 (2026-09-16, 커밋 903e6528 이후)
+
+디자이너 6건 · 코드 검수 7건. 파일 범위 동일, 재고 파일 무접촉.
+
+- [x] D1. 그룹 key 충돌 — `key={g.kind === 'lease' ? g.leaseTermId : g.kind}`(property·other 가 둘 다 null)
+- [x] D2. 환경설정 문구 어미 반복·없는 이름 — `상담 도구의 문자·메일 첨부와 입주자 정보 > 서류에서 보낼 수 있습니다.`
+- [x] D3. 보조줄 링크 둘에 `min-w-[44px]`(다시 작성 41px)
+- [x] D4. `lib/docMime` LABEL·EXT 에 `image/heif` 등재(HEIC 와 같은 라벨)
+- [x] D5. 등록증 큐 항목 `dateStr` 을 `''` 로(em dash 가 파일명 접미로 새는 길)
+- [x] D6. 빈 상태·머리 판정 — EmptyState 는 계약·중립 그룹 기준, 머리는 property 그룹이 있으면 참
+- [x] C1. 미납 안내·공지 문자 발신자 둘도 정본으로(호출부 셋 → 넷, 드라이런 결함 넷이 거기서도 산다)
+- [x] C2. 그물 ⓒ 를 이름 무관 **꼴** 여덟 가지로. 새로 잡힌 rooms 9 · export 2 · TenantClient 1 등
+      실측으로 ALLOW 개수 갱신(7파일)
+- [x] C3. 그물 ⓑ 를 '호출 존재' 에서 **'결과 사용'** 으로 → 검수 우회(호출만 남김) 역주입 빨강 확인
+- [x] C4. 정본에 `id` 2차 정렬키 + 본국 폴백 안에서도 주 연락처 우선. 단언 둘 추가(21케이스)
+- [x] C5. `test-doc-bundle` 에 "문이 서는 docType ⊆ DOC_WRITE_NEW_LABEL 키" 단언(83케이스)
+- [x] C6. `check-doc-write-gate` ⓔ 완화 — 대입은 `(true|!!cert)`, 라벨은 JSX 텍스트 노드만
+- [x] C7. 시트 기기 경로 파일명이 표기를 안 따르는 것(커밋 전부터) → `knowledge/open-issues.md` 별건

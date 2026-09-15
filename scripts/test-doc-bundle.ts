@@ -8,7 +8,7 @@
 //   · 계약을 말할 수 없는 파일은 중립 그룹 — 없는 계약에 갖다 붙이지 않는다.
 
 import {
-  buildDocBundle,
+  buildDocBundle, DOC_WRITE_NEW_LABEL,
   type DocBundleFile, type DocBundleLease, type TenantDocBundle,
   type DocBundleContractVersion, type DocBundleBizCert,
 } from '../lib/docBundle'
@@ -307,6 +307,29 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
   eq('실거주 문 · 중립 그룹인가', o.groups[1].kind, 'other')
   eq('실거주 문 · 중립 그룹 실거주에는 문이 없다',
     o.groups[1].rows.find(r => r.docType === 'residence')!.canWriteNew, undefined)
+}
+
+// ── 문과 라벨의 짝 ───────────────────────────────────────────────
+//
+// 시트는 `canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType]` 일 때만 링크를 그린다.
+// 그래서 **문만 늘리고 라벨을 잊으면 링크가 소리 없이 사라진다** — 화면에는 아무 일도 안 일어나고
+// 테스트도 canWriteNew 만 보면 초록이다. 두 목록이 같은 편에 서 있는지 여기서 못 박는다.
+{
+  const all = build(
+    [lease({ id: '402' }), lease({ id: '601', roomNo: '601' })],
+    {
+      rents: [file('402', '2026-07-20'), file('601', '2026-07-20')],
+      certs: [file('402', '2026-05-10')],
+      deposits: [file('402', '2026-07-20')],
+      contracts: [file('402', '2026-07-20')],
+    },
+    ['402'],
+  )
+  const doorTypes = [...new Set(
+    all.groups.flatMap(g => g.rows).filter(r => r.canWriteNew !== undefined).map(r => r.docType),
+  )].sort()
+  eq('문 · 지금 문이 서는 종류는 납부와 실거주 둘', doorTypes, ['rent', 'residence'])
+  eq('문 · 라벨 없는 문이 없다', doorTypes.filter(t => !DOC_WRITE_NEW_LABEL[t]), [])
 }
 
 // ── 영업장 서류(사업자등록증) 그룹 (2026-09-16 운영자 결정 C) ──────────

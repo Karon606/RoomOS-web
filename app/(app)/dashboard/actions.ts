@@ -319,7 +319,20 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
       select: {
         dueDay: true,
         room: { select: { roomNo: true } },
-        tenant: { select: { name: true, contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 } } },
+        // 받는 번호 — 서류 시트 문자 탭·입주자 문자와 **같은 정본**(lib/tenantContact)이 고른다.
+        // 종전 `첫 PHONE` 은 실측에서 본국 번호와 비상 연락처를 골라 미납 안내를 엉뚱한 곳으로
+        // 보냈다(2026-09-16 드라이런 6건). 문자라 유선전화는 뺀다.
+        tenant: {
+          select: {
+            name: true,
+            contacts: {
+              select: {
+                id: true, contactType: true, contactValue: true,
+                isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+              },
+            },
+          },
+        },
       },
     })
     if (!lease) return { ok: false, error: '입주 정보를 찾을 수 없습니다.' }
@@ -331,7 +344,7 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
     const dueDayLabel = rawDue ? (/^\d+$/.test(rawDue) ? `${rawDue}일` : rawDue) : ''
     return {
       ok: true,
-      phone: lease.tenant.contacts[0]?.contactValue?.trim() || null,
+      phone: pickTenantPhone(lease.tenant.contacts, ['PHONE'])?.trim() || null,
       tenantName: lease.tenant.name,
       roomNo: lease.room?.roomNo ?? '',
       dueDayLabel,
@@ -392,7 +405,7 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
         // 서류 시트의 문자 탭과 같은 사람에게 다른 번호를 답할 수 있었다.
         contacts: {
           select: {
-            contactType: true, contactValue: true,
+            id: true, contactType: true, contactValue: true,
             isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
           },
         },

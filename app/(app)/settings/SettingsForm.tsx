@@ -2156,10 +2156,11 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           하나를 채우러 온 김에 다른 하나도 눈에 들어와야 한다(운영자 오더 2026-08-18). */}
       <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자등록증</h3>
-        {/* 보낼 수 있는 자리가 둘이 됐다(2026-09-16) — 상담 도구와 입주자 서류. 어디서 쓰이는
-            파일인지 등록하는 자리가 말해 주지 않으면 운영자가 두 화면을 각각 발견해야 한다.
-            '시트'는 개발 용어라 라벨에 안 쓴다([[doc-vocabulary]]) — 화면 제목 그대로 '입주자 서류'. */}
-        <p className="text-xs text-[var(--warm-muted)] -mt-1">이미지 또는 PDF, 4MB 이하. 상담 도구에서 문자·메일 첨부로 바로 보낼 수 있습니다. 입주자 서류에서도 함께 보낼 수 있습니다.</p>
+        {/* 보낼 수 있는 자리가 둘이 됐다(2026-09-16) — 상담 도구와 입주자 정보 > 서류. 어디서
+            쓰이는 파일인지 등록하는 자리가 말해 주지 않으면 운영자가 두 화면을 각각 발견해야 한다.
+            **두 자리를 한 문장에 넣는다** — 문장을 둘로 나누면 어미가 '보낼 수 있습니다'로 겹친다(§29).
+            '시트'는 개발 용어라 안 쓰고([[doc-vocabulary]]) 운영자가 밟는 경로를 그대로 적는다. */}
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">이미지 또는 PDF, 4MB 이하. 상담 도구의 문자·메일 첨부와 입주자 정보 &gt; 서류에서 보낼 수 있습니다.</p>
         <div className="flex items-center gap-4">
           {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
           <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">

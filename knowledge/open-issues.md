@@ -517,3 +517,23 @@ id, parentId)`) 로 갈라 그 함수를 진리표에 넣는 구조. 트리 드�
 **첫 전파에서 실측(`false`)으로 확정**한다 — 확정되는 값이 실측으로도 맞아서 사고는 안 나지만,
 '옮겨서 달라진 것' 과 '세어서 달라진 것' 이 장부에서 구별되지 않는다. 후보는 델타 표식(네 번째
 상태)이나 `StockCheckLocation` 에 이동 출처를 남기는 것. 급하지 않다.
+
+## 서류 시트의 기기 경로 파일명이 성명 표기를 안 따른다 (2026-09-16 코드 검수, 커밋 전부터)
+같은 시트에서 같은 서류를 보내는데 **파일 이름이 경로마다 갈린다.**
+
+- 메일 경로(`app/(app)/tenants/docBundle.ts` `resolveDocMailContext`)는 발급본에 박제된
+  `nameStyle` 을 읽어 `documentName(bundle.nameSource, st)` + `docFileLabel(docType, st)` 로 짓는다.
+- 기기 경로(`components/doc/TenantDocBundleSheet.tsx` `shareEntries`)는 `bundle.tenantName`
+  (한글 고정)과 `DOC_TYPE_FILE_LABEL`(한글 고정)로 짓는다.
+
+그래서 영문으로 발급한 실거주 확인서를 **메일로 보내면** `John Smith_Proof of Residence.pdf`,
+**공유·저장으로 보내면** `쩐 티 투 창_실거주확인서.pdf` 가 된다. 2026-09-03 신고가 고친 것은
+서버(메일) 쪽 한 벌뿐이고 클라이언트 쪽은 그때 손대지 않았다 — 이번 등록증 작업 이전부터 있던
+상태라 같은 커밋에 섞지 않았다(운영자 결정 B 의 "손대지 않기로 한 것" 과 같은 결).
+
+- 고치는 자리는 시트의 `shareEntries` 하나다. 행이 이미 `nameStyle` 을 들고 있고
+  (`DocBundleRow.nameStyle`) `bundle.nameSource` 도 내려와 있어 **필요한 값은 다 와 있다.**
+- 급소 — 등록증 행은 `nameStyle` 이 null 이고 이름 자리가 영업장 이름이라 그 분기를 먼저 태워야
+  한다(지금 `personName` 분기와 같은 자리).
+- 감지망 `scripts/check-doc-file-label.mjs` 는 이 자리를 **안 본다**. 그 그물은 `fileName` 이
+  적힌 줄만 훑는데 여기는 `personName`·`docLabel` 이라 이름이 다르다. 고칠 때 축을 함께 넓힌다.

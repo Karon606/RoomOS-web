@@ -16,8 +16,14 @@
 //
 // 진리표는 scripts/test-tenant-phone.ts 가 쥔다. 규칙을 고치면 거기서 먼저 빨강이 나야 한다.
 
-/** 고르는 데 필요한 최소 모양 — TenantContact 의 여섯 칸. */
+/** 고르는 데 필요한 최소 모양 — TenantContact 의 일곱 칸. */
 export type TenantPhoneContact = {
+  /**
+   * createdAt 동률의 2차 정렬키. 한 트랜잭션에서 여러 연락처를 만들면 `now()` 가 같은 값으로
+   * 박혀(실제로 입주자 등록 폼이 본인·비상·본국을 한 번에 넣는다) createdAt 만으로는 순서가
+   * 안 정해진다. 그러면 같은 사람에게 화면마다 다른 번호가 답으로 나올 수 있다.
+   */
+  id: string
   contactType: string
   contactValue: string
   isPrimary: boolean
@@ -32,22 +38,30 @@ export const PHONE_CONTACT_KINDS = ['PHONE', 'LANDLINE'] as const
 /**
  * 이 사람에게 연락할 번호 하나. 없으면 null.
  *
- * 순서는 넷이다.
+ * 순서는 다섯이다.
  *   ① 주 연락처(비상 아님 · 본국 아님 · kinds 안)
  *   ② 그 밖의 국내 번호 중 먼저 만든 것(비상 아님 · 본국 아님 · kinds 안)
- *   ③ 본국 번호 중 먼저 만든 것(비상 아님 · kinds 안) — 국내 번호가 하나도 없을 때만
- *   ④ null
+ *   ③ 본국 번호 중 **주 연락처**(비상 아님 · kinds 안) — 국내 번호가 하나도 없을 때만
+ *   ④ 그 밖의 본국 번호 중 먼저 만든 것
+ *   ⑤ null
+ *
+ * ③이 ④보다 먼저인 이유는 ①과 ②의 관계와 같다 — **운영자가 손으로 고른 것이 만든 순서보다 세다.**
+ * 본국 번호가 둘인 사람(옛 번호를 안 지우고 새 번호를 추가)에게 주 연락처 표시가 붙어 있으면
+ * 그것이 지금 닿는 번호다. 폴백 안에서만 순서가 갈리므로 국내 번호가 있는 사람은 영향이 없다.
  *
  * **인자 배열은 제자리에서 정렬하지 않는다.** 같은 배열을 화면이 다른 용도로 또 쓰는 자리가 있다.
- * 호출부의 orderBy 가 무엇이든 답이 같아야 하므로 여기서 createdAt 오름차순을 다시 세운다.
+ * 호출부의 orderBy 가 무엇이든 답이 같아야 하므로 여기서 createdAt 오름차순(동률은 id)을 다시 세운다.
  */
 export function pickTenantPhone(
   contacts: readonly TenantPhoneContact[],
   kinds: readonly string[] = PHONE_CONTACT_KINDS,
 ): string | null {
-  const byAge = [...contacts].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const byAge = [...contacts].sort((a, b) =>
+    (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   const callable = byAge.filter(c => !c.isEmergency && kinds.includes(c.contactType))
   const local = callable.filter(c => !c.isHomeCountry)
-  const hit = local.find(c => c.isPrimary) ?? local[0] ?? callable.find(c => c.isHomeCountry)
+  const home = callable.filter(c => c.isHomeCountry)
+  const hit = local.find(c => c.isPrimary) ?? local[0]
+    ?? home.find(c => c.isPrimary) ?? home[0]
   return hit?.contactValue ?? null
 }

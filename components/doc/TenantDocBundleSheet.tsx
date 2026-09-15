@@ -153,7 +153,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   }, [tenantId, preselectLeaseTermId])
 
   const rows = useMemo(() => (bundle?.groups ?? []).flatMap(g => g.rows), [bundle])
-  const hasAnyRow = rows.length > 0
+  // 빈 상태 판정은 **이 사람의 종이**로만 센다. 영업장 서류(등록증)는 누구의 시트에서나 서므로
+  // 그것까지 세면 계약이 하나도 없는 퇴실자에게 "보낼 서류가 없습니다"가 영영 안 뜨고, 머리 없는
+  // 등록증 한 줄만 덩그러니 남아 화면이 고장난 것처럼 보인다(디자이너 패스 2026-09-16).
+  const hasTenantRow = (bundle?.groups ?? []).some(g => g.kind !== 'property')
 
   const toggle = (row: DocBundleRow) => {
     const cur = pickedOf(row, pickedVersion)
@@ -188,7 +191,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         ? `${FILE_LABEL[r.docType]}(${r.versions.find(v => v.contractFileId === pickedVersion[r.key])?.purposeLabel ?? ''})`
           .replace('()', '')
         : FILE_LABEL[r.docType],
-      dateStr: fmtDateDot(p.issuedAt),
+      // 등록증에는 우리가 아는 날짜가 없다 — fmtDateDot(null) 은 em dash 를 돌려주고 그것이
+      // 파일 이름 접미로 들어갈 수 있다. 이 접미는 같은 이름이 둘 이상일 때만 쓰이는 값이라
+      // 빈 문자열이 옳다(등록증은 한 사람에 한 행이라 애초에 겹치지 않는다).
+      dateStr: r.docType === 'bizcert' ? '' : fmtDateDot(p.issuedAt),
       fetchBytes: fetchDocBytes(p.driveFileId as string),
     }))
   const mailOn = !!bundle?.mail.enabled
@@ -240,7 +246,9 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const groups = bundle?.groups ?? []
 
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
-  const showGroupTitles = groups.length > 1
+  // **영업장 서류는 그 예외다.** 그 그룹 하나만 서는 경우(계약이 없는 퇴실자)에도 머리가 있어야
+  // 그 한 줄이 이 사람의 종이가 아니라는 것을 말한다. 위 EmptyState 와 한 묶음이다.
+  const showGroupTitles = groups.length > 1 || groups.some(g => g.kind === 'property')
 
   // 제목이 '서류 보내기'가 아닌 이유. 이 시트는 보관본을 보내기만 하던 자리였는데, 프리즘 하단의
   // 발급 버튼 셋을 여기로 접으면서(2026-08-29) 미발급 행의 '작성'이 유일한 발급 문이 됐다.
@@ -354,12 +362,15 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 
         {!bundle && !failed && <SkeletonRows rows={4} />}
         {failed && <p className="text-xs text-[var(--danger-fg)]">서류 목록을 불러오지 못했습니다.</p>}
-        {bundle && !hasAnyRow && (
+        {bundle && !hasTenantRow && (
           <EmptyState title="보낼 서류가 없습니다" description="계약이 진행되면 여기에 서류 칸이 생깁니다." />
         )}
 
+        {/* key 에 leaseTermId 를 그대로 쓰면 안 된다 — 영업장 서류 그룹과 중립 그룹이 **둘 다**
+            null 이라 형제 둘의 key 가 겹친다(재렌더마다 리마운트, 포커스 소실). 계약 그룹만
+            계약 id 를 쓰고 나머지는 그룹 종류가 곧 유일한 이름이다(각각 최대 하나). */}
         {groups.map(g => (
-          <div key={g.leaseTermId ?? 'other'}>
+          <div key={g.kind === 'lease' ? g.leaseTermId : g.kind}>
             {showGroupTitles && <SectionHeader first={g === groups[0]} name={groupName(g)} />}
             <ul className="space-y-1.5">
               {g.rows.map(r => (
@@ -550,7 +561,7 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
           {row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType] && (
             <div className="mt-0.5">
               <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
-                className="-my-2 inline-flex min-h-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                className="-my-2 inline-flex min-h-[44px] min-w-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                 {DOC_WRITE_NEW_LABEL[row.docType]}
               </a>
             </div>
@@ -573,7 +584,7 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
               </span>
               <button type="button"
                 onClick={e => { e.stopPropagation(); onChangeVersion() }}
-                className="-my-2 inline-flex min-h-[44px] shrink-0 items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                className="-my-2 inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                 판본 바꾸기
               </button>
             </div>

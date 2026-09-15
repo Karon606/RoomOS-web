@@ -112,10 +112,10 @@ Section h3(12px)보다 카드 헤더(14px)가 커 위계가 뒤집히고, Sectio
 
 ## 감지망
 
-- `scripts/test-doc-bundle.ts` 81 케이스 — 문 판정(stale·납부·종류·단기·실거주 상시)과 선납
-  귀속월, 영업장 서류 그룹(무회귀·한 행·미등록·형식).
-- `scripts/test-tenant-phone.ts` 18 케이스 — 서류·문자가 고르는 번호(주 연락처·본국 폴백·비상 제외).
-- `scripts/check-tenant-phone-axis.mjs` — 번호 고르기 손사본 금지, 아직 안 옮긴 자리는 수까지 적은 예외.
+- `scripts/test-doc-bundle.ts` 83 케이스 — 문 판정(stale·납부·종류·단기·실거주 상시)과 선납
+  귀속월, 영업장 서류 그룹(무회귀·한 행·미등록·형식), 문과 라벨의 짝.
+- `scripts/test-tenant-phone.ts` 21 케이스 — 서류·문자가 고르는 번호(주 연락처·본국 폴백·비상 제외·createdAt 동률).
+- `scripts/check-tenant-phone-axis.mjs` — 정본 호출부 넷이 **결과를 쓰는가**(호출만 남기는 우회 차단), 정본 밖 손사본 꼴 여덟 가지 금지, 아직 안 옮긴 일곱 파일은 수까지 적은 예외.
 - `scripts/test-doc-history.ts` 14 케이스 — 이력 정렬(안정 정렬 포함)과 보조 문구.
 - `scripts/check-doc-write-gate.mjs` — 실입금 술어 사본 금지, 문 판정이 정본에만(납부·실거주 둘 다),
   stale 이 귀속월, 보조 문구·문 라벨 상수 하나. 두 기능이 갈라지는 지점이 판정 사본이다.

@@ -22,7 +22,10 @@ function eq(name: string, actual: unknown, expected: unknown) {
 }
 
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`)
+let seq = 0
 const c = (o: Partial<TenantPhoneContact> & { contactValue: string }): TenantPhoneContact => ({
+  // id 는 안 주면 만든 순서대로 매긴다 — 동률 케이스만 직접 지정한다.
+  id: `c${String(++seq).padStart(3, '0')}`,
   contactType: 'PHONE', isPrimary: false, isEmergency: false, isHomeCountry: false,
   createdAt: D('2026-01-01'), ...o,
 })
@@ -68,6 +71,14 @@ const c = (o: Partial<TenantPhoneContact> & { contactValue: string }): TenantPho
     c({ contactValue: '+7-900-000-0001', isHomeCountry: true, createdAt: D('2026-02-01') }),
   ]
   eq('본국 · 둘이면 먼저 만든 것', pickTenantPhone(list), '+7-900-000-0001')
+}
+{
+  // 폴백 안에서도 손으로 고른 것이 만든 순서보다 세다(①과 ②의 관계를 그대로 옮긴다).
+  const list = [
+    c({ contactValue: '+7-900-000-0001', isHomeCountry: true, createdAt: D('2026-02-01') }),
+    c({ contactValue: '+7-900-000-0002', isHomeCountry: true, isPrimary: true, createdAt: D('2026-06-01') }),
+  ]
+  eq('본국 · 주 연락처가 있으면 그것', pickTenantPhone(list), '+7-900-000-0002')
 }
 
 // ── 비상 연락처는 어떤 경우에도 안 잡는다 ────────────────────────
@@ -124,6 +135,15 @@ const c = (o: Partial<TenantPhoneContact> & { contactValue: string }): TenantPho
   const b = c({ contactValue: '010-2222-2222', createdAt: D('2026-05-01') })
   eq('안정성 · 입력 순서가 바뀌어도 같은 답 (1)', pickTenantPhone([a, b]), '010-1111-1111')
   eq('안정성 · 입력 순서가 바뀌어도 같은 답 (2)', pickTenantPhone([b, a]), '010-1111-1111')
+}
+{
+  // createdAt 동률 — 입주자 등록 폼이 본인·비상·본국을 한 트랜잭션에 넣으면 실제로 같은 값이
+  // 박힌다. 2차 키가 없으면 DB 가 돌려주는 순서에 답이 끌려간다.
+  const same = D('2026-04-01')
+  const a = c({ id: 'z-late', contactValue: '010-8888-8888', createdAt: same })
+  const b = c({ id: 'a-early', contactValue: '010-7777-7777', createdAt: same })
+  eq('동률 · id 오름차순이 가른다 (1)', pickTenantPhone([a, b]), '010-7777-7777')
+  eq('동률 · 입력 순서가 바뀌어도 같은 답 (2)', pickTenantPhone([b, a]), '010-7777-7777')
 }
 {
   // 호출부가 넘긴 배열을 뒤집지 않는다 — 같은 배열을 다른 용도로 또 쓰는 자리가 있다.

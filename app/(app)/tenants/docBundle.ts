@@ -61,7 +61,7 @@ export async function getTenantDocBundle(
       // 본국 번호는 마지막 폴백). 종전 `첫 PHONE` 은 주 연락처로 찍어 둔 번호를 무시했다.
       contacts: {
         select: {
-          contactType: true, contactValue: true,
+          id: true, contactType: true, contactValue: true,
           isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
         },
       },

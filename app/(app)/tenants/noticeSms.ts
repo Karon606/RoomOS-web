@@ -6,6 +6,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
+import { pickTenantPhone } from '@/lib/tenantContact'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -65,7 +66,14 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
         tenant: {
           select: {
             name: true, gender: true, nationality: true, smoking: true, job: true, isBasicRecipient: true,
-            contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 },
+            // 받는 번호 — 형제 문자 셋과 **같은 정본**(lib/tenantContact)이 고른다. 종전
+            // `첫 PHONE` 은 본국 번호·비상 연락처를 골랐다(2026-09-16 드라이런). 문자라 유선 제외.
+            contacts: {
+              select: {
+                id: true, contactType: true, contactValue: true,
+                isPrimary: true, isEmergency: true, isHomeCountry: true, createdAt: true,
+              },
+            },
           },
         },
       },
@@ -86,7 +94,7 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
         leaseTermId: l.id,
         name: l.tenant.name,
         roomNo: l.room!.roomNo,
-        phone: l.tenant.contacts[0]?.contactValue?.trim() || null,
+        phone: pickTenantPhone(l.tenant.contacts, ['PHONE'])?.trim() || null,
         floor: (l.room!.floor ?? '').trim() || deriveFloor(l.room!.roomNo),
         windowType: l.room!.windowType,
         direction: l.room!.direction?.trim() || null,

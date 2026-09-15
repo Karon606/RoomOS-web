@@ -98,7 +98,8 @@ const CONSUMERS = ['app/rent-receipt/[tenantId]/actions.ts', 'app/(app)/tenants/
 //    계약인지 말할 수 없는 행이 작성 화면을 열고 도착 화면이 엉뚱한 계약을 추론한다.
 {
   const bundle = strip(read(BUNDLE))
-  if (!/if \(cert\) certRow\.canWriteNew = true/.test(bundle)) {
+  // 대입 꼴을 글자 그대로 요구하면 `!!cert` 로 바꾸는 것만으로 그물이 눈을 감는다 — 값만 본다.
+  if (!/canWriteNew\s*=\s*(?:true|!!cert)\b/.test(bundle)) {
     violations.push(`${BUNDLE} — 실거주 '다시 작성' 문을 정본이 안 세운다. 화면이 세우면 중립 그룹 행에도 문이 선다.`)
   }
   if (!/export const DOC_WRITE_NEW_LABEL\b/.test(bundle)) {
@@ -108,9 +109,11 @@ const CONSUMERS = ['app/rent-receipt/[tenantId]/actions.ts', 'app/(app)/tenants/
   if (!/DOC_WRITE_NEW_LABEL\[row\.docType\]/.test(sheet)) {
     violations.push(`${SHEET} — 문 라벨을 정본 상수에서 안 읽는다.`)
   }
+  // **JSX 텍스트 노드만 본다.** 단순 포함 검사는 주석·설명 문장에도 걸려, 이 파일이 규칙을
+  // 설명하는 것만으로 붉게 서고 그러면 다음 사람이 설명을 지운다(그물이 문서를 몰아내면 안 된다).
   for (const lit of ['이번 달 확인서 작성', '다시 작성']) {
-    if (sheet.includes(lit)) {
-      violations.push(`${SHEET} — 문 라벨 '${lit}' 을 리터럴로 적었다. DOC_WRITE_NEW_LABEL 을 쓴다.`)
+    if (new RegExp(`>\\s*${lit}\\s*<`).test(sheet)) {
+      violations.push(`${SHEET} — 문 라벨 '${lit}' 을 리터럴로 그렸다. DOC_WRITE_NEW_LABEL 을 쓴다.`)
     }
   }
 }

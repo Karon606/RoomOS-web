@@ -27,15 +27,21 @@ const LABEL: Record<string, string> = {
   'image/png': 'PNG',
   'image/webp': 'WebP',
   'image/heic': 'HEIC',
+  // 같은 HEIF 컨테이너인데 판정하는 쪽에 따라 이름이 갈린다 — 아이폰 사진을 Drive 가
+  // image/heif 로 적어 두면 저장값을 읽는 자리(사업자등록증 보조줄)가 '파일'로 찍혔다.
+  'image/heif': 'HEIC',
   'image/gif': 'GIF',
 }
 
+// **순서가 뜻이 있다.** guessDocMimeByName 이 값으로 되찾을 때 먼저 선 항목이 이긴다 —
+// 'heic' 확장자는 image/heic 로 돌아가야 한다(image/heif 는 저장값으로만 들어온다).
 const EXT: Record<string, string> = {
   'application/pdf': 'pdf',
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
   'image/heic': 'heic',
+  'image/heif': 'heic',
   'image/gif': 'gif',
 }
 
