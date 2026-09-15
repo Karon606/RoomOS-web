@@ -325,15 +325,26 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
   const [showBatchLoc, setShowBatchLoc]     = useState(false)
-  // 점검 진입 방식 — 'item'(품목별 목록) / 'location'(위치별 일괄). 마지막 선택 기억.
-  // 초기값은 서버와 동일하게 'item' 고정, 저장된 선택은 마운트 후 복원 — useState에서 localStorage를
-  // 읽으면 서버 HTML(item)과 클라 첫 렌더(location)가 어긋나 하이드레이션 #418(오류신고 5489fac1).
-  const [viewMode, setViewMode] = useState<'item' | 'location'>('item')
+  // 점검 진입 방식 — 'location'(위치별 일괄, 기본) / 'item'(품목별 목록). 마지막 선택 기억.
+  // 딥링크로 들어온 회차만 'item' 이다. ?focus= 는 종 알림(수령 대기·소진 임박)이 보내는
+  // 섹션인데 그 섹션은 아이템별 분기 안에만 있고, ?q= 는 통합검색이 품목을 찾아 보낸 것이다.
+  // 초기값 식은 서버·클라가 같다 — 서버도 같은 URL 을 보므로 첫 렌더가 어긋나지 않는다.
+  // useState 에서 localStorage 를 읽으면 서버 HTML 과 클라 첫 렌더가 갈려 하이드레이션 #418
+  // 이 난다(오류신고 5489fac1). 그래서 저장된 선택은 마운트 후에만 복원한다.
+  const deepLinked = !!(searchParams.get('focus') || searchParams.get('q'))
+  // 딥링크 여부는 마운트 시점 값으로 굳힌다 — useFocusSection 이 ?focus= 를 즉시 소진해
+  // 다음 렌더에는 false 가 된다. 복원은 마운트 1회다.
+  const deepLinkedRef = useRef(deepLinked)
+  const [viewMode, setViewMode] = useState<'item' | 'location'>(deepLinked ? 'item' : 'location')
   useEffect(() => {
-    const v = localStorage.getItem('stayeum-inventory-view')
+    if (deepLinkedRef.current) return
+    // 저장 키를 view2 로 승격했다. 옛 'stayeum-inventory-view' 에 남은 'item' 은 사용자의
+    // 선택이 아니라 부작용이다 — 인라인 패널의 onClose 가 changeView('item') 이라 체인 저장에
+    // 성공할 때마다 아이템별로 튕기며 그 값을 덮어썼다. 읽으면 기존 기기가 전부 아이템별로 연다.
+    const v = localStorage.getItem('stayeum-inventory-view2')
     // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (v === 'location') setViewMode('location')
+    if (v === 'item') setViewMode('item')
   }, [])
   // v2.0 §23 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
   // 초기값은 전역 통합 검색의 ?q= 딥링크 시딩(있을 때만).
@@ -344,7 +355,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     : rows
   const changeView = (m: 'item' | 'location') => {
     setViewMode(m)
-    if (typeof window !== 'undefined') localStorage.setItem('stayeum-inventory-view', m)
+    if (typeof window !== 'undefined') localStorage.setItem('stayeum-inventory-view2', m)
     if (m === 'location') { exitSelectMode(); setOrderEditMode(false) }
   }
   const [showExcluded, setShowExcluded]     = useState(false)
@@ -609,10 +620,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다. 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요. 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
             </h1>
           </div>
-          {/* 점검 진입 방식 토글 — v2.0 §23 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
+          {/* 점검 진입 방식 토글 — v2.0 §23 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트.
+              §23 관례대로 기본값이 첫 칸이다 — 지금 기본은 '위치별' 이라 그 칸이 왼쪽에 선다. */}
           <SegmentedControl size="sm" ariaLabel="점검 보기" className="shrink-0"
             value={viewMode} onChange={changeView}
-            options={[{ value: 'item', label: '아이템별' }, { value: 'location', label: '위치별' }]} />
+            options={[{ value: 'location', label: '위치별' }, { value: 'item', label: '아이템별' }]} />
         </div>
         {/* 툴바는 보기 전환과 무관하게 항상 노출 — 형제(지출 아이템별·주문별)와 동일 문법.
             종전엔 viewMode==='item' 이 툴바 행 전체를 감싸 위치별에서 통째로 사라졌고(오류신고 2e82ab7b),
@@ -725,7 +737,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       )}
 
       {viewMode === 'location' ? (
-        <LocationBatchCheckModal inline rows={visibleRows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
+        // 인라인 패널은 기본 보기다 — 닫을 뒤가 없어 onClose 자체를 안 넘긴다(모달 모드 전용 prop).
+        <LocationBatchCheckModal inline rows={visibleRows} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="추적할 품목이 아직 없습니다"
@@ -4084,8 +4097,10 @@ type LocSaveUnit = {
 // (품목, 위치) 쌍의 입력칸·드래프트 키. id 에 '|' 가 없으므로 되쪼갤 수 있다.
 const locPairKey = (itemId: string, locId: string) => `${itemId}|${locId}`
 
-function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
-  rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
+// onClose 는 모달 모드(showBatchLoc) 전용이다 — 인라인 패널은 재고 화면의 기본 보기라 닫을
+// 뒤가 없다. 안 넘겼을 때를 위해 기본값을 둔다(호출 자리를 조건으로 쪼개면 마감 규칙이 갈린다).
+function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = false, onDraftChange }: {
+  rows: InventoryRow[]; onClose?: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
   // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 패널 상한. 키보드 패널 2026-09-02 2단계.
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -4404,7 +4419,12 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
       // 하는 지속 상태라 사라지는 토스트가 아니라 §18 영속·리스트형으로 말한다. 그 목록은 아래
       // 버튼 줄 위 고정 영역이 그린다(스크롤 밖 — 10행이면 뷰포트 밖으로 밀린다).
       if (out.stopped === 'failed' || cleanupRef.current.length > 0) return
-      onClose()   // 위치별 최종 저장 후 점검 창(위치 패널) 닫기 — 실패 0 일 때만.
+      pushToast('success', `${out.done}건 저장됨`)
+      // 인라인은 닫지 않는다 — 기본 보기라 닫을 뒤가 없다. 대신 입력을 반드시 비운다. 안 비우면
+      // dirty 가 남아 'N건 저장' 이 다시 켜지고, 값을 조금만 고쳐도 두 번째 저장이 선다
+      // (createStockCheck 의 멱등창은 20초, updateStockCheck 는 같은 patch 만 무시한다).
+      if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null) }
+      else onClose()   // 모달 모드는 종전대로 최종 저장 후 닫는다 — 실패 0 일 때만.
     } catch {
       setError('저장 중 오류가 발생했습니다.')
     } finally {
@@ -4435,7 +4455,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     onDone()
     // 실패가 남아 있으면 닫지 않는다 — doSave 의 마감 규칙과 같은 축이다.
     if (out.stopped === 'failed' || cleanupRef.current.length > 0) return
-    onClose()
+    pushToast('success', `${out.done}건 저장됨`)
+    // 마감 모양도 doSave 와 같다 — 인라인은 입력만 비우고 그 자리에 머문다.
+    if (inline) { setBeforeQtys({}); setAfterQtys({}); setMergeChoice(null) }
+    else onClose()
   }
   // 보충으로 돌아가기 / 창고 재고 확인 — 남은 체인 전체 중단(무저장), 폼으로 복귀(모달 유지).
   const onHubShortExit = (reason: 'back' | 'reconcile') => {

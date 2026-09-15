@@ -410,6 +410,12 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
    원자 저장으로 올리려면 `detectHubShort` 를 합산형으로 넓혀야 해서 쌀 사건 봉합 자리를 건드린다.
 6. 허브 부족(HUB_SHORT)도 **멈춤**이다. 팝업이 그 한 건을 처리하면 나머지를 이어 달린다. 나머지를
    버리면 팝업을 처리한 뒤 아래 칸의 실측이 조용히 사라진다.
+7. **인라인 저장은 닫지 않는다**(입력 비움 + 성공 토스트). 위치별이 재고 화면의 기본 보기가 된
+   2026-09-15 부터 인라인 패널에는 닫을 뒤가 없다. 실패 0 이면 `N건 저장됨` 토스트를 띄우고
+   입력(`beforeQtys`·`afterQtys`·`mergeChoice`)을 비워 그 자리에 머문다. 비우지 않으면 dirty 가
+   남아 `N건 저장` 이 다시 켜지고, 값을 조금만 고쳐도 두 번째 저장이 선다(`createStockCheck` 의
+   멱등창은 20초, `updateStockCheck` 는 같은 patch 만 무시한다). 모달 모드(`showBatchLoc`)는
+   종전대로 닫힌다 — `onClose` 는 그쪽 전용 prop 이고 인라인에는 아예 넘기지 않는다.
 
 `carried` 규칙은 불변이다 — 점검한 행 false, 비점검 가지 승계(`test-stock-check-merge` 34단언).
 
@@ -435,6 +441,8 @@ DB 전체 1건). 그 마커는 타임라인에 없던 이동을 그리고 이월
 - `scripts/check-location-actions-wiring.mjs`(verify:fast) — 액션이 그 판정을 실제로 부르는가 여섯 축.
 - `scripts/check-location-name-axis.mjs`(verify:fast) — 표시·저장 이름이 pathName 인가 + 트리 행 들여쓰기.
 - `scripts/check-draft-lifecycle.mjs`(verify:fast) — 체인 저장 세 축(순차·허브 마지막·이어 붙이기) 포함.
+- `scripts/check-inventory-view-default.mjs`(verify:fast) — 기본 보기(위치별) 다섯 축(초기값 폴백·
+  복원 비교·세그먼트 첫 칸·인라인은 저장 후 안 닫힘·스켈레톤 골격).
 - `scripts/check-location-tree-drift.ts`(verify:db) — DB 무결성 여섯 축(순환·깊이·형제 이름·형제
   sortOrder·남의 영업장 부모·영업장 안 pathName 중복). **값 대조로는 절대 안 잡힌다** — 수량은 내내 맞고 구조만 틀리며,
   화면은 `buildTree` 가 고리를 끊어 루트로 올려 정상처럼 보여 준다(한 행도 안 잃기 위한 설계다).

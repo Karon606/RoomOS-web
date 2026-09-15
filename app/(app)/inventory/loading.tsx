@@ -27,10 +27,17 @@ export default function Loading() {
         </div>
         <div className="h-10 rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] animate-pulse" />
       </div>
-      <div className="space-y-2 pt-1">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-16 rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] animate-pulse" />
-        ))}
+      {/* 본문 골격 = 기본 보기 = 위치별 패널. 제목 줄 + 점검 위치·점검일 2열 + 안내 한 줄.
+          카드 5장 모형은 아이템별 모양이라 뺐다 — 기본이 위치별로 바뀐 뒤로는 로딩에서 로디드로 갈 때
+          목록이 패널로 바뀌는 점프가 된다. 아이템별은 딥링크(?focus=·?q=)로만 첫 화면이 되는
+          소수 경로라 §21 결정표 3(라우트 전환=본문 스켈레톤만)에서 다수 쪽 골격을 그린다. */}
+      <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-5 space-y-3">
+        <div className="h-5 w-40 rounded-md bg-[var(--canvas)] animate-pulse" />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="h-11 rounded-sm bg-[var(--canvas)] animate-pulse" />
+          <div className="h-11 rounded-sm bg-[var(--canvas)] animate-pulse" />
+        </div>
+        <div className="h-4 w-2/3 rounded-md bg-[var(--canvas)] animate-pulse" />
       </div>
     </div>
   )
