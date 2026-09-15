@@ -422,3 +422,36 @@
 - [x] 5. `scripts/check-inventory-view-default.mjs` 신설 + verify:fast 등록(소스 가드 5축, 주석 걷고 봄)
       → 검증: 역주입 4종 전부 발화, 백업 원복 후 cmp 동일
 - [x] 6. 문서 — `knowledge/domain-inventory.md` 체인 저장 7항 + 감지망 · `context-notes.md` 키 승격 근거
+
+
+## 점검 위치 전체 (2026-09-15)
+
+위치별 점검 선택기 맨 위에 **전체** 한 행을 둔다. 설계 패널 "요청 2" 그대로 — 확대 없음.
+서버 저장 규칙·체인 세 축·허브 게이트 무변경, 범위와 그 범위가 갈라 놓는 두 축(memo·들여쓰기)만 바뀐다.
+
+- [x] 1. 센티널 `ALL_LOCATIONS = '__all__'`(같은 파일 카테고리 세그먼트와 같은 문법)
+      → 검증: tsc 0
+- [x] 2. `LocationTreePicker` 에 `allRow` prop — 노드 map **앞**에 전체 행(44px·루트와 같은 10px
+      들여쓰기·선택 시 체크와 선택색·우측 `N품목` mono) + `my-1 border-t` 구분선. 트리거는 `전체 위치`.
+      카운트는 **링크된 품목의 중복 없는 수**(쌍 합계 아님) → 검증: 자리 단언 역주입 빨강
+- [x] 3. 범위 — `isAll` 이면 `scope = locs`(목록이 DFS 라 숲이 곧 트리 순서), `selectedLoc = null`
+      → 검증: `check-draft-lifecycle` 범위 축 초록
+- [x] 4. 들여쓰기 기준식에 `isAll ? 1 :` — 안 넣으면 모든 행이 0단으로 무너진다
+      → 검증: 새 그물 4' 단언, 원복 역주입 빨강
+- [x] 5. memo 를 두 갈래로 — 전체는 **접두 패턴 밖** `전체 위치 점검`(괄호 안에 넣으면 '전체' 라는
+      위치가 생기는 순간 백필이 오인한다). 그물 3' 단언도 두 갈래로 갱신(의도된 변경, 같은 커밋)
+      → 검증: `위치별 점검 (전체)` 역주입에 그물 둘 다 빨강
+- [x] 6. `getLocationDraftsFor(locationIds)` 신설 — 위치 수와 무관하게 쿼리 2개. 패널의
+      `Promise.all(ids.map(getLocationDrafts))` 를 이 한 호출로(전체면 36 → 2).
+      `getLocationDrafts` 는 임시저장 비우기 스냅샷이 여전히 부르므로 남긴다
+      → 검증: `check-query-fanout` 초록, fan-out 복귀 역주입 빨강
+- [x] 7. 진행 표시 — 체인 한 건마다 `done` 을 올리고, 멈춘 자리가 빈 문자열이면 중립 톤
+      `저장 중 · N/M`(끝나면 지운다), 주 버튼도 `저장 중… N/M`. 실패·정리 실패는 종전 문구가 덮는다
+      → 검증: tsc 0, 실기 확인 3번
+- [x] 8. 문구 — 빈 범위 `배정된 품목이 없습니다.`(전체) · `최근 점검 …`(전체는 '이 위치' 생략) ·
+      이중 차감 물음 목록은 5건 + `외 N건`(§14 고정 영역이 버튼을 밀어내지 않게)
+- [x] 9. 감지망 — `check-location-name-axis` 3' 두 갈래 + 4' 들여쓰기 기준·선택기 행 자리,
+      `check-draft-lifecycle` ⑦ 드래프트 fan-out 금지 → 검증: 역주입 5종 전부 발화, 백업 cp 원복 cmp 동일
+- [x] 10. 문서 — `knowledge/domain-inventory.md` 체인 저장 8항 · `knowledge/glossary.md` 체인 저장 ·
+      `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
+- [ ] 11. 운영자 실기 확인 5건(아래 보고서) — 45쌍 저장 시간은 실기에서 잰다

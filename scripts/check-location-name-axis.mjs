@@ -178,10 +178,16 @@ function mustNot(file, block, label, pattern) {
 // ── 3'. 점검 패널 저장 memo — 표기 경로인가 ──────────────────────────────────────────
 //   memo 는 화면 글자가 아니라 **저장 문자열**이다. 평면 이름으로 적히면 같은 이름의 칸이 둘
 //   생기는 순간 어느 칸의 점검인지 기록만으로는 영원히 복원할 수 없다.
+//
+//   2026-09-15 '전체' 뒤로 갈래가 둘이다. 위치를 고르면 종전대로 `위치별 점검 (표기 경로)`,
+//   '전체'면 **접두 패턴 밖의 다른 문자열** `전체 위치 점검` 이다. 괄호 안에 '전체' 를 넣으면
+//   백필(`^위치별 점검 \((.+)\)$`)이 '전체' 라는 이름의 위치가 생기는 순간 그 칸으로 오인한다.
 {
   const f = 'app/(app)/inventory/InventoryClient.tsx'
   const block = slice(f, 'function LocationBatchCheckModal(', 'function LocationTreePicker(')
-  must(f, block, '체인 저장 memo', /memo: `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/)
+  must(f, block, '체인 저장 memo(위치 갈래)', /memo: isAll \? '전체 위치 점검' : `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/)
+  mustNot(f, block, '체인 저장 memo(전체 갈래)', /위치별 점검 \(\$\{isAll/)
+  mustNot(f, block, '체인 저장 memo(전체 갈래)', /'위치별 점검 \(전체\)'|`위치별 점검 \(전체\)`/)
 }
 
 // ── 4'. 트리 행의 전제 — 들여쓰기를 실제로 그리는가 ───────────────────────────────────
@@ -203,6 +209,25 @@ function mustNot(file, block, label, pattern) {
   // 헤더만 들여쓰면 품목이 전부 왼쪽 벽에 붙어 어느 칸의 입력인지 다시 모호해진다.
   must(f, slice(f, 'function LocationBatchCheckModal(', 'const LocPinMarker'),
     'LocationBatchCheckModal(그룹·품목 같은 들여쓰기)', /marginLeft: indent/g, 2)
+  // '전체'(2026-09-15) — 기준 깊이가 고른 노드에서 나오는데 '전체'에는 고른 노드가 없다.
+  // `?? node.depth` 로 떨어지게 두면 모든 행이 0단이 되어 트리가 통째로 평면으로 무너지고,
+  // 그 순간 트리 행이 `name` 을 찍어도 되는 근거(구조는 들여쓰기가 말한다)가 사라진다.
+  must(f, slice(f, 'function LocationBatchCheckModal(', 'const LocPinMarker'),
+    'LocationBatchCheckModal(전체의 들여쓰기 기준)',
+    /const indent = \(node\.depth - \(isAll \? 1 : \(selectedLoc\?\.depth \?\? node\.depth\)\)\) \* LOC_INDENT_PX/)
+  // 선택기의 '전체' 행은 **노드 map 보다 앞**이다. 뒤로 가면 숲을 고르는 자리가 스크롤 끝에
+  // 숨어, 목록이 길어질수록 아무도 못 찾는 선택지가 된다.
+  {
+    const picker = slice(f, 'function LocationTreePicker(', 'function MergeDecisionModal(')
+    must(f, picker, 'LocationTreePicker(전체 행)', /onChange\(ALL_LOCATIONS\)/)
+    if (picker != null) {
+      const allAt = picker.indexOf('onChange(ALL_LOCATIONS)')
+      const mapAt = picker.indexOf('{locs.map(node => {')
+      if (allAt < 0 || mapAt < 0 || allAt > mapAt) {
+        violations.push(`${f} — LocationTreePicker(전체 행 자리): '전체' 행이 노드 map 앞에 없다.`)
+      }
+    }
+  }
 }
 
 // ── 4. 비품(공용부) — 배정 select·이력 라벨·그룹 순서 ────────────────────────────────

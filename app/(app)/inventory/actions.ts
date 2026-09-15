@@ -1560,6 +1560,57 @@ export async function getLocationDrafts(
   }))
 }
 
+// 여러 위치의 드래프트를 **한 번에** — 위치별 점검이 서브트리(그리고 '전체' = 영업장 위치 전부)를
+// 한 화면에 펼치므로, 위치마다 getLocationDrafts 를 부르면 위치 수 × 2 회 왕복이 된다(18칸이면 36).
+// 병합 규칙은 getLocationDrafts 와 같다 — 위치별 행 + 아이템별(locationId null) 행의 그 위치 값을
+// savedAt 최신 우선으로 합친다. 반환에 locationId 가 실린다(호출부가 (품목, 위치) 쌍으로 쓴다).
+type LocDraftJson = {
+  savedAt?: number
+  before?: string
+  after?: string
+  beforeQtys?: Record<string, string>
+  afterQtys?: Record<string, string>
+}
+
+export async function getLocationDraftsFor(
+  locationIds: string[],
+): Promise<{ locationId: string; trackedItemId: string; data: { before?: string; after?: string; savedAt: number } }[]> {
+  if (locationIds.length === 0) return []
+  const propertyId = await getPropertyId()
+  const ids = new Set(locationIds)
+  const [locRows, nullRows] = await Promise.all([
+    prisma.stockCheckDraft.findMany({ where: { locationId: { in: locationIds }, trackedItem: { propertyId } } }),
+    prisma.stockCheckDraft.findMany({ where: { locationId: null, trackedItem: { propertyId } } }),
+  ])
+  const savedAtOf = (d: LocDraftJson | null) => (typeof d?.savedAt === 'number' ? d.savedAt : 0)
+  const merged = new Map<string, { locationId: string; trackedItemId: string; before?: string; after?: string; savedAt: number }>()
+  for (const r of locRows) {
+    if (r.locationId == null) continue
+    const d = r.data as LocDraftJson | null
+    merged.set(`${r.locationId}|${r.trackedItemId}`, {
+      locationId: r.locationId, trackedItemId: r.trackedItemId,
+      before: d?.before, after: d?.after, savedAt: savedAtOf(d),
+    })
+  }
+  for (const r of nullRows) {
+    const d = r.data as LocDraftJson | null
+    const savedAt = savedAtOf(d)
+    for (const locationId of new Set([...Object.keys(d?.beforeQtys ?? {}), ...Object.keys(d?.afterQtys ?? {})])) {
+      if (!ids.has(locationId)) continue
+      const before = d?.beforeQtys?.[locationId]
+      const after  = d?.afterQtys?.[locationId]
+      if (before == null && after == null) continue
+      const k = `${locationId}|${r.trackedItemId}`
+      const cur = merged.get(k)
+      if (!cur || savedAt > cur.savedAt) merged.set(k, { locationId, trackedItemId: r.trackedItemId, before, after, savedAt })
+    }
+  }
+  return [...merged.values()].map(v => ({
+    locationId: v.locationId, trackedItemId: v.trackedItemId,
+    data: { before: v.before, after: v.after, savedAt: v.savedAt },
+  }))
+}
+
 // 임시저장이 있는 위치 요약 — 위치 선택 전에 어느 위치에 임시저장이 있는지 안내(오류신고 93f5d103).
 // 위치별 드래프트 + 아이템별 드래프트(locationId null)의 위치별 값을 함께 센다(getLocationDrafts와 동일 기준).
 export async function getDraftLocationSummary(): Promise<{ locationId: string; itemCount: number; latestSavedAt: number | null }[]> {

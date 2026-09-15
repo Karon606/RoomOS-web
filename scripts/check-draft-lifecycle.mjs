@@ -6,13 +6,14 @@
 // 인라인 모드의 onClose 는 화면 전환(changeView)이라 에러가 한 프레임도 안 그려졌다. 실패한
 // 품목의 드래프트만 남아 '임시저장 남음' 으로 보였다.
 //
-// 잡는 것 여섯.
+// 잡는 것 일곱.
 //   ① doSave 의 onClose 는 실패 0 조건 아래에만 선다.
 //   ② 드래프트 삭제·저장의 반환값을 읽는다(양 화면 모두).
 //   ③ 두 화면(아이템별 폼 · 위치 패널)의 임시저장 분기가 대칭이다.
 //   ④ currentLocationBreakdown 이 restockedQty 를 싣는다(죽은 '지난 옮김' 표시의 근원).
 //   ⑤ 이중 차감 확인창이 저장 경로에 꽂혀 있다.
 //   ⑥ (2026-09-14 6단계) 서브트리 체인 저장의 세 축 — 순차·허브 마지막·이어 붙이기.
+//   ⑦ (2026-09-15 '전체') 드래프트 읽기가 위치 수만큼 왕복하지 않는다.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -245,8 +246,9 @@ need('서버 규칙은 안 건드렸다 — 물음은 클라이언트에만 있�
 // 저장 단위는 (품목, 위치) 쌍이다. 셋 다 값 대조로는 안 잡히는 축이다.
 const buildUnits = fnBody(client, '  const buildUnits = (dirtyOnly = true): LocSaveUnit[] => {')
 need('저장 단위를 만드는 자리를 찾음', buildUnits.length > 0)
-need('점검 대상이 서브트리 전체다',
-  /const scope = locId \? locSubtree\(locs, locId\) : \[\]/.test(client),
+// 2026-09-15 '전체' — 범위가 두 갈래다. 고른 칸이면 그 서브트리, '전체'면 숲 전체(목록 그대로).
+need('점검 대상이 서브트리 전체(또는 숲 전체)다',
+  /const scope = isAll \? locs : locId \? locSubtree\(locs, locId\) : \[\]/.test(client),
   '고른 칸만 담으면 트리를 만든 이유가 사라진다')
 need('허브 행이 체인의 마지막이다',
   /return units\.sort\(\(a, b\) => \(a\.isHubUnit \? 1 : 0\) - \(b\.isHubUnit \? 1 : 0\)\)/.test(buildUnits),
@@ -267,12 +269,32 @@ need('같은 저장에 허브 실측이 있을 때만 부족 게이트를 건너
   '조건 없이 통과시키면 쌀 사건의 조용한 0 클램프가 되살아난다')
 need('클램프 판정이 서버로 실제로 간다',
   /allowHubClamp: clampRef\.current\.has\(locPairKey\(u\.r\.id, u\.locId\)\)/.test(runChain))
-need('저장 memo 는 고른 루트의 표기 경로다',
-  /memo: `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/.test(saveUnit),
-  'memo 는 저장 문자열이자 백필 매칭 키다 — 평면 이름이면 같은 이름의 칸이 둘일 때 복원할 수 없다')
-need('임시저장 복원이 서브트리 전체를 읽는다',
-  /const ids = locSubtree\(locsRef\.current, locId\)\.map\(n => n\.id\)/.test(client),
+need('저장 memo 는 고른 루트의 표기 경로다(전체는 접두 패턴 밖 문자열)',
+  /memo: isAll \? '전체 위치 점검' : `위치별 점검 \(\$\{selectedLoc\?\.pathName \?\? ''\}\)`/.test(saveUnit),
+  "memo 는 저장 문자열이자 백필 매칭 키다 — 평면 이름이면 같은 이름의 칸이 둘일 때 복원할 수 없고, '전체'를 괄호 안에 넣으면 '전체'라는 위치가 생기는 순간 백필이 그 칸으로 오인한다")
+need('임시저장 복원이 범위 전체를 읽는다',
+  /const ids = \(locId === ALL_LOCATIONS \? locsRef\.current : locSubtree\(locsRef\.current, locId\)\)\.map\(n => n\.id\)/.test(client),
   '한 칸만 읽으면 아래 칸에 임시저장한 값이 사라진 것처럼 보인다')
+
+// ── ⑦ 드래프트 읽기가 위치 수만큼 왕복하지 않는다 (2026-09-15 '전체') ──────────────
+// getLocationDrafts 는 위치 하나에 쿼리 2개다. 위치마다 부르면 '전체'(18칸)에서 36 왕복이 되고,
+// 위치를 늘릴수록 선형으로 는다. 한 번에 읽는 getLocationDraftsFor 로 고정한다(쿼리 2개).
+const locEffect = (() => {
+  const from = client.indexOf('  useEffect(() => {\n    if (!locId) return')
+  if (from < 0) return ''
+  const to = client.indexOf('}, [locId])', from)
+  return to < 0 ? '' : client.slice(from, to)
+})()
+need('위치 선택 effect 를 찾음', locEffect.length > 0)
+need('드래프트 읽기가 위치마다 왕복하지 않는다',
+  !/\.map\([\s\S]{0,120}?getLocationDrafts\(/.test(locEffect),
+  "'전체'는 위치 수 × 2 회 왕복이 된다 — 위치 목록을 통째로 넘기는 한 호출로 읽는다")
+need('한 번에 읽는 액션을 부른다',
+  /getLocationDraftsFor\(ids\)/.test(locEffect))
+need('그 액션이 쿼리 두 개다',
+  /export async function getLocationDraftsFor\(/.test(actions) &&
+  /const \[locRows, nullRows\] = await Promise\.all\(\[\s*\n\s*prisma\.stockCheckDraft\.findMany\(\{ where: \{ locationId: \{ in: locationIds \}/.test(actions),
+  '안에서 위치마다 도는 순간 호출부만 한 줄이고 왕복 수는 그대로다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

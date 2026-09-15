@@ -80,6 +80,7 @@ import {
   deleteItemDrafts,
   getItemDrafts,
   getLocationDrafts,
+  getLocationDraftsFor,
   getDraftLocationSummary,
   getDraftItemIds,
   applyMergeDecision,
@@ -4097,6 +4098,10 @@ type LocSaveUnit = {
 // (품목, 위치) 쌍의 입력칸·드래프트 키. id 에 '|' 가 없으므로 되쪼갤 수 있다.
 const locPairKey = (itemId: string, locId: string) => `${itemId}|${locId}`
 
+// 점검 위치 선택기의 '전체' 센티널 — 위치 id 자리에 앉는 비-id 값이다(같은 파일 카테고리
+// 세그먼트의 '__all__' 과 같은 문법). 범위만 숲 전체로 넓히고 그룹·행·체인은 그대로 돈다.
+const ALL_LOCATIONS = '__all__'
+
 // onClose 는 모달 모드(showBatchLoc) 전용이다 — 인라인 패널은 재고 화면의 기본 보기라 닫을
 // 뒤가 없다. 안 넘겼을 때를 위해 기본값을 둔다(호출 자리를 조건으로 쪼개면 마감 규칙이 갈린다).
 function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = false, onDraftChange }: {
@@ -4153,10 +4158,14 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   // 위치 미선택 상태로 돌아올 때마다 갱신 — 임시저장 직후 재진입도 최신으로
   useEffect(() => { if (!locId) getDraftLocationSummary().then(setDraftLocs).catch(() => {}) }, [locId])
 
-  const selectedLoc = locs.find(l => l.id === locId) ?? null
+  // '전체' 는 위치 하나가 아니라 **숲 전체**다 — 고른 노드가 없으므로 selectedLoc 은 null 이고,
+  // 그 자리에 기대던 두 축(들여쓰기 기준 깊이·저장 memo)은 아래에서 따로 가른다.
+  const isAll = locId === ALL_LOCATIONS
+  const selectedLoc = isAll ? null : (locs.find(l => l.id === locId) ?? null)
 
-  // 점검 대상 = 고른 위치의 **서브트리 전체**(자기 포함), DFS 순 그대로.
-  const scope = locId ? locSubtree(locs, locId) : []
+  // 점검 대상 = 고른 위치의 **서브트리 전체**(자기 포함), DFS 순 그대로. '전체' 면 목록 그대로다
+  // (서버가 주는 DFS 순이라 숲 전체가 곧 트리 순서다).
+  const scope = isAll ? locs : locId ? locSubtree(locs, locId) : []
   const itemsAt = (id: string) =>
     rows.filter(r => !r.isArchived && r.locations.some(l => l.id === id) && !r.hiddenLocationIds.includes(id))
   const groups = scope.map(node => ({ node, items: itemsAt(node.id) }))
@@ -4184,27 +4193,25 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     setCollapsed(new Set())
     setLocDraftSavedAt(null)
     locDraftSnapRef.current = null
-    // 임시저장(드래프트) 복원 — 서브트리의 **모든 위치**를 읽는다. 한 칸만 읽으면 아래 칸에
-    // 임시저장해 둔 값이 사라진 것처럼 보인다.
-    const ids = locSubtree(locsRef.current, locId).map(n => n.id)
-    void Promise.all(ids.map(id =>
-      getLocationDrafts(id).then(ds => [id, ds] as const).catch(() => [id, [] as { trackedItemId: string; data: { before?: string; after?: string; savedAt?: number } }[]] as const),
-    )).then(pairs => {
+    // 임시저장(드래프트) 복원 — 범위의 **모든 위치**를 읽는다. 한 칸만 읽으면 아래 칸에
+    // 임시저장해 둔 값이 사라진 것처럼 보인다. 위치마다 부르면 '전체'에서 18×2 = 36 왕복이
+    // 되므로 **한 호출**로 읽는다(getLocationDraftsFor, 위치 수와 무관하게 쿼리 2개).
+    const ids = (locId === ALL_LOCATIONS ? locsRef.current : locSubtree(locsRef.current, locId)).map(n => n.id)
+    void getLocationDraftsFor(ids).catch(() => [] as { locationId: string; trackedItemId: string; data: { before?: string; after?: string; savedAt: number } }[]).then(drafts => {
       const base: Record<string, { savedAt: number; before: string; after: string; itemId: string; locId: string }> = {}
       const nextBefore: Record<string, string> = {}
       const nextAfter: Record<string, string> = {}
       let latest = 0
-      for (const [lid, ds] of pairs) {
-        for (const d of ds) {
-          const before = d.data?.before != null ? String(d.data.before) : ''
-          const after  = d.data?.after  != null ? String(d.data.after)  : ''
-          const savedAt = typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0
-          const k = locPairKey(d.trackedItemId, lid)
-          base[k] = { savedAt, before, after, itemId: d.trackedItemId, locId: lid }
-          if (d.data?.before != null) nextBefore[k] = before
-          if (d.data?.after  != null) nextAfter[k]  = after
-          if (savedAt > latest) latest = savedAt
-        }
+      for (const d of drafts) {
+        const lid = d.locationId
+        const before = d.data?.before != null ? String(d.data.before) : ''
+        const after  = d.data?.after  != null ? String(d.data.after)  : ''
+        const savedAt = typeof d.data?.savedAt === 'number' ? d.data.savedAt : 0
+        const k = locPairKey(d.trackedItemId, lid)
+        base[k] = { savedAt, before, after, itemId: d.trackedItemId, locId: lid }
+        if (d.data?.before != null) nextBefore[k] = before
+        if (d.data?.after  != null) nextAfter[k]  = after
+        if (savedAt > latest) latest = savedAt
       }
       if (Object.keys(base).length === 0) return
       setRowDrafts(base)
@@ -4302,9 +4309,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     }
     // memo 는 저장 문자열이자 백필 매칭 키다 — 표기 경로(pathName)를 적는다.
     // 서브트리를 한 번에 저장하므로 **고른 루트**의 경로가 그 저장의 이름이다.
+    // '전체' 는 괄호 접두 패턴 **밖**의 다른 문자열이다 — `위치별 점검 (전체)` 로 적으면
+    // '전체' 라는 이름의 위치가 생기는 순간 백필(`^위치별 점검 \((.+)\)$`)이 그 칸으로 오인한다.
     return createStockCheck({
       trackedItemId: u.r.id, date, remainingQty: 0, locationPatch,
-      memo: `위치별 점검 (${selectedLoc?.pathName ?? ''})`, allowHubClamp: opts?.allowHubClamp,
+      memo: isAll ? '전체 위치 점검' : `위치별 점검 (${selectedLoc?.pathName ?? ''})`, allowHubClamp: opts?.allowHubClamp,
     }).then(res => { if (res.ok) chainIdsRef.current.set(u.r.id, res.id); return res })
   }
 
@@ -4326,6 +4335,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         if (del.ok) cleanedKeysRef.current.add(locPairKey(u.r.id, u.locId))
         else cleanupRef.current.push(label)
         done++
+        // 한 건 끝날 때마다 숫자를 올린다 — 45쌍이면 서버 왕복 90회가 직렬로 흐르는 동안
+        // 화면이 '저장 중…' 한 마디뿐이면 멈춘 것과 구별이 안 된다. 멈춘 자리('')가 비어
+        // 있는 동안은 진행 중이라는 뜻이다.
+        setSaveProgress({ done, total, stoppedAt: '' })
         continue
       }
       if ('code' in res && res.code === 'HUB_SHORT') {
@@ -4413,6 +4426,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
 
       const out = await runChain(units, !!forceMerge, 0, units.length)
       settleChain()
+      // 끝까지 갔으면 진행 숫자는 지운다 — 남겨 두면 '저장 중 45/45' 가 저장이 끝난 뒤에도 선다.
+      if (out.stopped === null) setSaveProgress(null)
       if (out.stopped === 'hubShort') return   // 팝업이 이어받음(모달 유지)
       onDone()   // 성공분은 언제나 화면에 반영한다
       // §27.2 이중 통지 금지 — 채널은 **인라인 하나**다. 저장 실패는 다시 시도할 자리가 남아야
@@ -4451,6 +4466,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
       ? await runChain(rest, chainCtxRef.current.forceMerge, done, chainCtxRef.current.total)
       : { stopped: null as 'hubShort' | 'failed' | null, done }
     settleChain()
+    if (out.stopped === null) setSaveProgress(null)   // 마감 모양은 doSave 와 같은 축이다
     if (out.stopped === 'hubShort') return
     onDone()
     // 실패가 남아 있으면 닫지 않는다 — doSave 의 마감 규칙과 같은 축이다.
@@ -4655,7 +4671,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검 위치</p>
-              <LocationTreePicker locs={locs} value={locId} onChange={setLocId} itemCountOf={id => itemsAt(id).length} />
+              {/* '전체' 카운트는 **링크된 품목의 중복 없는 수**다 — 칸 합계(쌍)를 적으면 28품목이
+                  45로 읽혀 무엇을 세는 숫자인지 화면이 거짓말을 한다. */}
+              <LocationTreePicker locs={locs} value={locId} onChange={setLocId} itemCountOf={id => itemsAt(id).length}
+                allRow={{ count: new Set(locs.flatMap(n => itemsAt(n.id).map(r => r.id))).size }} />
             </div>
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검일</p>
@@ -4708,7 +4727,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
               <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 그 위치와 아래 위치에 보관된 품목이 표시됩니다.</p>
             </>
           ) : scopeItemCount === 0 ? (
-            <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치와 아래 위치에 배정된 품목이 없습니다.</p>
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">{isAll ? '배정된 품목이 없습니다.' : '이 위치와 아래 위치에 배정된 품목이 없습니다.'}</p>
           ) : (
             <>
               {/* 이 범위 품목들의 마지막 점검 기록 시각 중 최댓값 */}
@@ -4718,11 +4737,14 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                   .filter((t): t is number => t != null)
                 if (times.length === 0) return null
                 const latest = new Date(Math.max(...times))
-                return <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">이 위치 최근 점검 {fmtDate(latest)} <span className="tabular-nums">{fmtTime(latest)}</span></p>
+                // '전체'에는 가리킬 '이 위치'가 없다 — 숲 전체의 최근 점검이다.
+                return <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">{isAll ? '최근 점검' : '이 위치 최근 점검'} {fmtDate(latest)} <span className="tabular-nums">{fmtTime(latest)}</span></p>
               })()}
               {groups.map(({ node, items }, gi) => {
                 // 들여쓰기는 **고른 루트 기준 상대 깊이**다 — 4층 주방을 고르면 그것이 0단이다.
-                const indent = (node.depth - (selectedLoc?.depth ?? node.depth)) * LOC_INDENT_PX
+                // '전체' 의 기준은 루트 깊이 1 이다. selectedLoc 이 null 이라 `?? node.depth` 로
+                // 떨어지게 두면 모든 행이 0단이 되어 트리가 통째로 평면으로 무너진다.
+                const indent = (node.depth - (isAll ? 1 : (selectedLoc?.depth ?? node.depth))) * LOC_INDENT_PX
                 const isCollapsed = collapsed.has(node.id)
                 const typedIn = items.filter(r => isPairDirty(r, node.id)).length
                 return (
@@ -4880,7 +4902,14 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
             밀려 "눌렀는데 아무 말이 없다"가 다시 난다. 채널은 여기 하나(§27.2 이중 통지 금지). */}
         {(saveFailed.length > 0 || draftCleanupFailed.length > 0 || saveProgress || error) && (
           <div className="border-t border-[var(--warm-border)] px-5 py-3 shrink-0 space-y-2">
-            {saveProgress && (
+            {saveProgress && (saveProgress.stoppedAt === '' ? (
+              // 아직 달리는 중 — 멈춘 자리가 없으니 경고 톤이 아니라 중립 톤이다.
+              <div className="rounded-lg px-3 py-2" style={{ background: 'var(--cream-2)' }}>
+                <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                  저장 중 · <span className="tabular-nums">{saveProgress.done}</span>/<span className="tabular-nums">{saveProgress.total}</span>
+                </p>
+              </div>
+            ) : (
               // 체인이 어디까지 갔는가 — 비원자 저장이라 이 문장이 값이다.
               <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
                 <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
@@ -4891,7 +4920,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                   {' '}멈춘 자리는 {`'${saveProgress.stoppedAt}'`}입니다. 저장된 행의 임시저장은 비워졌고 남은 행은 그대로입니다.
                 </p>
               </div>
-            )}
+            ))}
             {saveFailed.length > 0 && (
               <div className="rounded-lg px-3 py-2 space-y-1" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--danger-fg)' }}>
@@ -4949,8 +4978,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
               이미 옮긴 기록이 있습니다. 더 옮길까요?
             </p>
             <div className="rounded-lg px-3.5 py-3" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
+              {/* 목록은 5줄에서 자른다 — 여기는 스크롤 밖 고정 영역이라, '전체' 에서 대상이
+                  열이면 목록이 그대로 늘어 버튼 줄을 화면 밖으로 밀어낸다(§14 영향 목록). */}
               <ul className="space-y-0.5">
-                {dupUnits.map(u => {
+                {dupUnits.slice(0, 5).map(u => {
                   const d = doubleRestockOf(u.r, u.locId, mergeChoice === 'merge')
                   if (!d) return null
                   const unit = rowUnit(u.r)
@@ -4963,6 +4994,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                     </li>
                   )
                 })}
+                {dupUnits.length > 5 && (
+                  <li className="text-[12.5px] text-[var(--ink-s)]">
+                    · 외 <span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{dupUnits.length - 5}</span>건
+                  </li>
+                )}
               </ul>
             </div>
             <div className="flex gap-2">
@@ -5007,8 +5043,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
             {draftPending ? '저장 중…' : '임시저장'}
           </Btn>
           {/* 입력이 한 칸도 없으면 '0건 저장' 은 누를 데가 아니다 — 눌러도 아무 일이 없는 버튼은 오조작이다. */}
+          {/* 저장 중 라벨에도 진행 숫자를 싣는다 — 버튼만 보고 있는 사람에게도 멈춤과 진행이 갈린다. */}
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0 || dirtyUnitCount === 0}>
-            {pending ? '저장 중…' : `${dirtyUnitCount}건 저장`}
+            {pending
+              ? (saveProgress ? <>저장 중… <span className="tabular-nums">{saveProgress.done}/{saveProgress.total}</span></> : '저장 중…')
+              : `${dirtyUnitCount}건 저장`}
           </Btn>
         </div>
       </div>
@@ -5032,11 +5071,14 @@ const LocPinMarker = () => (
 //
 // 트리거는 **표기 경로(pathName)** 다(고른 칸 하나만 보이는 자리라 조상을 글자로 말해야 한다).
 // 목록 행은 그 노드 한 칸의 이름이다 — 조상은 들여쓰기가 말한다.
-function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
+//
+// allRow 를 주면 목록 맨 위에 '전체'(ALL_LOCATIONS) 한 행이 선다 — 숲 전체를 한 번에 고르는 자리다.
+function LocationTreePicker({ locs, value, onChange, itemCountOf, allRow }: {
   locs: StorageLocationNode[]
   value: string
   onChange: (id: string) => void
   itemCountOf: (id: string) => number
+  allRow?: { count: number }
 }) {
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -5055,7 +5097,9 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
     return () => document.removeEventListener('keydown', onKey, true)
   }, [open])
 
-  const selected = locs.find(l => l.id === value) ?? null
+  // '전체' 는 노드가 아니라 센티널이라 목록에서 못 찾는다 — 트리거가 쓸 이름만 세워 준다.
+  const selected: { pathName: string } | null =
+    value === ALL_LOCATIONS ? { pathName: '전체 위치' } : (locs.find(l => l.id === value) ?? null)
 
   return (
     <div className="relative">
@@ -5080,6 +5124,23 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf }: {
             className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
             style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '320px', overflowY: 'auto' }}>
             {locs.length === 0 && <p className="px-3 py-4 text-sm text-[var(--warm-muted)] text-center">등록된 위치가 없습니다.</p>}
+            {/* 전체 — 노드 목록 **앞**에 선다. 들여쓰기는 루트와 같은 10px 이고(같은 단),
+                아래 구분선이 '한 칸'과 '숲'을 가른다. 행 문법은 아래 노드 행 그대로다. */}
+            {allRow && locs.length > 0 && (
+              <>
+                <button type="button"
+                  onClick={() => { onChange(ALL_LOCATIONS); setOpen(false) }}
+                  style={{ paddingLeft: 10 }}
+                  className={`w-full flex items-center gap-2 min-h-[44px] pr-2.5 py-1.5 rounded-lg text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] ${value === ALL_LOCATIONS ? 'text-[var(--tc-text)] font-semibold' : 'text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]'}`}>
+                  {value === ALL_LOCATIONS && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  )}
+                  <span className="flex-1 min-w-0 truncate text-sm">전체</span>
+                  <span className="mono text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{allRow.count}품목</span>
+                </button>
+                <div className="my-1 border-t border-[var(--warm-border)]" />
+              </>
+            )}
             {locs.map(node => {
               const isSel = node.id === value
               return (
