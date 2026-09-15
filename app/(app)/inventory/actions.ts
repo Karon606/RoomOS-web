@@ -3617,7 +3617,10 @@ function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, n
   const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
   return {
     trackedItemId,
-    date: new Date(),
+    // 오늘(KST)의 @db.Date 표현(lib/kstDate 정본). 종전 `new Date()` 는 서버 UTC 날짜라 KST 00~09시에
+    // 만든 이동 점검이 어제 날짜로 박혀 (date desc, createdAt desc) 정렬에서 같은 날 폼 점검 뒤로
+    // 밀렸다 — 토스트는 완료인데 장부에는 이동이 안 보인다. createStockCheck 가 받는 축과 같게 맞춘다.
+    date: ymdToDbDate(kstYmdStr()),
     remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
     memo,
     locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
