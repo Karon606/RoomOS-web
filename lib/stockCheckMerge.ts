@@ -99,15 +99,34 @@ export function detectHubShort(base: LocBreakdown[], patch: LocCheckPatch, allow
 // 그래서 비점검 행은 전부 이월(true)로 찍힌다. 두 번째 패치부터는 base 가 '이 점검의 현재 상태'라
 // 앞 패치가 남긴 실측(false)·마커를 승계한다 — updateStockCheck 의 base 와 같은 자리가 된다.
 // 결과적으로 안 적은 행 true / 적은 행 false / 허브 미입력 + 옮김 있음은 차감된 파생 true /
-// 허브를 적었으면 그 패치가 마지막에 덮어 false 다. 허브 패치를 맨 뒤에 두는 것은 **호출부의 몫**이다
-// (패널의 buildUnits 가 허브 행을 맨 뒤로 미는 것과 같은 규칙 — 먼저 쓰면 그 위에서 또 차감된다).
+// 허브를 적었으면 그 패치가 마지막에 덮어 false 다.
+//
+// **순서와 중복은 여기서 지킨다**(검수 지적 2026-09-16). 종전에는 '허브를 맨 뒤로' 를 호출부의
+// 예의에 맡겼는데, 그 규칙은 장부의 정합 조건이지 취향이 아니다 — 허브를 먼저 쓰면 그 실측 위에서
+// 다시 차감돼 이중으로 빠진다. 안정 정렬로 허브 패치만 맨 뒤로 밀고(나머지 순서는 받은 그대로),
+// 같은 위치가 두 번 오면 **거부**한다. 중복은 마지막 값으로 덮는 것이 자연스러워 보이지만, 앞의
+// 패치가 이미 허브를 깎은 뒤라 뒤엣것이 덮어도 그 차감은 남는다 — 조용히 틀리느니 막는다.
 //
 // 원자성. 한 패치라도 허브 부족에 걸리면 **몇 번째 패치**인지를 실어 돌려주고 아무것도 내지 않는다.
 // 부분 반영으로 끝나면 화면은 '저장됨'인데 장부는 절반이 되고, 그 절반이 다음 base 가 된다.
+// index 는 **정렬한 뒤의 자리**다 — 호출부가 그 자리의 위치 이름을 말하려면 같은 정렬을 본 배열이
+// 필요하므로, 정렬 결과를 `patches` 로 함께 돌려준다.
 export type LocChecksResult =
-  | { ok: true; out: LocQtyOut[] }
-  | { ok: false; index: number; short: HubShort }
+  | { ok: true; out: LocQtyOut[]; patches: LocCheckPatch[] }
+  | { ok: false; index: number; short: HubShort; patches: LocCheckPatch[] }
+  | { ok: false; duplicate: string }
 export function applyLocationChecks(base: LocBreakdown[], patches: LocCheckPatch[], allowHubClamp?: boolean): LocChecksResult {
+  const seen = new Set<string>()
+  for (const p of patches) {
+    if (seen.has(p.checkedLocationId)) return { ok: false, duplicate: p.checkedLocationId }
+    seen.add(p.checkedLocationId)
+  }
+  // 안정 정렬 — 허브 자기 점검만 맨 뒤로. Array.prototype.sort 가 안정이라 나머지는 받은 순서 그대로다.
+  const ordered = [...patches].sort((a, b) => {
+    const ah = a.hubLocationId != null && a.checkedLocationId === a.hubLocationId ? 1 : 0
+    const bh = b.hubLocationId != null && b.checkedLocationId === b.hubLocationId ? 1 : 0
+    return ah - bh
+  })
   let cur: LocBreakdown[] = base
   // 패치가 0건이면 접을 것이 없다 — 그때의 결과는 '전부 이월'이다(한 행도 실측이 아니다).
   let out: LocQtyOut[] = base.map(lb => ({
@@ -115,12 +134,12 @@ export function applyLocationChecks(base: LocBreakdown[], patches: LocCheckPatch
     ...(lb.restockedQty != null && lb.restockedQty > 0 ? { restockedQty: lb.restockedQty } : {}),
     carried: lb.carried === undefined ? true : lb.carried,
   }))
-  for (let i = 0; i < patches.length; i++) {
-    const short = detectHubShort(cur, patches[i], allowHubClamp)
-    if (short) return { ok: false, index: i, short }
-    out = applyLocationCheck(cur, patches[i])
+  for (let i = 0; i < ordered.length; i++) {
+    const short = detectHubShort(cur, ordered[i], allowHubClamp)
+    if (short) return { ok: false, index: i, short, patches: ordered }
+    out = applyLocationCheck(cur, ordered[i])
     // 다음 패치의 base = 이 패치까지 반영된 현재 상태. 마커·표식을 그대로 들고 간다.
     cur = out.map(o => ({ locationId: o.storageLocationId, qty: o.qty, restockedQty: o.restockedQty ?? null, carried: o.carried ?? null }))
   }
-  return { ok: true, out }
+  return { ok: true, out, patches: ordered }
 }

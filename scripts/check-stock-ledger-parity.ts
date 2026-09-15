@@ -256,7 +256,13 @@ function sourceGuards() {
     // 비대칭(의도) — 여기 base 는 **직전 점검**이라 그 행의 마커·표식은 어제의 사실이다. 실으면
     // 어제의 보충 +N 이 오늘 새 점검에 되살아나고(신고 8319ba10), 어제의 실측 표식이 오늘의 이월 행에
     // 박혀 그 위치의 전파가 영구히 멈춘다. 값은 안 바뀌므로 아래 데이터 절도 침묵한다.
-    const createBase = create.match(/const base[^\n]*locationBreakdown[^\n]*/)?.[0]
+    // **한 줄뿐인지까지 센다**(검수 지적 2026-09-16). `match` 는 첫 자리만 보므로, 갈래를 늘리며
+    // base 조립문을 하나 더 세우면 그 새 줄에 마커·표식을 실어도 이 가드가 첫 줄만 보고 지나간다.
+    const createBases = [...create.matchAll(/const base[^\n]*locationBreakdown[^\n]*/g)].map(m => m[0])
+    if (createBases.length > 1) {
+      violations.push(`createStockCheck 에 위치 머지 base 조립문이 ${createBases.length}줄이다 — 갈래가 갈리면 비대칭 가드가 첫 줄만 본다`)
+    }
+    const createBase = createBases[0]
     if (!createBase) {
       violations.push('createStockCheck 의 위치 머지 base 조립문을 못 찾았다 — 비대칭 가드가 겨눌 자리를 잃었다')
     } else {
@@ -283,7 +289,11 @@ function sourceGuards() {
     // 비대칭의 반대쪽 — 여기 base 는 **이 점검의 현재 상태**라 앞 위치가 방금 남긴 마커·표식을
     // 그대로 들고 가야 한다. 빠지면 같은 날 연속 위치 점검의 두 번째 머지가 앞 위치의 +N 을 지우거나
     // (신고 8319ba10) 실측을 이월로 뒤집는다(2026-09-14 4층/5층 주방, 6품목).
-    const updateBase = update.match(/const base[^\n]*locationBreakdown[^\n]*/)?.[0]
+    const updateBases = [...update.matchAll(/const base[^\n]*locationBreakdown[^\n]*/g)].map(m => m[0])
+    if (updateBases.length > 1) {
+      violations.push(`updateStockCheck 에 위치 머지 base 조립문이 ${updateBases.length}줄이다 — 갈래가 갈리면 비대칭 가드가 첫 줄만 본다`)
+    }
+    const updateBase = updateBases[0]
     if (!updateBase) {
       violations.push('updateStockCheck 의 위치 머지 base 조립문을 못 찾았다 — 비대칭 가드가 겨눌 자리를 잃었다')
     } else {

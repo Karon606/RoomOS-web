@@ -123,9 +123,19 @@ need('카드 5장 모형이 남아 있지 않다',
 need('상세 모달 골격 컴포넌트가 있다',
   /function DetailModalSkeleton\(\{ mode \}: \{ mode: 'view' \| 'check' \}\)/.test(client),
   '골격이 함수 한 채여야 모드별 모양을 가를 수 있다')
-need('골격이 모달 본문 여백을 직접 낸다',
-  /className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback"/.test(client),
-  "bodyClassName='' 인 모달의 children 은 자기 여백을 갖는 것이 규칙이다(§13 풀블리드)")
+// 여백은 **대체할 화면의 것**이다(디자이너 검수 2026-09-16). 점검 폼은 `px-5 py-4`, 보기 화면은
+// `px-5 sm:px-6 pt-3` 이라, 한 벌만 쓰면 640px 이상에서 첫 페인트가 4px 튄다.
+need('점검 골격 여백이 점검 폼과 같다',
+  /className="px-5 py-4 space-y-3 delayed-fallback"/.test(client) &&
+  /<form onSubmit=\{handleSubmit\} className="px-5 py-4 space-y-3/.test(client),
+  "bodyClassName='' 인 모달의 children 은 자기 여백을 갖는 것이 규칙이다(§13 풀블리드) — 그 여백이 대체할 폼과 같아야 점프가 없다")
+need('보기 골격 여백이 보기 화면과 같다',
+  /className="px-5 sm:px-6 pt-3 space-y-3 delayed-fallback"/.test(client) &&
+  /<div className="px-5 sm:px-6 pt-3">/.test(client),
+  '보기 화면은 sm 에서 24px 이고 위 여백이 pt-3 이다 — 골격이 py-4 면 로디드에서 아래로 밀린다')
+need('점검 골격에 안내문 블록이 있다',
+  /안내문 두 줄 — 실제 폼의 첫 블록이다/.test(readFileSync(CLIENT, 'utf8')),
+  '실제 폼의 첫 블록을 빼면 골격이 통째로 위로 당겨 붙는다')
 need('골격에 표시 지연이 걸려 있다',
   /delayed-fallback/.test(client),
   '300ms 안에 끝나는 전환에서 골격이 한 프레임 번쩍이면 그게 더 산만하다(§21 임계)')

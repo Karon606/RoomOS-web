@@ -191,7 +191,7 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
     patch({ checkedLocationId: B, afterQty: 10, restockedQty: 9 }),
   ])
   eq('HUB_SHORT: 막힌다', r.ok, false)
-  if (!r.ok) {
+  if (!r.ok && 'index' in r) {
     eq('HUB_SHORT: 걸린 패치 인덱스', r.index, 1)
     // 남은 허브는 10 − 4 = 6 이라 +9 는 3 이 모자란다.
     eq('HUB_SHORT: 그 시점의 허브 잔량', r.short.hubQty, 6)
@@ -215,6 +215,57 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
     eq('패치 0건: 행 수 불변', r.out.length, 2)
     eq('패치 0건: 전부 이월', r.out.every(o => o.carried === true), true)
   }
+}
+
+// ── 11. 허브 패치가 먼저 와도 서버가 맨 뒤로 민다 (2026-09-16 검수) ─────────────
+// '허브는 맨 뒤' 는 장부의 정합 조건이지 호출부의 예의가 아니다. 먼저 쓰면 그 실측 위에서 다시
+// 차감돼 이중으로 빠진다 — 순서를 호출부에 맡기면 새 호출부가 생기는 날 조용히 틀어진다.
+{
+  const base: LocBreakdown[] = [{ locationId: H, qty: 12 }, { locationId: A, qty: 2 }]
+  const hubFirst = applyLocationChecks(base, [
+    patch({ checkedLocationId: H, afterQty: 9, restockedQty: 0 }),
+    patch({ checkedLocationId: A, afterQty: 6, restockedQty: 4 }),
+  ])
+  const hubLast = applyLocationChecks(base, [
+    patch({ checkedLocationId: A, afterQty: 6, restockedQty: 4 }),
+    patch({ checkedLocationId: H, afterQty: 9, restockedQty: 0 }),
+  ])
+  eq('허브 먼저: 통과', hubFirst.ok, true)
+  if (hubFirst.ok && hubLast.ok) {
+    eq('허브 먼저: 결과가 허브 나중과 같다', JSON.stringify(hubFirst.out), JSON.stringify(hubLast.out))
+    eq('허브 먼저: 잰 값이 남는다(이중 차감 없음)', rowOf(hubFirst.out, H)?.qty, 9)
+    eq('허브 먼저: 정렬 결과를 돌려준다', hubFirst.patches[hubFirst.patches.length - 1]?.checkedLocationId, H)
+  }
+}
+
+// ── 12. 같은 위치가 두 번 오면 거부한다 ────────────────────────────────────
+// 마지막 값으로 덮는 것이 자연스러워 보이지만, 앞 패치가 이미 허브를 깎은 뒤라 뒤엣것이 덮어도
+// 그 차감은 남는다 — 조용히 틀리느니 막는다.
+{
+  const r = applyLocationChecks([{ locationId: H, qty: 10 }, { locationId: A, qty: 2 }], [
+    patch({ checkedLocationId: A, afterQty: 4, restockedQty: 2 }),
+    patch({ checkedLocationId: A, afterQty: 7, restockedQty: 3 }),
+  ])
+  eq('중복 패치: 거부', r.ok, false)
+  eq('중복 패치: 어느 위치인지 말한다', !r.ok && 'duplicate' in r ? r.duplicate : null, A)
+}
+
+// ── 13. 실측 표식이 선 행 수 == 패치 수 (가드 우회 봉합의 장부 쪽 축) ──────────────
+// 화면이 '안 적은 행' 을 패치로 섞어 보내면 여기서 실측 행이 그만큼 는다. 값은 안 바뀌므로
+// 데이터 대조는 침묵하지만 이 축은 즉시 빨강이 된다.
+{
+  const base: LocBreakdown[] = [{ locationId: H, qty: 12 }, { locationId: A, qty: 2 }, { locationId: B, qty: 1 }]
+  const r = applyLocationChecks(base, [patch({ checkedLocationId: A, afterQty: 6, restockedQty: 4 })])
+  eq('실측 수 == 패치 수: 통과', r.ok, true)
+  if (r.ok) {
+    eq('실측 수 == 패치 수', r.out.filter(o => o.carried === false).length, 1)
+    eq('안 적은 행은 전부 이월', r.out.filter(o => o.carried === true).length, 2)
+  }
+  const r2 = applyLocationChecks(base, [
+    patch({ checkedLocationId: A, afterQty: 6, restockedQty: 4 }),
+    patch({ checkedLocationId: H, afterQty: 9, restockedQty: 0 }),
+  ])
+  if (r2.ok) eq('실측 수 == 패치 수(허브 포함)', r2.out.filter(o => o.carried === false).length, 2)
 }
 
 console.log(`\n위치 점검 머지 회귀: ${pass} 통과 / ${fails.length} 실패`)

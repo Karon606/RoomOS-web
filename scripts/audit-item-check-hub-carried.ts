@@ -58,8 +58,18 @@ async function main() {
       include: { locationBreakdown: true },
     })
     if (checks.length < 2) continue
-    const hubId = await resolveItemHubLocationId(it.id, it.hubLocationId, it.propertyId)
-    if (!hubId) continue
+    // **오늘의 허브로 과거를 보면 안 된다**(검수 지적 2026-09-16). 허브는 옮길 수 있고(setItemHub),
+    // 승격 이력이 있는 품목은 오늘의 허브가 그 점검 시점에는 평범한 칸이라 `continue` 로 새 나간다.
+    // 그래서 후보를 넓게 잡는다 — 이 품목이 **한 번이라도** 허브로 쓴 적이 있는 위치 전부.
+    // 오늘의 허브 + 이 품목에 링크된 위치 중 영업장 기본 창고. 그 중 그 점검에 행이 있는 것을 쓴다.
+    const todayHub = await resolveItemHubLocationId(it.id, it.hubLocationId, it.propertyId)
+    const links = await prisma.trackedItemLocation.findMany({ where: { trackedItemId: it.id }, select: { storageLocationId: true } })
+    const defaultHubs = await prisma.storageLocation.findMany({
+      where: { propertyId: it.propertyId, isHub: true, id: { in: links.map(l => l.storageLocationId) } },
+      select: { id: true },
+    })
+    const hubCandidates = new Set<string>([...(todayHub ? [todayHub] : []), ...defaultHubs.map(h => h.id)])
+    if (hubCandidates.size === 0) continue
 
     for (let i = 1; i < checks.length; i++) {
       const c = checks[i]
@@ -67,6 +77,10 @@ async function main() {
       // 폼이 아닌 자리(패널·옮기기·수령 자동 점검)는 대상이 아니다.
       if (c.sourceExpenseId) continue
       if (c.memo && (PANEL_MEMO.test(c.memo) || TRANSFER_MEMO.test(c.memo))) continue
+      // 이 점검에 실제로 행이 있는 허브 후보 — 여럿이면 직전 점검에도 있는 쪽을 고른다(그 시점의 창고).
+      const hubId = [...hubCandidates].find(h => c.locationBreakdown.some(b => b.storageLocationId === h) && prev.locationBreakdown.some(b => b.storageLocationId === h))
+        ?? [...hubCandidates].find(h => c.locationBreakdown.some(b => b.storageLocationId === h))
+      if (!hubId) continue
       const hubRow = c.locationBreakdown.find(b => b.storageLocationId === hubId)
       if (!hubRow || hubRow.carried !== false) continue
       // 옮김이 한 건도 없으면 파생값이라는 개념 자체가 없다 — 그 허브 값은 손으로 적은 값이다.

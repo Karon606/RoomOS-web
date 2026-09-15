@@ -772,9 +772,12 @@ export type HubShortResponse = {
   shortfall: number
   others: { locationId: string; name: string; qty: number }[]
   error: string
-  // 복수 패치(아이템별 폼의 원자 저장)에서 **몇 번째 패치**가 걸렸는지. 한 건도 저장하지 않으므로
-  // 클라는 이 인덱스로 어느 위치에서 멈췄는지 말할 수 있다. 단일 패치 경로에서는 언제나 0 이다.
+  // 복수 패치(아이템별 폼의 원자 저장)에서 **몇 번째 패치**가 걸렸는지. 한 건도 저장하지 않는다.
+  // 인덱스는 **서버가 허브를 맨 뒤로 민 뒤의 자리**라 클라가 보낸 배열과 어긋날 수 있으므로,
+  // 화면이 실제로 읽는 것은 아래 위치 id 다(단일 패치 경로에서는 인덱스가 언제나 0).
   patchIndex?: number
+  // 걸린 패치가 점검하려던 위치 — 화면이 "어느 칸에서 막혔는지" 를 이름으로 말하는 근거.
+  stuckLocationId?: string | null
 }
 
 // detectHubShort 의 others(id·qty)에 위치 이름을 채워 팝업 목록에 쓰게 한다.
@@ -868,7 +871,9 @@ export async function createStockCheck(data: {
   // 경로 B — 클라(CheckForm)가 실제로 차감한 허브 위치 id. 검출 허브와 차감 허브를 일치시켜 오탐/미탐 방지.
   restockHubLocationId?: string
   // sameDayNotice — 같은 날 맨 절대값 점검이 이미 있음(안내 전용, 저장은 정상 진행. 백로그 3번).
-}): Promise<{ ok: true; id: string; sameDayNotice?: boolean } | { ok: false; error: string } | HubShortResponse> {
+  // deduped — 20초 멱등창이 이 제출을 중복으로 보고 **새 점검을 만들지 않았다**. 돌려주는 id 는
+  // 기존 점검이므로 호출부는 §16 적용취소를 붙이지 않는다(붙이면 남의 저장을 지우는 버튼이 된다).
+}): Promise<{ ok: true; id: string; sameDayNotice?: boolean; deduped?: boolean } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -893,13 +898,24 @@ export async function createStockCheck(data: {
       // 보충이 또 적용돼 허브가 2배 차감됨.
       // 복수 패치는 **전부** 일치할 때만 같은 제출이다 — 하나라도 다르면 새로 적은 값이 섞인 제출이고,
       // 그걸 멱등으로 삼키면 그 값이 저장되지 않은 채 '저장됨' 이 된다.
+      //
+      // **패치 값 말고도 봐야 할 축이 셋 더 있다**(검수 지적 2026-09-16). 아이템별 폼이 이 갈래를
+      // 타면서 `date`·`memo`·`isReconcile` 이 함께 실려 오는데, 숫자만 대조하면 "같은 숫자로 날짜만
+      // 어제로 고쳐 다시 저장" 이 통째로 삼켜진다 — 화면은 '저장됨' 인데 날짜도 메모도 안 바뀐다.
+      // `carried === false` 도 본다 — 그 행이 이월(파생)이면 '방금 내가 실측으로 쓴 그 행' 이 아니다
+      // (updateStockCheck 은 이미 이 축을 보고 있었고 create 만 빠져 있었다).
       if (lastCheck && (Date.now() - lastCheck.createdAt.getTime()) < 20_000) {
-        const allSame = patches.every(p => {
+        const sameMeta = lastCheck.date.getTime() === ymdToDbDate(data.date).getTime()
+          && (lastCheck.memo ?? '') === (data.memo ?? '')
+          && lastCheck.isReconcile === !!data.isReconcile
+        const allSame = sameMeta && patches.every(p => {
           const lb = lastCheck.locationBreakdown.find(b => b.storageLocationId === p.checkedLocationId)
-          return lb != null && lb.remainingQty === p.afterQty && (lb.restockedQty ?? 0) === p.restockedQty
+          return lb != null && lb.remainingQty === p.afterQty && (lb.restockedQty ?? 0) === p.restockedQty && lb.carried === false
         })
         if (allSame) {
-          return { ok: true, id: lastCheck.id }
+          // **새로 만든 것이 아니다.** 호출부가 이 표식을 보고 §16 적용취소를 붙이지 않는다 —
+          // 붙이면 20초 전의 다른 저장을 지우는 버튼이 된다(그 점검은 이 제출의 결과가 아니다).
+          return { ok: true, id: lastCheck.id, deduped: true }
         }
       }
       // base 에 restockedQty·carried 를 **싣지 않는 것이 의도다**(updateStockCheck 의 base 와 비대칭).
@@ -921,6 +937,10 @@ export async function createStockCheck(data: {
       // 복수 패치는 걸린 자리에서 멈추고 **한 건도 저장하지 않는다**(원자). 부분 반영으로 끝나면
       // 화면은 '저장됨' 인데 장부는 절반이 되고, 그 절반이 다음 점검의 base 가 된다.
       const applied = applyLocationChecks(base, patches, data.allowHubClamp)
+      if (!applied.ok && 'duplicate' in applied) {
+        // 같은 위치가 두 번 실렸다 — 앞 패치가 이미 허브를 깎은 뒤라 뒤엣것이 덮어도 그 차감은 남는다.
+        return { ok: false, error: '같은 위치가 두 번 실렸습니다. 화면을 새로 고치고 다시 저장해 주세요.' }
+      }
       if (!applied.ok) {
         const short = applied.short
         return {
@@ -928,7 +948,10 @@ export async function createStockCheck(data: {
           hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
           others: await withOtherNames(propertyId, short.others),
           error: '창고(허브) 재고가 보충량보다 부족합니다.',
+          // 걸린 자리의 **위치 id** 를 그대로 준다 — 인덱스는 서버가 정렬한 뒤의 자리라 클라가 보낸
+          // 배열과 어긋난다(검수 지적 2026-09-16). 화면은 이 id 로 이름을 찾아 어느 칸인지 말한다.
           patchIndex: applied.index,
+          stuckLocationId: applied.patches[applied.index]?.checkedLocationId ?? null,
         }
       }
       patchedQtys = applied.out
@@ -1004,9 +1027,14 @@ export async function createStockCheck(data: {
     // 자동 삭제는 절대 하지 않는다(2026-08-19 점보롤 앵커 오판 삭제 교훈 — 값이 같아도
     // 보충 마커 등 사건 기록이 실린 앵커는 중복이 아니다). 그래서 수령 자동 점검(sourceExpenseId)·
     // 보정(isReconcile)·보충 마커가 실린 같은 날 점검은 세지 않고, 맨 절대값 점검만 안내 대상.
-    // 위치 병합 저장(locationPatch)은 같은 날 연속 점검이 설계된 흐름이라 제외.
+    // 축이 `patches` 가 아니라 `locationPatch` 인 것은 **의도다**(검수 지적 2026-09-16 — 오타로
+    // 읽히지 않게 적어 둔다). 위치 패널의 체인 저장은 한 칸씩 `locationPatch` 로 오고 같은 날 연속
+    // 저장이 설계된 흐름이라, 칸마다 안내가 뜨면 그것은 안내가 아니라 소음이다. 아이템별 폼
+    // (`locationPatches`)은 한 품목에 한 번 저장하는 자리라 같은 날 두 번 저장한 것이 그대로
+    // 신호다 — 백로그 3번이 원래 겨눈 자리가 거기다.
+    const isPanelChainSave = !!data.locationPatch
     let sameDayNotice = false
-    if (!data.locationPatch) {
+    if (!isPanelChainSave) {
       const sameDay = await prisma.stockCheck.findMany({
         where: { trackedItemId: data.trackedItemId, date: ymdToDbDate(data.date), sourceExpenseId: null, isReconcile: false },
         select: { locationBreakdown: { select: { restockedQty: true } } },

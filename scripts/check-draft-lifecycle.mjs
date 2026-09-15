@@ -30,6 +30,7 @@ import { readFileSync } from 'node:fs'
 const client   = readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8')
 const actions  = readFileSync('app/(app)/inventory/actions.ts', 'utf8')
 const overview = readFileSync('app/(app)/inventory/overview.ts', 'utf8')
+const merge    = readFileSync('lib/stockCheckMerge.ts', 'utf8')
 
 const fails = []
 const need = (name, cond, hint) => { if (!cond) fails.push(`${name}${hint ? ` — ${hint}` : ''}`) }
@@ -467,9 +468,21 @@ need('허브 보정 플래그(hubTouched) 상태가 아이템별 폼에서 사�
   "허브 실측 여부는 beforeQtys[허브] 가 비었는가 하나로 말한다 — 같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다")
 // 폐기한 플래그는 **읽기만** 남는다 — 그 시절 문서를 복원할 때 허브 값이 '채운 후'에 들어 있다.
 // 이 한 줄이 없으면 어제 임시저장한 허브 값이 오늘 폼에서 빈칸으로 열린다.
-need('구 드래프트 문서의 허브 값이 잔량 칸으로 옮겨온다',
-  /if \(main\?\.hubTouched && hubLoc && main\.afterQtys\?\.\[hubLoc\.id\] != null\)/.test(itemForm),
+// 옛 문서 호환은 **드래프트를 읽는 세 자리 전부**에 선다(검수 지적 2026-09-16). 한 자리라도 빠지면
+// 그 경로로 들어온 허브 값이 화면에 안 보이는 채(허브 칸은 before 를 그린다) enteredAny 의 과잉
+// 입고 신호와 §12 칩의 '수정됨' 판정에만 들어간다.
+need('옛 드래프트의 허브 값을 잔량 칸으로 옮기는 정본이 있다',
+  /function hubDraftToBefore\(isHubCell: boolean, before: string, after: string\)/.test(client),
+  '읽는 자리마다 손으로 쓰면 언젠가 한 자리만 바뀐다')
+need('아이템별 문서 복원이 그 정본을 지난다',
+  /const moved = hubDraftToBefore\(true, beforeOv\[hubLoc\.id\] \?\? '', afterOv\[hubLoc\.id\] \?\? ''\)/.test(itemForm),
   '구 문서 호환 한 줄 — 없으면 옛 임시저장의 허브 값이 조용히 사라진다')
+need('아이템별 폼의 위치별 문서 병합도 그 정본을 지난다',
+  /hubDraftToBefore\(\s*\n?\s*hubLoc != null && dr\.locationId === hubLoc\.id,/.test(itemForm),
+  'cross-merge 로 들어오는 옛 값은 이 자리를 안 지나면 그대로 폼에 앉는다')
+need('위치 패널 복원도 그 정본을 지난다',
+  /const \{ before, after \} = hubDraftToBefore\(\s*\n?\s*isHubCell,/.test(locPanel),
+  '패널만 빠지면 같은 값이 그쪽 화면에서 되살아난다')
 need('임시저장 문서에 hubTouched 를 더는 쓰지 않는다',
   !/hubTouched, savedAt/.test(itemForm) && /data: \{ date, qty, memo, locationQtys, beforeQtys, afterQtys, savedAt \}/.test(itemForm),
   '쓰면서 읽으면 폐기가 아니다 — 새 문서는 허브도 beforeQtys 에 든다')
@@ -503,11 +516,21 @@ need('상세 모달이 저장 토스트를 다시 띄우지 않는다',
   '같은 사건을 두 번 알리고, 그 토스트의 액션은 6초 뒤 사라져 이어갈 자리를 잃는다')
 const itemSubmit = fnBody(itemForm, '  const handleSubmit = (e: React.FormEvent) => {')
 need('아이템별 폼의 제출 함수를 찾음', itemSubmit.length > 1000)
-need('저장 성공 토스트마다 §16 적용취소가 달려 있다',
+// 저장 토스트의 부가 옵션은 **한 곳**에서 만든다 — 갈래마다 손으로 쓰면 어느 갈래만 적용취소가
+// 빠지거나 문장이 갈린다. 그 한 곳이 세 축을 지킨다(sameDayNotice 는 detail · deduped 면 적용취소
+// 없음 · 적용취소 뒤 결과 토스트).
+need('저장 성공 토스트가 공용 옵션 한 곳을 쓴다',
+  /const checkSaveToastOpts = \(res: \{ id: string; sameDayNotice\?: boolean; deduped\?: boolean \}\) => \(\{/.test(itemForm) &&
   (itemSubmit.match(/pushToast\('success'/g) ?? []).length ===
-  (itemSubmit.match(/action: \{ label: '적용취소'/g) ?? []).length &&
+  (itemSubmit.match(/checkSaveToastOpts\(res\)/g) ?? []).length &&
   (itemSubmit.match(/pushToast\('success'/g) ?? []).length >= 2,
   '잘못 센 값이 기준선으로 박히면 되돌릴 자리가 토스트뿐이다 — 한 갈래라도 빠지면 그 갈래만 못 되돌린다')
+need('멱등으로 삼킨 저장에는 적용취소를 안 붙인다',
+  /res\.deduped\s*\n?\s*\? \{ detail:/.test(itemForm) && /action: \{ label: '적용취소'/.test(itemForm),
+  '그때 돌아온 id 는 이 제출이 만든 점검이 아니다 — 지우면 20초 전의 다른 저장을 지운다')
+need('적용취소가 끝나면 결과 토스트를 낸다',
+  /pushToast\('info', '재고 점검 저장을 적용취소했습니다'\)/.test(itemForm),
+  '§16 Do — 적용취소 후에도 결과 토스트. 없으면 눌렀는지 아닌지 화면이 말을 안 한다')
 need('세 갈래가 같은 문장이다',
   (itemSubmit.match(/pushToast\('success', '재고 점검 저장됨'/g) ?? []).length ===
   (itemSubmit.match(/pushToast\('success'/g) ?? []).length,
@@ -523,9 +546,15 @@ need('아이템별 폼이 패치로 저장한다',
 need('허브 패치는 적었을 때만, 맨 뒤에 실린다',
   /if \(hubLoc && hubMeasured\) \{[\s\S]{0,260}?patches\.push\(\{ checkedLocationId: hubLoc\.id/.test(itemForm),
   '허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 패널 buildUnits 와 같은 규칙')
-need('허브 부족 재시도가 패치를 거른다',
-  /const patches = saveArgs\.locationPatches\.filter\(p => !exclude\.has\(p\.checkedLocationId\)\)/.test(itemForm),
-  '이동 출처 칸을 그대로 다시 보내면 옮기기 전에 센 값이 이동 점검을 덮어 유령 재고가 된다')
+need('허브 부족 재시도가 이동 출처와 허브 패치를 함께 거른다',
+  /!exclude\.has\(p\.checkedLocationId\) && !\(moved && hubLoc != null && p\.checkedLocationId === hubLoc\.id\)/.test(itemForm),
+  '이동 출처 칸을 그대로 다시 보내면 옮기기 전에 센 값이 이동 점검을 덮고, 허브 패치는 이동 전의 사실이라 옮겨 온 양을 지운다')
+need('허브를 직접 센 제출은 부족 게이트를 끈다',
+  /locationPatches, isReconcile: reconcileMode, allowHubClamp: hubMeasured,/.test(itemForm),
+  '위치 패널의 measuredHubs·clampRef 와 같은 술어다 — 안 끄면 지금 세는 값이 정답인데 팝업이 서고 others 가 비어 화면이 거짓말을 한다')
+need('막힌 자리를 위치 이름으로 말한다',
+  /itemLabel: stuckName/.test(itemForm) && /res\.stuckLocationId/.test(itemForm),
+  "itemLabel 이 빈 문자열이면 팝업이 어느 칸에서 막혔는지 말하지 못한다")
 const serverPatches = (() => {
   const s = actions.indexOf('export async function createStockCheck(data: {')
   if (s < 0) return ''
@@ -539,8 +568,38 @@ need('서버가 두 갈래를 한 자리로 모은다',
 need('서버가 복수 패치를 순서대로 접는다',
   /applyLocationChecks\(base, patches, data\.allowHubClamp\)/.test(serverPatches))
 need('멱등창이 모든 패치의 일치를 본다',
-  /const allSame = patches\.every\(p => \{/.test(serverPatches),
+  /const allSame = sameMeta && patches\.every\(p => \{/.test(serverPatches),
   '하나라도 다르면 새로 적은 값이 섞인 제출이다 — 삼키면 그 값이 저장되지 않은 채 저장됨이 된다')
+// 숫자만 보면 "같은 숫자로 날짜만 어제로 고쳐 다시 저장" 이 통째로 삼켜진다 — 화면은 '저장됨' 인데
+// 날짜도 메모도 안 바뀐다(검수 지적 2026-09-16). carried 축은 updateStockCheck 이 이미 보고 있었다.
+need('멱등창이 날짜·메모·보정 여부도 본다',
+  /const sameMeta = lastCheck\.date\.getTime\(\) === ymdToDbDate\(data\.date\)\.getTime\(\)[\s\S]{0,200}?lastCheck\.isReconcile === !!data\.isReconcile/.test(serverPatches),
+  '숫자만 대조하면 날짜·메모만 고친 재저장이 조용히 삼켜진다')
+need('멱등창이 그 행이 실측인지도 본다',
+  /lb\.carried === false/.test(serverPatches),
+  "이월(파생) 행은 '방금 내가 실측으로 쓴 그 행' 이 아니다")
+need('삼킨 저장은 표식을 달고 돌아온다',
+  /return \{ ok: true, id: lastCheck\.id, deduped: true \}/.test(serverPatches),
+  '호출부가 이 표식을 봐야 §16 적용취소를 안 붙인다')
+need('복수 패치의 순서·중복을 서버가 지킨다',
+  /const ordered = \[\.\.\.patches\]\.sort\(/.test(merge) && /return \{ ok: false, duplicate: p\.checkedLocationId \}/.test(merge),
+  "'허브는 맨 뒤' 는 장부의 정합 조건이지 호출부의 예의가 아니다 — 먼저 쓰면 그 실측 위에서 또 차감된다")
+
+// ── 가드 우회 봉합 — 프리필이 state 가 아니라 **조립부**로 숨어드는 길 ─────────────────
+// 검수가 설계한 우회: `useState({})` 는 그대로 두고 buildLocationPatches 안에서 빈 칸을 직전값으로
+// 채우면 위 22축이 전부 초록인 채 **안 센 위치가 전부 실측 패치로 나간다**. 값은 안 바뀌므로
+// 데이터 대조도 침묵한다. 그래서 '안 적은 행은 패치에 안 실린다' 를 조립부에서 직접 본다.
+const buildPatches = fnBody(itemForm, '  const buildLocationPatches = (): LocCheckPatch[] => {')
+need('패치 조립부를 찾음', buildPatches.length > 200)
+need('안 적은 비허브 행은 패치에 안 실린다',
+  /if \(beforeStr === '' && afterStr === ''\) continue/.test(buildPatches),
+  '안 적은 행을 실으면 아무도 안 센 값이 실측 선언(carried:false)으로 장부에 박혀 그 위치의 전파가 영구히 멈춘다')
+need('안 적은 허브 행도 패치에 안 실린다',
+  /if \(hubLoc && hubMeasured\)/.test(buildPatches),
+  '허브를 안 적었으면 서버가 차감한 파생값을 이월로 남긴다 — 실측으로 박으면 안 된다')
+need('조립부가 직전값(prevMap)을 끌어다 쓰지 않는다',
+  !/prevMap/.test(buildPatches),
+  '프리필이 state 에서 조립부로 자리만 옮긴 우회다 — 빈칸이 정본이라는 규칙은 저장 직전까지 살아야 한다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
