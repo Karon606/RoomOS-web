@@ -9,7 +9,7 @@
 //   · 고아 parentId 는 루트로 올려 살리고 보고한다 — 조용히 빠지면 그 위치의 재고가 화면에서 증발한다.
 import {
   buildTree, flattenDfs, subtreeIds, wouldCycle, siblingNameTaken, depthOf,
-  stripPrefixSuggestion, MAX_DEPTH, type LocationRow,
+  stripPrefixSuggestion, preserveName, MAX_DEPTH, type LocationRow,
 } from '../lib/locationTree'
 
 let pass = 0
@@ -108,6 +108,21 @@ eq('떼기: 접두가 안 맞으면 원래 이름', stripPrefixSuggestion('5층 
 eq('떼기: 부분 일치는 접두가 아니다(공백 경계)', stripPrefixSuggestion('4층 김치냉장고상단', '4층 김치냉장고'), '4층 김치냉장고상단')
 eq('떼기: 다 떼면 빈 이름이라 원래 이름', stripPrefixSuggestion('4층 김치냉장고', '4층 김치냉장고'), '4층 김치냉장고')
 eq('떼기: 부모 경로가 비면 원래 이름', stripPrefixSuggestion('상단', ''), '상단')
+
+// ── 이름 제안 한 규칙(preserveName) — pathName 을 보존한다 ─────────────────
+// 떼기 네 사례는 얇은 래퍼가 된 뒤에도 **값이 한 글자도 안 바뀐다**(위 여섯 단언이 그 축이고,
+// 아래 넷은 같은 값을 정본 함수로 직접 다시 박는다).
+eq('보존: 떼기 사례 값 불변 1', preserveName('4층 김치냉장고 상단', '4층 김치냉장고'), '상단')
+eq('보존: 떼기 사례 값 불변 2', preserveName('4층 주방 김치냉장고 상단', '4층 주방 김치냉장고'), '상단')
+eq('보존: 떼기 사례 값 불변 3(접두 불일치는 제안 없음)', preserveName('5층 김치냉장고 상단', '4층 김치냉장고'), null)
+eq('보존: 떼기 사례 값 불변 4(다 떼면 빈 이름이라 제안 없음)', preserveName('4층 김치냉장고', '4층 김치냉장고'), null)
+// 붙이기 — 얕아지는 방향. 같은 한 규칙이 이름을 늘린다.
+eq('보존: 붙이기(한 단 얕게)', preserveName('4층 주방 김치냉장고 상단', '4층 주방'), '김치냉장고 상단')
+eq('보존: 붙이기 접두 불일치는 제안 없음', preserveName('4층 주방 김치냉장고 상단', '5층 주방'), null)
+eq('보존: 최상위로 빼면 옛 pathName 전체', preserveName('4층 415호 창고', null), '4층 415호 창고')
+eq('보존: 오늘 루트 노드는 name == pathName 이라 한 글자도 안 바뀐다', preserveName('415호 창고', null), '415호 창고')
+eq('보존: 최상위는 빈 문자열도 null 과 같다', preserveName('4층 415호 창고', ''), '4층 415호 창고')
+eq('보존: 부분 일치는 접두가 아니다(공백 경계)', preserveName('4층 김치냉장고상단', '4층 김치냉장고'), null)
 
 // ── 고아 parentId — 루트로 취급하고 보고 ───────────────────────────────────
 {

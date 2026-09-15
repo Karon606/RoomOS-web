@@ -166,14 +166,37 @@ export function siblingNameTaken(
 }
 
 /**
+ * 옮길 때의 이름 제안 한 규칙 — **표기 경로(pathName)를 보존한다**.
+ *
+ * 옛 pathName 에서 새 부모의 pathName 접두를 떼고 남은 나머지가 새 `name` 이다. 그러면 옮기기
+ * 전후로 화면에 찍히는 전체 이름이 글자까지 같다 — `4층 주방 김치냉장고 상단` 을 `4층 주방`
+ * 아래로 올리면 name 이 `김치냉장고 상단` 이 되어 pathName 은 그대로다.
+ *
+ * 방향은 하나가 아니다. 깊어지면 이름이 **줄고**(앞부분 떼기), 얕아지면 **늘어난다**(앞부분 붙이기).
+ * 규칙은 한 줄이고 방향은 그 결과일 뿐이다 — 두 규칙으로 나누면 언젠가 갈린다.
+ *
+ * 돌려주는 값.
+ *   · 새 부모가 없으면(최상위) 옛 pathName **전체**. 오늘의 루트 노드는 name == pathName 이라
+ *     한 글자도 안 바뀐다.
+ *   · 접두가 안 맞거나 떼면 빈 이름이 되면 **null = 제안 없음**(호출부는 현재 name 을 그대로 쓴다).
+ */
+export function preserveName(oldPathName: string, newParentPathName: string | null): string | null {
+  const old = oldPathName.trim()
+  if (old === '') return null
+  const prefix = (newParentPathName ?? '').trim()
+  if (prefix === '') return old
+  if (!old.startsWith(`${prefix} `)) return null
+  const rest = old.slice(prefix.length).trim()
+  return rest === '' ? null : rest
+}
+
+/**
  * 옮길 때의 '앞부분 떼기' 제안. `4층 김치냉장고 상단` 을 `4층 김치냉장고` 아래로 넣으면 `상단`.
  * 접두가 안 맞거나 떼면 빈 이름이 되면 원래 이름을 그대로 돌려준다(제안 없음 = 원본).
+ *
+ * `preserveName` 의 얇은 래퍼다 — 첫 인자로 **name** 을 받는 옛 호출부(옮기기 모달 ·
+ * `moveStorageLocation`)를 그대로 두기 위한 자리이고, 값은 네 사례 모두 종전과 같다.
  */
 export function stripPrefixSuggestion(childName: string, parentPathName: string): string {
-  const prefix = parentPathName.trim()
-  if (prefix === '') return childName
-  const child = childName.trim()
-  if (!child.startsWith(`${prefix} `)) return childName
-  const rest = child.slice(prefix.length).trim()
-  return rest === '' ? childName : rest
+  return preserveName(childName, parentPathName) ?? childName
 }

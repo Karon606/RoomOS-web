@@ -485,3 +485,34 @@
       `context-notes.md` 결정 근거. **Work_log·INDEX 는 이번 시공 범위 밖**
 - [ ] 7. 운영자 실기 확인 4건(아래 보고서)
 - [ ] 8. 독립 디자이너 검수(시공 담당 몫 아님)
+
+
+## 위치 트리 드래그 (2026-09-16)
+
+보관 위치 관리 모달의 손잡이가 **부모를 넘나든다**. 설계 패널 "보관 위치 트리 — 부모를 넘나드는
+드래그" + 운영자 확정 그대로. 기존 `옮기기` 모달 경로·`moveStorageLocation` 은 손대지 않는다.
+
+- [x] 0. 가이드 §22 — '형제 안 순서 전용' 삭제 + 드래그 고스트 등재문(세 구간·고스트·자리표·
+      표시선·막힘·settle·자동 스크롤 48px/420px·드래그는 보조 입구)
+      → 검증: `docs/brand-guide-v2.0.md` §22 두 항목
+- [x] 1. `lib/locationTree.preserveName(옛 pathName, 새 부모 pathName)` + `stripPrefixSuggestion`
+      얇은 래퍼 → 검증: `test-location-tree` 71 통과(떼기 네 사례 값 불변 + 붙이기 네 사례)
+- [x] 2. `actions.ts placeStorageLocation(id, parentId, index, preserve)` — 거부 규칙 다섯은
+      이동과 글자까지 같은 호출, 이름 제안만 `preserveName`, 쓰기는 `$transaction` 하나
+      (자기 parentId·name + 새 형제 전체 sortOrder), undo 는 `LocationMoveUndo`
+      → 검증: tsc 0, 배선 그물 ⓖ 초록
+- [x] 3. `check-location-actions-wiring` ⓖ 신설 — place 다섯 규칙·트랜잭션·형제 전체성·undo·권한·
+      영업장 + 드롭 핸들러가 2연타 대신 place + 포인터 이동에 `setLocs` 없음 + 캡션 축 +
+      드래그와 모달이 같은 `reasonOf` → 검증: 역주입 4종 전부 빨강
+- [x] 4. 드래그 엔진 교체 — `locHitOf`(세 구간 히트) · ref 고스트 · 자리표 · 표시선 · 가장자리
+      자동 스크롤 · 고스트 아래 이름 제안 한 줄. `locReflow`·`locOwnerAt` 삭제
+      → 검증: tsc 0, eslint 496 델타 0
+- [x] 5. `reasonOf` 모듈 레벨 공용화 + 형제 이름·전체 이름 두 줄 추가
+      → 검증: 드래그·모달 한 벌(그물 ⓖ')
+- [x] 6. 이름 제안 기본값·라벨 방향별(모달·드래그) — 최상위면 끔, 아니면 켬 / 떼기·붙이기
+- [x] 7. 캡션 교체 + `check-location-name-axis` 에 표시선 깊이 산식 한 줄
+      → 검증: 옛 문구 사본 0, 그물 초록
+- [x] 8. 문서 — `knowledge/domain-inventory.md` '부모를 넘나드는 드래그' 절 · `glossary.md` 2항 ·
+      이 파일 · `context-notes.md`. **Work_log·INDEX 는 이번 시공 범위 밖**
+- [ ] 9. 운영자 실기 확인 6건(보고서)
+- [ ] 10. 독립 디자이너 검수(시공 담당 몫 아님)

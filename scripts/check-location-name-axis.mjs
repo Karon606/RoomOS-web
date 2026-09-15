@@ -205,6 +205,11 @@ function mustNot(file, block, label, pattern) {
   ]) {
     must(f, slice(f, start, end), label, INDENT, min)
   }
+  // 드래그 표시선(2026-09-16)도 같은 전제 위에 선다 — '놓으면 몇 단이 되는가' 를 말하는 것이
+  // 좌측 여백뿐이다. 그 산식이 LOC_INDENT_PX 를 안 쓰면 표시선과 행이 다른 자에 맞춰져,
+  // 한 단 들어가는 드롭과 형제로 서는 드롭이 화면에서 구분되지 않는다.
+  must(f, slice(f, 'function LocationSettingsModal(', 'function LocationMoveModal('),
+    'LocationSettingsModal(드래그 표시선 들여쓰기)', /left: \(drop\.depth - 1\) \* LOC_INDENT_PX/)
   // 점검 패널은 그룹 헤더와 **그 아래 품목 행**이 같은 자리에 서야 트리로 읽힌다.
   // 헤더만 들여쓰면 품목이 전부 왼쪽 벽에 붙어 어느 칸의 입력인지 다시 모호해진다.
   must(f, slice(f, 'function LocationBatchCheckModal(', 'const LocPinMarker'),

@@ -17,7 +17,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 // 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
 import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
-import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
+import { MAX_DEPTH, depthOf, siblingNameTaken, stripPrefixSuggestion, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
@@ -2886,6 +2886,83 @@ export async function moveStorageLocation(id: string, parentId: string | null, s
       where: { id },
       data: { parentId, name: nextName, sortOrder: maxOrder + 1 },
     })
+    revalidatePath('/inventory')
+    // §29 — 화살표는 '값의 전환' 한 자리에만 쓴다. 이름이 실제로 바뀐 경우에만 붙인다.
+    return { ok: true, undo, ...(nextName !== self.name ? { renameLabel: `${self.name} → ${nextName}` } : {}) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '위치 이동에 실패했습니다.' }
+  }
+}
+
+// 위치를 **부모와 자리까지 한 번에** 놓는다(부모를 넘나드는 드래그, 2026-09-16).
+//
+// 왜 액션을 새로 두나. 드래그 한 번은 '부모가 바뀌고 그 형제 안 자리도 정해진다' 는 한 동작인데,
+// `moveStorageLocation` + `reorderStorageLocations` 2연타로 치면 앞이 성공하고 뒤가 실패할 때
+// **부모만 바뀌고 자리는 맨 뒤인** 반쪽 상태가 남는다. 화면은 이미 놓은 자리를 보여 주고 있으니
+// 운영자는 그 어긋남을 모른다. 그래서 자기 parentId·name 갱신과 새 형제 집합 sortOrder 재기록을
+// **한 트랜잭션**으로 묶는다.
+//
+// 거부 규칙 다섯은 `moveStorageLocation` 과 **글자까지 같은 호출**이다 — 사본을 만들면 두 입구가
+// 허용하는 자리가 언젠가 갈린다(감지망 check-location-actions-wiring ⓖ 가 그 축을 본다).
+// 이름 제안만 다르다. 여기는 `preserveName` — 옛 pathName 에서 새 부모 접두를 뗀 나머지라
+// 얕아지는 방향에서는 이름이 **늘어난다**(앞부분 붙이기). 옮기기 모달은 종전 규칙 그대로다.
+//
+// 같은 부모 안 순서만 바뀐 드롭은 여기로 오지 않는다 — 화면이 `reorderStorageLocations` 로 보낸다.
+// (§16 적용취소가 rename → move → reorder 순인데 `moveStorageLocation` 이 같은 부모를 거부하므로,
+//  같은 부모 place 를 허용하면 되돌릴 수 없는 쓰기가 생긴다.)
+export async function placeStorageLocation(id: string, parentId: string | null, index: number, preserve: boolean): Promise<
+  { ok: true; undo: LocationMoveUndo; renameLabel?: string } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rows = await loadLocationRows(propertyId)
+    const self = rows.find(r => r.id === id)
+    if (!self) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    const parent = parentId === null ? null : rows.find(r => r.id === parentId)
+    // 목록에 없는 부모 = 다른 영업장이거나 삭제된 위치. 소속이 다르면 여기서 걸린다.
+    if (parentId !== null && !parent) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    if (self.parentId === parentId) return { ok: false, error: '이미 그 위치 아래에 있습니다.' }
+    if (!Number.isInteger(index) || index < 0) return { ok: false, error: '놓을 자리가 올바르지 않습니다.' }
+
+    if (wouldCycle(rows, id, parentId)) return { ok: false, error: '자기 자신이나 하위 위치 아래로는 옮길 수 없습니다.' }
+
+    const parentDepth = parentId === null ? 0 : depthOf(rows, parentId)
+    if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
+    const newDepth = parentDepth + 1
+    if (newDepth + subtreeRelativeDepth(rows, id) > MAX_DEPTH) {
+      return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
+    }
+
+    // 이름 제안 — pathName 보존 한 규칙. 제안이 없으면(접두 불일치) 지금 이름 그대로다.
+    const locIndex = indexLocations(rows)
+    const oldPath = locIndex.pathName(id) ?? self.name
+    const parentPath = parentId === null ? null : (locIndex.pathName(parentId) ?? '')
+    const nextName = preserve ? (preserveName(oldPath, parentPath) ?? self.name) : self.name
+    if (siblingNameTaken(rows, parentId, nextName, id)) {
+      return { ok: false, error: `'${nextName}' 은 그 위치에 이미 있습니다.` }
+    }
+    // 옮기면 자손의 전체 이름이 통째로 바뀐다 — 제안 적용 후 이름과 서브트리 자손까지 영업장 안에서 본다.
+    const clash = conflictingPathName(rows, id, parentId, nextName)
+    if (clash) return { ok: false, error: pathNameTakenError(clash) }
+
+    // 새 형제 집합 전체성 — 부분 집합 위에 sortOrder 를 다시 쓰면 안 보낸 형제의 상대 순서가
+    // 흔들린다(reorderStorageLocations 와 같은 문법). rows 는 이 영업장 전체라 소속은 이미 검증됐다.
+    const siblings = rows.filter(r => r.parentId === parentId && r.id !== id).map(r => r.id)
+    const total = await prisma.storageLocation.count({ where: { propertyId, parentId } })
+    if (total !== siblings.length) return { ok: false, error: '위치 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    const at = Math.min(index, siblings.length)
+    const nextIds = [...siblings.slice(0, at), id, ...siblings.slice(at)]
+
+    const siblingsBefore = rows.filter(r => r.parentId === self.parentId).map(r => r.id)
+    const undo: LocationMoveUndo = {
+      id, parentId: self.parentId, name: self.name, sortOrder: self.sortOrder, siblingIds: siblingsBefore,
+    }
+    await prisma.$transaction([
+      prisma.storageLocation.update({ where: { id }, data: { parentId, name: nextName } }),
+      ...nextIds.map((sid, i) => prisma.storageLocation.update({ where: { id: sid }, data: { sortOrder: i } })),
+    ])
     revalidatePath('/inventory')
     // §29 — 화살표는 '값의 전환' 한 자리에만 쓴다. 이름이 실제로 바뀐 경우에만 붙인다.
     return { ok: true, undo, ...(nextName !== self.name ? { renameLabel: `${self.name} → ${nextName}` } : {}) }

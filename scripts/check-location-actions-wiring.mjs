@@ -1,4 +1,4 @@
-// 보관 위치 트리 쓰기 액션의 배선 감지망 — 여섯 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
+// 보관 위치 트리 쓰기 액션의 배선 감지망 — 일곱 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 소스 가드인가. 이동·생성·삭제·순서의 거부 규칙은 DB 가 있어야 실행되는 서버 액션이라
 // 순수 진리표(scripts/test-location-tree.ts)로 덮을 수 없다. 순수 판정 함수는 이미 그 진리표가
@@ -13,11 +13,18 @@
 //   ⓔ 모든 쓰기가 소속 영업장을 확인한다(남의 영업장 위치를 옮기거나 지우지 못하게).
 //   ⓕ 쓰기 셋(생성·이름 바꾸기·이동)이 영업장 안 pathName 유일 검사를 부른다 — 형제 유일은 같은
 //     부모 안만 보므로 루트 `4층 김치냉장고 상단` 과 `4층 김치냉장고` 아래 `상단` 이 둘 다 통과한다.
+//   ⓖ 부모를 넘나드는 드래그(2026-09-16)가 **원자**인가. 드롭 한 번은 '부모가 바뀌고 자리도
+//     정해진다' 는 한 동작인데 move + reorder 2연타로 치면 앞이 성공하고 뒤가 실패할 때 부모만
+//     바뀌고 자리는 맨 뒤인 반쪽이 남는다 — 화면은 이미 놓은 자리를 보여 주니 아무도 모른다.
+//     그래서 (1) placeStorageLocation 이 이동과 **글자까지 같은** 다섯 규칙을 부르고 한
+//     트랜잭션으로 쓰는가, (2) 화면 드롭 핸들러가 2연타 대신 그 액션을 부르는가, (3) 드래그와
+//     옮기기 모달이 **같은 reasonOf** 를 부르는가(막은 자리와 서버가 거부하는 자리가 갈리지 않게).
 //
 // 실행: node scripts/check-location-actions-wiring.mjs
 import { readFileSync } from 'node:fs'
 
 const FILE = 'app/(app)/inventory/actions.ts'
+const UI = 'app/(app)/inventory/InventoryClient.tsx'
 const violations = []
 
 // 문자열·템플릿 안의 // 를 주석으로 오인하지 않도록 상태를 들고 걷는다. 줄 수는 보존한다.
@@ -56,12 +63,16 @@ let src
 try { src = stripComments(readFileSync(FILE, 'utf8')) }
 catch { console.error(`FAIL  ${FILE} — 파일이 없다. 경로가 바뀌었으면 이 그물도 같이 고쳐야 한다.`); process.exit(1) }
 
-function block(startMarker, endMarker) {
-  const from = src.indexOf(startMarker)
+let ui
+try { ui = stripComments(readFileSync(UI, 'utf8')) }
+catch { console.error(`FAIL  ${UI} — 파일이 없다. 경로가 바뀌었으면 이 그물도 같이 고쳐야 한다.`); process.exit(1) }
+
+function block(startMarker, endMarker, source = src) {
+  const from = source.indexOf(startMarker)
   if (from < 0) { violations.push(`블록 시작을 못 찾았다: ${startMarker}`); return null }
-  const to = src.indexOf(endMarker, from + startMarker.length)
+  const to = source.indexOf(endMarker, from + startMarker.length)
   if (to < 0) { violations.push(`블록 끝을 못 찾았다: ${endMarker}`); return null }
-  return src.slice(from, to)
+  return source.slice(from, to)
 }
 
 function must(b, label, pattern, why) {
@@ -69,8 +80,13 @@ function must(b, label, pattern, why) {
   if (!pattern.test(b)) violations.push(`${label} — ${why} (${pattern})`)
 }
 
+function mustNot(b, label, pattern, why) {
+  if (b == null) return
+  if (pattern.test(b)) violations.push(`${label} — ${why} (${pattern})`)
+}
+
 // ── 공통 전제: 순수 판정 함수를 실제로 import 하고 있는가 ────────────────────────────
-for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSuggestion', 'subtreeIds', 'MAX_DEPTH', 'conflictingPathName']) {
+for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSuggestion', 'preserveName', 'subtreeIds', 'MAX_DEPTH', 'conflictingPathName']) {
   if (!new RegExp(`\\b${fn}\\b`).test(src.slice(0, src.indexOf('async function getPropertyId')))) {
     violations.push(`import 에 ${fn} 이 없다 — 판정 정본(lib/locationTree · lib/locationPaths)을 안 쓰고 있다.`)
   }
@@ -78,7 +94,7 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
 
 // ⓐ 이동 — 순환·깊이·형제 중복 셋 전부.
 {
-  const b = block('export async function moveStorageLocation', 'export async function setStorageHub')
+  const b = block('export async function moveStorageLocation', 'export async function placeStorageLocation')
   must(b, '이동', /wouldCycle\(rows, id, parentId\)/, '자기 서브트리 이동 거부(wouldCycle)를 안 부른다')
   must(b, '이동', /depthOf\(rows, parentId\)/, '깊이 계산(depthOf)을 안 부른다')
   must(b, '이동', /subtreeRelativeDepth\(rows, id\)/, '서브트리 깊이까지 안 센다 — 자손 단 노드가 상한을 넘겨 앉는다')
@@ -134,7 +150,8 @@ for (const fn of ['wouldCycle', 'depthOf', 'siblingNameTaken', 'stripPrefixSugge
 for (const fn of [
   ['createStorageLocation', 'export async function updateStorageLocation'],
   ['updateStorageLocation', 'export type LocationDeleteImpact'],
-  ['moveStorageLocation', 'export async function setStorageHub'],
+  ['moveStorageLocation', 'export async function placeStorageLocation'],
+  ['placeStorageLocation', 'export async function reorderTrackedItems'],
   ['reorderStorageLocations', 'export type LocationMoveUndo'],
   ['deleteStorageLocation', 'export async function setItemLocations'],
 ]) {
@@ -143,9 +160,61 @@ for (const fn of [
   must(b, fn[0], /const propertyId = await getPropertyId\(\)/, '영업장을 안 집는다')
 }
 
+// ⓖ 부모를 넘나드는 드래그 — 원자 배치(placeStorageLocation)와 화면 배선.
+{
+  const b = block('export async function placeStorageLocation', 'export async function reorderTrackedItems')
+  // (1) 거부 규칙은 이동과 **글자까지 같은 호출**이다. 한 줄이라도 사본이 되면 두 입구가 허용하는
+  //     자리가 언젠가 갈리고, 그날 화면이 놓게 해 준 자리를 서버가 거부한다.
+  must(b, '배치', /wouldCycle\(rows, id, parentId\)/, '자기 서브트리 이동 거부(wouldCycle)를 안 부른다')
+  must(b, '배치', /depthOf\(rows, parentId\)/, '깊이 계산(depthOf)을 안 부른다')
+  must(b, '배치', /subtreeRelativeDepth\(rows, id\)/, '서브트리 깊이까지 안 센다 — 자손 단 노드가 상한을 넘겨 앉는다')
+  must(b, '배치', /> MAX_DEPTH/, '깊이 상한(MAX_DEPTH) 비교가 없다')
+  must(b, '배치', /siblingNameTaken\(rows, parentId, nextName, id\)/, '형제 중복 거부(siblingNameTaken)를 안 부른다')
+  must(b, '배치', /conflictingPathName\(rows, id, parentId, nextName\)/, '영업장 안 전체 이름 유일을 안 본다 — 자손 경로까지 겹칠 수 있다')
+  must(b, '배치', /preserveName\(oldPath, parentPath\)/, '이름 제안이 pathName 보존 정본(preserveName)이 아니다')
+  must(b, '배치', /const rows = await loadLocationRows\(propertyId\)/, '이 영업장 행 목록을 안 읽는다 — 소속 검사의 전제다')
+  must(b, '배치', /상위 위치를 찾을 수 없습니다/, '다른 영업장 부모를 거부하지 않는다')
+  // (2) 쓰기는 한 트랜잭션이다. 나뉘면 부모만 바뀌고 자리는 맨 뒤인 반쪽이 남는다.
+  must(b, '배치', /prisma\.\$transaction\(/, '부모 갱신과 형제 sortOrder 재기록이 한 트랜잭션이 아니다')
+  must(b, '배치', /count\(\{ where: \{ propertyId, parentId \} \}\)/, '새 형제 집합 전체 개수를 안 센다')
+  must(b, '배치', /total !== siblings\.length/, '형제 전체성 비교가 없다 — 부분 집합 위에 순서를 다시 쓴다')
+  must(b, '배치', /undo: LocationMoveUndo/, '적용취소 페이로드(이전 parentId·name·sortOrder·형제 순서)가 없다')
+}
+
+// ⓖ' 화면 — 드롭 핸들러가 2연타를 안 하고, 드래그와 모달이 같은 판정을 부른다.
+{
+  const drop = block('const commitLocDrop = async (', 'const handleAdd = async (', ui)
+  must(drop, '드롭 핸들러', /placeStorageLocation\(/, '원자 배치 액션을 안 부른다')
+  mustNot(drop, '드롭 핸들러', /moveStorageLocation\(/, 'move + reorder 2연타로 돌아갔다 — 반쪽 저장이 다시 생긴다')
+  mustNot(drop, '드롭 핸들러', /reorderStorageLocations\(/, 'move + reorder 2연타로 돌아갔다 — 반쪽 저장이 다시 생긴다')
+
+  // 포인터 이동에서 목록 state 를 건드리면 한 프레임에 여러 번 오는 이동마다 트리를 다시 엮게 되고
+  // 402px 에서 행이 눈에 띄게 튄다. 움직이는 것은 ref 로 DOM 을 직접 쓰는 고스트 하나뿐이다.
+  const move = block('const onLocHandleMove = ', 'const onLocHandleUp = ', ui)
+  mustNot(move, '포인터 이동', /setLocs\(/, '포인터 이동에서 목록 state 를 다시 쓴다 — 실시간 재배열이 되살아났다')
+  mustNot(move, '포인터 이동', /locReflow/, '실시간 재배열(locReflow)이 되살아났다')
+
+  // 캡션은 손잡이가 무엇을 하는지 미리 말하는 한 줄이다. 옛 문구가 남으면 화면은 부모를 넘나드는데
+  // 안내는 '같은 부모 안에서만' 이라고 말한다 — 기능이 있어도 아무도 안 쓴다.
+  must(ui, '캡션', /손잡이를 잡아 끌어 순서와 상위 위치를 바꿉니다\. 행 가운데에 놓으면 그 위치 아래로 들어갑니다\./,
+    '드래그 안내 문구가 없다')
+  mustNot(ui, '캡션', /손잡이는 같은 부모 아래에서만 순서를 바꿉니다/, '옛 안내 문구(형제 안 순서 전용)가 남아 있다')
+
+  // 판정은 한 벌이다. 드래그는 모듈 레벨 locHitOf 를 거쳐, 모달은 직접 같은 reasonOf 를 부른다.
+  if (!/\nfunction reasonOf\(/.test(ui)) violations.push('화면 — 모듈 레벨 reasonOf 가 없다(드래그와 모달이 나눠 쓰는 판정 한 벌).')
+  must(block('function locHitOf(', 'function LocationSettingsModal(', ui), '드래그 판정', /reasonOf\(ctx, parentId, nextName, samePlace\)/,
+    '히트 판정이 공용 reasonOf 를 안 부른다 — 사본이 생기면 화면이 막은 자리와 서버가 거부하는 자리가 갈린다')
+  must(block('function LocationSettingsModal(', 'function LocationMoveModal(', ui), '드래그 배선', /locHitOf\(s, /,
+    '드래그가 공용 히트 판정(locHitOf)을 안 부른다')
+  must(block('function LocationMoveModal(', 'function BatchLocationModal(', ui), '옮기기 모달', /reasonOf\(ctx, target\?\.id \?\? null, nameFor\(target\), /,
+    '목적지 판정이 공용 reasonOf 를 안 부른다 — 두 입구가 회색으로 막는 자리가 갈린다')
+  mustNot(block('function LocationMoveModal(', 'function BatchLocationModal(', ui), '옮기기 모달', /const reasonOf = /,
+    '모달 안에 reasonOf 사본이 되살아났다')
+}
+
 if (violations.length > 0) {
   for (const v of violations) console.error(`FAIL  ${v}`)
   console.error(`\n위치 트리 쓰기 배선 위반 ${violations.length}건. 판정 정본은 lib/locationTree, 진리표는 scripts/test-location-tree.ts.`)
   process.exit(1)
 }
-console.log('OK    위치 트리 쓰기 여섯 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일)이 배선돼 있다.')
+console.log('OK    위치 트리 쓰기 일곱 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치)이 배선돼 있다.')
