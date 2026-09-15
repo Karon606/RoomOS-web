@@ -1750,7 +1750,7 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
     en:  [{ word: 'Tenant', why: '임차인' }, { word: 'tenant', why: '임차인' }, { word: 'landlord', why: '임대인' }],
     ja:  [{ word: '賃料', why: '임대차' }, { word: '家賃', why: '임대차' }, { word: '宿泊料', why: '숙박업' }],
     zh:  [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿费', why: '숙박업' }],
-    zht: [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿費', why: '숙박업' }],
+    zht: [{ word: '租金', why: '임대차' }, { word: '房租', why: '임대차' }, { word: '住宿費', why: '숙박업' }, { word: '退租', why: '임대차' }],
   }
 
   const hits: string[] = []
@@ -1790,6 +1790,61 @@ eq('순서가 바뀌어도 통과한다(문장 구조는 언어마다 다르다)
   eq('bn 서명 패드가 বাসিন্দা 를 쓴다', signText('bn', 'pad.titleContract').includes('বাসিন্দা'), true)
 
   console.log(`  [실측] 임대차·숙박업 낱말: ${Object.keys(FORBIDDEN).length}언어 × (권장 4 + 안내 ${SIGN_KEYS.length}) 자리 · 위반 ${hits.length}`)
+}
+
+// ── 14단계 중국어 둘의 퇴실 낱말은 그 언어의 실무어다 (2026-09-17 운영자 결정) ──────────
+//
+// **13단계와 축이 다르다. 섞지 마라.** 13은 "그 낱말이 임대차·숙박업 프레임을 끌고 오는가"라는
+// **법 프레임** 축이고, 여기는 "그 언어의 실무 문서가 실제로 그 말을 쓰는가"라는 축이다. 서로를
+// 못 덮는다 — `退住` 는 어느 법 프레임도 안 끌고 오므로 13단계는 영원히 침묵한다. 그런데 대만
+// 정형화계약 원문을 실측하니 `退住` 0회, `遷出` 10회였다(衛福部 住宿式長照機構定型化契約
+// 應記載事項 14회 · 2012 養護 범본 19회, 조항 이름이 「遷出長照機構及遺留物品之處理」다).
+// `退住` 를 유지하던 근거가 그 실측으로 뒤집혔다([[open-issues]]).
+//
+// **간체는 `搬离` 다.** 대만 판정을 그대로 따라갔던 `退住` 는 근거가 같이 사라졌고, `迁出` 은
+// 본토에서 户口 색이 짙어 그대로 옮기면 안 된다. `退宿`·`退房`·`退租` 는 각각 기숙사·호텔·
+// 임대차 프레임이다. 본토 양로·임대차 정형계약이 둘 다 쓰는 말이 `搬离` 다.
+//
+// **12단계가 겪은 구멍을 여기서도 막는다.** '옛 낱말 0' 단언 하나만 두면 문장을 통째로 지워도
+// 초록이다. 새 낱말이 실제로 그 자리에 섰는지 함께 센다 — **가운데 둘이 급소다.**
+//
+// **왜 zh 를 따로 세나.** 2026-09-13 작업이 DB 만 옮기고 코드를 빠뜨려, 같은 상수 안에서
+// `clause.zh` 는 `退住` 인데 `none.zh` 는 `退房` 이었다. 한 상수 안의 갈림을 아무 그물도 안 봤다.
+//
+// **영업장 사전(DB)은 여기서 못 본다** — verify:fast 가 DB 를 안 읽는다. 그쪽은
+// `scripts/fix-contract-translation-text.ts` 가 zht 17줄·zh 17줄을 옮겼고, 되돌아가면 이 그물이
+// 아니라 그 스크립트를 다시 돌려야 한다.
+{
+  const zhTexts = (lang: 'zh' | 'zht'): { where: string; text: string }[] => [
+    { where: '청소비 권장(있음)', text: RECOMMENDED_CLEANING_TRANSLATION.clause[lang] },
+    { where: '청소비 권장(없음)', text: RECOMMENDED_CLEANING_TRANSLATION.none[lang] },
+    { where: '청소비 권장(공제)', text: RECOMMENDED_CLEANING_TRANSLATION.deduct[lang] },
+    { where: '환불 권장', text: RECOMMENDED_REFUND_TRANSLATION[lang] },
+    ...SIGN_KEYS.map(k => ({ where: `서명 안내 ${k}`, text: signText(lang, k) })),
+  ]
+  const zht = zhTexts('zht')
+  const zh = zhTexts('zh')
+
+  // zht — 옛 낱말이 없다.
+  eq('zht 코드 문안에 退住 가 없다', zht.filter(t => t.text.includes('退住')).map(t => t.where), [])
+  // 급소 둘 — 새 낱말이 실제로 그 자리에 섰다.
+  eq('청소비 권장(있음) zht 가 遷出 을 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.zht.includes('遷出'), true)
+  eq('청소비 권장(없음) zht 가 遷出 을 쓴다', RECOMMENDED_CLEANING_TRANSLATION.none.zht.includes('遷出'), true)
+  eq('zht 코드 문안에 退房·退租 가 없다',
+    zht.filter(t => /退房|退租/.test(t.text)).map(t => t.where), [])
+
+  // zh — 같은 꼴.
+  eq('zh 코드 문안에 退住 가 없다', zh.filter(t => t.text.includes('退住')).map(t => t.where), [])
+  eq('청소비 권장(있음) zh 가 搬离 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.clause.zh.includes('搬离'), true)
+  eq('청소비 권장(없음) zh 가 搬离 를 쓴다', RECOMMENDED_CLEANING_TRANSLATION.none.zh.includes('搬离'), true)
+  eq('zh 코드 문안에 退房·退租 가 없다',
+    zh.filter(t => /退房|退租/.test(t.text)).map(t => t.where), [])
+
+  // 실측 줄은 **잰 값**을 찍는다(11·12단계와 같은 규칙). 0 을 글자로 박으면 붉게 선 회차에도
+  // 거짓을 말한다.
+  const stale = [...zht, ...zh].filter(t => /退住|退房|退租/.test(t.text)).length
+  const fresh = [...zht.filter(t => t.text.includes('遷出')), ...zh.filter(t => t.text.includes('搬离'))].length
+  console.log(`  [실측] 중국어 퇴실 낱말: zht ${zht.length}자리 · zh ${zh.length}자리 · 옛 낱말 잔존 ${stale} · 새 낱말 선 자리 ${fresh}`)
 }
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
