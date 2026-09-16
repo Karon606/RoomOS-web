@@ -47,6 +47,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { fileToUploadPdf, fileToUploadImage } from '@/lib/uploadImage'
 import { pdfToPngBlob } from '@/lib/pdfToPng'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
@@ -919,11 +920,12 @@ export default function SettingsForm({
             <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 로고</label>
             <p className="text-xs text-[var(--warm-muted)]">앱 상단·사이드바·대시보드에 <strong>원형으로</strong> 표시되는 대표 로고입니다. 올리면 <strong>위치·크기를 직접 맞출 수</strong> 있어요. 배경 있는 정사각형 권장.</p>
             <div className="flex items-center gap-3">
-              <div className="w-20 h-20 rounded-full border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden shrink-0">
+              {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
+              <div className="w-20 h-20 rounded-full border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden shrink-0">
                 {appLogoUrl ? (
                   <img src={appLogoUrl} alt="영업장 로고" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">미등록</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-mid)]">미등록</span>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -946,11 +948,12 @@ export default function SettingsForm({
             <label className="text-xs font-medium text-[var(--warm-mid)]">계약서용 로고 <span className="text-[var(--warm-muted)] font-normal">(투명 PNG)</span></label>
             <p className="text-xs text-[var(--warm-muted)]">계약서 헤더에만 표시됩니다. 투명 배경 가로형 PNG 권장.</p>
             <div className="flex items-center gap-3">
-              <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
+              {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
+              <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">
                 {logoUrl ? (
                   <img src={logoUrl} alt="계약서용 로고" className="max-w-full max-h-full object-contain" />
                 ) : (
-                  <span className="text-xs text-[var(--warm-muted)]">미등록</span>
+                  <span className="text-xs text-[var(--warm-mid)]">미등록</span>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -2091,7 +2094,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     const id = bizCert.driveFileId
     let alive = true
     let made: string | null = null
-    setCertThumbError(null)
+    setCertThumb(null); setCertThumbError(null)
     void (async () => {
       try {
         const res = await fetch(`/api/biz-cert?v=${id}`)
@@ -2103,7 +2106,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
       } catch (err) {
         if (!alive) return
         setCertThumb(null)
-        setCertThumbError(humanError(err, 'PDF 첫 장을 그리지 못했습니다.'))
+        setCertThumbError(humanError(err, '첫 장을 여는 데 실패했습니다.'))
       }
     })()
     return () => { alive = false; if (made) URL.revokeObjectURL(made) }
@@ -2228,7 +2231,11 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
               // eslint-disable-next-line @next/next/no-img-element
               <img src={certThumb} alt="사업자등록증 첫 장" className="max-w-full max-h-full object-contain" />
             ) : bizCert ? (
-              <span className="text-xs font-medium text-[var(--warm-mid)]">PDF</span>
+              // 아직 그리는 중 — 'PDF' 글자를 먼저 세우면 1~3초 뒤 그림으로 바뀌며 칸이 튄다.
+              // delayed-fallback 은 300ms 안에 끝나면 한 프레임도 안 보인다(§18.3).
+              certThumbError
+                ? <span className="text-xs font-medium text-[var(--warm-mid)]">PDF</span>
+                : <Skeleton className="w-full h-full delayed-fallback" />
             ) : (
               // --warm-muted 는 이 바탕(--cream-soft) 위에서 다크 4.46:1 로 §28 본문 하한(4.5)에 못 미쳤다
               // (헤드리스 실측). --warm-mid 는 라이트에서 --warm-muted 와 같은 값이라 밝은 화면은 무변동.
@@ -2256,11 +2263,12 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
         <h3 className="text-sm font-semibold text-[var(--warm-dark)]">도장 이미지</h3>
         <p className="text-xs text-[var(--warm-muted)] -mt-1">투명 배경 PNG 권장. 출력 시 사업자 서명란 옆에 자동 표시됩니다.</p>
         <div className="flex items-center gap-4">
-          <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
+          {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
+          <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">
             {stampUrl ? (
               <img src={stampUrl} alt="도장" className="max-w-full max-h-full object-contain" />
             ) : (
-              <span className="text-xs text-[var(--warm-muted)]">미등록</span>
+              <span className="text-xs text-[var(--warm-mid)]">미등록</span>
             )}
           </div>
           <div className="flex flex-col gap-2">
