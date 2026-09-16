@@ -45,6 +45,7 @@ import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum 
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { fileToUploadPdf, fileToUploadImage } from '@/lib/uploadImage'
+import { pdfToPngBlob } from '@/lib/pdfToPng'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
@@ -1971,6 +1972,12 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
   const [certUploading, setCertUploading]   = useState(false)
+  // 사업자등록증 미리보기 — PDF 는 첫 장을 그려 같은 칸에 얹는다(운영자 지적 2026-09-16).
+  // 사진을 올리기 전에 PDF 한 장으로 정규화하면서(handleBizCertSelect) 이미지 갈래로 떨어지는
+  // 파일이 사라져, 어떤 장이 올라가 있는지 화면이 말해 주지 못했다. 실패하면 종전 'PDF' 표시로
+  // 떨어지되 아래 한 줄이 무엇을 못 그렸는지 말한다 — 조용히 삼키면 같은 회귀가 또 안 보인다.
+  const [certThumb, setCertThumb]           = useState<string | null>(null)
+  const [certThumbError, setCertThumbError] = useState<string | null>(null)
 
   // 서류 자동채움 값 — 기본정보 탭에서 옮겨 온 상태(2026-08-19 IA 2단계). 칸의 문법은 무수정.
   const [areaVal, setAreaVal] = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
@@ -2071,6 +2078,37 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   // **사진은 올리기 전에 PDF 한 장으로 바뀐다**(lib/uploadImage, 운영자 결정 2026-09-16).
   // 아이폰 HEIC 를 그대로 저장하면 상담 문자·메일 첨부가 열리지 않는 파일로 나간다. 변환에
   // 실패하면 던지므로 원본이 조용히 올라가는 분기가 없고, 그 문구는 아래 catch 가 띄운다.
+  //
+  // 그 정규화가 미리보기를 죽였다(운영자 지적 2026-09-16) — 이미지 갈래로 떨어지는 파일이
+  // 없어져 칸에 'PDF' 글자만 남았다. 그래서 등록된 것이 PDF 면 첫 장을 래스터화해 같은 칸에
+  // 그린다. 래스터화 정본은 lib/pdfToPng(서류 '사진 저장'·상담 도구가 쓰는 그것)이고 바이트는
+  // 미리보기와 같은 인증 프록시에서 온다. 파일이 바뀌면(driveFileId) 다시 그린다 — 교체 직후
+  // 옛 장이 남으면 미리보기가 거짓말을 한다.
+  useEffect(() => {
+    // 조건이 아래 그리는 갈래와 **같은 문장**이다 — 지금 맨 'PDF' 글자만 서는 그 집합이 곧
+    // 첫 장을 그려야 하는 집합이다. 갈라 적으면 mime 이 빈 옛 저장분이 어느 쪽에도 안 든다.
+    if (!bizCert || bizCert.mimeType.startsWith('image/')) { setCertThumb(null); setCertThumbError(null); return }
+    const id = bizCert.driveFileId
+    let alive = true
+    let made: string | null = null
+    setCertThumbError(null)
+    void (async () => {
+      try {
+        const res = await fetch(`/api/biz-cert?v=${id}`)
+        if (!res.ok) throw new Error(`사업자등록증을 불러오지 못했습니다 (${res.status}).`)
+        const blob = await pdfToPngBlob(await res.arrayBuffer(), 1.5)
+        if (!alive) return
+        made = URL.createObjectURL(blob)
+        setCertThumb(made)
+      } catch (err) {
+        if (!alive) return
+        setCertThumb(null)
+        setCertThumbError(humanError(err, 'PDF 첫 장을 그리지 못했습니다.'))
+      }
+    })()
+    return () => { alive = false; if (made) URL.revokeObjectURL(made) }
+  }, [bizCert?.driveFileId, bizCert?.mimeType])
+
   const handleBizCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -2185,6 +2223,10 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
               // 인증 프록시를 직접 문다 — Drive 공개 URL 을 쓰지 않는다. v= 는 교체 직후 옛 캐시를 끊는 키다.
               // eslint-disable-next-line @next/next/no-img-element
               <img src={`/api/biz-cert?v=${bizCert.driveFileId}`} alt="사업자등록증" className="max-w-full max-h-full object-contain" />
+            ) : certThumb ? (
+              // PDF 첫 장. 위 효과가 만든 화면 안 주소(blob:)라 v= 가 필요 없다 — 파일이 바뀌면 효과가 다시 그린다.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={certThumb} alt="사업자등록증 첫 장" className="max-w-full max-h-full object-contain" />
             ) : bizCert ? (
               <span className="text-xs font-medium text-[var(--warm-mid)]">PDF</span>
             ) : (
@@ -2202,6 +2244,11 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
             {bizCert && <Btn variant="danger" size="sm" onClick={handleBizCertDelete} disabled={certUploading}>삭제</Btn>}
           </div>
         </div>
+        {/* 미리보기만 못 그린 것이라 파일·보내기는 멀쩡하다는 것까지 말한다 — 그 말이 없으면
+            운영자가 등록증이 깨진 줄 알고 멀쩡한 파일을 다시 올린다. */}
+        {certThumbError && (
+          <p className="text-xs text-[var(--warm-mid)]">미리보기를 그리지 못했습니다. {certThumbError} 파일은 그대로 있어 보내기와 첨부는 됩니다.</p>
+        )}
       </div>
 
       {/* 도장 */}
