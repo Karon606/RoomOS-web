@@ -1223,6 +1223,142 @@ export function translationNoticeBi(lang: TranslationLang): string {
   return `${TRANSLATION_NOTICE.ko}\n${TRANSLATION_NOTICE[lang]}`
 }
 
+// ── 검수 종이 문안 ──────────────────────────────────────────────────
+//
+// 왜 그 언어로 적나(운영자 오더 2026-09-17, 번역가 패널 + 독립 원어민 검수). 검수 종이는 **그
+// 언어를 읽을 줄 아는 사람에게 보내 "번역이 맞는지" 묻는** 종이다. 그런데 검수 지시가 한국어이거나
+// 한/영이면 검수자가 그 지시를 못 읽는다. 못 읽는 지시 위에서 나온 답은 거짓이고, 운영자는 그
+// 거짓을 검증할 방법이 없다 — 한자·벵골 글자를 스스로 읽지 못하기 때문이다. 그 구멍을 막는다.
+//
+// **Record 전량 선언이다. Partial 금지**(TRANSLATION_NOTICE 선례). 언어가 늘었는데 문안을 안
+// 채우면 tsc 가 컴파일을 막는다 — 그것이 누락 감지망이다. 빠뜨린 채 나가면 그 언어의 검수자만
+// 지시를 못 읽는데, 그 결손은 종이 위에서 아무 소리도 안 낸다.
+//
+// **인용부호를 기계로 통일하지 마라.** 본토 중국어 `“”` · 대만·일본 `「」` · 러시아 `«»` 로
+// 갈린다. lib/signGuideText 가 이미 그렇게 갈라 두었다(:428·496·565).
+//
+// 세는 자리는 `{총}`·`{남은}` **홑중괄호**다. renderContractText 의 자리표시자가 `{{ }}` 라
+// 홑중괄호는 그 그물에 안 걸린다 — 안내 문안이 `{{ }}` 를 글자 그대로 품고 있어서 그렇게 갈랐다.
+// **이 표들을 renderContractText 에 통과시키지 마라.** 통과시키면 안내문의 `{{ }}` 가 `{{}}` 로
+// 쪼그라들어, "이 표시는 고장이 아니다"라고 말하는 문장이 스스로 고장 난 모습으로 나간다.
+
+/**
+ * 번역이 없어 한국어가 남은 항목에 붙는 회색 표식 — **그 언어 단독**이다.
+ *
+ * 한국어 `원문` 을 함께 안 남긴다. 이 낱말은 종이에서 수십 번 반복되어 길이가 급소이고,
+ * 무엇보다 **그 낱말 자체가 이번 사고의 원인**이다 — 검수자는 제 언어로 된 표식을 찾는다.
+ *
+ * `untranslated` 로 줄이지 마라(en) — 완료 상태로 읽힌다. 실측 3장에 넘침 0 이라 자리가 있다.
+ */
+export const TRANSLATION_PRINT_MARK: Record<TranslationLang, string> = {
+  en: 'not yet translated',
+  vi: 'chưa dịch',
+  bn: 'অনুবাদ বাকি',
+  ru: 'без перевода',
+  ja: '未翻訳',
+  zh: '未翻译',
+  zht: '未翻譯',
+}
+
+/**
+ * 진행 첫 문장 — 남은 것이 있을 때. `{총}`·`{남은}` 을 숫자로 바꿔 쓴다.
+ *
+ * zh·zht 에 `条目`/`條目` 을 쓰지 마라 — 뒤 문장의 `标有` 와 만나면 `条`·`目标`·`有` 로 갈라
+ * 읽히는 정원길 문장이 된다(`目标` 이 실재어다). ru 의 콜론 수법은 수 일치 회피라 유지한다.
+ */
+export const TRANSLATION_PRINT_PROGRESS_LEFT: Record<TranslationLang, string> = {
+  en: '{남은} of the {총} items are still in the Korean original.',
+  vi: 'Trong {총} mục, còn {남은} mục vẫn là nguyên bản tiếng Hàn.',
+  bn: '{총}টি অংশের মধ্যে {남은}টি এখনো অনুবাদ হয়নি, কোরিয়ান মূল লেখাই আছে।',
+  ru: 'Всего пунктов: {총}. Из них без перевода: {남은}.',
+  ja: '全{총}項目のうち{남은}項目が韓国語原文のままです。',
+  zh: '共{총}项，其中{남은}项仍为韩文原文。',
+  zht: '共{총}項，其中{남은}項仍為韓文原文。',
+}
+
+/**
+ * 진행 둘째 문장 — **TRANSLATION_PRINT_MARK 를 그대로 인용한다.**
+ *
+ * 표식과 인용이 두 자리에 있으므로 한쪽만 고치면 종이가 자기 표식을 못 가리킨다. 표를 고칠 때는
+ * 둘을 짝으로 고쳐라. zh·zht 의 `都` 는 정원길 차단이니 빼지 마라.
+ */
+export const TRANSLATION_PRINT_PROGRESS_MARKED: Record<TranslationLang, string> = {
+  en: 'These are the items marked "not yet translated".',
+  vi: 'Đó là những mục có dấu "chưa dịch".',
+  bn: 'এই অংশগুলোতে "অনুবাদ বাকি" চিহ্ন দেওয়া আছে।',
+  ru: 'Эти пункты остались на корейском языке и помечены «без перевода».',
+  ja: '「未翻訳」の印が付いた項目です。',
+  zh: '这些项都标有“未翻译”。',
+  zht: '這些項都標有「未翻譯」。',
+}
+
+/**
+ * 진행 — 다 찼을 때. ru 는 두 문장 구조를 유지한다. 한 문장으로 붙이면 `{총}` 이 1·2·3·4 일 때
+ * 어미가 깨진다(수 일치).
+ */
+export const TRANSLATION_PRINT_PROGRESS_ALL: Record<TranslationLang, string> = {
+  en: 'All {총} items are translated.',
+  vi: 'Cả {총} mục đều đã được dịch.',
+  bn: '{총}টি অংশই অনুবাদ করা হয়েছে।',
+  ru: 'Переведены все пункты. Всего пунктов: {총}.',
+  ja: '全{총}項目すべて翻訳済みです。',
+  zh: '全部{총}项均已翻译。',
+  zht: '全部{총}項均已翻譯。',
+}
+
+/**
+ * 검수 안내 — `{{ }}` 가 그대로 보이는 것이 고장이 아니라는 말.
+ *
+ * **문장이 셋인 이유(독립 검수 2026-09-17의 가장 큰 발견).** 종이에 실제로 뜨는 것은 빈 `{{ }}`
+ * 가 아니라 `{{청소비}}` 다 — 영어 종이에도 `The cleaning fee of {{청소비}} is payment for…` 로
+ * 나간다. 그 한국어를 본 검수자는 "여기 한국어가 안 지워졌다"고 답하고 그 답은 거짓이다. 회색
+ * 표식은 그 자리에 안 붙으니 표식으로는 못 막는다. 그래서 **중괄호 안의 한국어는 항목 이름이지
+ * 미번역이 아니다**를 일곱 언어 전부에 한 문장 더 적었다. 그 문장을 지우지 마라.
+ *
+ * ru 의 `—` 는 주어와 `это` 술어 사이에 오는 тире 로 **러시아어에서 생략이 금지된 문법 부호**다.
+ * 가이드 §25 의 em dash 금지에 안 걸린다. 그리고 `настоящий договор` 로 되돌리지 마라 —
+ * 그것은 "이 문서"를 뜻하는 정형구라, 이 종이가 스스로를 계약서라 부르게 된다
+ * (RECOMMENDED_CLEANING_TRANSLATION.none.ru 가 그 뜻으로 쓴 증거다).
+ *
+ * zh·zht 가 셋에서 갈린다 — `合同`/`契約` · `信息`/`資訊` · `字段`/`欄位`. 양안 표준이 실제로
+ * 다른 자리라 한쪽으로 통일하면 한쪽 검수자가 낯선 말을 읽는다.
+ */
+export const TRANSLATION_PRINT_VAR_GUIDE: Record<TranslationLang, string> = {
+  en: 'The {{ }} marks are placeholders that the real contract fills in with a value, so they appear as-is here. The Korean word inside the braces is the field name, not untranslated text. This is not an error.',
+  vi: 'Dấu {{ }} trong các điều khoản là chỗ sẽ điền thông tin trên hợp đồng thực tế, nên ở bản này chúng hiện nguyên như vậy. Từ tiếng Hàn bên trong dấu ngoặc là tên của trường thông tin, không phải phần chưa dịch. Đây không phải lỗi.',
+  bn: 'ধারাগুলোর ভেতরে {{ }} চিহ্ন আসল চুক্তিতে তথ্য বসানোর জায়গা, তাই এই কাগজে সেগুলো যেমন আছে তেমনই দেখা যায়। বন্ধনীর ভেতরের কোরিয়ান শব্দটি ওই ঘরের নাম, অনুবাদ বাকি থাকা লেখা নয়। এটি কোনো ত্রুটি নয়।',
+  ru: 'Знаки {{ }} в пунктах — это места, которые заполняются в самом договоре, поэтому здесь они видны как есть. Корейское слово внутри скобок — это название поля, а не непереведённый текст. Это не ошибка.',
+  ja: '条項内の {{ }} は、実際の契約書で値が入る箇所です。本翻訳ではそのまま表示されます。かっこ内の韓国語は項目名であり、未翻訳の文ではありません。誤りではありません。',
+  zh: '条款中的 {{ }} 是实际合同中填入具体信息的位置，在本译文中原样显示。括号内的韩文是字段名称，并非未翻译的内容。这不是错误。',
+  zht: '條款中的 {{ }} 是實際契約中填入具體資訊的位置，在本譯文中原樣顯示。括號內的韓文是欄位名稱，並非未翻譯的內容。這不是錯誤。',
+}
+
+/**
+ * 종이 머리 라벨의 뒤쪽 자리. 한국어 앞쪽과 짝지어 선다(translationPrintHeadText).
+ *
+ * zht 에 `不構成契約` 을 쓰지 마라 — 라벨 슬롯이라 명사구가 들어가야 하는데 그것은 술어구다.
+ */
+export const TRANSLATION_PRINT_HEAD: Record<TranslationLang, string> = {
+  en: 'Reference only · Not a contract',
+  vi: 'Chỉ để tham khảo · Không phải hợp đồng',
+  bn: 'শুধু সহায়তার জন্য · এটি চুক্তি নয়',
+  ru: 'Только для справки · Не является договором',
+  ja: '参考用 · 契約書ではありません',
+  zh: '仅供参考 · 非合同文本',
+  zht: '僅供參考 · 非契約文件',
+}
+
+/** 모든 장 꼬리말의 뒤쪽 자리. 머리와 같은 말을 하되 문장 모양이다(translationPrintFooterText). */
+export const TRANSLATION_PRINT_FOOTER: Record<TranslationLang, string> = {
+  en: 'Reference translation, not a contract',
+  vi: 'Bản dịch tham khảo, không phải hợp đồng',
+  bn: 'সহায়তার জন্য অনুবাদ, চুক্তি নয়',
+  ru: 'Справочный перевод, не является договором',
+  ja: '参考用翻訳、契約書ではありません',
+  zh: '参考译文，非合同文本',
+  zht: '參考譯文，非契約文件',
+}
+
 /**
  * 이 계약서에 우선 조항을 붙일지. **번역본이 없으면 null 이다.**
  *

@@ -187,7 +187,12 @@ export async function POST(req: Request) {
           margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' },
           displayHeaderFooter: true,
           headerTemplate: '<div></div>',
-          footerTemplate: buildTranslationPrintFooterTemplate(pretendardBase64, withPageNumber),
+          // 꼬리말도 그 언어로 간다 — 2장 이후 유일한 표식이라, 머리만 고치면 검수자가 2장부터
+          // 아무것도 못 읽는다. 본문 밖 독립 문서라 **그 언어 글꼴을 한 벌 더 싣는다**(재고 정한
+          // 것이다. 최악인 zh 가 본문 7.93MB + 꼬리말 7.93MB · setContent 663ms · pdf 571ms 로
+          // 위 25초 상한과 maxDuration 60초 예산 안에 든다, 2026-09-17 실측).
+          footerTemplate: buildTranslationPrintFooterTemplate(
+            parsedLang, pretendardBase64, scriptFontBase64, withPageNumber),
         }))
         // 번호를 붙여 한 번 찍고 장수를 센다. 한 장이면 번호를 걷고 한 번 더 찍는다(§26 "2p 이상만").
         // 번역 전문은 2장 이상이 보통이라 번호 붙인 쪽을 먼저 찍는 편이 두 번 찍는 일이 드물다.

@@ -27,7 +27,10 @@ import {
   type ContractTemplate, type SubLeaseAddendum,
 } from '@/lib/contract'
 import {
-  TRANSLATION_LANG_ENDONYM, translationNoticeBi,
+  TRANSLATION_LANG_ENDONYM, translationNoticeBi, translationSourceLines,
+  TRANSLATION_PRINT_MARK, TRANSLATION_PRINT_PROGRESS_LEFT, TRANSLATION_PRINT_PROGRESS_MARKED,
+  TRANSLATION_PRINT_PROGRESS_ALL, TRANSLATION_PRINT_VAR_GUIDE,
+  TRANSLATION_PRINT_HEAD, TRANSLATION_PRINT_FOOTER,
   type ResolvedContractTranslation, type TranslationLang,
 } from '@/lib/contractTranslation'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -96,11 +99,22 @@ export async function translationPretendardBase64(): Promise<string> {
   return b64
 }
 
-/** 모든 장 꼬리말에 서는 문장. 종이 어느 쪽을 펴도 무엇인지 읽힌다. */
-export const TRANSLATION_PRINT_FOOTER_TEXT = '참고용 번역본 · 계약서 아님 / Reference translation, not a contract'
+/**
+ * 모든 장 꼬리말에 서는 문장 — **한국어 줄 + 그 언어 줄**이다.
+ *
+ * 뒤쪽을 그 언어로 가는 이유. 머리만 고치면 **2장부터 검수자가 아무것도 못 읽는다** — 이 종이는
+ * 번역 전문이라 두 장 넘기기가 보통이고, 꼬리말은 2장 이후 유일한 표식이다.
+ * 한국어를 남기는 이유는 운영자가 자기 손의 종이를 알아봐야 해서다(그가 못 읽는 언어로만 적으면
+ * 어느 언어의 검수본인지도 종이 위에서 못 읽는다).
+ */
+export function translationPrintFooterText(lang: TranslationLang): string {
+  return `참고용 번역본 · 계약서 아님 / ${TRANSLATION_PRINT_FOOTER[lang]}`
+}
 
-/** 종이 머리에 서는 문장. 꼬리말과 같은 말을 하되 첫 줄에서 먼저 말한다. */
-const TRANSLATION_PRINT_HEAD_TEXT = '참고용 · 계약서 아님 / Reference only · Not a contract'
+/** 종이 머리에 서는 문장. 꼬리말과 같은 말을 하되 첫 줄에서 먼저 말한다. 같은 병기 규칙이다. */
+function translationPrintHeadText(lang: TranslationLang): string {
+  return `참고용 · 계약서 아님 / ${TRANSLATION_PRINT_HEAD[lang]}`
+}
 
 const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -108,8 +122,14 @@ const escape = (s: string) =>
 /**
  * 모든 장에 서는 꼬리말 — puppeteer 의 footerTemplate 이다.
  *
- * 본문 HTML 밖에서 그려지므로 글꼴을 다시 실어야 한다(계약서 라우트의 꼬리말과 같은 사정).
- * 꼬리말 문장은 한국어라 Pretendard 한 벌이면 충분하다.
+ * 본문 HTML 밖에서 그려지는 **독립 문서**라 글꼴을 자기가 다시 들어야 한다(계약서 라우트의
+ * 꼬리말과 같은 사정). 꼬리말이 그 언어로 가면서 **그 언어 글꼴도 여기 한 벌 더 실린다** —
+ * 본문에 실린 벌은 이 문서에 안 닿는다. 안 실으면 2장 이후 유일한 표식이 통째로 두부가 되고,
+ * 운영자는 그것을 못 읽는다(파일 머리 주석의 '부분 성공 없음'이 이 자리에서만 되살아난다).
+ *
+ * **재고 정한 것이다**(2026-09-17 실측, 로컬 Chrome). 최악인 zh 가 본문 7.93MB + 꼬리말 7.93MB
+ * 이고 setContent 663ms · pdf 571ms 라 25초 상한과 maxDuration 60초 예산 안에 넉넉히 든다.
+ * 글꼴을 더 키울 일이 생기면 여기를 다시 재라.
  *
  * **페이지 번호는 2장 이상일 때만 붙는다**(§26 "페이지 번호는 2p 이상만"). 한 장짜리에 `1 / 1`
  * 을 찍으면 셀 것이 없는 자리에 숫자를 두는 일이고, 형제 계약서 라우트는 장수를 센 뒤 2장부터만
@@ -117,10 +137,20 @@ const escape = (s: string) =>
  * 장수는 부르는 쪽만 알 수 있으므로 `withPageNumber` 로 받는다. 참고용 표식은 장수와 무관하게
  * 항상 선다(scripts/check-translation-print.mjs 축 5).
  */
-export function buildTranslationPrintFooterTemplate(pretendardBase64: string, withPageNumber = true): string {
-  return `<style>@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}*{margin:0;padding:0}</style>`
-    + `<div style="font-family:'Pretendard',sans-serif;font-size:8pt;color:${PRINT_HEX.inkMuted};width:100%;padding:0 16mm;display:flex;justify-content:space-between;align-items:center;">`
-    + `<span>${TRANSLATION_PRINT_FOOTER_TEXT}</span>`
+export function buildTranslationPrintFooterTemplate(
+  lang: TranslationLang,
+  pretendardBase64: string,
+  scriptFontBase64: string | null,
+  withPageNumber = true,
+): string {
+  // 본문과 **같은 순서**다(bodyFamily). 순서가 갈리면 한 낱말이 두 서체에 나뉘어 그려진다.
+  const scriptFace = scriptFontBase64
+    ? `@font-face{font-family:'${SCRIPT_FAMILY}';font-weight:400;font-style:normal;font-display:block;src:url(data:font/woff2;base64,${scriptFontBase64}) format('woff2');}`
+    : ''
+  const family = scriptFontBase64 ? `'${SCRIPT_FAMILY}','Pretendard',sans-serif` : `'Pretendard',sans-serif`
+  return `<style>${scriptFace}@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}*{margin:0;padding:0}</style>`
+    + `<div style="font-family:${family};font-size:8pt;color:${PRINT_HEX.inkMuted};width:100%;padding:0 16mm;display:flex;justify-content:space-between;align-items:center;">`
+    + `<span>${escape(translationPrintFooterText(lang))}</span>`
     + (withPageNumber
       ? `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span>`
       : '')
@@ -191,15 +221,44 @@ export function buildContractTranslationPrintHtml(
     ? `'${SCRIPT_FAMILY}', 'Pretendard', sans-serif`
     : `'Pretendard', sans-serif`
 
-  // 진행 한 줄. 검수자가 "왜 여기만 한국어인가"를 묻기 전에 종이가 먼저 답한다.
+  // 세는 낱말은 **검수자가 종이에서 셀 수 있는 덩어리**라야 한다(독립 검수 2026-09-17 실측).
+  // `t.totalCount` 는 줄이 아니라 사전 열쇠 수라 **변수 줄까지 든다.** 변수 줄은 조항 *안*에
+  // 치환돼 들어가 종이에 독립된 줄로 안 서므로, 그 수를 찍으면 검수자가 세어서 못 맞추는 숫자가
+  // 된다(기본 템플릿 실측 — 열쇠 53 · 라우트 해석 50 · 종이에 서는 덩어리 49).
+  // 그래서 여기서 **변수 줄을 뺀 수를 다시 센다.** 변수 줄은 환불·청소비 인자를 넘길 때만 서므로
+  // 그 인자를 안 넘기면 제목·절 제목·항목·서약문만 나온다 — 그것이 곧 종이에 서는 덩어리다.
+  // 검수자가 세어서 안 맞는 숫자는 그 자체로 "이 종이 어딘가 잘못됐다"는 신호가 되어야 한다.
+  //
+  // 낱말도 `줄` 이 아니라 `항목` 이다. 항목 하나가 종이에서 2~3줄로 접히므로 "53줄"을 믿고 세면
+  // 150쯤 나온다.
+  const total = translationSourceLines(opts.source, opts.sourceAddenda).length
+  // `{남은}` 은 그대로 `fallbackCount` 다. 권장 번역이 7언어 × 4자리 전부 차 있어 변수 줄은
+  // 여기 절대 안 든다(translationLineDone) — 부푼 것은 총수 하나뿐이었다.
   const left = t.fallbackCount
-  const progress = left > 0
-    ? `번역 ${t.totalCount}줄 중 ${left}줄이 한국어 원문으로 남았습니다. 회색 원문 표식이 붙은 줄입니다.`
-    : `번역 ${t.totalCount}줄이 모두 채워졌습니다.`
 
+  // 표식은 **그 언어 단독**이다. 한국어 `원문` 을 안 남긴다 — 그 낱말이 검수자가 못 읽는 지시의
+  // 원인이었다. 아래 진행 둘째 문장이 이 표를 그대로 인용하므로 표를 고칠 때는 짝으로 고친다.
+  //
   // 강조 마커(**…**)는 계약서 종이처럼 색으로 바꾸지 않고 글자 그대로 둔다. 검수자가 보는 것이
   // 곧 사전에 저장된 문자열이라야 하고, 화면 미리보기도 그대로 보인다 — 두 창이 갈리면 안 된다.
-  const mark = '<span class="src-mark">원문</span>'
+  const markText = TRANSLATION_PRINT_MARK[t.lang]
+  const mark = `<span class="src-mark">${escape(markText)}</span>`
+
+  // 진행 두 줄. 검수자가 "왜 여기만 한국어인가"를 묻기 전에 종이가 먼저 답한다.
+  //
+  // **한국어 줄을 지우지 마라.** 운영자가 한자·벵골 글자를 못 읽으므로, 그 언어 줄만 두면 자기가
+  // 뽑은 종이의 숫자를 자기가 못 읽는다 — 이 기능이 생긴 그 말("난 한자를 못읽기 때문에 알수가
+  // 없어")이 이 한 줄에서 그대로 되살아난다.
+  const fillCount = (s: string) =>
+    s.replace(/\{총\}/g, String(total)).replace(/\{남은\}/g, String(left))
+  const progressKo = left > 0
+    ? `전체 ${total}개 항목 중 ${left}개가 한국어 원문으로 남았습니다. 회색 '${markText}' 표식이 붙은 항목입니다.`
+    : `${total}개 항목이 모두 번역되었습니다.`
+  // 두 문장을 잇는 한 칸은 언어가 정한다 — 일본어·중국어는 문장 사이를 안 띄운다.
+  const progressTr = left > 0
+    ? fillCount(TRANSLATION_PRINT_PROGRESS_LEFT[t.lang])
+      + (noSpaceScript ? '' : ' ') + TRANSLATION_PRINT_PROGRESS_MARKED[t.lang]
+    : fillCount(TRANSLATION_PRINT_PROGRESS_ALL[t.lang])
   const ymd = opts.today ?? kstYmdStr()
   const dateLabel = ymd.replace(/-/g, '.')
 
@@ -243,10 +302,11 @@ export function buildContractTranslationPrintHtml(
   /* 고지 상자 — 문안은 코드 사전 정본 그대로다(translationNoticeBi). 한국어 줄이 앞선다. */
   .notice { border: 0.4pt solid var(--p-rule); background: var(--p-label-bg); padding: 3mm 4mm; font-size: 9pt; line-height: 1.6; white-space: pre-line; margin-bottom: 3mm; break-inside: avoid; }
 
-  /* 검수 안내 · 진행 — 계약 조항이 아니라 검수 지시문이라 한/영 두 줄로 세운다. */
+  /* 검수 안내 · 진행 — 계약 조항이 아니라 **검수 지시문**이라 한국어 줄 + 그 언어 줄로 세운다.
+     지시를 검수자가 못 읽으면 그 검수는 거짓을 내놓고, 한국어를 지우면 운영자가 못 읽는다. */
   .guide { font-size: 8.5pt; line-height: 1.55; color: var(--p-muted); margin-bottom: 1.5mm; }
-  .guide .en { display: block; }
   .progress { font-size: 8.5pt; line-height: 1.55; color: var(--p-muted); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 6mm; }
+  .guide .tr, .progress .tr { display: block; }
 
   /* 본문 — 1단이다. 계약서는 2단이라 한눈에 다른 종이로 읽힌다. */
   .doc-title { font-size: 16pt; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; margin-bottom: 5mm; }
@@ -258,22 +318,25 @@ export function buildContractTranslationPrintHtml(
   .clause-list li::before { counter-increment: clause; content: counter(clause) "."; color: var(--p-muted); margin-right: 2mm; }
   .oath { font-size: 9.5pt; line-height: 1.65; margin-top: 5mm; padding-top: 3mm; border-top: 0.4pt solid var(--p-rule); white-space: pre-line; break-inside: avoid; }
 
-  /* 원문으로 남은 줄의 표식. 색도 테두리도 없는 회색 글자 한 낱말이다(§29 장식 0). */
-  .src-mark { font-family: 'Pretendard', sans-serif; font-size: 8.5pt; font-weight: 500; color: var(--p-muted); margin-left: 2mm; white-space: nowrap; }
+  /* 원문으로 남은 줄의 표식. 색도 테두리도 없는 회색 글자 한 낱말이다(§29 장식 0).
+     **font-family 를 못박지 마라.** 본문 family 를 물려받아야 한다 — 표식이 그 언어로 가면서
+     Pretendard 를 지목하면 한자·벵골 표식이 이 자리에서만 통째로 두부가 되고(Pretendard 는
+     한자 0자·벵골 0자, fontconfig 에 CJK 가 없어 폴백도 없다), 운영자는 그것을 못 읽는다. */
+  .src-mark { font-size: 8.5pt; font-weight: 500; color: var(--p-muted); margin-left: 2mm; white-space: nowrap; }
 </style>
 </head>
 <body>
   <div class="head">
-    <span class="what">${escape(TRANSLATION_PRINT_HEAD_TEXT)}</span>
+    <span class="what">${escape(translationPrintHeadText(t.lang))}</span>
     <span class="meta"><span class="lang">${escape(TRANSLATION_LANG_ENDONYM[t.lang])}</span>${escape(dateLabel)}</span>
   </div>
   <div class="head-rule"></div>
 
   <div class="notice">${escape(translationNoticeBi(t.lang))}</div>
 
-  <p class="guide">조항 안의 {{ }} 표시는 실제 계약서에서 값이 들어가는 자리라 이 종이에는 그대로 보입니다. 고장이 아닙니다.
-    <span class="en">The {{ }} marks are placeholders filled in on the real contract, so they appear as-is here. This is not an error.</span></p>
-  <p class="progress">${escape(progress)}</p>
+  <p class="guide">조항 안의 {{ }} 표시는 실제 계약서에서 값이 들어가는 자리라 이 종이에는 그대로 보입니다. 중괄호 안의 한국어는 그 자리의 항목 이름이지 번역이 안 된 문장이 아닙니다. 고장이 아닙니다.
+    <span class="tr">${escape(TRANSLATION_PRINT_VAR_GUIDE[t.lang])}</span></p>
+  <p class="progress">${escape(progressKo)}<span class="tr">${escape(progressTr)}</span></p>
 
   <h1 class="doc-title">${escape(render(t.title))}${sameAsSource(t.title, opts.source?.title) ? mark : ''}</h1>
   ${sectionsHtml}
