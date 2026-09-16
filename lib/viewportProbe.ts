@@ -51,3 +51,83 @@ export function viewportProbe(): string {
     : 'focus 없음')
   return out.join('\n')
 }
+
+// ── 열었을 때의 스냅샷 ─────────────────────────────────────────────
+//
+// 왜 한 번 더 재나(2026-09-17). 사진을 붙이려면 사진 앱을 다녀와야 하고, 그 왕복이
+// visibilitychange 를 일으켜 useSettleEntrance 의 settle() 과 useVisibleBand 의 resync() 를 둘 다
+// 깨운다. **제출 시점에는 화면이 이미 스스로 나아 있다.** 그래서 화면이 깨진 신고(bf0a6fff)와
+// 멀쩡한 신고(be42800d)의 계측 블록이 한 글자도 다르지 않았다. 신고창이 뜬 그 순간을 따로 담아야
+// 다음 재현이 증거를 남긴다.
+//
+// **시간으로 마감하지 않는다.** 벽시계 추정은 2026-09-08 결정이 금지한 바로 그 함정이다. 여기서는
+// 지금 도는 애니메이션의 finished 를 기다린다 — "얼마나 지났나"가 아니라 "실제로 끝났나"를 신호로
+// 쓴다. 도는 것이 하나도 없으면(모션 축소 설정·숨은 채 마운트·이미 굳음) 기다릴 것이 없으므로 rAF
+// 두 번 뒤에 잰다. 첫 rAF 는 방금 붙은 노드의 스타일이 계산되기를, 둘째는 그것이 한 번 그려지기를
+// 기다리는 자리다. 둘 다 "무엇이 일어났는가"를 보는 신호다.
+
+/** 가장 위 모달의 오버레이·패널 — 계측이 쓰는 표식 두 개와 같은 손잡이다. */
+function topModalParts(): HTMLElement[] {
+  const pick = (sel: string) => {
+    const all = document.querySelectorAll<HTMLElement>(sel)
+    return all.length > 0 ? [all[all.length - 1]] : []
+  }
+  return [...pick('[data-modal-overlay]'), ...pick('[data-modal-panel]')]
+}
+
+/**
+ * 등장 모션이 **끝났음을 확인한 뒤** 한 번 재서 넘긴다. 반환값은 취소 함수다(언마운트 정리용).
+ * 브라우저 밖이면 아무것도 안 한다.
+ */
+export function probeAfterEntrance(onProbe: (probe: string) => void): () => void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return () => { /* noop */ }
+  let cancelled = false
+  const rafs: number[] = []
+  const fire = () => { if (!cancelled) onProbe(viewportProbe()) }
+
+  const running: Animation[] = []
+  for (const el of topModalParts()) {
+    if (typeof el.getAnimations !== 'function') continue
+    for (const anim of el.getAnimations()) if (anim.playState === 'running') running.push(anim)
+  }
+  if (running.length > 0) {
+    // finished 는 애니메이션이 중간에 취소되면(등장 클래스를 떼는 settle 이 바로 그 일을 한다)
+    // 거부된다 — 그것도 '끝났다'의 한 갈래라 allSettled 로 받는다.
+    //
+    // 끝난 것을 안 직후에 바로 재지 않고 한 프레임을 더 기다린다. animationend 는 같은 프레임의
+    // 렌더링 단계에서 rAF 콜백보다 **먼저** 나가므로, 다음 rAF 에서 재면 useSettleEntrance 가
+    // 신고창 제 등장 클래스를 이미 걷은 뒤다. 안 기다리면 신고창 자신의 모션이 '잔존'으로 세어져
+    // 아래 굳은 모달의 지문을 가린다. 이것도 시간이 아니라 순서를 쓰는 신호다.
+    void Promise.allSettled(running.map(a => a.finished)).then(() => {
+      if (!cancelled) rafs.push(requestAnimationFrame(fire))
+    })
+  } else {
+    rafs.push(requestAnimationFrame(() => { rafs.push(requestAnimationFrame(fire)) }))
+  }
+  return () => { cancelled = true; for (const id of rafs) cancelAnimationFrame(id) }
+}
+
+/** 한 줄의 이름 — 'vv h=812 …' 의 'vv', 'kbd-open=n' 의 'kbd-open'. 다른 줄을 짚을 때 쓴다. */
+function lineName(line: string): string {
+  return line.split(/[\s=]/)[0] || line
+}
+
+/**
+ * 두 스냅샷을 **나란히** 적는다. 같으면 한 덩이로 접고, 다르면 둘 다 펴고 달라진 줄을 짚는다.
+ * 줄 문법은 viewportProbe 그대로다 — 읽는 눈과 scripts/ 의 그물이 같은 것을 본다.
+ */
+export function probeReport(openedProbe: string | null, submitProbe: string): string {
+  if (!submitProbe) return ''
+  if (!openedProbe) return submitProbe
+  if (openedProbe === submitProbe) return `열었을 때·제출할 때 같음\n${submitProbe}`
+  const a = openedProbe.split('\n')
+  const b = submitProbe.split('\n')
+  const changed: string[] = []
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] !== b[i]) {
+      const name = lineName(b[i] ?? a[i] ?? '')
+      if (!changed.includes(name)) changed.push(name)
+    }
+  }
+  return `열었을 때\n${openedProbe}\n제출할 때 (달라진 줄: ${changed.join(' · ')})\n${submitProbe}`
+}

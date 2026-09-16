@@ -128,8 +128,26 @@ need('lib/viewportProbe.ts', [
     if (re.test(src)) violations.push(`lib/viewportProbe.ts — ${what} 을 읽는다. 계측은 기하와 요소의 종류만 담는다`)
   }
 }
+// 열었을 때의 스냅샷(2026-09-17) — 사진 왕복이 visibilitychange 로 화면을 고쳐 놓아 제출 시점
+// 계측만으로는 깨진 신고와 멀쩡한 신고가 한 글자도 다르지 않았다(bf0a6fff 대 be42800d).
+// 언제 재는지도 함께 잠근다 — 벽시계로 마감하면 09-08 결정이 금지한 그 함정으로 되돌아간다.
+need('lib/viewportProbe.ts', [
+  [/export function probeAfterEntrance\(/, '열었을 때를 재는 정본이 사라짐. 제출 시점 하나로는 또 증거가 안 남는다'],
+  [/export function probeReport\(/, '두 스냅샷을 나란히 적는 정본이 사라짐'],
+  [/getAnimations\(\)/, '등장 모션이 실제로 끝났는지를 안 본다'],
+  [/requestAnimationFrame\(/, '도는 모션이 없을 때의 대기(rAF)가 사라짐'],
+])
+{
+  let src = ''
+  try { src = strip(readFileSync('lib/viewportProbe.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (/setTimeout\(|setInterval\(|Date\.now\(|performance\.now\(/.test(src)) {
+    violations.push('lib/viewportProbe.ts — 벽시계로 시점을 정한다. 계측 시점은 "실제로 무엇이 끝났는가"로만 정한다(2026-09-08 결정)')
+  }
+}
 need('components/ErrorReportButton.tsx', [
   [/viewportProbe\(\)/, '신고 제출이 화면 계측을 안 담는다'],
+  [/probeAfterEntrance\(/, '신고창이 뜬 순간의 계측을 안 잰다. 사진 왕복이 화면을 고쳐 놓아 제출 시점만으로는 증거가 안 남는다'],
+  [/probeReport\(/, '두 스냅샷을 나란히 싣는 조립이 사라짐'],
   [/note\.trim\(\)/, '메모가 계측보다 앞에 오는 조립이 사라짐. 운영자가 읽는 문장이 먼저다'],
 ])
 need('components/ui/Modal.tsx', [

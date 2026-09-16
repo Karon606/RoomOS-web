@@ -7,7 +7,7 @@ import { useState, useRef, useEffect } from 'react'
 import { submitErrorReport, createErrorReportImageSession } from '@/app/(app)/errorReports'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
-import { viewportProbe } from '@/lib/viewportProbe'
+import { viewportProbe, probeAfterEntrance, probeReport } from '@/lib/viewportProbe'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -66,6 +66,18 @@ export default function ErrorReportButton() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  // 신고창이 뜬 그 순간의 화면 기하 — 제출 시점 계측과 나란히 싣는다(2026-09-17).
+  // 사진을 붙이려면 사진 앱을 다녀와야 하고 그 왕복이 visibilitychange 로 settle()·resync() 를
+  // 깨워서, 제출할 때는 화면이 이미 나아 있다. 깨진 신고와 멀쩡한 신고의 계측이 한 글자도 다르지
+  // 않았던 것이 그래서다(bf0a6fff 대 be42800d). 언제 재는지는 정본 probeAfterEntrance 가 정한다 —
+  // 벽시계가 아니라 등장 모션이 실제로 끝났는지를 신호로 쓴다. 메모리에만 두고 최근 한 번만 남긴다.
+  const openedProbeRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!open) return
+    openedProbeRef.current = null
+    return probeAfterEntrance(p => { openedProbeRef.current = p })
+  }, [open])
 
   // 미리보기 objectURL 정리 — 언마운트 시 남은 것 일괄 해제(선택 취소·삭제 때는 개별 해제)
   useEffect(() => { imagesRef.current = images }, [images])
@@ -162,7 +174,8 @@ export default function ErrorReportButton() {
     setPending(true)
     // 화면 기하는 **첫 await 전에** 잰다. 사진 업로드는 초 단위라 그 사이 키보드가 닫히면
     // 정작 알고 싶은 그 순간의 기하가 아니라 업로드가 끝난 뒤의 기하가 담긴다.
-    const probe = viewportProbe()
+    // 열었을 때의 스냅샷과 나란히 적는다 — 둘이 다르면 정본 probeReport 가 달라진 줄을 짚는다.
+    const probe = probeReport(openedProbeRef.current, viewportProbe())
     try {
       // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
       const imageFileIds: string[] = []
