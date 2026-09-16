@@ -1938,6 +1938,8 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
       expenses?: { id: string; oldLabel: string }[]
       tracked?: { id: string; oldLabel: string }[]
       assets?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText?: string | null; oldQtyValue?: number | null; oldQtyUnit: string | null; oldDetail: string | null }[]
+      // 비품 합치기가 함께 옮긴 배정 이력(2026-09-16 이력 고아 봉합). 옛 이력에는 이 키가 없다.
+      assetLogs?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText: string | null }[]
     } | null
     await prisma.$transaction(async (tx) => {
       for (const e of aff?.expenses ?? []) { try { await tx.expense.update({ where: { id: e.id }, data: { itemLabel: e.oldLabel } }) } catch { /* 삭제된 행 무시 */ } }
@@ -1945,6 +1947,8 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
       // 비품 합치기(combineAssets) 원복 — 이름·사양·단위·detail 통째 복구.
       // specText·qtyValue 는 신규 이력에만 있는 필드(하위호환) — 있을 때만 원복(옛 이력은 종전대로).
       for (const a of aff?.assets ?? []) { try { await tx.expense.update({ where: { id: a.id }, data: { itemLabel: a.oldLabel, specValue: a.oldSpecValue, specUnit: a.oldSpecUnit, qtyUnit: a.oldQtyUnit, detail: a.oldDetail, ...(a.oldSpecText !== undefined ? { specText: a.oldSpecText } : {}), ...(a.oldQtyValue !== undefined ? { qtyValue: a.oldQtyValue } : {}) } }) } catch { /* skip */ } }
+      // 배정 이력도 함께 원복 — 지출만 되돌리면 이력이 대상 이름에 남아 반대쪽 고아가 된다.
+      for (const l of aff?.assetLogs ?? []) { try { await tx.assetAssignmentLog.update({ where: { id: l.id }, data: { itemLabel: l.oldLabel, specValue: l.oldSpecValue, specUnit: l.oldSpecUnit, specText: l.oldSpecText } }) } catch { /* 삭제된 이력 무시 */ } }
       if (run.newAliasKeys.length) await tx.itemNameAlias.deleteMany({ where: { propertyId, aliasKey: { in: run.newAliasKeys } } })
       await tx.itemNameMergeRun.update({ where: { id: run.id }, data: { undoneAt: new Date() } })
     })

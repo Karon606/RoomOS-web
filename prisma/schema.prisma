@@ -1191,6 +1191,11 @@ model Expense {
   qtyValue     Float?
   qtyUnit      String?
   receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)
+  // 폐기·분실 — 이 자재가 그 자리에서 빠진 사건. 금액(amount)은 그대로 방에 남는다
+  // (자재비는 살 때 이미 나간 돈이라 폐기로 방별 투자금이 줄면 안 된다, domain-room-work).
+  // null = 지금 설치돼 있음. 값 = 그 날짜에 빠짐.
+  disposedAt      DateTime? @db.Date
+  disposalReason  String?
   excludeFromInventory Boolean @default(false) // true면 재고 계산에서 제외 (지출 기록은 유지)
   // 이 기록을 간격 주기의 기준으로 삼지 않는다 (2026-08-31 운영자 승인).
   //

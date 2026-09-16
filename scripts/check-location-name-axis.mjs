@@ -246,7 +246,8 @@ function mustNot(file, block, label, pattern) {
   must(f, slice(f, 'export async function getAssignableLocations', 'export type AssignTarget'),
     '공용부 배정 후보', /pathName: r\.pathName/)
 
-  must(f, slice(f, 'async function placeLabel', 'type SpecKey = {'),
+  // 끝 표식은 placeLabel 바로 다음 선언 — SpecKey 타입은 2026-09-16 에 순수층(./aggregate)으로 옮겼다.
+  must(f, slice(f, 'async function placeLabel', 'const specOf = (r: SpecKey)'),
     '배정 이력 라벨(placeLabel)', /locPaths\.pathName\(locId\)/)
 
   const resolve = slice(f, 'async function resolvePlace', 'export async function revertAssignmentLog')

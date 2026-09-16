@@ -19,45 +19,17 @@ import { fmtRoomNo } from '@/lib/roomNo'
 // 공용부(위치) 이름은 재고와 같은 표기 경로(pathName)를 쓴다 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '../locationPaths'
 
-// 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
-const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
-function buildAssetDetail(e: { itemLabel: string | null; specValue: number | null; specUnit: string | null; specText?: string | null; qtyValue: number | null; qtyUnit: string | null }): string {
-  const label = e.itemLabel ?? ''
-  const spec = e.specText ? ` ${e.specText}` : e.specValue != null ? ` ${fmtQty(e.specValue)}${e.specUnit ?? ''}` : ''
-  const qty = e.qtyValue != null ? ` x ${fmtQty(e.qtyValue)}${e.qtyUnit ?? ''}` : ''
-  return `[${label}]${spec}${qty}`
-}
+// 집계·표기 규칙 정본은 순수층(./aggregate)에 산다 — 'use server' 파일은 async 함수만 내보낼 수 있어
+// 여기에 두면 진리표가 붙지 않는다. 이 파일은 조회·쓰기만 진다.
+import {
+  fmtQty, buildAssetDetail, serializeSpecKey, aggregateAssets, disposalDenial, disposalDenyOver,
+  type SpecKey, type AssetItem, type RawAsset, type AssetOrderMaps,
+} from './aggregate'
+export type { AssetItem } from './aggregate'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
   return propertyId
-}
-
-// 화면 표시용 — 같은 버킷(미배정/방/공용부) 안에서 동일 품목(라벨·규격·단위·카테고리)을
-// 하나로 합쳐 표시. 장부(Expense)는 개별 구매 기록 그대로 유지하고 화면만 집계한다.
-export type AssetItem = {
-  id: string                    // 대표(React key) = ids[0]
-  ids: string[]                 // 묶인 지출 id 전부
-  count: number                 // 묶인 구매 건수
-  date: string                  // 대표(최신) 일자
-  itemLabel: string
-  detail: string | null         // 합계 수량으로 재구성
-  specText: string | null       // 서술형 규격(카드 구분·검색용)
-  specValue: number | null      // 숫자 규격값(60 등) — 카드 제목 규격 병기용(오류신고 86f1418e)
-  specUnit: string | null       // 규격 단위(cm 등)
-  amount: number                // 합계 금액
-  qtyValue: number | null       // 합계 수량
-  qtyUnit: string | null
-  category: string
-  vendor: string | null
-  roomId: string | null
-  roomNo: string | null
-  locationId: string | null     // 공용부(StorageLocation) 배정 시
-  locationName: string | null
-  isCommon: boolean             // 공용 자재(페인트 등) 표시
-  isService: boolean            // 서비스·무형(시공비) — 자산 아님, 방별 비용 집계용
-  assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
-  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
 }
 
 export type AssetsData = {
@@ -69,15 +41,6 @@ export type AssetsData = {
   commonTotal: number
   unassigned: AssetItem[]
   unassignedTotal: number
-}
-
-type RawAsset = {
-  id: string; date: string; itemLabel: string; amount: number
-  qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null; specText: string | null
-  category: string; vendor: string | null
-  roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
-  isCommon: boolean; received: boolean; assignedAt: string | null
-  isService: boolean               // 서비스·무형(시공비 등) — 방별 비용에 포함, 카드에 칩 표시
 }
 
 // 비품·자재 Expense 필터 — 소모품(추적)·배송비 제외, 서비스·무형은 배정된 것만.
@@ -95,61 +58,6 @@ function durableExpenseWhere(propertyId: string, trackedCats: string[]): Prisma.
       { excludeFromInventory: true, assignedLocationId: { not: null } },
     ],
   }
-}
-
-// 규격 식별자 직렬화 — 라벨 내 규격(색상 등) 순서 편집 키(specValue␟specUnit␟specText, SpecKey 3종과 동일 정체성).
-// 전부 null이면 '␟␟'라 라벨 행 센티널 ''과 겹치지 않는다.
-const serializeSpecKey = (s: SpecKey): string => [s.specValue ?? '', s.specUnit ?? '', s.specText ?? ''].join('␟')
-
-// 순서 편집 맵 — 2계층. label = (category␟itemLabel)→라벨 rank, spec = (category␟itemLabel␟specKey)→규격 rank,
-// labelMaxSpec = (category␟itemLabel)→그 라벨 규격 rank 최대값(규격 rank 없는 카드의 라벨 내 맨 뒤 폴백용).
-type AssetOrderMaps = { label: Map<string, number>; spec: Map<string, number>; labelMaxSpec: Map<string, number> }
-
-// 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계.
-// 정렬 3단 — ① 라벨 rank(품목 순서, 있으면 오름차순) ② 규격 rank(라벨 안 색상·규격 순서) ③ 기존 구매일 최신순.
-// 규격 rank 없는 카드는 그 라벨 내 맨 뒤(전역 MAX로 빠지면 라벨 rank 동률 시 라벨 그룹이 깨진다).
-function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): AssetItem[] {
-  const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
-  for (const r of list) {
-    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : ''].join('␟')
-    const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, specText: r.specText, rows: [] }
-    g.rows.push(r); map.set(key, g)
-  }
-  const out: AssetItem[] = []
-  for (const g of map.values()) {
-    const rows = g.rows
-    const hasQty = rows.some(r => r.qtyValue != null)
-    const qtyValue = hasQty ? rows.reduce((s, r) => s + (r.qtyValue ?? 0), 0) : null
-    const amount = rows.reduce((s, r) => s + r.amount, 0)
-    const date = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0].date)
-    const assignedAt = rows.map(r => r.assignedAt).filter((x): x is string => !!x).sort().pop() ?? null   // 대표=가장 최근 배정일
-    const rep = rows[0]
-    out.push({
-      id: rep.id, ids: rows.map(r => r.id), count: rows.length, date,
-      itemLabel: rep.itemLabel, specText: g.specText, specValue: g.spec, specUnit: g.specUnit,
-      detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
-      amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
-      roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
-      isCommon: rep.isCommon, isService: rep.isService, assignedAt,
-      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText }))
-        .sort((a, b) => b.date.localeCompare(a.date)),
-    })
-  }
-  const labelRank = (i: AssetItem) => orderMaps?.label.get(`${i.category}␟${i.itemLabel}`) ?? Number.MAX_SAFE_INTEGER
-  const specRank = (i: AssetItem) => {
-    if (!orderMaps) return 0
-    const lk = `${i.category}␟${i.itemLabel}`
-    const r = orderMaps.spec.get(`${lk}␟${serializeSpecKey(i)}`)
-    if (r != null) return r
-    return (orderMaps.labelMaxSpec.get(lk) ?? -1) + 1   // 규격 rank 없는 카드는 그 라벨 내 맨 뒤
-  }
-  return out.sort((a, b) => {
-    const la = labelRank(a), lb = labelRank(b)
-    if (la !== lb) return la - lb
-    const sa = specRank(a), sb = specRank(b)
-    if (sa !== sb) return sa - sb
-    return b.date.localeCompare(a.date)
-  })
 }
 
 // 비품·자재 = 품목으로 입력된 지출 중 소모품(재고 추적 카테고리)·배송비를 제외한 내구재.
@@ -172,6 +80,8 @@ export async function getDurableItems(): Promise<AssetsData> {
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
       isCommonAsset: true, receivedAt: true, assignedAt: true, excludeFromInventory: true,
+      // 폐기·분실 — 버킷 분류에는 안 쓴다(폐기 행도 그 방 버킷에 남는다). 가르는 일은 aggregateAssets 안에서만.
+      disposedAt: true, disposalReason: true,
     },
   })
 
@@ -187,6 +97,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     locationName: r.assignedLocationId ? (locPaths.pathName(r.assignedLocationId) ?? r.assignedLocation?.name ?? null) : null,
     isCommon: r.isCommonAsset, received: r.receivedAt != null, isService: r.excludeFromInventory,
     assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null,
+    disposedAt: r.disposedAt ? kstYmd(r.disposedAt) : null, disposalReason: r.disposalReason,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
@@ -350,6 +261,9 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
               itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
               qtyValue: need, qtyUnit: e.qtyUnit,
               receivedAt: now, excludeFromInventory: e.excludeFromInventory,
+              // 수령 대기 행은 폐기될 수 없지만(disposeAsset 의 수령 전 게이트), 복제 목록에서 빠지면
+              // 언젠가 이 경로로 반쪽만 살아나는 구멍이 된다. 원행 값을 그대로 잇는다.
+              disposedAt: e.disposedAt, disposalReason: e.disposalReason,
               allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
               propertyId, roomId: e.roomId, assignedLocationId: e.assignedLocationId,
               isCommonAsset: e.isCommonAsset, assignedAt: e.assignedAt,
@@ -398,14 +312,17 @@ export async function setAssetRowSpec(expenseId: string, specValue: number | nul
 // 숫자(qtyValue)는 그대로 둔다 — 표기만 바꾸는 연산이라 환산하지 않는다(m 을 cm 로 바꿔도 값 불변).
 // 입력은 canonicalUnit 으로 정규화한다 — 'M' 과 'm' 이 다른 카드로 갈라지던 표기 혼재의 근본 차단.
 // 소모품(추적 카테고리)은 거부 — 그쪽 qtyUnit 은 잔량 산식의 매칭 키라 여기서 손대면 재고 수학이 흔들린다.
-export async function setAssetQtyUnit(expenseIds: string[], qtyUnit: string | null): Promise<{ ok: true; changed: number } | { ok: false; error: string }> {
+// disposedIds — 그 카드의 폐기 행. 함께 안 바꾸면 폐기분만 옛 단위로 남아 **별도 카드로 갈라져**
+// 폐기 기록이 원래 카드에서 사라진다(카드 정체성 키에 qtyUnit 이 들어가기 때문). 한 트랜잭션.
+export async function setAssetQtyUnit(expenseIds: string[], qtyUnit: string | null, disposedIds?: string[]): Promise<{ ok: true; changed: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
     const unit = canonicalUnit(qtyUnit)
+    const targetIds = [...new Set([...expenseIds, ...(disposedIds ?? [])])]
     const rows = await prisma.expense.findMany({
-      where: { id: { in: expenseIds }, propertyId },
+      where: { id: { in: targetIds }, propertyId },
       select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, specText: true, qtyValue: true },
     })
     if (!rows.length) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
@@ -539,8 +456,9 @@ export async function setCommonAsset(expenseIds: string[], value: boolean): Prom
 // 비품 카드 합치기 — 선택 카드(src)의 지출들을 대상 카드(dest)의 이름·사양·단위로 통일해 한 카드로 병합.
 // (소모품 '다른 카드와 병합'과 동일 개념. 비품은 TrackedItem 이 아니라 Expense 집계라, 라벨·사양을 대상값으로 맞춰 재집계.)
 // 장부 금액·구매기록은 유지(이름/사양만 변경). 환경설정 '품명 병합'에서 적용취소(완전 원복) 가능.
+// disposedIds — 그 카드의 폐기 행. 함께 안 옮기면 폐기분만 옛 이름으로 남아 별도 카드로 갈라진다.
 export async function combineAssets(
-  destExpenseId: string, srcExpenseIds: string[],
+  destExpenseId: string, srcExpenseIds: string[], disposedIds?: string[],
 ): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -550,7 +468,7 @@ export async function combineAssets(
       select: { itemLabel: true, specValue: true, specUnit: true, specText: true, qtyUnit: true },
     })
     if (!dest) return { ok: false, error: '대상 품목을 찾을 수 없습니다.' }
-    const srcIds = [...new Set(srcExpenseIds)].filter(id => id !== destExpenseId)
+    const srcIds = [...new Set([...srcExpenseIds, ...(disposedIds ?? [])])].filter(id => id !== destExpenseId)
     if (!srcIds.length) return { ok: false, error: '합칠 항목이 없습니다.' }
     const srcs = await prisma.expense.findMany({
       where: { id: { in: srcIds }, propertyId },
@@ -567,6 +485,26 @@ export async function combineAssets(
       return (srcIsSet && destPerPiece && s.specValue && s.qtyValue != null) ? s.qtyValue * s.specValue : s.qtyValue
     }
 
+    // 배정 이력도 함께 옮긴다 — 이력 고아 봉합(2026-09-16).
+    //
+    // 이력(AssetAssignmentLog)은 조회 키가 (itemLabel + 규격 3종)이다. 지출만 대상 이름으로
+    // 바꾸면 그 카드의 옛 이력은 아무 카드에도 안 붙어 화면에서 통째로 사라진다 —
+    // "이 자재가 어느 방에 언제 갔나"의 기록이 합치기 한 번에 증발하던 결함이다.
+    // 규격은 **정확히 일치하는 것만** 옮긴다. 규격 미상(all-null) 이력은 그 라벨의 다른 카드
+    // 것일 수도 있어 손대면 엉뚱한 카드로 끌려간다.
+    const srcKeys = [...new Map(srcs.map(s => [
+      serializeSpecKey(s) + '␟' + (s.itemLabel ?? ''),
+      { itemLabel: s.itemLabel, specValue: s.specValue, specUnit: s.specUnit, specText: s.specText },
+    ])).values()].filter(k =>
+      k.itemLabel !== dest.itemLabel || k.specValue !== dest.specValue
+      || k.specUnit !== dest.specUnit || (k.specText ?? null) !== (dest.specText ?? null))
+    const logRows = srcKeys.length
+      ? await prisma.assetAssignmentLog.findMany({
+        where: { propertyId, OR: srcKeys.map(k => ({ itemLabel: k.itemLabel, ...specOf(k) })) },
+        select: { id: true, itemLabel: true, specValue: true, specUnit: true, specText: true },
+      })
+      : []
+
     let runId = ''
     await prisma.$transaction(async (tx) => {
       for (const e of srcs) {
@@ -579,11 +517,21 @@ export async function combineAssets(
           },
         })
       }
+      if (logRows.length) {
+        await tx.assetAssignmentLog.updateMany({
+          where: { id: { in: logRows.map(l => l.id) } },
+          data: { itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, specText: dest.specText ?? null },
+        })
+      }
       const oldLabels = [...new Set(srcs.map(s => s.itemLabel).filter(Boolean))]
       const run = await tx.itemNameMergeRun.create({
         data: {
           propertyId, canonical: dest.itemLabel ?? '', memberCount: oldLabels.length || srcs.length, newAliasKeys: [],
-          affected: { assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldSpecText: s.specText, oldQtyValue: s.qtyValue, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })) },
+          affected: {
+            assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldSpecText: s.specText, oldQtyValue: s.qtyValue, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })),
+            // 옛값을 행마다 실어야 적용취소가 온전하다 — 라벨 하나로 접으면 규격이 섞인 이력을 못 되돌린다.
+            assetLogs: logRows.map(l => ({ id: l.id, oldLabel: l.itemLabel, oldSpecValue: l.specValue, oldSpecUnit: l.specUnit, oldSpecText: l.specText })),
+          },
         },
       })
       runId = run.id
@@ -665,9 +613,7 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
   return { kind: 'none', label: '미배정' }
 }
 
-// 이력·조회의 규격 식별자 — aggregateAssets 의 집계 키(위 81행) 중 규격 부분과 같은 3종.
-// 라벨만으로 기록·조회하면 색상·사이즈가 다른 카드끼리 이력이 섞인다(오류신고 5853a0ff).
-type SpecKey = { specValue: number | null; specUnit: string | null; specText: string | null }
+// 이력·조회의 규격 식별자 — 정본 타입은 ./aggregate 의 SpecKey(집계 키 중 규격 부분과 같은 3종).
 const specOf = (r: SpecKey): SpecKey => ({ specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, specText: r.specText ?? null })
 // 규격 미상 = 컬럼 추가 전 기록 중 백필 불가였던 것(그 라벨에 규격이 2종 이상이라 어느 쪽인지 알 수 없음).
 const specUnknown = (r: SpecKey) => r.specValue == null && r.specUnit == null && r.specText == null
@@ -717,15 +663,24 @@ export async function getAssetAssignmentLog(itemLabel: string, spec?: SpecKey): 
 //   data.assignedAt 을 생략하면 행의 기존 배정일을 유지한다(이력 되돌리기용).
 // ============================================================
 type ExpRow = Prisma.ExpenseGetPayload<Record<string, never>>
-type MoveData = { roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean; assignedAt?: Date | null }
+// 폐기(disposedAt·disposalReason)도 같은 분할 기계를 탄다 — 폐기는 "그 수량만큼 자리를 떠났다"는
+// 뜻이라 이동과 모양이 같다. 다만 **위치 세 칸은 원행 값 그대로** 넘긴다(폐기는 자리를 안 옮긴다).
+// 키를 생략하면 그 칸은 원행 값을 유지한다(assignedAt 선례와 동일 규약).
+type MoveData = {
+  roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean
+  assignedAt?: Date | null
+} & { disposedAt?: Date | null; disposalReason?: string | null }
+// createdOpIndexes = ops 안 create 연산의 위치 — $transaction 결과에서 새 행 id 를 뽑아
+// 적용취소 deleteIds 로 쓴다(buildFanOutOps 와 같은 규약).
 function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: number | null):
-  { ops: Prisma.PrismaPromise<unknown>[]; movedQty: number; touchedGroups: string[] } {
+  { ops: Prisma.PrismaPromise<unknown>[]; movedQty: number; touchedGroups: string[]; createdOpIndexes: number[] } {
   const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
   const movedQty = (qty == null || qty >= totalQty) ? totalQty : qty
   let need = movedQty
   // 선입선출 — 오래된 구매분부터 차감(운영자 확인 2026-07-09). 같은 날짜 안에서는 큰 행부터(분할 최소화).
   const sorted = [...exps].sort((a, b) => a.date.getTime() - b.date.getTime() || (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
   const ops: Prisma.PrismaPromise<unknown>[] = []
+  const createdOpIndexes: number[] = []
   const touched: string[] = []
   for (const e of sorted) {
     if (need <= 1e-9) break
@@ -742,6 +697,7 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
       if (!e.allocationGroupId) touched.push(groupId)
       ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
       // 아래 복제 필드는 buildFanOutOps 와 동일 목록 유지 — 하나라도 어긋나면 분할된 행이 별도 카드로 갈라진다.
+      createdOpIndexes.push(ops.length)
       ops.push(prisma.expense.create({ data: {
         date: e.date, amount: assignedAmount, category: e.category,
         detail: buildAssetDetail({ ...e, qtyValue: need }),
@@ -753,12 +709,15 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
         allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
         propertyId, roomId: data.roomId, assignedLocationId: data.assignedLocationId, isCommonAsset: data.isCommonAsset,
         assignedAt: 'assignedAt' in data ? data.assignedAt : e.assignedAt,
+        // 폐기 표식도 키가 있을 때만 덮는다 — 이동 경로는 원행 값을 그대로 물려받는다.
+        disposedAt: 'disposedAt' in data ? data.disposedAt : e.disposedAt,
+        disposalReason: 'disposalReason' in data ? data.disposalReason : e.disposalReason,
         financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
       } }))
       need = 0
     }
   }
-  return { ops, movedQty, touchedGroups: [...new Set(touched)] }
+  return { ops, movedQty, touchedGroups: [...new Set(touched)], createdOpIndexes }
 }
 
 // 1대N 나눠 배정 공통 — buildSplitOps 의 1패스 다구간 일반화.
@@ -838,6 +797,8 @@ function buildFanOutOps(exps: ExpRow[], propertyId: string, segments: { data: Mo
         allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
         propertyId, roomId: d.roomId, assignedLocationId: d.assignedLocationId, isCommonAsset: d.isCommonAsset,
         assignedAt: 'assignedAt' in d ? d.assignedAt : e.assignedAt,
+        disposedAt: 'disposedAt' in d ? d.disposedAt : e.disposedAt,
+        disposalReason: 'disposalReason' in d ? d.disposalReason : e.disposalReason,
         financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
       } }))
     }
@@ -848,7 +809,10 @@ function buildFanOutOps(exps: ExpRow[], propertyId: string, segments: { data: Mo
 export async function assignAggregateToTarget(
   expenseIds: string[], target: AssignTarget, qty: number | null,
   assignedAtYmd?: string | null,   // 배정일 직접 지정(YYYY-MM-DD, 미지정 = 오늘) — 운영자 요청 2026-07-08
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 교체 — 새것을 그 자리에 넣으면서 **이미 그 자리에 있던 같은 품목 같은 수량**을 폐기로 기록한다.
+  // 배정과 폐기가 한 트랜잭션이라 '넣었는데 뺀 기록이 없는' 중간 상태가 생기지 않는다(운영자 요청 2026-09-16).
+  replace?: { reason: string } | null,
+): Promise<{ ok: true; undo?: AssetAssignUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -870,13 +834,47 @@ export async function assignAggregateToTarget(
     const tData = isNone ? { roomId: null, assignedLocationId: null } : targetData(target)
     // 배정일 — 방/공용부 배정 시 기본 '지금', 직접 지정 가능(이후 상세에서 수정). 미배정 복귀는 비움.
     const assignedAtVal = isNone ? null : (assignedAtYmd ? new Date(assignedAtYmd) : new Date())
-    const { ops, movedQty, touchedGroups } = buildSplitOps(exps, propertyId, { ...tData, isCommonAsset: false, assignedAt: assignedAtVal }, qty)
-    await prisma.$transaction(ops)
+    const built = buildSplitOps(exps, propertyId, { ...tData, isCommonAsset: false, assignedAt: assignedAtVal }, qty)
+    const { movedQty, touchedGroups } = built
+    let ops = built.ops
+    let createdIdx = built.createdOpIndexes
+    let undoRows: ExpRow[] = []
+
+    if (replace && !isNone) {
+      // 교체 대상 = 그 자리에 **이미 있던** 같은 카드의 살아 있는 행(이번에 옮기는 행은 뺀다).
+      // 카드 정체성은 aggregateAssets 의 집계 키와 같은 축이다 — 라벨·규격 3종·수량단위·분류·유형.
+      const already = await prisma.expense.findMany({
+        where: {
+          propertyId, itemLabel: rep0.itemLabel, ...specOf(rep0),
+          qtyUnit: rep0.qtyUnit, category: rep0.category, excludeFromInventory: rep0.excludeFromInventory,
+          roomId: tData.roomId, assignedLocationId: tData.assignedLocationId,
+          disposedAt: null, id: { notIn: expenseIds },
+        },
+      })
+      const have = already.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+      if (have <= 1e-9) return { ok: false, error: '그 자리에 바꿔 놓을 같은 품목이 없어요. 교체를 끄고 배정하세요.' }
+      // 초과 거부 문구는 폐기 정본과 같은 줄을 쓴다 — 두 자리가 다른 말을 하면 안 된다.
+      if (movedQty > have + 1e-9) return { ok: false, error: disposalDenyOver(have, rep0.qtyUnit) }
+      const disp = buildSplitOps(already, propertyId, {
+        // 위치 세 칸은 원행 값 그대로 — 폐기는 자리를 안 옮긴다.
+        roomId: tData.roomId, assignedLocationId: tData.assignedLocationId, isCommonAsset: false,
+        disposedAt: assignedAtVal ?? new Date(), disposalReason: replace.reason,
+      }, movedQty)
+      createdIdx = [...built.createdOpIndexes, ...disp.createdOpIndexes.map(i => i + ops.length)]
+      ops = [...ops, ...disp.ops]
+      undoRows = [...exps, ...already]
+    }
+
+    const results = await prisma.$transaction(ops)
     if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
     await logAssignment(propertyId, rep0.itemLabel, rep0, fromState,
       isNone ? { kind: 'none', label: '미배정' } : await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty, assignedAtVal)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true }
+    if (!replace || isNone) return { ok: true }
+    return { ok: true, undo: {
+      restore: undoRows.map(snapshotRow),
+      deleteIds: createdIdx.map(i => (results[i] as { id: string }).id),
+    } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '배정에 실패했습니다.' }
@@ -923,8 +921,10 @@ export async function revertAssignmentLog(logId: string): Promise<{ ok: true } |
     //   끌려나올 수 있었다(오류신고 5853a0ff 조사 중 발견. 표시 오염이 아니라 데이터 오염).
     //   규격 미상 이력(백필 불가분)은 all-null 로 필터되어 규격 없는 행만 건드리므로 교차 오염이 없고,
     //   규격 있는 품목이면 매칭 0건이라 아래 '되돌릴 수량 없음' 안내로 빠진다(삭제만 가능).
+    // ⚠️ 폐기 행은 제외한다 — mergeUnassignedGroup 과 같은 클래스다. 속성으로 찾는 조회가
+    //   폐기 행을 집으면 이미 버린 자재가 되돌리기로 미배정에 되살아난다.
     const exps = await prisma.expense.findMany({ where: {
-      propertyId, itemLabel: log.itemLabel, ...specOf(log),
+      propertyId, itemLabel: log.itemLabel, ...specOf(log), disposedAt: null,
       roomId: to.roomId, assignedLocationId: to.locationId,
       ...(to.roomId || to.locationId ? {} : { isCommonAsset: to.isCommon }),
     } })
@@ -971,8 +971,40 @@ export type AssetAssignUndo = {
     // 배정일 원상태(ISO). 전량 소진으로 통째 이동한 행을 적용취소하면 위치는 돌아오는데 배정일은
     // 배정 시각으로 오염된 채 남던 클래스 봉합. undefined(구 토큰)면 복원 data 에서 생략한다.
     assignedAt?: string | null
+    // 폐기 원상태. 배정 경로의 옛 토큰에는 없으므로(undefined) 그때는 손대지 않는다.
+    disposedAt?: string | null
+    disposalReason?: string | null
   }[]
   deleteIds: string[]
+}
+
+// 적용취소 스냅샷 한 벌 — 폐기·배정이 같은 토큰을 쓰므로 뜨는 자리도 하나여야 두 경로가 안 갈린다.
+function snapshotRow(e: ExpRow): AssetAssignUndo['restore'][number] {
+  return {
+    id: e.id, roomId: e.roomId, assignedLocationId: e.assignedLocationId, isCommonAsset: e.isCommonAsset,
+    qtyValue: e.qtyValue, amount: e.amount, allocationGroupId: e.allocationGroupId, detail: e.detail,
+    assignedAt: e.assignedAt ? e.assignedAt.toISOString() : null,
+    disposedAt: e.disposedAt ? e.disposedAt.toISOString() : null,
+    disposalReason: e.disposalReason,
+  }
+}
+
+// 적용취소 적용층 — 분할로 생긴 행을 지우고 원상태를 되돌린다. 배정·폐기·교체가 이 한 자리를 쓴다.
+async function applyAssetUndo(propertyId: string, undo: AssetAssignUndo): Promise<void> {
+  await prisma.$transaction([
+    ...(undo.deleteIds.length ? [prisma.expense.deleteMany({ where: { id: { in: undo.deleteIds }, propertyId } })] : []),
+    ...undo.restore.map(r => prisma.expense.update({
+      where: { id: r.id },
+      data: {
+        roomId: r.roomId, assignedLocationId: r.assignedLocationId, isCommonAsset: r.isCommonAsset,
+        qtyValue: r.qtyValue, amount: r.amount, allocationGroupId: r.allocationGroupId, detail: r.detail,
+        // 스냅샷에 없는 구 토큰(undefined)이면 손대지 않는다(하위 호환).
+        ...(r.assignedAt !== undefined ? { assignedAt: r.assignedAt ? new Date(r.assignedAt) : null } : {}),
+        ...(r.disposedAt !== undefined ? { disposedAt: r.disposedAt ? new Date(r.disposedAt) : null } : {}),
+        ...(r.disposalReason !== undefined ? { disposalReason: r.disposalReason } : {}),
+      },
+    })),
+  ])
 }
 
 export async function batchAssignAssets(
@@ -1012,22 +1044,104 @@ export async function batchAssignAssets(
   }
 }
 
-export async function undoBatchAssignAssets(undo: AssetAssignUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+// ============================================================
+// 폐기·분실 — 우리가 사서 넣은 자재가 그 자리에서 빠진 사건을 기록한다(운영자 승인 2026-09-16).
+//
+//   **돈은 한 원도 안 움직인다.** amount 는 그대로고 수량만 살아 있는 축에서 빠진다. 자재비는
+//   살 때 이미 나간 돈이라 폐기로 방별 투자금이 줄면 그 방의 투자 이력이 거짓이 된다
+//   (knowledge/domain-room-work). 그래서 행을 지우지 않고 표식만 남긴다.
+//
+//   게이트 넷 — ① 수령 전 거부 ② 수량 0 이하 거부 ③ 보유량 초과 **거부**(클램프 아님)
+//   ④ 이미 폐기된 행 제외. ③ 을 클램프로 바꾸면 운영자가 다른 수량이 빠진 걸 모른다.
+// ============================================================
+export async function disposeAsset(
+  expenseIds: string[], qty: number | null, dateYmd: string | null, reason: string | null,
+): Promise<{ ok: true; disposedQty: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    await prisma.$transaction([
-      ...(undo.deleteIds.length ? [prisma.expense.deleteMany({ where: { id: { in: undo.deleteIds }, propertyId } })] : []),
-      ...undo.restore.map(r => prisma.expense.update({
-        where: { id: r.id },
-        data: {
-          roomId: r.roomId, assignedLocationId: r.assignedLocationId, isCommonAsset: r.isCommonAsset,
-          qtyValue: r.qtyValue, amount: r.amount, allocationGroupId: r.allocationGroupId, detail: r.detail,
-          // 배정일도 원복 — 스냅샷에 없는 구 토큰(undefined)이면 손대지 않는다(하위 호환).
-          ...(r.assignedAt !== undefined ? { assignedAt: r.assignedAt ? new Date(r.assignedAt) : null } : {}),
-        },
-      })),
-    ])
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
+    if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    // 게이트 넷은 순수 정본 한 함수가 판정한다(./aggregate). 여기서 다시 쓰면 진리표와 갈린다.
+    const denial = disposalDenial(exps, qty)
+    if (denial) return { ok: false, error: denial }
+    const live = exps.filter(e => !e.disposedAt)
+    const rep = live[0]
+    const when = dateYmd ? new Date(dateYmd) : new Date()
+    if (Number.isNaN(when.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    const { ops, movedQty, createdOpIndexes } = buildSplitOps(live, propertyId, {
+      // 위치 세 칸은 원행 값 그대로 — 폐기는 자리를 안 옮긴다. 그 방 버킷에 남아 비용의 행방을 잇는다.
+      roomId: rep.roomId, assignedLocationId: rep.assignedLocationId, isCommonAsset: rep.isCommonAsset,
+      disposedAt: when, disposalReason: reason?.trim() || null,
+    }, qty)
+    const results = await prisma.$transaction(ops)
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, disposedQty: movedQty, undo: {
+      restore: live.map(snapshotRow),
+      deleteIds: createdOpIndexes.map(i => (results[i] as { id: string }).id),
+    } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '폐기 기록에 실패했습니다.' }
+  }
+}
+
+// 폐기 기록 한 줄 적용취소 — 상세의 '설치·폐기' 목록에서 부른다(토스트 토큰이 이미 사라진 뒤).
+// 표식만 지우고, 그 폐기가 쪼갠 짝이 그대로 남아 있으면 다시 한 행으로 접는다.
+// 짝의 조건은 **한 구매를 쪼갠 것(allocationGroupId)·같은 자리·같은 구매일·같은 정체성·살아 있음**이라
+// 합쳐도 잃는 것이 id 하나뿐이다(카드는 어차피 둘을 한 줄로 집계한다).
+export async function undoDisposalRow(expenseId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
+    if (!row) return { ok: false, error: '폐기 기록을 찾을 수 없습니다.' }
+    if (!row.disposedAt) return { ok: false, error: '이미 되돌려진 기록이에요.' }
+    const mate = row.allocationGroupId ? await prisma.expense.findFirst({
+      where: {
+        propertyId, allocationGroupId: row.allocationGroupId, id: { not: row.id }, disposedAt: null,
+        roomId: row.roomId, assignedLocationId: row.assignedLocationId, isCommonAsset: row.isCommonAsset,
+        itemLabel: row.itemLabel, ...specOf(row), qtyUnit: row.qtyUnit, category: row.category, date: row.date,
+      },
+      orderBy: { createdAt: 'asc' },
+    }) : null
+    if (mate) {
+      const sumQty = (mate.qtyValue ?? 0) + (row.qtyValue ?? 0)
+      await prisma.$transaction([
+        prisma.expense.update({ where: { id: mate.id }, data: {
+          qtyValue: sumQty, amount: mate.amount + row.amount,
+          detail: buildAssetDetail({ ...mate, qtyValue: sumQty }),
+        } }),
+        prisma.expense.delete({ where: { id: row.id } }),
+      ])
+    } else {
+      await prisma.expense.update({ where: { id: row.id }, data: { disposedAt: null, disposalReason: null } })
+    }
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
+export async function undoDisposeAsset(undo: AssetAssignUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await applyAssetUndo(await getPropertyId(), undo)
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
+export async function undoBatchAssignAssets(undo: AssetAssignUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await applyAssetUndo(await getPropertyId(), undo)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
@@ -1100,13 +1214,18 @@ export async function distributeAssetToTargets(
 }
 
 // 같은 분할 묶음(allocationGroupId)의 '미배정(방·위치 모두 없음)' 행들을 하나로 재병합.
+//
+// ⚠️ **양쪽 where 에 `disposedAt: null` 이 급소다.** 이 함수는 여러 행을 하나로 접고 나머지를
+//    삭제한다. 폐기 행이 여기 끌려 들어오면 폐기 기록이 통째로 사라지고 그 수량이 살아 있는
+//    행에 합쳐진다 — 표시 오염이 아니라 **데이터 소실**이다. 개수 판정(assignedCount)에서도
+//    빼야 한다. 폐기 행은 '어디에 배정된 행'이 아니라 '이제 세지 않는 행'이다.
 async function mergeUnassignedGroup(propertyId: string, groupId: string): Promise<void> {
   const unassigned = await prisma.expense.findMany({
-    where: { propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null },
+    where: { propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, disposedAt: null },
     orderBy: { createdAt: 'asc' },
   })
   const assignedCount = await prisma.expense.count({
-    where: { propertyId, allocationGroupId: groupId, OR: [{ roomId: { not: null } }, { assignedLocationId: { not: null } }] },
+    where: { propertyId, allocationGroupId: groupId, disposedAt: null, OR: [{ roomId: { not: null } }, { assignedLocationId: { not: null } }] },
   })
   if (unassigned.length <= 1) {
     // 묶음에 남은 행이 1개뿐이면 묶음 의미 없음 → groupId 정리(단독 행 복귀)

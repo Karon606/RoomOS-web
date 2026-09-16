@@ -771,3 +771,37 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
       `isEmergency`·`kinds`), ⓑ 를 두 함수 이름으로 일반화. **ALLOW 7 무변경**
 - [x] 9. 문서 — `knowledge/tenant-own-phone-fallback.md` 신설 + INDEX 등재
 - [ ] 10. 운영자 실기 확인 6건 — 아래 보고의 실기 목록
+
+### 자재 설치·폐기 두 축 (2026-09-16)
+
+비용은 5개인데 설치된 것은 3개로 보이는 축 분리 + 시공 중 파손·분실·교체 폐기 기록 문.
+운영자 승인 — (a)안(지출 행에 두 칸) / 자리 수는 안 넣음 / 나눠 배정 조작 개선은 다음 회차 /
+교체 한 동작은 폐기 문법의 일부라 포함 / combineAssets 이력 고아 함께 수정.
+
+- [x] 1. 순수 집계 분리 — `app/(app)/inventory/assets/aggregate.ts` 신설(`'use server'` 아님).
+      `aggregateAssets`·`serializeSpecKey`·`buildAssetDetail`·`fmtQty`·`SpecKey` 이동. **동작 변화 0**
+      (집계 스냅샷 392,706바이트 전부 동일로 실측)
+- [x] 2. 스키마 2칸 — `Expense.disposedAt`(date)·`disposalReason`(text), nullable·인덱스 없음.
+      예행(BEGIN→DDL→검사→ROLLBACK) 뒤 **운영자 승인**받고 적용. `db push` 안 씀.
+      적용 전후 지출 591행 지문 `05108f5b…` **바이트 동일**
+- [x] 3. 읽기 축 — `RawAsset`·`AssetItem` 에 폐기 5칸, `getDurableItems` select 2칸.
+      **`durableExpenseWhere`·버킷 분류 무접촉**(폐기 행은 그 방 버킷에 남는다)
+- [x] 4. 쓰기 축 — `MoveData` 확장, `disposeAsset`(게이트 넷 = 정본 `disposalDenial`)·
+      `undoDisposeAsset`·`undoDisposalRow` 신설. `mergeUnassignedGroup` 양쪽 `disposedAt: null`,
+      `revertAssignmentLog` 조회도 같은 클래스로 봉합. `combineAssets`·`setAssetQtyUnit` 이
+      `disposedIds` 를 함께 받음. **교체 한 동작** = 배정 액션의 `replace`, 한 트랜잭션·토큰 하나
+- [x] 5. 화면 — `valueSub` 조건부(`누적 N개`, 폐기 0이면 undefined) · 상세 '설치·폐기' 블록
+      (§12 자동 합산 읽기전용 `--sand-s`·tnum) + 캡션 + `[폐기·분실 기록]` + 폐기 목록(`적용취소` 단일) ·
+      폐기 Modal(`xs`, 옮기기 문법 복제, 사유 select) · 선택 알약바 `폐기·분실`(수령 대기 섞이면 숨김) ·
+      `buysOf` 가 `disposed` 를 거름
+- [x] 6. 그물 — `test-asset-disposal.ts`(verify:fast, **61건**) ·
+      `check-asset-disposal-wiring.mjs`(verify:fast, 급소 = mergeUnassignedGroup 의 `disposedAt: null`) ·
+      `check-asset-overinstall.ts`(verify:db, **명부이지 위반 아님**, 실측 24건) ·
+      `knowledge/domain-inventory.md` 절 + INDEX 한 줄
+- [x] 7. combineAssets 이력 고아(별도 커밋 단위) — `AssetAssignmentLog` 의 라벨·규격 3종을 대상 값으로
+      함께 옮기고 옛값을 `affected.assetLogs` 에 실어 `undoItemNameMerge` 가 온전히 원복
+- [x] 8. 검증 — tsc 0 · verify:fast 0 · verify:db 0 · next build 0 · eslint 496(기준선 496, 델타 0)
+- [x] 9. 금전 불변 실측 — 정적 지문 바이트 동일 + **폐기 시뮬 4건**(502호 2개·504호 1개·미배정 2개·
+      전량 폐기) 전부 총지출·방별·월·영수증·RoomWork 지문 동일, 카드 안 사라짐
+- [x] 10. 역주입 5종 전부 빨강(②·⑤ 는 진리표가 못 보고 배선 그물이 잡는다), 백업 cp 원복 cmp 동일
+- [ ] 11. 운영자 실기 확인 5건 — 아래 보고의 실기 목록
