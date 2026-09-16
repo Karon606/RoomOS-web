@@ -2,7 +2,8 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, renameTrackedItemLabel } from './actions'
-import { specMultiplier, convertUnit, splitSizeLabel, isLengthUnit, isVolumeSizeLabel } from '@/lib/units'
+import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
+import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
 import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '@/lib/unitOptions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
@@ -201,8 +202,9 @@ export type ItemPickState = {
   amount?: number   // 이 품목에 할당된 총 금액
   unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
   // 단가 기준 — 'spec'(규격당: 40개입 3박스 → 120개당) / 'qty'(완제품 1개당: 장판 1롤당 등).
-  // 규격이 치수(cm 등)면 규격당 단가가 무의미해 개당 기준 입력 지원(오류신고 4e2ffe04). 생략=spec(현행).
-  unitBasis?: 'spec' | 'qty'
+  // 규격이 치수(cm 등)면 규격당 단가가 무의미해 개당 기준 입력 지원(오류신고 4e2ffe04).
+  // **생략은 '기록 없음'이지 'spec' 이 아니다** — 읽는 자리는 전부 정본(lib/unitBasis)이 답한다.
+  unitBasis?: UnitBasis
   // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
   allocations?: { roomId: string; qty: string; locked?: boolean }[]
 }
@@ -337,7 +339,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [amountStr, setAmountStr]     = useState('')
   const [unitStr, setUnitStr]         = useState('')                        // 단가(기준단위 1개당) — 아는 값 입력 시 금액 자동
   const [priceMode, setPriceMode]     = useState<'amount' | 'unit'>('amount')  // 마지막으로 사용자가 직접 입력한 쪽(그쪽이 기준)
-  const [unitBasis, setUnitBasis]     = useState<'spec' | 'qty'>('spec')    // 단가 기준: 규격당 / 완제품 1개당(장판 1롤당 등)
+  // 단가 기준: 규격당 / 완제품 1개당(장판 1롤당 등). 첫 값도 정본이 준다 — 아래 휴리스틱이
+  // 규격·수량 단위를 알게 되는 순간 다시 답한다(정본 lib/unitBasis).
+  const [unitBasis, setUnitBasis]     = useState<UnitBasis>(() => inferUnitBasis({}))
   const [basisTouched, setBasisTouched] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
@@ -379,25 +383,20 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
+    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
   }, [category])
 
-  // 규격 단위가 치수(길이)면 규격당 단가가 무의미한 경우가 많아(장판 1cm당 가격 등)
-  // 기본 기준을 '완제품 1개당'으로. 사용자가 직접 전환했으면(basisTouched) 존중. (오류신고 4e2ffe04)
-  // 길이 판정은 lib/units 정본 하나 — 여기 목록을 따로 들고 있으면 별칭(센티·피트)이 새고 낡는다.
+  // 단가 기준 기본값 — 판정은 정본 하나(lib/unitBasis)가 한다. 길이·부피·추적단위 규칙의 경위는
+  // 그 파일 주석에 있다. 여기서 규칙을 또 적으면 기준을 정하는 자리가 다시 다섯으로 갈린다
+  // (신고 73c18e13, 2026-09-17). 사용자가 직접 전환했으면(basisTouched) 존중한다.
   useEffect(() => {
     if (basisTouched) return
-    const u = specUnit.trim().toLowerCase()
-    if (isLengthUnit(u)) { setUnitBasis('qty'); return }
-    // 부피 규격 + 장수 단위 = 그 부피는 **물건의 크기 표시**다. 나눌 수 있는 양이 아니다.
-    // 종량제봉투 50L 20매에 25,000원이면 1매당 1,250원이지 리터당 25원이 아니다(운영자 지적 2026-08-05).
-    // 세제 1.5L 처럼 부피가 진짜 양인 경우는 수량 단위가 개·통·병이라 여기 안 걸린다.
-    // 이 판정도 lib/units 정본 하나 — 여기서 목록을 비교하면 소문자로 다듬은 u 에 'L' 이 안 걸리고
-    // 리터·cc·oz 도 함께 샌다(실제로 ml 일 때만 우연히 서 있었다).
-    if (isVolumeSizeLabel(u, qtyUnit)) { setUnitBasis('qty'); return }
-    // 품목의 재고 추적 단위가 '수량'이면 개당 단가가 기본 — 봉투·장판 등(오류신고 c7cf6180)
-    setUnitBasis(prevUnits?.trackUnit === 'qty' ? 'qty' : 'spec')
-  }, [specUnit, qtyUnit, basisTouched, prevUnits])
+    setUnitBasis(inferUnitBasis({
+      specUnit, qtyUnit,
+      specText: specTextMode ? specText : null,
+      trackUnit: prevUnits?.trackUnit,
+    }))
+  }, [specUnit, qtyUnit, specTextMode, specText, basisTouched, prevUnits])
 
   // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
   // 기준수량 = 수량 × (규격당 기준이면 규격). 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)
@@ -457,7 +456,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
     const def = itemDefaultsFor(label)
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -526,7 +525,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     }
     onChange([...items, data])
     setActiveLabel(null)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel('')
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel('')
     // 다음 품목으로 브랜드가 넘어가면 안 된다 — 진라면 담고 휴지 담는데 '오뚜기'가 남는다.
     setBrand(''); setProductName(''); setBrandFromLast(false); setBrandOpen(false)
   }
@@ -557,7 +556,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   }
   // 단가 기준 — 'spec'(규격당: 40개입 3박스 → 120개당) / 'qty'(완제품 1개당: 장판 1롤당).
   // 총 기준수량 = 수량 × (spec 기준이면 규격값). 단가 라벨을 눌러 기준 전환.
-  const basisOf = (it: ItemPickState) => it.unitBasis ?? 'spec'
+  // 기록이 있으면 그대로, 없으면 정본 규칙(lib/unitBasis). 종전에는 `?? 'spec'` 이라, 영수증으로
+  // 담은 품목이 부피든 길이든 무조건 규격당으로 읽혀 봉투 20매가 `단가/1L` 로 보였다(신고 73c18e13).
+  const basisOf = (it: ItemPickState) => resolveUnitBasis({
+    recorded: it.unitBasis, specUnit: it.specUnit, qtyUnit: it.qtyUnit, specText: it.specText,
+  })
   const specMul = (it: { specValue?: string | number | null }) => it.specValue ? (Number(it.specValue) || 1) : 1
   const baseQtyOf = (it: ItemPickState) => (Number(it.qtyValue) || 1) * (basisOf(it) === 'spec' ? specMul(it) : 1)
   // 금액 입력 → 단가 자동(금액 ÷ 기준수량)
@@ -1571,6 +1574,8 @@ export default function FinanceClient({
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
   const [addExpAccId, setAddExpAccId]     = useState('')
   const [addExpAccName, setAddExpAccName] = useState('')
+  // 영수증이 본 결제수단 표기 — 등록된 카드와 못 맞혔을 때만 남는다(확인형 고지, 신고 73c18e13).
+  const [addCardHint, setAddCardHint] = useState<{ name: string; last4: string } | null>(null)
   const [editExpMethod, setEditExpMethod]   = useState('계좌이체')
   const [editExpAccId, setEditExpAccId]     = useState('')
   const [editExpAccName, setEditExpAccName] = useState('')
@@ -1725,15 +1730,26 @@ export default function FinanceClient({
     if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
     // 영수증에 보이는 카드사·마스킹 번호로 결제수단 매칭 — 카드형 계좌만, 후보가 딱 1건일 때만 채운다.
     // 복수·0건이면 손대지 않음(오매칭 방지 — 기존 lastPayDefaults 값 유지).
-    const ocrCardName = d.cardName ? d.cardName.replace(/\s/g, '') : ''
+    //
+    // **못 맞혀도 조용히 버리지 않는다(신고 73c18e13, 2026-09-17).** 운영자 원문 — "영수증에 사용한
+    // 결제수단이 현대카드라고 되어있는데 왜 그 데이터는 활용을 안하는거지?". 종전에는 실패하면
+    // 원문을 메모에도 안 남기고 고지도 안 한 채 직전 결제수단(기본 '계좌이체')이 조용히 남았다.
+    // 지금은 영수증에 보이는 표기를 화면에 한 줄로 말해 주고 운영자가 고르게 한다 — **확인형**이다.
+    // 자동으로 payMethod 를 써 넣지 않는 것은 그 칸이 정산 상태(settleStatus)를 파생시키기 때문이다.
+    const matchNorm = (v: string) => v.replace(/\s/g, '').toLowerCase()
+    const ocrCardName = matchNorm(d.cardName ?? '')
     const byLast4 = d.cardLast4
       ? cardAccounts.filter(a => (a.identifier ?? '').replace(/\D/g, '').slice(-4) === d.cardLast4)
       : []
+    // 브랜드 매칭은 **양방향**이다. 종전에는 `영수증 표기가 브랜드를 품는가` 한 방향만 봐서,
+    // 브랜드가 '현대카드 M2'인데 영수증이 '현대카드'로 찍히면 못 맞혔다. 계정 쪽 표기도 셋을 본다
+    // (브랜드·별칭·표시명) — 어느 하나가 영수증 표기와 서로를 품으면 같은 카드다.
+    // 한 글자 표기는 아무 데나 걸리므로 부분 일치는 두 글자부터 인정한다.
     const byBrand = ocrCardName
-      ? cardAccounts.filter(a => {
-          const brand = a.brand.replace(/\s/g, '')
-          return !!brand && (brand === ocrCardName || ocrCardName.includes(brand))
-        })
+      ? cardAccounts.filter(a => [a.brand, a.alias ?? '', accName(a)].map(matchNorm).filter(Boolean)
+          .some(n => n === ocrCardName
+            || (n.length >= 2 && ocrCardName.includes(n))
+            || (ocrCardName.length >= 2 && n.includes(ocrCardName))))
       : []
     const matchedCard = byLast4.length === 1 ? byLast4[0]
       : byLast4.length === 0 && byBrand.length === 1 ? byBrand[0]
@@ -1744,6 +1760,10 @@ export default function FinanceClient({
       setAddExpAccId(matchedCard.id)
       setAddExpAccName(accName(matchedCard))
     }
+    // 못 맞힌 표기는 화면이 말한다. 카드 미등록·후보 여럿·표기 불일치가 전부 이 한 줄로 모인다.
+    setAddCardHint(!matchedCard && (d.cardName || d.cardLast4)
+      ? { name: (d.cardName ?? '').trim(), last4: d.cardLast4 ?? '' }
+      : null)
     if (d.items.length > 0) {
       // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
       // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
@@ -1782,25 +1802,27 @@ export default function FinanceClient({
       // 그대로 두면 수량이 맨숫자로 저장돼 같은 품목의 재고 카드와 어긋난다(신고 102d768f·c977db2a 의 재발 경로).
       // 프리셋 경로와 같은 순서로 메운다 — 라벨 일치 프리셋 → 크기 뗀 부모 프리셋 → 직전 구매 이력.
       // 영수증이 준 단위는 덮지 않는다. 규격 단위는 규격 값이 있을 때만 — 값 없는 단위는 뜻이 없다.
-      const unitFills = await Promise.all(ocrItems.map(async it => {
+      //
+      // 직전 구매의 **단가 기준**도 같은 조회에서 가져온다(신고 73c18e13, 2026-09-17).
+      // 운영자 원문 — "이전에 어떻게 저장했는지에 따라서 기준을 맞춰가면 좋겠는데…". 피커로 고르는
+      // 길은 이미 그렇게 하는데 영수증 길만 기준을 아예 안 실어서, 봉투 20매가 `단가/1L` 로 들어왔다.
+      // 기록이 없으면 null 이고 그때는 아래에서 정본 규칙이 답한다 — 여기서 지어내지 않는다.
+      const lastFills = await Promise.all(ocrItems.map(async it => {
         const needQty  = !(it.qtyUnit  ?? '').trim()
         const needSpec = !(it.specUnit ?? '').trim() && !!(it.specValue ?? '').trim()
-        if (!needQty && !needSpec) return null
         const def = itemDefaultsFor(it.label)
         let qtyUnit  = needQty  ? (def?.qtyUnit  ?? '') : ''
         let specUnit = needSpec ? (def?.specUnit ?? '') : ''
-        if ((needQty && !qtyUnit) || (needSpec && !specUnit)) {
-          const last = await getLastItemUnits(it.label).catch(() => null)
-          if (needQty  && !qtyUnit)  qtyUnit  = last?.qtyUnit  ?? ''
-          if (needSpec && !specUnit) specUnit = last?.specUnit ?? ''
-        }
-        return { qtyUnit, specUnit }
+        const last = await getLastItemUnits(it.label).catch(() => null)
+        if (needQty  && !qtyUnit)  qtyUnit  = last?.qtyUnit  ?? ''
+        if (needSpec && !specUnit) specUnit = last?.specUnit ?? ''
+        return { qtyUnit, specUnit, recordedBasis: last?.unitBasis ?? null, trackUnit: last?.trackUnit ?? null }
       }))
       // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
       // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
       // specText(색상·사이즈 등 서술형 규격)가 있으면 처음부터 텍스트 규격 모드로 열림(숫자 규격 비움·개당 단가).
       setAddItems(ocrItems.map((it, i) => {
-        const fill = unitFills[i]
+        const fill = lastFills[i]
         const hasTextSpec = !!(it.specText && it.specText.trim())
         // 서술 규격(애플민트향)이 있어도 **숫자 규격(2.1L)을 버리지 않는다** — 신고 1fd2e22b.
         //
@@ -1810,18 +1832,27 @@ export default function FinanceClient({
         //   2) 2.1L 이 DB 에 저장되지 않아 재고가 수량 4 를 그대로 받아 '4ml' 로 찍혔다(실제 8,400ml).
         //
         // 폼 UI 는 원래부터 둘을 병기할 수 있다(위 규격 셀의 `it.specText == null || it.specValue` 조건).
-        // 저장 경로만 배타로 만들고 있었다. 단가 기준은 'qty'(완제품 1개당)로 두어 라벨과 값이 일치한다.
-        const basis = hasTextSpec ? ('qty' as const) : undefined
-        const specMulHere = (basis ?? 'spec') === 'spec' ? (Number(it.specValue) || 1) : 1
+        // 저장 경로만 배타로 만들고 있었다. 서술 규격이면 개당 단가라야 라벨과 값이 일치한다.
+        //
+        // 기준은 **반드시 싣는다.** 종전에는 서술 규격이 없으면 undefined 로 두어, 영수증으로 담은
+        // 품목이 부피든 길이든 무조건 규격당으로 읽혔다(basisOf 의 옛 `?? 'spec'`). 판정은 정본 하나
+        // (lib/unitBasis) — 직전 구매에 기록이 있으면 그대로, 없으면 규칙이 답한다.
+        const specUnitHere = (it.specUnit ?? '') || (fill?.specUnit ?? '')
+        const qtyUnitHere  = (it.qtyUnit  ?? '') || (fill?.qtyUnit  ?? '')
+        const basis = resolveUnitBasis({
+          recorded: fill?.recordedBasis, specUnit: specUnitHere, qtyUnit: qtyUnitHere,
+          specText: hasTextSpec ? it.specText : null, trackUnit: fill?.trackUnit,
+        })
+        const specMulHere = basis === 'spec' ? (Number(it.specValue) || 1) : 1
         return {
           label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
           specValue: it.specValue ?? '',
-          specUnit:  (it.specUnit ?? '') || (fill?.specUnit ?? ''),
+          specUnit:  specUnitHere,
           specText:  hasTextSpec ? it.specText!.trim() : undefined,
           brand:       it.brand?.trim() || undefined,
           productName: it.productName?.trim() || undefined,
           unitBasis: basis,
-          qtyValue: it.qtyValue ?? '', qtyUnit: (it.qtyUnit ?? '') || (fill?.qtyUnit ?? ''),
+          qtyValue: it.qtyValue ?? '', qtyUnit: qtyUnitHere,
           amount: it.amount,
           // 정본 baseQtyOf 와 같은 규칙 — 기준수량 = 수량 × (spec 기준일 때만 규격값)
           unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * specMulHere)) : undefined,
@@ -1952,7 +1983,7 @@ export default function FinanceClient({
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   // 로컬 미리보기도 함께 비운다. 안 비우면 같은 세션에서 다음 폼을 열었을 때 직전 영수증 이미지가 새 주소를 덮는다.
-  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
+  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -4175,13 +4206,19 @@ export default function FinanceClient({
                       // 브랜드·제품명도 같은 이유로 반드시 복원한다(누락 시 수정 저장에서 소실).
                       brand:       detailExp.brand ?? undefined,
                       productName: detailExp.productName ?? undefined,
-                      unitBasis: detailExp.unitBasis === 'qty' ? 'qty' : detailExp.unitBasis === 'spec' ? 'spec' : undefined,
+                      // 기록이 없으면 **기록 없음 그대로** 넘긴다(undefined). 화면·계산은 basisOf 가 정본
+                      // 규칙으로 답하고, 저장 때 그 칸이 비어 있으면 기록도 안 생긴다 — 열어 본 것만으로
+                      // 옛 행에 기준이 박제되지 않는다(신고 73c18e13).
+                      unitBasis: storedUnitBasis(detailExp.unitBasis) ?? undefined,
                       // 수량 미입력 항목은 자동 1개로 (confirmAdd 와 동일 규칙) — 재저장 시 "x 1개" 일관 표기
                       qtyValue:  detailExp.qtyValue != null ? detailExp.qtyValue.toString() : '1',
                       qtyUnit:   detailExp.qtyValue != null ? (detailExp.qtyUnit ?? '') : (detailExp.qtyUnit ?? '개'),
                       amount:    baseAmount,
-                      // 단가 복원 — (금액−배송비)÷기준수량. 개당(qty) 기준이면 규격 나눗셈 제외(basis 인지).
-                      unitPrice: Math.round(baseAmount / ((Number(detailExp.qtyValue) || 1) * (detailExp.unitBasis === 'qty' ? 1 : (Number(detailExp.specValue) || 1)))),
+                      // 단가 복원 — (금액−배송비)÷기준수량. 기준은 정본이 답한다(옛 코드는 기록이 없으면
+                      // 무조건 규격당으로 나눠 봉투 단가가 리터당으로 복원됐다).
+                      unitPrice: Math.round(baseAmount / ((Number(detailExp.qtyValue) || 1) * (resolveUnitBasis({
+                        recorded: detailExp.unitBasis, specUnit: detailExp.specUnit, qtyUnit: detailExp.qtyUnit, specText: detailExp.specText,
+                      }) === 'qty' ? 1 : (Number(detailExp.specValue) || 1)))),
                     }] : [])
                     setEditExpAmount(baseAmount)
                     setEditExpDetail((detailExp.detail ?? '').replace(/\s*·?\s*배송비\s*[\d,]+원/, '').trim())
@@ -4689,6 +4726,19 @@ export default function FinanceClient({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
+                  {/* 영수증이 본 결제수단 — 등록 카드와 못 맞혔을 때만. 자동으로 채우지 않고 말해 준다
+                      (확인형, 운영자 결정 2026-09-17). 카드를 고르면 사라진다. 형제 안내줄과 같은 문법. */}
+                  {addCardHint && !cardAccounts.some(a => a.id === addExpAccId) && (
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
+                      {/* 값이 굵은 글씨 안이라 조사를 손으로 붙이면 '신한카드로'·'국민카드으로'가 갈린다.
+                          '입니다'는 어떤 명사에도 붙어 조사 정본을 부를 자리 자체가 없다. */}
+                      {addCardHint.name
+                        ? <>영수증에 보이는 결제수단은 <strong className="text-[var(--warm-mid)]">{addCardHint.name}</strong>입니다.</>
+                        : <>영수증에 보이는 카드번호 끝 4자리는 <strong className="text-[var(--warm-mid)]">{addCardHint.last4}</strong>입니다.</>}
+                      {addCardHint.name && addCardHint.last4 ? ` 카드번호 끝 4자리는 ${addCardHint.last4}입니다.` : ''}
+                      {cardAccounts.length === 0 ? ' 자산 관리에 카드를 등록하면 다음부터 자동으로 맞춰집니다.' : ' 맞는 카드를 골라 주세요.'}
+                    </p>
+                  )}
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                   <div className="space-y-1.5">

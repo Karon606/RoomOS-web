@@ -49,6 +49,13 @@ type GeminiResult = {
   qtyValue?: string
   qtyUnit?: string
   orderNo?: string
+  // 영수증에 보이는 사업자번호·카드 표기 — 지출 폼이 그대로 쓰는 칸들이다.
+  // **여기 칸이 없으면 저장 전에 사라진다.** 지출 등록 OCR 은 세 칸을 다 쓰는데 홈 찍어올리기만
+  // 재조립에서 빠뜨려, 영수증에 '현대카드'라고 찍혀 있어도 홈 경로로 들어온 건은 결제수단을
+  // 못 알아봤다(신고 73c18e13). 재조립이 ReceiptOcrResult 를 덮는지는 그물이 지킨다.
+  vendorBizNo?: string
+  cardName?: string
+  cardLast4?: string
   items?: ReceiptOcrItem[]        // 정밀 라인아이템 — 딥링크 폼 프리필용
   _meta?: { mime?: string }       // 원본 업로드 mime (재-OCR·다운로드 시 실제 값 사용)
   _error?: string                 // 인식 실패 사유 (사용자용 한 줄) — 카드가 '인식 실패' 표시
@@ -83,6 +90,9 @@ async function analyzeImage(imageBase64: string, mimeType: string): Promise<Gemi
     qtyValue:  first?.qtyValue,
     qtyUnit:   first?.qtyUnit,
     orderNo: d.orderNo,
+    vendorBizNo: d.vendorBizNo,
+    cardName: d.cardName,
+    cardLast4: d.cardLast4,
     items: d.items,
   }
 }
@@ -336,9 +346,12 @@ export async function getPendingReceiptImage(id: string): Promise<{ ok: true; ba
     const ocr: ReceiptOcrResult = {
       date: parsed?.date,
       vendor: parsed?.vendor,
+      vendorBizNo: parsed?.vendorBizNo,
       totalAmount: parsed?.amount,
       category: parsed?.category,
       orderNo: parsed?.orderNo,
+      cardName: parsed?.cardName,
+      cardLast4: parsed?.cardLast4,
       items: parsed?.items ?? [],
     }
     return { ok: true, base64: buf.toString('base64'), mime, imageUrl: row.imageUrl, ocr, ocrError: parsed?._error ?? null }

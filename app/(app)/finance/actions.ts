@@ -8,6 +8,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { computeSetHint } from '@/lib/setHint'
 import { resolveSingleItemFields } from '@/lib/expenseItemSource'
+import { storedUnitBasis, resolveUnitBasis, type UnitBasis } from '@/lib/unitBasis'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { splitQuickPickRows } from '@/lib/itemQuickPicks'
 import { randomUUID } from 'node:crypto'
@@ -270,7 +271,9 @@ export type LastItemContext = {
   // 안 띄고, 그 값이 나중에 재고 카드를 가르는 기준이 되면 진라면 산 것이 삼양 재고에 쌓인다.
   brand: string | null
   productName: string | null
-  unitBasis: 'spec' | 'qty' | null    // 직전 단가 기준 — 규격당/완제품당 유지
+  // 직전 단가 기준 — **기록된 것만.** 없으면 null 이고, 폼이 정본 규칙(lib/unitBasis)으로 간다.
+  // 여기서 지어내면 그 값이 사람이 고른 값으로 대접받아 부피·길이 판정을 끈다(신고 73c18e13).
+  unitBasis: UnitBasis | null
   qtyValue: string | null             // 직전 수량
   unitPrice: number | null            // 직전 단가 (금액 ÷ 기준수량 역산)
   trackedCategories: string[]         // 이 품목명이 재고 품목으로 등록된 카테고리들 — 착오 등록 경고용(신고 1f99d83c)
@@ -302,22 +305,28 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     select: { label: true },
   }).then(rows => rows.map(r => r.label)).catch(() => [] as string[])
   if (!row && tracked.length === 0 && specOptions.length === 0) return null
-  // 단가 역산 — 입력 폼과 동일 산식: 기준수량 = 수량 × (규격당 기준이면 규격 값).
-  // unitBasis 미기록(구 데이터)이면 규격 값이 있을 때 'spec'(폼 기본값과 동일 관례).
-  const basis: 'spec' | 'qty' | null = row
-    ? ((row.unitBasis === 'spec' || row.unitBasis === 'qty') ? row.unitBasis : (row.specValue ? 'spec' : 'qty'))
-    : null
+  // 직전 기준은 **기록이 있을 때만** 돌려준다(신고 73c18e13, 2026-09-17).
+  // 종전에는 기록이 없어도 규격 값이 있다는 이유로 'spec' 을 지어냈고, 받는 쪽이 그것을 사람이
+  // 고른 값으로 대접해 basisTouched 를 세워 부피 판정(종량제봉투 50L 20매)을 통째로 껐다.
+  // 없으면 null 로 두면 폼이 정본 규칙(lib/unitBasis)으로 간다 — 운영자 요구 "이전에 어떻게
+  // 저장했는지에 따라서"의 답은 '기록이 있을 때만 따르고 없으면 규칙'이다.
+  const trackUnit = tracked[0]?.trackUnit ?? null
+  const basis: UnitBasis | null = row ? storedUnitBasis(row.unitBasis) : null
   let unitPrice: number | null = null
   if (priceRow && priceRow.amount > 0) {
-    const pBasis: 'spec' | 'qty' = (priceRow.unitBasis === 'spec' || priceRow.unitBasis === 'qty')
-      ? priceRow.unitBasis : (priceRow.specValue ? 'spec' : 'qty')
+    // 단가 역산 — 입력 폼과 동일 산식: 기준수량 = 수량 × (규격당 기준이면 규격 값).
+    // 여기는 숫자를 내야 하므로 null 로 둘 수 없다. 기록이 없으면 정본 규칙이 답한다.
+    const pBasis = resolveUnitBasis({
+      recorded: priceRow.unitBasis, specUnit: priceRow.specUnit, qtyUnit: priceRow.qtyUnit,
+      specText: priceRow.specText, trackUnit,
+    })
     const q = (priceRow.qtyValue ?? 1) * (pBasis === 'spec' ? (priceRow.specValue ?? 1) : 1)
     if (q > 0) unitPrice = Math.round(priceRow.amount / q)
   }
   return {
     specUnit: row?.specUnit ?? null,
     qtyUnit: row?.qtyUnit ?? null,
-    trackUnit: tracked[0]?.trackUnit ?? null,
+    trackUnit,
     specOptions,
     specValue: row?.specValue != null ? String(row.specValue) : null,
     specText: row?.specText ?? null,

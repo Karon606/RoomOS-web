@@ -878,3 +878,55 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] L13 `check-asset-overinstall.ts` 에 `.catch` — 명부는 체인을 안 끊는다
 - [x] 가드 우회 봉합 — 그물이 인자의 **정체**를 본다(`live` 의 정의 대조)
 - [ ] 운영자 실기 확인 — 아래 보고의 목록
+
+## 오류신고 시공 — 계측·단가 기준·영수증 결제수단 (2026-09-17)
+
+### 0 계측이 눈을 뜬다 (신고 bf0a6fff 의 증거 공백)
+- [x] 정본 `lib/viewportProbe.ts` 에 `probeAfterEntrance`(열었을 때 한 번)와 `probeReport`
+      (두 스냅샷 나란히)를 더한다. 재는 문법은 기존 `viewportProbe()` 그대로 — 새 계측 문법 없음
+- [x] **시점은 시간이 아니라 순서로 정한다** — `getAnimations().playState==='running'` 의 `finished`
+      를 `allSettled` 로 받고, 같은 프레임의 `animationend`(useSettleEntrance)가 신고창 제 클래스를
+      걷을 때까지 rAF 한 번 더. 도는 모션이 없으면 rAF 두 번. 2026-09-08 벽시계 금지 결정 준수
+- [x] `ErrorReportButton` 이 열릴 때마다 최신 한 장만 ref 에 보관(DB·localStorage 안 씀), 제출 때
+      `probeReport(열었을 때, 제출할 때)` 로 합쳐 싣는다. 개인정보는 한 글자도 안 는다(같은 probe)
+- [x] 그물 — `test-viewport-probe.ts`(verify:fast, 7건) + `check-kbd-canonical.mjs` 에 배선·벽시계
+      금지 단언 6줄
+- [x] **헤드리스 실측으로 두 스냅샷이 갈리는 조건을 만들었다**(아래 보고). 열었을 때 `등장모션잔존=2`,
+      제출할 때 `0`, 블록에 `제출할 때 (달라진 줄: modal)`
+
+### 1 단가 기준 날조를 없앤다 (신고 73c18e13 앞부분)
+- [x] **제3 경로를 재현으로 확정** — 영수증 인식 행(`FinanceClient.tsx:1814`)이 기준을 아예 안
+      실어서 `basisOf`(`:560`)의 `?? 'spec'` 으로 떨어졌다. 09-15 두 행이 같은 영수증·같은
+      `orderId`·사업자번호까지 실려 있어 OCR 경로임이 장부로 확인됨
+- [x] 정본 `lib/unitBasis.ts` 신설 — `storedUnitBasis`(기록만) · `inferUnitBasis`(규칙 넷) ·
+      `resolveUnitBasis`(기록 우선). 판정은 `lib/units` 의 `isLengthUnit`·`isVolumeSizeLabel` 에서 온다
+- [x] 날조 제거 — `actions.ts:307` 이 기록 없으면 `null`. 단가 역산(`:312`)은 숫자를 내야 하므로
+      정본 규칙을 쓴다
+- [x] 다섯 자리 + 하나를 같은 정본으로 — 피커 휴리스틱 · 리셋 셋 · `basisOf` · 영수증 인식 행 ·
+      수정 프리필 단가 복원 · `lib/setHint` 의 과거 단가 역산
+- [x] 영수증 인식 행이 **직전 구매의 기록도 본다**(운영자 요구 "이전에 어떻게 저장했는지에 따라서").
+      `unitFills` 를 `lastFills` 로 넓혀 같은 조회에서 기준·추적단위를 함께 받는다
+- [x] 백필 27건 적용 — 예행·적용·멱등·`--revert` 원복·재적용까지 실측(아래 보고). 금전 지문 불변
+- [x] 그물 둘 — `test-unit-basis.ts`(진리표 30건) + `check-unit-basis-wiring.mjs`(verify:fast) ·
+      `check-unit-basis-drift.ts`(verify:db, 장부 축)
+- [ ] **SpecWizard 는 안 건드렸다** — 롤 + m 을 고르면 길이 규칙과 어긋난 규격당을 제안한다.
+      배선 그물의 '알려진 공백' 목록에 사유와 함께 올려 뒀다. 호출부 넷이 걸려 별건
+
+### 2 영수증 결제수단을 살린다 (신고 73c18e13 뒷부분)
+- [x] 홈 경로 복구 — `pendingReceipt.ts` 의 `GeminiResult` 타입과 재조립 두 군데에 `cardName`·
+      `cardLast4`·`vendorBizNo`. 사업자번호도 같이 빠져 있었다(같은 클래스)
+- [x] 브랜드 매칭 양방향 + 계정 쪽 표기 셋(브랜드·별칭·표시명). 부분 일치는 두 글자부터
+- [x] 못 맞히면 **확인형 고지 한 줄** — "영수증에는 현대카드로 결제한 것으로 보입니다". 카드를
+      고르면 사라진다. 자동 `payMethod` 기입은 안 한다(정산 상태가 따라 움직인다)
+- [x] 그물 — `check-receipt-card-relay.mjs`(verify:fast). **목록을 손으로 세지 않고**
+      `ReceiptOcrResult` 를 읽어 대조한다(2026-09-16 cloneExpenseScalars 와 같은 클래스)
+- [ ] **별칭 학습은 못 했다** — 저장할 칸이 없다. `ItemNameAlias` 재사용은 품목명 자동완성으로
+      그대로 샌다(`finance/actions.ts:1795~1808` 이 모든 `preferredLabel` 을 제안 목록에 넣는다).
+      새 칸·새 테이블은 loop.md §4(스키마 변경) 대상이라 운영자 승인 필요 — 보고에 적었다
+- [ ] 곁가지(고치지 않음) — `lib/paymentMethods.ts:4` 에 `체크카드` 가 없는데 지출 옵션
+      (`settings/actions.ts:599`)에는 있다. 수납 축과 지출 축이 다른 정본을 쓴다
+
+### 검증
+- [x] tsc 0 · verify:fast 0 · verify:db 0 · next build 0 · eslint 496(기준선 496, 델타 0)
+- [x] 역주입 9종 전부 빨강, 백업 cp 원복 후 cmp 6파일 전부 동일
+- [ ] 운영자 실기 확인 — 보고의 목록

@@ -1,5 +1,6 @@
 import 'server-only'
 import prisma from '@/lib/prisma'
+import { resolveUnitBasis } from '@/lib/unitBasis'
 
 // 세트 상품 의심 감지 — "주문 1개 = 실물 N개" (운영자 2026-07-06, 하수구트랩·의자발 사례).
 // 온라인 영수증(쿠팡 등)은 품목당 합계 위주라 개당 단가·실물 수량이 안 보임 →
@@ -55,11 +56,16 @@ export async function computeSetHint(propertyId: string, item: {
   if (amount <= 0) return null
   const hist = await prisma.expense.findFirst({
     where: { propertyId, itemLabel: item.label, amount: { gt: 0 } },
-    select: { amount: true, qtyValue: true, specValue: true, unitBasis: true },
+    select: { amount: true, qtyValue: true, specValue: true, specUnit: true, specText: true, qtyUnit: true, unitBasis: true },
     orderBy: { createdAt: 'desc' },
   })
   if (!hist) return null
-  const hBasis = (hist.unitBasis === 'spec' || hist.unitBasis === 'qty') ? hist.unitBasis : (hist.specValue ? 'spec' : 'qty')
+  // 과거 개당 단가를 역산하려면 기준이 있어야 한다 — 기록이 있으면 그대로, 없으면 정본 규칙.
+  // 여기서 '규격 값이 있으니 규격당'으로 지어내면 봉투·장판의 과거 단가가 리터·센티당이 되어
+  // 세트 배수 판정이 통째로 어긋난다(신고 73c18e13 과 같은 클래스).
+  const hBasis = resolveUnitBasis({
+    recorded: hist.unitBasis, specUnit: hist.specUnit, qtyUnit: hist.qtyUnit, specText: hist.specText,
+  })
   const hq = (hist.qtyValue ?? 1) * (hBasis === 'spec' ? (hist.specValue ?? 1) : 1)
   if (hq <= 0) return null
   const histUnit = hist.amount / hq

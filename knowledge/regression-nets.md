@@ -275,3 +275,19 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 **배선 순서 주의**: `check-datepicker-shell` 이 선재 위반으로 exit 1 을 내고 있어, 그 뒤에 둔
 검사는 `verify:fast` 에서 한 번도 안 돈다. 새 그물은 그보다 앞에 뒀다. **안 도는 자리에 선
 그물은 그물이 아니다.**
+
+## 2026-09-17 추가 — 오류신고 시공에서 네 벌
+
+- `test-viewport-probe`(verify:fast) — 오류신고 계측 두 스냅샷 조립. 열었을 때가 없으면 종전과 같은
+  한 덩이, 같으면 접기, 다르면 **달라진 줄의 이름**을 짚는다.
+- `check-kbd-canonical` 에 절 추가 — 열었을 때를 재는 배선(`probeAfterEntrance`·`probeReport`)과
+  **벽시계 금지**(`setTimeout`·`Date.now`·`performance.now` 가 `lib/viewportProbe` 에 들어오면 빨강).
+- `test-unit-basis` + `check-unit-basis-wiring`(verify:fast) · `check-unit-basis-drift`(verify:db) —
+  단가 기준 정본. 진리표·배선·장부 세 겹. 자세한 것은 [[domain-unit-basis]].
+- `check-receipt-card-relay`(verify:fast) — 영수증 인식 결과가 홈 경로 재조립 두 군데를 통과하는가.
+  **목록을 손으로 세지 않고 `ReceiptOcrResult` 를 읽어 대조한다** — 새 칸이 생기면 "홈이 그것을
+  나르는지 정하라"고 막는다. 2026-09-16 `cloneExpenseScalars` 사건과 같은 클래스의 예방이다.
+
+**알려진 공백을 목록에 올리는 문법을 썼다.** `check-unit-basis-wiring` 의 `KNOWN_GAPS` 는
+`components/ui/SpecWizard.tsx` 를 사유와 함께 담고, 그 파일이 `unitBasis` 를 더 이상 안 다루면
+"목록에서 내려라"고 빨개진다. 조용한 공백보다 낫다(`check-kbd-canonical` 의 ALLOW 와 같은 문법).

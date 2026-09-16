@@ -47,8 +47,12 @@ need('판정 정본이 길이 목록을 베끼지 않는다',
 need('정합 검사가 길이 목록을 베끼지 않는다',
   /import \{ isLengthUnit \} from '\.\.\/lib\/units'/.test(splitCheck) && !/LENGTH_UNITS/.test(splitCheck),
   '검증 스크립트가 규칙을 복제하면 정본 개정을 못 따라온다')
+// 지출 화면은 길이 판정을 **직접 부르거나**, 단가 기준 정본(lib/unitBasis)을 거쳐 닿으면 된다.
+// 2026-09-17 에 기준 판정이 lib/unitBasis 한 자리로 모이면서 화면의 직접 호출이 그리로 옮겨 갔다
+// (그 정본이 isLengthUnit 을 부르는지는 check-unit-basis-wiring 이 지킨다). 여기서 보는 것은
+// 변함없이 **목록을 베끼지 않는가**이다 — 정본 복제가 5일짜리 사고를 낸 그 클래스.
 need('지출 화면이 길이 목록을 베끼지 않는다',
-  /isLengthUnit/.test(client) && !/\['cm', 'mm', 'm', '인치'\]/.test(client))
+  (/isLengthUnit/.test(client) || /from '@\/lib\/unitBasis'/.test(client)) && !/\['cm', 'mm', 'm', '인치'\]/.test(client))
 
 // ── ② 묻는 자리 — 조건 넷 ─────────────────────────────────────────
 const block = between(client, '// 잔량을 길이로 셀지 세트로 셀지', '// 같은 쇼핑몰 주문번호의')
