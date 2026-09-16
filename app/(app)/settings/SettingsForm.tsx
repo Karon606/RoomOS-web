@@ -55,10 +55,11 @@ import {
   translationPlaceholderMisses, translationPlaceholderMessage, translationProgress,
   translationPlaceholders,
   translationVarSpecs, translationVarSpecByKey, isCustomVarTranslation, translationLineDone,
-  resolveContractTranslation,
+  resolveContractTranslation, TRANSLATION_LANG_ENDONYM,
   type TranslationLang, type TranslationLineKind, type TranslationVarSpec, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
+import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -3348,6 +3349,37 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
     }).filter(x => x.started && x.left > 0)
   }, [template, stored, addenda, refundClauseInContract, lang, lines.length, translated, draft])
 
+  /**
+   * 검수용 종이의 바이트 — 서버가 **지금 화면의 입력칸(draft)** 으로 그린다.
+   *
+   * 보내는 것은 `{ lang, dict }` 둘뿐이다. 한국어 원문·가변 절·환불 토글은 서버가 DB 에서 직접
+   * 읽어 미리보기 useMemo 와 같은 인자로 같은 정본을 부른다 — 창과 종이가 갈릴 자리가 없다.
+   * **저장 전 기준이다.** 저장본을 읽으면 "저장하기 전에 맞는지 확인"이라는 쓰임이 뒤집힌다.
+   */
+  const getTranslationPdfBytes = useCallback(async (): Promise<ArrayBuffer> => {
+    try {
+      const res = await fetch('/api/contract-translation/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang, dict: draft }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(j?.error ?? '번역본 PDF 를 만들지 못했습니다.')
+      }
+      return await res.arrayBuffer()
+    } catch (err) {
+      // 문구 정본은 여기다. SendDocButton 의 기본 폴백('보내기에 실패했습니다')은 이 종이의
+      // 사정을 모르고, 운영자가 받는 토스트는 하나라야 한다.
+      throw new Error(humanError(err, '번역본 PDF 를 만들지 못했습니다.'))
+    }
+  }, [lang, draft])
+  // 확장자는 SendDocButton 이 형식(사진/PDF)에 따라 붙인다. 이름에 입주자도 영업장도 없다 —
+  // 이 종이에 그런 값이 한 글자도 안 실리기 때문이다. 유니코드 letter 를 살려 정규화해야
+  // 한글·한자·벵골 글자가 남는다.
+  const pdfFileName = `참고용번역본_${TRANSLATION_LANG_ENDONYM[lang]}_${kstYmdStr().replace(/-/g, '')}`
+    .replace(/[^\p{L}\p{N}_-]+/gu, '_')
+
   // 저장 안 한 입력이 있는가. 언어를 바꿀 때 그것을 조용히 버리지 않으려고 센다(§27.5).
   const dirty = useMemo(() => {
     const saved = stored.langs[lang]?.dict ?? {}
@@ -3557,6 +3589,12 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                           저장 축(아래 저장 버튼)과 섞이면 어느 것이 종이에 실리는지 흐려진다.
                           보는 언어는 위 셀렉트가 정한다(원천이 lang state 라 저절로 따라간다). */}
                       <Btn type="button" variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>미리보기</Btn>
+                      {/* 넷째 자리. 성격이 앞 셋과 정확히 같다 — 저장하지 않고, 지금 편집 중인
+                          언어를 그대로 따라간다. 미리보기는 창을 끄면 사라지지만 이 종이는 남아
+                          읽을 줄 아는 사람에게 보낼 수 있다(운영자 오더 2026-09-17).
+                          라벨을 넘기지 않는다 — 이름 정의처는 컴포넌트 하나다(doc-vocabulary). */}
+                      <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
+                        className={btnClass('secondary', 'sm')} />
                     </div>
                   </div>
                 )}
@@ -3690,7 +3728,16 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
       {previewOpen && preview && (
         <Modal open onClose={() => setPreviewOpen(false)} width="md"
           title="번역본 미리보기"
-          subtitle={`${SIGN_LANG_LABEL[lang]} · 저장 전 입력값 기준`}>
+          subtitle={`${SIGN_LANG_LABEL[lang]} · 저장 전 입력값 기준`}
+          /* 창을 끄면 이 화면이 사라지므로 나가는 길 옆에 종이로 받는 길을 둔다(운영자 지적
+             2026-09-17 — "창을 끄니까 다시 방법이 없어"). 카드 도구 줄의 넷째 버튼과 **같은
+             함수·같은 파일 이름**이라 어디서 눌러도 같은 종이가 나온다. */
+          footer={(
+            <ModalFooterActions onCancel={() => setPreviewOpen(false)} cancelLabel="닫기">
+              <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
+                className={btnClass('secondary', 'md')} />
+            </ModalFooterActions>
+          )}>
           {/* 안내 문법은 발급 시트의 같은 줄과 한 벌이다. 계약이 없는 자리라 조항 안의 값은
               지어내지 않고 자리표시자가 글자 그대로 선다 — 그것이 고장이 아니라는 말을 여기서 한다.
               둘째 줄은 원문으로 남는 줄이 있을 때만 선다(0 이면 할 말이 없다). */}

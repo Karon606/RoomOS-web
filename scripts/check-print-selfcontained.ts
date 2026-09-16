@@ -15,7 +15,9 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { buildContractPrintHtml, type PrintContractData } from '../lib/contractPrintHtml'
-import { DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent } from '../lib/contract'
+import { DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, propertyContractAddenda } from '../lib/contract'
+import { resolveContractTranslation, TRANSLATION_LANGS } from '../lib/contractTranslation'
+import { buildContractTranslationPrintHtml, TRANSLATION_SCRIPT_FONT } from '../lib/contractTranslationPrintHtml'
 
 const violations: string[] = []
 
@@ -48,26 +50,77 @@ const dummy: PrintContractData = {
 }
 
 const html = buildContractPrintHtml(dummy)
-// src=/href= 의 값과 CSS url() 의 값. 둘 다 data: 로 시작해야 한다.
-for (const [re, what] of [
-  [/(?:src|href)="(?!data:)([^"]*)"/g, 'src/href'],
-  [/url\((?!data:)([^)]*)\)/g, 'CSS url()'],
-] as const) {
-  let m: RegExpExecArray | null
-  while ((m = re.exec(html))) {
-    const line = html.slice(0, m.index).split('\n').length
-    violations.push(`발급 HTML ${line}행의 ${what} 가 외부 참조다: ${m[1].slice(0, 80)} — 헤드리스 크로미움은 쿠키가 없어 이것을 못 받는다. lib/google-drive 의 driveImageDataUrl 로 바이트를 임베드한다`)
+
+/** src=/href= 의 값과 CSS url() 의 값. 둘 다 data: 로 시작해야 한다. */
+function assertSelfContained(doc: string, label: string) {
+  for (const [re, what] of [
+    [/(?:src|href)="(?!data:)([^"]*)"/g, 'src/href'],
+    [/url\((?!data:)([^)]*)\)/g, 'CSS url()'],
+  ] as const) {
+    let m: RegExpExecArray | null
+    while ((m = re.exec(doc))) {
+      const line = doc.slice(0, m.index).split('\n').length
+      violations.push(`${label} ${line}행의 ${what} 가 외부 참조다: ${m[1].slice(0, 80)} — 헤드리스 크로미움은 쿠키가 없어 이것을 못 받는다. lib/google-drive 의 driveImageDataUrl 로 바이트를 임베드한다`)
+    }
   }
 }
+assertSelfContained(html, '발급 HTML')
 // 폰트가 통째로 빠지는 회귀도 잡는다. 위 두 축은 '없으면' 조용히 통과한다.
 if (!html.includes('url(data:font/')) {
   violations.push('발급 HTML 에 임베드 폰트가 없다 — @sparticuz chromium 에는 한글 폰트가 없어 계약서가 통째로 두부가 된다')
 }
 
+// ── 축 1-b. 참고용 번역본 검수 종이 ────────────────────────────────────────
+// 같은 규칙을 지는 두 번째 종이다(2026-09-17). 여기는 실패의 모양이 더 나쁘다 — 운영자가
+// 한자·벵골 글자를 못 읽어 **두부와 정상 글자를 구별하지 못한다.** 네모로 찍힌 종이를 검수자에게
+// 보내면 검수자는 번역이 틀렸다고 답하고 그 답은 거짓이다.
+const trDummyTemplate = DEFAULT_CONTRACT_TEMPLATE
+const trDummyAddenda = propertyContractAddenda({}, true)
+const countFontFaces = (doc: string) => (doc.match(/url\(data:font\//g) ?? []).length
+for (const [lang, want] of [['ja', 2], ['en', 1]] as const) {
+  const resolved = resolveContractTranslation(
+    { enabled: true, langs: { [lang]: { published: true, dict: {} } } },
+    trDummyTemplate, lang, trDummyAddenda, true)
+  if (!resolved) { violations.push(`번역본 종이 더미 해석이 null 이다(${lang}) — 그물이 판정 불가다`); continue }
+  const doc = buildContractTranslationPrintHtml(resolved, {
+    source: trDummyTemplate, sourceAddenda: trDummyAddenda,
+    pretendardBase64: 'ZHVtbXk=',                                   // 실제 바이트는 필요 없다
+    scriptFontBase64: TRANSLATION_SCRIPT_FONT[lang] ? 'ZHVtbXk=' : null,
+    today: '2026-01-01',
+  })
+  assertSelfContained(doc, `번역본 종이 HTML(${lang})`)
+  const got = countFontFaces(doc)
+  if (got !== want) {
+    violations.push(`번역본 종이(${lang})의 임베드 폰트가 ${got}벌이다(${want}벌이라야 한다)`
+      + ' — 그 언어 글꼴과 Pretendard 는 한 종이에 함께 서야 한다.'
+      + ' Pretendard 가 빠지면 한국어 고지와 원문 잔존 줄이 두부가 되고, 그 언어 글꼴이 빠지면 본문이 통째로 두부가 된다')
+  }
+}
+
+// ── 축 1-c. 언어별 글꼴 지도가 실제 파일을 가리키는가 ──────────────────────
+// 이름만 적어 두고 파일이 없는 상태, LFS 포인터, 받다 만 파일을 잡는다. 이름이 맞는지는
+// 타입(Record 전량 선언)이 이미 지키므로 여기는 **바이트가 있는지**만 본다.
+const MIN_FONT_BYTES = 20 * 1024
+for (const lang of TRANSLATION_LANGS) {
+  const file = TRANSLATION_SCRIPT_FONT[lang]
+  if (!file) continue   // null 은 'Pretendard 로 충분하다'는 판정이다. 결손이 아니다
+  const p = join('public', 'fonts-i18n', file)
+  if (!existsSync(p)) {
+    violations.push(`${lang} 의 글꼴 ${p} 가 없다 — 지도는 그 파일을 가리키는데 저장소에 없으면 그 언어의 종이가 503 으로 막힌다`)
+    continue
+  }
+  const size = statSync(p).size
+  if (size < MIN_FONT_BYTES) {
+    violations.push(`${lang} 의 글꼴 ${p} 가 ${size}바이트다(${MIN_FONT_BYTES} 이상이라야 한다) — LFS 포인터이거나 받다 만 파일이다`)
+  }
+}
+
 // ── 축 2. 폰트 번들 명단 대조 ──────────────────────────────────────────────
 // public/fonts 의 실제 파일명을 읽는 모듈을 '폰트 소비자' 로 본다. 파일명은 코드에 문자열로 박혀
 // 있으므로 정확히 판정된다. 그 모듈을 (전이적으로) 부르는 API 라우트는 반드시 번들에 폰트를 넣어야 한다.
-const FONT_FILE_RE = /Pretendard(?:Variable\.woff2|-Regular\.ttf|-Bold\.ttf)/
+// 번역본 검수 종이가 읽는 Noto 넷도 같은 명단에 든다(2026-09-17). 이 이름을 빼면 그 라우트가
+// 폰트 소비자로 안 잡혀, 배포본 번들에 9MB 가 안 실린 채 조용히 두부 종이가 나간다.
+const FONT_FILE_RE = /Pretendard(?:Variable\.woff2|-Regular\.ttf|-Bold\.ttf)|NotoSans(?:JP|SC|TC|Bengali)-Regular\.woff2/
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[]

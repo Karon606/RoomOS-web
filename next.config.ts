@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
     '/api/contract/generate': ['./node_modules/@sparticuz/chromium/**/*', './public/fonts/**'],
     // 입실료 납부 확인서 PDF — Pretendard TTF를 서버리스 함수 번들에 포함
     '/api/rent-receipt/generate': ['./public/fonts/**'],
+    // 참고용 번역본 검수 PDF — chromium + Pretendard(한국어 줄) + 언어별 Noto(한자·가나·벵골).
+    // fonts-i18n 을 fonts 에 섞지 않는다 — 위 두 라우트가 쓰지도 않는 9MB 를 지게 된다.
+    '/api/contract-translation/pdf': ['./node_modules/@sparticuz/chromium/**/*', './public/fonts/**', './public/fonts-i18n/**'],
   },
   experimental: {
     serverActions: {
