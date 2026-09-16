@@ -75,6 +75,21 @@ export function withEulReul(word: string): string {
   return (code - 0xAC00) % 28 === 0 ? `${word}를` : `${word}을`
 }
 
+/** 받침(종성)이 있는가 — 한글 음절이 아니면 '없음'으로 본다('3m'·'2EA' 같은 단위). */
+function hasJongseong(word: string): boolean {
+  const code = word.trim().slice(-1).charCodeAt(0)
+  if (code < 0xAC00 || code > 0xD7A3) return false
+  return (code - 0xAC00) % 28 !== 0
+}
+
+/** '...는' / '...은' — 조사만. 값이 굵은 글씨 안에 들어 있어 조사만 따로 붙여야 할 때 쓴다.
+ *  재고 수량 단위(qtyUnit)는 자유 입력이라 '개'·'장'·'롤'·'m'이 섞인다 — 손으로 박으면 '3장는'이 나간다. */
+export const eunNeunOf = (word: string): string => (hasJongseong(word) ? '은' : '는')
+/** '...가' / '...이' — 조사만. 같은 이유로 수량 뒤에 손으로 박으면 '3롤가'가 나간다. */
+export const iGaOf = (word: string): string => (hasJongseong(word) ? '이' : '가')
+/** 값 + '는/은' 한 덩이. */
+export const withEunNeun = (word: string): string => `${word}${eunNeunOf(word)}`
+
 /** '...으로' / '...로' — 받침이 없거나 ㄹ 받침이면 '로'.
  *  상태 라벨이 '퇴실'(ㄹ)·'문의'(받침 없음)·'거주중'(ㅇ)로 갈려서 붙여 쓰면 '퇴실으로'가 된다. */
 export function withRo(word: string): string {

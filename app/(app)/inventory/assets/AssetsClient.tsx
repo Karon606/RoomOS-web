@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, setAssetQtyUnit, setAssetRowQty, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, disposeAsset, undoDisposeAsset, undoDisposalRow, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, setAssetQtyUnit, setAssetRowQty, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, disposeAssets, undoDisposeAsset, undoDisposalRow, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -28,6 +28,8 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
+// 조사 정본 — 수량 단위(qtyUnit)가 자유 입력이라 '3장는요?'·'3롤가' 가 나가던 자리(디자이너 검수 2026-09-16).
+import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -632,30 +634,26 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const runDispose = () => {
     if (!dispose) return
     const rows = dispose.rows.map(r => {
-      const max = r.it.qtyValue ?? 0
+      // 서버 게이트와 **같은 셈법**(liveUnits) — qtyValue 를 쓰면 수량 미기록 카드가 max 0 이라
+      // 폐기를 아예 못 적고, 섞인 카드는 화면과 서버가 다른 수를 센다(장부 검수 2026-09-16).
+      const max = r.it.liveUnits
       return { it: r.it, max, qty: r.qty.trim() === '' ? max : Number(r.qty) }
     })
     if (rows.some(r => !(r.qty > 0))) { pushToast('error', '0보다 큰 수량을 입력하세요.'); return }
     const over = rows.find(r => r.qty > r.max + 1e-9)
     if (over) { pushToast('error', `지금 있는 수량(${fmtQty(over.max)}${over.it.qtyUnit ?? '개'})보다 많아요.`); return }
     startTransition(async () => {
-      // 여러 품목이면 한 건씩 기록하되 토큰은 하나로 모은다. 도중에 막히면 이미 기록한 것을 되돌린다.
-      const merged: AssetAssignUndo = { restore: [], deleteIds: [] }
-      let total = 0
-      for (const r of rows) {
-        const res = await disposeAsset(r.it.ids, r.qty >= r.max ? null : r.qty, dispose.date || null, dispose.reason)
-        if (!res.ok) {
-          if (merged.restore.length || merged.deleteIds.length) await undoDisposeAsset(merged)
-          pushToast('error', res.error); router.refresh(); return
-        }
-        merged.restore.push(...res.undo.restore); merged.deleteIds.push(...res.undo.deleteIds)
-        total += res.disposedQty
-      }
+      // 여러 품목도 **서버 한 액션 = 한 트랜잭션**이다(장부 검수 2026-09-16). 보상 호출이면
+      // 그 호출이 실패할 때 절반만 폐기된 채로 끝난다.
+      const res = await disposeAssets(
+        rows.map(r => ({ ids: r.it.ids, qty: r.qty >= r.max ? null : r.qty })),
+        dispose.date || null, dispose.reason)
+      if (!res.ok) { pushToast('error', res.error); return }
       setDispose(null); exitMerge()
       const unit = rows[0].it.qtyUnit ?? '개'
       pushToast('success',
-        rows.length === 1 ? `${fmtQty(total)}${unit} 폐기·분실로 기록했습니다` : `${rows.length}개 품목을 폐기·분실로 기록했습니다`,
-        { action: { label: '적용취소', run: () => undoDispose(merged) } })
+        rows.length === 1 ? `${fmtQty(res.disposedQty)}${unit} 폐기·분실로 기록했습니다` : `${rows.length}개 품목을 폐기·분실로 기록했습니다`,
+        { action: { label: '적용취소', run: () => undoDispose(res.undo) } })
       router.refresh()
     })
   }
@@ -672,7 +670,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       startTransition(async () => {
         const res = await assignAggregateToTarget(it.ids, { kind: 'none' }, delta)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `${curPlace(it)} ${fmtQty(next)}${unit}로 조절했습니다 (${fmtQty(delta)}${unit}는 여분으로)`)
+        pushToast('success', `${curPlace(it)} ${fmtQty(next)}${unit}로 조절했습니다 (${withEunNeun(`${fmtQty(delta)}${unit}`)} 여분으로)`)
         setAdjQty(null); router.refresh()
       })
       return
@@ -697,17 +695,17 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const runRevertLog = (r: AssetAssignmentLogRow) => startTransition(async () => {
     const res = await revertAssignmentLog(r.id)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('success', '되돌렸습니다 (이 이력은 지워짐)')
+    pushToast('success', '이동을 적용취소했습니다 · 이 이력은 지워짐')
     setDetailItem(null)
     router.refresh()
   })
   const runDeleteLog = async (r: AssetAssignmentLogRow) => {
-    if (!(await confirmDialog({ title: '이 이력 기록만 지울까요?', message: '배정 상태는 그대로 유지되고, 기록만 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: '이 이력 기록만 삭제할까요?', message: '배정 상태는 그대로 유지되고, 기록만 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await deleteAssignmentLog(r.id)
       if (!res.ok) { pushToast('error', res.error); return }
       setLogRows(rows => rows.filter(x => x.id !== r.id))
-      pushToast('info', '이력을 지웠습니다')
+      pushToast('info', '이력을 삭제했습니다')
     })
   }
 
@@ -802,13 +800,17 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </>}
         meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
-        valueSub={it.disposedQty > 0 ? `누적 ${fmtQty((it.qtyValue ?? 0) + it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
+        valueSub={it.disposedQty > 0 ? `누적 ${fmtQty(it.liveUnits + it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
+        valueDanger={it.disposedQty > 0 && it.liveUnits <= 0}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
         expand={
           <ul className="space-y-0.5 border-l-2 border-[var(--warm-border)] pl-2.5">
             {it.breakdown.map((b, i) => (
               <li key={i} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
-                <span className="tabular-nums">{b.date.slice(2)}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}{b.disposed ? ' · 폐기' : ''}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="tabular-nums">{b.date.slice(2)}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
+                  {b.disposed && <span className="shrink-0 rounded-sm bg-[var(--canvas)] px-1.5 py-0.5 text-[0.65625rem] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기</span>}
+                </span>
                 <span className="tabular-nums">{won(b.amount)}</span>
               </li>
             ))}
@@ -1304,8 +1306,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 {okRows.length === 0
                   ? <p className="text-[var(--warm-muted)]">배정할 방·공용부와 수량을 정해주세요.</p>
                   : over
-                    ? <p className="text-[var(--danger-fg)]">합계 {fmtQty(sum)}{unit}가 지금 있는 수량({fmtQty(max)}{unit})보다 많아요.</p>
-                    : <p className="text-[var(--warm-dark)]">{from}에서 {okRows.length}곳에 <span className="font-semibold">{fmtQty(sum)}{unit}</span> 배정 · 잔여 {fmtQty(rest)}{unit}는 {from}에 남음</p>}
+                    ? <p className="text-[var(--danger-fg)]">합계 {fmtQty(sum)}{unit}{iGaOf(unit)} 지금 있는 수량({fmtQty(max)}{unit})보다 많아요.</p>
+                    : <p className="text-[var(--warm-dark)]">{from}에서 {okRows.length}곳에 <span className="font-semibold">{fmtQty(sum)}{unit}</span> 배정 · 잔여 {fmtQty(rest)}{unit}{eunNeunOf(unit)} {from}에 남음</p>}
                 {okRows.length > 0 && !over && <p className="mt-0.5 text-[var(--warm-muted)]">오래된 구매분부터 차감</p>}
               </div>
             </div>
@@ -1521,16 +1523,18 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 const unit = it.qtyUnit ?? '개'
                 return (
                   <div>
-                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">설치·폐기</p>
+                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">설치·폐기
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">자동 계산</span>
+                    </p>
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md bg-[var(--sand-s)] px-3 py-2.5">
                       <span className="text-xs text-[var(--warm-mid)]">지금 있는 것
-                        <span className="mono tnum ml-1.5 text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(it.qtyValue ?? 0)}{unit}</span>
+                        <span className="mono tnum ml-1.5 text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(it.liveUnits)}{unit}</span>
                       </span>
                       <span className="text-xs text-[var(--warm-mid)]">폐기·분실
                         <span className="mono tnum ml-1.5 text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(it.disposedQty)}{unit}</span>
                       </span>
                       <span className="text-xs text-[var(--warm-mid)]">누적
-                        <span className="mono tnum ml-1.5 text-sm font-semibold text-[var(--warm-dark)]">{fmtQty((it.qtyValue ?? 0) + it.disposedQty)}{unit}</span>
+                        <span className="mono tnum ml-1.5 text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(it.liveUnits + it.disposedQty)}{unit}</span>
                       </span>
                     </div>
                     <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">우리가 사서 넣은 것 기준이에요. 업체가 가져온 자재는 세지 않아요.</p>
@@ -1538,7 +1542,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                       <Btn variant="secondary" size="md" onClick={() => openDispose([it])} disabled={pending}>폐기·분실 기록</Btn>
                     </div>
                     {it.disposals.length > 0 && (
-                      <ul className="mt-2 space-y-1">
+                      <>
+                      <p className="mt-3 mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">폐기 기록</p>
+                      <ul className="space-y-1">
                         {it.disposals.map(d => (
                           <li key={d.id} className="flex items-center justify-between gap-2 text-xs">
                             <span className="min-w-0 truncate text-[var(--warm-dark)]">
@@ -1548,11 +1554,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                             <span className="flex shrink-0 items-center gap-1.5">
                               <span className="mono tnum text-[var(--warm-muted)]">{fmtQty(d.qty ?? 0)}{unit}</span>
                               <button type="button" onClick={() => runUndoDisposalRow(d.id)} disabled={pending}
-                                className="min-h-[30px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">적용취소</button>
+                                className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">적용취소</button>
                             </span>
                           </li>
                         ))}
                       </ul>
+                      </>
                     )}
                   </div>
                 )
@@ -1571,7 +1578,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                       <li key={b.id} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 text-xs">
                         <span className="flex items-center gap-1.5 shrink-0">
                           <span className="tabular-nums text-[var(--warm-mid)]">{b.date}</span>
-                          {b.disposed && <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">폐기</span>}
+                          {b.disposed && <span className="shrink-0 rounded-sm bg-[var(--canvas)] px-1.5 py-0.5 text-[0.65625rem] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기</span>}
                           <input value={q} disabled={pending} inputMode="decimal" placeholder="수량"
                             onChange={e => setRowQty(p => ({ ...p, [b.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                             className="w-14 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs tabular-nums outline-none focus:border-[var(--coral)]" />
@@ -1607,7 +1614,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               {logRows.length > 0 && (
                 <div>
                   <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력</p>
-                  <p className="mb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">되돌리기 = 그 이동을 원상복구하고 이력도 지웁니다 · 지우기 = 기록만 지웁니다</p>
+                  <p className="mb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">적용취소 = 그 이동을 원상복구하고 이력도 지웁니다 · 삭제 = 기록만 지웁니다</p>
                   <ul className="space-y-1">
                     {logRows.map(r => (
                       <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
@@ -1620,10 +1627,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           {/* 규격 미상 이력은 되돌릴 행을 특정할 수 없다 — 지우기만 제공(서버도 규격 필터로 이중 차단) */}
                           {!r.specUnknown && (
                           <button type="button" onClick={() => runRevertLog(r)} disabled={pending}
-                            className="min-h-[30px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">되돌리기</button>
+                            className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">적용취소</button>
                           )}
                           <button type="button" onClick={() => runDeleteLog(r)} disabled={pending}
-                            className="min-h-[30px] inline-flex items-center px-1 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">지우기</button>
+                            className="min-h-[44px] inline-flex items-center px-1 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">삭제</button>
                         </span>
                       </li>
                     ))}
@@ -1678,7 +1685,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어디로 옮길까요?</span>
                 <select value={move.to} disabled={pending}
-                  onChange={e => setMove(m => m ? { ...m, to: e.target.value } : m)}
+                  onChange={e => setMove(m => m ? { ...m, to: e.target.value, replace: '' } : m)}
                   className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                   <option value="">미배정(여분)으로</option>
                   <optgroup label="방">
@@ -1729,12 +1736,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   체크박스 대신 셀렉트 한 칸으로 받는다 — 켜기와 사유를 따로 묻지 않는다. */}
               {already && alreadyQty > 0 && (
                 <label className="block">
-                  <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">{dest}에 이미 있는 {fmtQty(alreadyQty)}{unit}는요?</span>
+                  <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">{dest}에 이미 있는 {withEunNeun(`${fmtQty(alreadyQty)}${unit}`)}요?</span>
                   <select value={move.replace} disabled={pending}
                     onChange={e => setMove(m => m ? { ...m, replace: e.target.value } : m)}
                     className={SELECT_CLS}>
                     <option value="">그대로 둡니다 (추가로 넣기)</option>
-                    <optgroup label="교체 — 같은 수량만큼 폐기로 기록">
+                    <optgroup label="교체 · 같은 수량만큼 폐기로 기록">
                       {DISPOSAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                     </optgroup>
                   </select>
@@ -1745,9 +1752,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
                 {same
                   ? <p className="text-[var(--warm-muted)]">지금 있는 곳과 같은 곳입니다. 다른 곳을 골라주세요.</p>
-                  : <p className="text-[var(--warm-dark)]">{from} → <span className="font-semibold">{dest}</span> · {q > 0 ? `${fmtQty(q)}${unit}` : '수량을 입력하세요'}{q > 0 && q < max ? ` (나머지 ${fmtQty(Math.round((max - q) * 1000) / 1000)}${unit}는 ${from}에 남음)` : ''}</p>}
+                  : max <= 0
+                  ? <p className="text-[var(--warm-muted)]">여기 남아 있는 수량이 없어요. 폐기·분실로 기록된 것은 옮길 수 없습니다.</p>
+                  : <p className="text-[var(--warm-dark)]">{from} → <span className="font-semibold">{dest}</span> · {q > 0 ? `${fmtQty(q)}${unit}` : '수량을 입력하세요'}{q > 0 && q < max ? ` (나머지 ${withEunNeun(`${fmtQty(Math.round((max - q) * 1000) / 1000)}${unit}`)} ${from}에 남음)` : ''}</p>}
                 {q > 0 && !same && move.replace && !replaceOver && (
-                  <p className="mt-0.5 text-[var(--warm-dark)]">{dest}에 있던 <span className="font-semibold">{fmtQty(q)}{unit}</span>는 폐기·분실로 기록됩니다 · {dest}에 든 비용은 그대로입니다</p>
+                  <p className="mt-0.5 text-[var(--warm-dark)]">{dest}에 있던 <span className="font-semibold">{fmtQty(q)}{unit}</span>{eunNeunOf(unit)} 폐기·분실로 기록됩니다 · {dest}에 든 비용은 그대로입니다</p>
                 )}
                 {q > 0 && !same && (
                   <p className="mt-0.5 text-[var(--warm-muted)]">{buy ? `${move.src.slice(2)} 구매분에서 차감` : buyDates.length > 1 ? '오래된 구매분부터 차감' : ''}</p>
@@ -1764,7 +1773,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         const one = dispose.rows.length === 1 ? dispose.rows[0] : null
         const unit = dispose.rows[0].it.qtyUnit ?? '개'
         const rows = dispose.rows.map(r => {
-          const max = r.it.qtyValue ?? 0
+          const max = r.it.liveUnits   // 서버 게이트와 같은 셈법(위 runDispose 와 동일)
           return { ...r, max, n: r.qty.trim() === '' ? max : Number(r.qty) }
         })
         const bad = rows.some(r => !(r.n > 0) || r.n > r.max + 1e-9)
@@ -1774,9 +1783,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         const oldest = [...new Set(rows.flatMap(r => r.it.breakdown.filter(b => !b.disposed).map(b => b.date)))].sort()[0]
         const place = one ? curPlace(one.it) : ''
         return (
-          <Modal open onClose={() => setDispose(null)} z={260} width="xs"
+          <Modal open onClose={() => setDispose(null)} z={260} width={one ? 'xs' : 'sm'}
             title={one ? `폐기·분실 · ${one.it.itemLabel}` : `폐기·분실 · ${dispose.rows.length}개 품목`}
-            subtitle={one ? `지금 ${place}에 ${fmtQty(one.it.qtyValue ?? 0)}${unit} 있습니다` : '고른 품목을 폐기·분실로 기록합니다'}
+            subtitle={one ? `지금 ${place}에 ${fmtQty(rows[0].max)}${unit} 있습니다` : '고른 품목을 폐기·분실로 기록합니다'}
             footer={
               <div className="flex gap-2 justify-end">
                 <Btn variant="secondary" size="md" onClick={() => setDispose(null)} disabled={pending}>취소</Btn>
@@ -1834,8 +1843,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
                 {bad
                   ? <p className="text-[var(--warm-muted)]">기록할 수량을 정해주세요.</p>
-                  : <p className="text-[var(--warm-dark)]">{one ? `${place}의 ` : ''}<span className="font-semibold">{fmtQty(totalQ)}{unit}</span>가 폐기·분실로 빠집니다</p>}
-                <p className="mt-0.5 text-[var(--warm-muted)]">{one ? `이 방에 든 비용 ${won(totalAmt)}은 그대로입니다` : `든 비용 ${won(totalAmt)}은 그대로입니다`}</p>
+                  : <p className="text-[var(--warm-dark)]">{one ? `${place}의 ` : ''}<span className="font-semibold">{fmtQty(totalQ)}{unit}</span>{iGaOf(unit)} 폐기·분실로 빠집니다</p>}
+                <p className="mt-0.5 text-[var(--warm-muted)]">{one ? `${place}에 든 비용 ${won(totalAmt)}은 그대로입니다` : `든 비용 ${won(totalAmt)}은 그대로입니다`}</p>
                 {oldest && <p className="mt-0.5 text-[var(--warm-muted)]">오래된 구매분({oldest.slice(5)})부터 빠집니다</p>}
               </div>
             </div>

@@ -100,22 +100,85 @@ function body(src, header) {
     '적용취소 deleteIds 가 이 값에서 나온다')
 }
 
+// ── ⓔ-B 복제 목록이 **Expense 스키마의 스칼라 칸을 전부 덮는가** ─────────────────
+//
+// 왜 스키마에서 읽나(장부 검수 2026-09-16). 쪼개는 자리 셋이 각자 목록을 들고 있었고 셋이
+// 서로 같기만 했지 스키마를 덮는지 아무도 안 봤다. `roomWorkId`·`costKind` 가 빠져 있었는데
+// 종전 방아쇠는 대개 작업에 걸리기 전 행에서 터져 안 드러났다 — **폐기는 정반대로 이미 방에
+// 설치돼 작업에 걸린 행을 겨눈다**(실측 67건이 그 모양이다). 그 행을 쪼개면 그 방 시공비가
+// 반으로 줄고 떨어져 나온 조각은 고아 지출이 되어 check-room-work-link 가 빨개진다.
+// **손으로 센 목록은 다음 컬럼이 늘 때 또 진다.** 그래서 schema.prisma 를 읽어 대조한다.
+{
+  // 자동 생성이라 복제하지 않는 셋. 그 밖의 스칼라는 전부 실려야 한다.
+  const AUTO = new Set(['id', 'createdAt', 'updatedAt'])
+  const model = schema.slice(schema.indexOf('model Expense {'))
+  const modelBody = model.slice(0, model.indexOf('\n}'))
+  const scalars = []
+  for (const raw of modelBody.split('\n').slice(1)) {
+    const line = raw.replace(/\/\/.*$/, '').trim()
+    if (!line || line.startsWith('@@') || line.startsWith('//')) continue
+    if (/\[\]|@relation/.test(line)) continue          // 관계 칸은 복제 대상이 아니다
+    const m = line.match(/^(\w+)\s+\S/)
+    if (m && !AUTO.has(m[1])) scalars.push(m[1])
+  }
+  need('스키마에서 Expense 스칼라를 읽었다', scalars.length > 30, `읽은 칸 ${scalars.length}개 — 파싱이 어긋났다`)
+
+  const clone = body(actions, 'function cloneExpenseScalars(')
+  need('cloneExpenseScalars 를 찾음', clone.length > 0,
+    '분할 복제 목록은 한 자리여야 한다 — 셋으로 흩어지면 또 어긋난다')
+  const missing = scalars.filter(k => !new RegExp(`(^|[\\s{,])${k}\\s*[,:]`).test(clone))
+  need('복제 목록이 스키마 스칼라를 전부 덮는다', missing.length === 0,
+    `빠진 칸: ${missing.join(', ')} — 그 칸은 분할된 행에서 사라진다`)
+
+  // 세 쪼개는 자리가 전부 그 한 자리를 거치는가. 직접 create 를 쓰면 목록이 또 갈린다.
+  for (const [fnName, header] of [
+    ['buildSplitOps', 'function buildSplitOps('],
+    ['buildFanOutOps', 'function buildFanOutOps('],
+    ['setAssetReceived(부분 수령)', 'export async function setAssetReceived('],
+  ]) {
+    const fn = body(actions, header)
+    need(`${fnName} 를 찾음`, fn.length > 0)
+    need(`${fnName} 의 분할이 cloneExpenseScalars 를 거친다`,
+      /prisma\.expense\.create\(\{ data: cloneExpenseScalars\(/.test(fn),
+      '직접 목록을 쓰면 스키마 대조를 빠져나간다')
+    need(`${fnName} 에 손으로 쓴 create 목록이 없다`,
+      !/prisma\.expense\.create\(\{ data: \{/.test(fn))
+  }
+}
+
 // ── ⓕ 서버 게이트가 정본 판정을 부르는가 ────────────────────────────
 {
-  const fn = body(actions, 'export async function disposeAsset(')
-  need('disposeAsset 를 찾음', fn.length > 0)
-  need('disposeAsset 가 정본 게이트를 부른다', /const denial = disposalDenial\(exps, qty\)/.test(fn),
+  const fn = body(actions, 'export async function disposeAssets(')
+  need('disposeAssets 를 찾음', fn.length > 0)
+  need('disposeAssets 가 정본 게이트를 부른다', /const denial = disposalDenial\(exps, it\.qty\)/.test(fn),
     '여기서 게이트를 다시 쓰면 진리표와 갈린다')
   need('막히면 그 줄 그대로 돌려준다', /if \(denial\) return \{ ok: false, error: denial \}/.test(fn))
   need('폐기는 자리를 안 옮긴다(위치 세 칸은 원행 값)',
     /roomId: rep\.roomId, assignedLocationId: rep\.assignedLocationId, isCommonAsset: rep\.isCommonAsset/.test(fn))
-  need('disposeAsset 가 적용취소 토큰을 돌려준다', /undo: \{\s*restore: live\.map\(snapshotRow\)/.test(fn))
+  need('여러 품목도 트랜잭션 하나다', (fn.match(/prisma\.\$transaction\(/g) ?? []).length === 1,
+    '보상 호출로 되돌리는 방식이면 그 호출이 실패할 때 절반만 폐기된 채로 끝난다')
+  need('게이트를 전부 먼저 보고 나서 쓴다', fn.indexOf('const results = await prisma.$transaction(ops)') > fn.lastIndexOf('if (denial) return'),
+    '한 품목이라도 막히면 아무것도 안 써야 한다')
+  need('disposeAssets 가 적용취소 토큰을 돌려준다', /restore: restoreRows\.map\(snapshotRow\)/.test(fn))
+
+  // ⚠️ **인자의 정체까지 본다.** `buildSplitOps(live, …)` 라는 글자만 보면 `const live = exps` 로
+  //    한 글자 바꾸는 우회가 통째로 투명해진다 — 그물 넷이 전부 `live` 라는 **이름**만 보고,
+  //    진리표는 순수층만 보며, 금액 지문도 안 움직인다. 그런데 buildSplitOps 가 폐기 행부터 다시
+  //    찍어 **살아 있는 수량이 안 줄고 옛 폐기 기록의 날짜·사유만 덮인다.** 502호·504호처럼 폐기
+  //    이력이 있는 방, 즉 이 기능이 겨눈 바로 그 방에서만 발화한다(검수 설계 우회, 2026-09-16).
+  need('분할에 넘기는 것이 live 다', /buildSplitOps\(live, propertyId,/.test(fn))
+  need('그 live 가 **폐기 행을 걸러낸 것**이다',
+    /const live = exps\.filter\(e => !e\.disposedAt\)/.test(fn),
+    'const live = exps 로 한 글자만 바꾸면 폐기 행부터 다시 찍혀 살아 있는 수량이 안 준다')
   // 초과 거부가 클램프로 바뀌는 역주입을 잡는다.
   const gate = body(agg, 'export function disposalDenial(')
   need('disposalDenial 을 찾음', gate.length > 0)
   need('초과는 거부다(클램프 아님)', /if \(qty > have \+ 1e-9\) return disposalDenyOver/.test(gate),
     'Math.min 으로 깎으면 운영자가 다른 수량이 빠진 걸 모른다')
   need('게이트에 클램프가 없다', !/Math\.min|Math\.max/.test(gate))
+  need('적용취소 복원이 propertyId 로 잠긴다',
+    /updateMany\(\{\s*where: \{ id: r\.id, propertyId \}/.test(actions),
+    '토큰은 클라가 돌려보내는 값이고 그 안에 amount 가 있다 — id 만 보면 남의 영업장 지출이 덮인다')
   need('적용취소가 폐기 표식을 되돌린다',
     /r\.disposedAt !== undefined \? \{ disposedAt: r\.disposedAt \? new Date\(r\.disposedAt\) : null \}/.test(actions))
 }
@@ -130,9 +193,11 @@ function body(src, header) {
   need('**미배정 조회 where 에 disposedAt: null**',
     /findMany\(\{\s*where: \{ propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, disposedAt: null \}/.test(fn),
     '빠지면 폐기 행이 합쳐져 사라진다 — 표시 오염이 아니라 데이터 소실이다')
-  need('**배정 개수 count where 에 disposedAt: null**',
-    /count\(\{\s*where: \{ propertyId, allocationGroupId: groupId, disposedAt: null, OR:/.test(fn),
-    '폐기 행은 배정된 행이 아니라 이제 세지 않는 행이다')
+  // 반대 방향이다 — '묶음이 아직 뜻이 있나' 를 세는 쪽에서는 **폐기 행도 세야** 한다.
+  // 빼면 남은 것이 폐기뿐일 때 groupId 가 풀려 undoDisposalRow 가 제 짝을 못 찾는다.
+  need('묶음 잔존 판정이 접지 않는 행 전부를 센다(폐기 포함)',
+    /count\(\{\s*where: \{ propertyId, allocationGroupId: groupId, id: \{ notIn: unassigned\.map/.test(fn),
+    '폐기 행을 빼고 세면 groupId 가 풀려 짝 접기가 안 걸린다')
 }
 
 // ── ⓗ 속성으로 찾는 조회가 폐기 행을 거르는가 ───────────────────────
@@ -149,6 +214,10 @@ function body(src, header) {
   need('assignAggregateToTarget 을 찾음', fn.length > 0)
   need('교체 인자를 받는다', /replace\?: \{ reason: string \} \| null/.test(fn))
   need('교체 대상 조회가 살아 있는 행만 본다', /disposedAt: null, id: \{ notIn: expenseIds \}/.test(fn))
+  need('교체 대상이 공용 표식까지 같다', /isCommonAsset: false,\s*\n\s*disposedAt: null, id: \{ notIn: expenseIds \}/.test(fn),
+    '공용 자재 행이 끌려오면 폐기 data 의 isCommonAsset: false 가 그 표식을 조용히 끈다')
+  need('교체도 **폐기 정본 게이트**를 통과한다', /const replaceDenial = disposalDenial\(already, movedQty\)/.test(fn),
+    '초과만 손으로 다시 쓰면 수령 전 행을 교체로 버릴 수 있다')
   need('교체 폐기 ops 를 배정 ops 에 **이어 붙인다**', /ops = \[\.\.\.ops, \.\.\.disp\.ops\]/.test(fn),
     '따로 커밋하면 넣었는데 뺀 기록이 없는 중간 상태가 생긴다')
   need('교체도 트랜잭션은 하나다', (fn.match(/prisma\.\$transaction\(/g) ?? []).length === 1)
@@ -159,9 +228,17 @@ function body(src, header) {
 // 합치기·단위 바꾸기가 폐기 행을 데려가는가 — 안 데려가면 카드가 갈라져 폐기 기록이 사라진다.
 {
   need('combineAssets 가 disposedIds 를 받는다', /export async function combineAssets\([\s\S]{0,160}?disposedIds\?: string\[\]/.test(actions))
-  need('combineAssets 가 disposedIds 를 대상에 합친다', /\[\.\.\.new Set\(\[\.\.\.srcExpenseIds, \.\.\.\(disposedIds \?\? \[\]\)\]\)\]/.test(actions))
+  need('combineAssets 가 폐기 행을 src 에 합친다', /withDisposedSiblings\(propertyId, \[\.\.\.new Set\(srcExpenseIds\)\], disposedIds\)/.test(actions))
   need('setAssetQtyUnit 이 disposedIds 를 받는다', /export async function setAssetQtyUnit\([\s\S]{0,160}?disposedIds\?: string\[\]/.test(actions))
-  need('setAssetQtyUnit 이 두 묶음을 함께 바꾼다', /targetIds = \[\.\.\.new Set\(\[\.\.\.expenseIds, \.\.\.\(disposedIds \?\? \[\]\)\]\)\]/.test(actions))
+  need('setCommonAsset 이 disposedIds 를 받는다', /export async function setCommonAsset\([\s\S]{0,160}?disposedIds\?: string\[\]/.test(actions),
+    'isCommon 도 카드 정체성 키다 — 빠지면 분실 행이 미배정에 유령 카드로 남는다')
+  // 클라가 준 id 를 믿지 않는다 — 옛 번들이 부르면 그 인자가 비어 카드가 갈린다.
+  for (const fnName of ['setAssetQtyUnit', 'combineAssets', 'setCommonAsset']) {
+    need(`${fnName} 이 폐기 행을 **서버가 정체성으로** 찾는다`,
+      new RegExp(`export async function ${fnName}\\([\\s\\S]{0,1400}?withDisposedSiblings\\(propertyId,`).test(actions),
+      '클라 인자만 믿으면 옛 번들 호출에서 카드가 갈린다')
+  }
+  need('withDisposedSiblings 가 폐기 행만 데려온다', /disposedAt: \{ not: null \}, OR: keys/.test(actions))
   // 합치기 이력 고아 봉합 — 지출만 바꾸면 그 카드의 배정 이력이 아무 카드에도 안 붙는다.
   const fn = body(actions, 'export async function combineAssets(')
   need('합치기가 배정 이력도 대상 값으로 옮긴다', /tx\.assetAssignmentLog\.updateMany\(/.test(fn))
@@ -183,7 +260,41 @@ function body(src, header) {
   need('미리보기가 돈이 안 움직인다고 말한다', /비용 \$\{won\(totalAmt\)\}은 그대로입니다|비용 \{won\(totalAmt\)\}은 그대로입니다/.test(client))
   need('되돌리기 라벨은 적용취소 단일', /runUndoDisposalRow\(d\.id\)[\s\S]{0,320}?>적용취소</.test(client),
     '§16 어휘 — 이 목록에 "되돌리기" 를 쓰면 안 된다')
-  need('폐기 목록에 되돌리기라는 말이 없다', !/폐기[\s\S]{0,400}?>되돌리기</.test(client))
+  need('상세의 되돌리기 라벨이 적용취소 하나다', !/>되돌리기</.test(client),
+    '§16 단일 라벨 — 같은 상세에서 두 목록이 다른 말을 쓰면 다른 일인 줄 안다')
+  need('선입선출 정렬이 안정적이다', (actions.match(/\|\| a\.id\.localeCompare\(b\.id\)/g) ?? []).length >= 2,
+    '날짜·수량이 같은 행이 둘이면 같은 입력이 다른 행을 쪼갠다')
+}
+
+// ── ⓚ 화면이 죽은 컨트롤을 이유 없이 남기지 않는가 (디자이너 검수 2026-09-16) ──────
+//    목적지를 바꾸면 교체 사유를 비운다. 안 비우면 새 목적지에 재고가 0일 때 replaceOver 가
+//    참으로 굳어 버튼이 비활성인데, 그 이유를 말하는 줄은 셀렉트와 함께 사라진다 —
+//    버튼이 **화면에 없는 컨트롤의 이름**(`교체`)을 달고 죽어 있게 된다.
+{
+  need('목적지를 바꾸면 교체 사유를 비운다',
+    /onChange=\{e => setMove\(m => m \? \{ \.\.\.m, to: e\.target\.value, replace: '' \} : m\)\}/.test(client),
+    '안 비우면 버튼이 이유 한 줄 없이 죽는다')
+  need('살아 있는 수량이 0이면 그 이유를 말한다',
+    /max <= 0[\s\S]{0,120}?여기 남아 있는 수량이 없어요\./.test(client),
+    '전량 폐기된 카드의 옮기기가 열자마자 죽던 같은 클래스')
+  need('전량 폐기 카드의 수치는 --coral(§22 valueDanger)',
+    /valueDanger=\{it\.disposedQty > 0 && it\.liveUnits <= 0\}/.test(client))
+  need('폐기 목록 적용취소 히트가 44px', /min-h-\[44px\][\s\S]{0,200}?>적용취소</.test(client))
+  {
+    // 줄 단위로 본다 — [^<]* 를 통짜 문자열에 걸면 줄바꿈을 넘어 주석까지 삼킨다.
+    // 주석(// 와 {/* */})은 사용자에게 안 보이므로 걷어내고 본다.
+    const uiLines = client
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .split('\n')
+      .filter(l => !/^\s*(\/\/|\*)/.test(l))
+    const emDash = uiLines.filter(l =>
+      /(optgroup label|placeholder|title|subtitle|label)="[^"]*—/.test(l) || />[^<>]*—[^<>]*</.test(l))
+    need('사용자 노출 문자열에 em dash 가 없다', emDash.length === 0,
+      `가이드 §25(AI 티 금지) — ${emDash[0]?.trim().slice(0, 80) ?? ''}`)
+  }
+  need('조사를 손으로 안 박는다(단위는 자유 입력)',
+    !/\{unit\}(는|가|를|은|이)[요?\s]/.test(client) && /withEunNeun|eunNeunOf|iGaOf/.test(client),
+    "'3장는요?'·'3롤가' 가 나간다 — lib/statusReasons 정본을 쓴다")
 }
 
 if (fails.length) {

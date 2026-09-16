@@ -72,4 +72,8 @@ async function main() {
   console.log('  구별할 수 없으니, 눈으로 확인하고 화면의 "폐기·분실 기록"으로 사람이 적는다.')
 }
 
-main()
+// 명부는 게이트가 아니다 — 조회가 던져도 verify:db 체인을 끊지 않는다(장부 검수 2026-09-16).
+main().catch(err => {
+  console.error(`[초과 후보] 명부를 만들지 못했습니다 — ${(err as Error).message}`)
+  console.error('  이 스크립트는 확인 요청 명부라 게이트가 아니다. 체인은 계속 간다.')
+})

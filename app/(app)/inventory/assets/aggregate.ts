@@ -86,10 +86,15 @@ export type AssetItem = {
   isCommon: boolean             // 공용 자재(페인트 등) 표시
   isService: boolean            // 서비스·무형(시공비) — 자산 아님, 방별 비용 집계용
   assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
+  // 수량 미기록(qtyValue null) 행까지 **게이트·분할과 같은 셈법**으로 센 살아 있는 몫.
+  // qtyValue 는 표시용이라 미기록 행을 0으로 접는데, 서버 게이트와 buildSplitOps 는 그 행을 1로
+  // 센다. 두 셈이 갈리면 "2를 버렸다고 알고 3이 빠지고", 전 행 미기록 카드는 화면이 max 0 이라
+  // 폐기를 아예 못 적는다(장부 검수 2026-09-16). 화면은 이 칸을 쓴다.
+  liveUnits: number
   // 폐기·분실 축 — 이 묶음에서 그 자리를 떠난 몫. 돈(amount)에는 그대로 남아 있다.
   disposedAt: string | null     // 대표(가장 최근) 폐기일. 폐기가 없으면 null
   disposalReason: string | null // 대표(가장 최근) 폐기 사유
-  disposedQty: number           // 폐기 합계 수량(없으면 0)
+  disposedQty: number           // 폐기 합계 수량 — liveUnits 와 같은 셈법(미기록 행은 1)
   disposedIds: string[]         // 폐기된 지출 id
   disposals: { id: string; date: string; qty: number | null; amount: number; disposedAt: string; disposalReason: string | null }[]   // 폐기 기록(최근순)
   breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null; disposed: boolean }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
@@ -135,7 +140,10 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
     // 폐기가 없는 카드에서는 live === rows 라 종전과 한 글자도 안 다르다.
     const hasQty = rows.some(r => r.qtyValue != null)
     const qtyValue = hasQty ? live.reduce((s, r) => s + (r.qtyValue ?? 0), 0) : null
-    const disposedQty = dead.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+    // liveUnits·disposedQty 는 **게이트·분할과 같은 셈법**(미기록 행 = 1). qtyValue 와 갈리는 것은
+    // 수량이 안 적힌 행이 섞였을 때뿐이고, 그때 진실을 말하는 쪽은 이쪽이다.
+    const liveUnits = live.reduce((s, r) => s + (r.qtyValue ?? 1), 0)
+    const disposedQty = dead.reduce((s, r) => s + (r.qtyValue ?? 1), 0)
     const amount = rows.reduce((s, r) => s + r.amount, 0)
     const date = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0].date)
     const assignedAt = rows.map(r => r.assignedAt).filter((x): x is string => !!x).sort().pop() ?? null   // 대표=가장 최근 배정일
@@ -151,7 +159,7 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
-      isCommon: rep.isCommon, isService: rep.isService, assignedAt,
+      isCommon: rep.isCommon, isService: rep.isService, assignedAt, liveUnits,
       disposedAt: disposals[0]?.disposedAt ?? null, disposalReason: disposals[0]?.disposalReason ?? null,
       disposedQty, disposedIds: dead.map(r => r.id), disposals,
       breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt }))

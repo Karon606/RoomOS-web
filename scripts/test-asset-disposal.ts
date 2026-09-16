@@ -211,6 +211,45 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
   eq('폐기 없으면 breakdown 이 전부 disposed:false', items.every(i => i.breakdown.every(b => !b.disposed)), true)
 }
 
+// ── ⑪ 수량 미기록 축 — 집계(?? 0)와 게이트·분할(?? 1)이 갈리던 자리 ─────────
+//    장부 검수 2026-09-16. 영수증에 수량이 안 적힌 행은 화면이 `N건` 으로 보여 준다.
+//    그때 qtyValue 는 null 인데 서버는 그 행을 **1개로 세서** 쪼갠다. 두 셈이 갈리면
+//    "2를 버렸다고 알고 3이 빠지고", 전 행 미기록 카드는 화면 max 가 0 이라 폐기를 못 적는다.
+//    그래서 liveUnits·disposedQty 를 게이트와 **같은 셈법**으로 두고 화면이 그것을 쓴다.
+{
+  const noQty = (o: Partial<RawAsset> = {}) => row({ qtyValue: null, ...o })
+  // 전 행 미기록 — 표시는 '수량 미기록'(null)이지만 셀 수 있는 몫은 3이다.
+  const [c] = aggregateAssets([noQty(), noQty(), noQty()])
+  eq('전 행 미기록이면 qtyValue 는 null', c.qtyValue, null)
+  eq('그래도 셀 수 있는 몫은 3', c.liveUnits, 3)
+  eq('미기록 카드도 폐기를 적을 수 있다(max>0)', c.liveUnits > 0, true)
+  // 게이트도 같은 수를 센다 — 화면 max 와 서버 have 가 어긋나면 안 된다.
+  const g = (o: Partial<DisposalGateRow> = {}): DisposalGateRow =>
+    ({ receivedAt: new Date('2026-09-11'), excludeFromInventory: false, disposedAt: null, qtyValue: null, qtyUnit: '개', ...o })
+  eq('미기록 3행에 3개 폐기는 통과', disposalDenial([g(), g(), g()], 3), null)
+  eq('미기록 3행에 4개 폐기는 거부', disposalDenial([g(), g(), g()], 4), '지금 있는 수량(3개)보다 많아요.')
+  // 섞인 카드 — 기록 2 + 미기록 1. 게이트가 세는 수는 3이고 liveUnits 도 3이어야 한다.
+  const [mix] = aggregateAssets([row({ qtyValue: 2 }), noQty()])
+  eq('섞인 카드의 liveUnits', mix.liveUnits, 3)
+  eq('섞인 카드의 게이트 수', disposalDenial([g({ qtyValue: 2 }), g()], 3), null)
+  eq('섞인 카드는 3을 넘으면 거부', disposalDenial([g({ qtyValue: 2 }), g()], 3.5), '지금 있는 수량(3개)보다 많아요.')
+  // 폐기 쪽도 같은 셈법 — 미기록 행 하나를 버리면 1로 센다(0 이면 버린 것이 안 보인다).
+  const [d] = aggregateAssets([noQty(), noQty({ disposedAt: '2026-09-16', disposalReason: '분실' })])
+  eq('미기록 폐기도 1로 센다', d.disposedQty, 1)
+  eq('미기록 카드의 남은 몫', d.liveUnits, 1)
+  eq('누적은 둘의 합', d.liveUnits + d.disposedQty, 2)
+  eq('미기록이어도 금액은 그대로', d.amount, 3610 * 2)
+}
+
+// ── ⑫ liveUnits 는 폐기가 없으면 qtyValue 와 같은 수다 ───────────────────
+//    폐기 없는 장부에서 화면이 쓰던 수가 안 바뀐다는 무회귀 확인.
+{
+  for (const rows of [[row()], [row(), row()], [row({ qtyValue: 2.5 }), row({ qtyValue: 1.5 })]]) {
+    const [c] = aggregateAssets(rows)
+    eq(`폐기 없으면 liveUnits == qtyValue (${rows.length}행)`, c.liveUnits, c.qtyValue)
+  }
+}
+
 if (fails.length) {
   console.error(`\n[자재 설치·폐기] 통과 ${pass} / 실패 ${fails.length}`)
   for (const f of fails) console.error('  - ' + f)

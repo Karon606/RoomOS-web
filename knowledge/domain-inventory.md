@@ -784,12 +784,51 @@ space-y-3 delayed-fallback` 을 직접 낸다.
 `undoItemNameMerge` 가 온전히 원복한다. 규격은 **정확히 일치하는 것만** 옮긴다 — 규격 미상(all-null)
 이력은 그 라벨의 다른 카드 것일 수 있어 손대면 엉뚱한 카드로 끌려간다.
 
+### 분할 복제 목록은 **한 자리**다 (검수 2026-09-16)
+한 구매 행을 쪼개는 자리가 셋인데(배정 분할·나눠 배정·부분 수령) 각자 목록을 들고 있었고,
+셋이 서로 같기만 했지 **스키마를 덮는지 아무도 안 봤다**. `roomWorkId`·`costKind`·`brand`·
+`productName`·`vendorBizNo`·`excludeFromAnchor`·`targetRoomId`·`breakdownJson` 이 빠져 있었다.
+- 종전 분할 방아쇠는 대개 **작업에 걸리기 전** 행에서 터져 안 드러났다. **폐기는 정반대로 이미
+  방에 설치돼 작업에 걸린 행을 겨눈다**(실측 — 작업에 걸린 지출 67건이 전부 방 배정 상태).
+  504호 `도배(돌출부) 40,000원` 에서 1회를 폐기하면 그 방 시공비가 20,000으로 줄고, 떨어져 나온
+  20,000은 고아 지출이 되어 `check-room-work-link` 가 빨개진다(실측으로 재현·확인).
+- 지금은 `cloneExpenseScalars` 한 자리뿐이고, 감지망이 **schema.prisma 에서 스칼라를 읽어** 대조한다.
+  손으로 센 목록은 다음 컬럼이 늘 때 또 진다.
+
+### 수량 미기록 행은 **1로 센다** (검수 2026-09-16)
+영수증에 수량이 안 적힌 행은 `qtyValue` 가 null 이고 화면은 `N건` 으로 보여 준다. 그런데 게이트와
+`buildSplitOps` 는 그 행을 **1개로 세서** 쪼갠다. 두 셈이 갈리면 "2를 버렸다고 알고 3이 빠지고",
+전 행 미기록 카드는 화면 max 가 0 이라 폐기를 아예 못 적는다. 그래서 `AssetItem.liveUnits` 와
+`disposedQty` 를 **게이트와 같은 셈법**(미기록=1)으로 두고 화면이 그것을 쓴다. `qtyValue` 는 표시용
+그대로다(폐기 없는 장부에서는 `liveUnits === qtyValue`).
+
+### 클라가 준 id 를 믿지 않는다 (검수 2026-09-16)
+`combineAssets`·`setAssetQtyUnit`·`setCommonAsset` 은 `disposedIds` 를 인자로 받지만 **서버가
+정체성으로 직접 찾는다**(`withDisposedSiblings`). 옛 번들이 부르면 그 인자가 비어 카드가 갈린다.
+`isCommon` 도 집계 키라 `setCommonAsset` 이 빠져 있었다 — 분실 행이 미배정에 `0개 · 누적 2개`
+유령 카드로 남았다.
+
+### 적용취소 토큰은 **서버에서 영업장으로 잠근다** (검수 2026-09-16)
+토큰은 클라가 들고 있다 돌려보내는 값이고 그 안에 `amount` 가 들어 있다. `update({ where: { id } })`
+면 임의의 지출 id 와 금액을 담아 보내는 것만으로 다른 영업장 지출이 덮인다 —
+금전 불변이 서버가 아니라 클라 선의로 지켜지던 자리였다. 지금은 `updateMany({ where: { id, propertyId } })`.
+
+### 교체는 그 줄에서 되돌릴 수 없다 (검수 2026-09-16)
+배정 이력의 적용취소로 교체를 무르면 **폐기가 반쪽으로 남고**, 선입선출이라 방금 넣은 새것이
+아니라 옛것을 내보낸다. 교체의 서명(같은 날·같은 자리에 같은 카드의 폐기 기록)으로 판정해 막고,
+상세의 '설치·폐기' 적용취소로 보낸다.
+
 ### 감지망
-- `scripts/test-asset-disposal.ts`(verify:fast) — 진리표 61건. 511호 정상 / 504호 1교체 /
+- `scripts/test-asset-disposal.ts`(verify:fast) — 진리표 76건. 511호 정상 / 504호 1교체 /
   502호 2철거폐기 / 전량 폐기 / 미배정 분실 / 적용취소 / 폐기 있는 방에서 옮기기 / 초과 거부 /
   수령 전 거부 / 합치기 + 무회귀(폐기 없는 장부는 예전과 한 글자도 같다).
-- `scripts/check-asset-disposal-wiring.mjs`(verify:fast) — 배선 단언. **급소는
-  `mergeUnassignedGroup` 의 `disposedAt: null` 양쪽**과 `amount = rows.reduce`(전 행 합)이다.
+- `scripts/check-asset-disposal-wiring.mjs`(verify:fast) — 배선 단언. **급소 셋** —
+  `mergeUnassignedGroup` 의 **미배정 조회**에 `disposedAt: null`(반대로 '묶음 잔존' 판정에서는
+  폐기도 세야 groupId 가 안 풀린다), `amount = rows.reduce`(전 행 합), 그리고 **인자의 정체**
+  (`buildSplitOps(live, …)` 에서 `live` 의 정의가 `exps.filter(e => !e.disposedAt)` 인가).
+  마지막 것은 검수가 설계한 우회다 — `const live = exps` 로 한 글자만 바꾸면 이름만 보는 단언은
+  전부 초록이고 진리표도 금액 지문도 안 움직이는데, 폐기 행부터 다시 찍혀 **살아 있는 수량이
+  안 줄고 옛 폐기 기록의 날짜·사유만 덮인다.** 폐기 이력이 있는 방에서만 발화한다.
 - `scripts/check-asset-overinstall.ts`(verify:db) — **초과 후보 명부, 위반이 아니다**(항상 exit 0).
   다른 방들의 **최빈값**을 잠정 기준으로 삼아 넘는 방을 뽑는다. 한계를 출력에 문장으로 적는다 —
   511호처럼 3자리가 정상인 방도 다른 방 대다수가 1개면 뜨고, 한 방만 초과면 그 방이 최빈값이라
