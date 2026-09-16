@@ -55,7 +55,7 @@ import {
   translationPlaceholderMisses, translationPlaceholderMessage, translationProgress,
   translationPlaceholders,
   translationVarSpecs, translationVarSpecByKey, isCustomVarTranslation, translationLineDone,
-  resolveContractTranslation, TRANSLATION_LANG_ENDONYM,
+  resolveContractTranslation, TRANSLATION_LANG_ENDONYM, TRANSLATION_PRINT_MARK,
   type TranslationLang, type TranslationLineKind, type TranslationVarSpec, type ContractTranslations,
 } from '@/lib/contractTranslation'
 import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
@@ -3739,7 +3739,9 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
       {/* 미리보기 창. 본문은 **입주자가 보는 그 컴포넌트**다(ContractTranslationBody) — 발급 상세의
           '전문 보기'와 같은 자리, 같은 폭(md)이다. 여기에 본문을 한 벌 더 만들면 운영자가 확인한
           문안과 입주자가 받는 문안이 언젠가 갈리고, 그때 이 창은 확인이 아니라 착각이 된다.
-          source·sourceAddenda 를 넘겨 번역이 없어 한국어가 남는 줄에 회색 '원문' 표식이 선다. */}
+          source·sourceAddenda 를 넘겨 번역이 없어 한국어가 남는 줄에 회색 표식이 선다. 그 표식은
+          **그 언어 단독**이라(TRANSLATION_PRINT_MARK) 운영자가 한자·벵골 글자를 못 읽어 못 짚을 수
+          있다. 그래서 아래 셋째 줄이 개수를 한국어로 말하고 표식 낱말을 그대로 인용한다. */}
       {previewOpen && preview && (
         <Modal open onClose={() => setPreviewOpen(false)} width="md"
           title="번역본 미리보기"
@@ -3765,9 +3767,13 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                 지금은 비공개라 서명 링크에 실리지 않습니다. 공개로 바꿔 저장하면 이 모양으로 실립니다.
               </p>
             )}
+            {/* 표식 낱말은 **사전에서 인용한다**(종이의 progressKo 와 같은 규칙). 여기 '원문'을
+                글자로 박아 두면 화면 표식이 그 언어로 가 있는데 이 줄만 있지도 않은 낱말을
+                가리켜, 운영자는 '원문'을 찾다가 "표식이 없다"고 답한다. */}
             {preview.fallbackCount > 0 && (
               <p className="text-xs leading-relaxed text-[var(--warm-muted)]">
-                한국어 원문으로 남는 줄이 <span className="num">{preview.fallbackCount}</span>줄 있습니다. 회색 원문 표식이 붙은 줄입니다.
+                한국어 원문으로 남는 줄이 <span className="num">{preview.fallbackCount}</span>줄 있습니다.
+                회색 &lsquo;{TRANSLATION_PRINT_MARK[lang]}&rsquo; 표식이 붙은 줄입니다.
               </p>
             )}
           </div>

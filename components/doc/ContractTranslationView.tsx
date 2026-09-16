@@ -29,7 +29,8 @@ import {
 } from '@/lib/contract'
 import {
   TRANSLATION_LANG_ENDONYM, translationNoticeBi,
-  type ResolvedContractTranslation,
+  TRANSLATION_PRINT_MARK, TRANSLATION_PRINT_HEAD,
+  type ResolvedContractTranslation, type TranslationLang,
 } from '@/lib/contractTranslation'
 
 /**
@@ -46,11 +47,26 @@ function sameAsSource(translated: string, source: string | undefined): boolean {
   return !!source && translated === source
 }
 
-/** 원문으로 남은 줄에 붙는 회색 표식. 크기는 §05 Caption 최소값(10.5px). */
-function SourceMark() {
+/**
+ * 원문으로 남은 줄에 붙는 회색 표식. 크기는 §05 Caption 최소값(10.5px).
+ *
+ * **문안은 종이와 같은 사전에서 오고, 그 언어 단독이다**(TRANSLATION_PRINT_MARK, 2026-09-17 오더).
+ * 한국어 `원문` 을 박아 두면 이 카드를 실제로 읽는 사람 — 자기 언어로 계약서를 받아 든 외국인
+ * 입주자 — 에게 화면에서 **유일하게 못 읽는 글자**가 그 표식이 된다. 표식은 "이 줄만 번역이
+ * 없다"를 말하는 자리라, 그 말을 못 읽으면 그 줄을 번역된 조항으로 읽고 넘어간다.
+ *
+ * 문안을 여기 복제하지 마라. 종이와 화면이 각자 표를 들면 다음에 한쪽만 고쳐지고, 그때
+ * 미리보기는 확인이 아니라 착각이 된다.
+ *
+ * 종이의 `.src-mark` 와 달리 `nowrap` 을 안 준다. 종이는 A4 고정 폭이라 끊길 자리가 넉넉하지만
+ * 화면 칸은 402px 에서 328~348px 까지 좁아져, 길어진 표식('not yet translated')을 끊을 수 없는
+ * 한 덩어리로 만들면 이 파일이 구조로 막아 둔 그 사고 — 글이 칸 밖으로 흘러 안 보이는 것 —
+ * 가 되살아난다. 제 띄어쓰기에서 접히게 둔다.
+ */
+function SourceMark({ lang }: { lang: TranslationLang }) {
   return (
     <span className="ml-1.5 shrink-0 align-middle text-[0.65625rem] font-medium text-[var(--warm-muted)]">
-      원문
+      {TRANSLATION_PRINT_MARK[lang]}
     </span>
   )
 }
@@ -120,9 +136,21 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
     <div className="space-y-4">
       {/* 머리 — 무엇인지 먼저 말한다. 배지는 pale-neutral 고정이다(§11). 강조색을 쓰면
           이 종이가 힘을 가진 것처럼 읽히는데, 여기는 힘이 없다는 것이 요점이다.
-          언어는 그 언어의 자기 이름으로 적는다 — 자기 언어를 찾는 사람에게 '영어'는 단서가 아니다. */}
+          언어는 그 언어의 자기 이름으로 적는다 — 자기 언어를 찾는 사람에게 '영어'는 단서가 아니다.
+
+          배지 문안도 **종이 머리와 같은 사전, 그 언어 단독**이다(TRANSLATION_PRINT_HEAD,
+          2026-09-17 오더). 종전 '참고용 · Reference only' 는 한국어와 영어라, 베트남어·벵골어로
+          계약서를 읽는 사람에게 "이것은 계약서가 아니다"라는 가장 중요한 한마디가 못 읽는 글자로
+          서 있었다. 여기 문안을 새로 적지 마라 — 종이와 화면이 각자 표를 들면 다음에 한쪽만
+          고쳐진다. 한국어는 바로 위 접힘 손잡이('참고용 번역본')와 모달 제목이 이미 말하고 있어
+          운영자가 이 카드를 못 알아보는 일은 없다.
+
+          배지 폭은 Chrome 402px 에서 실측했다(Pretendard 11px/500 · px-2 · 서명 카드 칸 348px ·
+          미리보기 모달 칸 328px). 가장 긴 ru 가 244.4px, 다음 vi 가 212.2px 로 일곱 언어 전부
+          한 줄이고, 원어 이름까지 얹어도 행이 안 접힌다(행 높이 20.5px 고정 · 가로 넘침 0).
+          더 좁아져도 안전하다 — 배지는 글자를 자르는 자리가 아니라 제 안에서 접히는 자리다. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="pale-neutral" size="sm">참고용 · Reference only</Badge>
+        <Badge tone="pale-neutral" size="sm">{TRANSLATION_PRINT_HEAD[translation.lang]}</Badge>
         <span className="text-xs font-medium text-[var(--warm-muted)]">
           {TRANSLATION_LANG_ENDONYM[translation.lang]}
         </span>
@@ -144,7 +172,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
       {/* 계약서 제목. 번역이 없으면 한국어 원문이 그대로 서고 표식이 붙는다. */}
       <h2 style={wrapStyle} className="text-lg font-bold leading-snug tracking-[-0.02em] text-[var(--warm-dark)]">
         {translation.title}
-        {sameAsSource(translation.title, source?.title) && <SourceMark />}
+        {sameAsSource(translation.title, source?.title) && <SourceMark lang={translation.lang} />}
       </h2>
 
       {/* 조항. **번호는 계약서와 같은 번호다** — 대조가 목적이라 여기서 다시 매기면 안 된다.
@@ -158,7 +186,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
             {/* 표식 판정은 **치환 전 문자열끼리** 견준다. 뜻이 "사전에 번역이 없어 원문이 남았다"
                 이고 그 사실은 치환과 무관하다 — 치환 후로 견주면 값이 같아진 두 문장이 우연히
                 원문으로 표시될 수 있다. */}
-            {sameAsSource(sec.title, srcSections[si]?.title) && <SourceMark />}
+            {sameAsSource(sec.title, srcSections[si]?.title) && <SourceMark lang={translation.lang} />}
           </h3>
           <ol className="space-y-1.5">
             {sec.items.map((item, ii) => (
@@ -166,7 +194,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
                 <span className="num shrink-0 text-[var(--warm-muted)]">{ii + 1}.</span>
                 <span className="min-w-0 whitespace-pre-line">
                   {stripClauseBullet(render(item))}
-                  {sameAsSource(item, srcSections[si]?.items?.[ii]) && <SourceMark />}
+                  {sameAsSource(item, srcSections[si]?.items?.[ii]) && <SourceMark lang={translation.lang} />}
                 </span>
               </li>
             ))}
@@ -177,7 +205,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
       {translation.oathText && (
         <p style={wrapStyle} className="text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)]">
           {render(translation.oathText)}
-          {sameAsSource(translation.oathText, source?.oathText) && <SourceMark />}
+          {sameAsSource(translation.oathText, source?.oathText) && <SourceMark lang={translation.lang} />}
         </p>
       )}
     </div>

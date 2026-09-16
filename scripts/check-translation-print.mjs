@@ -1,4 +1,4 @@
-// 참고용 번역본 검수 종이의 네 축을 지키는 감지망. 읽기 전용, 위반 시 exit 1 (2026-09-17).
+// 참고용 번역본 검수 종이의 다섯 축을 지키는 감지망. 읽기 전용, 위반 시 exit 1 (2026-09-17).
 //
 // 자립(외부 참조 0·폰트 두 벌)과 글꼴 파일 실재는 scripts/check-print-selfcontained.ts 가 본다.
 // 여기는 그 그물이 못 보는 넷이다.
@@ -22,11 +22,24 @@
 //              두부(□)를 **구조로** 막는다. 운영자는 두부와 정상 글자를 구별하지 못한다
 //            · 본문 밖 어느 규칙도 font-family 를 Pretendard 로 못박지 않는가 — 못박으면
 //              그 자리만 두부가 되는데, cmap 대조는 글꼴 합집합을 보므로 그것을 못 잡는다
+//   축 8 — **화면이 종이와 같은 사전을 쓴다**(2026-09-17 오더). 축 7 은 종이만 보는데, 같은
+//          표식·같은 머리가 화면에도 서고 그 화면은 **원격 서명에서 외국인 입주자가 직접 보는
+//          자리**다. 종이만 일곱 언어로 가고 화면이 한국어·영어로 남으면, 자기 언어로 계약서를
+//          읽는 사람에게 화면에서 유일하게 못 읽는 글자가 "이 줄만 번역이 없다"는 그 표식이 된다.
+//          그리고 운영자 미리보기가 종이와 다른 글자를 보이는 순간, 그 창은 확인이 아니라
+//          착각이 된다. 그래서 둘을 함께 본다.
+//            · 화면을 **실제로 그려** 일곱 언어의 표식·배지가 사전 문자열 그대로 서는가 —
+//              소스 문자열만 찾으면 `import` 만 남기고 호출을 지우는 손질을 못 잡는다
+//            · 화면 파일에 한국어 `원문`·`Reference only` 리터럴이 되살아나지 않았는가 —
+//              사전을 부르는 척하며 옆에 리터럴을 세우는 손질은 그림만으로는 안 걸린다
 //
 // 실행: npx tsx scripts/check-translation-print.mjs
 import { readFileSync } from 'node:fs'
 import { brotliDecompressSync } from 'node:zlib'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { DEFAULT_CONTRACT_TEMPLATE, propertyContractAddenda, appendSubLeaseAddendum, renderContractText, stripClauseBullet } from '../lib/contract.ts'
+import { ContractTranslationBody, ContractTranslationCard } from '../components/doc/ContractTranslationView.tsx'
 import {
   resolveContractTranslation, translationSourceLines, TRANSLATION_LANGS,
   TRANSLATION_PRINT_MARK, TRANSLATION_PRINT_PROGRESS_LEFT, TRANSLATION_PRINT_PROGRESS_MARKED,
@@ -368,6 +381,89 @@ function visibleText(doc) {
   }
 }
 
+// ── 축 8. 화면이 종이와 같은 사전을 쓴다 ───────────────────────────────────
+//
+// **그려서 본다.** 소스에서 `TRANSLATION_PRINT_MARK` 라는 글자를 찾는 그물은 `import` 만 남기고
+// 호출을 지운 화면을 통과시킨다(그 손질이 실제 역주입에서 통과했다). 컴포넌트를 실제로 렌더해
+// 결과 HTML 을 보면 그 손질은 표식이 사라지거나 다른 글자가 서는 것으로 드러난다.
+//
+// 기대값은 종이와 **같은 표**에서 온다(TRANSLATION_PRINT_MARK · TRANSLATION_PRINT_HEAD). 화면이
+// 제 문안을 따로 들면 다음에 한쪽만 고쳐지고, 그때 미리보기는 확인이 아니라 착각이 된다.
+{
+  const SCREEN = 'components/doc/ContractTranslationView.tsx'
+  const SETTINGS = 'app/(app)/settings/SettingsForm.tsx'
+
+  // 사전을 통째로 비운 해석 — 모든 줄이 한국어로 떨어져 표식이 전부 선다.
+  for (const lang of TRANSLATION_LANGS) {
+    const resolved = resolveContractTranslation(
+      { enabled: true, langs: { [lang]: { published: true, dict: {} } } },
+      template, lang, addenda, true)
+    if (!resolved) continue   // 축 5 가 이미 null 을 말했다
+    if (resolved.fallbackCount === 0) {
+      violations.push(`${lang} 화면 더미에 원문으로 남은 줄이 없다 — 표식이 설 자리가 없어 축 8 이 아무것도 안 본다`)
+      continue
+    }
+    const props = { translation: resolved, source: template, sourceAddenda: addenda }
+    // 두 자리를 다 그린다. 같은 본문이 **설정 미리보기**(운영자)와 **서명 화면 접힘 카드**
+    // (입주자)에 함께 서므로, 한쪽만 보면 카드 껍데기가 본문을 가리는 손질을 놓친다.
+    for (const [where, el] of [
+      ['미리보기·발급 상세 본문', createElement(ContractTranslationBody, props)],
+      ['서명 화면 접힘 카드', createElement(ContractTranslationCard, props)],
+    ]) {
+      let html
+      try { html = renderToStaticMarkup(el) } catch (e) {
+        violations.push(`${lang} ${where} 를 그리지 못했다(${e.message}) — 축 8 이 판정 불가다`)
+        continue
+      }
+      for (const [what, want] of [
+        // 표식은 **표식 자리에** 서야 한다. 낱말만 찾으면 옆 문장이 그 낱말을 품은 날 통과한다.
+        ['회색 표식', `>${TRANSLATION_PRINT_MARK[lang]}</span>`],
+        ['참고용 배지', `>${TRANSLATION_PRINT_HEAD[lang]}</span>`],
+      ]) {
+        if (!html.includes(want)) {
+          violations.push(`${lang} ${where} 에 ${what} 문안이 없다 — 종이는 그 언어로 갔는데 화면이 안 갔다.`
+            + ' 원격 서명 화면은 외국인 입주자가 직접 보는 자리라, 못 읽는 표식은 "이 줄만 번역이'
+            + ' 없다"는 말을 전하지 못하고, 운영자 미리보기는 종이와 다른 글자를 보여 확인이 아니라 착각이 된다')
+        }
+      }
+    }
+  }
+
+  // 그림이 못 보는 자리 — **리터럴의 부활**. 사전을 부르는 척하며 옆에 한국어·영어 문안을 세우면
+  // 위 렌더 대조는 통과한다(사전 문안도 함께 서 있으므로). 주석과 import 는 걷고 본다.
+  const screenSrc = strip(readFileSync(SCREEN, 'utf8')).replace(/^\s*import\s[\s\S]*?from\s[^\n]*$/gm, '')
+  for (const [bad, why] of [
+    ['원문', '한국어 표식이 되살아났다 — 자기 언어로 계약서를 읽는 사람에게 유일하게 못 읽는 글자가 된다'],
+    ['Reference only', '영어 배지가 되살아났다 — 베트남어·벵골어로 읽는 사람에게 이 카드가 무엇인지 말하지 못한다'],
+  ]) {
+    if (screenSrc.includes(bad)) {
+      violations.push(`${SCREEN} 에 '${bad}' 리터럴이 있다 — ${why}.`
+        + ' 문안은 종이와 같은 표에서만 온다(TRANSLATION_PRINT_MARK · TRANSLATION_PRINT_HEAD)')
+    }
+  }
+
+  // 미리보기의 진행 줄은 표식 낱말을 **사전에서 인용한다**(종이의 progressKo 와 같은 규칙).
+  // 여기에 '원문'을 글자로 박으면 화면 표식은 그 언어인데 이 줄만 있지도 않은 낱말을 가리켜,
+  // 운영자는 '원문'을 찾다가 "표식이 없다"고 답한다. 그 답은 거짓이다.
+  const settingsSrc = strip(readFileSync(SETTINGS, 'utf8'))
+  const at = settingsSrc.indexOf('preview.fallbackCount > 0')
+  if (at < 0) {
+    violations.push(`${SETTINGS} 에서 미리보기 진행 줄을 못 찾았다 — 구조가 바뀌었으면 이 그물부터 고친다.`
+      + ' 운영자가 그 언어 표식을 못 짚어도 개수를 알 수 있는 유일한 줄이다')
+  } else {
+    const block = settingsSrc.slice(at, at + 600)
+    if (!/TRANSLATION_PRINT_MARK\[lang\]/.test(block)) {
+      violations.push(`${SETTINGS} 의 미리보기 진행 줄이 표식을 사전에서 인용하지 않는다`
+        + ' — 표식과 인용은 짝으로 움직여야 한다. 갈리면 그 줄이 있지도 않은 낱말을 가리키고,'
+        + ' 운영자는 한자·벵골 표식을 못 짚는 대신 이 줄에 기대므로 신호를 통째로 잃는다')
+    }
+    if (/회색\s*원문/.test(block)) {
+      violations.push(`${SETTINGS} 의 미리보기 진행 줄에 '회색 원문' 이 글자로 박혀 있다`
+        + ' — 화면 표식은 그 언어 단독이라 그 낱말은 화면 어디에도 없다')
+    }
+  }
+}
+
 if (violations.length) {
   console.error(`\n[번역본 검수 종이] 위반 ${violations.length}건`)
   for (const v of violations) console.error('  - ' + v)
@@ -375,4 +471,5 @@ if (violations.length) {
   process.exit(1)
 }
 console.log(`[번역본 검수 종이] 저장 0건 · 참고용 표식 머리와 꼬리말 · 해석 결과 순서대로 전부`
-  + ` · 검수 지시 ${TRANSLATION_LANGS.length}언어 문안과 글꼴 전량 / 위반 0건`)
+  + ` · 검수 지시 ${TRANSLATION_LANGS.length}언어 문안과 글꼴 전량`
+  + ` · 화면 두 자리 ${TRANSLATION_LANGS.length}언어 표식·배지 같은 사전 / 위반 0건`)
