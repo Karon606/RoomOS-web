@@ -89,8 +89,21 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
     cache.current = {}
     // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다.
     // 형식을 묻기 전에 바이트를 봐야 한다(이미지면 질문 자체가 없다). 이미지는 변환기에 넣지 않는다.
-    const head = await ensureBytes().catch(() => null)
-    const srcMime = head ? sniffDocMime(head) : ''
+    //
+    // **여기서 이미 거절됐으면 선택창을 열지 않는다**(디자이너 검수 2026-09-17). 기존 여섯 사용처는
+    // 이미 만들어져 있는 파일을 받아 오는 자리라 실패가 예외였지만, 참고용 번역본 라우트는 글꼴
+    // 미확보(503)·본문 비었음(409)·사전 과대(413)·권한 없음(403)이 **설계된 답**이다. 실패를 삼키고
+    // 지나가면 형식과 목적지를 다 고른 뒤에야 실패를 알게 되고, 던지면서 캐시를 비운 자리를
+    // ensurePngs 가 한 번 더 부르므로 실패 한 번에 서버 렌더가 두 번 돈다. 성공하는 흐름은 이
+    // 갈래에 닿지 않으므로 형제 사용처의 동작은 한 글자도 달라지지 않는다.
+    let head: ArrayBuffer
+    try {
+      head = await ensureBytes()
+    } catch (e) {
+      pushToast('error', humanError(e, '보내기에 실패했습니다.'))
+      return
+    }
+    const srcMime = sniffDocMime(head)
     const isImage = isImageDocMime(srcMime)
     if (!isImage) void ensurePngs().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
     const pick = await ask(isImage)

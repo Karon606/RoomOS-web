@@ -114,6 +114,18 @@ for (const f of Object.keys(FIELDS)) {
     violations.push("app/(app)/finance/FinanceClient.tsx — 못 맞힌 카드 표기로 결제수단을 쓴다. "
       + "자동 기입은 정산 상태(actions.ts 의 payMethod === '신용카드')를 움직인다 — 확인형이다")
   }
+
+  // 고지가 가리키는 컨트롤이 화면에 실제로 서는가(디자이너 검수 2026-09-17).
+  // 카드 선택 셀렉트는 결제수단이 신용카드·체크카드일 때만 선다. 그런데 못 맞힌 그 경우에는
+  // 결제수단이 직전 기본값(거의 항상 계좌이체)으로 남으므로, 고지가 조건 없이 "카드를 골라
+  // 주세요" 라고 말하면 운영자가 읽고 내려다봐도 고를 것이 화면에 없다. 같은 폼 안에서 한 번
+  // 겪은 클래스다(오류신고 ad4256b0 — 품목이 없으면 켤 토글 자체가 없는데 켜라고 안내했다).
+  const hintLine = (src.match(/^.*cardAccounts\.length === 0 \?.*$/m) ?? [''])[0]
+  if (!/addExpMethod === '신용카드'/.test(hintLine) || !/addExpMethod === '체크카드'/.test(hintLine)) {
+    violations.push('app/(app)/finance/FinanceClient.tsx — 카드 고지가 결제수단 상태를 안 보고 말한다. '
+      + '카드 선택 셀렉트가 서는 조건(신용카드·체크카드)과 같은 조건으로 갈라야, 고를 것이 없는 화면에서 '
+      + '고르라고 하지 않는다(오류신고 ad4256b0 과 같은 클래스)')
+  }
 }
 
 console.log(`\n[영수증 결제수단 전달] 인식 칸 ${declared.length}개 / 위반 ${violations.length}건`)

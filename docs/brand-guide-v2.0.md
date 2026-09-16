@@ -336,8 +336,8 @@
 - 26.1 참고용 번역본 검수 종이 (2026-09-17 운영자 승인, 정본 `lib/contractTranslationPrintHtml.ts`). **계약서가 아니고 발급물도 아니다 — 번역이 맞는지 읽을 줄 아는 사람에게 보내 묻는 검수용이며 앱에 보관되지 않는다.**
   - **조판을 계약서와 일부러 가른다**(운영자 확정 — 같은 포맷이면 어느 것이 정본인지 헷갈린다). A4 **1단**(계약서는 2단) · 여백 상하좌우 16mm · 헤더 밴드 없음 · 축소맞춤 없음(장수 제한 없음, 읽히는 크기가 먼저).
   - 브랜딩 **OFF**. 계약번호·로고·도장·서명란·워드마크·정보표·입주자 이름·생년월일·등록번호·금액표·**영업장명** 전부 안 싣는다(카드에 없는 것을 종이에 넣지 않는다). 계약번호는 절대 안 찍는다.
-  - 서는 것: 머리 한 줄(`참고용 · 계약서 아님 / Reference only · Not a contract` + 그 언어 자기 이름 + 날짜 KST) 8.5pt · 0.6pt 룰 · 고지 박스(`translationNoticeBi` 정본, --p-label-bg, 9pt lh1.6) · 검수 안내 한/영 두 줄 8.5pt · 진행 한 줄 8.5pt · 제목 16pt/700 · 절 제목 11pt/700 · 항목 9.5pt lh1.65(번호는 CSS 카운터) · 서약문 9.5pt · **모든 장** 꼬리말 8pt(`참고용 번역본 · 계약서 아님 / Reference translation, not a contract` + 페이지 번호).
-  - 원문 표식: 번역이 없어 한국어가 남은 줄에만 회색 `원문` 7.5pt(Pretendard 고정). 색·테두리 없음(§29 장식 0).
+  - 서는 것: 머리 한 줄(`참고용 · 계약서 아님 / Reference only · Not a contract` + 그 언어 자기 이름 + 날짜 KST) 8.5pt · 0.6pt 룰 · 고지 박스(`translationNoticeBi` 정본, --p-label-bg, 9pt lh1.6) · 검수 안내 한/영 두 줄 8.5pt · 진행 한 줄 8.5pt · 제목 16pt/700 · 절 제목 11pt/700 · 항목 9.5pt lh1.65(번호는 CSS 카운터) · 서약문 9.5pt · **모든 장** 꼬리말 8pt(`참고용 번역본 · 계약서 아님 / Reference translation, not a contract`). 페이지 번호는 §26 본문 그대로 **2장 이상만** — 라우트가 장수를 센 뒤 정한다(2026-09-17 검수, 형제 계약서 라우트와 같은 규칙).
+  - 원문 표식: 번역이 없어 한국어가 남은 줄에만 회색 `원문` 8.5pt(Pretendard 고정). 색·테두리 없음(§29 장식 0). **본문 하한 8.5pt 의 예외가 아니다** — 2026-09-17 검수에서 7.5pt 예외를 걷었다(이 종이에서 신호가 가장 큰 글자라 가장 작게 찍을 이유가 없다).
   - 글꼴: `'그 언어 글꼴', 'Pretendard', sans-serif` 순서 고정. ja=NotoSansJP · zh=NotoSansSC · zht=NotoSansTC · bn=NotoSansBengali, en·vi·ru 는 Pretendard 만. **Pretendard 는 어느 언어에서도 안 빠진다**(한국어 고지와 원문 잔존 줄). 줄바꿈은 ja·zh·zht 만 `word-break: normal`, 나머지 `keep-all`, 전부 `overflow-wrap: anywhere`.
   - 글꼴을 못 구하면 **종이를 안 만든다**(503). 운영자가 두부와 정상 글자를 구별하지 못하므로 부분 성공이 없다. 자세한 근거는 knowledge/contract-translation-print.md.
 

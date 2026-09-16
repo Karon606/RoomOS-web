@@ -62,9 +62,17 @@ async function step<T>(t: Timings, key: string, fn: () => Promise<T>): Promise<T
 const fail = (status: number, error: string, code?: string) =>
   NextResponse.json({ ok: false, error, ...(code ? { code } : {}) }, { status })
 
-/** 글꼴을 못 구했을 때의 단일 답. 부분 성공이 없다는 판정을 한 자리에 둔다. */
+/**
+ * 글꼴을 못 구했을 때의 단일 답. 부분 성공이 없다는 판정을 한 자리에 둔다.
+ *
+ * **왜 계약서와 규칙이 다른가.** 계약서 라우트는 글꼴을 못 구해도 발급을 계속한다. 여기는 반대로
+ * 종이를 아예 안 만든다 — 한자를 못 읽는 사람이 번역이 맞는지 물어보려고 뽑는 종이라, 글자가
+ * 네모로 나가면 이 기능이 존재하는 이유가 정면으로 무너진다. 다음 세션이 알아야 할 것은 그
+ * 판단이지 운영자가 알아야 할 것은 아니다 — 그래서 근거는 여기 주석에 두고, 운영자가 받는
+ * 문장은 사정과 다음 할 일만 말한다(디자이너 검수 2026-09-17, §15 3줄 경계).
+ */
 const FONT_UNAVAILABLE_MESSAGE =
-  '이 언어의 글꼴을 서버에서 찾지 못해 종이를 만들 수 없습니다. 글자가 네모로 나가는 종이를 내보내는 것보다 여기서 멈추는 편이 낫습니다.'
+  '이 언어의 글꼴을 서버에서 찾지 못해 종이를 만들지 않았습니다. 잠시 후 다시 시도하고, 계속 같으면 알려 주세요.'
 
 export async function POST(req: Request) {
   // 로그에는 숫자와 언어 코드만 남긴다. 개인정보·사전 내용·영업장 식별자를 넣지 않는다
@@ -152,11 +160,13 @@ export async function POST(req: Request) {
     const html = buildContractTranslationPrintHtml(resolved, {
       source: template, sourceAddenda: addenda, pretendardBase64, scriptFontBase64,
     })
-    const footerTemplate = buildTranslationPrintFooterTemplate(pretendardBase64)
 
     // ── 렌더. 골격은 계약서 라우트 그대로다 — 런치 인자·waitUntil 'load'·document.fonts.ready.
     // 외부 참조가 0 건이라(글꼴이 전부 data URL) 'load' 가 정당하다. 그 사실은
     // scripts/check-print-selfcontained.ts 축 1 이 지킨다.
+    //
+    // 장수를 세는 눈도 형제 계약서 라우트와 같은 정본이다(app/api/contract/generate/route.ts).
+    const countPdfPages = (buf: Buffer) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
     const renderPdf = async (attempt: number): Promise<Buffer> => {
       const k = (name: string) => attempt === 1 ? name : `${name}_r${attempt}`
       chromium.setGraphicsMode = false
@@ -172,13 +182,20 @@ export async function POST(req: Request) {
         await step(timings, k('fontsReady'), () => page.evaluateHandle('document.fonts.ready'))
         // 축소맞춤이 없다 — 이 종이는 몇 장이 되어도 괜찮다(한 장에 들어가야 할 이유가 없다).
         // 대신 꼬리말이 모든 장에 선다. 조판을 줄이는 것보다 읽히는 크기가 먼저다.
-        return await step(timings, k('pdf'), async () => Buffer.from(await page.pdf({
+        const print = async (withPageNumber: boolean) => Buffer.from(await page.pdf({
           format: 'A4', printBackground: true, preferCSSPageSize: false,
           margin: { top: '16mm', right: '16mm', bottom: '16mm', left: '16mm' },
           displayHeaderFooter: true,
           headerTemplate: '<div></div>',
-          footerTemplate,
-        })))
+          footerTemplate: buildTranslationPrintFooterTemplate(pretendardBase64, withPageNumber),
+        }))
+        // 번호를 붙여 한 번 찍고 장수를 센다. 한 장이면 번호를 걷고 한 번 더 찍는다(§26 "2p 이상만").
+        // 번역 전문은 2장 이상이 보통이라 번호 붙인 쪽을 먼저 찍는 편이 두 번 찍는 일이 드물다.
+        // 두 번째 찍기가 비싸지 않은 이유는 값이 비싼 launch 와 setContent(8.4MB 글꼴)가 이미
+        // 끝났고 같은 page 를 다시 쓰기 때문이다 — 형제 계약서 라우트도 같은 자리에서 다시 찍는다.
+        const numbered = await step(timings, k('pdf'), () => print(true))
+        if (countPdfPages(numbered) > 1) return numbered
+        return await step(timings, k('pdfSinglePage'), () => print(false))
       } finally {
         await browser.close().catch(() => {})
       }

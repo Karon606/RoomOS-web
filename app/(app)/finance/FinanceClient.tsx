@@ -1761,9 +1761,9 @@ export default function FinanceClient({
       setAddExpAccName(accName(matchedCard))
     }
     // 못 맞힌 표기는 화면이 말한다. 카드 미등록·후보 여럿·표기 불일치가 전부 이 한 줄로 모인다.
-    setAddCardHint(!matchedCard && (d.cardName || d.cardLast4)
-      ? { name: (d.cardName ?? '').trim(), last4: d.cardLast4 ?? '' }
-      : null)
+    const hintName = (d.cardName ?? '').trim()
+    setAddCardHint(!matchedCard && (hintName || d.cardLast4)
+      ? { name: hintName, last4: d.cardLast4 ?? '' } : null)
     if (d.items.length > 0) {
       // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
       // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
@@ -4736,7 +4736,7 @@ export default function FinanceClient({
                         ? <>영수증에 보이는 결제수단은 <strong className="text-[var(--warm-mid)]">{addCardHint.name}</strong>입니다.</>
                         : <>영수증에 보이는 카드번호 끝 4자리는 <strong className="text-[var(--warm-mid)]">{addCardHint.last4}</strong>입니다.</>}
                       {addCardHint.name && addCardHint.last4 ? ` 카드번호 끝 4자리는 ${addCardHint.last4}입니다.` : ''}
-                      {cardAccounts.length === 0 ? ' 자산 관리에 카드를 등록하면 다음부터 자동으로 맞춰집니다.' : ' 맞는 카드를 골라 주세요.'}
+                      {cardAccounts.length === 0 ? ' 자산 관리에 카드를 등록하면 다음부터 자동으로 맞춰집니다.' : (addExpMethod === '신용카드' || addExpMethod === '체크카드') ? ' 아래에서 맞는 카드를 골라 주세요.' : ' 결제수단을 신용카드나 체크카드로 바꾸면 카드를 고를 수 있습니다.'}
                     </p>
                   )}
                 </div>

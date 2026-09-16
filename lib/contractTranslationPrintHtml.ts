@@ -106,16 +106,25 @@ const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /**
- * 페이지 번호가 붙는 꼬리말 — puppeteer 의 footerTemplate 이다.
+ * 모든 장에 서는 꼬리말 — puppeteer 의 footerTemplate 이다.
  *
  * 본문 HTML 밖에서 그려지므로 글꼴을 다시 실어야 한다(계약서 라우트의 꼬리말과 같은 사정).
  * 꼬리말 문장은 한국어라 Pretendard 한 벌이면 충분하다.
+ *
+ * **페이지 번호는 2장 이상일 때만 붙는다**(§26 "페이지 번호는 2p 이상만"). 한 장짜리에 `1 / 1`
+ * 을 찍으면 셀 것이 없는 자리에 숫자를 두는 일이고, 형제 계약서 라우트는 장수를 센 뒤 2장부터만
+ * 붙인다(app/api/contract/generate/route.ts) — 두 종이가 같은 자리에서 다르게 행동하면 안 된다.
+ * 장수는 부르는 쪽만 알 수 있으므로 `withPageNumber` 로 받는다. 참고용 표식은 장수와 무관하게
+ * 항상 선다(scripts/check-translation-print.mjs 축 5).
  */
-export function buildTranslationPrintFooterTemplate(pretendardBase64: string): string {
+export function buildTranslationPrintFooterTemplate(pretendardBase64: string, withPageNumber = true): string {
   return `<style>@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}*{margin:0;padding:0}</style>`
     + `<div style="font-family:'Pretendard',sans-serif;font-size:8pt;color:${PRINT_HEX.inkMuted};width:100%;padding:0 16mm;display:flex;justify-content:space-between;align-items:center;">`
     + `<span>${TRANSLATION_PRINT_FOOTER_TEXT}</span>`
-    + `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`
+    + (withPageNumber
+      ? `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span>`
+      : '')
+    + `</div>`
 }
 
 export type TranslationPrintOptions = {
@@ -250,7 +259,7 @@ export function buildContractTranslationPrintHtml(
   .oath { font-size: 9.5pt; line-height: 1.65; margin-top: 5mm; padding-top: 3mm; border-top: 0.4pt solid var(--p-rule); white-space: pre-line; break-inside: avoid; }
 
   /* 원문으로 남은 줄의 표식. 색도 테두리도 없는 회색 글자 한 낱말이다(§29 장식 0). */
-  .src-mark { font-family: 'Pretendard', sans-serif; font-size: 7.5pt; font-weight: 500; color: var(--p-muted); margin-left: 2mm; white-space: nowrap; }
+  .src-mark { font-family: 'Pretendard', sans-serif; font-size: 8.5pt; font-weight: 500; color: var(--p-muted); margin-left: 2mm; white-space: nowrap; }
 </style>
 </head>
 <body>

@@ -3580,21 +3580,36 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                     <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
                       한국어 전문을 복사해 번역기에 붙이고, 번역 결과를 그대로 복사해 되붙이면 아래 칸이 한 번에 채워집니다.
                       줄 수가 <span className="num">{lines.length}</span>줄로 같아야 하며 다르면 아무 칸도 채우지 않습니다.
-                      {flattened > 0 && ' 문장 안에서 줄이 바뀌는 항목은 한 줄로 이어 복사합니다.'}
+                      {flattened > 0 && ' 문장 안에서 줄이 바뀌는 항목은 한 줄로 이어 복사합니다.'}{' '}
+                      미리보기와 내보내기는 지금 입력한 번역으로 참고용 번역본 한 부를 만들어, 화면에서 보거나 파일로 받는 길입니다.
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Btn type="button" variant="secondary" size="sm" onClick={() => void copyAll()}>한국어 전문 복사</Btn>
-                      <Btn type="button" variant="secondary" size="sm" onClick={() => setPasteOpen(true)}>번역 붙여넣기</Btn>
+                    {/* 넷을 2 x 2 로 고정한다(디자이너 검수 2026-09-17). flex-wrap 에 맡기면 가용폭이
+                        304.2px 이상 386.2px 미만인 구간 — 402·412·430 기기 전부 — 에서 셋이 한 줄을
+                        채우고 넷째만 아래로 떨어져 외톨이가 된다. 고정하면 열 폭이 390·402·430 에서
+                        143·149·163px 라 라벨이 전부 한 줄에 선다(가장 긴 '한국어 전문 복사' 가 114.1px).
+                        320px 에서만 열이 108px 라 그 라벨이 두 줄로 접히는데, 접힘은 min-h 가 받고
+                        가로로는 넘치지 않는다 — whitespace-nowrap 을 붙이면 반대로 넘친다.
+                        문법은 같은 파일 :1696·:3153 의 버튼 줄과 한 벌이다(flex gap-2 + flex-1).
+                        변형이 secondary 가 아니라 subtle 인 이유. 이 면이 --cream-soft 인데 secondary 의
+                        바탕도 --cream-soft 라, 다크에서 둘 다 --d-card-2 로 **완전히 같은 색**이 되고
+                        경계가 --warm-border(8% 알파) 자국뿐이었다(디자이너 검수 2026-09-17). subtle 의
+                        --camel 40% 테두리는 같은 면 위 대비가 1.23:1 에서 2.21:1 로 올라 버튼이 버튼으로
+                        읽힌다. 넷이 한 벌이므로 변형도 넷이 같다. */}
+                    <div className="flex gap-2">
+                      <Btn type="button" variant="subtle" size="sm" className="flex-1" onClick={() => void copyAll()}>한국어 전문 복사</Btn>
+                      <Btn type="button" variant="subtle" size="sm" className="flex-1" onClick={() => setPasteOpen(true)}>번역 붙여넣기</Btn>
+                    </div>
+                    <div className="flex gap-2">
                       {/* 셋째 자리다. 앞의 둘과 같이 **저장하지 않는 도구**라 한 벌로 묶인다 —
                           저장 축(아래 저장 버튼)과 섞이면 어느 것이 종이에 실리는지 흐려진다.
                           보는 언어는 위 셀렉트가 정한다(원천이 lang state 라 저절로 따라간다). */}
-                      <Btn type="button" variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>미리보기</Btn>
+                      <Btn type="button" variant="subtle" size="sm" className="flex-1" onClick={() => setPreviewOpen(true)}>미리보기</Btn>
                       {/* 넷째 자리. 성격이 앞 셋과 정확히 같다 — 저장하지 않고, 지금 편집 중인
                           언어를 그대로 따라간다. 미리보기는 창을 끄면 사라지지만 이 종이는 남아
                           읽을 줄 아는 사람에게 보낼 수 있다(운영자 오더 2026-09-17).
                           라벨을 넘기지 않는다 — 이름 정의처는 컴포넌트 하나다(doc-vocabulary). */}
                       <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
-                        className={btnClass('secondary', 'sm')} />
+                        className={btnClass('subtle', 'sm', 'flex-1')} />
                     </div>
                   </div>
                 )}
@@ -3735,7 +3750,7 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
           footer={(
             <ModalFooterActions onCancel={() => setPreviewOpen(false)} cancelLabel="닫기">
               <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
-                className={btnClass('secondary', 'md')} />
+                className={btnClass('primary', 'md')} />
             </ModalFooterActions>
           )}>
           {/* 안내 문법은 발급 시트의 같은 줄과 한 벌이다. 계약이 없는 자리라 조항 안의 값은

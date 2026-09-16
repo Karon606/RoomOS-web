@@ -107,25 +107,61 @@ export function probeAfterEntrance(onProbe: (probe: string) => void): () => void
   return () => { cancelled = true; for (const id of rafs) cancelAnimationFrame(id) }
 }
 
-/** 한 줄의 이름 — 'vv h=812 …' 의 'vv', 'kbd-open=n' 의 'kbd-open'. 다른 줄을 짚을 때 쓴다. */
-function lineName(line: string): string {
-  return line.split(/[\s=]/)[0] || line
+/** 토큰의 이름 — 'h=812' 의 'h', 'kbd-open=n' 의 'kbd-open'. 값이 없는 토큰은 그 자신이다. */
+function tokenName(tok: string): string {
+  const at = tok.indexOf('=')
+  return at < 0 ? tok : tok.slice(0, at)
 }
 
 /**
- * 두 스냅샷을 **나란히** 적는다. 같으면 한 덩이로 접고, 다르면 둘 다 펴고 달라진 줄을 짚는다.
+ * 그 줄에서 **달라진 열쇠**의 이름들. 'modal open=2 등장모션잔존=0' 이면 'modal 등장모션잔존'
+ * 처럼 어느 값이 갈렸는지까지 짚는다.
+ *
+ * 줄 이름만 짚던 종전에는 이 계측이 겨누는 바로 그 값이 2 에서 0 으로 갈려도 머리줄이
+ * '달라진 줄: modal' 이라고만 적었고, 변수 넷이 든 vars 줄도 무엇이 바뀌었든 'vars' 하나로
+ * 접혔다(디자이너 검수 2026-09-17). 짚어 준다는 약속이 가장 중요한 두 줄에서만 안 지켜졌다.
+ *
+ * 줄 모양 자체가 바뀌면(토큰 수가 다름 — 'vv h=…' 이 'vv 미지원' 이 되는 경우) 열쇠를 짝지을
+ * 수 없으므로 머리말 하나로 답한다. 없는 말을 지어내는 것보다 덜 말하는 편이 낫다.
+ */
+function changedNames(before: string | undefined, after: string | undefined): string[] {
+  const a = (before ?? '').split(/\s+/).filter(Boolean)
+  const b = (after ?? '').split(/\s+/).filter(Boolean)
+  const src = b.length > 0 ? b : a
+  // 머리말 — 'vv'·'modal' 처럼 = 가 없는 첫 토큰. 'kbd-open=n' 같은 줄은 머리말이 없다.
+  const head = src[0] && !src[0].includes('=') ? src[0] : ''
+  const fallback = head || tokenName(src[0] ?? '')
+  if (a.length !== b.length) return [fallback]
+  const names: string[] = []
+  for (let i = 0; i < b.length; i++) {
+    if (a[i] === b[i]) continue
+    // 값이 없는 토큰(태그명 같은 것)은 이름이 곧 값이라 머리말로 답한다.
+    const name = b[i].includes('=')
+      ? (head ? `${head} ${tokenName(b[i])}` : tokenName(b[i]))
+      : fallback
+    if (!names.includes(name)) names.push(name)
+  }
+  return names.length > 0 ? names : [fallback]
+}
+
+/**
+ * 두 스냅샷을 **나란히** 적는다. 같으면 한 덩이로 접고, 다르면 둘 다 펴고 달라진 열쇠를 짚는다.
  * 줄 문법은 viewportProbe 그대로다 — 읽는 눈과 scripts/ 의 그물이 같은 것을 본다.
+ *
+ * 스냅샷이 하나뿐이어도 **머리줄을 단다**(디자이너 검수 2026-09-17). 라벨 없는 한 덩이는 옛 형식
+ * 신고와 생김새가 같아, 읽는 쪽이 '두 번 재는 기능이 없던 때의 신고'인지 '이번 신고인데 열었을
+ * 때를 못 잰 것'인지 가를 수 없었다. 그 둘은 다음 재현에서 볼 곳이 서로 다르다.
  */
 export function probeReport(openedProbe: string | null, submitProbe: string): string {
   if (!submitProbe) return ''
-  if (!openedProbe) return submitProbe
+  if (!openedProbe) return `제출할 때만\n${submitProbe}`
   if (openedProbe === submitProbe) return `열었을 때·제출할 때 같음\n${submitProbe}`
   const a = openedProbe.split('\n')
   const b = submitProbe.split('\n')
   const changed: string[] = []
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if (a[i] !== b[i]) {
-      const name = lineName(b[i] ?? a[i] ?? '')
+    if (a[i] === b[i]) continue
+    for (const name of changedNames(a[i], b[i])) {
       if (!changed.includes(name)) changed.push(name)
     }
   }
