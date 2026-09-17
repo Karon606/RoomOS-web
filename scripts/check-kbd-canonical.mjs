@@ -100,13 +100,51 @@ need('lib/useVisibleBand.ts', [
   // 있었고 인셋은 vv.height 를 날것으로 썼다 — 관문을 세워 놓고 옆문을 열어 둔 셈이다.
   [/bandHeight\(/, '띠 높이가 정본 관문(bandHeight)을 안 지난다. 찢어진 스냅샷이 그대로 박힌다'],
 ])
-// 날것 대입은 낱말이 아니라 **모양**으로 막는다. overlayInsets 에 vv.height 가 바로 들어오면
-// 그것이 곧 종전 결함이다(관문을 지난 값의 이름이 무엇이든 vv.height 만 아니면 된다).
+// 날것 대입은 낱말이 아니라 **사거리**로 막는다(독립 검수 2026-09-17).
+//
+// 종전 판정은 `overlayInsets({ ... height: vv.height` 라는 **문자열 한 모양**만 봤다. 검수가
+// `height: h` 를 `height: Math.round(vv.height)` 로 한 군데 바꿔 보였는데, 게이트가 전부 초록인
+// 채 결함이 글자 그대로 복원됐다 — 진리표는 순수 함수만 부르니 훅을 한 줄도 안 지나고, 낱말
+// 그물은 한 겹 감싸기에 뚫린다. 그래서 **모양이 아니라 사거리**를 본다. sync 함수 본문을
+// 중괄호 깊이로 잘라 그 안에 vv.height 가 한 번이라도 나오면 위반이다.
+//
+// 1차 방어는 그물이 아니라 구조다 — sync 는 이제 (h, offsetTop, innerHeight) 를 인자로만 받고
+// vv 를 안 본다. 정본대로면 이 본문에 `vv.` 가 아예 없다. 아래 둘은 그 구조가 되돌려지는 것까지
+// 잡는 보조다.
 {
   let src = ''
   try { src = strip(readFileSync('lib/useVisibleBand.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
-  if (/overlayInsets\(\s*\{[^}]*height:\s*vv\.height/.test(src)) {
-    violations.push('lib/useVisibleBand.ts — 오버레이 인셋이 vv.height 를 날것으로 쓴다. 높이는 관문을 지나는데 인셋만 안 지나면 둘이 갈린다(신고 bf0a6fff)')
+  if (src) {
+    const at = src.indexOf('const sync = (')
+    if (at < 0) {
+      violations.push('lib/useVisibleBand.ts — 인셋을 적는 sync 를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
+    } else {
+      // (1) 구조 — 스냅샷 두 항을 인자로 받는가. 클로저로 되돌아가면 사거리가 다시 열린다.
+      const sig = /const sync = \(([^)]*)\)/.exec(src.slice(at))
+      const params = sig ? sig[1] : ''
+      for (const p of ['offsetTop', 'innerHeight']) {
+        if (!new RegExp(`\\b${p}\\b`).test(params)) {
+          violations.push(`lib/useVisibleBand.ts — sync 가 ${p} 을 인자로 안 받는다. vv 를 클로저로 보면 날것 대입이 다시 사거리에 선다(신고 bf0a6fff)`)
+        }
+      }
+      // (2) 사거리 — 본문을 중괄호 깊이로 자르고 그 안의 vv 접근을 전부 막는다.
+      let depth = 0, start = -1, end = -1
+      for (let i = at; i < src.length; i++) {
+        const c = src[i]
+        if (c === '{') { if (depth === 0) start = i; depth++ }
+        else if (c === '}') { depth--; if (depth === 0) { end = i; break } }
+      }
+      if (start < 0 || end < 0) {
+        violations.push('lib/useVisibleBand.ts — sync 본문을 잘라낼 수 없다. 못 읽으면 통과가 아니라 위반이다')
+      } else if (/\bvv\s*\./.test(src.slice(start, end))) {
+        violations.push('lib/useVisibleBand.ts — sync 본문이 vv 를 직접 읽는다. 인셋은 관문을 지난 값만 써야 하고, Math.round( 한 겹을 씌워도 여기서 걸린다(신고 bf0a6fff)')
+      }
+    }
+    // (3) 한 스냅샷 — 세 항을 읽는 자리는 pass 하나뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
+    const reads = [...src.matchAll(/\bvv\.height\b/g)].length
+    if (reads !== 1) {
+      violations.push(`lib/useVisibleBand.ts — vv.height 를 읽는 자리가 ${reads} 군데다. 한 스냅샷 한 관문이려면 pass 안의 한 번뿐이어야 한다`)
+    }
   }
 }
 // 편집 포커스 판정은 한 곳에서만 한다 — 두 소유자가 생기면 한쪽만 참인 구간에서 어긋난다.

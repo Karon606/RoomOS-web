@@ -50,8 +50,8 @@ export function useVisibleBand(opts: {
     // 규칙 둘은 종전 그대로고(실측 2026-08-29), 판정은 정본 bandHeight 한 자리에서 한다.
     //   · 불가능값(120 미만)은 버리고 직전 유효값을 쓴다 — usableVvHeight.
     //   · **줄이는 것은 resize 에서만, 늘리는 것은 언제든** — shouldWriteVvHeight.
-    const gatedHeight = (allowShrink: boolean): number | null => {
-      const h = bandHeight(vv.height, lastGoodH, allowShrink)
+    const gatedHeight = (height: number, allowShrink: boolean): number | null => {
+      const h = bandHeight(height, lastGoodH, allowShrink)
       if (h != null) lastGoodH = h
       return h
     }
@@ -66,20 +66,37 @@ export function useVisibleBand(opts: {
       lastHeight = next
     }
 
-    const sync = (h: number | null) => {
+    // **인자로만 받는다 — 여기서는 vv 를 안 본다**(독립 검수 2026-09-17). 종전에는 이 함수가
+    // vv 를 클로저로 봤고, 그래서 `height: h` 를 `height: Math.round(vv.height)` 로 한 군데만
+    // 되돌리면 그물이 전부 초록인 채 결함이 글자 그대로 복원됐다(문자열만 보던 판정이
+    // Math.round( 한 겹에 뚫렸다). 날것이 **사거리에 없게** 구조를 바꾼 것이 1차 방어고,
+    // check-kbd-canonical 이 이 함수 본문에 vv.height 가 있는지를 보는 것이 2차다.
+    const sync = (h: number | null, offsetTop: number, innerHeight: number) => {
       const ov = overlayRef.current
       if (!ov) return
-      if (h == null) return                              // 아직 못 읽었다 — 0 폴백 그대로(높이와 같은 규칙)
+      // 아직 못 읽었다 — CSS 폴백 그대로 둔다(높이와 같은 규칙). 폴백은 받는 쪽이 정하고
+      // 0 이 아닌 자리도 있다: Modal 은 위가 0px, 아래가 var(--kbd-inset, 0px) 다
+      // (components/ui/Modal.tsx:187).
+      if (h == null) return
       // 위·아래 여백 둘 다에 상한 — 어긋난 스냅샷 한 장에 패널이 내려가며 작아지거나(8-29),
       // 위로 붙어 눌리던(bf0a6fff) 그 자리다. 클램프는 정본 overlayInsets 가 한다.
-      const ins = overlayInsets({ innerHeight: window.innerHeight, height: h, offsetTop: vv.offsetTop })
+      const ins = overlayInsets({ innerHeight, height: h, offsetTop })
       const top = `${ins.top}px`
       const bottom = `${ins.bottom}px`
       if (top !== lastTop) { ov.style.setProperty(varTop, top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty(varBottom, bottom); lastBottom = bottom }
     }
-    // 높이와 인셋을 **한 스냅샷 한 관문**으로 함께 적는다. 둘을 따로 부르면 또 갈린다.
-    const pass = (allowShrink: boolean) => { const h = gatedHeight(allowShrink); syncSize(h); sync(h) }
+    // **한 스냅샷 한 관문.** 세 항을 같은 순간에 한 번씩만 읽어(찢어짐 방지) 높이만 관문
+    // bandHeight 를 지나고, 나머지 둘은 그 높이와 짝지어 overlayInsets 의 클램프로 들어간다.
+    // 읽는 자리가 여기 하나뿐이라 높이와 인셋이 다른 프레임의 값을 섞을 길이 없다.
+    const pass = (allowShrink: boolean) => {
+      const height = vv.height
+      const offsetTop = vv.offsetTop
+      const innerHeight = window.innerHeight
+      const h = gatedHeight(height, allowShrink)
+      syncSize(h)
+      sync(h, offsetTop, innerHeight)
+    }
     // vv 의 resize — 키보드가 서서 띠가 진짜 주는 길이다. 여기서는 줄이는 값을 받는다(8-29 규칙).
     const both = () => pass(true)
     // 팬은 위치만 옮긴다. 크기는 커지는 쪽만 받아 복귀 직후 작게 찍힌 값이 여기서 씻긴다.

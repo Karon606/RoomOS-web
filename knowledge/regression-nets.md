@@ -302,6 +302,26 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   임포트만 남기고 호출 삭제·`allSettled`→`all`·`playState` 느슨화·ref 떼기·ref 이름 엇갈리기·
   막 지우기·`opacity:0` 기본 규칙·`fill: both`·없는 층 토큰·계측 수법 우회). 자세히는 [[domain-modal-shell]].
 
+**낱말 그물은 한 겹 감싸기에 뚫린다(독립 검수 2026-09-17).** 위 날것 금지는 종전에
+`overlayInsets(… height: vv.height` 라는 **문자열 한 모양**만 봤다. 검수가 `height: h` 를
+`height: Math.round(vv.height)` 로 한 군데 바꿔 보였는데 게이트가 전부 초록인 채 결함이 글자
+그대로 복원됐다 — 진리표는 순수 함수만 부르니 훅을 한 줄도 안 지난다. 봉합은 둘이다.
+**1차는 구조** — `sync` 가 `vv` 를 클로저로 안 보고 `(h, offsetTop, innerHeight)` 를 인자로만
+받게 해서 날것이 **사거리에 없게** 했다. **2차가 그물** — `check-kbd-canonical` 이 `sync` 본문을
+중괄호 깊이로 잘라 그 안의 `vv.` 접근을 막고, 인자 두 항이 빠져도, `vv.height` 를 읽는 자리가
+하나가 아니어도 빨개진다. 낱말이 아니라 사거리를 보는 것이 이 축의 문법이다.
+
+**같은 회차에 메운 그물 구멍 셋.** (ㄱ) `useSettleEntrance` 호출을 `indexOf` 로 **첫 하나**만
+읽던 것을 전수로, (ㄴ) 등장 클래스를 단 태그도 첫 하나만 보던 것을 전수로, (ㄷ) 자식 딤을
+"뒤에 오는 것 아무거나"로 고르던 것을 **여는 태그의 짝까지 세어 서브트리 안에서만** 찾게
+했다(앞 오버레이가 뒤쪽 다른 컴포넌트의 딤을 빌려 통과하던 자리).
+
+**새 축 둘.** 등장 모션이 **실제로 도는지**를 본다 — `.anim-X { animation: X <길이> }` 규약과
+`@keyframes` 실재와 길이 0 금지(`check-overlay-backdrop`), 마감 정본이 그 이름으로 묻는가
+(`check-overlay-resume-resync`). 즉시 제거 가지가 잘못 발동하면 앱의 모든 모달 페이드가 조용히
+사라지는데 종전에는 게이트가 한 줄도 안 변했다. 그리고 정본 `Modal` 의 막 **농도 값**을
+대조한다(`bg-black/70`, 가이드 v2.0 §13 모드 불변) — 존재만 보던 축은 `bg-black/5` 도 통과했다.
+
 **알려진 공백을 목록에 올리는 문법을 썼다.** `check-unit-basis-wiring` 의 `KNOWN_GAPS` 는
 `components/ui/SpecWizard.tsx` 를 사유와 함께 담고, 그 파일이 `unitBasis` 를 더 이상 안 다루면
 "목록에서 내려라"고 빨개진다. 조용한 공백보다 낫다(`check-kbd-canonical` 의 ALLOW 와 같은 문법).

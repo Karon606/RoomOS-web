@@ -13,10 +13,25 @@
 //
 // 시간은 한 글자도 안 쓴다. 벽시계로 마감하는 것은 2026-09-08 결정이 금지한 함정이다.
 
-/** 이 엘리먼트에서 **지금 도는** 애니메이션들. 미지원 환경·없는 엘리먼트는 빈 배열이다. */
-export function runningAnimations(el: Element | null | undefined): Animation[] {
+/**
+ * 이 엘리먼트에서 **지금 도는** 애니메이션들. 미지원 환경·없는 엘리먼트는 빈 배열이다.
+ *
+ * `names` 를 주면 그 이름의 CSS 애니메이션만 센다(독립 검수 2026-09-17). 안 거르면 그 층에
+ * 붙은 **모든** 도는 애니메이션이 섞인다 — 무한히 도는 것(`animate-pulse` 같은 로딩 표시)이
+ * 하나라도 있으면 `finished` 가 영영 안 풀려 등장 클래스가 영영 안 걷힌다. 굳은 모션을 고치러
+ * 온 코드가 정반대로 굳히는 자리다.
+ *
+ * 이름은 `@keyframes` 의 이름이고 `CSSAnimation.animationName` 으로 읽는다. 스크립트가 만든
+ * 애니메이션(`Animation`)에는 그 속성이 없으므로 `names` 를 준 물음에서는 자연히 빠진다.
+ */
+export function runningAnimations(el: Element | null | undefined, names?: readonly string[]): Animation[] {
   if (!el || typeof el.getAnimations !== 'function') return []
-  return el.getAnimations().filter(a => a.playState === 'running')
+  const running = el.getAnimations().filter(a => a.playState === 'running')
+  if (!names) return running
+  return running.filter(a => {
+    const n = (a as Animation & { animationName?: string }).animationName
+    return typeof n === 'string' && names.includes(n)
+  })
 }
 
 /** 넘긴 애니메이션들이 **어떤 식으로든 끝날 때까지**. 취소도 끝이므로 거부를 삼킨다. */

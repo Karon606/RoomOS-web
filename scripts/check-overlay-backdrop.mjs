@@ -25,8 +25,10 @@ const CSS = 'app/globals.css'
 // 조용한 공백보다 낫다. 파일이 더 이상 걸리지 않으면 "목록에서 내려라"고 빨개진다.
 const KNOWN_GAPS = new Map([
   ['components/ui/inventory/MergeSheet.tsx|불투명도',
-    '등장이 정본 모션이 아니라 setTimeout(10ms) + transition-opacity 토글이다. 같은 클래스의 위험이지만 '
-    + '고치면 모션 곡선·길이가 바뀌어 웹디자이너 패스가 필요하다 — bf0a6fff 시공 범위 밖(운영자 결정 대기)'],
+    '등장이 정본 모션이 아니라 setTimeout(10ms) + transition-opacity 토글이고 마감 정본이 아예 없다. '
+    + '딤은 absolute inset-0 로 전면을 덮고 onClick 에 닫기가 걸려 있어, 전이가 중간에 멎으면 옅은 막이 '
+    + '화면을 덮고 조작을 먹는다 — 신고 bf0a6fff 와 같은 증상이다. 여덟 중 유일하게 animationend 도 '
+    + 'visibilitychange 도 안 듣는 자리라 회복 경로가 없다. 곡선·길이가 바뀌므로 웹디자이너 패스 대상(운영자 결정 대기)'],
 ])
 
 function walk(p, out = []) {
@@ -64,6 +66,13 @@ function enclosingTag(src, pos) {
 /** 이 태그가 막을 칠하는가 — 클래스든 인라인이든, 색이 실제로 실려 있는가. */
 const PAINTS_DIM = /bg-black\/|bg-white\/|bg-\[rgba\(|bg-\[#|bg-\[var\(--(canvas|cream|ink)\)\]|background:\s*['"]?(rgba?\(|var\(|#)/
 
+// 농도의 **값**을 대조하는 자리 — 존재만 보면 bg-black/5 도 통과한다(독립 검수 2026-09-17).
+// 전 화면에 값을 못 박을 수는 없다(시트·라이트박스는 제 농도가 따로 있다). 가이드가 숫자까지
+// 정해 둔 정본 한 자리에만 건다 — v2.0 §13 "backdrop rgba 검정 70%(모드 불변)".
+const CANON_DIM = new Map([
+  ['components/ui/Modal.tsx', { re: /\bbg-black\/70\b/, what: 'bg-black/70(가이드 v2.0 §13 검정 70%, 모드 불변)' }],
+])
+
 /**
  * 이 태그가 쓰는 층 토큰들. 클래스가 변수로 들어오는 자리(Modal 의 `${zClass}`)는 그 변수의
  * 선언까지 따라가 읽는다 — 태그만 보면 정본을 지키는 코드가 위반으로 잡힌다.
@@ -87,6 +96,36 @@ function zTokens(tag, src) {
     out.push(...[...src.slice(at, end).matchAll(/var\(--z-([\w-]+)\)/g)].map(t => t[1]))
   }
   return out
+}
+
+/**
+ * 여는 태그 `tag` 의 **서브트리가 끝나는 인덱스.** 자기 닫힘이면 태그 끝이다.
+ *
+ * 왜 세나(독립 검수 2026-09-17). 자식 딤을 "뒤에 오는 것 아무거나"로 고르면 한 파일의 앞
+ * 오버레이가 뒤쪽 다른 컴포넌트의 딤을 빌려 통과한다. 같은 이름의 여는·닫는 태그를 세되
+ * 자기 닫힘(`/>`)은 깊이를 안 올린다.
+ */
+function subtreeEnd(src, tag) {
+  if (/\/>\s*$/.test(tag.text)) return tag.end
+  const name = /^<([A-Za-z][\w.:-]*)/.exec(tag.text)?.[1]
+  if (!name) return tag.end
+  const marks = []
+  for (const m of src.matchAll(new RegExp(`<${name}(?=[\\s/>])`, 'g'))) marks.push({ at: m.index, open: true, end: m.index })
+  for (const m of src.matchAll(new RegExp(`</${name}\\s*>`, 'g'))) marks.push({ at: m.index, open: false, end: m.index + m[0].length })
+  marks.sort((a, b) => a.at - b.at)
+  let depth = 0
+  for (const mk of marks) {
+    if (mk.at < tag.start) continue
+    if (mk.open) {
+      const t = enclosingTag(src, mk.at + 1)
+      if (t && /\/>\s*$/.test(t.text)) continue        // 자기 닫힘은 깊이를 안 올린다
+      depth++
+    } else {
+      depth--
+      if (depth <= 0) return mk.end
+    }
+  }
+  return src.length                                     // 짝을 못 찾으면 파일 끝까지(종전과 같은 넓이)
 }
 
 const violations = []
@@ -146,12 +185,22 @@ for (const f of files) {
     overlays++
     const at = `${f}:${src.slice(0, root.start).split('\n').length}`
 
-    // (1) 존재 — 제 몸에 칠하거나, 자식 딤이 대신 칠한다.
+    // (1) 존재 — 제 몸에 칠하거나, **제 서브트리 안의** 자식 딤이 대신 칠한다.
+    //
+    // 종전에는 `d.start > root.start` 하나로 골랐다(독립 검수 2026-09-17). 그러면 한 파일에
+    // 오버레이가 둘일 때 앞 오버레이가 **뒤쪽 다른 컴포넌트의 딤**을 빌려 통과한다 — 막이 없는
+    // 오버레이가 초록으로 남는 자리다. 여는 태그의 닫는 짝까지 세어 서브트리로 가둔다.
     const selfDim = PAINTS_DIM.test(root.text)
-    const dim = selfDim ? root : childDims.find(d => d.start > root.start)
+    const rootEnd = subtreeEnd(src, root)
+    const dim = selfDim ? root : childDims.find(d => d.start > root.start && d.end <= rootEnd)
     if (!dim) {
       gap(`${f}|존재`, `${at} — 다이얼로그 오버레이인데 막을 칠하는 자리가 없다. 뒤 목록이 그대로 비친다(가이드 §08 오버레이 층)`)
       continue
+    }
+    // (1-b) 농도의 값 — 가이드가 숫자까지 정해 둔 정본 한 자리에만 건다.
+    const canon = CANON_DIM.get(f)
+    if (canon && !canon.re.test(dim.text)) {
+      violations.push(`${at} — 정본 모달의 막 농도가 ${canon.what} 이 아니다. 존재만 보던 축은 bg-black/5 도 통과시켰다`)
     }
 
     // (2) 불투명도 — **막의 색은 기본 스타일이 진다.** 모션이나 토글만으로 불투명도가 올라오면,
@@ -174,7 +223,7 @@ for (const f of files) {
     if (!selfDim) {
       // 딤이 형제면 뒤에 오는 패널이 stacking 을 세워야 한다. relative 가 없으면 나중에 그린
       // 딤이 패널을 덮어 클릭이 전부 배경으로 간다.
-      const after = src.slice(dim.end)
+      const after = src.slice(dim.end, rootEnd)
       const panel = enclosingTag(after, after.search(/<[A-Za-z]/) + 1)
       if (!panel || !/\brelative\b/.test(panel.text)) {
         gap(`${f}|z`, `${at} — 형제 딤 바로 뒤 패널에 relative 가 없다. 딤이 패널을 덮어 조작이 배경으로 샌다`)
@@ -198,6 +247,29 @@ try {
     }
     if (/\b(backwards|both)\b/.test(body)) {
       violations.push(`${CSS} — .${cls} 가 fill-mode 로 시작 프레임을 붙잡는다. 멎은 모션이 투명한 첫 프레임에 영구히 굳는다`)
+    }
+    // **모션이 실제로 돌긴 하는가**(독립 검수 2026-09-17). 위 둘은 "멎었을 때 안 굳는가"를
+    // 보는데, 그 반대쪽에는 게이트가 하나도 없었다 — 등장이 통째로 사라져도 화면 말고는
+    // 아무도 모른다. 특히 마감 정본의 즉시 제거 가지가 잘못 발동하면 앱의 **모든** 모달
+    // 페이드가 조용히 없어지는데 종전 게이트는 한 줄도 안 변했다.
+    const shorthand = /animation\s*:\s*([\w-]+)\s+([\d.]+)(ms|s)\b/.exec(body)
+    if (!shorthand) {
+      violations.push(`${CSS} — .${cls} 에 '이름 + 길이' 꼴 animation 선언이 없다. 등장 모션이 사라져도 게이트가 안 변한다`)
+      continue
+    }
+    const [, name, num, unit] = shorthand
+    if ((unit === 's' ? Number(num) * 1000 : Number(num)) <= 0) {
+      violations.push(`${CSS} — .${cls} 의 모션 길이가 ${num}${unit} 다. 0 이면 등장이 없는 것과 같다`)
+    }
+    if (!new RegExp(`@keyframes\\s+${name}\\b`).test(css)) {
+      violations.push(`${CSS} — @keyframes ${name} 이 없다. 클래스는 서 있는데 도는 것이 없다`)
+    }
+    // 이름 규약 `.anim-X { animation: X ... }` — 마감 정본(lib/useSettleEntrance)이 클래스에서
+    // 'anim-' 만 떼어 이 이름으로 "지금 도는가"를 묻는다. 어긋나면 늘 "안 돌고 있다"로 답해
+    // 등장 클래스가 첫 프레임에 즉시 걷히고 페이드가 조용히 사라진다.
+    const want = cls.replace(/^anim-/, '')
+    if (name !== want) {
+      violations.push(`${CSS} — .${cls} 가 @keyframes ${name} 을 쓴다. 마감 정본은 'anim-' 만 뗀 '${want}' 로 묻는다 — 어긋나면 등장이 즉시 걷혀 페이드가 사라진다`)
     }
   }
   // 모션 축소 설정에서는 클래스가 통째로 무동작이어야 한다 — 그 무동작이 곧 '끝 상태'다.

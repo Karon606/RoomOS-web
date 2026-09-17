@@ -16,6 +16,7 @@ import { smsBodyFor, t, bi, biLine, subLangOf, SIGN_LANG_LABEL, type SignLang } 
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { SendDocButton } from '@/components/ui/SendDocButton'
+import { useSettleEntrance } from '@/lib/useSettleEntrance'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
@@ -1257,6 +1258,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const remaining = missingSlots({ slots: docSlots })
   const canSubmit = signStageSlots({ slots: docSlots }) === 'complete'
 
+  // 하단 원격 알약의 **등장 마감**(독립 검수 2026-09-17). `.anim-panel-in` 은 멎으면 그 첫
+  // 프레임(투명 + 10px 아래)에 굳는다. 이 층은 화면을 안 덮을 뿐 규칙은 같다 — 등장 클래스를
+  // 쓰면 마감이 있어야 한다. 여기서 굳으면 "다 하셨습니다" 알약과 제출 버튼이 통째로 안 보이고,
+  // 그것이 506호가 제출 없이 나간 사고와 같은 결말이다. 정본 한 벌로 마감한다.
+  const remotePillRef = useRef<HTMLDivElement>(null)
+  useSettleEntrance({ active: remote && canSubmit && !signOpen, panelRef: remotePillRef })
+
   // 원어 성명 칸 — 마지막 서명이 끝나면 한 번 데려간다(운영자 오더 2026-09-07 "어디에서 뭘
   // 입력해야 하는지 인지되게"). 문장 신설 대신 이동이다 — 제출 확인창은 이미 세 문장이고,
   // 위치 인지는 글보다 이동이 빠르다(패널 확정). 이미 적었거나 한 번 갔으면 다시 안 끈다.
@@ -2280,7 +2288,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
       {/* 하단 알약 — 비줌 상태 보조. 서명 오버레이(z 100) 열림 중엔 숨긴다(알약 z 120이 더 위). */}
       {remote && canSubmit && !signOpen && (
-        <div className="no-print remote-pill anim-panel-in">
+        <div ref={remotePillRef} className="no-print remote-pill anim-panel-in">
           <div className="remote-pill-inner">
             <span className="remote-pill-text" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'pill.allDone')}</span>
             <button onClick={handleRemoteSubmit} disabled={finalizing} className="toolbar-print remote-submit">

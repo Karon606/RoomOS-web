@@ -119,17 +119,29 @@ function enclosingTag(src, pos) {
   return null
 }
 
-/** `useSettleEntrance(` 의 인자 원문 — 괄호 깊이로 자른다. */
-function hookArgs(src) {
-  const at = src.indexOf('useSettleEntrance(')
-  if (at < 0) return null
-  const open = at + 'useSettleEntrance'.length
-  let depth = 0
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === '(') depth++
-    else if (src[i] === ')') { depth--; if (depth === 0) return src.slice(open + 1, i) }
+/**
+ * `useSettleEntrance(` **호출 전부**의 인자 원문과 그 범위. 괄호 깊이로 자른다.
+ *
+ * 종전에는 `indexOf` 로 **첫 호출 하나**만 봤다(독립 검수 2026-09-17). 한 파일이 오버레이를
+ * 둘 이상 가지면 둘째부터는 배선이 어긋나 있어도 아무도 안 봤다 — 이 그물이 고치러 온 바로
+ * 그 결함("호출 한 줄만 보면 그물이 아니다")의 같은 클래스다.
+ * 못 자르는 호출이 하나라도 있으면 null 을 내고 호출부가 위반으로 센다.
+ */
+function hookCalls(src) {
+  const out = []
+  let at = src.indexOf('useSettleEntrance(')
+  while (at >= 0) {
+    const open = at + 'useSettleEntrance'.length
+    let depth = 0, close = -1
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '(') depth++
+      else if (src[i] === ')') { depth--; if (depth === 0) { close = i; break } }
+    }
+    if (close < 0) return null
+    out.push({ args: src.slice(open + 1, close), start: at, end: close })
+    at = src.indexOf('useSettleEntrance(', close)
   }
-  return null
+  return out
 }
 
 /** 객체 인자에서 키의 값 — 축약(`overlayRef`)과 명시(`overlayRef: ov`) 둘 다 읽는다. */
@@ -139,45 +151,68 @@ function argOf(obj, key) {
   return new RegExp(`(^|[{,\\s])${key}\\s*(,|\\}|$)`).test(obj) ? key : null
 }
 
+// **오버레이인지는 안 묻는다**(독립 검수 2026-09-17). 종전에는 `fixed inset-0` 을 같이 요구해
+// 전체 화면이 아닌 층은 그물 밖이었다 — 계약서 원격 알약(app/contract/[tenantId]/ContractView.tsx)
+// 이 정확히 그 틈에 서 있었다. "등장 클래스를 쓰면 마감이 있어야 한다"는 규칙은 그 층이 화면을
+// 덮는지와 무관하다. 멎으면 막이 남느냐 알약이 안 보이느냐로 증상만 달라진다.
 const ENTRANCE = /anim-(overlay|panel)-in/
 for (const root of ROOTS) {
   for (const f of walk(root)) {
     const src = stripComments(readFileSync(f, 'utf8'))
-    if (!src.includes('fixed inset-0') || !ENTRANCE.test(src)) continue
+    if (!ENTRANCE.test(src)) continue
     if (!/useSettleEntrance\(/.test(src)) {
       violations.push(`${f} — 등장 모션을 붙여 놓고 마감이 없다. 숨은 채 뜨면 첫 프레임에 굳어 반투명 막이 남는다(lib/useSettleEntrance)`)
       continue
     }
-    // (ㄱ) 배선 — 넘긴 ref 가 등장 클래스를 단 엘리먼트에 붙었는가.
-    const args = hookArgs(src)
-    if (args == null) {
+    // (ㄱ) 배선 — 넘긴 ref 가 등장 클래스를 단 엘리먼트에 붙었는가. **호출도 태그도 전수**다.
+    const calls = hookCalls(src)
+    if (calls == null || calls.length === 0) {
       violations.push(`${f} — useSettleEntrance 의 인자를 읽을 수 없다. 못 읽으면 통과가 아니라 위반이다`)
       continue
     }
     // 클래스 이름을 바꿔 부르는 자리가 생기면 그 이름으로 본다(기본값은 정본과 같다).
-    const clsOf = (key, dflt) => {
+    const clsOf = (args, key, dflt) => {
       const m = new RegExp(`\\b${key}\\s*:\\s*'([^']+)'`).exec(args)
       return m ? m[1] : dflt
     }
-    const pairs = [
-      ['overlayRef', clsOf('overlayClass', 'anim-overlay-in'), '오버레이'],
-      ['panelRef', clsOf('panelClass', 'anim-panel-in'), '패널'],
-    ]
-    for (const [key, cls, what] of pairs) {
-      const at = src.indexOf(cls)
-      const refName = argOf(args, key)
-      if (at < 0) continue                       // 그 클래스를 안 쓰는 화면(라이트박스 등)
-      if (!refName) {
-        violations.push(`${f} — ${what} 등장 클래스(${cls})를 붙였는데 훅에 ${key} 를 안 넘긴다. 그 층의 모션은 영영 안 걷힌다`)
+    // 어느 클래스를 어느 ref 가 맡았는가. 한 파일에 호출이 여럿이면 전부 모은다.
+    const wired = new Map()
+    const add = (cls, ref) => {
+      if (!wired.has(cls)) wired.set(cls, new Set())
+      if (ref) wired.get(cls).add(ref)
+    }
+    for (const { args } of calls) {
+      add(clsOf(args, 'overlayClass', 'anim-overlay-in'), argOf(args, 'overlayRef'))
+      add(clsOf(args, 'panelClass', 'anim-panel-in'), argOf(args, 'panelRef'))
+    }
+    // 이 파일이 실제로 붙인 등장 클래스들 — 훅 인자 안의 문자열 리터럴은 세지 않는다.
+    const inCall = pos => calls.some(c => pos > c.start && pos < c.end)
+    const used = new Map()
+    for (const cls of new Set([...wired.keys(), 'anim-overlay-in', 'anim-panel-in'])) {
+      const spots = []
+      let at = src.indexOf(cls)
+      while (at >= 0) {
+        if (!inCall(at)) spots.push(at)
+        at = src.indexOf(cls, at + cls.length)
+      }
+      if (spots.length > 0) used.set(cls, spots)
+    }
+    for (const [cls, spots] of used) {
+      const refs = wired.get(cls)
+      if (!refs || refs.size === 0) {
+        violations.push(`${f} — 등장 클래스(${cls})를 붙였는데 훅에 그 층의 ref 를 안 넘긴다. 그 층의 모션은 영영 안 걷힌다`)
         continue
       }
-      const tag = enclosingTag(src, at)
-      if (tag == null) {
-        violations.push(`${f} — ${cls} 를 단 태그를 잘라낼 수 없다. 못 읽으면 통과가 아니라 위반이다`)
-        continue
-      }
-      if (!new RegExp(`ref=\\{\\s*${refName}\\s*\\}`).test(tag)) {
-        violations.push(`${f} — ${cls} 를 단 엘리먼트에 ref={${refName}} 가 없다. 훅은 도는데 화면은 안 걷힌다(호출 한 줄만 보던 그물이 놓친 자리)`)
+      // **그 클래스를 단 태그 전부.** 종전에는 indexOf 로 첫 자리 하나만 봤다.
+      for (const at of spots) {
+        const tag = enclosingTag(src, at)
+        if (tag == null) {
+          violations.push(`${f} — ${cls} 를 단 태그를 잘라낼 수 없다. 못 읽으면 통과가 아니라 위반이다`)
+          continue
+        }
+        if (![...refs].some(r => new RegExp(`ref=\\{\\s*${r}\\s*\\}`).test(tag))) {
+          violations.push(`${f} — ${cls} 를 단 엘리먼트에 ref={${[...refs].join('|')}} 가 없다. 훅은 도는데 화면은 안 걷힌다(호출 한 줄만 보던 그물이 놓친 자리)`)
+        }
       }
     }
   }
@@ -202,6 +237,18 @@ try {
   if (!/runningAnimations\(/.test(hook)) {
     violations.push('lib/useSettleEntrance.ts — 붙는 시점에 "지금 돌고 있는가"를 안 묻는다. 이미 굳은 모션은 이벤트로 영영 안 온다(lib/animationSettled)')
   }
+  // **묻되 이 모션만 묻는다**(독립 검수 2026-09-17). 이름을 안 넘기면 같은 엘리먼트에 붙은
+  // 모든 도는 모션이 섞여, 무한히 도는 것(animate-pulse 류) 하나가 finished 를 영영 안 내준다 —
+  // 굳은 모션을 고치러 온 코드가 정반대로 등장 클래스를 영영 못 걷는다.
+  if (!/runningAnimations\([^)]*,\s*\[/.test(hook)) {
+    violations.push('lib/useSettleEntrance.ts — runningAnimations 에 모션 이름을 안 넘긴다. 그 층의 무한 모션 하나에 등장 클래스가 영영 안 걷힌다')
+  }
+  // 이름 짓는 규약(클래스에서 anim- 만 뗀다)이 사라지면 위 물음이 늘 "안 돌고 있다"로 답해
+  // 등장이 즉시 걷힌다 — 앱의 모든 모달 페이드가 조용히 사라진다. CSS 쪽 짝은
+  // check-overlay-backdrop 이 진다(.anim-X { animation: X ... }).
+  if (!/function motionName\(/.test(hook) || !/'anim-'/.test(hook)) {
+    violations.push("lib/useSettleEntrance.ts — 등장 클래스에서 @keyframes 이름을 짓는 규약(motionName)이 사라졌다. 이름이 어긋나면 등장이 즉시 걷혀 페이드가 사라진다")
+  }
 } catch {
   violations.push('lib/useSettleEntrance.ts 를 읽을 수 없음 — 등장 마감 정본이 사라졌다')
 }
@@ -214,6 +261,9 @@ try {
   }
   if (!/allSettled\(/.test(canon)) {
     violations.push('lib/animationSettled.ts — allSettled 가 아니다. 취소도 끝의 한 갈래인데 거부로 새면 마감이 영영 안 온다')
+  }
+  if (!/animationName/.test(canon)) {
+    violations.push('lib/animationSettled.ts — animationName 으로 거르는 갈래가 사라졌다. 이름을 넘겨도 그 층의 모든 모션이 섞인다')
   }
 } catch {
   violations.push('lib/animationSettled.ts 를 읽을 수 없음 — 모션 마감 수법 정본이 사라졌다')

@@ -28,6 +28,17 @@
 import { useEffect, type RefObject } from 'react'
 import { runningAnimations, whenAnimationsSettled } from '@/lib/animationSettled'
 
+/**
+ * 등장 클래스 이름에서 `@keyframes` 이름을 얻는다 — `anim-overlay-in` 이면 `overlay-in`.
+ *
+ * 규약은 app/globals.css §25.3 이 지키고 scripts/check-overlay-backdrop.mjs 가 대조한다
+ * (`.anim-X { animation: X ...; }`). 이 짝이 어긋나면 아래 물음이 늘 "안 돌고 있다"로 답해
+ * 앱의 모든 모달 페이드가 조용히 사라진다 — 그물이 그 자리를 본다.
+ */
+function motionName(cls: string): string {
+  return cls.startsWith('anim-') ? cls.slice('anim-'.length) : cls
+}
+
 export function useSettleEntrance(opts: {
   /** 오버레이가 떠 있는 동안만 건다. */
   active: boolean
@@ -64,7 +75,10 @@ export function useSettleEntrance(opts: {
     let cancelled = false
     const settleWhenIdle = (el: HTMLElement | null, cls: string) => {
       if (!el) return
-      const running = runningAnimations(el)
+      // **그 층의 모든 모션이 아니라 이 등장 모션만 묻는다**(독립 검수 2026-09-17). 안 거르면
+      // 같은 엘리먼트에 붙은 무한 모션 하나가 finished 를 영영 안 내줘서 등장 클래스가 영영
+      // 안 걷힌다 — 굳은 모션을 고치러 온 코드가 정반대로 굳히는 자리다.
+      const running = runningAnimations(el, [motionName(cls)])
       if (running.length === 0) { el.classList.remove(cls); return }   // 안 돌고 있다 — 그 자리에서 걷는다
       void whenAnimationsSettled(running).then(() => { if (!cancelled) el.classList.remove(cls) })
     }
