@@ -1094,3 +1094,62 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
       지우는 수법** 3종 포함. 원복은 백업 `cp` + `cmp` 일치 확인(`git checkout --` 안 씀)
 - [x] 다크·라이트 둘 다 기하 동일(새 토큰 0). 라이트 색 티어 부재는 구분자로 메웠다
 - [ ] 운영자 실기 확인 — 로그인한 실제 화면은 못 봤다(헤드리스로 정본 폭·토큰 재현)
+
+### 3-d 운영자 승인 미결 세 건 (2026-09-17, 미푸시 `28dc2e1f` 위)
+
+독립 검수가 사실을 바로잡은 뒤 운영자가 셋을 승인했다. (1) MergeSheet 회복 경로
+(2) 다크에서 버튼이 면에 묻히는 7군데 (3) 그 규칙을 가이드에 등재하고 그물을 세운다.
+
+#### 1 MergeSheet 에 회복 경로를 붙인다
+
+- [x] **정본을 넓혔다 — 두 벌로 안 만들었다.** `lib/animationSettled.ts:67` 에 `stuckTransitions(el)`
+      하나. 종전 두 함수는 이름을 `animationName` 으로 읽어 CSS 전이를 못 본다(전이의 이름은
+      `transitionProperty` 다). 쓰는 이가 하나라 훅은 따로 안 세우고 컴포넌트 안에서 마감한다
+- [x] **회복 배선** — `MergeSheet.tsx:43` `dimRef` · `:61~78` 이펙트 · `:93` 딤에 `ref`.
+      `transitionend`(딤·패널) + `visibilitychange` 를 듣고 **안 도는 전이를 `cancel()`** 한다
+- [x] **곡선·길이 안 바꿈** — `duration-200` · 기본 easing · `setTimeout(10ms)` 전부 그대로.
+      정상 경로에서는 끝난 전이가 목록에서 스스로 빠져 걷을 것이 0이다(실측표는 context-notes)
+- [x] **`KNOWN_GAPS` 에서 걷었다** — `check-overlay-backdrop.mjs:28` 은 이제 빈 목록.
+      걷은 뒤 그 그물이 MergeSheet 을 실제로 검사한다(배선 전 판에서 `:90` 을 빨갛게 찍었다)
+- [x] **그물을 넓혔다** — 같은 파일 `:131~166` 의 `wiredByTransition` + `:240~259` 전이 갈래 수용(딤의 ref로
+      회복을 부르는가 · 전이 종료를 **딤에서** 듣는가 · 복귀를 듣는가 · **두 핸들러가 실제로
+      회복에 닿는가**). 정본 살아 있음은 `check-overlay-resume-resync.mjs:268~277`
+- [x] **정본 모션으로 안 갈아탔다**(`.anim-overlay-in`/`.anim-panel-in` 미도입 — 운영자 승인 범위 밖)
+
+#### 2 다크에서 버튼이 면에 묻히는 7군데
+
+전부 `variant="secondary"` → `variant="subtle"`. 형제(설정 번역 도구 줄, `299a931f`)와 같은 수다.
+
+- [x] 1 `app/(app)/tenants/TenantClient.tsx:3021`(면 `:2982`)
+- [x] 2 `app/(app)/rooms/DepositSection.tsx:231`(면 `:197`)
+- [x] 3 `components/entity-modal/widgets/PaymentRecordList.tsx:327`(면 `:235`)
+- [x] 4 `components/entity-modal/widgets/DepositStatusPanel.tsx:397`(면 `:355` = `formBoxCls`)
+- [x] 5 `components/entity-modal/widgets/DepositStatusPanel.tsx:508`(면 `:439` = `formBoxCls`)
+- [x] 6 `components/entity-modal/widgets/DepositStatusPanel.tsx:580`(면 `:557` 인라인)
+- [x] 7 `components/entity-modal/widgets/RentSettlementPanel.tsx:394`(면 `:355` = `formBoxCls`)
+- [x] **면은 안 건드렸다** — `panelFormStyles.ts:26` 의 `formBoxCls` 는 한 글자도 안 바뀌었다.
+      면을 `--cream` 으로 올리는 길은 앞서 버린 길이다
+- [x] **실측(402px, 브라우저 픽셀)** — 다크 보더 대비 **1.23:1 → 2.32:1**, 라이트 1.32:1 → 1.36:1
+- [ ] **라벨 대비가 내려간다 — 운영자·디자이너 판단 필요.** 라이트 12.34:1 → **4.45:1** 로
+      §28 본문 기준 4.5:1 을 0.05 차로 밑돈다(다크는 13.79:1 → 7.99:1 로 여유). `subtle` 이
+      글자를 `--warm-mid` 로 쓰기 때문이고 **형제도 같은 값**이라 이 자리만 달리 갈 수 없다.
+      고치려면 `subtle` 변형 자체(§10)를 손대야 하고 그건 앱 전체 범위다
+
+#### 3 규칙 등재 + 그물
+
+- [x] **가이드 등재 — §10 버튼 · Btn 의 다섯째 항목**(`docs/brand-guide-v2.0.md:170`).
+      근거(다크에서 두 토큰이 같은 값 · 경계가 8% 알파뿐)와 실측 숫자를 함께 적었다
+- [x] **그물 신설** — `scripts/check-secondary-on-soft.mjs`. 면을 칠하는 태그의 **서브트리**를
+      보고, `className={formBoxCls}` 처럼 **이름으로 오는 면**은 상수를 타고 들어간다
+- [x] **고치기 전 판에서 빨강** — 7건 전부, 검수가 준 줄 번호와 한 줄도 안 틀리고 일치했다
+- [x] **`verify:fast` 에 등재**(`package.json`, 72번째 그물)
+
+#### 검증
+- [x] 게이트 — tsc 0(`.next/types/*  2.ts` iCloud 중복 6건은 빌드 산출물·기존) ·
+      verify:fast 0 · verify:db 0 · next build 0 · eslint 496(기준선 496, 델타 0)
+- [x] 역주입 13종 전부 빨강. **`import` 만 남기고 호출 지우기**(B1) 포함.
+      원복은 백업 `cp` + `cmp` 일치 확인(`git checkout --`·`git restore` 안 씀)
+- [x] 역주입이 그물의 구멍을 하나 실제로 뚫었다 — 딤의 `transitionend` 만 떼도 초록이었다(B5).
+      파일 단위 낱말 검사를 **딤의 ref 를 따라가는 배선 검사**로 바꿔 막았다
+- [x] 회복 경로 실측 — puppeteer-core + 로컬 Chrome 402x812, 네 국면(생성·정상종료·굳음·취소)
+- [ ] 운영자 실기 확인 — 로그인한 실제 화면은 못 봤다. 아래 목록 참조

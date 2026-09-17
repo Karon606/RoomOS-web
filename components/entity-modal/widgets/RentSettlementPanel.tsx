@@ -386,8 +386,12 @@ export function RentSettlementPanel({
                 : '그 달 수납 기록을 환불 뒤 금액으로 다시 적습니다. 홈택스 발행분은 따로 정정해야 합니다.'}
             </p>
           )}
+          {/* 취소가 subtle 인 이유 — formBoxCls 의 면이 --cream-soft 인데 secondary 의 바탕도
+              --cream-soft 라, 다크에서 둘 다 --d-card-2 로 같은 색이 되고 경계가 --warm-border
+              (8% 알파) 자국뿐이었다(1.23:1). subtle 의 --camel 40% 테두리는 2.33:1 이다.
+              가이드 v2.0 §10 · 감지망 check-secondary-on-soft. */}
           <div className="flex gap-2 justify-end">
-            <Btn variant="secondary" size="sm" disabled={pending} onClick={closeForm}>취소</Btn>
+            <Btn variant="subtle" size="sm" disabled={pending} onClick={closeForm}>취소</Btn>
             <Btn variant="primary" size="sm" disabled={pending || amount <= 0 || over || (formMode === 'revise' && amount === refund?.refunded && reason.trim() === (refund?.reason ?? ''))}
               onClick={() => { void submit() }}>
               {formMode === 'revise' ? '다시 확정' : '환불 기록'}

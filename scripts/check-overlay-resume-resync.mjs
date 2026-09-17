@@ -265,6 +265,17 @@ try {
   if (!/animationName/.test(canon)) {
     violations.push('lib/animationSettled.ts — animationName 으로 거르는 갈래가 사라졌다. 이름을 넘겨도 그 층의 모든 모션이 섞인다')
   }
+  // 전이 갈래(2026-09-17 에 넓혔다 — MergeSheet 처럼 CSS 전이로 뜨는 막). 판정은 같은 정본이
+  // 진다. 두 벌로 두면 한쪽만 고쳐진다.
+  if (!/transitionProperty/.test(canon)) {
+    violations.push('lib/animationSettled.ts — transitionProperty 로 CSS 전이를 가리는 갈래가 사라졌다. 전이로 뜨는 막의 회복이 @keyframes 모션과 섞인다')
+  }
+  // 굳은 쪽도 playState 로 가린다. 막 만들어진 전이(play-pending)도 명세상 이미 'running' 이라
+  // 이 한 줄이 "이제 막 시작한 것까지 걷어 페이드가 통째로 사라지는" 창을 막는다 — 마감 정본의
+  // 즉시 제거 가지가 잘못 발동하는 것과 같은 클래스의 사고다.
+  if (!/playState\s*!==\s*'running'/.test(canon)) {
+    violations.push("lib/animationSettled.ts — 굳은 전이를 playState 로 안 가린다. 막 시작한 전이까지 걷어 페이드가 사라진다")
+  }
 } catch {
   violations.push('lib/animationSettled.ts 를 읽을 수 없음 — 모션 마감 수법 정본이 사라졌다')
 }

@@ -223,8 +223,12 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
                         이미 받았지만 입금 기록이 없는 보증금을 소급으로 남기는 자리입니다. 결제수단을 모르면 기타 그대로 두세요.
                       </p>
+                      {/* 취소가 subtle 인 이유 — 이 면이 --cream-soft 인데 secondary 의 바탕도 --cream-soft 라,
+                          다크에서 둘 다 --d-card-2 로 같은 색이 되고 경계가 --warm-border(8% 알파) 자국뿐이었다
+                          (1.23:1). subtle 의 --camel 40% 테두리는 2.33:1 이다. 가이드 v2.0 §10 ·
+                          감지망 check-secondary-on-soft. */}
                       <div className="flex gap-2 justify-end">
-                        <Btn variant="secondary" size="sm" disabled={recPending} onClick={() => setRecvFor(null)}>취소</Btn>
+                        <Btn variant="subtle" size="sm" disabled={recPending} onClick={() => setRecvFor(null)}>취소</Btn>
                         <Btn variant="primary" size="sm" disabled={recPending || recvAmount <= 0}
                           onClick={() => saveRecv(d.leaseTermId, d.tenantName)}>기록</Btn>
                       </div>

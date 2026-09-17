@@ -176,21 +176,58 @@ inset-0` 을 같이 요구해서 `app/contract/[tenantId]/ContractView.tsx` 의 
 있었다. 거기서 굳으면 막이 남는 게 아니라 **제출 버튼이 통째로 안 보인다** — 506호가 제출 없이
 나간 사고와 같은 결말이다. 전제를 뺐고 그 알약에 마감을 붙였다.
 
-### 알려진 공백
+### 알려진 공백 — **없다**(2026-09-17 에 마지막 하나를 닫았다)
 
-- `MergeSheet` 의 등장은 정본 모션이 아니라 `setTimeout(10ms)` + `transition-opacity` 토글이고
-  **마감 정본이 아예 없다.** 딤(`components/ui/inventory/MergeSheet.tsx:56~57`)은
-  `absolute inset-0` 로 전면을 덮고 `onClick={onClose}` 를 달고 있으며, 루트(`:54~55`)는
-  `fixed inset-0` 에 `pointer-events` 해제가 없다. **전이가 중간에 멎으면 옅은 막이 화면을 덮고
-  조작을 먹는다 — 신고 bf0a6fff 와 똑같은 증상이다.** 게다가 여덟 중 유일하게 `animationend`
-  도 `visibilitychange` 도 안 들어 **회복 경로가 하나도 없다.** 네 번 만에 고친 정본보다
-  나쁜 상태다. 처음에 이 자리를 "멎으면 반쯤 올라온 시트이지 화면을 먹는 옅은 막이 아니다"라고
-  적었는데 **그 말이 틀렸다**(독립 검수 2026-09-17에 바로잡음).
-  `check-overlay-backdrop.mjs` 의 `KNOWN_GAPS` 에 같은 사실로 올라 있다(운영자 결정 대기).
-  - **회복 경로만 붙이는 길은 곡선·길이를 안 바꾼다.** `transitionend` 와 `visibilitychange` 를
-    듣고, `shown` 이 참인데 실제 `opacity`·`transform` 이 끝값이 아니면 최종 상태로 확정하면
-    된다. 정상 경로에서는 전이가 이미 끝난 뒤라 아무 일도 안 일어난다. **디자이너 패스는
-    "정본 모션으로 갈아타기"에만 필요하고 회복 경로 추가만이라면 필요 없다.**
+`check-overlay-backdrop.mjs` 의 `KNOWN_GAPS` 는 지금 빈 목록이다. 목록이 빈 것은 검사가 없다는
+뜻이 아니다 — 여덟 오버레이가 전부 세 축(존재·농도·z)과 마감 축을 실제로 지난다.
+
+#### 닫힌 공백 — MergeSheet 의 회복 경로 (2026-09-17)
+
+`MergeSheet` 의 등장은 정본 모션이 아니라 `setTimeout(10ms)` + `transition-opacity` 토글이다.
+딤은 `absolute inset-0` 로 전면을 덮고 `onClick={onClose}` 를 달고 있으며, 루트는 `fixed inset-0`
+에 `pointer-events` 해제가 없다. **전이가 중간에 멎으면 옅은 막이 화면을 덮고 조작을 먹는다 —
+신고 bf0a6fff 와 똑같은 증상이다.** 여덟 중 유일하게 `animationend` 도 `visibilitychange` 도
+안 들어 회복 경로가 하나도 없었다. 처음에 이 자리를 "멎으면 반쯤 올라온 시트이지 화면을 먹는
+옅은 막이 아니다"라고 적었는데 **그 말이 틀렸고**(독립 검수 2026-09-17에 바로잡음), 운영자가
+"회복 경로만 붙인다"로 승인했다(정본 모션으로 갈아타기는 곡선·길이가 바뀌어 디자이너 패스 대상).
+
+**정본을 넓혔다 — 두 벌로 만들지 않았다.** `lib/animationSettled.ts` 의 두 함수는 `@keyframes`
+모션만 다뤘다(이름을 `animationName` 으로 읽는다). CSS 전이는 `getAnimations()` 에 `CSSTransition`
+으로 잡히고 이름이 `transitionProperty` 라 그 물음에서 빠진다. 같은 수법이 필요하니 같은 정본에
+**전이 갈래 하나**를 붙였다 — `stuckTransitions(el)`. 쓰는 이가 하나라 훅(`useSettleTransition`
+같은 것)은 따로 세우지 않고 `MergeSheet` 안에서 마감한다.
+
+- 무엇을 듣나. `transitionend`(딤·패널 각각)와 `visibilitychange` 둘. **`shown` 이 참일 때만.**
+- 무엇을 하나. **남아 있는데 안 도는 전이를 `cancel()`** 한다. 취소는 효과를 즉시 걷어 계산값이
+  클래스가 정한 끝값(`opacity-100` · `translate-y-0`)으로 떨어지고, 그 재계산이 굳은 프레임을
+  푼다 — 등장 클래스를 떼는 것과 같은 수법이다.
+- **속성으로 안 거른다.** 모션 쪽이 이름으로 거르는 이유(무한 반복 `animate-pulse` 하나가
+  `finished` 를 영영 안 내준다)가 전이에는 없다 — 전이는 유한하다. 게다가 Tailwind v4 의
+  `translate-y-*` 가 실제로 움직이는 속성은 `transform` 이 아니라 **`translate`** 다(`lib.js` 확인:
+  `transition-transform` = `transform, translate, scale, rotate`). 이름으로 걸면 그 이름이 바뀌는
+  날 회복이 조용히 죽는다.
+
+**실측(puppeteer-core + 로컬 Chrome, 402x812).** 같은 술어를 브라우저에 심어 넷을 쟀다.
+
+| 국면 | `getAnimations()` | `playState` | `stuckTransitions` | 딤 opacity |
+|---|---|---|---|---|
+| 전이가 막 생긴 순간 | 1건 | `running`(`pending: true`) | **0** | 0 |
+| 정상 종료 뒤 | **0건** | — | **0** | 1 |
+| 90ms 에서 멎음 | 1건 | `paused` | **1** | **0.776** |
+| 취소 뒤 | 0건 | — | 0 | **1** |
+
+읽는 법 둘. **(1) 정상 경로는 무동작이다** — 끝난 전이는 목록에서 스스로 빠지므로(fill 이 없다)
+걷을 것이 없고 `duration-200` 도 기본 easing 도 한 글자 안 바뀐다. **(2) 막 만들어진 전이는
+`playState` 가 이미 `running` 이다**(대기 중인 play 작업이 있으면 running 이라는 명세. 대기 여부는
+별도 속성 `pending` 이 진다). 그래서 `!== 'running'` 한 줄이 "이제 막 시작한 전이를 걷어 앱의 모든
+페이드를 조용히 없애는" 창을 막는다. TS 의 `AnimationPlayState` 에 `'pending'` 이 아예 없다는
+사실도 같은 것을 말한다 — 처음에 `!== 'pending'` 를 덧붙였다가 `tsc` 가 "겹치는 값이 없다"로
+잡아냈고, 실측이 그 판정을 확인했다.
+
+**남는 한 갈래는 못 막는다(정직하게 적는다).** 전이 객체가 이미 사라지고 계산값도 끝값인데
+합성 레이어만 낡은 프레임에 남은 경우는 어떤 읽기로도 감지가 안 된다. 정본의 클래스 제거가 그
+경우에 듣는 것은 제거가 **계산값을 실제로 바꾸기** 때문이다. 여기에는 뗄 클래스가 없다. 다만
+그 상태는 복귀 시 브라우저가 대개 다시 그린다.
 
 ---
 

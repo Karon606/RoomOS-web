@@ -388,8 +388,13 @@ export function DepositStatusPanel({
               이 금액이 곧 반환 정산 기준액이 됩니다.
             </p>
           )}
+          {/* 이 패널의 취소 셋이 전부 subtle 인 이유 — 면(formBoxCls · 편집 중 li)이 --cream-soft 인데
+              secondary 의 바탕도 --cream-soft 라, 다크에서 둘 다 --d-card-2 로 같은 색이 되고 경계가
+              --warm-border(8% 알파) 자국뿐이었다(1.23:1). subtle 의 --camel 40% 테두리는 2.33:1 이다.
+              바로 위 '받음으로 기록'·'반환 정산 기록'이 이미 subtle 이라 한 패널 안 문법도 한 벌이 된다.
+              가이드 v2.0 §10 · 감지망 check-secondary-on-soft. */}
           <div className="flex gap-2 justify-end">
-            <Btn variant="secondary" size="sm" disabled={pending} onClick={() => setRecvOpen(false)}>취소</Btn>
+            <Btn variant="subtle" size="sm" disabled={pending} onClick={() => setRecvOpen(false)}>취소</Btn>
             <Btn variant="primary" size="sm" disabled={pending || recvAmount <= 0 || recvOver} onClick={() => { void saveReceive() }}>기록</Btn>
           </div>
         </div>
@@ -500,7 +505,7 @@ export function DepositStatusPanel({
           )}
           {/* 취소 좌 · 확인 우(§13·§14). 종전 이 폼만 반대라 한 패널 안에 서로 반대인 두 폼이 서 있었다. */}
           <div className="flex gap-2 justify-end">
-            <Btn variant="secondary" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
+            <Btn variant="subtle" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
             <Btn variant="primary" size="sm" disabled={pending || recAmount > maxRecordable} onClick={() => { void saveRecord() }}>기록</Btn>
           </div>
         </div>
@@ -572,7 +577,7 @@ export function DepositStatusPanel({
                     </select>
                   </div>
                   <div className="flex gap-2 justify-end">
-                    <Btn variant="secondary" size="sm" onClick={() => setEditId(null)}>취소</Btn>
+                    <Btn variant="subtle" size="sm" onClick={() => setEditId(null)}>취소</Btn>
                     <Btn variant="primary" size="sm" onClick={saveEdit} disabled={pending}>저장</Btn>
                   </div>
                 </li>

@@ -23,13 +23,9 @@ const CSS = 'app/globals.css'
 
 // 알려진 공백 — 사유와 함께 올린다(check-kbd-canonical 의 ALLOW 와 같은 문법).
 // 조용한 공백보다 낫다. 파일이 더 이상 걸리지 않으면 "목록에서 내려라"고 빨개진다.
-const KNOWN_GAPS = new Map([
-  ['components/ui/inventory/MergeSheet.tsx|불투명도',
-    '등장이 정본 모션이 아니라 setTimeout(10ms) + transition-opacity 토글이고 마감 정본이 아예 없다. '
-    + '딤은 absolute inset-0 로 전면을 덮고 onClick 에 닫기가 걸려 있어, 전이가 중간에 멎으면 옅은 막이 '
-    + '화면을 덮고 조작을 먹는다 — 신고 bf0a6fff 와 같은 증상이다. 여덟 중 유일하게 animationend 도 '
-    + 'visibilitychange 도 안 듣는 자리라 회복 경로가 없다. 곡선·길이가 바뀌므로 웹디자이너 패스 대상(운영자 결정 대기)'],
-])
+// MergeSheet 의 '불투명도' 공백은 2026-09-17 에 걷었다 — 전이 회복 경로를 붙였고, 아래 (2) 가
+// 그 갈래를 정식으로 받는다. 목록이 빈 것은 공백이 없다는 뜻이지 검사가 없다는 뜻이 아니다.
+const KNOWN_GAPS = new Map([])
 
 function walk(p, out = []) {
   for (const n of readdirSync(p)) {
@@ -128,6 +124,43 @@ function subtreeEnd(src, tag) {
   return src.length                                     // 짝을 못 찾으면 파일 끝까지(종전과 같은 넓이)
 }
 
+/** `const NAME = …` 한 덩어리의 원문. 중괄호 깊이로 끊고, 중괄호가 없으면 그 줄까지다. */
+function declBody(src, name) {
+  const at = src.search(new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=`))
+  if (at < 0) return ''
+  let depth = 0, started = false
+  for (let i = at; i < src.length; i++) {
+    const c = src[i]
+    if (c === '{') { depth++; started = true }
+    else if (c === '}') { depth--; if (started && depth === 0) return src.slice(at, i + 1) }
+    else if (c === '\n' && !started) return src.slice(at, i)
+  }
+  return src.slice(at)
+}
+
+/**
+ * 전이 토글로 뜨는 막이 **이 막의 ref 로** 회복 경로를 갖췄는가(정본 lib/animationSettled).
+ *
+ * `const dim = dimRef.current` 같은 별칭을 따라간다 — 리스너는 보통 그 지역 이름에 건다(떼는
+ * 짝을 맞추려면 붙일 때 잡아 둔 엘리먼트여야 한다). 별칭을 안 따라가면 정상 코드가 위반이 된다.
+ */
+function wiredByTransition(src, ref) {
+  const recover = new RegExp(`stuckTransitions\\(\\s*${ref}\\.current\\s*\\)`)
+  if (!recover.test(src)) return false
+  const aliases = [`${ref}\\.current`]
+  for (const m of src.matchAll(new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${ref}\\.current\\b`, 'g'))) aliases.push(m[1])
+  const handlerOn = (target, ev) =>
+    new RegExp(`${target}\\s*\\??\\.\\s*addEventListener\\(\\s*'${ev}'\\s*,\\s*([A-Za-z_$][\\w$]*)`).exec(src)?.[1]
+  // (ㄱ) 전이 종료를 이 막에서 듣고, 그 핸들러가 이 막을 회복하는가
+  const onEnd = aliases.map(a => handlerOn(a, 'transitionend')).find(Boolean)
+  if (!onEnd || !recover.test(declBody(src, onEnd))) return false
+  // (ㄴ) 복귀를 듣고, 그 핸들러가 같은 회복에 닿는가(직접 부르거나 (ㄱ)의 핸들러를 부르거나)
+  const onVis = handlerOn('document', 'visibilitychange')
+  if (!onVis) return false
+  const visBody = declBody(src, onVis)
+  return recover.test(visBody) || new RegExp(`\\b${onEnd}\\b`).test(visBody)
+}
+
 const violations = []
 const gapsSeen = new Set()
 const gap = (key, msg) => {
@@ -206,10 +239,23 @@ for (const f of files) {
     // (2) 불투명도 — **막의 색은 기본 스타일이 진다.** 모션이나 토글만으로 불투명도가 올라오면,
     // 그것이 도중에 멎는 순간 막이 중간값에 굳어 화면을 덮고 조작을 먹는다(신고 bf0a6fff 의 옅어짐).
     // 등장 모션을 얹는 것은 좋다 — 다만 그때는 정본 마감(useSettleEntrance)이 함께 있어야 한다.
+    //
+    // 마감의 갈래는 둘이다. 둘 다 정본 판정(lib/animationSettled)을 쓰고, 시간은 안 쓴다.
+    //   (ㄱ) 정본 모션(.anim-*-in) — 등장 클래스를 떼는 마감 훅 useSettleEntrance
+    //   (ㄴ) CSS 전이 토글 — 굳은 전이를 취소해 계산값을 끝값으로 떨어뜨리는 stuckTransitions
+    // (ㄴ) 는 2026-09-17 에 열었다(MergeSheet). 곡선·길이를 안 바꾸고 회복 경로만 붙이는 길이라
+    // 정본 모션으로 갈아타지 않고도 이 축을 지날 수 있다.
     const animated = /anim-(overlay|panel)-in/.test(dim.text)
     const toggled = /opacity-0\b/.test(dim.text)
-    if ((animated || toggled) && !/useSettleEntrance\(/.test(src)) {
-      gap(`${f}|불투명도`, `${at} — 막의 불투명도가 ${animated ? '등장 모션' : '토글'}에만 실려 있는데 마감 정본(useSettleEntrance)이 없다. 모션이 중간에 멎으면 옅은 막이 화면에 남는다`)
+    const byClass = /useSettleEntrance\(/.test(src)
+    // **호출 한 줄만 보면 그물이 아니다.** 전이 갈래는 넷을 다 본다 — 정본 판정을 **이 막의 ref 로**
+    // 부르는가 · 전이 종료를 **이 막에서** 듣는가 · 복귀를 듣는가 · **그 두 핸들러가 실제로 회복을
+    // 부르는가.** 파일 어딘가에 낱말만 있으면 통과하던 판을 역주입이 뚫었다(옆 엘리먼트에만 걸어
+    // 두면 정작 막은 굳은 채 남는다 — 등장 마감 그물이 네 번째 재현에서 놓친 바로 그 자리다).
+    const dimRef = /ref=\{\s*([A-Za-z_$][\w$]*)\s*\}/.exec(dim.text)?.[1]
+    const byTransition = dimRef != null && wiredByTransition(src, dimRef)
+    if ((animated || toggled) && !byClass && !byTransition) {
+      gap(`${f}|불투명도`, `${at} — 막의 불투명도가 ${animated ? '등장 모션' : '토글'}에만 실려 있는데 마감이 없다. 모션이 중간에 멎으면 옅은 막이 화면에 남는다(정본 모션이면 useSettleEntrance, 전이 토글이면 lib/animationSettled 의 stuckTransitions 를 이 막의 ref 로)`)
     }
 
     // (3) z 순서 — 층 토큰을 쓰고, 그 토큰이 실재하고, 자식 딤이면 패널이 그 위에 선다.

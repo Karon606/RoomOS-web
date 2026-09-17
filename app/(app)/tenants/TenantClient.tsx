@@ -3013,8 +3013,12 @@ export default function TenantClient({
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                                   </div>
                                 </div>
+                                {/* 취소가 subtle 인 이유 — 이 면이 --cream-soft 인데 secondary 의 바탕도
+                                    --cream-soft 라, 다크에서 둘 다 --d-card-2 로 같은 색이 되고 경계가
+                                    --warm-border(8% 알파) 자국뿐이었다(1.23:1). subtle 의 --camel 40%
+                                    테두리는 2.33:1 이다. 가이드 v2.0 §10 · 감지망 check-secondary-on-soft. */}
                                 <div className="flex gap-2 justify-end">
-                                  <Btn variant="secondary" size="sm" onClick={() => setEditingPayId(null)}>취소</Btn>
+                                  <Btn variant="subtle" size="sm" onClick={() => setEditingPayId(null)}>취소</Btn>
                                   <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={isPending}>저장</Btn>
                                 </div>
                               </div>

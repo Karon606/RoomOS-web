@@ -38,3 +38,37 @@ export function runningAnimations(el: Element | null | undefined, names?: readon
 export function whenAnimationsSettled(anims: Animation[]): Promise<void> {
   return Promise.allSettled(anims.map(a => a.finished)).then(() => { /* 취소도 끝의 한 갈래다 */ })
 }
+
+/**
+ * 이 엘리먼트에 **남아 있는데 안 도는 CSS 전이**들 — 곧 중간값에 굳은 것들.
+ *
+ * 왜 여기에 붙나(2026-09-17). 이 파일의 두 함수는 `@keyframes` 모션만 다룬다 — `runningAnimations`
+ * 가 이름을 `animationName` 으로 읽으므로 CSS 전이는 이름을 준 물음에서 자연히 빠진다. 그런데
+ * 같은 병(모션이 중간에 멎으면 옅은 막이 화면을 덮고 조작을 먹는다)이 **전이로 뜨는 층**에도
+ * 있었다(`components/ui/inventory/MergeSheet.tsx`). 수법이 같으니 정본도 한 벌이어야 한다 —
+ * 두 벌로 두면 한쪽만 고쳐진다(2026-09-17 에 실제로 하루 사이 그 일이 났다).
+ *
+ * 아는 것 셋.
+ *   · **전이는 `getAnimations()` 에 `CSSTransition` 으로 잡힌다.** 이름은 `animationName` 이 아니라
+ *     `transitionProperty` 다. 그 속성이 있는 것만 골라 `@keyframes` 모션과 섞이지 않게 한다
+ *     (모션 쪽 마감은 등장 클래스를 떼는 `lib/useSettleEntrance` 의 몫이다).
+ *   · **정상적으로 끝난 전이는 목록에서 스스로 빠진다.** fill 이 없으므로 끝나면 효과가 사라지고
+ *     `getAnimations()` 에 안 남는다. 그래서 여기 남아 있는데 안 도는 것은 굳은 것이다.
+ *   · **막 만들어진 전이는 굳은 것이 아니다.** 시작 시각을 아직 못 받은 한두 프레임(play-pending)
+ *     동안에도 `playState` 는 이미 `'running'` 이다(Web Animations 명세 — 대기 중인 play 작업이
+ *     있으면 running 이다. 대기 여부는 별도 속성 `pending` 이 진다). 그래서 `!== 'running'` 하나로
+ *     그 창이 막힌다. 이것까지 굳은 것으로 세면 이제 막 시작한 전이를 걷어 **모든 페이드가 조용히
+ *     사라진다** — 굳은 모션을 고치러 온 코드가 정반대로 모션을 없애는 자리다.
+ *
+ * 부르는 쪽은 받은 것을 `cancel()` 한다. 취소는 효과를 즉시 걷어 계산값이 클래스가 정한 끝값으로
+ * 떨어지고, 그 재계산이 굳은 프레임을 푼다 — 등장 클래스를 떼는 것과 같은 수법이다.
+ * 시간은 여전히 한 글자도 안 쓴다(2026-09-08 결정).
+ */
+export function stuckTransitions(el: Element | null | undefined): Animation[] {
+  if (!el || typeof el.getAnimations !== 'function') return []
+  return el.getAnimations().filter(a => {
+    const p = (a as Animation & { transitionProperty?: string }).transitionProperty
+    if (typeof p !== 'string') return false                       // @keyframes 모션은 여기 몫이 아니다
+    return a.playState !== 'running'
+  })
+}

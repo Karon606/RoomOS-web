@@ -5,6 +5,7 @@
 // 적용취소는 실행 후 v2.0 §16 undo 토스트 — 환경설정에 숨기지 않음(호출부가 토스트로 처리).
 import React, { useEffect, useRef, useState } from 'react'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { stuckTransitions } from '@/lib/animationSettled'
 
 export type MergeTarget = { id: string; label: string; meta?: string }
 
@@ -39,7 +40,43 @@ export function MergeSheet({
   // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 시트 상한. 키보드 패널 2026-09-02 2단계.
   const overlayRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dimRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: open, overlayRef, panelRef })
+  // 회복 경로 — 전이가 중간에 멎으면 옅은 막이 화면을 덮고 조작을 먹는다(신고 bf0a6fff 와 같은 증상).
+  //
+  // 이 시트의 등장은 정본 모션(.anim-overlay-in)이 아니라 setTimeout(10ms) + CSS 전이 토글이라
+  // 등장 마감 정본(lib/useSettleEntrance)이 안 맞는다. 그쪽은 **클래스를 떼는** 마감이고 여기엔
+  // 뗄 클래스가 없다. 그래서 판정 수법만 정본(lib/animationSettled)에서 가져오고 — 전이를 볼 줄
+  // 아는 갈래를 그 정본에 넓혔다 — 마감은 이 자리에서 한다. 쓰는 이가 하나라 훅을 따로 세우지 않는다.
+  //
+  // 무엇을 듣나. transitionend 와 visibilitychange 둘이다. 정상 경로에서는 전이가 이미 끝나
+  // 목록에서 빠진 뒤라 걷을 것이 없고 **아무 일도 안 일어난다** — duration-200 도 기본 easing 도
+  // 한 글자 안 바뀐다. 굳은 경로에서만 남은 전이가 잡히고, 취소가 계산값을 클래스의 끝값
+  // (opacity-100 · translate-y-0)으로 떨어뜨리며 그 재계산이 굳은 프레임을 푼다.
+  //
+  // 속성으로 안 거른다. 이 둘은 각각 transition-opacity · transition-transform 하나씩만 달아
+  // 섞일 것이 없고, 전이는 유한하므로 모션 쪽의 무한 반복 함정(animate-pulse)이 없다. 게다가
+  // Tailwind v4 의 translate-y-* 가 실제로 움직이는 속성은 transform 이 아니라 translate 라,
+  // 이름으로 거르면 그 이름이 바뀌는 날 회복이 조용히 죽는다.
+  useEffect(() => {
+    if (!open || !shown) return
+    const dim = dimRef.current
+    const panel = panelRef.current
+    // 걷을 때는 ref 를 그 자리에서 읽는다(붙일 때 잡아 둔 dim·panel 은 떼는 짝을 맞추는 몫이다).
+    const confirmFinal = () => {
+      for (const t of stuckTransitions(dimRef.current)) t.cancel()
+      for (const t of stuckTransitions(panelRef.current)) t.cancel()
+    }
+    const onVisible = () => { if (!document.hidden) confirmFinal() }
+    dim?.addEventListener('transitionend', confirmFinal)
+    panel?.addEventListener('transitionend', confirmFinal)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      dim?.removeEventListener('transitionend', confirmFinal)
+      panel?.removeEventListener('transitionend', confirmFinal)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [open, shown])
   if (!open) return null
   const dest = targets.find(t => t.id === destId)
   const canFlip = !!sourceId
@@ -53,7 +90,7 @@ export function MergeSheet({
     // inset-0 이라 패딩과 무관하게 전면을 덮는다.
     <div ref={overlayRef} className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`}
       style={{ paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }} role="dialog" aria-modal="true">
-      <div className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
+      <div ref={dimRef} className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose} />
       <div ref={panelRef} className={`relative flex w-full max-w-md flex-col rounded-t-[20px] bg-[var(--cream)] px-[18px] pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}
         // 시트 상한 = 보이는 띠 — 키보드·피커가 서도 제목과 버튼줄이 화면 밖으로 안 나간다.
