@@ -297,6 +297,67 @@ function body(src, header) {
     "'3장는요?'·'3롤가' 가 나간다 — lib/statusReasons 정본을 쓴다")
 }
 
+// ── ⓛ 상세 모달의 **범위 표기** (신고 3e861137·고압호스 / be42800d·앵글밸브, 2026-09-17) ──
+//    한 모달 안에 범위가 다른 집계가 셋 있는데 범위를 말하는 글자가 하나도 없었다.
+//      카드 머리 `총 N개`(버킷+규격) · `배치 현황`(품목 전체) · `설치·폐기`(버킷+규격)
+//    데이터도 집계 축도 정상이고 결함은 표시 한 겹이었다. 그래서 여기서 지키는 것은 **글자**다 —
+//    범위를 말하는 말이 사라지거나, 규격 병기가 조건부로 되돌아가면 같은 신고가 그대로 재발한다.
+//    설치·폐기를 품목 단위로 올리는 '해결'은 금지다(커밋 950e73de — 돈의 축은 그 방에 들어간 누적).
+{
+  // 규격 문자열은 한 자리에서만 조립한다. 세 자리가 각자 만들면 한 화면에서 표기가 갈린다.
+  need('규격 문자열 정본(specOf)이 하나다',
+    (client.match(/x\.specText \|\| \(x\.specValue != null/g) ?? []).length === 1,
+    '복사본이 생기면 카드 제목과 칩의 규격 표기가 갈린다')
+
+  // 1) 배치 현황 = 품목 전체. `총` 은 카드 머리가 다른 범위로 이미 쓰고 있어 이 블록에서 금지.
+  need('배치 현황 머리가 범위를 말한다(이 품목 전체)',
+    /배치 현황\s*\n\s*<span[^>]*>이 품목 전체 · \{spots\}곳/.test(client),
+    '범위를 빼면 카드 머리 `총 N개`와 겹쳐 읽혀 규격 혼입으로 신고된다')
+  need('배치 현황 머리에 `총` 이 없다',
+    !/<span[^>]*>[^<]*총 \$\{fmtQty\(totalQ\)/.test(client) && !/`총 \$\{fmtQty\(totalQ\)\}/.test(client),
+    '같은 글자를 다른 범위로 쓰면 붙어 있는 한 계속 겹쳐 읽힌다')
+
+  // 2) `곳` 은 카드 수가 아니라 자리 수다. sorted.length 로 되돌리면 고압호스 13→14, 앵글밸브 20→22.
+  need('곳 수를 **자리**로 센다', /const spots = new Set\(sorted\.map\(spotKey\)\)\.size/.test(client),
+    'sorted.length 는 카드 수다 — 같은 자리가 규격 둘로 갈리면 부푼다')
+  need('그 자리 수를 화면이 실제로 찍는다', /\{spots\}곳/.test(client),
+    '계산만 남기고 찍는 자리를 sorted.length 로 되돌리는 우회')
+  need('자리 키가 미배정·공용 자재를 따로 센다',
+    /x\.isCommon \? 'common' : 'unassigned'/.test(client),
+    "placeKeyOf 는 둘 다 '' 로 접는다 — 옮기기 목적지 키라 이 셈에는 못 쓴다")
+
+  // 3) 규격 병기는 **무조건**. 조건을 달면 무라벨이 '같은 규격'과 '규격 미기록' 두 뜻을 진다.
+  need('규격 병기에 조건이 없다', /const chipSpec = specOf\(pl\)\s*\n/.test(client),
+    '지금 보는 카드 칩의 규격은 중복이 아니라 나머지를 읽는 기준점이다')
+  need('itemIdentity 비교로 되돌아가지 않았다',
+    !/itemIdentity\(pl\) !== itemIdentity\(it\)/.test(client),
+    '그 조건이 60cm 에만 라벨을 붙여 나머지를 "규격 없음"으로 읽히게 했다(3e861137)')
+  need('칩이 그 규격을 실제로 찍는다', /\{chipSpec && <span[^>]*>\{chipSpec\}<\/span>\}/.test(client),
+    'const 만 남기고 찍는 자리를 지우면 계산은 멀쩡한데 화면은 종전이다')
+
+  // 4) 폐기가 있는 칩에만 누적 부기 — 폐기를 적은 사람이 확인할 자리가 앱에 여기뿐이다.
+  need('폐기가 있는 칩에 누적을 부기한다',
+    /\{pl\.disposedQty > 0 && \(\s*\n\s*<span[^>]*>누적 \{fmtQty\(pl\.liveUnits \+ pl\.disposedQty\)\}/.test(client),
+    '카드 목록 valueSub 와 같은 문법이다 — 없으면 22곳을 하나씩 눌러 봐야 한다')
+  need('폐기 없는 칩은 한 픽셀도 안 바뀐다', /\{pl\.disposedQty > 0 && \(/.test(client),
+    '조건을 걷어 0 을 찍으면 폐기 없는 카드의 칩 폭이 바뀐다')
+  need('배치 현황 머리가 품목 전체 폐기 합을 말한다',
+    /const disposedQ = sorted\.reduce\(\(s, x\) => s \+ x\.disposedQty, 0\)/.test(client)
+    && /disposedQ > 0 \? \(units\.size === 1 \? ` · 폐기 /.test(client),
+    '목록이 폐기를 빼는 것은 옳다 — 다만 뺀다는 사실을 머리가 말해야 합계의 뜻이 정해진다')
+
+  // 5) 설치·폐기 = 이 카드 한 자리. 범위를 적되 **품목 단위로 올리지 않는다**.
+  need('설치·폐기 머리에 그 카드의 자리가 박힌다',
+    /설치·폐기\s*\n\s*<span[^>]*>\{here\} 기준 · 자동 계산<\/span>/.test(client),
+    '바로 위가 품목 전체라 범위를 안 적으면 두 숫자가 어긋난 것으로 읽힌다(be42800d)')
+  need('그 자리 글자가 curPlace + 규격이다',
+    /const here = `\$\{curPlace\(it\)\}\$\{specOf\(it\) \? ` \$\{specOf\(it\)\}` : ''\}`/.test(client))
+  need('설치·폐기 수치는 **버킷 단위** 그대로다',
+    /\{fmtQty\(it\.liveUnits\)\}\{unit\}/.test(client) && /\{fmtQty\(it\.disposedQty\)\}\{unit\}/.test(client)
+    && /\{fmtQty\(it\.liveUnits \+ it\.disposedQty\)\}\{unit\}/.test(client),
+    '품목 전체(sorted 합)로 올리면 방별 자재비 검산이 서 있는 설계 의도가 깨진다(950e73de)')
+}
+
 if (fails.length) {
   console.error(`\n[자재 폐기 배선] 위반 ${fails.length}건`)
   for (const f of fails) console.error('  - ' + f)

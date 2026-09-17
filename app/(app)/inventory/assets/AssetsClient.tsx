@@ -547,6 +547,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   }
   const curPlace = (it: AssetItem) =>
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : '미배정(여분)')
+  // 카드 제목·배치 현황 칩·설치·폐기 머리가 같은 규격 문자열을 쓴다. 세 자리가 각자 조립하면
+  // 한 화면 안에서 규격 표기가 갈린다(60cm 는 붙고 40cm 는 안 붙던 신고 3e861137 의 모양).
+  const specOf = (x: AssetItem) => x.specText || (x.specValue != null ? `${fmtQty(x.specValue)}${x.specUnit ?? ''}` : '')
   // 같은 품목(라벨+사양) 판별 — 수량 부분만 다른 카드끼리 묶는다 ("지금 어디에 있나")
   const itemIdentity = (x: AssetItem) => {
     const d = x.detail ?? x.itemLabel
@@ -791,7 +794,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
         title={(() => {
           // 제품명 뒤에 규격 병기 — 같은 이름 다른 규격(고압호스 60cm/40cm)을 상세 진입 없이 구분(오류신고 86f1418e).
-          const spec = it.specText || (it.specValue != null ? `${fmtQty(it.specValue)}${it.specUnit ?? ''}` : '')
+          const spec = specOf(it)
           return spec ? <>{it.itemLabel} <span className="font-normal text-[var(--warm-muted)]">{spec}</span></> : it.itemLabel
         })()}
         badges={<>
@@ -1475,10 +1478,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 // 되는데, 그 사이 옛 카드가 전부 배정돼 미배정 목록에서 사라지면 "이 제품이 지금
                 // 어디에 설치돼 있나"를 볼 자리가 없다(운영자 신고 2026-09-01, 샤워기 겸용 수전 —
                 // 설치 15곳이 수령 대기 카드에서 안 보였다). 정체성(itemIdentity)은 합치기·옮기기의
-                // 축으로 그대로 두고 이 **표시만** 이름 축으로 넓힌다. 규격이 다른 칩에는 규격을
-                // 병기해 규격 섞임(오류신고 5853a0ff)이 표시에서도 재발하지 않게 한다.
+                // 축으로 그대로 두고 이 **표시만** 이름 축으로 넓힌다. 규격이 있는 칩에는 조건 없이
+                // 규격을 병기해 규격 섞임(오류신고 5853a0ff·3e861137)이 표시에서도 재발하지 않게 한다.
                 const nameKey = (x: AssetItem) => [x.itemLabel, x.category ?? '', x.isService ? 'S' : ''].join('|')
-                const specOf = (x: AssetItem) => x.specText || (x.specValue != null ? `${fmtQty(x.specValue)}${x.specUnit ?? ''}` : '')
                 const places = allItems.filter(s => nameKey(s) === nameKey(it))
                 if (places.length <= 1) return null
                 const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
@@ -1486,16 +1488,31 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 const totalQ = sorted.reduce((s, x) => s + (x.qtyValue ?? 0), 0)
                 // 단위가 섞이면(개+세트) 합계 숫자가 거짓말이 된다 — 곳 수만 말한다.
                 const units = new Set(sorted.map(x => x.qtyUnit ?? '개'))
+                // '곳'은 카드 수가 아니라 **자리 수**다. 같은 자리가 규격 둘로 갈리면 카드는 둘이어도
+                // 자리는 하나다 — 고압호스 미배정(60cm·40cm)이 14곳, 앵글밸브 501·506호(15A·규격 미기록)가
+                // 22곳으로 부풀던 자리다(신고 3e861137·be42800d). 공용부·미배정·공용 자재도 각각 한 자리로 센다
+                // (placeKeyOf 는 옮기기 목적지 키라 미배정·공용을 같은 ''로 접는다 — 여기서는 못 쓴다).
+                const spotKey = (x: AssetItem) => x.roomId ? `room:${x.roomId}` : x.locationId ? `loc:${x.locationId}` : x.isCommon ? 'common' : 'unassigned'
+                const spots = new Set(sorted.map(spotKey)).size
+                // 이 목록은 폐기를 뺀 **지금의 배치**다(자리를 떠난 것은 지금의 배치가 아니다).
+                // 뺀다는 사실을 머리가 말하지 않으면 합계가 '산 것 전부'인지 '지금 있는 것'인지 알 길이 없다.
+                const disposedQ = sorted.reduce((s, x) => s + x.disposedQty, 0)
                 return (
                   <div>
+                    {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`총 N개`)·아래 `설치·폐기`와 범위가
+                        서로 달라 같은 `총`을 쓰면 계속 겹쳐 읽힌다 — 이 블록에서는 `총`을 안 쓴다. */}
                     <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배치 현황
-                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{units.size === 1 ? `총 ${fmtQty(totalQ)}${[...units][0]} · ` : ''}{sorted.length}곳</span>
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">이 품목 전체 · {spots}곳{units.size === 1 ? ` · 지금 ${fmtQty(totalQ)}${[...units][0]}` : ''}{disposedQ > 0 ? (units.size === 1 ? ` · 폐기 ${fmtQty(disposedQ)}${[...units][0]}` : ' · 폐기 있음') : ''}</span>
                     </p>
                     <ul className="flex flex-wrap gap-1.5">
                       {sorted.map(pl => {
                         const isCur = pl.id === it.id
                         const isPending = data.pending.some(x => x.id === pl.id)
-                        const otherSpec = itemIdentity(pl) !== itemIdentity(it) ? specOf(pl) : ''
+                        // 규격은 **조건 없이** 병기한다. 종전처럼 "지금 카드와 정체성이 다를 때만" 달면
+                        // 무라벨 칩이 두 뜻을 진다 — '이 카드와 같은 규격'과 '규격이 아예 안 적힌 카드'.
+                        // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
+                        // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
+                        const chipSpec = specOf(pl)
                         return (
                           <li key={pl.id}>
                             <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }}
@@ -1506,8 +1523,15 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                                   : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
                               ].join(' ')}>
                               {curPlace(pl)}{isPending ? ' (수령 대기)' : ''}
-                              {otherSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{otherSpec}</span>}
+                              {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
                               <span className="mono font-semibold tabular-nums">{fmtQty(pl.qtyValue ?? pl.count)}{pl.qtyUnit ?? '개'}</span>
+                              {/* 폐기가 있는 칩에만 누적을 부기 — 카드 목록 valueSub(`누적 N개`)와 같은 문법이라
+                                  새 패턴이 아니다. 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
+                                  전량 폐기된 카드가 `0개`로 서는 것도 이 한 조각으로 읽힌다 — 옆에 누적이
+                                  붙어야 0이 유령이 아니라 결과로 보인다. 폐기가 없으면 한 픽셀도 안 바뀐다. */}
+                              {pl.disposedQty > 0 && (
+                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">누적 {fmtQty(pl.liveUnits + pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
+                              )}
                             </button>
                           </li>
                         )
@@ -1521,10 +1545,14 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   §12 자동 합산 읽기전용 문법(bg --sand-s, 보더 없음, tnum, 포커스 불가). */}
               {!data.pending.some(x => x.id === it.id) && (() => {
                 const unit = it.qtyUnit ?? '개'
+                // 이 칸의 범위는 **이 카드 한 자리**다(버킷+규격). 바로 위 배치 현황은 품목 전체라
+                // 범위를 안 적으면 두 숫자가 같은 것을 두 번 말하는 줄 알고 어긋남으로 읽힌다 —
+                // 미배정 카드에 22곳이 서고 바로 아래 폐기 0 이 서던 자리다(신고 be42800d).
+                const here = `${curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
                 return (
                   <div>
                     <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">설치·폐기
-                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">자동 계산</span>
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{here} 기준 · 자동 계산</span>
                     </p>
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md bg-[var(--sand-s)] px-3 py-2.5">
                       <span className="text-xs text-[var(--warm-mid)]">지금 있는 것
