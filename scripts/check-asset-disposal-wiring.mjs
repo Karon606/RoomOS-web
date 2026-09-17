@@ -252,7 +252,7 @@ function body(src, header) {
   need('buysOf 가 폐기분을 옮기기 대상에서 뺀다', /for \(const b of it\.breakdown\) \{\s*if \(b\.disposed\) continue/.test(client),
     '남기면 "그 구매분 N개" 가 살아 있는 수량보다 많다고 말해 초과 거부에 걸린다')
   need('폐기 없는 카드는 보조줄을 안 받는다',
-    /valueSub=\{it\.disposedQty > 0 \? `누적 [^`]*` : undefined\}/.test(client),
+    /valueSub=\{it\.disposedQty > 0 \? `폐기 [^`]*` : undefined\}/.test(client),
     '빈 문자열이나 0 표시로 바꾸면 폐기 없는 카드의 픽셀이 바뀐다')
   need('수령 대기가 섞이면 폐기 알약을 숨긴다',
     /!selItems\.some\(it => data\.pending\.some\(p => p\.id === it\.id\)\)[\s\S]{0,160}?폐기·분실/.test(client))
@@ -297,12 +297,19 @@ function body(src, header) {
     "'3장는요?'·'3롤가' 가 나간다 — lib/statusReasons 정본을 쓴다")
 }
 
-// ── ⓛ 상세 모달의 **범위 표기** (신고 3e861137·고압호스 / be42800d·앵글밸브, 2026-09-17) ──
+// ── ⓛ 상세 모달의 **범위 표기와 셈법 축** (신고 3e861137·고압호스 / be42800d·앵글밸브, 2026-09-17) ──
 //    한 모달 안에 범위가 다른 집계가 셋 있는데 범위를 말하는 글자가 하나도 없었다.
-//      카드 머리 `총 N개`(버킷+규격) · `배치 현황`(품목 전체) · `설치·폐기`(버킷+규격)
+//      카드 머리 `지금 N개`(버킷+규격) · `배치 현황`(품목 전체) · `설치·폐기`(버킷+규격)
 //    데이터도 집계 축도 정상이고 결함은 표시 한 겹이었다. 그래서 여기서 지키는 것은 **글자**다 —
 //    범위를 말하는 말이 사라지거나, 규격 병기가 조건부로 되돌아가면 같은 신고가 그대로 재발한다.
 //    설치·폐기를 품목 단위로 올리는 '해결'은 금지다(커밋 950e73de — 돈의 축은 그 방에 들어간 누적).
+//
+//    독립 웹디자이너 검수(2026-09-17)가 같은 모달에서 **두 번째 층**을 찾았다. 범위는 적혔는데
+//    이번에는 **셈법**이 갈렸다 — 칩 수량은 qtyValue 축, 부기한 `누적`은 liveUnits 축이라 한 카드의
+//    "지금"이 한 모달 안에서 두 수로 갈린다. 낱말도 `누적`이라 폐기 수를 읽으려면 뺄셈을 해야 했다.
+//    운영자 확정 셋. (1) 칩 낱말은 `폐기` (2) 머리의 `지금`에서 수령 대기분을 뺀다 (3) 칩과 아래
+//    블록의 셈법을 통일한다. 그래서 이 절은 이제 **낱말**과 **축**을 같이 본다 — `누적`으로 되돌아가거나
+//    한 화면의 `지금`이 두 축으로 갈리면 빨갛다.
 {
   // 규격 문자열은 한 자리에서만 조립한다. 세 자리가 각자 만들면 한 화면에서 표기가 갈린다.
   need('규격 문자열 정본(specOf)이 하나다',
@@ -335,16 +342,80 @@ function body(src, header) {
   need('칩이 그 규격을 실제로 찍는다', /\{chipSpec && <span[^>]*>\{chipSpec\}<\/span>\}/.test(client),
     'const 만 남기고 찍는 자리를 지우면 계산은 멀쩡한데 화면은 종전이다')
 
-  // 4) 폐기가 있는 칩에만 누적 부기 — 폐기를 적은 사람이 확인할 자리가 앱에 여기뿐이다.
-  need('폐기가 있는 칩에 누적을 부기한다',
-    /\{pl\.disposedQty > 0 && \(\s*\n\s*<span[^>]*>누적 \{fmtQty\(pl\.liveUnits \+ pl\.disposedQty\)\}/.test(client),
-    '카드 목록 valueSub 와 같은 문법이다 — 없으면 22곳을 하나씩 눌러 봐야 한다')
+  // 4) 폐기가 있는 칩에만 폐기 수를 부기 — 폐기를 적은 사람이 확인할 자리가 앱에 여기뿐이다.
+  need('폐기가 있는 칩에 폐기 수를 부기한다',
+    /\{pl\.disposedQty > 0 && \(\s*\n\s*<span[^>]*>폐기 \{fmtQty\(pl\.disposedQty\)\}/.test(client),
+    '카드 목록 valueSub 와 같은 낱말이다 — 없으면 22곳을 하나씩 눌러 봐야 한다')
   need('폐기 없는 칩은 한 픽셀도 안 바뀐다', /\{pl\.disposedQty > 0 && \(/.test(client),
     '조건을 걷어 0 을 찍으면 폐기 없는 카드의 칩 폭이 바뀐다')
   need('배치 현황 머리가 품목 전체 폐기 합을 말한다',
     /const disposedQ = sorted\.reduce\(\(s, x\) => s \+ x\.disposedQty, 0\)/.test(client)
     && /disposedQ > 0 \? \(units\.size === 1 \? ` · 폐기 /.test(client),
     '목록이 폐기를 빼는 것은 옳다 — 다만 뺀다는 사실을 머리가 말해야 합계의 뜻이 정해진다')
+
+  // 4-B) **낱말은 `폐기` 하나다.** 신고 원문이 "왜 폐기 분실이 0개이고" 였고, `누적 N개`는 폐기 수를
+  //      읽으려면 뺄셈을 시킨다. 한 화면에 두 낱말이 서면 안 된다(doc-vocabulary) — 칩과 카드 목록이
+  //      같이 간다. disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌도 이 낱말로 사라진다.
+  need('칩·카드 목록 어디에도 `누적` 부기가 없다',
+    !/>누적 \{fmtQty\(/.test(client) && !/`누적 \$\{fmtQty\(/.test(client),
+    '`누적`으로 되돌리면 뺄셈이 돌아오고 liveUnits + disposedQty 파생이라 칩 수량과 축이 또 갈린다')
+  need('설치·폐기 블록의 `누적`은 그대로 둔다',
+    /<span className="text-xs text-\[var\(--warm-mid\)\]">누적\s*\n/.test(client),
+    '세 수(지금·폐기·누적)가 나란히 선 자리라 여기서는 뺄셈이 필요 없다 — 지울 대상이 아니다')
+
+  // 4-C) **셈법 축.** 한 모달의 `지금`이 전부 liveUnits 여야 한다. qtyValue 는 미기록 행을 0으로
+  //      접고 liveUnits 는 1로 세므로(aggregate.ts) 섞인 카드에서 같은 낱말이 다른 수를 말한다.
+  need('칩 수량이 liveUnits 축이다',
+    /<span className="mono font-semibold tabular-nums">\{fmtQty\(pl\.liveUnits\)\}/.test(client),
+    '`pl.qtyValue ?? pl.count` 로 되돌리면 수량 미기록 카드가 **구매 건수를 개 단위로** 찍는다')
+  need('배치 현황 머리의 `지금`도 liveUnits 축이다',
+    /const totalQ = sorted\.reduce\(\(s, x\) => s \+ \([\s\S]{0,80}?\? 0 : x\.liveUnits\), 0\)/.test(client),
+    '머리와 칩이 다른 축이면 칩을 세어 더한 수가 머리와 안 맞는다(두 신고가 다 칩을 세서 나왔다)')
+  need('카드 머리의 `지금`도 liveUnits 축이다',
+    /">지금 \{it\.qtyValue != null \? `\$\{fmtQty\(it\.liveUnits\)\}/.test(client),
+    '200px 아래 `지금 있는 것`이 liveUnits 다 — 여기만 qtyValue 면 같은 낱말이 다른 수를 말한다')
+  need('카드 머리가 `총` 을 안 쓴다', !/">총 \{it\.qtyValue/.test(client),
+    '첫 값만 살아 있는 수량이고 금액·구매 건수는 폐기분까지 전부다 — 총이 세 값을 못 덮는다')
+
+  // 4-D) **머리의 `지금`은 수령 대기를 뺀다**(운영자 확정). 칩은 남기되 머리가 안 센다.
+  need('머리의 `지금`이 수령 대기분을 뺀다',
+    /const totalQ = sorted\.reduce\(\(s, x\) => s \+ \(data\.pending\.some\(p => p\.id === x\.id\) \? 0 :/.test(client),
+    '"지금 44개"라 말한 바로 아래 아직 안 온 물건이 (수령 대기) 딱지를 달고 선다')
+  need('수령 대기 딱지가 말줄임 **밖**에 있다',
+    /<span className="min-w-0 truncate">\{curPlace\(pl\)\}<\/span>[\s\S]{0,400}?\{isPending && <span>\(수령 대기\)<\/span>\}/.test(client),
+    '안에 두면 긴 경로에서 이 딱지부터 잘려 나가 머리가 그 칩을 안 센다는 단서가 사라진다')
+  need('곳 수는 수령 대기 자리를 그대로 센다',
+    !/spotKey[\s\S]{0,200}?data\.pending/.test(client),
+    "`곳`은 칩이 선 자리 수다 — 빼면 전량 수령 대기 품목에서 칩이 둘인데 `0곳`이 된다")
+
+  // 4-E) **칩 안쪽 문법** — 가운뎃점 구분자(§11)와 자리 이름 말줄임. 라이트에서 --warm-mid 와
+  //      --warm-muted 가 같은 값이라 색으로는 토막이 안 갈린다(globals.css §05 주석).
+  need('칩 토막을 가운뎃점이 가른다',
+    /const sep = <span aria-hidden="true" className="text-\[var\(--warm-muted\)\]">·<\/span>/.test(client),
+    "gap-1 4px 와 같은 12px 띄어쓰기 3.25px 는 0.75px 차이라 긴 칩이 한 덩어리 문장으로 읽힌다")
+  need('그 구분자를 칩이 실제로 찍는다', (client.match(/\{sep\}|&& sep\}/g) ?? []).length >= 3,
+    'const 만 남기고 찍는 자리를 지우는 우회 — 계산은 멀쩡한데 화면은 종전이다')
+  need('자리 이름이 말줄임된다', /<span className="min-w-0 truncate">\{curPlace\(pl\)\}<\/span>/.test(client),
+    '전체 경로는 4단계까지 간다 — 안 줄이면 칩 하나가 328x42 두 줄이 되어 칩 문법이 깨진다')
+  need('나머지 토막은 안 줄어든다(whitespace-nowrap)',
+    /'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border/.test(client),
+    '없으면 min-content 가 낱말 단위라 `폐기 2개`가 두 줄로 접힌다')
+  need('잘린 이름을 title 이 받는다', /onClick=\{\(\) => \{ if \(!isCur\) setDetailItem\(pl\) \}\} title=\{curPlace\(pl\)\}/.test(client),
+    '자르면 어느 자리인지 못 읽는다 — 저장소 정본(DashboardClient·FinanceClient)과 같은 문법')
+
+  // 4-F) **범위 머리는 음절로 안 끊긴다.** 자리 이름이 전체 경로라 두 줄이 되는데, 한글 기본
+  //      줄바꿈이 음절 단위라 `자동 계산`이 `자` / `동 계산`으로 갈렸다(실측 328px).
+  for (const head of ['배치 현황', '설치·폐기']) {
+    need(`${head} 머리에 break-keep 이 있다`,
+      new RegExp(`<p className="mb-1\\.5 break-keep text-xs font-semibold text-\\[var\\(--warm-mid\\)\\]">${head.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(client),
+      '저장소가 이미 열 곳 넘게 쓰는 문법이다')
+  }
+
+  // 4-G) 칩 수와 곳 수가 다른 이유를 캡션이 말한다. 종전엔 숫자가 틀려도 세면 맞았는데
+  //      곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었다.
+  need('캡션이 칩과 곳이 갈리는 이유를 말한다',
+    /같은 자리라도 규격이 다르면 따로 나와요\. 눌러서 그 위치 카드로 이동할 수 있어요/.test(client),
+    '없으면 `22곳`인데 칩이 22개가 아닌 이유를 화면이 한 글자도 말하지 않는다')
 
   // 5) 설치·폐기 = 이 카드 한 자리. 범위를 적되 **품목 단위로 올리지 않는다**.
   need('설치·폐기 머리에 그 카드의 자리가 박힌다',

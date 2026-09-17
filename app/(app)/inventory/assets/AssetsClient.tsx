@@ -803,7 +803,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </>}
         meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
-        valueSub={it.disposedQty > 0 ? `누적 ${fmtQty(it.liveUnits + it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
+        valueSub={it.disposedQty > 0 ? `폐기 ${fmtQty(it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
         valueDanger={it.disposedQty > 0 && it.liveUnits <= 0}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
         expand={
@@ -1407,8 +1407,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
-                {/* 수량 미기록(qtyValue null)은 '총 0개'가 아니라 그대로 말한다 — 카드가 'N건'으로 보이는 것과 같은 상태(신고 2c13c859) */}
-                <span className="text-xs text-[var(--warm-muted)]">총 {it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : '수량 미기록'} · {won(it.amount)} · 구매 {it.count}건</span>
+                {/* 수량 미기록(qtyValue null)은 '0개'가 아니라 그대로 말한다 — 카드가 'N건'으로 보이는 것과
+                    같은 상태(신고 2c13c859). 낱말이 `총`이 아니라 `지금`인 이유. 이 값은 살아 있는 수량인데
+                    같은 줄의 금액과 구매 건수는 폐기분까지 포함한 전부라, `총`이 세 값을 덮는데 첫 값만
+                    총이 아니었다. 이 화면의 다수파도 `지금 있는 수량`이다. 찍는 수는 liveUnits — 200px 아래
+                    `지금 있는 것`이 같은 축이라 여기만 qtyValue 로 두면 같은 낱말이 다른 수를 말한다.
+                    qtyValue 는 '적힌 것이 있나'를 묻는 데만 쓴다(그 판정은 폐기 행까지 본다). */}
+                <span className="text-xs text-[var(--warm-muted)]">지금 {it.qtyValue != null ? `${fmtQty(it.liveUnits)}${it.qtyUnit ?? '개'}` : '수량 미기록'} · {won(it.amount)} · 구매 {it.count}건</span>
                 {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '', replace: '' })}
@@ -1485,13 +1490,26 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 if (places.length <= 1) return null
                 const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
                 const sorted = [...places].sort((a, b) => rank(a) - rank(b) || (a.roomNo ?? a.locationName ?? '').localeCompare(b.roomNo ?? b.locationName ?? ''))
-                const totalQ = sorted.reduce((s, x) => s + (x.qtyValue ?? 0), 0)
+                // `지금`은 **수령한 것**만 센다. 수령 대기 칩은 스스로 `(수령 대기)`라고 적혀 있는데
+                // 머리가 그것까지 더하면 "지금 44개"라 말한 바로 아래 아직 안 온 물건이 딱지를 달고 선다.
+                // 종전 `총`은 "산 것 전부"로도 읽혀 덜 아팠고 `지금`이 그 여지를 없앴다. 칩 자체는 남긴다 —
+                // 수령 대기 카드에서 "이 제품이 지금 어디에 설치돼 있나"를 보는 용도가 이 목록의 시작이었다.
+                //
+                // 축은 liveUnits 다. 칩 수량(`fmtQty(pl.liveUnits)`)·`폐기 {disposedQ}`·아래 설치·폐기
+                // 블록이 전부 이 축이라 여기만 qtyValue 로 두면 한 줄에 두 축이 붙고, 머리의 수와 칩을
+                // 세어 더한 수가 갈린다. 두 축은 수량 미기록 행이 섞인 카드에서만 갈리는데(aggregate.ts —
+                // qtyValue 는 미기록 행을 0으로 접고 liveUnits 는 1로 센다) 그때 참을 말하는 쪽이 이쪽이다.
+                const totalQ = sorted.reduce((s, x) => s + (data.pending.some(p => p.id === x.id) ? 0 : x.liveUnits), 0)
                 // 단위가 섞이면(개+세트) 합계 숫자가 거짓말이 된다 — 곳 수만 말한다.
                 const units = new Set(sorted.map(x => x.qtyUnit ?? '개'))
                 // '곳'은 카드 수가 아니라 **자리 수**다. 같은 자리가 규격 둘로 갈리면 카드는 둘이어도
                 // 자리는 하나다 — 고압호스 미배정(60cm·40cm)이 14곳, 앵글밸브 501·506호(15A·규격 미기록)가
                 // 22곳으로 부풀던 자리다(신고 3e861137·be42800d). 공용부·미배정·공용 자재도 각각 한 자리로 센다
                 // (placeKeyOf 는 옮기기 목적지 키라 미배정·공용을 같은 ''로 접는다 — 여기서는 못 쓴다).
+                // 수령 대기 자리도 한 자리로 센다(`지금`과 달리 안 뺀다). `곳`은 아래 캡션이 설명하는
+                // "칩이 선 자리 수"고, 그 자리가 아직 안 찼다는 말은 그 칩의 `(수령 대기)` 딱지가 한다.
+                // 빼면 칩과 곳이 어긋나는 이유가 둘이 되고(규격 분기 + 수령 대기) 캡션은 앞의 하나만
+                // 말하며, 전부 수령 대기인 품목에서 칩이 둘인데 `0곳`이라 적히는 자리가 생긴다.
                 const spotKey = (x: AssetItem) => x.roomId ? `room:${x.roomId}` : x.locationId ? `loc:${x.locationId}` : x.isCommon ? 'common' : 'unassigned'
                 const spots = new Set(sorted.map(spotKey)).size
                 // 이 목록은 폐기를 뺀 **지금의 배치**다(자리를 떠난 것은 지금의 배치가 아니다).
@@ -1499,9 +1517,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 const disposedQ = sorted.reduce((s, x) => s + x.disposedQty, 0)
                 return (
                   <div>
-                    {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`총 N개`)·아래 `설치·폐기`와 범위가
-                        서로 달라 같은 `총`을 쓰면 계속 겹쳐 읽힌다 — 이 블록에서는 `총`을 안 쓴다. */}
-                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배치 현황
+                    {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`지금 N개`, 이 카드 한 자리)·아래
+                        `설치·폐기`(같은 한 자리)와 범위가 서로 달라 범위를 안 적으면 계속 겹쳐 읽힌다.
+                        `총`은 이 화면에서 소수파인 데다 같은 줄의 금액·구매 건수만 덮으므로 안 쓴다. */}
+                    <p className="mb-1.5 break-keep text-xs font-semibold text-[var(--warm-mid)]">배치 현황
                       <span className="ml-1.5 font-normal text-[var(--warm-muted)]">이 품목 전체 · {spots}곳{units.size === 1 ? ` · 지금 ${fmtQty(totalQ)}${[...units][0]}` : ''}{disposedQ > 0 ? (units.size === 1 ? ` · 폐기 ${fmtQty(disposedQ)}${[...units][0]}` : ' · 폐기 있음') : ''}</span>
                     </p>
                     <ul className="flex flex-wrap gap-1.5">
@@ -1513,31 +1532,55 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                         // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
                         // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
                         const chipSpec = specOf(pl)
+                        // 토막을 가르는 것은 가운뎃점이다(가이드 §11 보조줄 구분자 ' · ', 형제 정본은
+                        // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
+                        // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
+                        // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
+                        // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
+                        // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
+                        const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
+                        // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가
+                        // 328x42 두 줄이 되어 칩 문법이 깨진다. whitespace-nowrap 이 나머지 토막의
+                        // min-content 를 제 폭으로 묶어 주므로 줄어드는 것은 이 칸 하나뿐이고, 잘린
+                        // 이름은 title 이 받는다(저장소 정본 — DashboardClient·FinanceClient 와 같은 문법).
+                        // 눌러서 그 카드로 가면 설치·폐기 머리가 자리 이름을 통째로 다시 말한다.
                         return (
-                          <li key={pl.id}>
-                            <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }}
+                          <li key={pl.id} className="min-w-0 max-w-full">
+                            <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }} title={curPlace(pl)}
                               className={[
-                                'inline-flex items-center gap-1 rounded-sm border px-2.5 py-1 text-xs transition-colors',
+                                'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
                                 isCur
                                   ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
                                   : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
                               ].join(' ')}>
-                              {curPlace(pl)}{isPending ? ' (수령 대기)' : ''}
+                              <span className="min-w-0 truncate">{curPlace(pl)}</span>
+                              {/* 수령 대기 딱지는 말줄임 **밖**에 둔다. 안에 두면 긴 경로에서 이 딱지부터
+                                  잘려 나가는데(실측 `4층 주방 김치냉장고 상…`), 머리의 `지금 N개`가 이 칩을
+                                  안 센다는 사실을 읽을 단서가 화면에서 그것 하나뿐이다. */}
+                              {isPending && <span>(수령 대기)</span>}
+                              {chipSpec && sep}
                               {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
-                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.qtyValue ?? pl.count)}{pl.qtyUnit ?? '개'}</span>
-                              {/* 폐기가 있는 칩에만 누적을 부기 — 카드 목록 valueSub(`누적 N개`)와 같은 문법이라
-                                  새 패턴이 아니다. 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
-                                  전량 폐기된 카드가 `0개`로 서는 것도 이 한 조각으로 읽힌다 — 옆에 누적이
-                                  붙어야 0이 유령이 아니라 결과로 보인다. 폐기가 없으면 한 픽셀도 안 바뀐다. */}
+                              {sep}
+                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.liveUnits)}{pl.qtyUnit ?? '개'}</span>
+                              {/* 폐기가 있는 칩에만 부기 — 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
+                                  낱말이 `누적`이 아니라 `폐기`인 이유 넷. 신고 원문이 "왜 폐기 분실이 0개이고"였고,
+                                  머리의 `폐기 N개`·아래 블록의 `폐기·분실`과 한 벌이 되고, 뺄셈이 필요 없고,
+                                  disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌이 없다(`누적`은
+                                  liveUnits + disposedQty 라 칩 수량과 축이 갈렸다). 폐기가 없으면 안 선다. */}
+                              {pl.disposedQty > 0 && sep}
                               {pl.disposedQty > 0 && (
-                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">누적 {fmtQty(pl.liveUnits + pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
+                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">폐기 {fmtQty(pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
                               )}
                             </button>
                           </li>
                         )
                       })}
                     </ul>
-                    <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">눌러서 그 위치 카드로 이동할 수 있어요</p>
+                    {/* 칩 수와 곳 수가 다른 이유를 화면이 말한다. 종전엔 숫자가 틀려도 칩을 세면 맞았는데
+                        곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었고,
+                        갈린 칩은 정렬이 같아 나란히 붙어 선다(`미배정(여분) 60cm`와 `미배정(여분) 40cm`).
+                        328px 에 326.4px 로 한 줄이다. `규격이 안 붙은 칩은 규격 미기록`을 여기 더하면 두 줄이 된다. */}
+                    <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">같은 자리라도 규격이 다르면 따로 나와요. 눌러서 그 위치 카드로 이동할 수 있어요</p>
                   </div>
                 )
               })()}
@@ -1551,7 +1594,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 const here = `${curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
                 return (
                   <div>
-                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">설치·폐기
+                    {/* break-keep — 자리 이름이 조상까지 이은 전체 경로라 4단계면 이 줄이 두 줄이 된다.
+                        두 줄인 것보다 끊기는 자리가 문제다. 한글 기본 줄바꿈이 음절 단위라 `자동 계산`이
+                        `자` / `동 계산`으로 갈렸다(실측 328px, break-keep 을 켜면 띄어쓰기에서 끊긴다). */}
+                    <p className="mb-1.5 break-keep text-xs font-semibold text-[var(--warm-mid)]">설치·폐기
                       <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{here} 기준 · 자동 계산</span>
                     </p>
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md bg-[var(--sand-s)] px-3 py-2.5">
