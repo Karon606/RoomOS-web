@@ -614,28 +614,34 @@ export default function RequestsClient({
                         <DatePicker value={resolvingDate} onChange={setResolvingDate} maxDate={kstYmdStr()}
                           className="flex-1 min-w-0 text-xs rounded-sm px-2 py-1.5 bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]" />
                       </div>
+                      {/* autoFocus 를 걷었다 — 이 줄은 이제 **완료일을 받으러** 여는 자리이고
+                          날짜 칸이 바로 위다. 모바일에서 열자마자 키보드가 올라와 그 날짜 칸을
+                          덮는다. 형제 셋(수납 내역·요청 탭·작업 행) 어디에도 autoFocus 가 없다. */}
                       <textarea
                         value={resolvingMemo}
                         onChange={e => setResolvingMemo(e.target.value)}
                         rows={2}
-                        autoFocus
                         placeholder="어떻게 처리했는지 짧게 (선택)"
                         className="w-full text-xs rounded-sm px-2 py-1.5 resize-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                       />
+                      {/* 행 인라인 확인 줄은 **확인 좌 · 취소 우**다(저장소 전수 7 대 0). §13·§14 의
+                          '취소 좌'는 폼 박스·모달 푸터 축이라 다른 자리다. 종전 이 줄만 거울이라,
+                          입주자 정보 › 요청·컴플레인 탭에서 완료를 누르던 손 위치가 여기서는
+                          취소였다 — 방금 적은 메모를 버리는데 적용취소도 없다. */}
                       <div className="flex gap-2">
-                        <button
-                          onClick={() => { setResolvingId(null); setResolvingMemo('') }}
-                          disabled={busyId === r.id}
-                          className="flex-1 py-1.5 text-xs font-medium rounded-md bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)] disabled:opacity-50"
-                        >
-                          취소
-                        </button>
                         <button
                           onClick={() => handleResolve(r.id, resolvingMemo, resolvingDate)}
                           disabled={busyId === r.id}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--on-solid)] disabled:opacity-50"
                         >
                           {busyId === r.id ? '저장 중…' : '완료 기록'}
+                        </button>
+                        <button
+                          onClick={() => { setResolvingId(null); setResolvingMemo('') }}
+                          disabled={busyId === r.id}
+                          className="flex-1 py-1.5 text-xs font-medium rounded-md bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)] disabled:opacity-50"
+                        >
+                          취소
                         </button>
                       </div>
                     </div>

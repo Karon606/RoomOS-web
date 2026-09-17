@@ -39,6 +39,7 @@ export function Modal({
   children,
   // 기본 = 헤더 정합 패딩(px-5 sm:px-6 py-4). 풀블리드가 필요하면 bodyClassName='' 을 명시하고 사유 주석을 남긴다.
   bodyClassName = 'px-5 sm:px-6 py-4',
+  bodyRef,
   z = 200,
   dirty = false,
 }: {
@@ -60,6 +61,14 @@ export function Modal({
   collapseFooterOnKeyboard?: boolean
   children: React.ReactNode
   bodyClassName?: string
+  /**
+   * 본문 스크롤러 손잡이. 내용을 바꾸면서 스크롤을 맨 위로 되감아야 하는 자리가 쓴다.
+   *
+   * 이 손잡이가 없던 동안 소비처는 제 div 에 ref 를 달고 `parentElement` 로 한 겹 타고 올라갔다.
+   * 그 방식은 여기서 래퍼를 한 겹만 더 둬도 **예외 없이 조용히 죽는다** — 되감기가 안 되는데
+   * 아무도 모른다. 스크롤러를 아는 것은 이 컴포넌트뿐이니 여기서 내준다.
+   */
+  bodyRef?: React.Ref<HTMLDivElement>
   z?: 200 | 260 | 280 | 380          // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등). 380=시스템 오버레이(오류신고) — 모든 모달·컨펌 위
   /** v2.0 §12 입력 유실 방지 — true 면 배경클릭 무시, Esc·X 는 닫기 확인 1회 */
   dirty?: boolean
@@ -241,7 +250,7 @@ export function Modal({
             ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
         )}
-        <div className={`flex-1 overflow-y-auto overscroll-contain ${bodyClassName}`}>
+        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain ${bodyClassName}`}>
           {children}
         </div>
         {footer && (

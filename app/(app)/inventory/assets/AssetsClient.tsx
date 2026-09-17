@@ -138,12 +138,14 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   // 본문 스크롤러 되감기 — 배치 현황이 본문 **아래쪽**으로 내려갔으므로(범위 축 재편, 2026-09-17)
   // 칩으로 카드를 바꿔도 스크롤이 그대로면 바뀐 내용(그룹 머리·수량 단위·설치·폐기)이 전부
-  // 화면 밖 위에 남는다. 스크롤러는 정본 Modal 의 본문(`flex-1 overflow-y-auto`, Modal.tsx:244)
-  // 이고 이 ref 를 단 div 의 부모다. 정본 Modal 에는 스크롤러를 내주는 손잡이가 없고,
-  // 그것을 만드는 일은 전 모달에 걸리는 변경이라 여기서는 한 겹만 타고 올라간다.
+  // 화면 밖 위에 남는다.
+  //
+  // 스크롤러는 정본 Modal 의 본문(`flex-1 overflow-y-auto`)이고, **정본이 내주는 손잡이**
+  // (`bodyRef`)로 직접 잡는다. 종전에는 제 div 에 ref 를 달고 `parentElement` 로 한 겹 타고
+  // 올라갔는데, 그러면 Modal 이 래퍼를 한 겹만 더 둬도 예외 없이 조용히 죽는다.
   const detailBodyRef = useRef<HTMLDivElement>(null)
   const scrollDetailTop = () => {
-    const sc = detailBodyRef.current?.parentElement
+    const sc = detailBodyRef.current
     if (sc) sc.scrollTop = 0
   }
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
@@ -216,8 +218,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 또 다른 '품목 전체'(이쪽은 규격을 본다)라, 펼친 채로 두면 바로 위 배치 현황과 한 덩어리로
   // 읽힌다. 접힘은 카드가 바뀔 때만 초기화한다 — data 까지 의존성에 넣으면 목록 안에서
   // 적용취소를 누른 순간 router.refresh() 가 보고 있던 목록을 접어 버린다.
+  // **정체성이 아니라 id 를 본다.** 종전에는 detailItem 객체를 그대로 의존성에 두었는데,
+  // saveAssignedAt·undoAssignedAt 이 `setDetailItem(d => ({ ...d, assignedAt }))` 로 새 객체를
+  // 만든다. 카드는 그대론데 참조만 바뀌어 펼쳐 둔 이력이 소리 없이 접혔다 — 하필 배정일을
+  // 고친 결과를 확인할 자리가 그 이력이다.
   const [logOpen, setLogOpen] = useState(false)
-  useEffect(() => { setLogOpen(false) }, [detailItem])
+  useEffect(() => { setLogOpen(false) }, [detailItem?.id])
   useEffect(() => {
     if (!detailItem) { setLogRows([]); return }
     let alive = true
@@ -1462,8 +1468,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           ? `이 품목 · ${specOf(it)} · 최근 30건`
           : places.some(p => specOf(p)) ? '이 품목 · 규격 미기록분 · 최근 30건' : '이 품목 · 최근 30건'
         return (
-          <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md">
-            <div ref={detailBodyRef} className="space-y-4">
+          <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md" bodyRef={detailBodyRef}>
+            <div className="space-y-4">
               <div>
                 <p className="text-sm text-[var(--warm-dark)]">{it.detail || it.itemLabel}</p>
                 <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
@@ -1586,11 +1592,20 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           `기록` = 버튼 동사, `이력`·`내역` = 목록 명사. 한 화면에서 제목과 버튼이
                           같은 낱말을 쓰던 자리는 저장소에 여기뿐이었다. 바로 위 버튼(`폐기·분실
                           기록`)은 그대로 두고 제목만 바꾼다. `폐기·분실`로 맞추면 버튼·집계 박스와
-                          한 벌이 되고, `· N건`은 발급 이력(ResidenceCertClient:163)과 같은 문법이며
-                          수량이 붙은 명사구라 동사 읽기를 끊는다. 토스트의 `폐기 기록을
-                          적용취소했습니다`는 안 고친다 — 그 `기록`은 목록의 한 **행**이다. */}
+                          한 벌이 되고, 수량이 붙은 명사구라 동사 읽기를 끊는다. 토스트의 `폐기 기록을
+                          적용취소했습니다`는 안 고친다 — 그 `기록`은 목록의 한 **행**이다.
+
+                          접미사는 **앞에 가운뎃점을 안 붙인다**(형제 정본 RentReceiptsClient:186
+                          `발급 이력 {n}건`). 종전 `· 2건`은 라벨 안의 `폐기·분실` 가운뎃점과 나란히
+                          서서 같은 부호가 서로 다른 일을 했다. 이 상세의 블록 라벨 넷이 한 꼴이다 —
+                          라벨(semibold)+공백+회색 부연, 가운뎃점은 부연 **안에서만** 토막을 가른다.
+
+                          부연이 `2건`이 아니라 `구매 내역 중 2건`인 이유. 바로 아래 `구매 내역 3건`과
+                          나란히 서면 합이 5로 읽히는데 **둘은 더할 수 없다** — aggregate 의
+                          `count`(=rows.length)가 폐기 행까지 세므로 이 2건은 저 3건 **안에** 있다
+                          (구매 내역 목록에서 그 행들은 `폐기` 딱지를 단다). 포함 관계를 글자로 못박는다. */}
                       <p className="mt-3 mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">폐기·분실 이력
-                        <span className="ml-1.5 font-normal text-[var(--warm-muted)]">· {it.disposals.length}건</span>
+                        <span className="ml-1.5 font-normal text-[var(--warm-muted)]">구매 내역 중 {it.disposals.length}건</span>
                       </p>
                       <ul className="space-y-1">
                         {it.disposals.map(d => (
@@ -1615,9 +1630,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <div>
                 {/* 건수는 카드 머리의 `구매 N건`과 **같은 값**이다(aggregate 의 count = breakdown 행 수).
                     카드 축 그룹의 마지막 블록이라 여기서 건수를 한 번 더 말해 두면, 아래 품목 축
-                    블록으로 넘어갈 때 "방금까지 세던 수는 이 카드 것"이 글자로 닫힌다. */}
+                    블록으로 넘어갈 때 "방금까지 세던 수는 이 카드 것"이 글자로 닫힌다.
+                    접미사에 앞 가운뎃점을 안 붙이는 이유는 위 폐기·분실 이력 주석에 적었다. */}
                 <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역
-                  <span className="ml-1.5 font-normal text-[var(--warm-muted)]">· {it.count}건</span>
+                  <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{it.count}건</span>
                 </p>
                 <ul className="space-y-1.5">
                   {it.breakdown.map(b => {
@@ -1776,7 +1792,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                       collapsible(펼치기·접기 꼬리 + 16px 셰브런, secProps :905)을 블록 라벨
                       크기로 옮겼다. 머리를 SectionHeader 로 올리지 않는 이유는 이 블록이 바로 위
                       그룹 머리의 **아래 층**이기 때문이다(같은 컴포넌트를 쓰면 층이 무너진다). */}
-                  <button type="button" onClick={() => setLogOpen(v => !v)}
+                  {/* 정본 SectionHeader 와 같은 이유로 aria-expanded 를 단다 — 이 손잡이는
+                      정본을 못 쓰는 아래 층이라 그 한 줄이 여기까지 안 온다. */}
+                  <button type="button" onClick={() => setLogOpen(v => !v)} aria-expanded={logOpen}
                     className="flex min-h-[44px] w-full items-center gap-1.5 text-left">
                     <span className="break-keep text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력
                       <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{logScope}</span>

@@ -17,6 +17,7 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
@@ -77,6 +78,11 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
   const [mode, setMode] = useState<Mode>(null)
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
+  // 확인 줄은 **한 번에 하나만** 편다. 종전에는 askOpen 이 카드 지역 상태라 여러 행이 동시에
+  // 열렸다 — 매일 여러 항목을 연달아 처리하는 자리라 반쯤 열린 줄이 쌓인다. 형제 셋은 전부
+  // 부모가 한 줄만 들고 있다(수납 내역 crAskId · 요청 탭 doneAskId · 작업·청소 행).
+  const [askId, setAskId] = useState<string | null>(null)
+  const [askDate, setAskDate] = useState(kstYmdStr())
 
   // 상단 분류: 점검 필요(due) / 여유 / 비활성
   const due     = rows.filter(r => r.isActive && (r.daysUntilDue == null || r.daysUntilDue <= r.alertDaysBefore))
@@ -108,12 +114,29 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       const res = await withSave(() => markChecklistDone({ id: row.id, memo: '', doneDate }))
       if (!res.ok) return
       const logId = res.logId
-      pushToast('success', `점검 완료로 기록했습니다 · 완료일 ${doneDate}`, {
+      // 날짜는 정본 포맷터를 지난다(lib/fmtDate). 원시 ISO 를 그대로 넣으면 `완료일 2026-09-16`
+      // 이 뜨는데 하이픈 날짜는 이 앱 어디에도 없다. 완료일은 최대 33일 전까지 가고 1월이면
+      // 해를 넘으므로 연도가 붙는 fmtDateDot 이다(형제 셋을 이 하나로 모았다).
+      pushToast('success', `점검 완료로 기록했습니다 · 완료일 ${fmtDateDot(doneDate)}`, {
         action: { label: '적용취소', run: () => { void undoDone(row.id, logId) } },
       })
       refresh()
     })
   }
+
+  // 카드에 넘기는 한 벌 — 세 섹션이 같은 props 를 쓴다. 손으로 세 번 적으면 한 곳만 고쳐져
+  // 같은 카드가 섹션마다 다르게 동작한다(이번 검수가 잡은 바로 그 클래스).
+  const cardProps = (r: ChecklistRow) => ({
+    row: r,
+    isPending,
+    askOpen: askId === r.id,
+    setAskOpen: (v: boolean) => setAskId(v ? r.id : null),
+    askDate,
+    setAskDate,
+    onQuickDone: (d: string) => handleQuickDone(r, d),
+    onCheck: () => setMode({ mode: 'check' as const, row: r }),
+    onEdit: () => setMode({ mode: 'edit' as const, row: r }),
+  })
 
   return (
     <div className="space-y-4">
@@ -144,7 +167,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           <EmptyState title="현재 점검이 필요한 항목이 없습니다" />
         ) : (
           <div className="space-y-2">
-            {due.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {due.map(r => <Card key={r.id} {...cardProps(r)} />)}
           </div>
         )}
       </Section>
@@ -152,7 +175,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {ok.length > 0 && (
         <Section title={`여유 ${ok.length}건`}>
           <div className="space-y-2">
-            {ok.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {ok.map(r => <Card key={r.id} {...cardProps(r)} />)}
           </div>
         </Section>
       )}
@@ -160,7 +183,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {archive.length > 0 && (
         <Section title={`비활성 ${archive.length}건`}>
           <div className="space-y-2">
-            {archive.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} muted />)}
+            {archive.map(r => <Card key={r.id} {...cardProps(r)} muted />)}
           </div>
         </Section>
       )}
@@ -224,9 +247,15 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           onConfirm={(memo, doneDate) => {
             startTransition(async () => {
               setError('')
-              const res = await withSave(() => markChecklistDone({ id: mode.row.id, memo, doneDate }), { success: '점검 완료 기록됨' })
+              const res = await withSave(() => markChecklistDone({ id: mode.row.id, memo, doneDate }))
               if (!res.ok) { setError(res.error); return }
+              const logId = res.logId
               setMode(null)
+              // 이 경로에도 적용취소를 단다. 종전에는 카드 경로에만 있었는데, 메모까지 받는
+              // **무거운 쪽**이 되돌릴 길 없이 남아 있었다. 되돌리기는 카드와 같은 undoDone 하나다.
+              pushToast('success', `점검 완료로 기록했습니다 · 완료일 ${fmtDateDot(doneDate)}`, {
+                action: { label: '적용취소', run: () => { void undoDone(mode.row.id, logId) } },
+              })
               refresh()
             })
           }}
@@ -260,12 +289,22 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 
 // ── 카드
-function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: ChecklistRow; isPending: boolean; onQuickDone: (doneDate: string) => void; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
-  const chip = dueChip(row)
+function Card({ row, isPending, askOpen, setAskOpen, askDate, setAskDate, onQuickDone, onCheck, onEdit, muted }: {
+  row: ChecklistRow
+  isPending: boolean
   // 완료 확인 줄 — 누르면 바로 기록하지 않고 완료일부터 받는다(운영자 지시 2026-09-17).
-  // 요청·컴플레인 카드, 수납 내역 행과 같은 인라인 문법이다.
-  const [askOpen, setAskOpen] = useState(false)
-  const [askDate, setAskDate] = useState(kstYmdStr())
+  // 요청·컴플레인 카드, 수납 내역 행과 같은 인라인 문법이다. **상태는 부모가 든다** — 한 번에
+  // 한 줄만 열리게 하려면 카드 밖에서 누가 열려 있는지 알아야 한다.
+  askOpen: boolean
+  setAskOpen: (v: boolean) => void
+  askDate: string
+  setAskDate: (v: string) => void
+  onQuickDone: (doneDate: string) => void
+  onCheck: () => void
+  onEdit: () => void
+  muted?: boolean
+}) {
+  const chip = dueChip(row)
   return (
     <div className={`bg-[var(--cream)] border rounded-xl px-4 py-3 ${muted ? 'opacity-60' : ''}`}
       style={{ borderColor: chip.color === 'var(--danger-fg)' ? 'var(--danger-ring)' : 'var(--warm-border)' }}>
@@ -296,45 +335,50 @@ function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: Ch
           </div>
         </div>
       </div>
-      {askOpen ? (
+      {/* 액션 행은 확인 줄이 떠도 **그대로 선다.** 종전에는 삼항이 이 행을 갈아 끼워 `이력·메모`와
+          `편집`이 통째로 사라졌다 — 완료일을 물으려고 두 기능을 빼앗는 셈이었다. 정본
+          (PaymentRecordList 의 발행일 줄)은 행 액션을 남기고 확인 줄을 아래에 덧붙인다. */}
+      <div className="flex gap-2 mt-3">
+        <button onClick={() => { setAskDate(kstYmdStr()); setAskOpen(true) }} disabled={isPending}
+          className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
+          style={{ background: 'var(--coral)' }}>
+          점검 완료
+        </button>
+        <button onClick={onCheck}
+          className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+          이력·메모
+        </button>
+        <button onClick={onEdit}
+          className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+          편집
+        </button>
+      </div>
+      {askOpen && (
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--warm-mid)' }}>
             완료일
-            {/* 껍데기는 이 카드의 버튼들과 같은 한 벌이다(rounded-lg px-3 py-2 text-xs) —
-                안 넘기면 테두리 없는 맨글자로 그려진다(오류신고 c2ab5b83). */}
+            {/* 껍데기는 형제 인라인 확인 줄과 같은 한 벌이다(TenantRequestsTab 의 DENSE_DATE_CLS,
+                PaymentRecordList 발행일 줄). 안 넘기면 테두리 없는 맨글자로 그려진다(오류신고 c2ab5b83). */}
             <DatePicker value={askDate} onChange={setAskDate} maxDate={kstYmdStr()}
-              className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-xs text-[var(--warm-dark)]" />
+              className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
           </div>
+          {/* 행 인라인 확인 줄은 **확인 좌 · 취소 우**다(저장소 전수 7 대 0). §13·§14 의 '취소 좌'는
+              폼 박스·모달 푸터 축이라 다른 자리다. 종전 이 줄만 거울이라, /requests 에서 완료를
+              누르던 손 위치가 여기서는 취소였다. */}
           <div className="flex gap-2">
-            <button onClick={() => { setAskOpen(false) }}
-              className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              취소
-            </button>
             <button onClick={() => { onQuickDone(askDate); setAskOpen(false) }} disabled={isPending}
               className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
               style={{ background: 'var(--coral)' }}>
               완료 기록
             </button>
+            <button onClick={() => { setAskOpen(false) }}
+              className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              취소
+            </button>
           </div>
-        </div>
-      ) : (
-        <div className="flex gap-2 mt-3">
-          <button onClick={() => { setAskDate(kstYmdStr()); setAskOpen(true) }} disabled={isPending}
-            className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--coral)' }}>
-            점검 완료
-          </button>
-          <button onClick={onCheck}
-            className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            이력·메모
-          </button>
-          <button onClick={onEdit}
-            className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            편집
-          </button>
         </div>
       )}
     </div>
@@ -487,8 +531,10 @@ function CheckModal({
           <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={isPending}>
             닫기
           </Btn>
+          {/* 확인 라벨은 `완료 기록` 하나다(노트 규약). 한 화면에서 카드는 `완료 기록`,
+              모달은 `점검 완료 기록`이라 같은 동작에 두 이름이 서 있었다. */}
           <Btn variant="primary" size="md" className="flex-1" onClick={() => onConfirm(memo, doneDate)} disabled={isPending}>
-            {isPending ? '처리 중…' : '점검 완료 기록'}
+            {isPending ? '처리 중…' : '완료 기록'}
           </Btn>
         </div>
       }>

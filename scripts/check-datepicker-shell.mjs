@@ -20,6 +20,13 @@
 //   그 선언을 찾아 이어 붙여 본다 — 이름만 보고 통과시키면 상수가 빈 문자열이 돼도 초록불이 뜨는
 //   반쪽 그물이 된다(verify-money-consistency 주석의 그 전례).
 //
+//   **축 3 — radius(2026-09-17 추가).** §12 는 전 입력 6px(r-sm) 통일이다. 배경·보더만 보던
+//   종전 축은 `rounded-lg`(10px)로 선 칸을 통과시켰다 — 체크리스트 카드의 완료일 칸이 그 상태로
+//   들어왔고(검수 지적 B3), 주석은 "이 카드의 버튼들과 같은 한 벌"이라 적고 있었다.
+//   **맞출 대상이 틀렸다. 입력은 버튼이 아니라 입력 형제에 맞춘다.**
+//   전수 95곳 중 6px 이 90곳, 어기는 자리 4곳, 껍데기 없는 인라인 편집 예외 1곳이었다 —
+//   90 대 4 라 다수파가 아니라 규칙이다. 축을 세울 값어치가 있다고 판정했다.
+//
 // 예외 하나 — 인라인 텍스트 편집
 //   껍데기 없이 정당한 자리는 '값을 그 자리에서 고치는 링크형' 하나다(입주자 상세의 연락 알림일).
 //   거기서는 밑줄과 강조색이 어포던스를 대신한다. 그래서 배경·보더 대신 `underline` 을 인정한다.
@@ -166,8 +173,27 @@ function importSourceOf(src, name, file) {
   return null
 }
 
+/**
+ * radius 축의 기지(旣知) 셋 — **이번 검수의 범위가 아니라서 손대지 않은 자리다.**
+ *
+ * 세 곳 모두 §12 6px 을 어긴다. 고치는 일 자체는 낱말 하나씩이지만, 이번 지적의 대상은 미푸시
+ * 커밋 셋이고 이 셋은 그보다 앞선 화면이다 — 남의 화면을 말없이 갈아 두면 그 화면을 본 적 없는
+ * 사람이 다음 검수에서 원인을 못 찾는다. 그래서 **고치는 대신 크게 적어 두고** 새 위반만 빨갛게
+ * 한다. 운영자가 승인하면 세 줄을 함께 고치고 이 명단을 지운다(그때 이 그물은 저절로 전수가 된다).
+ *
+ * 명단은 늘리지 말 것. 여기 한 줄을 더하는 것은 빚을 갚는 게 아니라 늘리는 것이다.
+ */
+const RADIUS_KNOWN = [
+  { file: 'app/(app)/tenants/TenantClient.tsx', line: 3193, has: 'rounded-lg',
+    what: '수납 › 조정 납부일 — 아래 DueDayTempAdjustWidget 과 같은 위젯의 두 벌 중 하나' },
+  { file: 'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', line: 224, has: 'rounded-lg',
+    what: '통합 상세 › 조정 납부일 — 위 TenantClient 와 쌍' },
+  { file: 'app/(app)/inventory/InventoryClient.tsx', line: 3448, has: 'rounded-xl',
+    what: '입수일 — 같은 행의 시각 input 이 rounded-sm 이라 한 줄 안에서 두 벌이다(가장 날카로운 §12 위반)' },
+]
 const files = ROOTS.flatMap(r => walk(r))
 let checked = 0
+let radiusChecked = 0
 for (const file of files) {
   const src = readFileSync(file, 'utf8')
   if (!src.includes('<DatePicker')) continue
@@ -191,12 +217,33 @@ for (const file of files) {
       const hasBg = /\bbg-/.test(resolved) || /background\s*:/.test(resolved)
       const hasBorder = /\bborder(?:-|\b)/.test(resolved)
       const hasUnderline = /\bunderline\b|text-decoration/.test(resolved)   // 인라인 편집형 예외
-      if (hasUnderline || (hasBg && hasBorder)) continue
-      const missing = [!hasBg && '배경(bg-)', !hasBorder && '보더(border)'].filter(Boolean).join('·')
-      const which = branch.trim() ? ` (가지: ${branch.trim().slice(0, 40)})` : ''
-      violations.push(`${file}:${line} DatePicker 껍데기에 ${missing} 이 없다${which} — 형제 입력칸과 달리 눌러야 할 칸으로 안 보인다(신고 c2ab5b83)`)
+      if (hasUnderline) continue                       // 인라인 편집형 — 면이 없으니 radius 도 없다
+      if (!hasBg || !hasBorder) {
+        const missing = [!hasBg && '배경(bg-)', !hasBorder && '보더(border)'].filter(Boolean).join('·')
+        const which = branch.trim() ? ` (가지: ${branch.trim().slice(0, 40)})` : ''
+        violations.push(`${file}:${line} DatePicker 껍데기에 ${missing} 이 없다${which} — 형제 입력칸과 달리 눌러야 할 칸으로 안 보인다(신고 c2ab5b83)`)
+        continue
+      }
+      // 축 3 — radius. 면이 있는 칸은 §12 6px(r-sm)이다.
+      //
+      // **호출부에 직접 적힌 글자만 본다.** resolve() 로 펼친 상수 뭉치에는 그 파일의 남남인
+      // 선언까지 딸려 와 `rounded-lg` 가 섞여 들어온다(이 축을 세우며 실제로 9곳이 오탐이었다).
+      // 껍데기를 상수로 뺀 자리는 그 상수 선언 한 줄만 따로 본다.
+      radiusChecked++
+      const own = branch.includes('rounded') ? branch : resolved
+      const radii = [...new Set([...own.matchAll(/\brounded(?:-(?:none|sm|md|lg|xl|2xl|3xl|full))?\b/g)].map(x => x[0]))]
+      const bad = radii.filter(r => r !== 'rounded-sm')
+      if (bad.length === 0) continue
+      if (RADIUS_KNOWN.some(k => k.file === file && k.line === line)) continue
+      violations.push(`${file}:${line} DatePicker 껍데기의 radius 가 ${bad.join('·')} 다 — §12 는 전 입력 6px(rounded-sm) 통일이다. **입력은 옆 버튼이 아니라 제 폼의 입력 형제에 맞춘다**(검수 지적 B3)`)
     }
   }
+}
+
+// 기지 셋은 매번 소리 내어 읽는다 — 조용한 명단은 곧 잊히는 빚이다.
+if (RADIUS_KNOWN.length > 0) {
+  console.log(`[날짜 칸 radius] 기지 위반 ${RADIUS_KNOWN.length}곳 (이번 범위 밖 · 운영자 승인 대기)`)
+  for (const k of RADIUS_KNOWN) console.log(`  · ${k.file}:${k.line} ${k.has} — ${k.what}`)
 }
 
 // 축 2 — 날것 `<input type="date">` 가 **폼 칸**으로 태어나는 것을 막는다.
@@ -217,7 +264,7 @@ for (const file of files) {
   }
 }
 
-console.log(`[날짜 칸 껍데기] 호출부 ${checked}곳 검사 / 위반 ${violations.length}건`)
+console.log(`[날짜 칸 껍데기] 호출부 ${checked}곳 검사(radius ${radiusChecked}가지) / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) {
   console.log('\n  각 자리는 **자기 폼 형제 입력칸과 같은** 껍데기를 넘긴다(§12 한 폼 안 입력 높이 혼용 금지).')

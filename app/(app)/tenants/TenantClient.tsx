@@ -5155,7 +5155,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {statusVal === 'CHECKED_OUT' && (
             // 실제 퇴실일 — 계약상 21일이어도 19일에 일찍 나가면 그날. 퇴실 상태에서만 노출(사후 정정용).
             // 기본값은 예정일이다(lib/checkoutDate 정본과 같은 규칙) — 늦게 처리한다고 밀리지 않는다.
-            <Field label="실제 퇴실일" name="actualMoveOut" type="date" value={actualOut || defaultCheckoutYmd(shortOut, kstYmdStr())} onChange={setActualOut} />
+            // 미래는 못 고른다. 서버(applyStatusTransition·checkoutTenant)는 이미 거부하는데 달력만
+            // 열려 있어, 앞날을 고르고 저장을 눌러야 거절당했다. 앞날은 바로 위 '퇴실 예정일'에 적는다.
+            <Field label="실제 퇴실일" name="actualMoveOut" type="date" value={actualOut || defaultCheckoutYmd(shortOut, kstYmdStr())} onChange={setActualOut} maxDate={kstYmdStr()} />
           )}
         </div>
       </FormSection>
@@ -5384,22 +5386,26 @@ function ContactValueInput({ name, defaultValue, contactType, onValueChange }: {
 }
 
 // value/onChange 를 주면 controlled, 아니면 defaultValue 로 자체 state 보유 (배타 사용).
-function DateFieldInner({ name, defaultValue, placeholder, value, onChange }: {
+function DateFieldInner({ name, defaultValue, placeholder, value, onChange, maxDate }: {
   name: string; defaultValue?: string; placeholder?: string; value?: string; onChange?: (v: string) => void
+  /** 앞날을 고를 수 없는 칸만 넘긴다(실제 퇴실일). 안 넘긴 칸은 종전 그대로 열려 있다. */
+  maxDate?: string
 }) {
   const [val, setVal] = useState(defaultValue ?? '')
   return (
     <DatePicker name={name} value={value ?? val} onChange={onChange ?? setVal} placeholder={placeholder ?? '날짜 선택'}
+      maxDate={maxDate}
       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-0" />
   )
 }
 
-function Field({ label, name, type = 'text', placeholder, defaultValue, required, value, onChange, maxLength, hint }: {
+function Field({ label, name, type = 'text', placeholder, defaultValue, required, value, onChange, maxLength, hint, maxDate }: {
   label: string; name: string; type?: string; placeholder?: string; defaultValue?: string; required?: boolean
   // value/onChange 를 주면 controlled, 아니면 defaultValue uncontrolled (SelectField 와 같은 배타 규칙).
   value?: string; onChange?: (v: string) => void
   maxLength?: number
   hint?: string   // 라벨 옆 보조 설명 — '현지 표기 이름' 캡션과 같은 문법
+  maxDate?: string   // type='date' 전용 — 달력에서 고를 수 있는 마지막 날
 }) {
   return (
     <div className="space-y-1.5">
@@ -5407,7 +5413,7 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
         {hint && <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal"> {hint}</span>}
       </label>
       {type === 'date'
-        ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} value={value} onChange={onChange} />
+        ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} value={value} onChange={onChange} maxDate={maxDate} />
         : type === 'birthdate'
         ? <BirthdateInput name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />

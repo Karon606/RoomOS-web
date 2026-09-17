@@ -6,6 +6,7 @@ import { requireEdit } from '@/lib/role'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { fillResidenceCertSeoul, type ResidenceCertFields } from '@/lib/residenceCertOverlay'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { assertNotFuture } from '@/lib/completionDate'
 
 // pdf-lib 는 가볍고 빠름 — puppeteer 불필요. nodejs runtime(Buffer·googleapis) 필요.
 export const runtime = 'nodejs'
@@ -39,6 +40,14 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Body
     if (!body.tenantId || !body.fields) return NextResponse.json({ ok: false, error: '필수 데이터 누락' }, { status: 400 })
+
+    // 발급일은 미래일 수 없다(운영자 확정 2026-09-17 — "미래로 할 필요는 없을 듯, 필요하면 발급
+    // 전에 수동으로 바꾸면 되니까"). 화면 max 와 두 겹이고, 정본은 lib/completionDate 다.
+    // **그리기 전에** 막는다 — 미리보기도 같은 문을 지나야 미래 날짜가 찍힌 종이가 아예 안 나온다.
+    // 문구는 이 화면의 말을 쓴다(자재 여섯이 '완료일'을 그대로 돌려주던 것과 같은 규칙).
+    if (!assertNotFuture(body.fields.issueDate).ok) {
+      return NextResponse.json({ ok: false, error: `발급일이 미래입니다(${body.fields.issueDate}). 아직 발급하지 않은 서류는 그 날짜로 기록할 수 없습니다.` }, { status: 400 })
+    }
 
     // 본인 영업장 입실자만 — 도장은 클라가 아니라 서버 DB 기준으로 결정(주입 방지)
     const [tenant, property] = await Promise.all([

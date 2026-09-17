@@ -882,7 +882,7 @@ export async function createStockCheck(data: {
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     // 미래 날짜 거부 — 지나지 않은 날의 점검은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `점검일이 미래입니다(${data.date}). 아직 하지 않은 점검은 기록할 수 없습니다.` }
     // #3: locationPatch(한 칸) 또는 locationPatches(아이템별 폼의 여러 칸)가 오면
     // 직전 점검의 위치별 잔량을 base 로 서버에서 적용한다. 두 갈래는 **같은 한 줄의 base** 를 쓴다 —
     // 갈라 놓으면 비대칭 가드(check-stock-ledger-parity)가 한쪽만 보게 된다.
@@ -1107,7 +1107,7 @@ export async function saveFullReconcile(data: {
     if (!data.items.length) return { ok: true, count: 0, createdIds: [] }
     // 미래 날짜 거부 — 지나지 않은 날의 보정은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `보정일이 미래입니다(${data.date}). 아직 하지 않은 보정은 기록할 수 없습니다.` }
     const ids = data.items.map(i => i.trackedItemId)
     const owned = await prisma.trackedItem.findMany({ where: { id: { in: ids }, propertyId }, select: { id: true } })
     const ownedSet = new Set(owned.map(o => o.id))
@@ -1179,7 +1179,7 @@ export async function updateStockCheck(id: string, data: {
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
     // 미래 날짜 거부 — 지나지 않은 날의 점검은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `점검일이 미래입니다(${data.date}). 아직 하지 않은 점검은 기록할 수 없습니다.` }
 
     // #3: locationPatch가 오면 이 점검의 현재 위치별 잔량을 base로 서버에서 적용(연속 위치점검 머지 정확)
     let patchedQtys: LocQty[] | null = null
@@ -1876,9 +1876,9 @@ export async function createStockAddition(data: {
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
-    // 미래 날짜 거부 — 지나지 않은 날의 입수은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
+    // 미래 날짜 거부 — 지나지 않은 날의 입수는 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `입수일이 미래입니다(${data.date}). 아직 받지 않은 물건은 입수로 기록할 수 없습니다.` }
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
@@ -1999,9 +1999,9 @@ export async function updateStockAddition(id: string, data: {
     const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
     if (data.addedQty !== undefined && data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
-    // 미래 날짜 거부 — 지나지 않은 날의 입수은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
+    // 미래 날짜 거부 — 지나지 않은 날의 입수는 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `입수일이 미래입니다(${data.date}). 아직 받지 않은 물건은 입수로 기록할 수 없습니다.` }
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
@@ -2083,9 +2083,9 @@ export async function createStockDisposal(data: {
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (data.disposedQty <= 0) return { ok: false, error: '폐기 수량은 0보다 커야 합니다.' }
-    // 미래 날짜 거부 — 지나지 않은 날의 폐기은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
+    // 미래 날짜 거부 — 지나지 않은 날의 폐기는 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
-    { const fg = assertNotFuture(data.date); if (!fg.ok) return { ok: false, error: fg.reason } }
+    if (!assertNotFuture(data.date).ok) return { ok: false, error: `폐기일이 미래입니다(${data.date}). 아직 하지 않은 폐기는 기록할 수 없습니다.` }
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }

@@ -4,7 +4,10 @@
 // 등록(생성) + 완료 처리 + 완료 적용취소 + 삭제 + 처리 이력 펼침/접힘.
 
 import { useEffect, useState, useTransition } from 'react'
-import { fmtMD as fmtDate } from '@/lib/fmtDate'
+// 두 포맷터를 나눠 쓴다. 목록 행은 그 입주자의 요청을 훑는 짧은 인라인이라 fmtMD('7/10')가 맞고,
+// 완료 토스트는 **방금 저장한 값을 확인하는 자리**라 연도가 붙는 fmtDateDot 이다 — 완료일은 최대
+// 33일 전까지 가고 1월이면 해를 넘는다. 형제 셋(/requests·체크리스트·여기)의 토스트를 이 하나로 모았다.
+import { fmtMD as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   createTenantRequest, resolveTenantRequest, unresolveTenantRequest, deleteTenantRequest, getTenantRequests,
@@ -104,7 +107,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
       const opts: { action: { label: string; run: () => void }; detail?: string } = {
         action: { label: '적용취소', run: () => handleUnresolve(id) },
       }
-      pushToast('success', `완료로 처리했습니다 · 완료일 ${fmtDate(doneDate)}`, opts)
+      pushToast('success', `완료로 처리했습니다 · 완료일 ${fmtDateDot(doneDate)}`, opts)
       await reload()
     })
   }

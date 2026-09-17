@@ -20,6 +20,16 @@
 //   ⓑ 서버 — 완료 액션들이 미래 가드(assertNotFuture)와 값 결정 정본(resolveCompletionAt)을 지나는가.
 //   ⓒ 화면 — 완료 버튼 옆에 완료일 칸이 서고 그 칸에 maxDate 가 걸려 있는가.
 //   ⓓ 어휘 — 라벨이 '완료일'이다. '처리일'은 **클릭한 날로 읽힌다**(보증금 정산일 축 ⓒ 가 이미 막았다).
+//      **거부 사유는 그 화면의 낱말을 쓴다.** 정본 assertNotFuture 의 기본 사유는 '완료일이
+//      미래입니다'인데, 그것을 그대로 돌려주면 라벨이 '점검일'·'입수일'·'폐기일'인 폼에서 화면에
+//      없는 낱말이 뜬다(검수 지적 B1, 2026-09-17 — 자재 여섯이 그 상태였다). 리터럴 '처리일'만
+//      보던 종전 축은 이 클래스를 한 건도 못 잡았다.
+//   ⓔ 순서 — **행 인라인 확인 줄은 확인 좌 · 취소 우**다(저장소 전수 7 대 0, 2026-09-17).
+//      같은 요청을 완료하는 두 화면에서 좌우가 거울이면, 한쪽에서 완료를 누르던 손 위치가 다른
+//      쪽에서는 취소다 — 그 취소는 방금 적은 메모를 버리고 적용취소도 없다. §13·§14 의 '취소 좌'는
+//      폼 박스·모달 푸터 축이라 **다른 자리**이므로 이 축은 인라인 확인 줄만 본다.
+//   ⓕ 발급일 — 서류 발급일도 미래를 막는다(운영자 확정 2026-09-17 — "미래로 할 필요는 없을 듯,
+//      필요하면 발급 전에 수동으로 바꾸면 되니까"). 화면 상한 + 서버 가드 두 겹이다.
 //
 // 무엇을 안 보나 — 이미 도메인 그물이 보는 자리는 뺀다. 두 그물이 같은 줄을 울면 고치는 사람이
 // 어느 규칙을 따를지 모른다.
@@ -154,13 +164,102 @@ for (const s of SERVER) {
   }
 }
 
+// ── ⓓ 어휘 축(2) — 거부 사유가 그 화면의 낱말을 쓰는가 ──────────
+//
+// 정본 assertNotFuture 의 기본 사유는 '완료일이 미래입니다'다. 라벨이 '점검일'·'입수일'인 폼에서
+// 그것을 그대로 돌려주면 **화면에 없는 낱말**이 뜬다. 시공자는 이 규칙을 알고 있었다 —
+// lib/cashReceipt 주석이 "사유 문구만 이 도메인의 말이다"이고 퇴실도 제 말을 쓴다. 자재 여섯만
+// 빠졌고, 리터럴 '처리일'만 보던 종전 축은 한 건도 못 잡았다(검수 지적 B1).
+//
+// **명단은 fail closed 다.** 새 가드 자리가 생기면 여기 적히기 전까지 걸린다 — 적는 순간
+// '이 화면의 낱말이 무엇인가'를 스스로 답하게 되는 것이 이 축의 요점이다. 열쇠는 줄 번호가 아니라
+// 감싸는 함수 이름이라 코드가 위아래로 밀려도 안 썩는다.
+const GUARD_SITES = [
+  { file: 'app/(app)/tenants/actions.ts', fn: 'checkoutTenant',        word: '퇴실일' },
+  { file: 'app/(app)/tenants/actions.ts', fn: 'applyStatusTransition', word: '퇴실일' },
+  { file: 'app/(app)/tenants/actions.ts', fn: 'resolveTenantRequest',  word: '완료일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'createStockCheck',     word: '점검일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'updateStockCheck',     word: '점검일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'saveFullReconcile',    word: '보정일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'createStockAddition',  word: '입수일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'updateStockAddition',  word: '입수일' },
+  { file: 'app/(app)/inventory/actions.ts', fn: 'createStockDisposal',  word: '폐기일' },
+  { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'completeCleaning',   word: '완료일' },
+  { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'rescheduleCleaning', word: '완료일' },
+  { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork',    word: '완료일' },
+  { file: 'app/(app)/room-manage/workActions.ts', fn: 'rescheduleRoomWork',  word: '완료일' },
+  { file: 'app/(app)/checklist/actions.ts', fn: 'markChecklistDone', word: '완료일' },
+  { file: 'app/api/import/route.ts', fn: 'importRequests', word: '완료일' },
+  // 아래 셋은 완료 축 밖의 도메인이라 제 말을 쓴다(현금영수증·서류 발급은 각자의 노트가 정본).
+  { file: 'lib/cashReceipt.ts', fn: 'resolveCashReceiptIssuedAt', word: '발행일' },
+  { file: 'app/api/rent-receipt/generate/route.ts', fn: 'POST', word: '발급일' },
+  { file: 'app/api/residence-cert/generate/route.ts', fn: 'POST', word: '발급일' },
+]
+
+/** 이 위치를 감싸는 `function 이름(` 을 위로 거슬러 찾는다. 줄 번호보다 안 썩는 열쇠다. */
+function enclosingFn(src, index) {
+  const head = src.slice(0, index)
+  let name = null
+  for (const m of head.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g)) name = m[1]
+  return name
+}
+
+{
+  const seen = new Set()
+  for (const site of new Set(GUARD_SITES.map(s => s.file))) {
+    const src = strip(readFileSync(join(ROOT, site), 'utf8'))
+    for (const m of src.matchAll(/assertNotFuture\(/g)) {
+      const fn = enclosingFn(src, m.index)
+      const decl = GUARD_SITES.find(s => s.file === site && s.fn === fn)
+      if (!decl) {
+        violations.push(`${site} — ${fn ?? '(파일 최상위)'} 의 미래 가드가 명단에 없다. 이 화면의 날짜 칸 라벨을 GUARD_SITES 에 적을 것(그 낱말이 거부 사유에 서야 한다)`)
+        continue
+      }
+      seen.add(`${site}::${fn}`)
+      // 이 가드가 무엇을 사유로 돌려주는지 — 다음 가드 전까지만 본다.
+      const next = src.indexOf('assertNotFuture(', m.index + 1)
+      const chunk = src.slice(m.index, next < 0 ? m.index + 400 : Math.min(next, m.index + 400))
+      const usesCanon = /\.reason\b/.test(chunk)
+      if (usesCanon && decl.word !== '완료일') {
+        violations.push(`${site} — ${fn} 이 정본 기본 사유를 그대로 돌려준다. 이 폼의 라벨은 '${decl.word}'이라 화면에 없는 낱말('완료일')이 뜬다`)
+      }
+      if (!usesCanon && !chunk.includes(`${decl.word}이 미래입니다`) && !chunk.includes(`${decl.word}가 미래입니다`)) {
+        violations.push(`${site} — ${fn} 의 거부 사유가 제 낱말('${decl.word}')을 안 쓴다`)
+      }
+    }
+  }
+  for (const s of GUARD_SITES) {
+    if (!seen.has(`${s.file}::${s.fn}`)) {
+      violations.push(`${s.file} — ${s.fn} 에서 미래 가드가 사라졌다(명단에는 '${s.word}'로 적혀 있다). 이름이 바뀌었으면 명단도 같이 고칠 것`)
+    }
+  }
+}
+
+// ── ⓕ 발급일 축 — 서류 발급일도 미래를 막는다 ────────────────────
+// 운영자 확정 2026-09-17. 종전 조사가 "미래 발급이 정당한 업무인지 확인 못 했다"로 남겼는데
+// **정당한 업무가 없다는 답**이 나왔다("필요하면 발급 전에 수동으로 바꾸면 되니까").
+// 화면 상한이 둘로 갈린다 — 영수증은 정본 DatePicker(maxDate), 실거주 확인서는 툴바 칩이라
+// 네이티브 input 의 max 다(.rc-field 가 옆 select 와 한 규칙으로 모양을 준다).
+for (const s of [
+  { file: 'app/rent-receipt/[tenantId]/RentReceiptView.tsx', re: /maxDate=\{kstYmdStr\(\)\}/, what: '납부 확인서·보증금 영수증 발행일(정본 DatePicker)' },
+  { file: 'app/residence-cert/[tenantId]/ResidenceCertView.tsx', re: /type="date"[^>]*\bmax=\{kstYmdStr\(\)\}/, what: '실거주 확인서 작성일(툴바 칩, 네이티브 max)' },
+]) {
+  if (!s.re.test(strip(readFileSync(join(ROOT, s.file), 'utf8')))) {
+    violations.push(`${s.file} — 발급일 칸에 미래 상한이 없다(${s.what}). 아직 발급하지 않은 날짜로 종이가 나간다`)
+  }
+}
+
 // ── ⓒⓓ 화면 축 — 완료 버튼 옆 날짜 칸·maxDate·라벨 ──────────────
+// dateFields = 이 화면에 서야 하는 **상한 걸린 날짜 칸의 수**. 개수를 안 박으면 칸이 둘인 화면에서
+// 하나를 지워도 나머지 하나가 검사를 통과시킨다 — 이 그물을 세우고 역주입으로 실제로 겪었다
+// (체크리스트는 카드와 점검 모달 둘인데, 카드 칸을 지워도 초록불이 떴다). 정당하게 칸이 늘면
+// 이 수를 같이 올린다. 그 한 줄이 "칸을 하나 더 세웠다"는 선언이다.
 const SCREENS = [
-  { file: 'app/(app)/requests/RequestsClient.tsx', what: '/requests 완료 확인 줄' },
-  { file: 'components/entity-modal/widgets/TenantRequestsTab.tsx', what: '입주자 정보 › 요청·컴플레인 탭' },
-  { file: 'app/(app)/checklist/ChecklistClient.tsx', what: '체크리스트 카드·점검 모달' },
-  { file: 'components/work/RoomWorkRowBody.tsx', what: '작업 행 완료 폼' },
-  { file: 'components/cleaning/CleaningRowBody.tsx', what: '청소 행 완료 폼' },
+  { file: 'app/(app)/requests/RequestsClient.tsx', what: '/requests 완료 확인 줄', dateFields: 1 },
+  { file: 'components/entity-modal/widgets/TenantRequestsTab.tsx', what: '입주자 정보 › 요청·컴플레인 탭', dateFields: 1 },
+  { file: 'app/(app)/checklist/ChecklistClient.tsx', what: '체크리스트 카드·점검 모달', dateFields: 2 },
+  { file: 'components/work/RoomWorkRowBody.tsx', what: '작업 행 완료 폼', dateFields: 2 },
+  { file: 'components/cleaning/CleaningRowBody.tsx', what: '청소 행 완료 폼', dateFields: 2 },
 ]
 for (const s of SCREENS) {
   const raw = readFileSync(join(ROOT, s.file), 'utf8')
@@ -168,15 +267,81 @@ for (const s of SCREENS) {
   if (!/(^|[>\s]) *완료일/m.test(src)) {
     violations.push(`${s.file} — 완료일 라벨이 없다(${s.what}). 완료 처리가 날짜를 안 묻는 상태로 되돌아갔다`)
   }
-  // maxDate 가 kstYmdStr() 로 걸려 있는가. 상수로 빼도 되지만 그때는 이 그물을 같이 고친다.
-  if (!/maxDate=\{[^}]*kstYmdStr\(\)/.test(src)) {
-    violations.push(`${s.file} — 완료일 칸에 maxDate 가 없다(${s.what}). 아직 하지 않은 일을 완료로 고를 수 있다`)
+  // maxDate 가 kstYmdStr() 로 걸려 있는가 — **몇 칸인지까지 센다.** 상수로 빼도 되지만
+  // 그때는 이 그물을 같이 고친다.
+  const fields = [...src.matchAll(/maxDate=\{[^}]*kstYmdStr\(\)/g)].length
+  if (fields !== s.dateFields) {
+    violations.push(fields === 0
+      ? `${s.file} — 완료일 칸에 maxDate 가 없다(${s.what}). 아직 하지 않은 일을 완료로 고를 수 있다`
+      : `${s.file} — 상한 걸린 날짜 칸이 ${fields}개다(${s.what}, 있어야 할 수 ${s.dateFields}). 칸이 줄었으면 어느 경로가 상한을 잃었는지 보고, 정당하게 늘었으면 이 그물의 dateFields 를 같이 올릴 것`)
   }
   // 어휘 — '처리일'은 클릭한 날로 읽힌다(보증금 정산일 축 ⓒ 와 같은 판정).
   // '목표 처리일'은 앞날을 적는 다른 칸이라 예외다.
   if (/(?<!목표 )처리일(?!\s*\(선택\))/.test(src.replace(/목표 처리일/g, ''))) {
     violations.push(`${s.file} — 라벨이 '처리일'이다(${s.what}). 축 이름은 '완료일' 하나다`)
   }
+}
+
+// ── ⓔ 순서 축 — 행 인라인 확인 줄은 확인 좌 · 취소 우 ────────────
+//
+// 위 다섯 화면에 **정본을 더해서** 본다. 정본(수납 내역의 발행일 줄)이 뒤집히면 나머지가 전부
+// 그쪽으로 끌려가므로, 기준이 되는 줄이야말로 지켜야 한다.
+for (const s of [
+  ...SCREENS,
+  { file: 'components/entity-modal/widgets/PaymentRecordList.tsx', what: '수납 내역 발행일 확인 줄(정본)' },
+]) {
+  for (const v of confirmRowOrder(readFileSync(join(ROOT, s.file), 'utf8'), s)) violations.push(v)
+}
+
+/**
+ * 인라인 확인 줄의 버튼 순서를 본다 — **확인 좌 · 취소 우**(저장소 전수 7 대 0).
+ *
+ * 무엇을 한 줄로 보나. 상한이 걸린 날짜 칸(`maxDate={…kstYmdStr()}`) 뒤에 오는 첫 버튼 행 하나다.
+ *
+ * **폼 박스·모달 푸터는 뺀다**(§13·§14 는 취소 좌라 반대 축이다). 가르는 표식은 `justify-end` 다 —
+ * 폼 푸터는 오른쪽에 모아 세우고 행 인라인 줄은 flex-1 로 폭을 나눠 가진다. 실제로 이 축을 세울 때
+ * PaymentRecordList 의 수납 편집 폼(`flex gap-2 justify-end`, 취소 좌)이 걸려 나왔고, 그것은 결함이
+ * 아니라 **다른 축의 올바른 줄**이었다. 표식 없이 창만 좁히면 그 줄을 잘못 빨갛게 만든다.
+ *
+ * 버튼 종류는 안 본다. CleaningRowBody 는 RowActionBtn 이 아니라 Btn 을 쓰는데도 확인이 왼쪽이다.
+ * **컴포넌트가 아니라 자리가 문법을 정한다.**
+ */
+function confirmRowOrder(raw, s) {
+  const out = []
+  const src = strip(raw)
+  for (const m of src.matchAll(/maxDate=\{[^}]*kstYmdStr\(\)/g)) {
+    // 다음 날짜 칸 전까지가 이 줄의 몫이다.
+    const next = src.indexOf('maxDate={', m.index + 1)
+    const win = src.slice(m.index, next < 0 ? src.length : next)
+    const rowAt = win.search(/<div className="flex gap-/)
+    if (rowAt < 0) continue                       // 확인 줄이 아닌 날짜 칸(모달 본문 등)
+    const row = divBlock(win, rowAt)
+    if (row === null) continue
+    if (/^<div className="[^"]*justify-end/.test(row)) continue   // 폼 박스·모달 푸터 = §13·§14 취소 좌
+    // 버튼 하나하나의 글자를 본다. '적용취소'는 취소가 아니라 되돌리기라 뺀다.
+    const btns = [...row.matchAll(/<(?:button|Btn|RowActionBtn)\b/g)].map(b => {
+      const el = row.slice(b.index, b.index + 600)
+      return { at: b.index, cancel: /(?<!적용)취소/.test(el.split(/<\/(?:button|Btn|RowActionBtn)>/)[0]) }
+    })
+    const firstCancel = btns.find(b => b.cancel)
+    const firstConfirm = btns.find(b => !b.cancel)
+    if (!firstCancel || !firstConfirm) continue   // 한쪽만 있는 줄은 순서가 없다
+    if (firstCancel.at < firstConfirm.at) {
+      const line = src.slice(0, m.index).split('\n').length
+      out.push(`${s.file}:${line} 인라인 확인 줄이 [취소][확인] 이다(${s.what}). 저장소 문법은 **확인 좌 · 취소 우**(전수 7 대 0) — 같은 일을 하는 형제 화면에서 완료를 누르던 손 위치가 여기서는 취소가 된다`)
+    }
+  }
+  return out
+}
+
+/** `<div …>` 한 벌을 여닫는 짝을 세어 떼어 온다. */
+function divBlock(src, start) {
+  let depth = 0
+  for (const m of src.slice(start).matchAll(/<div\b|<\/div>/g)) {
+    depth += m[0] === '</div>' ? -1 : 1
+    if (depth === 0) return src.slice(start, start + m.index + m[0].length)
+  }
+  return null
 }
 
 console.log(`[완료 처리 날짜 축] 완료 칸 ${COMPLETION_COLUMNS.size}종(${[...COMPLETION_COLUMNS].join('·')}) · 허용 ${ALLOW.length}곳 / 위반 ${violations.length}건`)

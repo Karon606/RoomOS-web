@@ -457,8 +457,25 @@ function body(src, header) {
   need('버튼 라벨에 목록 명사 `이력` 이 없다', !btnLabels.some(l => l.includes('이력')),
     `버튼은 동사다 — ${btnLabels.filter(l => l.includes('이력')).join(', ')}`)
   need('폐기 목록 제목이 명사구 + 건수다',
-    /">폐기·분실 이력\s*\n\s*<span[^>]*>· \{it\.disposals\.length\}건<\/span>/.test(client),
-    '`· N건`(ResidenceCertClient:163 문법)이 붙은 명사구라야 동사 읽기가 끊긴다')
+    /">폐기·분실 이력\s*\n\s*<span[^>]*>구매 내역 중 \{it\.disposals\.length\}건<\/span>/.test(client),
+    '수량이 붙은 명사구라야 동사 읽기가 끊긴다')
+  // **접미사 문법은 넷이 한 꼴이다**(독립 검수 지적 R4, 2026-09-17).
+  // 라벨(semibold) + 공백 + 회색 부연이고, 가운뎃점은 **부연 안에서만** 토막을 가른다.
+  // 형제 정본은 RentReceiptsClient:186 의 `발급 이력 {n}건` 이다. 종전에는 방향이 거꾸로였다 —
+  // 한 덩어리로 읽힐 위험이 큰 쪽(말 접미사)에 구분자가 없고, 수량만 붙는 쪽에 `· `가 있었다.
+  // `폐기·분실 이력 · 2건` 은 가운뎃점 둘이 서로 다른 일을 하는 문제까지 겹쳤다.
+  need('블록 라벨 넷의 접미사에 앞 가운뎃점이 없다',
+    !/font-normal text-\[var\(--warm-muted\)\]">· /.test(client),
+    '라벨과 부연 사이는 공백이다 — 앞 가운뎃점을 붙이면 부연 안의 가운뎃점과 같은 부호가 다른 일을 한다')
+  // **R9 — 두 건수가 더해지는 것으로 읽히면 안 된다.** `count` 는 rows.length 라 폐기 행까지 세므로
+  // 폐기·분실 이력의 건수는 구매 내역 건수 **안에** 있다(그 행들은 목록에서 `폐기` 딱지를 단다).
+  // 나란히 선 `3건`·`2건` 이 합 5 로 읽히던 자리라, 포함 관계를 글자로 못박는다.
+  need('구매 내역 건수는 부연 없이 수량만 붙는다',
+    /">구매 내역\s*\n\s*<span[^>]*>\{it\.count\}건<\/span>/.test(client),
+    '카드 머리의 `구매 N건`과 같은 값이다')
+  need('폐기 건수가 구매 건수에 포함됨을 화면이 말한다',
+    /구매 내역 중 \{it\.disposals\.length\}건/.test(client),
+    'aggregate 의 count 가 폐기 행까지 세므로 둘은 더할 수 없다 — 나란히 서면 합으로 읽힌다')
   need('폐기 버튼 라벨은 그대로 동사다', />폐기·분실 기록<\/Btn>/.test(client),
     '버튼은 안 고친다 — 고친 것은 제목 하나다')
   need('토스트의 `폐기 기록`은 안 건드린다', /폐기 기록을 적용취소했습니다/.test(client),
@@ -504,10 +521,16 @@ function body(src, header) {
     'const 만 남기고 찍는 자리를 지우는 우회 — 계산은 멀쩡한데 화면은 종전이다')
   need('30건 상한이 글자로 적힌다', /최근 30건/.test(client),
     '서버가 take: 30 이다(actions.ts getAssetAssignmentLog) — 안 적으면 30건째에서 목록이 끊긴 이유를 알 길이 없다')
+  // 의존성은 **`detailItem?.id`** 하나다. 두 가지가 다 틀린다.
+  //   · `data` 를 넣으면 목록 안 적용취소가 보던 목록을 접는다(처음부터 막아 둔 우회).
+  //   · `detailItem` 객체를 그대로 넣으면 **정체성**이 열쇠가 되는데, saveAssignedAt·undoAssignedAt
+  //     이 `setDetailItem(d => ({ ...d, assignedAt }))` 로 새 객체를 만든다. 카드는 그대론데 참조만
+  //     바뀌어 펼쳐 둔 이력이 소리 없이 접혔다 — 하필 배정일을 고친 결과를 확인할 자리가 그
+  //     이력이다(독립 검수 지적 B4, 2026-09-17).
   need('배정 변경 이력이 기본으로 접힌다',
     /const \[logOpen, setLogOpen\] = useState\(false\)/.test(client)
-    && /useEffect\(\(\) => \{ setLogOpen\(false\) \}, \[detailItem\]\)/.test(client),
-    '초기화 의존성은 detailItem 하나다 — data 를 넣으면 목록 안 적용취소가 보던 목록을 접는다')
+    && /useEffect\(\(\) => \{ setLogOpen\(false\) \}, \[detailItem\?\.id\]\)/.test(client),
+    '초기화 열쇠는 detailItem?.id 다 — data 를 넣으면 목록 안 적용취소가 보던 목록을 접고, 객체를 그대로 넣으면 배정일 저장이 만든 새 참조에 접힌다')
   need('그 접힘을 화면이 실제로 쓴다', /\{logOpen && \(<>/.test(client),
     'state 만 두고 안 쓰면 선언은 멀쩡한데 화면은 종전이다')
   need('접기 손잡이가 형제 문법이다(펼치기·접기 + 셰브런)',
@@ -535,12 +558,27 @@ function body(src, header) {
   need('칩 탭이 본문을 되감는다',
     /onClick=\{\(\) => \{ if \(!isCur\) \{ setDetailItem\(pl\); scrollDetailTop\(\) \} \}\}/.test(client),
     '스크롤이 그대로면 바뀐 카드의 머리·컨트롤이 전부 화면 밖 위에 남는다')
-  need('되감을 스크롤러가 Modal 본문이다',
-    /const sc = detailBodyRef\.current\?\.parentElement/.test(client),
-    'Modal.tsx:244 의 flex-1 overflow-y-auto 가 그 부모다 — 정본 Modal 은 안 건드린다')
-  need('그 ref 가 본문 루트에 실제로 붙어 있다',
-    /<div ref=\{detailBodyRef\} className="space-y-4">/.test(client),
-    'ref 선언만 남기고 안 붙이면 scrollDetailTop 이 조용히 무동작이다')
+  // **정본이 내주는 손잡이로 잡는다**(독립 검수 지적 R7, 2026-09-17).
+  // 종전에는 제 div 에 ref 를 달고 `parentElement` 로 한 겹 타고 올라갔다. 그러면 Modal 이 래퍼를
+  // 한 겹만 더 둬도 **예외 없이 조용히 죽는다** — 되감기가 안 되는데 아무도 모른다. 스크롤러를
+  // 아는 것은 Modal 뿐이니 Modal 이 내주는 것이 옳고, 옵셔널 프롭이라 다른 소비처는 안 움직인다.
+  need('되감을 스크롤러를 정본 손잡이로 잡는다',
+    /const sc = detailBodyRef\.current\b/.test(client)
+    && !/detailBodyRef\.current\s*\??\.\s*parentElement/.test(client),
+    'parentElement 로 타고 올라가면 Modal 이 래퍼를 한 겹 더 둘 때 예외도 없이 무동작이 된다')
+  need('그 ref 가 Modal 의 bodyRef 로 넘어간다',
+    /<Modal[\s\S]{0,200}?\bbodyRef=\{detailBodyRef\}/.test(client),
+    'ref 선언만 남기고 안 넘기면 scrollDetailTop 이 조용히 무동작이다')
+  // 손잡이가 정본에서 실제로 **스크롤러에** 꽂히는가 — 여기까지 봐야 반쪽이 아니다.
+  // 프롭만 받고 안 쓰거나 엉뚱한 div 에 달면 소비처는 멀쩡해 보이는데 되감기는 안 된다.
+  {
+    const modal = readFileSync('components/ui/Modal.tsx', 'utf8')
+    need('정본 Modal 이 bodyRef 를 받는다', /\bbodyRef\?: React\.Ref<HTMLDivElement>/.test(modal),
+      '옵셔널 프롭이라 다른 소비처는 한 글자도 안 바뀐다')
+    need('정본 Modal 이 그 ref 를 스크롤러에 단다',
+      /<div ref=\{bodyRef\} className=\{`flex-1 overflow-y-auto/.test(modal),
+      '프롭만 받고 안 쓰면 소비처는 멀쩡해 보이는데 되감기가 무동작이다')
+  }
 
   // 7) 곁가지 — 상세의 자리 이름이 정본 curPlace 하나로 수렴한다.
   need('상세 알약의 자리 이름이 curPlace 다', /const loc = curPlace\(it\)/.test(client),

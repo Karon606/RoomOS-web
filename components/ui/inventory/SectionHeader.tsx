@@ -20,9 +20,12 @@ export function SectionHeader({
   className?: string
 }) {
   const Tag: 'button' | 'div' = collapsible ? 'button' : 'div'
+  // 접힘 상태는 셰브런 회전으로만 말하고 있었다 — 화면을 못 보는 사람에게는 지금 열려 있는지
+  // 알 단서가 하나도 없다. 형제(TenantRequestsTab 의 `새 요청 등록`)는 이미 달고 있다.
+  // 정본에 다니 전 사용처가 함께 고쳐진다.
   return (
     <Tag
-      {...(collapsible ? { type: 'button' as const, onClick: onToggle } : {})}
+      {...(collapsible ? { type: 'button' as const, onClick: onToggle, 'aria-expanded': !collapsed } : {})}
       className={[
         'flex w-full items-center gap-2 pb-1.5',
         first ? 'pt-0.5' : 'pt-3.5',

@@ -379,8 +379,14 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
             </select>
           </label>
         )}
+        {/* 미래는 못 고른다(운영자 확정 2026-09-17 — "미래로 할 필요는 없을 듯, 필요하면 발급
+            전에 수동으로 바꾸면 되니까"). 서버 가드와 두 겹이다.
+            정본 DatePicker 로 안 갈아탄 이유 — 이 칸은 툴바 칩이고, 바로 옆 성명 select 와
+            `.rc-field input, .rc-field select` 한 규칙으로 같은 모양을 받는다. DatePicker 는
+            button 을 그리므로 그 선택자에서 빠져 둘의 모양이 갈린다. 네이티브에는 `max` 속성이
+            있어 maxDate 와 같은 일을 하므로 예외를 유지한 채 상한만 건다. */}
         <label className="rc-field"><span>작성일</span>
-          <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+          <input type="date" value={issueDate} max={kstYmdStr()} onChange={e => setIssueDate(e.target.value)} />
         </label>
         {/* 사진 저장은 '내보내기'가 흡수했다(§30.4, 운영자 확정 6). 그쪽이 형식을 먼저 묻고
             사진을 고르면 전 페이지를 그리므로 기능이 줄지 않고 다페이지 유실만 사라진다.
