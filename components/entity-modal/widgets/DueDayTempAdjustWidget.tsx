@@ -222,7 +222,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
               <DatePicker value={dateInput} onChange={setDateInput} minDate={`${overrideMonth}-01`}
-                className="bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]" />
+                className="bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]" />
             </div>
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>

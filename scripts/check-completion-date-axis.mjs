@@ -189,7 +189,9 @@ const GUARD_SITES = [
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork',    word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'rescheduleRoomWork',  word: '완료일' },
   { file: 'app/(app)/checklist/actions.ts', fn: 'markChecklistDone', word: '완료일' },
-  { file: 'app/api/import/route.ts', fn: 'importRequests', word: '완료일' },
+  // 엑셀 임포트는 화면이 아니라 **시트**가 말을 정한다. 요청 시트의 머리가 '해결일'이고
+  // (app/api/export/route.ts 가 그 이름으로 내보낸다) 임포트도 그 칸을 읽는다.
+  { file: 'app/api/import/route.ts', fn: 'importRequests', word: '해결일' },
   // 아래 셋은 완료 축 밖의 도메인이라 제 말을 쓴다(현금영수증·서류 발급은 각자의 노트가 정본).
   { file: 'lib/cashReceipt.ts', fn: 'resolveCashReceiptIssuedAt', word: '발행일' },
   { file: 'app/api/rent-receipt/generate/route.ts', fn: 'POST', word: '발급일' },

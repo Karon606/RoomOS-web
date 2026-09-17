@@ -174,23 +174,17 @@ function importSourceOf(src, name, file) {
 }
 
 /**
- * radius 축의 기지(旣知) 셋 — **이번 검수의 범위가 아니라서 손대지 않은 자리다.**
+ * radius 축의 기지(旣知) 명단 — **비었다. 이 그물은 이제 전수다.**
  *
- * 세 곳 모두 §12 6px 을 어긴다. 고치는 일 자체는 낱말 하나씩이지만, 이번 지적의 대상은 미푸시
- * 커밋 셋이고 이 셋은 그보다 앞선 화면이다 — 남의 화면을 말없이 갈아 두면 그 화면을 본 적 없는
- * 사람이 다음 검수에서 원인을 못 찾는다. 그래서 **고치는 대신 크게 적어 두고** 새 위반만 빨갛게
- * 한다. 운영자가 승인하면 세 줄을 함께 고치고 이 명단을 지운다(그때 이 그물은 저절로 전수가 된다).
+ * 세 줄이 여기 있었다(2026-09-17 하루). 조정 납부일 두 벌(수납 탭의 붙박이 · 통합 상세의
+ * DueDayTempAdjustWidget)과 자재 입수일이다. 축을 세운 회차가 "본 적 없는 화면을 말없이 갈지
+ * 않겠다"며 적어 두었고, 코디네이터 판정으로 셋을 함께 6px 로 닫으면서 명단을 지웠다.
+ * 전수는 95곳 중 6px 90 · 위반 4 · 밑줄 예외 1 이었다 — 90 대 4 는 다수결이 아니라 규칙이다.
  *
- * 명단은 늘리지 말 것. 여기 한 줄을 더하는 것은 빚을 갚는 게 아니라 늘리는 것이다.
+ * **다시 채우지 말 것.** 여기 한 줄을 더하는 것은 빚을 갚는 게 아니라 늘리는 것이다.
+ * 빈 명단이라 아무 자리도 안 봐준다.
  */
-const RADIUS_KNOWN = [
-  { file: 'app/(app)/tenants/TenantClient.tsx', line: 3193, has: 'rounded-lg',
-    what: '수납 › 조정 납부일 — 아래 DueDayTempAdjustWidget 과 같은 위젯의 두 벌 중 하나' },
-  { file: 'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', line: 224, has: 'rounded-lg',
-    what: '통합 상세 › 조정 납부일 — 위 TenantClient 와 쌍' },
-  { file: 'app/(app)/inventory/InventoryClient.tsx', line: 3448, has: 'rounded-xl',
-    what: '입수일 — 같은 행의 시각 input 이 rounded-sm 이라 한 줄 안에서 두 벌이다(가장 날카로운 §12 위반)' },
-]
+const RADIUS_KNOWN = []
 const files = ROOTS.flatMap(r => walk(r))
 let checked = 0
 let radiusChecked = 0
@@ -238,12 +232,6 @@ for (const file of files) {
       violations.push(`${file}:${line} DatePicker 껍데기의 radius 가 ${bad.join('·')} 다 — §12 는 전 입력 6px(rounded-sm) 통일이다. **입력은 옆 버튼이 아니라 제 폼의 입력 형제에 맞춘다**(검수 지적 B3)`)
     }
   }
-}
-
-// 기지 셋은 매번 소리 내어 읽는다 — 조용한 명단은 곧 잊히는 빚이다.
-if (RADIUS_KNOWN.length > 0) {
-  console.log(`[날짜 칸 radius] 기지 위반 ${RADIUS_KNOWN.length}곳 (이번 범위 밖 · 운영자 승인 대기)`)
-  for (const k of RADIUS_KNOWN) console.log(`  · ${k.file}:${k.line} ${k.has} — ${k.what}`)
 }
 
 // 축 2 — 날것 `<input type="date">` 가 **폼 칸**으로 태어나는 것을 막는다.

@@ -488,8 +488,13 @@ async function importRequests(rows: Record<string, unknown>[], propertyId: strin
       const resolvedYmd = parseDate(row['해결일'])?.toISOString().slice(0, 10) ?? null
       const resolvedRaw = str(row['처리여부'])
       const wantResolved = resolvedRaw === '완료' || !!resolvedYmd
-      const guard = assertNotFuture(resolvedYmd)
-      if (wantResolved && !guard.ok) { result.errors.push(`${tenantName}: ${guard.reason}`); result.skipped++; continue }
+      // 거부 사유는 **이 시트의 낱말**을 쓴다. 시트 머리가 '해결일'인데 정본 기본 사유('완료일이
+      // 미래입니다')를 그대로 돌려주면, 운영자는 엑셀 어느 칸을 고쳐야 하는지 못 찾는다.
+      if (wantResolved && !assertNotFuture(resolvedYmd).ok) {
+        result.errors.push(`${tenantName}: 해결일이 미래입니다(${resolvedYmd}). 아직 하지 않은 일은 해결로 기록할 수 없습니다.`)
+        result.skipped++
+        continue
+      }
       const resolvedAt = wantResolved
         ? resolveCompletionAt({ picked: resolvedYmd, column: 'timestamp' })
         : null

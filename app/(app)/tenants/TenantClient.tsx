@@ -3194,7 +3194,7 @@ export default function TenantClient({
                                   value={overrideDateInput}
                                   onChange={setOverrideDateInput}
                                   minDate={`${targetMonth}-01`}
-                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]"
+                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]"
                                 />
                               </div>
                               <div className="flex-1 space-y-1">
