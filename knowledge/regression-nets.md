@@ -288,6 +288,20 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   **목록을 손으로 세지 않고 `ReceiptOcrResult` 를 읽어 대조한다** — 새 칸이 생기면 "홈이 그것을
   나르는지 정하라"고 막는다. 2026-09-16 `cloneExpenseScalars` 사건과 같은 클래스의 예방이다.
 
+- `check-overlay-backdrop`(verify:fast, 신설) — 모달 **막**의 존재·불투명도·z 순서. 이 축을 보는
+  그물이 하나도 없어서 같은 병이 네 번 나는 동안 기존 그물 둘이 네 번 다 초록이었다. 대상 판정은
+  파일이 아니라 **태그 하나하나**에 건다(등장 클래스·`aria-modal`·훅에 넘긴 `overlayRef` 셋 중 하나를
+  단 `fixed inset-0` 태그 = 다이얼로그 8개). "막이 있으면 다이얼로그"로 접으면 축 하나가 통째로
+  무력해져서 **의도의 선언**만 신호로 쓴다. 층 토큰이 실재하는지도 본다 — `z-[var(--z-오타)]` 는
+  z-index 를 조용히 잃고 화면에는 아무 오류도 안 뜬다.
+- `check-overlay-resume-resync` 등장 절을 **호출 한 줄에서 배선으로** 바꿨다. 종전에는
+  `useSettleEntrance(` 라는 글자가 파일에 있기만 하면 통과했다. 이제 훅에 넘긴 ref 가 등장 클래스를
+  단 **바로 그 엘리먼트**에 붙었는지를 태그를 잘라 확인하고(중괄호 깊이로 진짜 닫는 `>` 를 찾는다),
+  정본이 붙는 시점에 "지금 돌고 있는가"를 묻는지, 벽시계를 안 쓰는지를 함께 본다.
+- 역주입 16종 전부 빨강(인셋 상한 제거·날것 대입·`bandHeight` 임포트만 남기고 호출 삭제·마감
+  임포트만 남기고 호출 삭제·`allSettled`→`all`·`playState` 느슨화·ref 떼기·ref 이름 엇갈리기·
+  막 지우기·`opacity:0` 기본 규칙·`fill: both`·없는 층 토큰·계측 수법 우회). 자세히는 [[domain-modal-shell]].
+
 **알려진 공백을 목록에 올리는 문법을 썼다.** `check-unit-basis-wiring` 의 `KNOWN_GAPS` 는
 `components/ui/SpecWizard.tsx` 를 사유와 함께 담고, 그 파일이 `unitBasis` 를 더 이상 안 다루면
 "목록에서 내려라"고 빨개진다. 조용한 공백보다 낫다(`check-kbd-canonical` 의 ALLOW 와 같은 문법).

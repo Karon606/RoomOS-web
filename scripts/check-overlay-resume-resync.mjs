@@ -90,6 +90,55 @@ const stripComments = s => s
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
   .replace(/(^|[^:])\/\/[^\n]*/g, (_, p) => p)
 
+//
+// **호출 한 줄만 보면 그물이 아니다(2026-09-16, 신고 bf0a6fff — 네 번째 재현).** 이 절은 여태
+// `useSettleEntrance(` 라는 글자가 파일 안에 있기만 하면 통과했다. ref 가 정말 그 등장 클래스를
+// 단 엘리먼트에 붙었는지, 마감이 굳은 상태에서도 회복되는지는 아무도 안 봤다. 아래에서 셋을 본다.
+//   (ㄱ) 배선 — 훅에 넘긴 ref 가 등장 클래스를 단 바로 그 엘리먼트에 붙어 있는가
+//   (ㄴ) 굳은 상태 회복 — 정본이 붙는 시점에 "지금 돌고 있는가"를 묻는가(이벤트만 듣지 않는가)
+//   (ㄷ) 벽시계 금지 — 마감 시점을 시간으로 추정하지 않는가(2026-09-08 결정)
+
+/** 인덱스 pos 를 품은 JSX 여는 태그의 원문. 못 찾으면 null(= 위반으로 센다). */
+function enclosingTag(src, pos) {
+  let start = -1
+  for (let i = pos; i >= 0; i--) {
+    if (src[i] === '<' && /[A-Za-z]/.test(src[i + 1] ?? '')) { start = i; break }
+  }
+  if (start < 0) return null
+  // 속성값에 화살표 함수가 살아 '>' 가 태그 안에 있다. 중괄호 깊이와 따옴표를 세며 진짜 닫는
+  // '>' 를 찾는다(check-calendar-room-open 이 같은 함정을 겪고 조인 자리와 같은 문법).
+  let depth = 0, quote = ''
+  for (let i = start + 1; i < src.length; i++) {
+    const c = src[i]
+    if (quote) { if (c === quote) quote = ''; continue }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue }
+    if (c === '{') depth++
+    else if (c === '}') depth--
+    else if (c === '>' && depth === 0) return src.slice(start, i + 1)
+  }
+  return null
+}
+
+/** `useSettleEntrance(` 의 인자 원문 — 괄호 깊이로 자른다. */
+function hookArgs(src) {
+  const at = src.indexOf('useSettleEntrance(')
+  if (at < 0) return null
+  const open = at + 'useSettleEntrance'.length
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '(') depth++
+    else if (src[i] === ')') { depth--; if (depth === 0) return src.slice(open + 1, i) }
+  }
+  return null
+}
+
+/** 객체 인자에서 키의 값 — 축약(`overlayRef`)과 명시(`overlayRef: ov`) 둘 다 읽는다. */
+function argOf(obj, key) {
+  const named = new RegExp(`\\b${key}\\s*:\\s*([A-Za-z_$][\\w$]*)`).exec(obj)
+  if (named) return named[1]
+  return new RegExp(`(^|[{,\\s])${key}\\s*(,|\\}|$)`).test(obj) ? key : null
+}
+
 const ENTRANCE = /anim-(overlay|panel)-in/
 for (const root of ROOTS) {
   for (const f of walk(root)) {
@@ -97,6 +146,39 @@ for (const root of ROOTS) {
     if (!src.includes('fixed inset-0') || !ENTRANCE.test(src)) continue
     if (!/useSettleEntrance\(/.test(src)) {
       violations.push(`${f} — 등장 모션을 붙여 놓고 마감이 없다. 숨은 채 뜨면 첫 프레임에 굳어 반투명 막이 남는다(lib/useSettleEntrance)`)
+      continue
+    }
+    // (ㄱ) 배선 — 넘긴 ref 가 등장 클래스를 단 엘리먼트에 붙었는가.
+    const args = hookArgs(src)
+    if (args == null) {
+      violations.push(`${f} — useSettleEntrance 의 인자를 읽을 수 없다. 못 읽으면 통과가 아니라 위반이다`)
+      continue
+    }
+    // 클래스 이름을 바꿔 부르는 자리가 생기면 그 이름으로 본다(기본값은 정본과 같다).
+    const clsOf = (key, dflt) => {
+      const m = new RegExp(`\\b${key}\\s*:\\s*'([^']+)'`).exec(args)
+      return m ? m[1] : dflt
+    }
+    const pairs = [
+      ['overlayRef', clsOf('overlayClass', 'anim-overlay-in'), '오버레이'],
+      ['panelRef', clsOf('panelClass', 'anim-panel-in'), '패널'],
+    ]
+    for (const [key, cls, what] of pairs) {
+      const at = src.indexOf(cls)
+      const refName = argOf(args, key)
+      if (at < 0) continue                       // 그 클래스를 안 쓰는 화면(라이트박스 등)
+      if (!refName) {
+        violations.push(`${f} — ${what} 등장 클래스(${cls})를 붙였는데 훅에 ${key} 를 안 넘긴다. 그 층의 모션은 영영 안 걷힌다`)
+        continue
+      }
+      const tag = enclosingTag(src, at)
+      if (tag == null) {
+        violations.push(`${f} — ${cls} 를 단 태그를 잘라낼 수 없다. 못 읽으면 통과가 아니라 위반이다`)
+        continue
+      }
+      if (!new RegExp(`ref=\\{\\s*${refName}\\s*\\}`).test(tag)) {
+        violations.push(`${f} — ${cls} 를 단 엘리먼트에 ref={${refName}} 가 없다. 훅은 도는데 화면은 안 걷힌다(호출 한 줄만 보던 그물이 놓친 자리)`)
+      }
     }
   }
 }
@@ -114,8 +196,36 @@ try {
   if (!/addEventListener\(\s*'visibilitychange'/.test(hook)) {
     violations.push('lib/useSettleEntrance.ts — 복귀 쓸이가 없다. 숨은 사이 멎은 모션이 그대로 남는다')
   }
+  // (ㄴ) **이벤트만 듣는 마감은 굳은 모션을 못 본다**(신고 bf0a6fff). 이펙트는 페인트 뒤에 돈다 —
+  // 리스너가 붙기 전에 끝났거나 멎은 모션은 animationend 로도 visibilitychange 로도 안 온다.
+  // 붙는 그 시점에 "지금 돌고 있는가"를 물어야 한다. 판정은 정본 lib/animationSettled 가 한다.
+  if (!/runningAnimations\(/.test(hook)) {
+    violations.push('lib/useSettleEntrance.ts — 붙는 시점에 "지금 돌고 있는가"를 안 묻는다. 이미 굳은 모션은 이벤트로 영영 안 온다(lib/animationSettled)')
+  }
 } catch {
   violations.push('lib/useSettleEntrance.ts 를 읽을 수 없음 — 등장 마감 정본이 사라졌다')
+}
+// 수법 정본 — 계측(lib/viewportProbe)과 마감(lib/useSettleEntrance)이 같은 한 벌을 본다.
+// 두 벌이 되면 한쪽만 고쳐진다(그 일이 실제로 2026-09-17 에 하루 간격으로 났다).
+try {
+  const canon = stripComments(readFileSync('lib/animationSettled.ts', 'utf8'))
+  if (!/playState\s*===\s*'running'/.test(canon)) {
+    violations.push("lib/animationSettled.ts — playState 로 '도는 중'을 안 가린다. 굳은 모션과 도는 모션을 구분할 길이 없어진다")
+  }
+  if (!/allSettled\(/.test(canon)) {
+    violations.push('lib/animationSettled.ts — allSettled 가 아니다. 취소도 끝의 한 갈래인데 거부로 새면 마감이 영영 안 온다')
+  }
+} catch {
+  violations.push('lib/animationSettled.ts 를 읽을 수 없음 — 모션 마감 수법 정본이 사라졌다')
+}
+// (ㄷ) 벽시계 금지(2026-09-08 결정) — 마감 시점을 시간으로 추정하면 이 그물이 막는 함정으로
+// 되돌아간다. 계측 쪽은 check-kbd-canonical 이 같은 단언을 진다.
+for (const f of ['lib/useSettleEntrance.ts', 'lib/animationSettled.ts']) {
+  let src = ''
+  try { src = stripComments(readFileSync(f, 'utf8')) } catch { continue }
+  if (/setTimeout\(|setInterval\(|Date\.now\(|performance\.now\(/.test(src)) {
+    violations.push(`${f} — 벽시계로 마감한다. 시점은 "실제로 무엇이 끝났는가"로만 정한다(2026-09-08 결정)`)
+  }
 }
 
 console.log(`[오버레이 복귀] 전체화면 오버레이 ${overlays}개 검사 / 위반 ${violations.length}건`)

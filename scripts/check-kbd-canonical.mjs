@@ -83,13 +83,32 @@ const need = (file, res, why) => {
 }
 need('lib/modalViewport.ts', [
   [/export function resumeAllowsShrink\(/, '정본 resumeAllowsShrink 가 사라짐. 복귀 첫 패스의 축소 금지가 없어진다'],
+  // 3-b) 인셋 두 항의 상한(2026-09-16, 신고 bf0a6fff) — 주석이 선언한 불변식
+  // (top + bottom = innerHeight - height)은 두 항이 모두 [0, 합] 안에 있을 때만 성립한다.
+  // 종전에는 위만 잠겨 있어서, 반대 방향으로 어긋난 스냅샷에 bottom 만 무한정 자랐고 오버레이
+  // content box 가 화면 위쪽 짧은 띠로 쪼그라들어 패널이 위로 붙어 눌렸다.
+  [/export function bandHeight\(/, '정본 bandHeight 가 사라짐. 높이와 인셋이 다시 서로 다른 값을 쓴다'],
+  [/top:\s*Math\.min\(/, '위 인셋의 상한이 사라짐. 오버팬 스냅샷 한 장에 패널이 내려가며 작아진다'],
+  [/bottom:\s*Math\.min\(/, '아래 인셋의 상한이 사라짐. 어긋난 스냅샷에 content box 가 위쪽 짧은 띠로 쪼그라든다'],
 ])
 need('lib/useVisibleBand.ts', [
   [/resumeAllowsShrink\(/, '복귀 재동기가 정본 관문(resumeAllowsShrink)을 안 지난다'],
   [/editableFocused\(\)/, '복귀 재동기가 포커스를 묻지 않는다. 포커스가 없으면 작은 띠는 낡은 값이다'],
   [/resyncPass\(\s*1\s*\)/, '복귀 첫 패스(1)가 사라짐'],
   [/requestAnimationFrame\([^\n]*resyncPass\(\s*2\s*\)/, '복귀 두 번째 패스(rAF 안의 2)가 사라짐'],
+  // 3-c) **인셋도 높이와 같은 관문을 지난다**(2026-09-16). 종전에는 관문이 높이 쪽에만 걸려
+  // 있었고 인셋은 vv.height 를 날것으로 썼다 — 관문을 세워 놓고 옆문을 열어 둔 셈이다.
+  [/bandHeight\(/, '띠 높이가 정본 관문(bandHeight)을 안 지난다. 찢어진 스냅샷이 그대로 박힌다'],
 ])
+// 날것 대입은 낱말이 아니라 **모양**으로 막는다. overlayInsets 에 vv.height 가 바로 들어오면
+// 그것이 곧 종전 결함이다(관문을 지난 값의 이름이 무엇이든 vv.height 만 아니면 된다).
+{
+  let src = ''
+  try { src = strip(readFileSync('lib/useVisibleBand.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (/overlayInsets\(\s*\{[^}]*height:\s*vv\.height/.test(src)) {
+    violations.push('lib/useVisibleBand.ts — 오버레이 인셋이 vv.height 를 날것으로 쓴다. 높이는 관문을 지나는데 인셋만 안 지나면 둘이 갈린다(신고 bf0a6fff)')
+  }
+}
 // 편집 포커스 판정은 한 곳에서만 한다 — 두 소유자가 생기면 한쪽만 참인 구간에서 어긋난다.
 need('lib/editableTarget.ts', [
   [/export function isEditableTarget\(/, '편집 요소 판정 정본이 사라짐'],
@@ -134,8 +153,14 @@ need('lib/viewportProbe.ts', [
 need('lib/viewportProbe.ts', [
   [/export function probeAfterEntrance\(/, '열었을 때를 재는 정본이 사라짐. 제출 시점 하나로는 또 증거가 안 남는다'],
   [/export function probeReport\(/, '두 스냅샷을 나란히 적는 정본이 사라짐'],
-  [/getAnimations\(\)/, '등장 모션이 실제로 끝났는지를 안 본다'],
+  // 수법은 정본 한 벌(lib/animationSettled)에서 온다 — 등장 마감(lib/useSettleEntrance)이 같은
+  // 것을 본다. 두 벌이 되면 한쪽만 고쳐진다(2026-09-17 에 실제로 하루 사이 그 일이 났다).
+  [/runningAnimations\(/, '등장 모션이 실제로 도는지를 안 본다(정본 lib/animationSettled)'],
   [/requestAnimationFrame\(/, '도는 모션이 없을 때의 대기(rAF)가 사라짐'],
+])
+need('lib/animationSettled.ts', [
+  [/export function runningAnimations\(/, "'지금 도는 모션' 정본이 사라짐"],
+  [/getAnimations\(\)/, 'getAnimations 를 안 쓴다. 굳은 모션을 알아볼 길이 없어진다'],
 ])
 {
   let src = ''

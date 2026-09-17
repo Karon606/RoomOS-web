@@ -13,6 +13,8 @@
 //            어떤 종류의 칸에 서 있었나만 알면 된다. 이 경계는 scripts/check-kbd-canonical.mjs
 //            가 지킨다(이 파일에 값 읽기가 새로 들어오면 그물이 막는다).
 
+import { runningAnimations, whenAnimationsSettled } from '@/lib/animationSettled'
+
 /** 소수 둘째 자리까지만 — vv 는 서브픽셀로 오는데 그 자릿수는 판독에 쓸모가 없다. */
 function num(v: number | undefined): string {
   return typeof v === 'number' ? String(Math.round(v * 100) / 100) : '—'
@@ -85,20 +87,16 @@ export function probeAfterEntrance(onProbe: (probe: string) => void): () => void
   const rafs: number[] = []
   const fire = () => { if (!cancelled) onProbe(viewportProbe()) }
 
+  // 도는 모션 모으기·끝 기다리기는 정본 한 벌을 쓴다(lib/animationSettled). 등장 마감
+  // (lib/useSettleEntrance)이 같은 것을 본다 — 수법이 두 벌이면 한쪽만 고쳐진다.
   const running: Animation[] = []
-  for (const el of topModalParts()) {
-    if (typeof el.getAnimations !== 'function') continue
-    for (const anim of el.getAnimations()) if (anim.playState === 'running') running.push(anim)
-  }
+  for (const el of topModalParts()) running.push(...runningAnimations(el))
   if (running.length > 0) {
-    // finished 는 애니메이션이 중간에 취소되면(등장 클래스를 떼는 settle 이 바로 그 일을 한다)
-    // 거부된다 — 그것도 '끝났다'의 한 갈래라 allSettled 로 받는다.
-    //
     // 끝난 것을 안 직후에 바로 재지 않고 한 프레임을 더 기다린다. animationend 는 같은 프레임의
     // 렌더링 단계에서 rAF 콜백보다 **먼저** 나가므로, 다음 rAF 에서 재면 useSettleEntrance 가
     // 신고창 제 등장 클래스를 이미 걷은 뒤다. 안 기다리면 신고창 자신의 모션이 '잔존'으로 세어져
     // 아래 굳은 모달의 지문을 가린다. 이것도 시간이 아니라 순서를 쓰는 신호다.
-    void Promise.allSettled(running.map(a => a.finished)).then(() => {
+    void whenAnimationsSettled(running).then(() => {
       if (!cancelled) rafs.push(requestAnimationFrame(fire))
     })
   } else {

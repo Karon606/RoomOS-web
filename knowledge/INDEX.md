@@ -50,6 +50,7 @@
 - [[open-checkout-paths-split]] — 퇴실 처리 경로 셋이 갈려 이용료 환불이 한 곳에만 있다(2026-08-30 발견, 2026-08-31 해소)
 - [[domain-checkout-settlement]] — 퇴실 이용료 정산 갈래 넷(위약금·면제·단기·환불 없음)·퇴실 처리 기본 '환불 없음'(선납은 돌려줌)·차액 미청구·공용 확인창·위젯 환불액 입력·퇴실 사유 승계(2026-09-02)·수납 정보 이용료 정산 카드(예상·완료·미처리·환불 없음, 수동 금액과 사유, 환불 record 잠금, 규칙 8·3-b)·환불 없음 0 확정(later 거부·noop·낙관적 잠금)·확인창 판정 정본(rentSettlementConfirmSpec, 전액은 futurePrepaid 초과일 때만)·환불 확정 뒤 쓰기 다섯 자리 거부(hasRentRefundSnapshot, 복귀·연장은 적용취소부터)
 - [[open-keyboard-field-visibility]] — 키보드가 뜰 때 입력 칸이 가려지는 문제(2026-08-30 신고, 2026-09-02 시공 완료 — 판정 정본 lib/keyboardViewport·띠 훅 useVisibleBand·가이드 §30)
+- [[domain-modal-shell]] — 모달 껍데기(등장 모션·막·띠 기하): 조각 다섯과 쓰는 이 여덟·같은 병 네 번의 이력·bf0a6fff 두 경로(굳은 모션은 "안 돌고 있다는 사실"로 걷는다·보호가 한쪽에만 걸린 값 쌍은 갈린다)·벽시계 금지·계측이 눈 감았던 이유·그물 넷
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)
 - [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어)
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)

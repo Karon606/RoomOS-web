@@ -5,7 +5,12 @@
 //   · **위 여백에도 상한이 있다** — 아래에만 0 하한이 있고 위에 짝이 없어서, 어긋난 스냅샷 한 장에
 //     패널이 내려가며 작아졌다. 32px 만 넘어도 발동한다.
 //   · **불가능값은 버리고 직전 값을 유지한다** — 0 으로 떨구면 레이아웃이 통째로 흔들린다.
-import { overlayInsets, usableVvHeight, shouldWriteVvHeight, resumeAllowsShrink, MIN_VV_HEIGHT } from '../lib/modalViewport'
+//   · **아래 여백에도 상한이 있다** — 위만 잠겨 있어서, offsetTop 이 음수로 오거나 height 가 작게
+//     찢어져 오면 bottom 이 무한정 자랐다. content box 가 화면 위쪽 짧은 띠로 쪼그라들고
+//     items-center 가 그 안에서 가운데를 잡아 패널이 위로 붙어 눌렸다(신고 bf0a6fff, 09-16).
+//   · **인셋도 높이와 같은 관문을 지난다** — 그 관문이 높이에만 걸려 있어서 찢어진 스냅샷이
+//     인셋으로만 새어 들어왔다. 정본 bandHeight 하나가 이 프레임의 띠 높이를 정한다.
+import { overlayInsets, usableVvHeight, shouldWriteVvHeight, resumeAllowsShrink, bandHeight, MIN_VV_HEIGHT } from '../lib/modalViewport'
 
 let pass = 0
 const fails: string[] = []
@@ -43,6 +48,23 @@ for (const pan of [436, 530, 900]) {
   eq(`오버팬 ${pan} 에서도 합이 안 커진다`, r.top + r.bottom <= H - 538, true)
 }
 eq('음수 팬은 0 으로', band(538, -50).top, 0)
+
+// ── 아래 여백 상한(신고 bf0a6fff) ──────────────────────────────────
+// 위 상한의 거울상이다. 종전에는 bottom 에 0 하한만 있고 상한이 없어서, 반대 방향으로 어긋난
+// 스냅샷이 오면 bottom 만 자라 content box 가 위쪽 짧은 띠로 쪼그라들었다.
+eq('음수 팬에서 아래 여백이 합을 넘지 않는다', band(538, -50).bottom, H - 538)
+eq('음수 팬에서도 합은 상수', band(538, -50).top + band(538, -50).bottom, H - 538)
+for (const pan of [-1, -50, -400]) {
+  const r = band(538, pan)
+  eq(`음수 팬 ${pan} 에서도 합이 안 커진다`, r.top + r.bottom <= H - 538, true)
+  eq(`음수 팬 ${pan} 의 아래 여백에 상한`, r.bottom <= H - 538, true)
+}
+// 두 항 모두 [0, 합] 안에 있다 — 주석이 선언한 불변식을 양쪽 끝에서 다 강제한다.
+for (const [h, pan] of [[538, 0], [538, 336], [538, 900], [538, -900], [466, 408], [874, 0], [900, 0]]) {
+  const r = band(h, pan)
+  const span = Math.max(0, H - h)
+  eq(`[${h},${pan}] 두 항이 [0, 합] 안에`, r.top >= 0 && r.bottom >= 0 && r.top <= span && r.bottom <= span, true)
+}
 
 // ── 띠 높이 위생 ───────────────────────────────────────────────────
 eq('정상값은 그대로', usableVvHeight(538, 0), 538)
@@ -97,6 +119,38 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   eq('vv resize 는 여전히 축소를 받는다', w(538, 874, true), true)
   eq('팬(scroll)은 여전히 축소를 안 받는다', w(400, 538, false), false)
   eq('팬에서 커지는 값은 여전히 받는다', w(874, 400, false), true)
+}
+
+// ── 한 관문 · 높이와 인셋이 같은 값을 쓴다(신고 bf0a6fff) ──────────
+// 종전에는 이 관문이 패널 높이에만 걸렸고 오버레이 인셋은 vv.height 를 날것으로 썼다.
+// **보호가 한쪽에만 걸린 값 쌍은 언젠가 갈린다.** 여기서 그 쌍을 붙여 둔다.
+{
+  const b = bandHeight
+  // 관문 자체 — usableVvHeight 와 shouldWriteVvHeight 를 한 번에 지난다.
+  eq('정상값은 그대로 통과', b(538, 874, true), 538)
+  eq('아직 못 읽었으면 null(호출부가 폴백)', b(80, 0, true), null)
+  eq('찢어진 스냅샷은 직전 유효값으로 답한다', b(80, 538, true), 538)
+  eq('팬의 축소는 직전 유효값으로 답한다', b(400, 538, false), 538)
+  eq('팬의 확대는 새 값으로 답한다', b(874, 538, false), 874)
+  eq('resize 의 축소는 새 값으로 답한다', b(538, 874, true), 538)
+  // **거부를 0 이 아니라 직전 값으로 답하는 것이 요점이다.** 0 으로 답하면 인셋이 폭발한다.
+  eq('거부 답이 0 이 아니다', b(80, 538, false) !== 0, true)
+
+  // 합성 — 훅이 실제로 부르는 모양 그대로. 찢어진 스냅샷 한 장이 인셋으로 못 샌다.
+  const insetsVia = (height: number, lastGood: number, allowShrink: boolean, offsetTop: number) => {
+    const h = b(height, lastGood, allowShrink)
+    return h == null ? null : overlayInsets({ innerHeight: H, height: h, offsetTop })
+  }
+  // 종전 결함의 재현값 — 띠가 90 으로 찢어져 오면 날것으로는 bottom 이 784 까지 자랐다.
+  eq('날것이면 아래 인셋이 폭발한다(종전)', overlayInsets({ innerHeight: H, height: 90, offsetTop: 0 }).bottom, H - 90)
+  eq('관문을 지나면 직전 띠 그대로', insetsVia(90, 538, true, 0), { top: 0, bottom: H - 538 })
+  eq('관문을 지나면 합도 직전 띠 기준', insetsVia(90, 538, false, 200), { top: 200, bottom: H - 538 - 200 })
+  eq('첫 프레임부터 찢어졌으면 안 쓴다', insetsVia(90, 0, true, 0), null)
+  // 팬 불변 — 같은 띠 안에서 팬만 달라지면 합이 상수다(인셋이 관문을 지난 뒤에도 유지).
+  for (const pan of [0, 150, 336]) {
+    const r = insetsVia(400, 538, false, pan)!
+    eq(`관문 뒤 팬 ${pan} 의 합은 상수`, r.top + r.bottom, H - 538)
+  }
 }
 
 console.log(`\n모달 기하 회귀: ${pass} 통과 / ${fails.length} 실패`)

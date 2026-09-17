@@ -23,16 +23,28 @@ export type VvSnapshot = {
 /**
  * 오버레이 위·아래 인셋 — 셋을 합치면 content box 가 보이는 띠와 같아진다.
  *
- * **위에도 상한을 건다.** 종전에는 아래에만 0 하한이 있고 위에는 짝이 없어서, offsetTop 이
+ * **두 끝에 다 상한을 건다.** 위 주석의 불변식(top + bottom = innerHeight - height)은 두 항이
+ * 모두 [0, 그 합] 안에 있을 때만 성립한다. 한쪽만 잠그면 반대 방향 스냅샷에서 그대로 새어 나간다.
+ *
+ * 종전 1차(2026-08-29) — 아래에만 0 하한이 있고 위에는 짝이 없었다. offsetTop 이
  * innerHeight - height 를 넘는 스냅샷이 오면 bottom 은 0 에 눌리고 top 만 자랐다. 그만큼
  * content box 가 깎이고, 패널 maxHeight 의 100% 안전망이 calc 를 이기면서 패널이 내려가며
  * 작아졌다. 여유가 2rem 뿐이라 32px 만 넘어도 발동한다.
+ *
+ * 종전 2차(2026-09-16, 신고 bf0a6fff) — 이번에는 **위만 잠겨 있고 아래에 상한이 없었다.**
+ * offsetTop 이 음수로 오거나 height 가 실제보다 작게 찢어져 오면 bottom 이 무한정 자라고,
+ * 오버레이 content box 가 화면 위쪽 짧은 띠로 쪼그라든다. items-center 가 그 띠 안에서 가운데를
+ * 잡으니 패널이 위로 붙고 maxHeight 100% 가 본문을 누른다. 사진의 기하가 정확히 그 모양이었다
+ * (패널 상단 90pt · 헤더와 푸터 사이 36pt · 가로는 max-w-xs 그대로).
+ *
+ * 찢어진 height 자체는 여기서 못 막는다 — 합을 정하는 값이 그것이라 상한도 같이 커진다.
+ * 그 문은 usableVvHeight 가 지키고, 호출부(lib/useVisibleBand)가 인셋에도 그 문을 지나게 한다.
  */
 export function overlayInsets(vv: VvSnapshot): { top: number; bottom: number } {
-  const maxTop = Math.max(0, Math.round(vv.innerHeight - vv.height))
+  const span = Math.max(0, Math.round(vv.innerHeight - vv.height))
   return {
-    top: Math.min(maxTop, Math.max(0, Math.round(vv.offsetTop))),
-    bottom: Math.max(0, Math.round(vv.innerHeight - (vv.offsetTop + vv.height))),
+    top: Math.min(span, Math.max(0, Math.round(vv.offsetTop))),
+    bottom: Math.min(span, Math.max(0, Math.round(vv.innerHeight - (vv.offsetTop + vv.height)))),
   }
 }
 
@@ -82,4 +94,27 @@ export function shouldWriteVvHeight(next: number, lastGood: number, fromResize: 
  */
 export function resumeAllowsShrink(pass: 1 | 2, editableFocused: boolean): boolean {
   return pass === 2 && editableFocused
+}
+
+/**
+ * **이 프레임에 쓸 띠 높이** — 위생 검사와 쓰기 방향 관문을 한 번에 지난 한 값.
+ *
+ * 왜 합쳤나(신고 bf0a6fff, 2026-09-16). 종전에는 이 두 관문이 훅 안에서 패널 높이에만 걸려
+ * 있었고, 오버레이 인셋은 `vv.height` 를 날것으로 썼다. **보호가 한쪽에만 걸린 값 쌍은 언젠가
+ * 갈린다.** 찢어진 스냅샷 한 장에 아래 인셋이 무한정 커져 content box 가 화면 위쪽 짧은 띠로
+ * 쪼그라들었고, `items-center` 가 그 띠 안에서 가운데를 잡아 패널이 위로 붙어 눌렸다.
+ *
+ * 돌려주는 값 셋의 뜻.
+ *   · `null`  — 아직 한 번도 못 읽었다. 호출부는 **아무것도 안 쓰고** CSS 폴백을 그대로 둔다.
+ *   · `lastGood` — 이 프레임 값은 안 믿는다(불가능값이거나, 줄이면 안 되는 자리의 축소다).
+ *   · 새 값 — 믿는다. 호출부가 `lastGood` 을 이것으로 갱신한다.
+ *
+ * 거부를 0 이 아니라 `lastGood` 으로 답하는 것이 요점이다. 인셋도 같은 값으로 계산해야 팬
+ * 프레임마다 합(top + bottom)이 흔들리지 않는다.
+ */
+export function bandHeight(height: number, lastGood: number, allowShrink: boolean): number | null {
+  const h = usableVvHeight(height, lastGood)
+  if (h == null) return null
+  if (!shouldWriteVvHeight(h, lastGood, allowShrink)) return lastGood
+  return h
 }

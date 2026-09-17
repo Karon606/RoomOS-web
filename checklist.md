@@ -930,3 +930,35 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] tsc 0 · verify:fast 0 · verify:db 0 · next build 0 · eslint 496(기준선 496, 델타 0)
 - [x] 역주입 9종 전부 빨강, 백업 cp 원복 후 cmp 6파일 전부 동일
 - [ ] 운영자 실기 확인 — 보고의 목록
+
+### 3 옮기기 모달이 깨져 뜬다 (신고 bf0a6fff, 네 번째 재현)
+- [x] **경로 (가) 옅어짐** — `lib/useSettleEntrance.ts` 가 붙는 시점에 `runningAnimations(el)` 로
+      "지금 돌고 있는가"를 묻는다. 안 돌고 있으면 그 자리에서 클래스를 떼고(재계산이 굳은 프레임을
+      푼다), 돌고 있으면 `finished` 를 `allSettled` 로 기다린다. 벽시계는 한 글자도 안 썼다
+- [x] **수법을 두 벌로 안 만들었다** — `lib/animationSettled.ts` 신설. 직전 커밋 `c0182100` 이
+      `lib/viewportProbe.ts` 에서 먼저 푼 그 수법을 정본 한 벌로 옮기고 둘이 같은 것을 부른다
+- [x] **경로 (나) 눌림 · 관문을 합쳤다** — `bandHeight(height, lastGood, allowShrink)` 를
+      `lib/modalViewport.ts` 에 신설(순수). 훅의 높이·인셋이 **한 값**에서 나온다. 거부는 0 이 아니라
+      직전 유효값으로 답한다(인셋이 같은 값을 써야 팬 프레임마다 합이 안 흔들린다)
+- [x] **`overlayInsets` 의 두 항 모두 `[0, 합]` 으로 죈다** — 위만 잠겨 있던 자리. 불변식
+      `top + bottom = innerHeight - height` 를 양쪽 끝에서 다 강제
+- [x] **그물을 실질로 바꿨다** — `check-overlay-resume-resync` 등장 절이 호출 한 줄이 아니라
+      **ref 배선**을 본다(등장 클래스를 단 바로 그 태그에 붙었는가). 붙는 시점 확인·`allSettled`·
+      벽시계 금지도 함께
+- [x] **막을 보는 축 신설** — `scripts/check-overlay-backdrop.mjs`(verify:fast). 존재·불투명도·
+      z 순서 + 층 토큰 실재 + 등장 클래스가 시작 프레임을 안 붙잡는가. 다이얼로그 8개 검사
+- [x] `check-kbd-canonical` 에 절 추가 — 두 항의 `Math.min` · `bandHeight` 통과 ·
+      `overlayInsets` 에 `vv.height` 날것 금지 · `lib/animationSettled` 생존
+- [x] **쓰는 이 여덟 전수 확인** — Modal · ConfirmDialog · PeekSheet · ImageLightbox · MergeSheet ·
+      GlobalSearchHost · InventoryClient 수제 둘. 패널 ref 유무 두 모양을 헤드리스로 각각 쟀다
+- [x] **두 경로 헤드리스 재현** — puppeteer-core + 로컬 Chrome, 정본 모듈을 그대로 번들해 before/after
+      대조. (가) 막 0.08·패널 0.16 에 굳은 것이 1.00 으로 회복 (나) 찢어진 스냅샷에서 패널 높이
+      506 → 58 로 눌리던 것이 506 유지. **정상 6행은 before/after 픽셀 동일**
+- [x] 역주입 16종 전부 빨강(임포트만 남기고 호출 삭제 2종 포함), 백업 cp 원복 후 cmp 8파일 동일
+- [x] 지식 적립 — `knowledge/domain-modal-shell.md` 신설 + INDEX 등재 + regression-nets 갱신.
+      `open-keyboard-field-visibility.md:63` 이 가리키던 끊긴 링크가 이어졌다
+- [x] 게이트 — tsc 0 · verify:fast 0 · verify:db 0 · next build 0 · eslint 496(기준선 496, 델타 0)
+- [ ] **MergeSheet 등장은 안 건드렸다** — `setTimeout(10ms)` + `transition-opacity` 토글이라 같은
+      클래스의 위험이지만, 고치면 모션 곡선·길이가 바뀌어 웹디자이너 패스가 필요하다.
+      `check-overlay-backdrop` 의 `KNOWN_GAPS` 에 사유와 함께 올려 뒀다(운영자 결정 대기)
+- [ ] 운영자 실기 확인 — iOS Safari·Android Chrome 두 엔진(보고의 목록)
