@@ -16,6 +16,7 @@ import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { ymdToDbDate } from '@/lib/kstDate'
+import { assertNotFuture } from '@/lib/completionDate'
 import { splitWorkCost, isLaborItem } from '@/lib/roomWorkCost'
 // 담당 어휘(직접·업체·제3자)는 청소와 같은 말이라 정본을 함께 쓴다. 사본을 만들면 한쪽만
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
@@ -221,6 +222,10 @@ export async function completeRoomWork(input: {
       },
     })
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
+    // 미래 완료일 거부 — 화면 maxDate 와 두 겹이다(운영자 확정 2026-09-17). 화면이 넷이어도
+    // 다섯째 경로가 생기면 여기가 받친다.
+    const fg = assertNotFuture(input.doneDate)
+    if (!fg.ok) return { ok: false, error: fg.reason }
     const doneDate = ymdToDbDate(input.doneDate)
     const cost = Math.max(0, Math.round(input.cost ?? 0))
     const mode = input.mode ?? 'ask'
@@ -444,6 +449,11 @@ export async function rescheduleRoomWork(input: { id: string; date: string }): P
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
     const date = ymdToDbDate(input.date)
     if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    // 완료 건의 날짜만 미래를 막는다. 예정 건은 앞날을 잡는 자리라 안 막는다(화면과 같은 갈래).
+    if (cur.status === 'DONE') {
+      const fg = assertNotFuture(input.date)
+      if (!fg.ok) return { ok: false, error: fg.reason }
+    }
     await prisma.roomWork.update({
       where: { id: cur.id },
       data: cur.status === 'DONE' ? { doneDate: date } : { scheduledDate: date },

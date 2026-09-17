@@ -110,12 +110,22 @@ eq('먼 과거도 그대로 받는다',
   iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-04-03', today: TODAY, now: NOW })),
   kst('2026-04-03T00:00:00').toISOString())
 
-// 막는 것은 미래 하나뿐 — 아직 안 한 발행이라 국세청에 있을 수가 없다. 폴백으로 떨어진다.
-eq('미래 날짜는 폴백',
-  iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-25', today: TODAY, now: NOW })), NOW.toISOString())
-eq('미래 날짜 + 기존 값이면 기존 값 보존',
-  iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-12-31', existing: EXISTING, today: TODAY, now: NOW })),
-  EXISTING.toISOString())
+// 막는 것은 미래 하나뿐 — 아직 안 한 발행이라 국세청에 있을 수가 없다.
+// **2026-09-17 부터 폴백이 아니라 거부다**(운영자 승인). 조용히 오늘로 바꾸면 운영자가 고른 날과
+// 저장된 날이 갈리는데 화면은 아무 말도 안 한다. 종전 기대값은 '폴백'이었고 그것을 뒤집었다.
+const throws = (name: string, fn: () => unknown) => {
+  try { fn(); fail++; console.log(`  실패 ${name}\n    기대 던짐\n    실제 안 던짐`) }
+  catch { pass++ }
+}
+throws('미래 날짜는 거부한다',
+  () => resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-25', today: TODAY, now: NOW }))
+throws('미래 날짜는 기존 값이 있어도 거부한다',
+  () => resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-12-31', existing: EXISTING, today: TODAY, now: NOW }))
+// 끈 상태·카드는 미래여도 안 던진다 — 날짜를 쓰지 않는 경로라 거부할 것이 없다.
+eq('꺼져 있으면 미래여도 null',
+  iso(resolveCashReceiptIssuedAt({ issued: false, issuedDate: '2026-12-31', today: TODAY, now: NOW })), null)
+eq('카드는 미래여도 null',
+  iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-12-31', payMethod: '신용카드', today: TODAY, now: NOW })), null)
 // 오늘은 미래가 아니다(경계).
 eq('오늘은 받는다',
   iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: TODAY, today: TODAY, now: NOW })),

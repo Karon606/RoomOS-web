@@ -1837,9 +1837,17 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     violations.push('[소스] updatePayment 이 기존 발행 시각을 정본에 안 넘긴다 — 금액만 고쳐도 발행일이 오늘로 밀려 그 달 합계가 움직인다')
   }
   // 미래 발행은 화면에서도 막는다 — 아직 안 한 발행이라 국세청에 있을 수가 없다.
+  //
+  // **2026-09-17 에 판정이 옮겨 갔다.** 날짜 결정 규칙이 완료 처리 전반의 정본(lib/completionDate)으로
+  // 모이면서, 미래 비교(`raw <= today`)는 거기 assertNotFuture 안에 산다. lib/cashReceipt 는 그것을
+  // 부르고 **폴백 대신 던진다**(운영자 승인 — 조용한 폴백은 고른 날과 저장된 날을 갈라 놓는다).
+  // 그래서 두 자리를 함께 본다. 한 자리만 보면 규칙이 옮겨 간 뒤 그물이 장식이 된다.
   const canon = readFileSync('lib/cashReceipt.ts', 'utf8')
-  if (!/raw <= today/.test(canon)) {
+  if (!/assertNotFuture\(input\.issuedDate/.test(canon) || !/throw new Error/.test(canon)) {
     violations.push('[소스] lib/cashReceipt 의 미래 발행일 가드가 사라졌다 — 아직 하지 않은 발행이 그 달 합계에 미리 잡힌다')
+  }
+  if (!/raw <= today/.test(readFileSync('lib/completionDate.ts', 'utf8'))) {
+    violations.push('[소스] lib/completionDate 의 미래 비교가 사라졌다 — 현금영수증·요청 완료·점검 완료가 함께 기대는 판정이다')
   }
   // 발행일 입력칸은 정본 DatePicker 여야 한다(네이티브 date 는 iOS 에서 형제와 다른 껍데기가 된다).
   for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/widgets/PaymentRecordList.tsx']) {

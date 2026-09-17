@@ -26,6 +26,7 @@ import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/r
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
+import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoCheckout'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
@@ -3367,6 +3368,11 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
+  // 미래 퇴실일 거부(운영자 확정 2026-09-17). 앞날을 잡는 것은 expectedMoveOut 의 몫이다.
+  if (!assertNotFuture(moveOutDate).ok) {
+    return { ok: false, error: `퇴실일이 미래입니다(${moveOutDate}). 앞날은 퇴실 예정일에 적습니다.` }
+  }
+
   // moveOutDate = 실제 퇴실일(호출부 입력, 기본 오늘). 예정일 복사 금지 — 계약상 예정일과 실제 퇴실은 다르다(2026-07-28 오더).
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
@@ -3492,6 +3498,12 @@ export async function applyStatusTransition(input: {
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    // 미래 퇴실일 거부(운영자 확정 2026-09-17). 실제로 나간 날은 지난 날이고, 앞날을 잡는 것은
+    // expectedMoveOut 의 몫이다 — 그래서 이 가드는 moveOutDate 에만 건다. 화면 maxDate 와 두 겹이다.
+    if (!assertNotFuture(input.moveOutDate).ok) {
+      return { ok: false, error: `퇴실일이 미래입니다(${input.moveOutDate}). 앞날은 퇴실 예정일에 적습니다.` }
+    }
 
     /**
      * 퇴실 적용취소 — 퇴실 완료에서 거주계로 돌아오는 전이다. **목적지도 차단도 서버가 술어로 정한다.**
@@ -4279,14 +4291,40 @@ export async function getActiveTenantsForRequests() {
   return rows.map(r => ({ ...r, leaseTerms: mainLeaseOnly(r.leaseTerms) }))
 }
 
-export async function resolveTenantRequest(id: string, memo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * 요청·컴플레인 완료 처리.
+ *
+ * **완료일을 운영자가 적는다**(지시 2026-09-17 — "어제 완료한건데 어제날짜로 완료했다고 입력할
+ * 방법이 없네"). 종전에는 `new Date()` 를 즉발로 박아 **클릭한 날**이 이력에 찍혔다. 실측 16건 중
+ * 9건은 완료일과 마지막 수정일이 다른 날이라, 나중에 손댄 건이 적지 않다.
+ *
+ * 값 결정은 lib/completionDate 정본 하나다. 엑셀 임포트('해결일' 칸)도 같은 정본을 지난다.
+ * 미래는 화면 maxDate 와 여기 가드 두 겹으로 막는다.
+ */
+export async function resolveTenantRequest(
+  id: string,
+  memo?: string,
+  /** 운영자가 고른 완료일 'YYYY-MM-DD'(KST). 안 넘기면 기존 값 보존, 그것도 없으면 지금. */
+  resolvedDate?: string | null,
+  /**
+   * 적용취소 복원용 — 원래 시각을 밀리초까지 되돌린다(현금영수증 setCashReceiptIssued 선례).
+   * 날짜 정본을 태우면 그 날 자정으로 뭉개져 감사 흔적이 사라진다.
+   */
+  restoreResolvedAt?: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     await getPropertyId()
+    const guard = assertNotFuture(resolvedDate)
+    if (!guard.ok) return { ok: false, error: guard.reason }
+    // 기존 값 보존 — 날짜를 안 넘긴 재완료가 이력의 날짜를 오늘로 밀면 안 된다.
+    const before = await prisma.tenantRequest.findUnique({ where: { id }, select: { resolvedAt: true } })
     await prisma.tenantRequest.update({
       where: { id },
       data: {
-        resolvedAt: new Date(),
+        resolvedAt: restoreResolvedAt
+          ? new Date(restoreResolvedAt)
+          : resolveCompletionAt({ picked: resolvedDate, existing: before?.resolvedAt ?? null, column: 'timestamp' }),
         // memo 를 안 실어 보낸 호출(입주자 정보 › 요청·컴플레인 탭)은 기존 메모를 그대로 둔다.
         // 종전에는 undefined 도 null 로 덮어, 완료 › 적용취소 › 재완료 세 걸음에 /requests 에서
         // 적어 둔 처리 메모가 소리 없이 사라졌다. 비우기 경로는 남긴다 — 빈 문자열을 실어 보내면
@@ -4305,14 +4343,19 @@ export async function resolveTenantRequest(id: string, memo?: string): Promise<{
 }
 
 // 요청 완료 해제 — 실수로 완료 처리한 요청을 미완료로 복귀(감사 2026-07-10: 삭제만 있던 문제)
-export async function unresolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+//
+// **끄기 전 날짜를 스냅샷으로 돌려준다**(현금영수증 setCashReceiptIssued 의 prevIssuedAt 선례).
+// 종전에는 되돌렸다 다시 완료하면 오늘이 박혔다 — 운영자 불만의 다른 얼굴이다. 화면이 이 값을
+// 들고 있다가 적용취소 때 restoreResolvedAt 으로 되돌린다.
+export async function unresolveTenantRequest(id: string): Promise<{ ok: true; prevResolvedAt: string | null } | { ok: false; error: string }> {
   try {
     // 완료 쪽과 대칭 — 완료가 편집 권한을 요구하는데 되돌리기가 안 요구하면 뷰어가 상태를 바꾼다.
     await requireEdit()
     await getPropertyId()
+    const before = await prisma.tenantRequest.findUnique({ where: { id }, select: { resolvedAt: true } })
     await prisma.tenantRequest.update({ where: { id }, data: { resolvedAt: null } })
     revalidatePath('/tenants'); revalidatePath('/requests'); revalidatePath('/dashboard')
-    return { ok: true }
+    return { ok: true, prevResolvedAt: before?.resolvedAt ? before.resolvedAt.toISOString() : null }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

@@ -16,7 +16,8 @@
 // 바로잡힌다. 카드는 매출전표가 결제 시점에 성립하므로 payDate 축 그대로다.
 import { CARD_LIKE_METHODS } from './paymentMethods'
 import { fmtWon } from './fmtMoney'
-import { dbDateMonthKey, kstMonthKey, kstYmdStr, kstDateTimeToUtc } from './kstDate'
+import { dbDateMonthKey, kstMonthKey, kstYmdStr } from './kstDate'
+import { assertNotFuture, resolveCompletionAt } from './completionDate'
 
 // ── 쓰기 ────────────────────────────────────────────────────────
 
@@ -46,8 +47,12 @@ export type CashReceiptStampInput = {
  *   3. 날짜를 안 넘겼으면 기존 값을 지키고, 기존 값도 없으면 지금이다.
  *      기존 값 보존은 updatePayment 이 원래부터 하던 것이고(재저장이 발행일을 오늘로 밀면 안 된다)
  *      그 규칙을 전 경로로 넓힌다.
- *   4. **미래 날짜는 받지 않는다.** 아직 안 한 발행이라 국세청에 있을 수가 없다. 화면은
- *      DatePicker maxDate 로 애초에 못 고르게 막고, 여기서는 폴백으로 떨어뜨린다(마지막 방어선).
+ *   4. **미래 날짜는 거부한다.** 아직 안 한 발행이라 국세청에 있을 수가 없다. 화면은
+ *      DatePicker maxDate 로 애초에 못 고르게 막고, 여기서는 **던진다**(2026-09-17 승인).
+ *      종전에는 조용히 폴백으로 떨어뜨렸다 — 운영자가 고른 날과 저장된 날이 갈리는데 화면은
+ *      아무 말도 안 하니, 틀린 홈택스 숫자가 앱에 조용히 앉는다. 결과형으로 안 바꾼 것은 이
+ *      함수의 반환이 `Date | null` 이고 호출부 일곱이 그 형태에 물려 있어서다. 던지면 저장 자체가
+ *      멈추고 withSave 가 실패 토스트를 띄운다 — 조용히 틀린 값이 앉는 쪽보다 낫다.
  *   5. **카드 계열이면 무조건 null.** 카드는 현금이 아니라 현금영수증 대상 자체가 아니고,
  *      국세청에는 카드 매출로 따로 보고된다(운영자 확정 2026-08-24). 그래서 수단을 카드로
  *      바꾸면 발행 표시는 자연히 취소되고 그 금액은 카드 합계로 넘어간다. 화면이 체크를
@@ -61,12 +66,15 @@ export function resolveCashReceiptIssuedAt(input: CashReceiptStampInput): Date |
   if (!isCashReceiptEligible(input.payMethod)) return null
   if (!input.issued) return null
   const today = input.today ?? kstYmdStr()
-  const raw = (input.issuedDate ?? '').slice(0, 10)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && raw <= today) {
-    const at = kstDateTimeToUtc(raw)
-    if (at) return at
+  // 미래 거부만 여기서 하고, 날짜 결정은 정본에 맡긴다(lib/completionDate). 규칙 문장은 같고
+  // 사유 문구만 이 도메인의 말이다 — '완료일'이 아니라 '발행일'이다.
+  if (!assertNotFuture(input.issuedDate, today).ok) {
+    throw new Error(`발행일이 미래입니다(${(input.issuedDate ?? '').slice(0, 10)}). 아직 하지 않은 발행이라 국세청에 있을 수가 없습니다.`)
   }
-  return input.existing ?? input.now ?? new Date()
+  return resolveCompletionAt({
+    picked: input.issuedDate, existing: input.existing,
+    column: 'timestamp', today, now: input.now,
+  })
 }
 
 /**

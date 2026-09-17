@@ -23,6 +23,7 @@ import {
 import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { ymdToDbDate } from '@/lib/kstDate'
+import { assertNotFuture } from '@/lib/completionDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
@@ -235,6 +236,9 @@ export async function completeCleaning(input: {
       },
     })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
+    // 미래 완료일 거부 — 형제인 작업 완료와 같은 가드다(운영자 확정 2026-09-17).
+    const fg = assertNotFuture(input.doneDate)
+    if (!fg.ok) return { ok: false, error: fg.reason }
     const doneDate = ymdToDbDate(input.doneDate)
     const cost = Math.max(0, Math.round(input.cost ?? 0))
     // 퇴실 청소가 아니면 부담 표식을 무시한다. 비용 0(직접 청소)도 부담할 것이 없다.
@@ -376,6 +380,9 @@ export async function rescheduleCleaning(input: { id: string; date: string }): P
       revalidatePath('/room-manage')
       return { ok: true }
     }
+    // 여기부터는 완료일이다 — 미래를 막는다(예정일은 위에서 이미 빠져나갔다).
+    const fg = assertNotFuture(input.date)
+    if (!fg.ok) return { ok: false, error: fg.reason }
     await prisma.$transaction(async tx => {
       await tx.roomCleaning.update({ where: { id: input.id }, data: { doneDate: date } })
       // updateMany 라 지출이 이미 지워졌으면 조용히 0건이다. update 였다면 없는 것을 고치려다

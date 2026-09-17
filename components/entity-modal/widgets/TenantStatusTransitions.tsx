@@ -690,7 +690,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{active.def.fieldLabel}</label>
                   {/* focus-visible 링은 §09 필수인데 이 칸에는 없었다. 바로 아래 청소 예정일이
                       같은 생김새로 서므로 둘이 다르게 반응하면 그 자체가 이질감이다. */}
+                  {/* **퇴실일만 미래를 막는다**(운영자 확정 2026-09-17). 실제로 나간 날은 지난 날이다.
+                      입주일·퇴실 예정일은 앞날을 잡는 자리라 안 막는다 — 작업 행의 완료일·예정일과 같은 갈래. */}
                   <DatePicker value={transDate} onChange={setTransDate}
+                    maxDate={active.def.field === 'moveOutDate' ? kstYmdStr() : undefined}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--persimmon)] focus-visible:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors" />
                 </div>
               )}

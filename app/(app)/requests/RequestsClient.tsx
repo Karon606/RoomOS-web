@@ -44,7 +44,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string }> = {
 
 const NEUTRAL_COLOR = CATEGORY_COLORS['기타']
 
-// 정렬 기준 — 처리일은 미처리 그룹에 값이 없으니 요청일로 폴백한다.
+// 정렬 기준 — 완료일은 미처리 그룹에 값이 없으니 요청일로 폴백한다.
 type SortKey = 'requestDate' | 'resolvedAt'
 
 
@@ -85,6 +85,9 @@ export default function RequestsClient({
 
   const [resolvingId,   setResolvingId]   = useState<string | null>(null)
   const [resolvingMemo, setResolvingMemo] = useState('')
+  // 완료일 — 운영자가 적는다(지시 2026-09-17 "어제 완료한건데 어제날짜로 완료했다고 입력할 방법이 없네").
+  // 기본은 오늘이고 지난 날짜로 고칠 수 있다. 미래는 maxDate 와 서버 가드 두 겹으로 막는다.
+  const [resolvingDate, setResolvingDate] = useState(kstYmdStr())
   const [busyId,        setBusyId]        = useState<string | null>(null)   // 행별 처리 중 (전역 잠금 방지)
 
   // 등록 폼 상태 — editingId 가 있으면 같은 폼이 수정 모드로 동작한다.
@@ -176,25 +179,8 @@ export default function RequestsClient({
 
   const resetFilters = () => { setFilterCategory('all'); setFilterUrgent(false); setSearch('') }
 
-  const handleResolve = (id: string, memo: string) => {
-    setBusyId(id)
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await resolveTenantRequest(id, memo)
-        if (!res.ok) { pushToast('error', res.error); return }
-        // 적용취소(기존 unresolve 재사용) — 월 스코프가 요청일 기준이라 처리해도 그 달 화면에 그대로 남는다
-        const opts: { action: { label: string; run: () => void }; detail?: string } = {
-          action: { label: '적용취소', run: () => unresolveTenantRequest(id).then(r => { if (!r.ok) { pushToast('error', r.error); return } router.refresh() }) },
-        }
-        pushToast('success', '완료로 처리했습니다', opts)
-        setResolvingId(null)
-        setResolvingMemo('')
-        router.refresh()
-      } finally { release(); setBusyId(null) }
-    })
-  }
-
+  // 되돌리기는 **끄기 전 날짜를 스냅샷으로 받아** 적용취소 때 그대로 되살린다(현금영수증 토글 선례).
+  // 종전에는 되돌렸다 다시 완료하면 오늘이 박혔다.
   const handleUnresolve = (id: string) => {
     setBusyId(id)
     startTransition(async () => {
@@ -203,9 +189,34 @@ export default function RequestsClient({
         if (!res.ok) { pushToast('error', res.error); return }
         // 문안은 입주자 정보 › 요청·컴플레인 탭과 문자 단위로 같다(§29 부연은 가운뎃점).
         // 동사는 버튼과 같은 '적용취소' 로 맞춘다 — 한 동작에 두 동사를 쓰지 않는다.
-        pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀')
+        pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀', {
+          action: { label: '적용취소', run: () => { void resolveTenantRequest(id, undefined, undefined, res.prevResolvedAt).then(r => {
+            if (r.ok) router.refresh(); else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        })
         router.refresh()
       } finally { setBusyId(null) }
+    })
+  }
+
+  // 완료 확인 — 완료일과 처리 메모를 함께 받는다. 종전에는 [완료로 처리]가 즉발이라 클릭한 날이
+  // 이력에 찍혔고, 날짜를 고칠 길이 아예 없었다(운영자 지시 2026-09-17).
+  const handleResolve = (id: string, memo: string, doneDate: string) => {
+    setBusyId(id)
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await resolveTenantRequest(id, memo, doneDate)
+        if (!res.ok) { pushToast('error', res.error); return }
+        // 적용취소(기존 unresolve 재사용) — 월 스코프가 요청일 기준이라 처리해도 그 달 화면에 그대로 남는다
+        const opts: { action: { label: string; run: () => void }; detail?: string } = {
+          action: { label: '적용취소', run: () => handleUnresolve(id) },
+        }
+        pushToast('success', `완료로 처리했습니다 · 완료일 ${fmtDate(doneDate)}`, opts)
+        setResolvingId(null)
+        setResolvingMemo('')
+        router.refresh()
+      } finally { release(); setBusyId(null) }
     })
   }
 
@@ -489,7 +500,7 @@ export default function RequestsClient({
           onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
           options={[
             { value: 'requestDate', label: '요청일' },
-            { value: 'resolvedAt',  label: '처리일' },
+            { value: 'resolvedAt',  label: '완료일' },
           ]}
         />
       </div>
@@ -594,7 +605,15 @@ export default function RequestsClient({
                 {/* 액션 */}
                 {!resolved ? (
                   resolvingId === r.id ? (
+                    /* 완료 확인 줄 — 완료일을 먼저 받고 처리 메모를 함께 적는다.
+                       라벨은 '완료일'이다. '처리일'은 클릭한 날로 읽혀 보증금 정산일 축에서 이미 막았다.
+                       날짜 칸 껍데기는 바로 아래 메모칸과 같은 한 벌이다(§12 한 폼 안 입력 높이 혼용 금지). */
                     <div className="mt-3 space-y-2 rounded-lg p-2.5 bg-[var(--success-bg)] border border-[var(--success-ring)]">
+                      <div className="flex items-center gap-2 text-xs text-[var(--warm-mid)]">
+                        완료일
+                        <DatePicker value={resolvingDate} onChange={setResolvingDate} maxDate={kstYmdStr()}
+                          className="flex-1 min-w-0 text-xs rounded-sm px-2 py-1.5 bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]" />
+                      </div>
                       <textarea
                         value={resolvingMemo}
                         onChange={e => setResolvingMemo(e.target.value)}
@@ -612,29 +631,24 @@ export default function RequestsClient({
                           취소
                         </button>
                         <button
-                          onClick={() => handleResolve(r.id, resolvingMemo)}
+                          onClick={() => handleResolve(r.id, resolvingMemo, resolvingDate)}
                           disabled={busyId === r.id}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--on-solid)] disabled:opacity-50"
                         >
-                          {busyId === r.id ? '저장 중…' : '완료로 저장'}
+                          {busyId === r.id ? '저장 중…' : '완료 기록'}
                         </button>
                       </div>
                     </div>
                   ) : (
                     <div className="flex gap-2 mt-3 items-center">
+                      {/* 즉발이 아니라 완료 확인 줄을 편다 — 완료일과 메모를 거기서 받는다.
+                          종전의 [메모 추가]는 같은 줄을 여는 두 번째 버튼이 되어 지웠다. */}
                       <button
-                        onClick={() => handleResolve(r.id, '')}
+                        onClick={() => { setResolvingId(r.id); setResolvingMemo(''); setResolvingDate(kstYmdStr()) }}
                         disabled={busyId === r.id}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-50 inline-flex items-center gap-1"
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>완료로 처리
-                      </button>
-                      <button
-                        onClick={() => { setResolvingId(r.id); setResolvingMemo('') }}
-                        disabled={busyId === r.id}
-                        className="text-xs px-2 py-1.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-50"
-                      >
-                        메모 추가
                       </button>
                       <button
                         onClick={() => openEdit(r)}

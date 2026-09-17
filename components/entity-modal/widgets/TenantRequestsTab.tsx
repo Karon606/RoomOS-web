@@ -13,6 +13,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { RotateCcw } from '@/components/ui/RotateCcw'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -20,6 +21,11 @@ import { Section } from './Section'
 import CategorySelect from '@/components/ui/CategorySelect'
 
 type Request = Awaited<ReturnType<typeof getTenantRequests>>['requests'][number]
+
+// 완료 확인 줄의 날짜 칸 껍데기 — 형제 인라인 확인 줄과 같은 한 벌이다(수납 내역의 발행일 줄,
+// 작업·청소 행의 완료일 줄). 안 넘기면 테두리 없는 맨글자로 그려진다(오류신고 c2ab5b83).
+const DENSE_DATE_CLS =
+  'flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
 
 
 export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
@@ -47,6 +53,9 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [newCategory, setNewCategory] = useState('')
   const [newUrgent, setNewUrgent] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  // 완료 처리가 묻는 완료일(운영자 지시 2026-09-17). 기본은 오늘이고 지난 날짜로 고칠 수 있다.
+  const [doneAskId, setDoneAskId] = useState<string | null>(null)
+  const [doneDate, setDoneDate] = useState(kstYmdStr())
   // 등록 폼은 접어 둔다 — 이 면은 '뭘 요청했나'를 보러 여는 자리이고 등록은 가끔이다.
   const [showNewForm, setShowNewForm] = useState(false)
 
@@ -66,26 +75,36 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   }
   // 되돌리기는 새 액션을 세우지 않고 /requests 와 같은 unresolveTenantRequest 하나를 쓴다.
   // resolvedAt 만 null 이 되고 처리 메모는 남으므로, 다시 완료해도 적어 둔 메모가 그대로다.
+  //
+  // **끄면서 받은 이전 날짜를 들고 간다.** 적용취소로 되살릴 때 그 시각을 그대로 되돌린다 —
+  // 종전에는 되돌렸다 다시 완료하면 오늘이 박혔다(현금영수증 토글과 같은 처방).
   const handleUnresolve = (id: string) => {
     startTransition(async () => {
       const res = await unresolveTenantRequest(id)
       if (!res.ok) { pushToast('error', res.error); return }
       // 버튼이 '적용취소'니 결과도 같은 동사여야 한다 — 형제 DueDayPermanentChangeWidget 과 같은 문법.
-      pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀')
+      pushToast('info', '완료를 적용취소했습니다 · 미처리로 복귀', {
+        action: { label: '적용취소', run: () => { void resolveTenantRequest(id, undefined, undefined, res.prevResolvedAt).then(r => {
+          if (r.ok) void reload(); else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      })
       await reload()
     })
   }
-  const handleResolve = (id: string) => {
+  // 완료 확인 — 누르면 바로 완료하지 않고 **완료일부터 받는다**(운영자 지시 2026-09-17).
+  // 수납 내역의 발행일 확인 줄과 같은 인라인 문법이다. 끄기(적용취소)는 이 줄을 안 거친다.
+  const confirmResolve = (id: string) => {
     startTransition(async () => {
-      const res = await resolveTenantRequest(id)
+      const res = await resolveTenantRequest(id, undefined, doneDate)
       // 조용한 실패 금지 — 종전에는 결과를 안 보고 목록만 다시 읽어, 권한이 없으면 아무 일도
       // 안 일어난 것처럼 보였다.
       if (!res.ok) { pushToast('error', res.error); return }
+      setDoneAskId(null)
       // §16 진입점 1 — 토스트 액션(액션이 붙으면 pushToast 가 6초 TOAST_DUR_ACTION 을 고른다).
       const opts: { action: { label: string; run: () => void }; detail?: string } = {
         action: { label: '적용취소', run: () => handleUnresolve(id) },
       }
-      pushToast('success', '완료로 처리했습니다', opts)
+      pushToast('success', `완료로 처리했습니다 · 완료일 ${fmtDate(doneDate)}`, opts)
       await reload()
     })
   }
@@ -178,12 +197,27 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                   </button>
                 </div>
                 <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
-                <button onClick={() => handleResolve(r.id)} disabled={pending}
-                  className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                  style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1.5px solid var(--success-ring)' }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>
-                  완료로 처리하기
-                </button>
+                {doneAskId === r.id ? (
+                  /* 완료 확인 줄 — 수납 내역의 발행일 확인 줄과 같은 인라인 문법이다.
+                     라벨은 '완료일'이다. '처리일'은 클릭한 날로 읽힌다(보증금 정산일 축에서 이미 막았다). */
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+                      완료일
+                      <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className={DENSE_DATE_CLS} />
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap items-center">
+                      <RowActionBtn tone="accent" disabled={pending} onClick={() => confirmResolve(r.id)}>완료 기록</RowActionBtn>
+                      <RowActionBtn onClick={() => setDoneAskId(null)}>취소</RowActionBtn>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => { setDoneAskId(r.id); setDoneDate(kstYmdStr()) }} disabled={pending}
+                    className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                    style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1.5px solid var(--success-ring)' }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>
+                    완료로 처리하기
+                  </button>
+                )}
               </div>
             ))}
           </div>

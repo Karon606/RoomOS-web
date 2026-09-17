@@ -2746,7 +2746,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
             `w-full text-left truncate` 뿐이라 맨글자로 그려졌다. 값은 이 폼의 inputCls 와
             같고 둘만 다르다: 수량 전용 text-right 를 빼고, button 이라 focus 를 focus-visible 로
             옮겼다(손가락으로 눌러 연 달력이 닫힌 뒤 링이 남지 않게). */}
-        <DatePicker value={date} onChange={setDate}
+        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         {dateHasCheck && (
           <p className="text-[0.6875rem] text-[var(--honey)] bg-[var(--honey)]/10 border border-[var(--honey)]/30 rounded-lg px-2.5 py-1.5">
@@ -3023,7 +3023,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
             {/* 껍데기는 이 모달 품목별 수량칸(inputCls)과 같은 값이다(오류신고 c2ab5b83).
                 text-right 는 수량 전용이라 뺐고, disabled:opacity-40 은 DatePicker 기본 클래스에
                 이미 있어 중복이라 뺐다. */}
-            <div className="w-44"><DatePicker value={date} onChange={setDate}
+            <div className="w-44"><DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" /></div>
           </div>
           <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
@@ -3208,7 +3208,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate}
+          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         {!hasLocations && (
@@ -3334,7 +3334,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate}
+          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         <div>
@@ -3893,7 +3893,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
         {/* 높이·radius 는 위치 패널의 점검일과 같은 한 벌이다(§12 한 폼 안 입력 높이 혼용 금지). */}
-        <DatePicker value={date} onChange={setDate}
+        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)]" />
       </div>
 
@@ -5289,7 +5289,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
             <div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">점검일</p>
               {/* 높이·radius 는 왼쪽 위치 선택기 트리거와 같은 한 벌이다(§12 한 폼 안 입력 통일). */}
-              <DatePicker value={date} onChange={setDate}
+              <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)]" />
             </div>
           </div>
@@ -7019,7 +7019,7 @@ function DisposalForm({ item, onCancel, onDone }: {
       <p className="text-xs text-[var(--warm-muted)]">상하거나 버려서 줄어든 양을 기록합니다. 소모량 계산에서 분리되어 소진 예측이 왜곡되지 않습니다. 점검 저장 전에 먼저 기록하세요.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기일 *</label>
-        <DatePicker value={date} onChange={setDate}
+        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
       <div className="space-y-1.5">
@@ -7137,7 +7137,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 수령, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>
-        <DatePicker value={date} onChange={setDate}
+        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
       {useSpec ? (

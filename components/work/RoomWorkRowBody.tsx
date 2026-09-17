@@ -210,7 +210,9 @@ export function RoomWorkRowBody({
           </div>
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
             완료일
-            <DatePicker value={doneDate} onChange={setDoneDate} className={DENSE_DATE_CLS} />
+            {/* 미래는 못 고른다 — 아직 안 한 작업을 완료로 적을 수는 없다(운영자 확정 2026-09-17).
+                바로 위 날짜 변경 줄은 완료 건에만 이 상한을 걸고 있었는데 여기만 비어 있었다. */}
+            <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className={DENSE_DATE_CLS} />
           </div>
           {/* 이름 칸 — 맡긴 이력이 있으면 그 목록에서 고른다. 같은 업체를 매번 손으로 적으면
               오타 한 번에 한 업체가 두 이름으로 갈린다('글로벌 코킹' 대 '글로벌코킹'이 실제로 그랬다).

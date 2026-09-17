@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
+import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
@@ -482,8 +483,16 @@ async function importRequests(rows: Record<string, unknown>[], propertyId: strin
       })
       if (exactMatch) { result.skipped++; continue }
 
+      // 완료일은 화면과 **같은 정본**을 지난다(lib/completionDate). 두 경로가 갈리면 임포트만
+      // 옛 규칙에 남는다 — 종전에는 여기서 `?? new Date()` 로 오늘을 박았다.
+      const resolvedYmd = parseDate(row['해결일'])?.toISOString().slice(0, 10) ?? null
       const resolvedRaw = str(row['처리여부'])
-      const resolvedAt  = resolvedRaw === '완료' ? (parseDate(row['해결일']) ?? new Date()) : parseDate(row['해결일'])
+      const wantResolved = resolvedRaw === '완료' || !!resolvedYmd
+      const guard = assertNotFuture(resolvedYmd)
+      if (wantResolved && !guard.ok) { result.errors.push(`${tenantName}: ${guard.reason}`); result.skipped++; continue }
+      const resolvedAt = wantResolved
+        ? resolveCompletionAt({ picked: resolvedYmd, column: 'timestamp' })
+        : null
 
       await prisma.tenantRequest.create({
         data: {

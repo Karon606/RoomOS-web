@@ -16,6 +16,8 @@ import { withSave, pushToast } from '@/lib/saveStatus'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { kstYmdStr } from '@/lib/kstDate'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -83,14 +85,31 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
 
   const refresh = () => router.refresh()
 
-  // 카드에서 1탭 점검 완료 — 메모 없이 바로 기록(메모·이력은 '이력·메모' 버튼으로)
-  const handleQuickDone = (row: ChecklistRow) => {
+  // 적용취소 — 로그 삭제가 곧 되돌리기다(ChecklistLog 에 수정 문이 없다).
+  // **지운 로그의 시각·메모를 받아 두었다가 되살린다.** 종전에는 되돌렸다 다시 완료하면
+  // 오늘이 박혀, 어제로 적어 둔 점검일이 사라졌다(현금영수증 prevIssuedAt 과 같은 처방).
+  const undoDone = async (checklistId: string, logId: string) => {
+    const r = await deleteChecklistLog(logId)
+    if (!r.ok) { pushToast('error', r.error); return }
+    const prev = r.prev
+    pushToast('info', '점검 완료를 적용취소했습니다', {
+      action: { label: '적용취소', run: () => { void markChecklistDone({
+        id: checklistId, memo: prev.memo ?? '', restoreCheckedAt: prev.checkedAt,
+      }).then(rr => { if (rr.ok) refresh(); else pushToast('error', rr.error) }) } },
+    })
+    refresh()
+  }
+
+  // 카드에서 점검 완료 — **완료일을 먼저 받는다**(운영자 지시 2026-09-17).
+  // 매일 누르는 자리라 묻지 말자는 안도 있었지만, 요청 완료·현금영수증과 같은 문법이 되는 쪽을 골랐다.
+  // 메모·이력은 종전대로 '이력·메모' 버튼에서 다룬다.
+  const handleQuickDone = (row: ChecklistRow, doneDate: string) => {
     startTransition(async () => {
-      const res = await withSave(() => markChecklistDone({ id: row.id, memo: '' }))
+      const res = await withSave(() => markChecklistDone({ id: row.id, memo: '', doneDate }))
       if (!res.ok) return
       const logId = res.logId
-      pushToast('success', '점검 완료로 기록했습니다', {
-        action: { label: '적용취소', run: () => { void deleteChecklistLog(logId).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
+      pushToast('success', `점검 완료로 기록했습니다 · 완료일 ${doneDate}`, {
+        action: { label: '적용취소', run: () => { void undoDone(row.id, logId) } },
       })
       refresh()
     })
@@ -125,7 +144,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           <EmptyState title="현재 점검이 필요한 항목이 없습니다" />
         ) : (
           <div className="space-y-2">
-            {due.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {due.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
           </div>
         )}
       </Section>
@@ -133,7 +152,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {ok.length > 0 && (
         <Section title={`여유 ${ok.length}건`}>
           <div className="space-y-2">
-            {ok.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {ok.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
           </div>
         </Section>
       )}
@@ -141,7 +160,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {archive.length > 0 && (
         <Section title={`비활성 ${archive.length}건`}>
           <div className="space-y-2">
-            {archive.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} muted />)}
+            {archive.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={d => handleQuickDone(r, d)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} muted />)}
           </div>
         </Section>
       )}
@@ -202,10 +221,10 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           error={error}
           isPending={isPending}
           onClose={() => { setMode(null); setError('') }}
-          onConfirm={(memo) => {
+          onConfirm={(memo, doneDate) => {
             startTransition(async () => {
               setError('')
-              const res = await withSave(() => markChecklistDone({ id: mode.row.id, memo }), { success: '점검 완료 기록됨' })
+              const res = await withSave(() => markChecklistDone({ id: mode.row.id, memo, doneDate }), { success: '점검 완료 기록됨' })
               if (!res.ok) { setError(res.error); return }
               setMode(null)
               refresh()
@@ -241,8 +260,12 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 
 // ── 카드
-function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: ChecklistRow; isPending: boolean; onQuickDone: () => void; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
+function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: ChecklistRow; isPending: boolean; onQuickDone: (doneDate: string) => void; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
   const chip = dueChip(row)
+  // 완료 확인 줄 — 누르면 바로 기록하지 않고 완료일부터 받는다(운영자 지시 2026-09-17).
+  // 요청·컴플레인 카드, 수납 내역 행과 같은 인라인 문법이다.
+  const [askOpen, setAskOpen] = useState(false)
+  const [askDate, setAskDate] = useState(kstYmdStr())
   return (
     <div className={`bg-[var(--cream)] border rounded-xl px-4 py-3 ${muted ? 'opacity-60' : ''}`}
       style={{ borderColor: chip.color === 'var(--danger-fg)' ? 'var(--danger-ring)' : 'var(--warm-border)' }}>
@@ -273,23 +296,47 @@ function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: Ch
           </div>
         </div>
       </div>
-      <div className="flex gap-2 mt-3">
-        <button onClick={onQuickDone} disabled={isPending}
-          className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
-          style={{ background: 'var(--coral)' }}>
-          점검 완료 기록
-        </button>
-        <button onClick={onCheck}
-          className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
-          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-          이력·메모
-        </button>
-        <button onClick={onEdit}
-          className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
-          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-          편집
-        </button>
-      </div>
+      {askOpen ? (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--warm-mid)' }}>
+            완료일
+            {/* 껍데기는 이 카드의 버튼들과 같은 한 벌이다(rounded-lg px-3 py-2 text-xs) —
+                안 넘기면 테두리 없는 맨글자로 그려진다(오류신고 c2ab5b83). */}
+            <DatePicker value={askDate} onChange={setAskDate} maxDate={kstYmdStr()}
+              className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-xs text-[var(--warm-dark)]" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { setAskOpen(false) }}
+              className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              취소
+            </button>
+            <button onClick={() => { onQuickDone(askDate); setAskOpen(false) }} disabled={isPending}
+              className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
+              style={{ background: 'var(--coral)' }}>
+              완료 기록
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => { setAskDate(kstYmdStr()); setAskOpen(true) }} disabled={isPending}
+            className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'var(--coral)' }}>
+            점검 완료
+          </button>
+          <button onClick={onCheck}
+            className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            이력·메모
+          </button>
+          <button onClick={onEdit}
+            className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            편집
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -424,12 +471,15 @@ function CheckModal({
   error: string
   isPending: boolean
   onClose: () => void
-  onConfirm: (memo: string) => void
+  onConfirm: (memo: string, doneDate: string) => void
   onDeleteLog: (logId: string) => void
 }) {
   const [memo, setMemo] = useState('')
+  // 완료일 — 기본은 오늘이고 지난 날짜로 고칠 수 있다(운영자 지시 2026-09-17).
+  // 종전 버튼 라벨이 '오늘 점검 완료'라 오늘 고정을 명시하고 있었다.
+  const [doneDate, setDoneDate] = useState(kstYmdStr())
   return (
-    <Modal open onClose={onClose} width="sm" dirty={memo.trim() !== ''}
+    <Modal open onClose={onClose} width="sm" dirty={memo.trim() !== '' || doneDate !== kstYmdStr()}
       title={row.title}
       subtitle={`${intervalLabel(row.intervalDays)} · 마지막 ${fmtRelative(row.lastCheckedAt)}`}
       footer={
@@ -437,12 +487,18 @@ function CheckModal({
           <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={isPending}>
             닫기
           </Btn>
-          <Btn variant="primary" size="md" className="flex-1" onClick={() => onConfirm(memo)} disabled={isPending}>
-            {isPending ? '처리 중…' : '오늘 점검 완료'}
+          <Btn variant="primary" size="md" className="flex-1" onClick={() => onConfirm(memo, doneDate)} disabled={isPending}>
+            {isPending ? '처리 중…' : '점검 완료 기록'}
           </Btn>
         </div>
       }>
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>완료일</label>
+            {/* 껍데기는 아래 메모칸과 같은 한 벌이다(§12 한 폼 안 입력 높이 혼용 금지). */}
+            <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>점검 메모 (선택)</label>
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}

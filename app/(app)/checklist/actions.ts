@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
+import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 
 async function getPropertyId() {
   const { propertyId, userId } = await requirePropertyAccess()
@@ -167,25 +168,48 @@ export async function deleteChecklist(id: string): Promise<{ ok: true } | { ok: 
   }
 }
 
-// 점검 완료 — lastCheckedAt 갱신 + 로그 기록
+/**
+ * 점검 완료 — lastCheckedAt 갱신 + 로그 기록.
+ *
+ * **점검일도 운영자가 적는다**(지시 2026-09-17). 매일 누르는 자리라 묻지 말자는 안도 있었지만,
+ * 세 자리(요청·점검·현금영수증)가 같은 문법이 되는 쪽을 골랐다(운영자 결정). 실측으로도 이 화면은
+ * 로그 8건이 전부 2026-05-06 하루뿐이라, 한 번 누르는 데 드는 손이 문제가 되는 자리가 아니다.
+ *
+ * `ChecklistLog` 에는 수정 문이 없다 — 삭제가 곧 적용취소다. 그 대칭을 깨지 않으려고 날짜는
+ * **완료 시점에만** 받는다(나중에 고치려면 지우고 다시 기록한다).
+ */
 export async function markChecklistDone(input: {
   id: string
   memo?: string
+  /** 운영자가 고른 점검일 'YYYY-MM-DD'(KST). 안 넘기면 지금. */
+  doneDate?: string | null
+  /** 적용취소 복원용 — 지운 로그의 원래 시각을 밀리초까지 되돌린다. */
+  restoreCheckedAt?: string | null
 }): Promise<{ ok: true; logId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { userId } = await getPropertyId()
-    const now = new Date()
+    const guard = assertNotFuture(input.doneDate)
+    if (!guard.ok) return { ok: false, error: guard.reason }
+    // 로그는 매번 새 줄이라 '기존 값'이 없다 — 지난 점검 시각을 물려받으면 이번 점검이 사라진다.
+    const at = input.restoreCheckedAt
+      ? new Date(input.restoreCheckedAt)
+      : resolveCompletionAt({ picked: input.doneDate, column: 'timestamp' })
+    // 지난 점검을 뒤늦게 적을 수 있게 되면서 lastCheckedAt 이 **뒤로 밀 수 있다.** 9/15 에 점검한
+    // 항목에 9/10 을 적으면 다음 예정일이 앞당겨져 멀쩡한 항목이 '경과'로 뜬다. 마지막 점검은
+    // 언제나 가장 늦은 로그다 — deleteChecklistLog 가 삭제 후 하는 재계산과 같은 규칙이다.
+    const cur = await prisma.checklist.findUnique({ where: { id: input.id }, select: { lastCheckedAt: true } })
+    const last = cur?.lastCheckedAt && cur.lastCheckedAt > at ? cur.lastCheckedAt : at
     // 적용취소(undo)용으로 생성된 로그 id를 반환 — 취소는 기존 deleteChecklistLog 재사용.
     const [, log] = await prisma.$transaction([
       prisma.checklist.update({
         where: { id: input.id },
-        data: { lastCheckedAt: now },
+        data: { lastCheckedAt: last },
       }),
       prisma.checklistLog.create({
         data: {
           checklistId: input.id,
-          checkedAt: now,
+          checkedAt: at,
           checkedBy: userId,
           memo: input.memo?.trim() || null,
         },
@@ -200,12 +224,16 @@ export async function markChecklistDone(input: {
   }
 }
 
-export async function deleteChecklistLog(logId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 점검 이력 삭제 — 이것이 곧 완료의 적용취소다(ChecklistLog 에 수정 문은 없다).
+//
+// **지운 로그의 시각·메모를 스냅샷으로 돌려준다**(현금영수증 prevIssuedAt 선례). 종전에는
+// 되돌렸다 다시 완료하면 오늘이 박혔다. 화면이 이 값을 들고 있다가 restoreCheckedAt 으로 되살린다.
+export async function deleteChecklistLog(logId: string): Promise<{ ok: true; prev: { checklistId: string; checkedAt: string; memo: string | null } } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const log = await prisma.checklistLog.findUnique({
       where: { id: logId },
-      select: { checklistId: true },
+      select: { checklistId: true, checkedAt: true, memo: true },
     })
     if (!log) return { ok: false, error: '로그를 찾을 수 없습니다.' }
     await prisma.checklistLog.delete({ where: { id: logId } })
@@ -220,7 +248,7 @@ export async function deleteChecklistLog(logId: string): Promise<{ ok: true } | 
     })
     revalidatePath('/checklist')
     revalidatePath('/dashboard')
-    return { ok: true }
+    return { ok: true, prev: { checklistId: log.checklistId, checkedAt: log.checkedAt.toISOString(), memo: log.memo } }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

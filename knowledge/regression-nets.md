@@ -325,3 +325,31 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 **알려진 공백을 목록에 올리는 문법을 썼다.** `check-unit-basis-wiring` 의 `KNOWN_GAPS` 는
 `components/ui/SpecWizard.tsx` 를 사유와 함께 담고, 그 파일이 `unitBasis` 를 더 이상 안 다루면
 "목록에서 내려라"고 빨개진다. 조용한 공백보다 낫다(`check-kbd-canonical` 의 ALLOW 와 같은 문법).
+
+## 2026-09-17 — 시간 그물의 넷째 형제 (완료 처리 날짜)
+
+`check-completion-date-axis`(verify:fast) · `test-completion-date`(verify:fast, 32케이스).
+
+기존 시간 그물 셋이 **이 클래스를 안 봤다.** `check-ssr-local-now` 는 '오늘 만들기',
+`check-naive-datetime` 은 '오프셋 없는 일시', `check-local-midnight-boundary` 는 '창의 양끝'을 본다.
+셋 다 "값을 어떻게 만드나"를 묻고 "운영자에게 물었나"는 안 묻는다. **`resolvedAt: new Date()` 는
+타임존이 완벽해도 틀린 날을 박는다** — 일어난 날이 아니라 누른 날이기 때문이다. 같은 병이 세 번
+났다(현금영수증 발행일 08-24 · 보증금 정산일 09-03 · 요청·점검 완료일 09-17).
+
+- 칸 이름을 **`schema.prisma` 에서 접미사로 뽑는다**(`check-naive-datetime` 의 `@db.Date` 명단 관행).
+  그래서 **새 완료 칸은 ALLOW 에 없어 fail closed 로 걸린다** — 역주입으로 확인했다(스키마에 없던
+  `completedAt` 을 넣자 명단이 5종에서 6종으로 늘고 그 자리가 빨개졌다).
+- ALLOW 는 **로그 자리 둘**(`undoneAt` 둘)뿐이고 각각 사유를 적는다. '언제 눌렀나'가 곧 사실인 칸만
+  여기 온다. 명단은 최소로 유지한다.
+- 이미 도메인 그물이 보는 자리는 **뺐다** — 현금영수증(규칙 20·20-b)과 보증금 정산일 축. 이름
+  접미사에 `issued`·`returned` 를 일부러 안 넣었다. 두 그물이 같은 줄을 울면 고치는 사람이 어느
+  규칙을 따를지 모른다.
+- 화면 축으로 완료일 칸·`maxDate`·라벨 어휘('처리일' 금지)를 함께 본다. 서버 축은 완료 액션 넷과
+  **엑셀 임포트**가 같은 정본을 지나는지 본다(두 경로가 갈리면 임포트만 옛 규칙에 남는다).
+- 역주입 6종 전부 빨강(직접 대입 · '지금' 변수 · 스키마에 없던 새 칸 · 가드 호출만 지우고 임포트는
+  남기기 · `maxDate` 삭제 · 라벨 되돌리기). 자세히는 [[domain-completion-date]].
+
+**규칙이 옮겨 가면 옛 그물도 같이 고친다.** 미래 비교(`raw <= today`)가 `lib/cashReceipt` 에서
+`lib/completionDate` 로 이사하면서 규칙 20-b 의 그 줄이 빨개졌다. 통과시키려고 지운 것이 아니라
+**두 자리를 함께 보도록** 바꿨다 — 정본에 비교가 살아 있는지, 그리고 현금영수증이 그것을 부르고
+폴백 대신 던지는지. 한 자리만 보면 규칙이 옮겨 간 뒤 그물이 장식이 된다.
