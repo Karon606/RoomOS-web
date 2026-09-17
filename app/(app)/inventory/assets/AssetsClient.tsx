@@ -136,6 +136,16 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [sheet, setSheet] = useState<{ sourceLabel: string; sourceId?: string; sourceMeta?: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string, srcId?: string) => void } | null>(null)
   // 비품 상세 풀화면 — v2.0 §22 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
+  // 본문 스크롤러 되감기 — 배치 현황이 본문 **아래쪽**으로 내려갔으므로(범위 축 재편, 2026-09-17)
+  // 칩으로 카드를 바꿔도 스크롤이 그대로면 바뀐 내용(그룹 머리·수량 단위·설치·폐기)이 전부
+  // 화면 밖 위에 남는다. 스크롤러는 정본 Modal 의 본문(`flex-1 overflow-y-auto`, Modal.tsx:244)
+  // 이고 이 ref 를 단 div 의 부모다. 정본 Modal 에는 스크롤러를 내주는 손잡이가 없고,
+  // 그것을 만드는 일은 전 모달에 걸리는 변경이라 여기서는 한 겹만 타고 올라간다.
+  const detailBodyRef = useRef<HTMLDivElement>(null)
+  const scrollDetailTop = () => {
+    const sc = detailBodyRef.current?.parentElement
+    if (sc) sc.scrollTop = 0
+  }
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
   const [rowSpec, setRowSpec] = useState<Record<string, { v: string; u: string; t: string }>>({})
   const saveRowSpec = (b: { id: string; specValue: number | null; specUnit: string | null; specText: string | null }) => {
@@ -202,6 +212,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
   const [logRows, setLogRows] = useState<AssetAssignmentLogRow[]>([])
+  // 배정 변경 이력은 **기본으로 접는다**(운영자 결정 2026-09-17). 이 블록의 범위는 배치 현황과
+  // 또 다른 '품목 전체'(이쪽은 규격을 본다)라, 펼친 채로 두면 바로 위 배치 현황과 한 덩어리로
+  // 읽힌다. 접힘은 카드가 바뀔 때만 초기화한다 — data 까지 의존성에 넣으면 목록 안에서
+  // 적용취소를 누른 순간 router.refresh() 가 보고 있던 목록을 접어 버린다.
+  const [logOpen, setLogOpen] = useState(false)
+  useEffect(() => { setLogOpen(false) }, [detailItem])
   useEffect(() => {
     if (!detailItem) { setLogRows([]); return }
     let alive = true
@@ -1395,11 +1411,59 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           ?? candidates.find(samePlaceAs(detailItem))
           ?? candidates.sort((a, b) => (b.qtyValue ?? 0) - (a.qtyValue ?? 0))[0]
         if (!it) return null
-        const loc = it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ? it.locationName : it.isCommon ? '공용 자재' : '미배정(여분)'
+        // 자리 이름은 정본 curPlace(:548) 하나다. 종전에는 같은 네 갈래(방·공용부·공용 자재·미배정)를
+        // 여기서 손으로 다시 짜 두 벌이 서 있었다. 출력은 글자까지 같았지만 한쪽만 고치면 같은 모달
+        // 안에서 알약과 칩·머리가 다른 이름을 말하게 된다.
+        const loc = curPlace(it)
         const sibs = allItems.filter(s => s.id !== it.id && s.category === it.category)
+        //
+        // ── 이 모달의 범위는 넷이다(2026-09-17 재편) ─────────────────────────────────
+        //   카드 축(버킷+규격)  : 머리·수량 단위·이 위치 수량·배정일·설치·폐기·폐기 목록·구매 내역
+        //   이름 축(규격 무시)  : 배치 현황
+        //   이름+규격 축        : 배정 변경 이력(+규격 미상 행, 최근 30건)
+        //   분류 축             : 다른 품목과 합치기
+        // 블록은 **축이 넓어지는 순서**로 선다(카드 → 품목 → 분류). 쓰기 컨트롤 여섯이 전부 카드
+        // 축이라 컨트롤이 먼저, 보고가 나중이다. 배치 현황과 배정 변경 이력은 둘 다 '품목 전체'
+        // 이지만 **서로 다른 품목 전체**라, 소제목 하나로 둘을 덮으면 그 소제목이 거짓말이 된다.
+        //
+        // 카드 축 그룹 머리의 글자. 아래 `설치·폐기` 머리가 같은 값을 쓴다 — 둘이 각자 조립하면
+        // 한 모달에서 자리 표기가 갈린다. `이 방의 것` 같은 일반 명사로 바꾸면 자리가 넷이라
+        // 분기를 손으로 쓰게 되고, 그게 또 하나의 진실 원천이 된다.
+        const here = `${curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
+        // 같은 **이름**(라벨·분류·유형)이면 배치 현황에 함께 세운다. 재구매는 규격 표기가
+        // 조금씩 달라져(빈 규격 → "2홀 무광 스텐", 개 → 세트) 엄격한 정체성으로는 남남이
+        // 되는데, 그 사이 옛 카드가 전부 배정돼 미배정 목록에서 사라지면 "이 제품이 지금
+        // 어디에 설치돼 있나"를 볼 자리가 없다(운영자 신고 2026-09-01, 샤워기 겸용 수전 —
+        // 설치 15곳이 수령 대기 카드에서 안 보였다). 정체성(itemIdentity)은 합치기·옮기기의
+        // 축으로 그대로 두고 이 **표시만** 이름 축으로 넓힌다.
+        // 블록 밖에 둔 이유는 하나다 — `이 품목 전체` 그룹 머리의 `N곳`이 같은 셈이라야 한다.
+        const nameKey = (x: AssetItem) => [x.itemLabel, x.category ?? '', x.isService ? 'S' : ''].join('|')
+        const places = allItems.filter(s => nameKey(s) === nameKey(it))
+        const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
+        const sorted = [...places].sort((a, b) => rank(a) - rank(b) || (a.roomNo ?? a.locationName ?? '').localeCompare(b.roomNo ?? b.locationName ?? ''))
+        // '곳'은 카드 수가 아니라 **자리 수**다. 같은 자리가 규격 둘로 갈리면 카드는 둘이어도
+        // 자리는 하나다 — 고압호스 미배정(60cm·40cm)이 14곳, 앵글밸브 501·506호(15A·규격 미기록)가
+        // 22곳으로 부풀던 자리다(신고 3e861137·be42800d). 공용부·미배정·공용 자재도 각각 한 자리로 센다
+        // (placeKeyOf 는 옮기기 목적지 키라 미배정·공용을 같은 ''로 접는다 — 여기서는 못 쓴다).
+        // 수령 대기 자리도 한 자리로 센다(`지금`과 달리 안 뺀다). `곳`은 아래 캡션이 설명하는
+        // "칩이 선 자리 수"고, 그 자리가 아직 안 찼다는 말은 그 칩의 `(수령 대기)` 딱지가 한다.
+        // 빼면 칩과 곳이 어긋나는 이유가 둘이 되고(규격 분기 + 수령 대기) 캡션은 앞의 하나만
+        // 말하며, 전부 수령 대기인 품목에서 칩이 둘인데 `0곳`이라 적히는 자리가 생긴다.
+        const spotKey = (x: AssetItem) => x.roomId ? `room:${x.roomId}` : x.locationId ? `loc:${x.locationId}` : x.isCommon ? 'common' : 'unassigned'
+        const spots = new Set(sorted.map(spotKey)).size
+        const showPlaces = places.length > 1
+        const showLog = logRows.length > 0
+        // 배정 변경 이력의 범위 한 줄. 서버가 `규격 일치 + 규격 미상`으로 거르고 최근 30건만
+        // 준다(actions.ts getAssetAssignmentLog). 규격이 없는 카드는 그 필터가 `규격 미상`
+        // 하나로 접혀 **규격 미기록 이력만** 남는데, 규격 자체가 없는 품목(대다수)에서는 그게
+        // 곧 전부라 "좁혔다"고 적으면 거짓이다. 그래서 같은 이름의 다른 카드에 규격이 있을
+        // 때만 좁혔다고 말한다(앵글밸브 22칩 중 셋이 무라벨인 실물 사례가 그 자리다).
+        const logScope = specOf(it)
+          ? `이 품목 · ${specOf(it)} · 최근 30건`
+          : places.some(p => specOf(p)) ? '이 품목 · 규격 미기록분 · 최근 30건' : '이 품목 · 최근 30건'
         return (
           <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md">
-            <div className="space-y-4">
+            <div ref={detailBodyRef} className="space-y-4">
               <div>
                 <p className="text-sm text-[var(--warm-dark)]">{it.detail || it.itemLabel}</p>
                 <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
@@ -1428,6 +1492,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   </button>
                 )}
               </div>
+              {/* 카드 축 그룹 머리 — 여기부터 구매 내역까지가 **이 카드 한 자리**(버킷+규격) 이야기다.
+                  정본 §22 SectionHeader(오버레이 안 전례: ContractFilesPanel:578·TenantDocBundleSheet:382).
+                  이름은 `here` 한 자리에서만 온다. break-keep 은 자리 이름이 조상까지 이은 전체
+                  경로라 4단계면 줄이 넘어가는데, 한글 기본 줄바꿈이 음절 단위라 `화장실`이
+                  `화` / `장실`로 갈리기 때문이다. 정본 컴포넌트는 안 건드리고 여기서 감싼다. */}
+              <SectionHeader name={<span className="break-keep">{here}</span>} />
               {/* 수량 단위 — 카드 정체성 키라 묶인 구매 전체에 함께 적용된다(신고 2c13c859). 숫자는 그대로, 표기만 바뀐다. */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">수량 단위</span>
@@ -1477,121 +1547,15 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">날짜를 고르면 바로 저장돼요</span>
                 </div>
               )}
-              {(() => {
-                // 같은 **이름**(라벨·분류·유형)이면 배치 현황에 함께 세운다. 재구매는 규격 표기가
-                // 조금씩 달라져(빈 규격 → "2홀 무광 스텐", 개 → 세트) 엄격한 정체성으로는 남남이
-                // 되는데, 그 사이 옛 카드가 전부 배정돼 미배정 목록에서 사라지면 "이 제품이 지금
-                // 어디에 설치돼 있나"를 볼 자리가 없다(운영자 신고 2026-09-01, 샤워기 겸용 수전 —
-                // 설치 15곳이 수령 대기 카드에서 안 보였다). 정체성(itemIdentity)은 합치기·옮기기의
-                // 축으로 그대로 두고 이 **표시만** 이름 축으로 넓힌다. 규격이 있는 칩에는 조건 없이
-                // 규격을 병기해 규격 섞임(오류신고 5853a0ff·3e861137)이 표시에서도 재발하지 않게 한다.
-                const nameKey = (x: AssetItem) => [x.itemLabel, x.category ?? '', x.isService ? 'S' : ''].join('|')
-                const places = allItems.filter(s => nameKey(s) === nameKey(it))
-                if (places.length <= 1) return null
-                const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
-                const sorted = [...places].sort((a, b) => rank(a) - rank(b) || (a.roomNo ?? a.locationName ?? '').localeCompare(b.roomNo ?? b.locationName ?? ''))
-                // `지금`은 **수령한 것**만 센다. 수령 대기 칩은 스스로 `(수령 대기)`라고 적혀 있는데
-                // 머리가 그것까지 더하면 "지금 44개"라 말한 바로 아래 아직 안 온 물건이 딱지를 달고 선다.
-                // 종전 `총`은 "산 것 전부"로도 읽혀 덜 아팠고 `지금`이 그 여지를 없앴다. 칩 자체는 남긴다 —
-                // 수령 대기 카드에서 "이 제품이 지금 어디에 설치돼 있나"를 보는 용도가 이 목록의 시작이었다.
-                //
-                // 축은 liveUnits 다. 칩 수량(`fmtQty(pl.liveUnits)`)·`폐기 {disposedQ}`·아래 설치·폐기
-                // 블록이 전부 이 축이라 여기만 qtyValue 로 두면 한 줄에 두 축이 붙고, 머리의 수와 칩을
-                // 세어 더한 수가 갈린다. 두 축은 수량 미기록 행이 섞인 카드에서만 갈리는데(aggregate.ts —
-                // qtyValue 는 미기록 행을 0으로 접고 liveUnits 는 1로 센다) 그때 참을 말하는 쪽이 이쪽이다.
-                const totalQ = sorted.reduce((s, x) => s + (data.pending.some(p => p.id === x.id) ? 0 : x.liveUnits), 0)
-                // 단위가 섞이면(개+세트) 합계 숫자가 거짓말이 된다 — 곳 수만 말한다.
-                const units = new Set(sorted.map(x => x.qtyUnit ?? '개'))
-                // '곳'은 카드 수가 아니라 **자리 수**다. 같은 자리가 규격 둘로 갈리면 카드는 둘이어도
-                // 자리는 하나다 — 고압호스 미배정(60cm·40cm)이 14곳, 앵글밸브 501·506호(15A·규격 미기록)가
-                // 22곳으로 부풀던 자리다(신고 3e861137·be42800d). 공용부·미배정·공용 자재도 각각 한 자리로 센다
-                // (placeKeyOf 는 옮기기 목적지 키라 미배정·공용을 같은 ''로 접는다 — 여기서는 못 쓴다).
-                // 수령 대기 자리도 한 자리로 센다(`지금`과 달리 안 뺀다). `곳`은 아래 캡션이 설명하는
-                // "칩이 선 자리 수"고, 그 자리가 아직 안 찼다는 말은 그 칩의 `(수령 대기)` 딱지가 한다.
-                // 빼면 칩과 곳이 어긋나는 이유가 둘이 되고(규격 분기 + 수령 대기) 캡션은 앞의 하나만
-                // 말하며, 전부 수령 대기인 품목에서 칩이 둘인데 `0곳`이라 적히는 자리가 생긴다.
-                const spotKey = (x: AssetItem) => x.roomId ? `room:${x.roomId}` : x.locationId ? `loc:${x.locationId}` : x.isCommon ? 'common' : 'unassigned'
-                const spots = new Set(sorted.map(spotKey)).size
-                // 이 목록은 폐기를 뺀 **지금의 배치**다(자리를 떠난 것은 지금의 배치가 아니다).
-                // 뺀다는 사실을 머리가 말하지 않으면 합계가 '산 것 전부'인지 '지금 있는 것'인지 알 길이 없다.
-                const disposedQ = sorted.reduce((s, x) => s + x.disposedQty, 0)
-                return (
-                  <div>
-                    {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`지금 N개`, 이 카드 한 자리)·아래
-                        `설치·폐기`(같은 한 자리)와 범위가 서로 달라 범위를 안 적으면 계속 겹쳐 읽힌다.
-                        `총`은 이 화면에서 소수파인 데다 같은 줄의 금액·구매 건수만 덮으므로 안 쓴다. */}
-                    <p className="mb-1.5 break-keep text-xs font-semibold text-[var(--warm-mid)]">배치 현황
-                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">이 품목 전체 · {spots}곳{units.size === 1 ? ` · 지금 ${fmtQty(totalQ)}${[...units][0]}` : ''}{disposedQ > 0 ? (units.size === 1 ? ` · 폐기 ${fmtQty(disposedQ)}${[...units][0]}` : ' · 폐기 있음') : ''}</span>
-                    </p>
-                    <ul className="flex flex-wrap gap-1.5">
-                      {sorted.map(pl => {
-                        const isCur = pl.id === it.id
-                        const isPending = data.pending.some(x => x.id === pl.id)
-                        // 규격은 **조건 없이** 병기한다. 종전처럼 "지금 카드와 정체성이 다를 때만" 달면
-                        // 무라벨 칩이 두 뜻을 진다 — '이 카드와 같은 규격'과 '규격이 아예 안 적힌 카드'.
-                        // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
-                        // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
-                        const chipSpec = specOf(pl)
-                        // 토막을 가르는 것은 가운뎃점이다(가이드 §11 보조줄 구분자 ' · ', 형제 정본은
-                        // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
-                        // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
-                        // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
-                        // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
-                        // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
-                        const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
-                        // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가
-                        // 328x42 두 줄이 되어 칩 문법이 깨진다. whitespace-nowrap 이 나머지 토막의
-                        // min-content 를 제 폭으로 묶어 주므로 줄어드는 것은 이 칸 하나뿐이고, 잘린
-                        // 이름은 title 이 받는다(저장소 정본 — DashboardClient·FinanceClient 와 같은 문법).
-                        // 눌러서 그 카드로 가면 설치·폐기 머리가 자리 이름을 통째로 다시 말한다.
-                        return (
-                          <li key={pl.id} className="min-w-0 max-w-full">
-                            <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }} title={curPlace(pl)}
-                              className={[
-                                'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
-                                isCur
-                                  ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
-                                  : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
-                              ].join(' ')}>
-                              <span className="min-w-0 truncate">{curPlace(pl)}</span>
-                              {/* 수령 대기 딱지는 말줄임 **밖**에 둔다. 안에 두면 긴 경로에서 이 딱지부터
-                                  잘려 나가는데(실측 `4층 주방 김치냉장고 상…`), 머리의 `지금 N개`가 이 칩을
-                                  안 센다는 사실을 읽을 단서가 화면에서 그것 하나뿐이다. */}
-                              {isPending && <span>(수령 대기)</span>}
-                              {chipSpec && sep}
-                              {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
-                              {sep}
-                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.liveUnits)}{pl.qtyUnit ?? '개'}</span>
-                              {/* 폐기가 있는 칩에만 부기 — 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
-                                  낱말이 `누적`이 아니라 `폐기`인 이유 넷. 신고 원문이 "왜 폐기 분실이 0개이고"였고,
-                                  머리의 `폐기 N개`·아래 블록의 `폐기·분실`과 한 벌이 되고, 뺄셈이 필요 없고,
-                                  disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌이 없다(`누적`은
-                                  liveUnits + disposedQty 라 칩 수량과 축이 갈렸다). 폐기가 없으면 안 선다. */}
-                              {pl.disposedQty > 0 && sep}
-                              {pl.disposedQty > 0 && (
-                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">폐기 {fmtQty(pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
-                              )}
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                    {/* 칩 수와 곳 수가 다른 이유를 화면이 말한다. 종전엔 숫자가 틀려도 칩을 세면 맞았는데
-                        곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었고,
-                        갈린 칩은 정렬이 같아 나란히 붙어 선다(`미배정(여분) 60cm`와 `미배정(여분) 40cm`).
-                        328px 에 326.4px 로 한 줄이다. `규격이 안 붙은 칩은 규격 미기록`을 여기 더하면 두 줄이 된다. */}
-                    <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">같은 자리라도 규격이 다르면 따로 나와요. 눌러서 그 위치 카드로 이동할 수 있어요</p>
-                  </div>
-                )
-              })()}
               {/* 설치·폐기 — 물건의 축. 위 금액(돈의 축)은 이것과 무관하게 그대로다.
                   §12 자동 합산 읽기전용 문법(bg --sand-s, 보더 없음, tnum, 포커스 불가). */}
               {!data.pending.some(x => x.id === it.id) && (() => {
                 const unit = it.qtyUnit ?? '개'
-                // 이 칸의 범위는 **이 카드 한 자리**다(버킷+규격). 바로 위 배치 현황은 품목 전체라
+                // 이 칸의 범위는 **이 카드 한 자리**다(버킷+규격). 아래 배치 현황은 품목 전체라
                 // 범위를 안 적으면 두 숫자가 같은 것을 두 번 말하는 줄 알고 어긋남으로 읽힌다 —
-                // 미배정 카드에 22곳이 서고 바로 아래 폐기 0 이 서던 자리다(신고 be42800d).
-                const here = `${curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
+                // 미배정 카드에 22곳이 서고 바로 위에 폐기 0 이 서던 자리다(신고 be42800d).
+                // `here` 는 그룹 머리와 공용이라 이 IIFE 밖에 있다. 소제목은 스크롤로 사라지고
+                // (Modal 본문이 flex-1 overflow-y-auto) 그때 범위를 말하는 글자는 이 줄뿐이다.
                 return (
                   <div>
                     {/* break-keep — 자리 이름이 조상까지 이은 전체 경로라 4단계면 이 줄이 두 줄이 된다.
@@ -1617,7 +1581,17 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     </div>
                     {it.disposals.length > 0 && (
                       <>
-                      <p className="mt-3 mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">폐기 기록</p>
+                      {/* 목록 제목은 **명사구**다(운영자 지적 1, 2026-09-17 — "기록을 불러오는
+                          버튼인지 기록하는 버튼인지 헷갈려"). 저장소 문법이 이미 갈려 있다.
+                          `기록` = 버튼 동사, `이력`·`내역` = 목록 명사. 한 화면에서 제목과 버튼이
+                          같은 낱말을 쓰던 자리는 저장소에 여기뿐이었다. 바로 위 버튼(`폐기·분실
+                          기록`)은 그대로 두고 제목만 바꾼다. `폐기·분실`로 맞추면 버튼·집계 박스와
+                          한 벌이 되고, `· N건`은 발급 이력(ResidenceCertClient:163)과 같은 문법이며
+                          수량이 붙은 명사구라 동사 읽기를 끊는다. 토스트의 `폐기 기록을
+                          적용취소했습니다`는 안 고친다 — 그 `기록`은 목록의 한 **행**이다. */}
+                      <p className="mt-3 mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">폐기·분실 이력
+                        <span className="ml-1.5 font-normal text-[var(--warm-muted)]">· {it.disposals.length}건</span>
+                      </p>
                       <ul className="space-y-1">
                         {it.disposals.map(d => (
                           <li key={d.id} className="flex items-center justify-between gap-2 text-xs">
@@ -1639,7 +1613,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 )
               })()}
               <div>
-                <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
+                {/* 건수는 카드 머리의 `구매 N건`과 **같은 값**이다(aggregate 의 count = breakdown 행 수).
+                    카드 축 그룹의 마지막 블록이라 여기서 건수를 한 번 더 말해 두면, 아래 품목 축
+                    블록으로 넘어갈 때 "방금까지 세던 수는 이 카드 것"이 글자로 닫힌다. */}
+                <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역
+                  <span className="ml-1.5 font-normal text-[var(--warm-muted)]">· {it.count}건</span>
+                </p>
                 <ul className="space-y-1.5">
                   {it.breakdown.map(b => {
                     const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '', t: b.specText ?? '' }
@@ -1685,9 +1664,132 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">규격(사이즈·용량)이 서로 다르면 별도 카드로 분리돼 따로 배정할 수 있습니다.</p>
                 <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">수량이 비어 있으면 카드에 몇 건인지만 표시됩니다. 수량을 채우면 단위와 함께 보입니다.</p>
               </div>
-              {logRows.length > 0 && (
+              {/* ── 여기부터 품목 축 ───────────────────────────────────────────────
+                  배치 현황·배정 변경 이력은 둘 다 이 카드가 아니라 **품목 전체**를 말한다.
+                  블록은 구매 내역(카드 축) 뒤로 내려갔다 — 운영자 지적 "방이 선택된 곳부터
+                  구매내역까지는 특정 방 이야기고 그 외는 품목 전체라 일관성이 떨어진다"
+                  (2026-09-17). 그룹 머리는 카드 축 머리와 같은 정본 §22 SectionHeader 다.
+                  `N곳`은 배치 현황이 설 때만 붙인다 — 이력만 남은 카드에서 `1곳`은 셈이 아니라
+                  군더더기다. 머리가 범위를 말해도 두 블록의 제 라벨은 그대로 둔다: 본문이
+                  가시 높이를 넘겨 이 머리는 스크롤로 사라지고, 두 블록의 '품목 전체'가 서로
+                  다른 품목 전체다(배치 현황은 규격 무시, 배정 변경 이력은 규격을 본다). */}
+              {(showPlaces || showLog) && (
+                <SectionHeader name={<span className="break-keep">이 품목 전체</span>} count={showPlaces ? `${spots}곳` : undefined} />
+              )}
+              {showPlaces && (() => {
+                // `지금`은 **수령한 것**만 센다. 수령 대기 칩은 스스로 `(수령 대기)`라고 적혀 있는데
+                // 머리가 그것까지 더하면 "지금 44개"라 말한 바로 아래 아직 안 온 물건이 딱지를 달고 선다.
+                // 종전 `총`은 "산 것 전부"로도 읽혀 덜 아팠고 `지금`이 그 여지를 없앴다. 칩 자체는 남긴다 —
+                // 수령 대기 카드에서 "이 제품이 지금 어디에 설치돼 있나"를 보는 용도가 이 목록의 시작이었다.
+                //
+                // 축은 liveUnits 다. 칩 수량(`fmtQty(pl.liveUnits)`)·`폐기 {disposedQ}`·아래 설치·폐기
+                // 블록이 전부 이 축이라 여기만 qtyValue 로 두면 한 줄에 두 축이 붙고, 머리의 수와 칩을
+                // 세어 더한 수가 갈린다. 두 축은 수량 미기록 행이 섞인 카드에서만 갈리는데(aggregate.ts —
+                // qtyValue 는 미기록 행을 0으로 접고 liveUnits 는 1로 센다) 그때 참을 말하는 쪽이 이쪽이다.
+                const totalQ = sorted.reduce((s, x) => s + (data.pending.some(p => p.id === x.id) ? 0 : x.liveUnits), 0)
+                // 단위가 섞이면(개+세트) 합계 숫자가 거짓말이 된다 — 곳 수만 말한다.
+                const units = new Set(sorted.map(x => x.qtyUnit ?? '개'))
+                // 이 목록은 폐기를 뺀 **지금의 배치**다(자리를 떠난 것은 지금의 배치가 아니다).
+                // 뺀다는 사실을 머리가 말하지 않으면 합계가 '산 것 전부'인지 '지금 있는 것'인지 알 길이 없다.
+                const disposedQ = sorted.reduce((s, x) => s + x.disposedQty, 0)
+                return (
+                  <div>
+                    {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`지금 N개`, 이 카드 한 자리)·아래
+                        `설치·폐기`(같은 한 자리)와 범위가 서로 달라 범위를 안 적으면 계속 겹쳐 읽힌다.
+                        `총`은 이 화면에서 소수파인 데다 같은 줄의 금액·구매 건수만 덮으므로 안 쓴다. */}
+                    <p className="mb-1.5 break-keep text-xs font-semibold text-[var(--warm-mid)]">배치 현황
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">이 품목 전체 · {spots}곳{units.size === 1 ? ` · 지금 ${fmtQty(totalQ)}${[...units][0]}` : ''}{disposedQ > 0 ? (units.size === 1 ? ` · 폐기 ${fmtQty(disposedQ)}${[...units][0]}` : ' · 폐기 있음') : ''}</span>
+                    </p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {sorted.map(pl => {
+                        const isCur = pl.id === it.id
+                        const isPending = data.pending.some(x => x.id === pl.id)
+                        // 규격은 **조건 없이** 병기한다. 종전처럼 "지금 카드와 정체성이 다를 때만" 달면
+                        // 무라벨 칩이 두 뜻을 진다 — '이 카드와 같은 규격'과 '규격이 아예 안 적힌 카드'.
+                        // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
+                        // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
+                        const chipSpec = specOf(pl)
+                        // 토막을 가르는 것은 가운뎃점이다(가이드 §11 보조줄 구분자 ' · ', 형제 정본은
+                        // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
+                        // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
+                        // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
+                        // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
+                        // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
+                        const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
+                        // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가
+                        // 328x42 두 줄이 되어 칩 문법이 깨진다. whitespace-nowrap 이 나머지 토막의
+                        // min-content 를 제 폭으로 묶어 주므로 줄어드는 것은 이 칸 하나뿐이고, 잘린
+                        // 이름은 title 이 받는다(저장소 정본 — DashboardClient·FinanceClient 와 같은 문법).
+                        // 눌러서 그 카드로 가면 설치·폐기 머리가 자리 이름을 통째로 다시 말한다.
+                        //
+                        // 카드를 바꿀 때 본문을 맨 위로 되감는다. 이 목록이 본문 **아래쪽**으로
+                        // 내려갔으므로 스크롤이 그대로면 바뀐 내용(그룹 머리·수량 단위·설치·폐기)이
+                        // 전부 화면 밖 위에 남고, 눌러 놓고 아무 일도 안 일어난 것처럼 보인다.
+                        return (
+                          <li key={pl.id} className="min-w-0 max-w-full">
+                            <button type="button" onClick={() => { if (!isCur) { setDetailItem(pl); scrollDetailTop() } }} title={curPlace(pl)}
+                              className={[
+                                'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
+                                isCur
+                                  ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
+                                  : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
+                              ].join(' ')}>
+                              <span className="min-w-0 truncate">{curPlace(pl)}</span>
+                              {/* 수령 대기 딱지는 말줄임 **밖**에 둔다. 안에 두면 긴 경로에서 이 딱지부터
+                                  잘려 나가는데(실측 `4층 주방 김치냉장고 상…`), 머리의 `지금 N개`가 이 칩을
+                                  안 센다는 사실을 읽을 단서가 화면에서 그것 하나뿐이다. */}
+                              {isPending && <span>(수령 대기)</span>}
+                              {chipSpec && sep}
+                              {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
+                              {sep}
+                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.liveUnits)}{pl.qtyUnit ?? '개'}</span>
+                              {/* 폐기가 있는 칩에만 부기 — 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
+                                  낱말이 `누적`이 아니라 `폐기`인 이유 넷. 신고 원문이 "왜 폐기 분실이 0개이고"였고,
+                                  머리의 `폐기 N개`·아래 블록의 `폐기·분실`과 한 벌이 되고, 뺄셈이 필요 없고,
+                                  disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌이 없다(`누적`은
+                                  liveUnits + disposedQty 라 칩 수량과 축이 갈렸다). 폐기가 없으면 안 선다. */}
+                              {pl.disposedQty > 0 && sep}
+                              {pl.disposedQty > 0 && (
+                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">폐기 {fmtQty(pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
+                              )}
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {/* 칩 수와 곳 수가 다른 이유를 화면이 말한다. 종전엔 숫자가 틀려도 칩을 세면 맞았는데
+                        곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었고,
+                        갈린 칩은 정렬이 같아 나란히 붙어 선다(`미배정(여분) 60cm`와 `미배정(여분) 40cm`).
+                        328px 에 326.4px 로 한 줄이다. `규격이 안 붙은 칩은 규격 미기록`을 여기 더하면 두 줄이 된다. */}
+                    <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">같은 자리라도 규격이 다르면 따로 나와요. 눌러서 그 위치 카드로 이동할 수 있어요</p>
+                  </div>
+                )
+              })()}
+              {showLog && (
                 <div>
-                  <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력</p>
+                  {/* 범위 캡션은 이 블록에만 없던 것이라 새로 붙인다. 바로 위 배치 현황도 '품목
+                      전체'지만 **다른** 품목 전체다 — 저쪽은 규격을 무시하고 이쪽은 규격을 본다.
+                      그룹 머리 하나로 둘을 덮으면 그 머리가 또 하나의 거짓말이 된다. 게다가 머리는
+                      스크롤로 사라진다(Modal.tsx:244 가 본문을 flex-1 overflow-y-auto 로 잡고
+                      헤더만 shrink-0 이다).
+                      접기 손잡이 문법은 이 파일의 형제 그대로다 — 정본 §22 SectionHeader 의
+                      collapsible(펼치기·접기 꼬리 + 16px 셰브런, secProps :905)을 블록 라벨
+                      크기로 옮겼다. 머리를 SectionHeader 로 올리지 않는 이유는 이 블록이 바로 위
+                      그룹 머리의 **아래 층**이기 때문이다(같은 컴포넌트를 쓰면 층이 무너진다). */}
+                  <button type="button" onClick={() => setLogOpen(v => !v)}
+                    className="flex min-h-[44px] w-full items-center gap-1.5 text-left">
+                    <span className="break-keep text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{logScope}</span>
+                    </span>
+                    <span className="flex-1" />
+                    <span className="shrink-0 text-[0.6875rem] text-[var(--warm-muted)]">{logOpen ? '접기' : '펼치기'}</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                      strokeLinecap="round" strokeLinejoin="round"
+                      className={`shrink-0 text-[var(--warm-muted)] transition-transform ${logOpen ? '' : '-rotate-90'}`} aria-hidden>
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  {logOpen && (<>
                   <p className="mb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">적용취소 = 그 이동을 원상복구하고 이력도 지웁니다 · 삭제 = 기록만 지웁니다</p>
                   <ul className="space-y-1">
                     {logRows.map(r => (
@@ -1709,8 +1811,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                       </li>
                     ))}
                   </ul>
+                  </>)}
                 </div>
               )}
+              {/* 분류 축 — 축이 가장 넓은 꼬리라 그룹 밖에 선다(가장 좁은 카드 축부터 넓어지는 순서). */}
               {sibs.length > 0 && (
                 <Btn variant="secondary" size="md" fullWidth onClick={() => { setDetailItem(null); openCardMerge(it, sibs) }}>
                   다른 품목과 합치기

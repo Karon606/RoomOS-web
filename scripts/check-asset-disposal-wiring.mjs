@@ -400,8 +400,10 @@ function body(src, header) {
   need('나머지 토막은 안 줄어든다(whitespace-nowrap)',
     /'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border/.test(client),
     '없으면 min-content 가 낱말 단위라 `폐기 2개`가 두 줄로 접힌다')
-  need('잘린 이름을 title 이 받는다', /onClick=\{\(\) => \{ if \(!isCur\) setDetailItem\(pl\) \}\} title=\{curPlace\(pl\)\}/.test(client),
+  need('잘린 이름을 title 이 받는다', /title=\{curPlace\(pl\)\}/.test(client),
     '자르면 어느 자리인지 못 읽는다 — 저장소 정본(DashboardClient·FinanceClient)과 같은 문법')
+  need('칩이 지금 보는 카드로는 이동하지 않는다', /onClick=\{\(\) => \{ if \(!isCur\)/.test(client),
+    '자기 칩을 누르면 아무 일도 안 일어나야 한다(cursor-default 와 한 벌)')
 
   // 4-F) **범위 머리는 음절로 안 끊긴다.** 자리 이름이 전체 경로라 두 줄이 되는데, 한글 기본
   //      줄바꿈이 음절 단위라 `자동 계산`이 `자` / `동 계산`으로 갈렸다(실측 328px).
@@ -427,6 +429,125 @@ function body(src, header) {
     /\{fmtQty\(it\.liveUnits\)\}\{unit\}/.test(client) && /\{fmtQty\(it\.disposedQty\)\}\{unit\}/.test(client)
     && /\{fmtQty\(it\.liveUnits \+ it\.disposedQty\)\}\{unit\}/.test(client),
     '품목 전체(sorted 합)로 올리면 방별 자재비 검산이 서 있는 설계 의도가 깨진다(950e73de)')
+}
+
+// ── ⓜ 상세 모달의 **범위 축 재편** (운영자 지적 2건, 2026-09-17) ─────────────────
+//    지적 원문. ① "폐기 분실 기록이라는 버튼이 기록을 불러오는 버튼인지 기록하는 버튼인지
+//    헷갈려" ② "배치현황에 방이 선택된 곳부터 구매내역까지는 특정 방에 대한 내용이, 그 외에는
+//    이 아이템의 전체 내용을 말하는 것이다보니 내용의 일관성이 떨어져"
+//
+//    ⓛ 이 지킨 것은 '범위를 적었나' 였다. 여기서 지키는 것은 **범위가 몇 개이고 어떤 순서로
+//    서는가** 다. 이 모달의 범위는 둘이 아니라 넷이다.
+//      카드 축(버킷+규격) · 이름 축(규격 무시) · 이름+규격 축 · 분류 축
+//    블록은 축이 넓어지는 순서(카드 → 품목 → 분류)로 서고, 두 축 경계에 정본 §22 SectionHeader
+//    가 선다. **순서가 이 설계의 전부라 순서를 지키는 그물이 필요하다** — 블록 하나가 위로
+//    올라가면 그룹 머리가 곧 거짓말이 되는데 낱말 검사로는 한 글자도 안 움직인다.
+{
+  const at = s => client.indexOf(s)
+
+  // 1) 낱말 — `기록` = 버튼 동사, `이력`·`내역` = 목록 명사. 클래스 봉합이라 한 자리가 아니라
+  //    상세 모달의 **모든** 목록 제목과 **모든** 버튼 라벨을 본다.
+  const headings = [...client.matchAll(/text-xs font-semibold text-\[var\(--warm-mid\)\]">([^<\n]{1,40})/g)]
+    .map(m => m[1].trim())
+  need('상세의 블록 머리를 전부 찾음', headings.length >= 5, `찾은 머리 ${headings.length}개 — 클래스가 갈렸다`)
+  need('목록 제목에 동사 `기록` 이 없다', !headings.some(h => h.includes('기록')),
+    `제목은 명사구다(이력·내역) — ${headings.filter(h => h.includes('기록')).join(', ')}`)
+  const btnLabels = [...client.matchAll(/<Btn[\s\S]{0,240}?>([^<]{1,40})<\/Btn>/g)].map(m => m[1].trim())
+  need('버튼 라벨을 전부 찾음', btnLabels.length >= 3, `찾은 라벨 ${btnLabels.length}개`)
+  need('버튼 라벨에 목록 명사 `이력` 이 없다', !btnLabels.some(l => l.includes('이력')),
+    `버튼은 동사다 — ${btnLabels.filter(l => l.includes('이력')).join(', ')}`)
+  need('폐기 목록 제목이 명사구 + 건수다',
+    /">폐기·분실 이력\s*\n\s*<span[^>]*>· \{it\.disposals\.length\}건<\/span>/.test(client),
+    '`· N건`(ResidenceCertClient:163 문법)이 붙은 명사구라야 동사 읽기가 끊긴다')
+  need('폐기 버튼 라벨은 그대로 동사다', />폐기·분실 기록<\/Btn>/.test(client),
+    '버튼은 안 고친다 — 고친 것은 제목 하나다')
+  need('토스트의 `폐기 기록`은 안 건드린다', /폐기 기록을 적용취소했습니다/.test(client),
+    '거기의 `기록`은 목록의 한 **행**이다 — 목록=이력, 한 줄=기록 은 층위지 어긋남이 아니다')
+
+  // 2) **블록 순서.** 축이 넓어지는 순서로 한 방향 정렬. 이 넷의 등장 인덱스가 오름차순이어야 한다.
+  {
+    const seq = ['>설치·폐기\n', '>구매 내역\n', '>배치 현황\n', '>배정 변경 이력\n']
+    const idx = seq.map(at)
+    need('네 블록 머리를 소스에서 전부 찾음', idx.every(i => i >= 0),
+      `못 찾음: ${seq.filter((_, i) => idx[i] < 0).join(', ')}`)
+    need('블록이 축이 넓어지는 순서로 선다(카드 → 품목)',
+      idx.every((v, i) => i === 0 || (idx[i - 1] >= 0 && idx[i - 1] < v)),
+      `실제 순서 ${seq.map((s, i) => `${s.slice(1).trim()}@${idx[i]}`).join(' ')} — 배치 현황은 구매 내역 **뒤**다`)
+  }
+
+  // 3) 그룹 머리 둘 — 정본 §22 SectionHeader. 카드 축 머리의 이름은 **손으로 쓰지 않는다**.
+  //    자리가 넷(방·공용부·공용 자재·미배정)이라 분기를 손으로 쓰면 또 하나의 진실 원천이 된다.
+  need('카드 축 그룹 머리가 정본 SectionHeader 다',
+    /<SectionHeader name=\{<span className="break-keep">\{here\}<\/span>\} \/>/.test(client),
+    '오버레이 안 전례는 ContractFilesPanel:578·TenantDocBundleSheet:382 — 컴포넌트는 안 고친다')
+  need('품목 축 그룹 머리가 정본 SectionHeader 다',
+    /<SectionHeader name=\{<span className="break-keep">이 품목 전체<\/span>\} count=\{showPlaces \? `\$\{spots\}곳` : undefined\} \/>/.test(client),
+    '`N곳`은 배치 현황이 설 때만 — 이력만 남은 카드에서 `1곳`은 셈이 아니다')
+  need('그룹 머리 이름이 curPlace·specOf 조립이다(손복사 금지)',
+    (client.match(/\{here\}/g) ?? []).length >= 2,
+    '`here` 는 그룹 머리와 설치·폐기 머리가 **같이** 쓴다 — 한쪽만 손으로 쓰면 자리 표기가 갈린다')
+  need('그 `here` 가 IIFE 밖에 한 번만 선언된다',
+    (client.match(/const here = /g) ?? []).length === 1,
+    '설치·폐기 안에 다시 선언하면 그룹 머리와 두 벌이 된다')
+  need('긴 자리 이름이 음절에서 안 갈린다(break-keep)',
+    (client.match(/<span className="break-keep">/g) ?? []).length >= 2,
+    '정본 SectionHeader 를 고치지 않고 name 슬롯에서 회피한다')
+
+  // 4) 배정 변경 이력 — 범위 캡션(신설) + 30 상한 + **기본 접힘**.
+  need('배정 변경 이력이 제 범위를 말한다',
+    /const logScope = specOf\(it\)\s*\n\s*\? `이 품목 · \$\{specOf\(it\)\} · 최근 30건`/.test(client),
+    '배치 현황과 **다른** 품목 전체다(저쪽은 규격 무시, 이쪽은 규격을 본다)')
+  need('규격 없는 카드의 범위를 셋으로 가른다',
+    /places\.some\(p => specOf\(p\)\) \? '이 품목 · 규격 미기록분 · 최근 30건' : '이 품목 · 최근 30건'/.test(client),
+    '규격 자체가 없는 품목(대다수)에서 "규격 미기록분"은 좁혔다는 거짓말이다')
+  need('그 범위를 화면이 실제로 찍는다', /<span[^>]*>\{logScope\}<\/span>/.test(client),
+    'const 만 남기고 찍는 자리를 지우는 우회 — 계산은 멀쩡한데 화면은 종전이다')
+  need('30건 상한이 글자로 적힌다', /최근 30건/.test(client),
+    '서버가 take: 30 이다(actions.ts getAssetAssignmentLog) — 안 적으면 30건째에서 목록이 끊긴 이유를 알 길이 없다')
+  need('배정 변경 이력이 기본으로 접힌다',
+    /const \[logOpen, setLogOpen\] = useState\(false\)/.test(client)
+    && /useEffect\(\(\) => \{ setLogOpen\(false\) \}, \[detailItem\]\)/.test(client),
+    '초기화 의존성은 detailItem 하나다 — data 를 넣으면 목록 안 적용취소가 보던 목록을 접는다')
+  need('그 접힘을 화면이 실제로 쓴다', /\{logOpen && \(<>/.test(client),
+    'state 만 두고 안 쓰면 선언은 멀쩡한데 화면은 종전이다')
+  need('접기 손잡이가 형제 문법이다(펼치기·접기 + 셰브런)',
+    /\{logOpen \? '접기' : '펼치기'\}/.test(client) && /\$\{logOpen \? '' : '-rotate-90'\}/.test(client),
+    '§22 SectionHeader collapsible·secProps(:905)와 같은 수여야 한다')
+
+  // 5) **배치 현황에는 접힘이 안 걸린다.** 운영자가 접기로 정한 것은 배정 변경 이력 하나다.
+  {
+    // 바깥 — 블록을 여는 조건이 `showPlaces` 하나여야 한다. 여기에 접힘 state 를 끼워 넣는 것이
+    // 가장 싼 우회라(한 낱말 추가) 조건 문자열을 통째로 못박는다.
+    need('배치 현황을 여는 조건이 showPlaces 하나다',
+      /\{showPlaces && \(\(\) => \{/.test(client),
+      '조건에 접힘 state 를 끼우면 칩 목록이 한 번 더 탭 뒤로 숨는다')
+    // 안쪽 — 칩 목록과 캡션 사이에 접힘 게이트가 없어야 한다. 경계는 이 블록 **안**에만 있는
+    // 두 글자로 잡는다(바깥 여는 줄로 잡으면 그 줄을 건드리는 우회에서 경계부터 사라진다).
+    const a = at('>배치 현황\n'), b = at('같은 자리라도 규격이 다르면')
+    need('배치 현황 블록 안쪽을 잘라 봄', a >= 0 && b > a)
+    const placesBlock = client.slice(a, b)
+    need('배치 현황 안쪽에 접힘이 안 걸린다',
+      !/logOpen|collapsible|Open && \(/.test(placesBlock),
+      '칩 목록이 접히면 "이 제품이 지금 어디에 설치돼 있나"가 한 번 더 탭 뒤로 숨는다')
+  }
+
+  // 6) **칩을 누르면 본문을 맨 위로.** 배치 현황이 아래로 내려간 이상 선택이 아니라 필수다.
+  need('칩 탭이 본문을 되감는다',
+    /onClick=\{\(\) => \{ if \(!isCur\) \{ setDetailItem\(pl\); scrollDetailTop\(\) \} \}\}/.test(client),
+    '스크롤이 그대로면 바뀐 카드의 머리·컨트롤이 전부 화면 밖 위에 남는다')
+  need('되감을 스크롤러가 Modal 본문이다',
+    /const sc = detailBodyRef\.current\?\.parentElement/.test(client),
+    'Modal.tsx:244 의 flex-1 overflow-y-auto 가 그 부모다 — 정본 Modal 은 안 건드린다')
+  need('그 ref 가 본문 루트에 실제로 붙어 있다',
+    /<div ref=\{detailBodyRef\} className="space-y-4">/.test(client),
+    'ref 선언만 남기고 안 붙이면 scrollDetailTop 이 조용히 무동작이다')
+
+  // 7) 곁가지 — 상세의 자리 이름이 정본 curPlace 하나로 수렴한다.
+  need('상세 알약의 자리 이름이 curPlace 다', /const loc = curPlace\(it\)/.test(client),
+    '네 갈래를 손으로 다시 짜면 출력이 같아도 한쪽만 고쳐 이름이 갈린다')
+  need('네 갈래 조립이 저장소에 한 벌뿐이다',
+    (client.match(/\? '공용 자재' : '미배정\(여분\)'/g) ?? []).length === 1,
+    'curPlace(:548) 한 자리에서만 조립한다')
 }
 
 if (fails.length) {
