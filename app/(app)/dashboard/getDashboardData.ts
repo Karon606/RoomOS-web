@@ -7,7 +7,7 @@ import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
+import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -1862,7 +1862,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     const [crPays, crIncomes, crLines] = await Promise.all([
       prisma.paymentRecord.findMany({
         where: { propertyId, isPrevOwner: false, isBillingAdjust: false, ...(lookFrom ? { payDate: { gte: lookFrom } } : {}), actualAmount: { gt: 0 } },
-        select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true,
+        // isDeposit 을 함께 읽는다 — 이것이 없으면 보증금 몫을 가를 수 없어, 받을 때 발행
+        // 대상이 아닌 돈까지 의무 기준액 판정에 들어간다(운영자 확정 2026-09-21).
+        select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true,
                   tenant: { select: { name: true } }, leaseTerm: { select: { room: { select: { roomNo: true } } } } },
       }),
       prisma.extraIncome.findMany({
@@ -1886,26 +1888,32 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         .map(k => k.slice('receipt:'.length)),
     )
     const crKey = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
-    type CrGroup = { roomNo: string; name: string; payYmd: string; amount: number }
+    // **몫을 셋으로 쌓고 issuable 로 잰다**(운영자 확정 2026-09-21). 보증금·청소비는 받을 때
+    // 발행 대상이 아니므로 의무 기준액(10만원) 판정도 이용료 몫으로 한다. 종전에는 전액으로
+    // 재서, 보증금 42만 + 이용료 8만 같은 입금이 "발급 의무"라며 홈에서 조르고 있었다.
+    type CrGroup = { roomNo: string; name: string; payYmd: string; deposit: number; cleaning: number; rent: number; issuable: number }
     const crGroups = new Map<string, CrGroup>()
     for (const r of crPays) {
       if (!isCashReceiptEligible(r.payMethod)) continue
       const k = crKey(r.leaseTermId, r.payDate, r.payMethod)
-      const g = crGroups.get(k) ?? { roomNo: r.leaseTerm.room?.roomNo ?? '', name: r.tenant.name, payYmd: kstYmdStr(r.payDate), amount: 0 }
-      g.amount += r.actualAmount
+      const g = crGroups.get(k) ?? { roomNo: r.leaseTerm.room?.roomNo ?? '', name: r.tenant.name, payYmd: kstYmdStr(r.payDate), deposit: 0, cleaning: 0, rent: 0, issuable: 0 }
+      if (r.isDeposit) g.deposit += r.actualAmount
+      else g.rent += r.actualAmount
       crGroups.set(k, g)
     }
     for (const e of crIncomes) {
       if (!e.leaseTermId || !isCashReceiptEligible(e.payMethod)) continue
       const g = crGroups.get(crKey(e.leaseTermId, e.date, e.payMethod))
-      if (g) g.amount += e.amount   // 발행 단위에 든 청소비 몫 — 홀로는 결제 단위를 못 이룬다
+      if (g) g.cleaning += e.amount   // 발행 단위에 든 청소비 몫 — 홀로는 결제 단위를 못 이룬다
     }
+    // 누적이 끝난 뒤 한 번에 센다 — 중간에 세면 뒤늦게 더해지는 청소비 몫이 반영되지 않는다.
+    for (const g of crGroups.values()) g.issuable = cashReceiptIssuableAmount(g)
     const crIssued = new Set(crLines.map(l => crKey(l.leaseTermId, l.payDate, l.payMethod)))
     // 자리 판정은 lib/cashReceipt 의 순수 함수 하나다 — 종전 `left <= 2` 인라인이 자리 넷으로
     // 늘면서 화면마다 갈릴 자리가 됐다.
     const crAll = [...crGroups.entries()]
       // crAll 이 임박·감경·요약 세 줄의 단일 소스라 이 한 자리가 세 표면을 함께 거른다.
-      .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN
+      .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.issuable >= CASH_RECEIPT_OBLIGATION_MIN
         && !isReceiptBeforeCutoff(k, crCutoffYmd))
       .map(([k, g]) => {
         const left = cashReceiptDaysLeft(g.payYmd, crTodayYmd)
@@ -1930,7 +1938,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       activeYmd: crCutoffYmd,
       wouldRestoreCount: crCutoffYmd
         ? [...crGroups.entries()].filter(([k, g]) =>
-            !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN
+            !crIssued.has(k) && !crMuted.has(k) && g.issuable >= CASH_RECEIPT_OBLIGATION_MIN
             && isReceiptBeforeCutoff(k, crCutoffYmd)).length
         : 0,
       // 오늘 이전 건만 센다(당일은 남긴다 — 새로 생긴 의무를 소리 없이 숨기지 않는다).
@@ -1943,7 +1951,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     }
     if (due.length > 0) {
       const worst = due[0].left
-      const total = due.reduce((sum, g) => sum + g.amount, 0)
+      const total = due.reduce((sum, g) => sum + g.issuable, 0)
       alertItems.push({
         category:  'receipt',
         // '임박' 한정어 — 아래 두 줄과 형제로 읽혀야 한다. 이 줄은 아직 기한 안이라 라벨에
@@ -1956,7 +1964,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         dotColor:  'var(--danger-fg)',
         timeLabel: cashReceiptDeadlineLabel(worst),
         detail:    `10만원 이상 현금·계좌이체 수취는 받은 날부터 5일 안에 발급해야 합니다(미발급 가산세 20%).\n`
-          + due.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
+          + due.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.issuable)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
           + (due.length > 10 ? `\n외 ${due.length - 10}건` : ''),
         sortKey:   worst,
       })
@@ -1968,7 +1976,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     // 접혀 안 보인다. 코드가 이미 세 자리로 갈라 놓은 것을 화면이 그대로 따른다.
     if (crGrace.length > 0) {
       const worst = crGrace[0].left
-      const total = crGrace.reduce((sum, g) => sum + g.amount, 0)
+      const total = crGrace.reduce((sum, g) => sum + g.issuable, 0)
       alertItems.push({
         category:  'receipt',
         text:      `현금영수증 자진발급 감경 창 ${crGrace.length}건 (${fmtWon(total)})`,
@@ -1977,7 +1985,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         dotColor:  'var(--danger-fg)',
         timeLabel: cashReceiptDeadlineLabel(worst),
         detail:    `기한(받은 날부터 5일)은 지났지만 받은 날부터 10일 안에 자진 발급하면 가산세가 줄 수 있습니다(20%에서 10%, 소득세법 제81조의9).\n`
-          + crGrace.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
+          + crGrace.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.issuable)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
           + (crGrace.length > 10 ? `\n외 ${crGrace.length - 10}건` : ''),
         sortKey:   worst,
       })
@@ -1990,7 +1998,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     // 그래서 제목에 건수와 합계를 늘 세우고, 묵을수록 timeLabel 의 숫자가 자란다.
     if (crOverdue.length > 0) {
       const oldest = -crOverdue[0].left
-      const total = crOverdue.reduce((sum, g) => sum + g.amount, 0)
+      const total = crOverdue.reduce((sum, g) => sum + g.issuable, 0)
       const months = [...new Set(crOverdue.map(g => g.payYmd.slice(0, 7)))].sort()
       alertItems.push({
         category:  'receipt',
@@ -2006,7 +2014,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         detail:    `기한(받은 날부터 5일)이 지나도 발급 의무는 사라지지 않습니다.\n`
           + `받은 날부터 10일 안에 자진 발급하면 가산세가 줄 수 있습니다(20%에서 10%, 소득세법 제81조의9).\n`
           + (months.length > 1 ? `입금이 ${months[0].replace('-', '.')}부터 ${months[months.length - 1].replace('-', '.')}까지 걸쳐 있습니다. 탭은 달 단위라 달을 바꿔 확인해 주세요.\n` : '')
-          + crOverdue.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
+          + crOverdue.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.issuable)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
           + (crOverdue.length > 10 ? `\n외 ${crOverdue.length - 10}건` : ''),
         sortKey:   crOverdue[0].left,
       })

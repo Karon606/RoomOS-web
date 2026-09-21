@@ -20,6 +20,7 @@ import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
+import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
@@ -114,9 +115,15 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     const line = receipts.find(r =>
       kstYmdStr(new Date(r.payDate)) === kstYmdStr(new Date(p.payDate)) && (r.payMethod ?? '') === (p.payMethod ?? ''))
     setEditCrAmount(line?.amount ?? p.actualAmount)
+    // 줄이 없으면 **정본 기본값**이다 — 보증금·청소비는 받을 때 발행 대상이 아니다
+    // (운영자 확정 2026-09-21). 종전에는 `deposit: !!p.isDeposit` 로 받은 몫이 있으면 켰다.
+    // 오늘 이 목록이 서는 자리 둘은 전부 scope='window' 이고 그 집합이 isDeposit=false 라
+    // 보증금 행이 안 온다. 그런데 **기본 prop 은 'month' 이고 그쪽 집합에는 보증금이 든다** —
+    // scope 를 안 준 마운트가 하나 생기는 순간 옛 규칙이 되살아난다. 그래서 죽은 가지여도
+    // 정본을 쓴다. 이 화면은 금액 칸이 예외 문이라 켤 사람은 여기서 직접 켠다.
     setEditCrIncl(line
       ? { deposit: line.inclDeposit, cleaning: line.inclCleaning, rent: line.inclRent }
-      : { deposit: !!p.isDeposit, cleaning: false, rent: !p.isDeposit })
+      : { ...CASH_RECEIPT_DEFAULT_INCL })
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }

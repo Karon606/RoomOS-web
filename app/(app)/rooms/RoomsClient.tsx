@@ -31,7 +31,10 @@ import { CashReceiptTab } from '@/components/rooms/CashReceiptTab'
 
 type CashReceiptCandidate = {
   leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
-  payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number
+  payYmd: string; payMethod: string
+  /** 받을 때 발행 대상인 금액(이용료 몫)과 실제 입금 총액 — 다른 값이다(운영자 확정 2026-09-21). */
+  issuable: number; received: number
+  deposit: number; cleaning: number; rent: number
 }
 type CashReceiptIssued = {
   roomNo: string; tenantName: string; amount: number
@@ -444,7 +447,7 @@ export default function RoomsClient({
   // 보증금 원장 — 월 스코프가 없는 전체 조회(서버 정본 getDepositSummaryByTenant·getDepositLedger)
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
-  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[]; muted: (CashReceiptCandidate & { mutedAt: string })[] }
+  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[]; muted: (CashReceiptCandidate & { mutedAt: string })[]; excluded: { count: number; deposit: number; cleaning: number } }
   initialTab?: ViewTabId
 }) {
   const searchParams = useSearchParams()
@@ -912,6 +915,7 @@ export default function RoomsClient({
           candidates={receiptRows.candidates}
           issued={receiptRows.issued}
           muted={receiptRows.muted}
+          excluded={receiptRows.excluded}
           targetMonth={targetMonth}
           issuedSum={payAggregates.cashReceiptSum}
           issuedCount={payAggregates.cashReceiptCount}
@@ -1018,7 +1022,10 @@ export default function RoomsClient({
               <InfoHint title="현금영수증·카드 합계">
                 <span className="block">현금영수증은 발행한 날이 속한 달에 잡힙니다. 홈택스 자료와 맞추기 위한 축입니다. 받은 날과 다른 날 발행해도 되고, 그때는 발행한 달 합계에 들어갑니다.</span>
                 <span className="block mt-1.5">카드는 받은 날(입금일)이 속한 달에 잡힙니다. 매출전표가 결제 시점에 성립하기 때문입니다. 신용카드와 결제선생이 함께 잡히고, 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않아 두 값은 겹치지 않습니다.</span>
-              <span className="block mt-1.5">보증금도 두 합계에 들어갑니다. 돌려줄 돈이지만 카드로 받으면 카드사에, 현금영수증을 끊었으면 국세청에 그대로 남기 때문입니다. 청구를 조정한 전표는 받은 돈이 아니라 빠집니다.</span>
+              {/* 두 합계가 보증금을 다르게 다룬다(운영자 확정 2026-09-21). 종전 한 문장은 둘을
+                  묶어 "보증금도 두 합계에 들어갑니다"라고 했는데, 받을 때는 현금영수증 대상이
+                  아니라고 정한 뒤로는 절반이 거짓이다. 카드 쪽 이유(카드사 명세)는 그대로 산다. */}
+              <span className="block mt-1.5">보증금은 카드 합계에는 들어갑니다. 돌려줄 돈이지만 카드로 받으면 카드사 명세에 그대로 남기 때문입니다. 현금영수증 합계에는 보증금·청소비를 예외로 포함해 발행한 경우에만 들어갑니다. 받을 때는 발행 대상이 아닙니다. 청구를 조정한 전표는 받은 돈이 아니라 빠집니다.</span>
                 {/* 같은 페이지에 답이 있는데 밖을 먼저 가리키던 줄이다(운영자 신고 249f98cc).
                     현금영수증 건별 목록은 바로 옆 탭에 있다. 옆 탭을 먼저 대고, 그 목록이 못 답하는
                     대조(카드·귀속월 어긋남)만 환경설정으로 넘긴다 — 안내를 지우는 게 아니라 순서다. */}

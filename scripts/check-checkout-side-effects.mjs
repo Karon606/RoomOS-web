@@ -355,10 +355,22 @@ for (const [name, re] of callers) {
       violations.push(`${f} — '${name}' 이 보증금 발행 안내를 버린다.`)
     }
   }
-  // 켜기 전 경고 — 보증금 몫이 발행에 섞이는 두 화면이 같은 정본 문구를 쓴다.
-  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'components/rooms/CashReceiptTab.tsx']) {
-    if (!/depositCashReceiptWarning\(/.test(readFileSync(f, 'utf8'))) {
-      violations.push(`${f} — 보증금 포함 발행 경고 정본을 안 쓴다. 화면마다 말이 갈리거나 없다.`)
+  // 켜기 전 경고 — 두 화면의 요구가 2026-09-21 운영자 확정으로 갈렸다.
+  //   · 수납 등록 폼은 여전히 **켜는 자리**다(기본은 꺼짐, 예외로 켤 수 있다). 그래서 경고
+  //     정본 두 종(보증금·청소비)이 다 서야 한다. 청소비도 받을 때 발행 대상이 아니라고
+  //     운영자가 닫았으므로 보증금만 말하면 절반이 침묵한다.
+  //   · 발행 탭 일괄 모달은 **켜는 자리가 아니다.** 이용료 몫만 적으므로 경고가 아니라
+  //     "안 넣는다"는 제외 안내가 사실이다. 경고를 요구하면 거짓말을 강요하게 된다.
+  {
+    const form = readFileSync('components/entity-modal/widgets/PaymentEntryForm.tsx', 'utf8')
+    for (const kind of ['deposit', 'cleaning']) {
+      if (!new RegExp(`cashReceiptShareWarning\\('${kind}'`).test(form)) {
+        violations.push(`components/entity-modal/widgets/PaymentEntryForm.tsx — ${kind === 'deposit' ? '보증금' : '청소비'} 포함 발행 경고 정본을 안 쓴다. 화면마다 말이 갈리거나 없다.`)
+      }
+    }
+    const tab = readFileSync('components/rooms/CashReceiptTab.tsx', 'utf8')
+    if (!/넣지 않습니다/.test(tab)) {
+      violations.push('components/rooms/CashReceiptTab.tsx — 일괄 모달이 제외 몫을 안 넣는다는 사실을 말하지 않는다. 운영자가 전액이 적힌 줄 알게 된다.')
     }
   }
 }

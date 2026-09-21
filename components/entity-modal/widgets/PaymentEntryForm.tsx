@@ -17,7 +17,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
-import { depositCashReceiptWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -113,7 +113,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   // 발행에 넣을 몫과 발행 금액 (운영자 확정 2026-08-24, 514호 예시).
   // "총금액 40만원이 미리 입력되어 있고 보증금 v, 월이용료 v … 보증금 체크를 해제하면
   //  금액은 35만원으로 바뀌고 월이용료에만 v 표시가 남는거지."
-  const [crIncl, setCrIncl] = useState({ deposit: true, cleaning: true, rent: true })
+  //
+  // **기본값은 이용료만이다**(운영자 확정 2026-09-21 — 보증금·청소비는 받을 때 발행 대상이
+  // 아니다). 리터럴을 여기 다시 적지 않는다 — 정본 상수를 참조해야 화면과 서버가 안 갈린다.
+  const [crIncl, setCrIncl] = useState(CASH_RECEIPT_DEFAULT_INCL)
   // 금액을 손으로 고쳤나. 손댄 뒤에는 체크를 바꿔도 **안 덮는다** — 분해 블록의
   // depositTouched 와 같은 처방이다(effect 로 되쓰면 사람이 친 숫자를 앱이 한 틱 뒤에 덮는다).
   const [crAmountTouched, setCrAmountTouched] = useState(false)
@@ -217,7 +220,6 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       : isCleaningFeeMode
         ? { deposit: 0, cleaning: Math.min(payAmount, room.cleaningFee), rent: Math.max(0, payAmount - room.cleaningFee) }
         : { deposit: 0, cleaning: 0, rent: payAmount }
-  const crPartCount = [crParts.deposit, crParts.cleaning, crParts.rent].filter(v => v > 0).length
   const crDefaultAmount = cashReceiptDefaultAmount(crParts, crIncl)
   const crShownAmount = crAmountTouched ? crAmount : crDefaultAmount
   // 발행함을 켰는데 금액이 0이면 저장을 막는다. 서버가 0원 줄을 조용히 안 만들어서,
@@ -366,8 +368,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             }
           }
           // 발행은 저장이 끝난 뒤 **한 번**만 기록한다(2026-08-25). 종전에는 세 저장부가 각자
-          // 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다. 금액을 안 넘기면 서버가 이 결제로
-          // 들어온 돈 전액을 기본값으로 세운다 — 보증금·청소비·이용료 세 표를 함께 센다.
+          // 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다. 금액을 안 넘기면 서버가 이 결제의
+          // **이용료 몫**을 기본값으로 세운다 — 보증금·청소비는 받을 때 발행 대상이 아니다
+          // (운영자 확정 2026-09-21). 이용료 몫이 0 이면 서버가 그 사실을 말하고 줄을 안 만든다.
           if (cashReceiptIssued) {
             const crRes = await setPaymentCashReceipt({
               leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
@@ -763,9 +766,11 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               {/* 발행에 넣을 몫 — **세로로 쌓는다.** 한 줄에 세우면 361px 이 필요한데 320 화면의
                   이 자리(모달 sm · 본문 px-5 · pl-6)는 224px 뿐이다. 세로면 행당 118px 로 든다
                   (Pretendard 자 0.851em/0.564em, 설계 실측 2026-08-25).
-                  몫이 하나뿐이면 줄 자체를 안 세운다 — 고를 자유가 없는 선택지는 묻지 않는다.
-                  몫이 0인 항목은 감춘다(분해 블록이 청소비를 다루는 규칙과 같다). */}
-              {crPartCount >= 2 && (
+                  몫이 0인 항목은 감춘다(분해 블록이 청소비를 다루는 규칙과 같다).
+                  **줄을 세우는 조건이 2026-09-22 에 바뀌었다.** 종전에는 '몫이 둘 이상'이었는데,
+                  기본값이 꺼짐이 된 뒤로는 보증금만 받는 결제에서도 예외로 켤 문이 필요하다.
+                  몫이 하나뿐이라 줄이 안 서면 그 문이 아예 없다. 그래서 '빠지는 몫이 있는가'로 센다. */}
+              {hasExcludedCashReceiptShare(crParts) && (
                 <div className="space-y-1">
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">발행에 넣을 몫</p>
                   {([
@@ -813,10 +818,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                   </p>
                 )}
                 {/* 0원은 막는다 — 서버가 0원 발행 줄을 조용히 안 만들어서, 안 막으면 '발행함이라
-                    체크했는데 아무것도 안 적힌' 침묵 실패가 된다(§27.2 검증은 인라인). */}
+                    체크했는데 아무것도 안 적힌' 침묵 실패가 된다(§27.2 검증은 인라인).
+                    **문구를 둘로 가른다**(2026-09-22). 보증금·청소비만 받은 결제는 규칙상 0원이지
+                    실수가 아니라, '체크를 해제하라'만 말하면 왜 0원인지를 안 말한다. */}
                 {crShownAmount <= 0 && (
                   <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
-                    발행 금액이 0원입니다. 발행하지 않았다면 위 체크를 해제해 주세요.
+                    {crParts.rent <= 0
+                      ? '이용료 몫이 없어 발행 금액이 0원입니다. 보증금·청소비는 받을 때 발행 대상이 아닙니다. 예외로 넣으려면 위에서 체크해 주세요.'
+                      : '발행 금액이 0원입니다. 발행하지 않았다면 위 체크를 해제해 주세요.'}
                   </p>
                 )}
               </div>
@@ -828,14 +837,19 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               </div>
             </div>
           )}
-          {/* 지금 서버가 하는 일을 그대로 말한다. 발행 표시는 이 결제가 만든 record 전부에 찍히고
-              합계도 보증금 몫을 함께 센다. 보증금은 돌려줄 돈이라 매출이 아니지만, 발행했으면
-              국세청에는 그대로 올라간다 — 그 사실을 여기서 말한다.
-              (2026-08-24 한때 합계에서 뺐다가 되돌렸다. 카드로 낸 보증금이 카드사 명세에 남아
-              앱에서만 빼면 대사가 안 된다.) */}
+          {/* 제외 몫을 **예외로 켰을 때만** 서는 경고 둘. 기본이 꺼짐이라 이 줄이 뜨는 것은
+              곧 운영자가 규칙 밖으로 나갔다는 뜻이다. 막지는 않는다 — 세무 담당자 확인 후의
+              예외 발행이 실재할 수 있어서다(운영자 확정 2026-09-21).
+              보증금은 돌려줄 돈이라 매출이 아니고, 청소비는 퇴실 정산에서 보증금에서 떼는 몫이다.
+              그래도 발행했으면 국세청에는 그대로 올라간다 — 그 사실을 여기서 말한다. */}
           {cashReceiptIssued && crIncl.deposit && crParts.deposit > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              {depositCashReceiptWarning(crParts.deposit)}
+              {cashReceiptShareWarning('deposit', crParts.deposit)}
+            </p>
+          )}
+          {cashReceiptIssued && crIncl.cleaning && crParts.cleaning > 0 && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              {cashReceiptShareWarning('cleaning', crParts.cleaning)}
             </p>
           )}
         </>
@@ -903,9 +917,11 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   // 카드로 바꾸면 발행 표시를 **끈다**(운영자 확정 2026-08-24). 종전에는 체크박스만 감추고
   // 값을 남겨, 화면이 '대상 아님'이라 말한 값이 그대로 저장됐다. 카드는 현금이 아니라 현금영수증
   // 대상 자체가 아니고 그 금액은 카드 합계로 넘어간다.
+  // 모드도 같은 자로 잰다(운영자 결정 5, 2026-09-22) — 이용료 선납이 아닌 모드로 바꾸면 끈다.
+  // 감추기만 하면 같은 병이 되풀이된다: 화면이 안 보여주는 값이 그대로 저장된다.
   useEffect(() => {
-    if (!isCashReceiptEligible(payMethod)) setCashReceiptIssued(false)
-  }, [payMethod])
+    if (!isCashReceiptEligible(payMethod) || mode !== 'prepaid') setCashReceiptIssued(false)
+  }, [payMethod, mode])
   const [memo, setMemo] = useState<string>('')
   const [error, setError] = useState<string>('')
 
@@ -1025,8 +1041,11 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
             </select>
           </div>
           {/* 카드는 현금영수증 대상이 아니다 — 정본 폼과 **같은 분기·같은 문구**를 쓴다.
-              종전에는 이 폼만 카드에도 체크를 내줘서 같은 사실을 두고 두 화면이 다른 말을 했다. */}
-          {!isCashReceiptEligible(payMethod) ? (
+              종전에는 이 폼만 카드에도 체크를 내줘서 같은 사실을 두고 두 화면이 다른 말을 했다.
+              **체크 자체가 이용료 선납 모드에서만 선다**(운영자 결정 5, 2026-09-22). 보증금 대체
+              모드로 받은 예약금은 전액이 보증금이라 받을 때 발행 대상이 아니다 — 켤 수 있는 문을
+              두면 규칙이 없는 자리에서만 열린다. 켜 둔 채 모드를 바꾸면 아래 effect 가 끈다. */}
+          {mode === 'prepaid' && (!isCashReceiptEligible(payMethod) ? (
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">
               {CARD_NOT_CASH_RECEIPT_NOTE}
             </p>
@@ -1036,7 +1055,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
                 className="w-3.5 h-3.5 accent-[var(--coral)]" />
               <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
             </label>
-          )}
+          ))}
           {/* 위 정본 폼과 같은 처방(체크 시에만 노출·pl-6 하위 들여쓰기·형제와 같은 껍데기·maxDate 오늘). */}
           {cashReceiptIssued && (
             <div className="space-y-1 pl-6">

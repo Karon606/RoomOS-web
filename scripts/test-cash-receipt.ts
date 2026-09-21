@@ -8,7 +8,7 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '../lib/cashReceipt'
+import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys, isReceiptBeforeCutoff, CASH_RECEIPT_DEFAULT_INCL, cashReceiptIssuableAmount, isCashReceiptCandidate, cashReceiptExcludedShare, hasExcludedCashReceiptShare, cashReceiptShareWarning } from '../lib/cashReceipt'
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
 
 let pass = 0, fail = 0
@@ -62,6 +62,43 @@ eq('단기는 청소비 몫이 선다', cashReceiptDefaultAmount(SHORT, { deposi
 eq('단기에서 청소비만 발행', cashReceiptDefaultAmount(SHORT, { deposit: false, cleaning: true, rent: false }), 60000)
 // 음수는 0으로 — 상류가 이상한 값을 줘도 합계가 줄어들면 안 된다.
 eq('음수 몫은 0으로 본다', cashReceiptDefaultAmount({ deposit: -1000, cleaning: 0, rent: 100 }, { deposit: true, cleaning: true, rent: true }), 100)
+
+// ── 받을 때 발행 대상은 이용료뿐 (운영자 확정 2026-09-21·결정 2026-09-22) ─────
+//
+// 운영자 원문 — "보증금은 돌려주는 금액, 청소비 또한 퇴실할 때 처리하는 금액이므로 받을 때는
+// 현금영수증 처리하면 안되는 건들이야". 기본값이 되돌아가면 없는 매출이 국세청에 올라간다.
+
+// 기본 상수를 **글자로** 고정한다. 이 셋이 곧 화면·서버가 참조하는 단 하나의 기본값이다.
+eq('기본 몫 상수는 이용료만 참', CASH_RECEIPT_DEFAULT_INCL, { deposit: false, cleaning: false, rent: true })
+
+// 413호 실측(2026-09-02 퇴실 건과 같은 계약, 보증금 50,000 + 이용료 350,000).
+eq('413호 실측: 발행 대상은 이용료 몫', cashReceiptIssuableAmount({ deposit: 50000, cleaning: 0, rent: 350000 }), 350000)
+eq('413호 실측: 후보다', isCashReceiptCandidate({ deposit: 50000, cleaning: 0, rent: 350000 }), true)
+// 보증금만 받은 입금 — 실측 17건이 이 모양이다. 후보에서 뺀다(운영자 결정 1).
+eq('보증금만 50,000: 발행 대상 없음', cashReceiptIssuableAmount({ deposit: 50000, cleaning: 0, rent: 0 }), 0)
+eq('보증금만 50,000: 후보가 아니다', isCashReceiptCandidate({ deposit: 50000, cleaning: 0, rent: 0 }), false)
+// '보유 보증금' 수단으로 퇴실 정산이 만든 청소비 — 실측 10건. 역시 후보가 아니다.
+eq('청소비만 20,000: 발행 대상 없음', cashReceiptIssuableAmount({ deposit: 0, cleaning: 20000, rent: 0 }), 0)
+eq('청소비만 20,000: 후보가 아니다', isCashReceiptCandidate({ deposit: 0, cleaning: 20000, rent: 0 }), false)
+// 단기 입실 — 청소비를 실수단으로 따로 받아도 규칙은 하나다(운영자 결정 4).
+eq('단기(청소비 60,000 + 이용료 300,000)도 이용료 몫만', cashReceiptIssuableAmount(SHORT), 300000)
+
+// 빠지는 몫 — 화면이 '보증금 N원 제외'라 적는 근거이자 몫 체크 줄을 세우는 판정이다.
+eq('제외 몫은 보증금·청소비 합', cashReceiptExcludedShare({ deposit: 50000, cleaning: 20000, rent: 350000 }),
+  { deposit: 50000, cleaning: 20000, total: 70000 })
+eq('제외 몫도 음수는 0', cashReceiptExcludedShare({ deposit: -5000, cleaning: 0, rent: 100 }), { deposit: 0, cleaning: 0, total: 0 })
+eq('이용료만 받은 입금은 빠지는 몫이 없다', hasExcludedCashReceiptShare({ deposit: 0, cleaning: 0, rent: 350000 }), false)
+eq('보증금만 받아도 몫 체크 줄은 선다', hasExcludedCashReceiptShare({ deposit: 50000, cleaning: 0, rent: 0 }), true)
+
+// 경고 두 종 — 보증금 문장은 2026-09-01 패널 문구 그대로다(test-money 가 같은 글자를 고정한다).
+eq('보증금 경고(금액 있음)', cashReceiptShareWarning('deposit', 50000),
+  '보증금 몫 50,000원은 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
+eq('보증금 경고(금액 없음)', cashReceiptShareWarning('deposit'),
+  '보증금은 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
+eq('청소비 경고(금액 있음)', cashReceiptShareWarning('cleaning', 20000),
+  '청소비 몫 20,000원은 퇴실 정산 때 보증금에서 처리하는 돈이라 받는 시점에는 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
+eq('청소비 경고(금액 없음)', cashReceiptShareWarning('cleaning'),
+  '청소비는 퇴실 정산 때 보증금에서 처리하는 돈이라 받는 시점에는 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
 
 // ── 쓰기: 스탬프 값 결정 ──────────────────────────────────────────
 
@@ -208,8 +245,10 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
 // ── 끈 건 중 살아 있는 키 ───────────────────────────────────────
 // 홈의 "N건 끔"이 저장된 끈 키를 그냥 셌다. 발행했거나 기준액 미만인 건은 되살려도 알림줄로
 // 안 돌아오는데도 숫자에 들어 라벨이 '다시 켜기'의 효과보다 부풀었다(신고 C-1).
+// **기준은 전액이 아니라 이용료 몫(issuable)이다**(2026-09-22). 보증금·청소비는 받을 때 발행
+// 대상이 아니라 알림줄에 서지 않으므로, 끈 키를 셀 때도 같은 자로 재야 라벨과 효과가 맞는다.
 {
-  const g = (amount: number) => ({ amount })
+  const g = (issuable: number) => ({ issuable })
   const groups = new Map([
     ['a|2026-08-01|현금', g(500000)],
     ['b|2026-08-02|현금', g(500000)],
@@ -222,6 +261,11 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('기준액 미만은 죽었다', liveMutedReceiptKeys(['c|2026-08-03|현금'], groups, issued).length, 0)
   // 조회창 밖이라 그룹에 없는 키 — 되살려도 그릴 줄이 없으니 세면 안 된다.
   eq('조회창 밖 키는 죽었다', liveMutedReceiptKeys(['z|2026-07-01|현금'], groups, issued).length, 0)
+  // 전액은 기준액을 넘는데 이용료 몫이 모자란 키 — 되살려도 알림줄에 안 선다.
+  // 보증금 420,000 + 이용료 80,000 처럼 섞여 들어온 입금이 이 모양이다.
+  const mixed = new Map([['d|2026-08-04|현금', g(80000)]])
+  eq('전액 500,000 이어도 이용료 80,000 이면 죽은 키',
+    liveMutedReceiptKeys(['d|2026-08-04|현금'], mixed, new Set<string>()).length, 0)
 }
 
 // ── 알림 컷오프 (운영자 오더 2026-09-06) ─────────────────────────
@@ -239,7 +283,7 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('입금일이 형식 밖이면 안 가린다', isReceiptBeforeCutoff('lease1|8월1일|현금', '2026-09-06'), false)
 
   // 끈 건 세기와 컷오프가 함께 걸린다 — 컷오프 이전이면서 끈 건은 되살려도 안 돌아오는 죽은 키다.
-  const groups = new Map([[K('2026-08-31'), { amount: 500000 }], [K('2026-09-07'), { amount: 500000 }]])
+  const groups = new Map([[K('2026-08-31'), { issuable: 500000 }], [K('2026-09-07'), { issuable: 500000 }]])
   const issued = new Set<string>()
   eq('컷오프 이전 끈 건은 안 센다',
     liveMutedReceiptKeys([K('2026-08-31')], groups, issued, '2026-09-06').length, 0)

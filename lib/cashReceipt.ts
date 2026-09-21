@@ -239,6 +239,71 @@ export function cashReceiptDefaultAmount(
     + (incl.rent ? Math.max(0, parts.rent) : 0)
 }
 
+// ── 받을 때 발행 대상인 몫은 이용료뿐이다 (운영자 확정 2026-09-21) ──────────
+//
+// 운영자 원문 — "보증금은 돌려주는 금액, 청소비 또한 퇴실할 때 처리하는 금액이므로 받을 때는
+// 현금영수증 처리하면 안되는 건들이야". 세무 패널(2026-09-01)이 "유권해석 못 찾음"으로 남겨 둔
+// 청소비 칸을 운영자가 닫았다. 근거는 둘이 같다 — 받는 시점에는 아직 이 사업장의 대가가 아니다.
+// 보증금은 반환 전제 예수금이고, 청소비는 퇴실 정산에서 보증금에서 떼는 몫이라 그 떼는 순간이
+// 곧 인식 시점이다(knowledge/cash-receipt-refund '청소비의 귀속' 표와 같은 축).
+//
+// 단기 입실 때 실수단으로 따로 받은 청소비도 **같이 제외**한다(운영자 결정 4, 2026-09-22).
+// 회계상으로는 받은 달 수익이지만 규칙을 둘로 두면 같은 '청소비'가 화면마다 다른 말을 한다.
+//
+// 실측(2026-09-21 전수 조회) — 살아 있는 발행 줄 49건 전부 inclRent 만 참이고 inclDeposit·
+// inclCleaning 은 0건이다. 운영자가 매번 손으로 체크를 풀어 왔다는 뜻이고, 그래서 백필이 없다.
+// 앱의 기본값만 반대로 서 있었다.
+
+export type CashReceiptParts = { deposit: number; cleaning: number; rent: number }
+
+/**
+ * 받을 때 발행에 넣는 몫의 기본값. **화면도 서버도 이 상수를 참조한다.**
+ * 리터럴 `{ deposit: true, … }` 가 어디에도 다시 서지 않게 하는 것이 목적이다 — 사본이 서면
+ * 그 자리만 옛 기본값으로 남고, 그 갈림이 그대로 국세청에 올라간다.
+ */
+export const CASH_RECEIPT_DEFAULT_INCL: { deposit: boolean; cleaning: boolean; rent: boolean } =
+  { deposit: false, cleaning: false, rent: true }
+
+/** 받을 때 발행 대상인 금액, 곧 이용료 몫. */
+export function cashReceiptIssuableAmount(parts: CashReceiptParts): number {
+  return cashReceiptDefaultAmount(parts, CASH_RECEIPT_DEFAULT_INCL)
+}
+
+/** 이 입금이 발행 후보인가. 보증금·청소비만 받은 입금은 후보에 세우지 않는다(운영자 결정 1). */
+export function isCashReceiptCandidate(parts: CashReceiptParts): boolean {
+  return cashReceiptIssuableAmount(parts) > 0
+}
+
+/** 받을 때 발행에서 빠지는 몫. 음수는 0으로 본다(상류가 이상한 값을 줘도 합계가 줄면 안 된다). */
+export function cashReceiptExcludedShare(parts: CashReceiptParts): { deposit: number; cleaning: number; total: number } {
+  const deposit = Math.max(0, parts.deposit)
+  const cleaning = Math.max(0, parts.cleaning)
+  return { deposit, cleaning, total: deposit + cleaning }
+}
+
+/** 이 입금에 빠지는 몫이 있는가. 몫 체크 줄을 세울지가 이 판정이다. */
+export function hasExcludedCashReceiptShare(parts: CashReceiptParts): boolean {
+  return cashReceiptExcludedShare(parts).total > 0
+}
+
+/**
+ * 제외 몫을 예외로 켜기 전 서는 경고. 두 종이 **같은 정본 한 벌**이다.
+ *
+ * 보증금 문장은 2026-09-01 세무 패널이 쓴 그대로다(scripts/test-money.ts 가 글자 단위로 고정).
+ * 청소비 문장만 이번에 새로 선다 — 근거가 예수금이 아니라 '퇴실 정산에서 떼는 몫'이라 이유절이
+ * 다르다. 앱은 켜는 것을 막지 않는다. 세무 담당자 확인 후의 예외 발행이 있을 수 있어서다.
+ */
+export function cashReceiptShareWarning(kind: 'deposit' | 'cleaning', amount?: number): string {
+  const label = kind === 'deposit' ? '보증금' : '청소비'
+  const head = amount && amount > 0
+    ? `${label} 몫 ${fmtWon(amount)}은`
+    : (kind === 'deposit' ? '보증금은' : '청소비는')
+  const why = kind === 'deposit'
+    ? '돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다.'
+    : '퇴실 정산 때 보증금에서 처리하는 돈이라 받는 시점에는 현금영수증 발급 대상이 아닙니다.'
+  return `${head} ${why} 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.`
+}
+
 
 // ── 발급 기한 ────────────────────────────────────────────────
 //
@@ -313,11 +378,14 @@ export function cashReceiptDeadlineLabel(daysLeft: number): string {
 //
 // 보증금은 반환을 전제로 받는 예수금이라 공급 대가가 아니고, 일반적으로 현금영수증 발급
 // 대상이 아니다(부가46015-1586·서삼46015-10652, 세무 패널 조사 2026-09-01). 앱이 세무 판단을
-// 단정하지는 않는다 — 켜는 것을 막지 않고, 켜기 전에 알린다. 문구가 두 화면(수납 등록 폼·
-// 발행 탭 일괄 모달)에 서므로 정본 한 벌이다.
+// 단정하지는 않는다 — 켜는 것을 막지 않고, 켜기 전에 알린다.
+//
+// **위임으로 남긴다.** 2026-09-22 에 청소비 경고가 같은 자리에 서면서 문구 정본이
+// cashReceiptShareWarning 한 벌로 합쳐졌는데, 이 이름을 scripts/test-money.ts 와
+// scripts/check-checkout-side-effects.mjs 가 보고 있다. 사본을 남기면 두 문장이 갈리고,
+// 갈려도 두 그물은 이름만 보므로 아무도 못 잡는다.
 export function depositCashReceiptWarning(amount?: number): string {
-  const head = amount && amount > 0 ? `보증금 몫 ${fmtWon(amount)}은` : '보증금은'
-  return `${head} 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.`
+  return cashReceiptShareWarning('deposit', amount)
 }
 
 // ── 발행 줄이 살아 있는 수납을 가리키는가 ────────────────────────
@@ -364,7 +432,10 @@ export function receiptRowVerdict(
  */
 export function liveMutedReceiptKeys(
   muted: Iterable<string>,
-  groups: ReadonlyMap<string, { amount: number }>,
+  // **issuable 이지 전액이 아니다**(2026-09-22). 보증금·청소비는 받을 때 발행 대상이 아니라
+  // 알림줄의 기준액 판정도 이용료 몫으로 한다. 뜻만 바꾸고 이름을 amount 로 두면 다음 세션이
+  // 전액으로 읽으므로, 컴파일러가 전 호출부를 지목하도록 이름을 바꿨다.
+  groups: ReadonlyMap<string, { issuable: number }>,
   issued: ReadonlySet<string>,
   // **기본값을 주지 않는다.** 이 인자가 optional 이면 호출부가 조용히 컷오프를 빠뜨리고,
   // 그러면 "N건 끔" 라벨과 다시 켜기 효과가 갈린다(신고 C-1 과 같은 클래스).
@@ -375,7 +446,7 @@ export function liveMutedReceiptKeys(
   return [...muted].filter(k => {
     const g = groups.get(k)
     // 컷오프 이전이면서 끈 건은 되살려도 화면에 안 돌아온다 — 죽은 키다.
-    return !!g && !issued.has(k) && g.amount >= min && !isReceiptBeforeCutoff(k, cutoffYmd)
+    return !!g && !issued.has(k) && g.issuable >= min && !isReceiptBeforeCutoff(k, cutoffYmd)
   })
 }
 

@@ -10,7 +10,7 @@ import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
 import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '@/lib/cashReceipt'
+import { cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate, CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -1300,7 +1300,11 @@ export async function saveDepositPayment(data: {
       isPaid:         false,
       isDeposit:      true,
       carryOver:      0,
-      cashReceiptIssuedAt: crStamp,
+      // **보증금 record 에는 도장을 안 찍는다**(운영자 확정 2026-09-21 — "보증금은 돌려주는
+      // 금액 … 받을 때는 현금영수증 처리하면 안되는 건들이야"). 초과분 이용료 record 는 아래에서
+      // 그대로 crStamp 를 받는다 — 한 결제라도 발행 대상인 몫은 이용료뿐이다.
+      // 예방용이다. 2026-09-21 실측으로 도장이 찍힌 보증금 record 는 전 기간 0건이라 백필이 없다.
+      cashReceiptIssuedAt: null,
     },
   })
   createdIds.push(depositRec.id)
@@ -1922,7 +1926,7 @@ export async function setCashReceiptIssued(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, createdAt: true },
+      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, createdAt: true, isDeposit: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     // 카드 계열은 매출전표가 증빙을 대신한다 — 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
@@ -1939,11 +1943,14 @@ export async function setCashReceiptIssued(
         payMethod: record.payMethod, isBillingAdjust: false,
         createdAt: { gte: new Date(record.createdAt.getTime() - 2000), lte: new Date(record.createdAt.getTime() + 2000) },
       },
-      select: { id: true, cashReceiptIssuedAt: true },
+      select: { id: true, cashReceiptIssuedAt: true, isDeposit: true },
     })
-    const targets = siblings.length > 0 ? siblings : [{ id: paymentId, cashReceiptIssuedAt: record.cashReceiptIssuedAt }]
+    const targets = siblings.length > 0 ? siblings : [{ id: paymentId, cashReceiptIssuedAt: record.cashReceiptIssuedAt, isDeposit: record.isDeposit }]
     let lastNext: Date | null = null
     for (const t of targets) {
+      // 보증금 형제는 건너뛴다 — 받을 때 발행 대상이 아니라 도장 자체를 안 찍는다
+      // (운영자 확정 2026-09-21). 끄기는 아래 alignDepositReceiptStamp 가 함께 내린다.
+      if (t.isDeposit) continue
       // 적용취소 복원은 원래 시각을 밀리초까지 되돌린다 — 날짜 정본을 태우면 그 날 자정으로 뭉개진다.
       // 켜기·끄기는 lib/cashReceipt 정본을 지난다(기본 오늘 KST, 기존 값 보존).
       const next = restoreIssuedAt != null && issued
@@ -2059,6 +2066,25 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
 // PaymentRecord.cashReceiptIssuedAt 은 **그대로 함께 쓴다**. 화면이 record 단위로 '이 수납은
 // 발행됨' 배지를 그리는 근거이고, 그 값이 곧 이 줄의 issuedAt 이다. 두 자리가 갈리지 않게
 // 쓰는 길을 여기 하나로 모은다 — 감지망 20-e 가 호출 개수를 센다.
+
+/**
+ * 보증금 record 의 발행 도장을 그 줄의 구성에 맞춘다 (운영자 확정 2026-09-21).
+ *
+ * 보증금은 받을 때 발행 대상이 아니므로 도장도 안 찍는 것이 기본이다. 다만 세무 담당자 확인
+ * 뒤 **예외로 포함해 발행한** 줄(inclDeposit)이 있을 수 있어, 그때는 도장을 따라 찍는다.
+ * 두 자리가 갈리면 verify:db 의 발행 줄 감사가 (마)축으로 운다 — 도장만 있고 줄은 없거나
+ * 줄이 보증금을 안 들었는데 도장만 남은 record 가 그것이다.
+ */
+async function alignDepositReceiptStamp(args: {
+  leaseTermId: string; payDate: Date; payMethod: string | null
+  issuedAt: Date | null; inclDeposit: boolean
+}): Promise<void> {
+  await prisma.paymentRecord.updateMany({
+    where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod, isDeposit: true },
+    data: { cashReceiptIssuedAt: args.inclDeposit && args.issuedAt ? args.issuedAt : null },
+  })
+}
+
 async function syncCashReceiptLine(args: {
   propertyId: string
   leaseTermId: string
@@ -2078,9 +2104,11 @@ async function syncCashReceiptLine(args: {
   })
   if (!args.issuedAt || args.amount <= 0) {
     if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data: { deletedAt: new Date() } })
+    // 줄이 없어지면 그 결제의 보증금 도장도 근거를 잃는다 — 함께 내린다.
+    await alignDepositReceiptStamp({ ...args, issuedAt: null, inclDeposit: false })
     return
   }
-  const incl = args.incl ?? { deposit: false, cleaning: false, rent: true }
+  const incl = args.incl ?? CASH_RECEIPT_DEFAULT_INCL
   const data = {
     issuedAt: args.issuedAt,
     amount: args.amount,
@@ -2097,6 +2125,8 @@ async function syncCashReceiptLine(args: {
       payDate: args.payDate, payMethod: args.payMethod, ...data,
     },
   })
+  // 보증금 도장은 줄의 구성을 따른다 — 기본은 안 찍고, 예외로 포함한 줄에서만 찍는다.
+  await alignDepositReceiptStamp({ ...args, issuedAt: args.issuedAt, inclDeposit: incl.deposit })
 }
 
 /**
@@ -2107,7 +2137,8 @@ async function syncCashReceiptLine(args: {
  * (패널 지적, 코드 경로로 확인). 발행 금액은 국세청에 올라간 사실이라 수납액을 고친다고
  * 따라 움직이면 안 된다. 금액을 바꾸는 문은 setPaymentCashReceipt 하나뿐이다.
  *
- * 처음 켜는 건에는 줄이 없으므로 그때만 기본값(이 결제로 들어온 돈 전액)을 세운다.
+ * 처음 켜는 건에는 줄이 없으므로 그때만 기본값(이 결제의 **이용료 몫**)을 세운다.
+ * 보증금·청소비는 받을 때 발행 대상이 아니다(운영자 확정 2026-09-21).
  */
 async function touchCashReceiptIssuedAt(args: {
   propertyId: string; leaseTermId: string; tenantId: string
@@ -2116,23 +2147,29 @@ async function touchCashReceiptIssuedAt(args: {
   const found = await prisma.cashReceipt.findFirst({
     where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod },
     orderBy: { createdAt: 'asc' },
-    select: { id: true },
+    // inclDeposit 까지 읽는다 — 아래 갱신 분기가 보증금 도장을 그 값으로 정렬한다.
+    select: { id: true, inclDeposit: true },
   })
   if (!args.issuedAt) {
     if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data: { deletedAt: new Date() } })
+    await alignDepositReceiptStamp({ ...args, issuedAt: null, inclDeposit: false })
     return
   }
   if (found) {
     // 금액·포함 항목은 손대지 않는다. 되살리기만 함께 한다.
     await prisma.cashReceipt.update({ where: { id: found.id }, data: { issuedAt: args.issuedAt, deletedAt: null } })
+    // 도장은 그 줄이 보증금을 들었을 때만 찍는다 — 줄의 구성이 진실이다.
+    await alignDepositReceiptStamp({ ...args, issuedAt: args.issuedAt, inclDeposit: found.inclDeposit })
     return
   }
   const c = await paymentCompositionFor({ propertyId: args.propertyId, leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod })
-  if (c.total <= 0) return
+  const issuable = cashReceiptIssuableAmount(c)
+  // 이용료 몫이 없으면 만들 줄이 없다 — 보증금·청소비만 받은 입금이 여기로 온다.
+  if (issuable <= 0) return
   await syncCashReceiptLine({
     ...args,
-    amount: c.total,
-    incl: { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 },
+    amount: issuable,
+    incl: CASH_RECEIPT_DEFAULT_INCL,
   })
 }
 
@@ -2157,7 +2194,7 @@ export async function setPaymentCashReceipt(input: {
   payMethod: string
   issued: boolean
   issuedDate?: string | null
-  /** 발행 금액. 안 넘기면 이 결제로 들어온 돈 전액(기본값). */
+  /** 발행 금액. 안 넘기면 이 결제의 **이용료 몫**(기본값, 운영자 확정 2026-09-21). */
   amount?: number | null
   incl?: { deposit: boolean; cleaning: boolean; rent: boolean }
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -2172,8 +2209,14 @@ export async function setPaymentCashReceipt(input: {
     let incl = input.incl
     if (issuedAt && (amount == null || amount <= 0 || !incl)) {
       const c = await paymentCompositionFor({ propertyId, leaseTermId: input.leaseTermId, payDate, payMethod: input.payMethod })
-      amount = amount ?? c.total
-      incl = incl ?? { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 }
+      // 폴백은 **이용료 몫**이다(운영자 확정 2026-09-21). 화면이 명시로 보낸 금액은 그대로
+      // 이긴다 — 세무 담당자 확인 뒤 보증금·청소비를 예외로 넣는 문이 그것이다.
+      amount = amount ?? cashReceiptIssuableAmount(c)
+      incl = incl ?? CASH_RECEIPT_DEFAULT_INCL
+      // 0 이면 줄을 안 만들고 침묵하던 자리다. 왜 아무 일도 안 일어났는지 말한다.
+      if (amount <= 0) {
+        return { ok: false, error: '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.' }
+      }
     }
     await syncCashReceiptLine({
       propertyId, leaseTermId: input.leaseTermId, tenantId: input.tenantId,
@@ -2199,7 +2242,12 @@ export async function setPaymentCashReceipt(input: {
  * PaymentRecord 가 없어 한쪽만 보면 목록에서 통째로 빠진다(paymentCompositionFor 와 같은 이유).
  */
 export async function getCashReceiptTabRows(targetMonth: string): Promise<{
-  candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }[]
+  /**
+   * 후보 행. **`issuable`(받을 때 발행 대상인 금액, 곧 이용료 몫)과 `received`(입금 총액)가
+   * 다른 값이다**(운영자 확정 2026-09-21). 화면의 큰 숫자는 issuable 이고 received 는
+   * '얼마를 받았는데 그중 얼마가 대상인가'를 말할 때 쓴다.
+   */
+  candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; received: number; deposit: number; cleaning: number; rent: number }[]
   /**
    * 발행 내역 행. **무엇을 포함했나까지 싣는다**(운영자 신고 249f98cc) — 금액만 보내면
    * 화면이 '왜 35만인가'를 못 말한다(schema.prisma CashReceipt 의 incl* 주석이 적는 존재 이유).
@@ -2210,7 +2258,13 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
    */
   issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null; inclDeposit: boolean; inclCleaning: boolean }[]
   /** 알림을 수동으로 끈 입금 — 후보와 같은 모양에 끈 날짜가 붙는다. */
-  muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number; mutedAt: string }[]
+  muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; received: number; deposit: number; cleaning: number; rent: number; mutedAt: string }[]
+  /**
+   * 규칙으로 후보에서 뺀 입금 — 보증금·청소비만 받은 건(운영자 결정 1, 2026-09-22).
+   * **끈 키 여부와 무관하게 센다.** 규칙으로 뺀 것과 손으로 끈 것은 다른 축이고, 섞으면
+   * 캡션의 숫자가 두 가지 이유를 한 수에 담아 어느 쪽도 못 말한다.
+   */
+  excluded: { count: number; deposit: number; cleaning: number }
 }> {
   const propertyId = await getPropertyId()
   const [y, m] = targetMonth.split('-').map(Number)
@@ -2256,16 +2310,18 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
 
   // 입금 묶음 — 발행 줄이 찾는 키와 **같은 축**이어야 한다(계약·수납일·수단).
   const key = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
-  type Cand = { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }
+  // 세 몫을 다 누적한다 — 이용료 몫이 곧 발행 대상 금액이라 따로 세지 않으면 후보 판정을 못 한다.
+  type Cand = { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; received: number; deposit: number; cleaning: number; rent: number }
   const byKey = new Map<string, Cand>()
   const put = (lt: string, tid: string, room: string, name: string, d: Date, pm: string | null, amt: number, kind: 'deposit' | 'cleaning' | 'rent') => {
     // 카드는 현금영수증 대상이 아니다 — 후보에 세우면 못 할 일을 목록이 시킨다.
     if (!isCashReceiptEligible(pm)) return
     const k = key(lt, d, pm)
-    const g = byKey.get(k) ?? { leaseTermId: lt, tenantId: tid, roomNo: room, tenantName: name, payYmd: kstYmdStr(d), payMethod: pm ?? '', amount: 0, deposit: 0, cleaning: 0 }
-    g.amount += amt
+    const g = byKey.get(k) ?? { leaseTermId: lt, tenantId: tid, roomNo: room, tenantName: name, payYmd: kstYmdStr(d), payMethod: pm ?? '', received: 0, deposit: 0, cleaning: 0, rent: 0 }
+    g.received += amt
     if (kind === 'deposit') g.deposit += amt
     if (kind === 'cleaning') g.cleaning += amt
+    if (kind === 'rent') g.rent += amt
     byKey.set(k, g)
   }
   // 방이 없는 계약은 화면에 세울 이름이 없다 — 지어내지 않고 건너뛴다.
@@ -2285,11 +2341,23 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   // 저장은 전 카테고리 공용 alertMutes 다(2026-09-02 일반화) — 이 탭 몫은 receipt: 접두어 키.
   const muteRows = readAlertMuteRows(property?.alertMutes)
   const mutedKeys = new Map(muteRows.filter(m => m.k.startsWith('receipt:')).map(m => [m.k.slice('receipt:'.length), m.at]))
+  // 후보 판정은 정본 하나다 — 보증금·청소비만 받은 입금은 받을 때 발행 대상이 아니라
+  // 목록에 세우지 않는다(운영자 확정 2026-09-21, 결정 1). 실측 27건(보증금만 17 · 청소비만 10).
   const all = [...byKey.entries()]
-    .filter(([k, g]) => !issuedKeys.has(k) && g.amount > 0)
+    .filter(([k, g]) => !issuedKeys.has(k) && isCashReceiptCandidate(g))
     .sort(([, a], [, b]) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
-  const candidates = all.filter(([k]) => !mutedKeys.has(k)).map(([, g]) => g)
-  const muted = all.filter(([k]) => mutedKeys.has(k)).map(([k, g]) => ({ ...g, mutedAt: mutedKeys.get(k) ?? '' }))
+  const row = (g: Cand) => ({ ...g, issuable: cashReceiptIssuableAmount(g) })
+  const candidates = all.filter(([k]) => !mutedKeys.has(k)).map(([, g]) => row(g))
+  const muted = all.filter(([k]) => mutedKeys.has(k)).map(([k, g]) => ({ ...row(g), mutedAt: mutedKeys.get(k) ?? '' }))
+  // 규칙으로 뺀 건 — 발행 내역이 있는 키는 여기 안 든다(그 건은 아래 발행 내역이 말한다).
+  // 끈 키는 뺀 이유가 다르므로 가리지 않는다.
+  const excluded = { count: 0, deposit: 0, cleaning: 0 }
+  for (const [k, g] of byKey) {
+    if (issuedKeys.has(k) || isCashReceiptCandidate(g)) continue
+    excluded.count += 1
+    excluded.deposit += Math.max(0, g.deposit)
+    excluded.cleaning += Math.max(0, g.cleaning)
+  }
 
   const issued = lines
     .filter(l => l.issuedAt >= issuedWindow.gte && l.issuedAt < issuedWindow.lt && isCashReceiptEligible(l.payMethod) && !!l.leaseTerm.room)
@@ -2300,7 +2368,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
     }))
     .sort((a, b) => b.issuedYmd.localeCompare(a.issuedYmd))
 
-  return { candidates, issued, muted }
+  return { candidates, issued, muted, excluded }
 }
 
 /** 저장값(Json)을 끈 목록으로 읽는다 — 깨진 값은 빈 목록이다(알림이 죽는 것보다 낫다). */
@@ -2397,8 +2465,9 @@ export async function unmuteReceiptAlert(k: string): Promise<{ ok: true } | { ok
 }
 
 /**
- * 일괄 발행 기록 — 고른 입금 전액을 한 발행일로 적는다.
- * 전액이 아닌 발행은 그 입금의 수납 내역에서 금액을 고친다(설계 판정 2026-08-25).
+ * 일괄 발행 기록 — 고른 입금의 **이용료 몫**을 한 발행일로 적는다.
+ * 보증금·청소비 몫은 받을 때 발행 대상이 아니라 넣지 않는다(운영자 확정 2026-09-21).
+ * 그와 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고친다(설계 판정 2026-08-25).
  */
 export async function batchSetCashReceipts(input: {
   items: { leaseTermId: string; tenantId: string; payYmd: string; payMethod: string }[]
@@ -2418,11 +2487,13 @@ export async function batchSetCashReceipts(input: {
       const issuedAt = resolveCashReceiptIssuedAt({ issued: true, issuedDate: input.issuedDate, payMethod: it.payMethod })
       if (!issuedAt) { skipped += 1; continue }
       const c = await paymentCompositionFor({ propertyId, leaseTermId: it.leaseTermId, payDate, payMethod: it.payMethod })
-      if (c.total <= 0) { skipped += 1; continue }
+      // 보증금·청소비만 받은 입금은 적을 것이 없다 — 건너뛴다(운영자 결정 1, 2026-09-22).
+      const issuable = cashReceiptIssuableAmount(c)
+      if (issuable <= 0) { skipped += 1; continue }
       await syncCashReceiptLine({
         propertyId, leaseTermId: it.leaseTermId, tenantId: it.tenantId,
-        payDate, payMethod: it.payMethod, issuedAt, amount: c.total,
-        incl: { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 },
+        payDate, payMethod: it.payMethod, issuedAt, amount: issuable,
+        incl: CASH_RECEIPT_DEFAULT_INCL,
       })
       done += 1
     }

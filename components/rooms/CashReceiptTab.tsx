@@ -22,13 +22,16 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
-import { depositCashReceiptWarning, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
+import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { batchSetCashReceipts, batchUnsetCashReceipts, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
 
 type Candidate = {
   leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
-  payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number
+  payYmd: string; payMethod: string
+  /** 받을 때 발행 대상인 금액(이용료 몫)과 실제 입금 총액 — 다른 값이다(운영자 확정 2026-09-21). */
+  issuable: number; received: number
+  deposit: number; cleaning: number; rent: number
 }
 type MutedCandidate = Candidate & { mutedAt: string }
 type Issued = {
@@ -39,12 +42,14 @@ type Issued = {
 }
 
 export function CashReceiptTab({
-  candidates, issued, muted, targetMonth, issuedSum, issuedCount, onChanged,
+  candidates, issued, muted, excluded, targetMonth, issuedSum, issuedCount, onChanged,
 }: {
   candidates: Candidate[]
   issued: Issued[]
   /** 발급 기한 알림을 수동으로 끈 입금 — 접힌 목록으로 두고 언제든 다시 켠다(§16). */
   muted: MutedCandidate[]
+  /** 규칙으로 후보에서 뺀 입금 — 보증금·청소비만 받은 건(운영자 확정 2026-09-21). */
+  excluded: { count: number; deposit: number; cleaning: number }
   targetMonth: string
   issuedSum: number
   issuedCount: number
@@ -64,7 +69,10 @@ export function CashReceiptTab({
 
   const keyOf = (c: Candidate) => `${c.leaseTermId}|${c.payYmd}|${c.payMethod}`
   const chosen = candidates.filter(c => picked.has(keyOf(c)))
-  const chosenSum = chosen.reduce((a, c) => a + c.amount, 0)
+  // 합계도 발행 대상 금액으로 센다 — 일괄 기록이 적는 값이 곧 이 수여야 한다.
+  const chosenSum = chosen.reduce((a, c) => a + c.issuable, 0)
+  // 고른 건에 딸린 제외 몫 — 모달이 "이만큼은 안 넣는다"고 말하는 근거다.
+  const chosenExcluded = chosen.reduce((a, c) => a + Math.max(0, c.deposit) + Math.max(0, c.cleaning), 0)
 
   const exitSelect = () => { setSelectMode(false); setPicked(new Set()) }
   const toggle = (c: Candidate) => {
@@ -109,6 +117,8 @@ export function CashReceiptTab({
             <span className="block">합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다.</span>
             <span className="block mt-1.5">아래 첫 목록은 이 달에 받은 입금 중 발행 내역이 없는 것입니다. 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
             <span className="block mt-1.5">카드 결제는 매출전표가 증빙을 대신해 여기 없습니다.</span>
+            <span className="block mt-1.5">보증금과 청소비는 받을 때 발행 대상이 아니라 후보에 세우지 않고, 함께 받은 입금은 이용료 몫만 발행 금액으로 잡습니다.</span>
+            <span className="block mt-1.5">발행 내역에 &lsquo;보증금 포함&rsquo;·&lsquo;청소비 포함&rsquo;이 뜨면 이 사업장 규칙의 예외입니다.</span>
             <span className="block mt-1.5">끈 건은 발급 후보에서도 빠집니다.</span>
           </InfoHint>
         </p>
@@ -139,7 +149,9 @@ export function CashReceiptTab({
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="min-w-0">
                 <h2 className="text-xs font-semibold text-[var(--warm-mid)]">발행 내역이 없는 입금 ({candidates.length}건)</h2>
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">입금일 기준 · 카드 결제 제외</p>
+                {/* 캡션이 목록에서 무엇이 빠졌는지 전부 적는다 — 규칙으로 뺀 건이 있는데
+                    말하지 않으면 "왜 이 입금이 없나"를 화면이 답하지 않는다. 0이면 생략한다. */}
+                <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">입금일 기준 · 카드 결제 제외{excluded.count > 0 ? ` · 보증금·청소비만 받은 ${excluded.count}건 제외` : ''}</p>
               </div>
               {canEdit && candidates.length > 0 && (
                 <Btn variant="secondary" size="sm" onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}>
@@ -148,7 +160,11 @@ export function CashReceiptTab({
               )}
             </div>
             {candidates.length === 0 ? (
-              <p className="text-xs text-[var(--warm-muted)]">카드를 제외한 이 달 입금에는 모두 발행 내역이 있습니다.</p>
+              <p className="text-xs text-[var(--warm-muted)] break-keep">
+                {excluded.count > 0
+                  ? `발행 대상인 이 달 입금에는 모두 발행 내역이 있습니다. 보증금·청소비만 받은 ${excluded.count}건은 대상이 아닙니다.`
+                  : '카드를 제외한 이 달 입금에는 모두 발행 내역이 있습니다.'}
+              </p>
             ) : (
               <>
                 {selectMode && (
@@ -160,12 +176,15 @@ export function CashReceiptTab({
                 )}
                 <ul className="space-y-1.5">
                   {candidates.map(c => {
-                    const extra = [c.deposit > 0 ? `보증금 ${fmtWon(c.deposit)} 포함` : '', c.cleaning > 0 ? `청소비 ${fmtWon(c.cleaning)} 포함` : ''].filter(Boolean)
+                    // **'포함'이 아니라 '제외'다**(운영자 확정 2026-09-21). 큰 숫자가 이용료 몫이라
+                    // 보증금·청소비는 그 수에 안 들어 있다. 종전 '포함'은 반대를 말한다.
+                    const extra = [c.deposit > 0 ? `보증금 ${fmtWon(c.deposit)} 제외` : '', c.cleaning > 0 ? `청소비 ${fmtWon(c.cleaning)} 제외` : ''].filter(Boolean)
                     // 발급 기한 — 홈 알림이 조르는 건(의무 기준액 이상)에만 말한다. 의무가 없는 건에
                     // 기한을 말하면 없는 일을 시킨다(끄기 버튼과 같은 게이트).
                     // 배지가 아니라 메타 텍스트인 이유는 오늘 후보 대부분이 기한을 넘겨 있어서다 —
                     // 목록 전체가 틴트 칩으로 도배되면 정작 급한 건이 안 도드라진다(디자이너 판정).
-                    const dLeft = c.amount >= CASH_RECEIPT_OBLIGATION_MIN ? cashReceiptDaysLeft(c.payYmd, todayYmd) : null
+                    // 기준액은 **발행 대상 금액**으로 잰다 — 홈 알림과 같은 자라야 두 화면이 안 갈린다.
+                    const dLeft = c.issuable >= CASH_RECEIPT_OBLIGATION_MIN ? cashReceiptDaysLeft(c.payYmd, todayYmd) : null
                     // 색은 홈 알림과 같은 문턱에서 선다. 갓 들어온 입금(3일 이상 남음)까지 경고색을
                     // 입히면 최근 입금이 많은 달이 amber 로 도배되고, 두 화면의 긴급 문턱도 어긋난다.
                     const dSlot = dLeft === null ? null : cashReceiptAlertSlot(dLeft)
@@ -192,7 +211,7 @@ export function CashReceiptTab({
                                 어긋나고 선택 모드 전환 때 튀었다(디자이너 지적 2026-09-02).
                                 홈 알림이 조르는 건(의무 기준액 이상)에만 선다 — 조르지도 않는 건에
                                 끄기 버튼이 서면 목록이 없는 일을 시킨다. */}
-                            {canEdit && !selectMode && c.amount >= CASH_RECEIPT_OBLIGATION_MIN && (
+                            {canEdit && !selectMode && c.issuable >= CASH_RECEIPT_OBLIGATION_MIN && (
                               <span className="flex gap-1.5">
                                 <RowActionBtn tone="neutral" disabled={pending}
                                   onClick={() => startTransition(async () => {
@@ -215,7 +234,7 @@ export function CashReceiptTab({
                               </span>
                             )}
                           </span>
-                          <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.amount)}</span>
+                          <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.issuable)}</span>
                         </label>
                       </li>
                     )
@@ -245,7 +264,7 @@ export function CashReceiptTab({
                         <span className="min-w-0 flex-1">
                           {/* 흐림은 텍스트에만 — 행 전체에 걸면 다시 켜는 버튼까지 흐려진다. */}
                           <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate opacity-80">{fmtRoomNo(c.roomNo)} {c.tenantName}</span>
-                          <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep opacity-80">입금 {fmtMD(c.payYmd)} · {c.payMethod} · 알림 끔 {fmtMD(c.mutedAt)}{c.amount >= CASH_RECEIPT_OBLIGATION_MIN ? ` · ${cashReceiptDeadlineLabel(cashReceiptDaysLeft(c.payYmd, todayYmd))}` : ''}</span>
+                          <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep opacity-80">입금 {fmtMD(c.payYmd)} · {c.payMethod} · 알림 끔 {fmtMD(c.mutedAt)}{c.issuable >= CASH_RECEIPT_OBLIGATION_MIN ? ` · ${cashReceiptDeadlineLabel(cashReceiptDaysLeft(c.payYmd, todayYmd))}` : ''}</span>
                           {canEdit && (
                             <span className="flex gap-1.5">
                               <RowActionBtn tone="accent" disabled={pending}
@@ -263,7 +282,7 @@ export function CashReceiptTab({
                             </span>
                           )}
                         </span>
-                        <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.amount)}</span>
+                        <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.issuable)}</span>
                       </li>
                     ))}
                   </ul>
@@ -305,6 +324,10 @@ export function CashReceiptTab({
                   // 침묵이 불일치로 바뀔 뿐이다. 이용료는 후보와 같이 무표지 기본값으로 둔다.
                   // 금액을 안 붙이는 이유는 서버 주석에 적었다 — 표가 불리언만 들고, 발행 금액은
                   // 받은 금액과 다를 수 있어 수납 쪽 원 단위를 옮기면 그것이 새 거짓이 된다.
+                  // **낱말은 그대로 두고 색만 준다**(2026-09-22). 받을 때 발행 대상이 아닌 몫이
+                  // 들어간 줄은 이 사업장 규칙의 **예외**라 눈에 걸려야 한다. 다만 '오류'라 부르지
+                  // 않는다 — 세무 담당자 확인 후 일부러 넣었을 수 있다. 사실 서술은 중립어로 적고
+                  // 상태는 색으로 말하는 것이 같은 행의 기한 라벨이 이미 쓰는 문법이다.
                   const incl = [r.inclDeposit ? '보증금 포함' : '', r.inclCleaning ? '청소비 포함' : ''].filter(Boolean)
                   return (
                   <li key={`${r.roomNo}-${r.payYmd}-${i}`} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)]">
@@ -313,7 +336,7 @@ export function CashReceiptTab({
                         {fmtRoomNo(r.roomNo)} {r.tenantName}
                       </span>
                       <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? ` · ${incl.join(' · ')}` : ''}
+                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span style={{ color: 'var(--warning-fg)' }}> · {incl.join(' · ')}</span> : null}
                       </span>
                     </span>
                     <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>
@@ -357,13 +380,16 @@ export function CashReceiptTab({
             <DatePicker value={issuedDate} onChange={setIssuedDate} maxDate={kstYmdStr()}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30" />
           </div>
-          {chosen.some(c => c.deposit > 0) && (
+          {/* 켜기 전 경고가 아니라 **제외 안내**다(운영자 확정 2026-09-21). 이 모달은 이제
+              이용료 몫만 적으므로 "보증금을 넣으려면 확인하라"가 아니라 "안 넣는다"가 사실이다.
+              행별 체크칸은 세우지 않는다 — 예외는 드물고, 그 자리는 수납 내역의 금액 칸이다. */}
+          {chosenExcluded > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              {depositCashReceiptWarning(chosen.reduce((a, c) => a + c.deposit, 0))}
+              보증금·청소비 몫 합계 {fmtWon(chosenExcluded)}은 이 기록에 넣지 않습니다. 넣어야 하면 기록 뒤 그 입금의 수납 내역에서 금액을 고쳐 주세요.
             </p>
           )}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            선택한 입금의 전액을 위 발행일로 기록합니다. 실제 발행은 홈택스나 결제 서비스에서 하고, 여기는 그 사실을 적는 자리입니다. 전액과 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고칠 수 있습니다. 처리 후 토스트의 적용취소로 되돌릴 수 있습니다.
+            선택한 입금의 이용료 몫을 위 발행일로 기록합니다. 보증금·청소비 몫은 넣지 않습니다. 실제 발행은 홈택스나 결제 서비스에서 하고, 여기는 그 사실을 적는 자리입니다. 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고칠 수 있습니다. 처리 후 토스트의 적용취소로 되돌릴 수 있습니다.
           </p>
         </div>
       </Modal>
