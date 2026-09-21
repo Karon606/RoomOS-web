@@ -9,6 +9,7 @@
 // ⓕ 서버 게이트가 정본 판정을 부르는가 ⓖ **mergeUnassignedGroup 의 disposedAt: null**(급소)
 // ⓗ 속성으로 찾는 조회들이 폐기 행을 거르는가 ⓘ 교체가 한 트랜잭션인가
 // ⓙ 화면이 폐기분을 옮기기 대상에서 빼고, 폐기 없는 카드에 보조줄을 안 주는가.
+// ⓝ **폐기 입구 셋**(선택 알약·카드 줄·상세)이 한 정본 openDispose 로 모이고 같은 축으로 숨는가.
 import { readFileSync } from 'node:fs'
 
 const agg     = readFileSync('app/(app)/inventory/assets/aggregate.ts', 'utf8')
@@ -586,6 +587,88 @@ function body(src, header) {
   need('네 갈래 조립이 저장소에 한 벌뿐이다',
     (client.match(/\? '공용 자재' : '미배정\(여분\)'/g) ?? []).length === 1,
     'curPlace(:548) 한 자리에서만 조립한다')
+}
+
+// ── ⓝ 폐기 입구 셋이 한 정본으로 모이는가 (운영자 오더 2026-09-21) ────────────────
+//    오더 원문. "여기에서도 1개 폐기에 대한 기록을 할 수는 없나?" — 목록 카드에서 바로 적고
+//    싶다는 것이고 카드 액션 줄에 넣는 쪽으로 승인됐다. 그래서 입구가 둘에서 **셋**이 됐다.
+//      ① 선택 모드 하단 알약(여러 품목) ② 카드 액션 줄(그 카드 하나) ③ 상세의 설치·폐기 블록
+//
+//    입구가 늘면 드리프트가 두 갈래로 온다. **하나는 제 모달을 새로 짜는 것**(그러면 수량 게이트·
+//    적용취소·토스트가 한 벌 더 생기고 한쪽만 고쳐진다), **하나는 숨는 조건이 갈리는 것**(서버가
+//    거부하는 상태에서 버튼이 서면 눌러 봐야 거부를 읽는다). 그래서 여기서 지키는 것은 둘이다 —
+//    셋이 같은 `openDispose` 를 부르는가, 셋이 서버 정본 게이트와 같은 축으로 숨는가.
+{
+  // 1) 정본이 하나다 — 선언 한 자리, 부르는 자리 셋, 그 밖에 상태를 직접 세우는 자리 없음.
+  need('openDispose 선언이 한 자리다',
+    (client.match(/const openDispose = /g) ?? []).length === 1,
+    '두 벌이 되면 입구마다 다른 기본값(날짜·사유)을 갖는다')
+  need('openDispose 를 부르는 자리가 정확히 셋이다',
+    (client.match(/openDispose\(/g) ?? []).length === 3,
+    `실제 ${(client.match(/openDispose\(/g) ?? []).length}곳 — 입구는 알약·카드 줄·상세 셋이다`)
+  need('폐기 상태를 직접 세우는 자리가 정본 안뿐이다',
+    (client.match(/setDispose\(\{/g) ?? []).length === 1,
+    'openDispose 를 우회해 setDispose({ rows: … }) 를 직접 쓰면 기본값과 게이트가 갈린다')
+  need('입구 셋이 같은 모달 하나를 연다',
+    (client.match(/\{dispose && dispose\.rows\.length > 0 && \(\(\) => \{/g) ?? []).length === 1,
+    '모달이 둘이 되면 수량 게이트·적용취소가 한 벌 더 생긴다')
+
+  // 2) 입구별 배선. 알약은 ⓙ 가 이미 보고 있고, 여기서는 카드 줄과 상세를 본다.
+  const rowStart = client.indexOf('const ItemRow = ')
+  const rowEnd = client.indexOf('const isEmpty =')
+  need('ItemRow 를 잘라 봄', rowStart >= 0 && rowEnd > rowStart)
+  // 주석을 걷고 본다 — 아래 구조 검사는 `awaitingReceipt` 의 **마지막** 등장 위치로 분기를
+  // 가르는데, 이 자리를 설명하는 JSX 주석이 그 낱말을 쓰면 주석이 코드 대신 잡힌다(실제로 걸렸다).
+  const row = client.slice(rowStart, rowEnd).replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+
+  need('카드 줄이 정본 openDispose 를 부른다',
+    /onClick=\{\(\) => openDispose\(\[it\]\)\}/.test(row),
+    '카드 줄이 제 모달을 짜면 게이트·적용취소가 한 벌 더 생긴다')
+  need('카드 줄 라벨이 알약과 같은 말이다',
+    /\n\s*폐기·분실\n\s*<\/button>/.test(row),
+    "상세의 `폐기·분실 기록` 은 그 자리 문법이다 — 목록 카드는 알약(`폐기·분실`)에 맞춘다")
+  need('카드 줄 폐기 버튼이 **맨 끝**에 선다',
+    row.indexOf('openDispose([it])') > row.indexOf('openCardMerge(it, siblings)'),
+    'flex-wrap 행이라 앞쪽에 두면 형제 버튼의 조건에 따라 파괴적 버튼이 1행과 2행을 오간다')
+
+  // 3) 숨는 축 — 서버 정본 게이트(disposalDenial) ①수령 전 ④전량 폐기 와 같은 두 갈래.
+  //    ① 카드 줄은 조건식이 아니라 **분기 구조**로 숨는다. `awaitingReceipt` 삼항의 마지막
+  //    else 안에만 서므로 수령 대기 카드에서는 이 갈래가 아예 안 그려진다. 그래서 여기서
+  //    지키는 것은 **버튼이 그 else 안에 있다는 사실**이고, 그 프롭이 수령 대기 목록에서만
+  //    넘어온다는 사실을 같이 못박아야 반쪽이 아니다.
+  const elseAt = row.search(/\)\s*:\s*\(\s*\n\s*<>/)
+  need('수령 대기 분기의 마지막 else 를 찾음', elseAt >= 0)
+  need('카드 줄 폐기 버튼이 수령 대기 분기 **밖**에 선다',
+    elseAt >= 0 && row.indexOf('openDispose([it])') > elseAt
+    && row.lastIndexOf('awaitingReceipt') < elseAt,
+    '수령 대기 카드에 서면 아직 받지도 않은 물건을 버리는 버튼이 된다(서버 게이트 ①이 거부)')
+  need('awaitingReceipt 를 넘기는 자리가 수령 대기 목록 하나다',
+    (client.match(/<ItemRow[^>]*\bawaitingReceipt\b/g) ?? []).length === 1
+    && /vPending\.map\(it => <ItemRow key=\{it\.id\} it=\{it\} placed=\{false\} awaitingReceipt /.test(client),
+    '다른 목록이 이 프롭을 안 주면 분기 구조가 곧 수령 대기 게이트다 — 늘어나면 그 전제가 깨진다')
+
+  //    ④ 전량 폐기. 안 막으면 서버는 DISPOSAL_DENY_ALL_DISPOSED 로 거부하고, 모달은 max 0 이라
+  //    '기록' 이 비활성인 채로 열린다 — 막다른 길이다.
+  need('카드 줄이 전량 폐기된 카드에서 숨는다',
+    /\{it\.liveUnits > 0 && \(\s*\n\s*<button type="button" onClick=\{\(\) => openDispose\(\[it\]\)\}/.test(row),
+    '조건만 지우면 버튼은 서는데 서버가 거부한다(게이트 ④) — 축은 qtyValue 가 아니라 liveUnits 다')
+  need('상세가 수령 대기에서 설치·폐기 블록째로 숨는다',
+    /\{!data\.pending\.some\(x => x\.id === it\.id\) && \(\(\) => \{/.test(client),
+    '상세의 폐기 버튼은 이 블록 안에 있다 — 블록이 열리면 버튼도 선다')
+  need('알약·카드 줄·상세가 모두 data.pending 축으로 숨는다',
+    /!selItems\.some\(it => data\.pending\.some\(p => p\.id === it\.id\)\)/.test(client)
+    && /!data\.pending\.some\(x => x\.id === it\.id\)/.test(client),
+    '버킷 분류(actions.ts `!r.received && !r.isService`)가 서버 게이트 ①과 같은 축이다 — 셋이 그 버킷을 본다')
+
+  // 4) 껍데기 — 형제 버튼과 **글자 단위로** 같아야 한다. 파괴적이라고 새 톤을 만들면
+  //    이 행에서 --coral 은 이미 옮기기·배정하기(주된 행동)의 색이라 두 뜻이 겹친다.
+  const SHELL = 'min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40'
+  const clsOf = re => (row.match(re) ?? [])[1] ?? ''
+  const dispCls = clsOf(/onClick=\{\(\) => openDispose\(\[it\]\)\} disabled=\{pending\}\s*\n\s*className="([^"]+)"/)
+  const mergeCls = clsOf(/onClick=\{\(\) => openCardMerge\(it, siblings\)\} disabled=\{pending\}\s*\n\s*className="([^"]+)"/)
+  need('형제 버튼 껍데기를 읽었다', mergeCls === SHELL, `합치기 껍데기가 바뀌었다 — ${mergeCls}`)
+  need('카드 줄 폐기 버튼 껍데기가 형제와 한 글자도 안 다르다', dispCls === SHELL,
+    `새 톤을 만들면 이 행에서 --coral 은 이미 옮기기의 색이다 — ${dispCls}`)
 }
 
 if (fails.length) {

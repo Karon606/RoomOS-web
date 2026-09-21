@@ -905,6 +905,22 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     합치기
                   </button>
                 )}
+                {/* 폐기·분실 — 입구 셋째. 선택 알약(:1158)·상세(:1586)와 **같은 정본 openDispose** 를
+                    부르므로 모달·토스트·적용취소가 저절로 따라온다(§16).
+                    숨는 조건은 서버 정본 게이트(aggregate.ts disposalDenial)의 두 갈래와 같은 축이다.
+                    ① 수령 전 — 이 갈래 자체가 `awaitingReceipt` 분기 바깥이라 수령 대기 카드에는 안 선다
+                       (서비스는 버킷 분류부터 수령 대기로 안 가고 게이트도 면제라 양쪽이 맞는다).
+                    ④ 전량 폐기 — `liveUnits > 0` 으로 막는다. 안 막으면 서버는 거부하고 모달의 max 는
+                       0 이라 '기록'이 비활성인 채로 열리는 막다른 길이 된다.
+                    **자리는 맨 끝이다.** 이 행은 flex-wrap 이라 앞쪽에 두면 형제 버튼의 조건에 따라
+                    파괴적 버튼이 1행과 2행을 오간다 — 맨 끝만이 늘 '마지막 칸'으로 고정된다
+                    (check-prism-action-row ⓐ 가 적어 둔 걱정과 같은 것). 정본 알약도 폐기를 끝에 둔다. */}
+                {it.liveUnits > 0 && (
+                  <button type="button" onClick={() => openDispose([it])} disabled={pending}
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    폐기·분실
+                  </button>
+                )}
               </>
             )}
           </>
