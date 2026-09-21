@@ -140,10 +140,24 @@ need('lib/useVisibleBand.ts', [
         violations.push('lib/useVisibleBand.ts — sync 본문이 vv 를 직접 읽는다. 인셋은 관문을 지난 값만 써야 하고, Math.round( 한 겹을 씌워도 여기서 걸린다(신고 bf0a6fff)')
       }
     }
-    // (3) 한 스냅샷 — 세 항을 읽는 자리는 pass 하나뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
+    // (3) **인셋은 방향 관문을 안 지난다**(신고 2026-09-17, 09-16 회귀 수정). 09-16 에 인셋을
+    //     bandHeight 의 결과에 묶었더니 반대쪽이 터졌다 — 키보드가 서서 띠가 진짜 줄어든 팬
+    //     프레임에서 관문이 작아진 값을 거부하고, 인셋까지 '키보드 없음'이라 답해 패널이 키보드
+    //     밑까지 뻗었다(전수 훑기: 띠 416 에서 패널 384 -> 780, 33개 조합). 위생 검사는 인셋에도
+    //     필요하니 usableVvHeight 는 지나야 하고, bandHeight 의 결과를 그대로 넘기면 안 된다.
+    const syncCall = /\bsync\(([^,]+),/.exec(src)
+    if (!syncCall) {
+      violations.push('lib/useVisibleBand.ts — sync 를 부르는 자리를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
+    } else {
+      const arg = syncCall[1].trim()
+      if (!/^usableVvHeight\(/.test(arg)) {
+        violations.push(`lib/useVisibleBand.ts — sync 의 첫 인자가 usableVvHeight(...) 가 아니라 '${arg}' 다. 인셋은 위생 검사만 지나야 한다 — 방향 관문(bandHeight)까지 지나면 키보드가 선 프레임에서 되레 가린다(신고 2026-09-17)`)
+      }
+    }
+    // (4) 한 스냅샷 — 세 항을 읽는 자리는 pass 하나뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
     const reads = [...src.matchAll(/\bvv\.height\b/g)].length
     if (reads !== 1) {
-      violations.push(`lib/useVisibleBand.ts — vv.height 를 읽는 자리가 ${reads} 군데다. 한 스냅샷 한 관문이려면 pass 안의 한 번뿐이어야 한다`)
+      violations.push(`lib/useVisibleBand.ts — vv.height 를 읽는 자리가 ${reads} 군데다. 한 스냅샷이려면 pass 안의 한 번뿐이어야 한다`)
     }
   }
 }

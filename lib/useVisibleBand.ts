@@ -10,12 +10,14 @@
 // 규칙은 Modal 주석에 쌓인 그대로다. 팬 불변(top+bottom 합 일정), 줄이기는 resize 에서만,
 // 불가능값은 직전 유효값 유지, 복귀 재동기(pageshow·회전·visibilitychange + rAF 한 박자).
 //
-// **셋은 한 관문을 지난다(2026-09-16, 신고 bf0a6fff).** 종전에는 높이만 위생 검사를 지나고
-// 인셋은 vv.height 를 날것으로 썼다. 보호가 한쪽에만 걸린 값 쌍은 언젠가 갈린다 — 그래서
-// bandHeight() 하나가 이 프레임의 띠 높이를 정하고, 높이도 인셋도 그 한 값에서 나온다.
+// **관문은 두 겹이고 쓰는 곳이 다르다(2026-09-17 회귀 수정).** 위생 검사(불가능값을 버리고
+// 직전 유효값을 쓴다)는 높이와 인셋 **둘 다** 지난다 — 그 문이 찢어진 스냅샷을 막는다(bf0a6fff).
+// 방향 관문(줄이는 것은 resize 에서만)은 **패널 높이만** 지난다. 09-16 에 둘을 한 값으로 묶었다가
+// 반대쪽이 터졌다 — 키보드가 서서 띠가 진짜 줄어든 팬 프레임에서 인셋이 '키보드 없음'이라 답해
+// 패널이 키보드 밑까지 뻗었다(신고 2026-09-17). 한 스냅샷을 한 번만 읽는 규칙은 그대로다.
 
 import { useEffect, type RefObject } from 'react'
-import { overlayInsets, bandHeight, resumeAllowsShrink } from '@/lib/modalViewport'
+import { overlayInsets, bandHeight, usableVvHeight, resumeAllowsShrink } from '@/lib/modalViewport'
 import { editableFocused } from '@/lib/editableTarget'
 
 export function useVisibleBand(opts: {
@@ -39,7 +41,8 @@ export function useVisibleBand(opts: {
     // 마지막으로 믿을 만했던 띠 높이. 0 이면 아직 한 번도 못 읽었다(그때는 dvh 폴백).
     let lastGoodH = 0
 
-    // **이 프레임에 쓸 띠 높이 — 관문 둘을 지난 한 값.** 높이와 인셋이 같은 값을 쓴다.
+    // **패널 높이에 쓸 띠 높이 — 관문 둘을 지난 값.** 인셋은 이 값이 아니라 위생 검사만 지난
+    // 값을 쓴다(아래 pass 참조). 방향 관문을 인셋에 걸면 키보드가 선 프레임에서 되레 가린다.
     //
     // 종전에는 이 관문이 높이에만 걸려 있었다(신고 bf0a6fff, 2026-09-16). 인셋 쪽 sync 는
     // vv.height 를 날것으로 넣어, 찢어진 스냅샷 한 장이 오면 아래 인셋이 무한정 커지고 오버레이
@@ -86,16 +89,23 @@ export function useVisibleBand(opts: {
       if (top !== lastTop) { ov.style.setProperty(varTop, top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty(varBottom, bottom); lastBottom = bottom }
     }
-    // **한 스냅샷 한 관문.** 세 항을 같은 순간에 한 번씩만 읽어(찢어짐 방지) 높이만 관문
-    // bandHeight 를 지나고, 나머지 둘은 그 높이와 짝지어 overlayInsets 의 클램프로 들어간다.
-    // 읽는 자리가 여기 하나뿐이라 높이와 인셋이 다른 프레임의 값을 섞을 길이 없다.
+    // **한 스냅샷, 관문 둘.** 세 항을 같은 순간에 한 번씩만 읽어(찢어짐 방지) 패널 높이는
+    // bandHeight(위생 + 방향)를, 인셋은 usableVvHeight(위생만)를 지난다. 읽는 자리가 여기
+    // 하나뿐이라 둘이 **다른 프레임**의 값을 섞을 길은 없다 — 같은 프레임에서 뜻이 갈릴 뿐이고,
+    // 그 갈림이 의도다. 아래 sync 호출부에 이유를 적어 뒀다.
     const pass = (allowShrink: boolean) => {
       const height = vv.height
       const offsetTop = vv.offsetTop
       const innerHeight = window.innerHeight
       const h = gatedHeight(height, allowShrink)
       syncSize(h)
-      sync(h, offsetTop, innerHeight)
+      // **인셋은 위생 검사만 지나고 방향 관문은 안 지난다**(신고 2026-09-17, 09-16 회귀 수정).
+      // 09-16 에 높이와 인셋을 한 값으로 묶었더니 반대쪽이 터졌다. 방향 관문(줄이는 것은 resize
+      // 에서만)은 **패널 높이에만 맞는 규칙**이다. 인셋에 걸면, 키보드가 서서 띠가 진짜 줄어든
+      // 팬 프레임에서 관문이 작아진 값을 거부하고 인셋까지 '키보드 없음'이라 답한다 — 패널이
+      // 키보드 밑까지 뻗어 입력 칸이 덮인다(전수 훑기 실측: 띠 416 에서 패널 384 -> 780).
+      // 위생 검사(불가능값 버리기)는 인셋에도 필요하다 — 그 문이 bf0a6fff 를 막는다.
+      sync(usableVvHeight(height, lastGoodH), offsetTop, innerHeight)
     }
     // vv 의 resize — 키보드가 서서 띠가 진짜 주는 길이다. 여기서는 줄이는 값을 받는다(8-29 규칙).
     const both = () => pass(true)

@@ -38,7 +38,8 @@ export type VvSnapshot = {
  * (패널 상단 90pt · 헤더와 푸터 사이 36pt · 가로는 max-w-xs 그대로).
  *
  * 찢어진 height 자체는 여기서 못 막는다 — 합을 정하는 값이 그것이라 상한도 같이 커진다.
- * 그 문은 usableVvHeight 가 지키고, 호출부(lib/useVisibleBand)가 인셋에도 그 문을 지나게 한다.
+ * 그 문은 usableVvHeight 가 지키고, 호출부(lib/useVisibleBand)가 인셋에도 **그 문만** 지나게 한다
+ * (방향 관문은 패널 높이 전용이다 — bandHeight 주석 참조).
  */
 export function overlayInsets(vv: VvSnapshot): { top: number; bottom: number } {
   const span = Math.max(0, Math.round(vv.innerHeight - vv.height))
@@ -109,8 +110,13 @@ export function resumeAllowsShrink(pass: 1 | 2, editableFocused: boolean): boole
  *   · `lastGood` — 이 프레임 값은 안 믿는다(불가능값이거나, 줄이면 안 되는 자리의 축소다).
  *   · 새 값 — 믿는다. 호출부가 `lastGood` 을 이것으로 갱신한다.
  *
- * 거부를 0 이 아니라 `lastGood` 으로 답하는 것이 요점이다. 인셋도 같은 값으로 계산해야 팬
- * 프레임마다 합(top + bottom)이 흔들리지 않는다.
+ * 거부를 0 이 아니라 `lastGood` 으로 답하는 것이 요점이다. 한 프레임 값이 조금 낡는 것이
+ * 레이아웃이 통째로 흔들리는 것보다 낫다.
+ *
+ * **이 함수는 패널 높이 전용이다(2026-09-17).** 인셋은 위생 검사(`usableVvHeight`)만 지나고
+ * 여기를 안 지난다. 방향 관문을 인셋에 걸었더니, 키보드가 서서 띠가 진짜 줄어든 팬 프레임에서
+ * 관문이 작아진 값을 거부하고 인셋까지 '키보드 없음'이라 답해 패널이 키보드 밑까지 뻗었다
+ * (신고 2026-09-17, 전수 훑기 실측: 띠 416 에서 패널 384 -> 780).
  */
 export function bandHeight(height: number, lastGood: number, allowShrink: boolean): number | null {
   const h = usableVvHeight(height, lastGood)
