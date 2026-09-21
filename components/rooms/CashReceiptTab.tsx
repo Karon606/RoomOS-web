@@ -29,9 +29,9 @@ import { batchSetCashReceipts, batchUnsetCashReceipts, muteReceiptAlert, unmuteR
 type Candidate = {
   leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
   payYmd: string; payMethod: string
-  /** 받을 때 발행 대상인 금액(이용료 몫)과 실제 입금 총액 — 다른 값이다(운영자 확정 2026-09-21). */
-  issuable: number; received: number
-  deposit: number; cleaning: number; rent: number
+  /** 큰 숫자는 발행 대상 금액(이용료 몫)이고, 아래 둘은 그 숫자에 **안 든** 몫이다. */
+  issuable: number
+  deposit: number; cleaning: number
 }
 type MutedCandidate = Candidate & { mutedAt: string }
 type Issued = {
@@ -49,7 +49,7 @@ export function CashReceiptTab({
   /** 발급 기한 알림을 수동으로 끈 입금 — 접힌 목록으로 두고 언제든 다시 켠다(§16). */
   muted: MutedCandidate[]
   /** 규칙으로 후보에서 뺀 입금 — 보증금·청소비만 받은 건(운영자 확정 2026-09-21). */
-  excluded: { count: number; deposit: number; cleaning: number }
+  excluded: { count: number }
   targetMonth: string
   issuedSum: number
   issuedCount: number

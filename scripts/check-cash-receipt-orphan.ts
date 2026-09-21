@@ -36,8 +36,11 @@ async function main() {
     where: { deletedAt: null },
     select: { id: true, leaseTermId: true, payDate: true, payMethod: true, amount: true, issuedAt: true, inclDeposit: true, inclCleaning: true },
   })
+  // **살아 있는 record 만 본다**(독립 검수 2026-09-22). 이 스크립트는 확장 없는 PrismaClient 를
+  // 직접 만들어 소프트삭제 필터를 안 지난다. 안 거르면 지워진 수납이 발행 줄을 받치는 것으로
+  // 세어져, 아무도 안 가리키는 줄(408호 클래스)을 정상으로 읽는다.
   const stamped = await prisma.paymentRecord.findMany({
-    where: { cashReceiptIssuedAt: { not: null } },
+    where: { cashReceiptIssuedAt: { not: null }, deletedAt: null },
     select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true },
   })
   // 키와 판정은 정본이 쥔다 — 여기 사본을 두면 갈린다(lib/cashReceipt).
@@ -116,7 +119,7 @@ async function main() {
   //      여기 걸린다. 조정 전표는 받은 돈이 아니라 뺀다(paymentCompositionFor 와 같은 기준).
   {
     const live = await prisma.paymentRecord.findMany({
-      where: { isBillingAdjust: false },
+      where: { isBillingAdjust: false, deletedAt: null },   // 이름 그대로 살아 있는 것만(독립 검수 2026-09-22)
       select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true },
     })
     const rentByKey = new Map<string, number>()
@@ -127,6 +130,12 @@ async function main() {
     }
     for (const r of receipts) {
       if (r.inclDeposit || r.inclCleaning) continue   // 예외 발행은 (라)가 이미 말했다
+      // **환불 대기는 비켜 간다**(2026-09-22). 환불은 원 수납을 소프트삭제하고 새 record 에는
+      // 도장을 일부러 안 찍는다. 그래서 살아 있는 이용료 몫이 0 이 되는데, 그 줄이 환불 전
+      // 금액을 드는 것은 정상 중간 상태다 — 홈택스가 아직 그 금액이고, 운영자가 취소·재발행할
+      // 때까지 앱 합계도 그 금액이어야 한다(lib/cashReceipt receiptRowVerdict 의 판정과 같다).
+      // 이것을 울면 첫 환불부터 매번 울고, 그러면 진짜 초과도 같이 안 읽힌다.
+      if (receiptRowVerdict(key(r), stampedKeys, pendingKeys) === 'refundPending') continue
       const rent = rentByKey.get(key(r)) ?? 0
       if (r.amount <= rent) continue
       violations.push(`[발행 몫] 초과 — 발행 ${r.amount.toLocaleString()}원 (발행 ${ymd(r.issuedAt)} · 수납일 ${ymd(r.payDate)})이 이용료 몫 ${rent.toLocaleString()}원을 넘는데 보증금·청소비를 안 들었다고 적혀 있다`)

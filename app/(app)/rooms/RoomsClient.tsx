@@ -32,9 +32,9 @@ import { CashReceiptTab } from '@/components/rooms/CashReceiptTab'
 type CashReceiptCandidate = {
   leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
   payYmd: string; payMethod: string
-  /** 받을 때 발행 대상인 금액(이용료 몫)과 실제 입금 총액 — 다른 값이다(운영자 확정 2026-09-21). */
-  issuable: number; received: number
-  deposit: number; cleaning: number; rent: number
+  /** 큰 숫자는 발행 대상 금액(이용료 몫)이고, 아래 둘은 그 숫자에 **안 든** 몫이다. */
+  issuable: number
+  deposit: number; cleaning: number
 }
 type CashReceiptIssued = {
   roomNo: string; tenantName: string; amount: number
@@ -447,7 +447,7 @@ export default function RoomsClient({
   // 보증금 원장 — 월 스코프가 없는 전체 조회(서버 정본 getDepositSummaryByTenant·getDepositLedger)
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
-  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[]; muted: (CashReceiptCandidate & { mutedAt: string })[]; excluded: { count: number; deposit: number; cleaning: number } }
+  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[]; muted: (CashReceiptCandidate & { mutedAt: string })[]; excluded: { count: number } }
   initialTab?: ViewTabId
 }) {
   const searchParams = useSearchParams()

@@ -2262,11 +2262,14 @@ export async function setPaymentCashReceipt(input: {
  */
 export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   /**
-   * 후보 행. **`issuable`(받을 때 발행 대상인 금액, 곧 이용료 몫)과 `received`(입금 총액)가
-   * 다른 값이다**(운영자 확정 2026-09-21). 화면의 큰 숫자는 issuable 이고 received 는
-   * '얼마를 받았는데 그중 얼마가 대상인가'를 말할 때 쓴다.
+   * 후보 행. 큰 숫자는 `issuable`(받을 때 발행 대상인 금액, 곧 이용료 몫)이고 `deposit`·
+   * `cleaning` 은 그 숫자에 **안 든** 몫이라 행 메타가 '제외'라 적는다(운영자 확정 2026-09-21).
+   *
+   * **화면이 안 쓰는 값은 안 싣는다**(독립 검수 2026-09-22). 종전에는 입금 총액과 이용료 몫을
+   * 함께 보내며 주석이 "'얼마를 받았는데 그중 얼마가 대상인가'를 말할 때 쓴다"고 적었는데,
+   * 그 자리가 화면에 없었다. 쓰는 날 다시 싣는다.
    */
-  candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; received: number; deposit: number; cleaning: number; rent: number }[]
+  candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; deposit: number; cleaning: number }[]
   /**
    * 발행 내역 행. **무엇을 포함했나까지 싣는다**(운영자 신고 249f98cc) — 금액만 보내면
    * 화면이 '왜 35만인가'를 못 말한다(schema.prisma CashReceipt 의 incl* 주석이 적는 존재 이유).
@@ -2277,13 +2280,14 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
    */
   issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null; inclDeposit: boolean; inclCleaning: boolean }[]
   /** 알림을 수동으로 끈 입금 — 후보와 같은 모양에 끈 날짜가 붙는다. */
-  muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; received: number; deposit: number; cleaning: number; rent: number; mutedAt: string }[]
+  muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; deposit: number; cleaning: number; mutedAt: string }[]
   /**
    * 규칙으로 후보에서 뺀 입금 — 보증금·청소비만 받은 건(운영자 결정 1, 2026-09-22).
    * **끈 키 여부와 무관하게 센다.** 규칙으로 뺀 것과 손으로 끈 것은 다른 축이고, 섞으면
    * 캡션의 숫자가 두 가지 이유를 한 수에 담아 어느 쪽도 못 말한다.
    */
-  excluded: { count: number; deposit: number; cleaning: number }
+  /** 규칙으로 후보에서 뺀 건수 — 캡션이 몇 건을 왜 뺐는지 말한다. */
+  excluded: { count: number }
 }> {
   const propertyId = await getPropertyId()
   const [y, m] = targetMonth.split('-').map(Number)
@@ -2365,12 +2369,19 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const all = [...byKey.entries()]
     .filter(([k, g]) => !issuedKeys.has(k) && isCashReceiptCandidate(g))
     .sort(([, a], [, b]) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
-  const row = (g: Cand) => ({ ...g, issuable: cashReceiptIssuableAmount(g) })
+  // 서버가 쥔 Cand 는 세 몫을 다 들지만 **화면에 필요한 것만 골라 보낸다**(독립 검수 2026-09-22).
+  // 받은 총액과 이용료 몫은 서버 판정에만 쓰이고 그리는 자리가 없다.
+  const row = (g: Cand) => ({
+    leaseTermId: g.leaseTermId, tenantId: g.tenantId, roomNo: g.roomNo, tenantName: g.tenantName,
+    payYmd: g.payYmd, payMethod: g.payMethod,
+    issuable: cashReceiptIssuableAmount(g), deposit: g.deposit, cleaning: g.cleaning,
+  })
   const candidates = all.filter(([k]) => !mutedKeys.has(k)).map(([, g]) => row(g))
   const muted = all.filter(([k]) => mutedKeys.has(k)).map(([k, g]) => ({ ...row(g), mutedAt: mutedKeys.get(k) ?? '' }))
   // 규칙으로 뺀 건 — 발행 내역이 있는 키는 여기 안 든다(그 건은 아래 발행 내역이 말한다).
   // 끈 키는 뺀 이유가 다르므로 가리지 않는다.
-  const excluded = { count: 0, deposit: 0, cleaning: 0 }
+  // 화면은 건수만 말한다 — 금액까지 적으면 "그 돈은 어디 갔나"를 이 캡션이 못 답한다.
+  const excluded = { count: 0 }
   for (const [k, g] of byKey) {
     if (issuedKeys.has(k) || isCashReceiptCandidate(g)) continue
     // **캡션이 '보증금·청소비만 받은 N건'이라 말하므로 실제로 그런 건만 센다**(독립 검수
@@ -2379,8 +2390,6 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
     // 그 달 캡션이 통째로 거짓말이 된다. 종전처럼 말없이 뺀다.
     if (g.deposit <= 0 && g.cleaning <= 0) continue
     excluded.count += 1
-    excluded.deposit += Math.max(0, g.deposit)
-    excluded.cleaning += Math.max(0, g.cleaning)
   }
 
   const issued = lines
