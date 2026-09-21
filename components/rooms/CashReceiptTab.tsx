@@ -115,27 +115,24 @@ export function CashReceiptTab({
           <span className="num"> ({issuedCount}건)</span>
           <InfoHint title="현금영수증 탭">
             <span className="block">합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다.</span>
-            <span className="block mt-1.5">아래 첫 목록은 이 달에 받은 입금 중 발행 내역이 없는 것입니다. 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
+            <span className="block mt-1.5">아래 첫 목록이 그 합계를 이루는 발행 내역입니다. 그 아래는 이 달에 받은 입금 중 아직 발행 내역이 없는 것이고, 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
             <span className="block mt-1.5">카드 결제는 매출전표가 증빙을 대신해 여기 없습니다.</span>
             <span className="block mt-1.5">보증금과 청소비는 받을 때 발행 대상이 아니라 후보에 세우지 않고, 함께 받은 입금은 이용료 몫만 발행 금액으로 잡습니다.</span>
             <span className="block mt-1.5">발행 내역에 &lsquo;보증금 포함&rsquo;·&lsquo;청소비 포함&rsquo;이 뜨면 이 사업장 규칙의 예외입니다.</span>
             <span className="block mt-1.5">끈 건은 발급 후보에서도 빠집니다.</span>
           </InfoHint>
         </p>
-        {/* 합계가 제 목록을 가리킨다 (운영자 신고 249f98cc).
-            "이 달 발행 16건" 바로 밑에 "발행 내역이 없는 입금 15건"이 깔려, 머리의 숫자와 바로
-            다음 목록이 **반대**를 말했다. 두 수가 우연히 비슷해 더 헷갈린다(16 대 15).
-            순서는 안 바꾼다 — 형제 정본이 '할 일 먼저, 기록 나중'이다(카드 정산: 미정산 →
-            정산 완료 내역 / 자재 상세: 컨트롤 먼저 보고 나중, 2026-09-17 운영자 승인).
-            형제와 진짜로 갈리는 자리는 순서가 아니라 **합계의 위치**였다. 카드 정산은 각 합계를
-            제 구역 안에 두는데 이 탭만 마지막 구역의 합계를 머리로 올려 놨다. 그래서 머리가
-            제 목록을 이름과 건수로 지목하게 한다 — 아래 제목의 `({issuedCount}건)` 과 글자까지
-            같은 수라 둘이 한 쌍으로 읽힌다. 0건이면 어긋날 머리 자체가 없어 줄도 안 세운다. */}
-        {issuedCount > 0 && (
-          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-            이 합계의 {issuedCount}건은 맨 아래 발행 내역에 있습니다. 바로 아래 목록은 아직 발행하지 않은 입금입니다.
-          </p>
-        )}
+        {/* 머리 합계 바로 밑이 그 합계의 목록이다 (운영자 신고 249f98cc, 2026-09-22 재지적).
+            종전에는 "이 달 발행 17건" 밑에 "발행 내역이 없는 입금 13건"이 깔려 머리와 다음
+            목록이 **반대**를 말했다. 1차 수정은 순서를 안 바꾸고 "맨 아래 발행 내역에 있습니다"
+            라는 안내만 붙였다 — 형제 정본이 '할 일 먼저, 기록 나중'이라는 근거였다(카드 정산).
+            **그 판단이 틀렸다.** 운영자가 같은 말을 두 번 했다 — "여기에서는 발행한 현금영수증에
+            대한 내역을 보여주는게 맞지 않나", 그리고 "여전히 발행한 현금영수증 사람들의 내역이
+            보이는게 아닌데". 안내를 읽어도 후보 13줄과 접힌 블록을 지나야 나오니 휴대폰에서 두
+            화면을 넘겨야 했다. 형제 논리가 여기서 안 서는 이유는 이 탭만 **마지막 구역의 합계를
+            머리로 올려 놨기** 때문이다. 카드 정산은 각 합계가 제 구역 안에 있어 순서가 무해하다.
+            머리가 든 숫자의 목록이 머리 바로 밑에 온다. 지목하는 안내 줄은 그래서 없앴다 —
+            자리가 맞으면 말이 필요 없다. 감지망은 check-receipt-alert-axis ⓗ 가 순서를 본다. */}
       </div>
 
       {candidates.length === 0 && issued.length === 0 && muted.length === 0 ? (
@@ -145,6 +142,58 @@ export function CashReceiptTab({
         />
       ) : (
         <>
+          <section className="space-y-2">
+            <div>
+              {/* 제목은 **명사구**다(운영자 결정 2026-09-17, 커밋 b233a72f — `기록` = 버튼 동사,
+                  `이력`·`내역` = 목록 명사). 그때 전수가 이 탭을 놓쳤고, 같은 화면에서 제목
+                  `발행 기록`과 버튼 셋(`일괄 발행 기록`·모달 제목·확정 버튼)이 같은 낱말을 썼다.
+                  버튼은 동사라 그대로 두고 제목만 옮긴다.
+                  `이력`이 아니라 `내역`인 이유 — 저장소가 둘을 쓰는 결이 갈려 있다. `이력`은 한
+                  대상의 상태가 바뀐 사슬(발급 이력의 판본·배정 변경 이력·상태 이력)이고, `내역`은
+                  돈이 줄 단위로 서는 목록(수납 내역·지출 내역·구매 내역·정산 완료 내역)이다.
+                  이 목록은 입금 한 건에 한 줄이고 줄마다 금액을 든다. 구조가 가장 닮은 형제가
+                  카드 정산의 `정산 완료 내역`(월 스코프 탭 + 완료분 목록)이다. 운영자가 쓴 낱말도
+                  `내역`이다.
+                  건수 접미는 **괄호**다. 형제 정본 `발급 이력 {n}건`(ResidenceCertClient:163 ·
+                  RentReceiptsClient:186)은 괄호를 안 쓰지만, 한 화면의 형제 제목 둘이 이미
+                  `(…건)`이고(위 `발행 내역이 없는 입금 (N건)` · `알림 끈 입금 (N건)`) b233a72f 의
+                  판정 기준 자체가 '한 화면'이었다. 머리의 `({issuedCount}건)` 과도 글자까지 같다. */}
+              <h2 className="text-xs font-semibold text-[var(--warm-mid)]">발행 내역 ({issuedCount}건)</h2>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">발행일 기준 · 위 합계와 같은 목록</p>
+            </div>
+            {issued.length === 0 ? (
+              <p className="text-xs text-[var(--warm-muted)]">이 달 발행 내역이 없습니다.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {issued.map((r, i) => {
+                  // 무엇을 발행했나 — **후보 목록(:147)의 문법을 그대로 가져온다.** 한 탭에서 위
+                  // 목록은 구성을 말하고 아래 목록은 침묵하던 것을 닫는 것이라, 새 표기를 만들면
+                  // 침묵이 불일치로 바뀔 뿐이다. 이용료는 후보와 같이 무표지 기본값으로 둔다.
+                  // 금액을 안 붙이는 이유는 서버 주석에 적었다 — 표가 불리언만 들고, 발행 금액은
+                  // 받은 금액과 다를 수 있어 수납 쪽 원 단위를 옮기면 그것이 새 거짓이 된다.
+                  // **낱말은 그대로 두고 색만 준다**(2026-09-22). 받을 때 발행 대상이 아닌 몫이
+                  // 들어간 줄은 이 사업장 규칙의 **예외**라 눈에 걸려야 한다. 다만 '오류'라 부르지
+                  // 않는다 — 세무 담당자 확인 후 일부러 넣었을 수 있다. 사실 서술은 중립어로 적고
+                  // 상태는 색으로 말하는 것이 같은 행의 기한 라벨이 이미 쓰는 문법이다.
+                  const incl = [r.inclDeposit ? '보증금 포함' : '', r.inclCleaning ? '청소비 포함' : ''].filter(Boolean)
+                  return (
+                  <li key={`${r.roomNo}-${r.payYmd}-${i}`} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate">
+                        {fmtRoomNo(r.roomNo)} {r.tenantName}
+                      </span>
+                      <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
+                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]"> · {incl.join(' · ')}</span> : null}
+                      </span>
+                    </span>
+                    <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>
+                  </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+
           <section className="space-y-2">
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="min-w-0">
@@ -294,58 +343,6 @@ export function CashReceiptTab({
               )}
             </section>
           )}
-
-          <section className="space-y-2">
-            <div>
-              {/* 제목은 **명사구**다(운영자 결정 2026-09-17, 커밋 b233a72f — `기록` = 버튼 동사,
-                  `이력`·`내역` = 목록 명사). 그때 전수가 이 탭을 놓쳤고, 같은 화면에서 제목
-                  `발행 기록`과 버튼 셋(`일괄 발행 기록`·모달 제목·확정 버튼)이 같은 낱말을 썼다.
-                  버튼은 동사라 그대로 두고 제목만 옮긴다.
-                  `이력`이 아니라 `내역`인 이유 — 저장소가 둘을 쓰는 결이 갈려 있다. `이력`은 한
-                  대상의 상태가 바뀐 사슬(발급 이력의 판본·배정 변경 이력·상태 이력)이고, `내역`은
-                  돈이 줄 단위로 서는 목록(수납 내역·지출 내역·구매 내역·정산 완료 내역)이다.
-                  이 목록은 입금 한 건에 한 줄이고 줄마다 금액을 든다. 구조가 가장 닮은 형제가
-                  카드 정산의 `정산 완료 내역`(월 스코프 탭 + 완료분 목록)이다. 운영자가 쓴 낱말도
-                  `내역`이다.
-                  건수 접미는 **괄호**다. 형제 정본 `발급 이력 {n}건`(ResidenceCertClient:163 ·
-                  RentReceiptsClient:186)은 괄호를 안 쓰지만, 한 화면의 형제 제목 둘이 이미
-                  `(…건)`이고(위 `발행 내역이 없는 입금 (N건)` · `알림 끈 입금 (N건)`) b233a72f 의
-                  판정 기준 자체가 '한 화면'이었다. 머리의 `({issuedCount}건)` 과도 글자까지 같다. */}
-              <h2 className="text-xs font-semibold text-[var(--warm-mid)]">발행 내역 ({issuedCount}건)</h2>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">발행일 기준 · 위 합계와 같은 목록</p>
-            </div>
-            {issued.length === 0 ? (
-              <p className="text-xs text-[var(--warm-muted)]">이 달 발행 내역이 없습니다.</p>
-            ) : (
-              <ul className="space-y-1.5">
-                {issued.map((r, i) => {
-                  // 무엇을 발행했나 — **후보 목록(:147)의 문법을 그대로 가져온다.** 한 탭에서 위
-                  // 목록은 구성을 말하고 아래 목록은 침묵하던 것을 닫는 것이라, 새 표기를 만들면
-                  // 침묵이 불일치로 바뀔 뿐이다. 이용료는 후보와 같이 무표지 기본값으로 둔다.
-                  // 금액을 안 붙이는 이유는 서버 주석에 적었다 — 표가 불리언만 들고, 발행 금액은
-                  // 받은 금액과 다를 수 있어 수납 쪽 원 단위를 옮기면 그것이 새 거짓이 된다.
-                  // **낱말은 그대로 두고 색만 준다**(2026-09-22). 받을 때 발행 대상이 아닌 몫이
-                  // 들어간 줄은 이 사업장 규칙의 **예외**라 눈에 걸려야 한다. 다만 '오류'라 부르지
-                  // 않는다 — 세무 담당자 확인 후 일부러 넣었을 수 있다. 사실 서술은 중립어로 적고
-                  // 상태는 색으로 말하는 것이 같은 행의 기한 라벨이 이미 쓰는 문법이다.
-                  const incl = [r.inclDeposit ? '보증금 포함' : '', r.inclCleaning ? '청소비 포함' : ''].filter(Boolean)
-                  return (
-                  <li key={`${r.roomNo}-${r.payYmd}-${i}`} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)]">
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate">
-                        {fmtRoomNo(r.roomNo)} {r.tenantName}
-                      </span>
-                      <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]"> · {incl.join(' · ')}</span> : null}
-                      </span>
-                    </span>
-                    <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>
-                  </li>
-                  )
-                })}
-              </ul>
-            )}
-          </section>
         </>
       )}
 

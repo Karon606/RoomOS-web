@@ -190,14 +190,22 @@ const RELAY = 'app/(app)/rooms/RoomsClient.tsx'
     violations.push(`${TAB} — 구성 문자열을 만들어만 두고 메타 줄에 안 붙였다. 화면에 안 나오면 없는 것과 같다.`)
   }
 
-  // ⓗ 머리가 제 목록을 이름과 건수로 지목한다.
+  // ⓗ **머리가 센 목록이 머리 바로 밑에 온다**(운영자 재지적 2026-09-22).
+  //
+  // 종전 검사는 머리에 '발행 내역 …{issuedCount}' 를 적는 **안내 줄**을 요구했다. 그 요구가
+  // 곧 순서가 틀렸다는 자백이었다 — 자리가 맞으면 가리킬 말이 필요 없다. 1차 수정이 안내만
+  // 붙이고 순서를 안 바꿨고, 운영자가 같은 말을 두 번 했다. 이제 자리 자체를 본다.
   if (!tab.includes('발행 내역 ({issuedCount}건)')) {
     violations.push(`${TAB} — 발행 내역 제목에 건수가 없다. 머리의 '({issuedCount}건)' 과 같은 수라야 둘이 한 쌍으로 읽힌다.`)
   }
-  const headEnd = tab.indexOf('<section')
-  const head = headEnd < 0 ? tab : tab.slice(0, headEnd)
-  if (!head.split('\n').some(l => l.includes('발행 내역') && l.includes('{issuedCount}'))) {
-    violations.push(`${TAB} — 머리 합계가 제 목록('발행 내역')을 건수와 함께 지목하지 않는다. 머리 바로 밑이 미발행 목록이라 둘이 반대를 말한다.`)
+  {
+    const issuedAt = tab.indexOf('발행 내역 ({issuedCount}건)')
+    const candAt = tab.indexOf('발행 내역이 없는 입금 ({candidates.length}건)')
+    if (issuedAt < 0 || candAt < 0) {
+      violations.push(`${TAB} — 두 목록 제목 중 하나를 못 찾았다. 마크업이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+    } else if (issuedAt > candAt) {
+      violations.push(`${TAB} — 머리가 센 '발행 내역'보다 미발행 목록이 먼저 온다. 머리의 숫자와 바로 다음 목록이 반대를 말한다(신고 249f98cc).`)
+    }
   }
 }
 
