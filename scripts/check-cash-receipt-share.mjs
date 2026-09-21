@@ -17,10 +17,17 @@ import { readFileSync } from 'node:fs'
 
 const violations = []
 
-/** 줄 수를 보존하며 주석을 걷는다(`\s*` 는 m 플래그에서 줄바꿈을 먹는다). */
+/**
+ * 줄 수를 보존하며 주석을 걷는다(`\s*` 는 m 플래그에서 줄바꿈을 먹는다).
+ *
+ * **줄 끝 주석도 걷는다**(독립 검수 2026-09-22). 종전 정규식은 `^[^\S\n]*\/\/` 라 줄 **머리**의
+ * 주석만 지웠다. 그래서 무관한 코드 줄 끝에 `// 이용료 몫` 을 붙이기만 하면 낱말 존재 검사가
+ * 전부 통과했다 — 이 파일이 규율 1로 "주석을 먼저 걷는다"고 적어 놓고 절반만 구현한 자리다.
+ * URL 의 `//` 를 안 먹게 앞 글자가 `:` 가 아닐 때만 자른다.
+ */
 const strip = s => s
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
-  .replace(/^[^\S\n]*\/\/.*$/gm, '')
+  .replace(/(^|[^:\\])\/\/.*$/gm, (m, pre) => pre)
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, m => m.replace(/[^\n]/g, ''))
 
 const read = f => { try { return strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f} — 읽을 수 없다.`); return '' } }
@@ -143,10 +150,24 @@ for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSet
   if (!/CASH_RECEIPT_DEFAULT_INCL/.test(b)) {
     violations.push(`${SRV} ${fn} — 몫 기본값이 정본 상수가 아니다. 서버와 화면이 갈린다.`)
   }
+  // **정본을 부르되 결과를 안 쓰는 길을 막는다**(독립 검수 2026-09-22). 호출 존재만 보면
+  // `cashReceiptIssuableAmount(c) + c.deposit + c.cleaning` 도 통과하고, `c.deposit > 0` 을
+  // `!!c.deposit` 으로 적기만 해도 옛 조립이 되살아난다. 이 세 문에서 몫을 직접 만지는 길을
+  // 통째로 닫는다 — 몫 판단은 lib/cashReceipt 정본 한 자리에서만 한다.
+  for (const m of b.match(/c\.(deposit|cleaning|total)\b/g) ?? []) {
+    violations.push(`${SRV} ${fn} — 입금 구성을 직접 만진다(${m}). 발행 대상 금액은 정본 함수가 정한다.`)
+  }
 }
 {
   const n = (srv.match(/cashReceiptIssuableAmount\(/g) ?? []).length
   if (n < 3) violations.push(`${SRV} — cashReceiptIssuableAmount 호출이 ${n}곳뿐이다. 저장 세 문이 다 지나야 한다.`)
+  // **넷째 저장 문이 생기면 여기서 걸린다**(독립 검수 2026-09-22). 위 루프는 이름 셋을 박아
+  // 두므로, `syncCashReceiptLine` 을 부르는 새 액션을 만들면 검사 대상 밖에서 전액을 적을 수
+  // 있었다. 부르는 자리 수를 못박아 새 문이 생기면 이 그물부터 고치게 한다.
+  const calls = (srv.match(/\bawait syncCashReceiptLine\(/g) ?? []).length
+  if (calls !== 3) {
+    violations.push(`${SRV} — syncCashReceiptLine 을 부르는 자리가 ${calls}곳이다(기대 3). 저장 문이 늘었으면 위 이름 목록과 이 수를 함께 고친다.`)
+  }
 }
 
 // ── ⓒ 보증금 record 스탬프 규칙 ─────────────────────────────────────────
@@ -176,6 +197,27 @@ for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSet
     if (n < 2) {
       violations.push(`${SRV} ${fn} — 보증금 도장 정렬 호출이 ${n}곳뿐이다. 줄을 지우는 분기와 쓰는 분기 둘 다 맞춰야 도장과 줄이 안 갈린다.`)
     }
+    // **개수만 세면 인자를 뒤집어도 통과한다**(독립 검수 2026-09-22). 지우는 분기는 반드시
+    // `issuedAt: null, inclDeposit: false` 여야 하고, 쓰는 분기는 그 줄의 구성을 따라야 한다.
+    // 한쪽에 `inclDeposit: true` 를 박으면 줄은 이용료만인데 도장은 보증금에 남는다.
+    for (const call of b.match(/alignDepositReceiptStamp\(\{[^}]*\}/g) ?? []) {
+      if (/issuedAt:\s*null/.test(call) && !/inclDeposit:\s*false/.test(call)) {
+        violations.push(`${SRV} ${fn} — 줄을 내리면서 도장을 안 내린다: ${call.replace(/\s+/g, ' ').slice(0, 90)}`)
+      }
+      if (/inclDeposit:\s*true\b/.test(call)) {
+        violations.push(`${SRV} ${fn} — 도장 정렬에 inclDeposit: true 가 박혀 있다. 그 값은 줄의 구성에서 와야 한다.`)
+      }
+    }
+  }
+  // **줄을 내리는 문마다 도장도 내려야 한다**(독립 검수 2026-09-22). 종전에는 정렬이 두 함수에만
+  // 걸려 있어, 수납 이동·일괄 적용취소·수납 삭제 셋은 줄만 내리고 도장을 남겼다. 줄을 내리는
+  // 자리 수와 도장을 내리는 자리 수를 맞춰 새 경로가 생기면 여기서 걸리게 한다.
+  {
+    const drops = (srv.match(/cashReceipt\.update\([^)]*deletedAt: new Date\(\)/g) ?? []).length
+    const aligns = (srv.match(/alignDepositReceiptStamp\(\{[^}]*inclDeposit:\s*false[^}]*\}/g) ?? []).length
+    if (drops !== aligns) {
+      violations.push(`${SRV} — 발행 줄을 내리는 자리 ${drops}곳에 도장을 내리는 자리가 ${aligns}곳이다. 줄만 내리면 도장이 남아 화면이 '발행됨'을 계속 말한다.`)
+    }
   }
   const sib = fnBody(srv, 'export async function setCashReceiptIssued(')
   if (!sib) {
@@ -185,8 +227,15 @@ for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSet
     if (!find || !/isDeposit:\s*true/.test(find)) {
       violations.push(`${SRV} setCashReceiptIssued — 형제 조회가 isDeposit 을 안 읽는다. 보증금 형제를 가려낼 수 없다.`)
     }
-    if (!/t\.isDeposit/.test(sib)) {
-      violations.push(`${SRV} setCashReceiptIssued — 보증금 형제를 건너뛰지 않는다. 토글 한 번에 보증금에도 도장이 찍힌다.`)
+    // 값을 읽기만 하고 안 쓰는 길을 막는다 — `const x = t.isDeposit; void x` 로도 통과했다.
+    if (!/if \(t\.isDeposit\) continue/.test(sib)) {
+      violations.push(`${SRV} setCashReceiptIssued — 보증금 형제를 건너뛰는 continue 가 없다. 토글 한 번에 보증금에도 도장이 찍힌다.`)
+    }
+    // **건너뛴 뒤 남는 null 이 켜기를 지우기로 만든다**(독립 검수 2026-09-22). 형제가 전부
+    // 보증금이면 lastNext 가 null 인 채로 내려가 있던 줄을 소프트삭제하고, 화면에는 성공
+    // 토스트가 뜬다. 다른 저장 문 셋처럼 실패를 돌려줘야 한다.
+    if (!/issued && lastNext == null/.test(sib)) {
+      violations.push(`${SRV} setCashReceiptIssued — 이용료 형제가 없을 때의 가드가 없다. 켜기가 있던 줄을 지우고 성공이라 답한다.`)
     }
   }
 }
@@ -240,6 +289,12 @@ for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSet
     for (const c of cmp) {
       if (!/issuable/.test(c)) violations.push(`${HOME} — 기준액 비교의 좌변이 발행 대상 금액이 아니다: ${c}`)
     }
+    // **이름만 보면 그 값이 어디서 왔는지는 아무도 안 본다**(독립 검수 2026-09-22).
+    // `g.issuable = g.deposit + g.cleaning + g.rent` 로 되돌려도 좌변 이름은 그대로라 통과했다.
+    // 홈 블록이 정본 함수를 실제로 부르는지를 함께 본다.
+    if (!/cashReceiptIssuableAmount\(/.test(block)) {
+      violations.push(`${HOME} — 발행 대상 금액 정본(cashReceiptIssuableAmount)을 안 쓴다. issuable 이라는 이름만 남고 값은 전액일 수 있다.`)
+    }
   }
   if (!/groups: ReadonlyMap<string, \{ issuable: number \}>/.test(lib)) {
     violations.push(`${LIB} — liveMutedReceiptKeys 의 groups 가 issuable 을 안 든다. 끈 건 라벨이 전액으로 되돌아간다.`)
@@ -277,8 +332,14 @@ for (const kind of ['deposit', 'cleaning']) {
   if (/선택한 입금의 전액/.test(tab)) {
     violations.push(`${TAB} — 일괄 모달이 아직 '전액'을 적는다. 적히는 것은 이용료 몫이다.`)
   }
-  if (!/이용료 몫/.test(tab)) {
-    violations.push(`${TAB} — 일괄 모달이 무엇을 적는지 말하지 않는다.`)
+  // **낱말이 파일 어딘가에 있는지가 아니라 그 줄에 있는지를 본다**(독립 검수 2026-09-22).
+  // 종전에는 파일 전체 검사라, 모달 본문에서 빼도 다른 문장(InfoHint)에 같은 낱말이 있어
+  // 통과했다. 모달 본문은 '실제 발행은 홈택스' 로 시작하는 그 문단 하나다.
+  const modalBody = tab.split('\n').find(l => l.includes('실제 발행은 홈택스'))
+  if (!modalBody) {
+    violations.push(`${TAB} — 일괄 모달 본문 문단을 못 찾았다(침묵 통과 금지).`)
+  } else if (!/이용료 몫/.test(modalBody)) {
+    violations.push(`${TAB} — 일괄 모달 본문이 무엇을 적는지 말하지 않는다. 적히는 것은 이용료 몫이다.`)
   }
   // 후보 행 메타 — '포함'이 아니라 '제외'다. 큰 숫자에 그 몫이 안 들어 있기 때문이다.
   for (const [col, label, josa] of [['deposit', '보증금', '을'], ['cleaning', '청소비', '를']]) {

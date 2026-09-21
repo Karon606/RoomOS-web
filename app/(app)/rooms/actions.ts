@@ -1869,6 +1869,11 @@ export async function updatePayment(
           select: { id: true },
         })
         if (stale) await prisma.cashReceipt.update({ where: { id: stale.id }, data: { deletedAt: new Date() } })
+        // 줄이 옛 키에서 내려갔으니 그 키의 보증금 도장도 함께 내린다(독립 검수 2026-09-22).
+        await alignDepositReceiptStamp({
+          leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod,
+          issuedAt: null, inclDeposit: false,
+        })
       }
     }
 
@@ -1961,6 +1966,14 @@ export async function setCashReceiptIssued(
           })
       await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })
       lastNext = next
+    }
+    // **이용료 형제가 하나도 없으면 켤 수 없다**(독립 검수 2026-09-22). 위 루프가 보증금을 전부
+    // 건너뛰어 lastNext 가 null 로 남는데, 그대로 아래로 내려가면 `issuedAt: null` 이 되어 켜기가
+    // 도리어 **있던 줄을 지운다.** 그리고 화면에는 성공 토스트가 뜬다 — 519호 클래스(앱 합계만
+    // 조용히 줄고 홈택스에는 원 금액이 살아 있음) 그대로다. 다른 저장 문 셋이 같은 사실을 말하고
+    // 실패를 돌려주므로 이 문도 같은 말을 한다.
+    if (issued && lastNext == null) {
+      return { ok: false, error: '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.' }
     }
     // 발행 줄 — 켜면 만들고 끄면 지운다(소프트삭제라 적용취소가 되살린다).
     await touchCashReceiptIssuedAt({
@@ -2079,8 +2092,14 @@ async function alignDepositReceiptStamp(args: {
   leaseTermId: string; payDate: Date; payMethod: string | null
   issuedAt: Date | null; inclDeposit: boolean
 }): Promise<void> {
+  // 지워진 record 는 건드리지 않는다(독립 검수 2026-09-22). 소프트삭제 익스텐션은 읽기 연산에만
+  // 걸리고 updateMany 는 안 지난다 — 여기서 안 거르면 지워진 보증금 record 의 도장까지 함께
+  // 바뀌고, 삭제 적용취소로 되살리면 원래와 다른 값이 돌아온다.
   await prisma.paymentRecord.updateMany({
-    where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod, isDeposit: true },
+    where: {
+      leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod,
+      isDeposit: true, deletedAt: null,
+    },
     data: { cashReceiptIssuedAt: args.inclDeposit && args.issuedAt ? args.issuedAt : null },
   })
 }
@@ -2354,6 +2373,11 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const excluded = { count: 0, deposit: 0, cleaning: 0 }
   for (const [k, g] of byKey) {
     if (issuedKeys.has(k) || isCashReceiptCandidate(g)) continue
+    // **캡션이 '보증금·청소비만 받은 N건'이라 말하므로 실제로 그런 건만 센다**(독립 검수
+    // 2026-09-22). 후보 판정은 이용료 몫이 0 이하인 것을 전부 거르는데, 환불·조정이 남긴
+    // 음수 이용료 그룹(418호 2026-05-05 -80,000)에는 보증금도 청소비도 없다. 그것까지 세면
+    // 그 달 캡션이 통째로 거짓말이 된다. 종전처럼 말없이 뺀다.
+    if (g.deposit <= 0 && g.cleaning <= 0) continue
     excluded.count += 1
     excluded.deposit += Math.max(0, g.deposit)
     excluded.cleaning += Math.max(0, g.cleaning)
@@ -2516,6 +2540,12 @@ export async function batchUnsetCashReceipts(items: { leaseTermId: string; payYm
         select: { id: true },
       })
       if (line) await prisma.cashReceipt.update({ where: { id: line.id }, data: { deletedAt: new Date() } })
+      // 줄을 내렸으면 그 키의 보증금 도장도 함께 내린다(독립 검수 2026-09-22). 안 내리면
+      // 줄은 없는데 도장만 남아 화면이 '발행됨'을 계속 말한다.
+      await alignDepositReceiptStamp({
+        leaseTermId: it.leaseTermId, payDate: ymdToDbDate(it.payYmd), payMethod: it.payMethod,
+        issuedAt: null, inclDeposit: false,
+      })
     }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true }
@@ -2554,6 +2584,11 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
           select: { id: true },
         })
         if (line) await prisma.cashReceipt.update({ where: { id: line.id }, data: { deletedAt: new Date() } })
+        // 줄을 내렸으면 그 키의 보증금 도장도 함께 내린다(독립 검수 2026-09-22).
+        await alignDepositReceiptStamp({
+          leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod,
+          issuedAt: null, inclDeposit: false,
+        })
       }
     }
 

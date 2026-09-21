@@ -368,14 +368,20 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             }
           }
           // 발행은 저장이 끝난 뒤 **한 번**만 기록한다(2026-08-25). 종전에는 세 저장부가 각자
-          // 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다. 금액을 안 넘기면 서버가 이 결제의
-          // **이용료 몫**을 기본값으로 세운다 — 보증금·청소비는 받을 때 발행 대상이 아니다
-          // (운영자 확정 2026-09-21). 이용료 몫이 0 이면 서버가 그 사실을 말하고 줄을 안 만든다.
+          // 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다.
+          //
+          // **화면이 정한 금액·구성을 그대로 넘긴다**(독립 검수 2026-09-22). 이 갈래는
+          // `splitMode` 곧 보증금 잔여가 남은 계약의 수납 등록이라 예외가 아니라 기본 경로인데,
+          // 종전에는 둘을 안 넘겨 서버 기본값(이용료 몫)으로 떨어졌다. 같은 폼이 바로 위에
+          // 몫 체크 줄과 발행 금액 칸을 세우고 "예외로 넣으려면 위에서 체크해 주세요"라고
+          // 적어 두고는, 저장하면 그 값을 하나도 안 보던 자리다. 화면이 보여 준 숫자와
+          // 국세청에 올라갈 숫자가 갈린다.
           if (cashReceiptIssued) {
             const crRes = await setPaymentCashReceipt({
               leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
               payDate: payDateVal, payMethod,
               issued: true, issuedDate: cashReceiptIssuedDate,
+              amount: crShownAmount, incl: crIncl,
             })
             if (!crRes.ok) pushToast('error', crRes.error)
           }

@@ -336,7 +336,7 @@ export function CashReceiptTab({
                         {fmtRoomNo(r.roomNo)} {r.tenantName}
                       </span>
                       <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span style={{ color: 'var(--warning-fg)' }}> · {incl.join(' · ')}</span> : null}
+                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]"> · {incl.join(' · ')}</span> : null}
                       </span>
                     </span>
                     <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>
@@ -382,14 +382,12 @@ export function CashReceiptTab({
           </div>
           {/* 켜기 전 경고가 아니라 **제외 안내**다(운영자 확정 2026-09-21). 이 모달은 이제
               이용료 몫만 적으므로 "보증금을 넣으려면 확인하라"가 아니라 "안 넣는다"가 사실이다.
-              행별 체크칸은 세우지 않는다 — 예외는 드물고, 그 자리는 수납 내역의 금액 칸이다. */}
-          {chosenExcluded > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              보증금·청소비 몫 합계 {fmtWon(chosenExcluded)}은 이 기록에 넣지 않습니다. 넣어야 하면 기록 뒤 그 입금의 수납 내역에서 금액을 고쳐 주세요.
-            </p>
-          )}
+              행별 체크칸은 세우지 않는다 — 예외는 드물고, 그 자리는 수납 내역의 금액 칸이다.
+              **한 문단이다**(독립 검수 2026-09-22). 종전에는 제외 안내와 본문이 '넣지 않습니다'
+              와 '수납 내역에서 금액을 고치…'를 각각 되풀이해, 10.5px 마이크로카피가 날짜 칸
+              아래로 아홉 줄 가까이 쌓였다. 금액만 조건부로 끼운다. */}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            선택한 입금의 이용료 몫을 위 발행일로 기록합니다. 보증금·청소비 몫은 넣지 않습니다. 실제 발행은 홈택스나 결제 서비스에서 하고, 여기는 그 사실을 적는 자리입니다. 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고칠 수 있습니다. 처리 후 토스트의 적용취소로 되돌릴 수 있습니다.
+            선택한 입금의 이용료 몫을 위 발행일로 기록합니다. 보증금·청소비 몫{chosenExcluded > 0 ? ` 합계 ${fmtWon(chosenExcluded)}` : ''}은 넣지 않습니다. 실제 발행은 홈택스나 결제 서비스에서 하고, 여기는 그 사실을 적는 자리입니다. 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고칠 수 있습니다. 처리 후 토스트의 적용취소로 되돌릴 수 있습니다.
           </p>
         </div>
       </Modal>
