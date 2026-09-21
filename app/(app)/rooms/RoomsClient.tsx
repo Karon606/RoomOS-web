@@ -36,6 +36,7 @@ type CashReceiptCandidate = {
 type CashReceiptIssued = {
   roomNo: string; tenantName: string; amount: number
   issuedYmd: string; payYmd: string; payMethod: string | null
+  inclDeposit: boolean; inclCleaning: boolean
 }
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'
@@ -1018,7 +1019,10 @@ export default function RoomsClient({
                 <span className="block">현금영수증은 발행한 날이 속한 달에 잡힙니다. 홈택스 자료와 맞추기 위한 축입니다. 받은 날과 다른 날 발행해도 되고, 그때는 발행한 달 합계에 들어갑니다.</span>
                 <span className="block mt-1.5">카드는 받은 날(입금일)이 속한 달에 잡힙니다. 매출전표가 결제 시점에 성립하기 때문입니다. 신용카드와 결제선생이 함께 잡히고, 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않아 두 값은 겹치지 않습니다.</span>
               <span className="block mt-1.5">보증금도 두 합계에 들어갑니다. 돌려줄 돈이지만 카드로 받으면 카드사에, 현금영수증을 끊었으면 국세청에 그대로 남기 때문입니다. 청구를 조정한 전표는 받은 돈이 아니라 빠집니다.</span>
-                <span className="block mt-1.5">아래 목록과 위의 청구액은 귀속월 기준이라 이 두 합계와 다를 수 있습니다. 지난달 말에 받아 이번 달 이용료로 잡힌 돈이 그런 경우입니다. 한 건씩 대조하려면 환경설정 &gt; 데이터 점검 &gt; 발생주의 데이터 진단을 보세요.</span>
+                {/* 같은 페이지에 답이 있는데 밖을 먼저 가리키던 줄이다(운영자 신고 249f98cc).
+                    현금영수증 건별 목록은 바로 옆 탭에 있다. 옆 탭을 먼저 대고, 그 목록이 못 답하는
+                    대조(카드·귀속월 어긋남)만 환경설정으로 넘긴다 — 안내를 지우는 게 아니라 순서다. */}
+                <span className="block mt-1.5">아래 목록과 위의 청구액은 귀속월 기준이라 이 두 합계와 다를 수 있습니다. 지난달 말에 받아 이번 달 이용료로 잡힌 돈이 그런 경우입니다. 현금영수증은 현금영수증 탭의 발행 내역에서 한 건씩 봅니다. 그 밖의 건별 대조는 환경설정 &gt; 데이터 점검 &gt; 발생주의 데이터 진단을 보세요.</span>
                 <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식돼도 합계에는 결제 전액이 잡힙니다. 발행 표시를 켜고 끌 때도 그 결제의 모든 달이 함께 바뀝니다.</span>
               </InfoHint>
             </p>

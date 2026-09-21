@@ -2189,10 +2189,10 @@ export async function setPaymentCashReceipt(input: {
 }
 
 /**
- * 현금영수증 탭 데이터 — 후보(미발행 입금)와 발행 기록 두 목록 (2026-08-25, 3단계).
+ * 현금영수증 탭 데이터 — 후보(미발행 입금)와 발행 내역 두 목록 (2026-08-25, 3단계).
  *
  * **축이 둘이다.** 후보는 입금일 축일 수밖에 없다(아직 발행 안 했으니 발행일이 없다).
- * 발행 기록은 발행일 축이고 상단 합계와 같은 필터를 지난다. 그래서 화면이 각 목록에
+ * 발행 내역은 발행일 축이고 상단 합계와 같은 필터를 지난다. 그래서 화면이 각 목록에
  * 축 이름을 상시 텍스트로 적는다.
  *
  * 후보에는 **ExtraIncome 청소비 행도 넣는다.** 단기 입실처럼 청소비만 따로 받은 입금은
@@ -2200,7 +2200,15 @@ export async function setPaymentCashReceipt(input: {
  */
 export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }[]
-  issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null }[]
+  /**
+   * 발행 내역 행. **무엇을 포함했나까지 싣는다**(운영자 신고 249f98cc) — 금액만 보내면
+   * 화면이 '왜 35만인가'를 못 말한다(schema.prisma CashReceipt 의 incl* 주석이 적는 존재 이유).
+   *
+   * 금액이 아니라 **불리언**인 것은 표가 그렇게 저장하기 때문이다. 발행 금액은 받은 금액과
+   * 다를 수 있어(40만 받고 35만 발행) 수납 쪽 보증금·청소비 금액을 여기 붙이면 그 원 단위가
+   * 이 발행에 들었다는 거짓이 된다. 저장한 만큼만 말한다.
+   */
+  issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null; inclDeposit: boolean; inclCleaning: boolean }[]
   /** 알림을 수동으로 끈 입금 — 후보와 같은 모양에 끈 날짜가 붙는다. */
   muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number; mutedAt: string }[]
 }> {
@@ -2237,6 +2245,9 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
       where: { propertyId, deletedAt: null },
       select: {
         leaseTermId: true, payDate: true, payMethod: true, amount: true, issuedAt: true,
+        // 구성 두 칸. inclRent 는 안 싣는다 — 후보 목록이 이용료를 **무표지 기본값**으로 두고
+        // 보증금·청소비만 적는 문법이라(:147), 발행 행만 셋을 적으면 같은 탭에서 두 문법이 된다.
+        inclDeposit: true, inclCleaning: true,
         tenant: { select: { name: true } },
         leaseTerm: { select: { room: { select: { roomNo: true } } } },
       },
@@ -2285,6 +2296,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
     .map(l => ({
       roomNo: l.leaseTerm.room!.roomNo, tenantName: l.tenant.name, amount: l.amount,
       issuedYmd: kstYmdStr(l.issuedAt), payYmd: kstYmdStr(l.payDate), payMethod: l.payMethod,
+      inclDeposit: l.inclDeposit, inclCleaning: l.inclCleaning,
     }))
     .sort((a, b) => b.issuedYmd.localeCompare(a.issuedYmd))
 

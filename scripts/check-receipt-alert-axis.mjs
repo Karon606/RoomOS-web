@@ -1,4 +1,7 @@
-// 현금영수증 기한 알림의 자리 판정이 흩어지는 것을 잡는 감지망. 읽기 전용, 위반 시 exit 1.
+// 현금영수증 화면의 축과 어휘를 지키는 감지망. 읽기 전용, 위반 시 exit 1.
+//
+// 파일 이름은 기한 알림에서 출발했지만 ⓔ 부터는 화면 어휘까지 본다 — ⓔ 가 이미 저장소 전역을
+// 훑는 문자열 규칙이라, 같은 결의 규칙을 새 파일로 흩기보다 여기 붙인다.
 //
 // 왜 필요한가. 이 알림은 자리가 셋이다(임박·자진발급 감경 창·기한 지남). 종전에는 대시보드가
 // `left <= 2` 인라인 하나로 전부를 갈랐고, 자리가 늘자 제목과 라벨이 서로 반대말을 했다
@@ -13,6 +16,18 @@
 //      큰 건부터 화면에서 빠진다(운영자가 철회한 '자연 소멸'의 뒷문, 2026-09-03).
 //   ⓔ 사용자에게 보이는 문자열에 '§' 를 쓰지 않는다. 그것은 가이드·노트의 내부 표기 관습이고
 //      한국 법령 인용은 조문식('제81조의9')이다. 운영자가 세무 담당자에게 그대로 읽어 줄 문구다.
+//   ⓕ 목록 제목(h1~h6)에 '기록' 이 안 선다. 2026-09-17 운영자 결정(b233a72f)이 어휘를 갈랐다 —
+//      '기록' = 버튼 동사, '이력'·'내역' = 목록 명사. 그때 전수가 현금영수증 탭을 놓쳐 한 화면에서
+//      제목 '발행 기록'과 버튼 '일괄 발행 기록'이 같은 낱말을 썼고, 운영자가 다시 지적했다
+//      (신고 249f98cc). 손으로 센 전수는 또 놓친다.
+//      보는 범위는 h1~h6 **엘리먼트**다. Modal·EmptyState 의 title 프로프는 안 본다 — 이 저장소의
+//      모달 제목은 대개 동작 이름('일괄 발행 기록')이라 같은 자로 재면 정상을 위반으로 만든다.
+//      면제 명단을 두지 않는다. 걸린 자리는 낱말을 고치거나, 왜 예외인지를 여기 적을 일이다.
+//   ⓖ 현금영수증 발행 내역 행이 **무엇을 발행했나**를 말한다(신고 249f98cc). 같은 탭 후보 목록은
+//      이미 '보증금 … 포함 · 청소비 … 포함'을 적는데 발행 목록만 침묵했다. 배선 넷을 다 본다 —
+//      서버 select · 반환 타입 · 중계 타입 · 실제로 찍는 줄. 낱말만 보면 select 를 지워도 통과한다.
+//   ⓗ 머리 합계가 제 목록을 이름과 건수로 지목한다. '이 달 발행 16건' 바로 밑에 '발행 내역이
+//      없는 입금 15건'이 깔려 머리와 다음 목록이 반대를 말하던 자리다(신고 249f98cc).
 //
 // 실행: node scripts/check-receipt-alert-axis.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -99,7 +114,86 @@ for (const f of walk('app', walk('components', walk('lib', [])))) {
   })
 }
 
-console.log(`[현금영수증 알림 축] 위반 ${violations.length}건`)
+// ⓕ 목록 제목(h1~h6)에 '기록' 금지 — 앱 코드 전역.
+//
+// 제목은 이 저장소에서 늘 한 줄에 선다(h 여는 태그와 닫는 태그가 같은 줄). 여러 줄로 쓴 제목이
+// 생기면 이 그물이 조용히 못 보게 되므로, 그때는 아래 추출을 고쳐야 한다.
+// 제목 안에 박힌 InfoHint 는 **제목이 아니라 설명 모달**이라 먼저 걷어낸다. 안 걷으면 설명
+// 본문의 '점검: 실제 수량을 세서 기록' 같은 문장이 제목으로 읽혀 정상 셋이 붉게 섰다(실측).
+const HEADING = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/g
+const dropHints = s => s.replace(/<InfoHint[\s\S]*?<\/InfoHint>/g, ' ')
+let titleFiles = 0
+for (const f of walk('app', walk('components', []))) {
+  const src = stripComments(readFileSync(f, 'utf8'))
+  titleFiles += 1
+  for (const m of src.matchAll(HEADING)) {
+    const label = dropHints(m[1])
+    if (!label.includes('기록')) continue
+    const lineNo = src.slice(0, m.index).split('\n').length
+    violations.push(`${f}:${lineNo} 목록 제목에 '기록' 이 있다: ${label.replace(/\s+/g, ' ').trim().slice(0, 40)} — 제목은 명사('이력'·'내역'), '기록'은 버튼 동사다(2026-09-17 운영자 결정).`)
+  }
+}
+
+// ⓖ·ⓗ 현금영수증 탭 — 발행 내역 행의 구성 표기와 머리 합계의 지목.
+const TAB = 'components/rooms/CashReceiptTab.tsx'
+const SRV = 'app/(app)/rooms/actions.ts'
+const RELAY = 'app/(app)/rooms/RoomsClient.tsx'
+{
+  const tab = stripComments(readFileSync(TAB, 'utf8'))
+  const srvAll = stripComments(readFileSync(SRV, 'utf8'))
+  const relay = stripComments(readFileSync(RELAY, 'utf8'))
+
+  // ⓖ-1 서버가 구성 칸을 실어 온다. 함수 몸통만 본다 — 다른 조회의 select 에 걸리면 헛통과한다.
+  const fnStart = srvAll.indexOf('export async function getCashReceiptTabRows')
+  const fnEnd = srvAll.indexOf('\nfunction readAlertMuteRows', fnStart)
+  const srv = fnStart < 0 ? '' : srvAll.slice(fnStart, fnEnd < 0 ? undefined : fnEnd)
+  if (!srv) {
+    violations.push(`${SRV} — getCashReceiptTabRows 를 못 찾았다. 구조가 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  } else {
+    for (const col of ['inclDeposit', 'inclCleaning']) {
+      if (!new RegExp(`${col}:\\s*true`).test(srv)) {
+        violations.push(`${SRV} — getCashReceiptTabRows 의 cashReceipt select 에 ${col} 가 없다. 화면이 '왜 이 금액인가'를 못 말한다.`)
+      }
+      // 실어만 오고 안 돌려주면 화면에 닿지 않는다.
+      if (!new RegExp(`${col}:\\s*l\\.${col}`).test(srv)) {
+        violations.push(`${SRV} — ${col} 가 issued 행으로 안 나간다. select 만 남고 길이 끊겼다.`)
+      }
+    }
+  }
+
+  // ⓖ-2 중계 타입이 그 칸을 들고 간다.
+  const relayType = relay.slice(relay.indexOf('type CashReceiptIssued'), relay.indexOf('type CashReceiptIssued') + 300)
+  for (const col of ['inclDeposit', 'inclCleaning']) {
+    if (!relayType.includes(col)) {
+      violations.push(`${RELAY} — CashReceiptIssued 타입에 ${col} 가 없다. 서버가 실어도 탭까지 안 간다.`)
+    }
+  }
+
+  // ⓖ-3 화면이 후보 목록과 **같은 문법**으로 찍는다. 낱말만이 아니라 그 값이 찍는 줄에 닿는지까지.
+  for (const [col, label] of [['inclDeposit', '보증금 포함'], ['inclCleaning', '청소비 포함']]) {
+    if (!new RegExp(`r\\.${col}\\s*\\?\\s*'${label}'`).test(tab)) {
+      violations.push(`${TAB} — 발행 내역 행이 ${col} 를 '${label}'로 안 찍는다. 후보 목록(:147)과 같은 문법이어야 한다.`)
+    }
+  }
+  const metaLine = tab.split('\n').find(l => l.includes('발행 {fmtMD(r.issuedYmd)}'))
+  if (!metaLine) {
+    violations.push(`${TAB} — 발행 내역 행의 메타 줄을 못 찾았다. 마크업이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  } else if (!/incl\.join\(/.test(metaLine)) {
+    violations.push(`${TAB} — 구성 문자열을 만들어만 두고 메타 줄에 안 붙였다. 화면에 안 나오면 없는 것과 같다.`)
+  }
+
+  // ⓗ 머리가 제 목록을 이름과 건수로 지목한다.
+  if (!tab.includes('발행 내역 ({issuedCount}건)')) {
+    violations.push(`${TAB} — 발행 내역 제목에 건수가 없다. 머리의 '({issuedCount}건)' 과 같은 수라야 둘이 한 쌍으로 읽힌다.`)
+  }
+  const headEnd = tab.indexOf('<section')
+  const head = headEnd < 0 ? tab : tab.slice(0, headEnd)
+  if (!head.split('\n').some(l => l.includes('발행 내역') && l.includes('{issuedCount}'))) {
+    violations.push(`${TAB} — 머리 합계가 제 목록('발행 내역')을 건수와 함께 지목하지 않는다. 머리 바로 밑이 미발행 목록이라 둘이 반대를 말한다.`)
+  }
+}
+
+console.log(`[현금영수증 화면 축] 제목 훑은 파일 ${titleFiles}개 · 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 if (violations.length > 15) console.error(`  ... 외 ${violations.length - 15}건`)
 process.exit(violations.length > 0 ? 1 : 0)
