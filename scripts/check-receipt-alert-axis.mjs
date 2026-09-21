@@ -206,6 +206,11 @@ const RELAY = 'app/(app)/rooms/RoomsClient.tsx'
     } else if (issuedAt > candAt) {
       violations.push(`${TAB} — 머리가 센 '발행 내역'보다 미발행 목록이 먼저 온다. 머리의 숫자와 바로 다음 목록이 반대를 말한다(신고 249f98cc).`)
     }
+    // 두 목록을 세그먼트로 갈랐으므로(운영자 결정 2026-09-22) **처음 보이는 쪽**도 못박는다.
+    // 기본을 미발행으로 돌리면 머리 합계와 첫 화면이 다시 반대를 말한다.
+    if (!/useState<'issued' \| 'open'>\('issued'\)/.test(tab)) {
+      violations.push(`${TAB} — 목록 스위치의 기본이 발행 쪽이 아니다. 머리 합계가 세는 목록이 먼저 보여야 한다.`)
+    }
   }
 }
 

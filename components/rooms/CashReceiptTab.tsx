@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useCanEdit } from '@/components/RoleContext'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
@@ -65,6 +66,11 @@ export function CashReceiptTab({
   const todayYmd = kstYmdStr()
   // 끈 입금은 기본 접힘 — 끈 것은 조용한 것이 정상이다(홈 '끈 알림'과 같은 처방).
   const [mutedOpen, setMutedOpen] = useState(false)
+  // **한 번에 한 목록만 보인다**(운영자 결정 2026-09-22). 두 목록을 위아래로 쌓으면 뒤엣것을
+  // 보려고 앞엣것 전부를 지나야 한다 — 발행 17줄 + 미발행 13줄이면 휴대폰에서 세 화면이다.
+  // 기본은 발행 쪽이다. 머리 합계가 그 목록을 세고, 이 탭에서 운영자가 먼저 찾은 것이 그것이다
+  // (신고 249f98cc 와 2026-09-22 재지적). 끈 입금은 미발행의 한 갈래라 그쪽에만 선다.
+  const [seg, setSeg] = useState<'issued' | 'open'>('issued')
   const [pending, startTransition] = useTransition()
 
   const keyOf = (c: Candidate) => `${c.leaseTermId}|${c.payYmd}|${c.payMethod}`
@@ -75,6 +81,9 @@ export function CashReceiptTab({
   const chosenExcluded = chosen.reduce((a, c) => a + Math.max(0, c.deposit) + Math.max(0, c.cleaning), 0)
 
   const exitSelect = () => { setSelectMode(false); setPicked(new Set()) }
+  // 목록을 갈아타면 고른 것을 버린다 — 안 보이는 목록의 선택이 살아 있으면 하단 바의 건수가
+  // 화면에 없는 것을 센다(적용취소가 가리킬 대상도 안 보인다).
+  const pickSeg = (next: 'issued' | 'open') => { if (next !== seg) exitSelect(); setSeg(next) }
   const toggle = (c: Candidate) => {
     const k = keyOf(c)
     setPicked(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n })
@@ -115,7 +124,7 @@ export function CashReceiptTab({
           <span className="num"> ({issuedCount}건)</span>
           <InfoHint title="현금영수증 탭">
             <span className="block">합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다.</span>
-            <span className="block mt-1.5">아래 첫 목록이 그 합계를 이루는 발행 내역입니다. 그 아래는 이 달에 받은 입금 중 아직 발행 내역이 없는 것이고, 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
+            <span className="block mt-1.5">아래 스위치로 두 목록을 갈아 봅니다. 발행 쪽이 이 합계를 이루는 목록이고, 미발행 쪽은 이 달에 받은 입금 중 아직 발행 내역이 없는 것입니다. 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
             <span className="block mt-1.5">카드 결제는 매출전표가 증빙을 대신해 여기 없습니다.</span>
             <span className="block mt-1.5">보증금과 청소비는 받을 때 발행 대상이 아니라 후보에 세우지 않고, 함께 받은 입금은 이용료 몫만 발행 금액으로 잡습니다.</span>
             <span className="block mt-1.5">발행 내역에 &lsquo;보증금 포함&rsquo;·&lsquo;청소비 포함&rsquo;이 뜨면 이 사업장 규칙의 예외입니다.</span>
@@ -142,6 +151,18 @@ export function CashReceiptTab({
         />
       ) : (
         <>
+          <SegmentedControl<'issued' | 'open'>
+            size="sm"
+            ariaLabel="현금영수증 목록"
+            value={seg}
+            onChange={pickSeg}
+            options={[
+              { value: 'issued', label: `발행 ${issuedCount}건` },
+              { value: 'open', label: `미발행 ${candidates.length}건` },
+            ]}
+          />
+
+          {seg === 'issued' && (
           <section className="space-y-2">
             <div>
               {/* 제목은 **명사구**다(운영자 결정 2026-09-17, 커밋 b233a72f — `기록` = 버튼 동사,
@@ -193,6 +214,10 @@ export function CashReceiptTab({
               </ul>
             )}
           </section>
+          )}
+
+          {seg === 'open' && (
+          <>
 
           <section className="space-y-2">
             <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -342,6 +367,8 @@ export function CashReceiptTab({
                 </>
               )}
             </section>
+          )}
+          </>
           )}
         </>
       )}
