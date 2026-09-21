@@ -31,7 +31,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css">
+<!-- Pretendard — 버전을 못박는다(운영자 결정 2026-09-22). 종전에는 태그 없이 기본 브랜치
+     최신을 따라가서, 상대 저장소가 파일을 옮기면 공개 사이트 본문 글꼴이 조용히 시스템
+     글꼴로 떨어졌다. 앱(app/layout.tsx)이 쓰는 v1.3.9 와 같은 버전이다.
+     자막판을 쓴다 — 전체판은 2,057,688B 한 덩어리라 히어로 첫 화면을 막는다. 자막판은
+     unicode-range 로 쪼개 쓰는 범위만 내려온다(실측: 한국어 2,075,440B -> 385,412B,
+     일본어 3,039,692B -> 1,522,076B). 글꼴 자체와 자형은 같다. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
 <script defer src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
 <script defer src="/_vercel/insights/script.js"></script>
