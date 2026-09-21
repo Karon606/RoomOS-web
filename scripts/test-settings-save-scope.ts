@@ -56,9 +56,11 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 
 /** 탭별 담당 칼럼 — 확정 재편 지도(2026-08-19 운영자 승인)를 그대로 옮긴 것. */
 const OWNED: Record<string, string[]> = {
-  기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
+  // 입금 계좌번호는 2026-09-22 에 계약서·서류에서 기본정보로 **되돌아왔다**. 서류만 쓰는
+  // 값이 아니라서다 — 상담도구·미납 문자 {계좌번호}·납부 확인서가 같은 칸을 읽는다.
+  기본정보:    ['name', 'address', 'phone', 'bankAccount', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
-  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum', 'roomScheduleAddendum'],
+  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum', 'roomScheduleAddendum'],
   웹사이트:    ['publicSlug'],
 }
 
@@ -70,6 +72,7 @@ const fd = (pairs: [string, string][]) => {
 }
 const BASIC_FORM: [string, string][] = [
   ['name', '더스테이 제기역점'], ['address', '서울시 동대문구 제기동 1-1'], ['phone', '02-000-0000'],
+  ['bankAccount', '카카오뱅크 3333-01-2345678 (홍길동)'],
   ['replyToEmail', 'contact@thestay.kr'], ['mailFromLocal', 'thestay.jegi'],
   ['mailCopyToSelf', '0'], ['mailCopyToSelf', '1'],
   ['acquisitionDate', '2026-03-01'], ['prevOwnerCutoffDate', '2026-02-28'], ['contactLeadDays', '14'], ['checkoutLeadShortDays', '7'], ['checkoutLeadMonths', '1'],
@@ -82,7 +85,7 @@ const PRICING_FORM: [string, string][] = [
 ]
 const DOC_FORM: [string, string][] = [
   ['multiContractVersions', '0'],
-  ['defaultAreaM2', '13.2'], ['bankAccount', '카카오뱅크 3333-01-2345678 (홍길동)'],
+  ['defaultAreaM2', '13.2'],
   ['disposalEnabled', '0'], ['disposalEnabled', '1'],
   ['disposalTitle', '잔여 소지품 임의처분 동의서'], ['disposalDays', '7'], ['disposalBody', '본문'],
   ['subLeaseTitle', '추가 호실 특약(보관 용도)'], ['subLeaseItems', '가'],
@@ -120,8 +123,17 @@ for (const [tab, form] of TAB_FORMS) {
   const after = apply(patch)
   eq('기본정보에서 이름만 고치면 이름만 바뀐다', ALL_COLUMNS.filter(c => !same(BEFORE[c], after[c])), ['name'])
   eq('그때 소개 페이지 주소는 그대로', after.publicSlug, 'thestayjegi')
-  eq('그때 입금 계좌번호도 그대로', after.bankAccount, '카카오뱅크 3333-01-2345678 (홍길동)')
+  eq('그때 영업장 전용면적도 그대로', after.defaultAreaM2, 13.2)
   eq('그때 임의처분 동의서 본문도 그대로', (after.disposalConsentTemplate as { body: string }).body, '본문')
+}
+// 반대 방향 — 계좌번호가 기본정보로 돌아왔으니(2026-09-22) 서류 탭 저장이 그 칸을 건드리면 안 된다.
+{
+  const patch = buildPropertySettingsPatch(fd(DOC_FORM.map(([k, v]) =>
+    k === 'defaultAreaM2' ? ['defaultAreaM2', '20.5'] as [string, string] : [k, v] as [string, string])), { isOwner: true })
+  const after = apply(patch)
+  eq('서류 탭에서 면적만 고치면 면적만 바뀐다', ALL_COLUMNS.filter(c => !same(BEFORE[c], after[c])), ['defaultAreaM2'])
+  eq('그때 입금 계좌번호는 그대로', after.bankAccount, '카카오뱅크 3333-01-2345678 (홍길동)')
+  ok('서류 탭 패치에 계좌번호가 아예 안 실린다', !('bankAccount' in patch))
 }
 
 // ── ③ 체크박스 해제가 저장된다(hidden '0' 짝) ─────────────────────────────────
@@ -152,7 +164,7 @@ for (const [tab, form] of TAB_FORMS) {
   // 뒤집히면 안 된다. 체크박스는 소유자에게만 렌더되지만 서버가 역할을 다시 본다.
   const docPatch = buildPropertySettingsPatch(fd([...DOC_FORM, ['multiContractVersions', '1']]), { isOwner: false })
   ok('비소유자 저장에 multiContractVersions 이 없다', !('multiContractVersions' in docPatch))
-  eq('그래도 나머지 서류 칼럼은 저장된다', docPatch.bankAccount, '카카오뱅크 3333-01-2345678 (홍길동)')
+  eq('그래도 나머지 서류 칼럼은 저장된다', docPatch.defaultAreaM2, 13.2)
 }
 
 // ── ⑤ 옛 폼(캐시된 번들)이 전 필드를 통째로 보내도 종전대로 저장된다 ────────────────

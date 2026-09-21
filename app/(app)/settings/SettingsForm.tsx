@@ -984,6 +984,23 @@ export default function SettingsForm({
               <label className="text-xs font-medium text-[var(--warm-mid)]">대표 연락처</label>
               <PhoneInput name="phone" defaultValue={property?.phone ?? ''} />
             </div>
+            {/* 입금 계좌번호 — **기본정보로 되돌렸다**(운영자 결정 2026-09-22).
+                2026-08-19 IA 2단계가 이 칸을 '서류 자동채움 값'으로 묶어 계약서·서류 탭에 넣었다.
+                그런데 서류만 쓰는 값이 아니다. 상담도구가 이 칸을 읽고(app/(app)/consultInfo.ts),
+                미납 안내 문자·메일의 {계좌번호} 가 이 칸이며, 납부 확인서의 납부방법 칸도 이 칸이다.
+                운영자 원문 — "입금계좌번호는 상단 어딘가에 따로 빼는게 좋을듯 해. 눈에 띄어야하고
+                이건 서류 자동 입력값만으로 사용하는 것도 아니니까". 실제로 고치러 왔다가 못 찾은
+                일이 있었다. 이름·주소·연락처 다음이 제자리다 — 영업장을 말하는 값들의 끝이다. */}
+            <div className="space-y-1.5">
+              <span id="dv-bank" className="scroll-mt-4" />
+              <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
+              <p className="text-xs text-[var(--warm-muted)]">상담도구·미납 안내 문자의 {'{계좌번호}'}·입실료 납부 확인서가 모두 이 칸을 씁니다. 은행·계좌번호·예금주까지 적어 주세요.</p>
+              <input type="text" name="bankAccount"
+                defaultValue={property?.bankAccount ?? ''}
+                placeholder="예: 카카오뱅크 3333-01-2345678 (홍길동)"
+                autoComplete="off"
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+            </div>
             {/* 서류 메일 주소 두 칸 — 나가는 방향(보내는 주소) 다음 돌아오는 방향(답장 받을 주소)이다.
                 도메인은 인증 때문에 고정이고 앞부분만 영업장 몫이다(lib/mailFrom).
                 문안은 계약서·서류 탭의 '서류 메일 문안' 카드에서 고친다. */}
@@ -1073,11 +1090,17 @@ export default function SettingsForm({
                 상자 둘이 나란히 서면 안내가 카드의 주인이 되기 때문이다.
                 바탕은 --cream-soft — 이 줄은 카드(--cream) 안이라 다크에서 --canvas(#000)를 쓰면
                 카드에 검은 구멍이 뚫린다(§28, 중첩 패널은 --cream-soft).
-                TODO(제거): 첫 줄은 2026-09 중순, 나머지 셋은 2026-09 하순. 한 번에 걷어도 된다. */}
+
+                **걷어낼 기한을 안 둔다**(운영자 지적 2026-09-22). 종전에는 "2026-09 하순에 제거"
+                라는 메모가 붙어 있었다. 이사 안내는 한 달이면 제 일을 다 한다는 일반론이었는데,
+                이 상자가 폼 맨 끝 저장 버튼 바로 위라 위에서부터 훑으면 그냥 지나친다. 실제로
+                안내가 있는데도 계좌번호를 못 찾은 일이 났다. 제 일을 못 하고 있는 안내를 기한이
+                됐다고 걷으면 더 나빠진다. 걷을 때는 날짜가 아니라 "이제 아무도 옛 자리를 안 찾는다"
+                를 보고 걷는다. 계좌번호 줄이 빠진 것은 그 값을 기본정보로 되돌렸기 때문이다. */}
             <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-0.5" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
               <p>소개 페이지 주소는 <span className="font-semibold text-[var(--warm-dark)]">웹사이트 탭</span>으로 옮겼습니다.</p>
               <p>기본 보증금·청소비·예약금·위약금·환불 규정은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책 탭</span>으로 옮겼습니다.</p>
-              <p>영업장 전용면적·입금 계좌번호·잔여 소지품 임의처분 동의서는 <span className="font-semibold text-[var(--warm-dark)]">계약서·서류 탭</span>으로 옮겼습니다.</p>
+              <p>영업장 전용면적·잔여 소지품 임의처분 동의서는 <span className="font-semibold text-[var(--warm-dark)]">계약서·서류 탭</span>으로 옮겼습니다.</p>
               <p>요청 카테고리는 <span className="font-semibold text-[var(--warm-dark)]">분류 관리 탭</span>으로 옮겼습니다.</p>
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
@@ -2370,7 +2393,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">서류 자동채움 값</h3>
           <Btn type="submit" variant="primary" size="sm" disabled={saving}>{saving ? '저장 중…' : '저장'}</Btn>
         </div>
-        <p className="text-xs text-[var(--warm-muted)] -mt-1">서류를 뽑을 때 저절로 채워지는 값입니다. 기본정보 탭에서 옮겨 왔습니다.</p>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">서류를 뽑을 때 저절로 채워지는 값입니다.</p>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>
           <p className="text-xs text-[var(--warm-muted)]">영업장(호실)의 전용면적입니다. 실거주 확인서의 면적 칸에 자동으로 들어갑니다. (호실별 측정 면적이 아닌 영업장 기준 면적)</p>
@@ -2386,14 +2409,21 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
             )}
           </div>
         </div>
+        {/* 입금 계좌번호는 기본정보 탭이 쥔다(운영자 결정 2026-09-22) — 서류만 쓰는 값이 아니라서다.
+            여기서는 **납부 확인서에 무엇이 박히는지**만 보여 주고 고치는 문은 원천으로 보낸다.
+            값을 아예 안 보여 주면 이 카드가 '서류에 들어가는 값 모음'이라는 말을 못 지킨다. */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
-          <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
-          <input type="text" name="bankAccount"
-            defaultValue={property?.bankAccount ?? ''}
-            placeholder="예: 카카오뱅크 3333-01-2345678 (홍길동)"
-            autoComplete="off"
-            className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+          <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 이 값이 들어갑니다. 상담도구·미납 안내 문자도 같은 칸을 써서 기본정보 탭에서 고칩니다.</p>
+          <div className="flex items-center justify-between gap-2 rounded-sm px-3 py-2.5 bg-[var(--canvas)] border border-[var(--warm-border)]">
+            <span className={`min-w-0 flex-1 text-sm break-all ${property?.bankAccount ? 'text-[var(--warm-dark)]' : 'text-[var(--warm-muted)]'}`}>
+              {property?.bankAccount || '아직 적지 않았습니다'}
+            </span>
+            <button type="button" onClick={() => onJump('basic', 'dv-bank')}
+              className="shrink-0 text-xs font-medium text-[var(--coral)] underline decoration-dotted underline-offset-2">
+              기본정보에서 고치기
+            </button>
+          </div>
         </div>
         {/* 여러 판본 만들기 — 소유자만. 형제 토글(청소비 보증금 포함)과 같은 문법이고, 다른 점은
             켤 때 경고 확인창을 지난다는 것뿐이다. 체크박스 앞의 hidden '0' 은 감지망 축 ⓔ 가 지킨다. */}
