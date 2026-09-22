@@ -93,6 +93,11 @@ html[lang="zh-Hant"] { --sans: 'Noto Sans TC', 'Pretendard Variable', -apple-sys
    기본 금칙처리에 맡긴다. 끊을 데 없는 긴 문자열 안전판은 body 의 overflow-wrap 이 맡는다. */
 html[lang="ko"] { word-break: keep-all; }
 
+/* 일본어 부제는 강제 줄바꿈을 걷는다(운영자 점검 2026-09-22). 한국어 문장 길이에 맞춰 넣은
+   <br> 라 일본어에서는 첫 줄이 넘쳐 `備と` 두 글자만 다음 줄에 남았다. 걷어 내면 text-wrap:
+   balance 가 세 줄을 고르게 나눈다. 번역 문구는 한 글자도 안 건드린다. */
+html[lang="ja"] .hero-sub br { display: none; }
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
@@ -543,12 +548,19 @@ footer {
   padding: 90px 24px 60px; text-align: center;
 }
 .footer-lockup { width: 190px; margin: 0 auto 20px; color: var(--cream); }
-.footer-sub { margin-top: 0; font-size: 12.5px; color: rgba(232, 222, 201, 0.45); letter-spacing: 0.04em; }
+.footer-sub { margin-top: 0; font-size: 12.5px; color: rgba(232, 222, 201, 0.62); letter-spacing: 0.04em; }  /* 3.60 -> AA(실측 아래) */
 .footer-line { width: 40px; height: 1px; background: rgba(232, 222, 201, 0.25); margin: 30px auto; }
 .footer-legal { font-size: 12px; color: rgba(232, 222, 201, 0.6); line-height: 1.9; }  /* 2.69 -> 5.36. 주소·전화번호다 */
 
 /* ---------- Floating contact ---------- */
-.floaters { position: fixed; right: 22px; bottom: 22px; z-index: 90; display: flex; flex-direction: column; gap: 12px; }
+.floaters { position: fixed; right: 22px; bottom: 22px; z-index: 90; display: flex; flex-direction: column; gap: 12px;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s; }
+/* 글자를 가리면 물러난다(운영자 지적 2026-09-22). 이 버튼들은 fixed 라 스크롤 위치에 따라
+   아무 글자 위에나 앉는다. 실제로 히어로 부제 끝과 CTA 버튼을 덮었다. 히어로와 연락처 구획에는
+   같은 동작(전화·카톡)이 본문에 이미 있어, 물러나도 잃는 것이 없다. 판정은 스크립트가 두
+   사각형을 실제로 겹쳐 보고 한다 — 구획 이름으로 어림하면 화면 높이마다 어긋난다. */
+.floaters.is-away { opacity: 0; visibility: hidden; transform: translateY(10px); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .floaters { transition: none; } }
 .floater {
   width: 54px; height: 54px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -1295,6 +1307,38 @@ footer {
   window.addEventListener('scroll', syncNav, { passive: true });
   window.addEventListener('resize', syncNav);
   syncNav();
+
+  /* ---------- 떠 있는 버튼이 글자를 가리면 물러난다 ---------- */
+  /* 구획 이름이 아니라 **사각형이 실제로 겹치는가**로 판정한다. 화면 높이와 글자 길이가
+     기기마다 달라 이름으로 어림하면 어긋난다. 지키는 대상은 같은 동작이 본문에 이미 있는
+     둘 — 히어로(입주 상담하기)와 연락처(전화 문의·카톡 상담)다. */
+  var floaters = document.querySelector('.floaters');
+  var guarded = ['.hero-actions', '.hero-sub', '.contact-actions'];
+  function syncFloaters() {
+    if (!floaters) return;
+    floaters.classList.remove('is-away');
+    var f = floaters.getBoundingClientRect();
+    var away = false;
+    for (var i = 0; i < guarded.length; i++) {
+      var el = document.querySelector(guarded[i]);
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      var ox = Math.min(f.right, r.right) - Math.max(f.left, r.left);
+      var oy = Math.min(f.bottom, r.bottom) - Math.max(f.top, r.top);
+      if (ox > 0 && oy > 0) { away = true; break; }
+    }
+    if (away) floaters.classList.add('is-away');
+  }
+  var floatTick = false;
+  function queueFloaters() {
+    if (floatTick) return;
+    floatTick = true;
+    requestAnimationFrame(function () { floatTick = false; syncFloaters(); });
+  }
+  window.addEventListener('scroll', queueFloaters, { passive: true });
+  window.addEventListener('resize', queueFloaters);
+  syncFloaters();
 
   /* ---------- Reveal on scroll ---------- */
   var io = new IntersectionObserver(function (entries) {
