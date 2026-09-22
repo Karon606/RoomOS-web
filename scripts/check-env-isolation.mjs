@@ -147,8 +147,11 @@ for (const f of SRC) {
   for (const f of SRC) {
     if (f === DRIVE_CANON) continue
     const s = stripComments(read(f) ?? '')
-    if (/from ['"]googleapis['"]/.test(s)) {
-      violations.push(`[소스] ${f} 가 googleapis 를 직접 가져온다 — 업로드 폴더 정본(lib/google-drive)을 우회해 테스트 파일이 운영 폴더에 쌓인다`)
+    // 꾸러미 이름이 둘이다 — 옛 `googleapis`(2026-09-22 제거)와 지금 쓰는 `@googleapis/drive`.
+    // 옛 이름도 계속 막는다. 누가 다시 깔면 라우트 32개가 33MB 를 도로 지고, 그것이 Vercel
+    // 함수 저장소 한도를 채운 원인이었다.
+    if (/from ['"]googleapis['"]/.test(s) || /from ['"]@googleapis\/[a-z]+['"]/.test(s)) {
+      violations.push(`[소스] ${f} 가 구글 API 꾸러미를 직접 가져온다 — 업로드 폴더 정본(lib/google-drive)을 우회해 테스트 파일이 운영 폴더에 쌓인다`)
     }
   }
   const s = stripComments(read(DRIVE_CANON) ?? '')

@@ -1,4 +1,12 @@
-import { google } from 'googleapis'
+// **Drive 만 든 꾸러미를 쓴다**(2026-09-22). 종전에는 `googleapis` 를 통째로 가져왔는데
+// 그 꾸러미는 구글의 **모든** API 정의를 담고 있어 33MB 다(Compute Engine·AI Platform·
+// Discovery Engine 까지). 이 파일이 서류 업로드 때문에 서버 액션에 물려 있어서, 그 33MB 를
+// 대시보드·호실·입주자·재고까지 라우트 32개가 함께 졌다. 배포 한 번에 1.03GB 다.
+// Vercel 무료 한도(Function Storage 10GB)가 배포 7개로 찼고(2026-09-22 경고 메일),
+// 콜드 스타트마다 46MB 를 푸느라 첫 화면도 느렸다.
+// 여기서 쓰는 것은 Drive v3 의 files.create/get/update/delete 넷과 OAuth2 뿐이다.
+import { drive as driveApi, type drive_v3 } from '@googleapis/drive'
+import { OAuth2Client } from 'google-auth-library'
 import { Readable } from 'stream'
 import { sniffDocMime, isImageDocMime, DOC_MIME_UNKNOWN } from './docMime'
 
@@ -14,13 +22,13 @@ function getOAuth2Client() {
     console.error('[drive] 인증 설정 누락 — GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN 확인 필요')
     throw new Error('파일 저장소 연결 설정이 완료되지 않았습니다. 관리자에게 문의해 주세요.')
   }
-  const auth = new google.auth.OAuth2(clientId, clientSecret)
+  const auth = new OAuth2Client(clientId, clientSecret)
   auth.setCredentials({ refresh_token: refreshToken })
   return auth
 }
 
-function getDriveClient() {
-  return google.drive({ version: 'v3', auth: getOAuth2Client() })
+function getDriveClient(): drive_v3.Drive {
+  return driveApi({ version: 'v3', auth: getOAuth2Client() })
 }
 
 // 업로드 — **기본은 비공개다.**
