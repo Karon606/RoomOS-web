@@ -57,7 +57,7 @@
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)
 - [[form-clear-vs-absent]] — "폼이 비운 칸은 서버가 비운다, 부재만 보존" 규약(formData.has)·두 조각(서버 가드+폼 상시 렌더)·전례 넷(c4b74c7d 퇴실일·aed91367 본국 연락처·슬러그 사고·c120bd32 호실)
 - [[regression-nets]] — 회귀 감지망 목록·자동 실행 배치(커밋 전 빠른 6종·푸시 전 타입체크+DB 4종)·훅 우회법
-- [[public-asset-exposure]] — Drive 공개 권한 판정 기준·열람 경로 세 가지·이관 순서(프록시→주소→회수)·명단형 감지망
+- [[public-asset-exposure]] — Drive 공개 권한 판정 기준·열람 경로 세 가지·이관 순서(프록시→주소→회수)·명단형 감지망·**공개 페이지의 운영자 전용 요소는 앱 표식(sessionStorage)으로만, 고객용 주소와 앱용 주소는 함수로 가른다**(2026-09-22)
 
 ## 핵심 파일 맵 (자주 건드리는 곳)
 - 빌링 엔진: `lib/billing.ts` `billForLeaseMonth`
