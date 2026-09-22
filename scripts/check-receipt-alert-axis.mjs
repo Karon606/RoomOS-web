@@ -211,6 +211,13 @@ const RELAY = 'app/(app)/rooms/RoomsClient.tsx'
     if (!/useState<'issued' \| 'open'>\('issued'\)/.test(tab)) {
       violations.push(`${TAB} — 목록 스위치의 기본이 발행 쪽이 아니다. 머리 합계가 세는 목록이 먼저 보여야 한다.`)
     }
+    // 머리 합계는 보고 있는 목록의 합계다(운영자 지시 2026-09-22). 발행 쪽은 issuedSum, 미발행 쪽은
+    // openSum 을 든다. 한쪽만 남으면 스위치를 넘겼을 때 위 숫자와 아래 목록이 다른 집합을 말한다.
+    const headEnd2 = tab.indexOf('<SegmentedControl')
+    const head2 = headEnd2 < 0 ? '' : tab.slice(0, headEnd2)
+    if (!/seg === 'issued' \?/.test(head2) || !/fmtWon\(issuedSum\)/.test(head2) || !/fmtWon\(openSum\)/.test(head2)) {
+      violations.push(`${TAB} — 머리 합계가 스위치를 안 따른다. 발행 쪽은 issuedSum, 미발행 쪽은 openSum 을 들어야 한다.`)
+    }
   }
 }
 

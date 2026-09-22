@@ -77,6 +77,9 @@ export function CashReceiptTab({
   const chosen = candidates.filter(c => picked.has(keyOf(c)))
   // 합계도 발행 대상 금액으로 센다 — 일괄 기록이 적는 값이 곧 이 수여야 한다.
   const chosenSum = chosen.reduce((a, c) => a + c.issuable, 0)
+  // 미발행 쪽 합계 — 후보 행의 발행 대상 금액(이용료 몫)을 더한다. 입금액이 아니다.
+  // 끈 입금은 안 센다. 스위치 라벨의 건수(candidates.length)와 같은 집합이어야 머리와 라벨이 한 쌍이다.
+  const openSum = candidates.reduce((a, c) => a + c.issuable, 0)
   // 고른 건에 딸린 제외 몫 — 모달이 "이만큼은 안 넣는다"고 말하는 근거다.
   const chosenExcluded = chosen.reduce((a, c) => a + Math.max(0, c.deposit) + Math.max(0, c.cleaning), 0)
 
@@ -119,11 +122,18 @@ export function CashReceiptTab({
     <div className="space-y-4">
       {/* 헤더 — 수납 스트립과 같은 껍데기. 발행일 축임을 상시 텍스트로 적는다. */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3">
+        {/* **머리 합계는 보고 있는 목록의 합계다**(운영자 지시 2026-09-22 — "발행탭에서는 발행금액,
+            미발행탭에서는 미발행 금액이 보이면 좋을 것 같아"). 종전에는 스위치를 미발행으로 넘겨도
+            머리가 발행 합계를 들고 있어, 아래 목록과 위 숫자가 다른 집합을 말했다.
+            축 이름을 앞에 적는 것은 그대로다 — 발행 쪽은 발행일, 미발행 쪽은 입금일이라 축이 다르다. */}
         <p className="text-xs text-[var(--warm-muted)] num">
-          발행일 기준 이 달 발행 <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(issuedSum)}</span>
-          <span className="num"> ({issuedCount}건)</span>
+          {seg === 'issued' ? (
+            <>발행일 기준 이 달 발행 <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(issuedSum)}</span><span className="num"> ({issuedCount}건)</span></>
+          ) : (
+            <>입금일 기준 미발행 <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(openSum)}</span><span className="num"> ({candidates.length}건)</span></>
+          )}
           <InfoHint title="현금영수증 탭">
-            <span className="block">합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다.</span>
+            <span className="block">발행 쪽 합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다. 미발행 쪽 합계는 입금일 기준으로, 아직 발행하지 않은 입금의 이용료 몫을 더한 값입니다.</span>
             <span className="block mt-1.5">아래 스위치로 두 목록을 갈아 봅니다. 발행 쪽이 이 합계를 이루는 목록이고, 미발행 쪽은 이 달에 받은 입금 중 아직 발행 내역이 없는 것입니다. 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
             <span className="block mt-1.5">카드 결제는 매출전표가 증빙을 대신해 여기 없습니다.</span>
             <span className="block mt-1.5">보증금과 청소비는 받을 때 발행 대상이 아니라 후보에 세우지 않고, 함께 받은 입금은 이용료 몫만 발행 금액으로 잡습니다.</span>
