@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Stay Jegi · 더스테이원룸텔 제기역점</title>
 <meta name="description" content="제기동역 도보 2분, 프리미엄 1인 주거 공간 더스테이원룸텔 제기역점. 신소방 안전시설과 철저한 위생 관리, 미니룸부터 프리미엄까지.">
-<link rel="canonical" href="https://www.stayeum.com/members/thestayjegi/">
+<link rel="canonical" href="https://www.stayeum.com/members/thestayjegi">
 
 <!-- 공유 카드 — 이 사이트의 1차 전환 채널이 카카오톡이라 링크 미리보기가 곧 첫인상이다.
      og 가 하나도 없어 썸네일 없는 맨 링크로 나가던 것을 채웠다(D페이즈 2026-08-03). -->
@@ -19,7 +19,7 @@
 <meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="더스테이원룸텔 제기역점">
 <meta property="og:description" content="제기동역 도보 2분, 프리미엄 1인 주거 공간. 신소방 안전시설과 주 3회 전문 청소, 미니룸부터 프리미엄까지.">
-<meta property="og:url" content="https://www.stayeum.com/members/thestayjegi/">
+<meta property="og:url" content="https://www.stayeum.com/members/thestayjegi">
 <meta property="og:image" content="https://www.stayeum.com/members/thestayjegi/images/room-418.jpg">
 <meta property="og:image:width" content="2048">
 <meta property="og:image:height" content="1536">
@@ -1056,8 +1056,14 @@ footer {
     <span data-en="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4F&middot;5F" data-zh="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5樓" data-ja="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5階（서울 동대문구 왕산로16길 9）">서울 동대문구 왕산로16길 9, 4~5층</span><br>
     <span>010-9218-7935 &middot; KakaoTalk TheStayJegi &middot; <a href="https://blog.naver.com/thestayjegi" target="_blank" rel="noopener" style="color: inherit; text-decoration: underline; text-underline-offset: 3px;">blog.naver.com/thestayjegi</a></span><br>
     <!-- 개인정보 처리방침 — 이 페이지가 방문 기록을 모으므로 그 사실을 알릴 문서가 필요하다(법 제30조).
-         법정 고지라 다국어 벌을 두지 않는다(네 벌을 두면 한 벌만 고쳐진 채 서로 다른 말을 하게 된다). -->
-    <span><a href="./privacy.html" style="color: inherit; text-decoration: underline; text-underline-offset: 3px;">개인정보 처리방침</a></span>
+         법정 고지라 다국어 벌을 두지 않는다(네 벌을 두면 한 벌만 고쳐진 채 서로 다른 말을 하게 된다).
+
+         **절대 경로다**(신고 2026-09-23 "404 에러야"). 상대 경로 `./privacy.html` 이 404 였다.
+         `/members/<slug>/` 로 들어오면 Next 가 끝 빗금을 떼며 308 로 `/members/<slug>` 에
+         보내는데, 그러면 브라우저가 선 자리의 기준 디렉터리가 `/members/` 가 된다. 상대 경로가
+         `/members/privacy.html` 로 풀려 한 칸 위를 가리켰다. 파일은 제자리에 있었고 주소만
+         틀렸다. 폴더 이름과 링크가 어긋나면 감지망 check-public-site 가 운다. -->
+    <span><a href="/members/thestayjegi/privacy.html" style="color: inherit; text-decoration: underline; text-underline-offset: 3px;">개인정보 처리방침</a></span>
   </div>
 </footer>
 

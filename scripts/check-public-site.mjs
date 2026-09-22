@@ -18,6 +18,28 @@ for (const slug of readdirSync(ROOT, { withFileTypes: true }).filter(e => e.isDi
   if (!existsSync(file)) continue
   const src = readFileSync(file, 'utf8')
 
+  // 0. 개인정보 처리방침 링크 — **절대 경로여야 하고 제 폴더를 가리켜야 한다**(신고 2026-09-23).
+  //
+  //    상대 경로가 404 였다. `/members/<slug>/` 로 들어오면 Next 가 끝 빗금을 떼며 308 로
+  //    `/members/<slug>` 에 보내고, 그러면 기준 디렉터리가 `/members/` 가 되어 `./privacy.html`
+  //    이 `/members/privacy.html` 로 풀린다. 파일은 제자리에 있고 주소만 한 칸 위를 가리켰다.
+  //    주소를 손으로 치면 200 이라 확인에서도 놓치기 쉬웠다.
+  //
+  //    폴더 이름까지 보는 이유는 따로다. 이 파일은 영업장마다 복사해 쓰는 틀이라, 절대 경로만
+  //    요구하면 복사본이 **원본 영업장의 방침**을 가리킨 채로 통과한다. 남의 문서를 제 법정
+  //    고지라고 내거는 셈이다.
+  {
+    const want = `/members/${slug}/privacy.html`
+    const m = src.match(/<a\s+href="([^"]*privacy\.html)"/)
+    if (!m) {
+      violations.push(`${slug}: 개인정보 처리방침 링크가 없다 — 방문 기록을 모으는 페이지는 그 사실을 알릴 문서를 걸어야 한다(법 제30조)`)
+    } else if (m[1] !== want) {
+      violations.push(`${slug}: 처리방침 링크가 '${m[1]}' 이다 — '${want}' 여야 한다(상대 경로는 끝 빗금이 떨어지며 한 칸 위를 가리킨다)`)
+    } else if (!existsSync(`${ROOT}/${slug}/privacy.html`)) {
+      violations.push(`${slug}: 처리방침 링크가 가리키는 ${want} 파일이 없다`)
+    }
+  }
+
   // 1. 4벌 규칙 — data-en 을 가진 요소는 zh·ja 도 함께 가져야 한다
   const tags = src.match(/<[^<>]*data-en=[^<>]*>/g) ?? []
   for (const lang of ['zh', 'ja']) {
