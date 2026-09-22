@@ -22,6 +22,20 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    // 클라이언트 라우터 캐시 — **한 번 연 화면은 잠시 다시 안 부른다**(운영자 지시 2026-09-22).
+    //
+    // dynamic 기본값이 0초라 캐시를 아예 안 했다. 이 앱은 페이지가 전부 동적이라 탭을 오갈
+    // 때마다 서버가 다시 그렸고, 그것이 Vercel 무료 한도의 Fluid Active CPU 4시간을 태운
+    // 원인의 한 축이다(경고 메일 2026-09-22). 하단 탭 prefetch 를 끈 것과 한 쌍이다.
+    //
+    // 60초인 이유. 돈을 다루는 화면이라 오래 묵히면 수납·재고 숫자가 옛것으로 보인다.
+    // 서버 액션은 revalidatePath 로 즉시 캐시를 깨므로 저장 직후에는 바로 새 숫자가 뜬다
+    // (호출 466곳). 다만 쓰기만 하고 갱신을 안 부르는 액션 파일이 11개 남아 있어, 그 빈틈이
+    // 1분이면 저절로 낫는 길이로 잡았다. 그 11개를 다 닫으면 더 늘릴 수 있다.
+    staleTimes: {
+      dynamic: 60,
+      static: 300,
+    },
     // Tailwind(atomic CSS)는 번들이 작아 inline이 유리: CSS link 렌더블로킹 제거
     inlineCss: true,
   },

@@ -120,6 +120,13 @@ export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?:
             key={href}
             href={linkHref}
             onClick={handleNavClick(href)}
+            /* **미리 당겨오지 않는다**(운영자 결정 2026-09-22). 이 탭은 화면에 늘 떠 있어
+               기본값이면 목적지 전부가 화면에 들어오는 순간 서버에서 미리 그려진다. 이 앱은
+               페이지가 전부 동적이고 (app) 레이아웃이 경계 위라, 미리 당겨오는 호출마다
+               인증 확인과 Prisma 질의 넷이 돈다. 화면 한 번 여는 데 여덟 번이 돌았다.
+               Vercel 무료 한도의 Fluid Active CPU 4시간을 그렇게 다 썼다(2026-09-22 경고 메일).
+               누른 뒤 받아오므로 전환이 조금 늦지만, 보고 있는 화면은 되레 빨라진다. */
+            prefetch={false}
             /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
             className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset active:bg-[var(--coral)]/10"
             style={{

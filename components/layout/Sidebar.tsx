@@ -222,6 +222,7 @@ function NavContent({
         <Link
           href={month ? `${homeHref}?month=${month}` : homeHref}
           onClick={onClose}
+          prefetch={false}
           aria-label="홈으로"
           className="flex items-center w-full rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
         >
@@ -263,6 +264,7 @@ function NavContent({
                   key={href}
                   href={linkHref}
                   onClick={onClose}
+                  prefetch={false}   /* 하단 탭과 같은 이유 — BottomNav 주석 참조 */
                   /* HIG: 최소 44pt 터치 타겟 — py-3.5로 달성 (14×2 + 아이콘17 = 45px) */
                   className={[
                     'flex items-center transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset min-h-[44px]',
@@ -310,14 +312,14 @@ function NavContent({
 
         {/* 운영자(슈퍼관리자) 전용 */}
         {isSuperAdmin && (
-          <Link href="/admin" onClick={onClose} className={acctRow} style={{ color: 'var(--persimmon)' }}>
+          <Link href="/admin" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--persimmon)' }}>
             <svg {...ico}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
             <span className={acctLabel}>운영자</span>
           </Link>
         )}
 
         {/* 영업장 관리 */}
-        <Link href="/property-select" onClick={onClose} className={acctRow} style={{ color: 'var(--warm-muted)' }}>
+        <Link href="/property-select" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--warm-muted)' }}>
           <svg {...ico}><path d="M3 21h18M6 21V7l6-4 6 4v14M10 9h.01M10 13h.01M10 17h.01M14 9h.01M14 13h.01M14 17h.01"/></svg>
           <span className={acctLabel}>영업장 관리</span>
         </Link>
@@ -392,7 +394,7 @@ function MobileMenu({
     <div className="fixed inset-0 z-[var(--z-drawer)] flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
       {/* 헤더: 로고 + 닫기 */}
       <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
-        <Link href={month ? `${homeHref}?month=${month}` : homeHref} onClick={onClose} aria-label="홈으로"
+        <Link href={month ? `${homeHref}?month=${month}` : homeHref} onClick={onClose} prefetch={false} aria-label="홈으로"
           className="rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset">
           <LogoFull />
         </Link>
@@ -415,7 +417,7 @@ function MobileMenu({
                 const isActive = pathname === href
                 const linkHref = month ? `${href}?month=${month}` : href
                 return (
-                  <Link key={href} href={linkHref} onClick={onClose}
+                  <Link key={href} href={linkHref} onClick={onClose} prefetch={false}
                     className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
                     style={isActive
                       ? { background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 30%, transparent)' }
@@ -481,13 +483,13 @@ function MobileMenu({
           <span className="text-xs truncate" style={{ color: 'var(--warm-mid)' }}>{user.user_metadata?.full_name ?? user.email}</span>
         </div>
         {isSuperAdmin && (
-          <Link href="/admin" onClick={onClose}
+          <Link href="/admin" onClick={onClose} prefetch={false}
             className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--persimmon)' }}>
             <svg {...ico} width={16} height={16}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
             운영자
           </Link>
         )}
-        <Link href="/property-select" onClick={onClose}
+        <Link href="/property-select" onClick={onClose} prefetch={false}
           className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--warm-muted)' }}>
           <svg {...ico} width={16} height={16}><path d="M3 21h18M6 21V7l6-4 6 4v14"/></svg>
           영업장
