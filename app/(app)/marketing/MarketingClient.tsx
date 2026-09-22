@@ -260,9 +260,10 @@ const md = (s: string) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`
 // 소개 페이지 열기 — 목적지가 같은 오리진이라 홈화면 앱은 target="_blank" 를 무시하고 앱 창에서
 // 열어버린다. 그러면 주소창도 뒤로가기도 없는 공개 페이지에 갇힌다(신고 3353a4ed, §27.7).
 // 그래서 터치 기기는 공유 시트로 넘기고(사용자가 열 곳을 직접 고른다), 데스크톱은 새 탭 그대로 둔다.
-// 주소의 nolog=1 은 그대로 유지한다 — 연 브라우저에 운영자 제외 플래그가 심긴다(_track.js).
+// 앱 안에서 여는 링크라 표식 둘을 붙인다 — app=1 이 공개 페이지의 복귀 버튼을 세우고(앱에서
+// 들어왔을 때만), nolog=1 이 운영자 방문을 기록에서 뺀다. 화면 글자는 고객용 주소 그대로다.
 function PublicSiteLink({ publicUrl }: { publicUrl: string }) {
-  const href = `${publicUrl}?nolog=1`
+  const href = `${publicUrl}?app=1&nolog=1`
 
   // 공유 시트는 탭 직후(transient activation)에만 열 수 있다 — 판정은 동기, 호출도 같은 틱에서 한다
   const open = (e: MouseEvent<HTMLAnchorElement>) => {

@@ -10,8 +10,12 @@
 
     // 운영자 복귀 버튼 — 이 페이지는 앱 밖(공개 사이트)이라 홈화면 앱에서 열면 주소창도 뒤로가기도
     // 없어 돌아올 길이 사라진다(신고 3353a4ed, 가이드 §27.7 "새 창은 복귀 경로를 함께 둔다").
-    // 트래킹 제외가 켜진 브라우저 = 운영자 본인이므로 그때만 만든다. 고객 화면에는 아예 안 생긴다.
     // 운영자 전용이라 4개 언어 병기 대상이 아니다(고객 문구가 아니다).
+    //
+    // **조건은 '앱에서 들어왔는가' 하나다**(운영자 지시 2026-09-22 — "이건 앱에서 접속했을 때만
+    // 보여야해"). 종전에는 추적 제외(nolog)에 얹혀 있었다. 그 둘은 다른 뜻인데 스위치 하나를
+    // 같이 써서, 제외를 켠 브라우저면 앱 밖에서 그냥 들어와도 버튼이 떴다. 운영자가 폰에서
+    // 그 화면을 보고 노출 사고로 읽었다.
     function mountBackToApp() {
       var put = function () {
         if (!document.body || document.getElementById('stayeum-back-to-app')) return;
@@ -31,13 +35,22 @@
       else document.addEventListener('DOMContentLoaded', put);
     }
 
+    // 앱에서 들어왔는가 — 앱 안의 링크만 app=1 을 붙인다(lib/publicSite 의 publicSiteUrlFromApp).
+    // **sessionStorage 다.** localStorage 에 심으면 그 주소를 한 번 받은 브라우저에 영영 남아,
+    // 고객에게 잘못 건네진 주소 한 줄이 그 사람 폰에 운영자 버튼을 계속 띄운다. 탭을 닫으면 끝난다.
+    try {
+      if (new URLSearchParams(window.location.search).get('app') === '1') sessionStorage.setItem('stayeumFromApp', '1');
+      if (sessionStorage.getItem('stayeumFromApp') === '1') mountBackToApp();
+    } catch { /* sessionStorage 막힌 브라우저는 버튼 없이 간다 — 없어도 페이지는 온전하다 */ }
+
     // 본인(운영자) 제외 — 주소 뒤에 ?nolog=1 을 붙여 한 번 열면 그 브라우저는 이후 계속 제외(localStorage 기억).
     // ?nolog=0 으로 해제. 여기서 return 하면 pageview·closeup·cta·갤러리 계측(pv 의존)이 전부 차단된다.
+    // **복귀 버튼과는 남남이다**(2026-09-22). 이 플래그는 기록에서 빼는 일만 한다.
     try {
       var flag = new URLSearchParams(window.location.search).get('nolog');
       if (flag === '1') localStorage.setItem('stayeumNoLog', '1');
       else if (flag === '0') localStorage.removeItem('stayeumNoLog');
-      if (localStorage.getItem('stayeumNoLog') === '1') { mountBackToApp(); return; }
+      if (localStorage.getItem('stayeumNoLog') === '1') return;
     } catch (e) { /* localStorage 막힌 브라우저는 그냥 정상 트래킹 */ }
 
     // 섹션 목록 — 우선 <script data-sections="..."> 로 페이지가 명시한 값 사용,

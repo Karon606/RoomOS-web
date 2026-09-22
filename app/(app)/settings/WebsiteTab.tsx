@@ -13,7 +13,7 @@ import { useCanEdit } from '@/components/RoleContext'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { publicSiteUrl } from '@/lib/publicSite'
+import { publicSiteUrl, publicSiteUrlFromApp } from '@/lib/publicSite'
 import { setRoomShowOnSite } from '@/app/(app)/room-manage/actions'
 import { updatePublicSlug } from './actions'
 import type { SiteRoomCandidate, SiteRoomCandidates } from '@/lib/siteCandidates'
@@ -126,8 +126,10 @@ export function WebsiteTab({
           </Btn>
         </div>
         {savedUrl && (
-          // nolog=1 — 운영자가 자기 페이지를 열어 본 것이 방문 기록에 섞이지 않게(방문 분석과 같은 처방)
-          <a href={`${savedUrl}?nolog=1`} target="_blank" rel="noopener noreferrer"
+          // 앱 안에서 여는 링크라 표식 둘을 붙인다(lib/publicSite publicSiteUrlFromApp) —
+          // app=1 이 공개 페이지의 복귀 버튼을 세우고, nolog=1 이 내 방문을 기록에서 뺀다.
+          // 화면에 보이는 글자는 표식 없는 고객용 주소 그대로다.
+          <a href={publicSiteUrlFromApp(savedSlug) ?? savedUrl} target="_blank" rel="noopener noreferrer"
             className="inline-block mt-2 text-xs break-all hover:underline" style={{ color: 'var(--persimmon-d)' }}>
             {savedUrl} ›
           </a>

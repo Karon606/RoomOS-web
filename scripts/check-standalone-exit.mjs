@@ -117,6 +117,29 @@ try {
   if (!/id\s*=\s*'stayeum-back-to-app'/.test(track) || !/href\s*=\s*'\/dashboard'/.test(track)) {
     violations.push('[소스] 공개 페이지의 운영자 복귀 버튼이 사라졌다 — 앱 밖으로 나간 운영자가 돌아올 길을 잃는다')
   }
+  // **버튼은 앱에서 들어왔을 때만 선다**(운영자 지시 2026-09-22). 종전에는 추적 제외(nolog)에
+  // 얹혀 있어, 제외를 켠 브라우저면 앱 밖에서 그냥 들어와도 떴다. 두 뜻이 스위치 하나를 같이
+  // 쓰던 것이라 갈랐다. 되돌아가는 길 셋을 다 막는다.
+  if (!/sessionStorage\.getItem\('stayeumFromApp'\)[\s\S]{0,40}mountBackToApp\(\)/.test(track)) {
+    violations.push("[소스] 복귀 버튼이 앱 표식(sessionStorage stayeumFromApp)으로 안 선다 — 조건이 바뀌면 고객 화면에 운영자 버튼이 뜬다")
+  }
+  if (/stayeumNoLog'\)\s*===\s*'1'\s*\)\s*\{[^}]*mountBackToApp/.test(track)) {
+    violations.push("[소스] 복귀 버튼이 다시 추적 제외(nolog)에 얹혔다 — 제외를 켠 브라우저면 앱 밖에서도 뜬다")
+  }
+  if (/localStorage\.setItem\('stayeumFromApp'/.test(track)) {
+    violations.push("[소스] 앱 표식을 localStorage 에 심는다 — 잘못 건네진 주소 한 줄이 그 브라우저에 영영 남는다. sessionStorage 여야 한다")
+  }
+  // 고객에게 주는 주소에는 표식이 없어야 한다 — 상담도구가 그대로 읽어 손님에게 건넨다.
+  const site = strip(readFileSync('lib/publicSite.ts', 'utf8'))
+  const pure = site.match(/export function publicSiteUrl\([\s\S]*?\n\}/)
+  if (!pure) {
+    violations.push('[소스] publicSiteUrl 정본을 못 찾았다 — 고객용 주소 대조가 건너뛰어졌다(침묵 통과 금지)')
+  } else if (/app=/.test(pure[0])) {
+    violations.push('[소스] 고객용 주소(publicSiteUrl)에 앱 표식이 붙는다 — 상담도구가 손님에게 그 주소를 건넨다')
+  }
+  if (!/publicSiteUrlFromApp/.test(site)) {
+    violations.push('[소스] 앱 전용 주소 정본(publicSiteUrlFromApp)이 없다 — 표식을 화면마다 손으로 붙이면 갈린다')
+  }
 } catch {
   violations.push('[소스] 소개 페이지 열기 정본(MarketingClient·_track.js) 을 읽을 수 없다 — 사라졌다')
 }
