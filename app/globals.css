@@ -372,7 +372,13 @@
 
 /* ── Base ─────────────────────────────────────────────────────── */
 html {
-  /* Apple 디스플레이에서 서브픽셀 안티앨리어싱 */
+  /* 회색조 안티앨리어싱. **주석이 종전에 "서브픽셀"이라 적혀 있었는데 값과 반대다** —
+     `antialiased` 는 서브픽셀을 끄고 회색조로만 그리게 하는 값이고, 켜는 값은
+     `subpixel-antialiased` 다. 글자만 고쳐 둔다(선언은 그대로).
+
+     이 두 줄은 애플 플랫폼에서만 동작한다. 그런데 iOS·iPadOS 는 원래부터 글자를 회색조로만
+     그리므로 거기서는 사실상 무효고, macOS 도 Mojave 이후 시스템 차원에서 서브픽셀을 껐다.
+     2026-09-23 "최상단이 블러처리되어 보인다" 신고의 원인으로 한 번 의심했지만 아니다. */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
