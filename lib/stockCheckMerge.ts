@@ -75,7 +75,10 @@ export type HubShort = {
   shortfall: number
   others: { locationId: string; qty: number }[]
 }
-const HUB_SHORT_EPS = 1e-6
+// 부동소수 허용오차. **화면도 이 상수를 쓴다**(InventoryClient 의 창고 잔량 예고).
+// 2.2 - 1.2 = 1.0000000000000002 같은 값 때문에 화면만 -2e-16 을 부족으로 읽으면,
+// 서버는 저장하는데 화면은 붉게 '0kg 부족' 이라고 말한다. 둘이 갈리면 화면이 거짓말을 한다.
+export const HUB_SHORT_EPS = 1e-6
 export function detectHubShort(base: LocBreakdown[], patch: LocCheckPatch, allowHubClamp?: boolean): HubShort | null {
   if (allowHubClamp) return null
   const isHubChecked = patch.hubLocationId != null && patch.checkedLocationId === patch.hubLocationId

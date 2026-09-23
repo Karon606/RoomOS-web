@@ -14,7 +14,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
 import { overbookExcess, calcLocMove } from '@/lib/stockLedger'
-import type { LocCheckPatch } from '@/lib/stockCheckMerge'
+import { HUB_SHORT_EPS, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -3691,6 +3691,27 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
         .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
     : 0
 
+  // **창고 잔량의 '지금' 값** — 저장된 잔량에서 이번 입력의 옮김 합을 뺀 것.
+  //
+  // 종전에는 행 배지가 저장된 잔량만 보여 줬다. 20kg 짜리 창고에서 7kg·8kg 을 빼내는 동안에도
+  // 모든 행이 그대로 '남음 20kg' 이라고 말했고, 넘치는지는 저장을 눌러야 알았다 — 서버가
+  // HUB_SHORT 로 막는다(actions.ts '창고(허브) 재고가 보충량보다 부족합니다'). 운영자 신고
+  // 2026-09-23: "실시간으로 허브창고의 양이 계산되면 내가 맞게 분배를 하고 있는지 알텐데".
+  //
+  // **차감하지 않는 경우가 하나 있다.** 창고를 직접 세어 적었으면 그 값이 그 자리의 진실이다.
+  // 허브 행의 '차감 후' 배지가 beforeStr === '' 일 때만 뜨는 것과 같은 규칙이고, 서버가 패치를
+  // 접는 순서(비허브 먼저, 허브는 맨 뒤)가 그 규칙의 근거다. 그 자리에서 또 깎으면 이중 차감이다.
+  const hubSaved = hubLoc ? (prevMap[hubLoc.id] ?? null) : null
+  const hubCounted = hubLoc ? (beforeQtys[hubLoc.id] ?? '') !== '' : false
+  // 직접 셌으면 **적은 값**을 보여 준다. 저장값으로 되돌아가면 한 폼 안에서 '남음' 이 두 뜻이 된다
+  // (다른 행은 실시간인데 이 경우만 저장본). 서버도 허브 실측이 있으면 부족 게이트를 끈다.
+  const hubMove = hubLoc ? calcLocMove(beforeQtys[hubLoc.id] ?? '', afterQtys[hubLoc.id] ?? '') : null
+  const hubLeft = hubCounted && hubMove ? (hubMove.afterN ?? hubMove.beforeN)
+    : hubSaved != null ? hubSaved - restockSum : null
+  // 이름이 hubShort 가 아닌 이유 — 같은 폼에 서버가 돌려준 부족 팝업 상태가 이미 그 이름이다
+  // (HubShortPending). 뜻은 이웃이다. 이쪽은 저장을 누르기 전에 화면이 미리 재는 같은 조건이다.
+  const hubOverdrawn = hubLeft != null && hubLeft < -HUB_SHORT_EPS
+
   // 저장 패치 — 서버(applyLocationChecks)가 이 순서대로 접는다. **비허브 먼저, 허브는 맨 뒤**다
   // (허브 실측을 먼저 쓰면 그 위에서 또 차감된다 — 위치 패널 buildUnits 와 같은 규칙).
   // **술어는 `entered` 집합 하나다** — '문자열이 비었는가' 로 물으면 어느 자리에 프리필이 숨어들든
@@ -3880,8 +3901,14 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     })
   }
 
+  // **스크롤은 모달 본문 하나만 한다**(components/ui/Modal.tsx:253). 종전에 이 폼이
+  // `flex-1 overflow-y-auto` 를 들고 있었다. 부모가 flex 가 아니라 flex-1 은 죽은 클래스였고,
+  // 살아남은 overflow-y-auto 가 폼을 스크롤 컨테이너로 만들었다. CSS 에서 sticky 의 기준은
+  // 가장 가까운 스크롤 컨테이너다 — 그래서 아래 창고 요약줄이 폼 안에 갇혀 폼과 함께 위로
+  // 사라졌다(디자이너 검수 2026-09-23, 헤드리스 재현 top -534px).
+  // 형제 폼 2086·7098 에도 같은 죽은 클래스가 있으나 sticky 를 안 쓰므로 증상이 없다.
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
       {/* 안내문 — 위치 패널 헤더와 같은 한 문장이다(같은 일을 두 문형으로 말하지 않는다). */}
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
@@ -3914,6 +3941,57 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
               최근 점검 {fmtDate(new Date(lastCheckCreatedAt))} <span className="tabular-nums">{fmtTime(lastCheckCreatedAt)}</span>
             </p>
           )}
+          {/* 창고 진행 요약 — 분배하는 동안 창고가 얼마나 남는지 계속 보인다(운영자 신고 2026-09-23).
+              **스크롤을 따라온다.** 위치가 스무 곳 넘는 품목에서 행을 오르내리다 보면 남은 양을
+              보려고 맨 위로 되돌아가야 하는데, 그 왕복이 곧 "분배를 맞게 하고 있는지 모르겠다" 다.
+              모달 본문이 유일한 스크롤 컨테이너여야 이 sticky 가 선다 — 폼이 제 스크롤을 갖고
+              있으면 여기 갇힌다(위 form 주석 참조).
+              배경은 패널과 같은 --cream 이어야 행이 비쳐 지나가지 않는다.
+              상자 문법은 바로 위 폐기 안내와 같은 한 벌이다(둥근 모서리 + -bg + -ring). */}
+          {hubLoc && (
+            <div className="sticky top-0 z-10 -mt-1 pt-1 pb-2 bg-[var(--cream)]">
+              <div className="rounded-lg px-3 py-2 space-y-1.5"
+                style={{
+                  background: hubOverdrawn ? 'var(--danger-bg)' : 'var(--canvas)',
+                  border: `1px solid ${hubOverdrawn ? 'var(--danger-ring)' : 'var(--warm-border)'}`,
+                }}>
+                <div className="flex items-baseline gap-2">
+                  <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-mid)]">창고 {hubLoc.pathName}</p>
+                  <p className="shrink-0 text-[0.65625rem] tabular-nums"
+                    style={{ color: hubOverdrawn ? 'var(--danger-fg)' : 'var(--warm-dark)' }}>
+                    {hubSaved == null
+                      ? <span className="text-[var(--warm-muted)]">점검 기록 없음</span>
+                      : hubCounted
+                        /* 창고를 직접 세어 적었다 — 그 값이 그 자리의 진실이라 차감 산수를 안 한다.
+                           남은 양을 예측해 말하면 저장 결과와 다른 숫자를 말하게 된다. */
+                        ? <span className="text-[var(--warm-muted)]">실측 <strong className="tabular-nums">{Math.round((hubLeft ?? 0) * 100) / 100}{stockUnit ?? ''}</strong> · 자동 차감 없음</span>
+                        : restockSum > 0
+                          ? <>
+                              <strong>{Math.round(hubSaved * 100) / 100}{stockUnit ?? ''}</strong> 중{' '}
+                              <strong>{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong> 옮김 ·{' '}
+                              {hubOverdrawn
+                                ? <><strong>{Math.round(Math.abs(hubLeft ?? 0) * 100) / 100}{stockUnit ?? ''}</strong> 부족</>
+                                : <><strong>{Math.round((hubLeft ?? 0) * 100) / 100}{stockUnit ?? ''}</strong> 남음</>}
+                            </>
+                          : <><strong>{Math.round(hubSaved * 100) / 100}{stockUnit ?? ''}</strong> 남음</>}
+                  </p>
+                </div>
+                {/* 진행바 — 창고를 직접 적었으면 차감 산수를 안 하므로 바도 안 그린다.
+                    넘친 만큼은 100% 로 잘리고 색으로 말한다(막대가 상자를 뚫고 나가지 않게). */}
+                {hubSaved != null && hubSaved > 0 && !hubCounted && restockSum > 0 && (
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--warm-border)' }}>
+                    <div className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, (restockSum / hubSaved) * 100)}%`,
+                        // --coral 은 다크 카드 위 2.78:1, --danger-solid 는 다크 --danger-bg 위 2.3:1 이라 둘 다 미달.
+                        // -fg 쌍은 다크에서 밝아진다(§04·§28). 대시보드 진행바 선례와 같은 토큰이다.
+                        background: hubOverdrawn ? 'var(--danger-fg)' : 'var(--tc-text)',
+                      }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {chkLocations.map(loc => {
             // 행 문법은 위치 패널(LocationBatchCheckModal)의 정본을 그대로 쓴다 — 같은 일을 하는
             // 두 화면이 다른 모양이면 어느 쪽이 맞는지 화면이 말을 못 한다.
@@ -3924,7 +4002,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
             const lastRestocked = prevRestockedMap[loc.id]
             const rowIsHub = loc.isHub
             // 이 품목의 창고와 그 잔량 — 비허브 행에서 '옮겨올 데가 있는가'의 전제다.
-            const hubStock = !rowIsHub && hubLoc ? { pathName: hubLoc.pathName, qty: prevMap[hubLoc.id] ?? null } : null
+            const hubStock = !rowIsHub && hubLoc ? { pathName: hubLoc.pathName, qty: hubLeft } : null
             const rowDraft = rowDrafts[loc.id]
             const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
             return (
@@ -3943,7 +4021,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                     {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     {/* 창고 잔량 — 기록이 없으면 0 이 아니라 '모름'이라 숫자를 만들어내지 않는다. */}
                     {!rowIsHub && hubStock && (
-                      <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
+                      <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
                         · {hubStock.pathName} 남음{' '}
                         {hubStock.qty == null
                           ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
@@ -5408,11 +5486,21 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       const rowIsHub = r.locations.find(l => l.id === node.id)?.isHub ?? false
                       // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
                       const hubLoc = r.locations.find(l => l.isHub)
-                      const hubStock = hubLoc
-                        ? { pathName: hubLoc.pathName, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
+                      // 이 품목이 이번 저장에서 창고에서 빼내는 양. 행이 허브든 아니든 같은 값이다 —
+                      // 허브 행은 '차감 후' 에, 비허브 행은 창고 잔량의 '지금' 값에 쓴다.
+                      const hubMoves = itemRestockSum(r)
+                      // 창고 잔량의 '지금' 값 — 아이템별 폼과 같은 규칙이다(그 주석이 정본).
+                      // 창고를 직접 세어 적었으면 그 값이 진실이라 안 깎는다.
+                      const hubSaved = hubLoc
+                        ? (r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null)
                         : null
-                      // 이 품목이 이번 저장에서 창고에서 빼내는 양 — 허브 행의 '차감 후' 가 쓴다.
-                      const itemMoves = rowIsHub ? itemRestockSum(r) : 0
+                      const hubRow = hubLoc ? computeRow(r, hubLoc.id) : null
+                      const hubCounted = hubRow ? hubRow.beforeStr !== '' : false
+                      const hubLeft = hubCounted && hubRow ? hubRow.finalN
+                        : hubSaved != null ? hubSaved - hubMoves : null
+                      const hubOverdrawn = hubLeft != null && hubLeft < -HUB_SHORT_EPS
+                      const hubStock = hubLoc ? { pathName: hubLoc.pathName, qty: hubLeft } : null
+                      const itemMoves = rowIsHub ? hubMoves : 0
                       // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
                       const rowDraft = rowDrafts[k]
                       const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
@@ -5433,7 +5521,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               {/* 창고 잔량 — 기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
                               {!rowIsHub && hubStock && (
-                                <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
+                                <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
                                   · {hubStock.pathName} 남음{' '}
                                   {hubStock.qty == null
                                     ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
