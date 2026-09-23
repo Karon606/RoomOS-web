@@ -157,6 +157,24 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
   /rounded-md bg-\[var\(--canvas\)\] animate-pulse/.test(client),
   '같은 화면의 두 골격이 다른 색이면 어느 쪽이 정본인지 알 수 없다')
 
+// ⑦ 보기에 안 매인 것은 보기 밖에 둔다 (운영자 지적 2026-09-23).
+//
+//    수령 대기 섹션이 아이템별 갈래 **안**에 있어서 위치별에서 통째로 사라졌다. 기본 보기가
+//    위치별이라, 주문해 놓고 아직 안 받은 물건이 화면 어디에도 없었다. 같은 클래스가 이 화면에서
+//    두 번째다 — 툴바 행도 같은 이유로 위치별에서 액션이 0개가 됐었다(오류신고 2e82ab7b).
+//    그래서 자리를 본다. 수령 대기 섹션이 `{viewMode === 'location' ? (` 보다 **앞**에 있어야 한다.
+{
+  const pend = client.indexOf(`id="inventory-pending"`)
+  const branch = client.indexOf("{viewMode === 'location' ? (")
+  if (pend < 0 || branch < 0) {
+    fails.push("수령 대기 섹션이나 보기 분기를 못 찾았다 — 마크업이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지)")
+  } else if (pend > branch) {
+    fails.push("수령 대기 섹션이 보기 분기 안에 있다 — 위치별에서 사라져 주문해 둔 물건을 놓친다(운영자 지적 2026-09-23)")
+  }
+  const n = (client.match(/id="inventory-pending"/g) ?? []).length
+  if (n > 1) fails.push(`수령 대기 섹션이 ${n}곳이다 — 보기마다 사본을 두면 한쪽만 고쳐진다`)
+}
+
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

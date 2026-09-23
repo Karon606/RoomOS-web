@@ -923,6 +923,122 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         </button>
       )}
 
+      {/* 수령 대기 — **보기 전환과 무관하게 맨 위에 선다**(운영자 지적 2026-09-23).
+          종전에는 아이템별 갈래 안에 있어서 위치별에서 통째로 사라졌다. 기본 보기가 위치별이라
+          (viewMode 초기값), 주문해 놓고 아직 안 받은 물건이 화면 어디에도 없었다. 운영자 원문 —
+          "위치별이 디폴트다보니 수령대기 아이템이 안보여서 놓칠 것 같아".
+          같은 클래스가 이 화면에서 두 번째다. 툴바 행도 아이템별 안에 있어 위치별에서 액션이
+          0개가 됐었다(오류신고 2e82ab7b). 보기에 안 매인 것은 보기 밖에 둔다. */}
+      {(() => {
+        const flat = visibleRows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit }))).filter(f => !receivedIds.has(f.p.id))
+        if (flat.length === 0) return null
+        // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
+        // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
+        // 구매 규격단위(L 등)를 품목 단위(ml 등)로 환산 — 서버 잔량 수학(overview sumPurchases)과 동일.
+        // 환산 누락 시 2.1L×2가 '4.2ml'로 표기되던 버그(오류신고 75dd05f7). 차원 불일치면 null(specMultiplier 정본).
+        const specOf = (trackUnit: string, specValue: number | null, fromUnit: string | null, toUnit: string | null) =>
+          trackUnit !== 'qty' ? specMultiplier(specValue, fromUnit, toUnit) : null
+        const specQtyOf = (qtyValue: number, specValue: number | null, fromUnit: string | null, toUnit: string | null, trackUnit: string) => {
+          const spec = specOf(trackUnit, specValue, fromUnit, toUnit)
+          return Math.round((spec != null ? qtyValue * spec : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
+        }
+        // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
+        const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
+        for (const f of flat) {
+          const key = `${f.label}␟${f.category}`
+          const g = groupMap.get(key) ?? { key, label: f.label, category: f.category, qtyUnit: f.qtyUnit, trackUnit: f.trackUnit, specUnit: f.specUnit, items: [] as typeof flat }
+          g.items.push(f); groupMap.set(key, g)
+        }
+        const groups = [...groupMap.values()]
+        const totalAmt = flat.reduce((s, f) => s + (f.p.amount || 0), 0)
+        return (
+          <section id="inventory-pending" className="space-y-2">
+            {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
+              수령 대기 <span className="text-[0.65625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
+            </h2>
+            <ul className="space-y-1.5">
+              {groups.map(g => {
+                // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
+                const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
+                const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
+                const boxUnit = g.items[0].p.qtyUnit
+                const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
+                // 규격 환산이 안 되면 totalQty 는 **개수**다. 거기에 품목 규격 단위를 붙이면 '4ml' 같은
+                // 거짓 숫자가 나온다(신고 1fd2e22b). 같은 상황에서 타임라인은 이미 구매 단위로 폴백한다.
+                //
+                // 단 **차원 불일치는 부재가 아니다**(신고 27f91356, 라면). 120g 은 개당 중량 속성이고
+                // 100개가 이미 완전한 개수라 집계에 부족한 것이 없다. 그런데 종전 판정이 둘을 뭉개서
+                // "용량을 몰라 집계했다"는 거짓 경고 3중(배지·캡션·수령 확인창)이 떴고, 그 말대로
+                // 뭔가 넣으면 오히려 곱셈 오염 위험이 생겼다. 진짜 부재(specValue 없음)만 잡는다.
+                const specMissing = g.trackUnit !== 'qty' && !specApplied
+                  && g.items.some(f => !isSpecDimensionMismatch(f.p.specUnit, g.specUnit))
+                const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
+                const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
+                const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
+                const ids = g.items.map(f => f.p.id)
+                const expanded = pendExpanded.has(g.key)
+                return (
+                  <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-[var(--warm-dark)] truncate">
+                          {g.label}{totalQty ? ` · ${qtyLabel}` : ''}
+
+                        </p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{fmtMDYearIfOther(latest)} · {g.category}</p>
+                        {/* 경고색을 안 쓴다 — 경고색은 행동 필요 신호인데 여기서의 용량 입력은 선택이다.
+                            사실만 뉴트럴로 말한다(웹디자이너 판정, 신고 27f91356). */}
+                        {specMissing && (
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">낱개 용량 없이 개수로 집계했습니다. 지출에서 용량을 넣으면 총량으로 계산됩니다.</p>
+                        )}
+                        {g.trackUnit !== 'qty' && g.items.some(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit)) && (
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})는 개당 속성이라 개수 기준으로 집계합니다</p>
+                        )}
+                        {g.items.length > 1 && (
+                          <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">
+                            구매 {g.items.length}건 합산 {expanded ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={() => setPendMerge({ label: g.label, category: g.category })}
+                          className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                          합치기
+                        </button>
+                        <button type="button" onClick={() => { if (specMissing) { void confirmQuickReceive(g.key, ids, g.label, qtyLabel) } else handleQuickReceive(g.key, ids) }} disabled={receivingKey === g.key}
+                          className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
+                          {receivingKey === g.key ? '처리 중' : '수령 확인'}
+                        </button>
+                      </div>
+                    </div>
+                    {g.items.length > 1 && expanded && (
+                      <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
+                        {g.items.map(f => {
+                          const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
+                          const conv = specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null
+                          const su = (g.trackUnit === 'qty' || !conv) ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
+                          const qstr = f.p.qtyValue
+                            ? (conv && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
+                            : ''
+                          return (
+                            <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
+                              <span className="tabular-nums">{fmtMDYearIfOther(f.p.date)}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
+                              {/* 금액 읽기 차단 역할에게는 서버가 null 로 지운다 — 0원으로 그리면 거짓이다 */}
+                              <span className="tabular-nums">{f.p.amount == null ? '' : fmtWon(f.p.amount)}</span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )
+      })()}
+
       {viewMode === 'location' ? (
         // 인라인 패널은 기본 보기다 — 닫을 뒤가 없어 onClose 자체를 안 넘긴다(모달 모드 전용 prop).
         <LocationBatchCheckModal inline rows={visibleRows} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
@@ -969,115 +1085,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         </>
       ) : (
         <>
-        {(() => {
-          const flat = visibleRows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit }))).filter(f => !receivedIds.has(f.p.id))
-          if (flat.length === 0) return null
-          // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
-          // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
-          // 구매 규격단위(L 등)를 품목 단위(ml 등)로 환산 — 서버 잔량 수학(overview sumPurchases)과 동일.
-          // 환산 누락 시 2.1L×2가 '4.2ml'로 표기되던 버그(오류신고 75dd05f7). 차원 불일치면 null(specMultiplier 정본).
-          const specOf = (trackUnit: string, specValue: number | null, fromUnit: string | null, toUnit: string | null) =>
-            trackUnit !== 'qty' ? specMultiplier(specValue, fromUnit, toUnit) : null
-          const specQtyOf = (qtyValue: number, specValue: number | null, fromUnit: string | null, toUnit: string | null, trackUnit: string) => {
-            const spec = specOf(trackUnit, specValue, fromUnit, toUnit)
-            return Math.round((spec != null ? qtyValue * spec : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
-          }
-          // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
-          const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
-          for (const f of flat) {
-            const key = `${f.label}␟${f.category}`
-            const g = groupMap.get(key) ?? { key, label: f.label, category: f.category, qtyUnit: f.qtyUnit, trackUnit: f.trackUnit, specUnit: f.specUnit, items: [] as typeof flat }
-            g.items.push(f); groupMap.set(key, g)
-          }
-          const groups = [...groupMap.values()]
-          const totalAmt = flat.reduce((s, f) => s + (f.p.amount || 0), 0)
-          return (
-            <section id="inventory-pending" className="space-y-2">
-              {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                수령 대기 <span className="text-[0.65625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
-              </h2>
-              <ul className="space-y-1.5">
-                {groups.map(g => {
-                  // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
-                  const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
-                  const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
-                  const boxUnit = g.items[0].p.qtyUnit
-                  const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
-                  // 규격 환산이 안 되면 totalQty 는 **개수**다. 거기에 품목 규격 단위를 붙이면 '4ml' 같은
-                  // 거짓 숫자가 나온다(신고 1fd2e22b). 같은 상황에서 타임라인은 이미 구매 단위로 폴백한다.
-                  //
-                  // 단 **차원 불일치는 부재가 아니다**(신고 27f91356, 라면). 120g 은 개당 중량 속성이고
-                  // 100개가 이미 완전한 개수라 집계에 부족한 것이 없다. 그런데 종전 판정이 둘을 뭉개서
-                  // "용량을 몰라 집계했다"는 거짓 경고 3중(배지·캡션·수령 확인창)이 떴고, 그 말대로
-                  // 뭔가 넣으면 오히려 곱셈 오염 위험이 생겼다. 진짜 부재(specValue 없음)만 잡는다.
-                  const specMissing = g.trackUnit !== 'qty' && !specApplied
-                    && g.items.some(f => !isSpecDimensionMismatch(f.p.specUnit, g.specUnit))
-                  const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
-                  const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
-                  const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
-                  const ids = g.items.map(f => f.p.id)
-                  const expanded = pendExpanded.has(g.key)
-                  return (
-                    <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-[var(--warm-dark)] truncate">
-                            {g.label}{totalQty ? ` · ${qtyLabel}` : ''}
-
-                          </p>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{fmtMDYearIfOther(latest)} · {g.category}</p>
-                          {/* 경고색을 안 쓴다 — 경고색은 행동 필요 신호인데 여기서의 용량 입력은 선택이다.
-                              사실만 뉴트럴로 말한다(웹디자이너 판정, 신고 27f91356). */}
-                          {specMissing && (
-                            <p className="text-[0.65625rem] text-[var(--warm-muted)]">낱개 용량 없이 개수로 집계했습니다. 지출에서 용량을 넣으면 총량으로 계산됩니다.</p>
-                          )}
-                          {g.trackUnit !== 'qty' && g.items.some(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit)) && (
-                            <p className="text-[0.65625rem] text-[var(--warm-muted)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})는 개당 속성이라 개수 기준으로 집계합니다</p>
-                          )}
-                          {g.items.length > 1 && (
-                            <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">
-                              구매 {g.items.length}건 합산 {expanded ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button type="button" onClick={() => setPendMerge({ label: g.label, category: g.category })}
-                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
-                            합치기
-                          </button>
-                          <button type="button" onClick={() => { if (specMissing) { void confirmQuickReceive(g.key, ids, g.label, qtyLabel) } else handleQuickReceive(g.key, ids) }} disabled={receivingKey === g.key}
-                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
-                            {receivingKey === g.key ? '처리 중' : '수령 확인'}
-                          </button>
-                        </div>
-                      </div>
-                      {g.items.length > 1 && expanded && (
-                        <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
-                          {g.items.map(f => {
-                            const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
-                            const conv = specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null
-                            const su = (g.trackUnit === 'qty' || !conv) ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
-                            const qstr = f.p.qtyValue
-                              ? (conv && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
-                              : ''
-                            return (
-                              <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
-                                <span className="tabular-nums">{fmtMDYearIfOther(f.p.date)}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
-                                {/* 금액 읽기 차단 역할에게는 서버가 null 로 지운다 — 0원으로 그리면 거짓이다 */}
-                                <span className="tabular-nums">{f.p.amount == null ? '' : fmtWon(f.p.amount)}</span>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )
-        })()}
         {/* 소진 임박 요약 — §18 Status Row 정본(좌 3px 팁 + danger-bg), 0건이면 미표시(신고 edffb4a7).
             임박 카드의 자동 재정렬 대신 요약 행으로 부상 — 사용자 지정 순서 보존 */}
         {(() => {
