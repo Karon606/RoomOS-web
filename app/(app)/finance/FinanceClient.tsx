@@ -3315,11 +3315,36 @@ export default function FinanceClient({
 
             const isEmpty = items.length === 0
 
+            // **전체 선택** — 지금 목록에 보이는 지출 전부(운영자 신고 2026-09-25 [27ae736e]).
+            // 종전에는 행을 하나씩 눌러야 했다. 카드 하나를 통째로 다른 카드로 옮기려던 운영자가
+            // 7분에 5건을 고치다 멈췄고, 그것이 "일괄 수정이 안되네" 의 뜻이었다(본인 확인).
+            // 일괄 편집 모달·서버(batchUpdateExpenses)는 이미 있었다. 없던 것은 고르는 방법이다.
+            //
+            // 집합은 **행을 하나씩 누른 것과 같아야 한다.** 그래서 expIdsOf 를 그대로 쓴다 —
+            // 주문·방 묶음을 멤버 id 로 펼치고 배송비 행을 뺀다(서버도 배송비는 건너뛴다).
+            // 사본을 만들면 '전체 선택' 과 손으로 고른 것이 다른 집합이 되는 날이 온다.
+            //
+            // 범위는 **보고 있는 목록**이다. 필터(금융사·카테고리·호실·금액)와 검색이 걸려 있으면
+            // 그 결과만 들어온다. 이게 의도다 — 금융사 필터로 카드 한 장만 남기고 전체 선택하면
+            // 이번 같은 일이 한 번에 끝난다. 다만 목록 자체가 한 달치라 다른 달은 안 들어온다.
+            const selectableIds = items.flatMap(it => it.kind === 'expense' ? expIdsOf(it.exp, it.groupRows) : [])
+            const allSelectedHere = selectableIds.length > 0 && selectableIds.every(id => mergeSel.has(id))
+            const toggleSelectAllHere = () => setMergeSel(prev => {
+              const n = new Set(prev)
+              selectableIds.forEach(id => allSelectedHere ? n.delete(id) : n.add(id))
+              return n
+            })
+
             return (
               <>
                 {/* 보기 토글 — 아이템별 / 주문별(같은 주문 묶음 + 배송비) */}
                 <div className="flex items-center justify-end gap-2">
                   {/* v2.0 §27 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
+                  {canEditUi && !isEmpty && mergeMode && (
+                    <Btn type="button" variant="secondary" size="sm" onClick={toggleSelectAllHere}>
+                      {allSelectedHere ? '전체 해제' : '전체 선택'}
+                    </Btn>
+                  )}
                   {canEditUi && !isEmpty && (
                     <Btn type="button" variant="secondary" size="sm"
                       onClick={() => { mergeMode ? exitMergeMode() : setMergeMode(true) }}>
@@ -5348,7 +5373,7 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
     <Modal open onClose={onClose} width="md" dirty={dirty}
       // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
       bodyClassName=""
-      title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
+      title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 (이 달 목록 기준) · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
