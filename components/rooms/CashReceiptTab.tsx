@@ -237,10 +237,23 @@ export function CashReceiptTab({
                     말하지 않으면 "왜 이 입금이 없나"를 화면이 답하지 않는다. 0이면 생략한다. */}
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">입금일 기준 · 카드 결제 제외{excluded.count > 0 ? ` · 보증금·청소비만 받은 ${excluded.count}건 제외` : ''}</p>
               </div>
+              {/* 전체 선택은 '선택 취소' 왼쪽 같은 Btn 이다 — 지출 목록과 같은 한 벌(가이드 §23).
+                  종전에는 이 화면만 10.5px 점선 링크를 목록 위에 두어, 같은 일을 두 화면이 다른
+                  모양으로 했다(디자이너 검수 2026-09-25 B1). 운영자 결정으로 버튼 쪽을 정본으로
+                  삼는다 — 이 신고의 본질이 "고르는 방법이 안 보였다" 는 발견성이라, 작은 링크보다
+                  44px 버튼이 맞다. */}
               {canEdit && candidates.length > 0 && (
-                <Btn variant="secondary" size="sm" onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}>
-                  {selectMode ? '선택 취소' : '선택'}
-                </Btn>
+                <div className="flex items-center gap-2 shrink-0">
+                  {selectMode && (
+                    <Btn variant="secondary" size="sm"
+                      onClick={() => setPicked(picked.size === candidates.length ? new Set() : new Set(candidates.map(keyOf)))}>
+                      {picked.size === candidates.length ? '전체 해제' : '전체 선택'}
+                    </Btn>
+                  )}
+                  <Btn variant="secondary" size="sm" onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}>
+                    {selectMode ? '선택 취소' : '선택'}
+                  </Btn>
+                </div>
               )}
             </div>
             {candidates.length === 0 ? (
@@ -251,13 +264,6 @@ export function CashReceiptTab({
               </p>
             ) : (
               <>
-                {selectMode && (
-                  <button type="button"
-                    onClick={() => setPicked(picked.size === candidates.length ? new Set() : new Set(candidates.map(keyOf)))}
-                    className="-my-2 min-h-[44px] flex items-center text-[0.65625rem] text-[var(--warm-mid)] underline decoration-dotted underline-offset-2">
-                    {picked.size === candidates.length ? '전체 해제' : '전체 선택'}
-                  </button>
-                )}
                 <ul className="space-y-1.5">
                   {candidates.map(c => {
                     // **'포함'이 아니라 '제외'다**(운영자 확정 2026-09-21). 큰 숫자가 이용료 몫이라

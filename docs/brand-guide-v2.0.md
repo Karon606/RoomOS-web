@@ -293,7 +293,7 @@
 - SearchBar: 좌 돋보기 SVG + cream + 우 지우기 + 풀폭 약 40px. 항상 노출.
 - 식별자: 호실번호·입주자명 = --ink bold tnum. 테라코타는 OVERDUE·.attn에만.
 - 1차 필터 = SegmentedControl(라디오·단일, '전체'=해제). 토글 칩 금지. 고급필터는 별도 패널.
-- 선택 모드: '선택' 토글 → 체크박스(모바일 카드 좌 / 데스크탑 sticky 호실셀, 선택 시 coral 체크) → SelectionPillBar(unit 개/명/실) → 배치 액션. 수납 일괄: 미수 호실 자동필터 → 확인 Modal(합계 tnum + DatePicker + 방법 세그먼트) → 성공 토스트 [적용취소]. 금액은 서버 권위 재계산.
+- 선택 모드: '선택' 토글 → 체크박스(모바일 카드 좌 / 데스크탑 sticky 호실셀, 선택 시 coral 체크) → SelectionPillBar(unit 개/명/실) → 배치 액션. **전체 선택/전체 해제는 '선택 취소' 왼쪽 같은 Btn secondary sm**(선택 모드일 때만, 링크 금지 — 44px 타겟이 발견성을 만든다). 범위는 **지금 보이는 목록**이다(필터·검색 결과 포함, 달을 넘지 않는다). 고를 것이 0이면 버튼을 숨긴다. 담는 줄은 flex-wrap 필수. 정본 두 곳: 지출 목록, 현금영수증 탭(2026-09-25 등재). 수납 일괄: 미수 호실 자동필터 → 확인 Modal(합계 tnum + DatePicker + 방법 세그먼트) → 성공 토스트 [적용취소]. 금액은 서버 권위 재계산.
 - sticky 테이블: thead sticky top-0 z-30 cream · 식별자 열 sticky-left z-20 cream(§08 지역 예외) · 호실셀 좌 3px 상태색 · 열 리사이즈 · 768px 전환 시 상태 공유.
 - 모달 아키텍처: 복잡 상세=EntityModal / 단순 폼=Modal.
 
