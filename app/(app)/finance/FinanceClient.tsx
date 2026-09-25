@@ -4512,6 +4512,28 @@ export default function FinanceClient({
                       </select>
                     </div>
                   )}
+                  {/* **한 주문이 두 카드로 갈리는 것을 화면이 말한다**(운영자 신고 2026-09-25 후속).
+                      다품목 지출은 한 번 입력으로 여러 행이 같은 카드로 생기는데, 나중에 그중 하나만
+                      고치면 그 주문이 두 카드로 갈린다. 실제로 났다 — 쿠팡 한 주문 5건 중 4건만
+                      다른 카드로 옮겨진 채 한 달을 지났고 아무 화면도 말하지 않았다.
+
+                      **자동으로 따라가게 만들지 않는다.** 일부러 나눠 결제하는 경우가 실제로 있다
+                      (같은 주문의 착불 배송비가 그렇다). 그래서 묻지도 고치지도 않고 사실만 적는다.
+                      배송비 행은 뺀다 — 착불이면 다른 것이 정상이다. */}
+                  {!detailExp.isShipping && detailExp.orderId && (() => {
+                    const sibs = expenses.filter(e =>
+                      e.orderId === detailExp.orderId && e.id !== detailExp.id && !e.isShipping)
+                    const differing = sibs.filter(sb => (sb.financialAccountId ?? '') !== (editExpAccId ?? ''))
+                    if (differing.length === 0) return null
+                    const names = [...new Set(differing.map(sb => sb.financeName ?? sb.payMethod ?? '미지정'))]
+                    return (
+                      <p className="text-[0.6875rem] rounded-lg px-3 py-2"
+                        style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
+                        이 주문의 다른 {differing.length}건은 <strong>{names.join(', ')}</strong> 입니다.
+                        같은 카드로 맞추려면 그 건들도 따로 고쳐야 합니다.
+                      </p>
+                    )
+                  })()}
                   {prepaidAccounts.length > 0 && prepaidAccounts.some(a => editExpMethod === a.brand || editExpMethod === accName(a)) && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택</label>
