@@ -4364,9 +4364,80 @@ export default function FinanceClient({
                       )}
                     </div>
                   )}
-                  {/* 배송비 — 두 방식(합산 / 별도 묶기)을 한 곳에 모아 명확히 구분.
-                      배송비 라인 자체엔 비노출(자기 자신을 묶는 모순 방지) — 금액·결제구분만 일반 필드로 수정 */}
+                  {/* **주문 묶음과 배송비는 다른 일이다**(운영자 신고 2026-09-25).
+                      종전에는 상자 하나가 '배송비' 라는 이름을 달고 그 안에 '한 주문으로 묶기' 를
+                      품고 있었다. 신고 원문 — "배송비에 관한 내용인데 지출 내역을 일괄로 묶는
+                      내용이 있다?? 이게 좀 헷갈릴 수 있고".
+
+                      이름이 이력을 그대로 드러낸 자리다. 묶기는 2026-06-09 에 배송비 기능으로
+                      태어났는데, 06-17 에 배송비 0 을 허용하면서 배송비 없이도 쓰는 독립 기능이
+                      됐다. 그런데 자리는 배송비 상자 안에 남았다.
+
+                      상자를 둘로 가른다. 기능·상태 변수·저장 경로는 그대로다 — 이름과 위계만이다.
+                      묶기 안에서도 순서를 뒤집었다. 고를 항목이 먼저고 배송비가 그다음이다.
+                      배송비 라인 자체엔 둘 다 비노출(자기 자신을 묶는 모순 방지). */}
                   {!detailExp.isShipping && (
+                  <>
+                  <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-[var(--warm-mid)]">주문 묶음 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
+                      <input type="checkbox" checked={editShipSeparate}
+                        onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
+                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                      <span><strong>다른 지출과 한 주문으로 묶기</strong> · 같은 날 항목을 골라 한 주문번호로</span>
+                    </label>
+                    {editShipSeparate && detailExp && (
+                      <div className="pl-5 space-y-2">
+                        {/* **고를 항목이 먼저다.** 이게 이 기능의 본체이고 배송비는 딸린 선택지다. */}
+                        {(() => {
+                          const sibs = expenses.filter(e =>
+                            e.id !== detailExp.id && !e.isShipping &&
+                            kstYmdStr(new Date(e.date)) === kstYmdStr(new Date(detailExp.date)) &&
+                            (!e.orderId || e.orderId === detailExp.orderId)
+                          )
+                          if (sibs.length === 0) return null
+                          const toggle = (id: string) => setAttachShipSiblings(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                          return (
+                            <div className="space-y-1">
+                              {/* **개수를 라벨에 적고 테두리를 두른다**(운영자 신고 2026-09-25 — "내역이 4개만
+                                  보이는데 이게 스크롤로 밑에 더 있다는게 인식하기 힘들게 되어 있어서 밑에 더
+                                  있는걸 몰랐어"). 종전에는 max-h-28(112px, 약 4행)에서 아무 단서 없이 잘렸다.
+                                  세로 페이드는 이 저장소에 없는 패턴이라 안 들인다 — 개수 문장과 테두리 상자가
+                                  이미 쓰는 문법이다(FloorPlanEditor 목록, 엑셀 모달 카드 목록). */}
+                              <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">
+                                같은 날 다른 지출 {sibs.length}건 · 함께 묶을 것을 고르세요 (선택)
+                              </p>
+                              <div className="space-y-1 max-h-48 overflow-auto overscroll-contain rounded-lg border border-[var(--warm-border)] bg-[var(--cream-2)] p-1">
+                                {sibs.map(s => (
+                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-[var(--cream)]">
+                                    <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
+                                      className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
+                                    <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
+                                    <span className="text-[var(--warm-muted)] shrink-0">{fmtWon(s.amount)}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">이 주문의 배송비 (없으면 비워두기)</p>
+                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원 (없으면 비워두기)" />
+                        <div className="flex items-center gap-1.5">
+                          {(['선불', '착불', '신용'] as const).map(t => (
+                            <button key={t} type="button" onClick={() => setAttachShipType(t)}
+                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                        <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
+                          placeholder="배송 메모 (선택)"
+                          className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+                        {/* 방향을 가리키는 말('아래에서')을 뺀다 — 목록이 위로 올라와 문장이 틀렸었다. */}
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">고른 항목이 같은 주문번호로 묶입니다. 배송비를 입력하면 배송비 1건도 함께 기록되고(신용은 미정산), 비워두면 묶기만 됩니다. 체크를 풀고 저장하면 묶음이 해제됩니다.</p>
+                      </div>
+                    )}
+                  </div>
                   <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                     <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
                     <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
@@ -4381,54 +4452,8 @@ export default function FinanceClient({
                         <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">품목 단가엔 미포함, 총액에만 더해집니다.</p>
                       </div>
                     )}
-                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
-                      <input type="checkbox" checked={editShipSeparate}
-                        onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
-                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                      <span><strong>다른 지출과 한 주문으로 묶기</strong> · 같은 날 항목 선택. 배송비 있으면 입력(없으면 묶기만)</span>
-                    </label>
-                    {editShipSeparate && detailExp && (
-                      <div className="pl-5 space-y-2">
-                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원 (없으면 비워두기)" />
-                        <div className="flex items-center gap-1.5">
-                          {(['선불', '착불', '신용'] as const).map(t => (
-                            <button key={t} type="button" onClick={() => setAttachShipType(t)}
-                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-                              {t}
-                            </button>
-                          ))}
-                        </div>
-                        <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
-                          placeholder="배송 메모 (선택)"
-                          className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
-                        {(() => {
-                          const sibs = expenses.filter(e =>
-                            e.id !== detailExp.id && !e.isShipping &&
-                            kstYmdStr(new Date(e.date)) === kstYmdStr(new Date(detailExp.date)) &&
-                            (!e.orderId || e.orderId === detailExp.orderId)
-                          )
-                          if (sibs.length === 0) return null
-                          const toggle = (id: string) => setAttachShipSiblings(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-                          return (
-                            <div className="space-y-1">
-                              <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
-                              <div className="space-y-1 max-h-28 overflow-auto overscroll-contain">
-                                {sibs.map(s => (
-                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-[var(--cream)]">
-                                    <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
-                                      className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
-                                    <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
-                                    <span className="text-[var(--warm-muted)] shrink-0">{fmtWon(s.amount)}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })()}
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">아래에서 같은 주문 항목을 선택하면 같은 주문번호로 묶입니다. 배송비를 입력하면 배송비 1건도 함께 기록(신용=미정산), 비워두면 묶기만 됩니다. 체크 해제 후 저장하면 묶음 해제.</p>
-                      </div>
-                    )}
                   </div>
+                  </>
                   )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
