@@ -16,6 +16,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { settleStatusForEdit } from '@/lib/settleStatus'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
@@ -891,6 +892,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       // 수량·규격·단위·제외 — 수령완료 구매의 재고 전파 게이트가 전후 환산 입수량을 비교하는 데 쓴다.
       select: {
         isShipping: true, settleStatus: true, itemLabel: true, category: true, receivedAt: true,
+        // payMethod: 정산상태 규칙이 '직전 갈래'와 비교해야 한다(lib/settleStatus 정본)
+        payMethod: true,
         qtyValue: true, specValue: true, specUnit: true, qtyUnit: true,
         excludeFromInventory: true, receivedLocationId: true,
         // 고정지출 기록의 날짜를 고치면 간격 주기의 기준 달도 따라 움직여야 한다 — 두 저장 경로가 쓴다.
@@ -908,7 +911,11 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     // 일반 수정 저장이 payMethod 기준으로 재계산해 '신용(미정산)'을 조용히 정산완료로 뒤집지 않게 보존.
     const baseSettleStatus: SettleStatus = existing?.isShipping
       ? existing.settleStatus
-      : (payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED')
+      : settleStatusForEdit({
+          prevPayMethod: existing?.payMethod,
+          nextPayMethod: payMethod,
+          current: (existing?.settleStatus ?? 'SETTLED') as SettleStatus,
+        }) as SettleStatus
 
     // 다중 품목/방별 분배 편집: 품목 2개+ 또는 방별 분배 있으면 분할.
     // 첫 행은 현재 row 업데이트, 나머지(추가 품목·방별 행·미지정 나머지)는 새 row.
@@ -1199,7 +1206,9 @@ export async function undoExpenseStockShift(undo: LedgerShiftUndo): Promise<{ ok
 
 // ── 지출 일괄 편집 — 여러 지출의 공통 필드를 한 번에 수정(적용취소 포함)
 // 스킵 규칙: 배송비 라인(전 필드) / 날짜 변경 시 고정지출 기록 / 카테고리·세부항목 변경 시 품목 등록 지출.
-// settleStatus 는 updateExpense 규칙 그대로 행별 재계산(신용카드=UNSETTLED, 그 외 SETTLED).
+// settleStatus 는 updateExpense 와 **같은 정본**(lib/settleStatus)으로 행별 판정한다.
+// 갈래(신용카드 여부)가 안 바뀌면 그 행의 지금 상태를 지킨다 — 카드에서 카드로 옮길 때
+// 정산완료가 미정산으로 되살아나던 자리다(운영자 승인 2026-09-25).
 export type BatchExpensesUndo = {
   rows: { id: string; fields: Record<string, unknown> }[]
 }
@@ -1295,10 +1304,17 @@ export async function batchUpdateExpenses(
     if (eligible.length > 0) {
       const ops: Prisma.PrismaPromise<unknown>[] = []
       if (wantsPayMethod) {
-        // settleStatus 행별 재계산 후 갈래별 updateMany — payMethod 가 균일하므로 실제론 한 갈래
+        // settleStatus 행별 판정 후 갈래별 updateMany. **행마다 갈라진다** — 같은 카드로 옮겨도
+        // 어떤 행은 이미 정산완료고 어떤 행은 미정산이라, 갈래가 안 바뀌면 각자 제 상태를 지킨다
+        // (lib/settleStatus 정본, 운영자 승인 2026-09-25). 종전에는 data.payMethod 하나만 보고
+        // 전부 같은 값으로 덮어 정산완료가 미정산으로 되살아났다.
         const byStatus = new Map<SettleStatus, string[]>()
         for (const t of eligible) {
-          const s: SettleStatus = data.payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+          const s = settleStatusForEdit({
+            prevPayMethod: t.payMethod,
+            nextPayMethod: data.payMethod,
+            current: t.settleStatus as SettleStatus,
+          }) as SettleStatus
           const arr = byStatus.get(s) ?? []; arr.push(t.id); byStatus.set(s, arr)
         }
         for (const [s, ids] of byStatus) {
