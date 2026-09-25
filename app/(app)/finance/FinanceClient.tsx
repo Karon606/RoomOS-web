@@ -1553,8 +1553,15 @@ export default function FinanceClient({
     })
   }
   const exitMergeMode = () => { setMergeMode(false); setMergeSel(new Set()) }
+  // **선택은 지금 목록에 있는 것만 유효하다.** mergeSel 을 비우는 자리는 exitMergeMode 셋뿐이고,
+  // 월 전환은 searchParam 만 바꾸는 내비라 컴포넌트가 안 풀린다 — 즉 8월에서 고른 id 가 9월 화면에
+  // 그대로 남는다. 종전에는 행을 하나씩 눌러야 해서 두 달치를 모으기가 어려웠는데, 전체 선택이
+  // 생기면서 한 탭이면 되게 됐다. 보이지도 않는 지난달 행이 같이 바뀌는 길을 여기서 막는다.
+  // 상태를 비우지 않고 **쓸 때 거르는** 이유는, 되돌아오면 선택이 살아 있는 편이 낫기 때문이다.
+  const expenseIdsHere = new Set(expenses.map(e => e.id))
+  const mergeSelHere = [...mergeSel].filter(id => expenseIdsHere.has(id))
   const handleMergeSelected = () => {
-    const ids = [...mergeSel]
+    const ids = mergeSelHere
     if (ids.length < 2) { pushToast('error', '2건 이상 선택해주세요.'); return }
     startTransition(async () => {
       const release = trackSave()
@@ -3327,7 +3334,13 @@ export default function FinanceClient({
             // 범위는 **보고 있는 목록**이다. 필터(금융사·카테고리·호실·금액)와 검색이 걸려 있으면
             // 그 결과만 들어온다. 이게 의도다 — 금융사 필터로 카드 한 장만 남기고 전체 선택하면
             // 이번 같은 일이 한 번에 끝난다. 다만 목록 자체가 한 달치라 다른 달은 안 들어온다.
-            const selectableIds = items.flatMap(it => it.kind === 'expense' ? expIdsOf(it.exp, it.groupRows) : [])
+            //
+            // **배송비는 여기서 직접 걷어낸다**(디자이너 검수 2026-09-25 N2). expIdsOf 가 배송비를
+            // 빼는 것은 **묶음 행일 때뿐**이다. 기본값인 아이템별 보기에서 배송비는 낱개 카드라
+            // `expIdsOf(e, undefined)` 가 `[e.id]` 를 그대로 돌려준다. 그대로 두면 서버가 건너뛴 뒤
+            // 토스트로 "배송비 N건 제외" 를 사후 통보하고, 그때까지 알약 카운트는 부풀어 있다.
+            const selectableIds = items.flatMap(it =>
+              it.kind === 'expense' && !it.exp.isShipping ? expIdsOf(it.exp, it.groupRows) : [])
             const allSelectedHere = selectableIds.length > 0 && selectableIds.every(id => mergeSel.has(id))
             const toggleSelectAllHere = () => setMergeSel(prev => {
               const n = new Set(prev)
@@ -3338,13 +3351,17 @@ export default function FinanceClient({
             return (
               <>
                 {/* 보기 토글 — 아이템별 / 주문별(같은 주문 묶음 + 배송비) */}
-                <div className="flex items-center justify-end gap-2">
-                  {/* v2.0 §27 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
-                  {canEditUi && !isEmpty && mergeMode && (
+                {/* wrap 필수 — 형제와 같은 처방이다(RoomManageClient:1484 주석). 선택 모드에서
+                    버튼이 둘로 늘어 320px 여유가 10px 뿐이라, 라벨이 한 글자만 늘어도 넘친다. */}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* 가드가 !isEmpty 가 아닌 이유 — items 에는 고정지출 '예정' 행도 섞여 있어,
+                      실지출 없이 예정만 있는 달이면 버튼이 서고 눌러도 아무 일이 없다(§22). */}
+                  {canEditUi && mergeMode && selectableIds.length > 0 && (
                     <Btn type="button" variant="secondary" size="sm" onClick={toggleSelectAllHere}>
                       {allSelectedHere ? '전체 해제' : '전체 선택'}
                     </Btn>
                   )}
+                  {/* v2.0 §27 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
                   {canEditUi && !isEmpty && (
                     <Btn type="button" variant="secondary" size="sm"
                       onClick={() => { mergeMode ? exitMergeMode() : setMergeMode(true) }}>
@@ -5249,11 +5266,11 @@ export default function FinanceClient({
 
     {/* 다중선택 묶기 — 하단 액션 바 */}
     {mergeMode && (
-      <SelectionPillBar count={mergeSel.size} unit="건" onClose={exitMergeMode}>
-        <PillButton primary disabled={mergeSel.size < 1} onClick={() => setShowBatchEdit(true)}>
+      <SelectionPillBar count={mergeSelHere.length} unit="건" onClose={exitMergeMode}>
+        <PillButton primary disabled={mergeSelHere.length < 1} onClick={() => setShowBatchEdit(true)}>
           일괄 편집
         </PillButton>
-        <PillButton disabled={isPending || mergeSel.size < 2} onClick={handleMergeSelected}>
+        <PillButton disabled={isPending || mergeSelHere.length < 2} onClick={handleMergeSelected}>
           한 주문으로 묶기
         </PillButton>
       </SelectionPillBar>
@@ -5262,7 +5279,7 @@ export default function FinanceClient({
     {/* 지출 일괄 편집 모달 */}
     {showBatchEdit && (
       <BatchEditExpensesModal
-        selectedIds={[...mergeSel]}
+        selectedIds={mergeSelHere}
         selected={expenses.filter(e => mergeSel.has(e.id)).map(e => ({ settleStatus: e.settleStatus, payMethod: e.payMethod, recurringExpenseId: e.recurringExpenseId }))}
         expenseCategories={expenseCategories}
         paymentMethods={effectivePaymentMethods}
@@ -5373,7 +5390,7 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
     <Modal open onClose={onClose} width="md" dirty={dirty}
       // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
       bodyClassName=""
-      title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 (이 달 목록 기준) · 입력하지 않은 항목은 변경되지 않습니다`}>
+      title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
