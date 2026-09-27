@@ -201,8 +201,20 @@ for (const [f, msg] of [
   if (/disposalConsentTemplate/.test(src)) {
     violations.push(`${f} — ${msg}이 라이브 영업장 설정으로 필수 여부를 판정한다. 서류를 켜면 과거가 소급으로 반쪽이 된다. 링크 templateSnapshot 을 본다.`)
   }
-  if (!/templateSnapshot/.test(src)) {
+  // **좁게 읽는 것도 스냅샷을 읽는 것이다**(2026-09-28). 이 축이 지키는 것은 "라이브 설정이
+  // 아니라 그 사람이 서명한 스냅샷을 본다" 이지, 특정 리터럴이 아니다. Supabase egress 소진으로
+  // 목록 쿼리에서 150KB 짜리 통짜를 빼고 paperDocsSnapshots(lib/contractListProjection)로
+  // 키 두 개만 읽게 바꿨는데, 출처는 여전히 같은 contract_share_links."templateSnapshot" 이다.
+  // 사슬이 끊기지 않게 정본 파일 자체도 아래에서 확인한다.
+  if (!/templateSnapshot|paperDocsSnapshots/.test(src)) {
     violations.push(`${f} — ${msg}이 링크 스냅샷을 안 읽는다. 세 화면의 축이 갈리면 어느 것을 봤느냐에 따라 다른 사실을 듣는다.`)
+  }
+}
+// 좁은 투영 정본이 정말 링크 스냅샷에서 뽑는가 — 위 완화가 빠져나갈 구멍이 되지 않게.
+{
+  const canon = read('lib/contractListProjection.ts')
+  if (!/contract_share_links/.test(canon) || !/templateSnapshot/.test(canon)) {
+    violations.push('lib/contractListProjection.ts — 좁은 투영이 contract_share_links."templateSnapshot" 에서 안 뽑는다. 위 세 화면의 축이 통째로 헐거워진다.')
   }
 }
 

@@ -12,6 +12,7 @@ import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
 import { issuedPrintedName } from '@/lib/contractPrintedFacts'
+import { paperDocsSnapshots, issuedPrintedNameSnapshots } from '@/lib/contractListProjection'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -72,10 +73,14 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
   const rows = await prisma.contractFile.findMany({
     where: { driveFileId: { not: '' }, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
-    // issuedSnapshot 은 여기서 읽지 않는다 — 서명 dataURL 두 장이 들어 있어 목록 응답이 통째로 무거워진다.
-    // 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
+    // **issuedSnapshot 은 여기서 읽지 않는다** — 서명 dataURL 두 장이 들어 있어 목록 응답이
+    // 통째로 무거워진다. 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
+    //
+    // 이 주석은 원래 있었는데 **select 에는 issuedSnapshot 이 들어 있었다**(주석과 코드가 반대).
+    // 발급 이름 한 줄(facts['tenant.name'])을 쓰려고 넣은 것으로 보이는데, 그 한 줄 때문에
+    // 66건 2.11MB 가 목록마다 오갔다. 이름만 따로 읽는다(2026-09-28 Supabase egress 소진).
     select: {
-      id: true, fileName: true, source: true, signedAt: true, createdAt: true, nameStyle: true, issuedSnapshot: true,
+      id: true, fileName: true, source: true, signedAt: true, createdAt: true, nameStyle: true,
       driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
       supersededAt: true, issuePurpose: true, purposeOverride: true,
       tenant: {
@@ -91,6 +96,8 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       leaseTerm: { select: { status: true, room: { select: { roomNo: true } } } },
     },
   })
+  // 발급 당시 인쇄된 이름만 따로 — select 에서 2.11MB 짜리 issuedSnapshot 을 뺀 대가다.
+  const printedNames = await issuedPrintedNameSnapshots(rows.map(r => r.id))
   return rows.map(r => {
     // 파일에 직접 연결된 lease 우선, 없으면 입주자의 대표 lease로 폴백(퇴실 분류 누락 방지).
     const lease = r.leaseTerm ?? effectiveLease(r.tenant.leaseTerms)
@@ -107,7 +114,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       // 파일 이름은 종이에 찍힌 그 이름을 쓴다 — 종전에는 서류 종류만 표기를 따랐다.
       // 박제가 있으면 그 문자열이 정본이다. 개명·오타 정정이 이미 나간 부의 성명을 소급해
       // 바꾸면 그 목록은 증거가 아니라 지금 상태의 사영이 된다.
-      docName: issuedPrintedName(r.issuedSnapshot) ?? documentName(r.tenant, asDocNameStyle(r.nameStyle)),
+      docName: issuedPrintedName(printedNames.get(r.id) ?? null) ?? documentName(r.tenant, asDocNameStyle(r.nameStyle)),
       nameStyle: asDocNameStyle(r.nameStyle) ?? null,
       roomNo: lease?.room?.roomNo ?? null,
       status: lease?.status ?? null,
@@ -164,13 +171,14 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
         id: true, signedAt: true, disposalSignedAt: true, docSignedAt: true, submittedAt: true, leaseTermId: true,
         // 링크 스냅샷이 기준이다 — 라이브 설정을 보면 서류를 새로 켜는 순간 과거 계약 전부가
         // 소급으로 반쪽이 된다. 홈 알림·계약서 패널과 같은 축이어야 세 화면이 한 답을 말한다.
-        templateSnapshot: true,
+        // **다만 통째로 안 읽는다.** 행당 150KB 인데 paperDocsOf 가 보는 키는 둘뿐이다.
+        // 그 둘만 따로 읽어 아래에서 붙인다(lib/contractListProjection). 기준은 그대로 스냅샷이다.
         tenant: { select: { id: true, name: true } },
         leaseTerm: {
           select: {
             room: { select: { roomNo: true } },
-            signatureImageUrl: true, signatureSignedAt: true,
-            disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+            // 서명 dataURL 은 안 읽는다 — leaseSignSlots 가 있는지 없는지로만 쓴다(alerts.ts 와 같은 처방).
+            signatureSignedAt: true, disposalSignatureSignedAt: true, documentSignatures: true,
             // 딸린 계약이면 발급할 종이는 부모 것이다 — 대기 한 줄이 부모를 가리켜야 발급이 된다.
             parentLeaseTermId: true,
             parentLeaseTerm: { select: { room: { select: { roomNo: true } } } },
@@ -190,10 +198,12 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   // 발급 대기의 물음은 "지금 발급하면 이 종이에 서명이 다 찍히는가"라 **계약 축**이다.
   // 여기는 처음부터 계약을 읽고 있었는데 손으로 조립했다. 정본으로 옮겨 세 화면이 같은
   // 함수를 부르게 한다 — 조립이 흩어져 있으면 축이 다시 갈린다(knowledge/sign-evidence-axes.md).
-  const sigSlots = (l: { templateSnapshot: unknown; leaseTerm: {
-    signatureImageUrl: string | null; signatureSignedAt: Date | null
-    disposalSignatureImageUrl: string | null; disposalSignatureSignedAt: Date | null
-    documentSignatures?: unknown } }) => leaseSignSlots(paperDocsOf(l.templateSnapshot), l.leaseTerm)
+  // 링크 스냅샷의 키 두 개만 따로 — select 에서 150KB 통짜를 뺀 대가다(lib/contractListProjection).
+  const paperSnaps = await paperDocsSnapshots(links.map(l => l.id))
+  const sigSlots = (l: { id: string; leaseTerm: {
+    signatureSignedAt: Date | null
+    disposalSignatureSignedAt: Date | null
+    documentSignatures?: unknown } }) => leaseSignSlots(paperDocsOf(paperSnaps.get(l.id) ?? null), l.leaseTerm)
 
   const rows: PendingIssueRow[] = []
   const seenLease = new Set<string>()
@@ -218,9 +228,10 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       roomNo: (l.leaseTerm.parentLeaseTermId ? l.leaseTerm.parentLeaseTerm?.room?.roomNo : l.leaseTerm.room?.roomNo) ?? null,
       signedAt: signalAt,
       submitted: l.submittedAt != null,
-      signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt
-        || l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
-      disposalMissing: signStageSlots({ slots: sigSlots(l) }) === 'partial' && !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
+      // dataURL 을 안 읽으므로 시각만 본다 — 둘이 어긋난 행이 없다는 것은 전수로 확인했고
+      // scripts/check-signature-pairing.ts 가 계속 지킨다.
+      signatureLive: !!(l.leaseTerm.signatureSignedAt || l.leaseTerm.disposalSignatureSignedAt),
+      disposalMissing: signStageSlots({ slots: sigSlots(l) }) === 'partial' && !!l.leaseTerm.signatureSignedAt,
       stage: signStageSlots({ slots: sigSlots(l) }),
     })
   }

@@ -13,6 +13,7 @@
 
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
+import { paperDocsSnapshots } from '@/lib/contractListProjection'
 import { fmtWon } from '@/lib/fmtMoney'
 import { dayDbRange, kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
@@ -124,16 +125,20 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
         // 이 링크가 나갈 때 동의서가 붙는 종이였는가. **라이브 설정을 보면 안 된다** —
         // 영업장이 서류를 새로 켜는 순간 과거 계약 전부가 소급으로 반쪽이 되어 알림이 도배된다.
         // 기준은 "그 사람이 무엇을 보고 서명했나"이고 그것은 링크 스냅샷에 박제돼 있다.
-        // 서명 dataURL 은 링크 발급 시점 이후에 들어오므로 이 스냅샷은 가볍다.
-        templateSnapshot: true,
+        // **templateSnapshot 은 여기서 안 읽는다.** 종전 주석은 "이 스냅샷은 가볍다" 고 했는데
+        // 재보니 **행당 150KB** 였고, 열린 링크 24건이면 홈 화면 한 번에 3.5MB 가 오간다.
+        // paperDocsOf 가 보는 것은 그 안의 키 두 개뿐이라, 그 둘만 따로 읽어 아래에서 붙인다
+        // (lib/contractListProjection — Supabase egress 소진 2026-09-28).
         // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
         // 서명 진행은 **계약 축**으로 센다. 링크 행은 그 링크에서 벌어진 일만 적어서, 서명을 두
         // 링크에 나눠 받은 계약(실측 15/37건)을 반쪽이라 부르게 된다. 이 알림의 문구는 계약에
         // 대한 주장이므로 계약을 봐야 한다(knowledge/sign-evidence-axes.md).
+        // **서명 dataURL 도 안 읽는다.** leaseSignSlots 는 그것을 있는지 없는지로만 쓴다
+        // (`!!(url || signedAt)`). 시각만 읽어도 판정이 같다는 것은 129건 전수로 확인했고
+        // (어긋난 행 0건) scripts/check-signature-pairing.ts 가 계속 지킨다.
         leaseTerm: { select: {
           room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true,
-          signatureImageUrl: true, signatureSignedAt: true,
-          disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+          signatureSignedAt: true, disposalSignatureSignedAt: true, documentSignatures: true,
         } },
         tenant: { select: { id: true, name: true } },
       },
@@ -284,6 +289,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
   // 원격 서명 완료 — 서명본 수신 후 정식 계약서가 아직 없는 상태. 발급본·스캔본이 생기면 소멸, 파일 삭제 시 재출현.
   // 판정은 lib/contractIssue 정본을 쓴다 — 계약서 파일 패널이 같은 규칙으로 '계약서 발급'을 주 동작으로 올린다.
+  // 링크 스냅샷의 키 두 개만 따로 — 위 select 에서 150KB 짜리 통짜를 뺀 대가다.
+  const paperSnaps = await paperDocsSnapshots(signedLinks.map(l => l.id))
+
   for (const link of signedLinks) {
     // 해소 판정의 기준 시각. 계약서 서명이 있으면 종전 그대로이고, 동의서만 있는 링크에서만
     // 새로 답이 생긴다.
@@ -301,7 +309,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     // 거짓말이 된다 — 동의서만 서명된 링크가 '계약서만 서명됨'으로 뜬다(방향만 바뀐 같은 거짓말).
     // 그 종이에 붙은 서류 목록은 링크 스냅샷에서 읽는다. 라이브 설정을 보면 서류를 새로 켜는
     // 순간 과거 계약 전부가 소급으로 반쪽이 된다.
-    const docs = paperDocsOf(link.templateSnapshot)
+    const docs = paperDocsOf(paperSnaps.get(link.id) ?? null)
     // 진행은 계약 축이다. "지금 발급하면 이 종이에 서명이 다 찍히는가"가 이 알림의 물음이다.
     const slots = leaseSignSlots(docs, link.leaseTerm)
     const stage = signStageSlots({ slots })
