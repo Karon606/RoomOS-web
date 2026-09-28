@@ -27,7 +27,10 @@ export default async function LoginPage({
       <DocumentScroll />
       <div className="w-full max-w-sm space-y-8 px-2">
         <div className="text-center space-y-3">
-          <StayeumLogo />
+          {/* 로그인 화면에서 공개 첫 화면으로 돌아가는 유일한 길(2026-09-28). 세션이 있으면 proxy 가 앱으로 보낸다 */}
+          <Link href="/" aria-label="스테이음 첫 화면" className="inline-flex min-h-[44px] items-center">
+            <StayeumLogo />
+          </Link>
           <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>고시원·원룸텔 스마트 관리 시스템</p>
         </div>
 
