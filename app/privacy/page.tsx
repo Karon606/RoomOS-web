@@ -126,7 +126,7 @@ export default function PrivacyPage() {
           head={['구분', '내용']}
           rows={[
             ['보호책임자', '김건우 (대표)'],
-            ['연락처', 'gunwoo80@gmail.com'],
+            ['연락처', 'contact@stayeum.com'],
             ['사업자등록번호', '718-08-03079'],
             ['주소', '서울특별시 동대문구 왕산로16길 9, 4~5층'],
           ]}
