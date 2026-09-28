@@ -1,7 +1,7 @@
 'use client'
 // 고정지출 '지출 기록' 모달 정본 — 지출관리 카드와 대시보드 알림이 함께 쓰는 공용 폼.
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
@@ -12,7 +12,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { isRecurringDueMonth, nextRecurringDueMonth, recurringCycleWord } from '@/lib/recurringDueDate'
-import { choiceDialog } from '@/components/ui/ConfirmDialog'
+import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
   type RecurringExpenseWithStatus,
@@ -63,6 +63,21 @@ export function RecurringExpenseRecordModal({
     return sum > 0 ? sum : effectiveRecurringAmount(rec)
   })
   const [date, setDate]           = useState(() => defaultDate ?? kstYmdStr())
+  // 예정일보다 일찍 연 경우 — 출금이 하루 앞당겨지는 일이 있어 오늘로 바꿀지 묻는다(2026-09-28 운영자 오더).
+  // 지난 예정일(늦게 적는 경우)은 예정일이 맞는 날짜라 묻지 않는다. ref 는 개발 모드 이중 실행에서 두 번 묻지 않게 한다.
+  const askedEarly = useRef(false)
+  useEffect(() => {
+    const today = kstYmdStr()
+    if (askedEarly.current || !defaultDate || defaultDate <= today) return
+    askedEarly.current = true
+    const md = (ymd: string) => `${Number(ymd.slice(5, 7))}월 ${Number(ymd.slice(8, 10))}일`
+    confirmDialog({
+      title: '오늘 날짜로 바꿀까요?',
+      message: `출금 예정일은 ${md(defaultDate)}이에요. 예정일보다 먼저 빠져나갔다면 오늘(${md(today)})로 바꿔서 기록하세요.`,
+      confirmLabel: '오늘로 바꾸기',
+      cancelLabel: '예정일 그대로',
+    }).then(ok => { if (ok) setDate(today) })
+  }, [defaultDate])
   const [memo, setMemo]           = useState(rec.memo ?? '')
   // #6: 가장 최근 실제 기록의 결제수단·계좌를 기본값으로(지난달 처리 방식 자동 대기)
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
