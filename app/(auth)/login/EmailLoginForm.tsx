@@ -45,8 +45,8 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
   )
 }
 
-export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
-  const [mode, setMode]                   = useState<Mode>('login')
+export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { returnTo?: string; initialMode?: Mode }) {
+  const [mode, setMode]                   = useState<Mode>(initialMode)
   const [email, setEmail]                 = useState('')
   const [password, setPassword]           = useState('')
   const [realName, setRealName]           = useState('')

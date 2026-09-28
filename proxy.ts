@@ -54,7 +54,7 @@ export async function proxy(request: NextRequest) {
       const hasProperty = !!request.cookies.get('selected_property_id')?.value
       return redirectTo(returnTo || (hasProperty ? '/dashboard' : '/property-select'))
     }
-    if (pathname === '/') return redirectTo('/login')
+    // 세션이 없으면 '/' 는 공개 첫 화면(app/(portal)/page.tsx)을 그대로 보인다(2026-09-28).
   }
 
   return supabaseResponse

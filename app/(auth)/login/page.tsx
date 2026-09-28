@@ -13,13 +13,13 @@ function StayeumLogo() {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string; error?: string; message?: string }>
+  searchParams: Promise<{ returnTo?: string; error?: string; message?: string; mode?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) redirect('/dashboard')
 
-  const { returnTo, error, message } = await searchParams
+  const { returnTo, error, message, mode } = await searchParams
 
   return (
     <main className="min-h-dvh flex items-center justify-center p-4"
@@ -52,7 +52,8 @@ export default async function LoginPage({
             </div>
           )}
 
-          <EmailLoginForm returnTo={returnTo} />
+          {/* 첫 화면의 '사용 신청'이 ?mode=signup 으로 들어온다 — 가입 칸을 연 채로 시작한다 */}
+          <EmailLoginForm returnTo={returnTo} initialMode={mode === 'signup' ? 'signup' : 'login'} />
 
           <div className="flex items-center gap-3 py-1">
             <div className="flex-1 h-px" style={{ background: 'var(--warm-border)' }} />
