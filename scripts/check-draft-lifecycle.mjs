@@ -60,7 +60,7 @@ need('doSave 가 onClose 를 한 번만 부른다',
 // 반환 타입이 줄을 넘기므로 화살표 뒤 여는 괄호를 머리로 삼는다 — 타입 리터럴의 중괄호를
 // 본문으로 오인하면 슬라이스가 한 줄짜리가 되고 아래 검사가 전부 거짓으로 통과한다.
 need('runChain 선언을 찾음',
-  /const runChain = async \(units: LocSaveUnit\[\], forceMerge: boolean, doneBefore: number, total: number\):/.test(client))
+  /const runChain = async \(units: LocSaveUnit\[\], forceMerge: boolean, doneBefore: number, total: number, deferShort = false\):/.test(client))
 const runChain = fnBody(client, "    Promise<{ stopped: 'hubShort' | 'failed' | null; done: number }> => {")
 need('runChain 본문을 찾음', runChain.length > 200)
 need('저장 실패 행을 목록으로 세운다',
@@ -267,7 +267,7 @@ need('점검 대상이 서브트리 전체(또는 숲 전체)다',
 need('허브 행이 체인의 마지막이다',
   /return units\.sort\(\(a, b\) => \(a\.isHubUnit \? 1 : 0\) - \(b\.isHubUnit \? 1 : 0\)\)/.test(buildUnits),
   '허브 실측을 먼저 쓰면 그 위에서 다시 차감돼 이중으로 빠진다')
-const saveUnit = fnBody(client, '  const saveUnit = (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {')
+const saveUnit = fnBody(client, '  const saveUnit = async (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {')
 need('saveUnit 을 찾음', saveUnit.length > 0)
 need('같은 품목의 두 번째 칸부터 이어 붙인다',
   /const chained = chainIdsRef\.current\.get\(u\.r\.id\) \?\? null/.test(saveUnit) &&

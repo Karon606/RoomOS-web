@@ -4861,11 +4861,14 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   const restUnitsRef  = useRef<LocSaveUnit[]>([])                // 멈춘 지점 다음부터의 나머지
   const chainCtxRef   = useRef<{ forceMerge: boolean; done: number; total: number; stoppedAt: string }>({ forceMerge: false, done: 0, total: 0, stoppedAt: '' })
   const stoppedUnitRef = useRef<LocSaveUnit | null>(null)
+  // 창고 부족으로 뒤로 미룬 칸 — 문제없는 칸을 먼저 다 저장한 뒤 팝업으로 하나씩 처리한다(2026-09-30).
+  const deferredRef   = useRef<LocSaveUnit[]>([])
+  const deferredItemsRef = useRef<Set<string>>(new Set())      // 미룬 칸이 있는 품목 — 그 품목의 뒤 칸도 함께 미룬다
   const cleanupRef    = useRef<string[]>([])
   const cleanedKeysRef = useRef<Set<string>>(new Set())
 
   // 한 (품목,위치) 쌍을 서버에 저장한다. 허브 부족 재시도(이동 후·강행)에서도 재사용한다.
-  const saveUnit = (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {
+  const saveUnit = async (u: LocSaveUnit, forceMerge: boolean, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {
     const { finalN, restocked } = computeRow(u.r, u.locId)
     // 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
     //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
@@ -4887,8 +4890,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     const shouldMerge = !opts?.forceNew && (chained != null || (dateIsToday && (forceMerge || (sameDay && within6h))))
     const targetId = chained ?? u.r.lastCheckId
     if (shouldMerge && targetId) {
-      return updateStockCheck(targetId, { locationPatch, allowHubClamp: opts?.allowHubClamp })
-        .then(res => { if (res.ok) chainIdsRef.current.set(u.r.id, targetId); return res })
+      const merged = await updateStockCheck(targetId, { locationPatch, allowHubClamp: opts?.allowHubClamp })
+      if (merged.ok) { chainIdsRef.current.set(u.r.id, targetId); return merged }
+      // 합칠 대상이 수령 자동 점검이면 서버가 거부한다 — 아래 새 점검 경로로 내려간다.
+      if (!('code' in merged) || merged.code !== 'AUTO_RECEIPT_TARGET') return merged
     }
     // memo 는 저장 문자열이자 백필 매칭 키다 — 표기 경로(pathName)를 적는다.
     // 서브트리를 한 번에 저장하므로 **고른 루트**의 경로가 그 저장의 이름이다.
@@ -4901,12 +4906,16 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   }
 
   // 체인 실행. 성공하면 그 행의 드래프트를 정리하고 다음으로, 실패·허브부족이면 **멈춘다**.
-  const runChain = async (units: LocSaveUnit[], forceMerge: boolean, doneBefore: number, total: number):
+  // deferShort — 첫 바퀴는 창고 부족 칸을 미뤄 두고 계속 달린다. 한 품목이 부족하다고 김치·세제 같은
+  // 다른 품목까지 멈추면, 팝업을 닫는 순간 그 품목들이 저장 안 된 채 체크 전 값으로 남는다(신고 2026-09-30).
+  // 같은 품목의 뒤 칸도 함께 미룬다 — 체인 이음(chainIdsRef)과 허브 행 마지막 순서를 지키기 위해서다.
+  const runChain = async (units: LocSaveUnit[], forceMerge: boolean, doneBefore: number, total: number, deferShort = false):
     Promise<{ stopped: 'hubShort' | 'failed' | null; done: number }> => {
     let done = doneBefore
     for (let i = 0; i < units.length; i++) {
       const u = units[i]
       const label = `${u.r.label} · ${u.locName}`
+      if (deferShort && deferredItemsRef.current.has(u.r.id)) { deferredRef.current.push(u); continue }
       let res: Awaited<ReturnType<typeof saveUnit>> | { ok: false; error: string }
       try { res = await saveUnit(u, forceMerge, { allowHubClamp: clampRef.current.has(locPairKey(u.r.id, u.locId)) }) }
       // humanError — 프레임워크가 던지는 영어 메시지가 폴백을 이기고 화면에 뜨는 것을 막는다.
@@ -4925,11 +4934,16 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         continue
       }
       if ('code' in res && res.code === 'HUB_SHORT') {
+        if (deferShort) {
+          deferredRef.current.push(u)
+          deferredItemsRef.current.add(u.r.id)
+          continue
+        }
         restUnitsRef.current = units.slice(i + 1)
         stoppedUnitRef.current = u
         chainCtxRef.current = { forceMerge, done, total, stoppedAt: label }
         setHubShortQueue([{
-          trackedItemId: u.r.id, itemLabel: label, unit: rowUnit(u.r), info: res,
+          trackedItemId: u.r.id, itemLabel: label, unit: rowUnit(u.r), info: res as HubShortResponse,
           // forceNew 라 항상 createStockCheck 경로(새 점검, id 반환) — 적용취소가 깔끔.
           retry: async (o) => {
             const rr = await saveUnit(u, forceMerge, { forceNew: true, allowHubClamp: o.allowHubClamp })
@@ -4989,6 +5003,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
       cleanedKeysRef.current = new Set()
       restUnitsRef.current = []
       stoppedUnitRef.current = null
+      deferredRef.current = []
+      deferredItemsRef.current = new Set()
 
       // 같은 저장에 그 품목의 **허브 실측**이 있으면 비허브 행의 부족 게이트를 건너뛴다.
       // 지금 세는 허브 값이 곧 정답이라 부족 판정이 뜻이 없고, 허브 행이 마지막에 그 값을 덮는다
@@ -5007,7 +5023,16 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         return hubId != null && (measuredHubs.get(u.r.id)?.has(hubId) ?? false)
       }).map(u => locPairKey(u.r.id, u.locId)))
 
-      const out = await runChain(units, !!forceMerge, 0, units.length)
+      let out = await runChain(units, !!forceMerge, 0, units.length, true)
+      const deferred = deferredRef.current
+      deferredRef.current = []
+      if (out.stopped === null && deferred.length > 0) {
+        // 두 번째 바퀴 — 미룬 칸만 종전 문법대로(부족하면 멈추고 팝업) 처리한다.
+        out = await runChain(deferred, !!forceMerge, out.done, units.length)
+      } else if (out.stopped === 'failed' && deferred.length > 0) {
+        // 실패로 멈췄으면 미룬 칸도 저장되지 않은 것이다 — 목록에 함께 올린다(말없이 사라지지 않게).
+        setSaveFailed(prev => [...prev, ...deferred.map(d => ({ id: locPairKey(d.r.id, d.locId), label: `${d.r.label} · ${d.locName}`, error: '창고 재고가 부족해 저장하지 않았습니다.' }))])
+      }
       settleChain()
       // 끝까지 갔으면 진행 숫자는 지운다 — 남겨 두면 '저장 중 45/45' 가 저장이 끝난 뒤에도 선다.
       if (out.stopped === null) setSaveProgress(null)
@@ -5064,14 +5089,18 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   }
   // 보충으로 돌아가기 / 창고 재고 확인 — 남은 체인 전체 중단(무저장), 폼으로 복귀(모달 유지).
   const onHubShortExit = (reason: 'back' | 'reconcile') => {
-    const ctx = chainCtxRef.current
-    const hadRest = restUnitsRef.current.length > 0 || stoppedUnitRef.current != null
+    // 팝업을 닫으면(버튼·바깥 누름 모두) 멈춘 칸과 그 뒤 칸은 저장되지 않는다. 문제없는 칸은 첫 바퀴에서
+    // 이미 저장됐으므로, 남은 것은 창고 부족 품목뿐이다 — 무엇이 남았는지 목록으로 말한다(2026-09-30).
+    const unsaved = [...(stoppedUnitRef.current ? [stoppedUnitRef.current] : []), ...restUnitsRef.current]
     setHubShortQueue([])
     restUnitsRef.current = []
     stoppedUnitRef.current = null
     settleChain()
     onDone()   // 이미 저장된 정상 행 반영
-    if (hadRest) setSaveProgress({ done: ctx.done, total: ctx.total, stoppedAt: ctx.stoppedAt })
+    setSaveProgress(null)
+    if (unsaved.length > 0) {
+      setSaveFailed(unsaved.map(u => ({ id: locPairKey(u.r.id, u.locId), label: `${u.r.label} · ${u.locName}`, error: '창고 재고가 부족해 저장하지 않았습니다.' })))
+    }
     if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.')
   }
 

@@ -1156,6 +1156,8 @@ export async function saveFullReconcile(data: {
   }
 }
 
+export type AutoReceiptTargetResponse = { ok: false; code: 'AUTO_RECEIPT_TARGET'; error: string }
+
 export async function updateStockCheck(id: string, data: {
   date?: string
   memo?: string | null
@@ -1171,12 +1173,18 @@ export async function updateStockCheck(id: string, data: {
   // 으로 영향을 보여주고 운영자가 '함께 조정'을 고른 경우에만 true 가 온다. 계획은 여기서 다시
   // 세운다(클라가 보낸 행을 믿지 않는다) — 미리보기와 저장 사이에 장부가 바뀌었을 수 있다.
   propagate?: boolean
-}): Promise<{ ok: true; undo?: StockCheckEditUndo; propagated?: number } | { ok: false; error: string } | HubShortResponse> {
+}): Promise<{ ok: true; undo?: StockCheckEditUndo; propagated?: number } | { ok: false; error: string } | HubShortResponse | AutoReceiptTargetResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true, locationBreakdown: true } })
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+    // 수령 자동 점검에는 위치별 점검을 합치지 않는다(2026-09-30 쌀 20kg). 수령 취소·수령일 변경이
+    // sourceExpenseId 로 이 점검을 지우거나 옮기는데, 합쳐 둔 손 실측(4층 주방 +10kg)까지 함께 사라진다.
+    // 호출자(위치별 점검 체인)는 이 코드를 받으면 새 점검으로 다시 저장한다.
+    if (data.locationPatch && c.sourceExpenseId) {
+      return { ok: false, code: 'AUTO_RECEIPT_TARGET', error: '수령 자동 점검에는 합치지 않습니다.' }
+    }
     // 미래 날짜 거부 — 지나지 않은 날의 점검은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
     if (!assertNotFuture(data.date).ok) return { ok: false, error: `점검일이 미래입니다(${data.date}). 아직 하지 않은 점검은 기록할 수 없습니다.` }
