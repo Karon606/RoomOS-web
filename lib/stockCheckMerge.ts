@@ -20,7 +20,7 @@ export type LocCheckPatch = {
 export type LocQtyOut = { storageLocationId: string; qty: number; restockedQty?: number; carried?: boolean | null }
 
 // base(머지 대상 점검의 현재 상태 또는 직전 점검)에 한 위치 점검을 적용:
-//  - 점검 위치 qty = afterQty (+ restockedQty 마커, 같은 위치 재점검은 마지막 값으로 덮어씀)
+//  - 점검 위치 qty = afterQty (+ restockedQty 마커. 같은 위치 재점검은 잔량만 마지막 값으로 덮고 마커는 누적)
 //  - 비허브 위치에 보충(restockedQty>0)이면 허브 위치 qty에서 그만큼 자동 차감(0 미만 방지)
 //  - 그 외 위치는 현재 값 그대로 이월 — 기존 보충 마커 포함(같은 날 연속 위치 점검이 앞 위치의 +N을 지우던 신고 8319ba10)
 //
@@ -47,7 +47,13 @@ export function applyLocationCheck(base: LocBreakdown[], patch: LocCheckPatch): 
   for (const lb of base) {
     if (lb.locationId === patch.checkedLocationId) {
       hasChecked = true
-      out.push({ storageLocationId: lb.locationId, qty: patch.afterQty, ...checkedMarker, carried: false })
+      // 같은 점검 안의 같은 위치 재점검 — 잔량은 마지막 잰 값이지만 **옮김 마커는 누적**이다(2026-09-30 라면).
+      // 앞 저장이 허브에서 이미 N 을 뺐는데 마커를 이번 보충량으로 덮으면, 옮김 없이 다시 센 두 번째 저장이
+      // +N 을 지우고 허브 차감만 남긴다. 장부 파생식(마커 합 = 허브 차감)이 깨진다.
+      // 앞 마커는 base 가 '같은 점검의 현재 상태'일 때만 실려 온다(updateStockCheck) — 새 점검의 base 에는 없다.
+      const prev = !isHubChecked && lb.restockedQty != null && lb.restockedQty > 0 ? lb.restockedQty : 0
+      const sum = prev + (isHubChecked ? 0 : Math.max(0, patch.restockedQty))
+      out.push({ storageLocationId: lb.locationId, qty: patch.afterQty, ...(sum > 0 ? { restockedQty: sum } : {}), carried: false })
     } else if (!isHubChecked && patch.restockedQty > 0 && patch.hubLocationId && lb.locationId === patch.hubLocationId) {
       out.push({ storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - patch.restockedQty), ...keepMarker(lb), carried: lb.carried === undefined ? true : lb.carried })
     } else {

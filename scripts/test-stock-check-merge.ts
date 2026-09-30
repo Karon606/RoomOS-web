@@ -131,6 +131,26 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
   eq('재점검 머지: 행 수 불변', out.length, 3)
 }
 
+// ── 6-b. 같은 위치를 같은 점검 안에서 다시 잴 때 — 옮김 마커는 누적 (2026-09-30 라면) ─────
+// 10:38 에 4층 주방 +5(허브 60 → 55)를 저장한 뒤, 같은 점검에 4층 주방을 옮김 없이 다시 저장하자
+// 마커가 지워지고 허브 −5 만 남았다(장부 대조: 저장 45 대 기대 50). 잔량은 마지막 값, 마커는 합.
+{
+  const base: LocBreakdown[] = [
+    { locationId: H, qty: 55, carried: true },
+    { locationId: A, qty: 10, restockedQty: 5, carried: false },
+  ]
+  const recount = applyLocationCheck(base, patch({ checkedLocationId: A, afterQty: 9, restockedQty: 0 }))
+  eq('재측정(옮김 없음): 잔량은 마지막 잰 값', rowOf(recount, A)?.qty, 9)
+  eq('재측정(옮김 없음): 앞 옮김 마커 보존', rowOf(recount, A)?.restockedQty, 5)
+  eq('재측정(옮김 없음): 허브 추가 차감 없음', rowOf(recount, H)?.qty, 55)
+  const more = applyLocationCheck(base, patch({ checkedLocationId: A, afterQty: 13, restockedQty: 3 }))
+  eq('추가 옮김: 마커는 합', rowOf(more, A)?.restockedQty, 8)
+  eq('추가 옮김: 허브는 이번 양만 더 차감', rowOf(more, H)?.qty, 52)
+  // 허브 자기 점검에는 여전히 마커가 붙지 않는다(누적도 없다).
+  const hubSelf = applyLocationCheck([{ locationId: H, qty: 55, restockedQty: 2, carried: true }], patch({ checkedLocationId: H, afterQty: 50, restockedQty: 0 }))
+  eq('허브 자기 재측정: 마커 없음', rowOf(hubSelf, H)?.restockedQty, undefined)
+}
+
 // ── 7. 복수 패치 — 비허브 두 칸의 옮김이 허브에서 **누적** 차감된다 ─────────────
 // 아이템별 폼이 4층 +4, 5층 +3 을 한 번에 보내면 허브는 12 − 7 = 5 여야 한다. 한 번만 빠지면
 // 장부가 옮긴 양보다 많이 남고, 두 번 빠지면 모자란다 — 둘 다 조용한 오차다.
