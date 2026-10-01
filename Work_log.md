@@ -6736,3 +6736,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-01 신고 8737b4d5 홈 미납 알림에서 독촉 문자
 - 미납 알림 상세에 보조 버튼 '독촉 문자 보내기'(정본 UnpaidSmsModal z 260 겹침, 닫으면 알림 상세로 복귀). 판정은 getTenantUnpaidTarget(+leaseId 좁힘), 규칙은 lib/unpaidSmsTarget 순수 함수로 빼 위젯 '안내문자'도 같은 판정(유예 중·납부일 전 행 숨김, 405호 클래스). 그물 check-unpaid-sms-gate(verify:fast, 역주입 4축 빨강).
+
+## 2026-10-01 신고 bc5d1c06 지출 카테고리 품목 세부
+- 재무 '카테고리별 지출 분석' 범례·도넛 조각을 누르면 카드 전폭으로 품목 세부(홈 지출 카테고리 문법, 단일 열림, ?cat= 진입 시 열린 채). 정본 lib/expenseItemBreakdown(배송비/itemLabel/고정지출 제목/내역 없음, 묶음 1건, 같은 단위 수량 합), 품목 탭 시 아래 목록 카테고리·검색 필터 + 스크롤, 검색 hay 에 itemLabel, 320px 범례 압착 결함 flex-col sm:flex-row. 그물 test-expense-item-breakdown(verify:fast, Σ 불변식·배선, 역주입 4축 빨강). 웹디자이너 패스 반영: 품목 행·토글 44px, '품목 미지정'·'품목 N개 더' 문구, 320px 캡션 둘째 줄, 범례 홈 정합, focus-visible, 탭 시 필터 패널 펼침, 달 바뀌면 펼침 닫힘.

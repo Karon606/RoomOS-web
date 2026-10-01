@@ -73,6 +73,7 @@ import {
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
 import { DonutChart } from '@/components/ui/DonutChart'
+import { expenseItemBreakdown, type BreakdownBucket } from '@/lib/expenseItemBreakdown'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 지출을 저장한 뒤 작업에 걸지 묻는 자리 — 판정·문답 모두 정본 하나를 쓴다.
 import { findWorkLinkCandidates, linkExpensesToWork, unlinkExpensesFromWork } from '@/app/(app)/room-manage/workActions'
@@ -1510,6 +1511,17 @@ export default function FinanceClient({
   // 목록이 걸러져 있는데 왜 걸러졌는지가 접혀 있으면 '지출이 세 건뿐인 달'로 읽힌다.
   const [showExpFilters, setShowExpFilters] = useState(!!initialCategory)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
+  // 카테고리별 지출 분석 카드의 품목 펼침(신고 bc5d1c06, 홈 지출 카테고리 문법). 단일 열림이고
+  // ?cat= 으로 들어오면 그 카테고리를 열어 둔 채 시작한다.
+  const [openCategory, setOpenCategory] = useState<string | null>(initialCategory ?? null)
+  const [showAllItems, setShowAllItems] = useState(false)
+  // 조회 달이 바뀌면 펼침을 닫는다 — 앞 달에 열어 둔 카테고리가 새 달 세부로 이어지면 기준 달이 흐려진다.
+  const [itemsMonth, setItemsMonth] = useState(targetMonth)
+  if (itemsMonth !== targetMonth) {
+    setItemsMonth(targetMonth)
+    setOpenCategory(null)
+    setShowAllItems(false)
+  }
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
   const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>('soon')
@@ -2280,7 +2292,7 @@ export default function FinanceClient({
     if (expAmountMax != null && e.amount > expAmountMax) return false
     if (expListSearch.trim()) {
       const q   = expListSearch.trim().toLowerCase()
-      const hay = `${e.detail ?? ''} ${e.vendor ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
+      const hay = `${e.itemLabel ?? ''} ${e.detail ?? ''} ${e.vendor ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
     return true
@@ -2881,7 +2893,30 @@ export default function FinanceClient({
   const donutSegments = allCats.map(cat => ({
     value: currentCatMap[cat] ?? 0,
     color: catColorMap[cat],
+    id: cat,
   }))
+
+  // 품목 세부 — 입력은 currentCatMap 을 만든 바로 그 expenses 배열이다(다른 필터를 타면 Σ품목 ≠ 카테고리 합).
+  const toggleCategory = (cat: string) => {
+    setOpenCategory(prev => prev === cat ? null : cat)
+    setShowAllItems(false)
+  }
+  const openCatAmount = openCategory ? (currentCatMap[openCategory] ?? 0) : 0
+  const openCatItems = openCategory && openCatAmount > 0
+    ? expenseItemBreakdown(expenses.filter(e => e.category === openCategory))
+    : null
+  // 품목 행 탭 — 아래 지출 목록을 그 카테고리·품목으로 걸러 보여 준다. 배송비·품목 미지정은 이름으로
+  // 찾을 글자가 없어 카테고리만 건다.
+  const jumpToItem = (cat: string, b: BreakdownBucket) => {
+    setTab('expense')
+    // 다른 필터(결제수단·호실 등)가 남아 있으면 목록 건수가 세부 내역과 달라 보인다. 이 카테고리만 남긴다.
+    setExpFilter({ method: 'all', category: cat, finance: 'all', roomId: 'all', kind: 'all' })
+    setExpListSearch(b.kind === 'item' || b.kind === 'recurring' ? b.label : '')
+    // 걸린 필터가 접혀 있으면 '지출이 몇 건뿐인 달'로 읽힌다(?cat= 진입과 같은 이유로 펼친다).
+    setShowExpFilters(true)
+    const el = document.getElementById('finance-tabs')
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
 
   const fmtMonthLabel = (m: string) => {
     const [y, mo] = m.split('-')
@@ -2959,8 +2994,9 @@ export default function FinanceClient({
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-4">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 분석</p>
 
-          {/* 도넛 + 범례 */}
-          <div className="flex items-start gap-4">
+          {/* 도넛 + 범례 — 좁은 폭에서는 범례를 도넛 아래로 내린다(320px 에서 옆 칸 이름이 0px 로
+              압착되던 결함, 홈 지출 카테고리 카드와 같은 문법). */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
             <div className="shrink-0">
               <DonutChart
                 segments={donutSegments}
@@ -2968,25 +3004,75 @@ export default function FinanceClient({
                 centerSub="총 지출"
                 size={150}
                 strokeWidth={22}
+                onSelect={toggleCategory}
               />
             </div>
-            <div className="flex-1 space-y-2 pt-1 min-w-0">
+            <div className="w-full sm:flex-1 space-y-1 min-w-0">
               {allCats.filter(cat => (currentCatMap[cat] ?? 0) > 0).map(cat => {
                 const amt = currentCatMap[cat] ?? 0
                 const pct = currentTotal > 0 ? Math.round((amt / currentTotal) * 100) : 0
+                const on = openCategory === cat
                 return (
-                  <div key={cat} className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
-                    <span className="text-xs text-[var(--warm-muted)] flex-1 truncate min-w-0">{cat}</span>
-                    <span className="text-xs font-medium text-[var(--warm-dark)] num shrink-0">
-                      {fmtWon(amt)}
+                  /* 범례 한 줄이 곧 진입점이다(도넛 조각은 마우스 편의, 키보드·보조기술은 이 버튼). */
+                  <button key={cat} type="button" aria-expanded={on} onClick={() => toggleCategory(cat)}
+                    className={`w-full text-left min-w-0 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-[var(--canvas)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] ${on ? 'bg-[var(--canvas)]' : ''}`}>
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
+                      <span className="text-xs text-[var(--warm-mid)] flex-1 truncate min-w-0">{cat}</span>
+                      <span className="text-xs text-[var(--warm-dark)] num shrink-0">
+                        {fmtWon(amt)}
+                      </span>
+                      <span className="text-xs text-[var(--warm-muted)] w-9 text-right shrink-0">{pct}%</span>
                     </span>
-                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-7 text-right shrink-0">{pct}%</span>
-                  </div>
+                  </button>
                 )
               })}
             </div>
           </div>
+
+          {/* ── 품목 세부 ── 카드 전폭이다. 도넛 옆 칸에 끼우면 320px 에서 이름·금액이 겹친다. */}
+          {openCategory && openCatItems && (() => {
+            const shown = showAllItems ? openCatItems : openCatItems.slice(0, 5)
+            const hidden = openCatItems.length - 5
+            return (
+              <div className="pt-3 border-t border-[var(--warm-border)] space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[openCategory] }} />
+                  <p className="text-xs font-semibold text-[var(--warm-dark)] flex-1 truncate">{openCategory}</p>
+                  <p className="text-xs text-[var(--warm-dark)] num shrink-0">{fmtWon(openCatAmount)}</p>
+                </div>
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">세부 내역은 선택한 달 기준입니다</p>
+                {/* 행마다 44px 히트영역(§09). 행 사이 간격 대신 행 높이가 리듬을 진다. */}
+                <div>
+                  {shown.map(b => {
+                    const caption = [
+                      b.count >= 2 ? `${b.count}건` : '',
+                      b.qty ? `${b.qty.value.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}${b.qty.unit}` : '',
+                    ].filter(Boolean).join(' · ')
+                    const pct = Math.round((b.amount / openCatAmount) * 100)
+                    return (
+                      <button key={`${b.kind}:${b.label}`} type="button" onClick={() => jumpToItem(openCategory, b)}
+                        className="w-full text-left flex items-center gap-2 text-[0.6875rem] min-w-0 min-h-[44px] pl-[18px] pr-1.5 -mx-1.5 rounded-md transition-colors hover:bg-[var(--canvas)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                        {/* 320px 에서는 건수·수량 캡션을 이름 아래 둘째 줄로 내린다(한 줄이면 이름이 두세 자로 죽는다). */}
+                        <span className="flex-1 min-w-0 sm:flex sm:items-baseline sm:gap-2">
+                          <span className={`block truncate sm:flex-1 ${b.kind === 'none' ? 'text-[var(--warm-muted)]' : 'text-[var(--warm-mid)]'}`}>{b.label}</span>
+                          {caption && <span className="block text-[0.65625rem] leading-tight sm:text-[0.6875rem] sm:leading-normal sm:shrink-0 text-[var(--warm-muted)]">{caption}</span>}
+                        </span>
+                        <span className="shrink-0 num text-[var(--warm-dark)]">{fmtWon(b.amount)}</span>
+                        <span className="shrink-0 w-9 text-right text-[var(--warm-muted)]">{pct}%</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {hidden > 0 && (
+                  <button type="button" onClick={() => setShowAllItems(v => !v)}
+                    className="inline-flex items-center min-h-[44px] px-1.5 -mx-1.5 rounded-md text-[0.65625rem] text-[var(--warm-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                    {showAllItems ? '접기' : `품목 ${hidden}개 더`}
+                  </button>
+                )}
+              </div>
+            )
+          })()}
 
           {/* 월별 비교 막대 */}
           <div className="pt-3 border-t border-[var(--warm-border)] space-y-2.5">
