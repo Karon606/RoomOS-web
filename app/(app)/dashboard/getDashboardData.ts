@@ -19,7 +19,7 @@ import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
-import { BILLABLE_STATUSES, checkedOutInMonthWhere, getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, leaseBillingEnd, leaseStayEnd, residedInMonth, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
+import { BILLABLE_STATUSES, checkedOutInMonthWhere, getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, leaseBillingEnd, leaseStayEnd, residedInMonth, roomAvailability, roomLeaseRowOrder, primaryRoomLease, OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { countSiteRoomCandidates } from '@/lib/siteCandidates'
@@ -518,7 +518,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     // take 없이 읽는 처방은 2026-08-11 getRoomDetail 이 같은 함정에서 쓴 것 그대로다.
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-      select: { roomId: true, status: true, expectedMoveOut: true },
+      // id — 퇴실 알림이 '이 계약 말고 방을 잡은 계약이 남는가'를 물을 때 자기 자신을 빼는 데 쓴다.
+      select: { id: true, roomId: true, status: true, expectedMoveOut: true },
     }),
   ])
 
@@ -1329,7 +1330,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   const TILE_OCCUPANT_LIMIT = 4
   // 방별 입주 가능 판정 — take 없이 읽은 계약으로 lib/leaseStatus 정본에 묻는다(판정 사본 금지).
   // roomId 가 없는 계약(방 미배정)은 방 축에 속하지 않는다.
-  const availabilityLeasesByRoom = new Map<string, { status: string; expectedMoveOut: Date | null }[]>()
+  const availabilityLeasesByRoom = new Map<string, { id: string; status: string; expectedMoveOut: Date | null }[]>()
   for (const l of availabilityLeases) {
     if (!l.roomId) continue
     const arr = availabilityLeasesByRoom.get(l.roomId)
@@ -1565,6 +1566,15 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     }
   }
 
+  // 퇴실 뒤에도 방을 잡는 계약의 갈래 — 다음 입실 예약이 있으면 'reserved', 예약 없이 거주 계약만
+  // 남으면 'resident', 없으면 null. 점유 정의는 OCCUPYING_STATUSES(roomStillOccupied 와 같은 선)다.
+  const moveOutRoomHeldBy = (leaseId: string, roomId: string | null): 'reserved' | 'resident' | null => {
+    if (!roomId) return null
+    const others = (availabilityLeasesByRoom.get(roomId) ?? [])
+      .filter(x => x.id !== leaseId && (OCCUPYING_STATUSES as string[]).includes(x.status))
+    if (others.length === 0) return null
+    return others.some(x => x.status === 'RESERVED') ? 'reserved' : 'resident'
+  }
   for (const l of moveOutLeases) {
     const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'
     // 홈에서 바로 퇴실 처리할 때 여는 최대치 — 서버(recordDepositReturn)가 되계산하는 기준액과 같아야 한다.
@@ -1596,6 +1606,10 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       // 호실이 걸린 계약인가 — 퇴실 창의 '청소 예정일' 칸은 이때만 선다(호실이 없으면 서버가
       // 청소를 아예 안 만들어 묻고 버리는 칸이 된다).
       moveOutHasRoom: !!l.roomId,
+      // 이 계약이 나가도 방을 잡은 계약이 남는가 — 남으면 서버(lib/roomOccupancy)가 공실로 돌리지
+      // 않는다. 퇴실 창이 '공실로 전환됩니다'라고 거짓말하지 않게 갈래를 싣는다(2026-10-01, 513호).
+      // 위 입주 가능 판정이 take 없이 읽은 계약을 그대로 쓴다(추가 조회 없음).
+      moveOutRoomHeldBy: moveOutRoomHeldBy(l.id, l.roomId),
       // 방 id 자체도 실어야 창이 '이미 잡힌 퇴실 청소'를 물어볼 수 있다. 종전에는 있다·없다만
       // 실어서, 9/2 로 청소가 잡힌 방을 홈에서 열어도 조회가 아예 안 돌아 '미정'으로 떴다
       // (2026-08-31 실기 재지적 — 화면은 고쳤는데 값이 안 갔다).

@@ -90,6 +90,8 @@ import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
 // ── 타입 ─────────────────────────────────────────────────────────
 
 type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; nonResidentVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null
+  // 이 방을 잡은 계약 id(거주중·퇴실 예정·입실 예약). 퇴실 저장 뒤에도 방이 차 있는지 묻는 데 쓴다.
+  occupyingLeaseIds?: string[]
   occupantMoveOut: string | null     // 'YYYY-MM-DD' — 그 방을 잡은 계약(거주중·퇴실 예정·예약) 중 마지막 퇴실 예정일. 이 방이 비는 날
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
@@ -1267,6 +1269,10 @@ export default function TenantClient({
     if (!roomId) return false
     const room = rooms.find(r => r.id === roomId)
     if (!room || room.scheduledRent == null) return false
+    // 이 계약이 나가도 방을 잡은 다른 계약(다음 입실 예약·남은 거주자)이 있으면 방은 공실이 되지 않고,
+    // 서버도 예약가를 앞당기지 않는다(변경 예정일에 정본이 적용). '공실로 변경됩니다'를 묻지 않는다(2026-10-01, 513호).
+    const leaseTermId = (fd.get('leaseTermId') as string) || ''
+    if ((room.occupyingLeaseIds ?? []).some(id => id !== leaseTermId)) return false
     setRentChangeModal({
       fd, fromDetail,
       roomNo: room.roomNo,

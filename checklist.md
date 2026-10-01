@@ -1519,3 +1519,12 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 타일 '9/30 퇴실' 캡션(흐림 없음), 누르면 그 계약 수납 면 (수납 관리 행 '9/30 퇴실' 보조줄)
 - [x] 과거 6개월 전후 대조(이번 달 동일), 소스 가드, 경계 테스트
 - [x] 게이트 + 웹디자이너 패스(차단 4건 반영), 푸시(운영자 승인)
+
+# 퇴실 처리가 다음 예약이 있는 방을 공실로 덮음 (2026-10-01 돌발, 운영자 승인)
+513호 10/1 21:05 퇴실 처리 → isVacant=true, 그러나 10/5 RESERVED. 배포 전 검사(check-wish-match-drift)가 멈춤.
+- [x] applyCheckoutSideEffects: isVacant = !roomStillOccupied(roomId, leaseTermId)
+- [x] 예약 인상가 조기 적용은 실제로 빌 때만, 수정 폼 운영자 답(applyScheduledRent) 존중
+- [x] import 퇴실 보관 경로 같은 가드, hasOtherActiveInRoom 사본 수렴
+- [x] 퇴실 확인창 '호실이 공실로 전환됩니다'·수정 폼 '공실로 변경됩니다' 사실 문구
+- [x] 소스 그물 check-vacant-write-guard, check-checkout-side-effects needle 갱신, check-wish-match-drift 축1 전 방
+- [x] 513호 isVacant=false 정정(되돌리기, scripts/fix-513-vacancy-reserved.ts) → verify:db 통과 → 푸시(대기 3건 포함)

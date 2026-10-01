@@ -74,14 +74,17 @@ async function main() {
   for (const r of rooms) {
     const av = roomAvailability(r)
     availByKey.set(`${r.propertyId}|${r.roomNo}`, av)
-    // 1) 방 집합 차 — '지금 비어 있다'와 isVacant 플래그가 어긋나면 두 화면이 다른 방을 센다.
-    //    공실 집계 제외 방(창고·사무실)은 두 정의가 일부러 다르므로 검사에서 뺀다(lib/vacancy 정본).
-    if (!r.nonResidentVacant) continue
-    const isNow = av?.kind === 'now'
+    // 1) 방 집합 차 — '방을 잡은 계약(OCCUPYING_STATUSES)이 0건'과 isVacant 플래그가 어긋나면 두 화면이
+    //    다른 방을 센다. 전 방에 건다(2026-10-01, 513호). 종전에는 집계 제외 방(창고·사무실)을 여기서
+    //    건너뛰었는데, 그 방들의 다름은 '집계'(lib/vacancy 가 집계 시점에 거른다)와 '입주 후보'
+    //    (roomAvailability 가 null)의 몫이지 isVacant 플래그의 몫이 아니다. 플래그는 비거주에 관여하지
+    //    않는 raw 값이라 어느 방이든 '점유 계약 0건'과 같아야 한다(lib/roomOccupancy 정본과 같은 선).
+    //    집계 제외 아닌 방에서는 roomAvailability 'now' 와 같은 판정이다.
+    const isNow = r.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status)).length === 0
     if (isNow !== r.isVacant) {
       roomAxis.push({
         property: r.property?.name ?? '?', roomNo: r.roomNo,
-        detail: `isVacant=${r.isVacant} / 계약 사실=${av ? (av.kind === 'now' ? '지금 공실' : `${av.availableFrom} 입주 가능`) : '무기한 점유'}`
+        detail: `isVacant=${r.isVacant} / 계약 사실=${isNow ? '점유 계약 없음' : av?.kind === 'soon' ? `${av.availableFrom} 입주 가능` : '무기한 점유'}`
           + ` | ${r.leaseTerms.map(l => `${l.status}/${l.tenant?.name ?? '-'}/${ymd(l.expectedMoveOut) ?? '무기한'}`).join(' · ') || '계약 없음'}`,
       })
     }

@@ -53,6 +53,7 @@ import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, recordRoomChange, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { vacancyExcludedWhere } from '@/lib/vacancy'
+import { roomStillOccupied, shouldApplyScheduledRentOnCheckout } from '@/lib/roomOccupancy'
 import {
   parseRoomSchedule, validateRoomSchedule, hasRoomSchedule, spanOverlaps, freeFromAfter,
   scheduledSegmentOn, nextRoomMove, roomScheduleText, roomScheduleLines,
@@ -175,17 +176,24 @@ async function clearAutoCheckoutCleaning(propertyId: string, leaseTermId: string
 async function applyCheckoutSideEffects(
   propertyId: string,
   leaseTermId: string,
-  opts: { roomId: string | null; cleaningYmd: string | null | undefined },
+  // applyScheduledRent — 수정 폼 '가격 변동 적용' 확인창의 운영자 답. 안 물었으면 undefined.
+  opts: { roomId: string | null; cleaningYmd: string | null | undefined; applyScheduledRent?: boolean },
 ): Promise<string | null> {
-  // 예약가가 걸려 있으면 그 값이 이제 표준가다. 방은 비운다.
+  // 공실은 그 방을 잡은 다른 계약이 없을 때만이다(2026-10-01, 513호). 종전에는 isVacant=true 를
+  // 무조건 써서, 10/5 입주 예약이 걸린 방이 퇴실 처리 한 번에 공실이 됐다.
+  // 예약가는 방이 실제로 빌 때만 앞당긴다 — 판정은 lib/roomOccupancy 정본.
   if (opts.roomId) {
     try {
+      const occupied = await roomStillOccupied(opts.roomId, leaseTermId)
       const room = await prisma.room.findUnique({ where: { id: opts.roomId }, select: { scheduledRent: true } })
+      const early = shouldApplyScheduledRentOnCheckout({
+        occupied, scheduledRent: room?.scheduledRent, operatorAnswer: opts.applyScheduledRent,
+      })
       await prisma.room.update({
         where: { id: opts.roomId },
         data: {
-          isVacant: true,
-          ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }),
+          isVacant: !occupied,
+          ...(early && room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }),
         },
       })
     } catch { /* 방 갱신 실패가 퇴실을 되돌리지 않는다 */ }
@@ -533,6 +541,10 @@ export async function getRoomsForSelect() {
       vacancyExcluded: isVacancyExcluded(r),
       occupantMoveOut: lastOut?.expectedMoveOut ? new Date(lastOut.expectedMoveOut).toISOString().slice(0, 10) : null,
       occupantIsShortTerm: lastOut?.isShortTerm ?? false,
+      // 이 방을 잡은 계약 전부(거주중·퇴실 예정·입실 예약, lib/roomOccupancy 와 같은 정의). 수정 폼이
+      // 퇴실 저장 전에 '이 방이 정말 비는가'를 묻는다. 다른 계약이 남으면 서버가 공실로 돌리지도,
+      // 예약가를 앞당기지도 않으므로 '공실로 변경됩니다' 확인창을 띄우지 않는다(2026-10-01, 513호).
+      occupyingLeaseIds: leaseTerms.filter(l => ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(l.status)).map(l => l.id),
       // 퇴실 예정일 없는 예약만 '무기한'이다. 날짜가 잡힌 예약은 언제 비는지 아는 방이라 막지 않고
       // 겹칠 때만 확인창으로 묻는다(운영 재량). 서버 가드(addTenant·updateTenant)도 같은 선이다.
       hasIndefiniteReservation: leaseTerms.some(l => l.status === 'RESERVED' && !l.expectedMoveOut),
@@ -1625,18 +1637,14 @@ export async function updateTenant(formData: FormData): Promise<
   const isActiveStatus  = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
   const wasActiveStatus = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(prevStatus)
 
-  const hasOtherActiveInRoom = async (roomId: string, excludeLeaseTermId: string) => {
-    const count = await prisma.leaseTerm.count({
-      where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] }, id: { not: excludeLeaseTermId } },
-    })
-    return count > 0
-  }
+  // 점유 확인은 lib/roomOccupancy 정본 하나다. 여기 있던 사본(hasOtherActiveInRoom)은 같은 정의
+  // (ACTIVE·RESERVED·CHECKOUT_PENDING, 자기 계약 제외)라 동작 변화 없이 걷었다(2026-10-01).
 
   // 거주중→공실 전환 판정 (scheduledRent 즉시 적용 처리에 사용)
   let vacatedRoomId: string | null = null
 
   if (newRoomId !== prevRoomId && prevRoomId && wasActiveStatus) {
-    const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
+    const hasOther = await roomStillOccupied(prevRoomId, leaseTermId)
     if (!hasOther) {
       await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
       vacatedRoomId = prevRoomId
@@ -1646,7 +1654,7 @@ export async function updateTenant(formData: FormData): Promise<
   if (isActiveStatus && newRoomId) {
     await prisma.room.update({ where: { id: newRoomId }, data: { isVacant: false } })
   } else if (!isActiveStatus && prevRoomId && wasActiveStatus) {
-    const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
+    const hasOther = await roomStillOccupied(prevRoomId, leaseTermId)
     if (!hasOther) {
       await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
       vacatedRoomId = prevRoomId
@@ -1749,6 +1757,9 @@ export async function updateTenant(formData: FormData): Promise<
     checkoutSideNotice = await applyCheckoutSideEffects(propertyId, leaseTermId, {
       roomId: newRoomId ?? prevRoomId ?? null,
       cleaningYmd: (formData.get('cleaningDate') as string) || undefined,
+      // 확인창 답을 존중한다. 종전에는 '아니오'(변경 예정일에 자동 적용)를 골라도 여기서 무조건
+      // 앞당겼다. 안 물었으면(빈 값) undefined 로 넘겨 빈 방이면 앞당기는 종전 규칙에 맡긴다.
+      applyScheduledRent: applyScheduledRent === '1' ? true : applyScheduledRent === '0' ? false : undefined,
     })
   }
 
@@ -3415,24 +3426,10 @@ function roomVacantForStatus(status: string): boolean | null {
   return null  // WAITING_TOUR, TOUR_DONE — 호실 점유 변경 없음
 }
 
-// 이 방을 아직 점유하고 있는 다른 계약이 있는가.
-//
-// 공실로 되돌리기 전에 반드시 본다. 종전에는 그 방의 다른 lease 를 보지 않고 isVacant 를 덮어써서,
-// 한 방에 비거주자와 거주자가 공존하는 상황에서 한쪽이 퇴실하면
-// **거주자가 있는 방이 공실로 표시**됐다(B페이즈 조사, 실측 0건이지만 열린 경로다).
-// exceptLeaseId 는 선택이다 — '예외 없음'을 '' 로 표현하면 Postgres 가 uuid 캐스팅에서 터진다
-// (invalid input syntax for type uuid, 2026-09-01 오늘 이사 처리 실사고). 빈 값이면 조건을 아예 뺀다.
-async function roomStillOccupied(roomId: string, exceptLeaseId?: string): Promise<boolean> {
-  const other = await prisma.leaseTerm.findFirst({
-    where: {
-      roomId,
-      ...(exceptLeaseId ? { id: { not: exceptLeaseId } } : {}),
-      status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] },
-    },
-    select: { id: true },
-  })
-  return !!other
-}
+// 이 방을 아직 점유하고 있는 다른 계약이 있는가 — roomStillOccupied 는 lib/roomOccupancy 정본이다
+// (2026-10-01, 엑셀 가져오기 라우트와 함께 쓰려고 옮겼다). 공실로 되돌리기 전에 반드시 본다.
+// 종전에는 그 방의 다른 lease 를 보지 않고 isVacant 를 덮어써서, 한 방에 비거주자와 거주자가
+// 공존하는 상황에서 한쪽이 퇴실하면 **거주자가 있는 방이 공실로 표시**됐다(B페이즈 조사).
 
 // 이 계약에 보증금 반환이 기록돼 있는가 — 퇴실 적용취소의 차단 술어가 읽는 한 축.
 // 조회를 여기 한 벌로 두는 이유는 되돌리는 길이 둘이기 때문이다(전환 액션·수정 폼 뒷문).
@@ -3666,23 +3663,28 @@ export async function applyStatusTransition(input: {
     if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE') await reanchorReservationPrepaid(input.leaseTermId)
 
     // 호실 공실 처리
-    let vac = roomVacantForStatus(input.toStatus)
-    // 공실로 되돌리려는데 그 방을 아직 점유한 다른 계약이 있으면 덮지 않는다
-    if (vac === true && lease.roomId && await roomStillOccupied(lease.roomId, input.leaseTermId)) vac = null
+    const vac = roomVacantForStatus(input.toStatus)
     if (lease.roomId && vac !== null) {
       if (input.toStatus === 'CHECKED_OUT') {
         // 공실·예약가·청소·구간은 부수 처리 정본 한 자리를 지난다(2026-08-30 경로 통합).
         // 종전에는 이 자리가 checkoutTenant 를 손으로 베낀 두 벌째였다 — 주석이 "동일"이라고
         // 적어 두었지만 손사본은 언젠가 갈린다.
+        // 정본은 항상 부른다(2026-10-01). 종전에는 위에서 점유 확인이 vac 를 null 로 만들어 이 호출
+        // 자체를 막았다. 룸메이트·다음 예약이 있는 방에서 퇴실하면 청소 예정도 구간 마감도 안 생겼다.
+        // 공실 여부는 정본 안의 점유 확인이 정한다.
         const cleaningNotice = await applyCheckoutSideEffects(propertyId, input.leaseTermId, {
           roomId: lease.roomId, cleaningYmd: input.cleaningDate,
         })
         // 이미 서 있는 안내(일할 정산 해제 등)를 덮지 않고 잇는다. 둘 다 같은 저장에서 일어난 일이다.
         if (cleaningNotice) notice = notice ? `${notice} ${cleaningNotice}` : cleaningNotice
       } else {
-        // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
-        await clearAutoCheckoutCleaning(propertyId, input.leaseTermId)
-        await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
+        // 공실로 되돌리려는데 그 방을 아직 점유한 다른 계약이 있으면 덮지 않는다(종전 동작 그대로)
+        const occupiedByOther = vac === true && await roomStillOccupied(lease.roomId, input.leaseTermId)
+        if (!occupiedByOther) {
+          // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
+          await clearAutoCheckoutCleaning(propertyId, input.leaseTermId)
+          await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
+        }
       }
     }
 

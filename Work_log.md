@@ -6745,3 +6745,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-01 신고 70addd65 과거 달 퇴실자 사라짐 (513호)
 - 정본 lib/leaseStatus residedInMonth·leaseStayEnd·leaseBillingEnd·checkedOutInMonthWhere. 홈 미수·도넛·타일·수납 관리 행에 그 달 거주 퇴실 계약 포함(이 달 청구 합·예상 수입·실수납은 퇴실 귀속 항 때문에 불변), 타일 무색 밴드 '퇴실 완료'(퇴실자만 선 빈 방 타일은 그 계약 수납 면), 과거 달 타일은 그 달 거주자만·입주 가능 블락 생략·기준 칩, 수납 관리 [퇴실 완료] 배지, 입주자 탭 과거 달 캡션. 전후 대조: 10월 동일(무순서 조회 순서만), 4~9월 사람·도넛 건수 추가 + 4·5월 415호 미수 250,000 노출. 그물 test-resided-in-month·check-month-population-axis(verify:fast). 웹디자이너 패스·커밋·푸시는 운영자 몫.
+
+## 2026-10-01 퇴실 처리가 다음 예약이 있는 방을 공실로 덮음 (513호)
+- 정본 lib/roomOccupancy(roomStillOccupied 를 actions 에서 옮겨 가져오기 라우트와 공유 · shouldApplyScheduledRentOnCheckout). applyCheckoutSideEffects 는 isVacant: !occupied, 예약가 조기 적용은 빈 방 + 운영자 답이 '적용 안 함' 아닐 때만. 프리즘 경로는 정본을 항상 부른다(룸메이트·다음 예약 방에서도 청소 예정·구간 마감 생성). 가져오기 보관 경로 같은 가드, updateTenant 사본 hasOtherActiveInRoom 수렴. 홈 퇴실 창 문구 3갈래(moveOutRoomHeldBy), 수정 폼은 방이 계속 차 있으면 '공실로 변경됩니다' 확인창을 안 띄움. 그물 check-vacant-write-guard·test-checkout-vacancy(verify:fast), check-checkout-side-effects needle 갱신 + 축 ⓑ', check-wish-match-drift 축1 전 방(역주입 4축 빨강). 513 정정·커밋·푸시는 운영자 몫.

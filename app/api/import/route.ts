@@ -8,6 +8,7 @@ import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { roomStillOccupied } from '@/lib/roomOccupancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
@@ -202,10 +203,13 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
             })
             // 거주 구간 이력 — 보관 처리(퇴실 확정)면 열린 구간을 퇴실일로 마감(추가 write).
             await closeStay(prisma, activeLease.id)
+            // 공실은 그 방을 잡은 다른 계약이 없을 때만이다(lib/roomOccupancy 정본, 2026-10-01 513호와
+            // 같은 클래스). 다음 입실 예약이 걸린 방을 보관 처리 한 번에 공실로 덮지 않는다.
             if (activeLease.room?.id) {
+              const occupied = await roomStillOccupied(activeLease.room.id, activeLease.id)
               await prisma.room.update({
                 where: { id: activeLease.room.id },
-                data: { isVacant: true },
+                data: { isVacant: !occupied },
               })
             }
           }

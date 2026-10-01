@@ -27,7 +27,10 @@ if (!fn) {
 } else {
   const body = fn[0]
   for (const [needle, what] of [
-    ['isVacant: true', '공실 표시'],
+    // 공실은 점유 정본(lib/roomOccupancy) 확인 뒤에만 쓴다(2026-10-01, 513호). 종전 needle 'isVacant: true' 는
+    // 무조건 공실 쓰기를 오히려 요구해서, 다음 입실 예약이 걸린 방을 덮는 그 결함을 그물이 지켜 주고 있었다.
+    ['roomStillOccupied(', '점유 확인'],
+    ['isVacant: !occupied', '점유 확인 뒤 공실 표시'],
     ['scheduledRent', '예약가 적용'],
     ['ensureCheckoutCleaning(', '청소 예정'],
     ['closeStay(', '거주 구간 마감'],
@@ -41,6 +44,7 @@ if (!fn) {
 const callers = [
   ['checkoutTenant', /export async function checkoutTenant[\s\S]*?\n\}\n/],
   ['updateTenant', /export async function updateTenant[\s\S]*?\n\}\n\n/],
+  ['applyStatusTransition', /export async function applyStatusTransition[\s\S]*?\n\}\n/],
 ]
 for (const [name, re] of callers) {
   const m = src.match(re)
@@ -48,6 +52,21 @@ for (const [name, re] of callers) {
   const writesCheckout = /status:\s*'CHECKED_OUT'|=== 'CHECKED_OUT'/.test(m[0])
   if (writesCheckout && !/applyCheckoutSideEffects\(/.test(m[0])) {
     violations.push(`${FILE} — ${name} 이 퇴실 상태를 쓰면서 부수 처리 정본을 안 부른다. 청소 예정·공실이 빠진다.`)
+  }
+}
+
+// ⓑ' 상태 전환 경로가 점유 확인으로 정본 호출 자체를 막지 않는가(2026-10-01).
+//    종전에는 roomStillOccupied 가 vac 를 null 로 만들어 정본 호출을 건너뛰었다. 룸메이트·다음 예약이
+//    있는 방에서 퇴실하면 청소 예정도 거주 구간 마감도 안 생겼다. 공실 판정은 정본 안의 몫이다.
+{
+  const m = src.match(/export async function applyStatusTransition[\s\S]*?\n\}\n/)
+  if (m) {
+    const body = m[0]
+    const callAt = body.indexOf('applyCheckoutSideEffects(')
+    const guardAt = body.indexOf('roomStillOccupied(')
+    if (callAt >= 0 && guardAt >= 0 && guardAt < callAt) {
+      violations.push(`${FILE} — applyStatusTransition 이 점유 확인을 정본 호출 앞에 둔다. 방이 차 있으면 퇴실 청소·구간 마감이 빠진다.`)
+    }
   }
 }
 

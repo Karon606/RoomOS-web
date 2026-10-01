@@ -58,7 +58,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 // ── 타입 ────────────────────────────────────────────────────────
 
 // 홈 알림 한 건 — 보이는 목록과 '끈 알림'이 같은 모양을 쓴다(끄기 일반화 2026-09-02).
-type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringDueMonth?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string; muteKeys?: string[]; mutedAt?: string }
+type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringDueMonth?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutRoomHeldBy?: 'reserved' | 'resident' | null; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string; muteKeys?: string[]; mutedAt?: string }
 
 export type DashboardData = {
   // 시작 체크리스트 — 3단계(호실·입주자·첫 수납) 모두 완료면 null
@@ -287,7 +287,7 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, roomId, expectedYmd, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, roomHeldBy, leaseTermId, roomId, expectedYmd, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
@@ -296,6 +296,8 @@ function CheckoutRefundModal({
   compositionLabel: string | null
   /** 호실이 걸린 계약인가 — 아니면 서버가 청소를 아예 안 만드므로 예정일 칸을 세우지 않는다. */
   hasRoom: boolean
+  /** 이 계약이 나가도 방을 잡는 계약의 갈래 — 있으면 서버가 공실로 돌리지 않는다(lib/roomOccupancy). */
+  roomHeldBy: 'reserved' | 'resident' | null
   /** 이용료 정산 정본이 이 계약의 환불액을 스스로 계산한다 — 미리 확정해 둔 값이 없어도 묻는다. */
   leaseTermId: string | null
   /** 이 방의 호실 id — 이미 잡힌 퇴실 청소가 있는지 묻는 데 쓴다. */
@@ -468,7 +470,12 @@ function CheckoutRefundModal({
           </>)}
 
           {depositAmount === 0 && (
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>호실이 공실로 전환됩니다.</p>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
+              {/* 방을 잡은 다른 계약이 남으면 공실이 아니다 — 서버 판정(roomStillOccupied)과 같은 사실을 말한다(2026-10-01, 513호). */}
+              {roomHeldBy === 'reserved' ? '다음 입실 예약이 있어 호실은 공실로 전환되지 않습니다.'
+                : roomHeldBy === 'resident' ? '이 호실에 거주 중인 다른 입주자가 있어 공실로 전환되지 않습니다.'
+                : '호실이 공실로 전환됩니다.'}
+            </p>
           )}
 
           {/* 이용료 정산은 **보증금 게이트 밖**이다. 종전에는 보증금이 있을 때만 그려서, 보증금 0 인
@@ -823,6 +830,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
           cleaningFee={moveOutCleaning}
           compositionLabel={alert.moveOutCompositionLabel ?? null}
           hasRoom={alert.moveOutHasRoom === true}
+          roomHeldBy={alert.moveOutRoomHeldBy ?? null}
           leaseTermId={moveOutLeaseId ?? null}
           roomId={alert.roomId ?? null}
           expectedYmd={alert.moveOutExpectedYmd ?? null}

@@ -15,7 +15,7 @@
 - [[domain-expense-target-month]] — 지출의 두 달 축(date=현금일·합계·손익 / targetMonth=고정지출 회차): 정본 lib/expenseTargetMonth·1안 범위·같은 회차 중복 거부·손익 비대칭은 별도 결정
 - [[domain-inventory]] — 추적품목·수령배치·위치별 점검·단위 매칭(specMultiplier 정본)·평균 소모율(30일 합산) · **자재 설치·폐기 두 축**(돈은 안 줄고 물건만 준다·가르는 자리는 집계 한 곳·mergeUnassignedGroup 의 disposedAt: null 이 급소·교체는 한 트랜잭션) · **상세 모달의 범위는 넷**(카드·이름·이름+규격·분류, 축이 넓어지는 순서로 선다, 소제목은 curPlace 단일 원천)
 - [[domain-unit-basis]] — 단가 기준(규격당 대 개당): 기록이 있으면 따르고 없으면 규칙으로 간다·날조 금지·규칙 넷(서술·길이·부피+매장·추적단위)·재고 환산과 다른 축·알려진 공백(SpecWizard)
-- [[domain-vacancy]] — 공실 집계 정본(lib/vacancy)·집계 제외(창고·사무실)·입실 파생식
+- [[domain-vacancy]] — 공실 집계 정본(lib/vacancy)·집계 제외(창고·사무실)·입실 파생식·공실 전환은 점유 정본(lib/roomOccupancy) 확인 뒤에만·퇴실 시 예약 인상가 조기 적용 조건(2026-10-01, 513호)
 - [[domain-room-stay]] — 거주 구간(RoomStay)과 이사(지금 방 대 거쳐 간 방·이사일 검증 5축·이사 어휘·입퇴실 건수 포함·표시 감지망)
 - [[domain-cleaning]] — 청소 결함 대장(D1~D5)·미반환분 분류 규칙(청소비 대 몰취)·수행자 규칙·캘린더 작업 레인 규칙·예정 담당자
 - [[domain-auto-checkout]] — 퇴실 예정 **자동 전환**: 리드(한 달 이하 7일 / 그 밖 달력 한 달)·두 축 판정·autoCheckoutAt 재무장·시점 선택과 되돌리기
