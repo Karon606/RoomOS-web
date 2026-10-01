@@ -319,6 +319,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           const recordIds: string[] = []
           let cleaningIncomeId: string | undefined
           let rentAllocs: SavePaymentResult['allocations'] = []
+          let staleNotice: string | null = null   // 잔여 변동 안내 — 성공 토스트 뒤에 띄운다
           // 몫마다 **그 몫의 정본 저장부**로 보낸다. 따로 받아 따로 적었다면 갔을 바로 그 자리다.
           // 새 배분 로직은 없다. 순서는 보증금·청소비·이용료이고, 중간에 실패하면 거기서 멈추고
           // 무엇까지 저장됐는지 말한다(형제 정본과 같은 문법).
@@ -354,9 +355,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               const amt = await getPaymentsByLease(room.leaseTermId, targetMonth)
                 .then(r => r.windowRecords.find(x => x.id === excessId)?.actualAmount ?? null)
                 .catch(() => null)
-              pushToast('info', `보증금 잔여가 바뀌어 ${amt != null ? fmtWon(amt) : '일부'}${amt != null ? '이' : '가'} ${Number(targetMonth.slice(5, 7))}월분 이용료로 기록됐습니다`, {
-                detail: '수납 내역에서 확인해 주세요.',
-              })
+              // 결과(성공 토스트)보다 먼저 서지 않게 모아 두었다가 성공 토스트 뒤에 띄운다(웹디자이너 패스).
+              staleNotice = `보증금 잔여가 바뀌어 ${amt != null ? fmtWon(amt) : '일부'}${amt != null ? '이' : '가'} ${Number(targetMonth.slice(5, 7))}월분 이용료로 기록됐습니다`
             }
           }
           if (cVal > 0) {
@@ -460,6 +460,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           if (hidden.length > 0) {
             pushToast('info', `${monthsLabel(hidden)}은 지금 보는 최근 3개월 내역에 표시되지 않습니다`)
           }
+          if (staleNotice) pushToast('info', staleNotice, { detail: '수납 내역에서 확인해 주세요.' })
           splitDone = true
         } else if (isCleaningFeeMode) {
           // 청소비는 보증금이 아니다 — 돌려줄 의무가 없는 확정 대가라 받은 달 수익이다.
@@ -608,18 +609,16 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         {tmOptions.map(o => {
           const [y, m] = o.month.split('-')
           const tag = o.status === 'paid' ? '완납'
-            : o.status === 'partial' ? `일부 ${fmtWon(o.paidAmount)}/${fmtWon(o.expectedAmount)}`
+            : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
             : o.status === 'future' ? '향후' : '미수'
           return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
         })}
       </select>
-      {splitMode ? (
+      {/* 직접 고른 달에만 선다. 자동이면 분해 모드는 이용료 행 캡션이, 비분해는 위 안내가 이미 시작 달과 규칙을 말한다.
+          분해 모드에서 이용료 몫이 0원(전액 보증금)이면 넘어갈 돈이 없으므로 세우지 않는다(웹디자이너 패스). */}
+      {forcedTm !== 'auto' && (!splitMode || rVal > 0) && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-          {forcedTm !== 'auto' ? '직접 선택 · ' : ''}이용료 몫이 그 달 청구액보다 많으면 남는 금액은 다음 달로 넘어갑니다.
-        </p>
-      ) : forcedTm !== 'auto' && (
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
-          직접 선택 · 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
+          직접 선택 · {splitMode ? '이용료 몫' : '입력 금액'}이 그 달 청구액보다 많으면 남는 금액은 다음 달로 넘어갑니다.
         </p>
       )}
     </div>
@@ -697,7 +696,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           </div>
           {/* 저장 전에 이용료가 앉을 달을 말한다(신고 955f47b1). 고른 달, 아니면 FIFO 시작 달. */}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">
-            {rVal > 0 && rentStartMonth ? `자동 계산 · ${Number(rentStartMonth.slice(5))}월분부터 기록` : '자동 계산'}
+            {rVal > 0 && forcedTm === 'auto' && rentStartMonth ? `자동 계산 · ${Number(rentStartMonth.slice(5))}월분부터 채움` : '자동 계산'}
           </p>
           {tmSelect}
           {depositOver ? (
