@@ -6733,3 +6733,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 그물: check-rent-month-pin(verify:fast, 역주입 5축 빨강 확인), check-skipped-month-prepaid(verify:db, 기준선 0, 지금 63c7591c 1건으로 빨강 · 정정 대기).
 - 남은 것: 서버 saveDepositPayment·saveCleaningFeePayment 초과분 못박기(2단계 승인 대기), 63c7591c 정정.
 - 2차(독립 검수 반영): 분해 모드 자릿수 확인창, 보증금 잔여 변동 경고와 저장 후 재조회, 귀속월 칸을 이용료 행 아래로(한 조각), 저장 전 표시를 서버 FIFO 값으로(getFifoStartMonth), 토스트 여러 달 접기, 청소비만 저장한 분해 수납 적용취소, 그물 구멍 봉합(역주입 9축), DB 래칫 확대·허용목록화(현재 63c7591c 1건).
+
+## 2026-10-01 신고 8737b4d5 홈 미납 알림에서 독촉 문자
+- 미납 알림 상세에 보조 버튼 '독촉 문자 보내기'(정본 UnpaidSmsModal z 260 겹침, 닫으면 알림 상세로 복귀). 판정은 getTenantUnpaidTarget(+leaseId 좁힘), 규칙은 lib/unpaidSmsTarget 순수 함수로 빼 위젯 '안내문자'도 같은 판정(유예 중·납부일 전 행 숨김, 405호 클래스). 그물 check-unpaid-sms-gate(verify:fast, 역주입 4축 빨강).

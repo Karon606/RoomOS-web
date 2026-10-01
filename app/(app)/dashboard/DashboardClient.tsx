@@ -12,7 +12,7 @@ import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import MonthSelector from '@/components/layout/MonthSelector'
-import { getTrendData, type TrendRange, type TrendPoint } from './actions'
+import { getTrendData, getTenantUnpaidTarget, type TrendRange, type TrendPoint, type TenantUnpaidTarget } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
@@ -46,6 +46,7 @@ import { muteHomeAlert, unmuteHomeAlert, setAlertCutoff } from '@/app/(app)/room
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
+import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -516,6 +517,18 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
   const [recordPending, setRecordPending]   = useState(false)
   const [mutePending, setMutePending]       = useState(false)
   const [cutoffPending, setCutoffPending]   = useState(false)
+  // 미납 알림의 독촉 문자 대상(신고 8737b4d5). 판정은 입주자 상세와 같은 정본 getTenantUnpaidTarget 이고,
+  // 알림이 가리키는 계약 행으로 좁힌다. undefined = 판정 중, null = 대상 아님(유예 중·납부일 전).
+  const [unpaidSmsTarget, setUnpaidSmsTarget] = useState<TenantUnpaidTarget | null | undefined>(undefined)
+  const [unpaidSmsOpen, setUnpaidSmsOpen]     = useState(false)
+  useEffect(() => {
+    if (alert.category !== 'unpaid' || !alert.tenantId || !alert.leaseTermId) return
+    let alive = true
+    getTenantUnpaidTarget(alert.tenantId, alert.leaseTermId)
+      .then(t => { if (alive) setUnpaidSmsTarget(t) })
+      .catch(() => { if (alive) setUnpaidSmsTarget(null) })
+    return () => { alive = false }
+  }, [alert.category, alert.tenantId, alert.leaseTermId])
 
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
@@ -718,6 +731,17 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
               수납 관리 보기
             </Btn>
           )}
+          {/* 독촉 문자 — 납부일 경과 미납일 때만 선다(정본 판정, 유예 중·납부일 전 제외).
+              판정 중에는 버튼 높이(Btn md min-h 44px)만큼 자리를 비워 둬 아래 링크가 뛰지 않게 한다. 대부분은 대상이라
+              그대로 버튼이 들어서고, 대상이 아닐 때만 자리가 접힌다. */}
+          {alert.category === 'unpaid' && alert.tenantId && alert.leaseTermId && (
+            unpaidSmsTarget === undefined ? <div aria-hidden className="min-h-[44px]" />
+            : unpaidSmsTarget ? (
+              <Btn variant="secondary" size="md" fullWidth onClick={() => setUnpaidSmsOpen(true)}>
+                독촉 문자 보내기
+              </Btn>
+            ) : null
+          )}
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-lg border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
@@ -805,6 +829,10 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}
         />
+      )}
+      {/* 알림 상세 위에 겹쳐 연다(z 260, 퇴실 미니폼·입주자 상세 독촉과 같은 층). 닫으면 알림 상세로 돌아온다. */}
+      {unpaidSmsOpen && unpaidSmsTarget && (
+        <UnpaidSmsModal target={unpaidSmsTarget} z={260} onClose={() => setUnpaidSmsOpen(false)} />
       )}
     </Modal>
   )
@@ -3119,16 +3147,21 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                   <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
                               </button>
-                              <div className="flex flex-col items-end gap-1 shrink-0">
+                              {/* 금액과 안내문자를 가로로 둔다. 세로로 쌓으면 버튼이 빠진 행(유예·납부일 전)만 낮아져
+                                  목록 리듬이 깨진다(웹디자이너 패스). 버튼은 행 액션 정본(히트영역·시각 박스 분리). */}
+                              <div className="flex items-center gap-2 shrink-0">
                                 <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
-                                {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지) */}
-                                <button type="button"
-                                  onClick={() => setSmsTarget({ leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue })}
-                                  className="min-h-[44px] inline-flex items-center text-[0.65625rem] px-2.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
-                                  안내문자
-                                </button>
+                                {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지).
+                                    납부일 경과 미납 행에만 선다(정본 isUnpaidSmsTarget). 유예 중·납부일 전 행에
+                                    서면 유예해 준 사람에게 독촉 문구가 나간다(2026-08-02 405호 사건 클래스). */}
+                                {isUnpaidSmsTarget(l) && (
+                                  <RowActionBtn tone="accent" className="shrink-0"
+                                    onClick={() => setSmsTarget({ leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue })}>
+                                    안내문자
+                                  </RowActionBtn>
+                                )}
                               </div>
                               </div>
                             )
@@ -3240,6 +3273,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       {/* RoomDetailPopup 제거됨 — 호실 클릭은 EntityModal(Pivot)로 일원화 (호실/입주자/수납 통일된 탭) */}
       {selectedAlert && (
         <AlertDetailModal
+          // 알림이 바뀌면 상태(독촉 문자 대상 판정 등)를 새로 시작한다 — 앞 알림의 판정이 남지 않게.
+          key={`${selectedAlert.category ?? ''}|${selectedAlert.leaseTermId ?? ''}|${selectedAlert.link}|${selectedAlert.text}`}
           alert={selectedAlert}
           cutoffOffer={data.receiptCutoff.offerCount}
           todayYmd={kstYmdStr()}

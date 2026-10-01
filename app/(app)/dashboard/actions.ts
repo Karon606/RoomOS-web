@@ -11,6 +11,7 @@ import { dbDateMonthKey, monthDbRange, monthsDbRange, ymdToDbDate, type DbDateRa
 import { daysInMonth, shiftMonth } from '@/lib/moveCalendar'
 import type { DashboardData } from './DashboardClient'
 import { computeUnpaidStatus } from './unpaid'
+import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 
 // ── 추이 차트 ────────────────────────────────────────────────────
 
@@ -370,12 +371,14 @@ export type TenantUnpaidTarget = {
   leaseId: string; tenantId: string; tenantName: string; roomNo: string
   unpaidAmount: number; daysOverdue: number | null
 }
-export async function getTenantUnpaidTarget(tenantId: string): Promise<TenantUnpaidTarget | null> {
+// leaseId 를 주면 그 계약 행으로 좁힌다(홈 미납 알림 — 방 둘 쓰는 입주자에서 알림 계약과 어긋나지 않게).
+// 판정 규칙은 lib/unpaidSmsTarget 정본(홈 미수납 위젯과 같은 함수).
+export async function getTenantUnpaidTarget(tenantId: string, leaseId?: string): Promise<TenantUnpaidTarget | null> {
   try {
     const access = await getPropertyAccess()
     if (!access) return null
     const { unpaidLeases } = await computeUnpaidStatus(access.propertyId)
-    const l = unpaidLeases.find(x => x.tenantId === tenantId && x.unpaidAmount > 0 && (x.daysOverdue ?? -1) >= 1)
+    const l = unpaidLeases.find(x => x.tenantId === tenantId && (!leaseId || x.leaseId === leaseId) && isUnpaidSmsTarget(x))
     if (!l) return null
     return { leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue }
   } catch (err) {
