@@ -1496,3 +1496,15 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 품목 행 탭 → 아래 목록 카테고리·검색 필터 + 스크롤, 검색 hay 에 itemLabel
 - [x] 320px 범례 이름 0px 결함: flex-col sm:flex-row
 - [x] 게이트 + 웹디자이너 패스
+
+# 고정지출 귀속월 — 가스요금 9월분 10/1 납부 (2026-10-01, 운영자 승인: 스키마 변경 + 1안)
+범위 1안: 귀속월은 고정지출 회차 판정·추정·앵커·중복가드에만. 재무 월 합계·손익·카드 청구월은 date(현금일) 유지.
+- [x] 운영 DB expenses."targetMonth" TEXT NULL 선추가(2026-10-01, DIRECT_URL)
+- [x] schema.prisma 필드 + generate, 정본 expenseTargetMonth(e) = targetMonth ?? date 월
+- [x] recurringStatus 판정·이력·추정을 정본 경유, 같은 항목 2건 합산
+- [x] recordRecurringExpense targetMonth 수용 + 같은 항목·같은 귀속월 거부, 삭제·앵커 재동기화 정본 경유
+- [x] 기록 모달 귀속월 select(기본=예정 달, 전후 1달), 홈 알림 진입 시 예정일 전달
+- [x] 목록 'N월분 지연' 배지, 삭제 확인창 문구
+- [x] 테스트·감지망(test-expense-target-month verify:fast, verify-recurring-estimate ③)
+- [ ] 10/1 가스요금 1건(bf6aeefb) targetMonth=2026-09 백필(되돌리기)
+- [x] 게이트 + 웹디자이너 패스(차단 2건 반영: 홈 알림 미래 예정일 미전달, 배지 중립 N월분)

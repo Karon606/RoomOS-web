@@ -54,6 +54,7 @@ import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
+import { expenseTargetMonth, targetMonthBadge } from '@/lib/expenseTargetMonth'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -90,6 +91,7 @@ type Expense = {
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
+  targetMonth: string | null   // 고정지출 귀속월 'YYYY-MM'(null=date 의 달) — 읽기는 lib/expenseTargetMonth 정본만
   receiptUrl: string | null
   breakdownJson: string | null   // #1 관리비 묶음 세부 내역
   itemLabel: string | null
@@ -235,6 +237,17 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
 }
 
 // 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
+// 고정지출 기록의 귀속월이 납부 달과 다를 때만 서는 중립 배지 'N월분' — 지연·선납은 판정하지 않는다
+// (말일 자동이체가 주말이면 제때 내도 다음 달 날짜다). 톤은 수납 내역 배지(PaymentRecordList)의 중립 갈래.
+function TargetMonthBadge({ e }: { e: { recurringExpenseId: string | null; targetMonth: string | null; date: Date | string } }) {
+  if (!e.recurringExpenseId) return null
+  const text = targetMonthBadge(e)
+  if (!text) return null
+  return (
+    <span className="text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap shrink-0 bg-[var(--cream-2)] text-[var(--warm-mid)]">{text}</span>
+  )
+}
+
 function roomChipText(rows: { room: { roomNo: string } | null }[]): string {
   const n = new Set(rows.filter(r => r.room).map(r => r.room!.roomNo)).size
   return n > 0 ? `방 ${n}개` : '미배정'
@@ -1932,7 +1945,8 @@ export default function FinanceClient({
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   // 기록 폼의 프리필·입력 상태는 공용 RecurringExpenseRecordModal 내부에 있다(대시보드와 동일 폼).
   // dueDate = 그 예정 행의 납부 예정일 — 모달 날짜 프리필용(신고 1cfaabab: 오늘로 뜨던 것).
-  const [recordingRec, setRecordingRec] = useState<{ rec: RecurringExpenseWithStatus; dueDate: string } | null>(null)
+  // dueMonth = 그 행을 띄운 조회 달 — 모달 귀속월 기본값(2026-10-01, 9월 화면에서 10/1 에 적어도 9월분).
+  const [recordingRec, setRecordingRec] = useState<{ rec: RecurringExpenseWithStatus; dueDate: string; dueMonth: string } | null>(null)
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
@@ -2736,7 +2750,7 @@ export default function FinanceClient({
     })
   }
   const handleDeleteExp = async (exp: Expense) => {
-    // #7: 고정지출에서 기록된 건은 '삭제'가 아니라 '이번 달 기록 취소'임을 명확히.
+    // #7: 고정지출에서 기록된 건은 '삭제'가 아니라 'N월분 기록 취소'임을 명확히.
     //     (지출 record만 삭제 — 고정지출 항목/템플릿 자체는 그대로 유지)
     const isFixed = !!exp.recurringExpenseId
     // 수령완료 추적 구매 — 이 수량을 이미 반영한 점검이 있으면 함께 조정할지 묻는다(점보롤 백로그 1번).
@@ -2768,10 +2782,12 @@ export default function FinanceClient({
         askedShift = true
       }
     }
+    // 취소되는 것은 그 기록이 치른 회차다 — 9월분을 10/1 에 낸 기록이면 '9월분'(귀속월 정본).
+    const slotMon = isFixed ? `${Number(expenseTargetMonth(exp).slice(5, 7))}월분` : ''
     const ok = askedShift ? true : isFixed
       ? await confirmDialog({
-          title: '이번 달 고정지출 기록만 취소할까요?',
-          message: '고정지출 항목 자체는 그대로 남고, 이번 달 기록(정산)만 취소됩니다.',
+          title: `${slotMon} 고정지출 기록만 취소할까요?`,
+          message: `고정지출 항목 자체는 그대로 남고, ${slotMon} 기록(정산)만 취소됩니다.`,
           confirmLabel: '기록 취소',
         })
       : await confirmDialog({
@@ -2786,9 +2802,9 @@ export default function FinanceClient({
         const res = await deleteExpense(exp.id, adjustStock ? { adjustStock } : undefined)
         if (!res.ok) { pushToast('error', res.error); return }
         setDetailExp(null); router.refresh()
-        pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨', {
+        pushToast('success', isFixed ? `${slotMon} 기록이 취소되었습니다` : '삭제됨', {
           action: { label: '적용취소', run: () => { void undoDeleteExpense(res.undo).then(r => {
-            if (r.ok) { pushToast('info', isFixed ? '이번 달 기록을 복원했습니다' : '지출을 복원했습니다'); router.refresh() }
+            if (r.ok) { pushToast('info', isFixed ? `${slotMon} 기록을 복원했습니다` : '지출을 복원했습니다'); router.refresh() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
         })
@@ -3530,11 +3546,13 @@ export default function FinanceClient({
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
-                                  <span className="text-[0.65625rem] text-[var(--coral)] font-medium">{e.category}</span>
+                                  {/* 좁은 폭(360px)에서 칩이 붙어도 금액 열을 밀지 않게 카테고리만 줄어든다 — 데스크톱 표의 같은 칸 문법(truncate·shrink-0). */}
+                                  <span className="text-[0.65625rem] text-[var(--coral)] font-medium min-w-0 truncate">{e.category}</span>
+                                  <TargetMonthBadge e={e} />
                                   {grp && (item.groupKind === 'order'
-                                    ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">주문 {grp.filter(r => !r.isShipping).length}품목</span>
-                                    : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">{roomChipText(grp)}</span>)}
-                                  {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
+                                    ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">주문 {grp.filter(r => !r.isShipping).length}품목</span>
+                                    : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(grp)}</span>)}
+                                  {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
                                 </div>
                                 {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
@@ -3569,7 +3587,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
+                          onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr, dueMonth: targetMonth })}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -3656,6 +3674,7 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
+                                    <TargetMonthBadge e={e} />
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
                                       : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(grp)}</span>)}
@@ -3687,7 +3706,7 @@ export default function FinanceClient({
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
-                              onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
+                              onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr, dueMonth: targetMonth })}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -3752,7 +3771,7 @@ export default function FinanceClient({
                             <span className="text-sm font-bold text-[var(--warm-mid)]"><MoneyDisplay amount={effectiveRecurringAmount(rec)} prefix="-" /></span>
                           </div>
                           <button type="button"
-                            onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth) })}
+                            onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth), dueMonth: targetMonth })}
                             className="mt-2 w-full px-3 py-2 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
                         </div>
                       ))}
@@ -3770,7 +3789,7 @@ export default function FinanceClient({
                               <td className="px-4 py-3 text-right text-[0.65625rem] text-[var(--warm-mid)] w-36 whitespace-nowrap">다음 도래 {fmtDateDot(recurringDueDateFor(rec, rec.nextDueMonth))}</td>
                               <td className="px-4 py-3 text-right w-24 whitespace-nowrap">
                                 <button type="button"
-                                  onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth) })}
+                                  onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth), dueMonth: targetMonth })}
                                   className="px-2.5 py-1.5 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
                               </td>
                             </tr>
@@ -4301,7 +4320,7 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn variant="danger" size="md" onClick={() => handleDeleteExp(detailExp)} disabled={isPending}>
-                    {detailExp.recurringExpenseId ? '이번 달 기록 취소' : '삭제'}
+                    {detailExp.recurringExpenseId ? `${Number(expenseTargetMonth(detailExp).slice(5, 7))}월분 기록 취소` : '삭제'}
                   </Btn>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
@@ -5392,6 +5411,7 @@ export default function FinanceClient({
         financialAccounts={financialAccounts}
         paymentMethods={paymentMethods}
         defaultDate={recordingRec.dueDate}
+        dueMonth={recordingRec.dueMonth}
         onClose={() => setRecordingRec(null)}
         onDone={() => { setRecordingRec(null); router.refresh(); pushToast('success', '지출이 기록되었습니다') }}
       />

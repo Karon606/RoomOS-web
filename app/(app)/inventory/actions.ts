@@ -3479,6 +3479,7 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
           allocationGroupId: groupId, orderId: expense.orderId, isShipping: expense.isShipping,
           propertyId, roomId: expense.roomId, assignedLocationId: expense.assignedLocationId,
           financialAccountId: expense.financialAccountId, recurringExpenseId: expense.recurringExpenseId,
+          targetMonth: expense.targetMonth,
         } }),
       ])
       expense = created

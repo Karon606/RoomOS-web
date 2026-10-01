@@ -38,7 +38,7 @@ import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
 import { monthDbRange } from '@/lib/kstDate'
-import { kstMonthOf } from '@/lib/fmtDate'
+import { expenseTargetMonth, isMonthKey, targetMonthForSave, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
@@ -1452,7 +1452,8 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
       // 같을 때만이다 — 다른 달 기록을 지운 것은 그 회차를 안 치른 것과 무관하다.
       let clearedOverride: string | null = null
       if (target.recurringExpenseId) {
-        const dueMonth = kstMonthOf(target.date)
+        // 치른 회차는 귀속월이다 — 9월분을 10/1 에 낸 기록을 지우면 되살아나는 것은 9월 회차다.
+        const dueMonth = expenseTargetMonth(target)
         const rec = await tx.recurringExpense.findFirst({
           where: { id: target.recurringExpenseId, propertyId },
           select: { intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true, activeSince: true, createdAt: true },
@@ -1521,13 +1522,12 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
     if (data.propertyId !== propertyId) return { ok: false, error: '다른 영업장의 기록입니다.' }
     // 멱등 — 이미 복원돼 있으면 성공
     if (await prisma.expense.findFirst({ where: { id: data.id }, select: { id: true } })) return { ok: true }
-    // 고정지출 이중 기록 차단 — 삭제로 '기록 대기'가 된 사이 같은 달을 다시 기록했으면 복원 거부
+    // 고정지출 이중 기록 차단 — 삭제로 '기록 대기'가 된 사이 같은 회차를 다시 기록했으면 복원 거부.
+    // 판정은 기록 가드(recordRecurringExpense)와 같은 식 — 귀속월 정본. 칸이 생기기 전 스냅샷은 targetMonth 가 없어 date 의 달.
     if (data.recurringExpenseId) {
-      const dt = new Date(data.date)
-      const from = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1))
-      const to = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1))
+      const slot = expenseTargetMonth({ targetMonth: data.targetMonth ?? null, date: data.date as Date | string })
       const dup = await prisma.expense.findFirst({
-        where: { propertyId, recurringExpenseId: data.recurringExpenseId, date: { gte: from, lt: to } },
+        where: { propertyId, recurringExpenseId: data.recurringExpenseId, ...targetMonthWhere(slot) },
         select: { id: true },
       })
       if (dup) return { ok: false, error: '그 사이 같은 달 고정지출이 다시 기록되어 복원하면 중복됩니다. 기존 기록을 확인해 주세요.' }
@@ -2295,14 +2295,18 @@ async function resyncRecurringAnchor(tx: TxClient, recurringExpenseId: string, p
     select: { intervalMonths: true, anchorMonth: true },
   })
   if (!rec || rec.intervalMonths <= 1) return
-  const last = await tx.expense.findFirst({
+  const rows = await tx.expense.findMany({
     // '이번만' 으로 적은 기록은 리듬의 근거가 아니다 — 그 한 번을 기준으로 삼으면 일회성이 영구가 된다.
     where: { propertyId, recurringExpenseId, excludeFromAnchor: false },
-    orderBy: { date: 'desc' },
-    select: { date: true },
+    select: { date: true, targetMonth: true },
   })
-  // 월 경계는 kstMonthOf 정본 경유 — @db.Date 의 UTC 자정을 KST 로 옮겨 어제 달로 새는 것을 막는다.
-  const next = last ? (Number(kstMonthOf(last.date).slice(5)) || null) : null
+  // 기준은 '가장 최근 회차'의 달 — 귀속월 정본 축이다. 2월분 검사를 3/1 에 내도 리듬은 2월이다(2026-10-01).
+  // 간격 항목은 해에 몇 건이라 전부 읽어 최댓값을 고른다('YYYY-MM' 글자 순서 = 달 순서).
+  const lastMonth = rows.reduce<string | null>((mx, r) => {
+    const m = expenseTargetMonth(r)
+    return mx == null || m > mx ? m : mx
+  }, null)
+  const next = lastMonth ? (Number(lastMonth.slice(5)) || null) : null
   if (next !== rec.anchorMonth) {
     await tx.recurringExpense.update({ where: { id: recurringExpenseId }, data: { anchorMonth: next } })
   }
@@ -2326,10 +2330,16 @@ export async function recordRecurringExpense(data: {
    * 주 사용례이기 때문이다. 청구 주기는 고정인데 납부만 옮긴 경우에만 이 갈래를 쓴다.
    */
   keepCycle?: boolean
+  /**
+   * 이 기록이 치르는 회차의 달 'YYYY-MM'(2026-10-01 운영자 승인). 9월분을 10/1 에 내면 '2026-09'.
+   * 없으면 date 의 달이다. date 의 달과 같으면 NULL 로 접어 저장한다(lib/expenseTargetMonth targetMonthForSave).
+   */
+  targetMonth?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
+    if (data.targetMonth != null && !isMonthKey(data.targetMonth)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
     const recurring = await prisma.recurringExpense.findUnique({
       where: { id: data.recurringExpenseId },
       select: { category: true, title: true, payMethod: true, financialAccountId: true, vendor: true },
@@ -2344,7 +2354,17 @@ export async function recordRecurringExpense(data: {
       ? data.breakdown!.reduce((s, it) => s + (Number(it.amount) || 0), 0)
       : data.amount
 
+    const storedTargetMonth = targetMonthForSave(data.targetMonth, new Date(data.date))
+    const slot = expenseTargetMonth({ targetMonth: storedTargetMonth, date: new Date(data.date) })
+
     await prisma.$transaction(async tx => {
+      // 같은 항목·같은 회차는 한 번만 — 판정은 삭제취소 가드(undoDeleteExpense)와 같은 식, 귀속월 정본.
+      // 9월분을 10/1 에 적고 나서 9월 예정 행에서 또 적으면 한 회차가 두 번 나간 것으로 남는다.
+      const dup = await tx.expense.findFirst({
+        where: { propertyId, recurringExpenseId: data.recurringExpenseId, ...targetMonthWhere(slot) },
+        select: { id: true },
+      })
+      if (dup) throw new Error(`${recurring.title} ${Number(slot.slice(5, 7))}월분은 이미 기록돼 있습니다.`)
       await tx.expense.create({
         data: {
           propertyId,
@@ -2360,6 +2380,7 @@ export async function recordRecurringExpense(data: {
           recurringExpenseId:  data.recurringExpenseId,
           breakdownJson:       hasBreakdown ? JSON.stringify(data.breakdown) : null,
           excludeFromAnchor:   data.keepCycle === true,
+          targetMonth:         storedTargetMonth,
         },
       })
       // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지

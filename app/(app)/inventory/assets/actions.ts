@@ -716,7 +716,7 @@ function cloneExpenseScalars(
     specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
     qtyValue: e.qtyValue, qtyUnit: e.qtyUnit,
     receivedAt: e.receivedAt, disposedAt: e.disposedAt, disposalReason: e.disposalReason,
-    excludeFromInventory: e.excludeFromInventory, excludeFromAnchor: e.excludeFromAnchor,
+    excludeFromInventory: e.excludeFromInventory, excludeFromAnchor: e.excludeFromAnchor, targetMonth: e.targetMonth,
     allocationGroupId: e.allocationGroupId, orderId: e.orderId, isShipping: e.isShipping,
     propertyId, roomId: e.roomId,
     financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId,

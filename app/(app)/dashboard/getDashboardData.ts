@@ -2088,6 +2088,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       recurringExpenseId:    re.id,
       recurringAmount:       expectedAmt,
       recurringDueDate:      effectiveDate.toISOString().slice(0, 10),
+      // 이 알림이 말하는 회차의 달 — 자동이체 시프트로 예정일이 다음 달로 넘어가도 회차는 이 달이다.
+      recurringDueMonth:     targetMonth,
       recurringCategory:     re.category,
       recurringPayMethod:    re.payMethod ?? undefined,
       recurringIsVariable:   re.isVariable,

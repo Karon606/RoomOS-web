@@ -69,4 +69,4 @@ KST 달**로 anchorMonth 를 다시 쓴다. 기록이 하나도 없으면 null �
 
 ## 관련 노트
 
-[[domain-billing]] · [[regression-nets]] · [[open-issues]]
+[[domain-expense-target-month]](회차의 달은 귀속월 축, 2026-10-01) · [[domain-billing]] · [[regression-nets]] · [[open-issues]]

@@ -12,6 +12,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { isRecurringDueMonth, nextRecurringDueMonth, recurringCycleWord } from '@/lib/recurringDueDate'
+import { shiftMonthKey, targetMonthLabel } from '@/lib/expenseTargetMonth'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
@@ -41,13 +42,15 @@ export function effectivePayMethods(
 }
 
 export function RecurringExpenseRecordModal({
-  rec, financialAccounts, paymentMethods, defaultDate, onClose, onDone,
+  rec, financialAccounts, paymentMethods, defaultDate, dueMonth, onClose, onDone,
 }: {
   rec: RecurringExpenseWithStatus
   financialAccounts: RecModalAccount[]
   paymentMethods: string[]
   /** 예정 행에서 열 때 그 행의 납부 예정일('YYYY-MM-DD')을 프리필 — 없으면 오늘(대시보드 알림 등) */
   defaultDate?: string
+  /** 이 기록이 치를 회차의 기본 달 'YYYY-MM' — 진입 경로의 예정 달(재무 조회 달·홈 알림의 달). 없으면 현황의 달. */
+  dueMonth?: string
   onClose: () => void
   /** 지출 기록 성공 시에만 호출 — 닫기·refresh·토스트는 caller 몫 */
   onDone: () => void
@@ -78,6 +81,11 @@ export function RecurringExpenseRecordModal({
       cancelLabel: '예정일 그대로',
     }).then(ok => { if (ok) setDate(today) })
   }, [defaultDate])
+  // 귀속월 — 이 기록이 치르는 회차(2026-10-01 운영자 승인). 9월분을 10/1 에 내면 날짜는 10/1, 귀속월은 9월.
+  // 고를 수 있는 달은 예정 달 앞뒤 한 달뿐이다. 더 먼 달은 그 달 화면에서 적는다.
+  const baseMonth = dueMonth ?? rec.estimateMonth
+  const [targetMonth, setTargetMonth] = useState(baseMonth)
+  const monthOpts = [-1, 0, 1].map(n => shiftMonthKey(baseMonth, n))
   const [memo, setMemo]           = useState(rec.memo ?? '')
   // #6: 가장 최근 실제 기록의 결제수단·계좌를 기본값으로(지난달 처리 방식 자동 대기)
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
@@ -96,10 +104,17 @@ export function RecurringExpenseRecordModal({
   return (
     <Modal open width="sm" dirty={dirty}
       onClose={() => { setError(''); setDirty(false); onClose() }}
-      title="지출 기록" subtitle={rec.title}>
+      title="지출 기록" subtitle={`${rec.title} · ${Number(targetMonth.slice(5, 7))}월분`}>
       <div onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
         {/* 폼 */}
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">귀속월</label>
+            <select value={targetMonth} onChange={e => setTargetMonth(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              {monthOpts.map(m => <option key={m} value={m}>{targetMonthLabel(m)}</option>)}
+            </select>
+          </div>
           {items.length > 0 ? (
             <>
               <div className="space-y-1.5">
@@ -239,8 +254,9 @@ export function RecurringExpenseRecordModal({
                     // 물음은 **리듬 밖의 달에 적을 때만** 세운다. 위상 달(반기의 2·8월)에 적는
                     // 평범한 기록까지 물으면 매번 문이 하나 더 생긴다. 미리 지정해 둔 달도 이미
                     // 의사를 밝힌 것이라 안 묻는다.
+                    // 달은 귀속월이다 — 기준 달 파생(resyncRecurringAnchor)이 귀속월 축이라 같은 달로 물어야 한다.
                     const keep = await (async () => {
-                      const month = date.slice(0, 7)
+                      const month = targetMonth
                       const onRhythm = isRecurringDueMonth({ ...rec, nextDueOverrideMonth: null }, month)
                       if (onRhythm || rec.nextDueOverrideMonth === month) return false
                       const after = nextRecurringDueMonth({ ...rec, anchorMonth: Number(month.slice(5, 7)), nextDueOverrideMonth: null }, month)
@@ -268,6 +284,7 @@ export function RecurringExpenseRecordModal({
                       memo: memo || undefined,
                       breakdown: items.length > 0 ? items : undefined,
                       keepCycle: keep,
+                      targetMonth,
                     })
                     if (!res.ok) { setError(res.error); return }
                     onDone()

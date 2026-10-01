@@ -6,13 +6,16 @@
 //    lib/recurringEstimate.ts 밖에서 손으로 다시 쓴 곳이 없는지 검사 — 식이 두 벌로 갈라지는 재발을 잡는다.
 // ② 데이터 대조: **앱이 실제로 쓰는 함수**(computeRecurringExpensesWithStatus · effectiveRecurringAmount)를
 //    그대로 불러 이번 달 현황을 뽑는다. 스크립트가 산식을 복제하면 정본이 바뀔 때 옛 규칙으로 채점하게 된다.
+// ③ 같은 회차 중복(2026-10-01): 같은 고정지출 항목·같은 귀속월(lib/expenseTargetMonth 정본) 기록이 둘 이상이면 위반.
+//    기록 가드가 막지만 가드 이전 데이터·다른 생성 경로(분할 수령 등)가 남길 수 있다. 화면은 합산해 보여 준다.
 // 실행: npx tsx --env-file=.env.local scripts/verify-recurring-estimate.ts
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import prisma from '../lib/prisma'
 import { computeRecurringExpensesWithStatus } from '../app/(app)/finance/recurringStatus'
 import { effectiveRecurringAmount, recurringAmountLabel, recurringEstimate } from '../lib/recurringEstimate'
-import { kstMonthStr } from '../lib/kstDate'
+import { kstMonthStr, dbDateMonthKey } from '../lib/kstDate'
+import { expenseTargetMonth } from '../lib/expenseTargetMonth'
 
 const HELPER_FILE = 'lib/recurringEstimate.ts'
 const ALERT_FILE = 'app/(app)/dashboard/getDashboardData.ts'
@@ -105,6 +108,26 @@ async function main() {
     console.log(`\n[${p.name}] ${month} 미기록 고정지출 ${lines.length}건`)
     for (const line of lines) console.log(`  - ${line}`)
     console.log(`  추정 합계 ${total.toLocaleString()}원 · 기본액 합계 ${baseTotal.toLocaleString()}원`)
+
+    // ③ 같은 항목·같은 귀속월 2건 이상 (읽기 전용)
+    const recs = await prisma.expense.findMany({
+      where: { propertyId: p.id, recurringExpenseId: { not: null } },
+      select: { id: true, recurringExpenseId: true, date: true, targetMonth: true, amount: true, recurringExpense: { select: { title: true } } },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    })
+    const slots = new Map<string, typeof recs>()
+    for (const e of recs) {
+      const k = `${e.recurringExpenseId}|${expenseTargetMonth(e)}`
+      slots.set(k, [...(slots.get(k) ?? []), e])
+    }
+    let shifted = 0
+    for (const e of recs) if (e.targetMonth && e.targetMonth !== dbDateMonthKey(e.date)) shifted++
+    console.log(`  고정지출 기록 ${recs.length}건 · 귀속월 지정(납부 달과 다름) ${shifted}건`)
+    for (const [k, rows] of slots) {
+      if (rows.length < 2) continue
+      const title = rows[0].recurringExpense?.title ?? rows[0].recurringExpenseId
+      dataIssues.push(`${p.name} · ${title} — ${k.split('|')[1]} 회차 기록이 ${rows.length}건(${rows.map(r => `${r.id.slice(0, 8)} ${r.date.toISOString().slice(0, 10)} ${r.amount.toLocaleString()}원`).join(', ')})`)
+    }
   }
 
   console.log(`\n[소스 가드] ${sourceIssues.length}건`)

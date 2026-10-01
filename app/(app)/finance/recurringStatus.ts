@@ -7,7 +7,8 @@
 // 재무 화면에선 사라진 항목이 알림에만 남는다(신고 568633fb).
 
 import prisma from '@/lib/prisma'
-import { dbDateMonthKey, monthDbRange, monthsDbRange } from '@/lib/kstDate'
+import { dbDateMonthKey } from '@/lib/kstDate'
+import { expenseTargetMonth, targetMonthWhere, foldRecordedByRecurring } from '@/lib/expenseTargetMonth'
 import { isRecurringDueMonth, nextRecurringDueMonth } from '@/lib/recurringDueDate'
 
 export type RecurringExpenseWithStatus = {
@@ -58,9 +59,9 @@ export type RecurringExpenseWithStatus = {
 
 export async function computeRecurringExpensesWithStatus(propertyId: string, month: string): Promise<RecurringExpenseWithStatus[]> {
   const [year, m] = month.split('-').map(Number)
-  // '이번 달' 창 — lib/kstDate 정본. 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 밀려
-  // 7/31 전기요금이 8월 기록으로 판정됐고, 그 바람에 예정 행이 사라졌다(2026-08 실측).
-  const thisMonth = monthDbRange(month)
+  // '이번 달' 회차 — 귀속월 정본(lib/expenseTargetMonth) 축이다. 9월분을 10/1 에 내면 date 는 10월이지만
+  // 치른 회차는 9월이다(2026-10-01). 귀속월이 없는 기록은 date 의 달 창으로 본다 — 창은 lib/kstDate 정본.
+  // 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 밀려 7/31 전기요금이 8월 기록으로 판정됐다(2026-08 실측).
 
   const [allRecurring, recordedThisMonth] = await Promise.all([
     prisma.recurringExpense.findMany({
@@ -69,15 +70,17 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       include: { items: { orderBy: { sortOrder: 'asc' } } },
     }),
     prisma.expense.findMany({
-      where: { propertyId, recurringExpenseId: { not: null }, date: thisMonth },
-      select: { id: true, recurringExpenseId: true, amount: true, date: true },
+      where: { propertyId, recurringExpenseId: { not: null }, ...targetMonthWhere(month) },
+      select: { id: true, recurringExpenseId: true, amount: true, date: true, createdAt: true },
     }),
   ])
 
   // activeSince: 이번 달보다 뒤의 달이면 isPending=true (목록엔 표시하되 기록 불가)
   const recurringList = allRecurring
 
-  const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
+  // 같은 항목·같은 귀속월이 둘이면 금액은 합산, id·날짜는 최신 — Map 으로 마지막 한 건만 남기면
+  // 조회 순서에 따라 금액 일부가 사라진다. 새 기록은 서버 가드가 막지만 가드 이전 데이터가 있을 수 있다.
+  const recordedMap = foldRecordedByRecurring(recordedThisMonth)
 
   // ── 이력 창 ──────────────────────────────────────────────────
   // 창은 '진짜 달력 달'로 잡는다. @db.Date 칸은 UTC 자정으로 저장되고 Prisma 는 경계 Date 의 날짜부만
@@ -89,10 +92,8 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
     const idx = (m - 1) - back
     return { y: year + Math.floor(idx / 12), mo: (((idx % 12) + 12) % 12) + 1 }
   })
-  const recentRange = monthsDbRange(
-    ymKey(recentMonths[0].y, recentMonths[0].mo),
-    ymKey(recentMonths[2].y, recentMonths[2].mo),
-  )
+  const recentFrom = ymKey(recentMonths[0].y, recentMonths[0].mo)
+  const recentTo   = ymKey(recentMonths[2].y, recentMonths[2].mo)
 
   const recurringIds = recurringList.map(re => re.id)
   // 활성화 예정 판정은 '달' 단위다 — activeSince 가 이번 달보다 뒤면 아직 볼 이력이 없다.
@@ -113,13 +114,13 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       : Promise.resolve([]),
     historyIds.length > 0
       ? prisma.expense.findMany({
-          where: { propertyId, recurringExpenseId: { in: historyIds }, date: recentRange },
-          select: { recurringExpenseId: true, amount: true, date: true },
+          where: { propertyId, recurringExpenseId: { in: historyIds }, ...targetMonthWhere(recentFrom, recentTo) },
+          select: { recurringExpenseId: true, amount: true, date: true, targetMonth: true },
         })
       : Promise.resolve([]),
     historyIds.length > 0
       ? prisma.expense.findMany({
-          where: { propertyId, recurringExpenseId: { in: historyIds }, date: monthDbRange(ymKey(year - 1, m)) },
+          where: { propertyId, recurringExpenseId: { in: historyIds }, ...targetMonthWhere(ymKey(year - 1, m)) },
           select: { recurringExpenseId: true, amount: true },
         })
       : Promise.resolve([]),
@@ -135,10 +136,11 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
   // 건수로 나누면 한 달에 두 번 낸 항목(분할·소급 납부)의 그 달 유출액이 절반으로 세어진다.
   const monthSum = new Map<string, number>()   // `${recurringId}|${YYYY-MM}` → 그 달 합계
   for (const e of recentExpenses) {
-    const key = `${e.recurringExpenseId!}|${dbDateMonthKey(e.date)}`
+    // 달 키는 귀속월 — 9월분을 10/1 에 낸 기록은 9월 몫이다(추정의 달과 회차의 달이 같은 축).
+    const key = `${e.recurringExpenseId!}|${expenseTargetMonth(e)}`
     monthSum.set(key, (monthSum.get(key) ?? 0) + e.amount)
   }
-  // 작년 같은 달 — 그 달에 실제로 나간 총액이므로 합계다(평균이 아니다).
+  // 작년 같은 달(귀속월) — 그 회차에 실제로 나간 총액이므로 합계다(평균이 아니다).
   const priorYearSum: Record<string, number> = {}
   for (const e of priorYearExpenses) {
     const id = e.recurringExpenseId!

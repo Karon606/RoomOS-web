@@ -57,7 +57,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 // ── 타입 ────────────────────────────────────────────────────────
 
 // 홈 알림 한 건 — 보이는 목록과 '끈 알림'이 같은 모양을 쓴다(끄기 일반화 2026-09-02).
-type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string; muteKeys?: string[]; mutedAt?: string }
+type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringDueMonth?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string; muteKeys?: string[]; mutedAt?: string }
 
 export type DashboardData = {
   // 시작 체크리스트 — 3단계(호실·입주자·첫 수납) 모두 완료면 null
@@ -2423,25 +2423,33 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)   // 상담 도구(값 복사 + 단기 요금 계산, 오류신고 ce05bb74)
   // 고정지출 기록은 지출관리와 같은 공용 모달을 쓴다 — 알림 페이로드가 아니라 서버 현황을 받아 연다.
-  const [recordingRec, setRecordingRec]           = useState<RecurringExpenseWithStatus | null>(null)
+  // dueDate·dueMonth = 알림의 예정일과 그 회차의 달 — 모달 날짜와 귀속월 기본값(2026-10-01). 오늘로 채우면
+  // 9/30 출금 알림을 10/1 에 열었을 때 10월분으로 적힌다.
+  const [recordingRec, setRecordingRec]           = useState<{ rec: RecurringExpenseWithStatus; dueDate?: string; dueMonth: string } | null>(null)
   const [recAccounts, setRecAccounts]             = useState<RecModalAccount[]>([])
   // 알림은 id 만 들고 있다(SSR 페이로드 비대화 방지) — 열 때 현황·계좌를 받아 지출관리와 같은 폼을 띄운다.
   const handleStartRecord = async (alert: AlertItem) => {
     const id = alert.recurringExpenseId
     if (!id) return
+    // 알림이 말하는 회차의 달로 현황을 읽는다 — 자동이체 영업일 시프트로 예정일이 다음 달로 넘어가도
+    // 회차는 알림을 만든 달이다(recurringDueMonth). 그 칸이 없는 옛 페이로드는 예정일의 달, 그마저 없으면 이번 달.
+    const dueMonth = alert.recurringDueMonth ?? alert.recurringDueDate?.slice(0, 7) ?? kstMonthStr()
     const [recs, accounts] = await Promise.all([
-      getRecurringExpensesWithStatus(kstMonthStr()),
+      getRecurringExpensesWithStatus(dueMonth),
       getFinancialAccounts(),
     ])
     const rec = recs.find(r => r.id === id)
-    // 스테일 알림 — 목록에서 사라졌거나 이미 이번 달 기록이 있으면 폼을 열지 않는다.
+    // 스테일 알림 — 목록에서 사라졌거나 이미 그 회차 기록이 있으면 폼을 열지 않는다.
     if (!rec || rec.recordedExpenseId) {
       pushToast('info', '이미 기록된 항목입니다')
       router.refresh()
       return
     }
     setRecAccounts(accounts)
-    setRecordingRec(rec)
+    // 예정일은 지났거나 오늘일 때만 날짜로 채운다. 알림은 예정일 며칠 전(D-N)부터 뜨는데, 미래 예정일을 넘기면
+    // 모달이 열 때마다 '오늘 날짜로 바꿀까요?'를 묻는다(웹디자이너 패스). 그 경우 오늘로 연다. 회차 달은 항상 넘긴다.
+    const due = alert.recurringDueDate
+    setRecordingRec({ rec, dueDate: due && due <= kstYmdStr() ? due : undefined, dueMonth })
   }
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   // 미납 안내 문자 — 입금확인 스텝 + 템플릿 발송 (/docs/stayeum_payment_spec.md Phase 1)
@@ -3296,9 +3304,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       )}
       {recordingRec && (
         <RecurringExpenseRecordModal
-          rec={recordingRec}
+          rec={recordingRec.rec}
           financialAccounts={recAccounts}
           paymentMethods={paymentMethods}
+          defaultDate={recordingRec.dueDate}
+          dueMonth={recordingRec.dueMonth}
           onClose={() => setRecordingRec(null)}
           onDone={() => { setRecordingRec(null); pushToast('success', '지출이 기록되었습니다'); router.refresh() }}
         />
