@@ -2455,3 +2455,10 @@ RentReceiptsClient:186 · AssetsClient:1623)은 **괄호를 안 쓴다.** 그런
 - **`getMonthPaymentAggregates` 의 축 비대칭**(현금영수증 합계는 보증금을 안 뺀다)은 그대로다.
   노트가 이미 '운영자·세무 확인 대기'로 열어 둔 별건이고, 집계 축 변경은 loop.md 4번이다.
 - **커밋·푸시 안 했다**(지시).
+
+## 2026-10-01 신고 955f47b1 — 분해 모드 이용료 귀속월
+- 원인: PaymentEntryForm splitMode(보증금 shortfall>0) 비정본 갈래가 savePayment 에 forcedTargetMonth=targetMonth(모달 조회 월)를 넘김. 분해 모드에서 귀속월 select 와 FIFO 안내가 `!splitMode` 로 숨음. 지문: memo=null(일반 갈래는 '').
+- 운영자가 "자동(오래 밀린 달부터)으로 했다"고 기억한 이유: 금액 칸 420,000 은 9월 미수 기준 추천액이라 FIFO 처럼 보였다.
+- 결정: 인수 전·후로 가르지 않는다(운영자). 보증금 칸 노출 여부를 바꾸는 대신, 보증금 상태와 무관하게 이용료 몫 규칙을 일반 수납과 같게 만든다. 보증금이 비는 이유는 앱이 알 수 없으므로 판정하지 않는다.
+- 범위: 폼 쪽만. 서버 saveDepositPayment/saveCleaningFeePayment 의 초과분 직접 create 는 2단계(별도 승인).
+- 피해 스캔: 2026-08-24 이후 1건(63c7591c)뿐.

@@ -6,7 +6,7 @@
 
 import { useEffect, useId, useMemo, useState, useTransition } from 'react'
 import {
-  savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, undoOverpayExtraIncome, type SavePaymentResult,
+  savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getFifoStartMonth, getTenantLastPayMethod, undoOverpayExtraIncome, getPaymentsByLease, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { getDepositCompositionForLease } from '@/app/(app)/tenants/actions'
@@ -17,11 +17,12 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
+import { shiftMonth } from '@/lib/moveCalendar'
 import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
-import { choiceDialog } from '@/components/ui/ConfirmDialog'
+import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel } from '@/lib/reservationDeposit'
@@ -59,6 +60,10 @@ const SUSPICIOUS_MULTIPLIER = 5
 
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
+// 배분된 달을 'N월분' 한 덩어리로 — 한 달이면 "9월분", 여럿이면 "9·10월분".
+const monthsLabel = (allocs: { targetMonth: string }[]) =>
+  `${allocs.map(a => Number(a.targetMonth.slice(5))).join('·')}월분`
+
 export function PaymentEntryForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
   room: Room
   targetMonth: string
@@ -91,6 +96,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   //  - 자동(FIFO)일 때 미수가 있으면(balance<0) 그 절댓값(누적 미수 보충),
   //    미수가 없으면 '앞으로 낼 가장 이른 안 낸 달'의 청구액 → 인상 전 달이 완납되면 자동으로 인상가가 추천됨.
   //  - 사용자가 직접 바꾸면 그대로 유지(추천값 변할 때만 갱신).
+  // 추천액이 쓰는 가장 이른 미완납 달(인상 반영). 저장 전 '기록될 달' 표시는 이 값이 아니라 아래
+  // fifoStart(서버 findFirstUnpaidMonth 그대로)를 쓴다 — 인수월 양도인 자동 처리에서 둘이 갈릴 수 있다.
+  const fifoNext = useMemo(() => tmOptions.find(o => o.paidAmount < o.expectedAmount), [tmOptions])
   const suggestedAmount = useMemo(() => {
     if (forcedTm !== 'auto') {
       const o = tmOptions.find(t => t.month === forcedTm)
@@ -98,9 +106,20 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       return room.expected
     }
     if (room.balance < 0) return -room.balance
-    const next = tmOptions.find(o => o.paidAmount < o.expectedAmount)   // FIFO: 가장 이른 미완납 달(인상 반영)
-    return next ? (next.expectedAmount - next.paidAmount) : room.expected
-  }, [forcedTm, tmOptions, room.balance, room.expected])
+    return fifoNext ? (fifoNext.expectedAmount - fifoNext.paidAmount) : room.expected
+  }, [forcedTm, tmOptions, fifoNext, room.balance, room.expected])
+  // savePayment 가 FIFO 로 시작할 달 — 서버의 같은 함수 값(getFifoStartMonth). 로딩 전엔 null(숫자 없는 문구).
+  const [fifoStart, setFifoStart] = useState<string | null>(null)
+  // 이용료가 기록될 달(저장 전 표시용) — 고른 달, 아니면 FIFO 시작 달. 실제 배분은 서버가 정하고 토스트가 말한다.
+  // 시작 달이 이미 완납이면 savePayment 는 0원 흔적만 남기고 다음 달로 넘어간다. 조회 월까지 다 낸
+  // 입주자의 선납(흔한 경우)에서 "9월분부터"라고 말하고 10월에 적는 갈림을 막으려고, 시작 달부터 첫 미완납 달을 말한다.
+  const startOrForced = forcedTm !== 'auto' ? forcedTm : fifoStart
+  const rentStartMonth = startOrForced
+    ? (tmOptions.find(o => o.month >= startOrForced && o.paidAmount < o.expectedAmount)?.month ?? startOrForced)
+    : null
+  const autoStartMonth = fifoStart
+    ? (tmOptions.find(o => o.month >= fifoStart && o.paidAmount < o.expectedAmount)?.month ?? fifoStart)
+    : null
   const [payAmount, setPayAmount] = useState<number>(suggestedAmount)
   useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
   // 추천(이번에 낼 금액)보다 더 낸 초과분 — '이월' 또는 '부가수익' 처리 대상
@@ -135,6 +154,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
 
   // 보증금 구성 — 잔여 판정의 정본은 서버다(depositComposition). 화면이 계약 보증금으로 대신 세면
   // 부분수납·청소비 포함형 계약에서 서버와 다른 말을 한다. 실제로 그랬다(아래 분해 블록 주석).
+  // 저장할 때마다 올린다 — 귀속월 옵션·FIFO 시작 달·보증금 잔여를 다시 읽게 한다. 안 읽으면 폼을 연 채
+  // 두 번째로 저장할 때 첫 저장 전 잔여로 몫을 제안한다(신고 955f47b1 2차, stale comp).
+  const [refreshKey, setRefreshKey] = useState(0)
   const [comp, setComp] = useState<Awaited<ReturnType<typeof getDepositCompositionForLease>> | null>(null)
   useEffect(() => {
     let active = true
@@ -142,7 +164,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       .then(c => { if (active) setComp(c) })
       .catch(() => { /* 조회 실패가 수납을 막으면 안 된다 — 분해 블록만 안 선다 */ })
     return () => { active = false }
-  }, [room.leaseTermId])
+  }, [room.leaseTermId, refreshKey])
 
   // 결제수단 프리필 — 이 고객의 직전 방식 우선(고객마다 계좌/카드/현금이 고정적, 운영자 요청 2026-07-06).
   // 첫 수납(기록 없음)만 기기 최근 방식으로 폴백.
@@ -155,12 +177,16 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     return () => { active = false }
   }, [room.tenantId])
 
-  // 귀속월 옵션 fetch
+  // 귀속월 옵션 · FIFO 시작 달 fetch — 같은 effect 에서 함께 읽는다.
   useEffect(() => {
     let active = true
+    setFifoStart(null)
     getTargetMonthOptions(room.leaseTermId, targetMonth).then(opts => { if (active) setTmOptions(opts) })
+    getFifoStartMonth(room.leaseTermId, targetMonth)
+      .then(m => { if (active) setFifoStart(m) })
+      .catch(() => { /* 표시용이라 실패해도 저장은 막지 않는다 — 숫자 없는 문구로 남는다 */ })
     return () => { active = false }
-  }, [room.leaseTermId, targetMonth])
+  }, [room.leaseTermId, targetMonth, refreshKey])
 
   // ── 3단 분해(제안·확인형, 운영자 확정 2026-08-24 · 신고 9e6c7cb3) ──────────────────────
   //
@@ -200,12 +226,15 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   // 합이 안 맞으면 앱이 말없이 보정하지 않는다. 인라인으로 말하고 저장을 막는다(§27.2).
   const splitOver = splitMode && rVal < 0
   const depositOver = splitMode && dVal > depositRemaining
-  const splitBlocked = splitOver || depositOver
+  // 청소비 몫도 잔여를 넘기면 막는다. 넘긴 만큼은 서버가 조회 월 이용료로 직접 적는다
+  // (saveCleaningFeePayment 초과분 경로) — 아래 몫별 저장이 막으려는 바로 그 갈래다(신고 955f47b1).
+  const cleaningOver = splitMode && cVal > cleaningRemaining
+  const splitBlocked = splitOver || depositOver || cleaningOver
+  // 분해 모드의 자릿수 오입력 의심 — 일반 갈래와 같은 배수, 기준은 이용료 추천액(없으면 계약 이용료).
+  // 일반 갈래의 초과분 확인창은 분해 모드에서 안 뜨므로 두 확인창이 연달아 뜨는 일은 없다.
+  const splitRentBase = suggestedAmount > 0 ? suggestedAmount : room.expected
+  const splitSuspicious = splitMode && splitRentBase > 0 && rVal >= splitRentBase * SUSPICIOUS_MULTIPLIER
   const resetSplit = () => { setDepositTouched(false); setCleaningTouched(false); setSplitDeposit(0); setSplitCleaning(0) }
-  // 사람이 제안을 그대로 두면 오늘과 **완전히 같은 한 번의 호출**로 저장한다(초과분을 그 달에
-  // 못박는 동작까지 그대로). 판정은 UI 상태(고쳤는가)가 아니라 값으로 한다 — 고쳤다 되돌린
-  // 사람과 안 건드린 사람이 같은 숫자로 다른 저장을 하면 그게 곧 다음 사고다.
-  const splitIsCanonical = cVal === 0 && dVal === Math.min(payAmount, depositRemaining)
 
   // 발행에 넣을 몫 — **폼이 확정한 값**을 쓴다(proposed 가 아니다). 사람이 배분을 고쳤으면
   // 그 값이 저장 정본이고, 발행 금액도 실제로 적힌 몫과 같아야 한다.
@@ -265,6 +294,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       if (choice === null) return   // 취소는 무변경 — 저장 자체를 하지 않는다
       excessAsIncome = choice === 'alt'
     }
+    // 분해 모드 자릿수 확인(신고 955f47b1 2차) — 일반 갈래 확인창이 !splitMode 라 이 모드에서는 빠져 있었다.
+    if (splitSuspicious && !(await confirmDialog({
+      title: `${room.roomNo ? room.roomNo + ' ' : ''}이용료 몫 ${fmtWon(rVal)}이 맞나요?`,
+      message: `청구액 ${fmtWon(splitRentBase)}보다 훨씬 큽니다. 0을 하나 더 누르지 않았는지 확인하세요.`,
+      level: 'caution',
+      confirmLabel: '저장',
+      cancelLabel: '취소',
+    }))) return
     // 보증금 수납 전 청소비 중복 확인 — 청소비를 이미 받았으면 현금 몫을 알려준다(신고 a5edc93e 후속, 정본 lib/depositEntryGuard).
     // 분해 모드에서는 총액이 아니라 **보증금으로 갈 몫**을 넘긴다. 총액을 넘기면 이용료가 섞인
     // 입금마다 확인창이 떠서, 진짜 경고여야 할 자리가 매번 누르고 지나가는 관문이 된다.
@@ -281,16 +318,26 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         if (splitMode) {
           const recordIds: string[] = []
           let cleaningIncomeId: string | undefined
-          if (splitIsCanonical) {
-            // 사람이 제안을 그대로 뒀다. 오늘과 글자 그대로 같은 한 번의 호출이다 —
-            // 서버가 min(총액, 잔여)로 쪼개고 초과분을 이 달에 못박는 동작까지 종전과 동일하다.
+          let rentAllocs: SavePaymentResult['allocations'] = []
+          // 몫마다 **그 몫의 정본 저장부**로 보낸다. 따로 받아 따로 적었다면 갔을 바로 그 자리다.
+          // 새 배분 로직은 없다. 순서는 보증금·청소비·이용료이고, 중간에 실패하면 거기서 멈추고
+          // 무엇까지 저장됐는지 말한다(형제 정본과 같은 문법).
+          //
+          // 이용료 몫은 보증금 상태와 무관하게 일반 수납과 같은 규칙이다(신고 955f47b1, 운영자 지시).
+          // 고른 귀속월이면 그 달, 아니면 서버 FIFO. 종전에는 조회 월로 못박아 9/30 입금이 10월분 선납이
+          // 되고 9월이 미수로 남았다. 보증금 기록이 비는 이유(미입력·무보증·차감·미납·일부 납)를 앱은
+          // 판정하지 않는다. 보증금 몫은 totalPaid=dVal(잔여 이하)이라 **폼의 잔여가 최신일 때** 서버 초과분
+          // 경로를 안 탄다. 그 사이 잔여가 줄었으면 서버가 넘친 몫을 조회 월 이용료로 적으므로 아래에서 알린다.
+          const savedParts: string[] = []
+          const savedDetail = (err: string) => savedParts.length > 0 ? `${savedParts.join(' · ')}은 저장됨 · ${err}` : err
+          if (dVal > 0) {
             const depRes = await saveDepositPayment({
               leaseTermId:   room.leaseTermId,
               tenantId:      room.tenantId!,
               targetMonth,
               depositAmount: room.depositAmount,
               rentAmount:    room.expected,
-              totalPaid:     payAmount,
+              totalPaid:     dVal,
               payDate:       payDateVal,
               payMethod,
               memo:          memo || undefined,
@@ -299,72 +346,63 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             })
             if (!depRes.ok) { pushToast('error', depRes.error); return }
             recordIds.push(...depRes.createdIds)
-          } else {
-            // 사람이 몫을 고쳤다. 각 몫을 **그 몫의 정본 저장부**로 보낸다 — 따로 받아 따로 적었다면
-            // 갔을 바로 그 자리다. 새 배분 로직은 없다. 순서는 보증금·청소비·이용료이고,
-            // 중간에 실패하면 거기서 멈추고 무엇까지 저장됐는지 말한다(형제 정본과 같은 문법).
-            if (dVal > 0) {
-              const depRes = await saveDepositPayment({
-                leaseTermId:   room.leaseTermId,
-                tenantId:      room.tenantId!,
+            savedParts.push(`보증금 ${fmtWon(dVal)}`)
+            // 보증금 record 하나만 생겨야 정상이다. 둘째가 있으면 서버 잔여가 폼보다 작아 초과분
+            // 이용료 record 가 조회 월에 생긴 것이다. 금액은 그 record 를 다시 읽어 말한다(못 읽으면 금액 없이).
+            if (depRes.createdIds.length > 1) {
+              const excessId = depRes.createdIds[1]
+              const amt = await getPaymentsByLease(room.leaseTermId, targetMonth)
+                .then(r => r.windowRecords.find(x => x.id === excessId)?.actualAmount ?? null)
+                .catch(() => null)
+              pushToast('info', `보증금 잔여가 바뀌어 ${amt != null ? fmtWon(amt) : '일부'}${amt != null ? '이' : '가'} ${Number(targetMonth.slice(5, 7))}월분 이용료로 기록됐습니다`, {
+                detail: '수납 내역에서 확인해 주세요.',
+              })
+            }
+          }
+          if (cVal > 0) {
+            const cleanRes = await saveCleaningFeePayment({
+              leaseTermId: room.leaseTermId,
+              tenantId:    room.tenantId!,
+              targetMonth,
+              cleaningFee: room.cleaningFee,
+              rentAmount:  room.expected,
+              totalPaid:   cVal,
+              payDate:     payDateVal,
+              payMethod,
+              memo:        memo || undefined,
+              cashReceiptIssued,
+              cashReceiptIssuedDate,
+            })
+            if (!cleanRes.ok) {
+              pushToast('error', '청소비 기록에 실패했습니다', { detail: savedDetail(cleanRes.error) })
+              onSaved?.(); return
+            }
+            recordIds.push(...cleanRes.createdIds); cleaningIncomeId = cleanRes.extraIncomeId
+            savedParts.push(`청소비 ${fmtWon(cVal)}`)
+          }
+          if (rVal > 0) {
+            try {
+              const rentRes = await savePayment({
+                leaseTermId:    room.leaseTermId,
+                tenantId:       room.tenantId!,
                 targetMonth,
-                depositAmount: room.depositAmount,
-                rentAmount:    room.expected,
-                totalPaid:     dVal,
-                payDate:       payDateVal,
+                expectedAmount: room.expected,
+                actualAmount:   rVal,
+                payDate:        payDateVal,
                 payMethod,
-                memo:          memo || undefined,
+                memo:           memo || undefined,
+                // 일반 갈래와 같은 식이다. 조회 월(targetMonth)을 넘기면 FIFO 가 꺼진다(신고 955f47b1).
+                forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
                 cashReceiptIssued,
                 cashReceiptIssuedDate,
               })
-              if (!depRes.ok) { pushToast('error', depRes.error); return }
-              recordIds.push(...depRes.createdIds)
-            }
-            if (cVal > 0) {
-              const cleanRes = await saveCleaningFeePayment({
-                leaseTermId: room.leaseTermId,
-                tenantId:    room.tenantId!,
-                targetMonth,
-                cleaningFee: room.cleaningFee,
-                rentAmount:  room.expected,
-                totalPaid:   cVal,
-                payDate:     payDateVal,
-                payMethod,
-                memo:        memo || undefined,
-                cashReceiptIssued,
-                cashReceiptIssuedDate,
+              recordIds.push(...rentRes.createdIds)
+              rentAllocs = rentRes.allocations
+            } catch (rentErr) {
+              pushToast('error', '이용료 기록에 실패했습니다', {
+                detail: savedDetail((rentErr as Error).message ?? ''),
               })
-              if (!cleanRes.ok) {
-                pushToast('error', '청소비 기록에 실패했습니다', {
-                  detail: `보증금 ${fmtWon(dVal)}은 저장됨 · ${cleanRes.error}`,
-                })
-                onSaved?.(); return
-              }
-              recordIds.push(...cleanRes.createdIds); cleaningIncomeId = cleanRes.extraIncomeId
-            }
-            if (rVal > 0) {
-              try {
-                const rentRes = await savePayment({
-                  leaseTermId:    room.leaseTermId,
-                  tenantId:       room.tenantId!,
-                  targetMonth,
-                  expectedAmount: room.expected,
-                  actualAmount:   rVal,
-                  payDate:        payDateVal,
-                  payMethod,
-                  memo:           memo || undefined,
-                  // 정본 분기가 썼을 그 달로 못박는다. 다른 달을 넘기면 그 자체가 갈림이다.
-                  forcedTargetMonth: targetMonth,
-                  cashReceiptIssued,
-                  cashReceiptIssuedDate,
-                })
-                recordIds.push(...rentRes.createdIds)
-              } catch (rentErr) {
-                pushToast('error', '이용료 기록에 실패했습니다', {
-                  detail: `보증금 ${fmtWon(dVal)}은 저장됨 · ${(rentErr as Error).message ?? ''}`,
-                })
-                onSaved?.(); return
-              }
+              onSaved?.(); return
             }
           }
           // 발행은 저장이 끝난 뒤 **한 번**만 기록한다(2026-08-25). 종전에는 세 저장부가 각자
@@ -386,14 +424,19 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             if (!crRes.ok) pushToast('error', crRes.error)
           }
 
+          // 이용료 몫은 실제로 앉은 달을 적는다(서버 배분 결과). 일반 갈래 자동 분배 토스트와 같은 'N월분' 문법.
+          // 두 달 이상이면 한 덩어리로 접는다("9·10월분 이용료 840,000원") — 토스트 2행이 3줄을 넘지 않게(§15).
+          const rentPart = rentAllocs.length > 0
+            ? `${monthsLabel(rentAllocs)} 이용료 ${fmtWon(rentAllocs.reduce((sum, a) => sum + a.amount, 0))}`
+            : `이용료 ${fmtWon(rVal)}`
           const parts = [
             dVal > 0 ? `보증금 ${fmtWon(dVal)}` : '',
             cVal > 0 ? `청소비 ${fmtWon(cVal)}` : '',
-            rVal > 0 ? `이용료 ${fmtWon(rVal)}` : '',
+            rVal > 0 ? rentPart : '',
           ].filter(Boolean)
           let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
           pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}${fmtWon(payAmount)} 수납됨 · 수납일 ${fmtMD(payDateVal)}`, {
-            ...(parts.length > 1 ? { detail: parts.join(' · ') } : {}),
+            ...((parts.length > 1 || rVal > 0) ? { detail: parts.join(' · ') } : {}),
             action: {
               label: '적용취소',
               run: () => {
@@ -409,8 +452,13 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               },
             },
           })
-          if (payDateVal.slice(0, 7) !== targetMonth) {
-            pushToast('info', `지금 보는 ${Number(targetMonth.slice(5, 7))}월 내역에는 표시되지 않습니다`)
+          // 수납 내역(PaymentRecordList scope='window')은 조회 월 포함 3개월을 입금일·귀속월 합집합으로
+          // 그린다(getPaymentsByLease). 둘 다 창 밖인 이용료 몫만 안 보인다. 보증금은 그 목록이 아니라
+          // 보증금 패널이 계약 단위로 그리고, 청소비는 부가수익이라 대상이 아니다.
+          const win = [0, 1, 2].map(i => shiftMonth(targetMonth, -i))
+          const hidden = win.includes(payDateVal.slice(0, 7)) ? [] : rentAllocs.filter(a => !win.includes(a.targetMonth))
+          if (hidden.length > 0) {
+            pushToast('info', `${monthsLabel(hidden)}은 지금 보는 최근 3개월 내역에 표시되지 않습니다`)
           }
           splitDone = true
         } else if (isCleaningFeeMode) {
@@ -534,7 +582,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             },
           })
         } else if (!splitDone) {
-          pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월 이용료 수납됨')
+          pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '이용료 수납됨')
         }
         // 폼 리셋
         setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
@@ -544,9 +592,38 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       } catch (err) {
         const msg = humanError(err, '저장 실패')
         setError(msg); pushToast('error', msg)
-      } finally { release() }
+      } finally { release(); setRefreshKey(k => k + 1) }
     })
   }
+
+  // 귀속월 선택 조각 — 비분해·분해 두 자리가 같은 마크업을 쓴다(두 벌 금지). 이용료 규칙은 보증금
+  // 상태와 무관하게 하나다(신고 955f47b1): 고른 달, 아니면 서버 FIFO.
+  // 자동 옵션의 시작 달 표시는 비분해에서만 — 분해 모드는 바로 위 이용료 행 캡션이 같은 달을 말한다.
+  const tmSelect = (
+    <div className="space-y-1">
+      <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
+      <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
+        <option value="auto">{!splitMode && autoStartMonth ? `자동 · ${Number(autoStartMonth.slice(5))}월분부터 채움` : '자동 · 오래 밀린 달부터 채움'}</option>
+        {tmOptions.map(o => {
+          const [y, m] = o.month.split('-')
+          const tag = o.status === 'paid' ? '완납'
+            : o.status === 'partial' ? `일부 ${fmtWon(o.paidAmount)}/${fmtWon(o.expectedAmount)}`
+            : o.status === 'future' ? '향후' : '미수'
+          return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
+        })}
+      </select>
+      {splitMode ? (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+          {forcedTm !== 'auto' ? '직접 선택 · ' : ''}이용료 몫이 그 달 청구액보다 많으면 남는 금액은 다음 달로 넘어갑니다.
+        </p>
+      ) : forcedTm !== 'auto' && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+          직접 선택 · 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
+        </p>
+      )}
+    </div>
+  )
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
@@ -563,30 +640,15 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       )}
       {/* 잔여 조회 전 자리 예약 — 값이 온 뒤 블록이 솟으면 그게 로딩 점프다(§17·§21). */}
       {!comp && room.depositAmount > 0 && <SkeletonRows rows={1} className="py-0" />}
+      {/* 비분해 모드의 귀속월 자리. 분해 모드에서는 같은 조각(tmSelect)이 분해 블록의 이용료 행
+          바로 아래에 선다(신고 955f47b1) — 이용료 몫에만 걸리는 선택이라 그 몫 옆이 자리다. 레거시 2단 모드만 숨긴다.
+          FIFO 설명 한 줄은 여기서만 — 분해 모드는 조각 안 캡션 한 줄이 같은 말을 한다(320px 캡션 연속 방지). */}
       {!isDepositMode && !isCleaningFeeMode && !splitMode && (
         <>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
             받은 돈은 가장 오래 밀린 달부터 자동으로 채웁니다. 특정 달 이용료로 넣고 싶으면 아래에서 직접 선택하세요.
           </p>
-          <div className="space-y-1">
-            <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
-            <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-              <option value="auto">자동 · 오래 밀린 달부터 채움</option>
-              {tmOptions.map(o => {
-                const [y, m] = o.month.split('-')
-                const tag = o.status === 'paid' ? '완납'
-                  : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
-                  : o.status === 'future' ? '향후' : '미수'
-                return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
-              })}
-            </select>
-            {forcedTm !== 'auto' && (
-              <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
-                직접 선택 · 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
-              </p>
-            )}
-          </div>
+          {tmSelect}
         </>
       )}
       {/* 400px 미만에서는 세로로 편다 — 헤드리스 실측(320·360·390)에서 2열이면 날짜 칸 글자 자리가
@@ -622,7 +684,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               <label className="text-xs font-medium text-[var(--warm-mid)] shrink-0" htmlFor={`${uid}-cleaning`}>청소비</label>
               <input id={`${uid}-cleaning`} type="text" inputMode="numeric" value={cVal.toLocaleString()}
                 onChange={e => { setCleaningTouched(true); setSplitCleaning(Number(e.target.value.replace(/[^0-9]/g, ''))) }}
-                className={`${SPLIT_INPUT_CLS} ${splitOver ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
+                className={`${SPLIT_INPUT_CLS} ${(cleaningOver || splitOver) ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
             </div>
           )}
           <div className="flex items-center justify-between gap-2 border-t border-[var(--warm-border)] pt-2">
@@ -633,10 +695,18 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               {fmtWon(Math.max(0, rVal))}
             </span>
           </div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산</p>
+          {/* 저장 전에 이용료가 앉을 달을 말한다(신고 955f47b1). 고른 달, 아니면 FIFO 시작 달. */}
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">
+            {rVal > 0 && rentStartMonth ? `자동 계산 · ${Number(rentStartMonth.slice(5))}월분부터 기록` : '자동 계산'}
+          </p>
+          {tmSelect}
           {depositOver ? (
             <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
               보증금 몫이 잔여 {fmtWon(depositRemaining)}보다 {fmtWon(dVal - depositRemaining)} 많습니다. 몫을 줄여 주세요.
+            </p>
+          ) : cleaningOver ? (
+            <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
+              청소비 몫이 잔여 {fmtWon(cleaningRemaining)}보다 {fmtWon(cVal - cleaningRemaining)} 많습니다. 몫을 줄여 주세요.
             </p>
           ) : splitOver ? (
             <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
@@ -662,13 +732,6 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           {preAcq && dVal > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
               인수 승계 계약에 새 보증금 입금이 기록됩니다. 퇴실 정산 기준액이 계약 보증금에서 실수납액으로 바뀝니다.
-            </p>
-          )}
-          {/* 조정 분기의 이용료 몫은 일반 수납과 똑같이 굴린다 — 그 달을 채우고 남으면 다음 달로 넘어간다.
-              문장은 귀속월 직접 선택 안내와 같은 정본을 쓴다. */}
-          {!splitIsCanonical && rVal > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              이용료 몫이 그 달 청구액보다 많으면 남는 금액은 다음 달로 넘어갑니다.
             </p>
           )}
         </div>
@@ -744,7 +807,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
         <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
           {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
@@ -863,7 +926,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
       </div>
       {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
       <div className="flex gap-2">
@@ -1042,7 +1105,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
             <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
               {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
@@ -1073,7 +1136,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">메모</label>
             <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
           </div>
         </>
       )}

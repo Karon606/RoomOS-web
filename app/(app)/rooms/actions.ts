@@ -1068,6 +1068,17 @@ export async function getTargetMonthOptions(
   return out
 }
 
+// 수납 폼의 "N월분부터 기록" 표시용 — savePayment 가 FIFO 로 시작할 달을 **같은 함수로** 돌려준다(읽기 전용).
+// getTargetMonthOptions 는 인수 전 입금을 빼고 인수월 양도인 자동 처리를 모르므로 그 값으로 표시하면
+// 저장과 갈릴 수 있다(신고 955f47b1 2차). 저장 경로는 이 함수를 쓰지 않는다.
+export async function getFifoStartMonth(leaseTermId: string, viewMonth: string): Promise<string | null> {
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
+  const propertyId = await getPropertyId()
+  const owned = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
+  if (!owned) return null
+  return findFirstUnpaidMonth(leaseTermId, 0, viewMonth)
+}
+
 // 양도인 정산 — 특정 월 임대료를 양도인이 받았다고 기록.
 // 그 달은 현 소유주 청구·미납·매출에서 제외 (record는 isPrevOwner=true).
 export async function savePrevOwnerSettle(
@@ -2756,7 +2767,9 @@ export async function undoOverpayExtraIncome(
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    if (!recordIds.length) return { ok: false, error: '되돌릴 대상이 없습니다.', intact: true }
+    // 청소비만 받은 분해 수납은 수납 record 가 0건이고 부가수익 한 건만 있다(신고 955f47b1 2차).
+    // 그 경우도 되돌릴 수 있어야 하므로, 둘 다 없을 때만 거절한다. 금액 계산은 바뀌지 않는다.
+    if (!recordIds.length && !extraIncomeId) return { ok: false, error: '되돌릴 대상이 없습니다.', intact: true }
 
     // 소속 월을 먼저 확보한다 — 삭제 후에는 익스텐션이 걸러서 못 읽는다.
     // 이 조회들은 읽기라 자동 필터가 붙으므로, 이미 지워진 건은 여기서 걸러져 이중 취소도 막힌다.
@@ -2772,7 +2785,7 @@ export async function undoOverpayExtraIncome(
 
     const deletedAt = new Date()
     await prisma.$transaction([
-      prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt } }),
+      ...(recordIds.length ? [prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt } })] : []),
       ...(extraIncomeId ? [prisma.extraIncome.updateMany({ where: { id: extraIncomeId, propertyId }, data: { deletedAt } })] : []),
     ])
 
