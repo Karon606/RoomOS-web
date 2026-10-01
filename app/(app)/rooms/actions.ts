@@ -16,7 +16,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
+import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
@@ -118,7 +118,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
   // 영업장 인수 날짜 조회
   // 다섯 조회 모두 propertyId·월에만 의존 — 병렬 실행(값·계산식 불변, 응답시간 단축)
-  const [property, rooms, activeLeases, prevLeases, allRecordsThruMonth] = await Promise.all([
+  const [property, rooms, monthLeases, prevLeases, allRecordsThruMonth] = await Promise.all([
     prisma.property.findUnique({
       where: { id: propertyId },
       // shortStayPolicy — 단기 계약의 예약금 처리가 영업장 공통 기본값보다 앞선다(resolveReservationDepositMode).
@@ -131,7 +131,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
+        // 그 달에 살다 나간 퇴실 계약도 그 달의 행이다(신고 70addd65) — 9/30 퇴실·10/1 처리된 513호가
+        // 9월 수납 관리에서 사라지던 결함. DB 는 체류 끝이 그 달 1일 이후인 것만, 최종 판정은 아래 residedInMonth.
+        OR: [
+          { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          checkedOutInMonthWhere(targetMonth),
+        ],
       },
       include: {
         tenant: {
@@ -167,6 +172,10 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       },
     }),
   ])
+  // 진행 중 계약은 종전 그대로, 퇴실 완료는 그 달에 산 것만(residedInMonth 정본).
+  // 진행 중 계약에 날짜 게이트를 새로 걸지 않는 이유 — 퇴실 예정일이 지났는데 아직 처리 전인 사람의
+  // 이월 미수는 오늘도 받을 돈이라 행이 사라지면 안 된다(이번 달 화면 불변).
+  const activeLeases = monthLeases.filter(l => l.status !== 'CHECKED_OUT' || residedInMonth(l, targetMonth))
   // 예약(RESERVED) lease 실수납 합 — 예약 단계 표시는 조회월 필터를 타지 않는다(신고 50a2a69b:
   // 예약금이 입주월(8월) 날짜로 저장되면 7월 화면에서 0원으로 보여 재시도 → 중복 수납 유발).
   const reservedIds = activeLeases.filter(le => le.status === 'RESERVED').map(le => le.id)
@@ -438,9 +447,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     // 퇴실예정일 기준 청구 종료 — 퇴실월 초과 월 제외 + 퇴실월 자체도 납부일 이전 퇴실이면 청구 0.
     // dashboard·unpaid.ts 와 동일 규칙(날짜 기준, 상태 무관).
+    // 청구 끝은 leaseBillingEnd(예정일 ?? 실제 퇴실일) — 진행 중 계약은 종전 expectedMoveOut 그대로이고,
+    // 예정일 없이 퇴실 처리된 계약(그 달 행으로 들어온 퇴실자, 신고 70addd65)만 실제 퇴실일에서 끝난다.
+    const billingEnd = leaseBillingEnd(lease)
     const skipByMoveOut = (ms: string): boolean =>
-      isAfterMoveOutMonth(lease.expectedMoveOut, ms)
-      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null }, lease.expectedMoveOut, ms, effDueDateForMonth(ms))
+      isAfterMoveOutMonth(billingEnd, ms)
+      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null }, billingEnd, ms, effDueDateForMonth(ms))
 
     let pastBillable = 0
     let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
@@ -665,7 +677,11 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       lastPayDate,
       nextDueDate,
       nextDueAmount,
-      expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+      // 퇴실 완료 행(그 달에 살다 나간 계약)은 실제로 나간 날이 '9/30 퇴실' 보조줄이다(체류 끝 정본 leaseStayEnd).
+      expectedMoveOut: (() => {
+        const end = lease.status === 'CHECKED_OUT' ? leaseStayEnd(lease) : lease.expectedMoveOut
+        return end ? new Date(end).toISOString().slice(0, 10) : null
+      })(),
       checkoutProratedAmount: proratedAmt ?? null,
       checkoutProratedMonth: proratedMonth ?? null,
       rentRefundFinalized: hasRentRefundSnapshot(l.checkoutProrationUndo),
@@ -677,7 +693,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   return rooms.flatMap(room => {
     // 점유 계약 전부를 행으로 — 방이 아니라 계약이 청구의 단위다(정본 lib/leaseStatus roomLeaseRowOrder).
     // 종전에는 방마다 대표 하나만 골라, 한 방에 계약이 둘이면 나머지 하나의 청구가 화면에서 사라졌다.
-    const roomLeases = roomLeaseRowOrder(activeLeases.filter(l => l.roomId === room.id))
+    // 그 달에 살다 나간 계약은 거주 층에 입주일 순으로 선다(9월 513호 = 퇴실자 행 + 10/5 예약 행).
+    const roomLeases = roomLeaseRowOrder(activeLeases.filter(l => l.roomId === room.id), { checkedOutAsResiding: true })
 
     if (roomLeases.length === 0) {
       const prev = prevLeases.find(l => l.roomId === room.id)

@@ -6742,3 +6742,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-01 고정지출 귀속월 (가스요금 9월분 10/1 납부)
 - Expense.targetMonth(정본 lib/expenseTargetMonth) 도입, 1안 범위(회차 판정·추정·기준 달·중복 가드만, 합계·손익은 date). 기록 모달 귀속월 select, 홈 알림 예정일·회차 달 전달, 목록 중립 'N월분' 배지(지연·선납 판정 안 함), 같은 회차 중복 거부. 그물 test-expense-target-month(verify:fast)·verify-recurring-estimate ③. 백필(bf6aeefb → 2026-09)·웹디자이너 패스·커밋은 운영자 몫.
+
+## 2026-10-01 신고 70addd65 과거 달 퇴실자 사라짐 (513호)
+- 정본 lib/leaseStatus residedInMonth·leaseStayEnd·leaseBillingEnd·checkedOutInMonthWhere. 홈 미수·도넛·타일·수납 관리 행에 그 달 거주 퇴실 계약 포함(이 달 청구 합·예상 수입·실수납은 퇴실 귀속 항 때문에 불변), 타일 무색 밴드 '퇴실 완료'(퇴실자만 선 빈 방 타일은 그 계약 수납 면), 과거 달 타일은 그 달 거주자만·입주 가능 블락 생략·기준 칩, 수납 관리 [퇴실 완료] 배지, 입주자 탭 과거 달 캡션. 전후 대조: 10월 동일(무순서 조회 순서만), 4~9월 사람·도넛 건수 추가 + 4·5월 415호 미수 250,000 노출. 그물 test-resided-in-month·check-month-population-axis(verify:fast). 웹디자이너 패스·커밋·푸시는 운영자 몫.

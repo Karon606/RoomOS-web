@@ -1508,3 +1508,14 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 테스트·감지망(test-expense-target-month verify:fast, verify-recurring-estimate ③)
 - [ ] 10/1 가스요금 1건(bf6aeefb) targetMonth=2026-09 백필(되돌리기)
 - [x] 게이트 + 웹디자이너 패스(차단 2건 반영: 홈 알림 미래 예정일 미전달, 배지 중립 N월분)
+
+# 신고 70addd65 — 과거 달 화면이 '오늘 status' 로 사람을 고름 (2026-10-01, 운영자 승인)
+513호 9/30 퇴실·10/1 처리 → 9월 홈·수납 관리에서 사람·미수가 사라짐(낸 돈만 보임).
+결정: 그 달 거주 판정 정본 residedInMonth, 이번 달 중간 퇴실 처리자도 이번 달에 보인다(운영자 승인).
+- [x] lib/leaseStatus residedInMonth(stayEnd=moveOutDate ?? expectedMoveOut, CANCELLED·투어 제외, RESERVED 입주월 게이트, NON_RESIDENT 는 종전 청구 게이트대로 날짜 게이트 — 통과로 두면 4월 415호 비거주가 청구에 들어와 동작 보존이 깨짐)
+- [x] 홈 unpaidLeasesRaw·roomsWithTenants 와 rooms/actions 수납 목록을 정본으로(activeLeases 는 BILLABLE 유지 — 퇴실 몫은 '퇴실 귀속' 항이 받아 넣으면 이중 계상)
+- [x] billableInTargetMonth·leaseStatus 사본 수렴, 미수 FIFO 는 청구 끝 leaseBillingEnd(예정 ?? 실제, 보고서 문법) — unpaid.ts 쌍둥이 동기화
+- [x] '지금' 축(statusCounts·입주율·보증금)은 불변, 과거 달 입주자 탭 상단 캡션 '입주자 현황은 오늘 기준입니다'
+- [x] 타일 '9/30 퇴실' 캡션(흐림 없음), 누르면 그 계약 수납 면 (수납 관리 행 '9/30 퇴실' 보조줄)
+- [x] 과거 6개월 전후 대조(이번 달 동일), 소스 가드, 경계 테스트
+- [x] 게이트 + 웹디자이너 패스(차단 4건 반영), 푸시(운영자 승인)

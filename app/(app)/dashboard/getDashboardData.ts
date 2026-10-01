@@ -18,8 +18,8 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
-import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
+import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
+import { BILLABLE_STATUSES, checkedOutInMonthWhere, getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, leaseBillingEnd, leaseStayEnd, residedInMonth, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { countSiteRoomCandidates } from '@/lib/siteCandidates'
@@ -244,7 +244,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     wishMatch,
     roomsWithTenants,
     recentPaymentsRaw,
-    unpaidLeasesRaw,
+    unpaidLeasesFetched,
     tenantRequestsRaw,
     waitingTourLeases,
     allHistoricalPayments,
@@ -256,7 +256,11 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
-      where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      // 퇴실 완료(CHECKED_OUT)는 이 '이 달 청구액' 항에 넣지 않는다 — 그 달 몫은 '퇴실 귀속' 항
+      // (getCheckedOutRecognizedRevenue, 그 달 귀속 수납)이 이미 예상 수입에 더한다. 여기도 넣으면 같은 돈이
+      // 두 번 선다. 그 사람을 그 달 화면에 세우는 일(미수·도넛·방 타일)은 아래 두 조회가 맡는다(신고 70addd65).
+      // 모집단 예외: 이 달 청구 항 — 퇴실 계약은 '퇴실 귀속' 항이 받는다(check-month-population-axis).
+      where: { propertyId, status: { in: BILLABLE_STATUSES } },
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
@@ -342,6 +346,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     prisma.leaseTerm.count({ where: { propertyId, status: 'CHECKOUT_PENDING' } }),
     prisma.leaseTerm.count({ where: { propertyId, status: 'NON_RESIDENT' } }),
     // 입주자 분포
+    // 모집단 예외: 지금 축 — 입주자 탭은 오늘의 계약을 센다(조회한 달과 무관, check-month-population-axis).
     prisma.tenant.findMany({
       where: {
         propertyId,
@@ -374,7 +379,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         nonResidentScheduled: true,
         nonResidentRentDate: true,
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          // 그 달에 살다 나간 퇴실 계약도 읽는다 — 9/30 퇴실·10/1 처리된 사람이 9월 타일에서 사라지던 결함
+          // (신고 70addd65). DB 는 체류 끝이 그 달 1일 이후인 것만 거르고, 최종 판정은 residedInMonth 가 한다.
+          where: { OR: [{ status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } }, checkedOutInMonthWhere(targetMonth)] },
           select: {
             // 타일에 부를 이름은 lib/displayName 이 고른다 — 별칭·영어이름·한글 이름 셋 중 하나.
             // 서류 성명(lib/documentName)과는 별개 축이고, 이 세 칸은 화면 카드에서만 쓴다.
@@ -382,6 +389,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
             // 사람별 실제 청구액(lib/billing) — 할인·일할·단기·예약 인상을 수납 관리와 같은 식으로 읽는다.
             // expectedMoveOut — 타일 퇴실 예정일 줄("8/14 퇴실"). 청구 판정에는 쓰지 않는다.
             isShortTerm: true, moveInDate: true, dueDay: true, expectedMoveOut: true,
+            // 퇴실 계약의 체류 끝(실제 퇴실일) — residedInMonth 판정과 타일 '9/30 퇴실' 줄.
+            moveOutDate: true, overrideDueDay: true, overrideDueDayMonth: true,
             checkoutProratedAmount: true, checkoutProratedMonth: true,
             discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           },
@@ -392,8 +401,11 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
           // 3 이던 시절엔 잘림이 곧 오표시였다: status asc 는 enum 선언 순서(RESERVED < ACTIVE)라
           // 예약이 셋 걸린 방에서는 실거주자가 잘려 나갔다. 호실 카드(getRooms)는 사람을 하나만
           // 세우므로 take 3 으로 충분하지만, 여기는 넷까지 세우므로 그만큼 더 읽는다.
+          //
+          // 퇴실 계약 몫 2를 더 읽는다(8) — status asc 에서 CHECKED_OUT 은 NON_RESIDENT 바로 앞이라, 그 달
+          // 퇴실이 둘 걸린 방(422호 5월)에서 6 이면 비거주가 잘려 나간다.
           orderBy: { status: 'asc' },
-          take: 6,
+          take: 8,
         },
       },
       orderBy: { roomNo: 'asc' },
@@ -428,10 +440,12 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       })
     })(),
     // 미납 상세 (이달 청구 대상 계약) — RESERVED는 미입주라 제외
+    // 그 달에 살다 나간 퇴실 계약도 넣는다(신고 70addd65) — 9월 미수·도넛에서 9/30 퇴실자가 사라지던 결함.
+    // DB 는 체류 끝이 그 달 1일 이후인 것만, 최종 판정(입주월 게이트)은 아래 residedInMonth 거름에서.
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
+        OR: [{ status: { in: BILLABLE_STATUSES } }, checkedOutInMonthWhere(targetMonth)],
         rentAmount: { gt: 0 },
       },
       select: {
@@ -439,6 +453,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         rentAmount: true,
         moveInDate: true,
         expectedMoveOut: true,
+        moveOutDate: true,
         status: true,
         dueDay: true,
         overrideDueDay: true,
@@ -496,7 +511,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     // 소개 페이지 반영 대기 — 홈은 건수 한 줄만 말한다(방 목록은 환경설정 웹사이트 탭이 그린다).
     // 모집단 정의는 lib/siteCandidates 한 벌이라 두 화면의 숫자가 갈릴 수 없다.
     countSiteRoomCandidates(propertyId),
-    // 입주 가능 판정(roomAvailability)의 계산 입력 — 위 방 현황 조회는 take: 6 이라 여기 못 쓴다.
+    // 입주 가능 판정(roomAvailability)의 계산 입력 — 위 방 현황 조회는 take: 8 이라 여기 못 쓴다.
+    // 모집단 예외: 지금 축 — 방이 언제 비는가는 오늘의 사실이다(check-month-population-axis).
     // 잘린 한 건이 무기한이면 방은 '모른다'인데 '곧 입주 가능'으로 뒤집히고, 타일이 홈 매칭 알림보다
     // 이른 날짜를 말하게 된다(같은 함수라도 먹이는 집합이 다르면 답이 갈린다). 판정에 필요한 두 필드만
     // take 없이 읽는 처방은 2026-08-11 getRoomDetail 이 같은 함정에서 쓴 것 그대로다.
@@ -505,6 +521,11 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       select: { roomId: true, status: true, expectedMoveOut: true },
     }),
   ])
+
+  // 그 달 미수 모집단 — 진행 중 계약은 종전 그대로, 퇴실 완료는 그 달에 산 것만(residedInMonth 정본, 신고 70addd65).
+  // 진행 중 계약에 날짜 게이트를 새로 걸지 않는 이유: 퇴실 예정일이 지났는데 아직 처리 전인 사람의
+  // 이월 미수는 오늘도 받을 돈이다. 그 달 청구 여부는 아래 루프가 lib/billing 규칙으로 따로 정한다.
+  const unpaidLeasesRaw = unpaidLeasesFetched.filter(l => l.status !== 'CHECKED_OUT' || residedInMonth(l, targetMonth))
 
   // ── 이달 집계 ────────────────────────────────────────────────
   // 이달 실수납(이용료 축)은 정본 하나로 — lib/leaseStatus getPaidRevenue.
@@ -763,21 +784,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     return calcDaysOverdueForMonth(effectiveDueDayForMonth(l, monthStr), monthStr)
   }
 
-  // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
+  // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월. 판정은 residedInMonth 정본이다.
   // (다음달 입주 예정인 ACTIVE 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
-  const monthOfDate = (d: Date | string | null): string | null => {
-    if (!d) return null
-    const dt = new Date(d)
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-  }
-  const billableInTargetMonth = (l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null }): boolean => {
-    const mi = monthOfDate(l.moveInDate ?? null)
-    if (mi && mi > targetMonth) return false   // 아직 입주 전
-    const mo = monthOfDate(l.expectedMoveOut ?? null)
-    if (mo && mo < targetMonth) return false   // 이미 퇴실
-    return true
-  }
-  const billableLeases = activeLeases.filter(l => l.rentAmount > 0 && billableInTargetMonth(l))
+  const billableLeases = activeLeases.filter(l => l.rentAmount > 0 && residedInMonth(l, targetMonth))
 
   // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 현 원장 청구·매출에서 제외.
   // [저장 청구액 우선] 락인 맵 — 둘 다 아래 '누적 미납 상세' 블록과 공유 (한 번만 구성).
@@ -1011,8 +1020,11 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
     if (firstMonth > targetMonth) continue
 
-    // 퇴실예정 — expectedMoveOut 이후 월은 청구 종료
-    const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut) : null
+    // 퇴실예정 — 청구 끝(leaseBillingEnd = 예정일 ?? 실제 퇴실일) 이후 월은 청구 종료.
+    // 진행 중 계약은 실제 퇴실일이 없어 종전 expectedMoveOut 그대로다. 퇴실 완료 계약 중 예정일 없이
+    // 처리된 것만 실제 퇴실일에서 끝난다(신고 70addd65 — 그 달 화면에 퇴실 계약이 들어오면서 생긴 경로).
+    const billingEnd = leaseBillingEnd(l)
+    const moveOut = billingEnd ? new Date(billingEnd) : null
     const moveOutMonth = moveOut
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
@@ -1044,7 +1056,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0 (rooms·unpaid.ts 와 동일, lib/billing 공용)
-      if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
+      if (isCheckoutNoBillingMonthFor(l, billingEnd, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
       billableMonthList.push(mon)
     }
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·unpaid.ts 와 동일
@@ -1335,7 +1347,14 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       displayName: displayName(l.tenant, l.tenant.displayNameStyle),
       status:   l.status,
       // 일할 → 락인 → 할인. 수납 관리·미수납 위젯이 쓰는 그 함수 그대로 — 두 화면이 같은 숫자를 말한다.
-      amount:   billForLeaseMonth({ ...l, room: r }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
+      // 퇴실 완료 계약은 그 달 청구가 없을 수 있다(퇴실월 이후·납부일 전 퇴실) — 그때는 0 이라 금액 줄이 빈다.
+      // 수납 관리 행(rowExpected)과 같은 규칙이다. 진행 중 계약은 종전 그대로 둔다(이번 달 화면 불변).
+      amount:   (l.status === 'CHECKED_OUT' && (
+                  isAfterMoveOutMonth(leaseBillingEnd(l), mon)
+                  || isCheckoutNoBillingMonthFor(l, leaseBillingEnd(l), mon,
+                       resolveDueDateForMonth((l.overrideDueDayMonth === mon && l.overrideDueDay) ? l.overrideDueDay : l.dueDay, mon))))
+                ? 0
+                : billForLeaseMonth({ ...l, room: r }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
       // 수납 상태는 방이 아니라 사람에게 붙는다 — 한 방에 둘이 살면 한 명은 냈고 한 명은 안 냈을 수 있다.
       // 판정식은 바로 위 비거주자 현황과 같은 것을 쓴다(새 규칙이 아니라 같은 정본의 두 번째 소비처).
       payStatus: (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
@@ -1344,8 +1363,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       // 미납 중 7일 초과만 연체로 부른다(§03) — 그 판정에 쓰는 경과일.
       daysOverdue: daysOverdueByLease[l.id] ?? null,
       // 타일 보조줄용 날짜 — "8/17 입실" / "8/14 퇴실". 청구 판정에는 관여하지 않는다.
+      // 퇴실 완료 계약은 실제로 나간 날이 그 줄이다(체류 끝 정본 leaseStayEnd).
       moveInDate:      tileYmd(l.moveInDate),
-      expectedMoveOut: tileYmd(l.expectedMoveOut),
+      expectedMoveOut: tileYmd(l.status === 'CHECKED_OUT' ? leaseStayEnd(l) : l.expectedMoveOut),
     }
   }
   const roomsData = roomsWithTenants.map(r => {
@@ -1374,13 +1394,19 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     offerRentAhead: vacancyExcluded ? null : offerRentChangeAfterMonth(r, targetMonth),
     ...(() => {
       // 비거주는 위 '비거주자 현황' 블록이 따로 세운다 — 타일 사람 줄에서는 뺀다.
-      const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT')
-      const primary = primaryRoomLease(occupying)
+      // 퇴실 완료는 그 달에 산 계약만 선다(residedInMonth, 신고 70addd65).
+      // 과거 달이면 진행 중 계약(거주·예약)도 같은 판정을 받는다 — 조회한 달 뒤에 들어온 사람이 9월 타일에
+      // 서면 그 달 화면에 오늘의 사람이 섞인다. 이번 달은 종전 그대로(오늘의 계약 전부)다.
+      const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT'
+        && ((l.status !== 'CHECKED_OUT' && !isPastMonth) || residedInMonth(l, targetMonth)))
+      // 평면 배치도의 대표 이름은 '지금' 축이라 퇴실 계약을 빼고 고른다(종전 그대로).
+      const primary = primaryRoomLease(r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT' && l.status !== 'CHECKED_OUT'))
       // 타일에 세울 사람 — 수납 관리 행 순서 정본(거주 먼저 입주일 순, 그다음 입실 예약)을 그대로 쓴다.
       // 종전 조립('주 계약 하나 + 나머지 예약')은 한 방에 거주 계약이 둘이면 두 번째 거주자를 통째로
       // 떨어뜨렸는데, 아래 입주 가능 판정은 그 떨어진 계약의 퇴실일까지 세어 날짜를 잡는다. 그러면
       // 화면에 없는 사람이 정한 날짜가 공실 블락에 뜬다. 두 축이 같은 계약 집합을 보게 맞춘다.
-      const queue = roomLeaseRowOrder(occupying)
+      // 그 달에 살다 나간 계약은 거주 층에 입주일 순으로 선다 — 9월 513호는 퇴실자가 먼저, 10/5 예약이 다음.
+      const queue = roomLeaseRowOrder(occupying, { checkedOutAsResiding: true })
       const occupants = queue.slice(0, TILE_OCCUPANT_LIMIT).map(l => tileOccupant(r, l))
       // 언제부터 이 방을 줄 수 있나 — 사슬 끝 정본(lib/leaseStatus). 날짜가 잡힌 방(soon)에만 값이 있다.
       // 밴드 상한은 공실 블락까지 합쳐 넷이다(패널 판정 2026-08-12) — 사람이 넷을 채우면 블락은 안 붙는다.
@@ -1400,7 +1426,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         // 다섯 명 이상이면 넘치는 수만 한 줄로 — 잘라 놓고 말이 없으면 없는 사람이 된다.
         occupantsMore: Math.max(0, queue.length - TILE_OCCUPANT_LIMIT),
         // 금액은 그 방이 비는 달의 제시가다 — 인상 적용월 이상이면 인상가(lib/billing 정본, 월 단위).
-        availability: (availability?.kind === 'soon' && occupants.length < TILE_OCCUPANT_LIMIT)
+        // 과거 달에는 안 내린다 — 언제 비는가는 오늘의 사실이라 그 달 타일에 서면 두 축이 섞인다.
+        availability: (!isPastMonth && availability?.kind === 'soon' && occupants.length < TILE_OCCUPANT_LIMIT)
           // 예고를 availability 안에 넣는 이유 — 이 블락의 기준월은 방이 비는 달이지 이번 달이 아니다.
           // 형제 필드로 두면 화면이 엉뚱한 달의 예고를 이 블락에 짝지을 여지가 생긴다.
           ? { from: availability.availableFrom,

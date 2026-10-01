@@ -22,7 +22,7 @@ import {
   type BillingLeaseFields,
 } from './billing'
 import { fmtDateDot } from './fmtDate'
-import { kstDaysUntil } from './kstDate'
+import { dbDateMonthKey, kstDaysUntil, ymdToDbDate } from './kstDate'
 import { fmtRoomNo, roomNoWithRo } from './roomNo'
 import { isVacancyExcluded } from './vacancy'
 
@@ -160,8 +160,13 @@ export const OCCUPYING_STATUSES: LeaseStatus[] = ['RESERVED', 'ACTIVE', 'CHECKOU
  */
 export function roomLeaseRowOrder<T extends { status: string; moveInDate?: Date | string | null }>(
   leases: T[],
+  opts?: { checkedOutAsResiding?: boolean },
 ): T[] {
-  const residing: string[] = CURRENT_OCCUPANCY_STATUSES
+  // 과거 달 화면(홈 방 타일·수납 관리)은 그 달에 살다 나간 퇴실 계약도 넘긴다(residedInMonth 로 거른 것).
+  // 그 계약은 그 달의 거주자라 거주 층에 입주일 순으로 선다. 옵션을 안 켠 호출부는 종전대로 퇴실을 버린다.
+  const residing: string[] = opts?.checkedOutAsResiding
+    ? [...CURRENT_OCCUPANCY_STATUSES, 'CHECKED_OUT']
+    : CURRENT_OCCUPANCY_STATUSES
   return [
     ...sortByMoveIn(leases.filter(l => residing.includes(l.status))),
     ...sortByMoveIn(leases.filter(l => l.status === 'RESERVED')),
@@ -244,6 +249,81 @@ export const CONTRACT_ISSUE_STATUSES: LeaseStatus[] = ['ACTIVE', 'RESERVED', 'CH
  * 종료된 lease — 공실 방의 직전 입주자 표시, 평균 거주기간 통계 등.
  */
 export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
+
+/**
+ * 체류의 끝 — 퇴실 완료면 실제 퇴실일, 진행 중이면 퇴실 예정일. 둘 다 없으면 미정이다.
+ * 입퇴실 캘린더(lib/moveCalendar)의 막대 끝과 '그 달에 살았나' 판정(residedInMonth)이 같은 끝을 본다.
+ */
+export function leaseStayEnd<T>(l: { moveOutDate?: T | null; expectedMoveOut?: T | null }): T | null {
+  return l.moveOutDate ?? l.expectedMoveOut ?? null
+}
+
+/**
+ * 청구가 끝나는 날 — 퇴실 예정일, 없으면 실제 퇴실일(보고서 미수 루프와 같은 문법).
+ *
+ * 체류 끝(leaseStayEnd)과 순서가 반대인 이유. 청구 규칙(퇴실월 이후 0·납부일 전 퇴실이면 그 달 0)은
+ * 계약이 정한 퇴실 예정일을 기준으로 세워져 있고, 실제 퇴실일은 처리한 날이라 하루 늦는 일이 많다
+ * (501호 예정 6/30·처리 7/1). 실제 퇴실일을 먼저 보면 7월이 청구 달이 되어 없던 미수가 생긴다.
+ * 다만 예정일 없이 퇴실 처리된 계약(422호 윤정승 등)은 예정일이 비어 무청구 규칙이 아예 안 걸리므로
+ * 그때만 실제 퇴실일로 끝낸다. 진행 중 계약은 실제 퇴실일이 없어 종전 expectedMoveOut 그대로다.
+ */
+export function leaseBillingEnd<T>(l: { moveOutDate?: T | null; expectedMoveOut?: T | null }): T | null {
+  return l.expectedMoveOut ?? l.moveOutDate ?? null
+}
+
+/** 방에 들어온 적이 없는 단계 — 그 달 거주 판정에서 날짜와 무관하게 빠진다. */
+const NEVER_RESIDED_STATUSES: string[] = ['CANCELLED', 'WAITING_TOUR', 'TOUR_DONE']
+
+/**
+ * 그 달(month 'YYYY-MM')에 이 계약이 살았나 — 과거 달 화면이 사람을 고르는 정본(신고 70addd65).
+ *
+ * 왜 status 가 아니라 날짜인가. 홈·수납 관리가 '오늘의 status' 로 사람을 고르던 시절엔 9/30 에
+ * 퇴실하고 10/1 에 처리된 513호가 9월 화면에서 통째로 사라졌다. 9월 내내 산 사람이고 9월 청구도
+ * 있었는데, 오늘 CHECKED_OUT 이라는 이유 하나로 과거가 지워졌다. 그 달의 사람은 그 달의 날짜가 정한다.
+ *
+ *   투어·취소           항상 아니다(방에 들어온 적이 없다)
+ *   그 밖(예약 포함)    입주월 ≤ month ∧ (체류 끝 미정 ∨ 체류 끝 달 ≥ month)
+ *   퇴실 완료           위와 같되 체류 끝이 없으면 아니다 — 퇴실했는데 끝이 없으면 기록이 빠진 것이라
+ *                       모든 달에 서게 두지 않는다
+ *
+ * 체류 끝은 leaseStayEnd(실제 퇴실일 ?? 퇴실 예정일). 일찍 나간 사람은 실제로 나간 달까지다.
+ * 날짜는 @db.Date(UTC 자정) 또는 'YYYY-MM-DD' 라 UTC 날짜부로 달을 뽑는다(lib/kstDate 정본).
+ *
+ * '지금' 축(입주율·상태 카운트·보유 보증금)은 이 판정을 쓰지 않는다 — 그쪽은 오늘의 사실이다.
+ * 이 함수는 사람을 모집단에 넣을지만 정한다. 그 달 금액(무청구 퇴실월·퇴실월 이후 0)은 lib/billing 이 정한다.
+ */
+export function residedInMonth(
+  l: {
+    status: string
+    moveInDate?: Date | string | null
+    moveOutDate?: Date | string | null
+    expectedMoveOut?: Date | string | null
+  },
+  month: string,
+): boolean {
+  if (NEVER_RESIDED_STATUSES.includes(l.status)) return false
+  const moveInMonth = l.moveInDate ? dbDateMonthKey(l.moveInDate) : null
+  if (moveInMonth && moveInMonth > month) return false
+  const end = leaseStayEnd(l)
+  if (!end) return l.status !== 'CHECKED_OUT'
+  return dbDateMonthKey(end) >= month
+}
+
+/**
+ * 그 달에 살았을 수 있는 퇴실 완료 계약의 DB 조건 — residedInMonth 의 앞단 거름망이다.
+ * 퇴실 계약 전부를 읽으면 영업장 이력 전체가 딸려 온다. 체류 끝이 그 달 1일 이후인 것만 읽고,
+ * 최종 판정(입주월 게이트 포함)은 메모리에서 residedInMonth 가 한다.
+ */
+export function checkedOutInMonthWhere(month: string) {
+  const from = ymdToDbDate(`${month}-01`)
+  return {
+    status: 'CHECKED_OUT' as const,
+    OR: [
+      { moveOutDate: { gte: from } },
+      { moveOutDate: null, expectedMoveOut: { gte: from } },
+    ],
+  }
+}
 
 /**
  * 퇴실 예정 보조 문구 — "6/26 퇴실 D-13" / "오늘 6/26 퇴실" / "6/26 퇴실 13일 경과".
@@ -635,20 +715,10 @@ export async function getReservedFullMonthRevenueByMonths(
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
   })
-  // 그 달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
+  // 그 달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월. 판정은 residedInMonth 정본이다.
   // (다음달 입주 예정인 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
-  const billableInMonth = (
-    l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null },
-    targetMonth: string,
-  ): boolean => {
-    const mi = monthOfDate(l.moveInDate ?? null)
-    if (mi && mi > targetMonth) return false   // 아직 입주 전
-    const mo = monthOfDate(l.expectedMoveOut ?? null)
-    if (mo && mo < targetMonth) return false   // 이미 퇴실
-    return true
-  }
   for (const targetMonth of months) {
-    const billable = reservedLeases.filter(l => billableInMonth(l, targetMonth))
+    const billable = reservedLeases.filter(l => residedInMonth(l, targetMonth))
     out.set(targetMonth, {
       amount: billable.reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0),
       count:  billable.length,

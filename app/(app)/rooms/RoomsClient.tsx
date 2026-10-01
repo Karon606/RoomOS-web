@@ -44,6 +44,8 @@ type CashReceiptIssued = {
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'
 import { checkoutSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
+import { transitionStatusLabel } from '@/lib/leaseTransitions'
+import { fmtMD } from '@/lib/fmtDate'
 import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -260,6 +262,17 @@ function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
   if (room.status === 'CHECKOUT_PENDING' && !!checkoutMonth && checkoutMonth <= targetMonth) return 'exit'
   if (room.nextDueDate && room.nextDueAmount > 0) return 'await'
   return 'paid'
+}
+
+// 그 달에 살다 나간 계약(신고 70addd65) — 주 배지(완납·미납·청구 없음) 옆에 정본 어휘 '퇴실 완료' 배지를 나란히,
+// 보조줄에는 날짜만('9/30'). 배지가 이미 '퇴실'을 말하므로 보조줄에 또 쓰면 중복이다.
+// 톤은 퇴실 계약의 정본 중립(검색 배지 CHECKED_OUT: neutral = StatusBadge info). '퇴실 예정'(exit)과 갈라야
+// 나간 사람과 나갈 사람이 같은 말이 되지 않는다.
+function checkedOutSub(room: RoomStatus): string | null {
+  return room.status === 'CHECKED_OUT' && room.expectedMoveOut ? fmtMD(room.expectedMoveOut) : null
+}
+function checkedOutBadge(room: RoomStatus): { tone: BadgeTone; label: string } | undefined {
+  return room.status === 'CHECKED_OUT' ? { tone: 'info', label: transitionStatusLabel('CHECKED_OUT') } : undefined
 }
 
 // 미납 미수액 — 이번 달 미수(이월 미수 + 당월 미수). 카드 잔액 표시와 동일한 계산을 공용화(표시·복사용, §4 재계산 없음).
@@ -828,8 +841,12 @@ export default function RoomsClient({
   //   예약 행 expected는 표시용 청구 예정액이고 잔액 0이라, 합산하면 청구·수납이 함께 부풀려진다(신고 78ea0c3d).
   // 수납 = 예상 − 이번 달 미수(행별 balance<0, 이월 미수와 구분되도록 expected로 캡).
   // 만실 기준 = 예상 + 공실·예약 방 + 청구 0원 점유 방의 기준 임대료(baseRent) — 아래 zeroBilledFill 주석 참조.
-  const billableRows = occupied.filter(r => r.status !== 'RESERVED')
+  //   퇴실 완료(CHECKED_OUT) 행도 제외 — 그 달에 살다 나간 사람의 행(신고 70addd65)은 사람과 미수를 보이려고
+  //   세운 것이고, 그 달 몫은 아래 등식의 '퇴실 귀속'(그 달 귀속 수납) 항이 이미 홈 예상 수입에 더한다.
+  //   여기서도 더하면 같은 돈이 두 번 선다. 만실 기준은 그 방이 종전에 공실 행으로 받던 기준가를 그대로 받는다.
+  const billableRows = occupied.filter(r => r.status !== 'RESERVED').filter(r => r.status !== 'CHECKED_OUT')
   const reservedRows = occupied.filter(r => r.status === 'RESERVED')
+  const checkedOutRows = occupied.filter(r => r.status === 'CHECKED_OUT')
   const expectedSum  = billableRows.reduce((s, r) => s + r.expected, 0)
   const collectedSum = billableRows.reduce((s, r) => s + (r.expected - Math.min(r.expected, Math.max(0, -r.balance))), 0)
   // 만실 기준 — 청구가 0원인 점유 방도 기준가로 채운다(운영자 질문 2026-08-01, 지표 패널 절충안).
@@ -847,6 +864,7 @@ export default function RoomsClient({
   const fillByRoom = new Map<string, number>()
   for (const r of vacants) fillByRoom.set(r.roomId, r.baseRent || 0)
   for (const r of reservedRows) if (!billedRoomIds.has(r.roomId)) fillByRoom.set(r.roomId, r.baseRent || 0)
+  for (const r of checkedOutRows) if (!billedRoomIds.has(r.roomId)) fillByRoom.set(r.roomId, r.baseRent || 0)
   for (const r of billableRows) {
     if (r.expected === 0 && r.status !== 'NON_RESIDENT' && !billedRoomIds.has(r.roomId)) fillByRoom.set(r.roomId, r.baseRent || 0)
   }
@@ -1245,21 +1263,21 @@ export default function RoomsClient({
                       // 라벨이 '납부일'이면 보조줄의 '오늘'은 중복이라 생략
                       const deferred = isDeferredNow(room, targetMonth)
                       // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
-                      const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
+                      const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room)
                       const sub = unpaidSubText(room, targetMonth, dueInfo, deferred, exitSub)
                       const isOverdue = !!(dueInfo && dueInfo.overdue && dueInfo.days > 7)
                       // §03 UNPAID(Amber)는 '기한 경과 1~6일' 정의라, 아직 기한 전인 건에 쓰면 정본 위반이다.
                       const beforeDue = !deferred && !!dueInfo && !dueInfo.overdue && dueInfo.days !== 0
                       return <StatusBadge tone={deferred ? 'await' : beforeDue ? 'info' : isOverdue ? 'overdue' : 'unpaid'} sub={sub}
-                        secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{deferred ? '납부 유예' : unpaidBadgeLabel(dueInfo?.days, dueInfo?.overdue)}</StatusBadge>
+                        secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>{deferred ? '납부 유예' : unpaidBadgeLabel(dueInfo?.days, dueInfo?.overdue)}</StatusBadge>
                     }
                     // 청구 없는 달 — 미납 다음, 퇴실 예정 앞. 이월 미수가 있으면 미납이 먼저여야 한다.
                     if (room.noBillReason) {
                       const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                       // 단기는 퇴실 예정 상태로 바뀌기 전에도 퇴실이 눈에 보여야 한다 — 문법은 CHECKOUT_PENDING 과 동일.
                       const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                      return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit].filter(Boolean).join(' · ')}
-                        secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : undefined}>청구 없음</StatusBadge>
+                      return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit, checkedOutSub(room)].filter(Boolean).join(' · ')}
+                        secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>청구 없음</StatusBadge>
                     }
                     // 퇴실 예정 — Camel
                     if (showCheckout && room.expectedMoveOut) {
@@ -1272,11 +1290,11 @@ export default function RoomsClient({
                     // 납부 예정 — 알림 필요, Blue(§03 AWAIT)
                     if (isAwaiting) {
                       // 기한을 미뤄준 사람은 '납부 예정'이 아니라 '납부 유예' — 미납 분기와 같은 말을 해야 한다
-                      if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, null)}>납부 유예</StatusBadge>
+                      if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                       const [, mm, dd] = room.nextDueDate!.split('-')
                       const days = kstDaysUntil(room.nextDueDate!)
                       const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
-                      return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
+                      return <StatusBadge tone="await" sub={[sub, checkedOutSub(room)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                     }
                     // 완납 — Olive 뱃지 (지연납부 이력이 있으면 sub로)
                     let lateSub: string | undefined
@@ -1286,8 +1304,8 @@ export default function RoomsClient({
                     }
                     // 단기 입주월 — 청구 없음 분기에 오기 전인 그 달에도 퇴실이 보여야 한다.
                     const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                    return <StatusBadge tone="paid" sub={[lateSub, shortExit].filter(Boolean).join(' · ') || undefined}
-                      secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : undefined}>완납</StatusBadge>
+                    return <StatusBadge tone="paid" sub={[lateSub, shortExit, checkedOutSub(room)].filter(Boolean).join(' · ') || undefined}
+                      secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>완납</StatusBadge>
                   })()}
                 </div>
               </div>
@@ -1528,19 +1546,19 @@ export default function RoomsClient({
                             // 이 표는 카드의 쌍둥이라 한쪽만 고치면 화면마다 다른 말을 한다.
                             const deferred = isDeferredNow(room, targetMonth)
                             // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
-                            const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
+                            const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room)
                             const sub = unpaidSubText(room, targetMonth, info, deferred, exitSub)
                             const isOverdue = !!(info && info.overdue && info.days > 7)
                             const beforeDue = !deferred && !!info && !info.overdue && info.days !== 0
                             return <StatusBadge tone={deferred ? 'await' : beforeDue ? 'info' : isOverdue ? 'overdue' : 'unpaid'} sub={sub}
-                              secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{deferred ? '납부 유예' : unpaidBadgeLabel(info?.days, info?.overdue)}</StatusBadge>
+                              secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>{deferred ? '납부 유예' : unpaidBadgeLabel(info?.days, info?.overdue)}</StatusBadge>
                           }
                           if (room.noBillReason) {
                             const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                             // 카드와 같은 규칙 — 단기는 자동 전환 전에도 퇴실을 보조줄에 담는다.
                             const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                            return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit].filter(Boolean).join(' · ')}
-                              secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : undefined}>청구 없음</StatusBadge>
+                            return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit, checkedOutSub(room)].filter(Boolean).join(' · ')}
+                              secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>청구 없음</StatusBadge>
                           }
                           if (showCheckout && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')
@@ -1550,11 +1568,11 @@ export default function RoomsClient({
                           }
                           if (showCheckout) return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
                           if (isAwaiting) {
-                            if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, null)}>납부 유예</StatusBadge>
+                            if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                             const [, mm, dd] = room.nextDueDate!.split('-')
                             const days = kstDaysUntil(room.nextDueDate!)
                             const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
-                            return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
+                            return <StatusBadge tone="await" sub={[sub, checkedOutSub(room)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                           }
                           let lateSub: string | undefined
                           if (room.latePaidAt) {
@@ -1562,8 +1580,8 @@ export default function RoomsClient({
                             lateSub = `${Number(mm)}/${Number(dd)} 지연납부`
                           }
                           const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                          return <StatusBadge tone="paid" sub={[lateSub, shortExit].filter(Boolean).join(' · ') || undefined}
-                            secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : undefined}>완납</StatusBadge>
+                          return <StatusBadge tone="paid" sub={[lateSub, shortExit, checkedOutSub(room)].filter(Boolean).join(' · ') || undefined}
+                            secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>완납</StatusBadge>
                         })()}
                         {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
                         {!selectMode && totalUnpaid > 0 && (

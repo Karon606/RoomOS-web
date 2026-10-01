@@ -23,7 +23,7 @@
 // 다른 오늘을 보는 함정을 애초에 열지 않는다).
 
 import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, occupancyOverlaps, type OverlapAckSpan } from './roomAssignment'
-import { OCCUPYING_STATUSES, checkoutDateLabel, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
+import { OCCUPYING_STATUSES, checkoutDateLabel, leaseStayEnd, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
 import { fmtRoomNo } from './roomNo'
 import { fmtMD } from './fmtDate'
 
@@ -443,9 +443,9 @@ const atUtc = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`)
 const daysBetween = (a: string, b: string): number => Math.round((atUtc(b) - atUtc(a)) / DAY_MS)
 const addDays = (ymd: string, n: number): string => new Date(atUtc(ymd) + n * DAY_MS).toISOString().slice(0, 10)
 
-/** 체류의 끝 — 퇴실 완료면 실제 퇴실일, 진행 중이면 퇴실 예정일. 둘 다 없으면 미정이다. */
+/** 체류의 끝 — 퇴실 완료면 실제 퇴실일, 진행 중이면 퇴실 예정일. 둘 다 없으면 미정이다(lib/leaseStatus 정본). */
 function stayEnd(l: MoveCalendarLease): string | null {
-  return l.moveOutDate ?? l.expectedMoveOut
+  return leaseStayEnd(l)
 }
 
 /**

@@ -49,6 +49,7 @@ import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModa
 import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
+import { transitionStatusLabel } from '@/lib/leaseTransitions'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -1992,7 +1993,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
 // ── 입주자 탭 ───────────────────────────────────────────────────
 
-function TenantsTab({ data }: { data: DashboardData }) {
+function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boolean }) {
   // 입주율 분모 = 전체 − 집계 제외(창고·사무실) — 거주중%+공실%=100 유지(신고 9d844226)
   const countedRooms = data.totalRooms - data.excludedRooms
   const occupancyRate = countedRooms > 0 ? Math.round((data.occupiedRooms / countedRooms) * 100) : 0
@@ -2008,6 +2009,8 @@ function TenantsTab({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-5">
+      {/* 이 탭의 숫자는 조회한 달이 아니라 오늘의 계약이다 — 과거 달을 볼 때만 범위를 한 줄로 고지한다(§27.6 문형) */}
+      {isPastView && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주자 현황은 오늘 기준입니다</p>}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label={`전체 입주자 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
         <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
@@ -2815,10 +2818,17 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                   {/* 방 현황 그리드 */}
                   <div className="rounded-xl p-5 flex flex-col gap-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-center justify-between shrink-0">
-                      <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>
-                        방 현황
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>
+                          방 현황
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
+                        </p>
+                        {/* 과거 달이면 타일의 사람은 그 달 사람이다(신고 70addd65) — 기준을 칩으로 선언한다(이달 미수납 칩과 같은 문법).
+                            '말일 기준'이 아니다: 그 달 중에 나간 사람(9/1 퇴실 등)도 선다. 이번 달은 종전 그대로 칩이 없다. */}
+                        {!isViewingRealMonth && (
+                          <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{`${Number(targetMonth.slice(5))}월 거주 기준`}</span>
+                        )}
+                      </div>
                       <Link href="/room-manage" style={{ fontSize: '0.6875rem', color: 'var(--coral)' }}>전체 보기 ›</Link>
                     </div>
                     {data.rooms.length === 0 ? (
@@ -2868,7 +2878,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                             { tone: 'await'   as const, label: '납부·입실 예정' },
                             { tone: 'unpaid'  as const, label: '미납' },
                             { tone: 'overdue' as const, label: '연체' },
-                            { tone: 'none'    as const, label: '공실·비거주·입주 가능' },
+                            // 무색 견본의 뜻은 화면에 실제로 선 것만 적는다 — 과거 달에는 입주 가능 블락이 없고(오늘 축),
+                            // 그 달 퇴실자 밴드(신고 70addd65)가 서면 '퇴실 완료'가 붙는다. 이번 달·퇴실자 없음은 종전 문구 그대로.
+                            { tone: 'none'    as const, label: ['공실', '비거주',
+                                isViewingRealMonth ? '입주 가능' : null,
+                                data.rooms.some(r => r.occupants.some(o => o.status === 'CHECKED_OUT')) ? transitionStatusLabel('CHECKED_OUT') : null,
+                              ].filter(Boolean).join('·') },
                           ]).map(s => (
                             <div key={s.label} className="flex items-center gap-[5px]">
                               {/* 10% 틴트는 7px 에서 안 보인다 — 견본 크기를 키우고 테두리는 중립 헤어라인으로(상태색 아님) */}
@@ -2926,7 +2941,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                             const renderCell = (r: typeof data.rooms[0]) => {
                               const hasNonResident = !!r.nonResidentName
                               // 사람 줄 — 사는 사람(또는 먼저 들어올 예약) + 다음 입실 예약(lib/leaseStatus 정본).
-                              const people = r.isVacant ? [] : r.occupants
+                              // 지금 빈 방이어도 조회한 달에 살다 나간 사람은 선다(신고 70addd65) — isVacant 는 오늘의 사실이다.
+                              const people = r.isVacant ? r.occupants.filter(p => p.status === 'CHECKED_OUT') : r.occupants
                               // 사람이 없을 때만 방 자체를 부른다.
                               // 거주·예약 계약이 하나도 없고 비거주 계약만 걸린 방(415호·사무실 유형)은 방의 용도만
                               // 말한다 — 점유자 이름을 세우면 그 방에 사는 사람으로 읽힌다(운영자 지적 2026-08-11).
@@ -2954,10 +2970,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                               // 그 사람의 청구액(할인·일할·락인)이라 방 예약값을 얹으면 우리가 계산하지
                               // 않은 청구를 약속하게 된다. 둘은 동시에 서지 않는다(사람 유무로 갈린다).
                               const ahead = people.length === 0 ? r.offerRentAhead : (r.availability?.ahead ?? null)
+                              // 지금 빈 방에 그 달 퇴실자 한 명만 선 타일은 방 모달(오늘의 방 — 그 사람이 없다)이 아니라
+                              // 그 계약의 수납 면을 연다. 비거주자 타일처럼 타일 전체가 한 사람을 가리키는 문법이다.
+                              // 둘 이상이면 누구를 열지 정할 수 없어 방 모달 그대로다.
+                              const soleCheckedOut = r.isVacant && people.length === 1 ? people[0] : null
                               return (
                                 <div
                                   key={r.roomNo}
-                                  onClick={() => entityModal.open({ kind: 'room', roomId: r.id })}
+                                  onClick={() => soleCheckedOut
+                                    ? entityModal.open({ kind: 'payment', leaseTermId: soleCheckedOut.leaseId, tenantId: soleCheckedOut.tenantId })
+                                    : entityModal.open({ kind: 'room', roomId: r.id })}
                                   className="room-tile rounded-[8px] flex flex-col cursor-pointer overflow-hidden"
                                 >
                                   {/* 호실번호는 밴드 밖 공통 헤더 — 방 이름은 사람 것이 아니라 타일 것이다 */}
@@ -2973,14 +2995,21 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                       : people.map(p => {
                                           const tone = personTone(p)
                                           const isOverdue = tone === 'overdue'
+                                          // 그 달에 살다 나간 사람(신고 70addd65) — 미납·연체가 아니면 무색 밴드에 정본 어휘 '퇴실 완료'.
+                                          // 올리브 밴드와 '9/30 퇴실'을 쓰면 나간 사람과 나갈 사람이 같은 모양이 된다. 흐림은 쓰지 않는다.
+                                          // 날짜를 붙이지 않는 이유 — '9/30 퇴실 완료'는 320px 화면의 68px 일정 슬롯을 넘는다(잘린
+                                          // 날짜는 없는 날짜보다 나쁘다, checkoutDateLabel 주석). 날짜는 title 과 수납 면이 말한다.
+                                          const departed = p.status === 'CHECKED_OUT' && tone !== 'unpaid' && tone !== 'overdue'
                                           // 일정 슬롯은 늘 있다(빈 줄이라도) — 미납·연체는 색과 함께 말로도 한 번 더 말한다.
                                           const subLine = isOverdue ? `연체 D+${p.daysOverdue}`
                                             : tone === 'unpaid' ? '미납'
-                                              : p.status === 'RESERVED' ? (moveInDateLabel(p.moveInDate) ?? DASH_STATUS_LABEL.RESERVED)
-                                                : checkoutDateLabel(p.expectedMoveOut)
+                                              : departed ? transitionStatusLabel('CHECKED_OUT')
+                                                : p.status === 'RESERVED' ? (moveInDateLabel(p.moveInDate) ?? DASH_STATUS_LABEL.RESERVED)
+                                                  : checkoutDateLabel(p.expectedMoveOut)
                                           return (
                                             // 이름·금액·일정 3슬롯 고정 — 두 사람이 서면 두 밴드가 같은 높이로 대칭이 된다.
-                                            <div key={p.leaseId} className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
+                                            <div key={p.leaseId} title={departed ? `${checkoutDateLabel(p.expectedMoveOut) ?? ''} 완료`.trim() : undefined}
+                                              className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(departed ? 'none' : tone)}>
                                               <span className="truncate w-full text-center" title={p.displayName} style={CELL_NAME}>{p.displayName}</span>
                                               <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{p.amount > 0 ? fmtManShort(p.amount) : NBSP}</span>
                                               <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{subLine ?? NBSP}</span>
@@ -3273,7 +3302,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
           )}
 
           {tab === 'finance' && <FinanceTab data={data} targetMonth={targetMonth} />}
-          {tab === 'tenants' && <TenantsTab data={data} />}
+          {tab === 'tenants' && <TenantsTab data={data} isPastView={targetMonth < kstMonthStr()} />}
           {tab === 'ai'      && <AiTab data={data} targetMonth={targetMonth} />}
         </div>
       </div>

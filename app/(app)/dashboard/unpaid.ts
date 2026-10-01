@@ -13,6 +13,7 @@
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
+import { leaseBillingEnd } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
 
 function monthRange(startMonth: string, endMonth: string): string[] {
@@ -66,6 +67,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         rentAmount: true,
         moveInDate: true,
         expectedMoveOut: true,
+        moveOutDate: true,   // 청구 끝(leaseBillingEnd) — 홈 미수 루프와 글자까지 같은 게이트를 쓰려고 읽는다
         status: true,
         dueDay: true,
         overrideDueDay: true,
@@ -283,7 +285,10 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
     if (firstMonth > targetMonth) continue
 
-    const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut) : null
+    // 청구 끝 — 홈 미수 루프(getDashboardData)와 같은 정본(leaseBillingEnd). 이 조회는 진행 중 계약뿐이라
+    // 실제 퇴실일이 없어 종전 expectedMoveOut 과 같은 값이다(신고 70addd65 에서 홈 쪽과 맞춘 것).
+    const billingEnd = leaseBillingEnd(l)
+    const moveOut = billingEnd ? new Date(billingEnd) : null
     const moveOutMonth = moveOut
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
@@ -310,7 +315,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       if (moveOutMonth && mon > moveOutMonth) continue
       // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 그 기간 미사용 = 청구 0
       // (rooms checkoutNoBilling 과 동일 규칙, lib/billing 공용. 수납 페이지=완납인데 푸시=미납 방지)
-      if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
+      if (isCheckoutNoBillingMonthFor(l, billingEnd, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
       billableMonthList.push(mon)
     }
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·dashboard page 와 동일
