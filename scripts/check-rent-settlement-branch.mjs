@@ -23,6 +23,9 @@
 //   ⓘ 환불 확정 계약은 일할 위젯이 잠긴 줄로 선다(2026-09-03). 서버(RoomRow.rentRefundFinalized)가 판정해
 //      내리고 위젯은 버튼 없이 한 줄만 그린다. 버튼을 두면 눌러야 거절되는 버튼이 된다. 위치 표현은
 //      '위 이용료 정산 항목'이다('맨 위'는 보증금 카드가 먼저라 거짓).
+//   ⓛ 정산 문장에 '회사 귀속'·'수납 기록은 바뀌지 않습니다'를 쓰지 않는다(2026-10-02 운영자 피드백, 513호).
+//      '회사 귀속'은 '챙긴다'로, '수납 기록은 바뀌지 않습니다'는 '기록 없이 몰래'로 읽혔다. 실제로는
+//      환불 없음 스냅샷이 남는다. 문장은 '받은 그대로 둡니다'·'환불 없음으로 기록됩니다'로 말한다.
 //
 // 실행: node scripts/check-rent-settlement-branch.mjs
 import { readFileSync } from 'node:fs'
@@ -194,9 +197,16 @@ for (const file of [SECTION, WIDGET]) {
   }
 }
 
+// ⓛ 정산 문장의 '회사 귀속' 부재. 주석은 결정 기록이라 빼고 본다.
+for (const file of ['lib/checkoutSettlement.ts', SECTION, 'components/entity-modal/widgets/RentSettlementPanel.tsx']) {
+  const src = stripComments(read(file))
+  if (/회사 귀속/.test(src)) violations.push(`${file} — 정산 문장에 '회사 귀속'이 있다. '챙긴다'로 읽힌다. '받은 그대로 둡니다'로 말한다.`)
+  if (/수납 기록은 바뀌지 않습니다/.test(src)) violations.push(`${file} — '수납 기록은 바뀌지 않습니다'가 있다. '기록 없이 몰래'로 읽힌다. '환불 없음으로 기록됩니다'로 말한다.`)
+}
+
 if (violations.length) {
   console.error('퇴실 정산 갈래 감지망 위반')
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·확인창 판정 정본·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금·수납 정보 우산 라벨·조회 실패 표시')
+console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·확인창 판정 정본·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금·수납 정보 우산 라벨·조회 실패 표시·정산 문장 말투')

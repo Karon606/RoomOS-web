@@ -7,6 +7,7 @@
 
 import type { CheckoutRefundResult, RefundMode } from './prorate'
 import { fmtWon } from './fmtMoney'
+import { fmtMD } from './fmtDate'
 
 /** 서버 모드 둘에 화면 갈래 둘을 얹는다. 단기 요금은 적용 금액의 기본값만 바꾸고, '환불 안 함'은 0을 확정한다. */
 export type SettlementPick = RefundMode | 'shortStay' | 'none'
@@ -33,7 +34,7 @@ export const SETTLEMENT_PICK_LABEL: Record<SettlementPick, string> = {
  */
 export function settlementPremise(withNone: boolean, hasFuturePrepaid = false): string {
   if (!withNone) return '셋 다 지낸 날짜만큼 일할로 받습니다. 위약금을 매기는지, 단기 요금표를 쓰는지가 다릅니다.'
-  return `환불 없음은 지낸 달 이용료를 돌려주지 않고, 나머지 셋은 지낸 날짜만큼 받고 돌려줍니다.${hasFuturePrepaid ? ' 아직 지내지 않은 기간의 선납은 넷 다 돌려줍니다.' : ''}`
+  return `넷 다 이미 받은 돈 안에서 정합니다. 환불 없음은 받은 그대로 두고, 나머지 셋은 지낸 날짜만큼만 남기고 돌려줍니다.${hasFuturePrepaid ? ' 아직 지내지 않은 기간의 선납은 넷 다 돌려줍니다.' : ''}`
 }
 
 /**
@@ -44,15 +45,21 @@ export function settlementPremise(withNone: boolean, hasFuturePrepaid = false): 
 export function settlementPickCaption(
   pick: SettlementPick,
   shortStay: ShortStayQuoteLite | null | undefined,
-  opts: { prepaidAmount?: number; futurePrepaid?: number } = {},
+  opts: { prepaidAmount?: number; futurePrepaid?: number; view?: SettleMonthView } = {},
 ): string {
   if (pick === 'legal') return '원칙. 사용한 일수에 잔여 이용금액의 위약금을 더해 청구합니다.'
   if (pick === 'goodwill') return '사용한 일수만 청구하고 위약금은 안 받습니다.'
   if (pick === 'none') {
     const future = opts.futurePrepaid ?? 0
-    return future > 0
-      ? `지낸 달 이용료는 돌려주지 않고, 아직 지내지 않은 기간의 선납 ${fmtWon(future)}만 돌려줍니다.`
-      : '지낸 달 이용료는 돌려주지 않습니다.'
+    const v = opts.view
+    const month = v ? `${monthNum(v.settleMonth)}월분` : '지낸 달 이용료'
+    if (future > 0) {
+      if (v && v.monthPaid <= 0) return `${month}은 받은 돈이 없습니다. 아직 지내지 않은 ${v.futureLabel || '기간의'} 선납 ${fmtWon(future)}을 전부 돌려줍니다.`
+      return `${month}${v ? '은' : '는'} 받은 그대로 두고, 아직 지내지 않은 ${v?.futureLabel || '기간의'} 선납 ${fmtWon(future)}만 돌려줍니다.`
+    }
+    if (!v) return '지낸 달 이용료는 받은 그대로 두고 돌려주지 않습니다.'
+    const unused = unusedPhrase(v)
+    return `${month}을 받은 그대로 둡니다.${unused ? ` 안 지낸 ${unused}도 돌려주지 않습니다.` : ''}`
   }
   if (!shortStay) return ''
   const over = opts.prepaidAmount != null ? shortStay.baseAmount - opts.prepaidAmount : 0
@@ -121,6 +128,79 @@ export function settlementPickOptions(hasShortStay: boolean, withNone: boolean):
   return picks.map(value => ({ value, label: SETTLEMENT_PICK_LABEL[value] }))
 }
 
+const monthNum = (ym: string) => Number(ym.slice(5, 7))
+
+/** 'YYYY-MM-DD' 다음 날. 표시용이라 UTC 자정 산술로 충분하다(시간대가 끼지 않는다). */
+function nextYmd(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+}
+
+/**
+ * 정산 귀속월 한 달의 돈을 '받은 돈 / 지낸 몫 / 안 지낸 몫'으로 편 표시용 파생.
+ *
+ * 왜 있나 (2026-10-02 운영자 피드백, 513호). 확인창이 "결제액 350,000원은 회사 귀속으로 남고 수납
+ * 기록은 바뀌지 않습니다"라고만 말해, 어느 기간 돈인지도, 돌려주지 않는 게 안 지낸 몫이라는 것도
+ * 안 보였다. 그래서 '한 달치를 더 받아 꿀꺽하느냐'로 읽혔다. 문장이 기간과 두 몫을 숫자로 말하려면
+ * 그 숫자가 한 곳에서 나와야 한다. 계산 규칙(settlementAmounts)과는 무관하다. 보이기만 한다.
+ *
+ * 일수는 30일 클램프라 안 지낸 '일수'는 만들지 않는다. 안 지낸 몫은 날짜 구간과 금액으로만 말한다.
+ */
+export type SettleMonthView = {
+  /** 정산 귀속월 'YYYY-MM' */
+  settleMonth: string
+  /** 귀속월에 받은 돈 = 결제액 − 뒤 달 선납 */
+  monthPaid: number
+  daysUsed: number
+  /** 지낸 몫(일할 사용분). 받은 돈을 넘으면 문장이 '지낸 몫'을 말하지 않는다. */
+  usedAmount: number
+  /** 안 지낸 몫 = max(0, 받은 돈 − 지낸 몫) */
+  unusedAmount: number
+  period: { startYmd: string; endYmd: string } | null
+  /** 퇴실 다음 날 ~ 기간 끝. 퇴실일이 기간 끝 전일 때만. */
+  unusedRange: { fromYmd: string; toYmd: string } | null
+  /** 뒤 달 선납 달 이름('10월분 · 11월분'). 없으면 빈 문자열. */
+  futureLabel: string
+}
+
+export function settleMonthView(input: {
+  settleMonth: string
+  period: { startYmd: string; endYmd: string } | null
+  moveOutYmd: string
+  prepaidAmount: number
+  refund: Pick<CheckoutRefundResult, 'futurePrepaid' | 'usedAmount' | 'daysUsed'>
+  prepaidMonths: { month: string }[]
+}): SettleMonthView {
+  const monthPaid = Math.max(0, input.prepaidAmount - Math.max(0, input.refund.futurePrepaid))
+  const usedAmount = Math.max(0, input.refund.usedAmount)
+  const { period, moveOutYmd } = input
+  return {
+    settleMonth: input.settleMonth,
+    monthPaid,
+    daysUsed: input.refund.daysUsed,
+    usedAmount,
+    unusedAmount: Math.max(0, monthPaid - usedAmount),
+    period,
+    unusedRange: period && moveOutYmd && moveOutYmd < period.endYmd ? { fromYmd: nextYmd(moveOutYmd), toYmd: period.endYmd } : null,
+    futureLabel: futureMonthsLabel(input.prepaidMonths.filter(m => m.month > input.settleMonth)),
+  }
+}
+
+/** '9/5~10/4' */
+export function periodLabel(r: { startYmd: string; endYmd: string } | { fromYmd: string; toYmd: string }): string {
+  return 'startYmd' in r ? `${fmtMD(r.startYmd)}~${fmtMD(r.endYmd)}` : `${fmtMD(r.fromYmd)}~${fmtMD(r.toYmd)}`
+}
+
+/** 지낸 몫이 받은 돈 안에 있을 때만 '지낸 26일 몫'을 말한다. 덜 받은 계약에서 지낸 몫을 말하면 받은 적 없는 돈을 말하게 된다. */
+export function usedFits(v: SettleMonthView): boolean {
+  return v.usedAmount > 0 && v.usedAmount <= v.monthPaid
+}
+
+/** '10/1~10/4 몫 46,667원' — 안 지낸 몫이 없거나 구간을 모르면 null. */
+function unusedPhrase(v: SettleMonthView): string | null {
+  return v.unusedAmount > 0 && v.unusedRange && usedFits(v) ? `${periodLabel(v.unusedRange)} 몫 ${fmtWon(v.unusedAmount)}` : null
+}
+
 /**
  * 퇴실 처리 세 화면(홈 알림·프리즘·입주자 수정)이 정본 섹션에서 부모로 올리는 정산 값.
  * null 이면 정산할 것이 없다는 뜻이고 섹션 자체가 안 선다.
@@ -129,7 +209,7 @@ export function settlementPickOptions(hasShortStay: boolean, withNone: boolean):
  * 못 막고, 부모가 결제액을 따로 조회하면 두 벌이 된다. `pick`·`suggested`·`futurePrepaid` 는
  * 확인창(rentSettlementConfirmSpec)의 근거다.
  */
-export type RentSettlementValue = { amount: number; max: number; pick: SettlementPick; suggested: number; futurePrepaid: number }
+export type RentSettlementValue = { amount: number; max: number; pick: SettlementPick; suggested: number; futurePrepaid: number; view: SettleMonthView }
 
 export type RentSettlementConfirmSpec = { title: string; message: string; confirmLabel: string }
 
@@ -148,15 +228,16 @@ export type RentSettlementConfirmSpec = { title: string; message: string; confir
  */
 export function rentSettlementConfirmSpec(rent: RentSettlementValue | null, depositReturn: number | null): RentSettlementConfirmSpec | null {
   if (!rent) return null
-  const { amount, max, pick, suggested, futurePrepaid } = rent
+  const { amount, max, pick, suggested, futurePrepaid, view } = rent
   const full = amount > 0 && amount >= max && amount > futurePrepaid
   const differs = amount !== suggested
   if (!full && !differs && amount > 0) return null
 
   // 두 갈래가 같은 모양이다. 제목은 이용료 한 금액, 보증금 반환액과 총 환불액은 본문(§14 위계,
   // 제목 16/700 에 두 금액을 실으면 375px 에서 두 줄을 꽉 채운다). 취소는 늘 무변경이라 기본 라벨.
+  // 보증금 꼬리는 줄을 바꿔 둔다. 본문이 whitespace-pre-line 이라 '\n' 이 줄바꿈으로 선다.
   const depositPart = depositReturn != null
-    ? ` 보증금 반환 ${fmtWon(depositReturn)} · 총 환불액 ${fmtWon(amount + depositReturn)}.`
+    ? `\n보증금 반환 ${fmtWon(depositReturn)} · 총 환불액 ${fmtWon(amount + depositReturn)}.`
     : ''
 
   // 전액 환불(사용분·위약금까지 반환)은 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다.
@@ -164,21 +245,35 @@ export function rentSettlementConfirmSpec(rent: RentSettlementValue | null, depo
   if (full) {
     return {
       title: `이용료 ${fmtWon(amount)}을 전액 환불할까요?`,
-      message: `사용분까지 모두 돌려주는 금액입니다.${depositPart}`,
+      message: `${usedFits(view) ? `지낸 ${view.daysUsed}일 몫 ${fmtWon(view.usedAmount)}까지` : '사용분까지 모두'} 돌려주는 금액입니다.${depositPart}`,
       confirmLabel: '전액 환불',
     }
   }
 
+  // 환불 0 의 세 갈래는 '어느 달 돈을, 왜 안 돌려주는지'와 '환불 없음으로 기록된다'를 말한다.
+  // 종전 "회사 귀속으로 남고 수납 기록은 바뀌지 않습니다"는 '챙긴다'·'기록 없이 몰래'로 읽혔다
+  // (2026-10-02 운영자 피드백, 513호). 실제로는 환불 없음 스냅샷이 남는다.
   const message = amount === 0
     ? (pick === 'none'
-      ? `결제액 ${fmtWon(max)}은 회사 귀속으로 남고 수납 기록은 바뀌지 않습니다.`
+      ? noneMessage(view, max)
       : suggested === 0
-      ? `계산값이 0원이라 돌려줄 이용료가 없습니다. 수납 기록은 바뀌지 않습니다.`
-      : `계산값 ${fmtWon(suggested)} 대신 0원입니다. 수납 기록은 바뀌지 않습니다.`)
+      ? '계산값이 0원이라 돌려줄 몫이 없습니다. 환불 없음으로 기록됩니다.'
+      : `계산값 ${fmtWon(suggested)} 대신 돌려주지 않습니다. 환불 없음으로 기록됩니다.`)
     : `계산값 ${fmtWon(suggested)}과 다른 금액입니다.`
   return {
-    title: amount === 0 ? '이용료를 환불하지 않고 처리할까요?' : `이용료 ${fmtWon(amount)}을 환불할까요?`,
+    // 뒤 달 선납이 섞인 수동 0원은 그 달 돈만 안 돌려주는 게 아니라 '9월분'만 말하면 거짓이다. 달 이름을 뗀다.
+    title: amount === 0 ? `${futurePrepaid > 0 ? '' : `${monthNum(view.settleMonth)}월분 `}이용료를 돌려주지 않고 퇴실 처리할까요?` : `이용료 ${fmtWon(amount)}을 환불할까요?`,
     message: `${message}${depositPart}`,
     confirmLabel: '퇴실 처리',
   }
+}
+
+/** '환불 없음' 0원 확인 본문. 안 지낸 몫이 0 이거나 기간을 모르면 그 구절을 뺀다. */
+function noneMessage(v: SettleMonthView, max: number): string {
+  const head = v.period ? `${periodLabel(v.period)}분 ${fmtWon(max)}` : `${monthNum(v.settleMonth)}월분 ${fmtWon(max)}`
+  const unused = unusedPhrase(v)
+  const keep = unused
+    ? `지낸 ${v.daysUsed}일 몫 ${fmtWon(v.usedAmount)}과 안 지낸 ${unused} 모두 돌려주지 않고 그대로 둡니다.`
+    : '돌려주지 않고 그대로 둡니다.'
+  return `${head}은 이미 받은 돈입니다. ${keep} 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.`
 }

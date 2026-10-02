@@ -22,7 +22,7 @@ import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNot
 import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
-import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL, rentSettlementConfirmSpec, type SettlementPick } from '../lib/checkoutSettlement'
+import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, settlementPremise, settleMonthView, futureMonthsLabel, SETTLEMENT_PICK_LABEL, rentSettlementConfirmSpec, type SettlementPick, type SettleMonthView } from '../lib/checkoutSettlement'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -747,6 +747,20 @@ const RENT = 300000
   eq('갈래: 환불 없음 선납 클램프', settlementAmounts('none', { prepaidAmount: 100000, refund: overFuture, shortStay: null }), { refund: 100000, companyKeeps: 0 })
   eq('갈래: 환불 없음 캡션에 선납액', settlementPickCaption('none', null, { futurePrepaid: 340000 }).includes('340,000'), true)
   eq('갈래: 환불 없음 캡션 선납 없음', settlementPickCaption('none', null).includes('돌려주지 않습니다'), true)
+  // 513호(2026-10-02 운영자 피드백): 납부일 5일, 9월분 350,000(9/5~10/4), 9/30 퇴실. 지낸 26일 303,333 · 안 지낸 46,667.
+  // 캡션이 어느 달 돈인지와 안 지낸 몫을 숫자로 말한다. '회사 귀속'은 '챙긴다'로 읽혀 쓰지 않는다.
+  const r513 = calcCheckoutRefund({ prepaidAmount: 350000, monthlyRent: 350000, daysUsed: 26, mode: 'goodwill', futurePrepaid: 0 })
+  const v513 = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-09-30', prepaidAmount: 350000, refund: r513, prepaidMonths: [{ month: '2026-09' }] })
+  eq('갈래: 513호 표시 파생', [v513.monthPaid, v513.usedAmount, v513.unusedAmount, v513.unusedRange], [350000, 303333, 46667, { fromYmd: '2026-10-01', toYmd: '2026-10-04' }])
+  eq('갈래: 513호 환불 없음 캡션', settlementPickCaption('none', null, { futurePrepaid: 0, view: v513 }), '9월분을 받은 그대로 둡니다. 안 지낸 10/1~10/4 몫 46,667원도 돌려주지 않습니다.')
+  // 기간 끝 날 퇴실이면 안 지낸 구간이 없다. 구절을 뺀다.
+  const vEnd = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-10-04', prepaidAmount: 350000, refund: { ...r513, daysUsed: 30, usedAmount: 350000 }, prepaidMonths: [{ month: '2026-09' }] })
+  eq('갈래: 기간 끝 퇴실은 안 지낸 구절 없음', [vEnd.unusedRange, settlementPickCaption('none', null, { view: vEnd })], [null, '9월분을 받은 그대로 둡니다.'])
+  const vFuture = settleMonthView({ settleMonth: '2026-09', period: null, moveOutYmd: '2026-09-30', prepaidAmount: 700000, refund: { ...r513, futurePrepaid: 350000 }, prepaidMonths: [{ month: '2026-09' }, { month: '2026-10' }] })
+  eq('갈래: 환불 없음 + 선납 캡션', settlementPickCaption('none', null, { futurePrepaid: 350000, view: vFuture }), '9월분은 받은 그대로 두고, 아직 지내지 않은 10월분 선납 350,000원만 돌려줍니다.')
+  eq('갈래: 전제문(환불 없음 자리)', settlementPremise(true), '넷 다 이미 받은 돈 안에서 정합니다. 환불 없음은 받은 그대로 두고, 나머지 셋은 지낸 날짜만큼만 남기고 돌려줍니다.')
+  eq('갈래: 전제문 선납 꼬리 유지', settlementPremise(true, true).endsWith(' 아직 지내지 않은 기간의 선납은 넷 다 돌려줍니다.'), true)
+  eq('갈래: 캡션·전제문에 회사 귀속 없음', [settlementPickCaption('none', null, { view: v513 }), settlementPickCaption('none', null, { futurePrepaid: 350000, view: vFuture }), settlementPremise(true, true)].some(t => t.includes('회사 귀속')), false)
   eq('갈래: 선납 달 라벨', futureMonthsLabel([{ month: '2026-10' }, { month: '2026-11' }]), '10월분 · 11월분')
   eq('갈래: 견적 없는 단기 선택은 서버 산식', settlementAmounts('shortStay', { prepaidAmount: 380000, refund: legal, shortStay: null }).refund, 79800)
   eq('갈래: 서버 모드', ['legal', 'goodwill', 'shortStay', 'none'].map(p => serverModeFor(p as never)), ['legal', 'goodwill', 'goodwill', 'goodwill'])
@@ -1023,7 +1037,9 @@ const RENT = 300000
 // 물었다. 전액의 뜻은 사용분까지 돌려주는 것이니 `amount > futurePrepaid` 가 판정에 들어간다.
 // 기본값 그대로면 종전 규칙대로 안 묻고, 손으로 올린 금액은 종전 문장 그대로 묻는다.
 {
-  const v = (amount: number, max: number, pick: SettlementPick, suggested: number, futurePrepaid: number) => ({ amount, max, pick, suggested, futurePrepaid })
+  // 표시 파생(view)은 확인 문장만 바꾸고 판정에는 안 낀다. 판정 케이스는 기간 정보 없는 최소 view 로 본다.
+  const bareView = (max: number, futurePrepaid: number): SettleMonthView => ({ settleMonth: '2026-09', monthPaid: max - futurePrepaid, daysUsed: 0, usedAmount: 0, unusedAmount: 0, period: null, unusedRange: null, futureLabel: '' })
+  const v = (amount: number, max: number, pick: SettlementPick, suggested: number, futurePrepaid: number, view: SettleMonthView = bareView(max, futurePrepaid)) => ({ amount, max, pick, suggested, futurePrepaid, view })
   // 506호: 위약금 갈래 계산값 그대로. 뒤 달 선납 없음.
   eq('확인창: 계산값 그대로면 안 묻는다', rentSettlementConfirmSpec(v(79800, 380000, 'legal', 79800, 0), null), null)
   // 두 달 선납 680,000 중 뒤 달 340,000 만 돌려주는 '환불 없음' 기본값.
@@ -1037,11 +1053,28 @@ const RENT = 300000
   const differs = rentSettlementConfirmSpec(v(340000, 340000, 'legal', 200000, 340000), null)!
   eq('확인창: 선납 전부라도 사용분이 없으면 다른 금액 창', [differs.title, differs.message], ['이용료 340,000원을 환불할까요?', '계산값 200,000원과 다른 금액입니다.'])
   // 환불 0 확정은 갈래와 무관하게 묻는다.
+  // 문장은 어느 달 돈인지와 '환불 없음으로 기록된다'를 말한다. '회사 귀속'·'수납 기록은 바뀌지 않습니다'는
+  // '챙긴다'·'기록 없이 몰래'로 읽혀 뺐다(2026-10-02 운영자 피드백, 513호).
   const zero = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), null)!
-  eq('확인창: 환불 0 은 묻는다', [zero.title, zero.message.includes('회사 귀속')], ['이용료를 환불하지 않고 처리할까요?', true])
+  eq('확인창: 환불 0 은 묻는다(기간 모르면 구절 없이)', [zero.title, zero.message], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '9월분 340,000원은 이미 받은 돈입니다. 돌려주지 않고 그대로 둡니다. 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.'])
+  // 513호: 납부일 5일, 9월분 350,000(9/5~10/4), 9/30 퇴실.
+  const r513 = calcCheckoutRefund({ prepaidAmount: 350000, monthlyRent: 350000, daysUsed: 26, mode: 'goodwill', futurePrepaid: 0 })
+  const v513 = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-09-30', prepaidAmount: 350000, refund: r513, prepaidMonths: [{ month: '2026-09' }] })
+  const zero513 = rentSettlementConfirmSpec(v(0, 350000, 'none', 0, 0, v513), null)!
+  eq('확인창: 513호 환불 없음', [zero513.title, zero513.message, zero513.confirmLabel], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '9/5~10/4분 350,000원은 이미 받은 돈입니다. 지낸 26일 몫 303,333원과 안 지낸 10/1~10/4 몫 46,667원 모두 돌려주지 않고 그대로 둡니다. 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.', '퇴실 처리'])
+  const zeroCalc = rentSettlementConfirmSpec(v(0, 350000, 'legal', 0, 0, v513), null)!
+  eq('확인창: 계산값 0 갈래', [zeroCalc.title, zeroCalc.message], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '계산값이 0원이라 돌려줄 몫이 없습니다. 환불 없음으로 기록됩니다.'])
+  const zeroOver = rentSettlementConfirmSpec(v(0, 350000, 'goodwill', 46667, 0, v513), null)!
+  eq('확인창: 계산값과 다른 0원', [zeroOver.title, zeroOver.message], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '계산값 46,667원 대신 돌려주지 않습니다. 환불 없음으로 기록됩니다.'])
+  const full513 = rentSettlementConfirmSpec(v(350000, 350000, 'goodwill', 46667, 0, v513), null)!
+  eq('확인창: 513호 전액', [full513.title, full513.message], ['이용료 350,000원을 전액 환불할까요?', '지낸 26일 몫 303,333원까지 돌려주는 금액입니다.'])
+  // 뒤 달 선납이 섞인 수동 0원은 '9월분'만 말하면 거짓이라 달 이름을 뗀다(웹디자이너 패스 2026-10-02).
+  const zeroWithFuture = rentSettlementConfirmSpec(v(0, 680000, 'goodwill', 400000, 340000), null)!
+  eq('확인창: 선납 섞인 수동 0원은 달 이름 없이', zeroWithFuture.title, '이용료를 돌려주지 않고 퇴실 처리할까요?')
+  eq('확인창: 회사 귀속·수납 기록 문장 없음', [zero, zero513, zeroCalc, zeroOver, full513].some(c => /회사 귀속|수납 기록은 바뀌지/.test(c.title + c.message)), false)
   // 보증금 반환액이 같이 실리면 본문 꼬리에 총 환불액.
   const withDeposit = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), 500000)!
-  eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith(' 보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
+  eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith('\n보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
 }
 
 // ── 입주달 첫 달 규칙 (운영자 승인 2026-09-07: 해석 1 합산 · 기한 = 입주일) ──

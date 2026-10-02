@@ -27,7 +27,7 @@ import { withSave, pushToast } from '@/lib/saveStatus'
 import {
   previewCheckoutRefund, getRentRefundForLease, getPendingRentRefundNotice, finalizeRentRefund, undoRentRefund,
 } from '@/app/(app)/tenants/actions'
-import { settlementAmounts, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '@/lib/checkoutSettlement'
+import { settlementAmounts, settlementPickCaption, settleMonthView, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '@/lib/checkoutSettlement'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { inputCls, inputErrCls, labelCls, formBoxCls, readonlyCls } from './panelFormStyles'
@@ -137,14 +137,14 @@ export function RentSettlementPanel({
   }
   const closeForm = () => setFormMode(null)
 
-  // '환불 없음'은 지낸 달 받은 돈을 그대로 회사 귀속으로 확정한다(서버 finalizeRentRefund 0 갈래).
+  // '환불 없음'은 지낸 달 받은 돈을 받은 그대로 두고 확정한다(서버 finalizeRentRefund 0 갈래).
   // 뒤 달 선납이 있으면 서버가 0 을 거부하므로 여기서 먼저 안내하고 환불 기록 폼에 그 금액을 채운다.
   const recordNone = async (p: NonNullable<Pending>) => {
     if (!expectedMoveOut) return
     if (p.later > 0) {
       if (!(await confirmDialog({
         title: `미리 낸 ${futureMonthsLabel(p.laterMonths)} ${fmtWon(p.later)}은 먼저 돌려줘야 합니다.`,
-        message: `아직 지내지 않은 달의 선납은 환불 없음과 상관없이 돌려줍니다. ${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}은 회사 귀속으로 남습니다. 환불액 칸에 ${fmtWon(p.later)}을 채워 둡니다.`,
+        message: `아직 지내지 않은 달의 선납은 환불 없음과 상관없이 돌려줍니다. ${monthLabel(p.month)}분 ${fmtWon(p.paid)}은 받은 그대로 둡니다. 환불액 칸에 ${fmtWon(p.later)}을 채워 둡니다.`,
         confirmLabel: '환불 기록 열기',
       }))) return
       setAmount(p.later); setReason(''); setReviseWarn(null); setFormMode('record')
@@ -152,7 +152,7 @@ export function RentSettlementPanel({
     }
     if (!(await confirmDialog({
       title: `이용료 ${fmtWon(p.amount)}을 돌려주지 않은 것으로 기록할까요?`,
-      message: `${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}이 전액 회사 귀속으로 남습니다. 청구 확정도 같은 금액이 되고 수납 기록은 바뀌지 않습니다.`,
+      message: `${monthLabel(p.month)}분 ${fmtWon(p.paid)}을 받은 그대로 둡니다. 새로 받거나 돌려주는 돈은 없고, 환불 없음으로 기록됩니다.`,
       level: 'caution', confirmLabel: '환불 없음으로 기록',
     }))) return
     startTransition(async () => {
@@ -202,7 +202,7 @@ export function RentSettlementPanel({
     } else if (formMode === 'record' && pend) {
       if (!(await confirmDialog({
         title: `이용료 ${fmtWon(amount)}을 환불로 기록할까요?`,
-        message: `${monthLabel(pend.month)} 받은 돈 ${fmtWon(pend.paid)}${later > 0 ? `과 선납 ${fmtWon(later)}` : ''} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
+        message: `${monthLabel(pend.month)}분 받은 돈 ${fmtWon(pend.paid)}${later > 0 ? `과 선납 ${fmtWon(later)}` : ''} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
         level: 'caution', confirmLabel: '환불 기록',
       }))) return
     }
@@ -268,7 +268,7 @@ export function RentSettlementPanel({
             <span className="font-semibold num">{fmtWon(refund.refunded)}</span>
             <span className="text-[var(--warm-muted)] text-xs">
               {refund.refunded === 0
-                ? ` / 원 수납 ${fmtWon(refund.prepaid)} · 전액 회사 귀속`
+                ? ` / 원 수납 ${fmtWon(refund.prepaid)} · 받은 그대로 둠`
                 : ` / 원 수납 ${fmtWon(refund.prepaid)} · 청구 확정 ${fmtWon(refund.companyKeeps)}`}
             </span>
           </p>
@@ -304,7 +304,7 @@ export function RentSettlementPanel({
             </p>
           )}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-            {monthLabel(pend.month)} 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로, 안 돌려주기로 했다면 환불 없음으로 기록해 주세요.
+            {monthLabel(pend.month)}분 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로, 안 돌려주기로 했다면 환불 없음으로 기록해 주세요.
           </p>
           {canEdit && formMode === null && (
             expectedMoveOut
@@ -333,7 +333,7 @@ export function RentSettlementPanel({
               <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                 {preview.appliedProration != null
                   ? `퇴실 정산에서 확정한 ${monthLabel(preview.prepaidMonths[0]?.month ?? expectedMoveOut)} 청구 ${fmtWon(preview.appliedProration)} 기준입니다.`
-                  : settlementPickCaption(preview.defaultPick, preview.shortStay, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid })}
+                  : settlementPickCaption(preview.defaultPick, preview.shortStay, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid, view: settleMonthView({ ...preview, moveOutYmd: expectedMoveOut }) })}
                 {' '}퇴실 처리할 때 최종 확정합니다.
               </p>
             </>
