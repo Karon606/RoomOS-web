@@ -4710,6 +4710,10 @@ export type CheckoutRefundPreview =
       futurePrepaid: number
       /** 귀속월 이상 달별 결제액 — 화면이 '8월분 · 9월분 선납'을 적는 근거다. */
       prepaidMonths: { month: string; amount: number }[]
+      /** 정산 귀속월('YYYY-MM') — 화면이 '9월분 받은 돈'처럼 어느 달 돈인지 말하는 근거. */
+      settleMonth: string
+      /** 귀속월의 서비스 기간(납부일~다음 납부일 전날). 정산할 기간이 없으면 null — 화면은 기간 구절을 뺀다. */
+      period: { startYmd: string; endYmd: string } | null
       /** 성립하지 않는 이유 — 화면이 그대로 보여 준다(빈 자리를 설명 없이 두지 않는다). */
       notApplicableReason?: string
     }
@@ -4808,6 +4812,8 @@ export async function previewCheckoutRefund(
       settlementApplies,
       futurePrepaid,
       prepaidMonths,
+      settleMonth,
+      period: sc ? { startYmd: sc.calc.startYmd, endYmd: sc.calc.mustLeaveYmd } : null,
       ...(settlementApplies ? {} : {
         notApplicableReason: '단기 계약은 체류 기간 전체가 한 번의 사용료라 일할 정산이 없습니다. 금액을 조정하시려면 수납 기록에서 직접 고쳐 주세요.',
       }),

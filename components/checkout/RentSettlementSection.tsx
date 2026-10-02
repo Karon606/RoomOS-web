@@ -24,6 +24,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import {
   settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor,
+  settleMonthView, periodLabel, usedFits,
   type SettlementPick, type ShortStayQuoteLite, type RentSettlementValue,
 } from '@/lib/checkoutSettlement'
 
@@ -39,6 +40,10 @@ type Preview = {
   futurePrepaid: number
   /** 귀속월 이상 달별 결제액 — '8월분 + 9월분 선납' 구성 줄의 근거. */
   prepaidMonths: { month: string; amount: number }[]
+  /** 정산 귀속월 — '9월분 받은 돈'의 근거. */
+  settleMonth: string
+  /** 귀속월 서비스 기간 — 없으면 기간 구절을 뺀다. */
+  period: { startYmd: string; endYmd: string } | null
 }
 
 /** 정산이 성립하지 않는 계약에 세우는 한 줄 — 자리를 설명 없이 비우지 않는다. */
@@ -64,10 +69,11 @@ function toPreview(r: OkResponse): Preview {
   return {
     prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct,
     appliedProration: r.appliedProration, shortStay: r.shortStay, futurePrepaid: r.futurePrepaid, prepaidMonths: r.prepaidMonths,
+    settleMonth: r.settleMonth, period: r.period,
   }
 }
 
-type Basis = Pick<Preview, 'prepaidAmount' | 'refund' | 'shortStay' | 'appliedProration'>
+type Basis = Pick<Preview, 'prepaidAmount' | 'refund' | 'shortStay' | 'appliedProration' | 'settleMonth' | 'period' | 'prepaidMonths'>
 
 /** 갈래별 기본 환불액. 퇴실 정산이 먼저 적용돼 있으면 그 확정값을 이어받는다(이중 수정 방지). */
 function suggestedFor(p: Basis, pick: SettlementPick): number {
@@ -75,9 +81,9 @@ function suggestedFor(p: Basis, pick: SettlementPick): number {
   return settlementAmounts(pick, p).refund
 }
 
-function valueFor(p: Basis, pick: SettlementPick): RentSettlementValue {
+function valueFor(p: Basis, pick: SettlementPick, moveOutYmd: string): RentSettlementValue {
   const suggested = suggestedFor(p, pick)
-  return { amount: suggested, max: p.prepaidAmount, pick, suggested, futurePrepaid: p.refund.futurePrepaid }
+  return { amount: suggested, max: p.prepaidAmount, pick, suggested, futurePrepaid: p.refund.futurePrepaid, view: settleMonthView({ ...p, moveOutYmd }) }
 }
 
 const parsePct = (s: string): number | null =>
@@ -130,7 +136,7 @@ export function RentSettlementSection({
       if (!r.ok || r.prepaidAmount <= 0) { setPreview(null); onChange(null); return }
       setPreview(toPreview(r))
       setPick(r.defaultPick)
-      onChange(valueFor(r, r.defaultPick))
+      onChange(valueFor(r, r.defaultPick, moveOutYmd))
     }).catch(() => { if (live) { setPreview(null); setNotApplicable(null); onChange(null) } })
     return () => { live = false }
     // onChange 는 부모가 매 렌더 새로 만들 수 있어 의존성에서 뺀다 — 넣으면 무한 루프가 된다.
@@ -145,14 +151,14 @@ export function RentSettlementSection({
     void previewCheckoutRefund(leaseTermId, moveOutYmd, mode, pctNum, pf).then(r => {
       if (!r.ok || !r.settlementApplies || r.prepaidAmount <= 0) return
       setPreview(toPreview(r))
-      onChange(valueFor(r, nextPick))
+      onChange(valueFor(r, nextPick, moveOutYmd))
     }).catch(() => {})
   }
 
   const handlePick = (next: SettlementPick) => {
     setPick(next); onDirty?.()
     if (next === 'legal' || next === 'goodwill') { refetch(serverModeFor(next), parsePct(pctInput), penalizeFuture, next); return }
-    if (preview) onChange(valueFor(preview, next))
+    if (preview) onChange(valueFor(preview, next, moveOutYmd))
   }
 
   // 위약금율 입력(0~10, 빈 값이면 영업장 기본) — 서버가 다시 계산하고 캡도 서버가 건다.
@@ -176,16 +182,28 @@ export function RentSettlementSection({
   const diff = amount - calcDefault
   const exceeds = amount > preview.prepaidAmount
   const short = preview.shortStay
+  const view = value.view
+  const monthName = `${Number(preview.settleMonth.slice(5, 7))}월분`
 
   return (
     // 차감 행은 라벨 앞 −(U+2212) 세로 수식 문법 — 퇴실 정산 위젯 환불 미리보기와 같다.
     <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 space-y-1.5 text-xs">
       <div className="flex justify-between">
         <span className="font-semibold text-[var(--warm-mid)]">이용료 정산</span>
-        <span className="tabular-nums text-[var(--warm-dark)]">결제액 {fmtWon(preview.prepaidAmount)}</span>
+        {/* 어느 달 돈인지 머리에서 말한다(2026-10-02, '결제액'만으로는 기간이 안 보였다). 뒤 달 선납이
+            섞이면 그 합은 한 달 돈이 아니라 달 이름을 떼고, 아래 구성 줄이 달별로 편다. */}
+        <span className="tabular-nums text-[var(--warm-dark)]">{preview.futurePrepaid > 0 ? '받은 돈' : `${monthName} 받은 돈`} {fmtWon(preview.prepaidAmount)}</span>
       </div>
-      {/* 여러 달이 걸릴 때만 구성을 편다 — 한 달짜리 정산은 종전과 한 글자도 다르지 않다.
-          '선납'은 귀속월보다 뒤, 곧 아직 시작도 안 한 기간의 결제에만 붙인다. */}
+      {/* 여러 달이 걸리면 달별 구성을 편다. '선납'은 귀속월보다 뒤, 곧 아직 시작도 안 한 기간의
+          결제에만 붙인다. 한 달이어도 '환불 없음'이면 기간과 지낸 몫·안 지낸 몫을 편다. 돌려주지 않는
+          대상이 숫자로 보여야 '한 달치를 더 받는다'로 안 읽힌다(2026-10-02 운영자 피드백, 513호). */}
+      {preview.futurePrepaid <= 0 && pick === 'none' && !locked && view.period && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
+          {periodLabel(view.period)}
+          {usedFits(view) && ` · 지낸 ${view.daysUsed}일 ${fmtWon(view.usedAmount)}`}
+          {usedFits(view) && view.unusedAmount > 0 && ` · 안 지낸 ${fmtWon(view.unusedAmount)}`}
+        </p>
+      )}
       {preview.prepaidMonths.length > 1 && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
           {preview.prepaidMonths.map((m, i) =>
@@ -211,7 +229,7 @@ export function RentSettlementSection({
               onChange={handlePick}
               options={settlementPickOptions(!!short, true)}
             />
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPickCaption(pick, short, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid })}</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPickCaption(pick, short, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid, view })}</p>
           </div>
           {(pick === 'legal' || pick === 'goodwill') && (
             <div className="flex justify-between">
@@ -267,10 +285,10 @@ export function RentSettlementSection({
             <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산{preview.futurePrepaid > 0 ? ` · 선납 ${fmtWon(preview.futurePrepaid)}` : ''}</p>
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
               {preview.futurePrepaid <= 0
-                ? `결제액 ${fmtWon(preview.prepaidAmount)}은 그대로 회사 귀속으로 남습니다. 수납 기록은 바뀌지 않습니다.`
+                ? `${monthName} ${fmtWon(preview.prepaidAmount)}을 받은 그대로 둡니다. 새로 받거나 돌려주는 돈은 없고, 환불 없음으로 기록됩니다.`
                 : preview.prepaidAmount > preview.futurePrepaid
-                ? `지낸 달 결제액 ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 회사 귀속으로 남습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}은 환불 없음과 상관없이 돌려줍니다.`
-                : `지낸 달에 받은 이용료가 없습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}을 전액 돌려줍니다.`}
+                ? `${monthName} ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 받은 그대로 두고, 아직 지내지 않은 ${view.futureLabel || '기간의'} 선납 ${fmtWon(preview.futurePrepaid)}만 돌려줍니다.`
+                : `${monthName}은 받은 돈이 없습니다. 아직 지내지 않은 ${view.futureLabel || '기간의'} 선납 ${fmtWon(preview.futurePrepaid)}을 전부 돌려줍니다.`}
             </p>
           </>
         ) : (
@@ -289,7 +307,7 @@ export function RentSettlementSection({
               <p className="text-[0.6875rem] text-[var(--warning-fg)] break-keep">아직 지내지 않은 달의 선납 {fmtWon(preview.futurePrepaid)}보다도 적습니다. 이용하지 않은 달의 선납은 돌려줘야 합니다.</p>
             )}
             {!exceeds && diff < 0 && amount >= preview.futurePrepaid && (
-              <p className="text-[0.6875rem] text-[var(--warm-muted)]">계산값보다 {fmtWon(-diff)} 적습니다. 차액은 회사 귀속으로 기록됩니다.</p>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)]">계산값보다 {fmtWon(-diff)} 적습니다. 그만큼은 돌려주지 않고 둡니다.</p>
             )}
           </>
         )}
