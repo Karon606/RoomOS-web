@@ -155,11 +155,11 @@ export function ConfirmHost() {
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
           )}
-          <h2 className="text-base font-bold text-[var(--ink)] leading-snug whitespace-pre-line break-keep">{opts.title}</h2>
+          <h2 className="text-base font-bold text-[var(--ink)] leading-snug whitespace-pre-line break-keep [overflow-wrap:anywhere]">{opts.title}</h2>
         </div>
 
         {opts.message && (
-          <p className="mt-2.5 text-[13.5px] text-[var(--ink-s)] whitespace-pre-line break-keep" style={{ lineHeight: 1.65 }}>
+          <p className="mt-2.5 text-[13.5px] text-[var(--ink-s)] whitespace-pre-line break-keep [overflow-wrap:anywhere]" style={{ lineHeight: 1.65 }}>
             {opts.message}
           </p>
         )}
