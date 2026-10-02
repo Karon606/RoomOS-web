@@ -197,11 +197,13 @@ export function RentSettlementSection({
       {/* 여러 달이 걸리면 달별 구성을 편다. '선납'은 귀속월보다 뒤, 곧 아직 시작도 안 한 기간의
           결제에만 붙인다. 한 달이어도 '환불 없음'이면 기간과 지낸 몫·안 지낸 몫을 편다. 돌려주지 않는
           대상이 숫자로 보여야 '한 달치를 더 받는다'로 안 읽힌다(2026-10-02 운영자 피드백, 513호). */}
-      {preview.futurePrepaid <= 0 && pick === 'none' && !locked && view.period && (
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
-          {periodLabel(view.period)}
-          {usedFits(view) && ` · 지낸 ${view.daysUsed}일 ${fmtWon(view.usedAmount)}`}
-          {usedFits(view) && view.unusedAmount > 0 && ` · 안 지낸 ${fmtWon(view.unusedAmount)}`}
+      {/* 덜 받은 계약(usedFits 아님)은 금액 없이 기간만 서게 되니 줄을 빼고, 구간마다 nowrap 으로 묶어
+          '·'가 줄 머리·끝에 매달리지 않게 한다(웹디자이너 패스 2026-10-02). */}
+      {preview.futurePrepaid <= 0 && pick === 'none' && !locked && view.period && usedFits(view) && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">
+          <span className="whitespace-nowrap">{periodLabel(view.period)}</span>
+          {' '}<span className="whitespace-nowrap">· 지낸 {view.daysUsed}일 {fmtWon(view.usedAmount)}</span>
+          {view.unusedAmount > 0 && <>{' '}<span className="whitespace-nowrap">· 안 지낸 {fmtWon(view.unusedAmount)}</span></>}
         </p>
       )}
       {preview.prepaidMonths.length > 1 && (

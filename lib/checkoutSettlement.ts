@@ -59,7 +59,7 @@ export function settlementPickCaption(
     }
     if (!v) return '지낸 달 이용료는 받은 그대로 두고 돌려주지 않습니다.'
     const unused = unusedPhrase(v)
-    return `${month}을 받은 그대로 둡니다.${unused ? ` ${unused}도 돌려주지 않습니다.` : ''}`
+    return `${month}을 받은 그대로 둡니다.${unused ? ` 안 지낸 ${unused}도 돌려주지 않습니다.` : ''}`
   }
   if (!shortStay) return ''
   const over = opts.prepaidAmount != null ? shortStay.baseAmount - opts.prepaidAmount : 0
@@ -235,8 +235,9 @@ export function rentSettlementConfirmSpec(rent: RentSettlementValue | null, depo
 
   // 두 갈래가 같은 모양이다. 제목은 이용료 한 금액, 보증금 반환액과 총 환불액은 본문(§14 위계,
   // 제목 16/700 에 두 금액을 실으면 375px 에서 두 줄을 꽉 채운다). 취소는 늘 무변경이라 기본 라벨.
+  // 보증금 꼬리는 줄을 바꿔 둔다. 본문이 whitespace-pre-line 이라 '\n' 이 줄바꿈으로 선다.
   const depositPart = depositReturn != null
-    ? ` 보증금 반환 ${fmtWon(depositReturn)} · 총 환불액 ${fmtWon(amount + depositReturn)}.`
+    ? `\n보증금 반환 ${fmtWon(depositReturn)} · 총 환불액 ${fmtWon(amount + depositReturn)}.`
     : ''
 
   // 전액 환불(사용분·위약금까지 반환)은 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다.
@@ -260,7 +261,8 @@ export function rentSettlementConfirmSpec(rent: RentSettlementValue | null, depo
       : `계산값 ${fmtWon(suggested)} 대신 돌려주지 않습니다. 환불 없음으로 기록됩니다.`)
     : `계산값 ${fmtWon(suggested)}과 다른 금액입니다.`
   return {
-    title: amount === 0 ? `${monthNum(view.settleMonth)}월분 이용료를 돌려주지 않고 퇴실 처리할까요?` : `이용료 ${fmtWon(amount)}을 환불할까요?`,
+    // 뒤 달 선납이 섞인 수동 0원은 그 달 돈만 안 돌려주는 게 아니라 '9월분'만 말하면 거짓이다. 달 이름을 뗀다.
+    title: amount === 0 ? `${futurePrepaid > 0 ? '' : `${monthNum(view.settleMonth)}월분 `}이용료를 돌려주지 않고 퇴실 처리할까요?` : `이용료 ${fmtWon(amount)}을 환불할까요?`,
     message: `${message}${depositPart}`,
     confirmLabel: '퇴실 처리',
   }
@@ -271,7 +273,7 @@ function noneMessage(v: SettleMonthView, max: number): string {
   const head = v.period ? `${periodLabel(v.period)}분 ${fmtWon(max)}` : `${monthNum(v.settleMonth)}월분 ${fmtWon(max)}`
   const unused = unusedPhrase(v)
   const keep = unused
-    ? `지낸 ${v.daysUsed}일 몫 ${fmtWon(v.usedAmount)}과 ${unused} 모두 돌려주지 않고 그대로 둡니다.`
+    ? `지낸 ${v.daysUsed}일 몫 ${fmtWon(v.usedAmount)}과 안 지낸 ${unused} 모두 돌려주지 않고 그대로 둡니다.`
     : '돌려주지 않고 그대로 둡니다.'
   return `${head}은 이미 받은 돈입니다. ${keep} 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.`
 }

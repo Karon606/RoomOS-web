@@ -152,7 +152,7 @@ export function RentSettlementPanel({
     }
     if (!(await confirmDialog({
       title: `이용료 ${fmtWon(p.amount)}을 돌려주지 않은 것으로 기록할까요?`,
-      message: `${monthLabel(p.month)}분 ${fmtWon(p.paid)}을 받은 그대로 둡니다. 새로 받거나 돌려주는 돈은 없고, 청구 확정도 같은 금액이 됩니다.`,
+      message: `${monthLabel(p.month)}분 ${fmtWon(p.paid)}을 받은 그대로 둡니다. 새로 받거나 돌려주는 돈은 없고, 환불 없음으로 기록됩니다.`,
       level: 'caution', confirmLabel: '환불 없음으로 기록',
     }))) return
     startTransition(async () => {
@@ -202,7 +202,7 @@ export function RentSettlementPanel({
     } else if (formMode === 'record' && pend) {
       if (!(await confirmDialog({
         title: `이용료 ${fmtWon(amount)}을 환불로 기록할까요?`,
-        message: `${monthLabel(pend.month)} 받은 돈 ${fmtWon(pend.paid)}${later > 0 ? `과 선납 ${fmtWon(later)}` : ''} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
+        message: `${monthLabel(pend.month)}분 받은 돈 ${fmtWon(pend.paid)}${later > 0 ? `과 선납 ${fmtWon(later)}` : ''} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
         level: 'caution', confirmLabel: '환불 기록',
       }))) return
     }
@@ -304,7 +304,7 @@ export function RentSettlementPanel({
             </p>
           )}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-            {monthLabel(pend.month)} 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로, 안 돌려주기로 했다면 환불 없음으로 기록해 주세요.
+            {monthLabel(pend.month)}분 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로, 안 돌려주기로 했다면 환불 없음으로 기록해 주세요.
           </p>
           {canEdit && formMode === null && (
             expectedMoveOut

@@ -752,7 +752,7 @@ const RENT = 300000
   const r513 = calcCheckoutRefund({ prepaidAmount: 350000, monthlyRent: 350000, daysUsed: 26, mode: 'goodwill', futurePrepaid: 0 })
   const v513 = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-09-30', prepaidAmount: 350000, refund: r513, prepaidMonths: [{ month: '2026-09' }] })
   eq('갈래: 513호 표시 파생', [v513.monthPaid, v513.usedAmount, v513.unusedAmount, v513.unusedRange], [350000, 303333, 46667, { fromYmd: '2026-10-01', toYmd: '2026-10-04' }])
-  eq('갈래: 513호 환불 없음 캡션', settlementPickCaption('none', null, { futurePrepaid: 0, view: v513 }), '9월분을 받은 그대로 둡니다. 10/1~10/4 몫 46,667원도 돌려주지 않습니다.')
+  eq('갈래: 513호 환불 없음 캡션', settlementPickCaption('none', null, { futurePrepaid: 0, view: v513 }), '9월분을 받은 그대로 둡니다. 안 지낸 10/1~10/4 몫 46,667원도 돌려주지 않습니다.')
   // 기간 끝 날 퇴실이면 안 지낸 구간이 없다. 구절을 뺀다.
   const vEnd = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-10-04', prepaidAmount: 350000, refund: { ...r513, daysUsed: 30, usedAmount: 350000 }, prepaidMonths: [{ month: '2026-09' }] })
   eq('갈래: 기간 끝 퇴실은 안 지낸 구절 없음', [vEnd.unusedRange, settlementPickCaption('none', null, { view: vEnd })], [null, '9월분을 받은 그대로 둡니다.'])
@@ -1061,17 +1061,20 @@ const RENT = 300000
   const r513 = calcCheckoutRefund({ prepaidAmount: 350000, monthlyRent: 350000, daysUsed: 26, mode: 'goodwill', futurePrepaid: 0 })
   const v513 = settleMonthView({ settleMonth: '2026-09', period: { startYmd: '2026-09-05', endYmd: '2026-10-04' }, moveOutYmd: '2026-09-30', prepaidAmount: 350000, refund: r513, prepaidMonths: [{ month: '2026-09' }] })
   const zero513 = rentSettlementConfirmSpec(v(0, 350000, 'none', 0, 0, v513), null)!
-  eq('확인창: 513호 환불 없음', [zero513.title, zero513.message, zero513.confirmLabel], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '9/5~10/4분 350,000원은 이미 받은 돈입니다. 지낸 26일 몫 303,333원과 10/1~10/4 몫 46,667원 모두 돌려주지 않고 그대로 둡니다. 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.', '퇴실 처리'])
+  eq('확인창: 513호 환불 없음', [zero513.title, zero513.message, zero513.confirmLabel], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '9/5~10/4분 350,000원은 이미 받은 돈입니다. 지낸 26일 몫 303,333원과 안 지낸 10/1~10/4 몫 46,667원 모두 돌려주지 않고 그대로 둡니다. 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.', '퇴실 처리'])
   const zeroCalc = rentSettlementConfirmSpec(v(0, 350000, 'legal', 0, 0, v513), null)!
   eq('확인창: 계산값 0 갈래', [zeroCalc.title, zeroCalc.message], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '계산값이 0원이라 돌려줄 몫이 없습니다. 환불 없음으로 기록됩니다.'])
   const zeroOver = rentSettlementConfirmSpec(v(0, 350000, 'goodwill', 46667, 0, v513), null)!
   eq('확인창: 계산값과 다른 0원', [zeroOver.title, zeroOver.message], ['9월분 이용료를 돌려주지 않고 퇴실 처리할까요?', '계산값 46,667원 대신 돌려주지 않습니다. 환불 없음으로 기록됩니다.'])
   const full513 = rentSettlementConfirmSpec(v(350000, 350000, 'goodwill', 46667, 0, v513), null)!
   eq('확인창: 513호 전액', [full513.title, full513.message], ['이용료 350,000원을 전액 환불할까요?', '지낸 26일 몫 303,333원까지 돌려주는 금액입니다.'])
+  // 뒤 달 선납이 섞인 수동 0원은 '9월분'만 말하면 거짓이라 달 이름을 뗀다(웹디자이너 패스 2026-10-02).
+  const zeroWithFuture = rentSettlementConfirmSpec(v(0, 680000, 'goodwill', 400000, 340000), null)!
+  eq('확인창: 선납 섞인 수동 0원은 달 이름 없이', zeroWithFuture.title, '이용료를 돌려주지 않고 퇴실 처리할까요?')
   eq('확인창: 회사 귀속·수납 기록 문장 없음', [zero, zero513, zeroCalc, zeroOver, full513].some(c => /회사 귀속|수납 기록은 바뀌지/.test(c.title + c.message)), false)
   // 보증금 반환액이 같이 실리면 본문 꼬리에 총 환불액.
   const withDeposit = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), 500000)!
-  eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith(' 보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
+  eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith('\n보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
 }
 
 // ── 입주달 첫 달 규칙 (운영자 승인 2026-09-07: 해석 1 합산 · 기한 = 입주일) ──
