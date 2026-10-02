@@ -401,11 +401,25 @@ export function availableFromLabel(availableFrom: string): string {
 
 /**
  * 입주 예정 보조 문구 — "9/1 입주 예정". 퇴실 표기(checkoutSubText)와 대칭인 짧은 인라인 날짜.
+ *
+ * dday 를 켜면 checkoutSubText 와 같은 문법으로 D-day 를 붙인다 — "10/5 입주 예정 D-3" /
+ * "오늘 입주" / "입주 예정일 3일 경과"(wish 면 '희망'). 입주자 상세 상태 배지 보조줄이 쓴다(2026-10-02 운영자
+ * 신고 — 확정한 입주일이 어디에도 눈에 안 띄었다). 기본값은 날짜만이다. 호실 카드·이사 달력처럼
+ * 이 문구 뒤에 이름을 잇는 자리는 종전 문장 그대로 둔다. today 는 테스트용 주입구다.
  */
-export function moveInSubText(moveInDate: string | null): string | null {
+export function moveInSubText(
+  moveInDate: string | null,
+  opts?: { dday?: boolean; today?: string; wish?: boolean },
+): string | null {
   if (!moveInDate) return null
   const [, mm, dd] = moveInDate.split('-')
-  return `${Number(mm)}/${Number(dd)} 입주 예정`
+  // wish — 예약 확정 전이면 그 날은 아직 '희망'이다(계약 정보 라벨 '입주 희망일'과 같은 말).
+  const noun = opts?.wish ? '희망' : '예정'
+  const label = `${Number(mm)}/${Number(dd)} 입주 ${noun}`
+  if (!opts?.dday) return label
+  const days = kstDaysUntil(moveInDate, opts.today)
+  if (Number.isNaN(days)) return label
+  return days > 0 ? `${label} D-${days}` : days === 0 ? '오늘 입주' : `입주 ${noun}일 ${Math.abs(days)}일 경과`
 }
 
 /**

@@ -203,3 +203,48 @@ export function spanOverlaps(
 export function freeFromAfter(moveOutYmd: string): string {
   return new Date(Date.parse(`${moveOutYmd}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
 }
+
+/**
+ * 계약 호실로 드는 날 — 이사일 칸 값이 입주일보다 앞서면 입주일로 올린다. 모르면 null.
+ *
+ * 계약 호실이 입주일 전에 이미 비어 있으면(513호: 10/1부터 빔, 입주 10/6) 서버 제안(10/2)이
+ * 입주일보다 앞선다. 그 값을 그대로 쓰면 임시 호실을 찾으러 가는데 그런 기간은 없다.
+ */
+export function effectiveMoveDate(endAt: string | null, moveIn: string): string | null {
+  if (endAt === null) return null
+  return endAt > moveIn ? endAt : moveIn
+}
+
+/**
+ * 입실 일정의 갈래 (2026-10-02 운영자 신고, 513호).
+ *
+ *   · direct  — 계약 호실로 드는 날이 곧 입주일이다. 임시 호실 없이 바로 들어간다.
+ *   · temp    — 계약 호실로 드는 날이 입주일보다 뒤다. 그 사이를 임시 호실로 채운다.
+ *   · unknown — 계약 호실이 언제 비는지 모른다(앞사람 퇴실 예정일 없음).
+ *
+ * 화면(이사일 칸)과 서버(빈 일정 저장 가드)가 이 한 함수로 가른다. 두 벌이면 화면은 '바로
+ * 입주'라 하고 서버는 거절하는 길이 생긴다.
+ */
+export type ScheduleMode = 'direct' | 'temp' | 'unknown'
+export function scheduleMode(endAt: string | null, moveIn: string): ScheduleMode {
+  const eff = effectiveMoveDate(endAt, moveIn)
+  if (eff === null) return 'unknown'
+  return eff === moveIn ? 'direct' : 'temp'
+}
+
+/**
+ * 입실 일정 저장(saveRoomSchedulePlan)의 적용취소를 해도 되는가 — 안 되면 사유, 되면 null.
+ *
+ * 되돌리는 것은 저장 직전 값이다. 그 사이 다른 저장(수정 폼·입실 처리·다른 일정)이 끼었으면
+ * 스냅샷으로 덮는 순간 그 변경이 조용히 사라진다. 그래서 **지금 값이 저장한 값과 같을 때만** 된다.
+ * 일정은 parseRoomSchedule 로 읽은 줄끼리 견준다(Json 키 순서·깨진 값에 흔들리지 않게).
+ */
+export function planUndoDenial(
+  current: { status: string; moveInYmd: string; schedule: unknown },
+  saved: { moveInYmd: string; schedule: unknown },
+): string | null {
+  if (current.status !== 'RESERVED') return '그 사이 계약 상태가 바뀌어 되돌릴 수 없습니다.'
+  const same = current.moveInYmd === saved.moveInYmd
+    && JSON.stringify(parseRoomSchedule(current.schedule)) === JSON.stringify(parseRoomSchedule(saved.schedule))
+  return same ? null : '그 사이 입주일이나 거주 호실 일정이 바뀌어 되돌릴 수 없습니다.'
+}

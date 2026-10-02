@@ -94,3 +94,39 @@ export async function propagateMoveInDateToSubLeases(
   }
   return targets.map(t => ({ id: t.id, prevMoveInDate: t.moveInDate }))
 }
+
+/**
+ * propagateMoveInDateToSubLeases 의 적용취소 — 그때 따라 움직인 딸린 계약을 각자의 이전 날로 되돌린다.
+ *
+ * 역방향 전파(부모 새 날 → 옛 날)로 대신하지 않는다. 그러면 비어 있다 따라온 계약이 null 이 아니라
+ * 부모 옛 날을 받고, 원래부터 새 날과 같던 계약까지 끌려간다. 스냅샷의 계약만, **지금도 저장한 날
+ * 그대로인 것만** 되돌린다(그 사이 따로 고친 날은 건드리지 않는다). 거주 구간은 전파와 같은 정본으로 맞춘다.
+ *
+ * @returns 되돌리지 못하고 건너뛴 계약 수.
+ */
+export async function restoreSubLeaseMoveInDates(
+  db: MoveInDb,
+  parentLeaseTermId: string,
+  savedMoveInDate: Date | string | null,
+  snapshots: readonly { id: string; prevMoveInDate: Date | string | null }[],
+): Promise<number> {
+  if (snapshots.length === 0) return 0
+  const subs = await db.leaseTerm.findMany({
+    where: { id: { in: snapshots.map(s => s.id) }, parentLeaseTermId },
+    select: { id: true, moveInDate: true, roomId: true, status: true },
+  })
+  let skipped = snapshots.length - subs.length
+  for (const sub of subs) {
+    if (!sameMoveInDate(sub.moveInDate, savedMoveInDate)) { skipped++; continue }
+    const snap = snapshots.find(s => s.id === sub.id)!
+    const prev = snap.prevMoveInDate ? new Date(snap.prevMoveInDate) : null
+    await db.leaseTerm.update({ where: { id: sub.id }, data: { moveInDate: prev } })
+    if (!STAY_ELIGIBLE_STATUSES.includes(sub.status)) continue
+    await syncRoomStayOnSave(db, sub.id, {
+      prevRoomId: sub.roomId, nextRoomId: sub.roomId,
+      prevStatus: sub.status, nextStatus: sub.status,
+      prevMoveInDate: sub.moveInDate, nextMoveInDate: prev,
+    })
+  }
+  return skipped
+}

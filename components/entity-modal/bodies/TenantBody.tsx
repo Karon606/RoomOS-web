@@ -41,7 +41,8 @@ import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy } from '@/lib/shortStay'
-import { primaryTenantLease, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
+import { primaryTenantLease, moveInSubText, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
+import { kstYmdStr } from '@/lib/kstDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 type RoomScheduleInfo = NonNullable<Awaited<ReturnType<typeof getRoomScheduleState>>>
@@ -80,7 +81,12 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   return (
     <div className="space-y-5">
       {/* 상태 칩 — 헤더 제목 옆에 두지 않고 본문 최상단에 (셸 제목은 호실·이름) */}
-      {status && <StatusInline status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate} />}
+      {/* 예약이면 배지 아래 입주 예정일을 D-day 와 함께 세운다(2026-10-02 운영자 신고 — 확정한 입주일이
+          어디에도 눈에 안 띄었다). 호실 카드의 '예약 확정' 배지 + '입주 예정' 보조줄과 같은 문법이다. */}
+      {status && <StatusInline status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate}
+        sub={status === 'RESERVED' && lease?.moveInDate
+          ? moveInSubText(kstYmdStr(new Date(lease.moveInDate)), { dday: true, wish: !lease.reservationConfirmedAt }) ?? undefined
+          : undefined} />}
 
       {/* 상태 전환 (다음 단계 버튼) — 가능한 전환이 없으면 자동 숨김 */}
       {lease && (
@@ -338,10 +344,10 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
 }
 
 // 파생 라벨(문의/입실 예약/예약 확정)은 목록 StatusChip과 동일 규칙 — e1b81629 용어 재정의
-function StatusInline({ status, confirmed, hasTourDate }: { status: string; confirmed?: boolean; hasTourDate?: boolean }) {
+function StatusInline({ status, confirmed, hasTourDate, sub }: { status: string; confirmed?: boolean; hasTourDate?: boolean; sub?: string }) {
   const ex = statusException(status, { hasTourDate })
   return ex
-    ? <div><StatusBadge tone={ex.tone}>{status === 'RESERVED' && confirmed ? '예약 확정' : ex.label}</StatusBadge></div>
+    ? <div><StatusBadge tone={ex.tone} sub={sub} align="start">{status === 'RESERVED' && confirmed ? '예약 확정' : ex.label}</StatusBadge></div>
     : <div className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</div>
 }
 

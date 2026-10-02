@@ -23,6 +23,7 @@ type Lease = {
   inquiryAt: Date | string | null
   tourDate?: Date | string | null                    // 투어 예정일 — 문의 단계에서만 값이 있다
   tourTime?: string | null                           // 투어 예정 시각 'HH:MM'(KST) — null=시간 미정
+  reservationConfirmedAt?: Date | string | null      // 예약 확정 시각 — 있으면 입주일은 '희망'이 아니라 '예정'이다
   moveInFlexible?: boolean | null                    // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
   contactAlertDate?: Date | string | null            // 연락 알림 시작일 지정(없으면 기본)
   property?: { contactLeadDays: number } | null      // 영업장 기본 리드타임
@@ -74,6 +75,7 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
   // 아직 들어오기 전(또는 끝난) 계약인가 — 문의 일시·투어 예정일이 뜨는 조건 한 벌.
   // 거주 단계에 투어 예정일을 남기면 이미 지난 약속이 앞으로의 일정처럼 읽힌다.
   const isLead = !['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status)
+  const confirmedReservation = lease.status === 'RESERVED' && !!lease.reservationConfirmedAt
   return (
     <Section title="계약 정보">
       <Grid>
@@ -91,7 +93,8 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
             투어 예정일은 입력해 두고도 열람에 없던 값이다(신고 91b72261). */}
         {isLead && lease.inquiryAt && <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />}
         {isLead && lease.tourDate && <Item label="투어 예정일" value={fmtTourAt(lease.tourDate, lease.tourTime)} />}
-        <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />
+        {/* 예약을 확정했으면 그 날은 희망이 아니라 확정된 입주 예정일이다(2026-10-02 운영자 신고). */}
+        <Item label={isPending ? (confirmedReservation ? '입주 예정일' : '입주 희망일') : '입주일'} value={fmtDate(lease.moveInDate)} />
         {/* 일정 조절 — 매칭 날짜 게이트가 읽는 값. 미확인이면 '확인 전'이라고 말한다(빈 값으로 두면
             물어본 적 없는 것과 '불가'가 화면에서 같아 보인다). 거주 단계에는 쓰이지 않아 그리지 않는다. */}
         {isPending && lease.status !== 'CANCELLED' && lease.moveInDate && (
@@ -109,7 +112,7 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
           const eff = base < today ? today : base
           return (
             <Item label="연락 알림일"
-              value={`${fmtDate(eff)}${lease.contactAlertDate ? ' (직접 지정)' : ` (희망일 ${lead}일 전)`}`} />
+              value={`${fmtDate(eff)}${lease.contactAlertDate ? ' (직접 지정)' : ` (${confirmedReservation ? '예정일' : '희망일'} ${lead}일 전)`}`} />
           )
         })()}
         {!isPending && (

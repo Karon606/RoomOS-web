@@ -1528,3 +1528,20 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 퇴실 확인창 '호실이 공실로 전환됩니다'·수정 폼 '공실로 변경됩니다' 사실 문구
 - [x] 소스 그물 check-vacant-write-guard, check-checkout-side-effects needle 갱신, check-wish-match-drift 축1 전 방
 - [x] 513호 isVacant=false 정정(되돌리기, scripts/fix-513-vacancy-reserved.ts) → verify:db 통과 → 푸시(대기 3건 포함)
+
+# 입주 예정일 표시 · 입실 일정 바로 입주 (2026-10-02, 운영자 승인)
+513호: 9/30 퇴실·10/1부터 빔·10/2 청소, 입주 10/5에서 10/6으로 옮기려는데 시트가 저장 불가.
+- [x] moveInSubText dday 옵션("10/5 입주 예정 D-3"·"오늘 입주"·"입주 예정일 N일 경과"), 기본 문장 불변
+- [x] 입주자 상세 StatusInline 에 RESERVED 보조줄(SUB_FG movein), '예약 확정일' 캡션 유지
+- [x] 계약 정보 라벨: 예약 확정이면 '입주 예정일'(Lease 타입에 reservationConfirmedAt 추가, getTenantDetail 이 이미 실음)
+- [x] lib/roomSchedule effectiveMoveDate·scheduleMode
+- [x] 시트 바로 입주 갈래(목록·일정 숨김, 상단 문구, 입주일 저장, 이사일 캡션, 청소 사실 문장, plan dirty, now 모드 안내+잠금)
+- [x] saveRoomSchedulePlan 빈 일정 수용 + 하한·앞당김 가드 + 일정 DbNull + 딸린 계약 입주일 전파(두 갈래)
+- [x] test-room-schedule 판정·소스 그물·보조줄 케이스, 역주입 빨강 후 백업 원복
+- [x] knowledge/domain-room-schedule '바로 입주' 절, Work_log
+- [x] 게이트(tsc·verify:fast·test-money·eslint 신규 0)
+- [x] 입실 일정 저장 적용취소(undoSaveRoomSchedulePlan, 저장값 일치 시만·딸린 계약 복원·겹침 재검사, 토스트 적용취소)
+- [x] 일정 갈래 청소 경고 문장(안 바꿨을 때만 '그날로 맞췄습니다')
+- [x] 웹디자이너 패스 반영(StatusBadge align='start' 상세만, now 모드 안내 사실 문장, 이사일 캡션 반복 제거, 청소 당일 문장, 미확정 '입주 희망')
+- [ ] 모바일 폭 실기(운영자)
+- [ ] 커밋(운영자)

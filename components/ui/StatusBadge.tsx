@@ -59,6 +59,7 @@ export function StatusBadge({
   children,
   sub,
   secondary,
+  align = 'center',
   className,
 }: {
   tone: BadgeTone
@@ -67,6 +68,12 @@ export function StatusBadge({
   sub?: string
   /** 같은 줄에 나란히 붙는 보조 뱃지 (예: 미납 + 퇴실 예정). sub는 둘을 합쳐 한 줄로. */
   secondary?: { tone: BadgeTone; label: ReactNode }
+  /**
+   * 보조줄 정렬. 기본 center(운영자 확정 2026-08-26, 목록·카드의 오른쪽 맥락). 'start' 는 좌측 정렬
+   * 맥락(입주자 상세 상단)용이다 — 보조줄이 배지보다 넓으면 center 가 배지를 안쪽으로 민다.
+   * className 덧대기로는 못 바꾼다(같은 속성 클래스 두 개는 Tailwind 생성 순서가 이긴다).
+   */
+  align?: 'center' | 'start'
   className?: string
 }) {
   const s = BADGE[tone]
@@ -75,7 +82,7 @@ export function StatusBadge({
     // 오른끝 맞춤(items-end)은 상자 끝은 맞아도 배지 글자가 패딩만큼 안쪽이라 삐져 보였고,
     // 글자 끝 맞춤(pr-2.5)은 반대로 너무 안으로 들어가 보였다. 배지가 보조줄보다 넓은 보통의
     // 경우 래퍼 폭 = 배지 폭이라, 오른쪽 정렬 맥락에서 배지의 바깥 정렬은 그대로다.
-    <span className={`inline-flex flex-col items-center gap-0.5 ${className ?? ''}`}>
+    <span className={`inline-flex flex-col ${align === 'start' ? 'items-start' : 'items-center'} gap-0.5 ${className ?? ''}`}>
       <span className="inline-flex items-center gap-1">
         <span
           className="inline-flex items-center px-2.5 py-1 rounded-sm text-[11px] font-semibold tracking-tight whitespace-nowrap"

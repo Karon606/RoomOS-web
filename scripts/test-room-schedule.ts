@@ -9,7 +9,10 @@
 import {
   parseRoomSchedule, hasRoomSchedule, validateRoomSchedule,
   scheduledSegmentOn, nextRoomMove, scheduleOpenFrom, roomScheduleText, freeFromAfter,
+  effectiveMoveDate, scheduleMode, planUndoDenial,
 } from '../lib/roomSchedule'
+import { moveInSubText } from '../lib/leaseStatus'
+import { readFileSync } from 'node:fs'
 
 let pass = 0
 const fails: string[] = []
@@ -143,6 +146,104 @@ eq('연 경계를 넘어도 하루', freeFromAfter('2026-12-31'), '2027-01-01')
   eq('이사일 미룸: 빈틈이 있으면 거절', gap !== null, true)
 }
 
+
+// ── 바로 입주 (2026-10-02 운영자 신고, 513호) ───────────────────────
+//
+// 513호는 앞사람이 9/30에 나가 10/1부터 비고(10/2 청소), 입주는 10/6이다. 서버 제안(10/2)이
+// 입주일보다 앞서는데 시트가 그 값을 이사일로 써서 없는 기간의 임시 호실을 찾았고, 후보가 없으면
+// '그날 지낼 수 있는 호실이 없습니다', 저장은 방을 하나 이상 골라야만 됐다.
+{
+  eq('이사일이 입주일보다 앞서면 입주일로 올린다', effectiveMoveDate('2026-10-02', '2026-10-06'), '2026-10-06')
+  eq('이사일이 입주일보다 뒤면 그대로', effectiveMoveDate('2026-10-08', '2026-10-06'), '2026-10-08')
+  eq('이사일을 모르면 null', effectiveMoveDate(null, '2026-10-06'), null)
+
+  eq('513 · 10/6 입주(제안 10/2)는 바로 입주', scheduleMode('2026-10-02', '2026-10-06'), 'direct')
+  eq('513 · 10/5 입주(제안 10/2)는 바로 입주', scheduleMode('2026-10-02', '2026-10-05'), 'direct')
+  eq('같은 날이면 바로 입주', scheduleMode('2026-10-06', '2026-10-06'), 'direct')
+  eq('513 · 이사일을 10/8로 미루면 임시 호실', scheduleMode('2026-10-08', '2026-10-06'), 'temp')
+  eq('박정후 건(9/1 빔, 8/31 입주)은 임시 호실', scheduleMode('2026-09-01', '2026-08-31'), 'temp')
+  eq('비는 날을 모르면 모른다', scheduleMode(null, '2026-10-06'), 'unknown')
+  // 서버 하한(moveEarliest = 앞사람이 나가는 날)도 같은 함수로 가른다 — 9/30 퇴실이면 10/1 입주부터 바로.
+  eq('서버 하한 · 9/30 퇴실 · 10/1 입주는 바로', scheduleMode('2026-09-30', '2026-10-01'), 'direct')
+  eq('서버 하한 · 10/7 퇴실 · 10/6 입주는 거절 갈래', scheduleMode('2026-10-07', '2026-10-06'), 'temp')
+}
+
+// ── 서버 빈 일정 저장 가드 (소스 그물) ────────────────────────────────
+//
+// DB 없이 돌리므로 소스로 묶는다. 빈 일정(바로 입주)이 hasRoomSchedule 2줄 검사보다 먼저 갈라지고,
+// 그 갈래가 화면과 같은 scheduleMode 로 하한을 보고, 두 갈래 모두 딸린 계약 입주일 전파를 탄다.
+{
+  const src = readFileSync('app/(app)/tenants/actions.ts', 'utf8')
+  const start = src.indexOf('export async function saveRoomSchedulePlan(')
+  const end = src.indexOf('\nexport async function', start + 10)
+  const body = start >= 0 ? src.slice(start, end) : ''
+  eq('saveRoomSchedulePlan 이 있다', start >= 0, true)
+  const iDirect = body.indexOf('schedule.length === 0')
+  const iTwoLines = body.indexOf('hasRoomSchedule(schedule)')
+  eq('빈 일정 갈래가 2줄 검사보다 먼저', iDirect >= 0 && iTwoLines > iDirect, true)
+  eq('빈 일정 갈래가 scheduleMode 로 하한을 본다', /scheduleMode\(earliest, input\.moveInDate\) !== 'direct'/.test(body), true)
+  eq('빈 일정이면 일정을 걷는다', body.includes('const savedSchedule = direct ? null : schedule') && body.includes('savedSchedule === null ? Prisma.DbNull'), true)
+  eq('저장이 적용취소 재료를 돌려준다', (body.match(/\bundo,\n/g) ?? []).length, 2)
+  eq('딸린 계약 입주일 전파(정본)', body.includes('propagateMoveInDateToSubLeases(tx, lease.id, lease.moveInDate, moveInAt)'), true)
+  eq('앞당김은 수정 폼과 같은 계획 구간 가드', body.includes('plannedStayDenial('), true)
+
+  // 시트도 같은 함수로 가르고, 바로 입주면 고를 것 없이 저장할 수 있다.
+  const sheet = readFileSync('components/tenant/RoomScheduleSheet.tsx', 'utf8')
+  eq('시트가 scheduleMode 로 바로 입주를 가른다', sheet.includes("scheduleMode(rawEnd, moveIn) === 'direct'"), true)
+  eq('시트 · 바로 입주면 다 채운 것', /const done = direct \|\|/.test(sheet), true)
+  eq('시트 · 이사일 값은 입주일보다 앞서지 않는다', sheet.includes('effectiveMoveDate(rawEnd, moveIn)'), true)
+}
+
+// ── 입실 일정 저장 적용취소 (운영자 원칙: 적용하는 모든 기능엔 적용취소) ──
+//
+// 지금 값이 저장한 값과 같을 때만 되돌린다. 그 사이 다른 저장이 끼었으면 덮지 않는다.
+{
+  const saved = { moveInYmd: '2026-10-06', schedule: null }
+  eq('저장 그대로면 되돌린다', planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-10-06', schedule: null }, saved), null)
+  eq('빈 일정과 null 은 같은 것(둘 다 일정 없음)',
+    planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-10-06', schedule: [] }, saved), null)
+  eq('그 사이 입주일이 바뀌면 거절',
+    planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-10-07', schedule: null }, saved),
+    '그 사이 입주일이나 거주 호실 일정이 바뀌어 되돌릴 수 없습니다.')
+  eq('그 사이 일정이 생기면 거절',
+    planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-10-06', schedule: ONE_HOP }, saved) !== null, true)
+  eq('그 사이 입실 처리되면 거절',
+    planUndoDenial({ status: 'ACTIVE', moveInYmd: '2026-10-06', schedule: null }, saved),
+    '그 사이 계약 상태가 바뀌어 되돌릴 수 없습니다.')
+  const savedPlan = { moveInYmd: '2026-08-31', schedule: ONE_HOP }
+  eq('일정 갈래 · 같은 일정이면 되돌린다',
+    planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-08-31', schedule: JSON.parse(JSON.stringify(ONE_HOP)) }, savedPlan), null)
+  eq('일정 갈래 · 일정이 바뀌면 거절',
+    planUndoDenial({ status: 'RESERVED', moveInYmd: '2026-08-31', schedule: TWO_HOP }, savedPlan) !== null, true)
+
+  const src = readFileSync('app/(app)/tenants/actions.ts', 'utf8')
+  const u0 = src.indexOf('export async function undoSaveRoomSchedulePlan(')
+  const ubody = u0 >= 0 ? src.slice(u0, src.indexOf('\nexport async function', u0 + 10)) : ''
+  eq('되돌림 액션이 있다', u0 >= 0, true)
+  eq('되돌림 · 권한·소속', ubody.includes('requireEdit()') && ubody.includes('propertyId }'), true)
+  eq('되돌림 · 저장값 일치 판정(정본)', ubody.includes('planUndoDenial('), true)
+  eq('되돌림 · 딸린 계약도 되돌린다', ubody.includes('restoreSubLeaseMoveInDates('), true)
+  eq('되돌림 · 되살리는 일정 겹침 재검사', ubody.includes('roomScheduleClash('), true)
+  const sheet = readFileSync('components/tenant/RoomScheduleSheet.tsx', 'utf8')
+  eq('시트 토스트에 적용취소', sheet.includes("label: '적용취소'") && sheet.includes('undoSaveRoomSchedulePlan(r.undo)'), true)
+  // 금지 어휘 '잡다' + 사람이 바꿔도 같은 문장이던 청소 경고.
+  eq('청소 경고에 금지 어휘 없음', sheet.includes('그날로 잡았습니다'), false)
+}
+
+// ── 입주 예정 보조줄 (2026-10-02 운영자 신고 — 확정한 입주일이 눈에 안 띔) ──
+//
+// checkoutSubText 와 대칭인 D-day 문법. 기본(옵션 없음)은 종전 문장 그대로라 호실 카드·이사 달력 불변.
+{
+  const today = '2026-10-02'
+  eq('기본은 날짜만(종전 문장)', moveInSubText('2026-10-05'), '10/5 입주 예정')
+  eq('D-3', moveInSubText('2026-10-05', { dday: true, today }), '10/5 입주 예정 D-3')
+  eq('오늘', moveInSubText('2026-10-02', { dday: true, today }), '오늘 입주')
+  eq('지남', moveInSubText('2026-09-29', { dday: true, today }), '입주 예정일 3일 경과')
+  eq('날짜 없음', moveInSubText(null, { dday: true, today }), null)
+  // 예약 확정 전이면 '희망'(계약 정보 라벨 '입주 희망일'과 같은 말).
+  eq('미확정 D-3', moveInSubText('2026-10-05', { dday: true, today, wish: true }), '10/5 입주 희망 D-3')
+  eq('미확정 지남', moveInSubText('2026-09-29', { dday: true, today, wish: true }), '입주 희망일 3일 경과')
+}
 
 console.log(`\n호실 일정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

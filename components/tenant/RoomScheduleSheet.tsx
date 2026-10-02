@@ -16,6 +16,10 @@
 // '9월 2일까지'만 적으면 운영자가 끝점과 빼기를 머릿속으로 해야 한다 — 운영자가 요구한 것은
 // 계산이 아니라 표시다("좀 더 심플하면서도 직관적이게").
 //
+// **바로 입주**(2026-10-02, 513호). 계약 호실이 입주일 전에 이미 비면 임시 호실이 필요 없다.
+// 그때는 목록을 감추고 입주일만 저장한다(빈 일정 = 남아 있던 일정을 걷는다). 갈래 판정은
+// lib/roomSchedule scheduleMode 하나이고 서버 가드도 같은 함수를 쓴다.
+//
 // 정한 일정은 계약서에도 적힌다. 옮기는 날이 오면 홈 알림이 '옮기시겠어요'를 묻는다 —
 // 방을 옮기는 것은 실제로 짐을 나르는 일이라 앱이 대신 정하지 않는다.
 
@@ -28,11 +32,11 @@ import { pushToast, humanError } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import {
-  scheduleOpenFrom, validateRoomSchedule, roomScheduleLines,
+  scheduleOpenFrom, validateRoomSchedule, roomScheduleLines, effectiveMoveDate, scheduleMode,
   type RoomScheduleEntry,
 } from '@/lib/roomSchedule'
-import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan, undoSaveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 
 type Options = Extract<Awaited<ReturnType<typeof getRoomScheduleOptions>>, { ok: true }>
 /** 고른 방 — 이름을 함께 담는다. 목록은 다음 걸음에서 그 방을 빼므로 거기서 이름을 못 찾는다. */
@@ -102,17 +106,24 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
    * (오전 퇴실·오후 입실이 정당한 실무라 막지 않는다, 운영자 확정).
    */
   const [endEdit, setEndEdit] = useState<string | null>(null)
-  const endAt = endEdit ?? opts?.moveSuggested ?? opts?.mainAvailableFrom ?? null
+  const rawEnd = endEdit ?? opts?.moveSuggested ?? opts?.mainAvailableFrom ?? null
+  /**
+   * 입주일보다 앞서면 입주일로 올린다(2026-10-02 운영자 신고, 513호). 계약 호실이 10/1부터 비는데
+   * 입주가 10/6이면 서버 제안(10/2)은 입주일 전이라, 그대로 쓰면 없는 기간의 임시 호실을 찾았다.
+   */
+  const endAt = opts ? effectiveMoveDate(rawEnd, moveIn) : null
   const unknownEnd = !!opts && endAt === null
-  // 다 채웠는가 — **방을 하나라도 골랐을 때만** 참이다. 아무것도 안 정했는데 "다 됐다"고
-  // 말하면 거짓이 된다(퇴실 예정일이 이미 지난 방에서 실제로 그랬다).
-  const done = picks.length > 0 && !!endAt && openFrom >= endAt
+  // 바로 입주 — 계약 호실로 드는 날이 곧 입주일이다. 임시 호실을 고를 기간이 없다.
+  const direct = !!opts && scheduleMode(rawEnd, moveIn) === 'direct'
+  // 다 채웠는가 — 일정 갈래는 **방을 하나라도 골랐을 때만** 참이다. 아무것도 안 정했는데 "다 됐다"고
+  // 말하면 거짓이 된다(퇴실 예정일이 이미 지난 방에서 실제로 그랬다). 바로 입주는 고를 것이 없다.
+  const done = direct || (picks.length > 0 && !!endAt && openFrom >= endAt)
 
   const fullSchedule: RoomScheduleEntry[] = useMemo(() => {
-    if (!opts || !endAt || picks.length === 0) return []
+    if (!opts || !endAt || direct || picks.length === 0) return []
     return [...picks.map(p => ({ roomId: p.roomId, from: p.from, to: p.to })),
       { roomId: opts.mainRoomId, from: endAt, to: null }]
-  }, [opts, picks, endAt])
+  }, [opts, picks, endAt, direct])
 
   // 이름은 고를 때 담아 둔 것에서 읽는다 — 목록은 다음 걸음에서 그 방을 빼기 때문이다.
   const scheduleLines = useMemo(() => {
@@ -130,16 +141,41 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
   }
 
   const submit = async () => {
-    if (!opts || pending || fullSchedule.length === 0) return
-    const bad = validateRoomSchedule(fullSchedule, { moveInYmd: moveIn, mainRoomId: opts.mainRoomId })
-    if (bad) { pushToast('error', bad); return }
+    if (!opts || pending) return
+    // 바로 입주는 빈 일정을 보낸다 — 서버가 입주일만 바꾸고 남아 있던 일정을 걷는다.
+    if (!direct) {
+      if (fullSchedule.length === 0) return
+      const bad = validateRoomSchedule(fullSchedule, { moveInYmd: moveIn, mainRoomId: opts.mainRoomId })
+      if (bad) { pushToast('error', bad); return }
+    }
     setPending(true)
     try {
-      const r = plan
-        ? await saveRoomSchedulePlan({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
-        : await startLeaseWithRoomSchedule({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
+      if (plan) {
+        const r = await saveRoomSchedulePlan({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
+        if (!r.ok) { pushToast('error', r.error); return }
+        // 적용취소 — 저장 직전 값으로 되돌린다. 토스트가 눌리면 닫히지만 연타 사이를 한 번 더 막는다.
+        let undoing = false
+        pushToast('success', direct ? '입주일을 저장했습니다' : '거주 호실 일정을 정했습니다', {
+          detail: r.notice,
+          action: {
+            label: '적용취소',
+            run: () => {
+              if (undoing) return
+              undoing = true
+              void undoSaveRoomSchedulePlan(r.undo).then(u => {
+                if (!u.ok) { pushToast('error', u.error); return }
+                pushToast('info', direct ? '입주일을 되돌렸습니다' : '거주 호실 일정을 되돌렸습니다', { detail: u.notice })
+                onDone()
+              }).catch(e => pushToast('error', humanError(e, '되돌리지 못했습니다.')))
+            },
+          },
+        })
+        onDone()
+        return
+      }
+      const r = await startLeaseWithRoomSchedule({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
       if (!r.ok) { pushToast('error', r.error); return }
-      pushToast('success', plan ? '거주 호실 일정을 정했습니다' : '입실 처리했습니다', { detail: r.notice })
+      pushToast('success', '입실 처리했습니다', { detail: r.notice })
       onDone()
     } catch (e) {
       pushToast('error', humanError(e, '처리에 실패했습니다.'))
@@ -149,19 +185,22 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
   }
 
   const tooLate = !plan && moveIn > today
-  const canSubmit = !!opts && !loading && !pending && done && !tooLate
+  // 오늘 입실 처리인데 바로 들어갈 수 있으면 이 시트의 일이 아니다 — 일반 입실 처리로 보낸다.
+  const nowDirect = !plan && direct
+  const canSubmit = !!opts && !loading && !pending && done && !tooLate && !nowDirect
   // 목록을 다시 읽는 중 — 라벨은 이미 새 기간을 말하는데 목록은 옛 기간 것이라 그 사이 탭을 막는다.
   const refreshing = loading && !!opts
 
   return (
     <Modal open onClose={onClose} z={280} width="md"
       title={`${plan ? '입실 일정' : '입실 처리'} · ${tenantName}`}
-      dirty={picks.length > 0 || moveIn !== today}
+      // 미리 잡기는 예약 때 정한 입주 희망일에서 시작하므로 그 값과 견준다(오늘과 견주면 열자마자 dirty).
+      dirty={picks.length > 0 || endEdit !== null || (plan ? (inited && moveIn !== opts?.moveInDate) : moveIn !== today)}
       footer={
         <div className="flex gap-2">
           <Btn variant="secondary" size="md" onClick={onClose} disabled={pending} className="flex-1">닫기</Btn>
           <Btn variant="primary" size="md" onClick={() => void submit()} disabled={!canSubmit} className="flex-1">
-            {pending ? '처리 중…' : (plan ? '일정 저장' : '입실 처리')}
+            {pending ? '처리 중…' : (plan ? (direct ? '입주일 저장' : '일정 저장') : '입실 처리')}
           </Btn>
         </div>
       }>
@@ -175,8 +214,22 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && endAt && (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-                  계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}는 {fmtDate(opts.mainAvailableFrom ?? endAt)}부터 입주 가능합니다.
-                  이사일까지 지낼 임시 호실을 정해 두면, 이사일에 홈 화면에서 이사 여부를 확인합니다.
+                  {nowDirect ? (
+                    // 이 시트는 입실 처리가 계약 호실 점유로 막혔을 때만 열린다(moveInBlock = 그 방에 거주 중·
+                    // 퇴실 예정 계약이 남음). 날짜로는 이미 비는데 막혔다면 그 계약의 퇴실 처리가 안 끝난 것이다.
+                    // 퇴실 처리를 마쳐도 자동으로 입실되지는 않으므로 '할 수 있습니다'로 말한다.
+                    <>
+                      날짜로는 {fmtDate(opts.mainAvailableFrom ?? moveIn)}부터 비지만 {opts.mainOccupantName ? `${opts.mainOccupantName}님` : '앞 입주자'}의 퇴실 처리가 끝나지 않았습니다.
+                      퇴실 처리를 마치면 임시 호실 없이 입실 처리할 수 있습니다.
+                    </>
+                  ) : direct ? (
+                    <>입주일 {fmtDate(moveIn)}에 계약 호실 {roomNoWithRo(opts.mainRoomNo, '')} 바로 들어갑니다. 임시 호실이 필요 없습니다.</>
+                  ) : (
+                    <>
+                      계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}는 {fmtDate(opts.mainAvailableFrom ?? endAt)}부터 입주 가능합니다.
+                      이사일까지 지낼 임시 호실을 정해 두면, 이사일에 홈 화면에서 이사 여부를 확인합니다.
+                    </>
+                  )}
                 </p>
               </div>
             )}
@@ -211,23 +264,45 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && opts.moveEarliest && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-[var(--warm-mid)]">계약 호실 이사일</p>
+                {/* 값은 입주일보다 앞서지 않는다(effectiveMoveDate). 하한은 앞사람이 나가는 날과 입주일 중
+                    늦은 쪽이라, 계약 호실이 입주일 전에 비면 곧 입주일이다(같은 날 = 바로 입주). */}
                 <DatePicker value={endAt ?? ''} onChange={v => { setEndEdit(v || null); setPicks([]) }}
                   minDate={opts.moveEarliest > moveIn ? opts.moveEarliest : moveIn}
                   className={`${dateCls} border-[var(--warm-border)]`} />
                 <p className={capCls}>
-                  {fmtDate(opts.mainAvailableFrom ?? opts.moveEarliest)}부터 입주 가능합니다. 사정에 맞춰 앞뒤로 옮겨도 됩니다.
+                  {opts.moveEarliest <= moveIn
+                    // 바로 입주면 상단 상자가 이미 '바로 들어갑니다'를 말한다 — 같은 말을 되풀이하지 않는다(§29).
+                    ? (direct ? '더 늦게 들어가야 하면 뒤로 미루세요.' : '입주일과 같으면 임시 호실 없이 바로 들어갑니다. 더 늦게 들어가야 하면 뒤로 미루세요.')
+                    : `${fmtDate(opts.mainAvailableFrom ?? opts.moveEarliest)}부터 입주 가능합니다. 사정에 맞춰 앞뒤로 옮겨도 됩니다.`}
                   {picks.length > 0 && ' 날짜를 바꾸면 정해 둔 임시 호실이 지워집니다.'}
                 </p>
-                {opts.mainCleaningYmd && (
-                  <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
-                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 잡혀 있어 그날로 잡았습니다.
+                {/* 청소는 막는 근거가 아니라 알리는 근거다(2026-08-21). 바로 입주이고 입주 전에 끝나면
+                    사실만 말하고, 입주일 뒤로 잡혀 있으면 경고 색으로 알린다. */}
+                {opts.mainCleaningYmd && (direct && opts.mainCleaningYmd < moveIn ? (
+                  <p className={capCls}>
+                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 정해져 있습니다. 입주 전에 끝납니다.
                   </p>
-                )}
+                ) : direct && opts.mainCleaningYmd === moveIn ? (
+                  <p className={capCls}>
+                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 입주 당일입니다.
+                  </p>
+                ) : direct ? (
+                  <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
+                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 정해져 있어 입주일보다 늦습니다.
+                  </p>
+                ) : (
+                  // 이사일을 사람이 안 바꿨을 때만 '그날로 맞췄다'고 말한다. 바꿨으면 청소일 사실만 말한다.
+                  <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
+                    {endEdit === null && opts.moveSuggested === opts.mainCleaningYmd
+                      ? `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${fmtDate(opts.mainCleaningYmd)}로 정해져 있어 이사일을 그날로 맞췄습니다.`
+                      : `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${fmtDate(opts.mainCleaningYmd)}로 정해져 있습니다.`}
+                  </p>
+                ))}
               </div>
             )}
 
             {/* 지금까지 짠 일정 — 구간마다 한 줄. 한 문장으로 이으면 안 읽힌다(운영자 지적). */}
-            {scheduleLines.length > 0 && (
+            {!direct && scheduleLines.length > 0 && (
               <div className="rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2">
                 <p className="text-[0.65625rem] text-[var(--warm-mid)]">지금까지 정한 일정</p>
                 <ul className="mt-1 space-y-1">
@@ -285,7 +360,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
               </div>
             )}
 
-            {done && endAt && (
+            {done && !direct && endAt && (
               <p className={capCls}>
                 {fmtDate(endAt)}에 계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}로 이사하라고 홈 화면에서 알립니다.
                 이 일정은 계약서에도 적힙니다.
