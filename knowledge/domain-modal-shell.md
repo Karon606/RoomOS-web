@@ -176,7 +176,7 @@
 | `scripts/test-modal-viewport.ts` (100건) | 기하 순수 함수. 팬 불변 · 두 항의 상한 · 높이 위생 · 쓰기 방향 · **관문을 지난 인셋** · 타당성 관문 표 · **전수 훑기 17,920 조합**(편집 중 종전과 동일 · 편집 밖 차이는 전부 관문 사유 · 패널을 작게 만드는 조합 0) |
 | `scripts/check-kbd-canonical.mjs` | 배선. 정본 호출 · 두 항의 `Math.min` · `bandHeight` 통과 · **`sync` 사거리에 `vv` 접근 금지**(본문을 중괄호 깊이로 자른다) · 계측 배선과 벽시계 금지 |
 | `scripts/check-overlay-resume-resync.mjs` | 퇴장 타이머 · 등장 마감. **ref 가 등장 클래스를 단 바로 그 엘리먼트에 붙었는가**(호출도 태그도 전수) · 붙는 시점 확인 · **이름으로 거르는가** · `allSettled` · 벽시계 금지 |
-| `scripts/check-no-nested-overlay.mjs` (2026-10-03) | `<Modal>` 자식 자리에 `Modal`·`*Modal`·`*Dialog`·`*Sheet`·`*Host` 태그 금지. 기존 7건 KNOWN(케케묵음 검사 포함) |
+| `scripts/check-no-nested-overlay.mjs` (2026-10-03) | `<Modal>` 자식 자리에 `Modal`·`*Modal`·`*Dialog`·`*Sheet`·`*Host` 태그 금지. KNOWN 대기 0건(같은 날 7건 전부 꺼냄, 케케묵음 검사 포함) |
 | `scripts/check-overlay-backdrop.mjs` (신설) | 막의 **존재 · 농도 값 · z 순서**. 층 토큰이 실재하는가 · 등장 클래스가 시작 프레임을 붙잡지 않는가 · **등장 모션이 실제로 도는가**(`.anim-X { animation: X <길이> }`) |
 
 **호출 한 줄만 보는 그물은 그물이 아니다.** `check-overlay-resume-resync` 의 등장 절은 여태
@@ -310,10 +310,29 @@ vv 를 다시 읽어 같은 관문에 넣는다. 300·1000 은 `onPan` 과 같�
 (다) 절에 "지금은 아무 데도 그렇게 안 한다"고 적었는데, 그물을 세우며 전수해 보니 9건이었다.
 알림 상세의 환불 확인(`CheckoutRefundModal`)·독촉 문자(`UnpaidSmsModal`) 둘은 Fragment 로 꺼내 형제로
 두었다(운영자 승인 범위). 나머지 7건(재무 `MergeSheet` · 재고 `TransferStockModal`·`LocationMoveModal` ·
-서류 `IssuedContractSheet`·`TenantDocBundleSheet` 안의 시트 둘 · `EntityModal` 의 `TenantDocBundleSheet`)은
-`check-no-nested-overlay` 의 KNOWN 목록에 묶어 새 중첩만 막는다. 꺼낼지는 운영자 결정 대기다.
-꺼낼 때는 React 합성 이벤트가 이제 바깥 패널의 `stopPropagation` 을 안 지난다는 점을 본다 — 형제로
-나간 모달의 막 클릭이 그 위 조상의 onClick 까지 올라간다(알림 상세는 조상에 핸들러가 없음을 확인).
+서류 `IssuedContractSheet`·`TenantDocBundleSheet` 안의 시트 둘 · `EntityModal` 의 `TenantDocBundleSheet`)도
+같은 날 운영자 승인으로 전부 형제로 꺼냈고 KNOWN 은 빈 Set 이다. 역주입(원본 하나씩 되넣기) 5파일 7건 전부 빨강.
+
+꺼낼 때 확인한 것(다음에 꺼낼 사람도 같은 넷을 본다).
+
+- **층.** 중첩일 때는 안쪽이 바깥의 쌓임 맥락 안이라 z 가 낮아도 위에 그려졌다. 형제가 되면 z 가 그대로
+  비교된다. `EntityModal` 셸은 280 인데 서류 시트는 260 이라 꺼내면 셸 **아래로 깔린다** — 시트를 280 으로
+  올리고 셸 뒤에 마운트해 같은 층·뒤 순서로 위에 세웠다(여는 곳은 셸뿐). 재고 상세(200)와 위치 이동(200)도
+  같은 층이라 순서가 층을 정한다. 나머지는 안쪽 z 가 더 높다. **같은 층 형제는 Fragment 안 순서를 바꾸지 말 것.**
+- **합성 이벤트.** 바깥 패널의 `stopPropagation` 을 더는 안 지나 형제의 막·패널 클릭이 바깥 컴포넌트의
+  조상까지 올라간다(`MergeSheet` 패널은 자체 stopPropagation 이 없다). 다섯 호출부의 조상(페이지 루트 div ·
+  AppShell · EntityModalProvider)에 onClick 이 없음을 확인. Esc 는 전역 스택이라 DOM 위치와 무관하다.
+- **바깥 컨텍스트 의존.** 안쪽 일곱 다 React 컨텍스트·`form=`·바깥 `<form>` 의존 없음. Modal 은 컨텍스트를
+  제공하지 않는다. 하나 걸린 것은 **오류 경계**다 — 재고 상세의 위치 이동은 상세 본문의 `ErrorBoundary`
+  안에 있었다. 꺼내면 그 그물을 못 물려받으므로 따로 감쌌고, 폴백은 창(`Modal`)으로 띄운다(본문 밖 폴백
+  div 는 막 뒤에 깔려 '조용히 사라짐'이 된다, 오류신고 0861b35f).
+- **dirty 가드.** 바깥 `dirty` 는 바깥 막 클릭만 막는다. 형제의 막 클릭은 원래도 바깥 막에 안 닿았다(중첩 때는
+  바깥 패널에서 멈췄고, 형제일 때는 바깥 막이 조상이 아니다).
+
+**그물 밖에 남은 같은 클래스**(승인 범위 밖이라 손대지 않음). 이름 규칙에 안 걸리는 `ContractVersionPicker`
+(서류 시트 안 `<Modal z=280>`), 파일을 건너는 중첩(셸 위젯 `ContractFilesPanel` 이 그리는 `IssuedContractSheet`
+처럼 셸 패널 안에서 뜨는 모달들), 수제 오버레이 `LocationBatchCheckModal` 안의 `TransferStockModal`·
+`HubShortDialog`. 그물은 같은 파일의 `<Modal>` 태그 안만 본다.
 
 ### 계측 보강 — 눌린 아래 모달의 값이 한 번도 안 남았다
 

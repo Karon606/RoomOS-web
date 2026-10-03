@@ -1754,6 +1754,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const detailCaption = row.specHint ?? detailSplit?.size ?? null
 
   return (
+    <>
     <Modal
       open
       onClose={onClose}
@@ -1904,14 +1905,26 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           </div>
         </>
       )}
-      {/* 품목별 위치 이동 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 이동과 동일 컴포넌트 */}
-      {transferOpen && (
+      </ErrorBoundary>
+    </Modal>
+    {/* 품목별 위치 이동 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 이동과 동일 컴포넌트.
+        상세 모달의 형제다(자식이면 패널 모션이 굳을 때 패널 상자에 갇힌다, check-no-nested-overlay).
+        z 는 상세와 같은 층이라 뒤에 마운트되는 이쪽이 위에 그려진다 — 이 순서를 바꾸지 말 것.
+        렌더 오류 그물은 상세 본문 것을 못 물려받으므로 따로 둔다. 폴백도 창으로 띄워야 조용히
+        사라지지 않는다(오류신고 0861b35f 의 그 증상). */}
+    {transferOpen && (
+      <ErrorBoundary label="재고 상세 · 위치 이동" fallback={msg => (
+        <Modal open onClose={() => setTransferOpen(false)} title="위치 이동" width="sm">
+          <p className="text-sm font-medium text-[var(--warm-dark)]">이 화면을 여는 중 오류가 발생했습니다.</p>
+          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-all">{msg}</p>
+        </Modal>
+      )}>
         <TransferStockModal rows={[row]} initialItemId={row.id}
           onClose={() => setTransferOpen(false)}
           onDone={() => { setTransferOpen(false); reload(); onChange() }} />
-      )}
       </ErrorBoundary>
-    </Modal>
+    )}
+    </>
   )
 }
 
@@ -6553,6 +6566,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
   const locFooterMsg = placing ? '저장 중…' : (drag != null ? (drop?.reason ?? drop?.note ?? null) : null)
 
   return (
+    <>
     <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 · 4층 주방 같은 보관 장소를 등록하고, 냉장고 상단처럼 아래 칸을 둘 수 있습니다" width="sm"
       // 풀블리드 — 본문 여백은 children 이 직접 준다(폭 전체 구분선 띠는 Modal 의 footer 가 맡는다).
       bodyClassName=""
@@ -6813,10 +6827,13 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         document.body,
       )}
 
-      {moveNode && (
-        <LocationMoveModal all={locs} node={moveNode} onClose={() => setMoveId(null)} onDone={onMoved} />
-      )}
     </Modal>
+    {/* 옮기기 모달은 위치 관리의 형제다(자식이면 패널 모션이 굳을 때 패널 상자에 갇힌다,
+        check-no-nested-overlay). 층은 z 260 이 정한다. */}
+    {moveNode && (
+      <LocationMoveModal all={locs} node={moveNode} onClose={() => setMoveId(null)} onDone={onMoved} />
+    )}
+    </>
   )
 }
 

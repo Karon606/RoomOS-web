@@ -6757,3 +6757,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-03 모바일 뷰포트 결함 3종 (알림 상세 190pt 눌림 · 재고 모달 눌림 · 확인창 위로 밀려남, 운영자 승인)
 - 정본 lib/modalViewport 에 타당성 관문 phantomKeyboardGap(키보드 칸 포커스 없음 + 가림 > KBD_OPEN_PX + 줌 아님)·plausibleVvHeight(거부는 lastGood, 없으면 null, 커지는 값은 회복으로 받음)·insetBand(인셋용, 방향 관문 없음, 첫 읽기 null 이고 편집 중 아니면 인셋 0). bandHeight 가 VvReading 을 받아 마운트 첫 읽기·resize·scroll·복귀 전부 관문 통과. useVisibleBand 가 scale·keyboardCapableFocus(iframe 포함, lib/editableTarget) 를 싣고, 열린 뒤 300ms·1000ms 두 번 + window focus 재동기(자가 회복). ViewportOffsetGuard --kbd-inset 도 같은 관문. 홈 AlertDetailModal 의 환불·독촉 모달을 형제로 꺼냄 + 그물 check-no-nested-overlay(verify:fast, 기존 중첩 7건 KNOWN 대기). 계측: 열린 패널 전부의 top·h·vvh, 확인창 열림·자리·--vv-*. 전수 훑기 17,920 조합 중 편집 중 8,960 조합 종전과 동일(가림 회귀 0), 역주입 15종 빨강. 커밋·실기(iPhone 홈화면·Safari, Android Chrome)는 운영자 몫.
+
+## 2026-10-03 모달 안 겹친 오버레이 7건 형제로 꺼냄 (운영자 승인)
+- 재무 구매처 관리의 MergeSheet · 재고 상세의 TransferStockModal · 위치 관리의 LocationMoveModal · 발급 기록 시트의 번역본 Modal · 서류 시트의 문자·메일 쓰기 시트 · 프리즘 셸의 TenantDocBundleSheet 를 바깥 <Modal> 의 Fragment 형제로. 서류 시트 z 260→280(형제가 되면 셸 280 아래로 깔리므로, 셸 뒤 마운트 순서로 위), 재고 위치 이동은 상세 본문 ErrorBoundary 를 못 물려받아 창 폴백 경계를 따로 둠. 조상 onClick·컨텍스트·form 의존 없음 확인. check-no-nested-overlay KNOWN 빈 Set, 역주입 7건 빨강. 실기 확인은 운영자 몫.

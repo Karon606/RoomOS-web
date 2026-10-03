@@ -22,18 +22,10 @@ const NOT_OVERLAY = new Map([
   ['ModalFooterActions', '모달 푸터 버튼줄 — 오버레이가 아니다'],
 ])
 
-// 이 그물을 세운 날(2026-10-03) 이미 있던 중첩 — 운영자 승인 범위가 홈 알림 상세 둘뿐이라 여기서
-// 손대지 않고 목록으로 묶어 둔다. **새로 늘어나는 것만 막는다.** 꺼내면 목록에서 지운다
-// (안 지우면 케케묵음 위반). 열쇠는 '파일|안쪽 컴포넌트'.
-const KNOWN = new Set([
-  'app/(app)/finance/FinanceClient.tsx|MergeSheet',
-  'app/(app)/inventory/InventoryClient.tsx|TransferStockModal',
-  'app/(app)/inventory/InventoryClient.tsx|LocationMoveModal',
-  'components/doc/IssuedContractSheet.tsx|Modal',
-  'components/doc/TenantDocBundleSheet.tsx|TenantDocSmsComposeSheet',
-  'components/doc/TenantDocBundleSheet.tsx|TenantDocMailComposeSheet',
-  'components/entity-modal/EntityModal.tsx|TenantDocBundleSheet',
-])
+// 이 그물을 세운 날(2026-10-03) 이미 있던 중첩 7건은 같은 날 운영자 승인으로 전부 형제로 꺼냈다.
+// 목록은 비어 있고, 비어 있어야 한다. 부득이 대기시킬 것이 생기면 '파일|안쪽 컴포넌트' 열쇠로 올리되
+// 꺼내면 지운다(안 지우면 케케묵음 위반).
+const KNOWN = new Set([])
 const seenKnown = new Set()
 
 function walk(p) {
