@@ -1922,6 +1922,7 @@ export async function exportAllData(): Promise<string> {
     prisma.tenant.findMany({ where: { propertyId } }),
     prisma.leaseTerm.findMany({ where: { propertyId } }),
     prisma.paymentRecord.findMany({ where: { propertyId } }),
+    // 현금일 축: 달로 자르지 않는 전 행 백업이다(targetMonth 칸도 그대로 실린다).
     prisma.expense.findMany({ where: { propertyId } }),
     prisma.extraIncome.findMany({ where: { propertyId } }),
     prisma.financialAccount.findMany({ where: { propertyId } }),

@@ -24,7 +24,8 @@ import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast, humanError } from '@/lib/saveStatus'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
@@ -201,6 +202,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
 
   const [pending, startTransition] = useTransition()
   const [date, setDate] = useState(row.inferredDate ?? kstYmdStr())
+  const [targetMonth, setTargetMonth] = useState<string | null>(null)   // 귀속월 — null 이면 날짜의 달
   const [amount, setAmount] = useState<number>(row.inferredAmount ?? 0)
   const [category, setCategory] = useState(() => {
     // 재고 모드면 추적 카테고리 중 첫 매치 또는 기본 '부식비'
@@ -276,6 +278,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
     startTransition(async () => {
       const res = await approvePendingReceipt(row.id, {
         date,
+        targetMonth: targetMonth ?? undefined,
         amount: amount || 0,
         category,
         vendor: vendor || undefined,
@@ -289,7 +292,9 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
           qtyUnit:   qtyUnit   || undefined,
         } : {}),
       })
-      if (res.ok) { pushToast('success', isInventory ? '재고 보충으로 등록됨' : '지출로 등록됨'); onApproved() }
+      // 귀속월이 날짜의 달과 다를 때만 붙인다(지출 등록 폼 토스트와 같은 문형).
+      const tmTail = targetMonth && targetMonth !== date.slice(0, 7) ? ` · ${Number(targetMonth.slice(5, 7))}월분` : ''
+      if (res.ok) { pushToast('success', (isInventory ? '재고 보충으로 등록됨' : '지출로 등록됨') + tmTail); onApproved() }
       else pushToast('error', res.error)
     })
   }
@@ -444,6 +449,8 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 <MoneyInput value={amount} onChange={setAmount} placeholder="0원" />
               </div>
             </div>
+            {/* 귀속월 — 지출 등록 폼과 같은 정본 행. 이 화면은 조회 달이 없어 이번 달(KST)을 기준으로 말한다. */}
+            <ExpenseTargetMonthField date={date} viewMonth={kstMonthStr()} onPick={setTargetMonth} dense />
             <div>
               <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
               <select value={category} onChange={e => setCategory(e.target.value)}

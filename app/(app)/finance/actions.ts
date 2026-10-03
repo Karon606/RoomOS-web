@@ -73,7 +73,7 @@ export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ c
   return Object.entries(map).map(([category, total]) => ({ category, total }))
 }
 
-// 지출 엑셀 내보내기 모달용 옵션 — 지출이 있는 월(YYYY-MM 내림차순)과 카드·계좌별 건수·금액 합(금액 내림차순).
+// 지출 엑셀 내보내기 모달용 옵션 — 지출이 있는 귀속월(YYYY-MM 내림차순)과 카드·계좌별 건수·금액 합(금액 내림차순).
 // 읽기 전용. 금액 정보를 담으므로 money 읽기 게이트(제한 스태프 차단). 그룹 키는 API 엑셀과 같은 공용 함수를 쓴다.
 export async function getExpenseExportOptions(): Promise<{
   months: string[]
@@ -84,15 +84,13 @@ export async function getExpenseExportOptions(): Promise<{
   const rows = await prisma.expense.findMany({
     where: { propertyId },
     select: {
-      date: true, amount: true, payMethod: true, financeName: true,
+      date: true, targetMonth: true, amount: true, payMethod: true, financeName: true,
       financialAccount: { select: { brand: true, alias: true } },
     },
   })
-  // 월 목록 — 지출이 존재하는 YYYY-MM(로컬 기준, API expenseMonthKey 와 동일 산식) 내림차순.
+  // 월 목록 — 지출이 존재하는 귀속월(API 월 필터·월 시트와 같은 정본 expenseTargetMonth) 내림차순.
   const monthSet = new Set<string>()
-  for (const r of rows) {
-    monthSet.add(`${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}`)
-  }
+  for (const r of rows) monthSet.add(expenseTargetMonth(r))
   const months = [...monthSet].sort((a, b) => (a < b ? 1 : -1))
   // 카드·계좌 키별 건수·금액 합 — 금액 합 내림차순(엑셀 시트 배치 순서와 통일).
   const acc = new Map<string, { count: number; sum: number }>()
@@ -1263,7 +1261,7 @@ export async function undoExpenseStockShift(undo: LedgerShiftUndo): Promise<{ ok
 }
 
 // ── 지출 일괄 편집 — 여러 지출의 공통 필드를 한 번에 수정(적용취소 포함)
-// 스킵 규칙: 배송비 라인(전 필드) / 날짜 변경 시 고정지출 기록 / 카테고리·세부항목 변경 시 품목 등록 지출.
+// 스킵 규칙: 배송비 라인(전 필드) / 날짜·귀속월 변경 시 고정지출 기록 / 카테고리·세부항목 변경 시 품목 등록 지출.
 // settleStatus 는 updateExpense 와 **같은 정본**(lib/settleStatus)으로 행별 판정한다.
 // 갈래(신용카드 여부)가 안 바뀌면 그 행의 지금 상태를 지킨다 — 카드에서 카드로 옮길 때
 // 정산완료가 미정산으로 되살아나던 자리다(운영자 승인 2026-09-25).
@@ -1278,6 +1276,7 @@ export async function batchUpdateExpenses(
     financialAccountId?: string | null
     financeName?: string | null
     date?: string
+    targetMonth?: string
     category?: string
     detail?: string | null
     memo?: string | null
@@ -1292,6 +1291,8 @@ export async function batchUpdateExpenses(
 
     const wantsPayMethod = data.payMethod != null && data.payMethod !== ''
     const changingDate   = data.date != null && data.date !== ''
+    const changingTargetMonth = data.targetMonth != null && data.targetMonth !== ''
+    if (changingTargetMonth && !isMonthKey(data.targetMonth)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
     const changingCategory = data.category != null && data.category !== ''
     const changingDetail = 'detail' in data
     const changingMemo   = 'memo' in data
@@ -1299,7 +1300,7 @@ export async function batchUpdateExpenses(
     const changingBizNo  = 'vendorBizNo' in data
     const changingCatOrDetail = changingCategory || changingDetail
 
-    if (!wantsPayMethod && !changingDate && !changingCategory && !changingDetail && !changingMemo && !changingVendor && !changingBizNo) {
+    if (!wantsPayMethod && !changingDate && !changingTargetMonth && !changingCategory && !changingDetail && !changingMemo && !changingVendor && !changingBizNo) {
       return { ok: false, error: '변경할 항목이 없습니다.' }
     }
     // 결제수단 변경 시 계좌·카드(선불) 정보 동반 필수 — 미지정이면 stale 계좌가 남는다
@@ -1326,7 +1327,9 @@ export async function batchUpdateExpenses(
     const eligible: typeof targets = []
     for (const t of targets) {
       if (t.isShipping) { bump('배송비 지출'); continue }
-      if (changingDate && t.recurringExpenseId) { bump('고정지출 기록'); continue }
+      // 고정지출 기록은 귀속월이 곧 회차다 — 일괄로 옮기면 같은 항목·같은 귀속월 가드(recordRecurringExpense·updateExpense)를
+      // 건너뛴다. 날짜와 같이 빼고, 회차를 옮기려면 그 기록의 수정 폼(중복 가드 있음)에서 한다.
+      if ((changingDate || changingTargetMonth) && t.recurringExpenseId) { bump('고정지출 기록'); continue }
       if (changingCatOrDetail && t.itemLabel) { bump('품목 등록 지출'); continue }
       eligible.push(t)
     }
@@ -1341,7 +1344,8 @@ export async function batchUpdateExpenses(
         fields.financeName = t.financeName
         fields.settleStatus = t.settleStatus
       }
-      if (changingDate) { fields.date = t.date; fields.targetMonth = t.targetMonth }
+      if (changingDate) fields.date = t.date
+      if (changingDate || changingTargetMonth) fields.targetMonth = t.targetMonth
       if (changingCategory) fields.category = t.category
       if (changingDetail) fields.detail = t.detail
       if (changingMemo) fields.memo = t.memo
@@ -1388,9 +1392,20 @@ export async function batchUpdateExpenses(
           data: commonData,
         }))
       }
-      // 귀속월은 옮기지 않는다(그 달의 지출이라는 뜻은 그대로). 다만 새 날짜의 달과 같아진 행은 NULL 로 접는다 —
-      // 값이 있으면 언제나 '날짜의 달과 다른 달'이라는 표현 하나를 지킨다(lib/expenseTargetMonth targetMonthForSave).
-      if (changingDate) {
+      // 귀속월을 고르면 행마다 그 행의 (새) 날짜로 접는다 — 날짜가 행마다 달라 같은 9월분도 어떤 행은 NULL,
+      // 어떤 행은 '2026-09' 다(lib/expenseTargetMonth targetMonthForSave). 접힌 값별로 묶어 updateMany.
+      if (changingTargetMonth) {
+        const byMonth = new Map<string | null, string[]>()
+        for (const t of eligible) {
+          const m = targetMonthForSave(data.targetMonth, changingDate ? new Date(data.date as string) : t.date)
+          const arr = byMonth.get(m) ?? []; arr.push(t.id); byMonth.set(m, arr)
+        }
+        for (const [m, ids] of byMonth) {
+          ops.push(prisma.expense.updateMany({ where: { id: { in: ids }, propertyId }, data: { targetMonth: m } }))
+        }
+      } else if (changingDate) {
+        // 귀속월을 안 고르면 옮기지 않는다(그 달의 지출이라는 뜻은 그대로). 다만 새 날짜의 달과 같아진 행은 NULL 로 접는다 —
+        // 값이 있으면 언제나 '날짜의 달과 다른 달'이라는 표현 하나를 지킨다.
         ops.push(prisma.expense.updateMany({
           where: { id: { in: eligible.map(e => e.id) }, propertyId, targetMonth: dbDateMonthKey(new Date(data.date as string)) },
           data: { targetMonth: null },

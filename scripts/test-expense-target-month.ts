@@ -8,6 +8,8 @@
 //   · 소스: recurringStatus·finance actions·기록 모달·재무 목록이 date 월을 직접 쓰지 않고 정본을 지난다
 //   · 2안 소스: 결산 소비처(재무 목록·카테고리·예비비 후보·홈·추이·보고서)의 지출 조회가 귀속월 조각을 쓴다,
 //     폼 귀속월 칸·addExpense/updateExpense 전파, 카드 정산 메타 칩
+//   · 3단계 소스(2026-10-03): 지출 엑셀 월 필터·월 시트·월 옵션·'귀속월' 열이 정본을 지난다(날짜 범위·전체 워크북은
+//     '// 현금일 축:' 표지), 영수증 승인 경로 귀속월 전파, 일괄 수정 귀속월 행별 접기·고정지출 제외·적용취소 스냅샷
 import fs from 'node:fs'
 import path from 'node:path'
 import {
@@ -172,9 +174,13 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
     (s.match(/\{item\.dateStr\.slice\(0, 7\) === targetMonth && <TargetMonthChip e=\{e\} \/>\}/g) ?? []).length === 2
     && (s.match(/outsideMonthHead\(/g) ?? []).length >= 3 && /!otherDay && /.test(s) && /!outsideMonthHead\(item\.dateStr\) && /.test(s))
   // 폼 귀속월 칸 — 등록·수정 두 폼, 수정은 저장값으로 연다. 날짜 행(반폭 grid) 밖 전폭 한 행.
-  const field = fnBody(s, /function ExpenseTargetMonthField[\s\S]*?\n\}\n/)
-  must(`${f} — 폼 귀속월 칸이 name="targetMonth" 로 실린다(접힘 hidden·펼침 select)`, (field.match(/name="targetMonth"/g) ?? []).length >= 2 && /targetMonthLabel\(m, dateMonth\)/.test(field))
-  must(`${f} — 귀속월 칸 손잡이가 같은 달에도 선다('귀속월 바꾸기')·버튼이 폼 dirty 를 세운다`, /'귀속월 바꾸기'/.test(field) && /onDirty\(\)/.test(field))
+  // 정본 행은 components/ui/ExpenseTargetMonthField(영수증 승인 카드와 공유, 3단계). FinanceClient 는 가져다 쓴다.
+  const FIELD = 'components/ui/ExpenseTargetMonthField.tsx'
+  const field = fnBody(read(FIELD), /export function ExpenseTargetMonthField[\s\S]*?\n\}\n/)
+  must(`${f} — 귀속월 행을 정본(${FIELD})에서 가져오고 사본을 두지 않는다`, /from '@\/components\/ui\/ExpenseTargetMonthField'/.test(s) && !/function ExpenseTargetMonthField/.test(s))
+  must(`${FIELD} — 폼 귀속월 칸이 name="targetMonth" 로 실린다(접힘 hidden·펼침 select)`, (field.match(/name="targetMonth"/g) ?? []).length >= 2 && /targetMonthLabel\(m, dateMonth\)/.test(field))
+  must(`${FIELD} — 귀속월 칸 손잡이가 같은 달에도 선다('귀속월 바꾸기')·버튼이 폼 dirty 를 세운다`, /'귀속월 바꾸기'/.test(field) && /onDirty\?\.\(\)/.test(field))
+  must(`${FIELD} — form 없는 화면에 고른 값을 넘긴다(onPick)`, /onPick\?\.\(m\)/.test(field))
   const uses = [...s.matchAll(/<ExpenseTargetMonthField [^\n]*\/>/g)]
   must(`${f} — 귀속월 칸이 등록·수정 두 폼에 선다(onDirty 배선)`, uses.length === 2 && uses.every(u => /onDirty=\{\(\) => set(AddExp|ExpEdit)Dirty\(true\)\}/.test(u[0])) && uses.some(u => /initial=\{detailExp\.targetMonth\}/.test(u[0])))
   for (const u of uses) {
@@ -299,6 +305,59 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
   }
 }
 
+// ── 3단계(2026-10-03): 엑셀·영수증 승인·일괄 수정 ──────────────────────
+{
+  // 일괄 수정의 귀속월은 행마다 그 행의 날짜로 접는다 — 같은 '9월분'도 9/30 행은 NULL, 10/1 행은 '2026-09'.
+  const rows = [D('2026-09-30'), D('2026-10-01'), D('2026-08-31')]
+  eq('일괄 귀속월 행별 접기', rows.map(d => targetMonthForSave('2026-09', d)), [null, '2026-09', '2026-09'])
+  // 날짜도 같이 바꾸면 새 날짜로 접는다.
+  eq('일괄 날짜+귀속월 — 새 날짜로 접기', targetMonthForSave('2026-09', D('2026-09-15')), null)
+}
+{
+  const f = 'app/api/export/route.ts'
+  const s = read(f)
+  must(`${f} — 귀속월 정본을 가져온다`, /from '@\/lib\/expenseTargetMonth'/.test(s))
+  must(`${f} — month 파라미터 필터가 귀속월 조각(targetMonthWhere(monthParam))`, /targetMonthWhere\(monthParam\)/.test(s) && !/monthDbRange\(monthParam\)/.test(s))
+  must(`${f} — 월 시트 키가 귀속월 정본(date 의 달 키 없음)`, /const key = expenseTargetMonth\(e\)/.test(s) && !/expenseMonthKey|dbDateMonthKey/.test(s))
+  must(`${f} — 지출 시트에 '귀속월' 열(정본)과 '날짜' 열이 함께 선다`, /'귀속월':\s*expenseTargetMonth\(e\)/.test(s) && /'날짜':\s*fmtDate\(e\.date\)/.test(s))
+  // 날짜 창(date: …)을 거는 자리는 전부 현금일 축 표지를 단다 — from/to 날짜 범위, 전체 워크북.
+  const lines = s.split('\n')
+  lines.forEach((ln, i) => {
+    if (!/\bdate:\s*(\{\s*gte:\s*ymdToDbDate|dateRange\b)/.test(ln)) return
+    // 같은 조회 안의 다른 표(수납·기타수익·요청사항)는 지출이 아니다 — 지출 조회 또는 지출 기간 변수만 본다.
+    const ctx = lines.slice(Math.max(0, i - 4), i + 1).join('\n')
+    if (!/prisma\.expense\.findMany|expPeriodWhere/.test(ctx)) return
+    must(`${f}:${i + 1} — 지출 날짜 창에 '// 현금일 축:' 표지가 없다(귀속월이면 targetMonthWhere 를 쓴다)`, /\/\/ 현금일 축:/.test(ctx))
+  })
+  const a = read('app/(app)/finance/actions.ts')
+  const opt = fnBody(a, /export async function getExpenseExportOptions[\s\S]*?\n\}\n/)
+  must(`app/(app)/finance/actions.ts — 엑셀 월 옵션이 귀속월 정본(expenseTargetMonth)`, /monthSet\.add\(expenseTargetMonth\(r\)\)/.test(opt) && /targetMonth: true/.test(opt) && !/getFullYear\(\)/.test(opt))
+}
+{
+  const f = 'app/(app)/dashboard/pendingReceipt.ts'
+  const s = read(f)
+  const ap = fnBody(s, /export async function approvePendingReceipt[\s\S]*?\n\}\n/)
+  must(`${f} — 영수증 승인이 귀속월을 받아 접어 저장한다`, /targetMonth\?: string/.test(ap) && /targetMonthForSave\(isMonthKey\(final\.targetMonth\)/.test(ap) && /^\s*targetMonth,/m.test(ap))
+  const c = read('components/dashboard/PendingReceiptSection.tsx')
+  must(`components/dashboard/PendingReceiptSection.tsx — 승인 카드가 정본 귀속월 행을 쓰고 값을 승인에 싣는다`,
+    /from '@\/components\/ui\/ExpenseTargetMonthField'/.test(c) && /<ExpenseTargetMonthField date=\{date\} viewMonth=\{kstMonthStr\(\)\} onPick=\{setTargetMonth\} dense \/>/.test(c)
+    && /targetMonth: targetMonth \?\? undefined/.test(c))
+}
+{
+  const f = 'app/(app)/finance/actions.ts'
+  const s = read(f)
+  const b = fnBody(s, /export async function batchUpdateExpenses[\s\S]*?\n\}\n/)
+  must(`${f} — 일괄 수정이 귀속월 형식을 검증한다`, /targetMonth\?: string/.test(b) && /isMonthKey\(data\.targetMonth\)/.test(b))
+  must(`${f} — 일괄 수정 귀속월에서 고정지출 기록을 뺀다(같은 항목·같은 귀속월 가드 우회 금지)`, /\(changingDate \|\| changingTargetMonth\) && t\.recurringExpenseId/.test(b))
+  must(`${f} — 일괄 수정 귀속월을 행별 날짜로 접는다`, /targetMonthForSave\(data\.targetMonth, changingDate \? new Date\(data\.date as string\) : t\.date\)/.test(b))
+  must(`${f} — 일괄 수정 적용취소 스냅샷에 귀속월`, /if \(changingDate \|\| changingTargetMonth\) fields\.targetMonth = t\.targetMonth/.test(b))
+  const c = read('app/(app)/finance/FinanceClient.tsx')
+  const m = fnBody(c, /function BatchEditExpensesModal[\s\S]*?\n\}\n/)
+  must(`app/(app)/finance/FinanceClient.tsx — 일괄 편집 귀속월 select('미변경' + 조회 달 ±1, N월분)·캡션·전송`,
+    /shiftMonthKey\(viewMonth, n\)/.test(m) && /targetMonthLabel\(m, viewMonth\)/.test(m) && /날짜는 그대로, 어느 달 지출로 셀지만 바뀝니다\./.test(m) && /data\.targetMonth = tMonth/.test(m))
+  must(`app/(app)/finance/FinanceClient.tsx — 일괄 편집 모달에 조회 달을 넘긴다`, /viewMonth=\{targetMonth\}/.test(c))
+}
+
 // 정본 밖에서 '지정 ?? date 월'을 손으로 다시 쓰면 KST 하나만 틀려도 회차가 갈린다.
 {
   const walk = (dir: string, out: string[] = []): string[] => {
@@ -325,4 +384,4 @@ if (fails.length > 0 || src.length > 0) {
   for (const f of src) console.error(`  - 소스: ${f}`)
   process.exit(1)
 }
-console.log(`[지출 귀속월] 정본·조각 의미·중복 판정·합산·배지·결산 축·폼 전파·소스 배선 통과 ${pass}`)
+console.log(`[지출 귀속월] 정본·조각 의미·중복 판정·합산·배지·결산 축·폼 전파·엑셀·영수증 승인·일괄 수정·소스 배선 통과 ${pass}`)

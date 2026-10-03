@@ -10,7 +10,8 @@ import { resolveMonthParam } from '@/lib/monthParam'
 import { billForLeaseMonth } from '@/lib/billing'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
-import { dbDateMonthKey, monthDbRange, yearDbRange, ymdToDbDate, type DbDateRange } from '@/lib/kstDate'
+import { monthDbRange, yearDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { expenseTargetMonth, isMonthKey, targetMonthWhere } from '@/lib/expenseTargetMonth'
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return ''
@@ -60,8 +61,11 @@ function autoWidth(ws: XLSX.WorkSheet) {
 }
 
 // 지출 시트 1행 매핑 — 전체 워크북 '지출' 시트와 지출 전용 내보내기가 공유(중복 제거).
+// '날짜'는 돈이 나간 날, '귀속월'은 어느 달 지출로 세는지(YYYY-MM, 수납 시트 '월' 칸과 같은 표기).
+// 9월분 가스요금을 10/1 에 내면 날짜 2026-10-01 · 귀속월 2026-09 다(knowledge/domain-expense-target-month).
 type ExpenseRow = {
-  date: Date | null
+  date: Date
+  targetMonth: string | null
   category: string
   detail: string | null
   vendor: string | null
@@ -76,6 +80,7 @@ type ExpenseRow = {
 function mapExpenseRow(e: ExpenseRow) {
   return {
     '날짜':      fmtDate(e.date),
+    '귀속월':    expenseTargetMonth(e),
     '카테고리':  e.category,
     '세부항목':  e.detail ?? '',
     '구매처':    e.vendor ?? '',
@@ -100,18 +105,12 @@ function buildExpenseSheet(rows: ExpenseRow[]): XLSX.WorkSheet {
   const data: Record<string, string | number>[] = rows.map(mapExpenseRow)
   const total = rows.reduce((s, e) => s + e.amount, 0)
   data.push({
-    '날짜': '합계', '카테고리': '', '세부항목': '', '금액': total,
+    '날짜': '합계', '귀속월': '', '카테고리': '', '세부항목': '', '금액': total,
     '결제수단': '', '카드/계좌': '', '정산여부': '', '메모': '',
   })
   const ws = XLSX.utils.json_to_sheet(data)
   autoWidth(ws)
   return ws
-}
-
-// 지출 월별 그룹 키 — 날짜 기준 'YYYY-MM'(lib/kstDate 정본).
-function expenseMonthKey(d: Date | null): string {
-  if (!d) return '날짜없음'
-  return dbDateMonthKey(d)
 }
 
 // 엑셀 시트명 제약 준수 — 금지문자(\ / ? * [ ] :) 제거, 31자 이내, 빈 값은 '미지정'.
@@ -149,13 +148,16 @@ export async function GET(request: NextRequest) {
     const fromParam = searchParams.get('from')      // 'YYYY-MM-DD', KST 로컬 파싱
     const toParam = searchParams.get('to')          // 'YYYY-MM-DD', KST 로컬 파싱
     const groupParam = (searchParams.get('group') ?? 'method') as 'method' | 'account' | 'month'
-    let expDateRange: DbDateRange | { gte: Date; lte: Date } | undefined
+    // 기간 축은 두 갈래다.
+    //  · from/to(모달의 1·3·6개월·직접 지정) — 날짜 범위라 돈이 나간 날로 거른다. 통장·카드 내역과 줄을 맞추는 용도다.
+    //  · month — 'N월 지출'이라 귀속월로 거른다(화면 월 합계와 같은 축, 9월분을 10/1 에 내도 9월).
+    let expPeriodWhere: object = {}
     if (fromParam && toParam) {
-      // 직접 지정·빠른 선택 — 양끝 날짜 포함. @db.Date 칸이라 UTC 자정끼리의 lte 가 정확하다
+      // 현금일 축: 날짜 범위는 낸 날 그대로. 양끝 날짜 포함. @db.Date 칸이라 UTC 자정끼리의 lte 가 정확하다
       // (로컬 자정으로 만들던 시절엔 KST 기기에서 시작이 하루 앞으로 밀려 전날 지출이 딸려 왔다).
-      expDateRange = { gte: ymdToDbDate(fromParam), lte: ymdToDbDate(toParam) }
-    } else if (monthParam) {
-      expDateRange = monthDbRange(monthParam)
+      expPeriodWhere = { date: { gte: ymdToDbDate(fromParam), lte: ymdToDbDate(toParam) } }
+    } else if (isMonthKey(monthParam)) {
+      expPeriodWhere = targetMonthWhere(monthParam)
     }
     // 카드·계좌 필터 — 쉼표 구분 accountKey 목록(각 값 encodeURIComponent). 있으면 공용 accountKey(시트 그룹핑과 동일 정의)로 걸러낸다.
     const accountsParam = searchParams.get('accounts')
@@ -163,8 +165,10 @@ export async function GET(request: NextRequest) {
       ? new Set(accountsParam.split(',').map(s => decodeURIComponent(s)))
       : null
 
+    // 카드·계좌 필터는 기간 축을 따로 갖지 않는다 — 위 기간 갈래 안에서 거르기만 한다. 카드 대사는 from/to(낸 날)로
+    // 하고, 청구월 단위 대사는 카드 정산 화면(getBillMonth, date 축)이 정본이다.
     const allExpenses = await prisma.expense.findMany({
-      where: { propertyId, ...(expDateRange ? { date: expDateRange } : {}) },
+      where: { propertyId, ...expPeriodWhere },
       include: { financialAccount: { select: { brand: true, alias: true } } },
       orderBy: { date: 'asc' },
     })
@@ -191,10 +195,11 @@ export async function GET(request: NextRequest) {
       // 0건이면 시트가 없어 빈 워크북 쓰기가 실패 — 헤더+합계 0 시트 1장 보장.
       if (ordered.length === 0) XLSX.utils.book_append_sheet(wb, buildExpenseSheet([]), '지출')
     } else if (groupParam === 'month') {
-      // 월별 — 'YYYY-MM' 키로 묶고 오름차순 배치. month 파라미터와 조합되면 그 달 1시트만 나온다(정상).
+      // 월별 — 귀속월 'YYYY-MM' 키로 묶고 오름차순 배치(화면 월 합계와 같은 축). month 파라미터와 조합되면 그 달 1시트만 나온다(정상).
+      // from/to 로 거른 경우 10/1 에 낸 9월분은 '2026-09' 시트에 선다 — 그 시트의 '날짜' 칸이 낸 날을 말한다.
       const buckets = new Map<string, ExpenseRow[]>()
       for (const e of expenses) {
-        const key = expenseMonthKey(e.date)
+        const key = expenseTargetMonth(e)
         const arr = buckets.get(key); if (arr) arr.push(e); else buckets.set(key, [e])
       }
       const ordered = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
@@ -502,6 +507,7 @@ export async function GET(request: NextRequest) {
   }))
 
   // ── 지출 ────────────────────────────────────────────────────────
+  // 현금일 축: 전체 워크북은 수납·기타수익·요청사항과 같은 날짜 창(dateRange)으로 자른 백업이다. 귀속월은 '귀속월' 칸이 말한다.
   const expenses = await prisma.expense.findMany({
     where: { propertyId, ...(dateRange ? { date: dateRange } : {}) },
     include: { financialAccount: { select: { brand: true, alias: true } } },

@@ -12,6 +12,7 @@ import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlia
 import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { getExpenseCategories, noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { cleanUnit } from '@/lib/receiptOcr'
+import { isMonthKey, targetMonthForSave } from '@/lib/expenseTargetMonth'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
@@ -248,6 +249,8 @@ export async function approvePendingReceipt(
   id: string,
   final: {
     date: string; amount: number; category: string
+    // 귀속월 'YYYY-MM' — 승인 카드의 ExpenseTargetMonthField 가 고른 값. 없으면 날짜의 달(NULL).
+    targetMonth?: string
     vendor?: string; memo?: string
     // 재고용 — 있으면 inventory 보충으로도 잡힘
     itemLabel?: string
@@ -284,6 +287,9 @@ export async function approvePendingReceipt(
     //   조건부 updateMany 가 행 잠금을 잡아 직렬화하므로 뒤늦은 요청은 count 0 으로 걸러진다.
     //   같은 파일 finalizePendingReceipt 가 이미 쓰는 문법('중복 등록 방어')과 통일 — 승인만 빠져 있었다.
     //   한 트랜잭션이라 지출 생성이 실패하면 상태 전이도 함께 롤백된다('승인됐는데 지출 없음' 방지).
+    const expDate = new Date(final.date)
+    // 지출 저장 경로(addExpense)와 같은 접기 — 날짜의 달과 같으면 NULL(lib/expenseTargetMonth).
+    const targetMonth = targetMonthForSave(isMonthKey(final.targetMonth) ? final.targetMonth : null, expDate)
     const exp = await prisma.$transaction(async tx => {
       const claim = await tx.pendingReceipt.updateMany({
         where: { id, propertyId, status: 'pending' },
@@ -293,7 +299,8 @@ export async function approvePendingReceipt(
       const e = await tx.expense.create({
         data: {
           propertyId,
-          date: new Date(final.date),
+          date: expDate,
+          targetMonth,
           amount: final.amount,
           category: final.category,
           vendor: final.vendor ?? null,

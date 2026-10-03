@@ -6757,3 +6757,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-03 모바일 뷰포트 결함 3종 (알림 상세 190pt 눌림 · 재고 모달 눌림 · 확인창 위로 밀려남, 운영자 승인)
 - 정본 lib/modalViewport 에 타당성 관문 phantomKeyboardGap(키보드 칸 포커스 없음 + 가림 > KBD_OPEN_PX + 줌 아님)·plausibleVvHeight(거부는 lastGood, 없으면 null, 커지는 값은 회복으로 받음)·insetBand(인셋용, 방향 관문 없음, 첫 읽기 null 이고 편집 중 아니면 인셋 0). bandHeight 가 VvReading 을 받아 마운트 첫 읽기·resize·scroll·복귀 전부 관문 통과. useVisibleBand 가 scale·keyboardCapableFocus(iframe 포함, lib/editableTarget) 를 싣고, 열린 뒤 300ms·1000ms 두 번 + window focus 재동기(자가 회복). ViewportOffsetGuard --kbd-inset 도 같은 관문. 홈 AlertDetailModal 의 환불·독촉 모달을 형제로 꺼냄 + 그물 check-no-nested-overlay(verify:fast, 기존 중첩 7건 KNOWN 대기). 계측: 열린 패널 전부의 top·h·vvh, 확인창 열림·자리·--vv-*. 전수 훑기 17,920 조합 중 편집 중 8,960 조합 종전과 동일(가림 회귀 0), 역주입 15종 빨강. 커밋·실기(iPhone 홈화면·Safari, Android Chrome)는 운영자 몫.
+
+## 2026-10-03 지출 귀속월 결산 3단계 (운영자 승인)
+- 엑셀: month 필터 targetMonthWhere·월별 시트 키 expenseTargetMonth·월 옵션 정본, 지출 시트 '귀속월' 열(YYYY-MM, '날짜' 열 유지). from/to 날짜 범위·전체 워크북·설정 JSON 백업은 '// 현금일 축:' 표지. 영수증 승인 카드(재고 등록)에 정본 귀속월 행(ExpenseTargetMonthField 를 components/ui 로 옮겨 재무 폼과 공유, dense·onPick) + approvePendingReceipt 접기. 일괄 수정 귀속월 select(미변경+조회 달 ±1), 행별 날짜로 접기·고정지출 제외·적용취소 스냅샷. 그물 test-expense-target-month 3단계 블록(역주입 13건 빨강 후 백업 원복). 커밋·웹디자이너 패스·실기는 운영자 몫.

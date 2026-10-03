@@ -56,6 +56,7 @@ import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { expenseTargetMonth, shiftMonthKey, targetMonthLabel } from '@/lib/expenseTargetMonth'
 import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
+import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -234,50 +235,6 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
   if (items.length === 0) return ''
   if (items.length === 1) return fmtItemDetail(items[0])
   return items.map(d => fmtItemDetail(d)).join(', ')
-}
-
-/**
- * 지출 폼 귀속월 행(2026-10-03 운영자 승인 2안). 날짜 행 아래 전폭 한 행이다(반폭 칸이면 320px 에서 캡션이 세 줄로 접힌다).
- * 기본은 접힘이다 — 대부분의 지출은 날짜의 달이 곧 귀속월이다.
- *  · 날짜의 달이 조회 달과 다르면 "10월분으로 기록됩니다 · 9월분으로 바꾸기" 캡션(기록 모달의 캡션+밑줄 액션 문법).
- *  · 같으면 캡션 없이 '귀속월 바꾸기' 밑줄 액션만 — 10월을 보며 10/1 에 낸 9월분을 적는 입구다.
- * 누르면 기록 모달과 같은 귀속월 select(날짜 달 ±1, 해가 같으면 'N월분')가 펼쳐진다. 사람이 고른 적 없으면 값은
- * 날짜의 달을 따라간다(picked=null). 고른 달이 창 밖이면 '(현재)' 옵션으로 남긴다. 수정 폼은 저장된 귀속월이 있으면
- * 처음부터 펼친다. 버튼은 input 이벤트를 안 내므로 폼 dirty 는 onDirty 로 직접 세운다. 서버는 날짜 달과 같으면 NULL 로 접는다.
- */
-function ExpenseTargetMonthField({ date, viewMonth, initial = null, onDirty }: { date: string; viewMonth: string; initial?: string | null; onDirty: () => void }) {
-  const [picked, setPicked] = useState<string | null>(initial)
-  const [open, setOpen] = useState(initial != null)
-  const dateMonth = /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : null
-  if (!dateMonth) return initial ? <input type="hidden" name="targetMonth" value={initial} /> : null
-  const value = picked ?? dateMonth
-  if (!open) {
-    const action = (label: string, next: string | null) => (
-      <button type="button" onClick={() => { setPicked(next); setOpen(true); onDirty() }}
-        className="underline text-[var(--coral)]">{label}</button>
-    )
-    return (
-      <div className="-mt-2">
-        <input type="hidden" name="targetMonth" value={value} />
-        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-          {dateMonth !== viewMonth
-            ? <>{targetMonthLabel(dateMonth, viewMonth)}으로 기록됩니다 · {action(`${targetMonthLabel(viewMonth, dateMonth)}으로 바꾸기`, viewMonth)}</>
-            : action('귀속월 바꾸기', null)}
-        </p>
-      </div>
-    )
-  }
-  const opts = [-1, 0, 1].map(n => shiftMonthKey(dateMonth, n))
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-medium text-[var(--warm-mid)]">귀속월</label>
-      <select name="targetMonth" value={value} onChange={e => setPicked(e.target.value)}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-        {!opts.includes(value) && <option value={value}>{targetMonthLabel(value, dateMonth)} (현재)</option>}
-        {opts.map(m => <option key={m} value={m}>{targetMonthLabel(m, dateMonth)}</option>)}
-      </select>
-    </div>
-  )
 }
 
 // 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
@@ -5514,6 +5471,7 @@ export default function FinanceClient({
         expenseCategories={expenseCategories}
         paymentMethods={effectivePaymentMethods}
         financialAccounts={financialAccounts}
+        viewMonth={targetMonth}
         onClose={() => setShowBatchEdit(false)}
         onDone={() => { setShowBatchEdit(false); exitMergeMode(); router.refresh() }}
       />
@@ -5529,16 +5487,18 @@ export default function FinanceClient({
 
 // ── 지출 일괄 편집 모달 ────────────────────────────────────────────
 // 선택한 지출들의 공통 필드를 한 번에 수정. 전 필드 '미변경' 기본, 채운 항목만 전송(BatchEditTenantsModal 문법 이식).
-function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, onClose, onDone }: {
+function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone }: {
   selectedIds: string[]
   selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null }[]
   expenseCategories: string[]
   paymentMethods: string[]
   financialAccounts: FinancialAccount[]
+  viewMonth: string
   onClose: () => void
   onDone: () => void
 }) {
   const [date, setDate]         = useState('')
+  const [tMonth, setTMonth]     = useState('')      // 귀속월 'YYYY-MM' — 빈 값은 미변경
   const [category, setCategory] = useState('')
   const [payMethod, setPayMethod] = useState('')
   const [accId, setAccId]       = useState('')
@@ -5582,6 +5542,7 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
   // 변경 요약 1줄 — 채운 필드만
   const summarySegs: string[] = []
   if (date) summarySegs.push(`날짜가 ${date}로`)
+  if (tMonth) summarySegs.push(`귀속월이 ${targetMonthLabel(tMonth, viewMonth)}으로`)
   if (category) summarySegs.push(`카테고리가 ${category}로`)
   if (vendor.trim()) summarySegs.push(`구매처가 '${vendor.trim()}'로`)
   if (normalizeBizNo(bizNo)) summarySegs.push(`사업자번호가 ${normalizeBizNo(bizNo)}로`)
@@ -5592,6 +5553,7 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
   const handleApply = async () => {
     const data: Parameters<typeof batchUpdateExpenses>[1] = {}
     if (date) data.date = date
+    if (tMonth) data.targetMonth = tMonth
     if (category) data.category = category
     if (vendor.trim()) data.vendor = vendor.trim()
     // 사업자번호는 10자리 완성분만 전송('미변경' 유지). 자동연동된 값도 함께 전송된다.
@@ -5628,14 +5590,24 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
         {payMethod && settledCardCount > 0 && (
           <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">정산완료된 카드 지출 {settledCardCount}건이 포함되어 있습니다. 결제수단을 변경하면 정산 상태가 다시 계산됩니다.</p>
         )}
-        {date && recurringCount > 0 && (
-          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">고정지출에서 기록된 지출 {recurringCount}건은 날짜 변경에서 제외됩니다.</p>
+        {(date || tMonth) && recurringCount > 0 && (
+          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">고정지출에서 기록된 지출 {recurringCount}건은 {date && tMonth ? '날짜·귀속월' : date ? '날짜' : '귀속월'} 변경에서 제외됩니다.</p>
         )}
 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">날짜</label>
           <DatePicker value={date} onChange={setDate} placeholder="미변경" className={inputCls} />
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">다른 달로 변경하면 이 달 목록에서는 보이지 않습니다.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">귀속월을 따로 두지 않은 지출은 다른 달로 변경하면 이 달 목록에서 보이지 않습니다.</p>
+        </div>
+
+        {/* 귀속월 — 행마다 날짜가 달라 서버가 행별로 접는다(새 날짜의 달과 같으면 NULL). 고정지출 기록은 회차가 옮겨지므로 제외. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">귀속월</label>
+          <select value={tMonth} onChange={e => setTMonth(e.target.value)} className={inputCls}>
+            <option value="">미변경</option>
+            {[-1, 0, 1].map(n => shiftMonthKey(viewMonth, n)).map(m => <option key={m} value={m}>{targetMonthLabel(m, viewMonth)}</option>)}
+          </select>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">{date ? '어느 달 지출로 셀지가 바뀝니다.' : '날짜는 그대로, 어느 달 지출로 셀지만 바뀝니다.'}</p>
         </div>
 
         <div className="space-y-1.5">

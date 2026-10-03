@@ -1570,3 +1570,13 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [ ] 기존 중첩 7건(재무 MergeSheet·재고 이동 둘·서류 시트 넷) 꺼낼지 운영자 결정
 - [ ] 실기(iPhone 홈화면 앱·Safari, Android Chrome) — 운영자
 - [ ] 커밋(운영자)
+
+# 지출 귀속월 결산 3단계 — 운영자 승인 2026-10-03
+- [x] 엑셀 month 필터·월별 시트 키·월 옵션을 귀속월 정본으로, 지출 시트 '귀속월' 열(YYYY-MM)
+- [x] 날짜 범위(from/to)·전체 워크북·설정 JSON 백업 '// 현금일 축:' 표지, 카드·계좌 필터는 기간 축을 따로 안 가짐(대사는 from/to·카드 정산)
+- [x] ExpenseTargetMonthField → components/ui(재무 등록·수정 폼과 영수증 승인 카드 공유), 승인 서버 targetMonthForSave
+- [x] 일괄 수정 귀속월 select·캡션, 행별 접기, 고정지출 제외, 적용취소 스냅샷
+- [x] 그물 3단계 블록 + 역주입 13건 빨강 후 백업 원복, knowledge 노트·Work_log
+- [x] 게이트(tsc · verify:fast · test-money 350 · drift 읽기 · eslint 신규 0)
+- [ ] 웹디자이너 패스(승인 카드 dense 행·일괄 편집 귀속월 칸) — 운영자
+- [ ] 모바일 폭 실기 · 커밋(운영자)
