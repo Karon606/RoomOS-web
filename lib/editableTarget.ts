@@ -21,3 +21,17 @@ export function editableFocused(): boolean {
   if (typeof document === 'undefined') return false
   return isEditableTarget(document.activeElement)
 }
+
+/**
+ * 지금 소프트 키보드가 떠 있을 **수 있는가** — 편집 요소, 또는 iframe 에 포커스가 있다.
+ *
+ * editableFocused 와 다른 점은 iframe 하나다. iframe 안쪽 칸에 선 포커스는 바깥 문서에서
+ * `activeElement === <iframe>` 으로만 보인다(PeekSheet). 띠 타당성 관문(lib/modalViewport
+ * phantomKeyboardGap)이 이것을 묻는다 — iframe 을 '칸 없음'으로 치면 그 안에서 키보드가 서는
+ * 진짜 축소를 낡은 값으로 거부해 키보드가 칸을 덮는다. 거부를 피하는 쪽으로만 넓힌다(2026-10-03).
+ */
+export function keyboardCapableFocus(): boolean {
+  if (typeof document === 'undefined') return false
+  const a = document.activeElement
+  return isEditableTarget(a) || a instanceof HTMLIFrameElement
+}

@@ -121,6 +121,9 @@ export function ConfirmHost() {
     >
       <div
         ref={panelRef}
+        // 계측 손잡이 — 오류신고가 확인창의 열림·자리·띠 변수를 함께 담을 때 이 표식으로 찾는다
+        // (lib/viewportProbe, 2026-10-03). 스타일은 붙지 않는다.
+        data-confirm-panel=""
         role="alertdialog" aria-modal="true" aria-label={opts.title}
         className="bg-[var(--cream)] rounded-2xl shadow-lift w-full anim-panel-in flex flex-col"
         style={{

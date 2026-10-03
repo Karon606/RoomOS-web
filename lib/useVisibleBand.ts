@@ -15,10 +15,15 @@
 // 방향 관문(줄이는 것은 resize 에서만)은 **패널 높이만** 지난다. 09-16 에 둘을 한 값으로 묶었다가
 // 반대쪽이 터졌다 — 키보드가 서서 띠가 진짜 줄어든 팬 프레임에서 인셋이 '키보드 없음'이라 답해
 // 패널이 키보드 밑까지 뻗었다(신고 2026-09-17). 한 스냅샷을 한 번만 읽는 규칙은 그대로다.
+//
+// **위생 검사에 타당성 관문이 붙었다(2026-10-03).** 키보드 칸에 포커스가 없는데 키보드만큼 준
+// 띠는 낡거나 찢어진 값으로 본다(정본 phantomKeyboardGap). 마운트 첫 읽기·vv resize·scroll·복귀
+// 전부에 걸리고, 높이와 인셋 둘 다 지난다 — 뜻이 '불가능값 거르기'라 위생 검사 쪽이다. 그리고
+// 열린 뒤 몇 번(300ms·1000ms, focus) 다시 읽어 vv 가 정상으로 돌아왔으면 바로 고친다(자가 회복).
 
 import { useEffect, type RefObject } from 'react'
-import { overlayInsets, bandHeight, usableVvHeight, resumeAllowsShrink } from '@/lib/modalViewport'
-import { editableFocused } from '@/lib/editableTarget'
+import { overlayInsets, bandHeight, insetBand, resumeAllowsShrink, type VvReading } from '@/lib/modalViewport'
+import { editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 
 export function useVisibleBand(opts: {
   active: boolean
@@ -53,8 +58,8 @@ export function useVisibleBand(opts: {
     // 규칙 둘은 종전 그대로고(실측 2026-08-29), 판정은 정본 bandHeight 한 자리에서 한다.
     //   · 불가능값(120 미만)은 버리고 직전 유효값을 쓴다 — usableVvHeight.
     //   · **줄이는 것은 resize 에서만, 늘리는 것은 언제든** — shouldWriteVvHeight.
-    const gatedHeight = (height: number, allowShrink: boolean): number | null => {
-      const h = bandHeight(height, lastGoodH, allowShrink)
+    const gatedHeight = (r: VvReading, allowShrink: boolean): number | null => {
+      const h = bandHeight(r, lastGoodH, allowShrink)
       if (h != null) lastGoodH = h
       return h
     }
@@ -89,23 +94,25 @@ export function useVisibleBand(opts: {
       if (top !== lastTop) { ov.style.setProperty(varTop, top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty(varBottom, bottom); lastBottom = bottom }
     }
-    // **한 스냅샷, 관문 둘.** 세 항을 같은 순간에 한 번씩만 읽어(찢어짐 방지) 패널 높이는
-    // bandHeight(위생 + 방향)를, 인셋은 usableVvHeight(위생만)를 지난다. 읽는 자리가 여기
+    // **한 스냅샷, 관문 둘.** 다섯 항을 같은 순간에 한 번씩만 읽어(찢어짐 방지) 패널 높이는
+    // bandHeight(위생·타당성 + 방향)를, 인셋은 insetBand(위생·타당성만)를 지난다. 읽는 자리가 여기
     // 하나뿐이라 둘이 **다른 프레임**의 값을 섞을 길은 없다 — 같은 프레임에서 뜻이 갈릴 뿐이고,
     // 그 갈림이 의도다. 아래 sync 호출부에 이유를 적어 뒀다.
     const pass = (allowShrink: boolean) => {
-      const height = vv.height
       const offsetTop = vv.offsetTop
       const innerHeight = window.innerHeight
-      const h = gatedHeight(height, allowShrink)
+      // 타당성 관문의 재료(scale·포커스)도 같은 순간에 싣는다 — 판정은 정본 phantomKeyboardGap.
+      const r: VvReading = { height: vv.height, innerHeight, scale: vv.scale, editing: keyboardCapableFocus() }
+      const h = gatedHeight(r, allowShrink)
       syncSize(h)
       // **인셋은 위생 검사만 지나고 방향 관문은 안 지난다**(신고 2026-09-17, 09-16 회귀 수정).
       // 09-16 에 높이와 인셋을 한 값으로 묶었더니 반대쪽이 터졌다. 방향 관문(줄이는 것은 resize
       // 에서만)은 **패널 높이에만 맞는 규칙**이다. 인셋에 걸면, 키보드가 서서 띠가 진짜 줄어든
       // 팬 프레임에서 관문이 작아진 값을 거부하고 인셋까지 '키보드 없음'이라 답한다 — 패널이
       // 키보드 밑까지 뻗어 입력 칸이 덮인다(전수 훑기 실측: 띠 416 에서 패널 384 -> 780).
-      // 위생 검사(불가능값 버리기)는 인셋에도 필요하다 — 그 문이 bf0a6fff 를 막는다.
-      sync(usableVvHeight(height, lastGoodH), offsetTop, innerHeight)
+      // 위생 검사(불가능값 버리기)는 인셋에도 필요하다 — 그 문이 bf0a6fff 를 막는다. 타당성 관문도
+      // 같은 문이다(2026-10-03, 확인창이 낡은 --vv-bottom 에 화면 위로 밀려나던 자리).
+      sync(insetBand(r, lastGoodH), offsetTop, innerHeight)
     }
     // vv 의 resize — 키보드가 서서 띠가 진짜 주는 길이다. 여기서는 줄이는 값을 받는다(8-29 규칙).
     const both = () => pass(true)
@@ -125,20 +132,30 @@ export function useVisibleBand(opts: {
     const resync = () => { resyncPass(1); requestAnimationFrame(() => resyncPass(2)) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
     both()
+    // **자가 회복(2026-10-03).** 마운트 순간의 vv 가 낡았는데 그 뒤로 vv 이벤트가 하나도 안 오면
+    // 종전에는 그 값이 닫힐 때까지 남았다. 열린 뒤 두 번만(300ms·1000ms) 다시 읽는다. 마감이 아니라
+    // **다시 묻기**라 벽시계 금지(2026-09-08)의 대상이 아니다 — 시간이 지났다고 무엇을 끝내거나 걷지
+    // 않고, 그 순간의 vv 를 같은 관문에 한 번 더 넣을 뿐이다. 반복 폴링은 안 한다. 축소는 안 받는다
+    // (onPan 과 같은 방향 규칙) — 커지는 회복과 첫 채움, 그리고 인셋만 바로잡는다.
+    const healTimers = [300, 1000].map(ms => window.setTimeout(onPan, ms))
     vv.addEventListener('resize', both)
     vv.addEventListener('scroll', onPan)
     window.addEventListener('pageshow', resync)
     window.addEventListener('resize', resync)
     window.addEventListener('orientationchange', resync)
+    // 복귀 신호를 하나 더 듣는다 — visibilitychange·pageshow 가 빠지거나 늦는 복귀 경로 대비(2026-10-03 사양).
+    window.addEventListener('focus', resync)
     document.addEventListener('visibilitychange', onVisibility)
     const panelEl = panelRef?.current
     const overlayEl = overlayRef.current
     return () => {
+      for (const t of healTimers) window.clearTimeout(t)
       vv.removeEventListener('resize', both)
       vv.removeEventListener('scroll', onPan)
       window.removeEventListener('pageshow', resync)
       window.removeEventListener('resize', resync)
       window.removeEventListener('orientationchange', resync)
+      window.removeEventListener('focus', resync)
       document.removeEventListener('visibilitychange', onVisibility)
       panelEl?.style.removeProperty(varHeight)
       overlayEl?.style.removeProperty(varTop)

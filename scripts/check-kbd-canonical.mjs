@@ -149,9 +149,10 @@ need('lib/useVisibleBand.ts', [
     if (!syncCall) {
       violations.push('lib/useVisibleBand.ts — sync 를 부르는 자리를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
     } else {
+      // 2026-10-03 — 위생 검사 자리가 insetBand(위생 + 타당성)로 넓어졌다. 방향 관문은 여전히 안 지난다.
       const arg = syncCall[1].trim()
-      if (!/^usableVvHeight\(/.test(arg)) {
-        violations.push(`lib/useVisibleBand.ts — sync 의 첫 인자가 usableVvHeight(...) 가 아니라 '${arg}' 다. 인셋은 위생 검사만 지나야 한다 — 방향 관문(bandHeight)까지 지나면 키보드가 선 프레임에서 되레 가린다(신고 2026-09-17)`)
+      if (!/^insetBand\(/.test(arg)) {
+        violations.push(`lib/useVisibleBand.ts — sync 의 첫 인자가 insetBand(...) 가 아니라 '${arg}' 다. 인셋은 위생·타당성 관문만 지나야 한다 — 방향 관문(bandHeight)까지 지나면 키보드가 선 프레임에서 되레 가린다(신고 2026-09-17)`)
       }
     }
     // (4) 한 스냅샷 — 세 항을 읽는 자리는 pass 하나뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
@@ -161,6 +162,54 @@ need('lib/useVisibleBand.ts', [
     }
   }
 }
+// 3-d) 타당성 관문(2026-10-03, 운영자 iPhone 하루 3회 — 패널 190pt 눌림 · 확인창이 위로 밀려남).
+// 키보드 칸에 포커스가 없는데 키보드만큼 준 띠를 낡은 값으로 거른다. 마운트 첫 읽기가 lastGood 0
+// 이라 무엇이든 받던 구멍이다. 높이(bandHeight)와 인셋(insetBand)이 둘 다 지나야 하고, 인셋 쪽이
+// 방향 관문을 지나면 67f91325 회귀가 되살아난다. 키보드 가드도 같은 정본을 묻는다.
+{
+  let mv = ''
+  try { mv = strip(readFileSync('lib/modalViewport.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const body = name => {
+    const at = mv.indexOf(`export function ${name}(`)
+    if (at < 0) return null
+    let depth = 0, start = -1
+    for (let i = mv.indexOf(')', at); i < mv.length; i++) {
+      if (mv[i] === '{') { if (depth === 0) start = i; depth++ }
+      else if (mv[i] === '}') { depth--; if (depth === 0) return mv.slice(start, i) }
+    }
+    return null
+  }
+  const gap = body('phantomKeyboardGap')
+  if (gap == null) violations.push('lib/modalViewport.ts — 정본 phantomKeyboardGap 이 사라짐. 칸 없는 키보드 높이가 다시 박힌다')
+  else {
+    if (!/\.editing\b/.test(gap)) violations.push('lib/modalViewport.ts — phantomKeyboardGap 이 포커스를 안 묻는다. 진짜 키보드까지 거부해 칸이 덮인다')
+    if (!/ZOOM_NEUTRAL_SCALE/.test(gap)) violations.push('lib/modalViewport.ts — phantomKeyboardGap 이 핀치 줌을 안 가린다. 줌의 정당한 축소를 거부한다')
+    if (!/KBD_OPEN_PX/.test(gap)) violations.push('lib/modalViewport.ts — phantomKeyboardGap 이 키보드 문턱 정본(KBD_OPEN_PX)을 안 쓴다')
+  }
+  const plaus = body('plausibleVvHeight')
+  if (plaus == null || !/phantomKeyboardGap\(/.test(plaus)) violations.push('lib/modalViewport.ts — plausibleVvHeight 가 타당성 관문(phantomKeyboardGap)을 안 지난다')
+  const band = body('bandHeight')
+  if (band == null || !/plausibleVvHeight\(/.test(band)) violations.push('lib/modalViewport.ts — bandHeight 가 plausibleVvHeight 를 안 지난다. 마운트 첫 읽기에 낡은 띠가 박힌다')
+  const inset = body('insetBand')
+  if (inset == null || !/plausibleVvHeight\(/.test(inset)) violations.push('lib/modalViewport.ts — insetBand 가 plausibleVvHeight 를 안 지난다. 확인창이 낡은 인셋에 밀려난다')
+  else if (/bandHeight\(|shouldWriteVvHeight\(/.test(inset)) violations.push('lib/modalViewport.ts — insetBand 가 방향 관문을 지난다. 키보드가 선 팬 프레임에서 인셋이 키보드 없음이라 답해 칸이 덮인다(67f91325)')
+}
+need('lib/useVisibleBand.ts', [
+  [/vv\.scale/, '타당성 관문에 핀치 줌 배율(vv.scale)을 안 싣는다'],
+  [/keyboardCapableFocus\(\)/, '타당성 관문에 포커스(iframe 포함)를 안 싣는다'],
+  [/setTimeout\(/, '자가 회복(열린 뒤 다시 읽기)이 사라짐. 마운트 순간의 낡은 띠가 닫힐 때까지 남는다'],
+  [/addEventListener\(['"]focus['"]/, '앱 복귀 focus 재동기가 사라짐'],
+])
+need('components/layout/ViewportOffsetGuard.tsx', [
+  [/phantomKeyboardGap\(/, '키보드 인셋(--kbd-inset)이 타당성 관문을 안 지난다. 칸 없는 키보드 높이가 모달 아래 폴백으로 샌다'],
+  [/keyboardCapableFocus\(\)/, '키보드 인셋 관문에 포커스(iframe 포함)를 안 싣는다'],
+  // 호출만 남고 판정에 안 쓰이는 되돌림까지 잡는다(역주입 2026-10-03 — 낱말만 보면 초록이었다).
+  [/if\s*\(\s*!keyboardOpen\(s\)\s*\|\|\s*phantom\s*\)/, '타당성 판정(phantom)이 닫힘 분기에 안 쓰인다. 칸 없는 키보드 높이가 --kbd-inset 으로 적힌다'],
+])
+need('lib/editableTarget.ts', [
+  [/HTMLIFrameElement/, 'keyboardCapableFocus 가 iframe 을 편집 중으로 안 친다. PeekSheet 안에서 키보드가 칸을 덮는다'],
+])
+
 // 편집 포커스 판정은 한 곳에서만 한다 — 두 소유자가 생기면 한쪽만 참인 구간에서 어긋난다.
 need('lib/editableTarget.ts', [
   [/export function isEditableTarget\(/, '편집 요소 판정 정본이 사라짐'],
@@ -229,6 +278,16 @@ need('components/ErrorReportButton.tsx', [
 ])
 need('components/ui/Modal.tsx', [
   [/data-modal-panel/, '계측이 모달을 찾을 손잡이가 사라짐(lib/viewportProbe 가 이 표식으로 읽는다)'],
+])
+// 패널 전부와 확인창(2026-10-03) — 마지막 패널(신고창 자신)만 읽어 눌린 아래 모달의 값이 안 남았다.
+need('lib/viewportProbe.ts', [
+  [/panels\.forEach\(/, '열린 패널을 전부 안 담는다. 신고창 아래 눌린 모달의 자리가 안 남는다'],
+  [/getBoundingClientRect\(\)/, '패널 자리(top·height)를 안 담는다'],
+  [/\[data-confirm-panel\]/, '확인창 열림·자리를 안 담는다'],
+  [/--vv-bottom/, '확인창 아래 인셋 변수를 안 담는다'],
+])
+need('components/ui/ConfirmDialog.tsx', [
+  [/data-confirm-panel/, '계측이 확인창을 찾을 손잡이가 사라짐(lib/viewportProbe 가 이 표식으로 읽는다)'],
 ])
 
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)

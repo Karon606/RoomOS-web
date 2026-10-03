@@ -1555,3 +1555,18 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 2 등록·수정 폼 귀속월(다를 때만 펼침), addExpense/updateExpense 전파, 고정지출 중복 가드
 - [x] 그물 확장, 전후 대조(9월 +176,030 · 10월 −176,030 · 나머지 0), 노트·주석 개정
 - [x] 게이트 + 웹디자이너 패스(차단 2·권고 5 반영) + 배포
+
+# 모바일 뷰포트 결함 3종 — 타당성 관문 일반화·자가 회복·계측 (2026-10-03, 운영자 승인 '다 진행')
+증상: 15:38 알림 상세 패널 190pt 눌림 · 16:25 재고 품목 모달 눌림 · 16:31 확인창이 화면 위로 밀려나 막만 남음.
+- [x] 정본 phantomKeyboardGap · plausibleVvHeight · insetBand, bandHeight(VvReading)
+- [x] useVisibleBand: scale·keyboardCapableFocus 싣기, 인셋 insetBand, 자가 회복(300·1000ms, focus)
+- [x] keyboardCapableFocus(iframe 포함) — PeekSheet 회귀 방지
+- [x] ViewportOffsetGuard --kbd-inset 같은 관문(70% 클램프 유지)
+- [x] AlertDetailModal 의 CheckoutRefundModal·UnpaidSmsModal 형제로 꺼냄 + check-no-nested-overlay(verify:fast)
+- [x] viewportProbe 패널 전수·확인창 줄, ConfirmDialog data-confirm-panel
+- [x] test-modal-viewport 표·전수 훑기(편집 중 종전과 동일), check-kbd-canonical 축 확장, 역주입 15종 빨강 후 백업 원복
+- [x] knowledge/domain-modal-shell 절, Work_log
+- [x] 게이트(tsc · verify:fast · eslint 신규 0)
+- [ ] 기존 중첩 7건(재무 MergeSheet·재고 이동 둘·서류 시트 넷) 꺼낼지 운영자 결정
+- [ ] 실기(iPhone 홈화면 앱·Safari, Android Chrome) — 운영자
+- [ ] 커밋(운영자)

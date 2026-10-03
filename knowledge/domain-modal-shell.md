@@ -12,7 +12,7 @@
 
 | 조각 | 무엇을 지나 | 소유자 |
 |---|---|---|
-| 기하 순수 함수 | `overlayInsets` · `usableVvHeight` · `shouldWriteVvHeight` · `resumeAllowsShrink` · `bandHeight` | `lib/modalViewport.ts` |
+| 기하 순수 함수 | `overlayInsets` · `usableVvHeight` · `shouldWriteVvHeight` · `resumeAllowsShrink` · `bandHeight` · `phantomKeyboardGap` · `plausibleVvHeight` · `insetBand`(2026-10-03) | `lib/modalViewport.ts` |
 | 띠 동기화 훅 | `--vv-top` · `--vv-bottom` · `--vv-h` 를 명령형으로 적는다 | `lib/useVisibleBand.ts` |
 | 등장 마감 훅 | `.anim-overlay-in` · `.anim-panel-in` 을 **끝난 것을 확인하고** 뗀다 | `lib/useSettleEntrance.ts` |
 | 모션 판정 정본 | "지금 돌고 있는가" · "어떻게든 끝났는가" | `lib/animationSettled.ts` |
@@ -141,8 +141,9 @@
 **그래서 (나) 봉합은 여전히 "이번에 발동한 경로"를 막은 것이다.** 지문(가로 320pt 정확 · 세로만
 무너짐)도 (나) 쪽에 맞는다 — 중첩 + 굳음에서는 스케일이 걸려 가로가 319 로 나온다.
 
-**그래도 규칙 하나가 남는다. 겹친 모달을 바깥 모달 JSX 안에 렌더하지 않는다.** 지금은 아무 데도
-그렇게 안 하고 있지만, 한 번 그렇게 쓰는 순간 위 넷째 행이 된다. 같은 이유로
+**그래도 규칙 하나가 남는다. 겹친 모달을 바깥 모달 JSX 안에 렌더하지 않는다.** 이 노트를 쓸 때
+"아무 데도 그렇게 안 한다"고 적었는데 **틀렸다**(2026-10-03 그물을 세우며 전수: 9건). 한 번 그렇게
+쓰는 순간 위 넷째 행이 된다. 아래 '2026-10-03' 절과 그물 `check-no-nested-overlay` 를 볼 것. 같은 이유로
 `app/contract/[tenantId]/ContractView.tsx:1002` 의 "이 모달과 그 조상에 CSS transform 을 절대
 걸지 말 것"이 서 있다 — 거기서는 서명 좌표가 어긋나고, 여기서는 기준 상자가 바뀐다. 한 원인이다.
 
@@ -172,9 +173,10 @@
 
 | 그물 | 무엇을 본다 |
 |---|---|
-| `scripts/test-modal-viewport.ts` (68건) | 기하 순수 함수. 팬 불변 · 두 항의 상한 · 높이 위생 · 쓰기 방향 · **관문을 지난 인셋** |
+| `scripts/test-modal-viewport.ts` (100건) | 기하 순수 함수. 팬 불변 · 두 항의 상한 · 높이 위생 · 쓰기 방향 · **관문을 지난 인셋** · 타당성 관문 표 · **전수 훑기 17,920 조합**(편집 중 종전과 동일 · 편집 밖 차이는 전부 관문 사유 · 패널을 작게 만드는 조합 0) |
 | `scripts/check-kbd-canonical.mjs` | 배선. 정본 호출 · 두 항의 `Math.min` · `bandHeight` 통과 · **`sync` 사거리에 `vv` 접근 금지**(본문을 중괄호 깊이로 자른다) · 계측 배선과 벽시계 금지 |
 | `scripts/check-overlay-resume-resync.mjs` | 퇴장 타이머 · 등장 마감. **ref 가 등장 클래스를 단 바로 그 엘리먼트에 붙었는가**(호출도 태그도 전수) · 붙는 시점 확인 · **이름으로 거르는가** · `allSettled` · 벽시계 금지 |
+| `scripts/check-no-nested-overlay.mjs` (2026-10-03) | `<Modal>` 자식 자리에 `Modal`·`*Modal`·`*Dialog`·`*Sheet`·`*Host` 태그 금지. 기존 7건 KNOWN(케케묵음 검사 포함) |
 | `scripts/check-overlay-backdrop.mjs` (신설) | 막의 **존재 · 농도 값 · z 순서**. 층 토큰이 실재하는가 · 등장 클래스가 시작 프레임을 붙잡지 않는가 · **등장 모션이 실제로 도는가**(`.anim-X { animation: X <길이> }`) |
 
 **호출 한 줄만 보는 그물은 그물이 아니다.** `check-overlay-resume-resync` 의 등장 절은 여태
@@ -246,6 +248,100 @@ inset-0` 을 같이 요구해서 `app/contract/[tenantId]/ContractView.tsx` 의 
 
 ---
 
+## 2026-10-03 — 낡은 띠가 첫 읽기에 박혔다 (운영자 iPhone 하루 3회)
+
+### 증상 셋 — 한 클래스다
+
+| 시각 | 화면 | 무엇이 보였나 |
+|---|---|---|
+| 15:38 | 홈 알림 상세(AlertDetailModal) | 패널이 화면 위쪽에 약 190pt 높이로 눌림. 가로·딤 정상, 버튼 잘림 |
+| 16:25 | 재고 품목(쌀) 모달 | 같은 높이로 눌림, 내용(재고 점검 버튼)이 패널 밖으로 삐져나옴 |
+| 16:31 | 같은 재고 모달 위 확인창 | 모달은 정상 높이인데 화면 전체가 막에 덮여 먹통. 맨 위에 '취소'·'실행 취소' 버튼 아랫부분만 = 확인창 패널이 화면 위로 밀려남 |
+
+앞의 둘은 `--modal-vvh`(패널 상한)가, 셋째는 `--vv-bottom`(확인창 아래 인셋)이 낡은 작은 띠로 찍힌
+모양이다. 확인창 오버레이는 `paddingBottom: calc(1rem + var(--vv-bottom))` 라 띠가 190 으로 찍히면
+아래 인셋이 684 가 되어 content box 가 화면 위쪽 짧은 띠로 줄고 패널이 위로 밀려난다(테스트에 그
+값을 그대로 넣었다).
+
+### 왜 막히지 않았나
+
+- **첫 읽기는 무엇이든 받았다.** 마운트 직후 `both()` = `pass(true)` 이고 `lastGoodH = 0` 이라
+  `shouldWriteVvHeight` 가 무조건 참이다. 뒤에 vv 이벤트가 하나도 안 오면 그 값이 닫힐 때까지 남는다.
+- **'칸이 없으면 줄어들 리 없다'는 복귀 2패스에만 있었다**(`resumeAllowsShrink`). 첫 읽기·vv resize·
+  scroll 에는 없었다.
+- **위생 하한이 120 이라** 120~800 이 전부 통과했다. 190 은 위생 검사의 눈에 정상이다.
+- 훅이 `vv.scale` 을 안 봤다. `vv.height < 120` 이면 인셋을 안 써서 Modal 아래 폴백 `--kbd-inset` 이
+  드러났는데, 그 값을 적는 가드도 포커스를 안 묻고 '열림'으로 읽었다.
+
+### 봉합 — 관문을 일반화한다
+
+`phantomKeyboardGap(r)` — **가림 > `KBD_OPEN_PX` 인데 키보드를 부를 곳에 포커스가 없고 줌이 아니면**
+그 띠는 실재가 아니다. 판정 재료는 한 프레임 읽기 `VvReading { height, innerHeight, scale, editing }`.
+
+- `plausibleVvHeight` — 위생 검사 + 이 관문. 거부는 `lastGood`(없으면 `null` → 100dvh 폴백). 거부된
+  값이라도 `lastGood` 보다 **크면** 받는다(키보드가 내려가는 중이거나 회복 중. 오염은 늘 작은 쪽).
+- `bandHeight(r, lastGood, allowShrink)` — 패널 높이. 위 관문 + 방향 관문. 마운트 첫 읽기도 지난다.
+- `insetBand(r, lastGood)` — 인셋. 위 관문까지만, **방향 관문은 안 지난다**(67f91325 교훈 그대로).
+  다른 점 하나: 아직 믿을 값이 없고 편집 중도 아니면 띠 = 화면 전체(인셋 0)로 답한다. null 로 두면
+  Modal 이 낡은 `--kbd-inset` 폴백을 쓰기 때문이다. 편집 중이면 종전대로 null — 가드가 잰 키보드
+  인셋을 지우면 칸이 덮인다.
+- **iframe 포커스는 편집 중으로 친다**(`keyboardCapableFocus`, `lib/editableTarget`). PeekSheet 안쪽
+  칸의 포커스는 바깥에서 `<iframe>` 으로만 보인다. 기존 `editableFocused` 는 그대로 두었다(복귀
+  재동기의 뜻이 달라지므로).
+- `ViewportOffsetGuard` 의 `--kbd-inset` 도 같은 정본을 묻는다 — 칸 없는 키보드 높이는 닫힘으로 친다.
+  70% 클램프(`overlapInset`)는 그대로다. 복원(`restore`)은 엡실론 판정이라 이 경로에서 화면을 안 되감는다.
+
+**뜻으로 갈랐다.** 이 관문은 '불가능값 거르기'라 위생 검사 쪽이고, 그래서 높이와 인셋이 **둘 다**
+지난다. 방향 관문은 여전히 높이 전용이다. 키보드가 진짜 열려 있으면 포커스가 반드시 있어 관문이
+꺼지므로, 그 경로는 종전과 한 글자도 안 달라진다 — 전수 훑기 17,920 조합 중 편집 중 8,960 조합이
+종전과 동일하다(가림 회귀 0). 편집 밖에서 달라진 1,888 조합은 전부 관문 사유이고, 패널을 종전보다
+작게 만드는 조합은 0 이다.
+
+### 자가 회복 — 열린 뒤 몇 번만 다시 묻는다
+
+열린 뒤 300ms·1000ms 두 번, 그리고 window `focus`(기존 pageshow·visibilitychange·resize 에 더해)에
+vv 를 다시 읽어 같은 관문에 넣는다. 300·1000 은 `onPan` 과 같은 규칙(축소 안 받음)이라 커지는 회복과
+첫 채움, 인셋만 바로잡는다. **벽시계 금지(2026-09-08)와 부딪치지 않는다** — 그 결정은 "시간이 지났으니
+끝났다"로 무엇을 걷거나 마감하는 것을 막는다. 여기서는 시간이 무엇도 끝내지 않고, 그 순간의 값을
+한 번 더 물을 뿐이다. 반복 폴링은 안 한다.
+
+### 겹친 모달 — 노트가 틀렸었다
+
+(다) 절에 "지금은 아무 데도 그렇게 안 한다"고 적었는데, 그물을 세우며 전수해 보니 9건이었다.
+알림 상세의 환불 확인(`CheckoutRefundModal`)·독촉 문자(`UnpaidSmsModal`) 둘은 Fragment 로 꺼내 형제로
+두었다(운영자 승인 범위). 나머지 7건(재무 `MergeSheet` · 재고 `TransferStockModal`·`LocationMoveModal` ·
+서류 `IssuedContractSheet`·`TenantDocBundleSheet` 안의 시트 둘 · `EntityModal` 의 `TenantDocBundleSheet`)은
+`check-no-nested-overlay` 의 KNOWN 목록에 묶어 새 중첩만 막는다. 꺼낼지는 운영자 결정 대기다.
+꺼낼 때는 React 합성 이벤트가 이제 바깥 패널의 `stopPropagation` 을 안 지난다는 점을 본다 — 형제로
+나간 모달의 막 클릭이 그 위 조상의 onClick 까지 올라간다(알림 상세는 조상에 핸들러가 없음을 확인).
+
+### 계측 보강 — 눌린 아래 모달의 값이 한 번도 안 남았다
+
+`viewportProbe` 의 vars 줄은 마지막 패널, 곧 **신고창 자신**만 읽었다. 이제 같은 블록에 줄이 더 붙는다.
+
+```
+panel1 top=90 h=190 vvh=190px
+panel2 top=59 h=640 vvh=812px
+confirm open=y top=-120 h=180 vv-top=0px vv-bottom=684px vv-h=812px
+```
+
+패널 줄은 열린 패널마다 하나, DOM 순서다(마지막이 가장 위, 보통 신고창). 확인창이 없으면
+`confirm open=n` 한 줄이다.
+
+읽는 법. 아래 패널의 `vvh` 가 화면보다 크게 작고 `focus` 줄이 BODY·BUTTON 이면 이번 클래스다. 이번
+봉합 뒤에는 그 조합이 나오면 안 된다 — 나온다면 관문을 지나지 않는 다른 쓰기 경로가 있다는 뜻이다.
+확인창이 `top` 음수 · `vv-bottom` 큼이면 16:31 의 지문이다.
+
+### 남은 것
+
+- 실기 확인(iPhone 홈 화면 앱 · Safari, Android Chrome). 헤드리스로는 iOS 의 vv 를 못 만든다.
+- 근본 원인(왜 iOS 가 마운트 순간에 작은 vv 를 냈나)은 여전히 미확정이다. 이번 봉합은 그 값을 **안
+  믿는** 쪽이고, 계측 보강이 다음 재현에서 그것을 사실로 바꾼다.
+- `lastGood` 자체가 키보드 열림 때 값이고 그 뒤 vv 가 영영 안 돌아오면, 패널은 그 값에 남는다(관문이
+  커지는 쪽만 받으므로). 자가 회복이 vv 가 정상으로 돌아오는 순간을 잡는다.
+
+---
+
 ## 손댈 때의 순서
 
 1. **쓰는 이 여덟을 다시 센다.** 훅을 고치면 전부 움직인다.
@@ -262,7 +358,10 @@ inset-0` 을 같이 요구해서 `app/contract/[tenantId]/ContractView.tsx` 의 
    맞았다. `pass(2)` 가 바로잡아 한두 프레임이지만, 헤드리스 "정상 경로 픽셀 동일" 표에 이
    구간이 없다(2026-09-17 독립 검수 지적, 미측정). 키보드를 올린 채 회전이 그 자리다.
 7. **겹친 모달을 바깥 모달 JSX 안에 렌더하지 않는다.** 위 (다) 를 볼 것 — 굳은 `transform` 이
-   자손 `fixed` 의 기준 상자가 된다. 지금은 전부 형제라 안 걸리고, 한 번 안에 넣는 순간 걸린다.
+   자손 `fixed` 의 기준 상자가 된다. 그물 `check-no-nested-overlay` 가 새 중첩을 막는다(기존 7건은
+   KNOWN 목록으로 운영자 결정 대기, 2026-10-03).
+8. **타당성 관문을 건드리면 전수 훑기를 다시 돌린다.** `test-modal-viewport` 의 전수 절이 '편집 중
+   조합은 종전과 한 글자도 안 다르다'를 단언한다. 그것이 깨지면 키보드 가림이 되살아난 것이다.
 
 ## 관련 노트
 

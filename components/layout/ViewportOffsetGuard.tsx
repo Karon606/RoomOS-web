@@ -37,7 +37,8 @@
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
 import { keyboardOpen, overlapInset, shouldRestore, revealDelta, type KbdSnapshot } from '@/lib/keyboardViewport'
-import { isEditableTarget, editableFocused } from '@/lib/editableTarget'
+import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
+import { phantomKeyboardGap } from '@/lib/modalViewport'
 
 const KBD_INSET = '--kbd-inset'
 // 키보드가 올라와 있는 동안 루트에 찍는 표식. **판정은 여기 한 곳에서만 한다**(§12) — 화면마다
@@ -124,9 +125,18 @@ export default function ViewportOffsetGuard() {
     // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
     // 불가능값 처리(상한)는 정본의 클램프가 맡는다 — 종전의 '기각 후 직전 값 유지'가 가로·소형
     // 창의 정당한 큰 겹침까지 버리던 것을 바로잡았다(오류신고 734ea211·e97f4b2b 경위는 정본 주석).
+    //
+    // **칸 없는 키보드는 닫힘으로 친다(2026-10-03).** 키보드를 부를 곳에 포커스가 없는데 띠가
+    // 키보드만큼 줄었다면 그 resize 는 낡거나 찢어진 스냅샷이다. 종전에는 그대로 '열림'으로 읽어
+    // --kbd-inset 을 적고 표식을 찍었고, 그 값이 모달 아래 인셋 폴백(var(--kbd-inset))으로 샜다.
+    // 판정은 모달 띠와 같은 정본(phantomKeyboardGap) 한 자리다 — 둘이 갈리면 한쪽만 참인 구간이 생긴다.
+    // 복원(restore)은 종전 판정을 그대로 지나므로(진짜 닫힘 엡실론) 여기서 화면을 되감지 않는다.
     const onResize = () => {
       const s = snapNow()
-      if (!keyboardOpen(s)) {
+      const phantom = phantomKeyboardGap({
+        height: s.vvHeight, innerHeight: s.innerHeight, scale: s.scale, editing: keyboardCapableFocus(),
+      })
+      if (!keyboardOpen(s) || phantom) {
         root.style.setProperty(KBD_INSET, '0px')
         root.removeAttribute(KBD_OPEN_ATTR)
         restore()

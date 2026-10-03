@@ -594,6 +594,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
   }
 
   return (
+    <>
     <Modal open onClose={onClose} width="sm"
       // 풀블리드 — 본문이 섹션마다 자체 여백과 폭 전체 구분선을 갖는 구조라 기본 패딩을 쓰면 구분선이 안쪽으로 밀린다.
       bodyClassName=""
@@ -823,27 +824,30 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
             </Btn>
           )}
         </div>
-      {refundModalOpen && (
-        <CheckoutRefundModal
-          tenantName={moveOutTenantName}
-          depositAmount={moveOutDeposit}
-          cleaningFee={moveOutCleaning}
-          compositionLabel={alert.moveOutCompositionLabel ?? null}
-          hasRoom={alert.moveOutHasRoom === true}
-          roomHeldBy={alert.moveOutRoomHeldBy ?? null}
-          leaseTermId={moveOutLeaseId ?? null}
-          roomId={alert.roomId ?? null}
-          expectedYmd={alert.moveOutExpectedYmd ?? null}
-          pending={confirmPending}
-          onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
-          onConfirm={handleRefundConfirm}
-        />
-      )}
-      {/* 알림 상세 위에 겹쳐 연다(z 260, 퇴실 미니폼·입주자 상세 독촉과 같은 층). 닫으면 알림 상세로 돌아온다. */}
-      {unpaidSmsOpen && unpaidSmsTarget && (
-        <UnpaidSmsModal target={unpaidSmsTarget} z={260} onClose={() => setUnpaidSmsOpen(false)} />
-      )}
     </Modal>
+    {/* 겹쳐 뜨는 모달은 바깥 <Modal> 의 형제로 둔다 — 자식으로 두면 바깥 패널 모션이 굳을 때 안쪽 fixed 가
+        그 패널 상자에 갇힌다(knowledge/domain-modal-shell.md (다), 그물 check-no-nested-overlay). */}
+    {refundModalOpen && (
+      <CheckoutRefundModal
+        tenantName={moveOutTenantName}
+        depositAmount={moveOutDeposit}
+        cleaningFee={moveOutCleaning}
+        compositionLabel={alert.moveOutCompositionLabel ?? null}
+        hasRoom={alert.moveOutHasRoom === true}
+        roomHeldBy={alert.moveOutRoomHeldBy ?? null}
+        leaseTermId={moveOutLeaseId ?? null}
+        roomId={alert.roomId ?? null}
+        expectedYmd={alert.moveOutExpectedYmd ?? null}
+        pending={confirmPending}
+        onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
+        onConfirm={handleRefundConfirm}
+      />
+    )}
+    {/* 알림 상세 위에 겹쳐 연다(z 260, 퇴실 미니폼·입주자 상세 독촉과 같은 층). 닫으면 알림 상세로 돌아온다. */}
+    {unpaidSmsOpen && unpaidSmsTarget && (
+      <UnpaidSmsModal target={unpaidSmsTarget} z={260} onClose={() => setUnpaidSmsOpen(false)} />
+    )}
+    </>
   )
 }
 

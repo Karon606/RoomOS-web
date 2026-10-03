@@ -7,8 +7,8 @@
 //
 // **개인정보 경계 — 여기서 지킨다.**
 //   담는 것: visualViewport 기하, layout viewport 크기, 키보드 표식(data-kbd-open), 모달 CSS
-//            변수 넷의 계산값, 열린 모달 수와 등장 모션 클래스 잔존 수, 포커스 요소의
-//            태그·id·name·type.
+//            변수 넷의 계산값, 열린 모달 수와 등장 모션 클래스 잔존 수, 열린 패널마다의 자리
+//            (top·height)와 띠 변수, 확인창 열림·자리·띠 변수, 포커스 요소의 태그·id·name·type.
 //   안 담는 것: 입력값(value)·placeholder·본문 텍스트·연락처·이름. 무엇을 적었나가 아니라
 //            어떤 종류의 칸에 서 있었나만 알면 된다. 이 경계는 scripts/check-kbd-canonical.mjs
 //            가 지킨다(이 파일에 값 읽기가 새로 들어오면 그물이 막는다).
@@ -45,6 +45,28 @@ export function viewportProbe(): string {
   // 등장 모션 클래스가 남아 있으면 모션이 시작만 하고 안 끝난 것이다 — 이번 신고의 지문.
   const stuck = document.querySelectorAll('.anim-overlay-in, .anim-panel-in').length
   out.push(`modal open=${panels.length} 등장모션잔존=${stuck}`)
+
+  // **열린 패널 전부의 자리와 그 패널이 읽은 띠 높이(2026-10-03).** 위 vars 줄은 마지막 패널 하나,
+  // 곧 신고창 자신만 읽어서, 정작 눌린 아래 모달(알림 상세 190pt)의 값이 한 번도 안 남았다.
+  // 줄 하나에 패널 하나 — 번호는 DOM 순서이고 마지막이 가장 위다(보통 신고창).
+  panels.forEach((p, i) => {
+    const r = p.getBoundingClientRect()
+    const v = getComputedStyle(p).getPropertyValue('--modal-vvh').trim() || '—'
+    out.push(`panel${i + 1} top=${num(r.top)} h=${num(r.height)} vvh=${v}`)
+  })
+  // 확인창 — 공용 Modal 과 다른 변수(--vv-top/--vv-bottom/--vv-h)를 쓴다. 위 둘은 오버레이에,
+  // 띠 높이는 패널에 찍히고 패널이 셋 다 상속하므로 패널에서 읽는다. 확인창이 화면 위로 밀려나
+  // 막만 남던 신고(2026-10-03 16:31)의 지문이 이 줄이다.
+  const confirm = document.querySelector<HTMLElement>('[data-confirm-panel]')
+  if (confirm) {
+    const r = confirm.getBoundingClientRect()
+    const ccs = getComputedStyle(confirm)
+    const cv = (name: string) => ccs.getPropertyValue(name).trim() || '—'
+    out.push(`confirm open=y top=${num(r.top)} h=${num(r.height)}`
+      + ` vv-top=${cv('--vv-top')} vv-bottom=${cv('--vv-bottom')} vv-h=${cv('--vv-h')}`)
+  } else {
+    out.push('confirm open=n')
+  }
 
   // 포커스 요소는 **종류만.** 값은 읽지 않는다.
   const a = document.activeElement as (HTMLElement & { name?: string; type?: string }) | null
