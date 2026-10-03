@@ -254,7 +254,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   // 발급 버튼 셋을 여기로 접으면서(2026-08-29) 미발급 행의 '작성'이 유일한 발급 문이 됐다.
   // 문 라벨이 '서류'인데 목적지가 '서류 보내기'면, 발급하러 온 사람이 잘못 왔다고 읽고 되돌아 나간다.
   return (
-    <Modal open onClose={onClose} z={260} width="md"
+    <>
+    {/* z 280 인 이유. 이 시트는 프리즘 셸(z 280)의 **형제**로 뜬다(2026-10-03). 종전 260 은 셸 패널
+        안에 그려져 셸의 층 안에서 위에 올라갔는데, 형제가 되면 260 은 셸 아래로 깔린다. 같은 층이면
+        뒤에 마운트되는 이쪽이 위다(셸 → 이 시트 → 문자·메일 쓰기 순). 이 시트를 여는 곳은 셸뿐이다. */}
+    <Modal open onClose={onClose} z={280} width="md"
       title={bundle ? `서류 · ${bundle.tenantName}` : '서류'}>
       <div className="space-y-3">
         {/* 내보낼 곳 — 저장·공유·문자·메일. '내보내기'는 문서를 앱 밖으로 빼내는 모든 길의
@@ -460,31 +464,35 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             }}
           />
         )}
-        {smsOpen && smsTo && bundle && (
-          <TenantDocSmsComposeSheet
-            tenantId={tenantId}
-            tenantName={bundle.tenantName}
-            propertyName={bundle.sms.propertyName}
-            phone={smsTo}
-            docTitles={docTitles}
-            share={share}
-            onClose={() => setSmsOpen(false)}
-          />
-        )}
-        {composeOpen && (
-          <TenantDocMailComposeSheet
-            tenantId={tenantId}
-            keys={[...selected]}
-            onClose={() => setComposeOpen(false)}
-            onSent={count => {
-              setComposeOpen(false)
-              setSelected(new Set())
-              pushToast('success', `서류 ${count}건을 메일로 보냈습니다`)
-            }}
-          />
-        )}
       </div>
     </Modal>
+    {/* 문자·메일 쓰기 시트는 이 시트의 형제다 — 자식이면 이 패널 모션이 굳을 때 그 상자에 갇힌다
+        (check-no-nested-overlay). 층은 이 시트와 같은 280 이라 뒤에 마운트되는 이쪽이 위다 — 이
+        순서를 바꾸지 말 것. */}
+    {smsOpen && smsTo && bundle && (
+      <TenantDocSmsComposeSheet
+        tenantId={tenantId}
+        tenantName={bundle.tenantName}
+        propertyName={bundle.sms.propertyName}
+        phone={smsTo}
+        docTitles={docTitles}
+        share={share}
+        onClose={() => setSmsOpen(false)}
+      />
+    )}
+    {composeOpen && (
+      <TenantDocMailComposeSheet
+        tenantId={tenantId}
+        keys={[...selected]}
+        onClose={() => setComposeOpen(false)}
+        onSent={count => {
+          setComposeOpen(false)
+          setSelected(new Set())
+          pushToast('success', `서류 ${count}건을 메일로 보냈습니다`)
+        }}
+      />
+    )}
+    </>
   )
 }
 

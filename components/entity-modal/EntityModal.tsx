@@ -404,6 +404,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
 
   return (
+    <>
     <Modal
       open onClose={onClose} onBack={onBack} width="sm" title={title} subtitle={titleContractSub} z={280} dirty={dirty}
       // 글을 쓰는 동안에는 이 푸터가 통째로 없는 편이 낫다. 액션 여섯과 탭 셋을 세어 보면
@@ -523,17 +524,20 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit roomNo={shownLeaseRoomNo}
                                                 leases={leaseOptions} onSelectLease={setLeaseSel} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}
-        {/* 서류 묶음 보내기 — 셸 안에서 겹쳐 세운다(발급 상세 시트와 같은 층 문법: 셸 패널 안에
-            그리면 셸의 층 안에서 그 위에 올라간다). undefined = 닫힘, null = 지목 없는 사람 단위 진입. */}
-        {docSheetLease !== undefined && links?.tenantId && (
-          <TenantDocBundleSheet
-            tenantId={links.tenantId}
-            preselectLeaseTermId={docSheetLease}
-            onClose={() => setDocSheetLease(undefined)}
-          />
-        )}
       </div>
     </Modal>
+    {/* 서류 묶음 보내기 — 셸의 **형제**로 세운다(2026-10-03). 종전에는 셸 패널 안에 그려 셸의 층 안에서
+        위에 올렸는데, 셸 패널 등장 모션이 굳으면 시트가 그 패널 상자에 갇힌다(check-no-nested-overlay).
+        층은 시트 쪽 z 280(셸과 같은 층)에 셸 뒤 마운트 순서로 위에 선다 — 이 순서를 바꾸지 말 것.
+        undefined = 닫힘, null = 지목 없는 사람 단위 진입. */}
+    {docSheetLease !== undefined && links?.tenantId && (
+      <TenantDocBundleSheet
+        tenantId={links.tenantId}
+        preselectLeaseTermId={docSheetLease}
+        onClose={() => setDocSheetLease(undefined)}
+      />
+    )}
+    </>
   )
 }
 

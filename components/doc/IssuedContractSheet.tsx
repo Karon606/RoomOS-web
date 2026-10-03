@@ -146,6 +146,7 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
   const frozen = snap?.facts.translation !== undefined ? frozenTranslation(snap.facts.translation) : null
 
   return (
+    <>
     <Modal open onClose={onClose} z={z} width="md"
       title={detail?.contractNo ? `계약번호 ${detail.contractNo}` : '발급 기록'}
       subtitle={detail ? `${detail.tenantName} · ${detail.source === 'GENERATED' ? '앱 발급본' : '스캔본'}` : undefined}>
@@ -232,28 +233,30 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
           )}
         </div>
       )}
-      {/* 번역본 전문 — 새 화면을 만들지 않고 이 저장소의 열람 문법(Modal)을 그대로 쓴다.
-          본문은 서명 화면의 카드와 **같은 컴포넌트**다. 두 벌을 만들면 운영자가 보는 문안과
-          입주자가 본 문안이 언젠가 갈린다.
-          z 는 이 시트(기본 260) 위다. 시트가 이미 280 이면 같은 층인데, 뒤에 마운트되는 이쪽이
-          위에 그려지고 Esc 도 최상단만 닫는다(Modal 의 esc 스택). */}
-      {viewTranslation && frozen && (
-        <Modal open onClose={() => setViewTranslation(false)} z={280} width="md"
-          title="참고용 번역본"
-          subtitle="이 발급본이 근거로 삼은 서명 시점 문안입니다. 계약 내용은 한국어 원본에 따릅니다.">
-          {/* 치환 재료가 없는 발급본(이 칸 이전에 발급된 것)은 조항에 {{청소비조항}} 같은 표시가
-              글자 그대로 남는다. 값을 지금 계산해 채우면 그것은 증거가 아니라 오늘의 값이므로,
-              **무엇이 없는지 한 줄로 말하고** 조항은 그대로 둔다(줄을 감추면 조항 번호가 밀린다).
-              문법은 위 '기록이 없습니다' 줄과 한 벌이다. */}
-          {!snap?.translationVars && (
-            <p className="mb-3 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs text-[var(--warm-muted)]">
-              값 치환 기록이 없는 발급본입니다. 조항 안의 {'{{ }}'} 표시는 종이에 실제 값이 들어간 자리입니다.
-            </p>
-          )}
-          <ContractTranslationBody translation={frozen} source={frozenTemplate(snap?.facts.template)}
-            vars={snap?.translationVars} />
-        </Modal>
-      )}
     </Modal>
+    {/* 번역본 전문 — 새 화면을 만들지 않고 이 저장소의 열람 문법(Modal)을 그대로 쓴다.
+        본문은 서명 화면의 카드와 **같은 컴포넌트**다. 두 벌을 만들면 운영자가 보는 문안과
+        입주자가 본 문안이 언젠가 갈린다.
+        z 는 이 시트(기본 260) 위다. 시트가 이미 280 이면 같은 층인데, 뒤에 마운트되는 이쪽이
+        위에 그려지고 Esc 도 최상단만 닫는다(Modal 의 esc 스택).
+        시트의 형제다 — 자식이면 시트 패널 모션이 굳을 때 그 상자에 갇힌다(check-no-nested-overlay). */}
+    {viewTranslation && frozen && (
+      <Modal open onClose={() => setViewTranslation(false)} z={280} width="md"
+        title="참고용 번역본"
+        subtitle="이 발급본이 근거로 삼은 서명 시점 문안입니다. 계약 내용은 한국어 원본에 따릅니다.">
+        {/* 치환 재료가 없는 발급본(이 칸 이전에 발급된 것)은 조항에 {{청소비조항}} 같은 표시가
+            글자 그대로 남는다. 값을 지금 계산해 채우면 그것은 증거가 아니라 오늘의 값이므로,
+            **무엇이 없는지 한 줄로 말하고** 조항은 그대로 둔다(줄을 감추면 조항 번호가 밀린다).
+            문법은 위 '기록이 없습니다' 줄과 한 벌이다. */}
+        {!snap?.translationVars && (
+          <p className="mb-3 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs text-[var(--warm-muted)]">
+            값 치환 기록이 없는 발급본입니다. 조항 안의 {'{{ }}'} 표시는 종이에 실제 값이 들어간 자리입니다.
+          </p>
+        )}
+        <ContractTranslationBody translation={frozen} source={frozenTemplate(snap?.facts.template)}
+          vars={snap?.translationVars} />
+      </Modal>
+    )}
+    </>
   )
 }

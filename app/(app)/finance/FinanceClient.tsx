@@ -1171,6 +1171,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   }
 
   return (
+    <>
     <Modal open onClose={onClose} title="구매처 관리"
       subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
@@ -1234,12 +1235,15 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
           </PillButton>
         </SelectionPillBar>
       )}
-      <MergeSheet open={!!sheet} z={260} onClose={() => setSheet(null)} pending={merging}
-        sourceLabel={sheet?.sourceLabel ?? ''} targets={sheet?.targets ?? []}
-        title="구매처 합치기" confirmLabel="합치기"
-        description="대표로 남길 구매처를 고르면 나머지 지출의 구매처가 대표로 바뀝니다."
-        onConfirm={runMerge} />
     </Modal>
+    {/* 합치기 시트는 모달의 형제다 — 자식으로 두면 패널 등장 모션이 굳을 때 시트가 패널 상자에
+        갇힌다(check-no-nested-overlay, knowledge/domain-modal-shell.md (다)). 층은 z 260 이 정한다. */}
+    <MergeSheet open={!!sheet} z={260} onClose={() => setSheet(null)} pending={merging}
+      sourceLabel={sheet?.sourceLabel ?? ''} targets={sheet?.targets ?? []}
+      title="구매처 합치기" confirmLabel="합치기"
+      description="대표로 남길 구매처를 고르면 나머지 지출의 구매처가 대표로 바뀝니다."
+      onConfirm={runMerge} />
+    </>
   )
 }
 

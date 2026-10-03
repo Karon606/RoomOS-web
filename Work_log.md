@@ -6760,3 +6760,5 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 
 ## 2026-10-03 지출 귀속월 결산 3단계 (운영자 승인)
 - 엑셀: month 필터 targetMonthWhere·월별 시트 키 expenseTargetMonth·월 옵션 정본, 지출 시트 '귀속월' 열(YYYY-MM, '날짜' 열 유지). from/to 날짜 범위·전체 워크북·설정 JSON 백업은 '// 현금일 축:' 표지. 영수증 승인 카드(재고 등록)에 정본 귀속월 행(ExpenseTargetMonthField 를 components/ui 로 옮겨 재무 폼과 공유, dense·onPick) + approvePendingReceipt 접기. 일괄 수정 귀속월 select(미변경+조회 달 ±1), 행별 날짜로 접기·고정지출 제외·적용취소 스냅샷. 그물 test-expense-target-month 3단계 블록(역주입 13건 빨강 후 백업 원복). 커밋·웹디자이너 패스·실기는 운영자 몫.
+## 2026-10-03 모달 안 겹친 오버레이 7건 형제로 꺼냄 (운영자 승인)
+- 재무 구매처 관리의 MergeSheet · 재고 상세의 TransferStockModal · 위치 관리의 LocationMoveModal · 발급 기록 시트의 번역본 Modal · 서류 시트의 문자·메일 쓰기 시트 · 프리즘 셸의 TenantDocBundleSheet 를 바깥 <Modal> 의 Fragment 형제로. 서류 시트 z 260→280(형제가 되면 셸 280 아래로 깔리므로, 셸 뒤 마운트 순서로 위), 재고 위치 이동은 상세 본문 ErrorBoundary 를 못 물려받아 창 폴백 경계를 따로 둠. 조상 onClick·컨텍스트·form 의존 없음 확인. check-no-nested-overlay KNOWN 빈 Set, 역주입 7건 빨강. 실기 확인은 운영자 몫.
