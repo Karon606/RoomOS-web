@@ -7,6 +7,7 @@ import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
 import { depositBasisOf } from '@/lib/depositPending'
@@ -146,8 +147,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   // 요청에서 이미 한 조회를 다시 하지 않는다.
   const pMoveCalendar = getMoveCalendarMonth(targetMonth)
   const pLastExpAggs = Promise.all([
-    prisma.expense.aggregate({ where: { propertyId, date: monthDbRange(shiftMonth(targetMonth, -1)) }, _sum: { amount: true } }),
-    prisma.expense.aggregate({ where: { propertyId, date: monthDbRange(shiftMonth(targetMonth, -12)) }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, ...targetMonthWhere(shiftMonth(targetMonth, -1)) }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, ...targetMonthWhere(shiftMonth(targetMonth, -12)) }, _sum: { amount: true } }),
   ])
   const pOverduConfirmed = prisma.leaseTerm.findMany({
     where: {
@@ -188,7 +189,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     _sum: { actualAmount: true },
   })
   const pNonRecurringPast = prisma.expense.aggregate({
-    where: { propertyId, recurringExpenseId: null, date: monthsDbRange(shiftMonth(targetMonth, -3), shiftMonth(targetMonth, -1)) },
+    where: { propertyId, recurringExpenseId: null, ...targetMonthWhere(shiftMonth(targetMonth, -3), shiftMonth(targetMonth, -1)) },
     _sum: { amount: true },
   })
   const pScheduleMoves = prisma.leaseTerm.findMany({
@@ -275,8 +276,10 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       },
       select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
     }),
+    // 지출은 귀속월 축(2026-10-03 운영자 승인 2안). 아래 groupBy 와 같은 조각이어야
+    // sum(categoryBreakdown) === expectedExpense 가 선다 — 둘을 함께 바꾼다.
     prisma.expense.findMany({
-      where: { propertyId, date: monthWindow },
+      where: { propertyId, ...targetMonthWhere(targetMonth) },
     }),
     prisma.extraIncome.findMany({
       where: { propertyId, date: monthWindow },
@@ -293,7 +296,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     }),
     prisma.expense.groupBy({
       by: ['category'],
-      where: { propertyId, date: monthWindow },
+      where: { propertyId, ...targetMonthWhere(targetMonth) },
       _sum: { amount: true },
       orderBy: { _sum: { amount: 'desc' } },
     }),
@@ -332,10 +335,10 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
     // 6개월 트렌드 — 이용료 항은 pTrendPaidRevenue(정본)로 옮겼다. 여기 있던 무캡 합산 조회는
-    // 그 자리에서 사라졌다(2026-08-12). 지출·부가수익은 date 축이라 그대로 남는다.
+    // 그 자리에서 사라졌다(2026-08-12). 부가수익은 date 축, 지출은 귀속월 축이다(2026-10-03).
     prisma.expense.findMany({
-      where: { propertyId, date: trendWindow },
-      select: { date: true, amount: true },
+      where: { propertyId, ...targetMonthWhere(last6Months[0], targetMonth) },
+      select: { date: true, targetMonth: true, amount: true },
     }),
     prisma.extraIncome.findMany({
       where: { propertyId, date: trendWindow },
@@ -923,7 +926,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         .reduce((s, i) => s + i.amount, 0)
     const expense =
       trendExpenses
-        .filter(e => dbDateMonthKey(e.date) === m)
+        .filter(e => expenseTargetMonth(e) === m)
         .reduce((s, e) => s + e.amount, 0)
     return { month: m, revenue, expense, profit: revenue - expense }
   })

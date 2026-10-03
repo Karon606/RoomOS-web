@@ -37,7 +37,7 @@ import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
-import { monthDbRange } from '@/lib/kstDate'
+import { dbDateMonthKey, monthDbRange } from '@/lib/kstDate'
 import { expenseTargetMonth, isMonthKey, targetMonthForSave, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
@@ -64,7 +64,7 @@ export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ c
   const rows = await prisma.expense.findMany({
     where: {
       propertyId,
-      date: monthDbRange(targetMonth),
+      ...targetMonthWhere(targetMonth),
     },
     select: { category: true, amount: true },
   })
@@ -122,10 +122,11 @@ export async function getRoomList() {
 
 export async function getExpenses(targetMonth: string) {
   const propertyId = await getPropertyId()
+  // 지출 결산은 귀속월 축이다(2026-10-03 운영자 승인 2안) — 9월분을 10/1 에 내도 9월 목록·합계에 든다.
   return prisma.expense.findMany({
     where: {
       propertyId,
-      date: monthDbRange(targetMonth),
+      ...targetMonthWhere(targetMonth),
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     include: {
@@ -135,6 +136,32 @@ export async function getExpenses(targetMonth: string) {
       order: { select: { id: true, code: true, externalOrderNo: true, shippingType: true, shippingMemo: true } },
     },
   })
+}
+
+/**
+ * 이 달에 냈지만 다른 달분인 지출 — 재무 목록 위 흔적 줄('10월에 낸 9월분 1건 176,030원 · 9월 보기 ›')용.
+ * 목록·합계는 귀속월 축이라 10/1 에 낸 9월분 가스요금이 10월 목록에서 사라진다. 통장에는 10/1 에
+ * 찍혀 있으니 10월 화면이 아무 말도 안 하면 '기록이 없어졌다'로 읽힌다. 합계·선택 집합에는 넣지 않는다.
+ * 귀속월·카테고리별로 접어 돌려준다 — 화면이 카테고리 필터를 같은 식으로 건다.
+ */
+export async function getOtherMonthPaidExpenses(targetMonth: string): Promise<{ month: string; category: string; count: number; total: number }[]> {
+  const propertyId = await getPropertyId()
+  // 현금일 축: 이 달에 돈이 나간 기록 중 귀속월이 다른 것만 — 흔적 줄 전용(결산 합계 아님).
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, date: monthDbRange(targetMonth), targetMonth: { not: targetMonth } },
+    select: { targetMonth: true, date: true, amount: true, category: true },
+  })
+  const by = new Map<string, { month: string; category: string; count: number; total: number }>()
+  for (const r of rows) {
+    const m = expenseTargetMonth(r)
+    if (m === targetMonth) continue
+    const key = `${m}\u0000${r.category}`
+    const cur = by.get(key) ?? { month: m, category: r.category, count: 0, total: 0 }
+    cur.count += 1
+    cur.total += r.amount
+    by.set(key, cur)
+  }
+  return [...by.values()].sort((a, b) => a.month.localeCompare(b.month) || a.category.localeCompare(b.category))
 }
 
 // 과거 구매내역 검색 — 월 한정인 지출 화면과 달리 '전 기간'을 품목명·세부·판매처·메모·카테고리로 검색.
@@ -631,6 +658,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
     const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    // 귀속월(2026-10-03 운영자 승인 2안) — 폼의 귀속월 칸. 날짜의 달과 같으면 NULL 로 접는다(lib/expenseTargetMonth).
+    const targetMonthRaw = (formData.get('targetMonth') as string) || null
+    if (targetMonthRaw && !isMonthKey(targetMonthRaw)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
+    const targetMonth = targetMonthForSave(targetMonthRaw, new Date(date))
 
     // 다중 품목/방별 분배: itemsJson 파싱해 N개 행으로 분할.
     // 품목 2개 이상이거나, 한 품목이라도 방별 분배(allocations)가 있으면 분할 경로.
@@ -714,6 +745,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       roomId:             roomId || null,
       excludeFromInventory,
       orderId,
+      targetMonth,
     }
 
     // 배송비 별도 지출 라인(합배송) — 주문에 연결, 재고 계산 제외.
@@ -739,6 +771,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
             orderId,
             isShipping:         true,
             excludeFromInventory: true,
+            targetMonth,        // 본 지출과 같은 달 — 배송비만 다른 달 결산에 남지 않게
           },
         })
       : null
@@ -898,8 +931,29 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         excludeFromInventory: true, receivedLocationId: true,
         // 고정지출 기록의 날짜를 고치면 간격 주기의 기준 달도 따라 움직여야 한다 — 두 저장 경로가 쓴다.
         recurringExpenseId: true,
+        // 귀속월 — 폼이 칸을 안 보낸 편집에서 보존하고, 고정지출 중복 가드가 '달이 바뀌었나'를 본다.
+        date: true, targetMonth: true,
       },
     })
+
+    // ── 귀속월(2026-10-03 운영자 승인 2안) — 칸이 실려 오면 그 값, 안 실려 오면 기존 값 보존
+    // (knowledge/form-clear-vs-absent: 빈 값=지움, 부재=건드리지 않음). 어느 쪽이든 새 날짜의 달과 같으면
+    // NULL 로 접는다(lib/expenseTargetMonth targetMonthForSave). NULL 인 기록은 날짜를 따라 옮겨진다.
+    const targetMonthRaw = formData.has('targetMonth') ? ((formData.get('targetMonth') as string) || null) : (existing?.targetMonth ?? null)
+    if (targetMonthRaw && !isMonthKey(targetMonthRaw)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
+    const targetMonth = targetMonthForSave(targetMonthRaw, new Date(date))
+    // 고정지출 기록이면 같은 항목·같은 귀속월은 하나다 — recordRecurringExpense 와 같은 식.
+    // 회차가 실제로 옮겨질 때만 본다(가드 이전 데이터로 이미 둘인 회차의 메모 수정까지 막지 않는다).
+    if (existing?.recurringExpenseId) {
+      const slot = expenseTargetMonth({ targetMonth, date: new Date(date) })
+      if (slot !== expenseTargetMonth(existing)) {
+        const dup = await prisma.expense.findFirst({
+          where: { propertyId, recurringExpenseId: existing.recurringExpenseId, id: { not: id }, ...targetMonthWhere(slot) },
+          select: { id: true, recurringExpense: { select: { title: true } } },
+        })
+        if (dup) return { ok: false, error: `${dup.recurringExpense?.title ?? '이 고정지출'} ${Number(slot.slice(5, 7))}월분은 이미 기록돼 있습니다.` }
+      }
+    }
 
     // ── 재고 전파 게이트(점보롤 백로그 1번) — 수령완료 구매는 재고 원장의 델타다.
     // 점검(절대값)이 이 델타를 이미 삼킨 뒤에 수량·품목을 바꾸면 잔량이 어긋난다.
@@ -995,6 +1049,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
             allocationGroupId: firstRow.groupId,
             excludeFromInventory,
+            targetMonth,
             ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
           },
         }),
@@ -1025,6 +1080,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
             allocationGroupId: r.groupId,
             excludeFromInventory,
+            targetMonth,        // 분할 조각도 원본과 같은 귀속월
             receivedAt:         existing?.receivedAt ?? null,   // 원본이 수령완료면 분배 조각도 수령완료 유지
           },
         })),
@@ -1044,6 +1100,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             settleStatus:       baseSettleStatus,
             isShipping:         true,
             excludeFromInventory: true,
+            targetMonth,
           },
         })] : []),
       ])
@@ -1130,6 +1187,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         settleStatus:       baseSettleStatus,
         roomId:             roomId || null,
         excludeFromInventory,
+        targetMonth,
         // 폼이 품목 필드를 아예 안 보낸 편집(카테고리만 수정 등)에서는 기존 값 보존 —
         // null 덮어쓰기로 품목 연결이 끊겨 재고에서 증발하던 버그(종량제봉투 2026-07-10)
         ...(formData.has('itemLabel') ? { itemLabel: itemLabel || null } : {}),
@@ -1258,6 +1316,7 @@ export async function batchUpdateExpenses(
         payMethod: true, financialAccountId: true, financeName: true,
         date: true, detail: true, memo: true,
         vendor: true, vendorBizNo: true,
+        targetMonth: true,
       },
     })
 
@@ -1282,7 +1341,7 @@ export async function batchUpdateExpenses(
         fields.financeName = t.financeName
         fields.settleStatus = t.settleStatus
       }
-      if (changingDate) fields.date = t.date
+      if (changingDate) { fields.date = t.date; fields.targetMonth = t.targetMonth }
       if (changingCategory) fields.category = t.category
       if (changingDetail) fields.detail = t.detail
       if (changingMemo) fields.memo = t.memo
@@ -1327,6 +1386,14 @@ export async function batchUpdateExpenses(
         ops.push(prisma.expense.updateMany({
           where: { id: { in: eligible.map(e => e.id) }, propertyId },
           data: commonData,
+        }))
+      }
+      // 귀속월은 옮기지 않는다(그 달의 지출이라는 뜻은 그대로). 다만 새 날짜의 달과 같아진 행은 NULL 로 접는다 —
+      // 값이 있으면 언제나 '날짜의 달과 다른 달'이라는 표현 하나를 지킨다(lib/expenseTargetMonth targetMonthForSave).
+      if (changingDate) {
+        ops.push(prisma.expense.updateMany({
+          where: { id: { in: eligible.map(e => e.id) }, propertyId, targetMonth: dbDateMonthKey(new Date(data.date as string)) },
+          data: { targetMonth: null },
         }))
       }
       await prisma.$transaction(ops)
@@ -1769,13 +1836,14 @@ export async function attachShippingToOrder(input: {
       if (existingShip) {
         await prisma.expense.update({
           where: { id: existingShip.id },
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, createdAt: shipCreatedAt },
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, createdAt: shipCreatedAt },
         })
       } else {
         await prisma.expense.create({
           data: {
             propertyId,
             date:               rep.date,
+            targetMonth:        rep.targetMonth,   // 배송비는 대표 지출의 날짜·귀속월을 따른다
             category:           rep.category,
             amount:             shipData.amount,
             detail:             shipData.detail,
@@ -2862,7 +2930,7 @@ export async function getSettleableExpenses(targetMonth: string): Promise<{ id: 
   const expenses = await prisma.expense.findMany({
     where: {
       propertyId,
-      date: monthDbRange(targetMonth),
+      ...targetMonthWhere(targetMonth),
     },
     select: { id: true, date: true, amount: true, category: true, detail: true },
     orderBy: { date: 'desc' },

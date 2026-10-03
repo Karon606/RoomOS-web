@@ -1,4 +1,4 @@
-import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getTrackedCategories, getLastPayDefaults } from './actions'
+import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getTrackedCategories, getLastPayDefaults, getOtherMonthPaidExpenses } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -32,7 +32,7 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, trackedCategories, lastPayDefaults] = await Promise.all([
+  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, trackedCategories, lastPayDefaults, otherMonthPaid] = await Promise.all([
     getExpenses(targetMonth),
     getFinancialAccounts(),
     getIncomeCategories(),
@@ -51,6 +51,7 @@ export default async function FinancePage({
     getSettleableExpenses(targetMonth),
     getTrackedCategories(),
     getLastPayDefaults(),
+    getOtherMonthPaidExpenses(targetMonth),
   ])
 
   const acquisitionDate = propertySettings?.acquisitionDate
@@ -80,6 +81,7 @@ export default async function FinancePage({
       settleableExpenses={settleableExpenses}
       lastPayDefaults={lastPayDefaults}
       trackedCategories={trackedCategories}
+      otherMonthPaid={otherMonthPaid}
       initialTab={initialTab}
       initialCategory={cat && cat.trim() ? cat.trim() : undefined}
     />

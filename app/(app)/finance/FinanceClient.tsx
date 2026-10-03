@@ -54,7 +54,8 @@ import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
-import { expenseTargetMonth, targetMonthBadge } from '@/lib/expenseTargetMonth'
+import { expenseTargetMonth, shiftMonthKey, targetMonthLabel } from '@/lib/expenseTargetMonth'
+import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -67,7 +68,6 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { MergeSheet } from '@/components/ui/inventory/MergeSheet'
 import { useLongPress } from '@/lib/useLongPress'
 import { ViewTabs } from '@/components/ui/ViewTabs'
-import { OtherMonthNotice } from '@/components/ui/OtherMonthNotice'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -91,7 +91,7 @@ type Expense = {
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
-  targetMonth: string | null   // 고정지출 귀속월 'YYYY-MM'(null=date 의 달) — 읽기는 lib/expenseTargetMonth 정본만
+  targetMonth: string | null   // 지출 귀속월 'YYYY-MM'(null=date 의 달) — 읽기는 lib/expenseTargetMonth 정본만
   receiptUrl: string | null
   breakdownJson: string | null   // #1 관리비 묶음 세부 내역
   itemLabel: string | null
@@ -236,18 +236,51 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
   return items.map(d => fmtItemDetail(d)).join(', ')
 }
 
-// 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
-// 고정지출 기록의 귀속월이 납부 달과 다를 때만 서는 중립 배지 'N월분' — 지연·선납은 판정하지 않는다
-// (말일 자동이체가 주말이면 제때 내도 다음 달 날짜다). 톤은 수납 내역 배지(PaymentRecordList)의 중립 갈래.
-function TargetMonthBadge({ e }: { e: { recurringExpenseId: string | null; targetMonth: string | null; date: Date | string } }) {
-  if (!e.recurringExpenseId) return null
-  const text = targetMonthBadge(e)
-  if (!text) return null
+/**
+ * 지출 폼 귀속월 행(2026-10-03 운영자 승인 2안). 날짜 행 아래 전폭 한 행이다(반폭 칸이면 320px 에서 캡션이 세 줄로 접힌다).
+ * 기본은 접힘이다 — 대부분의 지출은 날짜의 달이 곧 귀속월이다.
+ *  · 날짜의 달이 조회 달과 다르면 "10월분으로 기록됩니다 · 9월분으로 바꾸기" 캡션(기록 모달의 캡션+밑줄 액션 문법).
+ *  · 같으면 캡션 없이 '귀속월 바꾸기' 밑줄 액션만 — 10월을 보며 10/1 에 낸 9월분을 적는 입구다.
+ * 누르면 기록 모달과 같은 귀속월 select(날짜 달 ±1, 해가 같으면 'N월분')가 펼쳐진다. 사람이 고른 적 없으면 값은
+ * 날짜의 달을 따라간다(picked=null). 고른 달이 창 밖이면 '(현재)' 옵션으로 남긴다. 수정 폼은 저장된 귀속월이 있으면
+ * 처음부터 펼친다. 버튼은 input 이벤트를 안 내므로 폼 dirty 는 onDirty 로 직접 세운다. 서버는 날짜 달과 같으면 NULL 로 접는다.
+ */
+function ExpenseTargetMonthField({ date, viewMonth, initial = null, onDirty }: { date: string; viewMonth: string; initial?: string | null; onDirty: () => void }) {
+  const [picked, setPicked] = useState<string | null>(initial)
+  const [open, setOpen] = useState(initial != null)
+  const dateMonth = /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : null
+  if (!dateMonth) return initial ? <input type="hidden" name="targetMonth" value={initial} /> : null
+  const value = picked ?? dateMonth
+  if (!open) {
+    const action = (label: string, next: string | null) => (
+      <button type="button" onClick={() => { setPicked(next); setOpen(true); onDirty() }}
+        className="underline text-[var(--coral)]">{label}</button>
+    )
+    return (
+      <div className="-mt-2">
+        <input type="hidden" name="targetMonth" value={value} />
+        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+          {dateMonth !== viewMonth
+            ? <>{targetMonthLabel(dateMonth, viewMonth)}으로 기록됩니다 · {action(`${targetMonthLabel(viewMonth, dateMonth)}으로 바꾸기`, viewMonth)}</>
+            : action('귀속월 바꾸기', null)}
+        </p>
+      </div>
+    )
+  }
+  const opts = [-1, 0, 1].map(n => shiftMonthKey(dateMonth, n))
   return (
-    <span className="text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap shrink-0 bg-[var(--cream-2)] text-[var(--warm-mid)]">{text}</span>
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">귀속월</label>
+      <select name="targetMonth" value={value} onChange={e => setPicked(e.target.value)}
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        {!opts.includes(value) && <option value={value}>{targetMonthLabel(value, dateMonth)} (현재)</option>}
+        {opts.map(m => <option key={m} value={m}>{targetMonthLabel(m, dateMonth)}</option>)}
+      </select>
+    </div>
   )
 }
 
+// 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
 function roomChipText(rows: { room: { roomNo: string } | null }[]): string {
   const n = new Set(rows.filter(r => r.room).map(r => r.room!.roomNo)).size
   return n > 0 ? `방 ${n}개` : '미배정'
@@ -1468,7 +1501,7 @@ type CategoryTotal = { category: string; total: number }
 export default function FinanceClient({
   expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
-  trackedCategories,
+  trackedCategories, otherMonthPaid,
   initialTab,
   initialCategory,
 }: {
@@ -1493,6 +1526,7 @@ export default function FinanceClient({
   settleableExpenses: SettleableExpense[]
   lastPayDefaults: { payMethod: string | null; financialAccountId: string | null; financeName: string | null } | null
   trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
+  otherMonthPaid: { month: string; category: string; count: number; total: number }[]   // 이 달에 낸 다른 달분 흔적(합계 밖, getOtherMonthPaidExpenses)
   initialTab?: Tab
   initialCategory?: string      // ?cat= — 홈 지출 도넛 드릴다운이 실어 보낸 카테고리 필터 초기값
 }) {
@@ -2624,7 +2658,10 @@ export default function FinanceClient({
         // 로컬 미리보기도 함께 비운다 — 다음 폼에서 직전 영수증 이미지가 새 주소를 덮는 것을 막는다.
         setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
-        pushToast('success', '지출 등록됨')
+        // 귀속월이 날짜의 달과 다를 때만 그 달을 덧붙인다 — 지금 보는 목록에 안 보이는 이유가 된다.
+        const savedTm = String(fd.get('targetMonth') ?? '')
+        const savedDate = String(fd.get('date') ?? '')
+        pushToast('success', savedTm && savedTm !== savedDate.slice(0, 7) ? `지출 등록됨 · ${Number(savedTm.slice(5, 7))}월분` : '지출 등록됨')
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
         if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
         await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
@@ -3421,6 +3458,11 @@ export default function FinanceClient({
             /** 그 날짜 머리 문구 — 판정은 lib/dayExpenseTotal 정본이 한다(모바일·데스크톱 공용). */
             const dayTotalLabel = (dateStr: string, prefix: string): string =>
               dayTotalText({ actual: dayTotals.get(dateStr) ?? 0, planned: dayPlanned.get(dateStr) ?? 0 }, prefix, fmtWon)
+            // 조회 달 밖 날짜 묶음(9월 목록의 10/1 처럼 늦게 낸 9월분)의 머리 — 합계 대신 ' · 9월분'.
+            // 그 합계는 그날 다른 달분을 뺀 숫자라 10월 목록의 같은 머리와 금액이 갈린다(웹디자이너 패스).
+            // 목록이 귀속월 축이라 그 묶음 행은 전부 조회 달분이다. 머리가 말하므로 그 행들의 배지는 생략한다.
+            const outsideMonthHead = (dateStr: string): string =>
+              dateStr.slice(0, 7) === targetMonth ? '' : ` · ${targetMonthLabel(targetMonth, dateStr)}`
 
             const isEmpty = items.length === 0
 
@@ -3481,27 +3523,59 @@ export default function FinanceClient({
                     ]}
                   />
                 </div>
-                {/* 고정지출 가시성 토글 + 숨김 요약 */}
-                {isThisMonth && unconfirmedRecsFiltered.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SegmentedControl
-                      size="sm"
-                      ariaLabel="고정지출 표시"
-                      value={recVisibility}
-                      onChange={setRecVisibility}
-                      options={[
-                        { value: 'all',  label: '전체 보기' },
-                        { value: 'soon', label: '결제일 D-3' },
-                      ]}
-                    />
-                    {recVisibility === 'soon' && hiddenRecs.length > 0 && (
-                      <button onClick={() => setRecVisibility('all')}
-                        className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
-                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{fmtWon(hiddenRecsTotal)}</span> 숨김
-                      </button>
-                    )}
-                  </div>
-                )}
+                {/* 고정지출 가시성 토글 + 숨김 요약 + 다른 달분 흔적 — 목록 위 안내를 한 묶음으로 둔다. */}
+                {(() => {
+                  const showToggle = isThisMonth && unconfirmedRecsFiltered.length > 0
+                  // 이 달에 낸 다른 달분 흔적 — 목록·합계는 귀속월 축이라 10/1 에 낸 9월분이 10월 목록에서 빠진다.
+                  // 통장엔 10월로 찍혀 있으니 자리만 알려 준다(§27.6 '다른 보기에 N건 ›'). 합계·선택에는 넣지 않는다.
+                  // 카테고리 필터는 목록과 같은 식으로 건다. 미래 달(선납)은 조회가 이번 달까지라(lib/monthParam)
+                  // 링크 없이 'N월에 보입니다'. 어휘는 '낸' — 이체·현금도 섞이는 목록이라 카드 말인 '결제'를 쓰지 않는다.
+                  const traceBy = new Map<string, { count: number; total: number }>()
+                  for (const o of otherMonthPaid) {
+                    if (expFilter.category !== 'all' && o.category !== expFilter.category) continue
+                    const cur = traceBy.get(o.month) ?? { count: 0, total: 0 }
+                    cur.count += o.count; cur.total += o.total
+                    traceBy.set(o.month, cur)
+                  }
+                  const traceMonths = [...traceBy.keys()].sort()
+                  const traceCount = [...traceBy.values()].reduce((s, v) => s + v.count, 0)
+                  const traceTotal = [...traceBy.values()].reduce((s, v) => s + v.total, 0)
+                  if (!showToggle && traceMonths.length === 0) return null
+                  const monName = (m: string) => targetMonthLabel(m, targetMonth).replace(/분$/, '')
+                  return (
+                    <div className="space-y-1.5">
+                      {showToggle && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SegmentedControl
+                            size="sm"
+                            ariaLabel="고정지출 표시"
+                            value={recVisibility}
+                            onChange={setRecVisibility}
+                            options={[
+                              { value: 'all',  label: '전체 보기' },
+                              { value: 'soon', label: '결제일 D-3' },
+                            ]}
+                          />
+                          {recVisibility === 'soon' && hiddenRecs.length > 0 && (
+                            <button onClick={() => setRecVisibility('all')}
+                              className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                              + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{fmtWon(hiddenRecsTotal)}</span> 숨김
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {traceMonths.length > 0 && (
+                        <p className="text-xs text-[var(--warm-muted)]">
+                          {Number(targetMonth.slice(5, 7))}월에 낸 {traceMonths.length === 1 ? targetMonthLabel(traceMonths[0], targetMonth) : '다른 달분'} <span className="text-[var(--warm-dark)] font-semibold">{traceCount}건</span> <span className="num text-[var(--warm-dark)] font-semibold">{fmtWon(traceTotal)}</span>
+                          {traceMonths.map(m => m > todayStr.slice(0, 7)
+                            ? <span key={m}> · {monName(m)}에 보입니다</span>
+                            : <button key={m} type="button" onClick={() => router.push(`/finance?tab=expense&month=${m}`)}
+                                className="hover:text-[var(--coral)] transition-colors"> · {monName(m)} 보기 ›</button>)}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                 {/* 모바일 카드 */}
                 {isEmpty ? (
                   <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
@@ -3516,10 +3590,11 @@ export default function FinanceClient({
                         const [yy, mm, dd] = item.dateStr.split('-').map(Number)
                         const DAYS = ['일', '월', '화', '수', '목', '금', '토']
                         const wd = DAYS[new Date(yy, mm - 1, dd).getDay()]
+                        const otherDay = outsideMonthHead(item.dateStr)
                         return (
                           <div className="flex items-baseline justify-between px-1 pt-2 pb-0.5">
-                            <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</span>
-                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '합계')}</span>
+                            <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd}){otherDay}</span>
+                            {!otherDay && <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '합계')}</span>}
                           </div>
                         )
                       })() : null
@@ -3548,7 +3623,7 @@ export default function FinanceClient({
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
                                   {/* 좁은 폭(360px)에서 칩이 붙어도 금액 열을 밀지 않게 카테고리만 줄어든다 — 데스크톱 표의 같은 칸 문법(truncate·shrink-0). */}
                                   <span className="text-[0.65625rem] text-[var(--coral)] font-medium min-w-0 truncate">{e.category}</span>
-                                  <TargetMonthBadge e={e} />
+                                  {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                   {grp && (item.groupKind === 'order'
                                     ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">주문 {grp.filter(r => !r.isShipping).length}품목</span>
                                     : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(grp)}</span>)}
@@ -3640,8 +3715,8 @@ export default function FinanceClient({
                             <tr key={`dh-${item.dateStr}`} className="bg-[var(--canvas)]/50 border-b border-[var(--warm-border)]">
                               <td colSpan={6} className="px-4 py-1.5">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{fmtDate(item.dateStr)}</span>
-                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '해당일 합계')}</span>
+                                  <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{fmtDate(item.dateStr)}{outsideMonthHead(item.dateStr)}</span>
+                                  {!outsideMonthHead(item.dateStr) && <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '해당일 합계')}</span>}
                                 </div>
                               </td>
                             </tr>
@@ -3674,7 +3749,7 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
-                                    <TargetMonthBadge e={e} />
+                                    {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
                                       : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(grp)}</span>)}
@@ -4400,7 +4475,6 @@ export default function FinanceClient({
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <DatePicker name="date" value={editExpDate} onChange={setEditExpDate}
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-                      <OtherMonthNotice date={editExpDate} />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -4429,6 +4503,8 @@ export default function FinanceClient({
                       })()}
                     </div>
                   </div>
+                  {/* 귀속월 — 반폭 칸에 넣으면 320px 에서 캡션이 세 줄로 접혀 날짜 행 아래 전폭 한 행으로 둔다(기록 모달과 같은 자리). */}
+                  <ExpenseTargetMonthField date={editExpDate} viewMonth={targetMonth} initial={detailExp.targetMonth} onDirty={() => setExpEditDirty(true)} />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     {/* 카테고리 변경 시 품목 유지 — 저장하면 품목째 새 카테고리로 이동(운영자 지시 2026-07-13).
@@ -4761,7 +4837,6 @@ export default function FinanceClient({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <DatePicker name="date" value={addExpDate} onChange={setAddExpDate}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-                    <OtherMonthNotice date={addExpDate} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -4791,6 +4866,8 @@ export default function FinanceClient({
                     })()}
                   </div>
                 </div>
+                {/* 귀속월 — 날짜 행 아래 전폭 한 행(기록 모달과 같은 자리). */}
+                <ExpenseTargetMonthField date={addExpDate} viewMonth={targetMonth} onDirty={() => setAddExpDirty(true)} />
                 {/* #2 유형 — 물품 구매(품목 필수) vs 서비스·무형(품목 없이 금액만) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>

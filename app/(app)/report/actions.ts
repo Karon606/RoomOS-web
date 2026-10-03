@@ -9,6 +9,7 @@ import { unpaidForLease } from '@/lib/billing'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { redirect } from 'next/navigation'
 import { dbDateMonthKey, kstMonthStr, monthsDbRange, yearDbRange } from '@/lib/kstDate'
+import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { discountedRent } from '@/lib/rentDiscount'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
@@ -26,7 +27,7 @@ export type MonthlyRow = {
   billedAmount: number  // 그 달 발생 청구액 (미수 루프와 동일 스코프, billForLeaseMonth 합)
   revenue: number       // 발생주의 매출 (paymentRecord.actualAmount, targetMonth = 해당 월)
   extraIncome: number   // 기타수익 (date 기준)
-  expense: number       // 지출 (date 기준)
+  expense: number       // 지출 (귀속월 기준, 2026-10-03)
   profit: number        // (revenue + extraIncome) - expense
   unpaidAmount: number  // 그 월말 시점 누적 미수금
 }
@@ -145,11 +146,11 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     revenueByMonth[m] = total
   }
 
-  // 지출 / 기타수익 — 발생일(date) 기준
+  // 지출은 귀속월 축(2026-10-03 운영자 승인 2안), 기타수익은 발생일(date) 기준
   const [expenses, incomes] = await Promise.all([
     prisma.expense.findMany({
-      where: { propertyId, date: yearWindow },
-      select: { date: true, amount: true, category: true },
+      where: { propertyId, ...targetMonthWhere(months[0], months[11]) },
+      select: { date: true, targetMonth: true, amount: true, category: true },
     }),
     prisma.extraIncome.findMany({
       where: { propertyId, date: yearWindow },
@@ -159,7 +160,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
 
   const expenseByMonth: Record<string, number> = {}
   for (const e of expenses) {
-    const m = dbDateMonthKey(e.date)
+    const m = expenseTargetMonth(e)
     expenseByMonth[m] = (expenseByMonth[m] ?? 0) + e.amount
   }
   const extraByMonth: Record<string, number> = {}
@@ -415,9 +416,9 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     prisma.expense.findMany({
       where: {
         propertyId,
-        date: yearBackWindow,
+        ...targetMonthWhere(shiftMonth(startMonth, -12), shiftMonth(startMonth, monthsAhead - 1)),
       },
-      select: { date: true, amount: true },
+      select: { date: true, targetMonth: true, amount: true },
     }),
     prisma.extraIncome.findMany({
       where: {
@@ -430,7 +431,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
 
   const expByMonth: Record<string, number> = {}
   for (const e of historicalExpenses) {
-    const k = dbDateMonthKey(e.date)
+    const k = expenseTargetMonth(e)
     expByMonth[k] = (expByMonth[k] ?? 0) + e.amount
   }
   const incByMonth: Record<string, number> = {}
@@ -663,13 +664,13 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
   // 12개월 트렌드
   const trendRevenue = trendMonths.map(m => actualByMonth[m] ?? 0)
   const expenses12 = await prisma.expense.findMany({
-    where: { propertyId, date: monthsDbRange(trendMonths[0], trendMonths[11]) },
-    select: { date: true, amount: true, category: true },
+    where: { propertyId, ...targetMonthWhere(trendMonths[0], trendMonths[11]) },
+    select: { date: true, targetMonth: true, amount: true, category: true },
   })
   const expenseByMonth: Record<string, number> = {}
   const categoryAcc: Record<string, number> = {}
   for (const e of expenses12) {
-    const m = dbDateMonthKey(e.date)
+    const m = expenseTargetMonth(e)
     expenseByMonth[m] = (expenseByMonth[m] ?? 0) + e.amount
     categoryAcc[e.category] = (categoryAcc[e.category] ?? 0) + e.amount
   }
@@ -845,12 +846,12 @@ export async function getAvailableYears(): Promise<string[]> {
       select: { targetMonth: true },
       distinct: ['targetMonth'],
     }),
-    prisma.expense.findMany({ where: { propertyId }, select: { date: true } }),
+    prisma.expense.findMany({ where: { propertyId }, select: { date: true, targetMonth: true } }),
     prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true } }),
   ])
   const years = new Set<string>()
   for (const p of pmtMonths) years.add(p.targetMonth.slice(0, 4))
-  for (const e of exps) years.add(String(new Date(e.date).getFullYear()))
+  for (const e of exps) years.add(expenseTargetMonth(e).slice(0, 4))
   for (const i of incs) years.add(String(new Date(i.date).getFullYear()))
   const arr = Array.from(years).sort((a, b) => Number(b) - Number(a))
   if (arr.length === 0) arr.push(kstMonthStr().slice(0, 4))   // 데이터가 없을 때의 기본 연도도 KST

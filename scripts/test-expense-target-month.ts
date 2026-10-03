@@ -1,11 +1,13 @@
 // 고정지출 귀속월 정본(lib/expenseTargetMonth) 회귀 + 회차 판정 배선 그물 — 실행: npx tsx scripts/test-expense-target-month.ts
 //
-// 고정하는 것(2026-10-01 운영자 승인 1안, 가스요금 9월분 10/1 납부).
+// 고정하는 것(2026-10-01 운영자 승인 1안, 가스요금 9월분 10/1 납부 · 2026-10-03 2안 지출 결산 전체).
 //   · 귀속월 = targetMonth ?? date 의 달, 같은 달이면 NULL 로 접어 저장
 //   · where 조각(targetMonthWhere)이 메모리 판정(inTargetMonthRange)과 같은 뜻이다(무작위 다수)
 //   · 같은 항목·같은 귀속월 중복 판정, 같은 회차 2건은 금액 합산·id 최신
-//   · 배지 'N월분 지연/선납', 같은 달 무배지
+//   · 배지 중립 'N월분'(전 유형), 같은 달 무배지
 //   · 소스: recurringStatus·finance actions·기록 모달·재무 목록이 date 월을 직접 쓰지 않고 정본을 지난다
+//   · 2안 소스: 결산 소비처(재무 목록·카테고리·예비비 후보·홈·추이·보고서)의 지출 조회가 귀속월 조각을 쓴다,
+//     폼 귀속월 칸·addExpense/updateExpense 전파, 카드 정산 메타 칩
 import fs from 'node:fs'
 import path from 'node:path'
 import {
@@ -33,6 +35,8 @@ eq('저장 접기 — 미지정은 NULL', targetMonthForSave(undefined, D('2026-
 eq('형식 검증', [isMonthKey('2026-09'), isMonthKey('2026-13'), isMonthKey('2026-9'), isMonthKey(null)], [true, false, false, false])
 eq('달 이동 — 해 넘김', [shiftMonthKey('2026-01', -1), shiftMonthKey('2026-12', 1), shiftMonthKey('2026-10', 0)], ['2025-12', '2027-01', '2026-10'])
 eq('표기', targetMonthLabel('2026-09'), '2026년 9월분')
+eq('표기 — 기준 달과 해가 같으면 연도 생략', targetMonthLabel('2026-09', '2026-10'), '9월분')
+eq('표기 — 해가 갈리면 연도', [targetMonthLabel('2025-12', '2026-01'), targetMonthLabel('2027-01', '2026-12-31')], ['2025년 12월분', '2027년 1월분'])
 
 // ── where 조각의 의미 ─────────────────────────────────────────────
 // Prisma 가 하는 일을 손으로 흉내 내 조각을 평가한다 — 조각과 메모리 판정이 같은 답을 내야 한다.
@@ -142,23 +146,45 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
   must(`${f} — 삭제취소 가드가 기록 가드와 같은 식`, /targetMonthWhere\(slot\)/.test(undo) && !/Date\.UTC\(/.test(undo))
   const resync = fnBody(s, /async function resyncRecurringAnchor[\s\S]*?\n\}\n/)
   must(`${f} — 기준 달 파생이 귀속월 정본을 지난다`, /expenseTargetMonth\(/.test(resync) && !/kstMonthOf\(/.test(resync))
+  // 2안(2026-10-03): 칸이 실려 오면 그 값, 안 실려 오면 보존(form-clear-vs-absent), 분할 행에도 전파.
   const upd = fnBody(s, /export async function updateExpense[\s\S]*?\n\}\n/)
-  must(`${f} — updateExpense 가 귀속월을 덮어쓰지 않는다`, !/\btargetMonth\s*:/.test(upd))
+  must(`${f} — updateExpense 가 귀속월 칸 부재를 보존으로 읽는다(formData.has)`, /formData\.has\('targetMonth'\)/.test(upd) && /targetMonthForSave\(/.test(upd))
+  must(`${f} — updateExpense 가 첫 행·분할 행·배송비·단일 저장에 귀속월을 싣는다(4곳)`, (upd.match(/^\s*targetMonth,/gm) ?? []).length >= 4)
+  must(`${f} — updateExpense 의 고정지출 중복 가드가 기록 가드와 같은 식`, /targetMonthWhere\(slot\)/.test(upd) && /이미 기록돼 있습니다/.test(upd))
+  must(`${f} — updateExpense 가 기준 달 파생을 유지한다`, (upd.match(/resyncRecurringAnchor\(/g) ?? []).length >= 2)
+  const add = fnBody(s, /export async function addExpense[\s\S]*?\n\}\n/)
+  must(`${f} — addExpense 가 귀속월을 접어 저장한다(baseRow·배송비)`, /targetMonthForSave\(/.test(add) && (add.match(/^\s*targetMonth,/gm) ?? []).length >= 2)
 }
 {
   const f = 'app/(app)/finance/RecurringExpenseRecordModal.tsx'
   const s = read(f)
   must(`${f} — 귀속월을 저장에 넘긴다`, /keepCycle:\s*keep,\s*\n\s*targetMonth,/.test(s))
   must(`${f} — 주기 물음이 귀속월로 묻는다`, /const month = targetMonth\b/.test(s) && !/const month = date\.slice\(0,\s*7\)/.test(s))
-  must(`${f} — 귀속월 옵션 표기가 정본(targetMonthLabel)`, /targetMonthLabel\(m\)/.test(s))
+  must(`${f} — 귀속월 옵션 표기가 정본(targetMonthLabel, 해가 같으면 'N월분')`, /targetMonthLabel\(m, baseMonth\)/.test(s))
 }
 {
   const f = 'app/(app)/finance/FinanceClient.tsx'
   const s = read(f)
-  must(`${f} — 목록 배지가 정본(targetMonthBadge)`, /targetMonthBadge\(e\)/.test(s) && (s.match(/<TargetMonthBadge e=\{e\} \/>/g) ?? []).length >= 2)
-  // 배지는 판정하지 않는다 — 말일 자동이체 주말 시프트로 제때 낸 회차도 다음 달 날짜다.
-  const badge = fnBody(s, /function TargetMonthBadge[\s\S]*?\n\}\n/)
-  must(`${f} — 귀속월 배지가 지연·선납을 판정하지 않는다(중립 톤)`, badge !== '' && !/지연|선납|warning-|info-/.test(badge) && /cream-2/.test(badge))
+  // 배지는 정본 메타 칩 하나(components/ui/TargetMonthChip)를 카드 정산과 공유한다(웹디자이너 패스 2026-10-03).
+  must(`${f} — 목록 배지가 공유 메타 칩(TargetMonthChip)이고 수제 배지가 없다`, (s.match(/<TargetMonthChip e=\{e\} \/>/g) ?? []).length >= 2 && !/function TargetMonthBadge/.test(s))
+  // 조회 달 밖 날짜 묶음은 머리가 ' · 9월분'을 말하므로 그 행 배지는 생략한다(같은 말 두 번 금지).
+  must(`${f} — 조회 달 밖 날짜 머리는 합계 대신 귀속월, 그 묶음 행 배지는 생략`,
+    (s.match(/\{item\.dateStr\.slice\(0, 7\) === targetMonth && <TargetMonthChip e=\{e\} \/>\}/g) ?? []).length === 2
+    && (s.match(/outsideMonthHead\(/g) ?? []).length >= 3 && /!otherDay && /.test(s) && /!outsideMonthHead\(item\.dateStr\) && /.test(s))
+  // 폼 귀속월 칸 — 등록·수정 두 폼, 수정은 저장값으로 연다. 날짜 행(반폭 grid) 밖 전폭 한 행.
+  const field = fnBody(s, /function ExpenseTargetMonthField[\s\S]*?\n\}\n/)
+  must(`${f} — 폼 귀속월 칸이 name="targetMonth" 로 실린다(접힘 hidden·펼침 select)`, (field.match(/name="targetMonth"/g) ?? []).length >= 2 && /targetMonthLabel\(m, dateMonth\)/.test(field))
+  must(`${f} — 귀속월 칸 손잡이가 같은 달에도 선다('귀속월 바꾸기')·버튼이 폼 dirty 를 세운다`, /'귀속월 바꾸기'/.test(field) && /onDirty\(\)/.test(field))
+  const uses = [...s.matchAll(/<ExpenseTargetMonthField [^\n]*\/>/g)]
+  must(`${f} — 귀속월 칸이 등록·수정 두 폼에 선다(onDirty 배선)`, uses.length === 2 && uses.every(u => /onDirty=\{\(\) => set(AddExp|ExpEdit)Dirty\(true\)\}/.test(u[0])) && uses.some(u => /initial=\{detailExp\.targetMonth\}/.test(u[0])))
+  for (const u of uses) {
+    const before = s.slice(0, u.index!)
+    const g = before.lastIndexOf('<div className="grid grid-cols-2')
+    const seg = before.slice(g)
+    const depth = (seg.match(/<div\b/g) ?? []).length - (seg.match(/<\/div>/g) ?? []).length
+    must(`${f}:${before.split('\n').length} — 귀속월 칸이 반폭 grid 칸 안에 있다(320px 에서 접힌다). 날짜 행 아래 전폭으로`, g >= 0 && depth <= 0)
+  }
+  must(`${f} — 다른 달분 흔적 줄이 '낸' 어휘·카테고리 필터·숫자 강조로 선다`, /월에 낸 /.test(s) && /o\.category !== expFilter\.category/.test(s) && /fmtWon\(traceTotal\)/.test(s) && !/월 결제 · 다른 달분/.test(s))
   must(`${f} — 삭제 확인창이 '이번 달'이 아니라 귀속월로 말한다`, !/이번 달 (고정지출 )?기록/.test(s))
 }
 {
@@ -168,6 +194,111 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
   // 미래 예정일을 넘기면 모달이 열 때마다 '오늘 날짜로 바꿀까요?'를 묻는다 — 지났거나 오늘일 때만.
   must(`${f} — 홈 알림이 미래 예정일을 날짜로 넘기지 않는다`, /due && due <= kstYmdStr\(\) \? due : undefined/.test(s))
 }
+// ── 2안(2026-10-03): 지출 결산 소비처는 귀속월 축 ───────────────────────
+// 소비처마다 prisma.expense.(findMany|aggregate|groupBy) 인자 블록을 괄호 깊이로 잘라(문자열·주석은 건너뜀)
+// 본다. 달 창(date: monthDbRange 류)이 남아 있으면 위반, 현금일 축 예외는 바로 위 3줄 안의 `// 현금일 축:` 표지.
+{
+  /** idx 의 '(' 부터 짝 ')' 까지 — 문자열·주석 안의 괄호는 세지 않는다. 반환은 주석을 걷은 코드. */
+  function callBlock(raw: string, open: number): string | null {
+    let depth = 0, out = ''
+    for (let i = open; i < raw.length; i++) {
+      const c = raw[i], n = raw[i + 1]
+      if (c === '/' && n === '/') { const e = raw.indexOf('\n', i); i = e < 0 ? raw.length : e - 1; continue }
+      if (c === '/' && n === '*') { const e = raw.indexOf('*/', i + 2); i = e < 0 ? raw.length : e + 1; continue }
+      if (c === "'" || c === '"' || c === '`') {
+        let j = i + 1
+        while (j < raw.length && raw[j] !== c) { if (raw[j] === '\\') j++; j++ }
+        out += raw.slice(i, j + 1); i = j; continue
+      }
+      out += c
+      if (c === '(') depth++
+      else if (c === ')') { depth--; if (depth === 0) return out }
+    }
+    return null
+  }
+  const CALL = /prisma\.expense\.(findMany|aggregate|groupBy)\(/g
+  const WINDOW = /\bdate:\s*(monthDbRange|monthsDbRange|yearDbRange|dayDbRange|monthWindow|trendWindow|yearWindow|yearBackWindow|last3Window|window|monthFilter)\b/
+  type Blk = { at: number; line: number; code: string; cash: boolean }
+  function blocks(f: string, raw: string): Blk[] {
+    const out: Blk[] = []
+    for (const m of raw.matchAll(CALL)) {
+      const at = m.index!
+      const code = callBlock(raw, at + m[0].length - 1)
+      const line = raw.slice(0, at).split('\n').length
+      if (code == null) { src.push(`${f}:${line} — 지출 조회 인자 블록을 못 찾았다(괄호 불일치).`); continue }
+      const above = raw.slice(0, at).split('\n').slice(-4).join('\n')
+      out.push({ at, line, code, cash: /\/\/ 현금일 축:/.test(above) })
+    }
+    return out
+  }
+  const FILES = [
+    'app/(app)/finance/actions.ts',
+    'app/(app)/dashboard/getDashboardData.ts',
+    'app/(app)/dashboard/actions.ts',
+    'app/(app)/report/actions.ts',
+  ]
+  const byFile = new Map<string, { raw: string; bl: Blk[] }>()
+  for (const f of FILES) {
+    const raw = read(f)
+    const bl = blocks(f, raw)
+    byFile.set(f, { raw, bl })
+    for (const b of bl) {
+      if (b.cash) continue
+      must(`${f}:${b.line} — 지출 조회가 date 달 창을 쓴다. targetMonthWhere(..) 를 쓰거나, 정말 현금일 축이면 바로 위에 '// 현금일 축:' 표지를 단다`, !WINDOW.test(b.code))
+    }
+    // 지출 월 키는 귀속월 정본으로 — date 의 달로 버킷을 만들면 9월분이 10월 막대에 선다.
+    must(`${f} — 지출 월 키를 date 로 만들지 않는다(dbDateMonthKey(e.date)·yearOf(e.date))`, !/dbDateMonthKey\(e\.date\)|yearOf\(e\.date\)|inQ\(new Date\(e\.date\)\)/.test(raw))
+  }
+  /** 앵커 뒤 첫 지출 조회 블록 — 못 찾으면 위반. */
+  function firstAfter(f: string, anchor: RegExp): Blk | null {
+    const { raw, bl } = byFile.get(f)!
+    const m = raw.match(anchor)
+    if (!m || m.index == null) { src.push(`${f} — 앵커 ${anchor} 를 못 찾았다(이름이 바뀌었으면 그물도 고친다)`); return null }
+    const b = bl.find(x => x.at > m.index!)
+    if (!b) { src.push(`${f} — ${anchor} 뒤 지출 조회 블록을 못 찾았다`); return null }
+    return b
+  }
+  {
+    const f = 'app/(app)/finance/actions.ts'
+    for (const fn of ['getExpenses', 'getExpenseCategoryTotals', 'getSettleableExpenses']) {
+      const b = firstAfter(f, new RegExp(`export async function ${fn}\\(`))
+      if (b) must(`${f} — ${fn} 가 귀속월 조각을 쓴다`, /targetMonthWhere\(/.test(b.code) && !b.cash)
+    }
+    const t = firstAfter(f, /export async function getOtherMonthPaidExpenses\(/)
+    if (t) must(`${f} — 다른 달분 흔적 조회는 현금일 축 표지를 단다(결산 합계 아님)`, t.cash && /targetMonth:\s*\{\s*not:/.test(t.code))
+  }
+  {
+    // 홈은 지출 조회 전부가 결산 축이다 — KPI·도넛(findMany·groupBy 한 쌍)·전월·전년·비고정 3개월·6개월 추이.
+    // findMany 와 groupBy 가 갈리면 sum(categoryBreakdown) === expectedExpense 항등이 깨진다.
+    const f = 'app/(app)/dashboard/getDashboardData.ts'
+    const bl = byFile.get(f)!.bl
+    must(`${f} — 지출 조회 6곳 이상이 전부 귀속월 조각(현재 ${bl.length})`, bl.length >= 6 && bl.every(b => /targetMonthWhere\(/.test(b.code)))
+    must(`${f} — 추이 달 키가 귀속월 정본`, /expenseTargetMonth\(e\) === m/.test(byFile.get(f)!.raw))
+  }
+  {
+    const f = 'app/(app)/dashboard/actions.ts'
+    const bl = byFile.get(f)!.bl
+    must(`${f} — 달 단위 막대 지출이 귀속월 조각`, bl.some(b => /targetMonthWhere\(/.test(b.code)))
+    must(`${f} — 현금일 축 예외는 일간·주간 한 곳뿐`, bl.filter(b => b.cash).length <= 1)
+  }
+  {
+    const f = 'app/(app)/report/actions.ts'
+    const bl = byFile.get(f)!.bl
+    must(`${f} — 연간·예측·12개월 추이 지출이 귀속월 조각(3곳)`, bl.filter(b => /targetMonthWhere\(/.test(b.code)).length >= 3)
+    must(`${f} — 지출 달 키가 귀속월 정본`, (byFile.get(f)!.raw.match(/expenseTargetMonth\(e\)/g) ?? []).length >= 3)
+  }
+  {
+    const f = 'app/(app)/card-settlement/CardSettlementClient.tsx'
+    const s = read(f)
+    must(`${f} — 품목 행 귀속월 칩이 공유 정본(components/ui/TargetMonthChip)`, /from '@\/components\/ui\/TargetMonthChip'/.test(s) && (s.match(/<TargetMonthChip e=\{item\} \/>/g) ?? []).length >= 2 && !/function TargetMonthChip/.test(s))
+    const c = read('components/ui/TargetMonthChip.tsx')
+    must(`components/ui/TargetMonthChip.tsx — §11 메타 칩 정본·판정은 targetMonthBadge·지연/선납 판정 없음·전 유형`,
+      /targetMonthBadge\(e\)/.test(c) && /bg-\[var\(--canvas\)\][^"]*text-\[var\(--warm-muted\)\][^"]*ring-1 ring-\[var\(--warm-border\)\]/.test(c) && !/지연|선납|recurringExpenseId/.test(c.replace(/^\/\/.*$/gm, '')))
+    must(`${f} — 청구월이 결제일 기준임을 안내한다`, /청구월은 결제일 기준입니다\./.test(s))
+    must(`${f} — 청구월은 date 축 그대로(getBillMonth(item.date …))`, /getBillMonth\(/.test(s) && !/getBillMonth\([^)]*targetMonth/.test(s))
+  }
+}
+
 // 정본 밖에서 '지정 ?? date 월'을 손으로 다시 쓰면 KST 하나만 틀려도 회차가 갈린다.
 {
   const walk = (dir: string, out: string[] = []): string[] => {
@@ -189,9 +320,9 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
 }
 
 if (fails.length > 0 || src.length > 0) {
-  console.error(`[고정지출 귀속월] 통과 ${pass} · 실패 ${fails.length + src.length}`)
+  console.error(`[지출 귀속월] 통과 ${pass} · 실패 ${fails.length + src.length}`)
   for (const f of fails) console.error(`  - ${f}`)
   for (const f of src) console.error(`  - 소스: ${f}`)
   process.exit(1)
 }
-console.log(`[고정지출 귀속월] 정본·조각 의미·중복 판정·합산·배지·소스 배선 통과 ${pass}`)
+console.log(`[지출 귀속월] 정본·조각 의미·중복 판정·합산·배지·결산 축·폼 전파·소스 배선 통과 ${pass}`)

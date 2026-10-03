@@ -1,10 +1,14 @@
-// 고정지출 기록의 귀속월 정본 — targetMonth(지정) 아니면 date 의 달, 회차 판정·중복 가드·합산이 전부 여기를 지난다.
+// 지출의 귀속월 정본 — targetMonth(지정) 아니면 date 의 달. 지출 결산·고정지출 회차 판정·중복 가드·합산이 전부 여기를 지난다.
 //
-// 지출에는 달 축이 둘이다(2026-10-01 운영자 승인 1안, knowledge/domain-expense-target-month).
-//  · date        — 돈이 실제로 나간 날. 재무 월 합계·카테고리·손익·카드 청구월은 이 축이다.
-//  · targetMonth — 이 기록이 치른 고정지출 회차의 달. 9월분 가스요금을 10/1 에 내면 '2026-09'.
+// 지출에는 달 축이 둘이다(knowledge/domain-expense-target-month).
+//  · targetMonth — 이 지출이 속한 달(귀속월). 9월분 가스요금을 10/1 에 내면 '2026-09'.
 //                  NULL 이면 date 의 달이다(이 칸이 생기기 전 기록 전부, 그리고 귀속월 = 납부 달인 기록).
-// 소비처가 각자 `targetMonth ?? date 월` 을 쓰면 한 곳만 KST 를 틀려도 회차가 갈린다. 이 파일만 쓴다.
+//                  1안(2026-10-01)은 고정지출 회차 판정에만 썼고, 2안(2026-10-03 운영자 승인)부터
+//                  지출 결산 전체(재무 목록·카테고리·홈 KPI·도넛·추이 월 막대·보고서)가 이 축이다.
+//                  운영자 원문: "9월에 납부받아야할 돈도 10월에 늦게 받아도 9월 수납으로 처리되는 것처럼".
+//  · date        — 돈이 실제로 나간 날. 카드 청구월·예비비 거래 원장·목록 날짜 머리·일별 합계·
+//                  일간/주간 추이·엑셀(3단계 전까지)·전체 백업은 이 축이다.
+// 소비처가 각자 `targetMonth ?? date 월` 을 쓰면 한 곳만 KST 를 틀려도 달이 갈린다. 이 파일만 쓴다.
 
 import { dbDateMonthKey, monthsDbRange } from './kstDate'
 
@@ -15,8 +19,12 @@ export function isMonthKey(s: unknown): s is string {
   return typeof s === 'string' && MONTH_RE.test(s)
 }
 
-/** 이 지출이 치른 고정지출 회차의 달 'YYYY-MM'. */
-export function expenseTargetMonth(e: { targetMonth: string | null | undefined; date: Date | string }): string {
+/**
+ * 이 지출의 귀속월 'YYYY-MM'.
+ * targetMonth 는 `string | null` 이다(undefined 불가) — select 에서 targetMonth 를 빠뜨리면
+ * 모든 행이 date 의 달로 조용히 읽히는데, 그 누락을 tsc 가 잡게 하려는 것이다.
+ */
+export function expenseTargetMonth(e: { targetMonth: string | null; date: Date | string }): string {
   return e.targetMonth ?? dbDateMonthKey(e.date)
 }
 
@@ -31,8 +39,12 @@ export function targetMonthForSave(month: string | null | undefined, date: Date 
 }
 
 /**
- * 귀속월이 [from, to] 안인 지출 — Prisma where 조각. 다른 조건과 펼쳐 합친다(OR 키를 쓰므로 다른 OR 과 겹치면 안 된다).
- * 지정값이 있으면 그것으로, 없으면 date 가 그 달 창 안인지로 본다. 'YYYY-MM' 은 글자 순서가 곧 달 순서다.
+ * 귀속월이 [from, to] 안인 지출 — Prisma where 조각. 지정값이 있으면 그것으로, 없으면 date 가 그 달 창 안인지로 본다.
+ * 'YYYY-MM' 은 글자 순서가 곧 달 순서다.
+ *
+ * 합치는 규칙: 이 조각은 OR 키를 쓴다. 다른 조건과는 `{ propertyId, ...targetMonthWhere(m) }` 로 펼쳐 합치되,
+ * 그 where 에 이미 OR 이 있으면 펼치지 말고 `AND: [targetMonthWhere(m), { OR: [...] }]` 로 묶는다.
+ * 펼치면 뒤의 OR 이 앞의 OR 을 소리 없이 덮어써 귀속월 조건이 사라진다.
  */
 export function targetMonthWhere(from: string, to: string = from) {
   return {
@@ -56,9 +68,14 @@ export function shiftMonthKey(month: string, n: number): string {
   return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`
 }
 
-/** '2026년 9월분' — 수납 귀속월 select 와 같은 표기. */
-export function targetMonthLabel(month: string): string {
-  return `${Number(month.slice(0, 4))}년 ${Number(month.slice(5, 7))}월분`
+/**
+ * 귀속월 표기. 기준 달(relativeTo)을 주면 해가 같을 때 '9월분', 해가 다를 때만 '2025년 12월분'
+ * (홈 이월 버킷 AgingList·PaymentRecordList 와 같은 판정 — 해가 갈리는 것만 연도를 붙인다).
+ * 기준 없이 부르면 늘 연도를 붙인다.
+ */
+export function targetMonthLabel(month: string, relativeTo?: string): string {
+  const m = `${Number(month.slice(5, 7))}월분`
+  return relativeTo && relativeTo.slice(0, 4) === month.slice(0, 4) ? m : `${Number(month.slice(0, 4))}년 ${m}`
 }
 
 /**

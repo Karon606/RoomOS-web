@@ -16,9 +16,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { pushToast } from '@/lib/saveStatus'
+import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
 
 type UnsettledExpense = {
   id: string; date: Date; amount: number; category: string
+  targetMonth: string | null   // 귀속월 — 청구월은 date 축 그대로, 다를 때만 'N월분' 메타 칩
   detail: string | null; financeName: string | null
   financialAccountId: string | null
   financialAccount: {
@@ -51,6 +53,8 @@ function displayDay(day: number | null) {
   return `${day}일`
 }
 
+// 귀속월이 결제일의 달과 다르면 품목 행에 'N월분' 메타 칩(components/ui/TargetMonthChip, 재무 목록과 같은 정본).
+// 청구월은 결제일(date) 축이라 9월분 가스요금을 10/1 에 카드로 내면 10월 청구에 든다.
 // 거래일 → 그 거래가 속한 청구월(YYYY-MM). 마감일(cutOff) 이후 거래는 다음 청구월.
 function getBillMonth(date: Date | string, cutOffDay: number | null) {
   const d = new Date(date)
@@ -241,11 +245,14 @@ export default function CardSettlementClient({
           <div className="space-y-1.5">
             {g.items.map(item => (
               <div key={item.id} className="flex items-center justify-between text-xs gap-2">
-                <span className="text-[var(--warm-mid)] min-w-0 truncate">
-                  {fmtMD(item.date)}
-                  &nbsp;
-                  <span className="text-[var(--warm-muted)]">{item.category}</span>
-                  {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
+                <span className="min-w-0 flex items-center gap-1.5">
+                  <span className="text-[var(--warm-mid)] min-w-0 truncate">
+                    {fmtMD(item.date)}
+                    &nbsp;
+                    <span className="text-[var(--warm-muted)]">{item.category}</span>
+                    {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
+                  </span>
+                  <TargetMonthChip e={item} />
                 </span>
                 <span className="text-[var(--warm-dark)] font-medium num shrink-0">
                   {fmtWon(item.amount)}
@@ -282,7 +289,7 @@ export default function CardSettlementClient({
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산
-            <InfoHint title="카드 정산이란?">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다. 미정산 목록은 월과 무관하게 전체가 보이고, 정산 완료 내역은 위에서 선택한 달의 청구분만 보입니다.</InfoHint>
+            <InfoHint title="카드 정산이란?">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다. 미정산 목록은 월과 무관하게 전체가 보이고, 정산 완료 내역은 위에서 선택한 달의 청구분만 보입니다. 청구월은 결제일 기준입니다.</InfoHint>
           </h1>
         </div>
         <MonthSelector />
@@ -407,7 +414,10 @@ export default function CardSettlementClient({
                     <div className="space-y-1">
                       {g.items.map(item => (
                         <div key={item.id} className="flex items-center justify-between gap-2 text-xs text-[var(--warm-muted)]">
-                          <span className="min-w-0 truncate">{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
+                          <span className="min-w-0 flex items-center gap-1.5">
+                            <span className="min-w-0 truncate">{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
+                            <TargetMonthChip e={item} />
+                          </span>
                           <span className="shrink-0">{fmtWon(item.amount)}</span>
                           {/* §16 진입점 2 — 그룹 전체가 아니라 이 한 건만 미정산으로 돌린다. */}
                           <RowActionBtn tone="neutral" className="shrink-0" disabled={isPending}
