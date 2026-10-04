@@ -1,4 +1,4 @@
-// 총수납·잔액·이월액 3카드 — 셸의 수납 면 summary/full 모드 양쪽에서 재사용.
+// 총수납·잔액·이월(다음 달로/지난달 미수) 3카드 — 셸의 수납 면 summary/full 모드 양쪽에서 재사용.
 // 데이터는 caller 가 getLeaseSettlementInfo 결과로 직접 넘긴다 (자체 fetch X — 부모에서 일괄 관리).
 
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -6,6 +6,9 @@ import { InfoHint } from '@/components/ui/InfoHint'
 
 type Settlement = {
   totalPaid: number; balance: number; carryOver: number
+  // 선납 이월(lib/prepaidCarry) — 미정의는 0 으로 읽는다(예약·퇴실 폴백 등 종전 표시 유지).
+  prepaidIn?: number
+  prepaidOut?: number
   // 예약(RESERVED) 표시 정본(신고 50a2a69b) — 실수납은 조회월 무관 reservationPaid, 잔액 대신 '입주 시 납부 예정'.
   status?: string | null
   expected?: number
@@ -42,18 +45,28 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
       ? `${Number(settlement.expectedMoveOut.slice(5, 7))}/${Number(settlement.expectedMoveOut.slice(8))} 퇴실까지 납부됨`
       : '퇴실일까지 납부됨'
 
+  // 셋째 칸 — 종전 '이월액'(carryOver)은 FIFO 저장이 앞 달을 정확히 채우고 남은 돈을 다음 달 record 로
+  // 밀어 두는 한 거의 늘 0 이었다(2026-10-05 502호: 매달 1,500원을 더 내 이월시키는데 0원).
+  // 미수가 있으면 그 사실이 먼저다. 아니면 다음 달 이후분으로 넘어가는 돈을 보이고, 지난달에서
+  // 넘어와 이 달분을 채운 돈은 보조줄로 적는다. 수치(carryOver)는 그대로이고 읽는 방식만 바뀐다.
+  const prepaidIn = settlement.prepaidIn ?? 0
+  const prepaidOut = settlement.prepaidOut ?? 0
+  const pastUnpaid = settlement.carryOver < 0
+  const pastOverpaid = settlement.carryOver > 0 ? settlement.carryOver : 0
+
   return (
     <div className="space-y-2">
       {/* 카드 라벨은 간결하게, 용어 설명은 (i)로 이관(운영자 지시 2026-07-13) */}
       <div className="flex items-center">
         <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-          {month ? `${month.slice(0, 4)}년 ${Number(month.slice(5))}월 · 입금일 기준` : '입금일 기준'}
+          {month ? `${month.slice(0, 4)}년 ${Number(month.slice(5))}월 · 귀속월 기준` : '귀속월 기준'}
         </p>
         <InfoHint title="수납 요약 용어" z={380}>
           <div className="space-y-2">
-            <p><span className="font-medium">총 수납</span> 이번 달 입금일 기준으로 받은 금액 합계입니다.</p>
+            <p><span className="font-medium">총 수납</span> 이 달분(귀속월)으로 기록된 금액 합계입니다. 지난달에 냈어도 이 달분이면 포함됩니다.</p>
             <p><span className="font-medium">잔액</span> 이번 달 청구 대비 남은 금액입니다. +는 선납(더 받음), −는 미수(덜 받음)입니다.</p>
-            <p><span className="font-medium">이월액</span> 지난달에서 넘어온 선납·미수입니다.</p>
+            <p><span className="font-medium">다음 달로</span> 이 달까지 받은 돈 중 다음 달 이후분으로 적어 둔 금액입니다. 지난달에 미리 받아 이 달분을 채운 금액은 &apos;지난달 이월&apos;로 적습니다.</p>
+            <p><span className="font-medium">지난달 미수</span> 지난달까지 다 받지 못한 금액입니다.</p>
             <p><span className="font-medium">이 달 청구</span> 이번 달에 청구할 금액입니다. 청구가 없는 달에는 청구 없음으로 표시되고, 그 달을 덮은 수납을 아래에 적습니다.</p>
           </div>
         </InfoHint>
@@ -89,10 +102,22 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
           )}
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">이월액</p>
-          <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
-            {settlement.carryOver !== 0 ? `${settlement.carryOver > 0 ? '+' : '−'}${fmtWon(Math.abs(settlement.carryOver))}` : '0원'}
-          </p>
+          <p className="text-xs text-[var(--warm-muted)] leading-tight">{pastUnpaid ? '지난달 미수' : '다음 달로'}</p>
+          {/* 큰 숫자는 한 줄 — 320px 3열에서 '원'만 아랫줄로 떨어지지 않게. 색은 §06 +/− 정본. */}
+          {pastUnpaid ? (
+            <p className="text-sm font-bold mt-0.5 whitespace-nowrap text-[var(--danger-fg)]">−{fmtWon(Math.abs(settlement.carryOver))}</p>
+          ) : (
+            <p className="text-sm font-bold mt-0.5 whitespace-nowrap text-[var(--success-fg)]">{prepaidOut > 0 ? `+${fmtWon(prepaidOut)}` : '0원'}</p>
+          )}
+          {!pastUnpaid && prepaidOut > 0 && settlement.status === 'CHECKED_OUT' && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">퇴실 정산 대상</p>
+          )}
+          {pastOverpaid > 0 && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">지난달 과납 {fmtWon(pastOverpaid)}</p>
+          )}
+          {prepaidIn > 0 && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">지난달 이월 {fmtWon(prepaidIn)}</p>
+          )}
         </div>
       </div>
     </div>

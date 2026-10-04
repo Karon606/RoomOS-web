@@ -1030,8 +1030,9 @@ export default function RoomsClient({
             더한 값과 왜 다른지 화면이 말하지 않는 신고가 재발한다(감지망 규칙 20 이 지킨다).
             '납부일'은 쓰지 않는다. 이 화면에서 그 말은 LeaseTerm.dueDay(약정 지급일)의 이름이고
             (:103 colVis · :1018 필터 · :1121 정렬 · :1332 헤더 · 미납 배지) 그것이 곧 반대 축인
-            귀속월의 앵커라, 붙이면 신고가 겪은 오해를 문자로 굳힌다. '입금일'은 PaymentSummaryCards
-            와 발생주의 데이터 진단이 같은 payDate 축에 이미 쓰는 말이다. */}
+            귀속월의 앵커라, 붙이면 신고가 겪은 오해를 문자로 굳힌다. '입금일'은 발생주의 데이터 진단이
+            같은 payDate 축에 이미 쓰는 말이다(PaymentSummaryCards 머리는 2026-10-05 '귀속월 기준'으로 정정 —
+            그 카드의 총 수납·잔액은 귀속월 합이다). */}
         {(payAggregates.cashReceiptSum !== 0 || payAggregates.cardSum !== 0) && (
           <>
             <p className="text-[0.6875rem] text-[var(--warm-muted)]">
@@ -1487,7 +1488,7 @@ export default function RoomsClient({
                     <td className="px-4 py-4 text-sm">
                       <span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.totalPaid} /></span>
                       {room.carryOver > 0 && (
-                        <span className="text-xs text-[var(--coral)] ml-1">(+이월액 <MoneyDisplay amount={room.carryOver} />)</span>
+                        <span className="text-xs text-[var(--success-fg)] ml-1">(+지난달 과납 <MoneyDisplay amount={room.carryOver} />)</span>
                       )}
                       {room.lastPayDate && room.lastPayDate !== room.noBillCoveredDate && (
                         <span className="block text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">납부 {room.lastPayDate.slice(5).replace('-', '/')}</span>

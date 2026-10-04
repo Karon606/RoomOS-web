@@ -27,6 +27,7 @@ import { effectiveDueRawForMonth } from '@/lib/dueDate'
 import { recalculatePayments, rewriteLockedExpectedForDiscountChange } from './paymentEngine'
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
+import { prepaidCarry } from '@/lib/prepaidCarry'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -43,6 +44,12 @@ type RoomRow = {
   // 표시 가드 전용(계산·집계 비관여). dueDay 자체는 입주월 미납 판정 기한으로 계속 저장된다.
   isShortTerm: boolean
   carryOver: number; totalPaid: number; balance: number; isPaid: boolean
+  // 선납 이월 — 표시 전용(lib/prepaidCarry 정본, 2026-10-05 502호). carryOver·totalPaid·balance·isPaid 는 불변.
+  //   prepaidIn  지난달까지 미리 받아 이 달분(귀속월)으로 적어 둔 금액
+  //   prepaidOut 이 달까지 받은 돈 중 다음 달 이후분으로 적어 둔 금액
+  // 진행 중 계약 행(buildLeaseRow)에서만 채운다. 예약·인수 전·공실·퇴실 폴백은 미정의(=0).
+  prepaidIn?: number
+  prepaidOut?: number
   leaseTermId: string | null; depositAmount: number; cleaningFee: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
@@ -329,9 +336,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // ── 하이브리드 누적 계산 ──
-    // 잔액/이월액/총수납 → payDate 기준(현금주의)
-    // firstUnpaidMonth → targetMonth 기준(발생주의, 아래에서 별도 계산)
+    // ── 누적 계산 ──
+    // 잔액/이월액/총수납/firstUnpaidMonth → targetMonth 기준(발생주의, 88f38cb9 이후)
+    // 지연납부 라벨·최근 납부일·선납 이월(prepaidIn/Out)만 payDate 를 보조로 쓴다
     const cutoffMonthStr = cutoffDate
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
@@ -489,6 +496,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 미래월은 표시 목적상 청구 예정액을 그대로 보여준다(잔액 계산만 스킵).
     const rowExpected = ((targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || checkoutNoBilling) ? 0 : viewBill
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
+    // 선납 이월 — 귀속월과 입금월이 갈리는 몫(표시 전용). 위 쿼리 OR절이 payDate ≤ 말일 record 를
+    // 이미 싣고 있어 추가 조회가 없다. 양도인 몫은 postCutoffRecords 에서 이미 빠졌다.
+    const { prepaidIn, prepaidOut } = prepaidCarry(postCutoffRecords, targetMonth)
 
     // 이 달에 청구가 없는 이유 — 새 계산이 아니라 위에서 이미 나온 두 판정을 화면으로 꺼내는 것뿐이다.
     // 운영자 지적 2026-08-02: "0원인데 완납이면 이상한데? 납부는 했잖아?" 실제로 돈은 이미 받았고
@@ -629,7 +639,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: lease.status, expected: rowExpected, dueDay: effectiveDueDay,
         isShortTerm: lease.isShortTerm,
-        currentPaid: 0, carryOver: displayCarryOver,
+        currentPaid: 0, carryOver: displayCarryOver, prepaidIn, prepaidOut,
         totalPaid: 0, balance: cumulativeBalance,
         isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
@@ -662,7 +672,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected: rowExpected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       isShortTerm: lease.isShortTerm,
-      currentPaid: realCurrentPaid, carryOver: displayCarryOver,
+      currentPaid: realCurrentPaid, carryOver: displayCarryOver, prepaidIn, prepaidOut,
       totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
       leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
