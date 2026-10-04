@@ -36,13 +36,20 @@ async function main() {
     orderBy: { date: 'asc' },
     select: {
       leaseTermId: true, withheldAmount: true, date: true, reason: true,
-      leaseTerm: { select: { cleaningFee: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } } },
+      leaseTerm: { select: { status: true, cleaningFee: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } } },
     },
   })
 
   const hits = []
   for (const r of refunds) {
     if (r.withheldAmount <= 0) continue
+    // 입주 전 예약 취소는 이 규칙 밖이다(운영자 확정 2026-10-05, 513호 김창대). 방을 쓴 적이 없어
+    // 청소할 몫이 없고, 돌려주지 않은 예약금은 전액 위약금(그 달 부가수익)이 맞다.
+    // 청소비 몫 규칙(2026-08-11)은 살다가 퇴실할 때 보증금에서 떼는 경우만 본다.
+    // 취소 상태만으로는 못 가른다 — 거주 중에서 '입실 취소'로 가는 전환도 있다(lib/leaseTransitions).
+    // 거주 구간(RoomStay)이 한 번도 없었던 취소만 뺀다.
+    if (r.leaseTerm?.status === 'CANCELLED'
+        && (await prisma.roomStay.count({ where: { leaseTermId: r.leaseTermId } })) === 0) continue
     const rows = await prisma.extraIncome.findMany({
       where: { leaseTermId: r.leaseTermId, payMethod: DEPOSIT_SOURCED_PAY_METHOD, deletedAt: null },
       select: { id: true, category: true, amount: true },
