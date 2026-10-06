@@ -27,6 +27,29 @@ import { fmtRoomNo } from '@/lib/roomNo'
 /** 날짜 게이트를 적용하는 단계 — 아직 방이 확정되지 않은 리드. */
 export const WISH_LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as const
 
+/** 문의 퍼널 단계 — 입주자 관리 '문의·예약' 2차 필터와 단체 공지 '단계' 조건이 같은 값을 쓴다. */
+export type LeadStage = 'INQUIRY' | 'TOUR' | 'RESERVED'
+
+/** 단계 라벨 정본 — 입주자 관리 단계 세그먼트와 단체 공지 단계 칩이 같은 글자를 쓴다. */
+export const LEAD_STAGE_LABEL: Record<LeadStage, string> = { INQUIRY: '문의', TOUR: '투어', RESERVED: '입실 예약' }
+
+/**
+ * 문의 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
+ * 투어 = 투어 예정(WAITING_TOUR+투어일) + 투어 완료(TOUR_DONE).
+ * 예약 확정은 null 이다 — 별도 그룹('입실 예정')이라 문의 퍼널의 단계가 아니다.
+ * 여기서 갈라 두면 단계 카운트·단계 필터가 저절로 확정자를 빼고, 부르는 쪽마다 조건을 또 적지 않아도 된다.
+ * (입주자 관리 화면 안의 로컬 함수였다. 단체 공지가 같은 판정을 쓰게 되어 2026-10-06 여기로 올렸다.)
+ */
+export function inquiryStageOf(
+  lease: { status: string; tourDate?: string | Date | null; reservationConfirmedAt?: string | Date | null } | undefined,
+): LeadStage | null {
+  if (!lease) return null
+  if (lease.status === 'RESERVED')     return lease.reservationConfirmedAt ? null : 'RESERVED'
+  if (lease.status === 'TOUR_DONE')    return 'TOUR'
+  if (lease.status === 'WAITING_TOUR') return lease.tourDate ? 'TOUR' : 'INQUIRY'
+  return null
+}
+
 /**
  * 이 저장 결과가 리드 게이트를 떠나는가 — 떠나면 조절 여부(moveInFlexible)를 함께 접어야 한다.
  * 매칭(wishDateGate)은 리드에서만 이 값을 읽으므로, 그 밖의 상태(예약 확정 포함)에 남은 값은

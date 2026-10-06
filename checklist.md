@@ -1593,3 +1593,15 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] knowledge/domain-contracts 결정 기록(2단계: 통보일 기록 칸·자동 계산은 별도 승인), Work_log
 - [x] 체크리스트 D(열린 링크 0건 재확인)·E·F, 게이트(tsc · verify:fast · dict-terms 읽기 · 예행 · eslint 신규 0)
 - [ ] 커밋·배포 (운영자)
+
+# 단체 공지 문자에 문의·예약자 대상 추가 (2026-10-06, 운영자 승인)
+운영자 원문: "단체문자 보내는 기능에서 문의예약했던 사람들도 조건에 들어가면 좋겠어 … 선착순 예약(예약금 입금한 예약확정) … 문의한 날짜의 범위도 … 먼저 문의한 사람에게 우선권"
+결정: 대상 전환 입주자(기본)|문의·예약, 확정 예약자 제외, 입실 취소자 제외(2차 토글 후보), 치환 변수 없음(배치 본문 공유).
+- [x] lib/noticeTargets.ts 순수 함수(그룹·단계·문의일 범위·순번) + scripts/test-notice-targets.ts(verify:fast)
+- [x] noticeSms.ts 모집단 확장(CURRENT_OCCUPANCY_STATUSES + WISH_LEAD_STATUSES, reservationConfirmedAt 제외), group·stage·inquiryAt·lastNoticeAt 반환, 기록에 leaseTermId
+- [x] NoticeSmsModal: 대상 세그먼트, 단계 축, 문의일 범위(지출 엑셀 정본), 방 축 숨김, 문의일 오름차순·순번·보조줄·'N/N 안내함', 전체 선택/해제, filterLabel
+- [x] 공지 템플릿 '선착순 입실 안내' 기본값(영업장명 하드코딩 금지)
+- [x] 그물 check-notice-sms-group.mjs(기본 그룹 'resident', 상수 참조), 옛 드래프트 복원 기본값
+- [x] 게이트(tsc · verify:fast · eslint 신규 0 · 역주입 14종 빨강 · 실제 DB 읽기 요약) · knowledge/notice-sms-targets · Work_log
+- [x] 웹디자이너 패스 반영(날짜 칸 1열·연도 규칙·ml-auto·순번 칸·'공지 M/D'·'예시 문구')
+- [ ] 커밋 · 배포 (운영자)

@@ -4,6 +4,8 @@
 // (R4, 신고 4fad73fa · 조건 조합 확장 운영자 요청 2026-07-10)
 // 조합 규칙: 같은 줄(조건 축) 안에서 여러 개 = 그중 하나만 맞아도 포함(OR), 줄이 다르면 모두 만족(AND).
 // 예: '4층·5층 + 외창' = 4층이거나 5층이면서 외창인 사람. 실제 발송은 폰 문자앱에서 완료(이력은 '발송 시도').
+// 대상 그룹 둘(2026-10-06 운영자 승인): 입주자(기본) | 문의·예약. 문의·예약은 선착순 입실 안내용이라
+// 문의일 오름차순 고정·순번·문의일 범위 조건이 붙고, 방 축은 숨는다(§22 숨김). 판정 정본 lib/noticeTargets.
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -12,40 +14,63 @@ import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { pushToast } from '@/lib/saveStatus'
 import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, saveNoticeTemplateAuto, switchAiModelForQuota, getAiModelRestorePrompt, resolveAiModelRestore, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSmsTemplates, type SmsTemplateRow } from '@/app/(app)/settings/actions'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { kstMonthStr, kstMonthsAgoStr, kstYmdStr } from '@/lib/kstDate'
+import { NOTICE_GROUP_LABEL, inquiryRangeLabel, leadRanks, leadSubLine, noticeGroupRows, type InquiryRange, type NoticeGroup } from '@/lib/noticeTargets'
+import { withNoticeTemplateExamples } from '@/lib/noticeTemplates'
+import { LEAD_STAGE_LABEL, type LeadStage } from '@/lib/wishMatch'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성' }
 const STAY_ORDER = ['6개월 미만', '6개월~1년', '1년 이상']
+const STAGE_ORDER = Object.keys(LEAD_STAGE_LABEL)
 const BATCH_SIZE = 20   // sms: URL 길이 제한 대비 수신자 분할 단위
 
 // 조건 축 — 값은 영업장 데이터에서 도출(하드코딩 금지). 값이 2종 미만인 축은 걸러도 의미가 없어 숨긴다.
+// only 가 있으면 그 그룹에서만 선다. 방 축은 입주자만(문의·예약은 아직 방이 없다), 단계는 문의·예약만.
 type Dim = {
   key: string
   label: string
   get: (t: NoticeSmsTarget) => string | null
   fmt?: (v: string) => string
   order?: (a: string, b: string) => number
+  only?: NoticeGroup
 }
 const DIMS: Dim[] = [
-  { key: 'floor', label: '층', get: t => t.floor || null, fmt: v => `${v}층`, order: (a, b) => Number(a) - Number(b) },
-  { key: 'window', label: '창문', get: t => t.windowType, fmt: v => WINDOW_LABEL[v] ?? v },
-  { key: 'direction', label: '방향', get: t => t.direction },
-  { key: 'tier', label: '방 등급', get: t => t.tier },
-  { key: 'roomType', label: '방 타입', get: t => t.roomType },
+  { key: 'stage', label: '단계', only: 'lead', get: t => t.stage, fmt: v => LEAD_STAGE_LABEL[v as LeadStage] ?? v, order: (a, b) => STAGE_ORDER.indexOf(a) - STAGE_ORDER.indexOf(b) },
+  { key: 'floor', label: '층', only: 'resident', get: t => t.floor || null, fmt: v => `${v}층`, order: (a, b) => Number(a) - Number(b) },
+  { key: 'window', label: '창문', only: 'resident', get: t => t.windowType, fmt: v => WINDOW_LABEL[v] ?? v },
+  { key: 'direction', label: '방향', only: 'resident', get: t => t.direction },
+  { key: 'tier', label: '방 등급', only: 'resident', get: t => t.tier },
+  { key: 'roomType', label: '방 타입', only: 'resident', get: t => t.roomType },
   { key: 'gender', label: '성별', get: t => (t.gender === 'MALE' || t.gender === 'FEMALE' ? t.gender : null), fmt: v => GENDER_LABEL[v] ?? v },
   { key: 'smoking', label: '흡연', get: t => (t.smoking ? '흡연' : '비흡연') },
   { key: 'nationality', label: '국적', get: t => t.nationality },
   { key: 'welfare', label: '기초수급', get: t => (t.isBasicRecipient ? '수급자' : '해당 없음') },
-  { key: 'stay', label: '거주기간', get: t => t.stayBucket, order: (a, b) => STAY_ORDER.indexOf(a) - STAY_ORDER.indexOf(b) },
+  { key: 'stay', label: '거주기간', only: 'resident', get: t => t.stayBucket, order: (a, b) => STAY_ORDER.indexOf(a) - STAY_ORDER.indexOf(b) },
   { key: 'job', label: '직업', get: t => t.job },
-  { key: 'pay', label: '결제수단', get: t => t.payMethod },
+  { key: 'pay', label: '결제수단', only: 'resident', get: t => t.payMethod },
 ]
+const dimsOf = (g: NoticeGroup) => DIMS.filter(d => !d.only || d.only === g)
+
+// 문의일 조건 — 편집기는 지출 엑셀 내려받기의 기간 선택 정본 그대로(1·3·6개월 / 전체 / 직접 지정).
+// '전체'는 조건이 아니라서 적용하면 칩이 빠진다. 프리셋도 적용 순간의 날짜로 박아 둔다 — 드래프트를
+// 이튿날 열어도 칩이 말하는 범위와 거르는 범위가 같아야 한다.
+const INQ_KEY = 'inquiryAt'
+type RangePeriod = '1m' | '3m' | '6m' | 'all' | 'custom'
+type InquiryRangeSel = InquiryRange & { period: Exclude<RangePeriod, 'all'> }
+// 칩·보조줄 날짜 표기(해가 다를 때만 연도)는 lib/noticeTargets inquiryRangeLabel·leadSubLine 이 정한다.
+
+// 호실 자리 글자 — 순번은 목록과 제외 패널이 같은 칸(w-6 우정렬 tnum)을 쓴다.
+const ROOM_SLOT_CLS = 'font-medium text-[var(--warm-dark)] shrink-0'
+const RANK_SLOT_CLS = 'w-6 shrink-0 text-right font-medium text-[var(--warm-dark)] tabular-nums'
 
 /**
  * 기본으로 체크되는 사람 — **본인 번호가 있는 사람만**(운영자 결정 2026-09-16).
@@ -61,10 +86,12 @@ const defaultPick = (t: NoticeSmsTarget) => t.phone?.source === 'self'
  * 기본 선택에서 빠진 사람들 — 누가 빠졌는지 보여 주고, 문구를 복사해 다른 길로 보내게 한다.
  * 고르는 화면과 쓰는 화면 양쪽에 서므로 한 벌로 둔다(문구 복사는 본문이 있는 쪽에서만).
  */
-function FallbackExcludedPanel({ rows, body, onCopy }: {
+function FallbackExcludedPanel({ rows, body, onCopy, slotOf = t => fmtRoomNo(t.roomNo, ''), slotCls = ROOM_SLOT_CLS }: {
   rows: NoticeSmsTarget[]
   body?: string
   onCopy?: () => void
+  slotOf?: (t: NoticeSmsTarget) => string   // 호실 자리 — 문의·예약 그룹은 선착순 순번
+  slotCls?: string
 }) {
   const [open, setOpen] = useState(false)
   if (rows.length === 0) return null
@@ -88,7 +115,7 @@ function FallbackExcludedPanel({ rows, body, onCopy }: {
         <ul className="divide-y divide-[var(--warm-border)] rounded-lg border border-[var(--warm-border)] bg-[var(--cream)]">
           {rows.map(t => (
             <li key={t.leaseTermId} className="flex items-center gap-2.5 px-3 py-1.5 text-xs">
-              <span className="font-medium text-[var(--warm-dark)] shrink-0">{fmtRoomNo(t.roomNo, '')}</span>
+              <span className={slotCls}>{slotOf(t)}</span>
               <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
               <span className="ml-auto text-[var(--warm-muted)] shrink-0">
                 {t.phone?.ownerLabel ?? '비상 연락처'}
@@ -107,6 +134,9 @@ const DRAFT_KEY = 'stayeum-notice-sms-draft'
 type NoticeDraft = {
   savedAt: number
   step: 'pick' | 'compose'
+  // 대상 그룹 — 2026-10-06 이전 드래프트에는 없다. 없으면(또는 모르는 값이면) 입주자로 연다.
+  group?: NoticeGroup
+  range?: InquiryRangeSel | null
   sel: Record<string, string[]>
   checked: string[]
   body: string
@@ -129,10 +159,14 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<'pick' | 'compose'>('pick')
   const [targets, setTargets] = useState<NoticeSmsTarget[] | null>(null)
   const [loadError, setLoadError] = useState('')
+  // 보낼 대상 그룹 — 기본은 입주자(종전 단체 공지 그대로). 바꾸면 조건·체크가 그 그룹 기준으로 새로 선다.
+  const [group, setGroup] = useState<NoticeGroup>('resident')
   const [sel, setSel] = useState<Record<string, Set<string>>>({})   // 축별 선택 값
-  // 조건 추가/수정 인라인 편집기 — null=닫힘, 'pick-dim'=축 목록, 그 외=해당 축 값 선택 중
+  const [inqRange, setInqRange] = useState<InquiryRangeSel | null>(null)   // 문의일 조건(문의·예약 그룹만)
+  // 조건 추가/수정 인라인 편집기 — null=닫힘, 'pick-dim'=축 목록, INQ_KEY=문의일, 그 외=해당 축 값 선택 중
   const [editing, setEditing] = useState<null | 'pick-dim' | string>(null)
   const [draft, setDraft] = useState<Set<string>>(new Set())
+  const [rangeDraft, setRangeDraft] = useState<{ period: RangePeriod; from: string; to: string }>({ period: '1m', from: '', to: '' })
   const [checked, setChecked] = useState<Set<string>>(new Set())    // leaseTermId 기준(개별 보정)
 
   const [templates, setTemplates] = useState<SmsTemplateRow[]>([])
@@ -150,8 +184,12 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
         setTargets(r.targets)
         // 작성하던 드래프트(본문 또는 조건이 있는 것)가 있으면 복원 — 문자앱 갔다 온 재발송 흐름
         const d = loadDraft()
-        if (d && (d.body.trim() || Object.values(d.sel).some(v => v.length > 0))) {
-          const validIds = new Set(r.targets.map(t => t.leaseTermId))
+        if (d && (d.body.trim() || Object.values(d.sel).some(v => v.length > 0) || d.range)) {
+          // 그룹이 없는 옛 드래프트·모르는 값은 입주자로 연다 — 문의·예약으로 잘못 열면 엉뚱한 사람에게 간다.
+          const g: NoticeGroup = d.group === 'lead' ? 'lead' : 'resident'
+          const validIds = new Set(r.targets.filter(t => t.group === g).map(t => t.leaseTermId))
+          setGroup(g)
+          setInqRange(g === 'lead' ? d.range ?? null : null)
           setSel(Object.fromEntries(Object.entries(d.sel).map(([k, v]) => [k, new Set(v)])))
           setChecked(new Set(d.checked.filter(id => validIds.has(id))))
           setBody(d.body)
@@ -159,7 +197,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           setStep(d.step)
           setDraftRestored(true)
         } else {
-          setChecked(new Set(r.targets.filter(defaultPick).map(t => t.leaseTermId)))
+          setChecked(new Set(noticeGroupRows(r.targets, 'resident').filter(defaultPick).map(t => t.leaseTermId)))
         }
       })
       .catch(() => setLoadError('대상을 불러오지 못했습니다. 다시 열어 주세요.'))
@@ -179,33 +217,60 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     }).catch(() => { /* 제안 실패는 무시 */ })
   }, [])
 
+  const isLead = group === 'lead'
+  const groupDims = dimsOf(group)
   // 축별 선택지 — 실데이터에서 도출. 2종 미만이면 그 축은 숨김(걸러지는 게 없음).
+  // 고른 그룹의 사람만으로 센다 — 입주자 값이 문의·예약 화면의 칩으로 새면 고를수록 0명이 된다.
   const dimOptions = useMemo(() => {
     const map = new Map<string, string[]>()
-    for (const d of DIMS) {
+    const rows = noticeGroupRows(targets ?? [], group)
+    for (const d of dimsOf(group)) {
       const vals = new Set<string>()
-      for (const t of targets ?? []) { const v = d.get(t); if (v != null) vals.add(v) }
+      for (const t of rows) { const v = d.get(t); if (v != null) vals.add(v) }
       const arr = [...vals].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko')))
       if (arr.length >= 2) map.set(d.key, arr)
     }
     return map
-  }, [targets])
-  const visibleDims = DIMS.filter(d => dimOptions.has(d.key))
+  }, [targets, group])
+  const visibleDims = groupDims.filter(d => dimOptions.has(d.key))
   const activeDims = visibleDims.filter(d => sel[d.key]?.size)
   const addableDims = visibleDims.filter(d => !sel[d.key]?.size)
+  const range = isLead ? inqRange : null
+  const canAddRange = isLead && !inqRange
 
-  const matches = (t: NoticeSmsTarget, s: Record<string, Set<string>>) =>
-    DIMS.every(d => {
+  const matchesIn = (g: NoticeGroup, t: NoticeSmsTarget, s: Record<string, Set<string>>) =>
+    dimsOf(g).every(d => {
       const set = s[d.key]
       if (!set || set.size === 0) return true
       const v = d.get(t)
       return v != null && set.has(v)
     })
+  // 기본 체크 — 그 그룹·조건에 맞고 본인 번호가 있는 사람(defaultPick).
+  const defaultChecked = (g: NoticeGroup, s: Record<string, Set<string>>, r: InquiryRange | null) =>
+    new Set(noticeGroupRows(targets ?? [], g, g === 'lead' ? r : null)
+      .filter(t => defaultPick(t) && matchesIn(g, t, s)).map(t => t.leaseTermId))
+
+  // 받는 사람이 다시 서면 '기록됨' 표시도 비운다. 묶음 표시는 순번(0,1,…)으로 붙어 있어서, 9월 문의자에게
+  // 보낸 뒤 10월 문의자로 범위를 바꾸면 새 첫 묶음이 '기록됨'으로 보이고 기록이 건너뛰어진다(웨이브 흐름).
+  const recheck = (next: Set<string>) => {
+    setChecked(next)
+    setLoggedBatches(new Set())
+  }
+
+  // 그룹 전환 — 조건은 그룹마다 축이 달라 비우고, 체크는 새 그룹 기준으로 다시 선다.
+  const switchGroup = (g: NoticeGroup) => {
+    if (g === group) return
+    setGroup(g)
+    setSel({})
+    setInqRange(null)
+    setEditing(null)
+    recheck(defaultChecked(g, {}, null))
+  }
 
   // 조건 적용/삭제 — 바꿀 때마다 수신자 체크를 조건 일치자(번호 있는)로 재설정
   const applySel = (next: Record<string, Set<string>>) => {
     setSel(next)
-    setChecked(new Set((targets ?? []).filter(t => defaultPick(t) && matches(t, next)).map(t => t.leaseTermId)))
+    recheck(defaultChecked(group, next, range))
   }
   const applyDraft = (dimKey: string) => {
     const next = { ...sel }
@@ -224,15 +289,55 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     setEditing(dimKey)
   }
 
-  const hasCond = DIMS.some(d => sel[d.key]?.size)
-  // 조건 요약 — '4층·5층 + 외창 + 흡연' (이력 메모·작성 화면 부제로 사용)
-  const condLabel = hasCond
-    ? DIMS.filter(d => sel[d.key]?.size)
-        .map(d => [...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => (d.fmt ? d.fmt(v) : v)).join('·'))
-        .join(' + ')
-    : '전체'
+  // 문의일 — 편집기 열기·적용·삭제. 적용도 다른 조건처럼 체크를 다시 세운다.
+  const openRangeEditor = () => {
+    setRangeDraft(inqRange
+      ? { period: inqRange.period, from: inqRange.from, to: inqRange.to }
+      : { period: '1m', from: `${kstMonthStr()}-01`, to: kstYmdStr() })   // 직접 지정 기본값 = 지출 엑셀과 같다
+    setEditing(INQ_KEY)
+  }
+  const rangeDraftInvalid = rangeDraft.period === 'custom' && !!rangeDraft.from && !!rangeDraft.to && rangeDraft.from > rangeDraft.to
+  const applyRange = () => {
+    const p = rangeDraft.period
+    const next: InquiryRangeSel | null =
+      p === 'all' ? null
+      : p === 'custom' ? { period: p, from: rangeDraft.from, to: rangeDraft.to }
+      : { period: p, from: kstMonthsAgoStr(p === '1m' ? 1 : p === '3m' ? 3 : 6), to: kstYmdStr() }
+    setInqRange(next)
+    recheck(defaultChecked(group, sel, next))
+    setEditing(null)
+  }
+  const removeRange = () => {
+    setInqRange(null)
+    recheck(defaultChecked(group, sel, null))
+  }
 
-  const shownTargets = (targets ?? []).filter(t => matches(t, sel))
+  const hasCond = activeDims.length > 0 || !!range
+  // 조건 요약 — '4층·5층 + 외창 + 흡연' · '문의일 9/1~9/30 + 문의·투어' (이력 메모·작성 화면 부제로 사용)
+  const condLabel = [
+    ...(range ? [`문의일 ${inquiryRangeLabel(range)}`] : []),
+    ...groupDims.filter(d => sel[d.key]?.size)
+      .map(d => [...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => (d.fmt ? d.fmt(v) : v)).join('·')),
+  ].join(' + ')
+  // 이력·부제에는 그룹을 앞에 붙인다 — '[단체 공지 · 문의·예약 · 문의일 9/1~9/30]'
+  const targetLabel = `${NOTICE_GROUP_LABEL[group]}${hasCond ? ` · ${condLabel}` : ''}`
+
+  // 순번은 문의·예약 **전체** 기준이다(조건으로 거르기 전) — 조건을 바꿔도 같은 사람은 같은 번호.
+  const ranks = useMemo(() => leadRanks(targets ?? []), [targets])
+  const groupCount = (g: NoticeGroup) => (targets ?? []).filter(t => t.group === g).length
+  // 문의·예약은 문의일 오름차순 고정(선착순), 입주자는 호실순 — 문자 묶음도 이 순서로 잘린다.
+  const shownTargets = noticeGroupRows(targets ?? [], group, range).filter(t => matchesIn(group, t, sel))
+  const slotOf = (t: NoticeSmsTarget) => (isLead ? String(ranks.get(t.leaseTermId) ?? '') : fmtRoomNo(t.roomNo, ''))
+  const slotCls = isLead ? RANK_SLOT_CLS : ROOM_SLOT_CLS
+  // 전체 선택 범위 — 보이는 목록 중 본인 번호 행. 비상 대체 행은 직접 체크만(defaultPick 규칙).
+  const pickable = shownTargets.filter(defaultPick)
+  const allPicked = pickable.length > 0 && pickable.every(t => checked.has(t.leaseTermId))
+  const togglePickAll = () => setChecked(prev => {
+    const n = new Set(prev)
+    if (allPicked) for (const t of shownTargets) n.delete(t.leaseTermId)
+    else for (const t of pickable) n.add(t.leaseTermId)
+    return n
+  })
   // 기본 선택에서 빠진 대체(비상) 행 — 지금 조건에 맞는 사람 중 아직 체크가 안 된 사람이다.
   // 운영자가 직접 체크하면 이 목록에서 사라진다(그때는 문자가 그 번호로 나간다).
   const fallbackExcluded = shownTargets.filter(t => t.phone?.source === 'emergency' && !checked.has(t.leaseTermId))
@@ -257,10 +362,8 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     })
   }
 
-  const recipients = useMemo(
-    () => (targets ?? []).filter(t => checked.has(t.leaseTermId) && t.phone),
-    [targets, checked],
-  )
+  // 보이는 목록 순서 그대로 — 문의·예약은 첫 묶음이 먼저 문의한 사람들이다.
+  const recipients = shownTargets.filter(t => checked.has(t.leaseTermId) && t.phone)
   // 상태가 바뀔 때마다 드래프트 저장 — 문자앱 전환으로 리로드돼도 이어서 작성
   useEffect(() => {
     if (!targets) return
@@ -268,31 +371,33 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({
         savedAt: Date.now(),
         step,
+        group,
+        range: inqRange,
         sel: Object.fromEntries(Object.entries(sel).map(([k, v]) => [k, [...v]])),
         checked: [...checked],
         body,
         logged: [...loggedBatches],
       } satisfies NoticeDraft))
     } catch { /* 저장 실패는 무시 */ }
-  }, [targets, step, sel, checked, body, loggedBatches])
+  }, [targets, step, group, inqRange, sel, checked, body, loggedBatches])
 
   // 새로 작성 — 드래프트 폐기 후 초기 상태로
   const resetDraft = () => {
     clearDraft()
+    setGroup('resident')
     setSel({})
+    setInqRange(null)
+    setEditing(null)
     setBody('')
     setPrevDraft(null)
     setLoggedBatches(new Set())
-    setChecked(new Set((targets ?? []).filter(defaultPick).map(t => t.leaseTermId)))
+    setChecked(defaultChecked('resident', {}, null))
     setStep('pick')
     setDraftRestored(false)
   }
 
-  const batches = useMemo(() => {
-    const out: NoticeSmsTarget[][] = []
-    for (let i = 0; i < recipients.length; i += BATCH_SIZE) out.push(recipients.slice(i, i + BATCH_SIZE))
-    return out
-  }, [recipients])
+  const batches: NoticeSmsTarget[][] = []
+  for (let i = 0; i < recipients.length; i += BATCH_SIZE) batches.push(recipients.slice(i, i + BATCH_SIZE))
 
   // 다중 수신자 — 애플(아이폰·아이패드·맥 전부 메시지앱)은 'sms:번호1,번호2' 형식에서 첫 번호만
   // 인식(운영자 실기기 확인 2026-07-10~11). sms://open?addresses=번호1,번호2&body= 형식만 다중 수신 지원.
@@ -311,7 +416,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const logBatch = (idx: number, list: NoticeSmsTarget[]) => {
     if (loggedBatches.has(idx)) return
     setLoggedBatches(prev => new Set(prev).add(idx))
-    logNoticeSmsAttempt({ tenantIds: list.map(t => t.tenantId), body, filterLabel: condLabel })
+    logNoticeSmsAttempt({ recipients: list.map(t => ({ tenantId: t.tenantId, leaseTermId: t.leaseTermId })), body, filterLabel: targetLabel })
       .then(r => { if (!r.ok) pushToast('error', r.error) })
       .catch(() => pushToast('error', '이력 기록에 실패했습니다'))
   }
@@ -360,6 +465,9 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       .finally(() => setTplSaving(false))
   }
 
+  // 저장한 템플릿 + 예시 문구(선착순 입실 안내 등). 저장 목록은 덮지 않는다.
+  const templateOptions = withNoticeTemplateExamples(templates)
+
   const valueChip = (active: boolean) => [
     'rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors',
     active
@@ -367,6 +475,18 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',
   ].join(' ')
   const fmtVal = (d: Dim, v: string) => (d.fmt ? d.fmt(v) : v)
+  // 걸어둔 조건 칩 한 벌 — 값 축과 문의일이 같은 모양을 쓴다(몸통 탭=수정, ×=삭제).
+  const condChip = (key: string, label: string, value: string, onEdit: () => void, onRemove: () => void) => (
+    <span key={key} className="inline-flex items-center gap-1 rounded-sm border border-[var(--coral)] bg-[var(--cream)] pl-3 pr-1.5 py-1.5 text-xs font-medium text-[var(--tc-text)]">
+      <button type="button" onClick={onEdit}>
+        {label}: {value}
+      </button>
+      <button type="button" aria-label={`${label} 조건 삭제`} onClick={onRemove}
+        className="grid place-items-center w-5 h-5 rounded-full text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--coral)]/15">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="11" height="11" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </span>
+  )
 
   if (step === 'pick') {
     const editingDim = editing && editing !== 'pick-dim' ? visibleDims.find(d => d.key === editing) : null
@@ -397,29 +517,46 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                   <button type="button" onClick={resetDraft} className="font-semibold underline underline-offset-2 shrink-0 ml-2">새로 작성</button>
                 </p>
               )}
-              {/* 보낼 대상 문장 — 조건이 없으면 '전체'임을 명시(모호함 제거) */}
-              <p className="text-sm">
-                <span className="text-[var(--warm-muted)]">보낼 대상 · </span>
-                <span className="font-semibold text-[var(--warm-dark)]">
-                  {hasCond ? condLabel : '전체 입주자'}
-                </span>
-                <span className="text-[var(--warm-muted)]"> · {shownTargets.length}명</span>
-              </p>
+              {/* 보낼 대상 그룹 — 1차 선택(§23 SegmentedControl, 입주자 관리 단계 세그먼트 문법). 기본 입주자. */}
+              <div>
+                <SegmentedControl
+                  size="sm"
+                  scroll
+                  ariaLabel="보낼 대상 그룹"
+                  value={group}
+                  onChange={switchGroup}
+                  options={[
+                    { value: 'resident', label: `${NOTICE_GROUP_LABEL.resident} ${groupCount('resident')}` },
+                    { value: 'lead',     label: `${NOTICE_GROUP_LABEL.lead} ${groupCount('lead')}` },
+                  ]}
+                />
+              </div>
+
+              {/* 보낼 대상 문장 — 조건이 없으면 '전체'임을 명시(모호함 제거). 우측 전체 선택은 §23 정본(CashReceiptTab 문법). */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-sm min-w-0">
+                  <span className="text-[var(--warm-muted)]">보낼 대상 · </span>
+                  <span className="font-semibold text-[var(--warm-dark)]">
+                    {hasCond ? condLabel : `전체 ${NOTICE_GROUP_LABEL[group]}`}
+                  </span>
+                  <span className="text-[var(--warm-muted)]"> · {shownTargets.length}명</span>
+                </p>
+                {pickable.length > 0 && (
+                  <Btn type="button" variant="secondary" size="sm" className="shrink-0 ml-auto" onClick={togglePickAll}>
+                    {allPicked ? '전체 해제' : '전체 선택'}
+                  </Btn>
+                )}
+              </div>
 
               {/* 걸어둔 조건 칩 — 몸통 탭=수정, ×=삭제 */}
               <div className="flex flex-wrap items-center gap-1.5">
-                {activeDims.map(d => (
-                  <span key={d.key} className="inline-flex items-center gap-1 rounded-sm border border-[var(--coral)] bg-[var(--cream)] pl-3 pr-1.5 py-1.5 text-xs font-medium text-[var(--tc-text)]">
-                    <button type="button" onClick={() => openDimEditor(d.key)}>
-                      {d.label}: {[...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => fmtVal(d, v)).join('·')}
-                    </button>
-                    <button type="button" aria-label={`${d.label} 조건 삭제`} onClick={() => removeCond(d.key)}
-                      className="grid place-items-center w-5 h-5 rounded-full text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--coral)]/15">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="11" height="11" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                  </span>
+                {range && condChip(INQ_KEY, '문의일', inquiryRangeLabel(range), openRangeEditor, removeRange)}
+                {activeDims.map(d => condChip(
+                  d.key, d.label,
+                  [...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => fmtVal(d, v)).join('·'),
+                  () => openDimEditor(d.key), () => removeCond(d.key),
                 ))}
-                {editing === null && addableDims.length > 0 && (
+                {editing === null && (addableDims.length > 0 || canAddRange) && (
                   <button type="button" onClick={() => setEditing('pick-dim')}
                     className="rounded-sm border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
                     + 조건 추가
@@ -432,6 +569,9 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 space-y-2">
                   <p className="text-xs font-medium text-[var(--warm-mid)]">어떤 조건으로 좁힐까요?</p>
                   <div className="flex flex-wrap gap-1.5">
+                    {canAddRange && (
+                      <button type="button" onClick={openRangeEditor} className={valueChip(false)}>문의일</button>
+                    )}
                     {addableDims.map(d => (
                       <button key={d.key} type="button" onClick={() => openDimEditor(d.key)} className={valueChip(false)}>
                         {d.label}
@@ -465,30 +605,89 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
-              {activeDims.length >= 2 && (
+              {/* 인라인 편집기 — 문의일 범위. 기간 선택은 지출 엑셀 내려받기 정본 그대로. */}
+              {editing === INQ_KEY && (
+                <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 space-y-2">
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">
+                    문의일 <span className="font-normal text-[var(--warm-muted)]">(시작일과 종료일 당일도 포함합니다)</span>
+                  </p>
+                  <div>
+                    <SegmentedControl
+                      size="sm" scroll ariaLabel="문의일 기간"
+                      value={rangeDraft.period} onChange={p => setRangeDraft(d => ({ ...d, period: p }))}
+                      options={[
+                        { value: '1m', label: '1개월' },
+                        { value: '3m', label: '3개월' },
+                        { value: '6m', label: '6개월' },
+                        { value: 'all', label: '전체' },
+                        { value: 'custom', label: '직접 지정' },
+                      ]}
+                    />
+                  </div>
+                  {rangeDraft.period === 'custom' && (
+                    <div className="pt-1 space-y-2">
+                      {/* 좁은 폭은 1열 — 카드 안이라 2열이면 '2026년 10월 16일'이 360px 에서 잘린다(웹디자이너 패스).
+                          문턱은 같은 문법의 형제(입주자 폼·수납 입력)와 같은 400px. */}
+                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[0.65625rem] text-[var(--warm-muted)]">시작일</label>
+                          <DatePicker value={rangeDraft.from} onChange={v => setRangeDraft(d => ({ ...d, from: v }))}
+                            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[0.65625rem] text-[var(--warm-muted)]">종료일</label>
+                          <DatePicker value={rangeDraft.to} onChange={v => setRangeDraft(d => ({ ...d, to: v }))}
+                            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                        </div>
+                      </div>
+                      {rangeDraftInvalid && (
+                        <p className="text-[0.65625rem] text-[var(--coral)]">시작일이 종료일보다 늦습니다</p>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Btn type="button" variant="primary" size="sm" disabled={rangeDraftInvalid} onClick={applyRange}>적용</Btn>
+                    <Btn type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>취소</Btn>
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)]">전체를 고르고 적용하면 이 조건이 빠집니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {activeDims.length + (range ? 1 : 0) >= 2 && (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                   조건이 여러 개면 모두 만족하는 사람에게만 보냅니다.
                 </p>
               )}
               {/* 누가 왜 빠졌는지 목록 위에서 먼저 말한다 — 체크가 안 된 이유를 세는 것이 이 줄의 용건이다. */}
-              <FallbackExcludedPanel rows={fallbackExcluded} />
+              <FallbackExcludedPanel rows={fallbackExcluded} slotOf={slotOf} slotCls={slotCls} />
               <ul className="max-h-60 overflow-y-auto overscroll-contain divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
                 {shownTargets.map(t => (
                   <li key={t.leaseTermId}>
                     <label className={`flex items-center gap-2.5 px-3 py-2 text-sm ${t.phone ? 'cursor-pointer' : 'opacity-45'}`}>
                       <input type="checkbox" className="accent-[var(--coral)]"
                         checked={checked.has(t.leaseTermId)} disabled={!t.phone} onChange={() => toggle(t)} />
-                      <span className="font-medium text-[var(--warm-dark)] shrink-0">{fmtRoomNo(t.roomNo, '')}</span>
-                      <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
-                      <span className="ml-auto text-xs text-[var(--warm-muted)] tabular-nums shrink-0">
-                        {/* 대체 행은 번호 뒤에 꼬리표가 선다 — 이 번호의 주인이 입주자가 아니다. */}
-                        {t.phone ? `${t.phone.value}${t.phone.source === 'emergency' ? ' · 비상' : ''}` : '연락처 없음'}
+                      {/* 호실 자리 — 문의·예약은 방이 없으니 선착순 순번(문의 전체 기준)이 선다. */}
+                      <span className={slotCls}>{slotOf(t)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2.5">
+                          <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
+                          <span className="ml-auto text-xs text-[var(--warm-muted)] tabular-nums shrink-0">
+                            {/* 대체 행은 번호 뒤에 꼬리표가 선다 — 이 번호의 주인이 입주자가 아니다. */}
+                            {t.phone ? `${t.phone.value}${t.phone.source === 'emergency' ? ' · 비상' : ''}` : '연락처 없음'}
+                          </span>
+                        </span>
+                        {/* 보조줄 한 줄(§11) — 320px 에서도 행은 두 줄을 넘지 않는다(넘치면 말줄임). */}
+                        {isLead && (
+                          <span className="block truncate text-[0.65625rem] text-[var(--ink-m)] tabular-nums">{leadSubLine(t)}</span>
+                        )}
                       </span>
                     </label>
                   </li>
                 ))}
                 {shownTargets.length === 0 && (
-                  <li className="px-3 py-4 text-xs text-[var(--warm-muted)]">조건에 맞는 입주자가 없습니다.</li>
+                  <li className="px-3 py-4 text-xs text-[var(--warm-muted)]">
+                    {isLead ? '조건에 맞는 문의·예약이 없습니다.' : '조건에 맞는 입주자가 없습니다.'}
+                  </li>
                 )}
               </ul>
             </>
@@ -500,7 +699,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal open onClose={onClose} title="단체 공지 문자" width="sm"
-      subtitle={`${condLabel} · ${recipients.length}명에게 보냅니다 · 여기 기록은 '발송 시도'입니다`}
+      subtitle={`${targetLabel} · ${recipients.length}명에게 보냅니다 · 여기 기록은 '발송 시도'입니다`}
       footer={
         <div className="flex items-center gap-2 justify-between w-full">
           <Btn variant="secondary" size="md" onClick={() => setStep('pick')}>수신자 다시 선택</Btn>
@@ -514,7 +713,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <button type="button" onClick={resetDraft} className="font-semibold underline underline-offset-2 shrink-0 ml-2">새로 작성</button>
           </p>
         )}
-        {templates.length > 0 && (
+        {templateOptions.length > 0 && (
           <label className="block">
             {/* 관리(수정·삭제)는 설정에 있다 — 저장을 여기서 하니 지우는 길도 여기서 보여야 찾는다(운영자 신고 2026-07-17).
                 네이티브 select 라 옵션별 삭제 버튼을 못 달고, 발송 흐름 한복판에 파괴적 동작을 두면 오클릭이 난다. */}
@@ -524,10 +723,21 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">설정에서 관리 ›</Link>
             </span>
             <select defaultValue=""
-              onChange={e => { const t = templates.find(x => x.id === e.target.value); if (t) { setPrevDraft(null); setBody(t.body) } }}
+              onChange={e => { const t = templateOptions.find(x => x.id === e.target.value); if (t) { setPrevDraft(null); setBody(t.body) } }}
               className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="">직접 입력</option>
-              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {/* 예시 문구는 설정 목록에 없다(코드 본보기, lib/noticeTemplates) — 묶음 제목으로 출처를 가른다.
+                  '기본'이라 부르지 않는다. 설정에서 관리하는 템플릿과 다른 것임을 이름이 드러내야 한다. */}
+              {templateOptions.some(t => !t.example) && (
+                <optgroup label="저장한 템플릿">
+                  {templateOptions.filter(t => !t.example).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </optgroup>
+              )}
+              {templateOptions.some(t => t.example) && (
+                <optgroup label="예시 문구">
+                  {templateOptions.filter(t => t.example).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </optgroup>
+              )}
             </select>
           </label>
         )}
@@ -561,7 +771,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         {/* 문자로 못 가는 사람 — 보내기 버튼 바로 위에서 말하고, 여기서 문구를 복사해 간다. */}
-        <FallbackExcludedPanel rows={fallbackExcluded} body={body} onCopy={copyBody} />
+        <FallbackExcludedPanel rows={fallbackExcluded} body={body} onCopy={copyBody} slotOf={slotOf} slotCls={slotCls} />
         <div className="space-y-1.5">
           {batches.map((list, i) => (
             <a key={i} href={body.trim() ? smsHref(list) : undefined} onClick={e => { if (blockSmsIfStaging(e)) return; if (body.trim()) logBatch(i, list) }}

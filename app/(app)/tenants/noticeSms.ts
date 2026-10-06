@@ -4,9 +4,12 @@
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
+import { CURRENT_OCCUPANCY_STATUSES } from '@/lib/leaseStatus'
+import { classifyNoticeTarget, type NoticeGroup } from '@/lib/noticeTargets'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
 import { pickTenantPhoneWithFallback, trimPickedPhone, type PickedPhone } from '@/lib/tenantContact'
+import { WISH_LEAD_STATUSES, type LeadStage } from '@/lib/wishMatch'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -24,7 +27,15 @@ export type NoticeSmsTarget = {
   tenantId: string
   leaseTermId: string
   name: string
-  roomNo: string
+  roomNo: string         // 문의·예약 그룹은 방이 없을 수 있다('')
+  // 그룹·단계 — lib/noticeTargets classifyNoticeTarget 이 가른다. stage 는 문의·예약 그룹만 값이 있다.
+  group: NoticeGroup
+  stage: LeadStage | null
+  // 선착순·보조줄 — ISO 문자열. 문의 일시가 없으면 등록 일시가 순번 기준이다.
+  inquiryAt: string | null
+  createdAt: string
+  tourDate: string | null
+  lastNoticeAt: string | null   // 이 사람에게 마지막으로 단체 공지 발송 시도를 기록한 시각(SmsLog kind 'notice')
   // null = 보낼 번호 없음(발송 불가, 목록에 회색 표시). source 가 'emergency' 면 본인이 아니라
   // 비상 연락처로 가는 행이다 — 기본 선택에서 빠지고 번호 뒤에 꼬리표가 붙는다(2026-09-16).
   phone: PickedPhone | null
@@ -54,15 +65,30 @@ function stayBucketOf(moveInDate: Date | null): string | null {
   return '1년 이상'
 }
 
-// 입주 중(ACTIVE·퇴실 예정 포함) 전체 — 필터 칩(층·창)은 클라이언트가 이 데이터에서 도출한다.
+// 두 그룹 전체 — 입주 중(ACTIVE·퇴실 예정 포함, 방 있음) + 문의·예약(리드, 예약 확정 제외).
+// 필터 칩(층·창·단계 등)은 클라이언트가 이 데이터에서 도출한다. 그룹 판정 정본은 lib/noticeTargets.
 export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: NoticeSmsTarget[] } | { ok: false; error: string }> {
   try {
     const propertyId = await getPropertyId()
     const leases = await prisma.leaseTerm.findMany({
-      where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] }, roomId: { not: null } },
+      where: {
+        propertyId,
+        // 확정 제외는 리드 갈래에만 — 거주중 계약도 확정 시각을 들고 있다(예약 확정 뒤 입실한 사람).
+        // 취소(CANCELLED)는 두 상수 어디에도 없어 저절로 빠진다.
+        OR: [
+          { status: { in: CURRENT_OCCUPANCY_STATUSES }, roomId: { not: null } },
+          { status: { in: [...WISH_LEAD_STATUSES] }, reservationConfirmedAt: null },
+        ],
+      },
       select: {
         id: true,
         tenantId: true,
+        status: true,
+        roomId: true,
+        reservationConfirmedAt: true,
+        inquiryAt: true,
+        createdAt: true,
+        tourDate: true,
         moveInDate: true,
         room: { select: { roomNo: true, floor: true, windowType: true, direction: true, tier: true, type: true } },
         tenant: {
@@ -90,28 +116,47 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
     })
     const payByTenant = new Map<string, string>()
     for (const r of payRows) if (!payByTenant.has(r.tenantId)) payByTenant.set(r.tenantId, r.payMethod!)
+    // 마지막 단체 공지 — 웨이브로 나눠 보낼 때 이미 안내한 사람을 목록에서 보이게 한다(행 보조줄 'M/D 안내함').
+    const noticeRows = await prisma.smsLog.groupBy({
+      by: ['tenantId'],
+      where: { propertyId, kind: 'notice', tenantId: { in: leases.map(l => l.tenantId) } },
+      _max: { createdAt: true },
+    })
+    const lastNoticeByTenant = new Map(noticeRows.map(r => [r.tenantId, r._max.createdAt]))
 
     const targets: NoticeSmsTarget[] = leases
-      .filter(l => l.room && l.tenant)
-      .map(l => ({
-        tenantId: l.tenantId,
-        leaseTermId: l.id,
-        name: l.tenant.name,
-        roomNo: l.room!.roomNo,
-        phone: trimPickedPhone(pickTenantPhoneWithFallback(l.tenant.contacts, ['PHONE'])),
-        floor: (l.room!.floor ?? '').trim() || deriveFloor(l.room!.roomNo),
-        windowType: l.room!.windowType,
-        direction: l.room!.direction?.trim() || null,
-        tier: l.room!.tier?.trim() || null,
-        roomType: l.room!.type?.trim() || null,
-        gender: l.tenant.gender,
-        nationality: l.tenant.nationality?.trim() || null,
-        smoking: l.tenant.smoking,
-        job: l.tenant.job?.trim() || null,
-        isBasicRecipient: l.tenant.isBasicRecipient,
-        stayBucket: stayBucketOf(l.moveInDate),
-        payMethod: payByTenant.get(l.tenantId) ?? null,
-      }))
+      .flatMap(l => {
+        const cls = classifyNoticeTarget(l)
+        if (!cls) return []
+        const room = l.room
+        const lastNotice = lastNoticeByTenant.get(l.tenantId)
+        return [{
+          tenantId: l.tenantId,
+          leaseTermId: l.id,
+          name: l.tenant.name,
+          roomNo: room?.roomNo ?? '',
+          group: cls.group,
+          stage: cls.stage,
+          inquiryAt: l.inquiryAt?.toISOString() ?? null,
+          createdAt: l.createdAt.toISOString(),
+          tourDate: l.tourDate?.toISOString() ?? null,
+          lastNoticeAt: lastNotice?.toISOString() ?? null,
+          phone: trimPickedPhone(pickTenantPhoneWithFallback(l.tenant.contacts, ['PHONE'])),
+          floor: room ? ((room.floor ?? '').trim() || deriveFloor(room.roomNo)) : '',
+          windowType: room?.windowType ?? null,
+          direction: room?.direction?.trim() || null,
+          tier: room?.tier?.trim() || null,
+          roomType: room?.type?.trim() || null,
+          gender: l.tenant.gender,
+          nationality: l.tenant.nationality?.trim() || null,
+          smoking: l.tenant.smoking,
+          job: l.tenant.job?.trim() || null,
+          isBasicRecipient: l.tenant.isBasicRecipient,
+          // 리드의 moveInDate 는 입주 희망일이라 거주기간이 아니다(그 축은 리드 화면에서 숨는다).
+          stayBucket: cls.group === 'resident' ? stayBucketOf(l.moveInDate) : null,
+          payMethod: payByTenant.get(l.tenantId) ?? null,
+        }]
+      })
       .sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
     return { ok: true, targets }
   } catch (err) {
@@ -121,31 +166,37 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
 }
 
 // 발송 시도 기록 — 수신자별 1행(kind: 'notice'). 실제 발송은 폰 문자앱에서 완료된다.
+// 계약(leaseTermId)도 남긴다 — 문의·예약 그룹은 한 사람이 여러 문의를 가질 수 있어 사람만으로는 어느 건인지 모른다.
 export async function logNoticeSmsAttempt(input: {
-  tenantIds: string[]
+  recipients: { tenantId: string; leaseTermId: string }[]
   body: string
-  filterLabel: string   // '전체' | '4층' | '외창' 등 — 본문 앞에 조건 메모로 남긴다
+  filterLabel: string   // '입주자' | '입주자 · 4층' | '문의·예약 · 문의일 9/1~9/30' 등 — 본문 앞에 조건 메모로 남긴다
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const body = input.body.trim()
     if (!body) return { ok: false, error: '본문이 비어 있습니다.' }
-    if (input.tenantIds.length === 0) return { ok: false, error: '수신자가 없습니다.' }
-    // 영업장 소속 검증 — 다른 영업장 tenantId 혼입 방지
-    const owned = await prisma.tenant.findMany({ where: { id: { in: input.tenantIds }, propertyId }, select: { id: true } })
-    const ownedIds = owned.map(t => t.id)
-    if (ownedIds.length === 0) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
+    if (input.recipients.length === 0) return { ok: false, error: '수신자가 없습니다.' }
+    // 영업장 소속 검증 — 다른 영업장 계약 혼입 방지. 계약과 사람의 짝도 맞아야 한다.
+    const owned = await prisma.leaseTerm.findMany({
+      where: { id: { in: input.recipients.map(r => r.leaseTermId) }, propertyId },
+      select: { id: true, tenantId: true },
+    })
+    const tenantOfLease = new Map(owned.map(l => [l.id, l.tenantId]))
+    const valid = input.recipients.filter(r => tenantOfLease.get(r.leaseTermId) === r.tenantId)
+    if (valid.length === 0) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
     await prisma.smsLog.createMany({
-      data: ownedIds.map(tenantId => ({
+      data: valid.map(r => ({
         propertyId,
-        tenantId,
+        tenantId: r.tenantId,
+        leaseTermId: r.leaseTermId,
         renderedBody: `[단체 공지 · ${input.filterLabel}] ${body}`,
         sentVia: 'manual_sms',
         kind: 'notice',
       })),
     })
-    return { ok: true, count: ownedIds.length }
+    return { ok: true, count: valid.length }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '이력 기록에 실패했습니다.' }

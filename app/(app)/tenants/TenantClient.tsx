@@ -11,7 +11,7 @@ import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
-import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
+import { WISH_LEAD_STATUSES, LEAD_STAGE_LABEL, inquiryStageOf, type LeadStage } from '@/lib/wishMatch'
 import { isSameDayTurnover, plannedStayDenial } from '@/lib/roomAssignment'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
@@ -505,19 +505,9 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 //   퇴실 예정과 짝을 이루는 운영 축이다. 그래서 자리도 퇴실 예정 바로 옆이다.
 // 하위 단계는 2차 sm 세그먼트(InquiryStage)로 구분 — 요청관리 2단 필터 정본 문법.
 type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'confirmed' | 'NON_RESIDENT' | 'inquiry' | 'CANCELLED' | 'past' | 'all'
-type InquiryStage = '' | 'INQUIRY' | 'TOUR' | 'RESERVED'
+type InquiryStage = '' | LeadStage
 
-// 문의 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
-// 투어 = 투어 예정(WAITING_TOUR+투어일) + 투어 완료(TOUR_DONE).
-// 예약 확정은 null 이다 — 이제 별도 그룹('입실 예정')이라 문의 퍼널의 단계가 아니다.
-// 여기서 갈라 두면 단계 카운트·단계 필터가 저절로 확정자를 빼고, 부르는 쪽마다 조건을 또 적지 않아도 된다.
-function inquiryStageOf(lease: { status: string; tourDate?: string | Date | null; reservationConfirmedAt?: string | Date | null } | undefined): Exclude<InquiryStage, ''> | null {
-  if (!lease) return null
-  if (lease.status === 'RESERVED')     return lease.reservationConfirmedAt ? null : 'RESERVED'
-  if (lease.status === 'TOUR_DONE')    return 'TOUR'
-  if (lease.status === 'WAITING_TOUR') return lease.tourDate ? 'TOUR' : 'INQUIRY'
-  return null
-}
+// 문의 퍼널 단계 파생(inquiryStageOf)은 lib/wishMatch 정본이다 — 단체 공지 '단계' 조건이 같은 판정을 쓴다.
 
 /** 예약 확정 — '입실 예정' 그룹의 유일한 판정. 그룹·카운트·정렬이 같은 함수를 본다. */
 function isConfirmedReservation(lease: { status: string; reservationConfirmedAt?: string | Date | null } | undefined): boolean {
@@ -1986,9 +1976,9 @@ export default function TenantClient({
             onChange={setInquiryStage}
             options={[
               { value: '',          label: `전체 ${countInquiry}` },
-              { value: 'INQUIRY',   label: `문의 ${stageCounts.INQUIRY}` },
-              { value: 'TOUR',      label: `투어 ${stageCounts.TOUR}` },
-              { value: 'RESERVED',  label: `입실 예약 ${stageCounts.RESERVED}` },
+              { value: 'INQUIRY',   label: `${LEAD_STAGE_LABEL.INQUIRY} ${stageCounts.INQUIRY}` },
+              { value: 'TOUR',      label: `${LEAD_STAGE_LABEL.TOUR} ${stageCounts.TOUR}` },
+              { value: 'RESERVED',  label: `${LEAD_STAGE_LABEL.RESERVED} ${stageCounts.RESERVED}` },
               // '예약 확정' 단계는 2026-08-12 에 상위 '입실 예정' 그룹으로 승격돼 여기서 뺐다.
             ]}
           />
