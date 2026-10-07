@@ -154,7 +154,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
           className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left">
           <span className="text-xs font-semibold text-[var(--warm-dark)]">작업 이력</span>
           <span className="text-xs">
-            {plannedCount > 0 && <strong className="text-[var(--coral)]">예정 {plannedCount}</strong>}
+            {plannedCount > 0 && <strong className="text-[var(--tc-text)]">예정 {plannedCount}</strong>}
             <span className="text-[var(--warm-muted)] inline-flex items-center gap-1">
               {plannedCount > 0 ? ' · ' : ''}{merged.length}건
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${panelOpen ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>

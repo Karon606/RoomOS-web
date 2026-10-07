@@ -176,7 +176,7 @@ export default function AccrualCheckClient({ initialResult, myRole }: { initialR
             <div key={s.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-sm flex-wrap">
-                  <span className="font-bold text-[var(--coral)]">{fmtRoomNo(s.roomNo, '?')}</span>
+                  <span className="font-bold text-[var(--tc-text)]">{fmtRoomNo(s.roomNo, '?')}</span>
                   <span className="font-semibold text-[var(--warm-dark)]">{s.tenantName}</span>
                   <span className="text-[var(--warm-muted)]">·</span>
                   <span className="text-[var(--warm-mid)]">{s.payDate} 입금</span>

@@ -558,7 +558,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 ))}
                 {editing === null && (addableDims.length > 0 || canAddRange) && (
                   <button type="button" onClick={() => setEditing('pick-dim')}
-                    className="rounded-sm border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
+                    className="rounded-sm border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--tc-text)] hover:border-[var(--coral)] transition-colors">
                     + 조건 추가
                   </button>
                 )}
@@ -641,7 +641,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                         </div>
                       </div>
                       {rangeDraftInvalid && (
-                        <p className="text-[0.65625rem] text-[var(--coral)]">시작일이 종료일보다 늦습니다</p>
+                        <p className="text-[0.65625rem] text-[var(--tc-text)]">시작일이 종료일보다 늦습니다</p>
                       )}
                     </div>
                   )}
@@ -720,7 +720,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <span className="flex items-center justify-between gap-2 mb-1">
               <span className="text-xs font-medium text-[var(--warm-mid)]">공지 템플릿</span>
               <Link href="/settings" onClick={onClose}
-                className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">설정에서 관리 ›</Link>
+                className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">설정에서 관리 ›</Link>
             </span>
             <select defaultValue=""
               onChange={e => { const t = templateOptions.find(x => x.id === e.target.value); if (t) { setPrevDraft(null); setBody(t.body) } }}

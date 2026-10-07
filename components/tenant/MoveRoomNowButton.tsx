@@ -81,7 +81,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
   }
   return (
     <button type="button" onClick={run} disabled={pending}
-      className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
+      className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
       {pending ? '옮기는 중…' : '오늘 이사 처리'}
     </button>
   )

@@ -42,7 +42,7 @@ export default async function PendingPage() {
               </>
             ) : (
               <>
-                스테이음은 현재 <b style={{ color: 'var(--persimmon)' }}>베타 운영 중</b>입니다.
+                스테이음은 현재 <b style={{ color: 'var(--tc-text)' }}>베타 운영 중</b>입니다.
                 <br />
                 운영자 승인 후 모든 기능을 이용하실 수 있어요.
                 <br />

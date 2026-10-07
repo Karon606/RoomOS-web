@@ -1734,7 +1734,7 @@ export default function TenantClient({
         onClick={onClick}
         className={`relative text-left text-xs font-medium px-4 py-3 select-none overflow-hidden ${
           onClick ? 'cursor-pointer transition-colors' : ''
-        } ${isActive ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+        } ${isActive ? 'text-[var(--tc-text)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
         style={{ width: w, minWidth: w, maxWidth: w }}
       >
         <span className="truncate block">{label}{isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
@@ -2303,7 +2303,7 @@ export default function TenantClient({
                 {/* 연락처 — 탭하면 바로 전화 */}
                 {cardFields.contact && primary && (
                   <a href={`tel:${primary.contactValue.replace(/[^0-9+]/g, '')}`} onClick={e => e.stopPropagation()}
-                    className="text-xs text-[var(--coral)] mb-2 inline-block hover:underline underline-offset-2">{formatPhone(primary.contactValue)}</a>
+                    className="text-xs text-[var(--tc-text)] mb-2 inline-block hover:underline underline-offset-2">{formatPhone(primary.contactValue)}</a>
                 )}
                 {/* 이용료 · 납부일 — 단기는 rentAmount가 체류 전체 사용료라 라벨 '이용료',
                     매월 반복 납부 개념이 없어 납부일 대신 청소비 병기(신고 64bebb05, 운영자 승인 2026-07-20) */}
@@ -2342,7 +2342,7 @@ export default function TenantClient({
                     ) : null}
                     {lease && (
                       <button type="button" onClick={e => { e.stopPropagation(); openPayModal(tenant, lease) }}
-                        className="ml-auto shrink-0 inline-flex items-center justify-center min-h-[44px] -my-2 px-3 text-xs font-semibold text-[var(--coral)]">
+                        className="ml-auto shrink-0 inline-flex items-center justify-center min-h-[44px] -my-2 px-3 text-xs font-semibold text-[var(--tc-text)]">
                         수납
                       </button>
                     )}
@@ -2414,7 +2414,7 @@ export default function TenantClient({
                 {/* sticky — 호실 */}
                 <th
                   onClick={() => handleSort('roomNo')}
-                  className={`relative sticky left-0 z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+                  className={`relative sticky left-0 z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'roomNo' ? 'text-[var(--tc-text)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
                   style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}
                 >
                   <span className="truncate block">호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
@@ -2426,7 +2426,7 @@ export default function TenantClient({
                 {/* sticky — 이름 */}
                 <th
                   onClick={() => handleSort('name')}
-                  className={`relative sticky z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'name' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+                  className={`relative sticky z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'name' ? 'text-[var(--tc-text)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
                   style={{ left: colWidths.roomNo, width: colWidths.name, minWidth: colWidths.name, maxWidth: colWidths.name }}
                 >
                   <span className="truncate block">이름{sortKey === 'name' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
@@ -2475,7 +2475,7 @@ export default function TenantClient({
                       {/* 방을 둘 쓰는 사람은 꼬리로 나머지 호실을 적는다 — 이 칸은 메인 계약 하나만
                           말해 왔고, 그 사실이 표 어디에도 없었다(프리즘 '추가 계약' 줄과 같은 술어).
                           꼬리는 링크가 아니라 사실 표기라 코랄을 안 쓴다. 칸이 좁으면 종전대로 잘린다. */}
-                      <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
+                      <span className="block truncate text-[var(--tc-text)] cursor-pointer underline-offset-2 hover:underline">
                         {(() => {
                           // 지금 사는 방이 먼저다 — 카드·프리즘 제목과 같은 규칙(운영자 지시 2026-09-01).
                           const stay = lease?.roomStays?.[0]?.room ?? null
@@ -2527,14 +2527,14 @@ export default function TenantClient({
                           return (
                             <td key={c.key}
                               onClick={e => { e.stopPropagation(); if (lease) openPayModal(tenant, lease) }}
-                              className={`${tdBase} text-sm text-[var(--warm-dark)] transition-colors ${lease ? 'cursor-pointer hover:text-[var(--coral)]' : ''}`}>
+                              className={`${tdBase} text-sm text-[var(--warm-dark)] transition-colors ${lease ? 'cursor-pointer hover:text-[var(--tc-text)]' : ''}`}>
                               {lease ? (
                                 <span className="flex items-center gap-1.5 min-w-0">
                                   <span className="truncate underline decoration-dotted decoration-[var(--coral)]/50 underline-offset-2"><MoneyDisplay amount={lease.rentAmount} /></span>
                                   {lease.isShortTerm && lease.cleaningFee > 0 && (
                                     <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">청소비 <MoneyDisplay amount={lease.cleaningFee} /></span>
                                   )}
-                                  <span className="shrink-0 text-[0.625rem] font-medium text-[var(--coral)]">수납</span>
+                                  <span className="shrink-0 text-[0.625rem] font-medium text-[var(--tc-text)]">수납</span>
                                 </span>
                               ) : <span className="block truncate">—</span>}
                             </td>
@@ -2550,7 +2550,7 @@ export default function TenantClient({
                           )
                         case 'status': {
                           const ddLabel = sched ? fmtDDay(sched.date, today) : null
-                          const ddColor = sched?.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'
+                          const ddColor = sched?.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--tc-text)]'
                           return (
                             <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
@@ -3043,7 +3043,7 @@ export default function TenantClient({
                                     )
                                   })()}
                                 </p>
-                                {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                                {p.memo && <p className="text-xs text-[var(--tc-text)] mt-0.5">{p.memo}</p>}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
@@ -4478,7 +4478,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                 투어일이 지났습니다 ·{' '}
                 <button type="button" onClick={() => setStatusVal('TOUR_DONE')}
-                  className="underline text-[var(--coral)] font-medium">투어 완료로 변경</button>
+                  className="underline text-[var(--tc-text)] font-medium">투어 완료로 변경</button>
               </p>
             )}
             {statusVal === 'TOUR_DONE' && (
@@ -4679,7 +4679,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   <span className="text-xs font-medium text-[var(--warm-mid)]">연락 알림일</span>
                   {/* 날짜를 탭하면 달력이 열려 바로 변경(운영자 요청 2026-07-10). 저장값은 직접 지정했을 때만 */}
                   <DatePicker value={effective} onChange={setContactAlertVal}
-                    className="!w-auto inline-flex items-center px-1 text-sm font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-4" />
+                    className="!w-auto inline-flex items-center px-1 text-sm font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-4" />
                   <input type="hidden" name="contactAlertDate" value={contactAlertVal} />
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">
                     {contactAlertVal ? '직접 지정' : `기본 · 희망일 ${contactLeadDays}일 전`} · 이 날부터 홈 화면과 알림(종 아이콘)에 표시
@@ -4884,7 +4884,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 {deny}{' '}
                 <button type="button"
                   onClick={() => formEntityModal.open({ kind: 'tenant', tenantId: hit.tenantId })}
-                  className="underline text-[var(--coral)] font-medium">{hit.tenantName}님 일정 보기</button>
+                  className="underline text-[var(--tc-text)] font-medium">{hit.tenantName}님 일정 보기</button>
               </p>
             )
           })()}
@@ -4957,7 +4957,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
                   이 호실은 거주용이 아닌 방(창고·사무실)으로 설정돼 있습니다. 상태를 비거주자로 바꾸면 합본 계약서에 이 호실이 함께 실립니다.{' '}
                   <button type="button" onClick={() => setStatusVal('NON_RESIDENT')}
-                    className="underline text-[var(--coral)] font-medium">비거주자로 변경</button>
+                    className="underline text-[var(--tc-text)] font-medium">비거주자로 변경</button>
                 </p>
               )}
             </div>

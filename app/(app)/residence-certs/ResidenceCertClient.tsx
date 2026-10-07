@@ -149,7 +149,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     {t.status === 'NON_RESIDENT' && <StatusBadge tone="info" className="shrink-0">비거주</StatusBadge>}
                     {t.status === 'CHECKOUT_PENDING' && <StatusBadge tone="exit" className="shrink-0">퇴실 예정</StatusBadge>}
                   </span>
-                  <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
+                  <span className="text-[var(--tc-text)] text-xs shrink-0">발급 ›</span>
                 </a>
               </li>
             ))}
@@ -223,7 +223,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                         <button
                           type="button"
                           onClick={() => entityModal.open({ kind: 'tenant', tenantId: c.tenantId })}
-                          className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+                          className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--tc-text)] transition-colors">
                           {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}
                         </button>
                       )}

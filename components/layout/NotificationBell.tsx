@@ -208,7 +208,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
           <button
             onClick={() => { setOpen(false); router.push('/dashboard') }}
             className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
-            style={{ color: 'var(--coral)', borderTop: '1px solid var(--warm-border)' }}
+            style={{ color: 'var(--tc-text)', borderTop: '1px solid var(--warm-border)' }}
           >
             대시보드에서 보기
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>

@@ -180,7 +180,7 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
 
   return (
     <button type="button" onClick={handleSend} disabled={busy}
-      className={className ?? 'text-[0.6875rem] text-[var(--coral)] hover:text-[var(--coral)] disabled:opacity-50'}>
+      className={className ?? 'text-[0.6875rem] text-[var(--tc-text)] hover:text-[var(--tc-text)] disabled:opacity-50'}>
       {busy ? '준비 중…' : label}
     </button>
   )

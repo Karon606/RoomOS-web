@@ -1620,4 +1620,5 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 감지망(check-upload-hygiene 정규식, check-doc-file-label, audit-heic-uploads, check-property-doc-axis 신설, test-doc-bundle) + 역주입
 - [x] 게이트(tsc · verify:fast · eslint 신규 0) · 웹디자이너 패스(차단 1 다크 링크 대비 + 권고 5 반영) · knowledge · Work_log · 커밋
 - [x] 검증 중 추가: 쓸 수 없게 된 적용취소 스냅샷 걷기(복원 실패 시 + 30일 경과 버튼 미표시)
+- [x] 별건 승인('추천대로'): 테라코타 글자색 --coral → --tc-text 전수 221곳 + check-coral-text-token 감지망 + 가이드 §28
 - [ ] 배포 후 실기 확인(운영자)

@@ -40,7 +40,7 @@ const FALLBACK_EXPENSE_CATEGORIES = [
 const FALLBACK_INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비']
 
 const KIND_LABEL: Record<string, { label: string; color: string }> = {
-  expense:   { label: '지출(영수증)', color: 'var(--coral)' },
+  expense:   { label: '지출(영수증)', color: 'var(--tc-text)' },
   inventory: { label: '재고/물품',     color: 'var(--success-fg)' },
   unknown:   { label: '미분류',        color: 'var(--warm-mid)' },
 }
@@ -395,7 +395,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                   <div>
                     <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)
                       <button type="button" onClick={() => setWizOpen(true)}
-                        className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별</button>
+                        className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2">단계별</button>
                     </label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
@@ -403,7 +403,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                       <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
                         className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
-                    {specText.trim() && <p className="mt-0.5 text-[0.65625rem] text-[var(--coral)]">서술 규격: {specText}</p>}
+                    {specText.trim() && <p className="mt-0.5 text-[0.65625rem] text-[var(--tc-text)]">서술 규격: {specText}</p>}
                   </div>
                   <div>
                     <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>

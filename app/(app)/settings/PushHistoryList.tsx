@@ -60,7 +60,7 @@ export function PushHistoryList() {
               <div className="flex items-center justify-between">
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 {rows.length}건</p>
                 <button type="button" onClick={load} disabled={loading}
-                  className="text-[0.65625rem] text-[var(--coral)] hover:underline disabled:opacity-50">
+                  className="text-[0.65625rem] text-[var(--tc-text)] hover:underline disabled:opacity-50">
                   새로고침
                 </button>
               </div>

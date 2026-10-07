@@ -89,7 +89,7 @@ export function InventoryCard({
         {(value != null || valueSub != null) && (
           <div className="shrink-0 text-right">
             {value != null && (
-              <p className={`mono tnum text-[1.1875rem] font-bold leading-none ${valueDanger ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}>{value}</p>
+              <p className={`mono tnum text-[1.1875rem] font-bold leading-none ${valueDanger ? 'text-[var(--tc-text)]' : 'text-[var(--warm-dark)]'}`}>{value}</p>
             )}
             {valueSub != null && <p className="mt-0.5 text-[0.6875rem] text-[var(--warm-muted)]">{valueSub}</p>}
           </div>

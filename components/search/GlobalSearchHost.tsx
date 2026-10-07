@@ -239,7 +239,7 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
               {g.hasMore && (
                 <button type="button" onClick={() => onMore(g.moreHref)}
                   className="w-full px-4 py-2 text-left text-[0.78125rem] transition-colors hover:bg-[var(--cream)]"
-                  style={{ color: 'var(--coral)' }}>
+                  style={{ color: 'var(--tc-text)' }}>
                   {g.label}에서 더 보기 ›
                 </button>
               )}

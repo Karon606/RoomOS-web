@@ -138,7 +138,7 @@ export function ShortStayExtensionModal({
         {done ? (
           <div className="space-y-1.5">
             <p className="text-sm font-semibold text-[var(--warm-dark)]">연장 완료.</p>
-            <p className="text-sm text-[var(--warm-dark)]">추가 납부 <span className="font-bold text-[var(--coral)]">{fmtWon(done.diff)}</span></p>
+            <p className="text-sm text-[var(--warm-dark)]">추가 납부 <span className="font-bold text-[var(--tc-text)]">{fmtWon(done.diff)}</span></p>
           </div>
         ) : (
           <>
@@ -196,7 +196,7 @@ export function ShortStayExtensionModal({
                 </div>
                 <div className="border-t border-[var(--warm-border)] pt-2 flex items-baseline justify-between">
                   <span className="text-xs text-[var(--warm-mid)]">추가 납부</span>
-                  <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(ok.diff)}</span>
+                  <span className="text-lg font-bold tnum text-[var(--tc-text)]">{fmtWon(ok.diff)}</span>
                 </div>
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">청소비는 입실 시 1회 청구라 추가되지 않습니다.</p>
                 {ok.roundedUp && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{ok.stayDays}일 → {ok.units}주 계약으로 올림.</p>}

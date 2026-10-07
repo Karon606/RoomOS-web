@@ -137,7 +137,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         /* 분해 수납이면 보증금 record 가 없어 아래 DepositStatusPanel 이 서지 않는다.
            그 자리를 이 줄이 대신한다 — 받은 돈 총액과 그 구성(청소비 몫 / 이용료 충당 몫). */
         <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-          <span className="text-[var(--coral)] font-semibold">{resvPartsLabel ? '예약금' : '이용료 선납'}</span>
+          <span className="text-[var(--tc-text)] font-semibold">{resvPartsLabel ? '예약금' : '이용료 선납'}</span>
           <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(resvCleaning + prepaidReceived)}</span>
           {resvPartsLabel
             ? <span className="block mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{resvPartsLabel}</span>

@@ -1120,7 +1120,7 @@ export default function RoomManageClient({
         {/* 정보 */}
         <div className="flex-1 p-4 min-w-0 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
+            <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--tc-text)]'}`}>{fmtRoomNo(room.roomNo)}</span>
             {cardFields.floor && room.floor && (
               <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                 {room.floor}층
@@ -1654,7 +1654,7 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">사진</label>
                 <button type="button" onClick={() => addPhotoInputRef.current?.click()}
-                  className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+                  className="text-xs text-[var(--tc-text)] hover:text-[var(--tc-text)] transition-colors">
                   + 사진 선택
                 </button>
                 <input ref={addPhotoInputRef} type="file" accept="image/*" multiple className="hidden"
@@ -1818,14 +1818,14 @@ export default function RoomManageClient({
                   {/* 순서 편집(오류신고 8dba0177) — 첫 번째 사진이 호실 카드 대표. 헤더 형제('+ 사진 추가')와 같은 텍스트 버튼 문법 */}
                   {editPhotos.length >= 2 && (
                     <button type="button" onClick={() => setPhotoOrderMode(v => !v)}
-                      className="text-xs text-[var(--coral)] transition-colors">
+                      className="text-xs text-[var(--tc-text)] transition-colors">
                       {photoOrderMode ? '완료' : '순서 편집'}
                     </button>
                   )}
                   {!photoOrderMode && (
                     <button type="button" onClick={() => photoInputRef.current?.click()}
                       disabled={photoUploading}
-                      className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
+                      className="text-xs text-[var(--tc-text)] hover:text-[var(--tc-text)] transition-colors disabled:opacity-50">
                       {photoUploading ? '업로드 중…' : '+ 사진 추가'}
                     </button>
                   )}

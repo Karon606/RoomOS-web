@@ -40,7 +40,7 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
   return (
     <label className="block text-xs font-medium mb-1 px-1" style={{ color: 'var(--warm-dark)' }}>
       {children}
-      {required && <span style={{ color: 'var(--persimmon)' }}> *</span>}
+      {required && <span style={{ color: 'var(--tc-text)' }}> *</span>}
     </label>
   )
 }
@@ -163,7 +163,7 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <p className="text-[11px] px-1" style={{ color: 'var(--warm-muted)' }}>
-        <span style={{ color: 'var(--persimmon)' }}>*</span> 표시는 필수 입력 항목입니다
+        <span style={{ color: 'var(--tc-text)' }}>*</span> 표시는 필수 입력 항목입니다
       </p>
 
       {error && (
@@ -185,7 +185,7 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
           onClick={handleResendConfirmation}
           disabled={loading}
           className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-60"
-          style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon)', border: '1px solid var(--warm-border)' }}
+          style={{ background: 'var(--persimmon-l)', color: 'var(--tc-text)', border: '1px solid var(--warm-border)' }}
         >
           인증 메일 다시 보내기
         </button>

@@ -251,7 +251,7 @@ export function RoomWorkRowBody({
                 : `이미 지출 ${r.expenseCount}건이 걸려 있어 새로 만들지 않습니다. 줄마다 고치려면 위 목록에서 편집을 켜세요.`}{' '}
               <button type="button"
                 onClick={() => { window.location.assign(`/finance?month=${(r.doneDate ?? r.scheduledDate ?? kstYmdStr()).slice(0, 7)}`) }}
-                className="underline text-[var(--coral)] font-medium">지출 화면 열기</button>
+                className="underline text-[var(--tc-text)] font-medium">지출 화면 열기</button>
             </p>
           ) : Number(cost || 0) > 0 ? (
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요. 살 때 이미 지출로 잡혔습니다.</p>

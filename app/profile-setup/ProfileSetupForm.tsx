@@ -67,7 +67,7 @@ export default function ProfileSetupForm({
 
         <div>
           <label className="block text-xs font-medium mb-1 px-1" style={{ color: 'var(--warm-dark)' }}>
-            이름 (실명) <span style={{ color: 'var(--persimmon)' }}>*</span>
+            이름 (실명) <span style={{ color: 'var(--tc-text)' }}>*</span>
           </label>
           <input type="text" placeholder="홍길동"
             value={realName} onChange={e => setRealName(e.target.value)}

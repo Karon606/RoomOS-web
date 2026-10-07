@@ -776,7 +776,7 @@ export default function RoomsClient({
         onClick={onClick}
         className={`relative text-left text-xs font-medium px-4 py-3 select-none overflow-hidden whitespace-nowrap ${
           onClick ? 'cursor-pointer transition-colors' : ''
-        } ${isActive ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'} ${
+        } ${isActive ? 'text-[var(--tc-text)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'} ${
           stickyLeft !== undefined ? 'sticky z-40 bg-[var(--cream)]' : ''
         }`}
         style={{
@@ -1331,7 +1331,7 @@ export default function RoomsClient({
                                        ? -room.balance : 0
                   const totalUnpaid = carryUnpaid + viewUnpaid
                   if (totalUnpaid > 0) {
-                    return <span className="font-medium text-[var(--coral)]">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
+                    return <span className="font-medium text-[var(--tc-text)]">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
                   }
                   if (room.balance > 0) {
                     return <span className="text-[var(--warm-mid)]">선납 +<MoneyDisplay amount={room.balance} /></span>
@@ -1437,7 +1437,7 @@ export default function RoomsClient({
                     ${selectMode && isSelected(room) ? 'bg-[var(--coral)]/5' : ''}`}>
 
                   {/* sticky — 호실 (식별자 v2.0 §23: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
-                  <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 transition-colors ${stickyRowBg} ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
+                  <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 transition-colors ${stickyRowBg} ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--tc-text)]' : 'text-[var(--warm-dark)]'}`}
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="flex items-center gap-2 min-w-0">
                       {selectMode && isBatchEligible(room) && (
@@ -1501,7 +1501,7 @@ export default function RoomsClient({
 
                   {colVis.balance && (
                     <td className="px-4 py-4 text-sm font-semibold">
-                      <span className={room.balance >= 0 ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}>
+                      <span className={room.balance >= 0 ? 'text-[var(--warm-mid)]' : 'text-[var(--tc-text)]'}>
                         {room.balance > 0
                           ? <MoneyDisplay amount={room.balance} prefix="+" />
                           : room.balance < 0

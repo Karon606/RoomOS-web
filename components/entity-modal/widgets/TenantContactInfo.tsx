@@ -36,7 +36,7 @@ export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: str
   const phone = primary?.contactValue ? telDigits(primary.contactValue) : null
 
   const linkCls = 'flex-1 text-center text-xs font-semibold px-3 py-2 rounded-lg border transition-colors'
-  const onCls = 'border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10'
+  const onCls = 'border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10'
   const offCls = 'border-[var(--warm-border)] text-[var(--warm-muted)] pointer-events-none opacity-50'
 
   return (

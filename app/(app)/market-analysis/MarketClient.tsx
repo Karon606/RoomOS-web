@@ -291,7 +291,7 @@ function CompetitorModal({
               <button
                 type="button"
                 onClick={addPriceRow}
-                style={{ fontSize: '0.75rem', color: 'var(--coral)', fontWeight: 600 }}
+                style={{ fontSize: '0.75rem', color: 'var(--tc-text)', fontWeight: 600 }}
               >
                 + 행 추가
               </button>
@@ -1009,7 +1009,7 @@ export default function MarketClient({
                                   href={c.naverPlaceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  style={{ fontSize: '0.75rem', color: 'var(--coral)', marginTop: 2, display: 'block' }}
+                                  style={{ fontSize: '0.75rem', color: 'var(--tc-text)', marginTop: 2, display: 'block' }}
                                 >
                                   네이버 플레이스 ›
                                 </a>
@@ -1226,7 +1226,7 @@ export default function MarketClient({
                                   <td
                                     style={{
                                       padding: '8px 12px',
-                                      color: 'var(--coral)',
+                                      color: 'var(--tc-text)',
                                       fontWeight: 700,
                                       textAlign: 'right',
                                     }}
@@ -1468,7 +1468,7 @@ export default function MarketClient({
                                   padding: '4px 10px',
                                   background: 'color-mix(in srgb, var(--coral) 8%, transparent)',
                                   border: '1px solid color-mix(in srgb, var(--coral) 20%, transparent)',
-                                  color: 'var(--coral)',
+                                  color: 'var(--tc-text)',
                                   fontWeight: 600,
                                 }}
                               >

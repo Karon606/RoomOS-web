@@ -409,7 +409,7 @@ function CountryItem({
       onClick={() => onSelect(country)}
       className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left ${
         selected
-          ? 'bg-[var(--persimmon-l)] text-[var(--persimmon)]'
+          ? 'bg-[var(--persimmon-l)] text-[var(--tc-text)]'
           : 'text-[var(--warm-dark)] hover:bg-[var(--canvas)]'
       }`}
     >

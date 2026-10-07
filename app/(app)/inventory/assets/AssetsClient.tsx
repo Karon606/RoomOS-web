@@ -38,7 +38,7 @@ const PinMarker = () => (
   </svg>
 )
 const CoralTag = ({ children }: { children: ReactNode }) => (
-  <span className="text-[0.65625rem] font-normal text-[var(--coral)]">{children}</span>
+  <span className="text-[0.65625rem] font-normal text-[var(--tc-text)]">{children}</span>
 )
 
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
@@ -889,7 +889,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 )}
                 <button type="button" disabled={pending}
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '', replace: '' })}
-                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '옮기기' : '배정하기'}
                 </button>
                 {/* 나눠 배정 — 수량이 2 이상일 때만(1개는 옮기기로 충분) */}
@@ -974,7 +974,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재
             <InfoHint title="비품·자재란?">쓰면 없어지는 소모품과 달리, 오래 쓰는 물건(의자·장판·공구 등)을 다루는 탭입니다. 소모품은 위치(창고·주방)에 두고 수량을 세지만, 비품은 방·공용부에 &lsquo;배정&rsquo;해 어느 방에 무엇이 있는지를 관리합니다. 여분(미배정)은 언제든 방이나 공용부로 배정할 수 있고, 공용부는 &lsquo;위치 관리&rsquo;에서 추가합니다.</InfoHint>
           </h1>
-          {mergeMode && <p className="text-xs text-[var(--coral)] mt-0.5">비품을 눌러 선택하면 방·공용부 일괄 배정, 합치기(대표로 통일)를 할 수 있어요</p>}
+          {mergeMode && <p className="text-xs text-[var(--tc-text)] mt-0.5">비품을 눌러 선택하면 방·공용부 일괄 배정, 합치기(대표로 통일)를 할 수 있어요</p>}
           <p className="text-xs mt-1">
             <span className="font-semibold text-[var(--warm-dark)]">{monthLabel} 구매</span>{' '}
             {monthBuys.length > 0
@@ -1393,7 +1393,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <div>
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격 <span className="text-[var(--warm-muted)] font-normal">(선택)</span>
                   <button type="button" onClick={() => setFreeWizOpen(true)}
-                    className="ml-2 text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 입력</button>
+                    className="ml-2 text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2">단계별 입력</button>
                 </span>
                 <div className="flex gap-1.5">
                   <input value={freeForm.spec} disabled={pending} inputMode="decimal" placeholder="값"
@@ -1503,7 +1503,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '', replace: '' })}
-                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
                 {/* 나눠 배정 — 수량이 2 이상일 때만(카드 액션 행과 동일 조건) */}
@@ -1633,7 +1633,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                             <span className="flex shrink-0 items-center gap-1.5">
                               <span className="mono tnum text-[var(--warm-muted)]">{fmtQty(d.qty ?? 0)}{unit}</span>
                               <button type="button" onClick={() => runUndoDisposalRow(d.id)} disabled={pending}
-                                className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">적용취소</button>
+                                className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--tc-text)] hover:underline disabled:opacity-40">적용취소</button>
                             </span>
                           </li>
                         ))}
@@ -1670,7 +1670,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           <span className="text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
                           {qtyChanged && (
                             <button type="button" onClick={() => saveRowQty(b)} disabled={pending}
-                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline shrink-0">저장</button>
+                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--tc-text)] hover:underline shrink-0">저장</button>
                           )}
                         </span>
                         <span className="flex items-center gap-1.5 min-w-0 ml-auto">
@@ -1685,7 +1685,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                             className="w-20 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs outline-none focus:border-[var(--coral)]" />
                           {changed && (
                             <button type="button" onClick={() => saveRowSpec(b)} disabled={pending}
-                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline shrink-0">저장</button>
+                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--tc-text)] hover:underline shrink-0">저장</button>
                           )}
                           <span className="tabular-nums text-[var(--warm-dark)] shrink-0">{won(b.amount)}</span>
                         </span>
@@ -1837,7 +1837,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           {/* 규격 미상 이력은 되돌릴 행을 특정할 수 없다 — 지우기만 제공(서버도 규격 필터로 이중 차단) */}
                           {!r.specUnknown && (
                           <button type="button" onClick={() => runRevertLog(r)} disabled={pending}
-                            className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">적용취소</button>
+                            className="min-h-[44px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--tc-text)] hover:underline disabled:opacity-40">적용취소</button>
                           )}
                           <button type="button" onClick={() => runDeleteLog(r)} disabled={pending}
                             className="min-h-[44px] inline-flex items-center px-1 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">삭제</button>

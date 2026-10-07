@@ -273,7 +273,7 @@ function NavContent({
                       : 'gap-0 py-3.5 justify-center border-l-0 lg:gap-2.5 lg:px-5 lg:justify-start lg:border-l-[2.5px]',
                   ].join(' ')}
                   style={isActive ? {
-                    color: 'var(--coral)',
+                    color: 'var(--tc-text)',
                     fontWeight: 500,
                     background: 'color-mix(in srgb, var(--coral) 7%, transparent)',
                     borderLeftColor: 'var(--coral)',
@@ -312,7 +312,7 @@ function NavContent({
 
         {/* 운영자(슈퍼관리자) 전용 */}
         {isSuperAdmin && (
-          <Link href="/admin" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--persimmon)' }}>
+          <Link href="/admin" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--tc-text)' }}>
             <svg {...ico}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
             <span className={acctLabel}>운영자</span>
           </Link>
@@ -420,7 +420,7 @@ function MobileMenu({
                   <Link key={href} href={linkHref} onClick={onClose} prefetch={false}
                     className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
                     style={isActive
-                      ? { background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 30%, transparent)' }
+                      ? { background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--tc-text)', border: '1px solid color-mix(in srgb, var(--coral) 30%, transparent)' }
                       : { background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
                     <Icon />
                     <span className="text-[0.6875rem] font-medium leading-tight">{label}</span>
@@ -484,7 +484,7 @@ function MobileMenu({
         </div>
         {isSuperAdmin && (
           <Link href="/admin" onClick={onClose} prefetch={false}
-            className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--persimmon)' }}>
+            className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--tc-text)' }}>
             <svg {...ico} width={16} height={16}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
             운영자
           </Link>

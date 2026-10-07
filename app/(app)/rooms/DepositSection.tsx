@@ -119,7 +119,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">누적 미반환</p>
-            <p className="text-base font-semibold" style={{ color: 'var(--coral)' }}><MoneyDisplay amount={totalWithheld} /></p>
+            <p className="text-base font-semibold" style={{ color: 'var(--tc-text)' }}><MoneyDisplay amount={totalWithheld} /></p>
           </div>
         </div>
       </div>

@@ -127,7 +127,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
               <span className="flex items-center justify-between gap-2 mb-1">
                 <span className="text-xs font-medium text-[var(--warm-mid)]">템플릿</span>
                 <Link href="/settings" onClick={onClose}
-                  className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">설정에서 관리 ›</Link>
+                  className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">설정에서 관리 ›</Link>
               </span>
               <select value={templateId} onChange={e => pickTemplate(e.target.value)}
                 className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">

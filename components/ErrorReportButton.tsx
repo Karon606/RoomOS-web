@@ -272,7 +272,7 @@ export default function ErrorReportButton() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-[var(--warm-mid)]">사진 첨부 (선택)</span>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs text-[var(--coral)]">
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs text-[var(--tc-text)]">
                 + 사진 선택
               </button>
             </div>

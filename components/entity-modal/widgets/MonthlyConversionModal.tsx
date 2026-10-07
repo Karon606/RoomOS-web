@@ -81,7 +81,7 @@ export function MonthlyConversionModal({ open, onClose, leaseTermId, onDone }: {
       {!data ? (
         <p className="text-xs py-6 text-center" style={{ color: 'var(--warm-muted)' }}>불러오는 중…</p>
       ) : !data.ok ? (
-        <p className="text-xs py-6 text-center" style={{ color: 'var(--coral)' }}>{data.error}</p>
+        <p className="text-xs py-6 text-center" style={{ color: 'var(--tc-text)' }}>{data.error}</p>
       ) : (
         <div className="space-y-4">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-mid)' }}>

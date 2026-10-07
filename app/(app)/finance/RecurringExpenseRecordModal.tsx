@@ -150,7 +150,7 @@ export function RecurringExpenseRecordModal({
                 ))}
                 <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
                   <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
-                  <span className="text-sm font-bold num text-[var(--coral)]">{fmtWon(amount)}</span>
+                  <span className="text-sm font-bold num text-[var(--tc-text)]">{fmtWon(amount)}</span>
                 </div>
               </div>
             </>
@@ -234,7 +234,7 @@ export function RecurringExpenseRecordModal({
                     onClose(); router.refresh()
                   })
                 }}
-                className="ml-1 underline text-[var(--coral)]">예약 취소</button>
+                className="ml-1 underline text-[var(--tc-text)]">예약 취소</button>
             </p>
           )}
           <div className="flex flex-col gap-2 pt-1">
@@ -307,7 +307,7 @@ export function RecurringExpenseRecordModal({
                   onClose(); router.refresh()
                 })
               }}
-              className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-lg hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
+              className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--tc-text)] text-xs font-medium rounded-lg hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
               금액만 저장 (아직 납부 전)
             </button>
             <p className="text-[0.65625rem] text-[var(--warm-muted)] text-center leading-relaxed">

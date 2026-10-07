@@ -93,7 +93,7 @@ function WishRoomRow({ room }: { room: WishLeaseRoom }) {
           자기 색을 선언해 hover 코랄을 물려받지 않는다(코랄은 식별자에만). 폭이 모자라면 truncate 가
           뒤부터 먹으므로 호실번호는 끝까지 남는다. 타입이 비어 있으면 아무것도 그리지 않는다. */}
       <button type="button" onClick={() => entityModal.open({ kind: 'room', roomId: room.roomId })}
-        className="min-w-0 truncate text-left py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--coral)]">
+        className="min-w-0 truncate text-left py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--tc-text)]">
         {fmtRoomNo(room.roomNo)}
         {room.roomType && <span className="font-normal text-[var(--warm-muted)]"> {room.roomType}</span>}
       </button>

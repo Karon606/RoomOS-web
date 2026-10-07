@@ -79,7 +79,7 @@ function StayRow({ item }: { item: StayItem }) {
           계약이 지워져 사람을 못 찾는 행은 버튼이 아니라 평문이다(눌리는데 아무 일도 안 일어나면 고장이다). */}
       {tenantId ? (
         <button type="button" onClick={() => entityModal.open({ kind: 'tenant', tenantId })}
-          className={`min-w-0 truncate text-left py-1 -my-1 transition-colors hover:text-[var(--coral)] ${nameTone}`}>
+          className={`min-w-0 truncate text-left py-1 -my-1 transition-colors hover:text-[var(--tc-text)] ${nameTone}`}>
           {item.tenantName}
         </button>
       ) : (
@@ -91,7 +91,7 @@ function StayRow({ item }: { item: StayItem }) {
           : item.kind === 'upcoming'
             // 퇴실일을 안 잡은 예약 — 지나간 구간의 '—'(값 없음)와 다르다. 언제 나갈지 아직 안 정한 것이다.
             ? '미정'
-            : <span className="font-medium text-[var(--coral)]">현재</span>}
+            : <span className="font-medium text-[var(--tc-text)]">현재</span>}
         {/* 예약 확정 여부 — 기본정보 '예약자' 줄의 뱃지가 갖고 있던 사실이다. 11px 행에 뱃지를
             넣으면 320px 폭에서 이름이 밀리므로 어휘로만 가른다(고객 관리와 같은 두 말). */}
         {item.kind === 'upcoming' && <span className="ml-1.5">{item.confirmed ? '예약 확정' : '입실 예약'}</span>}

@@ -65,7 +65,7 @@ function MoveRow({ item }: { item: MoveItem }) {
       <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">
         {fmtDateDot(item.startDate)} ~ {item.endDate
           ? fmtDateDot(item.endDate)
-          : <span className="font-medium text-[var(--coral)]">현재</span>}
+          : <span className="font-medium text-[var(--tc-text)]">현재</span>}
       </span>
     </li>
   )

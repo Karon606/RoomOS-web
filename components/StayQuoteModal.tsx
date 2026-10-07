@@ -116,7 +116,7 @@ export function StayQuoteModal({ open, onClose, z = 200 }: { open: boolean; onCl
             </ul>
             <div className="border-t border-[var(--warm-border)] pt-2 flex items-baseline justify-between">
               <span className="text-xs text-[var(--warm-mid)]">단기 정책 요금</span>
-              <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(short.total)}</span>
+              <span className="text-lg font-bold tnum text-[var(--tc-text)]">{fmtWon(short.total)}</span>
             </div>
             {short.deposit > 0 && (
               <p className="text-[0.6875rem] text-[var(--warm-mid)] flex items-baseline justify-between">
@@ -146,7 +146,7 @@ export function StayQuoteModal({ open, onClose, z = 200 }: { open: boolean; onCl
               <span className="text-xs text-[var(--warm-mid)]">
                 총 {quote.fullMonths > 0 ? `${quote.fullMonths}개월` : ''}{quote.fullMonths > 0 && quote.partialDays > 0 ? ' + ' : ''}{quote.partialDays > 0 ? `${quote.partialDays}일` : ''}
               </span>
-              <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(quote.total)}</span>
+              <span className="text-lg font-bold tnum text-[var(--tc-text)]">{fmtWon(quote.total)}</span>
             </div>
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">일할은 30일 기준. 퇴실 정산과 동일한 계산입니다.</p>
           </div>

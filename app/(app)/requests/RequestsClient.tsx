@@ -317,7 +317,7 @@ export default function RequestsClient({
             {urgentCount > 0 && (
               <>
                 <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-                <span className="text-[var(--coral)] font-semibold">긴급 {urgentCount}건</span>
+                <span className="text-[var(--tc-text)] font-semibold">긴급 {urgentCount}건</span>
               </>
             )}
           </p>
@@ -564,7 +564,7 @@ export default function RequestsClient({
                   ) : (
                     <Link
                       href={`/tenants?tenantId=${r.tenantId}&tab=requests`}
-                      className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)]"
+                      className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--tc-text)]"
                     >
                       {r.tenant?.name ?? '입주자 미상'}{shownRoom && ` · ${pastRoom ? '당시 ' : ''}${fmtRoomNo(shownRoom, '')}`}
                     </Link>

@@ -39,7 +39,7 @@ export default async function PropertySelectPage() {
 
         {ctx.isSuperAdmin && (
           <div className="text-center">
-            <Link href="/admin" className="text-sm font-medium" style={{ color: 'var(--persimmon)' }}>
+            <Link href="/admin" className="text-sm font-medium" style={{ color: 'var(--tc-text)' }}>
               운영자 페이지 ›
             </Link>
           </div>

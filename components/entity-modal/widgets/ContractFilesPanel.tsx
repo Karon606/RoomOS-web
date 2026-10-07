@@ -617,7 +617,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                       <p className="num mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
                         {f.contractNo ? (
                           <button type="button" onClick={() => setDetailId(f.id)}
-                            className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
+                            className="max-w-full truncate hover:text-[var(--tc-text)] transition-colors">
                             계약번호 {f.contractNo}
                           </button>
                         ) : (
@@ -773,7 +773,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                           </span>
                           {f.contractNo ? (
                             <button type="button" onClick={() => setDetailId(f.id)}
-                              className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                              className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
                               계약번호 {f.contractNo}
                             </button>
                           ) : (
@@ -797,7 +797,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
               {voidedLeaseIds.map(id => (
                 // 히트영역만 44px 로 넓힌다 — 보이는 크기는 그대로 두는 정본 수법(RowActionBtn).
                 <button key={id} type="button" onClick={() => handleRestoreVersion(id)} disabled={restoring}
-                  className="mt-2 -my-1 min-h-[44px] inline-flex items-center text-xs font-medium text-[var(--coral)] disabled:opacity-60">
+                  className="mt-2 -my-1 min-h-[44px] inline-flex items-center text-xs font-medium text-[var(--tc-text)] disabled:opacity-60">
                   {restoring ? '되돌리는 중…' : '폐기 적용취소'}
                 </button>
               ))}

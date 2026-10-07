@@ -626,7 +626,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
-      <p className="text-xs font-semibold text-[var(--coral)]">수납 등록</p>
+      <p className="text-xs font-semibold text-[var(--tc-text)]">수납 등록</p>
       {/* 보증금 미수납 사실은 금액을 치기 **전에** 보여야 한다. 금액부터 채우는 동선에서 아래쪽
           진입점은 안 보이고, 그래서 보증금이 일반 수납으로 들어가 이용료 record 가 됐다(신고 00c39371).
           경고색을 쓰지 않는다 — 신규 입주 첫 달의 보증금 미수납은 정상 상태라 노랗게 칠하면 상시 오탐이다. */}
@@ -717,7 +717,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             <div className="flex items-center justify-between gap-2">
               {splitTouched ? (
                 <button type="button" onClick={resetSplit}
-                  className="-my-2 min-h-[44px] inline-flex items-center shrink-0 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] rounded-sm">
+                  className="-my-2 min-h-[44px] inline-flex items-center shrink-0 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--tc-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] rounded-sm">
                   제안값으로 되돌리기
                 </button>
               ) : <span />}
@@ -746,7 +746,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}
       {legacyOptIn && (room.depositAmount > 0 || room.cleaningFee > 0) && !splitMode && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
         <button type="button" onClick={() => setShowSpecialModes(true)}
-          className="w-full text-xs font-medium text-[var(--coral)] border border-[var(--coral)]/35 bg-[var(--coral)]/5 rounded-lg px-3 py-2 hover:bg-[var(--coral)]/10 transition-colors">
+          className="w-full text-xs font-medium text-[var(--tc-text)] border border-[var(--coral)]/35 bg-[var(--coral)]/5 rounded-lg px-3 py-2 hover:bg-[var(--coral)]/10 transition-colors">
           + {room.depositAmount > 0 ? '보증금' : ''}{room.depositAmount > 0 && room.cleaningFee > 0 ? '·' : ''}{room.cleaningFee > 0 ? '청소비' : ''} 수납하기
           {room.depositAmount > 0 && <span className="text-[var(--warm-muted)] font-normal"> · 보증금 {fmtKorMoney(room.depositAmount)}</span>}
         </button>
@@ -1047,7 +1047,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
-      <p className="text-xs font-semibold text-[var(--coral)]">예약금 수납</p>
+      <p className="text-xs font-semibold text-[var(--tc-text)]">예약금 수납</p>
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">처리 방식</label>
         <div className="grid grid-cols-3 gap-1.5">
@@ -1055,7 +1055,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
             <button key={m} type="button" onClick={() => changeMode(m)}
               className={`text-xs font-medium rounded-lg px-2 py-2 border transition-colors ${
                 mode === m
-                  ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
+                  ? 'border-[var(--coral)] text-[var(--tc-text)] bg-[var(--coral)]/10'
                   : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
               }`}>
               {RESV_MODE_LABEL[m]}

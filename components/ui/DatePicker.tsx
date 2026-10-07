@@ -184,7 +184,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isToday
-                        ? { background: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--coral)', fontWeight: 700 }
+                        ? { background: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--tc-text)', fontWeight: 700 }
                         : { color: dow === 0 ? 'var(--danger-fg)' : dow === 6 ? 'var(--info-fg)' : 'var(--warm-dark)' }
                     }
                   >
@@ -255,7 +255,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isCurrent
-                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
+                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--tc-text)' }
                         : { color: 'var(--warm-mid)' }}>
                     {label}
                   </button>
@@ -308,7 +308,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isViewYear
-                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
+                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--tc-text)' }
                         : { color: 'var(--warm-mid)' }}>
                     {yr}
                   </button>

@@ -93,7 +93,7 @@ export function WebsiteTab({
       </div>
       <button type="button" disabled={busy}
         onClick={() => toggleShowOnSite(room.id, show)}
-        className="min-h-[44px] shrink-0 inline-flex items-center text-[0.65625rem] px-2.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
+        className="min-h-[44px] shrink-0 inline-flex items-center text-[0.65625rem] px-2.5 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
         {show ? '올리기' : '내리기'}
       </button>
     </div>

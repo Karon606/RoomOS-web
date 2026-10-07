@@ -135,7 +135,7 @@ export function CleaningRowBody({
         {/* 호실 번호가 그 방으로 가는 문 — 카드 클릭과 같은 동선(형제 목록의 이름 버튼 문법) */}
         {onOpenRoom && (
           <button type="button" onClick={() => onOpenRoom(r.roomId)}
-            className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+            className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--tc-text)] transition-colors">
             {fmtRoomNo(r.roomNo)}
           </button>
         )}

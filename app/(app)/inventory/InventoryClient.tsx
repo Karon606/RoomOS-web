@@ -846,7 +846,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                       { v: 'newest' as const, label: '최근 추가순', desc: '새로 만든 품목이 위로' },
                     ]).map(o => (
                       <button key={o.v} type="button" onClick={() => { setOpenMenu(null); pickSortPreset(o.v) }}
-                        className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--canvas)] ${sortPreset === o.v ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-dark)]'}`}>
+                        className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--canvas)] ${sortPreset === o.v ? 'text-[var(--tc-text)] font-semibold' : 'text-[var(--warm-dark)]'}`}>
                         {o.label}<span className="block text-[0.65625rem] font-normal text-[var(--warm-muted)]">{o.desc}</span>
                       </button>
                     ))}
@@ -906,7 +906,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       )}
       {outOfScopeCount > 0 && (
         <button type="button" onClick={() => pickCatTab('__all__')}
-          className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+          className="text-xs text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
           다른 카테고리에 <span className="font-semibold text-[var(--warm-dark)]">{outOfScopeCount}건</span> 더 있음 · 전체에서 보기 ›
         </button>
       )}
@@ -955,7 +955,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           <section id="inventory-pending" className="space-y-2">
             {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
             <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-              수령 대기 <span className="text-[0.65625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
+              수령 대기 <span className="text-[0.65625rem] text-[var(--tc-text)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
             </h2>
             <ul className="space-y-1.5">
               {groups.map(g => {
@@ -996,7 +996,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           <p className="text-[0.65625rem] text-[var(--warm-muted)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})는 개당 속성이라 개수 기준으로 집계합니다</p>
                         )}
                         {g.items.length > 1 && (
-                          <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">
+                          <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--tc-text)] hover:underline">
                             구매 {g.items.length}건 합산 {expanded ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
                           </button>
                         )}
@@ -1265,7 +1265,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
               : row.avgDaily === 0 ? '최근 사용 없음'
               : '소진 예측 준비 중 · 점검 데이터 부족'}`
         // 임박은 값(valueDanger)만 붉었고 보조줄은 회색이라 D-숫자가 눈에 안 걸렸다. 판정은 위 lowStock 재사용(새 임계 없음).
-        return lowStock ? <span className="text-[var(--coral)]">{text}</span> : text
+        return lowStock ? <span className="text-[var(--tc-text)]">{text}</span> : text
       })()}
       expanded={open}
       actions={<>
@@ -1275,7 +1275,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
         </button>
         {suggestHide && onArchive && (
           <button type="button" onClick={onArchive}
-            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/40 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors">
             숨기기
           </button>
         )}
@@ -1323,14 +1323,14 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
         </p>
       )}
       {row.reorderMemo && (
-        <p className="text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
+        <p className="text-[0.65625rem] text-[var(--tc-text)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
           발주 · {row.reorderMemo}
         </p>
       )}
       {row.purchaseUrl && (
         <a href={row.purchaseUrl} target="_blank" rel="noopener noreferrer"
           onClick={e => e.stopPropagation()}
-          className="inline-flex items-center gap-1 self-start text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 hover:bg-[var(--coral)]/10 border border-[var(--coral)]/30 rounded-lg px-2 py-1 leading-none transition-colors">
+          className="inline-flex items-center gap-1 self-start text-[0.65625rem] text-[var(--tc-text)] bg-[var(--coral)]/5 hover:bg-[var(--coral)]/10 border border-[var(--coral)]/30 rounded-lg px-2 py-1 leading-none transition-colors">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
             <polyline points="15 3 21 3 21 9"/>
@@ -1498,7 +1498,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위
               <button type="button" onClick={() => setUnitWizOpen(true)}
-                className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 선택</button>
+                className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2">단계별 선택</button>
             </label>
             <input type="text" value={specUnit} onChange={e => setSpecUnit(e.target.value)} placeholder="m, L, kg"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
@@ -2306,7 +2306,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                   return (
                     <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">
                       {lb.locationName} {fmtQty(lb.qty, stockUnit)}
-                      {restocked > 0 && <span className="ml-1 text-[var(--coral)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>}
+                      {restocked > 0 && <span className="ml-1 text-[var(--tc-text)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>}
                     </span>
                   )
                 })}
@@ -2317,7 +2317,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
               const restockTotal = entry.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
               if (restockTotal <= 0) return null
               return (
-                <p className="text-[0.65625rem] text-[var(--coral)] mt-0.5">
+                <p className="text-[0.65625rem] text-[var(--tc-text)] mt-0.5">
                   ↳ 창고 → 각 위치 +{Math.round(restockTotal * 100) / 100}{stockUnit ?? ''} (창고에서 자동 차감)
                 </p>
               )
@@ -2498,7 +2498,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
               {itemLocations.map(loc => (
                 <button key={loc.id} type="button" disabled={pending}
                   onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
-                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--tc-text)]'}`}>
                   {loc.pathName}
                 </button>
               ))}
@@ -2920,7 +2920,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
               <div className="flex flex-wrap gap-1.5">
                 {available.map(c => (
                   <button key={c} type="button" onClick={() => add(c)}
-                    className="text-xs px-2.5 py-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+                    className="text-xs px-2.5 py-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--tc-text)] transition-colors">
                     + {c}
                   </button>
                 ))}
@@ -3281,7 +3281,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                       옮김 없음
                     </button>
                     {restocked > 0 && (
-                      <span className="text-[0.65625rem] text-[var(--coral)]">창고에서 +{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>
+                      <span className="text-[0.65625rem] text-[var(--tc-text)]">창고에서 +{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>
                     )}
                   </div>
                 </div>
@@ -3306,9 +3306,9 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
           })}
           <div className="flex justify-between text-[0.65625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1">
             {restockSum > 0
-              ? <span className="text-[var(--warm-mid)]">창고 → 이동 합계 <strong className="text-[var(--coral)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+              ? <span className="text-[var(--warm-mid)]">창고 → 이동 합계 <strong className="text-[var(--tc-text)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
               : <span className="text-[var(--warm-muted)]">옮김 없음</span>}
-            <span className="text-[var(--warm-mid)]">잔량 <strong className="text-[var(--coral)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">잔량 <strong className="text-[var(--tc-text)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
       )}
@@ -4031,7 +4031,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                 {(prevQty !== undefined || (lastRestocked != null && lastRestocked > 0) || (!rowIsHub && !!hubStock) || restocked > 0) && (
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                     {prevQty !== undefined && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prevQty}{stockUnit ?? ''}</strong></span>}
-                    {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--tc-text)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     {/* 창고 잔량 — 기록이 없으면 0 이 아니라 '모름'이라 숫자를 만들어내지 않는다. */}
                     {!rowIsHub && hubStock && (
                       <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
@@ -4041,11 +4041,11 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                           : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
                       </span>
                     )}
-                    {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {restocked > 0 && !rowIsHub && <span className="text-[var(--tc-text)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     {/* 허브를 안 적으면 서버가 옮김 합만큼 깎는다 — 그 파생값을 미리 말해 준다.
                         적는 순간 사라진다(적은 값이 그 자리의 진실이 되므로). */}
                     {rowIsHub && restockSum > 0 && beforeStr === '' && prevQty !== undefined && (
-                      <span className="text-[var(--coral)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, hubPrev - restockSum) * 100) / 100}{stockUnit ?? ''}</strong></span>
+                      <span className="text-[var(--tc-text)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, hubPrev - restockSum) * 100) / 100}{stockUnit ?? ''}</strong></span>
                     )}
                   </div>
                 )}
@@ -4124,8 +4124,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
             )
           })}
           <div className="flex justify-between text-[0.65625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-            <span className="text-[var(--warm-mid)]">이번 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
-            <span className="text-[var(--warm-mid)]">점검 후 잔량 <strong className="text-[var(--coral)] tabular-nums">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">이번 옮김 <strong className="text-[var(--tc-text)] tabular-nums">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">점검 후 잔량 <strong className="text-[var(--tc-text)] tabular-nums">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
       ) : hasLocations ? (
@@ -4146,7 +4146,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
               </div>
             </div>
           ))}
-          <p className="text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+          <p className="text-[0.65625rem] text-[var(--tc-text)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
             합계 <strong className="tabular-nums">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong>
           </p>
         </div>
@@ -5560,7 +5560,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                           {(prev != null || (restocked > 0 && !rowIsHub) || (!rowIsHub && !!hubStock)) && (
                             <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                               {prev != null && <span className="text-[var(--warm-mid)]">저장된 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
-                              {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                              {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 저장된 옮김 <strong className="text-[var(--tc-text)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               {/* 창고 잔량 — 기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
                               {!rowIsHub && hubStock && (
                                 <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
@@ -5570,12 +5570,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                     : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
                                 </span>
                               )}
-                              {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                              {restocked > 0 && !rowIsHub && <span className="text-[var(--tc-text)] ml-auto">이번 입력 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               {/* 허브를 안 적으면 서버가 옮김 합만큼 깎는다 — 그 파생값을 미리 말해 준다.
                                   적는 순간 사라진다(적은 값이 그 자리의 진실이 되므로). 아이템별 폼과 같은 한 줄이다
                                   (디자이너 검수 2026-09-16 — 두 화면이 같은 사실을 같은 말로 해야 한다). */}
                               {rowIsHub && itemMoves > 0 && beforeStr === '' && prev != null && (
-                                <span className="text-[var(--coral)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, prev.qty - itemMoves) * 100) / 100}{stockUnit ?? ''}</strong></span>
+                                <span className="text-[var(--tc-text)] ml-auto">차감 후 <strong className="tabular-nums">{Math.round(Math.max(0, prev.qty - itemMoves) * 100) / 100}{stockUnit ?? ''}</strong></span>
                               )}
                             </div>
                           )}
@@ -6004,7 +6004,7 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
         {decisions.map((d, i) => (
           <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-3 last:border-0">
             <p className="text-sm font-medium text-[var(--warm-dark)]">
-              <span className="text-[var(--coral)]">{d.newLabel}</span>
+              <span className="text-[var(--tc-text)]">{d.newLabel}</span>
               <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1.5">{d.category} · 지출 {d.expenseIds.length}건</span>
             </p>
             <div className="space-y-1.5">
@@ -6114,7 +6114,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                     </span>
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{r.category}</span>
                     <button type="button" onClick={() => remove(r.id)} disabled={pendingId === r.id}
-                      className="text-[0.6875rem] text-[var(--coral)] hover:underline disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">다시 추천 받기</button>
+                      className="text-[0.6875rem] text-[var(--tc-text)] hover:underline disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">다시 추천 받기</button>
                   </div>
                 ))}
               </div>
@@ -6645,7 +6645,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                     className="flex-1 min-w-0 bg-transparent text-sm text-[var(--warm-dark)] outline-none border-b border-[var(--coral)]" />
                   {/* 글자만으로는 24px 이라 §25 유사요소 확장으로 히트영역만 44px 로 넓힌다(보이는 크기는 그대로). */}
                   <button type="button" onClick={() => handleUpdate(node.id)} disabled={pending}
-                    className="relative text-xs font-semibold text-[var(--coral)] disabled:opacity-40 px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[10px]">저장</button>
+                    className="relative text-xs font-semibold text-[var(--tc-text)] disabled:opacity-40 px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[10px]">저장</button>
                   <button type="button" onClick={() => setEditId(null)}
                     className="relative text-xs text-[var(--warm-muted)] px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[10px]">취소</button>
                 </>
@@ -7103,7 +7103,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
         {pending ? '저장 중…' : '위치 저장'}
       </Btn>
       {dirty && !saved && (
-        <p className="text-[0.65625rem] text-[var(--coral)]">
+        <p className="text-[0.65625rem] text-[var(--tc-text)]">
           변경한 보관 위치는 위치 저장 버튼을 눌러야 반영됩니다.
         </p>
       )}
@@ -7306,7 +7306,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             </div>
           </div>
           {computed > 0 && (
-            <p className="text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+            <p className="text-[0.65625rem] text-[var(--tc-text)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
               → 입수량 합계 <strong>{Math.round(computed * 100) / 100}{item.specUnit}</strong>
             </p>
           )}

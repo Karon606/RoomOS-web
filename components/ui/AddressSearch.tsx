@@ -94,7 +94,7 @@ export function AddressSearch({
         <label className="block text-xs font-medium mb-1 px-1" style={{ color: 'var(--warm-dark)' }}>
           {label}
           {required
-            ? <span style={{ color: 'var(--persimmon)' }}> *</span>
+            ? <span style={{ color: 'var(--tc-text)' }}> *</span>
             : <span style={{ color: 'var(--warm-muted)' }}> (선택)</span>}
         </label>
       )}
@@ -114,7 +114,7 @@ export function AddressSearch({
           disabled={!ready}
           onClick={() => setOpen(true)}
           className="shrink-0 px-3 py-2.5 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 whitespace-nowrap"
-          style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon)', border: '1px solid var(--warm-border)' }}
+          style={{ background: 'var(--persimmon-l)', color: 'var(--tc-text)', border: '1px solid var(--warm-border)' }}
         >
           {ready ? '주소 검색' : '불러오는 중'}
         </button>

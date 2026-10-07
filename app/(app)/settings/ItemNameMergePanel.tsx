@@ -55,7 +55,7 @@ export function ItemNameMergePanel() {
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">
-        품명 병합 <span className="text-[0.65625rem] font-normal text-[var(--coral)]">AI 정리</span>
+        품명 병합 <span className="text-[0.65625rem] font-normal text-[var(--tc-text)]">AI 정리</span>
       </h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         비슷한 품목명(비품·자재·소모품·부식)을 AI로 묶어 한 이름으로 통일합니다. 통일하면 지출·재고의 기존 이름이 바뀌고,

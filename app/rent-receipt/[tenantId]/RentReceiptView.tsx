@@ -264,7 +264,7 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
       <DocumentScroll />
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href={back.href} className="text-sm text-[var(--coral)]">‹ {back.label}</Link>
+          <Link href={back.href} className="text-sm text-[var(--tc-text)]">‹ {back.label}</Link>
           <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)] active:bg-[var(--cream)] active:scale-[0.98]">자동값으로</button>
         </div>
 

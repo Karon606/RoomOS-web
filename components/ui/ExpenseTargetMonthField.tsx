@@ -34,7 +34,7 @@ export function ExpenseTargetMonthField({ date, viewMonth, initial = null, onDir
     const action = (label: string, next: string | null) => (
       <button type="button" onClick={() => { setPicked(next); setOpen(true); onDirty?.() }}
         // 승인 카드(dense)는 그 카드의 인라인 액션 문법('단계별')을 따른다 — 한 카드 두 문법 금지(웹디자이너 패스).
-        className={dense ? 'font-semibold underline decoration-dotted underline-offset-2 text-[var(--coral)]' : 'underline text-[var(--coral)]'}>{label}</button>
+        className={dense ? 'font-semibold underline decoration-dotted underline-offset-2 text-[var(--tc-text)]' : 'underline text-[var(--tc-text)]'}>{label}</button>
     )
     return (
       <div className={dense ? '-mt-0.5' : '-mt-2'}>

@@ -857,14 +857,14 @@ type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move
 const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'depositReturn', 'receipt', 'contact', 'upcoming', 'moveout', 'movein', 'move', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미납 (현 입주자)', color: 'var(--tc)' },
-  contact:   { label: '연락할 때',    color: 'var(--coral)' },
+  contact:   { label: '연락할 때',    color: 'var(--tc-text)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },
   move:      { label: '이사 예정',    color: 'var(--info-fg)' },
   tour:      { label: '문의·투어',    color: 'var(--ink)' },
   wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
-  request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
+  request:   { label: '요청·컴플레인',color: 'var(--tc-text)' },
   recurring: { label: '고정 지출',    color: 'var(--viz-2)' },
   inventory: { label: '재고 부족',    color: 'var(--viz-4)' },
   receipt:   { label: '현금영수증 발급 기한', color: 'var(--danger-fg)' },
@@ -1003,7 +1003,7 @@ function AlertsStrip({ alerts, muted, cutoff, onOpenAlert }: {
           <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
         {alerts.length > 0 && (
-          <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
+          <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--tc-text)' }}>
             {alerts.length}건
           </span>
         )}
@@ -1204,7 +1204,7 @@ function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
                그것을 막는다). 그물 밖에서 그런 줄이 생겨도 켜는 문이 아예 없지는 않게 남겨 둔다. */
             <Link href={a.link}
               className="shrink-0 -my-2 min-h-[44px] inline-flex items-center text-[0.65625rem] font-medium hover:opacity-70 transition-opacity"
-              style={{ color: 'var(--coral)' }}>
+              style={{ color: 'var(--tc-text)' }}>
               탭에서 다시 켜기 ›
             </Link>
           )}
@@ -2010,7 +2010,7 @@ function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boo
   const countedRooms = data.totalRooms - data.excludedRooms
   const occupancyRate = countedRooms > 0 ? Math.round((data.occupiedRooms / countedRooms) * 100) : 0
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
-  const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--persimmon)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
+  const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--tc-text)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
   const statusSegments = [
     { value: data.statusCounts.active,      color: STATUS_COLORS.active },
     { value: data.statusCounts.reserved,    color: STATUS_COLORS.reserved },
@@ -2193,7 +2193,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
           <div className="text-center py-10 text-sm" style={{ color: 'var(--warm-muted)' }}>버튼을 눌러 이달 재무 현황 AI 분석을 시작하세요</div>
         )}
         {isLoading && !aiText && (
-          <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--coral)' }}>
+          <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--tc-text)' }}>
             <span className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
             이달 재무 현황을 분석하고 있어요
           </div>
@@ -2210,7 +2210,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
               {aiText}
               {isLoading && <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />}
             </div>
-            {!isLoading && <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>다시 분석</button>}
+            {!isLoading && <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--tc-text)' }}>다시 분석</button>}
           </div>
         )}
       </div>
@@ -2529,7 +2529,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
         return (
           <section className="rounded-xl p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
             <div>
-              <h2 className="text-sm font-bold text-[var(--warm-dark)]">시작하기 <span className="text-[var(--coral)] tnum">{doneCount}/3</span></h2>
+              <h2 className="text-sm font-bold text-[var(--warm-dark)]">시작하기 <span className="text-[var(--tc-text)] tnum">{doneCount}/3</span></h2>
               <p className="text-xs text-[var(--warm-muted)] mt-0.5">세 단계면 운영 준비가 끝납니다. 완료된 단계는 자동으로 체크됩니다.</p>
             </div>
             <ol className="space-y-1.5">
@@ -2547,7 +2547,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                       {!s.done && <span className="block text-xs text-[var(--warm-muted)]">{s.desc}</span>}
                     </span>
                     {!s.done && (
-                      <svg className="ml-auto shrink-0 text-[var(--coral)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+                      <svg className="ml-auto shrink-0 text-[var(--tc-text)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
                     )}
                   </Link>
                 </li>
@@ -2749,7 +2749,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                     **전체**의 추정액이고, 바로 위 등식의 '고정 지출 (예정)'은 그중 **아직 기록 안 된 몫**이다.
                     모집단이 다른데 앞 글자가 같아 한 카드 안에서 같은 것으로 읽혔다. */}
                 <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
-                  <span style={{ color: 'var(--ink-2)' }}>●</span> 고정 지출 전체 (정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정 지출 전체 (변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
+                  <span style={{ color: 'var(--ink-2)' }}>●</span> 고정 지출 전체 (정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정 지출 전체 (변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--tc-text)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                 </p>
               </>
             )
@@ -2841,7 +2841,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                           <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{`${Number(targetMonth.slice(5))}월 거주 기준`}</span>
                         )}
                       </div>
-                      <Link href="/room-manage" style={{ fontSize: '0.6875rem', color: 'var(--coral)' }}>전체 보기 ›</Link>
+                      <Link href="/room-manage" style={{ fontSize: '0.6875rem', color: 'var(--tc-text)' }}>전체 보기 ›</Link>
                     </div>
                     {data.rooms.length === 0 ? (
                       <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
@@ -3142,7 +3142,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                         <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
-                        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
+                        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--tc-text)' }}>
                           {data.unpaidCount}건
                         </span>
                       )}
@@ -3224,7 +3224,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                           >
                             {unpaidExpanded
                               ? <>접기 ↑</>
-                              : <>더보기 <span style={{ color: 'var(--coral)' }}>+{sortedUnpaid.length - UNPAID_LIMIT}</span> ↓</>}
+                              : <>더보기 <span style={{ color: 'var(--tc-text)' }}>+{sortedUnpaid.length - UNPAID_LIMIT}</span> ↓</>}
                           </button>
                         )}
                       </>

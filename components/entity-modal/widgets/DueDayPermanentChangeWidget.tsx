@@ -52,7 +52,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           </div>
           <button type="button" onClick={() => { setShowForm(true); setInput('') }}
             className="text-[0.6875rem] px-2 py-1 rounded transition-colors shrink-0"
-            style={{ color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
+            style={{ color: 'var(--tc-text)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
             변경
           </button>
         </div>
@@ -66,7 +66,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
   return (
     <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
       <div className="space-y-2.5">
-        <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+        <p className="text-xs font-semibold" style={{ color: 'var(--tc-text)' }}>
           납입일 영구 변경 · {targetMonth} 기준 일할 정산
         </p>
         <div className="flex items-end gap-3">
@@ -99,7 +99,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>기존 납입일과 동일합니다.</p>
         )}
         {input.trim() && !calc && (
-          <p className="text-xs" style={{ color: 'var(--coral)' }}>유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
+          <p className="text-xs" style={{ color: 'var(--tc-text)' }}>유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
         )}
         <div className="flex gap-2">
           <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setInput('') }} className="flex-1">취소</Btn>

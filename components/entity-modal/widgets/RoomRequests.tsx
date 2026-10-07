@@ -34,7 +34,7 @@ export function RoomRequests({ roomId }: { roomId: string }) {
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-[var(--warm-dark)]">요청 내역</span>
         <span className="text-xs">
-          {unresolved > 0 && <strong className="text-[var(--coral)]">미처리 {unresolved}</strong>}
+          {unresolved > 0 && <strong className="text-[var(--tc-text)]">미처리 {unresolved}</strong>}
           <span className="text-[var(--warm-muted)] inline-flex items-center gap-1">{unresolved > 0 ? ' · ' : ''}{data.items.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></span>
         </span>
       </button>

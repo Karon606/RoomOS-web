@@ -6777,3 +6777,8 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 웹디자이너 패스: 다크 링크 대비 2.78:1(--coral) 을 --tc-text 로(같은 탭 '기본정보에서 고치기' 포함), 결과 토스트 '이전 파일로 복귀', 적용취소 3버튼 때 미리보기 self-start, 진행 중 업로드 라벨 흐림, 캡션 중복 정리.
 - 감지망: check-property-doc-axis 신설(verify:fast), check-upload-hygiene 정규식·ⓙ 범위 보강, check-doc-file-label·test-doc-bundle·audit-heic-uploads 확장. 역주입 축마다 빨강 확인.
 - 남은 것: 실기 확인(업로드·교체·삭제·두 입구 적용취소, 상담 도구 줄 셋·파일명, 제한 스태프 403). 2단계 선택: 입주자 서류 동봉, 영업장 영문명. 저장소 전반 --coral 텍스트 링크 다크 대비(19곳)는 별건.
+
+## 2026-10-07 테라코타 글자색 다크 대비 전수 통일 (운영자 '추천대로')
+- 통장사본 검수에서 잡힌 다크 링크 대비 2.78:1 의 클래스 봉합. app·components 의 text-[var(--coral)]·text-[var(--persimmon)]·인라인 color 'var(--coral|persimmon)' 221곳을 --tc-text 로(70파일). 라이트는 같은 값이라 픽셀 무변동, 다크만 #C9614C(4.63:1).
+- 범위 밖: SVG stroke·fill(배치도 캔버스·영수증 사진 위, 모드 불변), 보더·틴트·outline(§12·§03 자기 규칙).
+- 감지망 check-coral-text-token.mjs 신설(verify:fast, 포커스 링 그물과 같은 꼴, 첫 실행에서 퍼시먼 인라인 12곳을 추가로 잡아 빨강 확인). 가이드 §28 에 규칙 한 줄.

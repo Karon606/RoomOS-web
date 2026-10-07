@@ -348,7 +348,7 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
 type AlignType = 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV' | 'distributeH' | 'distributeV'
 
 function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignType) => void }) {
-  const btnCls = 'flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-30'
+  const btnCls = 'flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--tc-text)] transition-colors disabled:opacity-30'
   const items: { type: AlignType; Icon: () => React.ReactElement; title: string; min: number }[] = [
     { type: 'left',        Icon: IcoAlignLeft,    title: '좌측 정렬',       min: 2 },
     { type: 'centerH',     Icon: IcoAlignCenterH, title: '수평 가운데 정렬', min: 2 },
@@ -1159,7 +1159,7 @@ export default function FloorPlanEditor({
         style={{ background: 'var(--canvas)' }}>
         {floors.map(fl => (
           <div key={fl.id}
-            className={`flex items-center gap-1 px-3 py-2 text-xs border-r border-[var(--warm-border)] cursor-pointer whitespace-nowrap transition-colors shrink-0 ${fl.id === activeFloorId ? 'font-semibold text-[var(--coral)]' : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+            className={`flex items-center gap-1 px-3 py-2 text-xs border-r border-[var(--warm-border)] cursor-pointer whitespace-nowrap transition-colors shrink-0 ${fl.id === activeFloorId ? 'font-semibold text-[var(--tc-text)]' : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
             style={fl.id === activeFloorId ? { background: 'var(--cream)' } : {}}
             onClick={() => fl.id !== activeFloorId && switchFloor(fl.id)}
             onDoubleClick={() => renameFloor(fl.id)}>
@@ -1175,7 +1175,7 @@ export default function FloorPlanEditor({
         ))}
         {!viewOnly && (
           <button onClick={addFloor}
-            className="px-3 py-2 text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors shrink-0">
+            className="px-3 py-2 text-xs text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors shrink-0">
             + 층 추가
           </button>
         )}
@@ -1235,7 +1235,7 @@ export default function FloorPlanEditor({
             <div className="relative shrink-0">
               {drawingPolygon ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-[var(--coral)] font-medium">
+                  <span className="text-xs text-[var(--tc-text)] font-medium">
                     {TYPE_LABEL[drawingPolygon.type]} 그리는 중 ({Math.floor(drawingPolygon.points.length / 2)}개)
                   </span>
                   {drawingPolygon.points.length >= 6 && (
@@ -1332,7 +1332,7 @@ export default function FloorPlanEditor({
       {/* ── 다각형 그리기 안내 ── */}
       {drawingPolygon && (
         <div className="flex items-center justify-center py-1.5 text-[0.6875rem] font-medium border-b border-[var(--warm-border)]"
-          style={{ background: 'var(--coral-pale)', color: 'var(--coral)' }}>
+          style={{ background: 'var(--coral-pale)', color: 'var(--tc-text)' }}>
           {drawingPolygon.points.length === 0
             ? '캔버스를 클릭하여 첫 번째 꼭짓점을 추가하세요'
             : drawingPolygon.points.length < 6

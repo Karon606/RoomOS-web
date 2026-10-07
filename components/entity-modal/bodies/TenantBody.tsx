@@ -407,7 +407,7 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
           {pending ? 'AI 분석 중…' : aiText ? '다시 분석' : 'AI로 수납 패턴 분석'}
         </Btn>
         {pending && (
-          <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
+          <div className="flex items-center gap-2 text-xs text-[var(--tc-text)] animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--coral)] animate-bounce" />
             AI가 수납 패턴을 분석하고 있습니다…
           </div>

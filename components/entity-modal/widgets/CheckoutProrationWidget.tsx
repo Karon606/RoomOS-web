@@ -235,7 +235,7 @@ export function CheckoutProrationWidget({
             )}
             <button type="button" onClick={() => { setShowForm(true); setDate(expectedMoveOut ?? ''); setCalc(null); setCalcErr(null) }}
               className="text-[0.6875rem] px-2 py-1 rounded transition-colors"
-              style={{ color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
+              style={{ color: 'var(--tc-text)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
               {isApplied ? '다시 정산' : '정산'}
             </button>
           </div>
@@ -247,7 +247,7 @@ export function CheckoutProrationWidget({
   return (
     <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
       <div className="space-y-2.5">
-        <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+        <p className="text-xs font-semibold" style={{ color: 'var(--tc-text)' }}>
           퇴실 정산 · 일할 청구
         </p>
         <div className="space-y-1.5">
@@ -343,7 +343,7 @@ export function CheckoutProrationWidget({
           </div>
         )}
         {calcErr && (
-          <p className="text-xs" style={{ color: 'var(--coral)' }}>{calcErr}</p>
+          <p className="text-xs" style={{ color: 'var(--tc-text)' }}>{calcErr}</p>
         )}
 
         {refund && prepaid > 0 && (() => {

@@ -1618,7 +1618,7 @@ export default function SettingsForm({
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부항목 (선택)</label>
                     <button type="button" onClick={addRecItem}
-                      className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">+ 항목 추가</button>
+                      className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--tc-text)] hover:bg-[var(--coral)]/5 transition-colors">+ 항목 추가</button>
                   </div>
                   {recItems.length === 0 ? (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
@@ -1893,7 +1893,7 @@ export default function SettingsForm({
                     </select>
                   ) : (
                     <span className={`text-xs px-2 py-1 rounded-lg font-medium
-                      ${m.role === 'OWNER' ? 'bg-[var(--coral)]/30 text-[var(--coral)]' :
+                      ${m.role === 'OWNER' ? 'bg-[var(--coral)]/30 text-[var(--tc-text)]' :
                         m.role === 'MANAGER' ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' :
                         'bg-[var(--canvas)] text-[var(--warm-mid)]'}`}>
                       {m.roleLabel}
@@ -2305,7 +2305,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
             </div>
           ))}
           <button type="button" onClick={addSection}
-            className="w-full py-2 text-sm text-[var(--coral)] border border-dashed border-[var(--coral)]/40 rounded-xl hover:bg-[var(--coral-pale)]/30 transition-colors">
+            className="w-full py-2 text-sm text-[var(--tc-text)] border border-dashed border-[var(--coral)]/40 rounded-xl hover:bg-[var(--coral-pale)]/30 transition-colors">
             + 섹션 추가
           </button>
         </div>
@@ -2524,7 +2524,7 @@ function FontSizePreview({ basePx }: { basePx: number }) {
         <span style={{ fontSize: `${0.875 * scale}rem` }} className="font-bold text-[var(--danger-fg)]">-58만원</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-sm bg-[var(--coral-pale)] text-[var(--coral)]">통신비</span>
+        <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-sm bg-[var(--coral-pale)] text-[var(--tc-text)]">통신비</span>
         <span style={{ fontSize: `${0.75 * scale}rem` }} className="text-[var(--warm-dark)]">인터넷 요금</span>
       </div>
       <span style={{ fontSize: `${0.625 * scale}rem` }} className="text-[var(--warm-muted)]">계좌이체 · 하나은행</span>
@@ -2902,7 +2902,7 @@ function ItemSpecOptionsPanel() {
                 ) : (
                   <span key={o.id} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 text-xs rounded-md border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)]">
                     <button type="button" onClick={() => { setEditId(o.id); setEditVal(o.label) }}
-                      className="hover:text-[var(--coral)]" title="수정">{o.label}</button>
+                      className="hover:text-[var(--tc-text)]" title="수정">{o.label}</button>
                     <button type="button" onClick={() => remove(o.id, o.label)}
                       className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] px-1 leading-none" aria-label={`${o.label} 삭제`}>×</button>
                   </span>

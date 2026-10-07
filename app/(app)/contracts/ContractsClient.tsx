@@ -245,7 +245,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
             여전히 안 나와 누를 수 없는 버튼이 되기 때문이다. */}
         {pendingHidden > 0 && !selectMode && (
           <button type="button" onClick={() => { setSource('all'); setResidency('current') }}
-            className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+            className="text-xs text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
             발급 대기에 <span className="font-semibold text-[var(--warm-dark)]">{pendingHidden}건</span> 더 있음 · 전체에서 보기 ›
           </button>
         )}
@@ -266,7 +266,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
         <div id="contracts-pending-issue">
           <SectionHeader
             first
-            name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--coral)]">서명 받음</span></>}
+            name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--tc-text)]">서명 받음</span></>}
             count={`${pendingRows.length}건`}
           />
           {/* 발급본을 지워도 서명은 남아 여기 다시 선다 — 그때 '발급'을 누르면 같은 내용이 또 나간다.
@@ -280,7 +280,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   <button
                     type="button"
                     onClick={() => entityModal.open({ kind: 'tenant', tenantId: p.tenantId })}
-                    className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+                    className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--tc-text)] transition-colors">
                     {p.roomNo ? `${fmtRoomNo(p.roomNo)} · ` : ''}{p.tenantName}
                   </button>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtMD(p.signedAt)} 서명{p.submitted ? ' · 제출 완료' : ''}</p>
@@ -344,13 +344,13 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     <button
                       type="button"
                       onClick={() => entityModal.open({ kind: 'tenant', tenantId: c.tenantId })}
-                      className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+                      className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--tc-text)] transition-colors">
                       {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}
                     </button>
                   )}
                   <span className={`text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm ${
                     c.source === 'GENERATED'
-                      ? 'bg-[var(--coral)]/10 text-[var(--coral)]'
+                      ? 'bg-[var(--coral)]/10 text-[var(--tc-text)]'
                       : 'bg-[var(--canvas)] text-[var(--warm-mid)] ring-1 ring-[var(--warm-border)]'
                   }`}>{SOURCE_LABEL[c.source]}</span>
                   {/* 여러 부 중 어느 것이 지금 유효한지 — 입실자별에서만 띄운다. 최신순은 사람이 섞여
@@ -376,7 +376,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     <span className="max-w-full truncate">계약번호 {c.contractNo}</span>
                   ) : (
                     <button type="button" onClick={() => setDetailId(c.id)}
-                      className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
+                      className="max-w-full truncate hover:text-[var(--tc-text)] transition-colors">
                       계약번호 {c.contractNo}
                     </button>
                   )}

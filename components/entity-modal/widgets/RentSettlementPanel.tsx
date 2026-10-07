@@ -101,7 +101,7 @@ export function RentSettlementPanel({
   if (!relevant) return null
   if (!data && loadFailed) return (
     <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">
-      <p className="text-xs font-semibold text-[var(--coral)]">이용료 정산</p>
+      <p className="text-xs font-semibold text-[var(--tc-text)]">이용료 정산</p>
       <p className="text-xs text-[var(--danger-fg)] break-keep">정산 정보를 불러오지 못했습니다.</p>
       {/* 재시도 중 표시가 없으면 눌러도 화면이 1픽셀도 안 움직여 무반응으로 읽힌다(§27.2).
           data 를 null 로 되돌려 스켈레톤을 태우는 방식은 카드가 사라졌다 돌아오는 점프라 안 쓴다. */}
@@ -251,7 +251,7 @@ export function RentSettlementPanel({
   return (
     <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <p className="text-xs font-semibold text-[var(--coral)]">이용료 정산</p>
+        <p className="text-xs font-semibold text-[var(--tc-text)]">이용료 정산</p>
         <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
       </div>
 

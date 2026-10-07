@@ -126,7 +126,7 @@ export default function PropertyPhotosManager({ onClose }: { onClose: () => void
                     aria-label="카테고리 이름" placeholder="카테고리 이름"
                     className="flex-1 min-w-0 rounded-md px-2 py-1 text-sm font-semibold text-[var(--warm-dark)] bg-transparent border border-transparent hover:bg-[var(--cream)] focus:bg-[var(--cream)] focus:border-[var(--coral)] outline-none transition-colors" />
                   <button type="button" onClick={() => fileRefs.current[cat.id]?.click()} disabled={uploadingCat === cat.id}
-                    className="text-xs text-[var(--coral)] shrink-0 px-2 py-1 disabled:opacity-50">
+                    className="text-xs text-[var(--tc-text)] shrink-0 px-2 py-1 disabled:opacity-50">
                     {uploadingCat === cat.id ? '업로드 중…' : '+ 사진'}
                   </button>
                   {/* 파괴적 액션 — 주 액션에서 gap 만큼 떼고, 32px hit area + hover 시에만 위험색 */}

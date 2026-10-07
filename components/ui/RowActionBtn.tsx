@@ -18,7 +18,7 @@ const TONE_CLS: Record<Tone, string> = {
   neutral: 'border-[var(--warm-border)] text-[var(--warm-mid)]',
   danger: 'border-[var(--danger-ring)] text-[var(--danger-fg)]',
   deposit: 'border-[var(--deposit-ring)] text-[var(--deposit-fg)]',
-  accent: 'border-[var(--warm-border)] text-[var(--coral)]',
+  accent: 'border-[var(--warm-border)] text-[var(--tc-text)]',
   success: 'border-[var(--success-ring)] text-[var(--success-fg)]',
 }
 

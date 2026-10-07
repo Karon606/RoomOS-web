@@ -705,7 +705,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           규격 직접 입력 (직경x길이·색상·사이즈 등)
         </label>
         <button type="button" onClick={() => setWizardOpen(true)}
-          className="text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">
+          className="text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2">
           단계별 입력
         </button>
       </div>
@@ -745,7 +745,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           <div className="flex items-center gap-1.5">
             <label className="text-[0.65625rem] text-[var(--warm-muted)]">브랜드·제품명</label>
             {brandFromLast && (
-              <span className="text-[0.65625rem] text-[var(--coral)]">지난번 값</span>
+              <span className="text-[0.65625rem] text-[var(--tc-text)]">지난번 값</span>
             )}
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -859,8 +859,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                       if (next !== it.labelSimilarTo) patchItem(idx, { labelSimilarTo: next })
                     }}
                     aria-label="품명 수정" placeholder="품명"
-                    className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs font-medium text-[var(--coral)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                    className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs font-medium text-[var(--tc-text)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--tc-text)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
                 {it.labelSimilarTo && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--warning-bg)] ring-1 ring-[var(--warning-ring)] px-2 py-1.5">
@@ -986,7 +986,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                 {allowMulti && rooms.length > 0 && (
                   <div>
                     <button type="button" onClick={() => toggleAlloc(idx)}
-                      className={`text-[0.65625rem] px-1.5 py-0.5 rounded-md border transition-colors ${it.allocations ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)]'}`}>
+                      className={`text-[0.65625rem] px-1.5 py-0.5 rounded-md border transition-colors ${it.allocations ? 'border-[var(--coral)] text-[var(--tc-text)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--tc-text)]'}`}>
                       {it.allocations ? '방별 분배 끄기' : '방별로 나누기 (선택)'}
                     </button>
                     {it.allocations && (
@@ -1007,7 +1007,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                             {a.locked && (
                               <button type="button" onClick={() => resetAllocRoom(idx, ai)}
                                 title="자동 분배로 되돌리기" aria-label="이 방 자동 분배로 되돌리기"
-                                className="text-[var(--warm-muted)] hover:text-[var(--coral)] shrink-0"><svg className="inline-block align-middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 1-.9 5.2"/></svg></button>
+                                className="text-[var(--warm-muted)] hover:text-[var(--tc-text)] shrink-0"><svg className="inline-block align-middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 1-.9 5.2"/></svg></button>
                             )}
                             <button type="button" onClick={() => removeAllocRoom(idx, ai)} aria-label="이 방 삭제"
                               className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
@@ -1015,11 +1015,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         ))}
                         <div className="flex items-center justify-between gap-2">
                           <button type="button" onClick={() => addAllocRoom(idx)}
-                            className="text-[0.65625rem] text-[var(--coral)] hover:underline shrink-0">+ 방 추가</button>
+                            className="text-[0.65625rem] text-[var(--tc-text)] hover:underline shrink-0">+ 방 추가</button>
                           <span className={`text-[0.65625rem] text-right ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
                             {hasManual && (
                               <button type="button" onClick={() => resetAllocAll(idx)}
-                                className="text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] mr-1.5">균등으로 되돌리기</button>
+                                className="text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--tc-text)] mr-1.5">균등으로 되돌리기</button>
                             )}
                             {hasManual ? '직접 배분' : '자동 균등'} · {allocSum} / {it.qtyValue || 0}
                             {allocOver ? ' · 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain} 미배정` : ''}
@@ -1046,12 +1046,12 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
         <div className="flex flex-wrap gap-1.5">
           {presets.map(label => (
             <button key={label} type="button" onClick={() => openPreset(label)}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--tc-text)] transition-colors">
               + {label}
             </button>
           ))}
           <button type="button" onClick={() => { setActiveLabel('__custom__'); setSpecUnit(''); setQtyUnit('') }}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--tc-text)] transition-colors">
             + 직접 입력
           </button>
         </div>
@@ -3519,7 +3519,7 @@ export default function FinanceClient({
                           />
                           {recVisibility === 'soon' && hiddenRecs.length > 0 && (
                             <button onClick={() => setRecVisibility('all')}
-                              className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                              className="text-xs text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
                               + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{fmtWon(hiddenRecsTotal)}</span> 숨김
                             </button>
                           )}
@@ -3531,7 +3531,7 @@ export default function FinanceClient({
                           {traceMonths.map(m => m > todayStr.slice(0, 7)
                             ? <span key={m}> · {monName(m)}에 보입니다</span>
                             : <button key={m} type="button" onClick={() => router.push(`/finance?tab=expense&month=${m}`)}
-                                className="hover:text-[var(--coral)] transition-colors"> · {monName(m)} 보기 ›</button>)}
+                                className="hover:text-[var(--tc-text)] transition-colors"> · {monName(m)} 보기 ›</button>)}
                         </p>
                       )}
                     </div>
@@ -3583,7 +3583,7 @@ export default function FinanceClient({
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
                                   {/* 좁은 폭(360px)에서 칩이 붙어도 금액 열을 밀지 않게 카테고리만 줄어든다 — 데스크톱 표의 같은 칸 문법(truncate·shrink-0). */}
-                                  <span className="text-[0.65625rem] text-[var(--coral)] font-medium min-w-0 truncate">{e.category}</span>
+                                  <span className="text-[0.65625rem] text-[var(--tc-text)] font-medium min-w-0 truncate">{e.category}</span>
                                   {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                   {grp && (item.groupKind === 'order'
                                     ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">주문 {grp.filter(r => !r.isShipping).length}품목</span>
@@ -3593,8 +3593,8 @@ export default function FinanceClient({
                                 {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
                                 {grp && (item.groupKind === 'order'
-                                  ? <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
-                                  : <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                  ? <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                  : <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
                                 {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                     {c.text}
@@ -3607,7 +3607,7 @@ export default function FinanceClient({
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-sm font-semibold text-[var(--danger-fg)]"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></p>
-                                {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--coral)]">영수증</span>}
+                                {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--tc-text)]">영수증</span>}
                               </div>
                             </div>
                           </div>
@@ -3703,7 +3703,7 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     {e.recurringExpenseId && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0" title="고정지출" />}
-                                    <span className="text-xs text-[var(--coral)] font-medium truncate">{e.category}</span>
+                                    <span className="text-xs text-[var(--tc-text)] font-medium truncate">{e.category}</span>
                                     {e.recurringExpense?.isVariable && <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
                                 </td>
@@ -3714,11 +3714,11 @@ export default function FinanceClient({
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
                                       : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(grp)}</span>)}
-                                    {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--coral)] shrink-0">영수증</span>}
+                                    {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--tc-text)] shrink-0">영수증</span>}
                                   </div>
                                   {grp && (item.groupKind === 'order'
-                                    ? <p className="text-[0.65625rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
-                                    : <p className="text-[0.65625rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                    ? <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                    : <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
                                   {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                       {c.text}
@@ -3754,7 +3754,7 @@ export default function FinanceClient({
                               <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0" />
-                                    <span className="text-xs text-[var(--coral)] font-medium truncate">{r.category}</span>
+                                    <span className="text-xs text-[var(--tc-text)] font-medium truncate">{r.category}</span>
                                     {r.isVariable && <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
                               </td>
@@ -3808,7 +3808,7 @@ export default function FinanceClient({
                           </div>
                           <button type="button"
                             onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth), dueMonth: targetMonth })}
-                            className="mt-2 w-full px-3 py-2 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
+                            className="mt-2 w-full px-3 py-2 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--tc-text)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
                         </div>
                       ))}
                     </div>
@@ -3826,7 +3826,7 @@ export default function FinanceClient({
                               <td className="px-4 py-3 text-right w-24 whitespace-nowrap">
                                 <button type="button"
                                   onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth), dueMonth: targetMonth })}
-                                  className="px-2.5 py-1.5 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
+                                  className="px-2.5 py-1.5 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--tc-text)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
                               </td>
                             </tr>
                           ))}
@@ -4063,7 +4063,7 @@ export default function FinanceClient({
                             </div>
                             <button
                               onClick={() => { setEditingAcc(a); setAssetType(a.type); setAssetBrand(a.brand ?? ''); setAssetFormKey(k => k + 1) }}
-                              className="text-xs text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
+                              className="text-xs text-[var(--tc-text)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
                               수정
                             </button>
                             <button
@@ -4163,7 +4163,7 @@ export default function FinanceClient({
                     </div>
                   </div>
                   {expExcelRangeInvalid && (
-                    <p className="text-[0.65625rem] text-[var(--coral)]">시작일이 종료일보다 늦습니다</p>
+                    <p className="text-[0.65625rem] text-[var(--tc-text)]">시작일이 종료일보다 늦습니다</p>
                   )}
                 </div>
               )}
@@ -4193,7 +4193,7 @@ export default function FinanceClient({
                 {!expExcelOptLoading && accCount > 0 && (
                   <button type="button"
                     onClick={() => setExpExcelAccSel(allSelected ? new Set() : new Set(expExcelOpts!.accounts.map(a => a.key)))}
-                    className="text-[0.65625rem] text-[var(--coral)] hover:underline">
+                    className="text-[0.65625rem] text-[var(--tc-text)] hover:underline">
                     {allSelected ? '전체 해제' : '전체 선택'}
                   </button>
                 )}
@@ -4222,7 +4222,7 @@ export default function FinanceClient({
                 </div>
               )}
               {noneSelected && (
-                <p className="text-[0.65625rem] text-[var(--coral)]">카드·계좌를 하나 이상 선택하세요</p>
+                <p className="text-[0.65625rem] text-[var(--tc-text)]">카드·계좌를 하나 이상 선택하세요</p>
               )}
             </div>
           </div>
@@ -5130,7 +5130,7 @@ export default function FinanceClient({
                     <div key={g.month}>
                       <div className="flex items-center justify-between gap-2 px-1 pb-1">
                         <button onClick={() => goMonth(g.month)}
-                          className="text-xs font-semibold text-[var(--coral)] hover:underline">
+                          className="text-xs font-semibold text-[var(--tc-text)] hover:underline">
                           {gy}년 {parseInt(gm)}월 ›
                         </button>
                         <span className="text-[0.65625rem] text-[var(--warm-muted)]">{g.rows.length}건 · <MoneyDisplay amount={gTotal} /></span>
@@ -5368,7 +5368,7 @@ export default function FinanceClient({
             ) : (
               <div className="flex gap-2">
                 <button onClick={openNewRecMgmt}
-                  className="flex-1 py-2.5 text-sm font-medium rounded-lg border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
+                  className="flex-1 py-2.5 text-sm font-medium rounded-lg border border-dashed border-[var(--coral)] text-[var(--tc-text)] hover:bg-[var(--coral)]/5 transition-colors">
                   + 새 항목 추가
                 </button>
                 <button onClick={() => { setRecGroupMode(true); setRecMgmtError('') }}

@@ -395,7 +395,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 ) : (
                   p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증{crIssuedLabel(p)}</span>
                 )}
-                {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
+                {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--tc-text)]">· {p.memo}</span>}
               </div>
               {/* 보증금은 위 보증금 패널에서 관리한다. 여기에도 버튼을 두면 같은 record 에 편집 경로가 둘이 된다. */}
               {canEdit && p.isDeposit && (

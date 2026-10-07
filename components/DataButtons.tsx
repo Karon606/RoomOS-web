@@ -322,7 +322,7 @@ export default function DataButtons() {
                       전체 유지
                     </button>
                     <button type="button" onClick={() => setBulk(sheet, 'overwrite')}
-                      className="text-xs px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                      className="text-xs px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
                       전체 덮어쓰기
                     </button>
                     {sheet === 'tenants' && (

@@ -93,7 +93,7 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
                 <span className="min-w-0 truncate">
                   {x.room
                     ? <button type="button" onClick={() => entityModal.open({ kind: 'room', roomId: x.room!.id })}
-                        className="py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--coral)]">
+                        className="py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--tc-text)]">
                         {fmtRoomNo(x.room.roomNo)}
                       </button>
                     : <span className="font-medium text-[var(--warm-dark)]">호실 미지정</span>}

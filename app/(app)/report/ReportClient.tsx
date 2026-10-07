@@ -162,7 +162,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       {tab === 'past' && <>
       {/* 합계 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <SummaryCard label="총 수납액" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]"
+        <SummaryCard label="총 수납액" value={fmt(summary.totalRevenue)} accent="text-[var(--tc-text)]"
           hint={<InfoHint title="총 수납액">실제로 입금된 이용료를 입금일이 아니라 그 돈이 어느 달 몫인지(귀속월) 기준으로 모은 금액입니다. 아직 받지 못한 이용료는 포함되지 않으므로, 받을 예정 금액까지 포함하는 홈의 예상 수입보다 작을 수 있습니다.</InfoHint>} />
         <SummaryCard label="부가수익" value={fmt(summary.totalExtraIncome)} />
         <SummaryCard label="총 지출" value={fmt(summary.totalExpense)} />
@@ -435,7 +435,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <SummaryCard label="6개월 예상 청구액" value={fmt(forecast.totalRevenue)} accent="text-[var(--coral)]" />
+        <SummaryCard label="6개월 예상 청구액" value={fmt(forecast.totalRevenue)} accent="text-[var(--tc-text)]" />
         <SummaryCard label="6개월 예상 지출" value={fmt(forecast.totalExpense)} />
         <SummaryCard
           label="6개월 예상 운영이익"
@@ -542,7 +542,7 @@ function AISection() {
     <div className="space-y-4">
       {!text && !pending && !error && (
         <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-xl p-6 text-center space-y-3">
-          <p className="text-xs num text-[var(--persimmon)] tracking-wider uppercase">AI Diagnose</p>
+          <p className="text-xs num text-[var(--tc-text)] tracking-wider uppercase">AI Diagnose</p>
           <p className="text-sm font-semibold text-[var(--warm-dark)]">Gemini AI 영업장 진단</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
             현재 점유율·임대료·미수율·12개월 매출 추세·지출 구조·입주자 회전율 등을 종합 분석해<br/>
@@ -556,7 +556,7 @@ function AISection() {
       {pending && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 text-center space-y-3">
           <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중…</p>
+          <p className="text-xs text-[var(--tc-text)] animate-pulse">데이터 수집 + AI 분석 중…</p>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
         </div>
       )}
@@ -582,11 +582,11 @@ function AISection() {
         <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-[var(--coral)]">AI 진단 결과</span>
+              <span className="text-sm font-semibold text-[var(--tc-text)]">AI 진단 결과</span>
             </div>
             <Btn variant="primary" size="sm" onClick={handleAnalyze}>다시 분석</Btn>
           </div>
-          <div className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap [&_strong]:text-[var(--coral)] [&_strong]:font-semibold"
+          <div className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap [&_strong]:text-[var(--tc-text)] [&_strong]:font-semibold"
                dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
         </div>
       )}

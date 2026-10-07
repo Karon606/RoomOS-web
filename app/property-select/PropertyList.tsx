@@ -242,7 +242,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                 </div>
                 <div className="mt-3 flex justify-end items-center gap-2">
                   {isLoading ? (
-                    <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--coral)' }}>
+                    <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--tc-text)' }}>
                       <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
@@ -262,7 +262,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                   onClick={() => handleReactivate(p.propertyId)}
                   disabled={isPending}
                   className="mt-1.5 w-full py-2 rounded-lg text-xs font-medium disabled:opacity-40"
-                  style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--coral)' }}>
+                  style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--tc-text)' }}>
                   {reactivatingId === p.propertyId ? '재개 중…' : '운영 재개'}
                 </button>
               )}

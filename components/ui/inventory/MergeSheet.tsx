@@ -133,7 +133,7 @@ export function MergeSheet({
               {canFlip ? (
                 <button type="button" onClick={() => setFlipped(f => !f)} disabled={pending}
                   aria-label="합쳐질 품목과 남을 품목 방향 바꾸기"
-                  className="inline-flex h-11 min-w-[44px] items-center justify-center gap-1.5 rounded-lg px-2.5 text-[var(--warm-mid)] transition-colors duration-[var(--dur-base)] hover:bg-[var(--cream-2)] hover:text-[var(--coral)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 disabled:opacity-50">
+                  className="inline-flex h-11 min-w-[44px] items-center justify-center gap-1.5 rounded-lg px-2.5 text-[var(--warm-mid)] transition-colors duration-[var(--dur-base)] hover:bg-[var(--cream-2)] hover:text-[var(--tc-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 disabled:opacity-50">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <path d="M12 5v14M6 13l6 6 6-6" />
                   </svg>
@@ -146,7 +146,7 @@ export function MergeSheet({
               )}
             </div>
             <div className="rounded-lg bg-[var(--coral-pale)] px-2.5 py-2 transition-colors duration-[var(--dur-base)]">
-              <p className="text-[0.65625rem] text-[var(--coral)]">남을(대표)</p>
+              <p className="text-[0.65625rem] text-[var(--tc-text)]">남을(대표)</p>
               <p className="text-[0.8125rem] font-semibold leading-snug text-[var(--warm-dark)]">{keep.label}</p>
               {keep.meta && <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">{keep.meta}</p>}
             </div>
