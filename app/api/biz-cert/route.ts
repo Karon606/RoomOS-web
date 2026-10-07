@@ -10,7 +10,8 @@ import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
-import { downloadDriveBytes, sniffImageMime } from '@/lib/google-drive'
+import { downloadDriveBytes } from '@/lib/google-drive'
+import { resolveStoredDocMime } from '@/lib/propertyDocMime'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,8 +35,8 @@ export async function GET() {
     const bytes = await downloadDriveBytes(property.bizCertDriveFileId)
     // 저장된 mime 이 정본이다(업로드 마무리에서 Drive 판정값을 박아 둔다). 그 이전 저장분이나
     // 빈 값이면 바이트로 되짚는다 — 형식을 모른 채 내려보내면 첨부가 확장자 없는 파일이 된다.
-    const mime = property.bizCertMimeType
-      || (bytes.length >= 4 && bytes.toString('ascii', 0, 4) === '%PDF' ? 'application/pdf' : sniffImageMime(bytes))
+    // 판정은 /api/bank-book 과 같은 정본 하나다(lib/propertyDocMime).
+    const mime = resolveStoredDocMime(bytes, property.bizCertMimeType)
 
     return new NextResponse(new Uint8Array(bytes), {
       status: 200,

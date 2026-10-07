@@ -14,6 +14,7 @@
 | 대표 연락처 | `Property.phone` | |
 | 공개 소개 페이지 URL | `lib/publicSite.publicSiteUrl(publicSlug)` | 화면마다 손조립 |
 | 사업자등록증 사본 | `Property.bizCertDriveFileId` + `bizCertMimeType`, 열람은 `/api/biz-cert` | Drive 공개 URL |
+| 통장사본 국문·영문 | `Property.bankBookKo/EnDriveFileId` + `MimeType`, 열람은 `/api/bank-book?lang=ko\|en` | Drive 공개 URL, `/api/biz-cert` 에 종류 인자 |
 
 ## 사업자등록증은 값이 아니라 파일이다 (2026-08-18 추가)
 
@@ -43,6 +44,32 @@
   자리가 없다는 원 규약은 그대로다 — where 에 자기 영업장 id 가 함께 걸려 있다. [[doc-issue-history]]
 - `businessInfo.address` 가 '사업자등록증 표기 주소' 인 것과 헷갈리지 마라. 그건 문자열,
   이건 그 문자열이 인쇄된 종이의 사본이다.
+
+## 통장사본은 등록증과 같은 축, 권한만 계좌 쪽이다 (2026-10-07 추가)
+
+운영자 원문 "상담도구에 사업자등록증처럼 통장사본 영문과 국문 모두 다운로드나 발송할 수 있게".
+국문·영문 두 벌이라 칼럼이 두 쌍이고, 나머지는 위 등록증 규칙(4MB·PDF 정규화·Drive 판정 mime·
+공개 권한 없음·파일 ID 인자 없음·교체분 휴지통)을 그대로 지난다.
+
+- **종류 지도 `lib/propertyDocs.ts` 가 단일 원천이다.** 칼럼 이름·Drive 파일 접두·화면 이름·읽기
+  스코프가 여기 있고 업로드·마무리·삭제·적용취소 본문은 `settings/actions.ts` 의 제네릭 헬퍼
+  하나다. 등록증의 옛 수출 셋(`createBizCertUploadSession` 등)은 시그니처 불변 포장으로 남았다.
+  환경설정 칸은 `components/settings/PropertyDocSlot.tsx` 하나를 셋이 쓴다.
+- **권한은 입금 계좌와 같은 `canReadScope(role, 'money')`.** 예금주·계좌번호가 찍힌 종이라서다.
+  상담 도구 값(`consultInfo` 의 두 mime)과 프록시(`/api/bank-book` 403) **둘 다** 끊는다. 값만
+  끊으면 URL 직타가 뚫린다. 그래서 등록증 라우트에 `kind=` 를 붙이지 않고 라우트를 따로 뒀다.
+  한 라우트 안에 종류별 게이트가 생기면 한 줄 실수가 곧 유출이다.
+- **영문 파일명은 `{영업장명}_Bank Account Certificate`**(`docFileLabel('bankbook','en')`).
+  'Bankbook Copy' 는 한국식 직역이다. 영업장명은 한글 그대로다(영업장 영문명 칸은 아직 없다).
+- **적용취소는 `Property.propertyDocPrev` 스냅샷**(등록증도 함께 얻었다). 교체·삭제 직전에 같은
+  update 로 쓰고, 되살릴 때는 클라이언트 인자 없이 그 스냅샷만 쓴다. Drive 에 다시 물어 우리 소유
+  + 이름 접두 `${prefix}_${propertyId}_` 를 대조하고, 지금 칼럼이 비었거나(삭제 취소) 그때 들어온
+  파일 그대로일 때(교체 취소)만 되살린다. 쓸 수 없게 된 스냅샷(휴지통 30일 경과·그 뒤 또 바뀜)은
+  누르는 순간 걷고, 30일 넘은 것은 처음부터 카드 버튼을 세우지 않는다.
+- **입주자 정보 > 서류에는 아직 안 들어간다.** `/api/doc-file`·`/doc/[fileId]` 는 역할을 가리지
+  않는 통로라 money 게이트 가지를 처음 끼우는 일이 된다. 하려면 그 규약 개정부터 승인받는다.
+- 감지망 `scripts/check-property-doc-axis.mjs`(verify:fast): money 문·삼항, 공개 권한 0,
+  복원의 접두 대조, 등록증 수출 셋 존재, lang 열거값.
 
 ## 왜 계좌는 FinancialAccount 가 아닌가
 
@@ -93,6 +120,6 @@
 `/dashboard` 는 LIMITED_STAFF 화이트리스트 밖이라 제한 스태프는 상담 도구에 닿지 않는다.
 OWNER·MANAGER·STAFF 는 이미 `/settings` 에서 같은 값을 본다(새 노출 아님).
 다만 **서버 액션은 `requireRouteAccess` 가 못 막는 자리**라 계좌는 액션 안에서
-`canReadScope(role, 'money')` 로 직접 끊는다.
+`canReadScope(role, 'money')` 로 직접 끊는다. 통장사본 파일도 같은 술어다(값과 `/api/bank-book` 둘 다).
 
 관련: [[glossary]] · [[public-asset-exposure]] · [[domain-contracts]]

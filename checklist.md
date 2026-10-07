@@ -1605,3 +1605,19 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 게이트(tsc · verify:fast · eslint 신규 0 · 역주입 14종 빨강 · 실제 DB 읽기 요약) · knowledge/notice-sms-targets · Work_log
 - [x] 웹디자이너 패스 반영(날짜 칸 1열·연도 규칙·ml-auto·순번 칸·'공지 M/D'·'예시 문구')
 - [ ] 커밋 · 배포 (운영자)
+
+# 통장사본 국문·영문 보내기 (2026-10-07, 운영자 승인: 스키마 (가) · 카드 자리 (가) · 영문 이름 (가))
+운영자 원문: "상담도구에 사업자등록증처럼 통장사본 영문과 국문 모두 다운로드나 발송할 수 있게 하는 기능도 추가해줘" / "이 이미지들을 업로드할 수 있는 방법도 환경설정에 들어가야겠지?"
+범위 밖(2단계 선택): 입주자 정보 > 서류 동봉, 영업장 영문명 칸, PropertyDocument 테이블 일반화.
+- [x] 운영 DB properties 5칼럼 추가(bankBookKo/En DriveFileId·MimeType, propertyDocPrev JSONB, DIRECT_URL) + schema.prisma + generate
+- [x] lib/propertyDocs.ts 종류 지도 · lib/propertyDocMime.ts mime 폴백 · lib/docBundle 'bankbook' 이름 셋 · google-drive ownedDriveFile(allowTrashed)
+- [x] settings/actions.ts 제네릭 헬퍼(업로드·마무리·삭제·복원) + 기존 사업자등록증 수출 셋 시그니처 불변 포장 + getContractSettings 확장
+- [x] /api/bank-book?lang= (money 403·lang 400) · /api/biz-cert 동작 불변 리팩터
+- [x] consultInfo 두 mime(money 스코프)
+- [x] PropertyDocSlot 컴포넌트 추출(사업자등록증 픽셀 동일) + 통장사본 카드(국문·영문, 계좌 보기 링크)
+- [x] 상담 도구 국문·영문 보내기 줄, 순차 프리페치, sending 잠금
+- [x] 되돌리기: 삭제·교체·첫 업로드 토스트 적용취소 + 카드 보조 '적용취소'
+- [x] 감지망(check-upload-hygiene 정규식, check-doc-file-label, audit-heic-uploads, check-property-doc-axis 신설, test-doc-bundle) + 역주입
+- [x] 게이트(tsc · verify:fast · eslint 신규 0) · 웹디자이너 패스(차단 1 다크 링크 대비 + 권고 5 반영) · knowledge · Work_log · 커밋
+- [x] 검증 중 추가: 쓸 수 없게 된 적용취소 스냅샷 걷기(복원 실패 시 + 30일 경과 버튼 미표시)
+- [ ] 배포 후 실기 확인(운영자)

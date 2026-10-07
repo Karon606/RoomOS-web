@@ -182,8 +182,8 @@ export function buildReceiptImageUrl(fileId: string): string {
 // 동영상 바이트가 계약서 도장 자리에 data:image/heic 으로 실린다.
 //
 // 이 함수의 계약은 그대로다 — **이미지가 아니면 application/octet-stream**. 부르는 쪽(도장 data URI,
-// /api/biz-cert)이 이미지 여부로 갈라지므로 PDF 를 PDF 라고 답해 주면 안 된다(그 자리들은 PDF 를
-// 이미 따로 가려낸다).
+// /api/receipt-image)이 이미지 여부로 갈라지므로 PDF 를 PDF 라고 답해 주면 안 된다(그 자리들은 PDF 를
+// 이미 따로 가려낸다). /api/biz-cert·/api/bank-book 은 같은 계약을 lib/propertyDocMime 로 옮겨 쓴다.
 export function sniffImageMime(buf: Buffer): string {
   const mime = sniffDocMime(buf)
   return isImageDocMime(mime) ? mime : DOC_MIME_UNKNOWN
@@ -232,6 +232,29 @@ export async function ownedDriveFileMime(fileId: string): Promise<string | null>
     return res.data.mimeType ?? null
   } catch {
     return null
+  }
+}
+
+// 우리 소유 여부 + 휴지통 여부 + 이름·mime — 영업장 서류 적용취소가 휴지통의 이전 파일을 되살리기 전에 대조한다.
+// ownedDriveFileMime 과 같은 files.get 인데, 그 함수는 휴지통 파일을 null 로 거절해 되살릴 대상을 못 본다.
+// 이름은 호출부가 `${접두}_${영업장ID}_` 로 대조한다(소유만으로는 다른 영업장의 파일과 갈리지 않는다).
+//
+// null = 없는 파일(영구 삭제 포함, 404) 또는 휴지통인데 allowTrashed 가 아님.
+// 그 밖의 조회 실패는 던진다 — 일시 장애를 '영구 삭제됨'으로 답하면 운영자가 되살릴 수 있는 파일을 포기한다.
+export async function ownedDriveFile(
+  fileId: string,
+  opts?: { allowTrashed?: boolean },
+): Promise<{ owned: boolean; trashed: boolean; name: string; mimeType: string | null } | null> {
+  const drive = getDriveClient()
+  try {
+    const res = await drive.files.get({ fileId, fields: 'ownedByMe, trashed, name, mimeType' })
+    const trashed = res.data.trashed === true
+    if (trashed && !opts?.allowTrashed) return null
+    return { owned: res.data.ownedByMe === true, trashed, name: res.data.name ?? '', mimeType: res.data.mimeType ?? null }
+  } catch (err) {
+    const e = err as { code?: unknown; status?: unknown; response?: { status?: unknown } }
+    if (e?.code === 404 || e?.code === '404' || e?.status === 404 || e?.response?.status === 404) return null
+    throw err
   }
 }
 

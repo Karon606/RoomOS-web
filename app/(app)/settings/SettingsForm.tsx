@@ -28,7 +28,6 @@ import {
   exportAllData,
   saveContractTemplate, saveBusinessInfo,
   createStampUploadSession, finalizeStamp, deleteStamp,
-  createBizCertUploadSession, finalizeBizCert, deleteBizCert,
   createLogoUploadSession, finalizeLogo, deleteLogo,
   createAppLogoUploadSession, finalizeAppLogo, deleteAppLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
@@ -44,10 +43,8 @@ import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoin
 import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum } from '@/lib/contract'
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { fileToUploadPdf, fileToUploadImage } from '@/lib/uploadImage'
-import { pdfToPngBlob } from '@/lib/pdfToPng'
+import { fileToUploadImage } from '@/lib/uploadImage'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
   TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
@@ -78,6 +75,8 @@ import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { PropertyDocSlot } from '@/components/settings/PropertyDocSlot'
+import type { PropertyDocKind } from '@/lib/propertyDocs'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -1977,6 +1976,12 @@ export default function SettingsForm({
 
 // ── 계약서 탭 ─────────────────────────────────────────────────────
 
+// 영업장 서류 미리보기 주소 — 인증 프록시만 문다(Drive 공개 URL 금지). v= 는 교체 직후 옛 캐시를 끊는 키다.
+// 모듈 상수인 이유: 칸(PropertyDocSlot)의 첫 장 효과가 이 함수를 의존으로 보므로 렌더마다 새로 만들면 매번 다시 그린다.
+const BIZ_CERT_PREVIEW_URL = (id: string) => `/api/biz-cert?v=${id}`
+const BANK_BOOK_KO_PREVIEW_URL = (id: string) => `/api/bank-book?lang=ko&v=${id}`
+const BANK_BOOK_EN_PREVIEW_URL = (id: string) => `/api/bank-book?lang=en&v=${id}`
+
 function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJump }: {
   initial: ContractSettings
   /** 서류 자동채움 값(전용면적·계좌번호·동의서)의 현재 저장값 — 기본정보에서 옮겨 왔다. */
@@ -1992,19 +1997,17 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
   const [bizCert, setBizCert]           = useState(initial.bizCert)
+  const [bankBookKo, setBankBookKo]     = useState(initial.bankBook.ko)
+  const [bankBookEn, setBankBookEn]     = useState(initial.bankBook.en)
+  // 적용취소할 직전 스냅샷이 남은 종류 — 서버(getContractSettings)가 Drive ID 없이 표시만 내린다.
+  // 이 탭에서 교체·삭제·적용취소를 하면 칸이 이 값을 직접 고친다(서버가 같은 판정으로 스냅샷을 쓴다).
+  const [docPrev, setDocPrev]           = useState(initial.docPrev)
   const [savingTpl, setSavingTpl]       = useState(false)
   // 본문 저장 신호 — 아래 번역본 카드가 이 값이 오를 때 제 데이터를 다시 읽는다. 그 카드는
   // 마운트 때 한 번만 읽어서, 신호가 없으면 방금 고친 본문 기준의 진행·폴백을 못 보여 준다.
   const [tplSavedAt, setTplSavedAt]     = useState(0)
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
-  const [certUploading, setCertUploading]   = useState(false)
-  // 사업자등록증 미리보기 — PDF 는 첫 장을 그려 같은 칸에 얹는다(운영자 지적 2026-09-16).
-  // 사진을 올리기 전에 PDF 한 장으로 정규화하면서(handleBizCertSelect) 이미지 갈래로 떨어지는
-  // 파일이 사라져, 어떤 장이 올라가 있는지 화면이 말해 주지 못했다. 실패하면 종전 'PDF' 표시로
-  // 떨어지되 아래 한 줄이 무엇을 못 그렸는지 말한다 — 조용히 삼키면 같은 회귀가 또 안 보인다.
-  const [certThumb, setCertThumb]           = useState<string | null>(null)
-  const [certThumbError, setCertThumbError] = useState<string | null>(null)
 
   // 서류 자동채움 값 — 기본정보 탭에서 옮겨 온 상태(2026-08-19 IA 2단계). 칸의 문법은 무수정.
   const [areaVal, setAreaVal] = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
@@ -2099,76 +2102,16 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
     } finally { release(); setSavingBiz(false) }
   }
 
-  // 사업자등록증 — 업로드 축은 도장과 같다(세션 발급 → Drive 직접 PUT → 마무리).
-  // 다른 점은 둘뿐이다. 저장 형식이 PDF 하나라는 것과, mime 을 서버가 판정해 함께 저장한다는 것.
-  //
-  // **사진은 올리기 전에 PDF 한 장으로 바뀐다**(lib/uploadImage, 운영자 결정 2026-09-16).
-  // 아이폰 HEIC 를 그대로 저장하면 상담 문자·메일 첨부가 열리지 않는 파일로 나간다. 변환에
-  // 실패하면 던지므로 원본이 조용히 올라가는 분기가 없고, 그 문구는 아래 catch 가 띄운다.
-  //
-  // 그 정규화가 미리보기를 죽였다(운영자 지적 2026-09-16) — 이미지 갈래로 떨어지는 파일이
-  // 없어져 칸에 'PDF' 글자만 남았다. 그래서 등록된 것이 PDF 면 첫 장을 래스터화해 같은 칸에
-  // 그린다. 래스터화 정본은 lib/pdfToPng(서류 '사진 저장'·상담 도구가 쓰는 그것)이고 바이트는
-  // 미리보기와 같은 인증 프록시에서 온다. 파일이 바뀌면(driveFileId) 다시 그린다 — 교체 직후
-  // 옛 장이 남으면 미리보기가 거짓말을 한다.
-  useEffect(() => {
-    // 조건이 아래 그리는 갈래와 **같은 문장**이다 — 지금 맨 'PDF' 글자만 서는 그 집합이 곧
-    // 첫 장을 그려야 하는 집합이다. 갈라 적으면 mime 이 빈 옛 저장분이 어느 쪽에도 안 든다.
-    if (!bizCert || bizCert.mimeType.startsWith('image/')) { setCertThumb(null); setCertThumbError(null); return }
-    const id = bizCert.driveFileId
-    let alive = true
-    let made: string | null = null
-    setCertThumb(null); setCertThumbError(null)
-    void (async () => {
-      try {
-        const res = await fetch(`/api/biz-cert?v=${id}`)
-        if (!res.ok) throw new Error(`사업자등록증을 불러오지 못했습니다 (${res.status}).`)
-        const blob = await pdfToPngBlob(await res.arrayBuffer(), 1.5)
-        if (!alive) return
-        made = URL.createObjectURL(blob)
-        setCertThumb(made)
-      } catch (err) {
-        if (!alive) return
-        setCertThumb(null)
-        setCertThumbError(humanError(err, '첫 장을 여는 데 실패했습니다.'))
-      }
-    })()
-    return () => { alive = false; if (made) URL.revokeObjectURL(made) }
-  }, [bizCert?.driveFileId, bizCert?.mimeType])
-
-  const handleBizCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setCertUploading(true)
-    const release = trackSave()
-    try {
-      const { file: upFile, converted } = await fileToUploadPdf(file)
-      const session = await createBizCertUploadSession({
-        fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
-        origin: window.location.origin,
-      })
-      if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, upFile)
-      const fin = await finalizeBizCert(driveFileId)
-      if (!fin.ok) { pushToast('error', fin.error); return }
-      setBizCert({ driveFileId, mimeType: fin.mimeType })
-      pushToast('success', '사업자등록증 업로드됨',
-        converted ? { detail: '사진을 PDF 한 장으로 바꿔 저장했습니다.' } : undefined)
-    } catch (err) {
-      pushToast('error', humanError(err, '사업자등록증 업로드 실패'))
-    } finally { release(); setCertUploading(false) }
-  }
-  const handleBizCertDelete = async () => {
-    if (!(await confirmDialog({ title: '사업자등록증을 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
-    const release = trackSave()
-    try {
-      const res = await deleteBizCert()
-      if (!res.ok) { pushToast('error', res.error); return }
-      setBizCert(null)
-      pushToast('success', '사업자등록증 삭제됨')
-    } finally { release() }
-  }
+  // 사업자등록증·통장사본의 업로드·교체·삭제·적용취소와 PDF 첫 장 미리보기는 components/settings/
+  // PropertyDocSlot 한 곳이 한다(2026-10-07, 통장사본이 같은 축으로 들어오며 옮겼다). 여기는 칸의
+  // 값과 적용취소 표시만 쥔다.
+  const docPrevSetter = (kind: PropertyDocKind) => (next: boolean) =>
+    setDocPrev(p => {
+      const out = { ...p }
+      if (next) out[kind] = true
+      else delete out[kind]
+      return out
+    })
 
   // 도장 — PNG·JPEG 가 아닌 사진은 올리기 전에 PNG 로 바꾼다(lib/uploadImage).
   // 여기는 종이가 아니라 **그림으로 얹히는 자리**라 PDF 가 아니라 이미지여야 한다. HEIC 도장을
@@ -2243,43 +2186,37 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
         {/* 형식 안내는 도장('투명 배경 PNG 권장.')·로고와 같은 자리·같은 톤이다. 사진을 올려도
             되지만 저장되는 것은 PDF 한 장이라는 사실을 먼저 말한다 — 4MB 는 그 변환 뒤 크기다. */}
         <p className="text-xs text-[var(--warm-muted)] -mt-1">PDF 권장. 사진은 올릴 때 PDF 한 장으로 바뀝니다(변환 후 4MB 이하). 상담 도구의 문자·메일 첨부와 입주자 정보 &gt; 서류에서 보낼 수 있습니다.</p>
-        <div className="flex items-center gap-4">
-          {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
-          <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">
-            {bizCert?.mimeType.startsWith('image/') ? (
-              // 인증 프록시를 직접 문다 — Drive 공개 URL 을 쓰지 않는다. v= 는 교체 직후 옛 캐시를 끊는 키다.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/biz-cert?v=${bizCert.driveFileId}`} alt="사업자등록증" className="max-w-full max-h-full object-contain" />
-            ) : certThumb ? (
-              // PDF 첫 장. 위 효과가 만든 화면 안 주소(blob:)라 v= 가 필요 없다 — 파일이 바뀌면 효과가 다시 그린다.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={certThumb} alt="사업자등록증 첫 장" className="max-w-full max-h-full object-contain" />
-            ) : bizCert ? (
-              // 아직 그리는 중 — 'PDF' 글자를 먼저 세우면 1~3초 뒤 그림으로 바뀌며 칸이 튄다.
-              // delayed-fallback 은 300ms 안에 끝나면 한 프레임도 안 보인다(§18.3).
-              certThumbError
-                ? <span className="text-xs font-medium text-[var(--warm-mid)]">PDF</span>
-                : <Skeleton className="w-full h-full delayed-fallback" />
-            ) : (
-              // --warm-muted 는 이 바탕(--cream-soft) 위에서 다크 4.46:1 로 §28 본문 하한(4.5)에 못 미쳤다
-              // (헤드리스 실측). --warm-mid 는 라이트에서 --warm-muted 와 같은 값이라 밝은 화면은 무변동.
-              <span className="text-xs text-[var(--warm-mid)]">미등록</span>
-            )}
-          </div>
-          <div className="flex flex-col gap-2">
-            {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다. */}
-            <label className={btnClass('primary', 'sm', `cursor-pointer ${certUploading ? 'opacity-60' : ''}`)}>
-              {certUploading ? '업로드 중…' : (bizCert ? '교체' : '업로드')}
-              <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleBizCertSelect} disabled={certUploading} />
-            </label>
-            {bizCert && <Btn variant="danger" size="sm" onClick={handleBizCertDelete} disabled={certUploading}>삭제</Btn>}
-          </div>
+        <PropertyDocSlot kind="bizcert" slot={bizCert} previewUrl={BIZ_CERT_PREVIEW_URL} onChange={setBizCert}
+          canUndo={docPrev.bizcert === true} onCanUndoChange={docPrevSetter('bizcert')} />
+      </div>
+
+      {/* 통장사본 국문·영문 — 사업자등록증 바로 아래, 같은 카드 문법(2026-10-07 운영자 승인).
+          예금주·계좌번호가 찍힌 서류라 기본정보의 입금 계좌와 어긋나면 고객이 다른 계좌로 보낸다.
+          그 대조를 운영자에게 맡기는 대신 고칠 자리로 가는 길을 바로 옆에 둔다(입금 계좌번호 칸과 같은 링크 문법). */}
+      <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">통장사본</h3>
+        {/* 캡션 둘은 한 묶음이다 — 음수 마진을 줄마다 주지 않고 묶음 하나에 준다(사업자등록증 캡션과 같은 -mt-1). */}
+        <div className="space-y-1 -mt-1">
+          <p className="text-xs text-[var(--warm-muted)]">PDF 권장. 사진은 올릴 때 PDF 한 장으로 바뀝니다(변환 후 4MB 이하). 상담 도구에서 문자·메일 첨부로 보냅니다.</p>
+          <p className="text-xs text-[var(--warm-muted)]">
+            입금 계좌번호와 같은 계좌인지 확인해 주세요.{' '}
+            {/* --tc-text — --coral 은 다크에서 밝아지지 않아 카드 위 2.78:1 이었다(§28, 웹디자이너 실측). */}
+            <button type="button" onClick={() => onJump('basic', 'dv-bank')}
+              className="text-xs font-medium text-[var(--tc-text)] underline decoration-dotted underline-offset-2">
+              기본정보에서 계좌 보기
+            </button>
+          </p>
         </div>
-        {/* 미리보기만 못 그린 것이라 파일·보내기는 멀쩡하다는 것까지 말한다 — 그 말이 없으면
-            운영자가 등록증이 깨진 줄 알고 멀쩡한 파일을 다시 올린다. */}
-        {certThumbError && (
-          <p className="text-xs text-[var(--warm-mid)]">미리보기를 그리지 못했습니다. {certThumbError} 파일은 그대로 있어 보내기와 첨부는 됩니다.</p>
-        )}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-[var(--warm-mid)]">국문</p>
+          <PropertyDocSlot kind="bankbook_ko" slot={bankBookKo} previewUrl={BANK_BOOK_KO_PREVIEW_URL} onChange={setBankBookKo}
+            canUndo={docPrev.bankbook_ko === true} onCanUndoChange={docPrevSetter('bankbook_ko')} />
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-[var(--warm-mid)]">영문</p>
+          <PropertyDocSlot kind="bankbook_en" slot={bankBookEn} previewUrl={BANK_BOOK_EN_PREVIEW_URL} onChange={setBankBookEn}
+            canUndo={docPrev.bankbook_en === true} onCanUndoChange={docPrevSetter('bankbook_en')} />
+        </div>
       </div>
 
       {/* 도장 */}
@@ -2420,7 +2357,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
               {property?.bankAccount || '아직 적지 않았습니다'}
             </span>
             <button type="button" onClick={() => onJump('basic', 'dv-bank')}
-              className="shrink-0 text-xs font-medium text-[var(--coral)] underline decoration-dotted underline-offset-2">
+              className="shrink-0 text-xs font-medium text-[var(--tc-text)] underline decoration-dotted underline-offset-2">
               기본정보에서 고치기
             </button>
           </div>

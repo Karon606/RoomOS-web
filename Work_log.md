@@ -6768,3 +6768,12 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 전액 몰취 기각(약관규제법 8조·2절 1항 공정위 기준과 자기모순), 채택 '부족 통보 일수 × 월 이용료/30, 상한 7일분, 보증금 우선 공제, 위약금과 겹치면 큰 쪽'. 코드 기본 양식 lib/contract 2절 오탈자(뜻이 거꾸로이던 '전달 시 자동연장') 교정 + 배상 문장. 제기역점 저장본 정정 scripts/fix-checkout-notice-penalty.ts(2절 끝에 '\t5.\t[통보 지연 배상]' 한 줄만 추가, 기존 줄·열쇠 불변으로 고아 0, 적용 전후 박제·링크·발급본·번역 사전·열린 링크 지문 대조, --revert). 그물 check-contract-unfair-clause BANNED (4)·REQUIRED + `--db` 모드 verify:db 등록(저장본·사본, 훑기 자기 점검), 역주입 8종 빨강 후 백업 원복. 번역 7언어 초안은 ~/Downloads(저장소 밖). --apply·번역 저장·커밋·배포는 운영자 몫. [[domain-contracts]]
 ## 2026-10-06 단체 공지에 문의·예약 대상 (운영자 승인)
 - 모달 맨 위 입주자 N | 문의·예약 N(기본 입주자), 정본 lib/noticeTargets(분할·문의일 KST 범위·선착순 순번 리드 전체 기준, 확정 제외는 리드 갈래에만 — 거주 ACTIVE 3건이 확정 시각 보유), inquiryStageOf·LEAD_STAGE_LABEL 을 lib/wishMatch 로 올림, 문의·예약은 방 축 숨김·단계/문의일 칩·순번·보조줄 '문의 M/D · 투어 M/D · 공지 M/D'·전체 선택/해제, 이력에 leaseTermId·그룹 라벨, 조건 바뀌면 '기록됨' 비움, 예시 문구 '선착순 입실 안내'(lib/noticeTemplates, 코드 본보기). 그물 test-notice-targets·check-notice-sms-group(verify:fast, 역주입 14종 빨강 후 백업 원복). 실측 입주자 43·문의·예약 9. 웨이브 원칙 [[notice-sms-targets]]. 웹디자이너 패스 반영: 날짜 칸 400px 미만 1열, 날짜 해가 다를 때만 연도(정본 leadSubLine·inquiryRangeLabel), 전체 선택 ml-auto, 제외 패널 순번 칸 통일, '안내함'→'공지 M/D', 템플릿 묶음 '예시 문구'(그물 축 ⓗ, 역주입 5종 빨강). 커밋·배포는 운영자 몫.
+
+## 2026-10-07 통장사본 국문·영문 보내기 (운영자 승인: 스키마·카드 자리·영문 이름 추천안)
+- 운영 DB properties 에 bankBookKo/En DriveFileId·MimeType + propertyDocPrev(JSONB) 추가(prisma/migrate_bank_book.sql, DIRECT_URL). 종류 지도 lib/propertyDocs 가 칼럼·Drive 접두·이름·스코프의 단일 원천, settings/actions 제네릭 헬퍼(업로드·마무리·삭제·복원)에 사업자등록증도 함께 태우고 옛 수출 셋은 시그니처 불변 포장.
+- 환경설정 계약서 탭 사업자등록증 아래 '통장사본' 카드(국문·영문 칸, PropertyDocSlot 공용, '기본정보에서 계좌 보기'). 상담 도구 '국문 통장사본 보내기'·'영문 통장사본 보내기'(올린 것만, 순차 프리페치, 사진/PDF 고름). 영문 파일명 {영업장명}_Bank Account Certificate.
+- 권한: 입금 계좌와 같은 canReadScope money 로 consultInfo 값과 /api/bank-book(403) 둘 다. 공개 권한 없음, lang 열거값 외 400.
+- 적용취소: 삭제·교체·첫 업로드 토스트 + 카드 보조 버튼, Drive 휴지통 복원(소유 + 접두 대조, 낙관적 잠금). 쓸 수 없게 된 스냅샷은 복원 시 걷고 30일 지난 것은 버튼을 세우지 않는다.
+- 웹디자이너 패스: 다크 링크 대비 2.78:1(--coral) 을 --tc-text 로(같은 탭 '기본정보에서 고치기' 포함), 결과 토스트 '이전 파일로 복귀', 적용취소 3버튼 때 미리보기 self-start, 진행 중 업로드 라벨 흐림, 캡션 중복 정리.
+- 감지망: check-property-doc-axis 신설(verify:fast), check-upload-hygiene 정규식·ⓙ 범위 보강, check-doc-file-label·test-doc-bundle·audit-heic-uploads 확장. 역주입 축마다 빨강 확인.
+- 남은 것: 실기 확인(업로드·교체·삭제·두 입구 적용취소, 상담 도구 줄 셋·파일명, 제한 스태프 403). 2단계 선택: 입주자 서류 동봉, 영업장 영문명. 저장소 전반 --coral 텍스트 링크 다크 대비(19곳)는 별건.

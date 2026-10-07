@@ -27,9 +27,13 @@ import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
-  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
-  ownedDriveFileMime,
+  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, untrashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
+  ownedDriveFileMime, ownedDriveFile,
 } from '@/lib/google-drive'
+import {
+  PROPERTY_DOCS, PROPERTY_DOC_UNDO_MS, isPropertyDocKind, parsePropertyDocPrev,
+  type PropertyDocKind, type PropertyDocPrev, type PropertyDocSlotValue,
+} from '@/lib/propertyDocs'
 import {
   type ContractTemplate, type BusinessInfo, type SubLeaseAddendum,
   DEFAULT_CONTRACT_TEMPLATE, propertyContractAddenda,
@@ -1207,6 +1211,10 @@ export type ContractSettings = {
   stampThumbnailUrl: string | null
   /** 사업자등록증 사본 — null 이면 미등록. mimeType 으로 화면이 이미지·PDF 를 가른다. */
   bizCert: { driveFileId: string; mimeType: string } | null
+  /** 통장사본 국문·영문 — 모양은 사업자등록증과 같다. null 이면 미등록. */
+  bankBook: { ko: PropertyDocSlotValue | null; en: PropertyDocSlotValue | null }
+  /** 적용취소할 직전 스냅샷이 남은 종류 — 카드의 보조 '적용취소' 버튼이 이 표시로 선다(Drive ID 는 안 내린다). */
+  docPrev: Partial<Record<PropertyDocKind, true>>
 }
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = {
@@ -1220,6 +1228,9 @@ export async function getContractSettings(): Promise<ContractSettings> {
     select: {
       contractTemplate: true, businessInfo: true, stampDriveFileId: true,
       bizCertDriveFileId: true, bizCertMimeType: true,
+      bankBookKoDriveFileId: true, bankBookKoMimeType: true,
+      bankBookEnDriveFileId: true, bankBookEnMimeType: true,
+      propertyDocPrev: true,
     },
   })
   const template = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
@@ -1235,6 +1246,20 @@ export async function getContractSettings(): Promise<ContractSettings> {
     bizCert: property?.bizCertDriveFileId
       ? { driveFileId: property.bizCertDriveFileId, mimeType: property.bizCertMimeType ?? '' }
       : null,
+    bankBook: {
+      ko: property?.bankBookKoDriveFileId
+        ? { driveFileId: property.bankBookKoDriveFileId, mimeType: property.bankBookKoMimeType ?? '' }
+        : null,
+      en: property?.bankBookEnDriveFileId
+        ? { driveFileId: property.bankBookEnDriveFileId, mimeType: property.bankBookEnMimeType ?? '' }
+        : null,
+    },
+    // Drive 휴지통은 30일 뒤 스스로 비운다 — 그보다 오래된 스냅샷은 되살릴 파일이 없으니 버튼을 세우지 않는다.
+    docPrev: Object.fromEntries(
+      Object.entries(parsePropertyDocPrev(property?.propertyDocPrev))
+        .filter(([, e]) => !e.at || Date.now() - Date.parse(e.at) < PROPERTY_DOC_UNDO_MS)
+        .map(([k]) => [k, true]),
+    ) as Partial<Record<PropertyDocKind, true>>,
   }
 }
 
@@ -1327,19 +1352,47 @@ export async function saveBusinessInfo(info: BusinessInfo): Promise<{ ok: true }
 // 4MB 상한의 사정: 이 파일은 서버리스 함수가 바이트를 통째로 실어 응답한다(그 경로의 실질 한도가
 // 4.5MB). 도장·로고의 5MB 를 그대로 쓰면 경계 부근 파일이 업로드는 되고 전송에서만 터진다.
 // **이 상한은 변환 뒤 크기 기준이다** — 클라이언트가 변환한 File 의 size 로 재고, 화면 안내도 그렇게 적는다.
+//
+// **통장사본 국문·영문도 이 축을 그대로 지난다**(2026-10-07). 예금주·계좌번호가 찍힌 원본이라 같은 문
+// (4MB·PDF·JPEG·PNG·소유 검증·공개 권한 없음·교체분 휴지통)이 맞고, 프록시만 /api/bank-book 으로 갈린다.
+// 종류마다 다른 것은 칼럼 이름과 Drive 파일 접두뿐이라 그 둘만 종류 지도(lib/propertyDocs)에서 읽고
+// 본문은 아래 하나다. 아래 상수 이름의 BIZ_CERT 는 처음 생긴 자리의 이름일 뿐 세 종류 공용이다.
 const MAX_BIZ_CERT_BYTES = 4 * 1024 * 1024
 // JPEG·PNG 를 함께 받는 것은 안전망이다. 변환 정본을 못 태운 낡은 화면이 남아 있어도 첨부·미리보기가
 // 도는 형식이라 조용히 깨지지 않는다. **HEIC/HEIF 는 여기서 끝난다** — 그 바이트가 저장되면
 // 상담 첨부도 서류 묶음도 열리지 않는 파일을 내보낸다(그게 이 좁히기의 이유다).
 const BIZ_CERT_MIME_OK = (m: string) => m === 'application/pdf' || m === 'image/jpeg' || m === 'image/png'
 const BIZ_CERT_MIME_ERROR = 'PDF 또는 JPG·PNG 파일만 업로드 가능합니다.'
+const PROPERTY_DOC_KIND_ERROR = '서류 종류가 올바르지 않습니다.'
 
-export async function createBizCertUploadSession(input: {
+type PropertyDocUploadInput = {
   fileName: string
   mimeType: string
   fileSize: number
   origin: string
-}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+}
+
+// 영업장 서류 칼럼 전부 + 적용취소 스냅샷. 종류별 칼럼은 지도가 고르므로 읽을 때는 함께 읽는다.
+const PROPERTY_DOC_SELECT = {
+  bizCertDriveFileId: true, bizCertMimeType: true,
+  bankBookKoDriveFileId: true, bankBookKoMimeType: true,
+  bankBookEnDriveFileId: true, bankBookEnMimeType: true,
+  propertyDocPrev: true,
+} as const
+
+// 그 종류의 두 칼럼을 채우는 update 조각. 칼럼 이름이 지도에서 오는 계산 키라 Prisma 타입이
+// 좁히지 못해 여기서 한 번만 단언한다(키는 지도의 리터럴 유니온이라 오타가 들어올 자리는 없다).
+function propertyDocColumns(kind: PropertyDocKind, driveFileId: string | null, mimeType: string | null): Prisma.PropertyUpdateInput {
+  const spec = PROPERTY_DOCS[kind]
+  return { [spec.idCol]: driveFileId, [spec.mimeCol]: mimeType } as Prisma.PropertyUpdateInput
+}
+
+// 스냅샷 저장값 — 남은 종류가 없으면 빈 객체 대신 null 로 둔다.
+function propertyDocPrevValue(prev: PropertyDocPrev): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return Object.keys(prev).length > 0 ? (prev as unknown as Prisma.InputJsonValue) : Prisma.DbNull
+}
+
+async function uploadSessionFor(kind: PropertyDocKind, input: PropertyDocUploadInput): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     if (!BIZ_CERT_MIME_OK(input.mimeType)) return { ok: false, error: BIZ_CERT_MIME_ERROR }
@@ -1348,7 +1401,9 @@ export async function createBizCertUploadSession(input: {
     if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
     const propertyId = await getPropertyId()
     const ext = input.fileName.split('.').pop() ?? 'pdf'
-    const uniqueName = `bizcert_${propertyId}_${Date.now()}.${ext}`
+    // 접두는 지도에서 온다(사업자등록증은 종전 'bizcert_' 그대로). 적용취소가 휴지통의 파일을 되살리기
+    // 전에 이 이름으로 우리 영업장의 그 종류 파일인지 대조한다.
+    const uniqueName = `${PROPERTY_DOCS[kind].prefix}_${propertyId}_${Date.now()}.${ext}`
     const uploadUrl = await createDriveResumableSession({
       fileName: uniqueName,
       mimeType: input.mimeType,
@@ -1362,10 +1417,11 @@ export async function createBizCertUploadSession(input: {
   }
 }
 
-export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; mimeType: string } | { ok: false; error: string }> {
+async function finalizeFor(kind: PropertyDocKind, driveFileId: string): Promise<{ ok: true; mimeType: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const spec = PROPERTY_DOCS[kind]
     const propertyId = await getPropertyId()
     // mime 은 클라이언트가 부르는 대로 믿지 않는다 — 저장된 값이 곧 전송 Content-Type 이 된다.
     // 같은 호출이 소유 검증도 겸한다(임의 Drive ID 를 우리 영업장 레코드로 편입하는 것을 막는 정본).
@@ -1375,18 +1431,38 @@ export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; 
       try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
       return { ok: false, error: BIZ_CERT_MIME_ERROR }
     }
-    const prev = await prisma.property.findUnique({
+    const cur = await prisma.property.findUnique({
       where: { id: propertyId },
-      select: { bizCertDriveFileId: true },
+      select: PROPERTY_DOC_SELECT,
     })
-    // 교체된 원본은 영구 삭제가 아니라 휴지통으로 — 도장과 같은 규칙(30일 유예).
-    if (prev?.bizCertDriveFileId && prev.bizCertDriveFileId !== driveFileId) {
-      try { await trashInDrive(prev.bizCertDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+    const prevId = cur?.[spec.idCol] ?? null
+    const replaced = prevId && prevId !== driveFileId ? prevId : null
+    const prevMap = parsePropertyDocPrev(cur?.propertyDocPrev)
+    let nextPrev: PropertyDocPrev | null = null
+    if (replaced) {
+      // 교체 — 이전 파일을 휴지통에 넣기 **전에** 같은 update 로 스냅샷을 남긴다. 순서가 거꾸로면
+      // 휴지통에 들어간 뒤 저장이 실패했을 때 그 파일로 돌아갈 길이 기록에 없다.
+      nextPrev = {
+        ...prevMap,
+        [kind]: { driveFileId: replaced, mimeType: cur?.[spec.mimeCol] ?? null, replacedBy: driveFileId, at: new Date().toISOString() },
+      }
+    } else if (!prevId && prevMap[kind]) {
+      // 처음 올림 — 되돌림은 곧 삭제라 스냅샷을 쓰지 않는다. 그 전 삭제가 남긴 스냅샷은 걷는다.
+      // 남겨 두면 카드의 적용취소가 서는데, 누르면 '그 뒤에 파일이 다시 바뀌어'로만 답하는 버튼이 된다.
+      nextPrev = { ...prevMap }
+      delete nextPrev[kind]
     }
     await prisma.property.update({
       where: { id: propertyId },
-      data: { bizCertDriveFileId: driveFileId, bizCertMimeType: mimeType },
+      data: {
+        ...propertyDocColumns(kind, driveFileId, mimeType),
+        ...(nextPrev ? { propertyDocPrev: propertyDocPrevValue(nextPrev) } : {}),
+      },
     })
+    // 교체된 원본은 영구 삭제가 아니라 휴지통으로 — 도장과 같은 규칙(30일 유예). 적용취소가 여기서 되살린다.
+    if (replaced) {
+      try { await trashInDrive(replaced) } catch { /* 이전 파일 정리 실패 무시 */ }
+    }
     revalidatePath('/settings')
     return { ok: true, mimeType }
   } catch (err) {
@@ -1398,27 +1474,146 @@ export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; 
   }
 }
 
-export async function deleteBizCert(): Promise<{ ok: true } | { ok: false; error: string }> {
+async function deleteFor(kind: PropertyDocKind): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    const spec = PROPERTY_DOCS[kind]
     const propertyId = await getPropertyId()
-    const prev = await prisma.property.findUnique({
+    const cur = await prisma.property.findUnique({
       where: { id: propertyId },
-      select: { bizCertDriveFileId: true },
+      select: PROPERTY_DOC_SELECT,
     })
-    if (prev?.bizCertDriveFileId) {
-      try { await trashInDrive(prev.bizCertDriveFileId) } catch { /* 무시 */ }
-    }
+    const prevId = cur?.[spec.idCol] ?? null
+    // 지울 파일이 있을 때만 스냅샷을 남긴다. 교체와 같은 이유로 휴지통에 넣기 전, 같은 update 에 쓴다.
+    const nextPrev: PropertyDocPrev | null = prevId
+      ? {
+          ...parsePropertyDocPrev(cur?.propertyDocPrev),
+          [kind]: { driveFileId: prevId, mimeType: cur?.[spec.mimeCol] ?? null, replacedBy: null, at: new Date().toISOString() },
+        }
+      : null
     await prisma.property.update({
       where: { id: propertyId },
-      data: { bizCertDriveFileId: null, bizCertMimeType: null },
+      data: {
+        ...propertyDocColumns(kind, null, null),
+        ...(nextPrev ? { propertyDocPrev: propertyDocPrevValue(nextPrev) } : {}),
+      },
     })
+    if (prevId) {
+      try { await trashInDrive(prevId) } catch { /* 무시 */ }
+    }
     revalidatePath('/settings')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
   }
+}
+
+// 적용취소 — 스냅샷이 가리키는 휴지통의 이전 파일을 되살려 칼럼에 다시 앉힌다.
+//
+// 클라이언트에서 Drive ID 를 받지 않는다. 되살릴 대상은 서버가 교체·삭제 때 쓴 스냅샷 하나뿐이고,
+// 그마저 Drive 에 다시 묻는다 — 우리 소유이고 이름이 `${접두}_${영업장ID}_` 로 시작해야 한다.
+// DB 값 하나만 믿고 다른 영업장(또는 남)의 파일을 우리 칼럼에 앉히지 않는다.
+async function restoreFor(kind: PropertyDocKind): Promise<
+  { ok: true; slot: PropertyDocSlotValue; undid: 'delete' | 'replace' } | { ok: false; error: string; stale?: true }
+> {
+  try {
+    await requireEdit()
+    const spec = PROPERTY_DOCS[kind]
+    const propertyId = await getPropertyId()
+    const cur = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: PROPERTY_DOC_SELECT,
+    })
+    const prevMap = parsePropertyDocPrev(cur?.propertyDocPrev)
+    const snap = prevMap[kind]
+    if (!snap) return { ok: false, error: '적용취소할 이전 파일이 없습니다.' }
+    const rest: PropertyDocPrev = { ...prevMap }
+    delete rest[kind]
+    // 쓸 수 없게 된 스냅샷은 그 자리에서 걷는다. 남겨 두면 카드의 적용취소가 계속 서고 누를 때마다
+    // 같은 실패만 말한다(Drive 휴지통은 30일 뒤 스스로 비운다). 일시 장애는 ownedDriveFile 이 던져
+    // 아래 catch 로 가므로 여기서 걷히지 않는다 — 되살릴 수 있는 파일을 포기하지 않는다.
+    const dropStale = async (error: string) => {
+      await prisma.property.update({ where: { id: propertyId }, data: { propertyDocPrev: propertyDocPrevValue(rest) } })
+      revalidatePath('/settings')
+      return { ok: false as const, error, stale: true as const }
+    }
+    const file = await ownedDriveFile(snap.driveFileId, { allowTrashed: true })
+    if (!file) return dropStale('휴지통에서 이미 지워져 되살릴 수 없습니다.')
+    if (!file.owned || !file.name.startsWith(`${spec.prefix}_${propertyId}_`)) {
+      return dropStale('되살릴 파일을 확인하지 못했습니다.')
+    }
+    // 지금 칼럼이 비었으면 삭제를, 그때 들어온 새 파일 그대로면 교체를 무른다. 그 밖은 스냅샷 뒤에
+    // 또 바뀐 것이라 '직전'이 이미 아니다 — 되살리면 그 사이의 변경을 말없이 덮는다.
+    const now = cur?.[spec.idCol] ?? null
+    const undid = now === null ? 'delete' : snap.replacedBy !== null && now === snap.replacedBy ? 'replace' : null
+    if (!undid) return dropStale('그 뒤에 파일이 다시 바뀌어 되돌릴 수 없습니다.')
+    await untrashInDrive(snap.driveFileId)
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: {
+        // mime 은 스냅샷 값 — 그 파일이 저장될 때 Drive 가 판정한 값이다.
+        ...propertyDocColumns(kind, snap.driveFileId, snap.mimeType),
+        propertyDocPrev: propertyDocPrevValue(rest),
+      },
+    })
+    // 교체 취소면 그때 들어온 새 파일을 휴지통으로. 칼럼을 먼저 돌려 둔 뒤라 정리가 실패해도
+    // 화면과 전송은 되살린 파일을 본다(교체·삭제와 같은 순서).
+    if (undid === 'replace' && snap.replacedBy) {
+      try { await trashInDrive(snap.replacedBy) } catch { /* 정리 실패 무시 */ }
+    }
+    revalidatePath('/settings')
+    return { ok: true, slot: { driveFileId: snap.driveFileId, mimeType: snap.mimeType ?? '' }, undid }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
+// 사업자등록증 수출 셋은 시그니처·반환을 그대로 둔다 — 배포 직후 이미 열려 있는 옛 화면이
+// 이 이름으로 액션을 부른다. 새 화면은 아래 종류 인자형(PropertyDoc)을 쓴다.
+export async function createBizCertUploadSession(input: {
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  return uploadSessionFor('bizcert', input)
+}
+
+export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; mimeType: string } | { ok: false; error: string }> {
+  return finalizeFor('bizcert', driveFileId)
+}
+
+export async function deleteBizCert(): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteFor('bizcert')
+}
+
+// 종류 인자형 — kind 는 클라이언트가 보낸 값이라 지도 키인지 서버에서 다시 본다.
+export async function createPropertyDocUploadSession(kind: PropertyDocKind, input: PropertyDocUploadInput): Promise<
+  { ok: true; uploadUrl: string } | { ok: false; error: string }
+> {
+  if (!isPropertyDocKind(kind)) return { ok: false, error: PROPERTY_DOC_KIND_ERROR }
+  return uploadSessionFor(kind, input)
+}
+
+export async function finalizePropertyDoc(kind: PropertyDocKind, driveFileId: string): Promise<
+  { ok: true; mimeType: string } | { ok: false; error: string }
+> {
+  if (!isPropertyDocKind(kind)) return { ok: false, error: PROPERTY_DOC_KIND_ERROR }
+  return finalizeFor(kind, driveFileId)
+}
+
+export async function deletePropertyDoc(kind: PropertyDocKind): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isPropertyDocKind(kind)) return { ok: false, error: PROPERTY_DOC_KIND_ERROR }
+  return deleteFor(kind)
+}
+
+export async function restorePropertyDoc(kind: PropertyDocKind): Promise<
+  { ok: true; slot: PropertyDocSlotValue; undid: 'delete' | 'replace' } | { ok: false; error: string; stale?: true }
+> {
+  if (!isPropertyDocKind(kind)) return { ok: false, error: PROPERTY_DOC_KIND_ERROR }
+  return restoreFor(kind)
 }
 
 const MAX_STAMP_BYTES = 5 * 1024 * 1024  // 5MB — 도장은 작은 PNG면 충분

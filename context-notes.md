@@ -2477,3 +2477,11 @@ RentReceiptsClient:186 · AssetsClient:1623)은 **괄호를 안 쓴다.** 그런
 - iframe 은 새 함수 keyboardCapableFocus 로만 넓혔다. editableFocused 를 바꾸면 복귀 재동기(가드·훅)의 뜻까지 바뀌어 범위 밖.
 - 자가 회복 타이머는 onPan(축소 안 받음) 재사용. 벽시계 금지 결정은 '시간으로 마감'을 막는 것이라 '다시 묻기'와 구분해 노트에 적었다.
 - 중첩 그물이 9건을 찾음. 승인 범위가 알림 상세 둘이라 나머지 7건은 KNOWN 으로 묶고 운영자 결정으로 남김.
+
+## 2026-10-07 통장사본 국문·영문 (설계 패널 Fable, 운영자 승인 추천안 전부)
+- 칸 4개 + propertyDocPrev JSON. JSON 한 칸 안은 소유 검증이 `findFirst({ id, <col>: fileId })` where 절이라 기각. 별도 테이블은 사업자등록증 이전이 필요해 회귀 면이 넓어 2단계로.
+- 줄 둘(국문 통장사본 보내기 / 영문 통장사본 보내기). 줄 하나+언어 선택은 choiceDialog 가 두 번 겹치고 confirm/alt/back 세 갈래에 네 선택(국문·영문·사진·PDF)이 안 들어가 §14 위반.
+- 프록시를 /api/biz-cert 에 kind= 로 합치지 않는다. 등록증(역할 무관)과 통장사본(money 게이트)의 권한이 달라 한 라우트 안 종류별 게이트는 한 줄 실수가 곧 유출이다.
+- 통장사본은 운영자 금융정보라 입금 계좌 문자열과 같은 canReadScope(role,'money') 로 상담 도구 값과 프록시 둘 다 끊는다(값만 끊으면 URL 직타가 뚫린다).
+- 되돌리기는 토스트 + 카드 보조 버튼(§16 진입점 2). 복원은 클라이언트 인자가 아니라 서버가 적어 둔 스냅샷만 쓰고, Drive 소유 + 파일명 접두 `${prefix}_${propertyId}_` 대조, 현재 칼럼이 null(삭제 취소) 또는 replacedBy 와 같을 때만(낙관적 잠금).
+- 영문 파일명 Bank Account Certificate. 'Bankbook Copy' 는 한국식 직역. 영업장명은 한글 그대로(영문명 칸은 범위 밖).

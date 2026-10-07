@@ -9,6 +9,7 @@
 //   입금 계좌                  = Property.bankAccount (미납 안내 문자 {계좌번호}·납부 확인서와 같은 값)
 //   사업자등록번호             = businessInfo.registrationNo (계약서 헤더·영수증과 같은 값)
 //   사업자등록증               = Property.bizCertDriveFileId (환경설정 계약서 탭에서 올린 사본)
+//   통장사본 국문·영문         = Property.bankBookKo/EnDriveFileId (같은 탭, 입금 계좌와 같은 money 스코프)
 //
 // FinancialAccount 는 쓰지 않는다. 그 표는 지출·카드정산 원장이라 신용카드 끝 4자리와
 // 운영자 개인 계좌가 섞여 있고, '수납용 대표 계좌' 를 가리키는 표식이 스키마에 없다.
@@ -34,6 +35,12 @@ export type ConsultInfo = {
    * 서버 액션 응답에 최대 4MB 가 붙는다). 값이 없으면 줄을 뺀다는 규칙은 복사 항목과 같다.
    */
   bizCertMimeType: string
+  /**
+   * 통장사본 국문·영문의 mime — 빈 문자열이면 미등록이거나 금액 읽기가 막힌 역할이라 줄을 세우지 않는다.
+   * 파일은 /api/bank-book?lang= 이 내려준다(사업자등록증과 같은 이유로 바이트를 싣지 않는다).
+   */
+  bankBookKoMimeType: string
+  bankBookEnMimeType: string
 }
 
 export type ConsultInfoResult =
@@ -49,6 +56,8 @@ export async function getConsultInfo(): Promise<ConsultInfoResult> {
       select: {
         name: true, address: true, phone: true, publicSlug: true, bankAccount: true, businessInfo: true,
         bizCertDriveFileId: true, bizCertMimeType: true,
+        bankBookKoDriveFileId: true, bankBookKoMimeType: true,
+        bankBookEnDriveFileId: true, bankBookEnMimeType: true,
       },
     })
     if (!property) return { ok: false, error: '영업장 정보를 찾을 수 없습니다.' }
@@ -73,6 +82,14 @@ export async function getConsultInfo(): Promise<ConsultInfoResult> {
         // /api/biz-cert 가 바이트로 형식을 되짚으므로 첨부는 제 형식으로 나간다.
         bizCertMimeType: property.bizCertDriveFileId
           ? (property.bizCertMimeType?.trim() || 'application/pdf')
+          : '',
+        // 통장사본은 예금주·계좌번호가 찍힌 서류라 계좌와 같은 문으로 끊는다. 막힌 역할에게는 등록 여부도
+        // 안 내린다(줄이 서면 눌렀을 때 /api/bank-book 이 403 을 낸다). 폴백은 사업자등록증과 같다.
+        bankBookKoMimeType: canReadScope(access.role, 'money')
+          ? (property.bankBookKoDriveFileId ? (property.bankBookKoMimeType?.trim() || 'application/pdf') : '')
+          : '',
+        bankBookEnMimeType: canReadScope(access.role, 'money')
+          ? (property.bankBookEnDriveFileId ? (property.bankBookEnMimeType?.trim() || 'application/pdf') : '')
           : '',
       },
     }

@@ -18,7 +18,9 @@ import type { DocumentNameSource } from '@/lib/documentName'
 
 // 'bizcert' 는 영업장 사업자등록증이다. 앞 넷과 달리 **우리가 만든 종이가 아니라 받아 둔 원본**이고
 // 계약이 아니라 영업장에 걸린다 — 그래서 발급도 판본도 없고 행도 사람마다 하나뿐이다.
-export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence' | 'bizcert'
+// 'bankbook' 은 영업장 통장사본(국문·영문)이다(2026-10-07). 이름 지도에만 선다 — 상담 도구가 파일 이름을
+// 이 정본에서 짓기 때문이다. 입주자 서류 묶음에는 아직 행이 없다(묶음 연계는 별도 범위).
+export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence' | 'bizcert' | 'bankbook'
 
 // 서류 이름은 두 벌이다 — 화면에 서는 이름과 파일·메일에 적히는 이름. 파일 쪽은 형제 3화면이
 // 이미 쓰고 있는 문자열 그대로여야 같은 서류가 어디로 나가든 같은 이름으로 도착한다.
@@ -29,6 +31,7 @@ export const DOC_TYPE_TITLE: Record<DocBundleDocType, string> = {
   deposit: '보증금 영수증',
   residence: '실거주 확인서',
   bizcert: '사업자등록증',
+  bankbook: '통장사본',
 }
 export const DOC_TYPE_FILE_LABEL: Record<DocBundleDocType, string> = {
   contract: '계약서',
@@ -38,6 +41,8 @@ export const DOC_TYPE_FILE_LABEL: Record<DocBundleDocType, string> = {
   // 상담 도구가 이미 쓰고 있는 이름 그대로다(`{영업장명}_사업자등록증`). 같은 파일이 두 입구에서
   // 다른 이름으로 나가면 받는 쪽이 다른 서류로 읽는다.
   bizcert: '사업자등록증',
+  // 상담 도구가 `{영업장명}_통장사본` 으로 보낸다. 국문·영문은 아래 영문 이름 지도가 가른다.
+  bankbook: '통장사본',
 }
 
 /**
@@ -65,6 +70,9 @@ export const DOC_TYPE_FILE_LABEL_EN: Record<DocBundleDocType, string> = {
   // 안 쓰인다. 그래도 비워 두지 않는 이유는 지도에 구멍을 내지 않기 위해서다 — 나중에 누군가
   // 표기를 실어 부르면 조용히 undefined 가 파일 이름에 섞인다.
   bizcert: 'Business Registration Certificate',
+  // 영문 통장사본은 실제로 이 이름으로 나간다(상담 도구, `{영업장명}_Bank Account Certificate`).
+  // 은행이 발급하는 영문 서류의 통칭이고, 받는 쪽(해외 송금인)이 그대로 알아보는 말이다.
+  bankbook: 'Bank Account Certificate',
 }
 
 /** 표기에 맞는 파일용 서류 이름. 영문 표기일 때만 영문 이름을 쓴다(현지 표기는 한글 이름 그대로). */

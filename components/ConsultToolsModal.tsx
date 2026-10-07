@@ -4,6 +4,7 @@
 // 한 손으로 쓰는 도구라 값마다 별도 버튼을 찾게 하지 않고 행 전체가 복사 타겟이다.
 // 코너 안에 단기 요금 계산 진입을 함께 둔다(운영자 제안, 오류신고 ce05bb74).
 // 구분선 아래는 복사가 아닌 줄이다 — 사업자등록증 보내기(파일 첨부)와 단기 요금 계산(운영자 오더 2026-08-18).
+// 통장사본 국문·영문 보내기도 같은 줄 문법으로 사업자등록증 아래에 선다(2026-10-07). 금액 읽기가 막힌 역할에게는 줄이 안 선다.
 //
 // 표시되는 값이 곧 복사되는 값이다 — 말줄임을 쓰지 않는다. 화면에 '3333-01-234…' 를
 // 남기면 눈으로 본 것과 클립보드에 담긴 것이 갈린다(§06 축약 금지 구역과 같은 사고).
@@ -21,6 +22,7 @@ import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { getConsultInfo, type ConsultInfo } from '@/app/(app)/consultInfo'
 import { docFileLabel } from '@/lib/docBundle'
+import { PROPERTY_DOCS, withObjectParticle, type PropertyDocKind } from '@/lib/propertyDocs'
 
 // 행 하나. value 가 비면 목록에서 빠진다 — '미설정' 을 띄우면 탭해도 복사할 것이 없어
 // '행 = 복사' 규칙이 깨진다.
@@ -78,7 +80,7 @@ function CopyRow({ label, value, valueClass, onCopy }: {
   )
 }
 
-// 사업자등록증 첨부 파일명의 확장자. mime 을 그대로 쪼개면 image/jpeg 가 '.jpeg' 가 되고
+// 영업장 서류 첨부 파일명의 확장자. mime 을 그대로 쪼개면 image/jpeg 가 '.jpeg' 가 되고
 // 받는 쪽 앱이 낯설게 다루는 일이 있어 흔한 형식만 손으로 짝지어 둔다.
 const CERT_EXT: Record<string, string> = {
   'application/pdf': 'pdf',
@@ -86,9 +88,22 @@ const CERT_EXT: Record<string, string> = {
   'image/heic': 'heic', 'image/gif': 'gif',
 }
 
-async function fetchBizCertBlob(): Promise<Blob> {
-  const res = await fetch('/api/biz-cert')
-  if (!res.ok) throw new Error('사업자등록증을 불러오지 못했습니다.')
+// 보내기 줄 하나 — 영업장 서류(사업자등록증·통장사본 국문·영문)를 데이터로 둔다. mime 이 빈 줄은
+// 빠진다(값 없는 복사 줄을 빼는 규칙과 같다). 이름·파일 표기는 종류 지도(lib/propertyDocs)가 정본이다.
+type SendRow = { kind: PropertyDocKind; url: string; mime: string }
+
+function sendRows(info: ConsultInfo): SendRow[] {
+  const rows: SendRow[] = [
+    { kind: 'bizcert',     url: '/api/biz-cert',          mime: info.bizCertMimeType },
+    { kind: 'bankbook_ko', url: '/api/bank-book?lang=ko', mime: info.bankBookKoMimeType },
+    { kind: 'bankbook_en', url: '/api/bank-book?lang=en', mime: info.bankBookEnMimeType },
+  ]
+  return rows.filter(r => r.mime)
+}
+
+async function fetchDocBlob(url: string, title: string): Promise<Blob> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${withObjectParticle(title)} 불러오지 못했습니다.`)
   return res.blob()
 }
 
@@ -98,8 +113,9 @@ type PreparedCert = { blobs: Blob[]; mime: string; ext: string; original: Blob; 
 // PDF 는 이미지로 변환해 첨부한다(운영자 실사용 보고 2026-08-18 — 문자메시지가 PDF 첨부를 간혹
 // 거부한다). 공유 시트는 목적지를 미리 알 수 없으므로 항상 이미지가 안전하고, 이미지 원본은 그대로다.
 // 변환은 프리페치 단계에서 끝낸다 — 탭 후 변환을 시작하면 제스처 허용 시간이 지나 다운로드로 샌다.
-async function prepareBizCert(fallbackMime: string | null): Promise<PreparedCert> {
-  const blob = await fetchBizCertBlob()
+// title 은 불러오기 실패 문장에만 쓴다('사업자등록증을 불러오지 못했습니다.' 처럼 종류를 말한다).
+async function preparePropertyDoc(url: string, title: string, fallbackMime: string | null): Promise<PreparedCert> {
+  const blob = await fetchDocBlob(url, title)
   const mime = blob.type || fallbackMime || 'application/pdf'
   if (mime === 'application/pdf') {
     const pages = await pdfToPngBlobs(await blob.arrayBuffer())
@@ -113,25 +129,34 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const [quoteOpen, setQuoteOpen] = useState(false)
-  const [sending, setSending] = useState(false)
-  // 사업자등록증을 탭 전에 미리 받아 둔다. 공유 시트는 탭 직후에만 열 수 있어(lib/shareFile 제스처
+  // 보내는 중인 줄 — 어느 줄이든 진행 중이면 보내기 줄이 모두 잠기고 누른 줄만 '준비 중…'이 된다.
+  const [sending, setSending] = useState<PropertyDocKind | null>(null)
+  // 영업장 서류를 탭 전에 미리 받아 둔다. 공유 시트는 탭 직후에만 열 수 있어(lib/shareFile 제스처
   // 규칙) 탭하고 나서 내려받기 시작하면 허용 시간이 지나 전송이 다운로드로 새어 나간다.
   // 서류 보내기 시트가 체크하는 순간부터 준비를 거는 것과 같은 이유다(lib/docShareQueue).
-  const certRef = useRef<Promise<PreparedCert> | null>(null)
+  // 종류별 프라미스 맵이다. 열 때마다 새 맵으로 바꾼다 — 늦게 끝난 옛 조회가 새 맵을 덮지 않게.
+  const prepRef = useRef<Partial<Record<PropertyDocKind, Promise<PreparedCert>>>>({})
 
   const load = useCallback(() => {
-    // 열 때마다 버린다 — 환경설정에서 등록증을 교체한 직후에 옛 파일이 나가면 안 된다(값 재조회와 같은 이유).
-    certRef.current = null
+    // 열 때마다 버린다 — 환경설정에서 서류를 교체한 직후에 옛 파일이 나가면 안 된다(값 재조회와 같은 이유).
+    const map: Partial<Record<PropertyDocKind, Promise<PreparedCert>>> = {}
+    prepRef.current = map
     setFailed(false); setLoading(true)
     getConsultInfo()
       .then(res => {
         if (res.ok) {
           setInfo(res.info)
-          if (res.info.bizCertMimeType) {
-            if (res.info.bizCertMimeType === 'application/pdf') prewarmPdfToPng()
-            const p = prepareBizCert(res.info.bizCertMimeType)
-            p.catch(() => { /* 탭 전 실패는 조용히 — 탭 시점에 같은 프라미스를 다시 기다려 알린다 */ })
-            certRef.current = p
+          const rows = sendRows(res.info)
+          if (rows.some(r => r.mime === 'application/pdf')) prewarmPdfToPng()
+          // 줄 순서대로 하나씩 받는다(사업자등록증 다음 국문, 그다음 영문). 한꺼번에 걸면 PDF 래스터화
+          // 셋이 동시에 돌아 맨 위 줄 준비까지 늦어진다. 앞 것이 실패해도 다음 것은 받는다.
+          let chain: Promise<unknown> = Promise.resolve()
+          for (const r of rows) {
+            const p = chain.then(() => preparePropertyDoc(r.url, PROPERTY_DOCS[r.kind].title, r.mime))
+            // 탭 전 실패는 조용히 — 맵에서 빼 두면 탭 시점에 다시 받는다.
+            p.catch(() => { if (map[r.kind] === p) delete map[r.kind] })
+            map[r.kind] = p
+            chain = p.catch(() => undefined)
           }
           return
         }
@@ -155,20 +180,23 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
     }
   }
 
-  // PDF 로 올린 등록증은 보낼 때 형식을 고른다(운영자 오더 2026-08-18 — 문자엔 사진이 확실하고
+  // PDF 로 올린 서류는 보낼 때 형식을 고른다(운영자 오더 2026-08-18 — 문자엔 사진이 확실하고
   // 메일엔 PDF 원본이 맞는다). 물음은 SendDocButton 의 choiceDialog 정본(§14) 그대로이고, 선택
-  // 버튼 탭이 새 제스처라 공유 시트가 바로 열린다. 이미지로 올린 등록증은 물을 것이 없어 그대로 나간다.
-  // 사진 변환은 프리페치가 이미 끝내 두었다(prepareBizCert).
-  const sendBizCert = async () => {
+  // 버튼 탭이 새 제스처라 공유 시트가 바로 열린다. 이미지로 올린 서류는 물을 것이 없어 그대로 나간다.
+  // 사진 변환은 프리페치가 이미 끝내 두었다(preparePropertyDoc).
+  const sendPropertyDoc = async (row: SendRow) => {
     if (!info) return
-    setSending(true)
+    const spec = PROPERTY_DOCS[row.kind]
+    setSending(row.kind)
     try {
-      const pending = certRef.current ?? prepareBizCert(info.bizCertMimeType)
-      certRef.current = pending
+      const map = prepRef.current
+      const pending = map[row.kind] ?? preparePropertyDoc(row.url, spec.title, row.mime)
+      map[row.kind] = pending
       const prep = await pending
       // 서류 이름은 정본에서 가져온다 — 같은 등록증이 입주자 서류에서도 나가게 된 뒤로(2026-09-16)
       // 이름이 두 자리에 손으로 적혀 있으면 한쪽만 고쳐지는 날 받는 쪽이 다른 서류로 읽는다.
-      const docName = docFileLabel('bizcert', 'ko')
+      // 영문 통장사본만 영문 이름(Bank Account Certificate)으로 나간다 — 받는 쪽이 해외 송금인이다.
+      const docName = docFileLabel(spec.docType, spec.lang)
       const base = info.propertyName ? `${info.propertyName}_${docName}` : docName
       let asImage = true
       if (prep.originalMime === 'application/pdf') {
@@ -178,7 +206,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
           confirmLabel: '사진으로',
           altLabel: 'PDF로',
         })
-        if (!format || format === 'back') { setSending(false); return }
+        if (!format || format === 'back') { setSending(null); return }
         asImage = format === 'confirm'
       }
       if (!asImage) {
@@ -205,14 +233,14 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
         }
       }
     } catch (err) {
-      certRef.current = null   // 다음 탭에서 다시 받는다
-      pushToast('error', humanError(err, '사업자등록증을 보내지 못했습니다.'))
+      delete prepRef.current[row.kind]   // 다음 탭에서 다시 받는다
+      pushToast('error', humanError(err, `${withObjectParticle(spec.title)} 보내지 못했습니다.`))
     }
     // finally 로 묶지 않는다 — try/finally 안의 setState 를 보면 react-hooks 컴파일러 규칙이
     // 이 컴포넌트 전체 분석을 포기해, 위 useEffect 의 set-state-in-effect 검사까지 조용히 꺼졌다
     // (eslint 가 그 disable 지시를 '쓰이지 않음'으로 보고해 드러났다). catch 가 전부 삼키므로
     // 여기까지 오는 길은 하나뿐이고 결과는 finally 와 같다.
-    setSending(false)
+    setSending(null)
   }
 
   const items = info ? copyItems(info) : []
@@ -265,18 +293,19 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
         {/* 탭이 곧 동작인 줄들 — 위 목록은 복사, 여기는 복사가 아니다. 그래서 구분선 아래에 따로 선다.
             모달 부제('탭하면 클립보드에 복사됩니다')가 위 목록의 약속이라 섞으면 그 약속이 거짓말이 된다. */}
         <div className="border-t border-[var(--warm-border)]">
-          {/* 사업자등록증 — 파일이 있을 때만 선다(값 없는 복사 줄을 빼는 규칙과 같다).
+          {/* 영업장 서류 보내기 — 파일이 있을 때만 선다(값 없는 복사 줄을 빼는 규칙과 같다).
+              순서는 사업자등록증 · 국문 통장사본 · 영문 통장사본(sendRows).
               라벨에 '보내기'를 박는다 — 한 코너에서 위는 복사, 이 줄은 전송이라 라벨이 갈라 줘야 한다.
               동사는 서류 어휘 정본을 따른다('공유' 금지, '보내기'가 정본). */}
-          {info?.bizCertMimeType && (
-            <button type="button" onClick={sendBizCert} disabled={sending}
+          {info && sendRows(info).map(row => (
+            <button key={row.kind} type="button" onClick={() => { void sendPropertyDoc(row) }} disabled={sending !== null}
               className={`${ROW_CLS} border-b border-[var(--warm-border)]/50 disabled:opacity-60`}>
               <span className="flex items-center justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-[var(--warm-dark)]">
-                    {sending ? '준비 중…' : '사업자등록증 보내기'}
+                    {sending === row.kind ? '준비 중…' : `${PROPERTY_DOCS[row.kind].title} 보내기`}
                   </span>
-                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">{info?.bizCertMimeType === 'application/pdf' ? '보낼 때 사진과 PDF 중 고릅니다' : '문자·메일에 파일 그대로 첨부됩니다'}</span>
+                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">{row.mime === 'application/pdf' ? '보낼 때 사진과 PDF 중 고릅니다' : '문자·메일에 파일 그대로 첨부됩니다'}</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
@@ -285,7 +314,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
                 </svg>
               </span>
             </button>
-          )}
+          ))}
 
           {/* 단기 요금 계산 — 홈 월 선택 줄에 홀로 서 있던 도구를 이 코너 안으로 들였다(운영자 제안). */}
           <button type="button" onClick={() => setQuoteOpen(true)} className={ROW_CLS}>

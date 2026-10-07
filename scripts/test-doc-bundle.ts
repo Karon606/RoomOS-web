@@ -8,7 +8,7 @@
 //   · 계약을 말할 수 없는 파일은 중립 그룹 — 없는 계약에 갖다 붙이지 않는다.
 
 import {
-  buildDocBundle, DOC_WRITE_NEW_LABEL,
+  buildDocBundle, DOC_WRITE_NEW_LABEL, docFileLabel,
   type DocBundleFile, type DocBundleLease, type TenantDocBundle,
   type DocBundleContractVersion, type DocBundleBizCert,
 } from '../lib/docBundle'
@@ -394,6 +394,11 @@ function bizCert(o: Partial<DocBundleBizCert> = {}): DocBundleBizCert {
   eq('등록증 · 이미지 형식 그대로', g2.groups[1].rows[0].mime, 'image/jpeg')
   eq('등록증 · 형식이 비면 PDF 로 본다', c.groups[1].rows[0].mime, 'application/pdf')
 }
+
+// ── 통장사본 파일 이름 (2026-10-07) ─────────────────────────────────
+// 상담 도구가 `{영업장명}_{이름}` 으로 보낸다. 영문 통장사본은 받는 쪽이 해외 송금인이라 영문 이름이어야 한다.
+eq('통장사본 · 국문 파일 이름', docFileLabel('bankbook', 'ko'), '통장사본')
+eq('통장사본 · 영문 파일 이름', docFileLabel('bankbook', 'en'), 'Bank Account Certificate')
 
 console.log(`\n서류 보내기 행 규칙 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

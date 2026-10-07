@@ -61,10 +61,13 @@ const strip = s => s
 const AI_CALLS = /analyze(?:IdCard|Contract|Receipt)WithGemini\(|parseFloorPlanImage\(|uploadPendingReceipt\(/
 // 파일을 Drive 에 올리는 입구들(ⓖ~ⓗ). 앱 로고(createAppLogoUploadSession)는 뺀다 — 크롭 모달이
 // 캔버스로 다시 그려 PNG 로만 내보내므로 이미 정규화된 자리다.
-const UPLOAD_SESSIONS = /create(?:BizCert|Stamp|Logo|ContractScan)UploadSession\s*\(/
+// PropertyDoc 은 영업장 서류 칸(사업자등록증·통장사본 국문·영문, 2026-10-07)의 종류 인자형 입구다.
+// 사업자등록증 화면이 이 이름으로 옮겨 갔으므로 빠뜨리면 그 칸이 그물 밖으로 나간다.
+const UPLOAD_SESSIONS = /create(?:BizCert|PropertyDoc|Stamp|Logo|ContractScan)UploadSession\s*\(/
 // 고른 파일 원본이 그대로 실리는 모양 — 이번에 고친 네 입구가 전부 이 모양이었다.
 // (PUT 인자까지 보려면 앱 로고 경로의 지역 변수 이름과 부딪혀 그 자리는 세션 인자로 잰다.)
-const RAW_IN_SESSION = /create(?:BizCert|Stamp|Logo|ContractScan)UploadSession\s*\(\s*\{[^}]*fileName:\s*file\.name/
+// 종류 인자형은 첫 인자가 종류라 `(kind, {` 모양이다 — 그 앞 인자를 건너뛰고 객체를 본다.
+const RAW_IN_SESSION = /create(?:BizCert|PropertyDoc|Stamp|Logo|ContractScan)UploadSession\s*\(\s*(?:[\w.'"]+\s*,\s*)?\{[^}]*fileName:\s*file\.name/
 // 파일 헤더 몇 바이트만 읽는 자리는 대상이 아니다(lib/docMime 의 매직넘버 판독).
 const LOOP_ALLOW = ['lib/docMime.ts']
 
@@ -158,8 +161,10 @@ for (const f of files) {
 
 // ⓙ 업로드 세션 서버 액션의 mime 문 — 지목한 자리만 본다(파일이 크고 문이 정확히 둘이다).
 //    스캔 계약서는 **종전에 이 문이 아예 없어** 크기만 보고 HEIC 를 통과시켰다.
+// 영업장 서류 세션은 수출 둘(createBizCertUploadSession·createPropertyDocUploadSession)이 내부
+// uploadSessionFor 하나를 지난다(2026-10-07). 문은 그 본문에 있으므로 거기를 잰다.
 const MIME_GATES = [
-  ['app/(app)/settings/actions.ts', 'createBizCertUploadSession', 'BIZ_CERT_MIME_OK'],
+  ['app/(app)/settings/actions.ts', 'uploadSessionFor', 'BIZ_CERT_MIME_OK'],
   ['app/(app)/tenants/actions.ts', 'createContractScanUploadSession', 'SCAN_MIME_OK'],
 ]
 for (const [file, fn, gate] of MIME_GATES) {
@@ -171,9 +176,32 @@ for (const [file, fn, gate] of MIME_GATES) {
   if (/startsWith\(\s*['"]image\//.test(def[2])) {
     violations.push(`${file} ${gate} 가 image/* 를 통째로 받는다. HEIC 가 저장되면 첨부·발급이 깨진다.`)
   }
-  const body = src.slice(src.indexOf(`export async function ${fn}`))
-  if (!new RegExp(`${gate}\\s*\\(`).test(body.slice(0, 2000))) {
+  // 수출이 아닌 내부 함수도 잰다(영업장 서류 세션의 문은 비수출 uploadSessionFor 에 있다).
+  const at = src.search(new RegExp(`(?:export\\s+)?async\\s+function\\s+${fn}\\s*\\(`))
+  if (at < 0) { violations.push(`${file} ${fn} 정의가 없다(ⓙ 대상 함수가 옮겨졌나).`); continue }
+  // 본문은 다음 최상위 선언 직전까지다. 글자 수 창(종전 2000자)으로 자르면 바로 뒤 함수(finalizeFor)의
+  // 같은 문이 창 안에 들어와, 세션 함수에서 문을 지워도 초록으로 통과했다(2026-10-07 역주입 실측).
+  const rest = src.slice(at + 1)
+  const next = rest.search(/\n(?:export\s|async\s+function\s|function\s|const\s|type\s)/)
+  const body = src.slice(at, next < 0 ? at + 2000 : at + 1 + next)
+  if (!new RegExp(`${gate}\\s*\\(`).test(body)) {
     violations.push(`${file} ${fn} 이 ${gate} 를 안 지난다. 문을 만들어 두고 안 지나면 없는 것과 같다.`)
+  }
+}
+// 문을 내부 함수로 옮긴 만큼, 세션 수출이 그 함수를 안 지나고 Drive 세션을 직접 열면 문 밖이 된다.
+{
+  const file = 'app/(app)/settings/actions.ts'
+  const src = strip(readFileSync(file, 'utf8'))
+  for (const fn of ['createBizCertUploadSession', 'createPropertyDocUploadSession']) {
+    const at = src.search(new RegExp(`export\\s+async\\s+function\\s+${fn}\\s*\\(`))
+    if (at < 0) { violations.push(`${file} ${fn} 수출이 없다(ⓙ).`); continue }
+    // 다음 수출 직전까지가 그 함수 본문이다(뒤 함수의 호출이 섞여 들어오면 헛통과한다).
+    const rest = src.slice(at + 1)
+    const next = rest.search(/\nexport\s+/)
+    const body = src.slice(at, next < 0 ? undefined : at + 1 + next)
+    if (!/uploadSessionFor\s*\(/.test(body) || /createDriveResumableSession\s*\(/.test(body)) {
+      violations.push(`${file} ${fn} 이 uploadSessionFor 를 안 지난다. mime 문(BIZ_CERT_MIME_OK) 밖에서 세션이 열린다.`)
+    }
   }
 }
 
