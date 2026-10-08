@@ -6782,3 +6782,10 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 통장사본 검수에서 잡힌 다크 링크 대비 2.78:1 의 클래스 봉합. app·components 의 text-[var(--coral)]·text-[var(--persimmon)]·인라인 color 'var(--coral|persimmon)' 221곳을 --tc-text 로(70파일). 라이트는 같은 값이라 픽셀 무변동, 다크만 #C9614C(4.63:1).
 - 범위 밖: SVG stroke·fill(배치도 캔버스·영수증 사진 위, 모드 불변), 보더·틴트·outline(§12·§03 자기 규칙).
 - 감지망 check-coral-text-token.mjs 신설(verify:fast, 포커스 링 그물과 같은 꼴, 첫 실행에서 퍼시먼 인라인 12곳을 추가로 잡아 빨강 확인). 가이드 §28 에 규칙 한 줄.
+
+## 2026-10-08 호실 메모 인라인 편집 + 도어락 마스터키 소유자 전용 (운영자 승인: 소유자만·메모 재사용·열람 기록·프리즘 안에서만)
+- '비고란' 원인은 프리즘 MemoSection 이 비면 숨고 읽기 전용이던 것. 칸 신설 없이 memo 재사용: 늘 보이는 절 + '작성/수정' 인라인 폼(textarea, [취소 ghost][저장 primary], 토스트 적용취소), 호실 관리 등록·수정 폼 메모도 textarea.
+- 마스터키: rooms.doorMasterKeyEnc(AES-GCM, AAD room:id) + room_master_key_views(DIRECT_URL, migrate_room_master_key.sql). 읽기 스코프 'security' 소유자만(관리자 차단), 막힌 역할엔 등록 여부도 null. 프리즘 '도어락' 절(미등록/****** 보기/가리기/등록·변경/지우기 확인창, 적용취소 토큰은 암호문). 평문 한 길 revealRoomMasterKey 가 기록을 먼저 남긴다. lib/prisma 전역 omit 으로 엑셀·백업·목록 등 select 없는 조회 전부 차단(백업 JSON 미포함은 의도).
+- 부수 봉합: getRoomDetail 이 세션만 보고 방 id 로만 읽던 것을 영업장 격리(findFirst propertyId)로.
+- 감지망 check-master-key-axis 7축(역주입 전부 빨강) + test-room-master-key 19건 + check-pii-plaintext 축 A2. 게이트 tsc 0 · verify:fast · eslint 신규 0. knowledge/room-master-key 신설.
+- 웹디자이너 패스: 차단 1(쓰다 만 메모·마스터키가 프리즘 닫힘 확인창을 못 탐, markDirty 두 위젯), 권고(--cream-soft 면 취소 subtle, 헤더 버튼 secondary 통일 + 드러난 상태에도 [변경], 적용취소 문형 등록/지움/변경 분기, 지우기 확인창 제목에 호실·6초 한정 고지, Section 액션 슬롯 행 높이 44 유지로 점프 제거), 사소(라벨 묶음·14px 값·가린 값 가운뎃점·'마스터키 지움'·placeholder+autoFocus).

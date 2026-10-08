@@ -1622,3 +1622,16 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 검증 중 추가: 쓸 수 없게 된 적용취소 스냅샷 걷기(복원 실패 시 + 30일 경과 버튼 미표시)
 - [x] 별건 승인('추천대로'): 테라코타 글자색 --coral → --tc-text 전수 221곳 + check-coral-text-token 감지망 + 가이드 §28
 - [x] 배포 d8d13c84 READY · 실기 확인(운영자 2026-10-07 "통장사본에 대해서는 잘 되는듯해")
+
+# 호실 메모 인라인 편집 + 도어락 마스터키 (2026-10-08, 운영자 승인: 소유자만 · 메모 재사용 · 열람 기록 · 프리즘 안에서만)
+운영자 원문: "호실정보에서 비고란이 필요해 / 도어락 마스터키 번호도 입력할 수 있는 항목… 운영자 레벨에서만 열람 및 수정… 그 아래는 항목 자체가 안보이도록"
+범위 밖(선택): 영업장 공통 마스터키, 입주자 코드 칸, 자동 가림, 변경 이력, 열람 기록 조회 화면.
+- [x] 운영 DB rooms.doorMasterKeyEnc + room_master_key_views (DIRECT_URL, migrate_room_master_key.sql) + schema.prisma + generate
+- [x] routeScope 'security' 스코프(소유자만) · lib/pii 마스터키 문 둘 · lib/prisma 전역 omit
+- [x] getRoomDetail 영업장 격리 + 역할 + doorMasterKeySet DTO(권한 없으면 null)
+- [x] masterKeyActions.ts: updateRoomMemo(undo) · revealRoomMasterKey(기록 먼저) · updateRoomMasterKey(undo) · undoUpdateRoomMasterKey(v1: 검증)
+- [x] 프리즘: Section action 슬롯 · MemoSection 늘 표시+인라인 편집(textarea, 적용취소) · RoomMasterKeyInfo(가림·보기·변경·지우기 확인창·적용취소) · RoomBody 배치·재조회
+- [x] 호실 관리 등록·수정 폼 '메모' textarea
+- [x] 감지망: test-room-master-key · check-master-key-axis(7축) · check-pii-plaintext 축 A2 · 역주입 5종
+- [x] 게이트(tsc · verify:fast · eslint 신규 0) · 웹디자이너 패스(차단 1 markDirty + 권고 5 + 사소 5 반영) · knowledge/room-master-key · Work_log · 커밋
+- [ ] 배포 후 실기 확인(운영자)

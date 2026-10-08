@@ -1648,7 +1648,7 @@ export default function RoomManageClient({
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
             </div>
             <AreaInput />
-            <Field label="메모" name="memo" placeholder="방 컨디션 메모" />
+            <Field label="메모" name="memo" placeholder="방 컨디션 메모" multiline />
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1782,7 +1782,7 @@ export default function RoomManageClient({
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
             </div>
             <AreaInput defaultPyeong={editRoom.areaPyeong} defaultM2={editRoom.areaM2} />
-            <Field label="메모" name="memo" defaultValue={editRoom.memo ?? ''} />
+            <Field label="메모" name="memo" defaultValue={editRoom.memo ?? ''} multiline />
 
             {/* 방 특성 (2026-07-06, 운영자 요청 — 415 창고·사무실 사례) */}
             <div className="space-y-1.5">
@@ -2137,14 +2137,20 @@ function Modal({ title, children, onClose }: {
   )
 }
 
-function Field({ label, name, placeholder, defaultValue }: {
-  label: string; name: string; placeholder?: string; defaultValue?: string
+// multiline — 메모처럼 길이를 모르는 자유 입력은 세 줄 textarea 로 받는다(2026-10-08). 한 줄 input 은
+// 줄바꿈을 못 받아, 프리즘에서 여러 줄로 적은 메모를 여기서 열면 한 줄로 뭉개져 보였다.
+function Field({ label, name, placeholder, defaultValue, multiline }: {
+  label: string; name: string; placeholder?: string; defaultValue?: string; multiline?: boolean
 }) {
+  const cls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors'
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
-      <input type="text" name={name} defaultValue={defaultValue} placeholder={placeholder}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors" />
+      {multiline ? (
+        <textarea name={name} defaultValue={defaultValue} placeholder={placeholder} rows={3} className={`${cls} resize-none`} />
+      ) : (
+        <input type="text" name={name} defaultValue={defaultValue} placeholder={placeholder} className={cls} />
+      )}
     </div>
   )
 }

@@ -1,9 +1,20 @@
 // 제목 + 자식 콘텐츠 — entity body 안 구획용. Grid/Item 과 함께 쓴다.
 
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// action — 제목 줄 오른쪽 버튼 자리(호실 면의 메모·도어락 '수정'·'등록', 2026-10-08).
+// undefined 면 종전 마크업 그대로다(기존 호출부 픽셀 무변동). 슬롯을 쓰는 위젯은 편집 중에 null 을 넘겨
+// 버튼만 비우고 행 높이(44px, Btn sm 터치 타겟)는 지킨다 — 버튼이 사라지며 제목 줄이 28px 줄면 그 아래
+// 폼이 손가락 밑에서 튄다(웹디자이너 지적 2026-10-08).
+export function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-semibold text-[var(--warm-mid)] mb-2">{title}</h3>
+      {action !== undefined ? (
+        <div className="flex min-h-[44px] items-center justify-between gap-2 mb-2">
+          <h3 className="text-xs font-semibold text-[var(--warm-mid)]">{title}</h3>
+          {action}
+        </div>
+      ) : (
+        <h3 className="text-xs font-semibold text-[var(--warm-mid)] mb-2">{title}</h3>
+      )}
       {children}
     </div>
   )

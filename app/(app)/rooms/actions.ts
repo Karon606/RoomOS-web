@@ -1,6 +1,6 @@
 'use server'
 
-import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { requirePropertyAccess, getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -3238,12 +3238,15 @@ export async function getRoomQuickInfo(roomId: string) {
 // targetMonth('YYYY-MM') 는 단기 퇴실 도래를 묻는 기준월이다. 호실 카드가 보는 달과 같은 달이라야
 // 같은 라벨이 나온다 — 이 인자가 없던 시절엔 402·503호가 카드에선 [퇴실 예정], 모달에선 '거주중'이었다.
 export async function getRoomDetail(roomId: string, targetMonth: string) {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const room = await prisma.room.findUnique({
-    where: { id: roomId },
+  // 세션만 보던 자리를 격리 관문으로 바꿨다(2026-10-08, 마스터키 'security' 스코프를 물으려면 역할이 필요하다).
+  // 부수로 영업장 격리가 선다 — 종전에는 남의 영업장 방 id 로도 상세가 읽혔다. 접근 불가면 종전처럼 null 이다.
+  const access = await getPropertyAccess()
+  if (!access) return null
+  const room = await prisma.room.findFirst({
+    where: { id: roomId, propertyId: access.propertyId },
     select: {
+      // 마스터키 암호문은 등록 여부를 가리려고만 읽는다. 아래에서 떼어내 반환에는 싣지 않는다.
+      doorMasterKeyEnc: true,
       id: true, roomNo: true, type: true, tier: true,
       baseRent: true, scheduledRent: true, rentUpdateDate: true,
       nonResidentRent: true, nonResidentScheduled: true, nonResidentRentDate: true,
@@ -3291,11 +3294,15 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
     select: { status: true, expectedMoveOut: true },
   })
   const availability = roomAvailability({ nonResidentVacant: room.nonResidentVacant, leaseTerms: availabilityLeases })
+  // 암호문은 브라우저로 안 보낸다. 내려가는 것은 등록 여부 하나이고, 'security' 스코프가 없는 역할에는
+  // 그것도 null 이다(화면이 도어락 절을 아예 안 그린다). 평문은 revealRoomMasterKey 로만 나온다.
+  const { doorMasterKeyEnc: enc, ...roomFields } = room
   return {
-    ...room,
+    ...roomFields,
     leaseTerms: lease ? [lease] : [],
     status,
     availability,
+    doorMasterKeySet: canReadScope(access.role, 'security') ? !!enc : null,
   }
 }
 

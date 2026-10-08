@@ -2485,3 +2485,13 @@ RentReceiptsClient:186 · AssetsClient:1623)은 **괄호를 안 쓴다.** 그런
 - 통장사본은 운영자 금융정보라 입금 계좌 문자열과 같은 canReadScope(role,'money') 로 상담 도구 값과 프록시 둘 다 끊는다(값만 끊으면 URL 직타가 뚫린다).
 - 되돌리기는 토스트 + 카드 보조 버튼(§16 진입점 2). 복원은 클라이언트 인자가 아니라 서버가 적어 둔 스냅샷만 쓰고, Drive 소유 + 파일명 접두 `${prefix}_${propertyId}_` 대조, 현재 칼럼이 null(삭제 취소) 또는 replacedBy 와 같을 때만(낙관적 잠금).
 - 영문 파일명 Bank Account Certificate. 'Bankbook Copy' 는 한국식 직역. 영업장명은 한글 그대로(영문명 칸은 범위 밖).
+
+## 2026-10-08 호실 메모·마스터키 (설계 패널 Fable, 운영자 추천안 승인)
+- '비고란이 없다'의 1차 원인은 프리즘 MemoSection 이 비면 null 을 돌려주고 읽기 전용인 것. 칸 신설 대신 memo 재사용(자유 글 둘이면 매번 '어디에 적지'가 생기고 앱 어휘가 '메모'로 통일돼 있음).
+- 마스터키는 입주자 개인정보는 아니지만 유출 결과가 전 호실 물리 침입이라 외국인등록번호와 같은 축(AES-GCM, AAD=roomId, 평문 문 하나, 열람 기록)을 거울로. 인프라가 이미 있어 추가 비용 0.
+- 소유자만(A). 원문 "그 아래는 항목 자체가 안 보이도록"이 identity 스코프(관리자 허용)보다 엄격한 뜻. 관리자에게 열 땐 READ_SCOPE_DENY 한 줄.
+- 유출 경로 열두 곳(select 없는 findMany: 엑셀·백업·목록·수납 등)은 lib/prisma 전역 omit 한 줄로 닫는다. 백업 JSON 에 마스터키가 안 들어가는 것은 의도(백업 한 장이 전 호실 출입 코드가 되면 안 됨). 복원 시 미복원 고지.
+- 프리즘 인라인 편집은 새 패턴 아님: RoomCleaningPanel 청소 등록 토글 폼·DueDayPermanentChangeWidget 변경 토글·panelFormStyles 정본. 가이드 §10 --cream-soft 위 secondary 금지라 폼 상자 안은 [취소 ghost][저장 primary].
+- 복사 버튼 없음(도어락에 손으로 누르는 값, 클립보드는 기기 간 동기화로 새는 통로). 입력은 type=text(password 는 오타 저장 사고).
+- RoleContext 폴백이 OWNER 라 위젯 마운트는 useCanReadScope('security') && doorMasterKeySet !== null 두 겹(fail closed).
+- getRoomDetail 이 propertyId 없이 id 로만 읽던 것을 이번에 격리(부수 봉합, 화면 불변).

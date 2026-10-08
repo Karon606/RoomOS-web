@@ -2,14 +2,17 @@ import 'server-only'
 
 // 개인정보 암복호 정본. AES-256-GCM, 키는 환경변수 STAYEUM_PII_KEY(base64 32바이트) 하나다.
 //
-// 저장 형식은 `v1:<iv>:<tag>:<ct>` 이고 AAD 로 입주자 id 를 묶는다. AAD 를 묶는 이유는
-// 암호문 한 덩어리를 다른 입주자 행에 옮겨 붙이는 것을 복호 단계에서 실패로 만들기 위해서다.
+// 저장 형식은 `v1:<iv>:<tag>:<ct>` 이고 AAD 로 그 값이 사는 행의 id 를 묶는다(입주자 id, 마스터키는
+// `room:<방 id>`). AAD 를 묶는 이유는 암호문 한 덩어리를 다른 행에 옮겨 붙이는 것을 복호 단계에서
+// 실패로 만들기 위해서다.
 //
 // 키가 없으면 저장을 명시적으로 실패시킨다. 평문으로 조용히 떨어지는 경로는 두지 않는다.
 // 그 한 줄이 있으면 키를 등록하지 않은 환경에서 평문이 DB 에 그대로 쌓이고, 아무도 모른다.
 //
-// 평문을 꺼내는 문은 readStoredForeignRegNo 하나다. decryptPii 는 이 파일 밖에서 부르지 않는다.
-// scripts/check-pii-plaintext.ts 축 D 가 그 명단을 지킨다.
+// 평문을 꺼내는 문은 둘이다. 외국인등록번호의 readStoredForeignRegNo, 도어락 마스터키의
+// readStoredRoomMasterKey(2026-10-08). decryptPii 는 이 파일 밖에서 부르지 않는다.
+// scripts/check-pii-plaintext.ts 축 D 가 그 명단을 지키고, 마스터키 문의 호출처는
+// scripts/check-master-key-axis.mjs 가 한 파일(room-manage/masterKeyActions)로 묶는다.
 
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
 import { maskForeignRegNo } from '@/lib/foreignRegNo'
@@ -77,7 +80,7 @@ export function storeForeignRegNo(digits: string, tenantId: string): string {
 }
 
 /**
- * 평문을 꺼내는 유일한 문. 복호에 실패하면 null 이다(키 교체·행 이동·손상).
+ * 외국인등록번호 평문을 꺼내는 유일한 문. 복호에 실패하면 null 이다(키 교체·행 이동·손상).
  * 이 함수를 부르는 곳은 감지망 축 D 의 명단에 올라 있어야 한다.
  */
 export function readStoredForeignRegNo(enc: string | null | undefined, tenantId: string): string | null {
@@ -102,4 +105,26 @@ export function maskStoredForeignRegNo(enc: string | null | undefined, tenantId:
 export function foreignRegNoFact(plain: string | null | undefined): string | null {
   if (!plain) return null
   return `${maskForeignRegNo(plain)}#${piiFingerprint(plain)}`
+}
+
+// ── 도어락 마스터키 전용 문 (2026-10-08) ─────────────────────────
+
+// AAD 는 `room:<방 id>` 다. 외국인등록번호는 입주자 id 를 맨몸으로 쓰는데, 여기에 같은 꼴(맨 id)을
+// 쓰면 두 문이 같은 AAD 공간을 나눠 쓴다. 라벨을 붙여 '이 암호문은 방의 마스터키다' 까지 묶어 둔다.
+function roomMasterKeyAad(roomId: string): string {
+  return `room:${roomId}`
+}
+
+/** 저장할 암호문. 길이·공백 정리는 부르는 쪽(masterKeyActions)이 끝냈다는 전제다. */
+export function storeRoomMasterKey(plain: string, roomId: string): string {
+  return encryptPii(plain, roomMasterKeyAad(roomId))
+}
+
+/**
+ * 마스터키 평문을 꺼내는 유일한 문. 복호에 실패하면 null 이다(키 교체·행 이동·손상).
+ * 부르는 곳은 호실 프리즘의 revealRoomMasterKey 하나이고, 그 호출은 열람 기록을 남긴다.
+ */
+export function readStoredRoomMasterKey(enc: string | null | undefined, roomId: string): string | null {
+  if (!enc) return null
+  try { return decryptPii(enc, roomMasterKeyAad(roomId)) } catch { return null }
 }

@@ -11,7 +11,9 @@ const SOFT_DELETE_READ_OPS = new Set(['findMany', 'findFirst', 'findFirstOrThrow
 
 function createPrismaClient() {
   const adapter = new PrismaPg({ connectionString })
-  return new PrismaClient({ adapter }).$extends({
+  // 도어락 마스터키 암호문은 전역에서 뺀다 — select 없이 방을 읽는 자리 열두 곳(엑셀·백업·목록·수납 등)에
+  // 암호문이 딸려 나가지 않게 하는 한 줄이다. 이 칸은 명시 select 로만 읽는다(lib/pii readStoredRoomMasterKey).
+  return new PrismaClient({ adapter, omit: { room: { doorMasterKeyEnc: true } } }).$extends({
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {

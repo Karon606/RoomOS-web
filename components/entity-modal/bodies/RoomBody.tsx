@@ -5,6 +5,7 @@
 // "데이터 조합으로 발현되는 뷰" 의 첫 사례.
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { RoomCleaningPanel } from '@/components/entity-modal/widgets/RoomCleaningPanel'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -14,6 +15,7 @@ import { PhotoStrip } from '../widgets/PhotoStrip'
 import { RoomBasicInfo } from '../widgets/RoomBasicInfo'
 import { RoomSpatialInfo } from '../widgets/RoomSpatialInfo'
 import { MemoSection } from '../widgets/MemoSection'
+import { RoomMasterKeyInfo } from '../widgets/RoomMasterKeyInfo'
 import { RoomExpenses } from '../widgets/RoomExpenses'
 import { RoomStayHistory } from '../widgets/RoomStayHistory'
 import { RoomRequests } from '../widgets/RoomRequests'
@@ -35,12 +37,19 @@ export function RoomBody({ roomId, month, onApplyScheduledNow, rooms, onSelectRo
   /** 지금 보는 방이 그 사람의 추가 계약 방일 때의 한 줄. 메인 계약 방이면 undefined. */
   subLeaseNote?: string
 }) {
+  const router = useRouter()
   const [room, setRoom] = useState<RoomDetail | null>(null)
+  // 이 면 안에서 고친 값(메모·도어락)을 다시 읽는 카운터. 올리면 아래 조회가 한 번 더 돈다.
+  // 앞 조회의 응답은 active 가 꺼져 버려지므로, 연달아 고쳐도 마지막 값만 선다.
+  const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
     getRoomDetail(roomId, month).then(d => { if (active && d) setRoom(d as RoomDetail) })
     return () => { active = false }
-  }, [roomId, month])
+  }, [roomId, month, reloadKey])
+  // 프리즘 안에서 고친 뒤 — 이 면은 다시 읽고, 뒤에 깔린 호실 관리 목록은 router.refresh 로 맞춘다
+  // (예정 가격 즉시 적용과 같은 흐름이다).
+  const handleChanged = () => { setReloadKey(k => k + 1); router.refresh() }
 
   if (!room) return <SkeletonRows rows={5} className="py-4" />
 
@@ -65,7 +74,8 @@ export function RoomBody({ roomId, month, onApplyScheduledNow, rooms, onSelectRo
       {subLeaseNote && <p className="mb-2.5 text-xs text-[var(--warm-muted)]">{subLeaseNote}</p>}
       {/* 방을 열고 묻는 순서대로 세운다(운영자 지적 2026-08-27 — "정돈된 느낌이 아니야").
           어떻게 생겼나(사진) -> 지금 쓸 수 있나(현재 상태) -> 다음은 누구인가(거주 이력)
-          -> 어떤 방이고 얼마인가(방 정보) -> 무슨 일이 있었나(메모·지출·작업·요청).
+          -> 어떤 방이고 얼마인가(방 정보) -> 문은 어떻게 여나(도어락, 소유자만)
+          -> 무슨 일이 있었나(메모·지출·작업·요청).
 
           **2026-08-11 지시("기본정보 바로 다음이 거주 이력")는 그대로 지켜진다.** 그때의
           '기본정보'가 지금 '현재 상태'이고, 거주 이력은 그 바로 다음이다. 오히려 위로 올라갔다 —
@@ -81,7 +91,10 @@ export function RoomBody({ roomId, month, onApplyScheduledNow, rooms, onSelectRo
         <RoomBasicInfo room={room} />
         <RoomStayHistory roomId={roomId} />
         <RoomSpatialInfo room={room} onApplyScheduledNow={onApplyScheduledNow} />
-        <MemoSection memo={room.memo} />
+        {/* 쓰는 두 위젯에는 받아 온 데이터의 방 id(room.id)를 넘긴다. 방을 바꾼 직후에는 room 이 아직
+            앞 방 것이라, 진입 roomId 를 넘기면 앞 방의 메모가 새 방 이름으로 저장될 수 있다. */}
+        <RoomMasterKeyInfo roomId={room.id} roomNo={room.roomNo} doorMasterKeySet={room.doorMasterKeySet} onChanged={handleChanged} />
+        <MemoSection memo={room.memo} roomId={room.id} onChanged={handleChanged} />
         <RoomExpenses roomId={roomId} />
         {/* 작업 이력은 지출 다음에 둔다 — 작업은 곧 돈이 나가는 일이라 지출과 붙는 편이 읽힌다. */}
         <RoomCleaningPanel roomId={roomId} />

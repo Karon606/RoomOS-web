@@ -22,11 +22,16 @@ export function canEditScope(role: Role, scope: WriteScope): boolean {
 // identity — 신원번호(외국인등록번호). 금액과 따로 끊는다. 금액은 '업무상 볼 수 있는가' 의 문제지만
 // 신원번호는 유출되면 되돌릴 방법이 없고, 스태프가 그 번호로 할 업무가 없다. 그래서 계약을 쓰는
 // 역할(OWNER·MANAGER)만 남기고 STAFF 와 LIMITED_STAFF 를 함께 막는다. 마스킹조차 안 내려간다.
-export type ReadScope = 'money' | 'identity'
+//
+// security = 도어락 마스터키, 소유자만(운영자 결정 2026-10-08). 신원번호보다 한 단 좁다. 입주자가
+// 있는 방 문을 여는 번호라, 새면 현장에서 도어락을 다시 맞추기 전까지 되돌릴 길이 없다.
+// 그래서 계약을 쓰는 관리자(MANAGER)까지 막는다. 막힌 역할에는 등록 여부도 안 내려간다.
+export type ReadScope = 'money' | 'identity' | 'security'
 
 const READ_SCOPE_DENY: Partial<Record<Role, ReadonlySet<ReadScope>>> = {
-  STAFF: new Set(['identity']),
-  LIMITED_STAFF: new Set(['money', 'identity']),
+  MANAGER: new Set(['security']),
+  STAFF: new Set(['identity', 'security']),
+  LIMITED_STAFF: new Set(['money', 'identity', 'security']),
 }
 
 export function canReadScope(role: Role, scope: ReadScope): boolean {

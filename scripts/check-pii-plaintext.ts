@@ -7,10 +7,13 @@
 //
 //   축 A — tenants.foreignRegNoEnc 전 행이 `v1:` 접두어인가.
 //          평문이 그대로 들어갔거나 형식이 갈린 행을 잡는다.
+//   축 A2 — rooms.doorMasterKeyEnc(도어락 마스터키, 2026-10-08) 전 행이 null 이거나 `v1:` 접두어인가.
+//          같은 lib/pii 암호문 축이라 같은 그물에 단다. 소스 쪽 축은 scripts/check-master-key-axis.mjs 다.
 //   축 B — 발급본 박제(issuedSnapshot)·링크 스냅샷(templateSnapshot) JSON 에 13자리 등록번호가 있는가.
 //          박제는 마스킹 + 지문만, 스냅샷은 등록 여부 플래그만 담아야 한다.
 //   축 C — 내보내기·가져오기 경로와 로그 문장이 이 컬럼을 다루는가(소스 검사).
 //   축 D — 복호 문이 늘었는가. decryptPii 는 lib/pii 안에서만, 평문 게터는 명단 안에서만 불린다.
+//          평문 게터는 둘이다 — readStoredForeignRegNo(명단 다섯), readStoredRoomMasterKey(명단 하나).
 //   축 E — 위 B 탐지기가 실제로 발화하는가(합성 표본 역주입). 정규식이 죽으면 축 B 는 영원히 통과한다.
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
@@ -85,6 +88,18 @@ async function main() {
     violations.push(`[저장] ${t.name} 의 외국인등록번호가 v1: 암호문이 아니다 — 평문이 그대로 들어갔을 수 있다(tenant ${t.id})`)
   }
 
+  // ── 축 A2 — 마스터키 저장 형식 ─────────────────────────────
+  // 이 스크립트의 클라이언트는 lib/prisma 가 아니라 전역 omit 이 없다. 그래도 select 로 칸을 명시한다.
+  // 출력에는 방 번호와 id 만 싣는다 — 값이 평문이면 감지망 출력이 곧 유출이 된다.
+  const keyedRooms = await prisma.room.findMany({
+    where: { doorMasterKeyEnc: { not: null } },
+    select: { id: true, roomNo: true, doorMasterKeyEnc: true },
+  })
+  for (const r of keyedRooms) {
+    if (r.doorMasterKeyEnc?.startsWith('v1:')) continue
+    violations.push(`[저장] ${r.roomNo}호 의 도어락 마스터키가 v1: 암호문이 아니다 — 평문이 그대로 들어갔을 수 있다(room ${r.id})`)
+  }
+
   // ── 축 B — 박제·스냅샷 JSON ─────────────────────────────────
   const files = await prisma.contractFile.findMany({
     where: { issuedSnapshot: { not: Prisma.DbNull } },
@@ -138,6 +153,10 @@ async function main() {
   ])
   // 마스킹만 쓰는 자리(입주자 목록·상세 카드)는 여기 없다. 그쪽은 maskStoredForeignRegNo 라
   // 평문이 함수 밖으로 나오지 않는다. 명단은 '평문이 실제로 손에 잡히는 자리' 만 담는다.
+  // 도어락 마스터키의 평문 게터 명단 — 소유자 [보기] 한 자리뿐이다(2026-10-08).
+  const MASTER_KEY_READERS = new Map<string, string>([
+    [join('app', '(app)', 'room-manage', 'masterKeyActions.ts'), '호실 프리즘 [보기](revealRoomMasterKey) — 열람 기록을 남기는 유일한 문'],
+  ])
 
   for (const f of SRC) {
     const s = stripComments(read(f) ?? '')
@@ -146,6 +165,9 @@ async function main() {
     }
     if (/\breadStoredForeignRegNo\s*\(/.test(s) && f !== PII_CANON && !PLAINTEXT_READERS.has(f)) {
       violations.push(`[복호] ${f} 가 평문 게터(readStoredForeignRegNo)를 부른다 — 명단에 없는 자리다. 필요하면 감지망 명단에 사유와 함께 올린다`)
+    }
+    if (/\breadStoredRoomMasterKey\s*\(/.test(s) && f !== PII_CANON && !MASTER_KEY_READERS.has(f)) {
+      violations.push(`[복호] ${f} 가 마스터키 평문 게터(readStoredRoomMasterKey)를 부른다 — 명단에 없는 자리다. 필요하면 감지망 명단에 사유와 함께 올린다`)
     }
   }
   const piiSrc = read(PII_CANON)
@@ -165,7 +187,7 @@ async function main() {
     for (const v of violations) console.error('  - ' + v)
     process.exit(1)
   }
-  console.log(`[신원번호 평문] 암호문 ${tenants.length}행 · 박제 ${files.length}건 · 링크 ${links.length}건 / 위반 0건`)
+  console.log(`[신원번호 평문] 암호문 ${tenants.length}행 · 마스터키 ${keyedRooms.length}행 · 박제 ${files.length}건 · 링크 ${links.length}건 / 위반 0건`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
