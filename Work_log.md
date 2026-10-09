@@ -6789,3 +6789,9 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 부수 봉합: getRoomDetail 이 세션만 보고 방 id 로만 읽던 것을 영업장 격리(findFirst propertyId)로.
 - 감지망 check-master-key-axis 7축(역주입 전부 빨강) + test-room-master-key 19건 + check-pii-plaintext 축 A2. 게이트 tsc 0 · verify:fast · eslint 신규 0. knowledge/room-master-key 신설.
 - 웹디자이너 패스: 차단 1(쓰다 만 메모·마스터키가 프리즘 닫힘 확인창을 못 탐, markDirty 두 위젯), 권고(--cream-soft 면 취소 subtle, 헤더 버튼 secondary 통일 + 드러난 상태에도 [변경], 적용취소 문형 등록/지움/변경 분기, 지우기 확인창 제목에 호실·6초 한정 고지, Section 액션 슬롯 행 높이 44 유지로 점프 제거), 사소(라벨 묶음·14px 값·가린 값 가운뎃점·'마스터키 지움'·placeholder+autoFocus).
+
+## 2026-10-09 지출 단위 확인창: 빈 단위 카드는 이력 단위로 묻고 같은 바꿈은 한 번에 적용 (운영자 승인)
+- 원인: 재고 카드 qtyUnit null 은 '어떤 단위든 받는 카드'(병합 looseMatch)라 getUnitTrackedInfo 가 빼 버려, 한 지출의 60L(카드 '매')은 묻고 100L(null)은 안 물었다.
+- 수정: lib/unitMismatch(dominantUnit 최빈·동률 최근, groupUnitMismatches 같은 쌍·근거 묶음), getUnitTrackedInfo 가 개수 추적 null 카드에 이력 최빈 단위(source 'history')를 돌려줌, FinanceClient 확인창이 묶음 단위로 한 번 묻고 전부 적용(문장은 card/history 로 갈림).
+- 데이터: fix-bag-unit-1009 --apply — 10/9 100L 지출 '개'→'매'(detail 포함), 폐기물 처리비 null 카드 넷 '매'. 되돌리기 scripts/.fix-bag-unit-1009-undo-1791522459539.json.
+- 그물: test-unit-mismatch 25건, check-unit-mismatch-wiring(역주입 전부 빨강), check-qty-card-unit-gap(verify:db, 적용 전 3건 → 적용 뒤 0건). 범위 밖: 지출 수정 경로의 단위 확인창 부재(기존).

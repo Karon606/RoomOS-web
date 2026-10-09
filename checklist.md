@@ -1635,3 +1635,11 @@ B(1차 셋만 정본, 계약서 경로 셋은 드라이런만). 확대 없음.
 - [x] 감지망: test-room-master-key · check-master-key-axis(7축) · check-pii-plaintext 축 A2 · 역주입 5종
 - [x] 게이트(tsc · verify:fast · eslint 신규 0) · 웹디자이너 패스(차단 1 markDirty + 권고 5 + 사소 5 반영) · knowledge/room-master-key · Work_log · 커밋
 - [ ] 배포 후 실기 확인(운영자)
+
+# 지출 단위 확인창 — 빈 단위 카드 이력 기준 + 묶음 적용 (2026-10-09, 운영자 승인 추천안)
+운영자 원문: "단위를 '매'로 바꾸겠다고해서 그렇게 했는데 하나만 바뀌었네? … 등록하는 아이템 모두 적용되도록 수정해줘. 지금 '개'로 되어있는 봉투를 '매'로 바꿔주고"
+- [x] lib/unitMismatch(dominantUnit·groupUnitMismatches) · getUnitTrackedInfo 이력 폴백(source) · FinanceClient 묶음 확인창
+- [x] 정정 fix-bag-unit-1009 --apply(지출 1 + 카드 4, 되돌리기 JSON) · 적용 뒤 check-qty-card-unit-gap 0건
+- [x] 감지망 test-unit-mismatch 25 · check-unit-mismatch-wiring(역주입 축마다 빨강) · check-qty-card-unit-gap(verify:db)
+- [x] 게이트(tsc · verify:fast · eslint 신규 0) · knowledge/domain-inventory · Work_log · 커밋
+- [ ] 배포 후 실기 확인(운영자): 60L·100L 두 줄 '개'로 저장 → 확인창 한 번("외 1개 품목") → 둘 다 '매'

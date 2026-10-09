@@ -9,6 +9,7 @@ import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlia
 import { computeSetHint } from '@/lib/setHint'
 import { resolveSingleItemFields } from '@/lib/expenseItemSource'
 import { storedUnitBasis, resolveUnitBasis, type UnitBasis } from '@/lib/unitBasis'
+import { dominantUnit, type UnitSource } from '@/lib/unitMismatch'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { splitQuickPickRows } from '@/lib/itemQuickPicks'
 import { randomUUID } from 'node:crypto'
@@ -3152,17 +3153,38 @@ export async function getSpecTrackedInfo(labels: string[]): Promise<Record<strin
 // 재고 카드의 단위는 '롤'인데 지출을 '개'로 적으면, 수령 대기·잔량 매칭이 단위 비교에서 그 구매를
 // 조용히 걸러 낸다(overview pendingPurchases — 양쪽 단위가 다 있으면 같아야 잡힌다). 화면은 멀쩡해
 // 보이는데 수령 대기에만 안 뜨는 종류라, 위 용량 물음(getSpecTrackedInfo)과 같은 문법으로
-// 저장 직전에 한 번 묻는다. 카드가 없거나 카드 단위가 비어 있으면 침묵한다.
-export async function getUnitTrackedInfo(category: string, labels: string[]): Promise<Record<string, { qtyUnit: string }>> {
+// 저장 직전에 한 번 묻는다. 카드가 없으면 침묵한다.
+//
+// 카드 단위가 비어 있는 개수 추적 카드는 지출 이력의 최빈 단위로 대신 묻는다(2026-10-09 재활용품수거봉투
+// 사건, 운영자 승인). 품목 병합으로 '어떤 단위든 받는 카드'가 되면 qtyUnit 이 null 이 되는데, 종전에는
+// 그 카드를 통째로 빼서 같은 지출의 60L 은 묻고 100L 은 묻지 않았다. 이력이 없으면 물을 근거가 없어 침묵한다.
+// 용량으로 세는(spec) 카드는 단위가 비어도 빼 둔다. 수량 단위가 잔량 집계에 쓰이지 않는다.
+export async function getUnitTrackedInfo(category: string, labels: string[]): Promise<Record<string, { qtyUnit: string; source: UnitSource }>> {
   const { propertyId } = await requirePropertyAccess()
   const names = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
   if (!names.length) return {}
   const rows = await prisma.trackedItem.findMany({
-    where: { propertyId, category, label: { in: names }, isArchived: false, NOT: { qtyUnit: null } },
-    select: { label: true, qtyUnit: true },
+    where: { propertyId, category, label: { in: names }, isArchived: false },
+    select: { label: true, qtyUnit: true, trackUnit: true },
   })
-  const out: Record<string, { qtyUnit: string }> = {}
-  for (const r of rows) if (r.qtyUnit && r.qtyUnit.trim()) out[r.label] = { qtyUnit: r.qtyUnit }
+  const out: Record<string, { qtyUnit: string; source: UnitSource }> = {}
+  const blankQtyCards: string[] = []
+  for (const r of rows) {
+    if (r.qtyUnit && r.qtyUnit.trim()) out[r.label] = { qtyUnit: r.qtyUnit, source: 'card' }
+    else if (r.trackUnit === 'qty') blankQtyCards.push(r.label)
+  }
+  if (blankQtyCards.length) {
+    // 오래된 순으로 넘긴다. dominantUnit 은 동률이면 뒤(최근)를 고른다.
+    const hist = await prisma.expense.findMany({
+      where: { propertyId, category, itemLabel: { in: blankQtyCards }, qtyUnit: { not: null } },
+      select: { itemLabel: true, qtyUnit: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    for (const label of blankQtyCards) {
+      const unit = dominantUnit(hist.filter(h => h.itemLabel === label).map(h => h.qtyUnit ?? ''))
+      if (unit) out[label] = { qtyUnit: unit, source: 'history' }
+    }
+  }
   return out
 }
 
