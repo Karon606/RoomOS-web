@@ -43,6 +43,8 @@ const CoralTag = ({ children }: { children: ReactNode }) => (
 )
 
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
+// 같은 구매 계보 한 줄 순수층(짝을 카드 단위로 접는다) — 진리표 test-asset-disposal ⑮
+import { sameBuyIndex, lineageLine } from './lineage'
 import { fmtRoomNo } from '@/lib/roomNo'
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
@@ -1484,38 +1486,16 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         const logScope = specOf(it)
           ? `이 품목 · ${specOf(it)} · 최근 30건`
           : places.some(p => specOf(p)) ? '이 품목 · 규격 미기록분 · 최근 30건' : '이 품목 · 최근 30건'
-        // 같은 구매 묶음(allocationGroupId) 색인. 구매 내역 행 밑 계보 한 줄이 쓴다(신고 3e861137,
-        // "몇 개를 구매했는지 … 2개의 행방은 어디로 갔는지 추적 확인이 안돼").
-        // 색인은 **allItems 전수**로 만든다. 한 구매가 쪼개지면 짝은 다른 버킷(수령 대기·방·공용부·
-        // 공용 자재·미배정)에 가 있어서, 한 버킷만 보면 짝이 빠지고 합계가 거짓이 된다.
-        // 묶음 id 는 분할 때만 생긴다. 통째로 옮긴 것은 묶음이 없고 그 행방은 배정 변경 이력이 말한다.
-        // 계보 줄은 '지금 어디에 몇 개', 이력은 '언제 어디서 어디로'라 셋째 축(이벤트 표)을 만들지 않는다.
-        const sameBuy = new Map<string, { item: AssetItem; row: AssetItem['breakdown'][number] }[]>()
-        for (const x of allItems) for (const row of x.breakdown) {
-          if (row.groupId) (sameBuy.get(row.groupId) ?? sameBuy.set(row.groupId, []).get(row.groupId)!).push({ item: x, row })
-        }
-        const lineageOf = (b: AssetItem['breakdown'][number]): string | null => {
-          const all = b.groupId ? sameBuy.get(b.groupId) : undefined
-          // 묶음 없는 행, 짝이 안 보이는 행은 줄을 안 세운다. 그 행은 종전과 한 픽셀도 안 다르다.
-          if (!all || all.length < 2) return null
-          // 단위가 섞이면 합계 숫자가 거짓말이 된다(배치 현황 머리와 같은 규칙). 실측 76묶음 중 2건이
-          // 장판몰딩(m·개)이다. 짝이 모집단 밖이라 합이 틀리는 경우도 같은 태도다. `외 N개`를 지어내지 않는다.
-          const units = new Set(all.map(p => p.item.qtyUnit ?? '개'))
-          if (units.size > 1) return null
-          const unit = [...units][0]
-          // 수량 미기록 행은 1로 센다(liveUnits·게이트·분할과 같은 셈법). 합계는 폐기 행까지 전부다.
-          // 돈의 축이 안 줄듯 '같은 구매'도 산 그대로의 수와 금액이다.
-          const n = (r: { qty: number | null }) => r.qty ?? 1
-          const total = `같은 구매 ${fmtQty(all.reduce((s, p) => s + n(p.row), 0))}${unit} ${won(all.reduce((s, p) => s + p.row.amount, 0))}`
-          const pairs = all.filter(p => p.row.id !== b.id).map(p => {
-            const gone = p.row.disposed ? p.item.disposals.find(d => d.id === p.row.id) : undefined
-            const tag = gone ? ` (${gone.disposedAt.slice(5)} 폐기)`
-              : data.pending.some(x => x.id === p.item.id) ? ' (수령 대기)'
-              : p.row.assignedAt ? ` (${p.row.assignedAt.slice(5)} 배정)` : ''
-            return `${curPlace(p.item)} ${fmtQty(n(p.row))}${unit}${tag}`
-          })
-          return [total, `여기 ${fmtQty(n(b))}${unit}`, ...pairs].join(' · ')
-        }
+        // 같은 구매 묶음(allocationGroupId)의 계보 한 줄(신고 3e861137, "몇 개를 구매했는지 … 2개의 행방은
+        // 어디로 갔는지 추적 확인이 안돼"). 조립은 순수층 lineage.ts(진리표 test-asset-disposal ⑮)이고 화면은
+        // 정본(curPlace·수령 대기·fmtWon)을 넘기기만 한다. 색인은 **allItems 전수**다. 짝이 다른 버킷에 가 있다.
+        const sameBuy = sameBuyIndex(allItems)
+        const lineageCtx = { placeOf: curPlace, isPending: (x: AssetItem) => data.pending.some(p => p.id === x.id), won, fmtQty }
+        // 짝을 카드 단위로 접으므로 한 카드 안의 같은 묶음 행은 줄이 똑같다. 그 묶음의 첫 행(최근순) 밑에만 세운다.
+        const lineageRow = new Map<string, string>()
+        for (const b of it.breakdown) if (b.groupId && !lineageRow.has(b.groupId)) lineageRow.set(b.groupId, b.id)
+        const lineageOf = (b: AssetItem['breakdown'][number]): string | null =>
+          b.groupId && lineageRow.get(b.groupId) === b.id ? lineageLine(sameBuy.get(b.groupId), it.id, lineageCtx) : null
         return (
           <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md" bodyRef={detailBodyRef}>
             <div className="space-y-4">

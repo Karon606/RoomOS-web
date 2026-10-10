@@ -19,6 +19,7 @@ import {
   type RawAsset, type DisposalGateRow,
 } from '../app/(app)/inventory/assets/aggregate'
 import { roomsLabel, roomChipText } from '../app/(app)/finance/allocPlaceLabel'
+import { sameBuyIndex, lineageLine } from '../app/(app)/inventory/assets/lineage'
 
 let pass = 0
 const fails: string[] = []
@@ -316,6 +317,103 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
   eq('진짜 미배정 라벨은 수량과 함께', roomsLabel([r(null, null, 3), r(null, null, 1)]), '미배정 4개')
   eq('수량 없는 미배정', roomsLabel([r(null, null, null, null)]), '미배정')
   eq('같은 공용부 두 행은 한 곳', roomChipText([r(null, '창고'), r(null, '창고')]), '공용부 1곳')
+}
+
+// ── ⑮ 계보 한 줄 — 짝을 행이 아니라 카드로 접는다(2026-10-10 디자이너 패스 후속, 운영자 승인) ──────
+//    행 단위로 늘어놓으면 같은 자리가 한 줄에 두 번 섰다(`504호 1개 (09-16 폐기) · 504호 1개 (06-30 배정)`).
+//    지금 카드의 행은 `여기` 하나로, 다른 카드는 카드마다 한 토막. 날짜는 형제 블록과 같은 YY-MM-DD.
+{
+  const G = 'a1b2c3d4-0000-4000-8000-000000000000'
+  const ctx = {
+    placeOf: (x: { roomNo: string | null; locationName: string | null }) => (x.roomNo ? `${x.roomNo}호` : x.locationName ?? '미배정(여분)'),
+    isPending: () => false,
+    won: (n: number) => `${n.toLocaleString('en-US')}원`,
+    fmtQty: (n: number) => String(n),
+  }
+  const hose = (o: Partial<RawAsset>) => row({ itemLabel: '고압호스', specValue: 60, specUnit: 'cm', amount: 2250, allocationGroupId: G, ...o })
+  const card = (rows: RawAsset[]) => aggregateAssets(rows)[0]
+
+  // 고압호스 9/11 — 미배정 23개 + 5층 공용 화장실 1개.
+  const spare = card([hose({ roomId: null, roomNo: null, assignedAt: null, qtyValue: 23, amount: 51750 })])
+  const wc = card([hose({ roomId: null, roomNo: null, locationId: 'loc5', locationName: '5층 공용 화장실', assignedAt: '2026-09-16' })])
+  let idx = sameBuyIndex([spare, wc])
+  eq('미배정 카드에서 본 9/11 묶음', lineageLine(idx.get(G), spare.id, ctx), '같은 구매 24개 54,000원 · 여기 23개 · 5층 공용 화장실 1개 (26-09-16 배정)')
+  eq('공용부 카드에서 본 9/11 묶음', lineageLine(idx.get(G), wc.id, ctx), '같은 구매 24개 54,000원 · 여기 1개 · 미배정(여분) 23개')
+
+  // 504호 — 같은 묶음 두 행(살아 있는 1, 9/16 폐기 1)이 한 카드. 같은 자리는 한 토막이고 폐기는 쉼표 뒤 부기.
+  const r402 = card([hose({ roomId: 'r402', roomNo: '402', qtyValue: 2, amount: 4500, assignedAt: '2026-06-25' })])
+  const r504 = card([
+    hose({ roomId: 'r504', roomNo: '504', assignedAt: '2026-06-30' }),
+    hose({ roomId: 'r504', roomNo: '504', assignedAt: '2026-06-30', disposedAt: '2026-09-16', disposalReason: '교체' }),
+  ])
+  const r519 = card([hose({ roomId: 'r519', roomNo: '519', qtyValue: 2, amount: 4500, assignedAt: '2026-07-23' })])
+  idx = sameBuyIndex([r402, r504, r519])
+  eq('504호 카드는 여기에 살아 있는 몫과 폐기를 함께', lineageLine(idx.get(G), r504.id, ctx),
+    '같은 구매 6개 13,500원 · 여기 1개, 폐기 1개 (26-09-16) · 402호 2개 (26-06-25 배정) · 519호 2개 (26-07-23 배정)')
+  eq('다른 카드에서 본 504호는 한 토막', lineageLine(idx.get(G), r402.id, ctx),
+    '같은 구매 6개 13,500원 · 여기 2개 · 504호 1개 (26-06-30 배정), 폐기 1개 (26-09-16) · 519호 2개 (26-07-23 배정)')
+
+  // 한 카드 안에서 배정일이 갈리면 날짜를 안 쓴다(대표 하나를 골라 지어내지 않는다).
+  const r502 = card([hose({ roomId: 'r502', roomNo: '502', assignedAt: '2026-08-06' }), hose({ roomId: 'r502', roomNo: '502', assignedAt: '2026-09-16', date: '2026-09-12' })])
+  idx = sameBuyIndex([spare, r502])
+  eq('배정일이 갈린 카드는 날짜 없이 합친다', lineageLine(idx.get(G), spare.id, ctx), '같은 구매 25개 56,250원 · 여기 23개 · 502호 2개')
+
+  // 폐기만 남은 카드 — 다른 카드에서는 `{자리} 폐기 N개`, 그 카드 자신에서는 `여기 폐기 N개`.
+  const gone = card([hose({ roomId: 'r503', roomNo: '503', disposedAt: '2026-09-20', disposalReason: '파손' })])
+  idx = sameBuyIndex([spare, gone])
+  eq('폐기만 남은 짝', lineageLine(idx.get(G), spare.id, ctx), '같은 구매 24개 54,000원 · 여기 23개 · 503호 폐기 1개 (26-09-20)')
+  eq('폐기만 남은 지금 카드', lineageLine(idx.get(G), gone.id, ctx), '같은 구매 24개 54,000원 · 여기 폐기 1개 (26-09-20) · 미배정(여분) 23개')
+  // 폐기일이 갈리면 폐기 날짜도 안 쓴다.
+  const gone2 = card([
+    hose({ roomId: 'r503', roomNo: '503', disposedAt: '2026-09-20', disposalReason: '파손' }),
+    hose({ roomId: 'r503', roomNo: '503', disposedAt: '2026-09-25', disposalReason: '파손', date: '2026-09-12' }),
+  ])
+  idx = sameBuyIndex([spare, gone2])
+  eq('폐기일이 갈린 짝은 날짜 없이', lineageLine(idx.get(G), spare.id, ctx), '같은 구매 25개 56,250원 · 여기 23개 · 503호 폐기 2개')
+
+  // 수령 대기 짝은 배정일 대신 (수령 대기).
+  idx = sameBuyIndex([spare, wc])
+  eq('수령 대기 짝', lineageLine(idx.get(G), wc.id, { ...ctx, isPending: (x: { id: string }) => x.id === spare.id }),
+    '같은 구매 24개 54,000원 · 여기 1개 · 미배정(여분) 23개 (수령 대기)')
+
+  // 줄이 안 서는 경우 셋. 묶음 없음 · 이 카드뿐(추적할 행방이 없다) · 단위가 섞임.
+  eq('묶음이 없으면 줄이 없다', lineageLine(undefined, spare.id, ctx), null)
+  idx = sameBuyIndex([r504])
+  eq('같은 묶음이 이 카드에만 있으면 줄이 없다', lineageLine(idx.get(G), r504.id, ctx), null)
+  const meter = card([hose({ roomId: null, roomNo: null, assignedAt: null, qtyUnit: 'm', qtyValue: 3 })])
+  idx = sameBuyIndex([meter, wc])
+  eq('단위가 섞이면 줄이 없다', lineageLine(idx.get(G), wc.id, ctx), null)
+  // 다른 자리가 둘 이상이고 전부 같은 날 배정됐으면 그 날을 `여기` 뒤에 한 번만(SUS 앵글밸브 15A 17곳 같은 날).
+  const a1 = card([hose({ roomId: 'r501', roomNo: '501', assignedAt: '2026-09-16' })])
+  const a2 = card([hose({ roomId: 'r502', roomNo: '502', qtyValue: 3, amount: 6750, assignedAt: '2026-09-16' })])
+  const a3 = card([hose({ roomId: null, roomNo: null, locationId: 'loc5', locationName: '5층 공용 화장실', qtyValue: 2, amount: 4500, assignedAt: '2026-09-16' })])
+  idx = sameBuyIndex([spare, a1, a2, a3])
+  eq('다른 자리 셋이 같은 날이면 날짜를 한 번만', lineageLine(idx.get(G), spare.id, ctx),
+    '같은 구매 29개 65,250원 · 여기 23개 · 나머지 26-09-16 배정 · 501호 1개 · 502호 3개 · 5층 공용 화장실 2개')
+  idx = sameBuyIndex([spare, a1, a2])
+  eq('다른 자리 둘이 같은 날이어도 한 번만', lineageLine(idx.get(G), spare.id, ctx),
+    '같은 구매 27개 60,750원 · 여기 23개 · 나머지 26-09-16 배정 · 501호 1개 · 502호 3개')
+  // 미배정 짝은 배정일이 없는 게 정상이라 판정에서 빠지고 `나머지` 앞에 선다(앵글밸브를 방 카드에서 볼 때).
+  idx = sameBuyIndex([spare, a1, a2, a3])
+  eq('미배정 짝은 나머지 앞에, 방·공용부만 날짜 판정', lineageLine(idx.get(G), a1.id, ctx),
+    '같은 구매 29개 65,250원 · 여기 1개 · 미배정(여분) 23개 · 나머지 26-09-16 배정 · 502호 3개 · 5층 공용 화장실 2개')
+  // 방인데 배정일이 빈 카드(418호)가 있으면 접지 않는다 — 그 날 배정이라고 지어내지 않는다.
+  const a4 = card([hose({ roomId: 'r418', roomNo: '418', qtyValue: 2, amount: 4500, assignedAt: null })])
+  idx = sameBuyIndex([spare, a1, a2, a4])
+  eq('배정일 빈 방이 섞이면 안 접는다', lineageLine(idx.get(G), spare.id, ctx),
+    '같은 구매 29개 65,250원 · 여기 23개 · 501호 1개 (26-09-16 배정) · 502호 3개 (26-09-16 배정) · 418호 2개')
+  // 하나라도 어긋나면 지금 모양 그대로 — 폐기 부기가 있거나 수령 대기가 섞이면 접지 않는다.
+  const a1dead = card([hose({ roomId: 'r501', roomNo: '501', assignedAt: '2026-09-16' }), hose({ roomId: 'r501', roomNo: '501', assignedAt: '2026-09-16', disposedAt: '2026-09-20', disposalReason: '파손' })])
+  idx = sameBuyIndex([spare, a1dead, a2])
+  eq('폐기 부기가 섞이면 날짜를 안 접는다', lineageLine(idx.get(G), spare.id, ctx),
+    '같은 구매 28개 63,000원 · 여기 23개 · 501호 1개 (26-09-16 배정), 폐기 1개 (26-09-20) · 502호 3개 (26-09-16 배정)')
+  idx = sameBuyIndex([wc, a1, a2])
+  eq('수령 대기가 섞이면 날짜를 안 접는다', lineageLine(idx.get(G), wc.id, { ...ctx, isPending: (x: { id: string }) => x.id === a2.id }),
+    '같은 구매 5개 11,250원 · 여기 1개 · 501호 1개 (26-09-16 배정) · 502호 3개 (수령 대기)')
+  // 수량 미기록 행은 1로 센다(liveUnits·게이트·분할과 같은 셈법).
+  const blank = card([hose({ roomId: 'r511', roomNo: '511', qtyValue: null, assignedAt: '2026-09-16' })])
+  idx = sameBuyIndex([spare, blank])
+  eq('수량 미기록 짝은 1로', lineageLine(idx.get(G), spare.id, ctx), '같은 구매 24개 54,000원 · 여기 23개 · 511호 1개 (26-09-16 배정)')
 }
 
 if (fails.length) {

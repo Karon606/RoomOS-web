@@ -683,27 +683,45 @@ function body(src, header) {
 {
   // 1) 계보 색인은 **allItems 전수**다. 한 구매가 쪼개지면 짝은 다른 버킷에 가 있어서 한 버킷만
   //    보면 짝이 빠지고 합계가 거짓이 된다(고압호스 9/11 묶음은 미배정 23개 + 공용부 1개).
-  need('계보 색인을 allItems 전수로 만든다',
-    /for \(const x of allItems\) for \(const row of x\.breakdown\) \{\s*\n\s*if \(row\.groupId\) /.test(client),
+  //    조립은 순수층 lineage.ts(진리표 test-asset-disposal ⑮)이고 화면은 정본을 넘기기만 한다.
+  const lineageSrc = readFileSync('app/(app)/inventory/assets/lineage.ts', 'utf8')
+  need('계보 색인을 allItems 전수로 만든다', /const sameBuy = sameBuyIndex\(allItems\)/.test(client),
     'data.unassigned 같은 한 버킷으로 좁히면 짝이 빠져 `같은 구매 23개`처럼 산 수보다 적게 말한다')
-  // 줄을 조립하는 함수 하나만 잘라 본다(파일 전체로 세면 다른 자리의 같은 글자가 대신 통과시킨다).
-  const linAt = client.indexOf('const lineageOf = ')
-  const linEnd = linAt >= 0 ? client.indexOf("].join(' · ')", linAt) : -1
-  const lin = linAt >= 0 && linEnd > linAt ? client.slice(linAt, linEnd) : ''
-  need('lineageOf 를 찾음', lin.length > 0)
-
-  // 2) 묶음 없는 행·짝 없는 행에는 줄이 **안 선다**. 조건을 걷으면 모든 행이 줄 한 칸을 얻는다.
-  need('묶음 id 가 있는 행만 색인을 찾는다', /const all = b\.groupId \? sameBuy\.get\(b\.groupId\) : undefined/.test(lin))
-  need('짝이 둘 이상일 때만 줄을 세운다', /if \(!all \|\| all\.length < 2\) return null/.test(lin),
-    '조건을 걷으면 혼자인 묶음 행이 `같은 구매 N개 · 여기 N개`라는 빈 줄을 얻는다')
+  need('화면이 계보 조립을 손으로 안 한다(순수층을 부른다)',
+    /import \{ sameBuyIndex, lineageLine \} from '\.\/lineage'/.test(client) && !/같은 구매 \$\{/.test(client),
+    '화면에 손사본을 두면 진리표가 초록인 채 화면은 옛 규칙(행 단위 나열)으로 적는다')
+  need('자리 이름·수령 대기·금액은 화면 정본을 넘긴다',
+    /placeOf: curPlace, isPending: \(x: AssetItem\) => data\.pending\.some\(p => p\.id === x\.id\), won, fmtQty/.test(client),
+    '순수층에서 자리 이름을 다시 만들면 같은 자리가 계보 줄과 칩에서 다른 이름이 된다')
+  // 2) 한 카드 안의 같은 묶음 행은 줄이 똑같으므로(카드 단위로 접는다) 그 묶음의 첫 행 밑에만 선다.
+  need('한 카드에서 같은 묶음 줄은 첫 행에만',
+    /for \(const b of it\.breakdown\) if \(b\.groupId && !lineageRow\.has\(b\.groupId\)\) lineageRow\.set\(b\.groupId, b\.id\)/.test(client)
+    && /b\.groupId && lineageRow\.get\(b\.groupId\) === b\.id \? lineageLine\(sameBuy\.get\(b\.groupId\), it\.id, lineageCtx\) : null/.test(client),
+    '조건을 걷으면 504호 카드의 두 행 밑에 같은 줄이 두 번 선다')
+  // 3) 순수층 — 줄 조건과 접는 키. 진리표가 값을 잠그고 여기서는 모양(조건 한 낱말)을 본다.
+  const lin = body(lineageSrc, 'export function lineageLine(')
+  need('lineageLine 을 찾음', lin.length > 0)
+  need('짝은 카드(item.id)로 접는다', /cards\.get\(p\.item\.id\)/.test(lin),
+    '행(row.id)으로 늘어놓으면 같은 자리가 한 줄에 두 번 선다(`504호 1개 (09-16 폐기) · 504호 1개`)')
+  need('이 카드 말고 다른 카드가 있을 때만 줄을 세운다', /if \(!cards\.has\(hereId\) \|\| cards\.size < 2\) return null/.test(lin),
+    '조건을 걷으면 같은 묶음이 이 카드에만 있을 때 `같은 구매 2개 · 여기 1개, 폐기 1개`라는 행방 없는 줄이 선다')
   need('단위가 섞인 묶음은 줄을 안 세운다', /if \(units\.size > 1\) return null/.test(lin),
     '장판몰딩(m·개) 두 묶음이 그 자리다 — 섞인 단위를 더하면 합계가 거짓말이다')
   need('합계는 묶음 전 행(폐기 포함)이다', /all\.reduce\(\(s, p\) => s \+ p\.row\.amount, 0\)/.test(lin),
     'live 로 좁히면 돈의 축이 폐기로 줄어 산 금액과 안 맞는다')
-  need('계보 줄에 지어낸 `외 N개`가 없다', !/외 \$\{/.test(lin),
+  need('계보 줄에 지어낸 `외 N개`가 없다', !/외 \$\{/.test(lineageSrc),
     '짝이 모집단 밖이면 줄을 안 세운다 — 모르는 수를 지어내지 않는다')
-  need('계보 줄에 화살표가 없다', !/→|->/.test(lin), '§29 화살표는 값 전환 전용이다')
-  need('짝의 자리 이름이 curPlace 정본이다', /\$\{curPlace\(p\.item\)\}/.test(lin))
+  need('계보 줄에 화살표가 없다', !/→|->/.test(lineageSrc), '§29 화살표는 값 전환 전용이다')
+  // 같은 배정일 접기는 다른 자리 둘 이상 · 전부 살아 있는 몫 · 수령 대기 없음일 때만이다. 조건이 풀리면 폐기·수령
+  // 대기 토막에서 날짜가 사라지거나 한 자리뿐인 줄에 `나머지`가 선다(값은 진리표 ⑮가 잠근다).
+  need('같은 배정일 접기 조건', /const sharedDay = placed\.length >= 2 && allLive \? oneDay\(placed\./.test(lin)
+    && /const placed = otherCards\.filter\(ms => ms\[0\]\.item\.roomId \|\| ms\[0\]\.item\.locationId\)/.test(lin)
+    && /ms\.every\(p => !p\.row\.disposed\) && !ctx\.isPending\(ms\[0\]\.item\)/.test(lin),
+    '조건을 걷으면 폐기 부기가 있는 자리까지 날짜를 잃어 그 몫이 언제 들어갔는지 모르게 된다')
+  need('짝의 자리 이름은 넘겨받은 placeOf 다', /ctx\.placeOf\(ms\[0\]\.item\)/.test(lin))
+  // 날짜는 같은 모달의 폐기·분실 이력·배정 변경 이력과 같은 YY-MM-DD(slice(2)). MM-DD 는 해를 넘기면 모호하다.
+  need('계보 날짜는 YY-MM-DD 다', /const yy = \(ymd: string\) => ymd\.slice\(2\)/.test(lineageSrc) && !/slice\(5\)/.test(lineageSrc),
+    'MM-DD 로 두면 12월 구매·1월 배정에서 어느 해인지 모른다(형제 블록은 YY-MM-DD)')
   need('그 줄을 조건부로만 그린다',
     /\{lineage && \(\s*\n\s*<p className="[^"]*\bbasis-full\b[^"]*\bbreak-keep\b[^"]*">\{lineage\}<\/p>/.test(client),
     '조건 없이 그리면 묶음 없는 행의 높이가 바뀐다 — 그 행은 한 픽셀도 안 바뀌어야 한다')
