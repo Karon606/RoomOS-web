@@ -97,7 +97,10 @@ export type AssetItem = {
   disposedQty: number           // 폐기 합계 수량 — liveUnits 와 같은 셈법(미기록 행은 1)
   disposedIds: string[]         // 폐기된 지출 id
   disposals: { id: string; date: string; qty: number | null; amount: number; disposedAt: string; disposalReason: string | null }[]   // 폐기 기록(최근순)
-  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null; disposed: boolean }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
+  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null; disposed: boolean; groupId: string | null; assignedAt: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
+  // breakdown 의 groupId·assignedAt 은 상세의 '같은 구매' 계보 한 줄이 쓴다. 한 구매가 쪼개져
+  // 여러 자리로 갔을 때 지금 어디에 몇 개가 있는지를 그 행 밑에서 말하려면, 행마다 묶음 id 와
+  // 그 조각이 그 자리에 간 날이 실려야 한다. 카드 단위 assignedAt(대표=최근)으로는 짝마다 날이 갈린다.
 }
 
 export type RawAsset = {
@@ -109,6 +112,9 @@ export type RawAsset = {
   isService: boolean               // 서비스·무형(시공비 등) — 방별 비용에 포함, 카드에 칩 표시
   disposedAt: string | null        // null = 지금 설치돼 있음. 값(YYYY-MM-DD) = 그 날짜에 빠짐
   disposalReason: string | null
+  // 같은 구매 묶음 id. 분할(buildSplitOps)이 쪼갤 때만 생기고 분할·병합·폐기·되돌리기가 보존한다.
+  // 통째 이동은 묶음이 없다(그 행방은 배정 변경 이력이 말한다). 표시 전용이라 집계 키에는 안 넣는다.
+  allocationGroupId: string | null
 }
 
 // 순서 편집 맵 — 2계층. label = (category␟itemLabel)→라벨 rank, spec = (category␟itemLabel␟specKey)→규격 rank,
@@ -162,7 +168,7 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
       isCommon: rep.isCommon, isService: rep.isService, assignedAt, liveUnits,
       disposedAt: disposals[0]?.disposedAt ?? null, disposalReason: disposals[0]?.disposalReason ?? null,
       disposedQty, disposedIds: dead.map(r => r.id), disposals,
-      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt }))
+      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt, groupId: r.allocationGroupId, assignedAt: r.assignedAt }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }

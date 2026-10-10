@@ -6809,3 +6809,10 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - scripts/fix-hose-0916-spec.ts(예행/--apply/--revert): 앱 동작 그대로 ① 40cm 배정 이력 되돌리기 + 구매 묶음 접기(미배정 40cm 4개 12,760원 한 줄) ② 60cm 2개 선입선출 배정(7/20 1개 통째, 9/11 24개에서 1개 2,250원 분할, 배정일 9/16, 이력 한 줄). 적용 완료, 되돌리기 scripts/.fix-hose-0916-spec-undo-1791613598071.json. 금액 합계 불변.
 - 결과: 40cm 미배정 4 · 60cm 미배정 23 · 5층 공용 화장실 60cm 2. 생성 경로(배정 화면)는 정상, 규격을 잘못 고른 한 건.
 - 남은 것: 패널 계획(구매 내역 계보 한 줄, 배치 현황 규격별 묶음, 재무 화면 공용부 '미배정' 오표기) 운영자 결정 대기. 신고 3e861137 은 그 뒤 종결.
+
+## 2026-10-10 자재 상세 계보 줄 · 배치 현황 규격별 묶음 · 재무 공용부 라벨 (신고 3e861137 후속, 운영자 승인)
+- 구매 내역 행 밑 계보 줄: 같은 allocationGroupId 짝을 allItems 전수로 찾아 `같은 구매 24개 54,000원 · 여기 23개 · 5층 공용 화장실 1개 (09-16 배정)`. 짝 둘 이상·단위 하나일 때만, 합계는 폐기 포함, 자르지 않고 줄바꿈. aggregate breakdown 에 groupId·assignedAt, getDurableItems select 에 allocationGroupId.
+- 배치 현황: 이름 축 유지, sorted 에서 serializeSpecKey 로 파생 묶음(이 카드 규격 먼저). 하위 머리 `{규격} 지금 N개 · 이 카드의 규격`, 곳 수 없음. 규격 하나면 종전 목록.
+- 재무: getExpenses 가 assignedLocationName(표기 경로) 싣고 allocPlaceLabel 순수층(roomChipText·roomsLabel)이 공용부를 이름으로. 접기는 방에만.
+- 디자이너 패스(독립): 배포 전 필수 5 반영(하위 머리 '지금' 겹침, 계보 줄이 안내문에 붙음 mb-1, 7/20 라벨 접기, 계보 줄 잘림 줄바꿈, 하위 머리 곳 수 합 불일치 제거). 후속 2는 운영자 결정 대기(같은 자리 두 번 접기, 날짜 YY-MM-DD).
+- 그물: check-asset-disposal-wiring ⓞ(역주입 14축 + 바꿔 끼운 4축 빨강 확인), test-asset-disposal 104건. 게이트 tsc 0 · verify:fast · eslint 신규 0. knowledge/domain-inventory '같은 구매의 행방과 규격별 묶음'.

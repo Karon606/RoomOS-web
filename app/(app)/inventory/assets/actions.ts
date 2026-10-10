@@ -104,6 +104,8 @@ export async function getDurableItems(): Promise<AssetsData> {
       isCommonAsset: true, receivedAt: true, assignedAt: true, excludeFromInventory: true,
       // 폐기·분실 — 버킷 분류에는 안 쓴다(폐기 행도 그 방 버킷에 남는다). 가르는 일은 aggregateAssets 안에서만.
       disposedAt: true, disposalReason: true,
+      // 같은 구매 묶음 id — 상세 구매 내역의 계보 한 줄이 쓴다(표시 전용, 버킷·집계 키 무관).
+      allocationGroupId: true,
     },
   })
 
@@ -120,6 +122,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     isCommon: r.isCommonAsset, received: r.receivedAt != null, isService: r.excludeFromInventory,
     assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null,
     disposedAt: r.disposedAt ? kstYmd(r.disposedAt) : null, disposalReason: r.disposalReason,
+    allocationGroupId: r.allocationGroupId,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()

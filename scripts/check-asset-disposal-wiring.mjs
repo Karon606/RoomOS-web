@@ -10,6 +10,8 @@
 // ⓗ 속성으로 찾는 조회들이 폐기 행을 거르는가 ⓘ 교체가 한 트랜잭션인가
 // ⓙ 화면이 폐기분을 옮기기 대상에서 빼고, 폐기 없는 카드에 보조줄을 안 주는가.
 // ⓝ **폐기 입구 셋**(선택 알약·카드 줄·상세)이 한 정본 openDispose 로 모이고 같은 축으로 숨는가.
+// ⓞ **같은 구매의 행방**(2026-10-10) — 계보 한 줄이 allItems 전수 색인에서 나오고 묶음 없는 행엔 안 서는가,
+//    배치 현황이 규격별로 묶이되 지금 카드 규격이 첫 묶음이고 하위 머리가 liveUnits 축인가, 재무 라벨이 공용부를 아는가.
 import { readFileSync } from 'node:fs'
 
 const agg     = readFileSync('app/(app)/inventory/assets/aggregate.ts', 'utf8')
@@ -669,6 +671,90 @@ function body(src, header) {
   need('형제 버튼 껍데기를 읽었다', mergeCls === SHELL, `합치기 껍데기가 바뀌었다 — ${mergeCls}`)
   need('카드 줄 폐기 버튼 껍데기가 형제와 한 글자도 안 다르다', dispCls === SHELL,
     `새 톤을 만들면 이 행에서 --coral 은 이미 옮기기의 색이다 — ${dispCls}`)
+}
+
+// ── ⓞ 같은 구매의 행방 (신고 3e861137 후속, 운영자 승인 2026-10-10) ─────────────────
+//    운영자 원문. "40cm와 60cm 구분해서 각각 관리해야한다고 한 것 같은데 왜 아직도 구분이 안되었어? …
+//    몇 개를 구매했는지 … 2개의 행방은 어디로 갔는지 추적 확인이 안돼"
+//    화면 셋이 바뀌었다. ① 구매 내역 행 밑 계보 한 줄(같은 allocationGroupId = 같은 구매)
+//    ② 배치 현황을 규격별로 묶어 보이기(축은 이름 축 그대로) ③ 재무 지출 목록이 공용부 배정 행을
+//    '미배정'으로 적지 않기. 셋 다 쓰기 경로는 안 건드린 표시층이라, 글자는 멀쩡한데 색인 범위나
+//    조건 한 낱말이 바뀌면 진리표도 금액 지문도 안 움직인다. 그래서 모양을 본다.
+{
+  // 1) 계보 색인은 **allItems 전수**다. 한 구매가 쪼개지면 짝은 다른 버킷에 가 있어서 한 버킷만
+  //    보면 짝이 빠지고 합계가 거짓이 된다(고압호스 9/11 묶음은 미배정 23개 + 공용부 1개).
+  need('계보 색인을 allItems 전수로 만든다',
+    /for \(const x of allItems\) for \(const row of x\.breakdown\) \{\s*\n\s*if \(row\.groupId\) /.test(client),
+    'data.unassigned 같은 한 버킷으로 좁히면 짝이 빠져 `같은 구매 23개`처럼 산 수보다 적게 말한다')
+  // 줄을 조립하는 함수 하나만 잘라 본다(파일 전체로 세면 다른 자리의 같은 글자가 대신 통과시킨다).
+  const linAt = client.indexOf('const lineageOf = ')
+  const linEnd = linAt >= 0 ? client.indexOf("].join(' · ')", linAt) : -1
+  const lin = linAt >= 0 && linEnd > linAt ? client.slice(linAt, linEnd) : ''
+  need('lineageOf 를 찾음', lin.length > 0)
+
+  // 2) 묶음 없는 행·짝 없는 행에는 줄이 **안 선다**. 조건을 걷으면 모든 행이 줄 한 칸을 얻는다.
+  need('묶음 id 가 있는 행만 색인을 찾는다', /const all = b\.groupId \? sameBuy\.get\(b\.groupId\) : undefined/.test(lin))
+  need('짝이 둘 이상일 때만 줄을 세운다', /if \(!all \|\| all\.length < 2\) return null/.test(lin),
+    '조건을 걷으면 혼자인 묶음 행이 `같은 구매 N개 · 여기 N개`라는 빈 줄을 얻는다')
+  need('단위가 섞인 묶음은 줄을 안 세운다', /if \(units\.size > 1\) return null/.test(lin),
+    '장판몰딩(m·개) 두 묶음이 그 자리다 — 섞인 단위를 더하면 합계가 거짓말이다')
+  need('합계는 묶음 전 행(폐기 포함)이다', /all\.reduce\(\(s, p\) => s \+ p\.row\.amount, 0\)/.test(lin),
+    'live 로 좁히면 돈의 축이 폐기로 줄어 산 금액과 안 맞는다')
+  need('계보 줄에 지어낸 `외 N개`가 없다', !/외 \$\{/.test(lin),
+    '짝이 모집단 밖이면 줄을 안 세운다 — 모르는 수를 지어내지 않는다')
+  need('계보 줄에 화살표가 없다', !/→|->/.test(lin), '§29 화살표는 값 전환 전용이다')
+  need('짝의 자리 이름이 curPlace 정본이다', /\$\{curPlace\(p\.item\)\}/.test(lin))
+  need('그 줄을 조건부로만 그린다',
+    /\{lineage && \(\s*\n\s*<p className="[^"]*\bbasis-full\b[^"]*\bbreak-keep\b[^"]*">\{lineage\}<\/p>/.test(client),
+    '조건 없이 그리면 묶음 없는 행의 높이가 바뀐다 — 그 행은 한 픽셀도 안 바뀌어야 한다')
+  // 자르지 않는다(디자이너 패스 2026-10-10). 행방은 줄 끝에 오는데 truncate 면 328px 에서도 그 토막이
+  // 잘리고(7/20 행 `… 511호 2개 (…`), 홈화면 앱은 터치라 title 로도 못 본다.
+  need('계보 줄에 truncate 가 없다',
+    !/\{lineage && \(\s*\n\s*<p className="[^"]*\btruncate\b/.test(client),
+    '자르면 신고가 찾던 행방 토막(5층 공용 화장실 1개)이 화면 밖으로 잘려 나간다')
+
+  // 3) 배치 현황 — 모집단은 `sorted`(이름 축) 그대로, **표시만** serializeSpecKey 로 묶는다.
+  need('배치 현황이 sorted 에서 serializeSpecKey 로 묶는다',
+    /for \(const pl of sorted\) \{ const k = serializeSpecKey\(pl\);/.test(client),
+    'specOf 표기로 묶으면 같은 규격이 표기 편차로 갈리고, 모집단을 새로 거르면 이름 축이 깨진다(2026-09-01 샤워기 수전)')
+  need('지금 카드 규격이 첫 묶음, 규격 미기록이 끝이다',
+    /const curSpecKey = serializeSpecKey\(it\)/.test(client)
+    && /\.sort\(\(\[ka, ga\], \[kb, gb\]\) =>\s*\n\s*Number\(kb === curSpecKey\) - Number\(ka === curSpecKey\)\s*\n\s*\|\| Number\(ka === noSpecKey\) - Number\(kb === noSpecKey\)/.test(client),
+    '차례가 강조다(코랄 채움 금지 §03) — 지금 보는 규격이 맨 위가 아니면 40cm 카드에서 60cm 가 먼저 읽힌다')
+  need('첫 묶음 머리가 `이 카드의 규격`을 말한다', /gi === 0 \? '이 카드의 규격' : null/.test(client),
+    '`지금 보는 규격`으로 쓰면 바로 앞 `지금 N개`와 `지금`이 두 뜻으로 겹친다')
+
+  // 4) 하위 머리의 셈 — 블록 머리와 같은 축. 곳 = spotKey 자리 수, 지금 = liveUnits(수령 대기 제외).
+  need('하위 머리 `지금`이 liveUnits 축이고 수령 대기를 뺀다',
+    /const gLive = g\.reduce\(\(s, x\) => s \+ \(data\.pending\.some\(p => p\.id === x\.id\) \? 0 : x\.liveUnits\), 0\)/.test(client)
+    && /`지금 \$\{fmtQty\(gLive\)\}/.test(client),
+    'qtyValue 로 두면 미기록 행이 섞인 묶음에서 칩을 세어 더한 수와 머리가 갈린다')
+  // 곳 수는 하위 머리에 안 쓴다. spotKey 는 미배정을 규격과 무관한 한 자리로 세서 규격마다 세면
+  // 합(1 + 13)이 블록 머리 13곳과 안 맞는다. 앞선 신고 둘이 다 칩을 세어 머리와 대조해서 나왔다.
+  need('하위 머리에 곳 수가 없다(블록 곳 수와 합이 안 맞는 축)', !/new Set\(g\.map\(spotKey\)\)/.test(client),
+    '규격마다 곳을 세면 미배정이 두 번 세져 하위 머리 합이 블록 머리 곳 수보다 커진다')
+  need('하위 머리는 SectionHeader 가 아닌 아래 층 글자다',
+    /<p className="mb-1 break-keep text-\[0\.6875rem\] font-medium text-\[var\(--warm-mid\)\]">\{specOf\(g\[0\]\) \|\| '규격 미기록'\}/.test(client),
+    '블록 라벨 아래 층에 정본 SectionHeader 를 쓰면 층이 무너진다(배정 변경 이력 손잡이와 같은 이유)')
+
+  // 5) 규격이 하나뿐이면 묶음도 하나 — 하위 머리 없이 **종전 목록 그대로**.
+  need('묶음이 하나면 종전 목록 그대로 선다',
+    /\{specGroups\.length > 1 \? \([\s\S]{0,2400}?\) : \(\s*\n\s*<ul className="flex flex-wrap gap-1\.5">\{sorted\.map\(chip\)\}<\/ul>/.test(client),
+    '규격 하나인 품목(대다수)에 하위 머리가 서면 그 화면이 통째로 한 줄씩 밀린다')
+
+  // 6) 재무 — 방별 분배 라벨이 공용부를 안다. 정본은 순수층(진리표 test-asset-disposal ⑭)이고
+  //    화면이 그것을 부르며, 조회가 그 이름(표기 경로)을 싣는다. 셋 중 하나만 빠져도 '미배정'이 돌아온다.
+  const finClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
+  const finActions = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+  need('재무 화면이 라벨 정본을 부른다',
+    /import \{ roomChipText, roomsLabel \} from '\.\/allocPlaceLabel'/.test(finClient)
+    && !/function (roomChipText|roomsLabel)\(/.test(finClient),
+    '화면에 손사본을 두면 진리표가 초록인 채 화면은 공용부를 미배정으로 적는다')
+  const getExp = body(finActions, 'export async function getExpenses(')
+  need('getExpenses 가 공용부 이름을 표기 경로로 싣는다',
+    /assignedLocationName: r\.assignedLocationId \? \(locPaths\?\.pathName\(r\.assignedLocationId\) \?\? null\) : null/.test(getExp)
+    && /loadLocationPaths\(propertyId\)/.test(getExp),
+    '평면 name 을 쓰면 비품 화면과 같은 위치가 다른 이름으로 보인다(check-location-name-axis 와 같은 축)')
 }
 
 if (fails.length) {

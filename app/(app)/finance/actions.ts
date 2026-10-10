@@ -26,6 +26,8 @@ import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inventory/actions'
+// 공용부 이름은 비품 화면과 같은 표기 경로(pathName) 정본 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
+import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 재고 원장 전파(점보롤 백로그 1번) — 수령완료 구매의 수량 정정·삭제가 뒤 점검의 저장 잔량을
 // 함께 옮기게 한다. 계산 정본은 lib/stockLedger, 적용·되돌리기는 inventory/ledgerShift 공용층.
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
@@ -122,7 +124,7 @@ export async function getRoomList() {
 export async function getExpenses(targetMonth: string) {
   const propertyId = await getPropertyId()
   // 지출 결산은 귀속월 축이다(2026-10-03 운영자 승인 2안) — 9월분을 10/1 에 내도 9월 목록·합계에 든다.
-  return prisma.expense.findMany({
+  const rows = await prisma.expense.findMany({
     where: {
       propertyId,
       ...targetMonthWhere(targetMonth),
@@ -135,6 +137,14 @@ export async function getExpenses(targetMonth: string) {
       order: { select: { id: true, code: true, externalOrderNo: true, shippingType: true, shippingMemo: true } },
     },
   })
+  // 공용부(assignedLocationId)에 배정한 행의 자리 이름. 방별 분배 라벨이 방 축만 알아 이 행을 '미배정'으로
+  // 적었다(신고 3e861137 후속, 고압호스 60cm 5층 공용 화장실 1개). 평면 name 이 아니라 표기 경로다.
+  // 그런 행이 없는 달은 위치 조회를 아예 안 한다(목록 왕복을 늘리지 않는다).
+  const locPaths = rows.some(r => r.assignedLocationId) ? await loadLocationPaths(propertyId) : null
+  return rows.map(r => ({
+    ...r,
+    assignedLocationName: r.assignedLocationId ? (locPaths?.pathName(r.assignedLocationId) ?? null) : null,
+  }))
 }
 
 /**

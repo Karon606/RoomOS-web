@@ -60,6 +60,8 @@ import { expenseTargetMonth, shiftMonthKey, targetMonthLabel } from '@/lib/expen
 import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
 import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
+// 방별 분배 묶음의 자리 라벨(방 · 공용부 · 미배정) 정본 — 순수층이라 진리표가 붙는다
+import { roomChipText, roomsLabel } from './allocPlaceLabel'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -93,6 +95,7 @@ type Expense = {
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
+  assignedLocationName: string | null   // 공용부 배정 행의 자리 이름(표기 경로) — getExpenses 가 싣는다. 방별 분배 라벨이 쓴다
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
   targetMonth: string | null   // 지출 귀속월 'YYYY-MM'(null=date 의 달) — 읽기는 lib/expenseTargetMonth 정본만
   receiptUrl: string | null
@@ -237,26 +240,6 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
   if (items.length === 0) return ''
   if (items.length === 1) return fmtItemDetail(items[0])
   return items.map(d => fmtItemDetail(d)).join(', ')
-}
-
-// 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
-function roomChipText(rows: { room: { roomNo: string } | null }[]): string {
-  const n = new Set(rows.filter(r => r.room).map(r => r.room!.roomNo)).size
-  return n > 0 ? `방 ${n}개` : '미배정'
-}
-
-// 방별 분배 묶음의 방 목록 라벨 — '101·102·103호' / 많으면 '101호 외 N곳' / 미배정은 수량과 함께
-function roomsLabel(rows: { room: { roomNo: string } | null; qtyValue?: number | null; qtyUnit?: string | null }[]): string {
-  const fmt = (no: string) => fmtRoomNo(no, '')
-  const named = [...new Set(rows.filter(r => r.room).map(r => r.room!.roomNo))]
-  const parts = named.length <= 3 ? named.map(fmt) : [fmt(named[0]), `외 ${named.length - 1}곳`]
-  const unassigned = rows.filter(r => !r.room)
-  if (unassigned.length > 0) {
-    const qty = unassigned.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
-    const unit = unassigned.find(r => r.qtyUnit)?.qtyUnit ?? '개'
-    parts.push(qty > 0 ? `미배정 ${qty}${unit}` : '미배정')
-  }
-  return parts.join('·')
 }
 
 // 단위 콤보 — 공용 CategorySelect 를 기존 단위 입력 문법(--cream·px-2 py-1.5 text-xs)으로 감싼 래퍼
@@ -4109,7 +4092,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정')))}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.assignedLocationName ?? (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정'))))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{fmtWon(r.amount)}</span>

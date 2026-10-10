@@ -1484,6 +1484,38 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         const logScope = specOf(it)
           ? `이 품목 · ${specOf(it)} · 최근 30건`
           : places.some(p => specOf(p)) ? '이 품목 · 규격 미기록분 · 최근 30건' : '이 품목 · 최근 30건'
+        // 같은 구매 묶음(allocationGroupId) 색인. 구매 내역 행 밑 계보 한 줄이 쓴다(신고 3e861137,
+        // "몇 개를 구매했는지 … 2개의 행방은 어디로 갔는지 추적 확인이 안돼").
+        // 색인은 **allItems 전수**로 만든다. 한 구매가 쪼개지면 짝은 다른 버킷(수령 대기·방·공용부·
+        // 공용 자재·미배정)에 가 있어서, 한 버킷만 보면 짝이 빠지고 합계가 거짓이 된다.
+        // 묶음 id 는 분할 때만 생긴다. 통째로 옮긴 것은 묶음이 없고 그 행방은 배정 변경 이력이 말한다.
+        // 계보 줄은 '지금 어디에 몇 개', 이력은 '언제 어디서 어디로'라 셋째 축(이벤트 표)을 만들지 않는다.
+        const sameBuy = new Map<string, { item: AssetItem; row: AssetItem['breakdown'][number] }[]>()
+        for (const x of allItems) for (const row of x.breakdown) {
+          if (row.groupId) (sameBuy.get(row.groupId) ?? sameBuy.set(row.groupId, []).get(row.groupId)!).push({ item: x, row })
+        }
+        const lineageOf = (b: AssetItem['breakdown'][number]): string | null => {
+          const all = b.groupId ? sameBuy.get(b.groupId) : undefined
+          // 묶음 없는 행, 짝이 안 보이는 행은 줄을 안 세운다. 그 행은 종전과 한 픽셀도 안 다르다.
+          if (!all || all.length < 2) return null
+          // 단위가 섞이면 합계 숫자가 거짓말이 된다(배치 현황 머리와 같은 규칙). 실측 76묶음 중 2건이
+          // 장판몰딩(m·개)이다. 짝이 모집단 밖이라 합이 틀리는 경우도 같은 태도다. `외 N개`를 지어내지 않는다.
+          const units = new Set(all.map(p => p.item.qtyUnit ?? '개'))
+          if (units.size > 1) return null
+          const unit = [...units][0]
+          // 수량 미기록 행은 1로 센다(liveUnits·게이트·분할과 같은 셈법). 합계는 폐기 행까지 전부다.
+          // 돈의 축이 안 줄듯 '같은 구매'도 산 그대로의 수와 금액이다.
+          const n = (r: { qty: number | null }) => r.qty ?? 1
+          const total = `같은 구매 ${fmtQty(all.reduce((s, p) => s + n(p.row), 0))}${unit} ${won(all.reduce((s, p) => s + p.row.amount, 0))}`
+          const pairs = all.filter(p => p.row.id !== b.id).map(p => {
+            const gone = p.row.disposed ? p.item.disposals.find(d => d.id === p.row.id) : undefined
+            const tag = gone ? ` (${gone.disposedAt.slice(5)} 폐기)`
+              : data.pending.some(x => x.id === p.item.id) ? ' (수령 대기)'
+              : p.row.assignedAt ? ` (${p.row.assignedAt.slice(5)} 배정)` : ''
+            return `${curPlace(p.item)} ${fmtQty(n(p.row))}${unit}${tag}`
+          })
+          return [total, `여기 ${fmtQty(n(b))}${unit}`, ...pairs].join(' · ')
+        }
         return (
           <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md" bodyRef={detailBodyRef}>
             <div className="space-y-4">
@@ -1660,6 +1692,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     const qBase = b.qty != null ? fmtQty(b.qty) : ''
                     const q = rowQty[b.id] ?? qBase
                     const qtyChanged = q.trim() !== qBase
+                    const lineage = lineageOf(b)
                     return (
                       <li key={b.id} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 text-xs">
                         <span className="flex items-center gap-1.5 shrink-0">
@@ -1690,6 +1723,15 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           )}
                           <span className="tabular-nums text-[var(--warm-dark)] shrink-0">{won(b.amount)}</span>
                         </span>
+                        {/* 계보 한 줄. basis-full 로 그 행 아래 제 줄에 서고, -mt-1 로 제 행에 붙이고 mb-1 로
+                            아래(다음 행·블록 안내문)와 뗀다. 라이트에서는 안내문과 색이 같아(--warm-mid = --warm-muted)
+                            거리로만 갈린다. 자르지 않고 띄어쓰기에서 줄을 바꾼다. 행방이 줄 끝에 오는데 자르면
+                            신고가 찾던 그 토막이 잘려 나가고, 터치 화면에는 title 이 없다(디자이너 패스 2026-10-10).
+                            화살표를 안 쓰는 것은 §29 화살표가 값 전환 전용이라서다. 짝 자리로 가는 길은
+                            바로 아래 배치 현황 칩이 맡는다. */}
+                        {lineage && (
+                          <p className="-mt-1 mb-1 min-w-0 basis-full break-keep text-[0.65625rem] tabular-nums text-[var(--warm-muted)]">{lineage}</p>
+                        )}
                       </li>
                     )
                   })}
@@ -1725,6 +1767,79 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 // 이 목록은 폐기를 뺀 **지금의 배치**다(자리를 떠난 것은 지금의 배치가 아니다).
                 // 뺀다는 사실을 머리가 말하지 않으면 합계가 '산 것 전부'인지 '지금 있는 것'인지 알 길이 없다.
                 const disposedQ = sorted.reduce((s, x) => s + x.disposedQty, 0)
+                // 표시만 규격별로 묶는다(신고 3e861137 후속, "40cm와 60cm 구분해서 각각 관리해야한다고 한 것 같은데").
+                // 축은 그대로 이름 축이다. 규격을 무시하고 모으는 것이 이 블록의 의도라(2026-09-01 샤워기 수전,
+                // 재구매 규격 표기가 흔들려 설치처가 안 보이던 문제) 모집단은 위 `sorted` 그대로 두고 거기서 파생만 한다.
+                // 묶는 키는 규격 순서 편집과 같은 serializeSpecKey 다. 차례는 지금 카드의 규격 → 나머지 규격
+                // (순서 편집 화면이 보여 주는 그 품목의 규격 순서, 거기 없으면 규격 이름순) → 규격 미기록.
+                // 강조는 색이 아니라 차례와 글자다(코랄 채움 금지 §03). 규격이 하나뿐이면 묶음도 하나라
+                // 하위 머리를 안 그리고 종전 목록 그대로 선다.
+                const bySpec = new Map<string, AssetItem[]>()
+                for (const pl of sorted) { const k = serializeSpecKey(pl); (bySpec.get(k) ?? bySpec.set(k, []).get(k)!).push(pl) }
+                const curSpecKey = serializeSpecKey(it)
+                const noSpecKey = serializeSpecKey({ specValue: null, specUnit: null, specText: null })
+                const specOrd = orderGroups.find(g => g.cat === it.category)?.labels.find(l => l.label === it.itemLabel)?.specs.map(sp => sp.specKey) ?? []
+                const specGroups = [...bySpec.entries()].sort(([ka, ga], [kb, gb]) =>
+                  Number(kb === curSpecKey) - Number(ka === curSpecKey)
+                  || Number(ka === noSpecKey) - Number(kb === noSpecKey)
+                  || rankInOrder(specOrd, ka) - rankInOrder(specOrd, kb)
+                  || specOf(ga[0]).localeCompare(specOf(gb[0]), 'ko', { numeric: true }))
+                // 칩 한 개. 규격별 묶음이 서도 칩 자체(클래스·구분자·폐기 부기·title·눌러서 이동·되감기)는 그대로다.
+                const chip = (pl: AssetItem) => {
+                  const isCur = pl.id === it.id
+                  const isPending = data.pending.some(x => x.id === pl.id)
+                  // 규격은 **조건 없이** 병기한다. 종전처럼 "지금 카드와 정체성이 다를 때만" 달면
+                  // 무라벨 칩이 두 뜻을 진다 — '이 카드와 같은 규격'과 '규격이 아예 안 적힌 카드'.
+                  // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
+                  // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
+                  const chipSpec = specOf(pl)
+                  // 토막을 가르는 것은 가운뎃점이다(가이드 §11 보조줄 구분자 ' · ', 형제 정본은
+                  // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
+                  // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
+                  // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
+                  // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
+                  // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
+                  const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
+                  // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가
+                  // 328x42 두 줄이 되어 칩 문법이 깨진다. whitespace-nowrap 이 나머지 토막의
+                  // min-content 를 제 폭으로 묶어 주므로 줄어드는 것은 이 칸 하나뿐이고, 잘린
+                  // 이름은 title 이 받는다(저장소 정본 — DashboardClient·FinanceClient 와 같은 문법).
+                  // 눌러서 그 카드로 가면 설치·폐기 머리가 자리 이름을 통째로 다시 말한다.
+                  //
+                  // 카드를 바꿀 때 본문을 맨 위로 되감는다. 이 목록이 본문 **아래쪽**으로
+                  // 내려갔으므로 스크롤이 그대로면 바뀐 내용(그룹 머리·수량 단위·설치·폐기)이
+                  // 전부 화면 밖 위에 남고, 눌러 놓고 아무 일도 안 일어난 것처럼 보인다.
+                  return (
+                    <li key={pl.id} className="min-w-0 max-w-full">
+                      <button type="button" onClick={() => { if (!isCur) { setDetailItem(pl); scrollDetailTop() } }} title={curPlace(pl)}
+                        className={[
+                          'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
+                          isCur
+                            ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
+                            : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
+                        ].join(' ')}>
+                        <span className="min-w-0 truncate">{curPlace(pl)}</span>
+                        {/* 수령 대기 딱지는 말줄임 **밖**에 둔다. 안에 두면 긴 경로에서 이 딱지부터
+                            잘려 나가는데(실측 `4층 주방 김치냉장고 상…`), 머리의 `지금 N개`가 이 칩을
+                            안 센다는 사실을 읽을 단서가 화면에서 그것 하나뿐이다. */}
+                        {isPending && <span>(수령 대기)</span>}
+                        {chipSpec && sep}
+                        {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
+                        {sep}
+                        <span className="mono font-semibold tabular-nums">{fmtQty(pl.liveUnits)}{pl.qtyUnit ?? '개'}</span>
+                        {/* 폐기가 있는 칩에만 부기 — 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
+                            낱말이 `누적`이 아니라 `폐기`인 이유 넷. 신고 원문이 "왜 폐기 분실이 0개이고"였고,
+                            머리의 `폐기 N개`·아래 블록의 `폐기·분실`과 한 벌이 되고, 뺄셈이 필요 없고,
+                            disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌이 없다(`누적`은
+                            liveUnits + disposedQty 라 칩 수량과 축이 갈렸다). 폐기가 없으면 안 선다. */}
+                        {pl.disposedQty > 0 && sep}
+                        {pl.disposedQty > 0 && (
+                          <span className="text-[0.65625rem] text-[var(--warm-muted)]">폐기 {fmtQty(pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                }
                 return (
                   <div>
                     {/* 범위를 글자로 못박는다. 바로 위 카드 머리(`지금 N개`, 이 카드 한 자리)·아래
@@ -1733,63 +1848,33 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     <p className="mb-1.5 break-keep text-xs font-semibold text-[var(--warm-mid)]">배치 현황
                       <span className="ml-1.5 font-normal text-[var(--warm-muted)]">이 품목 전체 · {spots}곳{units.size === 1 ? ` · 지금 ${fmtQty(totalQ)}${[...units][0]}` : ''}{disposedQ > 0 ? (units.size === 1 ? ` · 폐기 ${fmtQty(disposedQ)}${[...units][0]}` : ' · 폐기 있음') : ''}</span>
                     </p>
-                    <ul className="flex flex-wrap gap-1.5">
-                      {sorted.map(pl => {
-                        const isCur = pl.id === it.id
-                        const isPending = data.pending.some(x => x.id === pl.id)
-                        // 규격은 **조건 없이** 병기한다. 종전처럼 "지금 카드와 정체성이 다를 때만" 달면
-                        // 무라벨 칩이 두 뜻을 진다 — '이 카드와 같은 규격'과 '규격이 아예 안 적힌 카드'.
-                        // 60cm 카드에서 보면 60cm 칩만 맨몸이라 나머지가 '규격 없음'으로 읽혔다(신고 3e861137).
-                        // 지금 보는 카드 칩에 붙는 규격은 중복이 아니라 나머지를 읽는 **기준점**이다.
-                        const chipSpec = specOf(pl)
-                        // 토막을 가르는 것은 가운뎃점이다(가이드 §11 보조줄 구분자 ' · ', 형제 정본은
-                        // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
-                        // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
-                        // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
-                        // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
-                        // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
-                        const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
-                        // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가
-                        // 328x42 두 줄이 되어 칩 문법이 깨진다. whitespace-nowrap 이 나머지 토막의
-                        // min-content 를 제 폭으로 묶어 주므로 줄어드는 것은 이 칸 하나뿐이고, 잘린
-                        // 이름은 title 이 받는다(저장소 정본 — DashboardClient·FinanceClient 와 같은 문법).
-                        // 눌러서 그 카드로 가면 설치·폐기 머리가 자리 이름을 통째로 다시 말한다.
-                        //
-                        // 카드를 바꿀 때 본문을 맨 위로 되감는다. 이 목록이 본문 **아래쪽**으로
-                        // 내려갔으므로 스크롤이 그대로면 바뀐 내용(그룹 머리·수량 단위·설치·폐기)이
-                        // 전부 화면 밖 위에 남고, 눌러 놓고 아무 일도 안 일어난 것처럼 보인다.
-                        return (
-                          <li key={pl.id} className="min-w-0 max-w-full">
-                            <button type="button" onClick={() => { if (!isCur) { setDetailItem(pl); scrollDetailTop() } }} title={curPlace(pl)}
-                              className={[
-                                'inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
-                                isCur
-                                  ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
-                                  : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
-                              ].join(' ')}>
-                              <span className="min-w-0 truncate">{curPlace(pl)}</span>
-                              {/* 수령 대기 딱지는 말줄임 **밖**에 둔다. 안에 두면 긴 경로에서 이 딱지부터
-                                  잘려 나가는데(실측 `4층 주방 김치냉장고 상…`), 머리의 `지금 N개`가 이 칩을
-                                  안 센다는 사실을 읽을 단서가 화면에서 그것 하나뿐이다. */}
-                              {isPending && <span>(수령 대기)</span>}
-                              {chipSpec && sep}
-                              {chipSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{chipSpec}</span>}
-                              {sep}
-                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.liveUnits)}{pl.qtyUnit ?? '개'}</span>
-                              {/* 폐기가 있는 칩에만 부기 — 폐기를 적은 사람이 그걸 확인할 자리가 이 앱에 여기뿐이다.
-                                  낱말이 `누적`이 아니라 `폐기`인 이유 넷. 신고 원문이 "왜 폐기 분실이 0개이고"였고,
-                                  머리의 `폐기 N개`·아래 블록의 `폐기·분실`과 한 벌이 되고, 뺄셈이 필요 없고,
-                                  disposedQty 는 파생이 아니라 그 자체로 참이라 셈법 충돌이 없다(`누적`은
-                                  liveUnits + disposedQty 라 칩 수량과 축이 갈렸다). 폐기가 없으면 안 선다. */}
-                              {pl.disposedQty > 0 && sep}
-                              {pl.disposedQty > 0 && (
-                                <span className="text-[0.65625rem] text-[var(--warm-muted)]">폐기 {fmtQty(pl.disposedQty)}{pl.qtyUnit ?? '개'}</span>
-                              )}
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
+                    {specGroups.length > 1 ? (
+                      <div className="space-y-2">
+                        {specGroups.map(([k, g], gi) => {
+                          // 하위 머리의 `지금`은 블록 머리와 같은 축이다. liveUnits 합에서 수령 대기를 뺀 것이고,
+                          // 단위가 섞이면 안 쓴다. 묶음 합이 블록 머리 `지금 N개`와 맞는다(4 + 47 = 51).
+                          // 곳 수는 안 쓴다. spotKey 는 미배정을 규격과 무관한 한 자리로 세서, 규격마다 세면
+                          // 합(1 + 13)이 블록 머리 13곳과 안 맞는다. 이 블록의 앞선 신고 둘이 다 칩을 세어 머리와
+                          // 대조해서 나왔다(디자이너 패스 2026-10-10). 첫 묶음 부기는 `이 카드의 규격`이다.
+                          // `지금 보는`이라 쓰면 한 줄에 `지금`이 시간과 보는 중 두 뜻으로 선다.
+                          // SectionHeader 를 안 쓰는 것은 이 줄이 블록 라벨 **아래 층**이라서다(같은 컴포넌트를
+                          // 쓰면 층이 무너진다. 배정 변경 이력 손잡이와 같은 이유).
+                          const gUnits = new Set(g.map(x => x.qtyUnit ?? '개'))
+                          const gLive = g.reduce((s, x) => s + (data.pending.some(p => p.id === x.id) ? 0 : x.liveUnits), 0)
+                          const gSub = [gUnits.size === 1 ? `지금 ${fmtQty(gLive)}${[...gUnits][0]}` : null, gi === 0 ? '이 카드의 규격' : null].filter(Boolean).join(' · ')
+                          return (
+                            <div key={k}>
+                              <p className="mb-1 break-keep text-[0.6875rem] font-medium text-[var(--warm-mid)]">{specOf(g[0]) || '규격 미기록'}
+                                {gSub && <span className="ml-1.5 font-normal tabular-nums text-[var(--warm-muted)]">{gSub}</span>}
+                              </p>
+                              <ul className="flex flex-wrap gap-1.5">{g.map(chip)}</ul>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <ul className="flex flex-wrap gap-1.5">{sorted.map(chip)}</ul>
+                    )}
                     {/* 칩 수와 곳 수가 다른 이유를 화면이 말한다. 종전엔 숫자가 틀려도 칩을 세면 맞았는데
                         곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었고,
                         갈린 칩은 정렬이 같아 나란히 붙어 선다(`미배정(여분) 60cm`와 `미배정(여분) 40cm`).

@@ -11,11 +11,14 @@
 //
 // 진리표가 잠그는 것 열. 511호 정상 / 504호 1교체 / 502호 2철거폐기 / 전량 폐기 /
 // 미배정 분실 / 적용취소 / 폐기 있는 방에서 옮기기 / 초과 거부 / 수령 전 거부 / 합치기.
+// 그리고 같은 구매 묶음의 행방 둘(2026-10-10, 신고 3e861137 후속) — ⑬ 구매 내역 행이 묶음 id·배정일을
+// 싣는가(상세의 계보 한 줄) ⑭ 재무 지출 목록이 공용부 배정 행을 '미배정'으로 적지 않는가.
 import {
   aggregateAssets, disposalDenial, disposalDenyOver,
   DISPOSAL_DENY_UNRECEIVED, DISPOSAL_DENY_NONPOSITIVE, DISPOSAL_DENY_ALL_DISPOSED,
   type RawAsset, type DisposalGateRow,
 } from '../app/(app)/inventory/assets/aggregate'
+import { roomsLabel, roomChipText } from '../app/(app)/finance/allocPlaceLabel'
 
 let pass = 0
 const fails: string[] = []
@@ -32,7 +35,7 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
   category: '수선유지', vendor: '철물점',
   roomId: 'r511', roomNo: '511', locationId: null, locationName: null,
   isCommon: false, received: true, assignedAt: '2026-09-11', isService: false,
-  disposedAt: null, disposalReason: null,
+  disposedAt: null, disposalReason: null, allocationGroupId: null,
   ...o,
 })
 
@@ -248,6 +251,71 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
     const [c] = aggregateAssets(rows)
     eq(`폐기 없으면 liveUnits == qtyValue (${rows.length}행)`, c.liveUnits, c.qtyValue)
   }
+}
+
+// ── ⑬ 같은 구매 묶음 — 구매 내역 행이 묶음 id 와 그 조각의 배정일을 싣는가 ─────────
+//    고압호스 60cm 9/11 24개 54,000원이 쪼개져 미배정 23개 + 5층 공용 화장실 1개가 됐다(묶음 하나).
+//    상세의 계보 한 줄('같은 구매 24개 54,000원 · 여기 23개 · 5층 공용 화장실 1개 (09-16 배정)')은
+//    버킷이 다른 두 카드를 묶음 id 로 잇는다. 그 id 와 짝마다의 배정일이 breakdown 에 실려야 한다.
+//    카드 단위 assignedAt 은 대표(가장 최근)라 짝이 여럿이면 날이 섞인다.
+{
+  const G = 'f0727517-0000-4000-8000-000000000000'
+  const h = (o: Partial<RawAsset>) => row({ itemLabel: '고압호스', specValue: 60, specUnit: 'cm', date: '2026-09-11', allocationGroupId: G, ...o })
+  const [spare] = aggregateAssets([h({ roomId: null, roomNo: null, assignedAt: null, qtyValue: 23, amount: 51750 })])
+  const [wc] = aggregateAssets([h({ roomId: null, roomNo: null, locationId: 'loc5', locationName: '5층 공용 화장실', assignedAt: '2026-09-16', qtyValue: 1, amount: 2250 })])
+  eq('미배정 행이 묶음 id 를 싣는다', spare.breakdown[0].groupId, G)
+  eq('공용부 행이 같은 묶음 id 를 싣는다', wc.breakdown[0].groupId, G)
+  eq('미배정 행의 배정일은 null', spare.breakdown[0].assignedAt, null)
+  eq('공용부 행의 배정일은 그 조각의 날', wc.breakdown[0].assignedAt, '2026-09-16')
+  // 두 카드의 행을 묶음 id 로 모으면 산 그대로가 나온다(돈·수량 모두 폐기 포함 전 행).
+  const all = [...spare.breakdown, ...wc.breakdown].filter(b => b.groupId === G)
+  eq('묶음 합계 수량 = 산 수량', all.reduce((s, b) => s + (b.qty ?? 1), 0), 24)
+  eq('묶음 합계 금액 = 산 금액', all.reduce((s, b) => s + b.amount, 0), 54000)
+  // 한 카드 안에서 짝마다 배정일이 다르면 행마다 제 날을 싣는다(대표 하나로 덮지 않는다).
+  const [room] = aggregateAssets([
+    row({ allocationGroupId: G, assignedAt: '2026-08-06' }),
+    row({ allocationGroupId: G, assignedAt: '2026-09-16', date: '2026-09-12' }),
+  ])
+  eq('행마다 제 배정일', room.breakdown.map(b => b.assignedAt), ['2026-09-16', '2026-08-06'])
+  eq('카드 대표 배정일은 그대로 최근', room.assignedAt, '2026-09-16')
+  // 폐기된 조각도 묶음에 남는다(합계는 폐기 포함). disposed 표식과 묶음 id 가 함께 실린다.
+  const [d] = aggregateAssets([row({ allocationGroupId: G }), row({ allocationGroupId: G, disposedAt: '2026-09-16', disposalReason: '파손' })])
+  eq('폐기 조각도 묶음 id 를 싣는다', d.breakdown.filter(b => b.disposed).map(b => b.groupId), [G])
+  // 묶음 없는 행은 null — 화면이 계보 줄을 안 세워 그 행이 한 픽셀도 안 바뀌는 근거.
+  const [plain] = aggregateAssets([row(), row()])
+  eq('묶음 없는 행은 groupId null', plain.breakdown.map(b => b.groupId), [null, null])
+  eq('묶음 id 는 집계 키가 아니다(한 카드)', aggregateAssets([row({ allocationGroupId: G }), row()]).length, 1)
+}
+
+// ── ⑭ 재무 지출 목록의 방별 분배 라벨 — 방, 공용부, 진짜 미배정 순 ──────────────
+//    종전에는 방 축만 알아 공용부 배정 행을 '미배정'으로 적었다. 고압호스 60cm 9/11 묶음이
+//    재무에서 `미배정` 칩으로 읽혀 5층 공용 화장실 1개의 행방이 흐려졌다.
+{
+  const r = (roomNo: string | null, loc: string | null = null, qtyValue: number | null = 1, qtyUnit: string | null = '개') =>
+    ({ room: roomNo ? { roomNo } : null, assignedLocationName: loc, qtyValue, qtyUnit })
+  // 방만 — 종전과 한 글자도 같아야 한다.
+  eq('방만 칩', roomChipText([r('501'), r('502')]), '방 2개')
+  eq('방만 라벨', roomsLabel([r('501'), r('502')]), '501호·502호')
+  eq('방 넷이면 외 N곳', roomsLabel([r('501'), r('502'), r('503'), r('504')]), '501호·외 3곳')
+  eq('사무실은 호를 안 붙인다', roomsLabel([r('사무실')]), '사무실')
+  // 공용부만 — 미배정이 아니다.
+  eq('공용부만 칩', roomChipText([r(null, '5층 공용 화장실')]), '공용부 1곳')
+  eq('공용부만 라벨', roomsLabel([r(null, '5층 공용 화장실')]), '5층 공용 화장실')
+  // 섞임 — 방, 공용부, 미배정 순. 고압호스 60cm 9/11 묶음의 모양.
+  eq('공용부 + 미배정 칩', roomChipText([r(null, null, 23), r(null, '5층 공용 화장실')]), '공용부 1곳')
+  eq('공용부 + 미배정 라벨', roomsLabel([r(null, null, 23), r(null, '5층 공용 화장실')]), '5층 공용 화장실·미배정 23개')
+  eq('방 + 공용부 칩은 방 수', roomChipText([r('502', null, 2), r(null, '5층 공용 화장실'), r('511', null, 2)]), '방 2개')
+  eq('방 + 공용부 라벨은 방이 먼저', roomsLabel([r(null, '5층 공용 화장실'), r('502', null, 2), r('511', null, 2)]), '502호·511호·5층 공용 화장실')
+  // 접기는 방에만 건다. 공용부는 늘 이름으로 뒤에 선다(7/20 묶음 — 칩 `방 3개`와 자리 수가 맞는다).
+  eq('방 셋 + 공용부는 안 접는다', roomsLabel([r('502'), r(null, '5층 공용 화장실'), r('511'), r('504')]), '502호·511호·504호·5층 공용 화장실')
+  eq('방이 넷이면 방만 접고 공용부는 이름으로', roomsLabel([r('501'), r('502'), r(null, '5층 공용 화장실'), r('503'), r('504')]), '501호·외 3곳·5층 공용 화장실')
+  // 방이 있는 행은 공용부 이름이 있어도 방으로 센다(방이 먼저다).
+  eq('방이 있으면 방으로', roomsLabel([r('502', '5층 공용 화장실')]), '502호')
+  // 진짜 미배정 — 방도 공용부도 없는 행만.
+  eq('진짜 미배정 칩', roomChipText([r(null), r(null)]), '미배정')
+  eq('진짜 미배정 라벨은 수량과 함께', roomsLabel([r(null, null, 3), r(null, null, 1)]), '미배정 4개')
+  eq('수량 없는 미배정', roomsLabel([r(null, null, null, null)]), '미배정')
+  eq('같은 공용부 두 행은 한 곳', roomChipText([r(null, '창고'), r(null, '창고')]), '공용부 1곳')
 }
 
 if (fails.length) {
