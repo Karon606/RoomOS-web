@@ -77,6 +77,7 @@ import { reservationConfirmPhoneDenial, type TenantPhoneContact } from '@/lib/te
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
 
@@ -724,7 +725,9 @@ async function leaseSaveDenial(
   if (roomDenial) return roomDenial
   if (f.isReservedConfirmed) {
     if (!f.roomId) return '예약 확정 시 호실은 필수입니다.'
-    if (!f.rentAmount) return '예약 확정 시 월 이용료는 필수입니다.'
+    // 월 이용료는 묻지 않는다(운영자 결정 2026-10-10). 예약 단계 어디에서도 이용료를 요구하지 않고,
+    // 값은 입실 처리 때 정해진다 — 예약금 수납·재앵커가 0 이용료를 견디는 근거는 rooms/actions
+    // reanchorReservationPrepaid 주석에 있다. 감지망 check-reservation-confirm-gate.
     if (!f.moveInDate) return '예약 확정 시 입주 희망일은 필수입니다.'
     // 본인 전화번호 문 — 예약 확정은 방을 잡아 두고 다른 손님을 돌려보내는 결정이다. 판정은
     // lib/tenantContact 정본 한 벌이고 수정 폼·상태 전환도 같은 문장을 부른다(roomRequiredDenial 전례).
@@ -1124,7 +1127,7 @@ export async function updateTenant(formData: FormData): Promise<
   if (isReservedConfirmed) {
     // 호실은 '수정' 시엔 비워둘 수 있게 허용 — 만실에서 입실예정 둘이 방을 맞바꿀 때
     // 잠시 '미지정'으로 파킹했다가 서로의 방으로 재지정하기 위함(새 기능 없이). 신규 등록(addTenant)은 그대로 필수.
-    if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
+    // 월 이용료는 묻지 않는다(운영자 결정 2026-10-10, leaseSaveDenial 과 같은 문).
     if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
   }
   // 청구 발생 상태(unpaid.ts unpaidLeasesRaw 필터와 동일: ACTIVE·CHECKOUT_PENDING·NON_RESIDENT + rentAmount>0)로
@@ -1201,7 +1204,7 @@ export async function updateTenant(formData: FormData): Promise<
     const conflict = await nextReservationConflict(newRoomId, leaseTermId, selfMoveIn, newMoveOutIso)
     if (conflict) {
       const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`
-      return { ok: false, error: `이 방은 ${md(conflict.moveIn)}에 ${conflict.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${md(newMoveOutIso)}로 두면 겹칩니다. 그 예약의 입주일을 먼저 옮기거나, 저장 화면의 확인을 거쳐 주세요.` }
+      return { ok: false, error: `이 방은 ${md(conflict.moveIn)}에 ${conflict.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${withParticle(md(newMoveOutIso), '으로/로')} 두면 겹칩니다. 그 예약의 입주일을 먼저 옮기거나, 저장 화면의 확인을 거쳐 주세요.` }
     }
   }
   if (newRoomId && (roomChanged || climbingIntoResidence)) {
@@ -1729,6 +1732,18 @@ export async function updateTenant(formData: FormData): Promise<
         .join(' · ')
       rentRewriteNotice = `월 단위로 전환하면서 이미 청구된 달의 금액도 새 이용료로 맞췄습니다 (${detail}).`
     }
+  } else if (status === 'RESERVED' && !isShortTerm && currentLease.rentAmount !== rentAmount) {
+    // 예약 중 이용료가 정해지거나 바뀌면 예약 단계 이용료 record 의 락도 따라간다(운영자 승인 2026-10-10).
+    // 예약 확정에 이용료를 묻지 않게 되면서 이용료 0 인 채 받은 몫(보증금 대체의 넘는 몫·이용료 0 선납)이
+    // 청구액 0 으로 락인된다. 위 단기 전환 가지와 같은 정본 함수라 '변경 전 기준값 그대로 락인된
+    // record 만' 되쓴다.
+    // 단기 계약은 빼고 위 단기 청구 동기화(syncShortStayCharge)에 맡긴다. 그쪽은 이미 받은 금액 아래로
+    // 락을 안 내리는 하한이 있는데, 동기화가 '바꿀 것 없음'으로 판정한 저장(락 = 받은 돈 = 옛 이용료)에서
+    // 여기가 돌면 그 하한을 뚫고 락을 새 이용료로 내려 과납을 만든다.
+    const fromMonth = moveInDate ? new Date(moveInDate).toISOString().slice(0, 7)
+      : (currentLease.moveInDate ? new Date(currentLease.moveInDate).toISOString().slice(0, 7) : null)
+    const { rewriteLockedExpectedForRentAmount } = await import('@/app/(app)/rooms/paymentEngine')
+    await rewriteLockedExpectedForRentAmount(leaseTermId, currentLease.rentAmount, rentAmount, fromMonth)
   }
 
   // 예약 -> 거주중 전환이면 예약 선납을 입주월로 재앵커한다.
@@ -2158,7 +2173,23 @@ export async function getReceivedDepositTotal(leaseTermId: string): Promise<numb
 // 분해하지 않은 예약(정책 미설정·장기·청소비 0)에는 예약 단계 청소비 부가수익이 없으므로
 // 두 번째 항이 0 이고 값이 종전과 문자 그대로 같다(실측 RESERVED 전수 갈림 0건).
 async function reservedPrepaidComposition(propertyId: string, leaseTermId: string): Promise<{ cleaning: number; prepaid: number }> {
-  const [agg, cleaning] = await Promise.all([
+  const c = await reservationReceivedComposition(propertyId, leaseTermId)
+  return { cleaning: c.cleaning, prepaid: c.rent }
+}
+
+// 예약 단계에서 받은 돈의 세 몫 — 보증금 record·이용료 record·예약 청소비 부가수익(공용 헬퍼).
+//
+// 보증금 대체 모드도 이용료 몫이 생긴다(운영자 승인 2026-10-10). 예약금이 남은 보증금보다 크면
+// saveDepositPayment 가 넘는 몫을 입주월 이용료 record 로 적어서, 보증금 합만 세는 종전 기준액
+// (getReceivedDepositTotal)은 받은 돈 일부를 못 본다. 세 몫을 한 자리에서 세어 확정 확인창·예약 취소가
+// 같은 숫자를 딛게 한다. where 는 각 몫의 종전 정본과 글자째 같다(보증금 = getReceivedDepositTotal,
+// 이용료·청소비 = 종전 reservedPrepaidComposition). 소프트삭제는 aggregate 확장이 자동 필터.
+async function reservationReceivedComposition(propertyId: string, leaseTermId: string): Promise<{ deposit: number; rent: number; cleaning: number }> {
+  const [deposit, rent, cleaning] = await Promise.all([
+    prisma.paymentRecord.aggregate({
+      where: { leaseTermId, propertyId, isDeposit: true },
+      _sum: { actualAmount: true },
+    }),
     prisma.paymentRecord.aggregate({
       where: { leaseTermId, propertyId, isDeposit: false },
       _sum: { actualAmount: true },
@@ -2168,7 +2199,17 @@ async function reservedPrepaidComposition(propertyId: string, leaseTermId: strin
       _sum: { amount: true },
     }),
   ])
-  return { cleaning: cleaning._sum.amount ?? 0, prepaid: agg._sum.actualAmount ?? 0 }
+  return {
+    deposit: deposit._sum.actualAmount ?? 0,
+    rent: rent._sum.actualAmount ?? 0,
+    cleaning: cleaning._sum.amount ?? 0,
+  }
+}
+
+// 예약 확정 확인창·보증금 대체 예약 취소의 기준 — 예약 단계에서 받은 돈의 세 몫(읽기 전용).
+export async function getReservationReceivedComposition(leaseTermId: string): Promise<{ deposit: number; rent: number; cleaning: number }> {
+  const { propertyId } = await getPropertyId()
+  return reservationReceivedComposition(propertyId, leaseTermId)
 }
 
 export async function getReservedPrepaidTotal(leaseTermId: string): Promise<number> {
@@ -2288,6 +2329,86 @@ export async function undoReservationPrepaidCancel(
   }
 }
 
+// 보증금 대체 예약 취소 — 받은 예약금이 보증금 몫과 입주월 이용료 몫으로 나뉘어 있을 때(운영자 승인 2026-10-10).
+//
+// 예약금이 남은 보증금보다 크면 saveDepositPayment 가 넘는 몫을 입주월 이용료 record 로 적는다. 종전
+// 취소는 보증금 몫만 기준으로 삼아(getReceivedDepositTotal) 이용료 몫이 취소된 계약에 매출로 남았다.
+// 새 산식은 없다 — 두 몫을 각자의 정본에 나눠 맡긴다.
+//   이용료 몫 → recordReservationPrepaidCancel(record 소프트삭제 + 몰취분 위약금 '예약금 몰취')
+//   보증금 몫 → recordDepositReturn(context 'reservationCancel' — DepositRefund + 몰취분 위약금 '보유 보증금')
+// 나누는 규칙: 반환은 이용료 몫부터, 몰취는 보증금 몫부터. 돌려줄 돈은 아직 매출이 아닌 이용료부터 덜고,
+// 남기는 돈은 원래 남겨 둘 성격인 보증금에서 먼저 뗀다.
+// 순서는 이용료 몫 먼저다. 보증금 몫이 실패하면 이용료 몫 처리를 되돌려 반쪽 취소를 남기지 않는다.
+// 이용료 몫이 0 이면 화면이 이 경로를 타지 않고 종전 recordDepositReturn 만 부른다.
+export async function recordReservationDepositCancel(params: {
+  leaseTermId: string
+  tenantId: string
+  refundAmount: number
+  date: string
+  tenantName: string
+}): Promise<{
+  ok: true
+  prepaid: { recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null }
+  deposit: { refundId: string; extraIncomeIds: string[] } | null
+  receiptNotice?: string
+} | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
+
+    const comp = await reservationReceivedComposition(propertyId, params.leaseTermId)
+    const total = comp.deposit + comp.rent
+    const returned = Math.max(0, Math.min(params.refundAmount, total))
+    const returnedRent = Math.min(returned, comp.rent)
+    const returnedDeposit = returned - returnedRent
+
+    const prepaid = await recordReservationPrepaidCancel({ ...params, refundAmount: returnedRent })
+    if (!prepaid.ok) return prepaid
+
+    // 보증금 몫이 없으면 반환 이력을 만들지 않는다 — 0/0 짜리 DepositRefund 가 수납 정보에 빈 반환 줄로 선다.
+    if (comp.deposit <= 0) {
+      return { ok: true, prepaid: { recordIds: prepaid.recordIds, cleaningIncomeIds: prepaid.cleaningIncomeIds, extraIncomeId: prepaid.extraIncomeId }, deposit: null }
+    }
+    const dep = await recordDepositReturn({
+      leaseTermId: params.leaseTermId, tenantId: params.tenantId,
+      depositAmount: comp.deposit, returnedAmount: returnedDeposit,
+      date: params.date, tenantName: params.tenantName,
+      context: 'reservationCancel',
+    })
+    if (!dep.ok) {
+      const undo = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds)
+      return {
+        ok: false,
+        error: undo.ok
+          ? dep.error
+          : `${dep.error} 이용료 몫 처리를 되돌리지 못했습니다. 수납 기록을 확인해 주세요.`,
+      }
+    }
+    return {
+      ok: true,
+      prepaid: { recordIds: prepaid.recordIds, cleaningIncomeIds: prepaid.cleaningIncomeIds, extraIncomeId: prepaid.extraIncomeId },
+      deposit: { refundId: dep.refundId, extraIncomeIds: dep.extraIncomeIds },
+      ...(dep.receiptNotice ? { receiptNotice: dep.receiptNotice } : {}),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 보증금 대체 예약 취소 적용취소 — 두 정본의 적용취소를 순서대로(이용료 몫 → 보증금 몫).
+// 지운 것과 되살리는 것이 짝이어야 한다(적용취소 원칙). 앞이 실패하면 뒤를 안 건드린다.
+export async function undoReservationDepositCancel(
+  prepaid: { recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null },
+  deposit: { refundId: string; extraIncomeIds: string[] } | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const p = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds)
+  if (!p.ok) return p
+  if (!deposit) return { ok: true }
+  return undoDepositReturn(deposit.refundId, deposit.extraIncomeIds)
+}
+
 // 퇴실 처리 + 보증금 환불 한 번에
 export async function checkoutWithDepositRefund(params: {
   leaseTermId: string
@@ -2390,7 +2511,7 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   // 이 계약에 딸린 계약도 같은 날로 — 부모가 비어 있다 날을 갖는 것도 납부일 변경이다.
   if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
 
-  // 입주월 재앵커 — prepaid 예약금이 실제 입주월과 다른 달에 걸려 있으면 이동(deposit/none은 no-op).
+  // 입주월 재앵커 — 예약 단계 이용료 record 가 실제 입주월과 다른 달에 걸려 있으면 이동(모드 무관, 2026-10-10).
   if (lease.status === 'RESERVED') await reanchorReservationPrepaid(leaseTermId)
 
   if (lease.roomId) {
@@ -2440,10 +2561,10 @@ async function moveInBlock(roomId: string, exceptLeaseId: string): Promise<{ roo
     select: { status: true },
   })
   if (others.some(o => o.status === 'ACTIVE')) {
-    return { roomNo: room.roomNo, error: `${fmtRoomNo(room.roomNo, '')}는 아직 거주 중인 입주자가 있습니다.` }
+    return { roomNo: room.roomNo, error: `${withParticle(fmtRoomNo(room.roomNo, ''), '은/는')} 아직 거주 중인 입주자가 있습니다.` }
   }
   if (others.some(o => o.status === 'CHECKOUT_PENDING')) {
-    return { roomNo: room.roomNo, error: `${fmtRoomNo(room.roomNo, '')}는 아직 퇴실 처리가 완료되지 않았습니다.` }
+    return { roomNo: room.roomNo, error: `${withParticle(fmtRoomNo(room.roomNo, ''), '은/는')} 아직 퇴실 처리가 완료되지 않았습니다.` }
   }
   return null
 }
@@ -2491,7 +2612,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     // 딸린 계약도 같은 날로(moveInTenant 와 같은 한 벌).
     if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
 
-    // 입주월 재앵커 — prepaid 예약금을 실제 입주월로(deposit/none은 no-op).
+    // 입주월 재앵커 — 예약 단계 이용료 record 를 실제 입주월로(모드 무관, 2026-10-10).
     await reanchorReservationPrepaid(leaseTermId)
 
     await prisma.room.update({
@@ -2722,7 +2843,7 @@ async function roomScheduleClash(
     const hit = spans.some(o => o.roomId === seg.roomId && spanOverlaps(want, { start: o.start, end: o.end }))
     if (hit) {
       const room = await prisma.room.findUnique({ where: { id: seg.roomId }, select: { roomNo: true } })
-      return `${fmtRoomNo(room?.roomNo ?? '', '')}는 그 기간에 다른 입주자가 있습니다.`
+      return `${withParticle(fmtRoomNo(room?.roomNo ?? '', ''), '은/는')} 그 기간에 다른 입주자가 있습니다.`
     }
   }
   return null
@@ -2912,7 +3033,7 @@ export async function startLeaseWithRoomSchedule(input: {
       : null
     return {
       ok: true,
-      notice: next ? `${fmtDateDot(next.at)}에 ${fmtRoomNo(nextRoom?.roomNo ?? '', '')}로 옮기라고 홈에서 알립니다.` : undefined,
+      notice: next ? `${fmtDateDot(next.at)}에 ${roomNoWithRo(nextRoom?.roomNo ?? '', '')} 옮기라고 홈에서 알립니다.` : undefined,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2976,7 +3097,7 @@ export async function saveRoomSchedulePlan(input: {
           ok: false,
           error: earliest === null
             ? `계약 호실 ${mainNo}의 입주 가능일이 정해지지 않았습니다. 지금 사는 분의 퇴실 예정일을 먼저 정해 주세요.`
-            : `계약 호실 ${mainNo}는 ${fmtDateDot(main.freeFrom ?? earliest)}부터 입주 가능합니다. 입주일에 바로 들어가려면 그 뒤로 정하거나 임시 호실을 정해 주세요.`,
+            : `계약 호실 ${withParticle(mainNo, '은/는')} ${fmtDateDot(main.freeFrom ?? earliest)}부터 입주 가능합니다. 입주일에 바로 들어가려면 그 뒤로 정하거나 임시 호실을 정해 주세요.`,
         }
       }
       // 입주일을 앞당기면 남이 계약 호실에 정해 둔 임시 구간과 겹칠 수 있다. 수정 폼(updateTenant)의
@@ -3321,7 +3442,7 @@ export async function advanceRoomSchedule(input: {
     const room = await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
     return {
       ok: true,
-      notice: after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${fmtRoomNo(room?.roomNo ?? '', '')}가 계약 호실입니다.`,
+      notice: after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${withParticle(fmtRoomNo(room?.roomNo ?? '', ''), '이/가')} 계약 호실입니다.`,
     }
   } catch (e) {
     if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
@@ -3692,12 +3813,13 @@ export async function applyStatusTransition(input: {
       if (blocked) return { ok: false, error: blocked.error, code: 'ROOM_OCCUPIED' }
     }
 
-    // 신고 9b974be0: 예약 확정 시 월 이용료·입주 희망일 필수(서버 방어). 확정 호출은 값을 새로 넘기지 않고
+    // 신고 9b974be0: 예약 확정 시 입주 희망일 필수(서버 방어). 확정 호출은 값을 새로 넘기지 않고
     // 기존 lease 값으로 확정하므로 lease 쪽 값을 검증한다.
+    // 월 이용료는 묻지 않는다(운영자 결정 2026-10-10) — 확정 조건은 입주 희망일과 본인 연락처뿐이다.
+    // 이용료가 0 인 채 확정·입실해도 아래 청구 상태 백스톱(입주일 필수)과 입실 재앵커가 받친다.
     if (input.reservationConfirmedAt) {
-      const rentOk    = input.rentAmount != null ? input.rentAmount > 0 : lease.rentAmount > 0
       const moveInOk  = input.moveInDate ? true : lease.moveInDate != null
-      if (!rentOk || !moveInOk) return { ok: false, error: '예약 확정에는 월 이용료와 입주 희망일이 필요합니다.' }
+      if (!moveInOk) return { ok: false, error: '예약 확정에는 입주 희망일이 필요합니다.' }
       // 본인 전화번호 문 — 등록 폼·수정 폼과 **같은 한 벌**이다(lib/tenantContact 정본).
       // 이 경로는 연락처를 안 건드리므로 저장된 값이 곧 판정 입력이다. 이미 확정된 계약을
       // 다시 저장하는 호출(대시보드 알림의 재확정 등)은 소급으로 안 막는다.
@@ -3799,8 +3921,8 @@ export async function applyStatusTransition(input: {
     })
     if (input.toStatus === 'ACTIVE') await ensureOpenStay(prisma, input.leaseTermId)
 
-    // 입주월 재앵커 — 예약(RESERVED)에서 입실 처리(ACTIVE)로 넘어갈 때 prepaid 예약금을 실제 입주월로 이동.
-    // moveInDate가 폼에서 갱신됐을 수 있어 lease.update 후에 실행(deposit/none은 no-op).
+    // 입주월 재앵커 — 예약(RESERVED)에서 입실 처리(ACTIVE)로 넘어갈 때 예약 단계 이용료 record 를 실제 입주월로 이동.
+    // moveInDate가 폼에서 갱신됐을 수 있어 lease.update 후에 실행(모드 무관, 2026-10-10).
     if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE') await reanchorReservationPrepaid(input.leaseTermId)
 
     // 호실 공실 처리

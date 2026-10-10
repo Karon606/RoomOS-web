@@ -23,7 +23,8 @@ import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, settlementPremise, settleMonthView, futureMonthsLabel, SETTLEMENT_PICK_LABEL, rentSettlementConfirmSpec, type SettlementPick, type SettleMonthView } from '../lib/checkoutSettlement'
-import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
+import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode, depositModeSplit, depositModeCompositionLabel, depositModeSplitPartsLabel } from '../lib/reservationDeposit'
+import { withParticle } from '../lib/koParticle'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
@@ -329,6 +330,48 @@ const RENT = 300000
   const over = reservationFeeSplit(300000, 20000)
   eq('분해: 잔여가 이용료를 넘어도 분해식 불변', over, { cleaning: 20000, prepaid: 280000 })
   eq('분해: 초과분도 두 몫의 합 = 받은 돈', over.cleaning + over.prepaid, 300000)
+}
+
+// ── 보증금 대체 모드 분해 ── (운영자 승인 2026-10-10)
+// 넘는 몫이 입주월 이용료라는 것은 서버(saveDepositPayment)가 이미 하던 나눔이다. 화면 미리보기·
+// 확정 확인창·예약 취소가 같은 식과 같은 문장을 쓰는지 여기서 잠근다.
+{
+  eq('보증금 대체 분해: 남은 보증금을 넘는 몫은 이용료', depositModeSplit(80000, 50000), { deposit: 50000, rent: 30000 })
+  eq('보증금 대체 분해: 못 미치면 전액 보증금', depositModeSplit(30000, 50000), { deposit: 30000, rent: 0 })
+  eq('보증금 대체 분해: 딱 맞으면 이용료 0', depositModeSplit(50000, 50000), { deposit: 50000, rent: 0 })
+  eq('보증금 대체 분해: 남은 보증금 0 이면 전액 이용료', depositModeSplit(50000, 0), { deposit: 0, rent: 50000 })
+
+  const won = (n: number) => `${n.toLocaleString()}원`
+  eq('보증금 대체 문구: 두 몫', depositModeCompositionLabel(50000, 30000, won), '예약금 80,000원 = 보증금 50,000원 + 입주월 이용료 30,000원')
+  eq('보증금 대체 문구: 이용료 몫 0 이면 null', depositModeCompositionLabel(50000, 0, won), null)
+  eq('보증금 대체 문구: 보증금 몫 0 이면 null', depositModeCompositionLabel(0, 30000, won), null)
+}
+
+// ── 조사 정본 withParticle ── (2026-10-10 전수 처방)
+// 돈 문장(환불 안내·정산 안내·구성 줄)이 이 함수로 조사를 고른다. 받침 판정이 틀리면 금액 문장이
+// 틀린 말로 나가므로 여기서 잠근다.
+{
+  eq('조사: 받침 있음 을', withParticle('보증금 영수증', '을/를'), '보증금 영수증을')
+  // 날짜꼴은 '…일'·'…월'(ㄹ 받침)로 읽는다 — 끝 숫자 소리로 판정하면 '10/13으로'·'10/12와' 가 된다.
+  eq('조사: 날짜 M/D 으로/로', withParticle('10/13', '으로/로'), '10/13로')
+  eq('조사: 날짜 M/D 과/와', withParticle('10/12', '과/와'), '10/12과')
+  eq('조사: 날짜 Y.M.D 은/는', withParticle('2026.10.16', '은/는'), '2026.10.16은')
+  // 보증금 대체 몫 라벨 — 몫만(총액 없이), 한쪽이 0 이면 null
+  eq('보증금 대체 몫 라벨', depositModeSplitPartsLabel(50000, 30000, n => `${n}`), '보증금 50000 + 입주월 이용료 30000')
+  eq('보증금 대체 몫 라벨 한쪽 0', depositModeSplitPartsLabel(50000, 0, n => `${n}`), null)
+  eq('조사: 받침 없음 를', withParticle('계약서', '을/를'), '계약서를')
+  eq('조사: 숫자 아닌 호실 은', withParticle('사무실', '은/는'), '사무실은')
+  eq('조사: 숫자 호실 는', withParticle('508호', '은/는'), '508호는')
+  eq('조사: 원 뒤 으로', withParticle('350,000원', '으로/로'), '350,000원으로')
+  eq('조사: ㄹ 받침은 로', withParticle('9월', '으로/로'), '9월로')
+  eq('조사: ㅇ 받침은 으로', withParticle('옥탑방', '으로/로'), '옥탑방으로')
+  eq('조사: 숫자 3(삼) 이', withParticle('3', '이/가'), '3이')
+  eq('조사: 숫자 2(이) 가', withParticle('2', '이/가'), '2가')
+  eq('조사: 숫자 1(일) 로', withParticle('1', '으로/로'), '1로')
+  eq('조사: 숫자 6(육) 으로', withParticle('6', '으로/로'), '6으로')
+  eq('조사: 영문은 받침 없음', withParticle('m', '과/와'), 'm와')
+  eq('조사: 빈 문자열은 받침 없음', withParticle('', '이/가'), '가')
+  eq('조사: 끝 괄호는 앞말에 맞춘다', withParticle('2026년 7월 10일 (금)', '과/와'), '2026년 7월 10일 (금)과')
 }
 
 // ── billForLeaseMonth 단기 입주월 단일 청구 ── (운영자 승인 2026-07-20)

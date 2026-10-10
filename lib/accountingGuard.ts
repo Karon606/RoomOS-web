@@ -33,6 +33,8 @@
 //
 // 차단만 하고 끝내면 운영자가 막힌 채로 남는다. 무엇을 어떻게 할지와 정식 출구(경정청구)를 함께 준다.
 
+import { withParticle } from './koParticle'
+
 export type SettlementMonthVerdict =
   | { ok: true; warning: string | null }
   | { ok: false; reason: string }
@@ -67,7 +69,7 @@ export function checkSettlementMonth(
   if (acqMonth && mon < acqMonth) {
     return {
       ok: false,
-      reason: `${fmt(mon)}은 영업장을 인수하기 전(${fmt(acqMonth)} 인수)이라 이 장부에 기록할 수 없습니다. 인수 이후 달로 정산하거나 수납 기록에서 직접 조정해 주세요.`,
+      reason: `${withParticle(fmt(mon), '은/는')} 영업장을 인수하기 전(${fmt(acqMonth)} 인수)이라 이 장부에 기록할 수 없습니다. 인수 이후 달로 정산하거나 수납 기록에서 직접 조정해 주세요.`,
     }
   }
 
@@ -79,7 +81,7 @@ export function checkSettlementMonth(
   if (todayYmd > incomeTaxDue) {
     return {
       ok: false,
-      reason: `${fmt(mon)}은 종합소득세 확정신고(${year + 1}년 5월 31일)가 끝난 기간이라 이 앱에서 되돌릴 수 없습니다. 실제 환불금이 나가는 날짜로 이번 달 수납 기록에 조정을 기록하고, 메모에 "${fmt(mon)}분 퇴실 정산"이라고 남겨 주세요. 이미 신고했고 금액이 크다면 세무 담당자에게 경정청구를 문의하세요(법정신고기한 후 5년 이내).`,
+      reason: `${withParticle(fmt(mon), '은/는')} 종합소득세 확정신고(${year + 1}년 5월 31일)가 끝난 기간이라 이 앱에서 되돌릴 수 없습니다. 실제 환불금이 나가는 날짜로 이번 달 수납 기록에 조정을 기록하고, 메모에 "${fmt(mon)}분 퇴실 정산"이라고 남겨 주세요. 이미 신고했고 금액이 크다면 세무 담당자에게 경정청구를 문의하세요(법정신고기한 후 5년 이내).`,
     }
   }
 

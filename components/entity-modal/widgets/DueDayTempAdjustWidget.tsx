@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
+import { withParticle } from '@/lib/koParticle'
 
 type Override = {
   overrideDueDay: string | null
@@ -107,7 +108,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
         ? `${monthLabel(room.overrideDueDayMonth)}분 납부일 임시 조정을 삭제할까요?`
         : '납부일 임시 조정을 삭제할까요?',
       message: room.overrideDueDayMonth && room.dueDay
-        ? `${monthLabel(room.overrideDueDayMonth)}분 납부일이 원래 ${fmtOvr(room.dueDay)}로 돌아갑니다. 그 달 연체 경과일도 다시 계산됩니다.`
+        ? `${monthLabel(room.overrideDueDayMonth)}분 납부일이 원래 ${withParticle(fmtOvr(room.dueDay), '으로/로')} 돌아갑니다. 그 달 연체 경과일도 다시 계산됩니다.`
         : '납부일이 원래대로 돌아갑니다. 그 달 연체 경과일도 다시 계산됩니다.',
       // caution — 원래 납부일로 되돌아가는 동작이라 danger 의 '되돌릴 수 없습니다'와 모순된다.
       // 같은 위젯의 덮어쓰기(기존 조정 소멸)도 caution 이라 위계도 이쪽이 맞다(디자이너 패스).
@@ -236,7 +237,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
               if (!dateInput) return '날짜를 선택하세요'
               const d = new Date(dateInput + 'T00:00:00')
               const dateStr = `${d.getMonth() + 1}월 ${d.getDate()}일`
-              return `${monthLabel(overrideMonth)}분 납부일을 ${dateStr}로 ${deferToUnpaid ? '미루기' : '조정'}`
+              return `${monthLabel(overrideMonth)}분 납부일을 ${withParticle(dateStr, '으로/로')} ${deferToUnpaid ? '미루기' : '조정'}`
             })()}
           </button>
         </div>

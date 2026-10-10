@@ -9,6 +9,8 @@
 // (check-print-selfcontained)이 그 너머의 폰트 소비자까지 /api/bank-book 에 엮는다.
 // docType 이 DocBundleDocType 의 부분집합인지는 docFileLabel 호출부에서 타입이 다시 잰다.
 
+import { withParticle } from './koParticle'
+
 export type PropertyDocKind = 'bizcert' | 'bankbook_ko' | 'bankbook_en'
 
 export type PropertyDocSpec = {
@@ -58,11 +60,9 @@ export function isPropertyDocKind(v: unknown): v is PropertyDocKind {
 /** 등록된 서류 한 칸 — null 이면 미등록. mimeType 으로 화면이 이미지·PDF 를 가른다(빈 값 = 옛 저장분). */
 export type PropertyDocSlotValue = { driveFileId: string; mimeType: string }
 
-/** '을/를' — 확인창·토스트 문장이 라벨 받침을 따라간다. */
+/** '을/를' — 확인창·토스트 문장이 라벨 받침을 따라간다. 판정은 조사 정본(lib/koParticle) 한 벌이다. */
 export function withObjectParticle(word: string): string {
-  const code = word.charCodeAt(word.length - 1) - 0xac00
-  const hasFinal = code >= 0 && code <= 11171 && code % 28 !== 0
-  return `${word}${hasFinal ? '을' : '를'}`
+  return withParticle(word, '을/를')
 }
 
 // ── 적용취소 스냅샷(Property.propertyDocPrev) ─────────────────────

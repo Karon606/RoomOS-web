@@ -35,6 +35,7 @@ import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
+import { withParticle } from '@/lib/koParticle'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
@@ -582,7 +583,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string) => {
     const ok = await confirmDialog({
       title: '낱개 용량이 비어 있습니다. 그대로 수령할까요?',
-      message: `${label}의 낱개 용량을 몰라 재고에는 ${qtyText}로 들어갑니다.\n지출에서 용량을 넣으면 총량이 다시 계산됩니다.`,
+      message: `${label}의 낱개 용량을 몰라 재고에는 ${withParticle(qtyText, '으로/로')} 들어갑니다.\n지출에서 용량을 넣으면 총량이 다시 계산됩니다.`,
       level: 'caution', confirmLabel: '그대로 수령',
     })
     if (ok) handleQuickReceive(key, expenseIds)
@@ -2068,7 +2069,7 @@ function SettingsForm({ row, onCancel, onDone, onGone }: {
     const res = await changeTrackedItemUnit(row.id, target)
     setUnitPending(false)
     if (!res.ok) { setUnitMsg(res.error); return }
-    pushToast('success', `단위를 ${target}로 변경했습니다 (점검 ${res.convertedChecks}건 환산).`)
+    pushToast('success', `단위를 ${withParticle(target, '으로/로')} 변경했습니다 (점검 ${res.convertedChecks}건 환산).`)
     if (res.unitlessReceipts > 0) {
       pushToast('info', `단위가 비어 있는 과거 영수증 ${res.unitlessReceipts}건은 자동 환산되지 않습니다. 타임라인에서 해당 구매의 규격 단위를 채워주세요.`)
     }

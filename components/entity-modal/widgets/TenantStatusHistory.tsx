@@ -26,6 +26,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { buildReason, parseReason, reasonsForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
+import { withParticle } from '@/lib/koParticle'
 
 import { fmtDateDot } from '@/lib/fmtDate'   // 날짜 표기 정본
 
@@ -222,7 +223,7 @@ function ReasonEditModal({ item, onClose, onDone }: { item: HistItem; onClose: (
       if (!res.ok) { pushToast('error', res.error); return }
       const prev = res.prev
       const lab = reasonLabel(item.toStatus) ?? '사유'
-      pushToast('success', next ? `${lab}를 저장했습니다` : `${lab}를 지웠습니다`, {
+      pushToast('success', next ? `${withParticle(lab, '을/를')} 저장했습니다` : `${withParticle(lab, '을/를')} 지웠습니다`, {
         // 상시 진입점은 같은 [수정] 버튼이다 — 텍스트는 되돌려 쓰는 것이 곧 적용취소라(§16)
         // 여기 토스트는 즉시 되돌리기용 편의다.
         action: { label: '적용취소', run: () => { void updateStatusLogReason(item.id, prev).then(u => {

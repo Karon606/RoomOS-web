@@ -39,6 +39,7 @@ const BEFORE: Row = {
   defaultDeposit: 50000,
   defaultCleaningFee: 20000,
   reservationDepositMode: 'prepaid',
+  defaultReservationFee: 30000,
   refundPenaltyPct: 10,
   refundClauseInContract: true,
   cleaningFeeInDeposit: true,
@@ -59,7 +60,7 @@ const OWNED: Record<string, string[]> = {
   // 입금 계좌번호는 2026-09-22 에 계약서·서류에서 기본정보로 **되돌아왔다**. 서류만 쓰는
   // 값이 아니라서다 — 상담도구·미납 문자 {계좌번호}·납부 확인서가 같은 칸을 읽는다.
   기본정보:    ['name', 'address', 'phone', 'bankAccount', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
-  '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
+  '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'defaultReservationFee', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
   '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum', 'roomScheduleAddendum'],
   웹사이트:    ['publicSlug'],
 }
@@ -79,6 +80,7 @@ const BASIC_FORM: [string, string][] = [
 ]
 const PRICING_FORM: [string, string][] = [
   ['defaultDeposit', '50000'], ['defaultCleaningFee', '20000'], ['reservationDepositMode', 'prepaid'],
+  ['defaultReservationFee', '30000'],
   ['refundPenaltyPct', '10'],
   ['refundClauseInContract', '0'], ['refundClauseInContract', '1'],
   ['cleaningFeeInDeposit', '0'], ['cleaningFeeInDeposit', '1'],
@@ -187,6 +189,8 @@ for (const [tab, form] of TAB_FORMS) {
   eq('위약금은 공정위 10% 캡', p([['refundPenaltyPct', '30']]).refundPenaltyPct, 10)
   eq('빈 위약금은 null', p([['refundPenaltyPct', '  ']]).refundPenaltyPct, null)
   eq('예약금 미허용값은 기본으로', p([['reservationDepositMode', 'weird']]).reservationDepositMode, 'deposit')
+  eq('빈 기본 예약금은 null', p([['defaultReservationFee', '']]).defaultReservationFee, null)
+  eq('기본 예약금은 숫자만 남긴다', p([['defaultReservationFee', '30,000원']]).defaultReservationFee, 30000)
   eq('연락 알림은 1~90 로 조인다', p([['contactLeadDays', '900']]).contactLeadDays, 90)
   eq('연락 알림 빈 값은 기본 14', p([['contactLeadDays', '']]).contactLeadDays, 14)
   eq('전용면적은 소수점을 남긴다', p([['defaultAreaM2', '13.2㎡']]).defaultAreaM2, 13.2)

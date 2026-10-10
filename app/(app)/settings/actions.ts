@@ -120,6 +120,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       refundPenaltyPct: true,   // 중도퇴실 위약금 기본값(%) — 공정위 10% 캡(운영자 결정 2026-07-20)
       defaultAreaM2: true,
       reservationDepositMode: true,
+      defaultReservationFee: true,   // 예약금 수납 폼의 기본 금액(2026-10-10)
       bankAccount: true,
       contactLeadDays: true,
       checkoutLeadShortDays: true,

@@ -50,7 +50,7 @@ import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 import { transitionStatusLabel } from '@/lib/leaseTransitions'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -683,7 +683,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
                 // 청소 예정은 강제하지 않는다 — '오늘 이사' 버튼과 같은 3지선다(운영자 지적 2026-09-01).
                 const pick = await choiceDialog({
                   level: 'caution',
-                  title: `${alert.scheduleMoveTenantName ?? ''}님 · ${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사할까요?`,
+                  title: `${alert.scheduleMoveTenantName ?? ''}님 · ${roomNoWithRo(alert.scheduleMoveToRoomNo ?? '', '')} 이사할까요?`,
                   message: `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')}에서 나와 옮깁니다.`,
                   confirmLabel: `이사 + ${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정`,
                   altLabel: '이사만',
@@ -698,7 +698,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
                 const movedYmd = kstYmdStr(new Date())
-                pushToast('success', `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리했습니다`, {
+                pushToast('success', `${roomNoWithRo(alert.scheduleMoveToRoomNo ?? '', '')} 이사 처리했습니다`, {
                   detail: [withCleaning ? `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 만들었습니다.` : null, r.notice].filter(Boolean).join(' '),
                   // 이사 처리에는 되돌릴 길이 없었다 — 방 하나 잘못 옮긴 것을 무르려면 입실 전체를
                   // 무너뜨려야 했다(§16). '오늘 이사' 버튼과 같은 정본(undoRoomMove)을 쓴다.
@@ -716,7 +716,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
               }}
               disabled={confirmPending}
               variant="primary" size="md" fullWidth>
-              {confirmPending ? '처리 중…' : `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리`}
+              {confirmPending ? '처리 중…' : `${roomNoWithRo(alert.scheduleMoveToRoomNo ?? '', '')} 이사 처리`}
             </Btn>
           )}
           {isRecurring && (

@@ -8,8 +8,9 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, finalizeRentRefund,
-  getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getDepositCompositionForLease, getOpenCheckoutCleaning, finalizeRentRefund,
+  getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel,
+  getReservationReceivedComposition, recordReservationDepositCancel, undoReservationDepositCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
@@ -27,7 +28,8 @@ import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/s
 import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
   CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
-import { reservationCompositionLabel } from '@/lib/reservationDeposit'
+import { reservationCompositionLabel, reservationSplitPartsLabel, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
+import { withParticle } from '@/lib/koParticle'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -154,9 +156,11 @@ type Lease = {
   checkoutReason?: string | null
 }
 
-// resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
+// resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합 = 보증금 몫 + 입주월 이용료 몫).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
 type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number
+  /** 보증금 대체 예약 취소에서 입주월 이용료로 적힌 몫 — 0 보다 크면 두 몫 오케스트레이터로 저장한다. */
+  rentShare?: number
   /** 이 방에 이미 열려 있는 퇴실 청소 예정 — 있으면 새로 만들지 않고 날짜도 안 덮는다(서버 skipped-open). */
   openCleaning?: { id: string; scheduledYmd: string | null } | null
   } | null
@@ -174,6 +178,30 @@ type TransitionFields = {
 }
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
+
+/**
+ * 예약 확정 확인창의 예약금 줄 — 받은 돈·기록 없음·안 받는 예약 셋 중 하나.
+ * 구성 줄은 모드마다 그 모드의 정본 문장을 쓴다(보증금 대체 = 보증금 + 입주월 이용료,
+ * 이용료 선납 = 청소비 + 이용료 충당). 몫이 하나뿐이면 총액만 말한다.
+ * 서버 읽기가 실패하면 null — 호출부는 줄 없이 확정을 연다.
+ */
+async function reservationReceivedLine(leaseTermId: string, mode: string): Promise<string | null> {
+  try {
+    const comp = await getReservationReceivedComposition(leaseTermId)
+    const total = comp.deposit + comp.rent + comp.cleaning
+    if (total > 0) {
+      // 총액이 바로 앞에 서 있으니 몫만 붙인다 — '예약금 80,000원 수납됨 · 예약금 80,000원 = …' 로 두 번 말하지 않게.
+      const parts = mode === 'deposit' ? depositModeSplitPartsLabel(comp.deposit, comp.rent, fmtWon)
+        : mode === 'prepaid' ? reservationSplitPartsLabel(comp.cleaning, comp.rent, fmtWon)
+        : null
+      return `예약금 ${fmtWon(total)} 수납됨${parts ? ` · ${parts}` : ''}`
+    }
+    if (mode !== 'none') return '예약금 수납 기록이 없습니다. 확정은 그대로 진행할 수 있고, 예약금은 수납 화면에서 따로 기록합니다.'
+    return '예약금 없이 받는 예약입니다.'
+  } catch {
+    return null
+  }
+}
 
 export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases = [], onChange }: {
   lease: Lease
@@ -243,21 +271,29 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     if (def.key === 'plan') { setPlanOpen(true); return }
     // 단기 lease의 퇴실일 변경 — 날짜만 바꾸는 우회를 막고 누적 요금을 재계산하는 연장 모달로 보낸다. 장기는 기존 미니폼.
     if (def.key === 'changeMoveOut' && lease.isShortTerm) { setShortExtOpen(true); return }
-    // 신고 9b974be0: 예약 확정 — 이용료·입주 희망일 필수(클라 선검증), 호실 미지정은 허용하되 확인 단계에 문구 표시.
+    // 신고 9b974be0: 예약 확정 — 입주 희망일 필수(클라 선검증), 호실 미지정은 허용하되 확인 단계에 문구 표시.
+    // 월 이용료는 묻지 않는다(운영자 결정 2026-10-10). 목록 구조는 남긴다 — 조건이 다시 늘어도
+    // 문장 조립(조사 포함)이 그대로 맞게.
     if (def.kind === 'confirm') {
       const missing: string[] = []
-      if (!lease.rentAmount)  missing.push('월 이용료')
       if (!lease.moveInDate)  missing.push('입주 희망일')
       if (missing.length > 0) {
         await alertDialog(
           `${tenantName}님 · 예약 확정 불가`,
-          `예약 확정에는 ${missing.join('·')}이 필요합니다. 입주자 정보 수정에서 입력한 뒤 다시 확정해 주세요.`,
+          `예약 확정에는 ${withParticle(missing.join('·'), '이/가')} 필요합니다. 입주자 정보 수정에서 입력한 뒤 다시 확정해 주세요.`,
         )
         return
       }
+      // 예약금 수납 상태 — 막지 않고 알리기만 한다(운영자 결정 2026-10-10). 확정은 방을 잡아 두는
+      // 결정이라 돈을 받았는지가 판단 재료인데, 종전 확인창은 그걸 말하지 않았다.
+      // 읽기가 실패하면 줄을 비우고 확정은 그대로 연다 — 알림 줄 때문에 확정이 막히면 주객이 바뀐다.
+      const receivedLine = await reservationReceivedLine(lease.id, lease.reservationDepositMode)
       const ok = await confirmDialog({
         title: `${tenantName}님 · 예약을 확정할까요?`,
-        message: lease.roomId ? undefined : '호실 미지정 상태로 확정합니다. 이후 호실을 지정할 수 있습니다.',
+        message: [
+          receivedLine,
+          lease.roomId ? null : '호실 미지정 상태로 확정합니다. 이후 호실을 지정할 수 있습니다.',
+        ].filter(Boolean).join('\n') || undefined,
         confirmLabel: '예약 확정',
       })
       if (!ok) return
@@ -295,12 +331,19 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         }
         // 선납 실수납 없음 — 아래 기존 확인 흐름으로.
       } else if (lease.reservationDepositMode !== 'none') {
-        const received = await getReceivedDepositTotal(lease.id)
+        // 기준액은 보증금 몫 + 입주월 이용료 몫(운영자 승인 2026-10-10). 예약금이 남은 보증금보다 크면
+        // 넘는 몫이 이용료 record 로 적혀 있어, 보증금 합만 세면 받은 돈 일부가 화면에서 빠진다.
+        const comp = await getReservationReceivedComposition(lease.id)
+        const received = comp.deposit + comp.rent
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
           setTransDefer(false)
           setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
-          setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
+          setActive({
+            def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true,
+            rentShare: comp.rent,
+            compositionLabel: depositModeCompositionLabel(comp.deposit, comp.rent, fmtWon),
+          })
           return
         }
         // 실수납 예약금 없음 — 아래 기존 확인 흐름으로.
@@ -423,10 +466,36 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (!res.ok) { pushToast('error', res.error); return }
           const { recordIds, cleaningIncomeIds, extraIncomeId } = r
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
-            action: { label: '취소 되돌리기', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds).then(u => {
-              if (u.ok) { pushToast('info', '예약 선납 반환/몰취를 되돌렸습니다 (상태는 유지 — 필요 시 상태 변경으로 복구)'); onChange?.() }
+            // 라벨은 §16 정본 '적용취소'. 무르는 것은 돈 기록뿐이고 예약 취소 상태는 그대로라 결과 문장이 그걸 말한다.
+            action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds).then(u => {
+              if (u.ok) { pushToast('info', '예약 선납 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로'); onChange?.() }
               else pushToast('error', u.error)
-            }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+          })
+          setActive(null)
+          onChange?.()
+          return
+        }
+        // 보증금 대체 예약 취소인데 입주월 이용료 몫이 있다 — 두 몫을 각자의 정본에 맡기는 서버 오케스트레이터.
+        // 이용료 몫이 0 이면 아래 종전 경로(recordDepositReturn 만) 그대로 간다. 적용취소는 위 형제와 같은 문법.
+        if (active?.resvCancel && (active.rentShare ?? 0) > 0 && transRefund != null) {
+          const r = await recordReservationDepositCancel({
+            leaseTermId: lease.id, tenantId, refundAmount: transRefund,
+            date: kstYmdStr(), tenantName,
+          })
+          if (!r.ok) { pushToast('error', r.error); return }
+          if (r.receiptNotice) pushToast('info', r.receiptNotice)
+          const res = await applyStatusTransition({
+            leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
+            ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
+          })
+          if (!res.ok) { pushToast('error', res.error); return }
+          const { prepaid, deposit } = r
+          pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
+            action: { label: '적용취소', run: () => { void undoReservationDepositCancel(prepaid, deposit).then(u => {
+              if (u.ok) { pushToast('info', '예약금 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로'); onChange?.() }
+              else pushToast('error', u.error)
+            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
           })
           setActive(null)
           onChange?.()
@@ -792,7 +861,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                     {active.resvCancelPrepaid
                       ? <>반환하지 않은 금액은 위약금으로 기록됩니다.</>
                       : active.resvCancel
-                      ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
+                      ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.{(active.rentShare ?? 0) > 0 && ' 입주월 이용료로 적어 둔 몫은 취소와 함께 수납 기록에서 지워집니다.'}</>
                       : active.carriedOver
                       ? <>인수 전 입주자라 이전 원장 원칙대로 승계받은 보증금을 돌려주지 않는 것이 기본입니다. 돌려주려면 위에서 &lsquo;반환함&rsquo;을 고르세요. 반환하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
                       : <>반환하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>}

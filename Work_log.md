@@ -6795,3 +6795,11 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 수정: lib/unitMismatch(dominantUnit 최빈·동률 최근, groupUnitMismatches 같은 쌍·근거 묶음), getUnitTrackedInfo 가 개수 추적 null 카드에 이력 최빈 단위(source 'history')를 돌려줌, FinanceClient 확인창이 묶음 단위로 한 번 묻고 전부 적용(문장은 card/history 로 갈림).
 - 데이터: fix-bag-unit-1009 --apply — 10/9 100L 지출 '개'→'매'(detail 포함), 폐기물 처리비 null 카드 넷 '매'. 되돌리기 scripts/.fix-bag-unit-1009-undo-1791522459539.json.
 - 그물: test-unit-mismatch 25건, check-unit-mismatch-wiring(역주입 전부 빨강), check-qty-card-unit-gap(verify:db, 적용 전 3건 → 적용 뒤 0건). 범위 밖: 지출 수정 경로의 단위 확인창 부재(기존).
+
+## 2026-10-10 예약 확정에서 월 이용료 요구 제거 + 예약금이 보증금과 다른 영업장 + 조사 정본 (운영자 승인 추천안)
+- 확정 조건 네 자리(확인창·leaseSaveDenial·updateTenant·applyStatusTransition)와 수정 폼 캡션에서 월 이용료 제거, 입주 희망일·본인 연락처 유지. 확인창에 예약금 수납 상태(받음 '예약금 N원 수납됨 · 몫', 없음 안내, 안 받음) — 막지 않음.
+- 보증금 대체 분해 보강: 폼 미리보기·토스트(서버 실제 몫, 부가 줄), 이용료 0 허용(락 0 비점착, 이용료 정해질 때 rewriteLocked 되쓰기), 재앵커 모드 무관·항상 재계산, 입주 전 취소 기준액 = 받은 돈 전부(recordReservationDepositCancel: 반환 이용료 몫부터·몰취 보증금 몫부터, 두 정본 조합·보상·적용취소).
+- 기본 예약금: properties.defaultReservationFee(DIRECT_URL) + 설정 2열(선택지 짧은 말·높이 42) + 프리필(단기 시드 > 영업장 기본 > 종전).
+- 조사 정본 lib/koParticle(받침·숫자 읽기·끝 괄호·날짜꼴 '일'), 흩어진 헬퍼 셋 위임, 109건 전수 중 동적 보간 전부 처방('보증금 영수증를'·'350,000원로' 등). 그물 check-korean-particle·check-reservation-confirm-gate, 축 D·재앵커 소스 축. test-money 376(기존 기대값 불변).
+- 웹디자이너 패스: 차단 1(설정 select 전 폭 잘림) + 권고 5 + 사소 2 반영(확인창 '예약금' 중복 제거, 취소 토스트 '적용취소' 두 형제, 저장 토스트 부가 줄, 날짜 뒤 조사, 문구).
+- 남은 결정: 조사 그물 범위 확대(템플릿 끝·JSX), lib/statusReasons·unitWithRo 헬퍼 통합.

@@ -2495,3 +2495,10 @@ RentReceiptsClient:186 · AssetsClient:1623)은 **괄호를 안 쓴다.** 그런
 - 복사 버튼 없음(도어락에 손으로 누르는 값, 클립보드는 기기 간 동기화로 새는 통로). 입력은 type=text(password 는 오타 저장 사고).
 - RoleContext 폴백이 OWNER 라 위젯 마운트는 useCanReadScope('security') && doorMasterKeySet !== null 두 겹(fail closed).
 - getRoomDetail 이 propertyId 없이 id 로만 읽던 것을 이번에 격리(부수 봉합, 화면 불변).
+
+## 2026-10-10 예약 확정·예약금 (설계 패널 Fable, 운영자 승인 추천안)
+- 예약 확정의 월 이용료 요구는 7/15 정비(신고 9b974be0) 때 근거 없이 들어갔다. 쓰는 곳은 홈 '예약 확정 N건 M원' 집계뿐이고 거기서도 rent>0 만 센다. 운영자: "입주가 아니라 예약확정인데 월이용료가 왜 필요하냐" — 네 자리(화면 1·서버 3) + 캡션에서 뺀다. 입주 희망일·본인 연락처는 유지.
+- 보증금 대체 모드의 '예약금 > 남은 보증금' 분해는 saveDepositPayment 가 이미 한다(남은 보증금까지 isDeposit, 나머지 입주월 이용료). 빈 곳만 메운다: 미리보기, 이용료 0 허용(락 0 은 끈적이지 않음, 정산은 이용료가 정해질 때 rewriteLockedExpectedForRentAmount), 재앵커 모드 무관, 취소 기준액 = 받은 돈 전부.
+- 취소 배분: 반환은 이용료 몫부터, 몰취는 보증금 몫부터(합 불변). 계약서가 위약금을 보증금에서 공제하고 이용료 몫은 용역 전 선수금이라서. 보증금 몫 몰취는 '보유 보증금' 꼬리표 유지(KPI·정산 감사 정합).
+- 기본 예약금 프리필 우선순위: 단기 분해 시드 > 영업장 기본 예약금 > 종전 기본값. 설정값에서 이미 받은 예약금을 뺀다(신고 50a2a69b 전례: 전액 프리필이 중복 수납을 만들었다).
+- 조사 헬퍼가 셋 흩어져 있어(withObjectParticle·hasFinalConsonant·withEunNeun) lib/koParticle 하나로 모으고 셋은 위임. 숫자 끝은 읽기(영·일·삼·육·칠·팔 받침).

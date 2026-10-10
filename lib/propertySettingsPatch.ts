@@ -51,6 +51,7 @@ export type PropertySettingsPatch = {
   defaultCleaningFee?: number | null
   defaultAreaM2?: number | null
   reservationDepositMode?: string
+  defaultReservationFee?: number | null
   bankAccount?: string | null
   contactLeadDays?: number
   checkoutLeadShortDays?: number
@@ -140,6 +141,11 @@ export function buildPropertySettingsPatch(
   if (formData.has('reservationDepositMode')) {
     const raw = str(formData, 'reservationDepositMode')
     patch.reservationDepositMode = ['deposit', 'prepaid', 'none'].includes(raw) ? raw : 'deposit'
+  }
+  // 기본 예약금 — 예약금 수납 폼의 첫 금액. 빈 칸이면 null(모드별 종전 기본값으로 돌아간다), 기본 보증금과 같은 꼴.
+  if (formData.has('defaultReservationFee')) {
+    const v = str(formData, 'defaultReservationFee')
+    patch.defaultReservationFee = v ? Number(digits(v)) : null
   }
   // 퇴실 환불 규정: 기간·1일당·청소비 차감은 여전히 미사용(법정 산식 고정).
   // 위약금율만 설정 가능 — 공정위 기준(10%)을 상한 캡으로(운영자 결정 2026-07-20).

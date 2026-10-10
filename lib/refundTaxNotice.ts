@@ -13,6 +13,7 @@
 // 언젠가 갈리고, 갈린 쪽은 아무도 눈치채지 못한다.
 
 import { fmtWon } from './fmtMoney'
+import { withParticle } from './koParticle'
 
 /** 환불 후 홈택스·카드사 조치 — 서버(finalizeRentRefund)가 만들어 준다. */
 export type RefundTaxNotice = {
@@ -51,7 +52,7 @@ export function refundTaxNoticeLines(notice: RefundTaxNotice | undefined): strin
     // 전액 환불이면 재발행할 것이 없다 — 취소만 하면 된다.
     out.push(notice.companyKeeps === 0
       ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${what}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
-      : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${what}을 취소하고 확정액 ${fmtWon(notice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
+      : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${withParticle(what, '을/를')} 취소하고 확정액 ${fmtWon(notice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
     // 한 발행 줄이 보증금 몫이나 지난 달 몫까지 덮고 있으면 그것도 함께 취소된다. 홈택스는
     // 부분 취소가 안 되므로 줄 전체를 취소하는 것이 맞고, 재발행액에 그 몫을 도로 얹어야 한다.
     // 얼마를 얹을지는 앱이 단정하지 않는다 — 딸린 금액만 알리고 판단은 운영자 몫이다.
@@ -80,7 +81,7 @@ export function refundTaxNoticeLines(notice: RefundTaxNotice | undefined): strin
 export function undoRefundTaxNoticeLines(issues: { ymd: string; amount: number }[] | undefined): string[] {
   if (!issues?.length) return []
   const what = issues.map(i => `${i.ymd} 발행 ${fmtWon(i.amount)}`).join(', ')
-  return [`환불을 되돌렸습니다. 홈택스에서 이미 취소하셨다면 ${what}을 다시 발행해 주세요. 앱 매출은 되돌렸지만 현금영수증은 따로 하셔야 합니다.`]
+  return [`환불을 되돌렸습니다. 홈택스에서 이미 취소하셨다면 ${withParticle(what, '을/를')} 다시 발행해 주세요. 앱 매출은 되돌렸지만 현금영수증은 따로 하셔야 합니다.`]
 }
 
 

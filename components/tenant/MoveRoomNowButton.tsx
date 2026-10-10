@@ -15,7 +15,7 @@ import { changeRoomMoveDate, undoChangeRoomMoveDate, advanceRoomSchedule, undoRo
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 
 export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoomNo, nextAt, onDone }: {
   leaseTermId: string
@@ -32,12 +32,13 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
     const today = kstYmdStr()
     const early = nextAt > today
     const from = fmtRoomNo(fromRoomNo, '지금 방')
-    const to = fmtRoomNo(nextRoomNo, '다음 방')
+    // 방향 조사까지 한 덩이로 — 호실명이 숫자가 아니거나 비어 '다음 방'이 서면 '로'를 손으로 못 붙인다.
+    const toRo = roomNoWithRo(nextRoomNo, '다음 방')
     // 청소 예정은 강제하지 않는다 — 만들지 여부를 같이 묻는다(운영자 지적 2026-09-01,
     // "옵션도 없이 만드는 것은 잘못된 것 같아"). §27 3지선다 정본이라 새 화면 문법이 없다.
     const pick = await choiceDialog({
       level: 'caution',
-      title: `${tenantName}님 · ${to}로 오늘 이사할까요?`,
+      title: `${tenantName}님 · ${toRo} 오늘 이사할까요?`,
       message: early
         ? `예정일(${dot(nextAt)})을 오늘로 앞당기고, ${from}에서 나와 옮깁니다.`
         : `${from}에서 나와 옮깁니다.`,
@@ -61,7 +62,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
         pushToast('error', bu.ok ? r.error : `${r.error} 이사일이 오늘로 당겨진 채 남았습니다. 이사일 바꾸기로 되돌려 주세요.`)
         return
       }
-      pushToast('success', `${to}로 이사 처리했습니다`, {
+      pushToast('success', `${toRo} 이사 처리했습니다`, {
         detail: [withCleaning ? `${from} 청소 예정을 만들었습니다.` : null, r.notice].filter(Boolean).join(' '),
         action: {
           label: '적용취소',

@@ -52,6 +52,7 @@ import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { withParticle } from '@/lib/koParticle'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -2373,7 +2374,7 @@ export default function FinanceClient({
       const perPiece = it.amount != null ? Math.round(it.amount / newQty) : (h.perPiece || 0)
       const choice = await choiceDialog({
         title: `${it.label} 세트 확인`,
-        message: `${h.count}개 1세트 상품으로 보입니다. ${newQty}개로 등록할까요? 개당 단가는 금액을 ${newQty}로 나눠 ${fmtWon(perPiece)}으로 계산됩니다.`,
+        message: `${h.count}개 1세트 상품으로 보입니다. ${newQty}개로 등록할까요? 개당 단가는 금액을 ${withParticle(String(newQty), '으로/로')} 나눠 ${fmtWon(perPiece)}으로 계산됩니다.`,
         confirmLabel: `${newQty}개로 등록`,
         altLabel: '1개 그대로',
         cancelLabel: '취소',

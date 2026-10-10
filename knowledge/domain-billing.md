@@ -205,3 +205,8 @@
 - 정산 구간(`settlementPeriodFor`)은 입주월 보정을 항상 하고 귀속월도 입주달이다.
 - `BillingLeaseFields.dueDay` 는 **필수 선언** — select 누락을 tsc 가 잡는다(소비처 9파일 배선).
 - 배포 안전 증명: 실DB 옛/새 엔진 대조(check-first-month-shift, verify:db) 노출 창 0건.
+
+## 락 0 은 끈적이지 않는다 (2026-10-10)
+`billForLeaseMonth` 는 `locked > 0` 일 때만 락을 쓴다. 이용료 0 인 예약 계약에 받은 이용료 몫(보증금 대체의 넘는 몫)은
+청구 0 으로 락인되지만 이용료가 정해지면 청구는 곧바로 새 값이다. 남는 흔적(expectedAmount 0·isPaid true)은
+`rewriteLockedExpectedForRentAmount(…, 0, rent, 입주월)` 가 되쓴다(입실 처리 재앵커 끝, 예약 중 장기 이용료 수정). [[deposit-entry-paths]]

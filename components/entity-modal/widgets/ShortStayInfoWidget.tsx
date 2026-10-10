@@ -16,6 +16,7 @@ import { Section } from './Section'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 import { MonthlyConversionModal } from './MonthlyConversionModal'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 
 type LeaseLite = {
   id: string
@@ -69,12 +70,12 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
   const lastLabel = lastActive?.kind === 'decrease' ? '감액' : '연장'
 
   const handleUndo = async () => {
-    const ok = await confirmDialog({ title: `${lastLabel}을 적용취소할까요?`, confirmLabel: '적용취소', level: 'caution' })
+    const ok = await confirmDialog({ title: `${withParticle(lastLabel, '을/를')} 적용취소할까요?`, confirmLabel: '적용취소', level: 'caution' })
     if (!ok) return
     setUndoing(true)
     const r = await undoShortStayExtension(lease.id)
     setUndoing(false)
-    if (r.ok) { pushToast('info', `${lastLabel}이 취소되었습니다.`); onChange?.() }
+    if (r.ok) { pushToast('info', `${withParticle(lastLabel, '이/가')} 취소되었습니다.`); onChange?.() }
     else pushToast('error', r.error)
   }
 

@@ -43,7 +43,8 @@ import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy } from '@/lib/shortStay'
 import { primaryTenantLease, moveInSubText, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
 import { kstYmdStr } from '@/lib/kstDate'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 
 type RoomScheduleInfo = NonNullable<Awaited<ReturnType<typeof getRoomScheduleState>>>
 type RoomBusyInfo = NonNullable<Awaited<ReturnType<typeof getRoomBusyNotice>>>
@@ -304,7 +305,7 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
       )}
       {moveOpen && (
         <Modal open z={280} width="sm" onClose={() => { if (!pending) setMoveOpen(false) }}
-          title="이사일 바꾸기" subtitle={`${tenantName}님 · ${info.nextRoomNo ? fmtRoomNo(info.nextRoomNo) : '계약 호실'}로 옮기는 날`}
+          title="이사일 바꾸기" subtitle={`${tenantName}님 · ${info.nextRoomNo ? roomNoWithRo(info.nextRoomNo) : '계약 호실로'} 옮기는 날`}
           footer={
             <div className="flex gap-2">
               <Btn variant="secondary" size="md" className="flex-1" onClick={() => setMoveOpen(false)} disabled={pending}>취소</Btn>
@@ -313,7 +314,7 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
                   const r = await changeRoomMoveDate({ leaseTermId, moveYmd: moveDate })
                   if (!r.ok) { pushToast('error', r.error); return }
                   setMoveOpen(false)
-                  pushToast('success', `이사일을 ${fmtDateDot(moveDate)}로 바꿨습니다`, {
+                  pushToast('success', `이사일을 ${withParticle(fmtDateDot(moveDate), '으로/로')} 바꿨습니다`, {
                     action: {
                       label: '적용취소',
                       run: () => { void undoChangeRoomMoveDate(r.undo).then(u => {

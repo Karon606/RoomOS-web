@@ -175,6 +175,9 @@ model Property {
   paymentMethods     String?   // 결제 수단 목록 (콤마 구분)
   defaultDeposit   Int?      // 기본 보증금
   defaultCleaningFee Int?    // 기본 청소비
+  // 기본 예약금 (2026-10-10, prisma/migrate_default_reservation_fee.sql). 보증금과 다른 금액으로 받는 영업장용
+  // (예: 보증금 5만·예약금 10만 — 넘는 몫은 입주월 이용료로 충당). 예약금 폼 프리필에만 쓴다. null = 남은 보증금을 채운다.
+  defaultReservationFee Int?
   defaultAreaM2    Float?    // 기본 전용면적(㎡) — 실거주 확인서 등 서류 기본값. 호실별 areaM2 가 비었을 때 사용
   // 단기 입실 정책 템플릿 (JSON, lib/shortStay.ShortStayPolicy) — 영업장별 수치.
   // null = 정책 미사용(기본). 예: {"enabled":true,"unitDays":7,"minUnits":1,"thresholdDays":30,"multiplier":1.5,"cleaningFee":20000}

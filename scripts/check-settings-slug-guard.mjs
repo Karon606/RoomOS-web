@@ -27,7 +27,7 @@ const GUARDED = [
   // 기본정보
   'name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths',
   // 요금·정책
-  'defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct',
+  'defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'defaultReservationFee', 'refundPenaltyPct',
   'refundClauseInContract', 'cleaningFeeInDeposit',
   // 계약서·서류
   'multiContractVersions',

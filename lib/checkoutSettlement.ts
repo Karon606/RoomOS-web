@@ -8,6 +8,7 @@
 import type { CheckoutRefundResult, RefundMode } from './prorate'
 import { fmtWon } from './fmtMoney'
 import { fmtMD } from './fmtDate'
+import { withParticle } from './koParticle'
 
 /** 서버 모드 둘에 화면 갈래 둘을 얹는다. 단기 요금은 적용 금액의 기본값만 바꾸고, '환불 안 함'은 0을 확정한다. */
 export type SettlementPick = RefundMode | 'shortStay' | 'none'
@@ -54,12 +55,12 @@ export function settlementPickCaption(
     const v = opts.view
     const month = v ? `${monthNum(v.settleMonth)}월분` : '지낸 달 이용료'
     if (future > 0) {
-      if (v && v.monthPaid <= 0) return `${month}은 받은 돈이 없습니다. 아직 지내지 않은 ${v.futureLabel || '기간의'} 선납 ${fmtWon(future)}을 전부 돌려줍니다.`
+      if (v && v.monthPaid <= 0) return `${withParticle(month, '은/는')} 받은 돈이 없습니다. 아직 지내지 않은 ${v.futureLabel || '기간의'} 선납 ${fmtWon(future)}을 전부 돌려줍니다.`
       return `${month}${v ? '은' : '는'} 받은 그대로 두고, 아직 지내지 않은 ${v?.futureLabel || '기간의'} 선납 ${fmtWon(future)}만 돌려줍니다.`
     }
     if (!v) return '지낸 달 이용료는 받은 그대로 두고 돌려주지 않습니다.'
     const unused = unusedPhrase(v)
-    return `${month}을 받은 그대로 둡니다.${unused ? ` 안 지낸 ${unused}도 돌려주지 않습니다.` : ''}`
+    return `${withParticle(month, '을/를')} 받은 그대로 둡니다.${unused ? ` 안 지낸 ${unused}도 돌려주지 않습니다.` : ''}`
   }
   if (!shortStay) return ''
   const over = opts.prepaidAmount != null ? shortStay.baseAmount - opts.prepaidAmount : 0
@@ -275,5 +276,5 @@ function noneMessage(v: SettleMonthView, max: number): string {
   const keep = unused
     ? `지낸 ${v.daysUsed}일 몫 ${fmtWon(v.usedAmount)}과 안 지낸 ${unused} 모두 돌려주지 않고 그대로 둡니다.`
     : '돌려주지 않고 그대로 둡니다.'
-  return `${head}은 이미 받은 돈입니다. ${keep} 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.`
+  return `${withParticle(head, '은/는')} 이미 받은 돈입니다. ${keep} 새로 받는 돈은 없고, 환불 없음으로 기록됩니다.`
 }

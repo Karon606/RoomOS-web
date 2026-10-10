@@ -115,6 +115,25 @@ N원이 M월분 이용료로 기록됐습니다" 토스트를 띄우고, 저장�
 감지망: `scripts/check-rent-month-pin.mjs`(소스 — 호출 블록 공백 접기, 귀속월 칸 조상 조건 전부·조건 변수 선언까지) ·
 `scripts/check-skipped-month-prepaid.ts`(DB — 귀속월 ≥ 입금월인데 앞선 달 미수, 기준선은 건수가 아니라 record id 허용목록).
 
+## 예약금이 보증금보다 큰 영업장 — 보증금 대체 모드의 분해 (2026-10-10, 운영자 승인)
+
+운영자 원문 "보증금은 5만원이지만 예약금은 10만원받고 그 10만원은 보증금과 첫달 월이용료 일부로 충당".
+- **분해는 서버가 이미 한다.** `saveDepositPayment` 가 남은 보증금(`depositComposition.shortfall`)까지 보증금
+  record(isDeposit, 도장 없음), 나머지는 입주월 이용료 record(isDeposit=false, 도장 대상)로 적는다. 새 산식은 없다.
+  화면은 `lib/reservationDeposit` 의 `depositModeSplit`(=`reservationFeeSplit` 이름 포장)·`depositModeCompositionLabel`
+  (총액 포함, 폼 미리보기·취소 미니폼)·`depositModeSplitPartsLabel`(몫만, 확정 확인창·저장 토스트 부가 줄)로 같은 문장을 쓴다.
+  토스트의 몫은 서버가 실제로 나눈 값(`saveReservationDeposit` 반환 `split`)이다 — 화면의 남은 보증금은 낡았을 수 있다.
+- **이용료 0 이어도 막지 않는다.** 이용료 몫은 청구 0 으로 락인되지만 락 0 은 끈적이지 않는다(`lib/billing` `locked > 0`).
+  이용료가 정해질 때 되쓴다 — 예약 중 이용료 수정(`updateTenant`, 장기만)과 입실 처리(`reanchorReservationPrepaid` 끝)에서
+  `rewriteLockedExpectedForRentAmount(…, 0, rent, 입주월)`. 재앵커는 이제 모드 무관 `targetMonth !== 입주월` 이고 이동이 없어도 입주월을 다시 잰다.
+- **입주 전 취소 기준액은 받은 돈 전부**(`recordReservationDepositCancel`). 반환은 이용료 몫부터, 몰취는 보증금 몫부터
+  (합 불변, 계약서가 위약금을 보증금에서 공제). 이용료 몫은 `recordReservationPrepaidCancel`(record 소프트삭제·위약금 '예약금 몰취'),
+  보증금 몫은 `recordDepositReturn`(위약금 '보유 보증금' 꼬리표 유지). 이용료 몫이 0 이면 종전 경로 그대로. 적용취소는 두 undo 순차.
+- **기본 예약금**(`Property.defaultReservationFee`, 환경설정 '예약금 기본 처리' 옆). 예약금 폼 프리필 = 설정값 − 이미 받은 예약금.
+  우선순위는 단기 분해 시드(`shortStayPolicy.deposit`) > 영업장 기본 예약금 > 종전 기본값(남은 보증금 / 입주월 이용료).
+- **예약 확정은 이용료를 요구하지 않는다**(운영자 "입주가 아니라 예약확정인데 월이용료가 왜 필요하냐"). 조건은 입주 희망일·본인 연락처.
+  확인창은 예약금 수납 상태를 말할 뿐 막지 않는다. 그물 `check-reservation-confirm-gate`.
+
 ## 인수 승계 계약은 '미수납'이 아니다
 
 `carriedOver`(패널 배지 판정)는 **받은 게 0 인 승계**만 참이다. 일부를 받은 승계 계약(실측 3건)에서는

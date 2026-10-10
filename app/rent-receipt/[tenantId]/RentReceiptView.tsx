@@ -10,6 +10,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { docFileLabel } from '@/lib/docBundle'
+import { withParticle } from '@/lib/koParticle'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
@@ -231,7 +232,7 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
 
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
-    if (!(await confirmDialog({ title: `${docLabel}를 발급할까요?`, message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
+    if (!(await confirmDialog({ title: `${withParticle(docLabel, '을/를')} 발급할까요?`, message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
     setIssuing(true)
     const release = trackSave()
     try {

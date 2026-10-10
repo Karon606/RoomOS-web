@@ -97,3 +97,39 @@ export function reservationCompositionLabel(
   const parts = reservationSplitPartsLabel(cleaning, prepaid, fmt)
   return parts ? `예약금 ${fmt(cleaning + prepaid)} = ${parts}` : null
 }
+
+// ── 보증금 대체 모드의 분해 (운영자 승인 2026-10-10) ──────────────────────────
+//
+// 보증금 대체로 받은 예약금이 **남은 보증금보다 크면** 넘는 몫은 입주월 이용료다. 서버는 이미 그렇게
+// 나눠 적는다(saveDepositPayment — 잔여 보증금까지 보증금 record, 나머지는 입주월 이용료 record).
+// 화면이 그 사실을 미리 말하지 않아서 운영자는 저장 뒤에야 이용료 record 를 발견했다.
+// 식은 새로 만들지 않는다. '한도까지 앞 몫, 나머지는 뒤 몫'은 reservationFeeSplit 과 같은 식이라
+// 그 함수를 이름만 바꿔 부른다(청소비 자리에 남은 보증금이 들어간다).
+
+/** 보증금 대체 예약금 분해 — 남은 보증금까지가 보증금, 넘는 몫이 입주월 이용료. 합은 언제나 받은 돈이다. */
+export function depositModeSplit(amount: number, depositRemain: number): { deposit: number; rent: number } {
+  const s = reservationFeeSplit(amount, depositRemain)
+  return { deposit: s.cleaning, rent: s.prepaid }
+}
+
+/**
+ * '보증금 50,000원 + 입주월 이용료 30,000원' — 보증금 대체 분해의 몫만(총액 없이). 총액이 바로 옆에 이미
+ * 서 있는 자리(확정 확인창 '예약금 N원 수납됨 · …', 저장 토스트 부가 줄)가 쓴다. reservationSplitPartsLabel 과 같은 규칙.
+ */
+export function depositModeSplitPartsLabel(
+  deposit: number, rent: number, fmt: (n: number) => string,
+): string | null {
+  if (deposit <= 0 || rent <= 0) return null
+  return `보증금 ${fmt(deposit)} + 입주월 이용료 ${fmt(rent)}`
+}
+
+/**
+ * '예약금 80,000원 = 보증금 50,000원 + 입주월 이용료 30,000원' 한 줄 — 수납 폼 미리보기·예약 취소 미니폼처럼
+ * 총액을 함께 말해야 하는 자리가 쓴다. 몫이 하나뿐이면 null(reservationCompositionLabel 과 같은 규칙).
+ */
+export function depositModeCompositionLabel(
+  deposit: number, rent: number, fmt: (n: number) => string,
+): string | null {
+  const parts = depositModeSplitPartsLabel(deposit, rent, fmt)
+  return parts ? `예약금 ${fmt(deposit + rent)} = ${parts}` : null
+}

@@ -30,6 +30,7 @@ import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { withParticle } from '@/lib/koParticle'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -3349,7 +3350,7 @@ export async function setItemLocations(trackedItemId: string, locationIds: strin
     for (const m of missing) {
       const qty = Math.max(0, breakdown.get(m.storageLocationId) ?? 0)
       if (qty >= 0.001) return { ok: false, error: `${locName(m.storageLocationId)}에 재고가 남아 있어 뗄 수 없습니다. 먼저 위치 이동으로 재고를 옮겨 비워주세요.` }
-      if (m.storageLocationId === effHub) return { ok: false, error: `${locName(m.storageLocationId)}은 이 품목의 창고입니다. 먼저 다른 위치를 창고로 지정해주세요.` }
+      if (m.storageLocationId === effHub) return { ok: false, error: `${withParticle(locName(m.storageLocationId), '은/는')} 이 품목의 창고입니다. 먼저 다른 위치를 창고로 지정해주세요.` }
       if (hasHistory.has(m.storageLocationId)) toClose.push(m.storageLocationId)
       else toDelete.push(m.storageLocationId)
     }
@@ -4106,7 +4107,7 @@ export async function closeItemLocation(data: {
     if (qty >= 0.001 && dest) {
       breakdown.set(data.storageLocationId, 0)
       breakdown.set(data.moveToLocationId!, (breakdown.get(data.moveToLocationId!) ?? 0) + qty)
-      const memo = `위치 숨김: ${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에서 ${locPaths.pathName(dest.storageLocationId) ?? dest.storageLocation.name}로 ${qty} 이관`
+      const memo = `위치 숨김: ${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에서 ${withParticle(locPaths.pathName(dest.storageLocationId) ?? dest.storageLocation.name, '으로/로')} ${qty} 이관`
       const check = await prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo), select: { id: true } })
       transferCheckId = check.id
     }

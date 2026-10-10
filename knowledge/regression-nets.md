@@ -388,3 +388,11 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 `lib/completionDate` 로 이사하면서 규칙 20-b 의 그 줄이 빨개졌다. 통과시키려고 지운 것이 아니라
 **두 자리를 함께 보도록** 바꿨다 — 정본에 비교가 살아 있는지, 그리고 현금영수증이 그것을 부르고
 폴백 대신 던지는지. 한 자리만 보면 규칙이 옮겨 간 뒤 그물이 장식이 된다.
+
+- **check-korean-particle** (2026-10-10, verify:fast) — `${값}조사` 고정 붙임 금지. 조사는 `lib/koParticle.withParticle`
+  (받침·숫자 읽기·끝 괄호 떼기·날짜꼴은 '일'). 허용: fmtWon·monLabel·targetMonthLabel·fmtDateKor 뒤 맞는 조사, 님/에/에서/까지/부터.
+  정규식 밖(템플릿 끝 백틱 직전, JSX `{식}조사`)은 아직 안 본다 — 범위 확대는 운영자 결정 대기.
+- **check-reservation-confirm-gate** (2026-10-10, verify:fast) — 예약 확정 네 자리(확인창·leaseSaveDenial·updateTenant·
+  applyStatusTransition)에 월 이용료 조건이 되살아나지 않게.
+- **check-short-stay-reservation 축 D + 재앵커 소스 축** (2026-10-10) — 취소 계약에 살아 있는 예약 단계 이용료 record(기준선 0, id 허용목록),
+  `reanchorReservationPrepaid` 의 모드 무관 비교식.

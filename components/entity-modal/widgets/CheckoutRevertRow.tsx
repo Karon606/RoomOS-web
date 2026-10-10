@@ -18,6 +18,7 @@ import { RotateCcw } from '@/components/ui/RotateCcw'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { roomNoWithI } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 import { applyStatusTransition, getCheckoutRevertInfo } from '@/app/(app)/tenants/actions'
 
 export function CheckoutRevertRow({
@@ -57,7 +58,7 @@ export function CheckoutRevertRow({
       // 화면의 말로만 적는다. '걷다'는 저장소 주석에서 쓰는 말이지 운영자가 화면에서 배운 말이
       // 아니고, 호실에 걸어 두는 그 금액의 화면 이름은 호실 관리의 '예약 이용료'다.
       // 청소 쪽 명사도 기존 화면(퇴실 청소 예정일 칸)의 '퇴실 청소 예정'을 그대로 쓴다.
-      message: `${subject} 다시 ${info.label}이 되고 퇴실일이 지워집니다. 잡힌 퇴실 청소 예정은 지웁니다. 끝난 청소·발급한 서류·호실에 적용된 예약 이용료는 되돌리지 않습니다.`,
+      message: `${subject} 다시 ${withParticle(info.label, '이/가')} 되고 퇴실일이 지워집니다. 잡힌 퇴실 청소 예정은 지웁니다. 끝난 청소·발급한 서류·호실에 적용된 예약 이용료는 되돌리지 않습니다.`,
       level: 'caution',
       confirmLabel: '퇴실 적용취소',
     })
@@ -69,7 +70,7 @@ export function CheckoutRevertRow({
         // 다시 정해 덮어쓴다. 화면이 목적지를 고르면 두 자리의 답이 갈린다.
         const res = await applyStatusTransition({ leaseTermId, tenantId, toStatus: 'ACTIVE' })
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('info', `${tenantName}님 · 퇴실을 적용취소했습니다 · ${info.label}으로 복귀`)
+        pushToast('info', `${tenantName}님 · 퇴실을 적용취소했습니다 · ${withParticle(info.label, '으로/로')} 복귀`)
         if (res.notice) pushToast('info', res.notice)
         onChanged?.()
       } finally { release() }

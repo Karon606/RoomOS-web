@@ -30,6 +30,7 @@ import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 // 조사 정본 — 수량 단위(qtyUnit)가 자유 입력이라 '3장는요?'·'3롤가' 가 나가던 자리(디자이너 검수 2026-09-16).
 import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
+import { withParticle } from '@/lib/koParticle'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -177,7 +178,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     if ((next || null) === prev) { setUnitEdit(null); return }
     const shown = next || '개'
     if (!(await confirmDialog({
-      title: `수량 단위를 ${prev ?? '개'}에서 ${shown}로 바꿀까요?`,
+      title: `수량 단위를 ${prev ?? '개'}에서 ${withParticle(shown, '으로/로')} 바꿀까요?`,
       message: '저장된 수량 숫자는 그대로 두고 표기만 바꿉니다. 같은 이름·규격에 단위가 같은 카드가 있으면 하나로 합쳐집니다.',
       level: 'caution', confirmLabel: '변경',
     }))) return
@@ -185,7 +186,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       const res = await setAssetQtyUnit(it.ids, next || null, it.disposedIds)
       if (!res.ok) { pushToast('error', res.error); return }
       setUnitEdit(null); setDetailItem(null)
-      pushToast('success', `수량 단위를 ${shown}로 바꿨습니다`, {
+      pushToast('success', `수량 단위를 ${withParticle(shown, '으로/로')} 바꿨습니다`, {
         action: { label: '적용취소', run: () => undoQtyUnit(it.ids, it.disposedIds, prev) },
       })
       router.refresh()
@@ -695,7 +696,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       startTransition(async () => {
         const res = await assignAggregateToTarget(it.ids, { kind: 'none' }, delta)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `${curPlace(it)} ${fmtQty(next)}${unit}로 조절했습니다 (${withEunNeun(`${fmtQty(delta)}${unit}`)} 여분으로)`)
+        pushToast('success', `${curPlace(it)} ${withParticle(`${fmtQty(next)}${unit}`, '으로/로')} 조절했습니다 (${withParticle(`${fmtQty(delta)}${unit}`, '은/는')} 여분으로)`)
         setAdjQty(null); router.refresh()
       })
       return
@@ -711,7 +712,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     startTransition(async () => {
       const res = await assignAggregateToTarget(spare.ids, target, delta, it.assignedAt ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `여분에서 ${fmtQty(delta)}${unit} 가져와 ${fmtQty(next)}${unit}로 조절했습니다`)
+      pushToast('success', `여분에서 ${fmtQty(delta)}${unit} 가져와 ${withParticle(`${fmtQty(next)}${unit}`, '으로/로')} 조절했습니다`)
       setAdjQty(null); router.refresh()
     })
   }
@@ -773,7 +774,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       const isPartial = value && qty != null && it.qtyValue != null && qty < it.qtyValue
       pushToast('success', !value ? '수령 대기로 변경됨'
         : isPartial
-          ? `${fmtQty(qty!)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${fmtQty(it.qtyValue! - qty!)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
+          ? `${fmtQty(qty!)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${withParticle(`${fmtQty(it.qtyValue! - qty!)}${it.qtyUnit ?? '개'}`, '은/는')} 수령 대기 유지`
           : '수령 완료',
         value && !isPartial ? { action: { label: '수령 취소', run: () => undoReceive(it.ids) } } : undefined)
       router.refresh()

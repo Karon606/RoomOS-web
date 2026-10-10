@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { docFileLabel } from '@/lib/docBundle'
+import { withParticle } from '@/lib/koParticle'
 import { InfoHint } from '@/components/ui/InfoHint'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
@@ -99,7 +100,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
   }, [kindFiles, fileQuery, fileStatus])
 
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `${name}님의 이 ${docLabel}를 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `${name}님의 이 ${withParticle(docLabel, '을/를')} 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteRentReceiptFile(id)
@@ -212,7 +213,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
         )}
         {fileRows.length === 0 ? (
           <EmptyState
-            title={kindFiles.length === 0 ? `발급한 ${docLabel}가 아직 없습니다` : `조건에 맞는 ${docLabel}가 없습니다`}
+            title={kindFiles.length === 0 ? `발급한 ${withParticle(docLabel, '이/가')} 아직 없습니다` : `조건에 맞는 ${withParticle(docLabel, '이/가')} 없습니다`}
             description={kindFiles.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
           />
         ) : (

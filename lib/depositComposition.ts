@@ -13,6 +13,7 @@
 // 한 곳만 청소비를 연결해 읽었고, 나머지 스무 곳은 계약 보증금을 그대로 믿었다.
 
 import { CLEANING_FEE_CATEGORY, FORFEIT_CATEGORY } from '@/lib/incomeCategories'
+import { withParticle } from '@/lib/koParticle'
 
 export type DepositComposition = {
   /** 계약 보증금 (0 하한) */
@@ -87,7 +88,7 @@ export function splitWithheldDeposit(withheld: number, cleaningPortion: number):
  */
 export function withheldDestinationLabel(withheld: number, cleaningPortion: number, fmt: (n: number) => string): string {
   const { cleaning, forfeit } = splitWithheldDeposit(withheld, cleaningPortion)
-  if (cleaning > 0 && forfeit > 0) return `부가수익 '${CLEANING_FEE_CATEGORY}' ${fmt(cleaning)}과 '${FORFEIT_CATEGORY}' ${fmt(forfeit)}으로`
+  if (cleaning > 0 && forfeit > 0) return `부가수익 '${CLEANING_FEE_CATEGORY}' ${withParticle(fmt(cleaning), '과/와')} '${FORFEIT_CATEGORY}' ${withParticle(fmt(forfeit), '으로/로')}`
   if (cleaning > 0) return `부가수익 '${CLEANING_FEE_CATEGORY}'로`
   return `부가수익 '${FORFEIT_CATEGORY}'로`
 }

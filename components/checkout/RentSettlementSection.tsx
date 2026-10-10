@@ -21,6 +21,7 @@ import { previewCheckoutRefund } from '@/app/(app)/tenants/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { fmtWon } from '@/lib/fmtMoney'
+import { withParticle } from '@/lib/koParticle'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import {
   settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor,
@@ -290,7 +291,7 @@ export function RentSettlementSection({
                 ? `${monthName} ${fmtWon(preview.prepaidAmount)}을 받은 그대로 둡니다. 새로 받거나 돌려주는 돈은 없고, 환불 없음으로 기록됩니다.`
                 : preview.prepaidAmount > preview.futurePrepaid
                 ? `${monthName} ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 받은 그대로 두고, 아직 지내지 않은 ${view.futureLabel || '기간의'} 선납 ${fmtWon(preview.futurePrepaid)}만 돌려줍니다.`
-                : `${monthName}은 받은 돈이 없습니다. 아직 지내지 않은 ${view.futureLabel || '기간의'} 선납 ${fmtWon(preview.futurePrepaid)}을 전부 돌려줍니다.`}
+                : `${withParticle(monthName, '은/는')} 받은 돈이 없습니다. 아직 지내지 않은 ${view.futureLabel || '기간의'} 선납 ${fmtWon(preview.futurePrepaid)}을 전부 돌려줍니다.`}
             </p>
           </>
         ) : (

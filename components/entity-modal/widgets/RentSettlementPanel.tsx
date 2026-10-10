@@ -17,6 +17,7 @@
 
 import { useEffect, useId, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
+import { withParticle } from '@/lib/koParticle'
 import { kstYmdStr } from '@/lib/kstDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
@@ -377,7 +378,7 @@ export function RentSettlementPanel({
             <p id={`${uid}-amount-err`} className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
               {later > 0
                 ? `받은 돈과 선납을 합한 ${fmtWon(max)}보다 ${fmtWon(amount - max)} 많습니다. 환불은 그 합을 넘을 수 없습니다.`
-                : `${maxLabel} ${fmtWon(max)}보다 ${fmtWon(amount - max)} 많습니다. 환불은 ${maxLabel}을 넘을 수 없습니다.`}
+                : `${maxLabel} ${fmtWon(max)}보다 ${fmtWon(amount - max)} 많습니다. 환불은 ${withParticle(maxLabel, '을/를')} 넘을 수 없습니다.`}
             </p>
           ) : (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">

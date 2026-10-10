@@ -15,6 +15,7 @@
 import { Modal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ISSUABLE_CONTRACT_PURPOSES, DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
+import { withParticle } from '@/lib/koParticle'
 
 /** 고른 결과 — 저장값이 아니라 표시값이다(호출부가 실계약을 null 로 내린다). */
 export type IssuePurposePick = (typeof ISSUABLE_CONTRACT_PURPOSES)[number]
@@ -37,7 +38,7 @@ export function ContractIssuePurposePicker({ archiveCount, onPick, onClose }: {
         })
       : await confirmDialog({
           title: `'${p}' 판본으로 발급할까요?`,
-          message: `대표 계약서는 실계약 그대로 남고, 이번 발급본은 ${p}으로 기록됩니다.`,
+          message: `대표 계약서는 실계약 그대로 남고, 이번 발급본은 ${withParticle(p, '으로/로')} 기록됩니다.`,
           confirmLabel: '발급',
           cancelLabel: '뒤로',
         })

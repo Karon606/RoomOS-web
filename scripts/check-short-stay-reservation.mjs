@@ -10,6 +10,11 @@
 //          퇴행했거나 누군가 보증금 폼으로 우회한 것이다. 컷오프 이전 record 는 옛 계약이라 대상 아님.
 //   축 C · 분해가 반쪽만 남는다. 청소비 부가수익과 선납 record 는 한 결제라 짝이 맞아야 하고,
 //          분해된 계약에 보증금까지 있으면 같은 돈이 두 번 잡힌 것이다.
+//   축 D · 취소된 계약에 이용료 record 가 살아 있다(2026-10-10). 예약 단계 이용료 몫(이용료 선납,
+//          보증금 대체의 넘는 몫)은 예약 취소가 소프트삭제하거나 위약금으로 바꿔야 한다. 남아 있으면
+//          입주하지 않은 사람의 이용료가 매출로 선다. 보증금 대체 취소가 보증금 몫만 정산하던 종전
+//          경로로 퇴행하면 여기서 걸린다. 기준선은 첫 실행(2026-10-10)의 record id 허용목록이고 0건이다 —
+//          래칫이라 목록 밖의 새 id 만 위반이다.
 //
 // 판정 함수는 순수하게 두고 아래에서 역주입한다 — 실데이터가 0건이라, 그물이 실제로 발화하는지
 // 확인하지 않으면 "위반 0건"이 빈 그물의 침묵인지 건강함인지 구분되지 않는다.
@@ -59,6 +64,29 @@ export function splitInconsistency(row) {
   return null
 }
 
+// ── 축 D ── 취소 계약에 살아 있는 이용료 record. 허용목록(기준선)에 있는 id 는 넘긴다.
+// 기준선 — 2026-10-10 첫 실행 결과 0건. 정당한 예외가 생기면 운영자 승인으로 id 를 여기 더한다.
+const CANCELLED_RENT_BASELINE = new Set([])
+export function cancelledRentLeak(row) {
+  if (row.status !== 'CANCELLED') return null
+  if (CANCELLED_RENT_BASELINE.has(row.recordId)) return null
+  return `취소된 계약에 이용료 record ${row.actualAmount.toLocaleString('ko-KR')}원(${row.targetMonth})이 살아 있다 — 예약 취소가 이용료 몫을 정리하지 않았다`
+}
+
+/** `anchor` 뒤 첫 '{' 부터 짝 맞는 '}' 까지 — 함수 몸통 소스 축에 쓴다. 못 찾으면 null. */
+function blockAfter(src, anchor) {
+  const at = src.indexOf(anchor)
+  if (at < 0) return null
+  const open = src.indexOf('{', src.indexOf(')', at))
+  if (open < 0) return null
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open, i + 1) }
+  }
+  return null
+}
+
 // ── 소스 가드 ── 생성·판정 정본이 사라지면 아래 데이터 대조는 영원히 0건을 보고한다.
 const sourceViolations = []
 {
@@ -76,6 +104,26 @@ const sourceViolations = []
   if (!actions.includes('${args.occasion} · 청소비')) {
     sourceViolations.push(`[소스] 청소비 detail 문법이 바뀌었다 — 이 그물의 표식('${RESERVATION_CLEANING_MARK}')과 갈린다`)
   }
+  // 재앵커 규칙(2026-10-10) — 모드 무관 '입주월이 아닌 달은 전부 입주월로'. prepaid 만 전량, 나머지는 앞선
+  // 달만 모으던 종전 삼항으로 돌아가면 예약 중 입주일을 앞당긴 보증금 대체의 넘는 몫이 뒷달에 남는다.
+  // 주석을 걷고 함수 몸통만 본다 — 설명 글자가 통과시키지 않게.
+  const reanchor = blockAfter(
+    actions.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1'),
+    'export async function reanchorReservationPrepaid(',
+  )
+  if (!reanchor) {
+    sourceViolations.push('[소스] reanchorReservationPrepaid 몸통을 못 찾았다(침묵 통과 금지)')
+  } else {
+    if (!reanchor.includes('r.targetMonth !== newMonth')) {
+      sourceViolations.push('[소스] 재앵커가 입주월이 아닌 달의 이용료 record 를 전부 모으지 않는다(r.targetMonth !== newMonth 소실)')
+    }
+    if (/isPrepaid\s*\?/.test(reanchor)) {
+      sourceViolations.push('[소스] 재앵커에 모드 삼항(isPrepaid ?)이 되살아났다 — 보증금 대체의 넘는 몫이 뒷달에 남는다')
+    }
+    if (!reanchor.includes('rewriteLockedExpectedForRentAmount(')) {
+      sourceViolations.push('[소스] 재앵커가 0 락 되쓰기를 하지 않는다 — 이용료 0 일 때 받은 몫이 청구 0 으로 굳는다')
+    }
+  }
   const tenants = readFileSync('app/(app)/tenants/actions.ts', 'utf8')
   if (!tenants.includes('cleaningIncomeIds')) {
     sourceViolations.push('[소스] 예약 취소가 예약 청소비 몫을 더 이상 다루지 않는다 — 취소 기준액·적용취소 대칭이 깨진다')
@@ -89,6 +137,7 @@ const 역주입 = [
   ['축C 청소비 2행', splitInconsistency({ reservationCleaningRows: 2, reservationCleaningSum: 20000, contractCleaningFee: 20000, depositPaid: 0 })],
   ['축C 상한 이탈', splitInconsistency({ reservationCleaningRows: 1, reservationCleaningSum: 30000, contractCleaningFee: 20000, depositPaid: 0 })],
   ['축C 보증금 공존', splitInconsistency({ reservationCleaningRows: 1, reservationCleaningSum: 20000, contractCleaningFee: 20000, depositPaid: 50000 })],
+  ['축D 취소 계약 이용료 record', cancelledRentLeak({ status: 'CANCELLED', recordId: 'new-id', actualAmount: 30000, targetMonth: '2026-11' })],
 ]
 const 미발화 = 역주입.filter(([, r]) => r === null).map(([n]) => n)
 // 성한 값에는 침묵해야 한다 — 무조건 발화하는 그물은 발화하지 않는 그물과 똑같이 쓸모없다.
@@ -101,6 +150,7 @@ const 오탐 = [
   ['축C 정상 분해', splitInconsistency({ reservationCleaningRows: 1, reservationCleaningSum: 20000, contractCleaningFee: 20000, depositPaid: 0 })],
   ['축C 전액 청소비(예약금 ≤ 청소비)', splitInconsistency({ reservationCleaningRows: 1, reservationCleaningSum: 10000, contractCleaningFee: 20000, depositPaid: 0 })],
   ['축C 분해 흔적 없음', splitInconsistency({ reservationCleaningRows: 0, reservationCleaningSum: 0, contractCleaningFee: 20000, depositPaid: 50000 })],
+  ['축D 취소 아닌 계약', cancelledRentLeak({ status: 'CHECKED_OUT', recordId: 'x', actualAmount: 30000, targetMonth: '2026-11' })],
 ].filter(([, r]) => r !== null).map(([n]) => n)
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -173,10 +223,24 @@ for (const l of leases) {
   if (rC) violations.push(`축C ${who} — ${rC}`)
 }
 
+// 축 D — 취소 계약의 살아 있는 이용료 record. 소프트삭제는 여기서 직접 건다(익스텐션은 앱 클라이언트에만).
+const cancelledRent = await prisma.paymentRecord.findMany({
+  where: { isDeposit: false, deletedAt: null, leaseTerm: { status: 'CANCELLED' } },
+  select: {
+    id: true, actualAmount: true, targetMonth: true,
+    leaseTerm: { select: { status: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } } },
+  },
+})
+for (const r of cancelledRent) {
+  const rD = cancelledRentLeak({ status: r.leaseTerm.status, recordId: r.id, actualAmount: r.actualAmount, targetMonth: r.targetMonth })
+  if (rD) violations.push(`축D ${r.leaseTerm.room?.roomNo ?? '호실 미지정'} ${r.leaseTerm.tenant?.name ?? '?'} — ${rD} [${r.id}]`)
+}
+
 await prisma.$disconnect()
 
 console.log(`[단기 예약금] 계약 ${leases.length}건(단기·예약) · 분해 수납 ${splitLeases}건`
-  + ` · 분해 규칙 영업장 ${applyToRentProps.size}곳 / 위반 ${violations.length}건 (기준선 0)`)
+  + ` · 분해 규칙 영업장 ${applyToRentProps.size}곳 · 취소 계약 이용료 record ${cancelledRent.length}건(허용 ${CANCELLED_RENT_BASELINE.size})`
+  + ` / 위반 ${violations.length}건 (기준선 0)`)
 console.log(`  역주입 ${역주입.length - 미발화.length}/${역주입.length} 발화 · 오탐 ${오탐.length}건`)
 for (const v of sourceViolations) console.error(`  ${v}`)
 for (const v of violations) console.error(`  ${v}`)
@@ -185,5 +249,6 @@ if (오탐.length) console.error(`  오탐: ${오탐.join(', ')}`)
 if (violations.length) {
   console.error('  축A 가 정당한 몰취(옛 환불 보증금 단기 계약에서 실제로 떼기로 한 돈)라면 이 그물의 기준선을 운영자 승인으로 올린다.')
   console.error('  축B·축C 는 생성 경로 결함이다 — 데이터를 손보기 전에 경로부터 고친다.')
+  console.error('  축D 는 예약 취소 경로 결함이다 — 보증금 대체 취소가 이용료 몫까지 정리하는지(recordReservationDepositCancel)부터 본다.')
 }
 if (sourceViolations.length || violations.length || 미발화.length || 오탐.length) process.exit(1)

@@ -82,6 +82,7 @@ import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo, fmtRoomList } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STATUSES } from '@/lib/leaseStatus'
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
@@ -1141,7 +1142,7 @@ export default function TenantClient({
       if (hit) {
         const ok = await confirmDialog({
           title: `${hit.tenantName}님 입주 예정일과 겹칩니다`,
-          message: `${fmtRoomNo(room.roomNo)}은 ${fmtMD(hit.moveIn)}에 ${hit.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${fmtMD(newOut)}로 두면 겹치는데 이대로 저장할까요.`,
+          message: `${withParticle(fmtRoomNo(room.roomNo), '은/는')} ${fmtMD(hit.moveIn)}에 ${hit.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${withParticle(fmtMD(newOut), '으로/로')} 두면 겹치는데 이대로 저장할까요.`,
           level: 'caution',
           confirmLabel: '이대로 저장',
           cancelLabel: '취소',
@@ -1161,7 +1162,7 @@ export default function TenantClient({
     if (isSameDayTurnover({ moveIn, moveOut: newOut || null }, hit)) return true
     const ok = await confirmDialog({
       title: `${hit.tenantName}님 퇴실 예정일과 겹칩니다`,
-      message: `${fmtRoomNo(room.roomNo)}은 ${hit.tenantName}님이 ${fmtMD(hit.moveOut)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요. 확정하면 확인된 겹침으로 기록됩니다.`,
+      message: `${withParticle(fmtRoomNo(room.roomNo), '은/는')} ${hit.tenantName}님이 ${fmtMD(hit.moveOut)}에 퇴실 예정입니다. 희망 입주일 ${withParticle(fmtMD(moveIn), '과/와')} 겹치는데 이대로 예약을 확정할까요. 확정하면 확인된 겹침으로 기록됩니다.`,
       level: 'caution',
       confirmLabel: '예약 확정',
       cancelLabel: '취소',
@@ -1316,7 +1317,7 @@ export default function TenantClient({
       if (res.shortSync) {
         const { leaseTermId, diff, newRent, kind } = res.shortSync
         const diffLabel = kind === 'decrease' ? `청구 감액 ${fmtWon(Math.abs(diff))}` : `추가 청구 ${fmtWon(diff)}`
-        pushToast('success', `단기 이용료 ${fmtWon(newRent)}로 청구 반영됨 · ${diffLabel}`, {
+        pushToast('success', `단기 이용료 ${withParticle(fmtWon(newRent), '으로/로')} 청구 반영됨 · ${diffLabel}`, {
           detail: '적용취소하면 이용료·퇴실일만 되돌립니다.',
           action: {
             label: '적용취소',
@@ -1613,7 +1614,7 @@ export default function TenantClient({
             const summary = otherMonths
               .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
               .join(', ')
-            setDistNotice(`이번 입력은 ${summary}으로 나뉘어 반영되었습니다. 미수가 가장 오래된 월부터 충당됩니다.`)
+            setDistNotice(`이번 입력은 ${withParticle(summary, '으로/로')} 나뉘어 반영되었습니다. 미수가 가장 오래된 월부터 충당됩니다.`)
           } else {
             setDistNotice(null)
           }
@@ -3254,7 +3255,7 @@ export default function TenantClient({
                                 const dayNum = d.getDate()
                                 const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
                                 const label = dayNum >= lastDay ? '말일' : `${dayNum}일`
-                                return `${targetMonth} 납부일을 ${label}로 조정`
+                                return `${targetMonth} 납부일을 ${withParticle(label, '으로/로')} 조정`
                               })()}
                             </button>
                           </div>
@@ -3292,6 +3293,9 @@ export default function TenantClient({
                       isShortTerm: lease.isShortTerm,
                       shortStayReservationMode,
                       shortStayDeposit,
+                      // 영업장 기본 예약금·이미 받은 예약금 — 예약금 폼 프리필(수납 화면과 같은 행에서 읽는다).
+                      defaultReservationFee: paySettlement?.defaultReservationFee ?? null,
+                      reservationPaid: paySettlement?.reservationPaid ?? null,
                     }}
                     targetMonth={targetMonth}
                     onSaved={async () => { setShowPayForm(false); const { records, windowRecords } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}
@@ -4118,7 +4122,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약'
         return (
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            {parentMoveIn ? `${who}과 같은 입주일입니다.` : `${who}에 입주일이 없습니다.`}
+            {parentMoveIn ? `${withParticle(who, '과/와')} 같은 입주일입니다.` : `${who}에 입주일이 없습니다.`}
             {parentMoveInUnsaved && ' 메인 계약에서 아직 저장하지 않은 값입니다.'}
           </p>
         )
@@ -4626,7 +4630,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </p>
             ) : (
               <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
-                체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
+                체크 시 호실과 입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
               </p>
             )}
           </div>
@@ -5107,7 +5111,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약'
                   return (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-                      {parentDue.raw ? `${who}과 같은 납부일입니다.` : `${who}에 납부일이 없습니다.`}
+                      {parentDue.raw ? `${withParticle(who, '과/와')} 같은 납부일입니다.` : `${who}에 납부일이 없습니다.`}
                       {parentDueUnsaved && ' 메인 계약에서 아직 저장하지 않은 값입니다.'}
                     </p>
                   )

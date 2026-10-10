@@ -106,6 +106,7 @@ type Property = {
   refundPenaltyPct?: number | null   // 중도퇴실 위약금 기본값(%) — 공정위 10% 캡
   defaultAreaM2: number | null
   reservationDepositMode: string | null
+  defaultReservationFee?: number | null   // 예약금 수납 폼의 기본 금액(2026-10-10)
   bankAccount: string | null
   contactLeadDays?: number | null
   checkoutLeadShortDays?: number | null
@@ -1444,15 +1445,29 @@ export default function SettingsForm({
                   <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
                 </div>
               </div>
+              {/* 처리 방식과 금액은 한 쌍이라 한 줄에 둔다(위 보증금·청소비 줄과 같은 2열). 캡션은 두 칸 높이가
+                  어긋나지 않게 칸 밖 아래로 뺀다. */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
-                <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다. 단기 계약은 단기 입실 정책에서 예약금 처리를 따로 정하면 그 방식을 따릅니다.</p>
-                <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="deposit">보증금 대체 · 받은 예약금을 보증금으로</option>
-                  <option value="prepaid">이용료 선납 · 입주월 이용료로 충당</option>
-                  <option value="none">안 받음 · 예약금 없이 예약</option>
-                </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
+                    <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
+                      className="w-full h-[42px] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                      {/* 선택지는 수납 폼 세그먼트(RESV_MODE_LABEL)와 같은 짧은 말이다 — 설명을 붙이면 2열 칸에서
+                          모든 폭에서 잘렸다(웹디자이너 실측 2026-10-10). 설명은 아래 캡션이 받는다.
+                          h-[42px] 는 옆 MoneyInput 과 높이를 맞춘다(Chrome select 는 line-height 를 무시한다). */}
+                      <option value="deposit">보증금 대체</option>
+                      <option value="prepaid">이용료 선납</option>
+                      <option value="none">안 받음</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">기본 예약금</label>
+                    <MoneyInput name="defaultReservationFee" defaultValue={property?.defaultReservationFee ?? undefined} placeholder="0원" />
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 보증금 대체는 받은 예약금을 보증금으로, 이용료 선납은 입주월 이용료로 충당합니다. 예약마다 개별로 바꿀 수 있습니다.</p>
+                <p className="text-xs text-[var(--warm-muted)]">기본 예약금은 예약금을 받을 때 기본으로 채우는 금액입니다. 비우면 보증금 대체는 남은 보증금, 이용료 선납은 입주월 이용료를 씁니다. 단기 계약은 단기 입실 정책의 예약금 처리와 예약금을 먼저 따릅니다.</p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">중도퇴실 위약금 기본값</label>

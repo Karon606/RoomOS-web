@@ -20,12 +20,13 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { withParticle } from '@/lib/koParticle'
 import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
-import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel } from '@/lib/reservationDeposit'
+import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, depositModeSplit, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 
 type Room = {
@@ -43,6 +44,9 @@ type Room = {
   isShortTerm?: boolean
   shortStayReservationMode?: string | null
   shortStayDeposit?: number
+  // 영업장 기본 예약금(미설정 null)과 이미 받은 예약금 — 예약금 폼이 '남은 몫'을 기본 금액으로 채운다(2026-10-10).
+  defaultReservationFee?: number | null
+  reservationPaid?: { deposit: number; prepaid: number; cleaning: number } | null
 }
 
 // 초과 납부분을 '부가수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
@@ -330,7 +334,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           // 판정하지 않는다. 보증금 몫은 totalPaid=dVal(잔여 이하)이라 **폼의 잔여가 최신일 때** 서버 초과분
           // 경로를 안 탄다. 그 사이 잔여가 줄었으면 서버가 넘친 몫을 조회 월 이용료로 적으므로 아래에서 알린다.
           const savedParts: string[] = []
-          const savedDetail = (err: string) => savedParts.length > 0 ? `${savedParts.join(' · ')}은 저장됨 · ${err}` : err
+          const savedDetail = (err: string) => savedParts.length > 0 ? `${withParticle(savedParts.join(' · '), '은/는')} 저장됨 · ${err}` : err
           if (dVal > 0) {
             const depRes = await saveDepositPayment({
               leaseTermId:   room.leaseTermId,
@@ -458,7 +462,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           const win = [0, 1, 2].map(i => shiftMonth(targetMonth, -i))
           const hidden = win.includes(payDateVal.slice(0, 7)) ? [] : rentAllocs.filter(a => !win.includes(a.targetMonth))
           if (hidden.length > 0) {
-            pushToast('info', `${monthsLabel(hidden)}은 지금 보는 최근 3개월 내역에 표시되지 않습니다`)
+            pushToast('info', `${withParticle(monthsLabel(hidden), '은/는')} 지금 보는 최근 3개월 내역에 표시되지 않습니다`)
           }
           if (staleNotice) pushToast('info', staleNotice, { detail: '수납 내역에서 확인해 주세요.' })
           splitDone = true
@@ -972,9 +976,17 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   // 분해 수납의 프리필은 단기 정책의 예약금 시드다(운영자 확정 2026-08-19). 이 자리에서 받는 돈은
   // 한 달 이용료가 아니라 '예약금'이라, 종전처럼 월 이용료를 채워 두면 매번 지우고 다시 쳐야 한다.
   // 시드가 0(미설정)이면 종전 기본값으로 떨어진다 — 빈 칸을 만들지 않는다.
+  //
+  // 영업장 기본 예약금(설정 > 요금·정책)이 있으면 그다음 순위다(2026-10-10). 우선순위는
+  // 단기 분해 시드 > 영업장 기본 예약금 > 종전 기본값(남은 보증금 · 입주월 이용료).
+  // 이미 받은 예약금(보증금·선납·청소비 몫 전부)을 빼고 **남은 몫**을 채운다 — 나눠 받는 두 번째
+  // 수납에 전액을 다시 채우면 중복 수납을 부르던 그 자리다(신고 50a2a69b).
+  const fee = room.defaultReservationFee ?? 0
+  const already = depositPaidTotal + (room.reservationPaid?.prepaid ?? 0) + (room.reservationPaid?.cleaning ?? 0)
+  const feeRemain = Math.max(0, fee - already)
   const defaultAmount = (m: ResvMode) =>
-    m === 'prepaid' ? (splits(m) && (room.shortStayDeposit ?? 0) > 0 ? room.shortStayDeposit! : (room.expected || 0))
-    : m === 'deposit' ? depositRemain : 0
+    m === 'prepaid' ? (splits(m) && (room.shortStayDeposit ?? 0) > 0 ? room.shortStayDeposit! : fee > 0 ? feeRemain : (room.expected || 0))
+    : m === 'deposit' ? (fee > 0 ? feeRemain : depositRemain) : 0
   const [amount, setAmount] = useState<number>(defaultAmount(initial))
   // 수납일 정본은 '받은 날'(오늘) — 입주 희망일 프리필은 조회월 밖으로 기록을 밀어 0원으로 보이게 했다.
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
@@ -998,6 +1010,11 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   // 지금 입력된 금액이 어떻게 갈리는지 — 분해 대상이 아니면 null 이라 줄이 서지 않는다(순수 산술이라 메모 불필요).
   const splitPreview = splits(mode)
     ? (() => { const s = reservationFeeSplit(amount, room.cleaningFee || 0); return reservationCompositionLabel(s.cleaning, s.prepaid, fmtWon) })()
+    : null
+  // 보증금 대체에서 남은 보증금을 넘는 몫 — 서버(saveDepositPayment)는 이미 입주월 이용료로 나눠 적는다.
+  // 저장 전에 그 사실을 같은 문장으로 보여 준다(넘지 않으면 null 이라 줄이 안 선다).
+  const depositPreview = mode === 'deposit' && amount > depositRemain
+    ? (() => { const s = depositModeSplit(amount, depositRemain); return depositModeCompositionLabel(s.deposit, s.rent, fmtWon) })()
     : null
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1032,7 +1049,12 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           pushToast('success', '예약금 없이 예약으로 저장했습니다')
         } else {
           // 금액·수납일 항상 명시 — '반응 없음'으로 오인한 재시도가 중복 수납을 만들었다(신고 50a2a69b).
-          pushToast('success', `예약금 ${fmtWon(amount)} 수납 기록됨 · 수납일 ${fmtMD(payDateVal)}`)
+          // 나뉜 몫은 서버가 실제로 적은 값으로 말한다 — 화면 미리보기의 남은 보증금이 그사이 바뀌었을 수 있다.
+          const split = res.split
+          // 나뉜 몫은 부가 줄(detail)로 — 한 줄에 세 토막을 이으면 320px 에서 세 줄로 접힌다(§15 장문형).
+          const parts = split ? depositModeSplitPartsLabel(split.deposit, split.rent, fmtWon) : null
+          pushToast('success', `예약금 ${fmtWon(amount)} 수납 기록됨 · 수납일 ${fmtMD(payDateVal)}`,
+            parts ? { detail: parts } : undefined)
           if (payDateVal.slice(0, 7) !== targetMonth) {
             pushToast('info', `지금 보는 ${Number(targetMonth.slice(5, 7))}월 내역에는 표시되지 않습니다`)
           }
@@ -1063,7 +1085,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           ))}
         </div>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
-          {mode === 'deposit' ? '받은 예약금을 보증금으로 기록합니다.'
+          {mode === 'deposit' ? '받은 예약금을 보증금으로 기록합니다. 계약 보증금을 넘는 몫은 입주월 이용료로 적습니다.'
             : mode === 'prepaid' ? (splits(mode)
               ? `청소비 ${fmtWon(room.cleaningFee)}을 먼저 떼고 남은 금액을 입주월 이용료로 충당합니다. 보증금은 남기지 않습니다.`
               : '받은 금액을 입주월 이용료로 충당합니다(선납).')
@@ -1089,6 +1111,14 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
               이미 받은 {fmtWon(depositPaidTotal)} / 계약 보증금 {fmtWon(room.depositAmount)}
             </p>
+          )}
+          {/* 보증금 대체 분해 미리보기 — 아래 단기 분해 미리보기와 같은 줄 모양. 이용료가 아직 0 이면
+              그 몫이 언제 정산되는지 한 줄 더 말한다(저장은 막지 않는다, 운영자 승인 2026-10-10). */}
+          {depositPreview && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{depositPreview}</p>
+          )}
+          {depositPreview && !(room.expected > 0) && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">입주월 이용료가 아직 없어 이 몫은 이용료가 정해질 때 정산됩니다.</p>
           )}
           {/* 분해 미리보기 — 저장 전에 이 돈이 어떻게 쪼개져 적히는지 보여준다. 금액을 고치면 같이 움직인다.
               문장은 정본 하나(reservationCompositionLabel)라 예약 취소 미니폼과 갈리지 않는다.

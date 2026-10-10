@@ -13,6 +13,8 @@
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { RotateCcw } from '@/components/ui/RotateCcw'
+// 받침 판정은 조사 정본 한 벌이다 — 영문·기호 라벨은 받침 없음으로 보는 폴백도 거기 그대로다.
+import { hasFinalConsonant } from '@/lib/koParticle'
 
 /** 목록 한 줄 — 어떤 칸이, 지금 무엇으로 찍히고, 안 고쳤다면 무엇이었을지. */
 export type FieldOverrideRow = {
@@ -22,15 +24,6 @@ export type FieldOverrideRow = {
   current: string
   /** 오버라이드를 벗겼을 때의 값. 빈 칸이면 호출부가 '빈칸' 같은 말을 담아 넘긴다. */
   auto: string
-}
-
-/** 마지막 음절에 받침이 있는가 — 한글 음절이 아니면 없는 것으로 본다(외자·기호 라벨 방어). */
-function hasFinalConsonant(label: string): boolean {
-  const t = label.trim()
-  if (!t) return false
-  const c = t.charCodeAt(t.length - 1)
-  if (c < 0xac00 || c > 0xd7a3) return false
-  return (c - 0xac00) % 28 !== 0
 }
 
 /**

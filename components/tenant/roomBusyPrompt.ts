@@ -19,6 +19,7 @@
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 
 export type RoomBusyInfo = {
   roomNo: string
@@ -58,7 +59,7 @@ export async function askRoomBusy(b: RoomBusyInfo): Promise<RoomBusyChoice> {
   }
 
   const go = await confirmDialog({
-    title: `${fmtRoomNo(b.roomNo, '')}는 ${fmtDate(b.freeFrom)}부터 입주 가능합니다`,
+    title: `${withParticle(fmtRoomNo(b.roomNo, ''), '은/는')} ${fmtDate(b.freeFrom)}부터 입주 가능합니다`,
     message: `입주일은 저장했습니다. ${who}그때까지 거주해 ${fmtDate(b.moveInYmd)}에는 입주할 수 없습니다. 그 전까지 지낼 임시 호실을 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`,
     level: 'caution',
     confirmLabel: '임시 호실 정하기',

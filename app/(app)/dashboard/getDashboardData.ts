@@ -28,7 +28,8 @@ import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel, heldContractCleaningPortion } from '@/lib/depositComposition'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1559,7 +1560,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         dotColor:  'var(--info-fg)',
         timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
         tenantId:  l.tenant.id,
-        detail:    `지금 ${fmtRoomNo(l.roomStays[0]?.room?.roomNo ?? '', '')}에 머물고 있습니다. 일정대로 ${fmtRoomNo(roomNos.get(next.roomId) ?? '', '')}로 이사할까요?`,
+        detail:    `지금 ${fmtRoomNo(l.roomStays[0]?.room?.roomNo ?? '', '')}에 머물고 있습니다. 일정대로 ${roomNoWithRo(roomNos.get(next.roomId) ?? '', '')} 이사할까요?`,
         exactDate: fmtShortDate(new Date(`${next.from}T00:00:00.000Z`)),
         scheduleMoveLeaseId: l.id,
         scheduleMoveTenantName: l.tenant.name,
@@ -1683,7 +1684,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         dotColor:  'var(--success-fg)',
         timeLabel: `날짜 불가 ${g.excludedCount}명`,
         muteKey:   `wish:${g.roomNo}`,
-        detail:    `${fmtRoomNo(g.roomNo, '')}를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
+        detail:    `${withParticle(fmtRoomNo(g.roomNo, ''), '을/를')} 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
         wishRoomNo: g.roomNo,
       })
       continue
@@ -1694,8 +1695,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         ? `${c.tenantName}님과 조건이 맞는 ${fmtRoomNo(g.roomNo, '')} ${stateLabel}`
         : `${c.tenantName}님이 희망한 ${fmtRoomNo(g.roomNo, '')} ${stateLabel}`
       const detail = c.matchedBy === 'conditions'
-        ? `${c.tenantName}님이 원하는 조건과 일치하는 ${fmtRoomNo(g.roomNo, '')}가 ${stateLabel} 상태입니다.`
-        : `${c.tenantName}님이 입실을 희망한 ${fmtRoomNo(g.roomNo, '')}가 ${stateLabel} 상태입니다.`
+        ? `${c.tenantName}님이 원하는 조건과 일치하는 ${withParticle(fmtRoomNo(g.roomNo, ''), '이/가')} ${stateLabel} 상태입니다.`
+        : `${c.tenantName}님이 입실을 희망한 ${withParticle(fmtRoomNo(g.roomNo, ''), '이/가')} ${stateLabel} 상태입니다.`
       alertItems.push({
         category:  'wish',
         text,

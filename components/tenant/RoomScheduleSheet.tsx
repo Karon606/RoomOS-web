@@ -37,6 +37,7 @@ import {
 } from '@/lib/roomSchedule'
 import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan, undoSaveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { withParticle } from '@/lib/koParticle'
 
 type Options = Extract<Awaited<ReturnType<typeof getRoomScheduleOptions>>, { ok: true }>
 /** 고른 방 — 이름을 함께 담는다. 목록은 다음 걸음에서 그 방을 빼므로 거기서 이름을 못 찾는다. */
@@ -253,7 +254,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
               ) : (
                 <p className={capCls}>
                   이 날짜부터 이용료가 청구됩니다.
-                  {!plan && ` 예약 때 잡은 ${fmtDate(opts.moveInDate)}과 달라도 됩니다.`}
+                  {!plan && ` 예약 때 잡은 ${withParticle(fmtDate(opts.moveInDate), '과/와')} 달라도 됩니다.`}
                   {picks.length > 0 && ' 날짜를 바꾸면 정해 둔 임시 호실이 지워집니다.'}
                 </p>
               )}
@@ -294,8 +295,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                   // 이사일을 사람이 안 바꿨을 때만 '그날로 맞췄다'고 말한다. 바꿨으면 청소일 사실만 말한다.
                   <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
                     {endEdit === null && opts.moveSuggested === opts.mainCleaningYmd
-                      ? `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${fmtDate(opts.mainCleaningYmd)}로 정해져 있어 이사일을 그날로 맞췄습니다.`
-                      : `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${fmtDate(opts.mainCleaningYmd)}로 정해져 있습니다.`}
+                      ? `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${withParticle(fmtDate(opts.mainCleaningYmd), '으로/로')} 정해져 있어 이사일을 그날로 맞췄습니다.`
+                      : `${fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 ${withParticle(fmtDate(opts.mainCleaningYmd), '으로/로')} 정해져 있습니다.`}
                   </p>
                 ))}
               </div>
