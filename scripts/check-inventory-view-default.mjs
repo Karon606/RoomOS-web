@@ -14,6 +14,8 @@
 //      (2026-10-12 재고 정비 2단계) 안내문·폐기 안내는 실제와 같은 문장으로 높이를 맞추고, 발끝 고정에 맞춰
 //      골격 발끝(DetailCheckFooterSkeleton)도 둔다.
 //   ⑧ (2026-10-12 재고 정비 3단계) 상세 보기 — 탭 위 요약 블록(골격과 한 함수)·창고 패널·발끝 두 줄·'관리' 메뉴·낱말.
+//   ⑨ (2026-10-13 재고 정비 4단계) 이력 카드 — 머리 한 줄 행 액션·삭제는 수정 폼 안(확인창 경로 유지)·종류 판별 한 곳·
+//      수령 반영 읽기 전용·창고 실측 표식·위치 묶음·CheckEditForm 문법·요약의 최근 점검.
 //
 // ④ 를 왜 여기서 또 보나. check-draft-lifecycle 은 onClose 가 **실패 0 일 때만** 서는지를 본다.
 // 여기서 보는 것은 다른 축이다 — 인라인(기본 보기)에서는 아예 안 서야 한다. 되돌아가면 체인 저장에
@@ -136,10 +138,12 @@ need('점검 골격 여백이 점검 폼과 같다',
 const viewSkeleton = (() => { const body = fnBody(client, "function DetailModalSkeleton({ mode, row }: { mode: 'view' | 'check'; row: InventoryRow })"); const i = body.indexOf(') : ('); return i < 0 ? '' : body.slice(i) })()
 need('보기 골격 여백이 보기 화면과 같다(두 블록)',
   /<div className="delayed-fallback" aria-busy="true" aria-label="불러오는 중">\s*<div className="px-5 sm:px-6 pt-3">/.test(viewSkeleton) &&
-  /<div className="px-5 sm:px-6 py-3">\s*<div className="space-y-1\.5">/.test(viewSkeleton) &&
+  /<div className="px-5 sm:px-6 py-3">\s*<div className="space-y-2">/.test(viewSkeleton) &&
   /<div className="px-5 sm:px-6 pt-3">\s*<DetailViewSummary row=\{row\}\s/.test(client) &&
-  /<div className="px-5 sm:px-6 py-3 space-y-3">/.test(client),
-  '보기 화면은 sm 에서 24px 이고 위 여백이 pt-3, 이력 블록이 py-3 이다 — 한 블록으로 그리면 로디드에서 12px 밀린다')
+  /<div className="px-5 sm:px-6 py-3 space-y-3">/.test(client) &&
+  // 이력 행 간격 — 골격과 실제가 같은 값이다(4단계에 space-y-1.5 에서 space-y-2 로, 디자이너 B10).
+  /<ul className="space-y-2">\s*\{data\.timeline\.map\(/.test(client),
+  '보기 화면은 sm 에서 24px 이고 위 여백이 pt-3, 이력 블록이 py-3 이다 — 한 블록으로 그리면 로디드에서 12px 밀린다 · 행 간격이 갈리면 둘째 행부터 어긋난다')
 // **주석이 아니라 마크업을 겨눈다**(재검수 2026-09-16). 이 파일의 client 는 주석을 걷은 소스라,
 // 블록을 지우고 설명만 남기면 초록이 되는 축을 세우면 안 된다. 골격의 첫 블록은 안내문이고, 그 아래
 // 폐기 안내, 다시 그 아래 점검일 라벨(h-3 w-12)이 온다 — 그 순서를 그대로 본다.
@@ -315,6 +319,121 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     !/>숨김<\/Btn>/.test(detail) && !/이 품목 창고:/.test(client) && !/bg-\[var\(--honey\)\]\/10/.test(detail) &&
     reconcile.length > 500 && !/>보정<\/p>/.test(reconcile),
     "'보정 (차이 소모 제외)' 는 사실과 다르다(보정 폼에 차이를 소모로 넣는 선택지가 있다) · honey 칩은 경고 배지처럼 읽혔다")
+}
+
+// ⑨ 이력 카드 (2026-10-13 재고 정비 4단계, 운영자 승인 패널 계획 · 결정 2·3).
+//
+//    머리 한 줄('YYYY.MM.DD HH:MM · 종류' + 오른쪽 RowActionBtn)과 본문 전폭이 카드 문법이다. 종전 수정·삭제 글자 버튼(32px)이
+//    오른쪽 세로 가운데에 떠서 본문 폭을 먹었다. 삭제는 수정 폼 안으로 옮겼다(구매 행 문법) — 옮기면서 **확인창이 사라지면 안
+//    된다**(바꾸면 안 되는 것: 이력 수정·삭제 확인창). 그래서 폼의 삭제가 종전 행 버튼과 같은 처리부(handleDeleteCheck·
+//    handleDeleteAddition)를 타는지를 본다. 폐기만 수정 폼이 없어 행에 '삭제' 가 남는다.
+//    맞바꿈·이동·수령 반영은 저장 메모 접두로 가리되 판정은 lib/stockCheckKind 한 곳이다(진리표 scripts/test-stock-check-kind).
+//    화면이 접두를 따로 읽기 시작하면 합쳐진 손 실측을 가리는 가드가 그 자리에서 빠진다.
+//    검수 반영(같은 날): 판별은 이름이 아니라 값으로 · 수령 반영은 그 구매가 이력에 있을 때만(sourceExpenseId) · 요약 최근 점검은
+//    카드와 같은 값에 종류 꼬리(원안 P3-12) · 수정 폼 셋 삭제는 Btn danger · 형제 수정 폼 문법 · 수령 위치 칩 · 센 기록만 체크 글리프.
+{
+  const topFn2 = name => {
+    const start = client.indexOf(`\nfunction ${name}(`)
+    if (start < 0) return ''
+    const m = /\n(function |const |type |export |let )/.exec(client.slice(start + 1))
+    return client.slice(start, m ? start + 1 + m.index : client.length)
+  }
+  const row = topFn2('TimelineRow')
+  const lines = topFn2('TimelineLocLines')
+  const edit = topFn2('CheckEditForm')
+  const detail = topFn2('DetailModal')
+  const summary = topFn2('DetailViewSummary')
+  const EDIT_DATE_LIT = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] outline-none focus-visible:border-[var(--coral)]'
+  const addEdit = topFn2('AdditionEditForm')
+  const purEdit = topFn2('PurchaseEditForm')
+  const actions = stripComments(readFileSync('app/(app)/inventory/actions.ts', 'utf8'))
+  const detailFn = (() => { const i = actions.indexOf('export async function getInventoryDetail('); const j = actions.indexOf('\n}\n', i); return i < 0 || j < 0 ? '' : actions.slice(i, j) })()
+  need('이력 카드·위치 줄·점검 수정 폼을 찾음', row.length > 3000 && lines.length > 300 && edit.length > 2000 && detailFn.length > 500 && addEdit.length > 1000 && purEdit.length > 1500,
+    '함수 머리가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지)')
+  need('이력 카드에 글자 버튼(32px) 수정·삭제가 없고 행 액션은 정본 RowActionBtn 이다',
+    !/min-h-\[32px\]/.test(row) && (row.match(/<RowActionBtn disabled=\{pending\} onClick=\{\(\) => setEditing\(true\)\}>수정<\/RowActionBtn>/g) ?? []).length === 3 &&
+    /<RowActionBtn tone="success" className="shrink-0" disabled=\{pending\}/.test(row) && /function TimelineHead\(/.test(client),
+    '히트 32px 글자 버튼은 §25 44px 미달이고 본문 폭을 90px 먹었다 · 수령 확인은 긍정 액션 tone success')
+  need("점검·입수 카드의 삭제는 수정 폼 안에서 종전 처리부(확인창·적용취소)를 탄다",
+    /onDelete=\{\(\) => onDeleteCheck\(entry\.id\)\}/.test(row) && /onDelete=\{async \(\) => \{ onDeleteAddition\(entry\.id\) \}\}/.test(row) &&
+    /<Btn variant="danger" size="sm" onClick=\{onDelete\} disabled=\{pending\}>삭제<\/Btn>/.test(edit) &&
+    /onDeleteCheck=\{handleDeleteCheck\} onDeleteAddition=\{handleDeleteAddition\}/.test(detail) &&
+    /const handleDeleteCheck = async \(id: string\) => \{\s*if \(!\(await confirmDialog\(\{ title: '이 점검 기록을 삭제할까요\?'/.test(detail) && /undoDeleteStockCheck\(res\.undo\)/.test(detail) &&
+    /if \(!ask\.result\.asked && !\(await confirmDialog\(\{ title: '이 입수 기록을 삭제할까요\?'/.test(detail) && /undoDeleteStockAddition\(res\.undo\)/.test(detail) &&
+    !/onClick=\{\(\) => onDeleteCheck\(entry\.id\)\}/.test(row) && !/onClick=\{\(\) => onDeleteAddition\(entry\.id\)\}/.test(row),
+    '폼의 종전 입수 삭제 처리부는 물을 것이 없을 때 확인창 없이 지웠다 — 행 버튼이 지키던 확인창이 옮기는 순간 사라진다')
+  need("폐기만 행에 '삭제'(danger)가 남는다", /<RowActionBtn tone="danger" disabled=\{pending\} onClick=\{\(\) => onDeleteDisposal\(entry\.id\)\}>삭제<\/RowActionBtn>/.test(row) &&
+    (row.match(/>삭제<\/RowActionBtn>/g) ?? []).length === 1,
+    '폐기는 수정 폼이 없다 — 행에서 지워야 하고, 다른 유형에 행 삭제가 되살아나면 같은 이력 안 문법이 갈린다')
+  need('맞바꿈·이동·수령 반영 판별은 lib/stockCheckKind 한 곳이고 상세 모달이 넘긴다',
+    /import \{ classifyChecks, checkMemoText, type CheckKind \} from '@\/lib\/stockCheckKind'/.test(client) &&
+    /const checkKinds = classifyChecks\(timelineChecks, purchaseIds\)/.test(detail) &&
+    /const purchaseIds = new Set\(data \? data\.timeline\.filter\(e => e\.type === 'purchase'\)\.map\(e => e\.id\) : \[\]\)/.test(detail) &&
+    /sourceExpenseId: c\.sourceExpenseId,/.test(detailFn) && /checkKind=\{e\.type === 'check' \? checkKinds\.get\(e\.id\) : undefined\}/.test(detail) &&
+    !/맞바꿈:|이동:|\[수령 자동\]/.test(row) && /const memoText = checkMemoText\(entry\.memo, kind\)/.test(row),
+    '화면이 접두를 따로 읽으면 합쳐진 손 실측을 가리는 가드(채움 마커·실측 표식·바뀐 칸)가 그 자리에서 빠진다')
+  need('수령 반영 카드는 읽기 전용이고 고치는 길을 말한다',
+    /actions=\{kind\.kind === 'receipt' \? undefined : <RowActionBtn/.test(row) && /고치려면 그 구매의 수정에서 미수령으로 되돌리세요\./.test(row),
+    "수령 자동 점검을 손으로 고치거나 지우면 수령 취소가 지울 기록과 장부가 어긋난다(운영자 결정 3, 서버 가드는 없다) · 안내 낱말은 구매 수정 폼 버튼 '미수령으로' 와 같다")
+  need('글리프 — 체크는 센 기록(점검)에만',
+    /<TimelineHead glyph=\{kind\.kind === 'swap' \|\| kind\.kind === 'move' \? TL_GLYPH_MOVE : kind\.kind === 'receipt' \? TL_GLYPH_IN : TL_GLYPH_CHECK\}/.test(row) &&
+    /const TL_GLYPH_MOVE = <svg/.test(client),
+    '아무도 세지 않은 맞바꿈·수령 반영에 체크(센 기록)를 달면 머리 종류와 글리프가 다른 말을 한다')
+  need('창고 실측과 자동 차감을 가른다(getInventoryDetail 이 carried 를 싣는다)',
+    /carried: lb\.carried,/.test(detailFn) && /hubRow\?\.carried === false \? ` · 창고 실측 \$\{fmtQty\(hubRow\.qty, stockUnit\)\}` : ''/.test(row) &&
+    /창고에서 \{fmtQty\(restockTotal, stockUnit\)\} 채움/.test(row) && !/창고에서 자동 차감\)/.test(row) && !/↳/.test(row),
+    "창고를 직접 센 점검에 '(창고에서 자동 차감)' 이라 적던 거짓말(도메인 P1-3) · 경로 화살표는 §29 위반")
+  need('위치 줄은 정본 splitLocPath 로 묶고 창고 표식은 Badge, 채움은 캡션이다',
+    /splitLocPath\(meta\)/.test(lines) && /meta && meta\.pathName === row\.locationName/.test(lines) &&
+    /<Badge tone="pale-amber" className="ml-1 leading-4">창고<\/Badge>/.test(lines) && /채움 \{fmtQty\(row\.restockedQty!, unit\)\}/.test(lines) &&
+    !/--tc-text/.test(lines) && !/text-\[var\(--tc-text\)\][^"]*">\+/.test(row) && !/text-\[var\(--tc-text\)\] mt-0\.5/.test(row),
+    "칸마다 전체 경로 칩이 세로로 쌓였다 · 테라코타 '+8kg' 은 §03·§06 절제 대상")
+  need("보정은 정본 Badge 하나로 말한다('전체 보정' 글자와 미니 배지 중복 제거)",
+    /\{entry\.isReconcile && <Badge tone="pale-amber" className="ml-1\.5">보정<\/Badge>\}/.test(row) && !/'전체 보정'/.test(row) && !/bg-\[var\(--honey\)\]\/15/.test(row),
+    '같은 말을 두 번 하는 장식이고 수제 honey 배지는 §11 트라이어드 밖이다')
+  need('이력 카드 모양이 투명 바탕 + 1px 테두리 + r-md 다',
+    /const TL_CARD = 'rounded-md border border-\[var\(--warm-border\)\] px-3 py-2'/.test(client) && !/rounded-xl/.test(row) &&
+    (row.match(/<li className=\{TL_CARD\}>/g) ?? []).length === 2 && /<li className=\{`rounded-md px-3 py-2 \$\{isPendingReceipt/.test(row) &&
+    /<li className="rounded-md border border-\[var\(--danger-ring\)\]\/40 px-3 py-2"/.test(row) && !/<li className="[^"]*bg-\[var\(--canvas\)\]/.test(row),
+    '유형마다 바탕·테두리·모서리가 달라 한 목록이 정리돼 보이지 않았다(§07)')
+  need('점검 수정 폼이 2단계 문법이다(값 미리 채움 유지)',
+    !/border-\[var\(--tc-text\)\]\/45/.test(edit) && /<RowActionBtn className="shrink-0" onClick=\{\(\) => setAfterQtys/.test(edit) &&
+    /<Badge tone="pale-amber" className="shrink-0">창고<\/Badge>/.test(edit) && !/\(창고\)/.test(edit) && !/bg-\[var\(--coral\)\]\/5/.test(edit) &&
+    !/--persimmon-d|--tc-text/.test(edit) && (edit.match(/<QtyField /g) ?? []).length >= 4 && /className=\{checkTextInputCls\}/.test(edit) &&
+    !/text-\[0\.65625rem\] text-\[var\(--warm-muted\)\] mb-/.test(edit) &&
+    /initial\[l\.id\]\?\.before \?\? ''/.test(edit) && /initial\[l\.id\]\?\.after \?\? ''/.test(edit),
+    '코랄 테두리 버튼·틴트 면·테라코타 수치·10.5px 라벨·1px 입력 보더가 남으면 같은 일을 하는 두 폼이 다른 말을 한다 · 미리 채움을 걷으면 그대로 저장할 때 값이 사라진다')
+  need("상세 요약 '최근 점검' 은 카드와 같은 값이고 그 기록이 센 점검이 아니면 종류를 흐리게 붙인다(도메인 P3-12 원안)",
+    /const created = row\.lastCheckCreatedAt \? new Date\(row\.lastCheckCreatedAt\) : null/.test(summary) &&
+    /const kindTag = created != null && lastKind \? `· \$\{lastKind === 'swap' \? '맞바꿈' : lastKind === 'move' \? '위치 이동' : '수령 반영'\}` : ''/.test(summary) &&
+    /<span className="whitespace-nowrap text-\[var\(--warm-muted\)\]">\{g\(kindTag\)\}<\/span>/.test(summary) &&
+    /const lastKindOf = row\.lastCheckId \? checkKinds\.get\(row\.lastCheckId\)\?\.kind : undefined/.test(detail) && /lastKind=\{lastKind\} \/>/.test(detail) &&
+    !/lastCountedCheck|이후 \$\{/.test(client),
+    "다른 값(마지막 센 점검)을 쓰면 카드·점검 입력과 말이 갈리고 수령만 있는 품목이 '기록 없음' 이 됐다(검수) · 종류 꼬리는 같은 줄에 덩이째 서서 로디드 순간 줄 수가 안 변한다")
+  // 형제 수정 폼 셋 — 삭제·제외는 정본 Btn danger, 라벨·입력·날짜는 점검 수정 폼과 같은 문법(검수 반영).
+  need('형제 수정 폼(무상 입수·구매)이 점검 수정 폼과 같은 문법이다',
+    /<Btn variant="danger" size="sm" onClick=\{onDelete\} disabled=\{pending\}>삭제<\/Btn>/.test(addEdit) &&
+    /<Btn variant="danger" size="sm" onClick=\{onDelete\} disabled=\{pending\}>재고에서 제외<\/Btn>/.test(purEdit) &&
+    !/<button type="button" onClick=\{onDelete\}/.test(edit + addEdit + purEdit) &&
+    !/text-\[0\.65625rem\] text-\[var\(--warm-muted\)\] mb-1|const inputCls =/.test(addEdit + purEdit) &&
+    (addEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 5 && (purEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 5 &&
+    /<QtyField unit=\{stockUnit\} aria-label="수량"/.test(addEdit) && /<select value=\{storageLocationId\} onChange=\{e => setStorageLocationId\(e\.target\.value\)\} className=\{checkTextInputCls\}>/.test(addEdit) &&
+    // 날짜 칸 셋은 글자째 한 벌(44px · rounded-sm) — 상수로 빼면 check-datepicker-shell 의 radius 축이 선언 밖 글자를 끌어와 오탐한다.
+    [edit, addEdit, purEdit].every(f => f.includes(`className="w-full ${EDIT_DATE_LIT}"`)) && purEdit.includes(`className="min-w-0 flex-1 basis-36 ${EDIT_DATE_LIT}"`) &&
+    /type="time"[\s\S]{0,160}border-\[1\.5px\] border-\[var\(--border-s\)\][^"]*min-h-\[var\(--input-h-touch\)\]/.test(purEdit) &&
+    /<Badge tone="pale-amber">미수령<\/Badge>/.test(purEdit) && !/bg-\[var\(--honey\)\]\/15/.test(purEdit) &&
+    /className="w-full bg-\[var\(--canvas\)\] border border-\[var\(--warm-border\)\] rounded-sm px-3 py-2 text-sm text-\[var\(--warm-dark\)\] min-h-\[var\(--input-h-touch\)\]/.test(edit),
+    '같은 목록의 수정 폼 셋이 라벨 크기·입력 보더·높이·삭제 버튼 모양이 갈리면 이질감이다(§10 raw 버튼 금지 · §12 한 폼 안 입력 높이)')
+  // 수령 위치 칩 — 색만으로 창고를 가르지 않는다(WCAG 1.4.1).
+  need("수령 위치 칩은 행 버튼이고 창고는 낱말(Badge '창고')로 가른다",
+    /\{loc\.pathName\}\{loc\.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고<\/Badge>\}/.test(row) &&
+    />\s*위치 없이 확정\s*<\/RowActionBtn>/.test(row) && /<RowActionBtn onClick=\{\(\) => setShowLocationPicker\(false\)\}>취소<\/RowActionBtn>/.test(row) &&
+    !/border-\[var\(--honey\)\] bg-\[var\(--honey\)\]\/10/.test(row) && /<QtyField unit=\{entry\.qtyUnit \?\? '개'\} aria-label="도착 수량"/.test(row),
+    '종전 honey 면만으로 창고를 가렸다 — 색을 못 보는 사람에게 단서가 없다 · 32px 미만 글자 버튼')
+  need('구매 카드 캡션이 이력 공통 크기이고 자르지 않는다',
+    !/truncate/.test(row) && /<p className="text-\[0\.6875rem\] text-\[var\(--warning-fg\)\]">수령 대기 중<\/p>/.test(row) &&
+    /text-sm font-medium tabular-nums text-\[var\(--warm-dark\)\]">\{baseQty > 0/.test(row) && !/text-\[0\.65625rem\]/.test(row.slice(row.indexOf("entry.type === 'purchase'"), row.indexOf('isPendingReceipt && showLocationPicker'))),
+    '브랜드 줄만 말줄임이면 이력 공통 줄바꿈과 갈리고 터치 화면에서 뒤를 읽을 길이 없다')
 }
 
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)

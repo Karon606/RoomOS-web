@@ -160,9 +160,18 @@ function sourceGuards() {
     violations.push('재고 화면이 조정 전에 영향을 묻지 않는다(askLedgerShift/previewStockAdditionShift 소실)')
   }
   const wired = (client.match(/adjustFollowing:\s*ask\.result\.adjust/g) ?? []).length
-  // 등록 1 · 수정 1 · 삭제 2(타임라인 행 버튼, 수정 폼 안 삭제) = 4 자리.
-  if (wired < 4) {
-    violations.push(`조정 인자가 물음 결과에서 오지 않는 경로가 있다 — 연결 ${wired}/4`)
+  // 등록 1 · 수정 1 · 삭제 1 = 3 자리. 삭제는 종전 두 자리(타임라인 행 버튼 · 수정 폼 안 삭제)였는데 재고 정비 4단계
+  // (2026-10-13)에 행 버튼을 폼 안으로 옮기며 한 처리부(handleDeleteAddition)로 모았다 — 폼 쪽 처리부는 물을 것이 없을 때
+  // 확인창 없이 지웠다. 그래서 삭제 호출(deleteStockAddition)이 화면에 **물음을 거친 한 자리**뿐인지도 함께 본다
+  // (적용취소 토스트의 adjustFollowing: true 되돌림은 그 짝이라 뺀다). 폼 배선은 check-inventory-view-default ⑨ 가 본다.
+  if (wired < 3) {
+    violations.push(`조정 인자가 물음 결과에서 오지 않는 경로가 있다 — 연결 ${wired}/3`)
+  }
+  const delCalls = (client.match(/deleteStockAddition\(/g) ?? []).length
+  const delAsked = (client.match(/deleteStockAddition\(id, \{ adjustFollowing: ask\.result\.adjust \}\)/g) ?? []).length
+  const delUndo = (client.match(/deleteStockAddition\(newId, \{ adjustFollowing: true \}\)/g) ?? []).length
+  if (delAsked !== 1 || delCalls !== delAsked + delUndo) {
+    violations.push(`무상 입수 삭제가 물음을 거치지 않는 자리에서 불린다 — 삭제 호출 ${delCalls}곳 중 물음 ${delAsked} · 등록 적용취소 ${delUndo}`)
   }
 
   // ── 지출 전파 게이트(점보롤 백로그 1번) — 지출 수정·삭제·수령 취소·제외의 조정도

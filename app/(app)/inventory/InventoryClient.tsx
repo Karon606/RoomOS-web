@@ -37,6 +37,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
 import { ViewTabs } from '@/components/ui/ViewTabs'
+import { classifyChecks, checkMemoText, type CheckKind } from '@/lib/stockCheckKind'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
   getInventoryDetail,
@@ -124,6 +125,9 @@ const LOC_INDENT_PX = 12   // 승인 목업(402px) 기준 — 한 단계당 12px
 // 같은 폼의 글자칸(메모)은 정렬만 다른 한 벌(checkTextInputCls)이다 — 한 폼 안 입력 문법 통일(2단계 검수 5).
 const checkTextInputCls = 'w-full min-w-0 bg-[var(--canvas)] border-[1.5px] border-[var(--border-s)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]'
 const qtyInputCls = `${checkTextInputCls} text-right`
+// 이력 수정 폼 셋의 라벨 — 2단계 점검 입력과 같은 12px/500 --warm-mid, 칸과 사이 mb-1. 세 폼의 날짜 칸은 점검 입력의 점검일과 같은
+// 44px 글자째 한 벌이다(상수로 빼지 않는다 — check-datepicker-shell 이 호출부 글자에서 radius 를 읽는다). 보더는 공용 DatePicker 1px 그대로.
+const EDIT_LABEL_CLS = 'mb-1 text-xs font-medium text-[var(--warm-mid)]'
 
 // 단위 접미 자리 — 칸 안 오른쪽에 고정한다(2단계). 맨 위 라벨 '(kg)' 에 기대면 행이 많을 때 단위가 화면
 // 밖으로 밀려 무엇을 세는 숫자인지가 사라진다. 글자 폭만큼 오른쪽 안쪽 여백을 비워 숫자와 겹치지 않게 한다
@@ -859,7 +863,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식
-              <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다. 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요. 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
+              <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다. 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요. 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 실측값으로 기준을 다시 맞춤(줄어든 차이를 소모로 칠지는 그때 고름). 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
             </h1>
           </div>
           {/* 점검 진입 방식 토글 — v2.0 §23 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트.
@@ -1692,9 +1696,9 @@ function DetailModalSkeleton({ mode, row }: { mode: 'view' | 'check'; row: Inven
         </span>
       </div>
     </div>
-    {/* 이력 행 — 실제 이력 블록과 같은 여백·행 간격(py-3 · space-y-1.5). 행 높이는 기록마다 달라 고정 막대다. */}
+    {/* 이력 행 — 실제 이력 블록과 같은 여백·행 간격(py-3 · space-y-2, 4단계). 행 높이는 기록마다 달라 고정 막대다. */}
     <div className="px-5 sm:px-6 py-3">
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {[0, 1, 2, 3, 4].map(i => <div key={i} className={`h-12 ${bar}`} />)}
       </div>
     </div>
@@ -1731,18 +1735,27 @@ function DetailCheckFooterSkeleton({ restock }: { restock: boolean }) {
 // (--sand-s 면)은 폼 안 파생값 자리라 여기와 다르다. 값은 카드와 같은 출처(row)·같은 단위 식이다.
 // 골격(DetailModalSkeleton 보기)도 이 함수를 ghost 로 그린다 — 같은 글자를 투명하게 그려 폭마다 줄 수가 실제와
 // 같다(2단계 안내문 골격과 같은 문법). 그래서 로디드 순간 탭과 이력이 한 픽셀도 안 움직인다.
-function DetailViewSummary({ row, hubPicker, ghost = false }: { row: InventoryRow; hubPicker?: React.ReactNode; ghost?: boolean }) {
+function DetailViewSummary({ row, hubPicker, lastKind, ghost = false }: {
+  row: InventoryRow; hubPicker?: React.ReactNode
+  // 최근 기록(row.lastCheckId)이 센 점검이 아니면 그 종류(4단계, lib/stockCheckKind). 이력을 읽은 뒤에만 넘어온다 —
+  // 골격은 종류를 모르고, 붙는 꼬리는 같은 줄에 덩이째 선다.
+  lastKind?: 'swap' | 'move' | 'receipt' | null
+  ghost?: boolean
+}) {
   const unit = row.trackUnit === 'qty' ? (row.qtyUnit ?? row.unitHint) : (row.specUnit ?? row.qtyUnit ?? row.unitHint)
   const bar = 'rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]'
   const g = (s: string) => ghost ? <span className={bar}>{s}</span> : s
   // 잔량을 모르면(점검 전) 대시를 쓰지 않는다 — 이 앱에서 대시는 '대상 없음'으로 학습된 기호다(카드 주석과 같은 이유).
   const nowText = row.currentStock == null ? '미확인' : fmtQty(row.currentStock, unit)
-  // 최근 점검 — 점검일과 기록 시각이 다른 날이면 둘 다(종전 캡션 그대로). 맞바꿈·이동 기록 시각이어도 지금은 숫자만(종류 병기는 4단계).
+  // 최근 점검 — 점검일과 기록 시각이 다른 날이면 둘 다(종전 캡션 그대로). 값은 카드·점검 입력·위치 패널과 같은
+  // row.lastCheckCreatedAt 이다. 그 기록이 맞바꿈·위치 이동·수령 반영이면 종류를 흐리게 붙인다(도메인 P3-12 '마지막 기록
+  // 종류 병기', 4단계) — 김치 10/12 처럼 16:08 맞바꿈 시각이 아무 말 없이 '최근 점검' 으로 서던 것을 막는다.
   const created = row.lastCheckCreatedAt ? new Date(row.lastCheckCreatedAt) : null
   const lastText = created == null ? '기록 없음'
     : (row.lastCheckDate ? isSameKstDay(new Date(row.lastCheckDate), created) : true)
       ? `${fmtDate(row.lastCheckDate)} ${fmtTime(created)}`
       : `${fmtDate(row.lastCheckDate)} · ${fmtDate(created)} ${fmtTime(created)} 기록`
+  const kindTag = created != null && lastKind ? `· ${lastKind === 'swap' ? '맞바꿈' : lastKind === 'move' ? '위치 이동' : '수령 반영'}` : ''
   const itemHub = row.locations.find(l => l.isHub) ?? null
   // 창고 잔량 부기 — 모르면(창고 미지정·breakdown 없음) 숫자를 지어내지 않고 생략한다.
   const itemHubQty = itemHub ? row.currentLocationBreakdown.find(lb => lb.locationId === itemHub.id)?.qty ?? null : null
@@ -1759,7 +1772,7 @@ function DetailViewSummary({ row, hubPicker, ghost = false }: { row: InventoryRo
       </div>
       <div className="flex items-baseline gap-3">
         <span className={label}>{g('최근 점검')}</span>
-        <span className={`${value} ${created == null ? 'text-[var(--warm-muted)]' : ''}`}>{g(lastText)}</span>
+        <span className={`${value} ${created == null ? 'text-[var(--warm-muted)]' : ''}`}>{g(lastText)}{kindTag && <>{' '}<span className="whitespace-nowrap text-[var(--warm-muted)]">{g(kindTag)}</span></>}</span>
       </div>
       {/* 창고 — 위치가 없는 품목엔 고를 것이 없다(종전 칩과 같은 조건). 줄 높이는 '변경' 히트영역(44 - 위아래 -8)인
           28px 이고, 라벨·값은 py-1 로 그 가운데 선다. 경로가 길면 낱말 단위로 줄을 바꾼다 — 끝 칸 이름(상단·하단)이
@@ -2125,6 +2138,15 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
   }
 
   const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? (data.item.qtyUnit ?? data.item.unitHint) : (data.item.specUnit ?? data.item.qtyUnit ?? data.item.unitHint)) : null
+  // 점검 기록의 종류(맞바꿈·위치 이동·수령 반영)는 직전 점검과 견줘야 가린다 — 이력 전체를 한 번에 가려 카드에 넘기고,
+  // 요약의 최근 점검 종류 꼬리도 같은 판정에서 낸다(4단계, lib/stockCheckKind). 이력은 서버가 최신부터 정렬해 준다.
+  // 수령 반영은 그 구매가 이력에 있을 때만이다 — 고치는 길이 구매 카드의 수정이라, 단위가 다른 지출처럼 구매가 이력에
+  // 안 보이면 읽기 전용은 막다른 길이 된다(검수 실측 빨래줄). 그때는 수정할 수 있는 '점검' 으로 둔다.
+  const timelineChecks = data ? data.timeline.filter((e): e is TimelineEntry & { type: 'check' } => e.type === 'check') : []
+  const purchaseIds = new Set(data ? data.timeline.filter(e => e.type === 'purchase').map(e => e.id) : [])
+  const checkKinds = classifyChecks(timelineChecks, purchaseIds)
+  const lastKindOf = row.lastCheckId ? checkKinds.get(row.lastCheckId)?.kind : undefined
+  const lastKind = lastKindOf === 'swap' || lastKindOf === 'move' || lastKindOf === 'receipt' ? lastKindOf : null
   const isViewMode = mode === 'view' && !!data
   // 카드 제목과 같은 분리 — 카드에서 캡션으로 떨어져 있던 크기가 모달을 열면 되돌아오면 안 된다.
   const detailLabel = data?.item.label ?? row.label
@@ -2235,10 +2257,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
         <>
           <div className="px-5 sm:px-6 pt-3">
             {/* view 모드 본문 최상단 — 요약 블록(지금 · 최근 점검 · 창고 + 변경). '최근 점검' 은 재고 카드·점검 입력·위치
-                패널과 같은 말이다(패널 합의, 다수파). 창고 변경의 패널·적용취소는 종전 동작 그대로다(changeItemHub).
+                패널과 같은 말이고 같은 값(row.lastCheckCreatedAt)이다(패널 합의, 다수파). 그 기록이 맞바꿈·위치 이동·수령
+                반영이면 종류만 흐리게 붙는다(4단계, lastKind). 창고 변경의 패널·적용취소는 종전 동작 그대로다(changeItemHub).
                 패널의 체크와 요약의 '(기본 창고)' 는 같은 값(row.hubLocationId)을 읽는다 — 둘이 다른 출처면 갱신 사이에 말이 갈린다. */}
             <DetailViewSummary row={row}
-              hubPicker={<ItemHubPicker locations={row.locations} hubLocationId={row.hubLocationId} disabled={pending} onPick={changeItemHub} />} />
+              hubPicker={<ItemHubPicker locations={row.locations} hubLocationId={row.hubLocationId} disabled={pending} onPick={changeItemHub} />}
+              lastKind={lastKind} />
             {/* 연속 점검 이어가기 — 저장한 뒤 모달이 닫힐 때까지 남는다(§16·§18 영속 자리).
                 히트영역은 §25 유사요소 확장으로 44px — 글자만으로는 16px 이다. */}
             {checkSaved && nextId && nextLabel && onGoToItem && (
@@ -2275,8 +2299,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                 {data.timeline.length === 0 ? (
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
                 ) : (
-                  <ul className="space-y-1.5">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                  <ul className="space-y-2">
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                   </ul>
                 )}
               </div>
@@ -2626,9 +2650,35 @@ function MergeSection({ currentId, currentLabel, onDone, onGone }: {
   )
 }
 
-function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
+// 이력 카드 머리 한 줄 — 글리프 · 'YYYY.MM.DD HH:MM · 종류' · 오른쪽 행 액션(재고 화면 정비 4단계, 디자이너 B4).
+// 종전에는 수정·삭제 글자 버튼(32px)이 카드 오른쪽 세로 가운데에 떠서 본문 폭을 90px 먹었다. 액션은 머리 줄에만 서고
+// 본문은 그 아래 카드 전폭이다. 행 액션은 정본 RowActionBtn(히트 44px, 보이는 상자는 머리 줄 28px 안)이다.
+function TimelineHead({ glyph, color = 'var(--warm-muted)', actions, children }: {
+  glyph: React.ReactNode; color?: string; actions?: React.ReactNode; children: React.ReactNode
+}) {
+  return (
+    // 글리프·액션은 머리 **첫 줄**(28px)에 선다 — 좁은 폭에서 날짜·종류가 둘째 줄로 꺾여도(보정 배지·구매 규격) 세로 가운데로 흐르지 않게.
+    <div className="flex items-start gap-2">
+      <span className="flex h-7 shrink-0 items-center">{glyph}</span>
+      <p className="min-w-0 flex-1 break-keep py-1.5 text-xs tabular-nums" style={{ color }}>{children}</p>
+      {actions != null && <div className="flex h-7 shrink-0 items-center gap-1.5">{actions}</div>}
+    </div>
+  )
+}
+const TL_GLYPH_CHECK = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+const TL_GLYPH_IN = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
+// 맞바꿈·위치 이동 — 아무도 세지 않은 기록이라 체크(센 기록) 대신 자리 바꿈 글리프다(4단계 검수).
+const TL_GLYPH_MOVE = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" /></svg>
+const TL_GLYPH_OUT = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger-fg)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+// 이력 카드 모양(§07) — 투명 바탕 + 1px --warm-border + r-md. 폐기(danger)·수령 대기(warning) 틴트만 제 색을 갖는다.
+const TL_CARD = 'rounded-md border border-[var(--warm-border)] px-3 py-2'
+const TL_CAPTION = 'text-[0.6875rem] text-[var(--warm-muted)] break-keep [overflow-wrap:anywhere]'
+
+function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
   entry: TimelineEntry; trackedItemId: string; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   itemLocations: StorageLocationItem[]
+  // 점검 기록의 종류(lib/stockCheckKind) — 직전 점검과 견줘야 가릴 수 있어 이력 전체를 본 상세 모달이 넘긴다.
+  checkKind?: CheckKind
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   onDeleteDisposal: (id: string) => void
@@ -2673,64 +2723,66 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
           })
           onChanged()
         }}
-        pending={savePending}
+        // 삭제는 수정 폼 안이다(4단계 — 구매 행과 같은 문법, 같은 이력 안 일관성). 경로는 종전 행 버튼과 같은
+        // handleDeleteCheck(확인창 · 삭제 · 적용취소 토스트)다. 그 사이 대기는 loadingId 가 진다.
+        onDelete={() => onDeleteCheck(entry.id)}
+        pending={savePending || pending}
         error={editError}
       />
     }
+    // 종류 — 맞바꿈·위치 이동·수령 반영은 저장 메모 접두로 가린다(운영자 결정, 저장 메모는 그대로). 가드를 못 지나는
+    // 기록(합쳐진 손 실측·이름이 바뀐 옛 기록)은 종전처럼 '점검'이다(lib/stockCheckKind 주석).
+    const kind: CheckKind = checkKind ?? { kind: 'check' }
+    const kindLabel = kind.kind === 'swap' ? '맞바꿈' : kind.kind === 'move' ? '위치 이동' : kind.kind === 'receipt' ? '수령 반영' : '점검'
+    const memoText = checkMemoText(entry.memo, kind)
+    const hubId = itemLocations.find(l => l.isHub)?.id ?? null
+    const restockTotal = entry.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
+    // 창고를 직접 센 점검(창고 행 carried:false)과 자동 차감 이월을 가른다(도메인 P1-3). 종전 줄은 창고를 센 점검에도
+    // '(창고에서 자동 차감)' 이라 적었다. 표식 이전 행(null)은 모르는 것이라 실측이라 말하지 않는다.
+    const hubRow = hubId ? entry.locationBreakdown.find(lb => lb.locationId === hubId) : undefined
     return (
-      <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2">
-        <div className="min-w-0 flex items-center gap-2">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-          <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">
-              {fmtDate(entry.date)} · {entry.isReconcile ? '전체 보정' : '점검'} · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span>
-              {entry.isReconcile && <span className="ml-1 text-[0.65625rem] bg-[var(--honey)]/15 text-[var(--honey)] border border-[var(--honey)]/40 rounded-sm px-1.5 py-0.5">보정</span>}
+      <li className={TL_CARD}>
+        {/* 수령 반영은 읽기 전용이다(운영자 결정 3) — 고치는 길은 그 구매 카드의 수정(수령 취소)이다. 서버 가드는 두지 않았다. */}
+        {/* 글리프는 센 기록(점검)에만 체크다 — 맞바꿈·이동은 자리 바꿈, 수령 반영은 구매와 같은 들어옴 글리프. */}
+        <TimelineHead glyph={kind.kind === 'swap' || kind.kind === 'move' ? TL_GLYPH_MOVE : kind.kind === 'receipt' ? TL_GLYPH_IN : TL_GLYPH_CHECK}
+          actions={kind.kind === 'receipt' ? undefined : <RowActionBtn disabled={pending} onClick={() => setEditing(true)}>수정</RowActionBtn>}>
+          {fmtDate(entry.date)} <span className="tabular-nums">{fmtTime(entry.createdAt)}</span> · {kindLabel}
+          {/* 보정은 정본 Badge 하나로만 말한다 — 종전 '전체 보정' 글자 + 보정 미니 배지는 같은 말을 두 번 했다. */}
+          {entry.isReconcile && <Badge tone="pale-amber" className="ml-1.5">보정</Badge>}
+        </TimelineHead>
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 <span className="tabular-nums">{fmtQty(entry.remainingQty, stockUnit)}</span></p>
+          {kind.kind === 'swap' || kind.kind === 'move' ? (
+            // 맞바꿈·이동은 바뀐 칸만, 값 전환 표기로(§29). 총량이 실제로 같을 때만 '총량 변화 없음'.
+            <>
+              <TimelineLocLines unit={stockUnit} hubId={hubId} itemLocations={itemLocations}
+                rows={kind.changes.map(c => ({ locationId: c.locationId, locationName: c.locationName, qty: c.to, from: c.from }))} />
+              {kind.totalSame && <p className={TL_CAPTION}>총량 변화 없음</p>}
+            </>
+          ) : (
+            <TimelineLocLines unit={stockUnit} hubId={hubId} itemLocations={itemLocations} rows={entry.locationBreakdown} />
+          )}
+          {restockTotal > 0 && (
+            <p className={TL_CAPTION}>
+              창고에서 {fmtQty(restockTotal, stockUnit)} 채움{hubRow?.carried === false ? ` · 창고 실측 ${fmtQty(hubRow.qty, stockUnit)}` : ''}
             </p>
-            <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
-            {entry.locationBreakdown.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {entry.locationBreakdown.map(lb => {
-                  const restocked = lb.restockedQty ?? 0
-                  return (
-                    <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">
-                      {lb.locationName} {fmtQty(lb.qty, stockUnit)}
-                      {restocked > 0 && <span className="ml-1 text-[var(--tc-text)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-            {/* 보충 합계 — restockedQty 가 있으면 합계와 허브 차감 안내 */}
-            {(() => {
-              const restockTotal = entry.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
-              if (restockTotal <= 0) return null
+          )}
+          {/* (레거시) 명시적 이동 유입 — fromHubQty 가 있는 점검만 */}
+          {entry.locationBreakdown
+            .filter(lb => lb.fromHubQty != null && lb.fromHubQty > 0)
+            .map(lb => {
+              const src = entry.locationBreakdown.find(x => x.locationId === lb.fromLocationId)
               return (
-                <p className="text-[0.65625rem] text-[var(--tc-text)] mt-0.5">
-                  ↳ 창고 → 각 위치 +{Math.round(restockTotal * 100) / 100}{stockUnit ?? ''} (창고에서 자동 차감)
+                <p key={`mv-${lb.locationId}`} className={TL_CAPTION}>
+                  {src?.locationName ?? '창고'}에서 {withParticle(lb.locationName, '으로/로')} {fmtQty(lb.fromHubQty!, stockUnit)} 이동
                 </p>
               )
-            })()}
-            {/* (레거시) 명시적 이동 유입 — fromHubQty 가 있는 점검만 */}
-            {entry.locationBreakdown
-              .filter(lb => lb.fromHubQty != null && lb.fromHubQty > 0)
-              .map(lb => {
-                const src = entry.locationBreakdown.find(x => x.locationId === lb.fromLocationId)
-                return (
-                  <p key={`mv-${lb.locationId}`} className="text-[0.65625rem] text-[var(--honey)] mt-0.5">
-                    ↳ {src?.locationName ?? '창고'} → {lb.locationName} · {fmtQty(lb.fromHubQty!, stockUnit)} 이동
-                  </p>
-                )
-              })}
-            {/* 메모는 자르지 않고 줄을 바꾼다 — 맞바꿈·이동 메모는 두 위치 이름이라 길고, 잘리면 어느 칸을
-                바꿨는지가 사라진다. 터치 화면엔 title 툴팁이 없어 말줄임 뒤를 읽을 길이 없다(이력 카드 공통). */}
-            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button type="button" disabled={pending} onClick={() => setEditing(true)}
-            className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
-          <button type="button" disabled={pending} onClick={() => onDeleteCheck(entry.id)}
-            className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+            })}
+          {/* 메모는 자르지 않고 줄을 바꾼다 — 맞바꿈·이동 메모는 두 위치 이름이라 길고, 잘리면 어느 칸을
+              바꿨는지가 사라진다. 터치 화면엔 title 툴팁이 없어 말줄임 뒤를 읽을 길이 없다(이력 카드 공통).
+              맞바꿈·이동·수령 반영은 머리 종류가 그 말을 하므로 접두를 떼고 한 번만 적는다(표시만, 저장 메모는 그대로). */}
+          {memoText && <p className={TL_CAPTION}>{kind.kind === 'receipt' ? `수령 ${memoText}` : memoText}</p>}
+          {kind.kind === 'receipt' && <p className={TL_CAPTION}>고치려면 그 구매의 수정에서 미수령으로 되돌리세요.</p>}
         </div>
       </li>
     )
@@ -2832,76 +2884,68 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
     }
 
     return (
-      <li className={`rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]/60'}`}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 flex items-center gap-2">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
-            <div className="min-w-0">
-              <p className="text-xs text-[var(--warm-muted)]">
-                구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
-              </p>
-              <p className="text-sm font-medium text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${fmtWon(entry.amount)})` : ''}</p>
-              {/* 무엇을 샀나 — 재고 잔량은 브랜드로 안 갈린다(창고에 섞어 쌓으므로 셀 수가 없다).
-                  대신 **언제 바뀌었나**는 여기서 읽힌다. 라면을 오뚜기에서 삼양으로 바꿔 사도
-                  그 사실이 재고 화면 어디에도 안 뜨던 것을 메운다(운영자 2026-08-28).
-                  업체(어디서 샀나)보다 한 단 진하다 — 물건이 곳보다 앞선다. */}
-              {(entry.brand || entry.productName) && (
-                <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)] mt-0.5 truncate">
-                  {[entry.brand, entry.productName].filter(Boolean).join(' · ')}
-                </p>
+      <li className={`rounded-md px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]'}`}>
+        {/* 머리는 'YYYY.MM.DD · 구매'(구매일은 날짜뿐이라 시각이 없다 — 수령 시각은 아래 수령 확정 줄이 말한다).
+            머리 줄 액션은 다른 카드처럼 '수정' 하나다. '수령 확인' 은 그것이 푸는 상태 줄('수령 대기 중') 오른쪽에 선다 —
+            머리에 둘을 세우면 320px 에서 날짜·종류가 세 줄로 꺾였다(4단계 렌더). */}
+        <TimelineHead glyph={TL_GLYPH_IN} actions={<RowActionBtn disabled={pending} onClick={() => setEditing(true)}>수정</RowActionBtn>}>
+          {fmtDate(entry.date)} · 구매{packLabel && <> · <span className="whitespace-nowrap">{packLabel}</span></>}
+        </TimelineHead>
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium tabular-nums text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${fmtWon(entry.amount)})` : ''}</p>
+          {/* 무엇을 샀나 — 재고 잔량은 브랜드로 안 갈린다(창고에 섞어 쌓으므로 셀 수가 없다).
+              대신 **언제 바뀌었나**는 여기서 읽힌다. 라면을 오뚜기에서 삼양으로 바꿔 사도
+              그 사실이 재고 화면 어디에도 안 뜨던 것을 메운다(운영자 2026-08-28).
+              업체(어디서 샀나)보다 한 단 진하다 — 물건이 곳보다 앞선다. 캡션 크기는 이력 공통(TL_CAPTION 11px)이고 자르지 않는다. */}
+          {(entry.brand || entry.productName) && (
+            <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)] break-keep [overflow-wrap:anywhere]">
+              {[entry.brand, entry.productName].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {isPendingReceipt ? (
+            <div className="flex min-h-7 items-center justify-between gap-2">
+              <p className="text-[0.6875rem] text-[var(--warning-fg)]">수령 대기 중</p>
+              {onConfirmReceipt && !showLocationPicker && (
+                <RowActionBtn tone="success" className="shrink-0" disabled={pending}
+                  onClick={() => { setShowLocationPicker(true); setRcvQtyStr(entry.qtyValue != null ? String(entry.qtyValue) : '') }}>
+                  수령 확인
+                </RowActionBtn>
               )}
-              {isPendingReceipt ? (
-                <p className="text-[0.65625rem] text-[var(--honey)] mt-0.5">수령 대기 중</p>
-              ) : entry.receivedAt ? (
-                <p className="text-[0.65625rem] text-[var(--status-paid-fg)] mt-0.5">
-                  수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
-                  {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
-                </p>
-              ) : null}
-              {(entry.vendor || entry.memo) && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
             </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {isPendingReceipt && onConfirmReceipt && !showLocationPicker && (
-              <button type="button" disabled={pending}
-                onClick={() => { setShowLocationPicker(true); setRcvQtyStr(entry.qtyValue != null ? String(entry.qtyValue) : '') }}
-                className="text-xs font-semibold text-[var(--status-paid-fg)] hover:text-[var(--status-paid-strong)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--status-paid-bg)] whitespace-nowrap">
-                수령 확인
-              </button>
-            )}
-            <button type="button" disabled={pending} onClick={() => setEditing(true)}
-              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
-          </div>
+          ) : entry.receivedAt ? (
+            <p className="text-[0.6875rem] text-[var(--status-paid-fg)] break-keep">
+              수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
+              {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
+            </p>
+          ) : null}
+          {(entry.vendor || entry.memo) && <p className={TL_CAPTION}>{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
         </div>
         {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
           <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입수됩니까?</p>
             {entry.qtyValue != null && entry.qtyValue > 1 && (
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[0.65625rem] text-[var(--warm-muted)]">도착 수량 (전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지)</span>
-                <input type="text" inputMode="decimal" autoComplete="off" value={rcvQtyStr} disabled={pending}
-                  onChange={e => setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
-                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+              <div className="mb-2">
+                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지</span></p>
+                <div className="w-32">
+                  <QtyField unit={entry.qtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
+                    onChange={e => setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, ''))} />
+                </div>
               </div>
             )}
-            <div className="flex flex-wrap gap-1.5">
+            {/* 위치는 정본 행 버튼이고 창고는 낱말(Badge '창고')로 가른다 — 종전 honey 면만으로 가르면 색을 못 보는 사람에게는
+                어느 칸이 창고인지 단서가 없다(WCAG 1.4.1). 줄 사이 gap-y-3 — 행 버튼 히트(44px)가 윗줄과 덜 겹치게. */}
+            <div className="flex flex-wrap gap-x-1.5 gap-y-3">
               {itemLocations.map(loc => (
-                <button key={loc.id} type="button" disabled={pending}
-                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
-                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--tc-text)]'}`}>
-                  {loc.pathName}
-                </button>
+                <RowActionBtn key={loc.id} disabled={pending}
+                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}>
+                  {loc.pathName}{loc.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고</Badge>}
+                </RowActionBtn>
               ))}
-              <button type="button" disabled={pending}
-                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, undefined, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
-                className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">
+              <RowActionBtn disabled={pending}
+                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, undefined, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}>
                 위치 없이 확정
-              </button>
-              <button type="button"
-                onClick={() => setShowLocationPicker(false)}
-                className="text-xs px-2.5 py-1 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">
-                취소
-              </button>
+              </RowActionBtn>
+              <RowActionBtn onClick={() => setShowLocationPicker(false)}>취소</RowActionBtn>
             </div>
           </div>
         )}
@@ -2911,22 +2955,19 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
 
   // ── 폐기 (StockDisposal) — 표시 + 삭제(undo는 부모 핸들러)
   if (entry.type === 'disposal') {
+    // 폐기만 행에 '삭제' 가 남는다 — 수정 폼이 없다(4단계). 사유·위치는 머리에서 본문 캡션으로 내렸다(머리는 날짜·종류 한 줄).
     return (
-      <li className="flex items-center justify-between gap-2 border border-[var(--danger-ring)]/40 rounded-xl px-3 py-2" style={{ background: 'var(--danger-bg)' }}>
-        <div className="min-w-0 flex items-center gap-2">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger-fg)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-          <div className="min-w-0">
-            <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>
-              {fmtDate(entry.date)} · 폐기{entry.reason ? ` (${entry.reason})` : ''}
-              {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
-            </p>
-            <p className="text-sm font-medium" style={{ color: 'var(--danger-fg)' }}>− {fmtQty(entry.disposedQty, stockUnit)}</p>
-            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button type="button" disabled={pending} onClick={() => onDeleteDisposal(entry.id)}
-            className="text-xs text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+      <li className="rounded-md border border-[var(--danger-ring)]/40 px-3 py-2" style={{ background: 'var(--danger-bg)' }}>
+        <TimelineHead glyph={TL_GLYPH_OUT} color="var(--danger-fg)"
+          actions={<RowActionBtn tone="danger" disabled={pending} onClick={() => onDeleteDisposal(entry.id)}>삭제</RowActionBtn>}>
+          {fmtDate(entry.date)} <span className="tabular-nums">{fmtTime(entry.createdAt)}</span> · 폐기
+        </TimelineHead>
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium tabular-nums" style={{ color: 'var(--danger-fg)' }}>− {fmtQty(entry.disposedQty, stockUnit)}</p>
+          {(entry.reason || entry.storageLocationName) && (
+            <p className="text-[0.6875rem] break-keep [overflow-wrap:anywhere]" style={{ color: 'var(--danger-fg)' }}>{[entry.reason, entry.storageLocationName].filter(Boolean).join(' · ')}</p>
+          )}
+          {entry.memo && <p className={TL_CAPTION}>{entry.memo}</p>}
         </div>
       </li>
     )
@@ -2965,54 +3006,75 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         })
         onChanged()
       }}
-      onDelete={async () => {
-        // 삭제도 같은 물음을 거친다 — 뒤 점검에 얹힌 만큼 빼지 않으면 유령 재고가 남는다.
-        const ask = await askLedgerShift({
-          trackedItemId, additionId: entry.id, next: null,
-          title: '이 입수 기록을 삭제할까요?',
-          keepLine: '입수 기록은 삭제됩니다.',
-          impactLine: n => `이 입수를 담고 있는 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
-          unit: stockUnit,
-        })
-        if (ask.error) { setEditError(ask.error); return }
-        if (!ask.result) return
-        setSavePending(true)
-        const res = await deleteStockAddition(entry.id, { adjustFollowing: ask.result.adjust })
-        setSavePending(false)
-        if (!res.ok) { setEditError(res.error); return }
-        pushToast('success', '입수 기록 삭제됨', {
-          action: { label: '적용취소', run: () => { void undoDeleteStockAddition(res.undo).then(r => {
-            if (r.ok) { pushToast('info', '입수 기록을 복원했습니다'); onChanged() }
-            else pushToast('error', r.error)
-          }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
-        })
-        onChanged()
-      }}
-      pending={savePending}
+      // 삭제는 종전 행 버튼과 같은 경로(handleDeleteAddition)다 — 뒤 점검 물음, 물을 것이 없으면 삭제 확인창, 적용취소
+      // 토스트(4단계, 행의 삭제 버튼을 폼 안으로 옮겼다). 폼 자리의 종전 처리부는 물을 것이 없을 때 확인창 없이 지워서
+      // 행 버튼이 지키던 확인창이 사라지지 않게 한 경로로 모았다(이력 수정·삭제 확인창 유지).
+      onDelete={async () => { onDeleteAddition(entry.id) }}
+      pending={savePending || pending}
       error={editError}
     />
   }
 
   return (
-    <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
-      <div className="min-w-0 flex items-center gap-2">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
-        <div className="min-w-0">
-          <p className="text-xs text-[var(--warm-muted)]">
-            {fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}
-            {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
-          </p>
-          <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
-          {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
-        </div>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button type="button" disabled={pending} onClick={() => setEditing(true)}
-          className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
-        <button type="button" disabled={pending} onClick={() => onDeleteAddition(entry.id)}
-          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+    <li className={TL_CARD}>
+      <TimelineHead glyph={TL_GLYPH_IN}
+        actions={<RowActionBtn disabled={pending} onClick={() => setEditing(true)}>수정</RowActionBtn>}>
+        {fmtDate(entry.date)} <span className="tabular-nums">{fmtTime(entry.createdAt)}</span> · 무상 입수
+      </TimelineHead>
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium tabular-nums text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
+        {(entry.source || entry.storageLocationName) && <p className={TL_CAPTION}>{[entry.source, entry.storageLocationName].filter(Boolean).join(' · ')}</p>}
+        {entry.memo && <p className={TL_CAPTION}>{entry.memo}</p>}
       </div>
     </li>
+  )
+}
+
+// 이력 카드 위치 줄 — 부모 경로로 묶어 '4층 주방 김치냉장고 · 상단 4kg · 하단 8kg' 한 줄씩(재고 화면 정비 4단계).
+// 종전 칩은 칸마다 전체 경로를 들고 세로로 쌓여 네 줄이 됐다. 묶음은 2단계 점검 폼과 같은 정본(splitLocPath, 끝 칸
+// 이름이 표기 경로 꼬리와 글자째 같을 때만 가른다)이고 차례는 서버가 준 트리 순서 그대로다(이웃끼리만 묶는다).
+// 이 기록의 이름이 지금 표기 경로와 다르면(숨긴·떼어 낸 위치) 가르지 않고 통째다. 창고 행 표식은 점검 폼과 같은
+// 낱말 '창고'(§22 Badge), 채움은 '채움 8kg' 캡션이다(종전 테라코타 '+8kg' 은 §03·§06 절제 대상). 맞바꿈·이동은
+// from 이 있어 값 전환 표기(§29 '8kg → 4kg')로 그린다 — 조사로 이으면 kg 뒤 '으로/로' 가 갈린다.
+function TimelineLocLines({ rows, itemLocations, hubId, unit }: {
+  rows: { locationId: string; locationName: string; qty: number; restockedQty?: number; from?: number }[]
+  itemLocations: StorageLocationItem[]; hubId: string | null; unit: string | null
+}) {
+  if (rows.length === 0) return null
+  const groups = rows.reduce<{ parent: string; items: { row: (typeof rows)[number]; leaf: string }[] }[]>((gs, row) => {
+    const meta = itemLocations.find(x => x.id === row.locationId)
+    const { parent, leaf } = meta && meta.pathName === row.locationName ? splitLocPath(meta) : { parent: '', leaf: row.locationName }
+    const last = gs[gs.length - 1]
+    if (last && parent !== '' && last.parent === parent) last.items.push({ row, leaf })
+    else gs.push({ parent, items: [{ row, leaf }] })
+    return gs
+  }, [])
+  return (
+    <>
+      {groups.map(g => (
+        // leading-5 — 창고 Badge(위아래 2px)가 선 줄과 안 선 줄의 높이를 같게 둔다.
+        <p key={g.items[0].row.locationId} className="break-keep text-xs leading-5 text-[var(--warm-mid)]">
+          {g.parent !== '' && <span className="text-[var(--warm-muted)]">{g.parent} · </span>}
+          {g.items.map(({ row, leaf }, i) => (
+            <span key={row.locationId}>
+              {i > 0 && ' · '}
+              {/* 칸 하나(이름·표식·수치)는 한 덩이로 다음 줄로 넘어간다(inline-block) — 줄 끝에서 '하단' 과 그 값이 갈라지면
+                  어느 칸의 값인지 흐려진다. 한 줄보다 긴 이름일 때만 덩이 안에서 낱말 단위로 꺾인다. 수치는 늘 붙어 있다. */}
+              <span className="inline-block max-w-full">
+                {leaf}
+                <span className="whitespace-nowrap">
+                {row.locationId === hubId && <Badge tone="pale-amber" className="ml-1 leading-4">창고</Badge>}
+                {' '}
+                {row.from != null && <><span className="tabular-nums">{fmtQty(row.from, unit)}</span>{' → '}</>}
+                <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{fmtQty(row.qty, unit)}</strong>
+                {(row.restockedQty ?? 0) > 0 && <span className="text-[var(--warm-muted)]"> 채움 {fmtQty(row.restockedQty!, unit)}</span>}
+                </span>
+              </span>
+            </span>
+          ))}
+        </p>
+      ))}
+    </>
   )
 }
 
@@ -3440,8 +3502,8 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
           <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
             <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
             <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
-              <strong className="text-[var(--warm-dark)]">창고 → 방 보충을 모두 마쳤습니다.</strong><br />
-              보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 보충 완료 후 점검을 권장합니다.
+              <strong className="text-[var(--warm-dark)]">창고에서 방으로 채우는 일을 모두 마쳤습니다.</strong><br />
+              다 채우기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 다 채운 뒤 점검을 권장합니다.
             </span>
           </label>
           {/* 모달 단위 선택 1개(행별 아님) — 줄어든 품목이 하나라도 생기면 뜬다. 날짜·보충 완료와 같은
@@ -3508,12 +3570,13 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   )
 }
 
-function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pending, error }: {
+function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDelete, pending, error }: {
   entry: TimelineEntry & { type: 'check' }
   stockUnit: string | null
   itemLocations: StorageLocationItem[]
   onCancel: () => void
   onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number; restockedQty?: number }[]; restockHubLocationId?: string }) => Promise<void>
+  onDelete: () => void   // 이력 카드의 삭제가 폼 안으로 들어왔다(4단계) — 경로는 종전 행 버튼과 같은 handleDeleteCheck
   pending: boolean
   error: string
 }) {
@@ -3559,8 +3622,6 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
   // 창고(허브)는 보충받는 게 아니라 차감되는 쪽 — '자동 차감 후'를 자동계산. 사용자가 직접 고치면 그 값 사용.
   const [hubTouched, setHubTouched] = useState(false)
-
-  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   // calcLocMove 단일 규칙(생성 폼과 동일) — 빈 '채우기 전'은 0 이다(운영자 확정 2026-09-01).
   const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) =>
@@ -3608,8 +3669,14 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
     }
   }
 
+  // 문법은 2단계 점검 입력과 맞춘다(4단계) — 라벨 12px/500 · 입력칸 정본(qtyInputCls, 1.5px --border-s · 44px · 칸 안 단위
+  // 접미) · 창고 표식 Badge '창고' · 행 버튼 RowActionBtn · 채움·차감 수치는 면 없이 --warm-dark 600(테라코타 걷음).
+  // 값은 그대로 미리 채운다 — 저장된 점검 한 건을 고치는 폼이라 빈칸 시작(점검 입력 규칙)과 다르다.
+  // 칸 이름은 말줄임 대신 낱말 단위로 꺾는다 — 오른쪽 버튼에 밀려 끝 칸 이름(상단·하단)이 잘리면 바꿔 적던 근원이 된다.
+  // 카드 껍데기는 이력 행과 같은 투명 바탕 · 1px 테두리 · r-md 다(형제 수정 폼 둘도 같이) — 종전 --canvas 바탕은 같은 색
+  // 입력칸과 한 면이 되어 읽는 칸과 쓰는 칸이 갈리지 않았다.
   return (
-    <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2.5 bg-[var(--canvas)]">
+    <li className="rounded-md border border-[var(--warm-border)] px-3 py-3 space-y-2.5">
       <p className="text-xs font-medium text-[var(--warm-mid)]">재고 점검 수정</p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       {/* 좁은 폰에서는 1열로 접는다(오류신고 c2ab5b83 전수). 2열이면 셀이 320px 에서 106px 인데
@@ -3618,42 +3685,45 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
           같은 파일 :805 가 이미 쓰는 문법이다. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
+          <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">날짜</p>
+          {/* 높이는 점검 입력의 점검일과 같은 44px 다(§12 한 폼 안 입력 높이 혼용 금지). */}
+          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()} className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         {!hasLocations && (
           <div>
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
-            <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} className={`w-full ${inputCls}`} />
+            <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">잔량</p>
+            <QtyField unit={stockUnit} aria-label="잔량" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} />
           </div>
         )}
       </div>
       {hasLocations && (
         <div className="space-y-2">
-          {/* 화살표는 값의 전환 표시에만 쓴다(§29) — 두 칸 이름을 잇는 자리는 가운뎃점이다(2단계 낱말 한 벌). */}
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">채우기 전 · 채운 후{stockUnit ? ` (${stockUnit})` : ''}</p>
+          <p className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량</p>
           {locationSources.map(l => {
             // 창고(허브) 행 — 보충 입력 없이 '이전 → 자동 차감 후' 자동계산
             if (l.isHub) {
               const userVal = afterQtys[l.id]
               const displayAfter = hubTouched && userVal !== undefined ? userVal : String(Math.round(hubAutoAfter * 100) / 100)
               return (
-                <div key={l.id} className="bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-lg px-2 py-1.5 space-y-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{l.pathName} <span className="text-[var(--warm-muted)]">(창고)</span></span>
-                    <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">이전 {Math.round(hubBefore * 100) / 100}{stockUnit ?? ''}</span>
+                <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                  <div className="flex min-h-7 items-center gap-2">
+                    <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
+                    <Badge tone="pale-amber" className="shrink-0">창고</Badge>
+                    <span className="flex-1" />
+                    <span className="shrink-0 text-xs text-[var(--warm-muted)]">이전 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(hubBefore * 100) / 100}{stockUnit ?? ''}</strong></span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-[var(--warm-muted)] shrink-0">자동 차감 후</span>
-                    <input type="text" inputMode="decimal" autoComplete="off"
-                      value={displayAfter}
-                      onChange={e => { setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }}
-                      className={`w-20 ${inputCls}`} />
-                    <span className="text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
-                    {restockSum > 0 && (
-                      <span className="ml-auto text-[0.65625rem] text-[var(--persimmon-d)] shrink-0">−{Math.round(restockSum * 100) / 100} 차감</span>
-                    )}
+                  {/* 왼쪽 입력은 저장될 창고 값(안 고치면 자동 차감 후 값), 오른쪽은 이번 채움만큼 뺀 양(§12 자동 합산 읽기 칸). */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">자동 차감 후</p>
+                      <QtyField unit={stockUnit} aria-label={`${l.pathName} 자동 차감 후`}
+                        value={displayAfter}
+                        onChange={e => { setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }} />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">이번 차감</p>
+                      <QtyReadout unit={stockUnit} value={restockSum} />
+                    </div>
                   </div>
                 </div>
               )
@@ -3663,52 +3733,49 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
             const afterStr  = afterQtys[l.id] ?? ''
             const { restocked } = calcLocMove(beforeStr, afterStr)
             return (
-              <div key={l.id} className="space-y-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.pathName}</span>
-                  <div className="flex items-baseline gap-1.5 shrink-0">
-                    <button type="button"
-                      onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
-                      className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                      채움 없음
-                    </button>
-                    {restocked > 0 && (
-                      <span className="text-[0.65625rem] text-[var(--tc-text)]">창고에서 +{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>
-                    )}
-                  </div>
+              <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                <div className="flex min-h-7 items-center gap-2">
+                  <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
+                  <span className="flex-1" />
+                  {restocked > 0 && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                  <RowActionBtn className="shrink-0" onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}>
+                    채움 없음
+                  </RowActionBtn>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
-                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                    <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
+                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채우기 전`} placeholder="0"
                       value={beforeStr}
-                      onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      className={`w-full min-w-0 ${inputCls}`} />
+                      onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                   </div>
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
-                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                    <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채운 후</p>
+                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채운 후`} placeholder="0"
                       value={afterStr}
-                      onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                      className={`w-full min-w-0 ${inputCls}`} />
+                      onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                   </div>
                 </div>
               </div>
             )
           })}
-          <div className="flex justify-between text-[0.65625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1">
+          {/* 합계 줄 — 면 없이 12px, 수치 600 tnum(2단계 발끝 합계 줄과 같은 문법, 종전 코랄 틴트 면·테라코타 수치 걷음). */}
+          <div className="flex items-baseline justify-between gap-3 text-xs text-[var(--warm-mid)]">
             {restockSum > 0
-              ? <span className="text-[var(--warm-mid)]">채움 합계 <strong className="text-[var(--tc-text)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+              ? <span>채움 합계 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
               : <span className="text-[var(--warm-muted)]">채움 없음</span>}
-            <span className="text-[var(--warm-mid)]">잔량 <strong className="text-[var(--tc-text)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span>잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
       )}
       <div>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">메모</p>
-        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={`w-full ${inputCls} text-left`} />
+        <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">메모</p>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={checkTextInputCls} />
       </div>
-      <div className="flex gap-2 pt-1 justify-end">
+      {/* 삭제는 형제 수정 폼(무상 입수·구매)과 같은 자리·같은 모양이다 — 왼쪽 끝, 저장·취소와 떨어뜨린다. 정본 Btn danger(§10 raw 버튼 금지). */}
+      <div className="flex gap-2 pt-1">
+        <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>삭제</Btn>
+        <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0))}
           onClick={handleSave}>
@@ -3736,32 +3803,30 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
   const [memo, setMemo]     = useState(entry.memo ?? '')
   const [storageLocationId, setStorageLocationId] = useState<string>(entry.storageLocationId ?? '')
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-
+  // 문법은 점검 수정 폼과 같다(4단계 검수) — 라벨 12px/500 · 글자칸·select 는 checkTextInputCls · 수량은 칸 안 단위 접미.
   return (
-    <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
+    <li className="rounded-md border border-[var(--warm-border)] px-3 py-3 space-y-2.5">
       <p className="text-xs font-medium text-[var(--warm-mid)]">무상 입수 수정</p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       {/* 1열 접힘 근거는 '재고 점검 수정'과 같다(오류신고 c2ab5b83 전수). */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
+          <p className={EDIT_LABEL_CLS}>날짜</p>
+          <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()} className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">수량{stockUnit ? ` (${stockUnit})` : ''}</p>
-          <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} className={inputCls} />
+          <p className={EDIT_LABEL_CLS}>수량</p>
+          <QtyField unit={stockUnit} aria-label="수량" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} />
         </div>
       </div>
       <div>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">출처</p>
-        <input type="text" value={source} onChange={e => setSource(e.target.value)} placeholder="예: 샘플, 증정" className={inputCls} />
+        <p className={EDIT_LABEL_CLS}>출처</p>
+        <input type="text" value={source} onChange={e => setSource(e.target.value)} placeholder="예: 샘플, 증정" className={checkTextInputCls} />
       </div>
       {itemLocations.length > 0 && (
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">입고 위치</p>
-          <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={inputCls}>
+          <p className={EDIT_LABEL_CLS}>입수 위치</p>
+          <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={checkTextInputCls}>
             <option value="">위치 없이 기록</option>
             {itemLocations.map(loc => (
               <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
@@ -3770,12 +3835,11 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
         </div>
       )}
       <div>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">메모</p>
-        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
+        <p className={EDIT_LABEL_CLS}>메모</p>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={checkTextInputCls} />
       </div>
       <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onDelete} disabled={pending}
-          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+        <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>삭제</Btn>
         <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending || !qty || Number(qty) <= 0}
@@ -3812,7 +3876,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   // 'clear' 문자열을 날짜로 파싱하려다 Invalid Date 표시되던 문제 해결
   const [unreceived, setUnreceived] = useState(false)
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  // 문법은 점검 수정 폼과 같다(4단계 검수) — 라벨 12px/500 · 글자칸 checkTextInputCls · 날짜·시각 44px.
 
   const buildReceivedAt = () => {
     if (unreceived) return null  // 수령 대기로 되돌리기
@@ -3822,44 +3886,44 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   }
 
   return (
-    <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
+    <li className="rounded-md border border-[var(--warm-border)] px-3 py-3 space-y-2.5">
       <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.65625rem] font-normal text-[var(--warm-muted)]">수정 내용은 지출 페이지에도 반영됩니다</span></p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       {/* 1열 접힘 근거는 '재고 점검 수정'과 같다(오류신고 c2ab5b83 전수). */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">구매일</p>
-          <DatePicker value={date} onChange={setDate}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
+          <p className={EDIT_LABEL_CLS}>구매일</p>
+          <DatePicker value={date} onChange={setDate} className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         <div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">금액 (원)</p>
-          <input type="number" min="0" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" className={inputCls} />
+          <p className={EDIT_LABEL_CLS}>금액 (원)</p>
+          <input type="number" min="0" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" className={qtyInputCls} />
         </div>
       </div>
       <div>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">구매처</p>
-        <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 고구마켓" className={inputCls} />
+        <p className={EDIT_LABEL_CLS}>구매처</p>
+        <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 고구마켓" className={checkTextInputCls} />
       </div>
       <div>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">메모</p>
-        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
+        <p className={EDIT_LABEL_CLS}>메모</p>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={checkTextInputCls} />
       </div>
       {/* 수령 확정일시 */}
-      <div className="space-y-1">
-        <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령 확정일시</p>
+      <div>
+        <p className={EDIT_LABEL_CLS}>수령 확정일시</p>
         {unreceived ? (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
-            <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-[var(--honey)]/15 text-[var(--warning-fg)] tracking-wider">미수령</span>
+            <Badge tone="pale-amber">미수령</Badge>
             <span className="text-[0.6875rem] text-[var(--warm-muted)]">저장 시 수령 대기로 되돌립니다</span>
             <div className="flex-1" />
             <Btn variant="ghost" size="sm" onClick={() => { setUnreceived(false); setReceivedDate(initReceivedDate || ''); setReceivedTime(initReceivedTime || '') }}>되돌리기</Btn>
           </div>
         ) : (
-          <div className="flex gap-2 items-center">
-            <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
-            <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
-              className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          // 좁은 폭에서는 '미수령으로' 가 다음 줄로 넘어간다(flex-wrap) — 한 줄에 셋을 세우면 320px 에서 날짜 칸이 30px 로 눌렸다.
+          <div className="flex flex-wrap gap-2 items-center">
+            <DatePicker value={receivedDate} onChange={setReceivedDate} className="min-w-0 flex-1 basis-36 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] outline-none focus-visible:border-[var(--coral)]" />
+            <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)} aria-label="수령 시각"
+              className="w-36 bg-[var(--canvas)] border-[1.5px] border-[var(--border-s)] rounded-sm px-2 py-2 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
             {entry.receivedAt && (
               <Btn variant="danger" size="sm" onClick={() => { setUnreceived(true); setReceivedDate(''); setReceivedTime('') }}>미수령으로</Btn>
             )}
@@ -3867,8 +3931,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         )}
       </div>
       <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onDelete} disabled={pending}
-          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">재고에서 제외</button>
+        <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>재고에서 제외</Btn>
         <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending}
@@ -4113,7 +4176,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   //
   // 종전에는 행 배지가 저장된 잔량만 보여 줬다. 20kg 짜리 창고에서 7kg·8kg 을 빼내는 동안에도
   // 모든 행이 그대로 '남음 20kg' 이라고 말했고, 넘치는지는 저장을 눌러야 알았다 — 서버가
-  // HUB_SHORT 로 막는다(actions.ts '창고(허브) 재고가 보충량보다 부족합니다'). 운영자 신고
+  // HUB_SHORT 로 막는다(actions.ts '창고 재고가 채울 양보다 적습니다.'). 운영자 신고
   // 2026-09-23: "실시간으로 허브창고의 양이 계산되면 내가 맞게 분배를 하고 있는지 알텐데".
   //
   // **차감하지 않는 경우가 하나 있다.** 창고를 직접 세어 적었으면 그 값이 그 자리의 진실이다.
@@ -5005,7 +5068,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
       const moves = [...transferChecksRef.current]
       const undoIds = res.deduped ? [...moves].reverse() : [restockId, ...[...moves].reverse()]
       pushToast('success', '옮기고 채움 완료', {
-        ...(res.deduped ? { detail: '보충은 방금 저장한 것과 같은 내용이라 기존 기록을 그대로 두었습니다.' } : {}),
+        ...(res.deduped ? { detail: '채움은 방금 저장한 것과 같은 내용이라 기존 기록을 그대로 두었습니다.' } : {}),
         action: {
           label: '적용취소', run: () => { void (async () => {
             for (const id of undoIds) {
@@ -7077,7 +7140,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
               경로 60자에서 재현). 잘린 꼬리는 이름 일부라 판정 자체는 첫 줄에서 읽힌다. */}
           <div className="relative overflow-hidden">
             <p className={`text-[0.65625rem] text-[var(--warm-muted)] ${locFooterMsg != null ? 'invisible' : ''}`} aria-hidden={locFooterMsg != null}>
-              <strong className="text-[var(--warning-fg)]">기본 창고</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 &quot;이동 수량&quot; 입력란이 표시됩니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
+              <strong className="text-[var(--warning-fg)]">기본 창고</strong>는 품목 창고를 따로 정하지 않은 품목이 입수될 때 들어가고 채울 때 빼 쓰는 위치입니다. 위치는 {MAX_DEPTH}단계까지 만들 수 있습니다.
             </p>
             {locFooterMsg != null && (
               <p className="absolute inset-0 overflow-hidden text-[0.65625rem] text-[var(--warm-muted)]">{locFooterMsg}</p>
@@ -7242,7 +7305,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 closeMenu()
                 if (!menuNode.isHub && !(await confirmDialog({
                   title: `'${menuNode.pathName}' 위치를 기본 창고로 지정할까요?`,
-                  message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
+                  message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 채울 때도 여기서 뺍니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
                   level: 'caution', confirmLabel: '기본 창고로',
                 }))) return
                 setPending(true)
@@ -7777,7 +7840,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
 
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-      <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 수령, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
+      <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 입수, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>
         <DatePicker value={date} onChange={v => { setDate(v); onDirty?.() }} maxDate={kstYmdStr()}
@@ -7807,9 +7870,10 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
               </div>
             </div>
           </div>
+          {/* 합계 줄 — 면 없이 12px, 수치 600 tnum(점검 수정 폼 합계 줄과 같은 문법, 종전 장식 화살표·코랄 틴트 걷음). */}
           {computed > 0 && (
-            <p className="text-[0.65625rem] text-[var(--tc-text)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-              → 입수량 합계 <strong>{Math.round(computed * 100) / 100}{item.specUnit}</strong>
+            <p className="text-xs text-[var(--warm-mid)]">
+              입수량 합계 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(computed * 100) / 100}{item.specUnit}</strong>
             </p>
           )}
         </>
@@ -7825,7 +7889,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
         <label className="text-xs font-medium text-[var(--warm-mid)]">출처</label>
         <select value={source} onChange={e => setSource(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
-          <option value="무상">무상 수령</option>
+          <option value="무상">무상 입수</option>
           <option value="기증">기증</option>
           <option value="이월">이월 (인수 전 보유)</option>
           <option value="기타">기타</option>
@@ -7833,7 +7897,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
       </div>
       {item.locations.length > 0 && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">입고 위치</label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">입수 위치</label>
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>

@@ -130,6 +130,9 @@ export type LocationQtyEntry = {
   restockedQty?: number     // 이 점검에서 이 위치에 보충한 양 ("전" = qty - restockedQty)
   fromHubQty?: number       // (레거시) 명시적 이동 유입 수량
   fromLocationId?: string   // (레거시) 이동 유입 출처
+  // 이월/실측 표식(StockCheckLocation.carried — true 이월 · false 실측 · null 표식 이전). 이력(getInventoryDetail)만
+  // 싣는다 — 창고를 직접 센 점검과 자동 차감을 이력 카드가 가르려는 읽기 전용 값이다(저장 경로는 클라 표식을 안 쓴다).
+  carried?: boolean | null
 }
 
 // 영수증→재고 자동등록 시, 새 라벨에 대한 병합 후보(기존 카드)
@@ -189,7 +192,8 @@ export function resolveDiffAttribution(
 }
 
 export type TimelineEntry =
-  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean; isReconcile?: boolean }
+  // sourceExpenseId — 수령 자동 점검을 만든 구매(StockCheck.sourceExpenseId). 이력 카드가 그 구매가 이력에 있는지 보려고 읽는다.
+  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean; isReconcile?: boolean; sourceExpenseId?: string | null }
   // brand·productName 은 **재고 수학에 안 쓴다**(Expense 주석과 같은 계약 — 표시 전용).
   // 그런데 재고 화면이 브랜드의 존재조차 몰라서, 라면을 오뚜기에서 삼양으로 바꿔 사도
   // 그 사실이 이 화면 어디에도 안 떴다. 잔량을 브랜드로 가르는 것은 다른 얘기이고
