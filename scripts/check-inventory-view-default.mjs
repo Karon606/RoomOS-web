@@ -11,6 +11,8 @@
 //   ④ doSave 성공 가지의 onClose() 가 else 아래에 있다(인라인이면 안 불린다).
 //   ⑤ loading.tsx 본문이 패널 골격이다.
 //   ⑥ (2026-09-15) 상세 모달 골격도 제 여백을 갖고, 열릴 모드의 모양을 본뜬다.
+//      (2026-10-12 재고 정비 2단계) 안내문·폐기 안내는 실제와 같은 문장으로 높이를 맞추고, 발끝 고정에 맞춰
+//      골격 발끝(DetailCheckFooterSkeleton)도 둔다.
 //
 // ④ 를 왜 여기서 또 보나. check-draft-lifecycle 은 onClose 가 **실패 0 일 때만** 서는지를 본다.
 // 여기서 보는 것은 다른 축이다 — 인라인(기본 보기)에서는 아예 안 서야 한다. 되돌아가면 체인 저장에
@@ -123,24 +125,28 @@ need('카드 5장 모형이 남아 있지 않다',
 need('상세 모달 골격 컴포넌트가 있다',
   /function DetailModalSkeleton\(\{ mode \}: \{ mode: 'view' \| 'check' \}\)/.test(client),
   '골격이 함수 한 채여야 모드별 모양을 가를 수 있다')
-// 여백은 **대체할 화면의 것**이다(디자이너 검수 2026-09-16). 점검 폼은 `px-5 py-4`, 보기 화면은
-// `px-5 sm:px-6 pt-3` 이라, 한 벌만 쓰면 640px 이상에서 첫 페인트가 4px 튄다.
+// 여백은 **대체할 화면의 것**이다(디자이너 검수 2026-09-16). 점검 폼은 `px-5 sm:px-6 py-4`(2단계 검수 12 — 모달
+// 발끝 px-6 과 맞춰 640px 이상에서 4px 어긋나지 않게), 보기 화면은 `px-5 sm:px-6 pt-3` 이다.
 need('점검 골격 여백이 점검 폼과 같다',
-  /className="px-5 py-4 space-y-3 delayed-fallback"/.test(client) &&
-  /<form onSubmit=\{handleSubmit\} className="px-5 py-4 space-y-3/.test(client),
+  /className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback"/.test(client) &&
+  /<form onSubmit=\{handleSubmit\} className="px-5 sm:px-6 py-4 space-y-3/.test(client),
   "bodyClassName='' 인 모달의 children 은 자기 여백을 갖는 것이 규칙이다(§13 풀블리드) — 그 여백이 대체할 폼과 같아야 점프가 없다")
 need('보기 골격 여백이 보기 화면과 같다',
   /className="px-5 sm:px-6 pt-3 space-y-3 delayed-fallback"/.test(client) &&
   /<div className="px-5 sm:px-6 pt-3">/.test(client),
   '보기 화면은 sm 에서 24px 이고 위 여백이 pt-3 이다 — 골격이 py-4 면 로디드에서 아래로 밀린다')
 // **주석이 아니라 마크업을 겨눈다**(재검수 2026-09-16). 이 파일의 client 는 주석을 걷은 소스라,
-// 블록을 지우고 설명만 남기면 초록이 되는 축을 세우면 안 된다. 골격의 첫 블록은 안내문 두 줄
-// (h-4 + h-4 w-2/3)이고, 그 아래에 점검일 라벨(h-3 w-12)이 온다 — 그 순서를 그대로 본다.
+// 블록을 지우고 설명만 남기면 초록이 되는 축을 세우면 안 된다. 골격의 첫 블록은 안내문이고, 그 아래
+// 폐기 안내, 다시 그 아래 점검일 라벨(h-3 w-12)이 온다 — 그 순서를 그대로 본다.
+// 2단계(2026-10-12) — 안내문이 세 문장으로 길어져 폭마다 줄 수가 달라졌다(320px 네 줄 · 402px 세 줄 · 모달 최대폭
+// 두 줄). 고정 막대로는 어느 폭에서든 어긋나서, 골격이 **실제 폼과 같은 상수**를 투명 글자로 그린다(폐기 안내도
+// 같다 — 320px 에서 세 줄로 꺾여 종전 50px 막대가 15px 짧았다). 같은 상수를 두 자리가 함께 쓰는지를 본다.
 const checkSkeleton = fnBody(client, "function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' })")
 need('점검 골격 본문을 찾음', checkSkeleton.length > 200)
-need('점검 골격의 첫 블록이 안내문 두 줄이다',
-  /<div className={`h-4 \$\{bar\}`} \/>\s*\n\s*<div className={`h-4 w-2\/3 \$\{bar\}`} \/>[\s\S]{0,400}?<div className={`h-3 w-12 \$\{bar\}`} \/>/.test(checkSkeleton),
-  '실제 폼의 첫 블록(안내문)을 빼면 골격이 통째로 위로 당겨 붙는다')
+need('점검 골격의 첫 블록이 실제와 같은 안내문이고 폐기 안내·점검일 라벨이 뒤따른다',
+  /\{CHECK_GUIDE_RESTOCK\}<\/span><\/p>[\s\S]{0,40}?<div className="flex items-center justify-between[^\n]*>\s*\n\s*<p className="text-\[0\.65625rem\] text-transparent">\{CHECK_DISPOSAL_HINT\}<\/p>[\s\S]{0,500}?<div className={`h-3 w-12 \$\{bar\}`} \/>/.test(checkSkeleton) &&
+  /\? CHECK_GUIDE_RESTOCK\n/.test(client) && /\{CHECK_DISPOSAL_HINT\}<\/p>/.test(client.slice(client.indexOf('function CheckForm('), client.indexOf('function TransferStockModal('))),
+  '실제 폼의 첫 블록(안내문)을 빼거나 다른 문장으로 그리면 골격이 폭마다 위아래로 어긋난다')
 need('행 골격 입력칸이 실제와 같은 44px 다',
   (checkSkeleton.match(/<div className={`h-11 \$\{bar\}`} \/>/g) ?? []).length >= 4,
   '입력칸이 34px 모형이면 행마다 10px 씩 짧아 로디드에서 세로가 늘어난다')
@@ -153,6 +159,16 @@ need('맨몸 SkeletonRows rows={5} 가 남아 있지 않다',
 need('골격이 열릴 모드를 따라간다',
   /<DetailModalSkeleton mode=\{initialMode\} \/>/.test(client),
   "'다음 품목' 으로 이어 열면 점검 폼부터 뜬다 — 그때 보기 골격을 그리면 로디드에서 갈아엎힌다")
+// 발끝 고정(2단계) — 점검 모드는 모달 발끝에 버튼이 선다. 불러오는 동안 발끝이 비어 있다가 생기면 그만큼 본문이 줄며
+// 튄다. 골격 발끝은 실제 발끝과 같은 높이다 — 보충 모드는 합계 줄 16 · 간격 8 · 버튼 줄 44(93px), 첫 점검·위치 없는
+// 품목은 합계 줄이 없어 버튼 줄뿐(69px)이라 호출부가 보충 모드인지 넘긴다(2단계 검수 6 — 늘 합계 줄을 그리면 첫
+// 점검에서 24px 튄다). 넘기는 판정은 CheckForm restockMode 와 같은 식(직전 위치 내역 · 숨김 아닌 위치)이다.
+const footSk = fnBody(client, 'function DetailCheckFooterSkeleton({ restock }: { restock: boolean }) {')
+need('점검 모드 발끝 골격이 보충 모드를 따라간다',
+  footSk.length > 100 && /\{restock && \(/.test(footSk) && /<div className={`h-11 flex-1 \$\{bar\}`} \/>/.test(footSk) &&
+  /<DetailCheckFooterSkeleton restock=\{row\.currentLocationBreakdown\.length > 0 && row\.locations\.some\(l => !row\.hiddenLocationIds\.includes\(l\.id\)\)\} \/>/.test(client) &&
+  /const restockMode = hasPrev && hasLocations/.test(client),
+  '발끝이 로디드 순간 생기거나 줄면 본문 높이가 그만큼 바뀌며 점프한다')
 need('골격 막대가 loading.tsx 와 같은 색이다',
   /rounded-md bg-\[var\(--canvas\)\] animate-pulse/.test(client),
   '같은 화면의 두 골격이 다른 색이면 어느 쪽이 정본인지 알 수 없다')

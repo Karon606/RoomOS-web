@@ -18,6 +18,10 @@
 //      이동 점검을 지우고 비운 값을 되쓴다.
 //   ⑨ (2026-09-15 아이템별 폼 통일) 아이템별 점검 폼이 위치 패널과 같은 축·같은 행 문법·같은
 //      저장 경로(서버 패치 접기)를 쓴다. 성공 통지의 주인도 그 폼 하나다.
+//      (2026-10-12 2단계) 행 머리 '저장 N' + '그대로'(종전 '옮김 없음'·'저장된 값' 을 합친 한 이름),
+//      발끝 고정([취소][임시저장][N곳 저장], form= 으로 폼에 붙는다), 창고 남음 줄은 패널에만(예외).
+//      (2단계 검수) 행 머리 낱말은 '저장값 N'(주 버튼 'N곳 저장' 과 겹치지 않게), 키보드가 선 동안 접는 것은
+//      정상 창고 요약·임시저장 칩·패널 안내 줄뿐이고 합계 줄·버튼 줄은 접지 않는다.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -49,6 +53,17 @@ function fnBody(src, header, from = 0) {
   return ''
 }
 const before = (s, a, b) => s.indexOf(a) >= 0 && s.indexOf(b) >= 0 && s.indexOf(a) < s.indexOf(b)
+// 최상위 함수 한 채를 통째로 잘라 본다. fnBody 는 헤더 뒤 첫 '{' 를 몸통으로 잡는데, 이 함수들은
+// 그 자리가 props **타입 주석**이라 타입만 잘려 나온다(판정이 통째로 무의미해진다).
+// 두 화면의 행 문법 축(③·④·⑧·⑨)이 화면별로 세야 해서 맨 위에서 한 번 자른다.
+function topFn(src, header) {
+  const start = src.indexOf(header)
+  if (start < 0) return ''
+  const end = src.indexOf('\nfunction ', start + header.length)
+  return end < 0 ? src.slice(start) : src.slice(start, end)
+}
+const itemForm = topFn(client, 'function CheckForm({ item, lastCheckBreakdown')
+const locPanel = topFn(client, 'function LocationBatchCheckModal({ rows, onClose')
 
 // ── ① 실패하면 닫지 않는다 ─────────────────────────────────────────
 const doSave = fnBody(client, "const doSave = async (forceMerge?: boolean, dupDecision?: 'keep' | 'skip') => {")
@@ -204,9 +219,13 @@ need('행 캡션에 좌측 립이 없다', !/border-left[^\n]*inspect/.test(clie
 need('getLocationDrafts 가 savedAt 을 함께 돌려준다',
   /trackedItemId, data: \{ before: v\.before, after: v\.after, savedAt: v\.savedAt \}/.test(actions),
   '시각이 없으면 행 캡션이 "언제"를 말할 수 없다')
-need("참고줄이 '저장된 잔량' 이라고 말한다",
-  (client.match(/>저장된 잔량 <strong/g) ?? []).length === 2 && !/>직전 잔량 <strong/.test(client),
-  "'직전'은 임시저장본과 구별이 안 된다 — 두 화면 모두 바꿔야 한다")
+// 2단계(2026-10-12) — 회색 참고줄 상자를 걷고 저장값은 행 머리 오른쪽 '저장값 N'(12px tnum)이 말한다
+// (검수 10 — '저장 N' 은 발끝 주 버튼 'N곳 저장' 의 동사와 겹쳤다). 축은 그대로다: 저장본을 '직전' 이 아니라
+// '저장' 계열로, 두 화면이 같은 말로.
+need("행 머리가 저장값을 '저장값 N' 이라고 말한다(두 화면)",
+  (itemForm.match(/>저장값 <strong/g) ?? []).length === 1 && (locPanel.match(/>저장값 <strong/g) ?? []).length === 1 &&
+  !/>직전 잔량 <strong/.test(client) && !/>저장된 잔량 <strong/.test(client),
+  "'직전'은 임시저장본과 구별이 안 된다 — 두 화면 모두 같은 말이어야 한다")
 
 // ── ④ 죽은 '지난 옮김' 표시를 살린다 ───────────────────────────────
 need('currentLocationBreakdown 이 restockedQty 를 싣는다',
@@ -216,11 +235,15 @@ need('currentLocationBreakdown 이 restockedQty 를 싣는다',
 need('마커는 표시 전용이다 — 잔량 맵(cur)에 안 들어간다',
   !/cur\.set\([^\n]*restocked/.test(overview))
 // 한 줄에 같은 +N 이 두 번 뜨지 않게 축을 가른다 — 저장본 대 이번 입력.
+// 낱말은 채움 계열이다(2단계 낱말 한 벌 — '옮김' 은 별개 기능인 위치 이동과 겹친다).
 need('소비처 두 곳이 같은 문구다',
-  (client.match(/· 저장된 옮김 <strong/g) ?? []).length === 2 &&
-  !/· 지난 옮김/.test(client) && !/이 점검에 반영된 옮김/.test(client))
-need('이번 입력 축이 두 곳 다 갈렸다',
-  (client.match(/>이번 입력 <strong/g) ?? []).length === 2 && !/>창고에서 <strong/.test(client))
+  (itemForm.match(/저장된 채움 <strong/g) ?? []).length === 1 && (locPanel.match(/저장된 채움 <strong/g) ?? []).length === 1 &&
+  !/저장된 옮김( <strong|\{)/.test(client) && !/· 지난 옮김/.test(client) && !/이 점검에 반영된 옮김/.test(client))
+// 아이템별 폼은 행 + 발끝 합계 줄 둘, 패널은 행 하나. 저장본(저장된 채움)과 한 줄에 같은 +N 이 두 번 뜨지 않게
+// 이번 채움은 행 머리에 선다.
+need('이번 채움 축이 두 곳 다 갈렸다',
+  (itemForm.match(/>이번 채움 <strong/g) ?? []).length === 2 && (locPanel.match(/>이번 채움 <strong/g) ?? []).length === 1 &&
+  !/>이번 (입력|옮김) <strong/.test(client) && !/>창고에서 <strong/.test(client))
 
 // ── ⑤ 이중 차감 물음 ───────────────────────────────────────────────
 const dupFn = fnBody(client, 'const doubleRestockOf = (r: InventoryRow, lid: string, forceMerge?: boolean) => {')
@@ -239,8 +262,9 @@ need('행마다 모달을 띄우지 않는다',
 need('물음은 형제 바와 같은 자리의 인라인 바다',
   /\{dupUnits\.length > 0 && \(/.test(client) &&
   /border-t border-\[var\(--honey\)\]\/40 bg-\[var\(--honey\)\]\/10 px-5 py-3 shrink-0 space-y-2/.test(client))
+// 낱말은 채움 계열이다(2단계 검수 7 — 점검 중 창고에서 빼 오는 일은 '채움', '옮김' 은 위치 이동).
 need('제목이 물음형이고 라벨 뒤 조사가 없다',
-  /이미 옮긴 기록이 있습니다\. 더 옮길까요\?/.test(client))
+  /이미 채운 기록이 있습니다\. 더 채울까요\?/.test(client) && !/더 옮길까요|더 옮긴 것으로 저장/.test(client))
 need('대상 목록이 §14 영향 목록 박스 문법이다',
   /<li key=\{locPairKey\(u\.r\.id, u\.locId\)\} className="text-\[12\.5px\] text-\[var\(--ink-s\)\]">/.test(client) &&
   /font-semibold" style=\{\{ fontFeatureSettings: "'tnum'" \}\}/.test(client))
@@ -254,7 +278,7 @@ need("'빼고 저장'은 그 행만 뺀다",
 need('다 빠지면 조용히 끝나지 않는다',
   /if \(units\.length === 0\) \{ setError\('저장할 행이 없습니다\.'\); return \}/.test(doSave))
 need('서버 규칙은 안 건드렸다 — 물음은 클라이언트에만 있다',
-  !/doubleRestockOf|더 옮길까요/.test(actions))
+  !/doubleRestockOf|더 채울까요|더 옮길까요/.test(actions))
 
 // ── ⑥ 서브트리 체인 저장 (2026-09-14 6단계) ────────────────────────
 // 저장 단위는 (품목, 위치) 쌍이다. 셋 다 값 대조로는 안 잡히는 축이다.
@@ -385,27 +409,32 @@ need('모달이 결과를 호출부에 넘긴다',
 // 적용취소 기대값 — 옮기기 결과에 실어야 호출부가 '얹힌 점검' 을 가려낼 수 있다.
 need('모달이 적용취소 기대값도 함께 넘긴다',
   /createdAtMs: res\.createdAtMs, rowCount: res\.rowCount, markerSum: res\.markerSum/.test(tSubmit))
-// 행 버튼 — 좌 '다른 곳으로' / 우 '옮김 없음' 한 줄. 허브 행에는 두지 않는다(§27.1).
+// 행 버튼 — '그대로' 는 행 머리('저장 N' 과 같은 줄, 두 화면), '다른 곳으로' 는 패널 비허브 행의 입력칸 아래 줄.
+// (2단계 2026-10-12 — 종전 목업 '좌 다른 곳으로 · 우 옮김 없음' 한 줄을 승인 계획으로 바꿨다.) 허브 행에는 두지 않는다(§27.1).
 need('비허브 행에 다른 곳으로가 있다',
   (client.match(/>\s*다른 곳으로\s*</g) ?? []).length === 1)
-const rowBtnRow = (() => {
-  const a = client.indexOf('<div className="flex items-center justify-between mt-1">')
+const headCluster = (src) => {
+  const a = src.indexOf('>저장값 <strong')
   if (a < 0) return ''
-  const b = client.indexOf('옮김 없음', a)
-  return b < 0 ? '' : client.slice(a, b)
-})()
-need('두 버튼이 한 줄에 마주 선다',
-  rowBtnRow.length > 0 && /다른 곳으로/.test(rowBtnRow),
-  '좌 다른 곳으로 · 우 옮김 없음 — justify-between 한 줄이 목업이다')
+  const b = src.indexOf('</div>', a)
+  return b < 0 ? '' : src.slice(a, b)
+}
+need("'그대로' 가 행 머리 '저장값 N' 과 같은 줄에 선다(두 화면)",
+  /그대로/.test(headCluster(itemForm)) && /그대로/.test(headCluster(locPanel)),
+  '입력칸 아래로 내리면 저장값과 그 값을 확정하는 버튼이 떨어져, 무엇을 그대로 두는지 화면이 말을 못 한다')
 // 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이 없다 — 열어도 출발지 칩이 하나도 없는 막다른 모달이다.
 need('잔량 0 행에는 다른 곳으로가 없다',
   /\{prev != null && prev\.qty !== 0 && \(/.test(client),
   '눌러도 고를 출발지가 없는 모달이 뜬다')
-// 셋이다 — 패널의 '다른 곳으로'·'옮김 없음' 과 아이템별 폼의 '옮김 없음'(2026-09-15 통일).
-// 세 자리가 같은 확장 문법을 쓰는지를 본다(한 벌이 아니면 같은 버튼이 화면마다 다른 크기가 된다).
-need('히트영역 문법이 옮김 없음과 같다',
-  (client.match(/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/g) ?? []).length === 3,
-  '글자만이면 19px 이다 — §25 유사요소 확장으로 44px 를 낸다')
+// 셋이다 — 두 화면의 '그대로' 와 패널의 '다른 곳으로'. 종전에는 수제 유사요소 확장(before:h-11)으로 44px 를
+// 냈는데, 2단계에서 정본 RowActionBtn(neutral — §03 코랄 테두리 금지)으로 옮겼다. 히트 44px 는 정본이 진다.
+// 수제 확장이 한 자리라도 남으면 같은 버튼이 화면마다 다른 크기·색이 된다.
+const rowActionCount = (label) => (client.match(new RegExp(`<RowActionBtn\\b[\\s\\S]{0,240}?>\\s*${label}\\s*</RowActionBtn>`, 'g')) ?? []).length
+need('행 버튼이 정본 RowActionBtn 이다(히트 44px · neutral)',
+  rowActionCount('그대로') === 2 && rowActionCount('다른 곳으로') === 1 &&
+  !/before:absolute before:content-\[''\] before:-inset-x-2 before:-top-1 before:h-11/.test(client) &&
+  !/<RowActionBtn[^\n]*tone="accent"[^\n]*>\s*(그대로|다른 곳으로)/.test(client),
+  '글자만이면 19px 이다 — 정본이 44px 히트와 중립 테두리를 함께 진다')
 const hubBranch = (() => {
   const a = client.indexOf('허브 위치 점검 — 잔량 1칸')
   const b = client.indexOf('비허브 위치 점검', a)
@@ -438,16 +467,6 @@ need('패널의 두 진입이 모두 모달 토스트를 끈다',
 //     수 없어 '이전' 접미까지 통째로 죽은 코드였다.
 // 그리고 저장 경로가 갈려 있었다 — 클라가 허브를 미리 깎아 절대값으로 보내는 경로 B 였다.
 // 지금은 두 화면 모두 서버에 패치를 보내고 서버가 접는다(경로 A). 아래는 그 대칭의 그물이다.
-// 최상위 함수 한 채를 통째로 잘라 본다. fnBody 는 헤더 뒤 첫 '{' 를 몸통으로 잡는데, 이 함수들은
-// 그 자리가 props **타입 주석**이라 타입만 잘려 나온다(판정이 통째로 무의미해진다).
-function topFn(src, header) {
-  const start = src.indexOf(header)
-  if (start < 0) return ''
-  const end = src.indexOf('\nfunction ', start + header.length)
-  return end < 0 ? src.slice(start) : src.slice(start, end)
-}
-const itemForm = topFn(client, 'function CheckForm({ item, lastCheckBreakdown')
-const locPanel = topFn(client, 'function LocationBatchCheckModal({ rows, onClose')
 need('아이템별 점검 폼을 찾음', itemForm.length > 2000)
 need('위치별 점검 패널을 찾음', locPanel.length > 2000)
 // 허브 가지 — 입력은 beforeQtys 에 묶이고, 그 가지 안에 afterQtys 가 없다.
@@ -494,18 +513,24 @@ need('아이템별 폼에 prevMap 프리필 시딩이 없다',
   "채워 둔 값은 '세었다'는 뜻이 되어 버린다 — 빈칸이 정본이다")
 // 행 문법 — 두 화면이 같은 버튼·같은 말을 쓴다. (타임라인 편집 폼 CheckEditForm 은 이 대칭의
 // 대상이 아니다 — 저장된 점검 한 건을 고치는 다른 일이고 경로 B 에 남는다.)
-need("'저장된 값' 버튼이 두 화면 모두에 있다",
-  (itemForm.match(/>\s*저장된 값\s*</g) ?? []).length === 1 &&
-  (locPanel.match(/>\s*저장된 값\s*</g) ?? []).length === 1,
-  '참고줄의 저장된 잔량을 칸에 채워 넣는 자리 — 한쪽만 있으면 같은 일에 입구가 갈린다')
+// '그대로' — 저장된 값을 이번 실측으로 확정한다. 종전 '저장된 값'(창고 행)·'옮김 없음'(비허브 행)이 같은 일을 두 이름으로
+// 하고 있어 한 이름으로 합쳤다(2단계). 글자는 화면마다 소스에 한 번이다(조건부 렌더) — 옛 두 이름은 남지 않는다.
+need("'그대로' 버튼이 두 화면 모두에 있다",
+  (itemForm.match(/>\s*그대로\s*</g) ?? []).length === 1 &&
+  (locPanel.match(/>\s*그대로\s*</g) ?? []).length === 1 &&
+  !/>\s*(저장된 값|옮김 없음)\s*</.test(itemForm + locPanel),
+  '행 머리의 저장값을 칸에 채워 넣는 자리 — 한쪽만 있으면 같은 일에 입구가 갈린다')
 // 창고 행 유령 재고(도메인 P1-1, 2026-10-12). 창고 칸은 허브 패치로 **맨 뒤에 덮어쓰는** 실측이라, 같은 저장에
 // 채움(창고에서 빼 옴)이 있는데 옮기기 전 저장값을 그대로 적으면 옮긴 만큼이 두 번 남는다. 막는 축은 둘이다.
 //   ⓐ 채움이 있으면 '저장된 값' 버튼을 안 그린다(그 자리에 자동 차감 캡션).
 //   ⓑ 그래도 칸에 저장값이 남았으면(버튼을 먼저 눌렀거나 임시저장 복원) 경고 + 비우기를 띄운다.
 //      ⓐ 만 있으면 입력 순서에 따라 값이 남는다(독립 검수 2026-10-12 재현) — 두 화면 모두.
-need("채움이 있으면 창고 행 '저장된 값' 을 안 그린다(두 화면)",
-  /\{prevQty !== undefined && restockSum <= 0 && \(/.test(itemForm) &&
-  /\{prev != null && itemMoves <= 0 && \(/.test(locPanel),
+// 술어 하나(canKeep)가 두 조건을 진다 — 행이 비어 있을 때만, 그리고 창고 행은 이번 저장에 채움이 없을 때만.
+need("채움이 있으면 창고 행 '그대로' 를 안 그린다(두 화면)",
+  /const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !\(rowIsHub && restockSum > 0\)/.test(itemForm) &&
+  /const canKeep = prev != null && beforeStr === '' && afterStr === '' && !\(rowIsHub && itemMoves > 0\)/.test(locPanel) &&
+  /\{canKeep && \(\s*\n\s*<RowActionBtn[\s\S]{0,240}?그대로/.test(itemForm) &&
+  /\{canKeep && \(\s*\n\s*<RowActionBtn[\s\S]{0,240}?그대로/.test(locPanel),
   '옮기기 전 창고 양을 실측으로 박는 입구다 — 허브 패치가 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다')
 need('창고 칸에 저장값이 남으면 경고와 비우기가 선다(두 화면)',
   /const hubStale = rowIsHub && restockSum > 0 && beforeStr !== '' && Number\(beforeStr\) === prevQty/.test(itemForm) &&
@@ -515,9 +540,38 @@ need('창고 칸에 저장값이 남으면 경고와 비우기가 선다(두 화
   /\{hubStale && \(/.test(locPanel) &&
   /setBeforeQtys\(p => \(\{ \.\.\.p, \[k\]: '' \}\)\)/.test(locPanel),
   "버튼만 숨기면 '저장된 값' 을 먼저 누르고 아래 행을 채운 순서·임시저장 복원에서 그 값이 그대로 저장된다")
-need("'옮김 없음' 버튼이 두 화면 모두에 있다",
-  (itemForm.match(/>\s*옮김 없음\s*</g) ?? []).length === 1 &&
-  (locPanel.match(/>\s*옮김 없음\s*</g) ?? []).length === 1)
+// 예외(2단계, 운영자 승인 계획) — 행마다의 '{창고} 남음' 줄은 **위치 패널에만** 선다. 아이템별 폼은 한 품목이라
+// 위 고정 창고 요약이 같은 값을 말하고, 패널은 품목마다 창고가 달라 한 줄 요약이 성립하지 않는다. 비대칭을 봉인한다 —
+// 폼에 되살아나면 같은 숫자가 한 화면에 행 수만큼 서고, 패널에서 빠지면 채울 창고를 볼 자리가 없다.
+need('창고 남음 줄은 위치 패널 행에만 있다(아이템별 폼은 고정 요약이 말한다)',
+  /\{hubStock\.pathName\} 남음/.test(locPanel) && !/\{(hubStock|hubLoc)\.pathName\} 남음/.test(itemForm) && !/const hubStock = /.test(itemForm),
+  'knowledge/domain-inventory.md 화면도 한 벌 절의 예외 — 한쪽만 바꾸면 그 노트가 거짓이 된다')
+// 발끝 고정(2단계) — 저장 버튼은 상세 모달 발끝에 서고 form= 으로 이 폼에 붙는다. 'N곳' 은 저장에 실릴 칸 수라
+// 패치 조립부 그대로 센다(세는 규칙이 갈리면 '2곳 저장' 을 눌렀는데 3곳이 저장된다). 0 이면 비활성이다.
+need('아이템별 폼의 저장 버튼이 발끝에서 form= 으로 붙는다',
+  /<form onSubmit=\{handleSubmit\}[^\n]*id=\{formId\}/.test(itemForm) &&
+  /<Btn type="submit" form=\{formId\}/.test(itemForm) &&
+  /createPortal\(footer, footerSlot\)/.test(itemForm) &&
+  /data \? <div data-check-footer="" \/> : <DetailCheckFooterSkeleton restock=\{/.test(client),
+  '본문 끝에 두면 위치가 많은 품목에서 저장 버튼이 스크롤 밖이다(§27.1 저장 버튼 상시 노출)')
+need("'N곳 저장' 이 패치 조립부로 세고 0 이면 비활성이다",
+  /const restockSaveCount = restockMode \? buildLocationPatches\(\)\.length : null/.test(itemForm) &&
+  /disabled=\{pending \|\| restockSaveCount === 0\}/.test(itemForm) &&
+  /\$\{restockSaveCount\}곳 저장/.test(itemForm),
+  '화면이 따로 세면 버튼의 숫자와 실제 저장 칸 수가 갈린다')
+// 키보드가 선 동안(html[data-kbd-open] .kbd-collapse) — 2단계 검수 1. 작은 아이폰에서 보이는 띠가 150px 안팎인데 고정 창고
+// 요약(58px)이 그 위를 먹어, 재노출 정본이 칸을 올린 자리에서 행 머리('상단')가 요약 밑에 깔리고 칸 아래 다음 행 이름만
+// 보였다(검수 실측 9칸 중 9칸). 전역 가드는 sticky 를 모르므로 이 화면이 띠를 돌려준다. 접는 것은 셋뿐이다 —
+// 정상 창고 요약(넘침이면 경고 우선이라 안 접는다), 임시저장 칩(두 화면), 패널 발끝 안내 줄. 합계 줄과 버튼 줄은
+// 접지 않는다(§27.1 저장 수단 상시 노출 — check-kbd-collapse-optin 이 Modal 옵트인만 보므로 여기서 본다).
+need('키보드가 선 동안 정상 창고 요약·임시저장 칩만 접고 저장 수단은 안 접는다',
+  /<div className=\{`sticky top-0 z-10[^`]*\$\{hubOverdrawn \? '' : 'kbd-collapse'\}`\}>/.test(itemForm) &&
+  (itemForm.match(/className="kbd-collapse flex items-center justify-between gap-2 text-\[0\.65625rem\] rounded-lg/g) ?? []).length === 1 &&
+  (locPanel.match(/className="kbd-collapse flex items-center justify-between gap-2 text-\[0\.65625rem\] rounded-lg/g) ?? []).length === 1 &&
+  /<p className="kbd-collapse text-xs text-\[var\(--warm-mid\)\]">채운 만큼 각 품목의 창고 잔량에서 자동 차감됩니다\.<\/p>/.test(locPanel) &&
+  (client.match(/className=[^\n]*kbd-collapse/g) ?? []).length === 4 &&
+  !/kbd-collapse[^\n]*(type="submit"|이번 채움|점검 후 잔량|건 저장|곳 저장)/.test(client),
+  '요약이 띠를 먹으면 칸의 이름이 가려지고, 저장 수단을 접으면 적는 동안 커밋할 길이 사라진다')
 need("죽은 '이전' 접미가 아이템별 폼에서 사라졌다",
   !/>이전 \{/.test(itemForm),
   '프리필이 없으니 이전 값을 가리키는 접미도 성립하지 않는다')

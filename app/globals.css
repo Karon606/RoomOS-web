@@ -593,6 +593,9 @@ html.dark {
   --warm-mid:     var(--d-ink-s);
   --warm-muted:   var(--d-ink-m);
   --warm-border:  var(--d-border);
+  /* 강조 보더(§12 입력 보더 --border-s) 다크 짝 — 라이트값(rgba(61,36,24,.18))이 그대로 남으면 검은 바탕 위에서
+     보더가 사라진다. 가이드 v2.0 다크 표의 값(--d-border-s)이다(재고 점검 입력칸 2단계에서 첫 소비). */
+  --border-s:     var(--d-border-s);
 
   /* Terracotta — solid 요소는 동일 hex 유지, 페일 배경만 짙게 */
   --persimmon-l:  #3a1f18;
@@ -749,6 +752,7 @@ html[data-kbd-open] .kbd-collapse { display: none; }
     --warm-mid:     #7a6553;
     --warm-muted:   #7a6553;
     --warm-border:  #dccfbc;
+    --border-s:     rgba(61,36,24,.18);   /* 다크 짝(--d-border-s)을 인쇄에서 라이트로 되돌린다(2단계 검수 9) */
     --persimmon-l:  #f2dfd8;
     --coral-pale:   #f2dfd8;
     --chart-1:      #3d2418;

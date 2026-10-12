@@ -235,6 +235,23 @@ function mustNot(file, block, label, pattern) {
   }
 }
 
+// ── 4''. 점검 행 머리 — 끝 칸 이름은 pathName 을 쪼갠 조각이다 (2026-10-12 재고 정비 2단계) ──────────────
+//   아이템별 점검 폼은 위치를 부모 경로로 묶어 머리('4층 주방 김치냉장고')를 세우고 행에는 끝 칸('상단')만
+//   크게 쓴다 — 상단·하단을 바꿔 적던 근원을 줄이려는 것이다. 위 3항의 예외(트리 행 = 한 칸 이름)와 같은
+//   근거(구조는 묶음 머리가 말한다)인데, 그 근거가 무너지지 않으려면 **두 조각을 이으면 언제나 pathName** 이어야
+//   한다. 그래서 쪼개기는 정본 한 함수(splitLocPath)뿐이고, 끝 칸이 pathName 의 꼬리와 글자째 같을 때만 가른다
+//   (이름에 공백이 든 칸 '415호 창고' 가 있어 마지막 공백으로 자르면 '4층 415호' + '창고' 로 틀린다).
+//   못 가르면 pathName 통째다. 점검 폼 안에서 loc.name 을 직접 찍는 길은 위 3항의 금지 식별자가 막는다.
+{
+  const f = 'app/(app)/inventory/InventoryClient.tsx'
+  const fn = slice(f, 'function splitLocPath(', '\n}\n')
+  must(f, fn, 'splitLocPath(꼬리가 글자째 같을 때만 가른다)', /l\.pathName\.endsWith\(tail\)/)
+  must(f, fn, 'splitLocPath(부모 = pathName 에서 꼬리를 뗀 것)', /parent: l\.pathName\.slice\(0, -tail\.length\)/)
+  must(f, fn, 'splitLocPath(못 가르면 pathName 통째)', /\{ parent: '', leaf: l\.pathName \}/)
+  mustNot(f, fn, 'splitLocPath(마지막 공백 자르기 금지)', /lastIndexOf\(' '\)|split\(' '\)/)
+  must(f, slice(f, 'function CheckForm(', 'function TransferStockModal('), 'CheckForm(행 머리는 정본으로 쪼갠다)', /splitLocPath\(loc\)/)
+}
+
 // ── 4. 비품(공용부) — 배정 select·이력 라벨·그룹 순서 ────────────────────────────────
 {
   const f = 'app/(app)/inventory/assets/actions.ts'
