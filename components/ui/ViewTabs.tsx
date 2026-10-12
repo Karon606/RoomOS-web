@@ -150,8 +150,12 @@ export function ViewTabs({
   // 좌우 12px씩 확장한다 — 최단 라벨 '수납'도 히트폭 약 48px로 44px을 넘고, gap 24px이라 이웃
   // 히트박스와 겹치지 않는다. 포커스 링은 스크롤러 클리핑을 피해 인셋으로, 색은 --coral 이 아니라
   // --tc-text 다(다크 페이지 위 --coral 은 3:1 미달 — 라이트는 같은 값이라 픽셀 무변경).
+  // 양 끝 탭은 트랙 밖으로 확장하지 않는다(first-of-type · last-of-type 의 before 를 0 으로, 2026-10-12). 트랙이 가로
+  // 스크롤러라 마지막 탭의 오른쪽 12px 확장이 넘침으로 셈해져 탭이 다 들어가는데도 넘침 페이드(data-fade='right')가
+  // 늘 켜졌다(재고 상세 '단가 추이'가 흐려 보였다). 그 12px 은 스크롤러가 잘라 원래도 눌리지 않던 자리다. first 가 아니라
+  // first-of-type 인 이유 — 활성 바(div)가 트랙의 첫 자식이라 첫 탭은 :first-child 가 아니다.
   const segBase = `relative z-[1] px-0 ${fill ? 'flex-1 justify-center text-center' : ''} py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center whitespace-nowrap shrink-0
-    before:absolute before:-inset-x-3 before:inset-y-0 before:content-['']
+    before:absolute before:-inset-x-3 before:inset-y-0 before:content-[''] first-of-type:before:left-0 last-of-type:before:right-0
     focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--tc-text)]
     motion-safe:transition-colors motion-safe:duration-150`
   // 바 실측 전(첫 프레임·JS 비활성)엔 활성 탭이 자체 인셋 밑바로 폴백.
