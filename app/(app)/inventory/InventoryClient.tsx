@@ -118,7 +118,7 @@ const LOC_INDENT_PX = 12   // 승인 목업(402px) 기준 — 한 단계당 12px
 // 높이·좌우 패딩은 옮기기 모달(TransferStockModal)의 수량칸과 같은 한 벌이다 — 종전 `px-2.5 py-1.5`
 // 는 34px 이라, 같은 폼 안에서 점검일 44 · 메모 42 · 수량 34 세 높이가 동시에 섰다(디자이너 지적
 // 2026-09-16). §12 는 한 폼 안 입력 높이 혼용을 금지하고 모바일 최소 44 를 요구한다.
-const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]'
+const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]'
 
 // 옛 드래프트 호환 — 허브(창고) 칸이 '채운 후'(after)에 묶여 있던 시절의 문서다(2026-09-11 이전).
 // 그대로 복원하면 **화면에 안 보이는 값**이 된다(허브 칸은 '잔량'=before 를 그린다). 그 값은
@@ -1125,7 +1125,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   onArchive={async () => {
                     if (!(await confirmDialog({ title: `'${r.label}' 품목을 숨길까요?`, message: '카드 목록에서 사라집니다. 점검·구매·지출 기록은 모두 보존되며, 헤더의 "숨김 품목"에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
                     const res = await archiveTrackedItem(r.id)
-                    if (res.ok) { refreshArchivedCount(); router.refresh(); pushToast('success', '품목 숨김 처리됨') }
+                    // §16 — 상세 모달의 숨김과 같은 적용취소(같은 사건은 어느 입구에서든 같이 되돌린다).
+                    if (res.ok) { refreshArchivedCount(); router.refresh(); pushToast('success', '품목 숨김 처리됨', {
+                      action: { label: '적용취소', run: () => { void unarchiveTrackedItem(r.id).then(u => {
+                        if (u.ok) { pushToast('info', '품목 숨김을 적용취소했습니다 · 목록에 다시 표시'); refreshArchivedCount(); router.refresh() }
+                        else pushToast('error', u.error)
+                      }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                    }) }
                     else { pushToast('error', res.error) }
                   }}
                 />
@@ -1203,6 +1209,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             onClose={() => { setCheckSavedId(null); setDetailId(null) }}
             onChange={() => { router.refresh(); refreshDrafts() }}
             onDraftChange={refreshDrafts}
+            onArchivedChange={refreshArchivedCount}
             targetMonth={targetMonth}
             onChangeMonth={changeMonth}
           />
@@ -1555,6 +1562,8 @@ function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
         <div className={`h-4 ${bar}`} />
         <div className={`h-4 w-2/3 ${bar}`} />
       </div>
+      {/* 폐기 먼저 기록 안내 — 보충 모드에서도 서므로 늘 있다(두 줄 49.5px, 폭 196~380 실측) */}
+      <div className={`h-[50px] ${bar}`} />
       {/* 점검일 라벨 + 입력(44px) */}
       <div className="space-y-1.5">
         <div className={`h-3 w-12 ${bar}`} />
@@ -1600,9 +1609,23 @@ function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
     </div>
   ) : (
     <div className="px-5 sm:px-6 pt-3 space-y-3 delayed-fallback" aria-busy="true" aria-label="불러오는 중">
-      {/* 마지막 점검 캡션 · 탭 세그먼트 · 창고(허브) 칩 */}
+      {/* 마지막 점검 캡션 · 밑줄 탭 · 창고(허브) 칩 */}
       <div className={`h-3 w-40 ${bar}`} />
-      <div className={`h-8 ${bar}`} />
+      {/* 밑줄 탭 모형 — 정본 ViewTabs(fill)와 같은 치수(gap-6·min-h 44/40·행 밑선·활성 2px 바).
+          막대로 그리면 로디드 순간 탭 높이만큼 아래가 밀린다(재고 loading.tsx 탭 모형과 같은 문법).
+          활성 바는 칸 폭이 아니라 **글자 폭**이다 — 정본이 글자 span 을 재서 바를 긋는다(barRectOf).
+          그래서 바깥 칸은 높이만, 안쪽 글자 span 이 패딩과 인셋 바를 진다. */}
+      <div className="flex w-full gap-6 border-b border-[var(--warm-border)] text-sm font-semibold">
+        <span className="flex-1 flex justify-center min-h-[44px] md:min-h-[40px]">
+          <span className="inline-flex items-center whitespace-nowrap py-2.5 md:py-2 text-[var(--tc-text)] shadow-[inset_0_-2px_0_0_var(--tc-text)]">이력</span>
+        </span>
+        <span className="flex-1 flex justify-center min-h-[44px] md:min-h-[40px]">
+          <span className="inline-flex items-center whitespace-nowrap py-2.5 md:py-2 text-[var(--warm-dark)]">월별 입수</span>
+        </span>
+        <span className="flex-1 flex justify-center min-h-[44px] md:min-h-[40px]">
+          <span className="inline-flex items-center whitespace-nowrap py-2.5 md:py-2 text-[var(--warm-dark)]">단가 추이</span>
+        </span>
+      </div>
       <div className={`h-7 w-44 ${bar}`} />
       {/* 타임라인 행 */}
       <div className="space-y-2">
@@ -1612,8 +1635,16 @@ function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
   )
 }
 
-function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth, initialMode = 'view', nextId = null, nextLabel = null, checkSaved = false, onCheckSaved, onGoToItem }: {
+type DetailMode = 'view' | 'check' | 'addition' | 'disposal' | 'settings' | 'reconcile'
+// 모드 화면 머리 부제의 이름 — 보기 화면 발끝 버튼의 말과 같다('부식비 · 재고 점검').
+const DETAIL_MODE_LABEL: Record<Exclude<DetailMode, 'view'>, string> = {
+  check: '재고 점검', addition: '무상 입수', disposal: '폐기', settings: '설정', reconcile: '보정',
+}
+
+function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, targetMonth, onChangeMonth, initialMode = 'view', nextId = null, nextLabel = null, checkSaved = false, onCheckSaved, onGoToItem }: {
   row: InventoryRow | null; onClose: () => void; onChange: () => void; onDraftChange?: () => void
+  // 숨김 품목 수(헤더 '숨김 품목 (N)')를 다시 센다 — 숨김·숨김 적용취소 뒤에만. onChange 에 섞으면 저장마다 센다.
+  onArchivedChange?: () => void
   targetMonth: string; onChangeMonth: (delta: number) => void
   initialMode?: 'view' | 'check'; nextId?: string | null; nextLabel?: string | null; onGoToItem?: (id: string) => void
   // 이번 진입에서 점검을 저장했는가 — 호출부가 들고 있다(여기 훅을 하나 더 세우지 않으려고).
@@ -1624,7 +1655,13 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [monthlyInflow, setMonthlyInflow] = useState<MonthlyInflowRow[]>([])
-  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'disposal' | 'settings' | 'reconcile'>(initialMode)
+  // 모드와 '입력이 있었는가'(§12 dirty)를 한 상태로 든다 — 모드가 바뀌면 dirty 는 언제나 새로 시작한다.
+  // 따로 들면 점검에서 적다 보기로 돌아온 뒤 다시 들어간 빈 폼까지 '작성 중' 으로 남는다.
+  const [modeState, setModeState] = useState<{ mode: DetailMode; dirty: boolean }>({ mode: initialMode, dirty: false })
+  const mode = modeState.mode
+  const setMode = (m: DetailMode) => setModeState({ mode: m, dirty: false })
+  // 보기 모드에는 입력이 없다 — 거기서 dirty 가 서면 닫기 확인이 거짓말을 한다.
+  const markDirty = () => setModeState(s => (s.dirty || s.mode === 'view' ? s : { ...s, dirty: true }))
   const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
@@ -1633,11 +1670,18 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
 
   const changeItemHub = (locId: string | null) => {
     setHubOpen(false)
+    // §16 — 바꾸기 전 지정값(null = 영업장 기본 창고 따름)을 쥐어 두고 같은 액션으로 되돌린다.
+    const prevHubId = data?.item.hubLocationId ?? null
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await setItemHub(trackedItemId, locId)
-        if (res.ok) { reload(); onChange(); pushToast('success', '창고(허브) 변경됨') }
+        if (res.ok) { reload(); onChange(); pushToast('success', '창고 변경됨', {
+          action: { label: '적용취소', run: () => { void setItemHub(trackedItemId, prevHubId).then(r => {
+            if (r.ok) { pushToast('info', '창고 변경을 적용취소했습니다 · 이전 창고로 복귀'); reload(); onChange() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        }) }
         else { pushToast('error', res.error) }
       } finally { release() }
     })
@@ -1670,7 +1714,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       const release = trackSave()
       try {
         const res = await archiveTrackedItem(trackedItemId)
-        if (res.ok) { onChange(); onClose(); pushToast('success', '품목 숨김 처리됨') }
+        // §16 — 숨김에도 적용취소. 되돌리는 길은 이미 있는 '숨김 품목' 복구(unarchiveTrackedItem) 그대로다.
+        // 모달은 닫힌 뒤라 목록 갱신(onChange)만 한다.
+        if (res.ok) { onChange(); onArchivedChange?.(); onClose(); pushToast('success', '품목 숨김 처리됨', {
+          action: { label: '적용취소', run: () => { void unarchiveTrackedItem(trackedItemId).then(r => {
+            if (r.ok) { pushToast('info', '품목 숨김을 적용취소했습니다 · 목록에 다시 표시'); onChange(); onArchivedChange?.() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        }) }
         else { pushToast('error', res.error) }
       } finally { release() }
     })
@@ -1753,6 +1804,22 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const detailLabel = data?.item.label ?? row.label
   const detailSplit = row.specHint ? null : splitSizeLabel(detailLabel)
   const detailCaption = row.specHint ?? detailSplit?.size ?? null
+  // 적던 모드 화면을 떠나는 자리(뒤로 가기, 점검 폼의 '폐기 기록')도 X 와 같은 확인을 거친다.
+  // 적던 값이 사라지기는 마찬가지다. 폼 안의 '취소' 는 버리겠다는 말이라 묻지 않는다.
+  //  · 뒤로 가기 = 닫기와 같은 일이라 §12 문구·버튼 그대로.
+  //  · 폐기 기록으로 넘어가기 = 닫기가 아니라 이동이다. '닫을까요?' 로 물으면 눌러서 일어나는 일과
+  //    말이 어긋난다. 무엇이 사라지는지와 이어 적는 길(임시저장)을 말한다(§14 일반, 확인은 동사).
+  const leaveModeTo = async (next: DetailMode) => {
+    if (modeState.dirty && !(await confirmDialog(next === 'disposal'
+      ? { title: '적던 점검이 사라집니다. 폐기 기록으로 넘어갈까요?', message: '이어 적으려면 먼저 임시저장하세요.', confirmLabel: '넘어가기', cancelLabel: '계속 작성' }
+      : { title: '작성 중인 내용이 있습니다. 닫을까요?', confirmLabel: '닫기', cancelLabel: '계속 작성' }))) return
+    setMode(next)
+  }
+  // 저장된 자리(임시저장·설정의 위치 저장)가 생기면 '작성 중' 을 내린다 — 남겨 두면 닫을 때 없는 손실을 묻는다.
+  const clearDirty = () => setModeState(s => (s.dirty ? { ...s, dirty: false } : s))
+  // 저장 적용취소 뒤 표시 갱신만 — 모드는 건드리지 않는다(폐기 onUndone 과 같은 이유: 그 사이 다른 모드에서
+  // 적고 있을 수 있다. onDone 으로 보기 화면을 띄우면 적던 것이 확인 없이 사라진다).
+  const refreshAfterUndo = () => { reload(); onChange() }
 
   return (
     <>
@@ -1764,7 +1831,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       title={detailCaption
         ? <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{detailSplit?.base ?? detailLabel} <span className="font-normal text-[var(--warm-muted)]">{detailCaption}</span></h2>
         : detailLabel}
-      subtitle={data?.item.category ?? row.category}
+      // 모드 화면은 머리 부제에 모드 이름을 붙이고(부식비 · 재고 점검) 뒤로 가기로 보기 화면에 돌아간다.
+      // 보기 화면은 종전 그대로 분류만, 뒤로 가기 없음.
+      subtitle={mode === 'view'
+        ? (data?.item.category ?? row.category)
+        : `${data?.item.category ?? row.category} · ${DETAIL_MODE_LABEL[mode]}`}
+      onBack={mode === 'view' ? undefined : () => { void leaveModeTo('view') }}
+      // §12 입력 유실 방지 — 모드 화면에서 무엇이든 적었으면 배경 클릭은 무시하고 Esc·X 는 확인을 거친다.
+      dirty={mode !== 'view' && modeState.dirty}
       // 풀블리드 — 모드(점검·보정·설정 등)마다 다른 하위 폼이 자기 여백과 폭 전체 구분선을 직접 갖는다.
       bodyClassName=""
       footer={isViewMode ? (
@@ -1784,12 +1858,17 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     >
       {/* 렌더 오류가 모달을 조용히 닫던 문제 방지 — 안내+자취 기록(오류신고 0861b35f). resetKey=mode로 모드 전환 시 재시도 */}
       <ErrorBoundary label="재고 상세" resetKey={mode}>
+      {/* v2.0 §12 dirty — 입력을 시작하면 표시(형제 2882·3026 문법). 보기 모드에서는 markDirty 가 무동작이다.
+          점검 폼의 '저장된 값'·'옮김 없음' 은 입력 이벤트 없이 값을 채우므로 폼이 onDirty 로 따로 알린다.
+          스크롤·여백 없는 맨 div 라 모달 본문이 유일한 스크롤 컨테이너인 것은 그대로다. */}
+      <div onInput={markDirty} onChange={markDirty}>
       {!data ? (
         <DetailModalSkeleton mode={initialMode} />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} lastCheckCreatedAt={row.lastCheckCreatedAt} hiddenLocationIds={row.hiddenLocationIds}
           currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
-          onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
+          onDirty={markDirty} onDraftSaved={clearDirty} onUndone={refreshAfterUndo}
+          onGoDisposal={() => { void leaveModeTo('disposal') }} onCancel={() => setMode('view')} onDone={() => {
           // 성공 토스트의 주인은 CheckForm 하나다 — 여기서 또 띄우면 같은 사건을 두 번 알리고
           // (§27.2), 그 토스트의 '다음 품목' 은 6초 뒤 사라져 이어갈 자리를 잃는다.
           setMode('view'); onCheckSaved?.(); reload(); onChange()
@@ -1799,14 +1878,17 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           item={data.item}
           hiddenLocationIds={row.hiddenLocationIds}
           existingCheckDays={Array.from(new Set(data.timeline.filter(e => e.type === 'check').map(e => new Date(new Date(e.date).getTime() + 9 * 3600000).toISOString().slice(0, 10))))}
-          onCancel={() => setMode('view')}
+          onCancel={() => setMode('view')} onDirty={markDirty}
           onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
-        <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }}
+          onDirty={markDirty} onUndone={refreshAfterUndo} />
       ) : mode === 'disposal' ? (
-        <DisposalForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <DisposalForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }}
+          onDirty={markDirty} onUndone={refreshAfterUndo} />
       ) : mode === 'settings' ? (
         <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }}
+          onDirty={markDirty}
           onGone={() => { onChange(); onClose() }} />
       ) : (
         <>
@@ -1817,9 +1899,10 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
               const sameDay = row.lastCheckDate ? isSameKstDay(new Date(row.lastCheckDate), created) : true
               return (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-2">
+                  {/* '최근 점검' — 재고 카드·점검 입력·위치 패널과 같은 말이다(패널 합의, 다수파). */}
                   {sameDay
-                    ? <>마지막 점검 {fmtDate(row.lastCheckDate)} <span className="tabular-nums">{fmtTime(created)}</span></>
-                    : <>마지막 점검 {fmtDate(row.lastCheckDate)} · {fmtDate(created)} <span className="tabular-nums">{fmtTime(created)}</span> 기록</>}
+                    ? <>최근 점검 {fmtDate(row.lastCheckDate)} <span className="tabular-nums">{fmtTime(created)}</span></>
+                    : <>최근 점검 {fmtDate(row.lastCheckDate)} · {fmtDate(created)} <span className="tabular-nums">{fmtTime(created)}</span> 기록</>}
                 </p>
               )
             })()}
@@ -1831,15 +1914,17 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                 다음 품목: {nextLabel} ›
               </button>
             )}
-            <SegmentedControl
-              size="sm"
+            {/* 뷰 전환이다(항상 하나 활성, '전체' 없음) — §25 정본 ViewTabs. SegmentedControl 은 필터 전용.
+                모달 안 탭은 형제 PrismNavBar 와 같이 fill(행 밑선이 본문 폭을 다 긋는다). */}
+            <ViewTabs
+              fill
               ariaLabel="품목 상세 탭"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'timeline', label: '타임라인' },
-                { value: 'monthly',  label: '월별 입수' },
-                { value: 'price',    label: '단가 추이' },
+              activeId={tab}
+              onChange={id => setTab(id as typeof tab)}
+              tabs={[
+                { id: 'timeline', label: '이력' },
+                { id: 'monthly',  label: '월별 입수' },
+                { id: 'price',    label: '단가 추이' },
               ]}
             />
             {row.locations.length > 0 && (() => {
@@ -1851,14 +1936,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                   <button type="button" onClick={() => setHubOpen(o => !o)} disabled={pending}
                     className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.pathName ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
+                    이 품목 창고: <strong className="text-[var(--warm-dark)]">{itemHub?.pathName ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
                     <span className="text-[var(--warm-muted)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
                   </button>
                   {hubOpen && (
                     <>
                       <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setHubOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
-                        <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">채울 때 차감할 창고(허브) 위치</p>
+                        <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">채울 때 빼 쓰는 위치</p>
                         {/* 숨긴 위치는 허브 후보에서 제외 — 서버(setItemHub)도 거부하지만 애초에 안 보여준다 */}
                         {row.locations.filter(l => l.closedAt == null).map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
@@ -1906,6 +1991,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           </div>
         </>
       )}
+      </div>
       </ErrorBoundary>
     </Modal>
     {/* 품목별 위치 이동 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 이동과 동일 컴포넌트.
@@ -2039,8 +2125,10 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
   )
 }
 
-function SettingsForm({ row, onCancel, onDone, onGone }: {
+function SettingsForm({ row, onCancel, onDone, onGone, onDirty }: {
   row: InventoryRow; onCancel: () => void; onDone: () => void
+  /** 입력 이벤트 없이 값이 바뀌는 자리(추적 단위 버튼)를 상세 모달에 알린다(§12 dirty) */
+  onDirty?: () => void
   /** 이 카드 자체가 합쳐져 사라진 경우 — 삭제된 id 를 다시 조회하지 않도록 상세를 닫는다 */
   onGone?: () => void
 }) {
@@ -2119,11 +2207,11 @@ function SettingsForm({ row, onCancel, onDone, onGone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => setTrackUnit('spec')}
+          <button type="button" onClick={() => { setTrackUnit('spec'); onDirty?.() }}
             className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'spec' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
             규격 단위{row.specUnit ? ` (${row.specUnit})` : ''}
           </button>
-          <button type="button" onClick={() => setTrackUnit('qty')}
+          <button type="button" onClick={() => { setTrackUnit('qty'); onDirty?.() }}
             className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'qty' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
             수량 단위{row.qtyUnit ? ` (${row.qtyUnit})` : ''}
           </button>
@@ -2334,7 +2422,9 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                   </p>
                 )
               })}
-            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+            {/* 메모는 자르지 않고 줄을 바꾼다 — 맞바꿈·이동 메모는 두 위치 이름이라 길고, 잘리면 어느 칸을
+                바꿨는지가 사라진다. 터치 화면엔 title 툴팁이 없어 말줄임 뒤를 읽을 길이 없다(이력 카드 공통). */}
+            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -2469,7 +2559,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                   {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
                 </p>
               ) : null}
-              {(entry.vendor || entry.memo) && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
+              {(entry.vendor || entry.memo) && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -2532,7 +2622,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
               {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
             </p>
             <p className="text-sm font-medium" style={{ color: 'var(--danger-fg)' }}>− {fmtQty(entry.disposedQty, stockUnit)}</p>
-            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -2614,7 +2704,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
             {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
           </p>
           <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
-          {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+          {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep [overflow-wrap:anywhere]">{entry.memo}</p>}
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -2667,12 +2757,13 @@ function DiffAttributionChoice({ value, onChange, name, sinceLabel }: {
 // ── 타임라인 보정 끼워넣기 (v2) — 품목 상세에서 특정 과거/현재 시점에 보정 점검 삽입.
 //    날짜를 고르면 그 시점 '예상 재고'(직전 점검+그 사이 입고)를 위치별로 보여주고, 실측 입력 → 차이 표시.
 //    isReconcile 점검으로 저장(saveFullReconcile 단일 품목) → 그 구간 차이는 사용량에 안 잡힘.
-function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds, onCancel, onDone }: {
+function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds, onCancel, onDone, onDirty }: {
   item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   existingCheckDays?: string[]   // 이미 점검이 있는 날짜(KST, YYYY-MM-DD) — 같은 날 중복 보정 가드용
   hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력·합계에서 제외(카드 칩과 동일 기준)
   onCancel: () => void
   onDone: () => void
+  onDirty?: () => void   // 날짜(DatePicker)는 입력 이벤트가 없어 직접 알린다(§12 dirty)
 }) {
   const NO_LOC = '__total__'
   // 숨긴 위치 제외 — 잔량 ≈0 이라 합계는 ε 안에서 동일. 보정 저장의 breakdown 에서도 빠지지만
@@ -2767,7 +2858,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
             `w-full text-left truncate` 뿐이라 맨글자로 그려졌다. 값은 이 폼의 inputCls 와
             같고 둘만 다르다: 수량 전용 text-right 를 빼고, button 이라 focus 를 focus-visible 로
             옮겼다(손가락으로 눌러 연 달력이 닫힌 뒤 링이 남지 않게). */}
-        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
+        <DatePicker value={date} onChange={v => { setDate(v); onDirty?.() }} maxDate={kstYmdStr()}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         {dateHasCheck && (
           <p className="text-[0.6875rem] text-[var(--honey)] bg-[var(--honey)]/10 border border-[var(--honey)]/30 rounded-lg px-2.5 py-1.5">
@@ -3250,7 +3341,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
               return (
                 <div key={l.id} className="bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-lg px-2 py-1.5 space-y-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{l.pathName} <span className="text-[var(--warm-muted)]">(허브)</span></span>
+                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{l.pathName} <span className="text-[var(--warm-muted)]">(창고)</span></span>
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">이전 {Math.round(hubBefore * 100) / 100}{stockUnit ?? ''}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -3373,7 +3464,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={inputCls}>
             <option value="">위치 없이 기록</option>
             {itemLocations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (허브)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
             ))}
           </select>
         </div>
@@ -3489,7 +3580,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocationIds, currentStock, hasPriorCheck, pendingCount, onCancel, onDone, onDraftChange, onGoDisposal }: {
+function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocationIds, currentStock, hasPriorCheck, pendingCount, onCancel, onDone, onDraftChange, onGoDisposal, onDirty, onDraftSaved, onUndone }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
   lastCheckCreatedAt?: Date | string | null   // 참고줄의 '저장된 잔량'이 언제 저장된 값인지 — §11 메타 칩
@@ -3499,6 +3590,12 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   pendingCount?: number          // 수령 대기 구매 건수 — 신호 문구에 부기
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
   onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
+  // 입력이 생겼음을 상세 모달에 알린다(§12 dirty). 입력칸은 모달이 입력 이벤트로 알아채지만 '저장된 값'·
+  // '옮김 없음' 은 이벤트 없이 값을 채우므로, 두 경우를 다 지나는 markEntered 에서 함께 부른다.
+  onDirty?: () => void
+  onDraftSaved?: () => void   // 임시저장 성공 — 적은 것이 서버에 남았으니 상세 모달이 '작성 중' 을 내린다
+  // 저장 적용취소 뒤 갱신만(모드 유지). 없으면 종전처럼 onDone. 그 사이 다른 모드에서 적고 있을 수 있다.
+  onUndone?: () => void
 }) {
   const stockUnit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   // 숨긴 위치는 점검 입력에서도 가린다 — 서버 carryOver 가 미입력 위치의 직전값(0)을 이월하므로 데이터 무손실.
@@ -3543,7 +3640,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   // 복원조차 병합 결과가 아니라 **서버 문서의 키**(draftedIds)에서만 가져온다. 그래서 어느 자리에
   // 프리필을 넣어도 이 집합은 안 늘고, 패치 수도 안 는다.
   const [entered, setEntered] = useState<Set<string>>(new Set())
-  const markEntered = (id: string) => setEntered(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
+  const markEntered = (id: string) => { onDirty?.(); setEntered(prev => (prev.has(id) ? prev : new Set(prev).add(id))) }
   // 허브 실측 여부 — 적은 적이 있고 그 칸이 비어 있지 않을 때만 참. 따로 든 플래그(hubTouched)는
   // 폐기했다(같은 사실을 두 곳에서 말하면 드래프트 복원에서 갈린다).
   const hubMeasured = hubLoc ? entered.has(hubLoc.id) && (beforeQtys[hubLoc.id] ?? '') !== '' : false
@@ -3666,6 +3763,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       })
       pushToast('success', '임시저장됨')
       onDraftChange?.()
+      onDraftSaved?.()
     })
   }
 
@@ -3792,7 +3890,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       ? { detail: '방금 저장한 것과 같은 내용이라 기존 기록을 그대로 두었습니다.' }
       : {
         action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
-          if (r.ok) { onDraftChange?.(); onDone(); pushToast('info', '재고 점검 저장을 적용취소했습니다') }
+          if (r.ok) { onDraftChange?.(); (onUndone ?? onDone)(); pushToast('info', '재고 점검 저장을 적용취소했습니다') }
           else pushToast('error', r.error)
         }) } },
       }),
@@ -3926,11 +4024,12 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       {/* 안내문 — 위치 패널 헤더와 같은 한 문장이다(같은 일을 두 문형으로 말하지 않는다). */}
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
-          ? '채우기 전·후를 입력하면 늘어난 만큼 이 품목의 창고(허브)에서 자동 차감됩니다.'
+          ? '채우기 전·후를 입력하면 늘어난 만큼 이 품목의 창고에서 자동 차감됩니다.'
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
       </p>
-      {/* 폐기 바로가기 — 점검을 먼저 저장하면 폐기분이 소모로 잡히므로 순서를 안내(오류신고 a1e048e8) */}
-      {onGoDisposal && !restockMode && (
+      {/* 폐기 바로가기 — 점검을 먼저 저장하면 폐기분이 소모로 잡히므로 순서를 안내(오류신고 a1e048e8).
+          보충 모드(직전 점검 있음)에서도 띄운다 — 그쪽이 점검의 대부분이라, 거기서 숨으면 안내가 없는 것과 같다. */}
+      {onGoDisposal && (
         <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
           <p className="text-[0.65625rem]" style={{ color: 'var(--warning-fg)' }}>버리거나 상해서 줄어든 양이 있나요? 점검 저장 전에 폐기를 먼저 기록해야 소모량이 정확합니다.</p>
           <button type="button" onClick={onGoDisposal}
@@ -3941,7 +4040,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
         {/* 높이·radius 는 위치 패널의 점검일과 같은 한 벌이다(§12 한 폼 안 입력 높이 혼용 금지). */}
-        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
+        {/* DatePicker 는 입력 이벤트가 없어 모달이 못 알아챈다 — 바꾸면 직접 알린다(§12 dirty). */}
+        <DatePicker value={date} onChange={v => { setDate(v); onDirty?.() }} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)]" />
       </div>
 
@@ -4019,13 +4119,20 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
             const hubStock = !rowIsHub && hubLoc ? { pathName: hubLoc.pathName, qty: hubLeft } : null
             const rowDraft = rowDrafts[loc.id]
             const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
+            // 창고 칸에 **옮기기 전 저장값이 그대로** 들어 있는데 이번 저장에 채움이 있다(도메인 P1-1 유령 재고).
+            // '저장된 값' 을 먼저 누르고 아래 행을 채웠거나 임시저장 복원으로 들어온 경우다 — 버튼을 숨겨도 칸의
+            // 값은 남아 허브 실측(hubMeasured)으로 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다. 상태를 늘리지 않고
+            // 값으로 가른다(우연히 같은 값을 센 경우도 경고는 뜨지만 고치는 길이 같아 해가 없다).
+            const hubStale = rowIsHub && restockSum > 0 && beforeStr !== '' && Number(beforeStr) === prevQty
             return (
               <div key={loc.id} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
                 {/* 창고 표시는 §22 정본 Badge 다 — 위치 패널 그룹 헤더의 `기본 창고` 와 같은 뱃지·같은 톤.
-                    평문 `(창고)` 로 쓰면 같은 사실을 두 화면이 다른 모양으로 말한다(디자이너 검수 2026-09-16). */}
+                    평문 `(창고)` 로 쓰면 같은 사실을 두 화면이 다른 모양으로 말한다(디자이너 검수 2026-09-16).
+                    낱말은 다르다 — 이 행은 **품목 창고**(hubLocationId 우선)라 '창고', 패널 그룹 헤더는
+                    영업장 기본 창고(StorageLocation.isHub)라 '기본 창고' 다(2026-10-12 낱말 통일). */}
                 <div className="flex items-baseline gap-1.5">
                   <p className="min-w-0 truncate text-xs font-medium text-[var(--warm-dark)]">{loc.pathName}</p>
-                  {rowIsHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
+                  {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
                 </div>
                 {/* 참고줄 — 입력 중에도 저장된 잔량·저장된 옮김이 계속 보이게. 축을 '저장본'과
                     '이번 입력'으로 갈라 같은 +N 이 한 줄에 두 번 뜨지 않게 한다. */}
@@ -4066,16 +4173,21 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                   // calcLocMove 가 후 − 전(빈칸=0) = 잔량 전체를 옮김량으로 셈해 허브 자기 행에 +N
                   // 마커가 박힌다(2026-09-11 김치). 창고에서 창고로 옮기는 일은 없다.
                   // 빈칸으로 둔다 — 안 적으면 서버가 '직전 − 옮김 합'을 파생으로 남긴다(참고줄이 그 값을 말한다).
+                  // placeholder 도 비운다. '0' 을 띄우면 비워 둔 칸이 '0kg 남음' 으로 읽힌다(빈칸=차감 후 값).
+                  <>
                   <div className="flex items-center gap-1.5">
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
-                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                    <input type="text" inputMode="decimal" autoComplete="off"
                       value={beforeStr}
                       onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }}
                       className={qtyInputCls} />
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                     {/* 참고줄의 '저장된 잔량' 과 같은 축의 말이다 — 채워 넣는 값이 그것이다.
-                        글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
-                    {prevQty !== undefined && (
+                        글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다.
+                        **이번 저장에 채움이 있으면 그리지 않는다**(도메인 P1-1 유령 재고). 저장된 값은 옮기기 전
+                        창고 양이라, 그걸 실측으로 박으면 허브 패치가 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다.
+                        글자는 이 한 자리뿐이다(check-draft-lifecycle 이 화면마다 1회로 센다). */}
+                    {prevQty !== undefined && restockSum <= 0 && (
                       <button type="button"
                         onClick={() => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) })) }}
                         className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
@@ -4083,13 +4195,29 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                       </button>
                     )}
                   </div>
+                  {/* 버튼 대신 규칙을 말한다. 줄 안에 두면 320px 에서 입력칸이 40px 대로 눌려 아래 줄에, 입력칸과 같은 들여쓰기로 둔다.
+                      낱말은 같은 폼의 '자동 차감' 이다(안내문·창고 요약과 한 벌). */}
+                  {restockSum > 0 && !hubStale && (
+                    <p className="pl-[4.375rem] break-keep text-[0.65625rem] text-[var(--warm-muted)]">비워 두면 채운 만큼 자동 차감됩니다.</p>
+                  )}
+                  {/* 저장값이 남아 있으면 같은 자리에서 경고하고 비우는 길을 준다. 비운 칸은 '안 셈'(entered 판정은 그대로,
+                      hubMeasured 는 값이 비면 거짓)이라 서버가 옮긴 만큼 깎은 파생값을 남긴다. */}
+                  {hubStale && (
+                    <div className="pl-[4.375rem] flex items-center justify-between gap-2">
+                      <p className="min-w-0 break-keep text-[0.65625rem] text-[var(--danger-fg)]">창고에서 빼기 전 저장값이 그대로입니다. 채운 만큼 두 번 남으니 비우거나 지금 센 값을 적으세요.</p>
+                      <RowActionBtn className="shrink-0" onClick={() => { onDirty?.(); setBeforeQtys(p => ({ ...p, [loc.id]: '' })) }}>비우기</RowActionBtn>
+                    </div>
+                  )}
+                  </>
                 ) : (
                   <>
-                    {/* 비허브 위치 점검 — 현재 잔량 / 채운 후(선택). 두 칸 모두 빈칸으로 시작한다. */}
+                    {/* 비허브 위치 점검 — 현재 잔량 / 채운 후(선택). 두 칸 모두 빈칸으로 시작한다.
+                        '채우기 전' 칸의 placeholder '0' 은 **채운 후만 적었을 때만** 보인다 — 그때 빈칸은 0 으로
+                        저장된다(운영자 확정 2026-09-01). 행을 통째로 비우면 이월이라 0 이 아니다. */}
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
                         <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
-                        <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                        <input type="text" inputMode="decimal" autoComplete="off" placeholder={afterStr !== '' && beforeStr === '' ? '0' : undefined}
                           value={beforeStr}
                           onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }}
                           className={qtyInputCls} />
@@ -4142,8 +4270,9 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                   type="text" inputMode="decimal" autoComplete="off"
                   value={locationQtys[loc.id] ?? ''}
                   onChange={e => handleLocChange(loc.id, e.target.value)}
+                  // '0' 은 뜻이 맞는 자리다 — 첫 점검이라 이월할 직전값이 없어 빈 위치는 0 으로 남는다(합계도 0 으로 센다).
                   placeholder="0"
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
               </div>
             </div>
           ))}
@@ -4154,9 +4283,10 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       ) : (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">잔량 *{stockUnit ? ` (${stockUnit})` : ''}</label>
+          {/* '0' 은 뜻이 맞는 자리다 — 위치 없는 품목은 빈칸으로 저장하면 잔량 0 으로 저장된다(Number('') = 0). */}
           <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]" />
         </div>
       )}
 
@@ -4221,7 +4351,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       {hubShort && (
         <HubShortDialog key={hubShort.trackedItemId} pending={hubShort}
           onResolved={() => { setHubShort(null); void clearDraftsAfterSave().then(() => onDone()) }}
-          onExit={(reason) => { setHubShort(null); if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.') }} />
+          onExit={(reason) => { setHubShort(null); if (reason === 'reconcile') pushToast('info', '창고의 실제 재고를 세어 창고 위치부터 맞춰 주세요.') }} />
       )}
     </form>
   )
@@ -4273,6 +4403,9 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
   const unit = item ? (item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint ?? '개') : (item.specUnit ?? item.qtyUnit ?? item.unitHint ?? '개')) : '개'
   const fromLoc = locStock?.find(l => l.id === fromId) ?? null
   const toLoc = locStock?.find(l => l.id === toId) ?? null
+  // 칩의 '(창고)' 는 **이 품목의 창고**다(카드·상세·점검 폼과 같은 판정, overview 의 hubLocationId 우선).
+  // locStock 의 isHub 는 영업장 기본 창고라, 그걸 찍으면 한 흐름 안에서 창고가 둘로 뜬다(검수 2026-10-12).
+  const itemHubId = item?.locations.find(l => l.isHub)?.id ?? null
   const qty = Number(qtyStr) || 0
   const moveQty = swapMode ? 0 : (qtyStr === '' ? (fromLoc?.qty ?? 0) : qty)
   // 남은 양은 **안 적는 것이 기본**이다(빈칸 = 장부에서 뺀 값). 0 은 '남은 게 없다'는 실측이므로
@@ -4357,7 +4490,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                   <button key={l.id} type="button" className={chip(fromId === l.id)}
                     // 남은 양은 출발지에 매인 값이다 — 출발지를 바꾸면 앞 위치의 실측이 남으면 안 된다.
                     onClick={() => { setFromId(l.id); setSrcLeftStr(''); if (toId === l.id) setToId('') }}>
-                    {l.pathName}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -4373,7 +4506,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                 {locStock.filter(l => l.id !== fromId && !l.closed).map(l => (
                   <button key={l.id} type="button" className={chip(toId === l.id)}
                     onClick={() => setToId(l.id)}>
-                    {l.pathName}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -4600,14 +4733,14 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
           </svg>
           <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[var(--warm-dark)]">창고(허브) 재고가 옮김량보다 {fmtQty(shortfall, unit)} 부족합니다</h2>
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">창고 재고가 옮김량보다 {fmtQty(shortfall, unit)} 부족합니다</h2>
             {itemLabel && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{itemLabel}</p>}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-3">
           <p className="text-xs text-[var(--warm-mid)]">
-            창고(허브) 현재 {fmtQty(hubQty, unit)} · 이번 옮김 {fmtQty(hubQty + shortfall, unit)}
+            창고 현재 {fmtQty(hubQty, unit)} · 이번 옮김 {fmtQty(hubQty + shortfall, unit)}
           </p>
           <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
             창고 장부가 실물과 다를 수 있어요. 실제 재고가 더 많다면 먼저 확인해 맞춰주세요.
@@ -5115,7 +5248,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     if (unsaved.length > 0) {
       setSaveFailed(unsaved.map(u => ({ id: locPairKey(u.r.id, u.locId), label: `${u.r.label} · ${u.locName}`, error: '창고 재고가 부족해 저장하지 않았습니다.' })))
     }
-    if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.')
+    if (reason === 'reconcile') pushToast('info', '창고의 실제 재고를 세어 창고 위치부터 맞춰 주세요.')
   }
 
   const handleSave = async () => {
@@ -5397,7 +5530,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
-              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. 아래 위치까지 한 번에 입력할 수 있습니다.
+              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고에서 자동 차감됩니다. 아래 위치까지 한 번에 입력할 수 있습니다.
             </p>
           </div>
           {!inline && (
@@ -5544,6 +5677,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       const hubOverdrawn = hubLeft != null && hubLeft < -HUB_SHORT_EPS
                       const hubStock = hubLoc ? { pathName: hubLoc.pathName, qty: hubLeft } : null
                       const itemMoves = rowIsHub ? hubMoves : 0
+                      // 창고 칸에 옮기기 전 저장값이 그대로 남았는데 이번 저장에 채움이 있다 — 아이템별 폼과 같은 판정(그 주석이 정본).
+                      const hubStale = rowIsHub && itemMoves > 0 && beforeStr !== '' && prev != null && Number(beforeStr) === prev.qty
                       // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
                       const rowDraft = rowDrafts[k]
                       const rowDraftEdited = rowDraft != null && (beforeStr !== rowDraft.before || afterStr !== rowDraft.after)
@@ -5598,16 +5733,20 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                             //    +N 마커로 박혔다(2026-09-11 김치 5층 하단 17kg, DB 전체 1건). 창고에서
                             //    창고로 옮기는 일은 없으므로 허브 칸은 실측 한 값이지 옮김이 아니다.
                             //    computeRow 의 finalN = afterN ?? beforeN 이라 저장 잔량은 그대로 이 값이다.
+                            //    placeholder 는 비운다 — '0' 은 비워 둔 칸(= 차감 후 값)을 '0 남음' 으로 읽히게 한다.
+                            <>
                             <div className="flex items-center gap-1.5">
                               <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
-                              <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                              <input type="text" inputMode="decimal" autoComplete="off"
                                 value={beforeStr}
                                 onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
                                 className={qtyInputCls} />
                               <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                               {/* 참고줄의 '저장된 잔량' 과 같은 축의 말이다 — 채워 넣는 값이 그것이다.
-                                  글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다. */}
-                              {prev != null && (
+                                  글자만으로는 19px 이라 §25 유사요소 확장으로 히트영역을 44px 로 넓힌다.
+                                  **이 품목의 이번 저장에 채움이 있으면 그리지 않는다** — 아이템별 폼과 같은 규칙이다
+                                  (그 주석이 정본, 도메인 P1-1 유령 재고). 글자는 이 한 자리뿐이다. */}
+                              {prev != null && itemMoves <= 0 && (
                                 <button type="button"
                                   onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}
                                   className="relative shrink-0 text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10 before:absolute before:content-[''] before:-inset-x-1 before:-inset-y-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
@@ -5615,13 +5754,24 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                 </button>
                               )}
                             </div>
+                            {itemMoves > 0 && !hubStale && (
+                              <p className="pl-[4.375rem] break-keep text-[0.65625rem] text-[var(--warm-muted)]">비워 두면 채운 만큼 자동 차감됩니다.</p>
+                            )}
+                            {hubStale && (
+                              <div className="pl-[4.375rem] flex items-center justify-between gap-2">
+                                <p className="min-w-0 break-keep text-[0.65625rem] text-[var(--danger-fg)]">창고에서 빼기 전 저장값이 그대로입니다. 채운 만큼 두 번 남으니 비우거나 지금 센 값을 적으세요.</p>
+                                <RowActionBtn className="shrink-0" onClick={() => setBeforeQtys(p => ({ ...p, [k]: '' }))}>비우기</RowActionBtn>
+                              </div>
+                            )}
+                            </>
                           ) : (
                             <>
-                              {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택) */}
+                              {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택).
+                                  '채우기 전' placeholder '0' 은 채운 후만 적었을 때만(빈칸=0, 2026-09-01) — 아이템별 폼과 같다. */}
                               <div className="grid grid-cols-2 gap-1.5">
                                 <div>
                                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
-                                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
+                                  <input type="text" inputMode="decimal" autoComplete="off" placeholder={afterStr !== '' && beforeStr === '' ? '0' : undefined}
                                     value={beforeStr}
                                     onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))}
                                     className={qtyInputCls} />
@@ -5729,7 +5879,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         {locId && scopeItemCount > 0 && totalRestock > 0 && (
           <div className="border-t border-[var(--coral)]/20 bg-[var(--coral)]/5 px-5 py-2 shrink-0">
             <p className="text-[0.6875rem] text-[var(--warm-mid)]">
-              채운 만큼 각 품목의 창고(허브) 잔량에서 자동 차감됩니다.
+              채운 만큼 각 품목의 창고 잔량에서 자동 차감됩니다.
             </p>
           </div>
         )}
@@ -6052,7 +6202,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
   const undo = async (id: string) => {
     const ok = await confirmDialog({
       title: '이 병합을 적용취소할까요?',
-      message: '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n카드 병합이었던 경우 위치별 재고 연결·허브(창고) 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.',
+      message: '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n카드 병합이었던 경우 위치별 재고 연결·창고 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.',
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
@@ -7126,9 +7276,13 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
 }
 
 // ── 폐기 기록 폼 — 무상 입수의 거울(유출). 서버가 잔량 초과·이후 점검 존재를 거부(이중 차감 방지).
-function DisposalForm({ item, onCancel, onDone }: {
+function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
+  // 적용취소 뒤 표시 갱신만 — 모드는 건드리지 않는다. 폐기를 기록하고 곧장 재고 점검을 적는 것이
+  // 안내된 순서라(오류신고 a1e048e8), 그 사이 적용취소가 onDone 으로 보기 화면을 띄우면 적던 점검이 사라진다.
+  onUndone: () => void
+  onDirty?: () => void   // 날짜(DatePicker)는 입력 이벤트가 없어 직접 알린다(§12 dirty)
 }) {
   const stockUnit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   const [date, setDate] = useState(kstYmdStr())
@@ -7151,7 +7305,15 @@ function DisposalForm({ item, onCancel, onDone }: {
         storageLocationId: storageLocationId || null,
       })
       if (!res.ok) { setError(res.error); return }
-      pushToast('success', '폐기를 기록했습니다')
+      // §16 — 폐기 저장에도 적용취소. 되돌림은 이미 있는 폐기 삭제(deleteStockDisposal)다. 만든 행 하나를
+      // 지우는 것이 정확히 역동작이다(폐기는 뒤 점검을 옮기지 않는다). 무상 입수 저장 토스트와 같은 문법.
+      const newId = res.id
+      pushToast('success', '폐기를 기록했습니다', {
+        action: { label: '적용취소', run: () => { void deleteStockDisposal(newId).then(r => {
+          if (r.ok) { pushToast('info', '폐기 기록을 적용취소했습니다 · 기록 전으로 복귀'); onUndone() }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      })
       onDone()
     })
   }
@@ -7161,15 +7323,15 @@ function DisposalForm({ item, onCancel, onDone }: {
       <p className="text-xs text-[var(--warm-muted)]">상하거나 버려서 줄어든 양을 기록합니다. 소모량 계산에서 분리되어 소진 예측이 왜곡되지 않습니다. 점검 저장 전에 먼저 기록하세요.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기일 *</label>
-        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
+        <DatePicker value={date} onChange={v => { setDate(v); onDirty?.() }} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기 수량 *</label>
         <div className="flex gap-1.5 items-center">
+          {/* placeholder 없음 — 빈칸은 0 이 아니라 저장이 거부되는 칸이다(0 보다 커야 한다). '0' 을 띄우면 그 뜻이 뒤집힌다. */}
           <input type="text" inputMode="decimal" autoComplete="off" value={qtyStr}
             onChange={e => setQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
-            placeholder="0"
             className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           <span className="text-xs text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
         </div>
@@ -7208,9 +7370,12 @@ function DisposalForm({ item, onCancel, onDone }: {
   )
 }
 
-function AdditionForm({ item, onCancel, onDone }: {
+function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
+  // 저장 적용취소 뒤 갱신만(모드 유지) — 폐기 onUndone 과 같은 이유. 없으면 종전처럼 onDone.
+  onUndone?: () => void
+  onDirty?: () => void   // 날짜(DatePicker)는 입력 이벤트가 없어 직접 알린다(§12 dirty)
 }) {
   // trackUnit='qty': specUnit 있어도 매(qtyUnit) 단위로 단일 입력
   // trackUnit='spec' & specUnit 있음: 규격 × 수량 두 입력
@@ -7265,7 +7430,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         pushToast('success', '입수 기록 저장됨', {
           detail: `점검 ${ask.result.count}건의 잔량도 함께 옮겼습니다.`,
           action: { label: '적용취소', run: () => { void deleteStockAddition(newId, { adjustFollowing: true }).then(r => {
-            if (r.ok) { pushToast('info', '입수 기록 저장을 적용취소했습니다 · 저장 전으로 복귀'); onDone() }
+            if (r.ok) { pushToast('info', '입수 기록 저장을 적용취소했습니다 · 저장 전으로 복귀'); (onUndone ?? onDone)() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
         })
@@ -7279,7 +7444,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 수령, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>
-        <DatePicker value={date} onChange={setDate} maxDate={kstYmdStr()}
+        <DatePicker value={date} onChange={v => { setDate(v); onDirty?.() }} maxDate={kstYmdStr()}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
       {useSpec ? (
@@ -7288,9 +7453,9 @@ function AdditionForm({ item, onCancel, onDone }: {
             <div className="space-y-1.5">
               <label className="text-[0.65625rem] text-[var(--warm-muted)]">규격</label>
               <div className="flex gap-1.5 items-center">
+                {/* placeholder 없음 — 빈칸은 0 이 아니라 저장이 거부되는 칸이다(폐기 수량칸과 같은 규칙). */}
                 <input type="text" inputMode="decimal" autoComplete="off" value={specQty}
                   onChange={e => setSpecQty(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder="0"
                   className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.specUnit}</span>
               </div>
@@ -7317,7 +7482,6 @@ function AdditionForm({ item, onCancel, onDone }: {
           <label className="text-xs font-medium text-[var(--warm-mid)]">수량 *{qtyUnitLabel ? ` (${qtyUnitLabel})` : ''}</label>
           <input type="text" inputMode="decimal" autoComplete="off" value={qtyOnly}
             onChange={e => setQtyOnly(e.target.value.replace(/[^0-9.]/g, ''))}
-            placeholder="0"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
       )}
@@ -7338,7 +7502,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
             {item.locations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (허브)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
             ))}
           </select>
         </div>

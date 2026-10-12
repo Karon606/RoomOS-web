@@ -173,7 +173,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       include: {
         locationBreakdown: {
-          include: { storageLocation: { select: { id: true, name: true } } },
+          include: { storageLocation: { select: { id: true, name: true, sortOrder: true } } },
           orderBy: { storageLocation: { sortOrder: 'asc' } },
         },
       },
@@ -210,7 +210,12 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     ...checks.map(c => ({
       type: 'check' as const,
       id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile,
-      locationBreakdown: c.locationBreakdown.map(lb => ({
+      // 칩 차례는 아래 locations 와 같은 트리(DFS) 순이다. sortOrder 는 형제 사이 순서라 부모가 다른
+      // 칸끼리 견주면 층이 섞인다(4층 상단 · 5층 상단 · 4층 하단). 표시 순서만 바뀌고 값은 그대로다.
+      locationBreakdown: [...c.locationBreakdown].sort((a, b) =>
+        locPaths.rank(a.storageLocationId) - locPaths.rank(b.storageLocationId)
+        || a.storageLocation.sortOrder - b.storageLocation.sortOrder
+        || a.storageLocation.name.localeCompare(b.storageLocation.name)).map(lb => ({
         locationId: lb.storageLocationId,
         locationName: locPaths.pathName(lb.storageLocationId) ?? lb.storageLocation.name,
         qty: lb.remainingQty,
@@ -957,7 +962,7 @@ export async function createStockCheck(data: {
           ok: false, code: 'HUB_SHORT', trackedItemId: data.trackedItemId,
           hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
           others: await withOtherNames(propertyId, short.others),
-          error: '창고(허브) 재고가 보충량보다 부족합니다.',
+          error: '창고 재고가 보충량보다 부족합니다.',
           // 걸린 자리의 **위치 id** 를 그대로 준다 — 인덱스는 서버가 정렬한 뒤의 자리라 클라가 보낸
           // 배열과 어긋난다(검수 지적 2026-09-16). 화면은 이 id 로 이름을 찾아 어느 칸인지 말한다.
           patchIndex: applied.index,
@@ -997,7 +1002,7 @@ export async function createStockCheck(data: {
               ok: false, code: 'HUB_SHORT', trackedItemId: data.trackedItemId,
               hubLocationId, hubQty, shortfall: restockSum - hubQty,
               others: await withOtherNames(propertyId, others),
-              error: '창고(허브) 재고가 보충량보다 부족합니다.',
+              error: '창고 재고가 보충량보다 부족합니다.',
             }
           }
         }
@@ -1221,7 +1226,7 @@ export async function updateStockCheck(id: string, data: {
           ok: false, code: 'HUB_SHORT', trackedItemId: c.trackedItemId,
           hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
           others: await withOtherNames(propertyId, short.others),
-          error: '창고(허브) 재고가 보충량보다 부족합니다.',
+          error: '창고 재고가 보충량보다 부족합니다.',
         }
       }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
@@ -1250,7 +1255,7 @@ export async function updateStockCheck(id: string, data: {
               ok: false, code: 'HUB_SHORT', trackedItemId: c.trackedItemId,
               hubLocationId, hubQty, shortfall: restockSum - hubQty,
               others: await withOtherNames(propertyId, others),
-              error: '보충량이 창고(허브) 재고를 초과합니다. 창고를 먼저 채우거나 실측해 주세요.',
+              error: '보충량이 창고 재고를 초과합니다. 창고를 먼저 채우거나 실측해 주세요.',
             }
           }
         }

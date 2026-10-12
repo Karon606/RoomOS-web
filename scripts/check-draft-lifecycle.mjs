@@ -498,6 +498,23 @@ need("'저장된 값' 버튼이 두 화면 모두에 있다",
   (itemForm.match(/>\s*저장된 값\s*</g) ?? []).length === 1 &&
   (locPanel.match(/>\s*저장된 값\s*</g) ?? []).length === 1,
   '참고줄의 저장된 잔량을 칸에 채워 넣는 자리 — 한쪽만 있으면 같은 일에 입구가 갈린다')
+// 창고 행 유령 재고(도메인 P1-1, 2026-10-12). 창고 칸은 허브 패치로 **맨 뒤에 덮어쓰는** 실측이라, 같은 저장에
+// 채움(창고에서 빼 옴)이 있는데 옮기기 전 저장값을 그대로 적으면 옮긴 만큼이 두 번 남는다. 막는 축은 둘이다.
+//   ⓐ 채움이 있으면 '저장된 값' 버튼을 안 그린다(그 자리에 자동 차감 캡션).
+//   ⓑ 그래도 칸에 저장값이 남았으면(버튼을 먼저 눌렀거나 임시저장 복원) 경고 + 비우기를 띄운다.
+//      ⓐ 만 있으면 입력 순서에 따라 값이 남는다(독립 검수 2026-10-12 재현) — 두 화면 모두.
+need("채움이 있으면 창고 행 '저장된 값' 을 안 그린다(두 화면)",
+  /\{prevQty !== undefined && restockSum <= 0 && \(/.test(itemForm) &&
+  /\{prev != null && itemMoves <= 0 && \(/.test(locPanel),
+  '옮기기 전 창고 양을 실측으로 박는 입구다 — 허브 패치가 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다')
+need('창고 칸에 저장값이 남으면 경고와 비우기가 선다(두 화면)',
+  /const hubStale = rowIsHub && restockSum > 0 && beforeStr !== '' && Number\(beforeStr\) === prevQty/.test(itemForm) &&
+  /\{hubStale && \(/.test(itemForm) &&
+  /setBeforeQtys\(p => \(\{ \.\.\.p, \[loc\.id\]: '' \}\)\)/.test(itemForm) &&
+  /const hubStale = rowIsHub && itemMoves > 0 && beforeStr !== '' && prev != null && Number\(beforeStr\) === prev\.qty/.test(locPanel) &&
+  /\{hubStale && \(/.test(locPanel) &&
+  /setBeforeQtys\(p => \(\{ \.\.\.p, \[k\]: '' \}\)\)/.test(locPanel),
+  "버튼만 숨기면 '저장된 값' 을 먼저 누르고 아래 행을 채운 순서·임시저장 복원에서 그 값이 그대로 저장된다")
 need("'옮김 없음' 버튼이 두 화면 모두에 있다",
   (itemForm.match(/>\s*옮김 없음\s*</g) ?? []).length === 1 &&
   (locPanel.match(/>\s*옮김 없음\s*</g) ?? []).length === 1)
