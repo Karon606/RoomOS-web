@@ -22,13 +22,23 @@ export type PopoverPos = { top: number; left: number; width: number }
  *
  * 폭은 `max(트리거 폭, minWidth)` 다. 좁은 칸에서도 팝업 안이 눌리지 않게 하한을 둔다.
  * 좌우는 화면에서 8px 안쪽으로 물린다. 아래 공간이 `estimatedHeight` 보다 좁으면 위로 뒤집는다.
+ *
+ * 선택 두 개(기본값이면 종전과 한 픽셀도 안 다르다, 2026-10-12 재고 상세 3단계):
+ *  · `placement: 'above'` — 위에 자리가 있으면 위로 먼저 뜬다. 모달 발끝 메뉴는 아래로 뜨면 바로 밑의 주 버튼을
+ *    덮고 모달 밖으로 나간다(짧은 모달·데스크톱 실측). 위에도 자리가 없을 때만 아래로 간다.
+ *  · `align: 'end'` — 팝업 오른쪽 끝을 트리거 오른쪽 끝에 맞춘다. 줄 오른쪽 끝의 트리거에서 왼쪽 정렬로 열면
+ *    넓은 화면에서 팝업이 모달 오른쪽 밖으로 삐져나간다.
  */
 export function usePopoverAnchor<T extends HTMLElement = HTMLButtonElement>(opts?: {
   minWidth?: number
   estimatedHeight?: number
+  placement?: 'auto' | 'above'
+  align?: 'start' | 'end'
 }) {
   const minWidth = opts?.minWidth ?? 280
   const estimatedHeight = opts?.estimatedHeight ?? 340
+  const placement = opts?.placement ?? 'auto'
+  const align = opts?.align ?? 'start'
   const [pos, setPos] = useState<PopoverPos>({ top: 0, left: 0, width: 0 })
   const triggerRef = useRef<T>(null)
 
@@ -38,9 +48,13 @@ export function usePopoverAnchor<T extends HTMLElement = HTMLButtonElement>(opts
     if (!el) return
     const r = el.getBoundingClientRect()
     const width = Math.max(r.width, minWidth)
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+    const left = Math.max(8, Math.min(align === 'end' ? r.right - width : r.left, window.innerWidth - width - 8))
     const spaceBelow = window.innerHeight - r.bottom - 8
-    const top = spaceBelow >= estimatedHeight
+    const spaceAbove = r.top - 8
+    const below = placement === 'above'
+      ? spaceAbove < estimatedHeight && spaceBelow >= estimatedHeight
+      : spaceBelow >= estimatedHeight
+    const top = below
       ? r.bottom + 4
       : Math.max(8, r.top - estimatedHeight - 4)
     setPos({ top, left, width })
