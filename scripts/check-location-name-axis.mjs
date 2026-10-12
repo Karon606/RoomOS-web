@@ -149,7 +149,10 @@ function mustNot(file, block, label, pattern) {
   const f = 'app/(app)/inventory/InventoryClient.tsx'
   const BLOCKS = [
     ['InventoryCard(카드 칩)', 'function InventoryCard(', 'function AddItemModal(', 1],
-    ['DetailModal(상세 위치 칩·허브 목록)', 'function DetailModal(', 'function MonthlyInflowList(', 2],
+    // 3단계(2026-10-12) — 상세의 창고 표시는 탭 위 요약 블록(DetailViewSummary)과 창고 패널(ItemHubPicker)로 옮겼다.
+    // 블록은 그 둘부터 DetailModal 본문 끝까지다 — DetailModal 을 빼면 본문에 평면 이름(.name)이 되살아나도 못 본다
+    // (검수 지적). 요약의 창고 경로 하나 + 패널 후보 행 하나 = 최소 2.
+    ['DetailViewSummary~DetailModal(상세 요약 창고·창고 패널·상세 본문)', 'function DetailViewSummary(', 'function MonthlyInflowList(', 2],
     ['TimelineRow(수령 위치 칩)', 'function TimelineRow(', 'function DiffAttributionChoice(', 1],
     ['TimelineReconcileForm(보정 행)', 'function TimelineReconcileForm(', 'function InventoryCategorySettingsModal(', 1],
     ['FullReconcileModal(일괄 보정 행)', 'function FullReconcileModal(', 'function CheckEditForm(', 1],

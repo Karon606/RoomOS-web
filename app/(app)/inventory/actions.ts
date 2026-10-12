@@ -154,6 +154,9 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   // unitHint = 표시 전용 단위 폴백(overview.resolveUnitHint 정본) — 카드 qtyUnit 이 비었을 때만 쓰인다.
   item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }
   timeline: TimelineEntry[]
+  // 품목 삭제가 서버에서 통과하는가 — 거부 판정과 **같은 계수**(itemRecordCounts)로 낸다. 이력(timeline)은 재고 제외 지출과
+  // 다른 단위 지출을 안 보여 줘 그것으로 가르면 '이력 0건인데 서버 거부'가 생긴다(2026-10-12 검수, 옥상 폐기물처리 실측).
+  deletable: boolean
 } | null> {
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({
@@ -167,7 +170,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   })
   if (!item) return null
 
-  const [checks, additions, disposals, purchases, unitHint, locPaths] = await Promise.all([
+  const [checks, additions, disposals, purchases, unitHint, locPaths, records] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -204,6 +207,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
     // 표기 경로 — 타임라인·위치 칩에 찍는 이름은 전부 pathName 이다(카드와 같은 글자).
     loadLocationPaths(propertyId),
+    itemRecordCounts(propertyId, item),
   ])
 
   const timeline: TimelineEntry[] = [
@@ -291,6 +295,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         .sort((a, b) => locPaths.rank(a.id) - locPaths.rank(b.id) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
     },
     timeline,
+    deletable: records.total === 0,
   }
 }
 
@@ -4175,29 +4180,110 @@ export async function undoCloseItemLocation(undo: CloseLocationUndo): Promise<{ 
   }
 }
 
+// ── 품목에 딸린 기록 수 — 삭제 가능 판정의 정본 한 곳(2026-10-12 재고 정비 3단계 검수).
+//    삭제 거부(deleteTrackedItemIfEmpty)와 상세 메뉴의 '품목 삭제' 노출(getInventoryDetail.deletable)이 이 함수 하나를 쓴다.
+//    지출은 품명(카테고리+라벨)으로 잇는 기록이라 재고 제외·다른 단위까지 **전부** 센다 — 품목을 지우면 그 지출이 가리킬
+//    카드가 사라진다. 이력 화면은 그중 일부만 보여 주므로 이력 건수로 가르면 화면과 서버가 갈린다.
+async function itemRecordCounts(propertyId: string, it: { id: string; category: string; label: string }) {
+  const [expense, check, addition, disposal] = await Promise.all([
+    prisma.expense.count({ where: { propertyId, category: it.category, itemLabel: it.label } }),
+    prisma.stockCheck.count({ where: { trackedItemId: it.id } }),
+    prisma.stockAddition.count({ where: { trackedItemId: it.id } }),
+    prisma.stockDisposal.count({ where: { trackedItemId: it.id } }),
+  ])
+  return { expense, check, addition, disposal, total: expense + check + addition + disposal }
+}
+
+// 품목 삭제 적용취소 스냅샷 — 기록이 없는 품목만 지워지므로 되살릴 것은 그 품목 행과, 행이 지워질 때 FK 로 함께 지워지는
+// 셋(위치 연결 · 점검 임시저장 · 병합 추천 규칙)뿐이다(DB 실측: tracked_items 를 참조하는 FK 여섯은 전부 ON DELETE CASCADE,
+// 그중 점검·입수·폐기는 0건이라 삭제가 통과했다). **같은 id 로** 되살린다 — 병합 되돌리기 기록(targetItemId, FK 없음)과
+// 화면이 쥔 id 가 그대로 이어진다.
+export type TrackedItemDeleteUndo = {
+  item: {
+    id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null
+    alertThresholdDays: number; reorderMemo: string | null; purchaseUrl: string | null; trackUnit: string
+    hubLocationId: string | null; isArchived: boolean; sortOrder: number | null; memo: string | null; createdAt: string
+  }
+  locations: { storageLocationId: string; closedAt: string | null }[]
+  drafts: { locationId: string | null; data: Prisma.InputJsonValue }[]
+  mergeRules: { category: string; sourceLabel: string; normLabel: string; kind: string }[]
+}
+
 // ── 기록 없는 품목 진짜 삭제 — 카테고리 착오 등으로 자동 생성된 품목의 되돌리기(신고 f3454e4c).
-//    지출·점검·입수 기록이 하나라도 있으면 거부(그 경우 '숨기기'). v2.0 §16 되돌리기 원칙.
-export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+//    지출·점검·입수·폐기 기록이 하나라도 있으면 거부(그 경우 '숨기기'). 거부 판정은 itemRecordCounts 정본.
+//    v2.0 §16 — 지운 품목은 적용취소(undoDeleteTrackedItem)로 같은 id 로 되살린다.
+export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true; undo: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId }, include: { locations: true, checkDrafts: true } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    const [expCount, checkCount, addCount, dispCount] = await Promise.all([
-      prisma.expense.count({ where: { propertyId, category: it.category, itemLabel: it.label } }),
-      prisma.stockCheck.count({ where: { trackedItemId: id } }),
-      prisma.stockAddition.count({ where: { trackedItemId: id } }),
-      prisma.stockDisposal.count({ where: { trackedItemId: id } }),
-    ])
-    if (expCount + checkCount + addCount + dispCount > 0) {
-      return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${expCount}·점검 ${checkCount}·입수 ${addCount}·폐기 ${dispCount}건). 대신 '숨김'을 사용하세요.` }
+    const n = await itemRecordCounts(propertyId, it)
+    if (n.total > 0) {
+      return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${n.expense}·점검 ${n.check}·입수 ${n.addition}·폐기 ${n.disposal}건). 대신 '숨김'을 사용하세요.` }
+    }
+    const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId, targetItemId: id } })
+    const undo: TrackedItemDeleteUndo = {
+      item: {
+        id: it.id, category: it.category, label: it.label, specUnit: it.specUnit, qtyUnit: it.qtyUnit,
+        alertThresholdDays: it.alertThresholdDays, reorderMemo: it.reorderMemo, purchaseUrl: it.purchaseUrl, trackUnit: it.trackUnit,
+        hubLocationId: it.hubLocationId, isArchived: it.isArchived, sortOrder: it.sortOrder, memo: it.memo, createdAt: it.createdAt.toISOString(),
+      },
+      locations: it.locations.map(l => ({ storageLocationId: l.storageLocationId, closedAt: l.closedAt ? l.closedAt.toISOString() : null })),
+      drafts: it.checkDrafts.map(d => ({ locationId: d.locationId, data: d.data as Prisma.InputJsonValue })),
+      mergeRules: rules.map(r => ({ category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, kind: r.kind })),
     }
     await prisma.trackedItem.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+// 품목 삭제 적용취소 — 스냅샷을 같은 id 로 한 트랜잭션에 되살린다. 영업장은 스냅샷이 아니라 세션에서 정한다.
+// 그 사이 같은 이름(카테고리+라벨) 품목이 생겼으면 되살리지 않는다(유니크 충돌 — 두 카드가 한 품명을 다투게 된다).
+// 위치·창고는 이 영업장에 지금 있는 위치만 잇는다(그 사이 지운 위치는 건너뛴다).
+export async function undoDeleteTrackedItem(undo: TrackedItemDeleteUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const same = await prisma.trackedItem.findUnique({ where: { id: undo.item.id }, select: { propertyId: true } })
+    if (same) return same.propertyId === propertyId ? { ok: true } : { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    const clash = await prisma.trackedItem.findUnique({
+      where: { propertyId_category_label: { propertyId, category: undo.item.category, label: undo.item.label } }, select: { id: true },
+    })
+    if (clash) return { ok: false, error: '같은 이름의 품목이 이미 있어 되살릴 수 없습니다.' }
+    const wantLocIds = [...new Set([...undo.locations.map(l => l.storageLocationId), ...(undo.item.hubLocationId ? [undo.item.hubLocationId] : []), ...undo.drafts.flatMap(d => d.locationId ? [d.locationId] : [])])]
+    const liveLocIds = new Set((await prisma.storageLocation.findMany({ where: { propertyId, id: { in: wantLocIds } }, select: { id: true } })).map(l => l.id))
+    const i = undo.item
+    await prisma.$transaction(async tx => {
+      await tx.trackedItem.create({
+        data: {
+          id: i.id, propertyId, category: i.category, label: i.label, specUnit: i.specUnit, qtyUnit: i.qtyUnit,
+          alertThresholdDays: i.alertThresholdDays, reorderMemo: i.reorderMemo, purchaseUrl: i.purchaseUrl, trackUnit: i.trackUnit,
+          hubLocationId: i.hubLocationId && liveLocIds.has(i.hubLocationId) ? i.hubLocationId : null,
+          isArchived: i.isArchived, sortOrder: i.sortOrder, memo: i.memo, createdAt: new Date(i.createdAt),
+        },
+      })
+      const links = undo.locations.filter(l => liveLocIds.has(l.storageLocationId))
+      if (links.length > 0) {
+        await tx.trackedItemLocation.createMany({ data: links.map(l => ({ trackedItemId: i.id, storageLocationId: l.storageLocationId, closedAt: l.closedAt ? new Date(l.closedAt) : null })) })
+      }
+      for (const d of undo.drafts) {
+        if (d.locationId && !liveLocIds.has(d.locationId)) continue
+        await tx.stockCheckDraft.create({ data: { trackedItemId: i.id, locationId: d.locationId, data: d.data } })
+      }
+      if (undo.mergeRules.length > 0) {
+        await tx.trackedItemMergeRule.createMany({ data: undo.mergeRules.map(r => ({ propertyId, category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, targetItemId: i.id, kind: r.kind })), skipDuplicates: true })
+      }
+    })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
   }
 }
 

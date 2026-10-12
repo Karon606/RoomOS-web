@@ -48,6 +48,7 @@ import {
   changeTrackedItemUnit,
   archiveTrackedItem,
   deleteTrackedItemIfEmpty,
+  undoDeleteTrackedItem,
   getArchivedTrackedItems,
   unarchiveTrackedItem,
   mergeTrackedItems,
@@ -1604,10 +1605,10 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
 // 골격은 **열릴 모드의 모양**을 본뜬다(§21 결정표 5 — 모달 내부는 인라인 스켈레톤). '다음 품목'
 // 으로 이어 열면 점검 폼부터 뜨므로, 그때 보기 골격을 그리면 로디드에서 통째로 갈아엎히는 점프가 된다.
 // 막대 색은 재고 loading.tsx 와 같은 --canvas 다(§17 최대 8 — 여기서는 최상단 블록 8).
-function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
+function DetailModalSkeleton({ mode, row }: { mode: 'view' | 'check'; row: InventoryRow }) {
   const bar = 'rounded-md bg-[var(--canvas)] animate-pulse'
   // 여백은 **대체할 화면의 것**이다(디자이너 검수 2026-09-16). 점검 폼은 `px-5 sm:px-6 py-4`(2단계 검수 12 —
-  // 모달 발끝 px-6 과 맞췄다), 보기 화면은 `px-5 sm:px-6 pt-3` 이다.
+  // 모달 발끝 px-6 과 맞췄다), 보기 화면은 두 블록(위 `px-5 sm:px-6 pt-3` · 이력 `px-5 sm:px-6 py-3`)이다.
   return mode === 'check' ? (
     <div className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback" aria-busy="true" aria-label="불러오는 중">
       {/* 안내문 — 실제 폼의 첫 블록이다. 빼면 골격이 통째로 위로 당겨 붙는다. **실제와 같은 문장**을 글자색 없이
@@ -1669,9 +1670,12 @@ function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
       <div className="flex h-11 items-center"><div className={`h-4 w-28 ${bar}`} /></div>
     </div>
   ) : (
-    <div className="px-5 sm:px-6 pt-3 space-y-3 delayed-fallback" aria-busy="true" aria-label="불러오는 중">
-      {/* 마지막 점검 캡션 · 밑줄 탭 · 창고(허브) 칩 */}
-      <div className={`h-3 w-40 ${bar}`} />
+    // 실제 보기 화면처럼 **두 블록**이다(3단계 — 한 블록 space-y-3 이던 종전 골격은 실제와 세로 12px 어긋났다,
+    // knowledge/open-issues 2026-09-16). 위 블록은 요약을 실제 함수 그대로 글자 없이 그리고(폭마다 줄 수가 같다)
+    // 탭 모형을 잇는다. 발끝 두 줄은 DetailViewFooterSkeleton 이 Modal 발끝 자리에 그린다.
+    <div className="delayed-fallback" aria-busy="true" aria-label="불러오는 중">
+    <div className="px-5 sm:px-6 pt-3">
+      <DetailViewSummary row={row} ghost />
       {/* 밑줄 탭 모형 — 정본 ViewTabs(fill)와 같은 치수(gap-6·min-h 44/40·행 밑선·활성 2px 바).
           막대로 그리면 로디드 순간 탭 높이만큼 아래가 밀린다(재고 loading.tsx 탭 모형과 같은 문법).
           활성 바는 칸 폭이 아니라 **글자 폭**이다 — 정본이 글자 span 을 재서 바를 긋는다(barRectOf).
@@ -1687,11 +1691,13 @@ function DetailModalSkeleton({ mode }: { mode: 'view' | 'check' }) {
           <span className="inline-flex items-center whitespace-nowrap py-2.5 md:py-2 text-[var(--warm-dark)]">단가 추이</span>
         </span>
       </div>
-      <div className={`h-7 w-44 ${bar}`} />
-      {/* 타임라인 행 */}
-      <div className="space-y-2">
+    </div>
+    {/* 이력 행 — 실제 이력 블록과 같은 여백·행 간격(py-3 · space-y-1.5). 행 높이는 기록마다 달라 고정 막대다. */}
+    <div className="px-5 sm:px-6 py-3">
+      <div className="space-y-1.5">
         {[0, 1, 2, 3, 4].map(i => <div key={i} className={`h-12 ${bar}`} />)}
       </div>
+    </div>
     </div>
   )
 }
@@ -1715,6 +1721,236 @@ function DetailCheckFooterSkeleton({ restock }: { restock: boolean }) {
         <div className={`h-11 flex-1 ${bar}`} />
         <div className={`h-11 flex-1 ${bar}`} />
       </div>
+    </div>
+  )
+}
+
+// 품목 상세 보기 맨 위 요약 — 지금 잔량 · 최근 점검 · 창고(재고 화면 정비 3단계, 운영자 승인 패널 계획).
+// 지금 잔량이 상세 어디에도 없었고, 창고는 탭 아래 honey 칩이라 경고 배지처럼 읽혔다. 읽는 줄은 면 없이 12px 라벨 +
+// 값(tnum)이다 — 재고 정비 패널 디자이너 결정(B2 '키-값 한 줄', 운영자 승인)이 근거다. §12 의 자동 합산 읽기 전용 칸
+// (--sand-s 면)은 폼 안 파생값 자리라 여기와 다르다. 값은 카드와 같은 출처(row)·같은 단위 식이다.
+// 골격(DetailModalSkeleton 보기)도 이 함수를 ghost 로 그린다 — 같은 글자를 투명하게 그려 폭마다 줄 수가 실제와
+// 같다(2단계 안내문 골격과 같은 문법). 그래서 로디드 순간 탭과 이력이 한 픽셀도 안 움직인다.
+function DetailViewSummary({ row, hubPicker, ghost = false }: { row: InventoryRow; hubPicker?: React.ReactNode; ghost?: boolean }) {
+  const unit = row.trackUnit === 'qty' ? (row.qtyUnit ?? row.unitHint) : (row.specUnit ?? row.qtyUnit ?? row.unitHint)
+  const bar = 'rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]'
+  const g = (s: string) => ghost ? <span className={bar}>{s}</span> : s
+  // 잔량을 모르면(점검 전) 대시를 쓰지 않는다 — 이 앱에서 대시는 '대상 없음'으로 학습된 기호다(카드 주석과 같은 이유).
+  const nowText = row.currentStock == null ? '미확인' : fmtQty(row.currentStock, unit)
+  // 최근 점검 — 점검일과 기록 시각이 다른 날이면 둘 다(종전 캡션 그대로). 맞바꿈·이동 기록 시각이어도 지금은 숫자만(종류 병기는 4단계).
+  const created = row.lastCheckCreatedAt ? new Date(row.lastCheckCreatedAt) : null
+  const lastText = created == null ? '기록 없음'
+    : (row.lastCheckDate ? isSameKstDay(new Date(row.lastCheckDate), created) : true)
+      ? `${fmtDate(row.lastCheckDate)} ${fmtTime(created)}`
+      : `${fmtDate(row.lastCheckDate)} · ${fmtDate(created)} ${fmtTime(created)} 기록`
+  const itemHub = row.locations.find(l => l.isHub) ?? null
+  // 창고 잔량 부기 — 모르면(창고 미지정·breakdown 없음) 숫자를 지어내지 않고 생략한다.
+  const itemHubQty = itemHub ? row.currentLocationBreakdown.find(lb => lb.locationId === itemHub.id)?.qty ?? null : null
+  // 지정 없이 영업장 기본 창고를 따르는 중이면 그 사실을 값 뒤에 흐리게 적는다 — 패널의 체크가 '기본 창고 따르기' 에
+  // 서는데 요약이 위치 이름만 말하면 둘이 다른 말을 하는 것처럼 읽힌다(검수). 골격도 같은 row 로 그려 폭이 같다.
+  const followsDefault = row.hubLocationId == null && itemHub != null
+  const label = 'w-14 shrink-0 text-xs text-[var(--warm-muted)]'
+  const value = 'min-w-0 flex-1 text-sm text-[var(--warm-dark)] tnum break-keep'
+  return (
+    <div className="mb-3 space-y-1">
+      <div className="flex items-baseline gap-3">
+        <span className={label}>{g('지금')}</span>
+        <span className={`${value} ${row.currentStock == null ? 'text-[var(--warm-muted)]' : 'font-semibold'}`}>{g(nowText)}</span>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <span className={label}>{g('최근 점검')}</span>
+        <span className={`${value} ${created == null ? 'text-[var(--warm-muted)]' : ''}`}>{g(lastText)}</span>
+      </div>
+      {/* 창고 — 위치가 없는 품목엔 고를 것이 없다(종전 칩과 같은 조건). 줄 높이는 '변경' 히트영역(44 - 위아래 -8)인
+          28px 이고, 라벨·값은 py-1 로 그 가운데 선다. 경로가 길면 낱말 단위로 줄을 바꾼다 — 끝 칸 이름(상단·하단)이
+          말줄임에 잘리면 안 된다(2단계 묶음과 같은 이유). */}
+      {row.locations.length > 0 && (
+        <div className="flex items-start gap-3">
+          <div className="flex min-w-0 flex-1 items-baseline gap-3 py-1">
+            <span className={label}>{g('창고')}</span>
+            <span className={value}>{g(itemHub?.pathName ?? '미지정')}{itemHubQty != null && <span className="whitespace-nowrap">{g(` · ${fmtQty(itemHubQty, unit)}`)}</span>}{followsDefault && <span className="whitespace-nowrap text-[var(--warm-muted)]">{g(' (기본 창고)')}</span>}</span>
+          </div>
+          {ghost
+            ? <span className="-my-2 inline-flex min-h-[44px] shrink-0 items-center"><span className={`rounded-lg border border-transparent px-2.5 py-1 text-[0.65625rem] font-medium ${bar}`}>변경</span></span>
+            : hubPicker}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 팝업 메뉴 키보드 공용(위치 관리 '관리' · 상세 발끝 '관리' · 창고 패널, 2026-10-12 검수) — ↑↓ Home End 로 행 사이를
+// 옮긴다. 패널은 portal 이라 문서 끝에 붙어 있어 Tab 을 그냥 두면 포커스가 모달 밖으로 샌다 — Tab 은 메뉴를 닫고 포커스를
+// 트리거로 돌려 거기서 이어 가게 한다(onTab 이 그 일을 한다). 역할(role=menu)은 달지 않는다 — 형제 위치 관리 메뉴와 같은
+// 단순 버튼 목록이고, 트리거는 aria-expanded 로 열림만 말한다.
+function menuKeyNav(e: React.KeyboardEvent<HTMLElement>, onTab: () => void) {
+  if (e.key === 'Tab') { onTab(); return }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
+  const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+  if (items.length === 0) return
+  e.preventDefault()
+  const i = items.indexOf(document.activeElement as HTMLButtonElement)
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+    : e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
+  items[next]?.focus()
+}
+
+// 품목 창고 고르기 — §22 ③ 트리 드롭다운의 패널 문법(portal·화면 기준 fixed·44px 행·선택 체크 --tc-text)을 쓴다(3단계).
+// 종전 칩의 패널은 모달 본문(스크롤 컨테이너) 안 absolute 라 아래가 잘렸다. 자리 산수는 정본 usePopoverAnchor 하나다.
+// 후보는 이 품목의 열린 위치뿐이다(숨긴 위치는 창고가 될 수 없다 — setItemHub 도 거부한다). 후보가 트리의 일부라
+// 들여쓸 조상이 없으므로 행은 표기 경로(pathName)고, 말줄임 대신 낱말 단위 줄바꿈이다(끝 칸 이름을 지킨다).
+// '기본 창고 따르기'(지정 해제 = 영업장 기본 창고를 따름)는 구분선 아래 마지막 행이다.
+// 체크는 **설정값**에 선다 — 지정이 없으면 따르기 행. 이미 고른 행을 다시 누르면 쓰기 없이 닫는다(헛 저장·헛 토스트 방지).
+// 키보드(검수) — 열면 체크된 행에 포커스, Esc·바깥 누름·고르기로 닫으면 '변경' 으로 포커스가 돌아온다.
+function ItemHubPicker({ locations, hubLocationId, disabled, onPick }: {
+  locations: StorageLocationItem[]; hubLocationId: string | null; disabled?: boolean; onPick: (locId: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const candidates = locations.filter(l => l.closedAt == null)
+  // 높이 예측 = 테두리 2 + p-2 16 + 머리글 27 + 행 44·n + 구분선 9 + 따르기 행 44(최대 320, 넘치면 패널 안 스크롤)
+  // 오른쪽 끝을 '변경' 에 맞춘다 — 왼쪽 정렬로 열면 넓은 화면에서 모달 오른쪽 밖으로 삐져나간다.
+  const { pos, triggerRef, measure } = usePopoverAnchor<HTMLSpanElement>({ minWidth: 240, estimatedHeight: Math.min(320, 98 + 44 * candidates.length), align: 'end' })
+  const panelRef = useRef<HTMLDivElement>(null)
+  // 외부 클릭 닫기는 백드롭 하나(LocationTreePicker 와 같은 이유). Esc 는 바깥 Modal 보다 먼저(capture) 패널만 닫는다.
+  useEffect(() => {
+    if (!open) return
+    const panel = panelRef.current
+    ;(panel?.querySelector<HTMLButtonElement>('button[data-selected="true"]:not(:disabled)') ?? panel?.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation(); setOpen(false); triggerRef.current?.querySelector('button')?.focus()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [open, triggerRef])
+  const close = () => { setOpen(false); triggerRef.current?.querySelector('button')?.focus() }
+  const pick = (locId: string | null) => { close(); if (locId !== hubLocationId) onPick(locId) }
+  const rowCls = (sel: boolean) => `w-full flex items-center gap-2 min-h-[44px] pl-2.5 pr-2.5 py-1.5 rounded-lg text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] ${sel ? 'text-[var(--tc-text)] font-semibold' : 'text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]'}`
+  const check = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+  return (
+    <>
+      {/* 메뉴가 뜰 자리의 기준점 — RowActionBtn 은 히트영역과 크롬을 나눈 정본이라 ref 를 안 받는다. 감싼 span 을 쓴다(§22 ① 과 같은 문법). */}
+      <span ref={triggerRef} className="shrink-0">
+        <RowActionBtn disabled={disabled} expanded={open} onClick={() => { if (!open) measure(); setOpen(v => !v) }}>변경</RowActionBtn>
+      </span>
+      {open && typeof window !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={close} />
+          {/* 높이 상한은 화면에 남은 자리다 — 고정 320px 이면 긴 경로 한 줄이 두 줄로 꺾일 때 4px 만 넘쳐 안쪽 스크롤이
+              생겼다(검수 실측). 진짜로 화면을 넘칠 때만 스크롤이 선다. */}
+          <div ref={panelRef} onKeyDown={e => menuKeyNav(e, close)}
+            className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
+            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: Math.max(160, window.innerHeight - pos.top - 8), overflowY: 'auto' }}>
+            <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">채울 때 빼 쓰는 위치</p>
+            {candidates.map(l => {
+              const sel = l.id === hubLocationId
+              return (
+                <button key={l.id} type="button" disabled={disabled} data-selected={sel || undefined} onClick={() => pick(l.id)} className={rowCls(sel)}>
+                  {sel && check}
+                  <span className="flex-1 min-w-0 text-sm break-keep">{l.pathName}</span>
+                </button>
+              )
+            })}
+            <div className="my-1 border-t border-[var(--warm-border)]" />
+            <button type="button" disabled={disabled} data-selected={hubLocationId == null || undefined} onClick={() => pick(null)} className={rowCls(hubLocationId == null)}>
+              {hubLocationId == null && check}
+              <span className="flex-1 min-w-0 text-sm break-keep">기본 창고 따르기</span>
+            </button>
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  )
+}
+
+// 메뉴 한 줄 — §22 ① 위치 관리 '관리' 메뉴와 상세 발끝 '관리' 메뉴가 한 벌로 쓴다(DisplayFieldsMenu 행 문법, 44px).
+// 파괴 항목은 색을 **갈아 끼운 별도 상수**다. 같은 클래스 문자열에 글자색 둘(--warm-dark · --danger-fg)을 함께 얹으면
+// 어느 쪽이 이기는지는 쓴 차례가 아니라 생성된 CSS 차례가 정해, 실측에서 '삭제' 가 --warm-dark 로 그려졌다(3단계 렌더).
+const MENU_ROW_BOX = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm disabled:opacity-40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]'
+const MENU_ROW = `${MENU_ROW_BOX} text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]`
+const MENU_ROW_DANGER = `${MENU_ROW_BOX} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`
+// 위치 관리 '관리' 메뉴 높이 예측 — 테두리 2 + p-2 16 + 머리글(경로) 27 + 행 44·6 + 구분선 9 + 삭제 44 = 362(320·360·402·768
+// 실측 361.5). 종전 340 은 내용보다 작아 위로 뒤집힐 때 메뉴 끝이 '관리' 를 덮었다. 깊이 상한 칸은 안내 한 줄(약 22px)이 더
+// 서지만, 높이 예측은 여는 순간(행을 고르기 전)에 정해져 그 칸만 따로 잴 수 없다 — 흔한 경우에 맞춘다.
+const LOC_MENU_EST_H = 362
+
+// 상세 발끝 윗줄 버튼 넷(폐기·무상 입수·위치 이동·관리)이 함께 쓰는 좁은 폭 보정 — 높이는 md(44px) 그대로다.
+//  · 640px 미만은 좌우 여백만 줄인다(px-1.5). md 여백(px-4)이면 320px 에서 넷이 한 줄에 안 선다.
+//  · 360px 미만은 글자를 13px 로 한 단계 줄인다. 14px 이면 320px 여유가 10px 뿐이라 안드로이드 글자 크기 110% 에서
+//    '관리' 가 모달 밖으로 밀린다(13px 이면 115% 까지 들어간다, 실측). 13px 은 sm 버튼 12px 보다 크다.
+const FOOT_TOP_BTN = 'whitespace-nowrap max-sm:px-1.5 max-[359px]:text-[13px]'
+
+// 품목 상세 발끝 '관리' 메뉴 — 드문 관리·파괴 동작을 주 동작과 가른다(가이드 §13 모달 발끝 관리 메뉴, 재고 상세
+// 2026-10-12 운영자 승인). 근거는 실사용 빈도와 위험도다(최근 90일 위치 이동 10·맞바꿈 9, 보정 0 — 보정은 기준선
+// 리셋이라 잘못 누르면 소모 구간이 사라진다). 패널은 §22 ① 위치 관리 '관리' 메뉴와 한 문법이다(DisplayFieldsMenu 패널 ·
+// usePopoverAnchor · portal · 행 44px). 발끝 메뉴라 **위로 먼저** 뜨고(아래로 뜨면 '재고 점검' 을 덮고 모달 밖으로
+// 나간다 — 짧은 모달·데스크톱 실측) 오른쪽 끝을 트리거에 맞춘다. 위로 뜨는 자리는 높이 예측으로 정하므로 실제 행 수로 센다.
+// 품목 삭제는 onDelete 를 받을 때만(서버가 지울 수 있는 품목) 구분선 아래 마지막, §04 danger 글자색이다.
+// 트리거는 secondary md 다 — ghost 는 바탕·테두리가 없어 버튼·메뉴로 안 읽혔다(검수). 키보드: 열면 첫 행에 포커스,
+// Esc·바깥 누름·항목 실행으로 닫으면 트리거로 포커스가 돌아온다(항목이 확인창을 띄우면 거기로 다시 옮겨 간다).
+function DetailManageMenu({ pending, onReconcile, onSettings, onArchive, onDelete }: {
+  pending: boolean; onReconcile: () => void; onSettings: () => void; onArchive: () => void; onDelete?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  // 높이 예측 = 테두리 2 + p-2 16 + 행 44·3 (+ 구분선 9 + 품목 삭제 44)
+  const { pos, triggerRef, measure } = usePopoverAnchor<HTMLSpanElement>({ minWidth: 208, estimatedHeight: 150 + (onDelete ? 53 : 0), placement: 'above', align: 'end' })
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    panelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation(); setOpen(false); triggerRef.current?.querySelector('button')?.focus()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [open, triggerRef])
+  const close = () => { setOpen(false); triggerRef.current?.querySelector('button')?.focus() }
+  const run = (f: () => void) => { close(); f() }
+  return (
+    <>
+      {/* 기준점 span — Btn 은 ref 를 안 받는다. 좁은 폭의 여백·글자 줄임은 윗줄 버튼 셋과 같은 값이다(발끝 주석). */}
+      <span ref={triggerRef} className="shrink-0">
+        <Btn variant="secondary" size="md" className={`min-w-11 ${FOOT_TOP_BTN}`} aria-expanded={open}
+          onClick={() => { if (!open) measure(); setOpen(v => !v) }}>관리</Btn>
+      </span>
+      {open && typeof window !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={close} />
+          <div ref={panelRef} onKeyDown={e => menuKeyNav(e, close)}
+            className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
+            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '70vh', overflowY: 'auto' }}>
+            <button type="button" className={MENU_ROW} onClick={() => run(onReconcile)}>보정</button>
+            <button type="button" className={MENU_ROW} onClick={() => run(onSettings)}>설정</button>
+            <button type="button" className={MENU_ROW} disabled={pending} onClick={() => run(onArchive)}>숨기기</button>
+            {onDelete && (
+              <>
+                <div className="my-1 border-t border-[var(--warm-border)]" />
+                <button type="button" disabled={pending} className={MENU_ROW_DANGER} onClick={() => run(onDelete)}>품목 삭제</button>
+              </>
+            )}
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  )
+}
+
+// 보기 발끝 골격 — 실제 발끝(두 줄 고정: 윗줄 버튼 넷 · 아랫줄 '재고 점검' 풀폭)과 같은 높이 96px 다. 없다가 로디드
+// 순간 발끝이 생기면 그만큼 본문이 줄며 튄다(점검 모드 발끝 골격과 같은 이유). 래퍼(border-t · py-3)는 Modal 이 그린다.
+function DetailViewFooterSkeleton() {
+  const bar = 'rounded-md bg-[var(--canvas)] animate-pulse'
+  return (
+    <div className="space-y-2 delayed-fallback" aria-hidden="true">
+      <div className="flex gap-2">
+        <div className={`h-11 flex-1 ${bar}`} />
+        <div className={`h-11 flex-1 ${bar}`} />
+        <div className={`h-11 flex-1 ${bar}`} />
+        <div className={`h-11 w-11 ${bar}`} />
+      </div>
+      <div className={`h-11 ${bar}`} />
     </div>
   )
 }
@@ -1750,10 +1986,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
   const [loadingId, setLoadingId] = useState<string | null>(null)
-  const [hubOpen, setHubOpen] = useState(false)
 
+  // 창고 변경 — 패널(ItemHubPicker)이 스스로 닫고 이 함수를 부른다(3단계, 패널 열림 상태는 패널이 든다).
   const changeItemHub = (locId: string | null) => {
-    setHubOpen(false)
     // §16 — 바꾸기 전 지정값(null = 영업장 기본 창고 따름)을 쥐어 두고 같은 액션으로 되돌린다.
     const prevHubId = data?.item.hubLocationId ?? null
     startTransition(async () => {
@@ -1786,7 +2021,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
       const release = trackSave()
       try {
         const res = await deleteTrackedItemIfEmpty(trackedItemId)
-        if (res.ok) { onChange(); onClose(); pushToast('success', '품목을 삭제했습니다') }
+        // §16 — 지운 품목도 적용취소로 같은 id 로 되살린다(서버가 돌려준 스냅샷, 기록이 없는 품목만 지워지므로 행과
+        // 위치 연결·임시저장·병합 규칙이 전부다). 모달은 닫힌 뒤라 목록 갱신만 한다. 숨긴 품목이었을 수 있어 숨김 수도 다시 센다.
+        if (res.ok) { onChange(); onClose(); pushToast('success', '품목을 삭제했습니다', {
+          action: { label: '적용취소', run: () => { void undoDeleteTrackedItem(res.undo).then(r => {
+            if (r.ok) { pushToast('info', '품목 삭제를 적용취소했습니다 · 목록에 다시 표시'); onChange(); onArchivedChange?.() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        }) }
         else { pushToast('error', res.error) }
       } finally { release() }
     })
@@ -1926,18 +2168,27 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
       // 풀블리드 — 모드(점검·보정·설정 등)마다 다른 하위 폼이 자기 여백과 폭 전체 구분선을 직접 갖는다.
       bodyClassName=""
       footer={isViewMode ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
-          <Btn variant="secondary" size="sm" onClick={handleDeleteItem} disabled={pending}>삭제</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
-          {/* 위치 이동은 관리 그룹으로 — 점검 무리 옆에 두면 품목 점검 중 오클릭(오류신고 97839062) */}
-          <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>위치 이동</Btn>
-          <div className="flex-1" />
-          <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 (차이 소모 제외)</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setMode('disposal')}>폐기</Btn>
-          <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
+        // 발끝 두 줄 고정(재고 화면 정비 3단계, 운영자 승인 배치). 종전 버튼 여덟이 sm 으로 세 줄까지 접혔다(모달 높이
+        // 26%, 주 버튼이 맨 아래 왼쪽). 윗줄은 자주 쓰는 셋 + '관리' 메뉴, 아랫줄은 '재고 점검' 풀폭이다(근거: 최근 90일
+        // 위치 이동 10·맞바꿈 9, 보정 0). 위치 이동이 점검과 한 무리에 서면 오클릭이 났다(오류신고 97839062) — 윗줄·아랫줄로
+        // 가른다. flex-wrap 은 없다(EntityModal 발끝과 같은 이유 — 접히면 버튼 자리가 기기마다 달라진다). 좁은 폭에서는
+        // 넷이 한 줄에 서도록 좌우 여백만 줄인다(높이·글자는 md 그대로). 셋에 min-w 를 걸지 않는다 — 걸면 글자 폭 하한이
+        // 풀려 '무상 입수' 가 테두리에 닿는다(320px 렌더). 글자 폭이 하한이고, 남는 폭이 '폐기' 를 44px 위로 올린다(320px 46px).
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Btn variant="secondary" size="md" className={`flex-1 ${FOOT_TOP_BTN}`} onClick={() => setMode('disposal')}>폐기</Btn>
+            <Btn variant="secondary" size="md" className={`flex-1 ${FOOT_TOP_BTN}`} onClick={() => setMode('addition')}>무상 입수</Btn>
+            <Btn variant="secondary" size="md" className={`flex-1 ${FOOT_TOP_BTN}`} onClick={() => setTransferOpen(true)}>위치 이동</Btn>
+            {/* 품목 삭제는 서버가 지울 수 있을 때만 메뉴에 선다 — 판정은 서버 거부와 같은 계수 한 곳(itemRecordCounts)이
+                낸 deletable 이다. 이력 건수로 가르면 재고 제외 지출만 있는 품목에서 '이력 0건인데 거부'가 났다(검수 실측). */}
+            <DetailManageMenu pending={pending}
+              onReconcile={() => setMode('reconcile')} onSettings={() => setMode('settings')} onArchive={handleArchive}
+              onDelete={data.deletable ? handleDeleteItem : undefined} />
+          </div>
+          <Btn variant="primary" size="md" fullWidth onClick={() => setMode('check')}>재고 점검</Btn>
         </div>
+      ) : !data && initialMode === 'view' ? (
+        <DetailViewFooterSkeleton />
       ) : mode === 'check' ? (
         // 점검 발끝 — 합계 줄·임시저장 칩·[취소][임시저장][N곳 저장]은 상태의 주인인 CheckForm 이 이 자리로
         // 포털해 그린다(재고 화면 정비 2단계, §27.1 저장 버튼 상시 노출). 불러오는 동안은 같은 높이의 골격
@@ -1953,7 +2204,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
           스크롤·여백 없는 맨 div 라 모달 본문이 유일한 스크롤 컨테이너인 것은 그대로다. */}
       <div onInput={markDirty} onChange={markDirty}>
       {!data ? (
-        <DetailModalSkeleton mode={initialMode} />
+        <DetailModalSkeleton mode={initialMode} row={row} />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} lastCheckCreatedAt={row.lastCheckCreatedAt} hiddenLocationIds={row.hiddenLocationIds}
           currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
@@ -1983,19 +2234,11 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
       ) : (
         <>
           <div className="px-5 sm:px-6 pt-3">
-            {/* view 모드 본문 최상단 — 마지막 점검 기록 시각(점검일과 다른 날이면 병기) */}
-            {row.lastCheckCreatedAt && (() => {
-              const created = new Date(row.lastCheckCreatedAt)
-              const sameDay = row.lastCheckDate ? isSameKstDay(new Date(row.lastCheckDate), created) : true
-              return (
-                <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-2">
-                  {/* '최근 점검' — 재고 카드·점검 입력·위치 패널과 같은 말이다(패널 합의, 다수파). */}
-                  {sameDay
-                    ? <>최근 점검 {fmtDate(row.lastCheckDate)} <span className="tabular-nums">{fmtTime(created)}</span></>
-                    : <>최근 점검 {fmtDate(row.lastCheckDate)} · {fmtDate(created)} <span className="tabular-nums">{fmtTime(created)}</span> 기록</>}
-                </p>
-              )
-            })()}
+            {/* view 모드 본문 최상단 — 요약 블록(지금 · 최근 점검 · 창고 + 변경). '최근 점검' 은 재고 카드·점검 입력·위치
+                패널과 같은 말이다(패널 합의, 다수파). 창고 변경의 패널·적용취소는 종전 동작 그대로다(changeItemHub).
+                패널의 체크와 요약의 '(기본 창고)' 는 같은 값(row.hubLocationId)을 읽는다 — 둘이 다른 출처면 갱신 사이에 말이 갈린다. */}
+            <DetailViewSummary row={row}
+              hubPicker={<ItemHubPicker locations={row.locations} hubLocationId={row.hubLocationId} disabled={pending} onPick={changeItemHub} />} />
             {/* 연속 점검 이어가기 — 저장한 뒤 모달이 닫힐 때까지 남는다(§16·§18 영속 자리).
                 히트영역은 §25 유사요소 확장으로 44px — 글자만으로는 16px 이다. */}
             {checkSaved && nextId && nextLabel && onGoToItem && (
@@ -2017,40 +2260,6 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                 { id: 'price',    label: '단가 추이' },
               ]}
             />
-            {row.locations.length > 0 && (() => {
-              const itemHub = row.locations.find(l => l.isHub) ?? null
-              // 창고 잔량 부기 — 모르면(허브 미지정·breakdown 없음) 숫자를 지어내지 않고 생략한다.
-              const itemHubQty = itemHub ? row.currentLocationBreakdown.find(lb => lb.locationId === itemHub.id)?.qty ?? null : null
-              return (
-                <div className="relative inline-block mt-2">
-                  <button type="button" onClick={() => setHubOpen(o => !o)} disabled={pending}
-                    className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-                    이 품목 창고: <strong className="text-[var(--warm-dark)]">{itemHub?.pathName ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
-                    <span className="text-[var(--warm-muted)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
-                  </button>
-                  {hubOpen && (
-                    <>
-                      <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setHubOpen(false)} />
-                      <div className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
-                        <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">채울 때 빼 쓰는 위치</p>
-                        {/* 숨긴 위치는 허브 후보에서 제외 — 서버(setItemHub)도 거부하지만 애초에 안 보여준다 */}
-                        {row.locations.filter(l => l.closedAt == null).map(l => (
-                          <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
-                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
-                            {l.pathName}{l.isHub && <span className="text-[var(--honey)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 현재</span>}
-                          </button>
-                        ))}
-                        <button type="button" disabled={pending} onClick={() => changeItemHub(null)}
-                          className="w-full text-left px-3 py-1.5 text-[0.65625rem] text-[var(--warm-muted)] hover:bg-[var(--cream-soft)] border-t border-[var(--warm-border)]/60 mt-1">
-                          영업장 기본 창고 사용
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )
-            })()}
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
             {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
@@ -2935,13 +3144,12 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
 
   return (
     <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-      <div>
-        <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
-          고른 날짜 시점의 실제 수량으로 기준선을 보정합니다.{' '}
-          {asUsage ? '줄어든 차이는 지난 기간 사용으로 기록됩니다.' : '차이는 사용량으로 잡히지 않습니다.'}
-        </p>
-      </div>
+      {/* 제목은 두지 않는다 — 모달 머리 부제가 이미 '부식비 · 보정' 이라 같은 말이 두 번 섰다(검수). 형제 모드 폼(폐기·
+          무상 입수)처럼 설명 한 줄부터 시작한다. */}
+      <p className="text-xs text-[var(--warm-muted)]">
+        고른 날짜 시점의 실제 수량으로 기준선을 보정합니다.{' '}
+        {asUsage ? '줄어든 차이는 지난 기간 사용으로 기록됩니다.' : '차이는 사용량으로 잡히지 않습니다.'}
+      </p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보정 시점(날짜)</label>
@@ -6469,18 +6677,29 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
 
   // 행 액션 메뉴는 화면 기준(fixed)으로 띄운다 — 모달 본문이 세로 스크롤 컨테이너라 아래쪽 행에서
   // 열면 바닥에서 잘린다. 자리 산수는 정본 하나(usePopoverAnchor)를 쓴다.
+  // 높이 예측은 실측 내용 높이다(2026-10-12 검수, LOC_MENU_EST_H). 위로 뒤집힐 때 이 값으로 자리를 잡으므로 실제보다
+  // 크면 트리거와 벌어지고 작으면 트리거를 덮는다.
   const { pos: menuPos, triggerRef: menuAnchorRef, measure: measureMenu } =
-    usePopoverAnchor<HTMLElement>({ minWidth: 208, estimatedHeight: 340 })
+    usePopoverAnchor<HTMLElement>({ minWidth: 208, estimatedHeight: LOC_MENU_EST_H })
   const menuPanelRef = useRef<HTMLDivElement>(null)
   const rowAnchors = useRef<Map<string, HTMLElement>>(new Map())
+  // 닫으면 그 행의 '관리' 로 포커스를 돌린다(검수 — 상세 발끝 메뉴와 같은 키보드 문법). 항목이 다음 화면(이름 입력칸·옮기기
+  // 모달·확인창)을 열면 포커스는 거기로 다시 옮겨 간다.
+  const closeMenu = () => {
+    const id = menuId
+    setMenuId(null)
+    if (id) rowAnchors.current.get(id)?.querySelector('button')?.focus()
+  }
   // 외부 클릭 닫기는 백드롭 하나가 맡는다(위치 선택기와 같은 이유). Esc 는 메뉴만 닫고
-  // 바깥 Modal 까지 내려가지 않게 capture 에서 잡아 전파를 멈춘다.
+  // 바깥 Modal 까지 내려가지 않게 capture 에서 잡아 전파를 멈춘다. 열면 첫 활성 행에 포커스.
   useEffect(() => {
     if (!menuId) return
+    menuPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
       setMenuId(null)
+      rowAnchors.current.get(menuId)?.querySelector('button')?.focus()
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
@@ -6515,7 +6734,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     if (i < 0 || j < 0 || j >= sibs.length) return
     const ids = sibs.map(s => s.id)
     ;[ids[i], ids[j]] = [ids[j], ids[i]]
-    setMenuId(null)
+    closeMenu()
     void saveOrder(node.parentId, ids)
   }
 
@@ -6828,7 +7047,6 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
   const menuSibs = menuNode ? siblingsOf(menuNode.parentId) : []
   const menuIdx  = menuNode ? menuSibs.findIndex(s => s.id === menuNode.id) : -1
   const moveNode = moveId ? locs.find(n => n.id === moveId) ?? null : null
-  const MENU_ROW = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm text-[var(--warm-dark)] hover:bg-[var(--cream-soft)] disabled:opacity-40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]'
   // footer 캡션 자리에 평시 문장 대신 들어갈 말. null 이면 평시 문장이 그대로 보인다.
   const locFooterMsg = placing ? '저장 중…' : (drag != null ? (drop?.reason ?? drop?.note ?? null) : null)
 
@@ -6934,7 +7152,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                   {/* 메뉴가 뜰 자리의 기준점 — RowActionBtn 은 히트영역과 크롬을 나눈 정본이라
                       이벤트를 내주지 않는다. 행마다 감싼 span 을 앵커로 쓴다. */}
                   <span className="shrink-0" ref={el => { if (el) rowAnchors.current.set(node.id, el); else rowAnchors.current.delete(node.id) }}>
-                    <RowActionBtn
+                    <RowActionBtn expanded={menuId === node.id}
                       onClick={() => {
                         if (menuId === node.id) { setMenuId(null); return }
                         menuAnchorRef.current = rowAnchors.current.get(node.id) ?? null
@@ -6987,24 +7205,24 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
         <>
           {/* 외부 클릭 닫기 backdrop — DatePicker 정본 문법. 뒤 목록이 스크롤로 움직이면 메뉴가
               엉뚱한 행 위에 남는다. 아무 데나 눌러도 닫힌다. */}
-          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={() => setMenuId(null)} />
-          <div ref={menuPanelRef}
+          <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={closeMenu} />
+          <div ref={menuPanelRef} onKeyDown={e => menuKeyNav(e, closeMenu)}
             className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
             style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width, maxHeight: '70vh', overflowY: 'auto' }}>
             <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{menuNode.pathName}</p>
             <button type="button" className={MENU_ROW} disabled={menuNode.depth >= MAX_DEPTH}
-              onClick={() => { setChildOf(menuNode.id); setChildName(''); setMenuId(null) }}>
+              onClick={() => { setChildOf(menuNode.id); setChildName(''); closeMenu() }}>
               아래 칸 추가
             </button>
             {menuNode.depth >= MAX_DEPTH && (
               <p className="px-2 pb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">{MAX_DEPTH}단계가 상한이라 더 만들 수 없습니다.</p>
             )}
             <button type="button" className={MENU_ROW}
-              onClick={() => { setEditId(menuNode.id); setEditName(menuNode.name); setMenuId(null) }}>
+              onClick={() => { setEditId(menuNode.id); setEditName(menuNode.name); closeMenu() }}>
               이름 바꾸기
             </button>
             <button type="button" className={MENU_ROW}
-              onClick={() => { setMoveId(menuNode.id); setMenuId(null) }}>
+              onClick={() => { setMoveId(menuNode.id); closeMenu() }}>
               옮기기
             </button>
             <button type="button" className={MENU_ROW} disabled={menuIdx <= 0 || pending}
@@ -7021,7 +7239,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
                 // 이름 뒤에 조사를 손으로 붙이면 받침에 따라 '창고가/창고이' 가 갈린다 — 이름은
                 // 따옴표 안에 두고 조사는 뒤따르는 명사가 받는다.
-                setMenuId(null)
+                closeMenu()
                 if (!menuNode.isHub && !(await confirmDialog({
                   title: `'${menuNode.pathName}' 위치를 기본 창고로 지정할까요?`,
                   message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
@@ -7040,9 +7258,11 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
               }}>
               {menuNode.isHub ? '기본 창고 해제' : '기본 창고로 지정'}
             </button>
+            {/* 파괴 항목은 맨 끝 구분선 아래다(가이드 §13 모달 발끝 관리 메뉴와 한 문법, 검수). */}
+            <div className="my-1 border-t border-[var(--warm-border)]" />
             <button type="button" disabled={pending}
-              className={`${MENU_ROW} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`}
-              onClick={() => { setMenuId(null); void handleDelete(menuNode.id, menuNode.pathName) }}>
+              className={MENU_ROW_DANGER}
+              onClick={() => { closeMenu(); void handleDelete(menuNode.id, menuNode.pathName) }}>
               삭제
             </button>
           </div>

@@ -72,6 +72,9 @@ export type InventoryRow = {
   lastUnitPrice: number | null  // 가장 최근 구매의 단가
   pendingPurchases: PendingPurchase[]  // 수령 대기 중인 구매 내역
   locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록(원본 — 절대 필터 안 함, closedAt 실림)
+  // 품목 창고 지정값 — null 이면 영업장 기본 창고를 따른다(locations[].isHub 는 둘을 합친 실효값이라 이 구분이 안 남는다).
+  // 상세 요약의 '(기본 창고)' 표기와 창고 패널의 선택 표시가 이 값을 읽는다(2026-10-12 재고 정비 3단계 검수).
+  hubLocationId: string | null
   // 숨긴 위치(closedAt != null) 중 현재 잔량이 비어(< 0.001) 화면에서 가릴 위치 id. 히스토리 소비자는 무시.
   // 표시 소비자는 이 집합 멤버십으로만 거른다 — 술어(ε·잔량 소스)를 서버 한 곳에 모으기 위함.
   hiddenLocationIds: string[]

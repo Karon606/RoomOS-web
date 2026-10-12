@@ -23,16 +23,18 @@ const TONE_CLS: Record<Tone, string> = {
 }
 
 export function RowActionBtn({
-  tone = 'neutral', onClick, disabled, className = '', children,
+  tone = 'neutral', onClick, disabled, expanded, className = '', children,
 }: {
   tone?: Tone
   onClick?: () => void
   disabled?: boolean
+  // 팝업(메뉴·패널)을 여는 버튼이면 열림 상태 — aria-expanded 로 나간다. 안 넘기면 속성 자체가 없다(종전과 같다).
+  expanded?: boolean
   className?: string   // 행 레이아웃용(shrink-0 등) — 시각 크롬은 tone 이 정한다
   children: React.ReactNode
 }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={`${HIT_CLS} ${className}`}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-expanded={expanded} className={`${HIT_CLS} ${className}`}>
       <span className={`${CHROME_CLS} ${TONE_CLS[tone]}`}>{children}</span>
     </button>
   )

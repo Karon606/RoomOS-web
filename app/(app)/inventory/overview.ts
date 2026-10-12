@@ -803,6 +803,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       lastUnitPrice,
       pendingPurchases,
       locations,
+      hubLocationId: it.hubLocationId,
       hiddenLocationIds,
       currentLocationBreakdown,
       lastCheckLocationBreakdown: (last?.locationBreakdown ?? []).map(lb => ({
