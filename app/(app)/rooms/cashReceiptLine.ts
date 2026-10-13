@@ -272,6 +272,8 @@ export function verifyCrUndo(propertyId: string, undo: CashReceiptUndo): boolean
 
 /** 적용취소가 막힐 때 화면에 갈 말. 무엇이 바뀌었는지 단정하지 않고 볼 자리를 준다. */
 export const CR_UNDO_CONFLICT_MESSAGE = '그 사이 현금영수증 발행 기록이 다시 바뀌어 되돌리지 않았습니다. 수납 내역에서 지금 상태를 확인해 주세요.'
+/** 여러 키를 한 번에 쓴 조작(일괄 발행 기록)의 적용취소가 한 키 때문에 막혔을 때의 말. */
+export const CR_UNDO_BATCH_CONFLICT_MESSAGE = '그 사이 고른 입금 중 일부의 발행 기록이 다시 바뀌어 일괄 기록 전체를 되돌리지 않았습니다. 수납 내역에서 지금 상태를 확인해 주세요.'
 /** 토큰이 모양·서명·범위 검사에서 떨어졌을 때의 말. */
 export const CR_UNDO_INVALID_MESSAGE = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 

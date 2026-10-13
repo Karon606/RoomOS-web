@@ -19,6 +19,7 @@ import {
 import {
   alignRevivedStamps, applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, lockCrKey, lockCrKeys, readCrKey,
   reconcileCrAfterRemoval, setStamps, signPaymentEditUndo, verifyPaymentEditUndo, writeCrKey, CrUndoConflict,
+  CR_UNDO_BATCH_CONFLICT_MESSAGE, CR_UNDO_CONFLICT_MESSAGE,
   type CrKeyInfo, type CrKeyRef, type CrMismatch, type CrRemovalResult, type PaymentDeleteUndo, type PaymentEditEffect, type PaymentEditUndo,
 } from './cashReceiptLine'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -2242,21 +2243,44 @@ export async function setCashReceiptIssued(
  */
 export async function undoCashReceiptChange(
   undo: CashReceiptUndo,
-): Promise<{ ok: true; line: CashReceiptLineView | null } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true
+      line: CashReceiptLineView | null
+      /** 되살린 줄의 금액이 지금 그 키의 이용료 몫과 다르다(그 사이 수납이 바뀌었다). 금액은 스냅샷 그대로다. */
+      mismatch?: CrMismatch[]
+    }
+  | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    await prisma.$transaction(async tx => { await applyCrUndo(tx, propertyId, undo) })
+    const mismatch = await prisma.$transaction(async tx => {
+      await applyCrUndo(tx, propertyId, undo)
+      // 복원은 스냅샷 금액 그대로다(같은 조작의 적용취소). 그 사이 그 키의 수납이 바뀌었으면 복원한 금액이
+      // 지금 몫과 갈린다. 덮지 않고 말한다(규칙 4, 삭제의 keep 과 같은 mismatch 모양).
+      const out: CrMismatch[] = []
+      for (const l of undo.lines) {
+        if (!l.before || l.before.deleted || l.before.inclDeposit || l.before.inclCleaning) continue
+        const st = await readCrKey(tx, { propertyId, leaseTermId: l.leaseTermId, payDate: ymdToDbDate(l.payYmd), payMethod: l.payMethod })
+        if (st.parts.rent !== l.before.amount) out.push({ payYmd: l.payYmd, payMethod: l.payMethod, lineAmount: l.before.amount, basis: st.parts.rent })
+      }
+      return out
+    })
     // 한 키짜리면(토글) 복원된 줄을 돌려준다. 화면이 '얼마로 돌아갔나'를 말할 재료.
     const only = undo?.lines?.length === 1 ? undo.lines[0] : null
     const line = only?.before && !only.before.deleted
       ? cashReceiptLineView({ ...only.before, issuedAt: new Date(only.before.issuedAt) })
       : null
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-    return { ok: true, line }
+    return { ok: true, line, ...(mismatch.length > 0 ? { mismatch } : {}) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    if (err instanceof CrUndoConflict) return { ok: false, error: err.message }
+    if (err instanceof CrUndoConflict) {
+      // 일괄 기록은 한 키만 바뀌어도 전체를 안 되돌린다(반쪽 복원을 만들지 않는다). 그 사실을 말한다.
+      const many = Array.isArray(undo?.lines) && undo.lines.length > 1 && err.message === CR_UNDO_CONFLICT_MESSAGE
+      return { ok: false, error: many ? CR_UNDO_BATCH_CONFLICT_MESSAGE : err.message }
+    }
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
