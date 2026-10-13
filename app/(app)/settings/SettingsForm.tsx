@@ -90,6 +90,7 @@ import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } fr
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
+import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, type OptionListField } from '@/lib/optionLists'
 
 type Property = {
   id: string
@@ -134,6 +135,10 @@ const WINDOW_TYPE_LABEL: Record<string, string> = {
 function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
+
+// 초기화 확인창이 말하는 기본값은 정본(lib/optionLists)에서 읽는다. 문구에 목록을 손으로 적으면
+// 초기화가 실제로 쓰는 값과 갈린다(결제 수단이 4종이라 말하고 12종을 쓰던 사고, 2026-10-13).
+const DEFAULT_DIRS = OPTION_LIST_DEFAULTS.directionOptions
 
 type Tab = SettingsTab
 
@@ -286,6 +291,9 @@ export default function SettingsForm({
   ) => {
     const newVal = rawNew.trim()
     if (!newVal || newVal === oldVal) return
+    // 판정에 쓰이는 이름으로(또는 그 이름에서) 바꾸려 하면 건수 확인창을 띄우기 전에 서버와 같은 문장으로 알린다.
+    const blocked = protectedRenameError(field, oldVal, newVal)
+    if (blocked) { pushToast('error', blocked); return }
     const targets = await countRenameTargets(field, oldVal)
     if (targets > 0) {
       const ok = await confirmDialog({
@@ -368,7 +376,7 @@ export default function SettingsForm({
     await runRename('roomTypeOptions', oldVal, newVal, setRoomTypes)
   }
   const handleResetRoomTypes = async () => {
-    if (!(await confirmDialog({ title: '방타입을 기본값(원룸, 미니룸)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `방타입을 기본값(${OPTION_LIST_DEFAULTS.roomTypeOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setRoomTypes(await resetOptionsToDefault('roomTypeOptions'))
   }
 
@@ -396,7 +404,7 @@ export default function SettingsForm({
     await runRename('roomTierOptions', oldVal, newVal, setRoomTiers)
   }
   const handleResetRoomTiers = async () => {
-    if (!(await confirmDialog({ title: '등급을 기본값(스탠다드, 실속형)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `등급을 기본값(${OPTION_LIST_DEFAULTS.roomTierOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setRoomTiers(await resetOptionsToDefault('roomTierOptions'))
   }
 
@@ -424,7 +432,7 @@ export default function SettingsForm({
     await runRename('windowTypeOptions', oldVal, newVal, setWindowTypes)
   }
   const handleResetWindowTypes = async () => {
-    if (!(await confirmDialog({ title: '창문 유형을 기본값(외창, 내창)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `창문 유형을 기본값(${OPTION_LIST_DEFAULTS.windowTypeOptions.map(windowLabel).join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setWindowTypes(await resetOptionsToDefault('windowTypeOptions'))
   }
 
@@ -452,7 +460,7 @@ export default function SettingsForm({
     await runRename('directionOptions', oldVal, newVal, setDirections)
   }
   const handleResetDirections = async () => {
-    if (!(await confirmDialog({ title: '방향을 기본값(북향~북서향 8방위)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `방향을 기본값(${DEFAULT_DIRS[0]}~${DEFAULT_DIRS[DEFAULT_DIRS.length - 1]} ${DEFAULT_DIRS.length}방위)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setDirections(await resetOptionsToDefault('directionOptions'))
   }
 
@@ -483,7 +491,7 @@ export default function SettingsForm({
     await runRename('workKindOptions', oldVal, newVal, setWorkKinds)
   }
   const handleResetWorkKinds = async () => {
-    if (!(await confirmDialog({ title: '작업 종류를 기본값(도배, 장판)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `작업 종류를 기본값(${OPTION_LIST_DEFAULTS.workKindOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setWorkKinds(await resetOptionsToDefault('workKindOptions'))
   }
 
@@ -641,7 +649,7 @@ export default function SettingsForm({
     await runRename('paymentMethods', oldVal, newVal, setPayMethods)
   }
   const handleResetPayMethods = async () => {
-    if (!(await confirmDialog({ title: '결제 수단을 기본값(계좌이체, 신용카드, 체크카드, 현금)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    if (!(await confirmDialog({ title: `결제 수단을 기본값(${OPTION_LIST_DEFAULTS.paymentMethods.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
     setPayMethods(await resetOptionsToDefault('paymentMethods'))
   }
 
@@ -1258,6 +1266,7 @@ export default function SettingsForm({
             title="방타입 관리"
             description="호실 등록 시 선택할 수 있는 방 유형 목록입니다."
             items={roomTypes}
+            field="roomTypeOptions"
             getLabel={v => v}
             newValue={newRoomType}
             onNewValueChange={setNewRoomType}
@@ -1272,6 +1281,7 @@ export default function SettingsForm({
             title="등급 관리"
             description="스탠다드/실속형/프리미엄처럼 호실의 등급(패키지)을 구분하는 옵션입니다. 방 타입과는 별개 차원으로, 같은 원룸이라도 등급이 다를 수 있어요."
             items={roomTiers}
+            field="roomTierOptions"
             getLabel={v => v}
             newValue={newRoomTier}
             onNewValueChange={setNewRoomTier}
@@ -1286,6 +1296,7 @@ export default function SettingsForm({
             title="창문 유형 관리"
             description="기본 유형: 내창, 외창. 직접 추가하면 그대로 호실 옵션에 표시됩니다."
             items={windowTypes}
+            field="windowTypeOptions"
             getLabel={windowLabel}
             newValue={newWindowType}
             onNewValueChange={setNewWindowType}
@@ -1300,6 +1311,7 @@ export default function SettingsForm({
             title="방향 관리"
             description="호실 등록 시 선택할 수 있는 방향 목록입니다."
             items={directions}
+            field="directionOptions"
             getLabel={v => v}
             newValue={newDirection}
             onNewValueChange={setNewDirection}
@@ -1314,6 +1326,7 @@ export default function SettingsForm({
             title="작업 종류 관리"
             description="호실 관리 > 작업 탭에서 작업 기록 등록 시 선택할 종류입니다. 청소는 등록 칸이 따로 있어 이 목록에 없습니다."
             items={workKinds}
+            field="workKindOptions"
             getLabel={v => v}
             newValue={newWorkKind}
             onNewValueChange={setNewWorkKind}
@@ -1328,6 +1341,7 @@ export default function SettingsForm({
             title="부가수익 카테고리 관리"
             description="수납 관리 > 부가수익 탭에서 수익 등록 시 선택할 카테고리입니다."
             items={incomeCategs}
+            field="incomeCategories"
             getLabel={v => v}
             newValue={newIncomeCateg}
             onNewValueChange={setNewIncomeCateg}
@@ -1342,6 +1356,7 @@ export default function SettingsForm({
             title="지출 카테고리 관리"
             description="지출 등록 시 선택할 카테고리입니다. 고정 지출에도 사용됩니다."
             items={expenseCategs}
+            field="expenseCategories"
             getLabel={v => v}
             newValue={newExpenseCateg}
             onNewValueChange={setNewExpenseCateg}
@@ -1356,6 +1371,7 @@ export default function SettingsForm({
             title="결제 수단 관리"
             description="지출·고정 지출 등록 시 선택할 결제 수단입니다."
             items={payMethods}
+            field="paymentMethods"
             getLabel={v => v}
             newValue={newPayMethod}
             onNewValueChange={setNewPayMethod}
@@ -1364,13 +1380,14 @@ export default function SettingsForm({
             onReorder={handleReorderPayMethods}
             onRename={handleRenamePayMethod}
             onReset={handleResetPayMethods}
-            placeholder="예: 자동이체, 법인카드…"
+            placeholder="예: 자동이체, 지역화폐…"
           />
           {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
           <OptionSection
             title="요청 카테고리 관리"
             description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
             items={requestCategs}
+            field="requestCategories"
             getLabel={v => v}
             newValue={newRequestCateg}
             onNewValueChange={setNewRequestCateg}
@@ -1388,6 +1405,7 @@ export default function SettingsForm({
             title="수량 단위 관리"
             description="'몇 개 샀나'를 세는 단위입니다. 지출이나 재고를 저장할 때 목록에 없는 단위를 치면 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 기록은 그대로 있고, 앞으로 고를 때만 안 보입니다."
             items={qtyUnits}
+            field="qtyUnitOptions"
             getLabel={v => v}
             newValue={newQtyUnit}
             onNewValueChange={setNewQtyUnit}
@@ -1402,6 +1420,7 @@ export default function SettingsForm({
             title="규격 단위 관리"
             description="'한 덩어리가 얼마짜리인가'를 재는 단위입니다. 120g 짜리, 30매 들이처럼 씁니다. 크기가 다른 단위끼리는 이름만 바꿀 수 없습니다(저장된 수량이 틀어지기 때문에, 값까지 바꾸려면 재고 관리의 단위 변환을 씁니다)."
             items={specUnits}
+            field="specUnitOptions"
             getLabel={v => v}
             newValue={newSpecUnit}
             onNewValueChange={setNewSpecUnit}
@@ -2633,11 +2652,13 @@ function AppearanceTab() {
 }
 
 function OptionSection({
-  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
+  title, description, items, field, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
 }: {
   title: string
   description?: string
   items: string[]
+  /** 이 카드의 목록 칸. 이름을 바꿀 수 없는 항목(lib/optionLists 보호 이름)을 서버와 같은 함수로 가린다. */
+  field: OptionListField
   getLabel: (v: string) => string
   newValue: string
   onNewValueChange: (v: string) => void
@@ -2654,6 +2675,10 @@ function OptionSection({
 
   const trimmed = newValue.trim()
   const isDuplicate = trimmed !== '' && items.includes(trimmed)
+  // 코드가 글자로 판정하는 이름은 수정 버튼 대신 '이름 고정' 을 세우고, 결과 문장은 카드 머리에 한 번 적는다.
+  // 다른 이름을 새로 추가해 쓰라고 권하지 않는다. 새 이름은 그 판정에 안 잡힌다(lib/optionLists 보호 이름 머리말).
+  // 버튼을 눌러 보고서야 거절당하게 두지 않는다(§22 옮기기 목적지의 비활성 + 이유 캡션과 같은 뜻).
+  const fixedReason = onRename ? (items.map(v => protectedOptionReason(field, v)).find(r => r !== null) ?? null) : null
 
   const handleAdd = async () => {
     if (isAdding || !trimmed || isDuplicate) return
@@ -2734,8 +2759,11 @@ function OptionSection({
           </button>
         )}
       </div>
-      {description && <p className="text-xs text-[var(--warm-muted)] mb-4">{description}</p>}
-      {!description && <div className="mb-4" />}
+      {description && <p className={`text-xs text-[var(--warm-muted)] ${fixedReason ? 'mb-1.5' : 'mb-4'}`}>{description}</p>}
+      {!description && <div className={fixedReason ? 'mb-1.5' : 'mb-4'} />}
+      {fixedReason && (
+        <p className="text-xs text-[var(--warm-muted)] mb-4">&apos;이름 고정&apos; 항목은 바꿀 수 없습니다. {fixedReason}</p>
+      )}
       <div ref={optListRef} className="space-y-2 mb-4">
         {items.length === 0 && (
           <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
@@ -2789,10 +2817,12 @@ function OptionSection({
                     </svg>
                   </button>
                 )}
-                {onRename && (
+                {onRename && (protectedOptionReason(field, item) ? (
+                  <span className="shrink-0 px-1 text-[0.65625rem] text-[var(--warm-muted)]">이름 고정</span>
+                ) : (
                   <button onClick={() => startEdit(item)}
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
-                )}
+                ))}
                 <button onClick={() => onDelete(item)}
                   className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
               </>

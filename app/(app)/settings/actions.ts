@@ -15,7 +15,8 @@ import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
-import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, resolveUnitForSave } from '@/lib/unitOptions'
+import { resolveUnitForSave } from '@/lib/unitOptions'
+import { OPTION_LIST_DEFAULTS, parseOptionList, protectedRenameError, type OptionListField } from '@/lib/optionLists'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -24,7 +25,6 @@ import {
   DOC_MAIL_LIMITS, DOC_MAIL_DEFAULT_SUBJECT, DOC_MAIL_DEFAULT_BODY, type DocMailTemplate,
 } from '@/lib/docMail'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
-import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, untrashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
@@ -156,8 +156,7 @@ export async function getRoomTypeOptions(): Promise<string[]> {
     where: { id: propertyId },
     select: { roomTypeOptions: true },
   })
-  const raw = (property as any)?.roomTypeOptions ?? '원룸,미니룸'
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('roomTypeOptions', (property as any)?.roomTypeOptions)
 }
 
 export async function addRoomTypeOption(name: string) {
@@ -203,8 +202,7 @@ export async function getWorkKindOptions(): Promise<string[]> {
   })
   // 형제 여덟은 `as any` 를 쓴다 — 그 칸들이 생기기 전에 쓰인 코드라 그렇다. 이 칸은 스키마에
   // 이미 있으므로 그럴 이유가 없다(신규 eslint 지적을 만들지 않는다).
-  const raw = property?.workKindOptions ?? '도배,장판'
-  return raw.split(',').map(t => t.trim()).filter(Boolean)
+  return parseOptionList('workKindOptions', property?.workKindOptions)
 }
 
 export async function addWorkKindOption(name: string) {
@@ -241,8 +239,7 @@ export async function getRoomTierOptions(): Promise<string[]> {
     where: { id: propertyId },
     select: { roomTierOptions: true } as any,
   })
-  const raw = (property as any)?.roomTierOptions ?? '스탠다드,실속형'
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('roomTierOptions', (property as any)?.roomTierOptions)
 }
 
 export async function addRoomTierOption(name: string) {
@@ -278,8 +275,7 @@ export async function getWindowTypeOptions(): Promise<string[]> {
     where: { id: propertyId },
     select: { windowTypeOptions: true },
   })
-  const raw = (property as any)?.windowTypeOptions ?? 'OUTER,INNER'
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('windowTypeOptions', (property as any)?.windowTypeOptions)
 }
 
 export async function addWindowTypeOption(name: string) {
@@ -309,16 +305,13 @@ export async function deleteWindowTypeOption(name: string) {
 
 // ── 방향 관리 ──────────────────────────────────────────────────────
 
-const DEFAULT_DIRECTION_OPTIONS = '북향,북동향,동향,남동향,남향,남서향,서향,북서향'
-
 export async function getRoomDirectionOptions(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { directionOptions: true } as any,
   })
-  const raw = (property as any)?.directionOptions ?? DEFAULT_DIRECTION_OPTIONS
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('directionOptions', (property as any)?.directionOptions)
 }
 
 export async function addRoomDirectionOption(name: string) {
@@ -356,8 +349,7 @@ export const getIncomeCategories = cache(async function getIncomeCategories(): P
     where: { id: propertyId },
     select: { incomeCategories: true },
   })
-  const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('incomeCategories', (property as any)?.incomeCategories)
 })
 
 export async function addIncomeCategory(name: string) {
@@ -387,16 +379,13 @@ export async function deleteIncomeCategory(name: string) {
 
 // ── 지출 카테고리 ─────────────────────────────────────────────────
 
-const DEFAULT_EXPENSE_CATEGORIES = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환'
-
 export const getExpenseCategories = cache(async function getExpenseCategories(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { expenseCategories: true } as any,
   })
-  const raw = (property as any)?.expenseCategories ?? DEFAULT_EXPENSE_CATEGORIES
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('expenseCategories', (property as any)?.expenseCategories)
 })
 
 /**
@@ -411,7 +400,7 @@ export const getSpecUnitOptions = cache(async function getSpecUnitOptions(): Pro
   const property = await prisma.property.findUnique({
     where: { id: propertyId }, select: { specUnitOptions: true },
   })
-  return parseUnitOptions(property?.specUnitOptions, DEFAULT_SPEC_UNITS)
+  return parseOptionList('specUnitOptions', property?.specUnitOptions)
 })
 
 export const getQtyUnitOptions = cache(async function getQtyUnitOptions(): Promise<string[]> {
@@ -419,7 +408,7 @@ export const getQtyUnitOptions = cache(async function getQtyUnitOptions(): Promi
   const property = await prisma.property.findUnique({
     where: { id: propertyId }, select: { qtyUnitOptions: true },
   })
-  return parseUnitOptions(property?.qtyUnitOptions, DEFAULT_QTY_UNITS)
+  return parseOptionList('qtyUnitOptions', property?.qtyUnitOptions)
 })
 
 /**
@@ -562,7 +551,7 @@ export const getRequestCategories = cache(async function getRequestCategories():
     where: { id: propertyId },
     select: { requestCategories: true } as any,
   })
-  return parseRequestCategories((property as any)?.requestCategories)
+  return parseOptionList('requestCategories', (property as any)?.requestCategories)
 })
 
 export async function addRequestCategory(name: string) {
@@ -592,26 +581,13 @@ export async function deleteRequestCategory(name: string) {
 
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories' | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions'
-
-const FIELD_DEFAULTS: Record<ReorderableField, string> = {
-  roomTypeOptions:   '원룸,미니룸',
-  roomTierOptions:   '스탠다드,실속형',
-  windowTypeOptions: 'OUTER,INNER',
-  directionOptions:  '북향,북동향,동향,남동향,남향,남서향,서향,북서향',
-  incomeCategories:  '건조기,세탁기,자판기,이자수익,기타',
-  expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환',
-  paymentMethods:    '계좌이체,신용카드,체크카드,현금,네이버페이,카카오페이,토스,쿠팡캐시,서울페이,제로페이,페이코,SSG머니',
-  requestCategories: REQUEST_CATEGORIES.join(','),
-  workKindOptions:   '도배,장판',
-  specUnitOptions:   DEFAULT_SPEC_UNITS.join(','),
-  qtyUnitOptions:    DEFAULT_QTY_UNITS.join(','),
-}
+// 기본값은 lib/optionLists 정본 한 벌이다(조회·초기화·이름 변경·확인창이 같이 읽는다).
+type ReorderableField = OptionListField
 
 export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
   await requireEdit()
   const propertyId = await getPropertyId()
-  const defaultVal = FIELD_DEFAULTS[field]
+  const defaultVal = OPTION_LIST_DEFAULTS[field].join(',')
   await prisma.property.update({
     where: { id: propertyId },
     data: { [field]: defaultVal } as any,
@@ -754,12 +730,15 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
     where: { id: propertyId },
     select: { [field]: true } as any,
   })
-  // 요청 카테고리는 미저장(빈 값)이 곧 기본 5종 — 그대로 split 하면 첫 이름변경에서 목록이 통째로 날아간다.
-  const stored = (property as any)?.[field]
-  const current: string[] = field === 'requestCategories'
-    ? parseRequestCategories(stored)
-    : (stored ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  // 조회 함수와 같은 정본으로 읽는다. 종전에는 칸이 비었을 때(null) 기본값 대신 빈 목록을 읽어
+  // 아래 '목록에 없음' 갈래로 빠졌다. 아무것도 안 바뀌었는데 화면은 성공 토스트를 띄웠다
+  // (운영 영업장의 결제 수단·창문 유형이 그 상태였다, 2026-10-13). 요청 카테고리의 빈 값=기본 5종도 정본이 쥔다.
+  const current = parseOptionList(field, (property as any)?.[field])
   if (newValue === oldValue) return { ok: true, updated: 0 }
+  // 코드가 이 글자와 같은지로 판정하는 이름은 바꾸지 않는다(lib/optionLists PROTECTED_OPTION_NAMES).
+  // 화면은 그 이름의 수정 버튼을 안 세우지만, 입구는 서버다.
+  const protectedError = protectedRenameError(field, oldValue, newValue)
+  if (protectedError) return { ok: false, error: protectedError }
   if (!current.includes(oldValue)) return { ok: true, updated: 0 }
   if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }
   // 단위는 **표기만** 고치는 자리다. 뜻이 바뀌는 변경은 막는다 — 저장된 숫자는 그대로인 채
@@ -827,16 +806,13 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
 
 // ── 결제 수단 ─────────────────────────────────────────────────────
 
-const DEFAULT_PAYMENT_METHODS = '계좌이체,신용카드,체크카드,현금'
-
 export const getPaymentMethods = cache(async function getPaymentMethods(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { paymentMethods: true } as any,
   })
-  const raw = (property as any)?.paymentMethods ?? DEFAULT_PAYMENT_METHODS
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('paymentMethods', (property as any)?.paymentMethods)
 })
 
 export async function addPaymentMethod(name: string) {

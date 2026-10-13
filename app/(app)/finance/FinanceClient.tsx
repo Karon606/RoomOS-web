@@ -1232,7 +1232,6 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   )
 }
 
-const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 // 부가 수익 전용 입금수단 — '보유 보증금'은 보증금 카테고리에서 선택 가능 (다른 카테고리/모달엔 노출 X)
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   BANK_ACCOUNT: '은행계좌', CREDIT_CARD: '신용카드', DEBIT_CARD: '체크카드', PREPAID: '선불/상품권',

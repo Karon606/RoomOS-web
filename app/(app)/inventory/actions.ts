@@ -15,6 +15,7 @@ import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
+import { parseOptionList } from '@/lib/optionLists'
 // 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
 import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
@@ -3762,8 +3763,6 @@ export async function confirmAllPending(trackedItemId: string): Promise<{ ok: tr
 }
 
 // ── 재고관리 카테고리 설정 (추적 대상 + 표시 별칭)
-const DEFAULT_EXPENSE_CATEGORIES_INV = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환'
-
 // 설정 화면용 — 현재 재고 카테고리 + 선택 가능한 전체 지출 카테고리.
 export async function getInventoryCategorySettings(): Promise<{
   categories: InventoryCategory[]
@@ -3774,8 +3773,8 @@ export async function getInventoryCategorySettings(): Promise<{
     getInventoryCategoryConfig(propertyId),
     prisma.property.findUnique({ where: { id: propertyId }, select: { expenseCategories: true } }),
   ])
-  const raw = property?.expenseCategories ?? DEFAULT_EXPENSE_CATEGORIES_INV
-  const allExpenseCategories = raw.split(',').map(s => s.trim()).filter(Boolean)
+  // 기본값은 정본 한 벌(lib/optionLists)이다. 여기에 목록을 따로 적으면 지출 화면과 갈린다.
+  const allExpenseCategories = parseOptionList('expenseCategories', property?.expenseCategories)
   return { categories, allExpenseCategories }
 }
 

@@ -21,6 +21,7 @@ import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNo
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
+import { parseOptionList } from '@/lib/optionLists'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
@@ -1416,7 +1417,9 @@ async function createCleaningFeeIncome(args: {
   const property = await prisma.property.findUnique({
     where: { id: args.propertyId }, select: { incomeCategories: true },
   })
-  const cats = (property?.incomeCategories ?? '').split(',').map(c => c.trim()).filter(Boolean)
+  // 칸이 빈(null) 영업장은 기본 목록이다. 종전에는 빈 목록으로 읽어 청소비 하나만 써 넣었고, 그 순간
+  // 기본 부가수익 카테고리(건조기·세탁기 등)가 드롭다운에서 사라졌다. 조회 함수와 같은 정본으로 읽는다.
+  const cats = parseOptionList('incomeCategories', property?.incomeCategories)
   if (!cats.includes(CLEANING_FEE_CATEGORY)) {
     await prisma.property.update({
       where: { id: args.propertyId },

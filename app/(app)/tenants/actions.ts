@@ -59,6 +59,7 @@ import {
   scheduledSegmentOn, nextRoomMove, roomScheduleText, roomScheduleLines, scheduleMode, planUndoDenial,
 } from '@/lib/roomSchedule'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
+import { parseOptionList } from '@/lib/optionLists'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
@@ -1939,8 +1940,8 @@ export async function recordDepositReturn(params: {
         }] : []),
       ]
 
-      const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
-      const cats: string[] = raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+      // 기본값은 정본 한 벌(lib/optionLists)에서 읽는다. 칸이 빈 영업장도 조회 화면과 같은 목록 끝에 붙는다.
+      const cats = parseOptionList('incomeCategories', property?.incomeCategories)
       const missing = [...new Set(parts.map(p => p.category))].filter(c => !cats.includes(c))
       if (missing.length > 0) {
         await prisma.property.update({
@@ -2267,8 +2268,7 @@ export async function recordReservationPrepaidCancel(params: {
     // 몰취분이 있으면 '위약금' 카테고리 보장(없으면 추가) — 트랜잭션 밖 선처리.
     if (withheld > 0) {
       const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { incomeCategories: true } })
-      const raw = property?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
-      const cats = raw.split(',').map(s => s.trim()).filter(Boolean)
+      const cats = parseOptionList('incomeCategories', property?.incomeCategories)
       if (!cats.includes(PENALTY_CATEGORY)) {
         await prisma.property.update({ where: { id: propertyId }, data: { incomeCategories: [...cats, PENALTY_CATEGORY].join(',') } })
       }
