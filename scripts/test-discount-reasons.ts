@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { normalizeCategoryInput } from '../lib/categoryInput'
 import {
   OPTION_LIST_DEFAULTS, PROTECTED_OPTION_NAMES, parseOptionList, optionRenameWhere, normalizeOptionName,
-  protectedOptionReason, protectedRenameError, insertOptionAt, mergeResetUndo, type OptionListField,
+  protectedOptionReason, protectedRenameError, insertOptionAt, mergeResetUndo, isOptionListField, type OptionListField,
   optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, renameUndoPlan,
 } from '../lib/optionLists'
 import { REQUEST_CATEGORIES } from '../lib/requestCategories'
@@ -217,6 +217,12 @@ eq('초기화 적용취소: 직전 목록도 정규화를 거친다', optionList
   const forged = renameUndoPlan(cascade, { ...undo, rows: [{ model: 'rentDiscount', column: 'memo', ids: ['d1'], via: undefined } as never] }, 'P1')
   eq('영업장 범위는 서버 표에서', forged?.[0]?.where.leaseTerm, { propertyId: 'P1' })
 }
+
+// ── 목록 칸 이름 검사: 서버 액션이 영업장 행의 다른 칸에 못 쓴다 ──────
+eq('목록 열셋은 전부 목록 칸', fields.every(f => isOptionListField(f)), true)
+eq('영업장 행의 다른 칸은 목록 칸이 아니다', ['publicSlug', 'shortStayPolicy', 'name', 'inventoryCategories'].map(isOptionListField), [false, false, false, false])
+eq('상속 이름도 지나가지 않는다', ['toString', '__proto__', 'constructor'].map(isOptionListField), [false, false, false])
+eq('글자가 아니면 아니다', [null, undefined, 1, {}].map(isOptionListField), [false, false, false, false])
 
 // ── 사유는 라벨: 금액 무관 ─────────────────────────────────────────
 const base = { discountType: 'amount', value: 10000, scope: 'permanent', startMonth: '2026-01', endMonth: null }

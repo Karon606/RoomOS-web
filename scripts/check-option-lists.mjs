@@ -7,7 +7,7 @@
 // 판정하는 자리가 조용히 틀어질 길이 열렸다(독립 검수). 적용취소는 화면이 들고 있던 이전 목록을 통째로
 // 다시 써서 그사이 바뀐 항목을 지웠고, 자동 추가는 운영자가 뺀 항목을 기존 값 재저장마다 되살렸다.
 //
-// 축은 열이다.
+// 축은 열하나다.
 //   ⓐ 조회 정본: 목록 열셋의 조회가 전부 parseOptionList 를 거친다. 어느 파일에서도 목록 칸을 `?? '…'`·
 //      `|| '…'` 폴백이나 `?.split(` 으로 읽지 않고, 기본값 목록을 배열로 베껴 두지도 않는다(빈 칸을 빈 목록이나
 //      손으로 적은 기본값으로 읽는 자리, 정본과 갈릴 사본이 되살아나지 않는다).
@@ -27,6 +27,8 @@
 //      쓰는 기록(할인 사유 memo·입주자 직업, 엑셀 가져오기 포함)도 같은 정규화로 저장한다.
 //   ⓙ 자동 추가는 새로 적은 값만: 기존 기록을 고치는 update 함수는 이전 값을 넘겨 견준다. 뺀 항목이
 //      그 기록을 다시 저장할 때마다 되살아나지 않는다.
+//   ⓚ 목록 서버 액션은 field 검사를 거친다: 칸 이름을 받아 `{ [field]: … }` 로 쓰는 액션은 무엇을 읽거나
+//      쓰기 전에 assertOptionField 로 정본 표의 칸인지 본다. 없으면 편집 권한으로 영업장 행 아무 칸에나 쓴다.
 //
 // 실행: node scripts/check-option-lists.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -371,7 +373,31 @@ const os = bodyOf(form, /function OptionSection\(/)
   }
 }
 
-console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
+// ⓚ 목록 서버 액션은 field 검사를 거친다.
+{
+  const guard = bodyOf(actions, /function assertOptionField\(/)
+  if (!guard || !/isOptionListField\(field\)/.test(guard) || !/throw new Error/.test(guard)) {
+    violations.push(`${ACTIONS} · assertOptionField 가 정본 표(isOptionListField)로 칸 이름을 막지 않는다.`)
+  }
+  const isField = bodyOf(lib, /export function isOptionListField\(/)
+  if (!isField || !/Object\.hasOwn\(OPTION_LIST_DEFAULTS, v\)/.test(isField)) {
+    violations.push(`${LIB} · isOptionListField 가 OPTION_LIST_DEFAULTS 자기 칸(Object.hasOwn)으로 거르지 않는다. 'toString' 같은 상속 이름이 지나간다.`)
+  }
+  let n = 0
+  for (const m of actions.matchAll(/export async function (\w+)\((field|undo)\b/g)) {
+    n++
+    const b = bodyOf(actions, new RegExp(`export async function ${m[1]}\\(`))
+    if (!b) continue
+    const code = stripComments(b)
+    const at = code.search(m[2] === 'undo' ? /assertOptionField\(undo\.field\)/ : /assertOptionField\(field\)/)
+    const firstUse = Math.min(...[/prisma\./, /parseOptionList\(/, /RENAME_CASCADE\[/, /getPropertyId\(/]
+      .map(re => { const i = code.search(re); return i < 0 ? Infinity : i }))
+    if (at < 0 || at > firstUse) violations.push(`${ACTIONS} · ${m[1]} 가 무엇을 읽거나 쓰기 전에 assertOptionField 로 칸 이름을 보지 않는다. 편집 권한만 있으면 영업장 행 아무 칸에나 쓸 수 있다.`)
+  }
+  if (n < 7) violations.push(`${ACTIONS} · 칸 이름을 받는 목록 서버 액션을 ${n}개만 찾았다(초기화·순서·빼기 적용취소·초기화 적용취소·건수·이름 변경·이름 변경 적용취소, 7 이상 기대).`)
+}
+
+console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

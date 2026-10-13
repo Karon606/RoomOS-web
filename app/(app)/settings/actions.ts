@@ -16,7 +16,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
-import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, type OptionListField, type RenameTarget } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, isOptionListField, type OptionListField, type RenameTarget } from '@/lib/optionLists'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -637,6 +637,12 @@ export async function deleteRequestCategory(name: string) {
 // 기본값은 lib/optionLists 정본 한 벌이다(조회·초기화·이름 변경·확인창이 같이 읽는다).
 type ReorderableField = OptionListField
 
+// 목록 서버 액션의 입구 검사. field 는 화면에서 오고 아래에서 `{ [field]: … }` 로 영업장 행에 쓰인다.
+// 정본 표(OPTION_LIST_DEFAULTS)에 없는 칸이면 아무것도 읽거나 쓰기 전에 멈춘다(lib/optionLists isOptionListField).
+function assertOptionField(field: unknown): asserts field is ReorderableField {
+  if (!isOptionListField(field)) throw new Error('잘못된 목록입니다.')
+}
+
 // 목록만 고친 저장(초기화·순서·빼기 적용취소·초기화 적용취소)이 같은 화면들을 무효화한다.
 function revalidateOptionList(field: ReorderableField) {
   revalidatePath('/settings')
@@ -657,6 +663,7 @@ function revalidateOptionList(field: ReorderableField) {
  */
 export async function resetOptionsToDefault(field: ReorderableField): Promise<{ items: string[]; before: string[] }> {
   await requireEdit()
+  assertOptionField(field)
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
   const before = parseOptionList(field, property?.[field])
@@ -671,6 +678,7 @@ export async function resetOptionsToDefault(field: ReorderableField): Promise<{ 
 
 export async function reorderOptions(field: ReorderableField, items: string[]): Promise<void> {
   await requireEdit()
+  assertOptionField(field)
   const propertyId = await getPropertyId()
   await prisma.property.update({
     where: { id: propertyId },
@@ -688,6 +696,7 @@ export type OptionListResult = { ok: true; items: string[] } | { ok: false; erro
  */
 export async function restoreOption(field: ReorderableField, name: string, index: number): Promise<OptionListResult> {
   await requireEdit()
+  assertOptionField(field)
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
   const r = optionListAfterRestore(field, property?.[field], name, index)
@@ -709,6 +718,7 @@ export async function restoreOption(field: ReorderableField, name: string, index
  */
 export async function undoResetOptions(field: ReorderableField, before: string[]): Promise<OptionListResult> {
   await requireEdit()
+  assertOptionField(field)
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
   const next = optionListAfterResetUndo(field, property?.[field], before)
@@ -806,6 +816,7 @@ function renameInventoryCategories(raw: string | null, oldValue: string, newValu
 
 // 이름 변경 시 함께 바뀔 데이터 건수 — 사전 고지용(읽기 전용).
 export async function countRenameTargets(field: ReorderableField, oldValue: string): Promise<number> {
+  assertOptionField(field)
   const propertyId = await getPropertyId()
   let total = 0
   for (const t of RENAME_CASCADE[field]) {
@@ -878,6 +889,7 @@ function revalidateRenamed(field: ReorderableField) {
 
 export async function renameOption(field: ReorderableField, oldValue: string, rawNewValue: string): Promise<RenameOptionResult> {
   await requireEdit()
+  assertOptionField(field)
   // 목록 추가와 같은 정규화를 거친다(normalizeOptionName). 쉼표가 남으면 목록이 두 줄로 쪼개지고
   // 그 글자를 쓰는 기록과 목록 글자가 갈린다. 종전에는 할인 사유만 거쳤다.
   const newValue = normalizeOptionName(field, rawNewValue)
@@ -973,6 +985,7 @@ export async function renameOption(field: ReorderableField, oldValue: string, ra
  */
 export async function undoRenameOption(undo: RenameUndo): Promise<{ ok: true; items: string[] } | { ok: false; error: string }> {
   await requireEdit()
+  assertOptionField(undo.field)
   const propertyId = await getPropertyId()
   const { field, oldValue, newValue } = undo
   // 적용취소도 이름 변경 입구와 같은 문을 지난다. 되돌리는 쪽(새 이름에서 옛 이름으로)이 보호 이름에 걸리거나

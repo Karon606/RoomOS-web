@@ -43,6 +43,15 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
 }
 
 /**
+ * 이 값이 목록 칸 이름인가. 목록 서버 액션은 칸 이름을 화면에서 받아 `{ [field]: … }` 로 영업장 행에
+ * 쓴다. 타입은 실행 중에 아무것도 막지 않으므로, 이 검사가 없으면 편집 권한만 있으면 영업장 행의 아무
+ * 칸(공개 주소·단기 정책 따위)에나 글자를 쓸 수 있다(독립 검수 2026-10-13). 정본 표에 있는 칸만 받는다.
+ */
+export function isOptionListField(v: unknown): v is OptionListField {
+  return typeof v === 'string' && Object.hasOwn(OPTION_LIST_DEFAULTS, v)
+}
+
+/**
  * 저장된 칸을 목록으로 읽는다. 조회 함수와 이름 변경이 반드시 같은 답을 내야 한다.
  *
  * 칸이 null(한 번도 안 고침)이면 기본값이다. 빈 문자열(운영자가 전부 뺌)은 빈 목록으로 남는다.
