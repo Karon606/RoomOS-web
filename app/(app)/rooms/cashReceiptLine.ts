@@ -275,6 +275,40 @@ export async function applyCrUndo(db: CrDb, propertyId: string, raw: unknown): P
   }
 }
 
+// ── 되살린 수납의 도장 ───────────────────────────────────────────
+
+/** 되살린 수납 한 건. 도장을 지금 줄에 맞출 재료. */
+export type CrRevived = { id: string; leaseTermId: string; payDate: Date; payMethod: string | null; cashReceiptIssuedAt: Date | null }
+
+/**
+ * 되살린 수납의 도장을 지금 줄에 맞춘다. 수납 삭제·예약 선납 취소·이용료 환불의 적용취소 공통(검수 W1).
+ *
+ * 왜. 삭제는 줄을 그대로 두는 경우(keep)가 있어 적용취소 스냅샷에 줄이 없다. 그 사이 운영자가 같은 키의
+ * 발행을 끄거나 다시 켜면, 되살린 수납이 지울 때 들고 있던 옛 도장이 줄 없이 남거나(유령 도장, 검수 R6)
+ * 지금 줄과 다른 날짜를 말한다. 그래서 되살린 **직후 같은 트랜잭션에서** 맞춘다.
+ *
+ *   도장이 있던 수납만 본다. 살아 있는 줄이 있으면 그 줄 발행일로, 없으면 null.
+ *   도장이 없던 수납은 그대로 둔다. 발행 없이 받은 돈을 '발행됨'이라 말하지 않는다.
+ *   줄 금액은 안 덮는다(국세청 금액 보호). 기본 구성 줄이 지금 키의 이용료 몫과 다르면 mismatch 로 돌려준다.
+ */
+export async function alignRevivedStamps(db: CrDb, propertyId: string, revived: CrRevived[]): Promise<CrMismatch[]> {
+  const mismatch: CrMismatch[] = []
+  const groups = new Map<string, CrRevived[]>()
+  for (const r of revived) groups.set(cashReceiptKey(r), [...(groups.get(cashReceiptKey(r)) ?? []), r])
+  for (const group of groups.values()) {
+    const ref: CrKeyRef = { propertyId, leaseTermId: group[0].leaseTermId, payDate: group[0].payDate, payMethod: group[0].payMethod }
+    const s = await readCrKey(db, ref)
+    const live = s.line && !s.line.deletedAt ? s.line : null
+    const want = live ? live.issuedAt : null
+    const off = group.filter(r => r.cashReceiptIssuedAt && iso(r.cashReceiptIssuedAt) !== iso(want)).map(r => r.id)
+    await setStamps(db, propertyId, off, want)
+    if (live && !live.inclDeposit && !live.inclCleaning && live.amount !== s.parts.rent) {
+      mismatch.push({ payYmd: ymdOf(ref.payDate), payMethod: ref.payMethod, lineAmount: live.amount, basis: s.parts.rent })
+    }
+  }
+  return mismatch
+}
+
 // ── record 가 빠진 뒤의 줄 ─────────────────────────────────────────
 
 export type CrDroppedLine = CashReceiptLineView & { payYmd: string; payMethod: string | null }

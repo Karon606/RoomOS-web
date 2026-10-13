@@ -13,13 +13,13 @@ import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, mon
 import {
   cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate,
   cashReceiptKey, cashReceiptLineView, planCashReceiptEdit, planCashReceiptEntry, planCashReceiptOn, planCashReceiptRemoval,
-  summarizeCashReceiptKey,
+  summarizeCashReceiptKey, CR_ZERO_ROW_REFUSED,
   type CashReceiptIncl, type CashReceiptLineView, type CashReceiptUndo,
 } from '@/lib/cashReceipt'
 import {
-  applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, readCrKey, reconcileCrAfterRemoval,
+  alignRevivedStamps, applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, readCrKey, reconcileCrAfterRemoval,
   setStamps, writeCrKey, CrUndoConflict,
-  type CrKeyInfo, type CrKeyRef, type CrRemovalResult, type PaymentDeleteUndo, type PaymentEditEffect, type PaymentEditUndo,
+  type CrKeyInfo, type CrKeyRef, type CrMismatch, type CrRemovalResult, type PaymentDeleteUndo, type PaymentEditEffect, type PaymentEditUndo,
 } from './cashReceiptLine'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
@@ -2016,7 +2016,9 @@ export async function updatePayment(
         }
         await writeCrKey(prisma, newS, target, after.tenantId, 'stamped')
       } else if (next.kind === 'transfer') {
-        await writeCrKey(prisma, newS, next.next, after.tenantId, 'key')
+        // 옮겨 간 영수증이 덮는 돈은 이 수납 하나다. 새 키의 다른 미발행 행에 도장을 찍지 않는다(검수 W2·R5).
+        await writeCrKey(prisma, newS, next.next, after.tenantId, 'none')
+        await setStamps(prisma, propertyId, [paymentId], next.next.issuedAt)
         effect.transferred = cashReceiptLineView({ ...next.next, inclDeposit: next.next.incl.deposit, inclCleaning: next.next.incl.cleaning, inclRent: next.next.incl.rent })
       } else if (next.kind === 'merge') {
         await writeCrKey(prisma, newS, next.next, after.tenantId, 'stamped')
@@ -2163,9 +2165,12 @@ export async function setCashReceiptIssued(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, memo: true },
+      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, memo: true, actualAmount: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    // 0원 행(원본 월 흔적·음수 조정)은 발행할 돈이 아니다. 켜면 같은 키의 앞 발행만 건드리고 이 행에는
+    // 아무것도 안 찍혀, 성공처럼 보이는데 아무 일도 안 일어난다(검수 W3·R11). 정직하게 거부한다.
+    if (issued && record.actualAmount <= 0) return { ok: false, error: CR_ZERO_ROW_REFUSED }
     // 카드 계열은 매출전표가 증빙을 대신한다 — 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
     // 수납 폼에는 이 가드가 있는데 토글에는 없어 카드 record 에도 켤 수 있었다.
     if (issued && record.payMethod && CARD_LIKE_METHODS.includes(record.payMethod)) {
@@ -2916,8 +2921,10 @@ export async function deletePayment(paymentId: string): Promise<
 // 삭제가 함께 내린 발행 줄과 도장도 **삭제 직전 그대로** 되살린다(결함 D5). 종전에는 수납만 되살려
 // 행은 '발행'인데 줄이 없어 합계에서 빠졌다. 그 사이 그 키의 발행 기록이 다시 바뀌었으면 덮지 않고
 // 아무것도 안 되살린 채 실패한다. 수납만 되살아나는 반쪽보다 낫다.
+// 줄을 그대로 둔 삭제(keep)는 스냅샷에 줄이 없다. 그 사이 끄거나 다시 켰으면 되살린 수납의 옛 도장이
+// 지금 줄과 갈리므로 같은 트랜잭션에서 지금 줄에 맞추고, 금액이 갈리면 mismatch 로 말한다(검수 W1).
 export async function restorePayment(paymentId: string, undo: PaymentDeleteUndo): Promise<
-  { ok: true; cashReceipt: { revived: CashReceiptLineView[] } } | { ok: false; error: string }
+  { ok: true; cashReceipt: { revived: CashReceiptLineView[]; mismatch: CrMismatch[] } } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -2930,9 +2937,14 @@ export async function restorePayment(paymentId: string, undo: PaymentDeleteUndo)
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     if (!record.deletedAt) return { ok: false, error: '이미 되살아난 수납 기록입니다.' }
-    await prisma.$transaction(async tx => {
+    const mismatch = await prisma.$transaction(async tx => {
       await applyCrUndo(tx, propertyId, undo.cr)
       await tx.paymentRecord.updateMany({ where: { id: paymentId, propertyId }, data: { deletedAt: null } })
+      const back = await tx.paymentRecord.findMany({
+        where: { id: paymentId, propertyId, deletedAt: null },
+        select: { id: true, leaseTermId: true, payDate: true, payMethod: true, cashReceiptIssuedAt: true },
+      })
+      return alignRevivedStamps(tx, propertyId, back)
     })
     const revived = (undo.cr?.lines ?? [])
       .filter(l => l.before && !l.before.deleted)
@@ -2946,7 +2958,7 @@ export async function restorePayment(paymentId: string, undo: PaymentDeleteUndo)
         await serverBillForMonth(record.leaseTermId, record.targetMonth, lease.rentAmount))
     }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-    return { ok: true, cashReceipt: { revived } }
+    return { ok: true, cashReceipt: { revived, mismatch } }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     if (err instanceof CrUndoConflict) return { ok: false, error: err.message }

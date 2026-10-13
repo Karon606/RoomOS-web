@@ -520,6 +520,13 @@ export function summarizeCashReceiptKey(rows: CashReceiptKeyRow[], cleaning = 0)
   return { deposit, cleaning, rent, rentRows, stampedRentRows, unstampedRent }
 }
 
+/**
+ * 0원 행(원본 월 흔적·음수 조정)은 발행 대상이 아니다(검수 W3, 2026-10-14). 원터치 토글은 그 행에 체크를
+ * 두지 않고 같은 자리에 캡션을 세우며, 서버는 켜기를 거부한다. 두 문장은 한 벌이다(가이드 §22 ②).
+ */
+export const CR_ZERO_ROW_CAPTION = '0원 · 발행할 금액 없음'
+export const CR_ZERO_ROW_REFUSED = '금액이 0원인 수납이라 현금영수증을 발행할 금액이 없습니다.'
+
 /** 발행 줄의 지금 상태. deleted 는 소프트삭제(꺼 둔) 줄이다. */
 export type CashReceiptLineState = { amount: number; issuedAt: Date; incl: CashReceiptIncl; deleted: boolean }
 /** 줄을 이렇게 세운다. */

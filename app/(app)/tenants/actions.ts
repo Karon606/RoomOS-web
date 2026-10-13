@@ -62,9 +62,9 @@ import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { cashReceiptIssueLines, cashReceiptKey, type CashReceiptIssueLine, type CashReceiptUndo } from '@/lib/cashReceipt'
+import { cashReceiptIssueLines, type CashReceiptIssueLine, type CashReceiptUndo } from '@/lib/cashReceipt'
 import {
-  applyCrUndo, captureCr, finishCrUndo, readCrKey, reconcileCrAfterRemoval, setStamps, CrUndoConflict,
+  alignRevivedStamps, applyCrUndo, captureCr, finishCrUndo, reconcileCrAfterRemoval, CrUndoConflict,
   type CrKeyRef, type CrMismatch, type CrRemovalResult,
 } from '@/app/(app)/rooms/cashReceiptLine'
 import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refundTaxNotice'
@@ -2359,18 +2359,26 @@ export type ReservationPrepaidCancelUndo = {
 export async function undoReservationPrepaidCancel(
   recordIds: string[], extraIncomeId: string | null, cleaningIncomeIds: string[],
   crUndo: CashReceiptUndo | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; cashReceipt?: { mismatch: CrMismatch[] } } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    await prisma.$transaction(async tx => {
+    const mismatch = await prisma.$transaction(async tx => {
       if (crUndo) await applyCrUndo(tx, propertyId, crUndo)
       if (recordIds.length > 0) await tx.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })
       if (cleaningIncomeIds.length > 0) await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt: null } })
       if (extraIncomeId) await tx.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })
+      // 되살린 선납의 도장을 지금 줄에 맞춘다. 취소가 줄을 안 내렸던 키(keep)는 스냅샷에 줄이 없어
+      // 그 사이 끄거나 다시 켠 뒤 되살리면 옛 도장이 남는다(검수 W1, restorePayment 와 같은 정렬).
+      if (recordIds.length === 0) return []
+      const back = await tx.paymentRecord.findMany({
+        where: { id: { in: recordIds }, propertyId, deletedAt: null },
+        select: { id: true, leaseTermId: true, payDate: true, payMethod: true, cashReceiptIssuedAt: true },
+      })
+      return alignRevivedStamps(tx, propertyId, back)
     })
     revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
-    return { ok: true }
+    return { ok: true, ...(mismatch.length > 0 ? { cashReceipt: { mismatch } } : {}) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     if (err instanceof CrUndoConflict) return { ok: false, error: err.message }
@@ -5410,7 +5418,7 @@ export async function undoRentRefund(leaseTermId: string): Promise<
     const snap = undoObj?.refund as RentRefundSnapshot | undefined
     if (!snap || !Array.isArray(snap.deletedRecordIds)) return { ok: false, error: '되돌릴 환불 기록이 없습니다.' }
 
-    await prisma.$transaction(async tx => {
+    const { issues, mismatch } = await prisma.$transaction(async tx => {
       if (snap.deletedRecordIds.length > 0) {
         await tx.paymentRecord.updateMany({
           where: { id: { in: snap.deletedRecordIds }, leaseTermId },
@@ -5430,34 +5438,24 @@ export async function undoRentRefund(leaseTermId: string): Promise<
           checkoutProrationUndo: (Object.keys(rest).length > 0 ? rest : Prisma.DbNull) as Prisma.InputJsonValue,
         },
       })
+      // 되살아난 수납에 발행 표시가 있으면 재발행을 알린다. 되살린 **뒤에** 읽는다.
+      // 소프트삭제 조회는 자동으로 걸러지므로 되살리기 앞에서는 안 보인다.
+      const back = await tx.paymentRecord.findMany({
+        where: { id: { in: snap.deletedRecordIds }, cashReceiptIssuedAt: { not: null } },
+        select: { id: true, leaseTermId: true, cashReceiptIssuedAt: true, actualAmount: true, payDate: true, payMethod: true },
+      })
+      const rows = back.length > 0
+        ? await tx.cashReceipt.findMany({
+            where: { leaseTermId, propertyId, deletedAt: null, payDate: { in: back.map(r => r.payDate) } },
+            select: { issuedAt: true, amount: true, payDate: true, payMethod: true },
+          })
+        : []
+      const issues = cashReceiptIssueLines(rows, back)
+      // 되살린 수납의 도장을 지금 줄에 맞춘다(위 머리말). **복원과 같은 트랜잭션**(검수 W5). 종전에는 복원이
+      // 끝난 뒤 따로 맞춰, 그 사이가 끊기면 옛 도장이 줄과 갈린 채 남았다. 안내(issues)는 맞추기 전 값이다.
+      const mismatch = await alignRevivedStamps(tx, propertyId, back)
+      return { issues, mismatch }
     })
-    // 되살아난 수납에 발행 표시가 있으면 재발행을 알린다. 되살린 **뒤에** 읽는다 —
-    // 소프트삭제 조회는 자동으로 걸러지므로 트랜잭션 앞에서는 안 보인다.
-    const back = await prisma.paymentRecord.findMany({
-      where: { id: { in: snap.deletedRecordIds }, cashReceiptIssuedAt: { not: null } },
-      select: { id: true, cashReceiptIssuedAt: true, actualAmount: true, payDate: true, payMethod: true },
-    })
-    const rows = back.length > 0
-      ? await prisma.cashReceipt.findMany({
-          where: { leaseTermId, deletedAt: null, payDate: { in: back.map(r => r.payDate) } },
-          select: { issuedAt: true, amount: true, payDate: true, payMethod: true },
-        })
-      : []
-    const issues = cashReceiptIssueLines(rows, back)
-
-    // 되살린 수납의 도장을 지금 줄에 맞춘다(위 머리말). 안내(issues)는 맞추기 전 값으로 이미 만들었다.
-    const mismatch: CrMismatch[] = []
-    const keyOf = (r: { payDate: Date; payMethod: string | null }) => cashReceiptKey({ leaseTermId, ...r })
-    for (const k of new Set(back.map(keyOf))) {
-      const group = back.filter(b => keyOf(b) === k)
-      const s = await readCrKey(prisma, { propertyId, leaseTermId, payDate: group[0].payDate, payMethod: group[0].payMethod })
-      const live = s.line && !s.line.deletedAt ? s.line : null
-      const off = group.filter(b => (live ? b.cashReceiptIssuedAt?.getTime() !== live.issuedAt.getTime() : true)).map(b => b.id)
-      await setStamps(prisma, propertyId, off, live ? live.issuedAt : null)
-      if (live && !live.inclDeposit && !live.inclCleaning && live.amount !== s.parts.rent) {
-        mismatch.push({ payYmd: group[0].payDate.toISOString().slice(0, 10), payMethod: group[0].payMethod, lineAmount: live.amount, basis: s.parts.rent })
-      }
-    }
 
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
     return { ok: true, ...(issues.length > 0 ? { taxNotice: issues } : {}), ...(mismatch.length > 0 ? { cashReceipt: { mismatch } } : {}) }

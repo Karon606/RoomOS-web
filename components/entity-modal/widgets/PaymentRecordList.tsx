@@ -21,7 +21,7 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
-import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
@@ -398,6 +398,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     화면에만 칩이 뜨면 발행했다고 오인한다(수납 폼은 원래부터 감춘다). */}
                 {p.payMethod && CARD_LIKE_METHODS.includes(p.payMethod) ? (
                   <span className="text-[0.65625rem] text-[var(--warm-muted)] whitespace-nowrap">카드 결제 · 매출전표</span>
+                ) : canEdit && p.actualAmount <= 0 && !p.cashReceiptIssuedAt ? (
+                  // 0원 행은 발행할 돈이 아니다. 체크를 두면 눌러야 거절되는 조작이 된다(검수 W3, 가이드 §22 ②).
+                  // 카드 행과 같은 자리·같은 글자 크기로 상태만 말한다. 서버도 켜기를 거부한다(CR_ZERO_ROW_REFUSED).
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] whitespace-nowrap">{CR_ZERO_ROW_CAPTION}</span>
                 ) : canEdit ? (
                   <label className={`inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px] ${pending ? 'opacity-50 pointer-events-none' : ''}`}>
                     <input type="checkbox" checked={!!p.cashReceiptIssuedAt} disabled={pending} onChange={() => handleToggleCashReceipt(p)}
