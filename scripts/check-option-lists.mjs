@@ -8,23 +8,27 @@
 // 다시 써서 그사이 바뀐 항목을 지웠고, 자동 추가는 운영자가 뺀 항목을 기존 값 재저장마다 되살렸다.
 //
 // 축은 열하나다.
-//   ⓐ 조회 정본: 목록 열셋의 조회가 전부 parseOptionList 를 거친다. 어느 파일에서도 목록 칸을 `?? '…'`·
-//      `|| '…'` 폴백이나 `?.split(` 으로 읽지 않고, 기본값 목록을 배열로 베껴 두지도 않는다(빈 칸을 빈 목록이나
-//      손으로 적은 기본값으로 읽는 자리, 정본과 갈릴 사본이 되살아나지 않는다).
+//   ⓐ 조회 정본: 목록 열셋의 조회가 전부 parseOptionList 를 거친다. 어느 파일에서도 목록 칸에 `??`·`||` 폴백을
+//      붙이거나(오른쪽이 글자든 변수든) 직접 split 하지 않고, 기본값 목록을 배열(작은·큰따옴표)이나 쉼표 문자열로
+//      베껴 두지도 않는다(빈 칸을 빈 목록이나 손으로 적은 기본값으로 읽는 자리, 정본과 갈릴 사본이 되살아나지 않는다).
 //   ⓑ 초기화 정본: resetOptionsToDefault 가 OPTION_LIST_DEFAULTS 를 쓴다.
 //   ⓒ 이름 변경이 기본값을 거친다: renameOption 이 parseOptionList 로 지금 목록을 읽는다(`?? ''` 금지).
 //   ⓓ 확인창: '기본값(' 뒤에는 정본에서 읽은 값(${...})만 온다. 손으로 적은 목록은 갈린다.
 //   ⓔ 할인 사유 이름 변경은 영업장 범위: 연쇄 표에 via: 'leaseTerm', 조건은 optionRenameWhere 한 곳.
-//   ⓕ '관리는 설정에서' 가 사실이다: showAddHint 를 쓰는 목록마다 분류 관리 탭에 그 카드가 있다.
+//   ⓕ '관리는 설정에서' 가 사실이다: showAddHint 를 쓰는 목록마다 분류 관리 탭에 그 카드가 있다. 추가 힌트는
+//      저장하면 실제로 더해질 때(직접 입력·기록에 저장된 값과 다른 새 값)만 선다.
 //   ⓖ 적용취소가 모든 카드에 같고 지금 서버 목록 위에서 돈다: 빼기는 restoreOption(그 이름 하나를 뺄 때의
 //      자리에), 초기화는 undoResetOptions(서버가 쥐어 준 직전 목록에), 이름 변경은 바뀐 행 id 로. 서버 액션의
 //      목록 계산은 lib/optionLists 순수 함수(표는 test-discount-reasons)이고 액션은 그 함수를 저장된 칸 그대로
 //      넘겨 부른다. 이름 변경은 바뀐 행 id 를 적용취소 표에 싣고, 되돌릴 조건은 renameUndoPlan 이 서버 표로 만든다.
+//      화면은 실패 응답을 보기 전에 목록을 덮지 않고, 바뀐 것이 없으면 '원래 자리로 복귀' 라고 하지 않는다.
 //   ⓗ 보호 이름: 이름 변경 입구(renameOption)·그 적용취소(undoRenameOption)와 화면(runRename·OptionSection)이
 //      protectedRenameError · protectedOptionReason 한 벌로 막는다. 결제 수단 보호 집합은 판정 상수에서 끌어온다.
+//      이름 편집은 보호 이름·이미 있는 이름을 인라인으로 막고, 서버가 받아 준 뒤에만 그 행일 때만 편집 칸을 닫는다.
 //   ⓘ 정규화: 목록에 이름을 넣는 길(손 추가·이름 변경·적용취소, 그리고 다른 파일의 자동 추가)이 전부
 //      정본 정규화(normalizeOptionName 또는 resolveCategoryForSave·resolveUnitForSave)를 거친다. 그 글자를
-//      쓰는 기록(할인 사유 memo·입주자 직업, 엑셀 가져오기 포함)도 같은 정규화로 저장한다.
+//      쓰는 기록(할인 사유 memo·입주자 직업, 엑셀 가져오기 포함)도 같은 정규화로 저장한다. 창문 유형 표기는
+//      설정과 엑셀 가져오기가 한 표(windowTypeCode)로 원값에 접는다.
 //   ⓙ 자동 추가는 새로 적은 값만: 기존 기록을 고치는 update 함수는 이전 값을 넘겨 견준다. 뺀 항목이
 //      그 기록을 다시 저장할 때마다 되살아나지 않는다.
 //   ⓚ 목록 서버 액션은 field 검사를 거친다: 칸 이름을 받아 `{ [field]: … }` 로 쓰는 액션은 무엇을 읽거나
@@ -107,16 +111,19 @@ for (const p of SOURCES) {
   if (p === LIB) continue
   const code = stripComments(readFileSync(p, 'utf8'))
   const at = i => code.slice(0, i).split('\n').length
-  for (const m of code.matchAll(new RegExp(`\\b(${FIELD_RE})\\s*(\\?\\?|\\|\\|)\\s*(['"\`]|[A-Z_]{4,})`, 'g'))) {
+  // 폴백의 오른쪽이 무엇이든(글자·상수·소문자 변수) 목록 칸에 ?? · || 를 붙이면 빈 칸을 제 뜻대로 읽는 것이다.
+  for (const m of code.matchAll(new RegExp(`\\b(${FIELD_RE})\\s*(\\?\\?|\\|\\|)`, 'g'))) {
     violations.push(`${p}:${at(m.index)} · 목록 칸 ${m[1]} 을 \`${m[2]} …\` 폴백으로 읽는다. 빈 칸(null)을 빈 목록이나 손으로 적은 기본값으로 읽으면 조회 화면과 갈린다. ${LIB} 의 parseOptionList 를 쓴다.`)
   }
-  for (const m of code.matchAll(new RegExp(`\\b(${FIELD_RE})\\s*\\??\\.split\\(`, 'g'))) {
+  // 직접 split 은 `x.paymentMethods?.split(` 뿐 아니라 `(x.paymentMethods ?? d).split(` 처럼 괄호를 닫고 붙는 꼴도 본다.
+  for (const m of code.matchAll(new RegExp(`\\b(${FIELD_RE})\\b(\\s*\\??\\.split\\(|[^\\n]{0,40}\\)\\s*\\.split\\()`, 'g'))) {
     violations.push(`${p}:${at(m.index)} · 목록 칸 ${m[1]} 을 직접 split 한다. 빈 칸(null)의 기본값을 잃는다. ${LIB} 의 parseOptionList 를 쓴다.`)
   }
 }
-// 기본값 목록의 배열 사본. 기본값이 셋 이상인 목록의 항목을 80% 넘게 담은 배열 글자는 정본(OPTION_LIST_DEFAULTS)의
-// 손 사본이다(PendingReceiptSection 폴백은 13개 중 12개, FinanceClient 결제 수단은 4개 전부였다, 2차 검수).
-// 판정용 부분집합(세부 항목 면제 5개·재고 3개·수납 어휘 4개 중 3개)은 이 문턱 아래라 안 걸린다. 정본을 import 해 쓴다.
+// 기본값 목록의 사본. 어느 목록의 기본값을 80% 이상 담은 배열 글자(작은따옴표·큰따옴표)나 쉼표 문자열은 정본
+// (OPTION_LIST_DEFAULTS)의 손 사본이다(PendingReceiptSection 폴백은 13개 중 12개, FinanceClient 결제 수단은 4개 전부였다,
+// 2차 검수). 두 항목 목록(방타입·등급·창문·작업 종류)도 둘 다 담으면 사본이다. 저장소에 그런 사본은 정본뿐이라 오탐이
+// 없다(3차 검수 실측). 판정용 부분집합(세부 항목 면제 5개·재고 3개·수납 어휘 4개 중 3개)은 이 문턱 아래라 안 걸린다.
 // 기본값 배열이 사는 정본 파일(lib/optionLists·lib/requestCategories·lib/unitOptions)만 빼고 본다.
 {
   const resolveConst = name => {
@@ -132,17 +139,22 @@ for (const p of SOURCES) {
   }
   if (Object.keys(defaults).length < 13) violations.push(`${LIB} · 기본값 사본 검사가 OPTION_LIST_DEFAULTS 를 ${Object.keys(defaults).length}칸만 읽었다(13 기대).`)
   const CANON = new Set([LIB, 'lib/requestCategories.ts', 'lib/unitOptions.ts'])
+  const copied = strs => Object.entries(defaults)
+    .filter(([, vals]) => vals.length >= 2 && vals.filter(v => strs.has(v)).length >= vals.length * 0.8)
+    .map(([f]) => f)
   for (const p of SOURCES) {
     if (CANON.has(p)) continue
     const code = stripComments(readFileSync(p, 'utf8'))
+    const at = i => code.slice(0, i).split('\n').length
     for (const m of code.matchAll(/\[([^\[\]]*)\]/g)) {
-      const strs = new Set([...m[1].matchAll(/'([^'\n]+)'/g)].map(x => x[1]))
-      if (strs.size < 3) continue
-      for (const [f, vals] of Object.entries(defaults)) {
-        if (vals.length >= 3 && vals.filter(v => strs.has(v)).length > vals.length * 0.8) {
-          violations.push(`${p}:${code.slice(0, m.index).split('\n').length} · ${f} 기본값 목록을 배열로 베껴 두었다. 정본(OPTION_LIST_DEFAULTS.${f})을 import 해 쓴다.`)
-        }
-      }
+      const strs = new Set([...m[1].matchAll(/(['"])([^'"\n]+)\1/g)].map(x => x[2]))
+      if (strs.size < 2) continue
+      for (const f of copied(strs)) violations.push(`${p}:${at(m.index)} · ${f} 기본값 목록을 배열로 베껴 두었다. 정본(OPTION_LIST_DEFAULTS.${f})을 import 해 쓴다.`)
+    }
+    for (const m of code.matchAll(/(['"`])([^'"`\n]*,[^'"`\n]*)\1/g)) {
+      const strs = new Set(m[2].split(',').map(x => x.trim()).filter(Boolean))
+      if (strs.size < 2) continue
+      for (const f of copied(strs)) violations.push(`${p}:${at(m.index)} · ${f} 기본값 목록을 쉼표 문자열로 베껴 두었다. 정본(OPTION_LIST_DEFAULTS.${f})을 import 해 쓴다.`)
     }
   }
 }
@@ -215,6 +227,23 @@ for (const p of [...walk('app', [], /\.tsx$/), ...walk('components', [], /\.tsx$
   if (!f) { violations.push(`${p} · showAddHint('관리는 설정에서')를 쓰는데 어느 목록인지 이 그물에 안 적혔다. HINT_FIELD 에 적고 분류 관리 탭에 카드가 있는지 본다.`); continue }
   if (!cardFields.has(f)) violations.push(`${p} · '관리는 설정에서' 라고 말하는데 분류 관리 탭에 ${f} 카드(OptionSection)가 없다. 거짓 약속이다.`)
 }
+// 힌트 '저장할 때 목록에 저절로 추가' 는 실제로 더해질 때만 선다. 직접 입력을 골랐거나 기록에 저장된 값과 다른
+// 새 값을 쳤을 때다(서버는 이전 값과 같으면 안 더한다). 고치는 폼은 그 기록의 값을, 새 기록 폼은 '' 를 savedValue 로
+// 넘긴다(3차 검수). 지출 수정·지출 등록·입주자 직업이 그 자리다.
+{
+  const cs = readFileSync('components/ui/CategorySelect.tsx', 'utf8')
+  if (!/showAddHint && \(customMode \|\| \(value !== '' && value !== baseline\)\)/.test(cs) || !/const baseline = savedValue \?\? initialValue/.test(cs)) {
+    violations.push(`components/ui/CategorySelect.tsx · 추가 힌트가 '실제로 목록에 더해질 때'(직접 입력·저장된 값과 다른 새 값)만 서지 않는다.`)
+  }
+  const SAVED = [
+    ['app/(app)/finance/FinanceClient.tsx', /value=\{editExpCategory\}[\s\S]{0,200}savedValue=\{detailExp\.category \?\? ''\}/, '지출 수정'],
+    ['app/(app)/finance/FinanceClient.tsx', /value=\{addExpCategory\}[\s\S]{0,240}savedValue=""/, '지출 등록'],
+    ['components/ui/JobSelect.tsx', /savedValue=\{defaultValue \?\? ''\}/, '입주자 직업'],
+  ]
+  for (const [p, re, what] of SAVED) {
+    if (!re.test(readFileSync(p, 'utf8'))) violations.push(`${p} · ${what} 칸이 CategorySelect 에 기록의 저장 값(savedValue)을 안 넘긴다. 추가 힌트가 사실과 달라진다.`)
+  }
+}
 
 // ⓖ 적용취소가 모든 카드에 같고, 지금 서버 목록 위에서 돈다.
 const os = bodyOf(form, /function OptionSection\(/)
@@ -228,13 +257,24 @@ const os = bodyOf(form, /function OptionSection\(/)
     if (!/restoreOption\(field, item, index\)/.test(code) || !/const index = items\.indexOf\(item\)/.test(code)) violations.push(`${FORM} · 빼기 적용취소가 뺄 때의 자리(index)로 그 이름 하나만 되돌리지(restoreOption) 않는다.`)
     if (!/undoResetOptions\(field,/.test(code)) violations.push(`${FORM} · 초기화 적용취소가 서버가 쥐어 준 직전 목록(undoResetOptions)을 안 쓴다.`)
     if (!/undoRenameOption\(/.test(code)) violations.push(`${FORM} · 이름 변경 적용취소가 서버의 id 기준 되돌리기를 안 부른다.`)
+    // 적용취소 결과가 실패면 화면 목록을 덮지 않는다. 실패 응답에는 목록이 없어 그대로 덮으면 카드가 빈다(3차 검수 역주입 N8).
+    if (!/const undoToast = [\s\S]*?if \(!r\.ok\) \{ pushToast\('error', r\.error\); return \}\s*setItems\(\(\) => r\.items\)/.test(code)) {
+      violations.push(`${FORM} · 빼기·초기화 적용취소가 실패 응답(r.ok)을 보기 전에 화면 목록을 덮는다.`)
+    }
+    if (!/if \(!u\.ok\) \{ pushToast\('error', u\.error\); return \}\s*setItems\(\(\) => u\.items\)/.test(code)) {
+      violations.push(`${FORM} · 이름 변경 적용취소가 실패 응답(u.ok)을 보기 전에 화면 목록을 덮는다.`)
+    }
+    // 그사이 같은 이름이 다시 생겨 바뀐 것이 없으면 '원래 자리로 복귀' 대신 사실대로 말한다(changed).
+    if (!/r\.changed === false && unchangedMessage/.test(code) || !/restoreOption\(field, item, index\), say\.undone\(getLabel\(item\)\), ALREADY_LISTED\(getLabel\(item\)\)\)/.test(code)) {
+      violations.push(`${FORM} · 빼기 적용취소가 바뀐 것이 없을 때(changed false)도 '원래 자리로 복귀' 라고 말한다.`)
+    }
   }
   const reset = bodyOf(actions, /export async function resetOptionsToDefault\(/)
   if (reset && !/return \{ items, before \}/.test(reset)) violations.push(`${ACTIONS} · 초기화가 직전 서버 목록(before)을 돌려주지 않는다. 적용취소가 화면의 낡은 목록을 기준으로 삼게 된다.`)
   // 목록 계산은 순수 함수가 하고(표는 test-discount-reasons), 액션은 저장된 칸 그대로를 넘긴다.
   // 빈 목록이나 화면 목록을 넘기거나 직전 목록만 쓰면 그사이 바뀐 항목이 지워진다(2차 검수 역주입 M26·M27).
   const WIRING = {
-    restoreOption: [/optionListAfterRestore\(field, property\?\.\[field\], name, index\)/, /if \(!r\.name\) return \{ ok: false/, /data: \{ \[field\]: r\.next\.join\(','\) \}/, /items: r\.next/],
+    restoreOption: [/optionListAfterRestore\(field, property\?\.\[field\], name, index\)/, /if \(!r\.name\) return \{ ok: false/, /data: \{ \[field\]: r\.next\.join\(','\) \}/, /items: r\.next, changed: r\.changed/],
     undoResetOptions: [/optionListAfterResetUndo\(field, property\?\.\[field\], before\)/, /data: \{ \[field\]: next\.join\(','\) \}/],
     undoRenameOption: [/optionListAfterRenameUndo\(field, property\?\.\[field\], oldValue, newValue\)/, /renameUndoPlan\(cascade, undo, propertyId\)/, /const cascade = RENAME_CASCADE\[field\]/, /where: step\.where/],
     renameOption: [/optionListAfterRename\(current, oldValue, newValue\)/, /rows\.push\(\{ model: t\.model, column: t\.column, ids \}\)/, /rows: changed\.rows/],
@@ -278,6 +318,25 @@ const os = bodyOf(form, /function OptionSection\(/)
   if (os && !/protectedOptionReason\(field, item\)/.test(stripComments(os))) {
     violations.push(`${FORM} · OptionSection 이 보호 이름의 수정 버튼을 서버와 같은 함수(protectedOptionReason)로 가리지 않는다.`)
   }
+  // 이름 편집의 인라인 검증(§27.2). 보호 이름·이미 있는 이름을 치는 자리에서 막고, 걸리면 저장을 못 누르고,
+  // 저장은 입구에서 그 오류를 다시 본다. 편집 칸은 서버가 받아 준 뒤에만, 그 행일 때만 닫는다(3차 검수 역주입 N9·N10).
+  if (os) {
+    const code = stripComments(os)
+    if (!/protectedRenameError\(field, editingItem, editName\)/.test(code) || !/editName !== editingItem && items\.includes\(editName\)/.test(code)) {
+      violations.push(`${FORM} · 이름 편집의 인라인 검증이 보호 이름·이미 있는 이름을 서버와 같은 기준으로 재지 않는다.`)
+    }
+    if (!/disabled=\{!!editError \|\| savingEdit\}/.test(code)) violations.push(`${FORM} · 인라인 오류가 있어도 저장 버튼이 눌린다.`)
+    const save = bodyOf(code, /const saveEdit = async \(/)
+    if (!save) violations.push(`${FORM} · saveEdit 를 못 찾았다.`)
+    else {
+      if (!/if \(editingItem === null \|\| !onRename \|\| savingEdit \|\| editError\) return/.test(save)) violations.push(`${FORM} · saveEdit 가 입구에서 인라인 오류(editError)를 다시 보지 않는다. Enter 로 오류를 지나 저장할 수 있다.`)
+      const between = save.slice(save.indexOf('setSavingEdit(true)'), save.indexOf('if (!res) return'))
+      if (save.indexOf('setSavingEdit(true)') < 0 || save.indexOf('if (!res) return') < 0 || /setEditingItem\(/.test(between)) {
+        violations.push(`${FORM} · saveEdit 가 서버 응답 전에 편집 칸을 닫는다. 거절당하면 친 글자가 사라진다.`)
+      }
+      if (!/setEditingItem\(cur => cur === oldVal \? null : cur\)/.test(save)) violations.push(`${FORM} · saveEdit 가 응답 뒤 지금 열린 행이 그 행인지 보지 않고 닫는다. 그사이 연 다른 행 편집이 닫힌다.`)
+    }
+  }
   const pay = lib.match(/paymentMethods:\s*\{\s*names:([^\n]*)/)?.[1] ?? ''
   for (const c of ['...PAYMENT_METHODS', '...CARD_LIKE_METHODS', 'DEPOSIT_SOURCED_PAY_METHOD']) {
     if (!pay.includes(c)) violations.push(`${LIB} · 결제 수단 보호 이름이 판정 상수 ${c.replace('...', '')} 에서 오지 않는다. 손으로 적으면 판정 자리와 두 벌이 된다.`)
@@ -310,6 +369,16 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/api/import/route.ts', /normalizeOptionName\('jobOptions', str\(row\['직업'\]\)\)/g, 3, '엑셀 가져오기 직업(비교·덮어쓰기·새로 만들기)'],
     ['app/api/import/preview/route.ts', /normalizeOptionName\('jobOptions', str\(row\['직업'\]\)\)/g, 1, '엑셀 가져오기 미리보기 직업'],
   ]
+  // 창문 유형 표기 표는 정본 한 벌이다. 목록 이름 정규화와 엑셀 가져오기 두 경로가 같은 표(windowTypeCode)를 쓴다.
+  // 표가 갈리면 '외창' 이 원값 OUTER 옆에 두 줄로 서거나 가져오기와 설정이 다른 원값을 고른다(3차 검수).
+  {
+    const n = bodyOf(lib, /export function normalizeOptionName\(/)
+    if (!n || !/field === 'windowTypeOptions'\) return windowTypeCode\(name\) \?\? name/.test(n)) violations.push(`${LIB} · normalizeOptionName 이 창문 유형의 화면 이름(외창·내창)을 원값으로 접지 않는다.`)
+    for (const p of ['app/api/import/route.ts', 'app/api/import/preview/route.ts']) {
+      const code = stripComments(readFileSync(p, 'utf8'))
+      if (/WINDOW_MAP\b|'외창'\s*:/.test(code) || !/windowTypeCode\(str\(row\['채광'\]\)\)/.test(code)) violations.push(`${p} · 창문 표기를 제 표로 읽는다. lib/optionLists 의 windowTypeCode 한 벌을 쓴다.`)
+    }
+  }
   for (const [p, re, min, what] of RECORD_NORMALIZERS) {
     const n = (stripComments(readFileSync(p, 'utf8')).match(re) ?? []).length
     if (n < min) violations.push(`${p} · ${what} 를 목록과 같은 정규화(normalizeOptionName)로 저장하지 않는다(${n}/${min}). 목록 글자와 기록 글자가 갈려 이름 변경이 그 기록을 못 따라간다.`)
