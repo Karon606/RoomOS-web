@@ -116,3 +116,66 @@ export function protectedRenameError(field: OptionListField, oldValue: string, n
   if (to) return `다른 항목을 이 이름으로 바꿀 수 없습니다. ${to}`
   return null
 }
+
+/**
+ * 빼기 적용취소가 지금 서버 목록에 한 이름을 도로 넣는다. 이미 있으면(그사이 다시 더했으면) 그대로 둔다.
+ *
+ * 자리는 뺄 때의 위치이고 지금 목록 길이로 자른다. 바탕이 지금 목록이라 그사이 더해진 항목이 안 지워진다.
+ * 종전처럼 화면이 들고 있던 이전 목록을 통째로 다시 쓰면 (가) 둘을 빼고 먼저 뜬 토스트부터 적용취소할 때
+ * 뒤에 뺀 것까지 살아났다가 두 번째 적용취소가 앞의 것을 다시 지우고, (나) 빼고 곧바로 더한 항목이
+ * 사라지고, (다) 그사이 다른 화면이 목록에 쌓은 값이 지워졌다(독립 검수 2026-10-13).
+ */
+export function insertOptionAt(list: readonly string[], name: string, index: number): string[] {
+  if (!name || list.includes(name)) return [...list]
+  const at = Number.isInteger(index) ? Math.min(Math.max(index, 0), list.length) : list.length
+  return [...list.slice(0, at), name, ...list.slice(at)]
+}
+
+/**
+ * 초기화 적용취소가 쓸 목록. 초기화 직전 서버 목록을 되살리고, 초기화 뒤 지금 목록에 새로 생긴 항목
+ * (기본값에도 직전 목록에도 없던 것)은 뒤에 붙여 잃지 않는다. 기본값에서 온 항목은 초기화가 넣은 것이라 걷힌다.
+ */
+export function mergeResetUndo(before: readonly string[], resetTo: readonly string[], now: readonly string[]): string[] {
+  const out: string[] = []
+  for (const v of before) if (v && !out.includes(v)) out.push(v)
+  for (const v of now) if (!resetTo.includes(v) && !out.includes(v)) out.push(v)
+  return out
+}
+
+// 아래 넷은 목록 서버 액션(이름 변경·이름 변경 적용취소·빼기 적용취소·초기화 적용취소)이 쓸 목록을 정하는
+// 순수 함수다. 서버 액션은 저장된 칸을 읽어 넘기고 결과를 쓰기만 한다. 목록 계산이 액션 안에 있으면 표로
+// 고정할 수 없어, 지금 목록 대신 빈 목록에 끼우거나 직전 목록만 쓰는 실수가 그물에 안 걸렸다(2차 검수).
+// 표는 scripts/test-discount-reasons, 액션이 이 함수를 그대로 부르는지는 scripts/check-option-lists ⓖ 가 본다.
+
+/** 이름 변경 뒤 목록. 옛 이름 자리에 새 이름이 선다(순서 그대로). */
+export function optionListAfterRename(list: readonly string[], oldValue: string, newValue: string): string[] {
+  return list.map(v => v === oldValue ? newValue : v)
+}
+
+/**
+ * 이름 변경 적용취소 뒤 목록. 지금 저장된 칸(raw)에서 새 이름 자리에 옛 이름을 도로 넣는다. 그사이 옛 이름이
+ * 목록에 다시 생겼으면 새 이름만 뺀다(같은 이름 두 줄 금지). 목록에 새 이름이 없으면(그사이 누가 또 바꿨으면)
+ * 목록은 그대로이고 changed 는 false 다.
+ */
+export function optionListAfterRenameUndo(field: OptionListField, raw: string | null | undefined, oldValue: string, newValue: string): { next: string[]; changed: boolean } {
+  const list = parseOptionList(field, raw)
+  if (!list.includes(newValue)) return { next: list, changed: false }
+  const next = list.includes(oldValue) ? list.filter(v => v !== newValue) : list.map(v => v === newValue ? oldValue : v)
+  return { next, changed: true }
+}
+
+/**
+ * 빼기 적용취소 뒤 목록. 지금 저장된 칸(raw)을 바탕으로 그 이름 하나를 뺄 때의 자리에 넣는다(insertOptionAt).
+ * name 은 실제로 넣는 이름이고, 비어 있으면 아무것도 안 넣는다. changed 는 목록이 실제로 바뀌는지다.
+ */
+export function optionListAfterRestore(field: OptionListField, raw: string | null | undefined, rawName: string, index: number): { next: string[]; changed: boolean; name: string } {
+  const list = parseOptionList(field, raw)
+  const name = rawName
+  const next = insertOptionAt(list, name, index)
+  return { next, changed: next.length !== list.length, name }
+}
+
+/** 초기화 적용취소 뒤 목록. 지금 저장된 칸(raw)에서 초기화 뒤 생긴 항목을 지키며 직전 목록(before)으로 간다. */
+export function optionListAfterResetUndo(field: OptionListField, raw: string | null | undefined, before: readonly string[]): string[] {
+  return mergeResetUndo(before, OPTION_LIST_DEFAULTS[field], parseOptionList(field, raw))
+}

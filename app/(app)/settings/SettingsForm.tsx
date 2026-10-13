@@ -21,7 +21,7 @@ import {
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   getRequestCategories, addRequestCategory, deleteRequestCategory,
   getSpecUnitOptions, getQtyUnitOptions, addUnitOption, deleteUnitOption,
-  reorderOptions, renameOption, countRenameTargets, resetOptionsToDefault,
+  reorderOptions, renameOption, undoRenameOption, countRenameTargets, resetOptionsToDefault, restoreOption, undoResetOptions, type RenameUndo, type OptionListResult,
   getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
@@ -283,17 +283,18 @@ export default function SettingsForm({
   }
 
   // 옵션 이름 변경 공통 흐름 — 같은 값을 쓰는 기존 데이터도 함께 바뀌므로, 대상이 있으면 건수를 먼저 고지한다.
+  // 결과 토스트와 적용취소는 OptionSection 이 한 곳에서 띄운다(바뀐 행 id 로 그 행만 되돌린다).
   const runRename = async (
     field: Parameters<typeof renameOption>[0],
     oldVal: string,
     rawNew: string,
     setItems: (updater: (prev: string[]) => string[]) => void,
-  ) => {
+  ): Promise<OptionRenamed | null> => {
     const newVal = rawNew.trim()
-    if (!newVal || newVal === oldVal) return
+    if (!newVal || newVal === oldVal) return null
     // 판정에 쓰이는 이름으로(또는 그 이름에서) 바꾸려 하면 건수 확인창을 띄우기 전에 서버와 같은 문장으로 알린다.
     const blocked = protectedRenameError(field, oldVal, newVal)
-    if (blocked) { pushToast('error', blocked); return }
+    if (blocked) { pushToast('error', blocked); return null }
     const targets = await countRenameTargets(field, oldVal)
     if (targets > 0) {
       const ok = await confirmDialog({
@@ -302,14 +303,12 @@ export default function SettingsForm({
         level: 'caution',
         confirmLabel: '변경',
       })
-      if (!ok) return
+      if (!ok) return null
     }
     const res = await renameOption(field, oldVal, newVal)
-    if (!res.ok) { pushToast('error', res.error); return }
+    if (!res.ok) { pushToast('error', res.error); return null }
     setItems(prev => prev.map(v => v === oldVal ? newVal : v))
-    pushToast('success', '이름이 변경되었습니다', res.updated > 0
-      ? { detail: '되돌리려면 이름을 다시 바꾸면 데이터도 함께 돌아옵니다.' }
-      : undefined)
+    return { updated: res.updated, undo: res.undo }
   }
 
   const handleSubmit = async (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => {
@@ -364,20 +363,22 @@ export default function SettingsForm({
     setRoomTypes(prev => [...prev, v]); setNewRoomType('')
   }
   const handleDeleteRoomType = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 방타입을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 방타입을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomTypeOption(name)
     setRoomTypes(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderRoomTypes = async (items: string[]) => {
     setRoomTypes(items)
     await reorderOptions('roomTypeOptions', items)
   }
-  const handleRenameRoomType = async (oldVal: string, newVal: string) => {
-    await runRename('roomTypeOptions', oldVal, newVal, setRoomTypes)
-  }
+  const handleRenameRoomType = (oldVal: string, newVal: string) =>
+    runRename('roomTypeOptions', oldVal, newVal, setRoomTypes)
   const handleResetRoomTypes = async () => {
-    if (!(await confirmDialog({ title: `방타입을 기본값(${OPTION_LIST_DEFAULTS.roomTypeOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setRoomTypes(await resetOptionsToDefault('roomTypeOptions'))
+    if (!(await confirmDialog({ title: `방타입을 기본값(${OPTION_LIST_DEFAULTS.roomTypeOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('roomTypeOptions')
+    setRoomTypes(r.items)
+    return r.before
   }
 
   // ── 호실 등급 (스탠다드/실속형 등 — 방 타입과 별개 차원) ─────────────────
@@ -392,20 +393,22 @@ export default function SettingsForm({
     setRoomTiers(prev => [...prev, v]); setNewRoomTier('')
   }
   const handleDeleteRoomTier = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 등급을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 등급을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomTierOption(name)
     setRoomTiers(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderRoomTiers = async (items: string[]) => {
     setRoomTiers(items)
     await reorderOptions('roomTierOptions', items)
   }
-  const handleRenameRoomTier = async (oldVal: string, newVal: string) => {
-    await runRename('roomTierOptions', oldVal, newVal, setRoomTiers)
-  }
+  const handleRenameRoomTier = (oldVal: string, newVal: string) =>
+    runRename('roomTierOptions', oldVal, newVal, setRoomTiers)
   const handleResetRoomTiers = async () => {
-    if (!(await confirmDialog({ title: `등급을 기본값(${OPTION_LIST_DEFAULTS.roomTierOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setRoomTiers(await resetOptionsToDefault('roomTierOptions'))
+    if (!(await confirmDialog({ title: `등급을 기본값(${OPTION_LIST_DEFAULTS.roomTierOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('roomTierOptions')
+    setRoomTiers(r.items)
+    return r.before
   }
 
   // ── 창문 유형 ───────────────────────────────────────────────────
@@ -420,20 +423,22 @@ export default function SettingsForm({
     setWindowTypes(prev => [...prev, v]); setNewWindowType('')
   }
   const handleDeleteWindowType = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${windowLabel(name)}' 창문 유형을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${windowLabel(name)}' 창문 유형을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteWindowTypeOption(name)
     setWindowTypes(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderWindowTypes = async (items: string[]) => {
     setWindowTypes(items)
     await reorderOptions('windowTypeOptions', items)
   }
-  const handleRenameWindowType = async (oldVal: string, newVal: string) => {
-    await runRename('windowTypeOptions', oldVal, newVal, setWindowTypes)
-  }
+  const handleRenameWindowType = (oldVal: string, newVal: string) =>
+    runRename('windowTypeOptions', oldVal, newVal, setWindowTypes)
   const handleResetWindowTypes = async () => {
-    if (!(await confirmDialog({ title: `창문 유형을 기본값(${OPTION_LIST_DEFAULTS.windowTypeOptions.map(windowLabel).join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setWindowTypes(await resetOptionsToDefault('windowTypeOptions'))
+    if (!(await confirmDialog({ title: `창문 유형을 기본값(${OPTION_LIST_DEFAULTS.windowTypeOptions.map(windowLabel).join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('windowTypeOptions')
+    setWindowTypes(r.items)
+    return r.before
   }
 
   // ── 방향 ────────────────────────────────────────────────────────
@@ -448,20 +453,22 @@ export default function SettingsForm({
     setDirections(prev => [...prev, v]); setNewDirection('')
   }
   const handleDeleteDirection = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 방향을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 방향을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomDirectionOption(name)
     setDirections(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderDirections = async (items: string[]) => {
     setDirections(items)
     await reorderOptions('directionOptions', items)
   }
-  const handleRenameDirection = async (oldVal: string, newVal: string) => {
-    await runRename('directionOptions', oldVal, newVal, setDirections)
-  }
+  const handleRenameDirection = (oldVal: string, newVal: string) =>
+    runRename('directionOptions', oldVal, newVal, setDirections)
   const handleResetDirections = async () => {
-    if (!(await confirmDialog({ title: `방향을 기본값(${DEFAULT_DIRS[0]}~${DEFAULT_DIRS[DEFAULT_DIRS.length - 1]} ${DEFAULT_DIRS.length}방위)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setDirections(await resetOptionsToDefault('directionOptions'))
+    if (!(await confirmDialog({ title: `방향을 기본값(${DEFAULT_DIRS[0]}~${DEFAULT_DIRS[DEFAULT_DIRS.length - 1]} ${DEFAULT_DIRS.length}방위)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('directionOptions')
+    setDirections(r.items)
+    return r.before
   }
 
   // ── 작업 종류 ──────────────────────────────────────────────────
@@ -479,20 +486,22 @@ export default function SettingsForm({
     setWorkKinds(prev => [...prev, v]); setNewWorkKind('')
   }
   const handleDeleteWorkKind = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 작업 종류를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 작업 종류를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteWorkKindOption(name)
     setWorkKinds(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderWorkKinds = async (items: string[]) => {
     setWorkKinds(items)
     await reorderOptions('workKindOptions', items)
   }
-  const handleRenameWorkKind = async (oldVal: string, newVal: string) => {
-    await runRename('workKindOptions', oldVal, newVal, setWorkKinds)
-  }
+  const handleRenameWorkKind = (oldVal: string, newVal: string) =>
+    runRename('workKindOptions', oldVal, newVal, setWorkKinds)
   const handleResetWorkKinds = async () => {
-    if (!(await confirmDialog({ title: `작업 종류를 기본값(${OPTION_LIST_DEFAULTS.workKindOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setWorkKinds(await resetOptionsToDefault('workKindOptions'))
+    if (!(await confirmDialog({ title: `작업 종류를 기본값(${OPTION_LIST_DEFAULTS.workKindOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('workKindOptions')
+    setWorkKinds(r.items)
+    return r.before
   }
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
@@ -585,20 +594,22 @@ export default function SettingsForm({
     setIncomeCategs(prev => [...prev, v]); setNewIncomeCateg('')
   }
   const handleDeleteIncomeCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteIncomeCategory(name)
     setIncomeCategs(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderIncomeCategs = async (items: string[]) => {
     setIncomeCategs(items)
     await reorderOptions('incomeCategories', items)
   }
-  const handleRenameIncomeCateg = async (oldVal: string, newVal: string) => {
-    await runRename('incomeCategories', oldVal, newVal, setIncomeCategs)
-  }
+  const handleRenameIncomeCateg = (oldVal: string, newVal: string) =>
+    runRename('incomeCategories', oldVal, newVal, setIncomeCategs)
   const handleResetIncomeCategs = async () => {
-    if (!(await confirmDialog({ title: '부가수익 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
-    setIncomeCategs(await resetOptionsToDefault('incomeCategories'))
+    if (!(await confirmDialog({ title: '부가수익 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('incomeCategories')
+    setIncomeCategs(r.items)
+    return r.before
   }
 
   // ── 지출 카테고리 ────────────────────────────────────────────────
@@ -611,20 +622,22 @@ export default function SettingsForm({
     setExpenseCategs(prev => [...prev, v]); setNewExpenseCateg('')
   }
   const handleDeleteExpenseCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteExpenseCategory(name)
     setExpenseCategs(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderExpenseCategs = async (items: string[]) => {
     setExpenseCategs(items)
     await reorderOptions('expenseCategories', items)
   }
-  const handleRenameExpenseCateg = async (oldVal: string, newVal: string) => {
-    await runRename('expenseCategories', oldVal, newVal, setExpenseCategs)
-  }
+  const handleRenameExpenseCateg = (oldVal: string, newVal: string) =>
+    runRename('expenseCategories', oldVal, newVal, setExpenseCategs)
   const handleResetExpenseCategs = async () => {
-    if (!(await confirmDialog({ title: '지출 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
-    setExpenseCategs(await resetOptionsToDefault('expenseCategories'))
+    if (!(await confirmDialog({ title: '지출 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('expenseCategories')
+    setExpenseCategs(r.items)
+    return r.before
   }
 
   // ── 결제 수단 ────────────────────────────────────────────────────
@@ -637,20 +650,22 @@ export default function SettingsForm({
     setPayMethods(prev => [...prev, v]); setNewPayMethod('')
   }
   const handleDeletePayMethod = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 결제 수단을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 결제 수단을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deletePaymentMethod(name)
     setPayMethods(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderPayMethods = async (items: string[]) => {
     setPayMethods(items)
     await reorderOptions('paymentMethods', items)
   }
-  const handleRenamePayMethod = async (oldVal: string, newVal: string) => {
-    await runRename('paymentMethods', oldVal, newVal, setPayMethods)
-  }
+  const handleRenamePayMethod = (oldVal: string, newVal: string) =>
+    runRename('paymentMethods', oldVal, newVal, setPayMethods)
   const handleResetPayMethods = async () => {
-    if (!(await confirmDialog({ title: `결제 수단을 기본값(${OPTION_LIST_DEFAULTS.paymentMethods.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return
-    setPayMethods(await resetOptionsToDefault('paymentMethods'))
+    if (!(await confirmDialog({ title: `결제 수단을 기본값(${OPTION_LIST_DEFAULTS.paymentMethods.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('paymentMethods')
+    setPayMethods(r.items)
+    return r.before
   }
 
   // ── 요청·컴플레인 카테고리 ───────────────────────────────────────
@@ -663,20 +678,22 @@ export default function SettingsForm({
     setRequestCategs(prev => [...prev, v]); setNewRequestCateg('')
   }
   const handleDeleteRequestCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRequestCategory(name)
     setRequestCategs(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderRequestCategs = async (items: string[]) => {
     setRequestCategs(items)
     await reorderOptions('requestCategories', items)
   }
-  const handleRenameRequestCateg = async (oldVal: string, newVal: string) => {
-    await runRename('requestCategories', oldVal, newVal, setRequestCategs)
-  }
+  const handleRenameRequestCateg = (oldVal: string, newVal: string) =>
+    runRename('requestCategories', oldVal, newVal, setRequestCategs)
   const handleResetRequestCategs = async () => {
-    if (!(await confirmDialog({ title: '요청 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
-    setRequestCategs(await resetOptionsToDefault('requestCategories'))
+    if (!(await confirmDialog({ title: '요청 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('requestCategories')
+    setRequestCategs(r.items)
+    return r.before
   }
 
   // ── 단위 어휘 ────────────────────────────────────────────────────
@@ -696,20 +713,22 @@ export default function SettingsForm({
     setSpecUnits(prev => [...prev, v]); setNewSpecUnit('')
   }
   const handleDeleteSpecUnit = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
     await deleteUnitOption('spec', name)
     setSpecUnits(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderSpecUnits = async (items: string[]) => {
     setSpecUnits(items)
     await reorderOptions('specUnitOptions', items)
   }
-  const handleRenameSpecUnit = async (oldVal: string, newVal: string) => {
-    await runRename('specUnitOptions', oldVal, newVal, setSpecUnits)
-  }
+  const handleRenameSpecUnit = (oldVal: string, newVal: string) =>
+    runRename('specUnitOptions', oldVal, newVal, setSpecUnits)
   const handleResetSpecUnits = async () => {
-    if (!(await confirmDialog({ title: '규격 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
-    setSpecUnits(await resetOptionsToDefault('specUnitOptions'))
+    if (!(await confirmDialog({ title: '규격 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('specUnitOptions')
+    setSpecUnits(r.items)
+    return r.before
   }
   const handleAddQtyUnit = async () => {
     const v = newQtyUnit.trim(); if (!v) return
@@ -717,20 +736,22 @@ export default function SettingsForm({
     setQtyUnits(prev => [...prev, v]); setNewQtyUnit('')
   }
   const handleDeleteQtyUnit = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
     await deleteUnitOption('qty', name)
     setQtyUnits(prev => prev.filter(t => t !== name))
+    return true
   }
   const handleReorderQtyUnits = async (items: string[]) => {
     setQtyUnits(items)
     await reorderOptions('qtyUnitOptions', items)
   }
-  const handleRenameQtyUnit = async (oldVal: string, newVal: string) => {
-    await runRename('qtyUnitOptions', oldVal, newVal, setQtyUnits)
-  }
+  const handleRenameQtyUnit = (oldVal: string, newVal: string) =>
+    runRename('qtyUnitOptions', oldVal, newVal, setQtyUnits)
   const handleResetQtyUnits = async () => {
-    if (!(await confirmDialog({ title: '수량 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
-    setQtyUnits(await resetOptionsToDefault('qtyUnitOptions'))
+    if (!(await confirmDialog({ title: '수량 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('qtyUnitOptions')
+    setQtyUnits(r.items)
+    return r.before
   }
 
   // ── 고정 지출 ────────────────────────────────────────────────────
@@ -1267,6 +1288,7 @@ export default function SettingsForm({
             description="호실 등록 시 선택할 수 있는 방 유형 목록입니다."
             items={roomTypes}
             field="roomTypeOptions"
+            setItems={setRoomTypes}
             getLabel={v => v}
             newValue={newRoomType}
             onNewValueChange={setNewRoomType}
@@ -1282,6 +1304,7 @@ export default function SettingsForm({
             description="스탠다드/실속형/프리미엄처럼 호실의 등급(패키지)을 구분하는 옵션입니다. 방 타입과는 별개 차원으로, 같은 원룸이라도 등급이 다를 수 있어요."
             items={roomTiers}
             field="roomTierOptions"
+            setItems={setRoomTiers}
             getLabel={v => v}
             newValue={newRoomTier}
             onNewValueChange={setNewRoomTier}
@@ -1297,6 +1320,7 @@ export default function SettingsForm({
             description="기본 유형: 내창, 외창. 직접 추가하면 그대로 호실 옵션에 표시됩니다."
             items={windowTypes}
             field="windowTypeOptions"
+            setItems={setWindowTypes}
             getLabel={windowLabel}
             newValue={newWindowType}
             onNewValueChange={setNewWindowType}
@@ -1312,6 +1336,7 @@ export default function SettingsForm({
             description="호실 등록 시 선택할 수 있는 방향 목록입니다."
             items={directions}
             field="directionOptions"
+            setItems={setDirections}
             getLabel={v => v}
             newValue={newDirection}
             onNewValueChange={setNewDirection}
@@ -1327,6 +1352,7 @@ export default function SettingsForm({
             description="호실 관리 > 작업 탭에서 작업 기록 등록 시 선택할 종류입니다. 청소는 등록 칸이 따로 있어 이 목록에 없습니다."
             items={workKinds}
             field="workKindOptions"
+            setItems={setWorkKinds}
             getLabel={v => v}
             newValue={newWorkKind}
             onNewValueChange={setNewWorkKind}
@@ -1342,6 +1368,7 @@ export default function SettingsForm({
             description="수납 관리 > 부가수익 탭에서 수익 등록 시 선택할 카테고리입니다."
             items={incomeCategs}
             field="incomeCategories"
+            setItems={setIncomeCategs}
             getLabel={v => v}
             newValue={newIncomeCateg}
             onNewValueChange={setNewIncomeCateg}
@@ -1357,6 +1384,7 @@ export default function SettingsForm({
             description="지출 등록 시 선택할 카테고리입니다. 고정 지출에도 사용됩니다."
             items={expenseCategs}
             field="expenseCategories"
+            setItems={setExpenseCategs}
             getLabel={v => v}
             newValue={newExpenseCateg}
             onNewValueChange={setNewExpenseCateg}
@@ -1372,6 +1400,7 @@ export default function SettingsForm({
             description="지출·고정 지출 등록 시 선택할 결제 수단입니다."
             items={payMethods}
             field="paymentMethods"
+            setItems={setPayMethods}
             getLabel={v => v}
             newValue={newPayMethod}
             onNewValueChange={setNewPayMethod}
@@ -1388,6 +1417,7 @@ export default function SettingsForm({
             description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
             items={requestCategs}
             field="requestCategories"
+            setItems={setRequestCategs}
             getLabel={v => v}
             newValue={newRequestCateg}
             onNewValueChange={setNewRequestCateg}
@@ -1406,11 +1436,13 @@ export default function SettingsForm({
             description="'몇 개 샀나'를 세는 단위입니다. 지출이나 재고를 저장할 때 목록에 없는 단위를 치면 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 기록은 그대로 있고, 앞으로 고를 때만 안 보입니다."
             items={qtyUnits}
             field="qtyUnitOptions"
+            setItems={setQtyUnits}
             getLabel={v => v}
             newValue={newQtyUnit}
             onNewValueChange={setNewQtyUnit}
             onAdd={handleAddQtyUnit}
             onDelete={handleDeleteQtyUnit}
+            removeVerb="빼기"
             onReorder={handleReorderQtyUnits}
             onRename={handleRenameQtyUnit}
             onReset={handleResetQtyUnits}
@@ -1421,11 +1453,13 @@ export default function SettingsForm({
             description="'한 덩어리가 얼마짜리인가'를 재는 단위입니다. 120g 짜리, 30매 들이처럼 씁니다. 크기가 다른 단위끼리는 이름만 바꿀 수 없습니다(저장된 수량이 틀어지기 때문에, 값까지 바꾸려면 재고 관리의 단위 변환을 씁니다)."
             items={specUnits}
             field="specUnitOptions"
+            setItems={setSpecUnits}
             getLabel={v => v}
             newValue={newSpecUnit}
             onNewValueChange={setNewSpecUnit}
             onAdd={handleAddSpecUnit}
             onDelete={handleDeleteSpecUnit}
+            removeVerb="빼기"
             onReorder={handleReorderSpecUnits}
             onRename={handleRenameSpecUnit}
             onReset={handleResetSpecUnits}
@@ -2651,27 +2685,83 @@ function AppearanceTab() {
   )
 }
 
+/** 이름 변경 결과. OptionSection 이 결과 토스트와 적용취소를 띄우는 데 쓴다. */
+type OptionRenamed = { updated: number; undo: RenameUndo | null }
+
+// 행을 빼는 동작의 토스트 문장. 행 버튼·확인창과 같은 동사를 쓴다(scripts/check-undo-verb). 동사마다 문장을
+// 따로 두는 것은 보간 뒤에 조사를 박지 않으려는 것이다(scripts/check-korean-particle).
+const REMOVE_TOAST = {
+  삭제: { done: (label: string) => `'${label}' 항목을 삭제했습니다`, undone: '항목 삭제를 적용취소했습니다 · 목록에 다시 표시' },
+  빼기: { done: (label: string) => `'${label}' 항목을 뺐습니다`, undone: '항목 빼기를 적용취소했습니다 · 목록에 다시 표시' },
+} as const
+
 function OptionSection({
-  title, description, items, field, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
+  title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, removeVerb = '삭제', onReorder, onRename, onReset, placeholder,
 }: {
   title: string
   description?: string
   items: string[]
-  /** 이 카드의 목록 칸. 이름을 바꿀 수 없는 항목(lib/optionLists 보호 이름)을 서버와 같은 함수로 가린다. */
+  /** 이 카드의 목록 칸. 이름을 바꿀 수 없는 항목(lib/optionLists 보호 이름)을 서버와 같은 함수로 가리고,
+   * 빼기·초기화·이름 변경의 적용취소가 이 칸을 서버에서 다시 고친다. */
   field: OptionListField
+  /** 적용취소가 끝난 뒤 화면 목록을 서버 값으로 맞춘다. */
+  setItems: (updater: (prev: string[]) => string[]) => void
   getLabel: (v: string) => string
   newValue: string
   onNewValueChange: (v: string) => void
   onAdd: () => void | Promise<void>
-  onDelete: (v: string) => void
+  /** true = 실제로 뺐다. 확인창에서 취소하면 false 라 적용취소 토스트가 안 뜬다. */
+  onDelete: (v: string) => Promise<boolean>
+  /** 이 카드가 행을 빼는 동작을 부르는 말. 행 버튼·확인창·토스트·적용취소 토스트가 한 낱말이어야 한다
+   * (scripts/check-undo-verb). 기록은 그대로 두고 목록에서만 빼는 카드(단위·할인 사유·직업)가 '빼기'다. */
+  removeVerb?: '삭제' | '빼기'
   onReorder?: (items: string[]) => void
-  onRename?: (oldValue: string, newValue: string) => void
-  onReset?: () => void | Promise<void>
+  onRename?: (oldValue: string, newValue: string) => Promise<OptionRenamed | null>
+  /** 초기화 직전의 서버 목록을 돌려준다(적용취소 기준). 확인창에서 취소하면 null. */
+  onReset?: () => Promise<string[] | null>
   placeholder?: string
 }) {
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+
+  // 적용취소(§16). 빼기·초기화·이름 변경 뒤 토스트 [적용취소]. 분류 관리 탭의 목록 카드 전부가
+  // 이 한 곳을 같이 쓴다(카드마다 따로 달면 어느 카드는 되고 어느 카드는 안 되는 날이 온다).
+  // 셋 다 지금 서버 목록을 바탕으로 되돌리고 그 결과로 화면을 맞춘다. 화면이 들고 있던 이전 목록을
+  // 통째로 다시 쓰면 그사이 더하거나 뺀 항목, 다른 화면이 쌓은 항목이 엉킨다(lib/optionLists insertOptionAt).
+  // 빼기는 그 이름 하나를 뺄 때의 자리에 도로 넣고(restoreOption), 초기화는 서버가 쥐어 준 직전 목록에
+  // 그 뒤 생긴 항목을 더하고(undoResetOptions), 이름 변경은 바뀐 행 id 로 그 행만 되돌린다(undoRenameOption).
+  const undoToast = (run: () => Promise<OptionListResult>, doneMessage: string) => () => {
+    void run().then(r => {
+      if (!r.ok) { pushToast('error', r.error); return }
+      setItems(() => r.items)
+      pushToast('info', doneMessage)
+    }).catch(err => pushToast('error', humanError(err, '적용취소 실패')))
+  }
+
+  const handleDelete = async (item: string) => {
+    const index = items.indexOf(item)
+    try {
+      if (!(await onDelete(item))) return
+    } catch (err) { pushToast('error', humanError(err, `${removeVerb} 실패`)); return }
+    const say = REMOVE_TOAST[removeVerb]
+    pushToast('success', say.done(getLabel(item)), {
+      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone) },
+    })
+  }
+
+  const handleReset = async () => {
+    if (!onReset) return
+    let before: string[] | null
+    try {
+      before = await onReset()
+    } catch (err) { pushToast('error', humanError(err, '초기화 실패')); return }
+    if (!before) return
+    const serverBefore = before
+    pushToast('success', '기본값으로 초기화했습니다', {
+      action: { label: '적용취소', run: undoToast(() => undoResetOptions(field, serverBefore), '초기화를 적용취소했습니다 · 이전 목록으로 복귀') },
+    })
+  }
 
   const trimmed = newValue.trim()
   const isDuplicate = trimmed !== '' && items.includes(trimmed)
@@ -2741,11 +2831,29 @@ function OptionSection({
     setEditingValue(item)
   }
 
-  const saveEdit = () => {
-    if (editingItem !== null) {
-      onRename?.(editingItem, editingValue)
-      setEditingItem(null)
-    }
+  const saveEdit = async () => {
+    if (editingItem === null || !onRename) return
+    const oldVal = editingItem
+    setEditingItem(null)
+    let res: OptionRenamed | null
+    try { res = await onRename(oldVal, editingValue) } catch (err) { pushToast('error', humanError(err, '이름 변경 실패')); return }
+    if (!res) return
+    const undo = res.undo
+    pushToast('success', '이름이 변경되었습니다', {
+      ...(res.updated > 0 ? { detail: `기존 데이터 ${res.updated}건도 함께 바뀌었습니다.` } : {}),
+      ...(undo ? {
+        action: {
+          label: '적용취소',
+          run: () => {
+            void undoRenameOption(undo).then(u => {
+              if (!u.ok) { pushToast('error', u.error); return }
+              setItems(() => u.items)
+              pushToast('info', '이름 변경을 적용취소했습니다 · 이전 이름으로 복귀')
+            }).catch(err => pushToast('error', humanError(err, '적용취소 실패')))
+          },
+        },
+      } : {}),
+    })
   }
 
   return (
@@ -2753,7 +2861,7 @@ function OptionSection({
       <div className="flex items-start justify-between gap-2 mb-1">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
         {onReset && (
-          <button onClick={onReset}
+          <button onClick={handleReset}
             className="shrink-0 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
             기본값으로 초기화
           </button>
@@ -2823,8 +2931,8 @@ function OptionSection({
                   <button onClick={() => startEdit(item)}
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 ))}
-                <button onClick={() => onDelete(item)}
-                  className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
+                <button onClick={() => handleDelete(item)}
+                  className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">{removeVerb}</button>
               </>
             )}
           </div>

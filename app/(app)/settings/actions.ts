@@ -16,7 +16,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
-import { OPTION_LIST_DEFAULTS, parseOptionList, protectedRenameError, type OptionListField } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, parseOptionList, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, type OptionListField } from '@/lib/optionLists'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -584,19 +584,34 @@ export async function deleteRequestCategory(name: string) {
 // 기본값은 lib/optionLists 정본 한 벌이다(조회·초기화·이름 변경·확인창이 같이 읽는다).
 type ReorderableField = OptionListField
 
-export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
+// 목록만 고친 저장(초기화·순서·빼기 적용취소·초기화 적용취소)이 같은 화면들을 무효화한다.
+function revalidateOptionList(field: ReorderableField) {
+  revalidatePath('/settings')
+  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
+    revalidatePath('/finance')
+  }
+  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions' || field === 'workKindOptions') {
+    revalidatePath('/room-manage')
+  }
+  if (field === 'requestCategories') revalidatePath('/requests')
+}
+
+/**
+ * 기본값으로 초기화. 초기화 직전의 **서버** 목록(before)도 함께 돌려준다. 적용취소(undoResetOptions)가
+ * 그 목록을 기준으로 삼는다. 화면이 들고 있던 목록은 탭을 연 때의 것이라 그사이 다른 화면이 쌓은 항목이 없다.
+ */
+export async function resetOptionsToDefault(field: ReorderableField): Promise<{ items: string[]; before: string[] }> {
   await requireEdit()
   const propertyId = await getPropertyId()
-  const defaultVal = OPTION_LIST_DEFAULTS[field].join(',')
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
+  const before = parseOptionList(field, property?.[field])
+  const items = [...OPTION_LIST_DEFAULTS[field]]
   await prisma.property.update({
     where: { id: propertyId },
-    data: { [field]: defaultVal } as any,
+    data: { [field]: items.join(',') } as Prisma.PropertyUpdateInput,
   })
-  revalidatePath('/settings')
-  if (['incomeCategories', 'expenseCategories', 'paymentMethods'].includes(field)) revalidatePath('/finance')
-  if (['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions', 'workKindOptions'].includes(field)) revalidatePath('/room-manage')
-  if (field === 'requestCategories') revalidatePath('/requests')
-  return defaultVal.split(',').map(s => s.trim()).filter(Boolean)
+  revalidateOptionList(field)
+  return { items, before }
 }
 
 export async function reorderOptions(field: ReorderableField, items: string[]): Promise<void> {
@@ -606,14 +621,48 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
     where: { id: propertyId },
     data: { [field]: items.join(',') } as any,
   })
-  revalidatePath('/settings')
-  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
-    revalidatePath('/finance')
+  revalidateOptionList(field)
+}
+
+/** 목록을 고친 적용취소의 결과. 실패면 화면이 성공 토스트 대신 이 문장을 띄운다. */
+export type OptionListResult = { ok: true; items: string[] } | { ok: false; error: string }
+
+/**
+ * 빼기 적용취소(§16). 지금 서버 목록에 그 이름이 없을 때만 뺄 때의 자리(index, 목록 길이로 자른다)에
+ * 도로 넣고 새 목록을 돌려준다. 이전 목록을 통째로 다시 쓰지 않는다(lib/optionLists insertOptionAt 머리말).
+ */
+export async function restoreOption(field: ReorderableField, name: string, index: number): Promise<OptionListResult> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
+  const r = optionListAfterRestore(field, property?.[field], name, index)
+  // 넣을 이름이 없으면 아무것도 안 바뀐다. 성공으로 돌려주면 화면이 '적용취소했습니다' 를 띄운다.
+  if (!r.name) return { ok: false, error: '적용취소할 이름을 확인하지 못했습니다.' }
+  if (r.changed) {
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { [field]: r.next.join(',') } as Prisma.PropertyUpdateInput,
+    })
+    revalidateOptionList(field)
   }
-  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions' || field === 'workKindOptions') {
-    revalidatePath('/room-manage')
-  }
-  if (field === 'requestCategories') revalidatePath('/requests')
+  return { ok: true, items: r.next }
+}
+
+/**
+ * 초기화 적용취소(§16). 초기화 직전 서버 목록(before)으로 되돌리되, 초기화 뒤 목록에 새로 생긴 항목
+ * (직접 더했거나 다른 화면이 저장하며 쌓은 것)은 잃지 않게 뒤에 붙인다(lib/optionLists mergeResetUndo).
+ */
+export async function undoResetOptions(field: ReorderableField, before: string[]): Promise<OptionListResult> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
+  const next = optionListAfterResetUndo(field, property?.[field], before)
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput,
+  })
+  revalidateOptionList(field)
+  return { ok: true, items: next }
 }
 
 // ── 옵션 이름 변경 ────────────────────────────────────────────────
@@ -721,74 +770,39 @@ export async function countRenameTargets(field: ReorderableField, oldValue: stri
   return total
 }
 
-export type RenameOptionResult = { ok: true; updated: number } | { ok: false; error: string }
+/**
+ * 이름 변경 적용취소 표. 그때 바뀐 행의 id 를 쥔다.
+ *
+ * 값으로 되돌리면(새 이름인 행 전부를 옛 이름으로) 원래부터 새 이름이던 행까지 옛 이름이 된다.
+ * '현금' 을 '현금결제' 로 바꿨는데 이미 '현금결제' 로 적힌 지출이 있었다면 그 지출까지 '현금' 이 된다.
+ */
+export type RenameUndo = {
+  field: ReorderableField
+  oldValue: string
+  newValue: string
+  rows: { model: string; column: string; ids: string[] }[]
+  wishIds: string[]
+  inventory: boolean
+}
 
-export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<RenameOptionResult> {
-  await requireEdit()
-  const propertyId = await getPropertyId()
-  const property = await prisma.property.findUnique({
-    where: { id: propertyId },
-    select: { [field]: true } as any,
-  })
-  // 조회 함수와 같은 정본으로 읽는다. 종전에는 칸이 비었을 때(null) 기본값 대신 빈 목록을 읽어
-  // 아래 '목록에 없음' 갈래로 빠졌다. 아무것도 안 바뀌었는데 화면은 성공 토스트를 띄웠다
-  // (운영 영업장의 결제 수단·창문 유형이 그 상태였다, 2026-10-13). 요청 카테고리의 빈 값=기본 5종도 정본이 쥔다.
-  const current = parseOptionList(field, (property as any)?.[field])
-  if (newValue === oldValue) return { ok: true, updated: 0 }
-  // 코드가 이 글자와 같은지로 판정하는 이름은 바꾸지 않는다(lib/optionLists PROTECTED_OPTION_NAMES).
-  // 화면은 그 이름의 수정 버튼을 안 세우지만, 입구는 서버다.
-  const protectedError = protectedRenameError(field, oldValue, newValue)
-  if (protectedError) return { ok: false, error: protectedError }
-  if (!current.includes(oldValue)) return { ok: true, updated: 0 }
-  if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }
-  // 단위는 **표기만** 고치는 자리다. 뜻이 바뀌는 변경은 막는다 — 저장된 숫자는 그대로인 채
-  // 단위만 커지면 재고가 조용히 천 배로 틀린다. 값까지 환산하는 길은 재고 관리에 따로 있다.
-  if (field === 'specUnitOptions' || field === 'qtyUnitOptions') {
-    const a = canonicalUnit(oldValue), b = canonicalUnit(newValue)
-    if ((isConvertibleUnit(oldValue) || isConvertibleUnit(newValue)) && a !== b) {
-      return { ok: false, error: `'${oldValue}' 과 '${newValue}' 은 크기가 다른 단위라 이름만 바꾸면 저장된 수량이 틀어집니다. 재고 관리에서 품목별 단위 변환을 쓰면 값까지 함께 환산됩니다.` }
-    }
-  }
+export type RenameOptionResult = { ok: true; updated: number; undo: RenameUndo | null } | { ok: false; error: string }
 
-  const updated = current.map(v => v === oldValue ? newValue : v).join(',')
-  const wishKey = RENAME_WISH_KEY[field]
-  // 목록 갱신과 데이터 갱신은 한 트랜잭션 — 중간에 끊기면 라벨이 갈린다.
-  const changed = await prisma.$transaction(async (tx) => {
-    let n = 0
-    await tx.property.update({
-      where: { id: propertyId },
-      data: { [field]: updated } as any,
-    })
-    for (const t of RENAME_CASCADE[field]) {
-      const res = await (tx as any)[t.model].updateMany({
-        where: renameWhere(t.model, t.column, propertyId, oldValue),
-        data: { [t.column]: newValue },
-      })
-      n += res.count
-    }
-    if (wishKey) {
-      const rows = await tx.leaseTerm.findMany({
-        where: { propertyId, wishConditions: { contains: oldValue } },
-        select: { id: true, wishConditions: true },
-      })
-      for (const r of pickWishRows(rows, wishKey, oldValue)) {
-        const cond = JSON.parse(r.wishConditions ?? '{}') as Record<string, unknown>
-        cond[wishKey] = newValue
-        await tx.leaseTerm.update({ where: { id: r.id }, data: { wishConditions: JSON.stringify(cond) } })
-        n += 1
-      }
-    }
-    if (field === 'expenseCategories') {
-      const p = await tx.property.findUnique({ where: { id: propertyId }, select: { inventoryCategories: true } })
-      const nextInv = renameInventoryCategories(p?.inventoryCategories ?? null, oldValue, newValue)
-      if (nextInv) {
-        await tx.property.update({ where: { id: propertyId }, data: { inventoryCategories: nextInv } })
-        n += 1
-      }
-    }
-    return n
-  })
+// 목록 칸 전부. 칸 이름이 변수라 select 를 타입으로 좁히려고 둔다(빠진 칸은 satisfies 가 막는다).
+const OPTION_LIST_SELECT = {
+  roomTypeOptions: true, roomTierOptions: true, windowTypeOptions: true, directionOptions: true,
+  incomeCategories: true, expenseCategories: true, paymentMethods: true, requestCategories: true,
+  workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true,
+} as const satisfies Record<ReorderableField, true>
 
+// 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.
+type RenameDelegate = {
+  findMany(args: { where: Record<string, unknown>; select: { id: true } }): Promise<{ id: string }[]>
+  updateMany(args: { where: Record<string, unknown>; data: Record<string, string> }): Promise<{ count: number }>
+}
+const renameDelegate = (db: unknown, model: string) => (db as Record<string, RenameDelegate>)[model]
+
+// 이름 변경과 그 적용취소가 같은 화면들을 무효화한다.
+function revalidateRenamed(field: ReorderableField) {
   revalidatePath('/settings')
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
@@ -801,7 +815,148 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
   if (field === 'expenseCategories') revalidatePath('/inventory')
   if (field === 'paymentMethods') revalidatePath('/tenants')
   if (RENAME_CASCADE[field].some(t => t.model === 'room')) revalidatePath('/rooms')
-  return { ok: true, updated: changed }
+}
+
+export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<RenameOptionResult> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { [field]: true } as any,
+  })
+  // 조회 함수와 같은 정본으로 읽는다. 종전에는 칸이 비었을 때(null) 기본값 대신 빈 목록을 읽어
+  // 아래 '목록에 없음' 갈래로 빠졌다. 아무것도 안 바뀌었는데 화면은 성공 토스트를 띄웠다
+  // (운영 영업장의 결제 수단·창문 유형이 그 상태였다, 2026-10-13). 요청 카테고리의 빈 값=기본 5종도 정본이 쥔다.
+  const current = parseOptionList(field, (property as any)?.[field])
+  if (newValue === oldValue) return { ok: true, updated: 0, undo: null }
+  // 코드가 이 글자와 같은지로 판정하는 이름은 바꾸지 않는다(lib/optionLists PROTECTED_OPTION_NAMES).
+  // 화면은 그 이름의 수정 버튼을 안 세우지만, 입구는 서버다.
+  const protectedError = protectedRenameError(field, oldValue, newValue)
+  if (protectedError) return { ok: false, error: protectedError }
+  // 목록에 없는 이름이면 아무것도 안 바꾼다. 성공으로 돌려주면 화면이 이름 변경 성공 토스트를 띄운다.
+  if (!current.includes(oldValue)) return { ok: false, error: '목록에 없는 이름입니다. 새로고침 후 다시 시도해 주세요.' }
+  if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }
+  // 단위는 **표기만** 고치는 자리다. 뜻이 바뀌는 변경은 막는다 — 저장된 숫자는 그대로인 채
+  // 단위만 커지면 재고가 조용히 천 배로 틀린다. 값까지 환산하는 길은 재고 관리에 따로 있다.
+  if (field === 'specUnitOptions' || field === 'qtyUnitOptions') {
+    const a = canonicalUnit(oldValue), b = canonicalUnit(newValue)
+    if ((isConvertibleUnit(oldValue) || isConvertibleUnit(newValue)) && a !== b) {
+      return { ok: false, error: `'${oldValue}' 과 '${newValue}' 은 크기가 다른 단위라 이름만 바꾸면 저장된 수량이 틀어집니다. 재고 관리에서 품목별 단위 변환을 쓰면 값까지 함께 환산됩니다.` }
+    }
+  }
+
+  const updated = optionListAfterRename(current, oldValue, newValue).join(',')
+  const wishKey = RENAME_WISH_KEY[field]
+  // 목록 갱신과 데이터 갱신은 한 트랜잭션 — 중간에 끊기면 라벨이 갈린다.
+  const changed = await prisma.$transaction(async (tx) => {
+    let n = 0
+    const rows: RenameUndo['rows'] = []
+    const wishIds: string[] = []
+    let inventory = false
+    await tx.property.update({
+      where: { id: propertyId },
+      data: { [field]: updated } as any,
+    })
+    for (const t of RENAME_CASCADE[field]) {
+      const where = renameWhere(t.model, t.column, propertyId, oldValue)
+      // 바꿀 행의 id 를 먼저 쥔다. 적용취소가 이 행들만 되돌린다(값 기준 금지, RenameUndo).
+      const ids = (await renameDelegate(tx, t.model).findMany({ where, select: { id: true } })).map(r => r.id)
+      if (ids.length === 0) continue
+      const res = await renameDelegate(tx, t.model).updateMany({
+        where: { ...where, id: { in: ids } },
+        data: { [t.column]: newValue },
+      })
+      n += res.count
+      rows.push({ model: t.model, column: t.column, ids })
+    }
+    if (wishKey) {
+      const leases = await tx.leaseTerm.findMany({
+        where: { propertyId, wishConditions: { contains: oldValue } },
+        select: { id: true, wishConditions: true },
+      })
+      for (const r of pickWishRows(leases, wishKey, oldValue)) {
+        const cond = JSON.parse(r.wishConditions ?? '{}') as Record<string, unknown>
+        cond[wishKey] = newValue
+        await tx.leaseTerm.update({ where: { id: r.id }, data: { wishConditions: JSON.stringify(cond) } })
+        wishIds.push(r.id)
+        n += 1
+      }
+    }
+    if (field === 'expenseCategories') {
+      const p = await tx.property.findUnique({ where: { id: propertyId }, select: { inventoryCategories: true } })
+      const nextInv = renameInventoryCategories(p?.inventoryCategories ?? null, oldValue, newValue)
+      if (nextInv) {
+        await tx.property.update({ where: { id: propertyId }, data: { inventoryCategories: nextInv } })
+        inventory = true
+        n += 1
+      }
+    }
+    return { n, rows, wishIds, inventory }
+  })
+
+  revalidateRenamed(field)
+  return {
+    ok: true,
+    updated: changed.n,
+    undo: { field, oldValue, newValue, rows: changed.rows, wishIds: changed.wishIds, inventory: changed.inventory },
+  }
+}
+
+/**
+ * 이름 변경 적용취소(§16). 그때 바뀐 행(id)만 옛 이름으로 돌리고, 목록도 새 이름 자리에 옛 이름을 도로 넣는다.
+ *
+ * 그사이 그 행을 누가 또 고쳤으면(지금 값이 새 이름이 아니면) 건드리지 않는다. 표는 클라이언트를
+ * 거쳐 왔으므로 이 목록의 연쇄 대상에 있는 모델·칸만 받고, 행은 이 영업장 범위 안에서만 고른다.
+ */
+export async function undoRenameOption(undo: RenameUndo): Promise<{ ok: true; items: string[] } | { ok: false; error: string }> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const { field, oldValue, newValue } = undo
+  const cascade = RENAME_CASCADE[field]
+  if (!cascade || !undo.rows.every(r => cascade.some(t => t.model === r.model && t.column === r.column))) {
+    return { ok: false, error: '적용취소할 대상을 확인하지 못했습니다.' }
+  }
+  const result = await prisma.$transaction(async (tx) => {
+    const property = await tx.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
+    const { next, changed } = optionListAfterRenameUndo(field, property?.[field], oldValue, newValue)
+    // 실제로 되돌린 것이 있는가. 목록에 새 이름이 없고 되돌린 행도 0이면 그사이 누가 또 바꾼 것이다.
+    let reverted = changed ? 1 : 0
+    await tx.property.update({ where: { id: propertyId }, data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput })
+    for (const r of undo.rows) {
+      if (r.ids.length === 0) continue
+      const res = await renameDelegate(tx, r.model).updateMany({
+        where: { ...renameWhere(r.model, r.column, propertyId, newValue), id: { in: r.ids } },
+        data: { [r.column]: oldValue },
+      })
+      reverted += res.count
+    }
+    const wishKey = RENAME_WISH_KEY[field]
+    if (wishKey && undo.wishIds.length > 0) {
+      const leases = await tx.leaseTerm.findMany({
+        where: { propertyId, id: { in: undo.wishIds } },
+        select: { id: true, wishConditions: true },
+      })
+      for (const r of pickWishRows(leases, wishKey, newValue)) {
+        const cond = JSON.parse(r.wishConditions ?? '{}') as Record<string, unknown>
+        cond[wishKey] = oldValue
+        await tx.leaseTerm.update({ where: { id: r.id }, data: { wishConditions: JSON.stringify(cond) } })
+        reverted += 1
+      }
+    }
+    if (field === 'expenseCategories' && undo.inventory) {
+      const p = await tx.property.findUnique({ where: { id: propertyId }, select: { inventoryCategories: true } })
+      const back = renameInventoryCategories(p?.inventoryCategories ?? null, newValue, oldValue)
+      if (back) {
+        await tx.property.update({ where: { id: propertyId }, data: { inventoryCategories: back } })
+        reverted += 1
+      }
+    }
+    return { next, reverted }
+  })
+  // 아무것도 안 바뀌었는데 성공 토스트를 띄우지 않는다(목록 쓰기는 같은 값이라 무해하다).
+  if (result.reverted === 0) return { ok: false, error: '그사이 이름이 다시 바뀌어 적용취소할 것이 없습니다.' }
+  revalidateRenamed(field)
+  return { ok: true, items: result.next }
 }
 
 // ── 결제 수단 ─────────────────────────────────────────────────────
