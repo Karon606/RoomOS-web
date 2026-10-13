@@ -476,7 +476,10 @@ export function isReceiptBeforeCutoff(key: string, cutoffYmd: string | null): bo
 //      지워 둔 줄의 옛 금액은 쓰지 않는다. 같은 조작의 토스트 적용취소만 직전 스냅샷을 복원한다.
 //   3. 받을 때 발행 대상은 이용료 몫뿐이다(2026-09-21). 과납분을 부가수익으로 돌린 수납도 같다.
 //   4. 국세청에 올라간 금액은 수납을 따라 자동으로 덮지 않는다(2026-08-25). 살아 있는 줄의 금액이
-//      바뀌는 길은 수정 폼의 '발행 금액' 문과, 운영자가 그 키에 **발행을 새로 켜는** 조작뿐이다.
+//      바뀌는 길은 수정 폼의 '발행 금액' 문과, 운영자가 그 키에 **새 돈의 발행을 켜는** 조작뿐이다.
+//      그 조작도 앞 발행을 다시 세지 않고 **새 돈만 더한다**. 발행일은 앞 발행의 날짜를 지킨다. 한 키에
+//      날짜가 하나뿐이라 새 날짜로 덮으면 앞 발행이 그 달 합계에서 다른 달로 옮겨 간다(독립 검수 F4,
+//      2026-10-14. 앞서 '키 몫 전체로 다시 세우기'를 정본으로 적었다가 이 원칙과 충돌해 뒤집었다).
 //
 // 왜 순수 함수인가. 종전에는 이 판정이 저장 경로 다섯 군데에 인라인으로 흩어져 있었고, 경로마다
 // 결론이 갈렸다(토글은 옛 줄을 되살리고 일괄 기록은 새 금액으로 쓰고, 삭제는 형제를 보고 수정은
@@ -491,7 +494,11 @@ export type CashReceiptIncl = { deposit: boolean; cleaning: boolean; rent: boole
  * 행 수는 **금액이 든 행만** 센다. 0원 흔적 record(savePayment 의 원본 월 흔적)와 음수 조정은
  * 발행할 돈이 아니라서, 세면 '아직 발행 안 된 돈이 있다'는 판정이 거짓으로 선다.
  */
-export type CashReceiptKeyParts = CashReceiptParts & { rentRows: number; stampedRentRows: number }
+export type CashReceiptKeyParts = CashReceiptParts & {
+  rentRows: number; stampedRentRows: number
+  /** 도장 없는 이용료 행(금액이 든 행)의 합. 아직 어느 영수증에도 안 덮인 돈. */
+  unstampedRent: number
+}
 
 export type CashReceiptKeyRow = { isDeposit: boolean; actualAmount: number; cashReceiptIssuedAt: Date | string | null }
 
@@ -500,16 +507,17 @@ export type CashReceiptKeyRow = { isDeposit: boolean; actualAmount: number; cash
  * 부르는 쪽이 살아 있고 조정 전표가 아닌 record 만 넘긴다. 청소비 몫은 ExtraIncome 이라 따로 받는다.
  */
 export function summarizeCashReceiptKey(rows: CashReceiptKeyRow[], cleaning = 0): CashReceiptKeyParts {
-  let deposit = 0, rent = 0, rentRows = 0, stampedRentRows = 0
+  let deposit = 0, rent = 0, rentRows = 0, stampedRentRows = 0, unstampedRent = 0
   for (const r of rows) {
     if (r.isDeposit) { deposit += r.actualAmount; continue }
     rent += r.actualAmount
     if (r.actualAmount > 0) {
       rentRows += 1
       if (r.cashReceiptIssuedAt) stampedRentRows += 1
+      else unstampedRent += r.actualAmount
     }
   }
-  return { deposit, cleaning, rent, rentRows, stampedRentRows }
+  return { deposit, cleaning, rent, rentRows, stampedRentRows, unstampedRent }
 }
 
 /** 발행 줄의 지금 상태. deleted 는 소프트삭제(꺼 둔) 줄이다. */
@@ -524,26 +532,40 @@ const defaultIncl = (): CashReceiptIncl => ({ ...CASH_RECEIPT_DEFAULT_INCL })
  * 발행을 켤 때 줄이 어떻게 되나. 원터치 토글과 수정 폼에서 체크를 켤 때.
  *
  *   create  줄이 없었다. 지금 이용료 몫으로 새로 세운다.
- *   rebuild 줄이 있다. 지워 둔 줄이면(끈 뒤 다시 켜기) **옛 금액·옛 구성을 쓰지 않고** 지금
- *           이용료 몫·기본 구성으로 다시 세운다(규칙 2, 결함 D1). 살아 있는 줄인데 아직 도장이
- *           없는 행이 있으면, 그 키에 새로 들어온 돈까지 덮는 새 발행이다(T7). 환불 확정 record 를
- *           켜는 것이 이 갈래다. 원 수납이 지워지고 도장 없는 확정액 record 만 남았으므로 줄이
- *           확정액(과 그 키에 딸린 몫)으로 다시 선다(결함 D4).
- *   keep    살아 있는 줄이 키의 돈을 이미 다 덮고 있다. 금액·구성은 그대로 두고 발행일만 고친다.
+ *   rebuild 지워 둔 줄이 있다(끈 뒤 다시 켜기). **옛 금액·옛 구성을 쓰지 않고** 지금 이용료 몫·기본
+ *           구성으로 다시 세운다(규칙 2, 결함 D1). 그리고 **재발행**(opts.reissue, 환불 확정 record 를
+ *           켜는 것)이면 살아 있는 줄이 있어도 이 갈래다. 환불이 원 수납을 지웠고 운영자는 홈택스에서 원
+ *           영수증을 취소한 뒤 확정액(과 그 키에 딸린 몫)으로 다시 끊었다는 뜻이다(결함 D4).
+ *   add     살아 있는 줄이 있는데 도장 없는 이용료 행이 있다(T7). 새 돈만 **더한다**.
+ *           금액 = 줄 금액 + 도장 없는 행의 합. 발행일은 **앞 발행의 날짜를 지킨다**(규칙 4). 손으로
+ *           고친 금액도 그대로 두고 그 위에 더한다. 고른 날짜가 다르면 부르는 쪽이 그 사실을 말한다.
+ *   keep    살아 있는 줄이 키의 이용료 행을 이미 다 덮고 있다. 아무것도 안 바꾼다. 발행일도 안 옮긴다
+ *           (검수 R11: 0원 흔적 행을 눌러 켜면 앞 발행일이 다른 달로 옮겨 갔다).
  *   none    이용료 몫이 없어 발행할 금액이 0 이다. 보증금·청소비는 받을 때 대상이 아니다.
  */
 export type CashReceiptOnPlan =
   | { kind: 'create'; next: CashReceiptLineTarget }
   | { kind: 'rebuild'; next: CashReceiptLineTarget; over: 'deleted' | 'live'; prev: { amount: number; issuedAt: Date } }
+  | { kind: 'add'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date }; added: number }
   | { kind: 'keep'; next: CashReceiptLineTarget }
   | { kind: 'none' }
 
 export function planCashReceiptOn(
   line: CashReceiptLineState | null, parts: CashReceiptKeyParts, issuedAt: Date,
+  opts: { reissue?: boolean } = {},
 ): CashReceiptOnPlan {
   const live = liveLine(line)
-  if (live && parts.rentRows > 0 && parts.stampedRentRows === parts.rentRows) {
-    return { kind: 'keep', next: { amount: live.amount, issuedAt, incl: { ...live.incl } } }
+  if (live && !opts.reissue) {
+    if (parts.unstampedRent > 0) {
+      return {
+        kind: 'add',
+        next: { amount: live.amount + parts.unstampedRent, issuedAt: live.issuedAt, incl: { ...live.incl } },
+        prev: { amount: live.amount, issuedAt: live.issuedAt },
+        added: parts.unstampedRent,
+      }
+    }
+    if (parts.rentRows > 0) return { kind: 'keep', next: { amount: live.amount, issuedAt: live.issuedAt, incl: { ...live.incl } } }
+    return { kind: 'none' }
   }
   const amount = cashReceiptIssuableAmount(parts)
   if (amount <= 0) return { kind: 'none' }
@@ -553,45 +575,49 @@ export function planCashReceiptOn(
 }
 
 /**
- * 수납 등록 폼이 '현금영수증 발행함'으로 저장한 뒤 줄이 어떻게 되나. 등록 폼 두 벌의 공통 규칙(결함 D8).
+ * 수납 등록 폼이 '현금영수증 발행함'으로 저장한 뒤 줄이 어떻게 되나. 등록 폼 세 벌의 공통 규칙(결함 D8).
  *
- * 종전에는 두 폼이 같은 키의 기존 줄을 다르게 덮었다. 수납 등록 폼은 **이 결제 몫**을 보내 앞 입금의
- * 발행을 지웠고, 입주자 상세·예약 선납은 금액을 안 보내 **키 전체 몫**으로 썼다.
+ * 종전에는 폼마다 같은 키의 기존 줄을 다르게 덮었다. 수납 등록 폼은 **이 결제 몫**을 보내 앞 입금의
+ * 발행을 지웠고, 입주자 상세·예약 선납은 금액을 안 보내 **키 전체 몫**으로 썼다. 1단계 첫 판은 둘을
+ * '키 몫 전체로 다시 세우기'로 묶었는데, 그것도 손으로 고친 앞 금액과 앞 발행일을 지웠다(검수 F4).
  *
- *   merge   그 키에 이 입금 말고도 돈이 있다. 살아 있는 줄이 있거나 도장 없는 이용료 행이 있다.
- *           한 장 규칙이라 키의 이용료 몫 전체로 다시 세운다. 폼의 금액 칸은 이 입금 몫이라 여기서는
- *           쓰지 않는다(쓰면 앞 입금 몫이 사라진다). 결과에 직전 줄을 실어 화면이 말하게 한다.
- *   create / rebuild  이 입금이 그 키의 유일한 돈이다. 폼이 보낸 금액·구성이 이기고, 안 보냈으면
- *           이용료 몫·기본 구성이다. 지워 둔 줄이 있어도 그 옛 금액은 쓰지 않는다(규칙 2).
+ *   merge   그 키에 살아 있는 줄이 있다. **이번 입금의 발행 금액만 더한다** 수정 폼의 합치기(T14)와 같은
+ *           덧셈이다. 이번 입금의 발행 금액은 폼이 보낸 값이고, 안 보냈으면 이번 입금의 이용료 몫(entry)이다.
+ *           발행일은 앞 발행의 날짜를 지킨다(규칙 4). 직전 줄과 더한 금액을 돌려줘 화면이 말하게 한다.
+ *   create / rebuild  살아 있는 줄이 없다. 이번 입금 몫만 세운다. 폼이 보낸 금액·구성이 이기고, 안
+ *           보냈으면 이번 입금의 이용료 몫·기본 구성이다. 지워 둔 줄이 있어도 그 옛 금액은 쓰지 않는다(규칙 2).
+ *           **앞서 발행 없이 받은 입금은 덮지 않는다**(검수 R4b). 그 돈은 그대로 '아직 안 덮인 돈'이고,
+ *           일부 행만 도장이 찍힌 키는 정상 상태다. 덮으려면 그 행에서 발행을 켠다(add).
  *   none    적을 금액이 0 이다.
  *
- * '이 입금 말고도 돈이 있다'를 도장으로 가린다. 등록 경로(savePayment·saveDepositPayment·
- * saveCleaningFeePayment·예약 선납)가 발행함일 때 제 record 에 도장을 먼저 찍으므로, 줄이 없는
- * 키에서 도장 없는 이용료 행은 곧 앞서 발행 없이 받은 돈이다.
+ * entry 는 서버가 이번 저장이 만든 record 로 센 이용료 몫이다(부르는 쪽이 record id 를 넘긴다).
  */
 export type CashReceiptEntryPlan =
   | { kind: 'create'; next: CashReceiptLineTarget }
   | { kind: 'rebuild'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date } }
-  | { kind: 'merge'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date } | null }
+  | { kind: 'merge'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date }; added: number }
   | { kind: 'none' }
 
 export function planCashReceiptEntry(
-  line: CashReceiptLineState | null, parts: CashReceiptKeyParts, issuedAt: Date,
+  line: CashReceiptLineState | null, entry: number, issuedAt: Date,
   given: { amount?: number | null; incl?: CashReceiptIncl | null },
 ): CashReceiptEntryPlan {
   const live = liveLine(line)
-  const share = cashReceiptIssuableAmount(parts)
-  if (live || parts.stampedRentRows < parts.rentRows) {
-    if (share <= 0) return { kind: 'none' }
+  const amount = given.amount ?? entry
+  if (amount <= 0) return { kind: 'none' }
+  const incl = given.incl ? { ...given.incl } : defaultIncl()
+  if (live) {
     return {
       kind: 'merge',
-      next: { amount: share, issuedAt, incl: defaultIncl() },
-      prev: live ? { amount: live.amount, issuedAt: live.issuedAt } : null,
+      next: {
+        amount: live.amount + amount, issuedAt: live.issuedAt,
+        incl: { deposit: live.incl.deposit || incl.deposit, cleaning: live.incl.cleaning || incl.cleaning, rent: live.incl.rent || incl.rent },
+      },
+      prev: { amount: live.amount, issuedAt: live.issuedAt },
+      added: amount,
     }
   }
-  const amount = given.amount ?? share
-  if (amount <= 0) return { kind: 'none' }
-  const next = { amount, issuedAt, incl: given.incl ? { ...given.incl } : defaultIncl() }
+  const next = { amount, issuedAt, incl }
   return line ? { kind: 'rebuild', next, prev: { amount: line.amount, issuedAt: line.issuedAt } } : { kind: 'create', next }
 }
 

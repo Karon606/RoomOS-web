@@ -1528,7 +1528,9 @@ export async function saveReservationDeposit(data: {
   cashReceiptIssued?: boolean
   cashReceiptIssuedDate?: string | null   // 발행일 'YYYY-MM-DD'(KST) — 아래 두 엔진으로 그대로 넘긴다.
   // split — 보증금 대체에서 엔진이 실제로 나눠 적은 두 몫(남은 보증금을 넘으면 rent > 0). 다른 모드는 없음.
-}): Promise<{ ok: true; split?: { deposit: number; rent: number } } | { ok: false; error: string }> {
+  // createdIds. 이번에 만든 수납 record. 발행 기록이 '이번 입금의 몫'을 이것으로 센다(2026-10-14 F4).
+  // 금액 계산에는 관여하지 않는다, 돌려주기만 한다.
+}): Promise<{ ok: true; split?: { deposit: number; rent: number }; createdIds: string[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1557,6 +1559,7 @@ export async function saveReservationDeposit(data: {
       : `${kst.year}-${String(kst.month).padStart(2, '0')}`
 
     let split: { deposit: number; rent: number } | undefined
+    const createdIds: string[] = []
     if (data.mode === 'deposit') {
       // 중복 수납 가드 — 이미 계약 보증금만큼 받았으면 추가 저장 차단(반응 없음으로 오인한 재시도가
       // 5만원 2건 중복을 만든 사고, 신고 50a2a69b). 초과 수납은 기존 내역 확인으로 유도.
@@ -1583,6 +1586,7 @@ export async function saveReservationDeposit(data: {
       })
       if (!dep.ok) return { ok: false, error: dep.error }
       split = { deposit: dep.depositActual, rent: dep.excess }
+      createdIds.push(...dep.createdIds)
     } else if (data.mode === 'prepaid') {
       // 분해 판정은 정본 하나(reservationFeeSplitApplies) — 화면 미리보기와 같은 식이다.
       // 정책 미설정(현행)에서는 항상 false 라 아래 else 가지가 종전과 문자 그대로 같이 돈다.
@@ -1616,6 +1620,7 @@ export async function saveReservationDeposit(data: {
             cashReceiptIssuedDate: data.cashReceiptIssuedDate,
           })
           prepaidIds = paid.createdIds
+          createdIds.push(...paid.createdIds)
         }
         if (split.cleaning > 0) {
           // 두 몫은 한 결제다. DB 트랜잭션으로 묶지 못하는 이유는 선납 몫이 공용 결제 엔진
@@ -1635,7 +1640,7 @@ export async function saveReservationDeposit(data: {
           }
         }
       } else {
-        await savePayment({
+        const paid = await savePayment({
           leaseTermId:    data.leaseTermId,
           tenantId:       data.tenantId,
           targetMonth:    firstMonth,
@@ -1648,11 +1653,12 @@ export async function saveReservationDeposit(data: {
           cashReceiptIssued: data.cashReceiptIssued,
           cashReceiptIssuedDate: data.cashReceiptIssuedDate,
         })
+        createdIds.push(...paid.createdIds)
       }
     }
     // none: 수납 없음 — 모드만 저장.
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-    return { ok: true, split }
+    return { ok: true, split, createdIds }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1981,14 +1987,24 @@ export async function updatePayment(
           await setStamps(prisma, propertyId, [paymentId], null)
           effect.notIssued = '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.'
         } else {
-          // 수정 폼이 금액을 함께 실었으면 그것이 이긴다. 이 키에 새로 세우는 발행이라 그 칸의 뜻이 맞다.
+          // 수정 폼이 금액을 함께 실었으면(운영자가 칸을 고쳤으면) 그것이 이긴다. 이 키에 발행을 켜는
+          // 저장이라 그 칸의 뜻이 맞다. 안 실었으면 정본 판정 그대로다(add 면 앞 금액 + 새 돈, 앞 발행일 유지).
           const target = data.cashReceiptAmount != null && data.cashReceiptAmount > 0
             ? { ...next.plan.next, amount: data.cashReceiptAmount, incl: data.cashReceiptIncl ? { ...data.cashReceiptIncl } : next.plan.next.incl }
             : next.plan.next
           await writeCrKey(prisma, newS, target, after.tenantId, 'key')
-          effect.issued = next.plan.kind === 'rebuild'
-            ? { replaced: { amount: next.plan.prev.amount, issuedYmd: kstYmdStr(next.plan.prev.issuedAt), was: next.plan.over } }
-            : {}
+          if (next.plan.kind === 'add') {
+            effect.added = {
+              prevAmount: next.plan.prev.amount, added: next.plan.added, amount: target.amount,
+              issuedYmd: kstYmdStr(target.issuedAt), requestedYmd: kstYmdStr(stampAfter!),
+            }
+          } else if (next.plan.kind === 'keep') {
+            effect.kept = true
+          } else {
+            effect.issued = next.plan.kind === 'rebuild'
+              ? { replaced: { amount: next.plan.prev.amount, issuedYmd: kstYmdStr(next.plan.prev.issuedAt), was: next.plan.over } }
+              : {}
+          }
         }
       } else if (next.kind === 'redate' && newS.line) {
         const target = {
@@ -2110,8 +2126,10 @@ export async function undoPaymentEdit(
 // 이제는 그 키의 살아 있는 이용료 record 가 줄을 함께 따른다. 보증금 record 는 줄이 보증금을
 // 들었을 때만 찍힌다(운영자 확정 2026-09-21). 받을 때 발행 대상이 아니다.
 //
-// **켜기는 새 발행이다**(결함 D1). 꺼 둔 줄을 옛 금액 그대로 되살리지 않고 지금 이용료 몫으로
-// 다시 세운다. 같은 조작의 적용취소만 직전 스냅샷을 복원한다. 돌려주는 undo 를 undoCashReceiptChange 에
+// **끈 뒤 다시 켜기는 새 발행이다**(결함 D1). 꺼 둔 줄을 옛 금액 그대로 되살리지 않고 지금 이용료
+// 몫으로 다시 세운다. **살아 있는 줄이 있는 키에서 켜면 새 돈만 더한다**(독립 검수 F4). 앞 금액(손으로
+// 고친 값 포함)에 도장 없던 이용료를 더하고, 발행일은 앞 발행의 날짜를 지킨다(change 'add').
+// 같은 조작의 적용취소만 직전 스냅샷을 복원한다. 돌려주는 undo 를 undoCashReceiptChange 에
 // 넘긴다. 종전 적용취소는 '원래 시각으로 다시 켜기'였는데, 그것은 지금 남아 있는 줄을 되살릴 뿐이라
 // 그 사이 줄이 바뀌었으면 엉뚱한 값을 되살렸다.
 export async function setCashReceiptIssued(
@@ -2125,10 +2143,15 @@ export async function setCashReceiptIssued(
       prevIssuedAt: string | null
       /** 끝난 뒤 그 키의 살아 있는 줄. 끄면 null. */
       line: CashReceiptLineView | null
-      /** create 새로 세움 · rebuild 있던 줄 자리에 새로 세움 · keep 이미 다 덮여 발행일만 · off 내림 */
-      change: 'create' | 'rebuild' | 'keep' | 'off'
+      /**
+       * create 새로 세움 · rebuild 있던 줄 자리에 새로 세움 · add 살아 있는 줄에 새 돈만 더함(앞 발행일 유지)
+       * · keep 이미 다 덮여 아무것도 안 바꿈 · off 내림
+       */
+      change: 'create' | 'rebuild' | 'add' | 'keep' | 'off'
       /** rebuild 일 때 직전 줄. 지워 둔 줄이면 그 옛 금액은 쓰지 않았다는 뜻이다. */
       replaced?: { amount: number; issuedYmd: string; was: 'deleted' | 'live' }
+      /** add 일 때. 앞 금액, 더한 새 돈, 결과 금액, 지킨 발행일, 운영자가 고른 날짜(다르면 화면이 말한다). */
+      added?: { prevAmount: number; added: number; amount: number; issuedYmd: string; requestedYmd: string }
       /** 끈 줄. 화면이 '얼마가 빠지나'를 말할 재료. */
       dropped?: CashReceiptLineView
       undo: CashReceiptUndo
@@ -2140,7 +2163,7 @@ export async function setCashReceiptIssued(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true },
+      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, memo: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     // 카드 계열은 매출전표가 증빙을 대신한다 — 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
@@ -2156,24 +2179,30 @@ export async function setCashReceiptIssued(
     const out = await prisma.$transaction(async tx => {
       const before = await captureCr(tx, [ref])
       const s = await readCrKey(tx, ref)
-      let change: 'create' | 'rebuild' | 'keep' | 'off' = 'off'
+      let change: 'create' | 'rebuild' | 'add' | 'keep' | 'off' = 'off'
       let replaced: { amount: number; issuedYmd: string; was: 'deleted' | 'live' } | undefined
+      let added: { prevAmount: number; added: number; amount: number; issuedYmd: string; requestedYmd: string } | undefined
       let dropped: CashReceiptLineView | undefined
       if (issuedAt) {
-        const plan = planCashReceiptOn(lineStateOf(s.line), s.parts, issuedAt)
+        // 환불 확정 record 를 켜는 것은 재발행이다(결함 D4). 원 영수증을 취소하고 확정액으로 다시 끊었다.
+        // 그 밖의 켜기는 살아 있는 줄에 새 돈만 더한다(독립 검수 F4).
+        const plan = planCashReceiptOn(lineStateOf(s.line), s.parts, issuedAt, { reissue: isRentRefundRecord(record.memo) })
         // **이용료 몫이 없으면 켤 수 없다**(독립 검수 2026-09-22). 보증금·청소비만 받은 입금이다.
         // 다른 저장 문들과 같은 말로 실패를 돌려준다. 성공 토스트를 띄우면 519호 클래스가 된다.
         if (plan.kind === 'none') return null
         await writeCrKey(tx, s, plan.next, record.tenantId, 'key')
         change = plan.kind
         if (plan.kind === 'rebuild') replaced = { amount: plan.prev.amount, issuedYmd: kstYmdStr(plan.prev.issuedAt), was: plan.over }
+        if (plan.kind === 'add') {
+          added = { prevAmount: plan.prev.amount, added: plan.added, amount: plan.next.amount, issuedYmd: kstYmdStr(plan.next.issuedAt), requestedYmd: kstYmdStr(issuedAt) }
+        }
       } else {
         dropped = liveLineView(s.line) ?? undefined
         await writeCrKey(tx, s, null, record.tenantId, 'key')
       }
       const fin = await readCrKey(tx, ref)
       const undo = await finishCrUndo(tx, before)
-      return { change, replaced, dropped, line: liveLineView(fin.line), undo }
+      return { change, replaced, added, dropped, line: liveLineView(fin.line), undo }
     })
     if (!out) return { ok: false, error: '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.' }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
@@ -2182,6 +2211,7 @@ export async function setCashReceiptIssued(
       prevIssuedAt: record.cashReceiptIssuedAt ? record.cashReceiptIssuedAt.toISOString() : null,
       line: out.line, change: out.change,
       ...(out.replaced ? { replaced: out.replaced } : {}),
+      ...(out.added ? { added: out.added } : {}),
       ...(out.dropped ? { dropped: out.dropped } : {}),
       undo: out.undo,
     }
@@ -2223,12 +2253,14 @@ export async function undoCashReceiptChange(
 export async function previewCashReceiptOn(paymentId: string): Promise<
   | {
       ok: true
-      kind: 'create' | 'rebuild' | 'keep' | 'none'
-      /** 켜면 기록될 금액(keep 이면 지금 금액). none 이면 0. */
+      kind: 'create' | 'rebuild' | 'add' | 'keep' | 'none'
+      /** 켜면 기록될 금액(add 면 앞 금액 + 새 돈, keep 이면 지금 금액). none 이면 0. */
       amount: number
+      /** add 일 때 더해질 새 돈. 도장 없던 이용료 행의 합. */
+      added: number
       /** 그 키의 살아 있는 이용료 몫(점검 (바)와 같은 식)과 금액이 든 이용료 행 수. */
       keyRent: number; rentRows: number; stampedRentRows: number
-      /** 지금 살아 있는 줄. 켜면 이것을 새 금액으로 덮는다(rebuild over live). */
+      /** 지금 살아 있는 줄. 켜면 add 는 여기에 새 돈을 더하고, 이 줄이 덮는 살아 있는 행이 없으면(환불 대기) 새로 세운다. */
       current: CashReceiptLineView | null
       /** 꺼 둔 줄. 그 옛 금액은 쓰지 않는다(끈 뒤 다시 켜기는 새 발행). */
       deleted: CashReceiptLineView | null
@@ -2240,15 +2272,16 @@ export async function previewCashReceiptOn(paymentId: string): Promise<
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { leaseTermId: true, payDate: true, payMethod: true },
+      select: { leaseTermId: true, payDate: true, payMethod: true, memo: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     const s = await readCrKey(prisma, { propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod })
-    const plan = planCashReceiptOn(lineStateOf(s.line), s.parts, new Date())
+    const plan = planCashReceiptOn(lineStateOf(s.line), s.parts, new Date(), { reissue: isRentRefundRecord(record.memo) })
     return {
       ok: true,
       kind: plan.kind,
       amount: plan.kind === 'none' ? 0 : plan.next.amount,
+      added: plan.kind === 'add' ? plan.added : 0,
       keyRent: s.parts.rent, rentRows: s.parts.rentRows, stampedRentRows: s.parts.stampedRentRows,
       current: liveLineView(s.line),
       deleted: s.line && s.line.deletedAt ? cashReceiptLineView(s.line) : null,
@@ -2347,12 +2380,14 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
 // 경로마다 다른 규칙으로 줄을 덮었다(결함 D1·D8).
 
 /**
- * 이 결제의 발행을 기록한다. 수납 등록 직후(entry)와 수정 폼의 '발행 금액' 문(edit) 두 자리.
+ * 이 결제의 발행을 기록한다. 수납 등록 직후(entry)와 살아 있는 줄의 '발행 금액' 문(edit) 두 자리.
  *
- * **entry**(수납 등록 폼 두 벌, PaymentEntryForm 과 입주자 상세·예약 선납)는 같은 규칙을 쓴다
- * (결함 D8, lib/cashReceipt planCashReceiptEntry). 그 키에 이 입금만 있으면 화면이 보낸 금액·구성이
- * 이기고, 안 보냈으면 이용료 몫이다. 같은 날 같은 수단으로 받은 돈이 이미 있으면(살아 있는 줄이나
- * 발행 없이 받은 입금) 한 장 규칙이라 키의 이용료 몫 전체로 다시 세우고, 직전 줄을 merged 로 돌려준다.
+ * **entry**(수납 등록 폼 세 벌, PaymentEntryForm, 입주자 상세, 예약 선납)는 같은 규칙을 쓴다
+ * (결함 D8, lib/cashReceipt planCashReceiptEntry). 이번 입금의 발행 금액은 화면이 보낸 값이고, 안
+ * 보냈으면 이번 저장이 만든 record(recordIds)의 이용료 몫이다. 같은 날 같은 수단의 살아 있는 줄이
+ * 있으면 한 장 규칙이라 **그 줄에 이번 금액을 더하고 앞 발행일을 지킨다**(독립 검수 F4, 앞 금액을 키 몫
+ * 전체로 다시 세우면 손으로 고친 금액과 앞 발행일이 사라지고 달 합계가 옮겨 갔다). 살아 있는 줄이
+ * 없으면 이번 입금 몫만 세우고, 앞서 발행 없이 받은 입금은 덮지 않는다(그 몫을 uncovered 로 돌려준다).
  *
  * **edit** 는 살아 있는 줄의 금액·구성·발행일을 고치는 문이다. 금액을 다시 세지 않는다. 발행한
  * 금액은 국세청에 올라간 사실이라 화면이 보낸 값이 그대로 진실이다(2026-08-25). 줄이 없으면 아무것도
@@ -2370,15 +2405,26 @@ export async function setPaymentCashReceipt(input: {
   /** 발행 금액. entry 에서 안 넘기면 이 결제의 **이용료 몫**(기본값, 운영자 확정 2026-09-21). */
   amount?: number | null
   incl?: CashReceiptIncl
-  /** entry 수납 등록 직후 · edit 수정 폼의 발행 금액 문. 두 자리의 규칙이 달라 부르는 쪽이 밝힌다. */
-  via: 'entry' | 'edit'
-}): Promise<
+} & (
+  /** entry 수납 등록 직후 · edit 살아 있는 줄의 발행 금액 문. 두 자리의 규칙이 달라 부르는 쪽이 밝힌다. */
+  | {
+      via: 'entry'
+      /** 이번 저장이 만든 수납 record id. 이번 입금의 이용료 몫을 이것으로 센다(그 키 밖 id 는 무시). */
+      recordIds: string[]
+    }
+  | { via: 'edit'; recordIds?: undefined }
+)): Promise<
   | {
       ok: true
       /** 끝난 뒤 그 키의 살아 있는 줄. */
       line: CashReceiptLineView | null
-      /** 같은 키의 돈과 합쳐 키의 이용료 몫으로 다시 세웠다(entry). prev 는 직전 살아 있던 줄. */
-      merged?: { prev: CashReceiptLineView | null; amount: number }
+      /**
+       * entry 가 살아 있는 줄에 이번 금액을 더했다. prev 는 직전 줄, added 는 더한 이번 금액, amount 는 결과.
+       * issuedYmd 는 지킨 앞 발행일이고 requestedYmd 는 폼이 고른 날짜다(다르면 화면이 '앞 발행일 유지'를 말한다).
+       */
+      merged?: { prev: CashReceiptLineView; added: number; amount: number; issuedYmd: string; requestedYmd: string }
+      /** 이 키에 아직 어느 영수증에도 안 덮인 이용료(발행 없이 받은 앞 입금). 0 이면 싣지 않는다. */
+      uncovered?: number
       /** edit 인데 살아 있는 줄이 없어 아무것도 안 했다. */
       skipped?: boolean
       undo: CashReceiptUndo
@@ -2401,16 +2447,26 @@ export async function setPaymentCashReceipt(input: {
         issued: input.issued, issuedDate: input.issuedDate, payMethod: input.payMethod,
         existing: input.via === 'edit' ? live?.issuedAt ?? null : null,
       })
-      let merged: { prev: CashReceiptLineView | null; amount: number } | undefined
+      let merged: { prev: CashReceiptLineView; added: number; amount: number; issuedYmd: string; requestedYmd: string } | undefined
       let skipped = false
       if (!issuedAt) {
         await writeCrKey(tx, s, null, lease.tenantId, 'key')
       } else if (input.via === 'entry') {
-        const plan = planCashReceiptEntry(lineStateOf(s.line), s.parts, issuedAt, { amount: input.amount, incl: input.incl })
+        // 이번 입금의 이용료 몫. 이번 저장이 만든 record 중 이 키의 이용료 행만 센다.
+        const mine = new Set(Array.isArray(input.recordIds) ? input.recordIds.filter(id => typeof id === 'string') : [])
+        const entry = s.records.filter(r => mine.has(r.id) && !r.isDeposit && r.actualAmount > 0).reduce((t, r) => t + r.actualAmount, 0)
+        const plan = planCashReceiptEntry(lineStateOf(s.line), entry, issuedAt, { amount: input.amount, incl: input.incl })
         // 0 이면 줄을 안 만들고 침묵하던 자리다. 왜 아무 일도 안 일어났는지 말한다.
         if (plan.kind === 'none') return null
-        await writeCrKey(tx, s, plan.next, lease.tenantId, 'key')
-        if (plan.kind === 'merge') merged = { prev: liveLineView(s.line), amount: plan.next.amount }
+        // 도장은 이미 찍힌 행만 따른다. 이번 저장이 찍은 행과 앞 발행이 덮던 행. 발행 없이 받은 앞 입금에
+        // 도장을 찍어 '발행됨'이라 말하지 않는다(검수 R4b).
+        await writeCrKey(tx, s, plan.next, lease.tenantId, 'stamped')
+        if (plan.kind === 'merge') {
+          merged = {
+            prev: liveLineView(s.line)!, added: plan.added, amount: plan.next.amount,
+            issuedYmd: kstYmdStr(plan.next.issuedAt), requestedYmd: kstYmdStr(issuedAt),
+          }
+        }
       } else if (live) {
         await writeCrKey(tx, s, {
           amount: input.amount != null && input.amount > 0 ? input.amount : live.amount,
@@ -2422,13 +2478,14 @@ export async function setPaymentCashReceipt(input: {
       }
       const fin = await readCrKey(tx, ref)
       const undo = await finishCrUndo(tx, before)
-      return { line: liveLineView(fin.line), merged, skipped, undo }
+      return { line: liveLineView(fin.line), merged, skipped, uncovered: fin.parts.unstampedRent, undo }
     })
     if (!out) return { ok: false, error: '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.' }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return {
       ok: true, line: out.line,
       ...(out.merged ? { merged: out.merged } : {}),
+      ...(out.uncovered > 0 ? { uncovered: out.uncovered } : {}),
       ...(out.skipped ? { skipped: true } : {}),
       undo: out.undo,
     }

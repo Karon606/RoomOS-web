@@ -322,6 +322,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 이번 저장이 만든 수납 record. 발행 기록이 '이번 입금의 몫'을 이것으로 센다(2026-10-14 F4).
+        let entryIds: string[] = []
         if (splitMode) {
           const recordIds: string[] = []
           let cleaningIncomeId: string | undefined
@@ -426,7 +428,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
               payDate: payDateVal, payMethod,
               issued: true, issuedDate: cashReceiptIssuedDate,
-              amount: crShownAmount, incl: crIncl, via: 'entry',
+              amount: crShownAmount, incl: crIncl, via: 'entry', recordIds,
             })
             if (!crRes.ok) pushToast('error', crRes.error)
             else crUndo = crRes.undo
@@ -488,6 +490,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             cashReceiptIssuedDate,
           })
           if (!res.ok) { pushToast('error', res.error); return }
+          entryIds = res.createdIds
         } else if (isDepositMode) {
           const depRes = await saveDepositPayment({
             leaseTermId:   room.leaseTermId,
@@ -504,6 +507,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           })
           // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
           if (!depRes.ok) { pushToast('error', depRes.error); return }
+          entryIds = depRes.createdIds
         } else {
           // 초과분을 '부가수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
           const useIncome = excessAsIncome
@@ -525,6 +529,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             cashReceiptIssued,
             cashReceiptIssuedDate,
           })
+          entryIds = result.createdIds
           if (useIncome) {
             const fd = new FormData()
             fd.set('date', payDateVal)
@@ -562,7 +567,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
             payDate: payDateVal, payMethod,
             issued: true, issuedDate: cashReceiptIssuedDate,
-            amount: crShownAmount, incl: crIncl, via: 'entry',
+            amount: crShownAmount, incl: crIncl, via: 'entry', recordIds: entryIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
           else crUndo = crRes.undo
@@ -1046,7 +1051,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           const crRes = await setPaymentCashReceipt({
             leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
             payDate: payDateVal, payMethod,
-            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry',
+            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: res.createdIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }

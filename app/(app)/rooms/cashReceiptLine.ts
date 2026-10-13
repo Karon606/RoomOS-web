@@ -328,6 +328,13 @@ export type PaymentEditEffect = {
   merged?: { prevAmount: number; amount: number }
   /** 발행을 새로 켜서 세운 줄. 직전에 줄이 있었으면 그 금액·발행일. */
   issued?: { replaced?: { amount: number; issuedYmd: string; was: 'deleted' | 'live' } }
+  /**
+   * 살아 있는 줄에 이 키의 새 돈(도장 없던 이용료 행)을 더했다(F4). 앞 발행일을 지켰다.
+   * requestedYmd 는 폼이 고른 날짜라 issuedYmd 와 다르면 화면이 '앞 발행일 유지'를 말한다.
+   */
+  added?: { prevAmount: number; added: number; amount: number; issuedYmd: string; requestedYmd: string }
+  /** 켰지만 이 키의 이용료는 이미 다 덮여 있어 아무것도 안 바꿨다(이 수납에는 발행할 이용료 몫이 없다). */
+  kept?: true
   /** 이용료 몫이 없어 켜지 못했다. */
   notIssued?: string
   /** 옛 줄이 다른 수납 때문에 남아 이 record 의 도장만 지웠다(이 돈은 옛 영수증 안에 있다). */

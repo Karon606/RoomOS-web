@@ -324,10 +324,11 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
 
   // 정본 식. 점검 (바)와 같은 몫. 0원 흔적·음수 조정은 '발행할 돈이 든 행'으로 안 센다.
   eq('키 몫: 이용료·보증금을 가른다', summarizeCashReceiptKey([R(410000), R(10000), R(50000, null, true)]),
-    { deposit: 50000, cleaning: 0, rent: 420000, rentRows: 2, stampedRentRows: 0 })
+    { deposit: 50000, cleaning: 0, rent: 420000, rentRows: 2, stampedRentRows: 0, unstampedRent: 420000 })
   eq('키 몫: 0원 흔적은 행으로 안 센다', summarizeCashReceiptKey([R(350000, '2026-10-06'), R(0)]).rentRows, 1)
-  eq('키 몫: 음수 조정은 합에는 들고 행으로는 안 센다', summarizeCashReceiptKey([R(100000), R(-80000)]), { deposit: 0, cleaning: 0, rent: 20000, rentRows: 1, stampedRentRows: 0 })
+  eq('키 몫: 음수 조정은 합에는 들고 행으로는 안 센다', summarizeCashReceiptKey([R(100000), R(-80000)]), { deposit: 0, cleaning: 0, rent: 20000, rentRows: 1, stampedRentRows: 0, unstampedRent: 100000 })
   eq('키 몫: 도장 수', summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000)]).stampedRentRows, 1)
+  eq('키 몫: 아직 안 덮인 돈은 도장 없는 이용료 행의 합', summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000), R(0), R(50000, null, true)]).unstampedRent, 10000)
 
   // T5 켜기, 줄 없음. 키의 이용료 몫으로 새로 선다(같은 키의 다른 입금까지 한 장).
   const t5 = planCashReceiptOn(null, summarizeCashReceiptKey([R(410000), R(10000)]), D('2026-10-06'))
@@ -345,37 +346,53 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('T6 옛 구성(보증금 포함)도 안 되살린다', t6m.kind === 'rebuild' ? t6m.next.incl : null, { deposit: false, cleaning: false, rent: true })
   eq('T6 옛 금액 300,000 대신 지금 몫 450,000', amt(t6m), 450000)
 
-  // T7 살아 있는 줄이 있는 키에서 켜기. 아직 도장 없는 돈(새 입금)이 있으면 그 돈까지 덮는 새 발행.
+  // T7 살아 있는 줄이 있는 키에서 켜기. 새 돈(도장 없는 이용료 행)만 **더한다**(독립 검수 F4, 2026-10-14).
+  // 운영자 원칙 2026-08-25 '국세청에 올라간 금액은 자동으로 덮지 않는다'. 앞 발행일도 지킨다. 한 키에
+  // 날짜가 하나라 새 날짜로 덮으면 앞 발행이 다른 달 합계로 옮겨 간다(검수 R3: 9월 350,000 이 10월로 갔다).
   const t7 = planCashReceiptOn(L(410000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000)]), D('2026-10-12'))
-  eq('T7 새 돈이 든 키는 rebuild over live', t7.kind === 'rebuild' ? t7.over : t7.kind, 'live')
-  eq('T7 금액은 키 몫 420,000', amt(t7), 420000)
-  // 키의 돈이 이미 다 덮였으면 금액·구성을 지키고 발행일만(수정 폼 재저장과 같은 보호).
+  eq('T7 새 돈이 든 키는 add', t7.kind, 'add')
+  eq('T7 금액은 줄 금액 + 새 돈 = 420,000', amt(t7), 420000)
+  eq('T7 발행일은 앞 발행의 10/6(고른 10/12 아님)', t7.kind === 'add' ? t7.next.issuedAt.toISOString() : null, D('2026-10-06').toISOString())
+  eq('T7 더한 새 돈 10,000 · 직전 410,000', t7.kind === 'add' ? [t7.added, t7.prev.amount] : null, [10000, 410000])
+  // 손으로 고친 앞 금액(350,000)도 지키고 그 위에 더한다. 키 몫 전체(420,000)로 다시 세우지 않는다.
+  const t7h = planCashReceiptOn(L(350000, '2026-09-30'), summarizeCashReceiptKey([R(400000, '2026-09-30'), R(20000)]), D('2026-10-02'))
+  eq('T7 손 금액 350,000 + 새 돈 20,000 = 370,000 @9/30', t7h.kind === 'add' ? [amt(t7h), t7h.next.issuedAt.toISOString()] : t7h.kind, [370000, D('2026-09-30').toISOString()])
+  // 키의 돈이 이미 다 덮였으면 아무것도 안 바꾼다. 발행일도 안 옮긴다(검수 R11).
   const keep = planCashReceiptOn(L(300000, '2026-10-06'), summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-08'))
   eq('T7 다 덮인 키는 keep', keep.kind, 'keep')
   eq('T7 keep 은 손으로 넣은 300,000 을 지킨다', amt(keep), 300000)
-  eq('T7 keep 은 발행일만 바꾼다', keep.kind === 'keep' ? keep.next.issuedAt.toISOString() : null, D('2026-10-08').toISOString())
+  eq('T7 keep 은 발행일도 안 옮긴다(앞 10/6 유지)', keep.kind === 'keep' ? keep.next.issuedAt.toISOString() : null, D('2026-10-06').toISOString())
 
-  // D4 환불 확정 record 를 켤 때. 원 수납은 지워지고 도장 없는 확정액 record 만 남는다. 확정액으로 선다.
-  const d4 = planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000)]), D('2026-10-13'))
-  eq('D4 환불 대기 줄에서 켜면 rebuild', d4.kind, 'rebuild')
+  // D4 환불 확정 record 를 켤 때(재발행). 원 수납은 지워지고 도장 없는 확정액 record 만 남는다. 확정액으로 선다.
+  // 재발행 표식은 서버가 그 record 의 환불 확정 메모로 준다(lib/rentRefundRecord). 새 돈을 더하는 T7 과 갈린다.
+  const d4 = planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000)]), D('2026-10-13'), { reissue: true })
+  eq('D4 환불 대기 줄에서 재발행으로 켜면 rebuild', d4.kind, 'rebuild')
   eq('D4 금액은 확정액 200,000(원 금액 470,000 아님)', amt(d4), 200000)
+  eq('D4 재발행 발행일은 고른 날짜', d4.kind === 'rebuild' ? d4.next.issuedAt.toISOString() : null, D('2026-10-13').toISOString())
   // 같은 키에 환불 밖 몫(지난달분 선납)이 남아 있으면 그것까지. 재발행액은 확정액 + 딸린 몫이다.
-  eq('D4 딸린 몫이 있으면 확정액 + 딸린 몫', amt(planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000), R(100000, '2026-07-18')]), D('2026-10-13'))), 300000)
+  eq('D4 딸린 몫이 있으면 확정액 + 딸린 몫', amt(planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000), R(100000, '2026-07-18')]), D('2026-10-13'), { reissue: true })), 300000)
 
   // 0 원. 보증금만 받은 입금. 켤 수 없다(none). 종전 토글은 이때 도리어 있던 줄을 지웠다.
   eq('보증금만이면 none', planCashReceiptOn(null, summarizeCashReceiptKey([R(50000, null, true)]), D('2026-10-06')).kind, 'none')
 
-  // D8 등록 폼 두 벌의 같은 규칙. 그 키에 이 입금만 있으면 폼 금액이 이기고, 다른 돈이 있으면 키 몫.
-  eq('D8 홀로 선 입금: 폼 금액이 이긴다', amt(planCashReceiptEntry(null, summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-06'), { amount: 300000 })), 300000)
-  eq('D8 홀로 선 입금: 금액 없으면 이용료 몫(입주자 상세 경로)', amt(planCashReceiptEntry(null, summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-06'), {})), 450000)
-  const merge1 = planCashReceiptEntry(L(410000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000, '2026-10-07')]), D('2026-10-07'), { amount: 10000 })
+  // D8 등록 폼 세 벌의 같은 규칙(독립 검수 F4). 이번 입금의 발행 금액(폼 값, 없으면 이번 입금의 이용료 몫)을
+  // 살아 있는 줄이 있으면 **더하고**(수정 폼 합치기 T14 와 같은 덧셈) 앞 발행일을 지킨다. 없으면 이번 몫만 세운다.
+  eq('D8 홀로 선 입금: 폼 금액이 이긴다', amt(planCashReceiptEntry(null, 450000, D('2026-10-06'), { amount: 300000 })), 300000)
+  eq('D8 홀로 선 입금: 금액 없으면 이번 입금의 이용료 몫(입주자 상세 경로)', amt(planCashReceiptEntry(null, 450000, D('2026-10-06'), {})), 450000)
+  const merge1 = planCashReceiptEntry(L(410000, '2026-10-06'), 10000, D('2026-10-07'), { amount: 10000 })
   eq('D8 살아 있는 줄이 있는 키에 두 번째 발행: merge', merge1.kind, 'merge')
-  eq('D8 merge 금액은 키 몫 420,000(폼의 10,000 이 앞 발행을 지우지 않는다)', amt(merge1), 420000)
-  eq('D8 merge 는 직전 줄을 돌려준다', merge1.kind === 'merge' ? merge1.prev?.amount : null, 410000)
-  // 같은 키에 발행 없이 받은 돈이 있으면(도장 없는 행) 그것도 한 장 규칙으로 합친다.
-  eq('D8 발행 없이 받은 앞 입금이 있으면 merge', planCashReceiptEntry(null, summarizeCashReceiptKey([R(10000), R(410000, '2026-10-07')]), D('2026-10-07'), { amount: 410000 }).kind, 'merge')
-  eq('D8 지워 둔 줄만 있으면 rebuild(옛 금액 안 씀)', amt(planCashReceiptEntry(L(999000, '2026-09-01', true), summarizeCashReceiptKey([R(410000, '2026-10-07')]), D('2026-10-07'), {})), 410000)
-  eq('D8 0원이면 none', planCashReceiptEntry(null, summarizeCashReceiptKey([R(0)]), D('2026-10-07'), {}).kind, 'none')
+  eq('D8 merge 금액은 줄 금액 + 이번 금액 = 420,000', amt(merge1), 420000)
+  eq('D8 merge 발행일은 앞 발행의 10/6', merge1.kind === 'merge' ? merge1.next.issuedAt.toISOString() : null, D('2026-10-06').toISOString())
+  eq('D8 merge 는 직전 줄과 더한 금액을 돌려준다', merge1.kind === 'merge' ? [merge1.prev.amount, merge1.added] : null, [410000, 10000])
+  // 손으로 고친 앞 금액(350,000) 위에 이번 20,000. 국세청 350,000 + 20,000. 키 몫 420,000 으로 다시 세우지 않는다(검수 R4).
+  eq('D8 손 금액 위 merge 는 덧셈 370,000', amt(planCashReceiptEntry(L(350000, '2026-09-29'), 20000, D('2026-09-29'), { amount: 20000 })), 370000)
+  eq('D8 금액 없는 merge 는 이번 입금의 이용료 몫을 더한다', amt(planCashReceiptEntry(L(350000, '2026-09-29'), 20000, D('2026-09-29'), {})), 370000)
+  // 발행 없이 받은 앞 입금(도장 없는 행)이 있어도 이번 몫만 세운다. 앞 돈은 '아직 안 덮인 돈'으로 남는다(검수 R4b).
+  const r4b = planCashReceiptEntry(null, 100000, D('2026-09-28'), { amount: 100000 })
+  eq('D8 줄 없는 키: 이번 몫 100,000 만 create(앞 300,000 안 덮음)', [r4b.kind, amt(r4b)], ['create', 100000])
+  eq('D8 지워 둔 줄만 있으면 rebuild(옛 금액 안 씀)', amt(planCashReceiptEntry(L(999000, '2026-09-01', true), 410000, D('2026-10-07'), {})), 410000)
+  eq('D8 0원이면 none', planCashReceiptEntry(null, 0, D('2026-10-07'), {}).kind, 'none')
+  eq('D8 살아 있는 줄이 있어도 이번 금액이 0 이면 none', planCashReceiptEntry(L(410000, '2026-10-06'), 0, D('2026-10-07'), {}).kind, 'none')
 
   // D2 삭제. 형제가 남으면 금액을 자동으로 안 덮고 남은 몫을 돌려준다. 마지막 이용료면 줄을 내린다.
   const d2 = planCashReceiptRemoval(L(420000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06')]))

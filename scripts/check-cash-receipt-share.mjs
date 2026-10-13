@@ -144,11 +144,16 @@ const ten  = read(TEN)
 // 다른 규칙으로 줄을 덮은 것이 422호 결함(D1·D8)이었고, 그 자리를 하나로 모은 것이 이번 시공이다.
 {
   // (1) 기본 금액·구성을 정하는 판정 둘이 정본을 쓰는가.
+  //   켜기는 키의 몫에서 발행 대상 금액 정본으로 센다. 등록은 이번 입금의 이용료 몫(entry)을 받는다.
+  //   그 몫을 세는 자리(setPaymentCashReceipt)가 보증금 행을 빼는지는 아래 (1-b)가 본다(F4, 2026-10-14).
   for (const fn of ['planCashReceiptOn', 'planCashReceiptEntry']) {
     const b = fnBody(lib, `export function ${fn}(`)
     if (!b) { violations.push(`${LIB}: ${fn} 몸통을 못 찾았다. 모양이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`); continue }
-    if (!/cashReceiptIssuableAmount\(parts\)/.test(b)) {
+    if (fn === 'planCashReceiptOn' && !/cashReceiptIssuableAmount\(parts\)/.test(b)) {
       violations.push(`${LIB} ${fn}: 발행 대상 금액 정본(cashReceiptIssuableAmount)을 안 쓴다. 보증금·청소비가 기본으로 올라갈 수 있다.`)
+    }
+    if (fn === 'planCashReceiptEntry' && !/const amount = given\.amount \?\? entry/.test(b)) {
+      violations.push(`${LIB} ${fn}: 이번 입금의 발행 금액이 '폼 값, 없으면 이번 입금의 이용료 몫'이 아니다.`)
     }
     if (!/defaultIncl\(\)/.test(b)) {
       violations.push(`${LIB} ${fn}: 몫 기본값이 정본 상수가 아니다. 서버와 화면이 갈린다.`)
@@ -156,6 +161,13 @@ const ten  = read(TEN)
     // 몫을 직접 만지는 길을 닫는다. 발행 대상 금액은 정본 함수만 정한다(독립 검수 2026-09-22 의 같은 처방).
     for (const m of b.match(/parts\.(deposit|cleaning|total)\b/g) ?? []) {
       violations.push(`${LIB} ${fn}: 입금 구성을 직접 만진다(${m}). 발행 대상 금액은 정본 함수가 정한다.`)
+    }
+  }
+  // (1-b) 등록 경로가 이번 입금의 몫을 이용료 행으로만 센다.
+  {
+    const b = fnBody(srv, 'export async function setPaymentCashReceipt(')
+    if (!b || !/mine\.has\(r\.id\) && !r\.isDeposit && r\.actualAmount > 0/.test(b)) {
+      violations.push(`${SRV} setPaymentCashReceipt: 이번 입금의 몫을 이용료 행(보증금 제외·금액 있는 행)으로만 세지 않는다.`)
     }
   }
   if (!/const defaultIncl = \(\): CashReceiptIncl => \(\{ \.\.\.CASH_RECEIPT_DEFAULT_INCL \}\)/.test(lib)) {

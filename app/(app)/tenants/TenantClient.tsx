@@ -1578,6 +1578,8 @@ export default function TenantClient({
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 이번 저장이 만든 수납 record. 발행 기록이 '이번 입금의 몫'을 이것으로 센다(2026-10-14 F4).
+        let createdIds: string[] = []
         if (isDepositMode) {
           const depRes = await saveDepositPayment({
             leaseTermId:   payTarget.lease.id,
@@ -1594,6 +1596,7 @@ export default function TenantClient({
           })
           // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
           if (!depRes.ok) { pushToast('error', depRes.error); return }
+          createdIds = depRes.createdIds
         } else {
           const result = await savePayment({
             leaseTermId:    payTarget.lease.id,
@@ -1607,6 +1610,7 @@ export default function TenantClient({
             cashReceiptIssued,
             cashReceiptIssuedDate,
           })
+          createdIds = result.createdIds
           const otherMonths = result.allocations.length > 0
             ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             : []
@@ -1625,7 +1629,7 @@ export default function TenantClient({
           const crRes = await setPaymentCashReceipt({
             leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
             payDate: payDateVal, payMethod,
-            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry',
+            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: createdIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }
