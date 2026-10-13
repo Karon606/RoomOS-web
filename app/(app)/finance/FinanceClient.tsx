@@ -4460,7 +4460,7 @@ export default function FinanceClient({
                         재고 추적 카테고리 밖으로 옮기면 그 품목은 재고 인식에서 빠진다(카테고리 기준 인식). */}
                     <CategorySelect
                       name="category" value={editExpCategory} onChange={setEditExpCategory}
-                      options={expenseCategories} showAddHint
+                      options={expenseCategories} showAddHint savedValue={detailExp.category ?? ''}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
@@ -4834,7 +4834,7 @@ export default function FinanceClient({
                   <CategorySelect
                     name="category" value={addExpCategory}
                     onChange={v => { userPickedCategoryRef.current = true; setAddExpCategory(v) }}
-                    options={expenseCategories} showAddHint
+                    options={expenseCategories} showAddHint savedValue=""
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">

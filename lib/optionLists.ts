@@ -103,12 +103,13 @@ export function normalizeOptionName(field: OptionListField, raw: string | null |
  *     이 글자로 지출을 묶는다(운영 영업장이 그 상태다). 폐기물 처리비는 품목 추적 단위도 가른다.
  * 결제 수단 글자를 비교하는 자리가 이 목록 밖에 새로 생기면 scripts/test-discount-reasons 가 붉게 선다.
  */
-// 카드 머리 안내는 '‘이름 고정’ 항목은 바꿀 수 없습니다.' 뒤에 effect 를 붙인다. 360px·기본 글자에서 두 줄을
-// 넘지 않게 짧게 쓴다(2026-10-13 실측, 넷 다 두 줄).
+// 카드 머리 안내는 '‘이름 고정’ 항목은 바꿀 수 없습니다.' 뒤에 effect 를 붙인다. 기본 글자 320·360·412px 에서 두 줄을
+// 넘지 않게 짧게 쓴다(2026-10-13 실측, 넷 다 두 줄). 결제 수단 문장은 카드만 말하지 않는다. 보호 이름 일곱 중 카드는
+// 신용카드·결제선생·체크카드뿐이고 계좌이체·현금도 같은 문장 아래 선다(3차 검수).
 export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: readonly string[]; effect: string }>> = {
   paymentMethods: {
     names: Array.from(new Set([...PAYMENT_METHODS, ...CARD_LIKE_METHODS, DEPOSIT_SOURCED_PAY_METHOD, '체크카드'])),
-    effect: '수납 기록과 카드 정산은 이 이름만 카드로 봅니다.',
+    effect: '수납 기록과 카드 정산은 이 이름으로만 결제 수단을 알아봅니다.',
   },
   windowTypeOptions: {
     names: OPTION_LIST_DEFAULTS.windowTypeOptions,

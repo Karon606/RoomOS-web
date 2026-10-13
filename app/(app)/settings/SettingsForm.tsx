@@ -2794,6 +2794,8 @@ const REMOVE_TOAST = {
   삭제: { done: (label: string) => `'${label}' 항목을 삭제했습니다`, undone: (label: string) => `'${label}' 삭제를 적용취소했습니다 · 원래 자리로 복귀` },
   빼기: { done: (label: string) => `'${label}' 항목을 뺐습니다`, undone: (label: string) => `'${label}' 빼기를 적용취소했습니다 · 원래 자리로 복귀` },
 } as const
+// 빼기 적용취소를 눌렀는데 그사이 같은 이름이 목록에 다시 생겨 바뀐 것이 없을 때. '원래 자리로 복귀' 는 거짓이다(3차 검수).
+const ALREADY_LISTED = (label: string) => `'${label}' 항목이 이미 목록에 있어 그대로 둡니다`
 
 function OptionSection({
   title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, removeVerb = '삭제', onReorder, onRename, onReset, placeholder,
@@ -2833,11 +2835,11 @@ function OptionSection({
   // 통째로 다시 쓰면 그사이 더하거나 뺀 항목, 다른 화면이 쌓은 항목이 엉킨다(lib/optionLists insertOptionAt).
   // 빼기는 그 이름 하나를 뺄 때의 자리에 도로 넣고(restoreOption), 초기화는 서버가 쥐어 준 직전 목록에
   // 그 뒤 생긴 항목을 더하고(undoResetOptions), 이름 변경은 바뀐 행 id 로 그 행만 되돌린다(undoRenameOption).
-  const undoToast = (run: () => Promise<OptionListResult>, doneMessage: string) => () => {
+  const undoToast = (run: () => Promise<OptionListResult>, doneMessage: string, unchangedMessage?: string) => () => {
     void run().then(r => {
       if (!r.ok) { pushToast('error', r.error); return }
       setItems(() => r.items)
-      pushToast('info', doneMessage)
+      pushToast('info', r.changed === false && unchangedMessage ? unchangedMessage : doneMessage)
     }).catch(err => pushToast('error', humanError(err, '적용취소 실패')))
   }
 
@@ -2848,7 +2850,7 @@ function OptionSection({
     } catch (err) { pushToast('error', humanError(err, `${removeVerb} 실패`)); return }
     const say = REMOVE_TOAST[removeVerb]
     pushToast('success', say.done(getLabel(item)), {
-      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone(getLabel(item))) },
+      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone(getLabel(item)), ALREADY_LISTED(getLabel(item))) },
     })
   }
 
@@ -2936,7 +2938,12 @@ function OptionSection({
 
   // 보호 이름으로 바꾸려는 것은 치는 자리에서 바로 알린다(§27.2 검증은 인라인). 서버 입구와 같은 함수로 재고,
   // 걸리면 저장을 막는다. 저장을 눌러 보고서야 토스트로 거절당하고 친 글자까지 사라지던 길이다(웹디자이너 패스).
-  const editError = editingItem !== null ? protectedRenameError(field, editingItem, normalizeOptionName(field, editingValue)) : null
+  // 이미 있는 이름으로 바꾸려는 것도 같은 자리에서 막는다. 건수 확인창까지 지나서야 서버 토스트로 거절당했다.
+  // 문구는 형제 추가 칸('이미 존재하는 항목입니다.')과 같다(3차 검수).
+  const editName = editingItem !== null ? normalizeOptionName(field, editingValue) : ''
+  const editError = editingItem === null ? null
+    : (protectedRenameError(field, editingItem, editName)
+      ?? (editName !== editingItem && items.includes(editName) ? '이미 존재하는 항목입니다.' : null))
 
   const saveEdit = async () => {
     if (editingItem === null || !onRename || savingEdit || editError) return
@@ -2949,9 +2956,12 @@ function OptionSection({
     try { res = await onRename(oldVal, editingValue) } catch (err) { pushToast('error', humanError(err, '이름 변경 실패')); return } finally { setSavingEdit(false) }
     // 서버가 거절했거나 건수 확인창에서 물렀으면 편집 칸을 그대로 둔다. 친 글자가 사라지지 않게 성공한 뒤에만 닫는다.
     if (!res) return
-    setEditingItem(null)
+    // 응답을 기다리는 사이 Esc 로 닫고 다른 행을 열었으면 그 행은 그대로 둔다(이 응답이 닫을 것은 이 행뿐이다).
+    setEditingItem(cur => cur === oldVal ? null : cur)
     const undo = res.undo
-    pushToast('success', '이름을 바꿨습니다', {
+    // 토스트에 이름을 싣는다. 무엇이 무엇으로 바뀌었는지(값 전환 표기 §29) 보여야 적용취소를 고를 수 있다.
+    const fromLabel = getLabel(oldVal), toLabel = getLabel(next)
+    pushToast('success', `이름을 바꿨습니다 · '${fromLabel}' → '${toLabel}'`, {
       ...(res.updated > 0 ? { detail: `기존 데이터 ${res.updated}건도 함께 바뀌었습니다.` } : {}),
       ...(undo ? {
         action: {
@@ -2960,7 +2970,7 @@ function OptionSection({
             void undoRenameOption(undo).then(u => {
               if (!u.ok) { pushToast('error', u.error); return }
               setItems(() => u.items)
-              pushToast('info', '이름 변경을 적용취소했습니다 · 이전 이름으로 복귀')
+              pushToast('info', `이름 변경을 적용취소했습니다 · '${toLabel}' → '${fromLabel}'`)
             }).catch(err => pushToast('error', humanError(err, '적용취소 실패')))
           },
         },
@@ -3018,7 +3028,7 @@ function OptionSection({
                   autoFocus
                   aria-invalid={editError ? true : undefined}
                   aria-describedby={editError ? editErrorId : undefined}
-                  className={`flex-1 bg-[var(--canvas)] border rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none ${editError ? 'border-[var(--danger-ring)]' : 'border-[var(--coral)]'}`}
+                  className={`flex-1 min-w-0 bg-[var(--canvas)] border rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none ${editError ? 'border-[var(--danger-ring)]' : 'border-[var(--coral)]'}`}
                 />
                 <button onClick={saveEdit} disabled={!!editError || savingEdit}
                   className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors disabled:opacity-40"

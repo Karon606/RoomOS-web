@@ -32,11 +32,13 @@ import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { ocrFallbackAllowed } from '@/lib/ocrImage'
 import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
+import { TRACKED_CATEGORIES } from '@/app/(app)/inventory/constants'
 
 // 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
 // 지출 카테고리 폴백은 분류 목록 기본값 정본(lib/optionLists)이다. 손으로 적은 사본은 정본과 갈린다.
 const FALLBACK_EXPENSE_CATEGORIES: string[] = [...OPTION_LIST_DEFAULTS.expenseCategories]
-const FALLBACK_INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비']
+// 재고 카테고리 폴백도 손으로 적지 않는다. 재고 쪽 정본(inventory/constants)을 쓴다(3차 검수).
+const FALLBACK_INVENTORY_CATEGORIES: string[] = [...TRACKED_CATEGORIES]
 
 const KIND_LABEL: Record<string, { label: string; color: string }> = {
   expense:   { label: '지출(영수증)', color: 'var(--tc-text)' },

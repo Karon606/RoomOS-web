@@ -688,7 +688,8 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
 }
 
 /** 목록을 고친 적용취소의 결과. 실패면 화면이 성공 토스트 대신 이 문장을 띄운다. */
-export type OptionListResult = { ok: true; items: string[] } | { ok: false; error: string }
+// changed 가 false 면 서버 목록이 이미 그 모양이라 아무것도 안 바뀌었다(빼기 적용취소에서 그사이 같은 이름이 다시 생긴 때).
+export type OptionListResult = { ok: true; items: string[]; changed?: boolean } | { ok: false; error: string }
 
 /**
  * 빼기 적용취소(§16). 지금 서버 목록에 그 이름이 없을 때만 뺄 때의 자리(index, 목록 길이로 자른다)에
@@ -709,7 +710,7 @@ export async function restoreOption(field: ReorderableField, name: string, index
     })
     revalidateOptionList(field)
   }
-  return { ok: true, items: r.next }
+  return { ok: true, items: r.next, changed: r.changed }
 }
 
 /**

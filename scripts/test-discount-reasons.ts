@@ -89,9 +89,9 @@ eq('재고 기본 카테고리는 보호', DEFAULT_INVENTORY_CATEGORIES.every(c 
 eq('할인 사유·직업에는 보호 이름이 없다',
   [protectedOptionReason('discountReasons', '프로모션'), protectedOptionReason('jobOptions', '학생')], [null, null])
 eq('보호 이름에서 바꾸기는 막는다',
-  protectedRenameError('paymentMethods', '신용카드', '카드'), '이 이름은 바꿀 수 없습니다. 수납 기록과 카드 정산은 이 이름만 카드로 봅니다.')
+  protectedRenameError('paymentMethods', '신용카드', '카드'), '이 이름은 바꿀 수 없습니다. 수납 기록과 카드 정산은 이 이름으로만 결제 수단을 알아봅니다.')
 eq('보호 이름으로 바꾸기도 막는다(그 기록이 판정 안으로 들어온다)',
-  protectedRenameError('paymentMethods', '법인카드', '신용카드'), '다른 항목을 이 이름으로 바꿀 수 없습니다. 수납 기록과 카드 정산은 이 이름만 카드로 봅니다.')
+  protectedRenameError('paymentMethods', '법인카드', '신용카드'), '다른 항목을 이 이름으로 바꿀 수 없습니다. 수납 기록과 카드 정산은 이 이름으로만 결제 수단을 알아봅니다.')
 eq('보호와 무관한 이름 변경은 통과', protectedRenameError('paymentMethods', '서울페이', '서울Pay'), null)
 // 결과 문장은 판정 밖 우회로를 권하지 않는다. 판정이 글자에 묶여 있어 새 이름을 추가해 쓰면 카드 정산·재고에서
 // 빠진다(2차 검수). 운영자 말로 쓰고(판정·값 금지), 서버 오류와 카드 안내가 이 한 문장을 읽는다.
