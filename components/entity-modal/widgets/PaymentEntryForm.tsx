@@ -423,7 +423,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
               payDate: payDateVal, payMethod,
               issued: true, issuedDate: cashReceiptIssuedDate,
-              amount: crShownAmount, incl: crIncl,
+              amount: crShownAmount, incl: crIncl, via: 'entry',
             })
             if (!crRes.ok) pushToast('error', crRes.error)
           }
@@ -558,7 +558,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
             payDate: payDateVal, payMethod,
             issued: true, issuedDate: cashReceiptIssuedDate,
-            amount: crShownAmount, incl: crIncl,
+            amount: crShownAmount, incl: crIncl, via: 'entry',
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }
@@ -1041,7 +1041,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           const crRes = await setPaymentCashReceipt({
             leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
             payDate: payDateVal, payMethod,
-            issued: true, issuedDate: cashReceiptIssuedDate,
+            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry',
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }

@@ -23,7 +23,7 @@
 // 실행: npx tsx --env-file=.env.local scripts/check-cash-receipt-orphan.ts
 import { readFileSync } from 'node:fs'
 import { PrismaClient, Prisma } from '@prisma/client'
-import { cashReceiptKey, receiptRowVerdict } from '../lib/cashReceipt'
+import { cashReceiptKey, receiptRowVerdict, summarizeCashReceiptKey } from '../lib/cashReceipt'
 import { kstYmdStr } from '../lib/kstDate'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -123,14 +123,13 @@ async function main() {
   {
     const live = await prisma.paymentRecord.findMany({
       where: { isBillingAdjust: false, deletedAt: null },   // 이름 그대로 살아 있는 것만(독립 검수 2026-09-22)
-      select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true },
+      select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true, cashReceiptIssuedAt: true },
     })
-    const rentByKey = new Map<string, number>()
-    for (const p of live) {
-      if (p.isDeposit) continue
-      const k = key(p)
-      rentByKey.set(k, (rentByKey.get(k) ?? 0) + p.actualAmount)
-    }
+    // 키의 이용료 몫은 정본 식 하나로 센다(lib/cashReceipt summarizeCashReceiptKey, 2026-10-13).
+    // 수납 목록·현금영수증 탭이 행마다 싣는 '받은 몫'과 같은 식이라야 화면과 이 점검이 같은 말을 한다.
+    const rowsByKey = new Map<string, typeof live>()
+    for (const p of live) rowsByKey.set(key(p), [...(rowsByKey.get(key(p)) ?? []), p])
+    const rentByKey = new Map([...rowsByKey].map(([k, rows]) => [k, summarizeCashReceiptKey(rows).rent]))
     for (const r of receipts) {
       if (r.inclDeposit || r.inclCleaning) continue   // 예외 발행은 (라)가 이미 말했다
       // **환불 대기는 비켜 간다**(2026-09-22). 환불은 원 수납을 소프트삭제하고 새 record 에는

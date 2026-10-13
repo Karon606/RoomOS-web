@@ -1625,7 +1625,7 @@ export default function TenantClient({
           const crRes = await setPaymentCashReceipt({
             leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
             payDate: payDateVal, payMethod,
-            issued: true, issuedDate: cashReceiptIssuedDate,
+            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry',
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }
@@ -1653,7 +1653,7 @@ export default function TenantClient({
       const res = await withSave(() => deletePayment(paymentId), { success: '' })
       if (!res.ok) { setError(res.error); return }
       pushToast('success', '수납 기록 삭제됨', {
-        action: { label: '적용취소', run: () => { void restorePayment(paymentId).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
+        action: { label: '적용취소', run: () => { void restorePayment(paymentId, res.undo).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
       })
       if (payTarget) {
         const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)

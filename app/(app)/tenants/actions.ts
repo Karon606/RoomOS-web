@@ -62,7 +62,11 @@ import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
+import { cashReceiptIssueLines, cashReceiptKey, type CashReceiptIssueLine, type CashReceiptUndo } from '@/lib/cashReceipt'
+import {
+  applyCrUndo, captureCr, finishCrUndo, readCrKey, reconcileCrAfterRemoval, setStamps, CrUndoConflict,
+  type CrKeyRef, type CrMismatch, type CrRemovalResult,
+} from '@/app/(app)/rooms/cashReceiptLine'
 import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refundTaxNotice'
 import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
@@ -2248,13 +2252,21 @@ export async function getReservedPrepaidComposition(leaseTermId: string): Promis
 // 청소비 몫도 기준에 넣는 이유(운영자 확정 2026-08-19, 산식 1) — 입실 전 취소는 청소 용역을
 // 하기 전이라 그 돈은 아직 대가가 아니다. 그래서 반환이면 청소비 인식을 지우고, 몰취면 위약금으로
 // 성격이 바뀐다. 분해하지 않은 예약에는 그 부가수익이 없어 종전과 완전히 같은 경로다.
+//
+// 발행 줄(결함 D10, 2026-10-13). 종전에는 선납 record 만 지우고 그 결제의 발행 줄을 안 봐서, 아무
+// 수납도 안 가리키는 줄이 합계에 남았다(유령 줄). 이제는 지운 수납의 키마다 덮을 이용료가 하나도 안
+// 남으면 줄을 내리고 그 사실을 cashReceipt.dropped 로 돌려준다(홈택스 취소는 운영자 몫이다). 적용취소
+// 재료(crUndo)를 함께 돌려주고, undoReservationPrepaidCancel 이 그것으로 내린 줄까지 되살린다.
 export async function recordReservationPrepaidCancel(params: {
   leaseTermId: string
   tenantId: string
   refundAmount: number
   date: string
   tenantName: string
-}): Promise<{ ok: true; recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null; cashReceipt: CrRemovalResult; crUndo: CashReceiptUndo }
+  | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -2263,13 +2275,18 @@ export async function recordReservationPrepaidCancel(params: {
     const [records, cleaningIncomes] = await Promise.all([
       prisma.paymentRecord.findMany({
         where: { leaseTermId: params.leaseTermId, propertyId, isDeposit: false },
-        select: { id: true, actualAmount: true },
+        select: { id: true, actualAmount: true, payDate: true, payMethod: true },
       }),
       prisma.extraIncome.findMany({
         where: { leaseTermId: params.leaseTermId, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
-        select: { id: true, amount: true },
+        select: { id: true, amount: true, date: true, payMethod: true },
       }),
     ])
+    // 지울 돈이 든 발행 키. 선납 record 와 예약 청소비 부가수익의 (계약·입금일·수단).
+    const crRefs: CrKeyRef[] = [
+      ...records.map(r => ({ propertyId, leaseTermId: params.leaseTermId, payDate: r.payDate, payMethod: r.payMethod })),
+      ...cleaningIncomes.map(c => ({ propertyId, leaseTermId: params.leaseTermId, payDate: c.date, payMethod: c.payMethod })),
+    ]
     const total = records.reduce((s, r) => s + r.actualAmount, 0)
       + cleaningIncomes.reduce((s, r) => s + r.amount, 0)
     const returned = Math.max(0, Math.min(params.refundAmount, total))
@@ -2288,13 +2305,17 @@ export async function recordReservationPrepaidCancel(params: {
       }
     }
 
-    const extraIncomeId = await prisma.$transaction(async tx => {
+    const { extraIncomeId, cashReceipt, crUndo } = await prisma.$transaction(async tx => {
+      const crBefore = await captureCr(tx, crRefs, recordIds)
       if (recordIds.length > 0) {
         await tx.paymentRecord.updateMany({ where: { id: { in: recordIds } }, data: { deletedAt } })
       }
       if (cleaningIncomeIds.length > 0) {
         await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds } }, data: { deletedAt } })
       }
+      const cashReceipt = await reconcileCrAfterRemoval(tx, crRefs)
+      const crUndo = await finishCrUndo(tx, crBefore)
+      let extraIncomeId: string | null = null
       if (withheld > 0) {
         const inc = await tx.extraIncome.create({
           data: {
@@ -2308,37 +2329,51 @@ export async function recordReservationPrepaidCancel(params: {
             leaseTermId: params.leaseTermId,
           },
         })
-        return inc.id as string
+        extraIncomeId = inc.id as string
       }
-      return null
+      return { extraIncomeId, cashReceipt, crUndo }
     })
 
     revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
-    return { ok: true, recordIds, cleaningIncomeIds, extraIncomeId }
+    return { ok: true, recordIds, cleaningIncomeIds, extraIncomeId, cashReceipt, crUndo }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
+// 예약 선납 취소의 적용취소 재료. 되살릴 record·청소비 부가수익, 지울 몰취 부가수익, 함께 내린 발행 줄 스냅샷.
+// 화면 두 갈래(선납 취소 단독·보증금 대체 취소)와 서버 롤백이 같은 묶음을 그대로 넘긴다.
+export type ReservationPrepaidCancelUndo = {
+  recordIds: string[]
+  cleaningIncomeIds: string[]
+  extraIncomeId: string | null
+  crUndo: CashReceiptUndo | null
+}
+
 // prepaid 예약 취소 적용취소 — 소프트삭제한 선납 record·예약 청소비 복원 + 몰취 부가수입 삭제(대칭).
 // 지운 것과 되살리는 것이 정확히 짝이어야 한다. 청소비 몫을 지우면서 복원만 빼면 취소를 되돌린
 // 계약에서 그 매출이 영영 사라진다(적용취소 원칙 — 모든 기능에는 되돌릴 길이 있어야 한다).
+// 취소가 함께 내린 발행 줄도 crUndo 로 취소 직전 그대로 되살린다. 그 사이 그 키의 발행 기록이 다시
+// 바뀌었으면 덮지 않고 아무것도 안 되돌린 채 실패한다(한 트랜잭션).
 export async function undoReservationPrepaidCancel(
-  recordIds: string[], extraIncomeId: string | null, cleaningIncomeIds: string[] = [],
+  recordIds: string[], extraIncomeId: string | null, cleaningIncomeIds: string[],
+  crUndo: CashReceiptUndo | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    await prisma.$transaction([
-      ...(recordIds.length > 0 ? [prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })] : []),
-      ...(cleaningIncomeIds.length > 0 ? [prisma.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt: null } })] : []),
-      ...(extraIncomeId ? [prisma.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })] : []),
-    ])
+    await prisma.$transaction(async tx => {
+      if (crUndo) await applyCrUndo(tx, propertyId, crUndo)
+      if (recordIds.length > 0) await tx.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })
+      if (cleaningIncomeIds.length > 0) await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt: null } })
+      if (extraIncomeId) await tx.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })
+    })
     revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (err instanceof CrUndoConflict) return { ok: false, error: err.message }
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -2362,7 +2397,9 @@ export async function recordReservationDepositCancel(params: {
   tenantName: string
 }): Promise<{
   ok: true
-  prepaid: { recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null }
+  // crUndo·cashReceipt 는 이용료 몫 취소가 함께 내린 발행 줄의 적용취소 재료와 결과다(2026-10-14).
+  // 묶음에서 버리면 적용취소가 record 만 되살리고 줄은 내린 채로 남는다.
+  prepaid: ReservationPrepaidCancelUndo & { cashReceipt: CrRemovalResult }
   deposit: { refundId: string; extraIncomeIds: string[] } | null
   receiptNotice?: string
 } | { ok: false; error: string }> {
@@ -2381,8 +2418,12 @@ export async function recordReservationDepositCancel(params: {
     if (!prepaid.ok) return prepaid
 
     // 보증금 몫이 없으면 반환 이력을 만들지 않는다 — 0/0 짜리 DepositRefund 가 수납 정보에 빈 반환 줄로 선다.
+    const prepaidPart = {
+      recordIds: prepaid.recordIds, cleaningIncomeIds: prepaid.cleaningIncomeIds, extraIncomeId: prepaid.extraIncomeId,
+      crUndo: prepaid.crUndo, cashReceipt: prepaid.cashReceipt,
+    }
     if (comp.deposit <= 0) {
-      return { ok: true, prepaid: { recordIds: prepaid.recordIds, cleaningIncomeIds: prepaid.cleaningIncomeIds, extraIncomeId: prepaid.extraIncomeId }, deposit: null }
+      return { ok: true, prepaid: prepaidPart, deposit: null }
     }
     const dep = await recordDepositReturn({
       leaseTermId: params.leaseTermId, tenantId: params.tenantId,
@@ -2391,7 +2432,7 @@ export async function recordReservationDepositCancel(params: {
       context: 'reservationCancel',
     })
     if (!dep.ok) {
-      const undo = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds)
+      const undo = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds, prepaid.crUndo)
       return {
         ok: false,
         error: undo.ok
@@ -2401,7 +2442,7 @@ export async function recordReservationDepositCancel(params: {
     }
     return {
       ok: true,
-      prepaid: { recordIds: prepaid.recordIds, cleaningIncomeIds: prepaid.cleaningIncomeIds, extraIncomeId: prepaid.extraIncomeId },
+      prepaid: prepaidPart,
       deposit: { refundId: dep.refundId, extraIncomeIds: dep.extraIncomeIds },
       ...(dep.receiptNotice ? { receiptNotice: dep.receiptNotice } : {}),
     }
@@ -2414,10 +2455,10 @@ export async function recordReservationDepositCancel(params: {
 // 보증금 대체 예약 취소 적용취소 — 두 정본의 적용취소를 순서대로(이용료 몫 → 보증금 몫).
 // 지운 것과 되살리는 것이 짝이어야 한다(적용취소 원칙). 앞이 실패하면 뒤를 안 건드린다.
 export async function undoReservationDepositCancel(
-  prepaid: { recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null },
+  prepaid: ReservationPrepaidCancelUndo,
   deposit: { refundId: string; extraIncomeIds: string[] } | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const p = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds)
+  const p = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds, prepaid.crUndo)
   if (!p.ok) return p
   if (!deposit) return { ok: true }
   return undoDepositReturn(deposit.refundId, deposit.extraIncomeIds)
@@ -5348,8 +5389,13 @@ export async function finalizeRentRefund(input: {
 // 되돌리면 홈택스 쪽은 **따로 되돌려야 한다.** 안내를 보고 이미 취소했는데 여기서 적용취소하면
 // 앱 매출은 돌아오고 홈택스에는 없다 — 환불 안내가 막으려던 어긋남의 반대 방향이다. 게다가
 // 원 수납이 되살아나 발행 표시도 함께 돌아오므로 앱 안에서는 아무 이상이 없어 보인다.
+//
+// 발행 도장(2026-10-13). 환불은 발행 줄을 안 건드린다(환불 대기). 그래서 그 사이 아무 일이 없었으면
+// 되살린 수납의 도장과 줄이 그대로 맞는다. 그런데 환불 뒤 확정액 record 를 켜서 줄을 다시 세웠거나
+// (재발행) 줄을 껐으면(홈택스 취소) 되살린 수납의 옛 도장이 지금 줄과 갈린다. 그 도장을 지금 줄에
+// 맞춘다. 줄 금액은 자동으로 안 덮고, 되살린 몫과 다르면 cashReceipt.mismatch 로 알린다.
 export async function undoRentRefund(leaseTermId: string): Promise<
-  { ok: true; taxNotice?: CashReceiptIssueLine[] } | { ok: false; error: string }
+  { ok: true; taxNotice?: CashReceiptIssueLine[]; cashReceipt?: { mismatch: CrMismatch[] } } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -5389,7 +5435,7 @@ export async function undoRentRefund(leaseTermId: string): Promise<
     // 소프트삭제 조회는 자동으로 걸러지므로 트랜잭션 앞에서는 안 보인다.
     const back = await prisma.paymentRecord.findMany({
       where: { id: { in: snap.deletedRecordIds }, cashReceiptIssuedAt: { not: null } },
-      select: { cashReceiptIssuedAt: true, actualAmount: true, payDate: true, payMethod: true },
+      select: { id: true, cashReceiptIssuedAt: true, actualAmount: true, payDate: true, payMethod: true },
     })
     const rows = back.length > 0
       ? await prisma.cashReceipt.findMany({
@@ -5399,8 +5445,22 @@ export async function undoRentRefund(leaseTermId: string): Promise<
       : []
     const issues = cashReceiptIssueLines(rows, back)
 
+    // 되살린 수납의 도장을 지금 줄에 맞춘다(위 머리말). 안내(issues)는 맞추기 전 값으로 이미 만들었다.
+    const mismatch: CrMismatch[] = []
+    const keyOf = (r: { payDate: Date; payMethod: string | null }) => cashReceiptKey({ leaseTermId, ...r })
+    for (const k of new Set(back.map(keyOf))) {
+      const group = back.filter(b => keyOf(b) === k)
+      const s = await readCrKey(prisma, { propertyId, leaseTermId, payDate: group[0].payDate, payMethod: group[0].payMethod })
+      const live = s.line && !s.line.deletedAt ? s.line : null
+      const off = group.filter(b => (live ? b.cashReceiptIssuedAt?.getTime() !== live.issuedAt.getTime() : true)).map(b => b.id)
+      await setStamps(prisma, propertyId, off, live ? live.issuedAt : null)
+      if (live && !live.inclDeposit && !live.inclCleaning && live.amount !== s.parts.rent) {
+        mismatch.push({ payYmd: group[0].payDate.toISOString().slice(0, 10), payMethod: group[0].payMethod, lineAmount: live.amount, basis: s.parts.rent })
+      }
+    }
+
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
-    return { ok: true, ...(issues.length > 0 ? { taxNotice: issues } : {}) }
+    return { ok: true, ...(issues.length > 0 ? { taxNotice: issues } : {}), ...(mismatch.length > 0 ? { cashReceipt: { mismatch } } : {}) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }

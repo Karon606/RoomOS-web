@@ -9,6 +9,11 @@
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
 import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys, isReceiptBeforeCutoff, CASH_RECEIPT_DEFAULT_INCL, cashReceiptIssuableAmount, isCashReceiptCandidate, cashReceiptExcludedShare, hasExcludedCashReceiptShare, cashReceiptShareWarning } from '../lib/cashReceipt'
+import {
+  summarizeCashReceiptKey, planCashReceiptOn, planCashReceiptEntry, planCashReceiptRemoval, planCashReceiptEdit,
+  buildCashReceiptUndo, cashReceiptUndoConflict, parseCashReceiptUndo, sameCashReceiptLine,
+  type CashReceiptLineState, type CashReceiptLineTarget, type CashReceiptLineSnap, type CashReceiptKeyRow,
+} from '../lib/cashReceipt'
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
 
 let pass = 0, fail = 0
@@ -303,6 +308,203 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('배열이 아니면 null', readAlertCutoffYmd(null, 'receipt'), null)
   // 끄기 키와 컷오프 키는 문법이 달라 서로를 못 읽는다.
   eq('끄기 행을 컷오프로 오독하지 않는다', readAlertCutoffYmd([{ k: 'receipt:x', at: '2026-09-06' }], 'receipt'), null)
+}
+
+// ── 발행 줄의 생애주기 (2026-10-13 운영자 승인, 422호 신고) ─────────────────────
+//
+// 상태 전이 표(패널 원문 T1~T31) 중 이번에 바뀐 칸을 고정한다. 번호는 패널 원문과 같다.
+// 이 판정이 조용히 되돌아가면 화면은 410,000 발행을 말하는데 합계는 420,000 을 드는 422호가 다시 선다.
+{
+  const D = (ymd: string) => kst(`${ymd}T00:00:00`)
+  const R = (amount: number, stamp: string | null = null, isDeposit = false): CashReceiptKeyRow =>
+    ({ isDeposit, actualAmount: amount, cashReceiptIssuedAt: stamp ? D(stamp) : null })
+  const L = (amount: number, issued: string, deleted = false, incl = { deposit: false, cleaning: false, rent: true }): CashReceiptLineState =>
+    ({ amount, issuedAt: D(issued), incl, deleted })
+  const amt = (p: { kind: string; next?: CashReceiptLineTarget }) => (p.next ? p.next.amount : null)
+
+  // 정본 식. 점검 (바)와 같은 몫. 0원 흔적·음수 조정은 '발행할 돈이 든 행'으로 안 센다.
+  eq('키 몫: 이용료·보증금을 가른다', summarizeCashReceiptKey([R(410000), R(10000), R(50000, null, true)]),
+    { deposit: 50000, cleaning: 0, rent: 420000, rentRows: 2, stampedRentRows: 0 })
+  eq('키 몫: 0원 흔적은 행으로 안 센다', summarizeCashReceiptKey([R(350000, '2026-10-06'), R(0)]).rentRows, 1)
+  eq('키 몫: 음수 조정은 합에는 들고 행으로는 안 센다', summarizeCashReceiptKey([R(100000), R(-80000)]), { deposit: 0, cleaning: 0, rent: 20000, rentRows: 1, stampedRentRows: 0 })
+  eq('키 몫: 도장 수', summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000)]).stampedRentRows, 1)
+
+  // T5 켜기, 줄 없음. 키의 이용료 몫으로 새로 선다(같은 키의 다른 입금까지 한 장).
+  const t5 = planCashReceiptOn(null, summarizeCashReceiptKey([R(410000), R(10000)]), D('2026-10-06'))
+  eq('T5 줄 없는 켜기는 create', t5.kind, 'create')
+  eq('T5 금액은 키의 이용료 몫 420,000', amt(t5), 420000)
+  eq('T5 구성은 기본(이용료만)', t5.kind === 'create' ? t5.next.incl : null, { deposit: false, cleaning: false, rent: true })
+
+  // T6 / D1 끈 뒤 다시 켜기. **옛 금액을 쓰지 않는다.** 422호: 지운 줄 420,000, 남은 이용료 410,000.
+  const t6 = planCashReceiptOn(L(420000, '2026-10-06', true), summarizeCashReceiptKey([R(410000)]), D('2026-10-12'))
+  eq('T6 지운 줄 다시 켜기는 rebuild', t6.kind, 'rebuild')
+  eq('T6 금액은 지금 몫 410,000(옛 420,000 아님)', amt(t6), 410000)
+  eq('T6 직전 줄은 지워 둔 줄', t6.kind === 'rebuild' ? t6.over : null, 'deleted')
+  // 손으로 넣은 비기본 금액도 끈 뒤 켜면 기본값으로 다시 선다. 규칙 2(같은 조작의 적용취소만 복원).
+  const t6m = planCashReceiptOn(L(300000, '2026-09-01', true, { deposit: true, cleaning: false, rent: true }), summarizeCashReceiptKey([R(450000)]), D('2026-10-12'))
+  eq('T6 옛 구성(보증금 포함)도 안 되살린다', t6m.kind === 'rebuild' ? t6m.next.incl : null, { deposit: false, cleaning: false, rent: true })
+  eq('T6 옛 금액 300,000 대신 지금 몫 450,000', amt(t6m), 450000)
+
+  // T7 살아 있는 줄이 있는 키에서 켜기. 아직 도장 없는 돈(새 입금)이 있으면 그 돈까지 덮는 새 발행.
+  const t7 = planCashReceiptOn(L(410000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000)]), D('2026-10-12'))
+  eq('T7 새 돈이 든 키는 rebuild over live', t7.kind === 'rebuild' ? t7.over : t7.kind, 'live')
+  eq('T7 금액은 키 몫 420,000', amt(t7), 420000)
+  // 키의 돈이 이미 다 덮였으면 금액·구성을 지키고 발행일만(수정 폼 재저장과 같은 보호).
+  const keep = planCashReceiptOn(L(300000, '2026-10-06'), summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-08'))
+  eq('T7 다 덮인 키는 keep', keep.kind, 'keep')
+  eq('T7 keep 은 손으로 넣은 300,000 을 지킨다', amt(keep), 300000)
+  eq('T7 keep 은 발행일만 바꾼다', keep.kind === 'keep' ? keep.next.issuedAt.toISOString() : null, D('2026-10-08').toISOString())
+
+  // D4 환불 확정 record 를 켤 때. 원 수납은 지워지고 도장 없는 확정액 record 만 남는다. 확정액으로 선다.
+  const d4 = planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000)]), D('2026-10-13'))
+  eq('D4 환불 대기 줄에서 켜면 rebuild', d4.kind, 'rebuild')
+  eq('D4 금액은 확정액 200,000(원 금액 470,000 아님)', amt(d4), 200000)
+  // 같은 키에 환불 밖 몫(지난달분 선납)이 남아 있으면 그것까지. 재발행액은 확정액 + 딸린 몫이다.
+  eq('D4 딸린 몫이 있으면 확정액 + 딸린 몫', amt(planCashReceiptOn(L(470000, '2026-07-18'), summarizeCashReceiptKey([R(200000), R(100000, '2026-07-18')]), D('2026-10-13'))), 300000)
+
+  // 0 원. 보증금만 받은 입금. 켤 수 없다(none). 종전 토글은 이때 도리어 있던 줄을 지웠다.
+  eq('보증금만이면 none', planCashReceiptOn(null, summarizeCashReceiptKey([R(50000, null, true)]), D('2026-10-06')).kind, 'none')
+
+  // D8 등록 폼 두 벌의 같은 규칙. 그 키에 이 입금만 있으면 폼 금액이 이기고, 다른 돈이 있으면 키 몫.
+  eq('D8 홀로 선 입금: 폼 금액이 이긴다', amt(planCashReceiptEntry(null, summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-06'), { amount: 300000 })), 300000)
+  eq('D8 홀로 선 입금: 금액 없으면 이용료 몫(입주자 상세 경로)', amt(planCashReceiptEntry(null, summarizeCashReceiptKey([R(450000, '2026-10-06')]), D('2026-10-06'), {})), 450000)
+  const merge1 = planCashReceiptEntry(L(410000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06'), R(10000, '2026-10-07')]), D('2026-10-07'), { amount: 10000 })
+  eq('D8 살아 있는 줄이 있는 키에 두 번째 발행: merge', merge1.kind, 'merge')
+  eq('D8 merge 금액은 키 몫 420,000(폼의 10,000 이 앞 발행을 지우지 않는다)', amt(merge1), 420000)
+  eq('D8 merge 는 직전 줄을 돌려준다', merge1.kind === 'merge' ? merge1.prev?.amount : null, 410000)
+  // 같은 키에 발행 없이 받은 돈이 있으면(도장 없는 행) 그것도 한 장 규칙으로 합친다.
+  eq('D8 발행 없이 받은 앞 입금이 있으면 merge', planCashReceiptEntry(null, summarizeCashReceiptKey([R(10000), R(410000, '2026-10-07')]), D('2026-10-07'), { amount: 410000 }).kind, 'merge')
+  eq('D8 지워 둔 줄만 있으면 rebuild(옛 금액 안 씀)', amt(planCashReceiptEntry(L(999000, '2026-09-01', true), summarizeCashReceiptKey([R(410000, '2026-10-07')]), D('2026-10-07'), {})), 410000)
+  eq('D8 0원이면 none', planCashReceiptEntry(null, summarizeCashReceiptKey([R(0)]), D('2026-10-07'), {}).kind, 'none')
+
+  // D2 삭제. 형제가 남으면 금액을 자동으로 안 덮고 남은 몫을 돌려준다. 마지막 이용료면 줄을 내린다.
+  const d2 = planCashReceiptRemoval(L(420000, '2026-10-06'), summarizeCashReceiptKey([R(410000, '2026-10-06')]))
+  eq('D2 형제가 남는 삭제는 keep', d2.kind, 'keep')
+  eq('D2 금액은 그대로 420,000, 남은 몫 410,000', d2.kind === 'keep' ? [d2.amount, d2.basis] : null, [420000, 410000])
+  eq('T16 마지막 이용료 삭제는 drop', planCashReceiptRemoval(L(410000, '2026-10-12'), summarizeCashReceiptKey([])).kind, 'drop')
+  // 보증금만 남은 키. 종전에는 보증금까지 형제로 세어 줄이 살아 남았다.
+  eq('T17 보증금만 남으면 drop', planCashReceiptRemoval(L(440000, '2026-08-22'), summarizeCashReceiptKey([R(50000, null, true)])).kind, 'drop')
+  eq('T17 줄이 보증금을 든 예외 발행이면 keep', planCashReceiptRemoval(L(490000, '2026-08-22', false, { deposit: true, cleaning: false, rent: true }), summarizeCashReceiptKey([R(50000, '2026-08-22', true)])).kind, 'keep')
+  eq('줄이 없으면 none', planCashReceiptRemoval(null, summarizeCashReceiptKey([])).kind, 'none')
+  eq('지워 둔 줄도 none', planCashReceiptRemoval(L(1, '2026-01-01', true), summarizeCashReceiptKey([])).kind, 'none')
+  // D10 예약 선납 취소·분해 수납 적용취소도 같은 판정이다. 그 키의 이용료가 다 사라지면 drop.
+  eq('D10 선납 취소로 키가 비면 drop(유령 줄 금지)', planCashReceiptRemoval(L(350000, '2026-09-30'), summarizeCashReceiptKey([])).kind, 'drop')
+
+  // 수납 수정(updatePayment). 같은 키.
+  const P = (rows: CashReceiptKeyRow[]) => summarizeCashReceiptKey(rows)
+  const edit = (a: Partial<Parameters<typeof planCashReceiptEdit>[0]>) => planCashReceiptEdit({
+    moved: false, stampBefore: null, stampAfter: null,
+    oldKey: { line: null, partsAfter: P([]) }, newKey: { line: null, parts: P([]) }, ...a,
+  })
+  eq('T12 수정 폼에서 끄면 키 전체 off', edit({ stampBefore: D('2026-10-06'), newKey: { line: L(420000, '2026-10-06'), parts: P([R(410000, '2026-10-06'), R(10000, '2026-10-06')]) } }).next.kind, 'off')
+  eq('T11 금액만 고친 재저장은 redate(금액 보호)', edit({ stampBefore: D('2026-10-06'), stampAfter: D('2026-10-06'), newKey: { line: L(300000, '2026-10-06'), parts: P([R(450000, '2026-10-06')]) } }).next.kind, 'redate')
+  const t13 = edit({ stampAfter: D('2026-10-12'), newKey: { line: L(420000, '2026-10-06', true), parts: P([R(410000), R(10000)]) } })
+  eq('T13 지운 줄에 수정 폼으로 켜면 새 발행', t13.next.kind === 'on' ? t13.next.plan.kind : t13.next.kind, 'rebuild')
+  eq('T13 금액은 키 몫(행 몫이 아니다)', t13.next.kind === 'on' ? amt(t13.next.plan) : null, 420000)
+  eq('둘 다 꺼짐이면 none', edit({}).next.kind, 'none')
+
+  // D13 입금일·수단 이동. 옛 키에 다른 이용료가 남으면 옛 줄을 지키고 이 돈은 옛 영수증 안에 둔다.
+  const d13keep = edit({
+    moved: true, stampBefore: D('2026-10-06'), stampAfter: D('2026-10-06'),
+    oldKey: { line: L(420000, '2026-10-06'), partsAfter: P([R(410000, '2026-10-06')]) },
+    newKey: { line: null, parts: P([R(10000, '2026-10-06')]) },
+  })
+  eq('D13 형제가 남은 옛 키는 keep(종전에는 지웠다)', d13keep.old.kind, 'keep')
+  eq('D13 옮긴 수납은 도장만 지운다(두 번 세지 않는다)', d13keep.next.kind, 'unstamp')
+  // 옛 줄이 이 수납만 덮고 있었으면 발행이 함께 옮겨 간다. 금액·구성 유지.
+  const d13move = edit({
+    moved: true, stampBefore: D('2026-10-06'), stampAfter: D('2026-10-07'),
+    oldKey: { line: L(300000, '2026-10-06'), partsAfter: P([]) },
+    newKey: { line: null, parts: P([R(450000, '2026-10-06')]) },
+  })
+  eq('D13 홀로 선 수납을 옮기면 transfer', d13move.next.kind, 'transfer')
+  eq('D13 transfer 는 손으로 넣은 300,000 을 지킨다', d13move.next.kind === 'transfer' ? d13move.next.next.amount : null, 300000)
+  // 옮긴 자리에 이미 살아 있는 줄이 있으면 두 금액을 합친다(한 장 규칙, 발행 금액이 사라지지 않게).
+  const d13merge = edit({
+    moved: true, stampBefore: D('2026-10-06'), stampAfter: D('2026-10-06'),
+    oldKey: { line: L(10000, '2026-10-06'), partsAfter: P([]) },
+    newKey: { line: L(410000, '2026-10-05'), parts: P([R(410000, '2026-10-05'), R(10000, '2026-10-06')]) },
+  })
+  eq('D13 발행 있는 키로 옮기면 merge', d13merge.next.kind, 'merge')
+  eq('D13 merge 금액 420,000 · 발행일은 그 키의 것', d13merge.next.kind === 'merge' ? [d13merge.next.next.amount, d13merge.next.next.issuedAt.toISOString()] : null, [420000, D('2026-10-05').toISOString()])
+  eq('D13 옮기며 끄면 옛 키만 정리하고 새 키는 none', edit({ moved: true, stampBefore: D('2026-10-06'), oldKey: { line: L(10000, '2026-10-06'), partsAfter: P([]) } }).next.kind, 'none')
+  eq('D13 옮기며 처음 켜면 새 키에 새 발행', edit({ moved: true, stampAfter: D('2026-10-07'), newKey: { line: null, parts: P([R(10000)]) } }).next.kind, 'on')
+
+  // ── 적용취소 스냅샷 ─────────────────────────────────────────
+  const S = (amount: number, issued: string, deleted = false, id = 'L1'): CashReceiptLineSnap =>
+    ({ id, amount, issuedAt: D(issued).toISOString(), inclDeposit: false, inclCleaning: false, inclRent: true, deleted })
+  const line = (before: CashReceiptLineSnap | null, after: CashReceiptLineSnap | null) =>
+    ({ leaseTermId: 'lt', payYmd: '2026-10-06', payMethod: '계좌이체', before, after })
+  const iso = (ymd: string) => D(ymd).toISOString()
+  const undoOff = buildCashReceiptUndo(
+    [line(S(420000, '2026-10-06'), S(420000, '2026-10-06', true))],
+    new Map([['a', iso('2026-10-06')], ['b', iso('2026-10-06')]]),
+    new Map([['a', null], ['b', null]]),
+  )
+  eq('끄기 스냅샷은 줄과 도장 둘을 싣는다', [undoOff.lines.length, undoOff.stamps.length], [1, 2])
+  eq('바뀌지 않은 키·도장은 안 싣는다', buildCashReceiptUndo([line(S(1, '2026-10-06'), S(1, '2026-10-06'))], new Map([['a', null]]), new Map([['a', null]])), { v: 1, lines: [], stamps: [] })
+  // 그 사이 아무 일 없으면 되돌린다.
+  eq('지금이 쓴 직후와 같으면 충돌 없음', cashReceiptUndoConflict(undoOff, { lines: [S(420000, '2026-10-06', true)], stamps: new Map([['a', null], ['b', null]]) }), null)
+  // 그 사이 다시 켰으면(다른 금액으로 살아 있음) 덮지 않는다. 옛 토스트의 적용취소가 새 발행을 지우면 안 된다.
+  eq('그 사이 줄이 되살아났으면 충돌', cashReceiptUndoConflict(undoOff, { lines: [S(410000, '2026-10-12')], stamps: new Map([['a', null], ['b', null]]) }), 'line')
+  eq('그 사이 도장이 바뀌었으면 충돌', cashReceiptUndoConflict(undoOff, { lines: [S(420000, '2026-10-06', true)], stamps: new Map([['a', iso('2026-10-12')], ['b', null]]) }), 'stamp')
+  eq('도장 대상 record 가 없으면 충돌', cashReceiptUndoConflict(undoOff, { lines: [S(420000, '2026-10-06', true)], stamps: new Map([['a', null]]) }), 'stamp')
+  // 켜기 스냅샷. 쓴 직후가 살아 있는 줄이면 지금도 같은 내용이어야 한다(금액을 수정 폼에서 바꿨으면 충돌).
+  const undoOn = buildCashReceiptUndo([line(null, S(410000, '2026-10-12'))], new Map([['a', null]]), new Map([['a', iso('2026-10-12')]]))
+  eq('켜기 뒤 금액이 바뀌었으면 충돌', cashReceiptUndoConflict(undoOn, { lines: [S(400000, '2026-10-12')], stamps: new Map([['a', iso('2026-10-12')]]) }), 'line')
+  eq('켜기 뒤 그대로면 충돌 없음', cashReceiptUndoConflict(undoOn, { lines: [S(410000, '2026-10-12')], stamps: new Map([['a', iso('2026-10-12')]]) }), null)
+  // 화면을 거쳐 돌아온 값의 모양 검사. 모양이 틀리면 아무것도 안 쓴다.
+  eq('정상 스냅샷은 통과', parseCashReceiptUndo(JSON.parse(JSON.stringify(undoOff))) != null, true)
+  eq('버전이 다르면 거부', parseCashReceiptUndo({ ...undoOff, v: 2 }), null)
+  eq('금액이 음수면 거부', parseCashReceiptUndo({ v: 1, lines: [line(S(-1, '2026-10-06'), null)], stamps: [] }), null)
+  eq('입금일 형식이 틀리면 거부', parseCashReceiptUndo({ v: 1, lines: [{ ...line(null, null), payYmd: '10/6' }], stamps: [] }), null)
+  eq('같은 줄 비교는 시각을 밀리초로 본다', sameCashReceiptLine(S(1, '2026-10-06'), { ...S(1, '2026-10-06'), issuedAt: '2026-10-05T15:00:00Z' }), true)
+}
+
+// ── 422호 시퀀스 회귀 (운영자 신고 2026-10-13) ────────────────────────────
+//
+// 한 키에 줄 하나·record 여럿을 들고 서버 엔진(writeCrKey)과 같은 도장 규칙으로 판정을 차례로 적용한다.
+// 420,000 한 결제가 410,000(10월분)과 10,000(11월분 선납)으로 쪼개졌다. 원터치로 켬(10/6),
+// 10,000 삭제, 끔, 10/12 로 다시 켬. 종전 결과는 420,000(옛 줄 부활), 정답은 410,000 이다.
+{
+  type Rec = { id: string; isDeposit: boolean; actualAmount: number; cashReceiptIssuedAt: Date | null; deleted: boolean }
+  const D = (ymd: string) => kst(`${ymd}T00:00:00`)
+  const st = { line: null as CashReceiptLineState | null, recs: [] as Rec[] }
+  const live = () => st.recs.filter(r => !r.deleted)
+  const parts = () => summarizeCashReceiptKey(live())
+  // writeCrKey 의 'key' 도장 규칙과 같다. 켜면 금액이 든 이용료 행 전부가 줄 발행일, 내리면 null.
+  const write = (next: CashReceiptLineTarget | null) => {
+    st.line = next ? { ...next, deleted: false } : (st.line ? { ...st.line, deleted: true } : null)
+    for (const r of live()) {
+      if (r.isDeposit) r.cashReceiptIssuedAt = next && next.incl.deposit ? next.issuedAt : null
+      else r.cashReceiptIssuedAt = next && r.actualAmount > 0 ? next.issuedAt : null
+    }
+  }
+  const on = (ymd: string) => { const p = planCashReceiptOn(st.line, parts(), D(ymd)); if (p.kind !== 'none') write(p.next); return p }
+  const off = () => write(null)
+  const del = (id: string) => {
+    st.recs.find(r => r.id === id)!.deleted = true
+    const p = planCashReceiptRemoval(st.line, parts())
+    if (p.kind === 'drop') write(null)
+    return p
+  }
+  st.recs.push({ id: 'oct', isDeposit: false, actualAmount: 410000, cashReceiptIssuedAt: null, deleted: false })
+  st.recs.push({ id: 'nov', isDeposit: false, actualAmount: 10000, cashReceiptIssuedAt: null, deleted: false })
+
+  on('2026-10-06')
+  eq('422 ① 분할 결제 켜기: 한 줄 420,000', st.line?.amount, 420000)
+  eq('422 ① 두 행 모두 10/6 도장', st.recs.map(r => r.cashReceiptIssuedAt?.toISOString()), [D('2026-10-06').toISOString(), D('2026-10-06').toISOString()])
+  const r2 = del('nov')
+  eq('422 ② 형제 삭제: 줄은 그대로 420,000(자동으로 안 덮음)', st.line?.amount, 420000)
+  eq('422 ② 그 대신 남은 몫 410,000 과 다르다고 말한다', r2.kind === 'keep' ? [r2.amount, r2.basis] : null, [420000, 410000])
+  off()
+  eq('422 ③ 끄기: 줄 내림', st.line?.deleted, true)
+  eq('422 ③ 도장도 지움', live().map(r => r.cashReceiptIssuedAt), [null])
+  const r4 = on('2026-10-12')
+  eq('422 ④ 다시 켜기는 새 발행(rebuild over deleted)', r4.kind === 'rebuild' ? r4.over : r4.kind, 'deleted')
+  eq('422 ④ 결과 410,000', st.line?.amount, 410000)
+  eq('422 ④ 발행일 10/12', st.line?.issuedAt.toISOString(), D('2026-10-12').toISOString())
+  eq('422 ④ 남은 행 도장 10/12(행과 줄이 같은 말을 한다)', live().map(r => r.cashReceiptIssuedAt?.toISOString()), [D('2026-10-12').toISOString()])
 }
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)

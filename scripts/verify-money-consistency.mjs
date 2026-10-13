@@ -1893,13 +1893,13 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push(`[소스] ${f} 가 수단이 카드로 바뀔 때 발행 표시를 끄지 않는다 — 체크박스만 사라지고 값은 남는다`)
     }
   }
-  // 20-e. 발행 줄을 만드는 문은 하나다(2단계 개편 후 구조). 저장 함수는 발행 줄을 직접 만들지
-  //       않는다 — 화면이 저장 뒤 setPaymentCashReceipt 를 1회 부르고(수납 폼 세 갈래 + 수정 폼),
-  //       토글·수정은 touchCashReceiptIssuedAt(여부·날짜만)이며, 전부 syncCashReceiptLine 하나로
-  //       수렴한다. 어느 고리가 끊겨도 그 수납은 발행 표시만 뜨고 합계에서 빠진다.
-  // ※ 1단계에는 저장 함수(savePayment 등)가 직접 만들었고 resyncCashReceiptFromSiblings 가
-  //   있었다. 2단계가 문을 옮기고 이름을 바꿨는데 이 그물이 옛 구조를 계속 들고 있다가
-  //   오탐 6건으로 배포를 막았다(2026-08-25). 그물은 정본 구조를 따라와야 한다.
+  // 20-e. 발행 줄을 쓰는 자리는 하나다(2026-10-13 생애주기 정비 후 구조). 판정은 lib/cashReceipt 의 순수
+  //       함수가 하고, 줄·도장 쓰기는 rooms/cashReceiptLine.ts 의 writeCrKey 한 자리가 한다. 화면의 문 넷
+  //       (등록 직후 setPaymentCashReceipt · 원터치 setCashReceiptIssued · 일괄 batchSetCashReceipts · 수정
+  //       updatePayment)이 전부 그 엔진으로 수렴한다. 어느 고리가 끊겨도 그 수납은 발행 표시만 뜨고 합계에서 빠진다.
+  // ※ 이 그물은 세 번 구조를 따라왔다. 1단계(저장 함수가 직접)·2단계(syncCashReceiptLine·touchCashReceiptIssuedAt)
+  //   를 들고 있던 규칙이 2026-10-13 엔진 도입 뒤 오탐 7건으로 배포를 막았다(2026-10-14 독립 검수 후속에서 고침).
+  //   그물은 정본 구조를 따라와야 한다. 판정·배선의 세부 축은 check-cash-receipt-share ⓑ·ⓗ 가 맡는다.
   // **함수별로 본다.** 개수만 세면 호출이 `if (false)` 로 죽어 있어도 통과한다(역주입이 그것을
   // 잡았다). 본문을 자르는 두 함정. 괄호 깊이로 세면 **인자 타입의 `{` 가 먼저 닫혀** 서명만
   // 잘리고, 열 0의 `}` 를 그냥 찾으면 인자 타입을 닫는 `\n})` 에 먼저 걸린다. 그래서 서명이
@@ -1913,24 +1913,21 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     const end = src.indexOf('\n}', sigEnd)
     return end < 0 ? src.slice(at) : src.slice(at, end + 2)
   }
-  const RECEIPT_CHAIN = [
-    ['setPaymentCashReceipt', 'syncCashReceiptLine'],      // 화면의 문 — 저장 후 1회
-    ['touchCashReceiptIssuedAt', 'syncCashReceiptLine'],   // 토글·수정 — 여부·날짜만
-    ['batchSetCashReceipts', 'syncCashReceiptLine'],       // 일괄 발행
-    ['setCashReceiptIssued', 'touchCashReceiptIssuedAt'],  // 옛 토글 진입로가 정본 경유
-    ['updatePayment', 'touchCashReceiptIssuedAt'],         // 축 변경 시 옛 줄 정리 경유
-  ]
-  for (const [fnName, call] of RECEIPT_CHAIN) {
+  const RECEIPT_DOORS = ['setPaymentCashReceipt', 'setCashReceiptIssued', 'batchSetCashReceipts', 'updatePayment']
+  for (const fnName of RECEIPT_DOORS) {
     const body = sliceFn(roomsActions, fnName)
     if (!body) {
       violations.push(`[소스] ${fnName} 을 못 찾았다 — 발행 사슬 대조가 건너뛰어졌다. 감지망을 고칠 것`)
       continue
     }
     // 죽은 호출(`if (false) await ...`)도 없는 것과 같이 본다.
-    const live = new RegExp(`(^|[^)])\\s*await ${call}\\(`, 'm').test(body)
-    if (!live) {
-      violations.push(`[소스] ${fnName} 이 ${call} 를 안 부른다 — 발행 사슬이 끊겨 그 경로의 수납이 합계에서 빠진다`)
+    if (!/(^|[^)])\s*await writeCrKey\(/m.test(body)) {
+      violations.push(`[소스] ${fnName} 이 엔진(writeCrKey)으로 줄을 안 쓴다. 발행 사슬이 끊겨 그 경로의 수납이 합계에서 빠진다`)
     }
+  }
+  const engineSrc = readFileSync('app/(app)/rooms/cashReceiptLine.ts', 'utf8')
+  if (!/export async function writeCrKey\(/.test(engineSrc) || (engineSrc.match(/\bcashReceipt\.create\(/g) ?? []).length !== 1) {
+    violations.push('[소스] 발행 줄 엔진(rooms/cashReceiptLine writeCrKey)이 줄을 만드는 단 하나의 자리가 아니다')
   }
   // 화면 결선 — 문이 있어도 화면이 안 부르면 같은 결함이다. 수납 폼은 세 갈래(분해·일반·예약금),
   // 수정 폼(PaymentRecordList)은 한 곳이 저장 뒤 문을 불러야 한다.
@@ -1942,12 +1939,11 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/await setPaymentCashReceipt\(/.test(recordListSrc)) {
     violations.push('[소스] 수정 폼(PaymentRecordList)이 발행 문을 안 부른다 — 수정으로 바꾼 발행 금액이 합계에 안 잡힌다')
   }
-  // 발행 줄을 만드는 자리는 전부 봉인을 지난 issuedAt 을 넘겨야 한다. 직접 new Date() 를 박으면
+  // 발행 줄을 세우는 자리는 전부 봉인을 지난 issuedAt 을 넘겨야 한다. 직접 new Date() 를 박으면
   // 카드에도 줄이 생기고 발행일이 클릭 시각으로 되돌아간다.
-  const syncCalls = roomsActions.match(/syncCashReceiptLine\(\{[\s\S]*?\n  \}\)/g) ?? []
-  for (const c of syncCalls) {
-    if (/issuedAt:\s*new Date\(\)/.test(c)) {
-      violations.push('[소스] 발행 줄에 issuedAt 을 직접 박는 자리가 있다 — 카드 봉인과 발행일 정본을 건너뛴다')
+  for (const [f, src] of [['app/(app)/rooms/actions.ts', roomsActions], ['app/(app)/rooms/cashReceiptLine.ts', engineSrc]]) {
+    if (/issuedAt:\s*new Date\(\)/.test(src)) {
+      violations.push(`[소스] ${f} 에 발행 줄 issuedAt 을 직접 박는 자리가 있다. 카드 봉인과 발행일 정본을 건너뛴다`)
     }
   }
 
@@ -1962,8 +1958,17 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/if \(r\.isBillingAdjust\) return null/.test(canon)) {
     violations.push('[소스] paymentCardMonth 가 조정 전표를 안 거른다 — 받은 돈이 아닌 마커가 카드 합계에 든다')
   }
-  if (/r\.isDeposit/.test(canon)) {
-    violations.push('[소스] 축 판정 정본이 보증금을 다시 걸러낸다 — 카드로 낸 보증금은 카드사 명세에 남으므로 빼면 대사가 안 된다(2026-08-24 되돌린 판정)')
+  // 축 판정 함수 몸통만 본다. 같은 파일의 발행 줄 몫 계산(summarizeCashReceiptKey)은 보증금을 가르는 것이
+  // 맞는 자리라, 파일 전체를 보면 그 줄에 걸려 오탐한다(2026-10-14).
+  {
+    const axisFns = ['paymentCardMonth', 'cashReceiptMonth', 'paymentAggregateBucket']
+      .map(n => { const at = canon.indexOf(`export function ${n}(`); return at < 0 ? '' : canon.slice(at, canon.indexOf('\n}', at) + 2) })
+    if (axisFns.every(b => b === '')) {
+      violations.push('[소스] 축 판정 함수(paymentCardMonth 등)를 못 찾았다. 보증금 재필터 대조가 건너뛰어졌다. 감지망을 고칠 것')
+    }
+    if (axisFns.some(b => /r\.isDeposit/.test(b))) {
+      violations.push('[소스] 축 판정 정본이 보증금을 다시 걸러낸다. 카드로 낸 보증금은 카드사 명세에 남으므로 빼면 대사가 안 된다(2026-08-24 되돌린 판정)')
+    }
   }
   // 걸러내려면 그 칸을 실제로 읽어와야 한다. select 에서 빠지면 undefined 라 조용히 통과한다.
   const aggFn2 = roomsActions.match(/export async function getMonthPaymentAggregates[\s\S]*?\n}/)

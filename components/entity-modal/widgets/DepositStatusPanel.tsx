@@ -246,7 +246,7 @@ export function DepositStatusPanel({
       const res = await withSave(() => deletePayment(r.id), { success: '' })
       if (!res.ok) return
       pushToast('success', '보증금 수납 삭제됨', {
-        action: { label: '적용취소', run: () => { void restorePayment(r.id).then(x => { if (x.ok) { void load(); onChanged?.() } else pushToast('error', x.error) }) } },
+        action: { label: '적용취소', run: () => { void restorePayment(r.id, res.undo).then(x => { if (x.ok) { void load(); onChanged?.() } else pushToast('error', x.error) }) } },
       })
       await load(); onChanged?.()
     })

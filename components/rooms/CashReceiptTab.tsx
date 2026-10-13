@@ -25,7 +25,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
 import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
 import { pushToast, trackSave } from '@/lib/saveStatus'
-import { batchSetCashReceipts, batchUnsetCashReceipts, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
+import { batchSetCashReceipts, undoCashReceiptChange, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
 
 type Candidate = {
   leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
@@ -103,7 +103,7 @@ export function CashReceiptTab({
         ...(res.skipped > 0 ? { detail: `${res.skipped}건은 이미 발행 기록이 있어 제외` } : {}),
         action: {
           label: '적용취소',
-          run: () => { void batchUnsetCashReceipts(items).then(r => {
+          run: () => { void undoCashReceiptChange(res.undo).then(r => {
             if (r.ok) { pushToast('info', '일괄 발행 기록을 취소했습니다'); onChanged() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) },

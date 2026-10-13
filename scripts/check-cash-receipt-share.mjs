@@ -87,6 +87,8 @@ const HOME = 'app/(app)/dashboard/getDashboardData.ts'
 const TAB  = 'components/rooms/CashReceiptTab.tsx'
 const LIST = 'components/entity-modal/widgets/PaymentRecordList.tsx'
 const LIB  = 'lib/cashReceipt.ts'
+const ENG  = 'app/(app)/rooms/cashReceiptLine.ts'
+const TEN  = 'app/(app)/tenants/actions.ts'
 
 const form = read(FORM)
 const list = read(LIST)
@@ -94,6 +96,8 @@ const srv  = read(SRV)
 const home = read(HOME)
 const tab  = read(TAB)
 const lib  = read(LIB)
+const eng  = read(ENG)
+const ten  = read(TEN)
 
 // ── ⓐ 수납 등록 폼의 몫 기본값이 정본 상수인가 ──────────────────────────
 //
@@ -129,45 +133,64 @@ const lib  = read(LIB)
   }
 }
 
-// ── ⓑ 저장 세 문이 이용료 몫을 기본값으로 쓰는가 ────────────────────────
+// ── ⓑ 저장 문들이 이용료 몫을 기본값으로 쓰는가 ────────────────────────
 //
-// 셋이 각자 폴백을 갖고 있어 하나만 옛 모양으로 남아도 그 경로로 들어온 입금은 전액이 적힌다.
-for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSetCashReceipts']) {
-  const b = fnBody(srv, `function ${fn}(`)
-  if (!b) { violations.push(`${SRV} — ${fn} 몸통을 못 찾았다. 모양이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`); continue }
-  if (!/paymentCompositionFor\(/.test(b)) {
-    violations.push(`${SRV} ${fn} — 입금 구성을 안 읽는다. 몫을 모르면 이용료 몫만 적을 수가 없다.`)
-  }
-  if (!/cashReceiptIssuableAmount\(/.test(b)) {
-    violations.push(`${SRV} ${fn} — 발행 대상 금액 정본(cashReceiptIssuableAmount)을 안 쓴다.`)
-  }
-  if (/amount[^\n]*[:=][^\n]*c\.total/.test(b)) {
-    violations.push(`${SRV} ${fn} — 발행 금액에 입금 전액(c.total)이 되살아났다. 보증금·청소비가 함께 올라간다.`)
-  }
-  if (/c\.deposit\s*>\s*0/.test(b)) {
-    violations.push(`${SRV} ${fn} — 받은 몫이 있으면 켜는 옛 incl 조립이 되살아났다. 기본은 꺼짐이다.`)
-  }
-  if (!/CASH_RECEIPT_DEFAULT_INCL/.test(b)) {
-    violations.push(`${SRV} ${fn} — 몫 기본값이 정본 상수가 아니다. 서버와 화면이 갈린다.`)
-  }
-  // **정본을 부르되 결과를 안 쓰는 길을 막는다**(독립 검수 2026-09-22). 호출 존재만 보면
-  // `cashReceiptIssuableAmount(c) + c.deposit + c.cleaning` 도 통과하고, `c.deposit > 0` 을
-  // `!!c.deposit` 으로 적기만 해도 옛 조립이 되살아난다. 이 세 문에서 몫을 직접 만지는 길을
-  // 통째로 닫는다 — 몫 판단은 lib/cashReceipt 정본 한 자리에서만 한다.
-  for (const m of b.match(/c\.(deposit|cleaning|total)\b/g) ?? []) {
-    violations.push(`${SRV} ${fn} — 입금 구성을 직접 만진다(${m}). 발행 대상 금액은 정본 함수가 정한다.`)
-  }
-}
+// 2026-10-13 부터 발행 줄을 쓰는 길은 하나다. 판정은 lib/cashReceipt 의 순수 함수(켜기
+// planCashReceiptOn · 등록 planCashReceiptEntry · 수정 planCashReceiptEdit)가 하고, 줄·도장 쓰기는
+// rooms/cashReceiptLine.ts 의 writeCrKey 한 자리가 한다. 그래서 기본 금액·기본 구성 규칙은 판정
+// 함수 안에서, '다른 길로 줄을 쓰지 않는가'는 액션 파일 전체에서 본다. 종전 그물은 동기화 함수
+// 셋(syncCashReceiptLine·touchCashReceiptIssuedAt·도장 정렬)의 몸통을 잘라 봤다. 그 셋이 경로마다
+// 다른 규칙으로 줄을 덮은 것이 422호 결함(D1·D8)이었고, 그 자리를 하나로 모은 것이 이번 시공이다.
 {
-  const n = (srv.match(/cashReceiptIssuableAmount\(/g) ?? []).length
-  if (n < 3) violations.push(`${SRV} — cashReceiptIssuableAmount 호출이 ${n}곳뿐이다. 저장 세 문이 다 지나야 한다.`)
-  // **넷째 저장 문이 생기면 여기서 걸린다**(독립 검수 2026-09-22). 위 루프는 이름 셋을 박아
-  // 두므로, `syncCashReceiptLine` 을 부르는 새 액션을 만들면 검사 대상 밖에서 전액을 적을 수
-  // 있었다. 부르는 자리 수를 못박아 새 문이 생기면 이 그물부터 고치게 한다.
-  const calls = (srv.match(/\bawait syncCashReceiptLine\(/g) ?? []).length
-  if (calls !== 3) {
-    violations.push(`${SRV} — syncCashReceiptLine 을 부르는 자리가 ${calls}곳이다(기대 3). 저장 문이 늘었으면 위 이름 목록과 이 수를 함께 고친다.`)
+  // (1) 기본 금액·구성을 정하는 판정 둘이 정본을 쓰는가.
+  for (const fn of ['planCashReceiptOn', 'planCashReceiptEntry']) {
+    const b = fnBody(lib, `export function ${fn}(`)
+    if (!b) { violations.push(`${LIB}: ${fn} 몸통을 못 찾았다. 모양이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`); continue }
+    if (!/cashReceiptIssuableAmount\(parts\)/.test(b)) {
+      violations.push(`${LIB} ${fn}: 발행 대상 금액 정본(cashReceiptIssuableAmount)을 안 쓴다. 보증금·청소비가 기본으로 올라갈 수 있다.`)
+    }
+    if (!/defaultIncl\(\)/.test(b)) {
+      violations.push(`${LIB} ${fn}: 몫 기본값이 정본 상수가 아니다. 서버와 화면이 갈린다.`)
+    }
+    // 몫을 직접 만지는 길을 닫는다. 발행 대상 금액은 정본 함수만 정한다(독립 검수 2026-09-22 의 같은 처방).
+    for (const m of b.match(/parts\.(deposit|cleaning|total)\b/g) ?? []) {
+      violations.push(`${LIB} ${fn}: 입금 구성을 직접 만진다(${m}). 발행 대상 금액은 정본 함수가 정한다.`)
+    }
   }
+  if (!/const defaultIncl = \(\): CashReceiptIncl => \(\{ \.\.\.CASH_RECEIPT_DEFAULT_INCL \}\)/.test(lib)) {
+    violations.push(`${LIB}: defaultIncl 이 정본 상수(CASH_RECEIPT_DEFAULT_INCL)의 사본이 아니다.`)
+  }
+  // (2) 구성을 읽는 자리가 청소비 몫까지 세고 정본 식으로 모으는가.
+  const read = fnBody(eng, 'export async function readCrKey(')
+  if (!read) {
+    violations.push(`${ENG}: readCrKey 몸통을 못 찾았다(침묵 통과 금지).`)
+  } else {
+    if (!/CLEANING_FEE_CATEGORY/.test(read)) violations.push(`${ENG} readCrKey: 청소비 몫(ExtraIncome)을 안 센다. 분해 수납에서 몫이 작게 뜬다.`)
+    if (!/summarizeCashReceiptKey\(/.test(read)) violations.push(`${ENG} readCrKey: 키의 몫을 정본 식(summarizeCashReceiptKey)으로 안 모은다. 점검 (바)와 갈린다.`)
+    if (!/isBillingAdjust:\s*false/.test(read)) violations.push(`${ENG} readCrKey: 조정 전표를 안 거른다. 받은 돈이 아닌 것이 몫에 든다.`)
+  }
+  // (3) 액션들이 판정을 거쳐 엔진으로만 쓰는가.
+  const DOORS = [
+    ['setCashReceiptIssued', /planCashReceiptOn\(/],
+    ['setPaymentCashReceipt', /planCashReceiptEntry\(/],
+    ['batchSetCashReceipts', /planCashReceiptOn\(/],
+    ['updatePayment', /planCashReceiptEdit\(/],
+  ]
+  for (const [fn, plan] of DOORS) {
+    const b = fnBody(srv, `export async function ${fn}(`)
+    if (!b) { violations.push(`${SRV} — ${fn} 몸통을 못 찾았다(침묵 통과 금지).`); continue }
+    if (!plan.test(b)) violations.push(`${SRV} ${fn}: 줄을 어떻게 세울지 정본 판정을 안 거친다.`)
+    if (!/writeCrKey\(/.test(b)) violations.push(`${SRV} ${fn}: 줄을 엔진(writeCrKey)으로 안 쓴다.`)
+    if (/c\.total|\.deposit\s*>\s*0/.test(b)) violations.push(`${SRV} ${fn}: 입금 전액이나 '받은 몫이 있으면 켬' 조립이 되살아났다.`)
+  }
+  // (4) 엔진 밖에서 발행 줄을 직접 쓰는 자리가 없는가. 하나라도 서면 그 길만 다른 규칙으로 줄을 덮는다.
+  for (const [f, src] of [[SRV, srv], [TEN, ten]]) {
+    const w = src.match(/\bcashReceipt\.(create|update|updateMany|upsert|delete|deleteMany)\(/g) ?? []
+    if (w.length > 0) violations.push(`${f}: 발행 줄을 엔진 밖에서 직접 쓴다(${w.join(', ')}). 줄 쓰기는 rooms/cashReceiptLine 의 writeCrKey 한 자리다.`)
+  }
+  // 엔진 안에서도 줄을 만드는 자리는 writeCrKey 하나다(적용취소 복원은 있던 줄만 되돌린다).
+  const creates = (eng.match(/\bcashReceipt\.create\(/g) ?? []).length
+  if (creates !== 1) violations.push(`${ENG}: 발행 줄을 만드는 자리가 ${creates}곳이다(기대 1, writeCrKey). 새 문이 생겼으면 이 그물부터 고친다.`)
 }
 
 // ── ⓒ 보증금 record 스탬프 규칙 ─────────────────────────────────────────
@@ -187,55 +210,38 @@ for (const fn of ['touchCashReceiptIssuedAt', 'setPaymentCashReceipt', 'batchSet
       violations.push(`${SRV} saveDepositPayment — 보증금 record 에 발행 도장을 찍는다. 받을 때 보증금은 발행 대상이 아니다.`)
     }
   }
-  // **분기마다 세야 한다.** 두 함수 모두 줄을 지우는 분기와 쓰는 분기가 따로 있어, 존재만 보면
-  // 한쪽을 지워도 통과한다(역주입에서 실제로 통과했다). 지우는 쪽만 남으면 예외 발행에 도장이
-  // 안 따라가고, 쓰는 쪽만 남으면 줄을 내려도 도장이 남는다.
-  for (const fn of ['syncCashReceiptLine', 'touchCashReceiptIssuedAt']) {
-    const b = fnBody(srv, `function ${fn}(`)
-    if (!b) { violations.push(`${SRV} — ${fn} 몸통을 못 찾았다(침묵 통과 금지).`); continue }
-    const n = (b.match(/alignDepositReceiptStamp\(/g) ?? []).length
-    if (n < 2) {
-      violations.push(`${SRV} ${fn} — 보증금 도장 정렬 호출이 ${n}곳뿐이다. 줄을 지우는 분기와 쓰는 분기 둘 다 맞춰야 도장과 줄이 안 갈린다.`)
-    }
-    // **개수만 세면 인자를 뒤집어도 통과한다**(독립 검수 2026-09-22). 지우는 분기는 반드시
-    // `issuedAt: null, inclDeposit: false` 여야 하고, 쓰는 분기는 그 줄의 구성을 따라야 한다.
-    // 한쪽에 `inclDeposit: true` 를 박으면 줄은 이용료만인데 도장은 보증금에 남는다.
-    for (const call of b.match(/alignDepositReceiptStamp\(\{[^}]*\}/g) ?? []) {
-      if (/issuedAt:\s*null/.test(call) && !/inclDeposit:\s*false/.test(call)) {
-        violations.push(`${SRV} ${fn} — 줄을 내리면서 도장을 안 내린다: ${call.replace(/\s+/g, ' ').slice(0, 90)}`)
-      }
-      if (/inclDeposit:\s*true\b/.test(call)) {
-        violations.push(`${SRV} ${fn} — 도장 정렬에 inclDeposit: true 가 박혀 있다. 그 값은 줄의 구성에서 와야 한다.`)
-      }
-    }
-  }
-  // **줄을 내리는 문마다 도장도 내려야 한다**(독립 검수 2026-09-22). 종전에는 정렬이 두 함수에만
-  // 걸려 있어, 수납 이동·일괄 적용취소·수납 삭제 셋은 줄만 내리고 도장을 남겼다. 줄을 내리는
-  // 자리 수와 도장을 내리는 자리 수를 맞춰 새 경로가 생기면 여기서 걸리게 한다.
+  // **줄과 도장은 한 자리에서 함께 쓴다**(2026-10-13). 종전에는 도장 정렬 헬퍼를 줄을 내리는 문마다
+  // 손으로 불러야 했고(내리는 자리 수와 정렬 자리 수를 맞추는 축이 있었다), 수납 이동·일괄 적용취소·
+  // 수납 삭제 셋이 그것을 빠뜨렸었다. 이제는 writeCrKey 가 줄을 쓰는 같은 호출 안에서 도장을 맞춘다.
+  // 보증금 행의 규칙은 하나다. 줄이 보증금을 들었을 때만 줄 발행일, 아니면(내릴 때 포함) null.
   {
-    const drops = (srv.match(/cashReceipt\.update\([^)]*deletedAt: new Date\(\)/g) ?? []).length
-    const aligns = (srv.match(/alignDepositReceiptStamp\(\{[^}]*inclDeposit:\s*false[^}]*\}/g) ?? []).length
-    if (drops !== aligns) {
-      violations.push(`${SRV} — 발행 줄을 내리는 자리 ${drops}곳에 도장을 내리는 자리가 ${aligns}곳이다. 줄만 내리면 도장이 남아 화면이 '발행됨'을 계속 말한다.`)
+    const w = fnBody(eng, 'export async function writeCrKey(')
+    if (!w) {
+      violations.push(`${ENG}: writeCrKey 몸통을 못 찾았다(침묵 통과 금지).`)
+    } else {
+      if (!/if \(r\.isDeposit\) \{\s*want\.set\(r\.id, next && next\.incl\.deposit \? next\.issuedAt : null\)/.test(w)) {
+        violations.push(`${ENG} writeCrKey: 보증금 행 도장이 줄의 구성(incl.deposit)을 안 따른다. 토글 한 번에 보증금에도 도장이 찍히거나, 줄을 내려도 도장이 남는다.`)
+      }
+      if (!/stamp === 'key'\) want\.set\(r\.id, next && r\.actualAmount > 0 \? next\.issuedAt : null\)/.test(w)) {
+        violations.push(`${ENG} writeCrKey: 키 단위 도장이 줄을 따르지 않는다(켜면 줄 발행일, 내리면 null). 행마다 '발행' 표시가 갈린다(결함 D7).`)
+      }
+      if (!/deletedAt: new Date\(\)/.test(w)) {
+        violations.push(`${ENG} writeCrKey: 줄을 내리는 분기가 없다. 끄기가 줄을 못 내린다.`)
+      }
     }
   }
-  const sib = fnBody(srv, 'export async function setCashReceiptIssued(')
-  if (!sib) {
-    violations.push(`${SRV} — setCashReceiptIssued 몸통을 못 찾았다(침묵 통과 금지).`)
-  } else {
-    const find = argBlock(sib, 'prisma.paymentRecord.findMany(')
-    if (!find || !/isDeposit:\s*true/.test(find)) {
-      violations.push(`${SRV} setCashReceiptIssued — 형제 조회가 isDeposit 을 안 읽는다. 보증금 형제를 가려낼 수 없다.`)
+  // **이용료 몫이 없으면 켤 수 없다**(독립 검수 2026-09-22). 0 원이면 판정이 none 을 내고 토글은
+  // 실패를 돌려줘야 한다. 종전에는 켜기가 도리어 있던 줄을 지우고 성공 토스트를 띄웠다.
+  {
+    const on = fnBody(lib, 'export function planCashReceiptOn(')
+    if (!on || !/if \(amount <= 0\) return \{ kind: 'none' \}/.test(on)) {
+      violations.push(`${LIB} planCashReceiptOn: 이용료 몫이 0 일 때 none 을 안 낸다. 켜기가 0원 줄을 세우거나 있던 줄을 지운다.`)
     }
-    // 값을 읽기만 하고 안 쓰는 길을 막는다 — `const x = t.isDeposit; void x` 로도 통과했다.
-    if (!/if \(t\.isDeposit\) continue/.test(sib)) {
-      violations.push(`${SRV} setCashReceiptIssued — 보증금 형제를 건너뛰는 continue 가 없다. 토글 한 번에 보증금에도 도장이 찍힌다.`)
-    }
-    // **건너뛴 뒤 남는 null 이 켜기를 지우기로 만든다**(독립 검수 2026-09-22). 형제가 전부
-    // 보증금이면 lastNext 가 null 인 채로 내려가 있던 줄을 소프트삭제하고, 화면에는 성공
-    // 토스트가 뜬다. 다른 저장 문 셋처럼 실패를 돌려줘야 한다.
-    if (!/issued && lastNext == null/.test(sib)) {
-      violations.push(`${SRV} setCashReceiptIssued — 이용료 형제가 없을 때의 가드가 없다. 켜기가 있던 줄을 지우고 성공이라 답한다.`)
+    const sib = fnBody(srv, 'export async function setCashReceiptIssued(')
+    if (!sib) {
+      violations.push(`${SRV}: setCashReceiptIssued 몸통을 못 찾았다(침묵 통과 금지).`)
+    } else if (!/plan\.kind === 'none'\) return null/.test(sib) || !/이용료 몫이 없어 발행할 금액이 0원입니다/.test(sib)) {
+      violations.push(`${SRV} setCashReceiptIssued: 이용료 몫이 없을 때의 가드가 없다. 켜기가 성공이라 답한다.`)
     }
   }
 }
@@ -360,7 +366,7 @@ for (const kind of ['deposit', 'cleaning']) {
   }
 }
 
-console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 저장 세 문 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 / 위반 ${violations.length}건`)
+console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

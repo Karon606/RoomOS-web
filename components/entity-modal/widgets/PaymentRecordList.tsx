@@ -12,7 +12,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment, setCashReceiptIssued,
-  setPaymentCashReceipt,
+  setPaymentCashReceipt, undoCashReceiptChange,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -159,7 +159,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             leaseTermId, tenantId: rec.tenantId,
             payDate: editDate, payMethod: editPayMethod,
             issued: true, issuedDate: editCashReceiptDate,
-            amount: editCrAmount, incl: editCrIncl,
+            amount: editCrAmount, incl: editCrIncl, via: 'edit',
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }
@@ -178,7 +178,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         const res = await deletePayment(p.id)
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '수납 기록 삭제됨', {
-          action: { label: '적용취소', run: () => { void restorePayment(p.id).then(r => { if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error) }) } },
+          action: { label: '적용취소', run: () => { void restorePayment(p.id, res.undo).then(r => { if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error) }) } },
         })
         await reload()
         onChange?.()
@@ -202,7 +202,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       const res = await setCashReceiptIssued(p.id, false)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '현금영수증 발행 표시를 해제했습니다', {
-        action: { label: '적용취소', run: () => { void setCashReceiptIssued(p.id, res.prevIssuedAt != null, res.prevIssuedAt).then(r => {
+        action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
           if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
         }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
       })
@@ -214,11 +214,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 켜기 확정 — 물은 발행일로 기록한다. 토스트·적용취소는 종전 토글과 같은 문법.
   const confirmCashReceiptOn = (p: Record) => {
     startTransition(async () => {
-      const res = await setCashReceiptIssued(p.id, true, null, crAskDate)
+      const res = await setCashReceiptIssued(p.id, true, crAskDate)
       if (!res.ok) { pushToast('error', res.error); return }
       setCrAskId(null)
       pushToast('success', `현금영수증 발행으로 표시했습니다 · 발행일 ${fmtMD(crAskDate)}`, {
-        action: { label: '적용취소', run: () => { void setCashReceiptIssued(p.id, res.prevIssuedAt != null, res.prevIssuedAt).then(r => {
+        action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
           if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
         }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
       })

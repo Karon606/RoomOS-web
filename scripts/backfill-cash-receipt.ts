@@ -10,6 +10,19 @@
 // 금액은 **그 수납 금액 그대로**다. 운영자 확인 — "여기에는 다른 금액으로 발행하지는 않았어".
 // 나중에 다르게 끊은 것이 발견되면 화면에서 고친다.
 //
+// ── 2026-10-13 봉합: 지워진 수납을 옮기지 않는다, 그리고 다시 쓰지 않는다 ──────────
+//
+// 이 스크립트는 2026-08-24 한 번 돌았다. 그때 조회가 확장 없는 PrismaClient 라 **소프트삭제된 수납까지**
+// 옮겼다. 519호 임형진 470,000원은 7월에 홈택스에서 취소하고 앱에서도 지운 수납인데, 여기서 살아 있는
+// 발행 줄로 다시 태어나 지금도 7월 합계에 든다(5,660,000원 14건, 빼면 5,190,000원 13건). 점검은 그
+// 줄을 '환불 대기'로 읽어 영구 미검출이었다(패널 2026-10-13, 결함 D3).
+//   1. 조회에 deletedAt: null 을 건다. 지워진 수납은 발행 사실의 근거가 아니다.
+//   2. --apply 는 발행 줄이 하나라도 있으면 거부한다. 이미 발행 줄이 정본이 된 뒤의 재실행은 운영자가
+//      화면에서 고친 금액·발행일을 수납 금액으로 되덮거나 지운 줄을 되살린다. 정말 다시 써야 하면
+//      스크립트를 고쳐 그 이유를 이 머리말에 남긴다.
+//
+// 아래 '두 번 돌려도 안전하다'는 첫 실행 당시의 문장이다. 그 판정(같은 계약·수납일·발행일이면 건너뜀)은
+// 발행일이 바뀐 줄·지운 줄을 못 알아봐서 사실 안전하지 않았다.
 // 두 번 돌려도 안전하다. 이미 같은 (계약·수납일·발행일) 줄이 있으면 건너뛴다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
@@ -20,8 +33,18 @@ const APPLY = process.argv.includes('--apply')
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 
+  if (APPLY) {
+    const existing = await prisma.cashReceipt.count()
+    if (existing > 0) {
+      console.error(`발행 줄이 이미 ${existing}건 있다. 이 백필은 2026-08-24 에 끝났고 지금은 발행 줄이 정본이라 다시 쓰지 않는다(머리말 참조).`)
+      await prisma.$disconnect()
+      process.exit(1)
+    }
+  }
+
   const rows = await prisma.paymentRecord.findMany({
-    where: { cashReceiptIssuedAt: { not: null } },
+    // 확장 없는 클라이언트라 소프트삭제를 손으로 거른다. 519호가 이 줄 하나가 없어 생겼다.
+    where: { cashReceiptIssuedAt: { not: null }, deletedAt: null },
     orderBy: [{ leaseTermId: 'asc' }, { createdAt: 'asc' }],
     select: {
       id: true, propertyId: true, leaseTermId: true, tenantId: true,

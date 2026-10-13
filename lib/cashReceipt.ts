@@ -461,3 +461,380 @@ export function isReceiptBeforeCutoff(key: string, cutoffYmd: string | null): bo
   const ymd = key.split('|')[1] ?? ''
   return /^\d{4}-\d{2}-\d{2}$/.test(ymd) && ymd < cutoffYmd
 }
+
+// ── 발행 줄의 생애주기. 켜기·끄기·삭제·되돌리기 (2026-10-13 운영자 승인) ─────────────
+//
+// 422호 신고. 운영자 원문. "이게 이렇게 보이는데 백엔드에서 다르게 보인다면 그게 잘못된게
+// 맞아. 삭제, 수정, 재발행하는 단계 전면을 다시 검토해야 할 것 같은데?". 420,000 한 결제가
+// 410,000(10월분)과 10,000(11월분 선납)으로 쪼개져 저장됐고, 발행 줄은 키 하나에 420,000 한 줄로
+// 섰다. 10,000 을 지워도 줄은 그대로였고(형제가 남으면 손대지 않았다), 끈 뒤 10/12 로 다시 켜자
+// 지워 둔 줄이 **옛 금액 420,000 그대로** 되살아났다. 화면 행은 410,000 과 '10/12 발행'만 말했다.
+//
+// 확정 규칙(운영자 승인 2026-10-13, "추천대로 진행해줘").
+//   1. 발행 단위는 키(계약·입금일·수단) 하나에 현금영수증 한 장이다. 스키마는 그대로다.
+//   2. 끈 뒤 다시 켜기는 **새 발행**이다. 지금 살아 있는 이용료 몫과 기본 구성으로 다시 세운다.
+//      지워 둔 줄의 옛 금액은 쓰지 않는다. 같은 조작의 토스트 적용취소만 직전 스냅샷을 복원한다.
+//   3. 받을 때 발행 대상은 이용료 몫뿐이다(2026-09-21). 과납분을 부가수익으로 돌린 수납도 같다.
+//   4. 국세청에 올라간 금액은 수납을 따라 자동으로 덮지 않는다(2026-08-25). 살아 있는 줄의 금액이
+//      바뀌는 길은 수정 폼의 '발행 금액' 문과, 운영자가 그 키에 **발행을 새로 켜는** 조작뿐이다.
+//
+// 왜 순수 함수인가. 종전에는 이 판정이 저장 경로 다섯 군데에 인라인으로 흩어져 있었고, 경로마다
+// 결론이 갈렸다(토글은 옛 줄을 되살리고 일괄 기록은 새 금액으로 쓰고, 삭제는 형제를 보고 수정은
+// 안 봤다). 서버는 이 판정을 부르기만 하고 scripts/test-cash-receipt.ts 가 전이 표를 고정한다.
+
+/** 발행에 넣은 몫. CashReceipt.inclDeposit·inclCleaning·inclRent 와 같은 셋이다. */
+export type CashReceiptIncl = { deposit: boolean; cleaning: boolean; rent: boolean }
+
+/**
+ * 한 키에 지금 살아 있는 돈. 몫 셋에 더해 이용료 행 수와 그중 도장이 찍힌 수를 든다.
+ *
+ * 행 수는 **금액이 든 행만** 센다. 0원 흔적 record(savePayment 의 원본 월 흔적)와 음수 조정은
+ * 발행할 돈이 아니라서, 세면 '아직 발행 안 된 돈이 있다'는 판정이 거짓으로 선다.
+ */
+export type CashReceiptKeyParts = CashReceiptParts & { rentRows: number; stampedRentRows: number }
+
+export type CashReceiptKeyRow = { isDeposit: boolean; actualAmount: number; cashReceiptIssuedAt: Date | string | null }
+
+/**
+ * 키의 살아 있는 몫을 센다. **점검 (바)와 같은 정본 식**이다(scripts/check-cash-receipt-orphan).
+ * 부르는 쪽이 살아 있고 조정 전표가 아닌 record 만 넘긴다. 청소비 몫은 ExtraIncome 이라 따로 받는다.
+ */
+export function summarizeCashReceiptKey(rows: CashReceiptKeyRow[], cleaning = 0): CashReceiptKeyParts {
+  let deposit = 0, rent = 0, rentRows = 0, stampedRentRows = 0
+  for (const r of rows) {
+    if (r.isDeposit) { deposit += r.actualAmount; continue }
+    rent += r.actualAmount
+    if (r.actualAmount > 0) {
+      rentRows += 1
+      if (r.cashReceiptIssuedAt) stampedRentRows += 1
+    }
+  }
+  return { deposit, cleaning, rent, rentRows, stampedRentRows }
+}
+
+/** 발행 줄의 지금 상태. deleted 는 소프트삭제(꺼 둔) 줄이다. */
+export type CashReceiptLineState = { amount: number; issuedAt: Date; incl: CashReceiptIncl; deleted: boolean }
+/** 줄을 이렇게 세운다. */
+export type CashReceiptLineTarget = { amount: number; issuedAt: Date; incl: CashReceiptIncl }
+
+const liveLine = (line: CashReceiptLineState | null | undefined) => (line && !line.deleted ? line : null)
+const defaultIncl = (): CashReceiptIncl => ({ ...CASH_RECEIPT_DEFAULT_INCL })
+
+/**
+ * 발행을 켤 때 줄이 어떻게 되나. 원터치 토글과 수정 폼에서 체크를 켤 때.
+ *
+ *   create  줄이 없었다. 지금 이용료 몫으로 새로 세운다.
+ *   rebuild 줄이 있다. 지워 둔 줄이면(끈 뒤 다시 켜기) **옛 금액·옛 구성을 쓰지 않고** 지금
+ *           이용료 몫·기본 구성으로 다시 세운다(규칙 2, 결함 D1). 살아 있는 줄인데 아직 도장이
+ *           없는 행이 있으면, 그 키에 새로 들어온 돈까지 덮는 새 발행이다(T7). 환불 확정 record 를
+ *           켜는 것이 이 갈래다. 원 수납이 지워지고 도장 없는 확정액 record 만 남았으므로 줄이
+ *           확정액(과 그 키에 딸린 몫)으로 다시 선다(결함 D4).
+ *   keep    살아 있는 줄이 키의 돈을 이미 다 덮고 있다. 금액·구성은 그대로 두고 발행일만 고친다.
+ *   none    이용료 몫이 없어 발행할 금액이 0 이다. 보증금·청소비는 받을 때 대상이 아니다.
+ */
+export type CashReceiptOnPlan =
+  | { kind: 'create'; next: CashReceiptLineTarget }
+  | { kind: 'rebuild'; next: CashReceiptLineTarget; over: 'deleted' | 'live'; prev: { amount: number; issuedAt: Date } }
+  | { kind: 'keep'; next: CashReceiptLineTarget }
+  | { kind: 'none' }
+
+export function planCashReceiptOn(
+  line: CashReceiptLineState | null, parts: CashReceiptKeyParts, issuedAt: Date,
+): CashReceiptOnPlan {
+  const live = liveLine(line)
+  if (live && parts.rentRows > 0 && parts.stampedRentRows === parts.rentRows) {
+    return { kind: 'keep', next: { amount: live.amount, issuedAt, incl: { ...live.incl } } }
+  }
+  const amount = cashReceiptIssuableAmount(parts)
+  if (amount <= 0) return { kind: 'none' }
+  const next = { amount, issuedAt, incl: defaultIncl() }
+  if (!line) return { kind: 'create', next }
+  return { kind: 'rebuild', next, over: live ? 'live' : 'deleted', prev: { amount: line.amount, issuedAt: line.issuedAt } }
+}
+
+/**
+ * 수납 등록 폼이 '현금영수증 발행함'으로 저장한 뒤 줄이 어떻게 되나. 등록 폼 두 벌의 공통 규칙(결함 D8).
+ *
+ * 종전에는 두 폼이 같은 키의 기존 줄을 다르게 덮었다. 수납 등록 폼은 **이 결제 몫**을 보내 앞 입금의
+ * 발행을 지웠고, 입주자 상세·예약 선납은 금액을 안 보내 **키 전체 몫**으로 썼다.
+ *
+ *   merge   그 키에 이 입금 말고도 돈이 있다. 살아 있는 줄이 있거나 도장 없는 이용료 행이 있다.
+ *           한 장 규칙이라 키의 이용료 몫 전체로 다시 세운다. 폼의 금액 칸은 이 입금 몫이라 여기서는
+ *           쓰지 않는다(쓰면 앞 입금 몫이 사라진다). 결과에 직전 줄을 실어 화면이 말하게 한다.
+ *   create / rebuild  이 입금이 그 키의 유일한 돈이다. 폼이 보낸 금액·구성이 이기고, 안 보냈으면
+ *           이용료 몫·기본 구성이다. 지워 둔 줄이 있어도 그 옛 금액은 쓰지 않는다(규칙 2).
+ *   none    적을 금액이 0 이다.
+ *
+ * '이 입금 말고도 돈이 있다'를 도장으로 가린다. 등록 경로(savePayment·saveDepositPayment·
+ * saveCleaningFeePayment·예약 선납)가 발행함일 때 제 record 에 도장을 먼저 찍으므로, 줄이 없는
+ * 키에서 도장 없는 이용료 행은 곧 앞서 발행 없이 받은 돈이다.
+ */
+export type CashReceiptEntryPlan =
+  | { kind: 'create'; next: CashReceiptLineTarget }
+  | { kind: 'rebuild'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date } }
+  | { kind: 'merge'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date } | null }
+  | { kind: 'none' }
+
+export function planCashReceiptEntry(
+  line: CashReceiptLineState | null, parts: CashReceiptKeyParts, issuedAt: Date,
+  given: { amount?: number | null; incl?: CashReceiptIncl | null },
+): CashReceiptEntryPlan {
+  const live = liveLine(line)
+  const share = cashReceiptIssuableAmount(parts)
+  if (live || parts.stampedRentRows < parts.rentRows) {
+    if (share <= 0) return { kind: 'none' }
+    return {
+      kind: 'merge',
+      next: { amount: share, issuedAt, incl: defaultIncl() },
+      prev: live ? { amount: live.amount, issuedAt: live.issuedAt } : null,
+    }
+  }
+  const amount = given.amount ?? share
+  if (amount <= 0) return { kind: 'none' }
+  const next = { amount, issuedAt, incl: given.incl ? { ...given.incl } : defaultIncl() }
+  return line ? { kind: 'rebuild', next, prev: { amount: line.amount, issuedAt: line.issuedAt } } : { kind: 'create', next }
+}
+
+/**
+ * 키에서 record 가 빠진 뒤(삭제·예약 선납 취소·분해 수납 적용취소) 줄이 어떻게 되나.
+ *
+ *   drop  그 줄이 덮을 돈이 키에 하나도 안 남았다. 줄을 내리고 그 사실(금액·발행일)을 돌려준다.
+ *         종전에는 형제 record 를 보증금까지 세어서, 이용료가 다 지워지고 보증금만 남은 키의 줄이
+ *         살아 남았다. 예약 선납 취소·분해 수납 적용취소는 아예 줄을 안 봐서 유령 줄을 남겼다(D10).
+ *   keep  덮을 돈이 남았다. **금액은 자동으로 덮지 않는다**(규칙 4). 국세청에는 원래 금액이 올라가
+ *         있다. 대신 남은 몫(basis)을 함께 돌려줘 화면이 '남은 이용료 몫과 발행 금액이 다르다'를
+ *         말하게 한다(결함 D2, 422호의 첫 원인).
+ *   none  살아 있는 줄이 없다.
+ *
+ * basis 는 줄이 든 구성 기준의 남은 몫이다. 기본 구성(이용료만)이면 점검 (바)의 이용료 몫과 같다.
+ */
+export type CashReceiptRemovalPlan =
+  | { kind: 'none' }
+  | { kind: 'drop'; dropped: { amount: number; issuedAt: Date } }
+  | { kind: 'keep'; amount: number; basis: number }
+
+export function planCashReceiptRemoval(line: CashReceiptLineState | null, partsAfter: CashReceiptKeyParts): CashReceiptRemovalPlan {
+  const live = liveLine(line)
+  if (!live) return { kind: 'none' }
+  const covered = partsAfter.rentRows > 0
+    || (live.incl.deposit && partsAfter.deposit > 0)
+    || (live.incl.cleaning && partsAfter.cleaning > 0)
+  if (!covered) return { kind: 'drop', dropped: { amount: live.amount, issuedAt: live.issuedAt } }
+  return { kind: 'keep', amount: live.amount, basis: cashReceiptDefaultAmount(partsAfter, live.incl) }
+}
+
+/**
+ * 수납 수정(updatePayment) 저장 뒤 줄이 어떻게 되나.
+ *
+ * 도장 의도는 넷이다. 켜져 있던 것을 끔(off) · 꺼져 있던 것을 켬(on) · 켠 채로 다시 저장(keep,
+ * 발행일만 바뀔 수 있다) · 둘 다 꺼짐(none). 수단을 카드로 바꾸면 도장이 지워지므로 off 다.
+ *
+ * 입금일·수단을 옮기지 않았으면(같은 키).
+ *   off    키 전체를 끈다(줄 내림 + 키의 도장 전부 지움, 결함 D7 도장 단위를 키로).
+ *   on     planCashReceiptOn 과 같다(끈 뒤 다시 켜기는 새 발행).
+ *   redate 살아 있는 줄이면 금액·구성을 지키고 발행일만 옮긴다. 도장이 찍혀 있던 행이 그 날짜를
+ *          따른다. 종전부터의 보호다. 메모 한 글자만 고쳐도 금액이 수납액으로 돌아가던 사고(2026-08-25).
+ *
+ * 옮겼으면(결함 D13). 옛 키에서 빠지는 것과 새 키에 드는 것을 따로 본다.
+ *   옛 키  planCashReceiptRemoval 그대로다. 종전에는 형제가 남아도 옛 줄을 지웠다.
+ *   새 키  - 옛 줄이 이 record 만 덮고 있었으면 **그 발행이 함께 옮겨 간다**(transfer). 같은 영수증의
+ *            입금일·수단을 바로잡은 것이지 새로 발행한 것이 아니라 금액·구성을 지킨다.
+ *            새 키에 이미 살아 있는 줄이 있으면 두 금액을 합친다(merge, 한 장 규칙).
+ *          - 옛 줄이 다른 행 때문에 남으면 이 돈은 여전히 그 영수증 안에 있다. 새 키에서 또 발행으로
+ *            세면 두 번 센다. 그래서 이 record 의 도장만 지운다(unstamp). 옛 키의 차이는 keep 이 말한다.
+ *          - 옮기면서 처음 켜는 것이면 새 키에 새 발행(on)이다.
+ *
+ * newKey.parts 의 도장 수는 **수정 전 도장**으로 센다. updatePayment 가 먼저 쓴 도장은 임시값이라,
+ * 그것으로 세면 '켬'이 '이미 다 덮였다'로 읽혀 새 돈을 안 덮는다.
+ */
+export type CashReceiptEditPlan = {
+  old: CashReceiptRemovalPlan
+  next:
+    | { kind: 'none' }
+    | { kind: 'off' }
+    | { kind: 'on'; plan: CashReceiptOnPlan }
+    | { kind: 'redate'; issuedAt: Date }
+    | { kind: 'transfer'; next: CashReceiptLineTarget }
+    | { kind: 'merge'; next: CashReceiptLineTarget; prev: { amount: number; issuedAt: Date } }
+    | { kind: 'unstamp' }
+}
+
+export function planCashReceiptEdit(input: {
+  moved: boolean
+  stampBefore: Date | null
+  stampAfter: Date | null
+  /** 옛 키(옮기지 않았으면 같은 키)의 줄과, 이 record 를 뺀 뒤의 몫. */
+  oldKey: { line: CashReceiptLineState | null; partsAfter: CashReceiptKeyParts }
+  /** 새 키의 줄과, 이 record 가 든 몫(도장은 수정 전 값으로 센다). */
+  newKey: { line: CashReceiptLineState | null; parts: CashReceiptKeyParts }
+}): CashReceiptEditPlan {
+  const { moved, stampBefore, stampAfter, oldKey, newKey } = input
+  const none: CashReceiptRemovalPlan = { kind: 'none' }
+  if (!moved) {
+    if (stampBefore && !stampAfter) return { old: none, next: { kind: 'off' } }
+    if (!stampAfter) return { old: none, next: { kind: 'none' } }
+    if (stampBefore && liveLine(newKey.line)) return { old: none, next: { kind: 'redate', issuedAt: stampAfter } }
+    return { old: none, next: { kind: 'on', plan: planCashReceiptOn(newKey.line, newKey.parts, stampAfter) } }
+  }
+  const old = planCashReceiptRemoval(oldKey.line, oldKey.partsAfter)
+  if (!stampAfter) return { old, next: { kind: 'none' } }
+  if (stampBefore && old.kind === 'drop' && oldKey.line) {
+    const carriedIncl = { ...oldKey.line.incl }
+    const live = liveLine(newKey.line)
+    if (live) {
+      return {
+        old,
+        next: {
+          kind: 'merge',
+          next: {
+            amount: live.amount + old.dropped.amount, issuedAt: live.issuedAt,
+            incl: {
+              deposit: live.incl.deposit || carriedIncl.deposit,
+              cleaning: live.incl.cleaning || carriedIncl.cleaning,
+              rent: live.incl.rent || carriedIncl.rent,
+            },
+          },
+          prev: { amount: live.amount, issuedAt: live.issuedAt },
+        },
+      }
+    }
+    return { old, next: { kind: 'transfer', next: { amount: old.dropped.amount, issuedAt: stampAfter, incl: carriedIncl } } }
+  }
+  if (stampBefore && old.kind === 'keep') return { old, next: { kind: 'unstamp' } }
+  return { old, next: { kind: 'on', plan: planCashReceiptOn(newKey.line, newKey.parts, stampAfter) } }
+}
+
+// ── 적용취소 스냅샷 ─────────────────────────────────────────────
+//
+// 줄을 건드리는 쓰기는 전부 **쓰기 전과 쓴 직후**의 줄·도장을 돌려주고, 적용취소는 그 '쓰기 전'을
+// 그대로 복원한다(결함 D5·D6). 종전 적용취소는 역연산이 아니었다. 끄기의 적용취소는 '지금 남아
+// 있는 줄 되살리기'였고 켜기의 적용취소는 켜기 전부터 살아 있던 줄까지 지웠다. 수납 삭제의
+// 적용취소는 수납만 되살리고 함께 내린 줄은 안 되살렸다.
+//
+// 복원 전에 지금 상태가 '쓴 직후'와 같은지 본다. 그 사이 다른 조작이 줄이나 도장을 바꿨으면 덮지
+// 않고 정직하게 실패한다. updatedAt 대신 **내용**을 비교한다. 적용취소를 거꾸로 이어 부를 때
+// (수정 폼 저장의 두 단계) 앞 단계 복원이 updatedAt 을 새로 찍어도 내용이 같으면 뒷 단계가 막히지 않는다.
+
+/** 줄 한 줄의 스냅샷. 화면을 거쳐 돌아오는 값이라 날짜는 ISO 문자열이다. */
+export type CashReceiptLineSnap = {
+  id: string; amount: number; issuedAt: string
+  inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean
+  deleted: boolean
+}
+
+export type CashReceiptUndoLine = {
+  leaseTermId: string; payYmd: string; payMethod: string | null
+  /** 쓰기 전 줄. null 이면 쓰기 전에 그 키에 줄이 없었다. */
+  before: CashReceiptLineSnap | null
+  /** 쓴 직후 줄. */
+  after: CashReceiptLineSnap | null
+}
+
+export type CashReceiptUndo = {
+  v: 1
+  /** 바뀐 키만 싣는다. */
+  lines: CashReceiptUndoLine[]
+  /** 바뀐 도장만 싣는다(record id 별 쓰기 전·쓴 직후, ISO 또는 null). */
+  stamps: { id: string; before: string | null; after: string | null }[]
+}
+
+export const EMPTY_CASH_RECEIPT_UNDO: CashReceiptUndo = { v: 1, lines: [], stamps: [] }
+
+const sameTs = (a: string | null, b: string | null) =>
+  a === b || (a != null && b != null && new Date(a).getTime() === new Date(b).getTime())
+
+/** 두 스냅샷이 같은 줄의 같은 내용인가(삭제 여부 포함). */
+export function sameCashReceiptLine(a: CashReceiptLineSnap | null, b: CashReceiptLineSnap | null): boolean {
+  if (!a || !b) return a === b
+  return a.id === b.id && a.amount === b.amount && sameTs(a.issuedAt, b.issuedAt)
+    && a.inclDeposit === b.inclDeposit && a.inclCleaning === b.inclCleaning && a.inclRent === b.inclRent
+    && a.deleted === b.deleted
+}
+
+/**
+ * 쓰기 전·후 상태로 적용취소 스냅샷을 만든다. 바뀌지 않은 키·도장은 싣지 않는다. 실어 두면
+ * 그 사이 무관한 조작이 그 자리를 건드렸을 때 적용취소가 이유 없이 막힌다.
+ */
+export function buildCashReceiptUndo(
+  lines: CashReceiptUndoLine[],
+  stampsBefore: ReadonlyMap<string, string | null>,
+  stampsAfter: ReadonlyMap<string, string | null>,
+): CashReceiptUndo {
+  const outLines = lines.filter(l => !sameCashReceiptLine(l.before, l.after))
+  const ids = new Set([...stampsBefore.keys(), ...stampsAfter.keys()])
+  const stamps: CashReceiptUndo['stamps'] = []
+  for (const id of ids) {
+    const before = stampsBefore.has(id) ? stampsBefore.get(id)! : (stampsAfter.get(id) ?? null)
+    const after = stampsAfter.has(id) ? stampsAfter.get(id)! : before
+    if (!sameTs(before, after)) stamps.push({ id, before, after })
+  }
+  return { v: 1, lines: outLines, stamps }
+}
+
+/**
+ * 지금 상태로 이 스냅샷을 되돌려도 되는가. 되면 null, 안 되면 어긋난 자리('line' | 'stamp').
+ *
+ * current.lines 는 undo.lines 와 같은 순서로, 그 키의 지금 줄(살아 있는 줄이 있으면 그것, 없으면
+ * 가장 오래된 줄, 아무것도 없으면 null)이다. current.stamps 는 record id 별 지금 도장이다.
+ *
+ * '쓴 직후'가 살아 있는 줄이었으면 지금도 같은 줄이 같은 내용으로 살아 있어야 한다. 살아 있지
+ * 않았으면 지금도 살아 있는 줄이 없어야 한다. 지워 둔 줄의 내용이 그 사이 바뀐 것은 합계에 안
+ * 드는 자리라 막지 않는다.
+ */
+export function cashReceiptUndoConflict(
+  undo: CashReceiptUndo,
+  current: { lines: (CashReceiptLineSnap | null)[]; stamps: ReadonlyMap<string, string | null> },
+): 'line' | 'stamp' | null {
+  for (let i = 0; i < undo.lines.length; i++) {
+    const want = undo.lines[i].after
+    const now = current.lines[i] ?? null
+    const wantLive = !!want && !want.deleted
+    const nowLive = !!now && !now.deleted
+    if (wantLive) {
+      if (!nowLive || !sameCashReceiptLine(now, want)) return 'line'
+    } else if (nowLive) {
+      return 'line'
+    }
+  }
+  for (const s of undo.stamps) {
+    if (!current.stamps.has(s.id)) return 'stamp'
+    if (!sameTs(current.stamps.get(s.id) ?? null, s.after)) return 'stamp'
+  }
+  return null
+}
+
+/** 화면을 거쳐 돌아온 값이 스냅샷 모양인가. 아니면 null. 모양이 틀린 값으로는 아무것도 쓰지 않는다. */
+export function parseCashReceiptUndo(x: unknown): CashReceiptUndo | null {
+  if (!x || typeof x !== 'object') return null
+  const u = x as Partial<CashReceiptUndo>
+  if (u.v !== 1 || !Array.isArray(u.lines) || !Array.isArray(u.stamps)) return null
+  const isTs = (v: unknown) => v === null || (typeof v === 'string' && !Number.isNaN(new Date(v).getTime()))
+  const isSnap = (s: unknown): boolean => {
+    if (s === null) return true
+    if (!s || typeof s !== 'object') return false
+    const o = s as Record<string, unknown>
+    return typeof o.id === 'string' && Number.isInteger(o.amount) && (o.amount as number) >= 0
+      && typeof o.issuedAt === 'string' && isTs(o.issuedAt)
+      && typeof o.inclDeposit === 'boolean' && typeof o.inclCleaning === 'boolean' && typeof o.inclRent === 'boolean'
+      && typeof o.deleted === 'boolean'
+  }
+  // 수단 칸은 글자로 비교하지 않는다(문자열이거나 null 인지만). 수단 이름 글자 비교 그물(test-discount-reasons)과 같은 규율.
+  const strOrNull = (v: unknown) => v === null || typeof v === 'string'
+  for (const l of u.lines) {
+    if (!l || typeof l !== 'object') return null
+    if (typeof l.leaseTermId !== 'string' || typeof l.payYmd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(l.payYmd)) return null
+    if (!strOrNull(l.payMethod)) return null
+    if (!isSnap(l.before) || !isSnap(l.after)) return null
+  }
+  for (const s of u.stamps) {
+    if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !isTs(s.before) || !isTs(s.after)) return null
+  }
+  return u as CashReceiptUndo
+}
+
+/** 결과·조회에 싣는 줄 한 줄의 모양. 발행일은 KST 달력 날짜다. */
+export type CashReceiptLineView = { amount: number; issuedYmd: string; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }
+
+export function cashReceiptLineView(l: { amount: number; issuedAt: Date; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }): CashReceiptLineView {
+  return { amount: l.amount, issuedYmd: kstYmdStr(l.issuedAt), inclDeposit: l.inclDeposit, inclCleaning: l.inclCleaning, inclRent: l.inclRent }
+}

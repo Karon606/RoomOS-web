@@ -464,10 +464,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
-          const { recordIds, cleaningIncomeIds, extraIncomeId } = r
+          const { recordIds, cleaningIncomeIds, extraIncomeId, crUndo } = r
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
             // 라벨은 §16 정본 '적용취소'. 무르는 것은 돈 기록뿐이고 예약 취소 상태는 그대로라 결과 문장이 그걸 말한다.
-            action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds).then(u => {
+            action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds, crUndo).then(u => {
               if (u.ok) { pushToast('info', '예약 선납 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로'); onChange?.() }
               else pushToast('error', u.error)
             }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
