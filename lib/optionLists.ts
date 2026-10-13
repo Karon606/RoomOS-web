@@ -29,9 +29,10 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   directionOptions:  ['북향', '북동향', '동향', '남동향', '남향', '남서향', '서향', '북서향'],
   incomeCategories:  ['건조기', '세탁기', '자판기', '이자수익', '기타'],
   expenseCategories: ['부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비', '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료', '보증금 반환'],
-  // 4종이다. 칸이 빈 영업장의 드롭다운이 처음부터 보여 준 것이 4종이고 확인창도 4종이라 말했다.
-  // 초기화만 12종을 썼다(c535a4e2 가 FIELD_DEFAULTS 한 자리만 늘렸다). 12종으로 늘리려면 이 줄
-  // 하나만 고치면 조회·초기화·확인창이 같이 바뀐다. 단 칸이 빈 영업장의 드롭다운도 그날 바뀐다.
+  // 4종이다(2026-10-13 운영자 승인으로 확정). 칸이 빈 영업장의 드롭다운이 처음부터 보여 준 것이 4종이고
+  // 확인창도 4종이라 말했다. 초기화만 12종을 썼다(c535a4e2 가 FIELD_DEFAULTS 한 자리만 늘렸다). 그 12종의
+  // 나머지 여덟은 선불 서비스 이름이고, 재무에서 선불 계정을 등록하면 결제 수단 고르기에 저절로 붙는다
+  // (finance/RecurringExpenseRecordModal effectivePayMethods). 이 줄을 고치면 조회·초기화·확인창이 같이 바뀐다.
   paymentMethods:    ['계좌이체', '신용카드', '체크카드', '현금'],
   requestCategories: REQUEST_CATEGORIES,
   workKindOptions:   ['도배', '장판'],
