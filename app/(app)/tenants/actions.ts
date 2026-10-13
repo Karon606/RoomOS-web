@@ -64,7 +64,7 @@ import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { cashReceiptIssueLines, type CashReceiptIssueLine, type CashReceiptUndo } from '@/lib/cashReceipt'
 import {
-  alignRevivedStamps, applyCrUndo, captureCr, finishCrUndo, reconcileCrAfterRemoval, CrUndoConflict,
+  alignRevivedStamps, applyCrUndo, captureCr, finishCrUndo, lockCrKeys, reconcileCrAfterRemoval, CrUndoConflict,
   type CrKeyRef, type CrMismatch, type CrRemovalResult,
 } from '@/app/(app)/rooms/cashReceiptLine'
 import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refundTaxNotice'
@@ -2306,6 +2306,7 @@ export async function recordReservationPrepaidCancel(params: {
     }
 
     const { extraIncomeId, cashReceipt, crUndo } = await prisma.$transaction(async tx => {
+      await lockCrKeys(tx, crRefs)   // 지울 돈이 든 키 전부를 첫머리에서 잠근다(검수 W6)
       const crBefore = await captureCr(tx, crRefs, recordIds)
       if (recordIds.length > 0) {
         await tx.paymentRecord.updateMany({ where: { id: { in: recordIds } }, data: { deletedAt } })
@@ -2364,6 +2365,13 @@ export async function undoReservationPrepaidCancel(
     await requireEdit()
     const { propertyId } = await getPropertyId()
     const mismatch = await prisma.$transaction(async tx => {
+      // 되살릴 돈이 든 키를 첫머리에서 잠근다(검수 W6). 지워 둔 행이라 소프트삭제 필터를 끄고 읽는다.
+      const revKeys = [
+        ...(recordIds.length > 0 ? await tx.paymentRecord.findMany({ where: { id: { in: recordIds }, propertyId, deletedAt: undefined }, select: { leaseTermId: true, payDate: true, payMethod: true } }) : []),
+        ...(cleaningIncomeIds.length > 0 ? (await tx.extraIncome.findMany({ where: { id: { in: cleaningIncomeIds }, propertyId, deletedAt: undefined }, select: { leaseTermId: true, date: true, payMethod: true } }))
+          .filter(c => c.leaseTermId).map(c => ({ leaseTermId: c.leaseTermId!, payDate: c.date, payMethod: c.payMethod })) : []),
+      ]
+      await lockCrKeys(tx, revKeys.map(k => ({ propertyId, ...k })))
       if (crUndo) await applyCrUndo(tx, propertyId, crUndo)
       if (recordIds.length > 0) await tx.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })
       if (cleaningIncomeIds.length > 0) await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt: null } })
@@ -5419,6 +5427,12 @@ export async function undoRentRefund(leaseTermId: string): Promise<
     if (!snap || !Array.isArray(snap.deletedRecordIds)) return { ok: false, error: '되돌릴 환불 기록이 없습니다.' }
 
     const { issues, mismatch } = await prisma.$transaction(async tx => {
+      // 되살릴 수납과 지울 확정액 record 의 키를 첫머리에서 잠근다(검수 W6).
+      const touched = [...snap.deletedRecordIds, ...(snap.newRecordId ? [snap.newRecordId] : [])]
+      const refKeys = touched.length > 0
+        ? await tx.paymentRecord.findMany({ where: { id: { in: touched }, leaseTermId, deletedAt: undefined }, select: { leaseTermId: true, payDate: true, payMethod: true } })
+        : []
+      await lockCrKeys(tx, refKeys.map(k => ({ propertyId, ...k })))
       if (snap.deletedRecordIds.length > 0) {
         await tx.paymentRecord.updateMany({
           where: { id: { in: snap.deletedRecordIds }, leaseTermId },

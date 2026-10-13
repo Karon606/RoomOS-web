@@ -17,8 +17,8 @@ import {
   type CashReceiptIncl, type CashReceiptLineView, type CashReceiptUndo,
 } from '@/lib/cashReceipt'
 import {
-  alignRevivedStamps, applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, readCrKey, reconcileCrAfterRemoval,
-  setStamps, signPaymentEditUndo, verifyPaymentEditUndo, writeCrKey, CrUndoConflict,
+  alignRevivedStamps, applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, lockCrKey, lockCrKeys, readCrKey,
+  reconcileCrAfterRemoval, setStamps, signPaymentEditUndo, verifyPaymentEditUndo, writeCrKey, CrUndoConflict,
   type CrKeyInfo, type CrKeyRef, type CrMismatch, type CrRemovalResult, type PaymentDeleteUndo, type PaymentEditEffect, type PaymentEditUndo,
 } from './cashReceiptLine'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -1902,36 +1902,139 @@ export async function updatePayment(
     // 발행 줄의 적용취소 재료. 옛 키와 새 키의 줄·도장을 **고치기 전에** 떠 둔다.
     const oldRef: CrKeyRef = { propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod }
     const newRef: CrKeyRef = { propertyId, leaseTermId: record.leaseTermId, payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod }
-    const crBefore = await captureCr(prisma, [oldRef, newRef], [paymentId])
+    // 수납 칸 쓰기부터 발행 줄 정리·적용취소 재료까지 **한 트랜잭션**이다(검수 W5). 종전에는 단계마다 따로
+    // 써서, 중간에 끊기면 수납만 옮겨 가고 줄은 옛 키에 남거나 도장만 바뀐 반쪽이 남았다. 첫머리에서 두 키를
+    // 잠가 같은 키를 만지는 다른 조작과 줄 세운다(W6). 미수·완납 재계산은 돈 계산 정본이라 커밋 뒤에 그대로 돈다.
+    const { effect, cr, after } = await prisma.$transaction(async tx => {
+      await lockCrKeys(tx, [oldRef, newRef])
+      const crBefore = await captureCr(tx, [oldRef, newRef], [paymentId])
 
-    await prisma.paymentRecord.update({
-      where: { id: paymentId },
-      data: {
-        actualAmount: data.actualAmount,
-        payDate:      new Date(data.payDate),
-        payMethod:    data.payMethod,
-        memo:         data.memo || null,
-        ...(targetMonthChanged ? { targetMonth: newTargetMonth, seqNo: newSeqNo } : {}),
-        // 현금영수증 — undefined면 미변경(기존 호출이 스탬프를 지우지 않게, 영향검증 필수).
-        // 값 결정은 lib/cashReceipt 정본. 날짜를 안 넘기면 기존 발행 시각 보존(감사 흔적),
-        // 넘기면 그 날짜로 고친다 — **여기가 발행일 수정 경로다**(운영자 확정 2026-08-24).
-        //
-        // 단, **수단을 카드로 바꾸면 미변경이 아니라 취소다**(운영자 확정 2026-08-24).
-        // "결제 수단을 바꿨기 때문에 현금영수증은 자연히 취소가 되어야 하고 카드결제로 했으니
-        // 카드결제 금액으로 합산되어야 하는거야". 입주자 상세의 수정 폼은 발행 체크를 아예
-        // 안 보내므로(undefined) 여기서 지우지 않으면 카드 record 에 발행 표시가 남는다.
-        // 금액이 카드 합계로 넘어가는 것은 집계 정본이 이미 한다(paymentAggregateBucket 카드 우선).
-        ...(!isCashReceiptEligible(data.payMethod) ? { cashReceiptIssuedAt: null }
-          : data.cashReceiptIssued === undefined ? {} : {
-          cashReceiptIssuedAt: resolveCashReceiptIssuedAt({
-            issued: data.cashReceiptIssued,
-            issuedDate: data.cashReceiptIssuedDate,
-            existing: record.cashReceiptIssuedAt,
-            payMethod: data.payMethod,
+      await tx.paymentRecord.update({
+        where: { id: paymentId },
+        data: {
+          actualAmount: data.actualAmount,
+          payDate:      new Date(data.payDate),
+          payMethod:    data.payMethod,
+          memo:         data.memo || null,
+          ...(targetMonthChanged ? { targetMonth: newTargetMonth, seqNo: newSeqNo } : {}),
+          // 현금영수증. undefined면 미변경(기존 호출이 스탬프를 지우지 않게, 영향검증 필수).
+          // 값 결정은 lib/cashReceipt 정본. 날짜를 안 넘기면 기존 발행 시각 보존(감사 흔적),
+          // 넘기면 그 날짜로 고친다. **여기가 발행일 수정 경로다**(운영자 확정 2026-08-24).
+          //
+          // 단, **수단을 카드로 바꾸면 미변경이 아니라 취소다**(운영자 확정 2026-08-24).
+          // "결제 수단을 바꿨기 때문에 현금영수증은 자연히 취소가 되어야 하고 카드결제로 했으니
+          // 카드결제 금액으로 합산되어야 하는거야". 입주자 상세의 수정 폼은 발행 체크를 아예
+          // 안 보내므로(undefined) 여기서 지우지 않으면 카드 record 에 발행 표시가 남는다.
+          // 금액이 카드 합계로 넘어가는 것은 집계 정본이 이미 한다(paymentAggregateBucket 카드 우선).
+          ...(!isCashReceiptEligible(data.payMethod) ? { cashReceiptIssuedAt: null }
+            : data.cashReceiptIssued === undefined ? {} : {
+            cashReceiptIssuedAt: resolveCashReceiptIssuedAt({
+              issued: data.cashReceiptIssued,
+              issuedDate: data.cashReceiptIssuedDate,
+              existing: record.cashReceiptIssuedAt,
+              payMethod: data.payMethod,
+            }),
           }),
-        }),
-      },
-    })
+        },
+      })
+
+      // 발행 줄. 판정은 lib/cashReceipt 의 planCashReceiptEdit 정본이 한다. 요지는 셋이다.
+      //   · 같은 키에서 발행일만 고치면 금액은 지키고 날짜만 옮긴다(국세청 금액 보호, 2026-08-25).
+      //   · 켜고 끄는 것은 키 전체가 함께 움직인다(결함 D7). 끈 뒤 다시 켜면 새 발행이다(D1).
+      //   · 입금일·수단을 옮기면 옛 키는 남은 돈이 있는 한 줄을 지킨다(D13). 종전에는 형제가 남아도
+      //     옛 줄을 지웠다. 옛 줄이 이 수납만 덮고 있었으면 발행이 함께 옮겨 간다.
+      // 수단이 카드가 되면 도장이 지워져 끔으로 읽힌다(카드 봉인과 같은 결론).
+      const after = await tx.paymentRecord.findFirst({
+        where: { id: paymentId, propertyId },
+        select: { cashReceiptIssuedAt: true, tenantId: true, payDate: true, payMethod: true, actualAmount: true, memo: true, targetMonth: true, seqNo: true },
+      })
+      const effect: PaymentEditEffect = { line: null, mismatch: [] }
+      if (after) {
+        // 수단은 **엄격히** 비교한다. 줄을 찾는 조회는 null 과 '' 를 다른 키로 본다. 옛 수납의 null 수단을
+        // 폼이 '' 로 다시 저장하면 DB 키는 옮겨 간 것이고, 같다고 보면 옛 키의 줄이 아무도 안 가리키게 남는다.
+        const moved = record.payDate.getTime() !== after.payDate.getTime()
+          || record.payMethod !== after.payMethod
+        const stampBefore = record.cashReceiptIssuedAt
+        const stampAfter = after.cashReceiptIssuedAt
+        const oldS = await readCrKey(tx, oldRef)
+        const newS = moved ? await readCrKey(tx, newRef) : oldS
+        // 새 키의 도장 수는 수정 전 도장으로 센다. 위 update 가 쓴 도장은 임시값이다(정본 주석 참조).
+        const newParts = summarizeCashReceiptKey(
+          newS.records.map(r => (r.id === paymentId ? { ...r, cashReceiptIssuedAt: stampBefore } : r)),
+          newS.parts.cleaning,
+        )
+        const plan = planCashReceiptEdit({
+          moved, stampBefore, stampAfter,
+          oldKey: { line: lineStateOf(oldS.line), partsAfter: oldS.parts },
+          newKey: { line: lineStateOf(newS.line), parts: newParts },
+        })
+        if (moved && plan.old.kind === 'drop' && oldS.line) {
+          const dropped = { ...cashReceiptLineView(oldS.line), payYmd: kstYmdStr(record.payDate), payMethod: record.payMethod }
+          await writeCrKey(tx, oldS, null, after.tenantId, 'key')
+          if (plan.next.kind !== 'transfer' && plan.next.kind !== 'merge') effect.dropped = dropped
+        } else if (moved && plan.old.kind === 'keep' && plan.old.amount !== plan.old.basis) {
+          effect.mismatch.push({ payYmd: kstYmdStr(record.payDate), payMethod: record.payMethod, lineAmount: plan.old.amount, basis: plan.old.basis })
+        }
+        const next = plan.next
+        if (next.kind === 'off') {
+          await writeCrKey(tx, newS, null, after.tenantId, 'key')
+        } else if (next.kind === 'on') {
+          if (next.plan.kind === 'none') {
+            // 이용료 몫이 없어 켤 금액이 0 이다. 도장만 남기면 줄 없는 '발행됨'이 된다. 지운다.
+            await setStamps(tx, propertyId, [paymentId], null)
+            effect.notIssued = '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.'
+          } else {
+            // 수정 폼이 금액을 함께 실었으면(운영자가 칸을 고쳤으면) 그것이 이긴다. 이 키에 발행을 켜는
+            // 저장이라 그 칸의 뜻이 맞다. 안 실었으면 정본 판정 그대로다(add 면 앞 금액 + 새 돈, 앞 발행일 유지).
+            const target = data.cashReceiptAmount != null && data.cashReceiptAmount > 0
+              ? { ...next.plan.next, amount: data.cashReceiptAmount, incl: data.cashReceiptIncl ? { ...data.cashReceiptIncl } : next.plan.next.incl }
+              : next.plan.next
+            await writeCrKey(tx, newS, target, after.tenantId, 'key')
+            if (next.plan.kind === 'add') {
+              effect.added = {
+                prevAmount: next.plan.prev.amount, added: next.plan.added, amount: target.amount,
+                issuedYmd: kstYmdStr(target.issuedAt), requestedYmd: kstYmdStr(stampAfter!),
+              }
+            } else if (next.plan.kind === 'keep') {
+              effect.kept = true
+            } else {
+              effect.issued = next.plan.kind === 'rebuild'
+                ? { replaced: { amount: next.plan.prev.amount, issuedYmd: kstYmdStr(next.plan.prev.issuedAt), was: next.plan.over } }
+                : {}
+            }
+          }
+        } else if (next.kind === 'redate' && newS.line) {
+          const target = {
+            amount: data.cashReceiptAmount != null && data.cashReceiptAmount > 0 ? data.cashReceiptAmount : newS.line.amount,
+            issuedAt: next.issuedAt,
+            incl: data.cashReceiptIncl
+              ? { ...data.cashReceiptIncl }
+              : { deposit: newS.line.inclDeposit, cleaning: newS.line.inclCleaning, rent: newS.line.inclRent },
+          }
+          await writeCrKey(tx, newS, target, after.tenantId, 'stamped')
+        } else if (next.kind === 'transfer') {
+          // 옮겨 간 영수증이 덮는 돈은 이 수납 하나다. 새 키의 다른 미발행 행에 도장을 찍지 않는다(검수 W2·R5).
+          await writeCrKey(tx, newS, next.next, after.tenantId, 'none')
+          await setStamps(tx, propertyId, [paymentId], next.next.issuedAt)
+          effect.transferred = cashReceiptLineView({ ...next.next, inclDeposit: next.next.incl.deposit, inclCleaning: next.next.incl.cleaning, inclRent: next.next.incl.rent })
+        } else if (next.kind === 'merge') {
+          await writeCrKey(tx, newS, next.next, after.tenantId, 'stamped')
+          effect.merged = { prevAmount: next.prev.amount, amount: next.next.amount }
+        } else if (next.kind === 'unstamp') {
+          await setStamps(tx, propertyId, [paymentId], null)
+          effect.unstamped = true
+        }
+        const fin = await readCrKey(tx, newRef)
+        effect.line = liveLineView(fin.line)
+        // 줄이 살아 남았는데 키의 몫과 금액이 갈렸으면 알린다. 금액은 자동으로 안 덮었다(규칙 4).
+        // 수납액만 고친 재저장(redate)이 이 경우다. 기본 구성 줄만 센다(예외 발행은 몫 기준이 다르다).
+        if (fin.line && !fin.line.deletedAt && !fin.line.inclDeposit && !fin.line.inclCleaning && fin.parts.rent !== fin.line.amount) {
+          effect.mismatch.push({ payYmd: kstYmdStr(after.payDate), payMethod: after.payMethod, lineAmount: fin.line.amount, basis: fin.parts.rent })
+        }
+      }
+      const cr = await finishCrUndo(tx, crBefore)
+      return { effect, cr, after }
+    }, { timeout: 15_000 })
 
     if (lease) {
       await recalculatePayments(record.leaseTermId, record.targetMonth,
@@ -1941,101 +2044,6 @@ export async function updatePayment(
           await serverBillForMonth(record.leaseTermId, newTargetMonth, lease.rentAmount))
       }
     }
-    // 발행 줄. 판정은 lib/cashReceipt 의 planCashReceiptEdit 정본이 한다. 요지는 셋이다.
-    //   · 같은 키에서 발행일만 고치면 금액은 지키고 날짜만 옮긴다(국세청 금액 보호, 2026-08-25).
-    //   · 켜고 끄는 것은 키 전체가 함께 움직인다(결함 D7). 끈 뒤 다시 켜면 새 발행이다(D1).
-    //   · 입금일·수단을 옮기면 옛 키는 남은 돈이 있는 한 줄을 지킨다(D13). 종전에는 형제가 남아도
-    //     옛 줄을 지웠다. 옛 줄이 이 수납만 덮고 있었으면 발행이 함께 옮겨 간다.
-    // 수단이 카드가 되면 도장이 지워져 끔으로 읽힌다(카드 봉인과 같은 결론).
-    const after = await prisma.paymentRecord.findFirst({
-      where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true, tenantId: true, payDate: true, payMethod: true, actualAmount: true, memo: true, targetMonth: true, seqNo: true },
-    })
-    const effect: PaymentEditEffect = { line: null, mismatch: [] }
-    if (after) {
-      // 수단은 **엄격히** 비교한다. 줄을 찾는 조회는 null 과 '' 를 다른 키로 본다. 옛 수납의 null 수단을
-      // 폼이 '' 로 다시 저장하면 DB 키는 옮겨 간 것이고, 같다고 보면 옛 키의 줄이 아무도 안 가리키게 남는다.
-      const moved = record.payDate.getTime() !== after.payDate.getTime()
-        || record.payMethod !== after.payMethod
-      const stampBefore = record.cashReceiptIssuedAt
-      const stampAfter = after.cashReceiptIssuedAt
-      const oldS = await readCrKey(prisma, oldRef)
-      const newS = moved ? await readCrKey(prisma, newRef) : oldS
-      // 새 키의 도장 수는 수정 전 도장으로 센다. 위 update 가 쓴 도장은 임시값이다(정본 주석 참조).
-      const newParts = summarizeCashReceiptKey(
-        newS.records.map(r => (r.id === paymentId ? { ...r, cashReceiptIssuedAt: stampBefore } : r)),
-        newS.parts.cleaning,
-      )
-      const plan = planCashReceiptEdit({
-        moved, stampBefore, stampAfter,
-        oldKey: { line: lineStateOf(oldS.line), partsAfter: oldS.parts },
-        newKey: { line: lineStateOf(newS.line), parts: newParts },
-      })
-      if (moved && plan.old.kind === 'drop' && oldS.line) {
-        const dropped = { ...cashReceiptLineView(oldS.line), payYmd: kstYmdStr(record.payDate), payMethod: record.payMethod }
-        await writeCrKey(prisma, oldS, null, after.tenantId, 'key')
-        if (plan.next.kind !== 'transfer' && plan.next.kind !== 'merge') effect.dropped = dropped
-      } else if (moved && plan.old.kind === 'keep' && plan.old.amount !== plan.old.basis) {
-        effect.mismatch.push({ payYmd: kstYmdStr(record.payDate), payMethod: record.payMethod, lineAmount: plan.old.amount, basis: plan.old.basis })
-      }
-      const next = plan.next
-      if (next.kind === 'off') {
-        await writeCrKey(prisma, newS, null, after.tenantId, 'key')
-      } else if (next.kind === 'on') {
-        if (next.plan.kind === 'none') {
-          // 이용료 몫이 없어 켤 금액이 0 이다. 도장만 남기면 줄 없는 '발행됨'이 된다. 지운다.
-          await setStamps(prisma, propertyId, [paymentId], null)
-          effect.notIssued = '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.'
-        } else {
-          // 수정 폼이 금액을 함께 실었으면(운영자가 칸을 고쳤으면) 그것이 이긴다. 이 키에 발행을 켜는
-          // 저장이라 그 칸의 뜻이 맞다. 안 실었으면 정본 판정 그대로다(add 면 앞 금액 + 새 돈, 앞 발행일 유지).
-          const target = data.cashReceiptAmount != null && data.cashReceiptAmount > 0
-            ? { ...next.plan.next, amount: data.cashReceiptAmount, incl: data.cashReceiptIncl ? { ...data.cashReceiptIncl } : next.plan.next.incl }
-            : next.plan.next
-          await writeCrKey(prisma, newS, target, after.tenantId, 'key')
-          if (next.plan.kind === 'add') {
-            effect.added = {
-              prevAmount: next.plan.prev.amount, added: next.plan.added, amount: target.amount,
-              issuedYmd: kstYmdStr(target.issuedAt), requestedYmd: kstYmdStr(stampAfter!),
-            }
-          } else if (next.plan.kind === 'keep') {
-            effect.kept = true
-          } else {
-            effect.issued = next.plan.kind === 'rebuild'
-              ? { replaced: { amount: next.plan.prev.amount, issuedYmd: kstYmdStr(next.plan.prev.issuedAt), was: next.plan.over } }
-              : {}
-          }
-        }
-      } else if (next.kind === 'redate' && newS.line) {
-        const target = {
-          amount: data.cashReceiptAmount != null && data.cashReceiptAmount > 0 ? data.cashReceiptAmount : newS.line.amount,
-          issuedAt: next.issuedAt,
-          incl: data.cashReceiptIncl
-            ? { ...data.cashReceiptIncl }
-            : { deposit: newS.line.inclDeposit, cleaning: newS.line.inclCleaning, rent: newS.line.inclRent },
-        }
-        await writeCrKey(prisma, newS, target, after.tenantId, 'stamped')
-      } else if (next.kind === 'transfer') {
-        // 옮겨 간 영수증이 덮는 돈은 이 수납 하나다. 새 키의 다른 미발행 행에 도장을 찍지 않는다(검수 W2·R5).
-        await writeCrKey(prisma, newS, next.next, after.tenantId, 'none')
-        await setStamps(prisma, propertyId, [paymentId], next.next.issuedAt)
-        effect.transferred = cashReceiptLineView({ ...next.next, inclDeposit: next.next.incl.deposit, inclCleaning: next.next.incl.cleaning, inclRent: next.next.incl.rent })
-      } else if (next.kind === 'merge') {
-        await writeCrKey(prisma, newS, next.next, after.tenantId, 'stamped')
-        effect.merged = { prevAmount: next.prev.amount, amount: next.next.amount }
-      } else if (next.kind === 'unstamp') {
-        await setStamps(prisma, propertyId, [paymentId], null)
-        effect.unstamped = true
-      }
-      const fin = await readCrKey(prisma, newRef)
-      effect.line = liveLineView(fin.line)
-      // 줄이 살아 남았는데 키의 몫과 금액이 갈렸으면 알린다. 금액은 자동으로 안 덮었다(규칙 4).
-      // 수납액만 고친 재저장(redate)이 이 경우다. 기본 구성 줄만 센다(예외 발행은 몫 기준이 다르다).
-      if (fin.line && !fin.line.deletedAt && !fin.line.inclDeposit && !fin.line.inclCleaning && fin.parts.rent !== fin.line.amount) {
-        effect.mismatch.push({ payYmd: kstYmdStr(after.payDate), payMethod: after.payMethod, lineAmount: fin.line.amount, basis: fin.parts.rent })
-      }
-    }
-    const cr = await finishCrUndo(prisma, crBefore)
     const fields = (r: { actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; targetMonth: string; seqNo: number }) => ({
       actualAmount: r.actualAmount, payYmd: kstYmdStr(r.payDate), payMethod: r.payMethod, memo: r.memo, targetMonth: r.targetMonth, seqNo: r.seqNo,
     })
@@ -2183,6 +2191,7 @@ export async function setCashReceiptIssued(
       : null
     const ref: CrKeyRef = { propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod }
     const out = await prisma.$transaction(async tx => {
+      await lockCrKey(tx, ref)   // 같은 키를 만지는 다른 조작과 줄 세운다(검수 W6)
       const before = await captureCr(tx, [ref])
       const s = await readCrKey(tx, ref)
       let change: 'create' | 'rebuild' | 'add' | 'keep' | 'off' = 'off'
@@ -2446,6 +2455,7 @@ export async function setPaymentCashReceipt(input: {
     const payDate = ymdToDbDate(input.payDate)
     const ref: CrKeyRef = { propertyId, leaseTermId: input.leaseTermId, payDate, payMethod: input.payMethod }
     const out = await prisma.$transaction(async tx => {
+      await lockCrKey(tx, ref)   // 같은 키를 만지는 다른 조작과 줄 세운다(검수 W6)
       const before = await captureCr(tx, [ref])
       const s = await readCrKey(tx, ref)
       const live = s.line && !s.line.deletedAt ? s.line : null
@@ -2805,6 +2815,7 @@ export async function batchSetCashReceipts(input: {
       refs.push({ propertyId, leaseTermId: it.leaseTermId, payDate: ymdToDbDate(it.payYmd), payMethod: it.payMethod })
     }
     const undo = await prisma.$transaction(async tx => {
+      await lockCrKeys(tx, refs)   // 고른 키 전부를 한 번에 잠근다(검수 W6)
       const before = await captureCr(tx, refs)
       for (const ref of before.refs) {
         const s = await readCrKey(tx, ref)
@@ -2894,6 +2905,7 @@ export async function deletePayment(paymentId: string): Promise<
     // 발행 줄 정리와 한 트랜잭션이다. 수납만 지워지고 줄이 남는 반쪽을 만들지 않는다.
     const ref = crRefOf(propertyId, record)
     const res = await prisma.$transaction(async tx => {
+      await lockCrKey(tx, ref)   // 같은 키의 동시 삭제가 서로의 판정을 덮지 않게(검수 W6)
       const before = await captureCr(tx, [ref], [paymentId])
       const del = await tx.paymentRecord.updateMany({ where: { id: paymentId, propertyId, deletedAt: null }, data: { deletedAt: new Date() } })
       if (del.count !== 1) throw new Error('수납 기록이 이미 삭제되었습니다. 새로고침 후 확인해 주세요.')
@@ -2934,11 +2946,12 @@ export async function restorePayment(paymentId: string, undo: PaymentDeleteUndo)
     if (!undo || undo.paymentId !== paymentId) return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId, deletedAt: undefined },
-      select: { leaseTermId: true, targetMonth: true, deletedAt: true },
+      select: { leaseTermId: true, targetMonth: true, deletedAt: true, payDate: true, payMethod: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     if (!record.deletedAt) return { ok: false, error: '이미 되살아난 수납 기록입니다.' }
     const mismatch = await prisma.$transaction(async tx => {
+      await lockCrKey(tx, crRefOf(propertyId, record))   // 검수 W6
       await applyCrUndo(tx, propertyId, undo.cr)
       await tx.paymentRecord.updateMany({ where: { id: paymentId, propertyId }, data: { deletedAt: null } })
       const back = await tx.paymentRecord.findMany({
@@ -3117,6 +3130,7 @@ export async function undoOverpayExtraIncome(
     let cashReceipt: CrRemovalResult = { dropped: [], mismatch: [] }
     try {
       cashReceipt = await prisma.$transaction(async tx => {
+        await lockCrKeys(tx, refs)   // 검수 W6. 지울 돈이 든 키 전부
         if (recordIds.length) await tx.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt } })
         if (extraIncomeId) await tx.extraIncome.updateMany({ where: { id: extraIncomeId, propertyId }, data: { deletedAt } })
         if (crUndo) await applyCrUndo(tx, propertyId, crUndo)

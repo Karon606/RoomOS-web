@@ -24,8 +24,8 @@ import {
   type CashReceiptLineView, type CashReceiptUndo,
 } from '@/lib/cashReceipt'
 
-/** 트랜잭션 클라이언트와 전역 클라이언트가 둘 다 들어온다. 쓰는 표 셋만 요구한다. */
-export type CrDb = Pick<typeof prisma, 'cashReceipt' | 'paymentRecord' | 'extraIncome'>
+/** 트랜잭션 클라이언트와 전역 클라이언트가 둘 다 들어온다. 쓰는 표 셋과 키 잠금용 raw 쿼리만 요구한다. */
+export type CrDb = Pick<typeof prisma, 'cashReceipt' | 'paymentRecord' | 'extraIncome' | '$executeRaw'>
 
 /** 발행 키. 계약·입금일·수단. 영업장은 서버가 정한 값만 들어온다. */
 export type CrKeyRef = { propertyId: string; leaseTermId: string; payDate: Date; payMethod: string | null }
@@ -78,6 +78,26 @@ export function lineSnapOf(row: LineRow | null): CashReceiptLineSnap | null {
 /** 살아 있는 줄이면 화면에 싣는 모양, 아니면 null. */
 export function liveLineView(row: LineRow | null): CashReceiptLineView | null {
   return row && !row.deletedAt ? cashReceiptLineView(row) : null
+}
+
+/**
+ * 키 잠금(검수 W6). 같은 키(계약·입금일·수단)를 만지는 트랜잭션을 줄 세운다. **키를 만지는 트랜잭션의
+ * 첫머리에서** 그 트랜잭션이 만질 키를 전부 한 번에 잠근다.
+ *
+ * 왜. 줄 쓰기는 '읽고 판정하고 쓴다'라 두 조작이 같은 키를 동시에 읽으면 한쪽 쓰기가 다른 쪽 판정을
+ * 덮는다(삭제 두 건을 동시에 보내는 보증금 패널 적용취소가 실제 경로였다). 스키마를 안 바꾸고 트랜잭션
+ * 단위 권고 잠금(pg_advisory_xact_lock)을 쓴다. 커밋·롤백 때 저절로 풀려 놓칠 해제가 없다.
+ * 여러 키는 정렬해 같은 순서로 잠근다(두 트랜잭션이 서로의 키를 기다리는 교착을 피한다).
+ * 트랜잭션 밖(전역 클라이언트)에서 부르면 문장 하나 동안만 잡혀 아무것도 막지 못한다. 트랜잭션 안에서만 부른다.
+ */
+export async function lockCrKeys(db: CrDb, refs: CrKeyRef[]): Promise<void> {
+  const keys = [...new Set(refs.map(r => `cash-receipt|${crKeyOf(r)}`))].sort()
+  for (const k of keys) await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${k}))`
+}
+
+/** 키 하나 잠금. lockCrKeys 의 한 키짜리. */
+export async function lockCrKey(db: CrDb, ref: CrKeyRef): Promise<void> {
+  await lockCrKeys(db, [ref])
 }
 
 /** 한 키의 줄·record·몫을 읽는다. 순서대로 부른다. 트랜잭션 한 연결에서 겹쳐 부르지 않는다. */
@@ -277,6 +297,7 @@ export async function applyCrUndo(db: CrDb, propertyId: string, raw: unknown): P
   const now = Date.now()
   // 되돌릴 도장이 미래면 거부한다. 아직 하지 않은 발행이다(발행일 정본의 미래 거부와 같은 규칙).
   if (undo.stamps.some(st => st.before != null && new Date(st.before).getTime() > now + 60_000)) throw invalid()
+  await lockCrKeys(db, undo.keys.map(k => ({ propertyId, leaseTermId: k.leaseTermId, payDate: ymdToDbDate(k.payYmd), payMethod: k.payMethod })))
   // 도장은 토큰이 뜬 키에 걸린 record 에만 되돌린다. 키 밖 record 의 id 를 끼워 넣어도 안 쓴다.
   if (undo.stamps.length > 0) {
     const allowed = new Set(undo.keys.map(k => cashReceiptKey({ leaseTermId: k.leaseTermId, payDate: ymdToDbDate(k.payYmd), payMethod: k.payMethod })))

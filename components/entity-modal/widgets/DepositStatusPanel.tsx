@@ -211,7 +211,9 @@ export function DepositStatusPanel({
           run: () => {
             if (undone) return
             undone = true
-            void Promise.all(ids.map(id => deletePayment(id)))
+            // 한 결제의 record(보증금 몫·초과분 이용료 몫)는 같은 발행 키다. 동시에 지우면 서로의 줄 판정을
+            // 덮을 수 있어 차례로 지운다(검수 W6, 서버 키 잠금과 같은 뜻을 화면에서도 지킨다).
+            void (async () => { for (const id of ids) await deletePayment(id) })()
               .then(() => { pushToast('info', '수납 기록을 취소했습니다'); void load(); onChanged?.() })
               .catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
           },
