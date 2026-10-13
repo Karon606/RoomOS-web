@@ -2865,7 +2865,7 @@ function OptionSection({
   const isDuplicate = trimmed !== '' && items.includes(trimmed)
   // 코드가 글자로 판정하는 이름은 수정 버튼 대신 '이름 고정' 을 세우고, 결과 문장은 카드 머리에 한 번 적는다.
   // 다른 이름을 새로 추가해 쓰라고 권하지 않는다. 새 이름은 그 판정에 안 잡힌다(lib/optionLists 보호 이름 머리말).
-  // 버튼을 눌러 보고서야 거절당하게 두지 않는다(§22 옮기기 목적지의 비활성 + 이유 캡션과 같은 뜻).
+  // 버튼을 눌러 보고서야 거절당하게 두지 않는다(§22 ② 쓸 수 없는 행 동작은 숨기고 같은 폭 캡션으로 말한다, 2026-10-13 등재).
   const fixedReason = onRename ? (items.map(v => protectedOptionReason(field, v)).find(r => r !== null) ?? null) : null
 
   const handleAdd = async () => {
