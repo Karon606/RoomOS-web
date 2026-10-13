@@ -11,7 +11,7 @@
 import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys, isReceiptBeforeCutoff, CASH_RECEIPT_DEFAULT_INCL, cashReceiptIssuableAmount, isCashReceiptCandidate, cashReceiptExcludedShare, hasExcludedCashReceiptShare, cashReceiptShareWarning } from '../lib/cashReceipt'
 import {
   summarizeCashReceiptKey, planCashReceiptOn, planCashReceiptEntry, planCashReceiptRemoval, planCashReceiptEdit,
-  buildCashReceiptUndo, cashReceiptUndoConflict, parseCashReceiptUndo, sameCashReceiptLine,
+  buildCashReceiptUndo, cashReceiptUndoConflict, parseCashReceiptUndo, sameCashReceiptLine, canonicalCashReceiptUndo, CASH_RECEIPT_UNDO_MAX_STAMPS,
   type CashReceiptLineState, type CashReceiptLineTarget, type CashReceiptLineSnap, type CashReceiptKeyRow,
 } from '../lib/cashReceipt'
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
@@ -459,7 +459,8 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
     new Map([['a', null], ['b', null]]),
   )
   eq('끄기 스냅샷은 줄과 도장 둘을 싣는다', [undoOff.lines.length, undoOff.stamps.length], [1, 2])
-  eq('바뀌지 않은 키·도장은 안 싣는다', buildCashReceiptUndo([line(S(1, '2026-10-06'), S(1, '2026-10-06'))], new Map([['a', null]]), new Map([['a', null]])), { v: 1, lines: [], stamps: [] })
+  eq('바뀌지 않은 키·도장은 안 싣는다(뜬 키 범위만 남는다)', buildCashReceiptUndo([line(S(1, '2026-10-06'), S(1, '2026-10-06'))], new Map([['a', null]]), new Map([['a', null]])),
+    { v: 1, keys: [{ leaseTermId: 'lt', payYmd: '2026-10-06', payMethod: '계좌이체' }], lines: [], stamps: [] })
   // 그 사이 아무 일 없으면 되돌린다.
   eq('지금이 쓴 직후와 같으면 충돌 없음', cashReceiptUndoConflict(undoOff, { lines: [S(420000, '2026-10-06', true)], stamps: new Map([['a', null], ['b', null]]) }), null)
   // 그 사이 다시 켰으면(다른 금액으로 살아 있음) 덮지 않는다. 옛 토스트의 적용취소가 새 발행을 지우면 안 된다.
@@ -476,6 +477,18 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('금액이 음수면 거부', parseCashReceiptUndo({ v: 1, lines: [line(S(-1, '2026-10-06'), null)], stamps: [] }), null)
   eq('입금일 형식이 틀리면 거부', parseCashReceiptUndo({ v: 1, lines: [{ ...line(null, null), payYmd: '10/6' }], stamps: [] }), null)
   eq('같은 줄 비교는 시각을 밀리초로 본다', sameCashReceiptLine(S(1, '2026-10-06'), { ...S(1, '2026-10-06'), issuedAt: '2026-10-05T15:00:00Z' }), true)
+  // 위조 토큰의 구조 검사(독립 검수 W4). 서명과 상관없이 늘 지킨다.
+  eq('키 범위가 없으면 거부', parseCashReceiptUndo({ v: 1, lines: [], stamps: [] }), null)
+  eq('줄이 키 범위 밖이면 거부', parseCashReceiptUndo({ ...undoOff, keys: [{ leaseTermId: 'other', payYmd: '2026-10-06', payMethod: '계좌이체' }] }), null)
+  eq('한 줄의 쓰기 전·쓴 직후 id 가 다르면 거부', parseCashReceiptUndo({ ...undoOff, lines: [line(S(420000, '2026-10-06', false, 'L1'), S(420000, '2026-10-06', true, 'L2'))] }), null)
+  const many = Array.from({ length: CASH_RECEIPT_UNDO_MAX_STAMPS + 1 }, (_, i) => ({ id: `r${i}`, before: null, after: null }))
+  eq('도장 개수 상한을 넘으면 거부', parseCashReceiptUndo({ ...undoOff, stamps: many }), null)
+  eq('서명이 문자열이 아니면 거부', parseCashReceiptUndo({ ...undoOff, sig: 1 }), null)
+  // 서명 정본 문자열은 화면을 오가며 바뀌는 표기(객체 키 순서·날짜 표기)에 흔들리지 않는다.
+  const reordered = JSON.parse(JSON.stringify({ stamps: undoOff.stamps, lines: undoOff.lines, keys: undoOff.keys, v: 1 }))
+  reordered.lines[0].before.issuedAt = '2026-10-06T00:00:00+09:00'
+  eq('정본 문자열은 키 순서·날짜 표기와 무관', canonicalCashReceiptUndo(reordered), canonicalCashReceiptUndo(undoOff))
+  eq('정본 문자열은 금액이 바뀌면 달라진다', canonicalCashReceiptUndo({ ...undoOff, lines: [line(S(9990000, '2026-10-06'), S(420000, '2026-10-06', true))] }) === canonicalCashReceiptUndo(undoOff), false)
 }
 
 // ── 422호 시퀀스 회귀 (운영자 신고 2026-10-13) ────────────────────────────

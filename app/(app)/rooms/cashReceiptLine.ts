@@ -12,11 +12,13 @@
 // 소프트삭제 조건은 **손으로 건다.** 이 함수들은 인터랙티브 트랜잭션 안에서도 불리는데, 그때도
 // 익스텐션의 자동 필터에 기대지 않고 where 에 deletedAt 을 직접 적는다(CashReceipt 는 원래 익스텐션
 // 대상이 아니라 늘 손으로 거른다).
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import prisma from '@/lib/prisma'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { ymdToDbDate } from '@/lib/kstDate'
+import { derivedServerKey } from '@/lib/pii'
 import {
-  buildCashReceiptUndo, cashReceiptKey, cashReceiptLineView, cashReceiptUndoConflict, parseCashReceiptUndo,
+  buildCashReceiptUndo, canonicalCashReceiptUndo, cashReceiptKey, cashReceiptLineView, cashReceiptUndoConflict, parseCashReceiptUndo,
   planCashReceiptRemoval, summarizeCashReceiptKey,
   type CashReceiptKeyParts, type CashReceiptLineSnap, type CashReceiptLineState, type CashReceiptLineTarget,
   type CashReceiptLineView, type CashReceiptUndo,
@@ -189,18 +191,69 @@ export async function captureCr(db: CrDb, refs: CrKeyRef[], extraIds: string[] =
   return { refs: list, lines, stamps }
 }
 
-/** 쓰기 전 캡처와 같은 키·같은 record 로 쓴 직후를 떠서 적용취소 스냅샷을 만든다. */
+/**
+ * 쓰기 전 캡처와 같은 키·같은 record 로 쓴 직후를 떠서 적용취소 스냅샷을 만들고 서버가 서명한다.
+ * 쓰기 전에 줄이 있던 키는 쓴 직후도 **그 같은 줄**을 뜬다. 한 키에 줄이 둘 이상 남은 옛 데이터에서
+ * '살아 있는 줄, 없으면 가장 오래된 줄' 선택이 다른 줄을 집어 쓰기 전·쓴 직후 id 가 갈리지 않게(검수 W4).
+ */
 export async function finishCrUndo(db: CrDb, before: CrCapture): Promise<CashReceiptUndo> {
   const after = await captureCr(db, before.refs, [...before.stamps.keys()])
-  const lines = before.refs.map((ref, i) => ({
-    leaseTermId: ref.leaseTermId, payYmd: ymdOf(ref.payDate), payMethod: ref.payMethod,
-    before: before.lines[i], after: after.lines[i],
-  }))
-  return buildCashReceiptUndo(lines, before.stamps, after.stamps)
+  const lines = []
+  for (let i = 0; i < before.refs.length; i++) {
+    const ref = before.refs[i]
+    let a = after.lines[i]
+    const b = before.lines[i]
+    if (b && a && a.id !== b.id) {
+      const row = await db.cashReceipt.findFirst({ where: { id: b.id, propertyId: ref.propertyId }, select: LINE_SELECT })
+      a = lineSnapOf(row)
+    }
+    lines.push({ leaseTermId: ref.leaseTermId, payYmd: ymdOf(ref.payDate), payMethod: ref.payMethod, before: b, after: a })
+  }
+  const keys = before.refs.map(ref => ({ leaseTermId: ref.leaseTermId, payYmd: ymdOf(ref.payDate), payMethod: ref.payMethod }))
+  const undo = buildCashReceiptUndo(lines, before.stamps, after.stamps, keys)
+  return before.refs.length > 0 ? signCrUndo(before.refs[0].propertyId, undo) : undo
+}
+
+// ── 적용취소 토큰 서명(검수 W4) ─────────────────────────────────────
+//
+// 토큰은 화면을 거쳐 돌아오는 값이다. 영업장 경계는 모든 조회·쓰기의 propertyId 가 막지만, 같은 영업장
+// 안에서 금액·도장을 지어낸 토큰(9,990,000·2099-01-01, 검수 R8)은 모양 검사만으로 못 막는다. 서버 전용
+// 비밀(STAYEUM_PII_KEY 에서 용도 라벨로 파생한 키, lib/pii derivedServerKey)로 서명하고 복원 때 대조한다.
+// 영업장 id 를 서명에 넣어 다른 영업장으로 옮긴 토큰도 서명에서 떨어진다.
+//
+// 키가 없는 환경(키 미등록 개발 DB 등)에서는 서명도 대조도 안 한다. 그때 막을 길은 아래 구조 검사뿐이다.
+// 키가 있으면 서명 없는 토큰·틀린 서명은 거부한다.
+const CR_UNDO_KEY_LABEL = 'stayeum-cash-receipt-undo-v1'
+
+/** 토큰 종류(domain)·영업장·정본 문자열 위의 서명. 키가 없으면 null. */
+function undoMac(domain: string, propertyId: string, body: string): Buffer | null {
+  const key = derivedServerKey(CR_UNDO_KEY_LABEL)
+  if (!key) return null
+  return createHmac('sha256', key).update(`${domain}\n${propertyId}\n${body}`).digest()
+}
+
+function macMatches(mac: Buffer | null, sig: unknown): boolean {
+  if (!mac) return true
+  if (typeof sig !== 'string') return false
+  const got = Buffer.from(sig, 'base64url')
+  return got.length === mac.length && timingSafeEqual(got, mac)
+}
+
+/** 토큰에 서버 서명을 붙인다. 키가 없으면 서명 없이 돌려준다. */
+export function signCrUndo(propertyId: string, undo: CashReceiptUndo): CashReceiptUndo {
+  const mac = undoMac('cash-receipt', propertyId, canonicalCashReceiptUndo(undo))
+  return mac ? { ...undo, sig: mac.toString('base64url') } : { ...undo }
+}
+
+/** 이 영업장에서 서버가 만든 토큰 그대로인가. 키가 없으면 true(구조 검사에 맡긴다). */
+export function verifyCrUndo(propertyId: string, undo: CashReceiptUndo): boolean {
+  return macMatches(undoMac('cash-receipt', propertyId, canonicalCashReceiptUndo(undo)), undo.sig)
 }
 
 /** 적용취소가 막힐 때 화면에 갈 말. 무엇이 바뀌었는지 단정하지 않고 볼 자리를 준다. */
 export const CR_UNDO_CONFLICT_MESSAGE = '그 사이 현금영수증 발행 기록이 다시 바뀌어 되돌리지 않았습니다. 수납 내역에서 지금 상태를 확인해 주세요.'
+/** 토큰이 모양·서명·범위 검사에서 떨어졌을 때의 말. */
+export const CR_UNDO_INVALID_MESSAGE = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 
 export class CrUndoConflict extends Error {
   constructor(message = CR_UNDO_CONFLICT_MESSAGE) { super(message); this.name = 'CrUndoConflict' }
@@ -216,8 +269,24 @@ export class CrUndoConflict extends Error {
  */
 export async function applyCrUndo(db: CrDb, propertyId: string, raw: unknown): Promise<void> {
   const undo = parseCashReceiptUndo(raw)
-  if (!undo) throw new CrUndoConflict('적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.')
+  const invalid = () => new CrUndoConflict(CR_UNDO_INVALID_MESSAGE)
+  if (!undo) throw invalid()
   if (undo.lines.length === 0 && undo.stamps.length === 0) return
+  // 서버가 이 영업장에서 만든 토큰인가(검수 W4). 아래 구조 검사는 서명과 상관없이 늘 한다.
+  if (!verifyCrUndo(propertyId, undo)) throw invalid()
+  const now = Date.now()
+  // 되돌릴 도장이 미래면 거부한다. 아직 하지 않은 발행이다(발행일 정본의 미래 거부와 같은 규칙).
+  if (undo.stamps.some(st => st.before != null && new Date(st.before).getTime() > now + 60_000)) throw invalid()
+  // 도장은 토큰이 뜬 키에 걸린 record 에만 되돌린다. 키 밖 record 의 id 를 끼워 넣어도 안 쓴다.
+  if (undo.stamps.length > 0) {
+    const allowed = new Set(undo.keys.map(k => cashReceiptKey({ leaseTermId: k.leaseTermId, payDate: ymdToDbDate(k.payYmd), payMethod: k.payMethod })))
+    const owners = await db.paymentRecord.findMany({
+      where: { id: { in: undo.stamps.map(st => st.id) }, propertyId, deletedAt: undefined },
+      select: { id: true, leaseTermId: true, payDate: true, payMethod: true },
+    })
+    const inKey = new Set(owners.filter(r => allowed.has(cashReceiptKey(r))).map(r => r.id))
+    if (undo.stamps.some(st => !inKey.has(st.id))) throw invalid()
+  }
 
   const keyRows: LineRow[][] = []
   for (const l of undo.lines) {
@@ -242,13 +311,13 @@ export async function applyCrUndo(db: CrDb, propertyId: string, raw: unknown): P
   })
   if (conflict) throw new CrUndoConflict()
 
-  const now = new Date()
+  const at = new Date(now)
   for (let i = 0; i < undo.lines.length; i++) {
     const l = undo.lines[i]
     const rows = keyRows[i]
     if (l.before) {
       const b = l.before
-      if (!b.deleted && new Date(b.issuedAt).getTime() > now.getTime() + 60_000) {
+      if (!b.deleted && new Date(b.issuedAt).getTime() > now + 60_000) {
         throw new CrUndoConflict('되돌릴 발행일이 미래입니다. 적용취소 정보가 올바르지 않습니다.')
       }
       const cur = rows.find(r => r.id === b.id)
@@ -257,12 +326,12 @@ export async function applyCrUndo(db: CrDb, propertyId: string, raw: unknown): P
         data: {
           amount: b.amount, issuedAt: new Date(b.issuedAt),
           inclDeposit: b.inclDeposit, inclCleaning: b.inclCleaning, inclRent: b.inclRent,
-          deletedAt: b.deleted ? (cur?.deletedAt ?? now) : null,
+          deletedAt: b.deleted ? (cur?.deletedAt ?? at) : null,
         },
       })
     } else if (l.after && !l.after.deleted) {
       // 이 쓰기가 만든 줄이다. 쓰기 전에는 줄이 없었다. 지워 둔다(합계에서 빠진다).
-      await db.cashReceipt.updateMany({ where: { id: l.after.id, propertyId, leaseTermId: l.leaseTermId }, data: { deletedAt: now } })
+      await db.cashReceipt.updateMany({ where: { id: l.after.id, propertyId, leaseTermId: l.leaseTermId }, data: { deletedAt: at } })
     }
   }
   const byValue = new Map<string, string[]>()
@@ -347,8 +416,28 @@ export type PaymentEditFields = {
   targetMonth: string; seqNo: number
 }
 
-/** 수납 수정 저장의 적용취소 재료. undoPaymentEdit 이 받는다(운영자 원칙: 모든 쓰기에 적용취소). */
-export type PaymentEditUndo = { paymentId: string; before: PaymentEditFields; after: PaymentEditFields; cr: CashReceiptUndo }
+/**
+ * 수납 수정 저장의 적용취소 재료. undoPaymentEdit 이 받는다(운영자 원칙: 모든 쓰기에 적용취소).
+ * sig 는 수정 전·후 칸과 발행 줄 토큰을 함께 묶은 서버 서명이다(검수 W4, 되돌릴 칸을 지어내지 못하게).
+ */
+export type PaymentEditUndo = { paymentId: string; before: PaymentEditFields; after: PaymentEditFields; cr: CashReceiptUndo; sig?: string }
+
+function paymentEditBody(u: PaymentEditUndo): string {
+  const f = (x: PaymentEditFields) => [x.actualAmount, x.payYmd, x.payMethod, x.memo, x.targetMonth, x.seqNo]
+  return JSON.stringify([u.paymentId, f(u.before), f(u.after), canonicalCashReceiptUndo(u.cr), u.cr.sig ?? null])
+}
+
+/** 수정 저장 토큰에 서버 서명을 붙인다. 키가 없으면 서명 없이 돌려준다. */
+export function signPaymentEditUndo(propertyId: string, u: PaymentEditUndo): PaymentEditUndo {
+  const mac = undoMac('payment-edit', propertyId, paymentEditBody(u))
+  return mac ? { ...u, sig: mac.toString('base64url') } : { ...u }
+}
+
+/** 이 영업장에서 서버가 만든 수정 저장 토큰 그대로인가. 모양 검사를 지난 값에만 부른다. */
+export function verifyPaymentEditUndo(propertyId: string, u: PaymentEditUndo): boolean {
+  if (!parseCashReceiptUndo(u.cr)) return false
+  return macMatches(undoMac('payment-edit', propertyId, paymentEditBody(u)), u.sig)
+}
 
 /** 수납 수정이 발행 줄에 한 일. 화면이 토스트·확인으로 말할 재료(2단계). */
 export type PaymentEditEffect = {

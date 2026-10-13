@@ -763,15 +763,48 @@ export type CashReceiptUndoLine = {
   after: CashReceiptLineSnap | null
 }
 
+/** 스냅샷을 뜬 키. 계약·입금일·수단. 도장 record 와 줄이 이 키 안의 것인지 서버가 대조한다. */
+export type CashReceiptUndoKey = { leaseTermId: string; payYmd: string; payMethod: string | null }
+
 export type CashReceiptUndo = {
   v: 1
+  /**
+   * 스냅샷을 뜬 키 전부(바뀌지 않은 키 포함). 복원이 쓸 수 있는 범위다. 줄은 이 키 안의 줄만,
+   * 도장은 이 키에 걸린 record 만 되돌린다(독립 검수 W4, 위조 토큰이 키 밖 record 를 못 건드리게).
+   */
+  keys: CashReceiptUndoKey[]
   /** 바뀐 키만 싣는다. */
   lines: CashReceiptUndoLine[]
   /** 바뀐 도장만 싣는다(record id 별 쓰기 전·쓴 직후, ISO 또는 null). */
   stamps: { id: string; before: string | null; after: string | null }[]
+  /**
+   * 서버 서명(HMAC, 영업장 id 와 아래 정본 문자열 위에). 화면을 거쳐 돌아오는 값이라 서버가 만든 그대로인지
+   * 확인한다. 같은 영업장 안에서 금액·도장을 지어낸 토큰(검수 R8: 9,990,000·2099-01-01)을 막는다.
+   */
+  sig?: string
 }
 
-export const EMPTY_CASH_RECEIPT_UNDO: CashReceiptUndo = { v: 1, lines: [], stamps: [] }
+export const EMPTY_CASH_RECEIPT_UNDO: CashReceiptUndo = { v: 1, keys: [], lines: [], stamps: [] }
+
+/** 토큰 크기 상한. 화면을 거쳐 돌아오는 값이 서버를 오래 붙잡지 못하게(일괄 발행 한 번의 몇 배 여유). */
+export const CASH_RECEIPT_UNDO_MAX_KEYS = 500
+export const CASH_RECEIPT_UNDO_MAX_STAMPS = 3000
+
+/**
+ * 서명할 정본 문자열. 필드 순서를 고정한 배열의 JSON 이다. 객체 키 순서나 날짜 표기(Z·+09:00)가
+ * 화면을 오가며 달라져도 같은 문자열이 나온다. 모양 검사(parseCashReceiptUndo)를 지난 값에만 부른다.
+ */
+export function canonicalCashReceiptUndo(u: CashReceiptUndo): string {
+  const ts = (v: string | null) => (v == null ? null : new Date(v).toISOString())
+  const snap = (x: CashReceiptLineSnap | null) =>
+    x ? [x.id, x.amount, ts(x.issuedAt), x.inclDeposit, x.inclCleaning, x.inclRent, x.deleted] : null
+  return JSON.stringify([
+    u.v,
+    u.keys.map(k => [k.leaseTermId, k.payYmd, k.payMethod]),
+    u.lines.map(l => [l.leaseTermId, l.payYmd, l.payMethod, snap(l.before), snap(l.after)]),
+    u.stamps.map(st => [st.id, ts(st.before), ts(st.after)]),
+  ])
+}
 
 const sameTs = (a: string | null, b: string | null) =>
   a === b || (a != null && b != null && new Date(a).getTime() === new Date(b).getTime())
@@ -792,6 +825,7 @@ export function buildCashReceiptUndo(
   lines: CashReceiptUndoLine[],
   stampsBefore: ReadonlyMap<string, string | null>,
   stampsAfter: ReadonlyMap<string, string | null>,
+  keys: CashReceiptUndoKey[] = lines.map(l => ({ leaseTermId: l.leaseTermId, payYmd: l.payYmd, payMethod: l.payMethod })),
 ): CashReceiptUndo {
   const outLines = lines.filter(l => !sameCashReceiptLine(l.before, l.after))
   const ids = new Set([...stampsBefore.keys(), ...stampsAfter.keys()])
@@ -801,7 +835,7 @@ export function buildCashReceiptUndo(
     const after = stampsAfter.has(id) ? stampsAfter.get(id)! : before
     if (!sameTs(before, after)) stamps.push({ id, before, after })
   }
-  return { v: 1, lines: outLines, stamps }
+  return { v: 1, keys: keys.map(k => ({ leaseTermId: k.leaseTermId, payYmd: k.payYmd, payMethod: k.payMethod })), lines: outLines, stamps }
 }
 
 /**
@@ -836,11 +870,18 @@ export function cashReceiptUndoConflict(
   return null
 }
 
-/** 화면을 거쳐 돌아온 값이 스냅샷 모양인가. 아니면 null. 모양이 틀린 값으로는 아무것도 쓰지 않는다. */
+/**
+ * 화면을 거쳐 돌아온 값이 스냅샷 모양인가. 아니면 null. 모양이 틀린 값으로는 아무것도 쓰지 않는다.
+ *
+ * 모양에 더해 서명과 상관없이 늘 지키는 것(독립 검수 W4). 길이 상한, 한 줄의 쓰기 전·쓴 직후는 같은 줄 id,
+ * 줄은 keys 안의 키. 도장이 keys 의 record 인지와 미래 시각 거부는 DB·시계가 필요해 서버(applyCrUndo)가 본다.
+ */
 export function parseCashReceiptUndo(x: unknown): CashReceiptUndo | null {
   if (!x || typeof x !== 'object') return null
   const u = x as Partial<CashReceiptUndo>
-  if (u.v !== 1 || !Array.isArray(u.lines) || !Array.isArray(u.stamps)) return null
+  if (u.v !== 1 || !Array.isArray(u.keys) || !Array.isArray(u.lines) || !Array.isArray(u.stamps)) return null
+  if (u.keys.length > CASH_RECEIPT_UNDO_MAX_KEYS || u.lines.length > u.keys.length || u.stamps.length > CASH_RECEIPT_UNDO_MAX_STAMPS) return null
+  if (u.sig !== undefined && typeof u.sig !== 'string') return null
   const isTs = (v: unknown) => v === null || (typeof v === 'string' && !Number.isNaN(new Date(v).getTime()))
   const isSnap = (s: unknown): boolean => {
     if (s === null) return true
@@ -851,13 +892,22 @@ export function parseCashReceiptUndo(x: unknown): CashReceiptUndo | null {
       && typeof o.inclDeposit === 'boolean' && typeof o.inclCleaning === 'boolean' && typeof o.inclRent === 'boolean'
       && typeof o.deleted === 'boolean'
   }
+  const keyOf = (k: { leaseTermId: unknown; payYmd: unknown; payMethod: unknown }) => JSON.stringify([k.leaseTermId, k.payYmd, k.payMethod])
   // 수단 칸은 글자로 비교하지 않는다(문자열이거나 null 인지만). 수단 이름 글자 비교 그물(test-discount-reasons)과 같은 규율.
   const strOrNull = (v: unknown) => v === null || typeof v === 'string'
+  const isKey = (k: unknown): boolean => {
+    if (!k || typeof k !== 'object') return false
+    const o = k as Record<string, unknown>
+    return typeof o.leaseTermId === 'string' && typeof o.payYmd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.payYmd)
+      && strOrNull(o.payMethod)
+  }
+  if (!u.keys.every(isKey)) return null
+  const keySet = new Set(u.keys.map(keyOf))
   for (const l of u.lines) {
-    if (!l || typeof l !== 'object') return null
-    if (typeof l.leaseTermId !== 'string' || typeof l.payYmd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(l.payYmd)) return null
-    if (!strOrNull(l.payMethod)) return null
+    if (!isKey(l)) return null
+    if (!keySet.has(keyOf(l))) return null
     if (!isSnap(l.before) || !isSnap(l.after)) return null
+    if (l.before && l.after && l.before.id !== l.after.id) return null
   }
   for (const s of u.stamps) {
     if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !isTs(s.before) || !isTs(s.after)) return null

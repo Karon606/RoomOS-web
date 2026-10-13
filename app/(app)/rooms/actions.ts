@@ -18,7 +18,7 @@ import {
 } from '@/lib/cashReceipt'
 import {
   alignRevivedStamps, applyCrUndo, captureCr, crKeyInfoForLease, finishCrUndo, lineStateOf, liveLineView, readCrKey, reconcileCrAfterRemoval,
-  setStamps, writeCrKey, CrUndoConflict,
+  setStamps, signPaymentEditUndo, verifyPaymentEditUndo, writeCrKey, CrUndoConflict,
   type CrKeyInfo, type CrKeyRef, type CrMismatch, type CrRemovalResult, type PaymentDeleteUndo, type PaymentEditEffect, type PaymentEditUndo,
 } from './cashReceiptLine'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -2039,12 +2039,12 @@ export async function updatePayment(
     const fields = (r: { actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; targetMonth: string; seqNo: number }) => ({
       actualAmount: r.actualAmount, payYmd: kstYmdStr(r.payDate), payMethod: r.payMethod, memo: r.memo, targetMonth: r.targetMonth, seqNo: r.seqNo,
     })
-    const undo: PaymentEditUndo = {
+    const undo: PaymentEditUndo = signPaymentEditUndo(propertyId, {
       paymentId,
       before: fields(record),
       after: after ? fields(after) : fields(record),
       cr,
-    }
+    })
 
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, cashReceipt: effect, undo }
@@ -2075,7 +2075,8 @@ export async function undoPaymentEdit(
       && /^\d{4}-\d{2}-\d{2}$/.test(f.payYmd) && /^\d{4}-\d{2}$/.test(f.targetMonth)
       && Number.isInteger(f.seqNo) && f.seqNo >= 1
       && strOrNull(f.payMethod) && strOrNull(f.memo)
-    if (!undo || typeof undo.paymentId !== 'string' || !validFields(undo.before) || !validFields(undo.after)) {
+    if (!undo || typeof undo.paymentId !== 'string' || !validFields(undo.before) || !validFields(undo.after)
+      || !verifyPaymentEditUndo(propertyId, undo)) {
       return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
     }
     const record = await prisma.paymentRecord.findFirst({

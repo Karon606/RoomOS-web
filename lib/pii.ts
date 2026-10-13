@@ -64,6 +64,19 @@ export function decryptPii(stored: string, aad: string): string {
 }
 
 /**
+ * 용도별 서버 키. 마스터 키에서 라벨로 파생한 HMAC 키(지문 키와 같은 방식이라 용도끼리 서로를 못 쓴다).
+ * 이 키로 개인정보를 암복호하지 않는다. 지금은 현금영수증 적용취소 토큰 서명 하나가 쓴다
+ * (app/(app)/rooms/cashReceiptLine). 키가 없거나 길이가 틀리면 null. 정책은 부르는 쪽이 정한다.
+ */
+export function derivedServerKey(label: string): Buffer | null {
+  try {
+    return createHmac('sha256', masterKey()).update(label).digest()
+  } catch {
+    return null
+  }
+}
+
+/**
  * 박제용 지문 8자리. 순수 sha256 을 쓰면 안 된다. 후보가 13자리 숫자뿐이라 전수조사로
  * 원본이 그대로 복원된다. 마스터 키에서 파생한 HMAC 이라 키를 모르면 대조표를 못 만든다.
  */
