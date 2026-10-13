@@ -24,13 +24,16 @@
 import { readFileSync } from 'node:fs'
 import { PrismaClient, Prisma } from '@prisma/client'
 import { cashReceiptKey, receiptRowVerdict } from '../lib/cashReceipt'
+import { kstYmdStr } from '../lib/kstDate'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 async function main() {
 
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
   const violations: string[] = []
-  const ymd = (d: Date) => d.toISOString().slice(0, 10)
+  // 날짜는 KST 로 찍는다. 발행일(issuedAt)은 KST 자정을 UTC 로 저장해 toISOString 이면 하루 앞 날짜가 나왔다
+  // (2026-10-13 422호: 화면은 10/12 발행인데 이 점검은 10/11 이라 말해 운영자가 다른 기록으로 읽었다). 수납일은 @db.Date 라 같은 날로 나온다.
+  const ymd = (d: Date) => kstYmdStr(d)
 
   const receipts = await prisma.cashReceipt.findMany({
     where: { deletedAt: null },
