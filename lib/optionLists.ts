@@ -66,16 +66,37 @@ export function parseOptionList(field: OptionListField, raw: string | null | und
 }
 
 /**
+ * 창문 유형의 다른 표기를 원값으로 접는 표. 엑셀 가져오기(import·preview)와 목록 이름 정규화가 이 한 표를 쓴다.
+ * 종전에는 가져오기 두 경로에 표가 따로 있었고 미리보기 쪽에는 WINDOW·NO_WINDOW 가 없었다.
+ */
+const WINDOW_TYPE_CODES: Readonly<Record<string, string>> = {
+  '외창': 'OUTER', '내창': 'INNER',
+  OUTER: 'OUTER', INNER: 'INNER',
+  WINDOW: 'OUTER', NO_WINDOW: 'INNER',
+}
+
+/** 창문 유형 표기의 원값(OUTER·INNER). 표에 없는 글자면 null. */
+export function windowTypeCode(raw: string): string | null {
+  return Object.hasOwn(WINDOW_TYPE_CODES, raw) ? WINDOW_TYPE_CODES[raw] : null
+}
+
+/**
  * 목록에 들어갈 이름의 정규화 정본. 손 추가·자동 추가·이름 변경·빼기 적용취소가 모두 이것을 거친다.
  *
- * 쉼표는 저장 구분자라 지운다. 남기면 '입실자, 소개' 가 목록에서 두 줄로 쪼개지고, 그 글자를 쓰는
- * 기록(할인 사유·입주자 직업 등)과 목록 글자가 갈려 이름 변경이 그 기록을 못 따라간다. 종전에는
- * 할인 사유만 이 정규화를 거쳤다(독립 검수 2026-10-13). 단위는 단위 정본(normalizeUnitInput,
+ * 쉼표는 저장 구분자라 공백으로 바꾼다(normalizeCategoryInput). 남기면 '입실자, 소개' 가 목록에서 두 줄로
+ * 쪼개지고, 그 글자를 쓰는 기록(할인 사유·입주자 직업 등)과 목록 글자가 갈려 이름 변경이 그 기록을 못 따라간다.
+ * 종전에는 할인 사유만 이 정규화를 거쳤다(독립 검수 2026-10-13). 단위는 단위 정본(normalizeUnitInput,
  * 글자 없는 표기를 거르고 같은 정규화를 한다)을 쓴다.
+ *
+ * 창문 유형은 화면 이름(외창·내창)을 원값(OUTER·INNER)으로 접는다. 화면은 원값을 외창·내창으로 보여 주므로,
+ * '외창' 을 따로 더하거나 다른 이름을 '외창' 으로 바꾸면 같은 이름이 두 줄로 서고 원값 보호가 뚫린다(3차 검수).
+ * 접고 나면 더하기는 중복으로, 바꾸기는 보호 이름으로 막힌다.
  */
 export function normalizeOptionName(field: OptionListField, raw: string | null | undefined): string {
   if (field === 'specUnitOptions' || field === 'qtyUnitOptions') return normalizeUnitInput(raw) ?? ''
-  return normalizeCategoryInput(raw)
+  const name = normalizeCategoryInput(raw)
+  if (field === 'windowTypeOptions') return windowTypeCode(name) ?? name
+  return name
 }
 
 /**

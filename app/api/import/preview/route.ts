@@ -11,7 +11,7 @@ import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES, type RoomAssignmentOccupant } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
-import { normalizeOptionName } from '@/lib/optionLists'
+import { normalizeOptionName, windowTypeCode } from '@/lib/optionLists'
 import { LeaseStatus } from '@prisma/client'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
@@ -72,9 +72,6 @@ function parseDay(val: unknown): number | null {
   return isNaN(n) ? null : n
 }
 
-const WINDOW_MAP: Record<string, string> = {
-  '외창': 'OUTER', '내창': 'INNER', 'OUTER': 'OUTER', 'INNER': 'INNER',
-}
 const DIRECTION_MAP: Record<string, string> = {
   '동': 'EAST', '서': 'WEST', '남': 'SOUTH', '북': 'NORTH',
   '남동': 'SOUTHEAST', '남서': 'SOUTHWEST', '북동': 'NORTHEAST', '북서': 'NORTHWEST',
@@ -115,7 +112,7 @@ async function previewRooms(rows: Record<string, unknown>[], propertyId: string)
     if (existing) {
       const inType       = str(row['타입']) || null
       const inBaseRent   = parseNum(row['기본이용료'])
-      const inWindowType = WINDOW_MAP[str(row['채광'])] || null
+      const inWindowType = windowTypeCode(str(row['채광']))   // 가져오기 저장과 같은 표(lib/optionLists)
       const inDirection  = DIRECTION_MAP[str(row['방향'])] || null
       const inAreaPy     = row['면적(평)'] ? parseNum(row['면적(평)']) : null
       const inAreaM2     = row['면적(㎡)'] ? parseNum(row['면적(㎡)']) : null

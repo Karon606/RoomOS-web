@@ -17,7 +17,7 @@ import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { normalizeOptionName } from '@/lib/optionLists'
+import { normalizeOptionName, windowTypeCode } from '@/lib/optionLists'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolutions = Record<string, string>  // conflictId → 'overwrite' | 'keep' | 'archive'
@@ -51,11 +51,6 @@ function str(val: unknown): string {
   return val == null ? '' : String(val).trim()
 }
 
-const WINDOW_MAP: Record<string, string> = {
-  '외창': 'OUTER', '내창': 'INNER',
-  'OUTER': 'OUTER', 'INNER': 'INNER',
-  'WINDOW': 'OUTER', 'NO_WINDOW': 'INNER',
-}
 const DIRECTION_MAP: Record<string, string> = {
   '동': 'EAST', '서': 'WEST', '남': 'SOUTH', '북': 'NORTH',
   '남동': 'SOUTHEAST', '남서': 'SOUTHWEST', '북동': 'NORTHEAST', '북서': 'NORTHWEST',
@@ -113,7 +108,7 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string, 
       const data = {
         type:       str(row['타입']) || null,
         baseRent:   parseNum(row['기본이용료']),
-        windowType: WINDOW_MAP[str(row['채광'])] || null,
+        windowType: windowTypeCode(str(row['채광'])),   // 창문 표기 표는 정본 한 벌(lib/optionLists)
         direction:  DIRECTION_MAP[str(row['방향'])] || null,
         areaPyeong: row['면적(평)'] ? parseNum(row['면적(평)']) : null,
         areaM2:     row['면적(㎡)'] ? parseNum(row['면적(㎡)']) : null,

@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { normalizeCategoryInput } from '../lib/categoryInput'
 import {
   OPTION_LIST_DEFAULTS, PROTECTED_OPTION_NAMES, parseOptionList, optionRenameWhere, normalizeOptionName,
-  protectedOptionReason, protectedRenameError, insertOptionAt, mergeResetUndo, isOptionListField, type OptionListField,
+  protectedOptionReason, protectedRenameError, insertOptionAt, mergeResetUndo, isOptionListField, windowTypeCode, type OptionListField,
   optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, renameUndoPlan,
 } from '../lib/optionLists'
 import { REQUEST_CATEGORIES } from '../lib/requestCategories'
@@ -42,10 +42,27 @@ for (const f of fields) {
   // 목록 13종 모두 쉼표를 지운다. 종전에는 할인 사유만 지워 직업 '프로그래머, 개발' 이 두 줄이 됐다.
   eq(`${f} 이름 정규화는 쉼표를 지운다`, normalizeOptionName(f, ' 가나, 다라 ').includes(','), false)
 }
-eq('직업도 쉼표를 지운다', normalizeOptionName('jobOptions', '프로그래머, 개발'), '프로그래머 개발')
+eq('직업도 쉼표를 공백으로', normalizeOptionName('jobOptions', '프로그래머, 개발'), '프로그래머 개발')
 eq('결제 수단도 공백을 접는다', normalizeOptionName('paymentMethods', '  법인   카드 '), '법인 카드')
 eq('단위는 단위 정본을 쓴다(글자 없는 표기는 빈 값)', normalizeOptionName('specUnitOptions', '-'), '')
-eq('단위 쉼표도 지운다', normalizeOptionName('qtyUnitOptions', '박,스'), '박스')
+eq('단위 쉼표도 공백으로', normalizeOptionName('qtyUnitOptions', '박,스'), '박 스')
+
+// 쉼표는 지우지 않고 공백으로 바꾼다. 지우면 두 낱말이 붙는다(3차 검수).
+eq('쉼표로 붙여 적은 두 낱말은 공백으로 떨어진다', normalizeCategoryInput('학생,아르바이트'), '학생 아르바이트')
+eq('쉼표가 겹쳐도 한 칸', normalizeCategoryInput('a,,b'), 'a b')
+eq('끝 쉼표는 사라진다', normalizeCategoryInput('ml,'), 'ml')
+// 운영 DB 에 쉼표 든 값은 할인 메모 1건뿐이고(2026-10-13 읽기 전용 조회) 쉼표 뒤가 공백이라 종전 규칙과 결과가 같다.
+const MEMO_WITH_COMMA = '508호 정정(2만→1만, 2026-07-01)'
+eq('운영 할인 메모 1건은 종전과 같은 결과', normalizeCategoryInput(MEMO_WITH_COMMA), MEMO_WITH_COMMA.replace(/,/g, '').replace(/\s+/g, ' ').trim())
+// 창문 유형은 화면 이름을 원값으로 접는다. 접지 않으면 '외창' 이 원값 OUTER 옆에 두 줄로 서고 보호가 뚫린다(3차 검수).
+eq('창문 화면 이름은 원값으로', ['외창', ' 내창 ', 'WINDOW', 'NO_WINDOW'].map(v => normalizeOptionName('windowTypeOptions', v)), ['OUTER', 'INNER', 'OUTER', 'INNER'])
+eq('창문 원값은 그대로', ['OUTER', 'INNER'].map(v => normalizeOptionName('windowTypeOptions', v)), ['OUTER', 'INNER'])
+eq('창문 새 이름은 그대로', normalizeOptionName('windowTypeOptions', '복층창'), '복층창')
+eq('다른 목록은 창문 표로 접지 않는다', normalizeOptionName('roomTypeOptions', '외창'), '외창')
+eq('창문 표에 없는 글자는 null(상속 이름 포함)', ['외창2', 'toString', ''].map(windowTypeCode), [null, null, null])
+eq('다른 이름을 외창으로 바꾸는 것은 보호 이름으로 막힌다',
+  protectedRenameError('windowTypeOptions', '복층창', normalizeOptionName('windowTypeOptions', '외창')) !== null, true)
+eq('외창을 더하면 원값 OUTER 와 같은 이름(중복)', parseOptionList('windowTypeOptions', null).includes(normalizeOptionName('windowTypeOptions', '외창')), true)
 
 // ── 이름 변경 조건: 영업장 범위 ───────────────────────────────────
 const discWhere = optionRenameWhere({ model: 'rentDiscount', column: 'memo', via: 'leaseTerm' }, 'P1', '프로모션')
