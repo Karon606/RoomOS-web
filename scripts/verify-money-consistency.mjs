@@ -1929,15 +1929,19 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/export async function writeCrKey\(/.test(engineSrc) || (engineSrc.match(/\bcashReceipt\.create\(/g) ?? []).length !== 1) {
     violations.push('[소스] 발행 줄 엔진(rooms/cashReceiptLine writeCrKey)이 줄을 만드는 단 하나의 자리가 아니다')
   }
-  // 화면 결선 — 문이 있어도 화면이 안 부르면 같은 결함이다. 수납 폼은 세 갈래(분해·일반·예약금),
-  // 수정 폼(PaymentRecordList)은 한 곳이 저장 뒤 문을 불러야 한다.
+  // 화면 결선. 문이 있어도 화면이 안 부르면 같은 결함이다. 수납 폼은 세 갈래(분해·일반·예약금)가 저장 뒤
+  // 발행 문을 부른다. 수정 폼(PaymentRecordList)은 **발행 문을 따로 안 부르고** 고친 발행 금액을 저장 한 번에
+  // 싣는다(2026-10-14 독립 검수 F1, 저장 뒤 또 부르면 서버가 합친 결과를 옛 금액으로 덮었다).
   const entryDoorCalls = (entryForm.match(/await setPaymentCashReceipt\(/g) ?? []).length
   if (entryDoorCalls < 3) {
     violations.push(`[소스] 수납 폼의 발행 문 호출이 ${entryDoorCalls}곳(세 갈래여야 한다) — 빠진 갈래의 수납이 합계에서 빠진다`)
   }
   const recordListSrc = readFileSync('components/entity-modal/widgets/PaymentRecordList.tsx', 'utf8')
-  if (!/await setPaymentCashReceipt\(/.test(recordListSrc)) {
-    violations.push('[소스] 수정 폼(PaymentRecordList)이 발행 문을 안 부른다 — 수정으로 바꾼 발행 금액이 합계에 안 잡힌다')
+  if (!/cashReceiptAmount: editCrAmount/.test(recordListSrc)) {
+    violations.push('[소스] 수정 폼(PaymentRecordList)이 고친 발행 금액을 저장에 안 싣는다. 수정으로 바꾼 발행 금액이 합계에 안 잡힌다')
+  }
+  if (/await setPaymentCashReceipt\(/.test(recordListSrc)) {
+    violations.push('[소스] 수정 폼(PaymentRecordList)이 저장 뒤 발행 문을 또 부른다. 입금일 이동으로 합친 금액을 옛 금액으로 덮는다')
   }
   // 발행 줄을 세우는 자리는 전부 봉인을 지난 issuedAt 을 넘겨야 한다. 직접 new Date() 를 박으면
   // 카드에도 줄이 생기고 발행일이 클릭 시각으로 되돌아간다.

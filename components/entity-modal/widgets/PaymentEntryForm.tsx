@@ -18,7 +18,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
-import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare } from '@/lib/cashReceipt'
+import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare, type CashReceiptUndo } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { withParticle } from '@/lib/koParticle'
 import { fmtMD } from '@/lib/fmtDate'
@@ -315,6 +315,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     }))) return
     // 부가수익으로 돌린 경우의 적용취소 대상 — 수납 record 들과 부가수익 한 건을 함께 되돌린다.
     let undo: { recordIds: string[]; extraIncomeId: string } | null = null
+    // 이 결제의 발행 기록이 돌려준 적용취소 재료. 수납 적용취소가 발행 줄까지 쓰기 전으로 되돌린다
+    // (2026-10-14 독립 검수 F2). 종전에는 받아 놓고 버려서, 같은 키의 앞 발행과 합친 줄이 합친 금액으로 남았다.
+    let crUndo: CashReceiptUndo | null = null
     let splitDone = false   // 분해 경로는 몫을 실은 자기 토스트를 띄운다(아래 공용 토스트를 건너뛴다)
     startTransition(async () => {
       const release = trackSave()
@@ -426,6 +429,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               amount: crShownAmount, incl: crIncl, via: 'entry',
             })
             if (!crRes.ok) pushToast('error', crRes.error)
+            else crUndo = crRes.undo
           }
 
           // 이용료 몫은 실제로 앉은 달을 적는다(서버 배분 결과). 일반 갈래 자동 분배 토스트와 같은 'N월분' 문법.
@@ -446,7 +450,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               run: () => {
                 if (undone) return
                 undone = true
-                void undoOverpayExtraIncome(recordIds, cleaningIncomeId).then(r => {
+                void undoOverpayExtraIncome(recordIds, cleaningIncomeId, crUndo).then(r => {
                   if (r.ok) pushToast('info', '수납 기록을 취소했습니다')
                   else pushToast('error', r.error, {
                     detail: r.intact ? '수납 기록은 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
@@ -561,6 +565,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             amount: crShownAmount, incl: crIncl, via: 'entry',
           })
           if (!crRes.ok) pushToast('error', crRes.error)
+          else crUndo = crRes.undo
         }
 
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
@@ -576,7 +581,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               run: () => {
                 if (undone) return
                 undone = true
-                void undoOverpayExtraIncome(u.recordIds, u.extraIncomeId).then(r => {
+                void undoOverpayExtraIncome(u.recordIds, u.extraIncomeId, crUndo).then(r => {
                   if (r.ok) pushToast('info', '수납과 부가수익 기록을 취소했습니다')
                   else pushToast('error', r.error, {
                     detail: r.intact ? '수납과 부가수익 모두 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',

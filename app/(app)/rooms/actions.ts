@@ -1848,8 +1848,10 @@ export async function updatePayment(
     actualAmount: number; payDate: string; payMethod: string; memo?: string; targetMonth?: string; cashReceiptIssued?: boolean; cashReceiptIssuedDate?: string | null
     /**
      * 발행 금액·구성. 수정 폼의 '발행 금액' 칸을 **이 한 번의 저장에** 싣는 자리(선택).
-     * 실으면 setPaymentCashReceipt 를 따로 부를 필요가 없고 적용취소도 한 번에 된다. 입금일·수단을
-     * 옮겨 발행이 함께 옮겨 갔거나 합쳐진 경우에는 쓰지 않는다. 그 칸의 값은 옛 키의 금액이다.
+     * 화면은 운영자가 칸을 프리필과 다르게 고쳤을 때만 싣는다(2026-10-14 독립 검수 F1). 서버는 이 값을
+     * 발행을 새로 켜는 저장(on)과 같은 키에서 금액·발행일을 고치는 저장(redate)에서만 쓴다. 입금일·수단을
+     * 옮겨 발행이 함께 옮겨 갔거나(transfer) 합쳐졌거나(merge) 도장만 지운(unstamp) 경우에는 안 쓴다.
+     * 그 칸의 프리필은 옛 키의 금액이라, 쓰면 서버가 합친 결과를 옛 금액으로 덮는다.
      */
     cashReceiptAmount?: number | null
     cashReceiptIncl?: CashReceiptIncl | null
@@ -2036,11 +2038,13 @@ export async function updatePayment(
 
 // 수납 수정 저장의 적용취소. 운영자 원칙 "모든 쓰기에 적용취소"(결함 D6, 종전에는 없었다).
 //
-// 수정 폼은 두 번 부른다(updatePayment 다음 setPaymentCashReceipt). 그래서 두 스냅샷을 **거꾸로**
-// 되돌린다. 발행 금액 문을 먼저, 수납 칸과 그 수정이 건드린 줄·도장을 다음에. 한 트랜잭션이라
-// 하나라도 막히면 아무것도 안 바뀐다. 그 사이 이 수납이나 발행 기록이 다시 바뀌었으면 덮지 않는다.
+// 토큰은 하나다(2026-10-14 독립 검수 F1). 수정 폼은 발행 금액·구성까지 updatePayment 한 번에 싣고,
+// 그 저장이 돌려준 undo 하나가 수납 칸과 그 수정이 건드린 줄·도장을 함께 되돌린다. 종전 화면은
+// 저장 뒤 발행 금액 문을 한 번 더 불러 서버가 합친 결과를 옛 금액으로 덮었고, 토큰도 둘이었다.
+// 한 트랜잭션이라 하나라도 막히면 아무것도 안 바뀐다. 그 사이 이 수납이나 발행 기록이 다시 바뀌었으면
+// 덮지 않는다.
 export async function undoPaymentEdit(
-  undo: PaymentEditUndo, crUndo?: CashReceiptUndo | null,
+  undo: PaymentEditUndo,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -2074,7 +2078,6 @@ export async function undoPaymentEdit(
     if (!same) return { ok: false, error: '그 사이 이 수납 기록이 다시 바뀌어 되돌리지 않았습니다. 수납 내역에서 지금 상태를 확인해 주세요.' }
     const b = undo.before
     await prisma.$transaction(async tx => {
-      if (crUndo) await applyCrUndo(tx, propertyId, crUndo)
       await applyCrUndo(tx, propertyId, undo.cr)
       await tx.paymentRecord.updateMany({
         where: { id: undo.paymentId, propertyId, deletedAt: null },
@@ -2353,8 +2356,9 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
  *
  * **edit** 는 살아 있는 줄의 금액·구성·발행일을 고치는 문이다. 금액을 다시 세지 않는다. 발행한
  * 금액은 국세청에 올라간 사실이라 화면이 보낸 값이 그대로 진실이다(2026-08-25). 줄이 없으면 아무것도
- * 안 만든다. 수정 폼은 updatePayment 다음에 이 문을 부르는데, 켜기는 updatePayment 가 이미 세웠고,
- * 입금일을 옮겨 옛 영수증에 이 돈이 남은 경우(줄 없음)에 여기서 새로 만들면 같은 돈을 두 번 센다.
+ * 안 만든다(새로 만들면 옛 영수증에 남은 돈을 두 번 센다). 수납 수정 폼은 이 문을 부르지 않는다.
+ * 발행 금액을 updatePayment 에 함께 싣는다(2026-10-14 독립 검수 F1, 저장 뒤 이 문을 또 부르면 서버가
+ * 합친 결과를 옛 키 금액으로 덮었다).
  */
 export async function setPaymentCashReceipt(input: {
   leaseTermId: string

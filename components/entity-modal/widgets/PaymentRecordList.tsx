@@ -11,8 +11,8 @@ import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment, setCashReceiptIssued,
-  setPaymentCashReceipt, undoCashReceiptChange,
+  getPaymentsByLease, getTargetMonthOptions, updatePayment, undoPaymentEdit, deletePayment, restorePayment, setCashReceiptIssued,
+  undoCashReceiptChange,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -85,6 +85,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   const [crAskId, setCrAskId] = useState<string | null>(null)
   const [crAskDate, setCrAskDate] = useState(kstYmdStr())
   const [editCrIncl, setEditCrIncl] = useState({ deposit: false, cleaning: false, rent: true })
+  // 폼을 열 때의 발행 금액·구성. 운영자가 칸을 고쳤는지 가르는 기준(2026-10-14 독립 검수 F1).
+  // 안 고쳤으면 저장에 싣지 않는다. 실으면 서버가 입금일 이동으로 합친 금액을 이 프리필(옛 키 금액)로 덮는다.
+  const [editCrPrefill, setEditCrPrefill] = useState({ amount: 0, incl: { deposit: false, cleaning: false, rent: true } })
   // 이 계약의 활성 발행 줄 — (수납일·수단)으로 그 행의 발행을 찾는다.
   const [receipts, setReceipts] = useState<{ payDate: string | Date; payMethod: string | null; amount: number; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }[]>([])
 
@@ -121,9 +124,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     // 보증금 행이 안 온다. 그런데 **기본 prop 은 'month' 이고 그쪽 집합에는 보증금이 든다** —
     // scope 를 안 준 마운트가 하나 생기는 순간 옛 규칙이 되살아난다. 그래서 죽은 가지여도
     // 정본을 쓴다. 이 화면은 금액 칸이 예외 문이라 켤 사람은 여기서 직접 켠다.
-    setEditCrIncl(line
+    const prefillIncl = line
       ? { deposit: line.inclDeposit, cleaning: line.inclCleaning, rent: line.inclRent }
-      : { ...CASH_RECEIPT_DEFAULT_INCL })
+      : { ...CASH_RECEIPT_DEFAULT_INCL }
+    setEditCrIncl(prefillIncl)
+    setEditCrPrefill({ amount: line?.amount ?? p.actualAmount, incl: prefillIncl })
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
@@ -139,6 +144,15 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
 
   const handleSaveEdit = () => {
     if (!editingId) return
+    // 발행 금액·구성은 운영자가 프리필과 다르게 고쳤을 때만 이 저장에 함께 싣는다(2026-10-14 독립 검수 F1).
+    // 종전에는 저장 뒤 발행 금액 문(setPaymentCashReceipt)을 무조건 한 번 더 불러, 입금일을 옮겨 서버가
+    // 두 영수증을 합친 금액(700,000)을 프리필(옛 키 400,000)로 덮었다. 이제 호출은 한 번, 적용취소 토큰도 하나다.
+    const crChanged = editCashReceipt && (
+      editCrAmount !== editCrPrefill.amount
+      || editCrIncl.deposit !== editCrPrefill.incl.deposit
+      || editCrIncl.cleaning !== editCrPrefill.incl.cleaning
+      || editCrIncl.rent !== editCrPrefill.incl.rent
+    )
     startTransition(async () => {
       const res = await withSave(() => updatePayment(editingId, {
         actualAmount: editAmount,
@@ -148,22 +162,22 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         targetMonth:  editTargetMonth || undefined,
         cashReceiptIssued: editCashReceipt,
         cashReceiptIssuedDate: editCashReceiptDate,
-      }), { success: '수납 기록 수정됨' })
+        ...(crChanged ? { cashReceiptAmount: editCrAmount, cashReceiptIncl: editCrIncl } : {}),
+      }), { success: '' })
       if (!res.ok) return
-      // 발행 금액은 전용 문으로 따로 보낸다 — updatePayment 은 발행 여부·날짜만 손대고
-      // 금액은 안 건드린다(그래야 손으로 넣은 값이 재저장에 안 덮인다).
-      if (editCashReceipt) {
-        const rec = (records ?? []).find(r => r.id === editingId)
-        if (rec) {
-          const crRes = await setPaymentCashReceipt({
-            leaseTermId, tenantId: rec.tenantId,
-            payDate: editDate, payMethod: editPayMethod,
-            issued: true, issuedDate: editCashReceiptDate,
-            amount: editCrAmount, incl: editCrIncl, via: 'edit',
-          })
-          if (!crRes.ok) pushToast('error', crRes.error)
-        }
-      }
+      // 수정 저장도 적용취소가 있다(운영자 원칙 "모든 쓰기에 적용취소", 2026-10-14 W8).
+      const undo = res.undo
+      let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
+      pushToast('success', '수납 기록 수정됨', {
+        action: { label: '적용취소', run: () => {
+          if (undone) return
+          undone = true
+          void undoPaymentEdit(undo).then(r => {
+            if (r.ok) { pushToast('info', '수납 기록 수정을 적용취소했습니다'); reload(); onChange?.() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+        } },
+      })
       await reload()
       setEditingId(null)
       onChange?.()

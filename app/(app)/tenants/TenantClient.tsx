@@ -32,7 +32,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
-import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -1679,8 +1679,21 @@ export default function TenantClient({
         payDate:      editDate,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
-      }), { success: '수납 기록 수정됨' })
+      }), { success: '' })
       if (!res.ok) { setError(res.error); return }
+      // 수정 저장도 적용취소가 있다. 형제 수납 내역(PaymentRecordList)과 같은 토스트(2026-10-14 W8).
+      const undo = res.undo
+      let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
+      pushToast('success', '수납 기록 수정됨', {
+        action: { label: '적용취소', run: () => {
+          if (undone) return
+          undone = true
+          void undoPaymentEdit(undo).then(r => {
+            if (r.ok) { pushToast('info', '수납 기록 수정을 적용취소했습니다'); refresh() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+        } },
+      })
       if (payTarget) {
         const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)

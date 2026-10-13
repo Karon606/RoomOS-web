@@ -18,7 +18,7 @@ import { RotateCcw } from '@/components/ui/RotateCcw'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
-import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment, saveDepositPaymentForLease, getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
+import { getDepositPaymentsByLease, updatePayment, undoPaymentEdit, deletePayment, restorePayment, saveDepositPaymentForLease, getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
 import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease, recordDepositReturn } from '@/app/(app)/tenants/actions'
 import { kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason, CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
@@ -230,9 +230,22 @@ export function DepositStatusPanel({
     startTransition(async () => {
       const res = await withSave(
         () => updatePayment(editId, { actualAmount: editAmount, payDate: editDate, payMethod: editMethod }),
-        { success: '보증금 수납 수정됨' },
+        { success: '' },
       )
       if (!res.ok) return   // withSave 가 이미 error 토스트를 쏜다(이중 통지 금지)
+      // 수정 저장도 적용취소가 있다. 수납 내역 수정 폼과 같은 토스트(2026-10-14 W8).
+      const undo = res.undo
+      let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
+      pushToast('success', '보증금 수납 수정됨', {
+        action: { label: '적용취소', run: () => {
+          if (undone) return
+          undone = true
+          void undoPaymentEdit(undo).then(x => {
+            if (x.ok) { pushToast('info', '보증금 수납 수정을 적용취소했습니다'); void load(); onChanged?.() }
+            else pushToast('error', x.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+        } },
+      })
       setEditId(null); await load(); onChanged?.()
     })
   }

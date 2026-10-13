@@ -120,9 +120,10 @@ const ten  = read(TEN)
   // 이 목록이 서는 자리 둘은 scope='window' 라 보증금 행이 안 오지만 **기본 prop 은 'month'**
   // 이고 그쪽 집합에는 보증금이 든다 — scope 를 안 준 마운트 하나면 옛 규칙이 되살아난다.
   // 그래서 죽은 가지여도 정본을 쓰게 하고 그 사실을 여기서 못박는다.
-  const em = list.match(/setEditCrIncl\(line[\s\S]{0,300}?\}\)/)
+  // 폼을 열 때의 구성은 prefillIncl 하나로 세운다. 칸을 고쳤는지 가르는 기준값과 같은 값이다(F1, 2026-10-14).
+  const em = list.match(/const prefillIncl = line\n[^\n]*\n[^\n]*\n/)
   if (!em) {
-    violations.push(`${LIST} — setEditCrIncl(line …) 를 못 찾았다. 모양이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+    violations.push(`${LIST}: const prefillIncl = line … 를 못 찾았다. 모양이 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
   } else {
     if (!/CASH_RECEIPT_DEFAULT_INCL/.test(em[0])) {
       violations.push(`${LIST} — 발행 줄이 없을 때의 기본 구성이 정본 상수가 아니다.`)
