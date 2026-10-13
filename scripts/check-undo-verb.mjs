@@ -97,7 +97,7 @@ const SETTINGS_FORM = 'app/(app)/settings/SettingsForm.tsx'
     }
   }
   const table = src.match(/const REMOVE_TOAST = \{([\s\S]*?)\} as const/)?.[1] ?? ''
-  for (const [verb, done, undone] of [['삭제', '항목을 삭제했습니다', '항목 삭제를 적용취소했습니다 · 목록에 다시 표시'], ['빼기', '항목을 뺐습니다', '항목 빼기를 적용취소했습니다 · 목록에 다시 표시']]) {
+  for (const [verb, done, undone] of [['삭제', '항목을 삭제했습니다', "' 삭제를 적용취소했습니다 · 원래 자리로 복귀"], ['빼기', '항목을 뺐습니다', "' 빼기를 적용취소했습니다 · 원래 자리로 복귀"]]) {
     const row = table.split('\n').find(l => l.trim().startsWith(`${verb}:`)) ?? ''
     if (!row.includes(done) || !row.includes(undone)) violations.push(`${SETTINGS_FORM} · REMOVE_TOAST 의 '${verb}' 줄이 제 동사로 말하지 않는다('${done}' · '${undone}' 기대).`)
   }

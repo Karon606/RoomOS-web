@@ -47,8 +47,10 @@ export default function CategorySelect({
             aria-label="목록에서 선택"
             className="shrink-0 px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
-        {showAddHint && (
-          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">{addHintText ?? '새로 입력한 카테고리는 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.'}</p>
+        {/* 힌트는 운영자가 '기타(직접 입력)' 를 직접 고른 때만 선다. 기록에서 온 목록 밖 값으로 저절로 입력 모드가 된
+            때는 그대로 저장해도 목록에 안 더해지므로(이전 값과 같으면 안 더한다) 그 약속이 거짓이 된다. */}
+        {showAddHint && customMode && (
+          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">{addHintText ?? '새로 입력한 카테고리는 저장할 때 목록에 저절로 추가됩니다. 목록 관리는 환경설정 > 분류 관리에서 합니다.'}</p>
         )}
       </div>
     )

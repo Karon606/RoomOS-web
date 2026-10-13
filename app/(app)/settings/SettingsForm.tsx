@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useTransition, useEffect, useRef, useMemo, useCallback, useId } from 'react'
 import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -1382,7 +1382,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="창문 유형 관리"
-            description="기본 유형: 내창, 외창. 직접 추가하면 그대로 호실 옵션에 표시됩니다."
+            description="기본 유형: 외창, 내창. 직접 추가하면 그대로 호실 옵션에 표시됩니다."
             items={windowTypes}
             field="windowTypeOptions"
             setItems={setWindowTypes}
@@ -2788,10 +2788,11 @@ function AppearanceTab() {
 type OptionRenamed = { updated: number; undo: RenameUndo | null }
 
 // 행을 빼는 동작의 토스트 문장. 행 버튼·확인창과 같은 동사를 쓴다(scripts/check-undo-verb). 동사마다 문장을
-// 따로 두는 것은 보간 뒤에 조사를 박지 않으려는 것이다(scripts/check-korean-particle).
+// 따로 두는 것은 보간 뒤에 조사를 박지 않으려는 것이다(scripts/check-korean-particle). 적용취소 결과에도 이름을
+// 싣는다. 여러 줄을 빼고 무를 때 무엇이 돌아왔는지 보여야 한다(웹디자이너 패스 2026-10-13).
 const REMOVE_TOAST = {
-  삭제: { done: (label: string) => `'${label}' 항목을 삭제했습니다`, undone: '항목 삭제를 적용취소했습니다 · 목록에 다시 표시' },
-  빼기: { done: (label: string) => `'${label}' 항목을 뺐습니다`, undone: '항목 빼기를 적용취소했습니다 · 목록에 다시 표시' },
+  삭제: { done: (label: string) => `'${label}' 항목을 삭제했습니다`, undone: (label: string) => `'${label}' 삭제를 적용취소했습니다 · 원래 자리로 복귀` },
+  빼기: { done: (label: string) => `'${label}' 항목을 뺐습니다`, undone: (label: string) => `'${label}' 빼기를 적용취소했습니다 · 원래 자리로 복귀` },
 } as const
 
 function OptionSection({
@@ -2823,6 +2824,8 @@ function OptionSection({
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const editErrorId = useId()
 
   // 적용취소(§16). 빼기·초기화·이름 변경 뒤 토스트 [적용취소]. 분류 관리 탭의 목록 카드 전부가
   // 이 한 곳을 같이 쓴다(카드마다 따로 달면 어느 카드는 되고 어느 카드는 안 되는 날이 온다).
@@ -2845,7 +2848,7 @@ function OptionSection({
     } catch (err) { pushToast('error', humanError(err, `${removeVerb} 실패`)); return }
     const say = REMOVE_TOAST[removeVerb]
     pushToast('success', say.done(getLabel(item)), {
-      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone) },
+      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone(getLabel(item))) },
     })
   }
 
@@ -2931,15 +2934,24 @@ function OptionSection({
     setEditingValue(item)
   }
 
+  // 보호 이름으로 바꾸려는 것은 치는 자리에서 바로 알린다(§27.2 검증은 인라인). 서버 입구와 같은 함수로 재고,
+  // 걸리면 저장을 막는다. 저장을 눌러 보고서야 토스트로 거절당하고 친 글자까지 사라지던 길이다(웹디자이너 패스).
+  const editError = editingItem !== null ? protectedRenameError(field, editingItem, normalizeOptionName(field, editingValue)) : null
+
   const saveEdit = async () => {
-    if (editingItem === null || !onRename) return
+    if (editingItem === null || !onRename || savingEdit || editError) return
     const oldVal = editingItem
-    setEditingItem(null)
+    const next = normalizeOptionName(field, editingValue)
+    // 바뀐 것이 없으면 그냥 닫는다.
+    if (!next || next === oldVal) { setEditingItem(null); return }
+    setSavingEdit(true)
     let res: OptionRenamed | null
-    try { res = await onRename(oldVal, editingValue) } catch (err) { pushToast('error', humanError(err, '이름 변경 실패')); return }
+    try { res = await onRename(oldVal, editingValue) } catch (err) { pushToast('error', humanError(err, '이름 변경 실패')); return } finally { setSavingEdit(false) }
+    // 서버가 거절했거나 건수 확인창에서 물렀으면 편집 칸을 그대로 둔다. 친 글자가 사라지지 않게 성공한 뒤에만 닫는다.
     if (!res) return
+    setEditingItem(null)
     const undo = res.undo
-    pushToast('success', '이름이 변경되었습니다', {
+    pushToast('success', '이름을 바꿨습니다', {
       ...(res.updated > 0 ? { detail: `기존 데이터 ${res.updated}건도 함께 바뀌었습니다.` } : {}),
       ...(undo ? {
         action: {
@@ -2967,10 +2979,10 @@ function OptionSection({
           </button>
         )}
       </div>
-      {description && <p className={`text-xs text-[var(--warm-muted)] ${fixedReason ? 'mb-1.5' : 'mb-4'}`}>{description}</p>}
+      {description && <p className={`text-xs text-[var(--warm-muted)] break-keep ${fixedReason ? 'mb-1.5' : 'mb-4'}`}>{description}</p>}
       {!description && <div className={fixedReason ? 'mb-1.5' : 'mb-4'} />}
       {fixedReason && (
-        <p className="text-xs text-[var(--warm-muted)] mb-4">&apos;이름 고정&apos; 항목은 바꿀 수 없습니다. {fixedReason}</p>
+        <p className="text-xs text-[var(--warm-muted)] break-keep mb-4">&lsquo;이름 고정&rsquo; 항목은 바꿀 수 없습니다. {fixedReason}</p>
       )}
       <div ref={optListRef} className="space-y-2 mb-4">
         {items.length === 0 && (
@@ -2978,7 +2990,7 @@ function OptionSection({
         )}
         {(dragOrder ?? items).map((item, idx) => (
           // key는 값 자체(고유) — 재정렬 시 요소 identity 보존.
-          <div key={item} className={`flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
+          <div key={item} className={`flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${editingItem === item ? 'flex-wrap' : ''} ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
             {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button
@@ -3002,19 +3014,22 @@ function OptionSection({
                 <input
                   value={editingValue}
                   onChange={e => setEditingValue(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingItem(null) }}
+                  onKeyDown={e => { if (e.key === 'Enter') void saveEdit(); if (e.key === 'Escape') setEditingItem(null) }}
                   autoFocus
-                  className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
+                  aria-invalid={editError ? true : undefined}
+                  aria-describedby={editError ? editErrorId : undefined}
+                  className={`flex-1 bg-[var(--canvas)] border rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none ${editError ? 'border-[var(--danger-ring)]' : 'border-[var(--coral)]'}`}
                 />
-                <button onClick={saveEdit}
-                  className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors"
+                <button onClick={saveEdit} disabled={!!editError || savingEdit}
+                  className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors disabled:opacity-40"
                   style={{ background: 'var(--coral)' }}>저장</button>
                 <button onClick={() => setEditingItem(null)}
                   className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
+                {editError && <p id={editErrorId} className="basis-full text-[0.6875rem] text-[var(--danger-fg)] break-keep">{editError}</p>}
               </>
             ) : (
               <>
-                <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+                <span className="flex-1 min-w-[2rem] break-keep [overflow-wrap:anywhere] text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
                 {onReorder && (
                   <button type="button" aria-label={`${getLabel(item)} 순서 이동`}
                     onPointerDown={onHandleDown(idx)} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
@@ -3026,10 +3041,10 @@ function OptionSection({
                   </button>
                 )}
                 {onRename && (protectedOptionReason(field, item) ? (
-                  <span className="shrink-0 px-1 text-[0.65625rem] text-[var(--warm-muted)]">이름 고정</span>
+                  <span className="shrink-0 min-w-[2.9rem] text-center whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)]">이름 고정</span>
                 ) : (
                   <button onClick={() => startEdit(item)}
-                    className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                    className="shrink-0 min-w-[2.9rem] text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 ))}
                 <button onClick={() => handleDelete(item)}
                   className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">{removeVerb}</button>
