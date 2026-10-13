@@ -379,7 +379,138 @@ for (const kind of ['deposit', 'cleaning']) {
   }
 }
 
-console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 / 위반 ${violations.length}건`)
+// ── ⓗ 생애주기 배선(독립 검수 2026-10-14 W7) ─────────────────────────────
+//
+// 판정이 맞아도 그 판정을 **안 거치는 길** 하나면 422호가 다시 선다. 검수가 찾은 결함 넷(F1·F2·R6·R8)이
+// 전부 그 모양이었다. 수정 폼이 서버 결과를 덮는 두 번째 호출, 적용취소 토큰을 버린 화면, 줄 정렬 없이
+// 되살린 수납, 서명 없이 믿은 토큰. 통합 동작은 scripts/test-cash-receipt-flow.ts 가 실제 DB 위에서 보고,
+// 여기서는 그 동작이 기대는 배선을 글자로 지킨다.
+{
+  const FN_RE = /export async function (\w+)\(/g
+  /** 파일의 export 함수 몸통들. 이름으로 몸통을 찾는다. */
+  const bodies = src => {
+    const out = new Map()
+    for (const m of src.matchAll(FN_RE)) {
+      const b = fnBody(src.slice(m.index), `export async function ${m[1]}(`)
+      if (b) out.set(m[1], b)
+    }
+    return out
+  }
+  const srvFns = bodies(srv), tenFns = bodies(ten)
+
+  // ⓗ-1 수납 소프트삭제는 줄 정리(reconcileCrAfterRemoval)를 같은 함수 안에서 거친다.
+  //     줄을 일부러 안 건드리는 길은 까닭과 함께 여기 적는다(늘리면 리뷰에 걸리게).
+  const DELETE_EXEMPT = {
+    finalizeRentRefund: '환불 대기. 줄은 홈택스 사실이라 안 내리고 taxNotice 로 취소·재발행을 말한다',
+    undoShortStayExtension: '조정 전표 마커(isBillingAdjust): 받은 돈이 아니라 발행 키에 안 든다',
+    undoRentRefund: '확정액 record 를 지우고 원 수납을 되살린다. ⓗ-2 의 정렬(alignRevivedStamps)이 맡는다',
+  }
+  // ⓗ-2 수납 복원(deletedAt: null)은 적용취소 스냅샷(applyCrUndo)이나 도장 정렬(alignRevivedStamps)을 거친다.
+  const RESTORE_NEEDS = {
+    restorePayment: ['applyCrUndo(', 'alignRevivedStamps('],
+    undoReservationPrepaidCancel: ['applyCrUndo(', 'alignRevivedStamps('],
+    undoRentRefund: ['alignRevivedStamps('],
+  }
+  for (const [file, fns] of [[SRV, srvFns], [TEN, tenFns]]) {
+    for (const [name, b] of fns) {
+      for (const m of b.matchAll(/paymentRecord\.(updateMany|update)\(/g)) {
+        const call = braceBlock(b, b.indexOf('{', m.index))
+        if (!call) continue
+        const data = call.slice(call.indexOf('data:'))
+        if (/deletedAt:\s*null/.test(data)) {
+          const need = RESTORE_NEEDS[name]
+          if (!need) violations.push(`${file} ${name}: 수납을 되살리는데 발행 줄 복원 규칙이 정해지지 않았다(applyCrUndo·alignRevivedStamps). 되살린 수납의 옛 도장이 줄 없이 남는다(검수 R6).`)
+          else for (const n of need) if (!b.includes(n)) violations.push(`${file} ${name}: 수납 복원이 ${n.slice(0, -1)} 을 안 거친다.`)
+        } else if (/deletedAt(:\s*(new Date\(\)|deletedAt|now|at)\b|\s*[,}])/.test(data)) {
+          if (!b.includes('reconcileCrAfterRemoval(') && !DELETE_EXEMPT[name]) {
+            violations.push(`${file} ${name}: 수납을 지우면서 발행 줄 정리(reconcileCrAfterRemoval)를 안 거친다. 아무 수납도 안 가리키는 줄이 합계에 남는다(결함 D10).`)
+          }
+        }
+      }
+    }
+  }
+  for (const n of Object.keys(DELETE_EXEMPT)) if (!tenFns.has(n) && !srvFns.has(n)) violations.push(`ⓗ-1 면제 목록의 ${n} 이 없다. 이름이 바뀌었으면 이 그물부터 고친다.`)
+
+  // ⓗ-3 엔진의 모든 조회·쓰기가 영업장으로 걸린다. 적용취소 토큰은 화면을 거쳐 돌아온 값이라,
+  //     한 자리만 빠져도 남의 영업장 줄·도장을 건드리는 문이 된다.
+  {
+    if (!/const where = \{ propertyId: ref\.propertyId,/.test(eng)) violations.push(`${ENG} readCrKey: 키 조회 조건(where)이 영업장으로 시작하지 않는다.`)
+    let n = 0
+    for (const m of eng.matchAll(/\b(db|prisma)\.(cashReceipt|paymentRecord|extraIncome)\.(findMany|findFirst|updateMany|update|create|deleteMany|count)\(/g)) {
+      n++
+      const call = braceBlock(eng, eng.indexOf('{', m.index))
+      if (!call || !/propertyId|\.\.\.where\b/.test(call)) {
+        const line = eng.slice(0, m.index).split('\n').length
+        violations.push(`${ENG}:${line}: ${m[2]}.${m[3]} 가 영업장(propertyId)으로 안 걸린다.`)
+      }
+    }
+    if (n < 10) violations.push(`${ENG}: 엔진의 표 접근을 ${n}곳밖에 못 찾았다(기대 10곳 이상). 모양이 바뀌었으면 이 그물부터 고친다.`)
+  }
+
+  // ⓗ-4 화면이 보낸 계약 id 로 줄을 만드는 두 문은 계약이 이 영업장 것인지 먼저 본다.
+  {
+    const set = srvFns.get('setPaymentCashReceipt') ?? ''
+    if (!/prisma\.leaseTerm\.findFirst\(\{ where: \{ id: input\.leaseTermId, propertyId \}/.test(set)) {
+      violations.push(`${SRV} setPaymentCashReceipt: 계약 소유(영업장) 확인이 없다. 남의 계약 키에 줄을 세울 수 있다.`)
+    }
+    const batch = srvFns.get('batchSetCashReceipts') ?? ''
+    if (!/prisma\.leaseTerm\.findMany\(\{\s*where: \{ propertyId, id: \{ in:/.test(batch)) {
+      violations.push(`${SRV} batchSetCashReceipts: 계약 소유(영업장) 확인이 없다. 남의 계약 키에 줄을 세울 수 있다.`)
+    }
+  }
+
+  // ⓗ-5 키를 만지는 트랜잭션은 첫머리에서 키를 잠근다(W6). 잠금(lockCrKey·lockCrKeys, 또는 안에서 잠그는
+  //     applyCrUndo)이 그 트랜잭션의 첫 엔진 호출·첫 쓰기보다 앞서야 한다.
+  {
+    const ENGINE = /\b(captureCr|readCrKey|writeCrKey|reconcileCrAfterRemoval|setStamps|alignRevivedStamps)\(|\btx\.\w+\.(update|updateMany|create|delete|deleteMany)\(/
+    for (const [file, fns] of [[SRV, srvFns], [TEN, tenFns]]) {
+      for (const [name, b] of fns) {
+        for (const m of b.matchAll(/\$transaction\(async tx => \{/g)) {
+          const tx = braceBlock(b, m.index + m[0].length - 1)
+          if (!tx || !ENGINE.test(tx) || !/(captureCr|writeCrKey|reconcileCrAfterRemoval|alignRevivedStamps|applyCrUndo)\(/.test(tx)) continue
+          const lock = tx.search(/\b(lockCrKeys?|applyCrUndo)\(/)
+          const first = tx.search(ENGINE)
+          if (lock < 0 || lock > first) violations.push(`${file} ${name}: 발행 키를 만지는 트랜잭션이 첫머리에서 키를 잠그지 않는다(lockCrKey). 같은 키의 동시 조작이 서로의 판정을 덮는다.`)
+        }
+      }
+    }
+    const apply = fnBody(eng, 'export async function applyCrUndo(')
+    if (!apply || !/lockCrKeys\(db, undo\.keys/.test(apply)) violations.push(`${ENG} applyCrUndo: 토큰이 뜬 키를 잠그지 않는다.`)
+    if (!/pg_advisory_xact_lock\(hashtext\(/.test(eng)) violations.push(`${ENG}: 키 잠금이 트랜잭션 단위 권고 잠금(pg_advisory_xact_lock)이 아니다.`)
+  }
+
+  // ⓗ-6 적용취소 토큰은 서버가 서명하고 복원 전에 대조한다(W4). 서명과 상관없이 미래 도장·키 밖 record 는 막는다.
+  {
+    const apply = fnBody(eng, 'export async function applyCrUndo(') ?? ''
+    const verifyAt = apply.indexOf('verifyCrUndo(propertyId, undo)')
+    const firstWrite = apply.search(/\.(updateMany|update|create)\(/)
+    if (verifyAt < 0 || (firstWrite >= 0 && verifyAt > firstWrite)) violations.push(`${ENG} applyCrUndo: 쓰기 전에 토큰 서명을 대조하지 않는다(검수 R8).`)
+    if (!/st\.before != null && new Date\(st\.before\)\.getTime\(\) > now \+ 60_000/.test(apply)) violations.push(`${ENG} applyCrUndo: 되돌릴 도장이 미래인 토큰을 거부하지 않는다.`)
+    if (!/inKey\.has\(st\.id\)/.test(apply)) violations.push(`${ENG} applyCrUndo: 도장 record 가 토큰이 뜬 키의 것인지 대조하지 않는다.`)
+    const finish = fnBody(eng, 'export async function finishCrUndo(') ?? ''
+    if (!/signCrUndo\(/.test(finish)) violations.push(`${ENG} finishCrUndo: 적용취소 토큰에 서명하지 않는다.`)
+    const parse = fnBody(lib, 'export function parseCashReceiptUndo(') ?? ''
+    if (!/CASH_RECEIPT_UNDO_MAX_KEYS/.test(parse) || !/CASH_RECEIPT_UNDO_MAX_STAMPS/.test(parse)) violations.push(`${LIB} parseCashReceiptUndo: 토큰 길이 상한이 없다.`)
+    if (!/l\.before && l\.after && l\.before\.id !== l\.after\.id/.test(parse)) violations.push(`${LIB} parseCashReceiptUndo: 한 줄의 쓰기 전·쓴 직후 id 가 같은지 안 본다.`)
+    const undoEdit = srvFns.get('undoPaymentEdit') ?? ''
+    if (!/verifyPaymentEditUndo\(propertyId, undo\)/.test(undoEdit)) violations.push(`${SRV} undoPaymentEdit: 수정 저장 토큰의 서명을 대조하지 않는다.`)
+  }
+
+  // ⓗ-7 화면 배선. 수정 폼은 한 번만 부르고 토큰 하나로 되돌린다(F1·W8), 등록 적용취소는 발행 토큰을 넘긴다(F2).
+  {
+    const save = list.slice(list.indexOf('const handleSaveEdit'), list.indexOf('const handleDelete'))
+    if (!save || /setPaymentCashReceipt\(/.test(save)) violations.push(`${LIST} handleSaveEdit: 저장 뒤 발행 금액 문을 또 부른다. 서버가 합친 결과를 옛 금액으로 덮는다(검수 F1).`)
+    if (!/cashReceiptAmount: editCrAmount/.test(save) || !/crChanged \?/.test(save)) violations.push(`${LIST} handleSaveEdit: 고친 발행 금액을 저장 한 번에 싣지 않는다(검수 F1).`)
+    if (!/label: '적용취소'[\s\S]{0,300}undoPaymentEdit\(undo\)/.test(save)) violations.push(`${LIST} handleSaveEdit: 수정 저장 토스트에 적용취소(undoPaymentEdit)가 없다(검수 W8).`)
+    const undoEditSig = srv.match(/export async function undoPaymentEdit\(([\s\S]*?)\):/)
+    if (!undoEditSig || /crUndo/.test(undoEditSig[1])) violations.push(`${SRV} undoPaymentEdit: 토큰을 둘 받는다. 수정 저장의 적용취소 토큰은 하나다(검수 F1).`)
+    const calls = [...form.matchAll(/undoOverpayExtraIncome\(([^)]*)\)/g)]
+    if (calls.length < 2) violations.push(`${FORM}: 등록 적용취소(undoOverpayExtraIncome) 호출을 ${calls.length}곳밖에 못 찾았다(기대 2, 분해·과납).`)
+    for (const c of calls) if (!/crUndo/.test(c[1])) violations.push(`${FORM}: 등록 적용취소가 발행 기록 토큰을 안 넘긴다: undoOverpayExtraIncome(${c[1]}) (검수 F2).`)
+  }
+}
+
+console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 · ⓗ 생애주기 배선 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
