@@ -7,6 +7,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { getRentDiscounts, addRentDiscount, deleteRentDiscount, previewDiscountEnd, endRentDiscount, undoEndRentDiscount, type RentDiscountRow } from '@/app/(app)/rooms/actions'
 import { getDiscountReasons, addDiscountReason } from '@/app/(app)/settings/actions'
 import CategorySelect from '@/components/ui/CategorySelect'
+import { normalizeOptionName } from '@/lib/optionLists'
 import { discountLabel } from '@/lib/rentDiscount'
 import { kstMonthStr } from '@/lib/kstDate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -44,6 +45,8 @@ export function DiscountWidget({ leaseTermId, onChange }: {
 
   const handleAdd = () => {
     if (!(value > 0)) return
+    // 사유는 목록 글자와 같게 정규화한다(쉼표 제거·공백 축약). 서버 addRentDiscount·addDiscountReason 과 한 규칙.
+    const why = normalizeOptionName('discountReasons', reason)
     startTransition(async () => {
       const res = await withSave(() => addRentDiscount({
         leaseTermId,
@@ -52,12 +55,12 @@ export function DiscountWidget({ leaseTermId, onChange }: {
         scope,
         startMonth: start || null,
         endMonth:   scope === 'temporary' && end   ? end   : null,
-        ...(reason.trim() ? { memo: reason.trim() } : {}),
+        ...(why ? { memo: why } : {}),
       }), { success: '할인 적용됨' })
       if (!res.ok) return
       // 목록에 없는 사유를 적었으면 영업장 목록에 더한다 — 다음에도 고를 수 있게.
-      if (reason.trim() && !reasonOptions.includes(reason.trim())) {
-        await addDiscountReason(reason.trim()).catch(() => {})
+      if (why && !reasonOptions.includes(why)) {
+        await addDiscountReason(why).catch(() => {})
         setReasonOptions(await getDiscountReasons().catch(() => reasonOptions))
       }
       await reload()
@@ -221,6 +224,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             placeholder="할인 사유를 직접 입력하세요"
             closeIconSize={12}
             showAddHint
+            addHintText="새로 입력한 사유는 할인을 적용할 때 목록에 저절로 추가됩니다. 목록 관리는 환경설정 > 분류 관리에서 합니다."
             className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none" />
           <div className="flex gap-2">
             <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>

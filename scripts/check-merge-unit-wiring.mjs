@@ -72,7 +72,10 @@ need('수정 저장이 보존 게이트를 지킨 채 정본 단가기준을 쓴
   'has 게이트가 빠지면 카테고리만 수정할 때 단가 기준이 null 로 덮인다')
 need('수정 후처리가 정본 품명을 쓴다',
   /propagateItemLabelRename\(propertyId, category, existing\.itemLabel, itemLabel\)/.test(updateExpense))
-need('수정 저장의 단위 적립이 정본 단위를 쓴다', /noteUnits\(\[specUnit\], \[qtyUnit\]\)/.test(updateExpense))
+// 원래 쓰던 단위를 빼는 newUnitsOnly 로 감싸도(목록에서 뺀 단위가 재저장마다 되살아나지 않게, 2026-10-13)
+// 적립하는 값은 정본 변수 specUnit·qtyUnit 이어야 한다. 낱개 폼 필드(formSpecUnit)면 환산 전 값이 목록에 샌다.
+need('수정 저장의 단위 적립이 정본 단위를 쓴다',
+  /noteUnits\((?:newUnitsOnly\()?\[specUnit\](?:, existing\?\.specUnit\))?, (?:newUnitsOnly\()?\[qtyUnit\](?:, existing\?\.qtyUnit\))?\)/.test(updateExpense))
 // 화면 — 재고 미리보기도 환산 후 수량으로 물어야 한다(서버가 저장하는 값과 같은 값으로).
 const financeClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
 need('수정 저장의 재고 미리보기가 환산 후 품목을 쓴다',

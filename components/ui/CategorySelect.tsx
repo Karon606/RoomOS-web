@@ -6,7 +6,7 @@ import { useState } from 'react'
 export default function CategorySelect({
   value, onChange, options, className, wrapperClassName,
   emptyLabel, placeholder = '카테고리를 직접 입력하세요',
-  closeIconSize = 14, showAddHint = false, name,
+  closeIconSize = 14, showAddHint = false, addHintText, name,
 }: {
   value: string
   onChange: (v: string) => void
@@ -22,6 +22,8 @@ export default function CategorySelect({
   closeIconSize?: number
   /** 입력창 활성 시 '저장하면 목록에 추가' 인라인 힌트 노출(단위 입력에는 해당 없음). */
   showAddHint?: boolean
+  /** 힌트 문구. 목록이 카테고리가 아닌 자리(할인 사유·직업)는 그 낱말로 말한다. 없으면 카테고리 문구. */
+  addHintText?: string
   /** FormData 로 제출되는 폼에서 필드명 유지용. */
   name?: string
 }) {
@@ -46,7 +48,7 @@ export default function CategorySelect({
             className="shrink-0 px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         {showAddHint && (
-          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">새로 입력한 카테고리는 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.</p>
+          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">{addHintText ?? '새로 입력한 카테고리는 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.'}</p>
         )}
       </div>
     )

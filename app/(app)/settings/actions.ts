@@ -16,7 +16,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
-import { OPTION_LIST_DEFAULTS, parseOptionList, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, type OptionListField } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, type OptionListField, type RenameTarget } from '@/lib/optionLists'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -159,8 +159,10 @@ export async function getRoomTypeOptions(): Promise<string[]> {
   return parseOptionList('roomTypeOptions', (property as any)?.roomTypeOptions)
 }
 
-export async function addRoomTypeOption(name: string) {
+export async function addRoomTypeOption(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('roomTypeOptions', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getRoomTypeOptions()
   if (current.includes(name)) return
@@ -205,8 +207,10 @@ export async function getWorkKindOptions(): Promise<string[]> {
   return parseOptionList('workKindOptions', property?.workKindOptions)
 }
 
-export async function addWorkKindOption(name: string) {
+export async function addWorkKindOption(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('workKindOptions', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getWorkKindOptions()
   if (current.includes(name)) return
@@ -242,8 +246,10 @@ export async function getRoomTierOptions(): Promise<string[]> {
   return parseOptionList('roomTierOptions', (property as any)?.roomTierOptions)
 }
 
-export async function addRoomTierOption(name: string) {
+export async function addRoomTierOption(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('roomTierOptions', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getRoomTierOptions()
   if (current.includes(name)) return
@@ -278,8 +284,10 @@ export async function getWindowTypeOptions(): Promise<string[]> {
   return parseOptionList('windowTypeOptions', (property as any)?.windowTypeOptions)
 }
 
-export async function addWindowTypeOption(name: string) {
+export async function addWindowTypeOption(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('windowTypeOptions', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getWindowTypeOptions()
   if (current.includes(name)) return
@@ -314,8 +322,10 @@ export async function getRoomDirectionOptions(): Promise<string[]> {
   return parseOptionList('directionOptions', (property as any)?.directionOptions)
 }
 
-export async function addRoomDirectionOption(name: string) {
+export async function addRoomDirectionOption(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('directionOptions', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getRoomDirectionOptions()
   if (current.includes(name)) return
@@ -352,8 +362,10 @@ export const getIncomeCategories = cache(async function getIncomeCategories(): P
   return parseOptionList('incomeCategories', (property as any)?.incomeCategories)
 })
 
-export async function addIncomeCategory(name: string) {
+export async function addIncomeCategory(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('incomeCategories', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getIncomeCategories()
   if (current.includes(name)) return
@@ -460,24 +472,21 @@ export async function deleteUnitOption(kind: 'spec' | 'qty', name: string) {
 }
 
 // 입주자 직업 목록 — getExpenseCategories 와 같은 문법이다(영업장 행 안에 있어 다른 영업장으로
-// 샐 경로가 구조적으로 없다). 기본값은 코드에 두고 칼럼이 비었을 때만 폴백한다.
-const DEFAULT_JOB_OPTIONS = '직장인,학생,고시생,취업준비생,대학원생,프리랜서,자영업자,아르바이트,무직,의료인,교사 / 강사,군인,공무원,연구원,운전기사,기술직,서비스직,건설업,요식업,예술 / 창작'
-
+// 샐 경로가 구조적으로 없다). 기본값은 lib/optionLists 정본에 두고 칼럼이 비었을 때만 폴백한다.
 export const getJobOptions = cache(async function getJobOptions(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { jobOptions: true } as any,
+    select: { jobOptions: true },
   })
-  const raw = (property as any)?.jobOptions ?? DEFAULT_JOB_OPTIONS
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('jobOptions', property?.jobOptions)
 })
 
 /** 직업을 목록에 더한다 — 입주자 저장에서 목록 밖 값이 들어오면 자동으로 부른다. */
 export async function addJobOption(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()
-  const clean = name.trim()
+  const clean = normalizeOptionName('jobOptions', name)
   if (!clean) return
   const current = await getJobOptions()
   if (current.includes(clean)) return
@@ -489,37 +498,79 @@ export async function addJobOption(name: string) {
   revalidatePath('/settings')
 }
 
-// 월 이용료 할인 사유 — 직업 목록과 같은 문법이다.
-const DEFAULT_DISCOUNT_REASONS = '프로모션,양곡지원,공공요금,에너지바우처'
+/**
+ * 직업을 목록에서 뺀다. **이미 저장된 입주자의 직업(Tenant.job)은 그대로 둔다.**
+ * 단위 빼기와 같은 계약이다. 드롭다운에서만 사라지고, 그 직업으로 저장된 입주자는 폼을 열면
+ * 직접 입력 칸에 그 글자 그대로 선다(CategorySelect 하위호환).
+ */
+export async function deleteJobOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getJobOptions()
+  const next = current.filter(j => j !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { jobOptions: next.join(',') },
+  })
+  revalidatePath('/tenants')
+  revalidatePath('/settings')
+}
 
+// 월 이용료 할인 사유. 직업 목록과 같은 문법이다.
+//
+// 사유는 라벨이다. 할인에는 글자로 복사돼(RentDiscount.memo) 붙고 금액 계산은 안 읽는다
+// (lib/rentDiscount). 그래서 목록에서 빼도 이미 적용된 할인은 그 글자 그대로 남고, 이름을 바꾸면
+// 이 영업장의 할인 사유도 함께 바뀐다(RENAME_CASCADE.discountReasons, 적용취소 가능).
 export const getDiscountReasons = cache(async function getDiscountReasons(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { discountReasons: true } as any,
+    select: { discountReasons: true },
   })
-  const raw = (property as any)?.discountReasons ?? DEFAULT_DISCOUNT_REASONS
-  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return parseOptionList('discountReasons', property?.discountReasons)
 })
 
 /** 할인 사유를 목록에 더한다 — 할인 적용에서 목록 밖 사유가 들어오면 자동으로 부른다. */
 export async function addDiscountReason(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()
-  const clean = name.trim()
+  // 쉼표는 저장 구분자라 지운다(normalizeOptionName). 할인에 붙는 사유(RentDiscount.memo,
+  // addRentDiscount)도 같은 정규화를 거쳐 목록 글자와 할인 글자가 맞는다.
+  const clean = normalizeOptionName('discountReasons', name)
   if (!clean) return
   const current = await getDiscountReasons()
   if (current.includes(clean)) return
   await prisma.property.update({
     where: { id: propertyId },
-    data: { discountReasons: [...current, clean].join(',') } as any,
+    data: { discountReasons: [...current, clean].join(',') },
   })
-  revalidatePath('/payments')
+  revalidatePath('/rooms')
   revalidatePath('/settings')
 }
 
-export async function addExpenseCategory(name: string) {
+/**
+ * 할인 사유를 목록에서 뺀다. **이미 적용된 할인의 사유는 그대로 둔다.**
+ * 단위 빼기와 같은 계약이다. 고를 때만 안 보이고, 그 사유가 붙은 할인은 글자 그대로 남는다.
+ */
+export async function deleteDiscountReason(name: string) {
   await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getDiscountReasons()
+  const next = current.filter(r => r !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { discountReasons: next.join(',') },
+  })
+  revalidatePath('/rooms')
+  revalidatePath('/settings')
+}
+
+export async function addExpenseCategory(rawName: string) {
+  await requireEdit()
+  const name = normalizeOptionName('expenseCategories', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getExpenseCategories()
   if (current.includes(name)) return
@@ -554,8 +605,10 @@ export const getRequestCategories = cache(async function getRequestCategories():
   return parseOptionList('requestCategories', (property as any)?.requestCategories)
 })
 
-export async function addRequestCategory(name: string) {
+export async function addRequestCategory(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('requestCategories', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getRequestCategories()
   if (current.includes(name)) return
@@ -594,6 +647,8 @@ function revalidateOptionList(field: ReorderableField) {
     revalidatePath('/room-manage')
   }
   if (field === 'requestCategories') revalidatePath('/requests')
+  if (field === 'discountReasons') revalidatePath('/rooms')
+  if (field === 'jobOptions') revalidatePath('/tenants')
 }
 
 /**
@@ -669,7 +724,7 @@ export async function undoResetOptions(field: ReorderableField, before: string[]
 // 옵션 값은 데이터 행에 문자열 그대로 박혀 있다. 목록만 고치면 기존 행은 옛 이름으로 남아 고아가 되므로,
 // 이름을 바꾸면 그 값을 쓰는 행도 함께 갱신한다(운영자 오더 2026-07-27).
 // 여기엔 updateMany 가능한 평면 컬럼만 — JSON 문자열(wishConditions·inventoryCategories)은 아래에서 따로 처리.
-const RENAME_CASCADE: Record<ReorderableField, { model: string; column: string }[]> = {
+const RENAME_CASCADE: Record<ReorderableField, RenameTarget[]> = {
   requestCategories: [
     { model: 'tenantRequest', column: 'category' },
   ],
@@ -710,6 +765,15 @@ const RENAME_CASCADE: Record<ReorderableField, { model: string; column: string }
   // count 와 updateMany 가 둘 다 삭제분을 포함한다 — RENAME_SOFT_DELETE_MODELS 에 넣으면
   // 오히려 두 숫자가 갈린다(디자인 패널 지적 2026-08-25).
   workKindOptions:   [{ model: 'roomWork', column: 'kind' }],
+  // 할인 사유. RentDiscount 에는 propertyId 가 없어 계약으로 영업장을 거른다(via, optionRenameWhere).
+  // 그냥 { model, column } 으로 넣으면 실행 오류이거나 다른 영업장 할인까지 바뀐다.
+  // 사유는 라벨이라 금액은 안 바뀐다(lib/rentDiscount 는 memo 를 안 읽는다).
+  discountReasons:   [{ model: 'rentDiscount', column: 'memo', via: 'leaseTerm' }],
+  // 입주자 직업. Tenant 는 propertyId 를 가진다. 직업은 계약서 정보표 축이 아니다(printedFacts 밖).
+  // 단 계약서 본문 변수 {{job}}(lib/docVariables·lib/contractPrintHtml contractPrintVars)로는 찍힐 수 있다.
+  // 본문에 {{job}} 을 적은 영업장은 이름을 바꾸면 그 뒤 새로 찍는 계약서에 새 이름이 나간다. 이미 발급된
+  // PDF 와 서명본은 박제라 안 바뀐다(knowledge/domain-contracts). 운영 템플릿에는 {{job}} 이 없다(2026-10-13 조회).
+  jobOptions:        [{ model: 'tenant', column: 'job' }],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
@@ -719,15 +783,8 @@ const RENAME_WISH_KEY: Partial<Record<ReorderableField, 'type' | 'windowType' | 
   directionOptions:  'direction',
 }
 
-// 소프트삭제 모델 — 삭제된 행의 payMethod 도 과거 표기라 함께 갱신한다.
-// updateMany 는 익스텐션 필터 대상이 아니라 삭제분까지 바꾸므로, count 에도 deletedAt 을 명시해 필터를 끈다(건수 일치).
-const RENAME_SOFT_DELETE_MODELS = new Set(['paymentRecord', 'extraIncome'])
-
-function renameWhere(model: string, column: string, propertyId: string, oldValue: string) {
-  const where: Record<string, unknown> = { propertyId, [column]: oldValue }
-  if (RENAME_SOFT_DELETE_MODELS.has(model)) where.deletedAt = undefined
-  return where
-}
+// 고칠 행의 조건(영업장 범위·소프트삭제 포함)은 lib/optionLists 의 optionRenameWhere 한 곳이 정한다.
+// 건수 고지·이름 변경·적용취소 셋이 같은 조건을 써야 숫자와 실제가 안 갈린다.
 
 // contains 로 1차로 걸러온 행 중, 해당 키 값이 정확히 oldValue 인 행만.
 function pickWishRows(rows: { id: string; wishConditions: string | null }[], key: string, oldValue: string) {
@@ -752,7 +809,7 @@ export async function countRenameTargets(field: ReorderableField, oldValue: stri
   const propertyId = await getPropertyId()
   let total = 0
   for (const t of RENAME_CASCADE[field]) {
-    total += await (prisma as any)[t.model].count({ where: renameWhere(t.model, t.column, propertyId, oldValue) })
+    total += await (prisma as any)[t.model].count({ where: optionRenameWhere(t, propertyId, oldValue) })
   }
   const wishKey = RENAME_WISH_KEY[field]
   if (wishKey) {
@@ -791,7 +848,7 @@ export type RenameOptionResult = { ok: true; updated: number; undo: RenameUndo |
 const OPTION_LIST_SELECT = {
   roomTypeOptions: true, roomTierOptions: true, windowTypeOptions: true, directionOptions: true,
   incomeCategories: true, expenseCategories: true, paymentMethods: true, requestCategories: true,
-  workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true,
+  workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true,
 } as const satisfies Record<ReorderableField, true>
 
 // 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.
@@ -815,10 +872,16 @@ function revalidateRenamed(field: ReorderableField) {
   if (field === 'expenseCategories') revalidatePath('/inventory')
   if (field === 'paymentMethods') revalidatePath('/tenants')
   if (RENAME_CASCADE[field].some(t => t.model === 'room')) revalidatePath('/rooms')
+  if (field === 'discountReasons') { revalidatePath('/rooms'); revalidatePath('/tenants') }
+  if (field === 'jobOptions') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
 }
 
-export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<RenameOptionResult> {
+export async function renameOption(field: ReorderableField, oldValue: string, rawNewValue: string): Promise<RenameOptionResult> {
   await requireEdit()
+  // 목록 추가와 같은 정규화를 거친다(normalizeOptionName). 쉼표가 남으면 목록이 두 줄로 쪼개지고
+  // 그 글자를 쓰는 기록과 목록 글자가 갈린다. 종전에는 할인 사유만 거쳤다.
+  const newValue = normalizeOptionName(field, rawNewValue)
+  if (!newValue) return { ok: false, error: '이름을 입력하세요.' }
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -858,7 +921,7 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
       data: { [field]: updated } as any,
     })
     for (const t of RENAME_CASCADE[field]) {
-      const where = renameWhere(t.model, t.column, propertyId, oldValue)
+      const where = optionRenameWhere(t, propertyId, oldValue)
       // 바꿀 행의 id 를 먼저 쥔다. 적용취소가 이 행들만 되돌린다(값 기준 금지, RenameUndo).
       const ids = (await renameDelegate(tx, t.model).findMany({ where, select: { id: true } })).map(r => r.id)
       if (ids.length === 0) continue
@@ -912,22 +975,23 @@ export async function undoRenameOption(undo: RenameUndo): Promise<{ ok: true; it
   await requireEdit()
   const propertyId = await getPropertyId()
   const { field, oldValue, newValue } = undo
+  // 적용취소도 이름 변경 입구와 같은 문을 지난다. 되돌리는 쪽(새 이름에서 옛 이름으로)이 보호 이름에 걸리거나
+  // 옛 이름이 목록 정규화에서 벗어나면 화면을 거쳐 온 표가 틀린 것이라 아무것도 안 고친다(2차 검수).
+  const protectedError = protectedRenameError(field, newValue, oldValue)
+  if (protectedError) return { ok: false, error: protectedError }
+  if (normalizeOptionName(field, oldValue) !== oldValue) return { ok: false, error: '적용취소할 대상을 확인하지 못했습니다.' }
+  // 되돌릴 행의 조건은 서버 표(RENAME_CASCADE)의 칸으로 만든다(lib/optionLists renameUndoPlan).
   const cascade = RENAME_CASCADE[field]
-  if (!cascade || !undo.rows.every(r => cascade.some(t => t.model === r.model && t.column === r.column))) {
-    return { ok: false, error: '적용취소할 대상을 확인하지 못했습니다.' }
-  }
+  const plan = cascade ? renameUndoPlan(cascade, undo, propertyId) : null
+  if (!plan) return { ok: false, error: '적용취소할 대상을 확인하지 못했습니다.' }
   const result = await prisma.$transaction(async (tx) => {
     const property = await tx.property.findUnique({ where: { id: propertyId }, select: OPTION_LIST_SELECT })
     const { next, changed } = optionListAfterRenameUndo(field, property?.[field], oldValue, newValue)
     // 실제로 되돌린 것이 있는가. 목록에 새 이름이 없고 되돌린 행도 0이면 그사이 누가 또 바꾼 것이다.
     let reverted = changed ? 1 : 0
     await tx.property.update({ where: { id: propertyId }, data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput })
-    for (const r of undo.rows) {
-      if (r.ids.length === 0) continue
-      const res = await renameDelegate(tx, r.model).updateMany({
-        where: { ...renameWhere(r.model, r.column, propertyId, newValue), id: { in: r.ids } },
-        data: { [r.column]: oldValue },
-      })
+    for (const step of plan) {
+      const res = await renameDelegate(tx, step.model).updateMany({ where: step.where, data: { [step.column]: oldValue } })
       reverted += res.count
     }
     const wishKey = RENAME_WISH_KEY[field]
@@ -970,8 +1034,10 @@ export const getPaymentMethods = cache(async function getPaymentMethods(): Promi
   return parseOptionList('paymentMethods', (property as any)?.paymentMethods)
 })
 
-export async function addPaymentMethod(name: string) {
+export async function addPaymentMethod(rawName: string) {
   await requireEdit()
+  const name = normalizeOptionName('paymentMethods', rawName)
+  if (!name) return
   const propertyId = await getPropertyId()
   const current = await getPaymentMethods()
   if (current.includes(name)) return

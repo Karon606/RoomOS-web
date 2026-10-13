@@ -9,16 +9,17 @@
 // 이 파일은 'use server' 가 아니다. 서버 액션 파일은 상수를 내보낼 수 없고, 확인창(클라이언트)도
 // 같은 값을 읽어야 한다.
 
-import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions } from '@/lib/unitOptions'
+import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, normalizeUnitInput } from '@/lib/unitOptions'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { PAYMENT_METHODS, CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { DEFAULT_INVENTORY_CATEGORIES } from '@/app/(app)/inventory/constants'
+import { normalizeCategoryInput } from '@/lib/categoryInput'
 
 export type OptionListField =
   | 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions'
   | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories'
-  | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions'
+  | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions' | 'discountReasons' | 'jobOptions'
 
 export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = {
   roomTypeOptions:   ['원룸', '미니룸'],
@@ -35,6 +36,10 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   workKindOptions:   ['도배', '장판'],
   specUnitOptions:   DEFAULT_SPEC_UNITS,
   qtyUnitOptions:    DEFAULT_QTY_UNITS,
+  // 칸이 빈 영업장(새 영업장)만 이 값을 본다. 이미 목록을 저장한 영업장은 '입실자 소개' 가 저절로
+  // 생기지 않는다. 운영자가 분류 관리 탭에서 직접 더한다(신고 78bb0141, 기존 목록 불변).
+  discountReasons:   ['프로모션', '양곡지원', '공공요금', '에너지바우처', '입실자 소개'],
+  jobOptions:        ['직장인', '학생', '고시생', '취업준비생', '대학원생', '프리랜서', '자영업자', '아르바이트', '무직', '의료인', '교사 / 강사', '군인', '공무원', '연구원', '운전기사', '기술직', '서비스직', '건설업', '요식업', '예술 / 창작'],
 }
 
 /**
@@ -49,6 +54,19 @@ export function parseOptionList(field: OptionListField, raw: string | null | und
   if (field === 'specUnitOptions') return parseUnitOptions(raw, DEFAULT_SPEC_UNITS)
   if (field === 'qtyUnitOptions') return parseUnitOptions(raw, DEFAULT_QTY_UNITS)
   return (raw ?? OPTION_LIST_DEFAULTS[field].join(',')).split(',').map(s => s.trim()).filter(Boolean)
+}
+
+/**
+ * 목록에 들어갈 이름의 정규화 정본. 손 추가·자동 추가·이름 변경·빼기 적용취소가 모두 이것을 거친다.
+ *
+ * 쉼표는 저장 구분자라 지운다. 남기면 '입실자, 소개' 가 목록에서 두 줄로 쪼개지고, 그 글자를 쓰는
+ * 기록(할인 사유·입주자 직업 등)과 목록 글자가 갈려 이름 변경이 그 기록을 못 따라간다. 종전에는
+ * 할인 사유만 이 정규화를 거쳤다(독립 검수 2026-10-13). 단위는 단위 정본(normalizeUnitInput,
+ * 글자 없는 표기를 거르고 같은 정규화를 한다)을 쓴다.
+ */
+export function normalizeOptionName(field: OptionListField, raw: string | null | undefined): string {
+  if (field === 'specUnitOptions' || field === 'qtyUnitOptions') return normalizeUnitInput(raw) ?? ''
+  return normalizeCategoryInput(raw)
 }
 
 /**
@@ -170,12 +188,57 @@ export function optionListAfterRenameUndo(field: OptionListField, raw: string | 
  */
 export function optionListAfterRestore(field: OptionListField, raw: string | null | undefined, rawName: string, index: number): { next: string[]; changed: boolean; name: string } {
   const list = parseOptionList(field, raw)
-  const name = rawName
+  const name = normalizeOptionName(field, rawName)
   const next = insertOptionAt(list, name, index)
   return { next, changed: next.length !== list.length, name }
 }
 
 /** 초기화 적용취소 뒤 목록. 지금 저장된 칸(raw)에서 초기화 뒤 생긴 항목을 지키며 직전 목록(before)으로 간다. */
 export function optionListAfterResetUndo(field: OptionListField, raw: string | null | undefined, before: readonly string[]): string[] {
-  return mergeResetUndo(before, OPTION_LIST_DEFAULTS[field], parseOptionList(field, raw))
+  // before 는 화면을 거쳐 왔으므로 목록 이름 정규화를 다시 거친다(쉼표가 섞이면 목록이 쪼개진다).
+  return mergeResetUndo(before.map(v => normalizeOptionName(field, v)), OPTION_LIST_DEFAULTS[field], parseOptionList(field, raw))
+}
+
+/** 이름 변경이 따라가는 데이터 칸 하나. via 가 있으면 그 모델에 propertyId 가 없어 관계로 영업장을 거른다. */
+export type RenameTarget = { model: string; column: string; via?: 'leaseTerm' }
+
+// 소프트삭제 모델. 삭제된 행의 값도 과거 표기라 함께 갱신한다. updateMany 는 익스텐션 필터 대상이
+// 아니라 삭제분까지 바꾸므로, count·findMany 에도 deletedAt 을 명시해 필터를 끈다(건수 일치).
+const RENAME_SOFT_DELETE_MODELS = new Set(['paymentRecord', 'extraIncome'])
+
+/**
+ * 이름 변경(과 그 적용취소)이 고칠 행의 조건. **언제나 이 영업장 안에서만** 고른다.
+ *
+ * RentDiscount 에는 propertyId 칸이 없다. 다른 칸처럼 { propertyId } 를 넣으면 실행 오류이고,
+ * 그렇다고 빼면 같은 사유를 쓰는 다른 영업장의 할인까지 바뀐다. 그래서 계약을 타고 거른다.
+ */
+export function optionRenameWhere(t: RenameTarget, propertyId: string, value: string): Record<string, unknown> {
+  const where: Record<string, unknown> = t.via === 'leaseTerm'
+    ? { leaseTerm: { propertyId }, [t.column]: value }
+    : { propertyId, [t.column]: value }
+  if (RENAME_SOFT_DELETE_MODELS.has(t.model)) where.deletedAt = undefined
+  return where
+}
+
+/**
+ * 이름 변경 적용취소가 되돌릴 행. 행마다 고칠 칸과 조건을 서버 표(cascade)의 칸으로 만든다.
+ *
+ * 적용취소 표(undo)는 화면을 거쳐 왔다. 표에 연쇄 대상이 아닌 모델·칸이 하나라도 있으면 null 이다(아무것도
+ * 안 고친다). 조건은 지금 그 행에 적힌 새 이름(newValue)과 그때 바뀐 행 id 로 고르고, 영업장 범위는
+ * optionRenameWhere 가 정한다. 옛 이름으로 고르면 아무 행도 안 걸리고, 화면이 보낸 모델·칸을 그대로 쓰면
+ * 영업장 범위(via)를 화면이 정하게 된다(2차 검수 역주입 M12·M13).
+ */
+export function renameUndoPlan(
+  cascade: readonly RenameTarget[],
+  undo: { newValue: string; rows: readonly { model: string; column: string; ids: readonly string[] }[] },
+  propertyId: string,
+): { model: string; column: string; where: Record<string, unknown> }[] | null {
+  const plan: { model: string; column: string; where: Record<string, unknown> }[] = []
+  for (const r of undo.rows) {
+    const t = cascade.find(c => c.model === r.model && c.column === r.column)
+    if (!t) return null
+    if (r.ids.length === 0) continue
+    plan.push({ model: t.model, column: t.column, where: { ...optionRenameWhere(t, propertyId, undo.newValue), id: { in: [...r.ids] } } })
+  }
+  return plan
 }

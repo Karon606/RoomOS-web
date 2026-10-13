@@ -580,10 +580,13 @@ async function backfillVendorBizNo(propertyId: string, vendor: string | null, bi
 
 // 폼에서 직접 입력한 지출 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
 // 신규면 Property.expenseCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
-async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined): Promise<string | null> {
+// 고치는 지출이 원래 쓰던 카테고리(prev)는 목록에 다시 더하지 않는다. 운영자가 목록에서 뺀 카테고리가
+// 그 지출을 다시 저장할 때마다 되살아나면 '앞으로 고를 때만 안 보인다' 는 빼기의 약속이 깨진다.
+// 새로 적은 값만 더한다(독립 검수 2026-10-13).
+async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
   const list = await getExpenseCategories()
   const { value, nextList } = resolveCategoryForSave(list, raw)
-  if (nextList) {
+  if (nextList && value !== prev) {
     await prisma.property.update({
       where: { id: propertyId },
       data: { expenseCategories: nextList.join(',') } as any,
@@ -605,6 +608,12 @@ async function noteUnits(specUnits: (string | null | undefined)[], qtyUnits: (st
     await noteUnitsUsed('spec', specUnits)
     await noteUnitsUsed('qty', qtyUnits)
   } catch { /* 목록 적립 실패가 지출 저장을 되돌리지 않는다 */ }
+}
+
+// 고치는 지출이 원래 쓰던 단위는 적립에서 뺀다. 목록에서 뺀 단위가 그 지출을 다시 저장할 때마다
+// 되살아나지 않게 한다(카테고리의 prev 와 같은 규칙, 새로 적은 값만 더한다). 저장 값과 같은 cleanUnit 으로 견준다.
+function newUnitsOnly(units: (string | null | undefined)[], prev: string | null | undefined) {
+  return units.filter(u => (cleanUnit(u) ?? null) !== (prev ?? null))
 }
 
 export async function addExpense(formData: FormData): Promise<{ ok: true; backfilled?: number } | { ok: false; error: string }> {
@@ -925,8 +934,6 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외 (수정 시 보존, 새 분할 행에도 전파)
 
     if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
-    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
-    if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
     const existing = await prisma.expense.findUnique({
       where: { id },
@@ -944,6 +951,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         date: true, targetMonth: true,
       },
     })
+    // 이 지출이 원래 쓰던 카테고리를 다시 저장할 때는 목록에 되살리지 않는다(prev, 새로 적은 값만 더한다).
+    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, existing?.category)
+    if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
     // ── 귀속월(2026-10-03 운영자 승인 2안) — 칸이 실려 오면 그 값, 안 실려 오면 기존 값 보존
     // (knowledge/form-clear-vs-absent: 빈 값=지움, 부재=건드리지 않음). 어느 쪽이든 새 날짜의 달과 같으면
@@ -1114,7 +1124,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         })] : []),
       ])
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
-      await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
+      await noteUnits(newUnitsOnly(multiItems.map(i => i.specUnit), existing?.specUnit), newUnitsOnly(multiItems.map(i => i.qtyUnit), existing?.qtyUnit))
       // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다(기록·삭제·삭제취소와 같은 클래스).
       if (existing?.recurringExpenseId) {
         await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
@@ -1238,7 +1248,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         if (await propagateItemLabelRename(propertyId, category, existing.itemLabel, itemLabel)) revalidatePath('/inventory')
       } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
     }
-    await noteUnits([specUnit], [qtyUnit])
+    await noteUnits(newUnitsOnly([specUnit], existing?.specUnit), newUnitsOnly([qtyUnit], existing?.qtyUnit))
     // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다. 종전에는 이 경로만 새서, 8/25 기록을
     // 9/2 로 고치면 실제 기록은 9월인데 기준은 8월에 남았다(2026-08-31 패널 조사에서 발견).
     if (existing?.recurringExpenseId) {

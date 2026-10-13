@@ -21,7 +21,7 @@ import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNo
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
-import { parseOptionList } from '@/lib/optionLists'
+import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
@@ -3645,7 +3645,9 @@ export async function addRentDiscount(data: {
         // 있어도 거동이 안 바뀐다. 소급 등록은 시작월을 과거로 골라서 한다(403호 같은 경우).
         startMonth:   data.startMonth ?? null,
         endMonth:     data.scope === 'temporary' ? (data.endMonth ?? null) : null,
-        memo:         data.memo ?? null,
+        // 사유는 설정 목록(Property.discountReasons)과 같은 정규화를 거친다. 쉼표가 남으면 목록 쪽은
+        // 두 줄로 쪼개지고 글자가 갈려, 사유 이름 변경(영업장 범위 일괄)이 이 할인을 못 따라간다.
+        memo:         normalizeOptionName('discountReasons', data.memo) || null,
       },
     })
     // 락인 record 정합 — 등록된 할인이 이미 수납이 있는 달에도 즉시 반영되게(신고 70cde9d6)

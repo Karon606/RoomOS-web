@@ -59,7 +59,7 @@ import {
   scheduledSegmentOn, nextRoomMove, roomScheduleText, roomScheduleLines, scheduleMode, planUndoDenial,
 } from '@/lib/roomSchedule'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
-import { parseOptionList } from '@/lib/optionLists'
+import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
@@ -914,7 +914,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const memo             = formData.get('memo') as string
   const nationality      = formData.get('nationality') as string
   const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
-  const job              = formData.get('job') as string
+  // 직업은 목록과 같은 정규화를 거쳐 저장한다(쉼표 제거·공백 축약). 그래야 목록 글자와 입주자 글자가
+  // 같아 직업 이름 변경이 이 입주자를 따라간다(할인 사유와 같은 규칙).
+  const job              = normalizeOptionName('jobOptions', formData.get('job') as string)
   // 계약 칸·가드·뒤처리는 새 진입점(addLeaseToTenant)과 문자 그대로 같은 함수를 쓴다.
   const f = readLeaseFields(formData)
 
@@ -1059,7 +1061,7 @@ export async function updateTenant(formData: FormData): Promise<
   const memo             = formData.get('memo') as string
   const nationality      = formData.get('nationality') as string
   const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
-  const job              = formData.get('job') as string
+  const job              = normalizeOptionName('jobOptions', formData.get('job') as string)   // 등록과 같은 정규화
 
   // 연락처
   const contactType       = (formData.get('contactType') as ContactType) || 'PHONE'
@@ -1320,6 +1322,8 @@ export async function updateTenant(formData: FormData): Promise<
   // 입주자 정보 수정
   const regNo = foreignRegNoPatch(formData, tenantId)
   if (!regNo.ok) return { ok: false, error: regNo.error }
+  // 고치기 전 직업. 아래 목록 자동 추가가 '새로 적은 직업' 만 더하도록 견준다.
+  const prevJob = (await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { job: true } }))?.job ?? null
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
@@ -1781,8 +1785,10 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
-  // 목록에 없는 직업을 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙).
-  if (job) await addJobOption(job).catch(() => {})
+  // 목록에 없는 직업을 새로 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙). 직업이 그대로면 안 더한다.
+  // 운영자가 목록에서 뺀 직업이 그 직업을 가진 입주자 아무나 저장할 때마다 되살아나면 '앞으로 고를 때만
+  // 안 보인다' 는 빼기의 약속이 깨진다(독립 검수 2026-10-13).
+  if (job && job !== prevJob) await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
   revalidatePath('/rooms')
@@ -4397,14 +4403,16 @@ function mainLeaseOnly<T extends { status: string; moveInDate?: Date | string | 
 
 // 폼에서 직접 입력한 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
 // 신규면 Property.requestCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
-async function resolveRequestCategoryForSave(propertyId: string, raw: string | null | undefined): Promise<string | null> {
+// 고치는 요청이 원래 쓰던 카테고리(prev)는 다시 더하지 않는다. 목록에서 뺀 항목이 그 요청을 저장할 때마다
+// 되살아나지 않게 한다(지출 카테고리와 같은 규칙, 새로 적은 값만 더한다).
+async function resolveRequestCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { requestCategories: true } as any,
   })
   const list = parseRequestCategories((property as any)?.requestCategories)
   const { value, nextList } = resolveCategoryForSave(list, raw)
-  if (nextList) {
+  if (nextList && value !== prev) {
     await prisma.property.update({
       where: { id: propertyId },
       data: { requestCategories: nextList.join(',') } as any,
@@ -4493,7 +4501,7 @@ export async function updateTenantRequest(id: string, data: {
     })
     if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
 
-    const category = await resolveRequestCategoryForSave(propertyId, data.category)
+    const category = await resolveRequestCategoryForSave(propertyId, data.category, before.category)
     // 호실 스냅샷은 대상(입주자)이 실제로 바뀔 때만 다시 뽑는다 — 요청일 소급 변경에는 불변.
     // 적용취소로 값이 넘어오면 재파생 없이 그 값 그대로 원복한다.
     const nextTenantId = data.tenantId ?? null

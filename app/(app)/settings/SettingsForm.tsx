@@ -23,6 +23,8 @@ import {
   getSpecUnitOptions, getQtyUnitOptions, addUnitOption, deleteUnitOption,
   reorderOptions, renameOption, undoRenameOption, countRenameTargets, resetOptionsToDefault, restoreOption, undoResetOptions, type RenameUndo, type OptionListResult,
   getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
+  getDiscountReasons, addDiscountReason, deleteDiscountReason,
+  getJobOptions, addJobOption, deleteJobOption,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
   exportAllData,
@@ -90,7 +92,7 @@ import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } fr
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
-import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, type OptionListField } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, type OptionListField } from '@/lib/optionLists'
 
 type Property = {
   id: string
@@ -290,7 +292,8 @@ export default function SettingsForm({
     rawNew: string,
     setItems: (updater: (prev: string[]) => string[]) => void,
   ): Promise<OptionRenamed | null> => {
-    const newVal = rawNew.trim()
+    // 서버 renameOption 과 같은 정규화 정본(쉼표 제거·공백 축약)이라 화면 목록과 저장 글자가 같다.
+    const newVal = normalizeOptionName(field, rawNew)
     if (!newVal || newVal === oldVal) return null
     // 판정에 쓰이는 이름으로(또는 그 이름에서) 바꾸려 하면 건수 확인창을 띄우기 전에 서버와 같은 문장으로 알린다.
     const blocked = protectedRenameError(field, oldVal, newVal)
@@ -358,7 +361,7 @@ export default function SettingsForm({
   useEffect(() => { getRoomTypeOptions().then(setRoomTypes).catch(console.error) }, [])
 
   const handleAddRoomType = async () => {
-    const v = newRoomType.trim(); if (!v) return
+    const v = normalizeOptionName('roomTypeOptions', newRoomType); if (!v) return
     await addRoomTypeOption(v)
     setRoomTypes(prev => [...prev, v]); setNewRoomType('')
   }
@@ -388,7 +391,7 @@ export default function SettingsForm({
   useEffect(() => { getRoomTierOptions().then(setRoomTiers).catch(console.error) }, [])
 
   const handleAddRoomTier = async () => {
-    const v = newRoomTier.trim(); if (!v) return
+    const v = normalizeOptionName('roomTierOptions', newRoomTier); if (!v) return
     await addRoomTierOption(v)
     setRoomTiers(prev => [...prev, v]); setNewRoomTier('')
   }
@@ -418,7 +421,7 @@ export default function SettingsForm({
   useEffect(() => { getWindowTypeOptions().then(setWindowTypes).catch(console.error) }, [])
 
   const handleAddWindowType = async () => {
-    const v = newWindowType.trim(); if (!v) return
+    const v = normalizeOptionName('windowTypeOptions', newWindowType); if (!v) return
     await addWindowTypeOption(v)
     setWindowTypes(prev => [...prev, v]); setNewWindowType('')
   }
@@ -448,7 +451,7 @@ export default function SettingsForm({
   useEffect(() => { getRoomDirectionOptions().then(setDirections).catch(console.error) }, [])
 
   const handleAddDirection = async () => {
-    const v = newDirection.trim(); if (!v) return
+    const v = normalizeOptionName('directionOptions', newDirection); if (!v) return
     await addRoomDirectionOption(v)
     setDirections(prev => [...prev, v]); setNewDirection('')
   }
@@ -481,7 +484,7 @@ export default function SettingsForm({
   useEffect(() => { getWorkKindOptions().then(setWorkKinds).catch(console.error) }, [])
 
   const handleAddWorkKind = async () => {
-    const v = newWorkKind.trim(); if (!v) return
+    const v = normalizeOptionName('workKindOptions', newWorkKind); if (!v) return
     await addWorkKindOption(v)
     setWorkKinds(prev => [...prev, v]); setNewWorkKind('')
   }
@@ -501,6 +504,38 @@ export default function SettingsForm({
     if (!(await confirmDialog({ title: `작업 종류를 기본값(${OPTION_LIST_DEFAULTS.workKindOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
     const r = await resetOptionsToDefault('workKindOptions')
     setWorkKinds(r.items)
+    return r.before
+  }
+
+  // ── 할인 사유 ──────────────────────────────────────────────────
+  // 수납 정보 > 월 이용료 할인에서 고르는 사유. 라벨일 뿐 금액 계산에는 안 쓰인다(lib/rentDiscount).
+  // 빼기는 목록에서만이다. 이미 적용된 할인의 사유는 글자 그대로 남는다(단위 빼기와 같은 문법).
+  const [discountReasons, setDiscountReasons] = useState<string[]>([])
+  const [newDiscountReason, setNewDiscountReason] = useState('')
+
+  useEffect(() => { getDiscountReasons().then(setDiscountReasons).catch(console.error) }, [])
+
+  const handleAddDiscountReason = async () => {
+    const v = normalizeOptionName('discountReasons', newDiscountReason); if (!v) return
+    await addDiscountReason(v)
+    setDiscountReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewDiscountReason('')
+  }
+  const handleDeleteDiscountReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 뺄까요?`, message: '이미 적용된 할인의 사유는 그대로 남습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    await deleteDiscountReason(name)
+    setDiscountReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderDiscountReasons = async (items: string[]) => {
+    setDiscountReasons(items)
+    await reorderOptions('discountReasons', items)
+  }
+  const handleRenameDiscountReason = (oldVal: string, newVal: string) =>
+    runRename('discountReasons', oldVal, newVal, setDiscountReasons)
+  const handleResetDiscountReasons = async () => {
+    if (!(await confirmDialog({ title: `할인 사유를 기본값(${OPTION_LIST_DEFAULTS.discountReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('discountReasons')
+    setDiscountReasons(r.items)
     return r.before
   }
 
@@ -589,7 +624,7 @@ export default function SettingsForm({
   useEffect(() => { getIncomeCategories().then(setIncomeCategs).catch(console.error) }, [])
 
   const handleAddIncomeCateg = async () => {
-    const v = newIncomeCateg.trim(); if (!v) return
+    const v = normalizeOptionName('incomeCategories', newIncomeCateg); if (!v) return
     await addIncomeCategory(v)
     setIncomeCategs(prev => [...prev, v]); setNewIncomeCateg('')
   }
@@ -617,7 +652,7 @@ export default function SettingsForm({
   const [newExpenseCateg, setNewExpenseCateg] = useState('')
   useEffect(() => { getExpenseCategories().then(setExpenseCategs).catch(console.error) }, [])
   const handleAddExpenseCateg = async () => {
-    const v = newExpenseCateg.trim(); if (!v) return
+    const v = normalizeOptionName('expenseCategories', newExpenseCateg); if (!v) return
     await addExpenseCategory(v)
     setExpenseCategs(prev => [...prev, v]); setNewExpenseCateg('')
   }
@@ -645,7 +680,7 @@ export default function SettingsForm({
   const [newPayMethod, setNewPayMethod] = useState('')
   useEffect(() => { getPaymentMethods().then(setPayMethods).catch(console.error) }, [])
   const handleAddPayMethod = async () => {
-    const v = newPayMethod.trim(); if (!v) return
+    const v = normalizeOptionName('paymentMethods', newPayMethod); if (!v) return
     await addPaymentMethod(v)
     setPayMethods(prev => [...prev, v]); setNewPayMethod('')
   }
@@ -668,12 +703,42 @@ export default function SettingsForm({
     return r.before
   }
 
+  // ── 입주자 직업 ────────────────────────────────────────────────
+  // 입주자 등록·수정의 직업 선택(JobSelect)이 쓰는 목록. 직접 입력한 직업은 저장할 때 저절로 쌓인다.
+  // 빼기는 목록에서만이다. 이미 저장된 입주자의 직업은 그대로 있다(단위 빼기와 같은 문법).
+  const [jobs, setJobs] = useState<string[]>([])
+  const [newJob, setNewJob] = useState('')
+  useEffect(() => { getJobOptions().then(setJobs).catch(console.error) }, [])
+  const handleAddJob = async () => {
+    const v = normalizeOptionName('jobOptions', newJob); if (!v) return
+    await addJobOption(v)
+    setJobs(prev => [...prev, v]); setNewJob('')
+  }
+  const handleDeleteJob = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 직업을 목록에서 뺄까요?`, message: '이미 저장된 입주자의 직업은 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    await deleteJobOption(name)
+    setJobs(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderJobs = async (items: string[]) => {
+    setJobs(items)
+    await reorderOptions('jobOptions', items)
+  }
+  const handleRenameJob = (oldVal: string, newVal: string) =>
+    runRename('jobOptions', oldVal, newVal, setJobs)
+  const handleResetJobs = async () => {
+    if (!(await confirmDialog({ title: '직업을 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('jobOptions')
+    setJobs(r.items)
+    return r.before
+  }
+
   // ── 요청·컴플레인 카테고리 ───────────────────────────────────────
   const [requestCategs, setRequestCategs] = useState<string[]>([])
   const [newRequestCateg, setNewRequestCateg] = useState('')
   useEffect(() => { getRequestCategories().then(setRequestCategs).catch(console.error) }, [])
   const handleAddRequestCateg = async () => {
-    const v = newRequestCateg.trim(); if (!v) return
+    const v = normalizeOptionName('requestCategories', newRequestCateg); if (!v) return
     await addRequestCategory(v)
     setRequestCategs(prev => [...prev, v]); setNewRequestCateg('')
   }
@@ -708,7 +773,7 @@ export default function SettingsForm({
     getQtyUnitOptions().then(setQtyUnits).catch(console.error)
   }, [])
   const handleAddSpecUnit = async () => {
-    const v = newSpecUnit.trim(); if (!v) return
+    const v = normalizeOptionName('specUnitOptions', newSpecUnit); if (!v) return
     await addUnitOption('spec', v)
     setSpecUnits(prev => [...prev, v]); setNewSpecUnit('')
   }
@@ -731,7 +796,7 @@ export default function SettingsForm({
     return r.before
   }
   const handleAddQtyUnit = async () => {
-    const v = newQtyUnit.trim(); if (!v) return
+    const v = normalizeOptionName('qtyUnitOptions', newQtyUnit); if (!v) return
     await addUnitOption('qty', v)
     setQtyUnits(prev => [...prev, v]); setNewQtyUnit('')
   }
@@ -1274,9 +1339,9 @@ export default function SettingsForm({
 
       {/* 분류 관리 탭 — 앱이 쓰는 이름표를 한자리에 모았다(2026-08-19 IA 2단계).
           종전에는 같은 일(목록에 이름 하나 추가하기)이 호실 설정·수익·지출·기본정보·데이터·도구
-          네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(수납·지출 축) · 요청 · 품목 순이다.
-          앞의 아홉은 OptionSection 정본 하나로 같은 손놀림이고, 마지막 품목 세부스펙만
-          지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
+          네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(할인 사유·수납·지출 축) · 사람(직업·요청) · 품목 순이다.
+          앞의 열셋은 OptionSection 정본 하나로 같은 손놀림이고(빼기·초기화·이름 변경의 적용취소까지),
+          마지막 품목 세부스펙만 지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
       {tab === 'options' && (
         <div className="space-y-4">
           {/* 이사 안내 — 사라진 두 탭을 찾던 사람에게. TODO(2026-09 하순 제거). */}
@@ -1364,6 +1429,23 @@ export default function SettingsForm({
             placeholder="예: 도배, 장판, 방충망 교체…"
           />
           <OptionSection
+            title="할인 사유 관리"
+            description="수납 정보 > 월 이용료 할인에서 할인을 추가할 때 고르는 사유입니다. 기록용 이름표라 금액 계산에는 쓰이지 않습니다. 목록에서 빼도 이미 적용된 할인의 사유는 그대로 남습니다."
+            items={discountReasons}
+            field="discountReasons"
+            setItems={setDiscountReasons}
+            getLabel={v => v}
+            newValue={newDiscountReason}
+            onNewValueChange={setNewDiscountReason}
+            onAdd={handleAddDiscountReason}
+            onDelete={handleDeleteDiscountReason}
+            removeVerb="빼기"
+            onReorder={handleReorderDiscountReasons}
+            onRename={handleRenameDiscountReason}
+            onReset={handleResetDiscountReasons}
+            placeholder="예: 입실자 소개, 장기 계약…"
+          />
+          <OptionSection
             title="부가수익 카테고리 관리"
             description="수납 관리 > 부가수익 탭에서 수익 등록 시 선택할 카테고리입니다."
             items={incomeCategs}
@@ -1410,6 +1492,23 @@ export default function SettingsForm({
             onRename={handleRenamePayMethod}
             onReset={handleResetPayMethods}
             placeholder="예: 자동이체, 지역화폐…"
+          />
+          <OptionSection
+            title="직업 관리"
+            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하면 저장할 때 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            items={jobs}
+            field="jobOptions"
+            setItems={setJobs}
+            getLabel={v => v}
+            newValue={newJob}
+            onNewValueChange={setNewJob}
+            onAdd={handleAddJob}
+            onDelete={handleDeleteJob}
+            removeVerb="빼기"
+            onReorder={handleReorderJobs}
+            onRename={handleRenameJob}
+            onReset={handleResetJobs}
+            placeholder="예: 프로그래머, 디자이너…"
           />
           {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
           <OptionSection
@@ -2763,7 +2862,8 @@ function OptionSection({
     })
   }
 
-  const trimmed = newValue.trim()
+  // 중복 판정도 저장과 같은 정규화로 한다. '입실자, 소개' 는 '입실자 소개' 로 저장되니 이미 있으면 중복이다.
+  const trimmed = normalizeOptionName(field, newValue)
   const isDuplicate = trimmed !== '' && items.includes(trimmed)
   // 코드가 글자로 판정하는 이름은 수정 버튼 대신 '이름 고정' 을 세우고, 결과 문장은 카드 머리에 한 번 적는다.
   // 다른 이름을 새로 추가해 쓰라고 권하지 않는다. 새 이름은 그 판정에 안 잡힌다(lib/optionLists 보호 이름 머리말).

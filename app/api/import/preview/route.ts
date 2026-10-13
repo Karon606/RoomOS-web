@@ -11,6 +11,7 @@ import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES, type RoomAssignmentOccupant } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
+import { normalizeOptionName } from '@/lib/optionLists'
 import { LeaseStatus } from '@prisma/client'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
@@ -237,7 +238,7 @@ async function previewTenants(
       const inEnglishName = str(row['영문명']) || null
       const inGender      = (GENDER_MAP[str(row['성별'])] ?? 'UNKNOWN') as string
       const inNationality = str(row['국적']) || null
-      const inJob         = str(row['직업']) || null
+      const inJob         = normalizeOptionName('jobOptions', str(row['직업'])) || null   // 가져오기 저장과 같은 정규화로 견준다
       const inMemo        = str(row['메모']) || null
       const inStatus      = incomingRoom ? (STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE') : null
       const inRent        = parseNum(row['이용료'])

@@ -17,6 +17,7 @@ import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { normalizeOptionName } from '@/lib/optionLists'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolutions = Record<string, string>  // conflictId → 'overwrite' | 'keep' | 'archive'
@@ -177,7 +178,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
           fmtDate(existing.birthdate)                    === fmtDate(parseDate(row['생년월일'])) &&
           (existing.gender as string)                    === (GENDER_MAP[str(row['성별'])] ?? 'UNKNOWN') &&
           (existing.nationality  ?? null)                === (str(row['국적']) || null) &&
-          (existing.job          ?? null)                === (str(row['직업']) || null) &&
+          (existing.job          ?? null)                === (normalizeOptionName('jobOptions', str(row['직업'])) || null) &&
           (existing.memo         ?? null)                === (str(row['메모']) || null) &&
           existingRoom                                   === inRoomNo &&
           ((activeLease?.status ?? null) as string|null) === inStatus &&
@@ -225,7 +226,8 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               birthdate:   parseDate(row['생년월일']),
               gender:      (GENDER_MAP[str(row['성별'])] as any) ?? existing.gender,
               nationality: str(row['국적']) || null,
-              job:         str(row['직업']) || null,
+              // 직업은 화면 저장과 같은 정규화를 거친다(목록 글자와 입주자 글자가 맞아야 이름 변경이 따라간다).
+              job:         normalizeOptionName('jobOptions', str(row['직업'])) || null,
               memo:        str(row['메모']) || null,
             },
           })
@@ -325,7 +327,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
       birthdate:        parseDate(row['생년월일']),
       gender:           (GENDER_MAP[str(row['성별'])] as any) ?? 'UNKNOWN',
       nationality:      str(row['국적']) || null,
-      job:              str(row['직업']) || null,
+      job:              normalizeOptionName('jobOptions', str(row['직업'])) || null,   // 화면 저장과 같은 정규화
       memo:             str(row['메모']) || null,
       isBasicRecipient: false,
     },

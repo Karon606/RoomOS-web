@@ -59,6 +59,7 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
       emptyLabel={placeholder}
       placeholder="직업을 직접 입력하세요"
       showAddHint
+      addHintText="새로 입력한 직업은 저장할 때 목록에 저절로 추가됩니다. 목록 관리는 환경설정 > 분류 관리에서 합니다."
       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0"
     />
   )
