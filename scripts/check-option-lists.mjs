@@ -265,7 +265,7 @@ const os = bodyOf(form, /function OptionSection\(/)
       violations.push(`${FORM} · 이름 변경 적용취소가 실패 응답(u.ok)을 보기 전에 화면 목록을 덮는다.`)
     }
     // 그사이 같은 이름이 다시 생겨 바뀐 것이 없으면 '원래 자리로 복귀' 대신 사실대로 말한다(changed).
-    if (!/r\.changed === false && unchangedMessage/.test(code) || !/restoreOption\(field, item, index\), say\.undone\(getLabel\(item\)\), ALREADY_LISTED\(getLabel\(item\)\)\)/.test(code)) {
+    if (!/r\.changed === false && unchangedMessage/.test(code) || !/restoreOption\(field, item, index\), REMOVE_TOAST\.undone\(getLabel\(item\)\), ALREADY_LISTED\(getLabel\(item\)\)\)/.test(code)) {
       violations.push(`${FORM} · 빼기 적용취소가 바뀐 것이 없을 때(changed false)도 '원래 자리로 복귀' 라고 말한다.`)
     }
   }

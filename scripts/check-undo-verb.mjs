@@ -60,46 +60,61 @@ for (const [f, [action, what]] of Object.entries(ROW_UNDO)) {
   }
 }
 
-// 분류 관리 카드의 행 빼기 동사(2026-10-13, 신고 78bb0141 독립 검수).
+// 분류 관리 카드의 행 삭제 동사(2026-10-13, 신고 78bb0141 독립 검수 · 같은 날 운영자 승인으로 한 낱말).
 //
 // 같은 동작을 두 단어로 부른 셋째 모양이다. 13장 중 10장은 행 버튼·확인창이 '삭제'인데 토스트만
-// "'원룸' 항목을 뺐습니다" 였고, 단위 카드는 확인창이 '빼기' 인데 행 버튼이 '삭제' 였다. 카드마다
-// 동사를 하나로 쥔다(OptionSection removeVerb). 넷을 본다.
-//   · 카드의 빼기 확인창 동사(confirmLabel)와 그 카드에 넘긴 removeVerb(없으면 '삭제')가 같다.
-//   · OptionSection 의 행 버튼 글자가 removeVerb 다.
-//   · 토스트·적용취소 토스트는 동사별 문장 표(REMOVE_TOAST)에서 removeVerb 로 고른다. 표의 각 줄은 제 동사를 쓴다.
-//   · OptionSection 안에 고정 문장('항목을 뺐습니다' 따위)을 따로 적지 않는다.
+// "'원룸' 항목을 뺐습니다" 였고, 단위 카드는 확인창이 '빼기' 인데 행 버튼이 '삭제' 였다. 카드마다 동사를
+// 쥐게 했다가(removeVerb) 13장 모두 동작이 같다는 것(목록에서만 빠지고 기록은 그대로)으로 '삭제' 한 낱말로
+// 모았다. 그래서 카드별 동사 갈래가 되살아나는 것을 본다. 다섯을 본다.
+//   · 카드 13장의 삭제 확인창이 같은 꼴이다. 제목 "'{이름}' {대상}을(를) 목록에서 삭제할까요?", 본문
+//     "목록에서만 빠집니다. 이미 저장된 {그 카드의 기록}은(는) 그대로 있습니다.", 확인 단추 '삭제'.
+//   · OptionSection 의 행 버튼 글자가 '삭제' 다.
+//   · 토스트·적용취소 토스트는 문장 표(REMOVE_TOAST) 한 벌에서 읽고, 표는 '삭제' 로 말한다.
+//   · 카드별 동사 갈래(removeVerb)가 없다.
+//   · 분류 관리 카드·확인창·토스트 어디에도 '빼기' 계열 동사(빼기·뺄까요·뺐습니다·빼도)가 화면 글자로 남지 않는다.
 const SETTINGS_FORM = 'app/(app)/settings/SettingsForm.tsx'
 {
   const src = readFileSync(SETTINGS_FORM, 'utf8')
-  const confirmVerb = new Map()
-  for (const m of src.matchAll(/const (handleDelete\w+) = async \(name: string\) => \{\n\s*if \(!\(await confirmDialog\(\{[^\n]*confirmLabel: '(삭제|빼기)'/g)) {
-    confirmVerb.set(m[1], m[2])
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+  const confirmOf = new Map()
+  for (const m of code.matchAll(/const (handleDelete\w+) = async \(name: string\) => \{\n\s*if \(!\(await confirmDialog\(\{([^\n]*)\}\)\)\) return false/g)) {
+    confirmOf.set(m[1], m[2])
   }
-  const cards = [...src.matchAll(/<OptionSection\b[\s\S]*?\/>/g)].map(m => m[0])
-  if (cards.length === 0) violations.push(`${SETTINGS_FORM} · OptionSection 카드를 못 찾았다.`)
+  const cards = [...code.matchAll(/<OptionSection\b[\s\S]*?\/>/g)].map(m => m[0])
+  if (cards.length < 13) violations.push(`${SETTINGS_FORM} · OptionSection 카드를 ${cards.length}장만 찾았다(13 기대).`)
+  const TITLE = /^\s*title: `'\$\{[^}]+\}' [^`'$]+[을를] 목록에서 삭제할까요\?`, /
+  const MESSAGE = /message: '목록에서만 빠집니다\. 이미 저장된 [^']+[은는] 그대로 있습니다\.'/
   for (const card of cards) {
     const title = card.match(/title="([^"]+)"/)?.[1] ?? '(제목 없음)'
+    if (/\bremoveVerb\b/.test(card)) violations.push(`${SETTINGS_FORM} · '${title}' 카드가 removeVerb 를 넘긴다. 13장 모두 '삭제' 한 낱말이다.`)
     const handler = card.match(/onDelete=\{(\w+)\}/)?.[1]
-    const want = handler ? confirmVerb.get(handler) : undefined
-    const got = card.match(/removeVerb="(삭제|빼기)"/)?.[1] ?? '삭제'
-    if (!want) violations.push(`${SETTINGS_FORM} · '${title}' 카드의 빼기 확인창 동사를 못 읽었다(onDelete 핸들러의 confirmLabel).`)
-    else if (want !== got) violations.push(`${SETTINGS_FORM} · '${title}' 카드는 확인창이 '${want}' 인데 행 버튼·토스트는 '${got}' 다. removeVerb="${want}" 로 맞춘다.`)
+    const dlg = handler ? confirmOf.get(handler) : undefined
+    if (!dlg) { violations.push(`${SETTINGS_FORM} · '${title}' 카드의 삭제 확인창을 못 읽었다(onDelete 핸들러의 confirmDialog).`); continue }
+    if (!TITLE.test(dlg)) violations.push(`${SETTINGS_FORM} · '${title}' 카드 삭제 확인창 제목이 "'{이름}' {대상}을 목록에서 삭제할까요?" 꼴이 아니다.`)
+    if (!MESSAGE.test(dlg)) violations.push(`${SETTINGS_FORM} · '${title}' 카드 삭제 확인창 본문이 "목록에서만 빠집니다. 이미 저장된 …은 그대로 있습니다." 꼴이 아니다.`)
+    if (!/confirmLabel: '삭제'/.test(dlg)) violations.push(`${SETTINGS_FORM} · '${title}' 카드 삭제 확인창의 확인 단추가 '삭제' 가 아니다.`)
   }
-  const at = src.indexOf('function OptionSection(')
-  const body = at < 0 ? '' : src.slice(at).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+  // OptionSection 본문만 자른다(다음 최상위 function 앞까지). 뒤 컴포넌트의 '삭제' 버튼이 대신 통과시키지 않게.
+  const at = code.indexOf('function OptionSection(')
+  const rest = at < 0 ? '' : code.slice(at)
+  const body = rest.indexOf('\nfunction ', 1) < 0 ? rest : rest.slice(0, rest.indexOf('\nfunction ', 1))
   if (!body) violations.push(`${SETTINGS_FORM} · OptionSection 을 못 찾았다.`)
   else {
-    if (!/>\{removeVerb\}<\/button>/.test(body)) violations.push(`${SETTINGS_FORM} · OptionSection 행 버튼 글자가 removeVerb 가 아니다. 확인창은 '빼기' 인데 버튼은 '삭제' 인 카드가 다시 생긴다.`)
-    if (!/REMOVE_TOAST\[removeVerb\]/.test(body)) violations.push(`${SETTINGS_FORM} · OptionSection 토스트가 동사별 문장 표(REMOVE_TOAST)를 removeVerb 로 고르지 않는다.`)
-    for (const fixed of ['항목을 뺐습니다', '항목을 삭제했습니다', '빼기를 적용취소했습니다', '삭제를 적용취소했습니다']) {
-      if (body.includes(fixed)) violations.push(`${SETTINGS_FORM} · OptionSection 안에 고정 문장 '${fixed}' 이 있다. 카드마다 동사가 다르니 REMOVE_TOAST 에서 고른다.`)
-    }
+    if (/\bremoveVerb\b/.test(body)) violations.push(`${SETTINGS_FORM} · OptionSection 에 카드별 동사 갈래(removeVerb)가 되살아났다.`)
+    if (!/onClick=\{\(\) => handleDelete\(item\)\}\s*className="[^"]*">삭제<\/button>/.test(body)) violations.push(`${SETTINGS_FORM} · OptionSection 행 삭제 버튼 글자가 '삭제' 가 아니다.`)
+    if (!/REMOVE_TOAST\.done\(/.test(body) || !/REMOVE_TOAST\.undone\(/.test(body)) violations.push(`${SETTINGS_FORM} · OptionSection 토스트가 문장 표(REMOVE_TOAST)를 안 읽는다.`)
   }
-  const table = src.match(/const REMOVE_TOAST = \{([\s\S]*?)\} as const/)?.[1] ?? ''
-  for (const [verb, done, undone] of [['삭제', '항목을 삭제했습니다', "' 삭제를 적용취소했습니다 · 원래 자리로 복귀"], ['빼기', '항목을 뺐습니다', "' 빼기를 적용취소했습니다 · 원래 자리로 복귀"]]) {
-    const row = table.split('\n').find(l => l.trim().startsWith(`${verb}:`)) ?? ''
-    if (!row.includes(done) || !row.includes(undone)) violations.push(`${SETTINGS_FORM} · REMOVE_TOAST 의 '${verb}' 줄이 제 동사로 말하지 않는다('${done}' · '${undone}' 기대).`)
+  const table = code.match(/const REMOVE_TOAST = \{([\s\S]*?)\} as const/)?.[1] ?? ''
+  if (!/done: \(label: string\) => `'\$\{label\}' 항목을 삭제했습니다`/.test(table) || !/undone: \(label: string\) => `'\$\{label\}' 삭제를 적용취소했습니다 · 원래 자리로 복귀`/.test(table)) {
+    violations.push(`${SETTINGS_FORM} · REMOVE_TOAST 가 '삭제' 로 말하지 않는다('항목을 삭제했습니다' · '삭제를 적용취소했습니다 · 원래 자리로 복귀' 기대).`)
+  }
+  // 화면 글자에 '빼기' 계열 동사가 남았는가. 분류 관리 탭(카드 묶음)·확인창 핸들러·OptionSection·문장 표를 본다.
+  const tab = code.match(/\{tab === 'options' && \([\s\S]*?<ItemSpecOptionsPanel \/>/)?.[0] ?? ''
+  if (!tab) violations.push(`${SETTINGS_FORM} · 분류 관리 탭 묶음을 못 찾았다.`)
+  const handlers = [...confirmOf.values()].join('\n')
+  for (const [where, text] of [['분류 관리 탭', tab], ['삭제 확인창', handlers], ['OptionSection', body], ['REMOVE_TOAST', table]]) {
+    const hit = text.match(/빼기|뺄까요|뺐습니다|빼도|빼면/)
+    if (hit) violations.push(`${SETTINGS_FORM} · ${where} 화면 글자에 '${hit[0]}' 가 있다. 분류 관리 13장은 '삭제' 한 낱말이다.`)
   }
 }
 
@@ -117,7 +132,7 @@ const walk = (dir) => {
 }
 for (const r of ['components', 'app']) walk(r)
 
-console.log(`[적용취소 동사] 동사 ${Object.keys(GUARDED).length}곳 · 완료 직후 진입점 ${Object.keys(ROW_UNDO).length}곳 · 분류 관리 카드 빼기 동사 검사 / 위반 ${violations.length}건`)
+console.log(`[적용취소 동사] 동사 ${Object.keys(GUARDED).length}곳 · 완료 직후 진입점 ${Object.keys(ROW_UNDO).length}곳 · 분류 관리 카드 삭제 동사 검사 / 위반 ${violations.length}건`)
 if (others.length > 0) {
   console.log('  (별건) 라벨 적용취소 + 토스트 되돌렸습니다 가 같이 있는 파일:')
   for (const f of others) console.log(`    · ${f}`)

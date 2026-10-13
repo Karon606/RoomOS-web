@@ -366,7 +366,7 @@ export default function SettingsForm({
     setRoomTypes(prev => [...prev, v]); setNewRoomType('')
   }
   const handleDeleteRoomType = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 방타입을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 방타입을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 호실의 방타입은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomTypeOption(name)
     setRoomTypes(prev => prev.filter(t => t !== name))
     return true
@@ -396,7 +396,7 @@ export default function SettingsForm({
     setRoomTiers(prev => [...prev, v]); setNewRoomTier('')
   }
   const handleDeleteRoomTier = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 등급을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 등급을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 호실의 등급은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomTierOption(name)
     setRoomTiers(prev => prev.filter(t => t !== name))
     return true
@@ -426,7 +426,7 @@ export default function SettingsForm({
     setWindowTypes(prev => [...prev, v]); setNewWindowType('')
   }
   const handleDeleteWindowType = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${windowLabel(name)}' 창문 유형을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${windowLabel(name)}' 창문 유형을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 호실의 창문 유형은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteWindowTypeOption(name)
     setWindowTypes(prev => prev.filter(t => t !== name))
     return true
@@ -456,7 +456,7 @@ export default function SettingsForm({
     setDirections(prev => [...prev, v]); setNewDirection('')
   }
   const handleDeleteDirection = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 방향을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 방향을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 호실의 방향은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRoomDirectionOption(name)
     setDirections(prev => prev.filter(t => t !== name))
     return true
@@ -489,7 +489,7 @@ export default function SettingsForm({
     setWorkKinds(prev => [...prev, v]); setNewWorkKind('')
   }
   const handleDeleteWorkKind = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 작업 종류를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 작업 종류를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 작업 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteWorkKindOption(name)
     setWorkKinds(prev => prev.filter(t => t !== name))
     return true
@@ -509,7 +509,7 @@ export default function SettingsForm({
 
   // ── 할인 사유 ──────────────────────────────────────────────────
   // 수납 정보 > 월 이용료 할인에서 고르는 사유. 라벨일 뿐 금액 계산에는 안 쓰인다(lib/rentDiscount).
-  // 빼기는 목록에서만이다. 이미 적용된 할인의 사유는 글자 그대로 남는다(단위 빼기와 같은 문법).
+  // 삭제는 목록에서만이다. 이미 적용된 할인의 사유는 글자 그대로 남는다(분류 관리 13장이 같은 계약·같은 동사다).
   const [discountReasons, setDiscountReasons] = useState<string[]>([])
   const [newDiscountReason, setNewDiscountReason] = useState('')
 
@@ -521,7 +521,7 @@ export default function SettingsForm({
     setDiscountReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewDiscountReason('')
   }
   const handleDeleteDiscountReason = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 뺄까요?`, message: '이미 적용된 할인의 사유는 그대로 남습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 할인 기록의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteDiscountReason(name)
     setDiscountReasons(prev => prev.filter(t => t !== name))
     return true
@@ -629,7 +629,7 @@ export default function SettingsForm({
     setIncomeCategs(prev => [...prev, v]); setNewIncomeCateg('')
   }
   const handleDeleteIncomeCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 부가수익 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteIncomeCategory(name)
     setIncomeCategs(prev => prev.filter(t => t !== name))
     return true
@@ -657,7 +657,7 @@ export default function SettingsForm({
     setExpenseCategs(prev => [...prev, v]); setNewExpenseCateg('')
   }
   const handleDeleteExpenseCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 지출 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteExpenseCategory(name)
     setExpenseCategs(prev => prev.filter(t => t !== name))
     return true
@@ -685,7 +685,7 @@ export default function SettingsForm({
     setPayMethods(prev => [...prev, v]); setNewPayMethod('')
   }
   const handleDeletePayMethod = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 결제 수단을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 결제 수단을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 지출·수납 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deletePaymentMethod(name)
     setPayMethods(prev => prev.filter(t => t !== name))
     return true
@@ -705,7 +705,7 @@ export default function SettingsForm({
 
   // ── 입주자 직업 ────────────────────────────────────────────────
   // 입주자 등록·수정의 직업 선택(JobSelect)이 쓰는 목록. 직접 입력한 직업은 저장할 때 저절로 쌓인다.
-  // 빼기는 목록에서만이다. 이미 저장된 입주자의 직업은 그대로 있다(단위 빼기와 같은 문법).
+  // 삭제는 목록에서만이다. 이미 저장된 입주자의 직업은 그대로 있다(분류 관리 13장이 같은 계약·같은 동사다).
   const [jobs, setJobs] = useState<string[]>([])
   const [newJob, setNewJob] = useState('')
   useEffect(() => { getJobOptions().then(setJobs).catch(console.error) }, [])
@@ -715,7 +715,7 @@ export default function SettingsForm({
     setJobs(prev => [...prev, v]); setNewJob('')
   }
   const handleDeleteJob = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 직업을 목록에서 뺄까요?`, message: '이미 저장된 입주자의 직업은 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 직업을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 입주자의 직업은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteJobOption(name)
     setJobs(prev => prev.filter(t => t !== name))
     return true
@@ -743,7 +743,7 @@ export default function SettingsForm({
     setRequestCategs(prev => [...prev, v]); setNewRequestCateg('')
   }
   const handleDeleteRequestCateg = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 요청 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteRequestCategory(name)
     setRequestCategs(prev => prev.filter(t => t !== name))
     return true
@@ -778,7 +778,7 @@ export default function SettingsForm({
     setSpecUnits(prev => [...prev, v]); setNewSpecUnit('')
   }
   const handleDeleteSpecUnit = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 지출과 재고 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteUnitOption('spec', name)
     setSpecUnits(prev => prev.filter(t => t !== name))
     return true
@@ -801,7 +801,7 @@ export default function SettingsForm({
     setQtyUnits(prev => [...prev, v]); setNewQtyUnit('')
   }
   const handleDeleteQtyUnit = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 지출과 재고 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteUnitOption('qty', name)
     setQtyUnits(prev => prev.filter(t => t !== name))
     return true
@@ -1340,7 +1340,7 @@ export default function SettingsForm({
       {/* 분류 관리 탭 — 앱이 쓰는 이름표를 한자리에 모았다(2026-08-19 IA 2단계).
           종전에는 같은 일(목록에 이름 하나 추가하기)이 호실 설정·수익·지출·기본정보·데이터·도구
           네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(할인 사유·수납·지출 축) · 사람(직업·요청) · 품목 순이다.
-          앞의 열셋은 OptionSection 정본 하나로 같은 손놀림이고(빼기·초기화·이름 변경의 적용취소까지),
+          앞의 열셋은 OptionSection 정본 하나로 같은 손놀림이고(삭제·초기화·이름 변경의 적용취소까지),
           마지막 품목 세부스펙만 지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
       {tab === 'options' && (
         <div className="space-y-4">
@@ -1430,7 +1430,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="할인 사유 관리"
-            description="수납 정보 > 월 이용료 할인에서 할인을 추가할 때 고르는 사유입니다. 기록용 이름표라 금액 계산에는 쓰이지 않습니다. 목록에서 빼도 이미 적용된 할인의 사유는 그대로 남습니다."
+            description="수납 정보 > 월 이용료 할인에서 할인을 추가할 때 고르는 사유입니다. 기록용 이름표라 금액 계산에는 쓰이지 않습니다. 목록에서 삭제해도 이미 적용된 할인의 사유는 그대로 남습니다."
             items={discountReasons}
             field="discountReasons"
             setItems={setDiscountReasons}
@@ -1439,7 +1439,6 @@ export default function SettingsForm({
             onNewValueChange={setNewDiscountReason}
             onAdd={handleAddDiscountReason}
             onDelete={handleDeleteDiscountReason}
-            removeVerb="빼기"
             onReorder={handleReorderDiscountReasons}
             onRename={handleRenameDiscountReason}
             onReset={handleResetDiscountReasons}
@@ -1495,7 +1494,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="직업 관리"
-            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하면 저장할 때 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하면 저장할 때 저절로 여기 쌓입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
             items={jobs}
             field="jobOptions"
             setItems={setJobs}
@@ -1504,7 +1503,6 @@ export default function SettingsForm({
             onNewValueChange={setNewJob}
             onAdd={handleAddJob}
             onDelete={handleDeleteJob}
-            removeVerb="빼기"
             onReorder={handleReorderJobs}
             onRename={handleRenameJob}
             onReset={handleResetJobs}
@@ -1532,7 +1530,7 @@ export default function SettingsForm({
               'kg'이 수량에 뜨면 안 된다). */}
           <OptionSection
             title="수량 단위 관리"
-            description="'몇 개 샀나'를 세는 단위입니다. 지출이나 재고를 저장할 때 목록에 없는 단위를 치면 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 기록은 그대로 있고, 앞으로 고를 때만 안 보입니다."
+            description="'몇 개 샀나'를 세는 단위입니다. 지출이나 재고를 저장할 때 목록에 없는 단위를 치면 저절로 여기 쌓입니다. 목록에서 삭제해도 이미 저장된 기록은 그대로 있고, 앞으로 고를 때만 안 보입니다."
             items={qtyUnits}
             field="qtyUnitOptions"
             setItems={setQtyUnits}
@@ -1541,7 +1539,6 @@ export default function SettingsForm({
             onNewValueChange={setNewQtyUnit}
             onAdd={handleAddQtyUnit}
             onDelete={handleDeleteQtyUnit}
-            removeVerb="빼기"
             onReorder={handleReorderQtyUnits}
             onRename={handleRenameQtyUnit}
             onReset={handleResetQtyUnits}
@@ -1558,7 +1555,6 @@ export default function SettingsForm({
             onNewValueChange={setNewSpecUnit}
             onAdd={handleAddSpecUnit}
             onDelete={handleDeleteSpecUnit}
-            removeVerb="빼기"
             onReorder={handleReorderSpecUnits}
             onRename={handleRenameSpecUnit}
             onReset={handleResetSpecUnits}
@@ -2787,24 +2783,25 @@ function AppearanceTab() {
 /** 이름 변경 결과. OptionSection 이 결과 토스트와 적용취소를 띄우는 데 쓴다. */
 type OptionRenamed = { updated: number; undo: RenameUndo | null }
 
-// 행을 빼는 동작의 토스트 문장. 행 버튼·확인창과 같은 동사를 쓴다(scripts/check-undo-verb). 동사마다 문장을
-// 따로 두는 것은 보간 뒤에 조사를 박지 않으려는 것이다(scripts/check-korean-particle). 적용취소 결과에도 이름을
-// 싣는다. 여러 줄을 빼고 무를 때 무엇이 돌아왔는지 보여야 한다(웹디자이너 패스 2026-10-13).
+// 행 삭제의 토스트 문장. 13장 모두 행 버튼·확인창과 같은 동사 '삭제' 다(scripts/check-undo-verb). 13장 모두 동작이
+// 같다. 목록에서만 빠지고 기록은 그대로다. 그래서 단위·할인 사유·직업 넉 장의 '빼기' 를 걷어 한 낱말로 모았다
+// (2026-10-13 운영자 승인). 적용취소 결과에도 이름을 싣는다. 여러 줄을 지우고 무를 때 무엇이 돌아왔는지 보여야
+// 한다(웹디자이너 패스 2026-10-13).
 const REMOVE_TOAST = {
-  삭제: { done: (label: string) => `'${label}' 항목을 삭제했습니다`, undone: (label: string) => `'${label}' 삭제를 적용취소했습니다 · 원래 자리로 복귀` },
-  빼기: { done: (label: string) => `'${label}' 항목을 뺐습니다`, undone: (label: string) => `'${label}' 빼기를 적용취소했습니다 · 원래 자리로 복귀` },
+  done: (label: string) => `'${label}' 항목을 삭제했습니다`,
+  undone: (label: string) => `'${label}' 삭제를 적용취소했습니다 · 원래 자리로 복귀`,
 } as const
-// 빼기 적용취소를 눌렀는데 그사이 같은 이름이 목록에 다시 생겨 바뀐 것이 없을 때. '원래 자리로 복귀' 는 거짓이다(3차 검수).
+// 삭제 적용취소를 눌렀는데 그사이 같은 이름이 목록에 다시 생겨 바뀐 것이 없을 때. '원래 자리로 복귀' 는 거짓이다(3차 검수).
 const ALREADY_LISTED = (label: string) => `'${label}' 항목이 이미 목록에 있어 그대로 둡니다`
 
 function OptionSection({
-  title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, removeVerb = '삭제', onReorder, onRename, onReset, placeholder,
+  title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
 }: {
   title: string
   description?: string
   items: string[]
   /** 이 카드의 목록 칸. 이름을 바꿀 수 없는 항목(lib/optionLists 보호 이름)을 서버와 같은 함수로 가리고,
-   * 빼기·초기화·이름 변경의 적용취소가 이 칸을 서버에서 다시 고친다. */
+   * 삭제·초기화·이름 변경의 적용취소가 이 칸을 서버에서 다시 고친다. */
   field: OptionListField
   /** 적용취소가 끝난 뒤 화면 목록을 서버 값으로 맞춘다. */
   setItems: (updater: (prev: string[]) => string[]) => void
@@ -2812,11 +2809,8 @@ function OptionSection({
   newValue: string
   onNewValueChange: (v: string) => void
   onAdd: () => void | Promise<void>
-  /** true = 실제로 뺐다. 확인창에서 취소하면 false 라 적용취소 토스트가 안 뜬다. */
+  /** true = 실제로 지웠다. 확인창에서 취소하면 false 라 적용취소 토스트가 안 뜬다. */
   onDelete: (v: string) => Promise<boolean>
-  /** 이 카드가 행을 빼는 동작을 부르는 말. 행 버튼·확인창·토스트·적용취소 토스트가 한 낱말이어야 한다
-   * (scripts/check-undo-verb). 기록은 그대로 두고 목록에서만 빼는 카드(단위·할인 사유·직업)가 '빼기'다. */
-  removeVerb?: '삭제' | '빼기'
   onReorder?: (items: string[]) => void
   onRename?: (oldValue: string, newValue: string) => Promise<OptionRenamed | null>
   /** 초기화 직전의 서버 목록을 돌려준다(적용취소 기준). 확인창에서 취소하면 null. */
@@ -2829,11 +2823,11 @@ function OptionSection({
   const [savingEdit, setSavingEdit] = useState(false)
   const editErrorId = useId()
 
-  // 적용취소(§16). 빼기·초기화·이름 변경 뒤 토스트 [적용취소]. 분류 관리 탭의 목록 카드 전부가
+  // 적용취소(§16). 삭제·초기화·이름 변경 뒤 토스트 [적용취소]. 분류 관리 탭의 목록 카드 전부가
   // 이 한 곳을 같이 쓴다(카드마다 따로 달면 어느 카드는 되고 어느 카드는 안 되는 날이 온다).
   // 셋 다 지금 서버 목록을 바탕으로 되돌리고 그 결과로 화면을 맞춘다. 화면이 들고 있던 이전 목록을
   // 통째로 다시 쓰면 그사이 더하거나 뺀 항목, 다른 화면이 쌓은 항목이 엉킨다(lib/optionLists insertOptionAt).
-  // 빼기는 그 이름 하나를 뺄 때의 자리에 도로 넣고(restoreOption), 초기화는 서버가 쥐어 준 직전 목록에
+  // 삭제는 그 이름 하나를 지울 때의 자리에 도로 넣고(restoreOption), 초기화는 서버가 쥐어 준 직전 목록에
   // 그 뒤 생긴 항목을 더하고(undoResetOptions), 이름 변경은 바뀐 행 id 로 그 행만 되돌린다(undoRenameOption).
   const undoToast = (run: () => Promise<OptionListResult>, doneMessage: string, unchangedMessage?: string) => () => {
     void run().then(r => {
@@ -2847,10 +2841,9 @@ function OptionSection({
     const index = items.indexOf(item)
     try {
       if (!(await onDelete(item))) return
-    } catch (err) { pushToast('error', humanError(err, `${removeVerb} 실패`)); return }
-    const say = REMOVE_TOAST[removeVerb]
-    pushToast('success', say.done(getLabel(item)), {
-      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), say.undone(getLabel(item)), ALREADY_LISTED(getLabel(item))) },
+    } catch (err) { pushToast('error', humanError(err, '삭제 실패')); return }
+    pushToast('success', REMOVE_TOAST.done(getLabel(item)), {
+      action: { label: '적용취소', run: undoToast(() => restoreOption(field, item, index), REMOVE_TOAST.undone(getLabel(item)), ALREADY_LISTED(getLabel(item))) },
     })
   }
 
@@ -3057,7 +3050,7 @@ function OptionSection({
                     className="shrink-0 min-w-[2.9rem] text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 ))}
                 <button onClick={() => handleDelete(item)}
-                  className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">{removeVerb}</button>
+                  className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
               </>
             )}
           </div>
