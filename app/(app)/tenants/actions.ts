@@ -1139,8 +1139,10 @@ export async function updateTenant(formData: FormData): Promise<
     return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
   }
 
-  const currentLease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 영업장 범위. 입주자·계약 id 는 폼에서 오고 아래에서 그 id 로 읽고 쓴다. 이 영업장의 그 입주자 계약이 아니면
+  // 무엇을 읽거나 쓰기 전에 멈춘다(종전에는 id 만으로 읽고 써서 다른 영업장 id 를 넣으면 그 행이 바뀌었다, 2026-10-13).
+  const currentLease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId, tenantId },
     select: {
       roomId: true, status: true, reservationConfirmedAt: true, isShortTerm: true, rentAmount: true,
       // 폼에 종속 칸이 없는 저장은 저장된 값이 그대로 판정 입력이 된다(끊지도, 다시 묻지도 않는다).
@@ -1154,6 +1156,9 @@ export async function updateTenant(formData: FormData): Promise<
     },
   })
   if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+  // 고치기 전 직업도 여기서 읽는다. 아래 목록 자동 추가가 '새로 적은 직업' 만 더하도록 견준다.
+  const ownTenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { job: true } })
+  if (!ownTenant) return { ok: false, error: '입주자 정보를 찾을 수 없습니다.' }
 
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
@@ -1192,6 +1197,10 @@ export async function updateTenant(formData: FormData): Promise<
   // 지나가지 않았는데, 그 한 번의 저장이 뒤에 잡혀 있는 예약자의 입주일을 그대로 밟는다.
   const RESIDENT_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED']
   const roomChanged = !!newRoomId && newRoomId !== prevRoomId
+  // 새로 고른 호실도 이 영업장 것이라야 한다. 호실 id 는 폼에서 오고 아래에서 그 방을 읽고(점유 가드) 쓴다(공실 표시).
+  if (roomChanged && !(await prisma.room.findFirst({ where: { id: newRoomId, propertyId }, select: { id: true } }))) {
+    return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
+  }
   const climbingIntoResidence = RESIDENT_STATUSES.includes(status) && !RESIDENT_STATUSES.includes(prevStatus)
   // 무기한이던 계약에 퇴실일을 넣는 것은 '연장'이 아니라 축소다 — 없던 겹침을 만들 수 없으므로 묻지 않는다.
   const moveOutExtended = !!newMoveOutIso && !!prevMoveOutIso && newMoveOutIso > prevMoveOutIso
@@ -1322,8 +1331,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 입주자 정보 수정
   const regNo = foreignRegNoPatch(formData, tenantId)
   if (!regNo.ok) return { ok: false, error: regNo.error }
-  // 고치기 전 직업. 아래 목록 자동 추가가 '새로 적은 직업' 만 더하도록 견준다.
-  const prevJob = (await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { job: true } }))?.job ?? null
+  const prevJob = ownTenant.job ?? null
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {

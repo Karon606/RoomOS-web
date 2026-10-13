@@ -935,8 +935,10 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
 
     if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
-    const existing = await prisma.expense.findUnique({
-      where: { id },
+    // 영업장 범위. 지출 id 는 폼에서 오고 아래에서 그 id 로 고친다. 이 영업장 지출이 아니면 무엇을 쓰기 전에 멈춘다
+    // (종전에는 id 만으로 읽고 써서 다른 영업장 지출 id 를 넣으면 그 지출이 바뀌었다, 2026-10-13).
+    const existing = await prisma.expense.findFirst({
+      where: { id, propertyId },
       // receivedAt: 방별 분배로 갈라지는 새 조각이 '수령완료'를 물려받게(미수령으로 되돌아가는 것 방지)
       // 수량·규격·단위·제외 — 수령완료 구매의 재고 전파 게이트가 전후 환산 입수량을 비교하는 데 쓴다.
       select: {
@@ -951,6 +953,15 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         date: true, targetMonth: true,
       },
     })
+    if (!existing) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+    // 폼이 실어 온 호실(방별 분배 포함)·결제 계정 id 도 이 영업장 것만 받는다. 남의 호실·계정을 이 지출에 걸지 못한다.
+    const formRoomIds = [...new Set([roomId, ...parsedItems.flatMap(it => (Array.isArray(it.allocations) ? it.allocations : []).map(a => a?.roomId))].filter((v): v is string => !!v))]
+    if (formRoomIds.length > 0 && (await prisma.room.count({ where: { id: { in: formRoomIds }, propertyId } })) !== formRoomIds.length) {
+      return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
+    }
+    if (financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     // 이 지출이 원래 쓰던 카테고리를 다시 저장할 때는 목록에 되살리지 않는다(prev, 새로 적은 값만 더한다).
     const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, existing?.category)
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
