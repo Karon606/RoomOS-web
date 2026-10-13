@@ -24,6 +24,8 @@
 //      화면은 실패 응답을 보기 전에 목록을 덮지 않고, 바뀐 것이 없으면 '원래 자리로 복귀' 라고 하지 않는다.
 //   ⓗ 보호 이름: 이름 변경 입구(renameOption)·그 적용취소(undoRenameOption)와 화면(runRename·OptionSection)이
 //      protectedRenameError · protectedOptionReason 한 벌로 막는다. 결제 수단 보호 집합은 판정 상수에서 끌어온다.
+//      부가수익·지출 보호 이름(코드가 그 글자로 기록을 만드는 이름 포함, 2026-10-13 운영자 승인)도 상수에서 끌어오고,
+//      그 상수는 한 곳에서만 정의한다. 같은 글자를 다른 상수로 따로 적은 사본이 생기면 붉게 선다.
 //      이름 편집은 보호 이름·이미 있는 이름을 인라인으로 막고, 서버가 받아 준 뒤에만 그 행일 때만 편집 칸을 닫는다.
 //   ⓘ 정규화: 목록에 이름을 넣는 길(손 추가·이름 변경·적용취소, 그리고 다른 파일의 자동 추가)이 전부
 //      정본 정규화(normalizeOptionName 또는 resolveCategoryForSave·resolveUnitForSave)를 거친다. 그 글자를
@@ -340,6 +342,53 @@ const os = bodyOf(form, /function OptionSection\(/)
   const pay = lib.match(/paymentMethods:\s*\{\s*names:([^\n]*)/)?.[1] ?? ''
   for (const c of ['...PAYMENT_METHODS', '...CARD_LIKE_METHODS', 'DEPOSIT_SOURCED_PAY_METHOD']) {
     if (!pay.includes(c)) violations.push(`${LIB} · 결제 수단 보호 이름이 판정 상수 ${c.replace('...', '')} 에서 오지 않는다. 손으로 적으면 판정 자리와 두 벌이 된다.`)
+  }
+  // 부가수익·지출 보호 이름. 코드가 그 글자로 기록을 만들거나(청소·작업 지출, 퇴실 정산·예약 취소·과납 부가수익)
+  // 묶는(재고) 이름이다. 손으로 적으면 기록을 만드는 자리와 두 벌이 되고, 그 자리 글자가 바뀌는 날 보호가 헛돈다.
+  const PROTECTED_CONSTS = {
+    incomeCategories: {
+      CLEANING_FEE_CATEGORY: 'lib/incomeCategories.ts', FORFEIT_CATEGORY: 'lib/incomeCategories.ts',
+      PENALTY_CATEGORY: 'lib/incomeCategories.ts', OVERPAY_INCOME_CATEGORY: 'lib/incomeCategories.ts',
+    },
+    expenseCategories: {
+      CLEANING_EXPENSE_CATEGORY: 'app/(app)/room-manage/cleaningConstants.ts', WORK_EXPENSE_CATEGORY: 'app/(app)/room-manage/cleaningConstants.ts',
+    },
+  }
+  for (const [field, consts] of Object.entries(PROTECTED_CONSTS)) {
+    const line = lib.match(new RegExp(`\\b${field}:\\s*\\{\\s*names:([^\\n]*)`))?.[1] ?? ''
+    if (!line) { violations.push(`${LIB} · ${field} 보호 이름 줄을 못 찾았다.`); continue }
+    if (/'/.test(line)) violations.push(`${LIB} · ${field} 보호 이름에 손으로 적은 글자가 있다. 기록을 만드는 자리의 상수에서 끌어온다.`)
+    for (const c of Object.keys(consts)) {
+      if (!new RegExp(`\\b${c}\\b`).test(line)) violations.push(`${LIB} · ${field} 보호 이름이 ${c} 를 안 쥔다. 코드가 그 글자로 기록을 만들어 이름을 바꾸면 지난 기록과 다음 기록이 갈린다.`)
+    }
+    if (field === 'expenseCategories' && !line.includes('DEFAULT_INVENTORY_CATEGORIES')) violations.push(`${LIB} · 지출 보호 이름이 재고 기본 카테고리(DEFAULT_INVENTORY_CATEGORIES)에서 오지 않는다.`)
+  }
+  // 그 상수는 한 곳에서만 정의한다. 같은 글자를 다른 상수로 따로 적은 사본도 안 된다(이중 정의).
+  const canonOf = new Map()
+  for (const consts of Object.values(PROTECTED_CONSTS)) {
+    for (const [name, file] of Object.entries(consts)) {
+      const v = readFileSync(file, 'utf8').match(new RegExp(`export const ${name}\\s*=\\s*'([^']+)'`))?.[1]
+      if (!v) violations.push(`${file} · 보호 이름 상수 ${name} 의 정의를 못 찾았다.`)
+      else canonOf.set(v, { file, name })
+    }
+  }
+  // 수납 폼은 같은 글자를 따로 적고 있다. 그 파일은 같은 날 현금영수증 작업이 고치는 중이라 이번에 손대지 않았다.
+  // 그 작업을 합친 뒤 lib/incomeCategories OVERPAY_INCOME_CATEGORY 를 import 하고 이 줄을 지운다(2026-10-13).
+  const PENDING_COPIES = { 'components/entity-modal/widgets/PaymentEntryForm.tsx': 'EXTRA_INCOME_CATEGORY' }
+  // 글자만 같고 다른 칸에 쓰는 상수. 보증금 미반환 사유 목록의 '청소비' 항은 DepositRefund 사유이지 부가수익 카테고리가 아니다.
+  const OTHER_MEANING = { 'lib/depositWithholdReasons.ts': 'CLEANING_WITHHOLD_REASON' }
+  for (const p of SOURCES) {
+    const code = stripComments(readFileSync(p, 'utf8'))
+    for (const m of code.matchAll(/\bconst (\w+)\s*(?::[^=\n]*)?=\s*'([^']+)'/g)) {
+      const canon = canonOf.get(m[2])
+      if (!canon || (canon.file === p && canon.name === m[1]) || PENDING_COPIES[p] === m[1] || OTHER_MEANING[p] === m[1]) continue
+      violations.push(`${p} · 보호 이름 '${m[2]}' 을 상수 ${m[1]} 로 따로 적었다. 정본(${canon.file} ${canon.name})을 import 해 한 벌로 쓴다.`)
+    }
+  }
+  for (const [p, name] of Object.entries(PENDING_COPIES)) {
+    if (!new RegExp(`\\bconst ${name}\\s*=\\s*'`).test(stripComments(readFileSync(p, 'utf8')))) {
+      violations.push(`${p} · ${name} 사본이 이미 걷혔다. 이 그물의 PENDING_COPIES 에서 그 줄을 지운다.`)
+    }
   }
 }
 

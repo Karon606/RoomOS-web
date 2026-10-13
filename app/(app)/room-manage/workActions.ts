@@ -21,12 +21,9 @@ import { splitWorkCost, isLaborItem } from '@/lib/roomWorkCost'
 // 담당 어휘(직접·업체·제3자)는 청소와 같은 말이라 정본을 함께 쓴다. 사본을 만들면 한쪽만
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
-import { type CleaningPerformer } from './cleaningConstants'
+import { type CleaningPerformer, WORK_EXPENSE_CATEGORY } from './cleaningConstants'
 import { matchesWork } from '@/lib/roomWorkMatch'
 import { fmtRoomNo } from '@/lib/roomNo'
-
-/** 작업 비용이 잡히는 지출 카테고리. 이미 쌓인 도배·장판 87건이 전부 이 값이다(실측 2026-08-25). */
-const WORK_EXPENSE_CATEGORY = '수선유지비'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 

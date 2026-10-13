@@ -5,8 +5,10 @@
 //     목록 글자와 기록 글자(RentDiscount.memo·Tenant.job 등)가 같아 이름 변경이 그 기록을 따라간다.
 //   · **이름 변경은 영업장 범위** · RentDiscount 에는 propertyId 가 없다. 계약(leaseTerm)으로 거른다.
 //   · **빈 칸 기본값** · 칸이 null 이면 조회·이름 변경·초기화가 같은 기본값을 읽는다.
-//   · **보호 이름** · 코드가 글자로 판정하는 이름(결제 수단·창문 원값·청소비·재고 기본 카테고리)은 바꿀 수
-//     없다. 결제 수단 글자를 비교하는 자리가 코드에 새로 생기면 그 글자가 보호 집합에 있어야 한다.
+//   · **보호 이름** · 코드가 글자로 판정하는 이름(결제 수단·창문 원값·청소비·재고 기본 카테고리)과 코드가 그 글자로
+//     기록을 만드는 이름(보증금 몰취·위약금·기타 임대수입·청소용역비·수선유지비)은 바꿀 수 없다. 결제 수단 글자를
+//     비교하는 자리나, 기록을 만드는 코드가 카테고리·결제 수단을 글자로 적는 자리가 새로 생기면 그 글자가 보호 집합에
+//     있어야 한다(2026-10-13 운영자 승인 범위).
 //   · **적용취소는 지금 서버 목록 위에서** · 빼기 둘을 거꾸로 무르기·빼고 더한 뒤 무르기·그사이 다른 화면이
 //     쌓은 값, 세 경우에 아무것도 안 사라진다. 초기화 적용취소도 그 뒤 생긴 항목을 잃지 않는다.
 //   · **사유는 라벨** · 금액 계산은 memo 를 안 읽는다(돈 무변경의 근거).
@@ -21,7 +23,8 @@ import {
 import { REQUEST_CATEGORIES } from '../lib/requestCategories'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '../lib/unitOptions'
 import { PAYMENT_METHODS, CARD_LIKE_METHODS } from '../lib/paymentMethods'
-import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '../lib/incomeCategories'
+import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD, FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY } from '../lib/incomeCategories'
+import { CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY } from '../app/(app)/room-manage/cleaningConstants'
 import { DEFAULT_INVENTORY_CATEGORIES } from '../app/(app)/inventory/constants'
 import { discountForMonth, discountLabel } from '../lib/rentDiscount'
 
@@ -103,6 +106,16 @@ eq('직접 더한 결제 수단은 바꿀 수 있다', protectedOptionReason('pa
 eq('창문 원값 OUTER·INNER 는 보호', ['OUTER', 'INNER'].map(n => protectedOptionReason('windowTypeOptions', n) !== null), [true, true])
 eq('부가수익 청소비는 보호(환불 한도를 정하는 글자)', protectedOptionReason('incomeCategories', CLEANING_FEE_CATEGORY) !== null, true)
 eq('재고 기본 카테고리는 보호', DEFAULT_INVENTORY_CATEGORIES.every(c => protectedOptionReason('expenseCategories', c.cat) !== null), true)
+// 코드가 이 글자로 기록을 만드는 이름. 바꾸면 지난 기록만 새 이름이 되고 다음 기록은 옛 이름으로 생겨 갈린다.
+eq('청소·작업 완료가 만드는 지출 카테고리는 보호',
+  [CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY].map(n => protectedOptionReason('expenseCategories', n) !== null), [true, true])
+eq('퇴실 정산·예약 취소·수납 과납분이 만드는 부가수익 카테고리는 보호',
+  [FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY].map(n => protectedOptionReason('incomeCategories', n) !== null), [true, true, true])
+// 막지 않는 다섯(운영자 결정 2026-10-13). 세부 항목 면제·영수증 인식 제외만 바뀌고 돈 계산과 무관하다.
+eq('공과금·관리비·임대료·세금/수수료·보증금 반환은 바꿀 수 있다',
+  ['공과금', '관리비', '임대료', '세금/수수료', '보증금 반환'].map(n => protectedOptionReason('expenseCategories', n)), [null, null, null, null, null])
+eq('지출 보호 이름은 다섯(재고 셋 + 청소·작업 둘)', PROTECTED_OPTION_NAMES.expenseCategories?.names.length, 5)
+eq('부가수익 보호 이름은 넷(청소비·보증금 몰취·위약금·기타 임대수입)', PROTECTED_OPTION_NAMES.incomeCategories?.names.length, 4)
 eq('할인 사유·직업에는 보호 이름이 없다',
   [protectedOptionReason('discountReasons', '프로모션'), protectedOptionReason('jobOptions', '학생')], [null, null])
 eq('보호 이름에서 바꾸기는 막는다',
@@ -150,6 +163,71 @@ for (const file of [...walk('app'), ...walk('components'), ...walk('lib')]) {
   }
 }
 eq('결제 수단 글자 비교 자리를 찾았다(그물이 살아 있다)', payCompares.length > 10, true)
+
+// ── 기록을 만드는 코드가 목록 이름을 글자로 적는 자리 전수 ──────────
+// 지출·부가수익·수납 기록을 만드는 코드가 카테고리·결제 수단을 글자(또는 글자 상수)로 적으면 그 이름은 보호 이름이어야
+// 한다. 설정에서 바꾸면 지난 기록만 새 이름이 되고 다음 기록은 옛 이름으로 생겨, 한 돈이 두 이름으로 갈리고 옛 이름은
+// 목록 밖에 선다(2026-10-13 운영자 승인). 보는 자리는 셋이다. 기록 만들기 호출 덩어리(expense·extraIncome·paymentRecord
+// 의 create·createMany·upsert)의 category·payMethod 칸, 폼 데이터의 set('category'|'payMethod', …), 카테고리 이름 상수
+// (…CATEGORY… = '글자', 덩어리 밖 배열로 엮여 들어가는 퇴실 정산 parts 같은 자리). 변수로만 흘러드는 글자(무상 비품의
+// 빈 카테고리 폴백 '비품' 따위)는 이 그물 밖이다.
+// 보호하지 않는 글자는 까닭과 함께 아래 표에 적는다. 표에 없는 새 글자가 생기면 붉게 선다.
+const NOT_PROTECTED_WRITES: Record<string, string> = {
+  '양도인 정산': '양도인 정산 수납(rooms/actions)의 결제 수단 표식. 결제 수단 목록 항목이 아니다(기본값에 없고 저절로 더하지 않는다, 운영 결제 수단 칸 null)',
+  '예약금 몰취': '예약 취소 위약금 부가수익(tenants/actions)의 결제 수단 표식. 결제 수단 목록 항목이 아니다(기본값에 없고 저절로 더하지 않는다)',
+  '관리비': '고정 지출 폼이 처음 채워 두는 값(DEFAULT_RECURRING_CATEGORY)이라 기록을 스스로 만들지 않는다. 운영자 결정으로 막지 않는다(2026-10-13)',
+  '보증금': '옛 몰취 이름(FORFEIT_CATEGORY_LEGACY). 지금 코드는 이 글자로 기록을 만들지 않는다',
+}
+const incNames = PROTECTED_OPTION_NAMES.incomeCategories?.names ?? []
+const expNames = PROTECTED_OPTION_NAMES.expenseCategories?.names ?? []
+// 주석을 걷되 줄 수는 지킨다(위반 행 번호가 원본과 맞아야 한다).
+const stripKeepLines = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+const codeOf = new Map([...walk('app'), ...walk('components'), ...walk('lib')].map(f => [f, stripKeepLines(readFileSync(f, 'utf8'))] as const))
+// 글자 상수 지도(대문자 이름 = '글자'). 같은 이름이 여러 파일에 있으면 값을 다 본다.
+const constVals = new Map<string, string[]>()
+for (const code of codeOf.values()) {
+  for (const m of code.matchAll(/\bconst ([A-Z][A-Z0-9_]+)\s*(?::[^=\n]*)?=\s*'([^']+)'/g)) constVals.set(m[1], [...(constVals.get(m[1]) ?? []), m[2]])
+}
+// 별칭으로 들여온 상수(import { OVERPAY_INCOME_CATEGORY as EXTRA_INCOME_CATEGORY })도 원래 글자로 읽는다.
+for (const code of codeOf.values()) {
+  for (const m of code.matchAll(/\b([A-Z][A-Z0-9_]+) as ([A-Z][A-Z0-9_]+)\b/g)) {
+    if (constVals.has(m[1])) constVals.set(m[2], [...(constVals.get(m[2]) ?? []), ...constVals.get(m[1])!])
+  }
+}
+type Written = { file: string; line: number; kind: 'category' | 'payMethod'; value: string }
+const written: Written[] = []
+const valuesIn = (rawExpr: string, file: string, line: number, kind: Written['kind']) => {
+  const expr = rawExpr.replace(/\[[^\]]*\]/g, '')   // row['입금수단'] 같은 열쇠 글자는 값이 아니다
+  for (const m of expr.matchAll(/'([^']+)'/g)) written.push({ file, line, kind, value: m[1] })
+  for (const m of expr.matchAll(/\b([A-Z][A-Z0-9_]{3,})\b/g)) {
+    const vals = constVals.get(m[1])
+    if (!vals) { fails.push(`${file}:${line} · ${kind} 에 적는 상수 ${m[1]} 의 글자를 못 읽었다(이 그물은 const 이름 = '글자' 꼴을 읽는다).`); continue }
+    for (const v of vals) written.push({ file, line, kind, value: v })
+  }
+}
+for (const [file, code] of codeOf) {
+  const lineAt = (i: number) => code.slice(0, i).split('\n').length
+  for (const m of code.matchAll(/\b(expense|extraIncome|paymentRecord)\.(create|createMany|upsert)\(/g)) {
+    let depth = 0, j = m.index + m[0].length - 1
+    for (; j < code.length; j++) { if (code[j] === '(') depth++; else if (code[j] === ')' && --depth === 0) break }
+    const blk = code.slice(m.index, j + 1)
+    for (const f of blk.matchAll(/\b(category|payMethod)\s*:\s*([^,\n}]*)/g)) valuesIn(f[2], file, lineAt(m.index + f.index), f[1] as Written['kind'])
+  }
+  for (const f of code.matchAll(/\.set\('(category|payMethod)',\s*([^)\n]*)\)/g)) valuesIn(f[2], file, lineAt(f.index), f[1] as Written['kind'])
+  for (const m of code.matchAll(/\bconst ([A-Z0-9_]*CATEGORY[A-Z0-9_]*)\s*(?::[^=\n]*)?=\s*'([^']+)'/g)) {
+    written.push({ file, line: lineAt(m.index), kind: 'category', value: m[2] })
+  }
+}
+for (const w of written) {
+  const ok = w.kind === 'payMethod' ? payNames.includes(w.value) : (incNames.includes(w.value) || expNames.includes(w.value))
+  if (!ok && !Object.hasOwn(NOT_PROTECTED_WRITES, w.value)) {
+    fails.push(`${w.file}:${w.line} · 기록을 만드는 코드가 ${w.kind === 'payMethod' ? '결제 수단' : '카테고리'} '${w.value}' 을 글자로 적는데 보호 이름(lib/optionLists PROTECTED_OPTION_NAMES)에 없다. 설정에서 이 이름을 바꾸면 지난 기록과 다음 기록이 두 이름으로 갈린다. 상수로 보호 이름에 더하거나, 보호하지 않을 까닭을 NOT_PROTECTED_WRITES 에 적는다.`)
+  }
+}
+eq('기록을 만드는 코드의 글자 이름을 찾았다(그물이 살아 있다)', written.length > 15, true)
+for (const n of [CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY, FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY, CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD]) {
+  eq(`코드가 만드는 '${n}' 자리를 그물이 본다`, written.some(w => w.value === n), true)
+}
 
 // ── 적용취소: 지금 서버 목록 위에서 한 이름만 ─────────────────────
 // 서버 목록 흉내. 빼기는 거르기, 더하기는 끝에 붙이기, 빼기 적용취소는 insertOptionAt(뺄 때 자리).
@@ -253,4 +331,4 @@ if (fails.length) {
   for (const f of fails) console.error('  - ' + f)
   process.exit(1)
 }
-console.log(`test-discount-reasons: ${pass}건 통과 (결제 수단 글자 비교 ${payCompares.length}곳 검사)`)
+console.log(`test-discount-reasons: ${pass}건 통과 (결제 수단 글자 비교 ${payCompares.length}곳 · 기록을 만드는 글자 ${written.length}곳 검사)`)

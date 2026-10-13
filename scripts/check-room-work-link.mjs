@@ -19,7 +19,8 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 // 카테고리는 정본에서 읽는다 — 문자열을 복제하면 정본을 고쳐도 그물만 옛 이름을 보고 0건을 낸다.
-const CANON = 'app/(app)/room-manage/workActions.ts'
+// 2026-10-13 상수가 workActions('use server')에서 cleaningConstants 로 옮겨졌다. 옛 경로를 읽으면 이 검사가 통째로 꺼진다.
+const CANON = 'app/(app)/room-manage/cleaningConstants.ts'
 const CATEGORY = (readFileSync(CANON, 'utf8').match(/WORK_EXPENSE_CATEGORY\s*=\s*'([^']+)'/) ?? [])[1]
 if (!CATEGORY) {
   console.error(`[작업 지출] ${CANON} 에서 WORK_EXPENSE_CATEGORY 를 못 읽었다 — 검사가 통째로 건너뛰어졌다. 감지망을 고쳐야 한다.`)

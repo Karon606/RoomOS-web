@@ -13,6 +13,12 @@ export type CleaningPerformer = 'SELF' | 'VENDOR' | 'THIRD_PARTY'
 // 지금도 목록에 없는 고아 카테고리('청소비' 1건)가 떠 있다.
 export const CLEANING_EXPENSE_CATEGORY = '청소용역비'
 
+/** 작업(도배·장판 등) 비용이 잡히는 지출 카테고리. 이미 쌓인 도배·장판 87건이 전부 이 값이다(실측 2026-08-25). */
+// workActions('use server')에 있던 것을 여기로 옮겼다. 위 청소 카테고리와 함께 분류 관리의 이름 고정
+// (lib/optionLists PROTECTED_OPTION_NAMES)이 이 상수를 읽는다. 서버 액션 파일은 상수를 내보낼 수 없다.
+// **두 상수를 글자로 읽는 감지망이 있다**(scripts/check-cleaning-expense-orphan.mjs, check-room-work-link.mjs). 자리를 옮기면 그 CANON 경로도 함께 고친다.
+export const WORK_EXPENSE_CATEGORY = '수선유지비'
+
 export const CLEANING_REASON_LABEL: Record<CleaningReason, string> = {
   CHECKOUT: '퇴실 청소', AFTER_WORK: '공사·도배 후', DURING_STAY: '입실 중 요청', OTHER: '기타',
 }

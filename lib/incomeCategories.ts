@@ -12,6 +12,12 @@ export const FORFEIT_CATEGORY_LEGACY = '보증금'
 // 사업소득 내 잡수입이다(회계 패널 2026-08-01).
 export const PENALTY_CATEGORY = '위약금'
 
+// '기타 임대수입' — 수납에서 월 이용료를 넘게 받은 몫을 부가수익으로 돌릴 때의 카테고리(수납 폼의 과납분 처리).
+// 분류 관리의 이름 고정(lib/optionLists PROTECTED_OPTION_NAMES)이 이 상수를 읽는다. 수납 폼
+// (components/entity-modal/widgets/PaymentEntryForm EXTRA_INCOME_CATEGORY)은 아직 같은 글자를 따로 적고 있다.
+// 그 파일을 고칠 때 이 상수를 import 해 한 벌로 만든다(scripts/check-option-lists ⓗ 가 그 사본을 이름 불러 둔다).
+export const OVERPAY_INCOME_CATEGORY = '기타 임대수입'
+
 // '청소비' — 청소비 수익. 입실 때 별도로 받은 것과, 퇴실 정산에서 보증금 안의 청소비 몫을 쓴 것 둘 다다.
 // 어느 쪽이든 약정된 청소 대가를 실제로 받은 것이라 계정이 같다(운영자 정본 2026-08-11).
 //   "보증금 5만원에 이미 청소비 2만원이 포함되어 있었고 난 3만원을 돌려준 거야. 즉 정상적인 청소비를

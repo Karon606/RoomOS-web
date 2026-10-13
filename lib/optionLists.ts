@@ -12,7 +12,8 @@
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, normalizeUnitInput } from '@/lib/unitOptions'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { PAYMENT_METHODS, CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
+import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD, FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY } from '@/app/(app)/room-manage/cleaningConstants'
 import { DEFAULT_INVENTORY_CATEGORIES } from '@/app/(app)/inventory/constants'
 import { normalizeCategoryInput } from '@/lib/categoryInput'
 
@@ -100,14 +101,16 @@ export function normalizeOptionName(field: OptionListField, raw: string | null |
 }
 
 /**
- * 이름을 바꿀 수 없는 항목. 앱 코드가 이 글자와 같은지로 판정한다.
+ * 이름을 바꿀 수 없는 항목. 앱 코드가 이 글자와 같은지로 판정하거나, 이 글자로 기록을 스스로 만든다.
  *
  * 이름 변경은 목록과 함께 그 글자를 쓰는 기록까지 바꾼다(RENAME_CASCADE). 그런데 코드가 '신용카드'
  * 와 같은지로 카드 매출·현금영수증 대상·정산 상태를 가르면, 이름을 바꾸는 순간 그 기록들이 판정에서
  * 조용히 빠진다. 운영 영업장은 결제 수단 칸이 비어(null) 있어 종전에는 이름 변경이 무시됐는데, 위
  * parseOptionList 로 고친 뒤로는 수납 기록·계약까지 실제로 바뀐다(계좌이체 606행·신용카드 411행·
  * 현금 31행, 독립 검수 2026-10-13). 그래서 이름 변경 입구에서 막는다.
- * 빼기·초기화는 막지 않는다. 목록에서만 빠지고 기록은 그대로이며 판정은 코드 상수를 본다.
+ * 코드가 이 글자로 기록을 만드는 이름도 같다. 바꾸면 지난 기록만 새 이름이 되고 다음 기록은 옛 이름으로 생겨,
+ * 한 가지 돈이 두 이름으로 갈리고 옛 이름은 목록 밖에 선다(2026-10-13 운영자 승인으로 범위에 넣었다).
+ * 삭제·초기화는 막지 않는다. 목록에서만 빠지고 기록은 그대로이며 판정은 코드 상수를 본다.
  *
  * 항목마다 결과 문장(effect)을 둔다. 서버 오류와 화면 카드 안내가 이 한 문장을 읽는다. 그 문장은 '이 이름만
  * 그렇게 쓰인다' 는 결과를 말하고, 다른 이름을 새로 추가해 쓰라고 권하지 않는다. 판정이 글자에 묶여 있어
@@ -119,14 +122,23 @@ export function normalizeOptionName(field: OptionListField, raw: string | null |
  *     (CARD_LIKE_METHODS, 카드 매출·현금영수증 대상·환불 세무 고지)·보증금 표식(DEPOSIT_SOURCED_PAY_METHOD).
  *     '체크카드' 만 상수가 없다. 카드 정산 조회(finance/actions)와 지출·고정 지출 폼의 카드 선택 칸이 글자로 비교한다.
  *   · 창문 유형: 원값 OUTER·INNER. 화면 라벨 지도(OUTER 를 외창으로)와 가져오기 매핑(외창을 OUTER 로)이 이 값을 읽는다.
- *   · 부가수익: 청소비. CLEANING_FEE_RECEIVED_WHERE 가 이 글자로 입실 때 받은 청소비를 세고 그 합이 퇴실 환불 한도를 정한다.
+ *   · 부가수익: 청소비(CLEANING_FEE_CATEGORY). CLEANING_FEE_RECEIVED_WHERE 가 이 글자로 입실 때 받은 청소비를 세고 그 합이
+ *     퇴실 환불 한도를 정한다. 예약금 분해 수납과 퇴실 정산이 이 글자로 부가수익을 만든다. 보증금 몰취(FORFEIT_CATEGORY)는
+ *     퇴실 정산이, 위약금(PENALTY_CATEGORY)은 예약 취소가, 기타 임대수입(OVERPAY_INCOME_CATEGORY)은 수납 과납분 처리가
+ *     이 글자로 부가수익을 만든다(몰취·위약금은 목록에 없으면 저절로 더한다).
  *   · 지출: 재고 기본 카테고리(DEFAULT_INVENTORY_CATEGORIES). 재고 카테고리를 따로 정하지 않은 영업장은 재고가
- *     이 글자로 지출을 묶는다(운영 영업장이 그 상태다). 폐기물 처리비는 품목 추적 단위도 가른다.
- * 결제 수단 글자를 비교하는 자리가 이 목록 밖에 새로 생기면 scripts/test-discount-reasons 가 붉게 선다.
+ *     이 글자로 지출을 묶는다(운영 영업장이 그 상태다). 폐기물 처리비는 품목 추적 단위도 가른다. 청소용역비
+ *     (CLEANING_EXPENSE_CATEGORY)·수선유지비(WORK_EXPENSE_CATEGORY)는 청소·작업 완료가 이 글자로 지출을 만든다.
+ *   · 막지 않는 것: 공과금·관리비·임대료·세금/수수료·보증금 반환. 코드가 글자로 보기는 하지만(세부 항목 면제·영수증
+ *     인식 제외) 돈 계산과 무관하고 기록을 만들지 않는다(2026-10-13 운영자 승인).
+ * 결제 수단 글자를 비교하는 자리, 기록을 만드는 코드가 카테고리·결제 수단을 글자로 적는 자리가 이 목록 밖에 새로 생기면
+ * scripts/test-discount-reasons 가 붉게 선다.
  */
 // 카드 머리 안내는 '‘이름 고정’ 항목은 바꿀 수 없습니다.' 뒤에 effect 를 붙인다. 기본 글자 320·360·412px 에서 두 줄을
-// 넘지 않게 짧게 쓴다(2026-10-13 실측, 넷 다 두 줄). 결제 수단 문장은 카드만 말하지 않는다. 보호 이름 일곱 중 카드는
-// 신용카드·결제선생·체크카드뿐이고 계좌이체·현금도 같은 문장 아래 선다(3차 검수).
+// 넘지 않게 짧게 쓴다(2026-10-13 실측, 넷 다 두 줄. 부가수익·지출 문장은 이름이 늘어난 뒤 운영 목록 그대로 다시 쟀다).
+// 결제 수단 문장은 카드만 말하지 않는다. 보호 이름 일곱 중 카드는 신용카드·결제선생·체크카드뿐이고 계좌이체·현금도
+// 같은 문장 아래 선다(3차 검수). 한 칸에 까닭이 둘(재고가 묶는 이름·청소가 만드는 이름)이어도 문장은 칸마다 하나다.
+// 카드 머리는 한 번만 적고, 서버 오류도 같은 문장을 읽는다.
 export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: readonly string[]; effect: string }>> = {
   paymentMethods: {
     names: Array.from(new Set([...PAYMENT_METHODS, ...CARD_LIKE_METHODS, DEPOSIT_SOURCED_PAY_METHOD, '체크카드'])),
@@ -137,12 +149,12 @@ export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: re
     effect: '호실 정보와 엑셀 가져오기는 이 이름만 외창·내창으로 읽습니다.',
   },
   incomeCategories: {
-    names: [CLEANING_FEE_CATEGORY],
-    effect: '퇴실 환불 한도는 이 이름으로 받은 청소비만 셉니다.',
+    names: [CLEANING_FEE_CATEGORY, FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY],
+    effect: '수납과 퇴실·예약 취소가 이 이름으로 부가수익을 만들고 셉니다.',
   },
   expenseCategories: {
-    names: DEFAULT_INVENTORY_CATEGORIES.map(c => c.cat),
-    effect: '재고 관리는 이 이름으로 적은 지출만 묶습니다.',
+    names: [...DEFAULT_INVENTORY_CATEGORIES.map(c => c.cat), CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY],
+    effect: '재고 관리와 청소·작업 기록이 이 이름으로 지출을 묶고 만듭니다.',
   },
 }
 
