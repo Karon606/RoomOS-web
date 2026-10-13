@@ -290,6 +290,115 @@ need('components/ui/ConfirmDialog.tsx', [
   [/data-confirm-panel/, '계측이 확인창을 찾을 손잡이가 사라짐(lib/viewportProbe 가 이 표식으로 읽는다)'],
 ])
 
+// 5) 0단계 계측(키보드 가림 패널 2026-10-13) — 센티널 상자와 직전 키보드 세션 링버퍼.
+// 후보 1(innerHeight 대신 fixed 상자 H·T0 기준틀) 시공 전에 client 원점 모형을 실기로 가리는
+// 자리다. 계측은 앱 동작을 한 픽셀도 안 바꿔야 하고, 값만 담아야 한다.
+const sliceBody = (src, head) => {
+  const at = src.indexOf(head)
+  if (at < 0) return null
+  let depth = 0, start = -1
+  for (let i = src.indexOf(')', at); i < src.length; i++) {
+    if (src[i] === '{') { if (depth === 0) start = i; depth++ }
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(start, i + 1) }
+  }
+  return null
+}
+need('lib/viewportProbe.ts', [
+  [/sentinel H=/, '센티널 상자 높이(H)·client top(T0)을 안 담는다. 후보 1 기준틀의 client 원점 모형을 실기로 못 가른다'],
+  [/documentElement\.clientHeight/, 'documentElement.clientHeight 를 안 담는다'],
+  [/scrollingElement/, '문서 스크롤 위치(scrollingElement.scrollTop)를 안 담는다'],
+  // 신고 버튼을 누른 순간에도 같은 상자로 잰다(ErrorReportButton). 상자를 만드는 곳이 두 벌이면 한쪽만 숨겨진다.
+  [/export function sentinelRect\(/, '누른 순간에 잴 센티널 정본(sentinelRect)이 사라짐. 셸 폼에서 팬하던 때의 H·T0 가 0건이 된다'],
+  [/const r = sentinelRect\(\)/, '센티널 줄이 정본 sentinelRect 를 안 쓴다. 상자를 만드는 곳이 두 벌이 된다'],
+])
+// 센티널은 화면에 영향 0 — 안 보이고, 누름을 안 받고, 접근성 트리에 안 서고, 잰 그 실행 안에서 사라진다.
+{
+  let src = ''
+  try { src = strip(readFileSync('lib/viewportProbe.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const body = sliceBody(src, 'function sentinelRect(')
+  if (body == null) {
+    violations.push('lib/viewportProbe.ts — 센티널을 재는 sentinelRect 를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
+  } else {
+    const must = [
+      [/position:\s*fixed/, 'fixed 가 아니다. 키보드·팬 아래 화면 고정 상자의 자리를 재는 것이 목적이다'],
+      [/inset:\s*0/, 'inset 0 이 아니다. H·T0 가 화면 전체 상자의 값이 아니게 된다'],
+      [/visibility:\s*hidden/, '보이지 않게(visibility hidden) 하지 않는다'],
+      [/pointer-events:\s*none/, '누름을 막지 않는다(pointer-events none). 잰 순간 탭을 삼킬 수 있다'],
+      [/aria-hidden/, '접근성 트리에서 숨기지 않는다(aria-hidden)'],
+      [/finally\s*\{[^}]*\.remove\(\)/, '잰 뒤 finally 에서 지우지 않는다. 상자가 화면에 남는다'],
+      [/\}\s*catch\s*\{\s*return null\s*\}/, '실패를 null 로 삼키지 않는다. 신고 버튼을 누른 순간 계측이 던지면 신고창이 안 열린다'],
+    ]
+    for (const [re, msg] of must) if (!re.test(body)) violations.push(`lib/viewportProbe.ts — 센티널이 ${msg}`)
+  }
+}
+// 링버퍼 — 값만, 읽기 전용, 구독·예약 없음. 기록은 가드가 판정을 마친 자리에서 넣는다(§30 구독 두 곳).
+need('lib/kbdTrace.ts', [
+  [/export function kbdTrace\([^)]*\)\s*:\s*void/, '기록 함수가 값을 돌려준다. 가드가 그 값을 판정에 쓰는 길이 열린다'],
+  [/export function kbdTraceFreeze\(/, '신고창을 여는 순간 링버퍼를 얼리는 정본이 사라짐'],
+  [/export function kbdTraceTable\(/, '링버퍼를 표 한 덩이로 적는 정본이 사라짐'],
+  [/KBD_TRACE_CAP/, '링버퍼 상한이 사라짐. 메모리에 끝없이 쌓인다'],
+  [/try\s*\{/, '기록이 try 안에 있지 않다. 계측 실패가 가드를 멈춘다'],
+  // 독립 검수(2026-10-13) 반영 — 팬하는 동안의 화면 고정 상자 자리, 세션 앞부분, 판정이 바뀐 줄.
+  [/querySelector\('\[data-modal-overlay\]'\)/, '팬하는 동안 모달 오버레이(fixed 상자)를 안 잰다. 원래 칸이 팬하던 때의 H·T0 가 0건이 된다'],
+  [/Math\.abs\(fr\.width - window\.innerWidth\) < 1/, 'transform 조상 아래 틀어진 오버레이를 거르지 않는다. 엉뚱한 H·T0 가 실린다'],
+  [/scrollingElement/, '문서 scrollTop(sy)을 안 담는다'],
+  [/'H',\s*'T0',\s*'sy'/, '표에 H·T0·sy 열이 없다'],
+  [/H·T0=[^']*sy=/, '범례가 H·T0·sy 를 설명하지 않는다'],
+  [/KBD_TRACE_CAP = (?:[3-9]\d{2}|[1-9]\d{3,})\b/, '링버퍼 상한이 300 아래다. 큰 팬 한 번이 세션 앞부분(첫 fi, vr open 의 inner 기준선)을 밀어낸다'],
+  [/rank === FLIP/, '판정이 바뀐 줄을 덜기 맨 뒤로 미루지 않는다. 메모가 길면 vs shut·vr shut 부터 사라진다'],
+  [/REPORT_NOTE_MAX = 4000\b/, '메모 한도가 서버(app/(app)/errorReports.ts slice(0, 4000))와 어긋남'],
+])
+{
+  let src = ''
+  try { src = strip(readFileSync('lib/kbdTrace.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (src) {
+    const bad = [
+      [/\.value\b/, '입력값(.value)을 읽는다'],
+      [/placeholder/, 'placeholder 를 읽는다'],
+      [/textContent|innerText|innerHTML|outerHTML/, '본문 텍스트를 읽는다'],
+      [/getAttribute\(/, '속성값(getAttribute)을 읽는다. 표식은 hasAttribute 로 있고 없음만 본다'],
+      [/setProperty\(|setAttribute\(|removeAttribute\(|removeProperty\(|classList\./, 'DOM 에 쓴다. 계측은 읽기 전용이다'],
+      [/scrollTo\(|scrollBy\(|scrollIntoView\(|scrollTop\s*[+-]?=(?!=)/, '스크롤을 움직인다. 계측은 읽기 전용이다'],
+      [/\.style\.[A-Za-z]+\s*=(?!=)|cssText|appendChild\(|insertBefore\(|\.remove\(\)/, 'DOM 을 바꾼다. 계측은 읽기 전용이다'],
+      [/addEventListener\(/, '이벤트를 스스로 구독한다. visualViewport 구독은 가드·useVisibleBand 두 곳뿐이다(§30)'],
+      [/setTimeout\(|setInterval\(|requestAnimationFrame\(/, '스스로 예약해 돈다. 기록은 가드가 부를 때만 한다'],
+      [/\.(id|name|title|dataset|href|labels|ariaLabel)\b/, '포커스 요소의 종류 밖 속성을 읽는다'],
+    ]
+    for (const [re, what] of bad) if (re.test(src)) violations.push(`lib/kbdTrace.ts — ${what}`)
+  }
+}
+// 가드 배선 — 판정을 마친 자리마다 관찰 호출이 있고, 그 반환값을 판정에 안 쓴다. 판정 문장은 그대로다.
+need('components/layout/ViewportOffsetGuard.tsx', [
+  [/from '@\/lib\/kbdTrace'/, '링버퍼 기록을 정본(lib/kbdTrace)에서 안 가져온다'],
+  [/kbdTrace\('vr',\s*'open',\s*s\)/, '열림 판정(resize)을 링버퍼에 안 적는다'],
+  [/kbdTrace\('vr',\s*keyboardOpen\(s\)\s*\?\s*'phantom'\s*:\s*'shut',\s*s\)/, '닫힘·유령 판정(resize)을 링버퍼에 안 적는다'],
+  [/kbdTrace\('vs',/, '팬(vv scroll) 판정을 링버퍼에 안 적는다. 팬 도중 판정이 뒤집히는 순간이 안 남는다'],
+  [/kbdTrace\('fi',/, 'focusin 을 링버퍼에 안 적는다'],
+  [/kbdTrace\('rst',/, '복원(scrollTo 0,0) 발동을 링버퍼에 안 적는다'],
+  [/kbdTrace\('rs',\s*'clear'\)/, '복귀 재동기를 링버퍼에 안 적는다'],
+  // 판정 문장이 관찰 호출과 섞여 바뀌지 않았는지 — 0단계는 동작 무변화가 조건이다.
+  [/if \(!keyboardOpen\(snapNow\(\)\)\) restore\(\)/, '팬 판정 문장이 바뀌었다. 0단계 계측은 판정을 건드리지 않는다'],
+  [/if \(keyboardOpen\(snapNow\(\)\)\) scheduleReveal\(\)/, '칸-대-칸 재노출 판정 문장이 바뀌었다'],
+  [/if \(shouldRestore\(snapNow\(\), scrolled\)\)/, '복원 판정 문장이 바뀌었다'],
+])
+{
+  let src = ''
+  try { src = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  // 관찰 호출은 문장이어야 한다 — 조건·대입·인자·논리식 안에 서면 그 값이 동작에 섞인다.
+  const used = /(=|\(|,|&&|\|\||\?|:|!|return)\s*kbdTrace\(/.exec(src)
+  if (used) violations.push(`components/layout/ViewportOffsetGuard.tsx — kbdTrace 의 결과를 식 안에서 쓴다('${used[0]}'). 관찰 호출은 홀로 선 문장이어야 한다`)
+}
+need('components/ErrorReportButton.tsx', [
+  [/kbdTraceFreeze\(sentinelRect\(\)\)/, '누른 순간 센티널을 재서 링버퍼를 얼리지 않는다. 신고창 메모 칸의 키보드가 직전 세션을 밀어내고, 셸 폼에서 팬하던 때의 H·T0 가 0건이 된다'],
+  [/kbdTraceTable\(/, '직전 키보드 세션 표를 신고에 안 싣는다'],
+  // 임포트만 남고 호출에서 빠지는 되돌림까지 잡는다 — 한도는 표를 부르는 그 인자에 서야 한다.
+  [/kbdTraceTable\([^)]*REPORT_NOTE_MAX/, '서버 메모 한도 안에서 표를 덜지 않는다. 메모가 길면 서버가 표 꼬리(가장 최근 줄)를 자른다'],
+])
+// 서버 쪽 한도 — 'use server' 파일은 상수를 못 내보내 숫자가 두 곳에 산다. 한쪽만 바뀌면 표가 잘린다.
+need('app/(app)/errorReports.ts', [
+  [/userNote\?\.slice\(0, 4000\)/, '메모 한도가 lib/kbdTrace REPORT_NOTE_MAX 와 어긋남'],
+])
+
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exit(1)

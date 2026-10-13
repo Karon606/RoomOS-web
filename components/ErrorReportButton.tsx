@@ -7,7 +7,8 @@ import { useState, useRef, useEffect } from 'react'
 import { submitErrorReport, createErrorReportImageSession } from '@/app/(app)/errorReports'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
-import { viewportProbe, probeAfterEntrance, probeReport } from '@/lib/viewportProbe'
+import { viewportProbe, probeAfterEntrance, probeReport, sentinelRect } from '@/lib/viewportProbe'
+import { kbdTraceFreeze, kbdTraceTable, REPORT_NOTE_MAX, type KbdTraceFrozen } from '@/lib/kbdTrace'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -79,6 +80,13 @@ export default function ErrorReportButton() {
     return probeAfterEntrance(p => { openedProbeRef.current = p })
   }, [open])
 
+  // 직전 키보드 세션(키보드 가림 패널 0단계, 2026-10-13) — 신고창을 여는 순간 링버퍼를 얼린다.
+  // 신고창의 메모 칸이 키보드를 다시 띄우면 그 세션이 직전 세션을 밀어내기 때문이다. 값만 담는다
+  // (경계는 lib/kbdTrace 머리말). 메모리에만 두고 최근 한 번만 남긴다.
+  // 누른 그 순간의 센티널(H·T0)도 같은 줄에 싣는다. 메모 칸이 autoFocus 라 열린 뒤의 계측은 전부
+  // 신고창 자기 세션이고, 원래 칸이 아직 포커스를 쥐고 팬 상태가 남은 때는 누른 이 순간뿐이다.
+  const traceRef = useRef<KbdTraceFrozen | null>(null)
+
   // 미리보기 objectURL 정리 — 언마운트 시 남은 것 일괄 해제(선택 취소·삭제 때는 개별 해제)
   useEffect(() => { imagesRef.current = images }, [images])
   useEffect(() => () => { imagesRef.current.forEach(im => URL.revokeObjectURL(im.url)) }, [])
@@ -132,6 +140,7 @@ export default function ErrorReportButton() {
 
   const openModal = () => {
     if (suppressClickRef.current) return   // 이동 직후 click 무시
+    traceRef.current = kbdTraceFreeze(sentinelRect())
     // 여는 순간의 맥락을 고정(이후 이동해도 신고엔 '그 순간'이 담김)
     setSnapshot({
       url: typeof window !== 'undefined' ? window.location.href : '',
@@ -176,6 +185,9 @@ export default function ErrorReportButton() {
     // 정작 알고 싶은 그 순간의 기하가 아니라 업로드가 끝난 뒤의 기하가 담긴다.
     // 열었을 때의 스냅샷과 나란히 적는다 — 둘이 다르면 정본 probeReport 가 달라진 줄을 짚는다.
     const probe = probeReport(openedProbeRef.current, viewportProbe())
+    // 키보드 세션 표는 계측 덩이 맨 끝에 붙는다. 서버가 메모를 REPORT_NOTE_MAX 에서 자르므로 메모·
+    // 계측이 쓰고 남은 자리만큼만 싣는다(넘치면 정본이 판정이 그대로인 줄부터 덜어낸다).
+    const trace = probe ? kbdTraceTable(traceRef.current, REPORT_NOTE_MAX - note.trim().length - probe.length - 16) : ''
     try {
       // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
       const imageFileIds: string[] = []
@@ -196,7 +208,7 @@ export default function ErrorReportButton() {
       // 계측을 메모 **뒤에** 덧붙인다(2026-09-08). 운영자가 읽는 문장이 먼저고 계측은 뒤다 —
       // 메모가 길어 서버에서 잘리더라도 밀려나는 것은 계측 쪽이다.
       // 담는 것과 안 담는 것(개인정보 경계)은 lib/viewportProbe 머리말에 있다. 값은 안 담는다.
-      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${probe}`].filter(Boolean).join('\n\n')
+      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${[probe, trace].filter(Boolean).join('\n')}`].filter(Boolean).join('\n\n')
 
       const res = await submitErrorReport({
         url: snapshot.url,

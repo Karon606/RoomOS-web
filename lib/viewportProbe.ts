@@ -8,7 +8,8 @@
 // **개인정보 경계 — 여기서 지킨다.**
 //   담는 것: visualViewport 기하, layout viewport 크기, 키보드 표식(data-kbd-open), 모달 CSS
 //            변수 넷의 계산값, 열린 모달 수와 등장 모션 클래스 잔존 수, 열린 패널마다의 자리
-//            (top·height)와 띠 변수, 확인창 열림·자리·띠 변수, 포커스 요소의 태그·id·name·type.
+//            (top·height)와 띠 변수, 확인창 열림·자리·띠 변수, 포커스 요소의 태그·id·name·type,
+//            숨은 fixed 상자의 자리(H·T0·bottom)와 documentElement.clientHeight·scrollingElement.scrollTop.
 //   안 담는 것: 입력값(value)·placeholder·본문 텍스트·연락처·이름. 무엇을 적었나가 아니라
 //            어떤 종류의 칸에 서 있었나만 알면 된다. 이 경계는 scripts/check-kbd-canonical.mjs
 //            가 지킨다(이 파일에 값 읽기가 새로 들어오면 그물이 막는다).
@@ -20,6 +21,43 @@ function num(v: number | undefined): string {
   return typeof v === 'number' ? String(Math.round(v * 100) / 100) : '—'
 }
 
+/**
+ * 화면 고정 상자 하나의 실측 자리(키보드 가림 패널 0단계, 2026-10-13).
+ *
+ * 모바일 판정은 iOS 홈화면 앱이 팬할 때 innerHeight 를 팬만큼 줄여 보고한다는 것이고, 처방 후보 1 은
+ * innerHeight 대신 fixed inset-0 상자를 잰 높이 H 와 client top T0 를 기준틀로 쓰자는 것이다. 그 전에
+ * client 원점 모형을 실기로 가려야 해서, 같은 순간의 innerHeight·vv 줄(위 둘) 옆에 H·T0 를 나란히
+ * 남긴다. 신고 버튼을 누른 순간에도 이 함수로 한 번 잰다(components/ErrorReportButton openModal).
+ * 그때는 원래 칸이 아직 포커스를 쥐고 있어 팬이 풀리기 전의 H·T0 가 남는다.
+ *
+ * 상자는 **이 함수 안에서만 산다.** 만들고 재고 같은 동기 실행 안에서 지운다. 한 프레임도 그려지지
+ * 않고, 보이지 않고(visibility hidden), 누름을 안 받고(pointer-events none), 접근성 트리에도 안 선다
+ * (aria-hidden). fixed 라 흐름 밖이어서 다른 요소의 자리를 안 바꾼다. 값만 읽는다.
+ */
+export function sentinelRect(): DOMRect | null {
+  // 신고 버튼을 누르는 순간에도 부른다. 계측이 던지면 신고창이 안 열리니 실패는 null 로 삼킨다.
+  try {
+    const body = document.body
+    if (!body) return null
+    const box = document.createElement('div')
+    box.setAttribute('aria-hidden', 'true')
+    box.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none'
+    body.appendChild(box)
+    try { return box.getBoundingClientRect() } finally { box.remove() }
+  } catch { return null }
+}
+
+/** 센티널 줄과 문서 쪽 두 값(documentElement.clientHeight·scrollingElement.scrollTop). */
+function frameLines(): string[] {
+  const r = sentinelRect()
+  if (!r) return ['sentinel 없음']
+  const se = document.scrollingElement
+  return [
+    `sentinel H=${num(r.height)} T0=${num(r.top)} bottom=${num(r.bottom)}`,
+    `doc clientH=${document.documentElement.clientHeight} scrollTop=${se ? num(se.scrollTop) : '—'}`,
+  ]
+}
+
 /** 신고 본문 뒤에 덧붙일 한 덩이. 브라우저 밖이면 빈 문자열이다(서버 렌더 안전). */
 export function viewportProbe(): string {
   if (typeof window === 'undefined' || typeof document === 'undefined') return ''
@@ -29,6 +67,7 @@ export function viewportProbe(): string {
     ? `vv h=${num(vv.height)} w=${num(vv.width)} top=${num(vv.offsetTop)} pageTop=${num(vv.pageTop)} scale=${num(vv.scale)}`
     : 'vv 미지원')
   out.push(`inner h=${window.innerHeight} w=${window.innerWidth} dpr=${num(window.devicePixelRatio)}`)
+  out.push(...frameLines())
 
   const root = document.documentElement
   out.push(`kbd-open=${root.hasAttribute('data-kbd-open') ? 'y' : 'n'}`)

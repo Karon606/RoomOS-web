@@ -39,6 +39,11 @@ import { useEffect, useRef } from 'react'
 import { keyboardOpen, overlapInset, shouldRestore, revealDelta, type KbdSnapshot } from '@/lib/keyboardViewport'
 import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { phantomKeyboardGap } from '@/lib/modalViewport'
+// 관찰만 한다(키보드 가림 패널 0단계, 2026-10-13). 판정을 마친 자리에서 그 결과를 오류신고용
+// 링버퍼에 적을 뿐이고, 반환값도 없고 DOM 에 쓰지도 않는다. 판정·쓰기 문장은 한 글자도 안 바꿨고,
+// kbdTrace( 호출만 지우면 종전 가드와 같은 일을 한다. 기록하며 모달 오버레이 상자와 scrollTop 을 읽어
+// 열림 분기에서도 동기 레이아웃이 한 번 생기지만, 쓰기를 마친 뒤 같은 상태를 미리 계산할 뿐이라 값은 같다.
+import { kbdTrace } from '@/lib/kbdTrace'
 
 const KBD_INSET = '--kbd-inset'
 // 키보드가 올라와 있는 동안 루트에 찍는 표식. **판정은 여기 한 곳에서만 한다**(§12) — 화면마다
@@ -119,7 +124,7 @@ export default function ViewportOffsetGuard() {
     // 복원은 정본 판정을 지난다 — 진짜 닫힘(엡실론)일 때만. 외장 바·줌 팬은 되감지 않는다.
     const restore = () => {
       const scrolled = window.scrollY !== 0 || vv.offsetTop > 0
-      if (shouldRestore(snapNow(), scrolled)) window.scrollTo(0, 0)
+      if (shouldRestore(snapNow(), scrolled)) { kbdTrace('rst', '·'); window.scrollTo(0, 0) }
     }
     // 크기 갱신은 resize 에서만. 팬 프레임마다 다시 쓰면 scrollHeight 가 오르내리며
     // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
@@ -139,6 +144,7 @@ export default function ViewportOffsetGuard() {
       if (!keyboardOpen(s) || phantom) {
         root.style.setProperty(KBD_INSET, '0px')
         root.removeAttribute(KBD_OPEN_ATTR)
+        kbdTrace('vr', keyboardOpen(s) ? 'phantom' : 'shut', s)
         restore()
         return
       }
@@ -146,9 +152,13 @@ export default function ViewportOffsetGuard() {
       // 여백과 **같은 판정·같은 프레임**에 찍는다. 아래 scheduleReveal 은 rAF 라 이미 접힌
       // 기하를 읽는다 — setState 로 접으면 그 순서가 깨져 과소 스크롤이 난다(신고 d0833496).
       root.setAttribute(KBD_OPEN_ATTR, '')
+      kbdTrace('vr', 'open', s)
       scheduleReveal()
     }
-    const onScroll = () => { if (!keyboardOpen(snapNow())) restore() }
+    const onScroll = () => {
+      kbdTrace('vs', keyboardOpen(snapNow()) ? 'open' : 'shut')
+      if (!keyboardOpen(snapNow())) restore()
+    }
 
     // **복귀 재동기.** vv 의 resize·scroll 만 듣던 것이 오염을 영구화했다. 앱 전환·복귀,
     // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 값이 잘못 찍히면 씻을 기회가 없다.
@@ -162,15 +172,17 @@ export default function ViewportOffsetGuard() {
     // 그런데 아무 칸에도 포커스가 없으면 키보드도 없다 — 그때는 재는 대신 인셋을 0 으로 지우고
     // 표식을 떼고 잔존 오프셋을 복원한다. 포커스가 있으면 종전 경로 그대로다.
     const resyncPass = () => {
-      if (editableFocused()) { onResize(); return }
+      if (editableFocused()) { kbdTrace('rs', 'focus'); onResize(); return }
       root.style.setProperty(KBD_INSET, '0px')
       root.removeAttribute(KBD_OPEN_ATTR)
+      kbdTrace('rs', 'clear')
       restore()
     }
     const resync = () => { resyncPass(); requestAnimationFrame(resyncPass) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
     const onFocusIn = (e: FocusEvent) => {
+      kbdTrace('fi', keyboardOpen(snapNow()) ? 'open' : 'shut')
       if (!isEditableTarget(e.target)) return
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }
@@ -180,7 +192,7 @@ export default function ViewportOffsetGuard() {
       // 아무 일도 안 하게 된다.
       if (keyboardOpen(snapNow())) scheduleReveal()
     }
-    const onFocusOut = () => { pending.current = null }
+    const onFocusOut = () => { pending.current = null; kbdTrace('fo', '·') }
 
     vv.addEventListener('resize', onResize)
     vv.addEventListener('scroll', onScroll)
