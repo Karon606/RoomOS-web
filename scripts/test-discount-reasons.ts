@@ -194,15 +194,16 @@ for (const code of codeOf.values()) {
     if (constVals.has(m[1])) constVals.set(m[2], [...(constVals.get(m[2]) ?? []), ...constVals.get(m[1])!])
   }
 }
-type Written = { file: string; line: number; kind: 'category' | 'payMethod'; value: string }
+// model 은 생성 덩어리에서만 안다. 지출에 부가수익 보호 이름('청소비')을 적어도 합집합으로 보면 통과하던 미탐(독립 검수 2026-10-13)이라 모델별 목록으로 판정한다.
+type Written = { file: string; line: number; kind: 'category' | 'payMethod'; value: string; model?: 'expense' | 'extraIncome' | 'paymentRecord' }
 const written: Written[] = []
-const valuesIn = (rawExpr: string, file: string, line: number, kind: Written['kind']) => {
+const valuesIn = (rawExpr: string, file: string, line: number, kind: Written['kind'], model?: Written['model']) => {
   const expr = rawExpr.replace(/\[[^\]]*\]/g, '')   // row['입금수단'] 같은 열쇠 글자는 값이 아니다
-  for (const m of expr.matchAll(/'([^']+)'/g)) written.push({ file, line, kind, value: m[1] })
+  for (const m of expr.matchAll(/'([^']+)'/g)) written.push({ file, line, kind, value: m[1], model })
   for (const m of expr.matchAll(/\b([A-Z][A-Z0-9_]{3,})\b/g)) {
     const vals = constVals.get(m[1])
     if (!vals) { fails.push(`${file}:${line} · ${kind} 에 적는 상수 ${m[1]} 의 글자를 못 읽었다(이 그물은 const 이름 = '글자' 꼴을 읽는다).`); continue }
-    for (const v of vals) written.push({ file, line, kind, value: v })
+    for (const v of vals) written.push({ file, line, kind, value: v, model })
   }
 }
 for (const [file, code] of codeOf) {
@@ -211,7 +212,7 @@ for (const [file, code] of codeOf) {
     let depth = 0, j = m.index + m[0].length - 1
     for (; j < code.length; j++) { if (code[j] === '(') depth++; else if (code[j] === ')' && --depth === 0) break }
     const blk = code.slice(m.index, j + 1)
-    for (const f of blk.matchAll(/\b(category|payMethod)\s*:\s*([^,\n}]*)/g)) valuesIn(f[2], file, lineAt(m.index + f.index), f[1] as Written['kind'])
+    for (const f of blk.matchAll(/\b(category|payMethod)\s*:\s*([^,\n}]*)/g)) valuesIn(f[2], file, lineAt(m.index + f.index), f[1] as Written['kind'], m[1] as Written['model'])
   }
   for (const f of code.matchAll(/\.set\('(category|payMethod)',\s*([^)\n]*)\)/g)) valuesIn(f[2], file, lineAt(f.index), f[1] as Written['kind'])
   for (const m of code.matchAll(/\bconst ([A-Z0-9_]*CATEGORY[A-Z0-9_]*)\s*(?::[^=\n]*)?=\s*'([^']+)'/g)) {
@@ -219,7 +220,8 @@ for (const [file, code] of codeOf) {
   }
 }
 for (const w of written) {
-  const ok = w.kind === 'payMethod' ? payNames.includes(w.value) : (incNames.includes(w.value) || expNames.includes(w.value))
+  const catNames = w.model === 'expense' ? expNames : w.model === 'extraIncome' ? incNames : [...incNames, ...expNames]
+  const ok = w.kind === 'payMethod' ? payNames.includes(w.value) : catNames.includes(w.value)
   if (!ok && !Object.hasOwn(NOT_PROTECTED_WRITES, w.value)) {
     fails.push(`${w.file}:${w.line} · 기록을 만드는 코드가 ${w.kind === 'payMethod' ? '결제 수단' : '카테고리'} '${w.value}' 을 글자로 적는데 보호 이름(lib/optionLists PROTECTED_OPTION_NAMES)에 없다. 설정에서 이 이름을 바꾸면 지난 기록과 다음 기록이 두 이름으로 갈린다. 상수로 보호 이름에 더하거나, 보호하지 않을 까닭을 NOT_PROTECTED_WRITES 에 적는다.`)
   }

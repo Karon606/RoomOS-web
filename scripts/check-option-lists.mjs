@@ -17,7 +17,7 @@
 //   ⓔ 할인 사유 이름 변경은 영업장 범위: 연쇄 표에 via: 'leaseTerm', 조건은 optionRenameWhere 한 곳.
 //   ⓕ '관리는 설정에서' 가 사실이다: showAddHint 를 쓰는 목록마다 분류 관리 탭에 그 카드가 있다. 추가 힌트는
 //      저장하면 실제로 더해질 때(직접 입력·기록에 저장된 값과 다른 새 값)만 선다.
-//   ⓖ 적용취소가 모든 카드에 같고 지금 서버 목록 위에서 돈다: 빼기는 restoreOption(그 이름 하나를 뺄 때의
+//   ⓖ 적용취소가 모든 카드에 같고 지금 서버 목록 위에서 돈다: 삭제는 restoreOption(그 이름 하나를 뺄 때의
 //      자리에), 초기화는 undoResetOptions(서버가 쥐어 준 직전 목록에), 이름 변경은 바뀐 행 id 로. 서버 액션의
 //      목록 계산은 lib/optionLists 순수 함수(표는 test-discount-reasons)이고 액션은 그 함수를 저장된 칸 그대로
 //      넘겨 부른다. 이름 변경은 바뀐 행 id 를 적용취소 표에 싣고, 되돌릴 조건은 renameUndoPlan 이 서버 표로 만든다.
@@ -254,21 +254,21 @@ const os = bodyOf(form, /function OptionSection\(/)
   else {
     const code = stripComments(os)
     const n = (code.match(/label: '적용취소'/g) ?? []).length
-    if (n < 3) violations.push(`${FORM} · OptionSection 의 [적용취소] 가 ${n}곳이다(빼기·초기화·이름 변경 셋 기대).`)
+    if (n < 3) violations.push(`${FORM} · OptionSection 의 [적용취소] 가 ${n}곳이다(삭제·초기화·이름 변경 셋 기대).`)
     if (/reorderOptions\(/.test(code)) violations.push(`${FORM} · OptionSection 의 적용취소가 이전 목록으로 순서 저장(reorderOptions)을 다시 부른다. 화면이 들고 있던 목록을 통째로 쓰면 그사이 더하거나 다른 화면이 쌓은 항목이 지워진다. restoreOption·undoResetOptions 를 쓴다.`)
-    if (!/restoreOption\(field, item, index\)/.test(code) || !/const index = items\.indexOf\(item\)/.test(code)) violations.push(`${FORM} · 빼기 적용취소가 뺄 때의 자리(index)로 그 이름 하나만 되돌리지(restoreOption) 않는다.`)
+    if (!/restoreOption\(field, item, index\)/.test(code) || !/const index = items\.indexOf\(item\)/.test(code)) violations.push(`${FORM} · 삭제 적용취소가 삭제할 때의 자리(index)로 그 이름 하나만 되돌리지(restoreOption) 않는다.`)
     if (!/undoResetOptions\(field,/.test(code)) violations.push(`${FORM} · 초기화 적용취소가 서버가 쥐어 준 직전 목록(undoResetOptions)을 안 쓴다.`)
     if (!/undoRenameOption\(/.test(code)) violations.push(`${FORM} · 이름 변경 적용취소가 서버의 id 기준 되돌리기를 안 부른다.`)
     // 적용취소 결과가 실패면 화면 목록을 덮지 않는다. 실패 응답에는 목록이 없어 그대로 덮으면 카드가 빈다(3차 검수 역주입 N8).
     if (!/const undoToast = [\s\S]*?if \(!r\.ok\) \{ pushToast\('error', r\.error\); return \}\s*setItems\(\(\) => r\.items\)/.test(code)) {
-      violations.push(`${FORM} · 빼기·초기화 적용취소가 실패 응답(r.ok)을 보기 전에 화면 목록을 덮는다.`)
+      violations.push(`${FORM} · 삭제·초기화 적용취소가 실패 응답(r.ok)을 보기 전에 화면 목록을 덮는다.`)
     }
     if (!/if \(!u\.ok\) \{ pushToast\('error', u\.error\); return \}\s*setItems\(\(\) => u\.items\)/.test(code)) {
       violations.push(`${FORM} · 이름 변경 적용취소가 실패 응답(u.ok)을 보기 전에 화면 목록을 덮는다.`)
     }
     // 그사이 같은 이름이 다시 생겨 바뀐 것이 없으면 '원래 자리로 복귀' 대신 사실대로 말한다(changed).
     if (!/r\.changed === false && unchangedMessage/.test(code) || !/restoreOption\(field, item, index\), REMOVE_TOAST\.undone\(getLabel\(item\)\), ALREADY_LISTED\(getLabel\(item\)\)\)/.test(code)) {
-      violations.push(`${FORM} · 빼기 적용취소가 바뀐 것이 없을 때(changed false)도 '원래 자리로 복귀' 라고 말한다.`)
+      violations.push(`${FORM} · 삭제 적용취소가 바뀐 것이 없을 때(changed false)도 '원래 자리로 복귀' 라고 말한다.`)
     }
   }
   const reset = bodyOf(actions, /export async function resetOptionsToDefault\(/)
@@ -512,7 +512,7 @@ const os = bodyOf(form, /function OptionSection\(/)
       .map(re => { const i = code.search(re); return i < 0 ? Infinity : i }))
     if (at < 0 || at > firstUse) violations.push(`${ACTIONS} · ${m[1]} 가 무엇을 읽거나 쓰기 전에 assertOptionField 로 칸 이름을 보지 않는다. 편집 권한만 있으면 영업장 행 아무 칸에나 쓸 수 있다.`)
   }
-  if (n < 7) violations.push(`${ACTIONS} · 칸 이름을 받는 목록 서버 액션을 ${n}개만 찾았다(초기화·순서·빼기 적용취소·초기화 적용취소·건수·이름 변경·이름 변경 적용취소, 7 이상 기대).`)
+  if (n < 7) violations.push(`${ACTIONS} · 칸 이름을 받는 목록 서버 액션을 ${n}개만 찾았다(초기화·순서·삭제 적용취소·초기화 적용취소·건수·이름 변경·이름 변경 적용취소, 7 이상 기대).`)
 }
 
 console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)

@@ -1794,8 +1794,8 @@ export async function updateTenant(formData: FormData): Promise<
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
   // 목록에 없는 직업을 새로 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙). 직업이 그대로면 안 더한다.
-  // 운영자가 목록에서 뺀 직업이 그 직업을 가진 입주자 아무나 저장할 때마다 되살아나면 '앞으로 고를 때만
-  // 안 보인다' 는 빼기의 약속이 깨진다(독립 검수 2026-10-13).
+  // 운영자가 목록에서 삭제한 직업이 그 직업을 가진 입주자 아무나 저장할 때마다 되살아나면 삭제가 저장 한 번에
+  // 무효가 된다(독립 검수 2026-10-13).
   if (job && job !== prevJob) await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')

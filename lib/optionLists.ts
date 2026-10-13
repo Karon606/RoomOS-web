@@ -31,7 +31,7 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   expenseCategories: ['부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비', '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료', '보증금 반환'],
   // 4종이다(2026-10-13 운영자 승인으로 확정). 칸이 빈 영업장의 드롭다운이 처음부터 보여 준 것이 4종이고
   // 확인창도 4종이라 말했다. 초기화만 12종을 썼다(c535a4e2 가 FIELD_DEFAULTS 한 자리만 늘렸다). 그 12종의
-  // 나머지 여덟은 선불 서비스 이름이고, 재무에서 선불 계정을 등록하면 결제 수단 고르기에 저절로 붙는다
+  // 나머지 여덟은 선불 서비스 이름이고, 재무에서 선불 계정을 등록하면 지출 폼의 결제 수단 고르기에 저절로 붙는다
   // (finance/RecurringExpenseRecordModal effectivePayMethods). 이 줄을 고치면 조회·초기화·확인창이 같이 바뀐다.
   paymentMethods:    ['계좌이체', '신용카드', '체크카드', '현금'],
   requestCategories: REQUEST_CATEGORIES,
@@ -83,7 +83,7 @@ export function windowTypeCode(raw: string): string | null {
 }
 
 /**
- * 목록에 들어갈 이름의 정규화 정본. 손 추가·자동 추가·이름 변경·빼기 적용취소가 모두 이것을 거친다.
+ * 목록에 들어갈 이름의 정규화 정본. 손 추가·자동 추가·이름 변경·삭제 적용취소가 모두 이것을 거친다.
  *
  * 쉼표는 저장 구분자라 공백으로 바꾼다(normalizeCategoryInput). 남기면 '입실자, 소개' 가 목록에서 두 줄로
  * 쪼개지고, 그 글자를 쓰는 기록(할인 사유·입주자 직업 등)과 목록 글자가 갈려 이름 변경이 그 기록을 못 따라간다.
@@ -180,7 +180,7 @@ export function protectedRenameError(field: OptionListField, oldValue: string, n
 }
 
 /**
- * 빼기 적용취소가 지금 서버 목록에 한 이름을 도로 넣는다. 이미 있으면(그사이 다시 더했으면) 그대로 둔다.
+ * 삭제 적용취소가 지금 서버 목록에 한 이름을 도로 넣는다. 이미 있으면(그사이 다시 더했으면) 그대로 둔다.
  *
  * 자리는 뺄 때의 위치이고 지금 목록 길이로 자른다. 바탕이 지금 목록이라 그사이 더해진 항목이 안 지워진다.
  * 종전처럼 화면이 들고 있던 이전 목록을 통째로 다시 쓰면 (가) 둘을 빼고 먼저 뜬 토스트부터 적용취소할 때
@@ -204,7 +204,7 @@ export function mergeResetUndo(before: readonly string[], resetTo: readonly stri
   return out
 }
 
-// 아래 넷은 목록 서버 액션(이름 변경·이름 변경 적용취소·빼기 적용취소·초기화 적용취소)이 쓸 목록을 정하는
+// 아래 넷은 목록 서버 액션(이름 변경·이름 변경 적용취소·삭제 적용취소·초기화 적용취소)이 쓸 목록을 정하는
 // 순수 함수다. 서버 액션은 저장된 칸을 읽어 넘기고 결과를 쓰기만 한다. 목록 계산이 액션 안에 있으면 표로
 // 고정할 수 없어, 지금 목록 대신 빈 목록에 끼우거나 직전 목록만 쓰는 실수가 그물에 안 걸렸다(2차 검수).
 // 표는 scripts/test-discount-reasons, 액션이 이 함수를 그대로 부르는지는 scripts/check-option-lists ⓖ 가 본다.
@@ -227,7 +227,7 @@ export function optionListAfterRenameUndo(field: OptionListField, raw: string | 
 }
 
 /**
- * 빼기 적용취소 뒤 목록. 지금 저장된 칸(raw)을 바탕으로 그 이름 하나를 뺄 때의 자리에 넣는다(insertOptionAt).
+ * 삭제 적용취소 뒤 목록. 지금 저장된 칸(raw)을 바탕으로 그 이름 하나를 뺄 때의 자리에 넣는다(insertOptionAt).
  * name 은 실제로 넣는 이름이고, 비어 있으면 아무것도 안 넣는다. changed 는 목록이 실제로 바뀌는지다.
  */
 export function optionListAfterRestore(field: OptionListField, raw: string | null | undefined, rawName: string, index: number): { next: string[]; changed: boolean; name: string } {

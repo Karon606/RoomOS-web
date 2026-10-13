@@ -580,8 +580,8 @@ async function backfillVendorBizNo(propertyId: string, vendor: string | null, bi
 
 // 폼에서 직접 입력한 지출 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
 // 신규면 Property.expenseCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
-// 고치는 지출이 원래 쓰던 카테고리(prev)는 목록에 다시 더하지 않는다. 운영자가 목록에서 뺀 카테고리가
-// 그 지출을 다시 저장할 때마다 되살아나면 '앞으로 고를 때만 안 보인다' 는 빼기의 약속이 깨진다.
+// 고치는 지출이 원래 쓰던 카테고리(prev)는 목록에 다시 더하지 않는다. 운영자가 목록에서 삭제한 카테고리가
+// 그 지출을 다시 저장할 때마다 되살아나면 삭제가 저장 한 번에 무효가 된다.
 // 새로 적은 값만 더한다(독립 검수 2026-10-13).
 async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
   const list = await getExpenseCategories()
