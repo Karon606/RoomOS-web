@@ -43,7 +43,13 @@ type Issued = {
   inclDeposit: boolean; inclCleaning: boolean
   /** 그 키의 지금 살아 있는 이용료 몫과 금액이 든 이용료 행 수. 받은 금액 대비를 말할 재료(2026-10-13). */
   received: number; rentRows: number
+  /** 도장 찍힌 이용료 행 수와 도장 없는 이용료 합. 수납 행 캡션과 같은 비교 기준을 쓴다(독립 검수 R-2). */
+  stampedRentRows: number; unstampedRent: number
 }
+
+// 메타 줄의 구분점. 앞 낱말에 줄바꿈 없는 공백으로 붙여, 접혀도 둘째 줄이 '·' 로 시작하지 않게 한다
+// (웹디자이너 패스 R1, 수납 행 캡션이 구분점을 앞 덩이 끝에 붙이는 것과 같은 규칙).
+const SEP = '\u00A0· '
 
 export function CashReceiptTab({
   candidates, issued, muted, excluded, targetMonth, issuedSum, issuedCount, onChanged,
@@ -221,9 +227,12 @@ export function CashReceiptTab({
                         {fmtRoomNo(r.roomNo)} {r.tenantName}
                       </span>
                       <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]"> · {incl.join(' · ')}</span> : null}
-                        {/* 덩이마다 한 줄로 묶고 덩이 사이에서만 접는다. 조각 전체를 한 줄로 묶으면 메타 칸보다 길어 넘친다(하네스 실측). */}
-                        {gap ? <span className={gap.tone === 'warning' ? 'text-[var(--warning-fg)]' : undefined}>{gap.units.map((u, i) => <span key={i}>{' '}<span className="whitespace-nowrap">{i === 0 ? `· ${u}` : u}</span></span>)}</span> : null}
+                        발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? `${SEP}입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? `${SEP}${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]">{SEP}{incl.join(SEP)}</span> : null}
+                        {/* 덩이마다 한 줄로 묶고 덩이 사이에서만 접는다. 조각 전체를 한 줄로 묶으면 메타 칸보다 길어 넘친다(하네스 실측).
+                            구분점은 앞 낱말에 붙고(SEP 의 앞 공백이 줄바꿈 없는 공백), 숫자는 수납 행 캡션처럼 굵게·본문색이다(F3). */}
+                        {gap ? <span className={`num${gap.tone === 'warning' ? ' text-[var(--warning-fg)]' : ''}`}>{'\u00A0·'}{gap.units.map((u, i) => <span key={i}>{' '}<span className="whitespace-nowrap">{u.map((part, j) => (part.strong
+                          ? <strong key={j} className="num font-semibold text-[var(--warm-dark)]">{part.text}</strong>
+                          : <span key={j}>{part.text}</span>))}</span></span>)}</span> : null}
                       </span>
                     </span>
                     <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>

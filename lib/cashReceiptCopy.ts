@@ -10,6 +10,10 @@
 // 여러 달로 쪼개지면 같은 키에 행이 여럿이다. 행 금액과 비교하면 분할 결제마다 거짓 경보가 선다(결함 D12).
 // 서버가 행마다 싣는 cashReceiptKey.rent 가 그 합이다(점검 (바)와 같은 정본 식).
 //
+// 단 **일부만 도장 찍힌 키는 도장 찍힌 몫과 견준다**(독립 검수 R-2, 2026-10-14). 발행 없이 받은 앞 입금은 뒤
+// 입금의 발행이 덮지 않는 것이 정상 상태다(검수 R4b). 키 전체 합과 견주면 그 덮이지 않은 돈 때문에 '적음' 경고가
+// 늘 선다. '같은 날 입금 N건'의 N 도 도장 찍힌 행 수다(행 캡션과 탭이 같은 기준).
+//
 // 차이 표시는 **다를 때만** 선다(운영자 결정 2026-08-25). 같으면 침묵이고, 침묵이 곧 '받은 금액 그대로
 // 발행'이다. 경고색은 목록에만 쓰고 입력 폼은 쓰지 않는다(같은 결정). 이 파일은 문장만 내고 색은 tone 으로 넘긴다.
 import { fmtWon } from './fmtMoney'
@@ -17,7 +21,15 @@ import { fmtMD } from './fmtDate'
 import type { CashReceiptLineView } from './cashReceipt'
 
 /** 행마다 서버가 싣는 키 정보(getPaymentsByLease 의 cashReceiptKey). 줄은 살아 있는 줄만이다. */
-export type CashReceiptKeyView = { line: CashReceiptLineView | null; rent: number; rentRows: number; stampedRentRows: number }
+export type CashReceiptKeyView = { line: CashReceiptLineView | null; rent: number; rentRows: number; stampedRentRows: number; unstampedRent: number }
+
+/**
+ * 발행 금액과 견줄 받은 몫. 도장 찍힌 행이 있으면 키 합에서 도장 없는 이용료 행(아직 어느 영수증에도 안 든 돈)을
+ * 뺀다. 다 찍혀 있으면 키 합 그대로다. 행 캡션·탭·수정 폼 힌트가 이 한 식을 쓴다.
+ */
+export function crCoveredRent(k: { rent: number; unstampedRent: number; stampedRentRows: number }): number {
+  return k.stampedRentRows > 0 ? k.rent - k.unstampedRent : k.rent
+}
 
 /** 캡션 한 조각. strong 이면 숫자라 굵게·본문색으로 그린다. */
 export type CrPart = { text: string; strong?: boolean }
@@ -60,7 +72,7 @@ export function crInclLabel(l: { inclDeposit: boolean; inclCleaning: boolean }):
  * 수납 행 3번째 줄 캡션. 발행 표시가 있는 행에만, 발행 금액이 키의 이용료 합과 다를 때만 선다.
  *
  *   다름        '발행 금액 420,000원 · 받은 금액보다 10,000원 많음'(경고색)
- *               같은 키 이용료 행이 2건 이상이면 '· 같은 날 입금 2건 합계보다 …'(그 키의 각 행에)
+ *               같은 키에 도장 찍힌 이용료 행이 2건 이상이면 '· 같은 날 입금 2건 합계보다 …'(그 키의 각 행에)
  *   같고 합산   '발행 금액 420,000원 · 같은 날 입금 2건 합산'(보조색). 행 금액만 보고 410,000 발행으로
  *               읽은 것이 422호의 첫 오해라, 금액이 같아도 한 장이 여러 행을 덮으면 말한다.
  *   예외 몫     '발행 금액 1,410,000원 · 보증금 포함'(경고색, 숫자 없이)
@@ -75,8 +87,8 @@ export function cashReceiptRowCaption(input: { stamped: boolean; key: CashReceip
   const head: CrPart[] = [{ text: '발행 금액 ' }, { text: fmtWon(line.amount), strong: true }, { text: ' ·' }]
   const incl = crInclLabel(line)
   if (incl) return { tone: 'warning', chunks: [head, [{ text: incl }]] }
-  const diff = line.amount - input.key.rent
-  const n = input.key.rentRows
+  const diff = line.amount - crCoveredRent(input.key)
+  const n = input.key.stampedRentRows
   if (diff === 0) {
     return n >= 2 ? { tone: 'muted', chunks: [head, [{ text: `같은 날 입금 ${n}건 합산` }]] } : null
   }
@@ -95,15 +107,23 @@ export function cashReceiptRowCaption(input: { stamped: boolean; key: CashReceip
  *
  * 덩이(units)로도 낸다. 조각 전체를 한 줄로 묶으면(whitespace-nowrap) 메타 칸보다 길어 넘친다(2026-10-14 하네스
  * 실측. 360px 기본 글자에서 32px, 320px·아주 크게에서 170px). 덩이마다 한 줄로 묶고 덩이 사이에서만 접는다.
- * 금액과 '많음·적음'은 한 덩이다.
+ * 금액과 '많음·적음'은 한 덩이다. 덩이 안 숫자는 strong 이라 수납 행 캡션처럼 굵게·본문색으로 그린다(웹디자이너 F3).
+ * 비교 기준·'합산' 판정은 수납 행 캡션과 같다(crCoveredRent, 도장 찍힌 행 수, 독립 검수 R-2).
  */
-export function cashReceiptTabGap(r: { amount: number; received: number; rentRows: number; inclDeposit: boolean; inclCleaning: boolean }):
-  { tone: 'warning' | 'muted'; text: string; units: string[] } | null {
+export function cashReceiptTabGap(r: { amount: number; received: number; stampedRentRows: number; unstampedRent: number; inclDeposit: boolean; inclCleaning: boolean }):
+  { tone: 'warning' | 'muted'; text: string; units: CrPart[][] } | null {
   if (r.inclDeposit || r.inclCleaning) return null
-  const diff = r.amount - r.received
-  const out = (tone: 'warning' | 'muted', units: string[]) => ({ tone, units, text: units.join(' ') })
-  if (diff !== 0) return out('warning', ['받은 금액', `${fmtWon(r.received)}보다`, `${fmtWon(Math.abs(diff))} ${gapWord(diff, 'short')}`])
-  return r.rentRows >= 2 ? out('muted', [`같은 날 입금 ${r.rentRows}건 합산`]) : null
+  const basis = crCoveredRent({ rent: r.received, unstampedRent: r.unstampedRent, stampedRentRows: r.stampedRentRows })
+  const diff = r.amount - basis
+  const out = (tone: 'warning' | 'muted', units: CrPart[][]) => ({ tone, units, text: units.map(u => u.map(p => p.text).join('')).join(' ') })
+  if (diff !== 0) {
+    return out('warning', [
+      [{ text: '받은 금액' }],
+      [{ text: fmtWon(basis), strong: true }, { text: '보다' }],
+      [{ text: fmtWon(Math.abs(diff)), strong: true }, { text: ` ${gapWord(diff, 'short')}` }],
+    ])
+  }
+  return r.stampedRentRows >= 2 ? out('muted', [[{ text: `같은 날 입금 ${r.stampedRentRows}건 합산` }]]) : null
 }
 
 /**

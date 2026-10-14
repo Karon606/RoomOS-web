@@ -532,8 +532,17 @@ for (const kind of ['deposit', 'cleaning']) {
   const capFn = fnBody(copy, 'export function cashReceiptRowCaption(')
   if (!capFn) violations.push(`${COPY}: cashReceiptRowCaption 몸통을 못 찾았다(침묵 통과 금지).`)
   else {
-    if (!capFn.includes('input.key.rent')) violations.push(`${COPY} cashReceiptRowCaption: 차이를 키의 이용료 합(key.rent)으로 재지 않는다.`)
+    if (!capFn.includes('crCoveredRent(input.key)')) violations.push(`${COPY} cashReceiptRowCaption: 차이를 키의 도장 찍힌 이용료 몫(crCoveredRent)으로 재지 않는다.`)
     if (/actualAmount/.test(capFn)) violations.push(`${COPY} cashReceiptRowCaption: 행 금액(actualAmount)을 본다. 기준은 키의 이용료 합이다.`)
+    // '합산'·'같은 날 입금 N건'의 N 은 도장 찍힌 행 수다(독립 검수 R-2). 금액이 든 행 수로 세면 도장 하나뿐인 키에도 '합산'이 선다.
+    if (!/const n = input\.key\.stampedRentRows/.test(capFn)) violations.push(`${COPY} cashReceiptRowCaption: 합산 판정이 도장 찍힌 행 수(stampedRentRows)가 아니다(검수 R-2).`)
+  }
+  {
+    const cov = fnBody(copy, 'export function crCoveredRent(')
+    if (!cov || !/k\.stampedRentRows > 0 \? k\.rent - k\.unstampedRent : k\.rent/.test(cov)) violations.push(`${COPY} crCoveredRent: 일부만 도장 찍힌 키의 비교 기준이 도장 찍힌 몫이 아니다(검수 R-2).`)
+    // 반환 타입이 객체 리터럴이라 fnBody 가 그 중괄호를 몸통으로 집는다. 함수 끝(줄머리 '}')까지 자른다.
+    const tg = between(copy, 'export function cashReceiptTabGap(', '\n}\n')
+    if (!tg || !tg.includes('crCoveredRent(') || !tg.includes('r.stampedRentRows >= 2')) violations.push(`${COPY} cashReceiptTabGap: 탭이 수납 행 캡션과 다른 기준(비교 몫·합산 행 수)을 쓴다(검수 R-2).`)
   }
 
   // ⓘ-2 자리와 접근성. 줄2 다음의 독립 줄이고(체크 label·왼쪽 묶음 안 금지), 체크 input 이 캡션을 aria-describedby 로 가리킨다.
@@ -616,7 +625,10 @@ for (const kind of ['deposit', 'cleaning']) {
     else if (g.includes('whitespace-nowrap')) violations.push(`${TAB} — 받은 금액 대비 조각 전체를 한 줄로 묶었다. 메타 칸보다 길어 넘친다(하네스 실측).`)
   }
   const tabFn = fnBody(srv, 'export async function getCashReceiptTabRows(')
-  if (!tabFn || !/received: p\.rent, rentRows: p\.rentRows/.test(tabFn)) violations.push(`${SRV} getCashReceiptTabRows — 발행 내역 행에 받은 몫·행 수를 안 싣는다.`)
+  if (!tabFn || !/received: p\.rent, rentRows: p\.rentRows, stampedRentRows: p\.stampedRentRows, unstampedRent: p\.unstampedRent/.test(tabFn)) violations.push(`${SRV} getCashReceiptTabRows — 발행 내역 행에 받은 몫·행 수·도장 찍힌 행 수·도장 없는 몫을 안 싣는다(검수 R-2).`)
+  // 탭 숫자는 수납 행 캡션처럼 굵게·본문색(웹디자이너 F3), 구분점은 앞 낱말에 붙는다(R1).
+  need(TAB, tab, '<strong key={j} className="num font-semibold text-[var(--warm-dark)]">', '탭 받은 금액 대비 숫자가 굵게·본문색이 아니다(웹디자이너 F3).')
+  need(TAB, tab, "const SEP = '\\u00A0· '", "탭 메타 줄 구분점이 앞 낱말에 붙지 않는다. 접히면 둘째 줄이 '·' 로 시작한다(웹디자이너 R1).")
 }
 
 console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 · ⓗ 생애주기 배선 · ⓘ 화면의 발행 금액 / 위반 ${violations.length}건`)

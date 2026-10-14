@@ -513,7 +513,7 @@ async function main() {
   // keep 을 성공으로 말하거나) 판정이 맞아도 422호처럼 화면이 거짓을 말한다. 화면 호출 순서 그대로 돌린다.
   {
     const copy = await import('@/lib/cashReceiptCopy')
-    type Row = { id: string; cashReceiptIssuedAt: Date | null; cashReceiptKey: { line: { amount: number; issuedYmd: string; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean } | null; rent: number; rentRows: number; stampedRentRows: number } | null }
+    type Row = { id: string; cashReceiptIssuedAt: Date | null; cashReceiptKey: { line: { amount: number; issuedYmd: string; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean } | null; rent: number; rentRows: number; stampedRentRows: number; unstampedRent: number } | null }
     const rowOf = async (leaseId: string, id: string) => {
       const pl = await rooms.getPaymentsByLease(leaseId, '2026-10')
       return (pl.windowRecords as Row[]).find(r => r.id === id) ?? (pl.records as Row[]).find(r => r.id === id) ?? null
@@ -604,6 +604,15 @@ async function main() {
     eq('S19 옮겨 합쳐진 수정 저장 토스트', [eX.cashReceipt.merged?.amount, copy.crEditToastDetail(eX.cashReceipt, { moved: true, wasStamped: true, nowStamped: true, amountEdited: true, beforeAmount: rX?.cashReceiptKey?.line?.amount ?? null })],
       [520000, '입금일·수단이 바뀌어 직접 고친 발행 금액은 반영하지 않았습니다.'])
     eq('S19 합친 뒤 세 행 캡션: 같은 날 3건 합산', await capOf(L.id, X), ['muted', '발행 금액 520,000원 · 같은 날 입금 3건 합산'])
+
+    // 일부만 도장 찍힌 키(검수 R4b 정상 상태). 앞 입금 300,000 은 발행 없이 받았고 뒤 입금 100,000 만 발행했다.
+    // 행 캡션·탭 모두 도장 찍힌 몫(100,000)과 견주므로 침묵한다. 키 전체(400,000)와 견주면 '300,000원 적음'이 늘 섰다(검수 R-2).
+    const P1x = await rec(L, P1, { month: '2026-10', amount: 300000, pay: '2026-10-11' })
+    const P2x = await rec(L, P1, { month: '2026-11', amount: 100000, pay: '2026-10-11', stamp: '2026-10-11' })
+    await rooms.setPaymentCashReceipt({ leaseTermId: L.id, tenantId: L.tenantId, payDate: '2026-10-11', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-11', via: 'entry', recordIds: [P2x] })
+    eq('S19 일부 도장 키: 도장 찍힌 행 캡션은 침묵 · 안 찍힌 행은 캡션 없음', [await capOf(L.id, P2x), await capOf(L.id, P1x)], [null, null])
+    const tabR2 = (await rooms.getCashReceiptTabRows('2026-10')).issued.find((r: { payYmd: string }) => r.payYmd === '2026-10-11')
+    eq('S19 일부 도장 키: 탭 행도 침묵(도장 찍힌 몫과 같다)', tabR2 ? [tabR2.received, tabR2.stampedRentRows, tabR2.unstampedRent, copy.cashReceiptTabGap(tabR2)] : null, [400000, 1, 300000, null])
   }
 
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)

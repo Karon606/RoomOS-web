@@ -549,7 +549,7 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
 {
   const LV = (amount: number, issuedYmd = '2026-10-06', incl: Partial<{ inclDeposit: boolean; inclCleaning: boolean }> = {}) =>
     ({ amount, issuedYmd, inclDeposit: false, inclCleaning: false, inclRent: true, ...incl })
-  const K = (line: ReturnType<typeof LV> | null, rent: number, rentRows: number, stampedRentRows = rentRows) => ({ line, rent, rentRows, stampedRentRows })
+  const K = (line: ReturnType<typeof LV> | null, rent: number, rentRows: number, stampedRentRows = rentRows, unstampedRent = 0) => ({ line, rent, rentRows, stampedRentRows, unstampedRent })
   const cap = (stamped: boolean, key: ReturnType<typeof K> | null) => {
     const c = cashReceiptRowCaption({ stamped, key })
     return c ? [c.tone, crCaptionText(c)] : null
@@ -565,6 +565,11 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('캡션: 보증금·청소비 포함', cap(true, K(LV(480000, '2026-10-06', { inclDeposit: true, inclCleaning: true }), 410000, 1)), ['warning', '발행 금액 480,000원 · 보증금·청소비 포함'])
   eq('캡션: 도장만 있고 줄 없음(방어)', cap(true, K(null, 410000, 1)), ['danger', '발행 표시만 있고 발행 기록이 없음 · 발행 합계에서 빠짐'])
   eq('캡션: 키 정보 자체가 없어도 방어', cap(true, null), ['danger', '발행 표시만 있고 발행 기록이 없음 · 발행 합계에서 빠짐'])
+  // 일부만 도장 찍힌 키(검수 R4b 정상 상태). 비교 기준은 도장 찍힌 몫, '같은 날 입금 N건'의 N 도 도장 찍힌 행 수다(검수 R-2).
+  eq('캡션: 일부 도장 키는 도장 찍힌 몫과 같으면 침묵', cap(true, K(LV(100000), 400000, 2, 1, 300000)), null)
+  eq('캡션: 일부 도장 키에서 손 금액이 다르면 도장 찍힌 몫 기준', cap(true, K(LV(90000), 400000, 2, 1, 300000)), ['warning', '발행 금액 90,000원 · 받은 금액보다 10,000원 적음'])
+  eq('캡션: 도장 찍힌 행이 하나면 합산이라 말하지 않음', cap(true, K(LV(350000), 350000, 2, 1, 0)), null)
+  eq('캡션: 도장 셋 중 둘이면 같은 날 입금 2건', cap(true, K(LV(430000), 500000, 3, 2, 80000)), ['warning', '발행 금액 430,000원 · 같은 날 입금 2건 합계보다 10,000원 많음'])
   const parts = cashReceiptRowCaption({ stamped: true, key: K(LV(420000), 410000, 1) })!
   // 구분점은 앞 덩이 끝에 붙는다(웹디자이너 R1). 접혀도 둘째 줄이 '·' 로 시작하지 않는다.
   eq('캡션: 덩이 둘, 숫자만 강조, 구분점은 앞 덩이 끝', parts.chunks.map(ch => ch.map(p => (p.strong ? `[${p.text}]` : p.text)).join('')), ['발행 금액 [420,000원] ·', '받은 금액보다 [10,000원] 많음'])
@@ -573,12 +578,16 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('캡션: 합계 비교는 덩이 셋', split.chunks.map(ch => ch.map(p => (p.strong ? `[${p.text}]` : p.text)).join('')), ['발행 금액 [1,230,000원] ·', '같은 날 입금 2건', '합계보다 [120,000원] 적음'])
   eq('캡션: 위험 문장도 덩이 셋', cashReceiptRowCaption({ stamped: true, key: K(null, 1, 1) })!.chunks.map(ch => ch.map(p => p.text).join('')), ['발행 표시만 있고', '발행 기록이 없음 ·', '발행 합계에서 빠짐'])
 
-  eq('탭: 다르면 받은 금액을 숫자로', cashReceiptTabGap({ amount: 420000, received: 410000, rentRows: 1, inclDeposit: false, inclCleaning: false }),
-    { tone: 'warning', units: ['받은 금액', '410,000원보다', '10,000원 많음'], text: '받은 금액 410,000원보다 10,000원 많음' })
-  eq('탭: 적음', cashReceiptTabGap({ amount: 400000, received: 410000, rentRows: 1, inclDeposit: false, inclCleaning: false })?.text, '받은 금액 410,000원보다 10,000원 적음')
-  eq('탭: 같고 합산', cashReceiptTabGap({ amount: 420000, received: 420000, rentRows: 2, inclDeposit: false, inclCleaning: false }), { tone: 'muted', units: ['같은 날 입금 2건 합산'], text: '같은 날 입금 2건 합산' })
-  eq('탭: 같고 한 건이면 침묵', cashReceiptTabGap({ amount: 420000, received: 420000, rentRows: 1, inclDeposit: false, inclCleaning: false }), null)
-  eq('탭: 예외 몫이면 행이 이미 말하므로 침묵', cashReceiptTabGap({ amount: 470000, received: 420000, rentRows: 1, inclDeposit: true, inclCleaning: false }), null)
+  const T = (amount: number, received: number, stampedRentRows: number, unstampedRent = 0, inclDeposit = false) => cashReceiptTabGap({ amount, received, stampedRentRows, unstampedRent, inclDeposit, inclCleaning: false })
+  const tabParts = (g: ReturnType<typeof T>) => g ? g.units.map(u => u.map(p => (p.strong ? `[${p.text}]` : p.text)).join('')) : null
+  eq('탭: 다르면 받은 금액을 숫자로(숫자는 강조)', [T(420000, 410000, 1)?.tone, tabParts(T(420000, 410000, 1)), T(420000, 410000, 1)?.text],
+    ['warning', ['받은 금액', '[410,000원]보다', '[10,000원] 많음'], '받은 금액 410,000원보다 10,000원 많음'])
+  eq('탭: 적음', T(400000, 410000, 1)?.text, '받은 금액 410,000원보다 10,000원 적음')
+  eq('탭: 같고 합산(같은 날 입금 N건)', [T(420000, 420000, 2)?.tone, T(420000, 420000, 2)?.text], ['muted', '같은 날 입금 2건 합산'])
+  eq('탭: 같고 한 건이면 침묵', T(420000, 420000, 1), null)
+  eq('탭: 도장 찍힌 행이 하나뿐이면 합산이라 말하지 않음', T(350000, 350000, 1), null)
+  eq('탭: 일부 도장 키는 도장 찍힌 몫과 견줌(덮이지 않은 새 돈으로 적음 경고 안 섬)', T(100000, 400000, 1, 300000), null)
+  eq('탭: 예외 몫이면 행이 이미 말하므로 침묵', T(470000, 420000, 1, 0, true), null)
 
   // 두 폼(등록·수정)이 글자까지 같은 문장(PaymentEntryForm 의 '받은 금액 …보다 … 많습니다.').
   eq('폼 문장: 많습니다', cashReceiptGapSentence(420000, 410000), '받은 금액 410,000원보다 10,000원 많습니다.')

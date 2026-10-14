@@ -2569,8 +2569,10 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
      * 그 키의 지금 살아 있는 이용료 몫(점검 (바)와 같은 식)과 금액이 든 이용료 행 수(2026-10-13).
      * 이 행의 큰 숫자는 발행 금액이라 받은 금액이 화면 어디에도 없었다. 422호는 탭에서도
      * 420,000원만 보였다. 화면이 '받은 금액보다 얼마 많음'을 말할 재료다(2단계).
+     * stampedRentRows·unstampedRent 는 수납 행 캡션과 같은 기준을 쓰기 위한 몫이다(독립 검수 R-2). '합산'은
+     * 도장 찍힌 행이 둘 이상일 때만 말하고, 일부만 도장 찍힌 키는 도장 찍힌 몫과 견준다.
      */
-    received: number; rentRows: number
+    received: number; rentRows: number; stampedRentRows: number; unstampedRent: number
   }[]
   /** 알림을 수동으로 끈 입금 — 후보와 같은 모양에 끈 날짜가 붙는다. */
   muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; issuable: number; deposit: number; cleaning: number; mutedAt: string }[]
@@ -2707,7 +2709,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
         roomNo: l.leaseTerm.room!.roomNo, tenantName: l.tenant.name, amount: l.amount,
         issuedYmd: kstYmdStr(l.issuedAt), payYmd: kstYmdStr(l.payDate), payMethod: l.payMethod,
         inclDeposit: l.inclDeposit, inclCleaning: l.inclCleaning,
-        received: p.rent, rentRows: p.rentRows,
+        received: p.rent, rentRows: p.rentRows, stampedRentRows: p.stampedRentRows, unstampedRent: p.unstampedRent,
       }
     })
     .sort((a, b) => b.issuedYmd.localeCompare(a.issuedYmd))

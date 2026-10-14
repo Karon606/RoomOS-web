@@ -42,6 +42,8 @@ type CashReceiptIssued = {
   inclDeposit: boolean; inclCleaning: boolean
   /** 그 키의 받은 이용료 몫과 행 수. 탭 행이 받은 금액 대비를 말한다(2026-10-13). */
   received: number; rentRows: number
+  /** 도장 찍힌 이용료 행 수와 도장 없는 이용료 합(수납 행 캡션과 같은 비교 기준, 독립 검수 R-2). */
+  stampedRentRows: number; unstampedRent: number
 }
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'

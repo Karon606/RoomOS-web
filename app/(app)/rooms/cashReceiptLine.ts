@@ -489,8 +489,12 @@ export type PaymentEditEffect = {
   mismatch: CrMismatch[]
 }
 
-/** 조회 결과에 싣는 키 정보. 화면이 행마다 '발행 금액 대 받은 몫'을 말할 재료(2단계). */
-export type CrKeyInfo = { line: CashReceiptLineView | null; rent: number; rentRows: number; stampedRentRows: number }
+/**
+ * 조회 결과에 싣는 키 정보. 화면이 행마다 '발행 금액 대 받은 몫'을 말할 재료(2단계).
+ * unstampedRent 는 도장 없는 이용료 행의 합이다. 일부만 도장 찍힌 키에서 캡션의 비교 기준을 도장 찍힌 몫으로
+ * 잡는 데 쓴다(독립 검수 R-2, 아직 어느 영수증에도 안 덮인 새 돈 때문에 '적음' 경고가 늘 서지 않게).
+ */
+export type CrKeyInfo = { line: CashReceiptLineView | null; rent: number; rentRows: number; stampedRentRows: number; unstampedRent: number }
 
 /**
  * 한 계약의 여러 입금일에 걸친 키 정보를 한 번에 읽는다. 이용료 몫은 점검 (바)와 같은 식이다
@@ -521,7 +525,7 @@ export async function crKeyInfoForLease(propertyId: string, leaseTermId: string,
   for (const k of new Set([...rowsByKey.keys(), ...lineByKey.keys()])) {
     const p = summarizeCashReceiptKey(rowsByKey.get(k) ?? [])
     const l = lineByKey.get(k)
-    out.set(k, { line: l ? cashReceiptLineView(l) : null, rent: p.rent, rentRows: p.rentRows, stampedRentRows: p.stampedRentRows })
+    out.set(k, { line: l ? cashReceiptLineView(l) : null, rent: p.rent, rentRows: p.rentRows, stampedRentRows: p.stampedRentRows, unstampedRent: p.unstampedRent })
   }
   return out
 }
