@@ -44,6 +44,45 @@ const AXES = [
       [/expense\.findUnique\(\{\s*where:\s*\{\s*id\s*\}/, '지출을 id 만으로 읽는다'],
     ],
   },
+  // 비품의 배정 예정 호실(targetRoomId)은 FK 없는 text 칸이다(2026-10-15 S4). 등록·수정 둘 다 폼의 호실 칸 셋
+  // (대상 호실·방별 분배·배정할 호실)을 영업장 방으로 본다. 등록은 종전에 이 관문이 아예 없었다.
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'addExpense',
+    must: [
+      [/formRoomIds\s*=\s*\[\.\.\.new Set\(\[roomId,\s*formTarget,/, "폼의 '배정할 호실'을 영업장 검증 목록에 넣지 않는다"],
+      [/room\.count\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*formRoomIds\s*\},\s*propertyId\s*\}/, '폼의 호실·방별 분배·배정할 호실 id 를 영업장 범위로 보지 않는다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'updateExpense',
+    must: [
+      [/formRoomIds\s*=\s*\[\.\.\.new Set\(\[roomId,\s*formTarget,/, "폼의 '배정할 호실'을 영업장 검증 목록에 넣지 않는다"],
+    ],
+    mustNot: [],
+  },
+  // 비품 수령(+배정)과 그 적용취소(2026-10-15 S5). 토큰은 클라가 들고 오는 값이라 쓰기 조건마다 영업장을 건다.
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'setAssetReceived',
+    must: [
+      [/expense\.findMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*expenseIds\s*\},\s*propertyId\s*\}/, '받을 지출을 영업장 범위로 읽지 않는다'],
+      [/room\.findMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*tIds\s*\},\s*propertyId\s*\}/, '배정 예정 호실을 영업장 방으로만 찾지 않는다(남의 방에 배정된다)'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'undoAssetReceipt',
+    must: [
+      [/deleteMany\(\{\s*where:\s*\{\s*id:\s*c\.id,\s*propertyId,/, '분할 수령 조각을 영업장 범위 없이 지운다'],
+      [/updateMany\(\{\s*where:\s*\{\s*id:\s*row\.id,\s*propertyId,/, '행 복원을 영업장 범위 없이 쓴다'],
+      [/assetAssignmentLog\.deleteMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*undo\.logIds\s*\},\s*propertyId\s*\}/, '이력 줄을 영업장 범위 없이 지운다'],
+    ],
+    mustNot: [],
+  },
 ]
 
 for (const ax of AXES) {
