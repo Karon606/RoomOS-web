@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
-import { getAccessContext } from '@/lib/auth/access'
+import { requireApprovedAccount } from '@/lib/auth/access'
 
 export async function getMyProperties() {
   const supabase = await createClient()
@@ -37,8 +37,8 @@ export async function getMyProperties() {
 
 export async function selectProperty(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const ctx = await getAccessContext()
-    if (!ctx) redirect('/login')
+    // 계정 승인 문. 거절·대기 계정은 영업장을 고를 수 없다(/pending). 화면(page.tsx)과 같은 규칙이다.
+    const ctx = await requireApprovedAccount()
 
     // 슈퍼관리자 = 가입 여부와 무관하게 모든 영업장 진입 가능 (앱 전체 운영자 권한).
     // 일반 사용자 = UserPropertyRole 보유 시에만.
@@ -70,12 +70,8 @@ export async function selectProperty(propertyId: string): Promise<{ ok: true } |
 
 export async function createProperty(name: string): Promise<{ ok: true; propertyId: string } | { ok: false; error: string }> {
   try {
-    // 베타 게이팅 — 승인된 사용자/운영자만 영업장 개설 가능
-    const ctx = await getAccessContext()
-    if (!ctx) return { ok: false, error: '로그인이 필요합니다.' }
-    if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') {
-      return { ok: false, error: '아직 승인 대기 중인 계정입니다. 운영자 승인 후 이용할 수 있어요.' }
-    }
+    // 베타 게이팅 — 승인된 사용자/운영자만 영업장 개설 가능(계정 승인 문, 미승인은 /pending)
+    const ctx = await requireApprovedAccount()
 
     const trimmed = name.trim()
     if (!trimmed) return { ok: false, error: '영업장 이름을 입력해주세요.' }
@@ -99,6 +95,7 @@ export async function createProperty(name: string): Promise<{ ok: true; property
 
     return { ok: true, propertyId: property.id }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '개설 중 오류가 발생했습니다.' }
   }
 }
@@ -118,11 +115,8 @@ export async function requestJoinByCode(code: string, message?: string): Promise
   | { ok: false; error: string }
 > {
   try {
-    const ctx = await getAccessContext()
-    if (!ctx) return { ok: false, error: '로그인이 필요합니다.' }
-    if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') {
-      return { ok: false, error: '아직 승인 대기 중인 계정입니다. 운영자 승인 후 이용할 수 있어요.' }
-    }
+    // 계정 승인 문. 미인증은 /login, 거절·대기는 /pending
+    const ctx = await requireApprovedAccount()
 
     const trimmed = code.trim().toUpperCase()
     if (!trimmed) return { ok: false, error: '참여 코드를 입력해주세요.' }
@@ -165,9 +159,9 @@ export async function requestJoinByCode(code: string, message?: string): Promise
   }
 }
 // ── 영업장 오너 가드 — 이 사용자가 이 영업장의 OWNER 인지 확인(슈퍼관리자도 허용). ──
+// 계정 승인 문을 먼저 지난다. 종전에는 상태를 안 봐서 거절·대기로 돌린 OWNER 가 영업장을 지울 수 있었다.
 async function requirePropertyOwner(propertyId: string): Promise<{ userId: string }> {
-  const ctx = await getAccessContext()
-  if (!ctx) redirect('/login')
+  const ctx = await requireApprovedAccount()
   if (ctx.isSuperAdmin) return { userId: ctx.userId }
   const role = await prisma.userPropertyRole.findUnique({
     where: { userId_propertyId: { userId: ctx.userId, propertyId } },
@@ -195,6 +189,7 @@ export async function getPropertyDeletionImpact(propertyId: string): Promise<
     if (!property) return { ok: false, error: '영업장을 찾을 수 없습니다.' }
     return { ok: true, name: property.name, counts: { rooms, tenants, payments, expenses } }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -209,6 +204,7 @@ export async function deactivateProperty(propertyId: string): Promise<{ ok: true
     if (cookieStore.get('selected_property_id')?.value === propertyId) cookieStore.delete('selected_property_id')
     return { ok: true }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -220,6 +216,7 @@ export async function reactivateProperty(propertyId: string): Promise<{ ok: true
     await prisma.property.update({ where: { id: propertyId }, data: { isActive: true } })
     return { ok: true }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -241,6 +238,7 @@ export async function deletePropertyPermanently(
     if (cookieStore.get('selected_property_id')?.value === propertyId) cookieStore.delete('selected_property_id')
     return { ok: true }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }

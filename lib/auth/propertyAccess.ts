@@ -15,9 +15,12 @@ import type { Role } from '@/lib/role-types'
  * 보내면 읽기 접근이 가능했다(격리가 UUID 비밀성에 의존). 여기서 매 요청
  * userId×propertyId 소속을 확인해 접근통제를 ID 비밀성에서 분리한다.
  *
- * 허용 경로: ① UserPropertyRole 행(일반 멤버, PK 조회 1회)
+ * 허용 경로: ① UserPropertyRole 행(일반 멤버. 사용자·영업장 행과 함께 PK 조회 셋을 병렬 1회)
  *           ② property.ownerId(역할 행 없는 레거시 소유주)
  *           ③ 슈퍼관리자(전 영업장 OWNER 간주 — 레이아웃의 관리자 뷰와 동일 규칙)
+ * 계정 승인 상태(User.status)도 여기서 본다(권한 감사 P0, 2026-10-14). 종전에는 (app) 레이아웃만 봐서
+ * 거절·대기로 돌린 계정이 화면만 /pending 으로 가고 서버 액션·API 는 계속 썼다. 규칙은 레이아웃과 같다.
+ * 승인(APPROVED)이거나 슈퍼관리자(env 또는 DB 플래그)여야 통과한다. 사용자 행이 없으면 승인 아님이다.
  * React cache() 로 같은 요청 안에서는 1회만 조회한다.
  */
 
@@ -31,7 +34,7 @@ export type PropertyAccess = {
 
 type LoadResult =
   | { ok: true; access: PropertyAccess }
-  | { ok: false; reason: 'unauthenticated' | 'no-property' | 'no-membership' }
+  | { ok: false; reason: 'unauthenticated' | 'not-approved' | 'no-property' | 'no-membership' }
 
 const load = cache(async (): Promise<LoadResult> => {
   const supabase = await createClient()
@@ -45,13 +48,23 @@ const load = cache(async (): Promise<LoadResult> => {
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) return { ok: false, reason: 'no-property' }
 
-  const membership = await prisma.userPropertyRole.findUnique({
-    where: { userId_propertyId: { userId, propertyId } },
-    select: { role: true },
-  })
+  // 역할 행·사용자(승인 상태)·영업장 소유주를 병렬로 한 번에 읽는다. Prisma relationJoins 가 꺼져 있어
+  // 관계 select(역할 행 안의 user)는 SQL 두 개를 차례로 낸다. 셋을 Promise.all 로 묶으면 어느 갈래든
+  // DB 왕복이 한 번이다(역할 행 없는 갈래는 종전 순차 2회). 판정식은 갈래마다 종전과 같다.
+  const [membership, me, property] = await Promise.all([
+    prisma.userPropertyRole.findUnique({
+      where: { userId_propertyId: { userId, propertyId } },
+      select: { role: true },
+    }),
+    prisma.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true, email: true, status: true } }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } }),
+  ])
   if (membership) {
     // env 슈퍼관리자는 역할 행이 있어도 OWNER 로 승격 (getMyRole 기존 동작 유지)
     const superByEnv = isSuperAdminEmail(email)
+    if (!superByEnv && !me?.isSuperAdmin && me?.status !== 'APPROVED') {
+      return { ok: false, reason: 'not-approved' }
+    }
     return {
       ok: true,
       access: {
@@ -63,22 +76,19 @@ const load = cache(async (): Promise<LoadResult> => {
   }
 
   // 역할 행 없음 — 소유주(레거시) / 슈퍼관리자(DB 플래그 포함)만 허용
-  const [property, me] = await Promise.all([
-    prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } }),
-    prisma.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true, email: true } }),
-  ])
   const superAdmin = isSuperAdminEmail(email ?? me?.email ?? null) || !!me?.isSuperAdmin
+  if (!superAdmin && me?.status !== 'APPROVED') return { ok: false, reason: 'not-approved' }
   if (property && (property.ownerId === userId || superAdmin)) {
     return { ok: true, access: { userId, email, propertyId, role: 'OWNER', isSuperAdmin: superAdmin } }
   }
   return { ok: false, reason: 'no-membership' }
 })
 
-/** 페이지·서버 액션용: 접근 불가면 로그인/영업장 선택으로 보낸다(기존 로컬 헬퍼들과 동일한 이동 규칙). */
+/** 페이지·서버 액션용: 접근 불가면 로그인/승인 대기/영업장 선택으로 보낸다(레이아웃 게이트와 같은 이동 규칙). */
 export async function requirePropertyAccess(): Promise<PropertyAccess> {
   const r = await load()
   if (r.ok) return r.access
-  redirect(r.reason === 'unauthenticated' ? '/login' : '/property-select')
+  redirect(r.reason === 'unauthenticated' ? '/login' : r.reason === 'not-approved' ? '/pending' : '/property-select')
 }
 
 /** API 라우트·선택적 컨텍스트용: 접근 불가면 null (redirect 없음). */

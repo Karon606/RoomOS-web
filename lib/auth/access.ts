@@ -53,6 +53,19 @@ export async function getAccessContext(): Promise<AccessContext | null> {
   return { userId, email: claimEmail ?? user?.email ?? null, status, isSuperAdmin }
 }
 
+/**
+ * 계정 승인 문(영업장 무관). 영업장을 고르기 전 단계(영업장 선택·개설·참여 요청·오너 관리)와
+ * 사용자 단위 쓰기(푸시 구독)가 쓴다. getAccessContext 는 상태를 돌려주기만 하고 막지 않아서,
+ * 그것만 부르면 거절·대기 계정도 지나갔다(권한 감사 P0 독립 검수 M1, 2026-10-14).
+ * 미인증이면 /login, 슈퍼관리자가 아니고 승인(APPROVED)이 아니면 /pending. 통과 시 컨텍스트 반환.
+ */
+export async function requireApprovedAccount(): Promise<AccessContext> {
+  const ctx = await getAccessContext()
+  if (!ctx) redirect('/login')
+  if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') redirect('/pending')
+  return ctx
+}
+
 /** 슈퍼관리자 전용 라우트 가드. 미인증→/login, 권한없음→/dashboard. 통과 시 컨텍스트 반환. */
 export async function requireSuperAdmin(): Promise<AccessContext> {
   const ctx = await getAccessContext()
