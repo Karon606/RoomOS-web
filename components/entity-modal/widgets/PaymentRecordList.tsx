@@ -12,7 +12,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, undoPaymentEdit, deletePayment, restorePayment, setCashReceiptIssued,
-  undoCashReceiptChange, previewCashReceiptOn,
+  undoCashReceiptChange, previewCashReceiptOn, previewPaymentDelete,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -22,7 +22,10 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
-import { cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW } from '@/lib/cashReceiptCopy'
+import {
+  cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW, crOnToast, crOffToastDetail, crOffUndoneMessage, CR_ON_UNDONE,
+  CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteToastDetail, crRestoreDetail,
+} from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
@@ -192,14 +195,27 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   }
 
   const handleDelete = async (p: Record) => {
-    if (!(await confirmDeletePayment(p))) return
+    // 이 삭제가 현금영수증 발행 기록에 무엇을 하는지 먼저 읽어 확인창이 말하게 한다(2026-10-13 422호 2단계).
+    // 판정은 실제 삭제와 같은 정본이다. 읽기가 실패하면 그 한 줄만 빠지고 삭제는 막지 않는다.
+    const pv = await previewPaymentDelete(p.id).catch(() => null)
+    if (!(await confirmDeletePayment(p, pv?.ok ? pv : null))) return
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await deletePayment(p.id)
         if (!res.ok) { pushToast('error', res.error); return }
+        const detail = crDeleteToastDetail(res.cashReceipt)
         pushToast('success', '수납 기록 삭제됨', {
-          action: { label: '적용취소', run: () => { void restorePayment(p.id, res.undo).then(r => { if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error) }) } },
+          ...(detail ? { detail } : {}),
+          action: { label: '적용취소', run: () => { void restorePayment(p.id, res.undo).then(r => {
+            if (r.ok) {
+              // 적용취소 뒤에도 결과 토스트(§16). 함께 지웠던 발행 기록을 되살렸으면 그 금액을, 되살린 금액이 지금
+              // 받은 돈과 다르면 그 사실을 말한다(금액은 자동으로 안 덮는다).
+              const d = crRestoreDetail(r.cashReceipt)
+              pushToast('info', CR_DELETE_UNDONE, d ? { detail: d } : undefined)
+              reload(); onChange?.()
+            } else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
         })
         await reload()
         onChange?.()
@@ -228,10 +244,16 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     startTransition(async () => {
       const res = await setCashReceiptIssued(p.id, false)
       if (!res.ok) { pushToast('error', res.error); return }
+      // 그 달 발행 합계에서 얼마가 빠지는지 말한다. 한 장이 같은 날 여러 행을 덮었으면 그 행들도 함께 내려간다.
       pushToast('success', '현금영수증 발행 표시를 해제했습니다', {
+        detail: crOffToastDetail(res.dropped, p.cashReceiptKey?.stampedRentRows ?? 1),
         action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
-          if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+          if (r.ok) {
+            const d = crUndoMismatchDetail(r.mismatch)
+            pushToast('info', crOffUndoneMessage(r.line), d ? { detail: d } : undefined)
+            reload(); onChange?.()
+          } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
       })
       await reload()
       onChange?.()
@@ -239,15 +261,23 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   }
 
   // 켜기 확정 — 물은 발행일로 기록한다. 토스트·적용취소는 종전 토글과 같은 문법.
+  // 토스트는 기록된 줄의 발행일·금액을 말한다(고른 날짜가 아니다. 살아 있는 발행에 더하면 앞 발행일을 지킨다).
+  // 이미 다 덮인 키(keep)는 바뀐 것이 없어 성공처럼 말하지 않고 적용취소도 달지 않는다(lib/cashReceiptCopy crOnToast).
   const confirmCashReceiptOn = (p: Record) => {
     startTransition(async () => {
       const res = await setCashReceiptIssued(p.id, true, crAskDate)
       if (!res.ok) { pushToast('error', res.error); return }
       setCrAskId(null)
-      pushToast('success', `현금영수증 발행으로 표시했습니다 · 발행일 ${fmtMD(crAskDate)}`, {
-        action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
-          if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      const t = crOnToast(res, crAskDate)
+      pushToast(t.kind, t.message, {
+        ...(t.detail ? { detail: t.detail } : {}),
+        ...(t.undoable ? { action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
+          if (r.ok) {
+            const d = crUndoMismatchDetail(r.mismatch)
+            pushToast('info', CR_ON_UNDONE, d ? { detail: d } : undefined)
+            reload(); onChange?.()
+          } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
       })
       await reload()
       onChange?.()

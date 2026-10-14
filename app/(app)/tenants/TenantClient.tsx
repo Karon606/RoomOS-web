@@ -32,7 +32,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
-import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -43,6 +43,7 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail } from '@/lib/cashReceiptCopy'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
@@ -1650,14 +1651,24 @@ export default function TenantClient({
   // level 은 caution — 소프트삭제라 되살릴 수 있는데 danger 는 '되돌릴 수 없습니다'를 자동으로 붙여 거짓말이 된다.
   // 같은 삭제인데 프리즘 경로(PaymentRecordList)에만 적용취소가 있던 불일치도 함께 봉합한다.
   const handleDeletePayRecord = async (p: PayRecord) => {
-    if (!(await confirmDeletePayment(p))) return
+    // 현금영수증 발행 기록에 무엇이 일어나는지 확인창이 먼저 말한다. 프리즘(PaymentRecordList)과 같은 정본(lib/paymentConfirm)이다.
+    const pv = await previewPaymentDelete(p.id).catch(() => null)
+    if (!(await confirmDeletePayment(p, pv?.ok ? pv : null))) return
     const paymentId = p.id
     startTransition(async () => {
       // 적용취소는 토스트 액션으로 — 프리즘(PaymentRecordList)과 같은 패턴
       const res = await withSave(() => deletePayment(paymentId), { success: '' })
       if (!res.ok) { setError(res.error); return }
+      const detail = crDeleteToastDetail(res.cashReceipt)
       pushToast('success', '수납 기록 삭제됨', {
-        action: { label: '적용취소', run: () => { void restorePayment(paymentId, res.undo).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
+        ...(detail ? { detail } : {}),
+        action: { label: '적용취소', run: () => { void restorePayment(paymentId, res.undo).then(r => {
+          if (r.ok) {
+            const d = crRestoreDetail(r.cashReceipt)
+            pushToast('info', CR_DELETE_UNDONE, d ? { detail: d } : undefined)
+            refresh()
+          } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
       })
       if (payTarget) {
         const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
