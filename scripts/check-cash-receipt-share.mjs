@@ -510,7 +510,116 @@ for (const kind of ['deposit', 'cleaning']) {
   }
 }
 
-console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 · ⓗ 생애주기 배선 / 위반 ${violations.length}건`)
+// ── ⓘ 화면이 발행 금액을 말한다(2026-10-13 422호 2단계) ─────────────────────────────
+//
+// 422호는 판정이 아니라 화면에서 났다. 수납 행이 받은 금액 410,000 과 '발행'만 말해 420,000 발행이 410,000
+// 발행으로 읽혔다. 문장은 lib/cashReceiptCopy 정본이 내고 scripts/test-cash-receipt 가 글자를 고정한다. 여기서는
+// 화면이 그 정본을 **어떤 값으로** 부르는지(배선)를 본다. 판정이 맞아도 행 금액을 넘기거나 keep 을 성공으로
+// 말하면 같은 거짓이 다시 선다.
+{
+  const TCL = 'app/(app)/tenants/TenantClient.tsx'
+  const CONF = 'lib/paymentConfirm.ts'
+  const COPY = 'lib/cashReceiptCopy.ts'
+  const CAPC = 'components/entity-modal/widgets/CashReceiptCaption.tsx'
+  const tcl = read(TCL), conf = read(CONF), copy = read(COPY), capc = read(CAPC)
+  const need = (file, src, re, why) => { if (!(typeof re === 'string' ? src.includes(re) : re.test(src))) violations.push(`${file} — ${why}`) }
+  const between = (src, a, b) => { const i = src.indexOf(a); if (i < 0) return null; const j = src.indexOf(b, i + a.length); return j < 0 ? null : src.slice(i, j) }
+
+  // ⓘ-1 행 캡션의 기준은 키(같은 날·같은 수단)의 이용료 합이다. 행 금액으로 되돌리면 분할 결제마다 거짓 경보가 선다(D12).
+  const CAP_CALL = /cashReceiptRowCaption\(\{ stamped: !!p\.cashReceiptIssuedAt, key: p\.cashReceiptKey \}\)/
+  need(LIST, list, CAP_CALL, '행 캡션이 서버 키 정보(p.cashReceiptKey)를 그대로 넘기지 않는다. 기준이 행 금액으로 갈 수 있다.')
+  need(TCL, tcl, CAP_CALL, '입주자 수납 모달 행 캡션이 서버 키 정보(p.cashReceiptKey)를 그대로 넘기지 않는다.')
+  const capFn = fnBody(copy, 'export function cashReceiptRowCaption(')
+  if (!capFn) violations.push(`${COPY}: cashReceiptRowCaption 몸통을 못 찾았다(침묵 통과 금지).`)
+  else {
+    if (!capFn.includes('input.key.rent')) violations.push(`${COPY} cashReceiptRowCaption: 차이를 키의 이용료 합(key.rent)으로 재지 않는다.`)
+    if (/actualAmount/.test(capFn)) violations.push(`${COPY} cashReceiptRowCaption: 행 금액(actualAmount)을 본다. 기준은 키의 이용료 합이다.`)
+  }
+
+  // ⓘ-2 자리와 접근성. 줄2 다음의 독립 줄이고(체크 label·왼쪽 묶음 안 금지), 체크 input 이 캡션을 aria-describedby 로 가리킨다.
+  need(LIST, list, '<CashReceiptCaption caption={crCap} id={crCapId} />', '행 캡션이 id 를 달고 서지 않는다.')
+  need(LIST, list, 'aria-describedby={crCap ? crCapId : undefined}', '체크 input 이 캡션을 aria-describedby 로 가리키지 않는다.')
+  {
+    const at = list.indexOf('onChange={() => handleToggleCashReceipt(p)}')
+    const lab = at < 0 ? null : list.slice(list.lastIndexOf('<label', at), list.indexOf('</label>', at))
+    if (!lab) violations.push(`${LIST} — 원터치 체크 label 을 못 찾았다(침묵 통과 금지).`)
+    else if (lab.includes('CashReceiptCaption')) violations.push(`${LIST} — 캡션이 체크 label 안에 있다. 44px 히트영역 안이라 캡션을 눌러도 토글된다.`)
+    const capAt = list.indexOf('<CashReceiptCaption'), row2End = list.indexOf('handleDelete(p)}>삭제</RowActionBtn>'), askAt = list.indexOf('{crAskId === p.id && (')
+    if (capAt < 0 || row2End < 0 || askAt < 0 || !(capAt > row2End && capAt < askAt)) violations.push(`${LIST} — 캡션이 줄2 바로 뒤(삭제 버튼 묶음 뒤, 켜기 확인 줄 앞)에 서지 않는다.`)
+    const tAt = tcl.indexOf('<CashReceiptCaption caption={crCap}'), tDel = tcl.indexOf('handleDeletePayRecord(p)}>삭제</RowActionBtn>')
+    if (tAt < 0 || tDel < 0 || tAt < tDel) violations.push(`${TCL} — 입주자 수납 모달 캡션이 행 아래 한 줄(삭제 버튼 뒤)이 아니다. 왼쪽 칸 안이면 오른쪽 금액이 접힌다.`)
+  }
+  for (const [cls, why] of [
+    ['num text-[0.65625rem]', '캡션 글자 크기·숫자 폰트'], ['flex flex-wrap gap-x-1', '덩이 사이에서만 접힘'], ['whitespace-nowrap', '덩이를 한 줄로 묶음'],
+    ['font-semibold text-[var(--warm-dark)]', '숫자 강조'], ['text-[var(--warning-fg)]', '다를 때 경고색(목록 전용)'],
+  ]) need(CAPC, capc, cls, `캡션 컴포넌트에 ${why}(${cls})가 없다.`)
+
+  // ⓘ-3 켜기 확인 줄은 기록될 발행 금액을 읽기 전용으로 먼저 보이고(서버 미리보기) 발행일은 그다음이다.
+  {
+    const tog = between(list, 'const handleToggleCashReceipt', 'startTransition(')
+    if (!tog || !tog.includes('previewCashReceiptOn(p.id)')) violations.push(`${LIST} — 켜기를 누를 때 발행 금액 미리보기(previewCashReceiptOn)를 안 부른다.`)
+    const ask = between(list, '{crAskId === p.id && (', 'confirmCashReceiptOn(p)')
+    if (!ask) violations.push(`${LIST} — 켜기 확인 줄을 못 찾았다(침묵 통과 금지).`)
+    else {
+      if (!ask.includes('fmtWon(crPv.amount)')) violations.push(`${LIST} — 켜기 확인 줄이 기록될 발행 금액을 안 보인다.`)
+      const amtAt = ask.indexOf('발행 금액'), dateAt = ask.indexOf('발행일')
+      if (amtAt < 0 || dateAt < 0 || amtAt > dateAt) violations.push(`${LIST} — 켜기 확인 줄 순서가 '발행 금액 먼저, 발행일 다음'이 아니다(일괄 발행 모달과 같은 순서).`)
+      if (!ask.includes('crAddPreviewChunks(crPv.current, crPv.added)')) violations.push(`${LIST} — 새 돈을 더하는 켜기(add)가 지켜지는 앞 발행일을 말하지 않는다.`)
+      if (/<MoneyInput|<input/.test(ask)) violations.push(`${LIST} — 켜기 확인 줄에 금액 입력칸이 있다. 발행 금액을 고치는 자리는 수정 폼 하나다(2026-08-25).`)
+    }
+  }
+
+  // ⓘ-4 삭제 확인창이 발행 기록에 일어날 일을 말한다(미리보기, 정본 한 줄, 끝 줄 앞).
+  need(CONF, conf, 'crDeleteConfirmLine(cr)', '삭제 확인창이 발행 기록 한 줄(crDeleteConfirmLine)을 안 만든다.')
+  need(CONF, conf, "[body, crLine, '삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.']", '발행 기록 한 줄이 본문 끝 줄(적용취소 안내) 앞에 서지 않는다.')
+  if (/toLocaleString\(/.test(conf)) violations.push(`${CONF} — 금액을 toLocaleString 으로 적는다(가이드 §06, fmtWon 정본).`)
+  for (const [file, src, fn] of [[LIST, list, 'const handleDelete = async'], [TCL, tcl, 'const handleDeletePayRecord = async']]) {
+    const b = between(src, fn, 'startTransition(')
+    if (!b) { violations.push(`${file} — 삭제 핸들러를 못 찾았다(침묵 통과 금지).`); continue }
+    const pvAt = b.indexOf('previewPaymentDelete(p.id)'), cfAt = b.indexOf('confirmDeletePayment(p, pv?.ok ? pv : null)')
+    if (pvAt < 0 || cfAt < 0 || pvAt > cfAt) violations.push(`${file} — 삭제 확인창 전에 미리보기(previewPaymentDelete)를 읽어 넘기지 않는다.`)
+  }
+
+  // ⓘ-5 토스트는 정본 문장을 지난다. keep(바뀐 것 없음)은 성공으로 말하지 않고 적용취소도 안 단다.
+  {
+    const onFn = between(list, 'const confirmCashReceiptOn', 'if (records === null)')
+    if (!onFn) violations.push(`${LIST} — 켜기 확정 함수를 못 찾았다(침묵 통과 금지).`)
+    else {
+      if (!onFn.includes('crOnToast(res, crAskDate)') || !onFn.includes('pushToast(t.kind, t.message')) violations.push(`${LIST} — 켜기 토스트가 정본(crOnToast)의 종류·문장을 안 쓴다. keep 이 성공으로 나간다.`)
+      if (!onFn.includes('...(t.undoable ?')) violations.push(`${LIST} — 켜기 토스트가 바뀐 것 없는 keep 에도 적용취소를 단다(가짜 적용취소).`)
+      if (/pushToast\('success'/.test(onFn)) violations.push(`${LIST} — 켜기 토스트에 성공 종류를 손으로 박았다.`)
+      if (!onFn.includes('CR_ON_UNDONE')) violations.push(`${LIST} — 켜기 적용취소 결과 토스트가 없다(§16 적용취소 후에도 결과 토스트).`)
+    }
+    need(LIST, list, 'crOffToastDetail(res.dropped', '끄기 토스트가 발행 합계에서 빠지는 금액을 말하지 않는다.')
+    need(LIST, list, 'crOffUndoneMessage(r.line)', '끄기 적용취소 결과 토스트가 없다.')
+    for (const [file, src] of [[LIST, list], [TCL, tcl]]) {
+      need(file, src, 'crDeleteToastDetail(res.cashReceipt)', '삭제 토스트가 발행 기록에 일어난 일을 말하지 않는다.')
+      need(file, src, /pushToast\('info', CR_DELETE_UNDONE, /, '삭제 적용취소 결과 토스트가 없다.')
+      need(file, src, 'crRestoreDetail(r.cashReceipt)', '삭제 적용취소 결과가 되살린 발행 기록을 말하지 않는다.')
+      need(file, src, 'crEditToastDetail(res.cashReceipt', '수정 저장 토스트가 발행 줄에 일어난 일을 말하지 않는다.')
+    }
+  }
+
+  // ⓘ-6 두 폼의 발행 금액 힌트는 한 정본 문장이고, 수정 폼의 기준은 키의 이용료 합이다.
+  need(FORM, form, 'cashReceiptGapSentence(crShownAmount, payAmount)', '등록 폼 힌트가 정본 문장(cashReceiptGapSentence)을 안 쓴다.')
+  need(LIST, list, 'cashReceiptGapSentence(editCrAmount, crBasis)', '수정 폼 힌트가 정본 문장(cashReceiptGapSentence)을 안 쓴다.')
+  need(LIST, list, /const crBasis = [^\n]*p\.cashReceiptKey\?\.rent/, '수정 폼 힌트의 기준이 키의 이용료 합(p.cashReceiptKey.rent)이 아니다(D12, 분할 결제 거짓 경보).')
+  for (const [file, src] of [[FORM, form], [LIST, list]]) {
+    if (/>\s*받은 금액 \{fmtWon\(/.test(src)) violations.push(`${file} — 발행 금액 힌트 문장을 손으로 적었다. 두 폼이 갈린다.`)
+  }
+
+  // ⓘ-7 탭 발행 내역 행이 받은 금액 대비를 말하고, 덩이 단위로만 한 줄로 묶는다(조각 전체를 묶으면 넘친다).
+  need(TAB, tab, 'cashReceiptTabGap(r)', '탭 발행 내역 행이 받은 금액 대비(cashReceiptTabGap)를 안 쓴다.')
+  {
+    const g = between(tab, '{gap ?', 'gap.units.map(')
+    if (!g) violations.push(`${TAB} — 받은 금액 대비 조각을 덩이(gap.units)로 그리지 않는다.`)
+    else if (g.includes('whitespace-nowrap')) violations.push(`${TAB} — 받은 금액 대비 조각 전체를 한 줄로 묶었다. 메타 칸보다 길어 넘친다(하네스 실측).`)
+  }
+  const tabFn = fnBody(srv, 'export async function getCashReceiptTabRows(')
+  if (!tabFn || !/received: p\.rent, rentRows: p\.rentRows/.test(tabFn)) violations.push(`${SRV} getCashReceiptTabRows — 발행 내역 행에 받은 몫·행 수를 안 싣는다.`)
+}
+
+console.log(`[받을 때 발행 대상] 축 ⓐ 폼 기본값 · ⓑ 판정·쓰기 한 자리 · ⓒ 보증금 도장 · ⓓ 후보 필터 · ⓔ 홈 의무 기준 · ⓕ 경고 두 종 · ⓖ 탭 문구 · ⓗ 생애주기 배선 · ⓘ 화면의 발행 금액 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

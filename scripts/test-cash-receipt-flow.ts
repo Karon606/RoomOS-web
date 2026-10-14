@@ -507,6 +507,105 @@ async function main() {
       [bu.ok, bu.ok ? null : bu.error.includes('일괄 기록 전체'), (await lines(L2.id, '2026-10-07', '현금')).map(l => l.deleted)], [false, true, [false]])
   }
 
+  // ── S19 2단계 화면이 쓰는 반환 값을 화면 문장 정본(lib/cashReceiptCopy)에 그대로 넣는다 ─────────────
+  //
+  // 화면은 서버가 돌려준 값을 문장 함수에 넣어 그린다. 그 이음매가 갈리면(행 캡션이 키 대신 행 금액을 보거나,
+  // keep 을 성공으로 말하거나) 판정이 맞아도 422호처럼 화면이 거짓을 말한다. 화면 호출 순서 그대로 돌린다.
+  {
+    const copy = await import('@/lib/cashReceiptCopy')
+    type Row = { id: string; cashReceiptIssuedAt: Date | null; cashReceiptKey: { line: { amount: number; issuedYmd: string; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean } | null; rent: number; rentRows: number; stampedRentRows: number } | null }
+    const rowOf = async (leaseId: string, id: string) => {
+      const pl = await rooms.getPaymentsByLease(leaseId, '2026-10')
+      return (pl.windowRecords as Row[]).find(r => r.id === id) ?? (pl.records as Row[]).find(r => r.id === id) ?? null
+    }
+    const capOf = async (leaseId: string, id: string) => {
+      const r = await rowOf(leaseId, id)
+      const c = r ? copy.cashReceiptRowCaption({ stamped: !!r.cashReceiptIssuedAt, key: r.cashReceiptKey }) : null
+      return c ? [c.tone, copy.crCaptionText(c)] : null
+    }
+    // 422호 순서. 분할 결제 켜기, 형제 삭제, 끄기, 다시 켜기.
+    const L = await lease(P1)
+    const A = await rec(L, P1, { month: '2026-10', amount: 410000, pay: '2026-10-02' })
+    const B = await rec(L, P1, { month: '2026-11', amount: 10000, pay: '2026-10-02' })
+    const pv0 = await rooms.previewCashReceiptOn(A)
+    eq('S19 켜기 확인 줄 금액: 키 합 420,000(create)', pv0.ok ? [pv0.kind, pv0.amount] : pv0, ['create', 420000])
+    const on1 = await rooms.setCashReceiptIssued(A, true, '2026-10-02')
+    if (!on1.ok) throw new Error(on1.error)
+    eq('S19 켜기 토스트는 기록된 줄의 발행일·금액', copy.crOnToast(on1, '2026-10-02').message, '현금영수증 발행으로 표시했습니다 · 발행일 10/2 · 420,000원')
+    eq('S19 같고 합산이면 두 행 모두 보조색 합산 캡션', [await capOf(L.id, A), await capOf(L.id, B)],
+      [['muted', '발행 금액 420,000원 · 같은 날 입금 2건 합산'], ['muted', '발행 금액 420,000원 · 같은 날 입금 2건 합산']])
+    const pdB = await rooms.previewPaymentDelete(B)
+    eq('S19 형제 삭제 확인창: 발행은 남고 금액 확인을 요청', pdB.ok ? copy.crDeleteConfirmLine(pdB) : pdB,
+      '같은 날 받은 수납과 묶인 현금영수증 발행 420,000원은 그대로 남습니다. 삭제 뒤 발행 금액을 확인해 주세요.')
+    const dB = await rooms.deletePayment(B)
+    if (!dB.ok) throw new Error(dB.error)
+    eq('S19 삭제 토스트: 남은 수납의 발행은 그대로', copy.crDeleteToastDetail(dB.cashReceipt), '남은 수납의 현금영수증 발행 420,000원은 그대로입니다.')
+    eq('S19 행 캡션: 기준은 키 합이라 받은 금액보다 10,000원 많음(422호가 못 본 사실)', await capOf(L.id, A), ['warning', '발행 금액 420,000원 · 받은 금액보다 10,000원 많음'])
+    const tab = await rooms.getCashReceiptTabRows('2026-10')
+    const tr = tab.issued.find((r: { payYmd: string; amount: number }) => r.payYmd === '2026-10-02' && r.amount === 420000)
+    eq('S19 탭 행: 받은 금액을 숫자로', tr ? copy.cashReceiptTabGap(tr)?.text : null, '받은 금액 410,000원보다 10,000원 많음')
+    const rA = await rowOf(L.id, A)
+    const off = await rooms.setCashReceiptIssued(A, false)
+    if (!off.ok) throw new Error(off.error)
+    eq('S19 끄기 토스트: 발행월 합계에서 빠지는 금액', copy.crOffToastDetail(off.dropped, rA?.cashReceiptKey?.stampedRentRows ?? 1),
+      '10월 발행 합계에서 420,000원이 빠집니다. 홈택스에 발행한 영수증은 그대로입니다.')
+    const uOff = await rooms.undoCashReceiptChange(J(off.undo))
+    eq('S19 끄기 적용취소 결과: 발행 420,000원으로 복귀 + 지금 받은 돈과 다름', uOff.ok ? [copy.crOffUndoneMessage(uOff.line), copy.crUndoMismatchDetail(uOff.mismatch)] : uOff,
+      ['발행 표시 해제를 적용취소했습니다 · 발행 420,000원으로 복귀', '발행 금액 420,000원이 받은 금액 410,000원과 다릅니다.'])
+    await rooms.setCashReceiptIssued(A, false)
+    const pv1 = await rooms.previewCashReceiptOn(A)
+    eq('S19 다시 켜기 확인 줄: 옛 420,000 이 아니라 새 발행 410,000', pv1.ok ? [pv1.kind, pv1.amount] : pv1, ['rebuild', 410000])
+    const on2 = await rooms.setCashReceiptIssued(A, true, '2026-10-12')
+    if (!on2.ok) throw new Error(on2.error)
+    eq('S19 다시 켜기 토스트·캡션 침묵', [copy.crOnToast(on2, '2026-10-12').message, await capOf(L.id, A)], ['현금영수증 발행으로 표시했습니다 · 발행일 10/12 · 410,000원', null])
+
+    // 마지막 이용료 삭제(drop)와 그 적용취소, 줄 없는 삭제(none).
+    const C = await rec(L, P1, { month: '2026-09', amount: 350000, pay: '2026-10-03', method: '현금' })
+    await rooms.setCashReceiptIssued(C, true, '2026-10-03')
+    const pdC = await rooms.previewPaymentDelete(C)
+    eq('S19 마지막 이용료 삭제 확인창: 발행 기록도 함께', pdC.ok ? copy.crDeleteConfirmLine(pdC) : pdC,
+      '이 입금의 현금영수증 발행 기록 350,000원도 함께 지웁니다. 홈택스에 발행한 영수증은 그대로라 필요하면 홈택스에서 취소합니다.')
+    const dC = await rooms.deletePayment(C)
+    if (!dC.ok) throw new Error(dC.error)
+    eq('S19 drop 삭제 토스트', copy.crDeleteToastDetail(dC.cashReceipt), '현금영수증 발행 기록 350,000원도 함께 지웠습니다.')
+    const rC = await rooms.restorePayment(C, J(dC.undo))
+    eq('S19 삭제 적용취소 결과: 발행 기록도 되살림', rC.ok ? copy.crRestoreDetail(rC.cashReceipt) : rC, '현금영수증 발행 기록 350,000원도 되살렸습니다.')
+    const D = await rec(L, P1, { month: '2026-10', amount: 50000, pay: '2026-10-05', method: '현금' })
+    const pdD = await rooms.previewPaymentDelete(D)
+    eq('S19 발행 줄 없는 삭제 확인창은 덧붙이지 않음', pdD.ok ? [pdD.effect, copy.crDeleteConfirmLine(pdD)] : pdD, ['none', null])
+
+    // 살아 있는 발행 위의 새 돈(add)과 이미 다 덮인 키(keep).
+    const E = await rec(L, P1, { month: '2026-11', amount: 300000, pay: '2026-10-07' })
+    await rooms.setCashReceiptIssued(E, true, '2026-10-07')
+    const F = await rec(L, P1, { month: '2026-12', amount: 20000, pay: '2026-10-07' })
+    const pvF = await rooms.previewCashReceiptOn(F)
+    eq('S19 add 확인 줄: 금액 320,000 + 앞 발행일 유지 캡션', pvF.ok && pvF.current ? [pvF.kind, pvF.amount, copy.crAddPreviewChunks(pvF.current, pvF.added)] : pvF,
+      ['add', 320000, ['기존 발행 300,000원(10/7)에 20,000원 더함', '· 발행일 10/7 유지']])
+    const onF = await rooms.setCashReceiptIssued(F, true, '2026-10-12')
+    if (!onF.ok) throw new Error(onF.error)
+    const tF = copy.crOnToast(onF, '2026-10-12')
+    eq('S19 add 토스트: 고른 10/12 가 아니라 지킨 10/7', [tF.message, tF.detail], ['현금영수증 발행으로 표시했습니다 · 발행일 10/7 · 320,000원', '기존 발행에 20,000원을 더했습니다. 발행일은 10/7 그대로입니다.'])
+    const G = await rec(L, P1, { month: '2026-10', amount: 100000, pay: '2026-10-07', isDeposit: true })
+    const onG = await rooms.setCashReceiptIssued(G, true, '2026-10-12')
+    if (!onG.ok) throw new Error(onG.error)
+    const tG = copy.crOnToast(onG, '2026-10-12')
+    eq('S19 이미 다 덮인 키(보증금 행 켜기)는 keep: 성공이라 말하지 않고 적용취소도 없음', [onG.change, tG.kind, tG.undoable, tG.message], ['keep', 'info', false, '이미 같은 날 발행에 들어 있습니다'])
+
+    // 도장만 있고 줄이 없는 옛 데이터(방어 캡션).
+    const H = await rec(L, P1, { month: '2026-10', amount: 70000, pay: '2026-10-09', method: '현금', stamp: '2026-10-09' })
+    eq('S19 도장만 있고 줄 없음은 위험 캡션', await capOf(L.id, H), ['danger', '발행 표시만 있고 발행 기록이 없음 · 합계에 안 듦'])
+
+    // 수정 폼에서 입금일을 옮겨 합쳐지면 고친 발행 금액은 안 쓰였다고 말한다(검수 F1 의 화면 쪽).
+    const X = await rec(L, P1, { month: '2026-11', amount: 200000, pay: '2026-10-10' })
+    await rooms.setCashReceiptIssued(X, true, '2026-10-10')
+    const rX = await rowOf(L.id, X)
+    const eX = await rooms.updatePayment(X, { actualAmount: 200000, payDate: '2026-10-07', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-10', cashReceiptAmount: 250000 })
+    if (!eX.ok) throw new Error(eX.error)
+    eq('S19 옮겨 합쳐진 수정 저장 토스트', [eX.cashReceipt.merged?.amount, copy.crEditToastDetail(eX.cashReceipt, { moved: true, wasStamped: true, nowStamped: true, amountEdited: true, beforeAmount: rX?.cashReceiptKey?.line?.amount ?? null })],
+      [520000, '입금일·수단을 옮겨 고친 발행 금액은 쓰지 않았습니다.'])
+    eq('S19 합친 뒤 세 행 캡션: 같은 날 3건 합산', await capOf(L.id, X), ['muted', '발행 금액 520,000원 · 같은 날 입금 3건 합산'])
+  }
+
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

@@ -22,6 +22,10 @@ const GUARDED = {
   'app/(app)/dashboard/DashboardClient.tsx': ['이사를 되돌렸습니다'],
   'components/tenant/MoveRoomNowButton.tsx': ['이사를 되돌렸습니다'],
   'app/(app)/inventory/InventoryClient.tsx': ['입수 기록을 되돌렸습니다'],
+  // 수납 내역·입주자 수납 모달의 적용취소 실패 토스트(2026-10-13 422호 2단계, R5). 버튼은 '적용취소'인데
+  // 통신 실패만 '되돌리기 중'이라 불렀다. 결과 토스트 문장은 lib/cashReceiptCopy 정본(scripts/test-cash-receipt 가 글자 고정).
+  'components/entity-modal/widgets/PaymentRecordList.tsx': ['되돌리기 중 통신 오류가 발생했습니다'],
+  'app/(app)/tenants/TenantClient.tsx': ['되돌리기 중 통신 오류가 발생했습니다'],
 }
 
 const violations = []
