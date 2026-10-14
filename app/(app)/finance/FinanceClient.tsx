@@ -32,7 +32,7 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift, undoDeleteTrackedItem, unarchiveTrackedItem } from '@/app/(app)/inventory/actions'
 import { askShiftRows } from '@/lib/stockShiftAsk'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getPendingReceiptImage, finalizePendingReceipt } from '@/app/(app)/dashboard/pendingReceipt'
@@ -2700,7 +2700,18 @@ export default function FinanceClient({
               if (!sync.ok) pushToast('error', sync.error)
               else if (sync.moved) pushToast('success', `재고 품목을 '${newCat}'(으)로 옮겼습니다`)
               // 비추적 카테고리행 — 카드를 옮기는 대신 정리(좀비 카드·이중 표시 방지, 2026-07-22)
-              else if (sync.retired) pushToast('info', `'${newCat}'는 재고 추적 카테고리가 아니라 소모품 카드를 정리했습니다. 이 품목은 비품·자재에서 관리됩니다.`)
+              // 정리에도 적용취소가 있다(§16). 지운 카드는 같은 id 로 되살리고, 숨긴 카드는 숨김을 푼다.
+              // 지출 카테고리 수정은 그대로 남는다(되돌리는 것은 카드 정리뿐이다).
+              else if (sync.retired) {
+                const { deleteUndo, archivedId } = sync
+                const undoRetire = deleteUndo ? () => undoDeleteTrackedItem(deleteUndo) : archivedId ? () => unarchiveTrackedItem(archivedId) : null
+                pushToast('info', `'${newCat}'는 재고 추적 카테고리가 아니라 소모품 카드를 정리했습니다. 이 품목은 비품·자재에서 관리됩니다.`, undoRetire ? {
+                  action: { label: '적용취소', run: () => { void undoRetire().then(r => {
+                    if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 카드를 되살렸습니다'); router.refresh() }
+                    else pushToast('error', r.error)
+                  }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+                } : undefined)
+              }
             }
           }
         }

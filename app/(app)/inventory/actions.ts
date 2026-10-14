@@ -4212,6 +4212,23 @@ export type TrackedItemDeleteUndo = {
   mergeRules: { category: string; sourceLabel: string; normLabel: string; kind: string }[]
 }
 
+// 삭제 직전 스냅샷 한 벌. 품목을 지우는 자리 둘(기록 없는 품목 삭제·카테고리 동기화의 카드 정리)이 같은 모양을
+// 쓴다. 자리마다 모양을 따로 들면 되살리는 쪽(undoDeleteTrackedItem)과 한쪽만 어긋난다.
+type TrackedItemWithLinks = Prisma.TrackedItemGetPayload<{ include: { locations: true; checkDrafts: true } }>
+async function trackedItemDeleteSnapshot(propertyId: string, it: TrackedItemWithLinks): Promise<TrackedItemDeleteUndo> {
+  const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId, targetItemId: it.id } })
+  return {
+    item: {
+      id: it.id, category: it.category, label: it.label, specUnit: it.specUnit, qtyUnit: it.qtyUnit,
+      alertThresholdDays: it.alertThresholdDays, reorderMemo: it.reorderMemo, purchaseUrl: it.purchaseUrl, trackUnit: it.trackUnit,
+      hubLocationId: it.hubLocationId, isArchived: it.isArchived, sortOrder: it.sortOrder, memo: it.memo, createdAt: it.createdAt.toISOString(),
+    },
+    locations: it.locations.map(l => ({ storageLocationId: l.storageLocationId, closedAt: l.closedAt ? l.closedAt.toISOString() : null })),
+    drafts: it.checkDrafts.map(d => ({ locationId: d.locationId, data: d.data as Prisma.InputJsonValue })),
+    mergeRules: rules.map(r => ({ category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, kind: r.kind })),
+  }
+}
+
 // ── 기록 없는 품목 진짜 삭제 — 카테고리 착오 등으로 자동 생성된 품목의 되돌리기(신고 f3454e4c).
 //    지출·점검·입수·폐기 기록이 하나라도 있으면 거부(그 경우 '숨기기'). 거부 판정은 itemRecordCounts 정본.
 //    v2.0 §16 — 지운 품목은 적용취소(undoDeleteTrackedItem)로 같은 id 로 되살린다.
@@ -4225,17 +4242,7 @@ export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true; 
     if (n.total > 0) {
       return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${n.expense}·점검 ${n.check}·입수 ${n.addition}·폐기 ${n.disposal}건). 대신 '숨김'을 사용하세요.` }
     }
-    const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId, targetItemId: id } })
-    const undo: TrackedItemDeleteUndo = {
-      item: {
-        id: it.id, category: it.category, label: it.label, specUnit: it.specUnit, qtyUnit: it.qtyUnit,
-        alertThresholdDays: it.alertThresholdDays, reorderMemo: it.reorderMemo, purchaseUrl: it.purchaseUrl, trackUnit: it.trackUnit,
-        hubLocationId: it.hubLocationId, isArchived: it.isArchived, sortOrder: it.sortOrder, memo: it.memo, createdAt: it.createdAt.toISOString(),
-      },
-      locations: it.locations.map(l => ({ storageLocationId: l.storageLocationId, closedAt: l.closedAt ? l.closedAt.toISOString() : null })),
-      drafts: it.checkDrafts.map(d => ({ locationId: d.locationId, data: d.data as Prisma.InputJsonValue })),
-      mergeRules: rules.map(r => ({ category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, kind: r.kind })),
-    }
+    const undo = await trackedItemDeleteSnapshot(propertyId, it)
     await prisma.trackedItem.delete({ where: { id } })
     revalidatePath('/inventory')
     return { ok: true, undo }
@@ -4295,12 +4302,14 @@ export async function undoDeleteTrackedItem(undo: TrackedItemDeleteUndo): Promis
 //    대상이 비추적 카테고리(수선유지비 등)면 카드를 옮기지 않는다 — 옮기면 소모품 화면에 좀비 카드로 남고
 //    비품·자재 화면과 이중 표시된다(서빙집게·집게보관통·의자 사건, 운영자 승인 2026-07-22).
 //    이 경우 재고 기록 없으면 카드 삭제, 있으면 숨김(isArchived) 처리하고 결과를 알린다.
-export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived' } | { ok: false; error: string }> {
+//    정리 둘 다 적용취소가 있다(§16). 삭제는 품목 삭제와 같은 스냅샷(TrackedItemDeleteUndo)으로 같은 id 로
+//    되살리고(undoDeleteTrackedItem), 숨김은 숨김 해제(unarchiveTrackedItem)로 되돌린다. 종전에는 둘 다 없었다.
+export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived'; deleteUndo?: TrackedItemDeleteUndo; archivedId?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!label.trim() || fromCategory === toCategory) return { ok: true, moved: false }
-    const item = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: fromCategory } })
+    const item = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: fromCategory }, include: { locations: true, checkDrafts: true } })
     if (!item) return { ok: true, moved: false }
 
     const trackedCats = await getTrackedCategories(propertyId)
@@ -4312,13 +4321,15 @@ export async function syncTrackedItemCategory(label: string, fromCategory: strin
         prisma.stockDisposal.count({ where: { trackedItemId: item.id } }),
       ])
       if (checkCount + addCount + dispCount === 0) {
+        const deleteUndo = await trackedItemDeleteSnapshot(propertyId, item)
         await prisma.trackedItem.delete({ where: { id: item.id } })
         revalidatePath('/inventory'); revalidatePath('/finance')
-        return { ok: true, moved: false, retired: 'deleted' }
+        return { ok: true, moved: false, retired: 'deleted', deleteUndo }
       }
       await prisma.trackedItem.update({ where: { id: item.id }, data: { isArchived: true } })
       revalidatePath('/inventory'); revalidatePath('/finance')
-      return { ok: true, moved: false, retired: 'archived' }
+      // 이미 숨긴 카드였으면 되돌릴 것이 없다. 숨김 해제를 주면 원래 상태보다 한 걸음 더 간다.
+      return { ok: true, moved: false, retired: 'archived', ...(item.isArchived ? {} : { archivedId: item.id }) }
     }
 
     const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: toCategory }, select: { id: true } })
