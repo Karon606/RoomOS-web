@@ -5,14 +5,14 @@
 // 편집 가능 항목: 금액·납부일·납부방법·메모·귀속월. 보증금 record 는 귀속월 변경 불가.
 // 양도인 record 는 양도인 색 표시.
 
-import { useEffect, useId, useState, useTransition } from 'react'
+import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import { CARD_LIKE_METHODS, MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, undoPaymentEdit, deletePayment, restorePayment, setCashReceiptIssued,
-  undoCashReceiptChange, previewCashReceiptOn, previewPaymentDelete,
+  undoCashReceiptChange, previewCashReceiptOn, previewPaymentDelete, previewPaymentEditCr,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -25,6 +25,7 @@ import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible 
 import {
   cashReceiptRowCaption, crAddPreviewChunks, crReplacePreview, CR_PREVIEW_UNREAD, CR_KEEP_PREVIEW, CR_NONE_PREVIEW, crOnToast, crOffToastDetail, crOffUndoneMessage, crOnUndoneMessage,
   CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteToastDetail, crRestoreDetail, cashReceiptGapSentence, crEditToastDetail,
+  crCoveredRent, CR_EDIT_MOVED_NOTE,
 } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -99,6 +100,13 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 폼을 열 때의 발행 금액·구성. 운영자가 칸을 고쳤는지 가르는 기준(2026-10-14 독립 검수 F1).
   // 안 고쳤으면 저장에 싣지 않는다. 실으면 서버가 입금일 이동으로 합친 금액을 이 프리필(옛 키 금액)로 덮는다.
   const [editCrPrefill, setEditCrPrefill] = useState({ amount: 0, incl: { deposit: false, cleaning: false, rent: true } })
+  // 수정 폼의 발행 금액 미리보기(독립 검수 F-A). 미발행 행을 켜거나 입금일·수단을 옮기면 칸이 '저장하면 기록될 금액'을
+  // 보이게 한다. key 는 그 미리보기를 부른 입력이다(입력이 바뀌면 지난 응답을 안 쓴다). 'net' 은 통신 실패다.
+  const [editCrPv, setEditCrPv] = useState<{ key: string; res: Awaited<ReturnType<typeof previewPaymentEditCr>> | 'net' } | null>(null)
+  const editPvSeq = useRef(0)
+  // 응답이 올 때의 프리필. 운영자가 칸을 고치지 않았으면(칸 = 프리필) 칸도 기록될 금액으로 옮기고, 고쳤으면 그 값을 지킨다.
+  const editCrPrefillAmt = useRef(0)
+  useEffect(() => { editCrPrefillAmt.current = editCrPrefill.amount }, [editCrPrefill.amount])
   // 이 계약의 활성 발행 줄 — (수납일·수단)으로 그 행의 발행을 찾는다.
   const [receipts, setReceipts] = useState<{ payDate: string | Date; payMethod: string | null; amount: number; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }[]>([])
 
@@ -144,6 +152,34 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
   }
+
+  // 미리보기가 필요한 수정인가. 미발행 행을 켜거나(키 몫·더하기로 정해진다) 입금일·수단을 옮기면(옮긴 결과로 정해진다)
+  // 칸의 프리필(행 금액·옛 줄 금액)이 저장 결과와 갈린다(검수 N2·N3). 같은 키에서 발행일·금액만 고치는 재저장은
+  // 프리필이 곧 현재 줄이라 부르지 않는다. 옮겼는지는 서버와 같이 엄격히 본다(null 수단을 '' 로 저장해도 옮긴 것).
+  const editRec = editingId ? records?.find(r => r.id === editingId) ?? null : null
+  const editMoved = !!editRec && (editDate !== kstYmdStr(new Date(editRec.payDate)) || editPayMethod !== editRec.payMethod)
+  const editPvKey = editRec && editCashReceipt && isCashReceiptEligible(editPayMethod) && editAmount > 0 && (!editRec.cashReceiptIssuedAt || editMoved)
+    ? JSON.stringify([editRec.id, editDate, editPayMethod, editAmount, editCashReceiptDate])
+    : null
+  useEffect(() => {
+    if (!editPvKey || !editingId) return
+    const seq = ++editPvSeq.current
+    // 금액을 치는 동안 매 글자마다 부르지 않게 잠깐 기다린다.
+    const t = setTimeout(() => {
+      previewPaymentEditCr(editingId, { payDate: editDate, payMethod: editPayMethod, issued: true, issuedDate: editCashReceiptDate, actualAmount: editAmount })
+        .then(res => {
+          if (seq !== editPvSeq.current) return
+          setEditCrPv({ key: editPvKey, res })
+          if (res.ok && res.fieldUsed && res.amount != null) {
+            const amt = res.amount, pf = editCrPrefillAmt.current
+            setEditCrAmount(cur => (cur === pf ? amt : cur))
+            setEditCrPrefill(prev => ({ ...prev, amount: amt }))
+          }
+        })
+        .catch(() => { if (seq === editPvSeq.current) setEditCrPv({ key: editPvKey, res: 'net' }) })
+    }, 250)
+    return () => clearTimeout(t)
+  }, [editPvKey, editingId, editDate, editPayMethod, editCashReceiptDate, editAmount])
 
   // 수정 중 수단을 카드로 바꾸면 발행 표시를 끈다(운영자 확정 2026-08-24).
   // "결제 수단을 바꿨기 때문에 현금영수증은 자연히 취소가 되어야 하고 카드결제로 했으니
@@ -330,11 +366,19 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         // 기록 버튼. 읽는 중·서버 거절·발행할 것이 없는 키(none)·이미 다 덮인 키(keep)는 막는다. 통신 실패는 살린다.
         const crOnBlocked = crPv === null || (crPv !== 'net' && (!crPv.ok || crPv.kind === 'none' || crPv.kind === 'keep'))
         if (editingId === p.id) {
-          // 발행 금액 힌트의 기준. 그 키(같은 날·같은 수단)의 이용료 합에 입력 중인 수납 금액을 바꿔 넣는다.
-          // 입금일·수단을 옮기는 중이면 옮겨 갈 키의 합(목록에 같은 키 행이 있으면 그 서버 값)에 더한다.
+          // 발행 금액 미리보기(검수 F-A). 지금 입력에 대한 응답만 쓴다. 필요한데 아직 없으면 읽는 중이다.
+          const editPv = editPvKey && editCrPv?.key === editPvKey ? editCrPv.res : null
+          const editPvOk = editPv && editPv !== 'net' && editPv.ok ? editPv : null
+          const editPvLoading = !!editPvKey && editPv === null
+          // 옮겨 함께 옮겨 가거나 합쳐지거나 도장만 빠지면 서버가 칸을 안 쓴다. 칸 대신 그 사실을 적는다.
+          const editPvMovedAway = editPvOk?.kind === 'transfer' || editPvOk?.kind === 'merge' || editPvOk?.kind === 'unstamp'
+          // 발행 금액 힌트의 기준. 미리보기가 있으면 서버가 저장 뒤 그 키에서 견줄 몫이다. 없으면(같은 키 재저장·통신 실패)
+          // 그 키(같은 날·같은 수단)의 도장 찍힌 이용료 몫에 입력 중인 수납 금액을 바꿔 넣는다(행 캡션과 같은 식, 검수 R-2).
           const sameKey = editDate === kstYmdStr(new Date(p.payDate)) && editPayMethod === (p.payMethod ?? '')
           const sib = sameKey ? null : records.find(r => r.id !== p.id && kstYmdStr(new Date(r.payDate)) === editDate && (r.payMethod ?? '') === editPayMethod)
-          const crBasis = editAmount + (sameKey ? (p.cashReceiptKey?.rent ?? p.actualAmount) - p.actualAmount : (sib?.cashReceiptKey?.rent ?? 0))
+          const crBasis = editPvOk
+            ? editPvOk.keyRent
+            : editAmount + (sameKey ? (p.cashReceiptKey ? crCoveredRent(p.cashReceiptKey) : p.actualAmount) - p.actualAmount : (sib?.cashReceiptKey ? crCoveredRent(sib.cashReceiptKey) : 0))
           const crGap = editCrIncl.deposit || editCrIncl.cleaning ? null : cashReceiptGapSentence(editCrAmount, crBasis)
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
@@ -414,14 +458,32 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   <p className="text-xs font-medium text-[var(--warm-mid)]">발행일</p>
                   <DatePicker value={editCashReceiptDate} onChange={setEditCashReceiptDate} maxDate={kstYmdStr()}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
-                  {/* 발행 금액 — 받은 금액과 다를 수 있다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다. */}
-                  <p className="text-xs font-medium text-[var(--warm-mid)] mt-2">발행 금액</p>
-                  <MoneyInput value={editCrAmount} onChange={setEditCrAmount} />
-                  {/* 기준은 이 행 금액이 아니라 그 키의 이용료 합이다(결함 D12. 분할 결제면 행 금액과 늘 달라 거짓 경보였다).
-                      문장은 수납 등록 폼과 글자까지 같은 정본이고 폼이라 경고색은 안 쓴다(운영자 결정 2026-08-25).
-                      보증금·청소비를 넣은 예외 발행은 이용료 합과 견줄 수 없어 말하지 않는다(목록 캡션이 '포함'을 적는다). */}
-                  {crGap && (
-                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">{crGap}</p>
+                  {/* 발행 금액. 받은 금액과 다를 수 있다. 프리필은 저장하면 기록될 금액이다(검수 F-A). 안 건드리면 안 실린다.
+                      옮김 갈래(transfer·merge·unstamp)와 이미 다 덮인 키(keep)·이용료 몫 없음은 서버가 칸을 안 쓰므로
+                      칸 대신 그 사실을 적는다. 모두 폼이라 경고색이 아니다(운영자 결정 2026-08-25). */}
+                  {editPvMovedAway ? (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep mt-2">{CR_EDIT_MOVED_NOTE}</p>
+                  ) : editPvOk?.kind === 'keep' || editPvOk?.kind === 'notIssued' ? (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep mt-2">{editPvOk.kind === 'keep' ? CR_KEEP_PREVIEW : CR_NONE_PREVIEW}</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-medium text-[var(--warm-mid)] mt-2">발행 금액</p>
+                      <MoneyInput value={editCrAmount} onChange={setEditCrAmount} />
+                      {/* 살아 있는 발행에 새 돈만 더하는 저장(add)은 앞 발행일을 지킨다. 켜기 확인 줄과 같은 세 덩이. */}
+                      {editPvOk?.kind === 'add' && editPvOk.prev && (
+                        <p className="num text-[0.65625rem] text-[var(--warm-mid)] flex flex-wrap gap-x-1">
+                          {crAddPreviewChunks(editPvOk.prev, editPvOk.added).map((t, i) => <span key={i} className="whitespace-nowrap">{t}</span>)}
+                        </p>
+                      )}
+                      {/* 기준은 이 행 금액이 아니라 그 키의 이용료 몫이다(결함 D12. 분할 결제면 행 금액과 늘 달라 거짓 경보였다).
+                          문장은 수납 등록 폼과 글자까지 같은 정본이고 폼이라 경고색은 안 쓴다(운영자 결정 2026-08-25).
+                          보증금·청소비를 넣은 예외 발행은 이용료 합과 견줄 수 없어 말하지 않는다(목록 캡션이 '포함'을 적는다). */}
+                      {editPvLoading ? (
+                        <Skeleton className="h-3 w-3/4 mt-1" />
+                      ) : crGap && (
+                        <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">{crGap}</p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -431,7 +493,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   감지망 check-secondary-on-soft. */}
               <div className="flex gap-2 justify-end">
                 <Btn variant="subtle" size="sm" onClick={() => setEditingId(null)}>취소</Btn>
-                <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={pending}>저장</Btn>
+                {/* 기록될 금액을 읽는 동안은 저장을 막는다. 칸이 아직 옛 프리필이라 칸과 저장 결과가 갈린다(검수 F-A). */}
+                <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={pending || editPvLoading}>저장</Btn>
               </div>
             </div>
           )

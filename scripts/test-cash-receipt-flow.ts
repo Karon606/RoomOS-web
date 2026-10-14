@@ -620,6 +620,52 @@ async function main() {
     eq('S19 일부 도장 키: 탭 행도 침묵(도장 찍힌 몫과 같다)', tabR2 ? [tabR2.received, tabR2.stampedRentRows, tabR2.unstampedRent, copy.cashReceiptTabGap(tabR2)] : null, [400000, 1, 300000, null])
   }
 
+  // ── S20 수정 폼 발행 금액 칸 = 저장 결과(독립 검수 F-A, N2·N3) ─────────────────────────────
+  //
+  // 화면 순서 그대로. 폼은 미리보기(previewPaymentEditCr)의 기록될 금액을 칸·프리필로 쓰고, 칸을 안 고쳤으면 저장에
+  // 싣지 않는다(검수 F1). 그래서 미리 본 금액이 곧 저장 결과여야 한다. 종전 칸은 행 금액(10,000)이나 옛 줄(410,000)이었다.
+  {
+    const copy = await import('@/lib/cashReceiptCopy')
+    // N2: 줄 없는 키의 미발행 형제 둘 중 하나를 켠다. 키 몫 420,000 이 서고 두 행 모두 도장이다.
+    const L = await lease(P1)
+    const A2 = await rec(L, P1, { month: '2026-10', amount: 410000, pay: '2026-10-09' })
+    const B2 = await rec(L, P1, { month: '2026-11', amount: 10000, pay: '2026-10-09' })
+    const pv2 = await rooms.previewPaymentEditCr(B2, { payDate: '2026-10-09', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-09', actualAmount: 10000 })
+    eq('S20 N2 미리보기: create 420,000 · 칸을 쓴다 · 힌트 기준 420,000', pv2.ok ? [pv2.kind, pv2.amount, pv2.fieldUsed, pv2.keyRent] : pv2, ['create', 420000, true, 420000])
+    eq('S20 N2 칸이 기록될 금액이면 힌트는 침묵', pv2.ok && pv2.amount != null ? copy.cashReceiptGapSentence(pv2.amount, pv2.keyRent) : pv2, null)
+    const e2 = await rooms.updatePayment(B2, { actualAmount: 10000, payDate: '2026-10-09', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-09' })
+    eq('S20 N2 저장 결과 = 미리 본 금액, 앞 행도 도장', e2.ok ? [e2.cashReceipt.line?.amount, await stamp(A2), await stamp(B2)] : e2, [pv2.ok ? pv2.amount : -1, kstMid('2026-10-09'), kstMid('2026-10-09')])
+
+    // N3: 살아 있는 줄(410,000) 있는 키의 미발행 행을 켠다. add 420,000, 앞 발행일 유지.
+    const L3 = await lease(P1)
+    const A3 = await rec(L3, P1, { month: '2026-10', amount: 410000, pay: '2026-10-10' })
+    await rooms.setCashReceiptIssued(A3, true, '2026-10-10')
+    const B3 = await rec(L3, P1, { month: '2026-11', amount: 10000, pay: '2026-10-10' })
+    const pv3 = await rooms.previewPaymentEditCr(B3, { payDate: '2026-10-10', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-11', actualAmount: 10000 })
+    eq('S20 N3 미리보기: add 420,000 · 앞 410,000(10/10)에 10,000', pv3.ok ? [pv3.kind, pv3.amount, pv3.prev, pv3.added, pv3.issuedYmd, pv3.keyRent] : pv3,
+      ['add', 420000, { amount: 410000, issuedYmd: '2026-10-10' }, 10000, '2026-10-10', 420000])
+    eq('S20 N3 칸 밑 세 덩이', pv3.ok && pv3.prev ? copy.crAddPreviewChunks(pv3.prev, pv3.added) : pv3, ['기존 발행 410,000원(10/10)에', '10,000원 더함 ·', '발행일 10/10 유지'])
+    const e3 = await rooms.updatePayment(B3, { actualAmount: 10000, payDate: '2026-10-10', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-11' })
+    eq('S20 N3 저장 결과 = 미리 본 금액', e3.ok ? [e3.cashReceipt.added?.amount, e3.cashReceipt.line?.amount, e3.cashReceipt.line?.issuedYmd] : e3, [420000, 420000, '2026-10-10'])
+
+    // 옮김 갈래는 칸을 안 쓴다(검수 F1). 홀로 선 수납을 옮기면 transfer, 형제가 남으면 unstamp.
+    const L5 = await lease(P1)
+    const A5 = await rec(L5, P1, { month: '2026-10', amount: 300000, pay: '2026-10-12' })
+    await rooms.setCashReceiptIssued(A5, true, '2026-10-12')
+    const pv5 = await rooms.previewPaymentEditCr(A5, { payDate: '2026-10-13', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-12', actualAmount: 300000 })
+    eq('S20 옮김 transfer: 칸을 안 쓴다', pv5.ok ? [pv5.kind, pv5.amount, pv5.fieldUsed] : pv5, ['transfer', 300000, false])
+    const e5 = await rooms.updatePayment(A5, { actualAmount: 300000, payDate: '2026-10-13', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-12', cashReceiptAmount: 999000 })
+    eq('S20 옮김 transfer 저장은 칸 값을 무시하고 미리 본 금액', e5.ok ? e5.cashReceipt.transferred?.amount : e5, 300000)
+    const B5 = await rec(L5, P1, { month: '2026-11', amount: 10000, pay: '2026-10-13' })
+    await rooms.setCashReceiptIssued(B5, true, '2026-10-13')
+    const pv6 = await rooms.previewPaymentEditCr(B5, { payDate: '2026-10-14', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-13', actualAmount: 10000 })
+    eq('S20 옮김 unstamp: 칸이 없다', pv6.ok ? [pv6.kind, pv6.amount, pv6.fieldUsed] : pv6, ['unstamp', null, false])
+    // 남의 영업장 수납은 못 읽는다.
+    g.__CR_FLOW_PID = P2
+    eq('S20 남의 수납 미리보기 거부', (await rooms.previewPaymentEditCr(B5, { payDate: '2026-10-14', payMethod: '계좌이체', issued: true, actualAmount: 10000 })).ok, false)
+    g.__CR_FLOW_PID = P1
+  }
+
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

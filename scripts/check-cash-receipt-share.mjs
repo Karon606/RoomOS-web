@@ -624,7 +624,22 @@ for (const kind of ['deposit', 'cleaning']) {
   // ⓘ-6 두 폼의 발행 금액 힌트는 한 정본 문장이고, 수정 폼의 기준은 키의 이용료 합이다.
   need(FORM, form, 'cashReceiptGapSentence(crShownAmount, payAmount)', '등록 폼 힌트가 정본 문장(cashReceiptGapSentence)을 안 쓴다.')
   need(LIST, list, 'cashReceiptGapSentence(editCrAmount, crBasis)', '수정 폼 힌트가 정본 문장(cashReceiptGapSentence)을 안 쓴다.')
-  need(LIST, list, /const crBasis = [^\n]*p\.cashReceiptKey\?\.rent/, '수정 폼 힌트의 기준이 키의 이용료 합(p.cashReceiptKey.rent)이 아니다(D12, 분할 결제 거짓 경보).')
+  need(LIST, list, /const crBasis = editPvOk\s*\?\s*editPvOk\.keyRent\s*:\s*editAmount \+ \(sameKey \? \(p\.cashReceiptKey \? crCoveredRent\(p\.cashReceiptKey\)/, '수정 폼 힌트의 기준이 미리보기의 저장 뒤 몫이나 키의 도장 찍힌 이용료 몫(crCoveredRent)이 아니다(D12·R-2, 분할 결제 거짓 경보).')
+  // 독립 검수 F-A: 수정 폼 발행 금액 칸·힌트가 저장 결과와 같은 말을 한다. 미발행 행을 켜거나 입금일·수단을 옮기면 서버
+  // 미리보기(정본 판정 planCashReceiptEdit)를 불러 칸·프리필을 '기록될 금액'으로 옮기고, 옮김 갈래에서는 칸을 숨긴다.
+  {
+    const pvFn = fnBody(srv, 'export async function previewPaymentEditCr(')
+    if (!pvFn || !pvFn.includes('planCashReceiptEdit(') || !pvFn.includes('resolveCashReceiptIssuedAt(')) violations.push(`${SRV} previewPaymentEditCr — 저장(updatePayment)과 같은 정본 판정을 안 지난다(검수 F-A).`)
+    need(LIST, list, 'previewPaymentEditCr(editingId, {', '수정 폼이 기록될 발행 금액 미리보기를 안 부른다(검수 F-A, N2·N3).')
+    need(LIST, list, /setEditCrAmount\(cur => \(cur === pf \? amt : cur\)\)\s*setEditCrPrefill\(prev => \(\{ \.\.\.prev, amount: amt \}\)\)/, '수정 폼 칸·프리필이 기록될 금액으로 안 옮겨진다. 칸과 저장 결과가 갈린다(검수 F-A).')
+    need(LIST, list, /editPvMovedAway \? \(\s*<p[^>]*>\{CR_EDIT_MOVED_NOTE\}<\/p>/, '옮김 갈래(transfer·merge·unstamp)에서 칸을 숨기고 그 사실을 적지 않는다(검수 F-A).')
+    need(LIST, list, "const editPvMovedAway = editPvOk?.kind === 'transfer' || editPvOk?.kind === 'merge' || editPvOk?.kind === 'unstamp'", '옮김 갈래 판정이 transfer·merge·unstamp 셋이 아니다. 서버가 안 쓰는 칸이 보인다(검수 F-A, 역주입 X26).')
+    need(LIST, list, 'disabled={pending || editPvLoading}', '기록될 금액을 읽는 동안 수정 저장이 열려 있다(검수 F-A).')
+    // 그물 구멍 U7(독립 검수 R-8): 입력 폼은 경고색을 안 쓴다(운영자 결정 2026-08-25). 수정 폼 블록 안에 경고색이 없어야 한다.
+    const editBlock = between(list, 'if (editingId === p.id) {', 'className={`rounded-sm px-3 py-2.5 space-y-1.5 ${')
+    if (!editBlock) violations.push(`${LIST} — 수정 폼 블록을 못 찾았다(침묵 통과 금지).`)
+    else if (/--warning-fg/.test(editBlock)) violations.push(`${LIST} — 수정 폼(입력 폼)이 경고색(--warning-fg)을 쓴다. 경고색은 목록에만 쓴다(운영자 결정 2026-08-25, 검수 R-8 U7).`)
+  }
   for (const [file, src] of [[FORM, form], [LIST, list]]) {
     if (/>\s*받은 금액 \{fmtWon\(/.test(src)) violations.push(`${file} — 발행 금액 힌트 문장을 손으로 적었다. 두 폼이 갈린다.`)
   }

@@ -2331,6 +2331,101 @@ export async function previewCashReceiptOn(paymentId: string): Promise<
   }
 }
 
+/**
+ * 수납 수정 폼의 발행 금액 미리보기(독립 검수 F-A, 2026-10-14). 폼의 '발행 금액' 칸이 **저장하면 실제로 기록될 금액**을
+ * 보이게 하는 재료다. 쓰지 않는다. previewPaymentDelete 와 같은 꼴이다.
+ *
+ * 왜. 종전 칸은 행 금액이나 그 키의 옛 줄 금액을 프리필했다. 미발행 행을 켜면 칸은 10,000(행)·410,000(옛 줄)인데
+ * 저장은 키 몫 420,000(create, 앞 행에도 도장) 이나 add 420,000 이 기록됐다(검수 N2·N3). 힌트는 '10,000원 적습니다'라
+ * 말했다. 칸과 힌트와 저장 결과가 세 말을 했다.
+ *
+ * 판정은 updatePayment 와 같은 정본(planCashReceiptEdit)이다. updatePayment 는 수납 칸을 먼저 쓰고 두 키를 읽으므로,
+ * 여기서는 그 상태를 흉내 낸다. 옛 키는 이 수납을 뺀 몫, 새 키는 이 수납(입력 중인 금액, 수정 전 도장)이 든 몫이다.
+ *
+ *   kind      저장하면 발행 줄에 일어날 일. on 의 하위 판정(create·rebuild·add·keep)은 펼쳐 싣고, 이용료 몫이 없으면 notIssued.
+ *   amount    기록될 발행 금액(칸·프리필). 줄이 안 서거나 이 수납과 상관없이 정해지면 null.
+ *   fieldUsed 운영자가 칸을 고쳐 저장에 실으면 서버가 그 값을 쓰는가. create·rebuild·add·redate 만 쓴다. 입금일·수단을
+ *             옮겨 함께 옮겨 가거나(transfer) 합쳐지거나(merge) 도장만 빠지면(unstamp) 쓰지 않는다(검수 F1).
+ *   keyRent   저장 뒤 그 키에서 발행 금액과 견줄 받은 몫(폼 힌트의 기준). 켜면 키의 이용료 행 전부가 도장을 따르므로 키 합이다.
+ */
+export async function previewPaymentEditCr(
+  paymentId: string,
+  input: { payDate: string; payMethod: string; issued: boolean; issuedDate?: string | null; actualAmount: number },
+): Promise<
+  | {
+      ok: true
+      kind: 'none' | 'off' | 'create' | 'rebuild' | 'add' | 'keep' | 'notIssued' | 'redate' | 'transfer' | 'merge' | 'unstamp'
+      amount: number | null
+      issuedYmd: string | null
+      /** add 의 앞 발행과 더해질 새 돈. */
+      prev: { amount: number; issuedYmd: string } | null
+      added: number
+      keyRent: number
+      fieldUsed: boolean
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    if (!canReadScope(await getMyRole(), 'money')) return { ok: false, error: '권한이 없습니다.' }
+    const propertyId = await getPropertyId()
+    if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input.payDate) || !Number.isInteger(input.actualAmount)) {
+      return { ok: false, error: '입력이 올바르지 않습니다.' }
+    }
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId },
+      select: { leaseTermId: true, payDate: true, payMethod: true, cashReceiptIssuedAt: true, isDeposit: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    const stampBefore = record.cashReceiptIssuedAt
+    // 도장 값은 저장과 같은 정본으로 정한다(카드면 null, 미래 날짜는 저장이 거부하므로 그 문장을 그대로 돌려준다).
+    let stampAfter: Date | null
+    try {
+      stampAfter = resolveCashReceiptIssuedAt({ issued: input.issued, issuedDate: input.issuedDate, existing: stampBefore, payMethod: input.payMethod })
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+    const newPayDate = ymdToDbDate(input.payDate)
+    // 수단은 저장과 같이 엄격히 비교한다(옛 null 수단을 '' 로 다시 저장해도 키가 옮겨 간다).
+    const moved = record.payDate.getTime() !== newPayDate.getTime() || record.payMethod !== input.payMethod
+    const oldS = await readCrKey(prisma, crRefOf(propertyId, record))
+    const newS = moved
+      ? await readCrKey(prisma, { propertyId, leaseTermId: record.leaseTermId, payDate: newPayDate, payMethod: input.payMethod })
+      : oldS
+    const me = { id: paymentId, isDeposit: record.isDeposit, actualAmount: input.actualAmount, cashReceiptIssuedAt: stampBefore }
+    const newParts = summarizeCashReceiptKey([...newS.records.filter(r => r.id !== paymentId), me], newS.parts.cleaning)
+    const oldAfter = moved ? summarizeCashReceiptKey(oldS.records.filter(r => r.id !== paymentId), oldS.parts.cleaning) : newParts
+    const plan = planCashReceiptEdit({
+      moved, stampBefore, stampAfter,
+      oldKey: { line: lineStateOf(oldS.line), partsAfter: oldAfter },
+      newKey: { line: lineStateOf(newS.line), parts: newParts },
+    })
+    // 도장이 찍힌 행만 따르는 저장(redate·merge)은 도장 없는 새 돈을 덮지 않는다. 그때 기준은 도장 찍힌 몫이다(행 캡션과 같은 식).
+    const covered = newParts.stampedRentRows > 0 ? newParts.rent - newParts.unstampedRent : newParts.rent
+    const base = { amount: null as number | null, issuedYmd: null as string | null, prev: null as { amount: number; issuedYmd: string } | null, added: 0, keyRent: covered, fieldUsed: false }
+    const n = plan.next
+    if (n.kind === 'none' || n.kind === 'off' || n.kind === 'unstamp') return { ok: true, ...base, kind: n.kind }
+    if (n.kind === 'redate') {
+      const live = newS.line && !newS.line.deletedAt ? newS.line : null
+      return { ok: true, ...base, kind: 'redate', amount: live ? live.amount : null, issuedYmd: kstYmdStr(n.issuedAt), fieldUsed: true }
+    }
+    if (n.kind === 'transfer') return { ok: true, ...base, kind: 'transfer', amount: n.next.amount, issuedYmd: kstYmdStr(n.next.issuedAt) }
+    if (n.kind === 'merge') return { ok: true, ...base, kind: 'merge', amount: n.next.amount, issuedYmd: kstYmdStr(n.next.issuedAt) }
+    const on = n.plan
+    if (on.kind === 'none') return { ok: true, ...base, kind: 'notIssued' }
+    return {
+      ok: true, ...base, kind: on.kind, amount: on.next.amount, issuedYmd: kstYmdStr(on.next.issuedAt),
+      prev: on.kind === 'add' ? { amount: on.prev.amount, issuedYmd: kstYmdStr(on.prev.issuedAt) } : null,
+      added: on.kind === 'add' ? on.added : 0,
+      // 켜면 키의 이용료 행 전부가 도장을 따른다(writeCrKey 'key'). 기준은 키 합이다. keep 은 아무것도 안 바꾼다.
+      keyRent: on.kind === 'keep' ? covered : newParts.rent,
+      fieldUsed: on.kind !== 'keep',
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 월 수납 집계 — 현금영수증 발행 합계·카드 수납 합계(표시 전용, 결제 수식 비관여. 오류신고 c0936f89).
 //
 // **축이 둘이다**(2026-08-24 정정, 신고 8b9b6c43 재판정).

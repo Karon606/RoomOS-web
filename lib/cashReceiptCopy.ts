@@ -164,6 +164,13 @@ export function crReplacePreview(current: { amount: number; issuedYmd: string })
  */
 export const CR_PREVIEW_UNREAD = '발행 금액을 읽지 못했습니다. 기록하면 토스트가 금액을 알려 줍니다.'
 
+/**
+ * 수정 폼에서 입금일·수단을 옮겨 발행이 함께 옮겨 가거나(transfer) 옮긴 날의 발행과 합쳐지거나(merge) 원래 날의
+ * 발행 안에 남아 도장만 빠질 때(unstamp) 발행 금액 칸 자리에 서는 문장(독립 검수 F-A). 이때 서버는 칸 값을 쓰지
+ * 않는다(검수 F1). 칸을 보이면 고친 값이 기록될 것처럼 읽힌다. 폼이라 경고색이 아니다.
+ */
+export const CR_EDIT_MOVED_NOTE = '입금일·수단을 옮기면 발행 금액은 옮긴 결과대로 정해집니다.'
+
 /** 이미 다 덮인 키(보증금 행 켜기 등)의 확인 줄 캡션. 켜도 바뀌는 것이 없다. */
 export const CR_KEEP_PREVIEW = '이미 같은 날 발행에 들어 있어 바뀌는 것이 없습니다.'
 /** 이용료 몫이 없어 켤 수 없는 키의 확인 줄 캡션. 서버 거부 문장(setCashReceiptIssued)과 같은 사실이다. */
