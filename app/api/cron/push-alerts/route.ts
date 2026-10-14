@@ -11,7 +11,7 @@ import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
-import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
+import { approvedPushRecipients, ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
 import { canTransition } from '@/lib/leaseTransitions'
 import {
   autoCheckoutDue, checkoutLeadKind,
@@ -120,9 +120,13 @@ export async function GET(req: Request) {
     else byUser.set(s.userId, [s])
   }
 
+  // 거절·대기 계정의 기기는 건너뛴다(승인 계정·슈퍼관리자만, lib/pushSend 정본).
+  const approved = await approvedPushRecipients([...byUser.keys()])
+
   let usersNotified = 0
   let sent = 0
   for (const [userId, userSubs] of byUser) {
+    if (!approved.has(userId)) continue
     const [owned, roles] = await Promise.all([
       prisma.property.findMany({ where: { ownerId: userId }, select: { id: true } }),
       prisma.userPropertyRole.findMany({ where: { userId }, select: { propertyId: true } }),

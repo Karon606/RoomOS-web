@@ -4,6 +4,7 @@
 import webpush from 'web-push'
 import prisma from './prisma'
 import { isStagingEnv } from './env'
+import { isSuperAdminEmail } from './auth/access'
 
 // VAPID 키가 있으면 설정하고 true, 없으면 false. (호출부가 false 면 발송을 건너뛴다)
 export function ensureWebPushConfigured(): boolean {
@@ -37,6 +38,18 @@ export async function sendToSubscriptions(subs: SubLike[], payload: string): Pro
   return success
 }
 
+// 푸시를 받아도 되는 계정만 남긴다. 승인(APPROVED) 계정이거나 슈퍼관리자(env 또는 DB 플래그)다.
+// 거절·대기로 돌린 계정의 기기에도 영업장 알림(입주자 이름·건수 요약)이 계속 갔다(권한 감사 P0 독립 검수 R6).
+// 규칙은 관문(lib/auth/propertyAccess)·레이아웃과 같다. 영업장 알림을 보내는 자리는 전부 이것을 거친다.
+export async function approvedPushRecipients(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set()
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, status: true, isSuperAdmin: true, email: true },
+  })
+  return new Set(users.filter(u => u.status === 'APPROVED' || u.isSuperAdmin || isSuperAdminEmail(u.email)).map(u => u.id))
+}
+
 export type OperatorPushPayload = {
   title: string
   body: string
@@ -55,7 +68,9 @@ export async function notifyPropertyOperators(propertyId: string, payload: Opera
       prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } }),
       prisma.userPropertyRole.findMany({ where: { propertyId }, select: { userId: true } }),
     ])
-    const userIds = Array.from(new Set([...(prop?.ownerId ? [prop.ownerId] : []), ...roles.map(r => r.userId)]))
+    const candidates = Array.from(new Set([...(prop?.ownerId ? [prop.ownerId] : []), ...roles.map(r => r.userId)]))
+    const approved = await approvedPushRecipients(candidates)
+    const userIds = candidates.filter(id => approved.has(id))
     if (userIds.length === 0) return
 
     const json = JSON.stringify({

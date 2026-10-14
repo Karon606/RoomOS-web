@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { requireApprovedAccount } from '@/lib/auth/access'
 // 발송은 반드시 lib/pushSend 를 거친다. 이 파일이 web-push 를 직접 들고 있던 탓에
 // 테스트 사이트 차단이 테스트 푸시 버튼만 비껴갔다(2026-08-03).
 import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
@@ -44,7 +45,8 @@ export async function savePushSubscription(sub: {
   endpoint: string; keys: { p256dh: string; auth: string }; userAgent?: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const userId = await getUserId()
+    // 승인 계정만 기기를 등록한다(계정 승인 문). 거절·대기 계정이 새로 구독해 영업장 알림을 받지 않게(권한 감사 P0 독립 검수 R6).
+    const { userId } = await requireApprovedAccount()
     await prisma.pushSubscription.upsert({
       where: { endpoint: sub.endpoint },
       update: { userId, p256dh: sub.keys.p256dh, auth: sub.keys.auth, userAgent: sub.userAgent ?? null },
