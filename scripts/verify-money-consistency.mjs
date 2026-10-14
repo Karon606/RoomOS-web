@@ -1251,7 +1251,6 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
 {
   const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
-  const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
   const aiRoute = readFileSync('app/api/ai-analysis/route.ts', 'utf8')
 
   // (a) 모집단이 미납 루프에서 나온다 — 그 루프만이 인수월 양도인 자동 처리·양도인 귀속월·
@@ -1278,7 +1277,9 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/centerLabel=\{`\$\{data\.paymentRate\}%`\}/.test(dashClient)) {
     violations.push('[소스] 홈 도넛 수납률이 서버 정본을 안 쓴다 — 화면이 자기 분모를 만든다')
   }
-  for (const [name, src] of [['dashboard/actions AI 프롬프트', dashActions], ['api/ai-analysis 프롬프트', aiRoute]]) {
+  // 홈 AI 분석은 /api/ai-analysis 한 곳이다. dashboard/actions 의 analyzeDashboardWithGemini 는 화면 호출부 0 이라
+  // 권한 감사 P0(2026-10-14)에서 지웠다. 되살아나면 이 목록에 다시 넣는다.
+  for (const [name, src] of [['api/ai-analysis 프롬프트', aiRoute]]) {
     if (/\(data\.paidCount \+ data\.unpaidCount\)/.test(src)) {
       violations.push(`[소스] ${name} 이 수납률을 자기 분모로 다시 나눈다 — 수납예정이 빠져 화면과 다른 비율을 적는다`)
     }
