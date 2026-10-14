@@ -69,7 +69,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } })
   const contactLeadDays = prop?.contactLeadDays ?? 14
 
-  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
+  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, pendingAssetReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
     // 퇴실 — 당일 + 경과(미처리) + 내일 퇴실: 처리 전까지 지속(운영자 확정 2026-07-11)
@@ -96,6 +96,14 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     }),
     prisma.expense.findMany({
       where: { propertyId, category: { in: trackedCats }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false },
+      select: { id: true, itemLabel: true, vendor: true, amount: true, date: true },
+      orderBy: { date: 'asc' },
+    }),
+    // 비품 수령 대기. 소모품과 같은 '수령 대기' 알림(2026-10-15 운영자 결정 4). 종전에는 추적 카테고리만 봐서
+    // 비품은 수령을 누르지 않으면 받을 때 묻는 배정(F2)까지 영영 가지 못했다. 모집단은 비품 화면의 수령 대기와
+    // 같다(추적 카테고리 밖 · 물품 · 배송비 아님 · 미수령, assets/actions durableExpenseWhere + 수령 대기 버킷).
+    prisma.expense.findMany({
+      where: { propertyId, category: { notIn: trackedCats }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false, isShipping: false },
       select: { id: true, itemLabel: true, vendor: true, amount: true, date: true },
       orderBy: { date: 'asc' },
     }),
@@ -283,6 +291,17 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       title: e.itemLabel ?? '품목',
       subtitle: [e.vendor, e.amount > 0 ? fmtWon(e.amount) : '', '수령 대기'].filter(Boolean).join(' · '),
       href: '/inventory?focus=inventory-pending',
+      urgency: 300,
+    })
+  }
+  // 비품 수령 대기. 형제(소모품 수령 대기)와 같은 문법. 목적지만 비품 화면 수령 대기 섹션이다.
+  // 끄기 키는 없다(형제와 같다. 이 목록은 종·푸시 범위이고 홈 '끈 알림' 층은 대시보드 알림 띠의 몫이다).
+  for (const e of pendingAssetReceipts) {
+    items.push({
+      id: `receipt-${e.id}`, category: 'receipt',
+      title: e.itemLabel ?? '품목',
+      subtitle: [e.vendor, e.amount > 0 ? fmtWon(e.amount) : '', '비품 수령 대기'].filter(Boolean).join(' · '),
+      href: '/inventory/assets?focus=assets-pending',
       urgency: 300,
     })
   }

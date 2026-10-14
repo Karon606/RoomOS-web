@@ -5,7 +5,9 @@
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
 import { useState, useTransition, useMemo, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+// 알림 딥링크 ?focus= 정본(재고 화면과 같은 훅). 비품 수령 대기 알림이 수령 대기 섹션으로 보낸다.
+import { useFocusSection } from '@/lib/useFocusSection'
 import Link from 'next/link'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -110,7 +112,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 대분류 — 미배정(여분)·공용 자재·방·공용부 세 그룹 중 하나만 표시(운영자 요청 2026-07-08). 마지막 선택 유지.
   // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
   const [group, setGroup] = useState<'unassigned' | 'common' | 'placed'>('unassigned')
+  // 종 알림(비품 수령 대기)이 ?focus=assets-pending 으로 보낸다. 수령 대기 섹션은 미배정 그룹 맨 위에만 서므로
+  // 그 회차는 저장된 그룹을 복원하지 않는다(재고 화면 딥링크와 같은 규칙, 마운트 시점 값으로 굳힌다).
+  const searchParams = useSearchParams()
+  const focusPendingRef = useRef(searchParams.get('focus') === 'assets-pending')
+  useFocusSection()
   useEffect(() => {
+    if (focusPendingRef.current) return
     try { const g = localStorage.getItem('stayeum-assets-group'); if (g === 'common' || g === 'placed') setGroup(g) } catch { /* 무시 */ }
   }, [])
   const pickGroup = (g: 'unassigned' | 'common' | 'placed') => {
@@ -1132,7 +1140,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (미배정 그룹 맨 위) */}
           {searchEmpty && <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />}
           {showUn && vPending.length > 0 && (
-            <section className="space-y-2">
+            <section id="assets-pending" className="space-y-2">
               <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} />
               <ul className="space-y-1.5">
                 {vPending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
