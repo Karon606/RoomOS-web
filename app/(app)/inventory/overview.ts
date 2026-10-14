@@ -281,8 +281,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
     }),
     // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
-    // qtyValue 조건 없음 — 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준).
-    // 수량은 소모량·단가 수학에만 필수, 수령 확인 자체엔 불필요 (세탁조크리너 케이스).
+    // qtyValue 조건 없음. 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준, 세탁조크리너 케이스).
+    // 다만 받을 때는 수량이 있어야 자동 점검이 생긴다. 화면이 도착 수량을 먼저 묻고 서버는 비면 거부한다(receiptQtyGate).
     prisma.expense.findMany({
       where: {
         propertyId,

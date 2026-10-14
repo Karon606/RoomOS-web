@@ -411,12 +411,15 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     !/lastCountedCheck|이후 \$\{/.test(client),
     "다른 값(마지막 센 점검)을 쓰면 카드·점검 입력과 말이 갈리고 수령만 있는 품목이 '기록 없음' 이 됐다(검수) · 종류 꼬리는 같은 줄에 덩이째 서서 로디드 순간 줄 수가 안 변한다")
   // 형제 수정 폼 셋 — 삭제·제외는 정본 Btn danger, 라벨·입력·날짜는 점검 수정 폼과 같은 문법(검수 반영).
+  // 구매 수정 폼의 라벨 여섯째는 '도착 수량'이다(2026-10-15 S3). 수량이 빈 수령 대기 구매에 수령일을 넣을 때만 서고,
+  // 같은 라벨(EDIT_LABEL_CLS)·같은 칸(QtyField)을 쓴다. 다른 라벨 문법이 끼면 여전히 운다.
   need('형제 수정 폼(무상 입수·구매)이 점검 수정 폼과 같은 문법이다',
     /<Btn variant="danger" size="sm" onClick=\{onDelete\} disabled=\{pending\}>삭제<\/Btn>/.test(addEdit) &&
     /<Btn variant="danger" size="sm" onClick=\{onDelete\} disabled=\{pending\}>재고에서 제외<\/Btn>/.test(purEdit) &&
     !/<button type="button" onClick=\{onDelete\}/.test(edit + addEdit + purEdit) &&
     !/text-\[0\.65625rem\] text-\[var\(--warm-muted\)\] mb-1|const inputCls =/.test(addEdit + purEdit) &&
-    (addEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 5 && (purEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 5 &&
+    (addEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 5 && (purEdit.match(/<p className=\{EDIT_LABEL_CLS\}>/g) ?? []).length === 6 &&
+    /<p className=\{EDIT_LABEL_CLS\}>도착 수량 [\s\S]{0,400}<QtyField unit=\{entry\.qtyUnit \?\? cardQtyUnit \?\? '개'\} aria-label="도착 수량"/.test(purEdit) &&
     /<QtyField unit=\{stockUnit\} aria-label="수량"/.test(addEdit) && /<select value=\{storageLocationId\} onChange=\{e => setStorageLocationId\(e\.target\.value\)\} className=\{checkTextInputCls\}>/.test(addEdit) &&
     // 날짜 칸 셋은 글자째 한 벌(44px · rounded-sm) — 상수로 빼면 check-datepicker-shell 의 radius 축이 선언 밖 글자를 끌어와 오탐한다.
     [edit, addEdit, purEdit].every(f => f.includes(`className="w-full ${EDIT_DATE_LIT}"`)) && purEdit.includes(`className="min-w-0 flex-1 basis-36 ${EDIT_DATE_LIT}"`) &&

@@ -32,6 +32,8 @@ import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { withParticle } from '@/lib/koParticle'
+// 수령 수량 관문 정본(순수). 수량이 빈 추적 구매는 채운 뒤에만 받는다(2026-10-15 냉장고 유령수령 봉합).
+import { receiptNeedsQty, normalizeFillQty, fillQtyUnit, fillDetail, RECEIPT_QTY_REQUIRED, receiptQtyRequiredMany, type ReceiptQtyFill } from './receiptQtyGate'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -2216,7 +2218,9 @@ export async function updateExpenseFromInventory(id: string, data: {
   receivedAt?: string | null  // ISO 문자열 or null(수령 대기로 되돌리기)
   // 수령 대기로 되돌릴 때, 이 수령분을 삼킨 뒤 점검이 있으면 함께 조정할지(cancelReceiptCore 게이트).
   adjustFollowing?: boolean
-}): Promise<{ ok: true; cancelUndo?: ReceiptCancelUndo } | { ok: false; error: string }> {
+  // 수량이 빈 추적 구매에 수령일을 넣을 때의 도착 수량(confirmReceipt fillQty 로 그대로 간다).
+  qtyValue?: number
+}): Promise<{ ok: true; cancelUndo?: ReceiptCancelUndo; received?: { qtyFill?: ReceiptQtyFill } } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2228,6 +2232,11 @@ export async function updateExpenseFromInventory(id: string, data: {
     // 수령 대기(null)였던 행에 수령일을 다시 넣는 경우 — 자동 점검이 없으므로 단순 날짜 저장이 아니라
     // 정본 수령 경로(confirmReceipt)로 재생성해야 잔량·위치 배치에 반영된다(감사 잔여: 미재생성 → 재고 과소, 2026-07-22)
     const resurrect = e.receivedAt === null && newReceivedAt != null
+    // 수량 관문은 **무엇을 쓰기 전에** 본다. 아래에서 날짜·금액을 먼저 고친 뒤 confirmReceipt 가 거부하면
+    // 수정만 반쯤 남는다. 판정은 confirmReceipt 와 같은 정본이다.
+    if (resurrect && receiptNeedsQty(e, await getTrackedCategories(propertyId)) && normalizeFillQty(data.qtyValue) == null) {
+      return { ok: false, error: RECEIPT_QTY_REQUIRED }
+    }
     // 수령 대기로 되돌리기(null) — 수령 취소와 같은 사건이므로 같은 정본(cancelReceiptCore)을 탄다.
     // 종전에는 여기서 receivedAt 만 지우고 자동 점검을 무가드로 삭제해, 실측 머지·이후 점검 반영
     // 가드가 통째로 우회되는 뒷문이었다(수령 취소 클래스의 반쪽).
@@ -2250,9 +2259,11 @@ export async function updateExpenseFromInventory(id: string, data: {
     })
 
     // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화.
+    let received: { qtyFill?: ReceiptQtyFill } | undefined
     if (resurrect) {
-      const rc = await confirmReceipt(id)
+      const rc = await confirmReceipt(id, undefined, undefined, data.qtyValue)
       if (!rc.ok) return rc
+      received = rc.qtyFill ? { qtyFill: rc.qtyFill } : {}
       // confirmReceipt는 수령 시각을 지금으로 찍으므로 사용자가 고른 날짜로 동기화
       await prisma.expense.update({ where: { id }, data: { receivedAt: newReceivedAt } })
       await prisma.stockCheck.updateMany({ where: { sourceExpenseId: id }, data: { date: newReceivedAt } })
@@ -2265,7 +2276,7 @@ export async function updateExpenseFromInventory(id: string, data: {
 
     revalidatePath('/inventory')
     revalidatePath('/finance')   // 지출 페이지 경로는 /finance ('/expenses' 는 존재하지 않는 경로였음)
-    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}) }
+    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}), ...(received ? { received } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3429,7 +3440,9 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 // 결과: 수령 확인 직후 재고 점검을 열면 해당 위치 잔량이 0이 아니라 수령된 만큼으로 prefill됨 (#3)
 // receiveQty — 부분 수령(분할 배송): 전체 중 일부만 도착 시 그 수량만 수령 처리.
 // 지출 행을 [수령분]+[대기 잔여]로 분할(금액 비례, allocationGroupId로 지출목록 한 줄 유지 — 배정 분할과 동일 선례).
-export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number): Promise<{ ok: true; undo?: PartialReceiptUndo } | { ok: false; error: string }> {
+// fillQty. 구매 수량이 빈 추적 구매의 도착 수량. 그 값이 곧 구매 수량이 되어 수령과 한 트랜잭션에 적힌다.
+//   수량이 끝내 비면 거부한다(유령수령 봉합, 판정 정본 ./receiptQtyGate). 적용취소 조각(qtyFill)을 돌려준다.
+export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number, fillQty?: number): Promise<{ ok: true; undo?: PartialReceiptUndo; qtyFill?: ReceiptQtyFill } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -3439,6 +3452,16 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     // 재호출이 자동 점검을 또 만들어 입고량이 이중 가산되는 것을 막는다(createStockCheck의
     // 중복 제출 가드와 같은 취지). 수령 취소(undo)는 receivedAt을 null로 되돌리므로 재수령은 정상 동작.
     if (expense.receivedAt) return { ok: true }
+
+    // 수량 관문. 추적 품목인데 구매 수량이 비면 자동 점검을 만들 근거가 없다. 화면이 받은 도착 수량으로
+    // 채우고, 그것도 없으면 거부한다. 쓰기는 아래 수령 트랜잭션에서 receivedAt 과 함께 한다(반쪽 상태 없음).
+    // 채우는 수령은 부분 수령이 아니다. 전체를 모르니 '일부'가 성립하지 않는다(receiveQty 는 무시).
+    const needsQty = receiptNeedsQty(expense, await getTrackedCategories(propertyId))
+    const fill = needsQty ? normalizeFillQty(fillQty) : null
+    if (needsQty && fill == null) return { ok: false, error: RECEIPT_QTY_REQUIRED }
+    const filling = fill != null
+    const prevQty = { qtyValue: expense.qtyValue, qtyUnit: expense.qtyUnit, detail: expense.detail }
+    if (filling) expense = { ...expense, qtyValue: fill }
 
     // 품목 조회 — 위치 미지정으로 수령해도 허브(기본 창고)에 자동 배치해 잔량에서 누락되지 않게 한다.
     // (위치별 점검이 '어느 위치에도 배치 안 된 입고분'을 못 세어 통째로 증발하던 버그 방지 —
@@ -3467,10 +3490,19 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       return { ok: false, error: '이 품목의 보관 위치가 아닙니다. 화면을 새로고침한 뒤 다시 선택해 주세요.' }
     }
 
+    // 채울 수량의 단위·세부. 단위는 구매에 적힌 것이 먼저, 없으면 품목 카드 단위(지어내지 않는다).
+    let qtyFill: ReceiptQtyFill | null = null
+    if (fill != null) {
+      const unit = fillQtyUnit(prevQty.qtyUnit, item?.qtyUnit ?? null)
+      const detail = fillDetail(prevQty.detail, expense, fill, unit)
+      expense = { ...expense, qtyUnit: unit, detail }
+      qtyFill = { expenseId: expense.id, qtyValue: fill, qtyUnit: unit, detail, prevQtyValue: prevQty.qtyValue, prevQtyUnit: prevQty.qtyUnit, prevDetail: prevQty.detail }
+    }
+
     // 부분 수령 — 요청 수량이 전체 미만이면 행 분할 후, 수령 분할행에 대해 아래 기존 흐름을 그대로 태운다
     // (자동 점검·허브 배치가 수령 수량만 반영됨). 잔여 행은 수령 대기 유지.
     let partialUndo: PartialReceiptUndo | null = null
-    if (receiveQty != null && expense.qtyValue && receiveQty > 0 && receiveQty < expense.qtyValue) {
+    if (!filling && receiveQty != null && expense.qtyValue && receiveQty > 0 && receiveQty < expense.qtyValue) {
       const eq = expense.qtyValue
       const recvAmount = Math.round(expense.amount * (receiveQty / eq))
       const remainQty = Math.round((eq - receiveQty) * 1000) / 1000
@@ -3630,7 +3662,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     await prisma.$transaction([
       prisma.expense.update({
         where: { id: expense.id },
-        data: { receivedAt, ...(effectiveLocationId ? { receivedLocationId: effectiveLocationId } : {}) },
+        data: {
+          receivedAt, ...(effectiveLocationId ? { receivedLocationId: effectiveLocationId } : {}),
+          // 채운 수량은 수령과 한 트랜잭션. 수량만 들어가고 수령이 실패하거나 그 반대인 상태가 없다.
+          ...(qtyFill ? { qtyValue: qtyFill.qtyValue, qtyUnit: qtyFill.qtyUnit, detail: qtyFill.detail } : {}),
+        },
       }),
       ...(autoCheck ? [prisma.stockCheck.create({ data: autoCheck })] : []),
     ])
@@ -3641,7 +3677,8 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     }
 
     revalidatePath('/inventory')
-    return partialUndo ? { ok: true, undo: partialUndo } : { ok: true }
+    if (qtyFill) revalidatePath('/finance')
+    return partialUndo ? { ok: true, undo: partialUndo } : qtyFill ? { ok: true, qtyFill } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3746,8 +3783,13 @@ export async function confirmAllPending(trackedItemId: string): Promise<{ ok: tr
         excludeFromInventory: false,   // 재고 제외 지출을 수령 처리하던 구멍
       },
       orderBy: { date: 'asc' },
-      select: { id: true },
+      select: { id: true, category: true, itemLabel: true, excludeFromInventory: true, isShipping: true, qtyValue: true },
     })
+    // 수량 관문. 이 경로에는 도착 수량 칸이 없다. 하나라도 비면 시작하지 않는다(몇 건 받고 멈추는 반쪽 없음).
+    // 건별 정본 confirmReceipt 도 같은 판정으로 거부하지만, 거기서 멈추면 앞 건은 이미 받은 채로 남는다.
+    const trackedCats = await getTrackedCategories(propertyId)
+    const noQty = pending.filter(e => receiptNeedsQty(e, trackedCats)).length
+    if (noQty > 0) return { ok: false, error: receiptQtyRequiredMany(noQty) }
     let count = 0
     for (const e of pending) {
       const r = await confirmReceipt(e.id)
@@ -4363,8 +4405,10 @@ export type ReceiptCancelUndo = {
 //
 // adjustFollowing — 수령 이후 점검이 이 수령분을 절대값에 삼킨 경우(구식 수령 288건 포함),
 // 그 점검들에서 수령분을 함께 빼고 취소한다. 미지정이면 종전 가드 그대로 거부.
+// qtyFill. 수량을 채운 수령의 적용취소면 그 조각. 수령을 무르면서 채운 수량·단위·세부를 원래 값으로 함께 돌린다.
+//   지금 행이 채운 값 그대로일 때만 돌린다(그 사이 사람이 수량을 고쳤으면 그 값을 지키고 수령만 무른다).
 async function cancelReceiptCore(
-  expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean },
+  expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill },
 ): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
   const exp = await prisma.expense.findFirst({
     where: { id: expenseId, propertyId },
@@ -4443,16 +4487,24 @@ async function cancelReceiptCore(
     })),
     shift: null,
   }
+  const fillBack = opts?.qtyFill && opts.qtyFill.expenseId === expenseId ? opts.qtyFill : null
   await prisma.$transaction(async tx => {
     if (rows.length > 0 && it) undo.shift = await applyShiftRows(tx, it.id, rows)
     await tx.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } })
     await tx.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } })
+    if (fillBack) {
+      // 채운 값 그대로일 때만(CAS). 세부까지 그대로면 셋을, 세부만 바뀌었으면 수량·단위만 돌린다.
+      const back = { qtyValue: fillBack.prevQtyValue, qtyUnit: fillBack.prevQtyUnit }
+      const same = { id: expenseId, propertyId, qtyValue: fillBack.qtyValue, qtyUnit: fillBack.qtyUnit }
+      const full = await tx.expense.updateMany({ where: { ...same, detail: fillBack.detail }, data: { ...back, detail: fillBack.prevDetail } })
+      if (full.count === 0) await tx.expense.updateMany({ where: same, data: back })
+    }
   })
   return { ok: true, undo }
 }
 
 export async function undoConfirmReceipt(
-  expenseId: string, opts?: { adjustFollowing?: boolean },
+  expenseId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill },
 ): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()

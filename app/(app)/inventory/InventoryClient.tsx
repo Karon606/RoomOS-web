@@ -99,6 +99,8 @@ import {
   previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
+// 수령 수량 관문 정본(순수). 화면이 '수량을 물을 구매'를 서버와 같은 셈으로 가린다.
+import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
@@ -638,33 +640,42 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   // 용량을 모르는 채로 수령하면 재고에 총량이 아니라 **개수**가 들어간다(주방세제 8,400ml 대신 4).
   // 잔량과 평균 단가가 한꺼번에 틀어지고 소진 예측이 무너진다. 차단이 아니라 되묻는다 —
   // 장부와 실물이 어긋나는 상황은 상시 조건이라 막으면 운영이 멈춘다(HubShortDialog 와 같은 문법).
-  const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string) => {
+  const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string, fills?: Record<string, number>) => {
     const ok = await confirmDialog({
       title: '낱개 용량이 비어 있습니다. 그대로 수령할까요?',
       message: `${label}의 낱개 용량을 몰라 재고에는 ${withParticle(qtyText, '으로/로')} 들어갑니다.\n지출에서 용량을 넣으면 총량이 다시 계산됩니다.`,
       level: 'caution', confirmLabel: '그대로 수령',
     })
-    if (ok) handleQuickReceive(key, expenseIds)
+    if (ok) handleQuickReceive(key, expenseIds, fills)
   }
 
-  const handleQuickReceive = (key: string, expenseIds: string[]) => {
+  // 구매 수량이 빈 구매가 섞인 묶음. 카드 안에서 도착 수량을 먼저 받는다(형제 문법: 비품 수령 대기의 '몇 개 도착?',
+  // 품목 상세 구매 카드의 '도착 수량'). 수량 없이 받으면 자동 점검이 안 생겨 유령수령이 된다(서버도 거부한다).
+  // vals 는 구매 id 별 입력 글자, err 는 칸 아래 인라인 오류(§27.2 검증=인라인).
+  const [qtyAsk, setQtyAsk] = useState<{ key: string; vals: Record<string, string>; err: string } | null>(null)
+
+  const handleQuickReceive = (key: string, expenseIds: string[], fills?: Record<string, number>) => {
     setReceivingKey(key)
     const release = trackSave()
     // 같은 품목 다건은 순차 처리 — 각 수령이 허브에 자동 배치(점검 생성)되므로 동시 실행하면
     // 직전 점검을 같은 baseline 으로 읽어 입고분이 덮어써져(경합) 누락된다. 하나씩 쌓아 올린다.
     ;(async () => {
       let bad: { ok: false; error: string } | undefined
+      // 채운 수량의 적용취소 조각. 수령 취소가 수량도 원래 빈 값으로 함께 돌린다.
+      const qtyFills = new Map<string, ReceiptQtyFill>()
       for (const id of expenseIds) {
-        const r = await confirmReceipt(id)
+        const r = await confirmReceipt(id, undefined, undefined, fills?.[id])
         if (!r.ok) { bad = r as { ok: false; error: string }; break }
+        if (r.qtyFill) qtyFills.set(id, r.qtyFill)
       }
       if (bad) pushToast('error', bad.error)
       else {
+        setQtyAsk(null)
         setReceivedIds(prev => new Set([...prev, ...expenseIds]))   // 즉시 숨김 — refresh 대기 없이
         router.refresh()
         pushToast('success', '수령 확인 완료', {
           action: { label: '수령 취소', run: () => { void (async () => {
-            for (const id of [...expenseIds].reverse()) { const r = await undoConfirmReceipt(id); if (!r.ok) { pushToast('error', r.error); return } }
+            for (const id of [...expenseIds].reverse()) { const f = qtyFills.get(id); const r = await undoConfirmReceipt(id, f ? { qtyFill: f } : undefined); if (!r.ok) { pushToast('error', r.error); return } }
             setReceivedIds(prev => { const n = new Set(prev); for (const id of expenseIds) n.delete(id); return n })
             pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
             router.refresh()
@@ -1018,9 +1029,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             </h2>
             <ul className="space-y-1.5">
               {groups.map(g => {
+                // 구매 수량이 빈 구매. 받기 전에 도착 수량을 묻는다(판정 정본 receiptQtyGate.qtyMissing, 서버와 같은 셈).
+                const missing = g.items.filter(f => qtyMissing(f.p.qtyValue))
+                // 채운 수량을 넣은 수량. 용량 확인창 문장이 '0개로 들어갑니다'라고 거짓말하지 않게 같은 셈으로 다시 센다.
+                const qtyOf = (f: (typeof g.items)[number], fills?: Record<string, number>) => fills?.[f.p.id] ?? (f.p.qtyValue || 0)
                 // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
-                const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
-                const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
+                const totalQtyWith = (fills?: Record<string, number>) => Math.round(g.items.reduce((s, f) => s + specQtyOf(qtyOf(f, fills), f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
+                const rawBoxSumWith = (fills?: Record<string, number>) => g.items.reduce((s, f) => s + qtyOf(f, fills), 0)
+                const totalQty = totalQtyWith()
                 const boxUnit = g.items[0].p.qtyUnit
                 const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
                 // 규격 환산이 안 되면 totalQty 는 **개수**다. 거기에 품목 규격 단위를 붙이면 '4ml' 같은
@@ -1033,10 +1049,29 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 const specMissing = g.trackUnit !== 'qty' && !specApplied
                   && g.items.some(f => !isSpecDimensionMismatch(f.p.specUnit, g.specUnit))
                 const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
-                const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
+                const qtyLabelWith = (fills?: Record<string, number>) => {
+                  const t = totalQtyWith(fills)
+                  return specApplied && boxUnit ? `${t}${unit} (${rawBoxSumWith(fills)}${boxUnit})` : `${t}${unit}`
+                }
+                const qtyLabel = qtyLabelWith()
                 const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
                 const ids = g.items.map(f => f.p.id)
                 const expanded = pendExpanded.has(g.key)
+                const asking = qtyAsk?.key === g.key
+                // 받기. 용량이 빈 묶음은 종전처럼 '그대로 수령' 확인창을 거친다(채운 수량을 넣어 센 문장으로).
+                const receive = (fills?: Record<string, number>) => {
+                  if (specMissing) void confirmQuickReceive(g.key, ids, g.label, qtyLabelWith(fills), fills)
+                  else handleQuickReceive(g.key, ids, fills)
+                }
+                const submitQty = () => {
+                  const fills: Record<string, number> = {}
+                  for (const f of missing) {
+                    const n = normalizeFillQty(qtyAsk?.vals[f.p.id] ?? '')
+                    if (n == null) { setQtyAsk(q => q && { ...q, err: '도착 수량을 적어 주세요.' }); return }
+                    fills[f.p.id] = n
+                  }
+                  receive(fills)
+                }
                 return (
                   <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
                     <div className="flex items-baseline justify-between gap-2">
@@ -1065,12 +1100,38 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                           합치기
                         </button>
-                        <button type="button" onClick={() => { if (specMissing) { void confirmQuickReceive(g.key, ids, g.label, qtyLabel) } else handleQuickReceive(g.key, ids) }} disabled={receivingKey === g.key}
-                          className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
-                          {receivingKey === g.key ? '처리 중' : '수령 확인'}
-                        </button>
+                        {/* 수량을 묻는 중에는 아래 줄의 '수령 확인'이 주 동작이다. 같은 버튼을 둘 세우지 않는다. */}
+                        {!asking && (
+                          <button type="button" onClick={() => { if (missing.length > 0) setQtyAsk({ key: g.key, vals: {}, err: '' }); else receive() }} disabled={receivingKey === g.key}
+                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
+                            {receivingKey === g.key ? '처리 중' : '수령 확인'}
+                          </button>
+                        )}
                       </div>
                     </div>
+                    {/* 도착 수량. 형제(품목 상세 구매 카드의 '도착 수량', 비품 수령 대기의 '몇 개 도착?')와 같은 인라인 문법.
+                        묶음 안 빈 구매만 칸을 세운다. 적은 수량이 곧 그 구매의 수량이 되어 지출에도 남는다. */}
+                    {asking && (
+                      <div className="mt-2 pt-2 border-t border-[var(--warm-border)]">
+                        <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">구매 수량이 비어 있습니다. 적은 수량이 구매 수량이 됩니다.</p>
+                        {missing.map(f => (
+                          <div key={f.p.id} className="mb-2">
+                            <p className={EDIT_LABEL_CLS}>도착 수량{missing.length > 1 && <span className="font-normal text-[var(--warm-muted)]"> {fmtMDYearIfOther(f.p.date)}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>}</p>
+                            <div className="w-32">
+                              <QtyField unit={f.p.qtyUnit ?? g.qtyUnit ?? '개'} aria-label="도착 수량" autoFocus={f === missing[0]}
+                                value={qtyAsk?.vals[f.p.id] ?? ''} disabled={receivingKey === g.key}
+                                onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); setQtyAsk(q => q && { ...q, err: '', vals: { ...q.vals, [f.p.id]: v } }) }}
+                                onKeyDown={e => { if (e.key === 'Enter') submitQty() }} />
+                            </div>
+                          </div>
+                        ))}
+                        {qtyAsk?.err && <p className="text-[0.6875rem] text-[var(--danger-fg)] mb-1.5">{qtyAsk.err}</p>}
+                        <div className="flex flex-wrap gap-x-1.5 gap-y-3">
+                          <RowActionBtn tone="success" disabled={receivingKey === g.key} onClick={submitQty}>{receivingKey === g.key ? '처리 중' : '수령 확인'}</RowActionBtn>
+                          <RowActionBtn disabled={receivingKey === g.key} onClick={() => setQtyAsk(null)}>취소</RowActionBtn>
+                        </div>
+                      </div>
+                    )}
                     {g.items.length > 1 && expanded && (
                       <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
                         {g.items.map(f => {
@@ -2122,13 +2183,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
-  const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number) => {
+  const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number, fillQty?: number) => {
     setLoadingId(expenseId)
     const release = trackSave()
-    confirmReceipt(expenseId, locationId, qty).then(res => {
+    confirmReceipt(expenseId, locationId, qty, fillQty).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료', {
         // 부분 수령이면 분할 원복(undoPartialReceipt), 전량이면 기존 수령 취소 — 상세 모달 경로 undo 공백 해소(§4 2026-07-14)
-        action: { label: '수령 취소', run: () => { void (res.undo ? undoPartialReceipt(res.undo) : undoConfirmReceipt(expenseId)).then(r => {
+        // 수량을 채운 수령이면 수령 취소가 그 수량도 원래 빈 값으로 함께 돌린다(qtyFill).
+        action: { label: '수령 취소', run: () => { void (res.undo ? undoPartialReceipt(res.undo) : undoConfirmReceipt(expenseId, res.qtyFill ? { qtyFill: res.qtyFill } : undefined)).then(r => {
           if (r.ok) { pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
           else pushToast('error', r.error)
         }).catch(() => pushToast('error', '수령 취소 중 통신 오류가 발생했습니다')) } },
@@ -2300,7 +2362,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} cardQtyUnit={data.item.qtyUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                   </ul>
                 )}
               </div>
@@ -2674,15 +2736,17 @@ const TL_GLYPH_OUT = <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
 const TL_CARD = 'rounded-md border border-[var(--warm-border)] px-3 py-2'
 const TL_CAPTION = 'text-[0.6875rem] text-[var(--warm-muted)] break-keep [overflow-wrap:anywhere]'
 
-function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
+function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
   entry: TimelineEntry; trackedItemId: string; stockUnit: string | null; trackUnit: 'spec' | 'qty'
+  // 품목 카드의 수량 단위. 구매 수량이 비어 도착 수량을 받을 때 칸 단위로 쓴다(서버 fillQtyUnit 과 같은 순서).
+  cardQtyUnit?: string | null
   itemLocations: StorageLocationItem[]
   // 점검 기록의 종류(lib/stockCheckKind) — 직전 점검과 견줘야 가릴 수 있어 이력 전체를 본 상세 모달이 넘긴다.
   checkKind?: CheckKind
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   onDeleteDisposal: (id: string) => void
-  onConfirmReceipt?: (id: string, locationId?: string, qty?: number) => void
+  onConfirmReceipt?: (id: string, locationId?: string, qty?: number, fillQty?: number) => void
   onChanged: () => void
   loadingId: string | null
 }) {
@@ -2693,6 +2757,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
   const [showLocationPicker, setShowLocationPicker] = useState(false)
   // 부분 수령 — 몇 개 도착했는지(기본 전체). 전체 미만이면 서버가 행 분할(잔여=수령 대기).
   const [rcvQtyStr, setRcvQtyStr] = useState('')
+  // 구매 수량이 빈 구매의 도착 수량 칸 오류(§27.2 검증=인라인)
+  const [rcvQtyErr, setRcvQtyErr] = useState('')
 
   // ── 점검
   if (entry.type === 'check') {
@@ -2799,10 +2865,25 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
     const baseQty = convSpec != null ? entry.qtyValue * convSpec : entry.qtyValue
     const baseUnit = convSpec != null ? stockUnit : entry.qtyUnit
     const packLabel = hasSpec ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}` : null
+    // 구매 수량이 빈 구매. 받을 때 도착 수량을 꼭 받는다(판정 정본 receiptQtyGate.qtyMissing, 서버와 같은 셈).
+    const noQty = qtyMissing(entry.qtyValue)
+    // 위치(또는 위치 없이)를 고른 순간 받는다. 수량이 비면 그 칸을 먼저 채워야 한다.
+    const confirmAt = (locationId?: string) => {
+      if (!onConfirmReceipt) return
+      if (noQty) {
+        const n = normalizeFillQty(rcvQtyStr)
+        if (n == null) { setRcvQtyErr('도착 수량을 적어 주세요.'); return }
+        setShowLocationPicker(false)
+        onConfirmReceipt(entry.id, locationId, undefined, n)
+        return
+      }
+      setShowLocationPicker(false)
+      onConfirmReceipt(entry.id, locationId, (Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined)
+    }
 
     if (editing) {
       return <PurchaseEditForm
-        entry={entry} stockUnit={stockUnit}
+        entry={entry} stockUnit={stockUnit} cardQtyUnit={cardQtyUnit ?? null}
         onCancel={() => { setEditing(false); setEditError('') }}
         onSave={async (data) => {
           setEditError('')
@@ -2839,6 +2920,17 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                 if (r.ok) { pushToast('info', '수령 상태를 복원했습니다'); onChanged() }
                 else pushToast('error', r.error)
               }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+            })
+          }
+          // 수령일을 넣어 받은 경우. 형제(수령 대기·구매 카드의 수령 확인)와 같은 토스트와 '수령 취소'.
+          // 수량을 채워 받았으면 그 수량도 원래 빈 값으로 함께 돌린다(qtyFill). 이 폼의 다른 수정은 그대로 둔다.
+          const received = res.received
+          if (received) {
+            pushToast('success', '수령 확인 완료', {
+              action: { label: '수령 취소', run: () => { void undoConfirmReceipt(entry.id, received.qtyFill ? { qtyFill: received.qtyFill } : undefined).then(r => {
+                if (r.ok) { pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다'); onChanged() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '수령 취소 중 통신 오류가 발생했습니다')) } },
             })
           }
           onChanged()
@@ -2907,7 +2999,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
               <p className="text-[0.6875rem] text-[var(--warning-fg)]">수령 대기 중</p>
               {onConfirmReceipt && !showLocationPicker && (
                 <RowActionBtn tone="success" className="shrink-0" disabled={pending}
-                  onClick={() => { setShowLocationPicker(true); setRcvQtyStr(entry.qtyValue != null ? String(entry.qtyValue) : '') }}>
+                  onClick={() => { setShowLocationPicker(true); setRcvQtyErr(''); setRcvQtyStr(noQty ? '' : String(entry.qtyValue)) }}>
                   수령 확인
                 </RowActionBtn>
               )}
@@ -2923,7 +3015,17 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
           <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입수됩니까?</p>
-            {entry.qtyValue != null && entry.qtyValue > 1 && (
+            {noQty ? (
+              // 구매 수량이 비면 같은 '도착 수량' 칸이 필수다. 일부 수령은 성립하지 않는다(전체를 모른다).
+              <div className="mb-2">
+                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">구매 수량이 비어 있습니다 · 적은 수량이 구매 수량이 됩니다</span></p>
+                <div className="w-32">
+                  <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
+                    onChange={e => { setRcvQtyErr(''); setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, '')) }} />
+                </div>
+                {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
+              </div>
+            ) : entry.qtyValue > 1 && (
               <div className="mb-2">
                 <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지</span></p>
                 <div className="w-32">
@@ -2936,13 +3038,11 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                 어느 칸이 창고인지 단서가 없다(WCAG 1.4.1). 줄 사이 gap-y-3 — 행 버튼 히트(44px)가 윗줄과 덜 겹치게. */}
             <div className="flex flex-wrap gap-x-1.5 gap-y-3">
               {itemLocations.map(loc => (
-                <RowActionBtn key={loc.id} disabled={pending}
-                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}>
+                <RowActionBtn key={loc.id} disabled={pending} onClick={() => confirmAt(loc.id)}>
                   {loc.pathName}{loc.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고</Badge>}
                 </RowActionBtn>
               ))}
-              <RowActionBtn disabled={pending}
-                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, undefined, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}>
+              <RowActionBtn disabled={pending} onClick={() => confirmAt(undefined)}>
                 위치 없이 확정
               </RowActionBtn>
               <RowActionBtn onClick={() => setShowLocationPicker(false)}>취소</RowActionBtn>
@@ -3852,11 +3952,12 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
 }
 
 // ── 구매 인라인 편집 폼
-function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pending, error }: {
+function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onDelete, pending, error }: {
   entry: TimelineEntry & { type: 'purchase' }
   stockUnit: string | null
+  cardQtyUnit: string | null   // 도착 수량 칸 단위(구매 단위가 없을 때). 서버 fillQtyUnit 과 같은 순서
   onCancel: () => void
-  onSave: (data: { date?: string; amount?: number; vendor?: string | null; memo?: string | null; receivedAt?: string | null }) => Promise<void>
+  onSave: (data: { date?: string; amount?: number; vendor?: string | null; memo?: string | null; receivedAt?: string | null; qtyValue?: number }) => Promise<void>
   onDelete: () => Promise<void>
   pending: boolean
   error: string
@@ -3865,6 +3966,11 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   const [amount, setAmount] = useState(entry.amount > 0 ? String(entry.amount) : '')
   const [vendor, setVendor] = useState(entry.vendor ?? '')
   const [memo, setMemo]     = useState(entry.memo ?? '')
+  // 구매 수량이 빈 수령 대기 구매에 수령일을 넣으면 도착 수량이 필수다(폼 검증, 서버도 같은 판정으로 거부한다).
+  // 적은 수량이 곧 구매 수량이 된다. 수령일을 안 넣는 저장에는 묻지 않는다.
+  const askQty = entry.receivedAt === null && qtyMissing(entry.qtyValue)
+  const [rcvQty, setRcvQty] = useState('')
+  const [rcvQtyErr, setRcvQtyErr] = useState('')
 
   // 수령 확정일시 — 읽기·쓰기 모두 lib/kstDate 정본(인라인 KST 계산 복제 금지)
   const initReceived = splitKstDateTime(entry.receivedAt)
@@ -3930,12 +4036,32 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
           </div>
         )}
       </div>
+      {/* 도착 수량. 수령일을 넣을 때만 선다(형제: 구매 카드 수령 확인의 '도착 수량'). 칸 문법은 이 폼의 다른 칸과 같다. */}
+      {askQty && !!receivedDate && (
+        <div>
+          <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">구매 수량이 비어 있습니다 · 적은 수량이 구매 수량이 됩니다</span></p>
+          <div className="w-32">
+            <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQty} disabled={pending}
+              onChange={e => { setRcvQtyErr(''); setRcvQty(e.target.value.replace(/[^0-9.]/g, '')) }} />
+          </div>
+          {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
+        </div>
+      )}
       <div className="flex gap-2 pt-1">
         <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>재고에서 제외</Btn>
         <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending}
-          onClick={() => onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null, receivedAt: buildReceivedAt() })}>
+          onClick={() => {
+            const receivedAt = buildReceivedAt()
+            let qtyValue: number | undefined
+            if (askQty && receivedAt) {
+              const n = normalizeFillQty(rcvQty)
+              if (n == null) { setRcvQtyErr('수령일을 넣으려면 도착 수량을 적어 주세요.'); return }
+              qtyValue = n
+            }
+            void onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null, receivedAt, ...(qtyValue != null ? { qtyValue } : {}) })
+          }}>
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
