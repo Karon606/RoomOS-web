@@ -15,6 +15,10 @@ import {
   type CashReceiptLineState, type CashReceiptLineTarget, type CashReceiptLineSnap, type CashReceiptKeyRow,
 } from '../lib/cashReceipt'
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
+import {
+  cashReceiptRowCaption, crCaptionText, cashReceiptTabGap, cashReceiptGapSentence, crAddPreviewChunks, crOnToast, crOffToastDetail,
+  crOffUndoneMessage, CR_ON_UNDONE, CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteConfirmLine, crDeleteToastDetail, crRestoreDetail, crEditToastDetail,
+} from '../lib/cashReceiptCopy'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -535,6 +539,100 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('422 ④ 결과 410,000', st.line?.amount, 410000)
   eq('422 ④ 발행일 10/12', st.line?.issuedAt.toISOString(), D('2026-10-12').toISOString())
   eq('422 ④ 남은 행 도장 10/12(행과 줄이 같은 말을 한다)', live().map(r => r.cashReceiptIssuedAt?.toISOString()), [D('2026-10-12').toISOString()])
+}
+
+// ── 화면 문장 정본 (2026-10-13 422호 2단계, lib/cashReceiptCopy) ─────────────────────
+//
+// 수납 행은 받은 금액과 '발행'만 말해 420,000 발행이 410,000 발행으로 읽혔다. 행·탭·폼·토스트가 같은 사실을
+// 같은 글자로 말하는지 글자 단위로 고정한다. **기준은 행 금액이 아니라 키의 이용료 합이다.** 기준을 행 금액으로
+// 되돌리면 아래 분할 결제 두 줄(410,000 행 · 10,000 행)이 거짓 경보를 내며 붉게 선다.
+{
+  const LV = (amount: number, issuedYmd = '2026-10-06', incl: Partial<{ inclDeposit: boolean; inclCleaning: boolean }> = {}) =>
+    ({ amount, issuedYmd, inclDeposit: false, inclCleaning: false, inclRent: true, ...incl })
+  const K = (line: ReturnType<typeof LV> | null, rent: number, rentRows: number, stampedRentRows = rentRows) => ({ line, rent, rentRows, stampedRentRows })
+  const cap = (stamped: boolean, key: ReturnType<typeof K> | null) => {
+    const c = cashReceiptRowCaption({ stamped, key })
+    return c ? [c.tone, crCaptionText(c)] : null
+  }
+  eq('캡션: 같으면 침묵', cap(true, K(LV(410000), 410000, 1)), null)
+  eq('캡션: 발행 표시 없는 행은 침묵', cap(false, K(LV(420000), 410000, 1)), null)
+  eq('캡션: 422 삭제 뒤 받은 금액보다 많음', cap(true, K(LV(420000), 410000, 1)), ['warning', '발행 금액 420,000원 · 받은 금액보다 10,000원 많음'])
+  eq('캡션: 적음', cap(true, K(LV(400000), 410000, 1)), ['warning', '발행 금액 400,000원 · 받은 금액보다 10,000원 적음'])
+  eq('캡션: 분할 결제 키는 합계와 비교(행 금액 아님)', cap(true, K(LV(430000), 420000, 2)), ['warning', '발행 금액 430,000원 · 같은 날 입금 2건 합계보다 10,000원 많음'])
+  eq('캡션: 같고 합산이면 보조색으로 합산을 말함', cap(true, K(LV(420000), 420000, 2)), ['muted', '발행 금액 420,000원 · 같은 날 입금 2건 합산'])
+  eq('캡션: 보증금 포함은 숫자 없이', cap(true, K(LV(1410000, '2026-10-06', { inclDeposit: true }), 410000, 1)), ['warning', '발행 금액 1,410,000원 · 보증금 포함'])
+  eq('캡션: 청소비 포함', cap(true, K(LV(430000, '2026-10-06', { inclCleaning: true }), 410000, 1)), ['warning', '발행 금액 430,000원 · 청소비 포함'])
+  eq('캡션: 보증금·청소비 포함', cap(true, K(LV(480000, '2026-10-06', { inclDeposit: true, inclCleaning: true }), 410000, 1)), ['warning', '발행 금액 480,000원 · 보증금·청소비 포함'])
+  eq('캡션: 도장만 있고 줄 없음(방어)', cap(true, K(null, 410000, 1)), ['danger', '발행 표시만 있고 발행 기록이 없음 · 합계에 안 듦'])
+  eq('캡션: 키 정보 자체가 없어도 방어', cap(true, null), ['danger', '발행 표시만 있고 발행 기록이 없음 · 합계에 안 듦'])
+  const parts = cashReceiptRowCaption({ stamped: true, key: K(LV(420000), 410000, 1) })!
+  eq('캡션: 덩이 둘, 숫자만 강조', parts.chunks.map(ch => ch.map(p => (p.strong ? `[${p.text}]` : p.text)).join('')), ['발행 금액 [420,000원]', '· 받은 금액보다 [10,000원] 많음'])
+  // 긴 문장은 주어와 비교를 갈라 셋째 덩이를 둔다(320px·아주 크게에서 한 덩이가 행보다 넓었다). 비교어·금액은 한 덩이다.
+  const split = cashReceiptRowCaption({ stamped: true, key: K(LV(1230000), 1350000, 2) })!
+  eq('캡션: 합계 비교는 덩이 셋', split.chunks.map(ch => ch.map(p => (p.strong ? `[${p.text}]` : p.text)).join('')), ['발행 금액 [1,230,000원]', '· 같은 날 입금 2건', '합계보다 [120,000원] 적음'])
+  eq('캡션: 위험 문장도 덩이 셋', cashReceiptRowCaption({ stamped: true, key: K(null, 1, 1) })!.chunks.map(ch => ch.map(p => p.text).join('')), ['발행 표시만 있고', '발행 기록이 없음', '· 합계에 안 듦'])
+
+  eq('탭: 다르면 받은 금액을 숫자로', cashReceiptTabGap({ amount: 420000, received: 410000, rentRows: 1, inclDeposit: false, inclCleaning: false }),
+    { tone: 'warning', units: ['받은 금액', '410,000원보다', '10,000원 많음'], text: '받은 금액 410,000원보다 10,000원 많음' })
+  eq('탭: 적음', cashReceiptTabGap({ amount: 400000, received: 410000, rentRows: 1, inclDeposit: false, inclCleaning: false })?.text, '받은 금액 410,000원보다 10,000원 적음')
+  eq('탭: 같고 합산', cashReceiptTabGap({ amount: 420000, received: 420000, rentRows: 2, inclDeposit: false, inclCleaning: false }), { tone: 'muted', units: ['같은 날 2건 합산'], text: '같은 날 2건 합산' })
+  eq('탭: 같고 한 건이면 침묵', cashReceiptTabGap({ amount: 420000, received: 420000, rentRows: 1, inclDeposit: false, inclCleaning: false }), null)
+  eq('탭: 예외 몫이면 행이 이미 말하므로 침묵', cashReceiptTabGap({ amount: 470000, received: 420000, rentRows: 1, inclDeposit: true, inclCleaning: false }), null)
+
+  // 두 폼(등록·수정)이 글자까지 같은 문장(PaymentEntryForm 의 '받은 금액 …보다 … 많습니다.').
+  eq('폼 문장: 많습니다', cashReceiptGapSentence(420000, 410000), '받은 금액 410,000원보다 10,000원 많습니다.')
+  eq('폼 문장: 적습니다', cashReceiptGapSentence(400000, 410000), '받은 금액 410,000원보다 10,000원 적습니다.')
+  eq('폼 문장: 같으면 null', cashReceiptGapSentence(410000, 410000), null)
+
+  eq('켜기 확인 줄 add 캡션', crAddPreviewChunks({ amount: 350000, issuedYmd: '2026-09-30' }, 20000), ['기존 발행 350,000원(9/30)에 20,000원 더함', '· 발행일 9/30 유지'])
+
+  const onT = (change: 'create' | 'rebuild' | 'add' | 'keep', line: ReturnType<typeof LV> | null, added?: { added: number; issuedYmd: string }) =>
+    crOnToast({ change, line, ...(added ? { added } : {}) }, '2026-10-12')
+  eq('켜기 토스트: 발행일·금액', onT('rebuild', LV(410000, '2026-10-12')), { kind: 'success', message: '현금영수증 발행으로 표시했습니다 · 발행일 10/12 · 410,000원', undoable: true })
+  eq('켜기 토스트: add 는 지킨 앞 발행일과 더한 돈', onT('add', LV(370000, '2026-09-30'), { added: 20000, issuedYmd: '2026-09-30' }),
+    { kind: 'success', message: '현금영수증 발행으로 표시했습니다 · 발행일 9/30 · 370,000원', undoable: true, detail: '기존 발행에 20,000원을 더했습니다. 발행일은 9/30 그대로입니다.' })
+  const keepT = onT('keep', LV(420000))
+  eq('켜기 토스트: keep 은 성공이 아니고 적용취소도 없다', [keepT.kind, keepT.undoable, keepT.message], ['info', false, '이미 같은 날 발행에 들어 있습니다'])
+
+  eq('끄기 토스트: 발행월 합계에서 빠지는 금액', crOffToastDetail(LV(420000, '2026-10-06'), 1), '10월 발행 합계에서 420,000원이 빠집니다. 홈택스에 발행한 영수증은 그대로입니다.')
+  eq('끄기 토스트: 합산 키', crOffToastDetail(LV(420000, '2026-09-30'), 2), '9월 발행 합계에서 같은 날 2건 합산 420,000원이 빠집니다. 홈택스 영수증은 그대로입니다.')
+  eq('끄기 토스트: 줄 없던 도장', crOffToastDetail(null, 1), '발행 기록이 없던 표시라 발행 합계는 그대로입니다.')
+  // §16 형식 "{목적어}를 적용취소했습니다 · {복귀}"(감지망 check-undo-verb).
+  eq('적용취소 결과: 켜기', CR_ON_UNDONE, '현금영수증 발행 표시를 적용취소했습니다 · 미발행으로 복귀')
+  eq('적용취소 결과: 끄기', crOffUndoneMessage({ amount: 420000 }), '발행 표시 해제를 적용취소했습니다 · 발행 420,000원으로 복귀')
+  eq('적용취소 결과: 삭제', CR_DELETE_UNDONE, '수납 기록 삭제를 적용취소했습니다 · 원래 자리로 복귀')
+  eq('적용취소 결과: 차이 알림', crUndoMismatchDetail([{ lineAmount: 420000, basis: 410000 }]), '발행 금액 420,000원이 받은 금액 410,000원과 다릅니다.')
+
+  eq('삭제 확인창: drop', crDeleteConfirmLine({ effect: 'drop', line: { amount: 350000 }, basisAfter: 0 }),
+    '이 입금의 현금영수증 발행 기록 350,000원도 함께 지웁니다. 홈택스에 발행한 영수증은 그대로라 필요하면 홈택스에서 취소합니다.')
+  eq('삭제 확인창: keep 이고 달라짐', crDeleteConfirmLine({ effect: 'keep', line: { amount: 420000 }, basisAfter: 410000 }),
+    '같은 날 받은 수납과 묶인 현금영수증 발행 420,000원은 그대로 남습니다. 삭제 뒤 발행 금액을 확인해 주세요.')
+  eq('삭제 확인창: keep 이어도 금액이 그대로 맞으면 침묵', crDeleteConfirmLine({ effect: 'keep', line: { amount: 410000 }, basisAfter: 410000 }), null)
+  eq('삭제 확인창: none 은 침묵', crDeleteConfirmLine({ effect: 'none', line: null, basisAfter: 0 }), null)
+  eq('삭제 토스트: drop', crDeleteToastDetail({ dropped: [{ amount: 350000 }], mismatch: [] }), '현금영수증 발행 기록 350,000원도 함께 지웠습니다.')
+  eq('삭제 토스트: keep', crDeleteToastDetail({ dropped: [], mismatch: [{ lineAmount: 420000 }] }), '남은 수납의 현금영수증 발행 420,000원은 그대로입니다.')
+  eq('삭제 토스트: 아무 일 없음', crDeleteToastDetail({ dropped: [], mismatch: [] }), undefined)
+  eq('삭제 적용취소: 되살림 + 차이', crRestoreDetail({ revived: [{ amount: 350000 }], mismatch: [{ lineAmount: 420000, basis: 410000 }] }),
+    '현금영수증 발행 기록 350,000원도 되살렸습니다. 발행 금액 420,000원이 받은 금액 410,000원과 다릅니다.')
+
+  const E = (x: Partial<Parameters<typeof crEditToastDetail>[0] & object>) => ({ line: null, mismatch: [], ...x })
+  const O = (x: Partial<Parameters<typeof crEditToastDetail>[1]> = {}) => ({ moved: false, wasStamped: true, nowStamped: true, amountEdited: false, beforeAmount: 420000, ...x })
+  eq('수정 토스트: 발행 금액 전환(값 전환 화살표)', crEditToastDetail(E({ line: { amount: 410000, issuedYmd: '2026-10-12' } }), O()), '현금영수증 발행 금액 420,000원 → 410,000원')
+  eq('수정 토스트: 금액 그대로면 침묵', crEditToastDetail(E({ line: { amount: 420000, issuedYmd: '2026-10-12' } }), O()), undefined)
+  eq('수정 토스트: 옮겨 합쳐지면 고친 금액은 안 썼다고 먼저 말함', crEditToastDetail(E({ merged: { prevAmount: 300000, amount: 700000 }, line: { amount: 700000, issuedYmd: '2026-10-06' } }), O({ moved: true, amountEdited: true })),
+    '입금일·수단을 옮겨 고친 발행 금액은 쓰지 않았습니다.')
+  eq('수정 토스트: merge', crEditToastDetail(E({ merged: { prevAmount: 300000, amount: 700000 }, line: { amount: 700000, issuedYmd: '2026-10-06' } }), O({ moved: true })),
+    '옮긴 날의 발행과 합침 · 발행 금액 300,000원 → 700,000원')
+  eq('수정 토스트: transfer', crEditToastDetail(E({ transferred: { amount: 250000 } }), O({ moved: true })), '현금영수증 발행 250,000원도 함께 옮겼습니다.')
+  eq('수정 토스트: unstamp 는 한 문장(차이는 남은 행 캡션이 말한다)', crEditToastDetail(E({ unstamped: true, mismatch: [{ lineAmount: 420000, basis: 410000 }] }), O({ moved: true })),
+    '이 입금은 원래 날의 발행에 들어 있어 발행 표시만 뺐습니다.')
+  eq('수정 토스트: add', crEditToastDetail(E({ added: { prevAmount: 300000, added: 50000, amount: 350000, issuedYmd: '2026-10-03' } }), O({ wasStamped: false, beforeAmount: 300000 })),
+    '기존 발행에 50,000원을 더했습니다. 발행일은 10/3 그대로입니다.')
+  eq('수정 토스트: 새로 켬', crEditToastDetail(E({ line: { amount: 410000, issuedYmd: '2026-10-12' } }), O({ wasStamped: false, beforeAmount: null })), '현금영수증 발행 410,000원을 기록했습니다 · 발행일 10/12')
+  eq('수정 토스트: 발행 없이 받은 행을 그대로 두면 형제의 발행을 제 것처럼 말하지 않는다', crEditToastDetail(E({ line: { amount: 410000, issuedYmd: '2026-10-06' } }), O({ wasStamped: false, nowStamped: false, beforeAmount: 410000 })), undefined)
+  eq('수정 토스트: 끔', crEditToastDetail(E({}), O({ nowStamped: false })), '현금영수증 발행 기록 420,000원을 내렸습니다.')
+  eq('수정 토스트: 금액만 고친 재저장의 차이', crEditToastDetail(E({ line: { amount: 420000, issuedYmd: '2026-10-06' }, mismatch: [{ lineAmount: 420000, basis: 400000 }] }), O()), '발행 금액 420,000원이 받은 금액 400,000원과 다릅니다.')
+  eq('수정 토스트: 이용료 몫 없음은 서버 문장의 첫 문장', crEditToastDetail(E({ notIssued: '이용료 몫이 없어 발행할 금액이 0원입니다. 보증금·청소비는 받을 때 현금영수증 대상이 아닙니다.' }), O()), '이용료 몫이 없어 발행할 금액이 0원입니다.')
 }
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
