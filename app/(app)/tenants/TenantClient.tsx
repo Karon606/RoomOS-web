@@ -43,7 +43,7 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
-import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail } from '@/lib/cashReceiptCopy'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
@@ -161,6 +161,8 @@ type PayRecord = {
   actualAmount: number; payMethod: string | null; memo: string | null; isPaid: boolean
   isDeposit: boolean
   cashReceiptIssuedAt?: Date | string | null   // 발행 칩 표시(오류신고 c0936f89)
+  // 그 키(같은 날·같은 수단)의 발행 줄과 이용료 합(서버 getPaymentsByLease). 발행 금액 캡션·수정 토스트의 재료.
+  cashReceiptKey?: CashReceiptKeyView | null
 }
 
 type LeaseTerm = {
@@ -1697,9 +1699,17 @@ export default function TenantClient({
       }), { success: '' })
       if (!res.ok) { setError(res.error); return }
       // 수정 저장도 적용취소가 있다. 형제 수납 내역(PaymentRecordList)과 같은 토스트(2026-10-14 W8).
+      // 이 폼은 발행 표시를 안 보내지만 입금일·수단을 옮기면 발행 줄이 함께 옮겨 가거나 남는다. 그 사실을 같은 정본으로 말한다.
       const undo = res.undo
+      const before = payWindow.find(r => r.id === editingPayId)
+      const crDetail = crEditToastDetail(res.cashReceipt, {
+        moved: !!before && (editDate !== kstYmdStr(new Date(before.payDate)) || editPayMethod !== before.payMethod),
+        wasStamped: !!before?.cashReceiptIssuedAt, nowStamped: !!before?.cashReceiptIssuedAt,
+        amountEdited: false, beforeAmount: before?.cashReceiptKey?.line?.amount ?? null,
+      })
       let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
       pushToast('success', '수납 기록 수정됨', {
+        ...(crDetail ? { detail: crDetail } : {}),
         action: { label: '적용취소', run: () => {
           if (undone) return
           undone = true

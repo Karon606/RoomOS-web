@@ -24,7 +24,7 @@ import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
 import {
   cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW, crOnToast, crOffToastDetail, crOffUndoneMessage, CR_ON_UNDONE,
-  CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteToastDetail, crRestoreDetail,
+  CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteToastDetail, crRestoreDetail, cashReceiptGapSentence, crEditToastDetail,
 } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -163,6 +163,14 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       || editCrIncl.cleaning !== editCrPrefill.incl.cleaning
       || editCrIncl.rent !== editCrPrefill.incl.rent
     )
+    // 저장 토스트가 발행 줄에 일어난 일을 말할 재료(2026-10-13 422호 2단계). 옮겼는지는 서버와 같이 엄격히 본다
+    // (옛 null 수단을 '' 로 다시 저장해도 서버는 키가 옮겨 간 것으로 본다).
+    const before = records?.find(r => r.id === editingId)
+    const crOpts = {
+      moved: !!before && (editDate !== kstYmdStr(new Date(before.payDate)) || editPayMethod !== before.payMethod),
+      wasStamped: !!before?.cashReceiptIssuedAt, nowStamped: editCashReceipt && isCashReceiptEligible(editPayMethod),
+      amountEdited: crChanged, beforeAmount: before?.cashReceiptKey?.line?.amount ?? null,
+    }
     startTransition(async () => {
       const res = await withSave(() => updatePayment(editingId, {
         actualAmount: editAmount,
@@ -178,7 +186,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       // 수정 저장도 적용취소가 있다(운영자 원칙 "모든 쓰기에 적용취소", 2026-10-14 W8).
       const undo = res.undo
       let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
+      const crDetail = crEditToastDetail(res.cashReceipt, crOpts)
       pushToast('success', '수납 기록 수정됨', {
+        ...(crDetail ? { detail: crDetail } : {}),
         action: { label: '적용취소', run: () => {
           if (undone) return
           undone = true
@@ -303,6 +313,12 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         // 켜기 확인 줄의 미리보기. 이 행의 것만 쓴다. null 이면 아직 읽는 중이다.
         const crPv = crAskId === p.id && crPreview?.id === p.id ? crPreview.res : null
         if (editingId === p.id) {
+          // 발행 금액 힌트의 기준. 그 키(같은 날·같은 수단)의 이용료 합에 입력 중인 수납 금액을 바꿔 넣는다.
+          // 입금일·수단을 옮기는 중이면 옮겨 갈 키의 합(목록에 같은 키 행이 있으면 그 서버 값)에 더한다.
+          const sameKey = editDate === kstYmdStr(new Date(p.payDate)) && editPayMethod === (p.payMethod ?? '')
+          const sib = sameKey ? null : records.find(r => r.id !== p.id && kstYmdStr(new Date(r.payDate)) === editDate && (r.payMethod ?? '') === editPayMethod)
+          const crBasis = editAmount + (sameKey ? (p.cashReceiptKey?.rent ?? p.actualAmount) - p.actualAmount : (sib?.cashReceiptKey?.rent ?? 0))
+          const crGap = editCrIncl.deposit || editCrIncl.cleaning ? null : cashReceiptGapSentence(editCrAmount, crBasis)
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
               <div className="space-y-2">
@@ -384,10 +400,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   {/* 발행 금액 — 받은 금액과 다를 수 있다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다. */}
                   <p className="text-xs font-medium text-[var(--warm-mid)] mt-2">발행 금액</p>
                   <MoneyInput value={editCrAmount} onChange={setEditCrAmount} />
-                  {editCrAmount !== p.actualAmount && (
-                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">
-                      받은 금액 {fmtWon(p.actualAmount)}과 다릅니다.
-                    </p>
+                  {/* 기준은 이 행 금액이 아니라 그 키의 이용료 합이다(결함 D12. 분할 결제면 행 금액과 늘 달라 거짓 경보였다).
+                      문장은 수납 등록 폼과 글자까지 같은 정본이고 폼이라 경고색은 안 쓴다(운영자 결정 2026-08-25).
+                      보증금·청소비를 넣은 예외 발행은 이용료 합과 견줄 수 없어 말하지 않는다(목록 캡션이 '포함'을 적는다). */}
+                  {crGap && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">{crGap}</p>
                   )}
                 </div>
               )}

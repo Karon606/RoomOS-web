@@ -19,6 +19,7 @@ import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare, type CashReceiptUndo } from '@/lib/cashReceipt'
+import { cashReceiptGapSentence } from '@/lib/cashReceiptCopy'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { withParticle } from '@/lib/koParticle'
 import { fmtMD } from '@/lib/fmtDate'
@@ -894,9 +895,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 </div>
                 {/* 받은 것보다 많아도 막지 않는다(운영자 확정 2026-08-25). 앱이 모르는 현금
                     수령이 있을 수 있고, 정상 조작을 경고색으로 칠하면 상시 오탐이 된다. */}
+                {/* 문장은 수납 수정 폼과 한 정본이다(lib/cashReceiptCopy). 적은 쪽은 몫 체크로 빠진 정상 경우라 안 적는다. */}
                 {crShownAmount > payAmount && (
                   <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">
-                    받은 금액 {fmtWon(payAmount)}보다 {fmtWon(crShownAmount - payAmount)} 많습니다.
+                    {cashReceiptGapSentence(crShownAmount, payAmount)}
                   </p>
                 )}
                 {/* 0원은 막는다 — 서버가 0원 발행 줄을 조용히 안 만들어서, 안 막으면 '발행함이라
