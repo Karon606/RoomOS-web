@@ -2,7 +2,9 @@
 //
 // 왜 뺐나. 서버 액션(assets/actions)은 async 함수만 내보낼 수 있어 그 안의 판정에 진리표가 못 붙는다
 // (scripts/check-server-action-exports). aggregate.ts·lineage.ts 와 같은 배치다.
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { hasFinalConsonant, withParticle } from '@/lib/koParticle'
+import { fmtQty } from './aggregate'
 
 // ── S1 소모품 거부 ─────────────────────────────────────────────────────
 // 비품 화면의 수령 버튼은 비품 모집단(durableExpenseWhere)에 든 행만 그린다. 그런데 화면을 연 뒤 다른
@@ -85,3 +87,147 @@ export function assignDenialUnreceived(rows: { receivedAt: Date | null; excludeF
 export function unreceiveDenialPlaced(rows: { roomId: string | null; assignedLocationId: string | null; excludeFromInventory: boolean }[]): string | null {
   return rows.some(r => !r.excludeFromInventory && (r.roomId || r.assignedLocationId)) ? ASSET_UNRECEIVE_DENY_PLACED : null
 }
+
+// ── S5 수령 배정(F2) ─────────────────────────────────────────────────
+// 비품 화면 수령 대기 '수령 완료'에서 받는 몫이 배정 예정 호실을 가졌고 아직 어디에도 안 놓였으면 그 방에 배정할지
+// 묻는다. 화면(창을 띄울지·문구)과 서버(배정을 허락할지)가 **같은 판정**을 부른다. 갈리면 화면이 묻지 않은 배정을
+// 서버가 하거나, 물어 놓고 서버가 거부한다.
+//
+// '이미 배정됨'은 assignedAt 이 아니라 '방·공용부·공용 자재에 놓였나'로 본다(수령·방 있고 배정일 빈 비품 57건 실측).
+
+/** 수령 대기 카드의 한 행. 수량 미기록은 1로 센다(게이트·분할과 같은 셈, aggregate liveUnits). */
+export type ReceiptRow = {
+  id: string
+  units: number                    // qtyValue ?? 1
+  targetRoomId: string | null
+  targetRoomNo: string | null      // 그 영업장에 지금 있는 방일 때만. 지운 방이면 null(예정 없음으로 본다)
+  unplaced: boolean                // 방·공용부·공용 자재 어디에도 안 놓였다
+}
+export type PlanRoom = { roomId: string; roomNo: string; units: number }
+export type ReceiptPlan =
+  | { kind: 'none' }                                                                  // 묻지 않는다
+  | { kind: 'single'; room: PlanRoom; units: number; total: number; partial: boolean } // 받는 몫 전부 한 방
+  | { kind: 'multi'; rooms: PlanRoom[]; units: number; rest: number }                  // 전량, 여러 방(rest = 예정 없는 몫)
+  | { kind: 'some'; room: PlanRoom; targeted: number; total: number }                 // 전량, 일부만 한 방
+  | { kind: 'ambiguous'; units: number; total: number }                               // 부분 도착인데 몫이 갈린다. 창 없이 미배정
+
+const EPS = 1e-9
+const r3 = (n: number) => Math.round(n * 1000) / 1000
+
+/**
+ * 받을 때 배정을 물을지와 그 모양. qty 는 부분 도착 수량(null·전체 이상 = 전량).
+ * 부분 도착은 어느 행을 받는지 서버의 분할 순서가 정한다. 그래서 받는 몫이 한 방 것이라고 단정할 수 있는 경우
+ * (모든 행이 같은 한 방을 예정으로 가짐)에만 묻고, 몫이 갈리면(여러 방·일부만 호실) 묻지 않고 미배정으로 받는다.
+ */
+export function receiptPlacementPlan(rows: ReceiptRow[], qty: number | null): ReceiptPlan {
+  const total = r3(rows.reduce((s, r) => s + r.units, 0))
+  const units = qty == null || qty >= total - EPS ? total : r3(qty)
+  const partial = units < total - EPS
+  const cands = rows.filter(r => r.unplaced && r.targetRoomId && r.targetRoomNo)
+  if (!cands.length) return { kind: 'none' }
+  const byRoom = new Map<string, PlanRoom>()
+  for (const c of cands) {
+    const cur = byRoom.get(c.targetRoomId!) ?? { roomId: c.targetRoomId!, roomNo: c.targetRoomNo!, units: 0 }
+    cur.units = r3(cur.units + c.units)
+    byRoom.set(c.targetRoomId!, cur)
+  }
+  const rooms = [...byRoom.values()].sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
+  const targeted = r3(cands.reduce((s, c) => s + c.units, 0))
+  const allTargeted = targeted >= total - EPS
+  if (partial) return rooms.length === 1 && allTargeted ? { kind: 'single', room: rooms[0], units, total, partial: true } : { kind: 'ambiguous', units, total }
+  if (rooms.length === 1) return allTargeted ? { kind: 'single', room: rooms[0], units: total, total, partial: false } : { kind: 'some', room: rooms[0], targeted, total }
+  return { kind: 'multi', rooms, units: total, rest: r3(total - targeted) }
+}
+
+/** 이 판정에서 창을 띄우는가(= '배정'을 고를 수 있는가). 서버는 이 값이 거짓이면 배정 요청을 거부한다. */
+export const planAsks = (p: ReceiptPlan): p is Exclude<ReceiptPlan, { kind: 'none' } | { kind: 'ambiguous' }> =>
+  p.kind === 'single' || p.kind === 'multi' || p.kind === 'some'
+
+/** 배정을 고르면 어느 행을 어느 방에 놓는가. 예정 호실이 살아 있고 안 놓인 행만. 나머지는 그대로(미배정). */
+export function planTargetOf(row: ReceiptRow): string | null {
+  return row.unplaced && row.targetRoomId && row.targetRoomNo ? row.targetRoomId : null
+}
+
+// 서버가 배정을 받았는데 지금 판정으로는 물을 일이 없다. 화면을 연 뒤 예정 호실이 바뀌었거나 방이 지워졌다.
+export const ASSET_RECEIPT_PLAN_STALE = '배정할 호실 정보가 바뀌었습니다. 새로고침한 뒤 다시 수령해 주세요.'
+
+const qtyText = (n: number, unit: string) => `${fmtQty(n)}${unit}`
+const quoted = (label: string) => `'${label}'${hasFinalConsonant(label) ? '을' : '를'}`   // 따옴표 뒤 조사는 품명 받침으로(정본 판정)
+
+export type ReceiptAssignCopy = { title: string; message: string; confirmLabel: string; altLabel: string }
+
+/**
+ * F2 창 문구(UX 패널 보고 F2 대사 그대로). 버튼은 [취소][수령만][{방}에 배정]이고 단계는 normal(계획을 확인하는 물음).
+ * 호실은 '에'를 써서 조사가 바뀌지 않게 하고, 품명·수량 뒤 조사는 정본(koParticle·roomNo)으로 붙인다.
+ */
+export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string): ReceiptAssignCopy | null {
+  const alt = '수령만'
+  if (plan.kind === 'single') {
+    const room = fmtRoomNo(plan.room.roomNo, '')
+    if (!plan.partial) return {
+      title: `${quoted(label)} ${room}에 배정할까요?`,
+      message: `구매할 때 대상 호실을 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에 둡니다.`,
+      confirmLabel: `${room}에 배정`, altLabel: alt,
+    }
+    return {
+      title: `'${label}' ${withParticle(qtyText(plan.units, unit), '을/를')} ${room}에 배정할까요?`,
+      message: `${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.units, unit), '이/가')} 도착했습니다. 남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`,
+      confirmLabel: `${room}에 배정`, altLabel: alt,
+    }
+  }
+  if (plan.kind === 'multi') {
+    const parts = plan.rooms.map(r => `${fmtRoomNo(r.roomNo, '')} ${qtyText(r.units, unit)}`)
+    const last = parts.length - 1
+    parts[last] = withParticle(parts[last], '으로/로')
+    const rest = plan.rest > EPS ? ` 나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 둡니다.` : ''
+    return {
+      title: `'${label}' ${withParticle(qtyText(plan.units, unit), '을/를')} 적어 둔 방에 배정할까요?`,
+      message: `구매할 때 ${parts.join(' · ')} 적었습니다.${rest}`,
+      confirmLabel: '적은 대로 배정', altLabel: alt,
+    }
+  }
+  if (plan.kind === 'some') {
+    const room = fmtRoomNo(plan.room.roomNo, '')
+    return {
+      title: `'${label}' ${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.targeted, unit), '을/를')} ${room}에 배정할까요?`,
+      message: `구매할 때 ${qtyText(plan.targeted, unit)}만 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 둡니다.`,
+      confirmLabel: `${room}에 배정`, altLabel: alt,
+    }
+  }
+  return null
+}
+
+/**
+ * 받은 뒤 토스트(UX 패널 F2 토스트). choice: 'assign' = 배정을 골랐다, 'receive' = 수령만.
+ * 적용취소 라벨은 배정을 함께 했으면 '적용취소', 수령만이면 형제(재고 수령 확인)와 같은 '수령 취소'.
+ * 묻지 않은 수령(none)은 null. 화면이 종전 문구('수령 완료'·부분 수령 문구)를 그대로 쓴다.
+ */
+export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', unit: string): { text: string; detail?: string; actionLabel: string } | null {
+  if (plan.kind === 'none') return null
+  if (choice === 'assign' && planAsks(plan)) {
+    if (plan.kind === 'single') return plan.partial
+      ? { text: `${qtyText(plan.units, unit)} 수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: `남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`, actionLabel: '적용취소' }
+      : { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, actionLabel: '적용취소' }
+    if (plan.kind === 'multi') return {
+      text: `수령 완료 · ${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join('·')} 배정`,
+      ...(plan.rest > EPS ? { detail: `나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 두었습니다.` } : {}),
+      actionLabel: '적용취소',
+    }
+    return { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: `나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 두었습니다.`, actionLabel: '적용취소' }
+  }
+  if (plan.kind === 'ambiguous') return {
+    text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
+    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 나눠 배정으로 옮기세요.',
+    actionLabel: '수령 취소',
+  }
+  // 수령만. 미배정에 뒀다고 말한다.
+  if (plan.kind === 'single' && plan.partial) return {
+    text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
+    detail: `남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`,
+    actionLabel: '수령 취소',
+  }
+  return { text: '수령 완료 · 미배정', actionLabel: '수령 취소' }
+}
+
+// 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다.
+export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'

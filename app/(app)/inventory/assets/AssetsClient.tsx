@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, setAssetQtyUnit, setAssetRowQty, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, disposeAssets, undoDisposeAsset, undoDisposalRow, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, setAssetQtyUnit, setAssetRowQty, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, disposeAssets, undoDisposeAsset, undoDisposalRow, undoAssetReceipt, type AssetReceiptUndo, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -22,7 +22,7 @@ import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { SearchBar } from '@/components/ui/SearchBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
@@ -32,7 +32,7 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
 import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
-import { plannedRoomsMeta } from './receiptPlacement'
+import { plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, type ReceiptPlan } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -759,28 +759,54 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
-  // 수령 완료 적용취소 — 수령 대기로 정확 역연산(setAssetReceived 토글 false). 전량 수령에만 제공.
-  const undoReceive = (ids: string[]) => startTransition(async () => {
-    const res = await setAssetReceived(ids, false)
+  // 수령 적용취소. 서버가 준 토큰(수령 전 원상태·분할 조각·배정 이력 줄)으로 정확히 되돌린다.
+  // 전량·부분·배정·수령만 모든 갈래가 같은 토큰이다(종전에는 부분 수령에 되돌리기가 없었다). 배정 예정 호실은 남는다.
+  // 결과 문장은 형제(재고 수령 취소)와 같은 말이고, 배정까지 함께 무를 때만 '수령과 배정'이라 한다(UX 패널 F2).
+  const undoReceive = (undo: AssetReceiptUndo, withAssign: boolean) => startTransition(async () => {
+    const res = await undoAssetReceipt(undo)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
+    pushToast('info', withAssign ? '수령과 배정을 취소하고 수령 대기로 되돌렸습니다' : '수령을 취소하고 수령 대기로 되돌렸습니다')
     router.refresh()
   })
 
+  // 수령 완료. 받는 몫이 배정 예정 호실을 가졌고 아직 안 놓였으면 그 방에 배정할지 먼저 묻는다(F2).
+  // 창은 정본 ConfirmDialog 의 choiceDialog(normal) [취소][수령만][519호에 배정]. 취소·Esc·배경은 무변경(§27.5).
+  // 물을지·문구·토스트는 서버와 같은 순수 판정(receiptPlacement)이다. 부분 도착이면 인라인 '몇 개 도착?' 다음에 묻는다.
+  const receiveWithPlan = async (it: AssetItem, qty?: number) => {
+    const unit = it.qtyUnit ?? '개'
+    const idSet = new Set(it.ids)
+    const rows = it.breakdown.filter(b => idSet.has(b.id) && !b.disposed)
+      .map(b => ({ id: b.id, units: b.qty ?? 1, targetRoomId: b.targetRoomId, targetRoomNo: b.targetRoomNo, unplaced: b.unplaced }))
+    const plan = receiptPlacementPlan(rows, qty ?? null)
+    let assign = false
+    const copy = receiptAssignCopy(plan, it.itemLabel, unit)
+    if (copy) {
+      const choice = await choiceDialog({ ...copy, level: 'normal' })
+      if (choice === null || choice === 'back') return   // 취소. 수령도 안 한다(무변경)
+      assign = choice === 'confirm'
+    }
+    markReceived(it, true, qty, { assign, plan })
+  }
+
   // 수령 상태 토글 (수령 완료 / 수령 대기로). qty 지정 시 부분 수령(행 분할).
-  const markReceived = (it: AssetItem, value: boolean, qty?: number) => {
+  const markReceived = (it: AssetItem, value: boolean, qty?: number, how?: { assign: boolean; plan: ReceiptPlan }) => {
     startTransition(async () => {
-      const res = await setAssetReceived(it.ids, value, qty ?? null)
+      const res = await setAssetReceived(it.ids, value, qty ?? null, how?.assign ? { assign: true } : undefined)
       if (!res.ok) { pushToast('error', res.error); return }
       setRcvAsk(null)
-      // 부분 수령(행 분할)이면 it.ids가 잔여분을 가리켜 단일 역연산이 불가 → 적용취소 미제공.
-      // 전량 수령(qty 미지정 또는 전체 이상)만 setAssetReceived(ids,false)로 정확히 되돌린다.
-      const isPartial = value && qty != null && it.qtyValue != null && qty < it.qtyValue
-      pushToast('success', !value ? '수령 대기로 변경됨'
-        : isPartial
-          ? `${fmtQty(qty!)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${withParticle(`${fmtQty(it.qtyValue! - qty!)}${it.qtyUnit ?? '개'}`, '은/는')} 수령 대기 유지`
-          : '수령 완료',
-        value && !isPartial ? { action: { label: '수령 취소', run: () => undoReceive(it.ids) } } : undefined)
+      if (!value) { pushToast('success', '수령 대기로 변경됨'); router.refresh(); return }
+      const unit = it.qtyUnit ?? '개'
+      const undo = res.undo
+      const isPartial = qty != null && it.qtyValue != null && qty < it.qtyValue
+      // 물었던 갈래(배정·수령만·몫이 갈린 부분 도착)는 판정 정본의 문구, 묻지 않은 수령은 종전 문구.
+      const t = how ? receiptToast(how.plan, how.assign ? 'assign' : 'receive', unit) : null
+      const text = t?.text ?? (isPartial
+        ? `${fmtQty(qty!)}${unit} 수령 완료 · 잔여 ${withParticle(`${fmtQty(it.qtyValue! - qty!)}${unit}`, '은/는')} 수령 대기 유지`
+        : '수령 완료')
+      pushToast('success', text, {
+        ...(t?.detail ? { detail: t.detail } : {}),
+        ...(undo ? { action: { label: t?.actionLabel ?? '수령 취소', run: () => undoReceive(undo, !!how?.assign) } } : {}),
+      })
       router.refresh()
     })
   }
@@ -862,10 +888,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <input autoFocus inputMode="decimal"
                   value={rcvQty} disabled={pending}
                   onChange={e => setRcvQty(e.target.value.replace(/[^0-9.]/g, ''))}
-                  onKeyDown={e => { if (e.key === 'Enter') markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1)) }}
+                  onKeyDown={e => { if (e.key === 'Enter') void receiveWithPlan(it, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1)) }}
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
                 <button type="button" disabled={pending}
-                  onClick={() => markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1))}
+                  onClick={() => void receiveWithPlan(it, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1))}
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">수령</button>
                 <button type="button" onClick={() => setRcvAsk(null)} disabled={pending} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
               </>
@@ -874,7 +900,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 onClick={() => {
                   // 수량 여러 개면 부분 수령 지원 — 몇 개 도착했는지 확인(기본 전체)
                   if (it.qtyValue != null && it.qtyValue > 1) { setRcvAsk(it.id); setRcvQty(fmtQty(it.qtyValue)) }
-                  else markReceived(it, true)
+                  else void receiveWithPlan(it)
                 }}
                 className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
                 수령 완료

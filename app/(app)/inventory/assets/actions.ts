@@ -18,6 +18,8 @@ import { canonicalUnit } from '@/lib/units'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 공용부(위치) 이름은 재고와 같은 표기 경로(pathName)를 쓴다 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '../locationPaths'
+// 배정일(@db.Date)은 KST 오늘로. 정본 날짜 헬퍼.
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 // 집계·표기 규칙 정본은 순수층(./aggregate)에 산다 — 'use server' 파일은 async 함수만 내보낼 수 있어
 // 여기에 두면 진리표가 붙지 않는다. 이 파일은 조회·쓰기만 진다.
@@ -26,7 +28,10 @@ import {
   type SpecKey, type AssetItem, type RawAsset, type AssetOrderMaps,
 } from './aggregate'
 export type { AssetItem } from './aggregate'
-import { assetReceiptDenial, assignDenialUnreceived, unreceiveDenialPlaced } from './receiptPlacement'
+import {
+  assetReceiptDenial, assignDenialUnreceived, unreceiveDenialPlaced,
+  receiptPlacementPlan, planAsks, planTargetOf, ASSET_RECEIPT_PLAN_STALE, ASSET_RECEIPT_UNDO_STALE, type ReceiptRow,
+} from './receiptPlacement'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -255,9 +260,34 @@ export async function reorderAssetSpecs(category: string, itemLabel: string, spe
   }
 }
 
+// 비품 수령 적용취소 토큰. 수령(+배정)이 바꾼 행의 원상태, 분할로 생긴 수령 조각, 만든 배정 이력 줄.
+// 배정 예정 호실(targetRoomId)은 수령이 안 바꾸므로 토큰에 없다(되돌려도 그대로 남는다).
+// now 는 이번 쓰기 직후의 기대 상태다. 되돌릴 때 그 사이 옮기기·폐기·분할·수정이 끼었으면 거부한다(CAS).
+export type AssetReceiptUndo = {
+  at: string   // 이번 수령 시각(ISO). 받은 행의 receivedAt 이 이 값 그대로일 때만 되돌린다
+  rows: {
+    id: string
+    prev: {
+      receivedAt: string | null; roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean
+      assignedAt: string | null; qtyValue: number | null; amount: number; detail: string | null; allocationGroupId: string | null
+    }
+    now: { received: boolean; roomId: string | null; assignedLocationId: string | null; qtyValue: number | null; amount: number }
+  }[]
+  created: { id: string; roomId: string | null; qtyValue: number | null; amount: number }[]
+  logIds: string[]
+}
+
 // 비품 수령 상태 토글 — received=true 면 수령 완료(receivedAt=지금), false 면 수령 대기로.
 // (비품은 재고추적 대상이 아니라 자동 점검 생성 없이 receivedAt 만 설정)
-export async function setAssetReceived(expenseIds: string[], received: boolean, qty?: number | null): Promise<{ ok: true } | { ok: false; error: string }> {
+//
+// 수령 + 배정 정본(2026-10-15 운영자 승인 F2). opts.assign 이면 받는 몫 중 배정 예정 호실이 살아 있고 아직
+// 어디에도 안 놓인 행을 그 방에 배정한다. 한 트랜잭션에 receivedAt·roomId·배정일(지금)·배정 변경 이력
+// ('미배정에서 519호')까지 쓴다. 배정 규칙은 정본 배정 경로(assignAggregateToTarget·buildSplitOps·logAssignment)와
+// 같다. 다만 이력은 logAssignment 의 '변화 없음' 건너뛰기를 거치지 않고 직접 남긴다(받는 행은 늘 안 놓인 행이라
+// 출발이 미배정이고, 예정 호실을 roomId 에 두던 옛 설계의 함정. 이미 그 방이면 이력이 안 남는. 을 피한다).
+// 물을지·누구를 놓을지는 화면과 같은 순수 판정(receiptPlacement)이 정하고, 판정이 '묻지 않음'인데 배정이 오면 거부한다.
+// 받는 모든 갈래(전량·부분·배정·수령만)가 적용취소 토큰을 돌려준다.
+export async function setAssetReceived(expenseIds: string[], received: boolean, qty?: number | null, opts?: { assign?: boolean }): Promise<{ ok: true; undo?: AssetReceiptUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -279,51 +309,152 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
       }))
       if (placedDenial) return { ok: false, error: placedDenial }
     }
+    if (!received) {
+      await prisma.expense.updateMany({
+        where: { id: { in: expenseIds }, propertyId },
+        data: { receivedAt: null },
+      })
+      revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+      return { ok: true }
+    }
+
+    // ── 받기. 이미 받은 행은 건드리지 않는다(멱등. 응답 유실 뒤 재클릭이 수령 시각을 덮지 않게).
+    const exps = (await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })).filter(e => !e.receivedAt)
+    if (!exps.length) return { ok: true }
+    // 배정 예정 호실. 이 영업장에 지금 있는 방만 번호를 단다(지운 방은 예정 없음으로 본다).
+    const tIds = [...new Set(exps.map(e => e.targetRoomId).filter((v): v is string => !!v))]
+    const tRoomNo = new Map(tIds.length
+      ? (await prisma.room.findMany({ where: { id: { in: tIds }, propertyId }, select: { id: true, roomNo: true } })).map(r => [r.id, r.roomNo])
+      : [])
+    const planRows: ReceiptRow[] = exps.map(e => ({
+      id: e.id, units: e.qtyValue ?? 1, targetRoomId: e.targetRoomId,
+      targetRoomNo: e.targetRoomId ? (tRoomNo.get(e.targetRoomId) ?? null) : null,
+      unplaced: !e.roomId && !e.assignedLocationId && !e.isCommonAsset,
+    }))
+    const plan = receiptPlacementPlan(planRows, qty ?? null)
+    if (opts?.assign && !planAsks(plan)) return { ok: false, error: ASSET_RECEIPT_PLAN_STALE }
+    const now = new Date()
+    // 배정일 = KST 오늘. assignedAt 은 @db.Date 라 `new Date()` 를 그대로 넣으면 KST 00~09시(냉장고는 06:05 수령)에
+    // 어제(UTC 날짜)로 박힌다. 화면이 배정일 칸에 넣는 값(kstYmdStr 를 new Date(ymd) 로 바꾼 값)과 같은 셈이다. 이력의 배정일도 같은 값.
+    const assignDay = ymdToDbDate(kstYmdStr(now))
+    // 배정을 골랐으면 행마다 놓일 방. 예정 호실이 살아 있고 안 놓인 행만. 나머지는 미배정 그대로.
+    const targetOf = new Map(planRows.map(r => [r.id, opts?.assign ? planTargetOf(r) : null]))
+    const placeData = (id: string) => {
+      const t = targetOf.get(id)
+      // 정본 배정 경로(targetData + assignedAt)와 같은 칸 넷. 방이면 공용부는 비우고 공용 표식은 끈다.
+      return t ? { roomId: t, assignedLocationId: null, isCommonAsset: false, assignedAt: assignDay } : null
+    }
+    const snap = (e: ExpRow): AssetReceiptUndo['rows'][number]['prev'] => ({
+      receivedAt: e.receivedAt ? e.receivedAt.toISOString() : null, roomId: e.roomId, assignedLocationId: e.assignedLocationId,
+      isCommonAsset: e.isCommonAsset, assignedAt: e.assignedAt ? e.assignedAt.toISOString() : null,
+      qtyValue: e.qtyValue, amount: e.amount, detail: e.detail, allocationGroupId: e.allocationGroupId,
+    })
+
     // 부분 수령(분할 배송) — qty가 전체 미만이면 그 수량만 수령: 수량 큰 행부터 통째 소진,
     // 마지막만 분할(금액 비례·allocationGroupId 공유). 잔여는 수령 대기 유지. (배정 분할과 동일 선례)
-    if (received && qty != null) {
-      const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
-      const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
-      if (qty > 0 && qty < totalQty) {
-        let need = qty
-        const now = new Date()
-        const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
-        const ops: Prisma.PrismaPromise<unknown>[] = []
-        for (const e of sorted) {
-          if (need <= 1e-9) break
-          const eq = e.qtyValue ?? 1
-          if (eq <= need + 1e-9) {
-            ops.push(prisma.expense.update({ where: { id: e.id }, data: { receivedAt: now } }))
-            need -= eq
-          } else {
-            const recvAmount = Math.round(e.amount * (need / eq))
-            const remainQty = Math.round((eq - need) * 1000) / 1000
-            const groupId = e.allocationGroupId ?? randomUUID()
-            ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: e.amount - recvAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
-            // ⚠️ 복제 목록은 cloneExpenseScalars 한 자리다 — 집계 키(specText·isCommonAsset·unitBasis)든
-            //   장부 축(roomWorkId·costKind)이든 여기서 손으로 다시 쓰면 또 칸이 빠진다.
-            ops.push(prisma.expense.create({ data: cloneExpenseScalars(e, propertyId, {
-              amount: recvAmount, qtyValue: need, allocationGroupId: groupId,
-              detail: buildAssetDetail({ ...e, qtyValue: need }),
-              receivedAt: now,
-            }) }))
-            need = 0
-          }
-        }
-        await prisma.$transaction(ops)
-        revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-        return { ok: true }
+    // 전량이면 need 가 전체라 모든 행이 통째로 받힌다.
+    const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+    let need = qty != null && qty > 0 && qty < totalQty ? qty : totalQty
+    const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1) || a.id.localeCompare(b.id))
+    const ops: Prisma.PrismaPromise<unknown>[] = []
+    const undoRows: AssetReceiptUndo['rows'] = []
+    const createdAt: { opIndex: number; roomId: string | null; qtyValue: number | null; amount: number }[] = []
+    const moved = new Map<string, number>()   // 방 id 별 배정한 수량(이력 한 줄씩)
+    for (const e of sorted) {
+      if (need <= 1e-9) break
+      const eq = e.qtyValue ?? 1
+      const p = placeData(e.id)
+      if (eq <= need + 1e-9) {
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: { receivedAt: now, ...(p ?? {}) } }))
+        undoRows.push({ id: e.id, prev: snap(e), now: { received: true, roomId: p ? p.roomId : e.roomId, assignedLocationId: p ? null : e.assignedLocationId, qtyValue: e.qtyValue, amount: e.amount } })
+        if (p) moved.set(p.roomId, (moved.get(p.roomId) ?? 0) + eq)
+        need -= eq
+      } else {
+        const recvAmount = Math.round(e.amount * (need / eq))
+        const remainQty = Math.round((eq - need) * 1000) / 1000
+        const groupId = e.allocationGroupId ?? randomUUID()
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: e.amount - recvAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
+        undoRows.push({ id: e.id, prev: snap(e), now: { received: false, roomId: e.roomId, assignedLocationId: e.assignedLocationId, qtyValue: remainQty, amount: e.amount - recvAmount } })
+        // ⚠️ 복제 목록은 cloneExpenseScalars 한 자리다. 집계 키(specText·isCommonAsset·unitBasis)든
+        //   장부 축(roomWorkId·costKind)이든 여기서 손으로 다시 쓰면 또 칸이 빠진다. targetRoomId 도 거기서 물려받는다.
+        createdAt.push({ opIndex: ops.length, roomId: p ? p.roomId : e.roomId, qtyValue: need, amount: recvAmount })
+        ops.push(prisma.expense.create({ data: cloneExpenseScalars(e, propertyId, {
+          amount: recvAmount, qtyValue: need, allocationGroupId: groupId,
+          detail: buildAssetDetail({ ...e, qtyValue: need }),
+          receivedAt: now,
+          ...(p ?? {}),
+        }) }))
+        if (p) moved.set(p.roomId, (moved.get(p.roomId) ?? 0) + need)
+        need = 0
       }
     }
-    await prisma.expense.updateMany({
-      where: { id: { in: expenseIds }, propertyId },
-      data: { receivedAt: received ? new Date() : null },
+    // 배정 변경 이력. 방마다 한 줄, '미배정'에서 그 방으로(placeLabel 과 같은 표기). 같은 트랜잭션이다.
+    const logIdx: number[] = []
+    if (moved.size) {
+      const rep = exps[0]
+      for (const [roomId, units] of moved) {
+        logIdx.push(ops.length)
+        ops.push(prisma.assetAssignmentLog.create({ data: assignmentLogData(propertyId, rep.itemLabel, rep,
+          { kind: 'none', label: '미배정' }, { kind: 'room', label: fmtRoomNo(tRoomNo.get(roomId) ?? '', '') || '방' },
+          Math.round(units * 1000) / 1000, assignDay) }))
+      }
+    }
+    const results = await prisma.$transaction(ops)
+    const undo: AssetReceiptUndo = {
+      at: now.toISOString(),
+      rows: undoRows,
+      created: createdAt.map(c => ({ id: (results[c.opIndex] as { id: string }).id, roomId: c.roomId, qtyValue: c.qtyValue, amount: c.amount })),
+      logIds: logIdx.map(i => (results[i] as { id: string }).id),
+    }
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 비품 수령(+배정) 적용취소. 토큰의 원상태로 되돌리고, 분할로 생긴 수령 조각과 만든 배정 이력 줄을 지운다.
+// 배정 예정 호실은 그대로 남는다(수령이 안 바꾼 칸). 한 트랜잭션이고, 행마다 '이번 쓰기 직후 상태 그대로인가'를
+// 조건으로 건다(CAS). 그 사이 옮기기·폐기·분할·수정이 끼었으면 아무것도 안 바꾸고 거부한다(undoPartialReceipt 와 같은 원칙).
+// 토큰은 클라가 들고 오는 값이라 모든 조건에 propertyId 를 건다(영업장 잠금, 장부 검수 2026-09-16).
+export async function undoAssetReceipt(undo: AssetReceiptUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const at = new Date(undo.at)
+    if (Number.isNaN(at.getTime())) return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    const STALE = new Error(ASSET_RECEIPT_UNDO_STALE)
+    await prisma.$transaction(async tx => {
+      for (const c of undo.created) {
+        const r = await tx.expense.deleteMany({
+          where: { id: c.id, propertyId, receivedAt: at, roomId: c.roomId, qtyValue: c.qtyValue, amount: c.amount, disposedAt: null },
+        })
+        if (r.count !== 1) throw STALE
+      }
+      for (const row of undo.rows) {
+        const p = row.prev
+        const r = await tx.expense.updateMany({
+          where: {
+            id: row.id, propertyId, receivedAt: row.now.received ? at : null, disposedAt: null,
+            roomId: row.now.roomId, assignedLocationId: row.now.assignedLocationId, qtyValue: row.now.qtyValue, amount: row.now.amount,
+          },
+          data: {
+            receivedAt: p.receivedAt ? new Date(p.receivedAt) : null,
+            roomId: p.roomId, assignedLocationId: p.assignedLocationId, isCommonAsset: p.isCommonAsset,
+            assignedAt: p.assignedAt ? new Date(p.assignedAt) : null,
+            qtyValue: p.qtyValue, amount: p.amount, detail: p.detail, allocationGroupId: p.allocationGroupId,
+          },
+        })
+        if (r.count !== 1) throw STALE
+      }
+      if (undo.logIds.length) await tx.assetAssignmentLog.deleteMany({ where: { id: { in: undo.logIds }, propertyId } })
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 
@@ -675,6 +806,15 @@ const specOf = (r: SpecKey): SpecKey => ({ specValue: r.specValue ?? null, specU
 // 규격 미상 = 컬럼 추가 전 기록 중 백필 불가였던 것(그 라벨에 규격이 2종 이상이라 어느 쪽인지 알 수 없음).
 const specUnknown = (r: SpecKey) => r.specValue == null && r.specUnit == null && r.specText == null
 
+// 배정 변경 이력 한 줄의 모양. 이력을 남기는 자리 둘(logAssignment·수령 배정)이 같은 칸을 쓴다.
+function assignmentLogData(
+  propertyId: string, itemLabel: string | null, spec: SpecKey,
+  from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
+  assignedAt: Date | null,
+): Prisma.AssetAssignmentLogUncheckedCreateInput {
+  return { propertyId, itemLabel, ...specOf(spec), fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt }
+}
+
 // 배정 변경 이력 기록 — 테이블 미적용(SQL 전)이면 조용히 무시(앱 정상 동작)
 async function logAssignment(
   propertyId: string, itemLabel: string | null, spec: SpecKey,
@@ -684,7 +824,7 @@ async function logAssignment(
   if (from.kind === to.kind && from.label === to.label) return   // 변화 없음
   try {
     await prisma.assetAssignmentLog.create({
-      data: { propertyId, itemLabel, ...specOf(spec), fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt: assignedAt ?? null },
+      data: assignmentLogData(propertyId, itemLabel, spec, from, to, qty, assignedAt ?? null),
     })
   } catch { /* asset_assignment_log 미적용 — 무시 */ }
 }
