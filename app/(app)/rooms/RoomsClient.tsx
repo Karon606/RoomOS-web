@@ -40,6 +40,8 @@ type CashReceiptIssued = {
   roomNo: string; tenantName: string; amount: number
   issuedYmd: string; payYmd: string; payMethod: string | null
   inclDeposit: boolean; inclCleaning: boolean
+  /** 그 키의 받은 이용료 몫과 행 수. 탭 행이 받은 금액 대비를 말한다(2026-10-13). */
+  received: number; rentRows: number
 }
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'

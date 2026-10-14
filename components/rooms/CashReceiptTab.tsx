@@ -24,6 +24,7 @@ import { fmtMD } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
 import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
+import { cashReceiptTabGap } from '@/lib/cashReceiptCopy'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { batchSetCashReceipts, undoCashReceiptChange, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
 
@@ -40,6 +41,8 @@ type Issued = {
   issuedYmd: string; payYmd: string; payMethod: string | null
   /** 무엇을 포함해 발행했나. 금액이 아니라 불리언인 이유는 서버 주석에 적었다. */
   inclDeposit: boolean; inclCleaning: boolean
+  /** 그 키의 지금 살아 있는 이용료 몫과 금액이 든 이용료 행 수. 받은 금액 대비를 말할 재료(2026-10-13). */
+  received: number; rentRows: number
 }
 
 export function CashReceiptTab({
@@ -207,6 +210,10 @@ export function CashReceiptTab({
                   // 않는다 — 세무 담당자 확인 후 일부러 넣었을 수 있다. 사실 서술은 중립어로 적고
                   // 상태는 색으로 말하는 것이 같은 행의 기한 라벨이 이미 쓰는 문법이다.
                   const incl = [r.inclDeposit ? '보증금 포함' : '', r.inclCleaning ? '청소비 포함' : ''].filter(Boolean)
+                  // 받은 금액 대비(2026-10-13 422호 2단계). 이 행의 큰 숫자는 발행 금액이라 받은 금액이 화면 어디에도
+                  // 없었다. 다를 때만 경고색으로, 같아도 한 장이 같은 날 여러 입금을 덮으면 보조색으로 말한다.
+                  // 문장은 수납 행 캡션과 한 정본이다(lib/cashReceiptCopy). 예외 몫이 든 행은 위 '포함'이 이미 말한다.
+                  const gap = cashReceiptTabGap(r)
                   return (
                   <li key={`${r.roomNo}-${r.payYmd}-${i}`} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)]">
                     <span className="min-w-0 flex-1">
@@ -215,6 +222,8 @@ export function CashReceiptTab({
                       </span>
                       <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                         발행 {fmtMD(r.issuedYmd)}{r.issuedYmd !== r.payYmd ? ` · 입금 ${fmtMD(r.payYmd)}` : ''}{r.payMethod ? ` · ${r.payMethod}` : ''}{incl.length > 0 ? <span className="text-[var(--warning-fg)]"> · {incl.join(' · ')}</span> : null}
+                        {/* 덩이마다 한 줄로 묶고 덩이 사이에서만 접는다. 조각 전체를 한 줄로 묶으면 메타 칸보다 길어 넘친다(하네스 실측). */}
+                        {gap ? <span className={gap.tone === 'warning' ? 'text-[var(--warning-fg)]' : undefined}>{gap.units.map((u, i) => <span key={i}>{' '}<span className="whitespace-nowrap">{i === 0 ? `· ${u}` : u}</span></span>)}</span> : null}
                       </span>
                     </span>
                     <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(r.amount)}</span>

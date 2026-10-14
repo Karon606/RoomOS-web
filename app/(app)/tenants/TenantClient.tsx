@@ -43,7 +43,8 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
-import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
+import { CashReceiptCaption } from '@/components/entity-modal/widgets/CashReceiptCaption'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
@@ -3010,6 +3011,10 @@ export default function TenantClient({
                         </div>
                         {regularWindow.map(p => {
                           const prevOwner = isPreAcq(p)
+                          // 발행 금액 캡션(수납 내역과 같은 정본). 카드는 대상이 아니다.
+                          const crCap = isCashReceiptEligible(p.payMethod)
+                            ? cashReceiptRowCaption({ stamped: !!p.cashReceiptIssuedAt, key: p.cashReceiptKey })
+                            : null
                           if (editingPayId === p.id) {
                             return (
                               // 표면을 한 단 올린다 — 종전 --canvas 는 안의 입력과 같은 토큰이라
@@ -3060,47 +3065,53 @@ export default function TenantClient({
                             )
                           }
                           return (
-                            <div key={p.id} className={`flex items-center justify-between rounded-sm px-3 py-2.5 ${prevOwner ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'}`}>
-                              <div>
-                                <p className={`text-xs ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
-                                  {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
-                                  {prevOwner && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
-                                  {/* 몇 월분인지 항상 적는다(운영자 요청). 낸 달과 귀속월이 다를 때만 그 사실을 덧붙인다 —
-                                      '조회월과 다른가' 기준으로 두면 3개월 창에서 대부분 켜져 표식 구실을 못 한다. */}
-                                  {!p.isDeposit && (() => {
-                                    const paidMonth = new Date(p.payDate).toISOString().slice(0, 7)
-                                    const late = paidMonth > p.targetMonth, prepay = paidMonth < p.targetMonth
-                                    return (
-                                      <span className={`ml-1.5 text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
-                                        late ? 'bg-[var(--warning-bg)] text-[var(--warning-fg)]'
-                                        : prepay ? 'bg-[var(--info-bg)] text-[var(--info-fg)]'
-                                        : 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
-                                      }`}>
-                                        {Number(p.targetMonth.slice(5))}월분{late ? ' 지연' : prepay ? ' 선납' : ''}
-                                      </span>
-                                    )
-                                  })()}
-                                </p>
-                                {p.memo && <p className="text-xs text-[var(--tc-text)] mt-0.5">{p.memo}</p>}
+                            <div key={p.id} className={`rounded-sm px-3 py-2.5 ${prevOwner ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'}`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className={`text-xs ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
+                                    {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
+                                    {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
+                                    {prevOwner && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
+                                    {/* 몇 월분인지 항상 적는다(운영자 요청). 낸 달과 귀속월이 다를 때만 그 사실을 덧붙인다 —
+                                        '조회월과 다른가' 기준으로 두면 3개월 창에서 대부분 켜져 표식 구실을 못 한다. */}
+                                    {!p.isDeposit && (() => {
+                                      const paidMonth = new Date(p.payDate).toISOString().slice(0, 7)
+                                      const late = paidMonth > p.targetMonth, prepay = paidMonth < p.targetMonth
+                                      return (
+                                        <span className={`ml-1.5 text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
+                                          late ? 'bg-[var(--warning-bg)] text-[var(--warning-fg)]'
+                                          : prepay ? 'bg-[var(--info-bg)] text-[var(--info-fg)]'
+                                          : 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
+                                        }`}>
+                                          {Number(p.targetMonth.slice(5))}월분{late ? ' 지연' : prepay ? ' 선납' : ''}
+                                        </span>
+                                      )
+                                    })()}
+                                  </p>
+                                  {p.memo && <p className="text-xs text-[var(--tc-text)] mt-0.5">{p.memo}</p>}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
+                                  {/* 이 화면에는 조회 월 선택 UI 가 없다. 다른 달 귀속 행의 편집을 막으면
+                                      방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
+                                      삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
+                                  {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit 가 최종 방어(감사 D3) */}
+                                  {/* 이용료 환불 확정 record 는 어느 화면에서도 직접 안 고친다 — 수납 정보의 이용료 정산 카드가 정본(서버도 거부). */}
+                                  {canEdit && isRentRefundRecord(p.memo) && (
+                                    <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">이용료 정산에서 고칩니다</span>
+                                  )}
+                                  {canEdit && !isRentRefundRecord(p.memo) && (
+                                    <div className="flex gap-1.5 ml-1">
+                                      <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
+                                      <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
-                                {/* 이 화면에는 조회 월 선택 UI 가 없다. 다른 달 귀속 행의 편집을 막으면
-                                    방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
-                                    삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
-                                {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit 가 최종 방어(감사 D3) */}
-                                {/* 이용료 환불 확정 record 는 어느 화면에서도 직접 안 고친다 — 수납 정보의 이용료 정산 카드가 정본(서버도 거부). */}
-                                {canEdit && isRentRefundRecord(p.memo) && (
-                                  <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">이용료 정산에서 고칩니다</span>
-                                )}
-                                {canEdit && !isRentRefundRecord(p.memo) && (
-                                  <div className="flex gap-1.5 ml-1">
-                                    <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
-                                    <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
-                                  </div>
-                                )}
-                              </div>
+                              {/* 발행 금액 캡션. 수납 내역(PaymentRecordList)과 같은 정본·같은 자리(행 아래 한 줄, 받은 금액과 다를 때만,
+                                  기준은 그 키의 이용료 합). 왼쪽 칸 안에 두면 한 줄로 묶인 덩이가 칸을 넓혀 오른쪽 금액이 접히고
+                                  행이 넘쳤다(2026-10-14 하네스 실측, 320px 에서 31px). 그래서 행 폭 전체를 쓰는 아래 줄이다. */}
+                              {crCap && <CashReceiptCaption caption={crCap} className="mt-1.5" />}
                             </div>
                           )
                         })}
