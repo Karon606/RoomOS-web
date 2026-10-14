@@ -12,7 +12,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, undoPaymentEdit, deletePayment, restorePayment, setCashReceiptIssued,
-  undoCashReceiptChange,
+  undoCashReceiptChange, previewCashReceiptOn,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -22,7 +22,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
-import { cashReceiptRowCaption } from '@/lib/cashReceiptCopy'
+import { cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
@@ -88,6 +88,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 원터치 토글이 켤 때 묻는 발행일(운영자 지시 2026-08-25 — "응 물어봐줘"). 끌 때는 안 묻는다.
   const [crAskId, setCrAskId] = useState<string | null>(null)
   const [crAskDate, setCrAskDate] = useState(kstYmdStr())
+  // 켜기 확인 줄이 먼저 보일 '기록될 발행 금액'(서버 미리보기, 실제 켜기와 같은 정본 판정). 어느 행의 것인지 함께
+  // 들고 있다. 다른 행을 빨리 이어 누르면 늦게 온 응답이 엉뚱한 행에 서지 않게.
+  const [crPreview, setCrPreview] = useState<{ id: string; res: Awaited<ReturnType<typeof previewCashReceiptOn>> } | null>(null)
   const [editCrIncl, setEditCrIncl] = useState({ deposit: false, cleaning: false, rent: true })
   // 폼을 열 때의 발행 금액·구성. 운영자가 칸을 고쳤는지 가르는 기준(2026-10-14 독립 검수 F1).
   // 안 고쳤으면 저장에 싣지 않는다. 실으면 서버가 입금일 이동으로 합친 금액을 이 프리필(옛 키 금액)로 덮는다.
@@ -212,8 +215,14 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   const handleToggleCashReceipt = (p: Record) => {
     if (!p.cashReceiptIssuedAt) {
       // 켜기 — 행 밑에 발행일 확인 줄을 편다(작업 행 완료 폼과 같은 인라인 문법).
+      // 기록될 발행 금액을 먼저 보인다(일괄 발행 모달과 같은 순서). 판정은 실제 켜기와 같은 정본이라
+      // 미리 본 금액이 곧 기록되는 금액이다. 실패하면 금액 자리만 비우고 켜기는 막지 않는다(서버가 최종 판정).
       setCrAskId(p.id)
       setCrAskDate(kstYmdStr())
+      setCrPreview(null)
+      void previewCashReceiptOn(p.id)
+        .then(res => setCrPreview({ id: p.id, res }))
+        .catch(() => setCrPreview({ id: p.id, res: { ok: false, error: '' } }))
       return
     }
     startTransition(async () => {
@@ -261,6 +270,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
           ? cashReceiptRowCaption({ stamped: !!p.cashReceiptIssuedAt, key: p.cashReceiptKey })
           : null
         const crCapId = `${uid}-cr-${p.id}`
+        // 켜기 확인 줄의 미리보기. 이 행의 것만 쓴다. null 이면 아직 읽는 중이다.
+        const crPv = crAskId === p.id && crPreview?.id === p.id ? crPreview.res : null
         if (editingId === p.id) {
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
@@ -463,13 +474,35 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 작업 행 완료 폼과 같은 인라인 문법이다. 끄기는 이 줄을 안 거친다. */}
             {crAskId === p.id && (
               <div className="mt-1.5 space-y-2">
+                {/* 기록될 발행 금액. 읽기 전용으로 먼저, 발행일은 그다음(일괄 발행 모달과 같은 순서).
+                    금액을 여기서 고치는 칸은 두지 않는다. 확인 줄에 입력 높이가 섞이고, 발행 금액을 고치는 자리는
+                    수정 폼 하나라는 결정(2026-08-25)과 갈린다. 오른쪽 숫자는 줄1의 받은 금액과 자릿수가 맞는다. */}
+                <div className="space-y-0.5">
+                  <div className="flex items-baseline justify-between gap-2 text-xs text-[var(--warm-mid)]">
+                    <span>발행 금액</span>
+                    <span className="num text-sm font-semibold text-[var(--warm-dark)] whitespace-nowrap">
+                      {crPv ? (crPv.ok ? fmtWon(crPv.amount) : '—') : '…'}
+                    </span>
+                  </div>
+                  {/* 살아 있는 발행에 새 돈만 더하는 켜기(add)는 앞 발행일을 지킨다. 아래 발행일 칸에서 다른 날을
+                      골라도 그 날짜는 쓰이지 않으므로 지켜지는 날짜를 금액 바로 밑에 적는다(경고색 아님). */}
+                  {crPv?.ok && crPv.kind === 'add' && crPv.current && (
+                    <p className="num text-[0.65625rem] text-[var(--warm-mid)] flex flex-wrap justify-end gap-x-1">
+                      {crAddPreviewChunks(crPv.current, crPv.added).map((t, i) => <span key={i} className="whitespace-nowrap">{t}</span>)}
+                    </p>
+                  )}
+                  {crPv?.ok && (crPv.kind === 'keep' || crPv.kind === 'none') && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] text-right break-keep">{crPv.kind === 'keep' ? CR_KEEP_PREVIEW : CR_NONE_PREVIEW}</p>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
                   발행일
                   <DatePicker value={crAskDate} onChange={setCrAskDate} maxDate={kstYmdStr()}
                     className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
                 </div>
                 <div className="flex gap-1.5 flex-wrap items-center">
-                  <RowActionBtn tone="accent" disabled={pending} onClick={() => confirmCashReceiptOn(p)}>발행 기록</RowActionBtn>
+                  {/* 금액을 읽기 전에는 누르지 않게 한다. 이용료 몫이 없으면(none) 서버가 거부하므로 눌러야 거절되는 버튼이 된다. */}
+                  <RowActionBtn tone="accent" disabled={pending || !crPv || (crPv.ok && crPv.kind === 'none')} onClick={() => confirmCashReceiptOn(p)}>발행 기록</RowActionBtn>
                   <RowActionBtn onClick={() => setCrAskId(null)}>취소</RowActionBtn>
                 </div>
               </div>
