@@ -396,3 +396,10 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   applyStatusTransition)에 월 이용료 조건이 되살아나지 않게.
 - **check-short-stay-reservation 축 D + 재앵커 소스 축** (2026-10-10) — 취소 계약에 살아 있는 예약 단계 이용료 record(기준선 0, id 허용목록),
   `reanchorReservationPrepaid` 의 모드 무관 비교식.
+- **check-server-auth-gate** (2026-10-14, verify:fast, 권한 감사 P0 + 독립 검수 반영) 서버 인증 문 네 축. ⓐ 서버 파일에서 `getSession` 이라는 이름 자체 금지(호출·구조 분해·변수 경유, 쿠키 서명을 검증하지 않는다)
+  ⓑ 'use server' 내보낸 async 함수(export function·const·`export { }`, 기본 내보내기는 위반)는 정본 관문을 첫 DB·외부 호출보다 먼저 부른다. 정본은 모듈에서 import 했을 때만 인정한다.
+  `lib/auth/propertyAccess` 의 requirePropertyAccess(실패 시 redirect)·getPropertyAccess(null 을 주므로 변수에 담고 `if (!x)` 로 끝낼 때만, `?.` 로 꺼내면 약한 문), `lib/role` 의 getMyRole·requireEdit·requireOwner·requireScopeEdit,
+  `lib/auth/access` 의 requireSuperAdmin·requireApprovedAccount(계정 승인 문, 영업장 무관). getAccessContext·auth.getClaims/getUser 는 로그인만 아는 약한 문이라 IDENTITY_ONLY(본인 데이터·영업장 선택 전 단계)에 사유가 있어야 통과.
+  로컬 래퍼는 같은 파일·import 를 따라가 자동 인정(실패가 밖으로 새야 래퍼다). 호출은 무조건 실행되고 await 되어야 센다(조건부·void·안 불리는 중첩 함수 안은 안 센다). catch 로 삼키고 흘러 나가는 문, redirect 만 빼고 다시 던지는 catch 는 문이 아니다(geminiKey 사고).
+  ⓒ route.ts 처리기는 관문, 비밀이 없으면 닫히는 크론 확인(주석 뺀 본문에서 `!!secret &&` 류 + 첫 DB 호출 전 401), 공개 목록 중 하나. ⓓ `sendToSubscriptions` 를 부르는 함수는 같은 함수에서 `approvedPushRecipients`(lib/pushSend)로 거절·대기 계정을 거른다(본인 기기 시험 발송만 예외).
+  알려진 위반 5건은 BASELINE(P3: errorReports 업로드 세션·신고 제출, ai-analysis·market-analyze·naver-places)이고 고치면 명단에서 지워야 통과한다(낡은 기준선도 운다). `--list` 로 기준선 포함 전체 목록. 역주입 37건(검수 18 + 대조 1 + 내 축 18).

@@ -18,6 +18,15 @@
 - 이후 승인(/pending)·프로필(/profile-setup)·영업장(/property-select) 게이팅.
 - 이 가드는 **(app) 그룹에만** 적용. 공용/입주자 페이지는 그룹 밖이라 무관.
 
+## 서버 액션·API 의 관문 = lib/auth/propertyAccess (2026-10-14, 권한 감사 P0)
+- 레이아웃 가드는 화면만 막는다. 서버 액션은 액션 id 로 직접 POST 할 수 있고 proxy.ts 도 막지 않는다. 그래서 모든 서버 함수가 `requirePropertyAccess`(실패 시 redirect)·`getPropertyAccess`(실패 시 null) 또는 그 위의 역할 문(lib/role)을 직접 지나야 한다.
+- 관문은 계정 승인 상태도 본다. 승인(APPROVED)이거나 슈퍼관리자(env 또는 DB 플래그)여야 통과하고, 아니면 `requirePropertyAccess` 가 /pending 으로 보낸다. 규칙은 레이아웃 47행과 같다. 세 조회(역할 행·사용자·영업장 소유주)는 병렬 1회다.
+- 영업장을 고르기 전 단계는 계정 승인 문 `requireApprovedAccount`(lib/auth/access, 영업장 무관)를 지난다. 영업장 선택·개설·참여 요청·오너 관리(운영 종료·재개·영구 삭제)와 푸시 구독 저장이 여기다. `getAccessContext` 는 상태를 돌려주기만 하고 막지 않으므로 인증 문으로 쓰지 않는다.
+- 관리자 화면·액션은 `requireSuperAdmin` 이라 슈퍼관리자만 지난다. 로그인 동기화·프로필 설정·내 영업장 목록은 로그인만 보고(대기 계정도 지나야 하는 문), 그물의 IDENTITY_ONLY 목록에 사유가 있다.
+- 영업장 알림 푸시(일일 크론·서명 제출 알림)는 `approvedPushRecipients`(lib/pushSend)로 승인 계정·슈퍼관리자에게만 간다.
+- `supabase.auth.getSession()` 은 서버에서 쓰지 않는다(쿠키 서명을 검증하지 않는다). 그물 check-server-auth-gate 가 지킨다.
+- 실패를 catch 로 삼키는 헬퍼 금지. lib/geminiKey 가 관문 redirect 를 '세션 밖(크론)'으로 읽어 공용 키를 내줬다. 세션이 필요한 헬퍼는 예외를 그대로 올리고, 크론은 라우트가 CRON_SECRET 을 확인한 뒤 부르는 별도 경로만 쓴다(지금 AI 를 부르는 크론은 없다).
+
 ## 공용(인증 불필요) 라우트
 `/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/sign/[token]`(계약서 원격 서명 — 토큰+생년월일+HMAC 쿠키가 자격, 2026-07-18 신설) · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
 정정(2026-07-18): `/contract/[tenantId]` 는 공용이 아니라 **운영자 인증 필요**(getContractData 가 requirePropertyAccess 경유). 입주자 원격 서명은 `/sign/[token]` 이 담당.
