@@ -5,7 +5,7 @@
 // 편집 가능 항목: 금액·납부일·납부방법·메모·귀속월. 보증금 record 는 귀속월 변경 불가.
 // 양도인 record 는 양도인 색 표시.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useId, useState, useTransition } from 'react'
 import { CARD_LIKE_METHODS, MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -22,6 +22,8 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { cashReceiptRowCaption } from '@/lib/cashReceiptCopy'
+import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
@@ -65,6 +67,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   const [acqDate, setAcqDate] = useState<Date | null>(null)
   const [tmOptions, setTmOptions] = useState<TmOption[]>([])
   const [pending, startTransition] = useTransition()
+  // 행 캡션 id 의 접두. 체크 input 이 aria-describedby 로 캡션을 가리킨다(같은 record 가 두 목록에 서도 안 겹치게).
+  const uid = useId()
 
   // 편집 모드 state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -251,6 +255,12 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         // 화면에 표시되는 "회차"는 viewMonth 안에서 payDate 시간 순. records가 이미 payDate asc 정렬돼 옴.
         // DB seqNo는 귀속월 별로 매겨져서 사용자가 보는 시간 순서와 안 맞을 수 있음 (사용자 피드백 2026-05-31).
         const displaySeq = idx + 1
+        // 발행 금액 캡션(3번째 줄). 기준은 이 행 금액이 아니라 그 키(같은 날·같은 수단)의 이용료 합이다
+        // (서버 cashReceiptKey, lib/cashReceiptCopy 정본). 같으면 null 이라 줄이 안 선다. 카드는 대상이 아니다.
+        const crCap = isCashReceiptEligible(p.payMethod)
+          ? cashReceiptRowCaption({ stamped: !!p.cashReceiptIssuedAt, key: p.cashReceiptKey })
+          : null
+        const crCapId = `${uid}-cr-${p.id}`
         if (editingId === p.id) {
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
@@ -405,6 +415,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 ) : canEdit ? (
                   <label className={`inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px] ${pending ? 'opacity-50 pointer-events-none' : ''}`}>
                     <input type="checkbox" checked={!!p.cashReceiptIssuedAt} disabled={pending} onChange={() => handleToggleCashReceipt(p)}
+                      aria-describedby={crCap ? crCapId : undefined}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
                     <span className={`text-[0.65625rem] font-semibold ${p.cashReceiptIssuedAt ? 'text-[var(--success-fg)]' : 'text-[var(--warm-muted)]'}`}>
                       {p.cashReceiptIssuedAt ? `현금영수증${crIssuedLabel(p)}` : '현금영수증 미발행'}
@@ -444,6 +455,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 </div>
               )}
             </div>
+            {/* 줄3: 발행 금액 캡션. 받은 금액과 다를 때만 선다(같으면 침묵, 침묵이 곧 '받은 금액 그대로 발행').
+                체크 label 안이나 줄2 왼쪽 묶음에 넣지 않는다. 그 묶음은 flex-wrap 이라 캡션이 배지 사이로
+                끼어 접히고, 44px 히트영역 안에 들면 캡션을 눌러도 토글이 된다. 보기 전용·요약 모드에도 같은 줄이다. */}
+            {crCap && <CashReceiptCaption caption={crCap} id={crCapId} />}
             {/* 켜기 확인 줄 — 체크를 누르면 바로 켜지 않고 발행일부터 받는다(운영자 지시 2026-08-25).
                 작업 행 완료 폼과 같은 인라인 문법이다. 끄기는 이 줄을 안 거친다. */}
             {crAskId === p.id && (
