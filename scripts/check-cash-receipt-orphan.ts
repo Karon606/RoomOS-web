@@ -43,10 +43,8 @@ import { kstYmdStr } from '../lib/kstDate'
 import { loadCashReceiptAuditDataReadOnly } from './cash-receipt-audit-data'
 
 // 알려진 (자) 줄. 건수가 아니라 줄 id 와 사유다(건수로 두면 하나가 고쳐지고 하나가 새로 생겨도 초록이다).
-// 정리 스크립트를 적용하면 이 줄이 소프트삭제되어 (자)에서 빠지고 점검이 '기준선이 낡았다'로 운다. 그때 비운다.
-const KNOWN_BORN_DEAD: Record<string, string> = {
-  '16adb718-0d3a-43d9-9681-13d2c664b274': '519호 임형진 2026-07-18 계좌이체 470,000원. 7월 홈택스 취소 건을 2026-08-24 백필이 되살림. scripts/fix-cash-receipt-422-519.ts 가 정리',
-}
+// 519호 1건은 scripts/fix-cash-receipt-422-519.ts 적용으로 정리되어 비웠다. 기준선 0 이다.
+const KNOWN_BORN_DEAD: Record<string, string> = {}
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
