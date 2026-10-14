@@ -19,6 +19,7 @@ import { Btn } from '@/components/ui/Btn'
 import { RotateCcw } from '@/components/ui/RotateCcw'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { crDeleteToastDetail, crUndoMismatchDetail } from '@/lib/cashReceiptCopy'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
@@ -465,10 +466,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { recordIds, cleaningIncomeIds, extraIncomeId, crUndo } = r
+          // 선납 취소가 함께 지운 발행 기록, 적용취소가 되살린 발행 금액과 지금 받은 돈의 차이를 말한다(독립 검수 R-4).
+          // 서버가 계산한 값을 버리면 홈택스에 취소할 영수증이 남았다는 사실이 화면 어디에도 안 선다.
+          const crDropDetail = crDeleteToastDetail(r.cashReceipt)
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
+            ...(crDropDetail ? { detail: crDropDetail } : {}),
             // 라벨은 §16 정본 '적용취소'. 무르는 것은 돈 기록뿐이고 예약 취소 상태는 그대로라 결과 문장이 그걸 말한다.
             action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds, crUndo).then(u => {
-              if (u.ok) { pushToast('info', '예약 선납 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로'); onChange?.() }
+              if (u.ok) { const d = crUndoMismatchDetail(u.cashReceipt?.mismatch); pushToast('info', '예약 선납 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로', d ? { detail: d } : undefined); onChange?.() }
               else pushToast('error', u.error)
             }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
           })
@@ -491,9 +496,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { prepaid, deposit } = r
+          const crDropDetail = crDeleteToastDetail(prepaid.cashReceipt)   // 이용료 몫 취소가 함께 지운 발행 기록(검수 R-4)
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
+            ...(crDropDetail ? { detail: crDropDetail } : {}),
             action: { label: '적용취소', run: () => { void undoReservationDepositCancel(prepaid, deposit).then(u => {
-              if (u.ok) { pushToast('info', '예약금 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로'); onChange?.() }
+              if (u.ok) { const d = crUndoMismatchDetail(u.cashReceipt?.mismatch); pushToast('info', '예약금 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로', d ? { detail: d } : undefined); onChange?.() }
               else pushToast('error', u.error)
             }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
           })

@@ -30,6 +30,7 @@ import {
 } from '@/app/(app)/tenants/actions'
 import { settlementAmounts, settlementPickCaption, settleMonthView, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '@/lib/checkoutSettlement'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { crUndoMismatchDetail } from '@/lib/cashReceiptCopy'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { inputCls, inputErrCls, labelCls, formBoxCls, readonlyCls } from './panelFormStyles'
 
@@ -178,8 +179,11 @@ export function RentSettlementPanel({
       level: 'caution', confirmLabel: '적용취소',
     }))) return
     startTransition(async () => {
-      const res = await withSave(() => undoRentRefund(leaseTermId), { success: none ? '이용료 환불 없음을 적용취소했습니다' : '이용료 환불을 적용취소했습니다' })
+      const res = await withSave(() => undoRentRefund(leaseTermId), { success: '' })
       if (!res.ok) return
+      // 되살린 수납의 발행 금액이 지금 받은 돈과 다르면 둘째 줄로 말한다(독립 검수 R-4, 서버 mismatch 를 버리지 않는다).
+      const crGap = crUndoMismatchDetail(res.cashReceipt?.mismatch)
+      pushToast('success', none ? '이용료 환불 없음을 적용취소했습니다' : '이용료 환불을 적용취소했습니다', crGap ? { detail: crGap } : undefined)
       // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
       for (const line of undoRefundTaxNoticeLines(res.taxNotice)) pushToast('info', line)
       setReviseWarn(null); setFormMode(null); reload(); onChanged?.()
@@ -217,7 +221,9 @@ export function RentSettlementPanel({
       if (formMode === 'revise') {
         const un = await withSave(() => undoRentRefund(leaseTermId), { success: '' })
         if (!un.ok) return
-        undoNotice = undoRefundTaxNoticeLines(un.taxNotice)
+        // 확정이 막혀 적용취소만 남는 경우에만 띄운다. 확정이 되면 되살린 수납이 다시 지워져 이 차이는 사라진다(검수 R-4).
+        const crGap = crUndoMismatchDetail(un.cashReceipt?.mismatch)
+        undoNotice = [...undoRefundTaxNoticeLines(un.taxNotice), ...(crGap ? [crGap] : [])]
       }
       const res = await withSave(
         () => finalizeRentRefund({ leaseTermId, moveOutYmd: expectedMoveOut, rentRefundAmount: amount, ...(trimmed ? { reason: trimmed } : {}) }),

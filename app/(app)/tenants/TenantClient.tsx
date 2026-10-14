@@ -43,7 +43,7 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
-import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crEntryResultLines, ENTRY_UNDONE, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crEntryResultLines, ENTRY_UNDONE, crUndoMismatchDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from '@/components/entity-modal/widgets/CashReceiptCaption'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
@@ -1511,6 +1511,9 @@ export default function TenantClient({
                   if (!ru.ok) { pushToast('error', ru.error); return }
                   // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
                   for (const line of undoRefundTaxNoticeLines(ru.taxNotice)) pushToast('info', line)
+                  // 되살린 수납의 발행 금액이 지금 받은 돈과 다르면 말한다(독립 검수 R-4, 서버 mismatch 를 버리지 않는다).
+                  const crGap = crUndoMismatchDetail(ru.cashReceipt?.mismatch)
+                  if (crGap) pushToast('info', crGap)
                 }
                 const r = await undoDepositReturn(refundId, extraIncomeIds)
                 if (r.ok) { pushToast('info', '반환 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }

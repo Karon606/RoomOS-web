@@ -718,6 +718,22 @@ async function main() {
     eq('S22 키의 마지막 이용료 등록을 무르면 발행 기록도 함께 지웠다고 말한다', u1.ok ? copy.crDeleteToastDetail(u1.cashReceipt) : u1, '현금영수증 발행 기록 100,000원도 함께 지웠습니다.')
   }
 
+  // ── S23 서버가 계산한 drop·mismatch 를 화면이 받는 길(독립 검수 R-4) ─────────────────────────────
+  {
+    const copy = await import('@/lib/cashReceiptCopy')
+    // 보증금 대체 예약 취소의 적용취소가 이용료 몫 적용취소의 발행 금액 차이를 넘긴다(종전에는 묶음 함수가 버렸다).
+    const L = await lease(P1, 'RESERVED')
+    const M = await rec(L, P1, { month: '2026-10', amount: 350000, pay: '2026-09-27' })
+    await rooms.setCashReceiptIssued(M, true, '2026-09-27')
+    const c = await tenants.recordReservationDepositCancel({ leaseTermId: L.id, tenantId: L.tenantId, refundAmount: 350000, date: '2026-10-01', tenantName: '입주자' })
+    if (!c.ok) throw new Error(c.error)
+    eq('S23 보증금 대체 취소: 이용료 몫이 지운 발행 기록을 화면 문장으로', copy.crDeleteToastDetail(c.prepaid.cashReceipt), '현금영수증 발행 기록 350,000원도 함께 지웠습니다.')
+    // 그 사이 같은 키에 새 발행(300,000)이 서면 적용취소는 거부된다. 줄이 그대로면 되살리고 차이를 넘긴다.
+    const u = await tenants.undoReservationDepositCancel(c.prepaid, c.deposit)
+    eq('S23 보증금 대체 취소 적용취소: 수납·발행 되살림', [u.ok, await alive(M), (await lines(L.id, '2026-09-27')).map(l => [l.amount, l.deleted])], [true, true, [[350000, false]]])
+    eq('S23 차이가 없으면 넘기는 것도 없다', u.ok ? (u as { cashReceipt?: unknown }).cashReceipt : u, undefined)
+  }
+
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

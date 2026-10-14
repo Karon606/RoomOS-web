@@ -506,6 +506,23 @@ for (const kind of ['deposit', 'cleaning']) {
     if (!undoEditSig || /crUndo/.test(undoEditSig[1])) violations.push(`${SRV} undoPaymentEdit: 토큰을 둘 받는다. 수정 저장의 적용취소 토큰은 하나다(검수 F1).`)
     const calls = [...form.matchAll(/undoOverpayExtraIncome\(([^)]*)\)/g)]
     if (calls.length < 3) violations.push(`${FORM}: 등록 적용취소(undoOverpayExtraIncome) 호출을 ${calls.length}곳밖에 못 찾았다(기대 3, 분해·과납·일반).`)
+    // 그물 구멍 J20(독립 검수 R-8): 예약 선납 취소의 적용취소가 발행 기록 토큰(crUndo)을 넘긴다. null 을 넘기면 줄이 안 되살아난다.
+    {
+      const TST = 'components/entity-modal/widgets/TenantStatusTransitions.tsx'
+      const tst = read(TST)
+      if (!tst.includes('undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds, crUndo)')) violations.push(`${TST}: 예약 선납 취소 적용취소가 발행 기록 토큰(crUndo)을 안 넘긴다(검수 R-8 J20).`)
+      if (!tst.includes('undoReservationDepositCancel(prepaid, deposit)')) violations.push(`${TST}: 보증금 대체 예약 취소 적용취소가 이용료 몫 묶음(prepaid, 발행 토큰 포함)을 안 넘긴다.`)
+      // 독립 검수 R-4: 서버가 계산한 drop·mismatch 를 버리지 않는다.
+      if ((tst.match(/crDeleteToastDetail\(/g) ?? []).length < 2) violations.push(`${TST}: 예약 선납·보증금 대체 취소가 함께 지운 발행 기록(cashReceipt.dropped)을 말하지 않는다(검수 R-4).`)
+      if ((tst.match(/crUndoMismatchDetail\(u\.cashReceipt\?\.mismatch\)/g) ?? []).length < 2) violations.push(`${TST}: 취소 적용취소가 되살린 발행 금액의 차이(mismatch)를 말하지 않는다(검수 R-4).`)
+      const rsp = read('components/entity-modal/widgets/RentSettlementPanel.tsx')
+      if ((rsp.match(/crUndoMismatchDetail\((res|un)\.cashReceipt\?\.mismatch\)/g) ?? []).length < 2) violations.push(`components/entity-modal/widgets/RentSettlementPanel.tsx: 이용료 환불 적용취소의 발행 금액 차이(mismatch)를 버린다(검수 R-4).`)
+      const tc = read('app/(app)/tenants/TenantClient.tsx')
+      if (!tc.includes('crUndoMismatchDetail(ru.cashReceipt?.mismatch)')) violations.push(`app/(app)/tenants/TenantClient.tsx: 반환기록 취소의 이용료 환불 적용취소가 발행 금액 차이를 버린다(검수 R-4).`)
+      const udc = fnBody(ten, 'export async function undoReservationDepositCancel(') ?? ''
+      if (!/cashReceipt: p\.cashReceipt/.test(udc)) violations.push(`${TEN} undoReservationDepositCancel: 이용료 몫 적용취소의 발행 금액 차이를 버린다(검수 R-4).`)
+      if ((form.match(/crDeleteToastDetail\(r\.cashReceipt\)/g) ?? []).length < 3) violations.push(`${FORM}: 등록 적용취소가 함께 지운 발행 기록을 말하지 않는 갈래가 있다(검수 R-4).`)
+    }
     for (const c of calls) if (!/crUndo|, cr\b/.test(c[1])) violations.push(`${FORM}: 등록 적용취소가 발행 기록 토큰을 안 넘긴다: undoOverpayExtraIncome(${c[1]}) (검수 F2).`)
     // 운영자 원칙(모든 쓰기에 적용취소): 등록 폼 일반 갈래와 입주자 상세 수납 등록 토스트에 적용취소가 있다.
     const gen = form.slice(form.indexOf('} else if (!splitDone) {'), form.indexOf('setPayAmount(0); setForcedTm'))

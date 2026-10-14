@@ -2470,14 +2470,17 @@ export async function recordReservationDepositCancel(params: {
 
 // 보증금 대체 예약 취소 적용취소 — 두 정본의 적용취소를 순서대로(이용료 몫 → 보증금 몫).
 // 지운 것과 되살리는 것이 짝이어야 한다(적용취소 원칙). 앞이 실패하면 뒤를 안 건드린다.
+// 이용료 몫 적용취소가 알린 발행 금액 차이(cashReceipt.mismatch)를 그대로 넘긴다(독립 검수 R-4, 종전에는 여기서 버렸다).
 export async function undoReservationDepositCancel(
   prepaid: ReservationPrepaidCancelUndo,
   deposit: { refundId: string; extraIncomeIds: string[] } | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; cashReceipt?: { mismatch: CrMismatch[] } } | { ok: false; error: string }> {
   const p = await undoReservationPrepaidCancel(prepaid.recordIds, prepaid.extraIncomeId, prepaid.cleaningIncomeIds, prepaid.crUndo)
   if (!p.ok) return p
-  if (!deposit) return { ok: true }
-  return undoDepositReturn(deposit.refundId, deposit.extraIncomeIds)
+  const cr = p.cashReceipt ? { cashReceipt: p.cashReceipt } : {}
+  if (!deposit) return { ok: true, ...cr }
+  const d = await undoDepositReturn(deposit.refundId, deposit.extraIncomeIds)
+  return d.ok ? { ok: true, ...cr } : d
 }
 
 // 퇴실 처리 + 보증금 환불 한 번에
