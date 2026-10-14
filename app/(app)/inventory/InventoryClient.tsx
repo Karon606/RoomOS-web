@@ -651,8 +651,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
   // 구매 수량이 빈 구매가 섞인 묶음. 카드 안에서 도착 수량을 먼저 받는다(형제 문법: 비품 수령 대기의 '몇 개 도착?',
   // 품목 상세 구매 카드의 '도착 수량'). 수량 없이 받으면 자동 점검이 안 생겨 유령수령이 된다(서버도 거부한다).
-  // vals 는 구매 id 별 입력 글자, err 는 칸 아래 인라인 오류(§27.2 검증=인라인).
-  const [qtyAsk, setQtyAsk] = useState<{ key: string; vals: Record<string, string>; err: string } | null>(null)
+  // vals 는 구매 id 별 입력 글자, bad 는 빈 칸 id(그 칸 바로 아래 인라인 오류, §27.2 검증=인라인, 웹디자이너 패스 D14).
+  const [qtyAsk, setQtyAsk] = useState<{ key: string; vals: Record<string, string>; bad: string[] } | null>(null)
 
   const handleQuickReceive = (key: string, expenseIds: string[], fills?: Record<string, number>) => {
     setReceivingKey(key)
@@ -1065,11 +1065,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 }
                 const submitQty = () => {
                   const fills: Record<string, number> = {}
+                  const bad: string[] = []
                   for (const f of missing) {
                     const n = normalizeFillQty(qtyAsk?.vals[f.p.id] ?? '')
-                    if (n == null) { setQtyAsk(q => q && { ...q, err: '도착 수량을 적어 주세요.' }); return }
-                    fills[f.p.id] = n
+                    if (n == null) bad.push(f.p.id)
+                    else fills[f.p.id] = n
                   }
+                  // 빈 칸마다 그 칸 아래 오류를 세우고 첫 빈 칸으로 포커스를 옮긴다(여러 칸이면 어느 칸인지 말해야 한다).
+                  if (bad.length) { setQtyAsk(q => q && { ...q, bad }); document.getElementById(`rcvqty-${bad[0]}`)?.focus(); return }
                   receive(fills)
                 }
                 return (
@@ -1100,34 +1103,40 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                           합치기
                         </button>
-                        {/* 수량을 묻는 중에는 아래 줄의 '수령 확인'이 주 동작이다. 같은 버튼을 둘 세우지 않는다. */}
-                        {!asking && (
-                          <button type="button" onClick={() => { if (missing.length > 0) setQtyAsk({ key: g.key, vals: {}, err: '' }); else receive() }} disabled={receivingKey === g.key}
-                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
-                            {receivingKey === g.key ? '처리 중' : '수령 확인'}
-                          </button>
-                        )}
+                        {/* 수량을 묻는 중에는 아래 줄의 '수령 확인'이 주 동작이다. 같은 버튼을 둘 세우지 않되 **자리는 남긴다**
+                            (웹디자이너 패스 1). 머리 버튼이 사라지면 '합치기'가 오른쪽으로 밀려 막 누른 손가락 밑에 온다.
+                            보이지도 눌리지도 읽히지도 않게 하고(invisible·disabled·tabIndex -1·aria-hidden) 폭만 지킨다. */}
+                        <button type="button" onClick={() => { if (missing.length > 0) setQtyAsk({ key: g.key, vals: {}, bad: [] }); else receive() }} disabled={asking || receivingKey === g.key}
+                          aria-hidden={asking || undefined} tabIndex={asking ? -1 : undefined}
+                          className={`min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40${asking ? ' invisible' : ''}`}>
+                          {receivingKey === g.key ? '처리 중' : '수령 확인'}
+                        </button>
                       </div>
                     </div>
                     {/* 도착 수량. 형제(품목 상세 구매 카드의 '도착 수량', 비품 수령 대기의 '몇 개 도착?')와 같은 인라인 문법.
                         묶음 안 빈 구매만 칸을 세운다. 적은 수량이 곧 그 구매의 수량이 되어 지출에도 남는다. */}
                     {asking && (
                       <div className="mt-2 pt-2 border-t border-[var(--warm-border)]">
-                        <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">구매 수량이 비어 있습니다. 적은 수량이 구매 수량이 됩니다.</p>
+                        <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">수량 미기록 구매입니다. 적은 수량이 구매 수량이 됩니다.</p>
                         {missing.map(f => (
                           <div key={f.p.id} className="mb-2">
                             <p className={EDIT_LABEL_CLS}>도착 수량{missing.length > 1 && <span className="font-normal text-[var(--warm-muted)]"> {fmtMDYearIfOther(f.p.date)}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>}</p>
                             <div className="w-32">
-                              <QtyField unit={f.p.qtyUnit ?? g.qtyUnit ?? '개'} aria-label="도착 수량" autoFocus={f === missing[0]}
+                              <QtyField unit={f.p.qtyUnit ?? g.qtyUnit ?? '개'} aria-label="도착 수량" autoFocus={f === missing[0]} id={`rcvqty-${f.p.id}`}
+                                aria-invalid={qtyAsk?.bad.includes(f.p.id) || undefined}
                                 value={qtyAsk?.vals[f.p.id] ?? ''} disabled={receivingKey === g.key}
-                                onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); setQtyAsk(q => q && { ...q, err: '', vals: { ...q.vals, [f.p.id]: v } }) }}
+                                onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); setQtyAsk(q => q && { ...q, bad: q.bad.filter(x => x !== f.p.id), vals: { ...q.vals, [f.p.id]: v } }) }}
                                 onKeyDown={e => { if (e.key === 'Enter') submitQty() }} />
                             </div>
+                            {qtyAsk?.bad.includes(f.p.id) && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">도착 수량을 적어 주세요.</p>}
                           </div>
                         ))}
-                        {qtyAsk?.err && <p className="text-[0.6875rem] text-[var(--danger-fg)] mb-1.5">{qtyAsk.err}</p>}
-                        <div className="flex flex-wrap gap-x-1.5 gap-y-3">
-                          <RowActionBtn tone="success" disabled={receivingKey === g.key} onClick={submitQty}>{receivingKey === g.key ? '처리 중' : '수령 확인'}</RowActionBtn>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-3">
+                          {/* 제출은 머리의 '수령 확인'과 같은 코랄 솔리드(웹디자이너 패스 D13). 같은 동작이 두 모양이면 다른 일로 읽힌다. */}
+                          <button type="button" onClick={submitQty} disabled={receivingKey === g.key}
+                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
+                            {receivingKey === g.key ? '처리 중' : '수령 확인'}
+                          </button>
                           <RowActionBtn disabled={receivingKey === g.key} onClick={() => setQtyAsk(null)}>취소</RowActionBtn>
                         </div>
                       </div>
@@ -3018,7 +3027,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             {noQty ? (
               // 구매 수량이 비면 같은 '도착 수량' 칸이 필수다. 일부 수령은 성립하지 않는다(전체를 모른다).
               <div className="mb-2">
-                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">구매 수량이 비어 있습니다 · 적은 수량이 구매 수량이 됩니다</span></p>
+                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">수량 미기록 · 적은 수량이 구매 수량이 됨</span></p>
                 <div className="w-32">
                   <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
                     onChange={e => { setRcvQtyErr(''); setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, '')) }} />
@@ -4039,7 +4048,7 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
       {/* 도착 수량. 수령일을 넣을 때만 선다(형제: 구매 카드 수령 확인의 '도착 수량'). 칸 문법은 이 폼의 다른 칸과 같다. */}
       {askQty && !!receivedDate && (
         <div>
-          <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">구매 수량이 비어 있습니다 · 적은 수량이 구매 수량이 됩니다</span></p>
+          <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">수량 미기록 · 적은 수량이 구매 수량이 됨</span></p>
           <div className="w-32">
             <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQty} disabled={pending}
               onChange={e => { setRcvQtyErr(''); setRcvQty(e.target.value.replace(/[^0-9.]/g, '')) }} />

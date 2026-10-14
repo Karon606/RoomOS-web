@@ -156,7 +156,7 @@ must(FC, fc, null, [
   [/undoDeleteTrackedItem\(deleteUndo\)/, "S2 '같이 변경' 토스트가 카드 정리를 적용취소하지 않는다"],
   [/<input type="hidden" name="targetRoomId" value=\{addPlanned \? addExpRoomId : ''\} \/>/, "S4 등록 폼이 '배정할 호실'을 싣지 않는다"],
   [/\{editPlanned && <input type="hidden" name="targetRoomId" value=\{editExpRoomId\} \/>\}/, "S4 수정 폼이 받기 전 비품에만 '배정할 호실'을 싣지 않는다"],
-  [/수령 확인 때 이 호실에 배정할지 묻습니다\./, "S4 '배정할 호실' 캡션이 없다"],
+  [/수령할 때 이 호실에 배정할지 묻습니다\./, "S4 '배정할 호실' 캡션이 없다"],
 ])
 
 // ── 화면(비품·재고) ───────────────────────────────────────────────
@@ -170,9 +170,12 @@ must(AC, ac, null, [
   [/assign = choice === 'confirm'\s*\n/, "R-4 확인창 선택과 배정의 대응이 '배정'(confirm) 하나가 아니다('수령만'도 배정한다)"],
   [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다'],
   [/how\?\.assign \? \{ assign: true, expect: how\.expect \} : undefined/, 'N-4 배정 요청에 본 계획이 안 실린다'],
+  [/withAssign \? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE/, 'R-5 수령 적용취소 결과 토스트가 정본 문장(§16 형식)을 안 쓴다'],
   [/id="assets-pending"/, 'S6 알림 딥링크가 닿을 수령 대기 섹션 id 가 없다'],
+  [/if \(searchParams\.get\('focus'\) !== 'assets-pending'\) return\s*setGroup\('unassigned'\)/, 'D15 알림 딥링크가 수령 대기 섹션이 서는 미배정 그룹으로 바꾸지 않는다(다른 그룹을 보고 있으면 닿을 곳이 없다)'],
   [/!it\.isService && !placed &&/, "S4 놓인 카드에 '수령대기로'가 서 있다(서버가 거부한다)"],
 ])
+mustNot(AC, ac, null, [[/수령과 배정을 취소하고/, 'R-5 수령 적용취소 결과가 옛 동사로 돌아왔다']])
 const IC = 'app/(app)/inventory/InventoryClient.tsx'
 const ic = read(IC)
 must(IC, ic, null, [

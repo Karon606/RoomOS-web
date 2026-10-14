@@ -43,9 +43,23 @@ export function roomsLabel(rows: AllocPlaceRow[]): string {
   // (7/20 묶음 `502호·외 3곳`), 칩 `방 3개`와 라벨의 자리 수가 어긋난다(디자이너 패스 2026-10-10).
   const parts = rooms.length <= 3 ? [...rooms] : [rooms[0], `외 ${rooms.length - 1}곳`]
   parts.push(...locs)
-  const planned = plannedRoomsMeta(rows.filter(isPlanned).map(r => r.plannedRoomNo!))
-  if (planned) parts.push(planned)
+  // 예정 호실 몫(받기 전). 같은 방이 이미 앞에 섰으면(부분 도착 뒤 받은 조각이 그 방에 배정됨) 방 이름을 또 쓰지 않고
+  // '수령 대기 N개'로 사실만 말한다. 종전에는 '519호·519호 배정 예정'으로 같은 방이 두 번 섰다(검수 N-6).
+  // 아직 방에 없는 예정 몫은 다른 몫(방·공용부·미배정)과 함께 설 때만 '519호 배정 예정 N개'(미배정 몫과 같은 수량 꼬리).
+  // 예정 몫뿐이면 묶음 전체가 그 말이라 꼬리 없이 짧게 둔다(목록 라벨은 한 줄 말줄임이다).
+  const qtyTail = (rs: AllocPlaceRow[]) => {
+    const q = rs.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+    return q > 0 ? ` ${q}${rs.find(r => r.qtyUnit)?.qtyUnit ?? '개'}` : ''
+  }
+  const placedNos = new Set(rows.filter(r => r.room).map(r => r.room!.roomNo))
+  const plannedRows = rows.filter(isPlanned)
+  const plannedNew = plannedRows.filter(r => !placedNos.has(r.plannedRoomNo!))
+  const pendingHere = plannedRows.filter(r => placedNos.has(r.plannedRoomNo!))
   const unassigned = rows.filter(r => !r.room && !isLoc(r) && !isPlanned(r))
+  const mixed = rooms.length + locs.length + unassigned.length > 0
+  const planned = plannedRoomsMeta(plannedNew.map(r => r.plannedRoomNo!))
+  if (planned) parts.push(`${planned}${mixed ? qtyTail(plannedNew) : ''}`)
+  if (pendingHere.length) parts.push(`수령 대기${qtyTail(pendingHere)}`)
   if (unassigned.length > 0) {
     const qty = unassigned.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
     const unit = unassigned.find(r => r.qtyUnit)?.qtyUnit ?? '개'

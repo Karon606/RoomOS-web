@@ -52,7 +52,7 @@ import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
-import { withParticle } from '@/lib/koParticle'
+import { withParticle, hasFinalConsonant } from '@/lib/koParticle'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -2722,12 +2722,15 @@ export default function FinanceClient({
               else if (sync.retired) {
                 const { deleteUndo, archivedId } = sync
                 const undoRetire = deleteUndo ? () => undoDeleteTrackedItem(deleteUndo) : archivedId ? () => unarchiveTrackedItem(archivedId) : null
-                pushToast('info', `'${newCat}'는 재고 추적 카테고리가 아니라 소모품 카드를 정리했습니다. 이 품목은 비품·자재에서 관리됩니다.`, undoRetire ? {
-                  action: { label: '적용취소', run: () => { void undoRetire().then(r => {
-                    if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 카드를 되살렸습니다'); router.refresh() }
+                // 결과는 짧게, 까닭은 둘째 줄로(§15 장문형, 웹디자이너 패스 D10. 320px 에서 4줄이던 한 덩이).
+                // 따옴표 뒤 조사는 카테고리 이름 받침으로(정본 판정 hasFinalConsonant, 종전 '는' 고정).
+                pushToast('info', '소모품 카드를 정리했습니다', {
+                  detail: `'${newCat}'${hasFinalConsonant(newCat) ? '은' : '는'} 재고 추적 카테고리가 아닙니다. 이 품목은 비품·자재에서 관리됩니다.`,
+                  ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
+                    if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 목록에 다시 표시'); router.refresh() }
                     else pushToast('error', r.error)
-                  }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
-                } : undefined)
+                  }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
+                })
               }
             }
           }
@@ -4288,8 +4291,8 @@ export default function FinanceClient({
                   {detailExp.brand && <DetailRow label="브랜드" value={detailExp.brand} />}
                   {detailExp.productName && <DetailRow label="제품명" value={detailExp.productName} />}
                   {detailExp.room && <DetailRow label="대상 호실" value={`${fmtRoomNo(detailExp.room.roomNo, '')}`} />}
-                  {/* 받기 전 비품의 예정 호실. 같은 '대상 호실' 줄에 비품 수령 대기 카드 메타와 같은 말로('519호 배정 예정'). */}
-                  {!detailExp.room && (() => { const p = plannedRoomsMeta([plannedRoomNoOf(detailExp)]); return p ? <DetailRow label="대상 호실" value={p} /> : null })()}
+                  {/* 받기 전 비품의 예정 호실. 라벨은 폼 칸과 같은 '배정할 호실'(검수 R-5·D5), 값은 방 이름만 쓴다. */}
+                  {!detailExp.room && (() => { const no = plannedRoomNoOf(detailExp); return no ? <DetailRow label="배정할 호실" value={fmtRoomNo(no, '')} /> : null })()}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
@@ -4521,7 +4524,8 @@ export default function FinanceClient({
                         isService={!!detailExp?.excludeFromInventory}
                         isDurable={editIsDurable}
                       />
-                      {editIsDurable && (
+                      {/* '배정할 호실' 칸이 서는 받기 전 비품에서는 숨긴다. 칸 캡션과 서로 다른 때를 말한다(웹디자이너 패스 D3). */}
+                      {editIsDurable && !editPlanned && (
                         <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                       )}
                     </div>
@@ -4717,7 +4721,7 @@ export default function FinanceClient({
                           <option value="">선택 안함</option>
                           {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                         </select>
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령 확인 때 이 호실에 배정할지 묻습니다.</p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령할 때 이 호실에 배정할지 묻습니다.</p>
                       </div>
                     ) : editIsDurable ? (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재의 방·공용부 배정은 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 합니다. {detailExp.roomId ? '(현재 배정은 그대로 유지됩니다.)' : ''}</p>
@@ -4905,7 +4909,8 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{addIsService ? '세부 항목' : '품목 선택'}{addIsService && DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) ? '' : ' *'} <span className="text-[var(--warm-muted)] font-normal">{addIsService ? '(시공·작업별로 금액을 쪼개세요)' : '(여러 품목 추가 가능)'}</span></label>
                   <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} onSwitchType={() => void switchAddType(!addIsService)} />
-                  {addIsDurable && (
+                  {/* '배정할 호실' 칸이 서면(품목이 있는 비품) 숨긴다. 칸 캡션이 같은 일을 먼저 말한다(D3). */}
+                  {addIsDurable && !addPlanned && (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   )}
                 </div>
@@ -5050,7 +5055,7 @@ export default function FinanceClient({
                         <option value="">선택 안함</option>
                         {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                       </select>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령 확인 때 이 호실에 배정할지 묻습니다.</p>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령할 때 이 호실에 배정할지 묻습니다.</p>
                     </div>
                   ) : addIsDurable ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재는 수령 후 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>

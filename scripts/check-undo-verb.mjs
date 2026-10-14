@@ -29,6 +29,10 @@ const GUARDED = {
   // 수납 등록 폼의 등록 적용취소 결과·실패 토스트(2026-10-14 독립 검수 R-4 와 함께 정리). '…를 취소했습니다'는 버튼
   // '적용취소'와 다른 동사였다. 결과 문장은 lib/cashReceiptCopy ENTRY_UNDONE 정본.
   'components/entity-modal/widgets/PaymentEntryForm.tsx': ['되돌리기 중 통신 오류가 발생했습니다', '수납 기록을 취소했습니다', '수납과 부가수익 기록을 취소했습니다'],
+  // 비품 수령 배정의 적용취소 결과(2026-10-15 독립 검수 R-5). 문장 정본은 receiptPlacement 의 ASSET_RECEIPT_ASSIGN_UNDONE 이고
+  // AssetsClient 는 그 상수만 부른다(check-asset-receipt-wiring 이 묶음). AssetsClient 는 옛 '되돌렸습니다' 토스트가 남아 있어
+  // 아래 별건 목록에 계속 보이도록 여기 올리지 않는다.
+  'app/(app)/inventory/assets/receiptPlacement.ts': ['수령과 배정을 취소하고'],
 }
 
 const violations = []

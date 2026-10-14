@@ -6,8 +6,6 @@
 
 import { useState, useTransition, useMemo, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-// 알림 딥링크 ?focus= 정본(재고 화면과 같은 훅). 비품 수령 대기 알림이 수령 대기 섹션으로 보낸다.
-import { useFocusSection } from '@/lib/useFocusSection'
 import Link from 'next/link'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -34,7 +32,10 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
 import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
-import { plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, planExpectOf, type ReceiptPlan, type ReceiptPlanExpect } from './receiptPlacement'
+import {
+  plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, partialReceiveToast, planExpectOf, pendingPlaceCaption,
+  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON, type ReceiptPlan, type ReceiptPlanExpect,
+} from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -116,11 +117,28 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 그 회차는 저장된 그룹을 복원하지 않는다(재고 화면 딥링크와 같은 규칙, 마운트 시점 값으로 굳힌다).
   const searchParams = useSearchParams()
   const focusPendingRef = useRef(searchParams.get('focus') === 'assets-pending')
-  useFocusSection()
   useEffect(() => {
     if (focusPendingRef.current) return
     try { const g = localStorage.getItem('stayeum-assets-group'); if (g === 'common' || g === 'placed') setGroup(g) } catch { /* 무시 */ }
   }, [])
+  // 딥링크 받기(웹디자이너 패스 D15). 정본 useFocusSection 은 파라미터를 소진하고 곧바로 스크롤하는데, 여기서는
+  // 수령 대기 섹션이 미배정 그룹에만 서서 **같은 화면 안에서** 다른 그룹을 보고 있으면 그 섹션이 아직 없다.
+  // 그래서 순서를 둘로 가른다. 먼저 그룹을 미배정으로 바꾸고 파라미터를 소진한 뒤(같은 알림을 또 눌러도 반응하게),
+  // 그 그룹이 그려진 다음 회차에 스크롤한다. 저장된 그룹(localStorage)은 바꾸지 않는다(보기 선택은 운영자 것이다).
+  const [pendingFocusTick, setPendingFocusTick] = useState(0)
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'assets-pending') return
+    setGroup('unassigned')
+    setPendingFocusTick(n => n + 1)
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('focus')
+    const qs = params.toString()
+    router.replace(qs ? `?${qs}` : '?', { scroll: false })
+  }, [searchParams, router])
+  useEffect(() => {
+    if (!pendingFocusTick) return
+    requestAnimationFrame(() => document.getElementById('assets-pending')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [pendingFocusTick])
   const pickGroup = (g: 'unassigned' | 'common' | 'placed') => {
     setGroup(g)
     try { localStorage.setItem('stayeum-assets-group', g) } catch { /* 무시 */ }
@@ -773,7 +791,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const undoReceive = (undo: AssetReceiptUndo, withAssign: boolean) => startTransition(async () => {
     const res = await undoAssetReceipt(undo)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('info', withAssign ? '수령과 배정을 취소하고 수령 대기로 되돌렸습니다' : '수령을 취소하고 수령 대기로 되돌렸습니다')
+    pushToast('info', withAssign ? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE)
     router.refresh()
   })
 
@@ -808,13 +826,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       const undo = res.undo
       const isPartial = qty != null && it.qtyValue != null && qty < it.qtyValue
       // 물었던 갈래(배정·수령만·몫이 갈린 부분 도착)는 판정 정본의 문구, 묻지 않은 수령은 종전 문구.
-      const t = how ? receiptToast(how.plan, how.assign ? 'assign' : 'receive', unit) : null
-      const text = t?.text ?? (isPartial
-        ? `${fmtQty(qty!)}${unit} 수령 완료 · 잔여 ${withParticle(`${fmtQty(it.qtyValue! - qty!)}${unit}`, '은/는')} 수령 대기 유지`
-        : '수령 완료')
+      // 묻지 않은 부분 수령도 같은 '나머지' 문장 한 벌이다(웹디자이너 패스 D6, 판정 정본 partialReceiveToast).
+      const t = (how ? receiptToast(how.plan, how.assign ? 'assign' : 'receive', unit) : null)
+        ?? (isPartial ? partialReceiveToast(qty!, it.qtyValue! - qty!, unit) : null)
+      const text = t?.text ?? '수령 완료'
       pushToast('success', text, {
         ...(t?.detail ? { detail: t.detail } : {}),
-        ...(undo ? { action: { label: t?.actionLabel ?? '수령 취소', run: () => undoReceive(undo, !!how?.assign) } } : {}),
+        ...(undo ? { action: { label: (t && 'actionLabel' in t ? t.actionLabel : null) ?? '수령 취소', run: () => undoReceive(undo, !!how?.assign) } } : {}),
       })
       router.refresh()
     })
@@ -863,9 +881,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {it.isService && <span className="inline-flex items-center rounded-sm bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.65625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
           {it.amount === 0 && <Badge tone="pale-blue">무상</Badge>}
         </>}
-        // 수령 대기 카드는 배정일 자리에 배정 예정 호실('519호 배정 예정')을 단다. 받을 때 묻는 창이 기습이 되지 않게
-        // (UX 패널 보조 제안). 판정은 받을 때 묻는 창과 같다(살아 있는 방·안 놓인 행만, receiptPlacement).
-        meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : (awaitingReceipt ? plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)) : null), it.category, won(it.amount)].filter(Boolean).join(' · ')}
+        // 수령 대기 카드는 배정 예정 호실('519호 배정 예정')을 **맨 앞**에 단다. 받을 때 묻는 창이 기습이 되지 않게
+        // (UX 패널 보조 제안). 메타 줄은 한 줄 말줄임이라 뒤에 두면 휴대폰에서 잘리거나 사라진다(웹디자이너 패스 2).
+        // 판정은 받을 때 묻는 창과 같다(살아 있는 방·안 놓인 행만, receiptPlacement).
+        meta={(awaitingReceipt
+          ? [plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)), boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.category, won(it.amount)]
+          : [boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)]
+        ).filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         valueSub={it.disposedQty > 0 ? `폐기 ${fmtQty(it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
         valueDanger={it.disposedQty > 0 && it.liveUnits <= 0}
@@ -1213,8 +1235,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             <>
               {/* 수령 대기가 섞이면 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 같은 게이트,
                   receiptPlacement assignDenialUnreceived). 폐기·분실과 같은 판정이다. */}
-              {!selItems.some(it => data.pending.some(p => p.id === it.id)) && (
+              {!selItems.some(it => data.pending.some(p => p.id === it.id)) ? (
                 <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
+              ) : (
+                // 숨긴 동작 자리에 까닭 한 줄(§22 ②, 웹디자이너 패스 D8). 문장은 서버 거부와 한 벌이다.
+                <span className="min-w-0 break-keep text-[0.65625rem] leading-snug text-white/75">{ASSET_ASSIGN_PENDING_REASON}</span>
               )}
               {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
               {/* 수령 대기가 섞이면 숨긴다 — 아직 받지도 않은 물건을 버릴 수는 없다(서버도 같은 게이트) */}
@@ -1485,6 +1510,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         // 여기서 손으로 다시 짜 두 벌이 서 있었다. 출력은 글자까지 같았지만 한쪽만 고치면 같은 모달
         // 안에서 알약과 칩·머리가 다른 이름을 말하게 된다.
         const loc = curPlace(it)
+        const pendingHere = data.pending.some(x => x.id === it.id)
         const sibs = allItems.filter(s => s.id !== it.id && s.category === it.category)
         //
         // ── 이 모달의 범위는 넷이다(2026-09-17 재편) ─────────────────────────────────
@@ -1549,7 +1575,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
+                {/* 수령 대기 카드는 자리 대신 상태를 말한다. curPlace 는 '미배정(여분)'을 돌려주는데 카드는 수령 대기 섹션에 있어
+                    같은 물건을 두 이름으로 불렀다(웹디자이너 패스 D9). 자리 정본(curPlace)은 그대로 두고 이 알약만 가른다. */}
+                {pendingHere
+                  ? <Badge tone="pale-amber">수령 대기</Badge>
+                  : <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>}
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
                 {/* 수량 미기록(qtyValue null)은 '0개'가 아니라 그대로 말한다 — 카드가 'N건'으로 보이는 것과
                     같은 상태(신고 2c13c859). 낱말이 `총`이 아니라 `지금`인 이유. 이 값은 살아 있는 수량인데
@@ -1561,7 +1591,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 {/* 잘못 배정 즉시 수정. 옮기기 모달 직행(운영자 요청 2026-07-08 단순화).
                     수령 대기 카드는 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 거부,
                     receiptPlacement assignDenialUnreceived). 카드 액션 행이 수령 대기에 배정 버튼을 안 두는 것과 같다. */}
-                {!data.pending.some(x => x.id === it.id) && (
+                {pendingHere ? (
+                  // 숨긴 배정 버튼 자리에 까닭 한 줄(§22 ②, D9). 예정 호실이 있으면 그 방을, 없으면 언제 배정하는지를.
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">{pendingPlaceCaption(plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)))}</span>
+                ) : (
                 <button type="button"
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '', replace: '' })}
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors">
@@ -1569,7 +1602,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </button>
                 )}
                 {/* 나눠 배정 — 수량이 2 이상일 때만(카드 액션 행과 동일 조건) */}
-                {(it.qtyValue ?? 0) > 1 && !data.pending.some(x => x.id === it.id) && (
+                {(it.qtyValue ?? 0) > 1 && !pendingHere && (
                   <button type="button" onClick={() => openDistribute(it)}
                     className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                     나눠 배정

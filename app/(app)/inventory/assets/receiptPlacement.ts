@@ -74,7 +74,10 @@ export function plannedRoomsMeta(roomNos: (string | null)[]): string | null {
 }
 
 // 수령 전 비품을 방·공용부에 넣는 길은 막는다. 그 자리는 받을 때 정한다(배정 예정 호실은 지출에서 적는다).
-export const ASSET_ASSIGN_DENY_UNRECEIVED = '아직 받지 않은 비품입니다. 수령 대기에서 수령 완료를 먼저 눌러 주세요.'
+// 까닭 문장은 화면 캡션(선택 알약·수령 대기 상세)과 서버 거부가 한 벌이다(§22 ②, 검수 D8).
+export const ASSET_ASSIGN_PENDING_REASON = '수령 대기는 수령 완료 뒤 배정합니다'
+export const ASSET_ASSIGN_PENDING_REASON_SHORT = '수령 완료 뒤 배정'
+export const ASSET_ASSIGN_DENY_UNRECEIVED = `${ASSET_ASSIGN_PENDING_REASON}. 수령 대기에서 수령 완료를 먼저 눌러 주세요.`
 // 방·공용부에 놓인 비품을 수령 대기로 돌리면 '수령 전인데 자리가 있는' 행이 생긴다(위 규칙의 뒷문).
 export const ASSET_UNRECEIVE_DENY_PLACED = '방이나 공용부에 배정된 비품은 수령 대기로 돌릴 수 없습니다. 먼저 미배정으로 옮겨 주세요.'
 
@@ -168,6 +171,12 @@ export function planExpectMismatch(rows: ReceiptRow[], expect: ReceiptPlanExpect
 const qtyText = (n: number, unit: string) => `${fmtQty(n)}${unit}`
 const quoted = (label: string) => `'${label}'${hasFinalConsonant(label) ? '을' : '를'}`   // 따옴표 뒤 조사는 품명 받침으로(정본 판정)
 
+// 부분 도착에서 남은 몫을 말하는 문장 한 벌(웹디자이너 패스 D6). 종전에는 '남은 …는 수령 대기에 남습니다'·
+// '잔여 …는 수령 대기 유지' 두 벌이 창·토스트·비품 화면에 갈려 있었다. 낱말은 '나머지' 하나로, 묻는 자리(창)는
+// '둡니다', 끝난 뒤(토스트)는 '두었습니다'. 비품 화면의 묻지 않는 부분 수령 토스트도 이 함수를 부른다.
+export const restPendingAsk = (n: number, unit: string) => `나머지 ${withParticle(qtyText(n, unit), '은/는')} 수령 대기에 둡니다.`
+export const restPendingDone = (n: number, unit: string) => `나머지 ${withParticle(qtyText(n, unit), '은/는')} 수령 대기에 두었습니다.`
+
 export type ReceiptAssignCopy = { title: string; message: string; confirmLabel: string; altLabel: string }
 
 /**
@@ -180,12 +189,12 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const room = fmtRoomNo(plan.room.roomNo, '')
     if (!plan.partial) return {
       title: `${quoted(label)} ${room}에 배정할까요?`,
-      message: `구매할 때 대상 호실을 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에 둡니다.`,
+      message: `구매할 때 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에 둡니다.`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
     return {
       title: `'${label}' ${withParticle(qtyText(plan.units, unit), '을/를')} ${room}에 배정할까요?`,
-      message: `${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.units, unit), '이/가')} 도착했습니다. 남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`,
+      message: `${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.units, unit), '이/가')} 도착했습니다. ${restPendingAsk(r3(plan.total - plan.units), unit)}`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
   }
@@ -220,7 +229,7 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
   if (plan.kind === 'none') return null
   if (choice === 'assign' && planAsks(plan)) {
     if (plan.kind === 'single') return plan.partial
-      ? { text: `${qtyText(plan.units, unit)} 수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: `남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`, actionLabel: '적용취소' }
+      ? { text: `${qtyText(plan.units, unit)} 수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: restPendingDone(r3(plan.total - plan.units), unit), actionLabel: '적용취소' }
       : { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, actionLabel: '적용취소' }
     if (plan.kind === 'multi') return {
       text: `수령 완료 · ${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join('·')} 배정`,
@@ -231,13 +240,13 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
   }
   if (plan.kind === 'ambiguous') return {
     text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
-    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 나눠 배정으로 옮기세요.',
+    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 미배정 카드에서 배정해 주세요.',
     actionLabel: '수령 취소',
   }
   // 수령만. 미배정에 뒀다고 말한다.
   if (plan.kind === 'single' && plan.partial) return {
     text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
-    detail: `남은 ${withParticle(qtyText(r3(plan.total - plan.units), unit), '은/는')} 수령 대기에 남습니다.`,
+    detail: restPendingDone(r3(plan.total - plan.units), unit),
     actionLabel: '수령 취소',
   }
   return { text: '수령 완료 · 미배정', actionLabel: '수령 취소' }
@@ -247,6 +256,22 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
 export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
 // 서버가 만든 토큰이 아니거나(서명 불일치) 모양이 틀렸다. 무엇도 쓰지 않는다(검수 N-1, 위조 토큰).
 export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'
+
+// 수령 적용취소 결과 토스트(§16 형식 "…를 적용취소했습니다 · …", 감지망 check-undo-verb, 검수 R-5).
+// 배정까지 함께 무를 때만 이 문장이다. 수령만 무르는 형제('수령 취소' 라벨)는 재고 화면과 같은 종전 문장을 쓴다.
+export const ASSET_RECEIPT_ASSIGN_UNDONE = '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀'
+export const ASSET_RECEIPT_UNDONE = '수령을 취소하고 수령 대기로 되돌렸습니다'
+
+/** 묻지 않은 부분 수령 토스트(비품 화면 형제 문구, D6). 받은 수량과 나머지. */
+export function partialReceiveToast(received: number, rest: number, unit: string): { text: string; detail: string } {
+  return { text: `${qtyText(received, unit)} 수령 완료`, detail: restPendingDone(rest, unit) }
+}
+
+// ── 수령 대기 상세·선택 알약의 자리 캡션(D8·D9, §22 ② 숨긴 동작 자리에 상태를 말하는 캡션) ─────────────
+/** 수령 대기 상세에서 숨긴 배정 버튼 자리 캡션. 예정 호실이 있으면 그 방을, 없으면 언제 배정하는지를 말한다. */
+export function pendingPlaceCaption(plannedMeta: string | null): string {
+  return plannedMeta ? `수령 대기 · ${plannedMeta}` : `수령 대기 · ${ASSET_ASSIGN_PENDING_REASON_SHORT}`
+}
 
 // ── 수령 전 비품에 자리를 쓰지 않는다. 집는 행의 정본(검수 F-1·F-2) ─────────────────────────────
 /** 방·공용부에 놓을 수 있는 행인가. 받은 물품이거나 서비스(수령 개념 없음). assignDenialUnreceived 와 같은 판정. */
