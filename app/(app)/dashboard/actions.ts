@@ -1,7 +1,6 @@
 'use server'
 
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
-import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -10,7 +9,6 @@ import { pickTenantPhoneWithFallback, trimPickedPhone, type PickedPhone } from '
 import { dbDateMonthKey, monthDbRange, monthsDbRange, type DbDateRange } from '@/lib/kstDate'
 import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { daysInMonth, shiftMonth } from '@/lib/moveCalendar'
-import type { DashboardData } from './DashboardClient'
 import { computeUnpaidStatus } from './unpaid'
 import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 
@@ -221,90 +219,6 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   }
 
   return []
-}
-
-export async function analyzeDashboardWithGemini(
-  data: DashboardData,
-  targetMonth: string
-): Promise<string> {
-  const ai = await consumeGeminiAccess()
-  if (!ai.ok) return `[오류] ${ai.error}`
-  const apiKey = ai.apiKey
-
-  // 수납률은 서버 정본(page.tsx paymentRate)을 그대로 읽는다. 여기서 다시 나누던 시절엔
-  // 분모에 수납예정이 빠져 있어, 화면 도넛이 61% 인 달에 프롬프트가 100% 라고 적었다(2026-08).
-  const paymentRate = data.paymentRate
-  const occupancyRate = data.totalRooms > 0
-    ? Math.round((data.occupiedRooms / data.totalRooms) * 100)
-    : 0
-
-  const trendText = data.trend.map(t =>
-    `  ${t.month}: 수입 ${(t.revenue / 10000).toFixed(0)}만원 / 지출 ${(t.expense / 10000).toFixed(0)}만원 / 순수익 ${(t.profit / 10000).toFixed(0)}만원`
-  ).join('\n')
-
-  // 카테고리 금액은 화면 도넛과 같은 축이다 — 기록된 지출 + 고정 지출 (예정), 분모는 예상 지출.
-  // 기록분만 적던 시절엔 프롬프트가 임대료 없는 지출 구성을 읽고 "임대료 부담이 없다"고 답할 수 있었다.
-  const categoryText = data.categoryBreakdown.length > 0
-    ? data.categoryBreakdown.map(c =>
-        `  ${c.category}: ${(c.amount / 10000).toFixed(0)}만원 (${c.percent}%)${c.pending > 0 ? ` — 이 중 예정 ${(c.pending / 10000).toFixed(0)}만원` : ''}`
-      ).join('\n')
-    : '  지출 없음'
-
-  const prompt = `
-당신은 부동산 임대업 전문 재무 분석가입니다.
-아래는 숙박업소(원룸/게스트하우스) 운영 현황 데이터입니다. 한국어로 간결하고 실용적인 재무 분석을 작성해주세요.
-
-[분석 대상 월: ${targetMonth}]
-
-■ 이달 재무 요약
-- 총 수입: ${(data.totalRevenue / 10000).toFixed(1)}만원 (순수 이용료 ${(data.paidRevenue / 10000).toFixed(1)}만원)
-- 기록된 지출: ${(data.totalExpense / 10000).toFixed(1)}만원
-- 운영이익: ${(data.netProfit / 10000).toFixed(1)}만원
-- 보유 보증금: ${(data.totalDeposit / 10000).toFixed(0)}만원
-
-■ 수납 현황
-- 완납: ${data.paidCount}건 / 수납예정: ${data.awaitingCount}건 / 미납: ${data.unpaidCount}건 (수납률 ${paymentRate}%)
-
-■ 지출 카테고리 (예상 지출 기준 — 기록분 + 미기록 고정 지출 예정분)
-${categoryText}
-
-■ 6개월 트렌드
-${trendText}
-
-■ 입주 현황
-- 전체 호실: ${data.totalRooms}실 / 입주중: ${data.occupiedRooms}실 / 공실: ${data.vacantRooms}실 (입주율 ${occupancyRate}%)
-- 거주중: ${data.statusCounts.active}명 / 입실예정: ${data.statusCounts.reserved}명 / 퇴실예정: ${data.statusCounts.checkout}명
-
-아래 항목을 포함해 분석해주세요:
-1. 이달 재무 상태 총평 (수익성, 지출 적정성)
-2. 수납 현황 진단 (미납 리스크)
-3. 트렌드 기반 주목할 변화
-4. 공실/입주율 관련 운영 리스크
-5. 개선 포인트 1~2가지 (구체적이고 실행 가능한 제안)
-
-분석 결과는 항목별 소제목을 사용하되, 각 항목을 2~3문장으로 간결하게 작성해주세요.
-`.trim()
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
-      }),
-    }
-  )
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '')
-    return `[오류] Gemini API 응답 실패 (${res.status})${errBody ? ': ' + errBody.slice(0, 200) : ''}`
-  }
-  const json = await res.json()
-  const parts: { text?: string; thought?: boolean }[] = json.candidates?.[0]?.content?.parts ?? []
-  const text = parts.find(p => p.text && !p.thought)?.text ?? parts.find(p => p.text)?.text
-  return text ?? '분석 결과를 가져올 수 없습니다.'
 }
 
 // ============================================================

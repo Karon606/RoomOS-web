@@ -1030,8 +1030,12 @@ export async function getTargetMonthOptions(
   leaseTermId: string,
   viewMonth: string,
 ): Promise<TargetMonthOption[]> {
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 인증·영업장 범위가 없던 자리(권한 감사 P0, 2026-10-14). 금액을 돌려주므로 형제 getFifoStartMonth 와
+  // 같은 money 스코프를 본다. 막힌 역할에는 빈 목록이다(이 폼은 그 역할에게 안 열린다, 호출부가 catch 를 안 건다).
+  const { propertyId, role } = await requirePropertyAccess()
+  if (!canReadScope(role, 'money')) return []
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
     select: {
       moveInDate: true,
       rentAmount: true,
@@ -1167,8 +1171,10 @@ export async function getPrevOwnerSettleState(
   leaseTermId: string,
   viewMonth: string,
 ): Promise<{ canSettle: boolean; settledMonths: string[]; menuMode: string }> {
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 인증·영업장 범위가 없던 자리(권한 감사 P0, 2026-10-14). 형제 setPrevOwnerSettleMenu 와 같은 범위로 읽는다.
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
     select: {
       prevOwnerSettleMenu: true,
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
