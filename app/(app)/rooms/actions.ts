@@ -1878,6 +1878,12 @@ export async function updatePayment(
     // 이용료 환불 확정이 만든 record 는 잠근다 — 여기서 고치면 환불 스냅샷과 어긋나 적용취소가 틀어진다.
     // 고치는 자리는 수납 정보의 이용료 정산 카드(적용취소 뒤 재확정) 하나다(lib/rentRefundRecord).
     if (isRentRefundRecord(record.memo)) return { ok: false, error: RENT_REFUND_RECORD_LOCKED }
+    // 0원 행을 켜는 저장은 거부한다(독립 검수 R-6, 2026-10-14). 원터치 토글은 이미 거부하는데 수정 폼이 뒷문이었다.
+    // 켜면 이 행에는 발행할 돈이 없고 그 키의 다른 것만 움직였다. 살아 있는 줄이면 칸 값(999,000)으로 덮고 '이미 들어 있음'이라
+    // 말했고(Z1), 줄이 없으면 형제의 미발행 돈으로 새 발행을 세웠다(Z2). 같은 문장으로 거부한다(가이드 §22 ②).
+    if (data.cashReceiptIssued === true && !record.cashReceiptIssuedAt && isCashReceiptEligible(data.payMethod) && data.actualAmount <= 0) {
+      return { ok: false, error: CR_ZERO_ROW_REFUSED }
+    }
 
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: record.leaseTermId },
@@ -1987,8 +1993,11 @@ export async function updatePayment(
           } else {
             // 수정 폼이 금액을 함께 실었으면(운영자가 칸을 고쳤으면) 그것이 이긴다. 이 키에 발행을 켜는
             // 저장이라 그 칸의 뜻이 맞다. 안 실었으면 정본 판정 그대로다(add 면 앞 금액 + 새 돈, 앞 발행일 유지).
-            const target = data.cashReceiptAmount != null && data.cashReceiptAmount > 0
-              ? { ...next.plan.next, amount: data.cashReceiptAmount, incl: data.cashReceiptIncl ? { ...data.cashReceiptIncl } : next.plan.next.incl }
+            // 단 keep(이 키의 이용료가 이미 다 덮여 바뀌는 것이 없다)은 칸 값을 쓰지 않는다(독립 검수 R-6). 쓰면 앞 발행을
+            // 그 값으로 덮으면서 '이미 같은 날 발행에 들어 있어 그대로'라 말한다(Z1). 앞 발행을 고치는 문은 그 행의 수정 폼이다.
+            const useField = data.cashReceiptAmount != null && data.cashReceiptAmount > 0 && next.plan.kind !== 'keep'
+            const target = useField
+              ? { ...next.plan.next, amount: data.cashReceiptAmount!, incl: data.cashReceiptIncl ? { ...data.cashReceiptIncl } : next.plan.next.incl }
               : next.plan.next
             await writeCrKey(tx, newS, target, after.tenantId, 'key')
             if (next.plan.kind === 'add') {
@@ -2377,6 +2386,8 @@ export async function previewPaymentEditCr(
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     const stampBefore = record.cashReceiptIssuedAt
+    // 0원 행을 켜는 저장은 거부된다(updatePayment, 검수 R-6). 미리보기도 같은 문장을 낸다.
+    if (input.issued && !stampBefore && isCashReceiptEligible(input.payMethod) && input.actualAmount <= 0) return { ok: false, error: CR_ZERO_ROW_REFUSED }
     // 도장 값은 저장과 같은 정본으로 정한다(카드면 null, 미래 날짜는 저장이 거부하므로 그 문장을 그대로 돌려준다).
     let stampAfter: Date | null
     try {

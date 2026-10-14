@@ -666,6 +666,33 @@ async function main() {
     g.__CR_FLOW_PID = P1
   }
 
+  // ── S21 0원 행을 수정 폼으로 켜는 뒷문(독립 검수 R-6, Z1·Z2) ─────────────────────────────
+  {
+    // Z1: 살아 있는 줄(400,000) 있는 키의 0원 행을 켜며 칸 999,000 을 실으면 종전에는 줄이 999,000 으로 덮였다.
+    const L = await lease(P1)
+    const A = await rec(L, P1, { month: '2026-09', amount: 400000, pay: '2026-09-25' })
+    await rooms.setCashReceiptIssued(A, true, '2026-09-25')
+    const Z = await rec(L, P1, { month: '2026-10', amount: 0, pay: '2026-09-25' })
+    const z1 = await rooms.updatePayment(Z, { actualAmount: 0, payDate: '2026-09-25', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-03', cashReceiptAmount: 999000 })
+    eq('S21 Z1 0원 행 켜기 거부 · 줄 400,000 @9/25 그대로', [z1.ok, z1.ok ? null : z1.error, await lines(L.id, '2026-09-25'), await stamp(Z)],
+      [false, '금액이 0원인 수납이라 현금영수증을 발행할 금액이 없습니다.', [{ amount: 400000, issuedAt: kstMid('2026-09-25'), deleted: false }], null])
+    const zp = await rooms.previewPaymentEditCr(Z, { payDate: '2026-09-25', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-03', actualAmount: 0 })
+    eq('S21 Z1 미리보기도 같은 문장으로 거부', zp.ok ? zp : zp.error, '금액이 0원인 수납이라 현금영수증을 발행할 금액이 없습니다.')
+    // Z2: 줄 없는 키의 0원 행을 켜면 종전에는 형제(400,000)의 미발행 돈으로 새 발행이 섰다.
+    const L2 = await lease(P1)
+    const A2 = await rec(L2, P1, { month: '2026-09', amount: 400000, pay: '2026-09-26' })
+    const Z2 = await rec(L2, P1, { month: '2026-10', amount: 0, pay: '2026-09-26' })
+    const z2 = await rooms.updatePayment(Z2, { actualAmount: 0, payDate: '2026-09-26', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-03' })
+    eq('S21 Z2 0원 행 켜기 거부 · 형제 발행 안 섬', [z2.ok, (await lines(L2.id, '2026-09-26')).length, await stamp(A2), await stamp(Z2)], [false, 0, null, null])
+    // keep 갈래(이미 다 덮인 키)에서는 칸 값을 쓰지 않는다. 보증금 행을 켜며 칸을 실어도 앞 발행은 그대로다.
+    const L3 = await lease(P1)
+    const A3 = await rec(L3, P1, { month: '2026-09', amount: 400000, pay: '2026-09-27' })
+    await rooms.setCashReceiptIssued(A3, true, '2026-09-27')
+    const D3 = await rec(L3, P1, { month: '2026-09', amount: 100000, pay: '2026-09-27', isDeposit: true })
+    const k3 = await rooms.updatePayment(D3, { actualAmount: 100000, payDate: '2026-09-27', payMethod: '계좌이체', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-03', cashReceiptAmount: 999000 })
+    eq('S21 keep 갈래는 칸 값을 안 써 앞 발행 400,000 그대로', k3.ok ? [k3.cashReceipt.kept, k3.cashReceipt.line?.amount] : k3, [true, 400000])
+  }
+
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

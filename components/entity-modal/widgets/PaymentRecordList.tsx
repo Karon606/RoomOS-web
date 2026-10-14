@@ -194,7 +194,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     // 발행 금액·구성은 운영자가 프리필과 다르게 고쳤을 때만 이 저장에 함께 싣는다(2026-10-14 독립 검수 F1).
     // 종전에는 저장 뒤 발행 금액 문(setPaymentCashReceipt)을 무조건 한 번 더 불러, 입금일을 옮겨 서버가
     // 두 영수증을 합친 금액(700,000)을 프리필(옛 키 400,000)로 덮었다. 이제 호출은 한 번, 적용취소 토큰도 하나다.
-    const crChanged = editCashReceipt && (
+    // 0원 행은 발행할 돈이 아니라 켜는 저장을 서버가 거부한다(검수 R-6). 화면은 체크 대신 캡션을 세우고 켜지 않는다.
+    const before = records?.find(r => r.id === editingId)
+    const crOn = editCashReceipt && !(editAmount <= 0 && !before?.cashReceiptIssuedAt)
+    const crChanged = crOn && (
       editCrAmount !== editCrPrefill.amount
       || editCrIncl.deposit !== editCrPrefill.incl.deposit
       || editCrIncl.cleaning !== editCrPrefill.incl.cleaning
@@ -202,10 +205,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     )
     // 저장 토스트가 발행 줄에 일어난 일을 말할 재료(2026-10-13 422호 2단계). 옮겼는지는 서버와 같이 엄격히 본다
     // (옛 null 수단을 '' 로 다시 저장해도 서버는 키가 옮겨 간 것으로 본다).
-    const before = records?.find(r => r.id === editingId)
     const crOpts = {
       moved: !!before && (editDate !== kstYmdStr(new Date(before.payDate)) || editPayMethod !== before.payMethod),
-      wasStamped: !!before?.cashReceiptIssuedAt, nowStamped: editCashReceipt && isCashReceiptEligible(editPayMethod),
+      wasStamped: !!before?.cashReceiptIssuedAt, nowStamped: crOn && isCashReceiptEligible(editPayMethod),
       amountEdited: crChanged, beforeAmount: before?.cashReceiptKey?.line?.amount ?? null,
       stampedRows: before?.cashReceiptKey?.stampedRentRows ?? 1,
     }
@@ -216,7 +218,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
         targetMonth:  editTargetMonth || undefined,
-        cashReceiptIssued: editCashReceipt,
+        cashReceiptIssued: crOn,
         cashReceiptIssuedDate: editCashReceiptDate,
         ...(crChanged ? { cashReceiptAmount: editCrAmount, cashReceiptIncl: editCrIncl } : {}),
       }), { success: '' })
@@ -380,6 +382,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             ? editPvOk.keyRent
             : editAmount + (sameKey ? (p.cashReceiptKey ? crCoveredRent(p.cashReceiptKey) : p.actualAmount) - p.actualAmount : (sib?.cashReceiptKey ? crCoveredRent(sib.cashReceiptKey) : 0))
           const crGap = editCrIncl.deposit || editCrIncl.cleaning ? null : cashReceiptGapSentence(editCrAmount, crBasis)
+          // 0원 행(금액 칸이 0)은 발행할 돈이 아니다. 체크 대신 목록 행과 같은 캡션을 세운다(검수 R-6, 가이드 §22 ②).
+          const crZeroEdit = editAmount <= 0 && !p.cashReceiptIssuedAt
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
               <div className="space-y-2">
@@ -443,6 +447,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     <p className="text-[0.65625rem] text-[var(--warm-mid)]">저장하면 이 건의 현금영수증 발행 표시가 해제되고 금액은 카드 수납으로 잡힙니다.</p>
                   )}
                 </div>
+              ) : crZeroEdit ? (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">{CR_ZERO_ROW_CAPTION}</p>
               ) : (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={editCashReceipt} onChange={e => setEditCashReceipt(e.target.checked)}
@@ -453,7 +459,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               {/* 발행일 — 체크했을 때만 선다. 껍데기는 이 폼의 형제 칸('납부일')과 같은 것을 넘긴다
                   (§12 한 폼 안 입력 높이 혼용 금지). pl-6 은 체크박스의 하위 항목이라는 표시다.
                   미래는 maxDate 로 막고 과거는 안 막는다 — 누락분을 나중에 올리는 것이 정상 업무다. */}
-              {editCashReceipt && (
+              {editCashReceipt && !crZeroEdit && (
                 <div className="space-y-1 pl-6">
                   <p className="text-xs font-medium text-[var(--warm-mid)]">발행일</p>
                   <DatePicker value={editCashReceiptDate} onChange={setEditCashReceiptDate} maxDate={kstYmdStr()}

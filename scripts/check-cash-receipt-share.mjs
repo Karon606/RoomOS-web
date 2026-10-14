@@ -635,6 +635,11 @@ for (const kind of ['deposit', 'cleaning']) {
     need(LIST, list, /editPvMovedAway \? \(\s*<p[^>]*>\{CR_EDIT_MOVED_NOTE\}<\/p>/, '옮김 갈래(transfer·merge·unstamp)에서 칸을 숨기고 그 사실을 적지 않는다(검수 F-A).')
     need(LIST, list, "const editPvMovedAway = editPvOk?.kind === 'transfer' || editPvOk?.kind === 'merge' || editPvOk?.kind === 'unstamp'", '옮김 갈래 판정이 transfer·merge·unstamp 셋이 아니다. 서버가 안 쓰는 칸이 보인다(검수 F-A, 역주입 X26).')
     need(LIST, list, 'disabled={pending || editPvLoading}', '기록될 금액을 읽는 동안 수정 저장이 열려 있다(검수 F-A).')
+    // 독립 검수 R-6: 0원 행을 켜는 수정 저장은 서버가 거부하고(뒷문 Z1·Z2), keep 갈래는 칸 값을 안 쓴다. 화면은 체크 대신 캡션.
+    const upd = fnBody(srv, 'export async function updatePayment(') ?? ''
+    if (!/data\.cashReceiptIssued === true && !record\.cashReceiptIssuedAt && isCashReceiptEligible\(data\.payMethod\) && data\.actualAmount <= 0\) \{\s*return \{ ok: false, error: CR_ZERO_ROW_REFUSED \}/.test(upd)) violations.push(`${SRV} updatePayment — 0원 행을 켜는 저장을 거부하지 않는다(검수 R-6, 뒷문 Z1·Z2).`)
+    if (!/const useField = [^\n]*next\.plan\.kind !== 'keep'/.test(upd)) violations.push(`${SRV} updatePayment — 이미 다 덮인 키(keep)에서 칸 값으로 앞 발행을 덮는다(검수 R-6, Z1).`)
+    need(LIST, list, /crZeroEdit \? \(\s*<p[^>]*>\{CR_ZERO_ROW_CAPTION\}<\/p>/, '수정 폼이 0원 행에 발행 체크를 세운다. 눌러야 거절되는 조작이다(검수 R-6).')
     // 그물 구멍 U7(독립 검수 R-8): 입력 폼은 경고색을 안 쓴다(운영자 결정 2026-08-25). 수정 폼 블록 안에 경고색이 없어야 한다.
     const editBlock = between(list, 'if (editingId === p.id) {', 'className={`rounded-sm px-3 py-2.5 space-y-1.5 ${')
     if (!editBlock) violations.push(`${LIST} — 수정 폼 블록을 못 찾았다(침묵 통과 금지).`)
