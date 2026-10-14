@@ -298,6 +298,23 @@ export function verifyCrUndo(propertyId: string, undo: CashReceiptUndo): boolean
   return macMatches(undoMac('cash-receipt', propertyId, canonicalCashReceiptUndo(undo)), undo.sig)
 }
 
+/**
+ * 다른 적용취소 토큰도 이 서명 정본을 쓴다(2026-10-15 비품 수령·소모품 수량 채움 토큰, 독립 검수 N-1). 키·운영 판정·
+ * 대조 방식은 위와 한 벌이고 domain 이 용도를 가른다(같은 키라도 domain 이 다르면 서로의 서명이 안 맞는다).
+ * body 는 부르는 쪽이 필드 순서를 고정한 정본 문자열이다.
+ * 돌려주는 값: 서명(키 있음) · undefined(키 없음, 개발·하네스) · null(키 없음, 운영 = 토큰을 내지 않는다).
+ */
+export function signUndoBody(domain: string, propertyId: string, body: string): string | undefined | null {
+  const mac = undoMac(domain, propertyId, body)
+  if (mac) return mac.toString('base64url')
+  return crUndoSigningRequired() ? null : undefined
+}
+
+/** signUndoBody 의 짝. 키가 없으면 개발·하네스는 true(구조 검사에 맡긴다), 운영은 false(fail-closed). */
+export function verifyUndoBody(domain: string, propertyId: string, body: string, sig: unknown): boolean {
+  return macMatches(undoMac(domain, propertyId, body), sig)
+}
+
 /** 적용취소가 막힐 때 화면에 갈 말. 무엇이 바뀌었는지 단정하지 않고 볼 자리를 준다. */
 export const CR_UNDO_CONFLICT_MESSAGE = '그 사이 현금영수증 발행 기록이 다시 바뀌어 되돌리지 않았습니다. 수납 내역에서 지금 상태를 확인해 주세요.'
 /** 여러 키를 한 번에 쓴 조작(일괄 발행 기록)의 적용취소가 한 키 때문에 막혔을 때의 말. */

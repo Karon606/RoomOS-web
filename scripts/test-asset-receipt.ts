@@ -10,8 +10,11 @@ import {
   isDurableGoods, placementForSave, plannedRoomsMeta,
   assignDenialUnreceived, unreceiveDenialPlaced, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED,
   receiptPlacementPlan, planAsks, planTargetOf, receiptAssignCopy, receiptToast, type ReceiptRow,
+  isPlaceable, PLACEABLE_WHERE, planExpectOf, planExpectMismatch, parseAssetReceiptUndo, canonicalAssetReceiptUndo,
+  type AssetReceiptUndo,
 } from '../app/(app)/inventory/assets/receiptPlacement'
-import { receiptNeedsQty, qtyMissing, normalizeFillQty, fillQtyUnit, fillDetail, receiptQtyRequiredMany, RECEIPT_QTY_REQUIRED } from '../app/(app)/inventory/receiptQtyGate'
+import { isUnplaced } from '../app/(app)/inventory/assets/aggregate'
+import { receiptNeedsQty, qtyMissing, normalizeFillQty, fillQtyUnit, fillDetail, receiptQtyRequiredMany, RECEIPT_QTY_REQUIRED, qtyFillShapeOk, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED } from '../app/(app)/inventory/receiptQtyGate'
 import { roomsLabel, roomChipText } from '../app/(app)/finance/allocPlaceLabel'
 
 let pass = 0
@@ -147,6 +150,39 @@ eq('F2 토스트 배정(일부만)', receiptToast(some, 'assign', '개'), { text
 eq('F2 토스트 부분 도착 + 여러 방(창 없음)', receiptToast(receiptPlacementPlan([row('a', 1, '519'), row('b', 1, '520')], 1), 'receive', '개'),
   { text: '1개 수령 완료 · 미배정', detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 나눠 배정으로 옮기세요.', actionLabel: '수령 취소' })
 eq('F2 토스트 묻지 않은 수령은 화면 종전 문구(null)', receiptToast({ kind: 'none' }, 'receive', '개'), null)
+
+// ── 검수 반영(2026-10-15 독립 검수·웹디자이너 패스) ─────────────────────────────────
+// F-1·F-2 집는 행의 정본. 받은 물품이거나 서비스만 방·공용부에 놓는다
+eq('R isPlaceable 받은 물품', isPlaceable({ receivedAt: new Date(), excludeFromInventory: false }), true)
+eq('R isPlaceable 서비스', isPlaceable({ receivedAt: null, excludeFromInventory: true }), true)
+eq('R isPlaceable 수령 전 물품은 아님', isPlaceable({ receivedAt: null, excludeFromInventory: false }), false)
+eq('R PLACEABLE_WHERE 는 같은 판정의 조회 조건', PLACEABLE_WHERE, { OR: [{ receivedAt: { not: null } }, { excludeFromInventory: true }] })
+// R-4 안 놓인 행 정본(화면 breakdown·서버 수령이 같은 함수)
+eq('R isUnplaced 아무 데도 없음', isUnplaced(null, null, false), true)
+eq('R isUnplaced 공용 자재는 놓인 것', isUnplaced(null, null, true), false)
+eq('R isUnplaced 방·공용부', [isUnplaced('R', null, false), isUnplaced(null, 'L', false)], [false, false])
+// N-4 화면이 본 계획과 서버 계획
+const rowsN4 = [row('a', 1, '519'), row('b', 1, null)]
+eq('N-4 계획 그대로면 같다', planExpectMismatch(rowsN4, planExpectOf(rowsN4)), false)
+eq('N-4 계획 없이 배정 요청은 다르다', planExpectMismatch(rowsN4, undefined), true)
+eq('N-4 예정 호실이 바뀌면 다르다', planExpectMismatch([row('a', 1, '520'), row('b', 1, null)], planExpectOf(rowsN4)), true)
+eq('N-4 행이 늘면 다르다', planExpectMismatch([...rowsN4, row('c', 1, '519')], planExpectOf(rowsN4)), true)
+// N-1 토큰 모양. 이 동작이 만들 수 없는 값은 받지 않는다
+const tok: AssetReceiptUndo = { v: 1, at: '2026-10-15T00:00:00.000Z', received: [{ id: 'r1', assigned: true, prevAssignedAt: null, now: { roomId: 'R519', isCommonAsset: false, itemLabel: '의자', qtyValue: 1, amount: 100 } }], split: [{ id: 's1', prevGroupId: null, prevDetail: '[의자] x 4개', now: { qtyValue: 2, amount: 50, groupId: 'g1', itemLabel: '의자' } }], created: [{ id: 'c1', fromId: 's1', roomId: 'R519', isCommonAsset: false, qtyValue: 2, amount: 50 }], logIds: ['l1'] }
+eq('N-1 정상 토큰 통과', !!parseAssetReceiptUndo(JSON.parse(JSON.stringify(tok))), true)
+eq('N-1 옛 모양(rows·prev 금액) 거부', parseAssetReceiptUndo({ at: tok.at, rows: [{ id: 'x', prev: { amount: 1 } }], created: [], logIds: [] }), null)
+eq('N-1 묶음 id 를 다른 값으로 거부', parseAssetReceiptUndo({ ...tok, split: [{ ...tok.split[0], prevGroupId: 'other' }] }), null)
+eq('N-1 조각의 원행이 토큰 밖이면 거부', parseAssetReceiptUndo({ ...tok, created: [{ ...tok.created[0], fromId: 'zz' }] }), null)
+eq('N-1 배정했다면서 방 없음 거부', parseAssetReceiptUndo({ ...tok, received: [{ ...tok.received[0], now: { ...tok.received[0].now, roomId: null } }] }), null)
+eq('N-1 같은 id 두 번 거부', parseAssetReceiptUndo({ ...tok, created: [{ ...tok.created[0], id: 'r1' }] }), null)
+eq('N-1 정본 문자열은 키 순서·시각 표기와 무관', canonicalAssetReceiptUndo({ ...tok, at: '2026-10-15T09:00:00+09:00' }), canonicalAssetReceiptUndo(tok))
+const fill = { expenseId: 'e', qtyValue: 2, qtyUnit: '포', detail: '[쌀] 20kg x 2포', prevQtyValue: null, prevQtyUnit: null, prevDetail: '[쌀] 20kg' }
+eq('N-1 채움 조각 정상', qtyFillShapeOk(fill), true)
+eq('N-1 채움 조각 원래 수량 999 거부', qtyFillShapeOk({ ...fill, prevQtyValue: 999 }), false)
+eq('N-1 채움 조각 원래 단위가 채운 단위와 다르면 거부', qtyFillShapeOk({ ...fill, prevQtyUnit: '톤' }), false)
+eq('N-1 채움 조각 원래 단위 = 채운 단위는 통과', qtyFillShapeOk({ ...fill, prevQtyUnit: '포' }), true)
+eq('N-1 채움 정본 문자열(서명 대상)', canonicalQtyFill(fill), JSON.stringify(['e', 2, '포', '[쌀] 20kg x 2포', null, null, '[쌀] 20kg']))
+eq('R-2 재고 화면 거부 문구', INVENTORY_RECEIPT_DENY_UNTRACKED, '비품으로 바뀐 품목입니다. 새로고침한 뒤 비품·자재 화면에서 처리해 주세요.')
 
 // 사용자 문자열 지문. em dash·느낌표·이모지·전환 화살표가 없다(§29)
 const strings = [

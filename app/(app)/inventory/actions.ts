@@ -33,7 +33,15 @@ import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { withParticle } from '@/lib/koParticle'
 // 수령 수량 관문 정본(순수). 수량이 빈 추적 구매는 채운 뒤에만 받는다(2026-10-15 냉장고 유령수령 봉합).
-import { receiptNeedsQty, normalizeFillQty, fillQtyUnit, fillDetail, RECEIPT_QTY_REQUIRED, receiptQtyRequiredMany, type ReceiptQtyFill } from './receiptQtyGate'
+import {
+  receiptNeedsQty, normalizeFillQty, fillQtyUnit, fillDetail, RECEIPT_QTY_REQUIRED, receiptQtyRequiredMany, type ReceiptQtyFill,
+  QTY_FILL_DOMAIN, QTY_FILL_INVALID, canonicalQtyFill, qtyFillShapeOk, INVENTORY_RECEIPT_DENY_UNTRACKED,
+} from './receiptQtyGate'
+import { buildAssetDetail } from './assets/aggregate'
+// 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
+import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+// 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
+import { isDurableGoods, placementForSave } from './assets/receiptPlacement'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -2316,8 +2324,18 @@ async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?:
         itemId = it.id
       }
     }
+    // 자리 두 칸(독립 검수 R-1). 제외·포함은 비품 물품 여부를 뒤집는다. 방에 걸린 서비스(roomId = 비용 귀속 방)를
+    // '다시 포함'하면 그대로는 '수령 전 비품인데 자리가 있는' 행이 된다. 저장 규칙 정본(placementForSave)을 태워
+    // 받기 전 비품이 되면 그 방을 배정 예정 호실로 옮기고, 서비스가 되면 예정 호실을 비용 귀속 방으로 옮긴다.
+    // 두 방향이 서로의 역이라 제외의 적용취소(포함)와 포함의 적용취소(제외)가 원래 두 칸으로 돌아온다.
+    // 받은 행은 지금처럼 roomId 를 둔다(받은 비품의 자리가 곧 roomId 다). 소모품은 예정 호실이 없어 그대로다.
+    const goodsAfter = isDurableGoods({ category: e.category, excludeFromInventory: exclude, itemLabel: e.itemLabel, isShipping: e.isShipping }, await getTrackedCategories(propertyId))
+    const place = placementForSave({
+      durableGoods: goodsAfter, received: !!e.receivedAt,
+      roomId: goodsAfter ? e.roomId : (e.roomId ?? e.targetRoomId), formTarget: undefined, existingTarget: e.targetRoomId,
+    })
     await prisma.$transaction(async tx => {
-      await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude } })
+      await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude, roomId: place.roomId, targetRoomId: place.targetRoomId } })
       if (rows.length > 0 && itemId) await applyShiftRows(tx, itemId, rows)
     })
     revalidatePath('/inventory')
@@ -3452,6 +3470,9 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     // 재호출이 자동 점검을 또 만들어 입고량이 이중 가산되는 것을 막는다(createStockCheck의
     // 중복 제출 가드와 같은 취지). 수령 취소(undo)는 receivedAt을 null로 되돌리므로 재수령은 정상 동작.
     if (expense.receivedAt) return { ok: true }
+    // 소모품(추적 카테고리) 행만 이 길로 받는다(독립 검수 R-2 와 한 벌, 비품 쪽 S1 의 거울). 화면을 연 뒤 비품으로 바뀐
+    // 행을 받으면 비품 수령 정본(배정 물음)을 건너뛴다. 비품 수령은 비품 화면이 맡는다.
+    if (!(await getTrackedCategories(propertyId)).includes(expense.category)) return { ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED }
 
     // 수량 관문. 추적 품목인데 구매 수량이 비면 자동 점검을 만들 근거가 없다. 화면이 받은 도착 수량으로
     // 채우고, 그것도 없으면 거부한다. 쓰기는 아래 수령 트랜잭션에서 receivedAt 과 함께 한다(반쪽 상태 없음).
@@ -3678,7 +3699,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
 
     revalidatePath('/inventory')
     if (qtyFill) revalidatePath('/finance')
-    return partialUndo ? { ok: true, undo: partialUndo } : qtyFill ? { ok: true, qtyFill } : { ok: true }
+    // 채움 조각에 서버 서명(현금영수증 적용취소와 같은 정본, 검수 N-1). 운영에서 키가 없으면 조각을 내지 않는다
+    // (그때 수령 취소는 수령만 무르고 채운 수량은 남는다. 위조 조각으로 수량·세부를 쓰는 길보다 낫다).
+    const fillSig = qtyFill ? signUndoBody(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill(qtyFill)) : null
+    const fillOut = qtyFill && fillSig !== null ? { ...qtyFill, ...(fillSig ? { sig: fillSig } : {}) } : null
+    return partialUndo ? { ok: true, undo: partialUndo } : fillOut ? { ok: true, qtyFill: fillOut } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4415,11 +4440,19 @@ async function cancelReceiptCore(
     select: {
       id: true, category: true, itemLabel: true, qtyUnit: true, qtyValue: true,
       specValue: true, specUnit: true, receivedAt: true, receivedLocationId: true,
-      excludeFromInventory: true,
+      excludeFromInventory: true, specText: true, detail: true,
     },
   })
   if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
   if (!exp.receivedAt) return { ok: true }
+  // 소모품(추적 카테고리) 행만 이 길로 수령을 무른다(독립 검수 R-2, 비품 쪽 S1 의 거울). 화면을 연 뒤 카테고리가
+  // 비품으로 바뀌면 방에 놓인 비품이 '수령 전인데 자리가 있는' 행이 됐다. 비품 수령은 비품 화면 정본이 맡는다.
+  if (!(await getTrackedCategories(propertyId)).includes(exp.category)) return { ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED }
+  // 수량 채움 조각. 모양·원래 값 범위·서명을 먼저 본다(검수 N-1). 위조면 아무것도 무르지 않는다.
+  if (opts?.qtyFill && (!qtyFillShapeOk(opts.qtyFill) || opts.qtyFill.expenseId !== expenseId
+    || !verifyUndoBody(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill(opts.qtyFill), opts.qtyFill.sig))) {
+    return { ok: false, error: QTY_FILL_INVALID }
+  }
   // 자동 점검 이후 다른 점검이 있으면 거부 — 이후 점검이 수령분을 실측에 이미 반영했으므로
   // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
   const autoChecks = await prisma.stockCheck.findMany({
@@ -4493,10 +4526,16 @@ async function cancelReceiptCore(
     await tx.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } })
     await tx.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } })
     if (fillBack) {
-      // 채운 값 그대로일 때만(CAS). 세부까지 그대로면 셋을, 세부만 바뀌었으면 수량·단위만 돌린다.
+      // 채운 값 그대로일 때만(CAS). 원래 수량·단위는 조각 값이지만 모양 검사가 이 동작이 만들 수 있는 값(없음·채운 단위)만
+      // 받았다. 세부는 조각 글자를 그대로 쓰지 않는다(검수 N-1). 지금 세부가 채운 자동 형식일 때만 고치고, 되살릴 값은 이 동작이
+      // 만들 수 있었던 두 값(수량 없는 자동 형식, 또는 원래부터 채운 형식과 같던 글자) 중에서 고른다. fillDetail 이 자동 형식일
+      // 때만 고쳐 썼으므로 이 셈이 원래 값을 정확히 되살린다. 지금 세부가 다르면(사람이 고쳤다) 세부는 그대로 둔다.
       const back = { qtyValue: fillBack.prevQtyValue, qtyUnit: fillBack.prevQtyUnit }
       const same = { id: expenseId, propertyId, qtyValue: fillBack.qtyValue, qtyUnit: fillBack.qtyUnit }
-      const full = await tx.expense.updateMany({ where: { ...same, detail: fillBack.detail }, data: { ...back, detail: fillBack.prevDetail } })
+      const row = { itemLabel: exp.itemLabel, specValue: exp.specValue, specUnit: exp.specUnit, specText: exp.specText }
+      const filledAuto = buildAssetDetail({ ...row, qtyUnit: fillBack.qtyUnit, qtyValue: fillBack.qtyValue })
+      const prevDetail = fillBack.prevDetail === filledAuto ? filledAuto : buildAssetDetail({ ...row, qtyUnit: fillBack.prevQtyUnit, qtyValue: null })
+      const full = await tx.expense.updateMany({ where: { ...same, detail: filledAuto }, data: { ...back, detail: prevDetail } })
       if (full.count === 0) await tx.expense.updateMany({ where: same, data: back })
     }
   })

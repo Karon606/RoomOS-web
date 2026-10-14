@@ -25,6 +25,8 @@ import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { signProgressLabelSlots, signStageSlots, signAlertDue } from '@/lib/disposalSignGate'
+import { canReadScope } from '@/lib/auth/routeScope'
+import type { Role } from '@/lib/role-types'
 import { paperDocsOf, leaseSignSlots, linkSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
@@ -54,8 +56,15 @@ const CATEGORY_LABEL: Record<AlertCategory, string> = {
 
 // 금액 표기는 정본 fmtWon 사용(감사 B4)
 
-/** propertyId 의 "오늘 챙길 일" 알림 목록 — 긴급도순 정렬해서 반환. */
-export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
+/**
+ * propertyId 의 "오늘 챙길 일" 알림 목록. 긴급도순 정렬해서 반환한다.
+ * viewerRole 을 주면 그 역할이 열 수 없는 목적지·볼 수 없는 금액을 거른다(독립 검수 N-5). 비품 화면은 금액 읽기가
+ * 막힌 역할(제한 스태프)에게 목록 자체를 안 주므로 비품 수령 대기 알림을 빼고, 형제 소모품 수령 대기는 같은 역할에게
+ * 금액 없이 낸다(재고 화면이 그 역할에게 금액을 지우는 것과 같은 셈). 종(getMyAlerts)과 푸시(크론)가 같은 값을 넘겨
+ * 뱃지 숫자가 갈리지 않는다. 안 주면(옛 호출) 종전 그대로다.
+ */
+export async function computeAlerts(propertyId: string, viewerRole?: Role): Promise<AlertItem[]> {
+  const seeMoney = viewerRole ? canReadScope(viewerRole, 'money') : true
   // KST 오늘 [00:00, 다음날 00:00) — 일정 기반은 '당일'만
   const k = kstYmd()
   // 'YYYY-MM-DD' 는 today 와 같은 k 에서 뽑는다(두 번 재면 자정 경계에서 갈린다).
@@ -289,14 +298,14 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push({
       id: `receipt-${e.id}`, category: 'receipt',
       title: e.itemLabel ?? '품목',
-      subtitle: [e.vendor, e.amount > 0 ? fmtWon(e.amount) : '', '수령 대기'].filter(Boolean).join(' · '),
+      subtitle: [e.vendor, seeMoney && e.amount > 0 ? fmtWon(e.amount) : '', '수령 대기'].filter(Boolean).join(' · '),
       href: '/inventory?focus=inventory-pending',
       urgency: 300,
     })
   }
   // 비품 수령 대기. 형제(소모품 수령 대기)와 같은 문법. 목적지만 비품 화면 수령 대기 섹션이다.
   // 끄기 키는 없다(형제와 같다. 이 목록은 종·푸시 범위이고 홈 '끈 알림' 층은 대시보드 알림 띠의 몫이다).
-  for (const e of pendingAssetReceipts) {
+  for (const e of seeMoney ? pendingAssetReceipts : []) {
     items.push({
       id: `receipt-${e.id}`, category: 'receipt',
       title: e.itemLabel ?? '품목',

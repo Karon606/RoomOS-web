@@ -80,7 +80,7 @@ export const ASSET_UNRECEIVE_DENY_PLACED = '방이나 공용부에 배정된 비
 
 /** 배정(옮기기·나눠 배정·일괄 배정) 거부. 받기 전 물품 행이 섞이면 막는다. 서비스는 수령 개념이 없어 면제. */
 export function assignDenialUnreceived(rows: { receivedAt: Date | null; excludeFromInventory: boolean }[]): string | null {
-  return rows.some(r => !r.receivedAt && !r.excludeFromInventory) ? ASSET_ASSIGN_DENY_UNRECEIVED : null
+  return rows.some(r => !isPlaceable(r)) ? ASSET_ASSIGN_DENY_UNRECEIVED : null
 }
 
 /** 수령 대기로 돌리기 거부. 방·공용부에 놓인 물품 행이 섞이면 막는다. */
@@ -150,6 +150,20 @@ export function planTargetOf(row: ReceiptRow): string | null {
 
 // 서버가 배정을 받았는데 지금 판정으로는 물을 일이 없다. 화면을 연 뒤 예정 호실이 바뀌었거나 방이 지워졌다.
 export const ASSET_RECEIPT_PLAN_STALE = '배정할 호실 정보가 바뀌었습니다. 새로고침한 뒤 다시 수령해 주세요.'
+
+/** 화면이 창에 띄운 계획(행별 놓을 방). 배정을 고르면 서버에 같이 보낸다(검수 N-4). */
+export type ReceiptPlanExpect = { id: string; targetRoomId: string | null }[]
+export const planExpectOf = (rows: ReceiptRow[]): ReceiptPlanExpect => rows.map(r => ({ id: r.id, targetRoomId: planTargetOf(r) }))
+/**
+ * 화면이 본 계획과 지금 서버 계획이 다른가. 창이 떠 있는 동안 예정 호실이 바뀌면(다른 탭에서 지출 수정) 운영자가
+ * 본 적 없는 방으로 배정된다. 행 집합이 다르거나 한 행이라도 놓을 방이 다르면 다르다.
+ */
+export function planExpectMismatch(rows: ReceiptRow[], expect: ReceiptPlanExpect | undefined): boolean {
+  if (!expect) return true
+  const want = new Map(expect.map(e => [e.id, e.targetRoomId ?? null]))
+  if (want.size !== rows.length) return true
+  return rows.some(r => !want.has(r.id) || want.get(r.id) !== planTargetOf(r))
+}
 
 const qtyText = (n: number, unit: string) => `${fmtQty(n)}${unit}`
 const quoted = (label: string) => `'${label}'${hasFinalConsonant(label) ? '을' : '를'}`   // 따옴표 뒤 조사는 품명 받침으로(정본 판정)
@@ -231,3 +245,83 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
 
 // 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다.
 export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
+// 서버가 만든 토큰이 아니거나(서명 불일치) 모양이 틀렸다. 무엇도 쓰지 않는다(검수 N-1, 위조 토큰).
+export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'
+
+// ── 수령 전 비품에 자리를 쓰지 않는다. 집는 행의 정본(검수 F-1·F-2) ─────────────────────────────
+/** 방·공용부에 놓을 수 있는 행인가. 받은 물품이거나 서비스(수령 개념 없음). assignDenialUnreceived 와 같은 판정. */
+export const isPlaceable = (r: { receivedAt: Date | null; excludeFromInventory: boolean }) => !!r.receivedAt || r.excludeFromInventory
+/** isPlaceable 의 조회 조건. 속성으로 행을 집는 쓰기(배정 이력 되돌리기·미배정 묶음 합치기)가 where 에 건다. */
+export const PLACEABLE_WHERE = { OR: [{ receivedAt: { not: null } }, { excludeFromInventory: true }] }
+
+// ── 비품 수령 적용취소 토큰(검수 N-1) ─────────────────────────────────────────
+// 토큰은 화면을 거쳐 돌아오는 값이다. 종전 토큰은 행마다 '원상태' 칸 전부(금액·세부·수량까지)를 실어 그대로 썼다.
+// 그래서 같은 영업장 안의 무관한 지출 id 와 금액을 지어내면(공과금 50,000원을 1원으로) 그대로 써졌다. 지금은 셋으로 닫는다.
+//   1. 서명. 현금영수증 적용취소와 같은 정본(rooms/cashReceiptLine signUndoBody, 용도 'asset-receipt')으로 서명하고 대조한다.
+//   2. 범위. 대상 행은 그 영업장 비품 모집단 안이어야 한다(서버가 다시 조회).
+//   3. 칸. 이번 수령이 바꾼 칸만 되돌린다. 받은 행은 수령 시각과(배정했으면) 자리 넷, 분할 원행은 수량·금액·세부·묶음.
+//      수량·금액은 토큰 값을 쓰지 않고 서버가 원행과 조각에서 다시 더한다. 묶음 id 는 null 이나 지금 값만 받는다.
+export type AssetReceiptUndo = {
+  v: 1
+  at: string   // 이번 수령 시각(ISO). 받은 행의 receivedAt 이 이 값 그대로일 때만 되돌린다
+  // 통째로 받은 행. assigned 면 자리 넷(roomId·공용부·공용 표식·배정일)도 이번에 바꾼 것이다.
+  received: { id: string; assigned: boolean; prevAssignedAt: string | null; now: { roomId: string | null; isCommonAsset: boolean; itemLabel: string | null; qtyValue: number | null; amount: number } }[]
+  // 부분 도착으로 쪼갠 원행(지금은 수령 대기 잔여). 원래 묶음 id·세부만 싣는다(수량·금액은 서버가 다시 센다).
+  split: { id: string; prevGroupId: string | null; prevDetail: string | null; now: { qtyValue: number; amount: number; groupId: string; itemLabel: string | null } }[]
+  // 분할로 생긴 수령 조각. fromId 는 그 원행.
+  created: { id: string; fromId: string; roomId: string | null; isCommonAsset: boolean; qtyValue: number; amount: number }[]
+  logIds: string[]
+  sig?: string
+}
+export const ASSET_RECEIPT_UNDO_MAX_ROWS = 500
+/** 서명 용도(domain). 현금영수증 토큰과 같은 키라도 용도가 달라 서로의 서명이 안 맞는다. */
+export const ASSET_RECEIPT_UNDO_DOMAIN = 'asset-receipt'
+
+/** 서명할 정본 문자열. 필드 순서를 고정한 배열의 JSON 이라 객체 키 순서·시각 표기가 달라져도 같다. */
+export function canonicalAssetReceiptUndo(u: AssetReceiptUndo): string {
+  const ts = (v: string | null) => (v == null ? null : new Date(v).toISOString())
+  return JSON.stringify([
+    u.v, ts(u.at),
+    u.received.map(r => [r.id, r.assigned, ts(r.prevAssignedAt), r.now.roomId, r.now.isCommonAsset, r.now.itemLabel, r.now.qtyValue, r.now.amount]),
+    u.split.map(s => [s.id, s.prevGroupId, s.prevDetail, s.now.qtyValue, s.now.amount, s.now.groupId, s.now.itemLabel]),
+    u.created.map(c => [c.id, c.fromId, c.roomId, c.isCommonAsset, c.qtyValue, c.amount]),
+    u.logIds,
+  ])
+}
+
+/** 화면을 거쳐 돌아온 값이 토큰 모양인가. 아니면 null(모양이 틀린 값으로는 아무것도 안 쓴다). */
+export function parseAssetReceiptUndo(x: unknown): AssetReceiptUndo | null {
+  if (!x || typeof x !== 'object') return null
+  const u = x as Partial<AssetReceiptUndo>
+  const str = (v: unknown) => typeof v === 'string'
+  const strOrNull = (v: unknown) => v === null || typeof v === 'string'
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+  const numOrNull = (v: unknown) => v === null || num(v)
+  const isTs = (v: unknown) => typeof v === 'string' && !Number.isNaN(new Date(v).getTime())
+  if (u.v !== 1 || !isTs(u.at) || !Array.isArray(u.received) || !Array.isArray(u.split) || !Array.isArray(u.created) || !Array.isArray(u.logIds)) return null
+  if (u.received.length + u.split.length > ASSET_RECEIPT_UNDO_MAX_ROWS || u.created.length > u.split.length || u.logIds.length > ASSET_RECEIPT_UNDO_MAX_ROWS) return null
+  if (u.sig !== undefined && !str(u.sig)) return null
+  for (const r of u.received) {
+    if (!r || !str(r.id) || typeof r.assigned !== 'boolean' || !(r.prevAssignedAt === null || isTs(r.prevAssignedAt))) return null
+    const n = r.now
+    if (!n || !strOrNull(n.roomId) || typeof n.isCommonAsset !== 'boolean' || !strOrNull(n.itemLabel) || !numOrNull(n.qtyValue) || !num(n.amount)) return null
+    // 배정한 행은 방에 놓였고 공용 표식이 꺼져 있어야 한다(이번 쓰기가 만든 모양).
+    if (r.assigned && (!n.roomId || n.isCommonAsset)) return null
+  }
+  const splitIds = new Set<string>()
+  for (const s of u.split) {
+    if (!s || !str(s.id) || !strOrNull(s.prevGroupId) || !strOrNull(s.prevDetail)) return null
+    const n = s.now
+    if (!n || !num(n.qtyValue) || !num(n.amount) || !str(n.groupId) || !strOrNull(n.itemLabel)) return null
+    // 묶음 id 는 원래 없었거나(이번에 새로 만든 것) 지금 값 그대로다. 그 밖의 값으로는 못 바꾼다.
+    if (s.prevGroupId !== null && s.prevGroupId !== n.groupId) return null
+    splitIds.add(s.id)
+  }
+  for (const c of u.created) {
+    if (!c || !str(c.id) || !str(c.fromId) || !splitIds.has(c.fromId) || !strOrNull(c.roomId) || typeof c.isCommonAsset !== 'boolean' || !num(c.qtyValue) || !num(c.amount)) return null
+  }
+  if (!u.logIds.every(str)) return null
+  const ids = [...u.received.map(r => r.id), ...u.split.map(s => s.id), ...u.created.map(c => c.id)]
+  if (new Set(ids).size !== ids.length) return null
+  return u as AssetReceiptUndo
+}

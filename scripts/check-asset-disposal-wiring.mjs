@@ -194,7 +194,7 @@ function body(src, header) {
   need('mergeUnassignedGroup 을 찾음', fn.length > 0)
   // 읽는 조회 둘만 본다(뒤쪽 update·deleteMany 의 where 는 id 로 찍으므로 대상이 아니다).
   need('**미배정 조회 where 에 disposedAt: null**',
-    /findMany\(\{\s*where: \{ propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, disposedAt: null \}/.test(fn),
+    /findMany\(\{\s*where: \{ propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, disposedAt: null(, AND: \[PLACEABLE_WHERE\])? \}/.test(fn),
     '빠지면 폐기 행이 합쳐져 사라진다 — 표시 오염이 아니라 데이터 소실이다')
   // 반대 방향이다 — '묶음이 아직 뜻이 있나' 를 세는 쪽에서는 **폐기 행도 세야** 한다.
   // 빼면 남은 것이 폐기뿐일 때 groupId 가 풀려 undoDisposalRow 가 제 짝을 못 찾는다.

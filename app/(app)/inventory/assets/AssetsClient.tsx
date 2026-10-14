@@ -34,7 +34,7 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
 import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
-import { plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, type ReceiptPlan } from './receiptPlacement'
+import { plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, planExpectOf, type ReceiptPlan, type ReceiptPlanExpect } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -793,13 +793,14 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       if (choice === null || choice === 'back') return   // 취소. 수령도 안 한다(무변경)
       assign = choice === 'confirm'
     }
-    markReceived(it, true, qty, { assign, plan })
+    // 배정을 고르면 창에 띄운 계획(행별 놓을 방)을 같이 보낸다. 그 사이 예정 호실이 바뀌면 서버가 거부한다(검수 N-4).
+    markReceived(it, true, qty, { assign, plan, expect: planExpectOf(rows) })
   }
 
   // 수령 상태 토글 (수령 완료 / 수령 대기로). qty 지정 시 부분 수령(행 분할).
-  const markReceived = (it: AssetItem, value: boolean, qty?: number, how?: { assign: boolean; plan: ReceiptPlan }) => {
+  const markReceived = (it: AssetItem, value: boolean, qty?: number, how?: { assign: boolean; plan: ReceiptPlan; expect: ReceiptPlanExpect }) => {
     startTransition(async () => {
-      const res = await setAssetReceived(it.ids, value, qty ?? null, how?.assign ? { assign: true } : undefined)
+      const res = await setAssetReceived(it.ids, value, qty ?? null, how?.assign ? { assign: true, expect: how.expect } : undefined)
       if (!res.ok) { pushToast('error', res.error); return }
       setRcvAsk(null)
       if (!value) { pushToast('success', '수령 대기로 변경됨'); router.refresh(); return }

@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
+import type { Role } from '@/lib/role-types'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
 import { approvedPushRecipients, ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
@@ -129,14 +130,17 @@ export async function GET(req: Request) {
     if (!approved.has(userId)) continue
     const [owned, roles] = await Promise.all([
       prisma.property.findMany({ where: { ownerId: userId }, select: { id: true } }),
-      prisma.userPropertyRole.findMany({ where: { userId }, select: { propertyId: true } }),
+      prisma.userPropertyRole.findMany({ where: { userId }, select: { propertyId: true, role: true } }),
     ])
     const propIds = Array.from(new Set([...owned.map(o => o.id), ...roles.map(r => r.propertyId)]))
     if (propIds.length === 0) continue
 
     // 사용자가 접근 가능한 모든 영업장의 알림을 합산 (종과 같은 computeAlerts 소스)
     const allItems: AlertItem[] = []
-    for (const pid of propIds) allItems.push(...await computeAlerts(pid))
+    // 영업장마다 그 사용자의 역할을 넘긴다(소유 영업장은 소유자). 종(getMyAlerts)과 같은 값이라 뱃지 숫자가 같다(검수 N-5).
+    const roleOf = new Map<string, Role>(roles.map(r => [r.propertyId, r.role as Role]))
+    for (const o of owned) roleOf.set(o.id, 'OWNER')
+    for (const pid of propIds) allItems.push(...await computeAlerts(pid, roleOf.get(pid)))
     const { total, parts } = summarizeAlerts(allItems)
     if (total === 0) continue
 

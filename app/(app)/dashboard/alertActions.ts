@@ -11,5 +11,6 @@ import { computeAlerts, type AlertItem } from './alerts'
 export async function getMyAlerts(): Promise<AlertItem[]> {
   const access = await getPropertyAccess()
   if (!access) return []
-  return computeAlerts(access.propertyId)
+  // 역할을 넘겨 그 역할이 못 여는 목적지·못 보는 금액을 거른다(검수 N-5, 크론 푸시와 같은 값).
+  return computeAlerts(access.propertyId, access.role)
 }

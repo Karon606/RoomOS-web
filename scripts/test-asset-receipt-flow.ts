@@ -77,6 +77,17 @@ async function main() {
   const logs = async (label: string) => (await prisma.assetAssignmentLog.findMany({ where: { propertyId: P1, itemLabel: label }, orderBy: { createdAt: 'asc' } }))
     .map((l: { fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; assignedAt: Date | null }) => [l.fromKind, l.fromLabel, l.toKind, l.toLabel, l.qty, !!l.assignedAt])
   const amountSum = async () => (await prisma.expense.aggregate({ where: { propertyId: P1 }, _sum: { amount: true } }))._sum.amount ?? 0
+  // 화면이 창에 띄우는 계획을 서버와 같은 순수 함수로 만든다(검수 N-4, 배정 요청은 계획을 같이 보낸다).
+  const expectOf = async (ids: string[]) => {
+    const rows = await prisma.expense.findMany({ where: { id: { in: ids }, propertyId: P1, receivedAt: null } })
+    const alive = new Map((await prisma.room.findMany({ where: { propertyId: P1 } })).map((r: { id: string; roomNo: string }) => [r.id, r.roomNo]))
+    return rp.planExpectOf(rows.map((e: { id: string; qtyValue: number | null; targetRoomId: string | null; roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean }) => ({
+      id: e.id, units: e.qtyValue ?? 1, targetRoomId: e.targetRoomId, targetRoomNo: e.targetRoomId ? (alive.get(e.targetRoomId) ?? null) : null,
+      unplaced: !e.roomId && !e.assignedLocationId && !e.isCommonAsset,
+    })))
+  }
+  const withPlan = async (ids: string[]) => ({ assign: true, expect: await expectOf(ids) })
+  const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 
   // ── S1 비품 수령은 소모품 id 를 거부한다(참·거짓 둘 다) ───────────────────────────
   {
@@ -96,7 +107,7 @@ async function main() {
     const E = await exp({ targetRoomId: R519, qtyValue: 1 })
     const before = await bytes({ id: E })
     const sum0 = await amountSum()
-    const r = await assets.setAssetReceived([E], true, null, { assign: true })
+    const r = await assets.setAssetReceived([E], true, null, await withPlan([E]))
     if (!r.ok) throw new Error(r.error)
     const row = await prisma.expense.findUnique({ where: { id: E } })
     // 배정일은 KST 오늘(@db.Date). 받은 시각을 KST 날짜로 읽은 값과 같아야 한다. KST 00~09시 수령이 어제로 박히지 않게.
@@ -117,7 +128,7 @@ async function main() {
     await assets.undoAssetReceipt(J(r2.undo!))
     eq('F2 수령만 적용취소: 바이트 동일', await bytes({ id: E }), before)
     // 받은 뒤 옮겼으면 적용취소는 거부하고 아무것도 안 바꾼다
-    const r3 = await assets.setAssetReceived([E], true, null, { assign: true })
+    const r3 = await assets.setAssetReceived([E], true, null, await withPlan([E]))
     if (!r3.ok) throw new Error(r3.error)
     const mv = await assets.assignAggregateToTarget([E], { kind: 'room', id: R520 }, null)
     eq('F2 받은 뒤 520호로 옮김', mv.ok, true)
@@ -135,7 +146,7 @@ async function main() {
     const E = await exp({ itemLabel: '의자', targetRoomId: R519, qtyValue: 4, amount: 100001 })
     const before = await bytes({ itemLabel: '의자' })
     const sum0 = await amountSum()
-    const r = await assets.setAssetReceived([E], true, 2, { assign: true })
+    const r = await assets.setAssetReceived([E], true, 2, await withPlan([E]))
     if (!r.ok) throw new Error(r.error)
     const rows = await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: '의자' }, orderBy: { createdAt: 'asc' } })
     eq('F2 부분: 두 행(잔여 대기 + 받은 조각)', rows.length, 2)
@@ -162,10 +173,10 @@ async function main() {
     const A = await exp({ itemLabel: '선풍기', targetRoomId: R519, qtyValue: 1, amount: 30000 })
     const B = await exp({ itemLabel: '선풍기', targetRoomId: R520, qtyValue: 1, amount: 30000 })
     const before = await bytes({ itemLabel: '선풍기' })
-    const amb = await assets.setAssetReceived([A, B], true, 1, { assign: true })
+    const amb = await assets.setAssetReceived([A, B], true, 1, await withPlan([A, B]))
     eq('F2 부분 도착 + 여러 방: 배정 요청 거부', amb, { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
     eq('F2 거부면 무변경', await bytes({ itemLabel: '선풍기' }), before)
-    const r = await assets.setAssetReceived([A, B], true, null, { assign: true })
+    const r = await assets.setAssetReceived([A, B], true, null, await withPlan([A, B]))
     if (!r.ok) throw new Error(r.error)
     const ra = await prisma.expense.findUnique({ where: { id: A } }), rb = await prisma.expense.findUnique({ where: { id: B } })
     eq('F2 여러 방: 적은 대로 배정', [ra?.roomId === R519, rb?.roomId === R520], [true, true])
@@ -178,9 +189,9 @@ async function main() {
     await assets.undoAssetReceipt(J(r2.undo!))
     eq('F2 부분 도착 + 여러 방 적용취소: 바이트 동일', await bytes({ itemLabel: '선풍기' }), before)
     const D = await exp({ itemLabel: '책상', targetRoomId: randomUUID(), qtyValue: 1 })
-    eq('F2 지운 방이면 배정 요청 거부', await assets.setAssetReceived([D], true, null, { assign: true }), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
+    eq('F2 지운 방이면 배정 요청 거부', await assets.setAssetReceived([D], true, null, await withPlan([D])), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
     const X = await exp({ itemLabel: '책상2', targetRoomId: R999, qtyValue: 1 })
-    eq('F2 남의 영업장 방이면 배정 요청 거부', await assets.setAssetReceived([X], true, null, { assign: true }), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
+    eq('F2 남의 영업장 방이면 배정 요청 거부', await assets.setAssetReceived([X], true, null, await withPlan([X])), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
   }
 
   // ── S4 수령 전 비품에 자리를 쓰는 길은 막힌다 ────────────────────────────────────
@@ -239,7 +250,8 @@ async function main() {
     eq('S3 채움: 수량·카드 단위·세부', [row?.qtyValue, row?.qtyUnit, row?.detail, !!row?.receivedAt], [2, '포', '[쌀] 20kg x 2포', true])
     const checks = await prisma.stockCheck.findMany({ where: { trackedItemId: card.id } })
     eq('S3 자동 점검이 생긴다(유령수령 아님)', checks.map((c: { sourceExpenseId: string | null; remainingQty: number }) => [c.sourceExpenseId === T, c.remainingQty]), [[true, 40]])
-    eq('S3 적용취소 조각', J(r.qtyFill), { expenseId: T, qtyValue: 2, qtyUnit: '포', detail: '[쌀] 20kg x 2포', prevQtyValue: null, prevQtyUnit: null, prevDetail: '[쌀] 20kg' })
+    const { sig: fillSig, ...fillBody } = J(r.qtyFill!)
+    eq('S3 적용취소 조각(서명 붙음)', [fillBody, typeof fillSig === 'string' && fillSig.length > 20], [{ expenseId: T, qtyValue: 2, qtyUnit: '포', detail: '[쌀] 20kg x 2포', prevQtyValue: null, prevQtyUnit: null, prevDetail: '[쌀] 20kg' }, true])
     const u = await inv.undoConfirmReceipt(T, { qtyFill: J(r.qtyFill!) })
     eq('S3 수령 취소 ok', u.ok, true)
     eq('S3 수령 취소: 바이트 동일(수량·세부도 원래 빈 값)', await bytes({ id: T }), before)
@@ -280,7 +292,7 @@ async function main() {
   // ── 멀티테넌트: 남의 영업장 토큰·id 로는 아무것도 못 바꾼다 ─────────────────────────────
   {
     const E = await exp({ itemLabel: '소파', targetRoomId: R519, qtyValue: 1 })
-    const r = await assets.setAssetReceived([E], true, null, { assign: true })
+    const r = await assets.setAssetReceived([E], true, null, await withPlan([E]))
     if (!r.ok) throw new Error(r.error)
     const after = await bytes({ id: E })
     g.__CR_FLOW_PID = P2
@@ -288,6 +300,146 @@ async function main() {
     eq('MT 다른 영업장에서 수령 대기로 거부', (await assets.setAssetReceived([E], false)).ok, false)
     g.__CR_FLOW_PID = P1
     eq('MT 무변경', await bytes({ id: E }), after)
+  }
+
+  // ═══ 독립 검수·웹디자이너 패스 반영(2026-10-15) ═══════════════════════════════════════
+  // F-1 부분 도착 뒤 받은 조각을 미배정으로 돌려도 수령 대기 잔여와 접히지 않는다(세 길)
+  {
+    const shape = async (label: string) => (await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: label }, orderBy: { createdAt: 'asc' } }))
+      .map((r: { qtyValue: number | null; receivedAt: Date | null; roomId: string | null; allocationGroupId: string | null }) => [r.qtyValue, !!r.receivedAt, r.roomId === R519 ? '519' : r.roomId, !!r.allocationGroupId])
+    const E1 = await exp({ itemLabel: 'F1의자a', targetRoomId: R519, qtyValue: 4, amount: 100000 })
+    const r1 = await assets.setAssetReceived([E1], true, 2, await withPlan([E1]))
+    if (!r1.ok) throw new Error(r1.error)
+    const p1 = r1.undo!.created[0].id
+    eq('F-1a 519호 수량 줄이기(1개 미배정으로)', (await assets.assignAggregateToTarget([p1], { kind: 'none' }, 1)).ok, true)
+    eq('F-1a 받은 1개는 미배정·잔여 2개는 수령 대기 그대로', (await shape('F1의자a')).sort(), [[1, true, '519', true], [1, true, null, true], [2, false, null, true]].sort())
+    const E2 = await exp({ itemLabel: 'F1의자b', targetRoomId: R519, qtyValue: 4, amount: 100000 })
+    const r2 = await assets.setAssetReceived([E2], true, 2, await withPlan([E2]))
+    if (!r2.ok) throw new Error(r2.error)
+    eq('F-1b 조각 통째 미배정', (await assets.assignAggregateToTarget([r2.undo!.created[0].id], { kind: 'none' }, null)).ok, true)
+    eq('F-1b 받은 2개는 미배정으로 남고 수령 대기와 안 접힌다', await shape('F1의자b'), [[2, false, null, true], [2, true, null, true]])
+    eq('F-1b 금액 합 그대로', (await prisma.expense.aggregate({ where: { propertyId: P1, itemLabel: 'F1의자b' }, _sum: { amount: true } }))._sum.amount, 100000)
+    const E3 = await exp({ itemLabel: 'F1의자c', targetRoomId: R519, qtyValue: 4, amount: 100000 })
+    const r3 = await assets.setAssetReceived([E3], true, 2, await withPlan([E3]))
+    if (!r3.ok) throw new Error(r3.error)
+    const log3 = (await prisma.assetAssignmentLog.findFirst({ where: { propertyId: P1, itemLabel: 'F1의자c' } }))!
+    eq('F-1c 수령 배정 이력 되돌리기', (await assets.revertAssignmentLog(log3.id)).ok, true)
+    eq('F-1c 받은 2개 미배정·수령 대기 2개 그대로·이력 지움', [await shape('F1의자c'), (await logs('F1의자c')).length], [[[2, false, null, true], [2, true, null, true]], 0])
+  }
+  // F-2 배정 이력 되돌리기가 수령 전 행을 방에 넣지 않는다
+  {
+    const X = await exp({ itemLabel: 'F2거울', qtyValue: 1, roomId: R519, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    await assets.assignAggregateToTarget([X], { kind: 'none' }, null)
+    await assets.assignAggregateToTarget([X], { kind: 'room', id: R520 }, null)
+    const Y = await exp({ itemLabel: 'F2거울', qtyValue: 1, targetRoomId: R519 })
+    const before = await bytes({ id: Y })
+    const logA = (await prisma.assetAssignmentLog.findMany({ where: { propertyId: P1, itemLabel: 'F2거울', toKind: 'none' } }))[0]
+    const rv = await assets.revertAssignmentLog(logA.id)
+    eq('F-2 미배정 쪽에 받은 것이 없으면 되돌릴 수 없다고 말한다', rv.ok, false)
+    eq('F-2 수령 전 행은 그대로(방에 안 들어감)', await bytes({ id: Y }), before)
+  }
+  // R-1 '재고 계산에 다시 포함'이 방에 걸린 서비스를 수령 전 비품 + 방으로 만들지 않는다. 제외로 되돌리면 원래 두 칸
+  {
+    const S = (await prisma.expense.create({ data: { propertyId: P1, date: day('2026-10-03'), amount: 40000, category: '수선유지비', itemLabel: 'R1도배', roomId: R519, excludeFromInventory: true } })).id as string
+    const before = await bytes({ id: S })
+    eq('R-1 다시 포함 ok', (await inv.includeExpenseInInventory(S)).ok, true)
+    const e = await prisma.expense.findUnique({ where: { id: S } })
+    eq('R-1 받기 전 비품: 방은 배정 예정 호실로', [e?.roomId, e?.targetRoomId === R519, e?.excludeFromInventory], [null, true, false])
+    eq('R-1 제외로 되돌리면 바이트 동일', [(await inv.excludeExpenseFromInventory(S)).ok, await bytes({ id: S })], [true, before])
+  }
+  // R-2 재고 화면의 수령·수령 취소는 소모품만(비품 쪽 S1 의 거울)
+  {
+    const E = await exp({ itemLabel: 'R2책상', qtyValue: 1, roomId: R519, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    const before = await bytes({ id: E })
+    eq('R-2 수령 취소 거부', await inv.undoConfirmReceipt(E), { ok: false, error: gate.INVENTORY_RECEIPT_DENY_UNTRACKED })
+    eq('R-2 구매 수정 수령일 비우기 거부', await inv.updateExpenseFromInventory(E, { receivedAt: null }), { ok: false, error: gate.INVENTORY_RECEIPT_DENY_UNTRACKED })
+    eq('R-2 거부면 무변경', await bytes({ id: E }), before)
+    const P = await exp({ itemLabel: 'R2책상b', qtyValue: 1, targetRoomId: R519 })
+    eq('R-2 재고 화면 수령도 비품은 거부(배정 물음 우회 금지)', await inv.confirmReceipt(P), { ok: false, error: gate.INVENTORY_RECEIPT_DENY_UNTRACKED })
+  }
+  // R-3 수령만 뒤 공용 자재로 돌렸으면 적용취소는 거부(공용 표식 CAS)
+  {
+    const E = await exp({ itemLabel: 'R3선반', qtyValue: 1, targetRoomId: R519 })
+    const r = await assets.setAssetReceived([E], true)
+    if (!r.ok) throw new Error(r.error)
+    await assets.setCommonAsset([E], true)
+    const after = await bytes({ id: E })
+    eq('R-3 공용 표식 뒤 적용취소 거부', await assets.undoAssetReceipt(J(r.undo!)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('R-3 거부면 무변경', await bytes({ id: E }), after)
+  }
+  // N-1 위조 토큰. 무관한 지출·변조 값·변조 서명은 아무것도 못 쓴다
+  {
+    const U = (await prisma.expense.create({ data: { propertyId: P1, date: day('2026-10-02'), amount: 50000, category: '공과금', detail: '전기요금' } })).id as string
+    const uBefore = await bytes({ id: U })
+    const forged = { v: 1, at: new Date().toISOString(), received: [], split: [{ id: U, prevGroupId: null, prevDetail: '조작', now: { qtyValue: 1, amount: 50000, groupId: 'g', itemLabel: null } }], created: [], logIds: [] }
+    eq('N-1 무관한 지출 위조 토큰 거부', await assets.undoAssetReceipt(forged as never), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('N-1 옛 모양 위조 토큰 거부', await assets.undoAssetReceipt({ at: new Date().toISOString(), rows: [{ id: U, prev: { amount: 1, detail: '조작' }, now: { received: false, amount: 50000 } }], created: [], logIds: [] } as never), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('N-1 공과금 무변경', await bytes({ id: U }), uBefore)
+    const E = await exp({ itemLabel: 'N1의자', targetRoomId: R519, qtyValue: 4, amount: 100000 })
+    const r = await assets.setAssetReceived([E], true, 2, await withPlan([E]))
+    if (!r.ok) throw new Error(r.error)
+    const t = J(r.undo!)
+    const after = await bytes({ itemLabel: 'N1의자' })
+    eq('N-1 값 변조(원래 세부) 토큰은 서명에서 거부', await assets.undoAssetReceipt({ ...t, split: [{ ...t.split[0], prevDetail: '조작' }] }), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('N-1 서명 변조 거부', await assets.undoAssetReceipt({ ...t, sig: 'AAAA' + (t.sig ?? '').slice(4) }), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('N-1 다른 영업장 서명으로 거부(같은 토큰)', await (async () => { g.__CR_FLOW_PID = P2; const x = await assets.undoAssetReceipt(t); g.__CR_FLOW_PID = P1; return x })(), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('N-1 거부면 무변경', await bytes({ itemLabel: 'N1의자' }), after)
+    eq('N-1 진짜 토큰은 통과', (await assets.undoAssetReceipt(t)).ok, true)
+    // 채움 조각 위조
+    await prisma.trackedItem.create({ data: { propertyId: P1, category: '소모품비', label: 'N1쌀', trackUnit: 'spec', specUnit: 'kg', qtyUnit: '포' } })
+    const T = await exp({ category: '소모품비', itemLabel: 'N1쌀', qtyValue: null, qtyUnit: null, specValue: 20, specUnit: 'kg', detail: '[N1쌀] 20kg', amount: 55000 })
+    const tBefore = await bytes({ id: T })
+    const c = await inv.confirmReceipt(T, undefined, undefined, 2)
+    if (!c.ok) throw new Error(c.error)
+    const fillTok = J(c.qtyFill!)
+    const recvState = await bytes({ id: T })
+    eq('N-1 채움 조각 원래 값 위조(999·톤) 거부', await inv.undoConfirmReceipt(T, { qtyFill: { ...fillTok, prevQtyValue: 999, prevQtyUnit: '톤' } }), { ok: false, error: gate.QTY_FILL_INVALID })
+    eq('N-1 채움 조각 세부 위조(서명 불일치) 거부', await inv.undoConfirmReceipt(T, { qtyFill: { ...fillTok, prevDetail: '조작' } }), { ok: false, error: gate.QTY_FILL_INVALID })
+    eq('N-1 채움 조각 거부면 수령 그대로', await bytes({ id: T }), recvState)
+    eq('N-1 진짜 채움 조각은 통과, 바이트 동일', [(await inv.undoConfirmReceipt(T, { qtyFill: fillTok })).ok, await bytes({ id: T })], [true, tBefore])
+    // 채운 뒤 사람이 수량을 고쳤으면 수령 취소는 그 수량을 지킨다(검수 R-4 장면)
+    const c2 = await inv.confirmReceipt(T, undefined, undefined, 2)
+    if (!c2.ok) throw new Error(c2.error)
+    await prisma.expense.update({ where: { id: T }, data: { qtyValue: 3 } })
+    const u2 = await inv.undoConfirmReceipt(T, { qtyFill: J(c2.qtyFill!) })
+    const t2 = await prisma.expense.findUnique({ where: { id: T } })
+    eq('R-4 채운 뒤 사람이 고친 수량은 지키고 수령만 무른다', [u2.ok, t2?.qtyValue, !!t2?.receivedAt], [true, 3, false])
+    // 세부를 사람이 처음부터 채운 형식으로 적어 둔 구매(수량 칸만 빔). 채움은 세부를 안 고쳤으니 무를 때도 그 글자 그대로
+    const T2 = await exp({ category: '소모품비', itemLabel: 'N1쌀', qtyValue: null, qtyUnit: null, specValue: 20, specUnit: 'kg', detail: '[N1쌀] 20kg x 2포', amount: 55000 })
+    const t2Before = await bytes({ id: T2 })
+    const c3 = await inv.confirmReceipt(T2, undefined, undefined, 2)
+    if (!c3.ok) throw new Error(c3.error)
+    eq('N-1 원래 세부가 채운 형식과 같던 구매도 무르면 바이트 동일', [(await inv.undoConfirmReceipt(T2, { qtyFill: J(c3.qtyFill!) })).ok, await bytes({ id: T2 })], [true, t2Before])
+  }
+  // N-4 창이 떠 있는 동안 예정 호실이 바뀌면 배정 거부
+  {
+    const E = await exp({ itemLabel: 'N4의자', targetRoomId: R519, qtyValue: 1 })
+    const plan = await withPlan([E])
+    await prisma.expense.update({ where: { id: E }, data: { targetRoomId: R520 } })
+    const before = await bytes({ id: E })
+    eq('N-4 본 계획과 다르면 거부', await assets.setAssetReceived([E], true, null, plan), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
+    eq('N-4 계획 없이 배정 요청도 거부', await assets.setAssetReceived([E], true, null, { assign: true }), { ok: false, error: rp.ASSET_RECEIPT_PLAN_STALE })
+    eq('N-4 거부면 무변경', await bytes({ id: E }), before)
+  }
+  // N-8 배정일 기본값은 KST 오늘
+  {
+    const E = await exp({ itemLabel: 'N8선반', qtyValue: 1, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    await assets.assignAggregateToTarget([E], { kind: 'room', id: R519 }, null)
+    eq('N-8 옮기기 기본 배정일 = KST 오늘', (await prisma.expense.findUnique({ where: { id: E } }))?.assignedAt?.toISOString().slice(0, 10), kstToday())
+  }
+  // N-5 역할별 알림. 제한 스태프는 비품 수령 대기를 못 보고 소모품 금액도 안 받는다
+  {
+    const alerts = await import('@/app/(app)/dashboard/alerts')
+    await exp({ itemLabel: 'N5냉장고', qtyValue: 1, targetRoomId: R519, amount: 133000 })
+    await exp({ category: '소모품비', itemLabel: 'N5세제', qtyValue: 1, amount: 7000 })
+    const pick = (xs: { title: string; subtitle: string; href?: string }[]) => xs.filter(x => x.title.startsWith('N5')).map(x => [x.title, x.subtitle, x.href ?? null])
+    eq('N-5 소유자: 둘 다·금액·비품은 비품 화면으로', pick(await alerts.computeAlerts(P1, 'OWNER')).sort(), [
+      ['N5냉장고', '쿠팡(주) · 133,000원 · 비품 수령 대기', '/inventory/assets?focus=assets-pending'],
+      ['N5세제', '쿠팡(주) · 7,000원 · 수령 대기', '/inventory?focus=inventory-pending'],
+    ])
+    eq('N-5 제한 스태프: 비품 알림 없음·소모품 금액 없음', pick(await alerts.computeAlerts(P1, 'LIMITED_STAFF')), [
+      ['N5세제', '쿠팡(주) · 수령 대기', '/inventory?focus=inventory-pending'],
+    ])
   }
 
   console.log(`[비품 수령·배정·수량 관문 통합] 통과 ${pass} / 실패 ${fail}`)

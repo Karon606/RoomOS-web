@@ -3,6 +3,8 @@
 // 2026-10-15 냉장고 519호 건(계획서 비품-전환-배정 1단계). 판정 진리표(scripts/test-asset-receipt.ts)는 순수 함수만 본다.
 // 서버와 화면이 그 판정을 **실제로 부르는가**는 진리표가 못 본다. 판정을 지우거나 우회하면 진리표는 초록인 채로
 // 유령수령·수령 전 배정·적용취소 반쪽이 되살아난다. 그 자리를 글자로 묶는다(주석은 걷고 본다).
+// 독립 검수 반영(2026-10-15). 수령 전 행을 접기·되돌리기가 집는 길(F-1·F-2), 토큰 서명·모집단(N-1), 화면이 본 계획(N-4),
+// 역할별 알림(N-5), KST 기본 배정일(N-8), 재고 화면 수령의 소모품 한정(R-2), 제외·포함의 자리 규칙(R-1)을 더 묶는다.
 import { readFileSync } from 'node:fs'
 
 const violations = []
@@ -41,7 +43,9 @@ must(A, a, 'setAssetReceived', [
   [/if \(placedDenial\) return \{ ok: false, error: placedDenial \}/, 'S4 놓인 비품 판정을 부르고도 거부하지 않는다'],
   [/const assignDay = ymdToDbDate\(kstYmdStr\(now\)\)/, 'S5 배정일이 KST 오늘이 아니다. assignedAt 은 @db.Date 라 KST 00~09시 수령이 어제로 박힌다'],
   [/receiptPlacementPlan\(/, 'S5 받을 때 배정 판정을 화면과 같은 순수 함수로 하지 않는다'],
-  [/opts\?\.assign && !planAsks\(plan\)\) return/, 'S5 묻지 않을 판정인데 배정 요청이 오면 거부해야 한다'],
+  [/opts\?\.assign && \(!planAsks\(plan\) \|\| planExpectMismatch\(planRows, opts\.expect\)\)\) return \{ ok: false, error: ASSET_RECEIPT_PLAN_STALE \}/, 'S5 묻지 않을 판정이거나 화면이 본 계획과 다르면(N-4) 배정 요청을 거부해야 한다'],
+  [/unplaced: isUnplaced\(e\.roomId, e\.assignedLocationId, e\.isCommonAsset\)/, 'R-4 안 놓인 행 판정이 화면(aggregate)과 같은 정본(isUnplaced)이 아니다'],
+  [/signUndoBody\(ASSET_RECEIPT_UNDO_DOMAIN, propertyId, canonicalAssetReceiptUndo\(body\)\)/, 'N-1 적용취소 토큰에 서버 서명을 붙이지 않는다(위조 토큰으로 무관한 지출을 고친다)'],
   [/planTargetOf\(/, 'S5 배정 대상 행을 정본(planTargetOf)으로 고르지 않는다'],
   [/assetAssignmentLog\.create\(\{ data: assignmentLogData\(/, 'S5 수령 배정이 배정 변경 이력을 같은 트랜잭션에 남기지 않는다'],
   [/kind: 'none', label: '미배정' \}/, "S5 이력 출발이 '미배정'이 아니다(정본 placeLabel 표기)"],
@@ -52,12 +56,42 @@ must(A, a, 'setAssetReceived', [
 must(A, a, 'undoAssetReceipt', [
   [/requireEdit\(\)/, '적용취소가 편집 권한 관문을 안 지난다'],
   [/deleteMany\(\{\s*where: \{ id: c\.id, propertyId, receivedAt: at/, '분할 수령 조각을 영업장·수령 시각 조건(CAS) 없이 지운다'],
-  [/where: \{\s*id: row\.id, propertyId, receivedAt: row\.now\.received \? at : null/, '행 복원에 영업장·이번 상태 조건(CAS)이 없다'],
+  [/where: \{\s*id: row\.id, propertyId, receivedAt: at, disposedAt: null,\s*roomId: row\.now\.roomId, isCommonAsset: row\.now\.isCommonAsset, itemLabel: row\.now\.itemLabel,/, '행 복원에 영업장·이번 상태 조건(CAS)이 없다(R-3 공용 표식·품목명 포함)'],
+  [/parseAssetReceiptUndo\(undoRaw\)/, 'N-1 토큰 모양 검사(parseAssetReceiptUndo)를 안 지난다'],
+  [/verifyUndoBody\(ASSET_RECEIPT_UNDO_DOMAIN, propertyId, canonicalAssetReceiptUndo\(undo\), undo\.sig\)/, 'N-1 토큰 서명을 확인하지 않는다'],
+  [/durableExpenseWhere\(propertyId, trackedCats\), id: \{ in: ids \} \} \}\)\s*if \(inPop !== ids\.length\) return \{ ok: false, error: ASSET_RECEIPT_UNDO_INVALID \}/, 'N-1 토큰의 행이 전부 비품 모집단 안인지 보지 않는다(공과금 같은 무관한 지출)'],
+  [/data: \{ qtyValue: Math\.round\(qty \* 1000\) \/ 1000, amount, detail: s\.prevDetail, allocationGroupId: s\.prevGroupId \}/, 'N-1 분할 원행의 수량·금액을 서버가 다시 더하지 않는다'],
+  [/qty \+= c\.qtyValue; amount \+= c\.amount/, 'N-1 분할 원행 금액을 지운 조각에서 다시 셈하지 않는다'],
   [/assetAssignmentLog\.deleteMany\(\{ where: \{ id: \{ in: undo\.logIds \}, propertyId \} \}\)/, '적용취소가 만든 이력 줄을 영업장 범위로 지우지 않는다'],
   [/if \(r\.count !== 1\) throw STALE/, '그 사이 바뀐 행이면 거부해야 한다(반쪽 적용취소 금지)'],
 ])
 mustNot(A, a, 'undoAssetReceipt', [
   [/targetRoomId/, '적용취소가 배정 예정 호실을 건드린다. 예정 호실은 남아야 한다'],
+  [/\.prev\.(amount|qtyValue)|amount: (row|s)\.prev/, 'N-1 토큰에 실린 원래 금액·수량을 그대로 쓴다(위조 토큰이 금액을 쓴다)'],
+])
+// F-1·F-2 미배정 접기·이력 되돌리기는 수령 전 물품 행을 집지 않는다(배정 정본 isPlaceable 의 조회 조건)
+must(A, a, 'mergeUnassignedGroup', [
+  [/roomId: null, assignedLocationId: null, disposedAt: null, AND: \[PLACEABLE_WHERE\] \}/, 'F-1 미배정 접기가 수령 대기 잔여까지 집는다(받은 조각이 수령 대기로 사라진다)'],
+  [/const others = await prisma\.expense\.count\(\{\s*where: \{ propertyId, allocationGroupId: groupId, id: \{ notIn: unassigned\.map\(u => u\.id\) \} \},/, 'F-1 묶음 뜻 세기(others)에서 수령 대기 행을 뺐다. groupId 가 풀린다'],
+])
+must(A, a, 'revertAssignmentLog', [
+  [/roomId: to\.roomId, assignedLocationId: to\.locationId,[\s\S]{0,160}AND: \[PLACEABLE_WHERE\],/, 'F-2 배정 이력 되돌리기가 수령 전 물품 행을 방에 넣는다'],
+])
+// N-8 배정일·폐기일 기본값은 KST 오늘(@db.Date). new Date() 는 KST 00~09시에 어제로 박힌다
+for (const fn of ['assignAggregateToTarget', 'distributeAssetToTargets', 'disposeAssets']) {
+  must(A, a, fn, [[/ymdToDbDate\(kstYmdStr\(\)\)/, 'N-8 기본 날짜가 KST 오늘(ymdToDbDate(kstYmdStr()))이 아니다']])
+  mustNot(A, a, fn, [[/: new Date\(\)\)?\s*$/m, 'N-8 기본 날짜에 new Date() 가 남았다']])
+}
+// R-4 화면 breakdown 과 서버가 같은 '안 놓인 행' 정본을 쓴다
+const AG = 'app/(app)/inventory/assets/aggregate.ts'
+const ag = read(AG)
+must(AG, ag, null, [
+  [/export const isUnplaced = \(roomId: string \| null, locationId: string \| null, isCommon: boolean\) => !roomId && !locationId && !isCommon/, "R-4 안 놓인 행 정본(isUnplaced)이 방·공용부·공용 자재 셋을 다 안 본다"],
+  [/unplaced: isUnplaced\(r\.roomId, r\.locationId, r\.isCommon\)/, 'R-4 화면 breakdown 이 정본(isUnplaced)을 안 쓴다'],
+])
+const RP = 'app/(app)/inventory/assets/receiptPlacement.ts'
+must(RP, read(RP), null, [
+  [/export function assignDenialUnreceived\([\s\S]{0,400}isPlaceable\(/, 'F-2 배정 거부 판정이 isPlaceable 정본을 안 쓴다(조회 조건 PLACEABLE_WHERE 와 갈린다)'],
 ])
 for (const fn of ['assignAggregateToTarget', 'distributeAssetToTargets', 'batchAssignAssets']) {
   must(A, a, fn, [[/assignDenialUnreceived\(/, 'S4 수령 전 비품을 방·공용부에 넣는 길을 막지 않는다(받는 순간 말없이 그 방에 선다)']])
@@ -68,6 +102,8 @@ must(A, a, 'getDurableItems', [[/targetRoomId: true/, 'S4 수령 대기 카드�
 const I = 'app/(app)/inventory/actions.ts'
 const inv = read(I)
 must(I, inv, 'confirmReceipt', [
+  [/includes\(expense\.category\)\) return \{ ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED \}/, 'R-2 재고 화면 수령이 비품을 받는다(배정 물음 우회)'],
+  [/signUndoBody\(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill\(qtyFill\)\)/, 'N-1 채움 조각에 서버 서명을 붙이지 않는다'],
   [/receiptNeedsQty\(expense, /, 'S3 수량 관문(receiptNeedsQty)을 부르지 않는다. 수량 없는 수령이 유령수령이 된다'],
   [/if \(needsQty && fill == null\) return \{ ok: false, error: RECEIPT_QTY_REQUIRED \}/, 'S3 수량이 끝내 비면 거부해야 한다'],
   [/qtyFill \? \{ qtyValue: qtyFill\.qtyValue, qtyUnit: qtyFill\.qtyUnit, detail: qtyFill\.detail \}/, 'S3 채운 수량이 수령과 같은 트랜잭션에 안 적힌다'],
@@ -85,7 +121,18 @@ must(I, inv, 'confirmAllPending', [
   else if (firstWrite >= 0 && gate > firstWrite) violations.push(`${I} updateExpenseFromInventory. S3 수량 관문이 첫 쓰기보다 뒤다(거부돼도 수정이 반쯤 남는다)`)
   if (!/confirmReceipt\(id, undefined, undefined, data\.qtyValue\)/.test(body)) violations.push(`${I} updateExpenseFromInventory. S3 도착 수량을 정본 수령(confirmReceipt)에 넘기지 않는다`)
 }
-must(I, inv, 'cancelReceiptCore', [[/qtyValue: fillBack\.qtyValue, qtyUnit: fillBack\.qtyUnit/, 'S3 수령 취소가 채운 수량을 그대로일 때만(CAS) 원래 값으로 돌리지 않는다']])
+must(I, inv, 'cancelReceiptCore', [
+  [/qtyValue: fillBack\.qtyValue, qtyUnit: fillBack\.qtyUnit/, 'S3 수령 취소가 채운 수량을 그대로일 때만(CAS) 원래 값으로 돌리지 않는다'],
+  [/includes\(exp\.category\)\) return \{ ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED \}/, 'R-2 재고 화면 수령 취소가 놓인 비품을 수령 대기로 돌린다(자리 있는 수령 전 비품)'],
+  [/!qtyFillShapeOk\(opts\.qtyFill\) \|\| opts\.qtyFill\.expenseId !== expenseId/, 'N-1 채움 조각 모양 검사를 안 지난다'],
+  [/verifyUndoBody\(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill\(opts\.qtyFill\), opts\.qtyFill\.sig\)/, 'N-1 채움 조각 서명을 확인하지 않는다'],
+  [/where: \{ \.\.\.same, detail: filledAuto \}/, 'N-1 세부를 지금 값이 채운 자동 형식일 때만 고치지 않는다'],
+])
+mustNot(I, inv, 'cancelReceiptCore', [[/detail: fillBack\.prevDetail/, 'N-1 채움 조각의 세부 글자를 그대로 쓴다']])
+must(I, inv, 'setExpenseInventoryExclusion', [
+  [/placementForSave\(\{/, 'R-1 제외·포함이 자리 두 칸을 저장 규칙 정본으로 정하지 않는다(방에 걸린 서비스를 포함하면 자리 있는 수령 전 비품)'],
+  [/data: \{ excludeFromInventory: exclude, roomId: place\.roomId, targetRoomId: place\.targetRoomId \}/, 'R-1 정본이 정한 두 칸을 쓰지 않는다'],
+])
 must(I, inv, 'syncTrackedItemCategory', [
   [/const deleteUndo = await trackedItemDeleteSnapshot\(propertyId, item\)\s*await prisma\.trackedItem\.delete/, 'S2 카드를 지우기 전에 정본 스냅샷(TrackedItemDeleteUndo)을 안 뜬다'],
   [/retired: 'deleted', deleteUndo/, 'S2 카드 정리의 적용취소 토큰을 돌려주지 않는다'],
@@ -120,6 +167,9 @@ must(AC, ac, null, [
   [/choiceDialog\(\{ \.\.\.copy, level: 'normal' \}\)/, 'S5 정본 확인창(choiceDialog normal)을 쓰지 않는다'],
   [/if \(choice === null \|\| choice === 'back'\) return/, 'S5 취소가 무변경이 아니다(§27.5)'],
   [/undoAssetReceipt\(undo\)/, 'S5 수령 토스트가 서버 토큰으로 되돌리지 않는다'],
+  [/assign = choice === 'confirm'\s*\n/, "R-4 확인창 선택과 배정의 대응이 '배정'(confirm) 하나가 아니다('수령만'도 배정한다)"],
+  [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다'],
+  [/how\?\.assign \? \{ assign: true, expect: how\.expect \} : undefined/, 'N-4 배정 요청에 본 계획이 안 실린다'],
   [/id="assets-pending"/, 'S6 알림 딥링크가 닿을 수령 대기 섹션 id 가 없다'],
   [/!it\.isService && !placed &&/, "S4 놓인 카드에 '수령대기로'가 서 있다(서버가 거부한다)"],
 ])
@@ -136,9 +186,17 @@ must(IC, ic, null, [
 // ── 홈 알림 ───────────────────────────────────────────────────────
 const AL = 'app/(app)/dashboard/alerts.ts'
 must(AL, read(AL), 'computeAlerts', [
+  [/const seeMoney = viewerRole \? canReadScope\(viewerRole, 'money'\) : true/, 'N-5 알림이 보는 사람의 금액 읽기 권한(비품 화면 관문)을 안 본다'],
+  [/for \(const e of seeMoney \? pendingAssetReceipts : \[\]\)/, 'N-5 비품 화면을 못 여는 역할에게 비품 수령 대기 알림이 선다'],
+  [/seeMoney && e\.amount > 0 \? fmtWon\(e\.amount\)/, 'N-5 소모품 수령 대기 알림이 금액을 못 읽는 역할에게 금액을 보인다'],
   [/category: \{ notIn: trackedCats \}, itemLabel: \{ not: null \}, receivedAt: null, excludeFromInventory: false, isShipping: false/, 'S6 비품 수령 대기 알림 모집단이 비품 화면 수령 대기와 다르다'],
   [/href: '\/inventory\/assets\?focus=assets-pending'/, 'S6 비품 수령 대기 알림이 비품 화면 수령 대기로 안 보낸다'],
 ])
+
+const AA = 'app/(app)/dashboard/alertActions.ts'
+must(AA, read(AA), null, [[/computeAlerts\(access\.propertyId, access\.role\)/, 'N-5 인앱 종이 보는 사람 역할을 알림 계산에 안 넘긴다']])
+const CR = 'app/api/cron/push-alerts/route.ts'
+must(CR, read(CR), null, [[/computeAlerts\(pid, roleOf\.get\(pid\)\)/, 'N-5 푸시가 받는 사람 역할을 알림 계산에 안 넘긴다']])
 
 console.log(`[비품 수령 배선] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)

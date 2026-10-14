@@ -22,6 +22,10 @@ export function buildAssetDetail(e: { itemLabel: string | null; specValue: numbe
   return `[${label}]${spec}${qty}`
 }
 
+/** 안 놓인 행인가. 방·공용부·공용 자재 어디에도 없다. 수령 대기 카드(breakdown.unplaced)와 서버 수령 배정
+ *  (setAssetReceived)이 이 한 함수를 쓴다(검수 R-4). 한쪽만 공용 자재를 빼먹으면 화면이 안 묻는 배정을 서버가 한다. */
+export const isUnplaced = (roomId: string | null, locationId: string | null, isCommon: boolean) => !roomId && !locationId && !isCommon
+
 // 이력·조회의 규격 식별자 — 아래 집계 키 중 규격 부분과 같은 3종.
 // 라벨만으로 기록·조회하면 색상·사이즈가 다른 카드끼리 이력이 섞인다(오류신고 5853a0ff).
 export type SpecKey = { specValue: number | null; specUnit: string | null; specText: string | null }
@@ -174,7 +178,7 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
       isCommon: rep.isCommon, isService: rep.isService, assignedAt, liveUnits,
       disposedAt: disposals[0]?.disposedAt ?? null, disposalReason: disposals[0]?.disposalReason ?? null,
       disposedQty, disposedIds: dead.map(r => r.id), disposals,
-      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt, groupId: r.allocationGroupId, assignedAt: r.assignedAt, targetRoomId: r.targetRoomId ?? null, targetRoomNo: r.targetRoomNo ?? null, unplaced: !r.roomId && !r.locationId && !r.isCommon }))
+      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt, groupId: r.allocationGroupId, assignedAt: r.assignedAt, targetRoomId: r.targetRoomId ?? null, targetRoomNo: r.targetRoomNo ?? null, unplaced: isUnplaced(r.roomId, r.locationId, r.isCommon) }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
