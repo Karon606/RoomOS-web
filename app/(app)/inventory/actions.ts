@@ -2327,12 +2327,15 @@ async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?:
     // 자리 두 칸(독립 검수 R-1). 제외·포함은 비품 물품 여부를 뒤집는다. 방에 걸린 서비스(roomId = 비용 귀속 방)를
     // '다시 포함'하면 그대로는 '수령 전 비품인데 자리가 있는' 행이 된다. 저장 규칙 정본(placementForSave)을 태워
     // 받기 전 비품이 되면 그 방을 배정 예정 호실로 옮기고, 서비스가 되면 예정 호실을 비용 귀속 방으로 옮긴다.
-    // 두 방향이 서로의 역이라 제외의 적용취소(포함)와 포함의 적용취소(제외)가 원래 두 칸으로 돌아온다.
-    // 받은 행은 지금처럼 roomId 를 둔다(받은 비품의 자리가 곧 roomId 다). 소모품은 예정 호실이 없어 그대로다.
+    // 받기 전 행에서는 두 방향이 서로의 역이라 제외의 적용취소(포함)와 포함의 적용취소(제외)가 원래 두 칸으로 돌아온다.
+    // **예정 호실을 방으로 올리는 것은 받기 전 행에만 한다.** 받은 행의 예정 호실은 계획이었을 뿐 자리가 아니다.
+    // 받은 미배정 비품(예정 519호)을 제외했다가 다시 포함하면 종전에는 519호에 말없이 배정됐다(2차 검수 R1, 냉장고 클래스).
+    // 받은 행은 roomId 를 그대로 두고(받은 비품의 자리가 곧 roomId 다), 서비스가 되면 예정 호실만 비운다(저장 규칙·장부 축 2).
+    // 소모품은 예정 호실이 없어 그대로다.
     const goodsAfter = isDurableGoods({ category: e.category, excludeFromInventory: exclude, itemLabel: e.itemLabel, isShipping: e.isShipping }, await getTrackedCategories(propertyId))
     const place = placementForSave({
       durableGoods: goodsAfter, received: !!e.receivedAt,
-      roomId: goodsAfter ? e.roomId : (e.roomId ?? e.targetRoomId), formTarget: undefined, existingTarget: e.targetRoomId,
+      roomId: goodsAfter || e.receivedAt ? e.roomId : (e.roomId ?? e.targetRoomId), formTarget: undefined, existingTarget: e.targetRoomId,
     })
     await prisma.$transaction(async tx => {
       await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude, roomId: place.roomId, targetRoomId: place.targetRoomId } })

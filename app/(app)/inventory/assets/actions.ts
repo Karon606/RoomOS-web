@@ -294,11 +294,11 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     ])
     const gateDenial = assetReceiptDenial(expenseIds, gateFound, new Set(gateInPop.map(r => r.id)), trackedCats)
     if (gateDenial) return { ok: false, error: gateDenial }
-    // 수령 대기로 돌리기. 방·공용부에 놓인 물품이면 막는다. 돌리면 '수령 전인데 자리가 있는' 행이 생겨
+    // 수령 대기로 돌리기. 놓인 물품(방·공용부·공용 자재)이면 막는다. 돌리면 '수령 전인데 자리가 있는' 행이 생겨
     // 다시 받을 때 말없이 그 방에 선다(수령 전 자리는 배정 예정 호실뿐, 판정 정본 receiptPlacement).
     if (!received) {
       const placedDenial = unreceiveDenialPlaced(await prisma.expense.findMany({
-        where: { id: { in: expenseIds }, propertyId }, select: { roomId: true, assignedLocationId: true, excludeFromInventory: true },
+        where: { id: { in: expenseIds }, propertyId }, select: { roomId: true, assignedLocationId: true, isCommonAsset: true, excludeFromInventory: true },
       }))
       if (placedDenial) return { ok: false, error: placedDenial }
     }
@@ -435,9 +435,10 @@ export async function undoAssetReceipt(undoRaw: AssetReceiptUndo): Promise<{ ok:
       for (const s of undo.split) {
         const pieces = undo.created.filter(c => c.fromId === s.id)
         let qty = s.now.qtyValue, amount = s.now.amount
+        // 조각은 방에 놓였거나 미배정으로만 태어난다. 그 뒤 공용부로 옮겼으면 지우지 않는다(옮긴 이력과 자리가 사라진다, 2차 검수 F1).
         for (const c of pieces) {
           const r = await tx.expense.deleteMany({
-            where: { id: c.id, propertyId, receivedAt: at, roomId: c.roomId, isCommonAsset: c.isCommonAsset, qtyValue: c.qtyValue, amount: c.amount, itemLabel: s.now.itemLabel, allocationGroupId: s.now.groupId, disposedAt: null },
+            where: { id: c.id, propertyId, receivedAt: at, roomId: c.roomId, assignedLocationId: null, isCommonAsset: c.isCommonAsset, qtyValue: c.qtyValue, amount: c.amount, itemLabel: s.now.itemLabel, allocationGroupId: s.now.groupId, disposedAt: null },
           })
           if (r.count !== 1) throw STALE
           qty += c.qtyValue; amount += c.amount
@@ -449,13 +450,14 @@ export async function undoAssetReceipt(undoRaw: AssetReceiptUndo): Promise<{ ok:
         if (r.count !== 1) throw STALE
       }
       // 통째로 받은 행. 수령 시각을 지우고, 배정했으면 자리 넷도 안 놓인 상태로(받기 전 행은 늘 안 놓였다).
+      // 공용부(assignedLocationId)는 수령만이든 배정이든 늘 비어 있어야 한다. 이번 수령은 공용부에 두지 않으므로
+      // 지금 공용부에 있으면 그 뒤 옮긴 것이다. 무르면 '수령 전인데 공용부에 있는' 행과 고아 이력이 남는다(2차 검수 F1).
       for (const row of undo.received) {
         const r = await tx.expense.updateMany({
           where: {
             id: row.id, propertyId, receivedAt: at, disposedAt: null,
-            roomId: row.now.roomId, isCommonAsset: row.now.isCommonAsset, itemLabel: row.now.itemLabel,
+            roomId: row.now.roomId, assignedLocationId: null, isCommonAsset: row.now.isCommonAsset, itemLabel: row.now.itemLabel,
             qtyValue: row.now.qtyValue, amount: row.now.amount,
-            ...(row.assigned ? { assignedLocationId: null } : {}),
           },
           data: {
             receivedAt: null,
@@ -595,7 +597,7 @@ export async function addFreeAsset(input: {
     await prisma.expense.create({
       data: {
         propertyId,
-        date: new Date(),          // 오늘
+        date: ymdToDbDate(kstYmdStr()),   // KST 오늘(@db.Date). new Date() 는 KST 00~09시에 어제로 박힌다(2차 검수, N-8 과 같은 클래스)
         amount: 0,                 // 무상
         category: cat,
         itemLabel: label,
@@ -1105,7 +1107,7 @@ export async function assignAggregateToTarget(
       const disp = buildSplitOps(already, propertyId, {
         // 위치 세 칸은 원행 값 그대로 — 폐기는 자리를 안 옮긴다.
         roomId: tData.roomId, assignedLocationId: tData.assignedLocationId, isCommonAsset: false,
-        disposedAt: assignedAtVal ?? new Date(), disposalReason: replace.reason,
+        disposedAt: assignedAtVal ?? ymdToDbDate(kstYmdStr()), disposalReason: replace.reason,
       }, movedQty)
       createdIdx = [...built.createdOpIndexes, ...disp.createdOpIndexes.map(i => i + ops.length)]
       ops = [...ops, ...disp.ops]

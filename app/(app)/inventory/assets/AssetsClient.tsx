@@ -4,8 +4,10 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition, useMemo, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useState, useTransition, useMemo, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+// 알림 딥링크 ?focus= 정본(재고 화면과 같은 훅). 비품 수령 대기 알림이 수령 대기 섹션으로 보낸다.
+import { useFocusSection } from '@/lib/useFocusSection'
 import Link from 'next/link'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -34,7 +36,7 @@ import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
 import {
   plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, partialReceiveToast, planExpectOf, pendingPlaceCaption,
-  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON, type ReceiptPlan, type ReceiptPlanExpect,
+  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON, isUnplaced, type ReceiptPlan, type ReceiptPlanExpect,
 } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
@@ -117,28 +119,16 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 그 회차는 저장된 그룹을 복원하지 않는다(재고 화면 딥링크와 같은 규칙, 마운트 시점 값으로 굳힌다).
   const searchParams = useSearchParams()
   const focusPendingRef = useRef(searchParams.get('focus') === 'assets-pending')
+  // 딥링크 받기(웹디자이너 패스 D15). 수령 대기 섹션은 미배정 그룹에만 서서 **같은 화면 안에서** 다른 그룹을 보고
+  // 있으면 그 섹션이 아직 없다. 정본 useFocusSection 의 준비 단계(prepare)에서 그룹을 미배정으로 바꾸면 정본이
+  // 섹션이 그려질 때까지 기다려 스크롤하고 파라미터를 소진한다(같은 알림을 또 눌러도 반응). 저장된 그룹(localStorage)은
+  // 바꾸지 않는다(보기 선택은 운영자 것이다). 종전 손사본은 걷었다(2차 검수 참고).
+  const prepareFocus = useCallback((id: string) => { if (id === 'assets-pending') setGroup('unassigned') }, [])
+  useFocusSection({ prepare: prepareFocus })
   useEffect(() => {
     if (focusPendingRef.current) return
     try { const g = localStorage.getItem('stayeum-assets-group'); if (g === 'common' || g === 'placed') setGroup(g) } catch { /* 무시 */ }
   }, [])
-  // 딥링크 받기(웹디자이너 패스 D15). 정본 useFocusSection 은 파라미터를 소진하고 곧바로 스크롤하는데, 여기서는
-  // 수령 대기 섹션이 미배정 그룹에만 서서 **같은 화면 안에서** 다른 그룹을 보고 있으면 그 섹션이 아직 없다.
-  // 그래서 순서를 둘로 가른다. 먼저 그룹을 미배정으로 바꾸고 파라미터를 소진한 뒤(같은 알림을 또 눌러도 반응하게),
-  // 그 그룹이 그려진 다음 회차에 스크롤한다. 저장된 그룹(localStorage)은 바꾸지 않는다(보기 선택은 운영자 것이다).
-  const [pendingFocusTick, setPendingFocusTick] = useState(0)
-  useEffect(() => {
-    if (searchParams.get('focus') !== 'assets-pending') return
-    setGroup('unassigned')
-    setPendingFocusTick(n => n + 1)
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete('focus')
-    const qs = params.toString()
-    router.replace(qs ? `?${qs}` : '?', { scroll: false })
-  }, [searchParams, router])
-  useEffect(() => {
-    if (!pendingFocusTick) return
-    requestAnimationFrame(() => document.getElementById('assets-pending')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }, [pendingFocusTick])
   const pickGroup = (g: 'unassigned' | 'common' | 'placed') => {
     setGroup(g)
     try { localStorage.setItem('stayeum-assets-group', g) } catch { /* 무시 */ }
@@ -939,9 +929,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             ) : (
               <>
                 {/* 서비스(무형)는 수령 개념이 없어 '수령대기로' 미표시(오류신고 0443289d).
-                    방·공용부에 놓인 카드도 숨긴다. 서버가 거부한다(수령 전 자리는 배정 예정 호실뿐, receiptPlacement
-                    unreceiveDenialPlaced 와 같은 판정). 쓸 수 없는 때는 비활성이 아니라 숨긴다(§13). */}
-                {!it.isService && !placed && (
+                    놓인 카드(방·공용부·공용 자재)도 숨긴다. 서버가 거부한다(수령 전 자리는 배정 예정 호실뿐, receiptPlacement
+                    unreceiveDenialPlaced 와 같은 정본 isUnplaced. 종전에는 공용 자재 카드에 이 버튼이 섰다, 2차 검수 R3).
+                    쓸 수 없는 때는 비활성이 아니라 숨긴다(§13). */}
+                {!it.isService && isUnplaced(it.roomId, it.locationId, it.isCommon) && (
                   <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
                     className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                     수령대기로

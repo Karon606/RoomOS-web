@@ -6,7 +6,8 @@
 // 호실(targetRoomId) 하나뿐**이다(판정 정본 app/(app)/inventory/assets/receiptPlacement). 길을 다 막았지만
 // (지출 저장·옮기기·나눠 배정·일괄 배정·수령 대기로), 새 길이 생기면 장부에서 이 그물이 먼저 운다.
 //
-//   축 1(오류) 수령 전 비품 물품 행인데 roomId 나 assignedLocationId 가 있다.
+//   축 1(오류) 수령 전 비품 물품 행인데 roomId·assignedLocationId 가 있거나 공용 자재 표식이 있다(놓인 행의 판정 정본
+//             isUnplaced 와 같은 셋, 2차 검수 R3).
 //   축 2(오류) 비품 물품이 아닌 행(소모품·서비스·배송비·품명 없음)에 targetRoomId 가 있다. 저장 규칙은 비운다.
 //   축 3(경고) targetRoomId 가 그 영업장에 없는 방을 가리킨다(방을 지웠다). 화면은 예정 없음으로 보고 묻지 않는다.
 //
@@ -25,11 +26,11 @@ async function main() {
     const tracked = parseInventoryCategories(p.inventoryCategories ?? null).map(c => c.cat)
     const goods = { propertyId: p.id, itemLabel: { not: null }, isShipping: false, excludeFromInventory: false, category: { notIn: tracked } }
     const placed = await prisma.expense.findMany({
-      where: { ...goods, receivedAt: null, OR: [{ roomId: { not: null } }, { assignedLocationId: { not: null } }] },
-      select: { id: true, itemLabel: true, date: true, roomId: true, assignedLocationId: true },
+      where: { ...goods, receivedAt: null, OR: [{ roomId: { not: null } }, { assignedLocationId: { not: null } }, { isCommonAsset: true }] },
+      select: { id: true, itemLabel: true, date: true, roomId: true, assignedLocationId: true, isCommonAsset: true },
     })
     for (const e of placed) {
-      errors.push(`[${p.name}] 수령 전 비품 '${e.itemLabel}' (${e.date.toISOString().slice(0, 10)}, id ${e.id.slice(0, 8)}) 에 ${e.roomId ? 'roomId' : 'assignedLocationId'} 가 있다. 수령 전 자리는 배정 예정 호실뿐이다`)
+      errors.push(`[${p.name}] 수령 전 비품 '${e.itemLabel}' (${e.date.toISOString().slice(0, 10)}, id ${e.id.slice(0, 8)}) 에 ${e.roomId ? 'roomId' : e.assignedLocationId ? 'assignedLocationId' : 'isCommonAsset(공용 자재)'} 가 있다. 수령 전 자리는 배정 예정 호실뿐이다`)
     }
     const stray = await prisma.expense.findMany({
       where: {

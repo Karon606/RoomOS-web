@@ -4,7 +4,10 @@
 // (scripts/check-server-action-exports). aggregate.ts·lineage.ts 와 같은 배치다.
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { hasFinalConsonant, withParticle } from '@/lib/koParticle'
-import { fmtQty } from './aggregate'
+import { fmtQty, isUnplaced } from './aggregate'
+
+// '놓인 행'의 판정 정본(방·공용부·공용 자재 중 하나라도 있으면 놓인 것). 화면도 이 이름으로 부른다(2차 검수 R3).
+export { isUnplaced }
 
 // ── S1 소모품 거부 ─────────────────────────────────────────────────────
 // 비품 화면의 수령 버튼은 비품 모집단(durableExpenseWhere)에 든 행만 그린다. 그런데 화면을 연 뒤 다른
@@ -78,17 +81,18 @@ export function plannedRoomsMeta(roomNos: (string | null)[]): string | null {
 export const ASSET_ASSIGN_PENDING_REASON = '수령 대기는 수령 완료 뒤 배정합니다'
 export const ASSET_ASSIGN_PENDING_REASON_SHORT = '수령 완료 뒤 배정'
 export const ASSET_ASSIGN_DENY_UNRECEIVED = `${ASSET_ASSIGN_PENDING_REASON}. 수령 대기에서 수령 완료를 먼저 눌러 주세요.`
-// 방·공용부에 놓인 비품을 수령 대기로 돌리면 '수령 전인데 자리가 있는' 행이 생긴다(위 규칙의 뒷문).
-export const ASSET_UNRECEIVE_DENY_PLACED = '방이나 공용부에 배정된 비품은 수령 대기로 돌릴 수 없습니다. 먼저 미배정으로 옮겨 주세요.'
+// 방·공용부에 놓였거나 공용 자재인 비품을 수령 대기로 돌리면 '수령 전인데 자리가 있는' 행이 생긴다(위 규칙의 뒷문).
+export const ASSET_UNRECEIVE_DENY_PLACED = '방·공용부에 배정했거나 공용 자재인 비품은 수령 대기로 돌릴 수 없습니다. 먼저 미배정으로 옮겨 주세요.'
 
 /** 배정(옮기기·나눠 배정·일괄 배정) 거부. 받기 전 물품 행이 섞이면 막는다. 서비스는 수령 개념이 없어 면제. */
 export function assignDenialUnreceived(rows: { receivedAt: Date | null; excludeFromInventory: boolean }[]): string | null {
   return rows.some(r => !isPlaceable(r)) ? ASSET_ASSIGN_DENY_UNRECEIVED : null
 }
 
-/** 수령 대기로 돌리기 거부. 방·공용부에 놓인 물품 행이 섞이면 막는다. */
-export function unreceiveDenialPlaced(rows: { roomId: string | null; assignedLocationId: string | null; excludeFromInventory: boolean }[]): string | null {
-  return rows.some(r => !r.excludeFromInventory && (r.roomId || r.assignedLocationId)) ? ASSET_UNRECEIVE_DENY_PLACED : null
+/** 수령 대기로 돌리기 거부. 놓인 물품 행(방·공용부·공용 자재, 정본 isUnplaced)이 섞이면 막는다.
+ *  종전에는 공용 자재를 빼고 보아 '수령 대기인데 공용 자재'인 행이 생겼다(2차 검수 R3, 1차 X8). */
+export function unreceiveDenialPlaced(rows: { roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean; excludeFromInventory: boolean }[]): string | null {
+  return rows.some(r => !r.excludeFromInventory && !isUnplaced(r.roomId, r.assignedLocationId, r.isCommonAsset)) ? ASSET_UNRECEIVE_DENY_PLACED : null
 }
 
 // ── S5 수령 배정(F2) ─────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
   ASSET_RECEIPT_ASSIGN_UNDONE, type AssetReceiptUndo,
 } from '../app/(app)/inventory/assets/receiptPlacement'
 import { isUnplaced } from '../app/(app)/inventory/assets/aggregate'
+import { isUnplaced as rpIsUnplaced } from '../app/(app)/inventory/assets/receiptPlacement'
 import { receiptNeedsQty, qtyMissing, normalizeFillQty, fillQtyUnit, fillDetail, receiptQtyRequiredMany, RECEIPT_QTY_REQUIRED, qtyFillShapeOk, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED } from '../app/(app)/inventory/receiptQtyGate'
 import { roomsLabel, roomChipText } from '../app/(app)/finance/allocPlaceLabel'
 
@@ -82,9 +83,11 @@ eq('S4 카드 메타 없음', plannedRoomsMeta([null]), null)
 eq('S4 수령 전 물품 배정 거부', assignDenialUnreceived([{ receivedAt: null, excludeFromInventory: false }]), ASSET_ASSIGN_DENY_UNRECEIVED)
 eq('S4 서비스는 수령 개념 없음(통과)', assignDenialUnreceived([{ receivedAt: null, excludeFromInventory: true }]), null)
 eq('S4 받은 물품 배정 통과', assignDenialUnreceived([{ receivedAt: new Date(), excludeFromInventory: false }]), null)
-eq('S4 놓인 물품 수령 대기로 거부(방)', unreceiveDenialPlaced([{ roomId: 'R', assignedLocationId: null, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
-eq('S4 놓인 물품 수령 대기로 거부(공용부)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: 'L', excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
-eq('S4 미배정 물품 수령 대기로 통과', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, excludeFromInventory: false }]), null)
+eq('S4 놓인 물품 수령 대기로 거부(방)', unreceiveDenialPlaced([{ roomId: 'R', assignedLocationId: null, isCommonAsset: false, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
+eq('S4 놓인 물품 수령 대기로 거부(공용부)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: 'L', isCommonAsset: false, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
+eq('2차 R3 공용 자재도 놓인 것(수령 대기로 거부)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, isCommonAsset: true, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
+eq('S4 미배정 물품 수령 대기로 통과', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, isCommonAsset: false, excludeFromInventory: false }]), null)
+eq('2차 R3 화면·서버가 부르는 isUnplaced 는 집계 정본 그 함수', rpIsUnplaced === isUnplaced, true)
 eq('S4 재무 라벨. 예정만', [roomChipText([{ room: null, plannedRoomNo: '519', qtyValue: 2 }]), roomsLabel([{ room: null, plannedRoomNo: '519', qtyValue: 2 }])], ['방 1개 예정', '519호 배정 예정'])
 eq('S4 재무 라벨. 배정된 방 + 예정 + 미배정', roomsLabel([{ room: { roomNo: '404' } }, { room: null, plannedRoomNo: '519' }, { room: null, qtyValue: 1, qtyUnit: '개' }]), '404호·519호 배정 예정·미배정 1개')
 eq('S4 재무 칩. 배정된 방이 있으면 방 수', roomChipText([{ room: { roomNo: '404' } }, { room: null, plannedRoomNo: '519' }]), '방 1개')

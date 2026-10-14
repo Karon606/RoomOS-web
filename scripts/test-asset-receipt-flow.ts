@@ -442,6 +442,79 @@ async function main() {
     ])
   }
 
+  // ═══ 2차 검수 반영(08·09 회귀, 2026-10-15) ═══════════════════════════════════════════
+  // F1 수령만 뒤 공용부로 옮겼으면 수령 적용취소는 거부한다(공용부 CAS). 받은 그대로, 옮긴 이력도 그대로
+  {
+    const L = (await prisma.storageLocation.create({ data: { propertyId: P1, name: '창고' } })).id as string
+    const E = await exp({ itemLabel: 'S2F1의자', qtyValue: 1 })
+    const r = await assets.setAssetReceived([E], true)
+    if (!r.ok || !r.undo) throw new Error('S2F1 수령 실패')
+    eq('2차 F1 수령만 뒤 공용부로 옮김', (await assets.assignAggregateToTarget([E], { kind: 'location', id: L }, null)).ok, true)
+    const after = [await bytes({ itemLabel: 'S2F1의자' }), await logs('S2F1의자')]
+    eq('2차 F1 공용부로 옮긴 뒤 수령 적용취소 거부', await assets.undoAssetReceipt(J(r.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('2차 F1 거부면 무변경(행·이력)', [await bytes({ itemLabel: 'S2F1의자' }), await logs('S2F1의자')], after)
+    // 부분 수령(묻지 않음) 조각을 공용부로 통째 옮겼으면 조각을 지우지 않는다(05 부터 있던 같은 클래스)
+    const E2 = await exp({ itemLabel: 'S2F1책상', qtyValue: 4, amount: 100000 })
+    const r2 = await assets.setAssetReceived([E2], true, 2)
+    if (!r2.ok || !r2.undo) throw new Error('S2F1b 수령 실패')
+    eq('2차 F1 부분 수령 조각을 공용부로', (await assets.assignAggregateToTarget([r2.undo.created[0].id], { kind: 'location', id: L }, null)).ok, true)
+    const after2 = [await bytes({ itemLabel: 'S2F1책상' }), await logs('S2F1책상')]
+    eq('2차 F1 공용부로 옮긴 조각이 있으면 수령 적용취소 거부', await assets.undoAssetReceipt(J(r2.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('2차 F1 거부면 무변경(원행·조각·이력)', [await bytes({ itemLabel: 'S2F1책상' }), await logs('S2F1책상')], after2)
+  }
+  // R1 받은 미배정 비품(예정 519)을 재고 제외했다가 다시 포함해도 519호에 말없이 배정되지 않는다
+  {
+    const E = await exp({ itemLabel: 'S2R1냉장고', targetRoomId: R519 })
+    const r = await assets.setAssetReceived([E], true)
+    if (!r.ok) throw new Error(r.error)
+    const before = await prisma.expense.findUnique({ where: { id: E } })
+    eq('2차 R1 받은 행 제외·다시 포함', [(await inv.excludeExpenseFromInventory(E)).ok, (await inv.includeExpenseInInventory(E)).ok], [true, true])
+    const e = await prisma.expense.findUnique({ where: { id: E } })
+    eq('2차 R1 받은 행 왕복: 자리 셋 없음·수령 시각·배정일 그대로·이력 없음',
+      [e?.roomId, e?.assignedLocationId, e?.isCommonAsset, e?.receivedAt?.getTime(), e?.assignedAt ?? null, (await logs('S2R1냉장고')).length],
+      [null, null, false, before?.receivedAt?.getTime(), null, 0])
+    eq('2차 R1 받은 행의 예정 호실은 서비스가 되며 비워진다(저장 규칙·장부 축 2, 수령 뒤에는 쓰임이 없다)', e?.targetRoomId, null)
+  }
+  // R3 공용 자재는 놓인 것이다. 수령 대기로 돌리기를 거부한다(판정 정본 isUnplaced, 1차 X8)
+  {
+    const E = await exp({ itemLabel: 'S2R3페인트', receivedAt: new Date('2026-10-01T00:00:00Z') })
+    eq('2차 R3 공용 자재로', (await assets.setCommonAsset([E], true)).ok, true)
+    const before = await bytes({ id: E })
+    eq('2차 R3 공용 자재 수령 대기로 거부', await assets.setAssetReceived([E], false), { ok: false, error: rp.ASSET_UNRECEIVE_DENY_PLACED })
+    eq('2차 R3 거부면 무변경', await bytes({ id: E }), before)
+  }
+  // R4 서명 용도 교차. 같은 본문이라도 다른 용도로 서명했으면 안 맞는다(비품 수령·채움 조각·현금영수증 서로)
+  {
+    const crl = await import('@/app/(app)/rooms/cashReceiptLine')
+    const E = await exp({ itemLabel: 'S2R4의자', qtyValue: 1 })
+    const r = await assets.setAssetReceived([E], true)
+    if (!r.ok || !r.undo) throw new Error('S2R4 수령 실패')
+    const { sig: _s, ...body } = J(r.undo); void _s
+    const canon = rp.canonicalAssetReceiptUndo(body as never)
+    const recvA = await bytes({ id: E })
+    for (const dom of ['cash-receipt', gate.QTY_FILL_DOMAIN]) {
+      eq(`2차 R4 ${dom} 용도 서명을 비품 수령 토큰에 쓰면 거부`, await assets.undoAssetReceipt({ ...body, sig: crl.signUndoBody(dom, P1, canon) as string } as never), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    }
+    eq('2차 R4 거부면 무변경(비품)', await bytes({ id: E }), recvA)
+    const T = await exp({ category: '소모품비', itemLabel: 'N1쌀', qtyValue: null, qtyUnit: null, specValue: 20, specUnit: 'kg', detail: '[N1쌀] 20kg', amount: 55000 })
+    const c = await inv.confirmReceipt(T, undefined, undefined, 2)
+    if (!c.ok || !c.qtyFill) throw new Error('S2R4 채움 실패')
+    const { sig: _f, ...fill } = J(c.qtyFill); void _f
+    const fcanon = gate.canonicalQtyFill(fill as never)
+    const recvT = await bytes({ id: T })
+    for (const dom of [rp.ASSET_RECEIPT_UNDO_DOMAIN, 'cash-receipt']) {
+      eq(`2차 R4 ${dom} 용도 서명을 채움 조각에 쓰면 거부`, await inv.undoConfirmReceipt(T, { qtyFill: { ...fill, sig: crl.signUndoBody(dom, P1, fcanon) as string } as never }), { ok: false, error: gate.QTY_FILL_INVALID })
+    }
+    eq('2차 R4 거부면 무변경(채움)', await bytes({ id: T }), recvT)
+    eq('2차 R4 대조군. 제 용도 서명은 통과', [(await assets.undoAssetReceipt(J(r.undo))).ok, (await inv.undoConfirmReceipt(T, { qtyFill: J(c.qtyFill) })).ok], [true, true])
+  }
+  // 무상 비품 등록 구매일은 KST 오늘(@db.Date, N-8 과 같은 클래스)
+  {
+    eq('2차 무상 비품 등록', (await assets.addFreeAsset({ itemLabel: 'S2무상선반', category: '비품', qtyValue: 1 })).ok, true)
+    const e = await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'S2무상선반' } })
+    eq('2차 무상 비품 구매일 = KST 오늘', e?.date.toISOString().slice(0, 10), kstToday())
+  }
+
   console.log(`[비품 수령·배정·수량 관문 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

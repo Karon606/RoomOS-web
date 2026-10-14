@@ -137,9 +137,11 @@ export async function GET(req: Request) {
 
     // 사용자가 접근 가능한 모든 영업장의 알림을 합산 (종과 같은 computeAlerts 소스)
     const allItems: AlertItem[] = []
-    // 영업장마다 그 사용자의 역할을 넘긴다(소유 영업장은 소유자). 종(getMyAlerts)과 같은 값이라 뱃지 숫자가 같다(검수 N-5).
+    // 영업장마다 그 사용자의 역할을 넘긴다(검수 N-5). 순서는 종(getMyAlerts, lib/auth/propertyAccess)과 같다. 역할 줄이
+    // 있으면 그 역할, 없으면 소유 영업장은 소유자. 종전에는 소유 영업장을 늘 소유자로 덮어 역할 줄이 낮은 소유자에게서
+    // 종과 푸시의 뱃지 숫자가 갈렸다(2차 검수 역주입 P2 조사).
     const roleOf = new Map<string, Role>(roles.map(r => [r.propertyId, r.role as Role]))
-    for (const o of owned) roleOf.set(o.id, 'OWNER')
+    for (const o of owned) if (!roleOf.has(o.id)) roleOf.set(o.id, 'OWNER')
     for (const pid of propIds) allItems.push(...await computeAlerts(pid, roleOf.get(pid)))
     const { total, parts } = summarizeAlerts(allItems)
     if (total === 0) continue

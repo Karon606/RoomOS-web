@@ -5,6 +5,8 @@
 // 유령수령·수령 전 배정·적용취소 반쪽이 되살아난다. 그 자리를 글자로 묶는다(주석은 걷고 본다).
 // 독립 검수 반영(2026-10-15). 수령 전 행을 접기·되돌리기가 집는 길(F-1·F-2), 토큰 서명·모집단(N-1), 화면이 본 계획(N-4),
 // 역할별 알림(N-5), KST 기본 배정일(N-8), 재고 화면 수령의 소모품 한정(R-2), 제외·포함의 자리 규칙(R-1)을 더 묶는다.
+// 2차 검수(08·09 회귀). 적용취소 CAS 의 공용부 칸(F1), 받은 행 예정 호실 승격 금지(R1), 공용 자재도 놓인 것(R3),
+// 무상 비품 구매일 KST, 딥링크 정본 준비 단계를 묶는다.
 import { readFileSync } from 'node:fs'
 
 const violations = []
@@ -56,7 +58,8 @@ must(A, a, 'setAssetReceived', [
 must(A, a, 'undoAssetReceipt', [
   [/requireEdit\(\)/, '적용취소가 편집 권한 관문을 안 지난다'],
   [/deleteMany\(\{\s*where: \{ id: c\.id, propertyId, receivedAt: at/, '분할 수령 조각을 영업장·수령 시각 조건(CAS) 없이 지운다'],
-  [/where: \{\s*id: row\.id, propertyId, receivedAt: at, disposedAt: null,\s*roomId: row\.now\.roomId, isCommonAsset: row\.now\.isCommonAsset, itemLabel: row\.now\.itemLabel,/, '행 복원에 영업장·이번 상태 조건(CAS)이 없다(R-3 공용 표식·품목명 포함)'],
+  [/where: \{\s*id: row\.id, propertyId, receivedAt: at, disposedAt: null,\s*roomId: row\.now\.roomId, assignedLocationId: null, isCommonAsset: row\.now\.isCommonAsset, itemLabel: row\.now\.itemLabel,/, '행 복원에 영업장·이번 상태 조건(CAS)이 없다(R-3 공용 표식·품목명, 2차 F1 공용부 칸 늘 포함)'],
+  [/deleteMany\(\{\s*where: \{ id: c\.id, propertyId, receivedAt: at, roomId: c\.roomId, assignedLocationId: null,/, '2차 F1 공용부로 옮긴 수령 조각을 적용취소가 지운다(자리·옮긴 이력이 사라진다)'],
   [/parseAssetReceiptUndo\(undoRaw\)/, 'N-1 토큰 모양 검사(parseAssetReceiptUndo)를 안 지난다'],
   [/verifyUndoBody\(ASSET_RECEIPT_UNDO_DOMAIN, propertyId, canonicalAssetReceiptUndo\(undo\), undo\.sig\)/, 'N-1 토큰 서명을 확인하지 않는다'],
   [/durableExpenseWhere\(propertyId, trackedCats\), id: \{ in: ids \} \} \}\)\s*if \(inPop !== ids\.length\) return \{ ok: false, error: ASSET_RECEIPT_UNDO_INVALID \}/, 'N-1 토큰의 행이 전부 비품 모집단 안인지 보지 않는다(공과금 같은 무관한 지출)'],
@@ -80,8 +83,13 @@ must(A, a, 'revertAssignmentLog', [
 // N-8 배정일·폐기일 기본값은 KST 오늘(@db.Date). new Date() 는 KST 00~09시에 어제로 박힌다
 for (const fn of ['assignAggregateToTarget', 'distributeAssetToTargets', 'disposeAssets']) {
   must(A, a, fn, [[/ymdToDbDate\(kstYmdStr\(\)\)/, 'N-8 기본 날짜가 KST 오늘(ymdToDbDate(kstYmdStr()))이 아니다']])
-  mustNot(A, a, fn, [[/: new Date\(\)\)?\s*$/m, 'N-8 기본 날짜에 new Date() 가 남았다']])
+  mustNot(A, a, fn, [[/new Date\(\)/, 'N-8 기본 날짜에 new Date() 가 남았다(교체 폐기일 포함)']])
 }
+// 무상 비품 구매일도 KST 오늘(@db.Date, 2차 검수)
+must(A, a, 'addFreeAsset', [[/date: ymdToDbDate\(kstYmdStr\(\)\)/, '2차 무상 비품 구매일이 KST 오늘이 아니다(KST 00~09시에 어제로 박힌다)']])
+mustNot(A, a, 'addFreeAsset', [[/date: new Date\(\)/, '2차 무상 비품 구매일에 new Date() 가 남았다']])
+// R3 놓인 행 판정 정본 하나(공용 자재도 놓인 것). 수령 대기로 거부·서버 조회·화면 버튼·장부 축 1 이 같은 셋을 본다
+must(A, a, 'setAssetReceived', [[/select: \{ roomId: true, assignedLocationId: true, isCommonAsset: true, excludeFromInventory: true \}/, '2차 R3 수령 대기로 돌리기가 공용 자재 표식을 안 읽는다']])
 // R-4 화면 breakdown 과 서버가 같은 '안 놓인 행' 정본을 쓴다
 const AG = 'app/(app)/inventory/assets/aggregate.ts'
 const ag = read(AG)
@@ -92,6 +100,7 @@ must(AG, ag, null, [
 const RP = 'app/(app)/inventory/assets/receiptPlacement.ts'
 must(RP, read(RP), null, [
   [/export function assignDenialUnreceived\([\s\S]{0,400}isPlaceable\(/, 'F-2 배정 거부 판정이 isPlaceable 정본을 안 쓴다(조회 조건 PLACEABLE_WHERE 와 갈린다)'],
+  [/export function unreceiveDenialPlaced\([\s\S]{0,300}!isUnplaced\(r\.roomId, r\.assignedLocationId, r\.isCommonAsset\)/, '2차 R3 수령 대기로 거부가 놓인 행 정본(isUnplaced)을 안 쓴다(공용 자재가 빠진다)'],
 ])
 for (const fn of ['assignAggregateToTarget', 'distributeAssetToTargets', 'batchAssignAssets']) {
   must(A, a, fn, [[/assignDenialUnreceived\(/, 'S4 수령 전 비품을 방·공용부에 넣는 길을 막지 않는다(받는 순간 말없이 그 방에 선다)']])
@@ -132,6 +141,7 @@ mustNot(I, inv, 'cancelReceiptCore', [[/detail: fillBack\.prevDetail/, 'N-1 채�
 must(I, inv, 'setExpenseInventoryExclusion', [
   [/placementForSave\(\{/, 'R-1 제외·포함이 자리 두 칸을 저장 규칙 정본으로 정하지 않는다(방에 걸린 서비스를 포함하면 자리 있는 수령 전 비품)'],
   [/data: \{ excludeFromInventory: exclude, roomId: place\.roomId, targetRoomId: place\.targetRoomId \}/, 'R-1 정본이 정한 두 칸을 쓰지 않는다'],
+  [/roomId: goodsAfter \|\| e\.receivedAt \? e\.roomId : \(e\.roomId \?\? e\.targetRoomId\)/, '2차 R1 받은 행의 예정 호실을 방으로 올린다(받은 미배정 비품이 제외·포함 왕복으로 말없이 배정된다)'],
 ])
 must(I, inv, 'syncTrackedItemCategory', [
   [/const deleteUndo = await trackedItemDeleteSnapshot\(propertyId, item\)\s*await prisma\.trackedItem\.delete/, 'S2 카드를 지우기 전에 정본 스냅샷(TrackedItemDeleteUndo)을 안 뜬다'],
@@ -172,8 +182,8 @@ must(AC, ac, null, [
   [/how\?\.assign \? \{ assign: true, expect: how\.expect \} : undefined/, 'N-4 배정 요청에 본 계획이 안 실린다'],
   [/withAssign \? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE/, 'R-5 수령 적용취소 결과 토스트가 정본 문장(§16 형식)을 안 쓴다'],
   [/id="assets-pending"/, 'S6 알림 딥링크가 닿을 수령 대기 섹션 id 가 없다'],
-  [/if \(searchParams\.get\('focus'\) !== 'assets-pending'\) return\s*setGroup\('unassigned'\)/, 'D15 알림 딥링크가 수령 대기 섹션이 서는 미배정 그룹으로 바꾸지 않는다(다른 그룹을 보고 있으면 닿을 곳이 없다)'],
-  [/!it\.isService && !placed &&/, "S4 놓인 카드에 '수령대기로'가 서 있다(서버가 거부한다)"],
+  [/const prepareFocus = useCallback\(\(id: string\) => \{ if \(id === 'assets-pending'\) setGroup\('unassigned'\) \}, \[\]\)\s*useFocusSection\(\{ prepare: prepareFocus \}\)/, 'D15 알림 딥링크가 정본 useFocusSection 준비 단계에서 미배정 그룹으로 바꾸지 않는다(다른 그룹을 보고 있으면 닿을 곳이 없다)'],
+  [/!it\.isService && isUnplaced\(it\.roomId, it\.locationId, it\.isCommon\) &&/, "S4·2차 R3 놓인 카드(방·공용부·공용 자재)에 '수령대기로'가 서 있다(서버가 거부한다)"],
 ])
 mustNot(AC, ac, null, [[/수령과 배정을 취소하고/, 'R-5 수령 적용취소 결과가 옛 동사로 돌아왔다']])
 const IC = 'app/(app)/inventory/InventoryClient.tsx'
@@ -196,10 +206,23 @@ must(AL, read(AL), 'computeAlerts', [
   [/href: '\/inventory\/assets\?focus=assets-pending'/, 'S6 비품 수령 대기 알림이 비품 화면 수령 대기로 안 보낸다'],
 ])
 
+// D15 딥링크 정본. 준비 단계(prepare)를 먼저 부르고, 섹션이 그려질 때까지 몇 프레임 기다려 스크롤한다
+const FS = 'lib/useFocusSection.ts'
+must(FS, read(FS), null, [
+  [/prepare\?\.\(id\)/, 'D15 정본 딥링크가 준비 단계(prepare)를 안 부른다'],
+  [/else if \(left-- > 0\) requestAnimationFrame\(tryScroll\)/, 'D15 정본 딥링크가 섹션이 그려질 때까지 기다리지 않는다(그룹을 바꾼 회차에 스크롤이 헛돈다)'],
+])
+// R3 장부 축 1 도 같은 셋(방·공용부·공용 자재)
+const PP = 'scripts/check-asset-pending-placement.ts'
+must(PP, read(PP), null, [[/receivedAt: null, OR: \[\{ roomId: \{ not: null \} \}, \{ assignedLocationId: \{ not: null \} \}, \{ isCommonAsset: true \}\] \}/, '2차 R3 장부 축 1 이 공용 자재 표식을 안 본다(놓인 행 정본과 갈린다)']])
 const AA = 'app/(app)/dashboard/alertActions.ts'
 must(AA, read(AA), null, [[/computeAlerts\(access\.propertyId, access\.role\)/, 'N-5 인앱 종이 보는 사람 역할을 알림 계산에 안 넘긴다']])
 const CR = 'app/api/cron/push-alerts/route.ts'
-must(CR, read(CR), null, [[/computeAlerts\(pid, roleOf\.get\(pid\)\)/, 'N-5 푸시가 받는 사람 역할을 알림 계산에 안 넘긴다']])
+must(CR, read(CR), null, [
+  [/computeAlerts\(pid, roleOf\.get\(pid\)\)/, 'N-5 푸시가 받는 사람 역할을 알림 계산에 안 넘긴다'],
+  // 역할 줄이 먼저, 줄 없는 소유 영업장만 소유자(종 getPropertyAccess 와 같은 순서, 2차 검수 역주입 P2)
+  [/for \(const o of owned\) if \(!roleOf\.has\(o\.id\)\) roleOf\.set\(o\.id, 'OWNER'\)/, 'N-5 푸시의 역할 순서가 종과 다르다(역할 줄 먼저, 줄 없는 소유 영업장만 소유자)'],
+])
 
 console.log(`[비품 수령 배선] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
