@@ -505,8 +505,20 @@ for (const kind of ['deposit', 'cleaning']) {
     const undoEditSig = srv.match(/export async function undoPaymentEdit\(([\s\S]*?)\):/)
     if (!undoEditSig || /crUndo/.test(undoEditSig[1])) violations.push(`${SRV} undoPaymentEdit: 토큰을 둘 받는다. 수정 저장의 적용취소 토큰은 하나다(검수 F1).`)
     const calls = [...form.matchAll(/undoOverpayExtraIncome\(([^)]*)\)/g)]
-    if (calls.length < 2) violations.push(`${FORM}: 등록 적용취소(undoOverpayExtraIncome) 호출을 ${calls.length}곳밖에 못 찾았다(기대 2, 분해·과납).`)
-    for (const c of calls) if (!/crUndo/.test(c[1])) violations.push(`${FORM}: 등록 적용취소가 발행 기록 토큰을 안 넘긴다: undoOverpayExtraIncome(${c[1]}) (검수 F2).`)
+    if (calls.length < 3) violations.push(`${FORM}: 등록 적용취소(undoOverpayExtraIncome) 호출을 ${calls.length}곳밖에 못 찾았다(기대 3, 분해·과납·일반).`)
+    for (const c of calls) if (!/crUndo|, cr\b/.test(c[1])) violations.push(`${FORM}: 등록 적용취소가 발행 기록 토큰을 안 넘긴다: undoOverpayExtraIncome(${c[1]}) (검수 F2).`)
+    // 운영자 원칙(모든 쓰기에 적용취소): 등록 폼 일반 갈래와 입주자 상세 수납 등록 토스트에 적용취소가 있다.
+    const gen = form.slice(form.indexOf('} else if (!splitDone) {'), form.indexOf('setPayAmount(0); setForcedTm'))
+    if (!/label: '적용취소'[\s\S]{0,400}undoOverpayExtraIncome\(ids, incomeId, cr\)/.test(gen)) violations.push(`${FORM}: 수납 등록 일반 갈래 토스트에 적용취소가 없다(운영자 원칙: 모든 쓰기에 적용취소).`)
+    // 조건만 꺼도 위 글자는 남는다(역주입 X14). 액션이 서는 조건이 '이번 저장이 만든 것이 있으면'인지 본다.
+    if (!/\.\.\.\(\(?ids\.length > 0 \|\| incomeId\)?( && !crUndoLost)? \? \{ action: \{/.test(gen)) violations.push(`${FORM}: 수납 등록 일반 갈래 적용취소가 서는 조건이 '이번 저장이 만든 record·부가수익이 있으면'이 아니다(역주입 X14).`)
+    const tcl0 = read('app/(app)/tenants/TenantClient.tsx')
+    const tSave = tcl0.slice(tcl0.indexOf('const handleSavePayment = async'), tcl0.indexOf('const handleDeletePayRecord = async'))
+    if (!/label: '적용취소'[\s\S]{0,300}undoOverpayExtraIncome\(ids, undefined, crUndo\)/.test(tSave)) violations.push(`app/(app)/tenants/TenantClient.tsx handleSavePayment: 입주자 상세 수납 등록 토스트에 적용취소가 없거나 발행 기록 토큰을 안 넘긴다(운영자 원칙·검수 F2).`)
+    // 독립 검수 R-3: 등록 폼이 발행 기록 결과(merged·uncovered)를 버리지 않는다. 세 폼 넷 자리.
+    const crCalls = (form.match(/crEntryResultLines\(crRes\)/g) ?? []).length
+    if (crCalls < 3) violations.push(`${FORM}: 발행 기록 결과(crEntryResultLines)를 말하는 자리가 ${crCalls}곳이다(기대 3, 분해·일반·예약금). 서버가 합친 사실을 버린다(검수 R-3).`)
+    if (!/crLines = crEntryResultLines\(crRes\)/.test(tSave) || !tSave.includes('crLines.slice(1)')) violations.push(`app/(app)/tenants/TenantClient.tsx handleSavePayment: 발행 기록 결과(crEntryResultLines)를 버리거나 둘째 사실을 안 띄운다(검수 R-3).`)
   }
 }
 

@@ -19,7 +19,7 @@ import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { cashReceiptShareWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible, CASH_RECEIPT_DEFAULT_INCL, hasExcludedCashReceiptShare, type CashReceiptUndo } from '@/lib/cashReceipt'
-import { cashReceiptGapSentence } from '@/lib/cashReceiptCopy'
+import { cashReceiptGapSentence, crEntryResultLines, crDeleteToastDetail, ENTRY_UNDONE } from '@/lib/cashReceiptCopy'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { withParticle } from '@/lib/koParticle'
 import { fmtMD } from '@/lib/fmtDate'
@@ -319,12 +319,16 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     // 이 결제의 발행 기록이 돌려준 적용취소 재료. 수납 적용취소가 발행 줄까지 쓰기 전으로 되돌린다
     // (2026-10-14 독립 검수 F2). 종전에는 받아 놓고 버려서, 같은 키의 앞 발행과 합친 줄이 합친 금액으로 남았다.
     let crUndo: CashReceiptUndo | null = null
+    // 발행 기록 결과(같은 날 앞 발행에 합쳤나, 먼저 받은 돈이 발행 없이 남았나). 버리지 않고 말한다(검수 R-3). 사실 하나에 한 줄.
+    let crLines: string[] = []
     let splitDone = false   // 분해 경로는 몫을 실은 자기 토스트를 띄운다(아래 공용 토스트를 건너뛴다)
     startTransition(async () => {
       const release = trackSave()
       try {
         // 이번 저장이 만든 수납 record. 발행 기록이 '이번 입금의 몫'을 이것으로 센다(2026-10-14 F4).
+        // 등록 적용취소도 이것을 지운다(청소비 모드는 부가수익 한 건 entryIncomeId 도 함께).
         let entryIds: string[] = []
+        let entryIncomeId: string | undefined
         if (splitMode) {
           const recordIds: string[] = []
           let cleaningIncomeId: string | undefined
@@ -432,7 +436,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               amount: crShownAmount, incl: crIncl, via: 'entry', recordIds,
             })
             if (!crRes.ok) pushToast('error', crRes.error)
-            else crUndo = crRes.undo
+            else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
           }
 
           // 이용료 몫은 실제로 앉은 달을 적는다(서버 배분 결과). 일반 갈래 자동 분배 토스트와 같은 'N월분' 문법.
@@ -454,15 +458,18 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 if (undone) return
                 undone = true
                 void undoOverpayExtraIncome(recordIds, cleaningIncomeId, crUndo).then(r => {
-                  if (r.ok) pushToast('info', '수납 기록을 취소했습니다')
+                  // 함께 지운 발행 기록이 있으면 그 금액을 말한다(서버가 계산한 drop·mismatch, 검수 R-4).
+                  if (r.ok) { const d = crDeleteToastDetail(r.cashReceipt); pushToast('info', ENTRY_UNDONE, d ? { detail: d } : undefined) }
                   else pushToast('error', r.error, {
                     detail: r.intact ? '수납 기록은 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
                   })
                   onSaved?.()
-                }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
+                }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
               },
             },
           })
+          // 발행 기록 결과는 따로 띄운다. 위 토스트의 둘째 줄은 이미 몫(보증금·청소비·이용료)을 든다(§15 3줄 상한).
+          for (const line of crLines) pushToast('info', line)
           // 수납 내역(PaymentRecordList scope='window')은 조회 월 포함 3개월을 입금일·귀속월 합집합으로
           // 그린다(getPaymentsByLease). 둘 다 창 밖인 이용료 몫만 안 보인다. 보증금은 그 목록이 아니라
           // 보증금 패널이 계약 단위로 그리고, 청소비는 부가수익이라 대상이 아니다.
@@ -492,6 +499,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           })
           if (!res.ok) { pushToast('error', res.error); return }
           entryIds = res.createdIds
+          entryIncomeId = res.extraIncomeId
         } else if (isDepositMode) {
           const depRes = await saveDepositPayment({
             leaseTermId:   room.leaseTermId,
@@ -571,7 +579,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             amount: crShownAmount, incl: crIncl, via: 'entry', recordIds: entryIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
-          else crUndo = crRes.undo
+          else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
         }
 
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
@@ -588,17 +596,41 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 if (undone) return
                 undone = true
                 void undoOverpayExtraIncome(u.recordIds, u.extraIncomeId, crUndo).then(r => {
-                  if (r.ok) pushToast('info', '수납과 부가수익 기록을 취소했습니다')
+                  if (r.ok) { const d = crDeleteToastDetail(r.cashReceipt); pushToast('info', '수납·부가수익 기록을 적용취소했습니다 · 수납 전으로 복귀', d ? { detail: d } : undefined) }
                   else pushToast('error', r.error, {
                     detail: r.intact ? '수납과 부가수익 모두 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
                   })
                   onSaved?.()
-                }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
+                }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
               },
             },
           })
+          for (const line of crLines) pushToast('info', line)
         } else if (!splitDone) {
-          pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '이용료 수납됨')
+          // 일반 갈래(이용료·보증금·청소비)에도 적용취소를 단다(운영자 원칙: 모든 쓰기에 적용취소, §16 진입점 1).
+          // 형제 갈래(분해·과납)와 같은 등록 적용취소 정본(undoOverpayExtraIncome)이다. 이번 저장이 만든 수납 record 와
+          // 청소비 부가수익을 한 트랜잭션으로 지우고, 발행 기록은 등록 직전 스냅샷(crUndo)으로 되돌린다. 수납 내역의
+          // 삭제(deletePayment)를 행마다 부르면 청소비 부가수익이 남고 발행 줄 복원이 수납마다 갈린다.
+          const ids = entryIds, incomeId = entryIncomeId, cr = crUndo
+          let undone = false   // 연타 방지. 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
+          pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '이용료 수납됨', {
+            ...(crLines[0] ? { detail: crLines[0] } : {}),
+            ...(ids.length > 0 || incomeId ? { action: {
+              label: '적용취소',
+              run: () => {
+                if (undone) return
+                undone = true
+                void undoOverpayExtraIncome(ids, incomeId, cr).then(r => {
+                  if (r.ok) { const d = crDeleteToastDetail(r.cashReceipt); pushToast('info', ENTRY_UNDONE, d ? { detail: d } : undefined) }
+                  else pushToast('error', r.error, {
+                    detail: r.intact ? '수납 기록은 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
+                  })
+                  onSaved?.()
+                }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+              },
+            } } : {}),
+          })
+          for (const line of crLines.slice(1)) pushToast('info', line)
         }
         // 폼 리셋
         setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
@@ -1056,6 +1088,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
             issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: res.createdIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
+          else for (const line of crEntryResultLines(crRes)) pushToast('info', line)   // 앞 발행에 합쳤거나 먼저 받은 돈이 남았으면 말한다(검수 R-3)
         }
         if (mode === 'none') {
           pushToast('success', '예약금 없이 예약으로 저장했습니다')

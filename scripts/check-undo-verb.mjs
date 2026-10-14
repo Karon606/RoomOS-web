@@ -26,6 +26,9 @@ const GUARDED = {
   // 통신 실패만 '되돌리기 중'이라 불렀다. 결과 토스트 문장은 lib/cashReceiptCopy 정본(scripts/test-cash-receipt 가 글자 고정).
   'components/entity-modal/widgets/PaymentRecordList.tsx': ['되돌리기 중 통신 오류가 발생했습니다'],
   'app/(app)/tenants/TenantClient.tsx': ['되돌리기 중 통신 오류가 발생했습니다'],
+  // 수납 등록 폼의 등록 적용취소 결과·실패 토스트(2026-10-14 독립 검수 R-4 와 함께 정리). '…를 취소했습니다'는 버튼
+  // '적용취소'와 다른 동사였다. 결과 문장은 lib/cashReceiptCopy ENTRY_UNDONE 정본.
+  'components/entity-modal/widgets/PaymentEntryForm.tsx': ['되돌리기 중 통신 오류가 발생했습니다', '수납 기록을 취소했습니다', '수납과 부가수익 기록을 취소했습니다'],
 }
 
 const violations = []

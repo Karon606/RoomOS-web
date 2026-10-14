@@ -693,6 +693,31 @@ async function main() {
     eq('S21 keep 갈래는 칸 값을 안 써 앞 발행 400,000 그대로', k3.ok ? [k3.cashReceipt.kept, k3.cashReceipt.line?.amount] : k3, [true, 400000])
   }
 
+  // ── S22 등록 폼 결과와 일반 갈래 적용취소(독립 검수 R-3, 운영자 원칙 '모든 쓰기에 적용취소') ────────────────
+  {
+    const copy = await import('@/lib/cashReceiptCopy')
+    const L = await lease(P1)
+    const A = await rec(L, P1, { month: '2026-10', amount: 300000, pay: '2026-10-01' })   // 발행 없이 받은 앞 입금
+    const s1 = await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-10', expectedAmount: 420000, actualAmount: 100000, payDate: '2026-10-01', payMethod: '계좌이체', forcedTargetMonth: '2026-10', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-01' })
+    const c1 = await rooms.setPaymentCashReceipt({ leaseTermId: L.id, tenantId: L.tenantId, payDate: '2026-10-01', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-01', via: 'entry', recordIds: s1.createdIds })
+    eq('S22 등록 결과: 먼저 받은 300,000 은 발행 기록 없음', c1.ok ? copy.crEntryResultLines(c1) : c1, ['같은 날 먼저 받은 300,000원은 발행 기록이 없습니다'])
+    const s2 = await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-11', expectedAmount: 420000, actualAmount: 20000, payDate: '2026-10-01', payMethod: '계좌이체', forcedTargetMonth: '2026-11', cashReceiptIssued: true, cashReceiptIssuedDate: '2026-10-02' })
+    const c2 = await rooms.setPaymentCashReceipt({ leaseTermId: L.id, tenantId: L.tenantId, payDate: '2026-10-01', payMethod: '계좌이체', issued: true, issuedDate: '2026-10-02', via: 'entry', recordIds: s2.createdIds })
+    eq('S22 등록 결과: 앞 발행에 합침 · 발행일 그대로 · 먼저 받은 돈(두 줄)', c2.ok ? copy.crEntryResultLines(c2) : c2,
+      ['기존 발행에 합쳤습니다 · 발행 금액 120,000원 · 발행일 10/1 그대로', '같은 날 먼저 받은 300,000원은 발행 기록이 없습니다'])
+    // 둘째 등록의 적용취소(화면: 토스트 [적용취소]). 수납이 지워지고 발행 기록은 등록 직전(100,000)으로 돌아간다.
+    const u2 = await rooms.undoOverpayExtraIncome(s2.createdIds, undefined, c2.ok ? J(c2.undo) : null)
+    eq('S22 등록 적용취소: 수납 지움 · 발행 100,000 @10/1 로', [u2.ok, await alive(s2.createdIds[0]), await lines(L.id, '2026-10-01')],
+      [true, false, [{ amount: 100000, issuedAt: kstMid('2026-10-01'), deleted: false }]])
+    // 발행 없이 등록한 일반 갈래도 적용취소가 있다. 마지막 이용료를 지우는 첫 등록 적용취소는 발행 기록도 함께 지우고 그 사실을 말한다.
+    const s3 = await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-11', expectedAmount: 420000, actualAmount: 50000, payDate: '2026-10-03', payMethod: '현금', forcedTargetMonth: '2026-11' })
+    const u3 = await rooms.undoOverpayExtraIncome(s3.createdIds, undefined, null)
+    eq('S22 발행 없는 일반 갈래 등록 적용취소', [u3.ok, await alive(s3.createdIds[0]), u3.ok ? copy.crDeleteToastDetail(u3.cashReceipt) : u3], [true, false, undefined])
+    await rooms.deletePayment(A)
+    const u1 = await rooms.undoOverpayExtraIncome(s1.createdIds, undefined, null)
+    eq('S22 키의 마지막 이용료 등록을 무르면 발행 기록도 함께 지웠다고 말한다', u1.ok ? copy.crDeleteToastDetail(u1.cashReceipt) : u1, '현금영수증 발행 기록 100,000원도 함께 지웠습니다.')
+  }
+
   console.log(`[현금영수증 생애주기 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

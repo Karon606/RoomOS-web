@@ -32,7 +32,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
-import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, undoOverpayExtraIncome, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -43,7 +43,7 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
-import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crEntryResultLines, ENTRY_UNDONE, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from '@/components/entity-modal/widgets/CashReceiptCaption'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
@@ -65,7 +65,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
-import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible, type CashReceiptUndo } from '@/lib/cashReceipt'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -1629,6 +1629,9 @@ export default function TenantClient({
         }
         // 발행은 저장 뒤 한 번 — 형제 폼(PaymentEntryForm)과 같은 문(2026-08-25).
         // 종전에는 저장부가 각자 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다.
+        // 결과(앞 발행에 합쳤나, 먼저 받은 돈이 발행 없이 남았나)와 적용취소 재료를 버리지 않는다(검수 R-3·F2).
+        let crUndo: CashReceiptUndo | null = null
+        let crLines: string[] = []
         if (cashReceiptIssued) {
           const crRes = await setPaymentCashReceipt({
             leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
@@ -1636,13 +1639,34 @@ export default function TenantClient({
             issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: createdIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
+          else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
         }
 
         setShowPayForm(false)
-        const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        const leaseId = payTarget.lease.id
+        const { records, windowRecords } = await getPaymentsByLease(leaseId, targetMonth)
         setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
         refresh()
-        pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
+        // 등록에도 적용취소가 있다(운영자 원칙: 모든 쓰기에 적용취소). 수납 등록 폼(PaymentEntryForm)과 같은 등록 적용취소
+        // 정본(undoOverpayExtraIncome)이다. 이번 저장이 만든 record 를 지우고 발행 기록은 등록 직전 스냅샷으로 되돌린다.
+        const ids = createdIds
+        let undone = false   // 연타 방지. 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨', {
+          ...(crLines[0] ? { detail: crLines[0] } : {}),
+          ...(ids.length > 0 ? { action: { label: '적용취소', run: () => {
+            if (undone) return
+            undone = true
+            void undoOverpayExtraIncome(ids, undefined, crUndo).then(async r => {
+              if (!r.ok) { pushToast('error', r.error, { detail: r.intact ? '수납 기록은 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요' }); return }
+              const d = crDeleteToastDetail(r.cashReceipt)
+              pushToast('info', ENTRY_UNDONE, d ? { detail: d } : undefined)
+              const after = await getPaymentsByLease(leaseId, targetMonth)
+              setPayHistory(after.records.filter(x => !x.isBillingAdjust) as PayRecord[]); setPayWindow(after.windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
+              refresh()
+            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+          } } } : {}),
+        })
+        for (const line of crLines.slice(1)) pushToast('info', line)   // 사실 하나에 한 줄(§15 3줄 상한)
       } catch (err: unknown) {
         const msg = humanError(err, '수납 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
         setError(msg); pushToast('error', msg)

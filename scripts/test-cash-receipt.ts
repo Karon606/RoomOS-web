@@ -17,7 +17,7 @@ import {
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
 import {
   cashReceiptRowCaption, crCaptionText, cashReceiptTabGap, cashReceiptGapSentence, crAddPreviewChunks, crReplacePreview, CR_PREVIEW_UNREAD, crOnToast, crOffToastDetail,
-  crOffUndoneMessage, CR_ON_UNDONE, crOnUndoneMessage, CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteConfirmLine, crDeleteToastDetail, crRestoreDetail, crEditToastDetail,
+  crOffUndoneMessage, CR_ON_UNDONE, crOnUndoneMessage, CR_DELETE_UNDONE, crEntryResultLines, ENTRY_UNDONE, crUndoMismatchDetail, crDeleteConfirmLine, crDeleteToastDetail, crRestoreDetail, crEditToastDetail,
 } from '../lib/cashReceiptCopy'
 
 let pass = 0, fail = 0
@@ -621,6 +621,15 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('적용취소 결과: 삭제', CR_DELETE_UNDONE, '수납 기록 삭제를 적용취소했습니다 · 원래 자리로 복귀')
   eq('적용취소 결과: 차이 알림', crUndoMismatchDetail([{ lineAmount: 420000, basis: 410000 }]), '발행 금액 420,000원이 받은 금액 410,000원과 다릅니다.')
 
+  // 등록 폼 결과(검수 R-3). merged·uncovered 를 버리지 않고 말한다. 고른 날짜와 같으면 발행일은 안 적는다.
+  // 사실 하나에 한 줄이다(둘을 이으면 320px·20px 에서 토스트 둘째 줄이 5줄, 가이드 §15 3줄 상한).
+  eq('등록 결과: 앞 발행에 합침(발행일 그대로)', crEntryResultLines({ merged: { amount: 420000, issuedYmd: '2026-10-10', requestedYmd: '2026-10-11' } }), ['기존 발행에 합쳤습니다 · 발행 금액 420,000원 · 발행일 10/10 그대로'])
+  eq('등록 결과: 앞 발행에 합침(같은 날 고름)', crEntryResultLines({ merged: { amount: 420000, issuedYmd: '2026-10-10', requestedYmd: '2026-10-10' } }), ['기존 발행에 합쳤습니다 · 발행 금액 420,000원'])
+  eq('등록 결과: 먼저 받은 돈은 발행 기록 없음', crEntryResultLines({ uncovered: 300000 }), ['같은 날 먼저 받은 300,000원은 발행 기록이 없습니다'])
+  eq('등록 결과: 둘 다면 두 줄', crEntryResultLines({ merged: { amount: 120000, issuedYmd: '2026-10-15', requestedYmd: '2026-10-16' }, uncovered: 300000 }),
+    ['기존 발행에 합쳤습니다 · 발행 금액 120,000원 · 발행일 10/15 그대로', '같은 날 먼저 받은 300,000원은 발행 기록이 없습니다'])
+  eq('등록 결과: 말할 것 없음', crEntryResultLines({}), [])
+  eq('등록 적용취소 결과(§16 형식)', ENTRY_UNDONE, '수납 등록을 적용취소했습니다 · 수납 전으로 복귀')
   eq('삭제 확인창: drop', crDeleteConfirmLine({ effect: 'drop', line: { amount: 350000 }, basisAfter: 0 }),
     '이 입금의 현금영수증 발행 기록 350,000원도 함께 지웁니다. 홈택스에 발행한 영수증은 그대로이니 필요하면 홈택스에서 취소해 주세요.')
   eq('삭제 확인창: keep 이고 달라짐', crDeleteConfirmLine({ effect: 'keep', line: { amount: 420000 }, basisAfter: 410000 }),

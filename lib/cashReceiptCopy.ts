@@ -249,6 +249,29 @@ export function crUndoMismatchDetail(mismatch: { lineAmount: number; basis: numb
   return mismatch && mismatch.length > 0 ? crMismatchSentence(mismatch[0]) : undefined
 }
 
+// ── 수납 등록 ─────────────────────────────────────────────────
+
+/**
+ * 수납 등록 폼이 '현금영수증 발행함'으로 저장한 뒤의 결과(독립 검수 R-3). setPaymentCashReceipt 가 돌려준
+ * merged·uncovered 를 버리지 않고 말한다. 사실 하나에 한 줄이다. 첫 줄은 성공 토스트 둘째 줄로, 나머지는 따로 띄운다.
+ * 두 사실을 한 줄에 이으면 320px·아주 크게(20px)에서 5줄이었다(가이드 §15 3줄 상한, 하네스 실측).
+ *   merged     같은 날 같은 수단의 살아 있는 발행에 이번 금액을 더했다(한 키 한 장). 발행일은 앞 발행의 날짜를
+ *              지킨다(검수 F4). 고른 날짜와 다를 때만 그 날짜를 적는다.
+ *   uncovered  같은 날 먼저 받은 돈 중 발행 기록이 없는 몫. 이번 발행이 덮지 않았다(검수 R4b, 그 행에서 따로 켠다).
+ */
+export function crEntryResultLines(r: { merged?: { amount: number; issuedYmd: string; requestedYmd: string }; uncovered?: number }): string[] {
+  const lines: string[] = []
+  if (r.merged) {
+    const kept = r.merged.issuedYmd !== r.merged.requestedYmd ? ` · 발행일 ${fmtMD(r.merged.issuedYmd)} 그대로` : ''
+    lines.push(`기존 발행에 합쳤습니다 · 발행 금액 ${fmtWon(r.merged.amount)}${kept}`)
+  }
+  if (r.uncovered && r.uncovered > 0) lines.push(`같은 날 먼저 받은 ${fmtWon(r.uncovered)}은 발행 기록이 없습니다`)
+  return lines
+}
+
+/** 수납 등록의 적용취소 결과(§16 "{목적어}를 적용취소했습니다 · {복귀}"). 등록 폼 일반·분해 갈래와 입주자 상세가 같은 말을 한다. */
+export const ENTRY_UNDONE = '수납 등록을 적용취소했습니다 · 수납 전으로 복귀'
+
 // ── 수납 삭제 ─────────────────────────────────────────────────
 
 /**
