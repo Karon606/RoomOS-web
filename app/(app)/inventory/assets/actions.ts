@@ -26,6 +26,7 @@ import {
   type SpecKey, type AssetItem, type RawAsset, type AssetOrderMaps,
 } from './aggregate'
 export type { AssetItem } from './aggregate'
+import { assetReceiptDenial } from './receiptPlacement'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -253,6 +254,15 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    // 비품 모집단으로 다시 거른다. 받음·수령 대기로 둘 다. 화면이 낡아 소모품 id 가 날아오면 true 는
+    // 유령수령, false 는 자동 점검을 남긴 채 수령만 지우는 뒷문이 된다(판정 정본 ./receiptPlacement).
+    const trackedCats = await getTrackedCategories(propertyId)
+    const [gateFound, gateInPop] = await Promise.all([
+      prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId }, select: { id: true, category: true } }),
+      prisma.expense.findMany({ where: { ...durableExpenseWhere(propertyId, trackedCats), id: { in: expenseIds } }, select: { id: true } }),
+    ])
+    const gateDenial = assetReceiptDenial(expenseIds, gateFound, new Set(gateInPop.map(r => r.id)), trackedCats)
+    if (gateDenial) return { ok: false, error: gateDenial }
     // 부분 수령(분할 배송) — qty가 전체 미만이면 그 수량만 수령: 수량 큰 행부터 통째 소진,
     // 마지막만 분할(금액 비례·allocationGroupId 공유). 잔여는 수령 대기 유지. (배정 분할과 동일 선례)
     if (received && qty != null) {
