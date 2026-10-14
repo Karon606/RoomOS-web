@@ -91,6 +91,9 @@ assertNotFuture(ymd, today): { ok: true } | { ok: false; reason: string }
 
 되돌렸다 다시 완료하면 오늘이 박히던 것이 **운영자 불만의 다른 얼굴**이었다. 선례는 현금영수증
 토글의 `prevIssuedAt` 반환 + `restoreIssuedAt` 인자다(`setCashReceiptIssued`). 같은 규칙을 둘에 세웠다.
+(2026-10-14 부터 현금영수증 토글의 적용취소는 그 인자가 아니라 스냅샷 복원 `undoCashReceiptChange` 다. 끈 뒤
+켜기가 새 발행이 되면서 '원래 시각으로 다시 켜기'는 지금 남은 줄을 되살리는 엉뚱한 복원이 됐다.
+[[cash-receipt-refund]] '발행 줄의 생애주기' 절. 아래 두 자리의 규칙은 그대로다.)
 
 - `unresolveTenantRequest` 가 끄기 전 `resolvedAt` 을 **ISO 문자열로 돌려준다.** 화면이 그것을 들고
   있다가 적용취소 때 `resolveTenantRequest(id, undefined, undefined, prev)` 로 되살린다.
