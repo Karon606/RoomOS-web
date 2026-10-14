@@ -186,6 +186,11 @@ must(AC, ac, null, [
   [/!it\.isService && isUnplaced\(it\.roomId, it\.locationId, it\.isCommon\) &&/, "S4·2차 R3 놓인 카드(방·공용부·공용 자재)에 '수령대기로'가 서 있다(서버가 거부한다)"],
 ])
 mustNot(AC, ac, null, [[/수령과 배정을 취소하고/, 'R-5 수령 적용취소 결과가 옛 동사로 돌아왔다']])
+// 웹디자이너 2차. 알약 까닭은 짧은 형(서버 거부 문장 안에 든 같은 낱말), 수령 대기 상세 머리는 상태 이름
+must(AC, ac, null, [
+  [/text-white\/75">\{ASSET_ASSIGN_PENDING_REASON_SHORT\}<\/span>/, '디자이너 2차 F1 선택 알약 까닭이 짧은 형이 아니다(320px 125% 에서 다섯 줄)'],
+  [/const here = `\$\{pendingHere \? '수령 대기' : curPlace\(it\)\}/, "디자이너 2차 F3 수령 대기 상세 머리가 '미배정(여분)'으로 부른다"],
+])
 const IC = 'app/(app)/inventory/InventoryClient.tsx'
 const ic = read(IC)
 must(IC, ic, null, [
@@ -194,6 +199,12 @@ must(IC, ic, null, [
   [/const noQty = qtyMissing\(entry\.qtyValue\)/, 'S3 품목 상세 구매 수령이 수량 빈 구매를 가리지 않는다'],
   [/const askQty = entry\.receivedAt === null && qtyMissing\(entry\.qtyValue\)/, 'S3 구매 수정 수령일이 수량 빈 구매를 가리지 않는다'],
   [/undoConfirmReceipt\(id, f \? \{ qtyFill: f \} : undefined\)/, 'S3 수령 취소가 채운 수량을 함께 돌리지 않는다'],
+])
+// 웹디자이너 2차 R2. A 카드 칸별 오류는 칸과 오류 문장을 잇고(aria-describedby), 보더가 위험색으로 선다
+must(IC, ic, null, [
+  [/aria-describedby=\{qtyAsk\?\.bad\.includes\(f\.p\.id\) \? `rcvqty-err-\$\{f\.p\.id\}` : undefined\}/, '디자이너 2차 R2 A 카드 칸이 오류 문장을 가리키지 않는다(aria-describedby)'],
+  [/<p id=\{`rcvqty-err-\$\{f\.p\.id\}`\}/, '디자이너 2차 R2 A 카드 오류 문장에 id 가 없다'],
+  [/const qtyInputCls = `\$\{checkTextInputCls\} text-right aria-\[invalid=true\]:border-\[var\(--danger-fg\)\]`/, '디자이너 2차 R2 수량칸 오류 보더가 없다'],
 ])
 
 // ── 홈 알림 ───────────────────────────────────────────────────────

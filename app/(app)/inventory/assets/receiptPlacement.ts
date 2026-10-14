@@ -272,9 +272,10 @@ export function partialReceiveToast(received: number, rest: number, unit: string
 }
 
 // ── 수령 대기 상세·선택 알약의 자리 캡션(D8·D9, §22 ② 숨긴 동작 자리에 상태를 말하는 캡션) ─────────────
-/** 수령 대기 상세에서 숨긴 배정 버튼 자리 캡션. 예정 호실이 있으면 그 방을, 없으면 언제 배정하는지를 말한다. */
+/** 수령 대기 상세에서 숨긴 배정 버튼 자리 캡션. 예정 호실이 있으면 그 방을, 없으면 언제 배정하는지를 말한다.
+ *  '수령 대기'는 바로 앞 배지가 말하므로 캡션은 되풀이하지 않는다(웹디자이너 2차 F2). */
 export function pendingPlaceCaption(plannedMeta: string | null): string {
-  return plannedMeta ? `수령 대기 · ${plannedMeta}` : `수령 대기 · ${ASSET_ASSIGN_PENDING_REASON_SHORT}`
+  return plannedMeta ?? ASSET_ASSIGN_PENDING_REASON_SHORT
 }
 
 // ── 수령 전 비품에 자리를 쓰지 않는다. 집는 행의 정본(검수 F-1·F-2) ─────────────────────────────

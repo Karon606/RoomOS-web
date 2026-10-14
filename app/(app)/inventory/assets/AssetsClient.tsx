@@ -36,7 +36,7 @@ import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
 import {
   plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, partialReceiveToast, planExpectOf, pendingPlaceCaption,
-  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON, isUnplaced, type ReceiptPlan, type ReceiptPlanExpect,
+  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON_SHORT, isUnplaced, type ReceiptPlan, type ReceiptPlanExpect,
 } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
@@ -1230,7 +1230,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
               ) : (
                 // 숨긴 동작 자리에 까닭 한 줄(§22 ②, 웹디자이너 패스 D8). 문장은 서버 거부와 한 벌이다.
-                <span className="min-w-0 break-keep text-[0.65625rem] leading-snug text-white/75">{ASSET_ASSIGN_PENDING_REASON}</span>
+                <span className="min-w-0 break-keep text-[0.65625rem] leading-snug text-white/75">{ASSET_ASSIGN_PENDING_REASON_SHORT}</span>
               )}
               {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
               {/* 수령 대기가 섞이면 숨긴다 — 아직 받지도 않은 물건을 버릴 수는 없다(서버도 같은 게이트) */}
@@ -1516,7 +1516,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         // 카드 축 그룹 머리의 글자. 아래 `설치·폐기` 머리가 같은 값을 쓴다 — 둘이 각자 조립하면
         // 한 모달에서 자리 표기가 갈린다. `이 방의 것` 같은 일반 명사로 바꾸면 자리가 넷이라
         // 분기를 손으로 쓰게 되고, 그게 또 하나의 진실 원천이 된다.
-        const here = `${curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
+        // 수령 대기 카드는 자리 대신 상태로 부른다. curPlace 는 '미배정(여분)'을 돌려주는데 카드는 수령 대기 섹션에 있다
+        // (위 알약·캡션과 같은 이름, 웹디자이너 2차 F3).
+        const here = `${pendingHere ? '수령 대기' : curPlace(it)}${specOf(it) ? ` ${specOf(it)}` : ''}`
         // 같은 **이름**(라벨·분류·유형)이면 배치 현황에 함께 세운다. 재구매는 규격 표기가
         // 조금씩 달라져(빈 규격 → "2홀 무광 스텐", 개 → 세트) 엄격한 정체성으로는 남남이
         // 되는데, 그 사이 옛 카드가 전부 배정돼 미배정 목록에서 사라지면 "이 제품이 지금

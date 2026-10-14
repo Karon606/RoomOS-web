@@ -11,7 +11,7 @@ import {
   assignDenialUnreceived, unreceiveDenialPlaced, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED,
   receiptPlacementPlan, planAsks, planTargetOf, receiptAssignCopy, receiptToast, type ReceiptRow,
   isPlaceable, PLACEABLE_WHERE, planExpectOf, planExpectMismatch, parseAssetReceiptUndo, canonicalAssetReceiptUndo,
-  restPendingAsk, restPendingDone, partialReceiveToast, pendingPlaceCaption, ASSET_ASSIGN_PENDING_REASON,
+  restPendingAsk, restPendingDone, partialReceiveToast, pendingPlaceCaption, ASSET_ASSIGN_PENDING_REASON_SHORT,
   ASSET_RECEIPT_ASSIGN_UNDONE, type AssetReceiptUndo,
 } from '../app/(app)/inventory/assets/receiptPlacement'
 import { isUnplaced } from '../app/(app)/inventory/assets/aggregate'
@@ -190,8 +190,8 @@ eq('R-2 재고 화면 거부 문구', INVENTORY_RECEIPT_DENY_UNTRACKED, '비품�
 // D6·D7·D8·D9 문구
 eq('D6 나머지 문장 한 벌', [restPendingAsk(2, '개'), restPendingDone(2, '장')], ['나머지 2개는 수령 대기에 둡니다.', '나머지 2장은 수령 대기에 두었습니다.'])
 eq('D6 묻지 않은 부분 수령 토스트', partialReceiveToast(2, 3, '개'), { text: '2개 수령 완료', detail: '나머지 3개는 수령 대기에 두었습니다.' })
-eq('D8 까닭과 서버 거부는 한 벌', [ASSET_ASSIGN_PENDING_REASON, ASSET_ASSIGN_DENY_UNRECEIVED.startsWith(ASSET_ASSIGN_PENDING_REASON + '.')], ['수령 대기는 수령 완료 뒤 배정합니다', true])
-eq('D9 수령 대기 상세 캡션', [pendingPlaceCaption('519호 배정 예정'), pendingPlaceCaption(null)], ['수령 대기 · 519호 배정 예정', '수령 대기 · 수령 완료 뒤 배정'])
+eq('D8 알약 까닭(짧은 형, 디자이너 2차 F1)과 서버 거부는 한 벌', [ASSET_ASSIGN_PENDING_REASON_SHORT, ASSET_ASSIGN_DENY_UNRECEIVED.includes(ASSET_ASSIGN_PENDING_REASON_SHORT)], ['수령 완료 뒤 배정', true])
+eq('D9 수령 대기 상세 캡션(배지가 상태를 말하므로 되풀이 없음, 디자이너 2차 F2)', [pendingPlaceCaption('519호 배정 예정'), pendingPlaceCaption(null)], ['519호 배정 예정', '수령 완료 뒤 배정'])
 eq('R-5 적용취소 결과(§16 형식)', ASSET_RECEIPT_ASSIGN_UNDONE, '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀')
 // N-6 재무 묶음 라벨에서 같은 방이 두 번 서지 않는다
 eq('N-6 부분 도착 배정 직후', [roomChipText([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }]), roomsLabel([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }])], ['방 1개', '519호·수령 대기 2개'])

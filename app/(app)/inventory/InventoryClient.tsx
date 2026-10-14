@@ -126,7 +126,8 @@ const LOC_INDENT_PX = 12   // 승인 목업(402px) 기준 — 한 단계당 12px
 // 칸과 바탕의 경계가 흐려 읽는 줄과 쓰는 칸이 같은 면으로 보였다.
 // 같은 폼의 글자칸(메모)은 정렬만 다른 한 벌(checkTextInputCls)이다 — 한 폼 안 입력 문법 통일(2단계 검수 5).
 const checkTextInputCls = 'w-full min-w-0 bg-[var(--canvas)] border-[1.5px] border-[var(--border-s)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]'
-const qtyInputCls = `${checkTextInputCls} text-right`
+// 칸별 오류(aria-invalid)일 때 보더를 위험색으로(웹디자이너 2차 R2). aria-invalid 를 안 주는 칸은 종전 그대로다.
+const qtyInputCls = `${checkTextInputCls} text-right aria-[invalid=true]:border-[var(--danger-fg)]`
 // 이력 수정 폼 셋의 라벨 — 2단계 점검 입력과 같은 12px/500 --warm-mid, 칸과 사이 mb-1. 세 폼의 날짜 칸은 점검 입력의 점검일과 같은
 // 44px 글자째 한 벌이다(상수로 빼지 않는다 — check-datepicker-shell 이 호출부 글자에서 radius 를 읽는다). 보더는 공용 DatePicker 1px 그대로.
 const EDIT_LABEL_CLS = 'mb-1 text-xs font-medium text-[var(--warm-mid)]'
@@ -1122,13 +1123,15 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           <div key={f.p.id} className="mb-2">
                             <p className={EDIT_LABEL_CLS}>도착 수량{missing.length > 1 && <span className="font-normal text-[var(--warm-muted)]"> {fmtMDYearIfOther(f.p.date)}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>}</p>
                             <div className="w-32">
-                              <QtyField unit={f.p.qtyUnit ?? g.qtyUnit ?? '개'} aria-label="도착 수량" autoFocus={f === missing[0]} id={`rcvqty-${f.p.id}`}
+                              <QtyField unit={f.p.qtyUnit ?? g.qtyUnit ?? '개'} autoFocus={f === missing[0]} id={`rcvqty-${f.p.id}`}
+                                aria-label={missing.length > 1 ? `도착 수량 ${fmtMDYearIfOther(f.p.date)}${f.p.vendor ? ` ${f.p.vendor}` : ''}` : '도착 수량'}
                                 aria-invalid={qtyAsk?.bad.includes(f.p.id) || undefined}
+                                aria-describedby={qtyAsk?.bad.includes(f.p.id) ? `rcvqty-err-${f.p.id}` : undefined}
                                 value={qtyAsk?.vals[f.p.id] ?? ''} disabled={receivingKey === g.key}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); setQtyAsk(q => q && { ...q, bad: q.bad.filter(x => x !== f.p.id), vals: { ...q.vals, [f.p.id]: v } }) }}
                                 onKeyDown={e => { if (e.key === 'Enter') submitQty() }} />
                             </div>
-                            {qtyAsk?.bad.includes(f.p.id) && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">도착 수량을 적어 주세요.</p>}
+                            {qtyAsk?.bad.includes(f.p.id) && <p id={`rcvqty-err-${f.p.id}`} className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">도착 수량을 적어 주세요.</p>}
                           </div>
                         ))}
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-3">
@@ -3027,16 +3030,17 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             {noQty ? (
               // 구매 수량이 비면 같은 '도착 수량' 칸이 필수다. 일부 수령은 성립하지 않는다(전체를 모른다).
               <div className="mb-2">
-                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">수량 미기록 · 적은 수량이 구매 수량이 됨</span></p>
+                {/* 꼬리는 결과만 말한다. '수량 미기록'은 바로 위 카드 줄이 이미 말한다(웹디자이너 2차 R3). */}
+                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">적은 수량이 구매 수량이 됨</span></p>
                 <div className="w-32">
-                  <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
+                  <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" aria-invalid={!!rcvQtyErr || undefined} value={rcvQtyStr} disabled={pending}
                     onChange={e => { setRcvQtyErr(''); setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, '')) }} />
                 </div>
                 {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
               </div>
             ) : entry.qtyValue > 1 && (
               <div className="mb-2">
-                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지</span></p>
+                <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 나머지는 수령 대기 유지</span></p>
                 <div className="w-32">
                   <QtyField unit={entry.qtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
                     onChange={e => setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, ''))} />
@@ -4050,7 +4054,7 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
         <div>
           <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">수량 미기록 · 적은 수량이 구매 수량이 됨</span></p>
           <div className="w-32">
-            <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" value={rcvQty} disabled={pending}
+            <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" aria-invalid={!!rcvQtyErr || undefined} value={rcvQty} disabled={pending}
               onChange={e => { setRcvQtyErr(''); setRcvQty(e.target.value.replace(/[^0-9.]/g, '')) }} />
           </div>
           {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}

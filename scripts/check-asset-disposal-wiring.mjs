@@ -426,8 +426,9 @@ function body(src, header) {
   need('설치·폐기 머리에 그 카드의 자리가 박힌다',
     /설치·폐기\s*\n\s*<span[^>]*>\{here\} 기준 · 자동 계산<\/span>/.test(client),
     '바로 위가 품목 전체라 범위를 안 적으면 두 숫자가 어긋난 것으로 읽힌다(be42800d)')
-  need('그 자리 글자가 curPlace + 규격이다',
-    /const here = `\$\{curPlace\(it\)\}\$\{specOf\(it\) \? ` \$\{specOf\(it\)\}` : ''\}`/.test(client))
+  // 수령 대기 카드만 자리 대신 상태 이름이다(웹디자이너 2차 F3, 알약·캡션과 같은 이름). 그 밖은 정본 curPlace 그대로.
+  need('그 자리 글자가 curPlace(수령 대기는 상태 이름) + 규격이다',
+    /const here = `\$\{pendingHere \? '수령 대기' : curPlace\(it\)\}\$\{specOf\(it\) \? ` \$\{specOf\(it\)\}` : ''\}`/.test(client))
   need('설치·폐기 수치는 **버킷 단위** 그대로다',
     /\{fmtQty\(it\.liveUnits\)\}\{unit\}/.test(client) && /\{fmtQty\(it\.disposedQty\)\}\{unit\}/.test(client)
     && /\{fmtQty\(it\.liveUnits \+ it\.disposedQty\)\}\{unit\}/.test(client),

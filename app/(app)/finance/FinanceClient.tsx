@@ -62,7 +62,8 @@ import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 // 방별 분배 묶음의 자리 라벨(방 · 공용부 · 미배정) 정본 — 순수층이라 진리표가 붙는다
 import { roomChipText, roomsLabel } from './allocPlaceLabel'
-// 예정 호실 표기 정본. 비품 수령 대기 카드 메타와 재무의 '대상 호실'이 같은 말('519호 배정 예정')을 쓴다.
+// 예정 호실 표기 정본. 방별 분배 묶음 모달의 자리 칸이 비품 수령 대기 카드 메타와 같은 말('519호 배정 예정')을 쓴다.
+// 지출 상세의 예정 줄은 폼 칸과 같은 '배정할 호실' 라벨에 방 이름만 쓴다(웹디자이너 패스 D5, 2차 N7).
 import { plannedRoomsMeta } from '@/app/(app)/inventory/assets/receiptPlacement'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -2725,7 +2726,9 @@ export default function FinanceClient({
                 // 결과는 짧게, 까닭은 둘째 줄로(§15 장문형, 웹디자이너 패스 D10. 320px 에서 4줄이던 한 덩이).
                 // 따옴표 뒤 조사는 카테고리 이름 받침으로(정본 판정 hasFinalConsonant, 종전 '는' 고정).
                 pushToast('info', '소모품 카드를 정리했습니다', {
-                  detail: `'${newCat}'${hasFinalConsonant(newCat) ? '은' : '는'} 재고 추적 카테고리가 아닙니다. 이 품목은 비품·자재에서 관리됩니다.`,
+                  // 둘째 줄은 한 문장(웹디자이너 2차 N6). 줄바꿈 정비(SaveFeedback break-keep) 뒤 실측에서 두 문장보다 길지 않고
+                  // 360px 에서 한 줄 짧다.
+                  detail: `'${newCat}'${hasFinalConsonant(newCat) ? '은' : '는'} 재고 추적 카테고리가 아니라 비품·자재에서 관리됩니다.`,
                   ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
                     if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 목록에 다시 표시'); router.refresh() }
                     else pushToast('error', r.error)
