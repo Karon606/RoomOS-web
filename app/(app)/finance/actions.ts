@@ -28,6 +28,8 @@ import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inventory/actions'
 // 공용부 이름은 비품 화면과 같은 표기 경로(pathName) 정본 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
+// 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
+import { isDurableGoods, placementForSave } from '@/app/(app)/inventory/assets/receiptPlacement'
 // 재고 원장 전파(점보롤 백로그 1번) — 수령완료 구매의 수량 정정·삭제가 뒤 점검의 저장 잔량을
 // 함께 옮기게 한다. 계산 정본은 lib/stockLedger, 적용·되돌리기는 inventory/ledgerShift 공용층.
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
@@ -676,6 +678,20 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
     const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    // 호실 칸 셋(대상 호실·방별 분배·비품의 '배정할 호실')은 이 영업장 방만 받는다. updateExpense 와 같은 관문.
+    // 배정할 호실(targetRoomId)은 FK 가 없는 text 칸이라 여기서 안 보면 남의 방 id·지운 방 id 가 그대로 박힌다.
+    const formTarget = formData.has('targetRoomId') ? (((formData.get('targetRoomId') as string) || '').trim() || null) : undefined
+    const formRoomIds = [...new Set([roomId, formTarget, ...ocrCaptureItems.flatMap(it => (Array.isArray(it.allocations) ? it.allocations : []).map(a => a?.roomId))].filter((v): v is string => !!v))]
+    if (formRoomIds.length > 0 && (await prisma.room.count({ where: { id: { in: formRoomIds }, propertyId } })) !== formRoomIds.length) {
+      return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
+    }
+    // 수령 전 비품 물품의 자리는 배정할 호실(targetRoomId) 하나뿐이다. roomId 는 비운다(판정 정본 receiptPlacement).
+    // 등록하는 지출은 늘 수령 전이다. 비품 물품이 아니면 targetRoomId 를 비운다.
+    const saveTrackedCats = (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
+    const placeOf = (label: string | null | undefined, rowRoomId: string | null) => placementForSave({
+      durableGoods: isDurableGoods({ category, excludeFromInventory, itemLabel: label || null, isShipping: false }, saveTrackedCats),
+      received: false, roomId: rowRoomId, formTarget, existingTarget: null,
+    })
     // 귀속월(2026-10-03 운영자 승인 2안) — 폼의 귀속월 칸. 날짜의 달과 같으면 NULL 로 접는다(lib/expenseTargetMonth).
     const targetMonthRaw = (formData.get('targetMonth') as string) || null
     if (targetMonthRaw && !isMonthKey(targetMonthRaw)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
@@ -801,7 +817,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       const itemCreates = rows.map(r => prisma.expense.create({
         data: {
           ...baseRow,
-          roomId:    r.roomId,
+          ...placeOf(r.it.label, r.roomId),   // roomId·targetRoomId 두 칸(비품 물품은 수령 전 자리가 예정 호실뿐)
           amount:    r.amount,
           detail:    `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${cleanUnit(r.it.specUnit) ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${cleanUnit(r.it.qtyUnit) ?? ''}` : ''}`,
           itemLabel: r.it.label,
@@ -837,6 +853,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const singleCreate = prisma.expense.create({
       data: {
         ...baseRow,
+        ...placeOf(itemLabel, roomId || null),
         amount,
         detail:             detail || null,
         itemLabel:          itemLabel || null,
@@ -951,11 +968,15 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         recurringExpenseId: true,
         // 귀속월 — 폼이 칸을 안 보낸 편집에서 보존하고, 고정지출 중복 가드가 '달이 바뀌었나'를 본다.
         date: true, targetMonth: true,
+        // 비품의 배정 예정 호실. 받은 뒤·칸 부재 편집에서 지킨다(placementForSave).
+        targetRoomId: true,
       },
     })
     if (!existing) return { ok: false, error: '지출을 찾을 수 없습니다.' }
-    // 폼이 실어 온 호실(방별 분배 포함)·결제 계정 id 도 이 영업장 것만 받는다. 남의 호실·계정을 이 지출에 걸지 못한다.
-    const formRoomIds = [...new Set([roomId, ...parsedItems.flatMap(it => (Array.isArray(it.allocations) ? it.allocations : []).map(a => a?.roomId))].filter((v): v is string => !!v))]
+    // 비품의 '배정할 호실' 칸(부재 undefined · 빈 값 null). 수령 전 비품 수정 폼에만 선다.
+    const formTarget = formData.has('targetRoomId') ? (((formData.get('targetRoomId') as string) || '').trim() || null) : undefined
+    // 폼이 실어 온 호실(방별 분배·배정할 호실 포함)·결제 계정 id 도 이 영업장 것만 받는다. 남의 호실·계정을 이 지출에 걸지 못한다.
+    const formRoomIds = [...new Set([roomId, formTarget, ...parsedItems.flatMap(it => (Array.isArray(it.allocations) ? it.allocations : []).map(a => a?.roomId))].filter((v): v is string => !!v))]
     if (formRoomIds.length > 0 && (await prisma.room.count({ where: { id: { in: formRoomIds }, propertyId } })) !== formRoomIds.length) {
       return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
     }
@@ -965,6 +986,13 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     // 이 지출이 원래 쓰던 카테고리를 다시 저장할 때는 목록에 되살리지 않는다(prev, 새로 적은 값만 더한다).
     const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, existing?.category)
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    // 호실 두 칸(roomId·targetRoomId). 수령 전 비품 물품은 예정 호실만, 받은 비품은 지금처럼, 그 밖은 예정 호실 비움.
+    // 판정 정본 receiptPlacement.placementForSave. 분할 조각(방별 분배)도 원본의 수령 상태를 물려받으니 같은 판정이다.
+    const saveTrackedCats = (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
+    const placeOf = (label: string | null | undefined, rowRoomId: string | null) => placementForSave({
+      durableGoods: isDurableGoods({ category, excludeFromInventory, itemLabel: label || null, isShipping: existing.isShipping }, saveTrackedCats),
+      received: !!existing.receivedAt, roomId: rowRoomId, formTarget, existingTarget: existing.targetRoomId,
+    })
 
     // ── 귀속월(2026-10-03 운영자 승인 2안) — 칸이 실려 오면 그 값, 안 실려 오면 기존 값 보존
     // (knowledge/form-clear-vs-absent: 빈 값=지움, 부재=건드리지 않음). 어느 쪽이든 새 날짜의 달과 같으면
@@ -1066,7 +1094,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             financialAccountId: financialAccountId || null,
             financeName:        financeName || null,
             settleStatus:       baseSettleStatus,
-            roomId:             firstRow.roomId,
+            ...placeOf(firstRow.it.label, firstRow.roomId),
             itemLabel: firstRow.it.label,
             // 등록 경로(addExpense)와 같은 정화 — 수정 저장으로도 뜻 없는 단위가 새로 들어오지 않게.
             specUnit:  cleanUnit(firstRow.it.specUnit) ?? null,
@@ -1098,7 +1126,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             financeName:        financeName || null,
             receiptUrl:         receiptUrl || null,
             settleStatus:       baseSettleStatus,
-            roomId:             r.roomId,
+            ...placeOf(r.it.label, r.roomId),
             itemLabel: r.it.label,
             specUnit:  cleanUnit(r.it.specUnit) ?? null,
             qtyUnit:   cleanUnit(r.it.qtyUnit)  ?? null,
@@ -1215,7 +1243,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         financialAccountId: financialAccountId || null,
         financeName:        financeName || null,
         settleStatus:       baseSettleStatus,
-        roomId:             roomId || null,
+        ...placeOf(labelAfter, roomId || null),
         excludeFromInventory,
         targetMonth,
         // 폼이 품목 필드를 아예 안 보낸 편집(카테고리만 수정 등)에서는 기존 값 보존 —

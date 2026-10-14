@@ -26,7 +26,7 @@ import {
   type SpecKey, type AssetItem, type RawAsset, type AssetOrderMaps,
 } from './aggregate'
 export type { AssetItem } from './aggregate'
-import { assetReceiptDenial } from './receiptPlacement'
+import { assetReceiptDenial, assignDenialUnreceived, unreceiveDenialPlaced } from './receiptPlacement'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -107,11 +107,18 @@ export async function getDurableItems(): Promise<AssetsData> {
       disposedAt: true, disposalReason: true,
       // 같은 구매 묶음 id — 상세 구매 내역의 계보 한 줄이 쓴다(표시 전용, 버킷·집계 키 무관).
       allocationGroupId: true,
+      // 배정 예정 호실. 수령 대기 카드 메타('519호 배정 예정')와 받을 때 배정 물음의 근거(FK 없는 text).
+      targetRoomId: true,
     },
   })
 
   // 위치 표기 경로 색인 — 카드·그룹 헤더·배지에 찍는 공용부 이름이 전부 여기서 나온다.
   const locPaths = await loadLocationPaths(propertyId)
+  // 예정 호실 번호. 이 영업장에 지금 있는 방만 번호를 단다. 지운 방이면 예정이 없는 것으로 본다(묻지 않는다).
+  const targetIds = [...new Set(rows.map(r => r.targetRoomId).filter((v): v is string => !!v))]
+  const targetRoomNoById = new Map(targetIds.length
+    ? (await prisma.room.findMany({ where: { id: { in: targetIds }, propertyId }, select: { id: true, roomNo: true } })).map(r => [r.id, r.roomNo])
+    : [])
 
   const raws: RawAsset[] = rows.map(r => ({
     id: r.id, date: r.date.toISOString().slice(0, 10), itemLabel: r.itemLabel ?? '',
@@ -124,6 +131,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null,
     disposedAt: r.disposedAt ? kstYmd(r.disposedAt) : null, disposalReason: r.disposalReason,
     allocationGroupId: r.allocationGroupId,
+    targetRoomId: r.targetRoomId, targetRoomNo: r.targetRoomId ? (targetRoomNoById.get(r.targetRoomId) ?? null) : null,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
@@ -263,6 +271,14 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     ])
     const gateDenial = assetReceiptDenial(expenseIds, gateFound, new Set(gateInPop.map(r => r.id)), trackedCats)
     if (gateDenial) return { ok: false, error: gateDenial }
+    // 수령 대기로 돌리기. 방·공용부에 놓인 물품이면 막는다. 돌리면 '수령 전인데 자리가 있는' 행이 생겨
+    // 다시 받을 때 말없이 그 방에 선다(수령 전 자리는 배정 예정 호실뿐, 판정 정본 receiptPlacement).
+    if (!received) {
+      const placedDenial = unreceiveDenialPlaced(await prisma.expense.findMany({
+        where: { id: { in: expenseIds }, propertyId }, select: { roomId: true, assignedLocationId: true, excludeFromInventory: true },
+      }))
+      if (placedDenial) return { ok: false, error: placedDenial }
+    }
     // 부분 수령(분할 배송) — qty가 전체 미만이면 그 수량만 수령: 수량 큰 행부터 통째 소진,
     // 마지막만 분할(금액 비례·allocationGroupId 공유). 잔여는 수령 대기 유지. (배정 분할과 동일 선례)
     if (received && qty != null) {
@@ -885,6 +901,12 @@ export async function assignAggregateToTarget(
     if (err) return { ok: false, error: err }
     const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
     if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    // 수령 전 비품을 방·공용부에 넣지 않는다. 수령 전 자리는 배정 예정 호실뿐이다(판정 정본 receiptPlacement).
+    // 받는 순간 말없이 그 방에 서고 배정 이력이 어긋나는 길이었다. 해제(none)는 자리를 비우는 쪽이라 막지 않는다.
+    if (target.kind !== 'none') {
+      const unrecv = assignDenialUnreceived(exps)
+      if (unrecv) return { ok: false, error: unrecv }
+    }
     // 수량 방어는 클램프가 아니라 거부. 조용히 깎으면 운영자가 다른 수량이 들어간 걸 모른다.
     if (qty != null) {
       if (!(qty > 0)) return { ok: false, error: '0보다 큰 수량을 입력하세요.' }
@@ -1109,6 +1131,12 @@ export async function batchAssignAssets(
       where: { id: { in: allIds }, propertyId },
       select: { id: true, roomId: true, assignedLocationId: true, isCommonAsset: true, qtyValue: true, amount: true, allocationGroupId: true, detail: true, assignedAt: true },
     })
+    // 수령 전 비품이 섞이면 아무것도 안 한다. 아래 반복은 품목별 실패를 건너뛰므로 여기서 안 막으면
+    // 받은 것만 배정되고 '배정됨' 토스트가 나가는 반쪽이 된다(판정 정본 receiptPlacement).
+    const unrecv = assignDenialUnreceived(await prisma.expense.findMany({
+      where: { id: { in: allIds }, propertyId }, select: { receivedAt: true, excludeFromInventory: true },
+    }))
+    if (unrecv) return { ok: false, error: unrecv }
     const restore = restoreRows.map(r => ({ ...r, assignedAt: r.assignedAt ? r.assignedAt.toISOString() : null }))
 
     const deleteIds: string[] = []
@@ -1290,6 +1318,9 @@ export async function distributeAssetToTargets(
 
     const exps = await prisma.expense.findMany({ where: { id: { in: input.ids }, propertyId } })
     if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    // 수령 전 비품은 나눠 배정하지 않는다(assignAggregateToTarget 과 같은 판정 정본).
+    const unrecv = assignDenialUnreceived(exps)
+    if (unrecv) return { ok: false, error: unrecv }
     // 수량 방어는 클램프가 아니라 거부(assignAggregateToTarget 과 동일 문구·동일 판정).
     const have = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
     const want = targets.reduce((s, t) => s + t.qty, 0)

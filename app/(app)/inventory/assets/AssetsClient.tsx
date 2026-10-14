@@ -31,6 +31,8 @@ import { InfoHint } from '@/components/ui/InfoHint'
 // 조사 정본 — 수량 단위(qtyUnit)가 자유 입력이라 '3장는요?'·'3롤가' 가 나가던 자리(디자이너 검수 2026-09-16).
 import { withEunNeun, eunNeunOf, iGaOf } from '@/lib/statusReasons'
 import { withParticle } from '@/lib/koParticle'
+// 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
+import { plannedRoomsMeta } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -826,7 +828,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {it.isService && <span className="inline-flex items-center rounded-sm bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.65625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
           {it.amount === 0 && <Badge tone="pale-blue">무상</Badge>}
         </>}
-        meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
+        // 수령 대기 카드는 배정일 자리에 배정 예정 호실('519호 배정 예정')을 단다. 받을 때 묻는 창이 기습이 되지 않게
+        // (UX 패널 보조 제안). 판정은 받을 때 묻는 창과 같다(살아 있는 방·안 놓인 행만, receiptPlacement).
+        meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : (awaitingReceipt ? plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)) : null), it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         valueSub={it.disposedQty > 0 ? `폐기 ${fmtQty(it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}
         valueDanger={it.disposedQty > 0 && it.liveUnits <= 0}
@@ -877,8 +881,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               </button>
             ) : (
               <>
-                {/* 서비스(무형)는 수령 개념이 없어 '수령대기로' 미표시(오류신고 0443289d) */}
-                {!it.isService && (
+                {/* 서비스(무형)는 수령 개념이 없어 '수령대기로' 미표시(오류신고 0443289d).
+                    방·공용부에 놓인 카드도 숨긴다. 서버가 거부한다(수령 전 자리는 배정 예정 호실뿐, receiptPlacement
+                    unreceiveDenialPlaced 와 같은 판정). 쓸 수 없는 때는 비활성이 아니라 숨긴다(§13). */}
+                {!it.isService && !placed && (
                   <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
                     className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                     수령대기로
@@ -1170,7 +1176,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         <SelectionPillBar count={mergeSel.size} onClose={exitMerge}>
           {pillMode === 'menu' && (
             <>
-              <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
+              {/* 수령 대기가 섞이면 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 같은 게이트,
+                  receiptPlacement assignDenialUnreceived). 폐기·분실과 같은 판정이다. */}
+              {!selItems.some(it => data.pending.some(p => p.id === it.id)) && (
+                <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
+              )}
               {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
               {/* 수령 대기가 섞이면 숨긴다 — 아직 받지도 않은 물건을 버릴 수는 없다(서버도 같은 게이트) */}
               {!selItems.some(it => data.pending.some(p => p.id === it.id)) && (
@@ -1513,14 +1523,18 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     `지금 있는 것`이 같은 축이라 여기만 qtyValue 로 두면 같은 낱말이 다른 수를 말한다.
                     qtyValue 는 '적힌 것이 있나'를 묻는 데만 쓴다(그 판정은 폐기 행까지 본다). */}
                 <span className="text-xs text-[var(--warm-muted)]">지금 {it.qtyValue != null ? `${fmtQty(it.liveUnits)}${it.qtyUnit ?? '개'}` : '수량 미기록'} · {won(it.amount)} · 구매 {it.count}건</span>
-                {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
+                {/* 잘못 배정 즉시 수정. 옮기기 모달 직행(운영자 요청 2026-07-08 단순화).
+                    수령 대기 카드는 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 거부,
+                    receiptPlacement assignDenialUnreceived). 카드 액션 행이 수령 대기에 배정 버튼을 안 두는 것과 같다. */}
+                {!data.pending.some(x => x.id === it.id) && (
                 <button type="button"
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '', replace: '' })}
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
+                )}
                 {/* 나눠 배정 — 수량이 2 이상일 때만(카드 액션 행과 동일 조건) */}
-                {(it.qtyValue ?? 0) > 1 && (
+                {(it.qtyValue ?? 0) > 1 && !data.pending.some(x => x.id === it.id) && (
                   <button type="button" onClick={() => openDistribute(it)}
                     className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                     나눠 배정

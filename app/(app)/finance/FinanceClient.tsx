@@ -62,6 +62,8 @@ import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 // 방별 분배 묶음의 자리 라벨(방 · 공용부 · 미배정) 정본 — 순수층이라 진리표가 붙는다
 import { roomChipText, roomsLabel } from './allocPlaceLabel'
+// 예정 호실 표기 정본. 비품 수령 대기 카드 메타와 재무의 '대상 호실'이 같은 말('519호 배정 예정')을 쓴다.
+import { plannedRoomsMeta } from '@/app/(app)/inventory/assets/receiptPlacement'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -96,6 +98,9 @@ type Expense = {
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
   assignedLocationName: string | null   // 공용부 배정 행의 자리 이름(표기 경로) — getExpenses 가 싣는다. 방별 분배 라벨이 쓴다
+  // 비품의 배정 예정 호실(FK 없는 text). 받기 전 비품의 자리는 이것뿐이다(inventory/assets/receiptPlacement).
+  // 번호는 화면이 rooms 로 찾는다. 지운 방이면 못 찾아 아무것도 안 그린다.
+  targetRoomId: string | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
   targetMonth: string | null   // 지출 귀속월 'YYYY-MM'(null=date 의 달) — 읽기는 lib/expenseTargetMonth 정본만
   receiptUrl: string | null
@@ -1630,10 +1635,22 @@ export default function FinanceClient({
   const [editShipSeparate, setEditShipSeparate] = useState(false) // 배송비를 별도 지출(합배송)로 묶기
 
   // 비품·자재(내구재) 판정 — 재고 비추적 카테고리의 '물품'. 수령 후 비품 탭에서 방·공용부에 배정하므로
-  // 지출 등록/수정 폼에서는 방 배정 UI를 숨긴다(구매 단계 선배정이 실제 배정 때 중복되는 것 방지).
+  // 지출 등록/수정 폼에서는 roomId(배정된 자리)를 싣지 않는다(구매 단계 선배정이 실제 배정 때 중복되는 것 방지).
+  // 대신 받기 전에는 '배정할 호실'(예정)을 받는다. 아래 addPlanned·editPlanned.
   const isTrackedCat = (cat: string) => trackedCategories.includes(cat)
   const addIsDurable = !addIsService && !isTrackedCat(addExpCategory)
   const editIsDurable = editItems.length > 0 && !isTrackedCat(editExpCategory) && !detailExp?.excludeFromInventory
+  // 비품 물품의 '배정할 호실'(배정 예정 호실, targetRoomId). 받기 전 비품은 방 칸 자리에 이 칸이 선다.
+  // 고른 방은 받을 때 그 방에 배정할지 묻는 근거가 된다(비품 수령 대기 '수령 완료'). 저장 규칙 정본은
+  // inventory/assets/receiptPlacement.placementForSave(서버). 값은 대상 호실과 같은 상태(addExpRoomId·editExpRoomId)를
+  // 쓴다. 카테고리를 바꿔도 고른 방이 맞는 칸으로 따라간다. 받은 비품의 수정 폼은 지금처럼 칸을 숨긴다.
+  const addPlanned = addIsDurable && addItems.length > 0
+  const editPlanned = editIsDurable && !detailExp?.receivedAt
+  const roomNoById = useMemo(() => new Map(rooms.map(r => [r.id, r.roomNo])), [rooms])
+  // 받기 전 비품의 예정 호실 번호(살아 있는 방만). 방·공용부에 이미 놓인 행·받은 행은 예정이 아니다.
+  const plannedRoomNoOf = (e: Expense): string | null =>
+    !e.receivedAt && !e.room && !e.assignedLocationName && e.targetRoomId ? (roomNoById.get(e.targetRoomId) ?? null) : null
+  const withPlan = (rows: Expense[]) => rows.map(r => ({ ...r, plannedRoomNo: plannedRoomNoOf(r) }))
 
   // 등록 폼 유형 전환 — 세그먼트와 품목 칩 줄 아래 안내가 같은 한 곳을 부른다.
   // 두 벌로 두면 서비스로 갈 때 비우는 칸이 한쪽에만 늘어난다.
@@ -3585,14 +3602,14 @@ export default function FinanceClient({
                                   {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                   {grp && (item.groupKind === 'order'
                                     ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">주문 {grp.filter(r => !r.isShipping).length}품목</span>
-                                    : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(grp)}</span>)}
+                                    : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(withPlan(grp))}</span>)}
                                   {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
                                 </div>
                                 {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
                                 {grp && (item.groupKind === 'order'
                                   ? <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
-                                  : <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                  : <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(withPlan(grp))}</p>)}
                                 {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                     {c.text}
@@ -3711,12 +3728,12 @@ export default function FinanceClient({
                                     {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
-                                      : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(grp)}</span>)}
+                                      : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(withPlan(grp))}</span>)}
                                     {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--tc-text)] shrink-0">영수증</span>}
                                   </div>
                                   {grp && (item.groupKind === 'order'
                                     ? <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
-                                    : <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                    : <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(withPlan(grp))}</p>)}
                                   {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                       {c.text}
@@ -4102,7 +4119,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.assignedLocationName ?? (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정'))))}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.assignedLocationName ?? plannedRoomsMeta([plannedRoomNoOf(r)]) ?? (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정'))))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{fmtWon(r.amount)}</span>
@@ -4271,6 +4288,8 @@ export default function FinanceClient({
                   {detailExp.brand && <DetailRow label="브랜드" value={detailExp.brand} />}
                   {detailExp.productName && <DetailRow label="제품명" value={detailExp.productName} />}
                   {detailExp.room && <DetailRow label="대상 호실" value={`${fmtRoomNo(detailExp.room.roomNo, '')}`} />}
+                  {/* 받기 전 비품의 예정 호실. 같은 '대상 호실' 줄에 비품 수령 대기 카드 메타와 같은 말로('519호 배정 예정'). */}
+                  {!detailExp.room && (() => { const p = plannedRoomsMeta([plannedRoomNoOf(detailExp)]); return p ? <DetailRow label="대상 호실" value={p} /> : null })()}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
@@ -4369,7 +4388,8 @@ export default function FinanceClient({
                     setEditExpMethod(detailExp.payMethod ?? '계좌이체')
                     setEditExpAccId(detailExp.financialAccountId ?? '')
                     setEditExpAccName(detailExp.financeName ?? '')
-                    setEditExpRoomId(detailExp.roomId ?? '')
+                    // 받기 전이면 방 칸이 '배정할 호실'이라 예정 호실로 연다(받은 뒤에는 지금처럼 배정된 방).
+                    setEditExpRoomId(detailExp.roomId ?? (!detailExp.receivedAt ? detailExp.targetRoomId : null) ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setLocalPreview('edit', '')
                     setEditExpCategory(detailExp.category)
@@ -4426,7 +4446,9 @@ export default function FinanceClient({
                 <input type="hidden" name="id" value={detailExp.id} />
                 <input type="hidden" name="financialAccountId" value={editExpAccId} />
                 <input type="hidden" name="financeName" value={editExpAccName} />
-                <input type="hidden" name="roomId" value={editItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : editExpRoomId} />
+                <input type="hidden" name="roomId" value={(editPlanned || editItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : editExpRoomId} />
+                {/* 받기 전 비품만 '배정할 호실'을 싣는다. 안 실으면(받은 비품·그 밖) 서버가 원래 값을 지킨다(form-clear-vs-absent). */}
+                {editPlanned && <input type="hidden" name="targetRoomId" value={editExpRoomId} />}
                 <input type="hidden" name="excludeFromInventory" value={detailExp.excludeFromInventory ? '1' : ''} />
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
@@ -4686,7 +4708,18 @@ export default function FinanceClient({
                     </div>
                   )}
                   {rooms.length > 0 && (
-                    editIsDurable ? (
+                    editPlanned ? (
+                      // 받기 전 비품. 등록 폼과 같은 '배정할 호실' 칸(형제 '대상 호실'과 같은 정본 셀렉트·캡션 한 줄).
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">배정할 호실 <span className="font-normal text-[var(--warm-muted)]">(선택)</span></label>
+                        <select value={editExpRoomId} onChange={e => setEditExpRoomId(e.target.value)}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                          <option value="">선택 안함</option>
+                          {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
+                        </select>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령 확인 때 이 호실에 배정할지 묻습니다.</p>
+                      </div>
+                    ) : editIsDurable ? (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재의 방·공용부 배정은 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 합니다. {detailExp.roomId ? '(현재 배정은 그대로 유지됩니다.)' : ''}</p>
                     ) : editItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>로 지정됩니다.</p>
@@ -4789,6 +4822,8 @@ export default function FinanceClient({
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={(addIsDurable || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
+              {/* 비품 물품의 '배정할 호실'. 비품이 아니면 빈 값(서버도 비품 물품이 아니면 비운다). */}
+              <input type="hidden" name="targetRoomId" value={addPlanned ? addExpRoomId : ''} />
               <input type="hidden" name="excludeFromInventory" value={addIsService ? '1' : ''} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
@@ -5004,7 +5039,20 @@ export default function FinanceClient({
                   </div>
                 )}
                 {rooms.length > 0 && (
-                  addIsDurable ? (
+                  addPlanned ? (
+                    // 비품 물품. 숨기던 호실 자리에 '배정할 호실'(배정 예정 호실). 형제 '대상 호실'과 같은 정본 셀렉트에
+                    // 캡션 한 줄(상태 안내는 칸 아래 한 줄이 형제 문법이다. 종전 안내 상자는 칸이 없을 때의 대용이었다).
+                    // 방별 나누기는 없다(한 호실). 받은 뒤 다른 자리는 비품·자재 탭의 배정이 맡는다.
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">배정할 호실 <span className="font-normal text-[var(--warm-muted)]">(선택)</span></label>
+                      <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        <option value="">선택 안함</option>
+                        {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
+                      </select>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">수령 확인 때 이 호실에 배정할지 묻습니다.</p>
+                    </div>
+                  ) : addIsDurable ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재는 수령 후 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   ) : addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>로 지정됩니다.</p>
