@@ -29,7 +29,7 @@ import {
 } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
-import { confirmDeletePayment } from '@/lib/paymentConfirm'
+import { confirmDeletePayment, previewWithin } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
@@ -89,6 +89,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 발행 금액 — **잘못 적었을 때 고칠 수 있는 유일한 자리다**(운영자 승인 2026-08-25).
   // 여기가 없으면 틀린 국세청 숫자가 앱에 갇힌다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다.
   const [editCrAmount, setEditCrAmount] = useState(0)
+  // 삭제 확인창 앞 미리보기를 읽는 중인 행. 그 행의 삭제 버튼을 막아 반응이 있었음을 보이고 연타를 막는다(검수 R-9).
+  const [delPendingId, setDelPendingId] = useState<string | null>(null)
   // 원터치 토글이 켤 때 묻는 발행일(운영자 지시 2026-08-25 — "응 물어봐줘"). 끌 때는 안 묻는다.
   const [crAskId, setCrAskId] = useState<string | null>(null)
   const [crAskDate, setCrAskDate] = useState(kstYmdStr())
@@ -246,8 +248,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
 
   const handleDelete = async (p: Record) => {
     // 이 삭제가 현금영수증 발행 기록에 무엇을 하는지 먼저 읽어 확인창이 말하게 한다(2026-10-13 422호 2단계).
-    // 판정은 실제 삭제와 같은 정본이다. 읽기가 실패하면 그 한 줄만 빠지고 삭제는 막지 않는다.
-    const pv = await previewPaymentDelete(p.id).catch(() => null)
+    // 판정은 실제 삭제와 같은 정본이다. 읽기가 실패하거나 상한(600ms)을 넘으면 그 한 줄만 빠지고 삭제는 막지 않는다(검수 R-9).
+    if (delPendingId) return
+    setDelPendingId(p.id)
+    const pv = await previewWithin(previewPaymentDelete(p.id))
+    setDelPendingId(null)
     if (!(await confirmDeletePayment(p, pv?.ok ? pv : null))) return
     startTransition(async () => {
       const release = trackSave()
@@ -595,7 +600,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               {canEdit && !cashReceiptOnly && !p.isDeposit && !isRentRefundRecord(p.memo) && editableHere(p.targetMonth) && (
                 <div className="flex gap-1.5">
                   <RowActionBtn tone="neutral" onClick={() => startEdit(p)}>수정</RowActionBtn>
-                  <RowActionBtn tone="danger" onClick={() => handleDelete(p)}>삭제</RowActionBtn>
+                  <RowActionBtn tone="danger" disabled={delPendingId === p.id} onClick={() => handleDelete(p)}>삭제</RowActionBtn>
                 </div>
               )}
             </div>

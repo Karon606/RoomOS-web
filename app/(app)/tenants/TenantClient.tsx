@@ -42,7 +42,7 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
-import { confirmDeletePayment } from '@/lib/paymentConfirm'
+import { confirmDeletePayment, previewWithin } from '@/lib/paymentConfirm'
 import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crEntryResultLines, ENTRY_UNDONE, crUndoMismatchDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from '@/components/entity-modal/widgets/CashReceiptCaption'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
@@ -1680,9 +1680,15 @@ export default function TenantClient({
   // 어느 달 매출이 얼마 바뀌는지 알려준다 — 종전에는 '이 수납 기록을 삭제할까요?' 한 줄뿐이었다(A페이즈).
   // level 은 caution — 소프트삭제라 되살릴 수 있는데 danger 는 '되돌릴 수 없습니다'를 자동으로 붙여 거짓말이 된다.
   // 같은 삭제인데 프리즘 경로(PaymentRecordList)에만 적용취소가 있던 불일치도 함께 봉합한다.
+  // 삭제 확인창 앞 미리보기를 읽는 중인 수납 행(검수 R-9). 그 행의 삭제 버튼을 막는다.
+  const [delPayPendingId, setDelPayPendingId] = useState<string | null>(null)
   const handleDeletePayRecord = async (p: PayRecord) => {
     // 현금영수증 발행 기록에 무엇이 일어나는지 확인창이 먼저 말한다. 프리즘(PaymentRecordList)과 같은 정본(lib/paymentConfirm)이다.
-    const pv = await previewPaymentDelete(p.id).catch(() => null)
+    // 미리보기는 상한(600ms)까지만 기다리고, 그동안 그 행의 삭제 버튼을 막는다(검수 R-9).
+    if (delPayPendingId) return
+    setDelPayPendingId(p.id)
+    const pv = await previewWithin(previewPaymentDelete(p.id))
+    setDelPayPendingId(null)
     if (!(await confirmDeletePayment(p, pv?.ok ? pv : null))) return
     const paymentId = p.id
     startTransition(async () => {
@@ -3130,7 +3136,7 @@ export default function TenantClient({
                                   {canEdit && !isRentRefundRecord(p.memo) && (
                                     <div className="flex gap-1.5 ml-1">
                                       <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
-                                      <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
+                                      <RowActionBtn tone="danger" disabled={delPayPendingId === p.id} onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
                                     </div>
                                   )}
                                 </div>

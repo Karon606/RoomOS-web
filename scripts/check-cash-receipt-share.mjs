@@ -628,6 +628,8 @@ for (const kind of ['deposit', 'cleaning']) {
     if (!b) { violations.push(`${file} — 삭제 핸들러를 못 찾았다(침묵 통과 금지).`); continue }
     const pvAt = b.indexOf('previewPaymentDelete(p.id)'), cfAt = b.indexOf('confirmDeletePayment(p, pv?.ok ? pv : null)')
     if (pvAt < 0 || cfAt < 0 || pvAt > cfAt) violations.push(`${file} — 삭제 확인창 전에 미리보기(previewPaymentDelete)를 읽어 넘기지 않는다.`)
+    // 독립 검수 R-9: 미리보기 왕복을 상한 없이 기다리면 느린 통신에서 확인창이 늦게 떠 삭제를 다시 누른다.
+    if (!b.includes('await previewWithin(previewPaymentDelete(p.id))')) violations.push(`${file} — 삭제 미리보기를 상한(previewWithin, 600ms) 없이 기다린다(검수 R-9).`)
   }
 
   // ⓘ-5 토스트는 정본 문장을 지난다. keep(바뀐 것 없음)은 성공으로 말하지 않고 적용취소도 안 단다.

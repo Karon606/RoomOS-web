@@ -14,6 +14,24 @@ import { crDeleteConfirmLine } from '@/lib/cashReceiptCopy'
  * 한 줄 덧붙인다. 422호에서 10,000원 선납을 지웠을 때 420,000원 발행이 말없이 남았다(결함 D2).
  * 금액은 fmtWon 한 곳을 지난다(가이드 §06, 인라인 toLocaleString()+'원' 금지).
  */
+/**
+ * 삭제 확인창 앞 미리보기의 대기 상한(ms). 넘으면 발행 기록 한 줄 없이 확인창을 띄운다(독립 검수 R-9, 2026-10-14).
+ * 미리보기는 누르기 전에 말할 거리를 보태는 것이지 삭제의 조건이 아니다. 느린 통신에서 삭제를 누르고 아무 반응
+ * 없이 기다리게 하면 다시 누르게 된다. 실제 삭제는 같은 정본 판정을 다시 지나고 결과 토스트가 그 사실을 말한다.
+ */
+export const DELETE_PREVIEW_WAIT_MS = 600
+
+/** 미리보기를 상한까지만 기다린다. 늦거나 실패하면 null(확인창은 그 줄 없이 뜬다). */
+export async function previewWithin<T>(read: Promise<T>, ms = DELETE_PREVIEW_WAIT_MS): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), ms) })
+  try {
+    return await Promise.race([read.catch(() => null), late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export function confirmDeletePayment(
   p: { targetMonth: string; actualAmount: number; isDeposit: boolean },
   cr?: Parameters<typeof crDeleteConfirmLine>[0],
