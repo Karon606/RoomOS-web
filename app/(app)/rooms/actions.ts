@@ -1,7 +1,6 @@
 'use server'
 
 import { requirePropertyAccess, getPropertyAccess } from '@/lib/auth/propertyAccess'
-import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
@@ -3328,83 +3327,16 @@ export async function clearDueDayOverride(leaseTermId: string) {
   revalidatePath('/dashboard')
 }
 
-// 수납 내역 조회
-export async function getTenantLeaseForDashboard(tenantId: string, targetMonth?: string) {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const lease = await prisma.leaseTerm.findFirst({
-    where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-    select: {
-      id: true,
-      rentAmount: true,
-      depositAmount: true,
-      dueDay: true,
-      moveInDate: true,
-      paymentTiming: true,
-      overrideDueDay: true,
-      overrideDueDayMonth: true,
-      room: { select: { roomNo: true } },
-      tenant: { select: { id: true, name: true } },
-      property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (!lease) return null
-
-  // carryOver = targetMonth 이전까지 누적 (양수=이월 선납, 음수=이월 미수)
-  // 모달에서 진짜 미수(이월 + viewMonth 도래 후 미회수)를 표시하기 위함
-  let carryOver = 0
-  if (targetMonth && lease.moveInDate) {
-    const [y, m] = targetMonth.split('-').map(Number)
-    // 이 달 1일 — 로컬 자정으로 만들던 시절엔 KST 기기에서 전월 말일로 밀려, 그 날 낸 돈이
-    // '이전 달까지 입금'에서 빠지고 이월 미수로 둔갑했다. 창 정본은 lib/kstDate.
-    const monthStart = monthDbRange(targetMonth).gte
-
-    // 이전 달까지 입금 합 (보증금·납입일변경 조정 제외)
-    const recordsBefore = await prisma.paymentRecord.findMany({
-      where: { leaseTermId: lease.id, isDeposit: false, payDate: { lt: monthStart } },
-      select: { actualAmount: true, memo: true },
-    })
-    const receivedBefore = recordsBefore
-      .filter(r => !r.memo?.startsWith('[납입일변경]'))
-      .reduce((s, r) => s + r.actualAmount, 0)
-
-    // 이전 달까지 청구 = max(moveInDate, acquisitionDate)부터 (targetMonth-1)월까지의 월 수 * rentAmount
-    const mi = new Date(lease.moveInDate)
-    let startY = mi.getFullYear()
-    let startM = mi.getMonth() + 1
-    const acqRaw = lease.property.acquisitionDate
-    if (acqRaw) {
-      const acq = new Date(acqRaw)
-      const acqY = acq.getFullYear(), acqM = acq.getMonth() + 1
-      // acqDate가 moveIn보다 이후면 그 시점부터 청구 (이전 소유자 시기 제외)
-      if (acqY > startY || (acqY === startY && acqM > startM)) {
-        startY = acqY; startM = acqM
-      }
-    }
-    let billedMonths = 0
-    let cy = startY, cmn = startM
-    while (cy < y || (cy === y && cmn < m)) {
-      billedMonths++
-      cmn++; if (cmn > 12) { cmn = 1; cy++ }
-    }
-    const billedBefore = billedMonths * lease.rentAmount
-    carryOver = receivedBefore - billedBefore
-  }
-
-  return { ...lease, carryOver }
-}
-
 // 풀 입주자 상세 — Prism 셸의 kind='tenant' body 가 사용. quickInfo 대비 contacts 전체 필드·
 // lease 전체 필드(청소비·납부방식·전입신고·결제수단·현금영수증·방문경로·희망 호실·계약서 URL)·
 // 추가 정보·짧은 결제 요약(분석 탭) 포함.
 export async function getTenantDetail(tenantId: string) {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const row = await prisma.tenant.findUnique({
-    where: { id: tenantId },
+  // 세션 쿠키만 보던 자리를 격리 관문으로 바꿨다(권한 감사 P0, 2026-10-14). getSession 은 쿠키 서명을
+  // 검증하지 않고, 영업장 조건도 없어 남의 입주자 id 로 개인정보가 읽혔다. 접근 불가면 종전처럼 null 이다.
+  const access = await getPropertyAccess()
+  if (!access) return null
+  const row = await prisma.tenant.findFirst({
+    where: { id: tenantId, propertyId: access.propertyId },
     select: {
       id: true, name: true, englishName: true, email: true,
       // 현지 표기 이름 — 적어 넣고도 열람에서 볼 곳이 없었다(신고 4aabd1dc). 기본 정보 위젯이 그린다.
@@ -3476,7 +3408,7 @@ export async function getTenantDetail(tenantId: string) {
   // 신원번호는 암호문째 내려보내지 않는다. 상세 카드는 마스킹만 그리고, 평문이 필요하면
   // 입주자 정보 화면의 [보기](revealForeignRegNo)로 가야 한다. 그 문만 열람 기록을 남긴다.
   const { foreignRegNoEnc, ...tenant } = row
-  const canIdentity = canReadScope(await getMyRole(), 'identity')
+  const canIdentity = canReadScope(access.role, 'identity')
   return {
     ...tenant,
     foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null,
@@ -3522,11 +3454,11 @@ function mainLeaseOnly<T extends { status: string; moveInDate?: Date | string | 
 }
 
 export async function getTenantQuickInfo(tenantId: string) {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const row = await prisma.tenant.findUnique({
-    where: { id: tenantId },
+  // 형제 getTenantDetail 과 같은 관문(권한 감사 P0, 2026-10-14). 접근 불가면 종전처럼 null 이다.
+  const access = await getPropertyAccess()
+  if (!access) return null
+  const row = await prisma.tenant.findFirst({
+    where: { id: tenantId, propertyId: access.propertyId },
     select: {
       id: true, name: true, gender: true, nationality: true,
       job: true, birthdate: true, memo: true,
@@ -3662,39 +3594,6 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
   }
 }
 
-export async function getRoomQuickInfo(roomId: string) {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const room = await prisma.room.findUnique({
-    where: { id: roomId },
-    select: {
-      id: true, roomNo: true, type: true,
-      baseRent: true, scheduledRent: true, rentUpdateDate: true,
-      windowType: true, direction: true,
-      areaPyeong: true, areaM2: true,
-      memo: true, isVacant: true,
-      photos: {
-        select: { id: true, storageUrl: true, fileName: true, driveFileId: true },
-        orderBy: { sortOrder: 'asc' },
-      },
-      leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        select: { status: true, tenant: { select: { name: true } } },
-        // 정렬은 take 로 잘릴 때 점유 계약이 먼저 남게 하는 역할만 한다 — 주 계약은
-        // 아래 primaryRoomLease 가 의미로 고른다(호실 카드와 같은 규칙).
-        orderBy: { status: 'asc' },
-        take: 3,
-      },
-    },
-  })
-  if (!room) return null
-  // leaseTerms[0] = 그 방의 주 계약. 종전엔 'createdAt desc 첫 계약'이라 최근에 만든 예약이
-  // 실거주자를 밀어냈다(503호).
-  const primary = primaryRoomLease(room.leaseTerms)
-  return { ...room, leaseTerms: primary ? [primary] : [] }
-}
-
 // 풀 호실 상세 — Prism 호실 면(어디 페이지서 열든) + room-manage 인라인 상세 공유.
 // quickInfo 와 달리 tier·floor·비거주·areaPyeong/M2 까지 포함하고, 상태 라벨/뱃지 정보를 같이 돌려준다.
 //
@@ -3806,9 +3705,11 @@ export type EntityLinks = {
 export async function getEntityLinks(input: { roomId?: string; tenantId?: string; leaseTermId?: string }): Promise<
   EntityLinks | null
 > {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
+  // 세션 쿠키만 보던 자리를 격리 관문으로 바꿨다(권한 감사 P0, 2026-10-14). 아래 조회는 전부 이 영업장
+  // 안에서만 고른다. 종전에는 남의 방·사람·계약 id 하나로 이름과 계약 id 목록이 나왔다. 접근 불가면 null 이다.
+  const access = await getPropertyAccess()
+  if (!access) return null
+  const { propertyId } = access
   const leaseSelect = { id: true, tenantId: true, roomId: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } }
   type LeaseLink = { id: string; tenantId: string; roomId: string | null; room: { roomNo: string } | null; tenant: { name: string } | null }
   const emptyLinks: EntityLinks = {
@@ -3821,7 +3722,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
   // 붙인다 — 빠뜨리면 아직 문의 단계인 부계약 방(601호 창고)이 방 선택기에서 통째로 사라진다.
   const anchorOf = async (tenantId: string) => {
     const rows = await prisma.leaseTerm.findMany({
-      where: { tenantId, status: { in: TENANT_LIST_STATUSES } },
+      where: { tenantId, propertyId, status: { in: TENANT_LIST_STATUSES } },
       select: { id: true, status: true, moveInDate: true, roomId: true, room: { select: { roomNo: true } } },
     })
     const ranked = roomLeaseRowOrder(rows)
@@ -3852,7 +3753,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     if (!anchor) return base
     // 지금 사는 방 — 판정은 일정 추정이 아니라 열린 거주 구간이다(일정 줄의 '지금 거주'와 같은 축).
     const openStay = await prisma.roomStay.findFirst({
-      where: { leaseTermId: anchor.id, endDate: null },
+      where: { leaseTermId: anchor.id, propertyId, endDate: null },
       select: { room: { select: { roomNo: true } } },
     })
     return {
@@ -3873,16 +3774,16 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     // 계약을 이름으로 지목한 진입(수납 관리 행 등) — 그 계약은 수납 면의 초기 선택으로 살아남는다.
     // 앵커까지 그 계약으로 바꾸지는 않는다. 601호 행을 눌러도 제목·입주자 면은 그 사람의 메인 계약이다.
     return pack(
-      await prisma.leaseTerm.findUnique({ where: { id: input.leaseTermId }, select: leaseSelect }),
+      await prisma.leaseTerm.findFirst({ where: { id: input.leaseTermId, propertyId }, select: leaseSelect }),
       { namedLease: true, namedRoom: true },
     )
   }
   if (input.tenantId) {
     // 사람만 주어졌을 때의 씨앗 — 앵커가 잡히면 여기서 고른 계약은 안 쓰인다. 진행 중 계약이 하나도
     // 없는 사람(퇴실·취소만)에게만 종전 추론(createdAt desc)이 그대로 남는다.
-    const lease = await prisma.leaseTerm.findFirst({ where: { tenantId: input.tenantId }, orderBy: { createdAt: 'desc' }, select: leaseSelect })
+    const lease = await prisma.leaseTerm.findFirst({ where: { tenantId: input.tenantId, propertyId }, orderBy: { createdAt: 'desc' }, select: leaseSelect })
     if (lease) return pack(lease)
-    const t = await prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { id: true, name: true } })
+    const t = await prisma.tenant.findFirst({ where: { id: input.tenantId, propertyId }, select: { id: true, name: true } })
     return { ...emptyLinks, tenantId: t?.id ?? null, tenantName: t?.name ?? null }
   }
   if (input.roomId) {
@@ -3895,7 +3796,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     // 호실 면이 비거주자를 정상으로 그리고 거주 이력 위젯도 그 사람으로 가는 링크를 주는데,
     // 바로 아래 나브바의 '입주자 정보' 탭만 회색으로 죽어 있었다(운영자 실기 지적 2026-08-13).
     const leases = await prisma.leaseTerm.findMany({
-      where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      where: { roomId: input.roomId, propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // moveInDate — 예약이 둘 이상인 방에서 primaryRoomLease 가 '먼저 들어올 사람'을 고를 수 있게(404호).
       // 안 넘기면 배열 순서로 떨어져 모달 제목이 카드와 다른 사람을 가리킨다(2026-08-10 (7) 클래스).
       orderBy: { status: 'asc' }, take: 3, select: { ...leaseSelect, status: true, moveInDate: true },
@@ -3908,12 +3809,12 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
       // 위 집합과 나눠 묻는 이유: 한 조회로 합치면 enum 오름차순에서 문의·투어가 맨 앞으로 와
       // take 로 거주·비거주를 밀어낸다. 방을 잡은 계약이 있으면 그쪽이 언제나 먼저다.
       primary = await prisma.leaseTerm.findFirst({
-        where: { roomId: input.roomId, status: { in: ['WAITING_TOUR', 'TOUR_DONE'] } },
+        where: { roomId: input.roomId, propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE'] } },
         orderBy: { status: 'desc' },   // 투어 완료가 문의보다 뒤 단계다(enum 순서)
         select: leaseSelect,
       })
     }
-    const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
+    const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true, roomNo: true } })
     // 방을 이름으로 지목한 진입 — 호실 면은 이 방을 그린다. 앵커(제목·입주자·수납)는 그 사람의 메인 계약이다.
     return pack(primary, { roomFallback: room, namedRoom: true })
   }
