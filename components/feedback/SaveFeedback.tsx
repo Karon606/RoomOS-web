@@ -129,8 +129,10 @@ export default function SaveFeedback() {
                 padding: '10px 16px',
               }}>
               <KindIcon kind={t.kind} />
+              {/* 한국어는 낱말 단위로 줄을 바꾼다(break-keep). 띄어쓰기 없이 긴 값(주소·코드)은 칸 안에서 끊는다(overflow-wrap).
+                  정본 선례는 확인창 제목·본문(ConfirmDialog)이다. 종전에는 '아닙니/다'처럼 낱말 중간에서 끊겼다(웹디자이너 2차 R1). */}
               <div className="min-w-0 text-left">
-                <p className="text-[13px] font-semibold leading-snug whitespace-pre-line">
+                <p className="text-[13px] font-semibold leading-snug whitespace-pre-line break-keep [overflow-wrap:anywhere]">
                   {t.message}
                   {t.count > 1 && (
                     <span className="ml-1.5 inline-flex items-center rounded-full px-1.5 text-[0.65625rem] font-bold"
@@ -138,7 +140,7 @@ export default function SaveFeedback() {
                   )}
                 </p>
                 {t.detail && (
-                  <p className="text-[12.5px] font-normal mt-0.5" style={{ color: 'rgba(251,246,239,.75)', lineHeight: 1.55 }}>
+                  <p className="text-[12.5px] font-normal mt-0.5 break-keep [overflow-wrap:anywhere]" style={{ color: 'rgba(251,246,239,.75)', lineHeight: 1.55 }}>
                     {t.detail}
                   </p>
                 )}

@@ -42,6 +42,18 @@ for (const [f, anchor, label] of TARGETS) {
   }
 }
 
-console.log(`[긴 값 줄바꿈] 정본 ${TARGETS.length}곳 / 위반 ${violations.length}건`)
+// 토스트(SaveFeedback) 두 줄. 한국어 낱말 단위 줄바꿈(break-keep)과 긴 토큰 끊기(anywhere)를 함께 단다(웹디자이너 2차 R1).
+// 종전에는 '아닙니/다'처럼 낱말 중간에서 끊겼다. 정본 선례는 확인창(ConfirmDialog) 제목·본문이다.
+{
+  const f = 'components/feedback/SaveFeedback.tsx'
+  const ps = [...read(f).matchAll(/<p className="([^"]*)"/g)].map(m => m[1])
+  for (const [label, size] of [['본문', 'text-[13px]'], ['둘째 줄', 'text-[12.5px]']]) {
+    const cls = ps.find(c => c.includes(size))
+    if (!cls) violations.push(`${f}. 토스트 ${label}을 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+    else if (!/\bbreak-keep\b/.test(cls) || !/overflow-wrap:anywhere/.test(cls)) violations.push(`${f}. 토스트 ${label}에 break-keep·overflow-wrap:anywhere 가 없다. 낱말 중간에서 끊긴다.`)
+  }
+}
+
+console.log(`[긴 값 줄바꿈] 정본 ${TARGETS.length}곳·토스트 두 줄 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 10)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
