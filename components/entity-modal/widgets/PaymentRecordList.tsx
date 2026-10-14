@@ -23,7 +23,7 @@ import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CASH_RECEIPT_DEFAULT_INCL } from '@/lib/cashReceipt'
 import { CARD_NOT_CASH_RECEIPT_NOTE, CR_ZERO_ROW_CAPTION, isCashReceiptEligible } from '@/lib/cashReceipt'
 import {
-  cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW, crOnToast, crOffToastDetail, crOffUndoneMessage, CR_ON_UNDONE,
+  cashReceiptRowCaption, crAddPreviewChunks, CR_KEEP_PREVIEW, CR_NONE_PREVIEW, crOnToast, crOffToastDetail, crOffUndoneMessage, crOnUndoneMessage,
   CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteToastDetail, crRestoreDetail, cashReceiptGapSentence, crEditToastDetail,
 } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from './CashReceiptCaption'
@@ -170,6 +170,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       moved: !!before && (editDate !== kstYmdStr(new Date(before.payDate)) || editPayMethod !== before.payMethod),
       wasStamped: !!before?.cashReceiptIssuedAt, nowStamped: editCashReceipt && isCashReceiptEligible(editPayMethod),
       amountEdited: crChanged, beforeAmount: before?.cashReceiptKey?.line?.amount ?? null,
+      stampedRows: before?.cashReceiptKey?.stampedRentRows ?? 1,
     }
     startTransition(async () => {
       const res = await withSave(() => updatePayment(editingId, {
@@ -284,7 +285,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         ...(t.undoable ? { action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
           if (r.ok) {
             const d = crUndoMismatchDetail(r.mismatch)
-            pushToast('info', CR_ON_UNDONE, d ? { detail: d } : undefined)
+            // 살아 있는 발행에 더한 켜기(add)를 무르면 앞 발행이 돌아온다. 그 금액을 말한다(미발행으로 복귀가 아니다).
+            pushToast('info', crOnUndoneMessage(r.line), d ? { detail: d } : undefined)
             reload(); onChange?.()
           } else pushToast('error', r.error)
         }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),

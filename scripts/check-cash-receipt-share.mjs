@@ -588,7 +588,7 @@ for (const kind of ['deposit', 'cleaning']) {
       if (!onFn.includes('crOnToast(res, crAskDate)') || !onFn.includes('pushToast(t.kind, t.message')) violations.push(`${LIST} — 켜기 토스트가 정본(crOnToast)의 종류·문장을 안 쓴다. keep 이 성공으로 나간다.`)
       if (!onFn.includes('...(t.undoable ?')) violations.push(`${LIST} — 켜기 토스트가 바뀐 것 없는 keep 에도 적용취소를 단다(가짜 적용취소).`)
       if (/pushToast\('success'/.test(onFn)) violations.push(`${LIST} — 켜기 토스트에 성공 종류를 손으로 박았다.`)
-      if (!onFn.includes('CR_ON_UNDONE')) violations.push(`${LIST} — 켜기 적용취소 결과 토스트가 없다(§16 적용취소 후에도 결과 토스트).`)
+      if (!onFn.includes('crOnUndoneMessage(r.line)')) violations.push(`${LIST} — 켜기 적용취소 결과 토스트가 없거나 돌아온 앞 발행을 말하지 않는다(§16 적용취소 후에도 결과 토스트).`)
     }
     need(LIST, list, 'crOffToastDetail(res.dropped', '끄기 토스트가 발행 합계에서 빠지는 금액을 말하지 않는다.')
     need(LIST, list, 'crOffUndoneMessage(r.line)', '끄기 적용취소 결과 토스트가 없다.')

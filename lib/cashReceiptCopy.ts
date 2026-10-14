@@ -23,10 +23,13 @@ export type CashReceiptKeyView = { line: CashReceiptLineView | null; rent: numbe
 export type CrPart = { text: string; strong?: boolean }
 /**
  * 수납 행 캡션. 덩이는 둘(긴 문장은 셋)이고 각 덩이는 한 줄로 붙어 다닌다(whitespace-nowrap). 아주 큰
- * 글자에서도 비교어와 금액이 갈라지지 않고 덩이 사이에서만 접힌다. 둘째 덩이는 '· ' 로 시작한다.
+ * 글자에서도 비교어와 금액이 갈라지지 않고 덩이 사이에서만 접힌다.
+ *
+ * 구분점(·)은 **앞 덩이 끝에 붙는다**(2026-10-14 웹디자이너 패스 R1). 뒤 덩이 머리에 두면 접혔을 때 둘째 줄이
+ * '·' 로 시작해 앞 줄과 끊긴 낱말처럼 읽힌다. 한 줄에 다 서면 글자는 종전과 같다(crCaptionText 가 같은 문장을 낸다).
  *
  * 셋째 덩이가 생기는 자리는 둘이다(2026-10-14 하네스 실측). 320px·아주 크게(20px)에서 행 안쪽 폭이 200px 인데
- * '· 같은 날 입금 2건 합계보다 120,000원 적음' 한 덩이가 225px 라 17px 넘쳤다. 그래서 주어('· 같은 날 입금 2건')와
+ * '같은 날 입금 2건 합계보다 120,000원 적음' 한 덩이가 넘쳤다. 그래서 주어('같은 날 입금 2건')와
  * 비교('합계보다 120,000원 적음')를 가른다. 비교어·금액·많음/적음은 한 덩이로 남는다. 위험 문장도 '있고' 에서 가른다.
  */
 export type CrCaption = { tone: 'warning' | 'muted' | 'danger'; chunks: CrPart[][] }
@@ -61,28 +64,28 @@ export function crInclLabel(l: { inclDeposit: boolean; inclCleaning: boolean }):
  *   같고 합산   '발행 금액 420,000원 · 같은 날 입금 2건 합산'(보조색). 행 금액만 보고 410,000 발행으로
  *               읽은 것이 422호의 첫 오해라, 금액이 같아도 한 장이 여러 행을 덮으면 말한다.
  *   예외 몫     '발행 금액 1,410,000원 · 보증금 포함'(경고색, 숫자 없이)
- *   줄 없음     '발행 표시만 있고 발행 기록이 없음 · 합계에 안 듦'(위험색, 방어. 정상 경로로는 안 생긴다)
+ *   줄 없음     '발행 표시만 있고 발행 기록이 없음 · 발행 합계에서 빠짐'(위험색, 방어. 정상 경로로는 안 생긴다)
  */
 export function cashReceiptRowCaption(input: { stamped: boolean; key: CashReceiptKeyView | null | undefined }): CrCaption | null {
   if (!input.stamped) return null
   const line = input.key?.line
   if (!input.key || !line) {
-    return { tone: 'danger', chunks: [[{ text: '발행 표시만 있고' }], [{ text: '발행 기록이 없음' }], [{ text: '· 합계에 안 듦' }]] }
+    return { tone: 'danger', chunks: [[{ text: '발행 표시만 있고' }], [{ text: '발행 기록이 없음 ·' }], [{ text: '발행 합계에서 빠짐' }]] }
   }
-  const head: CrPart[] = [{ text: '발행 금액 ' }, { text: fmtWon(line.amount), strong: true }]
+  const head: CrPart[] = [{ text: '발행 금액 ' }, { text: fmtWon(line.amount), strong: true }, { text: ' ·' }]
   const incl = crInclLabel(line)
-  if (incl) return { tone: 'warning', chunks: [head, [{ text: `· ${incl}` }]] }
+  if (incl) return { tone: 'warning', chunks: [head, [{ text: incl }]] }
   const diff = line.amount - input.key.rent
   const n = input.key.rentRows
   if (diff === 0) {
-    return n >= 2 ? { tone: 'muted', chunks: [head, [{ text: `· 같은 날 입금 ${n}건 합산` }]] } : null
+    return n >= 2 ? { tone: 'muted', chunks: [head, [{ text: `같은 날 입금 ${n}건 합산` }]] } : null
   }
   const gap: CrPart[] = [{ text: fmtWon(Math.abs(diff)), strong: true }, { text: ` ${gapWord(diff, 'short')}` }]
   return {
     tone: 'warning',
     chunks: n >= 2
-      ? [head, [{ text: `· 같은 날 입금 ${n}건` }], [{ text: '합계보다 ' }, ...gap]]
-      : [head, [{ text: '· 받은 금액보다 ' }, ...gap]],
+      ? [head, [{ text: `같은 날 입금 ${n}건` }], [{ text: '합계보다 ' }, ...gap]]
+      : [head, [{ text: '받은 금액보다 ' }, ...gap]],
   }
 }
 
@@ -100,7 +103,7 @@ export function cashReceiptTabGap(r: { amount: number; received: number; rentRow
   const diff = r.amount - r.received
   const out = (tone: 'warning' | 'muted', units: string[]) => ({ tone, units, text: units.join(' ') })
   if (diff !== 0) return out('warning', ['받은 금액', `${fmtWon(r.received)}보다`, `${fmtWon(Math.abs(diff))} ${gapWord(diff, 'short')}`])
-  return r.rentRows >= 2 ? out('muted', [`같은 날 ${r.rentRows}건 합산`]) : null
+  return r.rentRows >= 2 ? out('muted', [`같은 날 입금 ${r.rentRows}건 합산`]) : null
 }
 
 /**
@@ -138,6 +141,9 @@ export function crMismatchSentence(m: { lineAmount: number; basis: number }): st
 /**
  * 원터치 켜기 결과 토스트. keep(이미 다 덮인 키라 아무것도 안 바뀜)은 성공처럼 말하지 않고 사실대로
  * 알린다. 바뀐 것이 없으니 적용취소도 달지 않는다(가짜 적용취소 금지, §16).
+ *
+ * 제목은 일괄 발행 토스트('N건 발행 기록됨 · 발행일 M/D')·확인 줄 버튼('발행 기록')과 같은 문법이다(웹디자이너
+ * 패스 R5). 종전 '발행으로 표시했습니다 · …' 꼴은 320px 에서 3줄이었다. 이 꼴은 2줄이다.
  */
 export function crOnToast(r: {
   change: 'create' | 'rebuild' | 'add' | 'keep' | 'off'
@@ -147,12 +153,12 @@ export function crOnToast(r: {
   if (r.change === 'keep') {
     return {
       kind: 'info', message: '이미 같은 날 발행에 들어 있습니다', undoable: false,
-      ...(r.line ? { detail: `바뀐 것이 없습니다. 발행 ${fmtWon(r.line.amount)} · 발행일 ${fmtMD(r.line.issuedYmd)}` } : {}),
+      ...(r.line ? { detail: `바뀐 것이 없습니다. 발행 금액 ${fmtWon(r.line.amount)} · 발행일 ${fmtMD(r.line.issuedYmd)}` } : {}),
     }
   }
   const message = r.line
-    ? `현금영수증 발행으로 표시했습니다 · 발행일 ${fmtMD(r.line.issuedYmd)} · ${fmtWon(r.line.amount)}`
-    : `현금영수증 발행으로 표시했습니다 · 발행일 ${fmtMD(requestedYmd)}`
+    ? `현금영수증 발행 기록됨 · 발행일 ${fmtMD(r.line.issuedYmd)} · ${fmtWon(r.line.amount)}`
+    : `현금영수증 발행 기록됨 · 발행일 ${fmtMD(requestedYmd)}`
   const detail = r.change === 'add' && r.added
     ? `기존 발행에 ${fmtWon(r.added.added)}을 더했습니다. 발행일은 ${fmtMD(r.added.issuedYmd)} 그대로입니다.`
     : undefined
@@ -165,16 +171,25 @@ export function crOnToast(r: {
  *
  * 합산 문장은 짧은 꼴이다(2026-10-14 하네스 실측). 토스트 둘째 줄은 3줄까지인데(가이드 §15) '같은 날 받은 2건의
  * 합산 발행 …을 함께 내려 …' 꼴은 320px 에서 4~5줄이었다. 같은 뜻을 한 문장 머리에 모으고 홈택스 문장을 줄였다.
+ * 행 캡션·탭과 같은 낱말 '같은 날 입금 N건'을 쓴다(웹디자이너 패스 F4, 같은 사실을 다른 말로 부르지 않는다). 그 낱말은
+ * 금액 뒤 괄호 부연이다. '같은 날 입금 2건 합산 1,230,000원이' 꼴은 320px·아주 크게(20px)에서 4줄이었다(하네스 실측).
  */
 export function crOffToastDetail(dropped: CashReceiptLineView | null | undefined, stampedRows: number): string {
   if (!dropped) return '발행 기록이 없던 표시라 발행 합계는 그대로입니다.'
   const mon = Number(dropped.issuedYmd.slice(5, 7))
-  if (stampedRows >= 2) return `${mon}월 발행 합계에서 같은 날 ${stampedRows}건 합산 ${fmtWon(dropped.amount)}이 빠집니다. 홈택스 영수증은 그대로입니다.`
+  if (stampedRows >= 2) return `${mon}월 발행 합계에서 ${fmtWon(dropped.amount)}(같은 날 입금 ${stampedRows}건)이 빠집니다. 홈택스 영수증은 그대로입니다.`
   return `${mon}월 발행 합계에서 ${fmtWon(dropped.amount)}이 빠집니다. 홈택스에 발행한 영수증은 그대로입니다.`
 }
 
 /** 적용취소 결과 토스트. §16 형식 "{목적어}를 적용취소했습니다 · {복귀}"(감지망 check-undo-verb). */
 export const CR_ON_UNDONE = '현금영수증 발행 표시를 적용취소했습니다 · 미발행으로 복귀'
+/**
+ * 켜기의 적용취소 결과. 살아 있는 발행에 새 돈을 더한(add) 켜기나 환불 확정 재발행을 무르면 앞 발행이 그대로
+ * 돌아온다. 그때 '미발행으로 복귀'는 거짓이라 돌아온 금액을 말한다(undoCashReceiptChange 의 line).
+ */
+export function crOnUndoneMessage(line: { amount: number } | null | undefined): string {
+  return line ? `현금영수증 발행 표시를 적용취소했습니다 · 발행 ${fmtWon(line.amount)}으로 복귀` : CR_ON_UNDONE
+}
 export function crOffUndoneMessage(line: { amount: number } | null | undefined): string {
   return line ? `발행 표시 해제를 적용취소했습니다 · 발행 ${fmtWon(line.amount)}으로 복귀` : '발행 표시 해제를 적용취소했습니다 · 발행으로 복귀'
 }
@@ -193,23 +208,29 @@ export function crUndoMismatchDetail(mismatch: { lineAmount: number; basis: numb
  *   keep  형제가 남아 발행 기록은 그대로인데 이 삭제로 발행 금액과 받은 돈이 달라진다.
  *         금액이 그대로 맞으면(덮지 않던 행을 지우는 경우) 말할 것이 없다.
  *   none  덧붙이지 않는다.
+ *
+ * 홈택스 쪽은 앱이 하지 않는 일이라 서술형('취소합니다')으로 적지 않고 운영자에게 청한다(웹디자이너 패스 F5,
+ * lib/refundTaxNotice 의 '홈택스에서 … 취소해 주세요' 문법). 줄을 말할 때는 '발행 기록 X원'이다(R6).
  */
 export function crDeleteConfirmLine(pv: { effect: 'none' | 'drop' | 'keep'; line: { amount: number } | null; basisAfter: number } | null | undefined): string | null {
   if (!pv || !pv.line) return null
   if (pv.effect === 'drop') {
-    return `이 입금의 현금영수증 발행 기록 ${fmtWon(pv.line.amount)}도 함께 지웁니다. 홈택스에 발행한 영수증은 그대로라 필요하면 홈택스에서 취소합니다.`
+    return `이 입금의 현금영수증 발행 기록 ${fmtWon(pv.line.amount)}도 함께 지웁니다. 홈택스에 발행한 영수증은 그대로이니 필요하면 홈택스에서 취소해 주세요.`
   }
   if (pv.effect === 'keep' && pv.line.amount !== pv.basisAfter) {
-    return `같은 날 받은 수납과 묶인 현금영수증 발행 ${fmtWon(pv.line.amount)}은 그대로 남습니다. 삭제 뒤 발행 금액을 확인해 주세요.`
+    return `같은 날 입금과 묶인 현금영수증 발행 기록 ${fmtWon(pv.line.amount)}은 그대로 남습니다. 삭제 뒤 발행 금액을 확인해 주세요.`
   }
   return null
 }
 
-/** 삭제 결과 토스트의 둘째 줄(deletePayment 의 cashReceipt). 없으면 undefined. */
+/**
+ * 수납이 빠진 뒤의 결과 둘째 줄(deletePayment·일괄 수납 적용취소·등록 적용취소·예약 선납 취소의 cashReceipt).
+ * 없으면 undefined. 서버가 계산한 drop·mismatch 를 버리지 않고 말하는 한 자리다(독립 검수 R-4).
+ */
 export function crDeleteToastDetail(r: { dropped: { amount: number }[]; mismatch: { lineAmount: number }[] } | undefined): string | undefined {
   if (!r) return undefined
   if (r.dropped.length > 0) return `현금영수증 발행 기록 ${fmtWon(r.dropped.reduce((s, d) => s + d.amount, 0))}도 함께 지웠습니다.`
-  if (r.mismatch.length > 0) return `남은 수납의 현금영수증 발행 ${fmtWon(r.mismatch[0].lineAmount)}은 그대로입니다.`
+  if (r.mismatch.length > 0) return `남은 수납의 현금영수증 발행 기록 ${fmtWon(r.mismatch[0].lineAmount)}은 그대로입니다.`
   return undefined
 }
 
@@ -257,30 +278,37 @@ export function crEditToastDetail(e: CrEditEffectView | undefined, opts: {
   amountEdited: boolean
   /** 저장 전 이 행 키의 살아 있는 발행 금액. */
   beforeAmount: number | null
+  /**
+   * 저장 전 이 행 키에서 도장이 찍혀 있던 이용료 행 수. 끄면 그 행들의 도장이 함께 지워진다(키 단위, 결함 D7).
+   * 2 이상이면 끄기 문장이 그 사실을 말한다(원터치 끄기 토스트와 같은 낱말).
+   */
+  stampedRows?: number
 }): string | undefined {
   if (!e) return undefined
   // 서버 문장의 첫 문장만. 둘째 문장(보증금·청소비 설명)은 등록 폼이 이미 상시로 적는다.
   if (e.notIssued) return e.notIssued.split('. ')[0].replace(/\.?$/, '.')
-  if (opts.amountEdited && (e.transferred || e.merged || e.unstamped)) return '입금일·수단을 옮겨 고친 발행 금액은 쓰지 않았습니다.'
+  if (opts.amountEdited && (e.transferred || e.merged || e.unstamped)) return '입금일·수단이 바뀌어 직접 고친 발행 금액은 반영하지 않았습니다.'
   if (e.added) {
     return e.added.amount === e.added.prevAmount + e.added.added
       ? `기존 발행에 ${fmtWon(e.added.added)}을 더했습니다. 발행일은 ${fmtMD(e.added.issuedYmd)} 그대로입니다.`
       : `현금영수증 발행 금액 ${fmtWon(e.added.prevAmount)} → ${fmtWon(e.added.amount)}`
   }
   if (e.merged) return `옮긴 날의 발행과 합침 · 발행 금액 ${fmtWon(e.merged.prevAmount)} → ${fmtWon(e.merged.amount)}`
-  if (e.transferred) return `현금영수증 발행 ${fmtWon(e.transferred.amount)}도 함께 옮겼습니다.`
+  if (e.transferred) return `현금영수증 발행 기록 ${fmtWon(e.transferred.amount)}도 함께 옮겼습니다.`
   if (e.unstamped) return '이 입금은 원래 날의 발행에 들어 있어 발행 표시만 뺐습니다.'
-  if (e.dropped) return `원래 날의 현금영수증 발행 기록 ${fmtWon(e.dropped.amount)}을 내렸습니다.`
+  if (e.dropped) return `원래 날의 현금영수증 발행 기록 ${fmtWon(e.dropped.amount)}을 지웠습니다.`
   if (e.kept) return '이미 같은 날 발행에 들어 있어 발행 금액은 그대로입니다.'
   if (!opts.moved) {
     if (e.line && opts.beforeAmount != null && opts.beforeAmount !== e.line.amount) {
       return `현금영수증 발행 금액 ${fmtWon(opts.beforeAmount)} → ${fmtWon(e.line.amount)}`
     }
     if (e.line && !opts.wasStamped && opts.nowStamped) {
-      return `현금영수증 발행 ${fmtWon(e.line.amount)}을 기록했습니다 · 발행일 ${fmtMD(e.line.issuedYmd)}`
+      return `현금영수증 발행 기록됨 · 발행일 ${fmtMD(e.line.issuedYmd)} · ${fmtWon(e.line.amount)}`
     }
     if (!e.line && opts.wasStamped && !opts.nowStamped && opts.beforeAmount != null) {
-      return `현금영수증 발행 기록 ${fmtWon(opts.beforeAmount)}을 내렸습니다.`
+      return (opts.stampedRows ?? 1) >= 2
+        ? `같은 날 입금 ${opts.stampedRows}건 합산 현금영수증 발행 기록 ${fmtWon(opts.beforeAmount)}을 지웠습니다.`
+        : `현금영수증 발행 기록 ${fmtWon(opts.beforeAmount)}을 지웠습니다.`
     }
   }
   return e.mismatch.length > 0 ? crMismatchSentence(e.mismatch[0]) : undefined
