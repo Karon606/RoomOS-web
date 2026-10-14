@@ -332,9 +332,11 @@ for (const [name, re] of callers) {
     violations.push('lib/refundTaxNotice.ts — 딸려 취소되는 몫을 안 알린다.')
   }
   // 감지망이 정상 중간 상태를 유령으로 울면 진짜 유령도 같이 안 읽힌다.
+  // 2026-10-14 부터 점검의 판정은 lib/cashReceiptAudit 에 있다. 점검이 그 판정을 부르고, 판정이 정본을 쓰는지 둘 다 본다.
   const orph = readFileSync('scripts/check-cash-receipt-orphan.ts', 'utf8')
-  if (!/receiptRowVerdict\(/.test(orph)) {
-    violations.push('scripts/check-cash-receipt-orphan.ts — 발행 줄 판정 정본을 안 쓴다. 환불할 때마다 유령으로 운다.')
+  const audit = readFileSync('lib/cashReceiptAudit.ts', 'utf8')
+  if (!/auditCashReceipts\(/.test(orph) || !/receiptRowVerdict\(/.test(audit)) {
+    violations.push('scripts/check-cash-receipt-orphan.ts · lib/cashReceiptAudit.ts 가 발행 줄 판정 정본을 안 쓴다. 환불할 때마다 유령으로 운다.')
   }
 }
 

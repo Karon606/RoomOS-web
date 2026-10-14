@@ -16,132 +16,59 @@
 //   (바) 줄 금액이 그 키의 이용료 몫보다 큰데 보증금·청소비를 안 들었다고 말한다.
 //        **(바)가 소스 그물을 우회한 회귀를 데이터에서 잡는다** — 소스는 통과하는데 값만 틀린 경우다.
 //
+// 2026-10-14 생애주기 정비 3단계(운영자 승인 규칙: 한 키 한 장, 끈 뒤 켜기는 새 발행, 살아 있는 줄 위 새 돈은
+// 덧셈, 발행 없이 받은 앞 입금은 덮지 않음)로 축이 넷 붙고 (바)의 기준이 바뀌었다. 판정은 전부
+// lib/cashReceiptAudit 의 순수 함수가 하고(scripts/test-cash-receipt-audit.ts 가 축마다 역주입), 여기는 읽고 찍는다.
+//   (바) 기준이 키 전체 이용료 합에서 **도장 찍힌 이용료 몫**(화면 캡션과 같은 crCoveredRent)으로. 일부만 도장
+//        찍힌 키에서 줄이 안 덮인 돈까지 든 경우를 전체 합 기준은 못 잡았다.
+//   (사) 도장 날짜(KST)와 그 키의 줄 발행일 불일치. 기준선 0.
+//   (아) 줄이 있는 키의 일부만 도장. 정상 상태라 위반이 아니라 정보(덮이지 않은 금액·건수)로 찍는다.
+//        도장 찍힌 합과 줄 금액이 다르면 위로는 (바), 아래로는 (카)가 잡는다.
+//   (자) 줄이 만들어질 때 그 키의 수납이 이미 전부 지워져 있었다(519호, 2026-08-24 백필). 아래 KNOWN_BORN_DEAD 가
+//        정리 전 한시 기준선이고, 정리(scripts/fix-cash-receipt-422-519.ts)가 끝나면 그 줄이 (자)에서 빠져
+//        '기준선이 낡았다'로 운다. 그때 목록을 비워 기준선을 0 으로 내린다.
+//   (차) 환불 대기 30일 경과. 경고만 찍고 실패로 세지 않는다. 운영자 화면 쪽 알림은 별건이다.
+//   (카) 줄 금액이 도장 찍힌 이용료 몫보다 적은데 줄 메모에 의도가 없다. 기준선 0.
+//
 // 삭제 표시된 발행 줄은 대상이 아니다. 다만 **집계가 그것을 세면 안 된다** — CashReceipt 는
 // 소프트삭제 익스텐션 대상이 아니라(lib/prisma) 조회마다 손으로 걸러야 한다. 그 규율이
 // 무너지면 (다)로 잡는다.
 //
 // 실행: npx tsx --env-file=.env.local scripts/check-cash-receipt-orphan.ts
 import { readFileSync } from 'node:fs'
-import { PrismaClient, Prisma } from '@prisma/client'
-import { cashReceiptKey, receiptRowVerdict, summarizeCashReceiptKey } from '../lib/cashReceipt'
-import { kstYmdStr } from '../lib/kstDate'
+import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { auditCashReceipts, CASH_RECEIPT_REFUND_PENDING_WARN_DAYS } from '../lib/cashReceiptAudit'
+import { kstYmdStr } from '../lib/kstDate'
+import { loadCashReceiptAuditDataReadOnly } from './cash-receipt-audit-data'
+
+// 알려진 (자) 줄. 건수가 아니라 줄 id 와 사유다(건수로 두면 하나가 고쳐지고 하나가 새로 생겨도 초록이다).
+// 정리 스크립트를 적용하면 이 줄이 소프트삭제되어 (자)에서 빠지고 점검이 '기준선이 낡았다'로 운다. 그때 비운다.
+const KNOWN_BORN_DEAD: Record<string, string> = {
+  '16adb718-0d3a-43d9-9681-13d2c664b274': '519호 임형진 2026-07-18 계좌이체 470,000원. 7월 홈택스 취소 건을 2026-08-24 백필이 되살림. scripts/fix-cash-receipt-422-519.ts 가 정리',
+}
 
 async function main() {
-
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
-  const violations: string[] = []
-  // 날짜는 KST 로 찍는다. 발행일(issuedAt)은 KST 자정을 UTC 로 저장해 toISOString 이면 하루 앞 날짜가 나왔다
-  // (2026-10-13 422호: 화면은 10/12 발행인데 이 점검은 10/11 이라 말해 운영자가 다른 기록으로 읽었다). 수납일은 @db.Date 라 같은 날로 나온다.
-  const ymd = (d: Date) => kstYmdStr(d)
+  // 이 스크립트는 확장 없는 PrismaClient 를 직접 만들어 소프트삭제 필터를 안 지난다. 살아 있는 것만 볼 자리는
+  // 판정이 deletedAt 으로 직접 고른다(독립 검수 2026-09-22, 지워진 수납이 발행 줄을 받치는 것으로 세어지면 안 된다).
+  // 읽기는 READ ONLY 트랜잭션 안에서 한다. 운영 DB 를 보는 점검이라 쓰기를 구조로 막는다.
+  const data = await loadCashReceiptAuditDataReadOnly(prisma)
+  const report = auditCashReceipts({ ...data, todayYmd: kstYmdStr(), knownBornDead: KNOWN_BORN_DEAD })
+  const violations = report.violations.map(v => v.text)
 
-  const receipts = await prisma.cashReceipt.findMany({
-    where: { deletedAt: null },
-    select: { id: true, leaseTermId: true, payDate: true, payMethod: true, amount: true, issuedAt: true, inclDeposit: true, inclCleaning: true },
-  })
-  // **살아 있는 record 만 본다**(독립 검수 2026-09-22). 이 스크립트는 확장 없는 PrismaClient 를
-  // 직접 만들어 소프트삭제 필터를 안 지난다. 안 거르면 지워진 수납이 발행 줄을 받치는 것으로
-  // 세어져, 아무도 안 가리키는 줄(408호 클래스)을 정상으로 읽는다.
-  const stamped = await prisma.paymentRecord.findMany({
-    where: { cashReceiptIssuedAt: { not: null }, deletedAt: null },
-    select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true },
-  })
-  // 키와 판정은 정본이 쥔다 — 여기 사본을 두면 갈린다(lib/cashReceipt).
-  const key = cashReceiptKey
-  const stampedKeys = new Set(stamped.map(key))
-  const receiptKeys = new Set(receipts.map(key))
-
-  // 이용료 환불이 만드는 정상 중간 상태를 유령과 가른다 (2026-09-01). 판정 근거는 정본 주석 참조.
-  const pendingKeys = new Set<string>()
-  {
-    const leases = await prisma.leaseTerm.findMany({
-      where: { checkoutProrationUndo: { not: Prisma.DbNull } },
-      select: { id: true, checkoutProrationUndo: true },
-    })
-    const ids: string[] = []
-    for (const l of leases) {
-      const snap = (l.checkoutProrationUndo as { refund?: { deletedRecordIds?: string[] } } | null)?.refund
-      if (Array.isArray(snap?.deletedRecordIds)) ids.push(...snap.deletedRecordIds)
-    }
-    if (ids.length > 0) {
-      // 소프트삭제된 것을 일부러 본다 — deletedAt 을 명시하면 자동 필터가 안 붙는다(lib/prisma).
-      const gone = await prisma.paymentRecord.findMany({
-        where: { id: { in: ids }, deletedAt: { not: null }, cashReceiptIssuedAt: { not: null } },
-        select: { leaseTermId: true, payDate: true, payMethod: true },
-      })
-      for (const g of gone) pendingKeys.add(key(g))
-    }
+  for (const p of report.pending) {
+    console.log(`  [환불 대기] ${p.amount.toLocaleString()}원 (발행 ${p.issuedYmd}) · 환불 확정 뒤 ${p.ageDays}일째. 이용료 환불로 표시가 꺼져 있다. 홈택스 취소·재발행 후 표시를 다시 켜면 풀린다`)
   }
+  for (const w of report.warnings) console.log(`  ${w.text}`)
+  for (const k of report.bornDeadKnown) console.log(`  [알려진 (자)] ${k.lineId.slice(0, 8)} · ${k.reason}`)
 
-  // (가) 유령 줄
-  let pending = 0
-  for (const r of receipts) {
-    const v = receiptRowVerdict(key(r), stampedKeys, pendingKeys)
-    if (v === 'ok') continue
-    if (v === 'refundPending') {
-      pending++
-      console.log(`  [환불 대기] ${r.amount.toLocaleString()}원 (발행 ${ymd(r.issuedAt)}) — 이용료 환불로 표시가 꺼져 있다. 홈택스 취소·재발행 후 표시를 다시 켜면 풀린다`)
-      continue
-    }
-    violations.push(`[발행 줄] 유령 — ${r.amount.toLocaleString()}원 (수납일 ${ymd(r.payDate)} · 발행 ${ymd(r.issuedAt)})에 대응하는 발행 표시 수납이 없다. 합계에 그대로 든다`)
-  }
-  // (나) 빠진 줄
-  const seen = new Set<string>()
-  for (const p of stamped) {
-    const k = key(p)
-    if (seen.has(k)) continue
-    seen.add(k)
-    if (!receiptKeys.has(k)) {
-      violations.push(`[발행 줄] 누락 — 수납(${ymd(p.payDate)} ${p.actualAmount.toLocaleString()}원)에 발행 표시가 켜져 있는데 발행 줄이 없다. 그 금액이 합계에서 통째로 빠진다`)
-    }
-  }
-  // ── 받을 때 발행 대상은 이용료 몫뿐 (운영자 확정 2026-09-21) ──────────────
-  //
-  // 기준선은 셋 다 0 이다(2026-09-21 전수 실측 — 살아 있는 줄 49건 전부 inclRent 만 참이고
-  // 도장이 찍힌 보증금 record 는 0건). 0 이 1 이 되는 날은 규칙이 뚫린 날이거나 세무 담당자
-  // 확인을 거친 예외가 처음 생긴 날이다. 후자라면 이 기준선을 **의식적으로** 올릴 일이다.
-
-  // (라) 살아 있는 줄이 보증금·청소비를 들었다.
-  for (const r of receipts) {
-    if (!r.inclDeposit && !r.inclCleaning) continue
-    const what = [r.inclDeposit ? '보증금' : '', r.inclCleaning ? '청소비' : ''].filter(Boolean).join('·')
-    violations.push(`[발행 몫] 예외 — ${r.amount.toLocaleString()}원 (발행 ${ymd(r.issuedAt)})이 ${what} 을(를) 포함한다. 받을 때는 발행 대상이 아니다`)
-  }
-
-  // (마) 보증금 record 에 도장이 있는데 줄이 그것을 안 받친다.
-  const lineByKey = new Map(receipts.map(r => [key(r), r]))
-  for (const p of stamped) {
-    if (!p.isDeposit) continue
-    const line = lineByKey.get(key(p))
-    if (line?.inclDeposit) continue
-    violations.push(`[발행 몫] 도장 — 보증금 수납(${ymd(p.payDate)} ${p.actualAmount.toLocaleString()}원)에 발행 표시가 있는데 ${line ? '그 발행 줄은 보증금을 안 들었다' : '발행 줄이 없다'}`)
-  }
-
-  // (바) 줄 금액이 그 키의 이용료 몫을 넘는데 보증금·청소비는 안 들었다고 말한다.
-  //      **소스 그물을 우회한 회귀를 데이터에서 잡는 자리다.** 소스는 통과하는데 값만 틀린 경우가
-  //      여기 걸린다. 조정 전표는 받은 돈이 아니라 뺀다(paymentCompositionFor 와 같은 기준).
-  {
-    const live = await prisma.paymentRecord.findMany({
-      where: { isBillingAdjust: false, deletedAt: null },   // 이름 그대로 살아 있는 것만(독립 검수 2026-09-22)
-      select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true, cashReceiptIssuedAt: true },
-    })
-    // 키의 이용료 몫은 정본 식 하나로 센다(lib/cashReceipt summarizeCashReceiptKey, 2026-10-13).
-    // 수납 목록·현금영수증 탭이 행마다 싣는 '받은 몫'과 같은 식이라야 화면과 이 점검이 같은 말을 한다.
-    const rowsByKey = new Map<string, typeof live>()
-    for (const p of live) rowsByKey.set(key(p), [...(rowsByKey.get(key(p)) ?? []), p])
-    const rentByKey = new Map([...rowsByKey].map(([k, rows]) => [k, summarizeCashReceiptKey(rows).rent]))
-    for (const r of receipts) {
-      if (r.inclDeposit || r.inclCleaning) continue   // 예외 발행은 (라)가 이미 말했다
-      // **환불 대기는 비켜 간다**(2026-09-22). 환불은 원 수납을 소프트삭제하고 새 record 에는
-      // 도장을 일부러 안 찍는다. 그래서 살아 있는 이용료 몫이 0 이 되는데, 그 줄이 환불 전
-      // 금액을 드는 것은 정상 중간 상태다 — 홈택스가 아직 그 금액이고, 운영자가 취소·재발행할
-      // 때까지 앱 합계도 그 금액이어야 한다(lib/cashReceipt receiptRowVerdict 의 판정과 같다).
-      // 이것을 울면 첫 환불부터 매번 울고, 그러면 진짜 초과도 같이 안 읽힌다.
-      if (receiptRowVerdict(key(r), stampedKeys, pendingKeys) === 'refundPending') continue
-      const rent = rentByKey.get(key(r)) ?? 0
-      if (r.amount <= rent) continue
-      violations.push(`[발행 몫] 초과 — 발행 ${r.amount.toLocaleString()}원 (발행 ${ymd(r.issuedAt)} · 수납일 ${ymd(r.payDate)})이 이용료 몫 ${rent.toLocaleString()}원을 넘는데 보증금·청소비를 안 들었다고 적혀 있다`)
-    }
+  // (아) 정보. 덮이지 않은 이용료는 발행 없이 받은 앞 입금이라 정상 상태다.
+  const unRows = report.partial.reduce((s, p) => s + p.unstampedRows, 0)
+  const unSum = report.partial.reduce((s, p) => s + p.unstampedRent, 0)
+  console.log(`  [정보 (아)] 줄이 있는 키의 일부만 도장 ${report.partial.length}키 · 덮이지 않은 이용료 ${unRows}건 ${unSum.toLocaleString()}원 (정상 상태, 위반 아님)`)
+  for (const p of report.partial.slice(0, 20)) {
+    console.log(`    수납일 ${p.payYmd} · 발행 ${p.amount.toLocaleString()}원 · 덮이지 않은 ${p.unstampedRows}건 ${p.unstampedRent.toLocaleString()}원`)
   }
 
   // (다) 집계가 삭제 표시를 거르는가 — 소스 대조
@@ -152,7 +79,7 @@ async function main() {
     violations.push('[발행 줄] 집계가 삭제 표시된 발행 줄을 안 거른다 — CashReceipt 는 소프트삭제 익스텐션 대상이 아니라 손으로 걸러야 한다. 껐다 켠 건이 두 번 세어진다')
   }
 
-  console.log(`[발행 줄] 발행 ${receipts.length}건 · 발행 표시 수납 ${stamped.length}건 · 환불 대기 ${pending}건 검사 (축 가·나·다·라 예외 몫·마 보증금 도장·바 이용료 몫 초과) / 위반 ${violations.length}건`)
+  console.log(`[발행 줄] 발행 ${report.lineCount}건 · 발행 표시 수납 ${report.stampedCount}건 · 환불 대기 ${report.pending.length}건(${CASH_RECEIPT_REFUND_PENDING_WARN_DAYS}일 경과 ${report.warnings.length}건) · 알려진 (자) ${report.bornDeadKnown.length}건 검사 (축 가·나·다·라 예외 몫·마 보증금 도장·바 이용료 몫 초과·사 도장 날짜·자 태어날 때부터 죽은 줄·카 의도 없는 미달, 정보 아·차) / 위반 ${violations.length}건`)
   if (violations.length > 0) {
     console.error('')
     for (const v of violations.slice(0, 20)) console.error(`  - ${v}`)
@@ -160,7 +87,6 @@ async function main() {
   }
   await prisma.$disconnect()
   process.exit(violations.length > 0 ? 1 : 0)
-
 }
 
 void main()
