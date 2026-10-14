@@ -26,7 +26,7 @@ import {
 } from '@/lib/cashReceipt'
 
 /** 트랜잭션 클라이언트와 전역 클라이언트가 둘 다 들어온다. 쓰는 표 셋과 키 잠금용 raw 쿼리만 요구한다. */
-export type CrDb = Pick<typeof prisma, 'cashReceipt' | 'paymentRecord' | 'extraIncome' | '$executeRaw'>
+export type CrDb = Pick<typeof prisma, 'cashReceipt' | 'paymentRecord' | 'extraIncome' | '$executeRaw' | '$queryRaw'>
 
 /** 발행 키. 계약·입금일·수단. 영업장은 서버가 정한 값만 들어온다. */
 export type CrKeyRef = { propertyId: string; leaseTermId: string; payDate: Date; payMethod: string | null }
@@ -88,12 +88,20 @@ export function liveLineView(row: LineRow | null): CashReceiptLineView | null {
  * 왜. 줄 쓰기는 '읽고 판정하고 쓴다'라 두 조작이 같은 키를 동시에 읽으면 한쪽 쓰기가 다른 쪽 판정을
  * 덮는다(삭제 두 건을 동시에 보내는 보증금 패널 적용취소가 실제 경로였다). 스키마를 안 바꾸고 트랜잭션
  * 단위 권고 잠금(pg_advisory_xact_lock)을 쓴다. 커밋·롤백 때 저절로 풀려 놓칠 해제가 없다.
- * 여러 키는 정렬해 같은 순서로 잠근다(두 트랜잭션이 서로의 키를 기다리는 교착을 피한다).
+ * 여러 키는 **잠금 번호(hashtext 정수) 차례로** 잠근다(두 트랜잭션이 서로의 키를 기다리는 교착을 피한다).
+ * 종전에는 키 문자열 차례였는데 실제 잠금 번호는 32비트 해시라, 서로 다른 키의 해시가 같거나 문자열 차례와 해시
+ * 차례가 엇갈리면 두 트랜잭션이 같은 두 잠금을 반대 차례로 잡을 여지가 남았다(검수 선택 항목). 같은 번호는 한 번만 잡는다.
  * 트랜잭션 밖(전역 클라이언트)에서 부르면 문장 하나 동안만 잡혀 아무것도 막지 못한다. 트랜잭션 안에서만 부른다.
  */
 export async function lockCrKeys(db: CrDb, refs: CrKeyRef[]): Promise<void> {
-  const keys = [...new Set(refs.map(r => `cash-receipt|${crKeyOf(r)}`))].sort()
-  for (const k of keys) await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${k}))`
+  const keys = [...new Set(refs.map(r => `cash-receipt|${crKeyOf(r)}`))]
+  if (keys.length === 0) return
+  if (keys.length === 1) {
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${keys[0]}))`
+    return
+  }
+  const nums = await db.$queryRaw<{ h: number }[]>`SELECT DISTINCT hashtext(k) AS h FROM unnest(${keys}::text[]) AS k ORDER BY h`
+  for (const { h } of nums) await db.$executeRaw`SELECT pg_advisory_xact_lock(${h}::int)`
 }
 
 /** 키 하나 잠금. lockCrKeys 의 한 키짜리. */

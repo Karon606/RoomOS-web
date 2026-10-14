@@ -477,6 +477,13 @@ for (const kind of ['deposit', 'cleaning']) {
     const apply = fnBody(eng, 'export async function applyCrUndo(')
     if (!apply || !/lockCrKeys\(db, undo\.keys/.test(apply)) violations.push(`${ENG} applyCrUndo: 토큰이 뜬 키를 잠그지 않는다.`)
     if (!/pg_advisory_xact_lock\(hashtext\(/.test(eng)) violations.push(`${ENG}: 키 잠금이 트랜잭션 단위 권고 잠금(pg_advisory_xact_lock)이 아니다.`)
+    // 여러 키는 잠금 번호(hashtext 정수) 차례로 잡는다. 문자열 차례면 해시 충돌·차례 엇갈림으로 교착 여지가 남는다.
+    {
+      const lk = fnBody(eng, 'export async function lockCrKeys(') ?? ''
+      if (!/SELECT DISTINCT hashtext\(k\) AS h FROM unnest\(\$\{keys\}::text\[\]\) AS k ORDER BY h/.test(lk)) violations.push(`${ENG} lockCrKeys: 여러 키를 잠금 번호(hashtext 정수) 차례로 잡지 않는다.`)
+      // 번호를 뽑기만 하고 안 잠그면 위 검사는 통과한다(역주입 J10 실측). 그 번호로 실제로 잠그는지 본다.
+      if (!/for \(const \{ h \} of nums\) await db\.\$executeRaw`SELECT pg_advisory_xact_lock\(\$\{h\}::int\)`/.test(lk)) violations.push(`${ENG} lockCrKeys: 여러 키를 뽑은 잠금 번호로 실제로 잠그지 않는다(검수 W6).`)
+    }
   }
 
   // ⓗ-6 적용취소 토큰은 서버가 서명하고 복원 전에 대조한다(W4). 서명과 상관없이 미래 도장·키 밖 record 는 막는다.
@@ -659,6 +666,8 @@ for (const kind of ['deposit', 'cleaning']) {
       need(file, src, /pushToast\('info', CR_DELETE_UNDONE, /, '삭제 적용취소 결과 토스트가 없다.')
       need(file, src, 'crRestoreDetail(r.cashReceipt)', '삭제 적용취소 결과가 되살린 발행 기록을 말하지 않는다.')
       need(file, src, 'crEditToastDetail(res.cashReceipt', '수정 저장 토스트가 발행 줄에 일어난 일을 말하지 않는다.')
+      // 그물 구멍 U12(독립 검수 R-8): 문장을 만들어 두고 토스트에 안 붙이면 화면에는 없는 것과 같다.
+      need(file, src, /pushToast\('success', '수납 기록 수정됨', \{\s*\.\.\.\(crDetail \? \{ detail: crDetail \} : \{\}\),/, '수정 저장 토스트가 발행 줄 문장(crDetail)을 둘째 줄에 안 붙인다(검수 R-8 U12).')
     }
   }
 
