@@ -16,7 +16,7 @@ import {
 } from '../lib/cashReceipt'
 import { readAlertCutoffYmd } from '../lib/alertCutoff'
 import {
-  cashReceiptRowCaption, crCaptionText, cashReceiptTabGap, cashReceiptGapSentence, crAddPreviewChunks, crOnToast, crOffToastDetail,
+  cashReceiptRowCaption, crCaptionText, cashReceiptTabGap, cashReceiptGapSentence, crAddPreviewChunks, crReplacePreview, CR_PREVIEW_UNREAD, crOnToast, crOffToastDetail,
   crOffUndoneMessage, CR_ON_UNDONE, crOnUndoneMessage, CR_DELETE_UNDONE, crUndoMismatchDetail, crDeleteConfirmLine, crDeleteToastDetail, crRestoreDetail, crEditToastDetail,
 } from '../lib/cashReceiptCopy'
 
@@ -594,13 +594,19 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('폼 문장: 적습니다', cashReceiptGapSentence(400000, 410000), '받은 금액 410,000원보다 10,000원 적습니다.')
   eq('폼 문장: 같으면 null', cashReceiptGapSentence(410000, 410000), null)
 
-  eq('켜기 확인 줄 add 캡션', crAddPreviewChunks({ amount: 350000, issuedYmd: '2026-09-30' }, 20000), ['기존 발행 350,000원(9/30)에 20,000원 더함', '· 발행일 9/30 유지'])
+  // 덩이 셋(웹디자이너 F1: 한 덩이가 320px·20px 에서 칸보다 넓어 행 왼쪽 밖으로 잘렸다), 구분점은 앞 덩이 끝(R1).
+  eq('켜기 확인 줄 add 캡션', crAddPreviewChunks({ amount: 350000, issuedYmd: '2026-09-30' }, 20000), ['기존 발행 350,000원(9/30)에', '20,000원 더함 ·', '발행일 9/30 유지'])
+  eq('켜기 확인 줄 재발행(살아 있는 앞 발행을 바꿈)', crReplacePreview({ amount: 470000, issuedYmd: '2026-07-18' }), '기존 발행 470,000원(7/18)을 이 금액으로 바꿉니다.')
+  eq('켜기 확인 줄 통신 실패 문장(대시 대신 이유)', CR_PREVIEW_UNREAD, '발행 금액을 읽지 못했습니다. 기록하면 토스트가 금액을 알려 줍니다.')
 
   const onT = (change: 'create' | 'rebuild' | 'add' | 'keep', line: ReturnType<typeof LV> | null, added?: { added: number; issuedYmd: string }) =>
     crOnToast({ change, line, ...(added ? { added } : {}) }, '2026-10-12')
   eq('켜기 토스트: 발행일·금액', onT('rebuild', LV(410000, '2026-10-12')), { kind: 'success', message: '현금영수증 발행 기록됨 · 발행일 10/12 · 410,000원', undoable: true })
   eq('켜기 토스트: add 는 지킨 앞 발행일과 더한 돈', onT('add', LV(370000, '2026-09-30'), { added: 20000, issuedYmd: '2026-09-30' }),
     { kind: 'success', message: '현금영수증 발행 기록됨 · 발행일 9/30 · 370,000원', undoable: true, detail: '기존 발행에 20,000원을 더했습니다. 발행일은 9/30 그대로입니다.' })
+  eq('켜기 토스트: 환불 확정 재발행은 바꾼 앞 발행을 말함', crOnToast({ change: 'rebuild', line: LV(200000, '2026-10-13'), replaced: { amount: 470000, issuedYmd: '2026-07-18', was: 'live' } }, '2026-10-13').detail,
+    '기존 발행 470,000원(7/18)을 이 금액으로 바꿨습니다.')
+  eq('켜기 토스트: 꺼 둔 줄 자리의 새 발행은 바꾼 것이 아님', crOnToast({ change: 'rebuild', line: LV(410000, '2026-10-12'), replaced: { amount: 420000, issuedYmd: '2026-10-06', was: 'deleted' } }, '2026-10-12').detail, undefined)
   const keepT = onT('keep', LV(420000))
   eq('켜기 토스트: keep 은 성공이 아니고 적용취소도 없다', [keepT.kind, keepT.undoable, keepT.message, keepT.detail], ['info', false, '이미 같은 날 발행에 들어 있습니다', '바뀐 것이 없습니다. 발행 금액 420,000원 · 발행일 10/6'])
 

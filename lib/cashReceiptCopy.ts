@@ -140,11 +140,29 @@ export function cashReceiptGapSentence(amount: number, basis: number): string | 
 
 /**
  * 살아 있는 줄에 새 돈만 더하는 켜기(add)의 확인 줄 캡션. 발행일은 앞 발행의 날짜를 지킨다(독립 검수 F4).
- * 확인 줄의 발행일 칸에서 다른 날을 골라도 그 날짜는 안 쓰인다. 그래서 지켜지는 날짜를 금액 바로 밑에 적는다.
+ * 확인 줄의 발행일 칸은 이때 잠기고 지켜지는 날짜를 보인다(웹디자이너 F2). 금액 바로 밑에도 그 사실을 적는다.
+ *
+ * 덩이는 셋이다(웹디자이너 F1, 2026-10-14 하네스 실측). 종전 둘째 덩이 '기존 발행 …에 … 더함'이 한 덩이로 261px 이라
+ * 320px·아주 크게(20px)에서 칸 198px 을 넘어 행 왼쪽 밖으로 29~48px 잘렸다. 구분점은 앞 덩이 끝에 붙는다(R1).
+ * 수정 폼이 add 로 저장될 때 칸 밑에도 같은 세 덩이를 쓴다(독립 검수 F-A).
  */
-export function crAddPreviewChunks(prev: { amount: number; issuedYmd: string }, added: number): [string, string] {
-  return [`기존 발행 ${fmtWon(prev.amount)}(${fmtMD(prev.issuedYmd)})에 ${fmtWon(added)} 더함`, `· 발행일 ${fmtMD(prev.issuedYmd)} 유지`]
+export function crAddPreviewChunks(prev: { amount: number; issuedYmd: string }, added: number): [string, string, string] {
+  return [`기존 발행 ${fmtWon(prev.amount)}(${fmtMD(prev.issuedYmd)})에`, `${fmtWon(added)} 더함 ·`, `발행일 ${fmtMD(prev.issuedYmd)} 유지`]
 }
+
+/**
+ * 환불 확정 수납을 켜는 재발행(rebuild, 살아 있는 줄 위)의 확인 줄 문장(독립 검수 R-5). 원 영수증을 홈택스에서
+ * 취소하고 확정액으로 다시 끊었다는 뜻이라 앞 발행을 이 금액으로 바꾼다. 무엇이 바뀌는지 누르기 전에 말한다.
+ */
+export function crReplacePreview(current: { amount: number; issuedYmd: string }): string {
+  return `기존 발행 ${fmtWon(current.amount)}(${fmtMD(current.issuedYmd)})을 이 금액으로 바꿉니다.`
+}
+
+/**
+ * 확인 줄의 미리보기를 통신 실패로 못 읽었을 때(웹디자이너 R2). 서버가 판정을 거절한 것이 아니라 버튼은 살린다.
+ * 기록하면 결과 토스트가 기록된 금액을 말한다. 서버가 거절한 경우(권한·수납 없음)는 그 문장을 그대로 보이고 버튼을 막는다.
+ */
+export const CR_PREVIEW_UNREAD = '발행 금액을 읽지 못했습니다. 기록하면 토스트가 금액을 알려 줍니다.'
 
 /** 이미 다 덮인 키(보증금 행 켜기 등)의 확인 줄 캡션. 켜도 바뀌는 것이 없다. */
 export const CR_KEEP_PREVIEW = '이미 같은 날 발행에 들어 있어 바뀌는 것이 없습니다.'
@@ -169,6 +187,8 @@ export function crOnToast(r: {
   change: 'create' | 'rebuild' | 'add' | 'keep' | 'off'
   line: CashReceiptLineView | null
   added?: { added: number; issuedYmd: string }
+  /** rebuild 일 때 직전 줄. 살아 있던 줄(환불 확정 재발행)이면 무엇을 바꿨는지 말한다(독립 검수 R-5). */
+  replaced?: { amount: number; issuedYmd: string; was: 'deleted' | 'live' }
 }, requestedYmd: string): { kind: 'success' | 'info'; message: string; detail?: string; undoable: boolean } {
   if (r.change === 'keep') {
     return {
@@ -181,7 +201,9 @@ export function crOnToast(r: {
     : `현금영수증 발행 기록됨 · 발행일 ${fmtMD(requestedYmd)}`
   const detail = r.change === 'add' && r.added
     ? `기존 발행에 ${fmtWon(r.added.added)}을 더했습니다. 발행일은 ${fmtMD(r.added.issuedYmd)} 그대로입니다.`
-    : undefined
+    : r.change === 'rebuild' && r.replaced?.was === 'live'
+      ? `기존 발행 ${fmtWon(r.replaced.amount)}(${fmtMD(r.replaced.issuedYmd)})을 이 금액으로 바꿨습니다.`
+      : undefined
   return { kind: 'success', message, undoable: true, ...(detail ? { detail } : {}) }
 }
 

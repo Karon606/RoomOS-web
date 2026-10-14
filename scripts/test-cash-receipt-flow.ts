@@ -244,8 +244,13 @@ async function main() {
   await rooms.setCashReceiptIssued(N0, true, '2026-07-18')
   await prisma.paymentRecord.update({ where: { id: N0 }, data: { deletedAt: new Date() } })
   const N1 = await rec(L4, P1, { month: '2026-07', amount: 200000, pay: '2026-07-18', memo: `${RENT_REFUND_MEMO_PREFIX} 하네스` })
+  // 확인 줄은 누르기 전에 살아 있는 앞 발행을 바꾼다고 말하고(독립 검수 R-5), 토스트도 그 사실을 말한다.
+  const pv9 = await rooms.previewCashReceiptOn(N1)
+  eq('S9 확인 줄: 재발행이 앞 발행 470,000(7/18)을 바꾼다', pv9.ok && pv9.current ? [pv9.kind, pv9.amount, (await import('@/lib/cashReceiptCopy')).crReplacePreview(pv9.current)] : pv9,
+    ['rebuild', 200000, '기존 발행 470,000원(7/18)을 이 금액으로 바꿉니다.'])
   const r9 = await rooms.setCashReceiptIssued(N1, true, '2026-10-13')
   eq('S9 환불 대기 키에서 켜면 확정액 200,000', r9.ok ? [r9.change, r9.line?.amount, r9.replaced?.amount, r9.replaced?.was] : r9, ['rebuild', 200000, 470000, 'live'])
+  eq('S9 재발행 토스트가 바꾼 앞 발행을 말한다', r9.ok ? (await import('@/lib/cashReceiptCopy')).crOnToast(r9, '2026-10-13').detail : r9, '기존 발행 470,000원(7/18)을 이 금액으로 바꿨습니다.')
   // 환불 적용취소. 원 수납이 되살아나고 확정액 record 는 지워진다. 원 수납의 옛 도장(7/18)은 지금
   // 줄(재발행 10/13)에 맞춰지고, 줄 금액은 안 덮인 채 차이가 알려진다.
   await prisma.leaseTerm.update({ where: { id: L4.id }, data: { checkoutProrationUndo: { refund: { at: new Date().toISOString(), month: '2026-07', refunded: 270000, prepaid: 470000, newRecordId: N1, deletedRecordIds: [N0], prevProration: { amount: null, month: null } } } } })
@@ -580,7 +585,7 @@ async function main() {
     const F = await rec(L, P1, { month: '2026-12', amount: 20000, pay: '2026-10-07' })
     const pvF = await rooms.previewCashReceiptOn(F)
     eq('S19 add 확인 줄: 금액 320,000 + 앞 발행일 유지 캡션', pvF.ok && pvF.current ? [pvF.kind, pvF.amount, copy.crAddPreviewChunks(pvF.current, pvF.added)] : pvF,
-      ['add', 320000, ['기존 발행 300,000원(10/7)에 20,000원 더함', '· 발행일 10/7 유지']])
+      ['add', 320000, ['기존 발행 300,000원(10/7)에', '20,000원 더함 ·', '발행일 10/7 유지']])
     const onF = await rooms.setCashReceiptIssued(F, true, '2026-10-12')
     if (!onF.ok) throw new Error(onF.error)
     const tF = copy.crOnToast(onF, '2026-10-12')

@@ -567,13 +567,25 @@ for (const kind of ['deposit', 'cleaning']) {
   {
     const tog = between(list, 'const handleToggleCashReceipt', 'startTransition(')
     if (!tog || !tog.includes('previewCashReceiptOn(p.id)')) violations.push(`${LIST} — 켜기를 누를 때 발행 금액 미리보기(previewCashReceiptOn)를 안 부른다.`)
-    const ask = between(list, '{crAskId === p.id && (', 'confirmCashReceiptOn(p)')
+    const ask = between(list, '{crAskId === p.id && (', 'confirmCashReceiptOn(p, crShownYmd)')
     if (!ask) violations.push(`${LIST} — 켜기 확인 줄을 못 찾았다(침묵 통과 금지).`)
     else {
-      if (!ask.includes('fmtWon(crPv.amount)')) violations.push(`${LIST} — 켜기 확인 줄이 기록될 발행 금액을 안 보인다.`)
+      if (!ask.includes('fmtWon(crPvOk.amount)')) violations.push(`${LIST} — 켜기 확인 줄이 기록될 발행 금액을 안 보인다.`)
       const amtAt = ask.indexOf('발행 금액'), dateAt = ask.indexOf('발행일')
       if (amtAt < 0 || dateAt < 0 || amtAt > dateAt) violations.push(`${LIST} — 켜기 확인 줄 순서가 '발행 금액 먼저, 발행일 다음'이 아니다(일괄 발행 모달과 같은 순서).`)
-      if (!ask.includes('crAddPreviewChunks(crPv.current, crPv.added)')) violations.push(`${LIST} — 새 돈을 더하는 켜기(add)가 지켜지는 앞 발행일을 말하지 않는다.`)
+      if (!ask.includes('crAddPreviewChunks(crPvOk.current, crPvOk.added)')) violations.push(`${LIST} — 새 돈을 더하는 켜기(add)가 지켜지는 앞 발행일을 말하지 않는다.`)
+      // 웹디자이너 F2: 고른 날짜가 안 쓰이는 켜기(add·keep·none)면 발행일 칸을 잠그고 지켜지는 날짜를 보인다.
+      if (!/<DatePicker value=\{crShownYmd\}[^>]*disabled=\{crLocked\}/.test(ask)) violations.push(`${LIST} — 켜기 확인 줄 발행일 칸이 add·keep·none 에서 잠기지 않는다(웹디자이너 F2).`)
+      if (!/const crLocked = !!crPvOk && crPvOk\.kind !== 'create' && crPvOk\.kind !== 'rebuild'/.test(list)) violations.push(`${LIST} — 발행일 칸 잠금 판정이 create·rebuild 밖 전부가 아니다(웹디자이너 F2).`)
+      // 그물 구멍 U11(독립 검수 R-8): none·keep 에서 기록 버튼이 열려 있으면 눌러야 거절되거나 아무 일도 안 일어난다.
+      if (!/const crOnBlocked = crPv === null \|\| \(crPv !== 'net' && \(!crPv\.ok \|\| crPv\.kind === 'none' \|\| crPv\.kind === 'keep'\)\)/.test(list)
+        || !ask.includes('disabled={pending || crOnBlocked}')) violations.push(`${LIST} — 켜기 확인 줄 기록 버튼이 읽는 중·서버 거절·none·keep 에서 막히지 않는다(검수 R-8 U11).`)
+      // 웹디자이너 R2·R3: 실패를 대시로만 보이지 않고(§29 em dash 금지) 이유를 말한다. 읽는 중은 스켈레톤, 금액 묶음은 aria-live.
+      if (/'—'|'…'/.test(ask)) violations.push(`${LIST} — 켜기 확인 줄이 읽는 중·실패를 기호(…·—)로만 보인다(웹디자이너 R2·R3).`)
+      if (!/const crPvFail = [^\n]*CR_PREVIEW_UNREAD : crPv\.error/.test(list) || !ask.includes('{crPvFail &&') || !ask.includes('<Skeleton') || !ask.includes('aria-live="polite"')) violations.push(`${LIST} — 켜기 확인 줄의 실패 이유·읽는 중 스켈레톤·aria-live 중 빠진 것이 있다(웹디자이너 R2·R3).`)
+      // 독립 검수 R-5·R-1: 재발행이 바꾸는 앞 발행, 받은 금액과 다른 기록 금액을 누르기 전에 말한다.
+      if (!ask.includes('crReplacePreview(crPvOk.current)')) violations.push(`${LIST} — 환불 확정 재발행이 바꿀 앞 발행을 확인 줄이 말하지 않는다(검수 R-5).`)
+      if (!/cashReceiptGapSentence\(crPvOk\.amount, crPvOk\.keyRent\)/.test(list)) violations.push(`${LIST} — 확인 줄이 기록될 금액과 받은 금액의 차이를 말하지 않는다(검수 R-1).`)
       if (/<MoneyInput|<input/.test(ask)) violations.push(`${LIST} — 켜기 확인 줄에 금액 입력칸이 있다. 발행 금액을 고치는 자리는 수정 폼 하나다(2026-08-25).`)
     }
   }
@@ -594,7 +606,7 @@ for (const kind of ['deposit', 'cleaning']) {
     const onFn = between(list, 'const confirmCashReceiptOn', 'if (records === null)')
     if (!onFn) violations.push(`${LIST} — 켜기 확정 함수를 못 찾았다(침묵 통과 금지).`)
     else {
-      if (!onFn.includes('crOnToast(res, crAskDate)') || !onFn.includes('pushToast(t.kind, t.message')) violations.push(`${LIST} — 켜기 토스트가 정본(crOnToast)의 종류·문장을 안 쓴다. keep 이 성공으로 나간다.`)
+      if (!onFn.includes('crOnToast(res, ymd)') || !onFn.includes('pushToast(t.kind, t.message')) violations.push(`${LIST} — 켜기 토스트가 정본(crOnToast)의 종류·문장을 안 쓴다. keep 이 성공으로 나간다.`)
       if (!onFn.includes('...(t.undoable ?')) violations.push(`${LIST} — 켜기 토스트가 바뀐 것 없는 keep 에도 적용취소를 단다(가짜 적용취소).`)
       if (/pushToast\('success'/.test(onFn)) violations.push(`${LIST} — 켜기 토스트에 성공 종류를 손으로 박았다.`)
       if (!onFn.includes('crOnUndoneMessage(r.line)')) violations.push(`${LIST} — 켜기 적용취소 결과 토스트가 없거나 돌아온 앞 발행을 말하지 않는다(§16 적용취소 후에도 결과 토스트).`)
