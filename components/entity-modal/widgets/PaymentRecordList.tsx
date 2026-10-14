@@ -226,19 +226,20 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       }), { success: '' })
       if (!res.ok) return
       // 수정 저장도 적용취소가 있다(운영자 원칙 "모든 쓰기에 적용취소", 2026-10-14 W8).
+      // 서버가 토큰을 못 냈으면(운영에서 서명 키 없음, 검수 R-7) 눌러도 거절될 버튼이라 숨긴다.
       const undo = res.undo
       let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
       const crDetail = crEditToastDetail(res.cashReceipt, crOpts)
       pushToast('success', '수납 기록 수정됨', {
         ...(crDetail ? { detail: crDetail } : {}),
-        action: { label: '적용취소', run: () => {
+        ...(undo ? { action: { label: '적용취소', run: () => {
           if (undone) return
           undone = true
           void undoPaymentEdit(undo).then(r => {
             if (r.ok) { pushToast('info', '수납 기록 수정을 적용취소했습니다'); reload(); onChange?.() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
-        } },
+        } } } : {}),
       })
       await reload()
       setEditingId(null)
@@ -260,9 +261,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         const res = await deletePayment(p.id)
         if (!res.ok) { pushToast('error', res.error); return }
         const detail = crDeleteToastDetail(res.cashReceipt)
+        const undo = res.undo   // 운영에서 서명 키가 없으면 null(검수 R-7). 그때는 적용취소를 숨긴다.
         pushToast('success', '수납 기록 삭제됨', {
           ...(detail ? { detail } : {}),
-          action: { label: '적용취소', run: () => { void restorePayment(p.id, res.undo).then(r => {
+          ...(undo ? { action: { label: '적용취소', run: () => { void restorePayment(p.id, undo).then(r => {
             if (r.ok) {
               // 적용취소 뒤에도 결과 토스트(§16). 함께 지웠던 발행 기록을 되살렸으면 그 금액을, 되살린 금액이 지금
               // 받은 돈과 다르면 그 사실을 말한다(금액은 자동으로 안 덮는다).
@@ -270,7 +272,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               pushToast('info', CR_DELETE_UNDONE, d ? { detail: d } : undefined)
               reload(); onChange?.()
             } else pushToast('error', r.error)
-          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
         })
         await reload()
         onChange?.()
@@ -300,15 +302,16 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       const res = await setCashReceiptIssued(p.id, false)
       if (!res.ok) { pushToast('error', res.error); return }
       // 그 달 발행 합계에서 얼마가 빠지는지 말한다. 한 장이 같은 날 여러 행을 덮었으면 그 행들도 함께 내려간다.
+      const undo = res.undo   // 운영에서 서명 키가 없으면 null(검수 R-7). 그때는 적용취소를 숨긴다.
       pushToast('success', '현금영수증 발행 표시를 해제했습니다', {
         detail: crOffToastDetail(res.dropped, p.cashReceiptKey?.stampedRentRows ?? 1),
-        action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
+        ...(undo ? { action: { label: '적용취소', run: () => { void undoCashReceiptChange(undo).then(r => {
           if (r.ok) {
             const d = crUndoMismatchDetail(r.mismatch)
             pushToast('info', crOffUndoneMessage(r.line), d ? { detail: d } : undefined)
             reload(); onChange?.()
           } else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
       })
       await reload()
       onChange?.()
@@ -324,9 +327,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       if (!res.ok) { pushToast('error', res.error); return }
       setCrAskId(null)
       const t = crOnToast(res, ymd)
+      const undo = res.undo   // 운영에서 서명 키가 없으면 null(검수 R-7). 그때는 적용취소를 숨긴다.
       pushToast(t.kind, t.message, {
         ...(t.detail ? { detail: t.detail } : {}),
-        ...(t.undoable ? { action: { label: '적용취소', run: () => { void undoCashReceiptChange(res.undo).then(r => {
+        ...(t.undoable && undo ? { action: { label: '적용취소', run: () => { void undoCashReceiptChange(undo).then(r => {
           if (r.ok) {
             const d = crUndoMismatchDetail(r.mismatch)
             // 살아 있는 발행에 더한 켜기(add)를 무르면 앞 발행이 돌아온다. 그 금액을 말한다(미발행으로 복귀가 아니다).

@@ -492,6 +492,16 @@ for (const kind of ['deposit', 'cleaning']) {
     const parse = fnBody(lib, 'export function parseCashReceiptUndo(') ?? ''
     if (!/CASH_RECEIPT_UNDO_MAX_KEYS/.test(parse) || !/CASH_RECEIPT_UNDO_MAX_STAMPS/.test(parse)) violations.push(`${LIB} parseCashReceiptUndo: 토큰 길이 상한이 없다.`)
     if (!/l\.before && l\.after && l\.before\.id !== l\.after\.id/.test(parse)) violations.push(`${LIB} parseCashReceiptUndo: 한 줄의 쓰기 전·쓴 직후 id 가 같은지 안 본다.`)
+    // 독립 검수 R-7: 키가 없을 때 운영은 fail-closed(서명 거부·대조 false), 개발·하네스만 건너뛴다.
+    if (!/if \(!mac\) return !crUndoSigningRequired\(\)/.test(eng)) violations.push(`${ENG} macMatches: 서명 키가 없을 때 운영에서도 토큰을 통과시킨다(fail-open, 검수 R-7).`)
+    if (!/process\.env\.NODE_ENV === 'production' \|\| isLiveEnv\(\)/.test(fnBody(eng, 'export function crUndoSigningRequired(') ?? '')) violations.push(`${ENG} crUndoSigningRequired: 운영 판정(NODE_ENV production 또는 lib/env isLiveEnv)이 아니다(검수 R-7).`)
+    if (!/if \(crUndoSigningRequired\(\) && \(undo\.lines\.length > 0 \|\| undo\.stamps\.length > 0\)\) return null/.test(eng)) violations.push(`${ENG} signCrUndo: 운영에서 키가 없을 때 토큰을 낸다(검수 R-7).`)
+    if (!/return crUndoSigningRequired\(\) \? null : \{ \.\.\.u \}/.test(eng)) violations.push(`${ENG} signPaymentEditUndo: 운영에서 키가 없을 때 수정 저장 토큰을 낸다(검수 R-7).`)
+    // 화면은 토큰이 없으면 적용취소를 숨긴다(눌러도 거절될 버튼 금지).
+    for (const [file, src, n] of [[LIST, list, 4], [TAB, tab, 1]]) {
+      const got = (src.match(/\.\.\.\((t\.undoable && )?undo \? \{ action:/g) ?? []).length
+      if (got < n) violations.push(`${file}: 적용취소 토큰이 없을 때(운영 서명 키 없음) 적용취소를 숨기지 않는 토스트가 있다(${got}/${n}, 검수 R-7).`)
+    }
     const undoEdit = srvFns.get('undoPaymentEdit') ?? ''
     if (!/verifyPaymentEditUndo\(propertyId, undo\)/.test(undoEdit)) violations.push(`${SRV} undoPaymentEdit: 수정 저장 토큰의 서명을 대조하지 않는다.`)
   }
@@ -638,7 +648,7 @@ for (const kind of ['deposit', 'cleaning']) {
     if (!onFn) violations.push(`${LIST} — 켜기 확정 함수를 못 찾았다(침묵 통과 금지).`)
     else {
       if (!onFn.includes('crOnToast(res, ymd)') || !onFn.includes('pushToast(t.kind, t.message')) violations.push(`${LIST} — 켜기 토스트가 정본(crOnToast)의 종류·문장을 안 쓴다. keep 이 성공으로 나간다.`)
-      if (!onFn.includes('...(t.undoable ?')) violations.push(`${LIST} — 켜기 토스트가 바뀐 것 없는 keep 에도 적용취소를 단다(가짜 적용취소).`)
+      if (!onFn.includes('...(t.undoable && undo ?')) violations.push(`${LIST} — 켜기 토스트가 바뀐 것 없는 keep 에도 적용취소를 단다(가짜 적용취소).`)
       if (/pushToast\('success'/.test(onFn)) violations.push(`${LIST} — 켜기 토스트에 성공 종류를 손으로 박았다.`)
       if (!onFn.includes('crOnUndoneMessage(r.line)')) violations.push(`${LIST} — 켜기 적용취소 결과 토스트가 없거나 돌아온 앞 발행을 말하지 않는다(§16 적용취소 후에도 결과 토스트).`)
     }

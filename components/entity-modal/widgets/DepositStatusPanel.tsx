@@ -236,17 +236,18 @@ export function DepositStatusPanel({
       )
       if (!res.ok) return   // withSave 가 이미 error 토스트를 쏜다(이중 통지 금지)
       // 수정 저장도 적용취소가 있다. 수납 내역 수정 폼과 같은 토스트(2026-10-14 W8).
+      // 운영에서 서명 키가 없으면 토큰이 없다(현금영수증 적용취소 토큰 fail-closed, 2026-10-14 독립 검수 R-7). 그때는 숨긴다.
       const undo = res.undo
       let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
       pushToast('success', '보증금 수납 수정됨', {
-        action: { label: '적용취소', run: () => {
+        ...(undo ? { action: { label: '적용취소', run: () => {
           if (undone) return
           undone = true
           void undoPaymentEdit(undo).then(x => {
             if (x.ok) { pushToast('info', '보증금 수납 수정을 적용취소했습니다'); void load(); onChanged?.() }
             else pushToast('error', x.error)
           }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
-        } },
+        } } } : {}),
       })
       setEditId(null); await load(); onChanged?.()
     })
@@ -260,8 +261,9 @@ export function DepositStatusPanel({
     startTransition(async () => {
       const res = await withSave(() => deletePayment(r.id), { success: '' })
       if (!res.ok) return
+      const undo = res.undo   // 운영에서 서명 키가 없으면 null(검수 R-7). 그때는 적용취소를 숨긴다.
       pushToast('success', '보증금 수납 삭제됨', {
-        action: { label: '적용취소', run: () => { void restorePayment(r.id, res.undo).then(x => { if (x.ok) { void load(); onChanged?.() } else pushToast('error', x.error) }) } },
+        ...(undo ? { action: { label: '적용취소', run: () => { void restorePayment(r.id, undo).then(x => { if (x.ok) { void load(); onChanged?.() } else pushToast('error', x.error) }) } } } : {}),
       })
       await load(); onChanged?.()
     })

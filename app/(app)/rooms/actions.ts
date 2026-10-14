@@ -1863,7 +1863,7 @@ export async function updatePayment(
     cashReceiptAmount?: number | null
     cashReceiptIncl?: CashReceiptIncl | null
   }
-): Promise<{ ok: true; cashReceipt: PaymentEditEffect; undo: PaymentEditUndo } | { ok: false; error: string }> {
+): Promise<{ ok: true; cashReceipt: PaymentEditEffect; undo: PaymentEditUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     // 영업장 스코프 검증(감사 잔여, 2026-07-22) — 타 영업장 record id로 수정 불가(멀티테넌트)
@@ -2057,12 +2057,13 @@ export async function updatePayment(
     const fields = (r: { actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; targetMonth: string; seqNo: number }) => ({
       actualAmount: r.actualAmount, payYmd: kstYmdStr(r.payDate), payMethod: r.payMethod, memo: r.memo, targetMonth: r.targetMonth, seqNo: r.seqNo,
     })
-    const undo: PaymentEditUndo = signPaymentEditUndo(propertyId, {
+    // 운영에서 서명 키가 없으면 토큰을 내지 않는다(null). 화면은 적용취소를 숨긴다(독립 검수 R-7).
+    const undo: PaymentEditUndo | null = cr ? signPaymentEditUndo(propertyId, {
       paymentId,
       before: fields(record),
       after: after ? fields(after) : fields(record),
       cr,
-    })
+    }) : null
 
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, cashReceipt: effect, undo }
@@ -2175,7 +2176,8 @@ export async function setCashReceiptIssued(
       added?: { prevAmount: number; added: number; amount: number; issuedYmd: string; requestedYmd: string }
       /** 끈 줄. 화면이 '얼마가 빠지나'를 말할 재료. */
       dropped?: CashReceiptLineView
-      undo: CashReceiptUndo
+      /** 운영에서 서명 키가 없으면 null(적용취소를 내지 않는다, 독립 검수 R-7). */
+      undo: CashReceiptUndo | null
     }
   | { ok: false; error: string }
 > {
@@ -2572,7 +2574,8 @@ export async function setPaymentCashReceipt(input: {
       uncovered?: number
       /** edit 인데 살아 있는 줄이 없어 아무것도 안 했다. */
       skipped?: boolean
-      undo: CashReceiptUndo
+      /** 운영에서 서명 키가 없으면 null(적용취소를 내지 않는다, 독립 검수 R-7). */
+      undo: CashReceiptUndo | null
     }
   | { ok: false; error: string }
 > {
@@ -2929,7 +2932,7 @@ export async function unmuteReceiptAlert(k: string): Promise<{ ok: true } | { ok
 export async function batchSetCashReceipts(input: {
   items: { leaseTermId: string; tenantId: string; payYmd: string; payMethod: string }[]
   issuedDate: string
-}): Promise<{ ok: true; done: number; skipped: number; undo: CashReceiptUndo } | { ok: false; error: string }> {
+}): Promise<{ ok: true; done: number; skipped: number; undo: CashReceiptUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -3018,7 +3021,7 @@ export async function previewPaymentDelete(paymentId: string): Promise<
 // 알린다(결함 D2, 422호에서 10,000 을 지워도 420,000 이 말없이 남았다).
 // 적용취소 재료(undo)를 돌려준다. restorePayment 가 받아 내린 줄까지 되살린다(결함 D5).
 export async function deletePayment(paymentId: string): Promise<
-  { ok: true; cashReceipt: CrRemovalResult; undo: PaymentDeleteUndo } | { ok: false; error: string }
+  { ok: true; cashReceipt: CrRemovalResult; undo: PaymentDeleteUndo | null } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -3055,7 +3058,8 @@ export async function deletePayment(paymentId: string): Promise<
         await serverBillForMonth(record.leaseTermId, record.targetMonth, lease.rentAmount))
     }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-    return { ok: true, cashReceipt: res.cashReceipt, undo: { paymentId, cr: res.cr } }
+    // 운영에서 서명 키가 없어 발행 토큰을 못 냈으면 삭제 적용취소도 내지 않는다(반쪽 복원 금지, 독립 검수 R-7).
+    return { ok: true, cashReceipt: res.cashReceipt, undo: res.cr ? { paymentId, cr: res.cr } : null }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

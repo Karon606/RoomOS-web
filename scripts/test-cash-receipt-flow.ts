@@ -468,6 +468,24 @@ async function main() {
     eq('S16 키 없어도 미래 도장 거부', (await rooms.undoCashReceiptChange(nk2)).ok, false)
     eq('S16 키 없어도 키 밖 record 거부', (await rooms.undoCashReceiptChange(nk3)).ok, false)
     eq('S16 키 없는 환경의 진짜 토큰은 통과', (await rooms.undoCashReceiptChange(nk)).ok, true)
+    // 운영(VERCEL_ENV·NODE_ENV production)에서 키가 없으면 fail-closed(독립 검수 R-7). 서명 없는 토큰은 거부하고,
+    // 쓰기는 하되 토큰을 내지 않는다(undo null, 화면은 적용취소를 숨긴다). 개발·하네스만 위처럼 건너뛴다.
+    const devTok = await rooms.setCashReceiptIssued(A8, true, '2026-10-01')
+    if (!devTok.ok || !devTok.undo) throw new Error('S16 개발 토큰')
+    const devUndo = J(devTok.undo)
+    process.env.VERCEL_ENV = 'production'
+    eq('S16 운영·키 없음: 서명 없는 토큰 거부(fail-closed)', [(await rooms.undoCashReceiptChange(devUndo)).ok, await stamp(A8)], [false, kstMid('2026-10-01')])
+    const offP = await rooms.setCashReceiptIssued(A8, false)
+    eq('S16 운영·키 없음: 끄기는 되고 적용취소 토큰은 안 낸다', offP.ok ? [offP.change, offP.undo] : offP, ['off', null])
+    const eP = await rooms.updatePayment(A8, { actualAmount: 300000, payDate: '2026-10-01', payMethod: '계좌이체', memo: 'y' })
+    eq('S16 운영·키 없음: 수정 저장 토큰도 안 낸다', eP.ok ? eP.undo : eP, null)
+    const dP = await rooms.deletePayment(other)
+    eq('S16 운영·키 없음: 발행 기록을 안 건드린 삭제는 적용취소가 그대로 있다(빈 토큰은 복원이 아무것도 안 쓴다)', dP.ok ? !!dP.undo : dP, true)
+    const Qp = await rec(L, P1, { month: '2026-10', amount: 70000, pay: '2026-10-03' })
+    await rooms.setCashReceiptIssued(Qp, true, '2026-10-03')
+    const dQ = await rooms.deletePayment(Qp)
+    eq('S16 운영·키 없음: 발행 줄을 함께 내린 삭제는 적용취소를 안 낸다(줄 못 되살리는 반쪽 복원 금지)', dQ.ok ? [dQ.cashReceipt.dropped.map(d => d.amount), dQ.undo] : dQ, [[70000], null])
+    delete process.env.VERCEL_ENV
     process.env.STAYEUM_PII_KEY = keep
   }
 

@@ -2264,7 +2264,8 @@ export async function recordReservationPrepaidCancel(params: {
   date: string
   tenantName: string
 }): Promise<
-  | { ok: true; recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null; cashReceipt: CrRemovalResult; crUndo: CashReceiptUndo }
+  // crUndo 는 운영에서 서명 키가 없으면 null 이다. 화면은 그때 적용취소를 숨긴다(줄을 못 되살리는 반쪽 복원 금지, 독립 검수 R-7).
+  | { ok: true; recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null; cashReceipt: CrRemovalResult; crUndo: CashReceiptUndo | null }
   | { ok: false; error: string }
 > {
   try {

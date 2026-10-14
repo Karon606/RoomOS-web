@@ -1635,6 +1635,9 @@ export default function TenantClient({
         // 결과(앞 발행에 합쳤나, 먼저 받은 돈이 발행 없이 남았나)와 적용취소 재료를 버리지 않는다(검수 R-3·F2).
         let crUndo: CashReceiptUndo | null = null
         let crLines: string[] = []
+        // 발행 기록은 썼는데 서버가 적용취소 토큰을 못 냈다(운영에서 서명 키 없음, 검수 R-7). 등록 적용취소가 발행 줄을
+        // 되돌리지 못하는 반쪽이 되므로 그때는 등록 적용취소를 숨긴다.
+        let crUndoLost = false
         if (cashReceiptIssued) {
           const crRes = await setPaymentCashReceipt({
             leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
@@ -1642,7 +1645,7 @@ export default function TenantClient({
             issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: createdIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
-          else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
+          else { crUndo = crRes.undo; crUndoLost = !crRes.undo; crLines = crEntryResultLines(crRes) }
         }
 
         setShowPayForm(false)
@@ -1656,7 +1659,7 @@ export default function TenantClient({
         let undone = false   // 연타 방지. 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
         pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨', {
           ...(crLines[0] ? { detail: crLines[0] } : {}),
-          ...(ids.length > 0 ? { action: { label: '적용취소', run: () => {
+          ...(ids.length > 0 && !crUndoLost ? { action: { label: '적용취소', run: () => {
             if (undone) return
             undone = true
             void undoOverpayExtraIncome(ids, undefined, crUndo).then(async r => {
@@ -1696,15 +1699,16 @@ export default function TenantClient({
       const res = await withSave(() => deletePayment(paymentId), { success: '' })
       if (!res.ok) { setError(res.error); return }
       const detail = crDeleteToastDetail(res.cashReceipt)
+      const undo = res.undo   // 운영에서 서명 키가 없으면 null(검수 R-7). 그때는 적용취소를 숨긴다.
       pushToast('success', '수납 기록 삭제됨', {
         ...(detail ? { detail } : {}),
-        action: { label: '적용취소', run: () => { void restorePayment(paymentId, res.undo).then(r => {
+        ...(undo ? { action: { label: '적용취소', run: () => { void restorePayment(paymentId, undo).then(r => {
           if (r.ok) {
             const d = crRestoreDetail(r.cashReceipt)
             pushToast('info', CR_DELETE_UNDONE, d ? { detail: d } : undefined)
             refresh()
           } else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
       })
       if (payTarget) {
         const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
@@ -1744,14 +1748,15 @@ export default function TenantClient({
       let undone = false   // 연타 방지. 두 번째 요청은 이미 되돌린 기록과 충돌해 실패로 떨어진다
       pushToast('success', '수납 기록 수정됨', {
         ...(crDetail ? { detail: crDetail } : {}),
-        action: { label: '적용취소', run: () => {
+        // 운영에서 서명 키가 없어 토큰이 없으면 적용취소를 숨긴다(검수 R-7).
+        ...(undo ? { action: { label: '적용취소', run: () => {
           if (undone) return
           undone = true
           void undoPaymentEdit(undo).then(r => {
             if (r.ok) { pushToast('info', '수납 기록 수정을 적용취소했습니다'); refresh() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
-        } },
+        } } } : {}),
       })
       if (payTarget) {
         const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)

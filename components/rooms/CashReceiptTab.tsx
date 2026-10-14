@@ -108,15 +108,16 @@ export function CashReceiptTab({
       const res = await batchSetCashReceipts({ items, issuedDate })
       if (!res.ok) { pushToast('error', res.error); return }
       setModalOpen(false); exitSelect()
+      const undo = res.undo   // 운영에서 서명 키가 없으면 null(독립 검수 R-7). 눌러도 거절될 버튼이라 숨긴다.
       pushToast('success', `${res.done}건 발행 기록됨 · 발행일 ${fmtMD(issuedDate)}`, {
         ...(res.skipped > 0 ? { detail: `${res.skipped}건은 이미 발행 기록이 있어 제외` } : {}),
-        action: {
+        ...(undo ? { action: {
           label: '적용취소',
-          run: () => { void undoCashReceiptChange(res.undo).then(r => {
+          run: () => { void undoCashReceiptChange(undo).then(r => {
             if (r.ok) { pushToast('info', '일괄 발행 기록을 취소했습니다'); onChanged() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) },
-        },
+        } } : {}),
       })
       // 발행일이 지금 보는 달 밖이면 그 사실을 말한다 — 처리는 됐는데 합계가 안 움직이면
       // 실패로 읽힌다(§27.6 월 스코프 사후 안내).

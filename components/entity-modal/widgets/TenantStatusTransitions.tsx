@@ -472,10 +472,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
             ...(crDropDetail ? { detail: crDropDetail } : {}),
             // 라벨은 §16 정본 '적용취소'. 무르는 것은 돈 기록뿐이고 예약 취소 상태는 그대로라 결과 문장이 그걸 말한다.
-            action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds, crUndo).then(u => {
+            // 발행 토큰이 없으면(운영에서 서명 키 없음, 검수 R-7) 내린 발행 줄을 못 되살리는 반쪽이라 숨긴다.
+            ...(crUndo ? { action: { label: '적용취소', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds, crUndo).then(u => {
               if (u.ok) { const d = crUndoMismatchDetail(u.cashReceipt?.mismatch); pushToast('info', '예약 선납 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로', d ? { detail: d } : undefined); onChange?.() }
               else pushToast('error', u.error)
-            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
           })
           setActive(null)
           onChange?.()
@@ -499,10 +500,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           const crDropDetail = crDeleteToastDetail(prepaid.cashReceipt)   // 이용료 몫 취소가 함께 지운 발행 기록(검수 R-4)
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
             ...(crDropDetail ? { detail: crDropDetail } : {}),
-            action: { label: '적용취소', run: () => { void undoReservationDepositCancel(prepaid, deposit).then(u => {
+            ...(prepaid.crUndo ? { action: { label: '적용취소', run: () => { void undoReservationDepositCancel(prepaid, deposit).then(u => {
               if (u.ok) { const d = crUndoMismatchDetail(u.cashReceipt?.mismatch); pushToast('info', '예약금 반환·몰취를 적용취소했습니다 · 예약 취소 상태는 그대로', d ? { detail: d } : undefined); onChange?.() }
               else pushToast('error', u.error)
-            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
           })
           setActive(null)
           onChange?.()

@@ -17,6 +17,7 @@ import prisma from '@/lib/prisma'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { derivedServerKey } from '@/lib/pii'
+import { isLiveEnv } from '@/lib/env'
 import {
   buildCashReceiptUndo, canonicalCashReceiptUndo, cashReceiptKey, cashReceiptLineView, cashReceiptUndoConflict, parseCashReceiptUndo,
   planCashReceiptRemoval, summarizeCashReceiptKey,
@@ -213,10 +214,11 @@ export async function captureCr(db: CrDb, refs: CrKeyRef[], extraIds: string[] =
 
 /**
  * 쓰기 전 캡처와 같은 키·같은 record 로 쓴 직후를 떠서 적용취소 스냅샷을 만들고 서버가 서명한다.
+ * 운영에서 서명 키가 없으면 바뀐 것이 있는 토큰은 내지 않는다(null, 독립 검수 R-7). 화면은 그때 적용취소를 숨긴다.
  * 쓰기 전에 줄이 있던 키는 쓴 직후도 **그 같은 줄**을 뜬다. 한 키에 줄이 둘 이상 남은 옛 데이터에서
  * '살아 있는 줄, 없으면 가장 오래된 줄' 선택이 다른 줄을 집어 쓰기 전·쓴 직후 id 가 갈리지 않게(검수 W4).
  */
-export async function finishCrUndo(db: CrDb, before: CrCapture): Promise<CashReceiptUndo> {
+export async function finishCrUndo(db: CrDb, before: CrCapture): Promise<CashReceiptUndo | null> {
   const after = await captureCr(db, before.refs, [...before.stamps.keys()])
   const lines = []
   for (let i = 0; i < before.refs.length; i++) {
@@ -241,9 +243,21 @@ export async function finishCrUndo(db: CrDb, before: CrCapture): Promise<CashRec
 // 비밀(STAYEUM_PII_KEY 에서 용도 라벨로 파생한 키, lib/pii derivedServerKey)로 서명하고 복원 때 대조한다.
 // 영업장 id 를 서명에 넣어 다른 영업장으로 옮긴 토큰도 서명에서 떨어진다.
 //
-// 키가 없는 환경(키 미등록 개발 DB 등)에서는 서명도 대조도 안 한다. 그때 막을 길은 아래 구조 검사뿐이다.
 // 키가 있으면 서명 없는 토큰·틀린 서명은 거부한다.
+//
+// **키가 없을 때는 운영과 그 밖을 가른다**(독립 검수 R-7, 2026-10-14). 종전에는 어느 환경이든 키가 없으면 대조를
+// 건너뛰었다(fail-open). 운영에서 키 등록이 빠지면 위조 토큰이 통째로 통과한다. 이제 운영(NODE_ENV 나 VERCEL_ENV 가
+// production)에서는 키가 없으면 서명을 거부해 토큰을 내지 않고(화면은 적용취소 버튼을 숨긴다) 들어온 토큰은 거부한다.
+// 키 미등록 개발 DB·통합 하네스에서만 건너뛴다. 그때 막을 길은 아래 구조 검사뿐이다.
 const CR_UNDO_KEY_LABEL = 'stayeum-cash-receipt-undo-v1'
+
+/**
+ * 서명 키 없이 토큰을 내고 받으면 안 되는 환경인가. 운영 빌드(NODE_ENV production)이거나 운영 배포(VERCEL_ENV
+ * production, 판정 정본 lib/env isLiveEnv)면 참이다. 환경 변수를 여기서 직접 읽지 않는다(감지망 check-env-isolation).
+ */
+export function crUndoSigningRequired(): boolean {
+  return process.env.NODE_ENV === 'production' || isLiveEnv()
+}
 
 /** 토큰 종류(domain)·영업장·정본 문자열 위의 서명. 키가 없으면 null. */
 function undoMac(domain: string, propertyId: string, body: string): Buffer | null {
@@ -253,19 +267,25 @@ function undoMac(domain: string, propertyId: string, body: string): Buffer | nul
 }
 
 function macMatches(mac: Buffer | null, sig: unknown): boolean {
-  if (!mac) return true
+  // 키가 없다. 운영이면 대조할 수 없는 토큰은 거부하고(fail-closed), 개발·하네스에서만 구조 검사에 맡긴다.
+  if (!mac) return !crUndoSigningRequired()
   if (typeof sig !== 'string') return false
   const got = Buffer.from(sig, 'base64url')
   return got.length === mac.length && timingSafeEqual(got, mac)
 }
 
-/** 토큰에 서버 서명을 붙인다. 키가 없으면 서명 없이 돌려준다. */
-export function signCrUndo(propertyId: string, undo: CashReceiptUndo): CashReceiptUndo {
+/**
+ * 토큰에 서버 서명을 붙인다. 키가 없으면 개발·하네스에서는 서명 없이 돌려주고, 운영에서는 바뀐 것이 있는 토큰을
+ * 내지 않는다(null). 바뀐 것이 없는 빈 토큰은 복원이 아무것도 안 쓰므로(applyCrUndo 첫머리) 그대로 낸다.
+ */
+export function signCrUndo(propertyId: string, undo: CashReceiptUndo): CashReceiptUndo | null {
   const mac = undoMac('cash-receipt', propertyId, canonicalCashReceiptUndo(undo))
-  return mac ? { ...undo, sig: mac.toString('base64url') } : { ...undo }
+  if (mac) return { ...undo, sig: mac.toString('base64url') }
+  if (crUndoSigningRequired() && (undo.lines.length > 0 || undo.stamps.length > 0)) return null
+  return { ...undo }
 }
 
-/** 이 영업장에서 서버가 만든 토큰 그대로인가. 키가 없으면 true(구조 검사에 맡긴다). */
+/** 이 영업장에서 서버가 만든 토큰 그대로인가. 키가 없으면 개발·하네스는 true(구조 검사에 맡긴다), 운영은 false. */
 export function verifyCrUndo(propertyId: string, undo: CashReceiptUndo): boolean {
   return macMatches(undoMac('cash-receipt', propertyId, canonicalCashReceiptUndo(undo)), undo.sig)
 }
@@ -450,10 +470,11 @@ function paymentEditBody(u: PaymentEditUndo): string {
   return JSON.stringify([u.paymentId, f(u.before), f(u.after), canonicalCashReceiptUndo(u.cr), u.cr.sig ?? null])
 }
 
-/** 수정 저장 토큰에 서버 서명을 붙인다. 키가 없으면 서명 없이 돌려준다. */
-export function signPaymentEditUndo(propertyId: string, u: PaymentEditUndo): PaymentEditUndo {
+/** 수정 저장 토큰에 서버 서명을 붙인다. 키가 없으면 개발·하네스는 서명 없이, 운영은 토큰을 내지 않는다(null, 검수 R-7). */
+export function signPaymentEditUndo(propertyId: string, u: PaymentEditUndo): PaymentEditUndo | null {
   const mac = undoMac('payment-edit', propertyId, paymentEditBody(u))
-  return mac ? { ...u, sig: mac.toString('base64url') } : { ...u }
+  if (mac) return { ...u, sig: mac.toString('base64url') }
+  return crUndoSigningRequired() ? null : { ...u }
 }
 
 /** 이 영업장에서 서버가 만든 수정 저장 토큰 그대로인가. 모양 검사를 지난 값에만 부른다. */

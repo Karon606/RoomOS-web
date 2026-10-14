@@ -319,6 +319,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     // 이 결제의 발행 기록이 돌려준 적용취소 재료. 수납 적용취소가 발행 줄까지 쓰기 전으로 되돌린다
     // (2026-10-14 독립 검수 F2). 종전에는 받아 놓고 버려서, 같은 키의 앞 발행과 합친 줄이 합친 금액으로 남았다.
     let crUndo: CashReceiptUndo | null = null
+    // 발행 기록은 썼는데 서버가 적용취소 토큰을 못 냈다(운영에서 서명 키 없음, 독립 검수 R-7). 등록 적용취소가 발행 줄을
+    // 되돌리지 못하는 반쪽이 되므로(합친 금액이 그대로 남는다) 그때는 등록 적용취소를 숨긴다.
+    let crUndoLost = false
     // 발행 기록 결과(같은 날 앞 발행에 합쳤나, 먼저 받은 돈이 발행 없이 남았나). 버리지 않고 말한다(검수 R-3). 사실 하나에 한 줄.
     let crLines: string[] = []
     let splitDone = false   // 분해 경로는 몫을 실은 자기 토스트를 띄운다(아래 공용 토스트를 건너뛴다)
@@ -436,7 +439,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               amount: crShownAmount, incl: crIncl, via: 'entry', recordIds,
             })
             if (!crRes.ok) pushToast('error', crRes.error)
-            else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
+            else { crUndo = crRes.undo; crUndoLost = !crRes.undo; crLines = crEntryResultLines(crRes) }
           }
 
           // 이용료 몫은 실제로 앉은 달을 적는다(서버 배분 결과). 일반 갈래 자동 분배 토스트와 같은 'N월분' 문법.
@@ -452,7 +455,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
           pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}${fmtWon(payAmount)} 수납됨 · 수납일 ${fmtMD(payDateVal)}`, {
             ...((parts.length > 1 || rVal > 0) ? { detail: parts.join(' · ') } : {}),
-            action: {
+            ...(crUndoLost ? {} : { action: {
               label: '적용취소',
               run: () => {
                 if (undone) return
@@ -466,7 +469,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                   onSaved?.()
                 }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
               },
-            },
+            } }),
           })
           // 발행 기록 결과는 따로 띄운다. 위 토스트의 둘째 줄은 이미 몫(보증금·청소비·이용료)을 든다(§15 3줄 상한).
           for (const line of crLines) pushToast('info', line)
@@ -579,7 +582,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             amount: crShownAmount, incl: crIncl, via: 'entry', recordIds: entryIds,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
-          else { crUndo = crRes.undo; crLines = crEntryResultLines(crRes) }
+          else { crUndo = crRes.undo; crUndoLost = !crRes.undo; crLines = crEntryResultLines(crRes) }
         }
 
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
@@ -590,7 +593,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
           pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}이용료 ${fmtWon(payAmount - excess)} 수납됨`, {
             detail: `초과분 ${fmtWon(excess)}은 부가수익으로 기록`,
-            action: {
+            ...(crUndoLost ? {} : { action: {
               label: '적용취소',
               run: () => {
                 if (undone) return
@@ -603,7 +606,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                   onSaved?.()
                 }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
               },
-            },
+            } }),
           })
           for (const line of crLines) pushToast('info', line)
         } else if (!splitDone) {
@@ -615,7 +618,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           let undone = false   // 연타 방지. 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
           pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '이용료 수납됨', {
             ...(crLines[0] ? { detail: crLines[0] } : {}),
-            ...(ids.length > 0 || incomeId ? { action: {
+            ...((ids.length > 0 || incomeId) && !crUndoLost ? { action: {
               label: '적용취소',
               run: () => {
                 if (undone) return
