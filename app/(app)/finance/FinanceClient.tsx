@@ -5,7 +5,7 @@ import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSiz
 // 소모품으로 적은 구매를 비품으로 바꿀지 묻는 판정·문구 정본(계획서 2단계 F1·F3). 서버 저장도 같은 판정을 다시 돌린다.
 import {
   conversionPlan, conversionPrecheck, conversionCopy, conversionToastDetail, conversionUndoneText, convertItemsFrom,
-  type ConvertPlan, type DurableConvertUndo,
+  CONVERT_BLOCKED_MERGED, CONVERT_BLOCKED_LEDGER, type ConvertPlan, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
 import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
 import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
@@ -2386,10 +2386,12 @@ export default function FinanceClient({
     try { res = await getDurableConvertFacts({ labels: items.map(it => it.label), expenseId: o.expenseId ?? null }) } catch { return { decision: 'keep' } }
     const plan = conversionPlan({ category: o.category, items, received: o.received, original: o.original }, res.facts)
     if (plan.kind === 'none') return { decision: 'keep' }
-    // 이미 받은 소모품(F3)은 다음 묶음이다. 지금은 묻지 않는다.
-    if (plan.kind === 'F3') return { decision: 'keep' }
+    if (plan.kind === 'F3') {
+      if (!res.receipt) return { decision: 'keep' }
+      if (res.receipt.blocked) return { decision: 'blocked', reason: res.receipt.blocked === 'merged' ? CONVERT_BLOCKED_MERGED : CONVERT_BLOCKED_LEDGER }
+    }
     const roomNos = plan.roomIds.map(id => roomNoById.get(id) ?? '').filter(Boolean)
-    const adjust = 0
+    const adjust = plan.kind === 'F3' ? (res.receipt?.adjustChecks ?? 0) : 0
     const copy = conversionCopy(plan, { from: o.category, roomNos, receivedMd: res.receipt?.receivedMd, adjustChecks: adjust })
     const pick = await choiceDialog({ ...copy, level: 'caution' })
     if (pick === null || pick === 'back') return null

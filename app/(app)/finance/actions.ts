@@ -29,7 +29,7 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 // 공용부 이름은 비품 화면과 같은 표기 경로(pathName) 정본 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
-import { isDurableGoods, placementForSave } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { isDurableGoods, placementForSave, assignmentLogData } from '@/app/(app)/inventory/assets/receiptPlacement'
 // 소모품으로 적은 구매를 비품으로 바꾸는 저장(F1·F3, 계획서 2단계). 판정·문구·토큰은 순수층(conversionPlan),
 // 조회·검증·되돌림은 공용층(durableConvert), 자동 점검 걷기는 수령 취소 정본(receiptCancel)이다.
 import {
@@ -37,11 +37,13 @@ import {
   canonicalDurableConvertUndo, parseDurableConvertUndo, type ConvertFacts, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
 import {
-  loadDurableConvertFacts, verifyDurableConvert, emptyAutoCards, deleteEmptyCardsTx,
+  loadDurableConvertFacts, verifyDurableConvert, receiptConvertPreview, emptyAutoCards, deleteEmptyCardsTx, autoCheckSnaps,
   applyDurableConvertUndo, DurableConvertUndoError,
 } from '@/app/(app)/inventory/durableConvert'
+import { planReceiptCancel, applyReceiptCancel } from '@/app/(app)/inventory/receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다).
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { fmtRoomNo } from '@/lib/roomNo'
 // 재고 원장 전파(점보롤 백로그 1번) — 수령완료 구매의 수량 정정·삭제가 뒤 점검의 저장 잔량을
 // 함께 옮기게 한다. 계산 정본은 lib/stockLedger, 적용·되돌리기는 inventory/ledgerShift 공용층.
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
@@ -54,7 +56,7 @@ import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
-import { dbDateMonthKey, monthDbRange } from '@/lib/kstDate'
+import { dbDateMonthKey, monthDbRange, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { expenseTargetMonth, isMonthKey, targetMonthForSave, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
@@ -1334,8 +1336,40 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     let stockShift: LedgerShiftUndo | null = null
     let durableUndo: DurableConvertUndo | null = null
     if (convertPlan?.kind === 'F3') {
-      // 이미 받은 소모품의 전환(F3)은 다음 묶음이다.
-      return { ok: false, error: DURABLE_CONVERT_STALE }
+      // F3. 이미 받은 소모품을 비품으로 바꿔 그 방에 배정한다. 한 트랜잭션이다(계획서 B4).
+      //   1. 이 구매의 수령 자동 점검을 수령 취소 정본(planReceiptCancel·applyReceiptCancel)으로 걷는다. 이후 점검이 삼켰으면
+      //      화면이 함께 조정(convertAdjust)을 실어 왔을 때만 정본 조정으로 뺀다. 실측이 합쳐졌으면 정본이 막는다(합치지 않는다).
+      //      수령 시각은 지킨다(비품에서는 원장 뜻이 없다).
+      //   2. 빈 자동 카드를 지운다(스냅샷). 3. 카테고리를 바꾼다. 4. 그 방에 배정한다. 배정일 = 수령일의 KST 날짜,
+      //      이력 '미배정에서 519호'를 직접 남긴다(roomId 가 이미 그 방이어도 남긴다. 정본 logAssignment 는 '변화 없음'이면 안 남긴다).
+      const place = placeOf(labelAfter, roomId || null)
+      if (!existing.receivedAt || !place.roomId || place.roomId !== convertPlan.roomIds[0] || shiftRows.length > 0) return { ok: false, error: DURABLE_CONVERT_STALE }
+      const rc = await planReceiptCancel(id, propertyId, { adjustFollowing: formData.get('convertAdjust') === '1' })
+      if (!rc.ok) return { ok: false, error: rc.error }
+      if (!rc.plan) return { ok: false, error: DURABLE_CONVERT_STALE }
+      const cancelPlan = rc.plan
+      const room = await prisma.room.findFirst({ where: { id: place.roomId, propertyId }, select: { roomNo: true } })
+      if (!room) return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
+      // 배정일은 @db.Date 다. 수령 시각을 그대로 넣으면 KST 00~09시 수령(냉장고 06:05)이 어제로 박힌다. 정본 KST 날짜로 바꾼다.
+      const assignDay = ymdToDbDate(kstYmdStr(existing.receivedAt))
+      const checks = autoCheckSnaps(cancelPlan.autoChecks)
+      const done = await prisma.$transaction(async tx => {
+        const cu = await applyReceiptCancel(tx, cancelPlan, { keepReceived: true })
+        const row = await tx.expense.update({ where: { id }, data: { ...singleUpdateData, assignedAt: assignDay, assignedLocationId: null, isCommonAsset: false } })
+        const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots)
+        const log = await tx.assetAssignmentLog.create({ data: assignmentLogData(propertyId, row.itemLabel, row,
+          { kind: 'none', label: '미배정' }, { kind: 'room', label: fmtRoomNo(room.roomNo, '') || '방' }, row.qtyValue ?? 1, assignDay) })
+        return { shift: cu.shift, cards, logId: log.id }
+      })
+      durableUndo = signDurableUndo(propertyId, {
+        v: 1, kind: 'F3', from: durableFrom!, to: category, rows: [],
+        placed: {
+          id, roomId: place.roomId, assignedAt: assignDay.toISOString(),
+          prev: { assignedAt: existing.assignedAt ? existing.assignedAt.toISOString() : null, assignedLocationId: existing.assignedLocationId, isCommonAsset: existing.isCommonAsset },
+        },
+        checks, shift: done.shift, cards: done.cards, seedLabels: [], logIds: [done.logId],
+      })
+      revalidatePath('/inventory'); revalidatePath('/inventory/assets')
     } else if (convertPlan) {
       // F1(받기 전 수정). 자리 두 칸은 placementForSave 가 정했다(대상 호실이 배정 예정 호실로). 빈 자동 카드를 같은 트랜잭션에서 지운다.
       const done = await prisma.$transaction(async tx => {
@@ -3289,8 +3323,14 @@ export async function getDurableConvertFacts(input: { labels: string[]; expenseI
   const labels = (Array.isArray(input?.labels) ? input.labels : []).filter((l): l is string => typeof l === 'string').slice(0, 50)
   const expenseId = typeof input?.expenseId === 'string' && input.expenseId ? input.expenseId : null
   const facts = await loadDurableConvertFacts(propertyId, labels, expenseId)
-  // 이미 받은 소모품(F3)의 수령 자동 점검 미리보기는 다음 묶음이다.
-  const receipt: { blocked: 'merged' | 'ledger' | null; adjustChecks: number; receivedMd: string } | null = null
+  let receipt: { blocked: 'merged' | 'ledger' | null; adjustChecks: number; receivedMd: string } | null = null
+  if (expenseId) {
+    const e = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { receivedAt: true, category: true } })
+    if (e?.receivedAt && facts.trackedCats.includes(e.category)) {
+      const ymd = kstYmdStr(e.receivedAt)
+      receipt = { ...(await receiptConvertPreview(expenseId, propertyId)), receivedMd: `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}` }
+    }
+  }
   return { facts, receipt }
 }
 

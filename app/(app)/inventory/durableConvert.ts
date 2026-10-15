@@ -5,13 +5,15 @@
 // 카드를 고르고(emptyAutoCards), 토큰 하나로 전환을 되돌린다(applyDurableConvertUndo). 재무 저장 트랜잭션 안에서 돌아야 해서
 // 서버 액션 파일 밖에 둔다(ledgerShift·receiptCancel·trackedItemSnapshot 과 같은 배치).
 import prisma from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 import { parseOptionList } from '@/lib/optionLists'
 import { getTrackedCategories } from './categoryConfig'
-import type { InventoryTx } from './ledgerShift'
+import { revertShiftRows, type InventoryTx } from './ledgerShift'
+import { planReceiptCancel, RECEIPT_CANCEL_MERGED } from './receiptCancel'
 import { trackedItemDeleteSnapshot, restoreTrackedItemTx, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 import {
   conversionPlan, DURABLE_CONVERT_UNDO_INVALID, DURABLE_CONVERT_UNDO_STALE,
-  type ConvertFacts, type ConvertInput, type ConvertPlan, type DurableConvertUndo,
+  type ConvertFacts, type ConvertInput, type ConvertPlan, type DurableConvertUndo, type AutoCheckSnap,
 } from './assets/conversionPlan'
 
 /**
@@ -59,6 +61,20 @@ export async function verifyDurableConvert(
 }
 
 /**
+ * 이미 받은 소모품(F3)의 수령 자동 점검을 걷을 수 있는가(정본 수령 취소 판정 그대로, 쓰기 없음).
+ * 이후 점검이 수령분을 삼켰으면 정본의 함께 조정(adjustFollowing)으로 걷는다. 그 수를 창에 적는다.
+ * 실측이 자동 점검에 합쳐졌으면 'merged', 조정 계획이 안 서면 'ledger'(둘 다 창 대신 안내하고 그대로 저장).
+ */
+export async function receiptConvertPreview(expenseId: string, propertyId: string): Promise<{ blocked: 'merged' | 'ledger' | null; adjustChecks: number }> {
+  const plain = await planReceiptCancel(expenseId, propertyId)
+  if (plain.ok) return { blocked: null, adjustChecks: 0 }
+  if (plain.error === RECEIPT_CANCEL_MERGED) return { blocked: 'merged', adjustChecks: 0 }
+  const adjusted = await planReceiptCancel(expenseId, propertyId, { adjustFollowing: true })
+  if (adjusted.ok) return { blocked: null, adjustChecks: adjusted.plan?.rows.length ?? 0 }
+  return { blocked: adjusted.error === RECEIPT_CANCEL_MERGED ? 'merged' : 'ledger', adjustChecks: 0 }
+}
+
+/**
  * 전환으로 쓸모가 없어지는 빈 자동 카드(계획서 B2). (category, label) 카드 중 점검·입수·폐기가 없고(이 지출의 수령 자동 점검은
  * 함께 걷으니 뺀다) 그 품명의 다른 구매도 없는 것만 스냅샷을 뜬다. 비지 않은 카드는 그대로 두고 이름만 돌려준다(보고용).
  * 지우기는 부르는 쪽 트랜잭션에서 deleteMany(같은 비어 있음 조건, CAS)로 한다.
@@ -94,6 +110,18 @@ export async function deleteEmptyCardsTx(tx: InventoryTx, propertyId: string, sn
   return done
 }
 
+/** F3 이 걷는 수령 자동 점검을 바이트 그대로 되살릴 스냅샷(전 칸, 위치 내역 id·이월 표식 포함). */
+export function autoCheckSnaps(rows: Prisma.StockCheckGetPayload<{ include: { locationBreakdown: true } }>[]): AutoCheckSnap[] {
+  return rows.map(c => ({
+    id: c.id, trackedItemId: c.trackedItemId, date: c.date.toISOString(), createdAt: c.createdAt.toISOString(),
+    remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile, sourceExpenseId: c.sourceExpenseId,
+    locations: c.locationBreakdown.map(l => ({
+      id: l.id, storageLocationId: l.storageLocationId, remainingQty: l.remainingQty, restockedQty: l.restockedQty,
+      fromHubQty: l.fromHubQty, fromLocationId: l.fromLocationId, carried: l.carried,
+    })),
+  }))
+}
+
 export class DurableConvertUndoError extends Error {
   constructor(message: string) { super(message); this.name = 'DurableConvertUndoError' }
 }
@@ -102,7 +130,7 @@ export class DurableConvertUndoError extends Error {
  * 전환 되돌림(부르는 쪽 트랜잭션). 서명·모양은 부르는 쪽이 먼저 봤다. 여기서는 범위와 CAS 를 본다.
  *   - from 은 지금 추적 카테고리, to 는 아니다. 카드는 추적 카테고리 카드다(무관한 카드·카테고리로 못 쓴다).
  *   - 행마다 '전환 직후 그대로인가'를 조건으로 걸고 전환이 바꾼 칸만 되돌린다. 하나라도 어긋나면 전부 되감는다(STALE).
- * F1 은 카테고리와 자리 두 칸(예정 호실을 대상 호실로)과 지운 카드다.
+ * F1 은 카테고리와 자리 두 칸(예정 호실을 대상 호실로), F3 은 카테고리와 배정 세 칸·이력 줄·자동 점검·조정·카드다.
  */
 export async function applyDurableConvertUndo(tx: InventoryTx, propertyId: string, undo: DurableConvertUndo, trackedCats: string[]): Promise<void> {
   const INVALID = new DurableConvertUndoError(DURABLE_CONVERT_UNDO_INVALID)
@@ -119,12 +147,49 @@ export async function applyDurableConvertUndo(tx: InventoryTx, propertyId: strin
     })
     if (u.count !== 1) throw STALE
   }
-  // 받은 소모품 전환(F3) 되돌림은 다음 묶음이다. 지금은 F1 토큰만 받는다.
-  if (undo.kind !== 'F1') throw INVALID
+  if (undo.placed) {
+    const p = undo.placed
+    const u = await tx.expense.updateMany({
+      where: {
+        id: p.id, propertyId, category: undo.to, receivedAt: { not: null }, disposedAt: null,
+        roomId: p.roomId, assignedAt: new Date(p.assignedAt), assignedLocationId: null, isCommonAsset: false,
+      },
+      data: {
+        category: undo.from,
+        assignedAt: p.prev.assignedAt ? new Date(p.prev.assignedAt) : null,
+        assignedLocationId: p.prev.assignedLocationId, isCommonAsset: p.prev.isCommonAsset,
+      },
+    })
+    if (u.count !== 1) throw STALE
+  }
   // 카드를 먼저 되살린다(자동 점검이 그 카드에 붙는다).
   for (const c of undo.cards) {
     const r = await restoreTrackedItemTx(tx, propertyId, c)
     if (r === 'foreign') throw INVALID
     if (r === 'clash') throw STALE
   }
+  // 걷은 자동 점검을 바이트 그대로(같은 id·입력 시각·위치 내역 id·이월 표식). 품목은 이 영업장 카드여야 한다.
+  for (const c of undo.checks) {
+    if ((await tx.trackedItem.count({ where: { id: c.trackedItemId, propertyId } })) !== 1) throw INVALID
+    if (await tx.stockCheck.findUnique({ where: { id: c.id }, select: { id: true } })) throw STALE
+    await tx.stockCheck.create({
+      data: {
+        id: c.id, trackedItemId: c.trackedItemId, date: new Date(c.date), createdAt: new Date(c.createdAt),
+        remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile, sourceExpenseId: c.sourceExpenseId,
+      },
+    })
+    if (c.locations.length) {
+      await tx.stockCheckLocation.createMany({
+        data: c.locations.map(l => ({
+          id: l.id, stockCheckId: c.id, storageLocationId: l.storageLocationId, remainingQty: l.remainingQty,
+          restockedQty: l.restockedQty, fromHubQty: l.fromHubQty, fromLocationId: l.fromLocationId, carried: l.carried,
+        })),
+      })
+    }
+  }
+  if (undo.shift) {
+    if ((await tx.trackedItem.count({ where: { id: undo.shift.trackedItemId, propertyId } })) !== 1) throw INVALID
+    await revertShiftRows(tx, undo.shift)
+  }
+  if (undo.logIds.length) await tx.assetAssignmentLog.deleteMany({ where: { id: { in: undo.logIds }, propertyId } })
 }
