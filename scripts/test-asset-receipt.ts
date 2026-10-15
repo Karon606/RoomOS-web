@@ -8,7 +8,7 @@
 import {
   assetReceiptDenial, ASSET_RECEIPT_DENY_TRACKED, ASSET_RECEIPT_DENY_STALE,
   isDurableGoods, placementForSave, plannedRoomsMeta,
-  assignDenialUnreceived, unreceiveDenialPlaced, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED,
+  assignDenialUnreceived, unreceiveDenialPlaced, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED, ASSET_UNRECEIVE_DENY_COMMON,
   receiptPlacementPlan, planAsks, planTargetOf, receiptAssignCopy, receiptToast, type ReceiptRow,
   isPlaceable, PLACEABLE_WHERE, planExpectOf, planExpectMismatch, parseAssetReceiptUndo, canonicalAssetReceiptUndo,
   restPendingAsk, restPendingDone, partialReceiveToast, pendingPlaceCaption, ASSET_ASSIGN_PENDING_REASON_SHORT,
@@ -85,7 +85,9 @@ eq('S4 서비스는 수령 개념 없음(통과)', assignDenialUnreceived([{ rec
 eq('S4 받은 물품 배정 통과', assignDenialUnreceived([{ receivedAt: new Date(), excludeFromInventory: false }]), null)
 eq('S4 놓인 물품 수령 대기로 거부(방)', unreceiveDenialPlaced([{ roomId: 'R', assignedLocationId: null, isCommonAsset: false, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
 eq('S4 놓인 물품 수령 대기로 거부(공용부)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: 'L', isCommonAsset: false, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
-eq('2차 R3 공용 자재도 놓인 것(수령 대기로 거부)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, isCommonAsset: true, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
+eq('2차 R3 공용 자재도 놓인 것(수령 대기로 거부, 공용 해제를 말한다)', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, isCommonAsset: true, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_COMMON)
+eq('A5 공용 자재 거부 문장은 카드의 실제 버튼(공용 해제)을 말한다', /공용 해제/.test(ASSET_UNRECEIVE_DENY_COMMON) && !/미배정으로 옮겨/.test(ASSET_UNRECEIVE_DENY_COMMON), true)
+eq('A5 방에 놓인 행이 섞이면 옮기기 문장', unreceiveDenialPlaced([{ roomId: 'R', assignedLocationId: null, isCommonAsset: false, excludeFromInventory: false }, { roomId: null, assignedLocationId: null, isCommonAsset: true, excludeFromInventory: false }]), ASSET_UNRECEIVE_DENY_PLACED)
 eq('S4 미배정 물품 수령 대기로 통과', unreceiveDenialPlaced([{ roomId: null, assignedLocationId: null, isCommonAsset: false, excludeFromInventory: false }]), null)
 eq('2차 R3 화면·서버가 부르는 isUnplaced 는 집계 정본 그 함수', rpIsUnplaced === isUnplaced, true)
 eq('S4 재무 라벨. 예정만', [roomChipText([{ room: null, plannedRoomNo: '519', qtyValue: 2 }]), roomsLabel([{ room: null, plannedRoomNo: '519', qtyValue: 2 }])], ['방 1개 예정', '519호 배정 예정'])
@@ -202,7 +204,7 @@ eq('N-6 예정 몫뿐이면 꼬리 없이 짧게(묶음 전체가 그 말)', roo
 const strings = [
   ...[single, partial, multi, some].flatMap(p => Object.values(receiptAssignCopy(p, L, '개') ?? {})),
   ...[single, partial, multi, some].flatMap(p => (['assign', 'receive'] as const).flatMap(c => Object.values(receiptToast(p, c, '개') ?? {}))),
-  ASSET_RECEIPT_DENY_TRACKED, ASSET_RECEIPT_DENY_STALE, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED, RECEIPT_QTY_REQUIRED,
+  ASSET_RECEIPT_DENY_TRACKED, ASSET_RECEIPT_DENY_STALE, ASSET_ASSIGN_DENY_UNRECEIVED, ASSET_UNRECEIVE_DENY_PLACED, ASSET_UNRECEIVE_DENY_COMMON, RECEIPT_QTY_REQUIRED,
 ]
 eq('§29 지문 0', strings.filter(s => /[\u2014!\u2192]|\p{Extended_Pictographic}/u.test(String(s))), [])
 

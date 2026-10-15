@@ -480,7 +480,7 @@ async function main() {
     const E = await exp({ itemLabel: 'S2R3페인트', receivedAt: new Date('2026-10-01T00:00:00Z') })
     eq('2차 R3 공용 자재로', (await assets.setCommonAsset([E], true)).ok, true)
     const before = await bytes({ id: E })
-    eq('2차 R3 공용 자재 수령 대기로 거부', await assets.setAssetReceived([E], false), { ok: false, error: rp.ASSET_UNRECEIVE_DENY_PLACED })
+    eq('2차 R3 공용 자재 수령 대기로 거부(공용 해제를 말한다)', await assets.setAssetReceived([E], false), { ok: false, error: rp.ASSET_UNRECEIVE_DENY_COMMON })
     eq('2차 R3 거부면 무변경', await bytes({ id: E }), before)
   }
   // R4 서명 용도 교차. 같은 본문이라도 다른 용도로 서명했으면 안 맞는다(비품 수령·채움 조각·현금영수증 서로)
