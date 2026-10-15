@@ -83,6 +83,28 @@ const AXES = [
     ],
     mustNot: [],
   },
+  // 비품 전환(2026-10-15 계획서 2단계). 적용취소 토큰은 클라가 들고 오는 값이라 되돌리는 쓰기마다 영업장을 건다.
+  // 되돌림 몸통은 공용층(durableConvert)에 있고 재무 undoDurableConvert 가 트랜잭션으로 부른다.
+  {
+    file: 'app/(app)/inventory/durableConvert.ts',
+    fn: 'applyDurableConvertUndo',
+    must: [
+      [/expense\.count\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*ids\s*\},\s*propertyId\s*\}/, '토큰의 지출이 이 영업장 것인지 보지 않는다'],
+      [/updateMany\(\{\s*where:\s*\{\s*id:\s*r\.id,\s*propertyId,/, 'F1 행 복원을 영업장 범위 없이 쓴다'],
+      [/updateMany\(\{\s*where:\s*\{\s*id:\s*p\.id,\s*propertyId,/, 'F3 행 복원을 영업장 범위 없이 쓴다'],
+      [/trackedItem\.count\(\{\s*where:\s*\{\s*id:\s*c\.trackedItemId,\s*propertyId\s*\}/, '되살릴 자동 점검의 카드가 이 영업장 것인지 보지 않는다'],
+      [/assetAssignmentLog\.deleteMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*undo\.logIds\s*\},\s*propertyId\s*\}/, '이력 줄을 영업장 범위 없이 지운다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'updateExpense',
+    must: [
+      [/room\.findFirst\(\{\s*where:\s*\{\s*id:\s*place\.roomId,\s*propertyId\s*\}/, 'F3 배정 호실을 영업장 방으로만 찾지 않는다'],
+    ],
+    mustNot: [],
+  },
 ]
 
 for (const ax of AXES) {
