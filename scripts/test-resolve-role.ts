@@ -42,5 +42,33 @@ eq('크론: 줄 없는 소유 영업장은 소유자, 줄 있는 소유 영업�
 eq('크론: 이메일이 없으면 슈퍼관리자가 아니다', asObj(pushRoleMap({ roleRows: [{ propertyId: 'P1', role: 'STAFF' }], ownedIds: [], email: null, isSuperEmail: isSuper })), { P1: 'STAFF' })
 eq('크론: 소유도 줄도 없는 영업장은 없다', asObj(pushRoleMap({ roleRows: [], ownedIds: [], email: SUPER, isSuperEmail: isSuper })), {})
 
+// ── 크론 전수 대조(2단계 독립 검수 권장 1). 관문 행동 그물과 같은 방식으로, 정본을 부르지 않는 독립 기대 함수와 조합 전부를 견준다.
+// 기대 함수는 32d87d95 관문의 역할 줄 갈래(env 슈퍼관리자면 소유자, 아니면 그 줄)와 줄 없는 소유 영업장(소유자)을 사용자 행
+// 이메일로 옮긴 것이다(1단계 A1 결정, 크론은 승인 수신자만 돌고 소유하거나 줄이 있는 영업장만 본다). 영업장 둘 x (줄 5 x 소유 2) x 이메일 3.
+{
+  const ROLES = [null, 'LIMITED_STAFF', 'STAFF', 'MANAGER', 'OWNER'] as const
+  const expectedCron = (rows: Record<string, string | null>, owned: Record<string, boolean>, email: string | null) => {
+    const out: Record<string, string> = {}
+    for (const pid of ['P1', 'P2']) {
+      if (rows[pid]) out[pid] = isSuper(email) ? 'OWNER' : rows[pid]!
+      else if (owned[pid]) out[pid] = 'OWNER'
+    }
+    return out
+  }
+  let n = 0, bad = 0
+  for (const r1 of ROLES) for (const o1 of [false, true]) for (const r2 of ROLES) for (const o2 of [false, true])
+    for (const email of [SUPER, 'x@example.com', null]) {
+      const rows = { P1: r1, P2: r2 }, owned = { P1: o1, P2: o2 }
+      const got = asObj(pushRoleMap({
+        roleRows: (['P1', 'P2'] as const).flatMap(p => rows[p] ? [{ propertyId: p, role: rows[p] as Role }] : []),
+        ownedIds: (['P1', 'P2'] as const).filter(p => owned[p]), email, isSuperEmail: isSuper,
+      }))
+      const want = expectedCron(rows, owned, email)
+      n++
+      if (JSON.stringify(got) !== JSON.stringify(want)) { bad++; if (bad <= 5) console.log(`  크론 전수 불일치 ${JSON.stringify({ rows, owned, email })}\n    기대 ${JSON.stringify(want)}\n    실제 ${JSON.stringify(got)}`) }
+    }
+  eq(`크론 전수 대조 ${n}조합이 관문 판정(사용자 행 이메일)과 같다`, bad, 0)
+}
+
 console.log(`[역할 판정 진리표] 통과 ${pass} / 실패 ${fail}`)
 process.exit(fail ? 1 : 0)
