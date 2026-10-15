@@ -24,7 +24,7 @@
 - 영업장을 고르기 전 단계는 계정 승인 문 `requireApprovedAccount`(lib/auth/access, 영업장 무관)를 지난다. 영업장 선택·개설·참여 요청·오너 관리(운영 종료·재개·영구 삭제)와 푸시 구독 저장이 여기다. `getAccessContext` 는 상태를 돌려주기만 하고 막지 않으므로 인증 문으로 쓰지 않는다.
 - 관리자 화면·액션은 `requireSuperAdmin` 이라 슈퍼관리자만 지난다. 로그인 동기화·프로필 설정·내 영업장 목록은 로그인만 보고(대기 계정도 지나야 하는 문), 그물의 IDENTITY_ONLY 목록에 사유가 있다.
 - 영업장 알림 푸시(일일 크론·서명 제출 알림)는 `approvedPushRecipients`(lib/pushSend)로 승인 계정·슈퍼관리자에게만 간다.
-- 영업장 안의 역할은 순수 판정 한 함수 `resolvePropertyRole`(lib/auth/resolveRole, 2026-10-15)이 정한다. 역할 줄이 있으면 그 역할이고 env 슈퍼관리자는 줄이 낮아도 소유자, 역할 줄이 없으면 소유주·슈퍼관리자(env 또는 DB 표식)만 소유자다. 관문(종 알림 포함)과 일일 크론 푸시가 같은 함수를 부른다. 크론은 사용자 행 이메일로 env 승격을 본다(종은 로그인 클레임 이메일). 종전에는 크론만 env 승격이 없었다. 운영 데이터 대조 결과 차이 0(2026-10-15 읽기 조회). 진리표 scripts/test-resolve-role.ts.
+- 영업장 안의 역할은 순수 판정 한 함수 `resolvePropertyRole`(lib/auth/resolveRole, 2026-10-15)이 정한다. 역할 줄이 있으면 그 역할이고 env 슈퍼관리자는 줄이 낮아도 소유자, 역할 줄이 없으면 소유주·슈퍼관리자(env 또는 DB 표식)만 소유자다. 관문(종 알림 포함)이 이 함수를 부르고, 일일 크론 푸시는 같은 함수를 묶은 `pushRoleMap` 을 부른다. 이메일 출처가 다르다. 관문의 역할 줄 갈래는 로그인 클레임 이메일만, 역할 줄 없는 갈래는 클레임이 없으면 사용자 행 이메일도 보고, 크론은 사용자 행 이메일(승인된 수신자만 조회)을 본다. 종전에는 크론만 env 승격이 없었다. 운영 데이터 대조 결과 차이 0(2026-10-15 읽기 조회). 그물은 진리표 scripts/test-resolve-role.ts 와 관문을 대역으로 통째로 돌리는 행동 그물 scripts/test-property-access.ts 다.
 - `supabase.auth.getSession()` 은 서버에서 쓰지 않는다(쿠키 서명을 검증하지 않는다). 그물 check-server-auth-gate 가 지킨다.
 - 실패를 catch 로 삼키는 헬퍼 금지. lib/geminiKey 가 관문 redirect 를 '세션 밖(크론)'으로 읽어 공용 키를 내줬다. 세션이 필요한 헬퍼는 예외를 그대로 올리고, 크론은 라우트가 CRON_SECRET 을 확인한 뒤 부르는 별도 경로만 쓴다(지금 AI 를 부르는 크론은 없다).
 
