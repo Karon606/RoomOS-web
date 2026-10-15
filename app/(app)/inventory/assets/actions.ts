@@ -31,7 +31,7 @@ export type { AssetItem } from './aggregate'
 import {
   assetReceiptDenial, assignDenialUnreceived, unreceiveDenialPlaced,
   receiptPlacementPlan, planAsks, planTargetOf, planExpectMismatch, ASSET_RECEIPT_PLAN_STALE, ASSET_RECEIPT_UNDO_STALE, ASSET_RECEIPT_UNDO_INVALID,
-  ASSET_RECEIPT_UNDO_DOMAIN, canonicalAssetReceiptUndo, parseAssetReceiptUndo, PLACEABLE_WHERE,
+  ASSET_RECEIPT_UNDO_DOMAIN, canonicalAssetReceiptUndo, parseAssetReceiptUndo, PLACEABLE_WHERE, assignmentLogData,
   type ReceiptRow, type ReceiptPlanExpect, type AssetReceiptUndo,
 } from './receiptPlacement'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
@@ -824,14 +824,8 @@ const specOf = (r: SpecKey): SpecKey => ({ specValue: r.specValue ?? null, specU
 // 규격 미상 = 컬럼 추가 전 기록 중 백필 불가였던 것(그 라벨에 규격이 2종 이상이라 어느 쪽인지 알 수 없음).
 const specUnknown = (r: SpecKey) => r.specValue == null && r.specUnit == null && r.specText == null
 
-// 배정 변경 이력 한 줄의 모양. 이력을 남기는 자리 둘(logAssignment·수령 배정)이 같은 칸을 쓴다.
-function assignmentLogData(
-  propertyId: string, itemLabel: string | null, spec: SpecKey,
-  from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
-  assignedAt: Date | null,
-): Prisma.AssetAssignmentLogUncheckedCreateInput {
-  return { propertyId, itemLabel, ...specOf(spec), fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt }
-}
+// 배정 변경 이력 한 줄의 모양은 순수층(./receiptPlacement assignmentLogData)에 산다. 이력을 남기는 자리 셋(logAssignment·수령 배정·
+// 재무의 비품 전환 F3)이 같은 칸을 쓴다.
 
 // 배정 변경 이력 기록 — 테이블 미적용(SQL 전)이면 조용히 무시(앱 정상 동작)
 async function logAssignment(

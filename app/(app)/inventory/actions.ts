@@ -35,11 +35,14 @@ import { withParticle } from '@/lib/koParticle'
 // 수령 수량 관문 정본(순수). 수량이 빈 추적 구매는 채운 뒤에만 받는다(2026-10-15 냉장고 유령수령 봉합).
 import {
   receiptNeedsQty, normalizeFillQty, fillQtyUnit, fillDetail, RECEIPT_QTY_REQUIRED, receiptQtyRequiredMany, type ReceiptQtyFill,
-  QTY_FILL_DOMAIN, QTY_FILL_INVALID, canonicalQtyFill, qtyFillShapeOk, INVENTORY_RECEIPT_DENY_UNTRACKED,
+  QTY_FILL_DOMAIN, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED,
 } from './receiptQtyGate'
-import { buildAssetDetail } from './assets/aggregate'
+// 품목 삭제 스냅샷·되살림 공용층(같은 id 로 되살린다)
+import { trackedItemDeleteSnapshot, restoreTrackedItemTx, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
+// 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
+import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
-import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
 import { isDurableGoods, placementForSave } from './assets/receiptPlacement'
 
@@ -4267,37 +4270,9 @@ async function itemRecordCounts(propertyId: string, it: { id: string; category: 
   return { expense, check, addition, disposal, total: expense + check + addition + disposal }
 }
 
-// 품목 삭제 적용취소 스냅샷 — 기록이 없는 품목만 지워지므로 되살릴 것은 그 품목 행과, 행이 지워질 때 FK 로 함께 지워지는
-// 셋(위치 연결 · 점검 임시저장 · 병합 추천 규칙)뿐이다(DB 실측: tracked_items 를 참조하는 FK 여섯은 전부 ON DELETE CASCADE,
-// 그중 점검·입수·폐기는 0건이라 삭제가 통과했다). **같은 id 로** 되살린다 — 병합 되돌리기 기록(targetItemId, FK 없음)과
-// 화면이 쥔 id 가 그대로 이어진다.
-export type TrackedItemDeleteUndo = {
-  item: {
-    id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null
-    alertThresholdDays: number; reorderMemo: string | null; purchaseUrl: string | null; trackUnit: string
-    hubLocationId: string | null; isArchived: boolean; sortOrder: number | null; memo: string | null; createdAt: string
-  }
-  locations: { storageLocationId: string; closedAt: string | null }[]
-  drafts: { locationId: string | null; data: Prisma.InputJsonValue }[]
-  mergeRules: { category: string; sourceLabel: string; normLabel: string; kind: string }[]
-}
-
-// 삭제 직전 스냅샷 한 벌. 품목을 지우는 자리 둘(기록 없는 품목 삭제·카테고리 동기화의 카드 정리)이 같은 모양을
-// 쓴다. 자리마다 모양을 따로 들면 되살리는 쪽(undoDeleteTrackedItem)과 한쪽만 어긋난다.
-type TrackedItemWithLinks = Prisma.TrackedItemGetPayload<{ include: { locations: true; checkDrafts: true } }>
-async function trackedItemDeleteSnapshot(propertyId: string, it: TrackedItemWithLinks): Promise<TrackedItemDeleteUndo> {
-  const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId, targetItemId: it.id } })
-  return {
-    item: {
-      id: it.id, category: it.category, label: it.label, specUnit: it.specUnit, qtyUnit: it.qtyUnit,
-      alertThresholdDays: it.alertThresholdDays, reorderMemo: it.reorderMemo, purchaseUrl: it.purchaseUrl, trackUnit: it.trackUnit,
-      hubLocationId: it.hubLocationId, isArchived: it.isArchived, sortOrder: it.sortOrder, memo: it.memo, createdAt: it.createdAt.toISOString(),
-    },
-    locations: it.locations.map(l => ({ storageLocationId: l.storageLocationId, closedAt: l.closedAt ? l.closedAt.toISOString() : null })),
-    drafts: it.checkDrafts.map(d => ({ locationId: d.locationId, data: d.data as Prisma.InputJsonValue })),
-    mergeRules: rules.map(r => ({ category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, kind: r.kind })),
-  }
-}
+// 품목 삭제 적용취소 스냅샷과 되살림은 공용층(./trackedItemSnapshot)에 산다. 품목을 지우는 자리 셋(기록 없는 품목 삭제·
+// '같이 변경'의 카드 정리·재무의 비품 전환)이 같은 모양을 쓴다. 비품 전환이 재무 저장 트랜잭션 안에서 돌아야 해서 옮겼다.
+export type { TrackedItemDeleteUndo } from './trackedItemSnapshot'
 
 // ── 기록 없는 품목 진짜 삭제 — 카테고리 착오 등으로 자동 생성된 품목의 되돌리기(신고 f3454e4c).
 //    지출·점검·입수·폐기 기록이 하나라도 있으면 거부(그 경우 '숨기기'). 거부 판정은 itemRecordCounts 정본.
@@ -4329,37 +4304,10 @@ export async function undoDeleteTrackedItem(undo: TrackedItemDeleteUndo): Promis
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const same = await prisma.trackedItem.findUnique({ where: { id: undo.item.id }, select: { propertyId: true } })
-    if (same) return same.propertyId === propertyId ? { ok: true } : { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
-    const clash = await prisma.trackedItem.findUnique({
-      where: { propertyId_category_label: { propertyId, category: undo.item.category, label: undo.item.label } }, select: { id: true },
-    })
-    if (clash) return { ok: false, error: '같은 이름의 품목이 이미 있어 되살릴 수 없습니다.' }
-    const wantLocIds = [...new Set([...undo.locations.map(l => l.storageLocationId), ...(undo.item.hubLocationId ? [undo.item.hubLocationId] : []), ...undo.drafts.flatMap(d => d.locationId ? [d.locationId] : [])])]
-    const liveLocIds = new Set((await prisma.storageLocation.findMany({ where: { propertyId, id: { in: wantLocIds } }, select: { id: true } })).map(l => l.id))
-    const i = undo.item
-    await prisma.$transaction(async tx => {
-      await tx.trackedItem.create({
-        data: {
-          id: i.id, propertyId, category: i.category, label: i.label, specUnit: i.specUnit, qtyUnit: i.qtyUnit,
-          alertThresholdDays: i.alertThresholdDays, reorderMemo: i.reorderMemo, purchaseUrl: i.purchaseUrl, trackUnit: i.trackUnit,
-          hubLocationId: i.hubLocationId && liveLocIds.has(i.hubLocationId) ? i.hubLocationId : null,
-          isArchived: i.isArchived, sortOrder: i.sortOrder, memo: i.memo, createdAt: new Date(i.createdAt),
-        },
-      })
-      const links = undo.locations.filter(l => liveLocIds.has(l.storageLocationId))
-      if (links.length > 0) {
-        await tx.trackedItemLocation.createMany({ data: links.map(l => ({ trackedItemId: i.id, storageLocationId: l.storageLocationId, closedAt: l.closedAt ? new Date(l.closedAt) : null })) })
-      }
-      for (const d of undo.drafts) {
-        if (d.locationId && !liveLocIds.has(d.locationId)) continue
-        await tx.stockCheckDraft.create({ data: { trackedItemId: i.id, locationId: d.locationId, data: d.data } })
-      }
-      if (undo.mergeRules.length > 0) {
-        await tx.trackedItemMergeRule.createMany({ data: undo.mergeRules.map(r => ({ propertyId, category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, targetItemId: i.id, kind: r.kind })), skipDuplicates: true })
-      }
-    })
-    revalidatePath('/inventory')
+    const r = await prisma.$transaction(tx => restoreTrackedItemTx(tx, propertyId, undo))
+    if (r === 'foreign') return { ok: false, error: RESTORE_TRACKED_ITEM_FOREIGN }
+    if (r === 'clash') return { ok: false, error: RESTORE_TRACKED_ITEM_CLASH }
+    if (r === 'restored') revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -4415,133 +4363,21 @@ export async function syncTrackedItemCategory(label: string, fromCategory: strin
 
 
 // 수령 확인 적용취소 — 이 지출로 생성된 자동 점검을 지우고 수령 대기로 복귀(감사 백로그 2026-07-10)
-// 수령 취소 적용취소 토큰 — 취소가 지운 자동 점검 스냅샷 + 함께 옮긴 조정. §16.
-export type ReceiptCancelUndo = {
-  expenseId: string
-  receivedAtMs: number
-  receivedLocationId: string | null
-  autoChecks: {
-    id: string; trackedItemId: string; dateMs: number; createdAtMs: number
-    remainingQty: number; memo: string | null; isReconcile: boolean
-    locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null }[]
-  }[]
-  shift: LedgerShiftUndo | null
-}
+// 수령 취소 적용취소 토큰(ReceiptCancelUndo)과 판정·쓰기 정본은 공용층(./receiptCancel)에 산다. 비품 전환(재무 수정 F3)이
+// 같은 정본을 재무 저장 트랜잭션 안에서 부르려고 나눴다(2026-10-15 계획서 2단계).
+export type { ReceiptCancelUndo } from './receiptCancel'
 
 // 수령 취소 핵심 — undoConfirmReceipt(수령 취소 버튼)와 updateExpenseFromInventory(수령일 비움)가
 // 같은 가드·같은 조정을 타야 한다. 한쪽만 막으면 다른 쪽이 뒷문이 된다(클래스 봉합).
-//
-// adjustFollowing — 수령 이후 점검이 이 수령분을 절대값에 삼킨 경우(구식 수령 288건 포함),
-// 그 점검들에서 수령분을 함께 빼고 취소한다. 미지정이면 종전 가드 그대로 거부.
-// qtyFill. 수량을 채운 수령의 적용취소면 그 조각. 수령을 무르면서 채운 수량·단위·세부를 원래 값으로 함께 돌린다.
-//   지금 행이 채운 값 그대로일 때만 돌린다(그 사이 사람이 수량을 고쳤으면 그 값을 지키고 수령만 무른다).
+// 가드(실측 머지·이후 점검·조정 adjustFollowing·채운 수량 서명)는 planReceiptCancel, 쓰기는 applyReceiptCancel 이다.
 async function cancelReceiptCore(
   expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill },
 ): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
-  const exp = await prisma.expense.findFirst({
-    where: { id: expenseId, propertyId },
-    select: {
-      id: true, category: true, itemLabel: true, qtyUnit: true, qtyValue: true,
-      specValue: true, specUnit: true, receivedAt: true, receivedLocationId: true,
-      excludeFromInventory: true, specText: true, detail: true,
-    },
-  })
-  if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
-  if (!exp.receivedAt) return { ok: true }
-  // 소모품(추적 카테고리) 행만 이 길로 수령을 무른다(독립 검수 R-2, 비품 쪽 S1 의 거울). 화면을 연 뒤 카테고리가
-  // 비품으로 바뀌면 방에 놓인 비품이 '수령 전인데 자리가 있는' 행이 됐다. 비품 수령은 비품 화면 정본이 맡는다.
-  if (!(await getTrackedCategories(propertyId)).includes(exp.category)) return { ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED }
-  // 수량 채움 조각. 모양·원래 값 범위·서명을 먼저 본다(검수 N-1). 위조면 아무것도 무르지 않는다.
-  if (opts?.qtyFill && (!qtyFillShapeOk(opts.qtyFill) || opts.qtyFill.expenseId !== expenseId
-    || !verifyUndoBody(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill(opts.qtyFill), opts.qtyFill.sig))) {
-    return { ok: false, error: QTY_FILL_INVALID }
-  }
-  // 자동 점검 이후 다른 점검이 있으면 거부 — 이후 점검이 수령분을 실측에 이미 반영했으므로
-  // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
-  const autoChecks = await prisma.stockCheck.findMany({
-    where: { sourceExpenseId: expenseId },
-    include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true, restockedQty: true } } },
-  })
-  // 자동 점검 안에 **운영자 실측이 머지된** 경우를 먼저 막는다(C페이즈 조사 2026-08-03).
-  //
-  // 위치별 점검 패널은 6시간 안 같은 날이면 마지막 점검에 합친다. 그 마지막 점검이 자동 수령 점검이면
-  // 운영자가 직접 센 값이 그 행 안으로 들어간다. 그 상태에서 수령 취소를 누르면 아래 deleteMany 가
-  // 행을 통째로 지워 **실측이 함께 사라진다.** '이후 점검' 가드는 같은 행이라 트립하지 않는다.
-  // 실측 2건이 이미 그 상태다(주방세제·김치 2026-07-14).
-  // 판정 신호는 보충 실측(restockedQty)이다. StockCheck 에는 updatedAt 이 없어 수정 시각으로는 못 가른다.
-  const merged = autoChecks.find(c => c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
-  if (merged) {
-    return { ok: false, error: '이 수령 기록에 직접 센 재고 점검이 함께 저장되어 있습니다. 되돌리면 그 실측까지 사라지므로 막았습니다. 재고 점검으로 잔량을 바로잡아 주세요.' }
-  }
-  const it = exp.excludeFromInventory ? null : await matchedTrackedItemForExpense(propertyId, exp)
-  let rows: ShiftRow[] = []
-  if (opts?.adjustFollowing) {
-    // 함께 조정 — 이 수령분을 절대값에 담고 있는 점검(자동 점검 제외)에서 수령분을 뺀다.
-    if (it) {
-      const qty = convertedPurchaseQty(it, exp)
-      const plan = qty > 0
-        ? await buildPurchaseShiftPlan(it, propertyId,
-            { receivedAtMs: exp.receivedAt.getTime(), qty, storageLocationId: exp.receivedLocationId },
-            null, autoChecks.map(c => c.id))
-        : { ok: true as const, rows: [] as ShiftRow[] }
-      if (!plan.ok) return { ok: false, error: plan.error }
-      rows = plan.rows
-    }
-  } else if (autoChecks.length > 0) {
-    const later = await prisma.stockCheck.findFirst({
-      where: {
-        trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
-        createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
-        OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
-      },
-      select: { id: true },
-    })
-    if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
-  } else if (it) {
-    // 자동 점검이 없는 구식 수령(2026-06 이전 경로 등) — 이 수령분을 삼킨 점검이 있으면
-    // 종전에는 아무 가드 없이 receivedAt 만 지워져, 재수령 시 그 수량이 이중 가산됐다(뒷문 봉합).
-    // 계획 실패(음수·귀속 불가)도 반영 점검이 있다는 뜻이므로 같이 거부한다.
-    const qty = convertedPurchaseQty(it, exp)
-    if (qty > 0) {
-      const plan = await buildPurchaseShiftPlan(it, propertyId,
-        { receivedAtMs: exp.receivedAt.getTime(), qty, storageLocationId: exp.receivedLocationId }, null)
-      if (!plan.ok || plan.rows.length > 0) {
-        return { ok: false, error: '수령 이후 재고 점검이 이 수령분을 이미 반영했습니다. 함께 조정해 취소하거나, 재고 점검으로 잔량을 바로잡아 주세요.' }
-      }
-    }
-  }
-  const undo: ReceiptCancelUndo = {
-    expenseId,
-    receivedAtMs: exp.receivedAt.getTime(),
-    receivedLocationId: exp.receivedLocationId,
-    autoChecks: autoChecks.map(c => ({
-      id: c.id, trackedItemId: c.trackedItemId, dateMs: c.date.getTime(), createdAtMs: c.createdAt.getTime(),
-      remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile,
-      locations: c.locationBreakdown.map(lb => ({
-        storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty, restockedQty: lb.restockedQty,
-      })),
-    })),
-    shift: null,
-  }
-  const fillBack = opts?.qtyFill && opts.qtyFill.expenseId === expenseId ? opts.qtyFill : null
-  await prisma.$transaction(async tx => {
-    if (rows.length > 0 && it) undo.shift = await applyShiftRows(tx, it.id, rows)
-    await tx.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } })
-    await tx.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } })
-    if (fillBack) {
-      // 채운 값 그대로일 때만(CAS). 원래 수량·단위는 조각 값이지만 모양 검사가 이 동작이 만들 수 있는 값(없음·채운 단위)만
-      // 받았다. 세부는 조각 글자를 그대로 쓰지 않는다(검수 N-1). 지금 세부가 채운 자동 형식일 때만 고치고, 되살릴 값은 이 동작이
-      // 만들 수 있었던 두 값(수량 없는 자동 형식, 또는 원래부터 채운 형식과 같던 글자) 중에서 고른다. fillDetail 이 자동 형식일
-      // 때만 고쳐 썼으므로 이 셈이 원래 값을 정확히 되살린다. 지금 세부가 다르면(사람이 고쳤다) 세부는 그대로 둔다.
-      const back = { qtyValue: fillBack.prevQtyValue, qtyUnit: fillBack.prevQtyUnit }
-      const same = { id: expenseId, propertyId, qtyValue: fillBack.qtyValue, qtyUnit: fillBack.qtyUnit }
-      const row = { itemLabel: exp.itemLabel, specValue: exp.specValue, specUnit: exp.specUnit, specText: exp.specText }
-      const filledAuto = buildAssetDetail({ ...row, qtyUnit: fillBack.qtyUnit, qtyValue: fillBack.qtyValue })
-      const prevDetail = fillBack.prevDetail === filledAuto ? filledAuto : buildAssetDetail({ ...row, qtyUnit: fillBack.prevQtyUnit, qtyValue: null })
-      const full = await tx.expense.updateMany({ where: { ...same, detail: filledAuto }, data: { ...back, detail: prevDetail } })
-      if (full.count === 0) await tx.expense.updateMany({ where: same, data: back })
-    }
-  })
+  const p = await planReceiptCancel(expenseId, propertyId, opts)
+  if (!p.ok) return p
+  if (!p.plan) return { ok: true }
+  const plan = p.plan
+  const undo = await prisma.$transaction(tx => applyReceiptCancel(tx, plan))
   return { ok: true, undo }
 }
 

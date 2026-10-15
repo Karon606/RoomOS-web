@@ -188,14 +188,21 @@ function sourceGuards() {
       violations.push(`${fn} 이 게이트(adjustStock) 없이 조정을 적용한다`)
     }
   }
+  // 수령 취소 정본의 가드는 공용층 판정(receiptCancel planReceiptCancel)에 산다(2026-10-15 비품 전환이 같은 정본을 재무 저장
+  // 트랜잭션에서 부르려고 나눴다). cancelReceiptCore 는 그 판정과 쓰기를 잇는 껍데기다.
+  const cancelSrc = readFileSync('app/(app)/inventory/receiptCancel.ts', 'utf8')
+  const cancelPlan = block(cancelSrc, 'export async function planReceiptCancel(', '\n}\n', 'planReceiptCancel')
+  if (cancelPlan) {
+    if (!/adjustFollowing/.test(cancelPlan)) {
+      violations.push('planReceiptCancel 에 조정 게이트(adjustFollowing)가 없다. 수령 취소 조정이 자동으로 걸리거나 아예 빠진다')
+    }
+    if (!/restockedQty/.test(cancelPlan)) {
+      violations.push('planReceiptCancel 이 실측 머지 가드(restockedQty)를 잃었다. 수령 취소가 실측을 지운다')
+    }
+  }
   const cancelCore = block(actions, 'async function cancelReceiptCore(', '\n}\n', 'cancelReceiptCore')
-  if (cancelCore) {
-    if (!/adjustFollowing/.test(cancelCore)) {
-      violations.push('cancelReceiptCore 에 조정 게이트(adjustFollowing)가 없다 — 수령 취소 조정이 자동으로 걸리거나 아예 빠진다')
-    }
-    if (!/restockedQty/.test(cancelCore)) {
-      violations.push('cancelReceiptCore 가 실측 머지 가드(restockedQty)를 잃었다 — 수령 취소가 실측을 지운다')
-    }
+  if (cancelCore && !/planReceiptCancel\(/.test(cancelCore)) {
+    violations.push('cancelReceiptCore 가 정본 판정(planReceiptCancel)을 안 탄다. 실측 머지·반영 가드가 통째로 우회된다')
   }
   // 수령일 비움(updateExpenseFromInventory)이 취소 정본을 우회해 자동 점검을 직접 지우면 뒷문이 된다.
   const updFromInv = block(actions, 'export async function updateExpenseFromInventory(', '\n}\n', 'updateExpenseFromInventory')

@@ -130,14 +130,25 @@ must(I, inv, 'confirmAllPending', [
   else if (firstWrite >= 0 && gate > firstWrite) violations.push(`${I} updateExpenseFromInventory. S3 수량 관문이 첫 쓰기보다 뒤다(거부돼도 수정이 반쯤 남는다)`)
   if (!/confirmReceipt\(id, undefined, undefined, data\.qtyValue\)/.test(body)) violations.push(`${I} updateExpenseFromInventory. S3 도착 수량을 정본 수령(confirmReceipt)에 넘기지 않는다`)
 }
-must(I, inv, 'cancelReceiptCore', [
-  [/qtyValue: fillBack\.qtyValue, qtyUnit: fillBack\.qtyUnit/, 'S3 수령 취소가 채운 수량을 그대로일 때만(CAS) 원래 값으로 돌리지 않는다'],
+// 수령 취소 정본은 공용층(receiptCancel)의 판정(planReceiptCancel)과 쓰기(applyReceiptCancel)다(2026-10-15 비품 전환이 같은 정본을
+// 재무 저장 트랜잭션 안에서 부르려고 나눴다). cancelReceiptCore 는 두 함수를 잇는 껍데기다.
+const RC = 'app/(app)/inventory/receiptCancel.ts'
+const rc = read(RC)
+must(RC, rc, 'planReceiptCancel', [
   [/includes\(exp\.category\)\) return \{ ok: false, error: INVENTORY_RECEIPT_DENY_UNTRACKED \}/, 'R-2 재고 화면 수령 취소가 놓인 비품을 수령 대기로 돌린다(자리 있는 수령 전 비품)'],
   [/!qtyFillShapeOk\(opts\.qtyFill\) \|\| opts\.qtyFill\.expenseId !== expenseId/, 'N-1 채움 조각 모양 검사를 안 지난다'],
   [/verifyUndoBody\(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill\(opts\.qtyFill\), opts\.qtyFill\.sig\)/, 'N-1 채움 조각 서명을 확인하지 않는다'],
-  [/where: \{ \.\.\.same, detail: filledAuto \}/, 'N-1 세부를 지금 값이 채운 자동 형식일 때만 고치지 않는다'],
 ])
-mustNot(I, inv, 'cancelReceiptCore', [[/detail: fillBack\.prevDetail/, 'N-1 채움 조각의 세부 글자를 그대로 쓴다']])
+must(RC, rc, 'applyReceiptCancel', [
+  [/qtyValue: fillBack\.qtyValue, qtyUnit: fillBack\.qtyUnit/, 'S3 수령 취소가 채운 수량을 그대로일 때만(CAS) 원래 값으로 돌리지 않는다'],
+  [/where: \{ \.\.\.same, detail: filledAuto \}/, 'N-1 세부를 지금 값이 채운 자동 형식일 때만 고치지 않는다'],
+  [/await tx\.stockCheck\.deleteMany\(\{ where: \{ sourceExpenseId: expenseId \} \}\)/, '수령 취소가 자동 점검을 걷지 않는다'],
+])
+mustNot(RC, rc, 'applyReceiptCancel', [[/detail: fillBack\.prevDetail/, 'N-1 채움 조각의 세부 글자를 그대로 쓴다']])
+must(I, inv, 'cancelReceiptCore', [
+  [/const p = await planReceiptCancel\(expenseId, propertyId, opts\)/, '수령 취소가 정본 판정(planReceiptCancel)을 안 탄다'],
+  [/prisma\.\$transaction\(tx => applyReceiptCancel\(tx, plan\)\)/, '수령 취소가 정본 쓰기(applyReceiptCancel)를 안 탄다'],
+])
 must(I, inv, 'setExpenseInventoryExclusion', [
   [/placementForSave\(\{/, 'R-1 제외·포함이 자리 두 칸을 저장 규칙 정본으로 정하지 않는다(방에 걸린 서비스를 포함하면 자리 있는 수령 전 비품)'],
   [/data: \{ excludeFromInventory: exclude, roomId: place\.roomId, targetRoomId: place\.targetRoomId \}/, 'R-1 정본이 정한 두 칸을 쓰지 않는다'],

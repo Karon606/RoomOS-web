@@ -4,10 +4,24 @@
 // (scripts/check-server-action-exports). aggregate.ts·lineage.ts 와 같은 배치다.
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { hasFinalConsonant, withParticle } from '@/lib/koParticle'
-import { fmtQty, isUnplaced } from './aggregate'
+import { fmtQty, isUnplaced, type SpecKey } from './aggregate'
+import type { Prisma } from '@prisma/client'
 
 // '놓인 행'의 판정 정본(방·공용부·공용 자재 중 하나라도 있으면 놓인 것). 화면도 이 이름으로 부른다(2차 검수 R3).
 export { isUnplaced }
+
+// ── 배정 변경 이력 한 줄의 모양(정본). 이력을 남기는 자리 셋(배정 logAssignment·수령 배정·재무의 비품 전환 F3)이 같은 칸을 쓴다.
+// 규격 세 칸은 카드 식별(라벨 + 규격)이다. 순수 함수라 서버 액션 파일 밖에 둔다(재무 저장 트랜잭션도 부른다).
+export function assignmentLogData(
+  propertyId: string, itemLabel: string | null, spec: SpecKey,
+  from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
+  assignedAt: Date | null,
+): Prisma.AssetAssignmentLogUncheckedCreateInput {
+  return {
+    propertyId, itemLabel, specValue: spec.specValue ?? null, specUnit: spec.specUnit ?? null, specText: spec.specText ?? null,
+    fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt,
+  }
+}
 
 // ── S1 소모품 거부 ─────────────────────────────────────────────────────
 // 비품 화면의 수령 버튼은 비품 모집단(durableExpenseWhere)에 든 행만 그린다. 그런데 화면을 연 뒤 다른
