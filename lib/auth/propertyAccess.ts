@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
 import { isSuperAdminEmail } from '@/lib/auth/access'
+// 역할 판정 정본(순수). 크론 푸시(app/api/cron/push-alerts)도 같은 함수로 역할을 정한다(env 슈퍼관리자 승격 경계 한 벌).
+import { resolvePropertyRole } from '@/lib/auth/resolveRole'
 import type { Role } from '@/lib/role-types'
 
 /**
@@ -69,17 +71,23 @@ const load = cache(async (): Promise<LoadResult> => {
       ok: true,
       access: {
         userId, email, propertyId,
-        role: superByEnv ? 'OWNER' : (membership.role as Role),
+        // 역할 줄이 있으면 그 역할, env 슈퍼관리자면 소유자(정본 resolvePropertyRole). 역할 줄이 있으면 null 이 없다.
+        role: resolvePropertyRole({ membershipRole: membership.role as Role, isOwner: property?.ownerId === userId, superByEnv }) as Role,
         isSuperAdmin: superByEnv,
       },
     }
   }
 
   // 역할 행 없음 — 소유주(레거시) / 슈퍼관리자(DB 플래그 포함)만 허용
-  const superAdmin = isSuperAdminEmail(email ?? me?.email ?? null) || !!me?.isSuperAdmin
+  const superByEnvNoRow = isSuperAdminEmail(email ?? me?.email ?? null)
+  const superAdmin = superByEnvNoRow || !!me?.isSuperAdmin
   if (!superAdmin && me?.status !== 'APPROVED') return { ok: false, reason: 'not-approved' }
-  if (property && (property.ownerId === userId || superAdmin)) {
-    return { ok: true, access: { userId, email, propertyId, role: 'OWNER', isSuperAdmin: superAdmin } }
+  // 역할 줄이 없으면 소유주·슈퍼관리자만 소유자, 나머지는 접근 없음(정본 resolvePropertyRole). 영업장 행이 없으면 접근 없음.
+  const noRowRole = property
+    ? resolvePropertyRole({ membershipRole: null, isOwner: property.ownerId === userId, superByEnv: superByEnvNoRow, superByDb: !!me?.isSuperAdmin })
+    : null
+  if (noRowRole) {
+    return { ok: true, access: { userId, email, propertyId, role: noRowRole, isSuperAdmin: superAdmin } }
   }
   return { ok: false, reason: 'no-membership' }
 })

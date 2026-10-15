@@ -229,11 +229,21 @@ must(PP, read(PP), null, [[/receivedAt: null, OR: \[\{ roomId: \{ not: null \} \
 const AA = 'app/(app)/dashboard/alertActions.ts'
 must(AA, read(AA), null, [[/computeAlerts\(access\.propertyId, access\.role\)/, 'N-5 인앱 종이 보는 사람 역할을 알림 계산에 안 넘긴다']])
 const CR = 'app/api/cron/push-alerts/route.ts'
-must(CR, read(CR), null, [
+const cr = read(CR)
+must(CR, cr, null, [
   [/computeAlerts\(pid, roleOf\.get\(pid\)\)/, 'N-5 푸시가 받는 사람 역할을 알림 계산에 안 넘긴다'],
-  // 역할 줄이 먼저, 줄 없는 소유 영업장만 소유자(종 getPropertyAccess 와 같은 순서, 2차 검수 역주입 P2)
-  [/for \(const o of owned\) if \(!roleOf\.has\(o\.id\)\) roleOf\.set\(o\.id, 'OWNER'\)/, 'N-5 푸시의 역할 순서가 종과 다르다(역할 줄 먼저, 줄 없는 소유 영업장만 소유자)'],
+  // 역할은 종(영업장 관문)과 같은 정본 한 함수로 정한다(3차 검수 권장 ①). 판정의 답은 진리표 scripts/test-resolve-role 이 지킨다.
+  [/resolvePropertyRole\(\{ membershipRole: rowRole\.get\(pid\) \?\? null, isOwner: ownedIds\.has\(pid\), superByEnv \}\)/, 'A1 푸시가 역할을 정본(resolvePropertyRole)으로 정하지 않는다(종과 역할이 갈린다)'],
+  [/const superByEnv = isSuperAdminEmail\(emailOf\.get\(userId\) \?\? null\)/, 'A1 푸시가 env 슈퍼관리자 승격을 안 본다(종은 소유자, 푸시는 낮은 줄 역할)'],
 ])
+mustNot(CR, cr, null, [[/roleOf\.set\([^)]*'OWNER'\)/, 'A1 푸시가 역할을 손으로 박는다(정본 resolvePropertyRole 밖 판정)']])
+const PA = 'lib/auth/propertyAccess.ts'
+const pa = read(PA)
+must(PA, pa, null, [
+  [/role: resolvePropertyRole\(\{ membershipRole: membership\.role as Role, isOwner: property\?\.ownerId === userId, superByEnv \}\)/, 'A1 관문(역할 줄 갈래)이 정본 resolvePropertyRole 로 역할을 정하지 않는다'],
+  [/resolvePropertyRole\(\{ membershipRole: null, isOwner: property\.ownerId === userId, superByEnv: superByEnvNoRow, superByDb: !!me\?\.isSuperAdmin \}\)/, 'A1 관문(역할 줄 없는 갈래)이 정본 resolvePropertyRole 로 역할을 정하지 않는다'],
+])
+mustNot(PA, pa, null, [[/role: superByEnv \? 'OWNER'|role: 'OWNER'/, 'A1 관문이 역할을 손으로 박는다(정본 resolvePropertyRole 밖 판정)']])
 
 console.log(`[비품 수령 배선] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)

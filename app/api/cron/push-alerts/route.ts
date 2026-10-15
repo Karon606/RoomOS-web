@@ -10,6 +10,9 @@ import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
 import type { Role } from '@/lib/role-types'
+// 역할 판정 정본(종의 영업장 관문 lib/auth/propertyAccess 와 같은 함수). env 슈퍼관리자 승격 경계를 종과 한 벌로 둔다.
+import { resolvePropertyRole } from '@/lib/auth/resolveRole'
+import { isSuperAdminEmail } from '@/lib/auth/access'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
 import { approvedPushRecipients, ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
@@ -123,6 +126,8 @@ export async function GET(req: Request) {
 
   // 거절·대기 계정의 기기는 건너뛴다(승인 계정·슈퍼관리자만, lib/pushSend 정본).
   const approved = await approvedPushRecipients([...byUser.keys()])
+  // 역할 판정에 쓰는 이메일(env 슈퍼관리자 승격). 종은 로그인 클레임 이메일을, 크론은 같은 사람의 사용자 행 이메일을 본다.
+  const emailOf = new Map((await prisma.user.findMany({ where: { id: { in: [...byUser.keys()] } }, select: { id: true, email: true } })).map(u => [u.id, u.email]))
 
   let usersNotified = 0
   let sent = 0
@@ -137,11 +142,17 @@ export async function GET(req: Request) {
 
     // 사용자가 접근 가능한 모든 영업장의 알림을 합산 (종과 같은 computeAlerts 소스)
     const allItems: AlertItem[] = []
-    // 영업장마다 그 사용자의 역할을 넘긴다(검수 N-5). 순서는 종(getMyAlerts, lib/auth/propertyAccess)과 같다. 역할 줄이
-    // 있으면 그 역할, 없으면 소유 영업장은 소유자. 종전에는 소유 영업장을 늘 소유자로 덮어 역할 줄이 낮은 소유자에게서
-    // 종과 푸시의 뱃지 숫자가 갈렸다(2차 검수 역주입 P2 조사).
-    const roleOf = new Map<string, Role>(roles.map(r => [r.propertyId, r.role as Role]))
-    for (const o of owned) if (!roleOf.has(o.id)) roleOf.set(o.id, 'OWNER')
+    // 영업장마다 그 사용자의 역할을 넘긴다(검수 N-5). 판정은 종(getMyAlerts, lib/auth/propertyAccess)과 같은 정본
+    // resolvePropertyRole 이다. 역할 줄이 있으면 그 역할(env 슈퍼관리자면 소유자), 없으면 소유 영업장은 소유자.
+    // 종전에는 손으로 짠 순서라 env 슈퍼관리자 승격이 크론에만 없었다(3차 검수 권장 ①).
+    const rowRole = new Map<string, Role>(roles.map(r => [r.propertyId, r.role as Role]))
+    const ownedIds = new Set(owned.map(o => o.id))
+    const superByEnv = isSuperAdminEmail(emailOf.get(userId) ?? null)
+    const roleOf = new Map<string, Role>()
+    for (const pid of propIds) {
+      const role = resolvePropertyRole({ membershipRole: rowRole.get(pid) ?? null, isOwner: ownedIds.has(pid), superByEnv })
+      if (role) roleOf.set(pid, role)
+    }
     for (const pid of propIds) allItems.push(...await computeAlerts(pid, roleOf.get(pid)))
     const { total, parts } = summarizeAlerts(allItems)
     if (total === 0) continue
