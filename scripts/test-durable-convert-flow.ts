@@ -184,6 +184,73 @@ async function main() {
     eq('비지 않은 카드: 축 1 갈림 없음(그 품명 소모품 지출이 없다)', await split(L), false)
   }
 
+  // ── 다품목 F1 수정은 저장 뒤 따로 한 트랜잭션에서 카드를 정리한다. 정리가 실패해도 성공으로 돌려준다(검수 권장 2, E2) ──
+  // 실패로 돌려주면 화면이 폼을 그대로 두고, 다시 저장하면 품목 행이 한 벌 더 생겨 금액이 불어났다. 삭제 트리거로 실패를 만든다.
+  {
+    const A = '정리실패냉장고'
+    await fin.addExpense(fd({ ...base, amount: '90000', category: '소모품비', roomId: '', targetRoomId: '', itemLabel: A, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: A, amount: 90000 }]) }))
+    const x = (await rowsOf(A))[0]
+    const card = await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: A } })
+    const sum0 = await amountSum()
+    await pg.exec(`create function flow_block_card_delete() returns trigger as $$ begin raise exception 'flow cleanup blocked'; end $$ language plpgsql;
+      create trigger flow_block_card_delete before delete on tracked_items for each row execute function flow_block_card_delete();`)
+    // 서버는 실패를 서버 로그에만 남긴다. 그물 출력이 어지럽지 않게 그 한 줄을 받아 둔다.
+    const errLog: unknown[][] = []
+    const origErr = console.error
+    console.error = (...a: unknown[]) => { errLog.push(a) }
+    const r = await fin.updateExpense(fd({ id: x.id, ...base, amount: '90000', roomId: R519, category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1',
+      itemsJson: items([{ label: A, amount: 60000 }, { label: A + '탭', amount: 30000 }]) })).finally(() => { console.error = origErr })
+    await pg.exec(`drop trigger flow_block_card_delete on tracked_items; drop function flow_block_card_delete();`)
+    eq('E2 정리 실패는 서버 로그에 한 줄', errLog.length, 1)
+    eq('E2 정리가 실패해도 저장은 성공, 토큰에 카드 없음(DB 원문을 안 낸다)', [r.ok, r.ok ? r.durableUndo?.cards.length : (r as { error: string }).error], [true, 0])
+    const rows = await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: { in: [A, A + '탭'] } }, orderBy: { amount: 'desc' } })
+    eq('E2 행 둘이 비품·예정 519호, 카드는 남고 금액 합 그대로', [rows.map((e: { category: string; targetRoomId: string | null }) => [e.category, e.targetRoomId === R519]), await prisma.trackedItem.count({ where: { id: card!.id } }), await amountSum()],
+      [[['수선유지비', true], ['수선유지비', true]], 1, sum0])
+    if (r.ok && r.durableUndo) {
+      eq('E2 적용취소', (await fin.undoDurableConvert(J(r.durableUndo))).ok, true)
+      const back = await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: { in: [A, A + '탭'] } } })
+      eq('E2 적용취소 뒤 행 둘 소모품비·대상 호실, 금액 합 그대로', [back.map((e: { category: string; roomId: string | null }) => [e.category, e.roomId === R519]), await amountSum()], [[['소모품비', true], ['소모품비', true]], sum0])
+    }
+  }
+
+  // ── F1 수정에서 같은 저장으로 품명을 바꾸고 전환한 뒤 적용취소(검수 참고 3). 그대로 저장했다면 형제 propagateItemLabelRename 이
+  // 카드를 같은 id 로 개명했다. 적용취소 뒤에도 같은 끝이어야 한다(옛 품명 카드가 되살아나 새 품명 행과 갈리면 재고에서 빠진다).
+  {
+    const ls = await import('@/app/(app)/inventory/ledgerShift')
+    const matched = async (id: string) => { const e = await prisma.expense.findUnique({ where: { id } }); return e ? !!(await ls.matchedTrackedItemForExpense(P1, e)) : null }
+    const add = (lab: string) => fin.addExpense(fd({ ...base, amount: '40000', category: '소모품비', roomId: '', targetRoomId: '', itemLabel: lab, qtyValue: '1', qtyUnit: '세트', itemsJson: JSON.stringify([{ label: lab, qtyValue: '1', qtyUnit: '세트', amount: 40000 }]) }))
+    const edit = (id: string, lab: string, extra: Record<string, string>) => fd({ id, ...base, amount: '40000', roomId: R519, itemLabel: lab, qtyValue: '1', qtyUnit: '세트',
+      itemsJson: JSON.stringify([{ label: lab, qtyValue: '1', qtyUnit: '세트', amount: 40000 }]), ...extra })
+    const cnt = (lab: string) => prisma.trackedItem.count({ where: { propertyId: P1, label: lab } })
+    const O = '개명전의자', N = '개명후의자', OT = '개명전쌍둥이', NT = '개명후쌍둥이'
+    await add(O); await add(OT)
+    const x = (await rowsOf(O))[0], t = (await rowsOf(OT))[0]
+    const cardId = (await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: O } }))!.id
+    const plain = await fin.updateExpense(edit(t.id, NT, { category: '소모품비' }))
+    eq('참고 3 쌍둥이: 그대로 저장한 개명은 카드째 개명', [plain.ok, await cnt(OT), await cnt(NT), await matched(t.id)], [true, 0, 1, true])
+    const r = await fin.updateExpense(edit(x.id, N, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1' }))
+    if (!r.ok) throw new Error(r.error)
+    eq('참고 3 전환: 옛 품명 빈 카드를 지우고 토큰의 카드는 같은 id·새 품명', [await prisma.trackedItem.count({ where: { id: cardId } }), r.durableUndo?.cards.map(c => [c.item.id === cardId, c.item.label])], [0, [[true, N]]])
+    eq('참고 3 적용취소', (await fin.undoDurableConvert(J(r.durableUndo!))).ok, true)
+    eq('참고 3 적용취소: 같은 id 카드가 새 품명으로 서고 행과 이어진다(그대로 저장 개명과 같은 끝)',
+      [(await prisma.trackedItem.findUnique({ where: { id: cardId } }))?.label, await cnt(O), await matched(x.id)], [N, 0, true])
+    eq('참고 3 적용취소: 그대로 저장한 쌍둥이와 행 바이트 동일', (await shape(N)).map(s => s.replace(N, 'X')), (await shape(NT)).map(s => s.replace(NT, 'X')))
+    // 새 품명 카드가 이미 있으면 형제는 개명하지 않는다(병합이 필요한 자리). 전환도 옛 품명으로 되살린다.
+    // 새 품명에 소모품 구매가 있으면 전환을 묻지 않으므로(이력이 곧 기억), 구매 없이 손으로 만든 카드로 둔다.
+    const O2 = '개명충돌전', N2 = '개명충돌후'
+    await add(O2)
+    await prisma.trackedItem.create({ data: { propertyId: P1, category: '소모품비', label: N2, qtyUnit: '세트' } })
+    const y = (await rowsOf(O2))[0]
+    const o2Id = (await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: O2 } }))!.id
+    const n2Id = (await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: N2 } }))!.id
+    const r2 = await fin.updateExpense(edit(y.id, N2, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1' }))
+    if (!r2.ok) throw new Error(r2.error)
+    eq('참고 3 새 품명 카드가 있으면 토큰 카드는 옛 품명', r2.durableUndo?.cards.map(c => c.item.label), [O2])
+    eq('참고 3 충돌 적용취소', (await fin.undoDurableConvert(J(r2.durableUndo!))).ok, true)
+    eq('참고 3 충돌 적용취소: 옛 카드는 옛 품명으로, 새 품명 카드는 그대로, 행은 새 품명 카드와 이어진다',
+      [(await prisma.trackedItem.findUnique({ where: { id: o2Id } }))?.label, (await prisma.trackedItem.findUnique({ where: { id: n2Id } }))?.label, await matched(y.id)], [O2, N2, true])
+  }
+
   // ── 서버 재판정: 화면이 본 판정과 다르면 거부 ────────────────────────────────────────
   {
     await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-01T00:00:00Z'), amount: 1000, category: '소모품비', itemLabel: '이력휴지', qtyValue: 1 } })

@@ -1243,9 +1243,17 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       const madeRows = multiResults.slice(0, 1 + restRows.length) as (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[]
       // 빈 자동 카드 정리. 이 갈래는 배열 트랜잭션이라 그 안에서 '다른 구매 없음'을 다시 셀 수 없다. 저장 직후 따로 한 트랜잭션에서
       // 다시 세고 비어 있을 때만 지운다(그 사이 기록이 붙었으면 카드를 남기고 토큰에도 안 싣는다. 남은 빈 카드는 해가 없다).
-      const cardsDone = retire.snapshots.length
-        ? await prisma.$transaction(tx => deleteEmptyCardsTx(tx, propertyId, retire.snapshots, madeRows.map(r => r.id)))
-        : []
+      // 정리가 실패해도 저장은 이미 끝났다. 실패로 돌려주면 화면이 폼을 그대로 두고, 다시 저장하면 품목 행이 한 벌 더 생겨
+      // 금액이 불어난다(2단계 독립 검수 권장 2, E2). 그래서 카드는 남기고(토큰에도 안 싣는다) 성공을 돌려준다. DB 원문은 안 낸다.
+      let cardsDone: Awaited<ReturnType<typeof deleteEmptyCardsTx>> = []
+      if (retire.snapshots.length) {
+        try {
+          cardsDone = await prisma.$transaction(tx => deleteEmptyCardsTx(tx, propertyId, retire.snapshots, madeRows.map(r => r.id)))
+        } catch (e) {
+          console.error('[updateExpense] 비품 전환 뒤 빈 카드 정리 실패(카드 남김)', e)
+          cardsDone = []
+        }
+      }
       if (cardsDone.length) revalidatePath('/inventory')
       const durableUndo = signDurableUndo(propertyId, {
         v: 1, kind: 'F1', from: durableFrom!, to: category,
@@ -1386,9 +1394,20 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots, [id])
         return { row, cards }
       })
+      // 같은 저장에서 품명을 바꿨으면 지운 카드는 새 품명으로 되살린다(2단계 독립 검수 참고 3). 전환 없이 그대로 저장했다면
+      // 형제 propagateItemLabelRename 이 그 카드를 같은 id 로 개명했을 자리다. 옛 품명으로 되살리면 적용취소 뒤 행(새 품명)과
+      // 카드(옛 품명)가 갈려 이 구매가 재고에 안 잡힌다. 형제와 같은 조건만 본다(카테고리가 그대로, 새 품명 카드가 따로 없음).
+      // 단위·수량만 바꾼 저장은 형제도 카드를 그대로 두므로 그대로 되살린다.
+      const renameTo = done.row.itemLabel && existing.itemLabel && done.row.itemLabel !== existing.itemLabel && existing.category === durableFrom
+        ? done.row.itemLabel : null
+      const undoCards = renameTo
+        ? await Promise.all(done.cards.map(async c => (await prisma.trackedItem.findUnique({
+            where: { propertyId_category_label: { propertyId, category: c.item.category, label: renameTo } }, select: { id: true },
+          })) ? c : { ...c, item: { ...c.item, label: renameTo } }))
+        : done.cards
       durableUndo = signDurableUndo(propertyId, {
         v: 1, kind: 'F1', from: durableFrom!, to: category, rows: [{ id, targetRoomId: done.row.targetRoomId, now: rowNowOf(done.row) }],
-        placed: null, checks: [], shift: null, cards: done.cards, seedLabels: [], logIds: [],
+        placed: null, checks: [], shift: null, cards: undoCards, seedLabels: [], logIds: [],
       })
       if (done.cards.length) revalidatePath('/inventory')
     } else if (shiftRows.length > 0 && shiftItemId) {
