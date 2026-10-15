@@ -10,6 +10,15 @@ import type { Prisma } from '@prisma/client'
 // '놓인 행'의 판정 정본(방·공용부·공용 자재 중 하나라도 있으면 놓인 것). 화면도 이 이름으로 부른다(2차 검수 R3).
 export { isUnplaced }
 
+// 줄이 접혀도 가운뎃점이 줄머리에 서지 않게 하는 두 표기(웹디자이너 2b N1·R1·C4, CashReceiptTab SEP 와 같은 규칙).
+// 비품 수령(이 파일)과 비품 전환(conversionPlan)·재무 토스트가 같은 표기를 쓴다.
+//   DOT  목록 안 가운뎃점('519호·520호'). 점 앞에 WJ(U+2060, 줄바꿈 금지), 점 뒤에 ZWSP(U+200B, 줄바꿈 기회)를 둔다.
+//        NBSP 는 눈에 보이는 공백이 생겨 쓰지 않는다. WJ 만 두면 목록이 한 낱말로 굳어, 좁은 토스트에서 줄바꿈이 낱말 안을
+//        자른다('519호·520' 다음 줄 '호', '521호' 다음 줄 '에', 240~440 실측). 점 뒤 기회가 있으면 '519호·520호·' 다음 줄 '521호에'.
+//   SEP  머리줄·결과 문장의 띄운 구분점(' · '). 점 앞 공백을 NBSP 로 앞 낱말에 붙인다. 점 뒤는 묶지 않는다(둘째 줄이 '·' 로 시작한다).
+export const DOT = '\u2060·\u200b'
+export const SEP = '\u00a0· '
+
 // ── 배정 변경 이력 한 줄의 모양(정본). 이력을 남기는 자리 셋(배정 logAssignment·수령 배정·재무의 비품 전환 F3)이 같은 칸을 쓴다.
 // 규격 세 칸은 카드 식별(라벨 + 규격)이다. 순수 함수라 서버 액션 파일 밖에 둔다(재무 저장 트랜잭션도 부른다).
 export function assignmentLogData(
@@ -87,7 +96,7 @@ export function plannedRoomsMeta(roomNos: (string | null)[]): string | null {
   const rooms = [...new Set(roomNos.filter((n): n is string => !!n))].map(n => fmtRoomNo(n, ''))
   if (rooms.length === 0) return null
   const parts = rooms.length <= 3 ? rooms : [rooms[0], `외 ${rooms.length - 1}곳`]
-  return `${parts.join('·')} 배정 예정`
+  return `${parts.join(DOT)} 배정 예정`
 }
 
 // 수령 전 비품을 방·공용부에 넣는 길은 막는다. 그 자리는 받을 때 정한다(배정 예정 호실은 지출에서 적는다).
@@ -256,7 +265,7 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
       ? { text: `${qtyText(plan.units, unit)} 수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: restPendingDone(r3(plan.total - plan.units), unit), actionLabel: '적용취소' }
       : { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, actionLabel: '적용취소' }
     if (plan.kind === 'multi') return {
-      text: `수령 완료 · ${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join('·')} 배정`,
+      text: `수령 완료 · ${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join(DOT)} 배정`,
       ...(plan.rest > EPS ? { detail: `나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 두었습니다.` } : {}),
       actionLabel: '적용취소',
     }
@@ -276,14 +285,15 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
   return { text: '수령 완료 · 미배정', actionLabel: '수령 취소' }
 }
 
-// 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다.
-export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
+// 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다. 동사는 §16 '적용취소'(2b C3).
+export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
 // 서버가 만든 토큰이 아니거나(서명 불일치) 모양이 틀렸다. 무엇도 쓰지 않는다(검수 N-1, 위조 토큰).
 export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'
 
 // 수령 적용취소 결과 토스트(§16 형식 "…를 적용취소했습니다 · …", 감지망 check-undo-verb, 검수 R-5).
 // 배정까지 함께 무를 때만 이 문장이다. 수령만 무르는 형제('수령 취소' 라벨)는 재고 화면과 같은 종전 문장을 쓴다.
-export const ASSET_RECEIPT_ASSIGN_UNDONE = '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀'
+// 구분점은 SEP, '…로 복귀'는 줄이 갈리지 않게 묶는다(전환 적용취소 결과 conversionUndoneText 와 같은 규칙, 2b C4).
+export const ASSET_RECEIPT_ASSIGN_UNDONE = `수령과 배정을 적용취소했습니다${SEP}수령 대기로\u00a0복귀`
 export const ASSET_RECEIPT_UNDONE = '수령을 취소하고 수령 대기로 되돌렸습니다'
 
 /** 묻지 않은 부분 수령 토스트(비품 화면 형제 문구, D6). 받은 수량과 나머지. */

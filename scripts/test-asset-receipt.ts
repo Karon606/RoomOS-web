@@ -12,7 +12,7 @@ import {
   receiptPlacementPlan, planAsks, planTargetOf, receiptAssignCopy, receiptToast, type ReceiptRow,
   isPlaceable, PLACEABLE_WHERE, planExpectOf, planExpectMismatch, parseAssetReceiptUndo, canonicalAssetReceiptUndo,
   restPendingAsk, restPendingDone, partialReceiveToast, pendingPlaceCaption, ASSET_ASSIGN_PENDING_REASON_SHORT,
-  ASSET_RECEIPT_ASSIGN_UNDONE, type AssetReceiptUndo,
+  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDO_STALE, type AssetReceiptUndo,
 } from '../app/(app)/inventory/assets/receiptPlacement'
 import { isUnplaced } from '../app/(app)/inventory/assets/aggregate'
 import { isUnplaced as rpIsUnplaced } from '../app/(app)/inventory/assets/receiptPlacement'
@@ -76,8 +76,8 @@ eq('S4 받기 전 비품 · 칸 부재 = 원래 값 보존', P({ existingTarget:
 eq('S4 받은 비품 = roomId 그대로, 예정 보존(칸 무시)', P({ received: true, roomId: 'R404', formTarget: 'R520', existingTarget: 'R519' }), { roomId: 'R404', targetRoomId: 'R519' })
 eq('S4 비품 물품이 아니면 예정 비움, roomId 는 대상 호실', P({ durableGoods: false, roomId: 'R519', formTarget: 'R520', existingTarget: 'R521' }), { roomId: 'R519', targetRoomId: null })
 eq('S4 카드 메타 한 방', plannedRoomsMeta(['519']), '519호 배정 예정')
-eq('S4 카드 메타 두 방(중복 접기)', plannedRoomsMeta(['519', '520', '519', null]), '519호·520호 배정 예정')
-eq('S4 카드 메타 넷 이상 접기', plannedRoomsMeta(['501', '502', '503', '504']), '501호·외 3곳 배정 예정')
+eq('S4 카드 메타 두 방(중복 접기, 점 앞 WJ 2b C4)', plannedRoomsMeta(['519', '520', '519', null]), '519호\u2060·\u200b520호 배정 예정')
+eq('S4 카드 메타 넷 이상 접기', plannedRoomsMeta(['501', '502', '503', '504']), '501호\u2060·\u200b외 3곳 배정 예정')
 eq('S4 카드 메타 숫자 아닌 방', plannedRoomsMeta(['사무실']), '사무실 배정 예정')
 eq('S4 카드 메타 없음', plannedRoomsMeta([null]), null)
 eq('S4 수령 전 물품 배정 거부', assignDenialUnreceived([{ receivedAt: null, excludeFromInventory: false }]), ASSET_ASSIGN_DENY_UNRECEIVED)
@@ -151,7 +151,7 @@ eq('F2 토스트 배정(단일)', receiptToast(single, 'assign', '개'), { text:
 eq('F2 토스트 수령만(단일)', receiptToast(single, 'receive', '개'), { text: '수령 완료 · 미배정', actionLabel: '수령 취소' })
 eq('F2 토스트 배정(부분)', receiptToast(partial, 'assign', '개'), { text: '2개 수령 완료 · 519호 배정', detail: '나머지 2개는 수령 대기에 두었습니다.', actionLabel: '적용취소' })
 eq('F2 토스트 수령만(부분)', receiptToast(partial, 'receive', '개'), { text: '2개 수령 완료 · 미배정', detail: '나머지 2개는 수령 대기에 두었습니다.', actionLabel: '수령 취소' })
-eq('F2 토스트 배정(여러 방)', receiptToast(multi, 'assign', '개'), { text: '수령 완료 · 519호·520호 배정', actionLabel: '적용취소' })
+eq('F2 토스트 배정(여러 방)', receiptToast(multi, 'assign', '개'), { text: '수령 완료 · 519호\u2060·\u200b520호 배정', actionLabel: '적용취소' })
 eq('F2 토스트 배정(일부만)', receiptToast(some, 'assign', '개'), { text: '수령 완료 · 519호 배정', detail: '나머지 1개는 미배정에 두었습니다.', actionLabel: '적용취소' })
 eq('F2 토스트 부분 도착 + 여러 방(창 없음)', receiptToast(receiptPlacementPlan([row('a', 1, '519'), row('b', 1, '520')], 1), 'receive', '개'),
   { text: '1개 수령 완료 · 미배정', detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 미배정 카드에서 배정해 주세요.', actionLabel: '수령 취소' })
@@ -194,11 +194,12 @@ eq('D6 나머지 문장 한 벌', [restPendingAsk(2, '개'), restPendingDone(2, 
 eq('D6 묻지 않은 부분 수령 토스트', partialReceiveToast(2, 3, '개'), { text: '2개 수령 완료', detail: '나머지 3개는 수령 대기에 두었습니다.' })
 eq('D8 알약 까닭(짧은 형, 디자이너 2차 F1)과 서버 거부는 한 벌', [ASSET_ASSIGN_PENDING_REASON_SHORT, ASSET_ASSIGN_DENY_UNRECEIVED.includes(ASSET_ASSIGN_PENDING_REASON_SHORT)], ['수령 완료 뒤 배정', true])
 eq('D9 수령 대기 상세 캡션(배지가 상태를 말하므로 되풀이 없음, 디자이너 2차 F2)', [pendingPlaceCaption('519호 배정 예정'), pendingPlaceCaption(null)], ['519호 배정 예정', '수령 완료 뒤 배정'])
-eq('R-5 적용취소 결과(§16 형식)', ASSET_RECEIPT_ASSIGN_UNDONE, '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀')
+eq('R-5 적용취소 결과(§16 형식, 구분점 앞 NBSP 2b C4)', ASSET_RECEIPT_ASSIGN_UNDONE, '수령과 배정을 적용취소했습니다\u00a0· 수령 대기로\u00a0복귀')
+eq('C3 적용취소 거부 동사는 적용취소(§16)', ASSET_RECEIPT_UNDO_STALE, '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.')
 // N-6 재무 묶음 라벨에서 같은 방이 두 번 서지 않는다
 eq('N-6 부분 도착 배정 직후', [roomChipText([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }]), roomsLabel([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }])], ['방 1개', '519호·수령 대기 2개'])
 eq('N-6 부분 수령만', roomsLabel([{ room: null, qtyValue: 2, qtyUnit: '개' }, { room: null, plannedRoomNo: '519', qtyValue: 2, qtyUnit: '개' }]), '519호 배정 예정 2개·미배정 2개')
-eq('N-6 예정 몫뿐이면 꼬리 없이 짧게(묶음 전체가 그 말)', roomsLabel([{ room: null, plannedRoomNo: '519', qtyValue: 2 }, { room: null, plannedRoomNo: '520', qtyValue: 2 }]), '519호·520호 배정 예정')
+eq('N-6 예정 몫뿐이면 꼬리 없이 짧게(묶음 전체가 그 말)', roomsLabel([{ room: null, plannedRoomNo: '519', qtyValue: 2 }, { room: null, plannedRoomNo: '520', qtyValue: 2 }]), '519호\u2060·\u200b520호 배정 예정')
 
 // 사용자 문자열 지문. em dash·느낌표·이모지·전환 화살표가 없다(§29)
 const strings = [
