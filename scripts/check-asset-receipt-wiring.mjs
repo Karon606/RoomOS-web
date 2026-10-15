@@ -204,6 +204,11 @@ must(IC, ic, null, [
 must(IC, ic, null, [
   [/aria-describedby=\{qtyAsk\?\.bad\.includes\(f\.p\.id\) \? `rcvqty-err-\$\{f\.p\.id\}` : undefined\}/, '디자이너 2차 R2 A 카드 칸이 오류 문장을 가리키지 않는다(aria-describedby)'],
   [/<p id=\{`rcvqty-err-\$\{f\.p\.id\}`\}/, '디자이너 2차 R2 A 카드 오류 문장에 id 가 없다'],
+  // 3차 검수 권장 ③. B(품목 상세 구매 수령)·C(구매 수정 수령일)도 같은 문법(칸이 오류 문장을 가리키고 문장에 id)
+  [/aria-describedby=\{rcvQtyErr \? `rcvqty-err-b-\$\{entry\.id\}` : undefined\}/, 'A4 B 카드 칸이 오류 문장을 가리키지 않는다(aria-describedby)'],
+  [/\{rcvQtyErr && <p id=\{`rcvqty-err-b-\$\{entry\.id\}`\}/, 'A4 B 카드 오류 문장에 id 가 없다'],
+  [/aria-describedby=\{rcvQtyErr \? `rcvqty-err-c-\$\{entry\.id\}` : undefined\}/, 'A4 C 폼 칸이 오류 문장을 가리키지 않는다(aria-describedby)'],
+  [/\{rcvQtyErr && <p id=\{`rcvqty-err-c-\$\{entry\.id\}`\}/, 'A4 C 폼 오류 문장에 id 가 없다'],
   [/const qtyInputCls = `\$\{checkTextInputCls\} text-right aria-\[invalid=true\]:border-\[var\(--danger-fg\)\]`/, '디자이너 2차 R2 수량칸 오류 보더가 없다'],
 ])
 

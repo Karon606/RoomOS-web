@@ -3038,10 +3038,12 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
                 {/* 꼬리는 결과만 말한다. '수량 미기록'은 바로 위 카드 줄이 이미 말한다(웹디자이너 2차 R3). */}
                 <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">적은 수량이 구매 수량이 됨</span></p>
                 <div className="w-32">
+                  {/* 오류 문장을 칸에 잇는다(A 카드와 같은 문법, 3차 검수 권장 ③). 읽기 프로그램이 칸에서 까닭을 읽는다. */}
                   <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" aria-invalid={!!rcvQtyErr || undefined} value={rcvQtyStr} disabled={pending}
+                    aria-describedby={rcvQtyErr ? `rcvqty-err-b-${entry.id}` : undefined}
                     onChange={e => { setRcvQtyErr(''); setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, '')) }} />
                 </div>
-                {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
+                {rcvQtyErr && <p id={`rcvqty-err-b-${entry.id}`} className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
               </div>
             ) : entry.qtyValue > 1 && (
               <div className="mb-2">
@@ -4059,10 +4061,12 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
         <div>
           <p className={EDIT_LABEL_CLS}>도착 수량 <span className="font-normal text-[var(--warm-muted)]">수량 미기록 · 적은 수량이 구매 수량이 됨</span></p>
           <div className="w-32">
+            {/* 오류 문장을 칸에 잇는다(A·B 카드와 같은 문법, 3차 검수 권장 ③). */}
             <QtyField unit={entry.qtyUnit ?? cardQtyUnit ?? '개'} aria-label="도착 수량" aria-invalid={!!rcvQtyErr || undefined} value={rcvQty} disabled={pending}
+              aria-describedby={rcvQtyErr ? `rcvqty-err-c-${entry.id}` : undefined}
               onChange={e => { setRcvQtyErr(''); setRcvQty(e.target.value.replace(/[^0-9.]/g, '')) }} />
           </div>
-          {rcvQtyErr && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
+          {rcvQtyErr && <p id={`rcvqty-err-c-${entry.id}`} className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{rcvQtyErr}</p>}
         </div>
       )}
       <div className="flex gap-2 pt-1">
