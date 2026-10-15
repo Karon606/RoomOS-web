@@ -44,8 +44,55 @@ async function main() {
   const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket')
   const pg = await PGlite.create()
   await pg.exec(schemaSql())
+  // 소켓 다리의 확장 프로토콜 응답 정렬(2026-10-15 후속 검수 1, 참고 4·E2 장면의 25P02 흔들림 원인).
+  // 트리거로 일부러 실패시키는 쿼리에서 PGlite 는 ErrorResponse 뒤에 ReadyForQuery 를 바로 내고, Sync 에서 하나를 더 낸다
+  // (실측 응답 'EZ' 다음 'Z', 한 번에 넘겨도 'EZZ'). 두 Z 가 따로 도착하면 node-postgres 는 둘째 Z 를 다음 쿼리(ROLLBACK)의
+  // 끝으로 받아 응답 짝이 하나씩 밀린다. 그러면 Prisma 는 ROLLBACK 이 끝났다고 믿고 돌아오는데 세션은 아직 실패한 트랜잭션
+  // 안이라, 그 틈의 직접 SQL(트리거 지우기)이 25P02 로 죽고, 지나가도 뒤 쿼리들이 앞 쿼리의 응답을 받는다(탐침 실측).
+  // 실제 서버처럼 Sync(또는 Flush·단순 쿼리·종료)까지 모아 한 번에 넘기고, 응답에서 바로 이어진 ReadyForQuery 를 하나로 접어
+  // 한 번에 보낸다. 시작·SSL 패킷(타입 바이트 없음)은 그대로 넘긴다.
+  {
+    const raw = pg.execProtocolRawStream.bind(pg)
+    let pending = new Uint8Array(0)
+    const ENDS = new Set([0x53 /* Sync */, 0x48 /* Flush */, 0x51 /* Query */, 0x58 /* Terminate */])
+    const walk = (buf: Uint8Array, at: (type: number, start: number, end: number) => void) => {
+      let k = 0
+      while (k + 5 <= buf.length) {
+        const len = ((buf[k + 1] << 24) | (buf[k + 2] << 16) | (buf[k + 3] << 8) | buf[k + 4]) >>> 0
+        if (len < 4 || k + 1 + len > buf.length) break
+        at(buf[k], k, k + 1 + len); k += 1 + len
+      }
+      return k
+    }
+    ;(pg as unknown as { execProtocolRawStream: typeof raw }).execProtocolRawStream = async (msg, opts) => {
+      if (pending.length === 0 && msg.length > 0 && msg[0] === 0) return raw(msg, opts)
+      const buf = new Uint8Array(pending.length + msg.length)
+      buf.set(pending); buf.set(msg, pending.length)
+      let lastType = -1
+      const done = walk(buf, t => { lastType = t })
+      if (done !== buf.length || !ENDS.has(lastType)) { pending = buf; return }
+      pending = new Uint8Array(0)
+      const outs: Uint8Array[] = []
+      await raw(buf, { ...opts, onRawData: (d: Uint8Array) => { outs.push(d.slice()) } })
+      const all = new Uint8Array(outs.reduce((n, d) => n + d.length, 0))
+      let o = 0; for (const d of outs) { all.set(d, o); o += d.length }
+      const keep: [number, number][] = []
+      let prevType = -1
+      const end = walk(all, (t, s, e) => { if (!(t === 0x5a && prevType === 0x5a)) keep.push([s, e]); prevType = t })
+      const fixed = new Uint8Array(keep.reduce((n, [s, e]) => n + (e - s), 0) + (all.length - end))
+      let w = 0; for (const [s, e] of keep) { fixed.set(all.subarray(s, e), w); w += e - s }
+      fixed.set(all.subarray(end), w)
+      if (fixed.length) opts?.onRawData?.(fixed)
+    }
+  }
   const server = new PGLiteSocketServer({ db: pg, port: PORT, host: '127.0.0.1' })
   await server.start()
+  // 직접 SQL(트리거 만들기·지우기)은 세션이 트랜잭션 밖일 때만 넣는다. 같은 PGlite 세션을 소켓과 나눠 쓰기 때문이다.
+  // 위 응답 정렬이 있으면 서버 액션이 돌아온 뒤 세션은 늘 비어 있다. 아니면 응답 짝이 어긋난 것이라 여기서 바로 멈춘다.
+  const directSql = async (sql: string) => {
+    if (pg.isInTransaction()) throw new Error('하네스: 직접 SQL 을 넣으려는데 세션이 아직 트랜잭션 안이다(소켓 응답 짝 어긋남)')
+    await pg.exec(sql)
+  }
 
   const prisma = (await import('@/lib/prisma')).default
   const fin = await import('@/app/(app)/finance/actions')
@@ -192,7 +239,7 @@ async function main() {
     const x = (await rowsOf(A))[0]
     const card = await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: A } })
     const sum0 = await amountSum()
-    await pg.exec(`create function flow_block_card_delete() returns trigger as $$ begin raise exception 'flow cleanup blocked'; end $$ language plpgsql;
+    await directSql(`create function flow_block_card_delete() returns trigger as $$ begin raise exception 'flow cleanup blocked'; end $$ language plpgsql;
       create trigger flow_block_card_delete before delete on tracked_items for each row execute function flow_block_card_delete();`)
     // 서버는 실패를 서버 로그에만 남긴다. 그물 출력이 어지럽지 않게 그 한 줄을 받아 둔다.
     const errLog: unknown[][] = []
@@ -200,7 +247,7 @@ async function main() {
     console.error = (...a: unknown[]) => { errLog.push(a) }
     const r = await fin.updateExpense(fd({ id: x.id, ...base, amount: '90000', roomId: R519, category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1',
       itemsJson: items([{ label: A, amount: 60000 }, { label: A + '탭', amount: 30000 }]) })).finally(() => { console.error = origErr })
-    await pg.exec(`drop trigger flow_block_card_delete on tracked_items; drop function flow_block_card_delete();`)
+    await directSql(`drop trigger flow_block_card_delete on tracked_items; drop function flow_block_card_delete();`)
     eq('E2 정리 실패는 서버 로그에 한 줄', errLog.length, 1)
     eq('E2 정리가 실패해도 저장은 성공, 토큰에 카드 없음(DB 원문을 안 낸다)', [r.ok, r.ok ? r.durableUndo?.cards.length : (r as { error: string }).error], [true, 0])
     const rows = await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: { in: [A, A + '탭'] } }, orderBy: { amount: 'desc' } })
@@ -270,16 +317,38 @@ async function main() {
     const rec = await prisma.recurringExpense.create({ data: { propertyId: P1, title: '분기 선반', amount: 90000, category: '소모품비', dueDay: 1, intervalMonths: 3, anchorMonth: 1 } })
     const e = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-13T00:00:00Z'), amount: 90000, category: '소모품비', itemLabel: A, qtyValue: 1, qtyUnit: '개', recurringExpenseId: rec.id } })
     const sum0 = await amountSum()
-    await pg.exec(`create function flow_block_rec_update() returns trigger as $$ begin raise exception 'flow anchor blocked'; end $$ language plpgsql;
+    await directSql(`create function flow_block_rec_update() returns trigger as $$ begin raise exception 'flow anchor blocked'; end $$ language plpgsql;
       create trigger flow_block_rec_update before update on recurring_expenses for each row execute function flow_block_rec_update();`)
     const errLog: unknown[][] = []
     const origErr = console.error
     console.error = (...a: unknown[]) => { errLog.push(a) }
     const r = await fin.updateExpense(fd({ id: e.id, ...base, amount: '90000', category: '소모품비', roomId: '',
       itemsJson: items([{ label: A, amount: 60000 }, { label: A + '탭', amount: 30000 }]) })).finally(() => { console.error = origErr })
-    await pg.exec(`drop trigger flow_block_rec_update on recurring_expenses; drop function flow_block_rec_update();`)
+    await directSql(`drop trigger flow_block_rec_update on recurring_expenses; drop function flow_block_rec_update();`)
     eq('참고 4 기준 달 맞춤이 실패해도 저장은 성공(실패는 서버 로그 한 줄)', [r.ok, errLog.length], [true, 1])
     eq('참고 4 품목 행 둘·금액 합 그대로(다시 저장할 일이 없다)', [await prisma.expense.count({ where: { propertyId: P1, itemLabel: { in: [A, A + '탭'] } } }), await amountSum()], [2, sum0])
+  }
+
+  // ── 단일 갈래 F1 전환 저장 뒤 기준 달 맞춤이 실패해도 성공과 적용취소 토큰을 돌려준다(후속 검수 권장 2) ──────────
+  // 저장과 전환은 이미 커밋됐다. 실패로 돌려주면 토큰이 사라져 전환을 되돌릴 길이 없어졌다.
+  {
+    const A = '고정단일냉장고'
+    const rec = await prisma.recurringExpense.create({ data: { propertyId: P1, title: '분기 냉장고', amount: 90000, category: '소모품비', dueDay: 1, intervalMonths: 3, anchorMonth: 1 } })
+    const e = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-13T00:00:00Z'), amount: 90000, category: '소모품비', itemLabel: A, qtyValue: 1, qtyUnit: '개', recurringExpenseId: rec.id } })
+    await directSql(`create function flow_block_rec_update1() returns trigger as $$ begin raise exception 'flow anchor blocked'; end $$ language plpgsql;
+      create trigger flow_block_rec_update1 before update on recurring_expenses for each row execute function flow_block_rec_update1();`)
+    const errLog: unknown[][] = []
+    const origErr = console.error
+    console.error = (...a: unknown[]) => { errLog.push(a) }
+    const r = await fin.updateExpense(fd({ id: e.id, ...base, amount: '90000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519,
+      itemLabel: A, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: A, amount: 90000 }]) })).finally(() => { console.error = origErr })
+    await directSql(`drop trigger flow_block_rec_update1 on recurring_expenses; drop function flow_block_rec_update1();`)
+    eq('권장 2 단일 갈래 기준 달 맞춤이 실패해도 저장 성공·전환 토큰 유지(실패는 서버 로그 한 줄)', [r.ok, r.ok ? !!r.durableUndo : null, errLog.length], [true, true, 1])
+    eq('권장 2 행은 비품·예정 519호', [(await prisma.expense.findUnique({ where: { id: e.id } }))?.category, (await prisma.expense.findUnique({ where: { id: e.id } }))?.targetRoomId === R519], ['수선유지비', true])
+    if (r.ok && r.durableUndo) {
+      eq('권장 2 그 토큰으로 전환 적용취소', (await fin.undoDurableConvert(J(r.durableUndo))).ok, true)
+      eq('권장 2 적용취소 뒤 소모품비·대상 호실', [(await prisma.expense.findUnique({ where: { id: e.id } }))?.category, (await prisma.expense.findUnique({ where: { id: e.id } }))?.roomId === R519], ['소모품비', true])
+    }
   }
 
   // ── 서버 재판정: 화면이 본 판정과 다르면 거부 ────────────────────────────────────────

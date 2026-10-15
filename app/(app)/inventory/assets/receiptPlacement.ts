@@ -293,9 +293,10 @@ export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', un
 // 갈래('수령 취소' 라벨)는 재고 화면 형제와 같은 '되돌릴 수 없습니다'(웹디자이너 가운뎃점 확인 권장). 갈래는 토큰으로 가른다.
 export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.'
 export const ASSET_RECEIPT_UNDO_STALE_RECEIVE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.'
-/** 이 수령 토큰이 배정까지 했는가(배정 이력 줄·배정한 받은 행·방에 놓인 조각 중 하나라도). 화면의 라벨 갈래와 같은 뜻이다. */
-export function assetReceiptUndoAssigned(u: Pick<AssetReceiptUndo, 'received' | 'created' | 'logIds'>): boolean {
-  return u.logIds.length > 0 || u.received.some(r => r.assigned) || u.created.some(c => !!c.roomId)
+/** 이 수령 토큰이 배정까지 했는가. 배정하면 반드시 배정 이력 줄을 남기므로 그 줄(logIds)로만 가른다. 조각의 roomId 는
+ *  레거시 원행에 이미 있던 방도 이어받아 수령만 한 경우에도 찰 수 있어 보지 않는다(2단계 후속 검수 참고 3). */
+export function assetReceiptUndoAssigned(u: Pick<AssetReceiptUndo, 'logIds'>): boolean {
+  return u.logIds.length > 0
 }
 // 서버가 만든 토큰이 아니거나(서명 불일치) 모양이 틀렸다. 무엇도 쓰지 않는다(검수 N-1, 위조 토큰).
 export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'

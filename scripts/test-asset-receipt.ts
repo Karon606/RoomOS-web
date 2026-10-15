@@ -197,12 +197,13 @@ eq('D9 수령 대기 상세 캡션(배지가 상태를 말하므로 되풀이 �
 eq('R-5 적용취소 결과(§16 형식, 구분점 앞 NBSP 2b C4)', ASSET_RECEIPT_ASSIGN_UNDONE, '수령과 배정을 적용취소했습니다\u00a0· 수령\u00a0대기로\u00a0복귀')
 eq('C3 적용취소 거부 동사는 적용취소(§16)', ASSET_RECEIPT_UNDO_STALE, '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.')
 eq('수령만 갈래 거부 동사는 형제와 같은 되돌릴 수 없습니다', ASSET_RECEIPT_UNDO_STALE_RECEIVE, '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.')
-eq('토큰 갈래: 이력 줄·배정한 행·방 조각이 있으면 배정 갈래', [
-  assetReceiptUndoAssigned({ received: [], created: [], logIds: ['l1'] }),
-  assetReceiptUndoAssigned({ received: [{ id: 'e', assigned: true, prevAssignedAt: null, now: { roomId: 'R', isCommonAsset: false, itemLabel: 'x', qtyValue: 1, amount: 1 } }], created: [], logIds: [] }),
-  assetReceiptUndoAssigned({ received: [], created: [{ id: 'c', fromId: 'e', roomId: 'R', isCommonAsset: false, qtyValue: 1, amount: 1 }], logIds: [] }),
-  assetReceiptUndoAssigned({ received: [{ id: 'e', assigned: false, prevAssignedAt: null, now: { roomId: null, isCommonAsset: false, itemLabel: 'x', qtyValue: 1, amount: 1 } }], created: [{ id: 'c', fromId: 'e', roomId: null, isCommonAsset: false, qtyValue: 1, amount: 1 }], logIds: [] }),
-], [true, true, true, false])
+eq('토큰 갈래: 배정 이력 줄이 있을 때만 배정 갈래(조각 roomId 는 레거시 원행 방일 수 있어 안 본다, 후속 검수 참고 3)', [
+  assetReceiptUndoAssigned({ logIds: ['l1'] }),
+  assetReceiptUndoAssigned({ logIds: [] }),
+  // 레거시 원행 방을 이어받은 조각·자리 표식이 있어도 이력 줄이 없으면 수령만 갈래
+  assetReceiptUndoAssigned(((u: Pick<AssetReceiptUndo, 'logIds' | 'created' | 'received'>) => u)({ logIds: [], created: [{ id: 'c', fromId: 'e', roomId: 'R', isCommonAsset: false, qtyValue: 1, amount: 1 }],
+    received: [{ id: 'e', assigned: true, prevAssignedAt: null, now: { roomId: 'R', isCommonAsset: false, itemLabel: 'x', qtyValue: 1, amount: 1 } }] })),
+], [true, false, false])
 // N-6 재무 묶음 라벨에서 같은 방이 두 번 서지 않는다
 eq('N-6 부분 도착 배정 직후', [roomChipText([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }]), roomsLabel([{ room: { roomNo: '519' }, qtyValue: 2 }, { room: null, plannedRoomNo: '519', qtyValue: 2 }])], ['방 1개', '519호·수령 대기 2개'])
 eq('N-6 부분 수령만', roomsLabel([{ room: null, qtyValue: 2, qtyUnit: '개' }, { room: null, plannedRoomNo: '519', qtyValue: 2, qtyUnit: '개' }]), '519호 배정 예정 2개·미배정 2개')

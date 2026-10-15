@@ -1175,7 +1175,7 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
   비품에서 roomId 는 곧 배정된 자리라, 받기 전에 roomId 가 있으면 받는 순간 말없이 그 방에 서고 배정 이력도 안 남았다.
 - 막는 자리: 배정(옮기기·나눠 배정·일괄 배정)은 받기 전 행을 거부(`assignDenialUnreceived`), 놓인 비품의 '수령대기로'는 거부
   (`unreceiveDenialPlaced`, 방·공용부면 '먼저 미배정으로 옮겨', 공용 자재면 '먼저 공용 해제'), 속성으로 행을 집는 쓰기(미배정 접기·
-  배정 이력 되돌리기)는 `PLACEABLE_WHERE`(receiptPlacement.ts:325), 재고 제외·포함 왕복도 placementForSave.
+  배정 이력 되돌리기)는 `PLACEABLE_WHERE`(receiptPlacement.ts:327), 재고 제외·포함 왕복도 placementForSave.
 - 놓인 행 판정 정본은 `isUnplaced`(방·공용부·공용 자재 셋). 장부 그물 `check-asset-pending-placement.ts`(verify:db).
 
 ### 수령 배정 창(F2)
@@ -1186,7 +1186,7 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
   한 트랜잭션에 쓴다. 배정일은 KST 오늘(`ymdToDbDate(kstYmdStr())`, @db.Date 에 new Date() 를 넣으면 KST 00~09시가 어제로 박힌다).
 - 적용취소(`undoAssetReceipt`)는 수령·배정·이력을 함께 무르고 예정 호실은 남긴다. 결과 문장 '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀'.
   막히면 거부 문장은 누른 버튼의 동사를 따른다. 배정까지 무르는 갈래('적용취소' 라벨)는 '…적용취소할 수 없습니다.', 수령만 무르는 갈래
-  ('수령 취소' 라벨)는 재고 화면 형제와 같은 '…되돌릴 수 없습니다.'(갈래는 토큰으로 가른다, `assetReceiptUndoAssigned`).
+  ('수령 취소' 라벨)는 재고 화면 형제와 같은 '…되돌릴 수 없습니다.'(갈래는 토큰의 배정 이력 줄 유무로 가른다, `assetReceiptUndoAssigned`. 조각의 방은 레거시 원행 방일 수 있어 안 본다).
 - 비품 수령 대기도 종 알림에 뜬다(비품 화면 수령 대기로 보낸다). 금액 읽기가 막힌 역할(제한 스태프)에게는 비품 수령 대기 알림이 안 선다.
 
 ### 소모품 수령의 수량 관문
@@ -1222,6 +1222,7 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
 - 방별 분배 갈래의 따로 한 카드 정리가 실패해도 **성공으로 돌려준다**(카드는 남기고 토큰에 안 싣는다, DB 원문은 서버 로그에만).
   실패로 돌려주면 화면이 폼을 그대로 두고, 다시 저장하면 품목 행이 한 벌 더 생겨 금액이 불어났다(2단계 독립 검수 권장 2, E2).
   같은 갈래의 저장 뒤 고정지출 기준 달 맞춤(resyncRecurringAnchor)도 같은 이유로 실패를 서버 로그에만 남긴다(후속 검수 참고 4).
+  단일 갈래도 같다. 저장과 F1·F3 전환이 커밋된 뒤라 실패로 돌려주면 적용취소 토큰이 사라졌다(후속 검수 권장 2).
 - 같은 저장에서 품명을 바꾸고 전환했으면 지운 카드는 **새 품명으로** 토큰에 싣는다(적용취소 때 같은 id·새 품명으로 되살아난다).
   그대로 저장했다면 형제 `propagateItemLabelRename` 이 카드를 같은 id 로 개명했을 자리라서 적용취소 뒤 끝이 같다. 형제와 같은
   조건만 본다(원래 카테고리가 '그대로 저장' 카테고리와 같고 새 품명 카드가 따로 없음). 단위·수량만 바꾼 저장은 형제도 카드를 그대로
@@ -1246,7 +1247,7 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
 - **아직 서명하지 않는 토큰이 셋 있다**(별건). 수령 취소 되돌림 `ReceiptCancelUndo`(undoCancelReceipt), 원장 조정 되돌림
   `LedgerShiftUndo`(revertShiftRows), 품목 삭제 되돌림 `TrackedItemDeleteUndo`(undoDeleteTrackedItem). 셋 다 영업장 범위 확인은 하지만
   값 위조는 서명으로 막지 않는다. 비품 전환 토큰 안에 실린 조정·카드 스냅샷은 바깥 전환 토큰의 서명이 덮는다.
-- 전환 적용취소(`undoDurableConvert`, finance/actions.ts:3371)는 **전환만** 되돌린다(같은 저장의 다른 입력은 남는다). from 이 지금 추적
+- 전환 적용취소(`undoDurableConvert`, finance/actions.ts:3375)는 **전환만** 되돌린다(같은 저장의 다른 입력은 남는다). from 이 지금 추적
   카테고리인지, 대상 행이 그 영업장 것인지 보고, 행마다 '전환 직후 그대로인가'(CAS, 품명·수량·규격·단위 포함)를 걸어 바꾼 칸만
   되돌린다. F3 는 걷은 자동 점검을 위치 내역 id·이월 표식까지 바이트 그대로, 지운 카드는 같은 id 로 되살리고 이력 줄을 지운다. 등록
   F1 은 되돌린 뒤 원래 생겼을 카드를 시드한다. 토스트 라벨은 '전환 적용취소', 결과 문장 '비품 전환을 적용취소했습니다 · 소모품비로 복귀'
@@ -1269,6 +1270,8 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
 ### 감지망
 - 진리표 `test-asset-receipt.ts`(수령 판정·자리·관문)·`test-durable-convert.ts`(전환 판정·대상·문구·토큰·가운뎃점 표기),
   통합 `test-asset-receipt-flow.ts`·`test-durable-convert-flow.ts`(PGlite, 바이트 동일·금액 합·남의 영업장·교차 용도·검수 X1~X8 경계,
-  카드 정리 실패 E2(삭제 트리거)·개명 전환 적용취소),
+  카드 정리 실패 E2(삭제 트리거)·개명 전환 적용취소·기준 달 맞춤 실패). 이 통합 하네스는 PGlite 소켓 다리에서 확장 프로토콜을
+  Sync 까지 모아 넘기고 겹친 ReadyForQuery 를 하나로 접는다. 트리거로 일부러 실패시킨 쿼리에 PGlite 가 'EZ'+'Z' 를 내 node-postgres
+  응답 짝이 하나씩 밀렸다(직접 SQL 이 25P02 로 죽던 흔들림의 원인, 탐침 실측).
   배선 `check-asset-receipt-wiring.mjs`·`check-durable-convert-wiring.mjs`(사슬 맨 앞·같이 변경 생략·막힘 창·서명·CAS), 장부
   `check-asset-pending-placement.ts`·`check-item-category-split.ts`(verify:db).

@@ -1447,8 +1447,12 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     await noteUnits(newUnitsOnly([specUnit], existing?.specUnit), newUnitsOnly([qtyUnit], existing?.qtyUnit))
     // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다. 종전에는 이 경로만 새서, 8/25 기록을
     // 9/2 로 고치면 실제 기록은 9월인데 기준은 8월에 남았다(2026-08-31 패널 조사에서 발견).
+    // 저장(과 F1·F3 전환·조정)은 위에서 이미 커밋됐다. 맞춤이 실패해도 실패로 돌려주지 않는다. 돌려주면 전환·조정 적용취소
+    // 토큰이 사라져 되돌릴 길이 없어진다(다품목 갈래와 같은 클래스, 2단계 후속 검수 권장 2).
     if (existing?.recurringExpenseId) {
-      await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+      try {
+        await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+      } catch (e) { console.error('[updateExpense] 저장 뒤 고정지출 기준 달 맞춤 실패(저장 유지)', e) }
     }
     const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
