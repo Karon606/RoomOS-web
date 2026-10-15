@@ -253,8 +253,8 @@ const cr = read(CR)
 must(CR, cr, null, [
   [/computeAlerts\(pid, roleOf\.get\(pid\)\)/, 'N-5 푸시가 받는 사람 역할을 알림 계산에 안 넘긴다'],
   // 역할은 종(영업장 관문)과 같은 정본 한 함수로 정한다(3차 검수 권장 ①). 판정의 답은 진리표 scripts/test-resolve-role 이 지킨다.
-  [/resolvePropertyRole\(\{ membershipRole: rowRole\.get\(pid\) \?\? null, isOwner: ownedIds\.has\(pid\), superByEnv \}\)/, 'A1 푸시가 역할을 정본(resolvePropertyRole)으로 정하지 않는다(종과 역할이 갈린다)'],
-  [/const superByEnv = isSuperAdminEmail\(emailOf\.get\(userId\) \?\? null\)/, 'A1 푸시가 env 슈퍼관리자 승격을 안 본다(종은 소유자, 푸시는 낮은 줄 역할)'],
+  [/const roleOf = pushRoleMap\(\{\s*roleRows: roles\.map\(r => \(\{ propertyId: r\.propertyId, role: r\.role as Role \}\)\), ownedIds: owned\.map\(o => o\.id\),\s*email: emailOf\.get\(userId\) \?\? null, isSuperEmail: isSuperAdminEmail,\s*\}\)/, 'A1 푸시가 역할을 정본 묶음 계산(pushRoleMap)으로 정하지 않는다(종과 역할이 갈린다)'],
+  [/prisma\.user\.findMany\(\{ where: \{ id: \{ in: \[\.\.\.approved\] \} \}, select: \{ id: true, email: true \} \}\)/, 'A1 푸시가 승인된 수신자 말고도 이메일을 읽는다(검수 R2)'],
 ])
 mustNot(CR, cr, null, [[/roleOf\.set\([^)]*'OWNER'\)/, 'A1 푸시가 역할을 손으로 박는다(정본 resolvePropertyRole 밖 판정)']])
 const PA = 'lib/auth/propertyAccess.ts'

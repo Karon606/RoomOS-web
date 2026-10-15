@@ -25,3 +25,25 @@ export function resolvePropertyRole(f: RoleFacts): Role | null {
   if (f.membershipRole) return f.superByEnv ? 'OWNER' : f.membershipRole
   return f.isOwner || f.superByEnv || !!f.superByDb ? 'OWNER' : null
 }
+
+/**
+ * 크론 푸시가 한 사용자에게 보낼 영업장별 역할(2단계 검수 R2). 그 사용자가 소유하거나 역할 줄이 있는 영업장마다 위 정본으로 정한다.
+ * env 슈퍼관리자 판정(isSuperEmail)은 이 함수 안에서 사용자 행 이메일로 한다. 종(관문)은 로그인 클레임 이메일로 같은 판정을 한다.
+ * 판정을 부르는 쪽에 두면 그 줄의 상승 역주입('|| true')을 진리표가 못 본다(검수 inj6). 그래서 이메일과 판정 함수를 받는다.
+ */
+export function pushRoleMap(input: {
+  roleRows: readonly { propertyId: string; role: Role }[]
+  ownedIds: readonly string[]
+  email: string | null
+  isSuperEmail: (email: string | null) => boolean
+}): Map<string, Role> {
+  const rowRole = new Map(input.roleRows.map(r => [r.propertyId, r.role]))
+  const owned = new Set(input.ownedIds)
+  const superByEnv = input.isSuperEmail(input.email)
+  const out = new Map<string, Role>()
+  for (const pid of new Set([...owned, ...rowRole.keys()])) {
+    const role = resolvePropertyRole({ membershipRole: rowRole.get(pid) ?? null, isOwner: owned.has(pid), superByEnv })
+    if (role) out.set(pid, role)
+  }
+  return out
+}

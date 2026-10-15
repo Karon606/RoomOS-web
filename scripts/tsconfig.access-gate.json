@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "paths": {
+      "react": ["./access-gate-stubs.ts"],
+      "next/headers": ["./access-gate-stubs.ts"],
+      "next/navigation": ["./access-gate-stubs.ts"],
+      "@/lib/supabase/server": ["./access-gate-stubs.ts"],
+      "@/lib/prisma": ["./access-gate-stubs.ts"],
+      "server-only": ["./server-only-stub.ts"],
+      "@/*": ["../*"]
+    }
+  }
+}
