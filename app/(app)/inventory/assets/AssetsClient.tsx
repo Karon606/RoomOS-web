@@ -36,7 +36,7 @@ import { withParticle } from '@/lib/koParticle'
 // 배정 예정 호실 표기·판정 정본(순수). 카드 메타와 받을 때 묻는 창이 같은 판정을 쓴다.
 import {
   plannedRoomsMeta, receiptPlacementPlan, receiptAssignCopy, receiptToast, partialReceiveToast, planExpectOf, pendingPlaceCaption,
-  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON_SHORT, isUnplaced, type ReceiptPlan, type ReceiptPlanExpect,
+  ASSET_RECEIPT_ASSIGN_UNDONE, ASSET_RECEIPT_UNDONE, ASSET_ASSIGN_PENDING_REASON_SHORT, isUnplaced, SEP, type ReceiptPlan, type ReceiptPlanExpect,
 } from './receiptPlacement'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
@@ -741,7 +741,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const runRevertLog = (r: AssetAssignmentLogRow) => startTransition(async () => {
     const res = await revertAssignmentLog(r.id)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('success', '이동을 적용취소했습니다 · 이 이력은 지워짐')
+    // 구분점 앞은 앞 낱말에 묶는다(SEP, 접혀도 둘째 줄이 '·' 로 시작하지 않게, 2단계 후속 검수 권장 2). 뒤 상태 말은 한 덩이.
+    pushToast('success', `이동을 적용취소했습니다${SEP}이\u00a0이력은\u00a0지워짐`)
     setDetailItem(null)
     router.refresh()
   })

@@ -251,7 +251,7 @@ export function conversionUndoneText(kind: 'F1' | 'F3', from: string): string {
 
 // 서버가 전환 요청을 받았는데 지금 판정과 다르다(화면을 연 뒤 이력·카테고리 목록이 바뀌었다). 다시 저장을 누르면 화면이 새 사실로
 // 다시 판정한다. 새로고침하면 적던 입력이 사라지므로 새로고침을 권하지 않는다(검수 R1, X4).
-export const DURABLE_CONVERT_STALE = '비품 전환 정보가 바뀌었습니다. 다시 저장을 눌러 주세요.'
+export const DURABLE_CONVERT_STALE = '비품 전환 정보가 바뀌었습니다. 다시 저장을 눌러\u00a0주세요.'   // 끝 '주세요.'는 앞 낱말과 한 덩이
 
 // ── 적용취소 토큰 ────────────────────────────────────────────────────
 // 토큰은 화면을 거쳐 돌아오는 값이다. 셋으로 닫는다(1단계 비품 수령 토큰과 같은 규칙, 검수 N-1).
@@ -285,7 +285,7 @@ export type DurableConvertUndo = {
 export const rowNowOf = (r: RowNow): RowNow => ({ itemLabel: r.itemLabel, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit })
 export const DURABLE_CONVERT_UNDO_DOMAIN = 'expense-durable-convert'
 export const DURABLE_CONVERT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'
-export const DURABLE_CONVERT_UNDO_STALE = '비품으로 바꾼 뒤 기록이 바뀌어 적용취소할 수 없습니다. 지출 상세에서 직접 고쳐 주세요.'
+export const DURABLE_CONVERT_UNDO_STALE = '비품으로 바꾼 뒤 기록이 바뀌어 적용취소할 수 없습니다. 지출 상세에서 직접 고쳐\u00a0주세요.'
 export const DURABLE_CONVERT_UNDO_MAX = 500
 
 /** 키 순서와 무관한 정본 문자열(객체 키를 정렬해 직렬화). 서명 대상이다. sig 는 뺀다. */

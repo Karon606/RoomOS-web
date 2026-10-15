@@ -192,6 +192,7 @@ must(AC, ac, null, [
   [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다'],
   [/how\?\.assign \? \{ assign: true, expect: how\.expect \} : undefined/, 'N-4 배정 요청에 본 계획이 안 실린다'],
   [/withAssign \? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE/, 'R-5 수령 적용취소 결과 토스트가 정본 문장(§16 형식)을 안 쓴다'],
+  [/`이동을 적용취소했습니다\$\{SEP\}이\\u00a0이력은\\u00a0지워짐`/, "후속 검수 권장 2 이동 적용취소 결과의 구분점이 SEP 가 아니다(접히면 둘째 줄이 '·' 로 시작한다)"],
   [/id="assets-pending"/, 'S6 알림 딥링크가 닿을 수령 대기 섹션 id 가 없다'],
   [/const prepareFocus = useCallback\(\(id: string\) => \{ if \(id === 'assets-pending'\) setGroup\('unassigned'\) \}, \[\]\)\s*useFocusSection\(\{ prepare: prepareFocus \}\)/, 'D15 알림 딥링크가 정본 useFocusSection 준비 단계에서 미배정 그룹으로 바꾸지 않는다(다른 그룹을 보고 있으면 닿을 곳이 없다)'],
   [/!it\.isService && isUnplaced\(it\.roomId, it\.locationId, it\.isCommon\) &&/, "S4·2차 R3 놓인 카드(방·공용부·공용 자재)에 '수령대기로'가 서 있다(서버가 거부한다)"],

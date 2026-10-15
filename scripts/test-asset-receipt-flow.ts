@@ -134,7 +134,7 @@ async function main() {
     eq('F2 받은 뒤 520호로 옮김', mv.ok, true)
     const moved = await bytes({ id: E })
     const u3 = await assets.undoAssetReceipt(J(r3.undo!))
-    eq('F2 옮긴 뒤 적용취소 거부', u3, { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('F2 옮긴 뒤 적용취소 거부(배정 갈래 문장)', u3, { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
     eq('F2 거부면 아무것도 안 바뀜', await bytes({ id: E }), moved)
     // 정리. 이 행은 이후 시나리오에 안 쓴다
     await prisma.expense.delete({ where: { id: E } })
@@ -364,7 +364,7 @@ async function main() {
     if (!r.ok) throw new Error(r.error)
     await assets.setCommonAsset([E], true)
     const after = await bytes({ id: E })
-    eq('R-3 공용 표식 뒤 적용취소 거부', await assets.undoAssetReceipt(J(r.undo!)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('R-3 공용 표식 뒤 적용취소 거부(수령만 갈래 문장)', await assets.undoAssetReceipt(J(r.undo!)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE_RECEIVE })
     eq('R-3 거부면 무변경', await bytes({ id: E }), after)
   }
   // N-1 위조 토큰. 무관한 지출·변조 값·변조 서명은 아무것도 못 쓴다
@@ -451,7 +451,7 @@ async function main() {
     if (!r.ok || !r.undo) throw new Error('S2F1 수령 실패')
     eq('2차 F1 수령만 뒤 공용부로 옮김', (await assets.assignAggregateToTarget([E], { kind: 'location', id: L }, null)).ok, true)
     const after = [await bytes({ itemLabel: 'S2F1의자' }), await logs('S2F1의자')]
-    eq('2차 F1 공용부로 옮긴 뒤 수령 적용취소 거부', await assets.undoAssetReceipt(J(r.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('2차 F1 공용부로 옮긴 뒤 수령 적용취소 거부(수령만 갈래 문장)', await assets.undoAssetReceipt(J(r.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE_RECEIVE })
     eq('2차 F1 거부면 무변경(행·이력)', [await bytes({ itemLabel: 'S2F1의자' }), await logs('S2F1의자')], after)
     // 부분 수령(묻지 않음) 조각을 공용부로 통째 옮겼으면 조각을 지우지 않는다(05 부터 있던 같은 클래스)
     const E2 = await exp({ itemLabel: 'S2F1책상', qtyValue: 4, amount: 100000 })
@@ -459,7 +459,7 @@ async function main() {
     if (!r2.ok || !r2.undo) throw new Error('S2F1b 수령 실패')
     eq('2차 F1 부분 수령 조각을 공용부로', (await assets.assignAggregateToTarget([r2.undo.created[0].id], { kind: 'location', id: L }, null)).ok, true)
     const after2 = [await bytes({ itemLabel: 'S2F1책상' }), await logs('S2F1책상')]
-    eq('2차 F1 공용부로 옮긴 조각이 있으면 수령 적용취소 거부', await assets.undoAssetReceipt(J(r2.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE })
+    eq('2차 F1 공용부로 옮긴 조각이 있으면 수령 적용취소 거부(수령만 갈래 문장)', await assets.undoAssetReceipt(J(r2.undo)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE_RECEIVE })
     eq('2차 F1 거부면 무변경(원행·조각·이력)', [await bytes({ itemLabel: 'S2F1책상' }), await logs('S2F1책상')], after2)
   }
   // R1 받은 미배정 비품(예정 519)을 재고 제외했다가 다시 포함해도 519호에 말없이 배정되지 않는다

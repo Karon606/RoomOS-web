@@ -2824,7 +2824,7 @@ export default function FinanceClient({
                   // 갈려 '비품 화면'으로 쓴다(웹디자이너 10). 실측 320px·글자 125% 세 줄, 브라우저 확대 125%(256px) 다섯 줄(2b C2).
                   detail: `이 품목은 '${newCat}' 카테고리라 비품 화면에서 관리됩니다.`,
                   ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
-                    if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 목록에 다시 표시'); router.refresh() }
+                    if (r.ok) { pushToast('info', `소모품 카드 정리를 적용취소했습니다${SEP}목록에\u00a0다시\u00a0표시`); router.refresh() }
                     else pushToast('error', r.error)
                   }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
                 })

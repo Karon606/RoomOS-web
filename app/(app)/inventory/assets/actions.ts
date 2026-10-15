@@ -30,7 +30,7 @@ import {
 export type { AssetItem } from './aggregate'
 import {
   assetReceiptDenial, assignDenialUnreceived, unreceiveDenialPlaced,
-  receiptPlacementPlan, planAsks, planTargetOf, planExpectMismatch, ASSET_RECEIPT_PLAN_STALE, ASSET_RECEIPT_UNDO_STALE, ASSET_RECEIPT_UNDO_INVALID,
+  receiptPlacementPlan, planAsks, planTargetOf, planExpectMismatch, ASSET_RECEIPT_PLAN_STALE, ASSET_RECEIPT_UNDO_STALE, ASSET_RECEIPT_UNDO_STALE_RECEIVE, assetReceiptUndoAssigned, ASSET_RECEIPT_UNDO_INVALID,
   ASSET_RECEIPT_UNDO_DOMAIN, canonicalAssetReceiptUndo, parseAssetReceiptUndo, PLACEABLE_WHERE, assignmentLogData,
   type ReceiptRow, type ReceiptPlanExpect, type AssetReceiptUndo,
 } from './receiptPlacement'
@@ -429,7 +429,8 @@ export async function undoAssetReceipt(undoRaw: AssetReceiptUndo): Promise<{ ok:
     const trackedCats = await getTrackedCategories(propertyId)
     const inPop = await prisma.expense.count({ where: { ...durableExpenseWhere(propertyId, trackedCats), id: { in: ids } } })
     if (inPop !== ids.length) return { ok: false, error: ASSET_RECEIPT_UNDO_INVALID }
-    const STALE = new Error(ASSET_RECEIPT_UNDO_STALE)
+    // 거부 문장은 누른 버튼의 동사를 따른다(배정까지 무르면 '적용취소할 수 없습니다', 수령만이면 '되돌릴 수 없습니다').
+    const STALE = new Error(assetReceiptUndoAssigned(undo) ? ASSET_RECEIPT_UNDO_STALE : ASSET_RECEIPT_UNDO_STALE_RECEIVE)
     await prisma.$transaction(async tx => {
       // 분할 원행. 조각을 지우고 수량·금액을 원행 + 조각으로 다시 더한다(토큰 값을 안 쓴다).
       for (const s of undo.split) {

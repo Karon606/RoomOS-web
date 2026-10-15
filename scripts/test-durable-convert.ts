@@ -164,8 +164,8 @@ eq('토스트 머리줄에 점 뒤 묶음이 없다(둘째 줄이 점으로 시�
 eq('적용취소 라벨', CONVERT_UNDO_LABEL, '전환 적용취소')
 eq('F1 적용취소 결과(§16 형식, 구분점 SEP, 복귀 묶음)', conversionUndoneText('F1', '소모품비'), '비품 전환을 적용취소했습니다\u00a0· 소모품비로\u00a0복귀')
 eq('F3 적용취소 결과', conversionUndoneText('F3', '부식비'), '비품 전환과 배정을 적용취소했습니다\u00a0· 부식비로\u00a0복귀')
-eq('서버 거부 문장은 새로고침을 권하지 않는다(R1)', DURABLE_CONVERT_STALE, '비품 전환 정보가 바뀌었습니다. 다시 저장을 눌러 주세요.')
-eq('적용취소 거부 문장(디자이너 9)', DURABLE_CONVERT_UNDO_STALE, '비품으로 바꾼 뒤 기록이 바뀌어 적용취소할 수 없습니다. 지출 상세에서 직접 고쳐 주세요.')
+eq('서버 거부 문장은 새로고침을 권하지 않는다(R1)', DURABLE_CONVERT_STALE, '비품 전환 정보가 바뀌었습니다. 다시 저장을 눌러\u00a0주세요.')
+eq('적용취소 거부 문장(디자이너 9)', DURABLE_CONVERT_UNDO_STALE, '비품으로 바꾼 뒤 기록이 바뀌어 적용취소할 수 없습니다. 지출 상세에서 직접 고쳐\u00a0주세요.')
 
 // §29 지문 0(em dash·느낌표·이모지·화살표·괄호 표기). 문장은 콜론으로 끝나지 않는다
 const strings = [c1.title, c1.message, cm.title, cm.message, c3.title, c3.message, bm.title, bm.message, mixed.message,

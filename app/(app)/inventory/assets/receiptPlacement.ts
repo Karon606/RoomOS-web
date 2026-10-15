@@ -207,7 +207,8 @@ const quoted = (label: string) => `'${label}'${hasFinalConsonant(label) ? '을' 
 // 부분 도착에서 남은 몫을 말하는 문장 한 벌(웹디자이너 패스 D6). 종전에는 '남은 …는 수령 대기에 남습니다'·
 // '잔여 …는 수령 대기 유지' 두 벌이 창·토스트·비품 화면에 갈려 있었다. 낱말은 '나머지' 하나로, 묻는 자리(창)는
 // '둡니다', 끝난 뒤(토스트)는 '두었습니다'. 비품 화면의 묻지 않는 부분 수령 토스트도 이 함수를 부른다.
-export const restPendingAsk = (n: number, unit: string) => `나머지 ${withParticle(qtyText(n, unit), '은/는')} 수령 대기에 둡니다.`
+// 문장 끝 '둡니다.'는 앞 낱말과 묶는다(끝줄에 홀로 남지 않게, 240~440 실측). 아래 F2 창 문장들도 같다.
+export const restPendingAsk = (n: number, unit: string) => `나머지 ${withParticle(qtyText(n, unit), '은/는')} 수령 대기에\u00a0둡니다.`
 export const restPendingDone = (n: number, unit: string) => `나머지 ${withParticle(qtyText(n, unit), '은/는')} 수령 대기에 두었습니다.`
 
 export type ReceiptAssignCopy = { title: string; message: string; confirmLabel: string; altLabel: string }
@@ -222,7 +223,7 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const room = fmtRoomNo(plan.room.roomNo, '')
     if (!plan.partial) return {
       title: `${quoted(label)} ${room}에 배정할까요?`,
-      message: `구매할 때 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에 둡니다.`,
+      message: `구매할 때 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에\u00a0둡니다.`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
     return {
@@ -235,10 +236,11 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const parts = plan.rooms.map(r => `${fmtRoomNo(r.roomNo, '')} ${qtyText(r.units, unit)}`)
     const last = parts.length - 1
     parts[last] = withParticle(parts[last], '으로/로')
-    const rest = plan.rest > EPS ? ` 나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 둡니다.` : ''
+    const rest = plan.rest > EPS ? ` 나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에\u00a0둡니다.` : ''
     return {
       title: `'${label}' ${withParticle(qtyText(plan.units, unit), '을/를')} 적어 둔 방에 배정할까요?`,
-      message: `구매할 때 ${parts.join(' · ')} 적었습니다.${rest}`,
+      // 몫 사이 구분점은 SEP(세 방이면 '· 521호 1개로'가 줄머리에 섰다, 웹디자이너 가운뎃점 확인 d).
+      message: `구매할 때 ${parts.join(SEP)} 적었습니다.${rest}`,
       confirmLabel: '적은 대로 배정', altLabel: alt,
     }
   }
@@ -246,7 +248,7 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const room = fmtRoomNo(plan.room.roomNo, '')
     return {
       title: `'${label}' ${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.targeted, unit), '을/를')} ${room}에 배정할까요?`,
-      message: `구매할 때 ${qtyText(plan.targeted, unit)}만 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 둡니다.`,
+      message: `구매할 때 ${qtyText(plan.targeted, unit)}만 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에\u00a0둡니다.`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
   }
@@ -257,43 +259,52 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
  * 받은 뒤 토스트(UX 패널 F2 토스트). choice: 'assign' = 배정을 골랐다, 'receive' = 수령만.
  * 적용취소 라벨은 배정을 함께 했으면 '적용취소', 수령만이면 형제(재고 수령 확인)와 같은 '수령 취소'.
  * 묻지 않은 수령(none)은 null. 화면이 종전 문구('수령 완료'·부분 수령 문구)를 그대로 쓴다.
+ * 머리 구분점은 SEP, ' 배정'은 앞 호실과 한 덩이다(끝줄에 '배정'만 남지 않게, 웹디자이너 가운뎃점 확인 b).
  */
 export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', unit: string): { text: string; detail?: string; actionLabel: string } | null {
   if (plan.kind === 'none') return null
   if (choice === 'assign' && planAsks(plan)) {
     if (plan.kind === 'single') return plan.partial
-      ? { text: `${qtyText(plan.units, unit)} 수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: restPendingDone(r3(plan.total - plan.units), unit), actionLabel: '적용취소' }
-      : { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, actionLabel: '적용취소' }
+      ? { text: `${qtyText(plan.units, unit)} 수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, detail: restPendingDone(r3(plan.total - plan.units), unit), actionLabel: '적용취소' }
+      : { text: `수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, actionLabel: '적용취소' }
     if (plan.kind === 'multi') return {
-      text: `수령 완료 · ${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join(DOT)} 배정`,
+      text: `수령 완료${SEP}${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join(DOT)}\u00a0배정`,
       ...(plan.rest > EPS ? { detail: `나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 두었습니다.` } : {}),
       actionLabel: '적용취소',
     }
-    return { text: `수령 완료 · ${fmtRoomNo(plan.room.roomNo, '')} 배정`, detail: `나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 두었습니다.`, actionLabel: '적용취소' }
+    return { text: `수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, detail: `나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 두었습니다.`, actionLabel: '적용취소' }
   }
   if (plan.kind === 'ambiguous') return {
-    text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
-    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 미배정 카드에서 배정해 주세요.',
+    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}미배정`,
+    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 미배정 카드에서 배정해\u00a0주세요.',
     actionLabel: '수령 취소',
   }
   // 수령만. 미배정에 뒀다고 말한다.
   if (plan.kind === 'single' && plan.partial) return {
-    text: `${qtyText(plan.units, unit)} 수령 완료 · 미배정`,
+    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}미배정`,
     detail: restPendingDone(r3(plan.total - plan.units), unit),
     actionLabel: '수령 취소',
   }
-  return { text: '수령 완료 · 미배정', actionLabel: '수령 취소' }
+  return { text: `수령 완료${SEP}미배정`, actionLabel: '수령 취소' }
 }
 
-// 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다. 동사는 §16 '적용취소'(2b C3).
-export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
+// 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다.
+// 동사는 누른 버튼을 따른다. 배정까지 무르는 갈래('적용취소' 라벨)는 §16 '적용취소할 수 없습니다'(2b C3), 수령만 무르는
+// 갈래('수령 취소' 라벨)는 재고 화면 형제와 같은 '되돌릴 수 없습니다'(웹디자이너 가운뎃점 확인 권장). 갈래는 토큰으로 가른다.
+export const ASSET_RECEIPT_UNDO_STALE = '수령 이후 이 비품이 옮겨지거나 바뀌어 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.'
+export const ASSET_RECEIPT_UNDO_STALE_RECEIVE = '수령 이후 이 비품이 옮겨지거나 바뀌어 되돌릴 수 없습니다. 비품 화면에서 직접 고쳐\u00a0주세요.'
+/** 이 수령 토큰이 배정까지 했는가(배정 이력 줄·배정한 받은 행·방에 놓인 조각 중 하나라도). 화면의 라벨 갈래와 같은 뜻이다. */
+export function assetReceiptUndoAssigned(u: Pick<AssetReceiptUndo, 'received' | 'created' | 'logIds'>): boolean {
+  return u.logIds.length > 0 || u.received.some(r => r.assigned) || u.created.some(c => !!c.roomId)
+}
 // 서버가 만든 토큰이 아니거나(서명 불일치) 모양이 틀렸다. 무엇도 쓰지 않는다(검수 N-1, 위조 토큰).
 export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 않습니다.'
 
 // 수령 적용취소 결과 토스트(§16 형식 "…를 적용취소했습니다 · …", 감지망 check-undo-verb, 검수 R-5).
 // 배정까지 함께 무를 때만 이 문장이다. 수령만 무르는 형제('수령 취소' 라벨)는 재고 화면과 같은 종전 문장을 쓴다.
-// 구분점은 SEP, '…로 복귀'는 줄이 갈리지 않게 묶는다(전환 적용취소 결과 conversionUndoneText 와 같은 규칙, 2b C4).
-export const ASSET_RECEIPT_ASSIGN_UNDONE = `수령과 배정을 적용취소했습니다${SEP}수령 대기로\u00a0복귀`
+// 구분점은 SEP. '수령 대기로 복귀'는 상태 이름이 갈리지 않게 통째로 묶는다(웹디자이너 가운뎃점 확인 e, '…· 수령' / '대기로
+// 복귀'로 갈렸다). 전환 적용취소 결과(conversionUndoneText)는 카테고리 이름이 길 수 있어 '…로 복귀' 두 낱말만 묶는다.
+export const ASSET_RECEIPT_ASSIGN_UNDONE = `수령과 배정을 적용취소했습니다${SEP}수령\u00a0대기로\u00a0복귀`
 export const ASSET_RECEIPT_UNDONE = '수령을 취소하고 수령 대기로 되돌렸습니다'
 
 /** 묻지 않은 부분 수령 토스트(비품 화면 형제 문구, D6). 받은 수량과 나머지. */
