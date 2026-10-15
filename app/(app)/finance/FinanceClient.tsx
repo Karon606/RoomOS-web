@@ -52,7 +52,7 @@ import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
-import { withParticle, hasFinalConsonant } from '@/lib/koParticle'
+import { withParticle } from '@/lib/koParticle'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -2724,11 +2724,10 @@ export default function FinanceClient({
                 const { deleteUndo, archivedId } = sync
                 const undoRetire = deleteUndo ? () => undoDeleteTrackedItem(deleteUndo) : archivedId ? () => unarchiveTrackedItem(archivedId) : null
                 // 결과는 짧게, 까닭은 둘째 줄로(§15 장문형, 웹디자이너 패스 D10. 320px 에서 4줄이던 한 덩이).
-                // 따옴표 뒤 조사는 카테고리 이름 받침으로(정본 판정 hasFinalConsonant, 종전 '는' 고정).
                 pushToast('info', '소모품 카드를 정리했습니다', {
-                  // 둘째 줄은 한 문장(웹디자이너 2차 N6). 줄바꿈 정비(SaveFeedback break-keep) 뒤 실측에서 두 문장보다 길지 않고
-                  // 360px 에서 한 줄 짧다.
-                  detail: `'${newCat}'${hasFinalConsonant(newCat) ? '은' : '는'} 재고 추적 카테고리가 아니라 비품·자재에서 관리됩니다.`,
+                  // 둘째 줄은 한 문장(웹디자이너 2차 N6). 주어는 품목이다(3차 검수 참고). 비품·자재에서 관리되는 것은 카테고리가
+                  // 아니라 이 품목이다. 카테고리 뒤에 '카테고리라'를 붙여 조사가 이름 받침에 안 매인다. 320px·글자 125% 세 줄 이하(실측).
+                  detail: `이 품목은 '${newCat}' 카테고리라 비품·자재에서 관리됩니다.`,
                   ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
                     if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 목록에 다시 표시'); router.refresh() }
                     else pushToast('error', r.error)
