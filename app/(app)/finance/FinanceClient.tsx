@@ -4,8 +4,8 @@ import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragm
 import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, renameTrackedItemLabel, getDurableConvertFacts, undoDurableConvert } from './actions'
 // 소모품으로 적은 구매를 비품으로 바꿀지 묻는 판정·문구 정본(계획서 2단계 F1·F3). 서버 저장도 같은 판정을 다시 돌린다.
 import {
-  conversionPlan, conversionPrecheck, conversionCopy, conversionToastDetail, conversionUndoneText, convertItemsFrom,
-  CONVERT_BLOCKED_MERGED, CONVERT_BLOCKED_LEDGER, type ConvertPlan, type DurableConvertUndo,
+  conversionPlan, conversionPrecheck, conversionCopy, conversionToast, conversionUndoneText, convertItemsFrom, itemFacets,
+  CONVERT_UNDO_LABEL, type ConvertPlan, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
 import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
 import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
@@ -2368,35 +2368,34 @@ export default function FinanceClient({
 
   // 비품 전환 물음(F1·F3, 계획서 2단계 · 운영자 승인 2026-10-15). 저장 직전 물음 사슬의 **맨 앞**이다. 비품이 되면 뒤의
   // 소모품 전용 물음(용량·단위·잘라 쓰기)이 빠져 물음 수가 줄어든다. 판정은 서버 저장과 같은 순수 함수(conversionPlan)이고
-  // 영업장 사실은 서버가 준다(조회 실패는 묻지 않고 저장한다, 형제 게이트와 같다). 이미 받은 소모품(F3)은 수령 자동 점검을
-  // 걷을 수 없으면(직접 센 점검이 합쳐졌거나 이후 점검과 안 맞음) 창 대신 저장 토스트 둘째 줄로 까닭만 알린다.
-  // 돌려주는 값: null 취소(저장 중단·무변경, §27.5) · keep 그대로 저장 · convert 비품으로 저장 · blocked 막힘(그대로 저장 + 안내).
+  // 영업장 사실은 서버가 준다(조회 실패는 묻지 않고 저장한다, 형제 게이트와 같다).
+  // 바꿀 수 없으면(함께 적은 품목에 소모품 이력·받은 소모품의 자동 점검을 못 걷음) 같은 자리에서 [취소][그대로 저장] 창으로
+  // 까닭을 말한다(웹디자이너 1·검수 R6). 저장 뒤 토스트로 알리면 같은 토스트의 조정 적용취소를 덮었다(검수 R4).
+  // 돌려주는 값: null 취소(저장 중단·무변경, §27.5) · keep 그대로 저장 · convert 비품으로 저장. asked 는 창을 띄웠는가.
   type DurableAsk =
-    | { decision: 'keep' }
-    | { decision: 'blocked'; reason: string }
-    | { decision: 'convert'; plan: Exclude<ConvertPlan, { kind: 'none' }>; from: string; roomNos: string[]; adjust: number }
+    | { decision: 'keep'; asked: boolean }
+    | { decision: 'convert'; asked: true; plan: Extract<ConvertPlan, { kind: 'F1' | 'F3' }>; from: string; roomNos: string[] }
   const askDurableConvert = async (o: {
     category: string; items: ItemPickState[]; formRoomId: string | null; received: boolean
-    original: { category: string; roomIds: string[] } | null; expenseId?: string
+    original: { category: string; roomIds: string[]; facets?: ReturnType<typeof itemFacets> } | null; expenseId?: string
   }): Promise<DurableAsk | null> => {
     const items = convertItemsFrom(o.items, o.formRoomId)
+    const input = { category: o.category, items, received: o.received, original: o.original }
     // 사실 없이 가를 수 있는 앞 조건이 거짓이면 서버에 묻지 않는다(대부분의 저장은 여기서 끝난다).
-    if (!conversionPrecheck({ category: o.category, items, received: o.received, original: o.original }, trackedCategories)) return { decision: 'keep' }
+    if (!conversionPrecheck(input, trackedCategories)) return { decision: 'keep', asked: false }
     let res: Awaited<ReturnType<typeof getDurableConvertFacts>>
-    try { res = await getDurableConvertFacts({ labels: items.map(it => it.label), expenseId: o.expenseId ?? null }) } catch { return { decision: 'keep' } }
-    const plan = conversionPlan({ category: o.category, items, received: o.received, original: o.original }, res.facts)
-    if (plan.kind === 'none') return { decision: 'keep' }
-    if (plan.kind === 'F3') {
-      if (!res.receipt) return { decision: 'keep' }
-      if (res.receipt.blocked) return { decision: 'blocked', reason: res.receipt.blocked === 'merged' ? CONVERT_BLOCKED_MERGED : CONVERT_BLOCKED_LEDGER }
-    }
+    try { res = await getDurableConvertFacts({ labels: items.map(it => it.label), expenseId: o.expenseId ?? null }) } catch { return { decision: 'keep', asked: false } }
+    const plan = conversionPlan(input, res.facts)
+    if (plan.kind === 'none') return { decision: 'keep', asked: false }
     const roomNos = plan.roomIds.map(id => roomNoById.get(id) ?? '').filter(Boolean)
-    const adjust = plan.kind === 'F3' ? (res.receipt?.adjustChecks ?? 0) : 0
-    const copy = conversionCopy(plan, { from: o.category, roomNos, receivedMd: res.receipt?.receivedMd, adjustChecks: adjust })
-    const pick = await choiceDialog({ ...copy, level: 'caution' })
+    const copy = conversionCopy(plan, { from: o.category, roomNos, receivedMd: res.receivedMd ?? undefined })
+    if (plan.kind === 'blocked') {
+      return (await confirmDialog({ ...copy, level: 'caution' })) ? { decision: 'keep', asked: true } : null
+    }
+    const pick = await choiceDialog({ ...copy, altLabel: copy.altLabel ?? '', level: 'caution' })
     if (pick === null || pick === 'back') return null
-    if (pick !== 'confirm') return { decision: 'keep' }
-    return { decision: 'convert', plan, from: o.category, roomNos, adjust }
+    if (pick !== 'confirm') return { decision: 'keep', asked: true }
+    return { decision: 'convert', asked: true, plan, from: o.category, roomNos }
   }
   // 전환 적용취소(토스트 액션). 전환만 되돌린다(지출의 다른 입력은 그대로). 결과 문장은 §16 형식(정본 conversionUndoneText).
   const runDurableUndo = (token: DurableConvertUndo, kind: 'F1' | 'F3', from: string) => {
@@ -2474,21 +2473,23 @@ export default function FinanceClient({
         // 카테고리를 durableFrom 으로 함께 싣는다(서버가 같은 판정을 다시 돌려 맞을 때만 받는다). 자리는 서버 정본
         // placementForSave 가 정한다(대상 호실이 배정 예정 호실로, 방별 분배 조각은 각 조각의 호실로).
         const addFormCat = (fd.get('category') as string) || addExpCategory
-        const durableAsk = addIsService ? { decision: 'keep' as const } : await askDurableConvert({
+        const durableAsk = addIsService ? { decision: 'keep' as const, asked: false } : await askDurableConvert({
           category: addFormCat, items: addItems, formRoomId: (fd.get('roomId') as string) || null, received: false, original: null,
         })
         if (durableAsk === null) return
         const durableConv = durableAsk.decision === 'convert' ? durableAsk : null
-        if (durableConv) { fd.set('category', durableConv.plan.target); fd.set('durableFrom', addFormCat) }
+        if (durableConv) { fd.set('category', durableConv.plan.target); fd.set('durableFrom', addFormCat); fd.set('durableKind', durableConv.plan.kind) }
         // 내구재 세트 확인 — 미승인 setHint가 남은 비품 항목은 개수 환산 여부를 등록 전 확답(신고 91b812ce)
-        if (addIsDurable) {
+        // 비품으로 바꾼 등록도 묻는다. 다만 방별 분배가 있으면 묻지 않는다. 세트 환산이 수량을 곱해 분배 조각 수량 합과 어긋난다.
+        const addAllocated = addItems.some(it => (it.allocations?.length ?? 0) > 0)
+        if (addIsDurable || (durableConv && !addAllocated)) {
           const converted = await confirmDurableSetItems(addItems)
           if (converted === null) return   // 취소 → 저장 중단
           if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
         }
         // 품목 이름의 카테고리 이력과 다르면 확답 — 비품·소모품이 카테고리 하나로 갈리기 때문이다
-        // 방금 비품 전환 창에서 카테고리를 정했으면 다시 묻지 않는다(바꾸면 서버 판정과 대상이 갈린다).
-        if (!durableConv) {
+        // 방금 비품 전환 창을 띄웠으면 답과 상관없이 다시 묻지 않는다(같은 물음을 두 번, 바꾸면 서버 판정과 대상이 갈린다, 디자이너 8).
+        if (!durableAsk.asked) {
           const decided = await confirmCategoryAgainstHistory(
             (fd.get('category') as string) || addExpCategory,
             addItems.map(it => it.label),
@@ -2575,7 +2576,8 @@ export default function FinanceClient({
         }
         // 용량 단위로 잔량을 세는 품목인데 용량이 비었으면 한 번 묻는다(신고 27f91356, 운영자 제안).
         // 막지 않는다 — 넣기 싫으면 그대로 저장하고, 그 구매는 개수로 집계된다.
-        {
+        // 비품으로 바꾸는 등록은 묻지 않는다. 비품은 잔량을 세지 않는다(검수 R6).
+        if (!durableConv) {
           const noSpec = finalItems.filter(it => it.label?.trim() && !(Number(it.specValue) > 0))
           if (noSpec.length) {
             const info = await getSpecTrackedInfo(noSpec.map(it => it.label.trim())).catch(() => ({} as Record<string, { specUnit: string }>))
@@ -2684,12 +2686,16 @@ export default function FinanceClient({
         const savedTm = String(fd.get('targetMonth') ?? '')
         const savedDate = String(fd.get('date') ?? '')
         const addedText = savedTm && savedTm !== savedDate.slice(0, 7) ? `지출 등록됨 · ${Number(savedTm.slice(5, 7))}월분` : '지출 등록됨'
-        // 비품으로 바꿨으면 둘째 줄과 적용취소(전환만 되돌린다). 등록 토스트에는 다른 적용취소가 없다(한 토스트 한 동작).
+        // 비품으로 바꿨으면 머리줄에 결과('· 비품'), 둘째 줄에 다음 일, 액션은 전환 적용취소(전환만 되돌린다, 디자이너 2).
+        // 등록 토스트에는 다른 적용취소가 없다(한 토스트 한 동작).
         const addUndo = res.durableUndo
-        if (durableConv) pushToast('success', addedText, {
-          detail: conversionToastDetail('F1', durableConv.plan.target, durableConv.roomNos),
-          ...(addUndo ? { action: { label: '적용취소', run: () => runDurableUndo(addUndo, 'F1', durableConv.from) } } : {}),
-        })
+        if (durableConv) {
+          const t = conversionToast('F1', addedText, durableConv.roomNos)
+          pushToast('success', t.text, {
+            detail: t.detail,
+            ...(addUndo ? { action: { label: CONVERT_UNDO_LABEL, run: () => runDurableUndo(addUndo, 'F1', durableConv.from) } } : {}),
+          })
+        }
         else pushToast('success', addedText)
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
         if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
@@ -2738,19 +2744,25 @@ export default function FinanceClient({
         const durableAsk = detailExp && !detailExp.isShipping && !detailExp.excludeFromInventory && editItems.length > 0
           ? await askDurableConvert({
               category: editFormCat, items: editItems, formRoomId: (fd.get('roomId') as string) || null, received: !!detailExp.receivedAt,
-              original: { category: detailExp.category, roomIds: detailExp.roomId ? [detailExp.roomId] : [] }, expenseId: detailExp.id,
+              original: {
+                category: detailExp.category, roomIds: detailExp.roomId ? [detailExp.roomId] : [],
+                facets: itemFacets({ label: detailExp.itemLabel, qtyValue: detailExp.qtyValue, qtyUnit: detailExp.qtyUnit, specValue: detailExp.specValue, specUnit: detailExp.specUnit }),
+              },
+              expenseId: detailExp.id,
             })
-          : { decision: 'keep' as const }
+          : { decision: 'keep' as const, asked: false }
         if (durableAsk === null) return
         const durableConv = durableAsk.decision === 'convert' ? durableAsk : null
-        const convertBlocked = durableAsk.decision === 'blocked' ? durableAsk.reason : null
         if (durableConv) {
-          fd.set('category', durableConv.plan.target); fd.set('durableFrom', editFormCat)
-          if (durableConv.adjust > 0) fd.set('convertAdjust', '1')
+          fd.set('category', durableConv.plan.target); fd.set('durableFrom', editFormCat); fd.set('durableKind', durableConv.plan.kind)
+          // 이후 점검이 수령분을 삼켰으면 정본 함께 조정이 필요하다(수가 0 이어도 표식은 싣는다, 검수 R1).
+          if (durableConv.plan.adjust.needs) fd.set('convertAdjust', '1')
         }
         // 내구재 세트 확인 — 미승인 setHint가 남은 비품 항목은 개수 환산 여부를 저장 전 확답(신고 91b812ce)
+        // 받기 전 비품으로 바꾸는 수정(F1)도 묻는다(분배가 없을 때만, 등록과 같은 까닭). 받은 구매(F3)는 수량을 바꾸면 안 된다.
         let savedItems = editItems
-        if (editIsDurable) {
+        const editAllocated = editItems.some(it => (it.allocations?.length ?? 0) > 0)
+        if (editIsDurable || (durableConv?.plan.kind === 'F1' && !editAllocated)) {
           const converted = await confirmDurableSetItems(editItems)
           if (converted === null) return   // 취소 → 저장 중단
           if (converted) {
@@ -2836,11 +2848,13 @@ export default function FinanceClient({
         // 함께 조정을 골랐으면 무엇이 옮겨졌는지와 되돌릴 길을 토스트에 싣는다(§16 — 조정만 되돌리고 수정은 유지).
         const shift = res.stockShift
         const editUndo = res.durableUndo
-        if (durableConv) pushToast('success', '지출 수정됨', {
-          detail: conversionToastDetail(durableConv.plan.kind, durableConv.plan.target, durableConv.roomNos),
-          ...(editUndo ? { action: { label: '적용취소', run: () => runDurableUndo(editUndo, durableConv.plan.kind, durableConv.from) } } : {}),
-        })
-        else if (convertBlocked) pushToast('success', '지출 수정됨', { detail: convertBlocked })
+        if (durableConv) {
+          const t = conversionToast(durableConv.plan.kind, '지출 수정됨', durableConv.roomNos, durableConv.plan.adjust.checks)
+          pushToast('success', t.text, {
+            detail: t.detail,
+            ...(editUndo ? { action: { label: CONVERT_UNDO_LABEL, run: () => runDurableUndo(editUndo, durableConv.plan.kind, durableConv.from) } } : {}),
+          })
+        }
         else pushToast('success', '지출 수정됨', shift ? {
           detail: `재고 점검 ${shift.checks.length}건의 잔량도 함께 조정했습니다.`,
           action: { label: '조정 적용취소', run: () => { void undoExpenseStockShift(shift).then(r => {

@@ -38,6 +38,8 @@ export type ReceiptCancelUndo = {
 //   지금 행이 채운 값 그대로일 때만 돌린다(그 사이 사람이 수량을 고쳤으면 그 값을 지키고 수령만 무른다).
 
 // 자동 점검에 운영자 실측이 합쳐진 수령의 거부 문장. 비품 전환 미리보기(durableConvert)가 이 값으로 까닭을 가른다.
+// 자동 점검 뒤에 다른 점검이 있어 조정 없이는(또는 조정 계획을 못 세워) 수령을 무를 수 없다.
+export const RECEIPT_CANCEL_LATER = '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.'
 export const RECEIPT_CANCEL_MERGED = '이 수령 기록에 직접 센 재고 점검이 함께 저장되어 있습니다. 되돌리면 그 실측까지 사라지므로 막았습니다. 재고 점검으로 잔량을 바로잡아 주세요.'
 
 // 판정 결과. 쓰기(applyReceiptCancel)가 다시 읽지 않고 이 값으로 쓴다. 자동 점검은 전 칸(위치 내역 포함)이다.
@@ -95,6 +97,15 @@ export async function planReceiptCancel(
   }
   const it = exp.excludeFromInventory ? null : await matchedTrackedItemForExpense(propertyId, exp)
   let rows: ShiftRow[] = []
+  // 자동 점검 뒤에 다른 점검이 있는가(이 구매의 자동 점검 카드들에서, 입력 시각 기준).
+  const laterCheckExists = async () => !!(await prisma.stockCheck.findFirst({
+    where: {
+      trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
+      createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
+      OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
+    },
+    select: { id: true },
+  }))
   if (opts?.adjustFollowing) {
     // 함께 조정 — 이 수령분을 절대값에 담고 있는 점검(자동 점검 제외)에서 수령분을 뺀다.
     if (it) {
@@ -106,17 +117,13 @@ export async function planReceiptCancel(
         : { ok: true as const, rows: [] as ShiftRow[] }
       if (!plan.ok) return { ok: false, error: plan.error }
       rows = plan.rows
+    } else if (autoChecks.length > 0 && await laterCheckExists()) {
+      // 매칭 카드가 없으면(단위가 갈리는 등) 조정 계획을 세울 수 없다. 이후 점검이 있으면 조정 없는 수령 취소와 같이 거부한다.
+      // 종전에는 이 갈래가 가드 없이 자동 점검만 지워, 이후 점검이 삼킨 수령분이 원장에 남았다(2단계 검수 R1).
+      return { ok: false, error: RECEIPT_CANCEL_LATER }
     }
   } else if (autoChecks.length > 0) {
-    const later = await prisma.stockCheck.findFirst({
-      where: {
-        trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
-        createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
-        OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
-      },
-      select: { id: true },
-    })
-    if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
+    if (await laterCheckExists()) return { ok: false, error: RECEIPT_CANCEL_LATER }
   } else if (it) {
     // 자동 점검이 없는 구식 수령(2026-06 이전 경로 등) — 이 수령분을 삼킨 점검이 있으면
     // 종전에는 아무 가드 없이 receivedAt 만 지워져, 재수령 시 그 수량이 이중 가산됐다(뒷문 봉합).

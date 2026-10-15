@@ -99,7 +99,7 @@ async function main() {
     const sum0 = await amountSum()
     const plain = await fin.addExpense(fd({ ...base, amount: '133000', category: '소모품비', roomId: R519, targetRoomId: '', itemLabel: LT, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: LT, amount: 133000 }]) }))
     eq('F1 등록 쌍둥이(그대로 저장) ok', plain.ok, true)
-    const r = await fin.addExpense(fd({ ...base, amount: '133000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 133000 }]) }))
+    const r = await fin.addExpense(fd({ ...base, amount: '133000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 133000 }]) }))
     if (!r.ok) throw new Error(r.error)
     const row = (await rowsOf(L))[0]
     eq('F1 등록: 비품 카테고리·대상 호실은 배정 예정 호실로', [row.category, row.roomId, row.targetRoomId === R519, row.receivedAt], ['수선유지비', null, true, null])
@@ -118,7 +118,7 @@ async function main() {
 
   // ── F1 등록 다품목(한 품목만 호실) ──────────────────────────────────────────────
   {
-    const r = await fin.addExpense(fd({ ...base, amount: '150000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemsJson: items([{ label: '다품목냉장고', amount: 130000 }, { label: '다품목멀티탭', amount: 20000 }]) }))
+    const r = await fin.addExpense(fd({ ...base, amount: '150000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemsJson: items([{ label: '다품목냉장고', amount: 130000 }, { label: '다품목멀티탭', amount: 20000 }]) }))
     if (!r.ok) throw new Error(r.error)
     const a = (await rowsOf('다품목냉장고'))[0], b = (await rowsOf('다품목멀티탭'))[0]
     eq('다품목: 둘 다 비품, 폼 호실은 둘 다 예정', [a.category, b.category, a.targetRoomId === R519, b.targetRoomId === R519, a.roomId, b.roomId], ['수선유지비', '수선유지비', true, true, null, null])
@@ -129,19 +129,18 @@ async function main() {
     eq('다품목 적용취소: 카드 둘 시드', await prisma.trackedItem.count({ where: { propertyId: P1, label: { in: ['다품목냉장고', '다품목멀티탭'] } } }), 2)
   }
 
-  // ── 다품목 한계(결정 6). 함께 바뀌는 품목에 소모품 이력이 있으면 그 품명이 양쪽에 서서 장부 축 1 갈림이 생긴다(보고용 사실)
+  // ── 다품목에서 함께 적은 품목에 소모품 이력이 있으면 바꾸지 않는다(검수 R6). 바꾸면 그 품명이 양쪽에 서서 장부 축 1 갈림이 생긴다
   {
     await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-02T00:00:00Z'), amount: 3000, category: '소모품비', itemLabel: '한계휴지', qtyValue: 1 } })
-    const r = await fin.addExpense(fd({ ...base, amount: '93000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemsJson: items([{ label: '한계냉장고', amount: 90000 }, { label: '한계휴지', amount: 3000 }]) }))
-    eq('다품목 한계: 호실 있는 품목에 이력이 없으면 전환은 된다', r.ok, true)
-    eq('다품목 한계: 함께 바뀐 품목(이력 있음)은 축 1 갈림', await split('한계휴지'), true)
-    if (r.ok && r.durableUndo) eq('다품목 한계: 적용취소하면 갈림이 풀린다', [(await fin.undoDurableConvert(J(r.durableUndo))).ok, await split('한계휴지')], [true, false])
+    const r = await fin.addExpense(fd({ ...base, amount: '93000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemsJson: items([{ label: '한계냉장고', amount: 90000 }, { label: '한계휴지', amount: 3000 }]) }))
+    eq('R6 함께 적은 품목에 소모품 이력이 있으면 서버가 전환을 받지 않는다', r, { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('R6 거부면 아무것도 안 만들고 축 1 갈림도 없다', [await prisma.expense.count({ where: { propertyId: P1, itemLabel: '한계냉장고' } }), await split('한계휴지')], [0, false])
   }
 
   // ── F1 등록 방별 분배(조각마다 그 조각의 호실이 예정) ───────────────────────────────────
   {
     const sum0 = await amountSum()
-    const r = await fin.addExpense(fd({ ...base, amount: '60000', category: '수선유지비', durableFrom: '소모품비', roomId: '', targetRoomId: '',
+    const r = await fin.addExpense(fd({ ...base, amount: '60000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: '', targetRoomId: '',
       itemsJson: items([{ label: '분배선풍기', amount: 60000, qty: '3', alloc: [{ roomId: R519, qty: '1' }, { roomId: R520, qty: '1' }] }]) }))
     if (!r.ok) throw new Error(r.error)
     const rs = await rowsOf('분배선풍기')
@@ -162,7 +161,7 @@ async function main() {
     const editOf = (id: string, lab: string, extra: Record<string, string>) => fd({ id, ...base, amount: '90000', roomId: R519, itemLabel: lab, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: lab, amount: 90000 }]), ...extra })
     const plain = await fin.updateExpense(editOf(t.id, LT, { category: '소모품비' }))
     eq('F1 수정 쌍둥이(그대로 저장)', plain.ok, true)
-    const r = await fin.updateExpense(editOf(x.id, L, { category: '수선유지비', durableFrom: '소모품비' }))
+    const r = await fin.updateExpense(editOf(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1' }))
     if (!r.ok) throw new Error(r.error)
     const xr = await prisma.expense.findUnique({ where: { id: x.id } })
     eq('F1 수정: 비품·예정 호실 519호·빈 자동 카드 지움', [xr?.category, xr?.roomId, xr?.targetRoomId === R519, await prisma.trackedItem.count({ where: { propertyId: P1, label: L } })], ['수선유지비', null, true, 0])
@@ -179,7 +178,7 @@ async function main() {
     const x = (await rowsOf(L))[0]
     const card = await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: L } })
     await prisma.stockCheck.create({ data: { trackedItemId: card!.id, date: new Date('2026-10-01T00:00:00Z'), remainingQty: 0 } })
-    const r = await fin.updateExpense(fd({ id: x.id, ...base, amount: '90000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 90000 }]) }))
+    const r = await fin.updateExpense(fd({ id: x.id, ...base, amount: '90000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 90000 }]) }))
     eq('비지 않은 카드: 전환은 된다', [r.ok, (await prisma.expense.findUnique({ where: { id: x.id } }))?.category], [true, '수선유지비'])
     eq('비지 않은 카드: 카드는 남고 토큰에 없다', [await prisma.trackedItem.count({ where: { id: card!.id } }), r.ok ? r.durableUndo?.cards.length : -1], [1, 0])
     eq('비지 않은 카드: 축 1 갈림 없음(그 품명 소모품 지출이 없다)', await split(L), false)
@@ -189,16 +188,16 @@ async function main() {
   {
     await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-01T00:00:00Z'), amount: 1000, category: '소모품비', itemLabel: '이력휴지', qtyValue: 1 } })
     const sum0 = await amountSum()
-    eq('재판정: 소모품 이력이 있는 품명은 전환 거부', await fin.addExpense(fd({ ...base, amount: '5000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemLabel: '이력휴지', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '이력휴지', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
-    eq('재판정: 대상 카테고리가 다르면 거부(하드코딩·임의 카테고리 금지)', await fin.addExpense(fd({ ...base, amount: '5000', category: '공과금', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemLabel: '새물건', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '새물건', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
-    eq('재판정: 호실 없이 전환 요청 거부', await fin.addExpense(fd({ ...base, amount: '5000', category: '수선유지비', durableFrom: '소모품비', roomId: '', targetRoomId: '', itemLabel: '새물건2', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '새물건2', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('재판정: 소모품 이력이 있는 품명은 전환 거부', await fin.addExpense(fd({ ...base, amount: '5000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: '이력휴지', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '이력휴지', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('재판정: 대상 카테고리가 다르면 거부(하드코딩·임의 카테고리 금지)', await fin.addExpense(fd({ ...base, amount: '5000', category: '공과금', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: '새물건', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '새물건', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('재판정: 호실 없이 전환 요청 거부', await fin.addExpense(fd({ ...base, amount: '5000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: '', targetRoomId: '', itemLabel: '새물건2', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '새물건2', amount: 5000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
     eq('재판정: 거부면 아무것도 안 만든다', await amountSum(), sum0)
   }
 
   // ── F1 적용취소 CAS: 전환 뒤 비품 화면에서 받으면 되돌리지 않는다 ─────────────────────────
   {
     const L = 'CAS냉장고'
-    const r = await fin.addExpense(fd({ ...base, amount: '70000', category: '수선유지비', durableFrom: '소모품비', roomId: R519, targetRoomId: '', itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 70000 }]) }))
+    const r = await fin.addExpense(fd({ ...base, amount: '70000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: L, qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: L, amount: 70000 }]) }))
     if (!r.ok) throw new Error(r.error)
     const x = (await rowsOf(L))[0]
     eq('CAS 준비: 비품 화면에서 수령', (await assets.setAssetReceived([x.id], true)).ok, true)
@@ -230,7 +229,7 @@ async function main() {
     eq('F3 준비: 수령 자동 점검 하나', await prisma.stockCheck.count({ where: { sourceExpenseId: x.id } }), 1)
     const sum0 = await amountSum()
     eq('F3 쌍둥이(그대로 저장) ok', (await fin.updateExpense(f3Edit(t.id, LT, { category: '소모품비' }))).ok, true)
-    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비' }))
+    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3' }))
     if (!r.ok) throw new Error(r.error)
     const xr = await prisma.expense.findUnique({ where: { id: x.id } })
     eq('F3: 비품·519호·배정일 = 수령일 KST(10/14)·수령 시각 유지', [xr?.category, xr?.roomId === R519, xr?.assignedAt?.toISOString().slice(0, 10), xr?.receivedAt?.toISOString()], ['수선유지비', true, '2026-10-14', '2026-10-13T21:05:33.000Z'])
@@ -258,10 +257,11 @@ async function main() {
       locationBreakdown: { create: [{ storageLocationId: HUB, remainingQty: 1, carried: false }] } } })
     const ledger0 = await ledger([card.id])
     const before = await exact(x.id)
-    const r0 = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비' }))
-    eq('F3 이후 점검: 함께 조정 없이 오면 정본 수령 취소가 거부', r0.ok, false)
+    eq('F3 이후 점검: 미리보기가 조정 필요와 그 수를 준다', (await fin.getDurableConvertFacts({ labels: [L], expenseId: x.id })).facts.receipt, { blocked: null, needsAdjust: true, adjustChecks: 1 })
+    const r0 = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3' }))
+    eq('F3 이후 점검: 함께 조정 없이 오면 정본 수령 취소가 거부', r0, { ok: false, error: rc.RECEIPT_CANCEL_LATER })
     eq('F3 이후 점검: 거부면 무변경', [await exact(x.id), await ledger([card.id])], [before, ledger0])
-    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', convertAdjust: '1' }))
+    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3', convertAdjust: '1' }))
     if (!r.ok) throw new Error(r.error)
     eq('F3 함께 조정: 이후 점검에서 수령분을 뺐다', (await prisma.stockCheck.findUnique({ where: { id: later.id } }))?.remainingQty, 0)
     eq('F3 함께 조정: 카드는 남는다(센 점검이 있다)', await prisma.trackedItem.count({ where: { id: card.id } }), 1)
@@ -278,15 +278,72 @@ async function main() {
     const { x, card } = await recvFixture(L)
     await prisma.stockCheckLocation.updateMany({ where: { stockCheck: { sourceExpenseId: x.id } }, data: { restockedQty: 1 } })
     const before = [await exact(x.id), await ledger([card.id])]
-    eq('F3 합친 실측: 정본 문장으로 거부', await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비' })), { ok: false, error: rc.RECEIPT_CANCEL_MERGED })
+    eq('F3 합친 실측: 미리보기가 막힘(merged)', (await fin.getDurableConvertFacts({ labels: [L], expenseId: x.id })).facts.receipt, { blocked: 'merged', needsAdjust: false, adjustChecks: 0 })
+    eq('F3 합친 실측: 서버도 같은 판정으로 거부', await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3' })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('F3 합친 실측: 정본 수령 취소도 같은 까닭으로 막는다', (await rc.planReceiptCancel(x.id, P1)), { ok: false, error: rc.RECEIPT_CANCEL_MERGED })
     eq('F3 합친 실측: 무변경(합치지 않는다)', [await exact(x.id), await ledger([card.id])], before)
+  }
+
+  // ── 검수 R1·R3·R5 F3 경계(X1·X2·X2b·X3·X8) ─────────────────────────────────────────
+  {
+    // X1 받은 소모품 + 한 방 분배. 저장 경로가 분배 갈래라 F3 가 성립하지 않는다(판정도 묻지 않음, 서버도 거부)
+    const { x } = await recvFixture('엑스원정수기')
+    const its = [{ label: '엑스원정수기', allocations: [{ roomId: R519, qty: '1' }], qtyValue: '1', qtyUnit: '개' }]
+    const { facts } = await fin.getDurableConvertFacts({ labels: ['엑스원정수기'], expenseId: x.id })
+    const orig = { category: '소모품비', roomIds: [], facets: cp.itemFacets({ label: '엑스원정수기', qtyValue: 1, qtyUnit: '개' }) }
+    eq('R1 X1 한 방 분배는 판정이 묻지 않는다', cp.conversionPlan({ category: '소모품비', items: cp.convertItemsFrom(its, null), received: true, original: orig }, facts).kind, 'none')
+    eq('R1 X1 서버도 거부', await fin.updateExpense(fd({ id: x.id, ...base, amount: '133000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3', roomId: '', itemLabel: '엑스원정수기', qtyValue: '1', qtyUnit: '개',
+      itemsJson: items([{ label: '엑스원정수기', amount: 133000, alloc: [{ roomId: R519, qty: '1' }] }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+  }
+  {
+    // X2·X2b 같은 저장에서 수량·품명을 바꾸면 F3 를 받지 않는다(바꾼 원장 델타로 되살리면 어긋난다)
+    const { x, card } = await recvFixture('엑스투제습기')
+    const before = [await exact(x.id), await ledger([card.id])]
+    eq('R3 X2 수량을 바꾼 F3 거부', await fin.updateExpense(fd({ id: x.id, ...base, amount: '133000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3', roomId: R519, itemLabel: '엑스투제습기', qtyValue: '2', qtyUnit: '개', itemsJson: items([{ label: '엑스투제습기', amount: 133000, qty: '2' }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('R3 X2b 품명을 바꾼 F3 거부', await fin.updateExpense(fd({ id: x.id, ...base, amount: '133000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3', roomId: R519, itemLabel: '엑스투오븐', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '엑스투오븐', amount: 133000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('R3 거부면 무변경', [await exact(x.id), await ledger([card.id])], before)
+  }
+  {
+    // X3 F3 뒤 비품 화면에서 수량을 바꾸면 적용취소가 막힌다(되살린 자동 점검이 바뀐 수량과 어긋난다)
+    const { x, card } = await recvFixture('엑스쓰리가습기')
+    const r = await fin.updateExpense(f3Edit(x.id, '엑스쓰리가습기', { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3' }))
+    if (!r.ok || !r.durableUndo) throw new Error('X3 준비 실패')
+    eq('R3 X3 비품 화면에서 수량 3', (await assets.setAssetRowQty(x.id, 3)).ok, true)
+    const after = [await exact(x.id), await ledger([card.id])]
+    eq('R3 X3 수량이 바뀐 뒤 적용취소 거부', await fin.undoDurableConvert(J(r.durableUndo)), { ok: false, error: cp.DURABLE_CONVERT_UNDO_STALE })
+    eq('R3 X3 거부면 무변경', [await exact(x.id), await ledger([card.id])], after)
+  }
+  {
+    // R5 화면이 본 종류와 서버 판정이 다르면 거부(받은 소모품에 F1 을 실어 옴)
+    const { x } = await recvFixture('알파이브선풍기')
+    eq('R5 종류가 다르면 거부', await fin.updateExpense(f3Edit(x.id, '알파이브선풍기', { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1' })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('R5 종류가 없으면 거부', await fin.updateExpense(f3Edit(x.id, '알파이브선풍기', { category: '수선유지비', durableFrom: '소모품비' })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+  }
+  {
+    // X8 매칭 카드가 없는데(단위가 갈림) 이후 점검이 있다. 미리보기는 막힘(ledger), 서버는 조정 표식이 있어도 거부, 정본도 같다
+    const { x, card } = await recvFixture('엑스에잇청소기')
+    await prisma.stockCheck.create({ data: { trackedItemId: card.id, date: new Date('2026-10-20T00:00:00Z'), createdAt: new Date(Date.now() + 60000), remainingQty: 1,
+      locationBreakdown: { create: [{ storageLocationId: HUB, remainingQty: 1, carried: false }] } } })
+    await prisma.trackedItem.update({ where: { id: card.id }, data: { qtyUnit: '대' } })
+    const before = [await exact(x.id), await ledger([card.id])]
+    eq('R1 X8 미리보기는 막힘(ledger)', (await fin.getDurableConvertFacts({ labels: ['엑스에잇청소기'], expenseId: x.id })).facts.receipt, { blocked: 'ledger', needsAdjust: false, adjustChecks: 0 })
+    eq('R1 X8 조정 표식을 실어도 서버가 거부', await fin.updateExpense(f3Edit(x.id, '엑스에잇청소기', { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3', convertAdjust: '1' })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    eq('R1 정본 수령 취소(함께 조정)도 매칭 카드 없이 이후 점검이 있으면 거부', await inv.undoConfirmReceipt(x.id, { adjustFollowing: true }), { ok: false, error: rc.RECEIPT_CANCEL_LATER })
+    eq('R1 X8 거부면 무변경(자동 점검·이후 점검 그대로)', [await exact(x.id), await ledger([card.id])], before)
+  }
+  {
+    // R7 그 품명에 비품 이력이 있으면 그 품명의 비품 카테고리가 대상(영업장 최빈 수선유지비가 아니라)
+    await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-07-01T00:00:00Z'), amount: 1000, category: '관리비', itemLabel: 'R7선반', qtyValue: 1, receivedAt: new Date('2026-07-01T00:00:00Z') } })
+    eq('R7 영업장 최빈으로 실으면 거부', await fin.addExpense(fd({ ...base, amount: '30000', category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: 'R7선반', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: 'R7선반', amount: 30000 }]) })), { ok: false, error: cp.DURABLE_CONVERT_STALE })
+    const r = await fin.addExpense(fd({ ...base, amount: '30000', category: '관리비', durableFrom: '소모품비', durableKind: 'F1', roomId: R519, targetRoomId: '', itemLabel: 'R7선반', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: 'R7선반', amount: 30000 }]) }))
+    eq('R7 품명 이력 카테고리(관리비)로 실으면 받는다', [r.ok, (await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: 'R7선반', amount: 30000 } })).map((e: { category: string; targetRoomId: string | null }) => [e.category, e.targetRoomId === R519])], [true, [['관리비', true]]])
   }
 
   // ── 남의 영업장·다른 용도·고친 토큰 ───────────────────────────────────────────────
   {
     const L = '토큰냉장고'
     const { x } = await recvFixture(L)
-    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비' }))
+    const r = await fin.updateExpense(f3Edit(x.id, L, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F3' }))
     if (!r.ok || !r.durableUndo) throw new Error('토큰 준비 실패')
     const after = await exact(x.id)
     g.__CR_FLOW_PID = P2

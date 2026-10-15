@@ -33,11 +33,11 @@ import { isDurableGoods, placementForSave, assignmentLogData } from '@/app/(app)
 // 소모품으로 적은 구매를 비품으로 바꾸는 저장(F1·F3, 계획서 2단계). 판정·문구·토큰은 순수층(conversionPlan),
 // 조회·검증·되돌림은 공용층(durableConvert), 자동 점검 걷기는 수령 취소 정본(receiptCancel)이다.
 import {
-  convertItemsFrom, DURABLE_CONVERT_STALE, DURABLE_CONVERT_UNDO_DOMAIN, DURABLE_CONVERT_UNDO_INVALID,
-  canonicalDurableConvertUndo, parseDurableConvertUndo, type ConvertFacts, type DurableConvertUndo,
+  convertItemsFrom, itemFacets, rowNowOf, DURABLE_CONVERT_STALE, DURABLE_CONVERT_UNDO_DOMAIN, DURABLE_CONVERT_UNDO_INVALID,
+  canonicalDurableConvertUndo, parseDurableConvertUndo, type ConvertFacts, type DurableConvertUndo, type RowNow,
 } from '@/app/(app)/inventory/assets/conversionPlan'
 import {
-  loadDurableConvertFacts, verifyDurableConvert, receiptConvertPreview, emptyAutoCards, deleteEmptyCardsTx, autoCheckSnaps,
+  loadDurableConvertFacts, verifyDurableConvert, emptyAutoCards, deleteEmptyCardsTx, autoCheckSnaps,
   applyDurableConvertUndo, DurableConvertUndoError,
 } from '@/app/(app)/inventory/durableConvert'
 import { planReceiptCancel, applyReceiptCancel } from '@/app/(app)/inventory/receiptCancel'
@@ -717,16 +717,18 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     // 카테고리 칸은 비품 카테고리다. 서버가 지금 사실로 같은 판정(conversionPlan)을 다시 돌려 맞을 때만 받는다. 자리는
     // 위 placementForSave 가 정한다(받기 전 비품은 대상 호실이 배정 예정 호실로, 방별 분배 조각은 각 조각의 호실로).
     const durableFrom = ((formData.get('durableFrom') as string) || '').trim() || null
+    // 화면이 본 종류(검수 R5). 등록은 F1 뿐이다.
+    const durableKind = ((formData.get('durableKind') as string) || '').trim() || null
     const convertPlan = durableFrom ? await verifyDurableConvert(propertyId, {
-      from: durableFrom, to: category, received: false, original: null,
+      from: durableFrom, to: category, kind: durableKind, received: false, original: null,
       items: convertItemsFrom(ocrCaptureItems.length ? ocrCaptureItems : [{ label: formItemLabel }], roomId || null),
     }) : null
     if (durableFrom && (!convertPlan || convertPlan.kind !== 'F1' || excludeFromInventory)) return { ok: false, error: DURABLE_CONVERT_STALE }
-    // 전환한 등록의 적용취소 토큰. 만든 품목 행(배송비 행 빼고)과 그때 예정 호실, 되돌리면 시드할 품명.
-    const durableUndoOf = (made: { id: string; itemLabel: string | null; isShipping: boolean; targetRoomId: string | null }[]) => convertPlan
+    // 전환한 등록의 적용취소 토큰. 만든 품목 행(배송비 행 빼고)과 그때 예정 호실·품목 칸, 되돌리면 시드할 품명.
+    const durableUndoOf = (made: (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[]) => convertPlan
       ? signDurableUndo(propertyId, {
           v: 1, kind: 'F1', from: durableFrom!, to: category,
-          rows: made.filter(r => r.itemLabel && !r.isShipping).map(r => ({ id: r.id, targetRoomId: r.targetRoomId })),
+          rows: made.filter(r => r.itemLabel && !r.isShipping).map(r => ({ id: r.id, targetRoomId: r.targetRoomId, now: rowNowOf(r) })),
           placed: null, checks: [], shift: null, cards: [],
           seedLabels: [...new Set(made.filter(r => r.itemLabel && !r.isShipping).map(r => r.itemLabel!))], logIds: [],
         })
@@ -887,7 +889,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean), { declaredTrackUnit }).catch(() => {})
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
-      const durableUndo = durableUndoOf(made.slice(0, itemCreates.length) as { id: string; itemLabel: string | null; isShipping: boolean; targetRoomId: string | null }[])
+      const durableUndo = durableUndoOf(made.slice(0, itemCreates.length) as (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[])
       return { ok: true, backfilled, ...(durableUndo ? { durableUndo } : {}) }
     }
 
@@ -1040,10 +1042,18 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     // 비품 전환(F1 받기 전·F3 이미 받은 소모품). 등록과 같은 규칙으로 서버가 판정을 다시 돌린다. 수정은 이번에 카테고리나
     // 호실을 바꿨을 때만 묻는다(원래 값 existing). F3 은 품목 하나·호실 하나라 품목 나누기·방별 분배 경로를 타지 않는다.
     const durableFrom = ((formData.get('durableFrom') as string) || '').trim() || null
+    // 화면이 본 종류(F1·F3). 서버 판정과 다르면 거부한다(검수 R5, 창을 띄운 뒤 수령 상태가 바뀐 경우).
+    const durableKind = ((formData.get('durableKind') as string) || '').trim() || null
+    // 품목 칸(F3 의 '같은 저장에서 안 바꿨나'). 폼이 칸을 안 실으면 저장 경로처럼 원래 값을 쓴다.
+    const formOr = (k: string, v: unknown) => formData.has(k) ? v : undefined
     const convertPlan = durableFrom ? await verifyDurableConvert(propertyId, {
-      from: durableFrom, to: category, received: !!existing.receivedAt, excludeExpenseId: id,
-      original: { category: existing.category, roomIds: existing.roomId ? [existing.roomId] : [] },
-      items: convertItemsFrom(parsedItems.length ? parsedItems : [{ label: formItemLabel || existing.itemLabel }], roomId || null),
+      from: durableFrom, to: category, kind: durableKind, received: !!existing.receivedAt, excludeExpenseId: id,
+      original: { category: existing.category, roomIds: existing.roomId ? [existing.roomId] : [], facets: itemFacets({ label: existing.itemLabel, qtyValue: existing.qtyValue, qtyUnit: existing.qtyUnit, specValue: existing.specValue, specUnit: existing.specUnit }) },
+      items: convertItemsFrom(parsedItems.length ? parsedItems : [{
+        label: (formOr('itemLabel', formItemLabel) as string | undefined) ?? existing.itemLabel,
+        qtyValue: formOr('qtyValue', formQtyValue) ?? existing.qtyValue, qtyUnit: (formOr('qtyUnit', formQtyUnit) as string | undefined) ?? existing.qtyUnit,
+        specValue: formOr('specValue', formSpecValue) ?? existing.specValue, specUnit: (formOr('specUnit', formSpecUnit) as string | undefined) ?? existing.specUnit,
+      }], roomId || null),
     }) : null
     if (durableFrom && (!convertPlan || existing.isShipping || excludeFromInventory || existing.disposedAt)) return { ok: false, error: DURABLE_CONVERT_STALE }
     // 비어 있는 자동 카드(점검·입수·폐기·다른 구매 0). 원래 카테고리가 소모품일 때 그 품명 카드를 본다. 지우기는 저장과 한 트랜잭션.
@@ -1219,10 +1229,6 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             targetMonth,
           },
         })] : []),
-        // 비품 전환(F1)이면 빈 자동 카드를 같은 트랜잭션에서 지운다(그 사이 기록이 붙었으면 안 지운다, 비어 있음 조건).
-        ...retire.snapshots.map(c => prisma.trackedItem.deleteMany({
-          where: { id: c.item.id, propertyId, stockChecks: { none: {} }, additions: { none: {} }, disposals: { none: {} } },
-        })),
       ])
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
       await noteUnits(newUnitsOnly(multiItems.map(i => i.specUnit), existing?.specUnit), newUnitsOnly(multiItems.map(i => i.qtyUnit), existing?.qtyUnit))
@@ -1233,14 +1239,17 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
       if (!convertPlan) return { ok: true, backfilled }
-      // 전환 토큰. 품목 행(첫 행 + 새 행, 배송비 행 빼고)과 그때 예정 호실, 실제로 지운 카드만.
-      const madeRows = multiResults.slice(0, 1 + restRows.length) as { id: string; itemLabel: string | null; isShipping: boolean; targetRoomId: string | null }[]
-      const cardResults = multiResults.slice(multiResults.length - retire.snapshots.length) as { count: number }[]
-      const cardsDone = retire.snapshots.filter((_, k) => cardResults[k]?.count === 1)
+      // 전환 토큰. 품목 행(첫 행 + 새 행, 배송비 행 빼고)과 그때 예정 호실·품목 칸, 실제로 지운 카드만.
+      const madeRows = multiResults.slice(0, 1 + restRows.length) as (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[]
+      // 빈 자동 카드 정리. 이 갈래는 배열 트랜잭션이라 그 안에서 '다른 구매 없음'을 다시 셀 수 없다. 저장 직후 따로 한 트랜잭션에서
+      // 다시 세고 비어 있을 때만 지운다(그 사이 기록이 붙었으면 카드를 남기고 토큰에도 안 싣는다. 남은 빈 카드는 해가 없다).
+      const cardsDone = retire.snapshots.length
+        ? await prisma.$transaction(tx => deleteEmptyCardsTx(tx, propertyId, retire.snapshots, madeRows.map(r => r.id)))
+        : []
       if (cardsDone.length) revalidatePath('/inventory')
       const durableUndo = signDurableUndo(propertyId, {
         v: 1, kind: 'F1', from: durableFrom!, to: category,
-        rows: madeRows.filter(r => r.itemLabel && !r.isShipping).map(r => ({ id: r.id, targetRoomId: r.targetRoomId })),
+        rows: madeRows.filter(r => r.itemLabel && !r.isShipping).map(r => ({ id: r.id, targetRoomId: r.targetRoomId, now: rowNowOf(r) })),
         placed: null, checks: [], shift: null, cards: cardsDone, seedLabels: [], logIds: [],
       })
       return { ok: true, backfilled, ...(durableUndo ? { durableUndo } : {}) }
@@ -1356,15 +1365,15 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       const done = await prisma.$transaction(async tx => {
         const cu = await applyReceiptCancel(tx, cancelPlan, { keepReceived: true })
         const row = await tx.expense.update({ where: { id }, data: { ...singleUpdateData, assignedAt: assignDay, assignedLocationId: null, isCommonAsset: false } })
-        const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots)
+        const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots, [id])
         const log = await tx.assetAssignmentLog.create({ data: assignmentLogData(propertyId, row.itemLabel, row,
           { kind: 'none', label: '미배정' }, { kind: 'room', label: fmtRoomNo(room.roomNo, '') || '방' }, row.qtyValue ?? 1, assignDay) })
-        return { shift: cu.shift, cards, logId: log.id }
+        return { shift: cu.shift, cards, logId: log.id, now: rowNowOf(row) }
       })
       durableUndo = signDurableUndo(propertyId, {
         v: 1, kind: 'F3', from: durableFrom!, to: category, rows: [],
         placed: {
-          id, roomId: place.roomId, assignedAt: assignDay.toISOString(),
+          id, roomId: place.roomId, assignedAt: assignDay.toISOString(), now: done.now,
           prev: { assignedAt: existing.assignedAt ? existing.assignedAt.toISOString() : null, assignedLocationId: existing.assignedLocationId, isCommonAsset: existing.isCommonAsset },
         },
         checks, shift: done.shift, cards: done.cards, seedLabels: [], logIds: [done.logId],
@@ -1374,11 +1383,11 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       // F1(받기 전 수정). 자리 두 칸은 placementForSave 가 정했다(대상 호실이 배정 예정 호실로). 빈 자동 카드를 같은 트랜잭션에서 지운다.
       const done = await prisma.$transaction(async tx => {
         const row = await tx.expense.update({ where: { id }, data: singleUpdateData })
-        const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots)
+        const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots, [id])
         return { row, cards }
       })
       durableUndo = signDurableUndo(propertyId, {
-        v: 1, kind: 'F1', from: durableFrom!, to: category, rows: [{ id, targetRoomId: done.row.targetRoomId }],
+        v: 1, kind: 'F1', from: durableFrom!, to: category, rows: [{ id, targetRoomId: done.row.targetRoomId, now: rowNowOf(done.row) }],
         placed: null, checks: [], shift: null, cards: done.cards, seedLabels: [], logIds: [],
       })
       if (done.cards.length) revalidatePath('/inventory')
@@ -3315,23 +3324,18 @@ export async function getLabelCategoryHistory(labels: string[]): Promise<Record<
 // 비품 전환 물음(F1·F3)의 판정에 넣을 영업장 사실. 화면이 저장 직전에 같은 순수 판정(conversionPlan)을 돌리려고 읽는다.
 // 이미 받은 소모품(수정 폼)이면 수령 자동 점검을 걷을 수 있는지(정본 수령 취소 판정)와 이후 점검 조정 수, 수령일도 함께 준다.
 // 쓰기 없음. 저장할 때 서버가 같은 판정을 다시 돌리므로 여기 값을 믿고 쓰는 곳은 없다.
-export async function getDurableConvertFacts(input: { labels: string[]; expenseId?: string | null }): Promise<{
-  facts: ConvertFacts
-  receipt: { blocked: 'merged' | 'ledger' | null; adjustChecks: number; receivedMd: string } | null
-}> {
+export async function getDurableConvertFacts(input: { labels: string[]; expenseId?: string | null }): Promise<{ facts: ConvertFacts; receivedMd: string | null }> {
   const { propertyId } = await requirePropertyAccess()
   const labels = (Array.isArray(input?.labels) ? input.labels : []).filter((l): l is string => typeof l === 'string').slice(0, 50)
   const expenseId = typeof input?.expenseId === 'string' && input.expenseId ? input.expenseId : null
+  // 받은 소모품의 수령 취소 미리보기(facts.receipt)는 저장 때와 같은 조회 정본이 싣는다(화면과 서버가 같은 사실로 가른다).
   const facts = await loadDurableConvertFacts(propertyId, labels, expenseId)
-  let receipt: { blocked: 'merged' | 'ledger' | null; adjustChecks: number; receivedMd: string } | null = null
-  if (expenseId) {
-    const e = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { receivedAt: true, category: true } })
-    if (e?.receivedAt && facts.trackedCats.includes(e.category)) {
-      const ymd = kstYmdStr(e.receivedAt)
-      receipt = { ...(await receiptConvertPreview(expenseId, propertyId)), receivedMd: `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}` }
-    }
+  let receivedMd: string | null = null
+  if (expenseId && facts.receipt) {
+    const e = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { receivedAt: true } })
+    if (e?.receivedAt) { const ymd = kstYmdStr(e.receivedAt); receivedMd = `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}` }
   }
-  return { facts, receipt }
+  return { facts, receivedMd }
 }
 
 // 비품 전환 적용취소. 토큰 하나로 전환만 되돌린다(지출의 다른 수정은 그대로). 토큰은 화면을 거쳐 돌아오는 값이라

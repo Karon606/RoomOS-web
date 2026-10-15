@@ -13,65 +13,73 @@ import { planReceiptCancel, RECEIPT_CANCEL_MERGED } from './receiptCancel'
 import { trackedItemDeleteSnapshot, restoreTrackedItemTx, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 import {
   conversionPlan, DURABLE_CONVERT_UNDO_INVALID, DURABLE_CONVERT_UNDO_STALE,
-  type ConvertFacts, type ConvertInput, type ConvertPlan, type DurableConvertUndo, type AutoCheckSnap,
+  type ConvertFacts, type ConvertInput, type ConvertPlan, type DurableConvertUndo, type AutoCheckSnap, type ReceiptFact,
 } from './assets/conversionPlan'
 
 /**
  * 판정에 넣을 영업장 사실. labels 는 저장하려는 품명들, excludeExpenseId 는 수정 폼이면 그 지출(이력에서 뺀다).
  * 비품 물품 빈도는 비품 화면 모집단(assets durableExpenseWhere)의 물품 갈래와 같은 축이다(품명 있음·배송비 아님·추적 밖·재고 제외 아님).
+ * 수정하는 지출이 받은 소모품이면 수령 취소 미리보기(receipt)도 싣는다. 화면과 서버가 같은 사실로 F3 막힘을 가른다.
  */
 export async function loadDurableConvertFacts(propertyId: string, labels: string[], excludeExpenseId?: string | null): Promise<ConvertFacts> {
   const trackedCats = await getTrackedCategories(propertyId)
   const names = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
-  const [hist, counts, prop] = await Promise.all([
+  const durableGoods = { propertyId, itemLabel: { not: null }, isShipping: false, category: { notIn: trackedCats }, excludeFromInventory: false }
+  const [hist, counts, labelCounts, prop, editing] = await Promise.all([
     names.length
       ? prisma.expense.findMany({
           where: { propertyId, itemLabel: { in: names }, category: { in: trackedCats }, isShipping: false, ...(excludeExpenseId ? { id: { not: excludeExpenseId } } : {}) },
           select: { itemLabel: true }, distinct: ['itemLabel'],
         })
       : Promise.resolve([] as { itemLabel: string | null }[]),
-    prisma.expense.groupBy({
-      by: ['category'],
-      where: { propertyId, itemLabel: { not: null }, isShipping: false, category: { notIn: trackedCats }, excludeFromInventory: false },
-      _count: { _all: true },
-    }),
+    prisma.expense.groupBy({ by: ['category'], where: durableGoods, _count: { _all: true } }),
+    // 그 품명들의 비품 카테고리 빈도(검수 R7, 품명에 비품 이력이 있으면 그 카테고리가 먼저다)
+    names.length
+      ? prisma.expense.groupBy({ by: ['itemLabel', 'category'], where: { ...durableGoods, itemLabel: { in: names } }, _count: { _all: true } })
+      : Promise.resolve([] as { itemLabel: string | null; category: string; _count: { _all: number } }[]),
     prisma.property.findUnique({ where: { id: propertyId }, select: { expenseCategories: true } }),
+    excludeExpenseId ? prisma.expense.findFirst({ where: { id: excludeExpenseId, propertyId }, select: { receivedAt: true, category: true } }) : Promise.resolve(null),
   ])
+  const receipt = editing?.receivedAt && trackedCats.includes(editing.category) ? await receiptConvertPreview(excludeExpenseId!, propertyId) : null
   return {
     trackedCats,
     trackedHistoryLabels: hist.map(h => h.itemLabel).filter((v): v is string => !!v),
     durableCounts: counts.map(c => ({ category: c.category, count: c._count._all })),
+    labelDurableCounts: labelCounts.filter(c => c.itemLabel).map(c => ({ label: c.itemLabel!, category: c.category, count: c._count._all })),
     // 영업장 지출 카테고리 목록(조회 화면 getExpenseCategories 와 같은 해석 정본)
     propertyCategories: parseOptionList('expenseCategories', (prop as { expenseCategories?: string | null } | null)?.expenseCategories),
+    receipt,
   }
 }
 
 /**
- * 재무 저장이 받은 전환 요청이 화면과 같은 판정인가. from 은 '그대로 저장'이면 쓰였을 카테고리, to 는 폼이 실어 온 카테고리.
- * 서버가 지금 사실로 판정을 다시 돌려 묻는 판정이고 대상 카테고리가 같을 때만 그 판정을 돌려준다. 아니면 null(거부).
+ * 재무 저장이 받은 전환 요청이 화면과 같은 판정인가. from 은 '그대로 저장'이면 쓰였을 카테고리, to 는 폼이 실어 온 카테고리,
+ * kind 는 화면이 본 종류(F1·F3, 검수 R5). 서버가 지금 사실로 판정을 다시 돌려 바꿀 수 있는 판정이고 종류와 대상 카테고리가
+ * 같을 때만 그 판정을 돌려준다. 아니면 null(거부). 막힌 판정(blocked)은 '비품으로 저장'을 주지 않으므로 받지 않는다.
  */
 export async function verifyDurableConvert(
   propertyId: string,
-  req: { from: string; to: string; items: ConvertInput['items']; received: boolean; original: ConvertInput['original']; excludeExpenseId?: string | null },
-): Promise<Exclude<ConvertPlan, { kind: 'none' }> | null> {
+  req: { from: string; to: string; kind: string | null; items: ConvertInput['items']; received: boolean; original: ConvertInput['original']; excludeExpenseId?: string | null },
+): Promise<Extract<ConvertPlan, { kind: 'F1' | 'F3' }> | null> {
   const facts = await loadDurableConvertFacts(propertyId, req.items.map(i => i.label), req.excludeExpenseId)
   const plan = conversionPlan({ category: req.from, items: req.items, received: req.received, original: req.original }, facts)
-  if (plan.kind === 'none' || plan.target !== req.to) return null
+  if ((plan.kind !== 'F1' && plan.kind !== 'F3') || plan.kind !== req.kind || plan.target !== req.to) return null
   return plan
 }
 
 /**
  * 이미 받은 소모품(F3)의 수령 자동 점검을 걷을 수 있는가(정본 수령 취소 판정 그대로, 쓰기 없음).
- * 이후 점검이 수령분을 삼켰으면 정본의 함께 조정(adjustFollowing)으로 걷는다. 그 수를 창에 적는다.
- * 실측이 자동 점검에 합쳐졌으면 'merged', 조정 계획이 안 서면 'ledger'(둘 다 창 대신 안내하고 그대로 저장).
+ * 조정 없이 걷히면 그대로. 안 되면 정본의 함께 조정(adjustFollowing)으로 다시 본다. 되면 '조정 필요'(needsAdjust)와 그 수를 준다.
+ * 저장은 화면이 실은 조정 표식대로 정본을 부르므로, 수가 0 이어도 조정이 필요하면 표식을 실어야 한다(검수 R1 X8).
+ * 실측이 자동 점검에 합쳐졌으면 'merged', 조정으로도 안 되면(매칭 카드 없음·계획 불성립) 'ledger'.
  */
-export async function receiptConvertPreview(expenseId: string, propertyId: string): Promise<{ blocked: 'merged' | 'ledger' | null; adjustChecks: number }> {
+export async function receiptConvertPreview(expenseId: string, propertyId: string): Promise<ReceiptFact> {
   const plain = await planReceiptCancel(expenseId, propertyId)
-  if (plain.ok) return { blocked: null, adjustChecks: 0 }
-  if (plain.error === RECEIPT_CANCEL_MERGED) return { blocked: 'merged', adjustChecks: 0 }
+  if (plain.ok) return { blocked: null, needsAdjust: false, adjustChecks: 0 }
+  if (plain.error === RECEIPT_CANCEL_MERGED) return { blocked: 'merged', needsAdjust: false, adjustChecks: 0 }
   const adjusted = await planReceiptCancel(expenseId, propertyId, { adjustFollowing: true })
-  if (adjusted.ok) return { blocked: null, adjustChecks: adjusted.plan?.rows.length ?? 0 }
-  return { blocked: adjusted.error === RECEIPT_CANCEL_MERGED ? 'merged' : 'ledger', adjustChecks: 0 }
+  if (adjusted.ok) return { blocked: null, needsAdjust: true, adjustChecks: adjusted.plan?.rows.length ?? 0 }
+  return { blocked: adjusted.error === RECEIPT_CANCEL_MERGED ? 'merged' : 'ledger', needsAdjust: false, adjustChecks: 0 }
 }
 
 /**
@@ -98,10 +106,15 @@ export async function emptyAutoCards(propertyId: string, category: string, label
   return { snapshots, kept }
 }
 
-/** 빈 자동 카드를 지운다(부르는 쪽 트랜잭션). 그 사이 기록이 붙었으면 안 지운다. 지운 카드의 스냅샷만 돌려준다(토큰에 실을 것). */
-export async function deleteEmptyCardsTx(tx: InventoryTx, propertyId: string, snapshots: TrackedItemDeleteUndo[]): Promise<TrackedItemDeleteUndo[]> {
+/**
+ * 빈 자동 카드를 지운다(부르는 쪽 트랜잭션). 그 사이 기록이 붙었으면 안 지운다. 지운 카드의 스냅샷만 돌려준다(토큰에 실을 것).
+ * 점검·입수·폐기는 삭제 조건(관계 없음)으로, 그 품명의 다른 구매는 트랜잭션 안에서 다시 센다(검수 참고, 고른 뒤 생긴 구매).
+ */
+export async function deleteEmptyCardsTx(tx: InventoryTx, propertyId: string, snapshots: TrackedItemDeleteUndo[], expenseIds: string[]): Promise<TrackedItemDeleteUndo[]> {
   const done: TrackedItemDeleteUndo[] = []
   for (const s of snapshots) {
+    const others = await tx.expense.count({ where: { propertyId, category: s.item.category, itemLabel: s.item.label, id: { notIn: expenseIds } } })
+    if (others > 0) continue
     const r = await tx.trackedItem.deleteMany({
       where: { id: s.item.id, propertyId, stockChecks: { none: {} }, additions: { none: {} }, disposals: { none: {} } },
     })
@@ -140,9 +153,11 @@ export async function applyDurableConvertUndo(tx: InventoryTx, propertyId: strin
   const ids = [...undo.rows.map(r => r.id), ...(undo.placed ? [undo.placed.id] : [])]
   if ((await tx.expense.count({ where: { id: { in: ids }, propertyId } })) !== ids.length) throw INVALID
 
+  // 품목 칸(품명·수량·단위·규격)도 전환 직후 그대로여야 한다. 바뀌었으면 되살릴 소모품 원장과 어긋난다(검수 R3).
+  const facetsOf = (n: DurableConvertUndo['rows'][number]['now']) => ({ itemLabel: n.itemLabel, qtyValue: n.qtyValue, qtyUnit: n.qtyUnit, specValue: n.specValue, specUnit: n.specUnit })
   for (const r of undo.rows) {
     const u = await tx.expense.updateMany({
-      where: { id: r.id, propertyId, category: undo.to, receivedAt: null, disposedAt: null, roomId: null, targetRoomId: r.targetRoomId, assignedLocationId: null, isCommonAsset: false },
+      where: { id: r.id, propertyId, category: undo.to, receivedAt: null, disposedAt: null, roomId: null, targetRoomId: r.targetRoomId, assignedLocationId: null, isCommonAsset: false, ...facetsOf(r.now) },
       data: { category: undo.from, roomId: r.targetRoomId, targetRoomId: null },
     })
     if (u.count !== 1) throw STALE
@@ -152,7 +167,7 @@ export async function applyDurableConvertUndo(tx: InventoryTx, propertyId: strin
     const u = await tx.expense.updateMany({
       where: {
         id: p.id, propertyId, category: undo.to, receivedAt: { not: null }, disposedAt: null,
-        roomId: p.roomId, assignedAt: new Date(p.assignedAt), assignedLocationId: null, isCommonAsset: false,
+        roomId: p.roomId, assignedAt: new Date(p.assignedAt), assignedLocationId: null, isCommonAsset: false, ...facetsOf(p.now),
       },
       data: {
         category: undo.from,
