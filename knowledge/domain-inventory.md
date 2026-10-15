@@ -1155,3 +1155,79 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
 - 그물: `scripts/test-unit-mismatch.ts`·`check-unit-mismatch-wiring.mjs`(verify:fast), `check-qty-card-unit-gap.mjs`(verify:db,
   개수 추적 카드가 단위 없이 이력 단위가 하나로 모이면 위반). 이력 단위가 섞인 null 카드는 병합 의도일 수 있어 안 잡는다.
 - 범위 밖(기존 미해결): 지출 **수정** 저장 경로에는 이 확인창이 없다.
+
+## 비품 전환과 수령 배정 (2026-10-15, 냉장고 519호 · 계획서 비품-전환-배정 1·2단계 · 운영자 승인)
+
+발단: 쿠팡 133,000원 냉장고를 소모품비 + 대상 호실 519호로 적자 소모품 재고로 잡혀 비품 화면에서 빠졌고, 수량이 비어
+수령이 자동 점검 없이 됐다(유령수령). **비품과 소모품을 가르는 축은 여전히 지출 카테고리 하나다**(추적 카테고리면 소모품).
+아래 file:line 은 2026-10-15 시점 기록이다. 코드가 진실이다.
+
+### targetRoomId = '배정 예정 호실'
+- 스키마에 원래 있던 죽은 text 칸을 되살렸다(FK 없음, 마이그레이션 없음). 뜻은 **받기 전 비품 물품이 받을 때 놓일 방**이다.
+  FK 가 없으니 서버가 그 영업장 방인지 본다(addExpense·updateExpense 의 formRoomIds 관문, `check-action-property-scope`).
+- 저장 규칙 정본은 `placementForSave`(inventory/assets/receiptPlacement.ts:71). 비품 물품이 아니면 비운다. 받은 비품은 원래 값을
+  지킨다. 받기 전 비품은 roomId 를 비우고 자리를 targetRoomId 로만 둔다(폼 '배정할 호실' 칸, 옛 화면이 roomId 로 실으면 그 값을
+  예정으로 옮긴다, 칸이 실려 왔는데 비었으면 지운다·부재면 보존). 방별 분배 조각도 조각마다 같은 규칙이다.
+- 재무 등록 폼은 비품이어도 '배정할 호실 (선택)'을 받는다. 수정 폼은 받기 전 비품에만 선다.
+
+### 수령 전 비품 자리 불변식
+- **받기 전 비품 물품 행은 roomId·assignedLocationId 가 비고 공용 표식이 꺼져 있다.** 자리는 targetRoomId 뿐이다.
+  비품에서 roomId 는 곧 배정된 자리라, 받기 전에 roomId 가 있으면 받는 순간 말없이 그 방에 서고 배정 이력도 안 남았다.
+- 막는 자리: 배정(옮기기·나눠 배정·일괄 배정)은 받기 전 행을 거부(`assignDenialUnreceived`), 놓인 비품의 '수령대기로'는 거부
+  (`unreceiveDenialPlaced`, 방·공용부면 '먼저 미배정으로 옮겨', 공용 자재면 '먼저 공용 해제'), 속성으로 행을 집는 쓰기(미배정 접기·
+  배정 이력 되돌리기)는 `PLACEABLE_WHERE`(receiptPlacement.ts:305), 재고 제외·포함 왕복도 placementForSave.
+- 놓인 행 판정 정본은 `isUnplaced`(방·공용부·공용 자재 셋). 장부 그물 `check-asset-pending-placement.ts`(verify:db).
+
+### 수령 배정 창(F2)
+- 비품 화면 수령 대기 '수령 완료'에서 받는 몫이 예정 호실을 가졌고 안 놓였으면 [취소][수령만][519호에 배정](normal)을 묻는다.
+  판정은 화면·서버 같은 순수 함수 `receiptPlacementPlan`(receiptPlacement.ts:149). 부분 도착 + 여러 방·일부만 호실은 창 없이
+  미배정으로 받는다. 서버는 화면이 본 계획(expect)과 다르면 거부한다.
+- `setAssetReceived`(assets/actions.ts:283)가 수령·배정·이력('미배정에서 519호', 정본 모양 `assignmentLogData`)을 한 트랜잭션에
+  쓴다. 배정일은 KST 오늘(`ymdToDbDate(kstYmdStr())`, @db.Date 에 new Date() 를 넣으면 KST 00~09시가 어제로 박힌다).
+- 적용취소(`undoAssetReceipt`)는 수령·배정·이력을 함께 무르고 예정 호실은 남긴다. 결과 문장 '수령과 배정을 적용취소했습니다 · 수령 대기로 복귀'.
+- 비품 수령 대기도 종 알림에 뜬다(비품 화면 수령 대기로 보낸다). 금액 읽기가 막힌 역할(제한 스태프)에게는 비품 수령 대기 알림이 안 선다.
+
+### 소모품 수령의 수량 관문
+- 수량이 빈 추적 구매는 **도착 수량을 받아 채운 뒤에만** 받는다(`receiptNeedsQty`, receiptQtyGate.ts:30). 재고 화면 셋(수령 대기 A·
+  상세 구매 수령 B·구매 수정 수령일 C)이 칸을 띄우고, 서버 `confirmReceipt` 는 끝내 비면 거부한다. 수령 취소는 채운 수량·단위·세부도
+  채운 값 그대로일 때만(CAS) 원래 값으로 돌린다.
+- 소모품 수령·수령 취소는 추적 카테고리 행만, 비품 수령은 비품 모집단 행만 받는다(화면을 연 뒤 카테고리가 바뀐 낡은 id 거부).
+
+### 비품 전환 판정(F1·F3)과 대상 카테고리
+- 판정·문구·토큰 정본은 순수층 `conversionPlan`(inventory/assets/conversionPlan.ts:83). 화면(재무 등록·수정 저장 직전 물음 사슬의
+  **맨 앞**, FinanceClient `askDurableConvert`)과 서버(addExpense·updateExpense 가 `verifyDurableConvert` 로 다시 판정)가 같은 함수를 부른다.
+- 발동: 저장하려는 카테고리가 추적 카테고리 + 대상 호실이 적힌 품목이 있음 + 그 품명에 이 지출 말고 추적 카테고리 구매 이력이 없음.
+  수정 폼은 이번에 카테고리나 호실을 바꿨을 때만(그대로 저장했던 구매는 다시 묻지 않는다, 결정 3). 소모품 수령 경로에는 전환 물음이 없다.
+  **금액 문턱·가전 낱말은 쓰지 않는다**(멀티테넌트, 쌀 20kg 오탐).
+- 대상 카테고리 `durableTargetCategory`(conversionPlan.ts:64): 그 영업장 비품 물품을 가장 많이 담은 카테고리(동수면 가나다 앞).
+  그 영업장 지출 카테고리 목록에 있는 것만 본다(목록에서 뺀 이름으로 저장하면 저장 경로가 목록에 되살린다). 비품 이력이 없으면 앱
+  기본 목록의 수선유지비가 그 영업장 목록에 있을 때만, 없으면 묻지 않는다.
+- 다품목은 한 품목만 호실이어도 묻고 함께 비품이 되는 품목을 창에 적는다(카테고리는 지출 하나에 하나, 결정 6). 함께 바뀌는 품목에
+  소모품 이력이 있으면 축 1 갈림이 생긴다(알려진 한계).
+- 이미 받은 소모품(F3)은 품목 하나·호실 하나일 때만 묻는다. 수령 자동 점검을 걷을 수 없으면(실측이 합쳐짐·조정 계획 불성립) 창 대신
+  저장 토스트 둘째 줄로 까닭만 알리고 그대로 저장한다.
+
+### 전환의 쓰기
+- F1(받기 전): 카테고리를 대상 카테고리로, 자리는 placementForSave 가 대상 호실을 예정 호실로 옮긴다(방별 분배 조각은 조각 호실).
+  수정이면 그 품명의 **빈 자동 카드**(점검·입수·폐기·다른 구매 0, `emptyAutoCards`)를 스냅샷 뜨고 같은 트랜잭션에서 비어 있음 조건으로
+  지운다. '재고 품목 카테고리도 같이 바꿀까요?'는 띄우지 않는다. 등록은 카드가 애초에 안 생긴다(시드가 추적 카테고리만 본다).
+- F3(받은 소모품): 한 트랜잭션에 수령 자동 점검을 **수령 취소 정본**(`planReceiptCancel`·`applyReceiptCancel`, receiptCancel.ts:57·152)으로
+  걷는다(이후 점검이 삼켰으면 창에 그 수를 적고 정본 함께 조정, 실측이 합쳐졌으면 정본이 막는다), 빈 카드 삭제, 카테고리 전환,
+  그 방에 배정(배정일 = 수령일의 KST 날짜), 이력 '미배정에서 519호'를 직접 남긴다(이미 그 방이어도). 수령 시각은 지킨다.
+- 공용층: 수령 취소 판정·쓰기는 receiptCancel.ts, 품목 삭제 스냅샷·되살림은 trackedItemSnapshot.ts, 전환 조회·검증·되돌림은
+  durableConvert.ts 다(재무 저장 트랜잭션에서 부르려고 서버 액션 파일 밖으로 나눴다, ledgerShift 와 같은 배치).
+
+### 적용취소 토큰 서명
+- 화면을 거쳐 돌아오는 토큰은 전부 현금영수증 정본 `signUndoBody`/`verifyUndoBody`(rooms/cashReceiptLine)로 서명한다. 용도 라벨이
+  달라 서로의 서명이 안 맞는다: 'asset-receipt'(비품 수령), 'receipt-qty-fill'(수량 채움), 'expense-durable-convert'(비품 전환),
+  'cash-receipt'. 영업장 id 가 서명에 들어 남의 영업장으로 옮긴 토큰도 떨어진다. 운영에서 키가 없으면 토큰을 내지 않는다(적용취소 숨김).
+- 전환 적용취소(`undoDurableConvert`)는 **전환만** 되돌린다(같은 저장의 다른 입력은 남는다). from 이 지금 추적 카테고리인지, 대상 행이
+  그 영업장 것인지 보고, 행마다 '전환 직후 그대로인가'(CAS)를 걸어 바꾼 칸만 되돌린다. F3 는 걷은 자동 점검을 위치 내역 id·이월 표식까지
+  바이트 그대로, 지운 카드는 같은 id 로 되살리고 이력 줄을 지운다. 등록 F1 은 되돌린 뒤 원래 생겼을 카드를 시드한다.
+  결과 문장 '비품 전환을 적용취소했습니다 · 소모품비로 복귀' / '비품 전환과 배정을 적용취소했습니다 · …로 복귀'.
+
+### 감지망
+- 진리표 `test-asset-receipt.ts`(수령 판정·자리·관문)·`test-durable-convert.ts`(전환 판정·대상·문구·토큰),
+  통합 `test-asset-receipt-flow.ts`·`test-durable-convert-flow.ts`(PGlite, 바이트 동일·금액 합·남의 영업장·교차 용도),
+  배선 `check-asset-receipt-wiring.mjs`·`check-durable-convert-wiring.mjs`(사슬 맨 앞·같이 변경 생략·서명·CAS), 장부
+  `check-asset-pending-placement.ts`·`check-item-category-split.ts`(verify:db).

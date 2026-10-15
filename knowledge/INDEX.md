@@ -13,7 +13,7 @@
 - [[domain-billing]] — 월 청구·임대료·할인·일할·예약 인상·락인(결제 핵심 엔진) · 입주달 첫 달 규칙(firstMonthGap)
 - [[domain-recurring-cycle]] — 고정지출 주기: 위상 앵커·회차 지정·이번만 기록(기준 달은 파생값)
 - [[domain-expense-target-month]] — 지출의 두 달 축(targetMonth=귀속월: 지출 결산 전체·고정지출 회차 / date=현금일: 카드 청구월·예비비 원장·날짜 머리·일별 합계·엑셀): 정본 lib/expenseTargetMonth·2안(2026-10-03)·폼 귀속월 칸·같은 회차 중복 거부·다른 달분 흔적 줄
-- [[domain-inventory]] — 추적품목·수령배치·위치별 점검·단위 매칭(specMultiplier 정본)·평균 소모율(30일 합산) · **자재 설치·폐기 두 축**(돈은 안 줄고 물건만 준다·가르는 자리는 집계 한 곳·mergeUnassignedGroup 의 disposedAt: null 이 급소·교체는 한 트랜잭션) · **상세 모달의 범위는 넷**(카드·이름·이름+규격·분류, 축이 넓어지는 순서로 선다, 소제목은 curPlace 단일 원천)
+- [[domain-inventory]] — 추적품목·수령배치·위치별 점검·단위 매칭(specMultiplier 정본)·평균 소모율(30일 합산) · **자재 설치·폐기 두 축**(돈은 안 줄고 물건만 준다·가르는 자리는 집계 한 곳·mergeUnassignedGroup 의 disposedAt: null 이 급소·교체는 한 트랜잭션) · **상세 모달의 범위는 넷**(카드·이름·이름+규격·분류, 축이 넓어지는 순서로 선다, 소제목은 curPlace 단일 원천) · **비품 전환과 수령 배정**(2026-10-15, 냉장고 519호: targetRoomId 는 배정 예정 호실·수령 전 비품 자리는 예정 호실뿐·수령 배정 창·소모품 수량 관문·전환 판정은 추적 카테고리 + 대상 호실 + 소모품 이력 없음, 대상은 그 영업장 비품 최빈·적용취소 토큰은 용도 라벨로 서명)
 - [[domain-unit-basis]] — 단가 기준(규격당 대 개당): 기록이 있으면 따르고 없으면 규칙으로 간다·날조 금지·규칙 넷(서술·길이·부피+매장·추적단위)·재고 환산과 다른 축·알려진 공백(SpecWizard)
 - [[domain-vacancy]] — 공실 집계 정본(lib/vacancy)·집계 제외(창고·사무실)·입실 파생식·공실 전환은 점유 정본(lib/roomOccupancy) 확인 뒤에만·퇴실 시 예약 인상가 조기 적용 조건(2026-10-01, 513호)
 - [[domain-room-stay]] — 거주 구간(RoomStay)과 이사(지금 방 대 거쳐 간 방·이사일 검증 5축·이사 어휘·입퇴실 건수 포함·표시 감지망)
@@ -57,7 +57,7 @@
 - [[open-keyboard-field-visibility]] — 키보드가 뜰 때 입력 칸이 가려지는 문제(2026-08-30 신고, 2026-09-02 시공 완료 — 판정 정본 lib/keyboardViewport·띠 훅 useVisibleBand·가이드 §30)
 - [[domain-modal-shell]] — 모달 껍데기(등장 모션·막·띠 기하): 조각 다섯과 쓰는 이 여덟·같은 병 네 번의 이력·bf0a6fff 두 경로(굳은 모션은 "안 돌고 있다는 사실"로 걷는다·보호가 한쪽에만 걸린 값 쌍은 갈린다)·벽시계 금지·계측이 눈 감았던 이유·그물 넷
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)
-- [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어)
+- [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어) · 역할 판정 정본 resolvePropertyRole(관문과 크론 푸시가 같은 함수)
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)
 - [[form-clear-vs-absent]] — "폼이 비운 칸은 서버가 비운다, 부재만 보존" 규약(formData.has)·두 조각(서버 가드+폼 상시 렌더)·전례 넷(c4b74c7d 퇴실일·aed91367 본국 연락처·슬러그 사고·c120bd32 호실)
 - [[regression-nets]] — 회귀 감지망 목록·자동 실행 배치(커밋 전 빠른 6종·푸시 전 타입체크+DB 4종)·훅 우회법
