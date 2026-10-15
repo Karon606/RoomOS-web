@@ -249,6 +249,37 @@ async function main() {
     eq('참고 3 충돌 적용취소', (await fin.undoDurableConvert(J(r2.durableUndo!))).ok, true)
     eq('참고 3 충돌 적용취소: 옛 카드는 옛 품명으로, 새 품명 카드는 그대로, 행은 새 품명 카드와 이어진다',
       [(await prisma.trackedItem.findUnique({ where: { id: o2Id } }))?.label, (await prisma.trackedItem.findUnique({ where: { id: n2Id } }))?.label, await matched(y.id)], [O2, N2, true])
+    // 탐침 A(후속 검수 권장 1). 옛 품명에 다른 구매가 있어 카드를 남긴 경우. 적용취소 뒤 새 품명 행이 이을 카드가 없으면 재고 미아다.
+    // 적용취소가 새 품명으로 시드해 행이 카드에 이어진다. 형제(그대로 저장 개명)는 카드와 형제 행까지 개명하므로 끝이 다르다(노트).
+    const O3 = '개명남는전', N3 = '개명남는후'
+    await add(O3); await add(O3)
+    const z = (await rowsOf(O3))[0]
+    const o3Id = (await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: O3 } }))!.id
+    const r3 = await fin.updateExpense(edit(z.id, N3, { category: '수선유지비', durableFrom: '소모품비', durableKind: 'F1' }))
+    if (!r3.ok) throw new Error(r3.error)
+    eq('탐침 A 전환: 다른 구매가 있는 옛 카드는 남고 토큰에 없음, 새 품명 시드를 싣는다', [await prisma.trackedItem.count({ where: { id: o3Id } }), r3.durableUndo?.cards.length, r3.durableUndo?.seedLabels], [1, 0, [N3]])
+    eq('탐침 A 적용취소', (await fin.undoDurableConvert(J(r3.durableUndo!))).ok, true)
+    eq('탐침 A 적용취소: 새 품명 행이 카드에 이어지고(미아 없음) 옛 카드와 옛 품명 구매는 그대로',
+      [await matched(z.id), await cnt(N3), (await prisma.trackedItem.findUnique({ where: { id: o3Id } }))?.label, await prisma.expense.count({ where: { propertyId: P1, itemLabel: O3 } })], [true, 1, O3, 1])
+  }
+
+  // ── 다품목 저장 뒤 고정지출 기준 달 맞춤이 실패해도 성공으로 돌려준다(후속 검수 참고 4, E2 와 같은 클래스) ──────
+  // 저장은 배열 트랜잭션에서 이미 끝났다. 실패로 돌려주면 다시 저장이 품목 행을 한 벌 더 만든다. 갱신 트리거로 실패를 만든다.
+  {
+    const A = '고정분할선반'
+    const rec = await prisma.recurringExpense.create({ data: { propertyId: P1, title: '분기 선반', amount: 90000, category: '소모품비', dueDay: 1, intervalMonths: 3, anchorMonth: 1 } })
+    const e = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-13T00:00:00Z'), amount: 90000, category: '소모품비', itemLabel: A, qtyValue: 1, qtyUnit: '개', recurringExpenseId: rec.id } })
+    const sum0 = await amountSum()
+    await pg.exec(`create function flow_block_rec_update() returns trigger as $$ begin raise exception 'flow anchor blocked'; end $$ language plpgsql;
+      create trigger flow_block_rec_update before update on recurring_expenses for each row execute function flow_block_rec_update();`)
+    const errLog: unknown[][] = []
+    const origErr = console.error
+    console.error = (...a: unknown[]) => { errLog.push(a) }
+    const r = await fin.updateExpense(fd({ id: e.id, ...base, amount: '90000', category: '소모품비', roomId: '',
+      itemsJson: items([{ label: A, amount: 60000 }, { label: A + '탭', amount: 30000 }]) })).finally(() => { console.error = origErr })
+    await pg.exec(`drop trigger flow_block_rec_update on recurring_expenses; drop function flow_block_rec_update();`)
+    eq('참고 4 기준 달 맞춤이 실패해도 저장은 성공(실패는 서버 로그 한 줄)', [r.ok, errLog.length], [true, 1])
+    eq('참고 4 품목 행 둘·금액 합 그대로(다시 저장할 일이 없다)', [await prisma.expense.count({ where: { propertyId: P1, itemLabel: { in: [A, A + '탭'] } } }), await amountSum()], [2, sum0])
   }
 
   // ── 서버 재판정: 화면이 본 판정과 다르면 거부 ────────────────────────────────────────

@@ -1233,8 +1233,12 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
       await noteUnits(newUnitsOnly(multiItems.map(i => i.specUnit), existing?.specUnit), newUnitsOnly(multiItems.map(i => i.qtyUnit), existing?.qtyUnit))
       // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다(기록·삭제·삭제취소와 같은 클래스).
+      // 저장은 위 배열 트랜잭션에서 이미 끝났다. 맞춤이 실패해도 실패로 돌려주지 않는다. 돌려주면 화면이 폼을 그대로 두고
+      // 다시 저장이 품목 행을 한 벌 더 만든다(카드 정리 E2 와 같은 클래스, 2단계 후속 검수 참고 4). 형제 noteUnits 와 같은 꼴이다.
       if (existing?.recurringExpenseId) {
-        await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+        try {
+          await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+        } catch (e) { console.error('[updateExpense] 다품목 저장 뒤 고정지출 기준 달 맞춤 실패(저장 유지)', e) }
       }
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
@@ -1405,9 +1409,13 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             where: { propertyId_category_label: { propertyId, category: c.item.category, label: renameTo } }, select: { id: true },
           })) ? c : { ...c, item: { ...c.item, label: renameTo } }))
         : done.cards
+      // 품명을 바꾼 저장이면 적용취소 뒤 그 행(새 품명, 소모품)이 이을 카드가 없을 수 있다. 옛 품명에 다른 구매가 있어 카드를
+      // 남긴 경우다(재고 미아, 2단계 후속 검수 권장 1). 그래서 적용취소가 새 품명으로 시드한다(시드는 카드가 이미 있으면 건너뛴다).
+      // 형제 propagateItemLabelRename 은 카드와 형제 행까지 새 품명으로 바꾸므로 끝이 다르다(옛 품명 카드와 형제 행은 그대로 남는다).
+      const renamedLabel = done.row.itemLabel && existing.itemLabel && done.row.itemLabel !== existing.itemLabel ? done.row.itemLabel : null
       durableUndo = signDurableUndo(propertyId, {
         v: 1, kind: 'F1', from: durableFrom!, to: category, rows: [{ id, targetRoomId: done.row.targetRoomId, now: rowNowOf(done.row) }],
-        placed: null, checks: [], shift: null, cards: undoCards, seedLabels: [], logIds: [],
+        placed: null, checks: [], shift: null, cards: undoCards, seedLabels: renamedLabel ? [renamedLabel] : [], logIds: [],
       })
       if (done.cards.length) revalidatePath('/inventory')
     } else if (shiftRows.length > 0 && shiftItemId) {
