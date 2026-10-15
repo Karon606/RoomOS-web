@@ -220,9 +220,13 @@ must(AL, read(AL), 'computeAlerts', [
 // D15 딥링크 정본. 준비 단계(prepare)를 먼저 부르고, 섹션이 그려질 때까지 몇 프레임 기다려 스크롤한다
 const FS = 'lib/useFocusSection.ts'
 must(FS, read(FS), null, [
-  [/prepare\?\.\(id\)/, 'D15 정본 딥링크가 준비 단계(prepare)를 안 부른다'],
-  [/else if \(left-- > 0\) requestAnimationFrame\(tryScroll\)/, 'D15 정본 딥링크가 섹션이 그려질 때까지 기다리지 않는다(그룹을 바꾼 회차에 스크롤이 헛돈다)'],
+  [/io\.prepare\(id\)/, 'D15 정본 딥링크가 준비 단계(prepare)를 안 부른다'],
+  [/prepare: id => prepareRef\.current\?\.\(id\)/, 'A3 정본 딥링크가 prepare 를 ref 로 부르지 않는다(인라인 함수가 효과를 다시 돌린다)'],
+  [/else if \(left-- > 0\) handle = io\.raf\(tryScroll\)/, 'D15 정본 딥링크가 섹션이 그려질 때까지 기다리지 않는다(그룹을 바꾼 회차에 스크롤이 헛돈다)'],
 ])
+// 행동 그물(scripts/test-focus-section)이 의미를 본다. 여기서는 받는 쪽 배선만 묶는다.
+// A2 재고 화면 '재고 소진 임박'은 품목별 보기 안에만 선다. 준비 단계가 품목별로 연다(저장된 보기는 안 건드린다)
+must(IC, ic, null, [[/useFocusSection\(\{ prepare: id => \{ if \(id === 'inventory-lowstock'\) setViewMode\('item'\) \} \}\)/, "A2 재고 소진 임박 딥링크가 위치별 보기에서 품목별을 열지 않는다(무반응)"]])
 // R3 장부 축 1 도 같은 셋(방·공용부·공용 자재)
 const PP = 'scripts/check-asset-pending-placement.ts'
 must(PP, read(PP), null, [[/receivedAt: null, OR: \[\{ roomId: \{ not: null \} \}, \{ assignedLocationId: \{ not: null \} \}, \{ isCommonAsset: true \}\] \}/, '2차 R3 장부 축 1 이 공용 자재 표식을 안 본다(놓인 행 정본과 갈린다)']])

@@ -533,8 +533,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const trackedCats = categories.map(c => c.cat)
   const router = useRouter()
   const searchParams = useSearchParams()
-  // 종 알림(재고 소진 임박·수령 대기)이 ?focus= 로 보내는 섹션으로 스크롤
-  useFocusSection()
+  // 종 알림(재고 소진 임박·수령 대기)이 ?focus= 로 보내는 섹션으로 스크롤한다. 받는 자리는 아래 보기 상태 다음(준비 단계가 보기를 연다).
   const rows = initialRows
   // 전역 월(?month=) 이동 — Header 와 동일하게 URL + localStorage 동기화
   const changeMonth = (delta: number) => {
@@ -573,6 +572,12 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   // 다음 렌더에는 false 가 된다. 복원은 마운트 1회다.
   const deepLinkedRef = useRef(deepLinked)
   const [viewMode, setViewMode] = useState<'item' | 'location'>(deepLinked ? 'item' : 'location')
+  // 종 알림 딥링크 받기(정본 useFocusSection).
+  // '재고 소진 임박'(inventory-lowstock)은 품목별 보기 안에만 선다. 같은 화면에서 위치별 보기를 보고 있으면 닿을 곳이
+  // 없어 무반응이었다(3차 검수 권장 ②, 비품 화면 D15 와 같은 클래스). 정본의 준비 단계에서 품목별로 연다.
+  // setViewMode 만 부른다. 저장된 보기(localStorage, changeView)는 운영자 것이라 건드리지 않는다.
+  // 수령 대기(inventory-pending)는 두 보기 모두의 위에 서서 준비가 필요 없다.
+  useFocusSection({ prepare: id => { if (id === 'inventory-lowstock') setViewMode('item') } })
   useEffect(() => {
     if (deepLinkedRef.current) return
     // 저장 키를 view2 로 승격했다. 옛 'stayeum-inventory-view' 에 남은 'item' 은 사용자의
