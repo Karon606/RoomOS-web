@@ -255,7 +255,8 @@ eq('얼린 적이 없으면 빈 문자열', kbdTraceTable(null), '')
   eq('팬하는 동안 열린 모달 오버레이의 H·T0 와 문서 sy 를 적는다', [r.H, r.T0, r.sy].join(' '), '812 -189.66 37')
   eq('오버레이는 계측 손잡이로만 찾는다', reads[0], '[data-modal-overlay]')
   eq('얼리는 순간을 rep 한 줄로 남긴다', one.rows[one.rows.length - 1].ev, 'rep')
-  eq('기록에 입력값이 안 실린다', JSON.stringify(one).includes('010'), false)
+  // 입력값 글자로 본다. 숫자 '010' 만 찾으면 t·at(performance.now() 소수)에 우연히 섞여 부하 때 흔들렸다.
+  eq('기록에 입력값이 안 실린다', ['입주자 이름', '010-0000-0000'].some(v => JSON.stringify(one).includes(v)), false)
 
   // transform 조상 아래 선 오버레이는 그 조상 기준으로 틀어진다. 폭이 innerWidth 와 다르면 안 믿는다.
   overlay = { width: 360, height: 500, top: 40 }
