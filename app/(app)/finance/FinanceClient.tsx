@@ -69,7 +69,7 @@ import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { roomChipText, roomsLabel } from './allocPlaceLabel'
 // 예정 호실 표기 정본. 방별 분배 묶음 모달의 자리 칸이 비품 수령 대기 카드 메타와 같은 말('519호 배정 예정')을 쓴다.
 // 지출 상세의 예정 줄은 폼 칸과 같은 '배정할 호실' 라벨에 방 이름만 쓴다(웹디자이너 패스 D5, 2차 N7).
-import { plannedRoomsMeta } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { plannedRoomsMeta, SEP } from '@/app/(app)/inventory/assets/receiptPlacement'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -2685,7 +2685,8 @@ export default function FinanceClient({
         // 귀속월이 날짜의 달과 다를 때만 그 달을 덧붙인다 — 지금 보는 목록에 안 보이는 이유가 된다.
         const savedTm = String(fd.get('targetMonth') ?? '')
         const savedDate = String(fd.get('date') ?? '')
-        const addedText = savedTm && savedTm !== savedDate.slice(0, 7) ? `지출 등록됨 · ${Number(savedTm.slice(5, 7))}월분` : '지출 등록됨'
+        // 구분점 앞은 앞 낱말에 묶는다(SEP, 접혀도 둘째 줄이 '·' 로 시작하지 않게, 웹디자이너 2b R1).
+        const addedText = savedTm && savedTm !== savedDate.slice(0, 7) ? `지출 등록됨${SEP}${Number(savedTm.slice(5, 7))}월분` : '지출 등록됨'
         // 비품으로 바꿨으면 머리줄에 결과('· 비품'), 둘째 줄에 다음 일, 액션은 전환 적용취소(전환만 되돌린다, 디자이너 2).
         // 등록 토스트에는 다른 적용취소가 없다(한 토스트 한 동작).
         const addUndo = res.durableUndo
@@ -2820,7 +2821,7 @@ export default function FinanceClient({
                 pushToast('info', '소모품 카드를 정리했습니다', {
                   // 둘째 줄은 한 문장(웹디자이너 2차 N6). 주어는 품목이다(3차 검수 참고). 비품·자재에서 관리되는 것은 카테고리가
                   // 아니라 이 품목이다. 카테고리 뒤에 '카테고리라'를 붙여 조사가 이름 받침에 안 매인다. '비품·자재'는 좁은 폭에서 가운뎃점에서
-                  // 갈려 '비품 화면'으로 쓴다(웹디자이너 10). 320px·글자 125% 세 줄 이하(실측).
+                  // 갈려 '비품 화면'으로 쓴다(웹디자이너 10). 실측 320px·글자 125% 세 줄, 브라우저 확대 125%(256px) 다섯 줄(2b C2).
                   detail: `이 품목은 '${newCat}' 카테고리라 비품 화면에서 관리됩니다.`,
                   ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
                     if (r.ok) { pushToast('info', '소모품 카드 정리를 적용취소했습니다 · 목록에 다시 표시'); router.refresh() }

@@ -11,6 +11,7 @@ import {
   DURABLE_CONVERT_STALE, DURABLE_CONVERT_UNDO_INVALID, DURABLE_CONVERT_UNDO_STALE,
   type ConvertFacts, type ConvertInput, type ConvertPlan, type DurableConvertUndo, type ItemFacets,
 } from '../app/(app)/inventory/assets/conversionPlan'
+import { DOT, SEP } from '../app/(app)/inventory/assets/receiptPlacement'
 
 let pass = 0
 const fails: string[] = []
@@ -122,12 +123,15 @@ eq('F1 버튼', [c1.altLabel, c1.confirmLabel], ['그대로 저장', '비품으�
 eq('대상 이름에 비품이 있으면 되풀이하지 않는다(디자이너 4)', conversionCopy({ ...p1, target: '집기 비품' }, { from: '소모품비', roomNos: ['519'] }).message.endsWith('집기 비품으로 바꾸면 수령할 때 519호 배정을 묻습니다.'), true)
 const cm = conversionCopy(multi as Extract<ConvertPlan, { kind: 'F1' }>, { from: '소모품비', roomNos: ['519'] })
 eq('다품목 제목', cm.title, `'${FRIDGE}' 외 1개 품목을 비품으로 바꿀까요?`)
-eq('다품목 본문 끝(디자이너 3)', cm.message.endsWith(' 카테고리는 지출 단위라 멀티탭도 함께 비품이 됩니다.'), true)
+eq('다품목 본문 끝(디자이너 3, 2b R2 끝 묶음)', cm.message.endsWith(' 카테고리는 지출 단위라 멀티탭도 함께\u00a0비품이\u00a0됩니다.'), true)
 const many = conversionPlan(add({ items: [{ label: FRIDGE, roomIds: ['R1'] }, { label: '멀티탭 6구', roomIds: [] }, { label: 'B', roomIds: [] }, { label: 'C', roomIds: [] }] }), facts())
-eq('다품목 셋 이상은 첫 이름 외 N개', conversionCopy(many as Extract<ConvertPlan, { kind: 'F1' }>, { from: '소모품비', roomNos: ['101'] }).message.endsWith(' 카테고리는 지출 단위라 멀티탭 6구 외 2개 품목도 함께 비품이 됩니다.'), true)
+eq('다품목 셋 이상은 첫 이름 외 N개', conversionCopy(many as Extract<ConvertPlan, { kind: 'F1' }>, { from: '소모품비', roomNos: ['101'] }).message.endsWith(' 카테고리는 지출 단위라 멀티탭 6구 외 2개 품목도 함께\u00a0비품이\u00a0됩니다.'), true)
 eq('받침 있는 품명은 을', conversionCopy({ ...p1, lead: '선풍기 받침' }, { from: '소모품비', roomNos: ['519'] }).title, "'선풍기 받침'을 비품으로 바꿀까요?")
 eq('부식비면 부식비로', conversionCopy(p1, { from: '부식비', roomNos: ['519'] }).message.includes('부식비로 저장하면'), true)
-eq('여러 방', conversionCopy(p1, { from: '소모품비', roomNos: ['519', '520'] }).message.startsWith('대상 호실을 519호·520호로 적었습니다.'), true)
+eq('여러 방(목록 점 앞 WJ, 2b N1)', conversionCopy(p1, { from: '소모품비', roomNos: ['519', '520'] }).message.startsWith('대상 호실을 519호\u2060·\u200b520호로 적었습니다.'), true)
+eq('호실 목록 셋까지 점 앞마다 WJ', convertRoomsText(['519', '520', '521']), '519호\u2060·\u200b520호\u2060·\u200b521호')
+eq('목록 점 앞에 WJ 가 아닌 가운뎃점이 없다', /(^|[^\u2060])·/.test(convertRoomsText(['1', '2', '3'])), false)
+eq('목록 점 뒤에는 줄바꿈 기회(ZWSP)가 있다(목록이 한 낱말로 굳지 않게)', /·(?!\u200b)/.test(convertRoomsText(['1', '2', '3'])), false)
 eq('문장 안 방 넷 이상은 외(디자이너 5)', convertRoomsText(['101', '102', '103', '104']), '101호 외 3곳')
 eq('방 넷 이상 문장', conversionCopy(p1, { from: '소모품비', roomNos: ['519', '520', '521', '522'] }).message.startsWith('대상 호실을 519호 외 3곳으로 적었습니다.'), true)
 eq('숫자 아닌 호실은 호 없이, 조사는 받침으로', conversionCopy(p1, { from: '소모품비', roomNos: ['옥탑방'] }).message.startsWith('대상 호실을 옥탑방으로 적었습니다.'), true)
@@ -144,19 +148,22 @@ eq('막힘 ledger 본문', conversionCopy({ kind: 'blocked', reason: 'ledger', l
   '대상 호실을 519호로 적었지만 이미 수령한 소모품이고 이후 재고 점검과 수량이 맞지 않아 비품으로 바꿀 수 없습니다. 그대로 저장하면 519호에 배정되지 않습니다.')
 const mixed = conversionCopy({ kind: 'blocked', reason: 'mixed', lead: FRIDGE, others: ['휴지'], mixedLabels: ['휴지'], roomIds: ['R519'] }, { from: '소모품비', roomNos: ['519'] })
 eq('막힘 mixed 창(R6)', mixed, { title: `'${FRIDGE}' 외 1개 품목을 소모품으로 저장할까요?`,
-  message: `대상 호실을 519호로 적었지만 함께 적은 '휴지'는 지금까지 소모품으로 적어 온 품목이라 함께 비품으로 바꿀 수 없습니다. '${FRIDGE}'를 따로 등록하면 비품으로 바꿀 수 있습니다. 그대로 저장하면 519호에 배정되지 않습니다.`, confirmLabel: '그대로 저장' })
+  message: `대상 호실을 519호로 적었지만 함께 적은 '휴지'는 지금까지 소모품으로 구매해 온 품목이라 이\u00a0지출은 비품으로 바꿀 수 없습니다. '${FRIDGE}'를 따로 등록하면 비품으로 바꿀 수 있습니다. 그대로 저장하면 519호에 배정되지 않습니다.`, confirmLabel: '그대로 저장' })
 eq('막힘 mixed 받침·셋 이상', [conversionCopy({ kind: 'blocked', reason: 'mixed', lead: 'A', others: ['물병'], mixedLabels: ['물병'], roomIds: ['R1'] }, { from: '소모품비', roomNos: ['1'] }).message.includes("함께 적은 '물병'은"),
   conversionCopy({ kind: 'blocked', reason: 'mixed', lead: 'A', others: ['x', 'y', 'z'], mixedLabels: ['x', 'y', 'z'], roomIds: ['R1'] }, { from: '소모품비', roomNos: ['1'] }).message.includes("함께 적은 'x' 외 2개 품목은")], [true, true])
+eq('막힘 mixed 둘은 WJ 가운뎃점', conversionCopy({ kind: 'blocked', reason: 'mixed', lead: 'A', others: ['휴지', '물티슈'], mixedLabels: ['휴지', '물티슈'], roomIds: ['R1'] }, { from: '소모품비', roomNos: ['1'] }).message.includes("함께 적은 '휴지'\u2060·\u200b'물티슈'는"), true)
 eq('막힘 창에는 비품으로 저장 버튼이 없다', [bm.altLabel, mixed.altLabel], [undefined, undefined])
-// 토스트(디자이너 2). 결과는 머리줄, 라벨은 전환 적용취소
-eq('F1 등록 토스트', conversionToast('F1', '지출 등록됨', ['519']), { text: '지출 등록됨 · 비품', detail: '수령할 때 519호 배정을 묻습니다.' })
-eq('F1 등록 토스트(다른 달)', conversionToast('F1', '지출 등록됨 · 9월분', ['519']).text, '지출 등록됨 · 9월분 · 비품')
-eq('F1 수정 토스트', conversionToast('F1', '지출 수정됨', ['519', '520']), { text: '지출 수정됨 · 비품', detail: '수령할 때 519호·520호 배정을 묻습니다.' })
-eq('F3 토스트', conversionToast('F3', '지출 수정됨', ['519']), { text: '지출 수정됨', detail: '비품으로 바꿔 519호에 배정했습니다.' })
-eq('F3 조정 토스트(디자이너 7)', conversionToast('F3', '지출 수정됨', ['519'], 2).detail, '비품으로 바꿔 519호에 배정하고 재고 점검 2건을 조정했습니다.')
+// 토스트(디자이너 2·2b R1·R3). 결과는 머리줄(구분점 앞은 NBSP 로 앞 낱말에 묶음), 라벨은 전환 적용취소
+eq('구분점 표기(SEP·DOT)', [SEP, DOT], ['\u00a0· ', '\u2060·\u200b'])
+eq('F1 등록 토스트', conversionToast('F1', '지출 등록됨', ['519']), { text: '지출 등록됨\u00a0· 비품', detail: '수령할 때 519호 배정을 묻습니다.' })
+eq('F1 등록 토스트(다른 달)', conversionToast('F1', '지출 등록됨\u00a0· 9월분', ['519']).text, '지출 등록됨\u00a0· 9월분\u00a0· 비품')
+eq('F1 수정 토스트', conversionToast('F1', '지출 수정됨', ['519', '520']), { text: '지출 수정됨\u00a0· 비품', detail: '수령할 때 519호\u2060·\u200b520호 배정을 묻습니다.' })
+eq('F3 토스트(2b R3 머리줄 비품, 둘째 줄 결과)', conversionToast('F3', '지출 수정됨', ['519']), { text: '지출 수정됨\u00a0· 비품', detail: '519호에 배정했습니다.' })
+eq('F3 조정 토스트', conversionToast('F3', '지출 수정됨', ['519'], 2).detail, '519호에 배정하고 재고 점검 2건을 조정했습니다.')
+eq('토스트 머리줄에 점 뒤 묶음이 없다(둘째 줄이 점으로 시작하지 않게)', /·\u00a0/.test(conversionToast('F1', '지출 등록됨\u00a0· 9월분', ['519']).text), false)
 eq('적용취소 라벨', CONVERT_UNDO_LABEL, '전환 적용취소')
-eq('F1 적용취소 결과(§16 형식, 복귀 묶음)', conversionUndoneText('F1', '소모품비'), '비품 전환을 적용취소했습니다 · 소모품비로 복귀')
-eq('F3 적용취소 결과', conversionUndoneText('F3', '부식비'), '비품 전환과 배정을 적용취소했습니다 · 부식비로 복귀')
+eq('F1 적용취소 결과(§16 형식, 구분점 SEP, 복귀 묶음)', conversionUndoneText('F1', '소모품비'), '비품 전환을 적용취소했습니다\u00a0· 소모품비로\u00a0복귀')
+eq('F3 적용취소 결과', conversionUndoneText('F3', '부식비'), '비품 전환과 배정을 적용취소했습니다\u00a0· 부식비로\u00a0복귀')
 eq('서버 거부 문장은 새로고침을 권하지 않는다(R1)', DURABLE_CONVERT_STALE, '비품 전환 정보가 바뀌었습니다. 다시 저장을 눌러 주세요.')
 eq('적용취소 거부 문장(디자이너 9)', DURABLE_CONVERT_UNDO_STALE, '비품으로 바꾼 뒤 기록이 바뀌어 적용취소할 수 없습니다. 지출 상세에서 직접 고쳐 주세요.')
 

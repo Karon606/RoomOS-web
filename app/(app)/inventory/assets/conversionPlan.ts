@@ -12,6 +12,7 @@ import { cleanUnit } from '@/lib/receiptOcr'
 import { WORK_EXPENSE_CATEGORY } from '@/app/(app)/room-manage/cleaningConstants'
 import type { LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
 import type { TrackedItemDeleteUndo } from '@/app/(app)/inventory/trackedItemSnapshot'
+import { DOT, SEP } from '@/app/(app)/inventory/assets/receiptPlacement'
 
 // ── 판정 ───────────────────────────────────────────────────────────
 
@@ -167,19 +168,20 @@ export function conversionPlan(input: ConvertInput, facts: ConvertFacts): Conver
   return { kind: 'F1', target, lead: lead.label, others, roomIds, adjust: { needs: false, checks: 0 } }
 }
 
-// ── 문구(UX 패널 F1·F3 대사, 1단계 낱말, 2단계 웹디자이너 패스 1·2·3·4·5·6·9) ─────────────────
+// ── 문구(UX 패널 F1·F3 대사, 1단계 낱말, 2단계 웹디자이너 패스 1·2·3·4·5·6·9, 2b) ─────────────────
+// 가운뎃점은 1단계 정본 표기를 쓴다. 목록 안은 DOT, 띄운 구분점은 SEP(줄머리에 점이 서지 않게, 웹디자이너 2b N1·R1).
 
 const quoted = (label: string) => `'${label}'${hasFinalConsonant(label) ? '을' : '를'}`
 /** 소모품 이력이 있는 함께 적은 품목(주제). 둘까지 '휴지'·'물티슈'는, 셋 이상이면 '휴지' 외 2개 품목은. */
 const mixedTopic = (labels: string[]) => labels.length <= 2
-  ? `${labels.map(l => `'${l}'`).join('·')}${hasFinalConsonant(labels[labels.length - 1]) ? '은' : '는'}`
+  ? `${labels.map(l => `'${l}'`).join(DOT)}${hasFinalConsonant(labels[labels.length - 1]) ? '은' : '는'}`
   : `'${labels[0]}' 외 ${labels.length - 1}개 품목은`
 /** 호실 목록 표기(문장용). 셋까지 '519호·520호', 넷 이상이면 '519호 외 3곳'(디자이너 5, 문장 안에서는 가운뎃점을 안 붙인다). */
 export function convertRoomsText(roomNos: string[]): string {
   const rooms = uniq(roomNos).map(n => fmtRoomNo(n, ''))
-  return rooms.length <= 3 ? rooms.join('·') : `${rooms[0]} 외 ${rooms.length - 1}곳`
+  return rooms.length <= 3 ? rooms.join(DOT) : `${rooms[0]} 외 ${rooms.length - 1}곳`
 }
-const othersText = (others: string[]) => others.length <= 2 ? others.join('·') : `${others[0]} 외 ${others.length - 1}개 품목`
+const othersText = (others: string[]) => others.length <= 2 ? others.join(DOT) : `${others[0]} 외 ${others.length - 1}개 품목`
 /** 대상 카테고리로 바꾸면 무엇이 되는가. 이름에 '비품'이 이미 있으면 되풀이하지 않는다(디자이너 4). */
 const becomeDurable = (target: string) => /비품/.test(target) ? '' : '비품이 되어 '
 const titleSubject = (lead: string, others: string[]) => others.length ? `'${lead}' 외 ${others.length}개 품목을` : quoted(lead)
@@ -201,7 +203,7 @@ export function conversionCopy(plan: Exclude<ConvertPlan, { kind: 'none' }>, ctx
   if (plan.kind === 'blocked') {
     const why = plan.reason === 'merged' ? '이미 수령한 소모품이고 직접 센 재고 점검이 이 수령에 합쳐져 있어'
       : plan.reason === 'ledger' ? '이미 수령한 소모품이고 이후 재고 점검과 수량이 맞지 않아'
-      : `함께 적은 ${mixedTopic(plan.mixedLabels)} 지금까지 소모품으로 적어 온 품목이라 함께`
+      : `함께 적은 ${mixedTopic(plan.mixedLabels)} 지금까지 소모품으로 구매해 온 품목이라 이\u00a0지출은`   // '이 지출은' 은 한 덩이(2b R4)
     const split = plan.reason === 'mixed' ? ` ${quoted(plan.lead)} 따로 등록하면 비품으로 바꿀 수 있습니다.` : ''
     return {
       title: `${titleSubject(plan.lead, plan.others)} 소모품으로 저장할까요?`,
@@ -218,7 +220,8 @@ export function conversionCopy(plan: Exclude<ConvertPlan, { kind: 'none' }>, ctx
       confirmLabel: CONVERT_CONFIRM_LABEL, altLabel: CONVERT_ALT_LABEL,
     }
   }
-  const together = plan.others.length ? ` 카테고리는 지출 단위라 ${othersText(plan.others)}도 함께 비품이 됩니다.` : ''
+  // '함께 비품이 됩니다.'는 한 덩이로 묶는다. 끝줄에 '됩니다.'만 남지 않게(웹디자이너 2b R2).
+  const together = plan.others.length ? ` 카테고리는 지출 단위라 ${othersText(plan.others)}도 함께\u00a0비품이\u00a0됩니다.` : ''
   return {
     title: `${titleSubject(plan.lead, plan.others)} 비품으로 바꿀까요?`,
     message: `대상 호실을 ${withParticle(rooms, '으로/로')} 적었습니다. ${withParticle(ctx.from, '으로/로')} 저장하면 소모품 재고로 잡혀 ${rooms}에 배정되지 않습니다. `
@@ -228,21 +231,22 @@ export function conversionCopy(plan: Exclude<ConvertPlan, { kind: 'none' }>, ctx
 }
 
 /**
- * 저장 뒤 토스트(디자이너 2). 결과는 머리줄에 올린다. 등록·수정 F1 은 '지출 등록됨 · 비품'(귀속월이 다르면 '· 9월분' 뒤에),
- * 둘째 줄은 앱이 아직 배정하지 않았으므로 '배정을 묻습니다'. F3 는 배정까지 했으므로 둘째 줄이 결과다.
- * base 는 형제 토스트의 머리('지출 등록됨'·'지출 등록됨 · 9월분'·'지출 수정됨').
+ * 저장 뒤 토스트(디자이너 2·2b R3). 결과는 머리줄에 올린다. F1·F3 모두 '지출 등록됨 · 비품'(귀속월이 다르면 '· 9월분' 뒤에).
+ * F1 의 둘째 줄은 앱이 아직 배정하지 않았으므로 '배정을 묻습니다'. F3 는 배정까지 했으므로 둘째 줄이 결과다('비품으로 바꿔'는
+ * 머리줄이 말하므로 되풀이하지 않는다). base 는 형제 토스트의 머리('지출 등록됨'·'지출 등록됨 · 9월분'·'지출 수정됨').
  */
 export function conversionToast(kind: 'F1' | 'F3', base: string, roomNos: string[], adjustChecks = 0): { text: string; detail: string } {
   const rooms = convertRoomsText(roomNos)
+  const text = `${base}${SEP}비품`
   if (kind === 'F3') {
-    return { text: base, detail: adjustChecks > 0 ? `비품으로 바꿔 ${rooms}에 배정하고 재고 점검 ${adjustChecks}건을 조정했습니다.` : `비품으로 바꿔 ${rooms}에 배정했습니다.` }
+    return { text, detail: adjustChecks > 0 ? `${rooms}에 배정하고 재고 점검 ${adjustChecks}건을 조정했습니다.` : `${rooms}에 배정했습니다.` }
   }
-  return { text: `${base} · 비품`, detail: `수령할 때 ${rooms} 배정을 묻습니다.` }
+  return { text, detail: `수령할 때 ${rooms} 배정을 묻습니다.` }
 }
 
-/** 적용취소 결과(§16 형식 '…를 적용취소했습니다 · …', 감지망 check-undo-verb). '…로 복귀'는 줄이 갈리지 않게 묶는다. */
+/** 적용취소 결과(§16 형식 '…를 적용취소했습니다 · …', 감지망 check-undo-verb). 구분점은 SEP, '…로 복귀'는 줄이 갈리지 않게 묶는다. */
 export function conversionUndoneText(kind: 'F1' | 'F3', from: string): string {
-  return `${kind === 'F3' ? '비품 전환과 배정을' : '비품 전환을'} 적용취소했습니다 · ${withParticle(from, '으로/로')} 복귀`
+  return `${kind === 'F3' ? '비품 전환과 배정을' : '비품 전환을'} 적용취소했습니다${SEP}${withParticle(from, '으로/로')}\u00a0복귀`
 }
 
 // 서버가 전환 요청을 받았는데 지금 판정과 다르다(화면을 연 뒤 이력·카테고리 목록이 바뀌었다). 다시 저장을 누르면 화면이 새 사실로
