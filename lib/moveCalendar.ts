@@ -616,22 +616,36 @@ export type MoveAxis = 'all' | 'moves' | 'works'
  * '전체'는 원본 배열 그대로다(참조 안정 — memo 아래에서 불필요한 재렌더를 안 만든다).
  * '입퇴실'은 작업을 걷어낸 뒤에도 서는 행만 남긴다 — 생존 판정은 조립과 같은 moveRowSurvives.
  *   작업 레인 수는 팩을 다시 돌려 센다(서버가 센 workLaneCount 는 걷기 전의 수다).
+ *   **무변동 행은 표지로 뺀다**(2026-10-19). 관통 거주 막대가 있어 술어로는 안 빠지고, 빼지 않으면
+ *   입퇴실이 없는 방 서른 몇 실이 '입퇴실' 축에 그대로 남는다.
  * '작업'은 작업이 있는 행만 남긴다. **거주 막대는 그대로 둔다**(운영자 확정 2026-08-21) —
  *   막대가 남아야 공실 캡션·겹침 밴드·꼬리가 근거를 잃지 않고, 그 작업이 공실 회전의
- *   어느 자리에 서는지가 보인다.
+ *   어느 자리에 서는지가 보인다. 거주 중 작업이 얹힌 무변동 행도 남는다(운영자 결정 2026-10-19).
+ *   이 축에는 '변동 없음' 소제목이 없어 두 덩어리의 경계가 안 보이므로, 무변동 행이 섞이면
+ *   호실번호 하나로 다시 세운다(변동 행끼리의 순서는 그대로다. 이미 호실번호순이다).
  * 남기는 행은 행 객체 참조를 그대로 쓴다 — 원본은 어느 축에서도 변조하지 않는다.
  */
 export function filterMoveRows(rows: MoveCalendarRow[], axis: MoveAxis): MoveCalendarRow[] {
   if (axis === 'all') return rows
-  if (axis === 'works') return rows.filter(r => r.works.length > 0)
+  if (axis === 'works') {
+    const kept = rows.filter(r => r.works.length > 0)
+    return kept.some(r => r.steady) ? [...kept].sort(byRoomNoNatural) : kept
+  }
   return rows
-    .filter(r => moveRowSurvives({ bars: r.bars, works: [] }))
+    .filter(r => !r.steady && moveRowSurvives({ bars: r.bars, works: [] }))
     .map(r => {
       if (r.works.length === 0) return r
       const kept: MoveWork[] = []
       return { ...r, works: kept, workLaneCount: packWorkLanes(kept) }
     })
 }
+
+/**
+ * 호실번호 자연 정렬. 형제 화면(호실 카드·수납 관리·입주자 표 등)의 정본 비교와 같은 식이다.
+ * 문자열 비교로 두면 '1001'이 '999' 앞에, 'A동-10'이 'A동-9' 앞에 선다.
+ */
+const byRoomNoNatural = (a: { roomNo: string }, b: { roomNo: string }): number =>
+  a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
 
 /** 날짜 번호 집합을 연속 구간으로 접는다. */
 function toSpans(days: Set<number>, upTo: number): MoveDaySpan[] {
@@ -974,13 +988,13 @@ function assemble(input: {
     })
   }
 
-  // 연속 창에서는 변동 덩어리가 먼저, 무변동 행이 그 뒤다. 구획은 steady 표지가 가른다(운영자 결정
-  // 2026-10-19: 변동 방은 지금처럼 호실번호순, 그 아래 계속 거주하는 방도 호실번호순).
-  const byRoomNo = (a: MoveCalendarRow, b: MoveCalendarRow) => (a.roomNo < b.roomNo ? -1 : a.roomNo > b.roomNo ? 1 : 0)
+  // 호실번호는 자연 정렬이다(형제 화면 정본, byRoomNoNatural). 연속 창에서는 변동 덩어리가 먼저,
+  // 무변동 행이 그 뒤다. 구획은 steady 표지가 가른다(운영자 결정 2026-10-19: 변동 방은 지금처럼
+  // 호실번호순, 그 아래 계속 거주하는 방도 호실번호순).
   const steadyLast = (a: MoveCalendarRow, b: MoveCalendarRow) => Number(!!a.steady) - Number(!!b.steady)
   rows.sort(order === 'roomNo'
-    ? (a, b) => steadyLast(a, b) || byRoomNo(a, b)
-    : (a, b) => a.firstChangeDay - b.firstChangeDay || byRoomNo(a, b))
+    ? (a, b) => steadyLast(a, b) || byRoomNoNatural(a, b)
+    : (a, b) => a.firstChangeDay - b.firstChangeDay || byRoomNoNatural(a, b))
   // 날짜 오름차순, 같은 날은 퇴실 먼저(방이 비어야 다음 사람이 들어온다), 그다음 호실번호.
   events.sort((a, b) => a.day - b.day || (a.type === b.type ? 0 : a.type === 'out' ? -1 : 1) || (a.roomNo < b.roomNo ? -1 : a.roomNo > b.roomNo ? 1 : 0))
 
