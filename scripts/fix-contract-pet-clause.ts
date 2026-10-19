@@ -41,6 +41,7 @@ import {
 } from '../lib/contractTranslation'
 import { propertyContractAddenda, stripClauseBullet, type ContractTemplate } from '../lib/contract'
 import { parseShortStayPolicy } from '../lib/shortStay'
+import { hasPetWord, squash } from './contract-pet-words'
 
 const APPLY = process.argv.includes('--apply')
 const REVERT_IDX = process.argv.indexOf('--revert')
@@ -50,7 +51,8 @@ const PROPERTY_IDX = process.argv.indexOf('--property')
 // 코드 기본 양식(lib/contract)과 그물(scripts/check-contract-unfair-clause.ts 의 PET_CLAUSE)이 같은 문장이다.
 const SENTENCE = '개·고양이 등 반려동물은 호실과 공용 공간에 데려오거나 기를 수 없으며, 잠시 맡아 두는 경우도 같습니다. 다만 「장애인복지법」에 따른 장애인 보조견은 예외로 합니다. 이를 어기면 관리자가 정한 기한까지 동물을 내보내야 하며, 따르지 않으면 강제 퇴실 조항에 따라 퇴실 조치될 수 있습니다. 동물로 생긴 오염·악취·시설 손상의 원상 복구와 소독·특수 청소에 실제로 든 비용은 입실자가 부담합니다.'
 // 같은 취지의 항목이 이미 있으면(운영자가 설정 화면에서 따로 적었다) 자동으로 더하지 않고 사람이 본다.
-const VARIANT_MARKS = ['반려동물', '애완동물', '반려견', '애완견', '보조견']
+// 감지어는 그물과 한 벌(scripts/contract-pet-words)이고 공백을 걷고 대조한다. 거기에 '보조견'을 더한다.
+const isVariant = (item: string): boolean => hasPetWord(item) || squash(item).includes('보조견')
 
 // ── 번역 초안 (참고용 번역본, 2026-10-19) ─────────────────────────────────────
 // 용어는 같은 영업장 사전의 기존 번역을 따른다. 호실 ja 部屋 · zh 房间 · zht 房間 · vi phòng ·
@@ -290,7 +292,7 @@ async function main(): Promise<void> {
     throw new Error('그 문장이 3절이 아닌 다른 절에 있다. 자동으로 고치지 않고 멈춘다(사람이 본다).')
   }
   if (!existing) {
-    const variant = allItems.find(it => typeof it === 'string' && VARIANT_MARKS.some(m => it.includes(m)))
+    const variant = allItems.find(it => typeof it === 'string' && isVariant(it))
     if (variant) {
       console.log(`  같은 취지의 항목이 이미 있다. 자동으로 더하지 않고 멈춘다(사람이 본다).\n    ${JSON.stringify(variant)}`)
       return

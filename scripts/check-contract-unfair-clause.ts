@@ -28,6 +28,7 @@ import {
   DEFAULT_ROOM_SCHEDULE_ADDENDUM,
 } from '../lib/contract'
 import { parseSignDocuments } from '../lib/signDocuments'
+import { hasPetWord, squash } from './contract-pet-words'
 
 // 되살아나면 안 되는 문안. 조각으로 잡는 이유는 앞뒤를 조금 고쳐 다시 넣는 길까지 막기 위함이다.
 const BANNED: { frag: string; why: string }[] = [
@@ -96,11 +97,23 @@ const REQUIRED: { where: string; text: string; got: () => string }[] = [
 // 번호를 매기기 때문이다. 예외가 다른 항목으로 떨어지면 그 줄만 지워지거나 번역이 빠져도 금지는 남는다.
 // 코드 기본값·DB 저장본·입실자별 사본을 같은 판정으로 본다(아래 storedProblems 의 scan).
 //
-// 낱말을 좁게 잡는다. '개'만으로 잡으면 '개인'·'개별'·'1개월'이 다 걸리고, 3절 4항 '위해 동물'과
-// 추가 호실 특약의 '동식물' 보관 금지는 반려동물 금지가 아니다(보조견을 창고에 둘 일은 없다).
-const PET_WORDS = ['반려동물', '애완동물', '반려견', '반려묘', '애완견', '강아지', '고양이']
-const PET_BAN = /금지|금합|금한다|불가|수\s*없|안\s*됩|허용하지\s*않|허용되지\s*않/
+// 낱말을 좁게 잡는다(scripts/contract-pet-words, 정정 스크립트와 한 벌). '개'만으로 잡으면 '개인'·'개별'·
+// '1개월'이 다 걸리고, 3절 4항 '위해 동물'과 추가 호실 특약의 '동식물' 보관 금지는 반려동물 금지가 아니다.
+//
+// 판정은 문장(마침표 단위) 안에서 한다(독립 검수 2026-10-19). 낱말과 금지어가 다른 문장에 있으면 반려동물
+// 금지가 아니다('반려동물 사료는 보관함에. 흡연은 금지.'). 대조는 공백을 걷은 문장으로 해서 띄어쓰기
+// 변형('반려 동물', '수 없')도 같은 말로 본다. 금지어에는 명령형(마십시오·마세요·말아)과 삼가·불허를 넣었다.
+// 보조견 예외는 '보조견'이 예외·제외·허용과 **같은 문장**에 있을 때만 인정한다. '보조견 포함'·'허용하지
+// 않'·'예외 없이'는 예외가 아니라 오히려 금지에 보조견을 넣은 말이다.
+const PET_BAN = /금지|금합|금한다|불가|수없|안됩|안돼|허용하지않|허용되지않|마십시오|마세요|말아|삼가|불허/
 const GUIDE_DOG = '보조견'
+const GUIDE_DOG_EXEMPT = /예외(?!로하지않|없|가없)|제외(?!하지않)|허용(?!하지않|되지않)/
+const GUIDE_DOG_INCLUDED = /보조견(을|도|까지)?포함/
+
+/** 마침표 단위로 자른 문장(공백을 걷은 모양). */
+function sentencesOf(text: string): string[] {
+  return text.split(/(?<=[.。!?])|\n/).map(squash).filter(Boolean)
+}
 // 이 축이 실제로 몇 줄을 봤는지 센다. 판정 호출을 지우고 함수만 남기면 축이 눈을 감은 채 초록이 되는데
 // (체크리스트 F 의 '호출을 지운 역주입'), 세는 일을 판정 함수 안에 두면 호출이 지워질 때 숫자도 함께
 // 0 이 된다. 코드 기본값은 REQUIRED 가 금지 항목 하나를 보증하므로 금지 항목을 하나도 못 봤다면 배선이
@@ -111,9 +124,11 @@ const guideDogSeen = { code: 0, codeBans: 0, db: 0, self: 0 }
 function guideDogCheck(where: string, text: string, bucket: 'code' | 'db' | 'self'): string | null {
   guideDogSeen[bucket]++
   if (typeof text !== 'string') return null
-  const ban = PET_WORDS.some(w => text.includes(w)) && PET_BAN.test(text)
+  const sentences = sentencesOf(text)
+  const ban = sentences.some(s => hasPetWord(s) && PET_BAN.test(s))
   if (ban && bucket === 'code') guideDogSeen.codeBans++
-  if (!ban || text.includes(GUIDE_DOG)) return null
+  const exempt = sentences.some(s => s.includes(GUIDE_DOG) && GUIDE_DOG_EXEMPT.test(s) && !GUIDE_DOG_INCLUDED.test(s))
+  if (!ban || exempt) return null
   return `보조견 예외 없는 반려동물 금지: ${where}\n    근거: 장애인복지법 40조 3항(보조견 동반 거부 금지). 같은 항목 안에 '장애인 보조견은 예외' 를 둔다.`
 }
 
@@ -198,7 +213,23 @@ const GUIDE_DOG_CASES: [string, boolean][] = [
   ['타인에게 피해를 줄 수 있는 위해 동물 등의 반입을 엄격히 금지합니다.', false],
   ['개인 물품은 각자의 책임 관리를 원칙으로 합니다.', false],
   [PET_CLAUSE, false],
+  // 독립 검수(2026-10-19)가 짚은 미탐·오탐 갈래. 띄어쓰기 변형·명령형·불허·'보조견 포함'은 잡고,
+  // 낱말과 금지어가 다른 문장에 있는 줄은 놓아준다.
+  ['반려 동물은 기를 수 없습니다.', true],
+  ['강아지나 고양이는 데려오지 마십시오.', true],
+  ['반려동물 반입은 불허합니다.', true],
+  ['반려동물(보조견 포함)은 데려올 수 없습니다.', true],
+  ['반려동물 사료는 개인 보관함에 둡니다. 실내 흡연은 금지합니다.', false],
+  ['강아지 산책 뒤에는 발을 닦아 주세요. 복도에 짐을 두는 것은 금지합니다.', false],
+  // 구현 중에 같은 클래스로 더 찾은 둘. '허용하지 않'·'예외 없이'는 예외 낱말을 품었지만 예외가 아니다.
+  ['보조견을 포함한 모든 반려동물은 허용하지 않습니다.', true],
+  ['반려동물은 기를 수 없으며 장애인 보조견도 예외 없이 같습니다.', true],
 ]
+// 공유 낱말 표는 정정 스크립트가 공백을 걷지 않은 줄 그대로 넘긴다(같은 취지 항목 감지). 위 판정은 문장을
+// 먼저 걷어서 넘기므로 표 쪽 공백 걷기가 빠져도 안 운다. 그래서 표를 직접 시험한다.
+if (!hasPetWord('반려 동물') || !hasPetWord('애완 동물을') || hasPetWord('개인 물품')) {
+  problems.push('공유 낱말 표 고장: scripts/contract-pet-words 의 hasPetWord 가 띄어쓰기 변형을 못 알아보거나 반려동물이 아닌 말을 잡는다.')
+}
 for (const [text, bad] of GUIDE_DOG_CASES) {
   if ((guideDogCheck('자기 점검', text, 'self') !== null) !== bad) {
     problems.push(`보조견 축 판정 고장: "${text.slice(0, 40)}" 를 ${bad ? '위반으로 잡아야' : '통과시켜야'} 하는데 반대로 답했다. guideDogCheck·PET_WORDS·PET_BAN 을 확인하라.`)
