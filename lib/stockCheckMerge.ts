@@ -67,6 +67,21 @@ export function applyLocationCheck(base: LocBreakdown[], patch: LocCheckPatch): 
   return out
 }
 
+// 저장 직전 값 검증(순수, 2026-10-19 신고 1daf641c 후속). 서버가 클라이언트의 잔량·채움을 그대로 믿지 않는다.
+//   · 잔량과 채움은 0 이상의 유한수다. NaN·음수는 장부를 그대로 오염시키니 거부한다.
+//   · 채움은 채운 후 잔량을 넘을 수 없다. 넘으면 '채우기 전 = 후 − 채움' 이 음수라, 그 위치에 실제로 생긴
+//     양보다 창고에서 더 많이 빼 간 장부가 된다(빈칸 해석이 갈리던 자리에서 나올 수 있는 모양이다).
+// 위치 행 여럿을 받아 첫 위반의 거부 문구를 돌려준다. null = 통과. 문구는 화면에 그대로 뜬다(합니다체).
+export function locValuesError(rows: { qty: unknown; restockedQty?: unknown }[]): string | null {
+  for (const r of rows) {
+    if (typeof r.qty !== 'number' || !Number.isFinite(r.qty) || r.qty < 0) return '잔량은 0 이상의 숫자여야 합니다.'
+    if (r.restockedQty == null) continue
+    if (typeof r.restockedQty !== 'number' || !Number.isFinite(r.restockedQty) || r.restockedQty < 0) return '채운 양은 0 이상의 숫자여야 합니다.'
+    if (r.restockedQty > r.qty + HUB_SHORT_EPS) return '채운 양이 채운 후 잔량보다 많습니다. 채우기 전과 채운 후를 다시 확인해 주세요.'
+  }
+  return null
+}
+
 export function totalQty(locs: { qty: number }[]): number {
   return locs.reduce((s, l) => s + l.qty, 0)
 }

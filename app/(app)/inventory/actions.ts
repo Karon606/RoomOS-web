@@ -21,7 +21,7 @@ import { loadLocationPaths, indexLocations, conflictingPathName } from './locati
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
-import { applyLocationCheck, applyLocationChecks, detectHubShort, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
+import { applyLocationCheck, applyLocationChecks, detectHubShort, locValuesError, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { transferCheckCreateData } from '@/lib/transferCheck'
 import { assertNotFuture } from '@/lib/completionDate'
 import { type ShiftRow } from '@/lib/stockLedger'
@@ -912,6 +912,14 @@ export async function createStockCheck(data: {
     // 미래 날짜 거부 — 지나지 않은 날의 점검은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
     if (!assertNotFuture(data.date).ok) return { ok: false, error: `점검일이 미래입니다(${data.date}). 아직 하지 않은 점검은 기록할 수 없습니다.` }
+    // 값 검증(2026-10-19 신고 1daf641c 후속). 화면이 보낸 잔량·채움을 그대로 믿지 않는다. 세 갈래(한 칸·여러 칸·
+    // 절대값) 모두 같은 정본(lib/stockCheckMerge locValuesError)을 지난다.
+    const valueError = locValuesError([
+      ...(data.locationPatches ?? []).map(p => ({ qty: p.afterQty, restockedQty: p.restockedQty })),
+      ...(data.locationPatch ? [{ qty: data.locationPatch.afterQty, restockedQty: data.locationPatch.restockedQty }] : []),
+      ...(data.locationQtys ?? []),
+    ])
+    if (valueError) return { ok: false, error: valueError }
     // #3: locationPatch(한 칸) 또는 locationPatches(아이템별 폼의 여러 칸)가 오면
     // 직전 점검의 위치별 잔량을 base 로 서버에서 적용한다. 두 갈래는 **같은 한 줄의 base** 를 쓴다 —
     // 갈라 놓으면 비대칭 가드(check-stock-ledger-parity)가 한쪽만 보게 된다.
@@ -1217,6 +1225,12 @@ export async function updateStockCheck(id: string, data: {
     // 미래 날짜 거부 — 지나지 않은 날의 점검은 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
     if (!assertNotFuture(data.date).ok) return { ok: false, error: `점검일이 미래입니다(${data.date}). 아직 하지 않은 점검은 기록할 수 없습니다.` }
+    // 값 검증. createStockCheck 와 같은 정본이다(위치 패널 머지 한 칸·이력 수정 폼 절대값 두 갈래).
+    const valueError = locValuesError([
+      ...(data.locationPatch ? [{ qty: data.locationPatch.afterQty, restockedQty: data.locationPatch.restockedQty }] : []),
+      ...(data.locationQtys ?? []),
+    ])
+    if (valueError) return { ok: false, error: valueError }
 
     // #3: locationPatch가 오면 이 점검의 현재 위치별 잔량을 base로 서버에서 적용(연속 위치점검 머지 정확)
     let patchedQtys: LocQty[] | null = null

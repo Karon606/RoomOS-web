@@ -12,7 +12,7 @@
 //
 // 7장부터는 **복수 패치 접기**(applyLocationChecks, 2026-09-15)다. 아이템별 점검 폼이 한 품목의
 // 여러 칸을 한 번에 보내는 원자 저장의 정본이고, 규칙은 위치 패널이 왕복으로 하던 것과 같아야 한다.
-import { applyLocationCheck, applyLocationChecks, type LocBreakdown, type LocCheckPatch, type LocQtyOut } from '../lib/stockCheckMerge'
+import { applyLocationCheck, applyLocationChecks, locValuesError, type LocBreakdown, type LocCheckPatch, type LocQtyOut } from '../lib/stockCheckMerge'
 
 let pass = 0
 const fails: string[] = []
@@ -288,6 +288,24 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
     patch({ checkedLocationId: H, afterQty: 9, restockedQty: 0 }),
   ])
   if (r2.ok) eq('실측 수 == 패치 수(허브 포함)', r2.out.filter(o => o.carried === false).length, 2)
+}
+
+// ── 14. 저장 직전 값 검증(locValuesError, 2026-10-19 신고 1daf641c 후속) ─────────────────
+// 서버가 화면이 보낸 잔량·채움을 그대로 믿지 않는다. createStockCheck·updateStockCheck 세 갈래가 이 한 함수를 지난다
+// (호출 배선은 check-draft-lifecycle ⑩ 이 본다).
+{
+  eq('값 검증: 정상(채움 ≤ 잔량)', locValuesError([{ qty: 10, restockedQty: 7.5 }]), null)
+  eq('값 검증: 채움 = 잔량(빈 위치를 다 채움)', locValuesError([{ qty: 10, restockedQty: 10 }]), null)
+  eq('값 검증: 채움 없음', locValuesError([{ qty: 3 }, { qty: 0, restockedQty: null }]), null)
+  eq('값 검증: 부동소수 오차는 통과', locValuesError([{ qty: 0.3, restockedQty: 0.1 + 0.2 }]), null)
+  eq('값 검증: 채움 > 채운 후 잔량은 거부', locValuesError([{ qty: 10, restockedQty: 12.5 }]),
+    '채운 양이 채운 후 잔량보다 많습니다. 채우기 전과 채운 후를 다시 확인해 주세요.')
+  eq('값 검증: 음수 잔량 거부', locValuesError([{ qty: -1 }]), '잔량은 0 이상의 숫자여야 합니다.')
+  eq('값 검증: 음수 채움 거부', locValuesError([{ qty: 5, restockedQty: -2 }]), '채운 양은 0 이상의 숫자여야 합니다.')
+  eq('값 검증: NaN 잔량 거부', locValuesError([{ qty: Number('.') }]), '잔량은 0 이상의 숫자여야 합니다.')
+  eq('값 검증: 문자열 잔량 거부', locValuesError([{ qty: '5' }]), '잔량은 0 이상의 숫자여야 합니다.')
+  eq('값 검증: 여러 행 중 하나만 틀려도 거부', locValuesError([{ qty: 4, restockedQty: 2 }, { qty: 1, restockedQty: 3 }]) != null, true)
+  eq('값 검증: 빈 목록은 통과', locValuesError([]), null)
 }
 
 console.log(`\n위치 점검 머지 회귀: ${pass} 통과 / ${fails.length} 실패`)
