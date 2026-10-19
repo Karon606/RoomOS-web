@@ -72,6 +72,10 @@ type RoomRow = {
   latePaidAt: string | null
   // 실제 가장 최근 납부일 — 수납 표에 '언제 냈는지' 표시용 ('YYYY-MM-DD' or null)
   lastPayDate: string | null
+  // 그 달 몫을 받은 날. 귀속월이 조회 달인 이용료 기록(청구 조정 전표 제외, 금액 > 0)의 최신 입금일 'YYYY-MM-DD'.
+  // 표시·정렬 전용(완납 묶음 키·완납 보조줄, 신고 db65cce9). 선납이 섞이는 lastPayDate 와 다른 축이다.
+  // 진행 중 계약 행(buildLeaseRow)에서만 채운다. 예약·인수 전·공실은 미정의.
+  viewMonthPaidAt?: string | null
   // 다음 청구 도래일 (오늘 이후 가장 가까운 dueDay, override·말일 등 반영). 'YYYY-MM-DD'
   nextDueDate: string | null
   // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
@@ -634,6 +638,21 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       return `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}-${String(latest.getDate()).padStart(2, '0')}`
     })()
 
+    // 그 달 몫을 받은 날. 수납 관리 완납 묶음의 정렬 키이자 완납 보조줄 날짜(신고 db65cce9, 표시 전용).
+    // lastPayDate 는 계약 전체의 최신 입금일이라 다음 달분 선납이 섞인다(402호 10/10 10월분, 10/14 11월분).
+    // 그래서 귀속월이 조회 달인 기록만 본다. 지난달 말에 미리 받은 이번 달분은 그 입금일이 그대로 선다(420호 9/30).
+    // 위에서 이미 읽은 postCutoffRecords 만 걸러 쓰므로 추가 조회가 없고, 어떤 금액 계산에도 들어가지 않는다.
+    // payDate 는 @db.Date(UTC 자정 저장 정본)라 UTC 날짜부가 곧 달력 날짜다(lib/kstDate dbDateMonthKey 와 같은 관행).
+    const viewMonthPaidAt: string | null = (() => {
+      let latest: string | null = null
+      for (const p of postCutoffRecords) {
+        if (p.isDeposit || p.isBillingAdjust || p.targetMonth !== targetMonth || p.actualAmount <= 0) continue
+        const ymd = new Date(p.payDate).toISOString().slice(0, 10)
+        if (!latest || ymd > latest) latest = ymd
+      }
+      return latest
+    })()
+
     // 다음 청구 도래일 — viewMonth 안에서만 (그 달 dueDay가 미도래이고 아직 받지 못한 금액이 있을 때)
     // 4월 페이지에서 5월/6월 dueDay를 표시하지 않음 — 그건 5월/6월 페이지에서 다룬다
     // 이월 미수가 있으면 '납부 예정'이 아니라 '미납' 우선이라 nextDue 표시 안 함
@@ -668,6 +687,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isReservationConfirmed: false,
         latePaidAt,
         lastPayDate,
+        viewMonthPaidAt,
         nextDueDate,
         nextDueAmount,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -700,6 +720,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       isReservationConfirmed: false,
       latePaidAt,
       lastPayDate,
+      viewMonthPaidAt,
       nextDueDate,
       nextDueAmount,
       // 퇴실 완료 행(그 달에 살다 나간 계약)은 실제로 나간 날이 '9/30 퇴실' 보조줄이다(체류 끝 정본 leaseStayEnd).
