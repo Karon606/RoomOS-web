@@ -22,6 +22,9 @@
 //      발끝 고정([취소][임시저장][N곳 저장], form= 으로 폼에 붙는다), 창고 남음 줄은 패널에만(예외).
 //      (2단계 검수) 행 머리 낱말은 '저장값 N'(주 버튼 'N곳 저장' 과 겹치지 않게), 키보드가 선 동안 접는 것은
 //      정상 창고 요약·임시저장 칩·패널 안내 줄뿐이고 합계 줄·버튼 줄은 접지 않는다.
+//   ⑩ (2026-10-19 신고 1daf641c) '채우기 전' 빈칸 해석이 세 화면(아이템별 폼·위치 패널·이력 수정 폼)에서 한 함수
+//      (lib/stockLedger calcLocMove)를 저장값과 함께 부른다. 묻는 행(미결)은 저장에 안 싣고 버튼을 막으며, 그 행에
+//      자리표시 '0' 이 없고, 안내문이 규칙과 맞고, 서버가 채움 ≤ 잔량·음수를 거부한다.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -719,6 +722,129 @@ need('삼켜진 재저장은 보충 점검을 적용취소 대상에서 뺀다',
 need('강행 저장 토스트도 같은 규칙이다',
   /pushToast\('success', '부족한 채로 저장했습니다', res\.deduped/.test(hubDialog),
   '두 자리 중 하나만 고치면 다른 경로로 같은 사고가 난다')
+
+// ── ⑩ '채우기 전' 빈칸 해석의 정본 (2026-10-19 신고 1daf641c, 운영자 승인 C안) ─────────────────────
+// 규칙이 06-14 '빈칸 = 저장값' 에서 09-01 '빈칸 = 0' 으로 뒤집혔고, 쌀 신고(2.5kg 에서 10kg 으로 채웠는데 +10)가 다시
+// 저장값을 기대했다. 두 규칙의 답이 갈리는 행만 묻는다. 이 축이 지키는 것은 그 물음이 **세 화면 모두**에 서는가다.
+// 한 화면이라도 둘짜리 해석(빈칸 = 0)을 부르면 그 화면만 옛 장부를 쓴다. 그리고 묻는 행이 저장으로 새지 않는가.
+const ledgerSrc = readFileSync('lib/stockLedger.ts', 'utf8')
+const editForm = topFn(client, 'function CheckEditForm({ entry, stockUnit, itemLocations')
+need('이력 수정 폼을 찾음', editForm.length > 2000)
+need('해석 정본이 저장값을 받는다',
+  /export function calcLocMove\(beforeStr: string, afterStr: string, savedQty: number \| null \| undefined\): LocMove \{/.test(ledgerSrc) &&
+  /pending: true/.test(ledgerSrc),
+  '저장값을 안 받으면 두 규칙의 답이 갈리는 행을 가를 수 없다(빈칸 = 0 으로 되돌아간다)')
+// 호출은 전부 인자 셋이다. 괄호 짝을 세어 최상위 쉼표가 둘인지 본다.
+const callArgs = (src, name) => {
+  const out = []
+  let i = 0
+  while ((i = src.indexOf(name + '(', i)) >= 0) {
+    let depth = 0, commas = 0, j = i + name.length
+    for (; j < src.length; j++) {
+      const ch = src[j]
+      if (ch === '(' || ch === '[' || ch === '{') depth++
+      else if (ch === ')' || ch === ']' || ch === '}') { depth--; if (depth === 0) break }
+      else if (ch === ',' && depth === 1) commas++
+    }
+    out.push(commas + 1)
+    i = j
+  }
+  return out
+}
+const clientCalls = callArgs(client, 'calcLocMove')
+need('화면의 해석 호출이 전부 저장값과 함께다',
+  clientCalls.length >= 4 && clientCalls.every(n => n === 3),
+  `인자 둘짜리 호출이 남으면 그 자리만 빈칸 = 0 으로 돈다(호출 ${clientCalls.join(',')})`)
+need('세 화면이 같은 함수를 저마다의 저장값으로 부른다',
+  /const moveOf = \(l: StorageLocationItem\) => calcLocMove\(beforeQtys\[l\.id\] \?\? '', afterQtys\[l\.id\] \?\? '', prevMap\[l\.id\]\)/.test(itemForm) &&
+  /const saved = r\.currentLocationBreakdown\.find\(lb => lb\.locationId === lid\)\?\.qty\s*\n\s*const \{[^}]*pending[^}]*\} = calcLocMove\(beforeStr, afterStr, saved\)/.test(locPanel) &&
+  /const moveOf = \(l: \{ id: string \}\) => calcLocMove\(beforeQtys\[l\.id\] \?\? '', afterQtys\[l\.id\] \?\? '', savedBeforeOf\(l\.id\)\)/.test(editForm),
+  '아이템별 폼은 행 머리 저장값(prevMap), 패널은 같은 출처(currentLocationBreakdown), 이력 수정 폼은 그 기록의 채우기 전. 한 화면만 빠지면 그 화면만 묻지 않는다')
+need('세 화면의 행 계산이 모두 그 한 자리(moveOf/computeRow)를 지난다',
+  !/calcLocMove\(/.test(itemForm.replace(/const moveOf = [^\n]*\n/, '').replace(/const hubMove = [^\n]*\n/, '')) &&
+  (locPanel.match(/calcLocMove\(/g) ?? []).length === 1 &&
+  (editForm.match(/calcLocMove\(/g) ?? []).length === 1,
+  '행마다 손으로 다시 부르면 언젠가 한 자리만 저장값을 빠뜨린다')
+// 묻는 행은 저장으로 새지 않는다. 세는 수에서 빠지고, 버튼이 막히고, 막힌 이유가 버튼 위에 선다.
+need('아이템별 폼: 묻는 행은 패치에 안 실린다',
+  /const \{ finalN, restocked, pending \} = moveOf\(l\)\s*\n\s*if \(pending\) continue/.test(buildPatches) &&
+  /if \(pendingLocCount > 0\) return\s*\n\s*const locationPatches = buildLocationPatches\(\)/.test(itemSubmit),
+  "빼지 않으면 '채우기 전'을 정하지 않은 칸이 빈칸 = 0 으로 저장된다(신고 그대로)")
+need('위치 패널: 묻는 칸은 저장 단위에서 빠지고 저장 경로가 그 목록을 쓴다',
+  /const saveUnits = \(\) => buildUnits\(\)\.filter\(u => !computeRow\(u\.r, u\.locId\)\.pending\)/.test(locPanel) &&
+  /const dirtyUnitCount = saveUnits\(\)\.length/.test(locPanel) &&
+  /let units = saveUnits\(\)/.test(doSave) && /if \(pendingPairCount > 0\) \{ setConfirmItems\(\[\]\); setDupUnits\(\[\]\); return \}/.test(doSave) &&
+  !/let units = buildUnits\(\)/.test(doSave),
+  '패널만 게이트가 빠지면 같은 물음이 이 화면에서만 빈칸 = 0 으로 저장된다')
+need('이력 수정 폼: 묻는 행이 있으면 저장하지 않는다',
+  /if \(pendingLocCount > 0\) return/.test(editForm) &&
+  /const \{ restocked, finalN \} = moveOf\(l\)/.test(editForm) && /qty: finalN \?\? 0,/.test(editForm) &&
+  !/qty: Number\(afterQtys\[l\.id\] \|\| '0'\)/.test(editForm),
+  "'채운 후'만 읽으면 그 칸을 비울 때 채우기 전 값을 버리고 0 을 저장한다(점검 폼과 갈린 자리)")
+need('세 화면의 저장 버튼이 묻는 행이 있으면 막히고 이유 한 줄이 선다',
+  /disabled=\{pending \|\| restockSaveCount === 0 \|\| pendingLocCount > 0\}/.test(itemForm) &&
+  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(itemForm) &&
+  /disabled=\{pending \|\| !locId \|\| scopeItemCount === 0 \|\| dirtyUnitCount === 0 \|\| pendingPairCount > 0\}/.test(locPanel) &&
+  /\{pendingPairCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonPanel\(pendingPairCount\)\}<\/p>\}/.test(locPanel) &&
+  /\|\| pendingLocCount > 0\}\s*\n\s*onClick=\{handleSave\}/.test(editForm) &&
+  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(editForm),
+  '§22 ② 하단 이유 한 줄 + 버튼 비활성. 막기만 하면 왜 안 눌리는지 모르고, 말만 하면 그 행을 빼고 저장된다')
+need('이유 줄은 키보드가 서도 접지 않는다',
+  !/kbd-collapse[^\n]*pendingReason/.test(client))
+// 발끝 합계. 묻는 행은 안 센 위치처럼(이월) 센다. 채운 후 값을 넣으면 창고 차감 없이 합계만 부푼다.
+need('아이템별 폼 점검 후 잔량이 묻는 행을 이월로 센다',
+  /if \(\(beforeStr === '' && afterStr === ''\) \|\| pending\) return s \+ \(prevMap\[l\.id\] \?\? 0\)/.test(itemForm),
+  '채운 후를 그대로 더하면 창고에서 안 빠진 양이 합계에 더해져 유령 재고가 화면에 선다')
+// 묻는 행 아래 고르는 줄. 세 화면 모두, 그 화면의 저장값으로.
+need('고르는 줄이 한 벌이고 버튼 글자가 규칙과 같다',
+  /function PendingFillChoice\(\{ saved, unit, onPick \}/.test(client) &&
+  /<RowActionBtn onClick=\{\(\) => onPick\(String\(saved\)\)\}>\{fmtQty\(saved, unit\)\}에서 채움<\/RowActionBtn>/.test(client) &&
+  /<RowActionBtn onClick=\{\(\) => onPick\('0'\)\}>0에서 채움<\/RowActionBtn>/.test(client) &&
+  !/에서 옮김/.test(client),
+  "낱말은 '채움'이다. '옮김'은 위치 이동이라 이 자리에 쓰지 않는다")
+need('세 화면이 묻는 행 아래에 고르는 줄을 세운다',
+  /\{movePending && prevQty !== undefined && \(\s*\n\s*<PendingFillChoice saved=\{prevQty\}/.test(itemForm) &&
+  /\{movePending && prev != null && \(\s*\n\s*<PendingFillChoice saved=\{prev\.qty\}/.test(locPanel) &&
+  /\{movePending && savedBefore != null && \(\s*\n\s*<PendingFillChoice saved=\{savedBefore\}/.test(editForm),
+  '물음이 한 화면에서만 빠지면 그 화면에서는 버튼이 막힌 채 고를 길이 없다')
+// 자리표시 '0'. 빈칸이 실제로 0 으로 저장되는 자리에만. 묻는 행에 세우면 아직 정하지 않은 칸이 '0 에서 채웠다' 로 읽힌다.
+const beforePh = /placeholder=\{afterStr !== '' && beforeStr === '' && !movePending \? '0' : undefined\}/
+need("묻는 행의 '채우기 전' 칸에 자리표시 '0' 이 없다(세 화면)",
+  beforePh.test(itemForm) && beforePh.test(locPanel) && beforePh.test(editForm) &&
+  !/placeholder=\{afterStr !== '' && beforeStr === '' \? '0' : undefined\}/.test(client),
+  '0 을 띄우면 신고 화면 그대로다. 비워 둔 칸이 0 으로 보이는데 저장값은 2.5kg 이었다')
+need("이력 수정 폼에 늘 서던 자리표시 '0' 이 없다",
+  !/placeholder="0"/.test(editForm),
+  "'채운 후' 칸은 비우면 채우기 전이 그대로 잔량이고, '채우기 전' 칸은 묻는 행일 수 있다. 늘 0 을 띄우면 둘 다 거짓이다")
+// 안내문. 규칙과 같은 말이고 이월의 단위는 칸이 아니라 위치(패널은 품목)다.
+need('안내문이 승인된 문장이고 규칙과 맞다',
+  client.includes("const CHECK_GUIDE_RESTOCK = '센 위치만 적으세요. 손대지 않은 위치는 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 창고에서 자동 차감됩니다.'") &&
+  !/비워 둔 칸은 지난 점검 값을 이어받습니다/.test(client) &&
+  /const CHECK_GUIDE_PANEL = '센 품목만 적으세요\. 손대지 않은 품목은 지난 점검 값을 이어받습니다\. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요\./.test(client) &&
+  /<p className="break-keep text-\[0\.6875rem\] text-\[var\(--warm-muted\)\] mt-0\.5">\{CHECK_GUIDE_PANEL\}<\/p>/.test(locPanel),
+  "'비워 둔 칸은 이어받는다' 는 '채운 후'만 적은 행에서 비운 '채우기 전'까지 이어받는다고 읽힌다. 그 칸은 묻는 자리다")
+need('안내문과 골격이 같은 상수를 break-keep 으로 그린다',
+  /<p className="break-keep text-xs text-\[var\(--warm-muted\)\]">\s*\n\s*\{restockMode\s*\n\s*\? CHECK_GUIDE_RESTOCK/.test(itemForm) &&
+  /<p className="break-keep text-xs" aria-hidden="true"><span className=\{`\$\{bar\}[^`]*`\}>\{CHECK_GUIDE_RESTOCK\}<\/span><\/p>/.test(client),
+  '한쪽만 break-keep 이면 폭마다 줄 수가 갈려 골격이 로디드 순간 튄다')
+// 서버. 화면이 보낸 값을 그대로 믿지 않는다. 세 갈래가 접기 전에 같은 검증을 지난다.
+const updateBody = (() => {
+  const st = actions.indexOf('export async function updateStockCheck(id: string, data: {')
+  if (st < 0) return ''
+  const e = actions.indexOf('\nexport ', st + 40)
+  return e < 0 ? actions.slice(st) : actions.slice(st, e)
+})()
+need('서버 값 검증 정본이 있다',
+  /export function locValuesError\(rows: \{ qty: unknown; restockedQty\?: unknown \}\[\]\): string \| null \{/.test(merge) &&
+  /r\.restockedQty > r\.qty \+ HUB_SHORT_EPS/.test(merge))
+need('createStockCheck 가 접기 전에 값 검증을 지난다(세 갈래)',
+  /const valueError = locValuesError\(\[\s*\n\s*\.\.\.\(data\.locationPatches \?\? \[\]\)\.map\(p => \(\{ qty: p\.afterQty, restockedQty: p\.restockedQty \}\)\),\s*\n\s*\.\.\.\(data\.locationPatch \? \[\{ qty: data\.locationPatch\.afterQty, restockedQty: data\.locationPatch\.restockedQty \}\] : \[\]\),\s*\n\s*\.\.\.\(data\.locationQtys \?\? \[\]\),\s*\n\s*\]\)\s*\n\s*if \(valueError\) return \{ ok: false, error: valueError \}/.test(serverPatches) &&
+  before(serverPatches, 'locValuesError(', 'applyLocationChecks('),
+  '빼면 채움 > 채운 후 잔량(채우기 전이 음수인 장부)이나 음수가 그대로 저장된다')
+need('updateStockCheck 가 접기 전에 값 검증을 지난다(두 갈래)',
+  /const valueError = locValuesError\(\[\s*\n\s*\.\.\.\(data\.locationPatch \? \[\{ qty: data\.locationPatch\.afterQty, restockedQty: data\.locationPatch\.restockedQty \}\] : \[\]\),\s*\n\s*\.\.\.\(data\.locationQtys \?\? \[\]\),\s*\n\s*\]\)\s*\n\s*if \(valueError\) return \{ ok: false, error: valueError \}/.test(updateBody) &&
+  before(updateBody, 'locValuesError(', 'applyLocationCheck(base'),
+  '위치 패널의 머지 저장과 이력 수정 폼이 이 길로 온다. 한쪽만 막으면 다른 쪽으로 샌다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
