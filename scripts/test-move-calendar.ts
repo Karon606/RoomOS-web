@@ -1073,18 +1073,22 @@ function invariants(name: string, p: SteadyIn) {
 // ── 무변동 행 충돌 ── 종전에는 행이 없어 안 보이던 사고가 무변동 행에서 선다(의도, 독립 검수 확정).
 // (b) 입주일이 창 첫날 전인 연체 예약 + 퇴실일 미정 거주 · (c) 입주일 없는 예약 + 거주.
 {
-  const chg = lease({ id: 'cf-chg', roomNo: '401', status: 'ACTIVE', moveInDate: '2026-10-05' })
+  const chg = lease({ id: 'cf-chg', roomNo: '401', status: 'ACTIVE', moveInDate: '2026-10-05', tenantName: '변동거주' })
+  // 변동 행(401)에도 충돌 하나. 없으면 '불변 · 변동 행 충돌'이 [] 와 [] 를 맞대는 빈 비교가 된다(재확인 지적).
+  const chgRsv = lease({ id: 'cf-chg-rsv', roomNo: '401', status: 'RESERVED', moveInDate: '2026-11-10', tenantName: '변동예약' })
   const res = lease({ id: 'cf-res', roomNo: '407', status: 'ACTIVE', moveInDate: '2026-01-10', tenantName: '거주' })
   const late = lease({ id: 'cf-late', roomNo: '407', status: 'RESERVED', moveInDate: '2026-08-20', expectedMoveOut: '2027-02-19', tenantName: '연체예약' })
   const res9 = lease({ id: 'cf-res9', roomNo: '409', status: 'ACTIVE', moveInDate: '2026-02-01', tenantName: '거주9' })
   const nodate = lease({ id: 'cf-nodate', roomNo: '409', status: 'RESERVED', tenantName: '날짜없음' })
-  const p: SteadyIn = { changed: [chg], rooms: [roomOf('401'), roomOf('407'), roomOf('409')], cover: [chg, res, late, res9, nodate] }
+  const p: SteadyIn = { changed: [chg, chgRsv], rooms: [roomOf('401'), roomOf('407'), roomOf('409')], cover: [chg, chgRsv, res, late, res9, nodate] }
+  eq('무변동 충돌 · 비교 전제(변동 행 충돌이 실제로 있다)', withoutRooms(p).conflicts.map(c => [c.roomNo, c.kind]), [['401', 'indefinite']])
   const a = invariants('무변동 충돌', p)
   eq('무변동 충돌 · (b)(c) 무기한 거주 위 예약', a.conflicts.map(c => [c.roomNo, c.kind, c.text]), [
+    ['401', 'indefinite', '401호 변동거주님 퇴실일이 미정인데 변동예약님 입실 예약이 잡혀 있습니다.'],
     ['407', 'indefinite', '407호 거주님 퇴실일이 미정인데 연체예약님 입실 예약이 잡혀 있습니다.'],
     ['409', 'indefinite', '409호 거주9님 퇴실일이 미정인데 날짜없음님 입실 예약이 잡혀 있습니다.'],
   ])
-  eq('무변동 충돌 · 방 목록이 없으면 종전대로 안 보인다', withoutRooms(p).conflicts.length, 0)
+  eq('무변동 충돌 · 방 목록이 없으면 무변동 몫은 종전대로 안 보인다', withoutRooms(p).conflicts.some(c => c.roomNo !== '401'), false)
   eq('무변동 충돌 · 행 좌측 팁 근거(행 충돌)', a.rows.filter(r => r.steady).map(r => r.conflicts.length), [1, 1])
 }
 
