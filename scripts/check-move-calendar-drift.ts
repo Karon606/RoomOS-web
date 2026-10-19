@@ -28,7 +28,7 @@
 //   D '전체' 축 = 모든 호실(2026-10-19). 화면과 **같은 오케스트레이션**(loadMoveRangeInputs)으로 기본 창과
 //     과거 창 하나를 만들어 맞댄다. D1 행 = 방 집합(제외 방 빼고, 변동으로 선 제외 방은 남는다), 방마다 한 번.
 //     D2 무변동 행에 창 안 경계 막대 0. D3 달별 건수 = 월 경로(홈 '이달 입퇴실 N건'과 같은 조립).
-//     D4 '입퇴실' 축과 변동 행이 방 목록 없는 결과와 같고, context 를 종전 SQL 로 다시 읽은 결과와도
+//     D4 '입퇴실' 축·변동 행·변동 행 충돌이 방 목록 없는 결과와 같고, context 를 종전 SQL 로 다시 읽은 결과와도
 //     바이트 단위로 같다(범위 경로는 context 를 메모리에서 고른다, 그 조건이 갈리면 여기서 운다).
 //     D5 무변동 빈 행(공실로 칠한 방)에 창과 겹치는 실제 구간이 없다(과거 창 퇴실 완료 미조회를 잡는다).
 //
@@ -415,6 +415,11 @@ async function main() {
       if (J(filterMoveRows(full.rows, 'moves')) !== J(filterMoveRows(bare.rows, 'moves'))) steadyDrift.push(`${tag} '입퇴실' 축이 방 목록 유무에 따라 달라진다`)
       if (J([full.months, full.focusEventCount, full.upcoming, full.beyond]) !== J([bare.months, bare.focusEventCount, bare.upcoming, bare.beyond])) {
         steadyDrift.push(`${tag} 사건 수·다가오는 입퇴실·beyond 가 방 목록 유무에 따라 달라진다`)
+      }
+      // 충돌은 무변동 행에도 선다(사고 알림, 독립 검수 확정). 변동 행 몫은 방 목록 없는 결과와 같아야 한다.
+      const changeRoomIds = new Set(bare.rows.map(r => r.roomId))
+      if (J(full.conflicts.filter(c => changeRoomIds.has(c.roomId))) !== J(bare.conflicts)) {
+        steadyDrift.push(`${tag} 변동 행의 충돌이 방 목록 유무에 따라 달라진다`)
       }
       const sql = await fetchMoveLeases(prisma as never, p.id, inputs.from, inputs.to, (inputs.works ?? []).map(w => w.roomId))
       const legacy = buildMoveRange({ ...inputs, changed: sql.changed, context: sql.context, rooms: [], cover: [] })

@@ -14,6 +14,7 @@
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
 import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, excludedRoomsNote, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, steadyHeading, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { pickContext } from '../lib/moveCalendarData'
 
 let pass = 0
 let fail = 0
@@ -892,6 +893,9 @@ function invariants(name: string, p: SteadyIn) {
   eq(`${name} · 불변 · beyond`, a.beyond, b.beyond)
   eq(`${name} · 불변 · 변동 행 바이트 동일`, J(a.rows.filter(r => !r.steady)), J(b.rows))
   eq(`${name} · 불변 · 입퇴실 축 바이트 동일`, J(filterMoveRows(a.rows, 'moves')), J(filterMoveRows(b.rows, 'moves')))
+  // 충돌은 무변동 행에도 선다(사고 알림, 독립 검수 2026-10-19 확정). 변동 행 몫은 방 목록 유무와 같아야 한다.
+  const changeIds = new Set(b.rows.map(r => r.roomId))
+  eq(`${name} · 불변 · 변동 행 충돌`, J(a.conflicts.filter(c => changeIds.has(c.roomId))), J(b.conflicts))
   const ids = a.rows.map(r => r.roomId)
   eq(`${name} · 방마다 한 번`, new Set(ids).size, ids.length)
   const want = new Set([...p.rooms.filter(r => !r.vacancyExcluded).map(r => r.id), ...b.rows.map(r => r.roomId)])
@@ -1064,6 +1068,39 @@ function invariants(name: string, p: SteadyIn) {
   const r = withRooms({ cover: [term], rooms: [roomOf('410')] }).rows[0]
   eq('기간 계약 무변동 · 열린 막대 아님', [r.steady, r.bars[0].openEnded, r.bars[0].clippedEnd], [true, false, true])
   eq('기간 계약 무변동 · 상태 문구는 창 밖 퇴실일', r.bars[0].stateLabel, '1/31 퇴실')
+}
+
+// ── 무변동 행 충돌 ── 종전에는 행이 없어 안 보이던 사고가 무변동 행에서 선다(의도, 독립 검수 확정).
+// (b) 입주일이 창 첫날 전인 연체 예약 + 퇴실일 미정 거주 · (c) 입주일 없는 예약 + 거주.
+{
+  const chg = lease({ id: 'cf-chg', roomNo: '401', status: 'ACTIVE', moveInDate: '2026-10-05' })
+  const res = lease({ id: 'cf-res', roomNo: '407', status: 'ACTIVE', moveInDate: '2026-01-10', tenantName: '거주' })
+  const late = lease({ id: 'cf-late', roomNo: '407', status: 'RESERVED', moveInDate: '2026-08-20', expectedMoveOut: '2027-02-19', tenantName: '연체예약' })
+  const res9 = lease({ id: 'cf-res9', roomNo: '409', status: 'ACTIVE', moveInDate: '2026-02-01', tenantName: '거주9' })
+  const nodate = lease({ id: 'cf-nodate', roomNo: '409', status: 'RESERVED', tenantName: '날짜없음' })
+  const p: SteadyIn = { changed: [chg], rooms: [roomOf('401'), roomOf('407'), roomOf('409')], cover: [chg, res, late, res9, nodate] }
+  const a = invariants('무변동 충돌', p)
+  eq('무변동 충돌 · (b)(c) 무기한 거주 위 예약', a.conflicts.map(c => [c.roomNo, c.kind, c.text]), [
+    ['407', 'indefinite', '407호 거주님 퇴실일이 미정인데 연체예약님 입실 예약이 잡혀 있습니다.'],
+    ['409', 'indefinite', '409호 거주9님 퇴실일이 미정인데 날짜없음님 입실 예약이 잡혀 있습니다.'],
+  ])
+  eq('무변동 충돌 · 방 목록이 없으면 종전대로 안 보인다', withoutRooms(p).conflicts.length, 0)
+  eq('무변동 충돌 · 행 좌측 팁 근거(행 충돌)', a.rows.filter(r => r.steady).map(r => r.conflicts.length), [1, 1])
+}
+
+// ── 범위 경로 context(pickContext) ── 종전 SQL 과 같은 두 갈래(지금 방 · 같은 영업장 옛 방 구간).
+// 구간 갈래는 운영 데이터에 그 모양이 없으면 감지망 D4 가 못 보므로 여기서 직접 고정한다.
+{
+  const occ = [
+    { id: 'now-in', roomId: 'r1', roomStays: [] },
+    { id: 'old-only', roomId: 'r9', roomStays: [{ roomId: 'r2', propertyId: 'p1' }] },
+    { id: 'old-other-prop', roomId: 'r9', roomStays: [{ roomId: 'r2', propertyId: 'p2' }] },
+    { id: 'out', roomId: 'r9', roomStays: [{ roomId: 'r8', propertyId: 'p1' }] },
+    { id: 'no-room', roomId: null, roomStays: [{ roomId: 'r1', propertyId: 'p1' }] },
+  ]
+  eq('pickContext · 지금 방 · 옛 방 구간(같은 영업장) · 호실 해제 계약의 구간',
+    pickContext(occ, 'p1', ['r1', 'r2']).map(x => x.id), ['now-in', 'old-only', 'no-room'])
+  eq('pickContext · 방 목록이 비면 없다', pickContext(occ, 'p1', []).length, 0)
 }
 
 // ── 문구 정본 ──

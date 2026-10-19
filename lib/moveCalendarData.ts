@@ -81,11 +81,6 @@ export type MoveLeaseRow = {
   roomSchedule?: unknown
 }
 
-/** MOVE_LEASE_SELECT_SCOPED 가 뽑는 모양. 구간마다 영업장이 하나 더 붙는다. */
-type ScopedMoveLeaseRow = Omit<MoveLeaseRow, 'roomStays'> & {
-  roomStays: (MoveLeaseRow['roomStays'][number] & { propertyId: string })[]
-}
-
 /** 날짜는 'YYYY-MM-DD' 문자열로 고정 — getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다. */
 export const dbYmd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
 
@@ -167,8 +162,12 @@ function contextRoomIds(changed: MoveLeaseRow[], workRoomIds: string[]): string[
  * 순차 왕복이 하나 늘 뿐이다. 조건이 SQL 과 한 글자라도 갈리면 변동 행이 달라지므로, 감지망
  * (check-move-calendar-drift 축 D)이 두 경로의 결과를 운영 데이터로 맞댄다.
  * **날짜 조건을 넣지 않는다**. 꼬리(tail)가 창 밖 예약을 이 집합에서 찾는다.
+ * 내보내는 이유는 순수 회귀다(scripts/test-move-calendar). 구간 갈래(옛 방)는 운영 데이터에 그 모양이
+ * 없으면 감지망이 못 보므로, '지금 방은 밖, 옛 방 구간만 안' 같은 모양을 회귀가 직접 고정한다.
  */
-function pickContext(occupying: ScopedMoveLeaseRow[], propertyId: string, roomIds: string[]): ScopedMoveLeaseRow[] {
+export function pickContext<T extends { roomId: string | null; roomStays: { roomId: string; propertyId: string }[] }>(
+  occupying: T[], propertyId: string, roomIds: string[],
+): T[] {
   const ids = new Set(roomIds)
   return occupying.filter(l =>
     (l.roomId != null && ids.has(l.roomId))

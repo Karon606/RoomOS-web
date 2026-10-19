@@ -474,8 +474,8 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
         <EmptyState
           title="이 기간에 일정이 없습니다"
           description="입주·퇴실·예약이 잡히거나 작업이 등록되면 이 달력에 나타납니다."
-          // 트랙이 없는 창에서는 아래 부유 알약이 설명문 위에 앉는다(빈 상태 안쪽 여백 32px 대
-          // 알약 윗변 54px = 세로 22px 겹침). 빈 상태의 CTA 자리가 곧 '여기서 나가는 길'이다(§17).
+          // 트랙이 없는 창에서는 부유 알약이 안 선다(닻이 카드 안 트랙 칸에 산다). 그래서 빈 상태의
+          // CTA 자리가 곧 '여기서 나가는 길'이다(§17).
           action={todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
         />
       ) : rows.length === 0 ? (
@@ -506,7 +506,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
               다중 선택은 없다 — 다중선택 필터 컴포넌트는 저장소 미등재라 신설 자체가 승인 대상이다.
               트랙 위 필터 배치는 저장소 전례가 없어 배포 전 디자이너 패스 대상. */}
           {/* 범례 — 거주와 예약이 색으로만 갈리고 있었다. 스크롤러 **밖**이라야 트랙과 함께 흘러가지
-              않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
+              않고, '오늘로' 알약이 트랙 위로 떠서 아래쪽을 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
               공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
               막대마다 aria-label 이 종류를 말하므로 스와치를 소리로 읽히면 같은 말이 두 번이다.
               범례만 aria-hidden 이고 필터는 아니다 — 하나는 장식이고 하나는 조작이다. */}
@@ -518,7 +518,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
             {/* scroll — 같은 페이지 형제 둘(청소 상태 필터·호실 상태 필터)이 넘기는 것과 같은 문법.
                 지금 트랙은 141.52px 이라 안 넘치지만, 안 넘기면 트랙에 max-w-full 이 안 붙어
-                라벨이 길어지는 날 카드 밖으로 밀리고 overflow-hidden 에 잘린다(디자이너 패스). */}
+                라벨이 길어지는 날 카드 밖으로 밀리고 카드 모서리(overflow-clip)에 잘린다(디자이너 패스). */}
             <SegmentedControl<MoveAxis> size="sm" scroll ariaLabel="일정 종류 필터"
               value={axis} onChange={setAxis}
               options={[
