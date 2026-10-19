@@ -14,6 +14,9 @@
 //   ⓑ 인라인 `color: 'var(--coral)'` 이 없다(같은 글자 축, 스타일 객체 문법).
 //   ⓒ SVG stroke·fill, 보더, 배경 틴트, outline 은 대상이 아니다 — 배치도 캔버스·영수증 사진 위
 //      그림은 모드 불변(§28)이고 보더·틴트는 자기 규칙(§12·§03)이 있다.
+//   ⓓ 상태 배지 보조줄 글자색 맵(StatusBadge SUB_FG) 값에 --coral·--persimmon 이 없다. 맵 값은
+//      `style={{ color: SUB_FG[tone] }}` 로 흘러가 ⓐ·ⓑ 의 줄 단위 패턴에 안 걸린다. 연체 보조줄이
+//      다크 연체 카드 위 2.81:1 로 남아 있던 자리다(2026-10-19, 신고 db65cce9 패널). 정본은 --overdue-fg.
 //
 // 실행: node scripts/check-coral-text-token.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -46,6 +49,16 @@ for (const f of files) {
       violations.push(`${f}:${i + 1} 인라인 color 가 --coral 이다 — 'var(--tc-text)' 를 쓴다(라이트 값은 같다).`)
     }
   })
+}
+
+// ⓓ 상태 배지 보조줄 글자색 맵. 블록을 못 찾으면 그것도 위반이다(이름이 바뀌면 그물이 조용히 꺼진다).
+{
+  const SB = 'components/ui/StatusBadge.tsx'
+  const block = strip(readFileSync(SB, 'utf8')).match(/const SUB_FG\b[^{]*\{([\s\S]*?)\n\}/)
+  if (!block) violations.push(`${SB} SUB_FG 맵을 찾지 못했다. 이름을 바꿨다면 이 그물(ⓓ)도 함께 옮긴다.`)
+  else if (/var\(--(?:coral|persimmon)\)/.test(block[1])) {
+    violations.push(`${SB} SUB_FG 에 --coral 값이 있다. 보조줄 글자라 다크 연체 카드 위 2.81:1 이다. 연체는 'var(--overdue-fg)' 를 쓴다(라이트 값은 같다).`)
+  }
 }
 
 console.log(`[테라코타 글자 토큰] ${files.length}파일 검사 / 위반 ${violations.length}건`)

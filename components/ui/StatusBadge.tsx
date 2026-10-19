@@ -43,12 +43,14 @@ const BADGE: Record<BadgeTone, { bg: string; fg: string }> = {
 
 // 뱃지 아래 보조 텍스트 색 — 행 배경(옅은 틴트) 위에 놓이므로 진한 톤(badge fg)을 사용.
 // 과거에 badge-bg를 썼었는데 그건 옅은 파스텔이라 옅은 row tint 위에서 거의 묻힘 (2026-05-31 피드백).
-// 예외: overdue는 fg가 크림(#fbf6ef)이라 행 위에서 안 보이므로 coral 액센트 사용.
+// 예외: overdue는 fg가 크림(#fbf6ef)이라 행 위에서 안 보이므로 연체 글자 토큰(--overdue-fg)을 쓴다.
+// --coral 은 다크 연체 카드(--danger-bg 틴트) 위에서 2.81:1 이라 §28 본문 하한(4.5:1)에 못 미쳤다
+// (2026-10-19, 신고 db65cce9 패널). --overdue-fg 는 라이트에서 같은 #A03C2E 라 라이트 픽셀은 그대로다(§04).
 const SUB_FG: Record<BadgeTone, string> = {
   paid:    'var(--badge-paid-fg)',
   await:   'var(--badge-await-fg)',
   unpaid:  'var(--badge-unpaid-fg)',
-  overdue: 'var(--coral)',
+  overdue: 'var(--overdue-fg)',
   exit:    'var(--badge-exit-fg)',
   movein:  'var(--badge-movein-fg)',
   info:    'var(--warm-mid)',
