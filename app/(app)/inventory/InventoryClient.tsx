@@ -3771,6 +3771,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
   )
 
   const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
+  // 위치 없는 품목의 잔량 칸이 저장할 수 있는 숫자인가(빈칸·NaN·음수 거부). 서버(locValuesError)와 같은 조건이다.
+  const qtyValid = qty !== '' && Number.isFinite(Number(qty)) && Number(qty) >= 0
   // 창고(허브)는 보충받는 게 아니라 차감되는 쪽 — '자동 차감 후'를 자동계산. 사용자가 직접 고치면 그 값 사용.
   const [hubTouched, setHubTouched] = useState(false)
 
@@ -3828,6 +3830,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
           }),
       })
     } else {
+      // 버튼이 막지만 여기서도 본다. '.' 은 Number 로 NaN 이 되는데 음수 검사만으로는 통과해 그대로 저장됐다.
+      if (!qtyValid) return
       onSave({ date, memo: memo || null, remainingQty: Number(qty) })
     }
   }
@@ -3955,7 +3959,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
         <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>삭제</Btn>
         <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
-        <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0)) || pendingLocCount > 0}
+        <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && !qtyValid) || pendingLocCount > 0}
           onClick={handleSave}>
           {pending ? '저장 중…' : '저장'}
         </Btn>

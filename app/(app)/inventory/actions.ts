@@ -1068,7 +1068,10 @@ export async function createStockCheck(data: {
     }
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
-    if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    // 합계도 같은 정본으로 본다(2026-10-19 검수). 위치 없는 품목은 이 값이 곧 화면이 보낸 remainingQty 라, 음수만 보면
+    // '.' 같은 입력이 NaN 으로 그대로 저장됐다(NaN < 0 은 거짓이다).
+    const totalError = locValuesError([{ qty: total }])
+    if (totalError) return { ok: false, error: totalError }
     // 같은 날 중복 앵커 안내(백로그 3번) — 감지·안내만 하고 저장은 그대로 진행한다.
     // 자동 삭제는 절대 하지 않는다(2026-08-19 점보롤 앵커 오판 삭제 교훈 — 값이 같아도
     // 보충 마커 등 사건 기록이 실린 앵커는 중복이 아니다). 그래서 수령 자동 점검(sourceExpenseId)·
@@ -1304,7 +1307,9 @@ export async function updateStockCheck(id: string, data: {
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const finalQty = adjusted ? adjusted.reduce((s, lq) => s + lq.qty, 0) : data.remainingQty
 
-    if (finalQty !== undefined && finalQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    // 위치 없는 품목의 잔량 수정도 같은 정본이다. 이력 수정 폼이 Number('.') = NaN 을 보내면 음수 검사만으로는 통과했다.
+    const finalError = finalQty !== undefined ? locValuesError([{ qty: finalQty }]) : null
+    if (finalError) return { ok: false, error: finalError }
     // #3 머지 시 점검 시각을 마지막 점검 시각(지금)으로 갱신 (locationPatch 사용 시)
     const bumpTime = !!data.locationPatch
 

@@ -876,6 +876,17 @@ need("이력 수정 폼 묻는 행에는 '채움 없음' 이 없다",
   /\{!movePending && \(\s*\n\s*<RowActionBtn className="shrink-0" onClick=\{\(\) => setAfterQtys\(p => \(\{ \.\.\.p, \[l\.id\]: beforeQtys\[l\.id\] \?\? '' \}\)\)\}>\s*\n\s*채움 없음/.test(editForm),
   '누르면 두 칸이 비면서 그 행이 잔량 0 으로 저장된다')
 // 임시저장 칩 기준값은 적은 글자만이다(검수 12). 해석 결과를 담으면 저장값만 바뀌어도 '임시저장 후 수정됨' 이 거짓으로 선다.
+// 위치 없는 품목의 잔량(remainingQty) 경로도 같은 정본을 지난다(검수 9). 음수만 보면 '.' 이 NaN 으로 저장됐다(NaN < 0 은 거짓).
+need('위치 없는 품목 잔량도 서버가 숫자 검증한다(만들기·고치기)',
+  /const totalError = locValuesError\(\[\{ qty: total \}\]\)\s*\n\s*if \(totalError\) return \{ ok: false, error: totalError \}/.test(serverPatches) &&
+  /const finalError = finalQty !== undefined \? locValuesError\(\[\{ qty: finalQty \}\]\) : null\s*\n\s*if \(finalError\) return \{ ok: false, error: finalError \}/.test(updateBody) &&
+  !/if \(total < 0\) return/.test(serverPatches) && !/finalQty !== undefined && finalQty < 0/.test(updateBody),
+  '이력 수정 폼이 Number(\'.\') = NaN 을 보내면 잔량이 NaN 으로 저장된다')
+need('이력 수정 폼 잔량 칸이 NaN 을 막는다(버튼·저장)',
+  /const qtyValid = qty !== '' && Number\.isFinite\(Number\(qty\)\) && Number\(qty\) >= 0/.test(editForm) &&
+  /disabled=\{pending \|\| \(!hasLocations && !qtyValid\) \|\| pendingLocCount > 0\}/.test(editForm) &&
+  /if \(!qtyValid\) return\s*\n\s*onSave\(\{ date, memo: memo \|\| null, remainingQty: Number\(qty\) \}\)/.test(editForm),
+  '버튼이 음수만 막으면 . 한 글자로 저장이 눌린다')
 need('패널 임시저장 칩 기준값이 적은 글자만 담는다',
   /const snapshotOfInputs = \(\) => JSON\.stringify\(\{\s*\n\s*locId, date,\s*\n\s*rows: groups\.flatMap\(g => g\.items\.map\(r => \{ const k = locPairKey\(r\.id, g\.node\.id\); return \{ k, b: beforeQtys\[k\] \?\? '', a: afterQtys\[k\] \?\? '' \} \}\)\),/.test(locPanel) &&
   !/\.\.\.computeRow\(r, g\.node\.id\)/.test(locPanel),
