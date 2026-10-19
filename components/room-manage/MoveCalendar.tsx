@@ -14,7 +14,7 @@
 // 건다. 두 축에 걸면 세로로는 넘칠 일이 없는 '가짜 스크롤러'가 되어 Android Blink 가 터치를 래치하고
 // 페이지 세로 스크롤이 먹통이 된다(knowledge/mobile-scroll-viewport, 신고 d8554128).
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Btn } from '@/components/ui/Btn'
@@ -30,7 +30,7 @@ import { suppressesTap, type TapOrigin } from '@/lib/tapGuard'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
-import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, filterMoveRows, moveWorkRailLabel, shiftMonth, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
+import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, excludedRoomsNote, filterMoveRows, moveWorkRailLabel, shiftMonth, steadyHeading, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -236,6 +236,9 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
    */
   const [axis, setAxis] = useState<MoveAxis>('all')
   const rows = useMemo(() => filterMoveRows(data.rows, axis), [data.rows, axis])
+  // '변동 없음 N실' 소제목의 자리와 문구. '전체' 축에서만 선다(lib 정본, 축 판정을 여기서 다시 하지 않는다).
+  const heading = steadyHeading(rows, axis)
+  const excludedNote = excludedRoomsNote(data.excludedRoomCount)
   const days = data.days
   const todayDay = data.todayDay
 
@@ -606,12 +609,27 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
               </div>
 
               {rows.map((row, ri) => (
-                <GanttRow key={row.roomId} row={row} days={days} cols={cols}
-                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0}
-                  onOpen={openLease} onOpenRoom={openRoom} />
+                <Fragment key={row.roomId}>
+                  {heading?.index === ri && (
+                    <SteadyHeadingRow label={heading.label} cols={cols} todayDay={todayDay}
+                      monthStarts={monthStarts} first={ri === 0} />
+                  )}
+                  {/* 소제목이 맨 위에 서면(변동 행 0) 첫 행은 소제목과의 구분선을 그대로 든다. */}
+                  <GanttRow row={row} days={days} cols={cols}
+                    todayDay={todayDay} monthStarts={monthStarts} first={ri === 0 && heading?.index !== 0}
+                    onOpen={openLease} onOpenRoom={openRoom} />
+                </Fragment>
               ))}
             </div>
           </div>
+          {/* 카드 끝 한 줄. 행으로 안 세운 창고·사무실(운영자 결정 2026-10-19). 문구와 0 판정은 lib 정본.
+              카드 머리(범례)와 같은 자리 문법이다(px-2 · 구분선 1px). 카드 **안**이라 바탕이 --cream 이고
+              --ink-m 이 AA 를 넘는다(카드 밖 --canvas 위에서는 라이트 4.11:1 로 미달, 실측). */}
+          {excludedNote && (
+            <p className="px-2 py-2 text-[0.65625rem]" style={{ color: 'var(--ink-m)', borderTop: '1px solid var(--warm-border)' }}>
+              {excludedNote}
+            </p>
+          )}
         </div>
       )}
 
@@ -1131,6 +1149,45 @@ function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
   return { ...bare, mode: 'name' }
 }
 
+/**
+ * '변동 없음 N실' 소제목. 변동 행 덩어리와 무변동 행 사이 한 줄(운영자 결정 2026-10-19).
+ *
+ * 호실 열 머리('호실')와 같은 티어다(10.5px · 700 · --ink-m). 새 색도 띠 배경도 안 쓰고 위 구분선
+ * 1px --warm-border 하나만 진다. 행이 아니라서 .mc-row 를 안 단다(hover 밝힘 없음, 누를 것 없음).
+ * 오늘 세로선·월 경계선은 이 줄도 관통한다. 시간축은 모든 줄에 공통이라 이 줄에서만 끊기면
+ * 선이 두 동강으로 읽힌다.
+ *
+ * 글자는 sticky 다. 트랙을 오른쪽으로 끌어도 호실 열 자리에 남는다. 불투명 바탕(--cream)이 줄 높이
+ * 전체를 덮어 그 자리를 지나가는 세로선을 호실 칸처럼 가린다. 호실 버튼(.mc-room)을 쓰지 않는 이유는
+ * 그 클래스가 행 hover 와 감지망(check-calendar-room-open 축 ③)의 대상이기 때문이다.
+ */
+function SteadyHeadingRow({ label, cols, todayDay, monthStarts, first }: {
+  label: string
+  cols: string
+  todayDay: number | null
+  monthStarts: number[]
+  first: boolean
+}) {
+  return (
+    <div className="grid" style={{ gridTemplateColumns: cols, borderTop: first ? 'none' : '1px solid var(--warm-border)' }}>
+      <div className="min-w-0" style={{ gridColumn: '1 / -1', gridRow: '1 / 2' }}>
+        <span className="sticky left-0 z-20 inline-block whitespace-nowrap px-2 py-1.5 text-[0.65625rem] font-bold leading-none"
+          style={{ minWidth: ROOM_COL, background: 'var(--cream)', color: 'var(--ink-m)' }}>
+          {label}
+        </span>
+      </div>
+      {monthStarts.map(d => (
+        <div key={`mb-${d}`} aria-hidden className="pointer-events-none"
+          style={{ gridColumn: `${d + 1} / span 1`, gridRow: '1 / 2', width: 1, justifySelf: 'start', background: 'var(--warm-border)' }} />
+      ))}
+      {todayDay != null && (
+        <div aria-hidden className="pointer-events-none"
+          style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / 2', width: 1, justifySelf: 'start', background: 'var(--tc-text)' }} />
+      )}
+    </div>
+  )
+}
+
 function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpenRoom }: {
   row: MoveCalendarRow
   days: number
@@ -1213,15 +1270,17 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
             덮어 sticky 열 아래로 막대가 비친다 — 그것이 이 칸의 존재 이유다. 크롬 실측으로는
             셋 다 픽셀 변화 0(박스 66×행높이·글자 위치 dx11/dy21 전후 동일)이라 값이 아니라
             보험이다. */}
+        {/* 긴 호실명('423호 오피스'처럼 66px 를 넘는 이름)은 말줄임 + title 이다. 형제 좁은 호실 칸
+            (수납 관리 sticky 칸·홈 방 현황 타일)과 같은 문법. 접근명은 aria-label 이 전체를 싣는다. */}
         <button type="button" onClick={() => onOpenRoom(row.roomId)}
-          aria-label={`${fmtRoomNo(row.roomNo)} 상세 열기`}
-          className="mc-room sticky left-0 z-20 flex h-full w-full items-center px-2 text-left tnum text-xs font-bold"
+          aria-label={`${fmtRoomNo(row.roomNo)} 상세 열기`} title={fmtRoomNo(row.roomNo)}
+          className="mc-room sticky left-0 z-20 flex h-full w-full min-w-0 items-center px-2 text-left tnum text-xs font-bold"
           style={{
             gridColumn: '1 / 2', gridRow: '1 / -1',
             color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
-          {fmtRoomNo(row.roomNo)}
+          <span className="min-w-0 truncate">{fmtRoomNo(row.roomNo)}</span>
         </button>
 
         {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}
@@ -1232,7 +1291,17 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
 
         {/* 공백 캡션 — 바 밖 라벨을 피해 남은 자리에, 폭이 나올 때만. 색은 없다(트랙 그대로).
             글자는 그 구간 안에서 sticky 라 긴 공백을 반쯤 지나가도 캡션이 화면에 남는다. */}
-        {row.gaps.map(g => {
+        {/* 계속 공실인 무변동 행(계약도 작업도 없다). '공실' 한 마디를 이름과 같은 x 에 sticky 로.
+            날수를 안 붙인다. 'N일 공실'은 창 길이를 말할 뿐이라 정보가 아니고, 가운데 캡션은 긴
+            트랙에서 화면 밖으로 밀려난다. */}
+        {row.steady && row.bars.length === 0 && (
+          <div className="flex items-center pointer-events-none" style={{ gridColumn: '2 / -1', gridRow: '1 / 2' }}>
+            <span className="sticky whitespace-nowrap px-2 text-[0.65625rem]" style={{ left: ROOM_COL, color: 'var(--ink-m)' }}>
+              공실
+            </span>
+          </div>
+        )}
+        {!(row.steady && row.bars.length === 0) && row.gaps.map(g => {
           const span = captionSpan(g)
           return span && (
             <div key={`gap-${g.startDay}`} className="flex items-center justify-center pointer-events-none"
@@ -1248,7 +1317,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
         {/* 막대 — 키는 구간 id 다. 계약 id 로 쓰면 나갔다 같은 방으로 돌아온 계약에서 키가 겹쳐
             React 가 stale DOM 을 남긴다(같은 사고 전례: RoomsClient 정렬 고착, 신고 7007d2c1). */}
         {placed.map(p => (
-          <Bar key={p.bar.id} p={p} roomNo={row.roomNo} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
+          <Bar key={p.bar.id} p={p} roomNo={row.roomNo} steady={!!row.steady} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
         ))}
 
         {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03).
@@ -1351,8 +1420,13 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
   )
 }
 
-function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => void }) {
+function Bar({ p, roomNo, steady, onOpen }: { p: Placed; roomNo: string; steady: boolean; onOpen: () => void }) {
   const { bar, full, name, mode, side, ink } = p
+  // 무변동 행의 거주 막대는 이름만 세운다(2026-10-19). 서른 몇 줄이 전부 '퇴실일 미정'을 달면 그 말이
+  // 아무것도 뜻하지 않게 된다. lib 라벨(bar.label·stateLabel)은 회귀가 딛고 있어 그대로 두고 화면이
+  // 행 표식으로 고른다. title·aria 는 종전 문장 그대로라 상태는 거기서 읽힌다.
+  // 예약·이사 예정 막대는 그 말이 곧 종류라 남긴다(색이 같은 대기 톤이라 글자가 가른다).
+  const nameOnly = steady && bar.kind === 'resident' && !bar.planned
 
   return (
     <>
@@ -1391,7 +1465,7 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
             {/* full 모드에서는 이름만 세운다. 예정 꼬리는 이미 startLabel·stateLabel 이 이고 있다.
                 꼬리를 여기서 또 달면 한 막대에 '예정'이 두 번 선다. */}
             {mode === 'outside' ? ''
-              : mode === 'full' ? (bar.stateLabel ? `${bar.tenantName} · ${bar.stateLabel}` : bar.tenantName)
+              : mode === 'full' ? (bar.stateLabel && !nameOnly ? `${bar.tenantName} · ${bar.stateLabel}` : bar.tenantName)
                 : name}
           </span>
         </span>

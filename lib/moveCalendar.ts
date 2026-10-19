@@ -27,6 +27,7 @@ import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, occupancyOverl
 import { CURRENT_OCCUPANCY_STATUSES, OCCUPYING_STATUSES, checkoutDateLabel, leaseStayEnd, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
 import { fmtRoomNo } from './roomNo'
 import { fmtMD } from './fmtDate'
+import { withParticle } from './koParticle'
 
 /**
  * 이 계약이 실제로 머문 방 한 칸 — RoomStay 구간 하나다.
@@ -646,6 +647,30 @@ export function filterMoveRows(rows: MoveCalendarRow[], axis: MoveAxis): MoveCal
  */
 const byRoomNoNatural = (a: { roomNo: string }, b: { roomNo: string }): number =>
   a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
+
+/**
+ * '변동 없음 N실' 소제목의 자리. '전체' 축에서만, 첫 무변동 행 바로 앞에 선다.
+ *
+ * 필터 축에는 서지 않는다(운영자 결정 2026-10-19). 화면이 축을 따로 따지면 그 판정이 두 번째
+ * 진실이 되어, 축이 늘 때 소제목만 옛 규칙에 남는다. 그래서 자리와 문구를 여기서 한 번만 낸다.
+ * N 은 무변동 행 수다(방 수가 아니라 이 화면에 실제로 선 행 수).
+ */
+export function steadyHeading(rows: readonly MoveCalendarRow[], axis: MoveAxis): { index: number; label: string } | null {
+  if (axis !== 'all') return null
+  const index = rows.findIndex(r => r.steady)
+  if (index < 0) return null
+  return { index, label: `변동 없음 ${rows.filter(r => r.steady).length}실` }
+}
+
+/**
+ * 카드 끝 한 줄. 행으로 안 세운 창고·사무실을 말한다(운영자 결정 2026-10-19). 0이면 줄이 없다.
+ *
+ * 말없이 빼면 "왜 415호가 없지"가 된다. 조사는 정본(withParticle)이 고른다. '실'은 받침이
+ * 있어 늘 '은'이지만, 단위가 바뀌는 날 손으로 박은 조사가 먼저 틀린다.
+ */
+export function excludedRoomsNote(count: number): string | null {
+  return count > 0 ? `창고·사무실 ${withParticle(`${count}실`, '은/는')} 일정에 넣지 않습니다.` : null
+}
 
 /** 날짜 번호 집합을 연속 구간으로 접는다. */
 function toSpans(days: Set<number>, upTo: number): MoveDaySpan[] {
