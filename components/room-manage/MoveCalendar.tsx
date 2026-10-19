@@ -197,6 +197,8 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
   const scrollRef = useRef<HTMLDivElement>(null)
   /** '오늘로' 버튼 — 표시를 DOM 에 직접 쓴다(아래 paintToday 주석). */
   const todayBtnRef = useRef<HTMLButtonElement>(null)
+  /** 일정 전체(다가오는 줄·충돌 줄·카드). 높이가 바뀌면 '오늘로' 걸림을 다시 칠한다. */
+  const rootRef = useRef<HTMLDivElement>(null)
   /** 마지막으로 내려앉은 달. null 이면 아직 첫 착지 전이다. */
   const landedRef = useRef<string | null>(null)
   /** 마지막으로 내려앉은 창의 첫날. 창이 미끄러지면 좌표계가 통째로 바뀌므로 다시 앉아야 한다. */
@@ -312,14 +314,20 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
   // 세로 스크롤·크기 변화에도 다시 칠한다. 걸림은 셸 main 의 세로 스크롤이 바꾸는데, 이 컴포넌트는 main 을
   // 모른다. 스크롤 이벤트는 거품이 안 일지만 document 의 캡처 단계에는 닿으므로 거기서 받고 프레임당 한 번만
   // 칠한다(수동 리스너, 스크롤·터치 동작은 안 건드린다. 두 축 스크롤러 금지와 무관).
+  // 스크롤 없이 트랙이 밀리는 경우(다가오는 줄 '더 보기' 펼침, 글자 크기 변경, 데이터 갱신)는 스크롤 이벤트가
+  // 안 나 걸림 판정이 낡은 채 남고, 그 사이 알약이 하단 내비 밑에 깔린다. 그래서 일정 전체 상자의 크기 변화도
+  // ResizeObserver 로 받는다(트랙 상자만 보면 위 줄이 자랄 때 트랙 크기는 그대로라 못 받는다).
   useEffect(() => {
     let raf: number | null = null
     const onAny = () => { if (raf == null) raf = requestAnimationFrame(() => { raf = null; paintToday() }) }
     document.addEventListener('scroll', onAny, { capture: true, passive: true })
     window.addEventListener('resize', onAny)
+    const ro = new ResizeObserver(onAny)
+    if (rootRef.current) ro.observe(rootRef.current)
     return () => {
       document.removeEventListener('scroll', onAny, { capture: true })
       window.removeEventListener('resize', onAny)
+      ro.disconnect()
       if (raf != null) cancelAnimationFrame(raf)
     }
   }, [paintToday])
@@ -479,7 +487,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
   const beyond = data.beyond
 
   return (
-    <div className="space-y-3">
+    <div ref={rootRef} className="space-y-3">
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
       <UpcomingRow items={data.upcoming} works={data.upcomingWorks} todayInRange={todayDay != null}

@@ -123,6 +123,11 @@ if (!/steady=\{!!row\.steady\}/.test(src)) {
     if (!/document\.addEventListener\('scroll', onAny, \{ capture: true, passive: true \}\)/.test(src) || !/raf = null; paintToday\(\)/.test(src)) {
       violations.push(`${SRC}: 세로 스크롤(document 캡처)에서 paintToday 를 다시 칠하지 않는다. 걸림은 main 세로 스크롤이 바꾼다.`)
     }
+    // 스크롤 없이 트랙이 밀리면('더 보기' 펼침·글자 크기·데이터 갱신) 스크롤 이벤트가 없다. 일정 전체 상자의 크기 변화로 받는다.
+    if (!/const ro = new ResizeObserver\(onAny\)/.test(src) || !/ro\.observe\(rootRef\.current\)/.test(src)
+      || !/ro\.disconnect\(\)/.test(src) || !/<div ref=\{rootRef\} className="space-y-3">/.test(src)) {
+      violations.push(`${SRC}: 일정 전체 상자의 크기 변화(ResizeObserver)에 paintToday 를 다시 칠하지 않거나 해제하지 않는다. 위 줄이 스크롤 없이 자라면 걸림 판정이 낡아 알약이 하단 내비 밑에 깔린다.`)
+    }
   }
   if (!/gridArea: '1 \/ 1', overscrollBehaviorX/.test(src)) {
     violations.push(`${SRC}: 트랙 스크롤러가 닻과 같은 grid 칸(1 / 1)에 서지 않는다.`)
