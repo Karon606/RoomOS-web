@@ -22,7 +22,9 @@
 //
 // 열린 링크. 미서명 열린 링크는 옛 본문 스냅샷으로 서명받는다(설정 저장도 이 정정도 링크를 닫지
 // 않는다). 그래서 --apply 직전에 그 영업장의 링크를 다시 세어 1건이라도 있으면 쓰지 않고 멈춘다.
-// 닫거나 서명받은 뒤 다시 돌린다(체크리스트 D).
+// 닫거나 서명받은 뒤 다시 돌린다(체크리스트 D). 링크 재확인·저장본 비교·쓰기는 Serializable 트랜잭션
+// 하나로 묶는다. 따로 하면 재확인과 쓰기 사이에 링크가 나가거나 설정 화면 저장이 끼어들 틈이 남는다.
+// --revert 도 같은 방식이다.
 //
 // 되돌리기 파일(scripts/.fix-contract-pet-clause-undo-<ts>.json)은 영업장 계약 문안 전문이라 커밋하지
 // 않는다(.gitignore 의 scripts/.fix-*-undo-*.json).
@@ -33,7 +35,7 @@
 //   되돌림  npx tsx --env-file=.env.local scripts/fix-contract-pet-clause.ts --revert scripts/.fix-contract-pet-clause-undo-<ts>.json
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import {
   translationSourceLines, translationStaleAfterEdit, orphanTranslationKeys, missingTranslationPlaceholders,
@@ -85,6 +87,17 @@ function stable(v: unknown): string {
   return JSON.stringify(v ?? null)
 }
 const digest = (rows: unknown[]): string => createHash('sha256').update(stable(rows)).digest('hex').slice(0, 16)
+
+/**
+ * Json 칸에 쓸 값. null 은 DB null(Prisma.DbNull)로 쓴다. Prisma 7 에서 `{ set: null }` 은 그 객체가
+ * 글자 그대로 저장된다(knowledge/domain-contracts.md '서명 지우기'). 되돌리기 파일·사전에서 온 값은
+ * 모양을 이 스크립트가 직접 만들거나 DB 에서 읽은 그대로라 Json 으로 넘긴다.
+ */
+function jsonInput(v: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return v == null ? Prisma.DbNull : (v as Prisma.InputJsonValue)
+}
+
+const SERIALIZABLE = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
 
 type Section = { id?: unknown; title?: unknown; items?: unknown }
 type StoredTranslations = { enabled?: unknown; langs?: Record<string, { published?: unknown; dict?: Record<string, unknown> } | undefined> }
@@ -235,16 +248,19 @@ async function revert(file: string): Promise<void> {
     before: { contractTemplate: unknown; contractTranslations: unknown }
     after: { contractTemplate: unknown; contractTranslations: unknown }
   }
-  const cur = await prisma.property.findUnique({ where: { id: undo.propertyId }, select: { contractTemplate: true, contractTranslations: true } })
-  if (!cur) throw new Error('대상 영업장이 없다')
-  if (stable(cur.contractTemplate) !== stable(undo.after.contractTemplate) || stable(cur.contractTranslations) !== stable(undo.after.contractTranslations)) {
-    throw new Error('지금 저장본이나 번역 사전이 적용 직후와 다르다(그 사이 설정 화면에서 고쳤다). 덮어쓰지 않고 멈춘다. 사람이 본다.')
-  }
   const g0 = await measureGuard(undo.propertyId)
-  await prisma.property.update({
-    where: { id: undo.propertyId },
-    data: { contractTemplate: undo.before.contractTemplate as never, contractTranslations: undo.before.contractTranslations as never },
-  })
+  // 비교와 쓰기를 한 트랜잭션으로. 사이에 설정 화면 저장이 끼면 직렬화 실패로 아무것도 안 쓴다.
+  await prisma.$transaction(async tx => {
+    const cur = await tx.property.findUnique({ where: { id: undo.propertyId }, select: { contractTemplate: true, contractTranslations: true } })
+    if (!cur) throw new Error('대상 영업장이 없다')
+    if (stable(cur.contractTemplate) !== stable(undo.after.contractTemplate) || stable(cur.contractTranslations) !== stable(undo.after.contractTranslations)) {
+      throw new Error('지금 저장본이나 번역 사전이 적용 직후와 다르다(그 사이 설정 화면에서 고쳤다). 덮어쓰지 않고 멈춘다. 사람이 본다.')
+    }
+    await tx.property.update({
+      where: { id: undo.propertyId },
+      data: { contractTemplate: jsonInput(undo.before.contractTemplate), contractTranslations: jsonInput(undo.before.contractTranslations) },
+    })
+  }, SERIALIZABLE)
   const g1 = await measureGuard(undo.propertyId)
   const back = await prisma.property.findUnique({ where: { id: undo.propertyId }, select: { contractTemplate: true, contractTranslations: true } })
   const same = stable(back?.contractTemplate) === stable(undo.before.contractTemplate) && stable(back?.contractTranslations) === stable(undo.before.contractTranslations)
@@ -295,6 +311,7 @@ async function main(): Promise<void> {
     const variant = allItems.find(it => typeof it === 'string' && isVariant(it))
     if (variant) {
       console.log(`  같은 취지의 항목이 이미 있다. 자동으로 더하지 않고 멈춘다(사람이 본다).\n    ${JSON.stringify(variant)}`)
+      process.exitCode = 1
       return
     }
   }
@@ -353,36 +370,44 @@ async function main(): Promise<void> {
     return
   }
 
-  // 직전 재확인(체크리스트 D). 위 measureGuard 와 사이에 링크가 새로 나갔을 수 있어 한 번 더 센다.
-  const now = new Date()
-  const openUnsigned = await prisma.contractShareLink.count({
-    where: { propertyId: p.id, signedAt: null, disposalSignedAt: null, submittedAt: null, closedAt: null, expiresAt: { gt: now } },
-  })
-  if (openUnsigned > 0) throw new Error(`미서명 열린 링크 ${openUnsigned}건. 옛 본문으로 서명받는다. 닫거나 서명받은 뒤 다시 돌린다. 아무것도 안 썼다.`)
+  // 쓰는 칸만 싣는다. 번역을 하나도 안 넣으면(사전 없음·이미 있음) 사전 칸은 건드리지 않는다.
+  const data: Prisma.PropertyUpdateInput = {}
+  if (templateChanges) data.contractTemplate = jsonInput(after)
+  if (tr.added > 0) data.contractTranslations = jsonInput(tr.next)
+  const afterTranslations = tr.added > 0 ? tr.next : p.contractTranslations
 
-  // 읽은 뒤 그 사이 설정 화면에서 저장했으면 덮어쓰지 않는다.
-  const fresh = await prisma.property.findUnique({ where: { id: p.id }, select: { contractTemplate: true, contractTranslations: true } })
-  if (stable(fresh?.contractTemplate) !== stable(before) || stable(fresh?.contractTranslations) !== stable(p.contractTranslations)) {
-    throw new Error('읽은 뒤 저장본이나 번역 사전이 바뀌었다. 다시 돌린다. 아무것도 안 썼다.')
-  }
-
+  // 되돌리기 파일을 먼저 남기고, 트랜잭션이 실패하면 지운다(쓰지 않은 적용의 되돌리기 파일을 남기지 않는다).
   const file = `scripts/.fix-contract-pet-clause-undo-${Date.now()}.json`
   fs.writeFileSync(file, JSON.stringify({
     propertyId: p.id, propertyName: p.name, appliedAt: new Date().toISOString(), newItem,
     before: { contractTemplate: before, contractTranslations: p.contractTranslations },
-    after: { contractTemplate: after, contractTranslations: tr.next },
+    after: { contractTemplate: after, contractTranslations: afterTranslations },
   }, null, 2))
-  await prisma.property.update({
-    where: { id: p.id },
-    data: { contractTemplate: after as never, contractTranslations: tr.next as never },
-  })
+  try {
+    await prisma.$transaction(async tx => {
+      // 직전 재확인(체크리스트 D). 위 measureGuard 와 사이에 링크가 새로 나갔을 수 있어 한 번 더 센다.
+      const openUnsigned = await tx.contractShareLink.count({
+        where: { propertyId: p.id, signedAt: null, disposalSignedAt: null, submittedAt: null, closedAt: null, expiresAt: { gt: new Date() } },
+      })
+      if (openUnsigned > 0) throw new Error(`미서명 열린 링크 ${openUnsigned}건. 옛 본문으로 서명받는다. 닫거나 서명받은 뒤 다시 돌린다. 아무것도 안 썼다.`)
+      // 읽은 뒤 그 사이 설정 화면에서 저장했으면 덮어쓰지 않는다.
+      const fresh = await tx.property.findUnique({ where: { id: p.id }, select: { contractTemplate: true, contractTranslations: true } })
+      if (stable(fresh?.contractTemplate) !== stable(before) || stable(fresh?.contractTranslations) !== stable(p.contractTranslations)) {
+        throw new Error('읽은 뒤 저장본이나 번역 사전이 바뀌었다. 다시 돌린다. 아무것도 안 썼다.')
+      }
+      await tx.property.update({ where: { id: p.id }, data })
+    }, SERIALIZABLE)
+  } catch (e) {
+    fs.rmSync(file, { force: true })
+    throw e
+  }
 
   const back = await prisma.property.findUnique({ where: { id: p.id }, select: { contractTemplate: true, contractTranslations: true } })
   const g1 = await measureGuard(p.id)
   console.log('\n--- 불가침 점검(적용 후)')
   printGuard(g1)
   const diffs = compareGuard(g0, g1)
-  const stored = stable(back?.contractTemplate) === stable(after) && stable(back?.contractTranslations) === stable(tr.next)
+  const stored = stable(back?.contractTemplate) === stable(after) && stable(back?.contractTranslations) === stable(afterTranslations)
   console.log(`\n  저장본·번역 사전: ${stored ? '의도한 모양 그대로 저장됨' : '의도와 다르다(확인 필요)'}`)
   console.log(diffs.length
     ? `  불가침 점검 실패: ${diffs.join(' · ')}`
