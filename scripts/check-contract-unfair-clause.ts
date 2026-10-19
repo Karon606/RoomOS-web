@@ -5,6 +5,7 @@
 //   (1) 서약문 — "위반 시 어떠한 조치에도 이의를 제기하지 않는다"는 고객의 항변권 배제(무효).
 //   (2) 1절 4항 — 법적 절차 "모든 비용" 부담(6조 2항 1호·8조 무효 소지).
 //   (3) 임의처분 동의서 — 고소권 사전 포기(무효)와 민사 청구 포기(14조 1호 무효).
+// 2026-10-19 에 축 5 를 더했다. 반려동물을 금하는 항목은 같은 항목 안에 장애인 보조견 예외를 둔다.
 //
 // **문자열이 아니라 값을 본다.** 소스를 정규식으로 훑으면 이 파일이나 knowledge 노트가 옛 문안을
 // 인용하는 것만으로 붉게 서고, 반대로 주석이 "고쳤다"고 적혀 있으면 통과시키는 그물이 된다.
@@ -49,6 +50,11 @@ const BANNED: { frag: string; why: string }[] = [
 const NOTICE_PENALTY =
   '7일 전까지 알리지 않은 경우, 부족한 통보 일수만큼의 이용료(1일 이용요금은 월 이용료의 30분의 1)를 공실 손해의 배상으로 청구하며 보증금에서 우선 공제합니다. 이 금액은 7일분을 넘지 않으며, 중도 퇴실 위약금과 겹치면 둘 중 큰 금액만 적용합니다.'
 
+// 3절의 반려동물 금지 문장(신고 f4dba72c, 계약서·법무 패널·운영자 2026-10-19, 글자 그대로).
+// 위치까지 본다. 생활 수칙이라 4절(강제 퇴실)의 '관리 지시 불응'이 이 항목을 근거로 선다.
+const PET_CLAUSE =
+  '개·고양이 등 반려동물은 호실과 공용 공간에 데려오거나 기를 수 없으며, 잠시 맡아 두는 경우도 같습니다. 다만 「장애인복지법」에 따른 장애인 보조견은 예외로 합니다. 이를 어기면 관리자가 정한 기한까지 동물을 내보내야 하며, 따르지 않으면 강제 퇴실 조항에 따라 퇴실 조치될 수 있습니다. 동물로 생긴 오염·악취·시설 손상의 원상 복구와 소독·특수 청소에 실제로 든 비용은 입실자가 부담합니다.'
+
 // 반드시 남아 있어야 하는 문안. 금지어만 보면 "문장을 통째로 지운다"는 회피로 뚫린다 —
 // 서약문이 빈 문자열이 되어도 금지어는 사라지므로 그물이 눈을 감는다.
 const REQUIRED: { where: string; text: string; got: () => string }[] = [
@@ -75,7 +81,41 @@ const REQUIRED: { where: string; text: string; got: () => string }[] = [
     text: NOTICE_PENALTY,
     got: () => (DEFAULT_CONTRACT_TEMPLATE.sections.find(s => s.id === 'checkout')?.items ?? []).join('\n'),
   },
+  {
+    // 아래 보조견 축은 '금지가 있으면 예외도 있어야 한다'라서 금지 항목을 통째로 지우면 조용하다.
+    // 그러면 새 영업장의 출발점에서 반려동물 금지가 사라진다.
+    where: "DEFAULT_CONTRACT_TEMPLATE.sections[id='rules'].items (반려동물 금지)",
+    text: PET_CLAUSE,
+    got: () => (DEFAULT_CONTRACT_TEMPLATE.sections.find(s => s.id === 'rules')?.items ?? []).join('\n'),
+  },
 ]
+
+// 축 5. 보조견 예외(2026-10-19). 반려동물을 금하는 항목에는 **같은 항목 안에** 장애인 보조견 예외가
+// 있어야 한다. 장애인복지법 40조 3항이 정당한 사유 없는 보조견 동반 거부를 금하므로, 예외 없는 전면
+// 금지는 그 자체로 법과 부딪친다. 같은 항목이어야 하는 이유는 번역 사전이 줄 단위이고 종이가 항목마다
+// 번호를 매기기 때문이다. 예외가 다른 항목으로 떨어지면 그 줄만 지워지거나 번역이 빠져도 금지는 남는다.
+// 코드 기본값·DB 저장본·입실자별 사본을 같은 판정으로 본다(아래 storedProblems 의 scan).
+//
+// 낱말을 좁게 잡는다. '개'만으로 잡으면 '개인'·'개별'·'1개월'이 다 걸리고, 3절 4항 '위해 동물'과
+// 추가 호실 특약의 '동식물' 보관 금지는 반려동물 금지가 아니다(보조견을 창고에 둘 일은 없다).
+const PET_WORDS = ['반려동물', '애완동물', '반려견', '반려묘', '애완견', '강아지', '고양이']
+const PET_BAN = /금지|금합|금한다|불가|수\s*없|안\s*됩|허용하지\s*않|허용되지\s*않/
+const GUIDE_DOG = '보조견'
+// 이 축이 실제로 몇 줄을 봤는지 센다. 판정 호출을 지우고 함수만 남기면 축이 눈을 감은 채 초록이 되는데
+// (체크리스트 F 의 '호출을 지운 역주입'), 세는 일을 판정 함수 안에 두면 호출이 지워질 때 숫자도 함께
+// 0 이 된다. 코드 기본값은 REQUIRED 가 금지 항목 하나를 보증하므로 금지 항목을 하나도 못 봤다면 배선이
+// 끊긴 것이고, DB 는 훑은 줄 수와 이 축이 본 줄 수가 같아야 한다.
+const guideDogSeen = { code: 0, codeBans: 0, db: 0, self: 0 }
+
+/** 한 줄 판정. 위반이면 보고 문장, 아니면 null. 부를 때마다 센다(위 주석). */
+function guideDogCheck(where: string, text: string, bucket: 'code' | 'db' | 'self'): string | null {
+  guideDogSeen[bucket]++
+  if (typeof text !== 'string') return null
+  const ban = PET_WORDS.some(w => text.includes(w)) && PET_BAN.test(text)
+  if (ban && bucket === 'code') guideDogSeen.codeBans++
+  if (!ban || text.includes(GUIDE_DOG)) return null
+  return `보조견 예외 없는 반려동물 금지: ${where}\n    근거: 장애인복지법 40조 3항(보조견 동반 거부 금지). 같은 항목 안에 '장애인 보조견은 예외' 를 둔다.`
+}
 
 // 금지어를 훑을 범위 — 종이에 찍히는 코드 기본 문안 전부. 새 특약 상수가 생기면 여기 더한다.
 function corpus(): { where: string; text: string }[] {
@@ -149,6 +189,30 @@ for (const r of REQUIRED) {
   }
 }
 
+// 판정 자체를 걷어 내는 역주입(항상 null 을 돌려준다)은 위 계수로 못 잡는다. 세기는 그대로 하기 때문이다.
+// 그래서 답을 아는 줄로 판정을 먼저 시험한다. 세는 칸은 따로 둬 실측 계수와 섞지 않는다.
+const GUIDE_DOG_CASES: [string, boolean][] = [
+  ['반려동물은 기를 수 없습니다.', true],
+  ['강아지·고양이를 데려오는 것을 금지합니다.', true],
+  ['반려견은 데려올 수 없습니다. 다만 장애인 보조견은 예외로 합니다.', false],
+  ['타인에게 피해를 줄 수 있는 위해 동물 등의 반입을 엄격히 금지합니다.', false],
+  ['개인 물품은 각자의 책임 관리를 원칙으로 합니다.', false],
+  [PET_CLAUSE, false],
+]
+for (const [text, bad] of GUIDE_DOG_CASES) {
+  if ((guideDogCheck('자기 점검', text, 'self') !== null) !== bad) {
+    problems.push(`보조견 축 판정 고장: "${text.slice(0, 40)}" 를 ${bad ? '위반으로 잡아야' : '통과시켜야'} 하는데 반대로 답했다. guideDogCheck·PET_WORDS·PET_BAN 을 확인하라.`)
+  }
+}
+
+for (const line of corpus()) {
+  const g = guideDogCheck(line.where, line.text, 'code')
+  if (g) problems.push(g)
+}
+if (guideDogSeen.codeBans === 0) {
+  problems.push(`검사 누락: 보조견 축이 코드 기본 문안 ${guideDogSeen.code}줄에서 반려동물 금지 항목을 하나도 못 봤다. 3절 문장이 있다면(REQUIRED) 이 파일의 guideDogCheck 배선이나 PET_WORDS·PET_BAN 을 확인하라.`)
+}
+
 // ── 축 4 — DB 저장본(--db 일 때만) ───────────────────────────────────────
 // 종이에 실리는 저장 문안 전부를 같은 금지 표로 훑는다. 영업장 본문·서약문, 조건부 특약 넷,
 // 임의처분 동의서, 추가 서류, 입실자별 본문 사본(contractOverride).
@@ -215,6 +279,8 @@ async function storedProblems(): Promise<{ problems: string[]; summary: string }
             out.push(`저장본 무효 소지 문안 — ${owner} ${line.where}\n    금지 문안: "${b.frag}"\n    근거: ${b.why}`)
           }
         }
+        const g = guideDogCheck(`${owner} ${line.where}`, line.text, 'db')
+        if (g) out.push(`저장본 ${g}`)
       }
     }
     for (const p of props) {
@@ -237,6 +303,10 @@ async function storedProblems(): Promise<{ problems: string[]; summary: string }
     // 역주입' 클래스다. 다른 문안(동의서 등)의 줄 수로는 못 가린다 — 그래서 본문 줄만 따로 센다.
     if (withTemplate > 0 && (templateExpected === 0 || templateScanned < templateExpected)) {
       out.push(`검사 누락 — 계약서 저장본 ${withTemplate}곳에서 읽은 본문 ${templateExpected}줄 중 ${templateScanned}줄만 훑었다. 이 파일의 templateLines·scan 배선을 확인하라.`)
+    }
+    // 같은 자기 점검을 보조견 축에도 건다. 금지 표 훑기는 남기고 보조견 판정만 지우면 위 숫자는 맞는다.
+    if (guideDogSeen.db < lines) {
+      out.push(`검사 누락: 저장 문안 ${lines}줄 중 보조견 축이 본 줄은 ${guideDogSeen.db}줄이다. scan 안의 guideDogCheck 배선을 확인하라.`)
     }
     return {
       problems: out,
@@ -263,7 +333,7 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`[check-contract-unfair-clause] OK — 검사 ${corpus().length}줄, 금지 문안 ${BANNED.length}종, 확정 문안 ${REQUIRED.length}건, 배선 ${WIRED.length}곳 모두 제자리.${dbSummary}`)
+  console.log(`[check-contract-unfair-clause] OK — 검사 ${corpus().length}줄, 금지 문안 ${BANNED.length}종, 확정 문안 ${REQUIRED.length}건, 배선 ${WIRED.length}곳 모두 제자리. 보조견 축 코드 ${guideDogSeen.code}줄(금지 항목 ${guideDogSeen.codeBans})${process.argv.includes('--db') ? `·DB ${guideDogSeen.db}줄` : ''}.${dbSummary}`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
