@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, Fragment } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -52,6 +52,11 @@ import { transitionStatusLabel } from '@/lib/leaseTransitions'
 import { fmtMD } from '@/lib/fmtDate'
 import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
+import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
+import {
+  getEffectiveDueInfo, isDeferredNow, unpaidBadgeLabel, checkedOutSub, paidBadgeDate, paidSubText, noBillBadgeSub,
+  paymentBadgeKind, sortRowsByPaymentStatus, STATUS_GROUP_LABEL, statusGroupOrderText, type StatusGroup,
+} from '@/lib/roomsStatusSort'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 // 뷰 전환 탭(v2.0 §25) — URL ?tab= 값과 같은 문자열이다. 홈 KPI 딥링크가 이 값으로 들어온다.
@@ -96,6 +101,8 @@ type RoomStatus = {
   isReservationConfirmed: boolean
   latePaidAt: string | null
   lastPayDate: string | null
+  // 그 달 몫을 받은 날(서버 표시 전용). 완납 묶음 정렬 키이자 완납 보조줄 날짜다(lib/roomsStatusSort).
+  viewMonthPaidAt?: string | null
   nextDueDate: string | null
   nextDueAmount: number
   expectedMoveOut: string | null
@@ -175,36 +182,8 @@ const WINDOW_LABEL: Record<string, string> = {
   INNER: '내창',
 }
 
-// 납부일 경과/잔여일 계산
-// 오늘은 반드시 KST 기준(kstDaysUntil)이어야 한다 — new Date() 로 재면 서버(UTC)와 기기(KST)가
-// KST 00~09시에 하루 다른 경과일을 내고, 그 숫자가 뱃지 문구로 렌더돼 하이드레이션이 갈린다.
-function getDueInfo(dueDay: string | null, targetMonth: string): { days: number; overdue: boolean } | null {
-  if (!dueDay) return null
-  // 다음달 지정 전체 날짜 (YYYY-MM-DD)
-  if (dueDay.includes('-')) {
-    const diff = -kstDaysUntil(dueDay)
-    return { days: Math.abs(diff), overdue: diff > 0 }
-  }
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
-  const dayNum = dueDay.includes('말')
-    ? new Date(yyyy, mm, 0).getDate()
-    : parseInt(dueDay)
-  if (isNaN(dayNum)) return null
-  // Date.UTC 는 로컬 생성자와 같은 자릿수 넘침 규칙을 쓴다(2월 31일 -> 3월 3일). 종전 동작 유지.
-  const due  = new Date(Date.UTC(yyyy, mm - 1, dayNum)).toISOString().slice(0, 10)
-  const diff = -kstDaysUntil(due)
-  return { days: Math.abs(diff), overdue: diff > 0 }
-}
-
-function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<typeof getDueInfo> {
-  // 누적 미납자는 첫 미납월의 dueDay 기준으로 경과일 표시.
-  // override는 그 override가 지정된 월(overrideDueDayMonth)에만 적용 — 미납월이
-  // 그 달이면 어느 화면에서 보든 override를 사용해야 함.
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  const isOverrideActive = room.overrideDueDayMonth === dueMonth && !!room.overrideDueDay
-  const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
-  return getDueInfo(effectiveDay, dueMonth)
-}
+// 납부일 경과·유예 판정(getDueInfo·getEffectiveDueInfo·isDeferredNow·unpaidBadgeLabel)은 lib/roomsStatusSort 정본이다.
+// 수납 상태 배지 분기(paymentBadgeKind)와 정렬 묶음이 같은 판정을 써야 화면과 순서가 안 갈린다(신고 db65cce9).
 
 // 납부일 셀 표기 — 임시조정이 그 달(미납월 우선)에 걸려 있으면 조정된 날짜를 보여준다.
 // 종전에는 다른 달로 미룬 조정(전체 날짜형)일 때 서버가 원래 dueDay 를 내려보내, 화면이 '매월 말일'로
@@ -227,32 +206,6 @@ function dueDayCellText(room: RoomStatus, targetMonth: string): string | null {
   return room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`
 }
 
-// 미납 배지 문구 — 납부일 당일은 아직 늦은 게 아니라 '납부일'로 표기한다(운영자 지시 2026-08-01).
-// 톤은 unpaid 를 유지한다 — 오늘 받아야 할 건이라 시야에서 사라지면 안 된다. 계산·집계는 손대지 않고 표시만 바꾼다.
-// days: 납부일로부터 경과일(0=오늘). 7일 초과면 연체.
-// 미납 뱃지 라벨 — days 는 **절댓값**이라 방향(overdue)을 함께 봐야 한다.
-// 405호 심원재가 7월분 납부 기한을 8/7 로 유예받았는데 8/2 에 '미납 5일 초과'로 뜬 것이 발단이다
-// (운영자 지적 2026-08-02). 실제로는 5일 '남은' 상태다.
-//
-// 발생 범위는 좁다. 서버가 **당월은 납부일이 지나야** isPaid=false 로 내리므로(actions.ts:447),
-// 월초 정상 납부 예정자는 애초에 이 분기에 안 들어오고 isAwaiting('납부 예정')으로 간다.
-// 이 오표기는 **과거월 미납을 미래 날짜로 유예한 계약**에서만 난다. 실측 1건(405호).
-//
-// 라벨을 '납부 예정'으로 하지 않은 이유: 그 말은 isAwaiting 분기가 이미 쓰고 tone 도 다르며
-// (await/Blue vs unpaid/Amber), 상단 필터 '납부 예정 N실'은 isPaid=true 만 세므로
-// 그 라벨을 달아도 그 필터로 못 찾는다. 정렬 그룹도 미납(0)에 남는다.
-//
-// '납부 유예'는 여기서 빼고 호출부로 올렸다(2026-08-02). 어제는 이 분기에서만 붙였는데,
-// 그러면 405호(미납 분기)만 유예로 보이고 516호(납부 예정 분기)는 그냥 '납부 예정'으로 남아
-// 같은 사정이 화면에서 다른 말을 한다 — 운영자 지적 "일관성이 없어".
-// 유예 판정은 isDeferredNow 정본이 하고, 이 함수는 유예가 아닌 경우만 맡는다.
-function unpaidBadgeLabel(days: number | null | undefined, overdue?: boolean): '납부일' | '납부일 전' | '미납' | '연체' {
-  if (days == null) return '미납'
-  if (days === 0) return '납부일'
-  if (!overdue) return '납부일 전'   // 기한 전인데 유예도 아님(앞당긴 조정 등). '미납 · 5일 남음'은 자기모순이다
-  return days > 7 ? '연체' : '미납'
-}
-
 // 호실 수납 상태 → 배지/팁 톤. 수납(미납·연체)이 비거주보다 우선 —
 // 비거주여도 미납이면 미납/연체 색으로 표시(회색으로 묻히지 않도록).
 function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
@@ -268,13 +221,7 @@ function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
   return 'paid'
 }
 
-// 그 달에 살다 나간 계약(신고 70addd65) — 주 배지(완납·미납·청구 없음) 옆에 정본 어휘 '퇴실 완료' 배지를 나란히,
-// 보조줄에는 날짜만('9/30'). 배지가 이미 '퇴실'을 말하므로 보조줄에 또 쓰면 중복이다.
-// 톤은 퇴실 계약의 정본 중립(검색 배지 CHECKED_OUT: neutral = StatusBadge info). '퇴실 예정'(exit)과 갈라야
-// 나간 사람과 나갈 사람이 같은 말이 되지 않는다.
-function checkedOutSub(room: RoomStatus): string | null {
-  return room.status === 'CHECKED_OUT' && room.expectedMoveOut ? fmtMD(room.expectedMoveOut) : null
-}
+// 퇴실 완료 보조 배지. 보조줄 날짜 절은 lib/roomsStatusSort checkedOutSub 정본.
 function checkedOutBadge(room: RoomStatus): { tone: BadgeTone; label: string } | undefined {
   return room.status === 'CHECKED_OUT' ? { tone: 'info', label: transitionStatusLabel('CHECKED_OUT') } : undefined
 }
@@ -288,26 +235,6 @@ function getTotalUnpaid(room: RoomStatus): number {
 }
 
 // 독촉 문구 — 미납 방/세입자/대상월/미수액을 채운 표준 안내. 멀티테넌트 공용(지점·세입자 하드코딩 금지).
-// 납부 기한을 미뤄준 상태인가 — 유예 판정 정본.
-//
-// 뱃지·독촉·홈 위젯이 각자 판정하면 화면마다 다른 말을 한다. 한 곳에서만 정한다.
-// 조건 넷을 모두 만족해야 유예다.
-//   ① 임시조정이 그 미납월에 걸려 있다  ② 원래 납부일보다 **뒤로** 미룬 것이다
-//   ③ 그 날짜가 아직 안 지났다          ④ 아직 낼 게 남아 있다
-// ②가 없으면 앞당긴 조정까지 유예가 되고, ④가 없으면 이미 다 낸 사람에게 유예 표시가 샌다.
-function isDeferredNow(room: RoomStatus, targetMonth: string): boolean {
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  if (room.isPaid && !(room.nextDueDate && room.nextDueAmount > 0)) return false   // ④ 낼 게 없으면 유예가 아니다
-  if (!room.overrideDueDay || room.overrideDueDayMonth !== dueMonth) return false
-  const eff = getDueInfo(room.overrideDueDay, dueMonth)
-  const base = getDueInfo(room.dueDay, dueMonth)
-  if (!eff || !base) return false
-  if (eff.overdue) return false                      // 조정일도 이미 지남 — 유예가 아니라 연체
-  const effSigned = eff.overdue ? eff.days : -eff.days
-  const baseSigned = base.overdue ? base.days : -base.days
-  return effSigned < baseSigned                       // 원래보다 뒤로 미룬 경우만
-}
-
 // 유예된 기한을 'M월 D일' 로 — 독촉 문구·보조 텍스트 공용
 function deferredDueLabel(room: RoomStatus, targetMonth: string): string | null {
   const dueMonth = room.firstUnpaidMonth ?? targetMonth
@@ -321,15 +248,6 @@ function deferredDueLabel(room: RoomStatus, targetMonth: string): string | null 
   const last = new Date(y, m, 0).getDate()
   const day = raw.includes('말') ? last : Math.min(parseInt(raw, 10), last)
   return `${m}월 ${day}일`
-}
-
-// 청구 없는 달 — '0원 · 완납'이 안 낸 사람처럼 읽히던 것을 사실대로 바꾼다(운영자 지적 2026-08-02).
-// 이유는 서버가 내려보낸다(noBillReason). 여기서 다시 판정하지 않는다.
-// 뱃지 클러스터에 '퇴실'이 세 번 나오던 것을 한 절로 합쳤다([청구 없음][퇴실 예정] + 보조줄).
-function noBillSubText(room: RoomStatus): string {
-  if (room.noBillReason === 'shortTermPrepaid') return '입주월에 전액 납부'
-  const md = room.expectedMoveOut ? `${Number(room.expectedMoveOut.slice(5, 7))}/${Number(room.expectedMoveOut.slice(8))}` : null
-  return md ? `${md} 퇴실까지 납부됨` : '퇴실일까지 납부됨'
 }
 
 // 캡션은 lib/fmtMoney 의 fmtNoBillCovered 정본을 쓴다(네 화면 공용).
@@ -386,6 +304,16 @@ function unpaidSubText(
   return parts.join(' · ') || undefined
 }
 
+// 총납부액 캡션의 최근 납부일. 청구 없는 달에 덮은 수납 날짜와 같거나, 완납 배지 보조줄이 이미 적은 날과 같으면
+// 한 번만 적는다(같은 날짜가 한 카드에 두 번 서지 않게, 아래 noBillCovered 캡션과 같은 규칙).
+// 다르면 그대로 둔다. lastPayDate 는 계약 전체의 최신 입금일이라 다음 달분 선납일이 따로 설 수 있다(402호 10/14).
+// paidDateShown 은 그 행에 완납 배지 보조줄이 실제로 서 있는가(카드는 배지가 늘 서고, 표는 수납 상태 열이 켜졌을 때).
+function lastPayCaptionDate(room: RoomStatus, paidDateShown: boolean): string | null {
+  if (!room.lastPayDate || room.lastPayDate === room.noBillCoveredDate) return null
+  if (paidDateShown && room.lastPayDate === paidBadgeDate(room)) return null
+  return room.lastPayDate
+}
+
 // 독촉 문구 — 기한을 미뤄준 사람에게 '확인되지 않았습니다'가 나가면 안 된다(운영자 지적 2026-08-02).
 // 405호는 8/7 까지 미뤄줬는데 8/2 에 독촉 문구가 복사됐다. 표시가 아니라 **실제 발송 사고**다.
 // 유예 중이면 독촉이 아니라 기한 안내로 문구를 바꾼다.
@@ -405,12 +333,6 @@ type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
              | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status' | 'dueDay' | 'cashReceipt'
 type SortDir = 'asc' | 'desc'
 const SORTKEY_VALUES: SortKey[] = ['roomNo', 'type', 'windowType', 'tenantName', 'contact', 'depositAmount', 'expected', 'totalPaid', 'balance', 'status', 'dueDay', 'cashReceipt']
-
-function getDueSortValue(room: RoomStatus, targetMonth: string): number {
-  const info = getEffectiveDueInfo(room, targetMonth)
-  if (!info) return 0
-  return info.overdue ? info.days : -info.days
-}
 
 function getEffectiveDueDayNum(room: RoomStatus, targetMonth: string): number {
   const isOverrideActive = room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
@@ -433,7 +355,6 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
     case 'expected':      return room.expected
     case 'totalPaid':     return room.totalPaid
     case 'balance':       return room.balance
-    case 'status':        return getDueSortValue(room, targetMonth)
     case 'dueDay':        return getEffectiveDueDayNum(room, targetMonth)
     case 'cashReceipt':   return room.cashReceiptIssued ? 0 : 1   // 발행 먼저
     default:              return ''
@@ -595,6 +516,12 @@ export default function RoomsClient({
     // 단기는 상태가 아니라 사실(퇴실 예정일)로 센다 — 자동 전환 전에도 퇴실 예정으로 보여야 한다.
     return (r.status === 'CHECKOUT_PENDING' && !!ck && ck <= targetMonth) || isShortTermCheckoutDue(r, targetMonth)
   }
+  // 완납 칩. 종전 조건(받을 돈이 남지 않았고 납부 예정·퇴실 예정이 아님)에서 입실 예약만 뺀다(신고 db65cce9 승인 범위).
+  // 입실 예약은 아직 청구 전이라 '다 받았다'가 아닌데 isPaid=true 로 내려와 완납에 섞였다. 판정은 배지 정본(paymentBadgeKind).
+  // 정렬의 완납 묶음과 같은 집합은 아니다. 청구 없음 행은 칩에서는 완납, 정렬에서는 꼬리이고, 단기 퇴실 예정은 칩에서는
+  // 퇴실 예정, 정렬에서는 완납 묶음이다. 같은 호실 동행 행은 정렬에서만 방의 묶음을 따른다(칩은 행마다 센다).
+  const isPaidRoom = (r: RoomStatus) =>
+    r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r) && paymentBadgeKind(r, targetMonth) !== 'reserved'
   // 이 달(targetMonth)에 납부일 임시 조정이 적용된 호실
   const isAdjustedRoom = (r: RoomStatus) =>
     !!r.overrideDueDay && r.overrideDueDayMonth === targetMonth
@@ -622,7 +549,7 @@ export default function RoomsClient({
     if (filter === 'unpaid')   return !r.isPaid
     if (filter === 'checkout') return isCheckoutRoom(r)
     if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
-    if (filter === 'paid')     return r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)
+    if (filter === 'paid')     return isPaidRoom(r)
     if (filter === 'adjusted') return isAdjustedRoom(r)
     return true
   })
@@ -631,34 +558,23 @@ export default function RoomsClient({
   // 행이 계약 단위가 되면서 한 방에 행이 둘일 수 있는데, 기본 정렬이 '수납 상태'라 402호 거주(미납 그룹)와
   // 입실 예약(예약 그룹)이 목록 양 끝으로 흩어진다. 그러면 같은 호실 번호가 두 군데 떠서 중복 등록으로 읽힌다.
   // 그래서 정렬은 방 단위로 하고, 방 안 순서는 서버 정본(roomLeaseRowOrder)이 준 순서를 그대로 둔다.
-  // 상태 그룹만은 그 방에서 가장 급한 행을 따른다 — 한 계약이 미납이면 그 방은 미납 블록에 있어야 한다.
+  // 수납 상태 정렬은 배지에서 파생한 묶음으로 한다(lib/roomsStatusSort, 신고 db65cce9). 방의 묶음은 그 방에서
+  // 가장 급한 행을 따르고 키도 그 행에서 읽는다. 기본(desc)은 미납·납부 예정·완납, 반대(asc)는 그 셋을 정확히 뒤집고
+  // 꼬리(퇴실 예정·청구 없음·입실 예약)는 방향과 무관하게 맨 아래다. 저장값·첫 화면(desc)은 그대로다.
+  const statusSorted = sortKey === 'status'
+    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', targetMonth })
+    : null
   const roomFirstIndex = new Map<string, number>()
   const roomLeadRow    = new Map<string, RoomStatus>()
-  const roomStatusGrp  = new Map<string, number>()
-  const statusGrpOf = (r: RoomStatus) => {
-    if (r.isVacant) return 5
-    if (!r.isPaid) return 0
-    if (isCheckoutRoom(r)) return 1
-    if (r.status === 'RESERVED') return 2
-    if (isAwaitingRoom(r)) return 3
-    return 4
-  }
   filtered.forEach((r, i) => {
     if (!roomLeadRow.has(r.roomId)) { roomLeadRow.set(r.roomId, r); roomFirstIndex.set(r.roomId, i) }
-    const g = statusGrpOf(r)
-    if (g < (roomStatusGrp.get(r.roomId) ?? Number.MAX_SAFE_INTEGER)) roomStatusGrp.set(r.roomId, g)
   })
   const rowSeq = new Map(filtered.map((r, i) => [r.leaseTermId ?? r.roomId, i]))
 
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = statusSorted ? statusSorted.rows : [...filtered].sort((a, b) => {
     // 같은 방이면 서버가 정한 방 안 순서를 그대로 — 화면이 다시 정하면 화면마다 순서가 갈린다.
     if (a.roomId === b.roomId) {
       return (rowSeq.get(a.leaseTermId ?? a.roomId) ?? 0) - (rowSeq.get(b.leaseTermId ?? b.roomId) ?? 0)
-    }
-    // 상태 열: 미납(0)→퇴실예정(1)→예약(2)→납부예정(3)→완납(4)→공실(5) 그룹 고정
-    if (sortKey === 'status') {
-      const grpA = roomStatusGrp.get(a.roomId) ?? 5, grpB = roomStatusGrp.get(b.roomId) ?? 5
-      if (grpA !== grpB) return grpA - grpB
     }
 
     const va = getSortValue(roomLeadRow.get(a.roomId) ?? a, sortKey, targetMonth)
@@ -681,6 +597,17 @@ export default function RoomsClient({
         (r.tenantName ?? '').toLowerCase().includes(q)
       )
     : sorted
+
+  // 묶음 경계 머리. 수납 상태 정렬일 때만, 지금 보이는 행 기준으로 묶음이 바뀌는 첫 행 위에 선다(카드·표 공용).
+  // 숫자는 안 단다. 칩이 이미 세고 있고, 검색·필터로 줄어든 목록에서는 머리 숫자가 칩과 갈린다.
+  const statusGroupHead = (idx: number): StatusGroup | null => {
+    if (!statusSorted) return null
+    const g = statusSorted.roomGroup.get(displayed[idx].roomId) ?? null
+    const prev = idx > 0 ? statusSorted.roomGroup.get(displayed[idx - 1].roomId) ?? null : null
+    return g !== prev ? g : null
+  }
+  const groupOrderText = (g: StatusGroup) => statusGroupOrderText(g, sortDir === 'asc')
+  const tableColCount = 2 + COL_DEFS.filter(c => colVis[c.key]).length
 
   // Phase 2.4c (2026-05-30): 자체 수납 모달 제거. 카드 클릭/URL 진입 → 전역 Prism 셸 사용.
   // 셸의 PaymentBody (summary/full) 가 모든 수납 기능 in-place 처리.
@@ -766,7 +693,7 @@ export default function RoomsClient({
   const unpaidCount   = occupied.filter(r => !r.isPaid).length
   const checkoutCount = occupied.filter(r => isCheckoutRoom(r)).length
   const awaitingCount = occupied.filter(r => isAwaitingRoom(r) && !isCheckoutRoom(r)).length
-  const paidCount     = occupied.filter(r => r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)).length
+  const paidCount     = occupied.filter(isPaidRoom).length
   const adjustedCount = occupied.filter(r => isAdjustedRoom(r)).length
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
@@ -1147,6 +1074,7 @@ export default function RoomsClient({
           <span className="block mt-1.5">이번 달 납부일을 조정한 건은 &lsquo;임시 조정&rsquo;에서 모아 볼 수 있습니다.</span>
           <span className="block mt-1.5">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
           <span className="block mt-1.5">숫자는 방이 아니라 계약 수입니다. 한 방에 계약이 둘이면 행도 둘이고, 같은 호실은 항상 붙여서 보입니다.</span>
+          <span className="block mt-1.5">입실 예약은 전체에서만 보입니다.</span>
         </InfoHint>
 
         {/* 공실 표시 · 열 설정 — flex-wrap 새 줄로 떨어져도 항상 우측 정렬되도록 ml-auto 그룹.
@@ -1194,7 +1122,7 @@ export default function RoomsClient({
           onChange={sk => { setSortKey(sk); setSortDir('desc') }}
           onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
           options={[
-            { value: 'status',        label: '수납상태' },
+            { value: 'status',        label: '수납 상태' },
             { value: 'roomNo',        label: '호실순' },
             { value: 'dueDay',        label: '납부일' },
             { value: 'balance',       label: '잔액' },
@@ -1211,13 +1139,23 @@ export default function RoomsClient({
 
       {/* 수납 현황 — 모바일 카드 뷰 */}
       <div className="sm:hidden space-y-2">
-        {displayed.map(room => {
+        {displayed.map((room, idx) => {
           const dueInfo = !room.isPaid ? getEffectiveDueInfo(room, targetMonth) : null
           const tone = roomStatusTone(room, targetMonth)
           const totalUnpaid = getTotalUnpaid(room)
+          // 배지 분기는 paymentBadgeKind 정본이 정한다(정렬 묶음·완납 칩과 같은 판정, 표 쌍둥이도 같은 함수).
+          const kind = paymentBadgeKind(room, targetMonth)
+          const head = statusGroupHead(idx)
+          const payCaption = lastPayCaptionDate(room, kind === 'paid')
           return (
             // 한 방에 실계약과 비거주 계약이 공존하면 roomId 키가 중복돼 React 가 stale DOM 을 남기고 정렬이 고착된다(신고 7007d2c1, 418호 실증).
-            <RoomCard key={room.leaseTermId ?? room.roomId}
+            <Fragment key={room.leaseTermId ?? room.roomId}>
+            {/* 묶음 경계 머리(§22 SectionHeader, 마커·숫자 없음). 오른쪽은 그 묶음의 순서 설명 */}
+            {head && (
+              <SectionHeader first={idx === 0} name={STATUS_GROUP_LABEL[head]}
+                trailing={<span className="text-[0.6875rem] text-[var(--warm-muted)]">{groupOrderText(head)}</span>} />
+            )}
+            <RoomCard
               kind="neutral"
               tipColor={statusTipColor(tone)}
               tipBg={statusRowTint(tone)}
@@ -1250,7 +1188,7 @@ export default function RoomsClient({
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
-                  {room.status === 'RESERVED' ? (() => {
+                  {kind === 'reserved' ? (() => {
                     let sub: string | undefined
                     if (room.moveInDate) {
                       const days = kstDaysUntil(room.moveInDate)
@@ -1258,17 +1196,12 @@ export default function RoomsClient({
                     }
                     return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                   })() : (() => {
-                    const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
-                    // 퇴실 예정 배지는 expectedMoveOut이 viewMonth 안(또는 그 이전)일 때만 표시
-                    const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
-                    const showCheckout = room.status === 'CHECKOUT_PENDING'
-                      && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
                     // 미납 / 연체 — 7일 초과면 연체(Terracotta 솔리드), 그 외 미납(Amber)
-                    if (!room.isPaid) {
+                    if (kind === 'unpaid' || kind === 'deferredUnpaid') {
                       // 라벨이 '납부일'이면 보조줄의 '오늘'은 중복이라 생략
-                      const deferred = isDeferredNow(room, targetMonth)
+                      const deferred = kind === 'deferredUnpaid'
                       // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
-                      const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room)
+                      const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room, true)
                       const sub = unpaidSubText(room, targetMonth, dueInfo, deferred, exitSub)
                       const isOverdue = !!(dueInfo && dueInfo.overdue && dueInfo.days > 7)
                       // §03 UNPAID(Amber)는 '기한 경과 1~6일' 정의라, 아직 기한 전인 건에 쓰면 정본 위반이다.
@@ -1277,39 +1210,34 @@ export default function RoomsClient({
                         secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>{deferred ? '납부 유예' : unpaidBadgeLabel(dueInfo?.days, dueInfo?.overdue)}</StatusBadge>
                     }
                     // 청구 없는 달 — 미납 다음, 퇴실 예정 앞. 이월 미수가 있으면 미납이 먼저여야 한다.
-                    if (room.noBillReason) {
+                    if (kind === 'noBill') {
                       const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                       // 단기는 퇴실 예정 상태로 바뀌기 전에도 퇴실이 눈에 보여야 한다 — 문법은 CHECKOUT_PENDING 과 동일.
                       const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                      return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit, checkedOutSub(room)].filter(Boolean).join(' · ')}
+                      return <StatusBadge tone="paid" sub={noBillBadgeSub(room, targetMonth)}
                         secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>청구 없음</StatusBadge>
                     }
                     // 퇴실 예정 — Camel
-                    if (showCheckout && room.expectedMoveOut) {
+                    if (kind === 'checkout' && room.expectedMoveOut) {
                       const [, mm, dd] = room.expectedMoveOut.split('-')
                       const days = kstDaysUntil(room.expectedMoveOut)
                       const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
                       return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
                     }
-                    if (showCheckout) return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
+                    if (kind === 'checkout') return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
                     // 납부 예정 — 알림 필요, Blue(§03 AWAIT)
-                    if (isAwaiting) {
+                    if (kind === 'awaiting' || kind === 'deferredAwait') {
                       // 기한을 미뤄준 사람은 '납부 예정'이 아니라 '납부 유예' — 미납 분기와 같은 말을 해야 한다
-                      if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
+                      if (kind === 'deferredAwait') return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room, true))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                       const [, mm, dd] = room.nextDueDate!.split('-')
                       const days = kstDaysUntil(room.nextDueDate!)
                       const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
-                      return <StatusBadge tone="await" sub={[sub, checkedOutSub(room)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
+                      return <StatusBadge tone="await" sub={[sub, checkedOutSub(room, true)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                     }
-                    // 완납 — Olive 뱃지 (지연납부 이력이 있으면 sub로)
-                    let lateSub: string | undefined
-                    if (room.latePaidAt) {
-                      const [, mm, dd] = room.latePaidAt.split('-')
-                      lateSub = `${Number(mm)}/${Number(dd)} 지연납부`
-                    }
+                    // 완납(Olive 뱃지). 보조줄에 그 달 몫을 받은 날을 상시로 적는다(paidSubText 정본, 표와 같은 문장)
                     // 단기 입주월 — 청구 없음 분기에 오기 전인 그 달에도 퇴실이 보여야 한다.
                     const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                    return <StatusBadge tone="paid" sub={[lateSub, shortExit, checkedOutSub(room)].filter(Boolean).join(' · ') || undefined}
+                    return <StatusBadge tone="paid" sub={paidSubText(room, targetMonth)}
                       secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>완납</StatusBadge>
                   })()}
                 </div>
@@ -1362,8 +1290,9 @@ export default function RoomsClient({
                   <span className="text-[var(--warm-muted)]">
                     총납부 <MoneyDisplay amount={room.totalPaid} />
                     {/* lastPayDate 는 월 격리가 아니라 계약 전체 최신 납부일이라, 청구 없는 달에는
-                        덮은 수납과 같은 날짜가 두 번 찍힌다. 같은 날이면 캡션 하나만 남긴다. */}
-                    {room.lastPayDate && room.lastPayDate !== room.noBillCoveredDate && <span className="text-[var(--warm-muted)]"> · 납부 {room.lastPayDate.slice(5).replace('-', '/')}</span>}
+                        덮은 수납과 같은 날짜가 두 번 찍힌다. 같은 날이면 캡션 하나만 남긴다.
+                        완납 배지 보조줄이 같은 날을 이미 적었으면 그것도 한 번만(카드에는 배지가 늘 선다). */}
+                    {payCaption && <span className="text-[var(--warm-muted)]"> · 납부 {fmtMD(payCaption)}</span>}
                     {noBillCoveredText(room) && <span className="text-[var(--warm-muted)]"> · {noBillCoveredText(room)}</span>}
                   </span>
                 )}
@@ -1378,6 +1307,7 @@ export default function RoomsClient({
                 </div>
               )}
             </RoomCard>
+            </Fragment>
           )
         })}
         {displayed.length === 0 && (
@@ -1413,9 +1343,13 @@ export default function RoomsClient({
               </tr>
             </thead>
             <tbody>
-              {displayed.map(room => {
+              {displayed.map((room, idx) => {
                 const tone = roomStatusTone(room, targetMonth)
                 const totalUnpaid = getTotalUnpaid(room)
+                // 배지 분기는 카드 쌍둥이와 같은 paymentBadgeKind 정본이 정한다.
+                const kind = paymentBadgeKind(room, targetMonth)
+                const head = statusGroupHead(idx)
+                const payCaption = lastPayCaptionDate(room, colVis.status && kind === 'paid')
                 // 고정(sticky) 열은 가로 스크롤 대비 불투명 배경이 필요해 행의 반투명 hover·선택 배경이 가려진다.
                 // 같은 결과색을 color-mix 로 재현해 호실·입주자 열도 함께 하이라이트되게 한다(행이 hover 대상일 때만).
                 const rowHoverable = !(room.isFutureMonth || (selectMode && !isBatchEligible(room)))
@@ -1426,7 +1360,21 @@ export default function RoomsClient({
                     : 'bg-[var(--cream)]'
                 return (
                 // 한 방에 실계약과 비거주 계약이 공존하면 roomId 키가 중복돼 React 가 stale DOM 을 남기고 정렬이 고착된다(신고 7007d2c1, 418호 실증).
-                <tr key={room.leaseTermId ?? room.roomId}
+                <Fragment key={room.leaseTermId ?? room.roomId}>
+                {/* 묶음 경계 머리 행. 지출 표 날짜 머리 행과 같은 문법(colSpan 한 칸). 순서 설명은 이름 바로 뒤에 두고 왼쪽에
+                    붙여 세운다(sticky). 표가 넓어 가로로 밀리는 노트북 폭에서 오른쪽 끝 설명이 첫 화면 밖으로 나가고, 밀면 이름이
+                    사라지던 것을 막는다(신고 db65cce9 웹디자이너 패스). */}
+                {head && (
+                  <tr className="bg-[var(--canvas)]/50 border-b border-[var(--warm-border)]">
+                    <td colSpan={tableColCount} className="px-4 py-1.5">
+                      <div className="sticky left-4 inline-flex items-center gap-2">
+                        <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{STATUS_GROUP_LABEL[head]}</span>
+                        <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{groupOrderText(head)}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                <tr
                   onClick={
                     selectMode
                       ? (isBatchEligible(room) ? () => toggleSelect(room.leaseTermId!) : undefined)
@@ -1494,8 +1442,9 @@ export default function RoomsClient({
                       {room.carryOver > 0 && (
                         <span className="text-xs text-[var(--success-fg)] ml-1">(+지난달 과납 <MoneyDisplay amount={room.carryOver} />)</span>
                       )}
-                      {room.lastPayDate && room.lastPayDate !== room.noBillCoveredDate && (
-                        <span className="block text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">납부 {room.lastPayDate.slice(5).replace('-', '/')}</span>
+                      {/* 카드와 같은 규칙. 수납 상태 열이 보이고 완납 보조줄이 같은 날을 적었으면 한 번만 */}
+                      {payCaption && (
+                        <span className="block text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">납부 {fmtMD(payCaption)}</span>
                       )}
                       {noBillCoveredText(room) && (
                         <span className="block text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">{noBillCoveredText(room)}</span>
@@ -1533,7 +1482,7 @@ export default function RoomsClient({
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-1 items-center text-center">
                         {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
-                        {room.status === 'RESERVED' ? (() => {
+                        {kind === 'reserved' ? (() => {
                           let sub: string | undefined
                           if (room.moveInDate) {
                             const days = kstDaysUntil(room.moveInDate)
@@ -1541,51 +1490,42 @@ export default function RoomsClient({
                           }
                           return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                         })() : (() => {
-                          const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
-                          const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
-                          const showCheckout = room.status === 'CHECKOUT_PENDING'
-                            && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
-                          if (!room.isPaid) {
+                          if (kind === 'unpaid' || kind === 'deferredUnpaid') {
                             const info = getEffectiveDueInfo(room, targetMonth)
                             // 카드(위)와 같은 규칙 — days 는 절댓값이라 방향(overdue)을 함께 봐야 한다.
                             // 이 표는 카드의 쌍둥이라 한쪽만 고치면 화면마다 다른 말을 한다.
-                            const deferred = isDeferredNow(room, targetMonth)
+                            const deferred = kind === 'deferredUnpaid'
                             // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
-                            const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room)
+                            const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room, true)
                             const sub = unpaidSubText(room, targetMonth, info, deferred, exitSub)
                             const isOverdue = !!(info && info.overdue && info.days > 7)
                             const beforeDue = !deferred && !!info && !info.overdue && info.days !== 0
                             return <StatusBadge tone={deferred ? 'await' : beforeDue ? 'info' : isOverdue ? 'overdue' : 'unpaid'} sub={sub}
                               secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>{deferred ? '납부 유예' : unpaidBadgeLabel(info?.days, info?.overdue)}</StatusBadge>
                           }
-                          if (room.noBillReason) {
+                          if (kind === 'noBill') {
                             const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                             // 카드와 같은 규칙 — 단기는 자동 전환 전에도 퇴실을 보조줄에 담는다.
                             const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                            return <StatusBadge tone="paid" sub={[noBillSubText(room), shortExit, checkedOutSub(room)].filter(Boolean).join(' · ')}
+                            return <StatusBadge tone="paid" sub={noBillBadgeSub(room, targetMonth)}
                               secondary={(exitSub || shortExit) ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>청구 없음</StatusBadge>
                           }
-                          if (showCheckout && room.expectedMoveOut) {
+                          if (kind === 'checkout' && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')
                             const days = kstDaysUntil(room.expectedMoveOut)
                             const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
                             return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
                           }
-                          if (showCheckout) return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
-                          if (isAwaiting) {
-                            if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
+                          if (kind === 'checkout') return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
+                          if (kind === 'awaiting' || kind === 'deferredAwait') {
+                            if (kind === 'deferredAwait') return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room, true))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                             const [, mm, dd] = room.nextDueDate!.split('-')
                             const days = kstDaysUntil(room.nextDueDate!)
                             const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
-                            return <StatusBadge tone="await" sub={[sub, checkedOutSub(room)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
-                          }
-                          let lateSub: string | undefined
-                          if (room.latePaidAt) {
-                            const [, mm, dd] = room.latePaidAt.split('-')
-                            lateSub = `${Number(mm)}/${Number(dd)} 지연납부`
+                            return <StatusBadge tone="await" sub={[sub, checkedOutSub(room, true)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                           }
                           const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
-                          return <StatusBadge tone="paid" sub={[lateSub, shortExit, checkedOutSub(room)].filter(Boolean).join(' · ') || undefined}
+                          return <StatusBadge tone="paid" sub={paidSubText(room, targetMonth)}
                             secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>완납</StatusBadge>
                         })()}
                         {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
@@ -1599,6 +1539,7 @@ export default function RoomsClient({
                     </td>
                   )}
                 </tr>
+                </Fragment>
                 )
               })}
             </tbody>
