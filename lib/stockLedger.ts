@@ -107,22 +107,30 @@ export function purchaseAfterCheck(
 // 화면 합계·배지·저장·과거 점검 수정·위치별 점검이 전부 이 한 함수를 쓴다(운영자 승인 2026-07-28).
 // 규칙이 두 벌이면 화면과 저장이 갈라져 유령 재고가 생긴다(김치 20kg 후속 신고).
 //
-// 빈칸 해석 (2026-09-01 운영자 확정 — "아무런 숫자를 입력하지 않으면 자동으로 0").
-//   · '채우기 전'이 비고 '채운 후'만 있으면 **전 = 0 이다.** 입력칸의 자리표시자가 0 이라
-//     말하는데 계산만 직전 잔량을 쓰면, 직전이 남아 있던 위치에서 옮김량이 조용히 줄어
-//     허브가 덜 차감된다(전 7 남았다 착각 - 실제로는 다 쓰고 0). 다 쓴 위치에 0 을 손으로
-//     쳐야 하는 것도 이 어긋남의 증상이었다.
-//   · 안 센 위치는 두 칸 다 빈칸이다 - 이 함수 밖(entered=false)에서 직전값이 보존되므로
-//     여기서 0 이 되지 않는다. '세지 않고 그대로'는 '그대로' 버튼(종전 '옮김 없음')이 직전값을 채워 말한다.
-// 음수(후 < 전)는 0 클램프 - 허브 환입 금지(종전 규칙 유지). 직전 잔량(baseline)은 이제
-// 계산에 관여하지 않아 서명에서도 뺐다 - 남겨 두면 "무언가에 쓰이나" 하고 다시 잇게 된다.
-export function calcLocMove(beforeStr: string, afterStr: string): {
-  beforeN: number | null; afterN: number | null; restocked: number
-} {
+// 빈칸 해석 (2026-10-19 운영자 승인 C안, 신고 1daf641c "기존 2.5키로에서 7.5kg만 추가되어야 하는데").
+//   이 자리의 규칙은 두 번 뒤집혔다. 06-14 '빈칸 = 저장값'(a56433f), 09-01 '빈칸 = 0'(c1e5146d).
+//   두 규칙의 답이 갈리는 행에서 어느 쪽을 골라도 한쪽 사람은 틀린 장부를 받는다. 그래서 그 행만 **묻는다**.
+//   · 두 칸 다 빈칸 = 안 센 위치다. 이 함수 밖(entered)에서 직전값이 이월되고 여기서는 값을 만들지 않는다.
+//   · '채운 후'만 있고 '채우기 전'이 비었으면 그 위치의 저장값(savedQty)으로 가른다.
+//     - 저장값이 0 이거나 없으면 전 = 0 이다. 두 규칙의 답이 같아 물을 것이 없다.
+//     - '채운 후'가 0 이면 전이 무엇이든 옮김 0 · 잔량 0 이라 답이 같다. 이것도 묻지 않는다.
+//     - 그 밖(저장값 > 0, 채운 후 > 0)은 **미결**(pending)이다. 화면이 [{저장값}에서 채움] [0에서 채움]을
+//       띄우고, 고른 값이 '채우기 전' 칸에 들어간다. 고르기 전에는 옮김 0 · 최종값 없음이고,
+//       저장 칸 수·창고 요약·발끝 합계 어디에도 안 센다(안 센 위치와 같게 다룬다).
+//   · 직접 친 0 은 값이다. 빈칸과 다르다.
+// 음수(후 < 전)는 0 클램프, 허브 환입 금지(종전 규칙 유지). finalN 은 그 위치에 저장될 잔량(후, 없으면 전)이다.
+// savedQty 는 인자를 빼고 부를 수 없게 받는다. 둘짜리 호출이 남으면 그 화면만 옛 규칙(빈칸 = 0)으로 돈다.
+export type LocMove = {
+  beforeN: number | null; afterN: number | null; restocked: number; finalN: number | null; pending: boolean
+}
+export function calcLocMove(beforeStr: string, afterStr: string, savedQty: number | null | undefined): LocMove {
   const beforeN = beforeStr === '' ? null : Number(beforeStr)
   const afterN  = afterStr === '' ? null : Number(afterStr)
+  if (beforeN === null && afterN !== null && afterN > 0 && savedQty != null && savedQty > LEDGER_EPS) {
+    return { beforeN: null, afterN, restocked: 0, finalN: null, pending: true }
+  }
   const restocked = (afterN !== null && afterN > (beforeN ?? 0)) ? afterN - (beforeN ?? 0) : 0
-  return { beforeN, afterN, restocked }
+  return { beforeN, afterN, restocked, finalN: afterN ?? beforeN, pending: false }
 }
 
 export function overbookExcess(measured: number, book: number): number | null {

@@ -161,6 +161,25 @@ function QtyReadout({ value, unit }: { value: number | null; unit: string | null
   )
 }
 
+/** '채우기 전'을 묻는 행(lib/stockLedger calcLocMove 미결) 아래의 짧은 안내 + 고르는 버튼 둘(2026-10-19 신고 1daf641c).
+ *  세 화면(아이템별 폼·위치 패널·이력 수정 폼)이 한 벌로 쓴다. 문법은 창고 행 경고(hubStale) 줄과 같다(11px 안내 +
+ *  정본 RowActionBtn). 버튼이 둘이라 안내 옆에 두면 좁은 폭에서 안내가 네 줄로 꺾여 버튼 줄을 안내 아래로 내렸다.
+ *  고르면 그 값이 '채우기 전' 칸에 들어가고 행은 보통 행이 된다. 저장값·단위는 행 머리 '저장값' 과 같은 표기(fmtQty)다.
+ *  색은 --warning-fg 다. 틀린 값이 아니라 아직 정하지 않은 값이라 위험색(hubStale)과 가른다. */
+function PendingFillChoice({ saved, unit, onPick }: { saved: number; unit: string | null; onPick: (before: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <p className="break-keep text-[0.6875rem] text-[var(--warning-fg)]">채우기 전이 비어 있습니다. 얼마에서 채웠는지 고르세요.</p>
+      {/* 꺾이면 줄 사이를 넉넉히 둔다(gap-y-3). RowActionBtn 은 히트 44px 를 -my-2 로 접어 줄 높이가 보이는 박스보다
+          낮아서(글자 125% 에서 24 대 33px), 세로 간격이 없으면 두 줄의 테두리가 겹쳤다(하네스 실측). */}
+      <div className="flex flex-wrap gap-x-2 gap-y-3">
+        <RowActionBtn onClick={() => onPick(String(saved))}>{fmtQty(saved, unit)}에서 채움</RowActionBtn>
+        <RowActionBtn onClick={() => onPick('0')}>0에서 채움</RowActionBtn>
+      </div>
+    </div>
+  )
+}
+
 // 점검 행 표시 전용 — 표기 경로(pathName)를 '부모 경로'(묶음 머리)와 '끝 칸 이름'(행 머리)으로 가른다(2단계).
 // 상단·하단처럼 끝 두 글자만 다른 행을 바꿔 적던 근원을 줄이려고 끝 칸을 크게 세운다. **표시 문자열만** 쪼갠다 —
 // 저장·키·메모는 그대로 pathName/locationId 다(check-location-name-axis). 끝 칸 이름이 pathName 의 꼬리와 글자째
@@ -180,6 +199,10 @@ const CHECK_DISPOSAL_HINT = '버리거나 상해서 줄어든 양이 있나요? 
 // '그대로' 낱말은 쓰지 않는다 — 같은 화면의 '그대로' 버튼은 저장값을 이번 실측으로 확정하는데(실측 패치), 비워 둔
 // 칸은 지난 점검 값을 이월로 이어받는다(패치 없음). 같은 낱말이 두 결과를 말하면 둘을 구별할 길이 없다(2단계 검수 3).
 const CHECK_GUIDE_RESTOCK = "센 칸만 적으세요. 비워 둔 칸은 지난 점검 값을 이어받습니다. 창고에서 채웠다면 '채운 후'도 적으세요. 늘어난 만큼 창고에서 자동 차감됩니다."
+// '채우기 전'을 고르지 않은 행이 남았을 때 저장 버튼 위 이유 한 줄(§22 ② 하단 이유 한 줄 + 버튼 비활성).
+// 세는 말은 그 화면의 저장 버튼과 같다(아이템별 폼 'N곳 저장', 위치 패널 'N건 저장').
+const pendingReasonItemForm = (n: number) => `채우기 전을 고를 위치가 ${n}곳 남았습니다.`
+const pendingReasonPanel = (n: number) => `채우기 전을 고를 품목이 ${n}건 남았습니다.`
 
 // 옛 드래프트 호환 — 허브(창고) 칸이 '채운 후'(after)에 묶여 있던 시절의 문서다(2026-09-11 이전).
 // 그대로 복원하면 **화면에 안 보이는 값**이 된다(허브 칸은 '잔량'=before 를 그린다). 그 값은
@@ -3743,9 +3766,18 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
   // 창고(허브)는 보충받는 게 아니라 차감되는 쪽 — '자동 차감 후'를 자동계산. 사용자가 직접 고치면 그 값 사용.
   const [hubTouched, setHubTouched] = useState(false)
 
-  // calcLocMove 단일 규칙(생성 폼과 동일) — 빈 '채우기 전'은 0 이다(운영자 확정 2026-09-01).
-  const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) =>
-    s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
+  // calcLocMove 단일 규칙(점검 폼·위치 패널과 같은 함수, 2026-10-19 신고 1daf641c). 이 폼의 저장값은 **이 기록에 저장된
+  // 그 행의 채우기 전**(잔량 − 채움)이다. 미리 채워 여는 폼이라 '채우기 전'을 지우고 '채운 후'만 남기면 그 값에서
+  // 채웠는지 0 에서 채웠는지가 갈려 묻는다. 기록에 없던 위치는 저장값이 없어 빈칸이 0 이다.
+  const origOf = (id: string) => entry.locationBreakdown.find(lb => lb.locationId === id)
+  const savedBeforeOf = (id: string) => { const lb = origOf(id); return lb ? Math.max(0, lb.qty - (lb.restockedQty ?? 0)) : null }
+  const moveOf = (l: { id: string }) => calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', savedBeforeOf(l.id))
+  // 미결 행은 고르기 전까지 '안 고친 행' 이다. 이 기록에 저장된 그 행의 채움·잔량을 그대로 센다. 다른 두 화면이
+  // 미결 행을 안 센 위치(이월)로 다루는 것과 같은 뜻이다. 저장은 고를 때까지 막는다.
+  const rowRestock = (l: { id: string }) => { const m = moveOf(l); return m.pending ? (origOf(l.id)?.restockedQty ?? 0) : m.restocked }
+  const rowFinal = (l: { id: string }) => { const m = moveOf(l); return m.pending ? (origOf(l.id)?.qty ?? 0) : (m.finalN ?? 0) }
+  const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) => s + rowRestock(l), 0)
+  const pendingLocCount = locationSources.filter(l => !l.isHub && moveOf(l).pending).length
 
   // 창고(허브) 행 — '이전 잔량'은 저장된 창고 잔량 + 이 점검의 원래 보충합계로 역산(편집 무관 상수).
   // '자동 차감 후' = 이전 잔량 − (현재 편집 중인) 보충합계. 사용자가 직접 보정 안 했으면 이 값으로 저장.
@@ -3759,11 +3791,12 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
     : 0
 
   const locationTotal = hasLocations
-    ? locationSources.reduce((s, l) => s + (l.isHub ? hubFinal : (Number(afterQtys[l.id]) || 0)), 0)
+    ? locationSources.reduce((s, l) => s + (l.isHub ? hubFinal : rowFinal(l)), 0)
     : 0
 
   const handleSave = () => {
     if (hasLocations) {
+      if (pendingLocCount > 0) return   // 버튼이 막혀 있다. 그 행을 빼고 저장하면 고친 값이 말없이 사라진다
       onSave({
         date, memo: memo || null,
         // 클라가 차감한 허브를 서버 검출과 일치시켜 조용한 클램프를 정확히 감지(권장 수정).
@@ -3776,10 +3809,12 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
             || (afterQtys[l.id] ?? '') !== '' || (beforeQtys[l.id] ?? '') !== '')
           .map(l => {
             if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
-            // calcLocMove 단일 규칙 — 화면 restockSum 과 같은 계산이라야 저장 후 숫자가 안 튄다
-            const { restocked } = calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '')
+            // calcLocMove 단일 규칙. 화면 restockSum 과 같은 계산이라야 저장 후 숫자가 안 튄다.
+            // 잔량은 '채운 후, 없으면 채우기 전'이다(finalN). 종전 '채운 후'만 읽어 그 칸을 비우면 채우기 전에 적은 값을
+            // 버리고 0 을 저장했다. 점검 폼(afterN ?? beforeN)과 갈려 있던 자리다.
+            const { restocked, finalN } = moveOf(l)
             return {
-              storageLocationId: l.id, qty: Number(afterQtys[l.id] || '0'),
+              storageLocationId: l.id, qty: finalN ?? 0,
               ...(restocked > 0 ? { restockedQty: restocked } : {}),
             }
           }),
@@ -3851,7 +3886,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
             // 비허브 위치 행 — 채우기 전 → 채운 후 (차이만큼 창고에서 이동). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[l.id] ?? ''
             const afterStr  = afterQtys[l.id] ?? ''
-            const { restocked } = calcLocMove(beforeStr, afterStr)
+            const { restocked, pending: movePending } = moveOf(l)
+            const savedBefore = savedBeforeOf(l.id)
             return (
               <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
                 <div className="flex min-h-7 items-center gap-2">
@@ -3862,20 +3898,26 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
                     채움 없음
                   </RowActionBtn>
                 </div>
+                {/* 자리표시 '0' 은 점검 폼과 같은 규칙이다. '채우기 전' 칸에만, 채운 후만 적었고 묻지 않는 행에서만 선다.
+                    '채운 후' 칸은 비우면 채우기 전 값이 그대로 잔량이라(채움 없음) 0 을 띄우면 거짓이 된다. */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
-                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채우기 전`} placeholder="0"
+                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' && !movePending ? '0' : undefined}
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                   </div>
                   <div>
                     <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채운 후</p>
-                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채운 후`} placeholder="0"
+                    <QtyField unit={stockUnit} aria-label={`${l.pathName} 채운 후`}
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                   </div>
                 </div>
+                {movePending && savedBefore != null && (
+                  <PendingFillChoice saved={savedBefore} unit={stockUnit}
+                    onPick={v => setBeforeQtys(prev => ({ ...prev, [l.id]: v }))} />
+                )}
               </div>
             )
           })}
@@ -3892,12 +3934,14 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
         <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={checkTextInputCls} />
       </div>
+      {/* 묻는 행이 남았으면 저장을 막고 이유를 버튼 줄 바로 위 한 줄로 말한다(점검 폼 발끝과 같은 문장·같은 자리). */}
+      {pendingLocCount > 0 && <p className="break-keep text-xs text-[var(--warning-fg)]">{pendingReasonItemForm(pendingLocCount)}</p>}
       {/* 삭제는 형제 수정 폼(무상 입수·구매)과 같은 자리·같은 모양이다 — 왼쪽 끝, 저장·취소와 떨어뜨린다. 정본 Btn danger(§10 raw 버튼 금지). */}
       <div className="flex gap-2 pt-1">
         <Btn variant="danger" size="sm" onClick={onDelete} disabled={pending}>삭제</Btn>
         <div className="flex-1" />
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
-        <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0))}
+        <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0)) || pendingLocCount > 0}
           onClick={handleSave}>
           {pending ? '저장 중…' : '저장'}
         </Btn>
@@ -4314,10 +4358,16 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
 
   // 비허브 위치들의 옮김량 합계 — calcLocMove 단일 규칙(저장 buildLocationPatches 와 동일).
   // 기준선(직전 잔량 = 현재 잔량 기준선)이 신뢰 가능해져 후만 입력해도 화면·허브 차감이 즉시 반영된다.
+  // 행의 해석은 이 한 자리에서 낸다(저장값과 함께, 2026-10-19). 미결 행은 옮김 0 이라 합계·창고 요약에 안 선다.
+  const moveOf = (l: StorageLocationItem) => calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', prevMap[l.id])
   const restockSum = restockMode
     ? chkLocations
         .filter(l => !l.isHub)
-        .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
+        .reduce((s, l) => s + moveOf(l).restocked, 0)
+    : 0
+  // '채우기 전'을 고르지 않은 행. 고르기 전에는 저장 칸 수에 안 세고 저장 버튼을 막는다(이유 한 줄은 발끝).
+  const pendingLocCount = restockMode
+    ? chkLocations.filter(l => !l.isHub && entered.has(l.id) && moveOf(l).pending).length
     : 0
 
   // **창고 잔량의 '지금' 값** — 저장된 잔량에서 이번 입력의 옮김 합을 뺀 것.
@@ -4334,7 +4384,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   const hubCounted = hubLoc ? (beforeQtys[hubLoc.id] ?? '') !== '' : false
   // 직접 셌으면 **적은 값**을 보여 준다. 저장값으로 되돌아가면 한 폼 안에서 '남음' 이 두 뜻이 된다
   // (다른 행은 실시간인데 이 경우만 저장본). 서버도 허브 실측이 있으면 부족 게이트를 끈다.
-  const hubMove = hubLoc ? calcLocMove(beforeQtys[hubLoc.id] ?? '', afterQtys[hubLoc.id] ?? '') : null
+  const hubMove = hubLoc ? calcLocMove(beforeQtys[hubLoc.id] ?? '', afterQtys[hubLoc.id] ?? '', hubSaved) : null
   const hubLeft = hubCounted && hubMove ? (hubMove.afterN ?? hubMove.beforeN)
     : hubSaved != null ? hubSaved - restockSum : null
   // 이름이 hubShort 가 아닌 이유 — 같은 폼에 서버가 돌려준 부족 팝업 상태가 이미 그 이름이다
@@ -4356,9 +4406,10 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
       const afterStr  = afterQtys[l.id] ?? ''
       if (beforeStr === '' && afterStr === '') continue
       // 전·후 모두 입력 → 옮김량 = max(0, 후-전) / 전만 입력 → 옮김 없이 잔량 = 전
-      // 후만 입력 → 빈 전은 0(옮김량 = 후 전체) / 모두 비움 → 패치 없음(직전값 이월)
-      const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
-      patches.push({ checkedLocationId: l.id, afterQty: afterN ?? beforeN ?? 0, restockedQty: restocked, hubLocationId: hubId })
+      // 후만 입력은 저장값이 0·없음이면 빈 전이 0, 저장값이 있으면 미결(고를 때까지 안 싣는다) / 모두 비움은 이월
+      const { finalN, restocked, pending } = moveOf(l)
+      if (pending) continue
+      patches.push({ checkedLocationId: l.id, afterQty: finalN ?? 0, restockedQty: restocked, hubLocationId: hubId })
     }
     // 허브는 **적었을 때만** 실린다. 안 적었으면 서버가 옮김 합만큼 차감한 파생값을 이월로 남긴다.
     if (hubLoc && hubMeasured) {
@@ -4388,9 +4439,10 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
         if (l.isHub) return s + (hubMeasured ? (Number(beforeQtys[l.id]) || 0) : Math.max(0, hubPrev - restockSum))
         const beforeStr = beforeQtys[l.id] ?? ''
         const afterStr  = afterQtys[l.id] ?? ''
-        if (beforeStr === '' && afterStr === '') return s + (prevMap[l.id] ?? 0)
-        const { beforeN, afterN } = calcLocMove(beforeStr, afterStr)
-        return s + (afterN ?? beforeN ?? 0)
+        const { finalN, pending } = moveOf(l)
+        // 안 센 행과 미결 행은 직전 잔량(이월)이다. 지금 저장하면 남을 값이다.
+        if ((beforeStr === '' && afterStr === '') || pending) return s + (prevMap[l.id] ?? 0)
+        return s + (finalN ?? 0)
       }, 0)
     : (hasLocations
         ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
@@ -4456,6 +4508,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     if (restockMode) {
       // 경로 A — 위치 패널과 같은 규칙으로 서버가 접는다(applyLocationChecks). 클라는 허브를
       // 차감하지 않는다. 차감은 서버의 몫이고, 그래야 두 화면의 장부가 한 글자도 안 갈린다.
+      // 묻는 행이 남았으면 저장하지 않는다. 버튼이 막혀 있지만 그 행을 빼고 저장하면 적은 값이 말없이 사라진다.
+      if (pendingLocCount > 0) return
       const locationPatches = buildLocationPatches()
       if (locationPatches.length === 0) { setError('입력한 위치가 없습니다.'); return }
       submittingRef.current = true
@@ -4590,6 +4644,9 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
           </div>
         )
       })()}
+      {/* 묻는 행이 남았으면 저장 버튼을 막고 이유를 버튼 바로 위 한 줄로 말한다(§22 ② 하단 이유 + 비활성). 키보드가 서도
+          접지 않는다. 버튼이 왜 안 눌리는지는 적는 동안에도 보여야 한다. */}
+      {pendingLocCount > 0 && <p className="break-keep text-xs text-[var(--warning-fg)]">{pendingReasonItemForm(pendingLocCount)}</p>}
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="flex gap-2">
         {/* 취소는 글자 폭 그대로다(shrink-0) — 줄어들게 두면 옆 두 칸(w-full)에 밀려 '취/소' 두 줄로 꺾인다(360px 실측). */}
@@ -4598,7 +4655,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
           {draftPending ? '저장 중…' : '임시저장'}
         </Btn>
         {/* 발끝은 폼 밖(모달 발끝)이라 form= 으로 이 폼에 붙는다. 보충 모드는 'N곳 저장' 이고 적은 칸이 없으면 비활성이다. */}
-        <Btn type="submit" form={formId} variant="primary" disabled={pending || restockSaveCount === 0} fullWidth>
+        <Btn type="submit" form={formId} variant="primary" disabled={pending || restockSaveCount === 0 || pendingLocCount > 0} fullWidth>
           {pending ? '저장 중…' : restockSaveCount != null ? `${restockSaveCount}곳 저장` : '저장'}
         </Btn>
       </div>
@@ -4717,7 +4774,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                 const prevQty = prevMap[loc.id]
                 const beforeStr = beforeQtys[loc.id] ?? ''
                 const afterStr  = afterQtys[loc.id] ?? ''
-                const { restocked } = calcLocMove(beforeStr, afterStr)
+                const { restocked, pending: movePending } = moveOf(loc)
                 const lastRestocked = prevRestockedMap[loc.id]
                 const rowIsHub = loc.isHub
                 const rowDraft = rowDrafts[loc.id]
@@ -4809,12 +4866,13 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                       <>
                         {/* 비허브 위치 점검 — 채우기 전 / 채운 후(선택). 두 칸 모두 빈칸으로 시작한다.
                             라벨은 12px/500(§12), 괄호 설명은 폼 머리 안내문 한 곳으로 모았다(2단계).
-                            '채우기 전' 칸의 placeholder '0' 은 **채운 후만 적었을 때만** 보인다 — 그때 빈칸은 0 으로
-                            저장된다(운영자 확정 2026-09-01). 행을 통째로 비우면 이월이라 0 이 아니다. */}
+                            '채우기 전' 칸의 placeholder '0' 은 **채운 후만 적었고 묻지 않는 행에서만** 보인다(저장값이 0·없음이라
+                            빈칸이 실제로 0 으로 저장되는 자리). 묻는 행(미결)에는 세우지 않는다. 0 을 띄우면 아직 정하지 않은
+                            칸이 '0 에서 채웠다' 로 읽힌다(2026-10-19 신고 1daf641c). 행을 통째로 비우면 이월이라 0 이 아니다. */}
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
-                            <QtyField unit={stockUnit} aria-label={`${loc.pathName} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' ? '0' : undefined}
+                            <QtyField unit={stockUnit} aria-label={`${loc.pathName} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' && !movePending ? '0' : undefined}
                               value={beforeStr}
                               onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }} />
                           </div>
@@ -4825,6 +4883,10 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                               onChange={e => { markEntered(loc.id); setAfterQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }} />
                           </div>
                         </div>
+                        {movePending && prevQty !== undefined && (
+                          <PendingFillChoice saved={prevQty} unit={stockUnit}
+                            onPick={v => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: v })) }} />
+                        )}
                       </>
                     )}
                   </div>
@@ -5503,11 +5565,13 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     const k = locPairKey(r.id, lid)
     const beforeStr = beforeQtys[k] ?? ''
     const afterStr  = afterQtys[k] ?? ''
-    // calcLocMove 단일 규칙 — 채운 후만 입력하면 빈 '채우기 전'은 0(옮김량 = 채운 후 전체)
-    const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
-    // 최종 잔량 = 채운 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
-    const finalN = afterN ?? beforeN
-    return { beforeStr, afterStr, beforeN, afterN, finalN, restocked }
+    // calcLocMove 단일 규칙(아이템별 폼·이력 수정 폼과 같은 함수, 저장값과 함께). 채운 후만 입력했을 때 저장값이
+    // 0·없음이면 빈 '채우기 전'은 0 이고, 저장값이 있으면 미결이다(행 아래에서 고른다, 2026-10-19 신고 1daf641c).
+    // 저장값은 행 머리 '저장값' 과 같은 출처(currentLocationBreakdown)다. 버튼 글자가 머리의 숫자와 같아야 한다.
+    const saved = r.currentLocationBreakdown.find(lb => lb.locationId === lid)?.qty
+    const { beforeN, afterN, restocked, finalN, pending } = calcLocMove(beforeStr, afterStr, saved)
+    // 최종 잔량 = 채운 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다. 미결이면 없다.
+    return { beforeStr, afterStr, beforeN, afterN, finalN, restocked, pending }
   }
 
   const isPairDirty = (r: InventoryRow, lid: string) => {
@@ -5531,7 +5595,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     return units.sort((a, b) => (a.isHubUnit ? 1 : 0) - (b.isHubUnit ? 1 : 0))
   }
 
-  const dirtyUnitCount = buildUnits().length
+  // 저장에 실을 칸. 입력이 있어도 '채우기 전'을 고르지 않은 칸(미결)은 고를 때까지 빼고 센다. 임시저장은
+  // buildUnits() 그대로다(적은 글자는 고르기 전에도 남겨야 한다).
+  const saveUnits = () => buildUnits().filter(u => !computeRow(u.r, u.locId).pending)
+  const dirtyUnitCount = saveUnits().length
+  const pendingPairCount = buildUnits().length - dirtyUnitCount
   const totalRestock = groups.reduce((s, g) => s + g.items.reduce((s2, r) => s2 + computeRow(r, g.node.id).restocked, 0), 0)
 
   // 한 품목이 이번 저장에서 **제 창고에서 빼내는 양** — 허브 행 참고줄의 '차감 후' 가 쓴다.
@@ -5682,9 +5750,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   // 상태가 아니라 인자로 흐른다(형제 mergeChoice 바와 같은 문법 — setState 는 이 호출에 안 보인다).
   const doSave = async (forceMerge?: boolean, dupDecision?: 'keep' | 'skip') => {
     if (savingRef.current) return   // 이미 저장 진행 중 — 중복 제출(더블클릭) 차단
+    // 묻는 칸이 남았으면 저장하지 않는다. 물음 바(합치기·이중 채움)가 선 뒤에 칸을 비웠으면 여기로 온다.
+    // 그 칸을 빼고 저장하면 성공 뒤 입력을 비우는 순간 적은 값이 말없이 사라진다. 바를 내리고 발끝 이유 한 줄에 맡긴다.
+    if (pendingPairCount > 0) { setConfirmItems([]); setDupUnits([]); return }
     savingRef.current = true
     try {
-      let units = buildUnits()
+      let units = saveUnits()
       if (units.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
       // 이중 차감 물음 — 행마다 모달을 N연타로 띄우지 않고, 형제 '기존에 합치기' 바와 같은
@@ -5805,7 +5876,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   }
 
   const handleSave = async () => {
-    const units = buildUnits()
+    if (pendingPairCount > 0) return   // 버튼이 막혀 있다. 이유는 발끝 한 줄이 말한다
+    const units = saveUnits()
     if (units.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
     // 같은 날, 6h 초과 → 사용자 확인 필요 (과거 날짜 백필이면 머지 자체가 없으므로 확인 불필요).
@@ -6210,7 +6282,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       const stockUnit = r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint)
                       const prev = r.currentLocationBreakdown.find(lb => lb.locationId === node.id)
                       const k = locPairKey(r.id, node.id)
-                      const { beforeStr, afterStr, restocked } = computeRow(r, node.id)
+                      const { beforeStr, afterStr, restocked, pending: movePending } = computeRow(r, node.id)
                       // 이 칸이 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
                       const rowIsHub = r.locations.find(l => l.id === node.id)?.isHub ?? false
                       // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
@@ -6324,11 +6396,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                           ) : (
                             <>
                               {/* 비허브 위치 점검 — 채우기 전 / 채운 후(선택). 라벨은 12px/500(§12) — 아이템별 폼과 같다.
-                                  '채우기 전' placeholder '0' 은 채운 후만 적었을 때만(빈칸=0, 2026-09-01) — 아이템별 폼과 같다. */}
+                                  '채우기 전' placeholder '0' 은 채운 후만 적었고 묻지 않는 행에서만이다. 묻는 행(미결)에는 세우지
+                                  않고 아래에서 고르게 한다(아이템별 폼과 같다, 2026-10-19 신고 1daf641c). */}
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
                                   <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
-                                  <QtyField unit={stockUnit} aria-label={`${node.pathName} ${r.label} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' ? '0' : undefined}
+                                  <QtyField unit={stockUnit} aria-label={`${node.pathName} ${r.label} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' && !movePending ? '0' : undefined}
                                     value={beforeStr}
                                     onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                                 </div>
@@ -6339,6 +6412,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                     onChange={e => setAfterQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))} />
                                 </div>
                               </div>
+                              {movePending && prev != null && (
+                                <PendingFillChoice saved={prev.qty} unit={stockUnit}
+                                  onPick={v => setBeforeQtys(p => ({ ...p, [k]: v }))} />
+                              )}
                               {/* 이 칸에서 다른 곳으로 옮기기 — 정본 RowActionBtn(neutral, §03 코랄 테두리 금지).
                                   허브(창고) 행에는 두지 않는다 — 창고에서 나가는 이동은 도착지 행의 '채운 후' 가 정본이다
                                   (§27.1 같은 일을 두 입구로 만들지 않는다). 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이
@@ -6496,6 +6573,9 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
               </div>
             )
           })()}
+          {/* 묻는 칸이 남았으면 저장 버튼을 막고 이유를 버튼 바로 위 한 줄로 말한다(아이템별 폼 발끝과 같다). 접힌 묶음
+              안의 칸이어도 여기서는 보인다. 키보드가 서도 접지 않는다. */}
+          {pendingPairCount > 0 && <p className="break-keep text-xs text-[var(--warning-fg)]">{pendingReasonPanel(pendingPairCount)}</p>}
           <div className="flex gap-2">
             {!inline && <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>}
             <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || scopeItemCount === 0}>
@@ -6503,7 +6583,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
             </Btn>
             {/* 입력이 한 칸도 없으면 '0건 저장' 은 누를 데가 아니다 — 눌러도 아무 일이 없는 버튼은 오조작이다. */}
             {/* 저장 중 라벨에도 진행 숫자를 싣는다 — 버튼만 보고 있는 사람에게도 멈춤과 진행이 갈린다. */}
-            <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0 || dirtyUnitCount === 0}>
+            <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || scopeItemCount === 0 || dirtyUnitCount === 0 || pendingPairCount > 0}>
               {pending
                 ? (saveProgress ? <>저장 중… <span className="tabular-nums">{saveProgress.done}/{saveProgress.total}</span></> : '저장 중…')
                 : `${dirtyUnitCount}건 저장`}

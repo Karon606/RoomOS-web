@@ -556,7 +556,7 @@ need('아이템별 폼의 저장 버튼이 발끝에서 form= 으로 붙는다',
   '본문 끝에 두면 위치가 많은 품목에서 저장 버튼이 스크롤 밖이다(§27.1 저장 버튼 상시 노출)')
 need("'N곳 저장' 이 패치 조립부로 세고 0 이면 비활성이다",
   /const restockSaveCount = restockMode \? buildLocationPatches\(\)\.length : null/.test(itemForm) &&
-  /disabled=\{pending \|\| restockSaveCount === 0\}/.test(itemForm) &&
+  /disabled=\{pending \|\| restockSaveCount === 0 \|\| pendingLocCount > 0\}/.test(itemForm) &&
   /\$\{restockSaveCount\}곳 저장/.test(itemForm),
   '화면이 따로 세면 버튼의 숫자와 실제 저장 칸 수가 갈린다')
 // 키보드가 선 동안(html[data-kbd-open] .kbd-collapse) — 2단계 검수 1. 작은 아이폰에서 보이는 띠가 150px 안팎인데 고정 창고

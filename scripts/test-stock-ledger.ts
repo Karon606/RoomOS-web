@@ -2,6 +2,7 @@
 // 운영자 신고(2026-08-19 쌀 40kg)를 그대로 박제한다. 8/18 로 잘못 넣은 무상 입고를 8/10 으로
 // 정정하면 그 사이 점검들의 저장 절대값이 그대로라 40kg 이 증발하던 사건이다.
 import { planStockShift, deltaAfterCheck, purchaseAfterCheck, overbookExcess, calcLocMove, type LedgerCheck, type LedgerDelta, type PurchaseDelta } from '../lib/stockLedger'
+import { applyLocationChecks } from '../lib/stockCheckMerge'
 
 let pass = 0
 const fails: string[] = []
@@ -352,22 +353,62 @@ eq('과소 신호: 많이 세면 초과분', overbookExcess(12, 10), 2)
 eq('과소 신호: 소수 초과분 2자리', overbookExcess(10.257, 10), 0.26)
 eq('과소 신호: 장부 0 에서 실측 존재', overbookExcess(3, 0), 3)
 
-// ── 점검 입력 해석 — 빈칸 규칙 (2026-09-01 운영자 확정) ─────────────────
+// ── 점검 입력 해석, 빈칸 규칙 (2026-10-19 운영자 승인 C안, 신고 1daf641c) ─────────────
 //
-// "현재 잔량 자리에 아무런 숫자를 입력하지 않으면 자동으로 0". 자리표시자가 0 이라 말하는데
-// 계산만 직전 잔량을 쓰면, 다 쓴 위치(실제 0)에서 옮김량이 직전만큼 줄어 허브가 덜 깎인다.
-const mv = (b: string, a: string) => calcLocMove(b, a)
-eq('점검 입력: 전 비우고 후만 넣으면 전은 0 — 옮김량 = 후 전체', mv('', '10').restocked, 10)
-eq('점검 입력: 직전 잔량이 0 이어도 같은 답(4층 주방 사례)', mv('', '10').restocked, 10)
-eq('점검 입력: 전·후 다 넣으면 차이', mv('4', '10').restocked, 6)
-eq('점검 입력: 전만 넣으면 옮김 없음', mv('3', '').restocked, 0)
-eq('점검 입력: 후 < 전이면 0 클램프(허브 환입 금지)', mv('10', '4').restocked, 0)
-eq('점검 입력: 후 < 0기준이어도 환입 없음', mv('', '0').restocked, 0)
-// 안 센 위치는 두 칸 다 빈칸 — 이 함수가 0 을 만들지 않아야 entered=false 보존이 성립한다.
-eq('점검 입력: 둘 다 빈칸이면 값 없음(carryOver 보존)', mv('', '').beforeN, null)
-eq('점검 입력: 둘 다 빈칸이면 후도 없음', mv('', '').afterN, null)
-eq('점검 입력: 둘 다 빈칸이면 옮김도 0', mv('', '').restocked, 0)
-eq('점검 입력: 명시한 0 은 값이다(0 저장 사건 재발 방지)', mv('0', '').beforeN, 0)
+// 규칙이 06-14 '빈칸 = 저장값' 에서 09-01 '빈칸 = 0' 으로 뒤집혔고, 10-16 쌀 신고는 다시 저장값을 기대했다.
+// 두 규칙의 답이 갈리는 행(저장값 > 0, 채운 후 > 0, 채우기 전 빈칸)만 미결로 두고 화면이 묻는다.
+// 답이 같은 행(저장값 0·없음, 채운 후 0)은 묻지 않는다. 직접 친 0 은 값이다.
+const mv = (b: string, a: string, saved: number | null | undefined) => calcLocMove(b, a, saved)
+// 쌀 10-16 실제 값. 5층 주방 저장값 2.5kg, 채우기 전 빈칸, 채운 후 10kg. 창고(4층 415호) 60kg, 4층 주방 5kg.
+eq('쌀 10-16: 저장값 2.5·빈칸·10 은 미결', mv('', '10', 2.5).pending, true)
+eq('쌀 10-16: 미결이면 옮김 0(창고 요약·발끝 합계에 안 섬)', mv('', '10', 2.5).restocked, 0)
+eq('쌀 10-16: 미결이면 저장할 잔량이 없다', mv('', '10', 2.5).finalN, null)
+eq('쌀 10-16: 미결이어도 채운 후 값은 그대로 읽는다', mv('', '10', 2.5).afterN, 10)
+eq('쌀 10-16: 2.5kg 에서 채움을 고르면 +7.5', mv('2.5', '10', 2.5).restocked, 7.5)
+eq('쌀 10-16: 2.5kg 에서 채움을 고르면 보통 행', mv('2.5', '10', 2.5).pending, false)
+eq('쌀 10-16: 0 에서 채움을 고르면 +10', mv('0', '10', 2.5).restocked, 10)
+eq('쌀 10-16: 0 에서 채움을 고르면 잔량 10', mv('0', '10', 2.5).finalN, 10)
+{
+  // 고른 값이 서버 접기(applyLocationChecks)까지 가면 창고 60 에서 7.5 만 빠지고 합계 67.5(신고자가 기대한 값).
+  const HUB = 'hub', K4 = 'k4', K5 = 'k5'
+  const base = [{ locationId: HUB, qty: 60 }, { locationId: K4, qty: 5 }, { locationId: K5, qty: 2.5 }]
+  const fold = (before: string) => {
+    const m = mv(before, '10', 2.5)
+    const r = applyLocationChecks(base, [{ checkedLocationId: K5, afterQty: m.finalN ?? 0, restockedQty: m.restocked, hubLocationId: HUB }])
+    return r.ok ? { hub: r.out.find(o => o.storageLocationId === HUB)?.qty, total: r.out.reduce((s, o) => s + o.qty, 0) } : null
+  }
+  eq('쌀 10-16 접기: 2.5kg 에서 채움이면 창고 52.5', fold('2.5')?.hub, 52.5)
+  eq('쌀 10-16 접기: 2.5kg 에서 채움이면 합계 67.5', fold('2.5')?.total, 67.5)
+  eq('쌀 10-16 접기: 0 에서 채움이면 창고 50', fold('0')?.hub, 50)
+  eq('쌀 10-16 접기: 0 에서 채움이면 합계 65', fold('0')?.total, 65)
+}
+// 묻지 않는 행. 두 규칙의 답이 같다.
+eq('저장값 0: 빈칸·10 은 묻지 않는다', mv('', '10', 0).pending, false)
+eq('저장값 0: 빈 전은 0 이라 옮김 = 후 전체', mv('', '10', 0).restocked, 10)
+eq('저장값 없음(null): 묻지 않고 옮김 = 후 전체', mv('', '10', null).restocked, 10)
+eq('저장값 없음(undefined, 처음 쓰는 위치): 묻지 않는다', mv('', '10', undefined).pending, false)
+eq('저장값 부동소수 찌꺼기(1e-9)는 0 으로 본다', mv('', '10', 1e-9).pending, false)
+eq('채운 후 0: 저장값이 있어도 답이 같아 묻지 않는다', mv('', '0', 2.5).pending, false)
+eq('채운 후 0: 옮김 0', mv('', '0', 2.5).restocked, 0)
+eq('채운 후 0: 잔량 0', mv('', '0', 2.5).finalN, 0)
+// 직접 친 0 은 값이다. 빈칸과 다르다(0 저장 사건 재발 방지).
+eq('직접 친 0: 채우기 전 0 이면 묻지 않는다', mv('0', '10', 2.5).pending, false)
+eq('직접 친 0: 채우기 전만 0 이면 값 0', mv('0', '', 2.5).beforeN, 0)
+eq('직접 친 0: 채우기 전만 0 이면 잔량 0', mv('0', '', 2.5).finalN, 0)
+// 두 칸 다 빈칸은 안 센 위치다. 이 함수가 값을 만들지 않아야 entered=false 의 이월이 성립한다.
+eq('둘 다 빈칸: 묻지 않는다', mv('', '', 2.5).pending, false)
+eq('둘 다 빈칸: 전 없음', mv('', '', 2.5).beforeN, null)
+eq('둘 다 빈칸: 후 없음', mv('', '', 2.5).afterN, null)
+eq('둘 다 빈칸: 잔량 없음(이월)', mv('', '', 2.5).finalN, null)
+eq('둘 다 빈칸: 옮김 0', mv('', '', 2.5).restocked, 0)
+// 종전 규칙 그대로인 행. 전·후 다 넣은 행, 전만 넣은 행, 후 < 전.
+eq('전·후 다 넣으면 차이', mv('4', '10', 2.5).restocked, 6)
+eq('전만 넣으면 옮김 없음', mv('3', '', 2.5).restocked, 0)
+eq('전만 넣으면 잔량 = 전', mv('3', '', 2.5).finalN, 3)
+eq('후 < 전이면 0 클램프(허브 환입 금지)', mv('10', '4', 2.5).restocked, 0)
+eq('후 < 전이면 잔량 = 후', mv('10', '4', 2.5).finalN, 4)
+// 채운 후가 저장값보다 작아도 답이 갈린다(저장값에서면 옮김 0, 0 에서면 옮김 = 후). 묻는다.
+eq('채운 후 < 저장값: 묻는다', mv('', '2', 2.5).pending, true)
 
 console.log(`\n재고 원장 리플레이 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
