@@ -111,6 +111,19 @@ if (!/steady=\{!!row\.steady\}/.test(src)) {
     // 알약이 막대 이름 열을 덮는다(웹디자이너 패스, 288·256 × 125% 이름 겹침 비율 1.15).
     violations.push(`${SRC}: '오늘로' 닻이 모바일에서 오류신고 버튼 위로 쌓이지 않는다(bottom-[3.375rem] · pr-0, md 는 옆). 좁은 폭에서 막대 이름을 덮는다.`)
   }
+  // 닻이 트랙 맨 위에 걸린 동안은 숨긴다. 그때 알약은 오류신고 버튼 세로줄에 서서 그 밑에 깔린다(재확인 면적 최대 80%).
+  // 판정은 닻·트랙 상자의 자기 위치(버튼 좌표 금지, 버튼은 끌어 옮긴다)이고, 세로 스크롤에도 다시 칠해야 한다.
+  {
+    const paint = (src.match(/const paintToday = useCallback\(\(\) => \{[\s\S]*?\n {2}\}, \[todayX\]\)/) ?? [''])[0]
+    const pinned = /const anchor = btn\.parentElement/.test(paint) && /anchor\?\.parentElement/.test(paint)
+      && /anchor\.getBoundingClientRect\(\)\.top - box\.getBoundingClientRect\(\)\.top < 1/.test(paint)
+      && /btn\.style\.visibility = pinnedTop \? 'hidden' : ''/.test(paint)
+    if (!pinned) violations.push(`${SRC}: paintToday 가 닻이 트랙 맨 위에 걸린 상태를 숨기지 않는다(닻·트랙 상자 자기 위치 판정, visibility). 모바일에서 알약이 오류신고 버튼 밑에 깔리고 누르면 오류신고가 열린다.`)
+    if (/aria-label\^?=?"오류|errorReport|오류·개선/.test(paint)) violations.push(`${SRC}: paintToday 가 오류신고 버튼 좌표를 본다. 버튼은 끌어 옮길 수 있어 기준이 못 된다.`)
+    if (!/document\.addEventListener\('scroll', onAny, \{ capture: true, passive: true \}\)/.test(src) || !/raf = null; paintToday\(\)/.test(src)) {
+      violations.push(`${SRC}: 세로 스크롤(document 캡처)에서 paintToday 를 다시 칠하지 않는다. 걸림은 main 세로 스크롤이 바꾼다.`)
+    }
+  }
   if (!/gridArea: '1 \/ 1', overscrollBehaviorX/.test(src)) {
     violations.push(`${SRC}: 트랙 스크롤러가 닻과 같은 grid 칸(1 / 1)에 서지 않는다.`)
   }

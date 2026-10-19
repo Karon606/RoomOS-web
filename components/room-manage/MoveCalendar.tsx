@@ -289,12 +289,40 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
     //
     // 오늘이 창 밖이면 트랙이 아예 없을 수도 있다(변동 없는 창은 카드 대신 빈 상태가 선다).
     // 그때가 바로 돌아올 길이 가장 필요한 자리라 스크롤러 존재와 무관하게 세운다.
-    if (todayX == null) { btn.style.display = ''; return }
     const el = scrollRef.current
-    if (!el) return
-    const view = Math.max(0, el.clientWidth - ROOM_COL)
-    btn.style.display = todayX < el.scrollLeft || todayX > el.scrollLeft + view ? '' : 'none'
+    if (todayX != null) {
+      if (!el) return
+      const view = Math.max(0, el.clientWidth - ROOM_COL)
+      btn.style.display = todayX < el.scrollLeft || todayX > el.scrollLeft + view ? '' : 'none'
+    } else {
+      btn.style.display = ''
+    }
+    if (btn.style.display === 'none') return
+    // 닻이 트랙 맨 위에 걸려 있는 동안은 숨긴다(visibility, 자리는 남긴다). 그때 닻은 sticky 자리까지 못
+    // 올라가 트랙 머리에 붙잡혀 있어, 알약이 하단 내비 쪽 오류신고 버튼 세로줄에 서서 그 버튼 밑에
+    // 깔린다(재확인 실측 면적 최대 80%, 누르면 오류신고가 열림). 판정은 닻과 트랙 상자의 자기 위치로 한다.
+    // 오류신고 버튼은 끌어 옮길 수 있어 그 좌표는 기준이 못 된다. display 가 아니라 visibility 인 이유는
+    // 닻 높이가 그대로여야 걸림 판정이 알약을 숨긴 뒤에도 같은 답을 내기 때문이다(아니면 깜빡인다).
+    const anchor = btn.parentElement
+    const box = anchor?.parentElement
+    const pinnedTop = !!anchor && !!box && anchor.getBoundingClientRect().top - box.getBoundingClientRect().top < 1
+    btn.style.visibility = pinnedTop ? 'hidden' : ''
   }, [todayX])
+
+  // 세로 스크롤·크기 변화에도 다시 칠한다. 걸림은 셸 main 의 세로 스크롤이 바꾸는데, 이 컴포넌트는 main 을
+  // 모른다. 스크롤 이벤트는 거품이 안 일지만 document 의 캡처 단계에는 닿으므로 거기서 받고 프레임당 한 번만
+  // 칠한다(수동 리스너, 스크롤·터치 동작은 안 건드린다. 두 축 스크롤러 금지와 무관).
+  useEffect(() => {
+    let raf: number | null = null
+    const onAny = () => { if (raf == null) raf = requestAnimationFrame(() => { raf = null; paintToday() }) }
+    document.addEventListener('scroll', onAny, { capture: true, passive: true })
+    window.addEventListener('resize', onAny)
+    return () => {
+      document.removeEventListener('scroll', onAny, { capture: true })
+      window.removeEventListener('resize', onAny)
+      if (raf != null) cancelAnimationFrame(raf)
+    }
+  }, [paintToday])
 
   // 착지 — 오늘을 뷰포트 왼쪽 1/4 에 둔다. 보고 있는 달이 오늘의 달이 아니면(딥링크·점프)
   // 그 달 1일을 호실 열 바로 오른쪽에 세운다. 애니메이션 없이 즉시 — 첫 페인트가 흐르면 위치를 착각한다.
