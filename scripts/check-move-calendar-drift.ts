@@ -25,14 +25,20 @@
 //     그 상태는 캘린더 대상이 아닌 것이 설계다.
 //   C 계약 출처 복귀 — 거주 막대의 id 가 실재하는 구간 id 이고 그 구간의 방·시작과 맞는가.
 //     막대가 다시 계약에서 나오기 시작하면(id 가 계약 id 가 된다) 이 축이 곧바로 발화한다.
+//   D '전체' 축 = 모든 호실(2026-10-19). 화면과 **같은 오케스트레이션**(loadMoveRangeInputs)으로 기본 창과
+//     과거 창 하나를 만들어 맞댄다. D1 행 = 방 집합(제외 방 빼고, 변동으로 선 제외 방은 남는다), 방마다 한 번.
+//     D2 무변동 행에 창 안 경계 막대 0. D3 달별 건수 = 월 경로(홈 '이달 입퇴실 N건'과 같은 조립).
+//     D4 '입퇴실' 축과 변동 행이 방 목록 없는 결과와 같고, context 를 종전 SQL 로 다시 읽은 결과와도
+//     바이트 단위로 같다(범위 경로는 context 를 메모리에서 고른다, 그 조건이 갈리면 여기서 운다).
+//     D5 무변동 빈 행(공실로 칠한 방)에 창과 겹치는 실제 구간이 없다(과거 창 퇴실 완료 미조회를 잡는다).
 //
 // 실행: npx tsx --env-file=.env.local scripts/check-move-calendar-drift.ts
 import { readFileSync } from 'node:fs'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { kstYmdStr } from '@/lib/kstDate'
-import { buildMoveRange } from '@/lib/moveCalendar'
-import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases } from '@/lib/moveCalendarData'
+import { buildMoveCalendar, buildMoveRange, filterMoveRows, monthLastDay, shiftMonth } from '@/lib/moveCalendar'
+import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases, loadMoveRangeInputs } from '@/lib/moveCalendarData'
 import { parseRoomSchedule } from '@/lib/roomSchedule'
 
 /** 오늘의 이사한 계약 수. 2026-08-20 실측 1건(김태란 506호에서 508호로),
@@ -66,6 +72,21 @@ function blockAfter(src: string, marker: string, open = '{', close = '}'): strin
   for (let i = start; i < src.length; i++) {
     if (src[i] === open) depth++
     else if (src[i] === close) { depth--; if (depth === 0) return src.slice(start, i + 1) }
+  }
+  return ''
+}
+
+/**
+ * 함수 본문. 이름 뒤 매개변수 괄호를 짝 맞춰 건너뛴 다음의 첫 중괄호 블록이다.
+ * blockAfter 를 그대로 쓰면 매개변수 타입의 중괄호(input: { ... })를 본문으로 잡는다.
+ */
+function fnBody(src: string, marker: string): string {
+  const at = src.indexOf(marker)
+  if (at < 0) return ''
+  let depth = 0
+  for (let i = at + marker.length - 1; i < src.length; i++) {
+    if (src[i] === '(') depth++
+    else if (src[i] === ')') { depth--; if (depth === 0) return blockAfter(src.slice(i + 1), '') }
   }
   return ''
 }
@@ -165,6 +186,59 @@ const mentionsWork = (block: string): string[] =>
       const leaks = ['events', 'covered', 'firstChangeDay', 'overlapDays'].filter(id => new RegExp(`\\b${id}\\b`).test(workBlock))
       if (leaks.length > 0) violations.push(`[소스] 작업 조립이 거주 쪽 배열을 건드린다(${leaks.join(',')})`)
     }
+  }
+}
+
+// ── 소스 축 6 ── '전체' 축 무변동 행(2026-10-19)의 모양. DB 를 안 보고 조립·조회·액션의 자리를 본다.
+//
+//   무엇이 깨지면 무엇이 되는가. 무변동 행이 사건을 내면 홈 '이달 입퇴실 N건'과 탭 접미 N 이 서른 몇
+//   건씩 부푼다. '입퇴실' 축이 표지를 안 보면 관통 막대가 있어 술어로는 안 빠지고 입퇴실 없는 방이
+//   그대로 남는다. 점유 계약 조회에 날짜 조건이 들어가면 창을 관통하는 거주와 창 밖 예약(꼬리)이 빠진다.
+//   액션이 창 계산을 다시 적으면 이 감지망과 화면이 다른 길을 지난다.
+{
+  const asm = stripComments(readFileSync('lib/moveCalendar.ts', 'utf8'))
+  const pushLines = asm.split('\n').filter(l => l.includes('events.push('))
+  if (pushLines.length === 0 || pushLines.some(l => !/if \(!g\.steady && (startsInRange|endsInRange)\) events\.push\(/.test(l))) {
+    violations.push('[소스] events.push 가 무변동 표지(!g.steady)로 막히지 않는다. 무변동 행이 사건을 내 홈 이달 입퇴실 건수가 부푼다')
+  }
+  const filterFn = fnBody(asm, 'export function filterMoveRows(')
+  const movesBranch = filterFn.slice(filterFn.indexOf("if (axis === 'works')"))
+  if (!/\.filter\(r => !r\.steady && moveRowSurvives\(/.test(movesBranch)) {
+    violations.push("[소스] '입퇴실' 축이 무변동 표지로 빼지 않는다. 관통 거주 막대가 있는 방이 입퇴실 축에 남는다")
+  }
+  if (!/rooms: \[\], cover: \[\]/.test(fnBody(asm, 'export function buildMoveCalendar('))) {
+    violations.push('[소스] 월 창(buildMoveCalendar)이 방 목록을 받는다. 홈 이달 입퇴실 경로는 무변동 행을 몰라야 한다')
+  }
+
+  const data = stripComments(readFileSync('lib/moveCalendarData.ts', 'utf8'))
+  // 점유 계약(OCCUPYING) 조회 전부. where 안에 날짜 칸이 있으면 위반이다.
+  let at = 0
+  let occupyingReads = 0
+  for (;;) {
+    const i = data.indexOf('status: { in: OCCUPYING_STATUSES }', at)
+    if (i < 0) break
+    at = i + 1
+    occupyingReads++
+    const callAt = data.lastIndexOf('findMany(', i)
+    const call = blockAfter(data.slice(callAt), 'findMany(', '(', ')')
+    const where = call.slice(0, call.indexOf('select:'))
+    if (/moveInDate|expectedMoveOut|moveOutDate|startDate|endDate/.test(where)) {
+      violations.push('[소스] 점유 계약 조회에 날짜 조건이 들어갔다. 창을 관통하는 거주와 창 밖 예약(꼬리)이 빠진다')
+    }
+  }
+  if (occupyingReads < 2) violations.push(`[소스] 점유 계약 조회를 ${occupyingReads}곳만 찾았다(월 경로 context · 범위 경로 점유 전부, 2곳이어야 한다)`)
+  const loader = fnBody(data, 'export async function loadMoveRangeInputs(')
+  if (!loader) violations.push('[소스] loadMoveRangeInputs 를 못 찾았다')
+  else {
+    if (!/checkedOutInMonthWhere\(/.test(loader)) violations.push('[소스] 범위 조회가 창과 겹치는 퇴실 완료 계약을 안 읽는다. 과거 창에서 그때 살던 방이 빈 방으로 칠해진다')
+    if (!/cover: toLeases\(\[\.\.\.occupying, \.\.\.checkedOut\]\)/.test(loader)) violations.push('[소스] 무변동 막대 재료(cover)가 점유 계약 전부와 퇴실 완료를 함께 싣지 않는다')
+    if (!/pickContext\(occupying,/.test(loader)) violations.push('[소스] 범위 경로 context 가 점유 계약 전부에서 고르지 않는다(축 D4 의 전제)')
+  }
+
+  const act = stripComments(readFileSync('app/(app)/room-manage/actions.ts', 'utf8'))
+  const actFn = fnBody(act, 'export async function getMoveCalendarRange(')
+  if (!/loadMoveRange\(prisma, propertyId,/.test(actFn) || /moveRangeWindow\(|fetchMoveWorks\(|buildMoveRange\(/.test(actFn)) {
+    violations.push('[소스] getMoveCalendarRange 가 lib 오케스트레이션(loadMoveRange)을 안 지나거나 창 계산을 다시 적는다. 감지망과 화면이 다른 길을 지난다')
   }
 }
 
@@ -299,6 +373,78 @@ async function main() {
     }
   }
 
+  // ── 축 D ── '전체' 축 = 모든 호실(2026-10-19). 화면과 같은 오케스트레이션으로 기본 창과 과거 창 하나.
+  //    과거 창은 일곱 달 전 달로 점프한 창이다. 퇴실 완료 계약이 창을 관통하는 자리가 거기서 생긴다.
+  const steadyDrift: string[] = []
+  let steadyRowCount = 0
+  let windowCount = 0
+  const J = (x: unknown) => JSON.stringify(x)
+  for (const p of properties) {
+    for (const focusMonth of [today.slice(0, 7), shiftMonth(today.slice(0, 7), -7)]) {
+      windowCount++
+      const inputs = await loadMoveRangeInputs(prisma as never, p.id, { today, focusMonth })
+      const full = buildMoveRange(inputs)
+      const bare = buildMoveRange({ ...inputs, rooms: [], cover: [] })
+      const tag = `${p.name} ${inputs.from}~${inputs.to}`
+      steadyRowCount += full.rows.filter(r => r.steady).length
+
+      // D1 행 = 방 집합. 집계 제외 방은 빼되, 그 창에 입퇴실이 있어 변동 행으로 선 제외 방은 남는다.
+      const ids = full.rows.map(r => r.roomId)
+      if (new Set(ids).size !== ids.length) steadyDrift.push(`${tag} 한 방이 두 번 섰다`)
+      const want = new Set([...inputs.rooms.filter(r => !r.vacancyExcluded).map(r => r.id), ...bare.rows.map(r => r.roomId)])
+      const missing = [...want].filter(id => !ids.includes(id))
+      const extra = ids.filter(id => !want.has(id))
+      if (missing.length > 0 || extra.length > 0) steadyDrift.push(`${tag} '전체' 행이 방 집합과 다르다(빠진 방 ${missing.length} · 남는 행 ${extra.length})`)
+
+      // D2 무변동 행에 창 안 경계 막대 없음.
+      for (const r of full.rows.filter(x => x.steady)) {
+        for (const b of r.bars) {
+          if (b.startsInRange || b.endsInRange) steadyDrift.push(`${tag} ${r.roomNo}호 무변동 행에 창 안 경계 막대가 있다(${b.tenantName} ${b.stayFrom ?? '?'}~${b.stayTo ?? '?'})`)
+        }
+      }
+
+      // D3 달별 건수 = 월 경로(홈 '이달 입퇴실 N건'이 지나는 조회·조립 그대로).
+      for (const m of full.months) {
+        const month = await fetchMoveLeases(prisma as never, p.id, `${m.month}-01`, monthLastDay(m.month))
+        const home = buildMoveCalendar({ month: m.month, today, changed: month.changed, context: month.context })
+        if (home.eventCount !== m.eventCount) steadyDrift.push(`${tag} ${m.month} 건수 ${m.eventCount} 이 월 경로 ${home.eventCount} 과 다르다`)
+      }
+
+      // D4 방 목록 유무 무관 + 메모리 context = 종전 SQL context.
+      if (J(full.rows.filter(r => !r.steady)) !== J(bare.rows)) steadyDrift.push(`${tag} 변동 행이 방 목록 유무에 따라 달라진다`)
+      if (J(filterMoveRows(full.rows, 'moves')) !== J(filterMoveRows(bare.rows, 'moves'))) steadyDrift.push(`${tag} '입퇴실' 축이 방 목록 유무에 따라 달라진다`)
+      if (J([full.months, full.focusEventCount, full.upcoming, full.beyond]) !== J([bare.months, bare.focusEventCount, bare.upcoming, bare.beyond])) {
+        steadyDrift.push(`${tag} 사건 수·다가오는 입퇴실·beyond 가 방 목록 유무에 따라 달라진다`)
+      }
+      const sql = await fetchMoveLeases(prisma as never, p.id, inputs.from, inputs.to, (inputs.works ?? []).map(w => w.roomId))
+      const legacy = buildMoveRange({ ...inputs, changed: sql.changed, context: sql.context, rooms: [], cover: [] })
+      if (J([legacy.rows, legacy.months, legacy.upcoming]) !== J([bare.rows, bare.months, bare.upcoming])) {
+        steadyDrift.push(`${tag} 메모리로 고른 context 가 종전 SQL context 와 다른 화면을 낸다`)
+      }
+
+      // D5 공실로 칠한 무변동 행에 창과 겹치는 실제 구간이 없다. 끝이 열린 구간은 계약의 퇴실일이 끝이다
+      //    (조립 slicesOf 와 같은 선). 열린 채 퇴실 완료인 구간은 데이터 사고라 축 B·room-stay 감지망 몫이다.
+      const vacant = full.rows.filter(r => r.steady && r.bars.length === 0)
+      if (vacant.length > 0) {
+        const real = await prisma.roomStay.findMany({
+          where: { propertyId: p.id, roomId: { in: vacant.map(r => r.roomId) }, leaseTerm: { status: { in: [...MOVE_LEASE_STATUSES] } } },
+          select: {
+            startDate: true, endDate: true, room: { select: { roomNo: true } },
+            leaseTerm: { select: { status: true, moveOutDate: true, expectedMoveOut: true, tenant: { select: { name: true } } } },
+          },
+        })
+        for (const s of real) {
+          const sf = dbYmd(s.startDate)
+          const st = dbYmd(s.endDate) ?? dbYmd(s.leaseTerm?.moveOutDate ?? null) ?? dbYmd(s.leaseTerm?.expectedMoveOut ?? null)
+          const openResident = st == null && (s.leaseTerm?.status === 'ACTIVE' || s.leaseTerm?.status === 'CHECKOUT_PENDING')
+          if ((sf == null || sf <= inputs.to) && ((st != null && st >= inputs.from) || openResident)) {
+            steadyDrift.push(`${tag} ${s.room.roomNo}호를 공실로 칠했는데 ${s.leaseTerm?.tenant?.name ?? '?'}님 구간(${sf ?? '시작 미상'}~${st ?? '열림'})이 창과 겹친다`)
+          }
+        }
+      }
+    }
+  }
+
   console.log(`\n[이사한 계약] ${moved.length}건 (기준선 ${BASELINE_MOVED_LEASES})`)
   for (const m of moved) console.log(`  - ${m}`)
   if (moved.length > BASELINE_MOVED_LEASES) {
@@ -311,10 +457,12 @@ async function main() {
   }
   report('공실 오칠', vacantMispaint)
   report('막대 출처 이탈', sourceDrift)
+  report("'전체' 축 무변동 행", steadyDrift)
   violations.push(...vacantMispaint.map(v => `[공실 오칠] ${v}`))
   violations.push(...sourceDrift.map(v => `[막대 출처] ${v}`))
+  violations.push(...steadyDrift.map(v => `[전체 축] ${v}`))
 
-  console.log(`\n영업장 ${properties.length}곳 · 행 ${rowCount} · 막대 ${barCount} 검사`)
+  console.log(`\n영업장 ${properties.length}곳 · 행 ${rowCount} · 막대 ${barCount} 검사 · '전체' 축 창 ${windowCount}개 · 무변동 행 ${steadyRowCount}`)
   await prisma.$disconnect()
 
   if (violations.length > 0) {

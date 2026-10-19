@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, excludedRoomsNote, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, steadyHeading, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -861,6 +861,204 @@ function work(p: Partial<MoveWorkInput> & { roomNo: string; date: string }): Mov
   eq('술어 · 막대도 작업도 없으면 행이 아니다', moveRowSurvives({ bars: [], works: [] }), false)
   eq('술어 · 작업만 있어도 행이다', moveRowSurvives({ bars: [], works: [1] }), true)
   eq('술어 · 막대만 있어도 행이다', moveRowSurvives({ bars: [1], works: [] }), true)
+}
+
+// ══ '전체' 축 = 모든 호실(2026-10-19 운영자 승인 "추천대로") ══════════════
+//
+// 이 절이 못 박는 것은 넷이다. ① 무변동 행(steady)은 사건을 안 낸다. 방 목록을 주든 안 주든
+// events·달별 건수·접미 N·다가오는 입퇴실·beyond·변동 행이 바이트 단위로 같다. ② '전체' 행은
+// 집계 제외 방을 뺀 방 집합과 같고 방마다 한 번이다. ③ 무변동 행에는 창 안 경계 막대가 없다.
+// ④ 정렬은 변동 덩어리 다음 무변동, 각자 호실번호 자연 정렬이다.
+// 위쪽 월 창 회귀(관통 거주 행 0 · 거주 중 작업 행 0 · 창고 행 0)는 그대로 참이다. 월 창은 방 목록을 모른다.
+
+const SF = '2026-09-01', ST = '2026-12-31', SD = '2026-10-19'
+const roomOf = (roomNo: string, vacancyExcluded = false): MoveRangeRoom => ({ id: `room-${roomNo}`, roomNo, vacancyExcluded })
+type SteadyIn = { changed?: MoveCalendarLease[]; context?: MoveCalendarLease[]; cover?: MoveCalendarLease[]; rooms: MoveRangeRoom[]; works?: MoveWorkInput[]; from?: string; to?: string; today?: string }
+const withRooms = (p: SteadyIn) => buildMoveRange({
+  from: p.from ?? SF, to: p.to ?? ST, today: p.today ?? SD, focusMonth: (p.from ?? SF).slice(0, 7),
+  changed: p.changed ?? [], context: p.context ?? p.changed ?? [], rooms: p.rooms, cover: p.cover ?? [],
+  works: p.works, beyond: null, canExtendPast: false,
+})
+const withoutRooms = (p: SteadyIn) => withRooms({ ...p, rooms: [], cover: [] })
+const axisIds = (rows: { roomNo: string; steady?: true }[]) => rows.map(r => `${r.roomNo}${r.steady ? '*' : ''}`)
+const J = (x: unknown) => JSON.stringify(x)
+
+/** 불변 단언. 방 목록 유무와 무관해야 하는 것 전부. */
+function invariants(name: string, p: SteadyIn) {
+  const a = withRooms(p), b = withoutRooms(p)
+  eq(`${name} · 불변 · 달별 건수`, a.months, b.months)
+  eq(`${name} · 불변 · 접미 N`, a.focusEventCount, b.focusEventCount)
+  eq(`${name} · 불변 · 다가오는 입퇴실`, a.upcoming, b.upcoming)
+  eq(`${name} · 불변 · beyond`, a.beyond, b.beyond)
+  eq(`${name} · 불변 · 변동 행 바이트 동일`, J(a.rows.filter(r => !r.steady)), J(b.rows))
+  eq(`${name} · 불변 · 입퇴실 축 바이트 동일`, J(filterMoveRows(a.rows, 'moves')), J(filterMoveRows(b.rows, 'moves')))
+  const ids = a.rows.map(r => r.roomId)
+  eq(`${name} · 방마다 한 번`, new Set(ids).size, ids.length)
+  const want = new Set([...p.rooms.filter(r => !r.vacancyExcluded).map(r => r.id), ...b.rows.map(r => r.roomId)])
+  eq(`${name} · '전체' 행 = 방 집합(제외 방 빼고, 변동으로 선 제외 방은 남는다)`, [...ids].sort(), [...want].sort())
+  eq(`${name} · 무변동 행에 창 안 경계 막대 없음`, a.rows.filter(r => r.steady).flatMap(r => r.bars.filter(x => x.startsInRange || x.endsInRange)).length, 0)
+  const firstSteady = a.rows.findIndex(r => r.steady)
+  eq(`${name} · 변동 덩어리 다음 무변동`, firstSteady < 0 || a.rows.slice(firstSteady).every(r => r.steady), true)
+  return a
+}
+
+// ── 상황 열하나 × 축 셋 ── 표의 각 칸은 '전체' / '입퇴실' / '작업' 의 행(별표는 무변동 행).
+{
+  // S1 변동만. 10/5 입실.
+  const s1 = lease({ id: 's1', roomNo: '401', status: 'ACTIVE', moveInDate: '2026-10-05', tenantName: '변동' })
+  // S2 변동+작업. 10/10 퇴실, 10/12 퇴실 청소(공실 작업).
+  const s2 = lease({ id: 's2', roomNo: '402', status: 'CHECKED_OUT', moveInDate: '2026-03-01', moveOutDate: '2026-10-10', tenantName: '나감' })
+  // S4 관통 거주. 1월부터 퇴실일 없음. 조회는 cover(점유 계약 전부)로만 싣는다.
+  const s4 = lease({ id: 's4', roomNo: '404', status: 'ACTIVE', moveInDate: '2026-01-01', tenantName: '관통' })
+  // S5 관통 + 거주 중 작업. 작업이 있는 방이라 조회가 context 에도 싣는다(fetchMoveLeases workRoomIds).
+  const s5 = lease({ id: 's5', roomNo: '405', status: 'ACTIVE', moveInDate: '2025-11-01', tenantName: '사는중' })
+  // S10 이사일이 창 밖. 7/10 에 506호에서 508호로. 창(9~12월)에는 변동이 없다.
+  const s10 = lease({ id: 's10', roomNo: '508', status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '이사함', stays: stays('s10', [['506', '2026-01-05', '2026-07-10'], ['508', '2026-07-10', null]]) })
+  // S11 날짜 없는 거주. 입주일·구간 날짜가 모두 없다(운영 407·412·512·518호 모양). 작업도 하나.
+  const s11 = lease({ id: 's11', roomNo: '412', status: 'ACTIVE', tenantName: '미상', stays: [{ id: 's11-s1', roomId: 'room-412', roomNo: '412', startDate: null, endDate: null }] })
+  const works = [
+    work({ id: 'w2', roomNo: '402', date: '2026-10-12', done: true }),
+    work({ id: 'w3', roomNo: '403', date: '2026-10-15' }),
+    work({ id: 'w5', roomNo: '405', date: '2026-10-20', kindLabel: '방충망 교체' }),
+    work({ id: 'w8', roomNo: '601', date: '2026-10-21', vacancyExcluded: true }),
+    work({ id: 'w11', roomNo: '412', date: '2026-10-22', kindLabel: '도배' }),
+  ]
+  const rooms = ['401', '402', '403', '404', '405', '406', '506', '508', '412'].map(n => roomOf(n))
+    .concat([roomOf('415', true), roomOf('601', true)])
+  const p: SteadyIn = {
+    changed: [s1, s2],
+    context: [s1, s2, s5, s11],          // 작업이 있는 방(405·412)의 점유 계약. 종전 조회 규칙 그대로
+    cover: [s1, s4, s5, s10, s11],       // 점유 계약 전부(퇴실 완료 S2 는 창 안 경계라 changed 가 진다)
+    rooms, works,
+  }
+  const a = invariants('표', p)
+  const all = filterMoveRows(a.rows, 'all'), mv = filterMoveRows(a.rows, 'moves'), wk = filterMoveRows(a.rows, 'works')
+  eq('표 · 전체', axisIds(all), ['401', '402', '403', '404*', '405*', '406*', '412*', '506*', '508*'])
+  eq('표 · 입퇴실', axisIds(mv), ['401', '402'])
+  eq('표 · 작업(무변동 행이 섞이면 호실번호 하나로)', axisIds(wk), ['402', '403', '405*', '412*'])
+
+  const row = (no: string) => a.rows.find(r => r.roomNo === no)!
+  // S1·S2·S3 는 종전 규칙 그대로 변동 행이다.
+  eq('S1 변동만 · 변동 행', [row('401').steady ?? false, row('401').bars.length], [false, 1])
+  eq('S2 변동+작업 · 작업이 얹힌다', row('402').works.map(w => w.id), ['w2'])
+  eq('S3 공실 작업만 · 변동 행(막대 없음)', [row('403').steady ?? false, row('403').bars.length, row('403').works.length], [false, 0, 1])
+  // S4 관통 거주. 창 전체 막대, 양 끝 직각, 사건 0.
+  const b4 = row('404').bars[0]
+  eq('S4 관통 · 무변동 행', row('404').steady, true)
+  eq('S4 관통 · 창 전체 막대·양 끝 잘림', [b4.startDay, b4.endDay, b4.clippedStart, b4.clippedEnd], [1, a.days, true, true])
+  eq('S4 관통 · lib 라벨은 그대로(화면이 이름만 세운다)', b4.label, '퇴실일 미정')
+  eq('S4 관통 · 공백 없음', row('404').gaps, [])
+  // S5 거주 중 작업. 무변동 행에 얹히고, 그날 사람이 있었다는 관찰이 선다. 요약에도 든다.
+  eq('S5 거주 중 작업 · 무변동 행에 얹힌다', [row('405').steady, row('405').works.map(w => [w.id, w.occupied])], [true, [['w5', true]]])
+  eq('S5 거주 중 작업 · 요약(다가오는 작업)에 든다', a.upcomingWorks.map(w => w.id).includes('w5'), true)
+  eq('S5 거주 중 작업 · 방 목록이 없으면 종전대로 행이 없다', withoutRooms(p).rows.some(r => r.roomNo === '405'), false)
+  // S6 완전 공실. 막대도 작업도 없지만 '전체'에는 선다. 공백은 창 전체(화면은 날수 없이 '공실'만).
+  eq('S6 완전 공실 · 무변동 빈 행', [row('406').steady, row('406').bars.length, row('406').works.length], [true, 0, 0])
+  eq('S6 완전 공실 · 공백은 창 전체', row('406').gaps, [{ startDay: 1, endDay: a.days, days: a.days }])
+  // S7·S8 집계 제외. 행이 없고 카드 끝 한 줄이 수를 말한다. 작업이 있어도 행을 안 만든다(기존 규칙).
+  eq('S7 집계 제외 · 행 없음', a.rows.some(r => r.roomNo === '415'), false)
+  eq('S8 집계 제외+작업 · 행 없음', a.rows.some(r => r.roomNo === '601'), false)
+  eq('S8 집계 제외+작업 · 요약에도 없다', a.upcomingWorks.some(w => w.id === 'w8'), false)
+  eq('S7·S8 · 제외 수', a.excludedRoomCount, 2)
+  eq('S7·S8 · 안내 문구', excludedRoomsNote(a.excludedRoomCount), '창고·사무실 2실은 일정에 넣지 않습니다.')
+  // S10 이사일이 창 밖. 옛 방은 빈 무변동 행, 새 방은 관통 막대. 이사 문구는 창 안에 안 선다.
+  eq('S10 이사 창 밖 · 옛 방은 빈 무변동 행', [row('506').steady, row('506').bars.length], [true, 0])
+  eq('S10 이사 창 밖 · 새 방은 관통 막대(시작 조각 없음)', [row('508').steady, row('508').bars[0].startLabel, row('508').bars[0].clippedStart], [true, null, true])
+  // S11 날짜 없는 거주('시작일 미상 거주'). 창 처음부터 막대이고, 그 방 작업은 거주 중 작업이다.
+  const b11 = row('412').bars[0]
+  eq('S11 날짜 없는 거주 · 창 전체 거주 막대', [b11.kind, b11.startDay, b11.endDay, b11.clippedStart, b11.clippedEnd], ['resident', 1, a.days, true, true])
+  eq('S11 날짜 없는 거주 · 작업은 거주 중(행을 새로 세우지 않는다)', [row('412').steady, row('412').works.map(w => w.occupied)], [true, [true]])
+  eq('S11 날짜 없는 거주 · 방 목록 없이는 행이 없다(공실 작업으로 안 읽는다)', withoutRooms(p).rows.some(r => r.roomNo === '412'), false)
+  // 소제목. '전체'에서만, 첫 무변동 행 앞에.
+  eq('소제목 · 전체', steadyHeading(all, 'all'), { index: 3, label: '변동 없음 6실' })
+  eq('소제목 · 입퇴실 축에는 없다', steadyHeading(mv, 'moves'), null)
+  eq('소제목 · 작업 축에는 없다', steadyHeading(wk, 'works'), null)
+  // 사건. 무변동 행은 한 건도 안 낸다(S1 입실 1 + S2 퇴실 1).
+  eq('사건 · 변동분만', a.months.reduce((n, m) => n + m.eventCount, 0), 2)
+}
+
+// ── S9 과거 창 퇴실 완료 관통 ── 그때 살던 방을 빈 방으로 칠하지 않는다(cover 가 지는 몫).
+{
+  const gone = lease({ id: 's9', roomNo: '519', status: 'CHECKED_OUT', moveInDate: '2024-12-20', moveOutDate: '2026-07-20', tenantName: '그때살던' })
+  const p: SteadyIn = { from: '2026-03-01', to: '2026-06-30', today: SD, rooms: [roomOf('519')], cover: [gone] }
+  const a = invariants('S9', p)
+  const r = a.rows[0]
+  eq('S9 과거 창 퇴실 완료 관통 · 무변동 거주 막대', [r.steady, r.bars.length, r.bars[0].kind, r.gaps], [true, 1, 'resident', []])
+  eq('S9 · cover 를 안 실으면 빈 방으로 칠해진다(대조)', withRooms({ ...p, cover: [] }).rows[0].bars.length, 0)
+}
+
+// ── S12 계획만 창 안 ── 변동 계약 조회에 안 걸리는 계약의 '아직 안 옮긴 이사'(임시 호실에 들어간 지
+// 한 달 넘은 뒤의 이사 예정). 종전에도 사건이 아니었고 행도 없었다. 무변동 행에는 막대가 서되 사건은
+// 여전히 0 이다(표지가 사건을 막는다). 이 모양이 운영 데이터에 나타나면 감지망 축 D2 가 운다.
+{
+  const mv = lease({
+    id: 'p12', roomNo: '404', status: 'ACTIVE', moveInDate: '2026-07-20', tenantName: '임시호실',
+    stays: [
+      { id: 'p12-s1', roomId: 'room-402', roomNo: '402', startDate: '2026-07-20', endDate: '2026-09-10' },
+      { id: 'plan-p12-1', roomId: 'room-404', roomNo: '404', startDate: '2026-09-10', endDate: null },
+    ],
+  })
+  const p: SteadyIn = { rooms: [roomOf('402'), roomOf('404')], cover: [mv] }
+  const a = withRooms(p), b = withoutRooms(p)
+  eq('S12 계획만 창 안 · 두 방 다 무변동 행', axisIds(a.rows), ['402*', '404*'])
+  eq('S12 계획만 창 안 · 막대는 그대로 선다(이사 문구)', a.rows.map(r => r.bars[0].endLabel ?? r.bars[0].startLabel), ['9/10 404호로 이사', '9/10 402호에서 이사 예정'])
+  eq('S12 계획만 창 안 · 사건은 0(방 목록 유무 같음)', [a.months, a.upcoming], [b.months, b.upcoming])
+  eq('S12 계획만 창 안 · 사건 0', a.months.reduce((n, m) => n + m.eventCount, 0), 0)
+}
+
+// ── 날짜 없는 조각의 점유 판정 ── 거주 중만 덮고, 예약은 여전히 아무 날도 안 덮는다(월 창도 같은 판정).
+{
+  const dateless = lease({ id: 'dl', roomNo: '518', status: 'ACTIVE', tenantName: '미상', stays: [{ id: 'dl-s1', roomId: 'room-518', roomNo: '518', startDate: null, endDate: null }] })
+  const occ = buildMoveCalendar({ month: MONTH, today: TODAY, changed: [], context: [dateless], works: [work({ roomNo: '518', date: '2026-08-12' })] })
+  eq('날짜 없는 거주 · 그 방 작업은 거주 중이라 행을 안 만든다(월 창)', occ.rows.length, 0)
+  const rsv = lease({ id: 'dr', roomNo: '517', status: 'RESERVED', tenantName: '날짜없는예약' })
+  const vac = buildMoveCalendar({ month: MONTH, today: TODAY, changed: [], context: [rsv], works: [work({ roomNo: '517', date: '2026-08-12' })] })
+  eq('날짜 없는 예약 · 그 방 작업은 여전히 공실 작업(월 창)', vac.rows.map(r => r.roomNo), ['517'])
+  const gone = lease({ id: 'dg', roomNo: '516', status: 'CHECKED_OUT', tenantName: '끝없는퇴실', stays: [{ id: 'dg-s1', roomId: 'room-516', roomNo: '516', startDate: null, endDate: null }] })
+  const vac2 = buildMoveCalendar({ month: MONTH, today: TODAY, changed: [], context: [gone], works: [work({ roomNo: '516', date: '2026-08-12' })] })
+  eq('끝 없는 퇴실 기록 · 아무 날도 안 덮는다(month-population)', vac2.rows.map(r => r.roomNo), ['516'])
+}
+
+// ── 집계 제외 방이 변동으로 선 경우 ── 변동 행은 그대로 남고, 안내 수에서는 빠진다.
+{
+  const rsv = lease({ id: 'xr', roomNo: '601', status: 'RESERVED', moveInDate: '2026-10-25', tenantName: '창고예약' })
+  const a = invariants('제외+변동', { changed: [rsv], rooms: [roomOf('601', true), roomOf('602', true), roomOf('401')] })
+  eq('제외+변동 · 변동 행은 남는다', axisIds(a.rows), ['601', '401*'])
+  eq('제외+변동 · 안내 수는 행 없는 제외 방만', a.excludedRoomCount, 1)
+}
+
+// ── 정렬 ── 변동 덩어리 다음 무변동, 각자 호실번호 자연 정렬(형제 화면 정본 localeCompare numeric).
+{
+  const mk = (no: string, d: string) => lease({ roomNo: no, status: 'ACTIVE', moveInDate: d })
+  const a = invariants('정렬', {
+    changed: [mk('1001', '2026-10-02'), mk('999', '2026-10-03'), mk('A동-10', '2026-10-04'), mk('A동-9', '2026-10-05')],
+    rooms: ['1001', '999', 'A동-10', 'A동-9', '10', '9', 'B동-2', 'B동-11'].map(n => roomOf(n)),
+  })
+  eq('정렬 · 자연 정렬', axisIds(a.rows), ['999', '1001', 'A동-9', 'A동-10', '9*', '10*', 'B동-2*', 'B동-11*'])
+}
+
+// ── '작업' 축 순서 ── 소제목이 없는 축이라 무변동 행이 섞이면 호실번호 하나로 다시 세운다.
+// 변동 행(409, 공실 작업)보다 번호가 낮은 무변동 행(405, 거주 중 작업)이 앞에 선다.
+{
+  const live = lease({ id: 'wo-l', roomNo: '405', status: 'ACTIVE', moveInDate: '2026-01-01', tenantName: '사는중' })
+  const a = withRooms({
+    context: [live], cover: [live], rooms: [roomOf('405'), roomOf('409')],
+    works: [work({ id: 'wo-1', roomNo: '409', date: '2026-10-21' }), work({ id: 'wo-2', roomNo: '405', date: '2026-10-22' })],
+  })
+  eq("'작업' 축 · 전체 순서는 변동 덩어리 먼저", axisIds(a.rows), ['409', '405*'])
+  eq("'작업' 축 · 호실번호 하나로", axisIds(filterMoveRows(a.rows, 'works')), ['405*', '409'])
+}
+
+// ── 문구 정본 ──
+eq('안내 · 0 이면 줄이 없다', excludedRoomsNote(0), null)
+eq('안내 · 운영 수(6)', excludedRoomsNote(6), '창고·사무실 6실은 일정에 넣지 않습니다.')
+eq('소제목 · 무변동 행이 없으면 없다', steadyHeading([], 'all'), null)
+
+// ── 빈 방 목록 ── 회귀·감지망이 맞대려고 쓰는 '무변동 행 없음'. 종전 결과와 같다.
+{
+  const l = lease({ id: 'er', roomNo: '409', status: 'ACTIVE', moveInDate: '2026-10-05' })
+  const a = withRooms({ changed: [l], rooms: [] })
+  eq('빈 방 목록 · 무변동 행 없음', [a.rows.length, a.excludedRoomCount], [1, 0])
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)
