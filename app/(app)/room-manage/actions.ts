@@ -129,6 +129,7 @@ export async function getMoveCalendarMonth(month: string): Promise<MoveCalendarM
  *
  * 조회와 창 계산은 lib/moveCalendarData loadMoveRange 가 한다(2026-10-19). 'use server' 파일 안에
  * 두면 감지망이 같은 길을 못 지나 사본을 들게 된다. 순차 왕복은 둘이다(창과 무관한 것 / 창에 묶인 것).
+ * '전체' 축은 모든 호실이 행이다. 방 목록은 그 함수가 읽어 작업 조회와 무변동 행이 함께 쓴다.
  */
 export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendarRange> {
   const { propertyId } = await getPropertyId()

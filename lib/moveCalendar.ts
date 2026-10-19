@@ -6,6 +6,7 @@
 // 범위는 둘이다.
 //   · buildMoveCalendar — 한 달 창. 홈 '이달 입퇴실 N건'이 딛는 수를 낸다.
 //   · buildMoveRange    — 여러 달을 잇는 연속 창(2026-08-17 운영자 오더). 호실 관리 입퇴실 탭이 쓴다.
+//     '전체' 축은 모든 호실이 행이다(2026-10-19). 변동 행 뒤에 무변동 행(steady)을 붙이되 사건은 안 낸다.
 // 기하는 한 벌(assemble)이다. 좌표를 '범위 첫날부터 며칠'로 세므로 한 달 창에서는 그 값이
 // 곧 '그 달 며칠'이라, 달을 넘겨도 같은 코드가 같은 그림을 그린다.
 //
@@ -23,7 +24,7 @@
 // 다른 오늘을 보는 함정을 애초에 열지 않는다).
 
 import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, occupancyOverlaps, type OverlapAckSpan } from './roomAssignment'
-import { OCCUPYING_STATUSES, checkoutDateLabel, leaseStayEnd, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
+import { CURRENT_OCCUPANCY_STATUSES, OCCUPYING_STATUSES, checkoutDateLabel, leaseStayEnd, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
 import { fmtRoomNo } from './roomNo'
 import { fmtMD } from './fmtDate'
 
@@ -66,6 +67,18 @@ export type MoveCalendarLease = {
    * 예약(RESERVED)은 구간을 만들지 않는 것이 설계라 비어 있고, 그때만 계약이 구간을 대신한다.
    */
   stays: MoveStaySpan[]
+}
+
+/**
+ * 범위 조립이 읽는 방 한 칸. '전체' 축이 모든 호실을 행으로 세우는 재료(2026-10-19 운영자 승인).
+ *
+ * vacancyExcluded 는 lib/vacancy isVacancyExcluded 와 같은 사실이다. 창고·사무실은 세를 놓는 방이
+ * 아니라 비어 있는 것이 정상이고, 무변동 행으로 세우면 그 행이 곧 거짓 입주 가능 신호가 된다.
+ */
+export type MoveRangeRoom = {
+  id: string
+  roomNo: string
+  vacancyExcluded: boolean
 }
 
 export type MoveBarKind = 'resident' | 'reserved'
@@ -268,6 +281,16 @@ export type MoveCalendarRow = {
   tail: string | null
   tailLeaseId: string | null
   tailTenantId: string | null
+  /**
+   * 무변동 행. 그 범위에 입주·이사·퇴실이 없어 종전 규칙이면 행이 안 섰을 방(범위 '전체' 축 전용).
+   *
+   * 칸이 아예 없는 것이 변동 행이다(false 를 싣지 않는다). 그래야 변동 행이 이 기능 전과 글자
+   * 하나까지 같고, 월 창(홈 '이달 입퇴실 N건')의 행은 이 칸을 영영 모른다.
+   * 무변동 행은 사건(events)을 안 낸다. 접미 N·달별 건수는 행 수가 아니라 사건 수다.
+   * 구획(소제목·'입퇴실' 축)은 이 표지로만 가른다. firstChangeDay 로 가르면 안 된다. 그 값은
+   * 막대에서만 나오고, 작업이 섞이지 않게 감지망(check-move-calendar-drift 소스 축 5)이 지킨다.
+   */
+  steady?: true
 }
 
 /** 날짜순 한 줄 — 간트와 같은 조립에서 나온 다른 편성이다. */
@@ -350,6 +373,12 @@ export type MoveCalendarRange = {
   beyond: { count: number; firstDate: string } | null
   /** 범위 왼쪽 밖에 더 과거 변동이 있는가. '이전 달 더 보기'가 이 값으로 선다. */
   canExtendPast: boolean
+  /**
+   * 행으로 안 세운 공실 집계 제외 방 수(창고·사무실). 카드 끝 한 줄이 이 수를 말한다
+   * (excludedRoomsNote). 제외 방이라도 그 범위에 입퇴실이 있어 변동 행으로 선 방은 세지 않는다.
+   * 그 방은 일정에 들어가 있다.
+   */
+  excludedRoomCount: number
 }
 
 /** 고정 요약 줄이 담는 날수. 운영자의 하루 질문("다음에 뭐가 있나")이 닿는 거리다. */
@@ -627,6 +656,8 @@ function toSpans(days: Set<number>, upTo: number): MoveDaySpan[] {
  * @param acks    유효한 확인된 겹침. 조회가 넘긴다 — 조립은 DB 를 못 보고, 확인 여부는 사실이지 계산이 아니다.
  * @param works   그 범위의 작업(청소). acks 와 **같은 문법**으로 조회가 넘긴다(순수 함수 규약).
  *                bars·events·firstChangeDay 어디에도 안 들어간다 — 위 MoveWork 머리 주석.
+ * @param rooms   무변동 행을 세울 방 목록. 월 창은 빈 배열이다. 변동 행·사건은 이 목록과 무관하다.
+ * @param cover   무변동 행 막대의 재료(점유 계약 전부 + 창과 겹치는 퇴실 완료). 변동 행은 안 본다.
  */
 function assemble(input: {
   from: string
@@ -637,6 +668,8 @@ function assemble(input: {
   order: 'firstChange' | 'roomNo'
   acks: MoveOverlapAck[]
   works: MoveWorkInput[]
+  rooms: MoveRangeRoom[]
+  cover: MoveCalendarLease[]
 }): { days: number; todayDay: number | null; rows: MoveCalendarRow[]; events: MoveEvent[]; conflicts: MoveConflict[] } {
   const { today, order } = input
   const first = input.from
@@ -662,18 +695,25 @@ function assemble(input: {
   // ── 그날 그 방에 사람이 있었는가 ──
   //
   // 조각 전부를 본다(변동분 + 점유 맥락). 조회가 **작업이 있는 방의 점유 계약도 함께** 실어
-  // 주므로, 행이 아닌 방도 여기서 판정할 수 있다. 날짜가 하나도 없는 조각은 아무 날도 안 덮는
-  // 것으로 친다 — 열린 양끝으로 읽으면 입주일 없는 예약 하나가 그 방을 영원히 점유로 만든다.
+  // 주므로, 행이 아닌 방도 여기서 판정할 수 있다.
+  //
+  // 날짜가 하나도 없는 조각은 계약 상태로 가른다(2026-10-19).
+  //   · 예약·퇴실 완료는 아무 날도 안 덮는다. 열린 양끝으로 읽으면 입주일 없는 예약 하나가 그 방을
+  //     영원히 점유로 만들고, 끝이 없는 퇴실 기록이 모든 날에 선다(month-population 과 같은 선).
+  //   · 거주 중(ACTIVE·CHECKOUT_PENDING)은 '시작일 미상 거주'다. 막대는 이미 창 처음부터 끝까지
+  //     서는데(아래 bar 의 clipped 양끝) 여기서만 '안 덮는다'고 읽으면, 사람이 사는 방의 작업이
+  //     공실 작업이 되어 행을 세우고 소리로도 "사람 없음"이 된다(운영 407·412·512·518호).
   const allSlices = [...changedSlices, ...contextSlices]
-  const coversDay = (sl: StaySlice, d: string): boolean => {
+  const coversDay = (x: { lease: MoveCalendarLease; slice: StaySlice }, d: string): boolean => {
+    const sl = x.slice
     const reversed = !!sl.from && !!sl.to && sl.from > sl.to
     const f = reversed ? sl.to : sl.from
     const t = reversed ? sl.from : sl.to
-    if (!f && !t) return false
+    if (!f && !t) return (CURRENT_OCCUPANCY_STATUSES as string[]).includes(x.lease.status)
     return (!f || f <= d) && (!t || t >= d)
   }
   const occupiedOn = (roomId: string, d: string): boolean =>
-    allSlices.some(x => x.slice.roomId === roomId && coversDay(x.slice, d))
+    allSlices.some(x => x.slice.roomId === roomId && coversDay(x, d))
 
   // ── 작업이 행을 만드는 자리 ──
   //
@@ -694,7 +734,7 @@ function assemble(input: {
   for (const x of changedSlices) if (roomIds.has(x.slice.roomId)) byId.set(x.slice.id, x)
   for (const x of contextSlices) if (roomIds.has(x.slice.roomId)) byId.set(x.slice.id, x)
 
-  const perRoom = new Map<string, { roomId: string; roomNo: string; slices: { lease: MoveCalendarLease; slice: StaySlice }[] }>()
+  const perRoom = new Map<string, { roomId: string; roomNo: string; slices: { lease: MoveCalendarLease; slice: StaySlice }[]; steady?: true }>()
   for (const x of byId.values()) {
     const g = perRoom.get(x.slice.roomId)
     if (g) g.slices.push(x)
@@ -705,6 +745,32 @@ function assemble(input: {
   for (const w of worksInRange) {
     if (!roomIds.has(w.roomId) || perRoom.has(w.roomId)) continue
     perRoom.set(w.roomId, { roomId: w.roomId, roomNo: w.roomNo, slices: [] })
+  }
+
+  // ── 무변동 행 ── 범위 '전체' 축 전용(2026-10-19 운영자 승인 "추천대로").
+  //
+  // 위까지가 종전 규칙 그대로의 변동 방이다. 여기서 perRoom 에 없는 방 중 공실 집계 제외 방을 뺀
+  // 나머지를 무변동 행으로 붙인다. 변동 방은 위에서 전부 행이 된다(입퇴실 조각이나 공실 작업이
+  // 있어야 roomIds 에 들므로). 그래서 perRoom 에 없다는 것이 곧 '종전 규칙이면 행이 없는 방'이다.
+  //
+  // 막대의 재료는 cover(점유 계약 전부 + 창과 겹치는 퇴실 완료)와 changed 다. changed 를 함께 보는
+  // 이유는 조회에는 걸렸지만 변동이 아닌 계약(퇴실 예정일만 창 안이고 실제 퇴실은 창 밖) 때문이다.
+  // 같은 조각이 양쪽에 있으면 한 번만. 사건은 아래 루프가 이 표지로 막는다.
+  if (input.rooms.length > 0) {
+    const steadyIds = new Set(input.rooms.filter(r => !r.vacancyExcluded && !perRoom.has(r.id)).map(r => r.id))
+    const pool = new Map<string, Map<string, { lease: MoveCalendarLease; slice: StaySlice }>>()
+    for (const l of [...input.changed, ...input.cover]) {
+      for (const s of slicesOf(l)) {
+        if (!steadyIds.has(s.roomId)) continue
+        const m = pool.get(s.roomId) ?? new Map()
+        if (!m.has(s.id)) m.set(s.id, { lease: l, slice: s })
+        pool.set(s.roomId, m)
+      }
+    }
+    for (const r of input.rooms) {
+      if (!steadyIds.has(r.id)) continue
+      perRoom.set(r.id, { roomId: r.id, roomNo: r.roomNo, slices: [...(pool.get(r.id)?.values() ?? [])], steady: true })
+    }
   }
 
   const rows: MoveCalendarRow[] = []
@@ -762,8 +828,10 @@ function assemble(input: {
       bars.push(bar)
       barLease.set(bar.id, l)
 
-      if (startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', moved: !!sl.movedFromRoomNo, otherRoomNo: sl.movedFromRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
-      if (endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', moved: !!sl.movedToRoomNo, otherRoomNo: sl.movedToRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      // 무변동 행은 사건을 안 낸다. 홈 '이달 입퇴실 N건'·탭 접미 N·달별 건수는 사건 수라
+      // 행이 서른 몇 줄 늘어도 한 건도 바뀌면 안 된다.
+      if (!g.steady && startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', moved: !!sl.movedFromRoomNo, otherRoomNo: sl.movedFromRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      if (!g.steady && endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', moved: !!sl.movedToRoomNo, otherRoomNo: sl.movedToRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
 
       if (reversed) {
         bar.conflicted = true
@@ -778,8 +846,10 @@ function assemble(input: {
     // 막대도 작업도 없으면 행이 아니다. 작업만 있는 빈 방은 남긴다 — 그 방이 언제 다시
     // 쓸 수 있게 되는지가 이 행이 답하는 유일한 질문이다. 판정은 화면 축 필터와 같은
     // 술어(moveRowSurvives)다 — 두 자리가 각자 적으면 규칙이 바뀔 때 한쪽만 남는다.
+    // 무변동 행은 이 술어를 안 지난다. 계약도 작업도 없는 방(계속 공실)도 '전체'에는 선다.
+    // 거주 중 작업은 무변동 행에 그대로 얹힌다(운영자 결정 2026-10-19. 행을 새로 세우지는 않는다).
     const rowWorks = worksInRange.filter(w => w.roomId === g.roomId)
-    if (!moveRowSurvives({ bars, works: rowWorks })) continue
+    if (!g.steady && !moveRowSurvives({ bars, works: rowWorks })) continue
 
     // ── 충돌 ── 방을 잡고 있는 계약끼리만 본다. 퇴실 완료 계약은 방을 잡지 않으므로
     // (lib/roomAssignment roomAssignmentBlockReason 의 같은 선) 같은 날 인수인계는 사고가 아니다.
@@ -852,7 +922,8 @@ function assemble(input: {
         status: w.done ? 'done' as const : w.date < today ? 'overdue' as const : 'planned' as const,
         kindLabel: w.kindLabel,
         performerLabel: w.performerLabel,
-        occupied: occupiedOn(g.roomId, w.date),
+        // 무변동 행의 방은 changed·context 에 계약이 없을 수 있다. 그 행이 든 조각(cover)으로 본다.
+        occupied: g.steady ? g.slices.some(x => coversDay(x, w.date)) : occupiedOn(g.roomId, w.date),
         lane: 0,
       }))
       .sort((a, b) => a.day - b.day)
@@ -898,11 +969,18 @@ function assemble(input: {
       tail,
       tailLeaseId: nextUp?.id ?? null,
       tailTenantId: nextUp?.tenantId ?? null,
+      // 변동 행은 이 칸을 안 싣는다(false 도 아니다). MoveCalendarRow.steady 주석.
+      ...(g.steady ? { steady: true as const } : null),
     })
   }
 
+  // 연속 창에서는 변동 덩어리가 먼저, 무변동 행이 그 뒤다. 구획은 steady 표지가 가른다(운영자 결정
+  // 2026-10-19: 변동 방은 지금처럼 호실번호순, 그 아래 계속 거주하는 방도 호실번호순).
   const byRoomNo = (a: MoveCalendarRow, b: MoveCalendarRow) => (a.roomNo < b.roomNo ? -1 : a.roomNo > b.roomNo ? 1 : 0)
-  rows.sort(order === 'roomNo' ? byRoomNo : (a, b) => a.firstChangeDay - b.firstChangeDay || byRoomNo(a, b))
+  const steadyLast = (a: MoveCalendarRow, b: MoveCalendarRow) => Number(!!a.steady) - Number(!!b.steady)
+  rows.sort(order === 'roomNo'
+    ? (a, b) => steadyLast(a, b) || byRoomNo(a, b)
+    : (a, b) => a.firstChangeDay - b.firstChangeDay || byRoomNo(a, b))
   // 날짜 오름차순, 같은 날은 퇴실 먼저(방이 비어야 다음 사람이 들어온다), 그다음 호실번호.
   events.sort((a, b) => a.day - b.day || (a.type === b.type ? 0 : a.type === 'out' ? -1 : 1) || (a.roomNo < b.roomNo ? -1 : a.roomNo > b.roomNo ? 1 : 0))
 
@@ -930,7 +1008,8 @@ export function buildMoveCalendar(input: {
 }): MoveCalendarMonth {
   const { month } = input
   const dim = daysInMonth(month)
-  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange', acks: input.acks ?? [], works: input.works ?? [] })
+  // 월 창은 방 목록을 받지 않는다. 홈 '이달 입퇴실 N건'은 변동 행의 사건 수라 무변동 행과 무관하다.
+  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange', acks: input.acks ?? [], works: input.works ?? [], rooms: [], cover: [] })
   return {
     month,
     daysInMonth: dim,
@@ -947,6 +1026,12 @@ export function buildMoveCalendar(input: {
  *
  * 범위의 경계(from·to)와 그 밖의 사실(beyond·canExtendPast)은 조회가 정한다. 이 함수는
  * 순수 함수라 스스로 DB 를 못 보고, 경계 계산을 여기 두면 조회가 두 번 필요해진다.
+ *
+ * 방 목록(rooms)과 무변동 막대 재료(cover)는 **필수**다(2026-10-19 '전체' 축 = 모든 호실).
+ * 옵션으로 두면 조회 한 곳이 빠뜨렸을 때 타입이 안 잡고, 그 순간 '전체'가 다시 일부 방만 보인다
+ * (lib/roomAssignment 가 plannedStays 를 필수로 둔 것과 같은 이유). 빈 배열은 '무변동 행 없음'을
+ * 뜻하는 명시적 선택이다. 회귀와 감지망이 두 결과를 맞대려고 쓴다.
+ * events·months[].eventCount·focusEventCount·upcoming·beyond·변동 행은 이 둘과 무관하다.
  */
 export function buildMoveRange(input: {
   from: string
@@ -955,13 +1040,20 @@ export function buildMoveRange(input: {
   focusMonth: string
   changed: MoveCalendarLease[]
   context: MoveCalendarLease[]
+  /** 그 영업장의 방 전부. 공실 집계 제외 방은 무변동 행이 되지 않는다(excludedRoomCount 로만 말한다). */
+  rooms: MoveRangeRoom[]
+  /**
+   * 무변동 행 막대의 재료. 점유 계약(OCCUPYING) 전부와 창과 겹치는 퇴실 완료 계약.
+   * 과거 창에서 퇴실 완료 계약을 안 실으면 그때 살던 방이 빈 방으로 칠해진다(month-population).
+   */
+  cover: MoveCalendarLease[]
   beyond: { count: number; firstDate: string } | null
   canExtendPast: boolean
   acks?: MoveOverlapAck[]
   works?: MoveWorkInput[]
 }): MoveCalendarRange {
   const { from, to, today, focusMonth } = input
-  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo', acks: input.acks ?? [], works: input.works ?? [] })
+  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo', acks: input.acks ?? [], works: input.works ?? [], rooms: input.rooms, cover: input.cover })
 
   const months: MoveRangeMonth[] = []
   for (let m = from.slice(0, 7); m <= to.slice(0, 7); m = shiftMonth(m, 1)) {
@@ -971,6 +1063,7 @@ export function buildMoveRange(input: {
   }
 
   const horizon = addDays(today, UPCOMING_DAYS)
+  const rowRoomIds = new Set(r.rows.map(row => row.roomId))
   return {
     from,
     to,
@@ -991,5 +1084,6 @@ export function buildMoveRange(input: {
     conflicts: r.conflicts,
     beyond: input.beyond,
     canExtendPast: input.canExtendPast,
+    excludedRoomCount: input.rooms.filter(x => x.vacancyExcluded && !rowRoomIds.has(x.id)).length,
   }
 }

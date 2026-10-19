@@ -9,7 +9,7 @@ import type { PrismaDb } from '@/lib/prisma'
 import { parseRoomSchedule, hasRoomSchedule } from './roomSchedule'
 import { displayName } from '@/lib/displayName'
 import { ymdToDbDate } from '@/lib/kstDate'
-import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
+import { OCCUPYING_STATUSES, checkedOutInMonthWhere } from '@/lib/leaseStatus'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { loadOverlapAcks } from '@/lib/overlapAck'
 import {
@@ -326,7 +326,7 @@ const cleaningKindLabel = (reason: CleaningReason): string => {
  *
  * 방은 받는다(fetchMoveRooms). 관계 include 로 달면 조회가 청소 행 수만큼 중첩되고, 여기 필요한
  * 것은 50행 남짓의 호실번호와 공실 집계 플래그뿐이라 통째로 한 번 읽는 편이 싸다. 같은 목록을
- * 범위 조회가 계획 구간 호실번호에도 쓰므로 여기서 다시 읽지 않는다(2026-10-19, 중복 조회 제거).
+ * 범위 조립(무변동 행)도 쓰므로 여기서 다시 읽지 않는다(2026-10-19, 중복 조회 제거).
  */
 export async function fetchMoveWorks(
   db: PrismaDb,
@@ -424,7 +424,7 @@ export async function fetchMoveWorks(
 // 같은 길을 지날 수 없어 사본을 들게 되고, 그 사본은 조회가 바뀔 때 옛 규칙에 남아 통과를 말한다.
 // 액션(getMoveCalendarRange)과 감지망(check-move-calendar-drift 축 D)이 이 함수를 그대로 부른다.
 
-/** 범위 조립이 읽는 방 한 줄. 작업 조회(fetchMoveWorks)와 계획 구간 호실번호가 같은 목록을 쓴다. */
+/** 범위 조립이 읽는 방 한 줄. 작업 조회(fetchMoveWorks)와 무변동 행이 같은 목록을 쓴다. */
 export type MoveRoomRow = { id: string; roomNo: string; nonResidentVacant: boolean }
 
 /** 그 영업장의 방 전부. 창과 무관하다. */
@@ -440,11 +440,15 @@ export function fetchMoveRooms(db: PrismaDb, propertyId: string): Promise<MoveRo
  *
  *   ① 창과 무관한 넷을 한꺼번에 읽는다. 변동 날짜 스캔(창의 끝과 '범위 밖 예정'을 정한다),
  *      확인된 겹침, 방 목록, 점유 계약 전부(날짜 조건 없음).
- *   ② 창이 정해진 뒤 둘을 한꺼번에 읽는다. 변동 계약, 작업.
+ *   ② 창이 정해진 뒤 셋을 한꺼번에 읽는다. 변동 계약, 작업, 창과 겹치는 퇴실 완료 계약.
  *
  * context 는 ①의 점유 계약에서 메모리로 고른다(pickContext). 종전 SQL 과 같은 집합이라 변동 행·사건은
- * 그대로다. 계획 구간의 호실번호도 ①의 방 목록에서 찾으므로 보통 왕복이 더 없다(다른 영업장 방을
- * 가리키는 계획처럼 목록에 없는 방만 따로 읽는다).
+ * 그대로이고, 감지망이 운영 데이터로 두 경로를 맞댄다. 계획 구간의 호실번호도 ①의 방 목록에서 찾으므로
+ * 보통 왕복이 더 없다(다른 영업장 방을 가리키는 계획처럼 목록에 없는 방만 따로 읽는다).
+ *
+ * 퇴실 완료 계약은 무변동 행 막대에만 쓴다(month-population 원칙: 과거 창의 사람은 그 창의 날짜가
+ * 정한다). 거름망은 정본 checkedOutInMonthWhere(체류 끝이 창 첫날 이후)에 입주일이 창 끝 이전인
+ * 조건을 더한 것이고, 조각이 정말 창과 겹치는지는 조립이 다시 본다.
  */
 export async function loadMoveRangeInputs(
   db: PrismaDb,
@@ -462,7 +466,8 @@ export async function loadMoveRangeInputs(
     }),
     loadOverlapAcks(propertyId, db),
     fetchMoveRooms(db, propertyId),
-    // 날짜 조건이 없는 것이 설계다. context 의 상위 집합이다(꼬리가 창 밖 예약을 여기서 찾는다).
+    // 날짜 조건이 없는 것이 설계다. context 의 상위 집합이고(꼬리가 창 밖 예약을 여기서 찾는다),
+    // 창 전체를 관통하는 거주는 날짜로 거를 수 없다.
     db.leaseTerm.findMany({
       where: { propertyId, status: { in: OCCUPYING_STATUSES } },
       select: MOVE_LEASE_SELECT_SCOPED,
@@ -481,15 +486,24 @@ export async function loadMoveRangeInputs(
   const { startMonth, endMonth } = moveRangeWindow({ todayMonth, focusMonth, lastChangeMonth: lastChange.slice(0, 7) })
   const from = `${startMonth}-01`
   const to = monthLastDay(endMonth)
+  const last = ymdToDbDate(to)
 
-  // ② 창이 정해진 뒤 둘.
-  const [changed, works] = await Promise.all([
+  // ② 창이 정해진 뒤 셋.
+  const [changed, works, checkedOut] = await Promise.all([
     fetchChangedRows(db, propertyId, from, to),
     fetchMoveWorks(db, propertyId, from, to, rooms),
+    db.leaseTerm.findMany({
+      where: {
+        propertyId,
+        ...checkedOutInMonthWhere(startMonth),
+        AND: [{ OR: [{ moveInDate: null }, { moveInDate: { lte: last } }] }],
+      },
+      select: MOVE_LEASE_SELECT,
+    }),
   ])
 
   const context = pickContext(occupying, propertyId, contextRoomIds(changed, works.map(w => w.roomId)))
-  const withPlan = withPlanOf(await planRoomNos(db, [...changed, ...occupying], rooms))
+  const withPlan = withPlanOf(await planRoomNos(db, [...changed, ...occupying, ...checkedOut], rooms))
   const toLeases = (rows: MoveLeaseRow[]) => rows.map(withPlan).map(toMoveLease)
 
   return {
@@ -499,6 +513,8 @@ export async function loadMoveRangeInputs(
     focusMonth,
     changed: toLeases(changed),
     context: toLeases(context),
+    rooms: rooms.map(r => ({ id: r.id, roomNo: r.roomNo, vacancyExcluded: isVacancyExcluded(r) })),
+    cover: toLeases([...occupying, ...checkedOut]),
     works,
     // 창이 과거로 미끄러지면 창의 끝이 오늘보다 이전일 수 있다. 그때 지난 변동을 '이후 예정'으로
     // 세면 지난 일이 앞으로의 일로 읽힌다(beyondWindow 의 today 가드).

@@ -219,9 +219,10 @@ async function main() {
     const to = marks.reduce((a, b) => (a > b ? a : b))
 
     const { changed, context } = await fetchMoveLeases(prisma, p.id, from, to)
+    // 축 B·C 는 변동 행만 본다(무변동 행은 축 D 가 화면과 같은 창으로 따로 본다).
     const range = buildMoveRange({
       from, to, today, focusMonth: today.slice(0, 7),
-      changed, context, beyond: null, canExtendPast: false,
+      changed, context, rooms: [], cover: [], beyond: null, canExtendPast: false,
     })
 
     // 마감된 구간만 — 열린 구간을 함께 보면 캘린더 대상이 아닌 상태(NON_RESIDENT 등)가 오탐이 된다.

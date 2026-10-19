@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -311,6 +311,8 @@ const range = (p: {
   today?: string
   focusMonth?: string
   works?: MoveWorkInput[]
+  rooms?: MoveRangeRoom[]
+  cover?: MoveCalendarLease[]
 }) => buildMoveRange({
   from: p.from,
   to: p.to,
@@ -318,6 +320,9 @@ const range = (p: {
   focusMonth: p.focusMonth ?? p.from.slice(0, 7),
   changed: p.changed,
   context: p.context ?? p.changed,
+  // 방 목록을 안 주면 무변동 행이 없다. 이 절 위쪽 케이스는 전부 종전 규칙(변동 행만)을 고정한다.
+  rooms: p.rooms ?? [],
+  cover: p.cover ?? [],
   beyond: null,
   canExtendPast: false,
   works: p.works,
@@ -427,7 +432,7 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   const out = buildMoveRange({
     from: '2026-08-01', to: '2026-09-30', today: TODAY, focusMonth: '2026-09',
     changed: [lease({ roomNo: '405', status: 'ACTIVE', moveInDate: '2026-09-03' })],
-    context: [], beyond: { count: 3, firstDate: '2026-11-02' }, canExtendPast: true,
+    context: [], rooms: [], cover: [], beyond: { count: 3, firstDate: '2026-11-02' }, canExtendPast: true,
   })
   eq('범위 밖 · 천장 너머', out.beyond, { count: 3, firstDate: '2026-11-02' })
   eq('범위 밖 · 과거 확장 가능', out.canExtendPast, true)
