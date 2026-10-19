@@ -240,9 +240,11 @@ need('소비처 두 곳이 같은 문구다',
   (itemForm.match(/저장된 채움 <strong/g) ?? []).length === 1 && (locPanel.match(/저장된 채움 <strong/g) ?? []).length === 1 &&
   !/저장된 옮김( <strong|\{)/.test(client) && !/· 지난 옮김/.test(client) && !/이 점검에 반영된 옮김/.test(client))
 // 아이템별 폼은 행 + 발끝 합계 줄 둘, 패널은 행 하나. 저장본(저장된 채움)과 한 줄에 같은 +N 이 두 번 뜨지 않게
-// 이번 채움은 행 머리에 선다.
+// 이번 채움은 행 머리에 선다. 발끝 합계 줄은 360px 미만에서 앞말 '이번'을 뗀다(2026-10-19, 한 줄 유지).
 need('이번 채움 축이 두 곳 다 갈렸다',
-  (itemForm.match(/>이번 채움 <strong/g) ?? []).length === 2 && (locPanel.match(/>이번 채움 <strong/g) ?? []).length === 1 &&
+  (itemForm.match(/>이번 채움 <strong/g) ?? []).length === 1 &&
+  (itemForm.match(/<span className="max-\[359px\]:hidden">이번 <\/span>채움 <strong/g) ?? []).length === 1 &&
+  (locPanel.match(/>이번 채움 <strong/g) ?? []).length === 1 &&
   !/>이번 (입력|옮김) <strong/.test(client) && !/>창고에서 <strong/.test(client))
 
 // ── ⑤ 이중 차감 물음 ───────────────────────────────────────────────

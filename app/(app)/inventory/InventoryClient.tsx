@@ -3926,12 +3926,14 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
               </div>
             )
           })}
-          {/* 합계 줄 — 면 없이 12px, 수치 600 tnum(2단계 발끝 합계 줄과 같은 문법, 종전 코랄 틴트 면·테라코타 수치 걷음). */}
-          <div className="flex items-baseline justify-between gap-3 text-xs text-[var(--warm-mid)]">
+          {/* 합계 줄 — 면 없이 12px, 수치 600 tnum(2단계 발끝 합계 줄과 같은 문법, 종전 코랄 틴트 면·테라코타 수치 걷음).
+              칸 안에서 꺾지 않는 것도 점검 폼 발끝 합계 줄과 같다(2026-10-19 실측, 320px 글자 125% 에서 '채움 합계 / +7.5kg' 으로
+              꺾였다). 360px 미만은 '합계' 를 떼고, 그래도 넘치면 둘째 칸이 통째로 다음 줄로 간다. */}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-[var(--warm-mid)]">
             {restockSum > 0
-              ? <span>채움 합계 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
-              : <span className="text-[var(--warm-muted)]">채움 없음</span>}
-            <span>잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
+              ? <span className="whitespace-nowrap">채움<span className="max-[359px]:hidden"> 합계</span> <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+              : <span className="whitespace-nowrap text-[var(--warm-muted)]">채움 없음</span>}
+            <span className="whitespace-nowrap">잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
       )}
@@ -4618,10 +4620,14 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
   // 합계 줄과 버튼 줄은 접지 않는다 — 저장 수단과 지금 적는 값의 결과는 적는 동안에도 보여야 한다(§27.1).
   const footer = (
     <div className="space-y-2">
+      {/* 합계 줄은 한 줄이다(2026-10-19 실측). 소수 값(+7.5kg · 67.5kg)이면 320px 글자 125% 와 확대 재현 폭 256·288 에서
+          두 칸이 저마다 '이번 채움 / +7.5kg' 으로 꺾여 발끝이 16px 자랐다. 적는 값이 길어지는 순간 자라니 본문이 그만큼 줄며
+          튄다. 360px 미만에서는 앞말('이번'·'점검 후')을 떼고, 칸 안에서는 꺾지 않는다(nowrap). 그래도 넘치는 극단에서만
+          둘째 칸이 통째로 다음 줄로 간다(flex-wrap, 칸 안 꺾임보다 읽힌다). 형제 선례는 발끝 버튼 FOOT_TOP_BTN 의 max-[359px]. */}
       {restockMode && (
-        <div className="flex items-baseline justify-between gap-3 text-xs text-[var(--warm-mid)]">
-          <span>이번 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
-          <span>점검 후 잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-[var(--warm-mid)]">
+          <span className="whitespace-nowrap"><span className="max-[359px]:hidden">이번 </span>채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+          <span className="whitespace-nowrap"><span className="max-[359px]:hidden">점검 후 </span>잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
         </div>
       )}
       {(draftPending || draftSavedAt) && (() => {
