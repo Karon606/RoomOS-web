@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import type { CleaningRow, CleaningStatus } from './cleaningConstants'
 import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/CleaningRowBody'
 import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
@@ -590,6 +590,10 @@ export default function RoomManageClient({
   const [cleaningOnly, setCleaningOnly] = useState(false)
   // 호실 / 작업 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
+  // 일정 탭의 '작업 탭에서 보기' 문. 식별자를 고정한다. 인라인 함수로 넘기면 이 컴포넌트가
+  // ?at= 이 바뀔 때마다(스크롤이 멎을 때마다) 다시 그려지며 새 함수가 되어 MoveCalendar 의 memo 가
+  // 깨지고, 트랙 수백 칸이 그 주기로 다시 그려진다(MoveCalendar 머리의 memo 주석).
+  const goWorksTab = useCallback(() => setViewTab('cleaning'), [])
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
   // 보고 있는 탭을 URL 에 남긴다 — 캘린더가 트랙 위치(?at=)를 적어 두는데 탭이 URL 에 없으면
   // 그 주소를 북마크·공유했을 때 캘린더가 아니라 호실 목록이 열린다. replaceState 라 히스토리가
@@ -1279,7 +1283,7 @@ export default function RoomManageClient({
       </div>
 
       {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
-      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} onGoWorks={() => setViewTab('cleaning')} />}
+      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} onGoWorks={goWorksTab} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
