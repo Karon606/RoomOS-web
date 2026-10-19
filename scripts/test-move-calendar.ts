@@ -1049,6 +1049,23 @@ function invariants(name: string, p: SteadyIn) {
   eq("'작업' 축 · 호실번호 하나로", axisIds(filterMoveRows(a.rows, 'works')), ['405*', '409'])
 }
 
+// ── 전부 무변동 ── 가를 덩어리가 없으면 소제목도 없다(먼 달 점프, 웹디자이너 패스).
+{
+  const live = lease({ id: 'all-s', roomNo: '401', status: 'ACTIVE', moveInDate: '2026-01-01' })
+  const a = withRooms({ cover: [live], rooms: [roomOf('401'), roomOf('402')] })
+  eq('전부 무변동 · 행은 다 무변동', axisIds(a.rows), ['401*', '402*'])
+  eq('전부 무변동 · 소제목 없음', steadyHeading(a.rows, 'all'), null)
+}
+
+// ── 기간 계약 무변동 행 ── 퇴실일이 창 밖에 잡힌 거주는 열린 막대가 아니다. 화면은 '1/31 퇴실'을
+// 남기고(이름만 세우는 것은 openEnded 막대뿐, 화면 그물 ②) lib 는 그 문구를 상태로 낸다.
+{
+  const term = lease({ id: 'term', roomNo: '410', status: 'ACTIVE', moveInDate: '2026-05-01', expectedMoveOut: '2027-01-31' })
+  const r = withRooms({ cover: [term], rooms: [roomOf('410')] }).rows[0]
+  eq('기간 계약 무변동 · 열린 막대 아님', [r.steady, r.bars[0].openEnded, r.bars[0].clippedEnd], [true, false, true])
+  eq('기간 계약 무변동 · 상태 문구는 창 밖 퇴실일', r.bars[0].stateLabel, '1/31 퇴실')
+}
+
 // ── 문구 정본 ──
 eq('안내 · 0 이면 줄이 없다', excludedRoomsNote(0), null)
 eq('안내 · 운영 수(6)', excludedRoomsNote(6), '창고·사무실 6실은 일정에 넣지 않습니다.')

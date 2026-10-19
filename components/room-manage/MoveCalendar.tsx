@@ -613,13 +613,12 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
 
               {rows.map((row, ri) => (
                 <Fragment key={row.roomId}>
+                  {/* 소제목은 변동 행 뒤에만 선다(steadyHeading 은 맨 위 자리를 안 낸다). */}
                   {heading?.index === ri && (
-                    <SteadyHeadingRow label={heading.label} cols={cols} todayDay={todayDay}
-                      monthStarts={monthStarts} first={ri === 0} />
+                    <SteadyHeadingRow label={heading.label} cols={cols} todayDay={todayDay} monthStarts={monthStarts} />
                   )}
-                  {/* 소제목이 맨 위에 서면(변동 행 0) 첫 행은 소제목과의 구분선을 그대로 든다. */}
                   <GanttRow row={row} days={days} cols={cols}
-                    todayDay={todayDay} monthStarts={monthStarts} first={ri === 0 && heading?.index !== 0}
+                    todayDay={todayDay} monthStarts={monthStarts} first={ri === 0}
                     onOpen={openLease} onOpenRoom={openRoom} />
                 </Fragment>
               ))}
@@ -640,11 +639,16 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
 
               sticky 의 기준선은 스크롤러의 안쪽 여백을 뺀 자리다(Blink·WebKit·Gecko 공통. 셸이 상단 여백을
               main 이 아니라 안쪽 래퍼에 둔 이유와 같은 성질, AppShell 주석). main 의 하단 여백이 곧 하단 내비
-              몫(모바일 4rem + safe area, md 1.5rem)이라 bottom 0 이면 이미 내비 위다. 거기서 오류신고 버튼
-              (right 16 · 48px · 바닥 --toast-offset-bottom)과 가운데 높이를 맞추는 만큼만 더 민다. 식은 알약
-              높이 44px 의 절반(22px)과 아래 여백(pb-2.5)을 뺀 값이다. 가로는 그 버튼 왼쪽으로 8px 비킨다
-              (오른쪽 여백 = 72px 에서 셸 본문 좌우 여백을 뺀 값, rem 이라 글자 크기를 따라 함께 커진다). */}
-          <div className="pointer-events-none sticky bottom-[calc(1.375rem-22px)] md:bottom-[calc(2px-0.625rem)] z-40 flex justify-end pb-2.5 pr-14 md:pr-12"
+              몫(모바일 4rem + safe area, md 1.5rem)이라 bottom 0 이면 이미 내비 위다. 오류신고 버튼(right 16 ·
+              48px · 바닥 --toast-offset-bottom)을 비키는 갈래가 둘이다.
+              · 모바일(md 미만)은 그 버튼 **위 8px 에 세로로 쌓고** 오른쪽 끝을 맞춘다(pr-0). 3.375rem = 버튼
+                윗변(4.5rem + 3rem) + 8px 에서 main 하단 여백 4rem 과 아래 여백 pb-2.5 를 뺀 값이다. 버튼 옆에
+                세우면 좁은 폭(288·256 × 125%)에서 알약이 막대 이름 열을 덮었다(웹디자이너 패스, 이름 겹침
+                비율 1.15 에서 0.09·0.20 으로).
+              · md 이상은 그 버튼 왼쪽 8px 에 가운데 높이를 맞춘다. 식은 알약 높이 44px 의 절반(22px)과 아래
+                여백을 뺀 값이고, 오른쪽 여백은 72px 에서 본문 좌우 여백(24px)을 뺀 값이다.
+              rem 이라 글자 크기를 따라 버튼과 함께 커진다. */}
+          <div className="pointer-events-none sticky bottom-[3.375rem] md:bottom-[calc(2px-0.625rem)] z-40 flex justify-end pb-2.5 pr-0 md:pr-12"
             style={{ gridArea: '1 / 1', alignSelf: 'end' }}>
             <button ref={todayBtnRef} type="button" onClick={goToday}
               className="pointer-events-auto min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
@@ -658,7 +662,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
               카드 머리(범례)와 같은 자리 문법이다(px-2 · 구분선 1px). 카드 **안**이라 바탕이 --cream 이고
               --ink-m 이 AA 를 넘는다(카드 밖 --canvas 위에서는 라이트 4.11:1 로 미달, 실측). */}
           {excludedNote && (
-            <p className="px-2 py-2 text-[0.65625rem]" style={{ color: 'var(--ink-m)', borderTop: '1px solid var(--warm-border)' }}>
+            <p className="break-keep px-2 py-2 text-[0.65625rem]" style={{ color: 'var(--ink-m)', borderTop: '1px solid var(--warm-border)' }}>
               {excludedNote}
             </p>
           )}
@@ -1179,17 +1183,16 @@ function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
  * 전체를 덮어 그 자리를 지나가는 세로선을 호실 칸처럼 가린다. 호실 버튼(.mc-room)을 쓰지 않는 이유는
  * 그 클래스가 행 hover 와 감지망(check-calendar-room-open 축 ③)의 대상이기 때문이다.
  */
-function SteadyHeadingRow({ label, cols, todayDay, monthStarts, first }: {
+function SteadyHeadingRow({ label, cols, todayDay, monthStarts }: {
   label: string
   cols: string
   todayDay: number | null
   monthStarts: number[]
-  first: boolean
 }) {
   return (
-    <div className="grid" style={{ gridTemplateColumns: cols, borderTop: first ? 'none' : '1px solid var(--warm-border)' }}>
+    <div className="grid" style={{ gridTemplateColumns: cols, borderTop: '1px solid var(--warm-border)' }}>
       <div className="min-w-0" style={{ gridColumn: '1 / -1', gridRow: '1 / 2' }}>
-        <span className="sticky left-0 z-20 inline-block whitespace-nowrap px-2 py-1.5 text-[0.65625rem] font-bold leading-none"
+        <span className="sticky left-0 z-20 inline-block whitespace-nowrap px-2 py-1.5 text-[0.65625rem] font-bold leading-none tnum"
           style={{ minWidth: ROOM_COL, background: 'var(--cream)', color: 'var(--ink-m)' }}>
           {label}
         </span>
@@ -1288,8 +1291,11 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
             덮어 sticky 열 아래로 막대가 비친다 — 그것이 이 칸의 존재 이유다. 크롬 실측으로는
             셋 다 픽셀 변화 0(박스 66×행높이·글자 위치 dx11/dy21 전후 동일)이라 값이 아니라
             보험이다. */}
-        {/* 긴 호실명('423호 오피스'처럼 66px 를 넘는 이름)은 말줄임 + title 이다. 형제 좁은 호실 칸
-            (수납 관리 sticky 칸·홈 방 현황 타일)과 같은 문법. 접근명은 aria-label 이 전체를 싣는다. */}
+        {/* 긴 호실명('423호 오피스'처럼 66px 를 넘는 이름)은 말줄이지 않고 줄을 접는다(44px 행 안에 두 줄).
+            말줄임은 112.5%·125% 글자에서 '1001호'가 '100…'으로 잘려 호실을 못 가린다(웹디자이너 패스).
+            어절로 먼저 접고(break-keep), 한 어절이 칸보다 길면 그 안에서 끊는다(overflow-wrap anywhere,
+            형제 환경설정·재고 캡션과 같은 짝). break-keep 만 두면 'A동-1001호'가 칸 밖 트랙 위로 넘친다(실측).
+            title 은 마우스 툴팁, 접근명은 aria-label 이 전체를 싣는다. */}
         <button type="button" onClick={() => onOpenRoom(row.roomId)}
           aria-label={`${fmtRoomNo(row.roomNo)} 상세 열기`} title={fmtRoomNo(row.roomNo)}
           className="mc-room sticky left-0 z-20 flex h-full w-full min-w-0 items-center px-2 text-left tnum text-xs font-bold"
@@ -1298,7 +1304,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
             color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
-          <span className="min-w-0 truncate">{fmtRoomNo(row.roomNo)}</span>
+          <span className="min-w-0 break-keep [overflow-wrap:anywhere]">{fmtRoomNo(row.roomNo)}</span>
         </button>
 
         {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}
@@ -1444,7 +1450,8 @@ function Bar({ p, roomNo, steady, onOpen }: { p: Placed; roomNo: string; steady:
   // 아무것도 뜻하지 않게 된다. lib 라벨(bar.label·stateLabel)은 회귀가 딛고 있어 그대로 두고 화면이
   // 행 표식으로 고른다. title·aria 는 종전 문장 그대로라 상태는 거기서 읽힌다.
   // 예약·이사 예정 막대는 그 말이 곧 종류라 남긴다(색이 같은 대기 톤이라 글자가 가른다).
-  const nameOnly = steady && bar.kind === 'resident' && !bar.planned
+  // 퇴실일이 창 밖에 잡힌 기간 계약('1/31 퇴실')도 남긴다. 그건 반복이 아니라 정보다(웹디자이너 패스).
+  const nameOnly = steady && bar.kind === 'resident' && !bar.planned && bar.openEnded
 
   return (
     <>

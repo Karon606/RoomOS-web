@@ -8,12 +8,12 @@
 //
 // 무엇을 보나 (축 여덟)
 //   ① 소제목은 lib 정본(steadyHeading)이 자리와 문구를 낸다. 화면이 축을 따로 따지거나 문구를 짓지 않는다.
-//   ② 무변동 거주 막대는 이름만 세운다(nameOnly). lib 라벨은 그대로라 title·aria 가 상태를 말한다.
-//   ③ '오늘로'는 트랙 상자(grid 한 칸) 안 sticky 닻에 있다. absolute 로 돌아가면 첫 화면에서 사라진다.
+//   ② 무변동 거주 막대 중 '퇴실일 미정'(openEnded)만 이름만 세운다(nameOnly). 창 밖 퇴실일은 남긴다.
+//   ③ '오늘로'는 트랙 상자(grid 한 칸) 안 sticky 닻에 있고, 모바일은 오류신고 버튼 위에 쌓인다.
 //      카드가 overflow-hidden 이면 카드가 스크롤 컨테이너가 되어 닻이 영영 안 붙는다(clip 이어야 한다).
 //   ④ 두 축 스크롤러 금지. 세로 스크롤러를 이 파일에 만들면 Android 터치 래치(신고 d8554128)가 돌아온다.
-//   ⑤ 호실 열 긴 이름은 말줄임 + title(형제 좁은 호실 칸 문법).
-//   ⑥ 카드 끝 안내 줄은 정본 문구(excludedRoomsNote)이고 카드 안(--cream 바탕)이다.
+//   ⑤ 호실 열 긴 이름은 줄 접기(break-keep + overflow-wrap anywhere) + title. 말줄임은 4자 호실번호를 자른다.
+//   ⑥ 카드 끝 안내 줄은 정본 문구(excludedRoomsNote)이고 카드 안(--cream 바탕)이며 어절로 접는다.
 //   ⑦ RoomManageClient 가 MoveCalendar 에 인라인 함수를 안 넘긴다(memo 가 ?at= 마다 깨진다).
 //   ⑧ 계속 공실인 무변동 행은 'N일 공실' 대신 '공실' 한 마디다.
 //
@@ -82,8 +82,8 @@ if (/변동 없음 \$\{/.test(src)) {
 }
 
 // ── ② 무변동 막대 이름만 ──
-if (!/const nameOnly = steady && bar\.kind === 'resident' && !bar\.planned/.test(src)) {
-  violations.push(`${SRC}: 무변동 거주 막대 표식(nameOnly)이 없다. 서른 몇 줄이 '퇴실일 미정'을 반복한다.`)
+if (!/const nameOnly = steady && bar\.kind === 'resident' && !bar\.planned && bar\.openEnded\b/.test(src)) {
+  violations.push(`${SRC}: 무변동 거주 막대 표식(nameOnly)이 '퇴실일 미정' 막대(openEnded)로 좁혀 있지 않다. 없으면 서른 몇 줄이 '퇴실일 미정'을 반복하고, 넓으면 창 밖 퇴실일('1/31 퇴실')까지 지운다.`)
 }
 if (!/bar\.stateLabel && !nameOnly \?/.test(src)) {
   violations.push(`${SRC}: full 모드 글자가 nameOnly 를 안 본다. 무변동 막대에 상태 문구가 붙는다.`)
@@ -106,6 +106,10 @@ if (!/steady=\{!!row\.steady\}/.test(src)) {
     violations.push(`${SRC}: '오늘로'의 닻이 트랙과 같은 grid 칸(1 / 1)의 sticky 가 아니다. 화면 아래에 안 붙거나, 카드 머리·끝 줄을 덮는다.`)
   } else if (/\bfixed\b/.test(anchor)) {
     violations.push(`${SRC}: '오늘로' 닻이 fixed 다. 카드가 화면에 없을 때도 떠 있다.`)
+  } else if (!/\bbottom-\[3\.375rem\]/.test(anchor) || !/\bpr-0\b/.test(anchor) || !/\bmd:pr-12\b/.test(anchor) || !/\bmd:bottom-\[/.test(anchor)) {
+    // 모바일은 오류신고 버튼 위에 쌓고 오른쪽 끝을 맞춘다. 버튼 옆(pr-14)으로 돌아가면 좁은 폭에서
+    // 알약이 막대 이름 열을 덮는다(웹디자이너 패스, 288·256 × 125% 이름 겹침 비율 1.15).
+    violations.push(`${SRC}: '오늘로' 닻이 모바일에서 오류신고 버튼 위로 쌓이지 않는다(bottom-[3.375rem] · pr-0, md 는 옆). 좁은 폭에서 막대 이름을 덮는다.`)
   }
   if (!/gridArea: '1 \/ 1', overscrollBehaviorX/.test(src)) {
     violations.push(`${SRC}: 트랙 스크롤러가 닻과 같은 grid 칸(1 / 1)에 서지 않는다.`)
@@ -131,14 +135,15 @@ if (!/steady=\{!!row\.steady\}/.test(src)) {
   if (xs.length !== 1) violations.push(`${SRC}: 가로 스크롤러가 ${xs.length}개다(트랙 하나여야 한다).`)
 }
 
-// ── ⑤ 호실 열 말줄임 ──
+// ── ⑤ 호실 열 줄 접기 ──
 {
   const room = tagAround(src, 'className="mc-room sticky left-0 z-20 flex')
   if (!room || !/title=\{fmtRoomNo\(row\.roomNo\)\}/.test(room) || !/\bmin-w-0\b/.test(room)) {
     violations.push(`${SRC}: 호실 열 버튼에 title·min-w-0 이 없다. 긴 호실명이 66px 칸을 넘친다.`)
   }
-  if (!/<span className="min-w-0 truncate">\{fmtRoomNo\(row\.roomNo\)\}<\/span>/.test(src)) {
-    violations.push(`${SRC}: 호실 열 글자가 말줄임(truncate) 상자 안에 있지 않다.`)
+  const roomSpan = src.match(/<span className="([^"]*)">\{fmtRoomNo\(row\.roomNo\)\}<\/span>/)
+  if (!roomSpan || /\btruncate\b/.test(roomSpan[1]) || !/\bbreak-keep\b/.test(roomSpan[1]) || !/\[overflow-wrap:anywhere\]/.test(roomSpan[1])) {
+    violations.push(`${SRC}: 호실 열 글자가 줄 접기(break-keep + overflow-wrap anywhere) 상자가 아니다. 말줄임이면 125% 에서 '1001호'가 '100…'으로 잘리고, break-keep 만이면 'A동-1001호'가 칸 밖 트랙으로 넘친다.`)
   }
 }
 
@@ -150,7 +155,7 @@ if (!/const excludedNote = excludedRoomsNote\(data\.excludedRoomCount\)/.test(sr
   const cardAt = src.indexOf('<div className="rounded-xl overflow-clip"')
   const noteAt = src.indexOf('{excludedNote && (')
   const noteTag = noteAt < 0 ? null : tagAround(src.slice(noteAt), '<p ')
-  if (noteAt < 0 || cardAt < 0 || noteAt < cardAt || divDepth(src, cardAt, noteAt) !== 1 || !noteTag || !/borderTop/.test(noteTag)) {
+  if (noteAt < 0 || cardAt < 0 || noteAt < cardAt || divDepth(src, cardAt, noteAt) !== 1 || !noteTag || !/borderTop/.test(noteTag) || !/\bbreak-keep\b/.test(noteTag)) {
     violations.push(`${SRC}: 안내 줄이 카드 안 끝 줄(카드 바로 안, 구분선 1px)이 아니다. 카드 밖 --canvas 위에서는 --ink-m 이 AA 미달이다(라이트 4.11:1).`)
   }
 }

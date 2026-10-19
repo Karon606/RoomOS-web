@@ -654,11 +654,13 @@ const byRoomNoNatural = (a: { roomNo: string }, b: { roomNo: string }): number =
  * 필터 축에는 서지 않는다(운영자 결정 2026-10-19). 화면이 축을 따로 따지면 그 판정이 두 번째
  * 진실이 되어, 축이 늘 때 소제목만 옛 규칙에 남는다. 그래서 자리와 문구를 여기서 한 번만 낸다.
  * N 은 무변동 행 수다(방 수가 아니라 이 화면에 실제로 선 행 수).
+ * 소제목은 두 덩어리를 가르는 줄이라 위에 변동 행이 있을 때만 선다. 전부 무변동인 창(먼 달 점프)에서
+ * 맨 위에 세우면 가를 것 없이 월 밴드의 '변동 없음'과 같은 말을 한 번 더 한다(웹디자이너 패스).
  */
 export function steadyHeading(rows: readonly MoveCalendarRow[], axis: MoveAxis): { index: number; label: string } | null {
   if (axis !== 'all') return null
   const index = rows.findIndex(r => r.steady)
-  if (index < 0) return null
+  if (index <= 0) return null
   return { index, label: `변동 없음 ${rows.filter(r => r.steady).length}실` }
 }
 
