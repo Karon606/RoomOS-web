@@ -665,6 +665,17 @@ export function steadyHeading(rows: readonly MoveCalendarRow[], axis: MoveAxis):
 }
 
 /**
+ * 호실 열 글자 조각 — 숫자 덩어리(앞뒤 영문 포함)는 끊지 않고, 조각 사이에서만 줄을 넘긴다.
+ *
+ * 66px 칸은 112.5%·125% 글자에서 '1001호'가 한 줄에 안 든다. overflow-wrap:anywhere 만 두면 '1000/1호',
+ * 'A동-100/1호'처럼 숫자 한가운데가 끊겨 다른 호실번호로 읽힌다(재확인 실측). 화면은 keep 조각을 줄바꿈
+ * 없는 상자로 싸고 조각 사이에 <wbr> 를 둔다. 그러면 '1001/호', 'A동-/1001호'처럼 숫자 밖에서만 넘어간다.
+ */
+export function roomLabelChunks(label: string): { text: string; keep: boolean }[] {
+  return label.split(/([A-Za-z]*\d+[A-Za-z]*)/).filter(Boolean).map(text => ({ text, keep: /\d/.test(text) }))
+}
+
+/**
  * 카드 끝 한 줄. 행으로 안 세운 창고·사무실을 말한다(운영자 결정 2026-10-19). 0이면 줄이 없다.
  *
  * 말없이 빼면 "왜 415호가 없지"가 된다. 조사는 정본(withParticle)이 고른다. '실'은 받침이

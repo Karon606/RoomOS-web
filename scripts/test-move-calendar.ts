@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, excludedRoomsNote, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, steadyHeading, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, excludedRoomsNote, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, roomLabelChunks, shiftMonth, steadyHeading, type MoveCalendarLease, type MoveRangeRoom, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 import { pickContext } from '../lib/moveCalendarData'
 
 let pass = 0
@@ -1105,6 +1105,18 @@ function invariants(name: string, p: SteadyIn) {
   eq('pickContext · 지금 방 · 옛 방 구간(같은 영업장) · 호실 해제 계약의 구간',
     pickContext(occ, 'p1', ['r1', 'r2']).map(x => x.id), ['now-in', 'old-only', 'no-room'])
   eq('pickContext · 방 목록이 비면 없다', pickContext(occ, 'p1', []).length, 0)
+}
+
+// ── 호실 열 글자 조각 ── 숫자 덩어리(앞뒤 영문 포함)는 한 조각이라 줄이 그 안에서 안 끊긴다('1000/1호' 방지).
+{
+  const c = (l: string) => roomLabelChunks(l).map(x => [x.text, x.keep])
+  eq('호실 조각 · 숫자 호실', c('1001호'), [['1001', true], ['호', false]])
+  eq('호실 조각 · 다섯 자리', c('10001호'), [['10001', true], ['호', false]])
+  eq('호실 조각 · 동 번호 혼합', c('A동-1001호'), [['A동-', false], ['1001', true], ['호', false]])
+  eq('호실 조각 · 영문 붙은 숫자', c('B1001호'), [['B1001', true], ['호', false]])
+  eq('호실 조각 · 띄어 쓴 이름', c('423호 오피스'), [['423', true], ['호 오피스', false]])
+  eq('호실 조각 · 숫자 없는 이름', c('옥탑방'), [['옥탑방', false]])
+  eq('호실 조각 · 이어 붙이면 원래 글자', roomLabelChunks('A-101-2호').map(x => x.text).join(''), 'A-101-2호')
 }
 
 // ── 문구 정본 ──

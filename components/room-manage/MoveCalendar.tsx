@@ -30,7 +30,7 @@ import { suppressesTap, type TapOrigin } from '@/lib/tapGuard'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
-import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, excludedRoomsNote, filterMoveRows, moveWorkRailLabel, shiftMonth, steadyHeading, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
+import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, excludedRoomsNote, filterMoveRows, moveWorkRailLabel, roomLabelChunks, shiftMonth, steadyHeading, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -1289,9 +1289,13 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
       <div className="mc-row grid" style={{
         gridTemplateColumns: cols,
         gridTemplateRows: [
-          row.laneCount > 0 ? `repeat(${row.laneCount}, var(--mc-lane))` : null,
-          railCount > 0 ? `repeat(${railCount}, var(--mc-work))` : null,
-        ].filter(Boolean).join(' ') || 'var(--mc-work)',
+          // 레인은 최소 --mc-lane 이고 호실 글자가 더 높으면 행이 그만큼 자란다('A동-1001호'가 125% 에서
+          // 세 줄). 고정 높이면 글자가 이웃 행으로 넘치거나, 줄 제한을 걸면 숫자가 말줄임에 잘린다(재확인 실측).
+          row.laneCount > 0 ? `repeat(${row.laneCount}, minmax(var(--mc-lane), auto))` : null,
+          // 거주 레인이 없는 행(레일만)은 레일이 같은 일을 진다. 마우스 화면에서는 20px 라 두 줄 호실명이
+          // 이웃 행과 겹친다(재확인 실측). 레인이 있으면 레일은 고정 20px 그대로다.
+          railCount > 0 ? `repeat(${railCount}, ${row.laneCount > 0 ? 'var(--mc-work)' : 'minmax(var(--mc-work), auto)'})` : null,
+        ].filter(Boolean).join(' ') || 'minmax(var(--mc-work), auto)',
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
         // 거주 레인이 없는 행(청소만 있는 공실 방)은 레일만 있어 행이 20px 이다. 호실 열이
         // 버튼이 된 지금 **그 20px 이 곧 터치 타겟 높이**라 §09 44px 을 깬다. 손가락 기기에서만
@@ -1332,7 +1336,13 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
             color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
-          <span className="min-w-0 break-keep [overflow-wrap:anywhere]">{fmtRoomNo(row.roomNo)}</span>
+          {/* 숫자 덩어리는 끊지 않는다(roomLabelChunks, 조각 사이 <wbr>). '1000/1호'처럼 숫자 가운데가 끊기면
+              다른 호실번호로 읽힌다. 줄 간격을 좁혀 두 줄이 마우스 화면 36px 행에 든다. 더 길면 행이 자란다(위 레인). */}
+          <span className="min-w-0 break-keep [overflow-wrap:anywhere] leading-[1.15]">
+            {roomLabelChunks(fmtRoomNo(row.roomNo)).map((c, i) => (
+              <Fragment key={i}>{i > 0 && <wbr />}{c.keep ? <span className="whitespace-nowrap">{c.text}</span> : c.text}</Fragment>
+            ))}
+          </span>
         </button>
 
         {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}

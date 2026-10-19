@@ -154,9 +154,19 @@ if (!/steady=\{!!row\.steady\}/.test(src)) {
   if (!room || !/title=\{fmtRoomNo\(row\.roomNo\)\}/.test(room) || !/\bmin-w-0\b/.test(room)) {
     violations.push(`${SRC}: 호실 열 버튼에 title·min-w-0 이 없다. 긴 호실명이 66px 칸을 넘친다.`)
   }
-  const roomSpan = src.match(/<span className="([^"]*)">\{fmtRoomNo\(row\.roomNo\)\}<\/span>/)
+  const roomSpan = src.match(/<span className="([^"]*)">\s*\{roomLabelChunks\(fmtRoomNo\(row\.roomNo\)\)\.map\(/)
   if (!roomSpan || /\btruncate\b/.test(roomSpan[1]) || !/\bbreak-keep\b/.test(roomSpan[1]) || !/\[overflow-wrap:anywhere\]/.test(roomSpan[1])) {
-    violations.push(`${SRC}: 호실 열 글자가 줄 접기(break-keep + overflow-wrap anywhere) 상자가 아니다. 말줄임이면 125% 에서 '1001호'가 '100…'으로 잘리고, break-keep 만이면 'A동-1001호'가 칸 밖 트랙으로 넘친다.`)
+    violations.push(`${SRC}: 호실 열 글자가 줄 접기(break-keep + overflow-wrap anywhere) 상자가 아니거나 말줄임·줄 제한이 붙었다. 말줄임·줄 제한은 125% 에서 '1001호'·'A동-1001호'의 숫자를 자르고, break-keep 만이면 긴 이름이 칸 밖으로 넘친다.`)
+  }
+  if (/line-clamp/.test(roomSpan?.[1] ?? '') || !/`repeat\(\$\{row\.laneCount\}, minmax\(var\(--mc-lane\), auto\)\)`/.test(src)) {
+    violations.push(`${SRC}: 거주 레인이 호실 글자 높이만큼 자라지 않는다(minmax(var(--mc-lane), auto)). 세 줄 호실명이 이웃 행으로 넘친다.`)
+  }
+  if (!/row\.laneCount > 0 \? 'var\(--mc-work\)' : 'minmax\(var\(--mc-work\), auto\)'/.test(src)) {
+    violations.push(`${SRC}: 거주 레인 없는 행의 레일이 호실 글자 높이만큼 자라지 않는다. 20px 행에서 두 줄 호실명이 이웃 행에 겹친다.`)
+  }
+  // 숫자 덩어리는 줄바꿈 없는 상자, 조각 사이에만 <wbr>. 빠지면 anywhere 가 '1000/1호'처럼 숫자 가운데를 끊는다.
+  if (!/\{i > 0 && <wbr \/>\}\{c\.keep \? <span className="whitespace-nowrap">\{c\.text\}<\/span> : c\.text\}/.test(src)) {
+    violations.push(`${SRC}: 호실 열 숫자 덩어리가 줄바꿈 없는 상자로 안 싸였거나 조각 사이 <wbr> 가 없다. 숫자 한가운데가 끊겨 다른 호실번호로 읽힌다.`)
   }
 }
 
