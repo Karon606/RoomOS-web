@@ -18,9 +18,9 @@ import {
 import { looksLike360 } from '@/lib/driveImage'
 import { applyScheduledRentsFor } from '@/lib/scheduledRent'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
-import { beyondWindow, buildMoveCalendar, buildMoveRange, monthLastDay, moveRangeWindow, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
-import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases, fetchMoveWorks } from '@/lib/moveCalendarData'
-import { createOverlapAck, loadOverlapAcks, softDeleteOverlapAck } from '@/lib/overlapAck'
+import { buildMoveCalendar, monthLastDay, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
+import { fetchMoveLeases, loadMoveRange } from '@/lib/moveCalendarData'
+import { createOverlapAck, softDeleteOverlapAck } from '@/lib/overlapAck'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 
@@ -127,60 +127,14 @@ export async function getMoveCalendarMonth(month: string): Promise<MoveCalendarM
  *   · ?month= 가 범위 밖이면 그쪽으로 범위를 넓힌다 — 딥링크 착지와 '이전 달 더 보기'가
  *     이 한 규칙을 함께 쓴다(파라미터를 새로 만들지 않는다).
  *
- * 조회는 셋이다. ①은 날짜 세 칸만 뽑는 스캔이라 조인이 없고, ②③은 종전 월 조회와 같은 모양이다.
+ * 조회와 창 계산은 lib/moveCalendarData loadMoveRange 가 한다(2026-10-19). 'use server' 파일 안에
+ * 두면 감지망이 같은 길을 못 지나 사본을 들게 된다. 순차 왕복은 둘이다(창과 무관한 것 / 창에 묶인 것).
  */
 export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendarRange> {
   const { propertyId } = await getPropertyId()
   const today = kstYmdStr()
-  const todayMonth = today.slice(0, 7)
-  const focusMonth = focus && /^\d{4}-\d{2}$/.test(focus) ? focus : todayMonth
-
-  // ① 변동 날짜 스캔 — 범위의 끝과 '범위 밖에 남은 예정'을 한 번에 읽는다.
-  //   확인된 겹침은 창과 무관하므로 여기서 함께 간다(종전에는 맨 뒤에서 혼자 한 번 더 갔다).
-  const [marks, acks] = await Promise.all([
-    prisma.leaseTerm.findMany({
-      where: { propertyId, roomId: { not: null }, status: { in: [...MOVE_LEASE_STATUSES] } },
-      select: { moveInDate: true, moveOutDate: true, expectedMoveOut: true },
-    }),
-    loadOverlapAcks(propertyId),
-  ])
-  const changeDates: string[] = []
-  for (const l of marks) {
-    // 퇴실의 진짜 날짜는 실제일이 이긴다 — lib/moveCalendar stayEnd 와 같은 선.
-    const from = dbYmd(l.moveInDate)
-    const to = dbYmd(l.moveOutDate) ?? dbYmd(l.expectedMoveOut)
-    if (from) changeDates.push(from)
-    if (to) changeDates.push(to)
-  }
-  const lastChange = changeDates.reduce((a, b) => (a > b ? a : b), today)
-  const firstChange = changeDates.reduce((a, b) => (a < b ? a : b), today)
-
-  // 경계 산식은 lib/moveCalendar 의 순수 함수다. 'use server' 파일 안에 두면 유닛으로 못 재고
-  // (async 만 내보낼 수 있고, 내보내는 순간 인증 없는 입구가 된다) 회귀를 못 세운다.
-  const { startMonth, endMonth } = moveRangeWindow({ todayMonth, focusMonth, lastChangeMonth: lastChange.slice(0, 7) })
-
-  const from = `${startMonth}-01`
-  const to = monthLastDay(endMonth)
-
-  // ② 작업(청소) — 계약 조회보다 **먼저** 간다. 청소가 있는 방의 점유 계약을 함께 읽어야
-  //   조립이 '거주 중 작업은 행을 안 만든다'를 판정할 수 있고, 그 방 목록은 여기서만 나온다.
-  const works = await fetchMoveWorks(prisma, propertyId, from, to)
-  const { changed, context } = await fetchMoveLeases(prisma, propertyId, from, to, works.map(w => w.roomId))
-  return buildMoveRange({
-    from,
-    to,
-    today,
-    focusMonth,
-    changed,
-    context,
-    works,
-    // 창이 과거로 미끄러지면 창의 끝이 오늘보다 이전일 수 있다 — 그때 지난 변동을 '이후 예정'으로
-    // 세면 지난 일이 앞으로의 일로 읽힌다(beyondWindow 의 today 가드).
-    beyond: beyondWindow(changeDates, to, today),
-    canExtendPast: firstChange < from,
-    // 확인된 겹침 — 조립은 DB 를 못 보고, 확인 여부는 계산이 아니라 사실이라 조회가 넘긴다.
-    acks,
-  })
+  const focusMonth = focus && /^\d{4}-\d{2}$/.test(focus) ? focus : today.slice(0, 7)
+  return loadMoveRange(prisma, propertyId, { today, focusMonth })
 }
 
 /**

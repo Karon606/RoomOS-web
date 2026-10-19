@@ -11,7 +11,11 @@ import { displayName } from '@/lib/displayName'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { isVacancyExcluded } from '@/lib/vacancy'
-import type { MoveCalendarLease, MoveWorkInput } from '@/lib/moveCalendar'
+import { loadOverlapAcks } from '@/lib/overlapAck'
+import {
+  beyondWindow, buildMoveRange, monthLastDay, moveRangeWindow,
+  type MoveCalendarLease, type MoveCalendarRange, type MoveWorkInput,
+} from '@/lib/moveCalendar'
 import {
   CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
   type CleaningPerformer, type CleaningReason,
@@ -47,6 +51,21 @@ export const MOVE_LEASE_SELECT = {
   roomSchedule: true,
 } as const
 
+/**
+ * 점유 계약 전부를 읽는 select. MOVE_LEASE_SELECT 에 구간의 영업장만 더했다.
+ *
+ * 범위 경로는 이 한 번의 조회에서 context 를 메모리로 고른다(pickContext). 그 조건이 context SQL 의
+ * `roomStays: { some: { propertyId, roomId: { in } } }` 와 글자 그대로 같으려면 구간의 영업장이 필요하다.
+ * 화면으로 나가는 모양(toMoveLease)은 이 칸을 버리므로 MOVE_LEASE_SELECT 와 같은 계약 한 줄이 된다.
+ */
+const MOVE_LEASE_SELECT_SCOPED = {
+  ...MOVE_LEASE_SELECT,
+  roomStays: {
+    select: { ...MOVE_LEASE_SELECT.roomStays.select, propertyId: true },
+    orderBy: MOVE_LEASE_SELECT.roomStays.orderBy,
+  },
+} as const
+
 /** MOVE_LEASE_SELECT 가 뽑는 모양. 추론에 맡기면 select 가 두 곳에서 불릴 때 원본 모델로 넓어진다. */
 export type MoveLeaseRow = {
   id: string
@@ -60,6 +79,11 @@ export type MoveLeaseRow = {
   tenant: { id: string; name: string; englishName: string | null; nickname: string | null; displayNameStyle: string | null }
   roomStays: { id: string; roomId: string; startDate: Date | null; endDate: Date | null; room: { roomNo: string } }[]
   roomSchedule?: unknown
+}
+
+/** MOVE_LEASE_SELECT_SCOPED 가 뽑는 모양. 구간마다 영업장이 하나 더 붙는다. */
+type ScopedMoveLeaseRow = Omit<MoveLeaseRow, 'roomStays'> & {
+  roomStays: (MoveLeaseRow['roomStays'][number] & { propertyId: string })[]
 }
 
 /** 날짜는 'YYYY-MM-DD' 문자열로 고정 — getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다. */
@@ -88,36 +112,20 @@ export const toMoveLease = (l: MoveLeaseRow): MoveCalendarLease => ({
 })
 
 /**
- * 그 범위의 변동 계약과, 변동이 있는 방의 점유 계약 전부.
+ * 그 범위의 변동 계약. 어느 방이 변동 행이 되는지를 정하는 계약들이다.
  *
- * ①은 과대근사다 — 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
+ * 과대근사다. 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
  * 그 선은 조립(lib/moveCalendar)이 한 번만 긋는다. 충돌 판정도 거기서 occupancyOverlaps 를
  * 부른다 — 화면도 액션도 감지망도 사본을 들지 않는다.
  *
  * 구간 경계도 창 조건에 든다. 이사는 계약의 세 날짜를 하나도 안 건드리므로(입주일은 최초
  * 입주일 그대로, 퇴실일은 비어 있다), 계약 날짜만 보면 **이사일만 이 창에 있는 계약**이 통째로
  * 빠진다. 김태란 건이 정확히 그 모양이다(입주 2024-03 · 이사 2026-07 · 퇴실 미정).
- *
- * ②의 방 목록도 구간을 본다. 옛 방 구간을 가진 계약은 그 방의 roomId 를 **이미 안 갖고 있어**
- * `roomId in roomIds` 로는 안 걸린다 — 옛 방 행에 그 사람의 거주가 다시 사라진다.
  */
-export async function fetchMoveLeases(
-  db: PrismaDb,
-  propertyId: string,
-  from: string,
-  to: string,
-  /**
-   * 작업(청소)이 있는 방 — **행 목록은 안 늘린다.** 점유 계약만 함께 읽는다.
-   *
-   * 조립이 '공실 작업은 행을 만들고 거주 중 작업은 안 만든다'를 판정하려면 그날 그 방에
-   * 사람이 있었는지를 알아야 하는데, 창 안에 입퇴실이 하나도 없는 방(관통 거주)은 changed 에
-   * 안 걸려 그 방의 계약이 조립에 아예 안 닿는다. 그러면 사람이 사는 방에 행이 하나 선다.
-   */
-  workRoomIds: string[] = [],
-): Promise<{ changed: MoveCalendarLease[]; context: MoveCalendarLease[] }> {
+async function fetchChangedRows(db: PrismaDb, propertyId: string, from: string, to: string): Promise<MoveLeaseRow[]> {
   const first = ymdToDbDate(from)
   const last = ymdToDbDate(to)
-  const changed = await db.leaseTerm.findMany({
+  return db.leaseTerm.findMany({
     where: {
       propertyId,
       roomId: { not: null },
@@ -134,34 +142,60 @@ export async function fetchMoveLeases(
     },
     select: MOVE_LEASE_SELECT,
   })
-  // 행이 될 수 있는 방 — 계약이 지금 있는 방과 그 계약이 거쳐 간 방 전부. 과대근사라도 좋다,
-  // 어느 방이 실제로 행이 되는지는 조립이 다시 한 번 거른다.
-  // 계획의 방도 창 조건에 든다 — 안 넣으면 임시 호실 행이 통째로 빠진다.
+}
+
+/**
+ * 점유 맥락을 읽을 방. 변동 계약이 지금 있는 방과 거쳐 간 방, 계획의 방, 작업이 있는 방.
+ * 과대근사라도 좋다, 어느 방이 실제로 행이 되는지는 조립이 다시 한 번 거른다.
+ * 계획의 방도 든다. 안 넣으면 임시 호실 행이 통째로 빠진다.
+ *
+ * 구간의 방을 보는 이유. 옛 방 구간을 가진 계약은 그 방의 roomId 를 **이미 안 갖고 있어**
+ * `roomId in roomIds` 로는 안 걸린다 — 옛 방 행에 그 사람의 거주가 다시 사라진다.
+ */
+function contextRoomIds(changed: MoveLeaseRow[], workRoomIds: string[]): string[] {
   const plannedRoomIds = changed.flatMap(l => parseRoomSchedule(l.roomSchedule).map(e => e.roomId))
-  const roomIds = [...new Set([
+  return [...new Set([
     ...changed.flatMap(l => [l.roomId!, ...l.roomStays.map(s => s.roomId)]),
     ...plannedRoomIds, ...workRoomIds,
   ])]
-  const context = roomIds.length === 0 ? [] : await db.leaseTerm.findMany({
-    where: {
-      propertyId,
-      status: { in: OCCUPYING_STATUSES },
-      OR: [
-        { roomId: { in: roomIds } },
-        { roomStays: { some: { propertyId, roomId: { in: roomIds } } } },
-      ],
-    },
-    select: MOVE_LEASE_SELECT,
-  })
+}
 
-  // 계획 구간에 방 이름을 붙여 실제 구간과 같은 모양으로 만든다 — 그래야 조립·화면이
-  // 계획인지 실제인지 몰라도 된다(막대를 내는 축은 구간 하나뿐이다).
-  const planRoomIds = [...new Set([...changed, ...context]
-    .flatMap(l => parseRoomSchedule(l.roomSchedule).map(e => e.roomId)))]
-  const planRooms = planRoomIds.length === 0 ? [] : await db.room.findMany({
-    where: { id: { in: planRoomIds } }, select: { id: true, roomNo: true },
+/**
+ * 범위 경로의 context. 아래 fetchMoveLeases 의 context SQL 과 **같은 조건**을 메모리에서 건다.
+ *
+ * 범위 경로는 무변동 행의 재료로 점유 계약 전부를 이미 읽었다. 같은 집합의 부분을 한 번 더 조회하면
+ * 순차 왕복이 하나 늘 뿐이다. 조건이 SQL 과 한 글자라도 갈리면 변동 행이 달라지므로, 감지망
+ * (check-move-calendar-drift 축 D)이 두 경로의 결과를 운영 데이터로 맞댄다.
+ * **날짜 조건을 넣지 않는다**. 꼬리(tail)가 창 밖 예약을 이 집합에서 찾는다.
+ */
+function pickContext(occupying: ScopedMoveLeaseRow[], propertyId: string, roomIds: string[]): ScopedMoveLeaseRow[] {
+  const ids = new Set(roomIds)
+  return occupying.filter(l =>
+    (l.roomId != null && ids.has(l.roomId))
+    || l.roomStays.some(s => s.propertyId === propertyId && ids.has(s.roomId)))
+}
+
+/**
+ * 계획 구간이 가리키는 방의 호실번호. 이미 읽은 방(known)에서 먼저 찾고, 없는 것만 조회한다.
+ * 범위 경로는 그 영업장 방을 전부 들고 있어 보통 왕복 0이다. 월 경로는 known 이 없어 종전과 같다.
+ */
+async function planRoomNos(db: PrismaDb, rows: MoveLeaseRow[], known: { id: string; roomNo: string }[] = []): Promise<Map<string, string>> {
+  const planRoomIds = [...new Set(rows.flatMap(l => parseRoomSchedule(l.roomSchedule).map(e => e.roomId)))]
+  const want = new Set(planRoomIds)
+  const roomNoOf = new Map(known.filter(r => want.has(r.id)).map(r => [r.id, r.roomNo]))
+  const missing = planRoomIds.filter(id => !roomNoOf.has(id))
+  const planRooms = missing.length === 0 ? [] : await db.room.findMany({
+    where: { id: { in: missing } }, select: { id: true, roomNo: true },
   })
-  const roomNoOf = new Map(planRooms.map(r => [r.id, r.roomNo]))
+  for (const r of planRooms) roomNoOf.set(r.id, r.roomNo)
+  return roomNoOf
+}
+
+/**
+ * 계획 구간에 방 이름을 붙여 실제 구간과 같은 모양으로 만든다. 그래야 조립·화면이
+ * 계획인지 실제인지 몰라도 된다(막대를 내는 축은 구간 하나뿐이다).
+ */
+function withPlanOf(roomNoOf: Map<string, string>) {
   const planStay = (l: MoveLeaseRow, e: { roomId: string; from: string; to: string | null }, i: number) => ({
     id: `plan-${l.id}-${i}`,
     roomId: e.roomId,
@@ -169,7 +203,7 @@ export async function fetchMoveLeases(
     endDate: e.to ? new Date(`${e.to}T00:00:00.000Z`) : null,
     room: { roomNo: roomNoOf.get(e.roomId) ?? '' },
   })
-  const withPlan = (l: MoveLeaseRow): MoveLeaseRow => {
+  return (l: MoveLeaseRow): MoveLeaseRow => {
     const plan = parseRoomSchedule(l.roomSchedule)
     if (!hasRoomSchedule(plan)) return l
     // 아직 안 들어왔으면 계획이 그 사람의 전부다.
@@ -205,6 +239,42 @@ export async function fetchMoveLeases(
       ],
     }
   }
+}
+
+/**
+ * 그 범위의 변동 계약과, 변동이 있는 방의 점유 계약 전부. **월 창**(홈 '이달 입퇴실 N건') 경로.
+ * 범위 경로(loadMoveRangeInputs)는 같은 조각을 써서 왕복을 줄인다. 두 경로의 context 가 같은
+ * 집합인지는 감지망이 맞댄다.
+ */
+export async function fetchMoveLeases(
+  db: PrismaDb,
+  propertyId: string,
+  from: string,
+  to: string,
+  /**
+   * 작업(청소)이 있는 방 — **행 목록은 안 늘린다.** 점유 계약만 함께 읽는다.
+   *
+   * 조립이 '공실 작업은 행을 만들고 거주 중 작업은 안 만든다'를 판정하려면 그날 그 방에
+   * 사람이 있었는지를 알아야 하는데, 창 안에 입퇴실이 하나도 없는 방(관통 거주)은 changed 에
+   * 안 걸려 그 방의 계약이 조립에 아예 안 닿는다. 그러면 사람이 사는 방에 행이 하나 선다.
+   */
+  workRoomIds: string[] = [],
+): Promise<{ changed: MoveCalendarLease[]; context: MoveCalendarLease[] }> {
+  const changed = await fetchChangedRows(db, propertyId, from, to)
+  const roomIds = contextRoomIds(changed, workRoomIds)
+  // 날짜 조건이 없는 것이 설계다. 꼬리(tail)가 창 밖 예약을 이 집합에서 찾는다.
+  const context = roomIds.length === 0 ? [] : await db.leaseTerm.findMany({
+    where: {
+      propertyId,
+      status: { in: OCCUPYING_STATUSES },
+      OR: [
+        { roomId: { in: roomIds } },
+        { roomStays: { some: { propertyId, roomId: { in: roomIds } } } },
+      ],
+    },
+    select: MOVE_LEASE_SELECT,
+  })
+  const withPlan = withPlanOf(await planRoomNos(db, [...changed, ...context]))
   return {
     changed: changed.map(withPlan).map(toMoveLease),
     context: context.map(withPlan).map(toMoveLease),
@@ -254,18 +324,20 @@ const cleaningKindLabel = (reason: CleaningReason): string => {
  * **소프트삭제분도 안 싣는다.** 호실 관리 '청소' 뷰는 복원 진입점 때문에 삭제분을 함께
  * 받지만(getPropertyCleanings), 캘린더는 복원할 자리가 아니라 지운 것은 지운 것이다.
  *
- * 방은 따로 한 번 읽는다. 관계 include 로 달면 조회가 청소 행 수만큼 중첩되고, 여기 필요한
- * 것은 50행 남짓의 호실번호와 공실 집계 플래그뿐이라 통째로 읽는 편이 싸다.
+ * 방은 받는다(fetchMoveRooms). 관계 include 로 달면 조회가 청소 행 수만큼 중첩되고, 여기 필요한
+ * 것은 50행 남짓의 호실번호와 공실 집계 플래그뿐이라 통째로 한 번 읽는 편이 싸다. 같은 목록을
+ * 범위 조회가 계획 구간 호실번호에도 쓰므로 여기서 다시 읽지 않는다(2026-10-19, 중복 조회 제거).
  */
 export async function fetchMoveWorks(
   db: PrismaDb,
   propertyId: string,
   from: string,
   to: string,
+  rooms: MoveRoomRow[],
 ): Promise<MoveWorkInput[]> {
   const first = ymdToDbDate(from)
   const last = ymdToDbDate(to)
-  const [rows, workRows, rooms] = await Promise.all([
+  const [rows, workRows] = await Promise.all([
     db.roomCleaning.findMany({
       where: {
         propertyId,
@@ -297,10 +369,6 @@ export async function fetchMoveWorks(
         scheduledDate: true, doneDate: true,
         performer: true, performerName: true,
       },
-    }),
-    db.room.findMany({
-      where: { propertyId },
-      select: { id: true, roomNo: true, nonResidentVacant: true },
     }),
   ])
   const roomById = new Map(rooms.map(r => [r.id, r]))
@@ -348,4 +416,104 @@ export async function fetchMoveWorks(
     })
   }
   return out
+}
+
+// ── 범위 조회 오케스트레이션 ─────────────────────────────────────
+//
+// 창 계산과 조회 순서를 'use server' 밖으로 올린 자리다(2026-10-19). 액션 파일 안에 두면 감지망이
+// 같은 길을 지날 수 없어 사본을 들게 되고, 그 사본은 조회가 바뀔 때 옛 규칙에 남아 통과를 말한다.
+// 액션(getMoveCalendarRange)과 감지망(check-move-calendar-drift 축 D)이 이 함수를 그대로 부른다.
+
+/** 범위 조립이 읽는 방 한 줄. 작업 조회(fetchMoveWorks)와 계획 구간 호실번호가 같은 목록을 쓴다. */
+export type MoveRoomRow = { id: string; roomNo: string; nonResidentVacant: boolean }
+
+/** 그 영업장의 방 전부. 창과 무관하다. */
+export function fetchMoveRooms(db: PrismaDb, propertyId: string): Promise<MoveRoomRow[]> {
+  return db.room.findMany({
+    where: { propertyId },
+    select: { id: true, roomNo: true, nonResidentVacant: true },
+  })
+}
+
+/**
+ * 연속 범위 한 벌의 조립 입력. 순차 왕복은 둘이다(종전 다섯).
+ *
+ *   ① 창과 무관한 넷을 한꺼번에 읽는다. 변동 날짜 스캔(창의 끝과 '범위 밖 예정'을 정한다),
+ *      확인된 겹침, 방 목록, 점유 계약 전부(날짜 조건 없음).
+ *   ② 창이 정해진 뒤 둘을 한꺼번에 읽는다. 변동 계약, 작업.
+ *
+ * context 는 ①의 점유 계약에서 메모리로 고른다(pickContext). 종전 SQL 과 같은 집합이라 변동 행·사건은
+ * 그대로다. 계획 구간의 호실번호도 ①의 방 목록에서 찾으므로 보통 왕복이 더 없다(다른 영업장 방을
+ * 가리키는 계획처럼 목록에 없는 방만 따로 읽는다).
+ */
+export async function loadMoveRangeInputs(
+  db: PrismaDb,
+  propertyId: string,
+  opts: { today: string; focusMonth: string },
+): Promise<Parameters<typeof buildMoveRange>[0]> {
+  const { today, focusMonth } = opts
+  const todayMonth = today.slice(0, 7)
+
+  // ① 창과 무관한 넷.
+  const [marks, acks, rooms, occupying] = await Promise.all([
+    db.leaseTerm.findMany({
+      where: { propertyId, roomId: { not: null }, status: { in: [...MOVE_LEASE_STATUSES] } },
+      select: { moveInDate: true, moveOutDate: true, expectedMoveOut: true },
+    }),
+    loadOverlapAcks(propertyId, db),
+    fetchMoveRooms(db, propertyId),
+    // 날짜 조건이 없는 것이 설계다. context 의 상위 집합이다(꼬리가 창 밖 예약을 여기서 찾는다).
+    db.leaseTerm.findMany({
+      where: { propertyId, status: { in: OCCUPYING_STATUSES } },
+      select: MOVE_LEASE_SELECT_SCOPED,
+    }),
+  ])
+  const changeDates: string[] = []
+  for (const l of marks) {
+    // 퇴실의 진짜 날짜는 실제일이 이긴다. lib/moveCalendar stayEnd 와 같은 선.
+    const from = dbYmd(l.moveInDate)
+    const to = dbYmd(l.moveOutDate) ?? dbYmd(l.expectedMoveOut)
+    if (from) changeDates.push(from)
+    if (to) changeDates.push(to)
+  }
+  const lastChange = changeDates.reduce((a, b) => (a > b ? a : b), today)
+  const firstChange = changeDates.reduce((a, b) => (a < b ? a : b), today)
+  const { startMonth, endMonth } = moveRangeWindow({ todayMonth, focusMonth, lastChangeMonth: lastChange.slice(0, 7) })
+  const from = `${startMonth}-01`
+  const to = monthLastDay(endMonth)
+
+  // ② 창이 정해진 뒤 둘.
+  const [changed, works] = await Promise.all([
+    fetchChangedRows(db, propertyId, from, to),
+    fetchMoveWorks(db, propertyId, from, to, rooms),
+  ])
+
+  const context = pickContext(occupying, propertyId, contextRoomIds(changed, works.map(w => w.roomId)))
+  const withPlan = withPlanOf(await planRoomNos(db, [...changed, ...occupying], rooms))
+  const toLeases = (rows: MoveLeaseRow[]) => rows.map(withPlan).map(toMoveLease)
+
+  return {
+    from,
+    to,
+    today,
+    focusMonth,
+    changed: toLeases(changed),
+    context: toLeases(context),
+    works,
+    // 창이 과거로 미끄러지면 창의 끝이 오늘보다 이전일 수 있다. 그때 지난 변동을 '이후 예정'으로
+    // 세면 지난 일이 앞으로의 일로 읽힌다(beyondWindow 의 today 가드).
+    beyond: beyondWindow(changeDates, to, today),
+    canExtendPast: firstChange < from,
+    // 확인된 겹침. 조립은 DB 를 못 보고, 확인 여부는 계산이 아니라 사실이라 조회가 넘긴다.
+    acks,
+  }
+}
+
+/** 호실 관리 일정 탭 한 벌. 액션과 감지망이 같은 길을 지난다. */
+export async function loadMoveRange(
+  db: PrismaDb,
+  propertyId: string,
+  opts: { today: string; focusMonth: string },
+): Promise<MoveCalendarRange> {
+  return buildMoveRange(await loadMoveRangeInputs(db, propertyId, opts))
 }

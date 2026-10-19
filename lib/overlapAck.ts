@@ -11,7 +11,7 @@
 // ①②는 한 함수(recordOverlapAcksForLease)로 받는다 — 두 확인창이 같은 폼의 같은 표식을 싣고,
 // 승인 뒤 실제로 남은 겹침이 무엇인지는 저장이 끝나야 알 수 있기 때문이다.
 
-import prisma from '@/lib/prisma'
+import prisma, { type PrismaDb } from '@/lib/prisma'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, type OverlapAckSpan } from '@/lib/roomAssignment'
 
@@ -24,9 +24,13 @@ export type OverlapAckRow = OverlapAckSpan & {
 
 const ymd = (d: Date | null): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
-/** 그 영업장의 유효한 확인 전부(해제분 제외). 캘린더 조립이 이 목록을 그대로 받는다. */
-export async function loadOverlapAcks(propertyId: string): Promise<OverlapAckRow[]> {
-  const rows = await prisma.leaseOverlapAck.findMany({
+/**
+ * 그 영업장의 유효한 확인 전부(해제분 제외). 캘린더 조립이 이 목록을 그대로 받는다.
+ * db 를 받는 이유는 범위 조회 오케스트레이션(lib/moveCalendarData)을 감지망이 자기 클라이언트로
+ * 그대로 지나가게 하려는 것이다. 생략하면 종전과 같은 전역 클라이언트다.
+ */
+export async function loadOverlapAcks(propertyId: string, db: Pick<PrismaDb, 'leaseOverlapAck'> = prisma): Promise<OverlapAckRow[]> {
+  const rows = await db.leaseOverlapAck.findMany({
     where: { propertyId, deletedAt: null },
     select: {
       id: true, roomId: true, createdAt: true,
