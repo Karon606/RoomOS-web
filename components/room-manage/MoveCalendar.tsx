@@ -467,10 +467,6 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
         </div>
       )}
 
-      {/* relative — '오늘로'가 이 안에 뜬다. 카드 **밖**에 두는 이유는, 변동이 없는 창(먼 달로
-          점프하면 흔하다)에서는 카드 자체가 안 서서 버튼이 함께 사라지고 돌아올 길이 없어지기
-          때문이다. 자리는 종전과 같다(카드 오른쪽 아래). */}
-      <div className="relative">
       {data.rows.length === 0 ? (
         /* ① 데이터 자체가 없다 — 캘린더가 작업까지 담게 되면서 낱말이 넓어졌다(종전
            "입퇴실 변동이 없습니다"는 작업만 있는 창에서 거짓이 된다 — 다만 그 창은 rows 가
@@ -499,8 +495,11 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
           </Btn>}
         />
       ) : (
-        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
-        <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음).
+           overflow 는 hidden 이 아니라 clip 이다. hidden 은 이 카드를 스크롤 컨테이너로 만들어 안쪽
+           sticky('오늘로' 닻)가 셸의 main 이 아니라 이 카드에 붙는다(그러면 닻이 영영 안 붙는다).
+           clip 은 모서리만 자르고 스크롤 컨테이너를 만들지 않는다. */
+        <div className="rounded-xl overflow-clip" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           {/* 카드 머리 — 축 필터 + 범례. 필터가 여기인 이유: 거르는 대상이 이 카드의 트랙이라,
               걸러지는 것 바로 위가 "현재 필터 안"(§27.6)을 눈으로 말하는 자리다. 정본은
               SegmentedControl(§23 1차 필터 = 라디오·단일·'전체' — §25 판별: 좁힘 + 전체 있음).
@@ -554,6 +553,10 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
             ))}
             </div>
           </div>
+          {/* 트랙과 '오늘로' 닻을 grid 한 칸에 겹쳐 둔다. sticky 닻이 움직일 수 있는 범위는 자기를 담은
+              상자라, 이 상자가 트랙만 감싸야 닻이 머리(필터·범례)나 끝 한 줄을 덮지 않는다(카드 전체를
+              grid 로 두면 grid 칸이 아니라 카드가 그 범위가 된다. 320px · 125% 실측). */}
+          <div className="grid grid-cols-1">
           {/* 가로 스크롤러는 포커스를 받아야 키보드로 오른쪽 날짜에 닿는다(WCAG 2.1.1). */}
           {/* containerType — 행 아래 줄의 글자 폭을 트랙(수천 px)이 아니라 **보이는 창**으로
               재기 위한 자(100cqw). 스크롤러는 이미 독립 포맷팅 컨텍스트(overflow)라 컨테인먼트가
@@ -574,7 +577,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
               })) { e.stopPropagation(); e.preventDefault() }
             }}
             className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--tc-text)]"
-            style={{ overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
+            style={{ gridArea: '1 / 1', overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
             <div className="move-track" style={{ width: trackW }}>
 
               {/* 눈금 두 줄 — 위는 월 밴드, 아래는 날짜. 호실 열이 둘을 가로질러 sticky 로 선다. */}
@@ -622,6 +625,35 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
               ))}
             </div>
           </div>
+          {/* 오늘이 화면 밖일 때. 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
+              보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
+              첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다. 오늘이 창 밖이면 곧 켜지고,
+              그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday).
+              트랙이 있을 때만 선다. 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다.
+
+              **화면 아래에 붙는다**(sticky, 2026-10-19). '전체'가 모든 호실이 되면서 카드가 네 화면 남짓으로
+              길어져, 종전처럼 카드 오른쪽 아래(absolute)에 두면 첫 화면에서 안 보인다. 스크롤러는 셸의
+              main 하나뿐이다. 이 닻은 스크롤러를 새로 만들지 않고(두 축 스크롤러는 Android 터치 래치,
+              신고 d8554128) main 의 아래 끝에 붙는다. 트랙과 같은 칸이라 움직이는 범위가 트랙이다.
+              트랙 끝까지 내리면 종전 자리(트랙 오른쪽 아래)에 앉고, 카드가 화면 아래쪽에서 막 시작할 때도
+              머리(필터·범례)나 끝 한 줄을 덮지 않는다.
+
+              sticky 의 기준선은 스크롤러의 안쪽 여백을 뺀 자리다(Blink·WebKit·Gecko 공통. 셸이 상단 여백을
+              main 이 아니라 안쪽 래퍼에 둔 이유와 같은 성질, AppShell 주석). main 의 하단 여백이 곧 하단 내비
+              몫(모바일 4rem + safe area, md 1.5rem)이라 bottom 0 이면 이미 내비 위다. 거기서 오류신고 버튼
+              (right 16 · 48px · 바닥 --toast-offset-bottom)과 가운데 높이를 맞추는 만큼만 더 민다. 식은 알약
+              높이 44px 의 절반(22px)과 아래 여백(pb-2.5)을 뺀 값이다. 가로는 그 버튼 왼쪽으로 8px 비킨다
+              (오른쪽 여백 = 72px 에서 셸 본문 좌우 여백을 뺀 값, rem 이라 글자 크기를 따라 함께 커진다). */}
+          <div className="pointer-events-none sticky bottom-[calc(1.375rem-22px)] md:bottom-[calc(2px-0.625rem)] z-40 flex justify-end pb-2.5 pr-14 md:pr-12"
+            style={{ gridArea: '1 / 1', alignSelf: 'end' }}>
+            <button ref={todayBtnRef} type="button" onClick={goToday}
+              className="pointer-events-auto min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
+              style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
+              오늘로
+            </button>
+          </div>
+          </div>
+
           {/* 카드 끝 한 줄. 행으로 안 세운 창고·사무실(운영자 결정 2026-10-19). 문구와 0 판정은 lib 정본.
               카드 머리(범례)와 같은 자리 문법이다(px-2 · 구분선 1px). 카드 **안**이라 바탕이 --cream 이고
               --ink-m 이 AA 를 넘는다(카드 밖 --canvas 위에서는 라이트 4.11:1 로 미달, 실측). */}
@@ -632,20 +664,6 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
           )}
         </div>
       )}
-
-      {/* 오늘이 화면 밖일 때 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
-          보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
-          첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜지고,
-          그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday).
-          **트랙이 있을 때만 부유시킨다** — 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다. */}
-      {rows.length > 0 && (
-      <button ref={todayBtnRef} type="button" onClick={goToday}
-        className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
-        style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
-        오늘로
-      </button>
-      )}
-      </div>
 
       {/* ── 트랙의 양 끝 ── 범위 밖의 사실과 그리로 가는 길. 트랙 끝에 붙이면 수천 px 을 끌어야
           닿으므로 카드 밖 한 줄로 세운다(320px 에서도 손이 닿는 자리다). */}
