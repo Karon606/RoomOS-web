@@ -298,6 +298,9 @@ function patch(p: Partial<LocCheckPatch> & { checkedLocationId: string; afterQty
   eq('값 검증: 채움 = 잔량(빈 위치를 다 채움)', locValuesError([{ qty: 10, restockedQty: 10 }]), null)
   eq('값 검증: 채움 없음', locValuesError([{ qty: 3 }, { qty: 0, restockedQty: null }]), null)
   eq('값 검증: 부동소수 오차는 통과', locValuesError([{ qty: 0.3, restockedQty: 0.1 + 0.2 }]), null)
+  // 허용 오차 바로 위 경계. 오차 폭이 커지면(예 0.1) 이 줄이 통과해 버린다(검수 2026-10-19 빈틈, 역주입 I7).
+  eq('값 검증: 오차 폭 바로 위(잔량 10, 채움 10.01)는 거부', locValuesError([{ qty: 10, restockedQty: 10.01 }]) != null, true)
+  eq('값 검증: 오차 폭 안(잔량 10, 채움 10.0000001)은 통과', locValuesError([{ qty: 10, restockedQty: 10.0000001 }]), null)
   eq('값 검증: 채움 > 채운 후 잔량은 거부', locValuesError([{ qty: 10, restockedQty: 12.5 }]),
     '채운 양이 채운 후 잔량보다 많습니다. 채우기 전과 채운 후를 다시 확인해 주세요.')
   eq('값 검증: 음수 잔량 거부', locValuesError([{ qty: -1 }]), '잔량은 0 이상의 숫자여야 합니다.')

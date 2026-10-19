@@ -4,6 +4,8 @@
 // 로딩→로디드 전환 시 레이아웃 점프가 없게 한다. 패딩은 AppShell 것만 사용(이중 패딩 금지).
 // delayed-fallback: 300ms 안에 끝나는 전환은 스켈레톤을 띄우지 않는다 — 그 구간은 상단 진행바가 맡는다.
 // 전 라우트 동일 규칙(F페이즈). 화면마다 다르면 "같은 링크인데 어떨 땐 뜨고 어떨 땐 안 뜬다"로 체감된다.
+import { CHECK_GUIDE_PANEL, LOC_PANEL_EMPTY_HINT } from './constants'
+
 export default function Loading() {
   return (
     <div className="delayed-fallback space-y-4">
@@ -39,20 +41,23 @@ export default function Loading() {
           inline 가지에서 그대로 베꼈다 — p-5 한 상자로 뭉치면 첫 페인트가 실제 패널의 40% 높이라
           로디드 순간 통째로 늘어난다. */}
       <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] flex flex-col">
-        {/* 헤더 — px-5 py-4, 제목 + 안내 두 줄 */}
-        <div className="px-5 py-4 border-b border-[var(--warm-border)] space-y-2">
-          <div className="h-4 w-24 rounded-md bg-[var(--canvas)] animate-pulse" />
-          <div className="space-y-1">
-            <div className="h-3 rounded-md bg-[var(--canvas)] animate-pulse" />
-            <div className="h-3 w-2/3 rounded-md bg-[var(--canvas)] animate-pulse" />
-          </div>
+        {/* 헤더. px-5 py-4, 제목 줄(text-sm 20px) + 안내문. 안내문은 **실제와 같은 상수**를 글자색 없이 막대로 그린다
+            (상세 모달 점검 골격과 같은 문법). 문장이 길어 폭마다 줄 수가 달라 고정 막대 두 줄로는 어느 폭에서든 어긋났다
+            (2026-10-19 검수, 안내문이 네 문장이 된 뒤 360px 첫 로딩에서 헤더가 자랐다). */}
+        <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+          <div className="flex h-5 items-center"><div className="h-4 w-24 rounded-md bg-[var(--canvas)] animate-pulse" /></div>
+          <p className="break-keep text-[0.6875rem] mt-0.5" aria-hidden="true"><span className="rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">{CHECK_GUIDE_PANEL}</span></p>
         </div>
-        {/* 선택기 블록 — px-5 py-3, 점검 위치·점검일 2열 + 우측 '위치 이동' */}
+        {/* 선택기 블록 — px-5 py-3, 점검 위치·점검일 2열 + 우측 '위치 이동'. 라벨은 칸마다 실제 글자를 투명하게 둔다
+            (10.5px 줄 높이 15.75px, 12px 막대 하나면 4px 짧았다, 2026-10-19 실측). */}
         <div className="px-5 py-3 border-b border-[var(--warm-border)] space-y-2">
-          <div>
-            <div className="h-3 w-14 rounded-md bg-[var(--canvas)] animate-pulse mb-1" />
-            <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[0.65625rem] mb-1" aria-hidden="true"><span className="rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">점검 위치</span></p>
               <div className="h-11 rounded-sm bg-[var(--canvas)] animate-pulse" />
+            </div>
+            <div>
+              <p className="text-[0.65625rem] mb-1" aria-hidden="true"><span className="rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">점검일</span></p>
               <div className="h-11 rounded-sm bg-[var(--canvas)] animate-pulse" />
             </div>
           </div>
@@ -60,11 +65,10 @@ export default function Loading() {
             <div className="h-11 w-20 rounded-md bg-[var(--canvas)] animate-pulse" />
           </div>
         </div>
-        {/* 본문 — 위치 미선택 첫 페인트는 가운데 안내 한 줄뿐이다(패널 본문 px-5 py-3 + 안내 py-6) */}
+        {/* 본문 — 위치 미선택 첫 페인트는 가운데 안내뿐이다(패널 본문 px-5 py-3 + 안내 py-6). 같은 상수를 투명 글자로 그린다.
+            360px 이하에서 두 줄로 꺾여 한 줄 막대면 16px 짧았다(2026-10-19 실측). */}
         <div className="px-5 py-3">
-          <div className="py-6 flex justify-center">
-            <div className="h-4 w-3/4 rounded-md bg-[var(--canvas)] animate-pulse" />
-          </div>
+          <p className="text-xs text-center py-6" aria-hidden="true"><span className="rounded-md bg-[var(--canvas)] animate-pulse text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">{LOC_PANEL_EMPTY_HINT}</span></p>
         </div>
         {/* 발끝 — border-t px-5 py-3, 인라인은 임시저장·저장 2열 */}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2">

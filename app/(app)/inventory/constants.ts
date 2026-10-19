@@ -1,5 +1,12 @@
 export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
 
+// 위치별 점검 패널 머리 문장(2026-10-19 신고 1daf641c). 아이템별 폼 안내문(CHECK_GUIDE_RESTOCK)과 같은 규칙을 패널의
+// 행 단위(품목)로 말한다. 서버 컴포넌트인 재고 loading.tsx 골격도 이 문장을 투명 글자로 그려 폭마다 줄 수를 맞추므로
+// 'use client' 모듈이 아니라 여기 둔다(클라이언트 모듈의 상수를 서버에서 읽으면 값이 아니라 참조가 온다).
+export const CHECK_GUIDE_PANEL = '센 품목만 적으세요. 손대지 않은 품목은 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 그 품목의 창고에서 자동 차감됩니다.'
+// 위치를 고르기 전 패널 본문 안내. 같은 까닭으로 로딩 골격과 한 상수다(360px 이하에서 두 줄로 꺾인다).
+export const LOC_PANEL_EMPTY_HINT = '위치를 선택하면 그 위치와 아래 위치에 보관된 품목이 표시됩니다.'
+
 // 재고관리 카테고리 = 지출 카테고리(cat) + 재고관리 표시명(alias).
 export type InventoryCategory = { cat: string; alias: string }
 

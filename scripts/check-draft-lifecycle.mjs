@@ -429,7 +429,7 @@ need("'그대로' 가 행 머리 '저장값 N' 과 같은 줄에 선다(두 화�
   '입력칸 아래로 내리면 저장값과 그 값을 확정하는 버튼이 떨어져, 무엇을 그대로 두는지 화면이 말을 못 한다')
 // 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이 없다 — 열어도 출발지 칩이 하나도 없는 막다른 모달이다.
 need('잔량 0 행에는 다른 곳으로가 없다',
-  /\{prev != null && prev\.qty !== 0 && \(/.test(client),
+  /\{prev != null && prev\.qty !== 0 && (!movePending && )?\(/.test(client),
   '눌러도 고를 출발지가 없는 모달이 뜬다')
 // 셋이다 — 두 화면의 '그대로' 와 패널의 '다른 곳으로'. 종전에는 수제 유사요소 확장(before:h-11)으로 44px 를
 // 냈는데, 2단계에서 정본 RowActionBtn(neutral — §03 코랄 테두리 금지)으로 옮겼다. 히트 44px 는 정본이 진다.
@@ -728,6 +728,8 @@ need('강행 저장 토스트도 같은 규칙이다',
 // 저장값을 기대했다. 두 규칙의 답이 갈리는 행만 묻는다. 이 축이 지키는 것은 그 물음이 **세 화면 모두**에 서는가다.
 // 한 화면이라도 둘짜리 해석(빈칸 = 0)을 부르면 그 화면만 옛 장부를 쓴다. 그리고 묻는 행이 저장으로 새지 않는가.
 const ledgerSrc = readFileSync('lib/stockLedger.ts', 'utf8')
+const invConstants = readFileSync('app/(app)/inventory/constants.ts', 'utf8')
+const invLoading = readFileSync('app/(app)/inventory/loading.tsx', 'utf8')
 const editForm = topFn(client, 'function CheckEditForm({ entry, stockUnit, itemLocations')
 need('이력 수정 폼을 찾음', editForm.length > 2000)
 need('해석 정본이 저장값을 받는다',
@@ -760,6 +762,12 @@ need('세 화면이 같은 함수를 저마다의 저장값으로 부른다',
   /const saved = r\.currentLocationBreakdown\.find\(lb => lb\.locationId === lid\)\?\.qty\s*\n\s*const \{[^}]*pending[^}]*\} = calcLocMove\(beforeStr, afterStr, saved\)/.test(locPanel) &&
   /const moveOf = \(l: \{ id: string \}\) => calcLocMove\(beforeQtys\[l\.id\] \?\? '', afterQtys\[l\.id\] \?\? '', savedBeforeOf\(l\.id\)\)/.test(editForm),
   '아이템별 폼은 행 머리 저장값(prevMap), 패널은 같은 출처(currentLocationBreakdown), 이력 수정 폼은 그 기록의 채우기 전. 한 화면만 빠지면 그 화면만 묻지 않는다')
+// 이력 수정 폼의 저장값은 **그 기록의 그 행 채우기 전**(잔량 − 채움)이다. 이름만 보면 정의가 바뀌어도(잔량을 그대로 쓰거나
+// null 로 비우면) 위 축은 초록이다. 정의 자체를 본다(검수 2026-10-19 빈틈).
+need('이력 수정 폼 저장값이 그 기록의 채우기 전이다',
+  /const origOf = \(id: string\) => entry\.locationBreakdown\.find\(lb => lb\.locationId === id\)/.test(editForm) &&
+  /const savedBeforeOf = \(id: string\) => \{ const lb = origOf\(id\); return lb \? Math\.max\(0, lb\.qty - \(lb\.restockedQty \?\? 0\)\) : null \}/.test(editForm),
+  '잔량(채운 후)을 저장값으로 쓰면 채움이 있던 행에서 [저장값에서 채움] 이 옮김 0 이 되고, null 이면 그 폼에서는 묻지 않는다')
 need('세 화면의 행 계산이 모두 그 한 자리(moveOf/computeRow)를 지난다',
   !/calcLocMove\(/.test(itemForm.replace(/const moveOf = [^\n]*\n/, '').replace(/const hubMove = [^\n]*\n/, '')) &&
   (locPanel.match(/calcLocMove\(/g) ?? []).length === 1 &&
@@ -783,11 +791,13 @@ need('이력 수정 폼: 묻는 행이 있으면 저장하지 않는다',
   "'채운 후'만 읽으면 그 칸을 비울 때 채우기 전 값을 버리고 0 을 저장한다(점검 폼과 갈린 자리)")
 need('세 화면의 저장 버튼이 묻는 행이 있으면 막히고 이유 한 줄이 선다',
   /disabled=\{pending \|\| restockSaveCount === 0 \|\| pendingLocCount > 0\}/.test(itemForm) &&
-  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(itemForm) &&
+  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warm-muted\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(itemForm) &&
   /disabled=\{pending \|\| !locId \|\| scopeItemCount === 0 \|\| dirtyUnitCount === 0 \|\| pendingPairCount > 0\}/.test(locPanel) &&
-  /\{pendingPairCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonPanel\(pendingPairCount\)\}<\/p>\}/.test(locPanel) &&
+  /\{pendingPairCount > 0 && <p className="break-keep text-xs text-\[var\(--warm-muted\)\]">\{pendingReasonPanel\(pendingPairCount\)\}<\/p>\}/.test(locPanel) &&
   /\|\| pendingLocCount > 0\}\s*\n\s*onClick=\{handleSave\}/.test(editForm) &&
-  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warning-fg\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(editForm),
+  /\{pendingLocCount > 0 && <p className="break-keep text-xs text-\[var\(--warm-muted\)\]">\{pendingReasonItemForm\(pendingLocCount\)\}<\/p>\}/.test(editForm) &&
+  client.includes("const pendingReasonItemForm = (n: number) => `'채우기 전'을 고를 위치가 ${n}곳 남았습니다.`") &&
+  client.includes("const pendingReasonPanel = (n: number) => `'채우기 전'을 고를 품목이 ${n}건 남았습니다.`"),
   '§22 ② 하단 이유 한 줄 + 버튼 비활성. 막기만 하면 왜 안 눌리는지 모르고, 말만 하면 그 행을 빼고 저장된다')
 need('이유 줄은 키보드가 서도 접지 않는다',
   !/kbd-collapse[^\n]*pendingReason/.test(client))
@@ -799,7 +809,9 @@ need('아이템별 폼 점검 후 잔량이 묻는 행을 이월로 센다',
 need('고르는 줄이 한 벌이고 버튼 글자가 규칙과 같다',
   /function PendingFillChoice\(\{ saved, unit, onPick \}/.test(client) &&
   /<RowActionBtn onClick=\{\(\) => onPick\(String\(saved\)\)\}>\{fmtQty\(saved, unit\)\}에서 채움<\/RowActionBtn>/.test(client) &&
-  /<RowActionBtn onClick=\{\(\) => onPick\('0'\)\}>0에서 채움<\/RowActionBtn>/.test(client) &&
+  /<RowActionBtn onClick=\{\(\) => onPick\('0'\)\}>\{fmtQty\(0, unit\)\}에서 채움<\/RowActionBtn>/.test(client) &&
+  client.includes(`{"'채우기 전'이 비어 있습니다. 얼마에서 채웠는지 고르세요."}`) &&
+  /function PendingFillChoice[\s\S]{0,800}?<div className="space-y-2">/.test(client) &&
   !/에서 옮김/.test(client),
   "낱말은 '채움'이다. '옮김'은 위치 이동이라 이 자리에 쓰지 않는다")
 need('세 화면이 묻는 행 아래에 고르는 줄을 세운다',
@@ -820,7 +832,8 @@ need("이력 수정 폼에 늘 서던 자리표시 '0' 이 없다",
 need('안내문이 승인된 문장이고 규칙과 맞다',
   client.includes("const CHECK_GUIDE_RESTOCK = '센 위치만 적으세요. 손대지 않은 위치는 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 창고에서 자동 차감됩니다.'") &&
   !/비워 둔 칸은 지난 점검 값을 이어받습니다/.test(client) &&
-  /const CHECK_GUIDE_PANEL = '센 품목만 적으세요\. 손대지 않은 품목은 지난 점검 값을 이어받습니다\. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요\./.test(client) &&
+  invConstants.includes("export const CHECK_GUIDE_PANEL = '센 품목만 적으세요. 손대지 않은 품목은 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 그 품목의 창고에서 자동 차감됩니다.'") &&
+  !/const CHECK_GUIDE_PANEL/.test(client) &&
   /<p className="break-keep text-\[0\.6875rem\] text-\[var\(--warm-muted\)\] mt-0\.5">\{CHECK_GUIDE_PANEL\}<\/p>/.test(locPanel),
   "'비워 둔 칸은 이어받는다' 는 '채운 후'만 적은 행에서 비운 '채우기 전'까지 이어받는다고 읽힌다. 그 칸은 묻는 자리다")
 need('안내문과 골격이 같은 상수를 break-keep 으로 그린다',
@@ -845,6 +858,28 @@ need('updateStockCheck 가 접기 전에 값 검증을 지난다(두 갈래)',
   /const valueError = locValuesError\(\[\s*\n\s*\.\.\.\(data\.locationPatch \? \[\{ qty: data\.locationPatch\.afterQty, restockedQty: data\.locationPatch\.restockedQty \}\] : \[\]\),\s*\n\s*\.\.\.\(data\.locationQtys \?\? \[\]\),\s*\n\s*\]\)\s*\n\s*if \(valueError\) return \{ ok: false, error: valueError \}/.test(updateBody) &&
   before(updateBody, 'locValuesError(', 'applyLocationCheck(base'),
   '위치 패널의 머지 저장과 이력 수정 폼이 이 길로 온다. 한쪽만 막으면 다른 쪽으로 샌다')
+// 재고 첫 로딩 골격의 패널 머리는 실제와 같은 상수를 투명 글자로 그린다(검수 권장 1). 고정 막대 두 줄이면 문장이 네
+// 문장이 된 뒤 360px 에서 헤더가 로디드 순간 자랐다. 서버 컴포넌트라 'use client' 모듈이 아닌 constants 에서 읽는다.
+need('로딩 골격 패널 머리가 같은 안내문 상수를 그린다',
+  /import \{ CHECK_GUIDE_PANEL, LOC_PANEL_EMPTY_HINT \} from '\.\/constants'/.test(invLoading) &&
+  /<p className="text-xs text-center py-6" aria-hidden="true"><span className="[^"]*text-transparent[^"]*">\{LOC_PANEL_EMPTY_HINT\}<\/span><\/p>/.test(invLoading) &&
+  /text-center py-6">\{LOC_PANEL_EMPTY_HINT\}<\/p>/.test(locPanel) &&
+  /<p className="break-keep text-\[0\.6875rem\] mt-0\.5" aria-hidden="true"><span className="[^"]*text-transparent[^"]*">\{CHECK_GUIDE_PANEL\}<\/span><\/p>/.test(invLoading) &&
+  /<div className="flex h-5 items-center"><div className="h-4 w-24 /.test(invLoading),
+  '막대 줄 수를 손으로 맞추면 폭마다 어긋난다. 같은 문장을 같은 클래스로 그려야 줄 수가 같다')
+// 묻는 동안 숨기는 행 버튼 둘(웹디자이너 2026-10-19). 패널 '다른 곳으로' 는 고르기 전에 옮기면 완료 핸들러가 그 칸의
+// 미저장 입력을 비우고, 이력 수정 폼 '채움 없음' 은 빈 '채우기 전'을 '채운 후'에 복사해 두 칸을 비워 잔량 0 을 저장한다.
+need("위치 패널 묻는 행에는 '다른 곳으로' 가 없다",
+  /\{prev != null && prev\.qty !== 0 && !movePending && \(\s*\n\s*<div className="flex">\s*\n\s*<RowActionBtn onClick=\{\(\) => setRowTransfer/.test(locPanel),
+  '고르기 전에 옮기면 방금 적은 채운 후가 사라지고, 버튼 셋이 한 줄씩 서면 물음의 답처럼 읽힌다')
+need("이력 수정 폼 묻는 행에는 '채움 없음' 이 없다",
+  /\{!movePending && \(\s*\n\s*<RowActionBtn className="shrink-0" onClick=\{\(\) => setAfterQtys\(p => \(\{ \.\.\.p, \[l\.id\]: beforeQtys\[l\.id\] \?\? '' \}\)\)\}>\s*\n\s*채움 없음/.test(editForm),
+  '누르면 두 칸이 비면서 그 행이 잔량 0 으로 저장된다')
+// 임시저장 칩 기준값은 적은 글자만이다(검수 12). 해석 결과를 담으면 저장값만 바뀌어도 '임시저장 후 수정됨' 이 거짓으로 선다.
+need('패널 임시저장 칩 기준값이 적은 글자만 담는다',
+  /const snapshotOfInputs = \(\) => JSON\.stringify\(\{\s*\n\s*locId, date,\s*\n\s*rows: groups\.flatMap\(g => g\.items\.map\(r => \{ const k = locPairKey\(r\.id, g\.node\.id\); return \{ k, b: beforeQtys\[k\] \?\? '', a: afterQtys\[k\] \?\? '' \} \}\)\),/.test(locPanel) &&
+  !/\.\.\.computeRow\(r, g\.node\.id\)/.test(locPanel),
+  '저장값에 따라 갈리는 미결·최종값이 기준에 들어가면 다른 저장 뒤 칩이 거짓말을 한다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
