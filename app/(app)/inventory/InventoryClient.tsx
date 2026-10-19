@@ -198,7 +198,12 @@ function splitLocPath(l: { name: string; pathName: string }): { parent: string; 
 const CHECK_DISPOSAL_HINT = '버리거나 상해서 줄어든 양이 있나요? 점검 저장 전에 폐기를 먼저 기록해야 소모량이 정확합니다.'
 // '그대로' 낱말은 쓰지 않는다 — 같은 화면의 '그대로' 버튼은 저장값을 이번 실측으로 확정하는데(실측 패치), 비워 둔
 // 칸은 지난 점검 값을 이월로 이어받는다(패치 없음). 같은 낱말이 두 결과를 말하면 둘을 구별할 길이 없다(2단계 검수 3).
-const CHECK_GUIDE_RESTOCK = "센 칸만 적으세요. 비워 둔 칸은 지난 점검 값을 이어받습니다. 창고에서 채웠다면 '채운 후'도 적으세요. 늘어난 만큼 창고에서 자동 차감됩니다."
+// 이월의 단위는 칸이 아니라 **위치**다(2026-10-19 신고 1daf641c). 종전 문장(비워 둔 칸이 이어받는다)은
+// '채운 후'만 적은 행에서 비워 둔 '채우기 전' 칸까지 이어받는다고 읽혔는데, 그 칸은 이월이 아니라 묻는 자리다
+// (lib/stockLedger calcLocMove 미결). 그래서 손대지 않은 위치만 이어받는다고 말하고 두 칸을 함께 적게 한다.
+const CHECK_GUIDE_RESTOCK = '센 위치만 적으세요. 손대지 않은 위치는 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 창고에서 자동 차감됩니다.'
+// 위치 패널 머리 문장. 같은 규칙을 패널의 행 단위(품목)로 말한다. 아래 위치까지 한 번에 적는 것은 패널만의 일이다.
+const CHECK_GUIDE_PANEL = '센 품목만 적으세요. 손대지 않은 품목은 지난 점검 값을 이어받습니다. 창고에서 채웠다면 채우기 전과 채운 후를 함께 적으세요. 늘어난 만큼 그 품목의 창고에서 자동 차감됩니다. 아래 위치까지 한 번에 입력할 수 있습니다.'
 // '채우기 전'을 고르지 않은 행이 남았을 때 저장 버튼 위 이유 한 줄(§22 ② 하단 이유 한 줄 + 버튼 비활성).
 // 세는 말은 그 화면의 저장 버튼과 같다(아이템별 폼 'N곳 저장', 위치 패널 'N건 저장').
 const pendingReasonItemForm = (n: number) => `채우기 전을 고를 위치가 ${n}곳 남았습니다.`
@@ -1718,7 +1723,7 @@ function DetailModalSkeleton({ mode, row }: { mode: 'view' | 'check'; row: Inven
     <div className="px-5 sm:px-6 py-4 space-y-3 delayed-fallback" aria-busy="true" aria-label="불러오는 중">
       {/* 안내문 — 실제 폼의 첫 블록이다. 빼면 골격이 통째로 위로 당겨 붙는다. **실제와 같은 문장**을 글자색 없이
           막대로 그린다(2단계) — 문장이 길어 폭마다 줄 수가 달라 고정 막대로는 어느 폭에서든 어긋난다. */}
-      <p className="text-xs" aria-hidden="true"><span className={`${bar} text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]`}>{CHECK_GUIDE_RESTOCK}</span></p>
+      <p className="break-keep text-xs" aria-hidden="true"><span className={`${bar} text-transparent [box-decoration-break:clone] [-webkit-box-decoration-break:clone]`}>{CHECK_GUIDE_RESTOCK}</span></p>
       {/* 폐기 먼저 기록 안내 — 보충 모드에서도 서므로 늘 있다. 실제 상자와 같은 문장·버튼 글자를 투명하게 둔다(2단계) —
           고정 50px 막대는 320px 에서 실제(세 줄 65px)보다 짧았다. */}
       <div className="flex items-center justify-between gap-2 rounded-lg border border-transparent bg-[var(--canvas)] px-3 py-2 animate-pulse" aria-hidden="true">
@@ -4665,7 +4670,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
     <form onSubmit={handleSubmit} className="px-5 sm:px-6 py-4 space-y-3" id={formId} ref={setFormEl}>
       {/* 안내문 — 입력칸 라벨의 괄호 설명을 여기 한 곳으로 모은 문장이다(2단계). 위치 패널 머리 안내문과
           자동 차감 규칙은 같은 말이고, '센 칸만 적는다' 는 원칙을 이 폼 머리가 먼저 말한다. */}
-      <p className="text-xs text-[var(--warm-muted)]">
+      <p className="break-keep text-xs text-[var(--warm-muted)]">
         {restockMode
           ? CHECK_GUIDE_RESTOCK
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
@@ -6154,9 +6159,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
-            <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
-              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고에서 자동 차감됩니다. 아래 위치까지 한 번에 입력할 수 있습니다.
-            </p>
+            <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">{CHECK_GUIDE_PANEL}</p>
           </div>
           {!inline && (
             <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-11 h-11 flex items-center justify-center"><svg className="inline-block align-middle" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
