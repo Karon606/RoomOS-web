@@ -834,7 +834,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       const res = await setCommonAsset(it.ids, value)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', value ? '공용 자재로 표시됨' : '공용 자재 해제됨', {
-        action: { label: '적용취소', run: () => undoCommon(it.ids, value, res.restoreStored) },
+        action: { label: '적용취소', run: () => undoCommon(res.changedIds, value, res.restoreStored) },
       })
       router.refresh()
     })

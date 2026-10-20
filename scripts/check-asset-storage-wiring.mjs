@@ -94,7 +94,7 @@ must(A, a, 'undoAddFreeAsset', [
 must(A, a, 'undoDisposalRow', [[/storedLocationId: row\.storedLocationId,/, '폐기 한 줄 적용취소가 다른 창고 짝에 접는다(검수 R2)']])
 must(A, a, 'setCommonAsset', [
   [/isCommonAsset: true, roomId: null, assignedLocationId: null, storedLocationId: null/, '공용 자재로 가면서 보관 위치를 비우지 않는다'],
-  [/return \{ ok: true, restoreStored: stored \}/, '공용 자재로 지운 보관 위치를 적용취소에 돌려주지 않는다'],
+  [/restoreStored: stored \}/, '공용 자재로 지운 보관 위치를 적용취소에 돌려주지 않는다'],
 ])
 mustNot(A, a, 'setCommonAsset', [[/snapshotRow/, '공용 자재 적용취소를 원상태 스냅샷으로 덮는다(옮긴 몫이 원행에 되살아나 지출이 는다, 검수 F1)']])
 must(A, a, 'undoSetCommonAsset', [
@@ -102,8 +102,22 @@ must(A, a, 'undoSetCommonAsset', [
   [/where: \{ id: \{ in: targetIds \}, propertyId, isCommonAsset: true \}, data: \{ isCommonAsset: false \}/, '공용 표시 적용취소가 반대 값 되돌리기(그 직후 상태 CAS)가 아니다(검수 F1)'],
   [/where: \{ id: r\.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: \{ not: null \} \}/, '보관 위치 되살리기에 CAS 가 없다'],
   [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '되살리는 보관 위치를 영업장 범위로 보지 않는다'],
+  [/where: \{ id: \{ in: targetIds \}, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null \}/, '해제 적용취소의 직후 상태 조건에 보관 위치가 없다(창고에 보관한 행을 공용으로 되돌린다, 재검수 X4e)'],
+  [/if \(flipped\.count === 0\) throw new Error\(ASSET_COMMON_UNDO_STALE\)/, '바뀐 행이 0건인데 성공으로 돌려준다(재검수 X4c)'],
 ])
-mustNot(A, a, 'undoSetCommonAsset', [[/qtyValue|amount/, '공용 자재 적용취소가 수량·금액을 쓴다(묵은 값으로 덮는다)']])
+mustNot(A, a, 'undoSetCommonAsset', [
+  [/qtyValue|amount/, '공용 자재 적용취소가 수량·금액을 쓴다(묵은 값으로 덮는다)'],
+  [/withDisposedSiblings\(/, '적용취소 때 형제를 다시 찾는다(다른 공용 카드의 폐기 행이 끌려와 공용이 풀린다, 재검수 X4d)'],
+])
+must(A, a, 'setCommonAsset', [[/return \{ ok: true, changedIds: targetIds, restoreStored: stored \}/, '공용 자재 표시가 실제로 바꾼 행을 토큰에 싣지 않는다(재검수 X4d)']])
+must(A, a, 'applyAssetUndo', [
+  [/if \(!expect \|\| touched\.some\(id => !expect\.some\(e => e\.id === id\)\)\) throw new Error\(ASSET_ASSIGN_UNDO_STALE\)/, '직후 모양 없는 적용취소 토큰을 받는다(재검수 X8)'],
+  [/if \(\(await tx\.expense\.count\(\{ where: shapeWhere\(e\) \}\)\) !== 1\) throw new Error\(ASSET_ASSIGN_UNDO_STALE\)/, '배정·폐기 적용취소가 직후 모양 CAS 없이 덮는다(옮긴 몫이 원행에 되살아나 지출이 는다, 재검수 X8)'],
+  [/storedLocationId: e\.storedLocationId, qtyValue: e\.qtyValue, amount: e\.amount, allocationGroupId: e\.allocationGroupId,/, '직후 모양 CAS 에 자리·수량·금액·묶음 칸이 빠졌다'],
+])
+for (const fn of ['assignAggregateToTarget', 'batchAssignAssets', 'disposeAssets', 'distributeAssetToTargets']) {
+  must(A, a, fn, [[/expect: await afterShapes\(propertyId,/, '적용취소 토큰에 직후 모양을 안 싣는다(재검수 X8)']])
+}
 must(A, a, 'snapshotRow', [[/storedLocationId: e\.storedLocationId/, '적용취소 스냅샷에 보관 위치가 없다']])
 must(A, a, 'applyAssetUndo', [
   [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '적용취소가 되살리는 보관 위치를 영업장 범위로 보지 않는다(토큰 위조로 남의 영업장 위치 FK)'],
@@ -176,7 +190,7 @@ must(AC, ac, null, [
   [/const placeIn = \(it: AssetItem\) =>/, '문장 속 장소(경로 그대로) 정본이 없다'],
   [/subtitle=\{`지금 \$\{fromIn\}에/, "옮기기 부제가 문장 속 장소가 아니라 라벨('…보관에')이다"],
   [/logPlaceLabel\(r\.fromKind, r\.fromLabel\)/, "배정 변경 이력이 보관 이력을 '{위치} 보관'으로 안 읽는다"],
-  [/undoCommon\(it\.ids, value, res\.restoreStored\)/, '공용 자재 적용취소가 반대 값 + 보관 위치 CAS(undoSetCommonAsset)가 아니다(검수 F1)'],
+  [/undoCommon\(res\.changedIds, value, res\.restoreStored\)/, '공용 자재 적용취소가 반대 값 + 보관 위치 CAS(undoSetCommonAsset)가 아니다(검수 F1)'],
   [/const res = await undoSetCommonAsset\(ids, value, restoreStored\)/, '공용 자재 적용취소 손잡이가 서버 undoSetCommonAsset 을 안 부른다(검수 F1)'],
   [/undoUnreceive\(uu\)/, '수령 대기로 토스트에 적용취소가 없다'],
   [/undoFree\(undo\)/, '무상 입수 토스트에 적용취소가 없다'],

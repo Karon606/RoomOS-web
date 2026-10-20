@@ -35,6 +35,7 @@ import {
   type ReceiptRow, type ReceiptPlanExpect, type AssetReceiptUndo,
   ASSET_UNRECEIVE_UNDO_DOMAIN, canonicalAssetUnreceiveUndo, parseAssetUnreceiveUndo, ASSET_UNRECEIVE_UNDO_STALE, type AssetUnreceiveUndo,
   ASSET_FREE_UNDO_DOMAIN, canonicalAssetFreeUndo, parseAssetFreeUndo, ASSET_FREE_UNDO_STALE, type AssetFreeUndo,
+  ASSET_COMMON_UNDO_STALE, ASSET_ASSIGN_UNDO_STALE,
 } from './receiptPlacement'
 // 보관 위치 축(배정과 다른 축, 받은 + 안 놓인 행에만). 판정·표기 정본은 순수층 ./storagePlace.
 import { storageCandidates, STORE_NOT_FOUND } from './storagePlace'
@@ -742,7 +743,9 @@ export async function undoAddFreeAsset(undoRaw: AssetFreeUndo): Promise<{ ok: tr
 // 돌려주고, 적용취소(undoSetCommonAsset)가 반대 값으로 되돌린 뒤 그 칸만 CAS 로 되살린다.
 // 원상태 스냅샷으로 덮지 않는다(독립 검수 F1). 표시한 뒤 몇 개를 방으로 옮기면 원행 수량·금액이 줄어 있는데, 묵은 스냅샷이
 // 원행을 옛 수량·금액으로 덮고 옮겨 간 조각은 남아 지출이 그만큼 불어났다.
-export async function setCommonAsset(expenseIds: string[], value: boolean, disposedIds?: string[]): Promise<{ ok: true; restoreStored: { id: string; storedLocationId: string }[] } | { ok: false; error: string }> {
+// changedIds = 이번에 실제로 바꾼 행(폐기 형제 포함). 적용취소는 이 id 만 다룬다(그때 다시 형제를 찾으면 다른 공용 카드의 폐기 행까지
+// 끌려와 공용이 풀린다, 재검수 X4d).
+export async function setCommonAsset(expenseIds: string[], value: boolean, disposedIds?: string[]): Promise<{ ok: true; changedIds: string[]; restoreStored: { id: string; storedLocationId: string }[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -757,7 +760,7 @@ export async function setCommonAsset(expenseIds: string[], value: boolean, dispo
       data: value ? { isCommonAsset: true, roomId: null, assignedLocationId: null, storedLocationId: null } : { isCommonAsset: false },
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true, restoreStored: stored }
+    return { ok: true, changedIds: targetIds, restoreStored: stored }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -767,28 +770,34 @@ export async function setCommonAsset(expenseIds: string[], value: boolean, dispo
 // 공용 자재 표시/해제의 적용취소. 반대 값으로 되돌리되 **그 동작 직후 상태 그대로인 행만**(공용으로 표시했던 것은 아직 공용인 행,
 // 해제했던 것은 아직 안 놓인 미배정 행) 바꾼다. 그 뒤 지웠던 보관 위치를 같은 CAS(공용 아님·방·공용부·보관 위치 모두 비어 있음)로
 // 되살린다. 보관 위치는 이 영업장 위치일 때만 받는다. 한 트랜잭션이다(독립 검수 F1).
-export async function undoSetCommonAsset(expenseIds: string[], value: boolean, restoreStored: { id: string; storedLocationId: string }[] = []): Promise<{ ok: true } | { ok: false; error: string }> {
+// changedIds 는 setCommonAsset 이 돌려준 '실제로 바꾼 행'이다. 여기서 형제를 다시 찾지 않는다(재검수 X4d). 바뀐 행이 0건이면
+// 그 사이 다른 일이 있었던 것이라 형제 적용취소들처럼 거부한다(재검수 X4c).
+export async function undoSetCommonAsset(changedIds: string[], value: boolean, restoreStored: { id: string; storedLocationId: string }[] = []): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
-    const targetIds = await withDisposedSiblings(propertyId, expenseIds)
+    if (!changedIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const targetIds = [...new Set(changedIds)]
     const storeIds = [...new Set(restoreStored.map(r => r.storedLocationId).filter(Boolean))]
     const okStores = new Set(storeIds.length
       ? (await prisma.storageLocation.findMany({ where: { id: { in: storeIds }, propertyId }, select: { id: true } })).map(l => l.id)
       : [])
-    await prisma.$transaction([
-      value
-        ? prisma.expense.updateMany({ where: { id: { in: targetIds }, propertyId, isCommonAsset: true }, data: { isCommonAsset: false } })
-        : prisma.expense.updateMany({
-          where: { id: { in: targetIds }, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null },
-          data: { isCommonAsset: true, storedLocationId: null },
-        }),
-      ...restoreStored.filter(r => okStores.has(r.storedLocationId)).map(r => prisma.expense.updateMany({
-        where: { id: r.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: { not: null } },
-        data: { storedLocationId: r.storedLocationId },
-      })),
-    ])
+    await prisma.$transaction(async tx => {
+      const flipped = value
+        ? await tx.expense.updateMany({ where: { id: { in: targetIds }, propertyId, isCommonAsset: true }, data: { isCommonAsset: false } })
+        // 해제 직후 상태 = 안 놓인 미배정 + 보관 위치 없음. 그 뒤 창고에 보관했으면 그 행은 그대로 둔다(재검수 X4e).
+        : await tx.expense.updateMany({
+          where: { id: { in: targetIds }, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null },
+          data: { isCommonAsset: true },
+        })
+      if (flipped.count === 0) throw new Error(ASSET_COMMON_UNDO_STALE)
+      for (const r of restoreStored.filter(x => okStores.has(x.storedLocationId) && targetIds.includes(x.id))) {
+        await tx.expense.updateMany({
+          where: { id: r.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: { not: null } },
+          data: { storedLocationId: r.storedLocationId },
+        })
+      }
+    })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
@@ -1298,9 +1307,10 @@ export async function assignAggregateToTarget(
       await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false, tData.storedLocationId), movedQty, assignedAtVal)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     if (!replace || isNone) return { ok: true }
+    const deleteIds = createdIdx.map(i => (results[i] as { id: string }).id)
     return { ok: true, undo: {
-      restore: undoRows.map(snapshotRow),
-      deleteIds: createdIdx.map(i => (results[i] as { id: string }).id),
+      restore: undoRows.map(snapshotRow), deleteIds,
+      expect: await afterShapes(propertyId, [...undoRows.map(r => r.id), ...deleteIds]),
     } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1437,6 +1447,22 @@ export type AssetAssignUndo = {
     storedLocationId?: string | null
   }[]
   deleteIds: string[]
+  // 그 동작 직후 모양(복원할 행 + 분할로 생긴 행). 적용취소는 행마다 이 모양 그대로일 때만 쓴다(재검수 X8). 그 사이 옮기거나 쪼갰으면
+  // 묵은 스냅샷이 원행을 옛 수량·금액으로 덮고 옮겨 간 조각은 남아 지출이 불었다. 없으면(옛 토큰) 거부한다.
+  expect?: AssetAfterShape[]
+}
+export type AssetAfterShape = {
+  id: string; roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean; storedLocationId: string | null
+  qtyValue: number | null; amount: number; allocationGroupId: string | null; disposedAt: string | null
+}
+// 동작 직후 모양을 뜬다. 적용취소 토큰의 expect 가 이것이다.
+async function afterShapes(propertyId: string, ids: string[]): Promise<AssetAfterShape[]> {
+  if (!ids.length) return []
+  const rows = await prisma.expense.findMany({
+    where: { id: { in: [...new Set(ids)] }, propertyId },
+    select: { id: true, roomId: true, assignedLocationId: true, isCommonAsset: true, storedLocationId: true, qtyValue: true, amount: true, allocationGroupId: true, disposedAt: true },
+  })
+  return rows.map(r => ({ ...r, disposedAt: r.disposedAt ? r.disposedAt.toISOString() : null }))
 }
 
 // 적용취소 스냅샷 한 벌 — 폐기·배정이 같은 토큰을 쓰므로 뜨는 자리도 하나여야 두 경로가 안 갈린다.
@@ -1464,9 +1490,22 @@ async function applyAssetUndo(propertyId: string, undo: AssetAssignUndo): Promis
   const okStores = new Set(storeIds.length
     ? (await prisma.storageLocation.findMany({ where: { id: { in: storeIds }, propertyId }, select: { id: true } })).map(l => l.id)
     : [])
-  await prisma.$transaction([
-    ...(undo.deleteIds.length ? [prisma.expense.deleteMany({ where: { id: { in: undo.deleteIds }, propertyId } })] : []),
-    ...undo.restore.map(r => prisma.expense.updateMany({
+  // 직후 모양 CAS(재검수 X8). 복원할 행과 지울 조각 전부가 모양 그대로여야 하고, 하나라도 어긋나면 아무것도 안 쓰고 거부한다.
+  const expect = Array.isArray(undo.expect) ? undo.expect : null
+  const touched = [...new Set([...undo.restore.map(r => r.id), ...undo.deleteIds])]
+  if (!expect || touched.some(id => !expect.some(e => e.id === id))) throw new Error(ASSET_ASSIGN_UNDO_STALE)
+  const shapeWhere = (e: AssetAfterShape) => ({
+    id: e.id, propertyId, roomId: e.roomId, assignedLocationId: e.assignedLocationId, isCommonAsset: e.isCommonAsset,
+    storedLocationId: e.storedLocationId, qtyValue: e.qtyValue, amount: e.amount, allocationGroupId: e.allocationGroupId,
+    disposedAt: e.disposedAt ? new Date(e.disposedAt) : null,
+  })
+  await prisma.$transaction(async tx => {
+    for (const id of touched) {
+      const e = expect.find(x => x.id === id)!
+      if ((await tx.expense.count({ where: shapeWhere(e) })) !== 1) throw new Error(ASSET_ASSIGN_UNDO_STALE)
+    }
+    if (undo.deleteIds.length) await tx.expense.deleteMany({ where: { id: { in: undo.deleteIds }, propertyId } })
+    for (const r of undo.restore) await tx.expense.updateMany({
       where: { id: r.id, propertyId },
       data: {
         roomId: r.roomId, assignedLocationId: r.assignedLocationId, isCommonAsset: r.isCommonAsset,
@@ -1477,8 +1516,8 @@ async function applyAssetUndo(propertyId: string, undo: AssetAssignUndo): Promis
         ...(r.disposalReason !== undefined ? { disposalReason: r.disposalReason } : {}),
         ...(r.storedLocationId !== undefined ? { storedLocationId: r.storedLocationId && okStores.has(r.storedLocationId) ? r.storedLocationId : null } : {}),
       },
-    })),
-  ])
+    })
+  })
 }
 
 export async function batchAssignAssets(
@@ -1517,7 +1556,7 @@ export async function batchAssignAssets(
       for (const e of after) if (!before.has(e.id)) deleteIds.push(e.id)   // 분할로 새로 생긴 행
     }
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true, assigned, undo: { restore, deleteIds } }
+    return { ok: true, assigned, undo: { restore, deleteIds, expect: await afterShapes(propertyId, [...restore.map(r => r.id), ...deleteIds]) } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '일괄 배정 중 오류가 발생했습니다.' }
@@ -1575,9 +1614,10 @@ export async function disposeAssets(
 
     const results = await prisma.$transaction(ops)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    const deleteIds = createdIdx.map(i => (results[i] as { id: string }).id)
     return { ok: true, disposedQty, undo: {
-      restore: restoreRows.map(snapshotRow),
-      deleteIds: createdIdx.map(i => (results[i] as { id: string }).id),
+      restore: restoreRows.map(snapshotRow), deleteIds,
+      expect: await afterShapes(propertyId, [...restoreRows.map(r => r.id), ...deleteIds]),
     } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1723,7 +1763,7 @@ export async function distributeAssetToTargets(
         await placeLabel(propertyId, td.roomId, td.assignedLocationId, false), moved[s], assignedAtVal)
     }
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true, distributed: targets.length, undo: { restore, deleteIds } }
+    return { ok: true, distributed: targets.length, undo: { restore, deleteIds, expect: await afterShapes(propertyId, [...restore.map(r => r.id), ...deleteIds]) } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '나눠 배정 중 오류가 발생했습니다.' }

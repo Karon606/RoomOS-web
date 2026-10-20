@@ -610,7 +610,7 @@ async function main() {
     const cm = await assets.setCommonAsset([D], true)
     if (!cm.ok) throw new Error(cm.error)
     eq('ST11 공용 자재: 보관 위치 비움', [await stOf(D), (await prisma.expense.findUnique({ where: { id: D } }))?.isCommonAsset], [null, true])
-    eq('ST11 공용 적용취소: 바이트 동일', [(await assets.undoSetCommonAsset([D], true, J(cm.restoreStored))).ok, await bytes({ itemLabel: 'ST행거' })], [true, d0])
+    eq('ST11 공용 적용취소: 바이트 동일', [(await assets.undoSetCommonAsset(J(cm.changedIds), true, J(cm.restoreStored))).ok, await bytes({ itemLabel: 'ST행거' })], [true, d0])
     // ST11b 검수 F1. 공용 자재로 표시한 뒤 2개를 방으로 옮기고 묵은 토스트로 적용취소해도 원행이 옛 수량·금액으로 덮이지 않는다(금액 합 불변).
     {
       const K = await exp({ itemLabel: 'ST공용F1', qtyValue: 5, amount: 50000, receivedAt: new Date('2026-10-01T00:00:00Z') })
@@ -619,13 +619,71 @@ async function main() {
       const ck = await assets.setCommonAsset([K], true)
       if (!ck.ok) throw new Error(ck.error)
       eq('ST11b 공용 표시 뒤 2개를 방으로', (await assets.assignAggregateToTarget([K], { kind: 'room', id: R519 }, 2)).ok, true)
-      eq('ST11b 묵은 공용 적용취소 ok', (await assets.undoSetCommonAsset([K], true, J(ck.restoreStored))).ok, true)
+      eq('ST11b 묵은 공용 적용취소 ok', (await assets.undoSetCommonAsset(J(ck.changedIds), true, J(ck.restoreStored))).ok, true)
       eq('ST11b 원행 3 공용 해제·기본 창고 되살림 / 방 2 그대로', (await shapeS('ST공용F1')).map(r => [r[0], r[2], r[3], r[5]]).sort(), [[2, 'room', null, false], [3, null, 'HUB', false]].sort())
       eq('ST11b 금액 합 불변(지출이 안 는다)', [await amountSum() - s0, await sum('ST공용F1')], [0, 50000])
       // 해제의 적용취소도 그 직후 상태(안 놓인 미배정) 행만 다시 공용으로. 그 사이 방으로 간 행은 안 끌어온다.
       const cu = await assets.setCommonAsset([K], false)
       if (!cu.ok) throw new Error(cu.error)
-      eq('ST11b 해제 적용취소는 방 몫을 안 건드린다', [(await assets.undoSetCommonAsset([K], false, [])).ok, (await shapeS('ST공용F1')).filter(r => r[2] === 'room').length], [true, 1])
+      // 해제 직후 상태(보관 위치 없음)가 아니면 거부한다. K 는 보관 위치가 있어 해제 적용취소가 공용으로 되돌리면 불변식이 깨진다(재검수 X4e).
+      eq('ST11b 해제 적용취소: 직후 상태가 아니면 STALE·방 몫 그대로', [await assets.undoSetCommonAsset(J(cu.changedIds), false, []), (await shapeS('ST공용F1')).filter(r => r[2] === 'room').length], [{ ok: false, error: rp.ASSET_COMMON_UNDO_STALE }, 1])
+    }
+    // ST11c 재검수 X4d. 적용취소는 그때 바꾼 행만 다룬다. 기존 공용 카드의 폐기 행이 끌려와 공용이 풀리지 않는다.
+    {
+      const C0 = await exp({ itemLabel: 'ST공용X4d', qtyValue: 4, amount: 4000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      await assets.setCommonAsset([C0], true)
+      await assets.disposeAsset([C0], 1, null, '파손')
+      const U = await exp({ itemLabel: 'ST공용X4d', qtyValue: 2, amount: 2000, receivedAt: new Date('2026-10-02T00:00:00Z') })
+      const before = await bytes({ itemLabel: 'ST공용X4d' })
+      const cc = await assets.setCommonAsset([U], true)
+      if (!cc.ok) throw new Error(cc.error)
+      eq('ST11c 적용취소 ok', (await assets.undoSetCommonAsset(J(cc.changedIds), true, J(cc.restoreStored))).ok, true)
+      eq('ST11c 바이트 동일(기존 공용 카드의 폐기 행은 공용 그대로)', await bytes({ itemLabel: 'ST공용X4d' }), before)
+    }
+    // ST11d 재검수 X4e·X4c. 해제 뒤 창고에 보관했으면 해제 적용취소는 그 행을 공용으로 되돌리지 않는다(바뀐 행 0 이면 STALE).
+    {
+      const E = await exp({ itemLabel: 'ST공용X4e', qtyValue: 1, amount: 1000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      await assets.setCommonAsset([E], true)
+      const u = await assets.setCommonAsset([E], false)
+      if (!u.ok) throw new Error(u.error)
+      await assets.assignAggregateToTarget([E], { kind: 'storage', id: SHELF }, null)
+      const b = await bytes({ itemLabel: 'ST공용X4e' })
+      eq('ST11d 보관한 뒤 해제 적용취소는 STALE', await assets.undoSetCommonAsset(J(u.changedIds), false, J(u.restoreStored)), { ok: false, error: rp.ASSET_COMMON_UNDO_STALE })
+      eq('ST11d 거부면 무변경(공용 아님·선반 보관)', await bytes({ itemLabel: 'ST공용X4e' }), b)
+      const E2 = await exp({ itemLabel: 'ST공용X4c', qtyValue: 2, amount: 2000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      const c2 = await assets.setCommonAsset([E2], true)
+      if (!c2.ok) throw new Error(c2.error)
+      await assets.assignAggregateToTarget([E2], { kind: 'room', id: R519 }, null)
+      const b2 = await bytes({ itemLabel: 'ST공용X4c' })
+      eq('ST11d 전부 방으로 옮긴 뒤 공용 적용취소는 STALE', await assets.undoSetCommonAsset(J(c2.changedIds), true, J(c2.restoreStored)), { ok: false, error: rp.ASSET_COMMON_UNDO_STALE })
+      eq('ST11d 거부면 무변경', await bytes({ itemLabel: 'ST공용X4c' }), b2)
+    }
+    // ST11e 재검수 X8. 일괄 배정·폐기 적용취소는 그 동작 직후 모양 CAS. 그 사이 옮겼으면 전부 거부하고 금액 합은 안 는다.
+    {
+      const E = await exp({ itemLabel: 'ST일괄X8', qtyValue: 5, amount: 5000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      await prisma.expense.update({ where: { id: E }, data: { storedLocationId: HUB } })
+      const s0 = await amountSum()
+      const bt8 = await assets.batchAssignAssets({ items: [{ ids: [E], qty: 3 }], target: { kind: 'room', id: R519 } })
+      if (!bt8.ok) throw new Error(bt8.error)
+      const piece = (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'ST일괄X8', roomId: R519 } }))!.id
+      await assets.assignAggregateToTarget([piece], { kind: 'storage', id: SHELF }, 1)
+      const b8 = await bytes({ itemLabel: 'ST일괄X8' })
+      eq('ST11e 옮긴 뒤 일괄 배정 적용취소 STALE', await assets.undoBatchAssignAssets(J(bt8.undo)), { ok: false, error: rp.ASSET_ASSIGN_UNDO_STALE })
+      eq('ST11e 거부면 무변경·금액 합 불변', [await bytes({ itemLabel: 'ST일괄X8' }), await amountSum() - s0], [b8, 0])
+      // 직후 그대로면 통과하고 바이트 동일
+      const E2 = await exp({ itemLabel: 'ST일괄X8b', qtyValue: 5, amount: 5000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      const b0 = await bytes({ itemLabel: 'ST일괄X8b' })
+      const bt9 = await assets.batchAssignAssets({ items: [{ ids: [E2], qty: 3 }], target: { kind: 'room', id: R519 } })
+      if (!bt9.ok) throw new Error(bt9.error)
+      eq('ST11e 직후 적용취소 ok·바이트 동일', [(await assets.undoBatchAssignAssets(J(bt9.undo))).ok, await bytes({ itemLabel: 'ST일괄X8b' })], [true, b0])
+      eq('ST11e 옛 모양(직후 모양 없는) 토큰 거부', (await assets.undoBatchAssignAssets({ restore: J(bt9.undo).restore, deleteIds: [] })).ok, false)
+      // 폐기 적용취소도 같은 CAS
+      const E3 = await exp({ itemLabel: 'ST폐기X8', qtyValue: 4, amount: 4000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+      const s3 = await amountSum()
+      const dz = await assets.disposeAssets([{ ids: [E3], qty: 1 }], null, '파손')
+      if (!dz.ok) throw new Error(dz.error)
+      await assets.assignAggregateToTarget([E3], { kind: 'room', id: R520 }, 2)
+      eq('ST11e 폐기 뒤 옮겼으면 폐기 적용취소 STALE·금액 합 불변', [await assets.undoDisposeAsset(J(dz.undo)), await amountSum() - s3], [{ ok: false, error: rp.ASSET_ASSIGN_UNDO_STALE }, 0])
     }
     // ST12 수령 대기로 = 보관 위치 비움. 적용취소(서명)가 수령 시각·보관 위치를 되살린다. 남의 영업장에서는 거부.
     const ur = await assets.setAssetReceived([D], false)
@@ -648,8 +706,12 @@ async function main() {
     eq('ST13 일괄 보관: 둘 다 기본 창고·방 비움', [await stOf(E1), await stOf(E2), (await prisma.expense.findUnique({ where: { id: E2 } }))?.roomId], [HUB, HUB, null])
     eq('ST13 일괄 보관 적용취소: 바이트 동일', [(await assets.undoBatchAssignAssets(J(bt.undo))).ok, [await bytes({ id: E1 }), await bytes({ id: E2 })]], [true, e0])
     // ST14 적용취소 토큰에 남의 영업장 보관 위치를 넣으면 비운다(FK 는 영업장을 모른다).
-    eq('ST14 위조 보관 위치 토큰', (await assets.undoBatchAssignAssets({ restore: [{ ...J(bt.undo).restore[0], storedLocationId: FOREIGN }], deleteIds: [] })).ok, true)
-    eq('ST14 남의 영업장 위치는 안 들어간다', await stOf(E1), null)
+    await prisma.expense.update({ where: { id: E1 }, data: { storedLocationId: SHELF } })
+    const bt14 = await assets.batchAssignAssets({ items: [{ ids: [E1], qty: null }], target: { kind: 'storage', id: HUB } })
+    if (!bt14.ok) throw new Error(bt14.error)
+    const t14 = J(bt14.undo)
+    eq('ST14 위조 보관 위치 토큰', (await assets.undoBatchAssignAssets({ ...t14, restore: t14.restore.map(r => r.id === E1 ? { ...r, storedLocationId: FOREIGN } : r) })).ok, true)
+    eq('ST14 남의 영업장 위치는 안 들어간다(선반 대신 비움)', await stOf(E1), null)
 
     // ST15 무상 입수 + 보관 위치. 적용취소는 만든 행을 지운다. 남의 영업장 위치 거부.
     eq('ST15 무상 입수 남의 영업장 위치 거부', await assets.addFreeAsset({ itemLabel: 'ST무상', category: '비품', qtyValue: 1, storedLocationId: FOREIGN }), { ok: false, error: st.STORE_NOT_FOUND })
