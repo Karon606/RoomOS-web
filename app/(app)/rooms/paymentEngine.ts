@@ -14,6 +14,8 @@ import prisma from '@/lib/prisma'
 import { billForLeaseMonth } from '@/lib/billing'
 
 // 수납 재계산 — GAS의 recalculatePayments 이관
+// 같은 날 두 행(조정 행과 그날 수납 등)은 회차(seqNo)로 줄 세운다. 입금일만으로 세우면 동률의 순서가 조회마다 달라
+// 완납 표시가 흔들렸다(독립 검수 2026-10-20). 금액·합계는 순서와 무관하고 완납 표시만 정해진다.
 export async function recalculatePayments(
   leaseTermId: string,
   targetMonth: string,
@@ -21,7 +23,7 @@ export async function recalculatePayments(
 ) {
   const records = await prisma.paymentRecord.findMany({
     where: { leaseTermId, targetMonth, isDeposit: false },
-    orderBy: { payDate: 'asc' },
+    orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }, { id: 'asc' }],
   })
 
   let cumulative = 0
@@ -34,6 +36,27 @@ export async function recalculatePayments(
       data:  { isPaid },
     })
   }
+}
+
+// 그 달 서버 권위 청구액 — 일할→락인(기존 record 최대)→할인 (lib/billing 공용 규칙).
+// 수납 수정/삭제/보증금 초과분 기록·납입일 변경 시 isPaid 재계산·expectedAmount 저장에 사용.
+// rooms/actions 안에만 있던 것을 납입일 변경(tenants/actions)도 쓰도록 이 내부 엔진으로 옮겼다(서버 액션 엔드포인트가 아니다).
+export async function serverBillForMonth(leaseTermId: string, mon: string, fallback: number): Promise<number> {
+  const lease = await prisma.leaseTerm.findUnique({
+    where: { id: leaseTermId },
+    select: {
+      rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
+    },
+  })
+  if (!lease) return fallback
+  const agg = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
+    _max: { expectedAmount: true },
+  })
+  return billForLeaseMonth(lease, mon, agg._max.expectedAmount ?? null)
 }
 
 // 할인 변경 → 락인 record 정합 되쓰기 (신고 70cde9d6 근본 수정, 운영자 승인 2026-07-20)

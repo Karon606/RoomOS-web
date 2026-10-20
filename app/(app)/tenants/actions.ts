@@ -85,7 +85,9 @@ import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
-import { planDueDayAdjustCreate } from '@/lib/dueDayAdjust'
+import { planDueDayAdjustCreate, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
+import { recalculatePayments, serverBillForMonth } from '@/app/(app)/rooms/paymentEngine'
+import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -4714,13 +4716,14 @@ export async function changeDueDay(
   // 협의 금액(양수, 선택). 비우면 일할 규칙값 그대로. 적으면 그 금액으로 조정 행을 만들고 메모에 규칙값과 함께 남긴다.
   // 방향은 규칙이 정한 대로다(신고 df82ce57, 운영자 승인 2026-10-20 C안 · "원단위 절삭이 필요할 수 있으므로 수동으로").
   agreedAmount?: number | null,
-): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo } | { ok: false; error: string }> {
+): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
 
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: leaseTermId },
+    // 영업장 범위로 읽는다. id 만으로 읽으면 남의 영업장 계약의 납부일을 바꿀 수 있다(독립 검수 2026-10-20).
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
       select: {
         dueDay: true, rentAmount: true, tenantId: true, status: true, moveInDate: true,
         // 퇴실 일할 정산 재계산용 — 납부일이 바뀌면 일할 기간(납부일~퇴실일)도 달라짐
@@ -4787,12 +4790,18 @@ export async function changeDueDay(
         },
       })
       undoSnap.adjustRecordId = adj.id
+      // 그 달 완납 표시를 지금 행들로 다시 매긴다(종전에는 조정 행만 isPaid 를 박고 형제 행은 묵었다).
+      await recalculatePayments(leaseTermId, targetMonth, await serverBillForMonth(leaseTermId, targetMonth, lease.rentAmount))
     }
 
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/dashboard')
-    return pr.notice ? { ok: true, notice: pr.notice, undo: undoSnap } : { ok: true, undo: undoSnap }
+    // 적용취소 토큰은 서버가 서명한다(화면을 거쳐 돌아오는 값이라 지어낸 조정 행 id·납부일로 지우거나 되돌리지 못하게).
+    // 운영에서 서명 키가 없으면 토큰을 내지 않는다(null). 화면은 그때 적용취소를 숨긴다(수납 수정 토큰과 같은 규칙).
+    const sig = signUndoBody(DUE_DAY_CHANGE_UNDO_DOMAIN, propertyId, canonicalDueDayChangeUndo(undoSnap))
+    const undo = sig === null ? null : { ...undoSnap, ...(sig ? { sig } : {}) }
+    return pr.notice ? { ok: true, notice: pr.notice, undo } : { ok: true, undo }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4807,14 +4816,35 @@ export type DueDayChangeUndo = {
   adjustRecordId: string | null
   // 함께 옮겨 간 딸린 계약의 원값. 선택 항목이라, 이 필드가 없던 시절에 받아 둔 스냅샷도 그대로 먹는다.
   subLeases?: { id: string; prevDueDay: string | null }[]
+  /** 서버 서명(cashReceiptLine signUndoBody, 용도 라벨 DUE_DAY_CHANGE_UNDO_DOMAIN). */
+  sig?: string
+}
+
+const DUE_DAY_CHANGE_UNDO_DOMAIN = 'due-day-change'
+// 서명할 정본 문자열. 객체 키 순서가 화면을 오가며 바뀌어도 같은 글자가 나오게 키를 정렬해 적는다.
+function stableJson(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null)
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`
+  const o = v as Record<string, unknown>
+  return `{${Object.keys(o).filter(k => o[k] !== undefined).sort().map(k => `${JSON.stringify(k)}:${stableJson(o[k])}`).join(',')}}`
+}
+function canonicalDueDayChangeUndo(u: DueDayChangeUndo): string {
+  return stableJson([u.leaseTermId, u.prevDueDay, u.prevProration, u.adjustRecordId, u.subLeases ?? []])
 }
 
 export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    const lease = await prisma.leaseTerm.findFirst({ where: { id: u.leaseTermId, propertyId }, select: { id: true } })
+    if (!u || typeof u.leaseTermId !== 'string' || !verifyUndoBody(DUE_DAY_CHANGE_UNDO_DOMAIN, propertyId, canonicalDueDayChangeUndo(u), u.sig)) {
+      return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
+    }
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: u.leaseTermId, propertyId }, select: { id: true, rentAmount: true } })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 지울 조정 행은 이 계약·이 영업장의 조정 행일 때만이다. 하드 삭제 대신 소프트삭제(삭제 복구·감사 흔적이 남는다).
+    const adj = u.adjustRecordId
+      ? await prisma.paymentRecord.findFirst({ where: { id: u.adjustRecordId, leaseTermId: u.leaseTermId, propertyId, ...dueDayAdjustWhere() }, select: { id: true, targetMonth: true } })
+      : null
     await prisma.$transaction([
       prisma.leaseTerm.update({ where: { id: u.leaseTermId }, data: {
         dueDay: u.prevDueDay,
@@ -4824,8 +4854,9 @@ export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true 
       } }),
       // 함께 옮겼던 딸린 계약도 제자리로 — 전파분이 남으면 되돌린 것이 아니다.
       ...(u.subLeases ?? []).map(s => prisma.leaseTerm.updateMany({ where: { id: s.id, propertyId }, data: { dueDay: s.prevDueDay } })),
-      ...(u.adjustRecordId ? [prisma.paymentRecord.deleteMany({ where: { id: u.adjustRecordId, propertyId } })] : []),
+      ...(adj ? [prisma.paymentRecord.updateMany({ where: { id: adj.id, leaseTermId: u.leaseTermId, propertyId, deletedAt: null, ...dueDayAdjustWhere() }, data: { deletedAt: new Date() } })] : []),
     ])
+    if (adj) await recalculatePayments(u.leaseTermId, adj.targetMonth, await serverBillForMonth(u.leaseTermId, adj.targetMonth, lease.rentAmount))
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {

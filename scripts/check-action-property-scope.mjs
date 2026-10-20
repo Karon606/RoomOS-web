@@ -19,6 +19,28 @@ function bodyOf(src, name) {
 }
 
 const AXES = [
+  // 납입일 영구 변경과 그 적용취소, 조정 행 전용 수정 문(신고 df82ce57 독립 검수 2026-10-20).
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'changeDueDay',
+    must: [[/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}/, '계약을 영업장 범위로 읽지 않는다']],
+    mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 id 만으로 읽는다']],
+  },
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'undoChangeDueDay',
+    must: [
+      [/verifyUndoBody\(DUE_DAY_CHANGE_UNDO_DOMAIN, propertyId,/, '적용취소 토큰 서명을 대조하지 않는다'],
+      [/paymentRecord\.findFirst\(\{\s*where:\s*\{\s*id:\s*u\.adjustRecordId,\s*leaseTermId:\s*u\.leaseTermId,\s*propertyId,\s*\.\.\.dueDayAdjustWhere\(\)/, '지울 조정 행을 계약·영업장·조정 행 범위로 찾지 않는다'],
+    ],
+    mustNot: [[/paymentRecord\.deleteMany\(/, '조정 행을 하드 삭제한다']],
+  },
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'updateDueDayAdjust',
+    must: [[/paymentRecord\.findFirst\(\{\s*where:\s*\{\s*id:\s*paymentId,\s*propertyId\s*\}/, '조정 행을 영업장 범위로 읽지 않는다']],
+    mustNot: [],
+  },
   {
     file: 'app/(app)/tenants/actions.ts',
     fn: 'updateTenant',

@@ -35,7 +35,7 @@ import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
-import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLockedExpectedForRentAmount } from './paymentEngine'
+import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLockedExpectedForRentAmount, serverBillForMonth } from './paymentEngine'
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 import { prepaidCarry } from '@/lib/prepaidCarry'
@@ -1849,25 +1849,7 @@ export async function saveDepositPaymentForLease(input: {
   })
 }
 
-// 그 달 서버 권위 청구액 — 일할→락인(기존 record 최대)→할인 (lib/billing 공용 규칙).
-// 수납 수정/삭제/보증금 초과분 기록 시 isPaid 재계산·expectedAmount 저장에 사용.
-async function serverBillForMonth(leaseTermId: string, mon: string, fallback: number): Promise<number> {
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
-    select: {
-      rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
-      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
-      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
-    },
-  })
-  if (!lease) return fallback
-  const agg = await prisma.paymentRecord.aggregate({
-    where: { leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
-    _max: { expectedAmount: true },
-  })
-  return billForLeaseMonth(lease, mon, agg._max.expectedAmount ?? null)
-}
+// 그 달 서버 권위 청구액(serverBillForMonth)은 ./paymentEngine 에 있다(납입일 변경도 같은 것을 쓴다).
 
 // 수납 기록 수정
 // 환불 확정 record 를 직접 고치려 할 때의 거절 문구 — 수정·삭제 두 문이 같은 말을 한다.

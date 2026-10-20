@@ -100,7 +100,7 @@ async function main() {
 
   // ── S1 납입일 변경이 만든 조정 행(규칙값 그대로) ──────────────────────────
   const ch = await tenants.changeDueDay(L.id, '20', '2026-10', -128333)
-  if (!ch.ok) throw new Error(ch.error)
+  if (!ch.ok || !ch.undo) throw new Error('S1 변경 실패')
   const ADJ = ch.undo.adjustRecordId!
   const created = await row(ADJ)
   eq('S1 조정 행 −128,333 · 메모 종전 글자 · 수단 없음', [created?.actualAmount, created?.memo, created?.payMethod], [-128333, '[납입일변경] 9일→20 변경, 일할 128,333원 (추가납부)', null])
@@ -214,7 +214,7 @@ async function main() {
   const L3 = await lease(P1)
   await rec(L3, P1, { month: '2026-10', amount: 350000, pay: '2026-10-07' })
   const c1 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, 130000)
-  if (!c1.ok) throw new Error(c1.error)
+  if (!c1.ok || !c1.undo) throw new Error('S10 변경 실패')
   const ca = await row(c1.undo.adjustRecordId!)
   eq('S10 협의 130,000 으로 조정 행 −130,000 · 메모에 규칙값과 협의값', [ca?.actualAmount, ca?.memo, ca?.payMethod], [-130000, '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)', null])
   eq('S10 납부일 20 으로 바뀜', (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay, '20')
@@ -224,15 +224,38 @@ async function main() {
   // 납입일 변경 적용취소가 협의 금액으로 만든 행까지 덮는다.
   const cu = await tenants.undoChangeDueDay(J(c1.undo))
   eq('S10 납입일 변경 적용취소 ok', cu.ok, true)
-  // undoChangeDueDay 는 조정 행을 deleteMany 로 지운다(종전 그대로, 하드 삭제). 남아 있지 않으면 지워진 것이다.
+  // undoChangeDueDay 는 조정 행을 소프트삭제한다(독립 검수 2026-10-20, 종전 하드 삭제).
   const gone = await row(c1.undo.adjustRecordId!)
-  eq('S10 조정 행 지워짐 · 납부일 9 로', [gone === null || !!gone.deletedAt, (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay], [true, '9'])
+  eq('S10 조정 행 지워짐 · 납부일 9 로', [!!gone?.deletedAt, (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay], [true, '9'])
   const c3 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, 0)
   eq('S10 협의 0 거절', c3, { ok: false, error: adj.DUE_DAY_ADJUST_AMOUNT_INVALID })
   eq('S10 거절이면 납부일도 안 바뀜', (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay, '9')
   const c4 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, null)
-  if (!c4.ok) throw new Error(c4.error)
+  if (!c4.ok || !c4.undo) throw new Error('S10 변경 실패')
   eq('S10 협의 비우면 규칙값 그대로(종전과 같은 메모)', [(await row(c4.undo.adjustRecordId!))?.actualAmount, (await row(c4.undo.adjustRecordId!))?.memo], [-128333, '[납입일변경] 9일→20 변경, 일할 128,333원 (추가납부)'])
+
+  // ── S11 납입일 변경 문 영업장 범위·서명 토큰·소프트삭제·완납 재계산(독립 검수 2026-10-20) ──────────
+  {
+    const L4 = await lease(P1)
+    const PAID4 = await rec(L4, P1, { month: '2026-10', amount: 350000, pay: '2026-10-07' })
+    g.__CR_FLOW_PID = P2
+    eq('S11 남의 영업장 계약의 납부일 변경 거절', (await tenants.changeDueDay(L4.id, '20', '2026-10', -128333)).ok, false)
+    g.__CR_FLOW_PID = P1
+    eq('S11 거절 뒤 납부일 그대로', (await prisma.leaseTerm.findFirst({ where: { id: L4.id }, select: { dueDay: true } }))?.dueDay, '9')
+    const c = await tenants.changeDueDay(L4.id, '20', '2026-10', -128333)
+    if (!c.ok || !c.undo) throw new Error('S11 변경 실패')
+    eq('S11 적용취소 토큰에 서명', typeof c.undo.sig, 'string')
+    eq('S11 변경 뒤 형제 행 완납 표시 재계산(350,000 − 128,333 < 350,000 이라 조정 행 미완납)', [(await row(PAID4))?.isPaid, (await row(c.undo.adjustRecordId!))?.isPaid], [true, false])
+    // 지어낸 토큰: 조정 행 id 를 다른 계약의 일반 수납으로 바꾸면 서명에서 떨어진다.
+    eq('S11 조정 행 id 를 바꾼 토큰 거절', (await tenants.undoChangeDueDay({ ...J(c.undo), adjustRecordId: PAID4 })).ok, false)
+    g.__CR_FLOW_PID = P2
+    eq('S11 남의 영업장에서 적용취소 거절', (await tenants.undoChangeDueDay(J(c.undo))).ok, false)
+    g.__CR_FLOW_PID = P1
+    const u = await tenants.undoChangeDueDay(J(c.undo))
+    const gone = await row(c.undo.adjustRecordId!)
+    eq('S11 적용취소: 조정 행 소프트삭제 · 일반 수납 남음 · 납부일 9', [u.ok, !!gone?.deletedAt, !!(await row(PAID4)) && !(await row(PAID4))?.deletedAt, (await prisma.leaseTerm.findFirst({ where: { id: L4.id }, select: { dueDay: true } }))?.dueDay], [true, true, true, '9'])
+    eq('S11 적용취소 뒤 그 달 완납 표시 재계산', (await row(PAID4))?.isPaid, true)
+  }
 
   console.log(`[납입일 변경 조정 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
