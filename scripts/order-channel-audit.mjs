@@ -21,9 +21,10 @@ export async function auditOrderChannel(query) {
   const props = (await query(`SELECT id, name, "channelOptions" AS opts FROM properties WHERE "channelOptions" IS NOT NULL AND "channelOptions" <> ''`)).rows
   const channelAsVendor = []
   for (const p of props) {
-    const names = String(p.opts).split(',').map(s => s.trim()).filter(Boolean)
+    // 열쇠는 lib/expenseChannel channelKey 와 같다(앞뒤 공백·라틴 대소문자 무시).
+    const names = String(p.opts).split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
     if (!names.length) continue
-    const r = await query(`SELECT vendor, COUNT(*)::int AS n FROM expenses WHERE "propertyId" = $1 AND btrim(vendor) = ANY($2::text[]) GROUP BY vendor`, [p.id, names])
+    const r = await query(`SELECT vendor, COUNT(*)::int AS n FROM expenses WHERE "propertyId" = $1 AND lower(btrim(vendor)) = ANY($2::text[]) GROUP BY vendor`, [p.id, names])
     for (const x of r.rows) channelAsVendor.push({ prop: p.name, vendor: x.vendor, n: x.n })
   }
   return { missingColumns: false, errors, mixed, nameTwoNo, noTwoName, channelAsVendor }

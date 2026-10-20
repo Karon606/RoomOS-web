@@ -445,8 +445,8 @@ const os = bodyOf(form, /function OptionSection\(/)
   if (rr && !/normalizeOptionName\(field, rawNew\)/.test(rr)) violations.push(`${FORM} · runRename 이 새 이름을 서버와 같은 정규화로 다듬지 않는다.`)
   // 다른 파일에서 목록 칸을 쓰는 자리. 새로 생기면 정규화를 거치게 하고 여기에 적는다.
   const EXTERNAL_LIST_WRITERS = {
-    // 쇼핑몰 목록(2026-10-19)은 지출 저장이 쌓는다. 쌓는 값은 normalizeChannel(정본 normalizeOptionName('channelOptions'))을 거친다.
-    'app/(app)/finance/actions.ts': { expenseCategories: /resolveCategoryForSave\(/, channelOptions: /const value = normalizeChannel\(raw\)/ },
+    // 쇼핑몰 목록(2026-10-19)은 lib/channelOptions appendChannelOption 이 SQL 한 문장으로 쌓는다(정본 normalizeChannel 을 거친다).
+    'app/(app)/finance/actions.ts': { expenseCategories: /resolveCategoryForSave\(/ },
     'app/(app)/tenants/actions.ts': { requestCategories: /resolveCategoryForSave\(/, incomeCategories: /(PENALTY_CATEGORY|parts\.map\(p => p\.category\))/ },
     'app/(app)/rooms/actions.ts': { incomeCategories: /CLEANING_FEE_CATEGORY\]\.join/ },
   }

@@ -46,7 +46,8 @@ const fa = strip(read(FA))
 
 // ── ⓑ 등록 ───────────────────────────────────────────────────────
 must(FA, fa, 'addExpense', [
-  [/let channel = await resolveChannelForSave\(propertyId, formData\.get\('channel'\) as string\)/, '머리 쇼핑몰 칸을 정본(resolveChannelForSave)으로 안 읽는다'],
+  [/let channel = channelForSave\(formData\.get\('channel'\) as string, await loadChannelNames\(propertyId\)\)/, '머리 쇼핑몰 칸을 정본(channelForSave, 목록 표기 맞춤)으로 안 읽는다'],
+  [/const made = await prisma\.\$transaction\(ops\)\n\s+await noteChannel\(propertyId, channel\)[\s\S]*const made = await prisma\.\$transaction\(ops\)\n\s+await noteChannel\(propertyId, channel\)/, '목록 덧붙이기가 저장(트랜잭션) 뒤가 아니다(검증·합류 거부로 멈춘 저장이 목록을 바꾼다)'],
   [/const baseRow = \{[\s\S]{0,400}\n\s+channel,\n/, '품목 행 바탕(baseRow)에 쇼핑몰이 없다(배송비 포함 행도 이 바탕을 쓴다)'],
   [/\.\.\.\(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : \{\}\)/, '다품목 행이 품목별 구매처 정본(itemVendorFor)을 안 거친다'],
   [/const multiVendor = multiItems\.length >= 2/, '품목별 구매처가 다품목에만 서지 않는다'],
@@ -63,7 +64,7 @@ must(FA, fa, 'addExpense', [
 // ── ⓒ 수정 ───────────────────────────────────────────────────────
 must(FA, fa, 'updateExpense', [
   [/const channelPresent = formData\.has\('channel'\)/, '쇼핑몰 칸 부재와 비움을 formData.has 로 가르지 않는다(form-clear-vs-absent)'],
-  [/resolveChannelForSave\(propertyId, formData\.get\('channel'\) as string, existing\.channel\)/, '자동 추가에 이전 값(existing.channel)을 안 넘긴다(뺀 이름이 되살아난다)'],
+  [/if \(channelPresent\) await noteChannel\(propertyId, channel, existing\.channel\)/, '자동 추가에 이전 값(existing.channel)을 안 넘긴다(뺀 이름이 되살아난다)'],
   [/\.\.\.\(channelPresent \? \{ channel \} : \{\}\)/, '단일 수정이 칸 부재에서도 쇼핑몰을 덮는다'],
   [/formData\.get\('channelScope'\) === 'order'/, "수정 폼 '주문 전체에 적용' 답을 안 읽는다"],
   [/applyChannelToOrder\(propertyId, existing\.orderId!, id, channel\)/, '주문 전체 적용이 정본 도우미를 안 부른다'],
@@ -72,12 +73,14 @@ must(FA, fa, 'updateExpense', [
 ])
 must(FA, fa, 'applyChannelToOrder', [
   [/signFieldUndo\(propertyId, 'channel-order'/, '주문 전체 적용이 적용취소 토큰을 안 낸다'],
+  [/if \(r\.count === 1\) done\.push\(s\)/, '주문 전체 적용 토큰에 조건부 갱신이 실제로 바꾼 행만 싣지 않는다'],
   [/where: \{ propertyId, orderId, id: \{ not: selfId \} \}/, '주문 형제를 영업장 범위로 안 고른다'],
 ])
 // ── ⓓ 소급 ───────────────────────────────────────────────────────
 must(FA, fa, 'backfillVendorBizNo', [
   [/bizBackfillAllowed\(vendor, bizNo, await loadChannelNames\(propertyId\)\)/, '쇼핑몰 목록 이름을 소급에서 빼지 않는다'],
   [/signFieldUndo\(propertyId, 'bizno-backfill'/, '소급이 바꾼 행 id 적용취소 토큰을 안 낸다'],
+  [/AND "vendorBizNo" IS NULL\s+RETURNING "id"/, '소급 토큰이 실제로 채운 행(RETURNING)만 싣지 않는다'],
 ])
 for (const fn of ['addExpense', 'updateExpense']) {
   const b = region(fa, fn) ?? ''
@@ -106,6 +109,7 @@ must(FA, fa, 'vendorChannelOp', [
   [/where: \{ propertyId, vendor: \{ in: names \} \}/, '쇼핑몰 정리가 영업장 범위로 안 고른다'],
   [/h\.channel === null \|\| h\.channel === channel/, '쇼핑몰이 이미 다른 행을 덮는다'],
   [/signFieldUndo\(propertyId, kind, result\.rows\)/, '쇼핑몰 정리가 적용취소 토큰을 안 낸다'],
+  [/if \(r\.count === 1\) rows\.push\(\{ id: h\.id, changes \}\)/, '쇼핑몰 정리 토큰에 실제로 바꾼 행만 싣지 않는다'],
 ])
 must(FA, fa, 'applyChannelToSameOrders', [
   [/verifyUndoBody\(EXPENSE_FIELD_UNDO_KINDS\[u\.kind\]/, '같은 주문 적용이 서명된 토큰에서만 행을 받지 않는다'],
@@ -127,10 +131,15 @@ must(FA, fa, 'attachShippingToOrder', [
 {
   // 사후 배송비 행은 새로 만들 때도, 이미 있는 배송비 행을 고칠 때도 그 주문의 쇼핑몰을 싣는다(두 자리 다).
   const b = region(fa, 'attachShippingToOrder') ?? ''
-  if ((b.match(/channel:\s+orderChannel/g) ?? []).length < 2) violations.push(`${FA} attachShippingToOrder. 사후 배송비 행(새로 만들기·고치기 둘 다)이 그 주문의 쇼핑몰을 안 싣는다`)
+  if (!/channel:\s+orderChannel,/.test(b) || !/\.\.\.\(orderChannel \? \{ channel: orderChannel \} : \{\}\)/.test(b)) violations.push(`${FA} attachShippingToOrder. 사후 배송비 행(새로 만들기·고치기)이 그 주문의 쇼핑몰을 안 싣거나 미기록일 때 null 로 덮는다`)
+  if (!/where: \{ orderId: existingOrderId, propertyId \}, select: \{ channel: true \}/.test(b)) violations.push(`${FA} attachShippingToOrder. 갈림 검사에 이미 있는 배송비 행을 안 센다`)
 }
 // ── ⓗ 같은 주문번호 제안 ─────────────────────────────────────────
-must(FA, fa, 'findOrderByExternalNo', [[/!want \|\| commonChannel\(o\.expenses\.filter\(e => !e\.isShipping\)\) === want/, '쇼핑몰이 정해져 있는데 다른 쇼핑몰 주문을 제안한다']])
+must(FA, fa, 'findOrderByExternalNo', [[/orders\.find\(o => chOf\(o\) === want\) \?\? orders\.find\(o => chOf\(o\) === null\)/, '쇼핑몰이 정해져 있을 때 같은 쇼핑몰, 없으면 미기록 옛 주문을 고르지 않는다(다른 쇼핑몰만 빼야 한다, 신고 4f9fb398 퇴행)']])
+must('lib/channelOptions.ts', strip(read('lib/channelOptions.ts')), 'appendChannelOption', [
+  [/const name = normalizeChannel\(raw\)/, '목록 덧붙이기가 정본 정규화를 안 거친다'],
+  [/NOT EXISTS[\s\S]*lower\(btrim\(t\.v\)\) = lower\(/, '목록 덧붙이기가 한 문장 조건부가 아니거나 같은 열쇠 검사가 없다(동시 저장에서 한쪽이 지워진다)'],
+])
 // ── ⓘ 일괄 수정·홈 승인·소모품 구매 수정 ─────────────────────────
 must(FA, fa, 'batchUpdateExpenses', [
   [/const changingChannel = 'channel' in data/, '일괄 수정에 쇼핑몰 칸이 없다'],
@@ -182,6 +191,20 @@ must(FA, fa, 'batchUpdateExpenses', [
   if (!/vendor: list\.length >= 2 && x\.vendor\?\.trim\(\) \? x\.vendor\.trim\(\) : undefined/.test(fc)) violations.push(`${FC}. 저장으로 보내는 품목 목록이 품목별 구매처를 다품목·빈 글자 규칙으로 안 거른다`)
   if (!/placeholder:text-\[var\(--ink-m\)\][^']*\[appearance:textfield\]/.test(fc)) violations.push(`${FC}. 품목 카드 입력(smallNum) 자리표시 대비가 정본(--ink-m)이 아니다`)
   if (!/channelSplitAgainst\(expenses\.filter\(x => x\.orderId === detailExp\.orderId && x\.id !== detailExp\.id\), next\)/.test(fc)) violations.push(`${FC}. 수정 폼이 주문 속 쇼핑몰 갈림을 묻지 않는다`)
+}
+{
+  const ec = strip(read('lib/expenseChannel.ts'))
+  if (!/export function channelKey\(v: string \| null \| undefined\): string \{\s*return key\(v\)\.toLowerCase\(\)/.test(ec)) violations.push('lib/expenseChannel.ts. 쇼핑몰 이름 열쇠(channelKey)가 라틴 대소문자를 접지 않는다')
+  if (!/channelNames\.some\(c => channelKey\(c\) === k\)/.test(ec)) violations.push('lib/expenseChannel.ts. isChannelName 이 정본 열쇠(channelKey)로 견주지 않는다')
+}
+{
+  // 분할 복제 유실 장부 그물이 배포 시각을 미리 박지 않고(배포 전 옛 코드 조각이 푸시를 막는다), 생긴 뒤 손댄 조각을 오류로 세지 않는가.
+  const CF = 'scripts/check-clone-field-loss.ts'
+  const cf = strip(read(CF))
+  if (!/const DEPLOYED_AT: Date \| null = process\.env\.CLONE_LOSS_DEPLOYED_AT \? new Date\(process\.env\.CLONE_LOSS_DEPLOYED_AT\) : null/.test(cf)) violations.push(`${CF}. 배포 시각을 코드에 미리 박았다(배포 전 운영 조각이 오류가 되어 푸시를 막는다). 배포 뒤 환경 변수나 상수로 적는다`)
+  if (!/Math\.abs\(r\.updatedAt\.getTime\(\) - r\.createdAt\.getTime\(\)\) < UNTOUCHED_MS/.test(cf)) violations.push(`${CF}. 생긴 뒤 손대지 않은 조각만 오류로 세지 않는다(정당한 수정이 푸시를 막는다)`)
+  const lf = strip(read('lib/cloneFieldLoss.ts'))
+  if (!/unitBasis: new Date\('2026-07-03T19:49:06\+09:00'\)/.test(lf) || !/if \(since && origin\.createdAt < since\) continue/.test(lf)) violations.push('lib/cloneFieldLoss.ts. 칸이 생기기 전 원행(단가 기준 07-03 전)의 값을 유실 근거로 쓴다(없는 기록을 지어낸다)')
 }
 // ── ⓛ 구매처를 쇼핑몰 자리에 대신 쓰지 않는다 ─────────────────────
 {

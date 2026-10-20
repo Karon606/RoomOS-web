@@ -236,6 +236,17 @@ async function main() {
     eq('다른 쇼핑몰 주문에 합류는 거부', rx.ok, false)
     const ry = await fin.addExpense(fd({ ...base, amount: '1000', vendor: '판매B', attachOrderId: found!.id, itemLabel: '합류상속', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '합류상속', amount: 1000 }]) }))
     eq('쇼핑몰을 비우고 합류하면 그 주문의 쇼핑몰을 따른다', [ry.ok, (await rowsOf('합류상속'))[0]?.channel], [true, '지마켓'])
+    // 거부된 저장은 목록을 안 바꾼다(목록 덧붙이기는 저장이 끝난 뒤, 독립 검수 2026-10-20)
+    const rz = await fin.addExpense(fd({ ...base, amount: '1000', vendor: '판매B', channel: '거부몰', attachOrderId: found!.id, itemLabel: '거부몰품', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '거부몰품', amount: 1000 }]) }))
+    eq('합류 거부된 저장의 새 쇼핑몰은 목록에 안 쌓인다', [rz.ok, (await channelList())?.split(',').includes('거부몰')], [false, false])
+    // 쇼핑몰 미기록 옛 주문은 쇼핑몰을 적어도 후보다(빼면 같은 주문이 두 벌 생긴다, 신고 4f9fb398 퇴행 막기)
+    const legacy = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '260901-077', externalOrderNo: 'NO-OLD' } })
+    await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-01T00:00:00Z'), amount: 3000, category: '수선유지비', vendor: '옛판매', orderId: legacy.id } })
+    eq('미기록 옛 주문은 쇼핑몰을 적어도 제안한다', (await fin.findOrderByExternalNo('NO-OLD', '쿠팡'))?.id, legacy.id)
+    const sameCh = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '260901-078', externalOrderNo: 'NO-OLD' } })
+    await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-02T00:00:00Z'), amount: 3000, category: '수선유지비', vendor: '옛판매', channel: '쿠팡', orderId: sameCh.id } })
+    eq('같은 쇼핑몰 주문을 미기록 주문보다 먼저 고른다', (await fin.findOrderByExternalNo('NO-OLD', '쿠팡'))?.id, sameCh.id)
+    eq('다른 쇼핑몰만 있으면 미기록 주문으로 간다', (await fin.findOrderByExternalNo('NO-OLD', '지마켓'))?.id, legacy.id)
   }
 
   // ── 9. 주문 묶기: 쇼핑몰 갈림 막기·적용취소 바이트 동일(지운 빈 주문 되살림) ──────────────────
@@ -269,6 +280,15 @@ async function main() {
     eq('배송비 묶기 ok', r2.ok, true)
     const ship = await prisma.expense.findFirst({ where: { orderId: (await prisma.expense.findUnique({ where: { id: m3.id } }))!.orderId, isShipping: true } })
     eq('배송비 묶기: 배송비 행 쇼핑몰은 그 주문의 쇼핑몰', ship?.channel, '쿠팡')
+    // 미기록 주문에 이미 있는 배송비 행의 쇼핑몰은 null 로 덮지 않는다(독립 검수 2026-10-20)
+    const o2 = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261019-055' } })
+    const i1 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-19T00:00:00Z'), amount: 1000, category: '수선유지비', orderId: o2.id } })
+    const sh2 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-19T00:00:00Z'), amount: 500, category: '수선유지비', orderId: o2.id, isShipping: true, channel: '쿠팡', excludeFromInventory: true } })
+    const r3 = await fin.attachShippingToOrder({ expenseIds: [i1.id], amount: 700, shippingType: '선불' })
+    eq('배송비 묶기: 미기록 주문이면 배송비 행 쇼핑몰을 안 덮는다', [r3.ok, (await prisma.expense.findUnique({ where: { id: sh2.id } }))?.channel], [true, '쿠팡'])
+    const i2 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-19T00:00:00Z'), amount: 1000, category: '수선유지비', orderId: o2.id, channel: '지마켓' } })
+    eq('배송비 묶기: 배송비 행 쇼핑몰이 품목과 다르면 막는다', (await fin.attachShippingToOrder({ expenseIds: [i2.id], amount: 700, shippingType: '선불' })).ok, false)
+    await prisma.expense.delete({ where: { id: i2.id } })   // 일부러 만든 갈림 행을 치운다(아래 장부 그물 시험이 깨끗한 장부에서 시작하게)
   }
 
   // ── 10. 일괄 수정: 쇼핑몰 지정·비우기·적용취소 바이트 동일 ────────────────────────────────
@@ -416,6 +436,18 @@ async function main() {
     const ex = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-01T00:00:00Z'), amount: 100, category: '수선유지비', channel: '11번가' } })
     const r2 = await settings.renameOption('channelOptions', '11번가', '십일번가')
     eq('설정 이름 변경: 지출 쇼핑몰이 따라간다', [r2.ok, (await prisma.expense.findUnique({ where: { id: ex.id } }))?.channel], [true, '십일번가'])
+  }
+
+  // ── 17-1. 쇼핑몰 목록: 대소문자만 다른 이름은 목록 표기로, 동시 덧붙이기는 둘 다 남는다 ──────────────
+  {
+    await prisma.property.update({ where: { id: P2 }, data: { channelOptions: 'Coupang' } })
+    g.__CR_FLOW_PID = P2
+    const r = await fin.addExpense(fd({ ...base, amount: '1000', vendor: '판매', channel: 'coupang', itemLabel: '대소문자품', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '대소문자품', amount: 1000 }]) }))
+    eq('대소문자만 다른 쇼핑몰은 목록 표기로 저장·목록 그대로', [r.ok, (await prisma.expense.findFirst({ where: { propertyId: P2, itemLabel: '대소문자품' } }))?.channel, await channelList(P2)], [true, 'Coupang', 'Coupang'])
+    const { appendChannelOption } = await import('@/lib/channelOptions')
+    await Promise.all([appendChannelOption(P2, '동시A'), appendChannelOption(P2, '동시B'), appendChannelOption(P2, 'COUPANG')])
+    eq('동시 덧붙이기는 둘 다 남고 같은 열쇠는 안 늘어난다', (await channelList(P2))?.split(',').sort(), ['Coupang', '동시A', '동시B'])
+    g.__CR_FLOW_PID = P1
   }
 
   // ── 18. 장부 그물(scripts/check-order-channel-split)의 질의 정본을 이 DB 에 돌린다. 갈린 주문을 일부러 만들면 오류, 맞추면 경고 ──

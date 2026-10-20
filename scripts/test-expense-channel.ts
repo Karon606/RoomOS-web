@@ -1,6 +1,6 @@
 // 구매처·쇼핑몰 저장·표시 규칙(lib/expenseChannel)과 글자 칸 적용취소 토큰(lib/expenseFieldUndo) 진리표. 실행: npx tsx scripts/test-expense-channel.ts
 import {
-  normalizeChannel, isChannelName, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, vendorSuggestionsWithoutChannels,
+  normalizeChannel, isChannelName, channelForSave, channelKey, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, vendorSuggestionsWithoutChannels,
   channelVendorLabel, commonChannel, externalOrderCaption, orderSellerLabel, orderChannelSplit, channelSplitAgainst, mergeChannelConflict,
 } from '../lib/expenseChannel'
 import { canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, EXPENSE_FIELD_UNDO_KINDS } from '../lib/expenseFieldUndo'
@@ -30,6 +30,12 @@ eq('앞뒤 공백은 같은 이름', isChannelName(' 쿠팡 ', CH), true)
 eq('표기가 다르면 다른 이름(쿠팡(주))', isChannelName('쿠팡(주)', CH), false)
 eq('빈 이름은 거짓', isChannelName('', CH), false)
 eq('목록이 비면 언제나 거짓', isChannelName('쿠팡', []), false)
+eq('라틴 대소문자는 무시한다', isChannelName('COUPANG', ['Coupang']), true)
+eq('열쇠는 앞뒤 공백·대소문자만 접는다', channelKey(' GMarket '), 'gmarket')
+eq('저장 값은 목록 표기를 따른다(대소문자만 다르면)', channelForSave('coupang', ['Coupang', '쿠팡']), 'Coupang')
+eq('목록에 없으면 정규화한 그대로', channelForSave(' 11번가 ', ['쿠팡']), '11번가')
+eq('빈 값은 미기록', channelForSave('  ', ['쿠팡']), null)
+eq('번호 지도도 대소문자 무시로 쇼핑몰 이름을 뺀다', Object.hasOwn(buildVendorBizMap([{ vendor: 'coupang', vendorBizNo: '1' }], ['Coupang']).vendorToBiz, 'coupang'), false)
 
 // ── 번호 지도: 최근 우선, 쇼핑몰 이름 제외 ────────────────────
 {

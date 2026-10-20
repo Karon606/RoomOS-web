@@ -1,6 +1,7 @@
 'use server'
 
 import { randomBytes } from 'crypto'
+import { appendChannelOption } from '@/lib/channelOptions'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { FREE_MONTHLY_AI_LIMIT } from '@/lib/geminiKey'
@@ -581,18 +582,16 @@ export const getChannelOptions = cache(async function getChannelOptions(): Promi
   return parseOptionList('channelOptions', property?.channelOptions)
 })
 
-/** 쇼핑몰을 목록에 더한다(분류 관리 카드의 추가). */
+/**
+ * 쇼핑몰을 목록에 더한다(분류 관리 카드의 추가·홈 승인·소모품 구매 수정). 같은 열쇠(앞뒤 공백·라틴 대소문자 무시)의 이름이 있으면 그대로다.
+ * 덧붙이기는 SQL 한 문장이라(lib/channelOptions) 두 저장이 동시에 새 이름을 더해도 한쪽이 지워지지 않는다(독립 검수 2026-10-20).
+ */
 export async function addChannelOption(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()
   const clean = normalizeOptionName('channelOptions', name)
   if (!clean) return
-  const current = await getChannelOptions()
-  if (current.includes(clean)) return
-  await prisma.property.update({
-    where: { id: propertyId },
-    data: { channelOptions: [...current, clean].join(',') },
-  })
+  if (!(await appendChannelOption(propertyId, clean))) return
   revalidatePath('/finance')
   revalidatePath('/settings')
 }

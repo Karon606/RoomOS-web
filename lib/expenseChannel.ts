@@ -21,10 +21,27 @@ export function normalizeChannel(raw: string | null | undefined): string | null 
 
 const key = (v: string | null | undefined) => (v ?? '').trim()
 
-/** 이 이름이 쇼핑몰 목록의 이름인가. 앞뒤 공백만 걷고 글자 그대로 견준다('쿠팡' 과 '쿠팡(주)' 는 다른 이름이다). */
+/**
+ * 쇼핑몰 목록 이름 견주기 열쇠(정본 한 곳). 앞뒤 공백을 걷고 라틴 문자 대소문자를 무시한다('Coupang' 과 'coupang' 은 같은 이름).
+ * 그 밖의 글자는 그대로 견준다('쿠팡' 과 '쿠팡(주)' 는 다른 이름이다). 장부 그물(scripts/order-channel-audit)도 같은 규칙(lower·btrim)이다.
+ */
+export function channelKey(v: string | null | undefined): string {
+  return key(v).toLowerCase()
+}
+
+/** 이 이름이 쇼핑몰 목록의 이름인가(channelKey 로 견준다). */
 export function isChannelName(name: string | null | undefined, channelNames: readonly string[]): boolean {
-  const k = key(name)
-  return !!k && channelNames.some(c => key(c) === k)
+  const k = channelKey(name)
+  return !!k && channelNames.some(c => channelKey(c) === k)
+}
+
+/**
+ * 쇼핑몰 저장 값. 정규화한 뒤 목록에 같은 열쇠(대소문자만 다른) 이름이 있으면 목록의 표기를 쓴다. 한 쇼핑몰이 두 표기로 갈리지 않게 한다.
+ */
+export function channelForSave(raw: string | null | undefined, channelNames: readonly string[]): string | null {
+  const v = normalizeChannel(raw)
+  if (!v) return null
+  return channelNames.find(c => channelKey(c) === channelKey(v)) ?? v
 }
 
 /**

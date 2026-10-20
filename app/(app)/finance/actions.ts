@@ -21,7 +21,7 @@ import { settleStatusForEdit } from '@/lib/settleStatus'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
-import type { Prisma, SettleStatus } from '@prisma/client'
+import { Prisma, type SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
@@ -63,13 +63,14 @@ import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본과 글자 칸 일괄 변경 적용취소 토큰(2026-10-19 운영자 승인, 신고 a0636f36).
-import { normalizeChannel, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
+import { channelForSave, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
+// 쇼핑몰 목록 읽기·원자적 덧붙이기(저장이 끝난 뒤에만 덧붙인다, 독립 검수 2026-10-20).
+import { loadChannelNames, appendChannelOption } from '@/lib/channelOptions'
 import { ORDER_MERGE_UNDO_DOMAIN, canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo, type OrderMergeUndo, type OrderSnap } from '@/lib/orderMergeUndo'
 import {
   EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
   type ExpenseFieldUndo, type ExpenseFieldUndoKind, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
-import { parseOptionList } from '@/lib/optionLists'
 import { withParticle } from '@/lib/koParticle'
 
 async function getPropertyId() {
@@ -615,12 +616,11 @@ async function captureItemSpecOptions(propertyId: string, items: ItemPick[]): Pr
 async function backfillVendorBizNo(propertyId: string, vendor: string | null, bizNo: string | null): Promise<{ count: number; undo: ExpenseFieldUndo | null }> {
   try {
     if (!bizBackfillAllowed(vendor, bizNo, await loadChannelNames(propertyId))) return { count: 0, undo: null }
-    const ids = await prisma.$transaction(async tx => {
-      const rows = await tx.expense.findMany({ where: { propertyId, vendor: vendor!, vendorBizNo: null }, select: { id: true } })
-      if (rows.length === 0) return []
-      await tx.expense.updateMany({ where: { id: { in: rows.map(r => r.id) }, propertyId, vendorBizNo: null }, data: { vendorBizNo: bizNo } })
-      return rows.map(r => r.id)
-    })
+    // 실제로 채운 행만 토큰에 싣는다. 한 문장 UPDATE … RETURNING 이라 고르기와 쓰기 사이에 그 칸이 채워진 행은 안 섞인다(독립 검수).
+    const ids = (await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      UPDATE "expenses" SET "vendorBizNo" = ${bizNo}, "updatedAt" = now()
+      WHERE "propertyId" = ${propertyId}::uuid AND "vendor" = ${vendor} AND "vendorBizNo" IS NULL
+      RETURNING "id"`)).map(r => r.id)
     if (ids.length === 0) return { count: 0, undo: null }
     return { count: ids.length, undo: signFieldUndo(propertyId, 'bizno-backfill', ids.map(id => ({ id, changes: [{ field: 'vendorBizNo', before: null, after: bizNo }] }))) }
   } catch {
@@ -630,26 +630,17 @@ async function backfillVendorBizNo(propertyId: string, vendor: string | null, bi
 
 // ── 쇼핑몰(Expense.channel)·품목별 구매처 저장 도우미(2026-10-19 운영자 승인, 신고 a0636f36) ──────────────
 
-/** 이 영업장 쇼핑몰 목록(Property.channelOptions). 목록 이름은 판매자 자리의 자동 기능(소급·자동완성·번호로 이름 채우기)에서 빠진다. */
-async function loadChannelNames(propertyId: string): Promise<string[]> {
-  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { channelOptions: true } })
-  return parseOptionList('channelOptions', p?.channelOptions)
-}
-
 /**
- * 폼의 쇼핑몰 칸을 저장 값으로. 처음 보는 이름이면 이 영업장 쇼핑몰 목록 끝에 쌓는다(지출 카테고리와 같은 흐름).
+ * 저장이 끝난 쇼핑몰 이름을 이 영업장 목록에 쌓는다(지출 카테고리와 같은 흐름, 원자적 덧붙이기 lib/channelOptions).
+ * 저장 뒤에만 부른다. 검증·합류 거부로 멈춘 저장은 목록을 안 바꾼다(독립 검수 2026-10-20).
  * 고치는 지출이 원래 쓰던 쇼핑몰(prev)은 다시 더하지 않는다. 운영자가 목록에서 뺀 이름이 그 지출을 다시 저장할 때마다
- * 되살아나면 빼기가 무효가 된다(새로 적은 값만 더한다).
+ * 되살아나면 빼기가 무효가 된다(새로 적은 값만 더한다). 실패는 삼킨다(목록 때문에 저장을 무르지 않는다).
  */
-async function resolveChannelForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
-  const value = normalizeChannel(raw)
-  if (!value || value === (prev ?? null)) return value
-  const list = await loadChannelNames(propertyId)
-  if (!list.includes(value)) {
-    await prisma.property.update({ where: { id: propertyId }, data: { channelOptions: [...list, value].join(',') } })
-    revalidatePath('/settings')
-  }
-  return value
+async function noteChannel(propertyId: string, value: string | null, prev?: string | null): Promise<void> {
+  if (!value || value === (prev ?? null)) return
+  try {
+    if (await appendChannelOption(propertyId, value)) revalidatePath('/settings')
+  } catch (e) { console.error('[쇼핑몰 목록] 덧붙이기 실패(저장 유지)', e) }
 }
 
 /** 다품목의 품목별 구매처가 머리와 다른 판매자를 하나라도 적었나. 그때만 과거 번호 지도를 읽는다(질의를 늘리지 않는다). */
@@ -759,8 +750,13 @@ async function applyChannelToOrder(propertyId: string, orderId: string, selfId: 
     const changed = await prisma.$transaction(async tx => {
       const sibs = await tx.expense.findMany({ where: { propertyId, orderId, id: { not: selfId } }, select: { id: true, channel: true } })
       const diff = sibs.filter(s => (s.channel ?? null) !== channel)
-      for (const s of diff) await tx.expense.updateMany({ where: { id: s.id, propertyId, channel: s.channel }, data: { channel } })
-      return diff
+      const done: typeof diff = []
+      // 토큰에는 조건부 갱신이 실제로 바꾼 행(count 1)만 싣는다. 그사이 바뀐 행이 섞이면 적용취소가 늘 거부된다(독립 검수).
+      for (const s of diff) {
+        const r = await tx.expense.updateMany({ where: { id: s.id, propertyId, channel: s.channel }, data: { channel } })
+        if (r.count === 1) done.push(s)
+      }
+      return done
     })
     return signFieldUndo(propertyId, 'channel-order', changed.map(s => ({ id: s.id, changes: [{ field: 'channel', before: s.channel ?? null, after: channel }] })))
   } catch (e) {
@@ -831,7 +827,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
     // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 머리 한 칸이 이 등록의 모든 행(품목·방별 조각·배송비)에 같이 선다(한 결제 = 한 쇼핑몰).
     // 비우면 미기록이다. 구매처를 이 칸으로 끌어 쓰지 않는다(lib/expenseChannel).
-    let channel = await resolveChannelForSave(propertyId, formData.get('channel') as string)
+    let channel = channelForSave(formData.get('channel') as string, await loadChannelNames(propertyId))
     // 호실 칸 셋(대상 호실·방별 분배·비품의 '배정할 호실')은 이 영업장 방만 받는다. updateExpense 와 같은 관문.
     // 배정할 호실(targetRoomId)은 FK 가 없는 text 칸이라 여기서 안 보면 남의 방 id·지운 방 id 가 그대로 박힌다.
     const formTarget = formData.has('targetRoomId') ? (((formData.get('targetRoomId') as string) || '').trim() || null) : undefined
@@ -1033,6 +1029,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         data: { ...baseRow, amount: shippingIncluded, detail: '배송비', isShipping: true, excludeFromInventory: true },
       }))
       const made = await prisma.$transaction(ops)
+      await noteChannel(propertyId, channel)
       await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
@@ -1066,6 +1063,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const ops = [singleCreate]
     if (shippingCreate) ops.push(shippingCreate)
     const made = await prisma.$transaction(ops)
+    await noteChannel(propertyId, channel)
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
     await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
@@ -1177,7 +1175,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     if (!existing) return { ok: false, error: '지출을 찾을 수 없습니다.' }
     // 쇼핑몰. 칸이 실려 오면 그 값(빈 값 = 지움), 안 실려 오면 기존 값(knowledge/form-clear-vs-absent).
     const channelPresent = formData.has('channel')
-    const channel = channelPresent ? await resolveChannelForSave(propertyId, formData.get('channel') as string, existing.channel) : existing.channel
+    const channel = channelPresent ? channelForSave(formData.get('channel') as string, await loadChannelNames(propertyId)) : existing.channel
     // '주문 전체에 적용'(수정 폼이 갈림을 물은 답). 이 행의 주문 형제(배송비 행 포함)도 같은 쇼핑몰로 맞춘다. 적용취소 토큰을 돌려준다.
     const channelToOrder = channelPresent && formData.get('channelScope') === 'order' && !!existing.orderId
     // 비품의 '배정할 호실' 칸(부재 undefined · 빈 값 null). 수령 전 비품 수정 폼에만 선다.
@@ -1417,6 +1415,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       }
       const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       const channelUndo = channelToOrder ? await applyChannelToOrder(propertyId, existing.orderId!, id, channel) : null
+      if (channelPresent) await noteChannel(propertyId, channel, existing.channel)
       revalidatePath('/finance')
       const tail = { backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}) }
       if (!convertPlan) return { ok: true, ...tail }
@@ -1635,6 +1634,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     }
     const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     const channelUndo = channelToOrder ? await applyChannelToOrder(propertyId, existing.orderId!, id, channel) : null
+    if (channelPresent) await noteChannel(propertyId, channel, existing.channel)
     revalidatePath('/finance')
     return {
       ok: true, backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}),
@@ -1713,7 +1713,8 @@ export async function batchUpdateExpenses(
       return { ok: false, error: '변경할 항목이 없습니다.' }
     }
     // 쇼핑몰 저장 값(정규화·처음 보는 이름은 목록에 쌓는다). 비우기는 null.
-    const channelValue = changingChannel ? await resolveChannelForSave(propertyId, data.channel ?? null) : null
+    // 쇼핑몰 저장 값(정규화·목록 표기 맞춤). 목록 덧붙이기는 저장이 끝난 뒤다(아래). 비우기는 null.
+    const channelValue = changingChannel ? channelForSave(data.channel ?? null, await loadChannelNames(propertyId)) : null
     // 결제수단 변경 시 계좌·카드(선불) 정보 동반 필수 — 미지정이면 stale 계좌가 남는다
     if (wantsPayMethod && (!('financialAccountId' in data) || !('financeName' in data))) {
       return { ok: false, error: '결제수단을 변경하려면 계좌·카드 정보가 함께 필요합니다.' }
@@ -1825,6 +1826,7 @@ export async function batchUpdateExpenses(
         }))
       }
       await prisma.$transaction(ops)
+      if (changingChannel) await noteChannel(propertyId, channelValue)
     }
 
     revalidatePath('/finance')
@@ -2093,20 +2095,23 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
 }
 
 // 같은 쇼핑몰 주문번호의 기존 주문 조회 — 지출 등록 시 '같은 주문으로 묶을까요?' 확인용(오류신고 4f9fb398).
-// 쇼핑몰을 정했으면 같은 쇼핑몰 주문만 제안한다(2026-10-19). 주문번호는 쇼핑몰마다 따로 매기므로 다른 쇼핑몰의 같은 번호는 남의 주문이다.
+// 쇼핑몰을 정했으면 **다른 쇼핑몰 주문만** 뺀다(2026-10-19, 독립 검수 2026-10-20). 주문번호는 쇼핑몰마다 따로 매기므로 다른 쇼핑몰의
+// 같은 번호는 남의 주문이다. 쇼핑몰이 미기록인 옛 주문은 후보에 남긴다. 빼면 판매자별 영수증이 같은 주문으로 안 묶여 주문이
+// 두 벌 생긴다(신고 4f9fb398 퇴행). 같은 쇼핑몰 주문을 미기록 주문보다 먼저 고른다.
 // 쇼핑몰을 안 정했으면 종전대로 가장 최근 주문이고, 합류하면 저장이 그 주문의 쇼핑몰을 따른다(addExpense).
 export async function findOrderByExternalNo(externalOrderNo: string, channel?: string | null): Promise<{ id: string; code: string; count: number; total: number; channel: string | null } | null> {
   const propertyId = await getPropertyId()
   const no = externalOrderNo.trim()
   if (!no) return null
-  const want = normalizeChannel(channel)
+  const want = channelForSave(channel, await loadChannelNames(propertyId))
   const orders = await prisma.expenseOrder.findMany({
     where: { propertyId, externalOrderNo: no },
     orderBy: { createdAt: 'desc' },
     take: 20,
     select: { id: true, code: true, expenses: { select: { amount: true, isShipping: true, channel: true } } },
   })
-  const order = orders.find(o => !want || commonChannel(o.expenses.filter(e => !e.isShipping)) === want)
+  const chOf = (o: typeof orders[number]) => commonChannel(o.expenses.filter(e => !e.isShipping))
+  const order = !want ? orders[0] : (orders.find(o => chOf(o) === want) ?? orders.find(o => chOf(o) === null))
   if (!order) return null
   return {
     id: order.id,
@@ -2286,8 +2291,9 @@ export async function attachShippingToOrder(input: {
     const existingOrderId = expenses.find(e => e.orderId)?.orderId ?? null
     // 한 주문(한 결제)은 한 쇼핑몰이다(2026-10-19). 묶일 행(선택 행 + 재사용할 주문의 본품 행)의 쇼핑몰이 갈리면 막는다(미기록은 안 센다).
     // 배송비 행은 그 주문의 쇼핑몰을 따른다.
+    // 이미 있는 배송비 행도 센다. 그 행의 쇼핑몰이 품목과 다르면 막는다(덮어쓰지 않는다, 독립 검수 2026-10-20).
     const orderRows = existingOrderId
-      ? await prisma.expense.findMany({ where: { orderId: existingOrderId, propertyId, isShipping: false }, select: { channel: true } })
+      ? await prisma.expense.findMany({ where: { orderId: existingOrderId, propertyId }, select: { channel: true } })
       : []
     const conflict = mergeChannelConflict([...expenses, ...orderRows])
     if (conflict) return { ok: false, error: `쇼핑몰이 다른 지출(${conflict.join(', ')})은 한 주문으로 묶을 수 없습니다.` }
@@ -2336,7 +2342,8 @@ export async function attachShippingToOrder(input: {
       if (existingShip) {
         await prisma.expense.update({
           where: { id: existingShip.id },
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, channel: orderChannel, createdAt: shipCreatedAt },
+          // 쇼핑몰은 정해졌을 때만 적는다. 미기록 주문이면 배송비 행의 값을 그대로 둔다(null 로 덮지 않는다).
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: orderChannel } : {}), createdAt: shipCreatedAt },
         })
       } else {
         await prisma.expense.create({
@@ -3600,7 +3607,7 @@ async function vendorChannelOp(vendorNames: string[], channelRaw: string, kind: 
     const propertyId = await getPropertyId()
     const names = [...new Set((Array.isArray(vendorNames) ? vendorNames : []).filter(v => typeof v === 'string' && v.trim() !== ''))]
     if (names.length === 0 || names.length > 200) return { ok: false, error: '대상 구매처가 없습니다.' }
-    const channel = await resolveChannelForSave(propertyId, channelRaw)
+    const channel = channelForSave(channelRaw, await loadChannelNames(propertyId))
     if (!channel) return { ok: false, error: '쇼핑몰 이름을 입력하세요.' }
     const result = await prisma.$transaction(async tx => {
       const hit = await tx.expense.findMany({ where: { propertyId, vendor: { in: names } }, select: { id: true, vendor: true, vendorBizNo: true, channel: true } })
@@ -3615,11 +3622,12 @@ async function vendorChannelOp(vendorNames: string[], channelRaw: string, kind: 
         }
         if (changes.length === 0) continue
         const data = Object.fromEntries(changes.map(c => [c.field, c.after]))
-        await tx.expense.updateMany({ where: { id: h.id, propertyId, vendor: h.vendor, channel: h.channel }, data })
-        rows.push({ id: h.id, changes })
+        const r = await tx.expense.updateMany({ where: { id: h.id, propertyId, vendor: h.vendor, channel: h.channel }, data })
+        if (r.count === 1) rows.push({ id: h.id, changes })   // 실제로 바꾼 행만 토큰에 싣는다
       }
       return { rows, skipped: hit.length - ok.length }
     })
+    if (result.rows.length) await noteChannel(propertyId, channel)
     const sameOrder = await countSameOrderUnset(propertyId, result.rows.map(r => r.id))
     const undo = signFieldUndo(propertyId, kind, result.rows)
     revalidatePath('/finance')

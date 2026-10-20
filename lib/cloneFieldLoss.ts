@@ -12,6 +12,9 @@
 //   · 그 저장보다 나중에 생긴 조각이고, 같은 구매(품명·카테고리·날짜·구매처가 같다)일 때만이다.
 //   · 원행에 값이 있고 조각이 비었을 때만 채운다. 조각에 다른 값이 있으면 안 덮는다. 원행이 비었는데 조각에만
 //     값이 있으면 운영자가 그 조각에 나중에 적은 것이라 퍼뜨리지 않는다(시공/자재 표식이 그 모양이다, 실측).
+//   · 칸이 생기기 전에 만들어진 원행의 값은 나중에 적힌 것이라 유실 근거가 없다(FIELD_RECORDED_SINCE, 독립 검수 2026-10-20).
+//     장판 원행(05-29~07-01)의 단가 기준 'qty' 가 그 모양이다. 칸(unitBasis·specText)은 2026-07-03 6c0d1cf2 에 생겼다.
+//     knowledge/domain-unit-basis '없는 기록을 지어내지 않는다'.
 // 'use server' 파일이 아니다. 스크립트(tsx)와 진리표가 함께 읽는다.
 
 export const CLONE_LOSS_FIELDS = ['vendorBizNo', 'brand', 'productName', 'specText', 'unitBasis', 'costKind'] as const
@@ -31,6 +34,15 @@ export type CloneLossRow = {
 export type CloneRestore = { id: string; groupId: string; originId: string; field: CloneLossField; value: string }
 
 const same = (a: string | null, b: string | null) => (a?.trim() || null) === (b?.trim() || null)
+
+/**
+ * 칸이 생긴 시각. 원행이 이보다 먼저 만들어졌으면 그 칸 값은 만들 때 적힌 것이 아니므로 되살리지 않는다.
+ * 사업자번호(07-23)·브랜드·제품명(08-27)·시공/자재(08-27)는 독립 검수가 유지를 판정했다(IKEA·콰이디 실측 5칸). 표에 없는 칸은 제한하지 않는다.
+ */
+export const FIELD_RECORDED_SINCE: Partial<Record<CloneLossField, Date>> = {
+  unitBasis: new Date('2026-07-03T19:49:06+09:00'),
+  specText: new Date('2026-07-03T19:49:06+09:00'),
+}
 
 /** 한 저장에서 함께 생긴 행으로 보는 간격. 배열 트랜잭션 한 번은 ms 단위로 끝나고, 쪼개기는 사람이 따로 누른 뒤다. */
 export const SAME_SAVE_MS = 2000
@@ -61,6 +73,8 @@ export function planCloneFieldRestore(rows: readonly CloneLossRow[]): CloneResto
       if (vals.size !== 1) continue   // 같은 저장의 행끼리 갈렸다. 원래 값을 모른다.
       const v = origin[f]
       if (v == null || v.trim() === '') continue
+      const since = FIELD_RECORDED_SINCE[f]
+      if (since && origin.createdAt < since) continue   // 칸이 생기기 전 원행: 값이 나중에 적혔다
       for (const p of pieces) {
         if (p[f] == null || p[f]!.trim() === '') out.push({ id: p.id, groupId, originId: origin.id, field: f, value: v })
       }

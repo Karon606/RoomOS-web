@@ -49,6 +49,14 @@ eq('카테고리가 다르면 안 채운다', planCloneFieldRestore([row('o', 1,
 eq('구매처 앞뒤 공백·빈 글자는 같은 것', planCloneFieldRestore([row('o', 1, { vendor: null, brand: 'X' }), row('a', 2, { vendor: ' ' })]).length, 1)
 // 단가 기준(장판세상 실측 모양). 원행 'qty', 뒤 조각 비어 있음.
 eq('단가 기준도 원행에서', planCloneFieldRestore([row('o', 1, { unitBasis: 'qty' }), row('a', 2), row('b', 3, { unitBasis: 'qty' })]).map(p => `${p.id}.${p.field}=${p.value}`), ['a.unitBasis=qty'])
+// 칸이 생기기 전 원행의 값은 나중에 적힌 것(장판 05-29 원행의 단가 기준). 되살리지 않는다(독립 검수 2026-10-20).
+{
+  const early = (id: string, at: string, over: Partial<CloneLossRow> = {}) => ({ ...row(id, 1, over), createdAt: new Date(at) })
+  eq('단가 기준 칸(07-03) 전 원행은 근거 없음', planCloneFieldRestore([early('o', '2026-05-29T04:27:59Z', { unitBasis: 'qty' }), early('a', '2026-07-08T03:28:10Z')]), [])
+  eq('서술 규격도 같은 날 칸이라 같다', planCloneFieldRestore([early('o', '2026-06-22T00:00:00Z', { specText: '폭 183cm' }), early('a', '2026-07-08T00:00:00Z')]), [])
+  eq('칸이 생긴 뒤 원행이면 되살린다', planCloneFieldRestore([early('o', '2026-07-04T00:00:00Z', { unitBasis: 'qty' }), early('a', '2026-07-08T00:00:00Z')]).map(p => p.field), ['unitBasis'])
+  eq('사업자번호는 제한 없음(검수 유지 판정)', planCloneFieldRestore([early('o', '2026-05-29T00:00:00Z', { vendorBizNo: '1' }), early('a', '2026-07-08T00:00:00Z')]).map(p => p.field), ['vendorBizNo'])
+}
 // 입력 순서가 바뀌어도 같은 답.
 {
   const rows = [row('o', 1, { brand: 'X', vendorBizNo: '1' }), row('b', 3), row('a', 2)]
