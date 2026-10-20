@@ -271,6 +271,24 @@ eq('얼린 적이 없으면 빈 문자열', kbdTraceTable(null), '')
   eq('모달이 없으면 H·T0 가 빈다', `${shell.rows.at(-2)?.H} ${shell.rows.at(-2)?.T0}`, 'null null')
   eq('누른 순간 잰 센티널을 rep 줄에 싣는다', `${shell.rows.at(-1)?.ev} ${shell.rows.at(-1)?.H} ${shell.rows.at(-1)?.T0}`, 'rep 812 -120')
 
+  // 화면 방식 한 줄(2026-10-20, 신고 be5316e8). 홈화면 앱과 사파리 탭을 가른다. 제목 바로 아래 선다.
+  {
+    const w = g.window as Record<string, unknown>
+    w.matchMedia = (q: string) => ({ matches: q === '(display-mode: standalone)' })
+    const fz = kbdTraceFreeze()
+    eq('얼릴 때 화면 방식을 함께 담는다', fz.mode?.startsWith('display-mode=standalone navigator.standalone='), true)
+    eq('표 제목 바로 아래 화면 방식 줄이 선다', kbdTraceTable(fz).split('\n')[1], fz.mode)
+    w.matchMedia = () => ({ matches: false })
+    eq('브라우저 탭이면 browser', kbdTraceFreeze().mode?.startsWith('display-mode=browser '), true)
+    w.matchMedia = () => { throw new Error('no mq') }
+    eq('못 읽으면 - 로 적고 얼리기는 계속된다', kbdTraceFreeze().mode, 'display-mode=- navigator.standalone=-')
+    delete w.matchMedia
+    // 덜기에도 안 덜린다. 한도가 빠듯해도 판정이 바뀐 줄과 같이 남는다.
+    const tightMode = kbdTraceTable({ ...FROZEN, mode: 'display-mode=standalone navigator.standalone=y' }, 400)
+    eq('한도가 빠듯해도 화면 방식 줄은 남는다', tightMode.split('\n')[1], 'display-mode=standalone navigator.standalone=y')
+    eq('손으로 만든 표(mode 없음)는 종전 모양 그대로', kbdTraceTable(FROZEN).split('\n')[1], LEGEND.split('\n')[0])
+  }
+
   kbdTrace('vr', 'open', { innerHeight: 812, vvHeight: 300, offsetTop: 0, scale: 1.5 })
   const zoomed = kbdTraceFreeze().rows.find(x => x.vvh === 300)
   eq('가드가 넘긴 스냅샷을 그대로 적고, 줌이면 판정에 +zoom 을 붙인다', `${zoomed?.inner} ${zoomed?.verdict}`, '812 open+zoom')

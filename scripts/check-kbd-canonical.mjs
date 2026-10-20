@@ -347,6 +347,10 @@ need('lib/kbdTrace.ts', [
   [/KBD_TRACE_CAP = (?:[3-9]\d{2}|[1-9]\d{3,})\b/, '링버퍼 상한이 300 아래다. 큰 팬 한 번이 세션 앞부분(첫 fi, vr open 의 inner 기준선)을 밀어낸다'],
   [/rank === FLIP/, '판정이 바뀐 줄을 덜기 맨 뒤로 미루지 않는다. 메모가 길면 vs shut·vr shut 부터 사라진다'],
   [/REPORT_NOTE_MAX = 4000\b/, '메모 한도가 서버(app/(app)/errorReports.ts slice(0, 4000))와 어긋남'],
+  // 화면 방식(2026-10-20, 신고 be5316e8). 홈화면 앱과 사파리 탭의 뷰포트 동작이 달라 그 둘을 못 가르면 또 추측이 된다.
+  [/matchMedia\('\(display-mode: standalone\)'\)/, '얼릴 때 화면 방식(display-mode standalone)을 안 잰다. 홈화면 앱과 사파리 탭을 못 가른다'],
+  [/mode: displayMode\(\)/, '얼린 사본에 화면 방식이 안 실린다'],
+  [/frozen\.mode \?/, '표에 화면 방식 줄을 안 적는다'],
 ])
 {
   let src = ''

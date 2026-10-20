@@ -49,7 +49,12 @@ export type KbdTraceRow = {
   focus: string        // 포커스 요소 태그(+type)
 }
 
-export type KbdTraceFrozen = { at: number; rows: KbdTraceRow[] }
+/**
+ * mode 는 얼린 순간의 화면 방식 한 줄이다(2026-10-20, 신고 be5316e8). 같은 iPhone 이라도 홈화면 앱과
+ * 사파리 탭의 뷰포트 동작이 달라, 그 둘을 가르지 못하면 키보드 신고를 읽을 때 또 추측이 된다.
+ * 손으로 만든 표(테스트)처럼 없으면 그 줄을 안 적는다.
+ */
+export type KbdTraceFrozen = { at: number; rows: KbdTraceRow[]; mode?: string }
 
 /** 화면 고정 상자의 자리 중 표에 싣는 두 값. DOMRect 를 그대로 받는다. */
 type FrameBox = Pick<DOMRectReadOnly, 'height' | 'top'>
@@ -115,6 +120,19 @@ export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: Fra
 }
 
 /**
+ * 화면 방식. 홈화면 앱(standalone)인가 브라우저 탭인가. 매체 질의 결과와 iOS 의 navigator.standalone
+ * 두 값만 읽는다(둘 다 참·거짓뿐이라 개인정보가 없다). 못 읽으면 '-'.
+ */
+function displayMode(): string {
+  try {
+    const nav = navigator as Navigator & { standalone?: boolean }
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(display-mode: standalone)').matches : null
+    const ns = typeof nav.standalone === 'boolean' ? (nav.standalone ? 'y' : 'n') : '-'
+    return `display-mode=${mq == null ? '-' : mq ? 'standalone' : 'browser'} navigator.standalone=${ns}`
+  } catch { return 'display-mode=- navigator.standalone=-' }
+}
+
+/**
  * 신고창을 여는 순간 링버퍼를 얼린다. 그 순간을 'rep' 한 줄로 남기고 사본을 돌려준다 —
  * 신고창 자신의 메모 칸이 키보드를 다시 띄워도 그 세션이 직전 세션을 밀어내지 못한다.
  * box 는 누른 순간 잰 센티널(lib/viewportProbe sentinelRect)이다. 그때는 원래 칸이 아직 포커스를
@@ -122,7 +140,9 @@ export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: Fra
  */
 export function kbdTraceFreeze(box?: FrameBox | null): KbdTraceFrozen {
   kbdTrace('rep', '·', undefined, box)
-  return { at: typeof performance === 'undefined' ? 0 : performance.now(), rows: rows.slice() }
+  const at = typeof performance === 'undefined' ? 0 : performance.now()
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return { at, rows: rows.slice() }
+  return { at, rows: rows.slice(), mode: displayMode() }
 }
 
 /** 소수 둘째 자리까지 — viewportProbe 의 num 과 같은 자릿수. */
@@ -208,7 +228,8 @@ function render(frozen: KbdTraceFrozen, shown: Line[], title: string, legend: bo
   const table = [[...COLS] as string[], ...cells]
   const widths = COLS.map((_, i) => Math.max(...table.map(c => c[i].length)))
   const lines = table.map(c => c.map((v, i) => (i === c.length - 1 ? v : v.padEnd(widths[i]))).join(' ').trimEnd())
-  return [title, ...(legend ? [LEGEND] : []), ...lines].join('\n')
+  // 화면 방식 줄은 제목 바로 아래 둔다. 덜기 대상이 아니다(짧고, 이 줄이 없으면 표를 읽는 틀이 갈린다).
+  return [title, ...(frozen.mode ? [frozen.mode] : []), ...(legend ? [LEGEND] : []), ...lines].join('\n')
 }
 
 /**
