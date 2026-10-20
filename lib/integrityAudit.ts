@@ -11,6 +11,8 @@ import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { sameDueDay, dueDayFromMoveIn } from '@/lib/dueDay'
+import { dueDayAdjustSignMismatch, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
 
@@ -283,6 +285,26 @@ export async function runIntegrityAudit(
       signature: `[정합] rent-refund-record-drift · ${l.id}`,
       note: `${l.tenant.name}: ${Number(snap.month.slice(5, 7))}월 이용료 수납 합이 ${actual.toLocaleString()}원인데 환불 확정(원 수납 ${snap.prepaid.toLocaleString()}원 − 환불 ${snap.refunded.toLocaleString()}원)대로면 ${expected.toLocaleString()}원이어야 합니다. 수납 정보의 이용료 정산에서 적용취소한 뒤 다시 확정해 주세요.`,
       tenantId: l.tenantId, propertyId: l.propertyId,
+    })
+  }
+
+  // 규칙 9. 납입일 변경 조정 행의 메모 방향과 금액 부호가 어긋남 (신고 df82ce57, 2026-10-20).
+  // 조정 행은 부호가 뜻이다(추가납부 = 음수, 과입금 = 양수). 일반 수정 폼이 부호를 지워 513호 −128,333 이 +130,000 이
+  // 됐고 504호도 같았다. 생성·수정 문은 이제 막혀 있다(updatePayment 거절, updateDueDayAdjust 가 부호를 붙인다).
+  // 이 규칙은 그 문을 우회한 회귀(옛 화면·스크립트)를 데이터에서 잡는다. 판정은 lib/dueDayAdjust 정본.
+  // 이 함수는 익스텐션 없는 클라이언트로도 불리므로(scripts/inspect-integrity-audit) 소프트삭제를 손으로 거른다.
+  const adjustRows = await prisma.paymentRecord.findMany({
+    where: { ...dueDayAdjustWhere(), deletedAt: null },
+    select: { id: true, memo: true, actualAmount: true, targetMonth: true, tenantId: true, propertyId: true, tenant: { select: { name: true } }, leaseTerm: { select: { room: { select: { roomNo: true } } } } },
+  })
+  for (const r of adjustRows) {
+    const why = dueDayAdjustSignMismatch(r)
+    if (!why) continue
+    const room = r.leaseTerm?.room?.roomNo
+    violations.push({
+      signature: `[정합] due-day-adjust-sign · ${r.id}`,
+      note: `${room ? `${fmtRoomNo(room)} ` : ''}${r.tenant?.name ?? ''}: ${Number(r.targetMonth.slice(5, 7))}월 납입일 변경 조정 기록의 ${why}. 수납 정보의 납입일 변경 조정에서 방향과 금액을 고쳐 주세요.`,
+      tenantId: r.tenantId, propertyId: r.propertyId,
     })
   }
 
