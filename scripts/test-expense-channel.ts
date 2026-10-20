@@ -5,6 +5,7 @@ import {
   rowChannel, channelSameAsVendor, wouldSplitOrder, ORDER_CHANNEL_SPLIT_DENIED,
 } from '../lib/expenseChannel'
 import { canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, EXPENSE_FIELD_UNDO_KINDS } from '../lib/expenseFieldUndo'
+import { parseBatchExpensesUndo, planBatchExpensesUndo, canonicalBatchExpensesUndo, undoValue } from '../lib/batchExpenseUndo'
 import { canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo } from '../lib/orderMergeUndo'
 
 let fail = 0
@@ -180,6 +181,23 @@ eq('B 하나 + 미기록 섞임은 갈림 아님(장부 그물 경고)', wouldSp
 eq('B 같은 이름은 갈림 아님', wouldSplitOrder(['쿠팡', ' 쿠팡 ']), false)
 eq('B 전부 비면 갈림 아님', wouldSplitOrder([null, undefined]), false)
 eq('B 거절 문장은 먼저 주문에서 빼라는 안내까지', /주문 묶음에서 빼 주세요/.test(ORDER_CHANNEL_SPLIT_DENIED), true)
+
+// ── 일괄 편집 적용취소 토큰(재검수 2026-10-20): 허용 칸·쓴 직후 검사 ─────────────────
+{
+  const tok = { v: 1, rows: [{ id: 'e1', fields: { channel: null, memo: 'a' }, after: { channel: '쿠팡', memo: 'b' } }] }
+  eq('일괄 토큰: 정상 모양', !!parseBatchExpensesUndo(tok), true)
+  eq('일괄 토큰: 허용 밖 칸(amount)은 거부', parseBatchExpensesUndo({ v: 1, rows: [{ id: 'e1', fields: { amount: 1 }, after: { amount: 2 } }] }), null)
+  eq('일괄 토큰: propertyId 같은 칸 끼우기 거부', parseBatchExpensesUndo({ v: 1, rows: [{ id: 'e1', fields: { propertyId: 'x' }, after: { propertyId: 'y' } }] }), null)
+  eq('일괄 토큰: fields 와 after 칸이 다르면 거부', parseBatchExpensesUndo({ v: 1, rows: [{ id: 'e1', fields: { memo: 'a' }, after: {} }] }), null)
+  eq('일괄 토큰: 같은 id 두 번 거부', parseBatchExpensesUndo({ v: 1, rows: [tok.rows[0], tok.rows[0]] }), null)
+  eq('일괄 토큰: 객체 값 거부', parseBatchExpensesUndo({ v: 1, rows: [{ id: 'e1', fields: { memo: { set: 'x' } }, after: { memo: 'b' } }] }), null)
+  const u = parseBatchExpensesUndo(tok)!
+  eq('일괄 쓴 직후: 지금이 after 면 fields 로 되돌림', planBatchExpensesUndo(u, new Map([['e1', { channel: '쿠팡', memo: 'b', amount: 9 }]])), [{ id: 'e1', data: { channel: null, memo: 'a' } }])
+  eq('일괄 쓴 직후: 그사이 바뀌면 전부 안 함', planBatchExpensesUndo(u, new Map([['e1', { channel: '지마켓', memo: 'b' }]])), null)
+  eq('일괄 쓴 직후: 행이 없으면 안 함', planBatchExpensesUndo(u, new Map()), null)
+  eq('일괄: 날짜 값은 ISO 글자', undoValue(new Date('2026-10-20T00:00:00+09:00')), '2026-10-19T15:00:00.000Z')
+  eq('일괄 서명 본문: 행·칸 순서 무관', canonicalBatchExpensesUndo({ v: 1, rows: [{ id: 'b', fields: { memo: 'x', channel: null }, after: { channel: 'c', memo: 'y' } }, { id: 'a', fields: { memo: 'x' }, after: { memo: 'y' } }] }) === canonicalBatchExpensesUndo({ v: 1, rows: [{ id: 'a', fields: { memo: 'x' }, after: { memo: 'y' } }, { id: 'b', fields: { channel: null, memo: 'x' }, after: { memo: 'y', channel: 'c' } }] }), true)
+}
 
 console.log(`[구매처·쇼핑몰 규칙] ${pass}건 통과${fail ? `, ${fail}건 실패` : ''}`)
 if (fail) process.exit(1)

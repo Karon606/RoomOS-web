@@ -546,6 +546,52 @@ async function main() {
     await prisma.expense.deleteMany({ where: { orderId: ob.id } })   // 일부러 만든 갈림 주문을 치운다(장부 그물 시험 앞)
   }
 
+  // ── 20. 재검수 2026-10-20 서버 넷 ─────────────────────────────────────────────
+  {
+    const day = new Date('2026-10-20T00:00:00Z')
+    const mk = (d: Record<string, unknown>) => prisma.expense.create({ data: { propertyId: P1, date: day, amount: 100, category: '수선유지비', ...d } })
+    // 1. 쇼핑몰 지정: 같은 구매처의 다른 쇼핑몰 행(건너뜀)이 든 주문의 미기록 행도 건너뛴다
+    const o1 = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261020-101' } })
+    const x1 = await mk({ vendor: '재검X몰', channel: '지마켓', orderId: o1.id })
+    const x2 = await mk({ vendor: '재검X몰', orderId: o1.id })
+    const xb = await exactAll([x1.id, x2.id])
+    const r1 = await fin.setChannelForVendor(['재검X몰'], '쿠팡')
+    eq('재검 1: 건너뛴 다른 쇼핑몰 행이 갈림 근거로 남는다', [r1.ok && r1.skipped, r1.ok && r1.splitSkipped, r1.ok && r1.updated, await exactAll([x1.id, x2.id])], [1, 1, 0, xb])
+    await prisma.expense.deleteMany({ where: { orderId: o1.id } })
+    // 2. 주문 묶기: 배송비 행 쇼핑몰도 센다
+    const o2 = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261020-102' } })
+    const m1 = await mk({ orderId: o2.id })
+    await mk({ orderId: o2.id, isShipping: true, channel: '지마켓', excludeFromInventory: true })
+    const m2 = await mk({ channel: '쿠팡' })
+    const rm = await fin.mergeExpensesIntoOrder([m1.id, m2.id])
+    eq('재검 2: 배송비 행 쇼핑몰이 다르면 묶기 거부·무변경', [rm.ok, (await prisma.expense.findUnique({ where: { id: m2.id } }))?.orderId], [false, null])
+    await prisma.expense.deleteMany({ where: { OR: [{ orderId: o2.id }, { id: m2.id }] } })
+    // 3. 일괄 적용취소: 서명·허용 칸·쓴 직후
+    const y = await mk({ memo: '원래' })
+    const yb = await exact(y.id)
+    const rb = await fin.batchUpdateExpenses([y.id], { memo: '바꿈' })
+    if (!rb.ok || !rb.undo) throw new Error('일괄 토큰 없음')
+    const tok = J(rb.undo)
+    eq('재검 3: 허용 밖 칸을 끼운 토큰 거부', (await fin.undoBatchUpdateExpenses({ ...tok, rows: tok.rows.map(r => ({ ...r, fields: { ...r.fields, amount: 999999 }, after: { ...r.after, amount: 100 } })) })).ok, false)
+    eq('재검 3: 값을 고친 토큰 거부(서명)', (await fin.undoBatchUpdateExpenses({ ...tok, rows: tok.rows.map(r => ({ ...r, fields: { memo: '위조' } })) })).ok, false)
+    { const { sig: _s, ...unsigned } = tok; void _s; eq('재검 3: 서명 없는 토큰 거부', (await fin.undoBatchUpdateExpenses(unsigned)).ok, false) }
+    eq('재검 3: 위조 거부 뒤 금액·메모 무변경', [(await prisma.expense.findUnique({ where: { id: y.id } }))?.amount, (await prisma.expense.findUnique({ where: { id: y.id } }))?.memo], [100, '바꿈'])
+    await prisma.expense.update({ where: { id: y.id }, data: { memo: '그사이' } })
+    eq('재검 3: 그사이 바뀌면 되돌리지 않는다', [(await fin.undoBatchUpdateExpenses(tok)).ok, (await prisma.expense.findUnique({ where: { id: y.id } }))?.memo], [false, '그사이'])
+    await prisma.expense.update({ where: { id: y.id }, data: { memo: '바꿈' } })
+    eq('재검 3: 쓴 직후면 되돌림·바이트 동일(updatedAt 제외)', [(await fin.undoBatchUpdateExpenses(tok)).ok, await exact(y.id)], [true, yb])
+    // 4. 등록 합류: 이미 갈린 옛 주문에 그 주문의 어느 쇼핑몰과도 다른 이름으로 합류 거부
+    const o4 = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261020-104' } })
+    await mk({ orderId: o4.id, channel: '쿠팡' })
+    await mk({ orderId: o4.id, channel: '지마켓' })
+    const before4 = await prisma.expense.count({ where: { orderId: o4.id } })
+    const ra = await fin.addExpense(fd({ ...base, amount: '500', vendor: '재검판매', channel: '옥션', attachOrderId: o4.id, itemLabel: '재검합류', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '재검합류', amount: 500 }]) }))
+    eq('재검 4: 갈린 옛 주문에 다른 쇼핑몰로 합류 거부', [ra.ok, await prisma.expense.count({ where: { orderId: o4.id } })], [false, before4])
+    const rok = await fin.addExpense(fd({ ...base, amount: '500', vendor: '재검판매', channel: '쿠팡', attachOrderId: o4.id, itemLabel: '재검합류2', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: '재검합류2', amount: 500 }]) }))
+    eq('재검 4: 그 주문에 있는 쇼핑몰로는 합류', [rok.ok, await prisma.expense.count({ where: { orderId: o4.id } })], [true, before4 + 1])
+    await prisma.expense.deleteMany({ where: { orderId: o4.id } })
+  }
+
   eq('전체 금액 합: 쇼핑몰 작업은 금액을 안 바꾼다(등록분만 늘었다)', (await amountSum()) - sumStart > 0, true)
   console.log(`[구매처·쇼핑몰 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

@@ -52,7 +52,7 @@ must(FA, fa, 'addExpense', [
   [/const baseRow = \{[\s\S]{0,600}\n\s+channel:\s+rowChannel\(channel, vendor \|\| null\),\n/, '품목 행 바탕(baseRow)에 쇼핑몰이 없거나 구매처와 같은 이름을 비우지 않는다(결정 A)'],
   [/const iv = multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : head[\s\S]{0,200}channel: rowChannel\(channel, iv\.vendor\)/, '다품목 행이 품목별 구매처 정본(itemVendorFor)을 안 거치거나 그 행 구매처 기준으로 쇼핑몰을 비우지 않는다(결정 A)'],
   [/const multiVendor = multiItems\.length >= 2/, '품목별 구매처가 다품목에만 서지 않는다'],
-  [/orderChannel && orderChannel !== headChannel/, '같은 주문 합류가 쇼핑몰이 다른 주문을 막지 않는다'],
+  [/const orderNames = \[\.\.\.new Set\(existing\.expenses\.map\(e => e\.channel\)[\s\S]{0,120}if \(headChannel && orderNames\.length > 0 && !orderNames\.includes\(headChannel\)\)/, '같은 주문 합류가 쇼핑몰이 다른 주문(이미 갈린 옛 주문·배송비 행 포함)을 막지 않는다'],
   [/if \(!channel && orderChannel\) channel = orderChannel/, '쇼핑몰을 비우고 합류할 때 그 주문의 쇼핑몰을 따르지 않는다'],
 ])
 {
@@ -123,6 +123,7 @@ must(FA, fa, 'vendorChannelOp', [
   [/if \(r\.count === 1\) rows\.push\(\{ id: h\.id, changes \}\)/, '쇼핑몰 정리 토큰에 실제로 바꾼 행만 싣지 않는다'],
   [/const after = rowChannel\(channel, kind === 'vendor-to-channel' \? null : h\.vendor\)/, '쇼핑몰 정리가 그 행 구매처와 같은 이름을 비우지 않는다(결정 A)'],
   [/if \(after && h\.orderId && splitOrder\.has\(h\.orderId\)\) \{ splitSkipped\+\+; continue \}/, '쇼핑몰 정리가 같은 주문에 다른 쇼핑몰이 있는 행을 건너뛰지 않는다(결정 B)'],
+  [/\.filter\(s => !okIds\.has\(s\.id\)\)/, '쇼핑몰 정리의 갈림 판정이 실제로 쓸 행(ok)이 아니라 고른 행 전부를 뺀다(건너뛴 다른 쇼핑몰 행이 근거에서 빠진다)'],
 ])
 {
   // 옮기기는 구매처 이름만 비운다(사업자번호를 토큰·쓰기에 싣지 않는다, 결정 C).
@@ -137,9 +138,17 @@ must(FA, fa, 'applyChannelToSameOrders', [
 ])
 // ── ⓖ 주문 묶기·배송비 묶기 ──────────────────────────────────────
 must(FA, fa, 'mergeExpensesIntoOrder', [
+  [/where: \{ orderId: \{ in: sourceOrderIds \}, propertyId \}, select: \{ channel: true \}/, '주문 묶기 갈림 검사에 배송비 행 쇼핑몰을 안 센다'],
   [/mergeChannelConflict\(\[\.\.\.selected, \.\.\.orderRows\]\)/, '주문 묶기가 쇼핑몰 갈림을 안 막는다'],
   [/signOrderMergeUndo\(propertyId/, '주문 묶기가 적용취소 토큰을 안 낸다'],
 ])
+must(FA, fa, 'undoBatchUpdateExpenses', [
+  [/await requireEdit\(\)/, '일괄 적용취소에 편집 권한 검사가 없다'],
+  [/const u = parseBatchExpensesUndo\(raw\)/, '일괄 적용취소가 허용 칸 모양 검사를 안 거친다(화면에서 온 fields 를 그대로 쓴다)'],
+  [/verifyUndoBody\(BATCH_EXPENSES_UNDO_DOMAIN, propertyId, canonicalBatchExpensesUndo\(body\), sig\)/, '일괄 적용취소가 서명을 안 본다'],
+  [/planBatchExpensesUndo\(u, /, "일괄 적용취소가 '쓴 직후' 검사를 안 거친다"],
+])
+must(FA, fa, 'batchUpdateExpenses', [[/signedUndo = signBatchUndo\(propertyId, /, '일괄 수정 적용취소 토큰에 서명·쓴 직후 값을 안 싣는다']])
 must(FA, fa, 'undoMergeExpensesIntoOrder', [
   [/await requireEdit\(\)/, '묶기 적용취소에 편집 권한 검사가 없다'],
   [/verifyUndoBody\(ORDER_MERGE_UNDO_DOMAIN/, '묶기 적용취소가 서명을 안 본다'],
@@ -288,6 +297,11 @@ must(FA, fa, 'batchUpdateExpenses', [
     if (!new RegExp(`channelSameAsVendor\\(${state}, ${v}\\) &&`).test(fc)) violations.push(`${FC}. 쇼핑몰 칸(${state})이 구매처와 같을 때 비워 두라는 안내가 없다(결정 A)`)
   }
   if (!/const next = rowChannel\(channelForSave\(String\(fd\.get\('channel'\)/.test(fc)) violations.push(`${FC} 수정 폼. 갈림 물음이 구매처와 같은 이름을 비운 값으로 보지 않는다(결정 A)`)
+  // 재검수 2026-10-20 화면 넷: 인라인 경고 문장·알약 카운트 정본 문법·창 제목 갈래·꼬리 문장 조건
+  if (!/저장할 때 \{next \? '주문 전체에 적용할지' : '주문 전체의 쇼핑몰을 비울지'\} 묻습니다\./.test(fc)) violations.push(`${FC} 수정 폼. 인라인 갈림 경고가 '주문 전체에 비우기할지' 꼴이다`)
+  if (!/<SelectionPillBar count=\{sel\.size\} unit="곳" compactNarrow /.test(fc) || !/max-\[359px\]:hidden/.test(read('components/ui/inventory/SelectionPillBar.tsx'))) violations.push(`${FC} 구매처 관리 알약. 카운트가 정본 'N곳 선택' 문법이 아니거나 좁은 폭 줄임이 없다`)
+  if (!/title=\{chMode === 'move' \? '쇼핑몰로 옮기기' : '쇼핑몰 지정'\}/.test(fc)) violations.push(`${FC} 쇼핑몰 창. 제목이 갈래(옮기기·지정)를 따르지 않는다`)
+  if (/[^?] ' ' \+ ORDER_CHANNEL_SPLIT_TAIL,/.test(fc) || !/split\.names\.length \? ' ' \+ ORDER_CHANNEL_SPLIT_TAIL : ''/.test(fc) || !/named \? ` \$\{ORDER_CHANNEL_SPLIT_TAIL\}` : ''/.test(fc)) violations.push(`${FC}. '먼저 주문에서 빼라' 꼬리가 다른 이름의 형제가 없을 때도 붙는다`)
   if (/구매처와 사업자등록번호가 비워집니다|구매처와 사업자등록번호를 비웁니다/.test(fc)) violations.push(`${FC} 구매처 관리. 비우기·옮기기 문구가 사업자번호도 비운다고 말한다(결정 C)`)
 }
 

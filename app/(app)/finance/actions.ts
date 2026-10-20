@@ -72,6 +72,7 @@ import {
   type ExpenseFieldUndo, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
 import { signFieldUndo, applyChannelToOrder } from './orderChannelApply'
+import { BATCH_EXPENSES_UNDO_DOMAIN, canonicalBatchExpensesUndo, parseBatchExpensesUndo, planBatchExpensesUndo, undoValue, type BatchExpensesUndo, type BatchUndoValue } from '@/lib/batchExpenseUndo'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -884,15 +885,18 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (attachOrderId) {
       const existing = await prisma.expenseOrder.findFirst({
         where: { id: attachOrderId, propertyId },
-        select: { id: true, expenses: { where: { isShipping: false }, select: { channel: true } } },
+        select: { id: true, expenses: { select: { channel: true, isShipping: true } } },
       })
       if (existing) {
         // 한 주문(한 결제)은 한 쇼핑몰이다. 다른 쇼핑몰 주문에는 합류하지 않는다(화면 제안도 같은 쇼핑몰만 보인다).
         // 쇼핑몰을 비우고 합류하면 그 주문의 쇼핑몰을 따른다.
-        const orderChannel = commonChannel(existing.expenses)
+        const orderChannel = commonChannel(existing.expenses.filter(e => !e.isShipping))
         const headChannel = rowChannel(channel, vendor || null)   // 구매처와 같은 이름이면 비운 값(결정 A)
-        if (headChannel && orderChannel && orderChannel !== headChannel) {
-          return { ok: false, error: `이 주문은 ${orderChannel} 주문입니다. 쇼핑몰이 다른 지출은 같은 주문으로 묶을 수 없습니다.` }
+        // 그 주문에 적힌 쇼핑몰 전부(배송비 행 포함). 이미 갈린 옛 주문이면 commonChannel 이 null 이라 위 검사만으로는 새 이름이 새어 들어간다.
+        // 새 행 쇼핑몰이 그 주문의 어떤 쇼핑몰과도 다르면 거절한다(재검수 2026-10-20).
+        const orderNames = [...new Set(existing.expenses.map(e => e.channel).filter((v): v is string => !!v))]
+        if (headChannel && orderNames.length > 0 && !orderNames.includes(headChannel)) {
+          return { ok: false, error: `이 주문은 ${orderNames.join(', ')} 주문입니다. 쇼핑몰이 다른 지출은 같은 주문으로 묶을 수 없습니다.` }
         }
         if (!channel && orderChannel) channel = orderChannel
         orderId = existing.id
@@ -1654,9 +1658,7 @@ export async function undoExpenseStockShift(undo: LedgerShiftUndo): Promise<{ ok
 // settleStatus 는 updateExpense 와 **같은 정본**(lib/settleStatus)으로 행별 판정한다.
 // 갈래(신용카드 여부)가 안 바뀌면 그 행의 지금 상태를 지킨다 — 카드에서 카드로 옮길 때
 // 정산완료가 미정산으로 되살아나던 자리다(운영자 승인 2026-09-25).
-export type BatchExpensesUndo = {
-  rows: { id: string; fields: Record<string, unknown> }[]
-}
+// 적용취소 토큰 모양은 lib/batchExpenseUndo 정본(허용 칸·서명 본문·'쓴 직후' 검사). 화면은 그 타입을 직접 가져간다.
 
 export async function batchUpdateExpenses(
   expenseIds: string[],
@@ -1677,7 +1679,7 @@ export async function batchUpdateExpenses(
   // 쇼핑몰을 바꿀 때 고른 행이 든 주문의 나머지 행도 같은 쇼핑몰로 맞춘다(화면의 '함께 적용', 결정 B). 그 행들은 쇼핑몰만 바뀌고
   // 적용취소 스냅샷에 함께 실린다. 끄면 갈림을 만드는 쓰기는 거절된다.
   opts?: { channelToOrders?: boolean },
-): Promise<{ ok: true; updated: number; siblings: number; skipped: { reason: string; count: number }[]; undo: BatchExpensesUndo } | { ok: false; error: string }> {
+): Promise<{ ok: true; updated: number; siblings: number; skipped: { reason: string; count: number }[]; undo?: BatchExpensesUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1757,7 +1759,8 @@ export async function batchUpdateExpenses(
     }
 
     // 되돌리기 스냅샷 — 덮어쓰기 전 원값(정산완료 이력 왕복 보존: settleStatus 필수 포함)
-    const undo: BatchExpensesUndo = { rows: [] }
+    // 쓴 직후 값(after)은 쓰기와 같은 트랜잭션에서 다시 읽어 채운다(아래). 서명은 그 뒤에 붙인다.
+    const undo: { rows: { id: string; fields: Record<string, unknown> }[] } = { rows: [] }
     for (const t of eligible) {
       const fields: Record<string, unknown> = {}
       if (wantsPayMethod) {
@@ -1789,6 +1792,7 @@ export async function batchUpdateExpenses(
     if (changingBizNo) commonData.vendorBizNo = normalizeBizNo(data.vendorBizNo ?? null)
     // 쇼핑몰은 행마다 다를 수 있어(결정 A) 공통 칸이 아니라 아래에서 값별로 묶어 쓴다.
 
+    let signedUndo: BatchExpensesUndo | null = null
     if (eligible.length > 0) {
       const ops: Prisma.PrismaPromise<unknown>[] = []
       if (wantsPayMethod) {
@@ -1841,7 +1845,15 @@ export async function batchUpdateExpenses(
       for (const t of eligible) if (touchesChannel(t)) { const k = channelAfterOf(t); byChannel.set(k, [...(byChannel.get(k) ?? []), t.id]) }
       for (const s of siblingsToSet) byChannel.set(s.after, [...(byChannel.get(s.after) ?? []), s.id])
       for (const [ch, ids] of byChannel) ops.push(prisma.expense.updateMany({ where: { id: { in: ids }, propertyId }, data: { channel: ch } }))
-      if (ops.length > 0) await prisma.$transaction(ops)
+      // 같은 트랜잭션 끝에서 쓴 직후 값을 읽는다(적용취소의 '쓴 직후' 검사 기준).
+      const undoIds = undo.rows.map(r => r.id)
+      const res = ops.length > 0 ? await prisma.$transaction([...ops, prisma.expense.findMany({ where: { id: { in: undoIds }, propertyId } })]) : []
+      const afterRows = new Map(((res.at(-1) ?? []) as Record<string, unknown>[]).map(r => [r.id as string, r]))
+      signedUndo = signBatchUndo(propertyId, undo.rows.map(r => ({
+        id: r.id,
+        fields: Object.fromEntries(Object.entries(r.fields).map(([k, v]) => [k, undoValue(v)])),
+        after: Object.fromEntries(Object.keys(r.fields).map(k => [k, undoValue(afterRows.get(r.id)?.[k])])),
+      })))
       // 실제로 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
       if (changingChannel) await noteChannel(propertyId, [...byChannel.keys()].some(Boolean) ? channelValue : null)
     }
@@ -1853,7 +1865,7 @@ export async function batchUpdateExpenses(
       updated: eligible.length,
       siblings: eligible.length > 0 ? siblingsToSet.length : 0,
       skipped: Object.entries(skippedCounts).map(([reason, count]) => ({ reason, count })),
-      undo,
+      ...(signedUndo ? { undo: signedUndo } : {}),
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1861,12 +1873,34 @@ export async function batchUpdateExpenses(
   }
 }
 
-// 지출 일괄 편집 적용취소 — 행별 원값 복원(batchUpdateTenants/undoBatchUpdateTenants 패턴)
-export async function undoBatchUpdateExpenses(u: BatchExpensesUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+/** 일괄 편집 적용취소 토큰에 서버 서명을 붙인다. 운영에서 키가 없으면 토큰을 내지 않는다(화면은 적용취소를 숨긴다). */
+function signBatchUndo(propertyId: string, rows: { id: string; fields: Record<string, BatchUndoValue>; after: Record<string, BatchUndoValue> }[]): BatchExpensesUndo | null {
+  rows = rows.filter(r => Object.keys(r.fields).length > 0)
+  if (rows.length === 0) return null
+  const body = { v: 1 as const, rows }
+  const sig = signUndoBody(BATCH_EXPENSES_UNDO_DOMAIN, propertyId, canonicalBatchExpensesUndo(body))
+  if (sig === null) return null
+  return sig ? { ...body, sig } : body
+}
+
+// 지출 일괄 편집 적용취소. 토큰 모양(허용 칸만, lib/batchExpenseUndo)·서명(용도 라벨 domain)·영업장 범위를 보고,
+// 지금 칸이 전부 쓴 직후 값일 때만 한 트랜잭션에서 되돌린다. 하나라도 그사이 바뀌었으면 아무것도 안 고친다(2026-10-20 재검수).
+export async function undoBatchUpdateExpenses(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    await prisma.$transaction(u.rows.map(x => prisma.expense.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })))
+    const u = parseBatchExpensesUndo(raw)
+    if (!u) return { ok: false, error: FIELD_UNDO_INVALID }
+    const { sig, ...body } = u
+    if (!verifyUndoBody(BATCH_EXPENSES_UNDO_DOMAIN, propertyId, canonicalBatchExpensesUndo(body), sig)) return { ok: false, error: FIELD_UNDO_INVALID }
+    const done = await prisma.$transaction(async tx => {
+      const now = await tx.expense.findMany({ where: { id: { in: u.rows.map(r => r.id) }, propertyId } })
+      const plan = planBatchExpensesUndo(u, new Map(now.map(r => [r.id, r as unknown as Record<string, unknown>])))
+      if (!plan) return false
+      for (const p of plan) await tx.expense.updateMany({ where: { id: p.id, propertyId }, data: p.data as never })
+      return true
+    })
+    if (!done) return { ok: false, error: FIELD_UNDO_CONFLICT }
     revalidatePath('/finance'); revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
@@ -2191,7 +2225,8 @@ export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok
     const sourceOrderIds = [...new Set(selected.map(e => e.orderId).filter(Boolean) as string[])]
     // 쇼핑몰 검사. 선택 행과 대상이 될 주문들의 다른 본품 행까지 본다(묶고 나면 한 주문이다).
     const orderRows = sourceOrderIds.length
-      ? await prisma.expense.findMany({ where: { orderId: { in: sourceOrderIds }, propertyId, isShipping: false }, select: { channel: true } })
+      // 배송비 행도 센다(사후 배송비 묶기와 같은 클래스, 재검수 2026-10-20). 배송비 행 쇼핑몰이 품목과 다르면 막는다.
+      ? await prisma.expense.findMany({ where: { orderId: { in: sourceOrderIds }, propertyId }, select: { channel: true } })
       : []
     const conflict = mergeChannelConflict([...selected, ...orderRows])
     if (conflict) return { ok: false, error: `쇼핑몰이 다른 지출(${conflict.join(', ')})은 한 주문으로 묶을 수 없습니다. 같은 쇼핑몰에서 결제한 지출만 고르거나 쇼핑몰을 먼저 고쳐 주세요.` }
@@ -3629,10 +3664,11 @@ async function vendorChannelOp(vendorNames: string[], channelRaw: string, kind: 
     const result = await prisma.$transaction(async tx => {
       const hit = await tx.expense.findMany({ where: { propertyId, vendor: { in: names } }, select: { id: true, vendor: true, vendorBizNo: true, channel: true, orderId: true } })
       const ok = hit.filter(h => h.channel === null || h.channel === channel)
-      // 한 주문 = 한 쇼핑몰(결정 B). 같은 주문의 다른 행(이번 대상 밖)에 다른 쇼핑몰이 적혀 있으면 그 행은 건너뛴다(갈림을 만들지 않는다).
-      const hitIds = new Set(hit.map(h => h.id))
+      // 한 주문 = 한 쇼핑몰(결정 B). 같은 주문의 다른 행(이번에 실제로 쓸 행 밖)에 다른 쇼핑몰이 적혀 있으면 그 행은 건너뛴다.
+      // 빼는 범위는 hit 이 아니라 ok 다. 같은 구매처라도 쇼핑몰이 이미 달라 건너뛴 행은 그대로 남아 갈림의 근거다(재검수 2026-10-20).
+      const okIds = new Set(ok.map(h => h.id))
       const orderIds = [...new Set(ok.map(h => h.orderId).filter((v): v is string => !!v))]
-      const others = orderIds.length ? (await tx.expense.findMany({ where: { propertyId, orderId: { in: orderIds } }, select: { id: true, orderId: true, channel: true } })).filter(s => !hitIds.has(s.id)) : []
+      const others = orderIds.length ? (await tx.expense.findMany({ where: { propertyId, orderId: { in: orderIds } }, select: { id: true, orderId: true, channel: true } })).filter(s => !okIds.has(s.id)) : []
       const splitOrder = new Set(others.filter(s => s.channel && s.channel !== channel).map(s => s.orderId!))
       const rows: ExpenseFieldUndo['rows'] = []
       let splitSkipped = 0

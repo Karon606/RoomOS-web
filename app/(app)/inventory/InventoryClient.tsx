@@ -2972,7 +2972,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             const split = res.orderSplit
             const ok = await confirmDialog({
               title: `이 주문의 다른 ${split.count}건은 ${splitSiblingsText(split)}`,
-              message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 같은 쇼핑몰을 적용할까요? ${ORDER_CHANNEL_SPLIT_TAIL}`,
+              // 서버는 다른 이름의 형제가 있을 때만 갈림으로 돌려준다. 그래도 꼬리는 이름이 있을 때만 붙인다(재무 수정 폼과 같은 규칙).
+              message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 같은 쇼핑몰을 적용할까요?${split.names.length ? ` ${ORDER_CHANNEL_SPLIT_TAIL}` : ''}`,
               confirmLabel: '주문 전체에 적용',
               level: 'caution',
             })

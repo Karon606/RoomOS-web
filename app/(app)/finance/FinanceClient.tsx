@@ -19,7 +19,7 @@ import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, undoMergeExpensesIntoOrder, findOrderByExternalNo,
-  batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo, getVendorBizMap,
+  batchUpdateExpenses, undoBatchUpdateExpenses, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks, getBrandSuggestions,
@@ -1370,9 +1370,9 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
         const picked = (rows ?? []).filter(x => sel.has(x.vendor))
         const canMerge = picked.length >= 2 && !picked.some(x => x.isChannel)
         return (
-          // 셋(쇼핑몰로·합치기·닫기)이 320px·글자 125% 와 256px 확대에서 알약 바탕 안에 들도록 카운트는 숫자만 둔다(하네스 실측,
-          // '2곳 선택' 이면 256px 에서 233 대 228 로 닫기가 바탕 밖으로 나간다). 고른 행은 목록에서 칠해져 있어 숫자만으로 읽힌다.
-          <SelectionPillBar count={sel.size} unit="" label="" onClose={exitSel} aboveModal>
+          // 카운트는 정본 문법 'N곳 선택'. 360px 미만(320px·글자 125%, 256px 확대)에서만 숫자로 줄여 셋(쇼핑몰로·합치기·닫기)이
+          // 알약 바탕 안에 든다(하네스 실측, '2곳 선택' 이면 256px 에서 233 대 228). 고른 행은 목록에서 칠해져 있어 숫자만으로 읽힌다.
+          <SelectionPillBar count={sel.size} unit="곳" compactNarrow onClose={exitSel} aboveModal>
             <PillButton disabled={merging || chBusy} onClick={() => openChannelSheet()}>
               쇼핑몰로
             </PillButton>
@@ -1398,7 +1398,7 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
       description="대표로 남길 구매처를 고르면 나머지 지출의 구매처가 대표로 바뀝니다."
       onConfirm={runMerge} />
     {/* 쇼핑몰 정리 창도 구매처 관리 모달의 형제다(합치기 시트와 같은 까닭). 입력 하나 + 갈래 둘(세그먼트)이라 정본 Modal 이다. */}
-    <Modal open={!!chSheet} onClose={() => setChSheet(null)} width="sm" title="쇼핑몰로 옮기기"
+    <Modal open={!!chSheet} onClose={() => setChSheet(null)} width="sm" title={chMode === 'move' ? '쇼핑몰로 옮기기' : '쇼핑몰 지정'}
       subtitle={chSheet ? `${chSheet.vendors.length === 1 ? chSheet.vendors[0] : `선택 ${chSheet.vendors.length}곳`} · 지출 ${chSheet.count}건` : undefined}
       // 발끝은 일괄 편집 모달과 같은 문법(취소 secondary · 주 동작 primary, 반반). 주 동작 라벨은 짧은 동사다(320px·글자 125% 에서 한 줄, 하네스 실측).
       footer={<div className="flex gap-2">
@@ -3019,9 +3019,12 @@ export default function FinanceClient({
               // 비우는 경우는 '주문 전체의 쇼핑몰을 비울까요?' 로 묻는다(빈 값을 '적용'하라고 말하지 않는다, 독립 검수 2026-10-20).
               const ok = await confirmDialog({
                 title: `이 주문의 다른 ${split.count}건은 ${splitSiblingsText(split)}`,
-                message: (next
-                  ? `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next, '을/를')} 적용할까요?`
-                  : '한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체의 쇼핑몰을 비울까요?') + ' ' + ORDER_CHANNEL_SPLIT_TAIL,
+                // 다른 이름의 형제가 있을 때만 '결제가 정말 다르면 먼저 주문에서 빼라' 꼬리를 붙인다. 형제가 모두 비어 있으면 한 문장으로 짧게 묻는다.
+                message: split.names.length === 0 && next
+                  ? `주문 전체를 ${withParticle(next, '으로/로')} 채웁니다.`
+                  : (next
+                    ? `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next, '을/를')} 적용할까요?`
+                    : '한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체의 쇼핑몰을 비울까요?') + (split.names.length ? ' ' + ORDER_CHANNEL_SPLIT_TAIL : ''),
                 confirmLabel: '주문 전체에 적용',
                 level: 'caution',
               })
@@ -4883,7 +4886,7 @@ export default function FinanceClient({
                           <p className="text-[0.6875rem] rounded-lg px-3 py-2"
                             style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
                             이 주문의 다른 {split.count}건은 {splitSiblingsText(split)}.
-                            저장할 때 주문 전체에 {next ? '적용' : '비우기'}할지 묻습니다.
+                            저장할 때 {next ? '주문 전체에 적용할지' : '주문 전체의 쇼핑몰을 비울지'} 묻습니다.
                           </p>
                         )
                       })()}
@@ -5916,10 +5919,10 @@ export default function FinanceClient({
         selectedIds={mergeSelHere}
         selected={expenses.filter(e => mergeSel.has(e.id)).map(e => ({ settleStatus: e.settleStatus, payMethod: e.payMethod, recurringExpenseId: e.recurringExpenseId }))}
         channelOptions={channelOptions}
-        orderSiblingIds={(() => {
+        orderSiblings={(() => {
           const picked = new Set(mergeSelHere)
           const orders = new Set(expenses.filter(e => picked.has(e.id) && e.orderId).map(e => e.orderId!))
-          return expenses.filter(e => e.orderId && orders.has(e.orderId) && !picked.has(e.id)).map(e => e.id)
+          return expenses.filter(e => e.orderId && orders.has(e.orderId) && !picked.has(e.id)).map(e => ({ id: e.id, channel: e.channel ?? null }))
         })()}
         expenseCategories={expenseCategories}
         paymentMethods={effectivePaymentMethods}
@@ -5940,12 +5943,13 @@ export default function FinanceClient({
 
 // ── 지출 일괄 편집 모달 ────────────────────────────────────────────
 // 선택한 지출들의 공통 필드를 한 번에 수정. 전 필드 '미변경' 기본, 채운 항목만 전송(BatchEditTenantsModal 문법 이식).
-export function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone, channelOptions, orderSiblingIds }: {
+export function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone, channelOptions, orderSiblings }: {
   selectedIds: string[]
   selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null }[]
   channelOptions: string[]
   // 고른 지출이 든 주문의 고르지 않은 다른 행(배송비 행 포함, 지금 보는 달). 쇼핑몰을 바꿀 때 함께 적용할지 묻는다.
-  orderSiblingIds: string[]
+  // 고른 행이 든 주문의 고르지 않은 행(쇼핑몰 '함께 적용' 물음이 건수와 다른 이름 여부를 읽는다).
+  orderSiblings: { id: string; channel: string | null }[]
   expenseCategories: string[]
   paymentMethods: string[]
   financialAccounts: FinancialAccount[]
@@ -6030,10 +6034,15 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
     // 갈래는 [함께 적용 / 취소] 둘뿐이다(운영자 결정 2026-10-20 B, '고른 것만' 갈래는 없앴다). 함께 적용은 그 건들의 쇼핑몰만 바꾸고
     // (다른 칸은 고른 건에만), 서버가 한 트랜잭션·한 적용취소 스냅샷으로 한다.
     let withSiblings = false
-    if ('channel' in data && orderSiblingIds.length > 0) {
+    if ('channel' in data && orderSiblings.length > 0) {
+      // 다른 이름이 적힌 형제가 있을 때만 '먼저 주문에서 빼라' 꼬리. 모두 비어 있으면 채운다는 한 문장으로 짧게 묻는다.
+      const nextCh = channelForSave(data.channel ?? null, channelOptions)
+      const named = orderSiblings.some(s => s.channel && s.channel !== nextCh)
       const ok = await confirmDialog({
-        title: `같은 주문에 고르지 않은 ${orderSiblingIds.length}건이 더 있습니다`,
-        message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 그 건들의 쇼핑몰도 함께 바꿀까요? 다른 항목은 고른 건에만 적용됩니다. ${ORDER_CHANNEL_SPLIT_TAIL}`,
+        title: `같은 주문에 고르지 않은 ${orderSiblings.length}건이 더 있습니다`,
+        message: !named && nextCh
+          ? `그 건들의 쇼핑몰도 ${withParticle(nextCh, '으로/로')} 채웁니다. 다른 항목은 고른 건에만 적용됩니다.`
+          : `한 주문은 한 쇼핑몰에서 결제한 것입니다. 그 건들의 쇼핑몰도 함께 바꿀까요? 다른 항목은 고른 건에만 적용됩니다.${named ? ` ${ORDER_CHANNEL_SPLIT_TAIL}` : ''}`,
         confirmLabel: '함께 적용',
         level: 'caution',
       })
@@ -6045,12 +6054,12 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
     const res = await batchUpdateExpenses(selectedIds, data, withSiblings ? { channelToOrders: true } : undefined)
     if (!res.ok) { setPending(false); setError(res.error); return }
     const sibUpdated = res.siblings
-    const u: BatchExpensesUndo = { rows: [...res.undo.rows] }
+    const u = res.undo   // 서명된 토큰 그대로(허용 칸·쓴 직후 검사는 서버, lib/batchExpenseUndo). 없으면 적용취소를 숨긴다.
     setPending(false)
     const skipMsg = (res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : '') + (sibUpdated ? ` · 같은 주문 ${sibUpdated}건 쇼핑몰 함께` : '')
-    pushToast('success', `지출 ${res.updated}건 업데이트 완료${skipMsg}`, {
+    pushToast('success', `지출 ${res.updated}건 업데이트 완료${skipMsg}`, u ? {
       action: { label: '적용취소', run: () => { void undoBatchUpdateExpenses(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다'); else pushToast('error', r.error) }) } },
-    })
+    } : undefined)
     onDone()
   }
 
