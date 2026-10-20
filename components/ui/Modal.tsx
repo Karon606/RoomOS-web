@@ -104,8 +104,11 @@ export function Modal({
   //
   // 그래서 오버레이의 위·아래 인셋을 **같은 vv 스냅샷 한 벌**로 적는다.
   //   --modal-vv-top    = vv.offsetTop                          (띠의 위가 layout 어디인가)
-  //   --modal-vv-bottom = innerHeight - (offsetTop + vv.height) (띠의 아래에서 얼마가 남는가)
+  //   --modal-vv-bottom = H - (offsetTop + vv.height)           (띠의 아래에서 얼마가 남는가)
   // 셋을 합치면 오버레이의 content box 가 보이는 띠와 정확히 같아진다.
+  // H 는 화면 고정 상자의 높이다(2026-10-20, 신고 be5316e8). 종전 innerHeight 자리인데, 키보드가 선
+  // iOS 가 팬하며 innerHeight 를 줄여 보고하면 아래 인셋이 모자라 패널이 키보드 밑으로 내려앉았다.
+  // 재는 일은 lib/viewportFrame readKbdSnapshot 이 한다(가이드 §30).
   //
   // **팬은 `resize` 가 아니라 `scroll` 로 온다.** 그래서 이 sync 는 두 이벤트를 다 듣는다.
   // 716e7b0c 의 "크기 갱신은 resize 에서만" 규칙과 충돌하지 않는다 — 그 규칙의 대상은 스크롤러의

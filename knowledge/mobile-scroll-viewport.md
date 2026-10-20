@@ -57,6 +57,8 @@ focus-scroll·visual viewport 팬 경로와 가장 잘 맞고, DOM 구조를 바
 
 겹침은 `innerHeight - (visualViewport.height + offsetTop)`으로 잰다. `height`만 빼면 iOS가 visual viewport를 팬한 만큼 과대 계산된다. 안드로이드는 키보드가 layout viewport를 함께 줄이므로 이 식이 0을 내고 이중 차감이 안 생긴다.
 
+**2026-10-20 개정(신고 be5316e8).** 위 식의 innerHeight 자리는 이제 화면 고정 상자의 높이 H 다(`lib/viewportFrame` readKbdSnapshot). 키보드가 선 iOS 는 팬하면 innerHeight 를 812 − offsetTop 이나 vv.height 로 줄여 보고해 이 식이 겹침을 16(실제 206)으로 냈다. 경위와 식은 [[open-keyboard-field-visibility]] 기준틀 교체 절.
+
 **높이를 줄이지 않고 패딩을 더한 이유** — 높이를 줄이면 `--shell-content-h`를 쓰는 편집기류(도면)까지 파급된다. 패딩은 스크롤 여유만 늘리고 고정 요소를 안 건드린다.
 
 ## 모달을 인라인 패널로 바꾸면 모달이 주던 보정도 함께 잃는다
