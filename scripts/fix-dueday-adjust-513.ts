@@ -56,6 +56,8 @@ type NewRec = { id: string; targetMonth: string; expectedAmount: number; actualA
 type Plan = {
   propertyId: string; tenantId: string
   adjAfter: { actualAmount: number; memo: string; payMethod: null }
+  /** 조정 행이 지워져 있었으면 그 시각(되살리고, 되돌리기 때 다시 지운다). 살아 있었으면 null. */
+  adjDeletedAt: string | null
   creates: NewRec[]
   isPaid: { id: string; before: boolean; after: boolean }[]
   months: { month: string; bill: number; paidBefore: number; paidAfter: number }[]
@@ -80,11 +82,15 @@ async function plan(tx: Tx): Promise<Plan> {
   if (!lease || lease.room?.roomNo !== ROOM_NO) throw new Error('대상 계약이 513호가 아니라 멈춘다')
   if (lease.dueDay !== '20') throw new Error(`납부일이 '20' 이 아니라(${lease.dueDay}) 멈춘다`)
   if (AGREED > lease.rentAmount) throw new Error(`협의 금액이 이용료(${won(lease.rentAmount)})보다 커서 멈춘다`)
+  // 2026-10-20 22:47 운영자가 옛 화면에서 이 행을 지웠다(소프트삭제, 그래서 받을 돈까지 사라졌다). 지워진 상태도 받아 되살린다.
   const adj = await tx.paymentRecord.findFirst({
-    where: { id: ADJ_ID, leaseTermId: LEASE_ID, propertyId: lease.propertyId, deletedAt: null },
-    select: { actualAmount: true, memo: true, payMethod: true, targetMonth: true, isDeposit: true, isBillingAdjust: true, cashReceiptIssuedAt: true },
+    where: { id: ADJ_ID, leaseTermId: LEASE_ID, propertyId: lease.propertyId },
+    select: {
+      actualAmount: true, memo: true, payMethod: true, targetMonth: true, isDeposit: true, isBillingAdjust: true, cashReceiptIssuedAt: true,
+      deletedAt: true, expectedAmount: true, isPrevOwner: true, payDate: true, seqNo: true, isPaid: true,
+    },
   })
-  if (!adj) throw new Error('조정 행이 없거나 지워져 있어 멈춘다')
+  if (!adj) throw new Error('조정 행이 없어 멈춘다')
   const same = adj.actualAmount === BROKEN.actualAmount && adj.memo === BROKEN.memo && adj.payMethod === BROKEN.payMethod
     && adj.targetMonth === BROKEN.targetMonth && !adj.isDeposit && !adj.isBillingAdjust && adj.cashReceiptIssuedAt === null
   if (!same) throw new Error(`조정 행 값이 신고 시점과 다르다(${won(adj.actualAmount)} · ${adj.memo} · 수단 ${JSON.stringify(adj.payMethod)}). 이미 고쳤거나 그 사이 바뀌어 멈춘다`)
@@ -106,7 +112,11 @@ async function plan(tx: Tx): Promise<Plan> {
     select: { id: true, targetMonth: true, actualAmount: true, expectedAmount: true, isPrevOwner: true, payDate: true, seqNo: true, isPaid: true },
   })
   if (live.some(r => r.isPrevOwner)) throw new Error('양도인 몫 행이 있어 이 스크립트의 FIFO 가정(인수 뒤 입주) 밖이라 멈춘다')
-  const sim: Rec[] = live.map(r => (r.id === ADJ_ID ? { ...r, actualAmount: adjAfter.actualAmount } : r))
+  // 지워진 조정 행은 live 에 없다. 되살린 모습으로 sim 에 넣고, before(지금 장부)에는 넣지 않는다.
+  const adjRec: Rec = { id: ADJ_ID, targetMonth: adj.targetMonth, actualAmount: adjAfter.actualAmount, expectedAmount: adj.expectedAmount, isPrevOwner: adj.isPrevOwner, payDate: adj.payDate, seqNo: adj.seqNo, isPaid: adj.isPaid }
+  const sim: Rec[] = adj.deletedAt
+    ? [...live, adjRec]
+    : live.map(r => (r.id === ADJ_ID ? { ...r, actualAmount: adjAfter.actualAmount } : r))
   const before: Rec[] = live
   const billOf = (rows: Rec[], ms: string) => {
     const locked = rows.filter(r => r.targetMonth === ms && !r.isPrevOwner).reduce((mx, r) => Math.max(mx, r.expectedAmount), 0)
@@ -148,7 +158,7 @@ async function plan(tx: Tx): Promise<Plan> {
     let cum = 0
     for (const r of sim.filter(x => x.targetMonth === ms).sort((a, b) => a.payDate.getTime() - b.payDate.getTime() || a.seqNo - b.seqNo)) {
       cum += r.actualAmount
-      const was = before.find(b => b.id === r.id)?.isPaid ?? false
+      const was = r.id === ADJ_ID ? adj.isPaid : (before.find(b => b.id === r.id)?.isPaid ?? false)
       isPaid.push({ id: r.id, before: was, after: cum >= bill })
     }
   }
@@ -156,12 +166,12 @@ async function plan(tx: Tx): Promise<Plan> {
   const last = touched[touched.length - 1]
   const due = resolveDueDateForMonth(lease.dueDay, last)
   const nextDue = { month: last, ymd: due ? `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}` : null, owed: Math.max(0, billOf(sim, last) - paidOf(sim, last)) }
-  return { propertyId: lease.propertyId, tenantId: lease.tenantId, adjAfter, creates, isPaid, months, nextDue, depositCash }
+  return { propertyId: lease.propertyId, tenantId: lease.tenantId, adjAfter, adjDeletedAt: adj.deletedAt?.toISOString() ?? null, creates, isPaid, months, nextDue, depositCash }
 }
 
 function print(p: Plan) {
   console.log(`대상: 513호 계약 ${LEASE_ID.slice(0, 8)} · 조정 행 ${ADJ_ID.slice(0, 8)}`)
-  console.log(`① 조정 행: ${won(BROKEN.actualAmount)} · 수단 '' → ${won(p.adjAfter.actualAmount)} · 수단 없음`)
+  console.log(`① 조정 행: ${won(BROKEN.actualAmount)} · 수단 ''${p.adjDeletedAt ? ` · 지워짐(${p.adjDeletedAt})` : ''} → ${won(p.adjAfter.actualAmount)} · 수단 없음${p.adjDeletedAt ? ' · 되살림' : ''} (추가로 받을 금액 ${won(-p.adjAfter.actualAmount)})`)
   console.log(`   메모: ${BROKEN.memo}`)
   console.log(`      → ${p.adjAfter.memo}`)
   console.log(`② 현금 ${won(CASH)} · ${METHOD} · 납부일 ${PAY_YMD} · 귀속월 자동(FIFO)`)
@@ -180,6 +190,7 @@ function print(p: Plan) {
 type Undo = {
   leaseTermId: string; adjId: string; propertyId: string
   adjBefore: typeof BROKEN; adjAfter: Plan['adjAfter']
+  adjDeletedAt?: string | null
   created: NewRec[]; isPaid: Plan['isPaid']
   /** 만든 수납의 키(계약·입금일·수단). 되돌리기 전에 이 키에 살아 있는 발행 줄이 없는지 본다. */
   payYmd: string; method: string
@@ -199,7 +210,7 @@ async function revert(file: string) {
     }
     const liveLine = await tx.cashReceipt.findFirst({ where: { propertyId: u.propertyId, leaseTermId: u.leaseTermId, payDate: ymdToDbDate(u.payYmd), payMethod: u.method, deletedAt: null }, select: { id: true } })
     if (liveLine) throw new Error(`그 키(${u.payYmd} · ${u.method})에 살아 있는 현금영수증 발행 줄이 있어 되돌리지 않는다. 앱에서 정리한 뒤 다시 실행한다`)
-    await tx.paymentRecord.updateMany({ where: { id: u.adjId, propertyId: u.propertyId }, data: { actualAmount: u.adjBefore.actualAmount, memo: u.adjBefore.memo, payMethod: u.adjBefore.payMethod } })
+    await tx.paymentRecord.updateMany({ where: { id: u.adjId, propertyId: u.propertyId }, data: { actualAmount: u.adjBefore.actualAmount, memo: u.adjBefore.memo, payMethod: u.adjBefore.payMethod, ...(u.adjDeletedAt ? { deletedAt: new Date(u.adjDeletedAt) } : {}) } })
     // 앱의 수납 삭제·등록 적용취소와 같은 소프트삭제다(감사 흔적이 남고 회차 번호도 앱 채번과 같이 센다).
     await tx.paymentRecord.updateMany({ where: { id: { in: u.created.map(c => c.id) }, propertyId: u.propertyId, deletedAt: null }, data: { deletedAt: new Date() } })
     for (const x of u.isPaid) {
@@ -227,7 +238,7 @@ async function main() {
 
   const p0 = await prisma.$transaction(async tx => { await tx.$executeRaw`SET TRANSACTION READ ONLY`; return plan(tx) })
   const file = `scripts/.fix-dueday-adjust-513-undo-${Date.now()}.json`
-  const undo: Undo = { leaseTermId: LEASE_ID, adjId: ADJ_ID, propertyId: p0.propertyId, adjBefore: BROKEN, adjAfter: p0.adjAfter, created: p0.creates, isPaid: p0.isPaid, payYmd: PAY_YMD, method: METHOD }
+  const undo: Undo = { leaseTermId: LEASE_ID, adjId: ADJ_ID, propertyId: p0.propertyId, adjBefore: BROKEN, adjAfter: p0.adjAfter, adjDeletedAt: p0.adjDeletedAt, created: p0.creates, isPaid: p0.isPaid, payYmd: PAY_YMD, method: METHOD }
   fs.writeFileSync(file, JSON.stringify(undo, null, 2))
   await prisma.$transaction(async tx => {
     const p = await plan(tx)   // 쓰기 직전 다시 확인. 예행과 다르면 멈춘다.
@@ -236,8 +247,8 @@ async function main() {
       throw new Error('쓰기 직전 계획이 예행과 달라 멈춘다')
     }
     const n = await tx.paymentRecord.updateMany({
-      where: { id: ADJ_ID, propertyId: p0.propertyId, deletedAt: null, actualAmount: BROKEN.actualAmount, memo: BROKEN.memo, payMethod: BROKEN.payMethod },
-      data: p0.adjAfter,
+      where: { id: ADJ_ID, propertyId: p0.propertyId, deletedAt: p0.adjDeletedAt ? new Date(p0.adjDeletedAt) : null, actualAmount: BROKEN.actualAmount, memo: BROKEN.memo, payMethod: BROKEN.payMethod },
+      data: { ...p0.adjAfter, deletedAt: null },
     })
     if (n.count !== 1) throw new Error('조정 행을 바꾸지 못해 멈춘다')
     for (const c of p0.creates) {
