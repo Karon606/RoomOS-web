@@ -145,13 +145,29 @@ export function orderChannelSplit(rows: readonly { channel?: string | null }[]):
  * 주문 속 한 행의 쇼핑몰을 바꿀 때 다른 행과 갈리는가. 갈리면 그 행 수와 이름들('쿠팡', 미기록은 '미기록').
  * 같으면 null. 수정 폼 경고와 저장 직전 물음이 같은 함수를 쓴다.
  */
-export function channelSplitAgainst(siblings: readonly { channel?: string | null }[], next: string | null | undefined): { count: number; names: string[] } | null {
+export function channelSplitAgainst(siblings: readonly { channel?: string | null }[], next: string | null | undefined): { count: number; names: string[]; unset: number } | null {
   const n = key(next)
   const differing = siblings.filter(s => key(s.channel) !== n)
   if (differing.length === 0) return null
-  const names = [...new Set(differing.map(s => key(s.channel) || '미기록'))]
-  return { count: differing.length, names }
+  const names = [...new Set(differing.map(s => key(s.channel)).filter(Boolean))]
+  return { count: differing.length, names, unset: differing.filter(s => !key(s.channel)).length }
 }
+
+/**
+ * 갈린 형제를 사람 말로('쿠팡입니다' · '쇼핑몰이 비어 있습니다' · '쿠팡이거나 쇼핑몰이 비어 있습니다'). 수정 폼 경고 상자와 저장 직전 물음이 쓴다.
+ * 화면 문장에는 '미기록' 이라는 낱말을 쓰지 않는다(운영자 말이 아니다, 독립 검수 2026-10-20).
+ */
+export function splitSiblingsText(split: { names: string[]; unset: number }): string {
+  if (split.names.length && split.unset) return `${split.names.join(', ')}이거나 쇼핑몰이 비어 있습니다`
+  if (split.names.length) return `${split.names.join(', ')}입니다`
+  return '쇼핑몰이 비어 있습니다'
+}
+
+/**
+ * 쇼핑몰 목록 이름이 구매처 자리에 있을 때 이름 변경·합치기를 막는 까닭(서버 renameVendor 거부 문장과 구매처 관리 화면 캡션이 한 벌).
+ * 행동 낱말은 '쇼핑몰로'(구매처 관리의 행 동작·알약·창 제목 '쇼핑몰로 옮기기'와 같다).
+ */
+export const VENDOR_CHANNEL_LOCKED = "쇼핑몰 목록의 이름은 구매처로 바꾸거나 합칠 수 없습니다. '쇼핑몰로'를 눌러 쇼핑몰 칸에 옮기세요."
 
 /** 묶을 행들의 쇼핑몰이 서로 다른가(미기록은 빼고 센다). 다르면 그 이름들. 주문 묶기·같은 주문 합류가 막는 조건이다. */
 export function mergeChannelConflict(rows: readonly { channel?: string | null }[]): string[] | null {

@@ -1,7 +1,7 @@
 // 구매처·쇼핑몰 저장·표시 규칙(lib/expenseChannel)과 글자 칸 적용취소 토큰(lib/expenseFieldUndo) 진리표. 실행: npx tsx scripts/test-expense-channel.ts
 import {
   normalizeChannel, isChannelName, channelForSave, channelKey, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, vendorSuggestionsWithoutChannels,
-  channelVendorLabel, commonChannel, externalOrderCaption, orderSellerLabel, orderChannelSplit, channelSplitAgainst, mergeChannelConflict,
+  channelVendorLabel, commonChannel, externalOrderCaption, orderSellerLabel, orderChannelSplit, channelSplitAgainst, splitSiblingsText, mergeChannelConflict,
 } from '../lib/expenseChannel'
 import { canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, EXPENSE_FIELD_UNDO_KINDS } from '../lib/expenseFieldUndo'
 import { canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo } from '../lib/orderMergeUndo'
@@ -104,10 +104,13 @@ eq('주문별 요약: 아무것도 없으면 null', orderSellerLabel([{ channel:
 eq('갈림 없음', orderChannelSplit([{ channel: '쿠팡' }, { channel: '쿠팡' }]), { distinct: ['쿠팡'], unset: 0 })
 eq('이름 둘이면 갈림', orderChannelSplit([{ channel: '쿠팡' }, { channel: '지마켓' }]).distinct.length, 2)
 eq('미기록 섞임은 따로 센다', orderChannelSplit([{ channel: '쿠팡' }, { channel: null }, { channel: '' }]), { distinct: ['쿠팡'], unset: 2 })
-eq('수정 갈림: 다른 2건은 쿠팡', channelSplitAgainst([{ channel: '쿠팡' }, { channel: '쿠팡' }], '지마켓'), { count: 2, names: ['쿠팡'] })
-eq('수정 갈림: 미기록 형제는 미기록이라 말한다', channelSplitAgainst([{ channel: null }], '쿠팡'), { count: 1, names: ['미기록'] })
+eq('수정 갈림: 다른 2건은 쿠팡', channelSplitAgainst([{ channel: '쿠팡' }, { channel: '쿠팡' }], '지마켓'), { count: 2, names: ['쿠팡'], unset: 0 })
+eq('수정 갈림: 빈 형제는 따로 센다', channelSplitAgainst([{ channel: null }], '쿠팡'), { count: 1, names: [], unset: 1 })
 eq('수정 갈림: 같으면 null', channelSplitAgainst([{ channel: '쿠팡' }], ' 쿠팡'), null)
-eq('수정 갈림: 비우면 값 있는 형제와 갈린다', channelSplitAgainst([{ channel: '쿠팡' }], null), { count: 1, names: ['쿠팡'] })
+eq('수정 갈림: 비우면 값 있는 형제와 갈린다', channelSplitAgainst([{ channel: '쿠팡' }], null), { count: 1, names: ['쿠팡'], unset: 0 })
+eq('갈림 문장: 이름만', splitSiblingsText({ names: ['쿠팡'], unset: 0 }), '쿠팡입니다')
+eq('갈림 문장: 빈 것만(미기록 낱말 없음)', splitSiblingsText({ names: [], unset: 2 }), '쇼핑몰이 비어 있습니다')
+eq('갈림 문장: 섞임', splitSiblingsText({ names: ['쿠팡'], unset: 1 }), '쿠팡이거나 쇼핑몰이 비어 있습니다')
 eq('묶기 충돌: 이름 둘', mergeChannelConflict([{ channel: '쿠팡' }, { channel: '지마켓' }, { channel: null }]), ['지마켓', '쿠팡'])
 eq('묶기 충돌 없음: 하나 + 미기록', mergeChannelConflict([{ channel: '쿠팡' }, { channel: null }]), null)
 

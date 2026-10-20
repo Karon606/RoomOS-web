@@ -206,6 +206,24 @@ must(FA, fa, 'batchUpdateExpenses', [
   const lf = strip(read('lib/cloneFieldLoss.ts'))
   if (!/unitBasis: new Date\('2026-07-03T19:49:06\+09:00'\)/.test(lf) || !/if \(since && origin\.createdAt < since\) continue/.test(lf)) violations.push('lib/cloneFieldLoss.ts. 칸이 생기기 전 원행(단가 기준 07-03 전)의 값을 유실 근거로 쓴다(없는 기록을 지어낸다)')
 }
+{
+  // 구매처 관리: 서버가 거부하는 동작(쇼핑몰 목록 이름의 저장·합치기)은 숨기고 같은 자리에 상태 캡션, 까닭은 서버 문장과 한 벌(검수 2026-10-20).
+  const FC = 'app/(app)/finance/FinanceClient.tsx'
+  const fc = strip(read(FC))
+  const vm = region(fc, 'VendorManageModal') ?? ''
+  if (!/r\.isChannel \? \(\s*<>[\s\S]{0,600}?<span className="shrink-0 whitespace-nowrap[^"]*">쇼핑몰 이름<\/span>\s*<button[^>]*onClick=\{\(\) => openChannelSheet\(r\.vendor\)\}[^>]*>쇼핑몰로<\/button>/.test(vm)) violations.push(`${FC} VendorManageModal. 쇼핑몰 목록 이름 행이 저장·합치기를 숨기고 '쇼핑몰 이름' 캡션과 '쇼핑몰로' 행 동작을 세우지 않는다`)
+  if (!/\{!selMode && !r\.isChannel && \(/.test(vm)) violations.push(`${FC} VendorManageModal. 쇼핑몰 목록 이름 행에 비움이 남았다`)
+  if (!/const canMerge = picked\.length >= 2 && !picked\.some\(x => x\.isChannel\)/.test(vm) || !/\{canMerge && \(/.test(vm)) violations.push(`${FC} VendorManageModal. 알약 합치기가 하나만 골랐거나 쇼핑몰 이름이 섞여도 선다(서버가 거부하는 동작)`)
+  if (!/targets: picked\.filter\(x => !x\.isChannel\)/.test(vm)) violations.push(`${FC} VendorManageModal. 합치기 시트 후보에 쇼핑몰 목록 이름이 남는다`)
+  if (!/\{VENDOR_CHANNEL_LOCKED\}/.test(vm) || !/return \{ ok: false, error: VENDOR_CHANNEL_LOCKED \}/.test(fa)) violations.push(`${FC}·${FA}. 막는 까닭이 화면과 서버에서 한 벌(VENDOR_CHANNEL_LOCKED)이 아니다`)
+  if (!/className="flex-1 basis-32 min-w-\[8rem\]/.test(vm)) violations.push(`${FC} VendorManageModal. 구매처 이름 칸이 좁은 폭에서 0 까지 눌린다(최소 8rem)`)
+  if (/'미기록'|>미기록</.test(fc)) violations.push(`${FC}. 화면 문장에 '미기록' 낱말이 남았다(운영자 말로 풀어 쓴다, splitSiblingsText)`)
+  if ((fc.match(/결제대행사\(예: 네이버파이낸셜\)는 구매처에도 쇼핑몰에도 적지 않습니다\./g) ?? []).length < 2) violations.push(`${FC}. 등록·수정 폼 두 곳에 결제대행사 안내가 없다`)
+  const bm = region(fc, 'BatchEditExpensesModal') ?? ''
+  if (!/type="checkbox" checked=\{clearChannel\}/.test(bm) || !/쇼핑몰 비우기<\/span>/.test(bm)) violations.push(`${FC} BatchEditExpensesModal. 쇼핑몰 비우기가 호실 일괄 편집과 같은 체크박스 문법이 아니다`)
+  const pr = read('components/dashboard/PendingReceiptSection.tsx')
+  if (!/>쇼핑몰 \(선택 · 비우면 상호명과 같음\)<\/label>/.test(pr) || !/list=\{`pr-channels-\$\{row\.id\}`\}/.test(pr)) violations.push('components/dashboard/PendingReceiptSection.tsx. 홈 승인 카드 쇼핑몰 칸에 보이는 라벨·datalist 가 없다')
+}
 // ── ⓛ 구매처를 쇼핑몰 자리에 대신 쓰지 않는다 ─────────────────────
 {
   const walk = (dir, out = []) => { for (const n of readdirSync(dir)) { const p = join(dir, n); if (n === 'node_modules' || n.startsWith('.')) continue; if (statSync(p).isDirectory()) walk(p, out); else if (/\.tsx?$/.test(n)) out.push(p) } return out }

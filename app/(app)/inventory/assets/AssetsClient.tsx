@@ -973,16 +973,23 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
         // (UX 패널 보조 제안). 메타 줄은 한 줄 말줄임이라 뒤에 두면 휴대폰에서 잘리거나 사라진다(웹디자이너 패스 2).
         // 판정은 받을 때 묻는 창과 같다(살아 있는 방·안 놓인 행만, receiptPlacement).
         meta={(() => {
+          // 금액은 맨 끝 따로 선다. 한 줄 말줄임이 금액부터 자르지 않게 앞 글자만 줄고 금액은 남는다(쇼핑몰이 늘어 줄이 길어진 뒤, 검수 2026-10-20).
           const rest = (awaitingReceipt
-            ? [plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)), boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.category, won(it.amount)]
-            : [boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)]
+            ? [plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)), boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.category]
+            : [boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category]
           ).filter(Boolean).join(' · ')
           // 메타 줄은 한 줄 말줄임이라 장소를 맨 앞에 둔다(수령 대기 예정 호실과 같은 이유). 보관 위치가 빈 카드는 위치가 있을 때만 '보관 위치 미정'.
           // 색은 따로 주지 않는다(차례가 강조다, 웹디자이너 패스).
           const place = storeMeta && !awaitingReceipt && isUnplaced(it.roomId, it.locationId, it.isCommon)
             ? (it.storedLocationName ? storedPlaceLabel(it.storedLocationName) : hasStores ? STORE_UNKNOWN_HEAD : null)
             : null
-          return place ? `${place} · ${rest}` : rest
+          const head = place ? `${place} · ${rest}` : rest
+          return (
+            <span className="flex min-w-0">
+              <span className="min-w-0 truncate">{head}</span>
+              <span className="shrink-0 whitespace-pre">{` · ${won(it.amount)}`}</span>
+            </span>
+          )
         })()}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         valueSub={it.disposedQty > 0 ? `폐기 ${fmtQty(it.disposedQty)}${it.qtyUnit ?? '개'}` : undefined}

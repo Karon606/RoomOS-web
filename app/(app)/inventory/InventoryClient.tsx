@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState, useTransition, useRef } from 'react'
 import { channelVendorLabel } from '@/lib/expenseChannel'
+import { getChannelOptions } from '@/app/(app)/settings/actions'
 import { createPortal } from 'react-dom'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
@@ -4056,6 +4057,9 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
   const [amount, setAmount] = useState(entry.amount > 0 ? String(entry.amount) : '')
   const [vendor, setVendor] = useState(entry.vendor ?? '')
   const [channel, setChannel] = useState(entry.channel ?? '')   // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 비우면 미기록
+  // 쇼핑몰 목록(고르기 후보). 지출 폼과 같은 datalist 다. 못 읽어도 직접 적을 수 있다.
+  const [channelOptions, setChannelOptions] = useState<string[]>([])
+  useEffect(() => { void getChannelOptions().then(setChannelOptions).catch(() => {}) }, [])
   const [memo, setMemo]     = useState(entry.memo ?? '')
   // 구매 수량이 빈 수령 대기 구매에 수령일을 넣으면 도착 수량이 필수다(폼 검증, 서버도 같은 판정으로 거부한다).
   // 적은 수량이 곧 구매 수량이 된다. 수령일을 안 넣는 저장에는 묻지 않는다.
@@ -4099,12 +4103,13 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
       </div>
       <div>
         <p className={EDIT_LABEL_CLS}>구매처</p>
-        <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 고구마켓" className={checkTextInputCls} />
+        <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 다이소, 철물24" className={checkTextInputCls} />
       </div>
       {/* 쇼핑몰. 지출 폼과 같은 칸·같은 순서(구매처 다음). 이 구매 한 줄만 고친다(주문 전체 맞춤은 지출 수정 폼이 묻는다). */}
       <div>
         <p className={EDIT_LABEL_CLS}>쇼핑몰 <span className="font-normal text-[var(--warm-muted)]">(선택 · 비우면 구매처와 같음)</span></p>
-        <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" className={checkTextInputCls} />
+        <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list={`pe-channels-${entry.id}`} className={checkTextInputCls} />
+        <datalist id={`pe-channels-${entry.id}`}>{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
       </div>
       <div>
         <p className={EDIT_LABEL_CLS}>메모</p>

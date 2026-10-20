@@ -27,7 +27,7 @@ import { pushToast, humanError } from '@/lib/saveStatus'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { getExpenseCategories } from '@/app/(app)/settings/actions'
+import { getExpenseCategories, getChannelOptions } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { ocrFallbackAllowed } from '@/lib/ocrImage'
@@ -183,7 +183,8 @@ export function PendingReceiptSection() {
   )
 }
 
-function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRetried, onRejected, EXPENSE_CATEGORIES = FALLBACK_EXPENSE_CATEGORIES, INVENTORY_CATEGORIES = FALLBACK_INVENTORY_CATEGORIES }: {
+// 내보내기는 화면 실측 하네스용이다(실제 컴포넌트를 묶어 잰다).
+export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRetried, onRejected, EXPENSE_CATEGORIES = FALLBACK_EXPENSE_CATEGORIES, INVENTORY_CATEGORIES = FALLBACK_INVENTORY_CATEGORIES }: {
   EXPENSE_CATEGORIES?: string[]
   INVENTORY_CATEGORIES?: string[]
   row: PendingReceiptRow
@@ -216,6 +217,9 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const [vendor, setVendor] = useState(row.inferredVendor ?? '')
   // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 비우면 미기록이다. 인식 결과로 채우지 않는다(영수증 인식 프롬프트는 운영자 실물 확인 뒤).
   const [channel, setChannel] = useState('')
+  // 쇼핑몰 목록(고르기 후보). 지출 폼과 같은 datalist 다. 못 읽어도 직접 적을 수 있다.
+  const [channelOptions, setChannelOptions] = useState<string[]>([])
+  useEffect(() => { void getChannelOptions().then(setChannelOptions).catch(() => {}) }, [])
   const [memo, setMemo] = useState(row.notes ?? '')
   // 재고 전용
   const [itemLabel, setItemLabel] = useState(row.itemLabel ?? '')
@@ -470,15 +474,25 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 </p>
               )}
             </div>
-            {/* 세 칸은 한 줄에 하나씩 선다. 두 칸을 나란히 두면 좁은 카드(썸네일 옆)에서 자리표시가 칸 너비를 넘어
-                라벨 노릇을 못 한다(320px 칸 43px 에 '상호명 (선택)' 63px, 쇼핑몰 칸을 더할 때 하네스 실측). */}
+            {/* 세 칸은 한 줄에 하나씩, 형제 칸(카테고리)과 같은 보이는 라벨을 단다. 자리표시를 라벨로 쓰면 좁은 카드(썸네일 옆)에서
+                칸 너비를 넘어 잘린다(320px 칸 43px 에 '상호명 (선택)' 63px, 검수 2026-10-20). */}
             <div className="grid grid-cols-1 gap-1.5">
-              <input type="text" placeholder="상호명 (선택)" value={vendor} onChange={e => setVendor(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
-              <input type="text" placeholder="쇼핑몰 (선택)" aria-label="쇼핑몰 (선택 · 비우면 상호명과 같음)" value={channel} onChange={e => setChannel(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
-              <input type="text" placeholder="메모 (선택)" value={memo} onChange={e => setMemo(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
+              <div>
+                <label htmlFor={`pr-vendor-${row.id}`} className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>상호명 (선택)</label>
+                <input id={`pr-vendor-${row.id}`} type="text" value={vendor} onChange={e => setVendor(e.target.value)}
+                  className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              </div>
+              <div>
+                <label htmlFor={`pr-channel-${row.id}`} className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>쇼핑몰 (선택 · 비우면 상호명과 같음)</label>
+                <input id={`pr-channel-${row.id}`} type="text" value={channel} onChange={e => setChannel(e.target.value)} list={`pr-channels-${row.id}`}
+                  className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <datalist id={`pr-channels-${row.id}`}>{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+              </div>
+              <div>
+                <label htmlFor={`pr-memo-${row.id}`} className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>메모 (선택)</label>
+                <input id={`pr-memo-${row.id}`} type="text" value={memo} onChange={e => setMemo(e.target.value)}
+                  className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              </div>
             </div>
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}

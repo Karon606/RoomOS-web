@@ -184,7 +184,8 @@ must(AC, ac, null, [
   [/target: \{ kind: 'storage', id: st\.id \}/, '선택 알약 보관 위치 지정이 서버 보관 대상을 안 쓴다'],
   [/<SectionHeader marker=\{g\.name \? <PinMarker \/> : undefined\}\s*name=\{g\.name \? <span className="break-keep">\{g\.name\}<\/span> : STORE_UNKNOWN_HEAD\}/, "보관 위치 묶음 머리가 정본 SectionHeader 가 아니거나 '보관 위치 미정' 머리에 마커·낮춘 색이 남았다(웹디자이너 패스)"],
   [/storeMeta=\{!!q\}/, '카드 메타의 보관 위치 토막이 묶음이 풀린 화면(검색)에서만 서야 한다'],
-  [/return place \? `\$\{place\} · \$\{rest\}` : rest/, '풀린 화면의 보관 위치 토막이 맨 앞 차례가 아니다'],
+  // 금액은 2026-10-20 부터 메타 줄 끝에 따로 선다(말줄임이 금액부터 자르지 않게). 보관 위치 토막은 여전히 맨 앞이다.
+  [/const head = place \? `\$\{place\} · \$\{rest\}` : rest/, '풀린 화면의 보관 위치 토막이 맨 앞 차례가 아니다'],
   [/const storeOptionLabel = \(s: \{ pathName: string; isHub: boolean \}\) => `\$\{s\.pathName\}에 보관\$\{s\.isHub \? ' \(기본 창고\)' : ''\}`/, "옮기기 목록의 보관 선택지가 '{경로}에 보관'이 아니다(공용부 무리와 같은 이름이 겹친다)"],
   [/\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}[\s\S]{0,2000}\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}|\{storeOptionLabel\(s\)\}[\s\S]*\{storeOptionLabel\(s\)\}/, '일괄 옮기기·옮기기 두 목록이 같은 보관 선택지 표기를 안 쓴다'],
   [/<PillButton primary onClick=\{\(\) => setPillMode\('assign'\)\}>일괄 옮기기<\/PillButton>/, "선택 알약 주 버튼이 '일괄 옮기기'가 아니다"],

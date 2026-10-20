@@ -34,7 +34,7 @@ import {
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
-import { channelSplitAgainst, normalizeChannel, externalOrderCaption, orderSellerLabel, channelVendorLabel } from '@/lib/expenseChannel'
+import { channelSplitAgainst, splitSiblingsText, channelForSave, externalOrderCaption, orderSellerLabel, channelVendorLabel, VENDOR_CHANNEL_LOCKED } from '@/lib/expenseChannel'
 import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
@@ -323,7 +323,8 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
   return best?.name ?? null
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false, onSwitchType, headVendor = '' }: {
+// 내보내기는 화면 실측 하네스(실제 컴포넌트를 묶어 잰다)용이다. 앱 안에서는 이 파일만 쓴다.
+export function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false, onSwitchType, headVendor = '' }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
@@ -1022,16 +1023,17 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                 {/* 접힌 점선 버튼은 한 줄에 함께 선다(좁으면 줄바꿈). 다품목이 아니면 '구매처 따로 입력'은 없다. */}
                 {allowMulti && (!brandOpen || (vendorAllowed && !vendorOpen)) && (
                   <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
-                    {!brandOpen && (
-                      <button type="button" onClick={() => patchItem(idx, { brand: '', productName: '' })}
-                        className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
-                        브랜드·제품명 입력
-                      </button>
-                    )}
+                    {/* 순서는 열린 줄과 같다(구매처 먼저, 브랜드 다음). 펴도 자리가 안 바뀐다. */}
                     {vendorAllowed && !vendorOpen && (
                       <button type="button" onClick={() => patchItem(idx, { vendor: '' })}
                         className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
                         구매처 따로 입력
+                      </button>
+                    )}
+                    {!brandOpen && (
+                      <button type="button" onClick={() => patchItem(idx, { brand: '', productName: '' })}
+                        className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
+                        브랜드·제품명 입력
                       </button>
                     )}
                   </div>
@@ -1174,7 +1176,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
 
 // 구매처 정리 — 이력 기반 자동완성(B)에 쌓인 구매처의 오타·중복을 이름변경/합치기/비우기로 정돈.
-function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: () => void; onChanged: () => void; channelOptions: string[] }) {
+export function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: () => void; onChanged: () => void; channelOptions: string[] }) {
   const [dirty, setDirty] = useState(false)   // v2.0 §12 — 이름 수정 시작 후 닫기 보호
   const [rows, setRows] = useState<{ vendor: string; count: number; isChannel: boolean }[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
@@ -1229,8 +1231,9 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
   const [chMode, setChMode] = useState<'move' | 'set'>('move')
   const [chName, setChName] = useState('')
   const [chBusy, setChBusy] = useState(false)
-  const openChannelSheet = () => {
-    const picked = (rows ?? []).filter(x => sel.has(x.vendor))
+  // 알약(고른 구매처들)과 쇼핑몰 목록 이름 행의 '쇼핑몰로'(그 한 곳)가 같은 창을 연다.
+  const openChannelSheet = (only?: string) => {
+    const picked = (rows ?? []).filter(x => only ? x.vendor === only : sel.has(x.vendor))
     if (picked.length === 0) return
     // 고른 이름이 쇼핑몰 목록에 있으면 옮기기가 기본이고 이름도 그대로 채운다. 아니면 지정이 기본이다(판매자 이름은 지우지 않는다).
     const allChannel = picked.every(x => x.isChannel)
@@ -1292,8 +1295,12 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
   return (
     <>
     <Modal open onClose={onClose} title="구매처 관리"
-      subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다. 구매처 자리에 쇼핑몰 이름이 적힌 지출은 선택한 뒤 쇼핑몰로 옮깁니다."
+      subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
+      {/* 쇼핑몰 목록 이름이 구매처 자리에 있으면 까닭을 목록 위에 한 번 적는다(서버 거부 문장과 한 벌, 부제는 두 줄에서 잘려 여기 둔다). */}
+      {(rows ?? []).some(r => r.isChannel) && (
+        <p className="mb-2 text-[0.6875rem] text-[var(--warm-muted)] break-keep">{VENDOR_CHANNEL_LOCKED}</p>
+      )}
       <div className="space-y-1.5" onInput={() => requestAnimationFrame(() => setDirty(true))}>
           {rows === null ? (
             <SkeletonRows rows={4} className="py-2" />
@@ -1304,9 +1311,8 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
             const changed = val.trim() !== r.vendor
             const checked = sel.has(r.vendor)
             return (
-              <Fragment key={r.vendor}>
-              <div
-                className={`flex items-center gap-1.5 rounded-lg select-none ${selMode ? 'cursor-pointer -mx-1 px-1 py-0.5' : ''} ${checked ? 'bg-[var(--coral)]/5 ring-1 ring-inset ring-[var(--coral)]/30' : ''}`}
+              <div key={r.vendor}
+                className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg select-none ${selMode ? 'cursor-pointer -mx-1 px-1 py-0.5' : ''} ${checked ? 'bg-[var(--coral)]/5 ring-1 ring-inset ring-[var(--coral)]/30' : ''}`}
                 onClick={selMode ? () => toggleSel(r.vendor) : undefined}
                 {...press(!selMode ? () => { setSelMode(true); setSel(new Set([r.vendor])) } : undefined)}
               >
@@ -1315,31 +1321,41 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
                     {checked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
                   </span>
                 )}
+                {/* 이름 칸은 8rem 아래로 안 줄어든다. 좁은 폭에서는 동작 묶음이 다음 줄로 내려간다(종전 320px 에서 이름 칸 0~62px, 검수). */}
                 {selMode ? (
-                  <span className="flex-1 min-w-0 truncate py-1.5 text-sm text-[var(--warm-dark)]">{r.vendor}</span>
+                  <span className="flex-1 basis-32 min-w-[8rem] truncate py-1.5 text-sm text-[var(--warm-dark)]">{r.vendor}</span>
+                ) : r.isChannel ? (
+                  <span className="flex-1 basis-32 min-w-[8rem] truncate py-1.5 px-2.5 text-sm text-[var(--warm-dark)]">{r.vendor}</span>
                 ) : (
-                  <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
-                    className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))} aria-label={`${r.vendor} 이름`}
+                    className="flex-1 basis-32 min-w-[8rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 )}
-                <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
-                {!selMode && (
-                  <>
-                    <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
-                      className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] disabled:opacity-30 shrink-0">저장</button>
-                    <button type="button" disabled={busy === r.vendor}
-                      onClick={() => { setSelMode(true); setSel(new Set([r.vendor])); pushToast('info', '합칠 구매처를 더 선택한 뒤 아래 합치기를 누르세요. 대표(남을 이름)는 다음 화면에서 고릅니다.') }}
-                      className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">합치기</button>
+                <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
+                  {!selMode && (r.isChannel ? (
+                    <>
+                      {/* 서버가 거부하는 저장·합치기는 숨기고 그 자리에 상태를 말한다(§22 ② · 환경설정 '이름 고정' 문법). 까닭은 목록 위 한 줄.
+                          비움도 숨긴다. 쇼핑몰 이름의 구매처를 비우기만 하면 그 주문이 어느 쇼핑몰이었는지가 사라진다('쇼핑몰로' 의 구매처 비우기가 그 일을 한다).
+                          320px·글자 125% 에서 한 줄에 들도록 캡션은 고정 폭 없이 글자 폭이다(하네스 실측). */}
+                      <span className="shrink-0 whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)]">쇼핑몰 이름</span>
+                      <button type="button" disabled={busy === r.vendor || chBusy} onClick={() => openChannelSheet(r.vendor)}
+                        className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">쇼핑몰로</button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
+                        className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] disabled:opacity-30 shrink-0">저장</button>
+                      <button type="button" disabled={busy === r.vendor}
+                        onClick={() => { setSelMode(true); setSel(new Set([r.vendor])); pushToast('info', '합칠 구매처를 더 선택한 뒤 아래 합치기를 누르세요. 대표(남을 이름)는 다음 화면에서 고릅니다.') }}
+                        className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">합치기</button>
+                    </>
+                  ))}
+                  {!selMode && !r.isChannel && (
                     <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
                       className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
-                  </>
-                )}
+                  )}
+                </span>
               </div>
-              {/* 쇼핑몰 목록에 있는 이름. 합치기·이름 변경이 막히고(서버 renameVendor 와 같은 판정) 쇼핑몰 칸으로 옮기기를 권한다.
-                  행 안 배지로 두면 좁은 폭에서 이름 칸이 눌려 사라져(320px 이름 칸 6px, 하네스 실측) 행 아래 캡션 한 줄로 둔다. */}
-              {r.isChannel && (
-                <p className="pl-1 -mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-keep">쇼핑몰 목록에 있는 이름입니다. 선택한 뒤 아래 &apos;쇼핑몰&apos;로 쇼핑몰 칸에 옮기세요.</p>
-              )}
-              </Fragment>
             )
           })}
       </div>
@@ -1349,21 +1365,30 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
           {selMode ? '선택 취소' : '선택'}
         </Btn>
       </div>
-      {selMode && sel.size > 0 && (
-        <SelectionPillBar count={sel.size} unit="곳" onClose={exitSel} aboveModal>
-          <PillButton disabled={merging || chBusy} onClick={openChannelSheet}>
-            쇼핑몰
-          </PillButton>
-          <PillButton primary disabled={sel.size < 2 || merging}
-            onClick={() => setSheet({
-              sourceLabel: `선택 ${sel.size}곳`,
-              sources: [...sel],
-              targets: (rows ?? []).filter(x => sel.has(x.vendor)).map(x => ({ id: x.vendor, label: `${x.vendor} (${x.count}건)` })),
-            })}>
-            합치기
-          </PillButton>
-        </SelectionPillBar>
-      )}
+      {selMode && sel.size > 0 && (() => {
+        // 쓸 수 없는 동작은 숨긴다(§22 SelectionPillBar). 합치기는 둘 이상 골랐고 쇼핑몰 목록 이름이 안 섞였을 때만 선다(서버가 거부한다).
+        const picked = (rows ?? []).filter(x => sel.has(x.vendor))
+        const canMerge = picked.length >= 2 && !picked.some(x => x.isChannel)
+        return (
+          // 셋(쇼핑몰로·합치기·닫기)이 320px·글자 125% 와 256px 확대에서 알약 바탕 안에 들도록 카운트는 숫자만 둔다(하네스 실측,
+          // '2곳 선택' 이면 256px 에서 233 대 228 로 닫기가 바탕 밖으로 나간다). 고른 행은 목록에서 칠해져 있어 숫자만으로 읽힌다.
+          <SelectionPillBar count={sel.size} unit="" label="" onClose={exitSel} aboveModal>
+            <PillButton disabled={merging || chBusy} onClick={() => openChannelSheet()}>
+              쇼핑몰로
+            </PillButton>
+            {canMerge && (
+              <PillButton primary disabled={merging}
+                onClick={() => setSheet({
+                  sourceLabel: `선택 ${sel.size}곳`,
+                  sources: picked.map(x => x.vendor),
+                  targets: picked.filter(x => !x.isChannel).map(x => ({ id: x.vendor, label: `${x.vendor} (${x.count}건)` })),
+                })}>
+                합치기
+              </PillButton>
+            )}
+          </SelectionPillBar>
+        )
+      })()}
     </Modal>
     {/* 합치기 시트는 모달의 형제다 — 자식으로 두면 패널 등장 모션이 굳을 때 시트가 패널 상자에
         갇힌다(check-no-nested-overlay, knowledge/domain-modal-shell.md (다)). 층은 z 260 이 정한다. */}
@@ -1373,7 +1398,7 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
       description="대표로 남길 구매처를 고르면 나머지 지출의 구매처가 대표로 바뀝니다."
       onConfirm={runMerge} />
     {/* 쇼핑몰 정리 창도 구매처 관리 모달의 형제다(합치기 시트와 같은 까닭). 입력 하나 + 갈래 둘(세그먼트)이라 정본 Modal 이다. */}
-    <Modal open={!!chSheet} onClose={() => setChSheet(null)} width="sm" title="쇼핑몰 정리"
+    <Modal open={!!chSheet} onClose={() => setChSheet(null)} width="sm" title="쇼핑몰로 옮기기"
       subtitle={chSheet ? `${chSheet.vendors.length === 1 ? chSheet.vendors[0] : `선택 ${chSheet.vendors.length}곳`} · 지출 ${chSheet.count}건` : undefined}
       // 발끝은 일괄 편집 모달과 같은 문법(취소 secondary · 주 동작 primary, 반반). 주 동작 라벨은 짧은 동사다(320px·글자 125% 에서 한 줄, 하네스 실측).
       footer={<div className="flex gap-2">
@@ -2986,13 +3011,16 @@ export default function FinanceClient({
         // 주문 속 한 행의 쇼핑몰만 바꾸면 묻는다(한 결제 = 한 쇼핑몰). 카드 갈림 경고와 같은 문장으로 사실을 말하고,
         // '주문 전체에 적용'은 형제도 맞춘다(그 부분만 적용취소 가능). '이 건만 바꾸기'는 그대로 저장한다(장부 그물이 갈림을 센다).
         if (detailExp && detailExp.orderId && fd.has('channel')) {
-          const next = normalizeChannel(String(fd.get('channel') ?? ''))
+          const next = channelForSave(String(fd.get('channel') ?? ''), channelOptions)
           if (next !== (detailExp.channel ?? null)) {
             const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
             if (split) {
+              // 비우는 경우는 '주문 전체의 쇼핑몰을 비울까요?' 로 묻는다(빈 값을 '적용'하라고 말하지 않는다, 독립 검수 2026-10-20).
               const pick = await choiceDialog({
-                title: `이 주문의 다른 ${split.count}건은 ${split.names.join(', ')}입니다`,
-                message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next ?? '미기록', '을/를')} 적용할까요?`,
+                title: `이 주문의 다른 ${split.count}건은 ${splitSiblingsText(split)}`,
+                message: next
+                  ? `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next, '을/를')} 적용할까요?`
+                  : '한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체의 쇼핑몰을 비울까요?',
                 confirmLabel: '주문 전체에 적용',
                 altLabel: '이 건만 바꾸기',
                 level: 'caution',
@@ -4842,18 +4870,19 @@ export default function FinanceClient({
                       <input type="text" name="channel" value={editExpChannel} onChange={e => setEditExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="edit-exp-channels"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                       <datalist id="edit-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
                       {(() => {
                         // 카드 갈림 경고(아래 결제 카드)와 같은 문법. 이번에 바꿨을 때만 말한다(옛 주문의 미기록 섞임까지 매번 띄우지 않는다).
                         if (!detailExp.orderId) return null
-                        const next = normalizeChannel(editExpChannel)
+                        const next = channelForSave(editExpChannel, channelOptions)
                         if (next === (detailExp.channel ?? null)) return null
                         const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
                         if (!split) return null
                         return (
                           <p className="text-[0.6875rem] rounded-lg px-3 py-2"
                             style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
-                            이 주문의 다른 {split.count}건은 <strong>{split.names.join(', ')}</strong> 입니다.
-                            저장할 때 주문 전체에 적용할지 묻습니다.
+                            이 주문의 다른 {split.count}건은 {splitSiblingsText(split)}.
+                            저장할 때 주문 전체에 {next ? '적용' : '비우기'}할지 묻습니다.
                           </p>
                         )
                       })()}
@@ -5909,7 +5938,7 @@ export default function FinanceClient({
 
 // ── 지출 일괄 편집 모달 ────────────────────────────────────────────
 // 선택한 지출들의 공통 필드를 한 번에 수정. 전 필드 '미변경' 기본, 채운 항목만 전송(BatchEditTenantsModal 문법 이식).
-function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone, channelOptions, orderSiblingIds }: {
+export function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone, channelOptions, orderSiblingIds }: {
   selectedIds: string[]
   selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null }[]
   channelOptions: string[]
@@ -5974,8 +6003,7 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
   if (category) summarySegs.push(`카테고리가 ${category}로`)
   if (vendor.trim()) summarySegs.push(`구매처가 '${vendor.trim()}'로`)
   if (normalizeBizNo(bizNo)) summarySegs.push(`사업자번호가 ${normalizeBizNo(bizNo)}로`)
-  if (clearChannel) summarySegs.push('쇼핑몰이')
-  else if (channel.trim()) summarySegs.push(`쇼핑몰이 ${withParticle(channel.trim(), '으로/로')}`)
+  if (!clearChannel && channel.trim()) summarySegs.push(`쇼핑몰이 ${withParticle(channel.trim(), '으로/로')}`)
   if (payMethod) summarySegs.push(`결제수단이 ${payMethod}${accNm ? `(${accNm})` : ''}로`)
   if (detail.trim()) summarySegs.push(`세부항목이 '${detail.trim()}'로`)
   if (memo.trim()) summarySegs.push('메모가')
@@ -6083,21 +6111,18 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">구매처와 사업자번호는 서로 연동됩니다. 빈 칸일 때 일치하는 최근 거래가 있으면 자동으로 채워집니다.</p>
         </div>
 
-        {/* 쇼핑몰. 등록·수정 폼과 같은 칸 순서(구매처 · 사업자등록번호 · 쇼핑몰). 빈 칸은 미변경이라 비우기는 옆 버튼으로 따로 고른다. */}
+        {/* 쇼핑몰. 등록·수정 폼과 같은 칸 순서(구매처 · 사업자등록번호 · 쇼핑몰). 빈 칸은 미변경이라 비우기는 체크박스로 따로 고른다
+            (호실 일괄 편집 '예약이용료 삭제' 와 같은 문법, 칸 높이가 안 튄다). */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰</label>
-          {clearChannel ? (
-            <div className="flex items-center gap-2 rounded-sm border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2">
-              <span className="flex-1 min-w-0 text-sm text-[var(--warm-dark)]">저장하면 쇼핑몰을 비웁니다</span>
-              <Btn type="button" variant="ghost" size="sm" onClick={() => setClearChannel(false)}>되돌리기</Btn>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="미변경" list="batch-exp-channels" className={`${inputCls} flex-1 min-w-0`} />
-              <datalist id="batch-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
-              <Btn type="button" variant="secondary" size="md" onClick={() => { setChannel(''); setClearChannel(true); setDirty(true) }}>비우기</Btn>
-            </div>
-          )}
+          <div className={clearChannel ? 'opacity-40 pointer-events-none' : ''}>
+            <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="미변경" list="batch-exp-channels" className={inputCls} />
+            <datalist id="batch-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+          </div>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={clearChannel} onChange={e => { setClearChannel(e.target.checked); if (e.target.checked) setChannel('') }} className="rounded" />
+            <span className="text-[0.65625rem] text-[var(--warm-muted)]">쇼핑몰 비우기</span>
+          </label>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">쇼핑몰만 바꿀 때는 배송비 지출도 함께 바뀝니다.</p>
         </div>
 
@@ -6147,9 +6172,12 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
           <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="미변경" className={inputCls} />
         </div>
       </div>
-      {summarySegs.length > 0 && (
+      {(summarySegs.length > 0 || clearChannel) && (
         <div className="px-6 pb-2">
-          <p className="text-[0.6875rem] text-[var(--warm-mid)]">적용 시 {selectedIds.length}건의 {summarySegs.join(', ')} 변경됩니다.</p>
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">
+            {summarySegs.length > 0 && `적용 시 ${selectedIds.length}건의 ${summarySegs.join(', ')} 변경됩니다.`}
+            {clearChannel && (summarySegs.length > 0 ? ' 쇼핑몰은 비웁니다.' : `적용 시 ${selectedIds.length}건의 쇼핑몰을 비웁니다.`)}
+          </p>
         </div>
       )}
       <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0">

@@ -63,7 +63,7 @@ import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본과 글자 칸 일괄 변경 적용취소 토큰(2026-10-19 운영자 승인, 신고 a0636f36).
-import { channelForSave, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
+import { VENDOR_CHANNEL_LOCKED, channelForSave, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
 // 쇼핑몰 목록 읽기·원자적 덧붙이기(저장이 끝난 뒤에만 덧붙인다, 독립 검수 2026-10-20).
 import { loadChannelNames, appendChannelOption } from '@/lib/channelOptions'
 import { ORDER_MERGE_UNDO_DOMAIN, canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo, type OrderMergeUndo, type OrderSnap } from '@/lib/orderMergeUndo'
@@ -71,7 +71,6 @@ import {
   EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
   type ExpenseFieldUndo, type ExpenseFieldUndoKind, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
-import { withParticle } from '@/lib/koParticle'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -3544,10 +3543,8 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
     if (!oldName) return { ok: false, error: '대상 구매처가 없습니다.' }
     if (target === oldName) return { ok: true, updated: 0 }
     const channelNames = await loadChannelNames(propertyId)
-    if (target && (isChannelName(oldName, channelNames) || isChannelName(target, channelNames))) {
-      const ch = isChannelName(oldName, channelNames) ? oldName : target
-      return { ok: false, error: `${withParticle(ch, '은/는')} 쇼핑몰 목록의 이름이라 구매처로 바꾸거나 합칠 수 없습니다. 그 지출은 '쇼핑몰로 옮기기'로 쇼핑몰 칸에 옮겨 주세요.` }
-    }
+    // 막는 까닭은 화면 캡션과 한 벌이다(lib/expenseChannel VENDOR_CHANNEL_LOCKED).
+    if (target && (isChannelName(oldName, channelNames) || isChannelName(target, channelNames))) return { ok: false, error: VENDOR_CHANNEL_LOCKED }
     const rows = await prisma.$transaction(async tx => {
       const hit = await tx.expense.findMany({ where: { propertyId, vendor: oldName }, select: { id: true, vendor: true, vendorBizNo: true } })
       if (hit.length === 0) return hit
