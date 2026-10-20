@@ -103,7 +103,9 @@ export function receiptRequestTag(requestId: unknown): string {
  * 순서. PDF 를 다 그린 뒤 업로드를 한꺼번에(병렬) 하고 마지막에 행을 쓴다. 업로드가 끝날 때까지 행이 없으니, 도중에 함수가
  * 잘려도 DB 에는 반쪽이 안 남는다. 올린 파일 id 는 uploaded 에 쌓여 부르는 쪽이 실패 때 휴지통으로 보낸다.
  *
- * 멱등. 같은 요청 표식(requestTag)의 살아 있는 행이 이미 있으면 새로 만들지 않고 그 행들을 돌려준다.
+ * 멱등. 같은 요청 표식(requestTag)의 살아 있는 행이 이미 있으면 새로 만들지 않고 그 행들을 돌려준다. 다만 앞서 낸 행의
+ * (사람·계약·종류·귀속월 집합·장수)가 지금 입력과 다르면 같은 표식으로 다른 요청이 온 것이라 거절한다(재검수 2026-10-20:
+ * 묶음 id 를 한 장 라우트로 보내거나 달 목록을 바꿔 재전송하면, 대조 없이는 엉뚱한 종이를 '발급됨'으로 돌려준다).
  */
 export async function issueRentReceiptsInTx(
   tx: RentReceiptIssueDb,
@@ -118,7 +120,16 @@ export async function issueRentReceiptsInTx(
     orderBy: { fileName: 'asc' },
     select: ISSUED_SELECT,
   })
-  if (prior.length > 0) return prior.map(r => ({ ...r, issuedAt: r.issuedAt.toISOString() }))
+  if (prior.length > 0) {
+    const shape = (xs: { tenantId: string; leaseTermId: string | null; kind: string; targetMonth: string | null }[]) =>
+      xs.map(x => `${x.tenantId}|${x.leaseTermId ?? ''}|${x.kind}|${x.targetMonth ?? ''}`).sort().join('\n')
+    const want = shape(inputs.map(i => {
+      const kind = i.fields.kind === 'deposit' ? 'deposit' : 'rent'
+      return { tenantId: i.tenantId, leaseTermId: i.leaseTermId, kind, targetMonth: kind === 'rent' && /^\d{4}-\d{2}$/.test(i.targetMonth ?? '') ? i.targetMonth : null }
+    }))
+    if (shape(prior) !== want) throw new RentReceiptReplayMismatch()
+    return prior.map(r => ({ ...r, issuedAt: r.issuedAt.toISOString() }))
+  }
 
   // 발행번호 = 발행일-발행순서 (영업장별 일련, v2.0 §26). 지운 발급본도 번호를 쥐고 있어 셈에 든다.
   const issued = await tx.rentReceiptFile.count({ where: { propertyId: ctx.propertyId, receiptNo: { not: null } } })
@@ -133,9 +144,10 @@ export async function issueRentReceiptsInTx(
     const pdf = await buildRentReceiptPdf(input.fields, { businessName: ctx.businessName, bizLine1: ctx.bizLine1, bizLine2: ctx.bizLine2, receiptNo }, ctx.logoBytes, ctx.stampBytes)
     return { input, receiptKind, fileName, receiptNo, issueDate, pdf }
   }))
-  // 업로드는 한꺼번에 — 묶음 시간의 대부분이 여기다. 하나라도 실패하면 이미 올라간 것까지 uploaded 에 남아 정리된다.
-  const results = await Promise.allSettled(drafts.map(d => uploadToDrive(Buffer.from(d.pdf), d.fileName, 'application/pdf')))
-  for (const r of results) if (r.status === 'fulfilled') uploaded.push(r.value.fileId)
+  // 업로드는 한꺼번에 — 묶음 시간의 대부분이 여기다. 끝나는 대로 곧장 uploaded 에 적는다. 모두 끝나길 기다렸다 적으면
+  // 그 사이 트랜잭션 시간이 다해 catch 가 돌 때 먼저 끝난 파일이 목록에 없어 고아로 남는다(재검수 2026-10-20).
+  const results = await Promise.allSettled(drafts.map(d => uploadToDrive(Buffer.from(d.pdf), d.fileName, 'application/pdf')
+    .then(r => { uploaded.push(r.fileId); return r })))
   const failed = results.find(r => r.status === 'rejected')
   if (failed) throw (failed as PromiseRejectedResult).reason
 
@@ -165,11 +177,24 @@ export async function issueRentReceiptsInTx(
   return rows
 }
 
-/** 발행번호 유니크 충돌(P2002)을 화면 문장으로. 그 밖의 오류는 null(부르는 쪽 기본 문구). */
+/** 같은 요청 표식으로 다른 내용이 왔다 — 앞서 낸 장을 돌려주지 않고 거절한다. */
+export class RentReceiptReplayMismatch extends Error {
+  readonly code = 'RR_REPLAY_MISMATCH'
+  constructor() { super('같은 요청으로 다른 내용이 들어와 발급하지 않았습니다. 화면을 새로고침한 뒤 다시 발급해 주세요.'); this.name = 'RentReceiptReplayMismatch' }
+}
+
+/**
+ * 발급 실패를 화면 문장으로. 모르는 오류는 null(부르는 쪽 기본 문구).
+ *   · P2002 발행번호 유니크 충돌
+ *   · P2028 트랜잭션 시간 초과 — 영업장 줄 세우기에서 앞 발급을 기다리다 시간이 다한 경우가 대부분이다
+ *   · 같은 요청 표식으로 다른 내용(재전송 대조)
+ */
 export function rentReceiptIssueErrorMessage(err: unknown): string | null {
-  return (err as { code?: string })?.code === 'P2002'
-    ? '발행번호가 다른 발급과 겹쳐 발급하지 않았습니다. 잠시 후 다시 발급해 주세요.'
-    : null
+  const code = (err as { code?: string })?.code
+  if (code === 'P2002') return '발행번호가 다른 발급과 겹쳐 발급하지 않았습니다. 잠시 후 다시 발급해 주세요.'
+  if (code === 'P2028') return '다른 발급이 진행 중이라 이번 발급은 하지 않았습니다. 잠시 후 다시 발급해 주세요.'
+  if (code === 'RR_REPLAY_MISMATCH') return (err as Error).message
+  return null
 }
 
 /** 트랜잭션이 되감겼을 때 이미 올린 파일을 휴지통으로. 실패는 로그만 남긴다(발급 실패 응답이 먼저다). */

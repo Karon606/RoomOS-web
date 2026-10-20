@@ -144,6 +144,16 @@ if (/subset:\s*true/.test(src('lib/rentReceiptPdf.ts'))) violations.push(`lib/re
 
 // ⓗ 줄 세우기·멱등·실패 새로고침.
 {
+  // 잠금은 정본의 **첫 문장**이어야 한다. 셈(count)·멱등 조회보다 뒤에 오면 그 사이 다른 발급이 같은 번호를 센다(재검수 2026-10-20).
+  // 하네스는 PGlite 한 연결이라 동시성을 실제로 못 만든다. 그래서 이 모양 검사가 잠금의 증거다.
+  const core = src(CORE)
+  const body = core.match(/export async function issueRentReceiptsInTx\([\s\S]*?\): Promise<RentReceiptIssueRow\[\]> \{\n([^\n]*)/)
+  if (!body || !/^\s*await tx\.\$executeRaw`SELECT pg_advisory_xact_lock\(hashtext\(/.test(body[1])) {
+    violations.push(`${CORE} — issueRentReceiptsInTx 첫 문장이 영업장 잠금(pg_advisory_xact_lock)이 아니다. 같은 영업장 발급이 같은 번호를 센다.`)
+  }
+  if (!/shape\(prior\) !== want/.test(core)) violations.push(`${CORE} — 멱등 재전송이 앞서 낸 행과 지금 입력을 대조하지 않는다.`)
+  if (!/\.then\(r => \{ uploaded\.push\(r\.fileId\)/.test(core)) violations.push(`${CORE} — 업로드가 끝나는 대로 uploaded 에 안 적는다(시간 초과 때 고아 파일).`)
+  if (!/code === 'P2028'/.test(core)) violations.push(`${CORE} — 잠금 대기 시간 초과(P2028)를 화면 문장으로 안 돌려준다.`)
   for (const f of [ONE, BATCH]) {
     const s = src(f)
     if (!/receiptRequestTag\(body\.requestId\)/.test(s)) violations.push(`${f} — 요청 id 를 정본에 안 넘긴다(응답 유실 뒤 재클릭이 새 장을 또 만든다).`)

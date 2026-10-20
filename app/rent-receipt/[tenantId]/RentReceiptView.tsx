@@ -641,7 +641,8 @@ function IssuedPanel({ docLabel, result, undoing, isDeposit, fileBase, nameStyle
           <li key={file.id} className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border border-[var(--warm-border)] p-3">
             <div className="min-w-[8.5rem] flex-1">
               <p className="text-sm font-medium text-[var(--warm-dark)] whitespace-nowrap">{file.targetMonth ? monthLabel(file.targetMonth) : docLabel}</p>
-              <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] num">{fmtDateDot(file.issuedAt)} 발급{file.receiptNo ? ` · ${file.receiptNo}` : ''}</p>
+              {/* 날짜 조각과 발행번호를 각각 한 덩어리로 묶는다. 좁은 폭에서 '20260715-'/'010' 처럼 하이픈에서 꺾였다(재검수). */}
+              <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] num"><span className="whitespace-nowrap">{fmtDateDot(file.issuedAt)} 발급</span>{file.receiptNo ? <> · <span className="whitespace-nowrap">{file.receiptNo}</span></> : null}</p>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <ViewDocButton driveFileId={file.driveFileId} from={from} tenantId={backTenantId} />

@@ -179,7 +179,31 @@ async function main() {
   eq('같은 요청 id 재전송 = 같은 장', [q1.ok && q1.files.map(f => f.id), await prisma.rentReceiptFile.count()], [q2.ok && q2.files.map(f => f.id), countAfter1])
   if (q1.ok) eq('재전송 장 적용취소', (await actions.undoRentReceiptIssue(J(q1.undo))).ok, true)
 
+  // 같은 요청 id 로 **다른 내용**이 오면 앞서 낸 장을 돌려주지 않고 거절한다(재검수 2026-10-20).
+  const rid2 = randomUUID()
+  const m1 = await issueRentReceiptBatch(P1, { tenantId: A.tenantId, leaseTermId: A.id, months: picks.slice(1), requestId: rid2 })
+  const nAfter = await prisma.rentReceiptFile.count()
+  const m2 = await issueRentReceiptBatch(P1, { tenantId: A.tenantId, leaseTermId: A.id, months: picks.slice(2), requestId: rid2 })
+  eq('같은 id · 달 목록 바꾼 재전송 = 409 거절', m2.ok ? 'ok' : [m2.status, m2.error], [409, '같은 요청으로 다른 내용이 들어와 발급하지 않았습니다. 화면을 새로고침한 뒤 다시 발급해 주세요.'])
+  // 묶음 id 를 한 장 경로(정본 직접 호출 = 한 장 라우트와 같은 길)로 보내면 장수·귀속월이 달라 거절한다.
+  const ctxA = await issue.loadRentReceiptIssueContext(P1)
+  let oneWithBatchId: unknown = null
+  if (ctxA.ok) {
+    try {
+      await prisma.$transaction(tx => issue.issueRentReceiptsInTx(tx, ctxA.ctx, [{
+        tenantId: A.tenantId, tenantName: '홍길동', leaseTermId: A.id, nameStyle: null, targetMonth: '2026-09',
+        fields: { issueDate: '2026-09-18', name: '홍길동', room: '', period: '', targetMonth: '', amount: '', payDate: '', payMethod: '', note: '', recipientName: '' },
+      }], [], issue.receiptRequestTag(rid2)))
+    } catch (e) { oneWithBatchId = issue.rentReceiptIssueErrorMessage(e) }
+  }
+  eq('묶음 id 를 한 장 경로로 = 거절', oneWithBatchId, '같은 요청으로 다른 내용이 들어와 발급하지 않았습니다. 화면을 새로고침한 뒤 다시 발급해 주세요.')
+  eq('거절된 재전송은 아무것도 안 만든다', await prisma.rentReceiptFile.count(), nAfter)
+  if (m1.ok) eq('대조용 묶음 적용취소', (await actions.undoRentReceiptIssue(J(m1.undo))).ok, true)
+  eq('잠금 대기 시간 초과(P2028) 문장', issue.rentReceiptIssueErrorMessage({ code: 'P2028' }), '다른 발급이 진행 중이라 이번 발급은 하지 않았습니다. 잠시 후 다시 발급해 주세요.')
+
   // ── 5-4. 동시 발급: 같은 영업장 두 묶음이 겹쳐도 번호가 안 겹치고 둘 다 성공한다(영업장 줄 세우기) ──────────
+  // 한계: 하네스 prisma 대역은 PGlite 연결 하나(max 1)라 두 트랜잭션이 연결 대기로 이미 줄을 선다. 그래서 이 사례는 잠금이 없어도
+  // 통과한다. 잠금의 증거는 배선 그물(issueRentReceiptsInTx 첫 문장이 pg_advisory_xact_lock)과 그 역주입이다.
   const [c1, c2] = await Promise.all([
     issueRentReceiptBatch(P1, { tenantId: A.tenantId, leaseTermId: A.id, months: picks }),
     issueRentReceiptBatch(P1, { tenantId: A.tenantId, leaseTermId: A.id, months: picks.slice(1) }),
