@@ -4045,7 +4045,7 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
   stockUnit: string | null
   cardQtyUnit: string | null   // 도착 수량 칸 단위(구매 단위가 없을 때). 서버 fillQtyUnit 과 같은 순서
   onCancel: () => void
-  onSave: (data: { date?: string; amount?: number; vendor?: string | null; memo?: string | null; receivedAt?: string | null; qtyValue?: number }) => Promise<void>
+  onSave: (data: { date?: string; amount?: number; vendor?: string | null; channel?: string | null; memo?: string | null; receivedAt?: string | null; qtyValue?: number }) => Promise<void>
   onDelete: () => Promise<void>
   pending: boolean
   error: string
@@ -4053,6 +4053,7 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
   const [date, setDate]     = useState(entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10))
   const [amount, setAmount] = useState(entry.amount > 0 ? String(entry.amount) : '')
   const [vendor, setVendor] = useState(entry.vendor ?? '')
+  const [channel, setChannel] = useState(entry.channel ?? '')   // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 비우면 미기록
   const [memo, setMemo]     = useState(entry.memo ?? '')
   // 구매 수량이 빈 수령 대기 구매에 수령일을 넣으면 도착 수량이 필수다(폼 검증, 서버도 같은 판정으로 거부한다).
   // 적은 수량이 곧 구매 수량이 된다. 수령일을 안 넣는 저장에는 묻지 않는다.
@@ -4097,6 +4098,11 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
       <div>
         <p className={EDIT_LABEL_CLS}>구매처</p>
         <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 고구마켓" className={checkTextInputCls} />
+      </div>
+      {/* 쇼핑몰. 지출 폼과 같은 칸·같은 순서(구매처 다음). 이 구매 한 줄만 고친다(주문 전체 맞춤은 지출 수정 폼이 묻는다). */}
+      <div>
+        <p className={EDIT_LABEL_CLS}>쇼핑몰 <span className="font-normal text-[var(--warm-muted)]">(선택 · 비우면 구매처와 같음)</span></p>
+        <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" className={checkTextInputCls} />
       </div>
       <div>
         <p className={EDIT_LABEL_CLS}>메모</p>
@@ -4150,7 +4156,7 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
               if (n == null) { setRcvQtyErr('수령일을 넣으려면 도착 수량을 적어 주세요.'); return }
               qtyValue = n
             }
-            void onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null, receivedAt, ...(qtyValue != null ? { qtyValue } : {}) })
+            void onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, channel: channel.trim() || null, memo: memo || null, receivedAt, ...(qtyValue != null ? { qtyValue } : {}) })
           }}>
           {pending ? '저장 중…' : '저장'}
         </Btn>

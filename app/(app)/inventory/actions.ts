@@ -20,7 +20,8 @@ import { parseOptionList } from '@/lib/optionLists'
 import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
-import { noteUnitsUsed } from '@/app/(app)/settings/actions'
+import { noteUnitsUsed, addChannelOption } from '@/app/(app)/settings/actions'
+import { normalizeChannel } from '@/lib/expenseChannel'
 import { applyLocationCheck, applyLocationChecks, detectHubShort, locValuesError, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { transferCheckCreateData } from '@/lib/transferCheck'
 import { assertNotFuture } from '@/lib/completionDate'
@@ -218,7 +219,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocationId: true, receivedLocation: { select: { name: true } } },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, channel: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocationId: true, receivedLocation: { select: { name: true } } },
     }),
     // 목록(overview)과 같은 헬퍼 한 벌 — 카드와 상세의 단위 표시가 갈라지지 않게.
     resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
@@ -266,7 +267,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       type: 'purchase' as const,
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
-      amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
+      amount: p.amount, vendor: p.vendor, channel: p.channel, memo: p.memo, receivedAt: p.receivedAt,
       brand: p.brand, productName: p.productName,
       receivedLocationName: p.receivedLocationId ? (locPaths.pathName(p.receivedLocationId) ?? p.receivedLocation?.name ?? null) : null,
     })),
@@ -2248,6 +2249,8 @@ export async function undoDeleteStockDisposal(undo: StockDisposalUndo): Promise<
 
 export async function updateExpenseFromInventory(id: string, data: {
   date?: string; amount?: number; vendor?: string | null; memo?: string | null
+  // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). undefined = 안 건드림, null·빈 값 = 지움(form-clear-vs-absent).
+  channel?: string | null
   receivedAt?: string | null  // ISO 문자열 or null(수령 대기로 되돌리기)
   // 수령 대기로 되돌릴 때, 이 수령분을 삼킨 뒤 점검이 있으면 함께 조정할지(cancelReceiptCore 게이트).
   adjustFollowing?: boolean
@@ -2274,6 +2277,8 @@ export async function updateExpenseFromInventory(id: string, data: {
     // 종전에는 여기서 receivedAt 만 지우고 자동 점검을 무가드로 삭제해, 실측 머지·이후 점검 반영
     // 가드가 통째로 우회되는 뒷문이었다(수령 취소 클래스의 반쪽).
     const cancel = e.receivedAt !== null && newReceivedAt === null
+    // 쇼핑몰. 지출 수정과 같은 정규화(lib/expenseChannel). 처음 보는 이름이면 아래 저장 뒤 영업장 목록에 쌓는다.
+    const channelNext = data.channel !== undefined ? normalizeChannel(data.channel) : undefined
     let cancelUndo: ReceiptCancelUndo | undefined
     if (cancel) {
       const r = await cancelReceiptCore(id, propertyId, { adjustFollowing: data.adjustFollowing })
@@ -2286,10 +2291,13 @@ export async function updateExpenseFromInventory(id: string, data: {
         ...(data.date ? { date: new Date(data.date) } : {}),
         ...(data.amount !== undefined ? { amount: data.amount } : {}),
         ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
+        ...(channelNext !== undefined ? { channel: channelNext } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
         ...(newReceivedAt !== undefined && !resurrect && !cancel ? { receivedAt: newReceivedAt } : {}),
       },
     })
+
+    if (channelNext && channelNext !== e.channel) await addChannelOption(channelNext).catch(() => {})
 
     // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화.
     let received: { qtyFill?: ReceiptQtyFill } | undefined

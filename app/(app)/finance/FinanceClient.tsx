@@ -25,7 +25,7 @@ import {
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks, getBrandSuggestions,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
-  getVendorUsage, renameVendor,
+  getVendorUsage, renameVendor, undoExpenseFieldChange,
   searchExpenses,
   getExpenseExportOptions,
   type RecurringExpenseWithStatus,
@@ -33,6 +33,9 @@ import {
 } from './actions'
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
+// 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
+import { channelSplitAgainst, normalizeChannel } from '@/lib/expenseChannel'
+import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
@@ -101,6 +104,8 @@ type FAcc = { brand: string; alias: string | null }
 type Expense = {
   id: string; date: Date; amount: number; category: string
   detail: string | null; vendor: string | null; vendorBizNo: string | null; memo: string | null; payMethod: string | null
+  // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 구매처(실제 판매자)와 다른 축이고 null = 미기록. 표시 규칙은 lib/expenseChannel.
+  channel: string | null
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
@@ -220,6 +225,9 @@ export type ItemPickState = {
   specText?: string   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여
   brand?: string        // 브랜드·제조사 — 표시·검색 전용(계산·재고 비관여)
   productName?: string  // 상세제품명
+  // 품목별 구매처(다품목에서만 '구매처 따로 입력', 2026-10-19). undefined = 머리 구매처를 따른다. 저장 때 빈 글자도 머리를 따른다
+  // (itemsForSave). 사업자번호 칸은 없다. 서버가 과거 기록에서 그 구매처 번호를 찾고, 머리 번호는 안 물려준다.
+  vendor?: string
   qtyValue: string; qtyUnit: string
   amount?: number   // 이 품목에 할당된 총 금액
   unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
@@ -247,6 +255,17 @@ export function fmtItemDetail(d: ItemPickState): string {
   const spec = d.specText ? d.specText : d.specValue ? `${d.specValue}${d.specUnit}` : ''
   const qty  = d.qtyValue  ? `${d.qtyValue}${d.qtyUnit}`  : ''
   return [`[${d.label}]`, spec, qty && `x ${qty}`].filter(Boolean).join(' ')
+}
+
+/**
+ * 저장으로 보낼 품목 목록(hidden itemsJson·저장 직전 게이트가 고친 목록 공용). 세트 칩은 떼고, 비품이면 방별 분배를 뗀다.
+ * 품목별 구매처는 다품목일 때만 싣고 빈 글자는 싣지 않는다(빈 칸 = 머리 구매처를 따른다, 자리표시 '비우면 {머리 구매처}').
+ */
+function itemsForSave(list: ItemPickState[], dropAlloc: boolean) {
+  return list.map(x => ({
+    ...x, setHint: undefined, allocations: dropAlloc ? undefined : x.allocations,
+    vendor: list.length >= 2 && x.vendor?.trim() ? x.vendor.trim() : undefined,
+  }))
 }
 
 export function fmtItemListDetail(items: ItemPickState[]): string {
@@ -304,7 +323,7 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
   return best?.name ?? null
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false, onSwitchType }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false, onSwitchType, headVendor = '' }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
@@ -316,6 +335,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   // 유형을 바꿀 수 있는 화면만 넘긴다. 넘어오면 반대 유형 이력이 있을 때 칩 줄 아래 안내가 선다.
   // 수정 폼은 유형이 고정이라 안 넘긴다 — 거기서는 이 줄이 아예 없다.
   onSwitchType?: () => void
+  // 머리 구매처(폼 위 '구매처' 칸). 다품목에서 품목별 구매처를 열면 자리표시 '비우면 {머리 구매처}' 로 쓴다.
+  headVendor?: string
 }) {
   // 품목 빠른 선택 — 유형(물품/서비스)→카테고리 계층 추천, 부족분은 상위 단계로 보충해 항상 10개(신고 6b79c725).
   const [presets, setPresets] = useState<string[]>(isService ? [] : (ITEM_PRESETS[category] ?? []))
@@ -835,7 +856,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             const allocRemain = Math.round((qtyN - allocSum) * 100) / 100   // 미지정(예비) 나머지
             const allocOver = !!it.allocations && qtyN > 0 && allocSum - qtyN > 0.001   // 초과 배정만 오류
             const hasManual = (it.allocations ?? []).some(a => a.locked)   // 손으로 고친 방이 하나라도 있나
-            const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
+            // 자리표시 글자는 §12 정본 --ink-m 이다(종전에는 브라우저 기본 회색이라 크림 위 2.98:1, UX 패널 2026-10-19).
+            const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
+            // 품목별 구매처(2026-10-19 운영자 승인, 신고 a0636f36). 오픈마켓 한 결제에 판매자가 여럿일 때만 쓴다. 다품목에서만 선다.
+            // 열면 한 줄('구매처 [입력] 지우기'), 비우면 머리 구매처를 따른다. 사업자번호 칸은 없다(서버가 과거 기록에서 찾는다).
+            const vendorAllowed = allowMulti && items.length >= 2
+            const vendorOpen = vendorAllowed && it.vendor !== undefined
+            const brandOpen = it.brand != null || it.productName != null
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -961,7 +988,20 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     수정 화면은 이 카드만 보이므로 읽기 전용으로 두면 과거 지출에 브랜드를 넣을
                     길이 없다(운영자 지적 2026-08-27). 문법은 바로 위 '규격(직접)' 줄과 같다.
                     값이 없으면 접어 두고 점선 버튼으로 연다 — 카드가 이미 조밀하다. */}
-                {allowMulti && (it.brand != null || it.productName != null ? (
+                {/* 품목별 구매처. 열린 줄. 문법은 아래 브랜드 줄('라벨 [입력] 지우기')과 같다. '지우기'는 줄을 접고 머리를 따른다. */}
+                {vendorOpen && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">구매처</span>
+                    <input type="text" value={it.vendor ?? ''}
+                      onChange={e => patchItem(idx, { vendor: e.target.value })}
+                      placeholder={headVendor.trim() ? `비우면 ${headVendor.trim()}` : '비우면 위 구매처'}
+                      aria-label="이 품목의 구매처"
+                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                    <button type="button" onClick={() => patchItem(idx, { vendor: undefined })}
+                      className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
+                  </div>
+                )}
+                {allowMulti && brandOpen && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">브랜드</span>
                     <input type="text" value={it.brand ?? ''}
@@ -975,12 +1015,24 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <button type="button" onClick={() => patchItem(idx, { brand: undefined, productName: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
                   </div>
-                ) : (
-                  <button type="button" onClick={() => patchItem(idx, { brand: '', productName: '' })}
-                    className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
-                    브랜드·제품명 입력
-                  </button>
-                ))}
+                )}
+                {/* 접힌 점선 버튼은 한 줄에 함께 선다(좁으면 줄바꿈). 다품목이 아니면 '구매처 따로 입력'은 없다. */}
+                {allowMulti && (!brandOpen || (vendorAllowed && !vendorOpen)) && (
+                  <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+                    {!brandOpen && (
+                      <button type="button" onClick={() => patchItem(idx, { brand: '', productName: '' })}
+                        className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
+                        브랜드·제품명 입력
+                      </button>
+                    )}
+                    {vendorAllowed && !vendorOpen && (
+                      <button type="button" onClick={() => patchItem(idx, { vendor: '' })}
+                        className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
+                        구매처 따로 입력
+                      </button>
+                    )}
+                  </div>
+                )}
                 {allowMulti && rooms.length > 0 && (
                   <div>
                     <button type="button" onClick={() => toggleAlloc(idx)}
@@ -1457,7 +1509,7 @@ type SettleableExpense = {
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
+  expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions, channelOptions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
   trackedCategories, otherMonthPaid,
   initialTab,
@@ -1478,6 +1530,7 @@ export default function FinanceClient({
   acquisitionDate: string | null
   detailSuggestions: string[]
   vendorSuggestions: string[]
+  channelOptions: string[]   // 영업장 쇼핑몰 목록(Property.channelOptions). 쇼핑몰 칸의 고르기 후보
   reserveBalance: number
   reserveMonthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   reserveTxns: ReserveTxn[]
@@ -1616,6 +1669,7 @@ export default function FinanceClient({
   // 영수증 스캔 (공통)
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpBizNo, setAddExpBizNo]         = useState('')   // 구매처 사업자등록번호 — 입력 중 자동 하이픈 포맷
+  const [addExpChannel, setAddExpChannel]     = useState('')   // 쇼핑몰(주문을 받은 플랫폼). 비우면 미기록
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
   const [addExpDetail, setAddExpDetail]       = useState('')
   const [addHasShipping, setAddHasShipping]   = useState(false)              // 배송비 포함 여부 (기본 무료, 총액 합산형)
@@ -1636,6 +1690,9 @@ export default function FinanceClient({
   const [addIsService, setAddIsService] = useState(false)   // #2 서비스·무형(시공·인건비 등) — 품목 없이 금액만
   const [addExtOrderNo, setAddExtOrderNo] = useState('')    // #1 쇼핑몰 주문번호(쿠팡 등) — OCR 프리필/수동
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
+  // 수정 폼의 구매처·쇼핑몰. 구매처는 품목별 구매처 자리표시('비우면 {구매처}')가 읽고, 쇼핑몰은 주문 갈림 물음이 읽는다.
+  const [editExpVendor, setEditExpVendor]     = useState('')
+  const [editExpChannel, setEditExpChannel]   = useState('')
   const [editExpAmount, setEditExpAmount]     = useState<number | undefined>(undefined)  // 품목 없을 때 controlled 금액
   const [editExpDetail, setEditExpDetail]     = useState('')
   const [editHasShipping, setEditHasShipping] = useState(false)   // 배송비를 이 지출 금액에 합산
@@ -2020,7 +2077,7 @@ export default function FinanceClient({
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   // 로컬 미리보기도 함께 비운다. 안 비우면 같은 세션에서 다음 폼을 열었을 때 직전 영수증 이미지가 새 주소를 덮는다.
-  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setError('') }
+  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpChannel(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -2487,7 +2544,7 @@ export default function FinanceClient({
         if (addIsDurable || (durableConv && !addAllocated)) {
           const converted = await confirmDurableSetItems(addItems)
           if (converted === null) return   // 취소 → 저장 중단
-          if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+          if (converted) fd.set('itemsJson', JSON.stringify(itemsForSave(converted, true)))
         }
         // 품목 이름의 카테고리 이력과 다르면 확답 — 비품·소모품이 카테고리 하나로 갈리기 때문이다
         // 방금 비품 전환 창을 띄웠으면 답과 상관없이 다시 묻지 않는다(같은 물음을 두 번, 바꾸면 서버 판정과 대상이 갈린다, 디자이너 8).
@@ -2574,7 +2631,7 @@ export default function FinanceClient({
             split = true
           }
           // 바꾼 품명이 후속 게이트·저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 품명이다.
-          if (split) fd.set('itemsJson', JSON.stringify(finalItems.map(x => ({ ...x, setHint: undefined, allocations: addIsDurable ? undefined : x.allocations }))))
+          if (split) fd.set('itemsJson', JSON.stringify(itemsForSave(finalItems, addIsDurable)))
         }
         // 용량 단위로 잔량을 세는 품목인데 용량이 비었으면 한 번 묻는다(신고 27f91356, 운영자 제안).
         // 막지 않는다 — 넣기 싫으면 그대로 저장하고, 그 구매는 개수로 집계된다.
@@ -2628,7 +2685,7 @@ export default function FinanceClient({
             }
           }
           // 바꾼 단위가 저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 단위다(품명 게이트와 같은 처방).
-          if (unitChanged) fd.set('itemsJson', JSON.stringify(finalItems.map(x => ({ ...x, setHint: undefined, allocations: addIsDurable ? undefined : x.allocations }))))
+          if (unitChanged) fd.set('itemsJson', JSON.stringify(itemsForSave(finalItems, addIsDurable)))
         }
         // 잔량을 길이로 셀지 세트로 셀지 첫 구매 때 한 번 묻는다(빨래줄 사건, 운영자 승인 2026-09-06).
         // trackUnit 은 사실 "잘라 쓰는 품목인가" 축인데 아무도 묻지 않아, 영수증에서 카드가 자동
@@ -2668,11 +2725,12 @@ export default function FinanceClient({
         // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.
         const extNo = ((fd.get('externalOrderNo') as string) || '').trim()
         if (extNo) {
-          const found = await findOrderByExternalNo(extNo).catch(() => null)
+          // 쇼핑몰을 정했으면 같은 쇼핑몰 주문만 찾는다(주문번호는 쇼핑몰마다 따로 매긴다, 2026-10-19).
+          const found = await findOrderByExternalNo(extNo, (fd.get('channel') as string) || null).catch(() => null)
           if (found) {
             const attach = await confirmDialog({
               title: '같은 주문번호의 주문이 있어요',
-              message: `주문 ${found.code} · 품목 ${found.count}건 · ${fmtWon(found.total)}.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
+              message: `주문 ${found.code}${found.channel ? ` · ${found.channel}` : ''} · 품목 ${found.count}건 · ${fmtWon(found.total)}.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
               confirmLabel: '같은 주문으로 묶기',
               cancelLabel: '따로 등록',
             })
@@ -2682,7 +2740,7 @@ export default function FinanceClient({
         const res = await addExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
         // 로컬 미리보기도 함께 비운다 — 다음 폼에서 직전 영수증 이미지가 새 주소를 덮는 것을 막는다.
-        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpChannel(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
         // 귀속월이 날짜의 달과 다를 때만 그 달을 덧붙인다 — 지금 보는 목록에 안 보이는 이유가 된다.
         const savedTm = String(fd.get('targetMonth') ?? '')
@@ -2700,12 +2758,26 @@ export default function FinanceClient({
           })
         }
         else pushToast('success', addedText)
-        // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
-        if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
+        // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시). 소급에도 적용취소가 있다(§16).
+        if (res.backfilled) toastBackfill(res.backfilled, res.backfillUndo)
         await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
       } finally { release() }
     })
   }
+  /**
+   * 글자 칸 일괄 변경의 결과 토스트와 적용취소(사업자번호 소급·쇼핑몰 주문 전체 적용·구매처 정리). 토큰이 없으면(운영 서명 키 없음)
+   * 적용취소를 숨긴다. 적용취소는 그때 바뀐 행만, 지금도 그 값일 때만 되돌린다(서버 undoExpenseFieldChange).
+   */
+  const runFieldUndo = (undo: ExpenseFieldUndo, done: string) => {
+    void undoExpenseFieldChange(undo).then(r => {
+      if (r.ok) { pushToast('info', done); router.refresh() }
+      else pushToast('error', r.error)
+    }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
+  }
+  const toastBackfill = (n: number, undo?: ExpenseFieldUndo) =>
+    pushToast('info', `같은 구매처 과거 ${n}건에도 사업자등록번호를 채웠습니다`, undo
+      ? { action: { label: '적용취소', run: () => runFieldUndo(undo, `과거 ${n}건의 사업자등록번호를 다시 비웠습니다`) } }
+      : undefined)
   /**
    * 지출을 저장한 **뒤** 작업에 걸지 묻는다 — 저장 트랜잭션 밖이다.
    *
@@ -2769,7 +2841,7 @@ export default function FinanceClient({
           const converted = await confirmDurableSetItems(editItems)
           if (converted === null) return   // 취소 → 저장 중단
           if (converted) {
-            fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+            fd.set('itemsJson', JSON.stringify(itemsForSave(converted, true)))
             savedItems = converted   // 아래 재고 미리보기도 환산 후 수량으로 물어야 한다(서버가 그 값으로 저장한다)
           }
         }
@@ -2796,6 +2868,25 @@ export default function FinanceClient({
           })
           if (ask === null) return   // 취소 — 저장 중단
           if (ask.adjust) fd.set('adjustStock', '1')
+        }
+        // 주문 속 한 행의 쇼핑몰만 바꾸면 묻는다(한 결제 = 한 쇼핑몰). 카드 갈림 경고와 같은 문장으로 사실을 말하고,
+        // '주문 전체에 적용'은 형제도 맞춘다(그 부분만 적용취소 가능). '이 건만 바꾸기'는 그대로 저장한다(장부 그물이 갈림을 센다).
+        if (detailExp && detailExp.orderId && fd.has('channel')) {
+          const next = normalizeChannel(String(fd.get('channel') ?? ''))
+          if (next !== (detailExp.channel ?? null)) {
+            const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
+            if (split) {
+              const pick = await choiceDialog({
+                title: `이 주문의 다른 ${split.count}건은 ${split.names.join(', ')}입니다`,
+                message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next ?? '미기록', '을/를')} 적용할까요?`,
+                confirmLabel: '주문 전체에 적용',
+                altLabel: '이 건만 바꾸기',
+                level: 'caution',
+              })
+              if (pick === null || pick === 'back') return
+              if (pick === 'confirm') fd.set('channelScope', 'order')
+            }
+          }
         }
         const res = await updateExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
@@ -2867,7 +2958,12 @@ export default function FinanceClient({
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
         } : undefined)
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
-        if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
+        if (res.backfilled) toastBackfill(res.backfilled, res.backfillUndo)
+        // '주문 전체에 적용'을 골랐으면 형제를 맞춘 결과와 그 부분만의 적용취소(이 지출 수정은 유지).
+        const chUndo = res.channelUndo
+        if (chUndo) pushToast('info', `같은 주문 ${chUndo.rows.length}건의 쇼핑몰도 맞췄습니다`, {
+          action: { label: '적용취소', run: () => runFieldUndo(chUndo, '같은 주문의 쇼핑몰을 되돌렸습니다. 이 지출 수정은 유지됩니다.') },
+        })
         await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
       } finally { release() }
     })
@@ -4503,6 +4599,8 @@ export default function FinanceClient({
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setLocalPreview('edit', '')
                     setEditExpCategory(detailExp.category)
+                    setEditExpVendor(detailExp.vendor ?? '')
+                    setEditExpChannel(detailExp.channel ?? '')
                     // '배송비 포함'(합산형)으로 등록된 지출 — detail 의 '배송비 N원' 표기에서 합산분 복원.
                     // 안 하면 수정 저장 시 배송비가 이중 합산되거나 표기가 사라지고 단가가 부풀던 문제.
                     const shipMatch = !detailExp.isShipping ? (detailExp.detail ?? '').match(/배송비\s*([\d,]+)원/) : null
@@ -4608,7 +4706,7 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
-                    <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소" list="edit-exp-vendors"
+                    <input type="text" name="vendor" value={editExpVendor} onChange={e => setEditExpVendor(e.target.value)} placeholder="예: 다이소, 철물24" list="edit-exp-vendors"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     <datalist id="edit-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                   </div>
@@ -4619,6 +4717,31 @@ export default function FinanceClient({
                       onChange={e => { e.currentTarget.value = formatBizNoInput(e.currentTarget.value) }} placeholder="000-00-00000"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                   </div>
+                  {/* 쇼핑몰. 등록 폼과 같은 칸. 서비스·무형 지출이면 숨긴다(칸이 안 실리면 서버가 기존 값을 지킨다, form-clear-vs-absent).
+                      주문 속 한 행만 다른 쇼핑몰이 되면 아래 경고가 서고, 저장 직전에 주문 전체에 적용할지 묻는다. */}
+                  {!detailExp.excludeFromInventory && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 <span className="text-[var(--warm-muted)] font-normal">(선택 · 비우면 구매처와 같음)</span></label>
+                      <input type="text" name="channel" value={editExpChannel} onChange={e => setEditExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="edit-exp-channels"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+                      <datalist id="edit-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                      {(() => {
+                        // 카드 갈림 경고(아래 결제 카드)와 같은 문법. 이번에 바꿨을 때만 말한다(옛 주문의 미기록 섞임까지 매번 띄우지 않는다).
+                        if (!detailExp.orderId) return null
+                        const next = normalizeChannel(editExpChannel)
+                        if (next === (detailExp.channel ?? null)) return null
+                        const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
+                        if (!split) return null
+                        return (
+                          <p className="text-[0.6875rem] rounded-lg px-3 py-2"
+                            style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
+                            이 주문의 다른 {split.count}건은 <strong>{split.names.join(', ')}</strong> 입니다.
+                            저장할 때 주문 전체에 적용할지 묻습니다.
+                          </p>
+                        )
+                      })()}
+                    </div>
+                  )}
                   {(
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
@@ -4630,6 +4753,7 @@ export default function FinanceClient({
                         detailSuggestions={detailSuggestions}
                         isService={!!detailExp?.excludeFromInventory}
                         isDurable={editIsDurable}
+                        headVendor={editExpVendor}
                       />
                       {/* '배정할 호실' 칸이 서는 받기 전 비품에서는 숨긴다. 칸 캡션과 서로 다른 때를 말한다(웹디자이너 패스 D3). */}
                       {editIsDurable && !editPlanned && (
@@ -4739,7 +4863,7 @@ export default function FinanceClient({
                     {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                     <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${fmtWon((editShipping ?? 0))}` : ''}`} />
                     {editItems.length > 0 && <>
-                      <input type="hidden" name="itemsJson" value={JSON.stringify(editItems.map(it => ({ ...it, setHint: undefined, allocations: editIsDurable ? undefined : it.allocations })))} />
+                      <input type="hidden" name="itemsJson" value={JSON.stringify(itemsForSave(editItems, editIsDurable))} />
                       {editItems.length === 1 && (
                         <>
                           <input type="hidden" name="itemLabel" value={editItems[0].label} />
@@ -4994,9 +5118,11 @@ export default function FinanceClient({
                     options={expenseCategories} showAddHint savedValue=""
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
+                {/* 머리 칸 순서(UX 패널 2026-10-19 확정): 구매처 · 사업자등록번호 · 쇼핑몰 · 쇼핑몰 주문번호. 구매처는 실제로 판 곳(사업자번호의
+                    주인), 쇼핑몰은 주문을 받은 플랫폼이다. 구매처 자리표시에서 쿠팡을 뺐다(쿠팡은 이제 쇼핑몰 자리다). */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
-                  <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소" list="add-exp-vendors"
+                  <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 다이소, 철물24" list="add-exp-vendors"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                 </div>
@@ -5005,17 +5131,28 @@ export default function FinanceClient({
                   <input type="text" name="vendorBizNo" inputMode="numeric" value={addExpBizNo} onChange={e => setAddExpBizNo(formatBizNoInput(e.target.value))} placeholder="000-00-00000"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                 </div>
+                {/* 쇼핑몰. 주문을 받은 플랫폼(2026-10-19 운영자 승인). 목록에서 고르거나 새 이름을 적는다(새 이름은 저장할 때 목록에 쌓인다).
+                    비우면 미기록이고 화면 안내만 '비우면 구매처와 같음'이다. 이 등록의 모든 행(품목·배송비)에 같이 선다. 서비스·무형이면 숨긴다. */}
+                {!addIsService && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 <span className="text-[var(--warm-muted)] font-normal">(선택 · 비우면 구매처와 같음)</span></label>
+                    <input type="text" name="channel" value={addExpChannel} onChange={e => setAddExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="add-exp-channels"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+                    <datalist id="add-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
+                  </div>
+                )}
                 {/* #1 쇼핑몰 주문번호 — 영수증 OCR로 자동입력되며 수동 수정 가능. 진위확인·재주문 참조용(보조). */}
                 {!addIsService && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 주문번호 <span className="text-[var(--warm-muted)] font-normal">(선택 · 쿠팡 등)</span></label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 주문번호 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
                     <input type="text" name="externalOrderNo" value={addExtOrderNo} onChange={e => setAddExtOrderNo(e.target.value)} placeholder="영수증 분석 시 자동 입력"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                   </div>
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{addIsService ? '세부 항목' : '품목 선택'}{addIsService && DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) ? '' : ' *'} <span className="text-[var(--warm-muted)] font-normal">{addIsService ? '(시공·작업별로 금액을 쪼개세요)' : '(여러 품목 추가 가능)'}</span></label>
-                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} onSwitchType={() => void switchAddType(!addIsService)} />
+                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} onSwitchType={() => void switchAddType(!addIsService)} headVendor={addExpVendor} />
                   {/* '배정할 호실' 칸이 서면(품목이 있는 비품) 숨긴다. 칸 캡션이 같은 일을 먼저 말한다(D3). */}
                   {addIsDurable && !addPlanned && (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
@@ -5080,7 +5217,7 @@ export default function FinanceClient({
                   {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                   <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${fmtWon((addShipping ?? 0))}` : ''}`} />
                   {addItems.length > 0 && <>
-                    <input type="hidden" name="itemsJson" value={JSON.stringify(addItems.map(it => ({ ...it, setHint: undefined, allocations: addIsDurable ? undefined : it.allocations })))} />
+                    <input type="hidden" name="itemsJson" value={JSON.stringify(itemsForSave(addItems, addIsDurable))} />
                     {addItems.length === 1 && (
                       <>
                         <input type="hidden" name="itemLabel" value={addItems[0].label} />

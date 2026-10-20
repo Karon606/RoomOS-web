@@ -205,6 +205,6 @@ export type TimelineEntry =
   // 그런데 재고 화면이 브랜드의 존재조차 몰라서, 라면을 오뚜기에서 삼양으로 바꿔 사도
   // 그 사실이 이 화면 어디에도 안 떴다. 잔량을 브랜드로 가르는 것은 다른 얘기이고
   // (창고에 섞어 쌓으므로 셀 수가 없다) 여기서 하는 것은 **언제 바뀌었나를 보이는 것**이다.
-  | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; brand: string | null; productName: string | null; memo: string | null; receivedAt: Date | null; receivedLocationName: string | null }
+  | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; channel: string | null; brand: string | null; productName: string | null; memo: string | null; receivedAt: Date | null; receivedLocationName: string | null }
   | { type: 'addition'; id: string; date: Date; createdAt: Date; addedQty: number; source: string | null; memo: string | null; storageLocationId: string | null; storageLocationName: string | null }
   | { type: 'disposal'; id: string; date: Date; createdAt: Date; disposedQty: number; reason: string | null; memo: string | null; storageLocationId: string | null; storageLocationName: string | null }

@@ -10,7 +10,9 @@ import { requireEdit } from '@/lib/role'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
-import { getExpenseCategories, noteUnitsUsed } from '@/app/(app)/settings/actions'
+import { getExpenseCategories, noteUnitsUsed, addChannelOption } from '@/app/(app)/settings/actions'
+import { normalizeChannel } from '@/lib/expenseChannel'
+import { normalizeBizNo } from '@/lib/bizNo'
 import { cleanUnit } from '@/lib/receiptOcr'
 import { isMonthKey, targetMonthForSave } from '@/lib/expenseTargetMonth'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
@@ -178,6 +180,8 @@ export type PendingReceiptRow = {
   imageUrl: string
   inferredKind: string | null
   inferredVendor: string | null
+  // 인식한 사업자번호(구매처 칸 그대로일 때만 승인에 싣는다). 종전에는 승인 카드가 버렸다(재무 패널 2026-10-19).
+  inferredVendorBizNo: string | null
   inferredDate: string | null
   inferredAmount: number | null
   inferredCategory: string | null
@@ -207,12 +211,13 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
       },
     })
     return rows.map(r => {
-      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string; _error?: string; items?: { specText?: string }[] } | null) ?? null
+      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string; vendorBizNo?: string; _error?: string; items?: { specText?: string }[] } | null) ?? null
       return {
         id: r.id,
         imageUrl: r.imageUrl,
         inferredKind: r.inferredKind,
         inferredVendor: r.inferredVendor,
+        inferredVendorBizNo: normalizeBizNo(parsed?.vendorBizNo ?? null),
         inferredDate: r.inferredDate,
         inferredAmount: r.inferredAmount,
         inferredCategory: r.inferredCategory,
@@ -252,6 +257,9 @@ export async function approvePendingReceipt(
     // 귀속월 'YYYY-MM' — 승인 카드의 ExpenseTargetMonthField 가 고른 값. 없으면 날짜의 달(NULL).
     targetMonth?: string
     vendor?: string; memo?: string
+    // 구매처 사업자번호(카드가 인식값을 구매처 칸이 그대로일 때만 싣는다)·쇼핑몰(주문을 받은 플랫폼, 2026-10-19 운영자 승인).
+    // 지출 등록 폼과 같은 칸이다. 비우면 미기록이다(구매처를 쇼핑몰로 끌어 쓰지 않는다).
+    vendorBizNo?: string; channel?: string
     // 재고용 — 있으면 inventory 보충으로도 잡힘
     itemLabel?: string
     specValue?: string; specUnit?: string
@@ -288,6 +296,7 @@ export async function approvePendingReceipt(
     //   같은 파일 finalizePendingReceipt 가 이미 쓰는 문법('중복 등록 방어')과 통일 — 승인만 빠져 있었다.
     //   한 트랜잭션이라 지출 생성이 실패하면 상태 전이도 함께 롤백된다('승인됐는데 지출 없음' 방지).
     const expDate = new Date(final.date)
+    const channel = normalizeChannel(final.channel)
     // 지출 저장 경로(addExpense)와 같은 접기 — 날짜의 달과 같으면 NULL(lib/expenseTargetMonth).
     const targetMonth = targetMonthForSave(isMonthKey(final.targetMonth) ? final.targetMonth : null, expDate)
     const exp = await prisma.$transaction(async tx => {
@@ -303,7 +312,10 @@ export async function approvePendingReceipt(
           targetMonth,
           amount: final.amount,
           category: final.category,
-          vendor: final.vendor ?? null,
+          vendor: final.vendor?.trim() || null,
+          // 구매처가 비면 번호도 싣지 않는다(주인 없는 번호가 번호로 이름 지도를 흐린다).
+          vendorBizNo: final.vendor?.trim() ? normalizeBizNo(final.vendorBizNo ?? null) : null,
+          channel,
           memo: final.memo ?? null,
           payMethod: '계좌이체',
           receiptUrl: row.imageUrl,
@@ -322,6 +334,8 @@ export async function approvePendingReceipt(
       return e
     })
     if (!exp) return { ok: false, error: '이미 처리된 영수증입니다.' }
+    // 처음 보는 쇼핑몰이면 영업장 쇼핑몰 목록에 쌓는다(지출 등록과 같은 흐름, 정규화·중복 거르기는 그 액션이 한다).
+    if (channel) await addChannelOption(channel).catch(() => {})
     // 운영자가 승인을 누른 뒤에만 적립한다 — 인식 시점에 쌓으면 잘못 뽑힌 말이 목록에 올라앉는다.
     await noteUnitsUsed('spec', [final.specUnit]).catch(() => {})
     await noteUnitsUsed('qty', [final.qtyUnit]).catch(() => {})

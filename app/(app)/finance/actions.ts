@@ -2086,21 +2086,27 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
 }
 
 // 같은 쇼핑몰 주문번호의 기존 주문 조회 — 지출 등록 시 '같은 주문으로 묶을까요?' 확인용(오류신고 4f9fb398).
-export async function findOrderByExternalNo(externalOrderNo: string): Promise<{ id: string; code: string; count: number; total: number } | null> {
+// 쇼핑몰을 정했으면 같은 쇼핑몰 주문만 제안한다(2026-10-19). 주문번호는 쇼핑몰마다 따로 매기므로 다른 쇼핑몰의 같은 번호는 남의 주문이다.
+// 쇼핑몰을 안 정했으면 종전대로 가장 최근 주문이고, 합류하면 저장이 그 주문의 쇼핑몰을 따른다(addExpense).
+export async function findOrderByExternalNo(externalOrderNo: string, channel?: string | null): Promise<{ id: string; code: string; count: number; total: number; channel: string | null } | null> {
   const propertyId = await getPropertyId()
   const no = externalOrderNo.trim()
   if (!no) return null
-  const order = await prisma.expenseOrder.findFirst({
+  const want = normalizeChannel(channel)
+  const orders = await prisma.expenseOrder.findMany({
     where: { propertyId, externalOrderNo: no },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, code: true, expenses: { select: { amount: true, isShipping: true } } },
+    take: 20,
+    select: { id: true, code: true, expenses: { select: { amount: true, isShipping: true, channel: true } } },
   })
+  const order = orders.find(o => !want || commonChannel(o.expenses.filter(e => !e.isShipping)) === want)
   if (!order) return null
   return {
     id: order.id,
     code: order.code,
     count: order.expenses.filter(e => !e.isShipping).length,
     total: order.expenses.reduce((s, e) => s + e.amount, 0),
+    channel: commonChannel(order.expenses.filter(e => !e.isShipping)),
   }
 }
 

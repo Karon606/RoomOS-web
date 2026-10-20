@@ -214,6 +214,8 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
     return row.inferredCategory ?? ''
   })
   const [vendor, setVendor] = useState(row.inferredVendor ?? '')
+  // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 비우면 미기록이다. 인식 결과로 채우지 않는다(영수증 인식 프롬프트는 운영자 실물 확인 뒤).
+  const [channel, setChannel] = useState('')
   const [memo, setMemo] = useState(row.notes ?? '')
   // 재고 전용
   const [itemLabel, setItemLabel] = useState(row.itemLabel ?? '')
@@ -283,6 +285,9 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
         amount: amount || 0,
         category,
         vendor: vendor || undefined,
+        // 인식한 사업자번호는 구매처 칸이 인식값 그대로일 때만 싣는다. 구매처를 고쳤으면 그 번호의 주인이 아니다.
+        vendorBizNo: row.inferredVendorBizNo && vendor.trim() && vendor.trim() === (row.inferredVendor ?? '').trim() ? row.inferredVendorBizNo : undefined,
+        channel: channel.trim() || undefined,
         memo: memo || undefined,
         ...(isInventory ? {
           itemLabel: itemLabel.trim(),
@@ -467,9 +472,11 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <input type="text" placeholder="상호명 (선택)" value={vendor} onChange={e => setVendor(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
+              <input type="text" placeholder="쇼핑몰 (선택)" aria-label="쇼핑몰 (선택 · 비우면 상호명과 같음)" value={channel} onChange={e => setChannel(e.target.value)}
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
               <input type="text" placeholder="메모 (선택)" value={memo} onChange={e => setMemo(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                className="col-span-2 w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
             </div>
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}

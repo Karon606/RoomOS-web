@@ -1,5 +1,5 @@
 import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getTrackedCategories, getLastPayDefaults, getOtherMonthPaidExpenses } from './actions'
-import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
+import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings, getChannelOptions } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { resolveMonthParam } from '@/lib/monthParam'
@@ -32,7 +32,7 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, trackedCategories, lastPayDefaults, otherMonthPaid] = await Promise.all([
+  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, trackedCategories, lastPayDefaults, otherMonthPaid, channelOptions] = await Promise.all([
     getExpenses(targetMonth),
     getFinancialAccounts(),
     getIncomeCategories(),
@@ -52,6 +52,7 @@ export default async function FinancePage({
     getTrackedCategories(),
     getLastPayDefaults(),
     getOtherMonthPaidExpenses(targetMonth),
+    getChannelOptions(),   // 쇼핑몰 목록(2026-10-19). 지출 폼 쇼핑몰 칸의 고르기 후보
   ])
 
   const acquisitionDate = propertySettings?.acquisitionDate
@@ -75,6 +76,7 @@ export default async function FinancePage({
       acquisitionDate={acquisitionDate}
       detailSuggestions={detailSuggestions}
       vendorSuggestions={vendorSuggestions}
+      channelOptions={channelOptions}
       reserveBalance={reserveBalance}
       reserveMonthly={reserveMonthly}
       reserveTxns={reserveTxns}
