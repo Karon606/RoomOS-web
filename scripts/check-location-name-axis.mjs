@@ -285,7 +285,7 @@ function mustNot(file, block, label, pattern) {
 }
 {
   const f = 'app/(app)/finance/actions.ts'
-  must(f, slice(f, 'export async function getExpenses', 'export async function'), '재무 방별 분배의 보관 위치 이름', /storedLocationName: r\.storedLocationId \? \(locPaths\?\.pathName\(r\.storedLocationId\)/)
+  must(f, slice(f, 'export async function getExpenses', 'export async function'), '재무 방별 분배의 보관 위치 이름', /!r\.excludeFromInventory\s*\? \(locPaths\?\.pathName\(r\.storedLocationId\)/)
 }
 
 {

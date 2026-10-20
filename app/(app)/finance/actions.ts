@@ -162,7 +162,9 @@ export async function getExpenses(targetMonth: string) {
   return rows.map(r => ({
     ...r,
     assignedLocationName: r.assignedLocationId ? (locPaths?.pathName(r.assignedLocationId) ?? null) : null,
-    storedLocationName: r.storedLocationId ? (locPaths?.pathName(r.storedLocationId) ?? null) : null,
+    // 불변식 관문(받은 + 안 놓인 비품 물품만, 비품 화면 getDurableItems 와 같은 판정). 어긋난 행의 남은 값을 라벨에 싣지 않는다.
+    storedLocationName: r.storedLocationId && r.receivedAt && !r.roomId && !r.assignedLocationId && !r.isCommonAsset && !r.excludeFromInventory
+      ? (locPaths?.pathName(r.storedLocationId) ?? null) : null,
   }))
 }
 

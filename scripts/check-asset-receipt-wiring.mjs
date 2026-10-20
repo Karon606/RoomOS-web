@@ -153,7 +153,7 @@ must(I, inv, 'cancelReceiptCore', [
 ])
 must(I, inv, 'setExpenseInventoryExclusion', [
   [/placementForSave\(\{/, 'R-1 제외·포함이 자리 두 칸을 저장 규칙 정본으로 정하지 않는다(방에 걸린 서비스를 포함하면 자리 있는 수령 전 비품)'],
-  [/data: \{ excludeFromInventory: exclude, roomId: place\.roomId, targetRoomId: place\.targetRoomId \}/, 'R-1 정본이 정한 두 칸을 쓰지 않는다'],
+  [/data: \{ excludeFromInventory: exclude, roomId: place\.roomId, targetRoomId: place\.targetRoomId, storedLocationId \}/, 'R-1 정본이 정한 두 칸(과 보관 위치 판정 storedForSave, 2026-10-19 검수 R3)을 쓰지 않는다'],
   [/roomId: goodsAfter \|\| e\.receivedAt \? e\.roomId : \(e\.roomId \?\? e\.targetRoomId\)/, '2차 R1 받은 행의 예정 호실을 방으로 올린다(받은 미배정 비품이 제외·포함 왕복으로 말없이 배정된다)'],
 ])
 must(I, inv, 'syncTrackedItemCategory', [

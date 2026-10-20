@@ -438,15 +438,25 @@ export function parseAssetUnreceiveUndo(x: unknown): AssetUnreceiveUndo | null {
 
 // ── 무상 입수 적용취소 토큰 ─────────────────────────────────────────────────────────
 // 무상 입수는 받은 상태로 보관 위치와 함께 생긴다. 적용취소는 만든 행 하나를 지운다(용도 'asset-free-add').
-export type AssetFreeUndo = { v: 1; id: string; sig?: string }
+// 등록 직후 모양(보관 위치·수량·품명·규격)과 등록 시각을 싣고 서버가 그대로일 때만 지운다(검수 R1). 등록 뒤 그 품목에 배정 이력이
+// 생겼어도 거부한다(방에 갔다 미배정으로 돌아온 행을 지우면 이력이 고아가 된다).
+export type AssetFreeUndo = {
+  v: 1; id: string; at: string; storedLocationId: string | null; qtyValue: number | null
+  itemLabel: string | null; specValue: number | null; specUnit: string | null; specText: string | null; sig?: string
+}
 export const ASSET_FREE_UNDO_DOMAIN = 'asset-free-add'
 export const ASSET_FREE_UNDO_STALE = '등록한 뒤 이 비품을 옮겼거나 바꿔서 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
 export const ASSET_FREE_UNDONE = '무상 입수를 적용취소했습니다'
-export const canonicalAssetFreeUndo = (u: AssetFreeUndo) => JSON.stringify([u.v, u.id])
+export const canonicalAssetFreeUndo = (u: AssetFreeUndo) =>
+  JSON.stringify([u.v, u.id, new Date(u.at).toISOString(), u.storedLocationId, u.qtyValue, u.itemLabel, u.specValue, u.specUnit, u.specText])
 export function parseAssetFreeUndo(x: unknown): AssetFreeUndo | null {
   if (!x || typeof x !== 'object') return null
   const u = x as Partial<AssetFreeUndo>
+  const strOrNull = (v: unknown) => v === null || typeof v === 'string'
+  const numOrNull = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v))
   if (u.v !== 1 || typeof u.id !== 'string' || !u.id) return null
+  if (typeof u.at !== 'string' || Number.isNaN(new Date(u.at).getTime())) return null
+  if (!strOrNull(u.storedLocationId) || !numOrNull(u.qtyValue) || !strOrNull(u.itemLabel) || !numOrNull(u.specValue) || !strOrNull(u.specUnit) || !strOrNull(u.specText)) return null
   if (u.sig !== undefined && typeof u.sig !== 'string') return null
   return u as AssetFreeUndo
 }

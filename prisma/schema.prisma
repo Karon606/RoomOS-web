@@ -1304,6 +1304,8 @@ model Expense {
 
   @@index([propertyId, date])
   @@index([orderId])
+  // 보관 위치 인덱스. 이름이 SQL(migrate_expense_stored_location.sql) 의 expenses_storedLocationId_idx 와 같다(db push 드리프트 방지).
+  @@index([storedLocationId])
   @@map("expenses")
 }
 

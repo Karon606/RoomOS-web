@@ -9,7 +9,7 @@ import {
 } from '../app/(app)/inventory/assets/storagePlace'
 import {
   receiptAssignCopy, receiptToast, plainReceiveToast, partialReceiveToast, SEP,
-  parseAssetUnreceiveUndo, canonicalAssetUnreceiveUndo, parseAssetFreeUndo, parseAssetReceiptUndo, type ReceiptPlan, type AssetReceiptUndo,
+  parseAssetUnreceiveUndo, canonicalAssetUnreceiveUndo, parseAssetFreeUndo, canonicalAssetFreeUndo, parseAssetReceiptUndo, type ReceiptPlan, type AssetReceiptUndo,
 } from '../app/(app)/inventory/assets/receiptPlacement'
 import { aggregateAssets, type RawAsset } from '../app/(app)/inventory/assets/aggregate'
 import { roomsLabel, roomChipText } from '../app/(app)/finance/allocPlaceLabel'
@@ -88,7 +88,9 @@ const ur = { v: 1 as const, rows: [{ id: 'e', receivedAt: '2026-10-19T00:00:00.0
 eq('⑦ 수령 대기로 토큰 정상', !!parseAssetUnreceiveUndo(ur), true)
 eq('⑦ 수령 대기로 토큰 정본 문자열', canonicalAssetUnreceiveUndo(ur), JSON.stringify([1, [['e', '2026-10-19T00:00:00.000Z', 'S']]]))
 eq('⑦ 수령 대기로 토큰: 빈 행·중복·날짜 거부', [parseAssetUnreceiveUndo({ v: 1, rows: [] }), parseAssetUnreceiveUndo({ v: 1, rows: [ur.rows[0], ur.rows[0]] }), parseAssetUnreceiveUndo({ v: 1, rows: [{ ...ur.rows[0], receivedAt: 'x' }] })], [null, null, null])
-eq('⑦ 무상 입수 토큰', [!!parseAssetFreeUndo({ v: 1, id: 'e' }), parseAssetFreeUndo({ v: 1, id: '' }), parseAssetFreeUndo({ v: 2, id: 'e' })], [true, null, null])
+const fu = { v: 1 as const, id: 'e', at: '2026-10-19T00:00:00.000Z', storedLocationId: 'S', qtyValue: 1, itemLabel: 'x', specValue: null, specUnit: null, specText: null }
+eq('⑦ 무상 입수 토큰(등록 직후 모양을 싣는다, 검수 R1)', [!!parseAssetFreeUndo(fu), parseAssetFreeUndo({ ...fu, id: '' }), parseAssetFreeUndo({ ...fu, v: 2 }), parseAssetFreeUndo({ v: 1, id: 'e' }), parseAssetFreeUndo({ ...fu, at: 'x' })], [true, null, null, null, null])
+eq('⑦ 무상 입수 토큰 정본 문자열', canonicalAssetFreeUndo(fu), JSON.stringify([1, 'e', '2026-10-19T00:00:00.000Z', 'S', 1, 'x', null, null, null]))
 
 // ⑧ 집계 키. 같은 품목이라도 보관 위치가 다르면 다른 카드. 보관 위치가 없는 행끼리는 종전대로 한 카드(무회귀).
 const raw = (id: string, stored: string | null, name: string | null = stored): RawAsset => ({

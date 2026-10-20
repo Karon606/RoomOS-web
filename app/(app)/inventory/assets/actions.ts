@@ -157,7 +157,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     targetRoomId: r.targetRoomId, targetRoomNo: r.targetRoomId ? (targetRoomNoById.get(r.targetRoomId) ?? null) : null,
     // 보관 위치는 받은 + 안 놓인 행에만 읽는다(불변식, 어긋난 행은 장부 그물 check-asset-pending-placement 가 운다).
     // 놓인 행에 남은 값으로 방 카드가 갈라지지 않게 표시층에서도 한 번 더 막는다. 이름은 표기 경로(pathName).
-    ...(r.storedLocationId && r.receivedAt && !r.roomId && !r.assignedLocationId && !r.isCommonAsset
+    ...(r.storedLocationId && r.receivedAt && !r.roomId && !r.assignedLocationId && !r.isCommonAsset && !r.excludeFromInventory
       ? { storedLocationId: r.storedLocationId, storedLocationName: locPaths.pathName(r.storedLocationId) ?? null }
       : { storedLocationId: null, storedLocationName: null }),
   }))
@@ -690,7 +690,11 @@ export async function addFreeAsset(input: {
       },
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    const body: AssetFreeUndo = { v: 1, id: made.id }
+    // 등록 직후 모양(보관 위치·수량·품명·규격)과 등록 시각을 싣는다. 그 사이 옮기거나 바꿨으면 적용취소가 거부한다(검수 R1).
+    const body: AssetFreeUndo = {
+      v: 1, id: made.id, at: made.createdAt.toISOString(), storedLocationId: made.storedLocationId, qtyValue: made.qtyValue,
+      itemLabel: made.itemLabel, specValue: made.specValue, specUnit: made.specUnit, specText: made.specText,
+    }
     const sig = signUndoBody(ASSET_FREE_UNDO_DOMAIN, propertyId, canonicalAssetFreeUndo(body))
     return sig === null ? { ok: true } : { ok: true, undo: sig ? { ...body, sig } : body }
   } catch (err) {
@@ -706,8 +710,20 @@ export async function undoAddFreeAsset(undoRaw: AssetFreeUndo): Promise<{ ok: tr
     const propertyId = await getPropertyId()
     const undo = parseAssetFreeUndo(undoRaw)
     if (!undo || !verifyUndoBody(ASSET_FREE_UNDO_DOMAIN, propertyId, canonicalAssetFreeUndo(undo), undo.sig)) return { ok: false, error: ASSET_RECEIPT_UNDO_INVALID }
+    // 등록 뒤 이 품목(이름·규격)에 배정 이력이 생겼으면 거부한다. 방에 배정했다가 미배정으로 돌린 행은 모양이 같아 보여도
+    // 지우면 이력이 고아로 남는다(검수 R1, X2).
+    const at = new Date(undo.at)
+    const logsAfter = await prisma.assetAssignmentLog.count({
+      where: { propertyId, itemLabel: undo.itemLabel, specValue: undo.specValue, specUnit: undo.specUnit, specText: undo.specText, createdAt: { gte: at } },
+    })
+    if (logsAfter > 0) return { ok: false, error: ASSET_FREE_UNDO_STALE }
     const r = await prisma.expense.deleteMany({
-      where: { id: undo.id, propertyId, amount: 0, memo: '무상입수', roomId: null, assignedLocationId: null, isCommonAsset: false, allocationGroupId: null, disposedAt: null, receivedAt: { not: null } },
+      where: {
+        id: undo.id, propertyId, amount: 0, memo: '무상입수', roomId: null, assignedLocationId: null, isCommonAsset: false, allocationGroupId: null, disposedAt: null, receivedAt: { not: null },
+        // 등록 직후 모양 그대로일 때만(다른 창고로 옮겼거나 수량·품명·규격을 고쳤으면 거부, 검수 R1 X1).
+        storedLocationId: undo.storedLocationId, qtyValue: undo.qtyValue, itemLabel: undo.itemLabel,
+        specValue: undo.specValue, specUnit: undo.specUnit, specText: undo.specText, createdAt: at,
+      },
     })
     if (r.count !== 1) return { ok: false, error: ASSET_FREE_UNDO_STALE }
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
@@ -722,24 +738,62 @@ export async function undoAddFreeAsset(undoRaw: AssetFreeUndo): Promise<{ ok: tr
 // isCommon 은 카드 정체성 키다(aggregate.ts 집계 키의 'C'). 그래서 여기도 폐기 행을 함께 데려간다 —
 // 안 그러면 여분 10개 중 2개를 분실로 적은 뒤 '공용 자재로' 를 누를 때 살아 있는 행만 공용으로 가고
 // 분실 행은 미배정에 `0개 · 누적 2개` 유령 카드로 남는다(장부 검수 2026-09-16).
-// 공용 자재는 놓인 것이라 보관 위치를 비운다(보관 위치는 안 놓인 행에만, ./storagePlace). 그 칸을 잃지 않도록 적용취소는
-// 원상태 스냅샷(AssetAssignUndo)이다. 종전처럼 반대 값으로 다시 부르면 지운 보관 위치가 안 돌아온다.
-export async function setCommonAsset(expenseIds: string[], value: boolean, disposedIds?: string[]): Promise<{ ok: true; undo: AssetAssignUndo } | { ok: false; error: string }> {
+// 공용 자재는 놓인 것이라 보관 위치를 비운다(보관 위치는 안 놓인 행에만, ./storagePlace). 지운 보관 위치는 restoreStored 로
+// 돌려주고, 적용취소(undoSetCommonAsset)가 반대 값으로 되돌린 뒤 그 칸만 CAS 로 되살린다.
+// 원상태 스냅샷으로 덮지 않는다(독립 검수 F1). 표시한 뒤 몇 개를 방으로 옮기면 원행 수량·금액이 줄어 있는데, 묵은 스냅샷이
+// 원행을 옛 수량·금액으로 덮고 옮겨 간 조각은 남아 지출이 그만큼 불어났다.
+export async function setCommonAsset(expenseIds: string[], value: boolean, disposedIds?: string[]): Promise<{ ok: true; restoreStored: { id: string; storedLocationId: string }[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
     const targetIds = await withDisposedSiblings(propertyId, expenseIds, disposedIds)
-    const before = await prisma.expense.findMany({ where: { id: { in: targetIds }, propertyId } })
+    const stored = value
+      ? (await prisma.expense.findMany({ where: { id: { in: targetIds }, propertyId, storedLocationId: { not: null } }, select: { id: true, storedLocationId: true } }))
+        .map(r => ({ id: r.id, storedLocationId: r.storedLocationId! }))
+      : []
     await prisma.expense.updateMany({
       where: { id: { in: targetIds }, propertyId },
       data: value ? { isCommonAsset: true, roomId: null, assignedLocationId: null, storedLocationId: null } : { isCommonAsset: false },
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true, undo: { restore: before.map(snapshotRow), deleteIds: [] } }
+    return { ok: true, restoreStored: stored }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 공용 자재 표시/해제의 적용취소. 반대 값으로 되돌리되 **그 동작 직후 상태 그대로인 행만**(공용으로 표시했던 것은 아직 공용인 행,
+// 해제했던 것은 아직 안 놓인 미배정 행) 바꾼다. 그 뒤 지웠던 보관 위치를 같은 CAS(공용 아님·방·공용부·보관 위치 모두 비어 있음)로
+// 되살린다. 보관 위치는 이 영업장 위치일 때만 받는다. 한 트랜잭션이다(독립 검수 F1).
+export async function undoSetCommonAsset(expenseIds: string[], value: boolean, restoreStored: { id: string; storedLocationId: string }[] = []): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const targetIds = await withDisposedSiblings(propertyId, expenseIds)
+    const storeIds = [...new Set(restoreStored.map(r => r.storedLocationId).filter(Boolean))]
+    const okStores = new Set(storeIds.length
+      ? (await prisma.storageLocation.findMany({ where: { id: { in: storeIds }, propertyId }, select: { id: true } })).map(l => l.id)
+      : [])
+    await prisma.$transaction([
+      value
+        ? prisma.expense.updateMany({ where: { id: { in: targetIds }, propertyId, isCommonAsset: true }, data: { isCommonAsset: false } })
+        : prisma.expense.updateMany({
+          where: { id: { in: targetIds }, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null },
+          data: { isCommonAsset: true, storedLocationId: null },
+        }),
+      ...restoreStored.filter(r => okStores.has(r.storedLocationId)).map(r => prisma.expense.updateMany({
+        where: { id: r.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: { not: null } },
+        data: { storedLocationId: r.storedLocationId },
+      })),
+    ])
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 
@@ -1556,6 +1610,8 @@ export async function undoDisposalRow(expenseId: string): Promise<{ ok: true } |
       where: {
         propertyId, allocationGroupId: row.allocationGroupId, id: { not: row.id }, disposedAt: null,
         roomId: row.roomId, assignedLocationId: row.assignedLocationId, isCommonAsset: row.isCommonAsset,
+        // 보관 위치도 같은 자리의 일부다. 다른 창고로 옮겨 간 짝에 접으면 폐기분이 그 창고 몫으로 되살아난다(검수 R2, X3).
+        storedLocationId: row.storedLocationId,
         itemLabel: row.itemLabel, ...specOf(row), qtyUnit: row.qtyUnit, category: row.category, date: row.date,
         excludeFromInventory: row.excludeFromInventory, receivedAt: row.receivedAt,
         qtyValue: { not: null },

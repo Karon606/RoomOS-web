@@ -45,6 +45,7 @@ import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from '.
 import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
 import { isDurableGoods, placementForSave } from './assets/receiptPlacement'
+import { storedForSave } from './assets/storagePlace'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -2359,8 +2360,14 @@ async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?:
       durableGoods: goodsAfter, received: !!e.receivedAt,
       roomId: goodsAfter || e.receivedAt ? e.roomId : (e.roomId ?? e.targetRoomId), formTarget: undefined, existingTarget: e.targetRoomId,
     })
+    // 보관 위치(2026-10-19)도 재무 저장과 같은 판정(storedForSave)이다. 서비스가 되면 비품 물품이 아니라 보관 위치를 비운다(검수 R3, X6).
+    // 다시 포함해도 지운 보관 위치는 돌아오지 않는다(보관 위치 미정으로 선다).
+    const storedLocationId = storedForSave({
+      durableGoods: goodsAfter, received: !!e.receivedAt, roomId: place.roomId,
+      assignedLocationId: e.assignedLocationId, isCommonAsset: e.isCommonAsset, existingStored: e.storedLocationId,
+    })
     await prisma.$transaction(async tx => {
-      await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude, roomId: place.roomId, targetRoomId: place.targetRoomId } })
+      await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude, roomId: place.roomId, targetRoomId: place.targetRoomId, storedLocationId } })
       if (rows.length > 0 && itemId) await applyShiftRows(tx, itemId, rows)
     })
     revalidatePath('/inventory')

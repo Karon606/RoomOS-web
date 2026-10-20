@@ -1151,7 +1151,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         </button>
                       </div>
                     </div>
-                    {/* 도착 수량. 형제(품목 상세 구매 카드의 '도착 수량', 비품 수령 대기의 '몇 개 도착?')와 같은 인라인 문법.
+                    {/* 도착 수량. 형제(품목 상세 구매 카드의 '도착 수량')와 같은 인라인 문법. 비품 수령 대기는 2026-10-19 부터
+                        인라인 물음 대신 수령 창(Modal, '몇 개 도착했나요?'와 보관 위치를 함께 묻는다)이다.
                         묶음 안 빈 구매만 칸을 세운다. 적은 수량이 곧 그 구매의 수량이 되어 지출에도 남는다. */}
                     {asking && (
                       <div className="mt-2 pt-2 border-t border-[var(--warm-border)]">
@@ -7568,7 +7569,7 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 const otherHubs = locs.filter(n => n.isHub && n.id !== menuNode.id)
                 if (!menuNode.isHub && !(await confirmDialog({
                   title: `'${menuNode.pathName}' 위치를 기본 창고로 지정할까요?`,
-                  message: `품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 채울 때도 여기서 뺍니다.${otherHubs.length ? `\n지금 기본 창고인 ${otherHubs.map(n => `'${n.pathName}'`).join('·')} 위치는 해제됩니다.` : ''}\n같은 메뉴를 다시 눌러 해제할 수 있습니다.`,
+                  message: `품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 채울 때도 여기서 뺍니다.${otherHubs.length ? `\n지금 기본 창고인 ${otherHubs.map(n => `'${n.pathName}'`).join('·')} 위치는 기본 창고에서 빠집니다.` : ''}\n같은 메뉴를 다시 눌러 해제할 수 있습니다.`,
                   level: 'caution', confirmLabel: '기본 창고로',
                 }))) return
                 setPending(true)

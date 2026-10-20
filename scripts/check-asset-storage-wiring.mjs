@@ -85,11 +85,25 @@ must(A, a, 'addFreeAsset', [
   [/if \(!\(await storageInProperty\(propertyId, input\.storedLocationId\)\)\) return \{ ok: false, error: STORE_NOT_FOUND \}/, '무상 입수 보관 위치를 영업장 범위로 보지 않는다'],
   [/signUndoBody\(ASSET_FREE_UNDO_DOMAIN, propertyId, canonicalAssetFreeUndo\(body\)\)/, '무상 입수 적용취소 토큰에 서명이 없다'],
 ])
-must(A, a, 'undoAddFreeAsset', [[/deleteMany\(\{\s*where: \{ id: undo\.id, propertyId, amount: 0, memo: '무상입수', roomId: null,/, '무상 입수 적용취소가 등록 직후 모양(CAS) 없이 지운다']])
+must(A, a, 'undoAddFreeAsset', [
+  [/deleteMany\(\{\s*where: \{\s*id: undo\.id, propertyId, amount: 0, memo: '무상입수', roomId: null,/, '무상 입수 적용취소가 등록 직후 모양(CAS) 없이 지운다'],
+  [/storedLocationId: undo\.storedLocationId, qtyValue: undo\.qtyValue, itemLabel: undo\.itemLabel,/, '무상 입수 적용취소가 보관 위치·수량·품명을 CAS 로 안 본다(다른 창고로 옮긴 행을 지운다, 검수 R1)'],
+  [/assetAssignmentLog\.count\(\{[\s\S]{0,200}createdAt: \{ gte: at \}/, '무상 입수 뒤 배정 이력이 생겼는데 지운다(이력 고아, 검수 R1 X2)'],
+  [/if \(logsAfter > 0\) return \{ ok: false, error: ASSET_FREE_UNDO_STALE \}/, '배정 이력이 생긴 무상 입수를 거부하지 않는다'],
+])
+must(A, a, 'undoDisposalRow', [[/storedLocationId: row\.storedLocationId,/, '폐기 한 줄 적용취소가 다른 창고 짝에 접는다(검수 R2)']])
 must(A, a, 'setCommonAsset', [
   [/isCommonAsset: true, roomId: null, assignedLocationId: null, storedLocationId: null/, '공용 자재로 가면서 보관 위치를 비우지 않는다'],
-  [/undo: \{ restore: before\.map\(snapshotRow\), deleteIds: \[\] \}/, '공용 자재 적용취소가 원상태 스냅샷이 아니다(지운 보관 위치가 안 돌아온다)'],
+  [/return \{ ok: true, restoreStored: stored \}/, '공용 자재로 지운 보관 위치를 적용취소에 돌려주지 않는다'],
 ])
+mustNot(A, a, 'setCommonAsset', [[/snapshotRow/, '공용 자재 적용취소를 원상태 스냅샷으로 덮는다(옮긴 몫이 원행에 되살아나 지출이 는다, 검수 F1)']])
+must(A, a, 'undoSetCommonAsset', [
+  [/requireEdit\(\)/, '공용 자재 적용취소가 편집 권한 관문을 안 지난다'],
+  [/where: \{ id: \{ in: targetIds \}, propertyId, isCommonAsset: true \}, data: \{ isCommonAsset: false \}/, '공용 표시 적용취소가 반대 값 되돌리기(그 직후 상태 CAS)가 아니다(검수 F1)'],
+  [/where: \{ id: r\.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: \{ not: null \} \}/, '보관 위치 되살리기에 CAS 가 없다'],
+  [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '되살리는 보관 위치를 영업장 범위로 보지 않는다'],
+])
+mustNot(A, a, 'undoSetCommonAsset', [[/qtyValue|amount/, '공용 자재 적용취소가 수량·금액을 쓴다(묵은 값으로 덮는다)']])
 must(A, a, 'snapshotRow', [[/storedLocationId: e\.storedLocationId/, '적용취소 스냅샷에 보관 위치가 없다']])
 must(A, a, 'applyAssetUndo', [
   [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '적용취소가 되살리는 보관 위치를 영업장 범위로 보지 않는다(토큰 위조로 남의 영업장 위치 FK)'],
@@ -98,7 +112,8 @@ must(A, a, 'applyAssetUndo', [
 must(A, a, 'getStorageLocations', [[/storageCandidates\(/, '보관 후보가 정본 순서(기본 창고 먼저)를 안 탄다']])
 mustNot(A, a, 'getStorageLocations', [[/filter\(r => !hubIds\.has/, '보관 후보에서 기본 창고를 뺐다(신고 195e05c8 의 원인)']])
 must(A, a, 'getAssignableLocations', [[/filter\(r => !hubIds\.has\(r\.id\)\)/, '공용부 배정 후보에 기본 창고가 들어갔다(미배정 뜻이 깨진다, 승인안 (a) 기각)']])
-must(A, a, 'getDurableItems', [[/storedLocationId: true,/, '비품 화면이 보관 위치를 안 읽는다'], [/storedLocationName: locPaths\.pathName\(r\.storedLocationId\)/, '보관 위치 이름이 표기 경로가 아니다']])
+must(A, a, 'getDurableItems', [[/storedLocationId: true,/, '비품 화면이 보관 위치를 안 읽는다'], [/storedLocationName: locPaths\.pathName\(r\.storedLocationId\)/, '보관 위치 이름이 표기 경로가 아니다'],
+  [/r\.storedLocationId && r\.receivedAt && !r\.roomId && !r\.assignedLocationId && !r\.isCommonAsset && !r\.excludeFromInventory/, '표시 관문이 받은 + 안 놓인 비품 물품만 보지 않는다(검수 R3)']])
 must(A, a, 'withDisposedSiblings', [[/storedLocationId: true,/, '카드 정체성(집계 키)에 보관 위치가 빠졌다. 다른 창고 카드의 폐기 행을 끌어온다']])
 const AG = 'app/(app)/inventory/assets/aggregate.ts'
 must(AG, read(AG), 'aggregateAssets', [[/r\.isService \? 'S' : '', r\.storedLocationId \?\? ''\]\.join\('␟'\)/, '집계 키에 보관 위치가 없다(다른 창고 몫이 한 카드로 뭉친다)']])
@@ -111,7 +126,7 @@ must(F, f, 'updateExpense', [
   [/assignedLocationId: null, isCommonAsset: false, storedLocationId: null \}/, '비품 전환(F3) 배정이 보관 위치를 비우지 않는다'],
 ])
 must(F, f, 'undoDeleteExpense', [[/storedLocationId: \(fk: string\) => prisma\.storageLocation\.findFirst\(\{ where: \{ id: fk, propertyId \}/, '삭제 복원이 보관 위치 FK 를 영업장 범위로 강등하지 않는다']])
-must(F, f, 'getExpenses', [[/storedLocationName: r\.storedLocationId \? \(locPaths\?\.pathName\(r\.storedLocationId\)/, '재무 목록이 보관 위치 이름(표기 경로)을 안 싣는다']])
+must(F, f, 'getExpenses', [[/storedLocationName: r\.storedLocationId && r\.receivedAt && !r\.roomId && !r\.assignedLocationId && !r\.isCommonAsset && !r\.excludeFromInventory\s*\? \(locPaths\?\.pathName\(r\.storedLocationId\)/, '재무 목록이 보관 위치 이름을 불변식 관문 없이(또는 표기 경로가 아니게) 싣는다']])
 
 // ── 위치(inventory/actions) ────────────────────────────────────────
 const I = 'app/(app)/inventory/actions.ts'
@@ -125,6 +140,10 @@ must(I, inv, 'deleteStorageLocation', [
   [/expense\.count\(\{ where: \{ propertyId, assignedLocationId: id \} \}\)/, '위치 삭제가 공용부 배정 비품을 세지 않는다(경고 없이 미배정으로)'],
   [/expense\.count\(\{ where: \{ propertyId, storedLocationId: id \} \}\)/, '위치 삭제가 보관 중인 비품을 세지 않는다'],
   [/checkRows \+ linkedItems \+ addRows \+ dispRows \+ assignedAssets \+ storedAssets > 0/, '비품 건수가 묻기 판정에 안 들어간다'],
+])
+must(I, inv, 'setExpenseInventoryExclusion', [
+  [/const storedLocationId = storedForSave\(\{/, '재고 제외(서비스로) 뒤 보관 위치가 남는다(검수 R3)'],
+  [/targetRoomId: place\.targetRoomId, storedLocationId \} \}\)/, '재고 제외가 판정한 보관 위치를 쓰지 않는다(검수 R3)'],
 ])
 const IC = 'app/(app)/inventory/InventoryClient.tsx'
 const ic = read(IC)
@@ -147,18 +166,26 @@ must(AC, ac, null, [
   [/void receiveWithPlan\(it, qty, storeId\)/, '수령 창 보관 위치가 수령에 안 실린다'],
   [/storedLocationId: freeForm\.store \|\| null/, '무상 입수가 보관 위치를 안 싣는다'],
   [/target: \{ kind: 'storage', id: st\.id \}/, '선택 알약 보관 위치 지정이 서버 보관 대상을 안 쓴다'],
-  [/<SectionHeader marker=\{<PinMarker \/>\}\s*name=\{g\.name \?/, '미배정 보관 위치 묶음 머리가 정본 SectionHeader + 위치 마커가 아니다'],
-  [/<span className="text-\[var\(--warm-muted\)\]">\{STORE_UNKNOWN_HEAD\}<\/span>/, "'보관 위치 미정' 머리 이름이 --warm-muted 가 아니다"],
+  [/<SectionHeader marker=\{g\.name \? <PinMarker \/> : undefined\}\s*name=\{g\.name \? <span className="break-keep">\{g\.name\}<\/span> : STORE_UNKNOWN_HEAD\}/, "보관 위치 묶음 머리가 정본 SectionHeader 가 아니거나 '보관 위치 미정' 머리에 마커·낮춘 색이 남았다(웹디자이너 패스)"],
   [/storeMeta=\{!!q\}/, '카드 메타의 보관 위치 토막이 묶음이 풀린 화면(검색)에서만 서야 한다'],
-  [/<span className="text-\[var\(--warm-mid\)\]">\{place\}<\/span>/, '풀린 화면의 보관 위치 토막이 --warm-mid 가 아니다'],
+  [/return place \? `\$\{place\} · \$\{rest\}` : rest/, '풀린 화면의 보관 위치 토막이 맨 앞 차례가 아니다'],
+  [/const storeOptionLabel = \(s: \{ pathName: string; isHub: boolean \}\) => `\$\{s\.pathName\}에 보관\$\{s\.isHub \? ' \(기본 창고\)' : ''\}`/, "옮기기 목록의 보관 선택지가 '{경로}에 보관'이 아니다(공용부 무리와 같은 이름이 겹친다)"],
+  [/\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}[\s\S]{0,2000}\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}|\{storeOptionLabel\(s\)\}[\s\S]*\{storeOptionLabel\(s\)\}/, '일괄 옮기기·옮기기 두 목록이 같은 보관 선택지 표기를 안 쓴다'],
+  [/<PillButton primary onClick=\{\(\) => setPillMode\('assign'\)\}>일괄 옮기기<\/PillButton>/, "선택 알약 주 버튼이 '일괄 옮기기'가 아니다"],
+  [/if \(parseStoreKey\(v\)\) \{ runBatchStore\(v\); return \}/, '일괄 옮기기 select 의 여분으로 보관 무리가 보관 대상으로 안 간다'],
+  [/const placeIn = \(it: AssetItem\) =>/, '문장 속 장소(경로 그대로) 정본이 없다'],
+  [/subtitle=\{`지금 \$\{fromIn\}에/, "옮기기 부제가 문장 속 장소가 아니라 라벨('…보관에')이다"],
   [/logPlaceLabel\(r\.fromKind, r\.fromLabel\)/, "배정 변경 이력이 보관 이력을 '{위치} 보관'으로 안 읽는다"],
-  [/undoCommon\(res\.undo\)/, '공용 자재 적용취소가 서버 스냅샷을 안 쓴다'],
+  [/undoCommon\(it\.ids, value, res\.restoreStored\)/, '공용 자재 적용취소가 반대 값 + 보관 위치 CAS(undoSetCommonAsset)가 아니다(검수 F1)'],
+  [/const res = await undoSetCommonAsset\(ids, value, restoreStored\)/, '공용 자재 적용취소 손잡이가 서버 undoSetCommonAsset 을 안 부른다(검수 F1)'],
   [/undoUnreceive\(uu\)/, '수령 대기로 토스트에 적용취소가 없다'],
   [/undoFree\(undo\)/, '무상 입수 토스트에 적용취소가 없다'],
 ])
 mustNot(AC, ac, null, [
   [/415|제기역/, '보관 위치를 하드코딩했다(멀티테넌트)'],
   [/rcvAsk/, '카드 안 인라인 수령 물음이 남았다(수령 창 하나로 모았다)'],
+  [/setPillMode\('store'\)/, "선택 알약에 '보관 위치' 버튼이 따로 섰다(360·412 에서 닫기·폐기가 밀린다, 웹디자이너 패스)"],
+  [/undoBatchAssignAssets\(undo\)\s*\n\s*if \(!res\.ok\) \{ pushToast\('error', res\.error\); return \}\s*\n\s*pushToast\('info', '되돌렸습니다'\)/, '공용 자재 적용취소가 원상태 스냅샷으로 덮는다'],
 ])
 
 console.log(`[비품 보관 위치 배선] 위반 ${violations.length}건`)
