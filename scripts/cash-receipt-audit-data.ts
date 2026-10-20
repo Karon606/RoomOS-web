@@ -9,6 +9,7 @@
 // 불러도 같은 재료가 나온다.
 import { Prisma, type PrismaClient } from '@prisma/client'
 import type { AuditLine, AuditRecord } from '../lib/cashReceiptAudit'
+import { isDueDayAdjust } from '../lib/dueDayAdjust'
 
 export type CashReceiptAuditData = { lines: AuditLine[]; records: AuditRecord[]; refundDeletedIds: Set<string> }
 
@@ -32,13 +33,14 @@ export async function loadCashReceiptAuditData(prisma: CashReceiptAuditDb): Prom
       inclDeposit: true, inclCleaning: true, memo: true,
     },
   })
-  const records = await prisma.paymentRecord.findMany({
+  // 납입일 변경 조정 행은 엔진(readCrKey)이 키의 몫에서 뺀다(신고 df82ce57). 점검도 같은 집합을 봐야 엔진과 갈리지 않는다.
+  const records = (await prisma.paymentRecord.findMany({
     where: { deletedAt: undefined },
     select: {
       id: true, leaseTermId: true, payDate: true, payMethod: true, actualAmount: true,
-      isDeposit: true, isBillingAdjust: true, cashReceiptIssuedAt: true, deletedAt: true,
+      isDeposit: true, isBillingAdjust: true, cashReceiptIssuedAt: true, deletedAt: true, memo: true,
     },
-  })
+  })).filter(r => !isDueDayAdjust(r.memo))
   // 이용료 환불이 만드는 정상 중간 상태(환불 대기)를 유령과 가르는 재료(2026-09-01, lib/cashReceipt receiptRowVerdict).
   const leases = await prisma.leaseTerm.findMany({
     where: { checkoutProrationUndo: { not: Prisma.DbNull } },

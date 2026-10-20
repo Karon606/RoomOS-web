@@ -12,7 +12,7 @@ import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, mon
 import {
   cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate,
   cashReceiptKey, cashReceiptLineView, planCashReceiptEdit, planCashReceiptEntry, planCashReceiptOn, planCashReceiptRemoval,
-  summarizeCashReceiptKey, CR_ZERO_ROW_REFUSED,
+  summarizeCashReceiptKey, CR_ZERO_ROW_REFUSED, EMPTY_CASH_RECEIPT_UNDO,
   type CashReceiptIncl, type CashReceiptLineView, type CashReceiptUndo,
 } from '@/lib/cashReceipt'
 import {
@@ -39,7 +39,10 @@ import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLoc
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 import { prepaidCarry } from '@/lib/prepaidCarry'
-import { dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
+import {
+  dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere, paymentEditGuard, paymentMemoGuard, planDueDayAdjustEdit,
+  DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind,
+} from '@/lib/dueDayAdjust'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -900,6 +903,7 @@ export async function savePayment(data: {
   cashReceiptIssuedDate?: string | null
 }): Promise<SavePaymentResult> {
   await requireEdit()
+  { const memoErr = paymentMemoGuard(data.memo); if (memoErr) throw new Error(memoErr) }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   // 스탬프는 루프 **밖에서 한 번** 정한다. 안에서 부르면 쪼개진 record 마다 밀리초가 갈려
   // '한 결제 = 한 발행'이라는 사실이 흐려진다(형제 묶음 판정도 createdAt 근사에 기댄다).
@@ -1256,6 +1260,7 @@ export async function saveDepositPayment(data: {
   // (그사이 남은 보증금이 바뀌었으면 미리보기와 다르다). 이것도 계산 비관여, 돌려주기만 한다.
 }): Promise<{ ok: true; createdIds: string[]; depositActual: number; excess: number } | { ok: false; error: string }> {
   await requireEdit()
+  { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   // 보증금 몫과 초과분(이용료) 몫은 한 결제다 — 스탬프도 하나를 나눠 쓴다.
   const crStamp = resolveCashReceiptIssuedAt({
@@ -1484,6 +1489,7 @@ export async function saveCleaningFeePayment(data: {
 }): Promise<{ ok: true; createdIds: string[]; extraIncomeId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
     const propertyId = await getPropertyId()
     const feeActual = Math.max(0, Math.min(data.totalPaid, data.cleaningFee))
     if (feeActual <= 0) return { ok: false, error: '청소비 금액이 올바르지 않습니다.' }
@@ -1549,6 +1555,7 @@ export async function saveReservationDeposit(data: {
 }): Promise<{ ok: true; split?: { deposit: number; rent: number }; createdIds: string[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
     const propertyId = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: data.leaseTermId, propertyId },
@@ -1758,6 +1765,7 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   amount?: number
 }) {
   await requireEdit()
+  { const memoErr = paymentMemoGuard(opts?.memo); if (memoErr) throw new Error(memoErr) }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
@@ -1817,6 +1825,7 @@ export async function saveDepositPaymentForLease(input: {
   memo?:       string
 }): Promise<{ ok: true; createdIds: string[] } | { ok: false; error: string }> {
   await requireEdit()
+  { const memoErr = paymentMemoGuard(input.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: input.leaseTermId, propertyId },
@@ -1893,6 +1902,13 @@ export async function updatePayment(
     // 이용료 환불 확정이 만든 record 는 잠근다 — 여기서 고치면 환불 스냅샷과 어긋나 적용취소가 틀어진다.
     // 고치는 자리는 수납 정보의 이용료 정산 카드(적용취소 뒤 재확정) 하나다(lib/rentRefundRecord).
     if (isRentRefundRecord(record.memo)) return { ok: false, error: RENT_REFUND_RECORD_LOCKED }
+    // 납입일 변경 조정 행은 전용 문(updateDueDayAdjust)으로만 고친다. 일반 행은 음수와 기계 키 메모를 못 갖는다
+    // (신고 df82ce57, 2026-10-20). 이 문으로 조정 행 −128,333 을 고치면 금액 칸이 부호를 지워 +130,000 이 됐다(513호).
+    // 부호 뒤집기만 막으면 메모 앞머리를 지우는 길이 남아 조정 행을 통째로 보낸다. 판정은 lib/dueDayAdjust 정본.
+    {
+      const guard = paymentEditGuard({ currentMemo: record.memo, nextMemo: data.memo, nextAmount: data.actualAmount })
+      if (guard) return { ok: false, error: guard }
+    }
     // 0원 행을 켜는 저장은 거부한다(독립 검수 R-6, 2026-10-14). 원터치 토글은 이미 거부하는데 수정 폼이 뒷문이었다.
     // 켜면 이 행에는 발행할 돈이 없고 그 키의 다른 것만 움직였다. 살아 있는 줄이면 칸 값(999,000)으로 덮고 '이미 들어 있음'이라
     // 말했고(Z1), 줄이 없으면 형제의 미발행 돈으로 새 발행을 세웠다(Z2). 같은 문장으로 거부한다(가이드 §22 ②).
@@ -2104,8 +2120,11 @@ export async function undoPaymentEdit(
     // 화면을 거쳐 돌아온 값이다. 모양을 다시 본다. 틀린 값으로는 아무것도 쓰지 않는다.
     // 수단·메모는 문자열이거나 null 인지만 본다(수단 이름을 글자로 비교하지 않는다).
     const strOrNull = (v: unknown) => v === null || typeof v === 'string'
+    // 음수는 납입일 변경 조정 행의 토큰(전·후 메모가 둘 다 조정 메모)에서만 받는다(신고 df82ce57, updateDueDayAdjust 가 낸 토큰).
+    // 일반 행은 종전처럼 0원 이상이다.
+    const adjustToken = !!undo && isDueDayAdjust(undo.before?.memo) && isDueDayAdjust(undo.after?.memo)
     const validFields = (f: PaymentEditUndo['before'] | undefined) => !!f
-      && Number.isInteger(f.actualAmount) && f.actualAmount >= 0
+      && Number.isInteger(f.actualAmount) && (f.actualAmount >= 0 || adjustToken)
       && /^\d{4}-\d{2}-\d{2}$/.test(f.payYmd) && /^\d{4}-\d{2}$/.test(f.targetMonth)
       && Number.isInteger(f.seqNo) && f.seqNo >= 1
       && strOrNull(f.payMethod) && strOrNull(f.memo)
@@ -2120,6 +2139,10 @@ export async function undoPaymentEdit(
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     // 수정 문과 같은 잠금·가드. 적용취소가 수정 문이 막는 값을 뒷문으로 쓰지 못하게.
     if (isRentRefundRecord(record.memo)) return { ok: false, error: RENT_REFUND_RECORD_LOCKED }
+    // 조정 행 여부는 적용취소로 못 바꾼다(기계 키를 붙이거나 떼는 뒷문 차단). 조정 행 토큰은 조정 행에만 쓴다.
+    if (isDueDayAdjust(record.memo) !== isDueDayAdjust(undo.before.memo) || isDueDayAdjust(record.memo) !== adjustToken) {
+      return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
+    }
     const leaseRent = await prisma.leaseTerm.findFirst({ where: { id: record.leaseTermId, propertyId }, select: { rentAmount: true } })
     if (leaseRent && !record.isDeposit && undo.before.actualAmount > leaseRent.rentAmount) {
       return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
@@ -2151,6 +2174,56 @@ export async function undoPaymentEdit(
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     if (err instanceof CrUndoConflict) return { ok: false, error: err.message }
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
+// 납입일 변경 조정 행 전용 수정 문(신고 df82ce57, 운영자 승인 2026-10-20 A안).
+//
+// 조정 행은 부호가 뜻이다(음수 = 추가로 받을 금액, 양수 = 돌려줄 금액). 화면은 방향 세그먼트와 양수 금액 칸만
+// 보내고, 부호는 여기서 붙인다. 일반 수정 문(updatePayment)은 조정 행을 거절한다(lib/dueDayAdjust paymentEditGuard).
+// 메모는 앞부분(기계 키·변경 전후 납부일·규칙값)을 지금 메모에서 가져와 다시 만들고, 운영자는 뒤 설명만 바꾼다.
+// 금액이 규칙값과 다르면 메모에 '협의 N원' 이 함께 남는다(운영자 요구 2026-10-20 "원단위 절삭이 필요할 수 있으므로").
+// 수단은 비운다(조정 행은 받은 돈이 아니다. '' 가 화면 select 에서 계좌이체로 보이던 문제). 납부일·귀속월은 그대로다.
+// 적용취소는 수납 수정과 같은 토큰(PaymentEditUndo, 서버 서명)이고 undoPaymentEdit 이 되돌린다. 발행 줄은 안 건드리므로
+// 줄 스냅샷은 빈 것이다.
+export async function updateDueDayAdjust(
+  paymentId: string,
+  input: { direction: DueDayAdjustKind; amount: number; note: string },
+): Promise<{ ok: true; actualAmount: number; undo: PaymentEditUndo | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId },
+      select: { leaseTermId: true, targetMonth: true, isDeposit: true, isBillingAdjust: true, payDate: true, payMethod: true, memo: true, actualAmount: true, seqNo: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    if (!isDueDayAdjust(record.memo)) return { ok: false, error: DUE_DAY_ADJUST_NOT_ADJUST }
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: record.leaseTermId, propertyId }, select: { rentAmount: true } })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    const plan = planDueDayAdjustEdit(record, input, lease.rentAmount)
+    if (!plan.ok) return plan
+    // 읽은 값 그대로일 때만 쓴다. 그 사이 다른 화면이 고쳤으면 덮지 않는다.
+    const n = await prisma.paymentRecord.updateMany({
+      where: { id: paymentId, propertyId, deletedAt: null, memo: record.memo, actualAmount: record.actualAmount },
+      data: { actualAmount: plan.actualAmount, memo: plan.memo, payMethod: null },
+    })
+    if (n.count !== 1) return { ok: false, error: '그 사이 이 조정 기록이 바뀌었습니다. 새로고침 후 다시 확인해 주세요.' }
+    await recalculatePayments(record.leaseTermId, record.targetMonth,
+      await serverBillForMonth(record.leaseTermId, record.targetMonth, lease.rentAmount))
+    const before = {
+      actualAmount: record.actualAmount, payYmd: kstYmdStr(record.payDate), payMethod: record.payMethod, memo: record.memo,
+      targetMonth: record.targetMonth, seqNo: record.seqNo,
+    }
+    // 운영에서 서명 키가 없으면 토큰을 내지 않는다(null). 화면은 적용취소를 숨긴다(독립 검수 R-7과 같은 규칙).
+    const undo = signPaymentEditUndo(propertyId, {
+      paymentId, before, after: { ...before, actualAmount: plan.actualAmount, memo: plan.memo, payMethod: null }, cr: EMPTY_CASH_RECEIPT_UNDO,
+    })
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true, actualAmount: plan.actualAmount, undo }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
@@ -2204,6 +2277,8 @@ export async function setCashReceiptIssued(
       select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, memo: true, actualAmount: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    // 납입일 변경 조정 행은 들어온 돈이 아니다. 부호가 뒤집힌 조정 행(+130,000, 513호)이 켜기를 통과하던 길을 막는다.
+    if (issued && isDueDayAdjust(record.memo)) return { ok: false, error: DUE_DAY_ADJUST_CR_REFUSED }
     // 0원 행(원본 월 흔적·음수 조정)은 발행할 돈이 아니다. 켜면 같은 키의 앞 발행만 건드리고 이 행에는
     // 아무것도 안 찍혀, 성공처럼 보이는데 아무 일도 안 일어난다(검수 W3·R11). 정직하게 거부한다.
     if (issued && record.actualAmount <= 0) return { ok: false, error: CR_ZERO_ROW_REFUSED }
@@ -2340,6 +2415,8 @@ export async function previewCashReceiptOn(paymentId: string): Promise<
       select: { leaseTermId: true, payDate: true, payMethod: true, memo: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    // 실제 켜기(setCashReceiptIssued)와 같은 거절. 미리보기만 통과하면 눌러야 거절되는 버튼이 된다.
+    if (isDueDayAdjust(record.memo)) return { ok: false, error: DUE_DAY_ADJUST_CR_REFUSED }
     const s = await readCrKey(prisma, { propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod })
     const plan = planCashReceiptOn(lineStateOf(s.line), s.parts, new Date(), { reissue: isRentRefundRecord(record.memo) })
     return {
@@ -2498,6 +2575,8 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
         propertyId,
         isPrevOwner: false,
         payDate: { gte: cutoff && cutoff > from ? cutoff : from, lt: to },   // 컷오프 이전 = 양도인 몫(적대검증 필수 2)
+        // 납입일 변경 조정 행은 받은 돈이 아니다. 현금영수증 쪽과 같은 집합으로 둔다(신고 df82ce57).
+        ...notDueDayAdjustWhere(),
       },
       select: { actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true },
     }),
@@ -2722,7 +2801,8 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
 
   const [records, incomes, lines] = await Promise.all([
     prisma.paymentRecord.findMany({
-      where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: payWindow },
+      // 납입일 변경 조정 행은 받은 돈이 아니라 후보에 안 든다(신고 df82ce57, 513호 +130,000·수단 '' 가 유령 후보였다).
+      where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: payWindow, ...notDueDayAdjustWhere() },
       select: {
         leaseTermId: true, tenantId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true,
         tenant: { select: { name: true } },
@@ -2817,7 +2897,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const keyRows = issuedLines.length > 0
     ? await prisma.paymentRecord.findMany({
         where: {
-          propertyId, isBillingAdjust: false, deletedAt: null,
+          propertyId, isBillingAdjust: false, deletedAt: null, ...notDueDayAdjustWhere(),
           leaseTermId: { in: [...new Set(issuedLines.map(l => l.leaseTermId))] },
           payDate: { in: [...new Map(issuedLines.map(l => [l.payDate.getTime(), l.payDate])).values()] },
         },

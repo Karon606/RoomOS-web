@@ -222,7 +222,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
   if (lease) {
     const recs = await prisma.paymentRecord.findMany({
       where: { leaseTermId: lease.id, targetMonth: viewMonth, isDeposit: false, isPrevOwner: false },
-      select: { actualAmount: true, expectedAmount: true, payDate: true, payMethod: true, isBillingAdjust: true },
+      select: { actualAmount: true, expectedAmount: true, payDate: true, payMethod: true, isBillingAdjust: true, memo: true },
       orderBy: { payDate: 'asc' },
     })
     for (const r of recs) {

@@ -6,7 +6,7 @@
 import {
   DUE_DAY_ADJUST_PREFIX, isDueDayAdjust, dueDayBeforeChange, parseDueDayAdjustMemo, buildDueDayAdjustMemo,
   dueDayAdjustLabel, dueDayAdjustKindOf, planDueDayAdjustEdit, planDueDayAdjustCreate, paymentEditGuard,
-  dueDayAdjustSignMismatch, dueDayAdjustWhere, notDueDayAdjustWhere,
+  dueDayAdjustSignMismatch, dueDayAdjustWhere, notDueDayAdjustWhere, paymentMemoGuard,
   DUE_DAY_ADJUST_NOT_ADJUST, DUE_DAY_ADJUST_UNREADABLE, DUE_DAY_ADJUST_AMOUNT_INVALID, DUE_DAY_ADJUST_NOTE_INVALID,
   DUE_DAY_ADJUST_EDIT_ELSEWHERE, PAYMENT_PREFIX_RESERVED, PAYMENT_NEGATIVE_REFUSED, dueDayAdjustOverCap,
 } from '../lib/dueDayAdjust'
@@ -110,6 +110,12 @@ eq('일반 행에 기계 키 메모 거절(조정 행 위조 차단)', paymentEd
 eq('일반 행 메모 중간의 기계 키도 거절(앞머리 판정과 contains 가 같게)', paymentEditGuard({ currentMemo: null, nextMemo: '메모 [납입일변경]', nextAmount: 1 }), PAYMENT_PREFIX_RESERVED)
 eq('일반 행 0원은 통과', paymentEditGuard({ currentMemo: null, nextMemo: undefined, nextAmount: 0 }), null)
 eq('일반 행 양수 통과', paymentEditGuard({ currentMemo: '보증금', nextMemo: '보증금', nextAmount: 50000 }), null)
+
+// ── 수납 생성 문 메모 검사 ──────────────────────────────────────────
+eq('수납 등록 메모 앞머리 기계 키 거절', paymentMemoGuard('[납입일변경] 9일→20 변경, 일할 1원 (추가납부)'), PAYMENT_PREFIX_RESERVED)
+eq('수납 등록 메모 중간 기계 키도 거절', paymentMemoGuard('현금 [납입일변경]'), PAYMENT_PREFIX_RESERVED)
+eq('일반 메모 통과', paymentMemoGuard('2026년 10월분 채우고 남은 금액'), null)
+eq('빈 메모 통과', paymentMemoGuard(undefined), null)
 
 // ── 감사 축: 메모 방향과 부호 ────────────────────────────────────────
 eq('513 지금 상태(+130,000 추가납부)는 불일치', dueDayAdjustSignMismatch({ memo: M513, actualAmount: 130000 }), '메모는 추가납부인데 금액이 +130,000원입니다')

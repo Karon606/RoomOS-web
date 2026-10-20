@@ -18,6 +18,7 @@ import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { derivedServerKey } from '@/lib/pii'
 import { isLiveEnv } from '@/lib/env'
+import { notDueDayAdjustWhere } from '@/lib/dueDayAdjust'
 import {
   buildCashReceiptUndo, canonicalCashReceiptUndo, cashReceiptKey, cashReceiptLineView, cashReceiptUndoConflict, parseCashReceiptUndo,
   planCashReceiptRemoval, summarizeCashReceiptKey,
@@ -115,8 +116,10 @@ export async function readCrKey(db: CrDb, ref: CrKeyRef): Promise<CrKeyState> {
   const lines = await db.cashReceipt.findMany({
     where: { ...where, payDate: ref.payDate }, orderBy: { createdAt: 'asc' }, select: LINE_SELECT,
   })
+  // 납입일 변경 조정 행은 들어온 돈이 아니라 키의 몫에 안 든다(신고 df82ce57). 빼지 않으면 부호가 뒤집힌 조정 행(+130,000)이
+  // 발행 금액에 더해지고, '키 단위 도장'이 조정 행에도 찍힌다.
   const records = await db.paymentRecord.findMany({
-    where: { ...where, payDate: ref.payDate, isBillingAdjust: false, deletedAt: null },
+    where: { ...where, payDate: ref.payDate, isBillingAdjust: false, deletedAt: null, ...notDueDayAdjustWhere() },
     select: { id: true, isDeposit: true, actualAmount: true, cashReceiptIssuedAt: true },
   })
   // 청소비 몫은 ExtraIncome 에 산다(분해 수납). 한쪽만 세면 그 키의 몫이 작게 뜬다.
@@ -552,7 +555,8 @@ export async function crKeyInfoForLease(propertyId: string, leaseTermId: string,
   if (days.length === 0) return out
   const [records, lines] = await Promise.all([
     prisma.paymentRecord.findMany({
-      where: { propertyId, leaseTermId, payDate: { in: days }, isBillingAdjust: false, deletedAt: null },
+      // readCrKey 와 같은 집합(조정 행 제외). 행 캡션의 받은 몫과 실제 켜기가 갈리지 않게.
+      where: { propertyId, leaseTermId, payDate: { in: days }, isBillingAdjust: false, deletedAt: null, ...notDueDayAdjustWhere() },
       select: { leaseTermId: true, payDate: true, payMethod: true, isDeposit: true, actualAmount: true, cashReceiptIssuedAt: true },
     }),
     prisma.cashReceipt.findMany({

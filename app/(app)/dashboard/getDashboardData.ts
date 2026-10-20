@@ -10,7 +10,7 @@ import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbR
 import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
-import { dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
+import { dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere } from '@/lib/dueDayAdjust'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -426,9 +426,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
           isDeposit: false,
           isPrevOwner: false,
           isBillingAdjust: false,
-          // 이 NOT 은 메모가 null 인 수납도 함께 뺀다(SQL NOT 의 null 규칙, lib/dueDayAdjust notDueDayAdjustWhere 주석).
-          // 2026-10-20 조정 행 판정을 모을 때 찾은 것이라 뜻을 바꾸지 않고 그대로 둔다(보고만, 별건).
-          NOT: dueDayAdjustWhere(),
+          // 조정 행만 뺀다. 종전 `NOT: { memo: { contains } }` 는 메모가 null 인 수납까지 뺐다(SQL NOT 의 null 규칙,
+          // 2026-10-20 실측 367행 중 45행이 피드에서 빠졌다. 513호 10월 350,000원도 그중 하나). 정본 조각이 null 을 살린다.
+          ...notDueDayAdjustWhere(),
           OR: [
             { payDate: monthWindow },
             { targetMonth },
@@ -1906,7 +1906,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     const crMuteProp = property
     const [crPays, crIncomes, crLines] = await Promise.all([
       prisma.paymentRecord.findMany({
-        where: { propertyId, isPrevOwner: false, isBillingAdjust: false, ...(lookFrom ? { payDate: { gte: lookFrom } } : {}), actualAmount: { gt: 0 } },
+        // 납입일 변경 조정 행은 받은 돈이 아니다(신고 df82ce57). 양수 조정 행(돌려줄 금액, 수단 null)과 부호가 뒤집힌 행(513호
+        // +130,000)이 홈 미발행 알림·의무 기준액에 잡히지 않게 정본 조각으로 뺀다(현금영수증 탭 후보·발행 키와 같은 집합).
+        where: { propertyId, isPrevOwner: false, isBillingAdjust: false, ...(lookFrom ? { payDate: { gte: lookFrom } } : {}), actualAmount: { gt: 0 }, ...notDueDayAdjustWhere() },
         // isDeposit 을 함께 읽는다 — 이것이 없으면 보증금 몫을 가를 수 없어, 받을 때 발행
         // 대상이 아닌 돈까지 의무 기준액 판정에 들어간다(운영자 확정 2026-09-21).
         select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true,

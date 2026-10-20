@@ -166,12 +166,21 @@ export function planDueDayAdjustCreate(input: {
 }
 
 /**
+ * 수납 생성·수정 문이 받는 메모 검사. 기계 키 '[납입일변경]' 은 납입일 변경만 쓴다. 일반 수납 메모에 들어가면 그 행이 조정 행으로
+ * 읽혀 실입금·현금영수증에서 빠지고 감사가 방향을 판정한다(독립 검수 2026-10-20). 앞머리만이 아니라 어디에 있든 막는다.
+ */
+export function paymentMemoGuard(memo: string | null | undefined): string | null {
+  return memo && memo.includes(DUE_DAY_ADJUST_PREFIX) ? PAYMENT_PREFIX_RESERVED : null
+}
+
+/**
  * 일반 수납 수정 문(updatePayment)의 거절 판정. 조정 행은 전용 문으로 보내고, 일반 행에 음수·기계 키를 못 넣게 한다.
  * 조정 행을 여기서 통째로 막는 이유. 부호만 막으면 메모 앞머리를 지우는 길(기계 키 삭제)이 남는다.
  */
 export function paymentEditGuard(input: { currentMemo: string | null; nextMemo: string | null | undefined; nextAmount: number }): string | null {
   if (isDueDayAdjust(input.currentMemo)) return DUE_DAY_ADJUST_EDIT_ELSEWHERE
-  if (input.nextMemo && input.nextMemo.includes(DUE_DAY_ADJUST_PREFIX)) return PAYMENT_PREFIX_RESERVED
+  const memoErr = paymentMemoGuard(input.nextMemo)
+  if (memoErr) return memoErr
   if (input.nextAmount < 0) return PAYMENT_NEGATIVE_REFUSED
   return null
 }
