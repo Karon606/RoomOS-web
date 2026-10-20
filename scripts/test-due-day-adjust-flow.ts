@@ -121,10 +121,9 @@ async function main() {
   eq('S2 일반 행 그대로', (await row(PAID))?.actualAmount, 350000)
 
   // ── S2b 수납 생성 문도 기계 키 메모를 거절한다(일반 수납이 조정 행이 되는 길) ─────────────
-  let regErr = ''
-  try { await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-10', expectedAmount: 350000, actualAmount: 1000, payDate: '2026-10-21', payMethod: '현금', memo: '[납입일변경] 1일→2 변경, 일할 1원 (과입금)' }) }
-  catch (e) { regErr = (e as Error).message }
-  eq('S2b 수납 등록이 기계 키 메모를 거절', regErr, adj.PAYMENT_PREFIX_RESERVED)
+  // 던지지 않고 돌려준다(운영 빌드는 던진 문구를 가린다). 형제 문 넷과 같은 모양이다.
+  eq('S2b 수납 등록이 기계 키 메모를 거절', await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-10', expectedAmount: 350000, actualAmount: 1000, payDate: '2026-10-21', payMethod: '현금', memo: '[납입일변경] 1일→2 변경, 일할 1원 (과입금)' }), { ok: false, error: adj.PAYMENT_PREFIX_RESERVED })
+  eq('S2b 보증금 받음 기록도 돌려준다', await rooms.recordDepositReceived(L.id, { amount: 50000, payDate: '2026-10-21', memo: '[납입일변경]' }), { ok: false, error: adj.PAYMENT_PREFIX_RESERVED })
   eq('S2b 보증금 수납도 거절', await rooms.saveDepositPayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: '2026-10', depositAmount: 50000, rentAmount: 350000, totalPaid: 50000, payDate: '2026-10-21', payMethod: '현금', memo: '보증금 [납입일변경]' }), { ok: false, error: adj.PAYMENT_PREFIX_RESERVED })
   eq('S2b 보증금 계약 단위 수납도 거절', await rooms.saveDepositPaymentForLease({ leaseTermId: L.id, amount: 50000, payDate: '2026-10-21', payMethod: '현금', memo: '[납입일변경]' } as Parameters<typeof rooms.saveDepositPaymentForLease>[0]), { ok: false, error: adj.PAYMENT_PREFIX_RESERVED })
   eq('S2b 거절 뒤 10월 수납 합 그대로', await monthPaid(L.id, '2026-10'), 221667)
@@ -276,7 +275,7 @@ async function main() {
     const opts = await rooms.getTargetMonthOptions(L5.id, '2026-10')
     eq('S12 귀속월 선택지 10월 청구 350,000 · 받은 돈 −130,000', opts.filter(o => o.month === '2026-10').map(o => [o.expectedAmount, o.paidAmount, o.status]), [[350000, -130000, 'unpaid']])
     const sp = await rooms.savePayment({ leaseTermId: L5.id, tenantId: L5.tenantId, targetMonth: '2026-10', expectedAmount: 350000, actualAmount: 480000, payDate: '2026-10-21', payMethod: '계좌이체', forcedTargetMonth: '2026-10' })
-    eq('S12 재등록 480,000 은 10월에만 충당', sp.allocations, [{ targetMonth: '2026-10', amount: 480000 }])
+    eq('S12 재등록 480,000 은 10월에만 충당', sp.ok ? sp.allocations : sp.error, [{ targetMonth: '2026-10', amount: 480000 }])
     const recs = await prisma.paymentRecord.findMany({ where: { leaseTermId: L5.id }, select: { targetMonth: true, expectedAmount: true, actualAmount: true, isDeposit: true, isPrevOwner: true, isBillingAdjust: true } })
     eq('S12 재등록 행의 락 350,000(478,333 이 아니다)', recs.filter(r => r.targetMonth === '2026-10' && r.actualAmount === 480000).map(r => r.expectedAmount), [350000])
     eq('S12 미납 0(10월 350,000 = 480,000 − 130,000, 11월 선납 그대로)', unpaidForLease(recs), 0)

@@ -85,7 +85,7 @@ import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
-import { planDueDayAdjustCreate, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
+import { planDueDayAdjustCreate, dueDayAdjustWhere, PAYMENT_PREFIX_RESERVED } from '@/lib/dueDayAdjust'
 import { recalculatePayments, serverBillForMonth } from '@/app/(app)/rooms/paymentEngine'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 
@@ -812,14 +812,17 @@ async function afterLeaseCreated(
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
   if (f.depositReceived && f.depositAmount > 0) {
+    let dep: Awaited<ReturnType<typeof recordDepositReceived>> | null = null
     try {
-      await recordDepositReceived(ctx.leaseId, {
+      dep = await recordDepositReceived(ctx.leaseId, {
         ...(f.depositReceivedAmount != null && f.depositReceivedAmount > 0 ? { amount: f.depositReceivedAmount } : {}),
         ...(f.depositReceivedDate ? { payDate: f.depositReceivedDate } : {}),
         ...(f.depositReceivedMethod ? { payMethod: f.depositReceivedMethod } : {}),
       })
     }
     catch { /* 이미 기록됨 등은 무시 */ }
+    // 이미 기록됨 같은 거절은 종전처럼 넘기되, 메모 기계 키 거절만은 호출자에게 올린다(조정 행으로 읽힐 메모를 조용히 버리지 않게).
+    if (dep && !dep.ok && dep.error === PAYMENT_PREFIX_RESERVED) throw new Error(dep.error)
   }
 }
 
@@ -1721,14 +1724,17 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
   if (depositReceived && depositAmount > 0) {
+    let dep: Awaited<ReturnType<typeof recordDepositReceived>> | null = null
     try {
-      await recordDepositReceived(leaseTermId, {
+      dep = await recordDepositReceived(leaseTermId, {
         ...(depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : {}),
         ...(depositReceivedDate ? { payDate: depositReceivedDate } : {}),
         ...(depositReceivedMethod ? { payMethod: depositReceivedMethod } : {}),
       })
     }
     catch { /* 이미 기록됨 등은 무시 */ }
+    // 이미 기록됨 같은 거절은 종전처럼 넘기되, 메모 기계 키 거절만은 호출자에게 올린다(조정 행으로 읽힐 메모를 조용히 버리지 않게).
+    if (dep && !dep.ok && dep.error === PAYMENT_PREFIX_RESERVED) throw new Error(dep.error)
   }
 
   // 단기에서 월 단위로 내려오면서 이용료가 바뀐 경우 — 락인된 청구액을 되쓴다(신고 2c6de978).

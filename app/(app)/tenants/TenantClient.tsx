@@ -1619,6 +1619,8 @@ export default function TenantClient({
             cashReceiptIssued,
             cashReceiptIssuedDate,
           })
+          // 거절(기계 키 메모 등)은 문구로 돌아온다. 형제 보증금 갈래와 같은 문법이다.
+          if (!result.ok) { pushToast('error', result.error); return }
           createdIds = result.createdIds
           const otherMonths = result.allocations.length > 0
             ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)

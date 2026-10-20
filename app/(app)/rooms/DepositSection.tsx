@@ -71,6 +71,8 @@ export function DepositSection({ summary, ledger, totalBalance }: {
         const res = await recordDepositReceived(leaseTermId, {
           amount: recvAmount, payDate: recvDate || kstYmdStr(), payMethod: recvMethod,
         })
+        // 거절(이미 기록됨 등)은 문구로 돌아온다. 운영 빌드는 던진 문구를 가린다.
+        if (!res.ok) { pushToast('error', res.error); return }
         let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
         // 대상·금액·수납일을 말한다(정본 money-display-feedback §2-a). 목록 화면이라 누구인지도 말해야 한다.
         pushToast('success', `${name} 보증금 ${fmtWon(recvAmount)} 받음으로 기록됨 · 입금일 ${fmtMD(recvDate)}`, {

@@ -413,6 +413,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 cashReceiptIssued,
                 cashReceiptIssuedDate,
               })
+              if (!rentRes.ok) {
+                pushToast('error', '이용료 기록에 실패했습니다', { detail: savedDetail(rentRes.error) })
+                onSaved?.(); return
+              }
               recordIds.push(...rentRes.createdIds)
               rentAllocs = rentRes.allocations
             } catch (rentErr) {
@@ -528,7 +532,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           const rentMemo = useIncome
             ? `${memo ? memo + ' · ' : ''}초과 ${fmtWon(excess)} 부가수익 처리`
             : memo
-          const result: SavePaymentResult = await savePayment({
+          const result = await savePayment({
             leaseTermId:    room.leaseTermId,
             tenantId:       room.tenantId!,
             targetMonth,
@@ -541,6 +545,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             cashReceiptIssued,
             cashReceiptIssuedDate,
           })
+          // 거절(기계 키 메모 등)은 문구로 돌아온다. 형제 보증금 갈래와 같은 문법이다.
+          if (!result.ok) { pushToast('error', result.error); return }
           entryIds = result.createdIds
           if (useIncome) {
             const fd = new FormData()

@@ -889,6 +889,8 @@ export type SavePaymentResult = {
   // 생기므로(아래 isOriginalMonth && remaining === 0), allocations 기준으로 지우면 고아가 남는다.
   createdIds: string[]
 }
+// 거절은 던지지 않고 돌려준다. 운영 빌드는 서버 액션이 던진 문구를 가려 화면이 사유를 못 보여 준다(형제 수납 문 넷과 같은 문법).
+export type SavePaymentOutcome = ({ ok: true } & SavePaymentResult) | { ok: false; error: string }
 
 export async function savePayment(data: {
   leaseTermId: string
@@ -905,9 +907,9 @@ export async function savePayment(data: {
   cashReceiptIssued?: boolean
   // 발행일 'YYYY-MM-DD'(KST). 안 넘기면 오늘. 값 결정은 lib/cashReceipt 정본이 한다.
   cashReceiptIssuedDate?: string | null
-}): Promise<SavePaymentResult> {
+}): Promise<SavePaymentOutcome> {
   await requireEdit()
-  { const memoErr = paymentMemoGuard(data.memo); if (memoErr) throw new Error(memoErr) }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
+  { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   // 스탬프는 루프 **밖에서 한 번** 정한다. 안에서 부르면 쪼개진 record 마다 밀리초가 갈려
   // '한 결제 = 한 발행'이라는 사실이 흐려진다(형제 묶음 판정도 createdAt 근사에 기댄다).
@@ -1032,7 +1034,7 @@ export async function savePayment(data: {
   }
 
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-  return { inputMonth: data.targetMonth, startMonth: startTm, allocations, createdIds }
+  return { ok: true, inputMonth: data.targetMonth, startMonth: startTm, allocations, createdIds }
 }
 
 // 수납 등록 시 사용자가 명시 선택할 수 있는 귀속월 후보 — 전체 미수월 + viewMonth ± 향후 3개월
@@ -1647,6 +1649,7 @@ export async function saveReservationDeposit(data: {
             cashReceiptIssued: data.cashReceiptIssued,
             cashReceiptIssuedDate: data.cashReceiptIssuedDate,
           })
+          if (!paid.ok) throw new Error(paid.error)
           prepaidIds = paid.createdIds
           createdIds.push(...paid.createdIds)
         }
@@ -1681,6 +1684,7 @@ export async function saveReservationDeposit(data: {
           cashReceiptIssued: data.cashReceiptIssued,
           cashReceiptIssuedDate: data.cashReceiptIssuedDate,
         })
+        if (!paid.ok) throw new Error(paid.error)
         createdIds.push(...paid.createdIds)
       }
     }
@@ -1768,15 +1772,16 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   payMethod?: string
   memo?: string
   amount?: number
-}) {
+}): Promise<{ ok: true; id: string; amount: number } | { ok: false; error: string }> {
+  // 거절은 던지지 않고 돌려준다. 운영 빌드는 서버 액션이 던진 문구를 가려 화면이 사유를 못 보여 준다.
   await requireEdit()
-  { const memoErr = paymentMemoGuard(opts?.memo); if (memoErr) throw new Error(memoErr) }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
+  { const memoErr = paymentMemoGuard(opts?.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: { id: true, tenantId: true, depositAmount: true, moveInDate: true },
   })
-  if (!lease) throw new Error('계약을 찾을 수 없습니다.')
+  if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
 
   const existing = await prisma.paymentRecord.aggregate({
     where: { leaseTermId, isDeposit: true },
@@ -1784,7 +1789,7 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   })
   const already = existing._sum.actualAmount ?? 0
   const remaining = opts?.amount ?? Math.max(0, lease.depositAmount - already)
-  if (remaining <= 0) throw new Error('이미 보증금 수납이 기록되어 있습니다.')
+  if (remaining <= 0) return { ok: false, error: '이미 보증금 수납이 기록되어 있습니다.' }
 
   const kst = kstYmd()
   const targetMonth = lease.moveInDate
@@ -1807,7 +1812,7 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   })
   revalidatePath('/finance'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
   // 만든 record 의 id — 토스트의 적용취소가 되돌릴 대상(§16). 금액 계산에는 관여하지 않는다.
-  return { id: created.id, amount: remaining }
+  return { ok: true, id: created.id, amount: remaining }
 }
 
 // 계약 단위 보증금 실입금 기록 — 보증금 패널(DepositStatusPanel)의 '수납 기록' 인라인 폼 진입로.
@@ -3239,7 +3244,7 @@ export async function batchRecordRentPayment(input: {
       })
       const beforeIds = new Set(before.map(b => b.id))
 
-      await savePayment({
+      const saved = await savePayment({
         leaseTermId: r.leaseTermId!,
         tenantId: r.tenantId!,
         targetMonth: input.targetMonth,
@@ -3250,6 +3255,7 @@ export async function batchRecordRentPayment(input: {
         forcedTargetMonth: input.targetMonth,
         memo: '일괄 수납',
       })
+      if (!saved.ok) throw new Error(saved.error)
 
       const after = await prisma.paymentRecord.findMany({
         where: { leaseTermId: r.leaseTermId!, targetMonth: input.targetMonth },

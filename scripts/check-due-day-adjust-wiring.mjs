@@ -90,6 +90,9 @@ const ten = read('app/(app)/tenants/actions.ts')
 need('납입일 변경이 협의 금액을 정본으로 넘긴다', /planDueDayAdjustCreate\(\{[^}]*agreedAmount: agreedAmount \?\? null/.test(body(ten, 'export async function changeDueDay(')))
 const w = strip(read('components/entity-modal/widgets/DueDayPermanentChangeWidget.tsx'))
 need('납입일 변경 위젯에 협의 금액 칸(MoneyInput)과 전달', /<MoneyInput /.test(w) && /changeDueDay\(leaseTermId, input\.trim\(\), targetMonth, adjustAmount, agreed > 0 \? agreed : null\)/.test(w))
+for (const fn of ['savePayment', 'recordDepositReceived']) {
+  need(`${fn} 가 메모 거절을 던지지 않고 돌려준다(운영 빌드는 던진 문구를 가린다)`, /if \(memoErr\) return \{ ok: false, error: memoErr \}/.test(body(rooms, `export async function ${fn}(`)))
+}
 
 // ── ⑤ 입주달 이중 셈 봉합 ──────────────────────────────────────────
 const billing = strip(read('lib/billing.ts'))
@@ -189,6 +192,9 @@ for (const f of readdirSync('scripts')) {
 // ⑤-4 종전 이중 셈으로 남는 모양을 감사가 알린다(규칙 10).
 const audit = strip(read('lib/integrityAudit.ts'))
 need('감사 규칙 10 이 firstMonthAdjustExposure 로 판정한다', /firstMonthAdjustExposure\(l, \{ moveInMonthLocked:/.test(audit) && /due-day-adjust-first-month/.test(audit))
+// ⑤-5 보증금 받음 기록을 무시하는 두 자리도 기계 키 거절만은 올린다.
+const tenStrip = strip(ten)
+need('입주자 저장 두 자리가 보증금 받음 기록의 기계 키 거절을 올린다', (tenStrip.match(/if \(dep && !dep\.ok && dep\.error === PAYMENT_PREFIX_RESERVED\) throw new Error\(dep\.error\)/g) ?? []).length === 2)
 
 console.log(`[납입일 변경 조정 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
