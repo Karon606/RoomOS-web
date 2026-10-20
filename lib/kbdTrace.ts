@@ -41,7 +41,7 @@ export type KbdTraceRow = {
   inner: number
   vvh: number | null
   top: number | null
-  H: number | null     // 화면 고정 상자(fixed inset-0)의 높이. 열린 모달 오버레이, rep 줄은 누른 순간의 센티널
+  H: number | null     // 화면 고정 상자(fixed inset-0)의 높이. 가드 판정 줄은 판정에 쓴 기준틀, 그 밖은 모달 오버레이, rep 줄은 누른 순간의 센티널
   T0: number | null    // 같은 상자의 client top
   sy: number | null    // document.scrollingElement.scrollTop
   open: boolean        // html[data-kbd-open] — 기록 순간
@@ -92,22 +92,22 @@ export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: Fra
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   try {
     const vv = window.visualViewport
-    const snap: KbdSnapshot = s ?? {
-      innerHeight: window.innerHeight,
-      vvHeight: vv ? vv.height : NaN,
-      offsetTop: vv ? vv.offsetTop : NaN,
-      scale: vv ? vv.scale : 1,
-    }
+    const vvHeight = s ? s.vvHeight : vv ? vv.height : NaN
+    const offsetTop = s ? s.offsetTop : vv ? vv.offsetTop : NaN
+    const scale = s ? s.scale : vv ? vv.scale : 1
     const root = document.documentElement
-    const fr = box ?? overlayBox()
+    // 가드가 스냅샷을 넘기면 그 판정에 쓴 기준틀(H·T0, lib/viewportFrame)을 그대로 적는다(2026-10-20).
+    // 안 넘긴 줄(fo·rs·rep)은 종전대로 누른 순간의 센티널이나 열린 모달 오버레이를 읽는다.
+    const fr: FrameBox | null = s ? { height: s.frameH, top: s.frameTop } : box ?? overlayBox()
     const se = document.scrollingElement
     rows.push({
       t: performance.now(),
       ev,
-      verdict: snap.scale > ZOOM_NEUTRAL_SCALE ? `${verdict}+zoom` : verdict,
-      inner: snap.innerHeight,
-      vvh: Number.isFinite(snap.vvHeight) ? snap.vvHeight : null,
-      top: Number.isFinite(snap.offsetTop) ? snap.offsetTop : null,
+      verdict: scale > ZOOM_NEUTRAL_SCALE ? `${verdict}+zoom` : verdict,
+      // innerHeight 는 판정에 안 쓰지만 기준틀과 견줄 수 있게 그대로 적는다(이 열이 (a)(b)(c) 상태를 가른다).
+      inner: window.innerHeight,
+      vvh: Number.isFinite(vvHeight) ? vvHeight : null,
+      top: Number.isFinite(offsetTop) ? offsetTop : null,
       H: fr ? fr.height : null,
       T0: fr ? fr.top : null,
       sy: se ? se.scrollTop : null,
@@ -154,7 +154,7 @@ const COLS = ['t', 'ev', 'verdict', 'inner', 'vvh', 'top', 'H', 'T0', 'sy', 'kbd
 const LEGEND = [
   'ev vr=vv resize · vs=vv scroll · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
   'vs×n=판정·표식이 같은 팬 n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
-    + ' · H·T0=fixed 상자 높이·client top(모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
+    + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
 
 // 덜기 차례. 큰 수부터 덜고, 같은 수 안에서는 오래된 줄부터 덜어낸다. 범례는 RESTORE 와 FLIP 사이에서

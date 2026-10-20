@@ -108,7 +108,7 @@ need('lib/useVisibleBand.ts', [
 // 그물은 한 겹 감싸기에 뚫린다. 그래서 **모양이 아니라 사거리**를 본다. sync 함수 본문을
 // 중괄호 깊이로 잘라 그 안에 vv.height 가 한 번이라도 나오면 위반이다.
 //
-// 1차 방어는 그물이 아니라 구조다 — sync 는 이제 (h, offsetTop, innerHeight) 를 인자로만 받고
+// 1차 방어는 그물이 아니라 구조다 — sync 는 이제 (h, offsetTop, frameH) 를 인자로만 받고
 // vv 를 안 본다. 정본대로면 이 본문에 `vv.` 가 아예 없다. 아래 둘은 그 구조가 되돌려지는 것까지
 // 잡는 보조다.
 {
@@ -122,7 +122,8 @@ need('lib/useVisibleBand.ts', [
       // (1) 구조 — 스냅샷 두 항을 인자로 받는가. 클로저로 되돌아가면 사거리가 다시 열린다.
       const sig = /const sync = \(([^)]*)\)/.exec(src.slice(at))
       const params = sig ? sig[1] : ''
-      for (const p of ['offsetTop', 'innerHeight']) {
+      // 2026-10-20. 상자 높이 자리가 innerHeight 에서 frameH(화면 고정 상자 H)로 바뀌었다(신고 be5316e8).
+      for (const p of ['offsetTop', 'frameH']) {
         if (!new RegExp(`\\b${p}\\b`).test(params)) {
           violations.push(`lib/useVisibleBand.ts — sync 가 ${p} 을 인자로 안 받는다. vv 를 클로저로 보면 날것 대입이 다시 사거리에 선다(신고 bf0a6fff)`)
         }
@@ -155,10 +156,16 @@ need('lib/useVisibleBand.ts', [
         violations.push(`lib/useVisibleBand.ts — sync 의 첫 인자가 insetBand(...) 가 아니라 '${arg}' 다. 인셋은 위생·타당성 관문만 지나야 한다 — 방향 관문(bandHeight)까지 지나면 키보드가 선 프레임에서 되레 가린다(신고 2026-09-17)`)
       }
     }
-    // (4) 한 스냅샷 — 세 항을 읽는 자리는 pass 하나뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
-    const reads = [...src.matchAll(/\bvv\.height\b/g)].length
-    if (reads !== 1) {
-      violations.push(`lib/useVisibleBand.ts — vv.height 를 읽는 자리가 ${reads} 군데다. 한 스냅샷이려면 pass 안의 한 번뿐이어야 한다`)
+    // (4) 한 스냅샷. 읽는 자리는 pass 안의 정본 readKbdSnapshot 한 번뿐이다. 두 곳에서 읽으면 프레임이 갈린다.
+    //     2026-10-20 부터 vv 세 값과 기준틀(H·T0)은 lib/viewportFrame 이 같은 순간에 잰다. 훅이 vv.height 를
+    //     직접 읽으면 그 한 벌 밖에서 다른 프레임 값을 섞는 길이 다시 열린다.
+    const reads = [...src.matchAll(/\bvv\.(height|offsetTop|scale)\b/g)].length
+    if (reads !== 0) {
+      violations.push(`lib/useVisibleBand.ts. vv 값을 직접 읽는 자리가 ${reads} 군데다. 한 스냅샷이려면 정본 readKbdSnapshot 으로만 읽어야 한다`)
+    }
+    const snaps = [...src.matchAll(/\breadKbdSnapshot\(vv\)/g)].length
+    if (snaps !== 1) {
+      violations.push(`lib/useVisibleBand.ts. readKbdSnapshot(vv) 를 부르는 자리가 ${snaps} 군데다. pass 안의 한 번뿐이어야 한다`)
     }
   }
 }
@@ -195,7 +202,7 @@ need('lib/useVisibleBand.ts', [
   else if (/bandHeight\(|shouldWriteVvHeight\(/.test(inset)) violations.push('lib/modalViewport.ts — insetBand 가 방향 관문을 지난다. 키보드가 선 팬 프레임에서 인셋이 키보드 없음이라 답해 칸이 덮인다(67f91325)')
 }
 need('lib/useVisibleBand.ts', [
-  [/vv\.scale/, '타당성 관문에 핀치 줌 배율(vv.scale)을 안 싣는다'],
+  [/scale:\s*s\.scale/, '타당성 관문에 핀치 줌 배율(스냅샷 scale)을 안 싣는다'],
   [/keyboardCapableFocus\(\)/, '타당성 관문에 포커스(iframe 포함)를 안 싣는다'],
   [/setTimeout\(/, '자가 회복(열린 뒤 다시 읽기)이 사라짐. 마운트 순간의 낡은 띠가 닫힐 때까지 남는다'],
   [/addEventListener\(['"]focus['"]/, '앱 복귀 focus 재동기가 사라짐'],
@@ -402,6 +409,61 @@ need('components/ErrorReportButton.tsx', [
 need('app/(app)/errorReports.ts', [
   [/userNote\?\.slice\(0, 4000\)/, '메모 한도가 lib/kbdTrace REPORT_NOTE_MAX 와 어긋남'],
 ])
+
+// 6) 기준틀 정본(2026-10-20, 신고 be5316e8 · 운영자 승인 '후보 1'). 키보드 기하는 innerHeight 가 아니라
+// 화면 고정 상자(H·T0)로 잰다. 키보드가 선 iOS 가 팬하며 innerHeight 를 812 − offsetTop 이나 vv.height 로
+// 줄여 보고해, 그 값을 상자 높이로 쓴 종전 식이 셸 여백 16(실제 206)·패널 95 내려앉음·닫힘 오판을 냈다.
+// 키보드 기하 경로에서 window.innerHeight 는 정본 readKbdSnapshot 본문 안에서만(상자를 못 잰 때의 종전 틀) 읽는다.
+{
+  const FRAME = 'lib/viewportFrame.ts'
+  let fsrc = ''
+  try { fsrc = strip(readFileSync(FRAME, 'utf8')) } catch { violations.push(`${FRAME}: 읽을 수 없음. 기준틀 정본이 사라졌다`) }
+  if (fsrc) {
+    const readBody = sliceBody(fsrc, 'export function readKbdSnapshot(')
+    if (readBody == null) violations.push(`${FRAME}: 정본 readKbdSnapshot 이 사라짐. 못 읽으면 통과가 아니라 위반이다`)
+    else {
+      if (!/getBoundingClientRect\(\)/.test(readBody)) violations.push(`${FRAME}: readKbdSnapshot 이 상자를 안 잰다(getBoundingClientRect). 기준틀이 다시 innerHeight 가 된다`)
+      if (!/frameH = r\.height/.test(readBody) || !/frameTop = r\.top/.test(readBody)) violations.push(`${FRAME}: 잰 상자의 높이·위 끝을 기준틀(frameH·frameTop)로 안 쓴다`)
+      if (!/requestAnimationFrame\(/.test(readBody)) violations.push(`${FRAME}: 한 번 잰 값을 다음 프레임에 안 지운다. 낡은 기준틀이 프레임을 넘는다`)
+    }
+    const outside = readBody == null ? fsrc : fsrc.replace(readBody, '')
+    if (/window\.innerHeight/.test(outside)) violations.push(`${FRAME}: readKbdSnapshot 밖에서 window.innerHeight 를 읽는다`)
+    const sent = sliceBody(fsrc, 'function frameSentinel(')
+    if (sent == null) violations.push(`${FRAME}: 기준틀 상자(frameSentinel)를 찾을 수 없다`)
+    else {
+      for (const [re, msg] of [
+        [/position:\s*fixed/, 'fixed 가 아니다'], [/inset:\s*0/, 'inset 0 이 아니다'],
+        [/visibility:\s*hidden/, '보이지 않게 하지 않는다'], [/pointer-events:\s*none/, '누름을 막지 않는다'],
+        [/aria-hidden/, '접근성 트리에서 숨기지 않는다'],
+      ]) if (!re.test(sent)) violations.push(`${FRAME}: 기준틀 상자가 ${msg}`)
+    }
+  }
+  // 키보드 기하 경로 넷. window.innerHeight 직접 사용 금지(주석은 strip 이 지운다).
+  for (const f of ['lib/keyboardViewport.ts', 'lib/modalViewport.ts', 'lib/useVisibleBand.ts', 'components/layout/ViewportOffsetGuard.tsx']) {
+    let src = ''
+    try { src = strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f}: 읽을 수 없음`); continue }
+    if (/\binnerHeight\b/.test(src)) violations.push(`${f}: 키보드 기하 경로에서 innerHeight 를 쓴다. 키보드가 선 iOS 는 팬하면 그 값을 줄여 보고한다. 기준틀은 정본 readKbdSnapshot 의 frameH·frameTop 이다(신고 be5316e8)`)
+  }
+  // 가드는 정본으로만 재고, vv 높이를 따로 읽어 띠를 만들지 않는다(재노출 띠는 visibleBand).
+  let guard = ''
+  try { guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (guard) {
+    if (!/const snapNow = \(\): KbdSnapshot => readKbdSnapshot\(vv\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: snapNow 가 정본 readKbdSnapshot 을 안 쓴다')
+    if (/\bvv\.height\b/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: vv.height 를 직접 읽는다. 띠는 정본 visibleBand(T0 + offsetTop 부터 vv.height)로만 만든다')
+    const rev = sliceBody(guard, 'const reveal = (')
+    if (rev == null || !/visibleBand\(snapNow\(\)\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 띠가 정본 visibleBand 를 안 쓴다. 팬한 iOS 에서 띠를 offsetTop 만큼 아래로 본다')
+  }
+  // 순수 정본. 판정·겹침·띠가 기준틀 항을 쓴다.
+  let kv = ''
+  try { kv = strip(readFileSync('lib/keyboardViewport.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (kv) {
+    const fn = name => sliceBody(kv, `export function ${name}(`) ?? ''
+    if (!/s\.frameH - s\.vvHeight > KBD_OPEN_PX/.test(fn('keyboardOpen'))) violations.push('lib/keyboardViewport.ts: 열림 판정이 H − vv.height > 60 이 아니다')
+    if (!/s\.frameH - \(s\.vvHeight \+ s\.offsetTop\)/.test(fn('overlapInset'))) violations.push('lib/keyboardViewport.ts: 겹침이 H − offsetTop − vv.height 가 아니다')
+    // 반환 타입의 중괄호 때문에 sliceBody 가 본문을 못 자른다. 선언 바로 아래 줄을 본다.
+    if (!/export function visibleBand\([^)]*\)[^\n]*\n\s*const top = s\.frameTop \+ s\.offsetTop\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 띠 위 끝이 T0 + offsetTop 이 아니다')
+  }
+}
 
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)

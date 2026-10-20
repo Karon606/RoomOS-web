@@ -118,7 +118,7 @@ const TABLE_ROWS = [
 const LEGEND = [
   'ev vr=vv resize · vs=vv scroll · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
   'vs×n=판정·표식이 같은 팬 n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
-    + ' · H·T0=fixed 상자 높이·client top(모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
+    + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
 eq('키보드 세션 표 — 상대 ms·열 맞춤·포커스는 바뀔 때만·H·T0·sy 열',
   kbdTraceTable(FROZEN),
@@ -289,9 +289,12 @@ eq('얼린 적이 없으면 빈 문자열', kbdTraceTable(null), '')
     eq('손으로 만든 표(mode 없음)는 종전 모양 그대로', kbdTraceTable(FROZEN).split('\n')[1], LEGEND.split('\n')[0])
   }
 
-  kbdTrace('vr', 'open', { innerHeight: 812, vvHeight: 300, offsetTop: 0, scale: 1.5 })
+  kbdTrace('vr', 'open', { frameH: 812, frameTop: -3, vvHeight: 300, offsetTop: 0, scale: 1.5 })
   const zoomed = kbdTraceFreeze().rows.find(x => x.vvh === 300)
-  eq('가드가 넘긴 스냅샷을 그대로 적고, 줌이면 판정에 +zoom 을 붙인다', `${zoomed?.inner} ${zoomed?.verdict}`, '812 open+zoom')
+  eq('가드가 넘긴 스냅샷을 그대로 적고, 줌이면 판정에 +zoom 을 붙인다', `${zoomed?.verdict}`, 'open+zoom')
+  // 기준틀(2026-10-20). 판정에 쓴 H·T0 를 적고, innerHeight 는 판정과 별도로 지금 값을 견줄 열로 남긴다.
+  eq('가드가 넘긴 기준틀 H·T0 를 적는다(오버레이를 안 읽는다)', `${zoomed?.H} ${zoomed?.T0}`, '812 -3')
+  eq('inner 열은 판정과 무관하게 지금의 innerHeight', zoomed?.inner, 622)
 
   for (let i = 0; i < KBD_TRACE_CAP + 15; i++) kbdTrace('vs', 'open')
   const full = kbdTraceFreeze()

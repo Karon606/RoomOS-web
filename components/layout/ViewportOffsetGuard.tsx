@@ -36,7 +36,8 @@
 // B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 와 app/admin/layout.tsx
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
-import { keyboardOpen, overlapInset, shouldRestore, revealDelta, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { readKbdSnapshot } from '@/lib/viewportFrame'
 import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { phantomKeyboardGap } from '@/lib/modalViewport'
 // 관찰만 한다(키보드 가림 패널 0단계, 2026-10-13). 판정을 마친 자리에서 그 결과를 오류신고용
@@ -82,9 +83,11 @@ export default function ViewportOffsetGuard() {
 
     // 스냅샷 한 장으로 정본 함수들을 부른다 — 판정(팬 불변)과 크기(팬 차감)가 다른 숫자인 이유,
     // 줌 게이트·엡실론·클램프의 근거는 전부 lib/keyboardViewport 에 있다.
-    const snapNow = (): KbdSnapshot => ({
-      innerHeight: window.innerHeight, vvHeight: vv.height, offsetTop: vv.offsetTop, scale: vv.scale,
-    })
+    //
+    // 기준틀은 화면 고정 상자(H·T0)다(2026-10-20, 신고 be5316e8). 종전에는 window.innerHeight 를 그
+    // 상자의 높이로 썼는데, 키보드가 선 iOS 가 팬하며 innerHeight 를 줄여 보고하면 판정이 '닫힘'으로
+    // 뒤집히거나 겹침이 모자랐다. 재는 일은 정본 readKbdSnapshot 이 하고, 같은 프레임이면 한 번 잰 값이다.
+    const snapNow = (): KbdSnapshot => readKbdSnapshot(vv)
 
     // 원샷·TTL 을 걷고 **focusout 까지 유지, resize 마다 재시도**한다(신고 d0833496).
     // iOS 키보드 리사이즈는 액세서리 바·본체로 나뉘어 오고, 모달의 자체 축소(--modal-vvh 반영)는
@@ -97,8 +100,9 @@ export default function ViewportOffsetGuard() {
       if (!p.el.isConnected || document.activeElement !== p.el) { pending.current = null; return }
       const box = scrollParent(p.el)
       if (!box) return
-      // getBoundingClientRect 는 layout viewport 기준이라 보이는 띠도 같은 프레임으로 환산한다.
-      // vv.height 만 쓰면 팬된 만큼 틀린다.
+      // getBoundingClientRect 는 client 기준이라 보이는 띠도 같은 틀로 환산한다(정본 visibleBand).
+      // vv.height 만 쓰면 팬된 만큼 틀린다. 위 끝은 offsetTop 이 아니라 T0 + offsetTop 이다
+      // (2026-10-20, 신고 be5316e8. 팬한 iOS 는 상자를 −offsetTop 에 세워 띠가 client 0 에서 시작한다).
       //
       // **하단선은 키보드 선과 스크롤러 자신의 잘린 하단 중 낮은 쪽이다(신고 d0833496).**
       // 모달은 키보드가 열리면 스스로 줄어든다(--modal-vvh). 그러면 필드가 키보드 선보다 위인데도
@@ -106,11 +110,11 @@ export default function ViewportOffsetGuard() {
       // 스크롤을 안 했고, 운영자는 품명 칸을 탭했는데 폼 상단만 보게 됐다.
       // 상단선도 같은 방식으로 스크롤러 상단과 visual viewport 상단 중 낮은 쪽을 쓴다.
       const boxRect = box.getBoundingClientRect()
-      const kbLine = vv.offsetTop + vv.height
+      const band = visibleBand(snapNow())
       const r = p.el.getBoundingClientRect()
       const delta = revealDelta({
-        bandTop: Math.max(boxRect.top, vv.offsetTop),
-        bandBottom: Math.min(kbLine, boxRect.bottom),
+        bandTop: Math.max(boxRect.top, band.top),
+        bandBottom: Math.min(band.bottom, boxRect.bottom),
         fieldTop: r.top, fieldBottom: r.bottom,
         aligned: p.aligned,
       })
@@ -124,7 +128,7 @@ export default function ViewportOffsetGuard() {
     // 복원은 정본 판정을 지난다 — 진짜 닫힘(엡실론)일 때만. 외장 바·줌 팬은 되감지 않는다.
     const restore = () => {
       const scrolled = window.scrollY !== 0 || vv.offsetTop > 0
-      if (shouldRestore(snapNow(), scrolled)) { kbdTrace('rst', '·'); window.scrollTo(0, 0) }
+      if (shouldRestore(snapNow(), scrolled)) { kbdTrace('rst', '·', snapNow()); window.scrollTo(0, 0) }
     }
     // 크기 갱신은 resize 에서만. 팬 프레임마다 다시 쓰면 scrollHeight 가 오르내리며
     // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
@@ -139,7 +143,7 @@ export default function ViewportOffsetGuard() {
     const onResize = () => {
       const s = snapNow()
       const phantom = phantomKeyboardGap({
-        height: s.vvHeight, innerHeight: s.innerHeight, scale: s.scale, editing: keyboardCapableFocus(),
+        height: s.vvHeight, frameH: s.frameH, scale: s.scale, editing: keyboardCapableFocus(),
       })
       if (!keyboardOpen(s) || phantom) {
         root.style.setProperty(KBD_INSET, '0px')
@@ -156,7 +160,7 @@ export default function ViewportOffsetGuard() {
       scheduleReveal()
     }
     const onScroll = () => {
-      kbdTrace('vs', keyboardOpen(snapNow()) ? 'open' : 'shut')
+      kbdTrace('vs', keyboardOpen(snapNow()) ? 'open' : 'shut', snapNow())
       if (!keyboardOpen(snapNow())) restore()
     }
 
@@ -182,7 +186,7 @@ export default function ViewportOffsetGuard() {
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
     const onFocusIn = (e: FocusEvent) => {
-      kbdTrace('fi', keyboardOpen(snapNow()) ? 'open' : 'shut')
+      kbdTrace('fi', keyboardOpen(snapNow()) ? 'open' : 'shut', snapNow())
       if (!isEditableTarget(e.target)) return
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }

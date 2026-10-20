@@ -24,9 +24,9 @@ function eq(name: string, got: unknown, want: unknown) {
 
 // 아이폰 16 Pro 실측 — 402x874, safe-area 59/34. 키보드가 열리면 띠가 538 이 된다.
 const H = 874
-const band = (height: number, offsetTop: number) => overlayInsets({ innerHeight: H, height, offsetTop })
+const band = (height: number, offsetTop: number) => overlayInsets({ frameH: H, height, offsetTop })
 // 한 프레임 읽기. 기본은 '편집 중'(키보드 칸에 포커스) — 타당성 관문이 꺼진 종전 경로다.
-const rd = (height: number, editing = true, scale = 1, innerHeight = H): VvReading => ({ height, innerHeight, scale, editing })
+const rd = (height: number, editing = true, scale = 1, frameH = H): VvReading => ({ height, frameH, scale, editing })
 
 // ── 팬 불변 ────────────────────────────────────────────────────────
 // 이 셋의 top+bottom 이 같아야 오버레이 content box 가 같고, 패널이 밀려도 안 줄어든다.
@@ -144,10 +144,10 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   // 합성 — 훅이 실제로 부르는 모양 그대로. 찢어진 스냅샷 한 장이 인셋으로 못 샌다.
   const insetsVia = (height: number, lastGood: number, allowShrink: boolean, offsetTop: number) => {
     const h = b(rd(height), lastGood, allowShrink)
-    return h == null ? null : overlayInsets({ innerHeight: H, height: h, offsetTop })
+    return h == null ? null : overlayInsets({ frameH: H, height: h, offsetTop })
   }
   // 종전 결함의 재현값 — 띠가 90 으로 찢어져 오면 날것으로는 bottom 이 784 까지 자랐다.
-  eq('날것이면 아래 인셋이 폭발한다(종전)', overlayInsets({ innerHeight: H, height: 90, offsetTop: 0 }).bottom, H - 90)
+  eq('날것이면 아래 인셋이 폭발한다(종전)', overlayInsets({ frameH: H, height: 90, offsetTop: 0 }).bottom, H - 90)
   eq('관문을 지나면 직전 띠 그대로', insetsVia(90, 538, true, 0), { top: 0, bottom: H - 538 })
   eq('관문을 지나면 합도 직전 띠 기준', insetsVia(90, 538, false, 200), { top: 200, bottom: H - 538 - 200 })
   eq('첫 프레임부터 찢어졌으면 안 쓴다', insetsVia(90, 0, true, 0), null)
@@ -196,12 +196,12 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   // 인셋 — 타당성은 지나되 방향 관문은 안 지난다(67f91325). 그리고 null 이면 편집 중이 아닐 때 0.
   eq('insetBand · 키보드 선 팬 프레임의 축소는 그대로(방향 관문 없음)', insetBand(rd(400, true), 538), 400)
   eq('insetBand · 칸 없는 첫 읽기는 화면 전체(인셋 0)', insetBand(rd(190, false), 0), H)
-  eq('insetBand · 칸 없는 첫 읽기의 인셋은 0', overlayInsets({ innerHeight: H, height: insetBand(rd(190, false), 0)!, offsetTop: 0 }), { top: 0, bottom: 0 })
+  eq('insetBand · 칸 없는 첫 읽기의 인셋은 0', overlayInsets({ frameH: H, height: insetBand(rd(190, false), 0)!, offsetTop: 0 }), { top: 0, bottom: 0 })
   eq('insetBand · 편집 중 + 첫 읽기 120 미만은 null(가드 폴백 유지)', insetBand(rd(80, true), 0), null)
   eq('insetBand · 칸 없는 축소는 lastGood 띠', insetBand(rd(190, false), 874), 874)
   // 16:31 확인창 — 낡은 190 이 인셋으로 들어오면 아래가 684 가 되어 패널이 위로 밀려났다.
-  eq('확인창 · 날것이면 아래 인셋이 684(종전 지문)', overlayInsets({ innerHeight: H, height: 190, offsetTop: 0 }).bottom, 684)
-  eq('확인창 · 관문 뒤에는 0', overlayInsets({ innerHeight: H, height: insetBand(rd(190, false), 874)!, offsetTop: 0 }).bottom, 0)
+  eq('확인창 · 날것이면 아래 인셋이 684(종전 지문)', overlayInsets({ frameH: H, height: 190, offsetTop: 0 }).bottom, 684)
+  eq('확인창 · 관문 뒤에는 0', overlayInsets({ frameH: H, height: insetBand(rd(190, false), 874)!, offsetTop: 0 }).bottom, 0)
 }
 
 // ── 전수 훑기 · 키보드 가림 회귀 0 (2026-10-03) ──────────────────────
@@ -230,10 +230,10 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   for (const inner of inners) for (const hh of heights) for (const lg of lastGoods)
   for (const pan of pans) for (const sc of scales) for (const allow of [true, false]) for (const editing of [true, false]) {
     combos++
-    const r: VvReading = { height: hh, innerHeight: inner, scale: sc, editing }
+    const r: VvReading = { height: hh, frameH: inner, scale: sc, editing }
     const nb = bandHeight(r, lg, allow), ob = oldBand(hh, lg, allow)
     const ni = insetBand(r, lg), oi = oldInset(hh, lg)
-    const ins = (h: number | null) => h == null ? null : overlayInsets({ innerHeight: inner, height: h, offsetTop: pan })
+    const ins = (h: number | null) => h == null ? null : overlayInsets({ frameH: inner, height: h, offsetTop: pan })
     const same = nb === ob && JSON.stringify(ins(ni)) === JSON.stringify(ins(oi))
     const tag = `[inner ${inner} h ${hh} lg ${lg} pan ${pan} scale ${sc} ${allow ? 'resize' : 'pan'}]`
     if (editing) {
@@ -252,6 +252,96 @@ eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
   eq('전수 · 편집 중이 아닐 때 달라진 조합은 전부 관문 사유로 설명된다', strayDiffs.slice(0, 3), [])
   eq('전수 · 관문이 패널을 종전보다 작게 만드는 조합은 0', shrunk.slice(0, 3), [])
   console.log(`  전수 훑기: ${combos} 조합 · 편집 중 ${focusedSame} 조합 종전과 동일 · 편집 밖 ${unfocusedDiff} 조합만 달라짐(전부 phantom/첫 읽기)`)
+}
+
+// ── 기준틀 교체(2026-10-20, 신고 be5316e8) · 패널 아래 끝이 키보드 선 위에 서는가 ─────────
+// iPhone 실기 세 상태(vv 416, 화면 고정 상자 812). 패널 자리는 Modal 의 CSS 를 그대로 계산한다.
+//   오버레이 = fixed inset-0(위 끝 T0, 높이 H), 패딩 위 max(1rem, safe-top) + --modal-vv-top,
+//   아래 max(1rem, safe-bottom) + --modal-vv-bottom, items-center.
+//   패널 maxHeight = min(--modal-vvh − safe-top − safe-bottom − 2rem, 100%).
+// 안전영역은 신고 계측에서 역산한 값이다(패널 h 350 = 416 − 32 − 34 이라 위 0, 아래 34).
+{
+  const SAFE_TOP = 0, SAFE_BOTTOM = 34, IPH = 812, VVH = 416
+  const panelAt = (frameTop: number, frameH: number, ins: { top: number; bottom: number }, vvh: number) => {
+    const padTop = Math.max(16, SAFE_TOP) + ins.top
+    const padBottom = Math.max(16, SAFE_BOTTOM) + ins.bottom
+    const content = frameH - padTop - padBottom
+    const h = Math.min(vvh - SAFE_TOP - SAFE_BOTTOM - 32, content)
+    const top = frameTop + padTop + (content - h) / 2
+    return { top: Math.round(top * 100) / 100, bottom: Math.round((top + h) * 100) / 100, h }
+  }
+  type St = { name: string; inner: number; frameTop: number; offsetTop: number }
+  const states: St[] = [
+    { name: '(a) inner 812 · top 0', inner: 812, frameTop: 0, offsetTop: 0 },
+    { name: '(b) inner 622 · top 189.66', inner: 622, frameTop: -189.66, offsetTop: 189.66 },
+    { name: '(c) inner = vv 416 · top 0', inner: 416, frameTop: 0, offsetTop: 0 },
+  ]
+  for (const st of states) {
+    const r = rd(VVH, true, 1, IPH)
+    const ins = overlayInsets({ frameH: IPH, height: insetBand(r, 0)!, offsetTop: st.offsetTop })
+    const p = panelAt(st.frameTop, IPH, ins, bandHeight(r, 0, true)!)
+    const kbLine = st.frameTop + st.offsetTop + VVH          // 키보드 선(client)
+    const bandTop = st.frameTop + st.offsetTop
+    eq(`${st.name} · 패널 아래 끝이 키보드 선 위`, p.bottom <= kbLine + 0.01, true)
+    eq(`${st.name} · 패널 위 끝이 띠 안`, p.top >= bandTop - 0.01, true)
+    eq(`${st.name} · 패널 높이는 띠 높이 기준 350`, p.h, 350)
+  }
+  // 종전 식(innerHeight 를 상자 높이로)으로 같은 상태를 넣으면 신고 계측이 그대로 나온다. 모형의 근거다.
+  const oldPanel = (st: St) => {
+    const ins = overlayInsets({ frameH: st.inner, height: VVH, offsetTop: st.offsetTop })
+    return panelAt(st.frameTop, IPH, ins, VVH)
+  }
+  eq('종전 (b) · 패널 위 끝 119(신고 be5316e8 panel1 top=119 와 일치)', Math.round(oldPanel(states[1]).top), 119)
+  eq('종전 (b) · 패널 아래 53 이 키보드 밑', Math.round(oldPanel(states[1]).bottom - VVH), 53)
+  eq('종전 (b) · 아래 인셋 16(신고 vv-bottom=16px 와 일치)', overlayInsets({ frameH: 622, height: VVH, offsetTop: 189.66 }).bottom, 16)
+  eq('종전 (c) · 인셋 0 이라 패널 위 끝 222(신고 사진과 일치)', Math.round(oldPanel(states[2]).top), 222)
+  eq('새 식 (b) · 아래 인셋 206', overlayInsets({ frameH: IPH, height: VVH, offsetTop: 189.66 }).bottom, 206)
+}
+
+// ── 동치 전수 · H = innerHeight 이면 인셋·관문이 종전 값과 같다 ─────────────
+// 종전 판(2026-10-19)의 사본. 필드 이름(innerHeight 를 frameH 로) 말고는 한 글자도 안 바뀌어야 한다.
+{
+  const MIN = MIN_VV_HEIGHT
+  const o = {
+    insets: (inner: number, height: number, offsetTop: number) => {
+      const span = Math.max(0, Math.round(inner - height))
+      return {
+        top: Math.min(span, Math.max(0, Math.round(offsetTop))),
+        bottom: Math.min(span, Math.max(0, Math.round(inner - (offsetTop + height)))),
+      }
+    },
+    phantom: (inner: number, height: number, scale: number, editing: boolean) =>
+      scale > 1.02 ? false : editing ? false : inner - height > 60,
+    usable: (height: number, lastGood: number) => {
+      const h = Math.round(height)
+      if (h >= MIN) return h
+      return lastGood > 0 ? lastGood : null
+    },
+  }
+  const plaus = (inner: number, height: number, scale: number, editing: boolean, lg: number) => {
+    const h = o.usable(height, lg)
+    if (h == null || Math.round(height) < MIN) return h
+    if (!o.phantom(inner, height, scale, editing)) return h
+    if (lg > 0 && h > lg) return h
+    return lg > 0 ? lg : null
+  }
+  let n = 0
+  const diffs: string[] = []
+  for (const inner of [416, 622, 667, 740, 812, 874]) for (const hh of [80, 120, 190, 416, 466, 538, 812, 874])
+  for (const pan of [-50, 0, 150, 189.66, 336]) for (const sc of [1, 1.02, 1.5]) for (const editing of [true, false])
+  for (const lg of [0, 416, 874]) {
+    n++
+    const r: VvReading = { height: hh, frameH: inner, scale: sc, editing }
+    const op = plaus(inner, hh, sc, editing, lg)
+    const oi = op != null ? op : editing ? null : Math.round(inner)
+    const same = JSON.stringify(overlayInsets({ frameH: inner, height: hh, offsetTop: pan })) === JSON.stringify(o.insets(inner, hh, pan))
+      && phantomKeyboardGap(r) === o.phantom(inner, hh, sc, editing)
+      && plausibleVvHeight(r, lg) === op
+      && insetBand(r, lg) === oi
+    if (!same) diffs.push(`[inner ${inner} h ${hh} pan ${pan} scale ${sc} ${editing ? '편집' : '-'} lg ${lg}]`)
+  }
+  eq(`동치 전수 ${n} 조합 · 인셋·유령·타당성·인셋띠가 종전과 전부 같다`, diffs.slice(0, 3), [])
+  console.log(`  동치 전수: ${n} 조합 · 다른 조합 ${diffs.length}`)
 }
 
 console.log(`\n모달 기하 회귀: ${pass} 통과 / ${fails.length} 실패`)

@@ -24,6 +24,7 @@
 import { useEffect, type RefObject } from 'react'
 import { overlayInsets, bandHeight, insetBand, resumeAllowsShrink, type VvReading } from '@/lib/modalViewport'
 import { editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
+import { readKbdSnapshot } from '@/lib/viewportFrame'
 
 export function useVisibleBand(opts: {
   active: boolean
@@ -79,7 +80,7 @@ export function useVisibleBand(opts: {
     // 되돌리면 그물이 전부 초록인 채 결함이 글자 그대로 복원됐다(문자열만 보던 판정이
     // Math.round( 한 겹에 뚫렸다). 날것이 **사거리에 없게** 구조를 바꾼 것이 1차 방어고,
     // check-kbd-canonical 이 이 함수 본문에 vv.height 가 있는지를 보는 것이 2차다.
-    const sync = (h: number | null, offsetTop: number, innerHeight: number) => {
+    const sync = (h: number | null, offsetTop: number, frameH: number) => {
       const ov = overlayRef.current
       if (!ov) return
       // 아직 못 읽었다 — CSS 폴백 그대로 둔다(높이와 같은 규칙). 폴백은 받는 쪽이 정하고
@@ -88,7 +89,7 @@ export function useVisibleBand(opts: {
       if (h == null) return
       // 위·아래 여백 둘 다에 상한 — 어긋난 스냅샷 한 장에 패널이 내려가며 작아지거나(8-29),
       // 위로 붙어 눌리던(bf0a6fff) 그 자리다. 클램프는 정본 overlayInsets 가 한다.
-      const ins = overlayInsets({ innerHeight, height: h, offsetTop })
+      const ins = overlayInsets({ frameH, height: h, offsetTop })
       const top = `${ins.top}px`
       const bottom = `${ins.bottom}px`
       if (top !== lastTop) { ov.style.setProperty(varTop, top); lastTop = top }
@@ -98,11 +99,15 @@ export function useVisibleBand(opts: {
     // bandHeight(위생·타당성 + 방향)를, 인셋은 insetBand(위생·타당성만)를 지난다. 읽는 자리가 여기
     // 하나뿐이라 둘이 **다른 프레임**의 값을 섞을 길은 없다 — 같은 프레임에서 뜻이 갈릴 뿐이고,
     // 그 갈림이 의도다. 아래 sync 호출부에 이유를 적어 뒀다.
+    //
+    // **읽기는 정본 readKbdSnapshot 한 번이다(2026-10-20, 신고 be5316e8).** 종전에는 여기서 vv 와
+    // window.innerHeight 를 직접 읽고 innerHeight 를 오버레이 상자의 높이로 썼다. 키보드가 선 iOS 가
+    // 팬하며 innerHeight 를 줄여 보고하면 아래 인셋이 모자라(16, 실제 206) 패널이 키보드 밑으로
+    // 내려앉았다. 이제 화면 고정 상자를 잰 높이 H 를 쓴다. 같은 프레임에 가드가 이미 쟀으면 그 값이다.
     const pass = (allowShrink: boolean) => {
-      const offsetTop = vv.offsetTop
-      const innerHeight = window.innerHeight
-      // 타당성 관문의 재료(scale·포커스)도 같은 순간에 싣는다 — 판정은 정본 phantomKeyboardGap.
-      const r: VvReading = { height: vv.height, innerHeight, scale: vv.scale, editing: keyboardCapableFocus() }
+      const s = readKbdSnapshot(vv)
+      // 타당성 관문의 재료(scale·포커스)도 같은 순간에 싣는다. 판정은 정본 phantomKeyboardGap.
+      const r: VvReading = { height: s.vvHeight, frameH: s.frameH, scale: s.scale, editing: keyboardCapableFocus() }
       const h = gatedHeight(r, allowShrink)
       syncSize(h)
       // **인셋은 위생 검사만 지나고 방향 관문은 안 지난다**(신고 2026-09-17, 09-16 회귀 수정).
@@ -112,7 +117,7 @@ export function useVisibleBand(opts: {
       // 키보드 밑까지 뻗어 입력 칸이 덮인다(전수 훑기 실측: 띠 416 에서 패널 384 -> 780).
       // 위생 검사(불가능값 버리기)는 인셋에도 필요하다 — 그 문이 bf0a6fff 를 막는다. 타당성 관문도
       // 같은 문이다(2026-10-03, 확인창이 낡은 --vv-bottom 에 화면 위로 밀려나던 자리).
-      sync(insetBand(r, lastGoodH), offsetTop, innerHeight)
+      sync(insetBand(r, lastGoodH), s.offsetTop, s.frameH)
     }
     // vv 의 resize — 키보드가 서서 띠가 진짜 주는 길이다. 여기서는 줄이는 값을 받는다(8-29 규칙).
     const both = () => pass(true)

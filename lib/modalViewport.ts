@@ -5,8 +5,13 @@
 // 회귀로 가둘 수 있다.
 //
 // 불변식 하나가 이 파일 전체를 지탱한다.
-//   top + bottom = innerHeight - vv.height   (팬이 얼마든 합은 일정하다)
+//   top + bottom = H - vv.height   (팬이 얼마든 합은 일정하다)
 // 그래서 오버레이 content box 는 **팬 불변**이고, 패널은 밀어도 안 줄어야 한다.
+//
+// H 는 화면 고정 상자(fixed inset-0)의 높이다(2026-10-20, 신고 be5316e8). 종전에는 innerHeight 였는데,
+// 키보드가 선 iOS 가 팬하면 innerHeight 를 812 − offsetTop 이나 vv.height 로 줄여 보고해 아래 인셋이
+// 모자라거나 0 이 됐다. 오버레이 자신이 그 상자라 인셋은 상자 좌표로 재야 맞다. 값은
+// lib/viewportFrame readKbdSnapshot 이 잰다(키보드 기하의 DOM 읽기 정본).
 
 import { KBD_OPEN_PX, ZOOM_NEUTRAL_SCALE } from './keyboardViewport'
 
@@ -14,22 +19,22 @@ import { KBD_OPEN_PX, ZOOM_NEUTRAL_SCALE } from './keyboardViewport'
 export const MIN_VV_HEIGHT = 120
 
 export type VvSnapshot = {
-  /** layout viewport 높이 */
-  innerHeight: number
+  /** 화면 고정 상자의 높이 H(lib/viewportFrame) */
+  frameH: number
   /** 보이는 띠의 높이 */
   height: number
-  /** 띠의 위가 layout 어디에 있나(iOS 팬) */
+  /** 띠의 위가 상자 위 끝에서 얼마 아래인가(iOS 팬) */
   offsetTop: number
 }
 
 /**
  * 오버레이 위·아래 인셋 — 셋을 합치면 content box 가 보이는 띠와 같아진다.
  *
- * **두 끝에 다 상한을 건다.** 위 주석의 불변식(top + bottom = innerHeight - height)은 두 항이
+ * **두 끝에 다 상한을 건다.** 위 주석의 불변식(top + bottom = H - height)은 두 항이
  * 모두 [0, 그 합] 안에 있을 때만 성립한다. 한쪽만 잠그면 반대 방향 스냅샷에서 그대로 새어 나간다.
  *
  * 종전 1차(2026-08-29) — 아래에만 0 하한이 있고 위에는 짝이 없었다. offsetTop 이
- * innerHeight - height 를 넘는 스냅샷이 오면 bottom 은 0 에 눌리고 top 만 자랐다. 그만큼
+ * H - height 를 넘는 스냅샷이 오면 bottom 은 0 에 눌리고 top 만 자랐다. 그만큼
  * content box 가 깎이고, 패널 maxHeight 의 100% 안전망이 calc 를 이기면서 패널이 내려가며
  * 작아졌다. 여유가 2rem 뿐이라 32px 만 넘어도 발동한다.
  *
@@ -44,10 +49,10 @@ export type VvSnapshot = {
  * (방향 관문은 패널 높이 전용이다 — bandHeight 주석 참조).
  */
 export function overlayInsets(vv: VvSnapshot): { top: number; bottom: number } {
-  const span = Math.max(0, Math.round(vv.innerHeight - vv.height))
+  const span = Math.max(0, Math.round(vv.frameH - vv.height))
   return {
     top: Math.min(span, Math.max(0, Math.round(vv.offsetTop))),
-    bottom: Math.min(span, Math.max(0, Math.round(vv.innerHeight - (vv.offsetTop + vv.height)))),
+    bottom: Math.min(span, Math.max(0, Math.round(vv.frameH - (vv.offsetTop + vv.height)))),
   }
 }
 
@@ -106,8 +111,8 @@ export function resumeAllowsShrink(pass: 1 | 2, editableFocused: boolean): boole
 export type VvReading = {
   /** 보이는 띠의 높이(vv.height) */
   height: number
-  /** layout viewport 높이 */
-  innerHeight: number
+  /** 화면 고정 상자의 높이 H(lib/viewportFrame). 종전 innerHeight 자리 */
+  frameH: number
   /** vv.scale — 핀치 줌 배율 */
   scale: number
   /** 키보드를 부를 수 있는 곳에 포커스가 있는가(lib/editableTarget keyboardCapableFocus — iframe 포함) */
@@ -135,7 +140,7 @@ export type VvReading = {
 export function phantomKeyboardGap(r: VvReading): boolean {
   if (r.scale > ZOOM_NEUTRAL_SCALE) return false
   if (r.editing) return false
-  return r.innerHeight - r.height > KBD_OPEN_PX
+  return r.frameH - r.height > KBD_OPEN_PX
 }
 
 /**
@@ -168,7 +173,7 @@ export function plausibleVvHeight(r: VvReading, lastGood: number): number | null
 export function insetBand(r: VvReading, lastGood: number): number | null {
   const h = plausibleVvHeight(r, lastGood)
   if (h != null) return h
-  return r.editing ? null : Math.round(r.innerHeight)
+  return r.editing ? null : Math.round(r.frameH)
 }
 
 /**

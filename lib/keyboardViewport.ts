@@ -7,6 +7,15 @@
 //
 // 판정과 겹침 크기는 서로 다른 숫자다(신고 716e7b0c). 판정은 팬 불변(offsetTop 무관),
 // 크기는 팬 차감. 하나로 합치면 iOS 가 팬한 만큼 값이 줄어 '닫혔다'로 오판한다.
+//
+// **기준틀은 innerHeight 가 아니라 화면 고정 상자다(2026-10-20, 신고 be5316e8).** 키보드가 선
+// iOS 는 팬하면 innerHeight 를 812 − offsetTop 으로, 때로는 vv.height 로 줄여 보고하는데, 화면 고정
+// 상자(fixed inset-0)는 높이 H 를 지키고 위 끝 T0 만 움직인다. 종전 식은 innerHeight 를 그 상자의
+// 높이로 전제해 판정이 뒤집히고 겹침이 모자랐다. 이제 모든 식은 lib/viewportFrame readKbdSnapshot 이
+// 잰 H·T0 를 쓴다. 안드로이드·데스크톱은 H = innerHeight, T0 = 0 이라 종전 식과 같다(동치 전수 테스트).
+//   열림   H − vv.height > 60
+//   겹침   H − offsetTop − vv.height      (셸 여백 · 오버레이 아래 인셋, 고정 상자 좌표)
+//   띠     client 기준 T0 + offsetTop 부터 vv.height 만큼
 
 export const KBD_OPEN_PX = 60      // 이만큼 가려지면 키보드가 올라온 것으로 본다
 // 겹침 크기의 물리적 상한(화면 높이 대비). 소프트 키보드는 액세서리 바를 포함해도 화면의
@@ -29,9 +38,10 @@ export const ZOOM_NEUTRAL_SCALE = 1.02
 export const RESTORE_EPS = 2
 
 export type KbdSnapshot = {
-  innerHeight: number   // layout viewport 높이
+  frameH: number        // 화면 고정 상자(fixed inset-0)의 높이 H, 키보드 기하의 기준틀
+  frameTop: number      // 같은 상자의 client top T0 (iOS 가 팬하며 innerHeight 를 줄이면 −offsetTop)
   vvHeight: number      // 보이는 띠 높이
-  offsetTop: number     // 띠의 위가 layout 어디에 있나(iOS 팬)
+  offsetTop: number     // 띠의 위가 상자 위 끝에서 얼마 아래인가(iOS 팬)
   scale: number         // visualViewport.scale — 핀치 줌 배율
 }
 
@@ -42,7 +52,7 @@ export function zoomNeutral(s: KbdSnapshot): boolean {
 /** 키보드가 올라와 있는가 — 팬 불변 판정. 줌 중이면 무조건 아니다. */
 export function keyboardOpen(s: KbdSnapshot): boolean {
   if (zoomNeutral(s)) return false
-  return s.innerHeight - s.vvHeight > KBD_OPEN_PX
+  return s.frameH - s.vvHeight > KBD_OPEN_PX
 }
 
 /**
@@ -53,8 +63,20 @@ export function keyboardOpen(s: KbdSnapshot): boolean {
  * 인셋 0 으로 방치됐다. 클램프면 오염 스냅샷의 폭주도 막고 정당한 큰 겹침도 상한만큼은 받는다.
  */
 export function overlapInset(s: KbdSnapshot): number {
-  const raw = Math.max(0, Math.round(s.innerHeight - (s.vvHeight + s.offsetTop)))
-  return Math.min(raw, Math.round(s.innerHeight * KBD_MAX_RATIO))
+  const raw = Math.max(0, Math.round(s.frameH - (s.vvHeight + s.offsetTop)))
+  return Math.min(raw, Math.round(s.frameH * KBD_MAX_RATIO))
+}
+
+/**
+ * 보이는 띠의 client 좌표. 재노출이 칸의 getBoundingClientRect 와 견주는 틀이다.
+ *
+ * 종전에는 위 끝을 offsetTop 으로 봤다. 상자가 client 0 에 서 있을 때(T0 = 0)만 맞는 식이다.
+ * iOS 가 팬하며 innerHeight 를 줄이면 상자가 −offsetTop 에 서고 띠는 client 0 에서 시작하는데,
+ * 종전 식은 띠를 offsetTop 만큼 아래로 봐서 칸을 키보드 밑으로 보냈다(신고 be5316e8).
+ */
+export function visibleBand(s: KbdSnapshot): { top: number; bottom: number } {
+  const top = s.frameTop + s.offsetTop
+  return { top, bottom: top + s.vvHeight }
 }
 
 /**
@@ -66,7 +88,7 @@ export function overlapInset(s: KbdSnapshot): number {
  */
 export function shouldRestore(s: KbdSnapshot, scrolled: boolean): boolean {
   if (zoomNeutral(s)) return false
-  if (s.innerHeight - s.vvHeight > RESTORE_EPS) return false
+  if (s.frameH - s.vvHeight > RESTORE_EPS) return false
   return scrolled
 }
 
