@@ -34,7 +34,7 @@ import {
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
-import { channelSplitAgainst, normalizeChannel } from '@/lib/expenseChannel'
+import { channelSplitAgainst, normalizeChannel, externalOrderCaption, orderSellerLabel, channelVendorLabel } from '@/lib/expenseChannel'
 import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
@@ -2471,7 +2471,7 @@ export default function FinanceClient({
     if (expAmountMax != null && e.amount > expAmountMax) return false
     if (expListSearch.trim()) {
       const q   = expListSearch.trim().toLowerCase()
-      const hay = `${e.itemLabel ?? ''} ${e.detail ?? ''} ${e.vendor ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
+      const hay = `${e.itemLabel ?? ''} ${e.detail ?? ''} ${e.vendor ?? ''} ${e.channel ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
     return true
@@ -3672,8 +3672,8 @@ export default function FinanceClient({
                   if (hasOther) repDetail = `${repDetail} 외`
                   // 판매처 — 같은 주문번호여도 판매처는 다를 수 있음(쿠팡 직접판매/중개판매 등).
                   // 묶을 때 대표행 판매처로 통일하지 말고, 여러 곳이면 '외 N'으로 표기(펼치면 개별 판매처 그대로).
-                  const vendors = [...new Set(nonShip.map(r => r.vendor).filter((v): v is string => !!v))]
-                  const vendorLabel = vendors.length > 1 ? `${vendors[0]} 외 ${vendors.length - 1}` : (vendors[0] ?? rep.vendor ?? null)
+                  // 쇼핑몰이 정해진 주문은 쇼핑몰 먼저('쿠팡 · 철물24 외 1', lib/expenseChannel orderSellerLabel).
+                  const vendorLabel = orderSellerLabel(nonShip) ?? rep.vendor ?? null
                   out.push({ exp: { ...rep, amount: total, detail: repDetail, vendor: vendorLabel }, groupRows: rows, groupKind: 'order' })
                   continue
                 }
@@ -3918,7 +3918,7 @@ export default function FinanceClient({
                                 {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
                                 {grp && (item.groupKind === 'order'
-                                  ? <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                  ? <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{(() => { const c = externalOrderCaption(e.order?.externalOrderNo, grp); return c ? ` · ${c}` : '' })()}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                   : <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(withPlan(grp))}</p>)}
                                 {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
@@ -4042,7 +4042,7 @@ export default function FinanceClient({
                                     {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--tc-text)] shrink-0">영수증</span>}
                                   </div>
                                   {grp && (item.groupKind === 'order'
-                                    ? <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                    ? <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{(() => { const c = externalOrderCaption(e.order?.externalOrderNo, grp); return c ? ` · ${c}` : '' })()}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                     : <p className="text-[0.65625rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(withPlan(grp))}</p>)}
                                   {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.65625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
@@ -4421,7 +4421,7 @@ export default function FinanceClient({
           // 풀블리드 — 목록과 하단 각주가 각자 여백을 갖는 구조라 기본 패딩을 쓰면 이중 여백이 된다.
           bodyClassName=""
           title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
-          subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
+          subtitle={`${(() => { const c = externalOrderCaption(groupDetail[0]?.order?.externalOrderNo, groupDetail); return c ? `${c} · ` : '' })()}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
           <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
               {groupDetail.map(r => (
                 <li key={r.id}>
@@ -4570,6 +4570,8 @@ export default function FinanceClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   <DetailRow label="날짜"        value={fmtDate(detailExp.date)} />
                   <DetailRow label="카테고리"    value={detailExp.category} />
+                  {/* 쇼핑몰(주문을 받은 플랫폼)은 구매처(실제 판매자) 위에 선다. 비었으면(미기록) 줄이 없다. */}
+                  {detailExp.channel && <DetailRow label="쇼핑몰"   value={detailExp.channel} />}
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   {detailExp.vendorBizNo && <DetailRow label="사업자등록번호" value={detailExp.vendorBizNo} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
@@ -4614,7 +4616,8 @@ export default function FinanceClient({
                         {(() => { const s = orderSummaries.get(detailExp.order!.id); return s ? s.label : detailExp.order!.code })()}
                         {detailExp.order.shippingType && <span className="ml-1 text-[var(--warm-muted)]">· 배송 {detailExp.order.shippingType}</span>}
                         <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">({detailExp.order.code})</span>
-                        {detailExp.order.externalOrderNo && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">· 쇼핑몰 {detailExp.order.externalOrderNo}</span>}
+                        {/* 쇼핑몰 주문번호. 낱말 '쇼핑몰' 자리에 그 주문의 쇼핑몰 이름(하나로 모일 때만, lib/expenseChannel externalOrderCaption). */}
+                        {(() => { const c = externalOrderCaption(detailExp.order!.externalOrderNo, expenses.filter(x => x.orderId === detailExp.order!.id)); return c ? <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">· {c}</span> : null })()}
                       </span>
                     } />
                   )}
@@ -5550,7 +5553,7 @@ export default function FinanceClient({
                               <span className="flex-1 min-w-0">
                                 <span className="block truncate text-xs text-[var(--warm-dark)]">{label}</span>
                                 <span className="block truncate text-[0.65625rem] text-[var(--warm-muted)]">
-                                  {r.category}{r.vendor ? ` · ${r.vendor}` : ''}{r.roomNo ? ` · ${fmtRoomNo(r.roomNo, '')}` : ''}
+                                  {r.category}{(() => { const sv = channelVendorLabel(r.channel, r.vendor); return sv ? ` · ${sv}` : '' })()}{r.roomNo ? ` · ${fmtRoomNo(r.roomNo, '')}` : ''}
                                 </span>
                               </span>
                               <span className="shrink-0 tabular-nums text-xs font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={r.amount} /></span>

@@ -122,7 +122,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     select: {
       id: true, date: true, itemLabel: true, amount: true,
       qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, specText: true,
-      category: true, vendor: true, roomId: true,
+      category: true, vendor: true, channel: true, roomId: true,
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
@@ -149,7 +149,7 @@ export async function getDurableItems(): Promise<AssetsData> {
   const raws: RawAsset[] = rows.map(r => ({
     id: r.id, date: r.date.toISOString().slice(0, 10), itemLabel: r.itemLabel ?? '',
     amount: r.amount, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText,
-    category: r.category, vendor: r.vendor,
+    category: r.category, vendor: r.vendor, channel: r.channel,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId,
     locationName: r.assignedLocationId ? (locPaths.pathName(r.assignedLocationId) ?? r.assignedLocation?.name ?? null) : null,

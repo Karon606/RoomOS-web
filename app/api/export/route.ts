@@ -71,6 +71,7 @@ type ExpenseRow = {
   detail: string | null
   vendor: string | null
   vendorBizNo: string | null
+  channel: string | null
   amount: number
   payMethod: string | null
   financeName: string | null
@@ -84,6 +85,8 @@ function mapExpenseRow(e: ExpenseRow) {
     '귀속월':    expenseTargetMonth(e),
     '카테고리':  e.category,
     '세부항목':  e.detail ?? '',
+    // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19)은 구매처(실제 판매자) 앞 열이다. 비었으면 빈 칸(미기록, 구매처로 채우지 않는다).
+    '쇼핑몰':    e.channel ?? '',
     '구매처':    e.vendor ?? '',
     '사업자등록번호': e.vendorBizNo ?? '',
     '금액':      e.amount,

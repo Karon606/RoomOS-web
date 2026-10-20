@@ -83,6 +83,7 @@ export type AssetItem = {
   qtyUnit: string | null
   category: string
   vendor: string | null
+  channel: string | null        // 쇼핑몰(2026-10-19). 카드 메타·상세 머리가 '쿠팡 · 철물24' 로 쓴다(lib/expenseChannel)
   roomId: string | null
   roomNo: string | null
   locationId: string | null     // 공용부(StorageLocation) 배정 시
@@ -116,7 +117,7 @@ export type AssetItem = {
 export type RawAsset = {
   id: string; date: string; itemLabel: string; amount: number
   qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null; specText: string | null
-  category: string; vendor: string | null
+  category: string; vendor: string | null; channel: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
   isCommon: boolean; received: boolean; assignedAt: string | null
   isService: boolean               // 서비스·무형(시공비 등) — 방별 비용에 포함, 카드에 칩 표시
@@ -181,7 +182,7 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
       id: rep.id, ids: live.map(r => r.id), count: rows.length, date,
       itemLabel: rep.itemLabel, specText: g.specText, specValue: g.spec, specUnit: g.specUnit,
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
-      amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
+      amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor, channel: rep.channel,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
       isCommon: rep.isCommon, storedLocationId: rep.storedLocationId ?? null, storedLocationName: rep.storedLocationName ?? null,
       isService: rep.isService, assignedAt, liveUnits,

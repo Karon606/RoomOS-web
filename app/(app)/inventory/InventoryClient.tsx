@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, useState, useTransition, useRef } from 'react'
+import { channelVendorLabel } from '@/lib/expenseChannel'
 import { createPortal } from 'react-dom'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
@@ -3064,7 +3065,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
               {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
             </p>
           ) : null}
-          {(entry.vendor || entry.memo) && <p className={TL_CAPTION}>{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
+          {/* 판매처 요약은 쇼핑몰 먼저('쿠팡 · 철물24', lib/expenseChannel channelVendorLabel). */}
+          {(() => { const sv = channelVendorLabel(entry.channel, entry.vendor); return (sv || entry.memo) ? <p className={TL_CAPTION}>{sv ?? ''}{sv && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p> : null })()}
         </div>
         {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
           <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">

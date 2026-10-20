@@ -3,6 +3,7 @@
 // 자동 라우팅 없음: 질의 종류(kind)는 그룹 표시 순서만 바꾸고, 모호성은 그룹 병렬 표시로 해소한다.
 
 import prisma from '@/lib/prisma'
+import { channelVendorLabel } from '@/lib/expenseChannel'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { normalizeSearchQuery, type SearchQueryKind } from '@/lib/searchQuery'
@@ -104,7 +105,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
           },
         })
       : Promise.resolve([]),
-    // 지출 — 텍스트 질의에서만(품목·내역·구매처·카테고리·메모)
+    // 지출. 텍스트 질의에서만(품목·내역·구매처·쇼핑몰·카테고리·메모)
     !isDigits
       ? prisma.expense.findMany({
           where: {
@@ -113,12 +114,13 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
               { itemLabel: { contains: q, mode: 'insensitive' } },
               { detail: { contains: q, mode: 'insensitive' } },
               { vendor: { contains: q, mode: 'insensitive' } },
+              { channel: { contains: q, mode: 'insensitive' } },
               { category: { contains: q, mode: 'insensitive' } },
               { memo: { contains: q, mode: 'insensitive' } },
             ],
           },
           orderBy: { date: 'desc' }, take: 6,
-          select: { id: true, date: true, amount: true, category: true, detail: true, itemLabel: true, vendor: true, room: { select: { roomNo: true } } },
+          select: { id: true, date: true, amount: true, category: true, detail: true, itemLabel: true, vendor: true, channel: true, room: { select: { roomNo: true } } },
         })
       : Promise.resolve([]),
     // 재고 추적품목 — 텍스트 질의에서만(보관 제외)
@@ -243,7 +245,8 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
       title: e.itemLabel ?? e.detail ?? e.category,
       right: fmtWon(e.amount),
       badge: null,
-      caption: [fmtDateDot(e.date), e.vendor, fmtRoomNo(e.room?.roomNo, '')].filter(Boolean).join(' · ') || null,
+      // 판매처 요약은 쇼핑몰 먼저('쿠팡 · 철물24', lib/expenseChannel). 쇼핑몰이 비면 구매처만이다.
+      caption: [fmtDateDot(e.date), channelVendorLabel(e.channel, e.vendor), fmtRoomNo(e.room?.roomNo, '')].filter(Boolean).join(' · ') || null,
       action: { type: 'href', href: `/finance?month=${month}&q=${enc}` },
     }
   })

@@ -5,6 +5,7 @@
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
 import { useState, useTransition, useMemo, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { channelVendorLabel } from '@/lib/expenseChannel'
 import { useRouter, useSearchParams } from 'next/navigation'
 // 알림 딥링크 ?focus= 정본(재고 화면과 같은 훅). 비품 수령 대기 알림이 수령 대기 섹션으로 보낸다.
 import { useFocusSection } from '@/lib/useFocusSection'
@@ -73,7 +74,7 @@ const mergeLabelOf = (it: AssetItem) => { const s = specDisp(it); return s ? `${
 // 이름·규격이 같은 두 카드는 이 한 줄이 없으면 시트 안에서 구분되지 않는다(오류신고 9a9ed836).
 const mergeMetaOf = (it: AssetItem) => [
   `${it.date.slice(2)} 구매`,
-  it.vendor,
+  channelVendorLabel(it.channel, it.vendor),
   it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`,
   it.count > 1 ? `구매 ${it.count}건` : null,
   won(it.amount),
@@ -973,8 +974,8 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
         // 판정은 받을 때 묻는 창과 같다(살아 있는 방·안 놓인 행만, receiptPlacement).
         meta={(() => {
           const rest = (awaitingReceipt
-            ? [plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)), boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.category, won(it.amount)]
-            : [boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)]
+            ? [plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)), boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.category, won(it.amount)]
+            : [boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, channelVendorLabel(it.channel, it.vendor), it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)]
           ).filter(Boolean).join(' · ')
           // 메타 줄은 한 줄 말줄임이라 장소를 맨 앞에 둔다(수령 대기 예정 호실과 같은 이유). 보관 위치가 빈 카드는 위치가 있을 때만 '보관 위치 미정'.
           // 색은 따로 주지 않는다(차례가 강조다, 웹디자이너 패스).
@@ -1079,7 +1080,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
 
   // 검색 필터 — 표시만 거른다. 합치기 후보(siblings)는 원본 목록에서 찾아 검색 중에도 온전.
   const q = search.trim().toLowerCase()
-  const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category} ${it.specText ?? ''}`.toLowerCase().includes(q)
+  const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.channel ?? ''} ${it.category} ${it.specText ?? ''}`.toLowerCase().includes(q)
   const sumAmt = (l: AssetsData['pending']) => l.reduce((s, it) => s + it.amount, 0)
   const secOpen = (k: string) => !!q || openSecs.has(k)
   // 대분류 표시 — 검색 중엔 전 그룹 통합 검색
@@ -1763,7 +1764,8 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-[var(--warm-dark)]">{it.detail || it.itemLabel}</p>
-                <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
+                {/* 판매처 요약은 쇼핑몰 먼저('쿠팡 · 철물24', lib/expenseChannel channelVendorLabel). */}
+                <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{(() => { const sv = channelVendorLabel(it.channel, it.vendor); return sv ? ` · ${sv}` : '' })()}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {/* 수령 대기 카드는 자리 대신 상태를 말한다. curPlace 는 '미배정(여분)'을 돌려주는데 카드는 수령 대기 섹션에 있어

@@ -212,6 +212,7 @@ export type ExpenseSearchResult = {
   detail: string | null
   itemLabel: string | null
   vendor: string | null
+  channel: string | null   // 쇼핑몰(2026-10-19). 검색 결과 줄이 '쿠팡 · 철물24' 로 쓴다
   memo: string | null
   specValue: number | null
   specUnit: string | null
@@ -231,6 +232,8 @@ export async function searchExpenses(query: string): Promise<ExpenseSearchResult
         { itemLabel: { contains: q, mode: 'insensitive' } },
         { detail:    { contains: q, mode: 'insensitive' } },
         { vendor:    { contains: q, mode: 'insensitive' } },
+        // 쇼핑몰도 찾는다('쿠팡'으로 찾으면 판매자가 다른 쿠팡 주문도 나온다, 2026-10-19).
+        { channel:   { contains: q, mode: 'insensitive' } },
         { memo:      { contains: q, mode: 'insensitive' } },
         { category:  { contains: q, mode: 'insensitive' } },
         // 브랜드·제품명 — "작년에 산 그 LG 모니터"를 찾는 축이다.
@@ -250,6 +253,7 @@ export async function searchExpenses(query: string): Promise<ExpenseSearchResult
     detail: r.detail,
     itemLabel: r.itemLabel,
     vendor: r.vendor,
+    channel: r.channel,
     memo: r.memo,
     specValue: r.specValue,
     specUnit: r.specUnit,

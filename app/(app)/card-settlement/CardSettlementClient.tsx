@@ -18,10 +18,15 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { pushToast } from '@/lib/saveStatus'
 import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
 
+/** 카드 명세와 맞춰 보는 이름. 쇼핑몰, 없으면 구매처. 화면 두 목록(미정산·정산 완료)이 같은 함수를 쓴다. */
+const statementName = (e: { channel: string | null; vendor: string | null }): string | null => e.channel?.trim() || e.vendor?.trim() || null
+
 type UnsettledExpense = {
   id: string; date: Date; amount: number; category: string
   targetMonth: string | null   // 귀속월 — 청구월은 date 축 그대로, 다를 때만 'N월분' 메타 칩
   detail: string | null; financeName: string | null
+  // 카드 명세의 가맹점은 대개 주문을 받은 플랫폼이다. 줄 맨 앞에 쇼핑몰, 없으면 구매처를 쓴다(2026-10-19, lib/expenseChannel).
+  vendor: string | null; channel: string | null
   financialAccountId: string | null
   financialAccount: {
     id: string; brand: string; alias: string | null
@@ -249,7 +254,9 @@ export default function CardSettlementClient({
                   <span className="text-[var(--warm-mid)] min-w-0 truncate">
                     {fmtMD(item.date)}
                     &nbsp;
-                    <span className="text-[var(--warm-muted)]">{item.category}</span>
+                    {/* 명세와 맞춰 보는 이름(쇼핑몰, 없으면 구매처)이 맨 앞이다. 둘 다 없으면 종전처럼 카테고리부터. */}
+                    {statementName(item) && <span className="text-[var(--warm-dark)]">{statementName(item)}</span>}
+                    <span className="text-[var(--warm-muted)]">{statementName(item) ? ' · ' : ''}{item.category}</span>
                     {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
                   </span>
                   <TargetMonthChip e={item} />
@@ -415,7 +422,7 @@ export default function CardSettlementClient({
                       {g.items.map(item => (
                         <div key={item.id} className="flex items-center justify-between gap-2 text-xs text-[var(--warm-muted)]">
                           <span className="min-w-0 flex items-center gap-1.5">
-                            <span className="min-w-0 truncate">{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
+                            <span className="min-w-0 truncate">{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {statementName(item) ? `${statementName(item)} · ` : ''}{item.detail ?? item.category}</span>
                             <TargetMonthChip e={item} />
                           </span>
                           <span className="shrink-0">{fmtWon(item.amount)}</span>
