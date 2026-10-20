@@ -16,6 +16,9 @@ import { readFileSync } from 'node:fs'
 
 const agg     = readFileSync('app/(app)/inventory/assets/aggregate.ts', 'utf8')
 const actions = readFileSync('app/(app)/inventory/assets/actions.ts', 'utf8')
+// 분할 복제 정본(2026-10-20 에 비품 액션 파일에서 공용 파일로 옮겼다. 소모품 부분 수령도 같은 함수를 부른다).
+const cloneSrc = readFileSync('app/(app)/inventory/expenseClone.ts', 'utf8')
+const invActions = readFileSync('app/(app)/inventory/actions.ts', 'utf8')
 const client  = readFileSync('app/(app)/inventory/assets/AssetsClient.tsx', 'utf8')
 const schema  = readFileSync('prisma/schema.prisma', 'utf8')
 
@@ -126,9 +129,11 @@ function body(src, header) {
   }
   need('스키마에서 Expense 스칼라를 읽었다', scalars.length > 30, `읽은 칸 ${scalars.length}개 — 파싱이 어긋났다`)
 
-  const clone = body(actions, 'function cloneExpenseScalars(')
+  const clone = body(cloneSrc, 'export function cloneExpenseScalars(')
   need('cloneExpenseScalars 를 찾음', clone.length > 0,
     '분할 복제 목록은 한 자리여야 한다 — 셋으로 흩어지면 또 어긋난다')
+  need('비품 액션 파일에 복제 목록 사본이 없다', !/function cloneExpenseScalars\(/.test(actions),
+    '정본은 inventory/expenseClone 하나다. 사본이 생기면 다음 칸에서 또 갈린다')
   const missing = scalars.filter(k => !new RegExp(`(^|[\\s{,])${k}\\s*[,:]`).test(clone))
   need('복제 목록이 스키마 스칼라를 전부 덮는다', missing.length === 0,
     `빠진 칸: ${missing.join(', ')} — 그 칸은 분할된 행에서 사라진다`)
@@ -146,6 +151,16 @@ function body(src, header) {
       '직접 목록을 쓰면 스키마 대조를 빠져나간다')
     need(`${fnName} 에 손으로 쓴 create 목록이 없다`,
       !/prisma\.expense\.create\(\{ data: \{/.test(fn))
+  }
+  // 넷째 쪼개는 자리, 소모품 부분 수령(inventory/actions confirmReceipt). 2026-10-20 까지 손 목록이라 사업자번호·브랜드·
+  // 제품명·서술 규격·단가 기준·시공/자재 표식이 받은 조각에서 사라졌다(재무 패널 실측 3묶음).
+  {
+    const fn = body(invActions, 'export async function confirmReceipt(')
+    need('confirmReceipt(소모품 부분 수령) 를 찾음', fn.length > 0)
+    need('confirmReceipt 의 부분 수령 분할이 cloneExpenseScalars 를 거친다',
+      /prisma\.expense\.create\(\{ data: cloneExpenseScalars\(expense, propertyId,/.test(fn),
+      '손으로 쓴 목록은 스키마 대조를 빠져나간다')
+    need('confirmReceipt 에 손으로 쓴 create 목록이 없다', !/prisma\.expense\.create\(\{ data: \{/.test(fn))
   }
 }
 

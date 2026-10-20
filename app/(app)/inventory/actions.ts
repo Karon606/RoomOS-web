@@ -46,6 +46,8 @@ import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
 import { isDurableGoods, placementForSave } from './assets/receiptPlacement'
 import { storedForSave } from './assets/storagePlace'
+// 분할 복제 정본(비품 분할과 한 벌). 부분 수령의 받은 조각이 원행 스칼라 전부를 물려받는다.
+import { cloneExpenseScalars } from './expenseClone'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -3603,18 +3605,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
           where: { id: expense.id },
           data: { qtyValue: remainQty, amount: expense.amount - recvAmount, allocationGroupId: groupId, detail: qtyPart(remainQty) },
         }),
-        prisma.expense.create({ data: {
-          date: expense.date, amount: recvAmount, category: expense.category, detail: qtyPart(receiveQty),
-          vendor: expense.vendor, memo: expense.memo, payMethod: expense.payMethod, settleStatus: expense.settleStatus,
-          receiptUrl: expense.receiptUrl, receiptUrls: expense.receiptUrls, financeName: expense.financeName,
-          itemLabel: expense.itemLabel, specValue: expense.specValue, specUnit: expense.specUnit,
-          qtyValue: receiveQty, qtyUnit: expense.qtyUnit,
-          excludeFromInventory: expense.excludeFromInventory,
-          allocationGroupId: groupId, orderId: expense.orderId, isShipping: expense.isShipping,
-          propertyId, roomId: expense.roomId, assignedLocationId: expense.assignedLocationId,
-          financialAccountId: expense.financialAccountId, recurringExpenseId: expense.recurringExpenseId,
-          targetMonth: expense.targetMonth,
-        } }),
+        // 받은 조각은 원행의 스칼라 전부를 물려받는다(분할 복제 정본 ./expenseClone). 종전 손 목록은 사업자번호·브랜드·
+        // 제품명·서술 규격·단가 기준·시공/자재 표식을 빠뜨렸다(재무 패널 2026-10-19 실측). 바뀌는 칸만 over 로 덮는다.
+        prisma.expense.create({ data: cloneExpenseScalars(expense, propertyId, {
+          amount: recvAmount, detail: qtyPart(receiveQty), qtyValue: receiveQty, allocationGroupId: groupId,
+        }) }),
       ])
       expense = created
       partialUndo = {

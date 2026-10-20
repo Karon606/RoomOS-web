@@ -41,6 +41,8 @@ import {
 import { storageCandidates, STORE_NOT_FOUND } from './storagePlace'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+// 분할 복제 목록 정본(스키마 대조 그물 check-asset-disposal-wiring). 소모품 부분 수령도 같은 함수를 부른다.
+import { cloneExpenseScalars } from '../expenseClone'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -1059,39 +1061,7 @@ export async function getAssetAssignmentLog(itemLabel: string, spec?: SpecKey): 
 // ============================================================
 type ExpRow = Prisma.ExpenseGetPayload<Record<string, never>>
 
-// 분할 복제 정본 — 한 구매 행을 쪼갤 때 새 행이 물려받아야 하는 **Expense 스칼라 전부**.
-//
-// 왜 한 자리로 묶었나(장부 검수 2026-09-16). 쪼개는 자리가 셋(배정 분할·나눠 배정·부분 수령)인데
-// 각자 목록을 들고 있다가 하나씩 어긋났다. `roomWorkId`·`costKind` 가 빠져 있었고, 종전 방아쇠는
-// 대개 작업에 걸리기 전 행에서 터져 드러나지 않았다. **폐기는 정반대로 이미 방에 설치돼 작업에
-// 걸린 행을 겨눈다** — 504호 `도배(돌출부) x2회 40,000원` 에서 1회를 폐기하면 그 방 작업 이력의
-// 시공비가 20,000으로 줄고, 떨어져 나온 20,000은 작업에 안 걸린 고아 지출이 되어
-// check-room-work-link 가 빨개진다. `brand`·`productName`·`vendorBizNo`·`excludeFromAnchor`·
-// `targetRoomId`·`breakdownJson` 도 같이 떨어지고 있었다.
-//
-// 이제 목록은 여기 하나뿐이고, scripts/check-asset-disposal-wiring 이 **schema.prisma 에서 읽어**
-// 대조한다(손으로 세는 단언은 다음 컬럼에서 또 진다). 자동 생성 셋(id·createdAt·updatedAt)만 뺀다.
-function cloneExpenseScalars(
-  e: ExpRow, propertyId: string, over: Partial<Prisma.ExpenseUncheckedCreateInput>,
-): Prisma.ExpenseUncheckedCreateInput {
-  return {
-    date: e.date, amount: e.amount, category: e.category, detail: e.detail,
-    vendor: e.vendor, vendorBizNo: e.vendorBizNo, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
-    receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
-    targetRoomId: e.targetRoomId, breakdownJson: e.breakdownJson,
-    itemLabel: e.itemLabel, costKind: e.costKind, brand: e.brand, productName: e.productName,
-    specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
-    qtyValue: e.qtyValue, qtyUnit: e.qtyUnit,
-    receivedAt: e.receivedAt, disposedAt: e.disposedAt, disposalReason: e.disposalReason,
-    excludeFromInventory: e.excludeFromInventory, excludeFromAnchor: e.excludeFromAnchor, targetMonth: e.targetMonth,
-    allocationGroupId: e.allocationGroupId, orderId: e.orderId, isShipping: e.isShipping,
-    propertyId, roomId: e.roomId,
-    financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId,
-    receivedLocationId: e.receivedLocationId, assignedLocationId: e.assignedLocationId, storedLocationId: e.storedLocationId,
-    assignedAt: e.assignedAt, isCommonAsset: e.isCommonAsset, roomWorkId: e.roomWorkId,
-    ...over,
-  }
-}
+// 분할 복제 정본은 ../expenseClone 의 cloneExpenseScalars 한 자리다(소모품 부분 수령과 함께 쓴다, 머리말은 그 파일).
 // 폐기(disposedAt·disposalReason)도 같은 분할 기계를 탄다 — 폐기는 "그 수량만큼 자리를 떠났다"는
 // 뜻이라 이동과 모양이 같다. 다만 **위치 세 칸은 원행 값 그대로** 넘긴다(폐기는 자리를 안 옮긴다).
 // 키를 생략하면 그 칸은 원행 값을 유지한다(assignedAt 선례와 동일 규약).

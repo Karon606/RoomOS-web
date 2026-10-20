@@ -42,7 +42,9 @@ mustNot(SP, sp, null, [[/415|제기역/, '보관 위치를 하드코딩했다(�
 // ── 서버(assets/actions) ───────────────────────────────────────────
 const A = 'app/(app)/inventory/assets/actions.ts'
 const a = read(A)
-must(A, a, 'cloneExpenseScalars', [[/storedLocationId: e\.storedLocationId/, '분할 복제가 보관 위치를 물려주지 않는다(남는 조각·옮긴 조각 규칙의 바닥)']])
+// 분할 복제 정본은 2026-10-20 에 공용 파일로 옮겼다(소모품 부분 수령도 같은 함수를 부른다).
+const EC = 'app/(app)/inventory/expenseClone.ts'
+must(EC, read(EC), 'cloneExpenseScalars', [[/storedLocationId: e\.storedLocationId/, '분할 복제가 보관 위치를 물려주지 않는다(남는 조각·옮긴 조각 규칙의 바닥)']])
 must(A, a, 'buildSplitOps', [[/storedLocationId: 'storedLocationId' in data \? data\.storedLocationId : e\.storedLocationId/, '옮긴 조각이 실린 보관 위치를 받지 않거나, 폐기(키 없음) 조각이 원행 값을 안 지킨다']])
 must(A, a, 'buildFanOutOps', [[/storedLocationId: 'storedLocationId' in d \? d\.storedLocationId : e\.storedLocationId/, '나눠 배정 조각이 보관 위치를 비우지 않는다']])
 must(A, a, 'targetData', [
