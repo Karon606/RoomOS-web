@@ -36,7 +36,7 @@
 // B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 와 app/admin/layout.tsx
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
-import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, windowResizeIsPan, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, windowResizeIsPan, resyncAfterPan, type KbdSnapshot } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
 import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { phantomKeyboardGap } from '@/lib/modalViewport'
@@ -80,6 +80,8 @@ export default function ViewportOffsetGuard() {
     const vv = window.visualViewport
     if (!vv) return
     const root = document.documentElement
+    // 늦은 재확인(아래 recheckAfterPan)이 언마운트 뒤에 돌아 루트에 다시 쓰지 않게 막는 표시.
+    let alive = true
 
     // 스냅샷 한 장으로 정본 함수들을 부른다 — 판정(팬 불변)과 크기(팬 차감)가 다른 숫자인 이유,
     // 줌 게이트·엡실론·클램프의 근거는 전부 lib/keyboardViewport 에 있다.
@@ -188,10 +190,17 @@ export default function ViewportOffsetGuard() {
     // 크기로 다시 쓰고 재노출을 다시 돌려, '크기는 vv resize 에서만'(716e7b0c)을 window 쪽 문으로 비켜 갔다.
     // 여기서는 판정만 새로 하고(기록 'wr'), 인셋·표식·재노출·복원은 손대지 않는다. 판정은 정본
     // windowResizeIsPan 이 하고, 열림이 아니면(키보드가 내려가는 중) 종전 재동기 그대로다.
+    //
+    // **팬으로 받았어도 두 프레임 뒤에 한 번 더 본다(검수 2026-10-20).** 키보드가 내려가는 순간의 window
+    // resize 가 아직 옛 vv 로 읽혀 팬이 되고, 그 뒤 vv resize 가 빠지면 표식과 여백이 남는다. 재확인이 닫힘일
+    // 때만 재동기하고(정본 resyncAfterPan), 여전히 열림이면 아무것도 안 한다. 두 프레임인 까닭은 같은 프레임의
+    // rAF 는 이 이벤트와 같은 vv 를 보기 때문이다.
+    const recheckAfterPan = () => { if (!alive) return; if (resyncAfterPan(snapNow())) resync() }
     const onWindowResize = () => {
       const s = snapNow()
       if (windowResizeIsPan(root.hasAttribute(KBD_OPEN_ATTR), keyboardCapableFocus(), s)) {
         kbdTrace('wr', 'open', s)
+        requestAnimationFrame(() => requestAnimationFrame(recheckAfterPan))
         return
       }
       resync()
@@ -220,6 +229,7 @@ export default function ViewportOffsetGuard() {
     window.addEventListener('orientationchange', resync)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
+      alive = false
       vv.removeEventListener('resize', onResize)
       vv.removeEventListener('scroll', onScroll)
       document.removeEventListener('focusin', onFocusIn, true)

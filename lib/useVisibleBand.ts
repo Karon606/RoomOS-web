@@ -24,7 +24,7 @@
 import { useEffect, type RefObject } from 'react'
 import { overlayInsets, bandHeight, insetBand, resumeAllowsShrink, type VvReading } from '@/lib/modalViewport'
 import { editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
-import { windowResizeIsPan } from '@/lib/keyboardViewport'
+import { windowResizeIsPan, resyncAfterPan } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
 
 export function useVisibleBand(opts: {
@@ -45,6 +45,8 @@ export function useVisibleBand(opts: {
     const vv = window.visualViewport
     if (!vv) return
     let lastTop = '', lastBottom = '', lastHeight = ''
+    // 늦은 재확인(아래 recheckAfterPan)이 닫힌 뒤에 돌아 지운 변수를 다시 쓰지 않게 막는 표시.
+    let alive = true
     // 마지막으로 믿을 만했던 띠 높이. 0 이면 아직 한 번도 못 읽었다(그때는 dvh 폴백).
     let lastGoodH = 0
 
@@ -142,10 +144,15 @@ export function useVisibleBand(opts: {
     // 이제 vv scroll 과 같은 onPan 한 번이다(인셋은 팬 위치를 따르고 높이는 커지는 쪽만 받는다).
     // 키보드가 서 있는가는 가드의 표식(data-kbd-open)과 같은 정본 windowResizeIsPan 으로 묻는다.
     // 판정을 여기서 새로 세우지 않는다. 가드가 없는 화면(표식 없음)은 종전 재동기 그대로다.
+    // 팬으로 받았어도 두 프레임 뒤에 한 번 더 보고, 닫힘이면 그때만 재동기한다(가드와 같은 정본 resyncAfterPan,
+    // 검수 2026-10-20). 가드 표식이 먼저 떨어졌어도 이쪽은 스냅샷으로 묻는다. 순서에 따라 재동기를 건너뛰지 않게.
+    const recheckAfterPan = () => { if (!alive) return; if (resyncAfterPan(readKbdSnapshot(vv))) resync() }
     const onWindowResize = () => {
       const stamped = document.documentElement.hasAttribute('data-kbd-open')
-      if (windowResizeIsPan(stamped, keyboardCapableFocus(), readKbdSnapshot(vv))) onPan()
-      else resync()
+      if (windowResizeIsPan(stamped, keyboardCapableFocus(), readKbdSnapshot(vv))) {
+        onPan()
+        requestAnimationFrame(() => requestAnimationFrame(recheckAfterPan))
+      } else resync()
     }
     both()
     // **자가 회복(2026-10-03).** 마운트 순간의 vv 가 낡았는데 그 뒤로 vv 이벤트가 하나도 안 오면
@@ -165,6 +172,7 @@ export function useVisibleBand(opts: {
     const panelEl = panelRef?.current
     const overlayEl = overlayRef.current
     return () => {
+      alive = false
       for (const t of healTimers) window.clearTimeout(t)
       vv.removeEventListener('resize', both)
       vv.removeEventListener('scroll', onPan)

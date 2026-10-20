@@ -96,6 +96,16 @@ export function windowResizeIsPan(stamped: boolean, editing: boolean, s: KbdSnap
 }
 
 /**
+ * 팬으로 받은 window resize 의 늦은 재확인. 두 프레임 뒤의 스냅샷이 닫힘이면 참이고, 받는 쪽은 그때만
+ * 종전 재동기를 돈다(검수 2026-10-20). 키보드가 내려가는 순간의 window resize 는 아직 옛 vv 로 읽혀 팬으로
+ * 판정될 수 있는데, 그 뒤 vv resize 가 빠지면 표식과 셸 여백 396 이 남는다. 여전히 열림이면 아무것도 안 한다
+ * (팬마다 다시 쓰지 않는다는 튐 수정은 그대로다).
+ */
+export function resyncAfterPan(s: KbdSnapshot): boolean {
+  return !keyboardOpen(s)
+}
+
+/**
  * 잔존 오프셋을 복원해도 되는가 — **진짜 닫힘(엡실론 이내)일 때만.**
  *
  * 종전에는 '열림 아님'이면 무조건 되감았다. 그러면 외장 키보드 단축바(약 55px, 문턱 미만)가

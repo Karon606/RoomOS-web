@@ -3,7 +3,7 @@
 // 8월의 키보드 회귀들을 헤드리스로 가둔다(키보드 패널 2026-09-02). 아이폰 16 Pro 실측 좌표계
 // (402x874, 키보드 열림 띠 538)와 iPad 줌·외장 바 시나리오를 스냅샷으로 고정한다.
 import {
-  keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand, windowResizeIsPan,
+  keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand, windowResizeIsPan, resyncAfterPan,
   KBD_OPEN_PX, KBD_MAX_RATIO, TARGET_RATIO, REVEAL_GAP, ZOOM_NEUTRAL_SCALE, RESTORE_EPS,
   type KbdSnapshot,
 } from '../lib/keyboardViewport'
@@ -154,6 +154,12 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
     ['핀치 줌이면 재동기(줌 게이트)', true, true, zoom, false],
   ]
   for (const [name, stamped, editing, s, want] of rows) eq(`window resize · ${name}`, windowResizeIsPan(stamped, editing, s), want)
+  // 늦은 재확인(검수 2026-10-20). 두 프레임 뒤 스냅샷이 닫힘일 때만 재동기한다.
+  eq('늦은 재확인 · 여전히 열림((b) 팬 190)이면 아무것도 안 한다', resyncAfterPan(open(189.66)), false)
+  eq('늦은 재확인 · (c) 상태도 열림이라 아무것도 안 한다', resyncAfterPan(STATES[2].s), false)
+  eq('늦은 재확인 · 키보드가 내려갔으면(옛 vv 로 팬 판정된 뒤) 재동기', resyncAfterPan(shut), true)
+  eq('늦은 재확인 · 외장 단축바만 남았으면(55 가림) 닫힘이라 재동기', resyncAfterPan({ frameH: IPH, frameTop: 0, vvHeight: IPH - 55, offsetTop: 0, scale: 1 }), true)
+  eq('늦은 재확인 · 핀치 줌이면 열림 판정이 거짓이라 재동기(종전 경로)', resyncAfterPan(zoom), true)
   // 종전 틀(innerHeight 를 상자 높이로)이었다면 (c) 에서 열림이 거짓이라 팬이 재동기로 새어 되감겼다.
   eq('종전 틀이면 (c) 의 window resize 가 재동기로 샜다', old.open(416, KB_VV, 1), false)
 }

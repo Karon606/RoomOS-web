@@ -168,7 +168,7 @@ need('lib/useVisibleBand.ts', [
     const passBody = sliceBody(src, 'const pass = (') ?? ''
     const inPass = [...passBody.matchAll(/\breadKbdSnapshot\(vv\)/g)].length
     const snaps = [...src.matchAll(/\breadKbdSnapshot\(vv\)/g)].length
-    const asPanArg = [...src.matchAll(/windowResizeIsPan\([^\n]*readKbdSnapshot\(vv\)\)/g)].length
+    const asPanArg = [...src.matchAll(/(?:windowResizeIsPan|resyncAfterPan)\([^\n]*readKbdSnapshot\(vv\)\)/g)].length
     if (inPass !== 1 || snaps - inPass !== asPanArg) {
       violations.push(`lib/useVisibleBand.ts. readKbdSnapshot(vv) 가 pass 안 ${inPass} 군데, 그 밖 ${snaps - inPass} 군데다. pass 안의 한 번과 windowResizeIsPan 인자 자리만 허용한다`)
     }
@@ -516,7 +516,12 @@ need('app/(app)/errorReports.ts', [
       const stray = stmts.filter(x => !allowed.some(re => re.test(x)))
       if (stray.length > 0) violations.push(`components/layout/ViewportOffsetGuard.tsx: 키보드가 선 동안의 window resize 분기에 허용 밖 문장이 있다('${stray[0]}'). 기록·늦은 재확인 예약·return 만 선다`)
       if (!stmts.includes('return')) violations.push('components/layout/ViewportOffsetGuard.tsx: 팬 분기가 돌아가지 않고 재동기로 흘러간다')
+      // 늦은 재확인(검수 2026-10-20). 키보드가 내려가는 순간의 window resize 가 옛 vv 로 팬이 되고 vv resize 가
+      // 빠지면 표식과 여백 396 이 남는다. 재확인은 닫힘일 때만 재동기하고 그 밖엔 아무것도 안 한다.
+      if (!stmts.some(x => /^requestAnimationFrame\(/.test(x))) violations.push('components/layout/ViewportOffsetGuard.tsx: 팬 분기가 늦은 재확인을 예약하지 않는다. 키보드가 내려가는 순간 표식·여백이 남을 수 있다')
     }
+    const re = sliceBody(guard, 'const recheckAfterPan = (')
+    if (re == null || re.replace(/\s+/g, ' ').trim() !== '{ if (!alive) return; if (resyncAfterPan(snapNow())) resync() }') violations.push('components/layout/ViewportOffsetGuard.tsx: 늦은 재확인이 (살아 있을 때, 닫힘이면 재동기) 하나가 아니다')
   }
   let hook = ''
   try { hook = strip(readFileSync('lib/useVisibleBand.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
@@ -525,8 +530,11 @@ need('app/(app)/errorReports.ts', [
     const body = sliceBody(hook, 'const onWindowResize = (')
     if (body == null || !/windowResizeIsPan\(/.test(body) || !/\)\)\)\s*\{?\s*onPan\(\)/.test(body)) violations.push('lib/useVisibleBand.ts: window resize 가 정본 windowResizeIsPan 으로 팬(onPan)을 가르지 않는다')
     // 첫 인자는 가드 표식 검사여야 한다(검수 역주입 2026-10-20).
+    else if (!/requestAnimationFrame\(\(\) => requestAnimationFrame\(recheckAfterPan\)\)/.test(body)) violations.push('lib/useVisibleBand.ts: 팬으로 받은 window resize 에 늦은 재확인이 없다')
     else if (!/const stamped = document\.documentElement\.hasAttribute\('data-kbd-open'\)/.test(body) || !/windowResizeIsPan\(stamped, keyboardCapableFocus\(\), readKbdSnapshot\(vv\)\)/.test(body)) violations.push('lib/useVisibleBand.ts: windowResizeIsPan 인자가 (가드 표식, 키보드 칸 포커스, 스냅샷) 이 아니다')
     if (!/window\.addEventListener\(['"]resize['"],\s*onWindowResize\)/.test(hook)) violations.push('lib/useVisibleBand.ts: window resize 를 onWindowResize 로 안 받는다')
+    const hre = sliceBody(hook, 'const recheckAfterPan = (')
+    if (hre == null || hre.replace(/\s+/g, ' ').trim() !== '{ if (!alive) return; if (resyncAfterPan(readKbdSnapshot(vv))) resync() }') violations.push('lib/useVisibleBand.ts: 늦은 재확인이 (살아 있을 때, 닫힘이면 재동기) 하나가 아니다')
   }
 }
 
