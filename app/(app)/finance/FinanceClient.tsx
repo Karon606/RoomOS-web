@@ -34,7 +34,7 @@ import {
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
-import { channelSplitAgainst, splitSiblingsText, channelForSave, externalOrderCaption, orderSellerLabel, channelVendorLabel, VENDOR_CHANNEL_LOCKED } from '@/lib/expenseChannel'
+import { channelSplitAgainst, splitSiblingsText, channelForSave, rowChannel, channelSameAsVendor, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL, externalOrderCaption, orderSellerLabel, channelVendorLabel, VENDOR_CHANNEL_LOCKED } from '@/lib/expenseChannel'
 import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
@@ -1251,7 +1251,7 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
       const res = chMode === 'move' ? await moveVendorToChannel(chSheet.vendors, name) : await setChannelForVendor(chSheet.vendors, name)
       if (!res.ok) { pushToast('error', res.error); return }
       const undo = res.undo
-      const skipTail = res.skipped ? ` · 쇼핑몰이 이미 다른 ${res.skipped}건 제외` : ''
+      const skipTail = (res.skipped ? ` · 쇼핑몰이 이미 다른 ${res.skipped}건 제외` : '') + (res.splitSkipped ? ` · 같은 주문에 다른 쇼핑몰이 있는 ${res.splitSkipped}건 제외` : '')
       pushToast('success', `${chMode === 'move' ? '쇼핑몰로 옮김' : '쇼핑몰 지정'} · 지출 ${res.updated}건${skipTail}`, undo ? {
         action: { label: '적용취소', run: () => { void runVendorUndos([undo], chMode === 'move' ? '쇼핑몰로 옮기기를 적용취소했습니다' : '쇼핑몰 지정을 적용취소했습니다') } },
       } : undefined)
@@ -1276,7 +1276,7 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
   const apply = async (oldName: string, rawNew: string) => {
     const newName = rawNew.trim()
     if (newName === oldName) return
-    if (newName === '' && !(await confirmDialog({ title: `'${oldName}' 구매처를 비울까요?`, message: '해당 지출들의 구매처와 사업자등록번호가 비워집니다. 지출 자체는 유지되고, 저장 뒤 적용취소할 수 있습니다.', level: 'caution', confirmLabel: '비우기' }))) return
+    if (newName === '' && !(await confirmDialog({ title: `'${oldName}' 구매처를 비울까요?`, message: '해당 지출들의 구매처 이름이 비워집니다. 사업자등록번호와 지출 자체는 유지되고, 저장 뒤 적용취소할 수 있습니다.', level: 'caution', confirmLabel: '비우기' }))) return
     setBusy(oldName)
     const release = trackSave()
     try {
@@ -1413,7 +1413,7 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
           options={[{ value: 'move', label: '구매처 비우기' }, { value: 'set', label: '구매처 그대로' }]} />
         <p className="text-[0.6875rem] text-[var(--warm-mid)] leading-relaxed break-keep">
           {chMode === 'move'
-            ? '구매처 자리에 쇼핑몰 이름이 적힌 경우입니다. 그 지출의 쇼핑몰에 아래 이름을 적고 구매처와 사업자등록번호를 비웁니다.'
+            ? '구매처 자리에 쇼핑몰 이름이 적힌 경우입니다. 그 지출의 쇼핑몰에 아래 이름을 적고 구매처 이름을 비웁니다. 사업자등록번호는 남깁니다.'
             : '구매처는 그대로 두고 그 지출의 쇼핑몰만 아래 이름으로 적습니다.'}
         </p>
         <div className="space-y-1.5">
@@ -1421,7 +1421,7 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
           <input type="text" value={chName} onChange={e => setChName(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="vendor-mgmt-channels"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
           <datalist id="vendor-mgmt-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">쇼핑몰이 이미 다른 이름으로 적힌 지출은 건드리지 않습니다. 저장 뒤 적용취소할 수 있습니다.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">쇼핑몰이 이미 다른 이름으로 적힌 지출과, 같은 주문에 다른 쇼핑몰이 적힌 지출은 건드리지 않습니다. 저장 뒤 적용취소할 수 있습니다.</p>
         </div>
       </div>
     </Modal>
@@ -3009,24 +3009,24 @@ export default function FinanceClient({
           if (ask.adjust) fd.set('adjustStock', '1')
         }
         // 주문 속 한 행의 쇼핑몰만 바꾸면 묻는다(한 결제 = 한 쇼핑몰). 카드 갈림 경고와 같은 문장으로 사실을 말하고,
-        // '주문 전체에 적용'은 형제도 맞춘다(그 부분만 적용취소 가능). '이 건만 바꾸기'는 그대로 저장한다(장부 그물이 갈림을 센다).
+        // 갈래는 [주문 전체에 적용 / 취소] 둘뿐이다(운영자 결정 2026-10-20 B). '이 건만 바꾸기' 갈래는 없앴다(서버도 갈림 쓰기를 거절한다).
+        // 결제가 정말 다르면 취소하고 먼저 주문에서 빼라고 물음 안에서 말한다. 쇼핑몰은 구매처와 같은 이름이면 비운 값으로 본다(결정 A).
         if (detailExp && detailExp.orderId && fd.has('channel')) {
-          const next = channelForSave(String(fd.get('channel') ?? ''), channelOptions)
+          const next = rowChannel(channelForSave(String(fd.get('channel') ?? ''), channelOptions), String(fd.get('vendor') ?? '').trim() || null)
           if (next !== (detailExp.channel ?? null)) {
             const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
             if (split) {
               // 비우는 경우는 '주문 전체의 쇼핑몰을 비울까요?' 로 묻는다(빈 값을 '적용'하라고 말하지 않는다, 독립 검수 2026-10-20).
-              const pick = await choiceDialog({
+              const ok = await confirmDialog({
                 title: `이 주문의 다른 ${split.count}건은 ${splitSiblingsText(split)}`,
-                message: next
+                message: (next
                   ? `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 ${withParticle(next, '을/를')} 적용할까요?`
-                  : '한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체의 쇼핑몰을 비울까요?',
+                  : '한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체의 쇼핑몰을 비울까요?') + ' ' + ORDER_CHANNEL_SPLIT_TAIL,
                 confirmLabel: '주문 전체에 적용',
-                altLabel: '이 건만 바꾸기',
                 level: 'caution',
               })
-              if (pick === null || pick === 'back') return
-              if (pick === 'confirm') fd.set('channelScope', 'order')
+              if (!ok) return
+              fd.set('channelScope', 'order')
             }
           }
         }
@@ -4870,11 +4870,12 @@ export default function FinanceClient({
                       <input type="text" name="channel" value={editExpChannel} onChange={e => setEditExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="edit-exp-channels"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                       <datalist id="edit-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                      {channelSameAsVendor(editExpChannel, editExpVendor) && <p className="text-[0.65625rem] text-[var(--warning-fg)] break-keep">{CHANNEL_SAME_AS_VENDOR_HINT}</p>}
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
                       {(() => {
                         // 카드 갈림 경고(아래 결제 카드)와 같은 문법. 이번에 바꿨을 때만 말한다(옛 주문의 미기록 섞임까지 매번 띄우지 않는다).
                         if (!detailExp.orderId) return null
-                        const next = channelForSave(editExpChannel, channelOptions)
+                        const next = rowChannel(channelForSave(editExpChannel, channelOptions), editExpVendor.trim() || null)
                         if (next === (detailExp.channel ?? null)) return null
                         const split = channelSplitAgainst(expenses.filter(x => x.orderId === detailExp.orderId && x.id !== detailExp.id), next)
                         if (!split) return null
@@ -5285,6 +5286,7 @@ export default function FinanceClient({
                     <input type="text" name="channel" value={addExpChannel} onChange={e => setAddExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="add-exp-channels"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     <datalist id="add-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                    {channelSameAsVendor(addExpChannel, addExpVendor) && <p className="text-[0.65625rem] text-[var(--warning-fg)] break-keep">{CHANNEL_SAME_AS_VENDOR_HINT}</p>}
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
                   </div>
                 )}
@@ -6025,30 +6027,25 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
     if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
 
     // 주문 일부만 골랐는데 쇼핑몰을 바꾸면 나머지 건수를 말하고 함께 적용할지 묻는다(한 결제 = 한 쇼핑몰).
-    // 함께 적용은 그 건들의 쇼핑몰만 바꾼다(다른 칸은 고른 건에만).
+    // 갈래는 [함께 적용 / 취소] 둘뿐이다(운영자 결정 2026-10-20 B, '고른 것만' 갈래는 없앴다). 함께 적용은 그 건들의 쇼핑몰만 바꾸고
+    // (다른 칸은 고른 건에만), 서버가 한 트랜잭션·한 적용취소 스냅샷으로 한다.
     let withSiblings = false
     if ('channel' in data && orderSiblingIds.length > 0) {
-      const pick = await choiceDialog({
+      const ok = await confirmDialog({
         title: `같은 주문에 고르지 않은 ${orderSiblingIds.length}건이 더 있습니다`,
-        message: '한 주문은 한 쇼핑몰에서 결제한 것입니다. 그 건들의 쇼핑몰도 함께 바꿀까요? 다른 항목은 고른 건에만 적용됩니다.',
+        message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 그 건들의 쇼핑몰도 함께 바꿀까요? 다른 항목은 고른 건에만 적용됩니다. ${ORDER_CHANNEL_SPLIT_TAIL}`,
         confirmLabel: '함께 적용',
-        altLabel: '고른 것만',
         level: 'caution',
       })
-      if (pick === null || pick === 'back') return
-      withSiblings = pick === 'confirm'
+      if (!ok) return
+      withSiblings = true
     }
 
     setPending(true); setError('')
-    const res = await batchUpdateExpenses(selectedIds, data)
+    const res = await batchUpdateExpenses(selectedIds, data, withSiblings ? { channelToOrders: true } : undefined)
     if (!res.ok) { setPending(false); setError(res.error); return }
-    let sibUpdated = 0
+    const sibUpdated = res.siblings
     const u: BatchExpensesUndo = { rows: [...res.undo.rows] }
-    if (withSiblings) {
-      const r2 = await batchUpdateExpenses(orderSiblingIds, { channel: data.channel ?? null })
-      if (r2.ok) { sibUpdated = r2.updated; u.rows.push(...r2.undo.rows) }
-      else pushToast('error', r2.error)
-    }
     setPending(false)
     const skipMsg = (res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : '') + (sibUpdated ? ` · 같은 주문 ${sibUpdated}건 쇼핑몰 함께` : '')
     pushToast('success', `지출 ${res.updated}건 업데이트 완료${skipMsg}`, {
@@ -6119,6 +6116,7 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
             <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="미변경" list="batch-exp-channels" className={inputCls} />
             <datalist id="batch-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
           </div>
+          {!clearChannel && channelSameAsVendor(channel, vendor) && <p className="text-[0.65625rem] text-[var(--warning-fg)] break-keep">{CHANNEL_SAME_AS_VENDOR_HINT}</p>}
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={clearChannel} onChange={e => { setClearChannel(e.target.checked); if (e.target.checked) setChannel('') }} className="rounded" />
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">쇼핑몰 비우기</span>

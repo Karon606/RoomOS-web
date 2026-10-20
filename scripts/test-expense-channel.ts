@@ -2,6 +2,7 @@
 import {
   normalizeChannel, isChannelName, channelForSave, channelKey, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, vendorSuggestionsWithoutChannels,
   channelVendorLabel, commonChannel, externalOrderCaption, orderSellerLabel, orderChannelSplit, channelSplitAgainst, splitSiblingsText, mergeChannelConflict,
+  rowChannel, channelSameAsVendor, wouldSplitOrder, ORDER_CHANNEL_SPLIT_DENIED,
 } from '../lib/expenseChannel'
 import { canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, EXPENSE_FIELD_UNDO_KINDS } from '../lib/expenseFieldUndo'
 import { canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo } from '../lib/orderMergeUndo'
@@ -162,6 +163,23 @@ eq('묶기 충돌 없음: 하나 + 미기록', mergeChannelConflict([{ channel: 
   eq('새로 만든 대상이 비면 지운다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B])?.dropTarget, true)
   eq('새로 만든 대상에 그 뒤 다른 행이 붙었으면 남긴다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B, S])?.dropTarget, false)
 }
+
+// ── 운영자 결정 2026-10-20 A: 쇼핑몰이 그 행 구매처와 같은 이름이면 비운다 ──────────
+eq('A 같은 이름은 비움', rowChannel('다이소', '다이소'), null)
+eq('A 대소문자·앞뒤 공백 무시', rowChannel(' Daiso ', 'daiso'), null)
+eq('A 다른 이름은 그대로(정규화)', rowChannel(' 쿠팡 ', '다이소'), '쿠팡')
+eq('A 구매처가 비면 쇼핑몰 그대로', rowChannel('쿠팡', null), '쿠팡')
+eq('A 빈 쇼핑몰은 미기록', rowChannel('', '다이소'), null)
+eq('A 비슷한 이름(쿠팡(주))은 다른 이름', rowChannel('쿠팡', '쿠팡(주)'), '쿠팡')
+eq('A 폼 안내: 같으면 참', channelSameAsVendor('다이소 ', '다이소'), true)
+eq('A 폼 안내: 쇼핑몰 빈 칸이면 거짓', channelSameAsVendor('', ''), false)
+eq('A 폼 안내: 다르면 거짓', channelSameAsVendor('쿠팡', '다이소'), false)
+// ── 결정 B: 한 주문 안 쇼핑몰 갈림(비운 값은 안 센다) ───────────────────────
+eq('B 둘이 다르면 갈림', wouldSplitOrder(['쿠팡', '지마켓']), true)
+eq('B 하나 + 미기록 섞임은 갈림 아님(장부 그물 경고)', wouldSplitOrder(['쿠팡', null, '']), false)
+eq('B 같은 이름은 갈림 아님', wouldSplitOrder(['쿠팡', ' 쿠팡 ']), false)
+eq('B 전부 비면 갈림 아님', wouldSplitOrder([null, undefined]), false)
+eq('B 거절 문장은 먼저 주문에서 빼라는 안내까지', /주문 묶음에서 빼 주세요/.test(ORDER_CHANNEL_SPLIT_DENIED), true)
 
 console.log(`[구매처·쇼핑몰 규칙] ${pass}건 통과${fail ? `, ${fail}건 실패` : ''}`)
 if (fail) process.exit(1)

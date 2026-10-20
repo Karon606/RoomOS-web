@@ -6,6 +6,7 @@
 //   2) AI 가 영수증/재고/기타 분류 + 추출값 표시
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
+import { channelSameAsVendor } from '@/lib/expenseChannel'
 import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
@@ -289,8 +290,8 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
         amount: amount || 0,
         category,
         vendor: vendor || undefined,
-        // 인식한 사업자번호는 구매처 칸이 인식값 그대로일 때만 싣는다. 구매처를 고쳤으면 그 번호의 주인이 아니다.
-        vendorBizNo: row.inferredVendorBizNo && vendor.trim() && vendor.trim() === (row.inferredVendor ?? '').trim() ? row.inferredVendorBizNo : undefined,
+        // 인식한 사업자번호는 구매처를 다른 이름으로 고쳤을 때만 뺀다(그 번호의 주인이 아니다). 비운 경우는 싣는다(결정 C, 비우기는 이름만).
+        vendorBizNo: row.inferredVendorBizNo && (!vendor.trim() || vendor.trim() === (row.inferredVendor ?? '').trim()) ? row.inferredVendorBizNo : undefined,
         channel: channel.trim() || undefined,
         memo: memo || undefined,
         ...(isInventory ? {
@@ -487,6 +488,8 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                 <input id={`pr-channel-${row.id}`} type="text" value={channel} onChange={e => setChannel(e.target.value)} list={`pr-channels-${row.id}`}
                   className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <datalist id={`pr-channels-${row.id}`}>{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+                {/* 상호명과 같은 이름이면 저장할 때 비운다(운영자 결정 2026-10-20 A, 지출 폼과 같은 안내를 이 카드의 칸 이름으로). */}
+                {channelSameAsVendor(channel, vendor) && <p className="text-[0.65625rem] mt-0.5 break-keep" style={{ color: 'var(--warning-fg)' }}>상호명과 같으면 비워 두세요. 저장할 때 비웁니다.</p>}
               </div>
               <div>
                 <label htmlFor={`pr-memo-${row.id}`} className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>메모 (선택)</label>

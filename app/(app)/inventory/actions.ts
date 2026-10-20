@@ -21,7 +21,10 @@ import { loadLocationPaths, indexLocations, conflictingPathName } from './locati
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { noteUnitsUsed, addChannelOption } from '@/app/(app)/settings/actions'
-import { normalizeChannel } from '@/lib/expenseChannel'
+import { channelForSave, rowChannel, wouldSplitOrder, channelSplitAgainst, ORDER_CHANNEL_SPLIT_DENIED } from '@/lib/expenseChannel'
+import { loadChannelNames } from '@/lib/channelOptions'
+import { applyChannelToOrder } from '@/app/(app)/finance/orderChannelApply'
+import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import { applyLocationCheck, applyLocationChecks, detectHubShort, locValuesError, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { transferCheckCreateData } from '@/lib/transferCheck'
 import { assertNotFuture } from '@/lib/completionDate'
@@ -2251,12 +2254,18 @@ export async function updateExpenseFromInventory(id: string, data: {
   date?: string; amount?: number; vendor?: string | null; memo?: string | null
   // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). undefined = 안 건드림, null·빈 값 = 지움(form-clear-vs-absent).
   channel?: string | null
+  // 주문 속 구매면 형제 행(배송비 행 포함)도 같은 쇼핑몰로 맞춘다(화면이 갈림을 물은 답 '주문 전체에 적용', 결정 B).
+  channelToOrder?: boolean
   receivedAt?: string | null  // ISO 문자열 or null(수령 대기로 되돌리기)
   // 수령 대기로 되돌릴 때, 이 수령분을 삼킨 뒤 점검이 있으면 함께 조정할지(cancelReceiptCore 게이트).
   adjustFollowing?: boolean
   // 수량이 빈 추적 구매에 수령일을 넣을 때의 도착 수량(confirmReceipt fillQty 로 그대로 간다).
   qtyValue?: number
-}): Promise<{ ok: true; cancelUndo?: ReceiptCancelUndo; received?: { qtyFill?: ReceiptQtyFill } } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; cancelUndo?: ReceiptCancelUndo; received?: { qtyFill?: ReceiptQtyFill }; channelUndo?: ExpenseFieldUndo }
+  // orderSplit: 이 저장이 한 주문 안 쇼핑몰을 가른다. 화면이 [주문 전체에 적용 / 취소] 로 묻고 channelToOrder 로 다시 보낸다.
+  | { ok: false; error: string; orderSplit?: { count: number; names: string[]; unset: number } }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2277,8 +2286,20 @@ export async function updateExpenseFromInventory(id: string, data: {
     // 종전에는 여기서 receivedAt 만 지우고 자동 점검을 무가드로 삭제해, 실측 머지·이후 점검 반영
     // 가드가 통째로 우회되는 뒷문이었다(수령 취소 클래스의 반쪽).
     const cancel = e.receivedAt !== null && newReceivedAt === null
-    // 쇼핑몰. 지출 수정과 같은 정규화(lib/expenseChannel). 처음 보는 이름이면 아래 저장 뒤 영업장 목록에 쌓는다.
-    const channelNext = data.channel !== undefined ? normalizeChannel(data.channel) : undefined
+    // 쇼핑몰. 지출 수정과 같은 정본(lib/expenseChannel). 목록 표기로 맞추고, 그 행 구매처와 같은 이름이면 비운다(결정 A).
+    // 처음 보는 이름이면 아래 저장 뒤 영업장 목록에 쌓는다.
+    const vendorAfter = data.vendor !== undefined ? (data.vendor || null) : e.vendor
+    const channelWanted = data.channel !== undefined ? channelForSave(data.channel, await loadChannelNames(propertyId)) : undefined
+    const channelNext = channelWanted !== undefined ? rowChannel(channelWanted, vendorAfter) : undefined
+    // 한 주문 = 한 쇼핑몰(결정 B). 이 행 쇼핑몰을 바꾸는 저장이 주문을 가르면 무엇을 쓰기 전에 멈추고 갈림을 알려 준다.
+    const channelToOrder = !!data.channelToOrder && channelNext !== undefined && !!e.orderId
+    if (channelNext !== undefined && channelNext && channelNext !== e.channel && e.orderId && !channelToOrder) {
+      const sibs = await prisma.expense.findMany({ where: { propertyId, orderId: e.orderId, id: { not: id } }, select: { channel: true } })
+      if (wouldSplitOrder([...sibs.map(x => x.channel), channelNext])) {
+        const split = channelSplitAgainst(sibs, channelNext)
+        return { ok: false, error: ORDER_CHANNEL_SPLIT_DENIED, ...(split ? { orderSplit: split } : {}) }
+      }
+    }
     let cancelUndo: ReceiptCancelUndo | undefined
     if (cancel) {
       const r = await cancelReceiptCore(id, propertyId, { adjustFollowing: data.adjustFollowing })
@@ -2298,6 +2319,8 @@ export async function updateExpenseFromInventory(id: string, data: {
     })
 
     if (channelNext && channelNext !== e.channel) await addChannelOption(channelNext).catch(() => {})
+    // '주문 전체에 적용'. 형제도 같은 쇼핑몰로 맞추고(형제마다 구매처 기준) 적용취소 토큰을 돌려준다(재무 수정 폼과 같은 정본).
+    const channelUndo = channelToOrder ? await applyChannelToOrder(propertyId, e.orderId!, id, channelWanted ?? null) : null
 
     // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화.
     let received: { qtyFill?: ReceiptQtyFill } | undefined
@@ -2317,7 +2340,7 @@ export async function updateExpenseFromInventory(id: string, data: {
 
     revalidatePath('/inventory')
     revalidatePath('/finance')   // 지출 페이지 경로는 /finance ('/expenses' 는 존재하지 않는 경로였음)
-    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}), ...(received ? { received } : {}) }
+    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}), ...(received ? { received } : {}), ...(channelUndo ? { channelUndo } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

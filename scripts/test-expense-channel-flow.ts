@@ -326,7 +326,8 @@ async function main() {
     eq('합치기 적용취소: 바이트 동일(원래부터 새 이름이던 행은 안 건드림)', await exactAll([v1.id, v2.id]), before)
     const r2 = await fin.renameVendor('오타상회', '')
     if (!r2.ok) throw new Error(r2.error)
-    eq('비우기: 구매처와 번호 함께 비움', [(await prisma.expense.findUnique({ where: { id: v1.id } }))?.vendor, (await prisma.expense.findUnique({ where: { id: v1.id } }))?.vendorBizNo], [null, null])
+    eq('비우기: 구매처 이름만 비우고 번호는 남김(결정 C)', [(await prisma.expense.findUnique({ where: { id: v1.id } }))?.vendor, (await prisma.expense.findUnique({ where: { id: v1.id } }))?.vendorBizNo], [null, '333-33-33333'])
+    eq('비우기 토큰: 구매처 칸만 싣는다(결정 C)', r2.undo?.rows.flatMap(x => x.changes.map(c => c.field)), ['vendor'])
     eq('비우기 적용취소: 바이트 동일', [(await fin.undoExpenseFieldChange(J(r2.undo!))).ok, await exact(v1.id)], [true, before[[v1.id, v2.id].sort().indexOf(v1.id)]])
   }
 
@@ -343,7 +344,7 @@ async function main() {
     const r = await fin.moveVendorToChannel(['쿠팡'], '쿠팡')
     if (!r.ok) throw new Error(r.error)
     const k1n = await prisma.expense.findUnique({ where: { id: k1.id } })
-    eq('옮기기: 쇼핑몰 적고 구매처·번호 비움', [k1n?.channel, k1n?.vendor, k1n?.vendorBizNo], ['쿠팡', null, null])
+    eq('옮기기: 쇼핑몰 적고 구매처 이름만 비움(번호 남김, 결정 C)', [k1n?.channel, k1n?.vendor, k1n?.vendorBizNo], ['쿠팡', null, '120-88-00767'])
     eq('옮기기: 쇼핑몰이 이미 다른 행은 건너뜀', [r.skipped, (await prisma.expense.findUnique({ where: { id: k3.id } }))?.vendor], [1, '쿠팡'])
     eq('옮기기: 같은 주문 미기록 행 수 제안', r.sameOrder, 1)
     // 위조 토큰은 '쓴 직후' 상태에서 시험한다(그래야 서명 검사만이 막는다).
@@ -384,7 +385,7 @@ async function main() {
     g.__CR_FLOW_PID = P2
     eq('남의 영업장: 적용취소 토큰 거부', (await fin.undoExpenseFieldChange(J(r1.undo!))).ok, false)
     eq('남의 영업장: 이름 변경이 P1 행을 안 건드림', [(await fin.renameVendor('바뀐이름', '침입')).ok, await exact(v.id)], [true, after])
-    eq('남의 영업장: 쇼핑몰로 옮기기 0건', (await fin.moveVendorToChannel(['바뀐이름'], '쿠팡')), { ok: true, updated: 0, skipped: 0, sameOrder: 0 })
+    eq('남의 영업장: 쇼핑몰로 옮기기 0건', (await fin.moveVendorToChannel(['바뀐이름'], '쿠팡')), { ok: true, updated: 0, skipped: 0, splitSkipped: 0, sameOrder: 0 })
     eq('남의 영업장: 수정 거부', (await fin.updateExpense(fd({ id: v.id, date: '2026-07-05', amount: '1000', category: '수선유지비', channel: '침입' }))).ok, false)
     eq('남의 영업장: 묶기 거부', (await fin.mergeExpensesIntoOrder([v.id, (await rowsOf('단일전구'))[0].id])).ok, false)
     eq('남의 영업장: P1 쇼핑몰 목록 그대로', (await channelList(P1))?.includes('침입') ?? false, false)
@@ -471,6 +472,78 @@ async function main() {
     eq('장부 그물: 쇼핑몰 목록 이름이 구매처 자리에 남은 행을 센다', mixed.channelAsVendor.some((x: { vendor: string }) => x.vendor === '쿠팡'), true)
     eq('장부 그물: 번호 하나 이름 둘(쿠팡(주)·소급상회 아님)을 경고로 센다', Array.isArray(mixed.noTwoName), true)
     await prisma.expense.deleteMany({ where: { orderId: o.id } })
+  }
+
+  // ── 19. 운영자 결정 2026-10-20 A(구매처와 같은 이름 = 비움)·B(한 주문 = 한 쇼핑몰 서버 거절)·C(비우기는 이름만) ────────
+  {
+    const list0 = await channelList()
+    // A 등록: 쇼핑몰이 구매처와 같은 이름이면 비우고 목록에 안 쌓는다(대소문자·앞뒤 공백 무시)
+    const a1 = await fin.addExpense(fd({ ...base, amount: '2100', vendor: '다이소', channel: ' 다이소 ', itemLabel: 'A같은이름', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: 'A같은이름', amount: 2100 }]) }))
+    eq('A 등록: 같은 이름 쇼핑몰은 비우고 목록 그대로', [a1.ok, (await rowsOf('A같은이름'))[0]?.channel, await channelList()], [true, null, list0])
+    const a1b = await fin.addExpense(fd({ ...base, amount: '2200', vendor: 'Daiso', channel: 'daiso', itemLabel: 'A대소문자', qtyValue: '1', qtyUnit: '개', itemsJson: items([{ label: 'A대소문자', amount: 2200 }]) }))
+    eq('A 등록: 대소문자만 다른 같은 이름도 비운다', [a1b.ok, (await rowsOf('A대소문자'))[0]?.channel], [true, null])
+    // A 다품목: 품목별 구매처가 쇼핑몰과 같은 행만 비운다(행마다)
+    const a2 = await fin.addExpense(fd({ ...base, amount: '3000', vendor: '판매자머리', channel: '이마트몰', itemsJson: items([{ label: 'A행1', amount: 1000, vendor: '이마트몰' }, { label: 'A행2', amount: 2000 }]) }))
+    eq('A 다품목: 품목 구매처가 쇼핑몰과 같은 행만 비움', [a2.ok, (await rowsOf('A행1'))[0]?.channel, (await rowsOf('A행2'))[0]?.channel], [true, null, '이마트몰'])
+    // A 수정: 같은 이름이면 비운다
+    const ax = (await rowsOf('A행2'))[0]
+    const ru = await fin.updateExpense(fd({ id: ax.id, date: '2026-10-18', amount: '2000', category: '수선유지비', vendor: '이마트몰', channel: '이마트몰', payMethod: '계좌이체', itemLabel: 'A행2', qtyValue: '1', qtyUnit: '개' }))
+    eq('A 수정: 구매처와 같은 쇼핑몰은 비운다', [ru.ok, (await rowsOf('A행2'))[0]?.channel], [true, null])
+    // A 일괄: 행마다 그 행 구매처 기준
+    const g1 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-02T00:00:00Z'), amount: 100, category: '수선유지비', vendor: '옥션' } })
+    const g2 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-02T00:00:00Z'), amount: 100, category: '수선유지비', vendor: '다른판매' } })
+    const gb = await exactAll([g1.id, g2.id])
+    const rb = await fin.batchUpdateExpenses([g1.id, g2.id], { channel: '옥션' })
+    eq('A 일괄: 구매처가 같은 행은 비우고 나머지만 적는다', [rb.ok, (await prisma.expense.findUnique({ where: { id: g1.id } }))?.channel, (await prisma.expense.findUnique({ where: { id: g2.id } }))?.channel], [true, null, '옥션'])
+    if (rb.ok) eq('A 일괄 적용취소: 바이트 동일', [(await fin.undoBatchUpdateExpenses(J(rb.undo))).ok, await exactAll([g1.id, g2.id])], [true, gb])
+    // A 홈 승인 + C 홈 승인(구매처를 비워도 번호를 싣는다)
+    const p1 = await prisma.pendingReceipt.create({ data: { propertyId: P1, uploaderId: OWNER, imageUrl: 'https://example.invalid/a.jpg', inferredVendor: '철물24' } })
+    eq('A 승인 ok', (await pr.approvePendingReceipt(p1.id, { date: '2026-10-19', amount: 4501, category: '수선유지비', vendor: '철물24', channel: '철물24' })).ok, true)
+    eq('A 승인: 상호명과 같은 쇼핑몰은 비운다', (await prisma.expense.findFirst({ where: { propertyId: P1, amount: 4501 } }))?.channel, null)
+    const p2 = await prisma.pendingReceipt.create({ data: { propertyId: P1, uploaderId: OWNER, imageUrl: 'https://example.invalid/c.jpg', inferredVendor: '철물24' } })
+    eq('C 승인 ok', (await pr.approvePendingReceipt(p2.id, { date: '2026-10-19', amount: 4502, category: '수선유지비', vendorBizNo: '111-11-11111' })).ok, true)
+    const c2 = await prisma.expense.findFirst({ where: { propertyId: P1, amount: 4502 } })
+    eq('C 승인: 구매처를 비워도 번호는 남긴다', [c2?.vendor, c2?.vendorBizNo], [null, '111-11-11111'])
+    // A 소모품 구매 수정
+    const iv = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-03T00:00:00Z'), amount: 700, category: '소모품비', itemLabel: 'A소모품', vendor: '다이소' } })
+    const ri = await inv.updateExpenseFromInventory(iv.id, { channel: ' 다이소 ' })
+    eq('A 소모품 수정: 구매처와 같은 쇼핑몰은 비운다', [ri.ok, (await prisma.expense.findUnique({ where: { id: iv.id } }))?.channel], [true, null])
+
+    // B 한 주문 = 한 쇼핑몰: 서버가 갈림을 만드는 쓰기를 거절한다
+    const ob = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261020-001' } })
+    const b1 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount: 1000, category: '수선유지비', vendor: '판매B1', channel: '쿠팡', orderId: ob.id } })
+    const b2 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount: 2000, category: '수선유지비', vendor: '판매B2', channel: '쿠팡', orderId: ob.id } })
+    const b3 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount: 300, category: '소모품비', itemLabel: 'B소모품', vendor: '판매B3', orderId: ob.id } })
+    const bAll = [b1.id, b2.id, b3.id]
+    const bBefore = await exactAll(bAll)
+    const editB1 = { id: b1.id, date: '2026-10-20', amount: '1000', category: '수선유지비', vendor: '판매B1', payMethod: '계좌이체' }
+    const rx = await fin.updateExpense(fd({ ...editB1, channel: '지마켓' }))
+    eq('B 수정: 주문을 가르는 저장은 거절·무변경', [rx.ok, !rx.ok && rx.error.startsWith('한 주문은 한 쇼핑몰입니다'), await exactAll(bAll)], [false, true, bBefore])
+    const rbx = await fin.batchUpdateExpenses([b1.id], { channel: '지마켓' })
+    eq('B 일괄: 함께 적용 없이 주문을 가르면 거절·무변경', [rbx.ok, await exactAll(bAll)], [false, bBefore])
+    const rbo = await fin.batchUpdateExpenses([b1.id], { channel: '지마켓' }, { channelToOrders: true })
+    if (!rbo.ok) throw new Error(rbo.error)
+    eq('B 일괄 함께 적용: 주문 전체가 한 쇼핑몰·형제 수', [(await prisma.expense.findMany({ where: { orderId: ob.id }, select: { channel: true } })).map((x: { channel: string | null }) => x.channel), rbo.siblings], [['지마켓', '지마켓', '지마켓'], 2])
+    eq('B 일괄 함께 적용 적용취소: 바이트 동일', [(await fin.undoBatchUpdateExpenses(J(rbo.undo))).ok, await exactAll(bAll)], [true, bBefore])
+    const rso = await fin.setChannelForVendor(['판매B3'], '지마켓')
+    eq('B 쇼핑몰 지정: 같은 주문에 다른 쇼핑몰이 있으면 건너뛴다', [rso.ok && rso.splitSkipped, rso.ok && rso.updated, await exactAll(bAll)], [1, 0, bBefore])
+    const rio = await inv.updateExpenseFromInventory(b3.id, { channel: '지마켓' })
+    eq('B 소모품 수정: 갈림을 알려 주고 무변경', [rio.ok, !rio.ok && rio.orderSplit?.count, await exactAll(bAll)], [false, 2, bBefore])
+    const sibBefore = await exactAll([b1.id, b2.id])
+    const rio2 = await inv.updateExpenseFromInventory(b3.id, { channel: '지마켓', channelToOrder: true })
+    if (!rio2.ok) throw new Error(rio2.error)
+    eq('B 소모품 수정 주문 전체 적용: 형제도 맞춘다·토큰', [(await prisma.expense.findMany({ where: { orderId: ob.id }, select: { channel: true } })).every((x: { channel: string | null }) => x.channel === '지마켓'), rio2.channelUndo?.rows.length], [true, 2])
+    eq('B 소모품 수정 형제 적용취소', (await fin.undoExpenseFieldChange(J(rio2.channelUndo!))).ok, true)
+    eq('B 소모품 수정 형제 적용취소 뒤 형제 바이트 동일', await exactAll([b1.id, b2.id]), sibBefore)
+    await prisma.expense.update({ where: { id: b3.id }, data: { channel: null } })
+    // 비우기(미기록 섞임)는 거절하지 않는다(장부 그물은 경고로만 센다)
+    const rc = await fin.updateExpense(fd({ ...editB1, channel: '' }))
+    eq('B 수정: 비우기는 갈림이 아니라 통과', [rc.ok, (await prisma.expense.findUnique({ where: { id: b1.id } }))?.channel], [true, null])
+    // 이미 갈린 옛 주문의 다른 칸 수정은 막지 않는다
+    await prisma.expense.update({ where: { id: b1.id }, data: { channel: '지마켓' } })
+    const rm = await fin.updateExpense(fd({ ...editB1, channel: '지마켓', memo: '옛 갈림' }))
+    eq('B 수정: 이미 갈린 옛 주문의 다른 칸 수정은 통과', rm.ok, true)
+    await prisma.expense.deleteMany({ where: { orderId: ob.id } })   // 일부러 만든 갈림 주문을 치운다(장부 그물 시험 앞)
   }
 
   eq('전체 금액 합: 쇼핑몰 작업은 금액을 안 바꾼다(등록분만 늘었다)', (await amountSum()) - sumStart > 0, true)

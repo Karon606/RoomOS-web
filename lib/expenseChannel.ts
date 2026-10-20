@@ -45,6 +45,38 @@ export function channelForSave(raw: string | null | undefined, channelNames: rea
 }
 
 /**
+ * 한 행에 실제로 적을 쇼핑몰(운영자 결정 2026-10-20 A). 쇼핑몰이 그 행 구매처와 같은 이름(channelKey)이면 비운다.
+ * 화면 안내 '비우면 구매처와 같음' 과 같은 뜻이다(다이소에서 산 것을 쇼핑몰 '다이소' 로 두 번 적지 않는다). 그런 이름은 목록에도 안 쌓는다.
+ * 같은 주문 안에서 이 규칙으로 비는 행은 갈림이 아니다(장부 그물은 미기록 섞임을 경고로만 센다).
+ */
+export function rowChannel(channel: string | null | undefined, vendor: string | null | undefined): string | null {
+  const c = key(channel)
+  if (!c) return null
+  return channelKey(c) === channelKey(vendor) ? null : c
+}
+
+/** 폼 안내: 쇼핑몰 칸이 구매처 칸과 같은 이름인가(저장하면 비운다). */
+export function channelSameAsVendor(channel: string | null | undefined, vendor: string | null | undefined): boolean {
+  return !!key(channel) && channelKey(channel) === channelKey(vendor)
+}
+
+/**
+ * 한 주문 안 쇼핑몰이 둘로 갈리는가(이번 쓰기 뒤 모양). 비어 있는 값은 안 센다. 서버 쓰기 관문이 쓴다(한 주문 = 한 쇼핑몰, 결정 B).
+ */
+export function wouldSplitOrder(channelsAfter: readonly (string | null | undefined)[]): boolean {
+  return new Set(channelsAfter.map(v => key(v)).filter(Boolean)).size > 1
+}
+
+/** 폼 안내: 쇼핑몰 칸이 구매처 칸과 같은 이름일 때(결정 A). 재무 등록·수정, 일괄 편집, 소모품 구매 수정이 한 벌로 쓴다. 홈 승인 카드는 칸 이름이 '상호명' 이라 그 낱말로 바꿔 쓴다. */
+export const CHANNEL_SAME_AS_VENDOR_HINT = '구매처와 같으면 비워 두세요. 저장할 때 비웁니다.'
+
+/** 주문 갈림 물음의 꼬리(재무 수정 폼·일괄 편집·소모품 구매 수정). 갈래는 [주문 전체에 적용 / 취소] 둘뿐이라 다른 길을 함께 말한다(결정 B). */
+export const ORDER_CHANNEL_SPLIT_TAIL = '결제가 정말 다르면 취소하고 먼저 지출 상세에서 그 지출을 주문 묶음에서 빼 주세요.'
+
+/** 주문 갈림 쓰기를 거절할 때의 문장(서버). 결제가 정말 다르면 먼저 주문에서 빼라는 안내까지 한 벌이다. */
+export const ORDER_CHANNEL_SPLIT_DENIED = '한 주문은 한 쇼핑몰입니다. 주문 전체에 같은 쇼핑몰을 적거나, 결제가 정말 다르면 먼저 지출 상세에서 그 지출을 주문 묶음에서 빼 주세요.'
+
+/**
  * 구매처 ↔ 사업자번호 지도. 번호가 있는 지출을 **최근순으로** 넘겨받아 구매처별 최근 번호, 번호별 최근 구매처를 하나씩 뽑는다.
  * 쇼핑몰 목록 이름은 양쪽에서 뺀다. '쿠팡' 을 쇼핑몰로 정한 영업장에서 쿠팡 번호를 쳤을 때 구매처 칸이 '쿠팡' 으로 채워지면
  * 플랫폼이 판매자 자리에 선다.

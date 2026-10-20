@@ -11,7 +11,8 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { getExpenseCategories, noteUnitsUsed, addChannelOption } from '@/app/(app)/settings/actions'
-import { normalizeChannel } from '@/lib/expenseChannel'
+import { channelForSave, rowChannel } from '@/lib/expenseChannel'
+import { loadChannelNames } from '@/lib/channelOptions'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { cleanUnit } from '@/lib/receiptOcr'
 import { isMonthKey, targetMonthForSave } from '@/lib/expenseTargetMonth'
@@ -296,7 +297,8 @@ export async function approvePendingReceipt(
     //   같은 파일 finalizePendingReceipt 가 이미 쓰는 문법('중복 등록 방어')과 통일 — 승인만 빠져 있었다.
     //   한 트랜잭션이라 지출 생성이 실패하면 상태 전이도 함께 롤백된다('승인됐는데 지출 없음' 방지).
     const expDate = new Date(final.date)
-    const channel = normalizeChannel(final.channel)
+    // 쇼핑몰. 목록 표기로 맞추고, 상호명(구매처)과 같은 이름이면 비운다(운영자 결정 2026-10-20 A, 지출 저장과 같은 정본).
+    const channel = rowChannel(channelForSave(final.channel, await loadChannelNames(propertyId)), final.vendor?.trim() || null)
     // 지출 저장 경로(addExpense)와 같은 접기 — 날짜의 달과 같으면 NULL(lib/expenseTargetMonth).
     const targetMonth = targetMonthForSave(isMonthKey(final.targetMonth) ? final.targetMonth : null, expDate)
     const exp = await prisma.$transaction(async tx => {
@@ -313,8 +315,8 @@ export async function approvePendingReceipt(
           amount: final.amount,
           category: final.category,
           vendor: final.vendor?.trim() || null,
-          // 구매처가 비면 번호도 싣지 않는다(주인 없는 번호가 번호로 이름 지도를 흐린다).
-          vendorBizNo: final.vendor?.trim() ? normalizeBizNo(final.vendorBizNo ?? null) : null,
+          // 인식한 사업자번호. 구매처를 비워도 번호는 남긴다(구매처 비우기와 같은 규칙, 운영자 결정 2026-10-20 C).
+          vendorBizNo: normalizeBizNo(final.vendorBizNo ?? null),
           channel,
           memo: final.memo ?? null,
           payMethod: '계좌이체',

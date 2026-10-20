@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useState, useTransition, useRef } from 'react'
-import { channelVendorLabel } from '@/lib/expenseChannel'
+import { channelVendorLabel, channelSameAsVendor, splitSiblingsText, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL } from '@/lib/expenseChannel'
 import { getChannelOptions } from '@/app/(app)/settings/actions'
 import { createPortal } from 'react-dom'
 import { useVisibleBand } from '@/lib/useVisibleBand'
@@ -26,7 +26,7 @@ import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeade
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
-import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
+import { mergeItemNames, undoExpenseFieldChange } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr, kstDateTimeToUtc, splitKstDateTime } from '@/lib/kstDate'
 import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor, splitSizeLabel } from '@/lib/units'
@@ -2964,10 +2964,34 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             }
           }
           setSavePending(true)
-          const res = await updateExpenseFromInventory(entry.id, adjustFollowing ? { ...data, adjustFollowing } : data)
+          let res = await updateExpenseFromInventory(entry.id, adjustFollowing ? { ...data, adjustFollowing } : data)
           setSavePending(false)
+          // 한 주문 = 한 쇼핑몰(운영자 결정 2026-10-20 B). 이 구매의 쇼핑몰만 바꾸면 주문이 갈려 서버가 무엇도 쓰지 않고 돌려준다.
+          // 재무 수정 폼과 같은 물음([주문 전체에 적용 / 취소])으로 묻고, 적용이면 형제도 맞춰 다시 보낸다.
+          if (!res.ok && res.orderSplit) {
+            const split = res.orderSplit
+            const ok = await confirmDialog({
+              title: `이 주문의 다른 ${split.count}건은 ${splitSiblingsText(split)}`,
+              message: `한 주문은 한 쇼핑몰에서 결제한 것입니다. 주문 전체에 같은 쇼핑몰을 적용할까요? ${ORDER_CHANNEL_SPLIT_TAIL}`,
+              confirmLabel: '주문 전체에 적용',
+              level: 'caution',
+            })
+            if (!ok) return
+            setSavePending(true)
+            res = await updateExpenseFromInventory(entry.id, { ...(adjustFollowing ? { ...data, adjustFollowing } : data), channelToOrder: true })
+            setSavePending(false)
+          }
           if (!res.ok) { setEditError(res.error); return }
           setEditing(false)
+          const channelUndo = res.channelUndo
+          if (channelUndo) {
+            pushToast('success', `같은 주문 ${channelUndo.rows.length}건에도 쇼핑몰 적용`, {
+              action: { label: '적용취소', run: () => { void undoExpenseFieldChange(channelUndo).then(r => {
+                if (r.ok) { pushToast('info', '같은 주문의 쇼핑몰 적용을 적용취소했습니다'); onChanged() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+            })
+          }
           const cancelUndo = res.cancelUndo
           if (cancelUndo) {
             pushToast('success', '수령을 취소했습니다', {
@@ -4105,11 +4129,12 @@ function PurchaseEditForm({ entry, stockUnit, cardQtyUnit, onCancel, onSave, onD
         <p className={EDIT_LABEL_CLS}>구매처</p>
         <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 다이소, 철물24" className={checkTextInputCls} />
       </div>
-      {/* 쇼핑몰. 지출 폼과 같은 칸·같은 순서(구매처 다음). 이 구매 한 줄만 고친다(주문 전체 맞춤은 지출 수정 폼이 묻는다). */}
+      {/* 쇼핑몰. 지출 폼과 같은 칸·같은 순서(구매처 다음). 주문 속 구매라 갈리면 저장할 때 주문 전체에 적용할지 묻는다(결정 B). */}
       <div>
         <p className={EDIT_LABEL_CLS}>쇼핑몰 <span className="font-normal text-[var(--warm-muted)]">(선택 · 비우면 구매처와 같음)</span></p>
         <input type="text" value={channel} onChange={e => setChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list={`pe-channels-${entry.id}`} className={checkTextInputCls} />
         <datalist id={`pe-channels-${entry.id}`}>{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
+        {channelSameAsVendor(channel, vendor) && <p className="mt-1 text-[0.65625rem] text-[var(--warning-fg)] break-keep">{CHANNEL_SAME_AS_VENDOR_HINT}</p>}
       </div>
       <div>
         <p className={EDIT_LABEL_CLS}>메모</p>

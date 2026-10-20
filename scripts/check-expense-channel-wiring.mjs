@@ -47,11 +47,12 @@ const fa = strip(read(FA))
 // ── ⓑ 등록 ───────────────────────────────────────────────────────
 must(FA, fa, 'addExpense', [
   [/let channel = channelForSave\(formData\.get\('channel'\) as string, await loadChannelNames\(propertyId\)\)/, '머리 쇼핑몰 칸을 정본(channelForSave, 목록 표기 맞춤)으로 안 읽는다'],
-  [/const made = await prisma\.\$transaction\(ops\)\n\s+await noteChannel\(propertyId, channel\)[\s\S]*const made = await prisma\.\$transaction\(ops\)\n\s+await noteChannel\(propertyId, channel\)/, '목록 덧붙이기가 저장(트랜잭션) 뒤가 아니다(검증·합류 거부로 멈춘 저장이 목록을 바꾼다)'],
-  [/const baseRow = \{[\s\S]{0,400}\n\s+channel,\n/, '품목 행 바탕(baseRow)에 쇼핑몰이 없다(배송비 포함 행도 이 바탕을 쓴다)'],
-  [/\.\.\.\(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : \{\}\)/, '다품목 행이 품목별 구매처 정본(itemVendorFor)을 안 거친다'],
+  // 목록 덧붙이기는 저장(트랜잭션) 뒤이고, 실제로 쇼핑몰이 적힌 행이 있을 때만이다(구매처와 같은 이름이라 다 비었으면 안 쌓는다, 결정 A).
+  [/const made = await prisma\.\$transaction\(ops\)\n(?:\s*\/\/[^\n]*\n)?\s+await noteChannel\(propertyId, \(made as \{ channel: string \| null \}\[\]\)\.some\(m => m\.channel\) \? channel : null\)[\s\S]*const made = await prisma\.\$transaction\(ops\)\n\s+await noteChannel\(propertyId, \(made as \{ channel: string \| null \}\[\]\)\.some\(m => m\.channel\) \? channel : null\)/, '목록 덧붙이기가 저장(트랜잭션) 뒤가 아니거나, 다 비운 쇼핑몰도 목록에 쌓는다(결정 A)'],
+  [/const baseRow = \{[\s\S]{0,600}\n\s+channel:\s+rowChannel\(channel, vendor \|\| null\),\n/, '품목 행 바탕(baseRow)에 쇼핑몰이 없거나 구매처와 같은 이름을 비우지 않는다(결정 A)'],
+  [/const iv = multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : head[\s\S]{0,200}channel: rowChannel\(channel, iv\.vendor\)/, '다품목 행이 품목별 구매처 정본(itemVendorFor)을 안 거치거나 그 행 구매처 기준으로 쇼핑몰을 비우지 않는다(결정 A)'],
   [/const multiVendor = multiItems\.length >= 2/, '품목별 구매처가 다품목에만 서지 않는다'],
-  [/mergeChannel|orderChannel !== channel/, '같은 주문 합류가 쇼핑몰이 다른 주문을 막지 않는다'],
+  [/orderChannel && orderChannel !== headChannel/, '같은 주문 합류가 쇼핑몰이 다른 주문을 막지 않는다'],
   [/if \(!channel && orderChannel\) channel = orderChannel/, '쇼핑몰을 비우고 합류할 때 그 주문의 쇼핑몰을 따르지 않는다'],
 ])
 {
@@ -59,22 +60,32 @@ must(FA, fa, 'addExpense', [
   const b = region(fa, 'addExpense') ?? ''
   const at = b.indexOf('const shippingCreate = isOrderMode')
   const sc = at < 0 ? '' : b.slice(at, b.indexOf('if (multiItems) {', at))
-  if (!/\n\s+channel,\s*\n/.test(sc)) violations.push(`${FA} addExpense. 별도 배송비 행이 쇼핑몰을 안 싣는다`)
+  if (!/\n\s+channel:\s+rowChannel\(channel, vendor \|\| null\),/.test(sc)) violations.push(`${FA} addExpense. 별도 배송비 행이 쇼핑몰을 안 싣는다(구매처와 같은 이름이면 비움까지)`)
 }
 // ── ⓒ 수정 ───────────────────────────────────────────────────────
 must(FA, fa, 'updateExpense', [
   [/const channelPresent = formData\.has\('channel'\)/, '쇼핑몰 칸 부재와 비움을 formData.has 로 가르지 않는다(form-clear-vs-absent)'],
-  [/if \(channelPresent\) await noteChannel\(propertyId, channel, existing\.channel\)/, '자동 추가에 이전 값(existing.channel)을 안 넘긴다(뺀 이름이 되살아난다)'],
-  [/\.\.\.\(channelPresent \? \{ channel \} : \{\}\)/, '단일 수정이 칸 부재에서도 쇼핑몰을 덮는다'],
+  [/if \(channelPresent\) await noteChannel\(propertyId, selfChannel, existing\.channel\)/, '자동 추가에 이전 값(existing.channel)을 안 넘기거나 비운 값을 쓰지 않는다'],
+  [/if \(channelPresent\) await noteChannel\(propertyId, \(multiResults as \{ channel: string \| null \}\[\]\)\.some\(m => m\.channel\) \? channel : null, existing\.channel\)/, '다품목 수정이 다 비운 쇼핑몰도 목록에 쌓는다(결정 A)'],
+  [/\.\.\.\(channelPresent \? \{ channel: selfChannel \} : \{\}\)/, '단일 수정이 칸 부재에서도 쇼핑몰을 덮거나 구매처와 같은 이름을 비우지 않는다'],
+  [/const selfChannel = rowChannel\(channel, vendor \|\| null\)/, '수정의 쇼핑몰이 정본(rowChannel)을 안 거친다(결정 A)'],
+  [/if \(channelPresent && !channelToOrder && existing\.orderId && selfChannel && selfChannel !== existing\.channel\) \{[\s\S]{0,300}wouldSplitOrder\(\[\.\.\.sibs\.map\(s => s\.channel\), selfChannel\]\)\) return \{ ok: false, error: ORDER_CHANNEL_SPLIT_DENIED \}/, '수정이 한 주문 안 쇼핑몰을 가르는 저장을 거절하지 않는다(결정 B)'],
+  [/channel: rowChannel\(channel, \(multiVendor \? itemVendorFor\(head, firstRow\.it\.vendor, vendorToBiz\) : head\)\.vendor\)/, '수정 다품목 첫 행이 그 행 구매처 기준으로 쇼핑몰을 비우지 않는다(결정 A)'],
+  [/channel: rowChannel\(channel, \(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : head\)\.vendor\)/, '수정 다품목 새 행이 그 행 구매처 기준으로 쇼핑몰을 비우지 않는다(결정 A)'],
   [/formData\.get\('channelScope'\) === 'order'/, "수정 폼 '주문 전체에 적용' 답을 안 읽는다"],
   [/applyChannelToOrder\(propertyId, existing\.orderId!, id, channel\)/, '주문 전체 적용이 정본 도우미를 안 부른다'],
   [/\.\.\.\(multiVendor \? itemVendorFor\(head, firstRow\.it\.vendor, vendorToBiz\) : \{\}\)/, '수정 다품목 첫 행이 품목별 구매처를 안 거친다'],
   [/\.\.\.\(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : \{\}\)/, '수정 다품목 새 행이 품목별 구매처를 안 거친다'],
 ])
-must(FA, fa, 'applyChannelToOrder', [
+// 주문 전체 적용 도우미는 재무 수정 폼과 소모품 구매 수정이 한 벌로 쓴다(서버 전용 모듈, 'use server' 아님. 액션으로 드러나면 propertyId 를 남이 정한다).
+const OCA = 'app/(app)/finance/orderChannelApply.ts'
+const oca = strip(read(OCA))
+if (/^\s*['"]use server['"]/.test(read(OCA))) violations.push(`${OCA}. 'use server' 파일이면 propertyId 를 받는 도우미가 액션으로 드러난다`)
+must(OCA, oca, 'applyChannelToOrder', [
   [/signFieldUndo\(propertyId, 'channel-order'/, '주문 전체 적용이 적용취소 토큰을 안 낸다'],
   [/if \(r\.count === 1\) done\.push\(s\)/, '주문 전체 적용 토큰에 조건부 갱신이 실제로 바꾼 행만 싣지 않는다'],
   [/where: \{ propertyId, orderId, id: \{ not: selfId \} \}/, '주문 형제를 영업장 범위로 안 고른다'],
+  [/after: rowChannel\(channel, s\.vendor\)/, '주문 전체 적용이 형제마다 그 행 구매처와 같은 이름을 비우지 않는다(결정 A)'],
 ])
 // ── ⓓ 소급 ───────────────────────────────────────────────────────
 must(FA, fa, 'backfillVendorBizNo', [
@@ -102,7 +113,7 @@ must(FA, fa, 'loadVendorToBiz', [[/buildVendorBizMap\(rows, await loadChannelNam
 must(FA, fa, 'renameVendor', [
   [/isChannelName\(oldName, channelNames\) \|\| isChannelName\(target, channelNames\)/, '쇼핑몰 목록 이름이 낀 이름 변경·합치기를 막지 않는다'],
   [/signFieldUndo\(propertyId, 'vendor-rename'/, '구매처 이름 변경·합치기·비우기가 적용취소 토큰을 안 낸다'],
-  [/target \? \{ vendor: target \} : \{ vendor: null, vendorBizNo: null \}/, '구매처를 비울 때 사업자번호를 남긴다(주인 없는 번호)'],
+  [/data: \{ vendor: target \|\| null \},/, '구매처 비우기가 구매처 이름만 비우지 않는다(사업자번호는 남긴다, 결정 C)'],
 ])
 must(FA, fa, 'vendorChannelOp', [
   [/await requireEdit\(\)/, '쇼핑몰 정리에 편집 권한 검사가 없다'],
@@ -110,10 +121,19 @@ must(FA, fa, 'vendorChannelOp', [
   [/h\.channel === null \|\| h\.channel === channel/, '쇼핑몰이 이미 다른 행을 덮는다'],
   [/signFieldUndo\(propertyId, kind, result\.rows\)/, '쇼핑몰 정리가 적용취소 토큰을 안 낸다'],
   [/if \(r\.count === 1\) rows\.push\(\{ id: h\.id, changes \}\)/, '쇼핑몰 정리 토큰에 실제로 바꾼 행만 싣지 않는다'],
+  [/const after = rowChannel\(channel, kind === 'vendor-to-channel' \? null : h\.vendor\)/, '쇼핑몰 정리가 그 행 구매처와 같은 이름을 비우지 않는다(결정 A)'],
+  [/if \(after && h\.orderId && splitOrder\.has\(h\.orderId\)\) \{ splitSkipped\+\+; continue \}/, '쇼핑몰 정리가 같은 주문에 다른 쇼핑몰이 있는 행을 건너뛰지 않는다(결정 B)'],
 ])
+{
+  // 옮기기는 구매처 이름만 비운다(사업자번호를 토큰·쓰기에 싣지 않는다, 결정 C).
+  const b = region(fa, 'vendorChannelOp') ?? ''
+  if (/field: 'vendorBizNo'/.test(b)) violations.push(`${FA} vendorChannelOp. 쇼핑몰로 옮기기가 사업자번호를 비운다(결정 C, 이름만 비운다)`)
+  const r = region(fa, 'renameVendor') ?? ''
+  if (/vendorBizNo: null/.test(r)) violations.push(`${FA} renameVendor. 구매처 비우기가 사업자번호를 비운다(결정 C)`)
+}
 must(FA, fa, 'applyChannelToSameOrders', [
   [/verifyUndoBody\(EXPENSE_FIELD_UNDO_KINDS\[u\.kind\]/, '같은 주문 적용이 서명된 토큰에서만 행을 받지 않는다'],
-  [/channel: null \}, select: \{ id: true \}/, '같은 주문 적용이 미기록 행만 고르지 않는다'],
+  [/const sibs = all\.filter\(s => s\.channel === null && !split\.has\(s\.orderId!\) && rowChannel\(channel, s\.vendor\)\)/, '같은 주문 적용이 미기록 행만 고르지 않거나, 다른 쇼핑몰이 있는 주문·구매처와 같은 이름의 행을 거르지 않는다(결정 A·B)'],
 ])
 // ── ⓖ 주문 묶기·배송비 묶기 ──────────────────────────────────────
 must(FA, fa, 'mergeExpensesIntoOrder', [
@@ -131,7 +151,7 @@ must(FA, fa, 'attachShippingToOrder', [
 {
   // 사후 배송비 행은 새로 만들 때도, 이미 있는 배송비 행을 고칠 때도 그 주문의 쇼핑몰을 싣는다(두 자리 다).
   const b = region(fa, 'attachShippingToOrder') ?? ''
-  if (!/channel:\s+orderChannel,/.test(b) || !/\.\.\.\(orderChannel \? \{ channel: orderChannel \} : \{\}\)/.test(b)) violations.push(`${FA} attachShippingToOrder. 사후 배송비 행(새로 만들기·고치기)이 그 주문의 쇼핑몰을 안 싣거나 미기록일 때 null 로 덮는다`)
+  if (!/channel:\s+rowChannel\(orderChannel, rep\.vendor\),/.test(b) || !/\.\.\.\(orderChannel \? \{ channel: rowChannel\(orderChannel, existingShip\.vendor\) \} : \{\}\)/.test(b)) violations.push(`${FA} attachShippingToOrder. 사후 배송비 행(새로 만들기·고치기)이 그 주문의 쇼핑몰을 안 싣거나 미기록일 때 null 로 덮는다`)
   if (!/where: \{ orderId: existingOrderId, propertyId \}, select: \{ channel: true \}/.test(b)) violations.push(`${FA} attachShippingToOrder. 갈림 검사에 이미 있는 배송비 행을 안 센다`)
 }
 // ── ⓗ 같은 주문번호 제안 ─────────────────────────────────────────
@@ -143,20 +163,33 @@ must('lib/channelOptions.ts', strip(read('lib/channelOptions.ts')), 'appendChann
 // ── ⓘ 일괄 수정·홈 승인·소모품 구매 수정 ─────────────────────────
 must(FA, fa, 'batchUpdateExpenses', [
   [/const changingChannel = 'channel' in data/, '일괄 수정에 쇼핑몰 칸이 없다'],
-  [/if \(changingChannel\) fields\.channel = t\.channel/, '일괄 수정 적용취소 스냅샷에 쇼핑몰이 없다'],
+  [/if \(touchesChannel\(t\)\) fields\.channel = t\.channel/, '일괄 수정 적용취소 스냅샷에 쇼핑몰이 없다'],
+  [/const channelAfterOf = \(t: [^)]*\) => rowChannel\(changingChannel \? channelValue : t\.channel, vendorAfterOf\(t\)\)/, '일괄 수정의 쇼핑몰이 행마다 그 행 구매처 기준으로 비우지 않는다(결정 A)'],
+  [/if \(wouldSplitOrder\(\[\.\.\.mine\.map\(channelAfterOf\), \.\.\.rest\]\)\) return \{ ok: false, error: ORDER_CHANNEL_SPLIT_DENIED \}/, '일괄 수정이 한 주문 안 쇼핑몰을 가르는 쓰기를 거절하지 않는다(결정 B)'],
+  [/for \(const s of siblingsToSet\) undo\.rows\.push\(\{ id: s\.id, fields: \{ channel: s\.channel \} \}\)/, "일괄 수정 '함께 적용' 형제가 적용취소 스냅샷에 안 실린다"],
   [/if \(t\.isShipping && !onlyChannel\)/, '쇼핑몰만 바꾸는 일괄이 배송비 행을 뺀다(한 결제 = 한 쇼핑몰)'],
 ])
 {
   const PR = 'app/(app)/dashboard/pendingReceipt.ts'
   const pr = strip(read(PR))
   must(PR, pr, 'approvePendingReceipt', [
-    [/const channel = normalizeChannel\(final\.channel\)/, '홈 승인이 쇼핑몰을 안 싣는다'],
-    [/vendorBizNo: final\.vendor\?\.trim\(\) \? normalizeBizNo\(final\.vendorBizNo \?\? null\) : null/, '홈 승인이 사업자번호를 버린다(또는 구매처 없이 번호만 싣는다)'],
+    [/const channel = rowChannel\(channelForSave\(final\.channel, await loadChannelNames\(propertyId\)\), final\.vendor\?\.trim\(\) \|\| null\)/, '홈 승인이 쇼핑몰을 정본(목록 표기·구매처와 같으면 비움)으로 안 싣는다(결정 A)'],
+    [/vendorBizNo: normalizeBizNo\(final\.vendorBizNo \?\? null\),/, '홈 승인이 구매처가 비면 사업자번호를 버린다(결정 C, 번호는 남긴다)'],
   ])
   const card = read('components/dashboard/PendingReceiptSection.tsx')
-  if (!/vendor\.trim\(\) === \(row\.inferredVendor \?\? ''\)\.trim\(\) \? row\.inferredVendorBizNo/.test(card)) violations.push('components/dashboard/PendingReceiptSection.tsx. 인식 번호를 구매처 칸이 인식값 그대로일 때만 싣지 않는다')
+  if (!/\(!vendor\.trim\(\) \|\| vendor\.trim\(\) === \(row\.inferredVendor \?\? ''\)\.trim\(\)\) \? row\.inferredVendorBizNo/.test(card)) violations.push('components/dashboard/PendingReceiptSection.tsx. 인식 번호를 구매처를 다른 이름으로 고쳤을 때만 빼지 않는다(비운 경우는 싣는다, 결정 C)')
+  if (!/channelSameAsVendor\(channel, vendor\) &&/.test(card)) violations.push('components/dashboard/PendingReceiptSection.tsx. 쇼핑몰이 상호명과 같을 때 비워 두라는 안내가 없다(결정 A)')
   const IA = 'app/(app)/inventory/actions.ts'
-  must(IA, strip(read(IA)), 'updateExpenseFromInventory', [[/channelNext !== undefined \? \{ channel: channelNext \} : \{\}/, '소모품 구매 수정이 쇼핑몰 칸 부재를 지키지 않는다']])
+  must(IA, strip(read(IA)), 'updateExpenseFromInventory', [
+    [/channelNext !== undefined \? \{ channel: channelNext \} : \{\}/, '소모품 구매 수정이 쇼핑몰 칸 부재를 지키지 않는다'],
+    [/const channelNext = channelWanted !== undefined \? rowChannel\(channelWanted, vendorAfter\) : undefined/, '소모품 구매 수정의 쇼핑몰이 정본(rowChannel)을 안 거친다(결정 A)'],
+    [/if \(channelNext !== undefined && channelNext && channelNext !== e\.channel && e\.orderId && !channelToOrder\) \{[\s\S]{0,300}wouldSplitOrder\(\[\.\.\.sibs\.map\(x => x\.channel\), channelNext\]\)[\s\S]{0,200}error: ORDER_CHANNEL_SPLIT_DENIED/, '소모품 구매 수정이 한 주문 안 쇼핑몰을 가르는 저장을 거절하지 않는다(결정 B)'],
+    [/applyChannelToOrder\(propertyId, e\.orderId!, id, channelWanted \?\? null\)/, "소모품 구매 수정 '주문 전체에 적용' 이 정본 도우미를 안 부른다"],
+  ])
+  const IC = 'app/(app)/inventory/InventoryClient.tsx'
+  const ic = read(IC)
+  if (!/if \(!res\.ok && res\.orderSplit\) \{[\s\S]{0,700}confirmLabel: '주문 전체에 적용'[\s\S]{0,400}channelToOrder: true/.test(ic)) violations.push(`${IC} PurchaseEditForm. 주문 갈림을 [주문 전체에 적용 / 취소] 로 묻고 다시 보내지 않는다(결정 B)`)
+  if (!/channelSameAsVendor\(channel, vendor\) &&/.test(ic)) violations.push(`${IC} PurchaseEditForm. 쇼핑몰이 구매처와 같을 때 안내가 없다(결정 A)`)
 }
 // ── ⓙ 표시·검색·엑셀 ─────────────────────────────────────────────
 {
@@ -241,6 +274,21 @@ must(FA, fa, 'batchUpdateExpenses', [
       for (const re of BAD) if (re.test(ln)) violations.push(`${f}:${i + 1}. 구매처를 쇼핑몰 자리에 대신 쓴다. 비운 쇼핑몰은 미기록이다(lib/expenseChannel). 표시는 channelVendorLabel 을 쓴다`)
     })
   }
+}
+
+// ── 운영자 결정 2026-10-20 A·B·C 화면 ───────────────────────────────
+{
+  const FC = 'app/(app)/finance/FinanceClient.tsx'
+  const fc = read(FC)
+  if (/altLabel: '이 건만 바꾸기'/.test(fc)) violations.push(`${FC} 수정 폼. '이 건만 바꾸기' 갈래가 남았다(결정 B, 주문 전체에 적용 / 취소만)`)
+  if (/altLabel: '고른 것만'/.test(fc)) violations.push(`${FC} 일괄 편집. '고른 것만' 갈래가 남았다(결정 B)`)
+  if (!/batchUpdateExpenses\(selectedIds, data, withSiblings \? \{ channelToOrders: true \} : undefined\)/.test(fc)) violations.push(`${FC} 일괄 편집. '함께 적용' 을 서버 한 번(channelToOrders)으로 보내지 않는다`)
+  if ((fc.match(/ORDER_CHANNEL_SPLIT_TAIL/g) ?? []).length < 3) violations.push(`${FC}. 주문 갈림 물음에 '먼저 주문에서 빼라' 안내가 없다(결정 B)`)
+  for (const [state, v] of [['addExpChannel', 'addExpVendor'], ['editExpChannel', 'editExpVendor'], ['channel', 'vendor']]) {
+    if (!new RegExp(`channelSameAsVendor\\(${state}, ${v}\\) &&`).test(fc)) violations.push(`${FC}. 쇼핑몰 칸(${state})이 구매처와 같을 때 비워 두라는 안내가 없다(결정 A)`)
+  }
+  if (!/const next = rowChannel\(channelForSave\(String\(fd\.get\('channel'\)/.test(fc)) violations.push(`${FC} 수정 폼. 갈림 물음이 구매처와 같은 이름을 비운 값으로 보지 않는다(결정 A)`)
+  if (/구매처와 사업자등록번호가 비워집니다|구매처와 사업자등록번호를 비웁니다/.test(fc)) violations.push(`${FC} 구매처 관리. 비우기·옮기기 문구가 사업자번호도 비운다고 말한다(결정 C)`)
 }
 
 if (violations.length) {

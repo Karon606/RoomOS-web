@@ -63,14 +63,15 @@ import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본과 글자 칸 일괄 변경 적용취소 토큰(2026-10-19 운영자 승인, 신고 a0636f36).
-import { VENDOR_CHANNEL_LOCKED, channelForSave, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
+import { VENDOR_CHANNEL_LOCKED, ORDER_CHANNEL_SPLIT_DENIED, rowChannel, wouldSplitOrder, channelForSave, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict, isChannelName, vendorSuggestionsWithoutChannels } from '@/lib/expenseChannel'
 // 쇼핑몰 목록 읽기·원자적 덧붙이기(저장이 끝난 뒤에만 덧붙인다, 독립 검수 2026-10-20).
 import { loadChannelNames, appendChannelOption } from '@/lib/channelOptions'
 import { ORDER_MERGE_UNDO_DOMAIN, canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo, type OrderMergeUndo, type OrderSnap } from '@/lib/orderMergeUndo'
 import {
   EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
-  type ExpenseFieldUndo, type ExpenseFieldUndoKind, type ExpenseFieldUndoField,
+  type ExpenseFieldUndo, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
+import { signFieldUndo, applyChannelToOrder } from './orderChannelApply'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -657,15 +658,6 @@ async function loadVendorToBiz(propertyId: string): Promise<Record<string, strin
   return buildVendorBizMap(rows, await loadChannelNames(propertyId)).vendorToBiz
 }
 
-/** 글자 칸 일괄 변경 적용취소 토큰에 서버 서명을 붙인다. 운영에서 키가 없으면 토큰을 내지 않는다(화면은 적용취소를 숨긴다). */
-function signFieldUndo(propertyId: string, kind: ExpenseFieldUndoKind, rows: ExpenseFieldUndo['rows']): ExpenseFieldUndo | null {
-  if (rows.length === 0) return null
-  const body = { v: 1 as const, kind, rows }
-  const sig = signUndoBody(EXPENSE_FIELD_UNDO_KINDS[kind], propertyId, canonicalExpenseFieldUndo(body))
-  if (sig === null) return null
-  return sig ? { ...body, sig } : body
-}
-
 const FIELD_UNDO_INVALID = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 const FIELD_UNDO_CONFLICT = '그 사이 해당 지출이 다시 바뀌어 되돌리지 않았습니다. 지출 내역에서 지금 상태를 확인해 주세요.'
 
@@ -738,30 +730,6 @@ async function noteUnits(specUnits: (string | null | undefined)[], qtyUnits: (st
 // 되살아나지 않게 한다(카테고리의 prev 와 같은 규칙, 새로 적은 값만 더한다). 저장 값과 같은 cleanUnit 으로 견준다.
 function newUnitsOnly(units: (string | null | undefined)[], prev: string | null | undefined) {
   return units.filter(u => (cleanUnit(u) ?? null) !== (prev ?? null))
-}
-
-/**
- * 수정 폼 '주문 전체에 적용'. 이 행의 주문 형제(배송비 행 포함, 이 영업장)를 같은 쇼핑몰로 맞추고, 바꾼 형제의 전후 값을 적용취소 토큰으로 돌려준다.
- * 저장(이 행)은 이미 끝났다. 형제 맞춤이 실패해도 저장을 무르지 않는다(토큰 없이 돌아가고 화면은 형제가 그대로라 다시 물을 수 있다).
- */
-async function applyChannelToOrder(propertyId: string, orderId: string, selfId: string, channel: string | null): Promise<ExpenseFieldUndo | null> {
-  try {
-    const changed = await prisma.$transaction(async tx => {
-      const sibs = await tx.expense.findMany({ where: { propertyId, orderId, id: { not: selfId } }, select: { id: true, channel: true } })
-      const diff = sibs.filter(s => (s.channel ?? null) !== channel)
-      const done: typeof diff = []
-      // 토큰에는 조건부 갱신이 실제로 바꾼 행(count 1)만 싣는다. 그사이 바뀐 행이 섞이면 적용취소가 늘 거부된다(독립 검수).
-      for (const s of diff) {
-        const r = await tx.expense.updateMany({ where: { id: s.id, propertyId, channel: s.channel }, data: { channel } })
-        if (r.count === 1) done.push(s)
-      }
-      return done
-    })
-    return signFieldUndo(propertyId, 'channel-order', changed.map(s => ({ id: s.id, changes: [{ field: 'channel', before: s.channel ?? null, after: channel }] })))
-  } catch (e) {
-    console.error('[updateExpense] 주문 전체 쇼핑몰 맞춤 실패(저장 유지)', e)
-    return null
-  }
 }
 
 export async function addExpense(formData: FormData): Promise<{ ok: true; backfilled?: number; backfillUndo?: ExpenseFieldUndo; durableUndo?: DurableConvertUndo } | { ok: false; error: string }> {
@@ -922,7 +890,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         // 한 주문(한 결제)은 한 쇼핑몰이다. 다른 쇼핑몰 주문에는 합류하지 않는다(화면 제안도 같은 쇼핑몰만 보인다).
         // 쇼핑몰을 비우고 합류하면 그 주문의 쇼핑몰을 따른다.
         const orderChannel = commonChannel(existing.expenses)
-        if (channel && orderChannel && orderChannel !== channel) {
+        const headChannel = rowChannel(channel, vendor || null)   // 구매처와 같은 이름이면 비운 값(결정 A)
+        if (headChannel && orderChannel && orderChannel !== headChannel) {
           return { ok: false, error: `이 주문은 ${orderChannel} 주문입니다. 쇼핑몰이 다른 지출은 같은 주문으로 묶을 수 없습니다.` }
         }
         if (!channel && orderChannel) channel = orderChannel
@@ -951,7 +920,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       category,
       vendor:             vendor || null,
       vendorBizNo:        vendorBizNo,
-      channel,
+      // 쇼핑몰이 이 행 구매처와 같은 이름이면 비운다(운영자 결정 2026-10-20 A, lib/expenseChannel rowChannel).
+      channel:            rowChannel(channel, vendor || null),
       memo:               memo || null,
       payMethod:          payMethod || '계좌이체',
       financialAccountId: financialAccountId || null,
@@ -979,7 +949,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
             detail:             `배송비${orderShippingType ? ` (${orderShippingType})` : ''}`,
             vendor:             vendor || null,
             vendorBizNo:        vendorBizNo,
-            channel,            // 배송비 행도 같은 결제라 같은 쇼핑몰
+            channel:            rowChannel(channel, vendor || null),   // 배송비 행도 같은 결제라 같은 쇼핑몰(머리 구매처 기준)
             memo:               orderShippingMemo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -1001,10 +971,14 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       const head = { vendor: vendor || null, vendorBizNo }
       const multiVendor = multiItems.length >= 2
       const vendorToBiz = needsVendorLookup(multiItems, head.vendor) ? await loadVendorToBiz(propertyId) : {}
-      const itemCreates = rows.map(r => prisma.expense.create({
+      const itemCreates = rows.map(r => {
+        // 품목별 구매처가 쇼핑몰과 같은 이름이면 그 행 쇼핑몰은 비운다(결정 A, 행마다).
+        const iv = multiVendor ? itemVendorFor(head, r.it.vendor, vendorToBiz) : head
+        return prisma.expense.create({
         data: {
           ...baseRow,
-          ...(multiVendor ? itemVendorFor(head, r.it.vendor, vendorToBiz) : {}),
+          ...(multiVendor ? iv : {}),
+          channel: rowChannel(channel, iv.vendor),
           ...placeOf(r.it.label, r.roomId),   // roomId·targetRoomId 두 칸(비품 물품은 수령 전 자리가 예정 호실뿐)
           amount:    r.amount,
           detail:    `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${cleanUnit(r.it.specUnit) ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${cleanUnit(r.it.qtyUnit) ?? ''}` : ''}`,
@@ -1020,7 +994,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
           qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
           allocationGroupId: r.groupId,
         },
-      }))
+      })
+      })
       const ops = [...itemCreates]
       if (shippingCreate) ops.push(shippingCreate)
       // 합산형 배송비 — 품목 행으로 흡수하면 단가가 왜곡되므로 별도 행(재고 제외)으로 분리
@@ -1028,7 +1003,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         data: { ...baseRow, amount: shippingIncluded, detail: '배송비', isShipping: true, excludeFromInventory: true },
       }))
       const made = await prisma.$transaction(ops)
-      await noteChannel(propertyId, channel)
+      // 실제로 쇼핑몰이 적힌 행이 있을 때만 목록에 쌓는다(구매처와 같은 이름이라 다 비었으면 안 쌓는다, 결정 A).
+      await noteChannel(propertyId, (made as { channel: string | null }[]).some(m => m.channel) ? channel : null)
       await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
@@ -1062,7 +1038,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const ops = [singleCreate]
     if (shippingCreate) ops.push(shippingCreate)
     const made = await prisma.$transaction(ops)
-    await noteChannel(propertyId, channel)
+    await noteChannel(propertyId, (made as { channel: string | null }[]).some(m => m.channel) ? channel : null)
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
     await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
@@ -1177,6 +1153,14 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const channel = channelPresent ? channelForSave(formData.get('channel') as string, await loadChannelNames(propertyId)) : existing.channel
     // '주문 전체에 적용'(수정 폼이 갈림을 물은 답). 이 행의 주문 형제(배송비 행 포함)도 같은 쇼핑몰로 맞춘다. 적용취소 토큰을 돌려준다.
     const channelToOrder = channelPresent && formData.get('channelScope') === 'order' && !!existing.orderId
+    // 이 행에 실제로 적힐 쇼핑몰(구매처와 같은 이름이면 비운다, 결정 A).
+    const selfChannel = rowChannel(channel, vendor || null)
+    // 한 주문 = 한 쇼핑몰(운영자 결정 2026-10-20 B). 이 행의 쇼핑몰을 바꾸는 저장이 주문 안 쇼핑몰을 둘로 가르면 거절한다.
+    // '주문 전체에 적용' 은 형제도 맞추니 통과다. 이미 갈린 옛 주문의 다른 칸 수정은 막지 않는다(이 행 쇼핑몰이 그대로면 안 본다).
+    if (channelPresent && !channelToOrder && existing.orderId && selfChannel && selfChannel !== existing.channel) {
+      const sibs = await prisma.expense.findMany({ where: { propertyId, orderId: existing.orderId, id: { not: id } }, select: { channel: true } })
+      if (wouldSplitOrder([...sibs.map(s => s.channel), selfChannel])) return { ok: false, error: ORDER_CHANNEL_SPLIT_DENIED }
+    }
     // 비품의 '배정할 호실' 칸(부재 undefined · 빈 값 null). 수령 전 비품 수정 폼에만 선다.
     const formTarget = formData.has('targetRoomId') ? (((formData.get('targetRoomId') as string) || '').trim() || null) : undefined
     // 폼이 실어 온 호실(방별 분배·배정할 호실 포함)·결제 계정 id 도 이 영업장 것만 받는다. 남의 호실·계정을 이 지출에 걸지 못한다.
@@ -1325,7 +1309,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             vendor:             vendor || null,
             vendorBizNo:        vendorBizNo,
             ...(multiVendor ? itemVendorFor(head, firstRow.it.vendor, vendorToBiz) : {}),
-            channel,
+            // 행마다 그 행 구매처 기준(결정 A).
+            channel: rowChannel(channel, (multiVendor ? itemVendorFor(head, firstRow.it.vendor, vendorToBiz) : head).vendor),
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -1358,7 +1343,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             vendor:             vendor || null,
             vendorBizNo:        vendorBizNo,
             ...(multiVendor ? itemVendorFor(head, r.it.vendor, vendorToBiz) : {}),
-            channel,
+            channel: rowChannel(channel, (multiVendor ? itemVendorFor(head, r.it.vendor, vendorToBiz) : head).vendor),
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -1391,7 +1376,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             detail:             '배송비',
             vendor:             vendor || null,
             vendorBizNo:        vendorBizNo,
-            channel,
+            channel:            selfChannel,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
             financeName:        financeName || null,
@@ -1414,7 +1399,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       }
       const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       const channelUndo = channelToOrder ? await applyChannelToOrder(propertyId, existing.orderId!, id, channel) : null
-      if (channelPresent) await noteChannel(propertyId, channel, existing.channel)
+      // 실제로 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
+      if (channelPresent) await noteChannel(propertyId, (multiResults as { channel: string | null }[]).some(m => m.channel) ? channel : null, existing.channel)
       revalidatePath('/finance')
       const tail = { backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}) }
       if (!convertPlan) return { ok: true, ...tail }
@@ -1507,8 +1493,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         detail:             detail || null,
         vendor:             vendor || null,
         vendorBizNo:        vendorBizNo,
-        // 쇼핑몰. 칸이 없으면 안 건드린다(부재 = 보존).
-        ...(channelPresent ? { channel } : {}),
+        // 쇼핑몰. 칸이 없으면 안 건드린다(부재 = 보존). 구매처와 같은 이름이면 비운다(결정 A).
+        ...(channelPresent ? { channel: selfChannel } : {}),
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
@@ -1633,7 +1619,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     }
     const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     const channelUndo = channelToOrder ? await applyChannelToOrder(propertyId, existing.orderId!, id, channel) : null
-    if (channelPresent) await noteChannel(propertyId, channel, existing.channel)
+    if (channelPresent) await noteChannel(propertyId, selfChannel, existing.channel)
     revalidatePath('/finance')
     return {
       ok: true, backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}),
@@ -1688,7 +1674,10 @@ export async function batchUpdateExpenses(
     // 쇼핑몰(2026-10-19). 키가 있으면 바꾼다. 빈 값·null 은 비우기(화면은 '쇼핑몰 비우기' 길로만 보낸다, 빈 칸 = 미변경이라).
     channel?: string | null
   },
-): Promise<{ ok: true; updated: number; skipped: { reason: string; count: number }[]; undo: BatchExpensesUndo } | { ok: false; error: string }> {
+  // 쇼핑몰을 바꿀 때 고른 행이 든 주문의 나머지 행도 같은 쇼핑몰로 맞춘다(화면의 '함께 적용', 결정 B). 그 행들은 쇼핑몰만 바뀌고
+  // 적용취소 스냅샷에 함께 실린다. 끄면 갈림을 만드는 쓰기는 거절된다.
+  opts?: { channelToOrders?: boolean },
+): Promise<{ ok: true; updated: number; siblings: number; skipped: { reason: string; count: number }[]; undo: BatchExpensesUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1728,7 +1717,7 @@ export async function batchUpdateExpenses(
         payMethod: true, financialAccountId: true, financeName: true,
         date: true, detail: true, memo: true,
         vendor: true, vendorBizNo: true, channel: true,
-        targetMonth: true,
+        targetMonth: true, orderId: true,
       },
     })
 
@@ -1743,6 +1732,28 @@ export async function batchUpdateExpenses(
       if ((changingDate || changingTargetMonth) && t.recurringExpenseId) { bump('고정지출 기록'); continue }
       if (changingCatOrDetail && t.itemLabel) { bump('품목 등록 지출'); continue }
       eligible.push(t)
+    }
+
+    // 행마다 쇼핑몰 결과(결정 A, rowChannel). 구매처만 바꿔도 새 구매처가 그 행 쇼핑몰과 같은 이름이 되면 비운다.
+    const vendorAfterOf = (t: { vendor: string | null }) => changingVendor ? (data.vendor?.trim() || null) : t.vendor
+    const channelAfterOf = (t: { vendor: string | null; channel: string | null }) => rowChannel(changingChannel ? channelValue : t.channel, vendorAfterOf(t))
+    const touchesChannel = (t: { vendor: string | null; channel: string | null }) => changingChannel || channelAfterOf(t) !== t.channel
+    // 주문의 나머지 행(고르지 않은 행). '함께 적용' 이면 쇼핑몰만 맞추고, 아니면 갈림 판정에만 쓴다.
+    const eligibleIds = new Set(eligible.map(e => e.id))
+    const touchedOrderIds = [...new Set(eligible.filter(t => t.orderId && touchesChannel(t)).map(t => t.orderId!))]
+    const orderRest = touchedOrderIds.length
+      ? (await prisma.expense.findMany({ where: { propertyId, orderId: { in: touchedOrderIds } }, select: { id: true, orderId: true, vendor: true, channel: true } })).filter(s => !eligibleIds.has(s.id))
+      : []
+    const siblingsToSet = changingChannel && opts?.channelToOrders
+      ? orderRest.map(s => ({ ...s, after: rowChannel(channelValue, s.vendor) })).filter(s => s.after !== s.channel)
+      : []
+    // 한 주문 = 한 쇼핑몰(결정 B). 이 쓰기 뒤 주문 안 쇼핑몰이 둘로 갈리면 통째로 거절한다. 쇼핑몰이 새로 적히는 주문만 본다
+    // (이미 갈린 옛 주문을 비우거나 다른 칸만 고치는 일은 막지 않는다).
+    for (const oid of touchedOrderIds) {
+      const mine = eligible.filter(t => t.orderId === oid)
+      if (!mine.some(t => { const a = channelAfterOf(t); return !!a && a !== t.channel })) continue
+      const rest = orderRest.filter(s => s.orderId === oid).map(s => siblingsToSet.find(x => x.id === s.id)?.after ?? s.channel)
+      if (wouldSplitOrder([...mine.map(channelAfterOf), ...rest])) return { ok: false, error: ORDER_CHANNEL_SPLIT_DENIED }
     }
 
     // 되돌리기 스냅샷 — 덮어쓰기 전 원값(정산완료 이력 왕복 보존: settleStatus 필수 포함)
@@ -1762,9 +1773,10 @@ export async function batchUpdateExpenses(
       if (changingMemo) fields.memo = t.memo
       if (changingVendor) fields.vendor = t.vendor
       if (changingBizNo) fields.vendorBizNo = t.vendorBizNo
-      if (changingChannel) fields.channel = t.channel
+      if (touchesChannel(t)) fields.channel = t.channel
       undo.rows.push({ id: t.id, fields })
     }
+    for (const s of siblingsToSet) undo.rows.push({ id: s.id, fields: { channel: s.channel } })
 
     // 결제수단 외 공통 필드 — 적격 행 전체에 동일 적용
     const commonData: Record<string, unknown> = {}
@@ -1775,7 +1787,7 @@ export async function batchUpdateExpenses(
     // 구매처·사업자번호 — 선택된 지출만 갱신(backfill 미호출: 같은 구매처의 다른 지출까지 덮으면 안 됨).
     if (changingVendor) commonData.vendor = data.vendor?.trim() || null
     if (changingBizNo) commonData.vendorBizNo = normalizeBizNo(data.vendorBizNo ?? null)
-    if (changingChannel) commonData.channel = channelValue
+    // 쇼핑몰은 행마다 다를 수 있어(결정 A) 공통 칸이 아니라 아래에서 값별로 묶어 쓴다.
 
     if (eligible.length > 0) {
       const ops: Prisma.PrismaPromise<unknown>[] = []
@@ -1799,7 +1811,7 @@ export async function batchUpdateExpenses(
             data: { ...commonData, payMethod: data.payMethod, financialAccountId: data.financialAccountId ?? null, financeName: data.financeName ?? null, settleStatus: s },
           }))
         }
-      } else {
+      } else if (Object.keys(commonData).length > 0) {
         ops.push(prisma.expense.updateMany({
           where: { id: { in: eligible.map(e => e.id) }, propertyId },
           data: commonData,
@@ -1824,8 +1836,14 @@ export async function batchUpdateExpenses(
           data: { targetMonth: null },
         }))
       }
-      await prisma.$transaction(ops)
-      if (changingChannel) await noteChannel(propertyId, channelValue)
+      // 쇼핑몰 결과별로 묶는다(고른 행 + '함께 적용' 의 주문 나머지 행). 한 트랜잭션이다.
+      const byChannel = new Map<string | null, string[]>()
+      for (const t of eligible) if (touchesChannel(t)) { const k = channelAfterOf(t); byChannel.set(k, [...(byChannel.get(k) ?? []), t.id]) }
+      for (const s of siblingsToSet) byChannel.set(s.after, [...(byChannel.get(s.after) ?? []), s.id])
+      for (const [ch, ids] of byChannel) ops.push(prisma.expense.updateMany({ where: { id: { in: ids }, propertyId }, data: { channel: ch } }))
+      if (ops.length > 0) await prisma.$transaction(ops)
+      // 실제로 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
+      if (changingChannel) await noteChannel(propertyId, [...byChannel.keys()].some(Boolean) ? channelValue : null)
     }
 
     revalidatePath('/finance')
@@ -1833,6 +1851,7 @@ export async function batchUpdateExpenses(
     return {
       ok: true,
       updated: eligible.length,
+      siblings: eligible.length > 0 ? siblingsToSet.length : 0,
       skipped: Object.entries(skippedCounts).map(([reason, count]) => ({ reason, count })),
       undo,
     }
@@ -2342,7 +2361,7 @@ export async function attachShippingToOrder(input: {
         await prisma.expense.update({
           where: { id: existingShip.id },
           // 쇼핑몰은 정해졌을 때만 적는다. 미기록 주문이면 배송비 행의 값을 그대로 둔다(null 로 덮지 않는다).
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: orderChannel } : {}), createdAt: shipCreatedAt },
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: rowChannel(orderChannel, existingShip.vendor) } : {}), createdAt: shipCreatedAt },
         })
       } else {
         await prisma.expense.create({
@@ -2354,7 +2373,7 @@ export async function attachShippingToOrder(input: {
             amount:             shipData.amount,
             detail:             shipData.detail,
             vendor:             rep.vendor,
-            channel:            orderChannel,   // 같은 결제라 그 주문의 쇼핑몰
+            channel:            rowChannel(orderChannel, rep.vendor),   // 같은 결제라 그 주문의 쇼핑몰(구매처와 같은 이름이면 비움, 결정 A)
             memo:               shipData.shippingMemo,
             payMethod:          rep.payMethod || '계좌이체',
             financialAccountId: rep.financialAccountId,
@@ -3534,7 +3553,7 @@ export async function getVendorUsage(): Promise<{ vendor: string; count: number;
 //   · 바꾼 행 id 와 전후 값을 적용취소 토큰으로 돌려준다(값으로 되돌리면 원래부터 새 이름이던 행까지 옛 이름이 된다).
 //   · 쇼핑몰 목록 이름이 낀 이름 변경·합치기는 막는다. 플랫폼 이름은 판매자가 아니라서 판매자끼리 합치면 사업자번호가 섞인다.
 //     그 이름의 행은 '쇼핑몰로 옮기기'로 쇼핑몰 칸에 옮긴다. 비우기는 막지 않는다.
-//   · 구매처를 비우면 그 행의 사업자번호도 함께 비운다(구매처 = 판매자 이름 + 번호, 주인 없는 번호는 번호로 이름 채우기를 흐린다).
+//   · 구매처 비우기는 종전대로 구매처 이름만 비운다. 사업자번호는 남긴다(운영자 결정 2026-10-20 C, 번호는 영수증에서 온 사실이다).
 export async function renameVendor(oldName: string, newName: string): Promise<{ ok: true; updated: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -3550,16 +3569,13 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
       if (hit.length === 0) return hit
       await tx.expense.updateMany({
         where: { id: { in: hit.map(h => h.id) }, propertyId, vendor: oldName },
-        data: target ? { vendor: target } : { vendor: null, vendorBizNo: null },
+        data: { vendor: target || null },
       })
       return hit
     })
     const undo = signFieldUndo(propertyId, 'vendor-rename', rows.map(r => ({
       id: r.id,
-      changes: [
-        { field: 'vendor' as const, before: r.vendor, after: target || null },
-        ...(!target && r.vendorBizNo ? [{ field: 'vendorBizNo' as const, before: r.vendorBizNo, after: null }] : []),
-      ],
+      changes: [{ field: 'vendor' as const, before: r.vendor, after: target || null }],
     })))
     revalidatePath('/finance')
     return { ok: true, updated: rows.length, ...(undo ? { undo } : {}) }
@@ -3569,8 +3585,11 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
   }
 }
 
-/** 구매처 정리 결과 + 같은 주문의 다른 행(쇼핑몰 미기록) 수. 화면이 '같은 주문 N건에도 적용'을 제안한다. */
-export type VendorChannelResult = { ok: true; updated: number; skipped: number; sameOrder: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }
+/**
+ * 구매처 정리 결과 + 같은 주문의 다른 행(쇼핑몰 미기록) 수. 화면이 '같은 주문 N건에도 적용'을 제안한다.
+ * splitSkipped 는 같은 주문의 다른 행에 다른 쇼핑몰이 적혀 있어 건너뛴 수다(한 주문 = 한 쇼핑몰, 결정 B).
+ */
+export type VendorChannelResult = { ok: true; updated: number; skipped: number; splitSkipped: number; sameOrder: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }
 
 /** 이 행들이 든 주문의 다른 행 중 쇼핑몰이 미기록인 행 수(배송비 행 포함). */
 async function countSameOrderUnset(propertyId: string, rowIds: string[]): Promise<number> {
@@ -3582,7 +3601,8 @@ async function countSameOrderUnset(propertyId: string, rowIds: string[]): Promis
 }
 
 /**
- * 구매처 정리 카드 '쇼핑몰로 옮기기'. 구매처 이름이 사실은 플랫폼(쿠팡 등)인 행에 쇼핑몰을 적고 구매처(이름·번호)를 비운다.
+ * 구매처 정리 카드 '쇼핑몰로 옮기기'. 구매처 이름이 사실은 플랫폼(쿠팡 등)인 행에 쇼핑몰을 적고 구매처 이름을 비운다.
+ * 사업자번호는 남긴다(구매처 비우기와 같은 규칙, 운영자 결정 2026-10-20 C).
  * 쇼핑몰이 이미 다른 이름으로 적힌 행은 건너뛴다(덮지 않는다). 쇼핑몰 이름은 목록에 쌓는다. 적용취소 토큰을 돌려준다.
  */
 export async function moveVendorToChannel(vendorNames: string[], channelRaw: string): Promise<VendorChannelResult> {
@@ -3607,28 +3627,35 @@ async function vendorChannelOp(vendorNames: string[], channelRaw: string, kind: 
     const channel = channelForSave(channelRaw, await loadChannelNames(propertyId))
     if (!channel) return { ok: false, error: '쇼핑몰 이름을 입력하세요.' }
     const result = await prisma.$transaction(async tx => {
-      const hit = await tx.expense.findMany({ where: { propertyId, vendor: { in: names } }, select: { id: true, vendor: true, vendorBizNo: true, channel: true } })
+      const hit = await tx.expense.findMany({ where: { propertyId, vendor: { in: names } }, select: { id: true, vendor: true, vendorBizNo: true, channel: true, orderId: true } })
       const ok = hit.filter(h => h.channel === null || h.channel === channel)
+      // 한 주문 = 한 쇼핑몰(결정 B). 같은 주문의 다른 행(이번 대상 밖)에 다른 쇼핑몰이 적혀 있으면 그 행은 건너뛴다(갈림을 만들지 않는다).
+      const hitIds = new Set(hit.map(h => h.id))
+      const orderIds = [...new Set(ok.map(h => h.orderId).filter((v): v is string => !!v))]
+      const others = orderIds.length ? (await tx.expense.findMany({ where: { propertyId, orderId: { in: orderIds } }, select: { id: true, orderId: true, channel: true } })).filter(s => !hitIds.has(s.id)) : []
+      const splitOrder = new Set(others.filter(s => s.channel && s.channel !== channel).map(s => s.orderId!))
       const rows: ExpenseFieldUndo['rows'] = []
+      let splitSkipped = 0
       for (const h of ok) {
+        // 옮긴 뒤 구매처(옮기기는 비움)와 같은 이름이면 그 행 쇼핑몰은 비운 값이다(결정 A).
+        const after = rowChannel(channel, kind === 'vendor-to-channel' ? null : h.vendor)
+        if (after && h.orderId && splitOrder.has(h.orderId)) { splitSkipped++; continue }
         const changes: ExpenseFieldUndo['rows'][number]['changes'] = []
-        if (h.channel !== channel) changes.push({ field: 'channel', before: h.channel, after: channel })
-        if (kind === 'vendor-to-channel') {
-          changes.push({ field: 'vendor', before: h.vendor, after: null })
-          if (h.vendorBizNo) changes.push({ field: 'vendorBizNo', before: h.vendorBizNo, after: null })
-        }
+        if (h.channel !== after) changes.push({ field: 'channel', before: h.channel, after })
+        if (kind === 'vendor-to-channel') changes.push({ field: 'vendor', before: h.vendor, after: null })
         if (changes.length === 0) continue
         const data = Object.fromEntries(changes.map(c => [c.field, c.after]))
         const r = await tx.expense.updateMany({ where: { id: h.id, propertyId, vendor: h.vendor, channel: h.channel }, data })
         if (r.count === 1) rows.push({ id: h.id, changes })   // 실제로 바꾼 행만 토큰에 싣는다
       }
-      return { rows, skipped: hit.length - ok.length }
+      return { rows, skipped: hit.length - ok.length, splitSkipped }
     })
-    if (result.rows.length) await noteChannel(propertyId, channel)
+    // 실제로 쇼핑몰이 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
+    if (result.rows.some(r => r.changes.some(c => c.field === 'channel' && c.after))) await noteChannel(propertyId, channel)
     const sameOrder = await countSameOrderUnset(propertyId, result.rows.map(r => r.id))
     const undo = signFieldUndo(propertyId, kind, result.rows)
     revalidatePath('/finance')
-    return { ok: true, updated: result.rows.length, skipped: result.skipped, sameOrder, ...(undo ? { undo } : {}) }
+    return { ok: true, updated: result.rows.length, skipped: result.skipped, splitSkipped: result.splitSkipped, sameOrder, ...(undo ? { undo } : {}) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3659,7 +3686,11 @@ export async function applyChannelToSameOrders(rawUndo: unknown): Promise<{ ok: 
       const orders = await tx.expense.findMany({ where: { id: { in: ids }, propertyId, orderId: { not: null } }, select: { orderId: true } })
       const orderIds = [...new Set(orders.map(o => o.orderId!))]
       if (orderIds.length === 0) return []
-      const sibs = await tx.expense.findMany({ where: { propertyId, orderId: { in: orderIds }, id: { notIn: ids }, channel: null }, select: { id: true } })
+      const all = await tx.expense.findMany({ where: { propertyId, orderId: { in: orderIds }, id: { notIn: ids } }, select: { id: true, orderId: true, vendor: true, channel: true } })
+      // 다른 쇼핑몰이 적힌 행이 있는 주문은 건드리지 않는다(갈림을 만들지 않는다, 결정 B).
+      // 구매처가 그 쇼핑몰과 같은 이름인 행은 비운 그대로가 맞다(결정 A).
+      const split = new Set(all.filter(s => s.channel && s.channel !== channel).map(s => s.orderId!))
+      const sibs = all.filter(s => s.channel === null && !split.has(s.orderId!) && rowChannel(channel, s.vendor))
       if (sibs.length) await tx.expense.updateMany({ where: { id: { in: sibs.map(x => x.id) }, propertyId, channel: null }, data: { channel } })
       return sibs.map(x => ({ id: x.id, changes: [{ field: 'channel' as const, before: null, after: channel }] }))
     })
