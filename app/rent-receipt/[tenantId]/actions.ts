@@ -5,7 +5,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { billForLeaseMonth } from '@/lib/billing'
 import { isRealRentPayment } from '@/lib/rentPaid'
 import { dueDayAdjustsFrom, type BillingDueDayAdjust } from '@/lib/dueDayAdjust'
-import { getMyRole } from '@/lib/role'
+import { getMyRole, requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
 import { roomLabel } from '@/lib/tenantAddress'
@@ -17,6 +17,13 @@ import type { ReceiptKind } from '@/lib/rentReceiptPdf'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { depositComposition } from '@/lib/depositComposition'
+import {
+  issuableRentMonths, defaultIssueDate, type IssuableMonth,
+  parseRentReceiptUndo, canonicalRentReceiptUndo, rentReceiptRowUnchanged,
+  RENT_RECEIPT_UNDO_DOMAIN, RENT_RECEIPT_UNDO_STALE, RENT_RECEIPT_UNDO_INVALID,
+} from '@/lib/rentReceiptMonths'
+import { verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { revalidatePath } from 'next/cache'
 
 // 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
 export type RentReceiptData = {
@@ -50,6 +57,20 @@ export type RentReceiptData = {
   kind: ReceiptKind       // 'deposit' 이면 보증금 영수증(월 개념 없음 — 스테퍼 숨김)
   preResidence: boolean   // 입주 전 보증금(예약금 성격) — 거주 기간 비움 + 반환 조건 문구가 다르다
   nonResident: boolean    // 비거주 계약 — 살지 않으므로 '거주'가 아닌 '이용' 어휘를 쓴다
+  /**
+   * 발행일 기본값 'YYYY-MM-DD' — 이 달 몫 마지막 실입금일, 실입금이 없으면 오늘(lib/rentReceiptMonths 정본).
+   * 종전에는 화면이 대상월과 무관하게 늘 오늘로 열어, 달력도 오늘의 달이 먼저 떴다(신고 2026-10-19).
+   * 보증금 영수증은 종전대로 오늘이다(월 축이 없다).
+   */
+  defaultIssueDate: string
+  /**
+   * 여러 달 발급에서 고를 수 있는 귀속월 — 이 계약에 실입금이 있는 달만, 최근 달이 앞(2026-10-20).
+   * issuedAt 은 그 달 귀속의 살아 있는 발급본 중 가장 늦은 발행일(ISO). 고르기 전에 중복을 보이려는 것이다.
+   * 단기·보증금은 빈 배열이다(단기는 입주월 하나, 보증금은 월 축이 없다).
+   */
+  issuable: (IssuableMonth & { issuedAt: string | null })[]
+  /** 계약 상태 — 퇴실 완료 계약이면 화면이 '이번 달' 기본값 대신 지난 달을 연다. */
+  leaseStatus: string | null
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
@@ -104,9 +125,14 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
           // 실거주확인서는 원래 포함한다. 실측 5명이 해당하고 507·509호는 이미 발급 이력이 있다.
           // 비거주(NON_RESIDENT)도 대상 — 같은 입실자가 거주·비거주 계약을 함께 가질 수 있어
           // 단순 take 1 로는 엉뚱한 쪽이 잡힌다. 여러 건을 받아 아래에서 고른다(실거주확인서와 같은 처방).
-          where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT'] } },
+          // 퇴실 완료(CHECKED_OUT)는 납부 확인서에만 연다(2026-10-20, 운영자 승인 범위 5번). 지난 달들의 납부를
+          // 증명하는 종이라 퇴실 뒤에도 요청이 온다. 보증금 영수증은 아래에서 다시 거른다(퇴실 뒤 새로 쓸 사건 증빙이 아니다).
+          // 우선순위는 lib/documentLease 표 밖(맨 뒤)이라 진행 중 계약이 있으면 종전 선택이 그대로다.
+          where: { status: { in: kind === 'deposit'
+            ? ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT']
+            : ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT', 'CHECKED_OUT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 5,
+          take: 10,
           include: { room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
         },
       },
@@ -126,11 +152,21 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
   const nonResident = lease?.status === 'NON_RESIDENT'
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const isShortTerm = !!lease?.isShortTerm
+  // 이 계약의 이용료 입금 전부 — 고를 수 있는 달(여러 달)과 퇴실 완료 계약의 기본 달을 함께 정한다.
+  // 실입금 술어는 lib/rentPaid 정본(isRealRentPayment)이 rentReceiptMonths 안에서 쥔다.
+  const allRentRecs = lease && kind === 'rent'
+    ? await prisma.paymentRecord.findMany({
+        where: { leaseTermId: lease.id, isDeposit: false, isPrevOwner: false },
+        select: { targetMonth: true, actualAmount: true, isBillingAdjust: true, memo: true, payDate: true },
+      })
+    : []
+  const paidMonths = issuableRentMonths(allRentRecs)
   // 단기는 입주월 단일 청구 — anchor 를 입주월로 고정(스테퍼도 화면에서 숨김, 회계 오더 2026-07-27)
+  // 퇴실 완료 계약은 달을 안 주면 마지막 실입금 달을 연다. 오늘 주기를 열면 늘 '수납 기록 없음'이다.
   const requestedMonth = /^\d{4}-\d{2}$/.test(month ?? '') ? (month as string) : null
   const anchorMonth = isShortTerm && lease?.moveInDate
     ? new Date(lease.moveInDate).toISOString().slice(0, 7)
-    : requestedMonth
+    : requestedMonth ?? (lease?.status === 'CHECKED_OUT' ? paidMonths[0]?.month ?? null : null)
   const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null, anchorMonth)
   const nextDue = dotPad(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
   const [cy, cm] = cycle.start.split('-').map(Number)
@@ -212,6 +248,9 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       kind,
       preResidence: notMovedIn,
       nonResident,
+      defaultIssueDate: todayKst,
+      issuable: [],
+      leaseStatus: lease?.status ?? null,
     }
   }
 
@@ -238,6 +277,20 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       paidSum += r.actualAmount
       lastRec = { payDate: r.payDate, payMethod: r.payMethod }
     }
+  }
+
+  // 귀속월마다 살아 있는 발급본의 가장 늦은 발행일 — 여러 달 목록이 '발급본이 이미 있습니다'를 말한다.
+  const issuedRows = lease && !isShortTerm
+    ? await prisma.rentReceiptFile.findMany({
+        where: { leaseTermId: lease.id, propertyId, kind: 'rent', deletedAt: null, targetMonth: { not: null } },
+        select: { targetMonth: true, issuedAt: true },
+      })
+    : []
+  const issuedByMonth = new Map<string, string>()
+  for (const r of issuedRows) {
+    const prev = issuedByMonth.get(r.targetMonth as string)
+    const iso = r.issuedAt.toISOString()
+    if (!prev || iso > prev) issuedByMonth.set(r.targetMonth as string, iso)
   }
 
   const defaultPayMethod = property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금'
@@ -313,5 +366,70 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     kind,
     preResidence: false,
     nonResident,
+    defaultIssueDate: defaultIssueDate(paidSum > 0 && lastRec ? payDateYmd : null, todayKst),
+    issuable: isShortTerm ? [] : paidMonths.map(m => ({ ...m, issuedAt: issuedByMonth.get(m.month) ?? null })),
+    leaseStatus: lease?.status ?? null,
   }
+}
+
+/**
+ * 발급 적용취소(§16) — 한 장 발급과 여러 달 묶음 발급이 같은 길이다(한 장 = 길이 1 인 묶음).
+ *
+ * 되돌림은 발급 이력의 '삭제'와 같은 모양이다. 행에 deletedAt 을 찍고 Drive 파일을 휴지통으로 보낸다(전역 발급
+ * 이력의 restoreRentReceiptFile 이 그 짝이다). 지운 행도 발행번호를 쥐고 있어 다음 번호가 겹치지 않는다(채번이
+ * 지운 행까지 센다). 그래서 번호에는 빈자리가 남는다. 물리 삭제로 번호를 되돌리면 그 사이 다른 발급이 있었을 때
+ * 같은 번호가 두 번 나간다.
+ *
+ * CAS. 토큰이 적어 둔 '발급 직후 모양'과 지금 행이 글자 그대로 같을 때만, 그리고 묶음이면 **전부** 같을 때만
+ * 되돌린다. 그 사이 발급 이력에서 한 장을 지웠거나 바뀌었으면 아무것도 안 바꾼다(묶음을 반쪽만 되돌리지 않는다).
+ * 서명은 현금영수증 적용취소와 같은 정본이고 용도 라벨이 'rent-receipt-issue' 다. 영업장 범위는 where 의
+ * propertyId 가 진다(남의 영업장 id 로는 행이 안 잡혀 STALE 로 끝난다).
+ *
+ * 계약에 남긴 성명 표기 힌트(lastDocNameStyle)는 되돌리지 않는다. 다음 서류를 편하게 열려는 힌트이지 종이의
+ * 사실이 아니고, 그 사이 다른 서류가 같은 칸을 썼을 수 있다(noteDocNameStyle 머리말).
+ */
+export async function undoRentReceiptIssue(raw: unknown): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  await requireEdit()
+  const { propertyId } = await requirePropertyAccess()
+  const u = parseRentReceiptUndo(raw)
+  if (!u || !verifyUndoBody(RENT_RECEIPT_UNDO_DOMAIN, propertyId, canonicalRentReceiptUndo(u), u.sig)) {
+    return { ok: false, error: RENT_RECEIPT_UNDO_INVALID }
+  }
+  const ids = u.rows.map(r => r.id)
+  let driveIds: string[]
+  try {
+    driveIds = await prisma.$transaction(async tx => {
+      const rows = await tx.rentReceiptFile.findMany({
+        where: { id: { in: ids }, propertyId },
+        select: {
+          id: true, driveFileId: true, fileName: true, receiptNo: true, issuedAt: true, kind: true,
+          targetMonth: true, tenantId: true, leaseTermId: true, nameStyle: true, deletedAt: true,
+        },
+      })
+      const byId = new Map(rows.map(r => [r.id, r]))
+      for (const t of u.rows) {
+        const db = byId.get(t.id)
+        if (!db || !rentReceiptRowUnchanged(db, t)) throw new RentReceiptUndoStale()
+      }
+      // 확인과 쓰기 사이에 다른 적용취소·삭제가 끼면 여기서 수가 모자란다. 그러면 전부 되감는다.
+      const res = await tx.rentReceiptFile.updateMany({
+        where: { id: { in: ids }, propertyId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+      if (res.count !== ids.length) throw new RentReceiptUndoStale()
+      return rows.map(r => r.driveFileId)
+    })
+  } catch (err) {
+    if (err instanceof RentReceiptUndoStale) return { ok: false, error: RENT_RECEIPT_UNDO_STALE }
+    throw err
+  }
+  // Drive 정리는 커밋 뒤 — 실패해도 이력은 이미 지워졌고, 전역 발급 이력의 삭제와 같은 규칙(실패 무시)이다.
+  const { trashInDrive } = await import('@/lib/google-drive')
+  for (const id of driveIds) { try { await trashInDrive(id) } catch { /* Drive 정리 실패 무시 */ } }
+  revalidatePath('/rent-receipts')
+  return { ok: true, count: ids.length }
+}
+
+class RentReceiptUndoStale extends Error {
+  constructor() { super(RENT_RECEIPT_UNDO_STALE); this.name = 'RentReceiptUndoStale' }
 }

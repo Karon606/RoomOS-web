@@ -31,9 +31,18 @@ export function isRealRentPayment(r: { isBillingAdjust: boolean; actualAmount: n
  * 금액 조건까지 DB 에 실어 보내므로 결과가 곧 "실입금이 있는 행"이다.
  */
 export function rentPaidWhere(month: string, leaseTermIds?: readonly string[]) {
+  return { ...rentPaidAnyMonthWhere(leaseTermIds), targetMonth: month }
+}
+
+/**
+ * 달을 묻지 않는 실입금 where 조각 — "이 계약에 실입금이 한 번이라도 있나".
+ *
+ * 서류 시트가 퇴실 완료 계약의 납부 확인서 행을 세울지 정할 때 쓴다(2026-10-20, 퇴실자 발급).
+ * 달 조건만 빠지고 나머지는 위 정본과 글자 그대로 같은 조각이다(위가 이것을 감싼다).
+ */
+export function rentPaidAnyMonthWhere(leaseTermIds?: readonly string[]) {
   return {
     ...(leaseTermIds ? { leaseTermId: { in: [...leaseTermIds] } } : {}),
-    targetMonth: month,
     isDeposit: false,
     isPrevOwner: false,
     isBillingAdjust: false,

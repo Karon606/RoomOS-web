@@ -13,14 +13,18 @@ export default async function RentReceiptPage({
   params: Promise<{ tenantId: string }>
   // from·tenantId 는 **돌아갈 곳**이다(lib/docNav). 안 읽으면 발급 뒤 목록으로 튕겨,
   // 입주자 상세의 서류 시트에서 들어온 사람이 제자리로 못 돌아온다(신고 2026-09-03).
-  searchParams: Promise<{ month?: string; kind?: string; leaseTermId?: string; from?: string; tenantId?: string }>
+  // mode=many 는 여러 달로 연다(서류 시트의 '여러 달 작성', 2026-10-20). 모르는 값은 한 달이다.
+  searchParams: Promise<{ month?: string; kind?: string; leaseTermId?: string; from?: string; tenantId?: string; mode?: string }>
 }) {
   const { tenantId } = await params
-  const { month, kind, leaseTermId, from, tenantId: backTenantId } = await searchParams
+  const { month, kind, leaseTermId, from, tenantId: backTenantId, mode } = await searchParams
   // kind='deposit' 이면 보증금 영수증. 미지정·오타는 기존 입실료 확인서로 폴백(무회귀).
   const receiptKind = kind === 'deposit' ? 'deposit' : 'rent'
   const data = await getRentReceiptData(tenantId, month, receiptKind, leaseTermId ?? null)
   if (!data) notFound()
   // key — 월·종류·계약을 바꾸면 폼 useState 초기값이 새 자동값으로 다시 잡히도록 리마운트.
-  return <RentReceiptView key={`${receiptKind}-${data.anchorMonth}-${data.leaseTermId ?? ''}`} data={data} back={resolveDocBack(from, backTenantId)} />
+  // from 은 열거 키만 넘긴다(lib/docNav) — 발급 뒤 [보기]가 연 뷰어가 같은 곳으로 돌아간다.
+  const docFrom = (['contracts', 'rent-receipts', 'residence-certs', 'tenant'] as const).find(k => k === from)
+  return <RentReceiptView key={`${receiptKind}-${data.anchorMonth}-${data.leaseTermId ?? ''}`} data={data} back={resolveDocBack(from, backTenantId)}
+    from={docFrom} backTenantId={docFrom === 'tenant' ? backTenantId : undefined} initialMode={mode === 'many' ? 'many' : 'one'} />
 }

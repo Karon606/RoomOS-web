@@ -15,6 +15,7 @@ import { CURRENT_OCCUPANCY_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus
 import { kstMonthOf } from '@/lib/fmtDate'
 import { DOC_MIME_PDF } from '@/lib/docMime'
 import type { DocumentNameSource } from '@/lib/documentName'
+import { latestByTargetMonth } from '@/lib/rentReceiptMonths'
 
 // 'bizcert' 는 영업장 사업자등록증이다. 앞 넷과 달리 **우리가 만든 종이가 아니라 받아 둔 원본**이고
 // 계약이 아니라 영업장에 걸린다 — 그래서 발급도 판본도 없고 행도 사람마다 하나뿐이다.
@@ -112,6 +113,14 @@ export type DocBundleRow = {
    * undefined 는 '이 행에는 문 자체가 없다'로, 둘은 다른 상태다.
    */
   canWriteNew?: boolean
+  /**
+   * '여러 달 작성' 링크를 세우는가 — 납부 확인서 행에만, 단기가 아닌 계약에만 선다(2026-10-20, 납부영수증 여러 달).
+   *
+   * 영수증 한 장은 한 귀속월 하나다. 석 달치를 달라는 요청에 한 장씩 왕복하던 길을 발급 화면의 [여러 달]로 잇는다.
+   * 단기는 입주월 단일 청구라 고를 달이 하나뿐이다(위 canWriteNew 의 단기 제외와 같은 까닭).
+   * 퇴실 완료 계약 행에도 선다 — 지난 달들의 납부를 증명하는 종이라 퇴실 뒤에도 요청이 온다.
+   */
+  writeMany?: boolean
   /** 파일 형식 추정(파일명 기준) — 첨부 표기·파일명 확장자의 기본값이다.
    *  실제로 내보낼 때는 바이트 스니핑(lib/docMime)이 최종 권위라, 이 추정이 틀려도 파일은 옳게 나간다. */
   mime: string
@@ -148,6 +157,7 @@ export type DocBundleGroup = {
    * 'lease' = 진행 중 계약 하나 · 'property' = 영업장에 걸린 서류(사업자등록증) ·
    * 'other' = 그 계약들에 걸리지 않은 보관본.
    * 순서도 이 순서다 — 영업장 서류가 '그 밖의 보관본' 뒤로 밀리면 눈에 안 띈다.
+   * 퇴실 완료 계약(status 'CHECKED_OUT')도 'lease' 그룹이지만 납부 확인서 행 하나뿐이다(진행 중 계약 뒤).
    */
   kind: 'lease' | 'property' | 'other'
   leaseTermId: string | null
@@ -253,6 +263,14 @@ export type DocBundleInput = {
    * 있는가" 하나다. 판정 술어는 lib/rentPaid 정본이 쥔다.
    */
   rentPaidLeaseIds?: readonly string[]
+  /**
+   * 퇴실 완료 계약 — **실입금이 있었던 것만** 넘긴다(2026-10-20, 운영자 승인 범위 5번).
+   *
+   * 퇴실한 사람도 지난 달들의 납부 확인서를 요청한다. 종전에는 이 시트가 진행 중 계약만 세워 퇴실자에게
+   * 확인서를 새로 뽑을 문이 없었다. 그룹은 납부 확인서 행 하나뿐이다. 계약서·보증금·실거주는 퇴실 뒤에 새로
+   * 만들 종이가 아니라서 그 계약의 옛 발급본은 종전대로 '그 밖의 보관본'에 남는다.
+   */
+  pastLeases?: DocBundleLease[]
   /** '이번 달' 판정 기준 — 호출부가 넘긴다(테스트가 시계를 고정할 수 있게). */
   now: Date
 }
@@ -260,6 +278,15 @@ export type DocBundleInput = {
 /** 종류별 최신 한 건 — 입력이 이미 최신순이라 첫 일치가 곧 최신이다. */
 const latestFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile | undefined =>
   files.find(f => f.leaseTermId === leaseTermId)
+
+/**
+ * 납부 확인서의 최신 한 건 — **귀속월 기준**이다(2026-10-20, lib/rentReceiptMonths 정본).
+ *
+ * 발행일 기준이면 10월에 7·8·9월분을 소급 발급했을 때 마지막으로 누른 달이 '최신'으로 선다. 그 종이가 9월분이
+ * 아니면 시트가 엉뚱한 달을 보내고, stale 문구도 그 달을 기준으로 판정한다.
+ */
+const latestRentFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile | undefined =>
+  latestByTargetMonth(files.filter(f => f.leaseTermId === leaseTermId))
 
 /**
  * 납부 확인서가 이번 달 것이 아닐 때의 보조 문구.
@@ -281,6 +308,9 @@ export const DOC_WRITE_NEW_LABEL: Partial<Record<DocBundleDocType, string>> = {
   rent: '이번 달 확인서 작성',
   residence: '다시 작성',
 }
+
+/** '여러 달 작성' 링크 라벨 — 문 라벨과 같은 자리에 둔다(화면 리터럴이면 그물이 못 본다). */
+export const DOC_WRITE_MANY_LABEL = '여러 달 작성'
 
 export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   const { tenantName, leases, contracts, contractVersions = [], rents, deposits, certs, now } = input
@@ -341,12 +371,13 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
       rows.push(contractRow)
     }
 
-    const rent = latestFor(rents, l.id)
+    const rent = latestRentFor(rents, l.id)
     const rentStale = rent ? staleNote(rent) : null
     const rentRow = row('rent', l.id, rent, rentStale)
     // 문은 '지난달 것뿐'이면서 '이번 달을 받았을' 때만 연다. 미발급 행은 이미 [작성]이 서므로
     // 여기서 다시 열 것이 없다(그 행은 rent 가 없어 rentStale 도 null 이다).
     if (rentStale && !l.isShortTerm) rentRow.canWriteNew = paidThisMonth.has(l.id)
+    if (!l.isShortTerm) rentRow.writeMany = true
     rows.push(rentRow)
 
     // 보증금 영수증은 보증금 있는 계약만. 이미 발급된 건이 있으면 계약이 0원이 됐어도 남긴다 —
@@ -370,6 +401,18 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
 
     return { kind: 'lease' as const, leaseTermId: l.id, roomNo: l.roomNo, status: l.status, rows }
   })
+
+  // 퇴실 완료 계약 — 납부 확인서 행 하나(위 pastLeases 주석). 진행 중 계약 뒤, 영업장 서류 앞이다.
+  // '이번 달' 문은 없다. 퇴실한 사람의 이번 달 납부를 묻는 문은 늘 닫혀 있어 닫힘 문단만 소음이 된다.
+  // 옛 발급본이 있으면 이 행이 그것을 안는다(아래 중립 그룹의 '지난 계약' 행이 같은 종이를 두 번 세우지 않게 shown 에 넣는다).
+  const past = [...(input.pastLeases ?? [])]
+    .filter(l => !ordered.some(o => o.id === l.id))
+    .sort((a, b) => String(b.moveInDate ?? '').localeCompare(String(a.moveInDate ?? '')))
+  for (const l of past) {
+    const rentRow = row('rent', l.id, latestRentFor(rents, l.id))
+    if (!l.isShortTerm) rentRow.writeMany = true
+    groups.push({ kind: 'lease', leaseTermId: l.id, roomNo: l.roomNo, status: l.status, rows: [rentRow] })
+  }
 
   // 영업장 서류 — 계약이 아니라 영업장에 걸린 종이다(사업자등록증, 운영자 결정 2026-09-16).
   //
@@ -401,8 +444,10 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   // 위 계약들에 걸리지 않은 보관본 — 계약 연결이 끊긴 옛 파일(null)과 끝난 계약의 발급본.
   // 어느 계약의 것인지 단정하지 않고 중립 그룹에 세운다. 파일이 있는 것만 담는다(작성 왕복 없음).
   const shown = new Set(ordered.map(l => l.id))
-  const orphan = (files: DocBundleFile[]): DocBundleFile | undefined =>
-    files.find(f => !f.leaseTermId || !shown.has(f.leaseTermId))
+  // 퇴실 완료 계약의 납부 확인서는 위 그룹이 안는다. 다른 서류는 그 계약 그룹에 행이 없어 종전대로 여기 남는다.
+  const shownRent = new Set([...shown, ...past.map(l => l.id)])
+  const orphan = (files: DocBundleFile[], seen: Set<string> = shown): DocBundleFile | undefined =>
+    files.find(f => !f.leaseTermId || !seen.has(f.leaseTermId))
   const otherRows: DocBundleRow[] = []
   const pushOther = (docType: DocBundleDocType, f: DocBundleFile | undefined) => {
     if (!f) return
@@ -417,7 +462,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     })
   }
   pushOther('contract', orphan(contracts))
-  pushOther('rent', orphan(rents))
+  pushOther('rent', orphan(rents, shownRent))
   pushOther('deposit', orphan(deposits))
   pushOther('residence', orphan(certs))
   if (otherRows.length > 0) {

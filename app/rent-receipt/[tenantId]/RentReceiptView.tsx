@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { RentReceiptData } from './actions'
+import { undoRentReceiptIssue, type RentReceiptData } from './actions'
 import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -14,17 +14,24 @@ import { withParticle } from '@/lib/koParticle'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
+import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import DocumentScroll from '@/components/layout/DocumentScroll'
+import { fetchDocBytes } from '@/lib/docBytes'
+import { fmtDateDot } from '@/lib/fmtDate'
+import type { DocFrom } from '@/lib/docNav'
+import {
+  autoFormFields, defaultIssueDate, monthLabel, monthLabelShort, RENT_RECEIPT_BATCH_MAX,
+  type RentReceiptFormFields, type RentReceiptIssueUndo,
+} from '@/lib/rentReceiptMonths'
 import {
   type DocNameStyle, DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL,
   asDocNameStyle, docNameStyles, documentName,
   resolveDocNameStyle, docNameStyleConflict,
 } from '@/lib/documentName'
 
-type Fields = {
-  name: string; room: string; period: string; targetMonth: string
-  amount: string; payDate: string; payMethod: string; note: string; recipientName: string
-}
+type Fields = RentReceiptFormFields
 
 const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
 
@@ -65,21 +72,26 @@ function relMonthLabel(view: string, today: string): string | null {
 const nameSourceOf = (data: RentReceiptData) =>
   ({ name: data.name, englishName: data.englishName, nativeName: data.nativeName })
 
+// 종이 칸의 첫 값 — 묶음 서버가 달마다 채우는 값과 같은 정본(lib/rentReceiptMonths autoFormFields)을 지난다.
 function buildInitial(data: RentReceiptData, nameStyle: DocNameStyle = DEFAULT_DOC_NAME_STYLE): Fields {
-  return {
-    name: documentName(nameSourceOf(data), nameStyle),
-    room: data.room,
-    period: data.period,
-    targetMonth: data.targetMonth,
-    amount: data.amount ? data.amount.toLocaleString() : '',
-    payDate: data.payDate,
-    payMethod: data.payMethod,
-    note: data.note,
-    recipientName: data.recipientName,
-  }
+  return autoFormFields(data, documentName(nameSourceOf(data), nameStyle))
 }
 
-export default function RentReceiptView({ data, back }: { data: RentReceiptData; back: { label: string; href: string } }) {
+/** 'YYYY-MM-DD' 를 '9월 18일' 로 — 여러 달 목록의 보조줄. 해는 제목(2026년 9월분)이 이미 말한다. */
+const mdKor = (ymd: string) => { const [, m, d] = ymd.split('-').map(Number); return `${m}월 ${d}일` }
+
+type IssuedFile = { id: string; driveFileId: string; fileName: string; issuedAt: string; targetMonth: string | null; receiptNo: string | null }
+type IssuedResult = { files: IssuedFile[]; undo: RentReceiptIssueUndo | null }
+
+export default function RentReceiptView({ data, back, from, backTenantId, initialMode = 'one' }: {
+  data: RentReceiptData
+  back: { label: string; href: string }
+  /** 들어온 곳(열거 키) — 발급 뒤 [보기]가 연 뷰어가 같은 곳으로 돌아가게 넘긴다. */
+  from?: DocFrom
+  backTenantId?: string
+  /** ?mode=many 로 들어오면 여러 달로 연다(서류 시트의 '여러 달 작성'). */
+  initialMode?: 'one' | 'many'
+}) {
   const router = useRouter()
   // 초기 이름도 셀렉트와 **같은 판정**을 지난다. 종전에는 기본값(한글)으로 지어 놓고 셀렉트만
   // 폴백을 거쳐서, 외국인이 아직 아무것도 안 고른 상태로 열면 셀렉트는 영문인데 종이에는 한글
@@ -91,7 +103,9 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
   })))
-  const [issueDate, setIssueDate] = useState(kstYmdStr())
+  // 발행일 기본값은 이 달 몫 마지막 실입금일이다(서버 정본 defaultIssueDate, 실입금이 없으면 오늘).
+  // 종전에는 대상월과 무관하게 늘 오늘이라 8월분을 열어도 달력이 10월로 떴다(신고 2026-10-19).
+  const [issueDate, setIssueDate] = useState(data.defaultIssueDate)
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
@@ -127,11 +141,36 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     }))) return
     applyNameStyle(next)
   }
+  const nameStyleSelect = canPickName ? (
+    <select value={nameStyle} onChange={e => pickNameStyle(e.target.value)} aria-label="성명 표기"
+      className="text-xs text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 cursor-pointer outline-none focus:border-[var(--coral)]">
+      {nameStyles.map(s => <option key={s} value={s}>{DOC_NAME_STYLE_LABEL[s]}</option>)}
+    </select>
+  ) : undefined
 
   // 서류 종류 — 보증금은 귀속 월이 없어 스테퍼를 숨기고 문구·라벨이 갈린다(신고 d68220bd)
   const isDeposit = data.kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
-  // 목록 복귀 경로 — 종류를 유지한다. 안 붙이면 보증금으로 발급하고도 입실료 탭으로 떨어진다(운영자 지적).
+
+  // ── 한 달 | 여러 달 (신고 2026-10-19, 운영자 승인 2026-10-20) ─────────────────
+  // 영수증 한 장은 한 귀속월 하나다(스키마 그대로). 여러 달은 고른 달마다 한 장씩 한 번에 낸다.
+  // 보증금(월 축 없음)과 단기(입주월 하나)에는 세그먼트를 안 세운다.
+  const canMany = !isDeposit && !data.isShortTerm && !!data.leaseTermId
+  const [mode, setMode] = useState<'one' | 'many'>(canMany ? initialMode : 'one')
+  // 고른 달 → 그 달의 발행일. 기본값은 그 달 몫 마지막 실입금일(달마다 각자), 사용자가 고치면 그 값.
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const today = kstYmdStr()
+  const togglePick = (month: string, lastPayDate: string) => setPicks(p => {
+    if (p[month] !== undefined) { const { [month]: _drop, ...rest } = p; void _drop; return rest }
+    if (Object.keys(p).length >= RENT_RECEIPT_BATCH_MAX) {
+      pushToast('info', `한 번에 ${RENT_RECEIPT_BATCH_MAX}달까지 고를 수 있습니다`)
+      return p
+    }
+    return { ...p, [month]: defaultIssueDate(lastPayDate, today) }
+  })
+  // 화면 순서(최근 달이 위)가 아니라 달 순서로 발급한다 — 발행번호가 7월분부터 차례로 붙는다.
+  const pickedMonths = Object.keys(picks).sort()
+
   // nameStyle 과 targetMonth 는 fields 밖이다 — 종이에 그리는 값이 아니라 **기록에 남길 사실**이다.
   // fields.targetMonth 는 '2026년 9월분' 표시 문자열이고 운영자가 고칠 수 있어 판정의 근거로
   // 못 쓴다. anchorMonth('YYYY-MM')가 이 화면이 실제로 여는 달이다.
@@ -149,7 +188,7 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     nationality: data.nationality,
     hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
-  })), issueDate: kstYmdStr() }))
+  })), issueDate: data.defaultIssueDate }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
   // 보증금은 월과 무관하다 — 이 자리가 말하는 것도 '대상월'이 아니라 입주 예정일이다.
   // 그런데 상대월 배지가 그대로 붙어, 8/29 에 8/31 입주 예정을 열면 '지난달'이 떴다
@@ -165,6 +204,8 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })()
   const atCurrentMonth = data.anchorMonth >= nextMonth
+  // 돌아갈 곳을 달을 옮겨도 잃지 않는다 — 종전에는 스테퍼가 from 을 안 실어 달을 한 번 옮기면 '홈'으로 돌아갔다.
+  const backQuery = from ? `&from=${from}${from === 'tenant' && backTenantId ? `&tenantId=${encodeURIComponent(backTenantId)}` : ''}` : ''
   const stepMonth = async (delta: number) => {
     if (delta > 0 && atCurrentMonth) return
     if (dirty && !(await confirmDialog({ title: '대상월을 옮길까요?', message: '작성 중인 내용이 초기화됩니다.', confirmLabel: '옮기기', level: 'caution' }))) return
@@ -173,13 +214,13 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     // 보고 있는 계약을 URL 에 고정해 옮긴다 — 안 실으면 601호 창고 확인서에서 달을 옮기는 순간
     // 서버가 다시 추론해 509호 거주 계약으로 갈아탄다(계약이 하나뿐인 사람은 추론과 같은 답이다).
     const named = data.leaseTermId ? `&leaseTermId=${encodeURIComponent(data.leaseTermId)}` : ''
-    router.replace(`/rent-receipt/${data.tenantId}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${named}`)
+    router.replace(`/rent-receipt/${data.tenantId}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${named}${backQuery}`)
   }
 
   const reset = async () => {
     if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라집니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
     setNameStyle(DEFAULT_DOC_NAME_STYLE)
-    setF(buildInitial(data)); setIssueDate(kstYmdStr())
+    setF(buildInitial(data)); setIssueDate(data.defaultIssueDate)
     pushToast('info', '자동값으로 되돌렸습니다')
   }
 
@@ -230,31 +271,119 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     return res.arrayBuffer()
   }
 
+  // ── 발급 결과와 적용취소(§16) ───────────────────────────────────────
+  // 발급 뒤 이 화면에 머문다(2026-10-20). 종전에는 한 장 발급 즉시 들어온 곳으로 돌아가 토스트가 화면 전환과
+  // 함께 사라졌고, 그래서 적용취소를 붙일 자리가 없었다. 결과 칸이 원위치 진입점(§16 2순위)이고 토스트가 1순위다.
+  const [result, setResult] = useState<IssuedResult | null>(null)
+  const [undoing, setUndoing] = useState(false)
+  const runUndo = async (undo: RentReceiptIssueUndo) => {
+    if (undoing) return
+    setUndoing(true)
+    const release = trackSave()
+    try {
+      const res = await undoRentReceiptIssue(undo)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setResult(cur => (cur?.undo === undo ? null : cur))
+      pushToast('success', `${docLabel} ${res.count}건 발급을 적용취소했습니다`)
+      router.refresh()
+    } catch (err) {
+      pushToast('error', humanError(err, '적용취소에 실패했습니다.'))
+    } finally { release(); setUndoing(false) }
+  }
+  const finishIssue = (files: IssuedFile[], undo: RentReceiptIssueUndo | null) => {
+    setResult({ files, undo })
+    // 이번에 쓴 표기를 계약에 남긴다 — 다음 서류가 이 값으로 열린다. 실패는 조용히 넘긴다.
+    if (data.leaseTermId) void noteDocNameStyle(data.leaseTermId, nameStyle)
+    pushToast('success', `${docLabel} ${files.length}건 발급됨`,
+      undo ? { action: { label: '적용취소', run: () => void runUndo(undo) } } : undefined)
+    // 여러 달 목록의 '발급본이 이미 있습니다'와 서류 시트가 새 발급본을 보게 한다(폼 상태는 key 가 같아 유지).
+    router.refresh()
+  }
+
+  // 요청 id — 같은 내용을 다시 누르면 같은 id 를 싣는다. 응답이 유실돼 실패로 보였는데 서버에서는 발급된 경우, 재클릭이
+  // 새 장을 또 만들지 않고 앞서 낸 장을 돌려받는다(서버 멱등, 검수 2026-10-20). 성공하면 비운다.
+  const attempt = useRef<{ key: string; id: string } | null>(null)
+  const requestIdFor = (key: string) => {
+    if (attempt.current?.key !== key) {
+      const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}${Math.random()}`
+      attempt.current = { key, id }
+    }
+    return attempt.current.id
+  }
+  // 실패해도 화면을 다시 읽는다 — 서버에서는 발급됐을 수 있고, 그러면 '발급본이 이미 있습니다'가 서야 재클릭 전에 보인다.
+  const failIssue = (msg: string) => { pushToast('error', msg); router.refresh() }
+  // 확인창의 달 표기 — 같은 해면 연도를 떼고(9월분), 다른 해면 붙인다. 두 조각이 같은 함수를 쓴다.
+  const monthsText = (months: string[]) => months.map(m => monthLabelShort(m, data.todayMonth)).join(' · ')
+
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
-    if (!(await confirmDialog({ title: `${withParticle(docLabel, '을/를')} 발급할까요?`, message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
+    // 이 달에 살아 있는 발급본이 있으면 여러 달과 같은 경고를 단다(한 장 더 생긴다는 사실은 같다).
+    const dup = !isDeposit && !!data.issuable.find(x => x.month === data.anchorMonth)?.issuedAt
+    if (!(await confirmDialog({
+      title: `${withParticle(docLabel, '을/를')} 발급할까요?`,
+      message: [
+        '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.',
+        dup ? `${withParticle(monthsText([data.anchorMonth]), '은/는')} 발급본이 이미 있어 한 장 더 생깁니다.` : null,
+      ].filter(Boolean).join(' '),
+      confirmLabel: '발급',
+      ...(dup ? { level: 'caution' as const } : {}),
+    }))) return
     setIssuing(true)
     const release = trackSave()
     try {
+      const body = payload()
       const res = await fetch('/api/rent-receipt/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload()),
+        body: JSON.stringify({ ...body, requestId: requestIdFor(JSON.stringify(body)) }),
       })
       const text = await res.text()
-      let json: { ok: boolean; error?: string } | null = null
+      let json: { ok: boolean; error?: string; file?: IssuedFile; undo?: RentReceiptIssueUndo | null } | null = null
       try { json = JSON.parse(text) } catch { /* not json */ }
-      if (!res.ok || !json?.ok) {
-        const msg = json?.error ?? `서버 오류 (${res.status})`
-        pushToast('error', msg); return
+      if (!res.ok || !json?.ok || !json.file) {
+        failIssue(json?.error ?? `서버 오류 (${res.status})`); return
       }
-      // 이번에 쓴 표기를 계약에 남긴다 — 다음 서류가 이 값으로 열린다. 실패는 조용히 넘긴다.
-      if (data.leaseTermId) void noteDocNameStyle(data.leaseTermId, nameStyle)
-      // 들어온 곳으로 돌아간다 — 목록에서 왔으면 목록, 입주자 상세에서 왔으면 그 사람이다.
-      pushToast('success', `${docLabel} 발급됨. ${back.label}(으)로 돌아갑니다`)
-      router.push(back.href)
+      attempt.current = null
+      finishIssue([json.file], json.undo ?? null)
     } catch (err) {
-      const msg = humanError(err, 'PDF 생성 실패')
-      pushToast('error', msg)
+      failIssue(humanError(err, 'PDF 생성 실패'))
+    } finally { release(); setIssuing(false) }
+  }
+
+  const handleIssueMany = async () => {
+    if (pickedMonths.length === 0 || !data.leaseTermId) return
+    const already = pickedMonths.filter(m => data.issuable.find(x => x.month === m)?.issuedAt)
+    if (!(await confirmDialog({
+      title: `${docLabel} ${pickedMonths.length}건을 발급할까요?`,
+      message: [
+        `${withParticle(monthsText(pickedMonths), '을/를')} 한 장씩 만들어 Google Drive에 저장하고 발급 이력에 추가합니다.`,
+        already.length > 0 ? `${withParticle(monthsText(already), '은/는')} 발급본이 이미 있어 한 장 더 생깁니다.` : null,
+      ].filter(Boolean).join(' '),
+      confirmLabel: `${pickedMonths.length}건 발급`,
+      ...(already.length > 0 ? { level: 'caution' as const } : {}),
+    }))) return
+    setIssuing(true)
+    const release = trackSave()
+    try {
+      const body = {
+        tenantId: data.tenantId, leaseTermId: data.leaseTermId, nameStyle,
+        name: f.name, recipientName: f.recipientName,
+        months: pickedMonths.map(m => ({ month: m, issueDate: picks[m] })),
+      }
+      const res = await fetch('/api/rent-receipt/generate-batch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, requestId: requestIdFor(JSON.stringify(body)) }),
+      })
+      const text = await res.text()
+      let json: { ok: boolean; error?: string; files?: IssuedFile[]; undo?: RentReceiptIssueUndo | null } | null = null
+      try { json = JSON.parse(text) } catch { /* not json */ }
+      if (!res.ok || !json?.ok || !json.files) {
+        failIssue(json?.error ?? `서버 오류 (${res.status})`); return
+      }
+      attempt.current = null
+      setPicks({})
+      finishIssue(json.files, json.undo ?? null)
+    } catch (err) {
+      failIssue(humanError(err, '여러 달 발급에 실패했습니다.'))
     } finally { release(); setIssuing(false) }
   }
 
@@ -264,17 +393,41 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
     <div className="min-h-dvh bg-[var(--canvas)] flex flex-col items-center px-4 pt-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
       <DocumentScroll />
       <div className="w-full max-w-md space-y-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 min-h-[34px]">
           <Link href={back.href} className="text-sm text-[var(--tc-text)]">‹ {back.label}</Link>
-          <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)] active:bg-[var(--cream)] active:scale-[0.98]">자동값으로</button>
+          {/* 자동값으로는 한 달 폼에만 있다 — 여러 달은 고칠 칸이 이름·발행일뿐이고 결과 칸에는 고칠 것이 없다. */}
+          {!result && mode === 'one' && (
+            <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)] active:bg-[var(--cream)] active:scale-[0.98]">자동값으로</button>
+          )}
         </div>
 
         <div>
-          <h1 className="text-lg font-bold text-[var(--warm-dark)]">{docLabel} 작성</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>
+          {/* 결과 칸이 떠 있으면 작성 단계가 끝났다 — 제목은 서류 이름만, 작성 안내 부제는 감춘다. */}
+          <h1 className="text-lg font-bold text-[var(--warm-dark)]">{result ? docLabel : `${docLabel} 작성`}</h1>
+          {!result && <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>}
         </div>
 
-        {/* 발급 대상월 — 이번 달이 아니면 '눈에 띄게'(MonthSelector 와 동일한 감색 셸·상대월 배지). 발행일은 항상 오늘. */}
+        {result ? (
+          <IssuedPanel docLabel={docLabel} result={result} undoing={undoing} isDeposit={isDeposit}
+            fileBase={f.name} nameStyle={nameStyle} from={from} backTenantId={backTenantId}
+            onUndo={() => result.undo && void runUndo(result.undo)}
+            onAgain={() => setResult(null)} />
+        ) : (
+        <>
+        {/* 한 달 | 여러 달 — 정본 SegmentedControl(§12 상호배타는 세그먼트). 라벨이 왼쪽, 컨트롤이 오른쪽. */}
+        {canMany && (
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+            {/* 라벨은 캔버스 위라 --warm-dark 다. 형제 라벨 색(--warm-mid)은 카드(--cream) 위 값이고 캔버스 위에서는
+                라이트 4.11:1 로 본문 하한에 못 미친다(하네스 실측). */}
+            <p className="text-xs font-medium text-[var(--warm-dark)]">발급할 달</p>
+            <SegmentedControl<'one' | 'many'> size="sm" className="ml-auto" ariaLabel="발급할 달" value={mode} onChange={setMode}
+              options={[{ value: 'one', label: '한 달' }, { value: 'many', label: '여러 달' }]} />
+          </div>
+        )}
+
+        {mode === 'one' ? (
+        <>
+        {/* 발급 대상월 — 이번 달이 아니면 '눈에 띄게'(MonthSelector 와 동일한 감색 셸·상대월 배지). */}
         <div
           className="flex items-stretch min-h-[44px] rounded-lg overflow-hidden transition-colors"
           style={rel
@@ -292,13 +445,19 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           )}
-          <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 text-sm font-semibold text-center" style={{ color: 'var(--warm-dark)' }}>
-            <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>{isDeposit ? (data.nonResident ? '계약 시작일' : '입주 예정일') : '발급 대상월'}</span>
-            <span className="truncate">{data.targetMonth}</span>
-            {rel && (
-              <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-sm leading-none shrink-0"
-                style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
-            )}
+          {/* 좁은 폭·큰 글자에서 라벨·값·배지가 한 줄을 다투면 라벨이 세 줄로 쪼개지고 값이 '20…'으로 잘렸다
+              (패널 실측 320px·125%). 덩어리마다 줄바꿈을 막고 덩어리 사이에서만 접는다.
+              라벨 글자는 --warm-dark 다. 감색 셸(--warning-bg)이 캔버스 위 반투명이라 형제 라벨 색(--warm-mid)이
+              라이트 3.75:1 로 본문 하한(§28 4.5:1)에 못 미쳤다. */}
+          <div className="flex-1 min-w-0 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 px-2 py-2 text-sm font-semibold text-center" style={{ color: 'var(--warm-dark)' }}>
+            <span className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--warm-dark)' }}>{isDeposit ? (data.nonResident ? '계약 시작일' : '입주 예정일') : '발급 대상월'}</span>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span>{data.targetMonth}</span>
+              {rel && (
+                <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-sm leading-none shrink-0"
+                  style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
+              )}
+            </span>
           </div>
           {!data.isShortTerm && !isDeposit && (
           <button
@@ -334,18 +493,13 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
                 화면의 형제 날짜 칸(수령일·입주 예정일)은 '2026년 9월 8일'로 읽히는데 이 칸만
                 '2026. 9. 8.'로 떠서 한 폼 안에 표기가 두 벌이었다. 껍데기는 형제와 같은 inputCls.
                 미래는 못 고른다(운영자 확정 2026-09-17 — "미래로 할 필요는 없을 듯, 필요하면 발급
-                전에 수동으로 바꾸면 되니까"). 서버 가드와 두 겹이다. */}
-            <DatePicker value={issueDate} onChange={setIssueDate} maxDate={kstYmdStr()} className={inputCls} />
+                전에 수동으로 바꾸면 되니까"). 서버 가드와 두 겹이다.
+                값을 비운 뒤 다시 열면 대상월의 달을 연다(DatePicker 열기 규칙). */}
+            <DatePicker value={issueDate} onChange={setIssueDate} maxDate={kstYmdStr()} defaultMonth={data.anchorMonth} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다(계약서·실거주 확인서와 같은 select). */}
-            <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동"
-              trailing={canPickName ? (
-                <select value={nameStyle} onChange={e => pickNameStyle(e.target.value)} aria-label="성명 표기"
-                  className="text-xs text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 cursor-pointer outline-none focus:border-[var(--coral)]">
-                  {nameStyles.map(s => <option key={s} value={s}>{DOC_NAME_STYLE_LABEL[s]}</option>)}
-                </select>
-              ) : undefined} />
+            <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동" trailing={nameStyleSelect} />
             <Field label="호실" value={f.room} onChange={set('room')} placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -369,22 +523,143 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 
-        {/* 실행 동사는 **상단**이 정본이다(운영자 4차 확정 2026-08-05, 규칙 6 원문 그대로).
-            이 화면만 아직 하단이고 골격 이동 단계에서 위로 옮긴다 — 지금 옮기면 접점이 넓어진다.
-            아래가 나쁜 이유는 열자마자 안 보이는 것이다. 2장짜리 계약서에서 운영자가 버튼을 못 찾았다.
-            보조 동사들 + 목적 동사. flex-1 균등, 접힘 금지.
+        {/* 발끝은 두 줄이다(§13 모달 발끝 문법, 형제 시트와 같은 꼴). 윗줄 보조 동사 둘, 아랫줄 목적 동사 풀폭.
+            종전 한 줄 셋은 320px·글자 125% 에서 '미리보기'·'내보내기'가 두 줄로 접혔다(패널 실측).
             '미리보기'는 이 화면에만 남는다 — 셋 중 유일하게 문서를 안 보여준다(3단계에서 인라인 미리보기로 대체). */}
-        <div className="flex gap-2">
-          <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
-            {previewing ? '여는 중…' : '미리보기'}
-          </Btn>
-          <SendDocButton fileName={docFileName} className={`flex-1 ${btnClass('secondary', 'md')}`}
-            getPdfBytes={previewBytes} />
-          <Btn variant="primary" className="flex-1" onClick={handleIssue} disabled={issuing}>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Btn variant="secondary" className="flex-1 whitespace-nowrap" onClick={handlePreview} disabled={previewing}>
+              {previewing ? '여는 중…' : '미리보기'}
+            </Btn>
+            <SendDocButton fileName={docFileName} className={`flex-1 whitespace-nowrap ${btnClass('secondary', 'md')}`}
+              getPdfBytes={previewBytes} />
+          </div>
+          <Btn variant="primary" className="w-full" onClick={handleIssue} disabled={issuing}>
             {issuing ? '발급 중…' : '발급'}
           </Btn>
         </div>
+        </>
+        ) : (
+        <>
+        {/* 여러 달 — 실입금이 있는 귀속월만 고를 수 있다(이번 달 고정 해제, lib/rentReceiptMonths 정본).
+            행은 서류 시트와 같은 선택 행 문법(§22 .sel 테두리 + 링, 22px r7 체크). */}
+        {data.issuable.length === 0 ? (
+          <p className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 text-xs text-[var(--warm-mid)] leading-relaxed break-keep">
+            이 계약에는 실제 입금 기록이 있는 달이 없습니다. 기록 없는 달은 한 달로 작성해 금액을 직접 입력하세요.
+          </p>
+        ) : (
+          <ul className="space-y-1.5" aria-label="발급할 달">
+            {data.issuable.map(m => {
+              const on = picks[m.month] !== undefined
+              return (
+                // 체크 역할은 머리 줄 하나가 진다. 발행일 칸은 그 형제라, 체크박스 안에 날짜 버튼이 들어앉는 중첩 상호작용이 없다
+                // (검수 2026-10-20). 행 테두리·링은 li 가 그린다(§22 .sel).
+                <li key={m.month}
+                  className={[
+                    'rounded-xl border bg-[var(--cream)] transition-colors',
+                    on ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
+                  ].join(' ')}>
+                  <div role="checkbox" aria-checked={on} tabIndex={0}
+                    onClick={() => togglePick(m.month, m.lastPayDate)}
+                    onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); togglePick(m.month, m.lastPayDate) } }}
+                    className="flex min-w-0 items-start gap-2.5 rounded-xl p-3 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--tc-text)]">
+                    <span className={[
+                      'mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border transition-colors',
+                      on ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] text-transparent',
+                    ].join(' ')} aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L19 7" /></svg>
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[var(--warm-dark)]">{monthLabel(m.month)}</p>
+                      <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] num">{m.amount.toLocaleString()}원 · {mdKor(m.lastPayDate)} 납부</p>
+                      {m.issuedAt && (
+                        <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-keep">발급본이 이미 있습니다 · <span className="whitespace-nowrap">{fmtDateDot(m.issuedAt)} 발급</span></p>
+                      )}
+                    </div>
+                  </div>
+                  {/* 고른 달마다 발행일 — 기본값은 그 달 몫 마지막 실입금일, 고치면 그 값(달마다 각자). 머리 줄의 형제다. */}
+                  {on && (
+                    <div className="-mt-0.5 px-3 pb-3 pl-[44px] space-y-1">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
+                      <DatePicker value={picks[m.month]} onChange={v => setPicks(p => ({ ...p, [m.month]: v }))}
+                        minDate={m.lastPayDate} maxDate={kstYmdStr()} defaultMonth={m.lastPayDate} className={inputCls} />
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+          {/* 한 달 폼처럼 풀폭 두 칸이다. 2칸 격자는 320px 에서 '임대인 대표 (수령인)'이 낱말 중간에서 꺾여 입력칸이 20px 어긋났다. */}
+          <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동" trailing={nameStyleSelect} />
+          <Field label="임대인 대표 (수령인)" value={f.recipientName} onChange={set('recipientName')} placeholder="예: 홍길동" />
+          <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed break-keep">거주 기간·금액·납부일은 달마다 수납 기록에서 채웁니다. 발행일은 입금일보다 앞설 수 없습니다. 한 달만 고치려면 한 달로 작성하세요.</p>
+        </div>
+
+        {/* 비활성 이유는 버튼 글자가 아니라 버튼 위 한 줄이 말한다(가이드 §22 ② '하단 이유 한 줄 + 버튼 비활성').
+            캔버스 위 글자라 --warm-dark 다(형제 보조 글자색은 캔버스 위에서 라이트 4.11:1). */}
+        <div className="space-y-1.5">
+          {pickedMonths.length === 0 && data.issuable.length > 0 && (
+            <p className="text-xs text-[var(--warm-dark)]">발급할 달을 고르세요.</p>
+          )}
+          <Btn variant="primary" className="w-full" onClick={handleIssueMany} disabled={issuing || pickedMonths.length === 0}>
+            {issuing ? '발급 중…' : pickedMonths.length > 0 ? `${pickedMonths.length}건 발급` : '발급'}
+          </Btn>
+        </div>
+        </>
+        )}
+        </>
+        )}
       </div>
     </div>
+  )
+}
+
+// 발급 결과 칸 — 'N건 발급됨'과 장마다 [보기]·[내보내기], 그리고 원위치 적용취소(§16 2순위 진입점).
+// 행 문법은 전역 발급 이력과 같다(보기 primary sm + 내보내기 secondary sm). 여러 장을 한 번에 보내는 길은
+// 서류 시트(입실자 정보 › 서류)가 이미 갖고 있어 여기서는 장마다 보낸다.
+function IssuedPanel({ docLabel, result, undoing, isDeposit, fileBase, nameStyle, from, backTenantId, onUndo, onAgain }: {
+  docLabel: string
+  result: IssuedResult
+  undoing: boolean
+  isDeposit: boolean
+  fileBase: string
+  nameStyle: DocNameStyle
+  from?: DocFrom
+  backTenantId?: string
+  onUndo: () => void
+  onAgain: () => void
+}) {
+  return (
+    <section className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3" aria-live="polite">
+      <p className="text-sm font-semibold text-[var(--warm-dark)]">{docLabel} {result.files.length}건 발급됨</p>
+      <ul className="space-y-2">
+        {result.files.map(file => (
+          // 좁은 폭·큰 글자에서는 버튼이 아랫줄로 내려간다(flex-wrap). 한 줄을 고집하면 제목이 글자마다 꺾였다(320px·125% 실측).
+          <li key={file.id} className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border border-[var(--warm-border)] p-3">
+            <div className="min-w-[8.5rem] flex-1">
+              <p className="text-sm font-medium text-[var(--warm-dark)] whitespace-nowrap">{file.targetMonth ? monthLabel(file.targetMonth) : docLabel}</p>
+              <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] num">{fmtDateDot(file.issuedAt)} 발급{file.receiptNo ? ` · ${file.receiptNo}` : ''}</p>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <ViewDocButton driveFileId={file.driveFileId} from={from} tenantId={backTenantId} />
+              <SendDocButton getPdfBytes={fetchDocBytes(file.driveFileId)}
+                fileName={`${fileBase}_${docFileLabel(isDeposit ? 'deposit' : 'rent', nameStyle)}`}
+                className={btnClass('secondary', 'sm')} />
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {result.undo ? (
+          <Btn variant="subtle" size="sm" className="whitespace-nowrap" onClick={onUndo} disabled={undoing}>
+            <RotateCcw />{undoing ? '되돌리는 중…' : '적용취소'}
+          </Btn>
+        ) : <span />}
+        <Btn variant="secondary" size="sm" onClick={onAgain}>새로 작성</Btn>
+      </div>
+    </section>
   )
 }

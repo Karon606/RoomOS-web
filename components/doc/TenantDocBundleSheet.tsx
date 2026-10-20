@@ -43,7 +43,7 @@ import { TenantDocMailComposeSheet } from '@/components/doc/TenantDocMailCompose
 import { TenantDocSmsComposeSheet } from '@/components/doc/TenantDocSmsComposeSheet'
 import { docMimeLabel } from '@/lib/docMime'
 import {
-  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE, DOC_WRITE_NEW_LABEL,
+  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE, DOC_WRITE_NEW_LABEL, DOC_WRITE_MANY_LABEL,
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
 } from '@/lib/docBundle'
 import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
@@ -85,8 +85,9 @@ function groupName(g: DocBundleGroup): string {
   return `${room} (${STATUS_LABEL[g.status] ?? g.status})`
 }
 
-/** 미발급 칸을 채우러 가는 문 — 목적지·질의문자열은 프리즘 하단 행이 쓰던 것과 같은 왕복 문법이다. */
-function writeHref(row: DocBundleRow, tenantId: string): string {
+/** 미발급 칸을 채우러 가는 문 — 목적지·질의문자열은 프리즘 하단 행이 쓰던 것과 같은 왕복 문법이다.
+ *  past(퇴실 완료 계약)면 대상월을 싣지 않는다 — 이번 달은 늘 납부가 없으니 도착 화면이 마지막 실입금 달을 고른다. */
+function writeHref(row: DocBundleRow, tenantId: string, past = false): string {
   const named = row.leaseTermId ? `leaseTermId=${encodeURIComponent(row.leaseTermId)}` : ''
   if (row.docType === 'contract') {
     return `/contract/${tenantId}${docFromQuery('tenant', tenantId)}${named ? `&${named}` : ''}`
@@ -97,8 +98,14 @@ function writeHref(row: DocBundleRow, tenantId: string): string {
   const kind = row.docType === 'deposit' ? 'kind=deposit&' : ''
   // 대상월을 명시한다 — 안 실으면 도착 화면이 주기 계산으로 앵커월을 다시 추론하고, 문을 연
   // 근거(이번 달 납부)와 화면의 대상월이 어긋날 수 있다. 보증금 영수증은 월 축이 없어 뺀다.
-  const month = row.docType === 'rent' ? `month=${kstMonthStr()}&` : ''
+  const month = row.docType === 'rent' && !past ? `month=${kstMonthStr()}&` : ''
   return `/rent-receipt/${tenantId}?${kind}${month}${named ? `${named}&` : ''}from=tenant&tenantId=${encodeURIComponent(tenantId)}`
+}
+
+/** '여러 달 작성' — 그 계약을 지목해 발급 화면을 여러 달로 연다(2026-10-20). 달은 도착 화면이 실입금 달 목록에서 고른다. */
+function writeManyHref(row: DocBundleRow, tenantId: string): string {
+  const named = row.leaseTermId ? `leaseTermId=${encodeURIComponent(row.leaseTermId)}&` : ''
+  return `/rent-receipt/${tenantId}?mode=many&${named}from=tenant&tenantId=${encodeURIComponent(tenantId)}`
 }
 
 export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }: {
@@ -386,7 +393,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             {showGroupTitles && <SectionHeader first={g === groups[0]} name={groupName(g)} />}
             <ul className="space-y-1.5">
               {g.rows.map(r => (
-                <DocRow key={r.key} row={r} tenantId={tenantId}
+                <DocRow key={r.key} row={r} tenantId={tenantId} past={g.status === 'CHECKED_OUT'}
                   propertyName={bundle?.propertyName ?? ''}
                   picked={pickedOf(r, pickedVersion)}
                   selected={selected.has(pickedOf(r, pickedVersion).key)}
@@ -498,9 +505,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 
 // 행 하나 — 발급본이 있으면 체크할 수 있고 [보기]가 열린다. 없으면 체크가 잠기고 [작성]으로 나간다.
 // 계약서 판본이 여럿이거나 대표가 공석이면 보조줄 아래에 판본 줄이 하나 더 선다(419호 봉합).
-function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onChangeVersion }: {
+function DocRow({ row, tenantId, past = false, propertyName, picked, selected, onToggle, onChangeVersion }: {
   row: DocBundleRow
   tenantId: string
+  /** 퇴실 완료 계약의 행 — [작성]이 이번 달을 싣지 않는다(writeHref). */
+  past?: boolean
   /** 영업장 이름 — 등록증 행의 보조줄이 쓴다(그 행에는 발급일이 없다). */
   propertyName: string
   picked: { driveFileId: string | null; issuedAt: string | null; key: string; label: string | null }
@@ -553,7 +562,8 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">{TITLE[row.docType]}</p>
-          <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">
+          {/* break-keep — 좁은 폭에서 '… 발/급'처럼 낱말 중간에서 꺾이던 자리(검수 2026-10-20). */}
+          <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-keep">
             {/* 등록증에는 우리가 아는 날짜가 없다 — 종이에 찍힌 날은 발급기관 것이고 업로드 시각을
                 그 자리에 넣으면 종이의 날짜인 척하는 값이 된다. 대신 '누구 것 · 무슨 형식'을 적는다.
                 형식은 정본 docMimeLabel 이 말한다(사진으로 올린 등록증을 PDF 라 부르면 안 된다). */}
@@ -563,7 +573,15 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
                 ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
                 : versions.length > 0 ? '보낼 판본을 고르세요' : '아직 만든 서류가 없습니다'}
           </p>
-          {noteText && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{noteText}</p>}
+          {noteText && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-keep">{noteText}</p>}
+          {/* 문이 닫혀 있을 때 침묵하면 "왜 버튼이 안 뜨냐"가 된다. 부재 이유를 그 자리가 말한다.
+              위 stale 조각은 걷고 한 문단 두 문장으로 —— 안 그러면 '이번 달'이 두 줄에 반복된다.
+              가운뎃점으로 잇지 않는 것은 §29 다(완결 문장 둘은 마침표 두 문장). */}
+          {row.canWriteNew === false && (
+            <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              {DOC_STALE_NOTE}. 납부가 확인되면 새로 작성할 수 있습니다.
+            </p>
+          )}
           {/* 지금 사실로 다시 만드는 문 — 발급본이 있으면 행이 '발급됨'이라 [보기]만 서고 새로
               만들 길이 없었다(납부 2026-09-03 · 실거주 2026-09-16). 버튼을 하나 더 두지 않는
               이유는 위 [보기]와 다투면 320px 에서 제목이 먼저 잘리기 때문이다. 같은 시트의
@@ -574,21 +592,24 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
               **간격은 감싸는 div 가 준다.** 앵커에 `-my-2` 와 `mt-0.5` 를 함께 얹으면 둘이 같은
               마진을 다퉈 위쪽 음수 마진이 죽고 링크가 제 보조줄에서 8px 떠 버린다(디자이너 실측
               2026-09-03). 아래 판본 줄이 이미 그 문법이다. */}
-          {row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType] && (
-            <div className="mt-0.5">
-              <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
-                className="-my-2 inline-flex min-h-[44px] min-w-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
-                {DOC_WRITE_NEW_LABEL[row.docType]}
-              </a>
+          {/* '여러 달 작성'은 같은 링크 줄에 선다(2026-10-20). 두 링크는 한 줄을 나눠 쓰고 좁으면 아랫줄로 흐른다
+              (flex-wrap, 판본 줄과 같은 문법). 문이 닫혀 있어도 이 링크는 선다 — 지난 달들의 납부는 이번 달 납부와
+              무관한 사실이고, 고를 수 있는 달은 도착 화면이 실입금 달로 거른다. */}
+          {((row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType]) || row.writeMany) && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3">
+              {row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType] && (
+                <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
+                  className="-my-2 inline-flex min-h-[44px] min-w-[44px] items-center whitespace-nowrap rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                  {DOC_WRITE_NEW_LABEL[row.docType]}
+                </a>
+              )}
+              {row.writeMany && (
+                <a href={writeManyHref(row, tenantId)} onClick={e => e.stopPropagation()}
+                  className="-my-2 inline-flex min-h-[44px] min-w-[44px] items-center whitespace-nowrap rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                  {DOC_WRITE_MANY_LABEL}
+                </a>
+              )}
             </div>
-          )}
-          {/* 문이 닫혀 있을 때 침묵하면 "왜 버튼이 안 뜨냐"가 된다. 부재 이유를 그 자리가 말한다.
-              위 stale 조각은 걷고 한 문단 두 문장으로 —— 안 그러면 '이번 달'이 두 줄에 반복된다.
-              가운뎃점으로 잇지 않는 것은 §29 다(완결 문장 둘은 마침표 두 문장). */}
-          {row.canWriteNew === false && (
-            <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              {DOC_STALE_NOTE}. 납부가 확인되면 새로 작성할 수 있습니다.
-            </p>
           )}
           {/* 판본 줄 — 지금 무엇이 나가는지 적고 바꿀 길을 그 자리에 둔다.
               값과 링크가 한 줄을 다투면 320px 에서 **값이** 잘린다. 값이 이 줄의 용건이라
@@ -611,7 +632,7 @@ function DocRow({ row, tenantId, propertyName, picked, selected, onToggle, onCha
       <div className="flex shrink-0 items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
         {issued
           ? <ViewDocButton driveFileId={picked.driveFileId as string} from="tenant" tenantId={tenantId} />
-          : <BtnLink href={writeHref(row, tenantId)} variant="secondary" size="sm">작성</BtnLink>}
+          : <BtnLink href={writeHref(row, tenantId, past)} variant="secondary" size="sm">작성</BtnLink>}
       </div>
     </li>
   )

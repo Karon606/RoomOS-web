@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/lib/prisma": [
+        "./cr-flow-prisma-stub.ts"
+      ],
+      "@/lib/auth/propertyAccess": [
+        "./cr-flow-access-stub.ts"
+      ],
+      "@/lib/role": [
+        "./dashboard-role-stub.ts"
+      ],
+      "@/lib/supabase/server": [
+        "./cr-flow-next-stub.ts"
+      ],
+      "next/cache": [
+        "./cr-flow-next-stub.ts"
+      ],
+      "next/headers": [
+        "./cr-flow-next-stub.ts"
+      ],
+      "next/navigation": [
+        "./cr-flow-next-stub.ts"
+      ],
+      "server-only": [
+        "./server-only-stub.ts"
+      ],
+      "@/lib/google-drive": [
+        "./rent-receipt-drive-stub.ts"
+      ],
+      "@/*": [
+        "../*"
+      ]
+    }
+  }
+}

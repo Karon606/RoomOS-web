@@ -33,6 +33,8 @@ export type RentReceiptListRow = {
   roomNo: string | null
   status: string | null
   kind: 'rent' | 'deposit'   // 서류 종류 — 파일명 접두 추론이 아닌 컬럼 정본
+  /** 귀속월 'YYYY-MM' — '다시 작성'이 그 장의 달을 연다(2026-10-20). 옛 발급본·보증금은 null. */
+  targetMonth: string | null
 }
 
 export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
@@ -41,7 +43,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     where: { propertyId, deletedAt: null },
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
-      id: true, fileName: true, kind: true, issuedAt: true, driveFileId: true, leaseTermId: true, nameStyle: true,
+      id: true, fileName: true, kind: true, issuedAt: true, driveFileId: true, leaseTermId: true, nameStyle: true, targetMonth: true,
       tenant: { select: { id: true, name: true, englishName: true, nativeName: true } },
       leaseTerm: { select: { status: true, room: { select: { roomNo: true } } } },
     },
@@ -61,6 +63,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     roomNo: r.leaseTerm?.room?.roomNo ?? null,
     status: r.leaseTerm?.status ?? null,
     kind: r.kind === 'deposit' ? 'deposit' as const : 'rent' as const,
+    targetMonth: r.kind === 'deposit' ? null : r.targetMonth,
   }))
 }
 

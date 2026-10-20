@@ -9,7 +9,8 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import prisma from '@/lib/prisma'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
-import { rentPaidWhere } from '@/lib/rentPaid'
+import { rentPaidWhere, rentPaidAnyMonthWhere } from '@/lib/rentPaid'
+import { monthLabel } from '@/lib/rentReceiptMonths'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
   buildDocBundle, DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, docFileLabel,
@@ -79,9 +80,18 @@ export async function getTenantDocBundle(
     select: { name: true, bizCertDriveFileId: true, bizCertMimeType: true },
   })
 
-  const [leases, contractRows, receiptRows, certRows] = await Promise.all([
+  const [leases, pastLeaseRows, contractRows, receiptRows, certRows] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { tenantId, propertyId, status: { in: CONTRACT_ISSUE_STATUSES } },
+      select: {
+        id: true, status: true, moveInDate: true, depositAmount: true, parentLeaseTermId: true, isShortTerm: true,
+        room: { select: { roomNo: true } },
+      },
+    }),
+    // 퇴실 완료 계약 — 아래에서 실입금이 있었던 것만 남겨 납부 확인서 행을 세운다(lib/docBundle pastLeases).
+    // 이 영업장·이 사람 범위는 진행 중 계약 조회와 같다.
+    prisma.leaseTerm.findMany({
+      where: { tenantId, propertyId, status: 'CHECKED_OUT' },
       select: {
         id: true, status: true, moveInDate: true, depositAmount: true, parentLeaseTermId: true, isShortTerm: true,
         room: { select: { roomNo: true } },
@@ -127,9 +137,25 @@ export async function getTenantDocBundle(
     : []
   const rentPaidLeaseIds = paidRows.map(r => r.leaseTermId).filter((id): id is string => !!id)
 
+  // 퇴실 완료 계약 중 실입금이 한 번이라도 있었던 것. 판정 술어는 lib/rentPaid 정본(달 조건만 뺀 조각)이다.
+  const pastPaidRows = pastLeaseRows.length > 0
+    ? await prisma.paymentRecord.findMany({
+      where: { propertyId, ...rentPaidAnyMonthWhere(pastLeaseRows.map(l => l.id)) },
+      select: { leaseTermId: true },
+      distinct: ['leaseTermId'],
+    })
+    : []
+  const pastPaid = new Set(pastPaidRows.map(r => r.leaseTermId))
+
   const receipt = (kind: 'rent' | 'deposit'): DocBundleFile[] => receiptRows
     .filter(r => (kind === 'deposit' ? r.kind === 'deposit' : r.kind !== 'deposit'))
-    .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, targetMonth: r.targetMonth, nameStyle: r.nameStyle }))
+    // 납부 확인서는 귀속월을 보조줄에 적는다 — 최신 판정이 귀속월 기준이라(2026-10-20) 발행일만 보이면
+    // 왜 이 종이가 서 있는지 말하지 못한다. 귀속월이 없는 옛 발급본은 지어내지 않고 비운다.
+    .map(r => ({
+      driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt,
+      note: kind === 'rent' && r.targetMonth ? monthLabel(r.targetMonth) : null,
+      targetMonth: r.targetMonth, nameStyle: r.nameStyle,
+    }))
 
   return withMail(buildDocBundle({
     tenantName: tenant.name,
@@ -138,6 +164,9 @@ export async function getTenantDocBundle(
     leases: leases.map(l => ({
       id: l.id, status: l.status, moveInDate: l.moveInDate, depositAmount: l.depositAmount,
       parentLeaseTermId: l.parentLeaseTermId, roomNo: l.room?.roomNo ?? null,
+      // 단기 제외는 정본이 이 값으로 판정한다. 종전에는 select 만 하고 안 넘겨서 단기 계약에도
+      // '이번 달 확인서 작성' 문이 섰다(2026-10-20 발견, 같은 판정을 쓰는 '여러 달 작성'과 함께 고침).
+      isShortTerm: l.isShortTerm,
     })),
     // 계약서 행은 **대표 한 부**만 후보다(lib/contractCurrentIssue 정본). 폐기본을 보내는 일도,
     // 제출용·번역본이 실계약 자리에 서는 일도 여기서 막힌다. 화면 둘과 같은 판정을 쓴다.
@@ -166,6 +195,10 @@ export async function getTenantDocBundle(
     })),
     rents: receipt('rent'),
     rentPaidLeaseIds,
+    pastLeases: pastLeaseRows.filter(l => pastPaid.has(l.id)).map(l => ({
+      id: l.id, status: l.status, moveInDate: l.moveInDate, depositAmount: l.depositAmount,
+      parentLeaseTermId: l.parentLeaseTermId, roomNo: l.room?.roomNo ?? null, isShortTerm: l.isShortTerm,
+    })),
     deposits: receipt('deposit'),
     certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, nameStyle: r.nameStyle })),
     // 미등록 영업장에는 안 넘긴다 — 정본이 그룹 자체를 안 세운다(빈 행·작성 왕복 없음).

@@ -221,8 +221,11 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
             {fileRows.map(c => {
               const sel = selected.has(c.id)
               // '다시 작성'이 여는 URL — 종류와 계약을 그 행에서 가져온다.
+              // 귀속월이 있는 장은 그 달을 연다(2026-10-20). 안 실으면 도착 화면이 오늘 주기로 열려 8월분 '다시 작성'이
+              // 10월분 폼이 된다. 귀속월이 없는 옛 발급본은 종전대로 연다(표시 문자열에서 달을 지어내지 않는다).
               const reissueQuery = [
                 c.kind === 'deposit' ? 'kind=deposit' : '',
+                c.targetMonth ? `month=${c.targetMonth}` : '',
                 c.leaseTermId ? `leaseTermId=${encodeURIComponent(c.leaseTermId)}` : '',
               ].filter(Boolean).join('&')
               return (
