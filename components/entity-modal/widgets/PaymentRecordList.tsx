@@ -31,6 +31,8 @@ import { CashReceiptCaption } from './CashReceiptCaption'
 import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment, previewWithin } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
+import { isDueDayAdjust } from '@/lib/dueDayAdjust'
+import { DueDayAdjustList } from './DueDayAdjustList'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 
@@ -345,11 +347,34 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   }
 
   if (records === null) return <SkeletonRows rows={2} className="py-1" />
-  if (records.length === 0) return <p className="text-xs text-[var(--warm-muted)] py-2">{scope === 'window' ? '최근 3개월 수납 기록이 없습니다.' : '이 달 수납 기록이 없습니다.'}</p>
+  // 납입일 변경 조정 행은 일반 수납 행이 아니다. 아래 '납입일 변경 조정' 묶음으로 떼어 그린다(신고 df82ce57, 입주자 수납 모달과 같은 컴포넌트).
+  // 일반 수정 폼을 열면 금액 칸이 부호를 지운다. 서버도 그 저장을 거절한다(updatePayment, lib/dueDayAdjust).
+  const regularRows = records.filter(r => !isDueDayAdjust(r.memo))
+  const adjustRows = records.filter(r => isDueDayAdjust(r.memo))
+  const adjustList = (
+    <DueDayAdjustList
+      records={adjustRows}
+      canEdit={canEdit}
+      readOnly={cashReceiptOnly}
+      // 편집 접점은 일반 수납 행과 같은 규칙이다(그 record 의 귀속월 화면, 미래 귀속은 어디서든).
+      editable={p => editableHere(p.targetMonth)}
+      lockedNote={p => `위 조회 월을 ${Number(p.targetMonth.slice(5))}월로 바꾸면 수정할 수 있습니다.`}
+      deletingId={delPendingId}
+      onDelete={a => { const p = records.find(r => r.id === a.id); if (p) void handleDelete(p) }}
+      onChanged={() => { void reload(); onChange?.() }}
+    />
+  )
+  if (regularRows.length === 0) return (
+    <div className="space-y-3">
+      <p className="text-xs text-[var(--warm-muted)] py-2">{scope === 'window' ? '최근 3개월 수납 기록이 없습니다.' : '이 달 수납 기록이 없습니다.'}</p>
+      {adjustList}
+    </div>
+  )
 
   return (
+    <div className="space-y-3">
     <div className="space-y-1.5">
-      {records.map((p, idx) => {
+      {regularRows.map((p, idx) => {
         const prevOwner = !p.isDeposit && (isPreAcq(p) || p.isPrevOwner)
         // 화면에 표시되는 "회차"는 viewMonth 안에서 payDate 시간 순. records가 이미 payDate asc 정렬돼 옴.
         // DB seqNo는 귀속월 별로 매겨져서 사용자가 보는 시간 순서와 안 맞을 수 있음 (사용자 피드백 2026-05-31).
@@ -663,6 +688,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
           </div>
         )
       })}
+    </div>
+    {adjustList}
     </div>
   )
 }

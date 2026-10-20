@@ -94,6 +94,14 @@ export function dueDayAdjustLabel(memo: string | null | undefined): string {
   return memo.startsWith(`${DUE_DAY_ADJUST_PREFIX} `) ? memo.slice(DUE_DAY_ADJUST_PREFIX.length + 1) : memo.replace(DUE_DAY_ADJUST_PREFIX, '').trim()
 }
 
+/**
+ * 행 아래 표시용. 기계 키와 방향 조각('(추가납부)'·'(과입금)')을 뗀다. 방향은 행 제목이 화면 어휘('추가로 받을 금액'·'돌려줄 금액')로
+ * 이미 말하므로 저장 메모의 옛 어휘를 같은 자리에 또 세우지 않는다. 저장 형식·파서는 기계 키라 그대로다(표시만).
+ */
+export function dueDayAdjustDisplayLabel(memo: string | null | undefined): string {
+  return dueDayAdjustLabel(memo).replace(/ \((추가납부|과입금)\)/, '')
+}
+
 /** 부호로 방향을 읽는다. 0 은 방향이 없다. */
 export function dueDayAdjustKindOf(actualAmount: number): DueDayAdjustKind | null {
   return actualAmount < 0 ? 'extra' : actualAmount > 0 ? 'refund' : null

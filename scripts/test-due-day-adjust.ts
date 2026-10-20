@@ -5,7 +5,7 @@
 // 메모 앞머리가 기계 키라, 그 둘을 지키는 판정을 여기서 글자까지 못박는다.
 import {
   DUE_DAY_ADJUST_PREFIX, isDueDayAdjust, dueDayBeforeChange, parseDueDayAdjustMemo, buildDueDayAdjustMemo,
-  dueDayAdjustLabel, dueDayAdjustKindOf, planDueDayAdjustEdit, planDueDayAdjustCreate, paymentEditGuard,
+  dueDayAdjustLabel, dueDayAdjustDisplayLabel, dueDayAdjustKindOf, planDueDayAdjustEdit, planDueDayAdjustCreate, paymentEditGuard,
   dueDayAdjustSignMismatch, dueDayAdjustWhere, notDueDayAdjustWhere, paymentMemoGuard,
   DUE_DAY_ADJUST_NOT_ADJUST, DUE_DAY_ADJUST_UNREADABLE, DUE_DAY_ADJUST_AMOUNT_INVALID, DUE_DAY_ADJUST_NOTE_INVALID,
   DUE_DAY_ADJUST_EDIT_ELSEWHERE, PAYMENT_PREFIX_RESERVED, PAYMENT_NEGATIVE_REFUSED, dueDayAdjustOverCap,
@@ -55,6 +55,8 @@ eq('파서: 협의·설명', parseDueDayAdjustMemo('[납입일변경] 말일일�
 eq('파서: 손으로 고친 옛 모양은 null', parseDueDayAdjustMemo('[납입일변경] 13만원으로 협의'), null)
 eq('파서: 일반 메모 null', parseDueDayAdjustMemo('보증금'), null)
 eq('라벨: 기계 키 뺀 앞부분', dueDayAdjustLabel(M513), '9일→20 변경, 일할 128,333원 (추가납부)')
+eq('표시: 방향 조각을 뗀다', dueDayAdjustDisplayLabel('[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부) 원단위 절삭'), '9일→20 변경, 일할 128,333원, 협의 130,000원 원단위 절삭')
+eq('표시: 과입금 조각도 뗀다', dueDayAdjustDisplayLabel('[납입일변경] 15일→5 변경, 일할 100,000원 (과입금)'), '15일→5 변경, 일할 100,000원')
 eq('방향: 음수는 추가로 받을 금액', dueDayAdjustKindOf(-1), 'extra')
 eq('방향: 양수는 돌려줄 금액', dueDayAdjustKindOf(1), 'refund')
 eq('방향: 0 은 없음', dueDayAdjustKindOf(0), null)

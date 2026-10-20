@@ -89,7 +89,8 @@ import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STA
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
-import { isDueDayAdjust, dueDayAdjustLabel } from '@/lib/dueDayAdjust'
+import { isDueDayAdjust } from '@/lib/dueDayAdjust'
+import { DueDayAdjustList } from '@/components/entity-modal/widgets/DueDayAdjustList'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -2869,6 +2870,8 @@ export default function TenantClient({
         const regularRecords = payHistory.filter(p => !isDueDayAdjust(p.memo) && !p.isDeposit)
         // 목록에 그릴 집합 — 3개월 창. 위 regularRecords 는 금액 계산용이라 조회월 기준 그대로 둔다.
         const regularWindow = payWindow.filter(p => !isDueDayAdjust(p.memo))
+        // 조정 묶음 목록도 같은 3개월 창이다. 위 adjRecords 는 '총 수납' 칸의 조정 합(조회월) 계산용이라 그대로 둔다.
+        const adjWindow = payWindow.filter(p => isDueDayAdjust(p.memo))
         const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
@@ -3004,43 +3007,6 @@ export default function TenantClient({
                       </div>
                     )}
 
-                    {/* 납입일 변경 조정 내역 */}
-                    {adjRecords.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>납입일 변경 조정</p>
-                        {adjRecords.map(p => {
-                          const isExtra = p.actualAmount < 0
-                          const absAmt = Math.abs(p.actualAmount)
-                          const label = dueDayAdjustLabel(p.memo)
-                          return (
-                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5"
-                              style={{
-                                background: isExtra ? 'var(--danger-bg)' : 'var(--success-bg)',
-                                border: `1px solid ${isExtra ? 'var(--danger-ring)' : 'var(--success-ring)'}`,
-                              }}>
-                              <div>
-                                <p className="text-xs font-semibold"
-                                  style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
-                                  {isExtra ? '추가납부 필요' : '과입금 처리'}
-                                </p>
-                                {label && (
-                                  <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>{label}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold"
-                                  style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
-                                  {isExtra ? '-' : '+'}{fmtWon(absAmt)}
-                                </span>
-                                <button onClick={() => handleDeletePayRecord(p)}
-                                  className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
                     {/* 납부 내역 */}
                     {regularWindow.length > 0 && (
                       <div className="space-y-2">
@@ -3160,6 +3126,16 @@ export default function TenantClient({
                     {regularWindow.length === 0 && (
                       <p className="text-sm text-[var(--warm-muted)] text-center py-4">최근 3개월 수납 기록이 없습니다.</p>
                     )}
+
+                    {/* 납입일 변경 조정. 수납 정보의 수납 내역과 같은 컴포넌트·같은 자리(수납 내역 아래)·같은 3개월 창(신고 df82ce57).
+                        종전에는 이 화면만 따로 그려 삭제만 있었고, 수납 정보 쪽은 일반 수정 폼을 열어 부호가 지워졌다. */}
+                    <DueDayAdjustList
+                      records={adjWindow}
+                      canEdit={canEdit}
+                      deletingId={delPayPendingId}
+                      onDelete={a => { const p = payWindow.find(r => r.id === a.id); if (p) void handleDeletePayRecord(p) }}
+                      onChanged={() => { void reloadPay() }}
+                    />
                   </div>
 
                   {/* 납부일 임시 조정 — 항상 보이는 영역 */}
