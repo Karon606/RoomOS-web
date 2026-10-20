@@ -11,6 +11,7 @@ import {
 } from './actions'
 import { pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -307,7 +308,13 @@ function PropertiesPanel({
 function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const INIT_H = 380
   const MIN_H  = 120
+  // 손잡이로 끌어 올릴 때의 화면 대비 상한이다. 키보드 기하가 아니라(끌 때는 키보드가 내려가 있다) 정본으로 옮기지 않는다.
   const MAX_H  = () => window.innerHeight * 0.88
+  // 시트의 아래 자리는 보이는 띠 훅이 정한다(2026-10-20 검수). 종전 --kbd-inset 은 셸 스크롤 여유용 값이라
+  // vv resize 때만 적히고 팬하는 동안 그대로다. fixed 위치로 쓰면 팬한 iOS 에서 실제 겹침(206)보다 큰 396 만큼
+  // 떠서 위가 잘렸다. 훅의 --vv-bottom 은 상자 좌표의 겹침(H − offsetTop − vv.height)이고 팬마다 갱신된다.
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: true, overlayRef: sheetRef })
 
   const [height, setHeight] = useState(INIT_H)
   const drag = useRef<{ startY: number; startH: number } | null>(null)
@@ -324,10 +331,11 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
   const onUp = () => { drag.current = null }
 
   return (
-    <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-lift"
+    <div ref={sheetRef} className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-lift"
       // 시트 안에 입력이 있어 layout viewport 하단 고정이면 iOS 키보드가 시트를 통째로 덮는다.
-      // 키보드 겹침만큼 띄운다(--kbd-inset). 데스크톱·안드로이드는 0px 이라 현행과 같은 픽셀이다.
-      style={{ bottom: 'var(--kbd-inset, 0px)', background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
+      // 키보드 겹침만큼 띄운다(--vv-bottom, 정본 useVisibleBand). 훅이 아직 못 읽었으면 가드의 --kbd-inset 으로 받는다.
+      // 데스크톱·안드로이드는 0px 이라 현행과 같은 픽셀이다.
+      style={{ bottom: 'var(--vv-bottom, var(--kbd-inset, 0px))', background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
       <div className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         <div className="w-10 h-1.5 rounded-full bg-[var(--warm-border)]" />

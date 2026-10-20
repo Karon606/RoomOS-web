@@ -245,6 +245,7 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
   onConfirm: (result: { dataUrl: string; base64: string }) => void
   onCancel: () => void
 }) {
+  // 화면 대비 캔버스 크기 상한이다. 이 화면엔 텍스트 입력이 없어 키보드 기하와 무관하다(정본으로 옮기지 않는다).
   const MAX_DIM = Math.min(window.innerWidth * 0.92, window.innerHeight * 0.62, 520)
   const sc = Math.min(MAX_DIM / bitmap.width, MAX_DIM / bitmap.height)
   const dW = Math.round(bitmap.width * sc), dH = Math.round(bitmap.height * sc)

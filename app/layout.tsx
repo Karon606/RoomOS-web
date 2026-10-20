@@ -33,7 +33,8 @@ export const viewport: Viewport = {
   ],
   viewportFit: 'cover',
   // 키보드가 서면 뷰포트를 줄이는 쪽으로 고정(가이드 §30). Android 는 이 선언이 없으면
-  // overlays-content 로 갈리는 기기가 있어 --kbd-inset 산수의 전제(innerHeight 불변)가 흔들린다.
+  // overlays-content 로 갈리는 기기가 있어 --kbd-inset 산수의 전제가 흔들린다. 그 산수의 기준틀은 2026-10-20 부터
+  // innerHeight 가 아니라 화면 고정 상자다(lib/viewportFrame, 가이드 §30).
   interactiveWidget: 'resizes-content',
 }
 

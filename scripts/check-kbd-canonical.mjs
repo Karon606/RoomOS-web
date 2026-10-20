@@ -538,6 +538,30 @@ need('app/(app)/errorReports.ts', [
   }
 }
 
+// 8) --kbd-inset 은 셸 스크롤 여유(패딩)용이다(검수 2026-10-20). vv resize 때만 적히고 팬하는 동안 그대로라
+// fixed 위치(bottom·top·transform·height)로 쓰면 팬한 iOS 에서 실제 겹침보다 크게 뜬다(도면 하단 시트 396 대 206).
+// 위치는 보이는 띠 훅(useVisibleBand)의 --vv-bottom 을 쓴다. var(..., var(--kbd-inset)) 폴백 자리는 허용한다.
+{
+  const posRe = /(?<![-\w])(bottom|top|transform|translate|height|maxHeight|max-height|inset)\s*:\s*['"`]?\s*(?:calc\()?[^'"`;,}]*?(?<!, )var\(--kbd-inset/
+  for (const f of [...walk('components'), ...walk('app')]) {
+    const src = strip(readFileSync(f, 'utf8'))
+    const m = posRe.exec(src)
+    if (m) violations.push(`${f}: --kbd-inset 을 위치(${m[1]})로 쓴다. 셸 스크롤 여유용 값이라 팬하는 동안 안 바뀐다. 위치는 useVisibleBand 의 --vv-bottom 을 쓸 것`)
+  }
+  const css = readFileSync('app/globals.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const cm = /(?<![-\w])(bottom|top|transform|translate|height|max-height|inset)\s*:[^;]*var\(--kbd-inset/.exec(css)
+  if (cm) violations.push(`app/globals.css: --kbd-inset 을 위치(${cm[1]})로 쓴다`)
+}
+// 9) 같은 클래스 innerHeight(검수 2026-10-20). 팝업 아래 공간은 보이는 띠 아래 끝(정본 visibleBottomNow)으로 센다.
+need('components/ui/usePopoverAnchor.ts', [
+  [/const bottom = visibleBottomNow\(\)/, '팝업 아래 공간을 정본 visibleBottomNow 로 안 센다'],
+])
+for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/InventoryClient.tsx']) {
+  let src = ''
+  try { src = strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f}: 읽을 수 없음`); continue }
+  if (/window\.innerHeight/.test(src)) violations.push(`${f}: window.innerHeight 로 팝업 공간을 센다. 키보드가 선 iOS 는 그 값을 줄여 보고하고 키보드도 안 잡는다. 정본 visibleBottomNow 를 쓸 것`)
+}
+
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exit(1)

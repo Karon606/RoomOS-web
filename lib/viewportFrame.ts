@@ -22,7 +22,7 @@
 // 같은 vv 이벤트를 듣고 둘 다 여기를 부르므로, 같은 프레임·같은 vv 값이면 한 번 잰 값을 돌려준다.
 // 기억은 다음 애니메이션 프레임에 지운다(낡은 값이 프레임을 넘지 않는다).
 
-import type { KbdSnapshot } from './keyboardViewport'
+import { visibleBand, type KbdSnapshot } from './keyboardViewport'
 
 /** 기준틀 상자. 처음 잴 때 한 번 만들어 body 끝에 두고 계속 쓴다(매번 붙였다 떼면 그때마다 레이아웃이 돈다). */
 let frameBox: HTMLElement | null = null
@@ -89,4 +89,15 @@ export function readKbdSnapshot(vv: VisualViewport): KbdSnapshot {
     requestAnimationFrame(() => { memo = null; memoExpiryArmed = false })
   }
   return snap
+}
+
+/**
+ * 지금 보이는 띠의 아래 끝(client 좌표). 화면 고정 팝업이 아래 공간을 셀 때 쓴다(lib/keyboardViewport visibleBand).
+ * 키보드가 없으면 innerHeight 와 같고(H = innerHeight, T0 = 0, offsetTop 0, vv.height = 화면), 키보드가 서면
+ * 키보드 선이다. visualViewport 가 없는 브라우저는 종전대로 innerHeight 다.
+ */
+export function visibleBottomNow(): number {
+  const vv = window.visualViewport
+  if (!vv) return window.innerHeight
+  return visibleBand(readKbdSnapshot(vv)).bottom
 }

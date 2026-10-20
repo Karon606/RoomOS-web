@@ -307,7 +307,8 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     '모달 본문 안 absolute 패널은 아래가 잘린다(종전 칩) · 지정 해제는 후보와 섞이면 안 된다')
   need('고른 행을 다시 누르면 쓰기가 없다', /const pick = \(locId: string \| null\) => \{ close\(\); if \(locId !== hubLocationId\) onPick\(locId\) \}/.test(picker),
     '같은 값으로 저장하면 헛 토스트와 헛 적용취소가 선다')
-  need('창고 패널 높이 상한이 화면에 남은 자리다', /maxHeight: Math\.max\(160, window\.innerHeight - pos\.top - 8\)/.test(picker) && !/maxHeight: '320px'/.test(picker),
+  // 2026-10-20(신고 be5316e8) 남은 자리는 innerHeight 가 아니라 보이는 띠 아래 끝까지다. 정본 usePopoverAnchor 가 pos.maxHeight 로 센다.
+  need('창고 패널 높이 상한이 화면에 남은 자리다', /maxHeight: Math\.max\(160, pos\.maxHeight\)/.test(picker) && !/maxHeight: '320px'/.test(picker),
     '고정 320px 이면 긴 경로 한 줄이 꺾일 때 4px 만 넘쳐 안쪽 스크롤이 생겼다')
   need("기본 창고를 따르면 요약 값 뒤에 '(기본 창고)' — 패널 체크와 같은 값(row.hubLocationId)",
     /const followsDefault = row\.hubLocationId == null && itemHub != null/.test(summary) && /\{followsDefault && <span className="whitespace-nowrap text-\[var\(--warm-muted\)\]">\{g\(' \(기본 창고\)'\)\}<\/span>\}/.test(summary) &&

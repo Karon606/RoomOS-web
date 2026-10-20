@@ -1968,7 +1968,7 @@ function ItemHubPicker({ locations, hubLocationId, disabled, onPick }: {
               생겼다(검수 실측). 진짜로 화면을 넘칠 때만 스크롤이 선다. */}
           <div ref={panelRef} onKeyDown={e => menuKeyNav(e, close)}
             className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
-            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: Math.max(160, window.innerHeight - pos.top - 8), overflowY: 'auto' }}>
+            style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: Math.max(160, pos.maxHeight), overflowY: 'auto' }}>
             <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">채울 때 빼 쓰는 위치</p>
             {candidates.map(l => {
               const sel = l.id === hubLocationId

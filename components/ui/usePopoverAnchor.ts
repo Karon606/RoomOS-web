@@ -14,8 +14,10 @@
 // 그 산수를 그대로 옮겼다 — 사본을 만들면 언젠가 갈린다.
 
 import { useState, useRef } from 'react'
+import { visibleBottomNow } from '@/lib/viewportFrame'
 
-export type PopoverPos = { top: number; left: number; width: number }
+/** maxHeight 는 뜬 자리에서 보이는 띠 아래 끝까지 남은 높이다(팝업 안이 넘칠 때만 안쪽 스크롤이 선다). */
+export type PopoverPos = { top: number; left: number; width: number; maxHeight: number }
 
 /**
  * 트리거 아래(또는 공간이 없으면 위)에 뜰 자리를 센다.
@@ -39,7 +41,7 @@ export function usePopoverAnchor<T extends HTMLElement = HTMLButtonElement>(opts
   const estimatedHeight = opts?.estimatedHeight ?? 340
   const placement = opts?.placement ?? 'auto'
   const align = opts?.align ?? 'start'
-  const [pos, setPos] = useState<PopoverPos>({ top: 0, left: 0, width: 0 })
+  const [pos, setPos] = useState<PopoverPos>({ top: 0, left: 0, width: 0, maxHeight: 0 })
   const triggerRef = useRef<T>(null)
 
   /** 팝업을 열기 직전에 부른다 — 여는 쪽이 상태를 쥐므로 여기서는 자리만 센다. */
@@ -49,7 +51,10 @@ export function usePopoverAnchor<T extends HTMLElement = HTMLButtonElement>(opts
     const r = el.getBoundingClientRect()
     const width = Math.max(r.width, minWidth)
     const left = Math.max(8, Math.min(align === 'end' ? r.right - width : r.left, window.innerWidth - width - 8))
-    const spaceBelow = window.innerHeight - r.bottom - 8
+    // 아래 끝은 innerHeight 가 아니라 보이는 띠의 아래 끝이다(2026-10-20, 신고 be5316e8). 키보드가 선 iOS 는
+    // innerHeight 를 팬만큼 줄여 보고하고, 키보드 자체도 innerHeight 에 안 잡힌다. 키보드가 없으면 같은 값이다.
+    const bottom = visibleBottomNow()
+    const spaceBelow = bottom - r.bottom - 8
     const spaceAbove = r.top - 8
     const below = placement === 'above'
       ? spaceAbove < estimatedHeight && spaceBelow >= estimatedHeight
@@ -57,7 +62,7 @@ export function usePopoverAnchor<T extends HTMLElement = HTMLButtonElement>(opts
     const top = below
       ? r.bottom + 4
       : Math.max(8, r.top - estimatedHeight - 4)
-    setPos({ top, left, width })
+    setPos({ top, left, width, maxHeight: bottom - top - 8 })
   }
 
   return { pos, triggerRef, measure }
