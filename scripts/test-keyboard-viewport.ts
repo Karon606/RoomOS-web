@@ -7,6 +7,7 @@ import {
   KBD_OPEN_PX, KBD_MAX_RATIO, TARGET_RATIO, REVEAL_GAP, ZOOM_NEUTRAL_SCALE, RESTORE_EPS,
   type KbdSnapshot,
 } from '../lib/keyboardViewport'
+import { readKbdSnapshot, frameBoxRect } from '../lib/viewportFrame'
 
 let pass = 0
 const fails: string[] = []
@@ -155,6 +156,74 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   for (const [name, stamped, editing, s, want] of rows) eq(`window resize · ${name}`, windowResizeIsPan(stamped, editing, s), want)
   // 종전 틀(innerHeight 를 상자 높이로)이었다면 (c) 에서 열림이 거짓이라 팬이 재동기로 새어 되감겼다.
   eq('종전 틀이면 (c) 의 window resize 가 재동기로 샜다', old.open(416, KB_VV, 1), false)
+}
+
+// ── 정본 readKbdSnapshot 을 가짜 DOM 으로 직접 부른다(검수 2026-10-20) ─────────────
+// 순수 함수 진리표만으로는 '잰 상자를 기준틀로 넘기는가'가 안 잡힌다(frameTop = r.top * 0 이 초록이었다).
+// 상자 자리는 getBoundingClientRect 가짜로 정하고, vv·innerHeight 도 가짜다.
+{
+  const g = globalThis as unknown as Record<string, unknown>
+  let rect = { top: -190, height: 812, width: 402 }
+  let rectReads = 0
+  let created = 0
+  let docW = 402
+  const box = {
+    isConnected: true,
+    style: { cssText: '' },
+    setAttribute: () => {},
+    getBoundingClientRect: () => { rectReads++; return { ...rect, bottom: rect.top + rect.height } },
+  }
+  const rafs: (() => void)[] = []
+  const flush = () => { const q = rafs.splice(0); for (const f of q) f() }
+  g.window = { innerHeight: 622 }
+  g.document = {
+    body: { appendChild: () => {} },
+    createElement: () => { created++; return box },
+    documentElement: { get clientWidth() { return docW } },
+  }
+  g.requestAnimationFrame = (f: () => void) => { rafs.push(f); return rafs.length }
+  const vv = { height: 416, offsetTop: 190, scale: 1, width: 402 } as unknown as VisualViewport
+  const s1 = readKbdSnapshot(vv)
+  eq('정본 · (b) 상자 위 끝 T0 = −190 을 기준틀로 넘긴다', s1.frameTop, -190)
+  eq('정본 · (b) 상자 높이 H = 812 (innerHeight 622 가 아니다)', s1.frameH, 812)
+  eq('정본 · vv 세 값은 그대로', [s1.vvHeight, s1.offsetTop, s1.scale], [416, 190, 1])
+  eq('정본 · 잰 값으로 띠가 client 0 ~ 416', [visibleBand(s1).top, visibleBand(s1).bottom], [0, 416])
+  eq('정본 · 잰 값으로 셸 겹침 206', overlapInset(s1), 206)
+  // 같은 프레임·같은 vv 면 다시 안 잰다(강제 레이아웃 한 번).
+  const reads = rectReads
+  readKbdSnapshot(vv)
+  eq('정본 · 같은 프레임 같은 vv 면 다시 안 잰다', rectReads, reads)
+  eq('정본 · 상자는 한 번만 만든다', created, 1)
+  // 다음 프레임에는 기억을 지우고 다시 잰다.
+  flush()
+  rect = { top: 0, height: 622, width: 402 }
+  const s2 = readKbdSnapshot(vv)
+  eq('정본 · 다음 프레임엔 다시 잰다', rectReads, reads + 1)
+  eq('정본 · H = inner, T0 = 0 이면 종전 틀과 같다', [s2.frameH, s2.frameTop], [622, 0])
+  eq('정본 · 그때 겹침은 종전 식 그대로', overlapInset(s2), old.inset(622, 416, 190))
+  // vv 값이 바뀌면 같은 프레임이라도 다시 잰다.
+  rect = { top: -100, height: 812, width: 402 }
+  const s3 = readKbdSnapshot({ height: 416, offsetTop: 100, scale: 1, width: 402 } as unknown as VisualViewport)
+  eq('정본 · vv 가 바뀌면 같은 프레임에도 다시 잰다', [s3.frameH, s3.frameTop], [812, -100])
+  // 상자가 이상하면(폭이 문서 폭과 다름 = transform 조상) 종전 틀로 답한다.
+  flush()
+  docW = 360
+  const s4 = readKbdSnapshot(vv)
+  eq('정본 · 폭이 어긋난 상자는 버리고 종전 틀(H = innerHeight, T0 = 0)', [s4.frameH, s4.frameTop], [622, 0])
+  docW = 402
+  flush()
+  rect = { top: -190, height: 0, width: 402 }
+  eq('정본 · 높이 0 인 상자도 종전 틀', readKbdSnapshot(vv).frameH, 622)
+  flush()
+  rect = { top: -190, height: 812, width: 402 }
+  eq('계측 · frameBoxRect 는 같은 상자를 잰다', frameBoxRect()?.top, -190)
+  box.getBoundingClientRect = () => { throw new Error('boom') }
+  eq('계측 · 재다 터지면 null(신고창이 열려야 한다)', frameBoxRect(), null)
+  flush()
+  eq('정본 · 재다 터지면 종전 틀', readKbdSnapshot(vv).frameH, 622)
+  delete g.window
+  delete g.document
+  delete g.requestAnimationFrame
 }
 
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).

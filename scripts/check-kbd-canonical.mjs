@@ -108,7 +108,7 @@ need('lib/useVisibleBand.ts', [
 // 그물은 한 겹 감싸기에 뚫린다. 그래서 **모양이 아니라 사거리**를 본다. sync 함수 본문을
 // 중괄호 깊이로 잘라 그 안에 vv.height 가 한 번이라도 나오면 위반이다.
 //
-// 1차 방어는 그물이 아니라 구조다 — sync 는 이제 (h, offsetTop, frameH) 를 인자로만 받고
+// 1차 방어는 그물이 아니라 구조다. sync 는 이제 (h, offsetTop, frameH) 를 인자로만 받고
 // vv 를 안 본다. 정본대로면 이 본문에 `vv.` 가 아예 없다. 아래 둘은 그 구조가 되돌려지는 것까지
 // 잡는 보조다.
 {
@@ -323,25 +323,19 @@ need('lib/viewportProbe.ts', [
   [/export function sentinelRect\(/, '누른 순간에 잴 센티널 정본(sentinelRect)이 사라짐. 셸 폼에서 팬하던 때의 H·T0 가 0건이 된다'],
   [/const r = sentinelRect\(\)/, '센티널 줄이 정본 sentinelRect 를 안 쓴다. 상자를 만드는 곳이 두 벌이 된다'],
 ])
-// 센티널은 화면에 영향 0 — 안 보이고, 누름을 안 받고, 접근성 트리에 안 서고, 잰 그 실행 안에서 사라진다.
+// 센티널은 화면에 영향 0. 안 보이고, 누름을 안 받고, 접근성 트리에 안 선다.
+// 2026-10-20 검수 반영. 상자는 키보드 기하 정본(lib/viewportFrame frameBoxRect)의 그 하나다. 계측이 따로
+// 상자를 만들면 판정과 계측이 서로 다른 상자를 잰다. 상자의 속성(fixed·inset 0·hidden·none·aria-hidden)은 6) 이 본다.
 {
   let src = ''
   try { src = strip(readFileSync('lib/viewportProbe.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
   const body = sliceBody(src, 'function sentinelRect(')
   if (body == null) {
-    violations.push('lib/viewportProbe.ts — 센티널을 재는 sentinelRect 를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
-  } else {
-    const must = [
-      [/position:\s*fixed/, 'fixed 가 아니다. 키보드·팬 아래 화면 고정 상자의 자리를 재는 것이 목적이다'],
-      [/inset:\s*0/, 'inset 0 이 아니다. H·T0 가 화면 전체 상자의 값이 아니게 된다'],
-      [/visibility:\s*hidden/, '보이지 않게(visibility hidden) 하지 않는다'],
-      [/pointer-events:\s*none/, '누름을 막지 않는다(pointer-events none). 잰 순간 탭을 삼킬 수 있다'],
-      [/aria-hidden/, '접근성 트리에서 숨기지 않는다(aria-hidden)'],
-      [/finally\s*\{[^}]*\.remove\(\)/, '잰 뒤 finally 에서 지우지 않는다. 상자가 화면에 남는다'],
-      [/\}\s*catch\s*\{\s*return null\s*\}/, '실패를 null 로 삼키지 않는다. 신고 버튼을 누른 순간 계측이 던지면 신고창이 안 열린다'],
-    ]
-    for (const [re, msg] of must) if (!re.test(body)) violations.push(`lib/viewportProbe.ts — 센티널이 ${msg}`)
+    violations.push('lib/viewportProbe.ts: 센티널을 재는 sentinelRect 를 찾을 수 없다. 못 읽으면 통과가 아니라 위반이다')
+  } else if (!/^\{\s*return frameBoxRect\(\)\s*\}$/.test(body)) {
+    violations.push('lib/viewportProbe.ts: sentinelRect 가 정본 상자(frameBoxRect)를 그대로 돌려주지 않는다. 상자가 두 벌이 된다')
   }
+  if (/createElement\(/.test(src)) violations.push('lib/viewportProbe.ts: 계측이 요소를 따로 만든다. 상자는 정본 lib/viewportFrame 하나다')
 }
 // 링버퍼 — 값만, 읽기 전용, 구독·예약 없음. 기록은 가드가 판정을 마친 자리에서 넣는다(§30 구독 두 곳).
 need('lib/kbdTrace.ts', [
@@ -428,12 +422,19 @@ need('app/(app)/errorReports.ts', [
     const readBody = sliceBody(fsrc, 'export function readKbdSnapshot(')
     if (readBody == null) violations.push(`${FRAME}: 정본 readKbdSnapshot 이 사라짐. 못 읽으면 통과가 아니라 위반이다`)
     else {
-      if (!/getBoundingClientRect\(\)/.test(readBody)) violations.push(`${FRAME}: readKbdSnapshot 이 상자를 안 잰다(getBoundingClientRect). 기준틀이 다시 innerHeight 가 된다`)
+      if (!/const r = frameBoxRect\(\)/.test(readBody)) violations.push(`${FRAME}: readKbdSnapshot 이 상자를 안 잰다(frameBoxRect). 기준틀이 다시 innerHeight 가 된다`)
       if (!/frameH = r\.height/.test(readBody) || !/frameTop = r\.top/.test(readBody)) violations.push(`${FRAME}: 잰 상자의 높이·위 끝을 기준틀(frameH·frameTop)로 안 쓴다`)
       if (!/requestAnimationFrame\(/.test(readBody)) violations.push(`${FRAME}: 한 번 잰 값을 다음 프레임에 안 지운다. 낡은 기준틀이 프레임을 넘는다`)
     }
-    const outside = readBody == null ? fsrc : fsrc.replace(readBody, '')
-    if (/window\.innerHeight/.test(outside)) violations.push(`${FRAME}: readKbdSnapshot 밖에서 window.innerHeight 를 읽는다`)
+    const boxBody = sliceBody(fsrc, 'export function frameBoxRect(')
+    if (boxBody == null || !/getBoundingClientRect\(\)/.test(boxBody) || !/catch\s*\{\s*return null\s*\}/.test(boxBody)) violations.push(`${FRAME}: frameBoxRect 가 상자를 재지 않거나 실패를 null 로 삼키지 않는다. 신고 버튼을 누른 순간 계측이 던지면 신고창이 안 열린다`)
+    // innerHeight 는 상자를 못 잰 때의 종전 틀로만 쓴다. 허용 자리는 readKbdSnapshot 과 visibleBottomNow(vv 미지원) 본문뿐이다.
+    let outside = fsrc
+    for (const head of ['export function readKbdSnapshot(', 'export function visibleBottomNow(']) {
+      const b = sliceBody(fsrc, head)
+      if (b) outside = outside.replace(b, '')
+    }
+    if (/window\.innerHeight/.test(outside)) violations.push(`${FRAME}: 허용 자리 밖에서 window.innerHeight 를 읽는다`)
     const sent = sliceBody(fsrc, 'function frameSentinel(')
     if (sent == null) violations.push(`${FRAME}: 기준틀 상자(frameSentinel)를 찾을 수 없다`)
     else {
@@ -457,7 +458,17 @@ need('app/(app)/errorReports.ts', [
     if (!/const snapNow = \(\): KbdSnapshot => readKbdSnapshot\(vv\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: snapNow 가 정본 readKbdSnapshot 을 안 쓴다')
     if (/\bvv\.height\b/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: vv.height 를 직접 읽는다. 띠는 정본 visibleBand(T0 + offsetTop 부터 vv.height)로만 만든다')
     const rev = sliceBody(guard, 'const reveal = (')
-    if (rev == null || !/visibleBand\(snapNow\(\)\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 띠가 정본 visibleBand 를 안 쓴다. 팬한 iOS 에서 띠를 offsetTop 만큼 아래로 본다')
+    if (rev == null || !/const band = visibleBand\(snapNow\(\)\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 띠가 정본 visibleBand 를 안 쓴다. 팬한 iOS 에서 띠를 offsetTop 만큼 아래로 본다')
+    // 띠를 만들고도 안 쓰는 되돌림까지 잡는다(검수 역주입 2026-10-20, visibleBand 줄을 남기고 bandTop 만 offsetTop 으로).
+    else if (!/bandTop: Math\.max\(boxRect\.top, band\.top\)/.test(rev) || !/bandBottom: Math\.min\(band\.bottom, boxRect\.bottom\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 인자가 band.top·band.bottom 이 아니다. 띠를 재고도 다른 틀로 견준다')
+  }
+  // 훅은 기준틀을 그대로 넘긴다(검수 역주입 2026-10-20, frameH 자리에 다른 식을 넣어도 초록이었다).
+  // 오버레이 인셋은 상자 좌표라 T0 가 필요 없다(위 = offsetTop, 아래 = H − offsetTop − vv.h). 그래서 훅은 frameTop 을 안 쓴다.
+  let hookSrc = ''
+  try { hookSrc = strip(readFileSync('lib/useVisibleBand.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (hookSrc) {
+    if (!/const r: VvReading = \{ height: s\.vvHeight, frameH: s\.frameH, scale: s\.scale, editing: keyboardCapableFocus\(\) \}/.test(hookSrc)) violations.push('lib/useVisibleBand.ts: 관문 읽기(VvReading)가 스냅샷의 vvHeight·frameH·scale 을 그대로 안 넘긴다')
+    if (!/sync\(insetBand\(r, lastGoodH\), s\.offsetTop, s\.frameH\)/.test(hookSrc)) violations.push('lib/useVisibleBand.ts: 인셋이 스냅샷의 offsetTop·frameH 를 그대로 안 쓴다')
   }
   // 순수 정본. 판정·겹침·띠가 기준틀 항을 쓴다.
   let kv = ''
@@ -487,14 +498,24 @@ need('app/(app)/errorReports.ts', [
     if (/window\.addEventListener\(['"]resize['"],\s*resync\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: window resize 를 재동기로 바로 받는다. 키보드가 선 동안의 팬마다 인셋을 다시 쓰고 되감는다')
     if (!/window\.addEventListener\(['"]resize['"],\s*onWindowResize\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: window resize 를 onWindowResize 로 안 받는다')
     const body = sliceBody(guard, 'const onWindowResize = (')
+    // 첫 인자는 가드 표식 검사여야 한다(검수 역주입 2026-10-20, true 로 바꿔도 초록이었다).
+    if (!body || !/if \(windowResizeIsPan\(root\.hasAttribute\(KBD_OPEN_ATTR\), keyboardCapableFocus\(\), s\)\)/.test(body)) violations.push('components/layout/ViewportOffsetGuard.tsx: windowResizeIsPan 인자가 (표식 검사, 키보드 칸 포커스, 스냅샷) 이 아니다')
     // 팬 분기 = if (windowResizeIsPan( 부터 그 if 블록의 닫는 중괄호까지.
     const at = body ? body.indexOf('if (windowResizeIsPan(') : -1
     const branch = at < 0 ? null : sliceBody(body.slice(at), 'if (windowResizeIsPan(')
     if (branch == null) violations.push('components/layout/ViewportOffsetGuard.tsx: onWindowResize 가 정본 windowResizeIsPan 으로 팬을 가르지 않는다')
     else {
-      if (!/\breturn\b/.test(branch)) violations.push('components/layout/ViewportOffsetGuard.tsx: 팬 분기가 돌아가지 않고 재동기로 흘러간다')
-      const bad = /setProperty\(|removeAttribute\(|setAttribute\(|scrollTo\(|restore\(|scheduleReveal\(|onResize\(|resync\(/.exec(branch)
-      if (bad) violations.push(`components/layout/ViewportOffsetGuard.tsx. 키보드가 선 동안의 window resize 분기가 '${bad[0]}' 을 부른다. 판정만 갱신하고 인셋·표식·재노출·복원은 손대지 않는다`)
+      // 금지어가 아니라 **허용 목록**이다(검수 역주입 2026-10-20, const again = onResize; again() 우회가 초록이었다).
+      // 팬 분기의 문장은 기록(kbdTrace 'wr'), 늦은 재확인 rAF 예약, return 셋만 선다.
+      const allowed = [
+        /^kbdTrace\('wr', 'open', s\)$/,
+        /^requestAnimationFrame\(\(\) => requestAnimationFrame\(recheckAfterPan\)\)$/,
+        /^return$/,
+      ]
+      const stmts = branch.slice(1, -1).split(/[\n;]/).map(x => x.trim()).filter(Boolean)
+      const stray = stmts.filter(x => !allowed.some(re => re.test(x)))
+      if (stray.length > 0) violations.push(`components/layout/ViewportOffsetGuard.tsx: 키보드가 선 동안의 window resize 분기에 허용 밖 문장이 있다('${stray[0]}'). 기록·늦은 재확인 예약·return 만 선다`)
+      if (!stmts.includes('return')) violations.push('components/layout/ViewportOffsetGuard.tsx: 팬 분기가 돌아가지 않고 재동기로 흘러간다')
     }
   }
   let hook = ''
@@ -502,7 +523,9 @@ need('app/(app)/errorReports.ts', [
   if (hook) {
     if (/window\.addEventListener\(['"]resize['"],\s*resync\)/.test(hook)) violations.push('lib/useVisibleBand.ts: window resize 를 재동기로 바로 받는다. 키보드가 선 팬마다 두 패스씩 다시 쓴다')
     const body = sliceBody(hook, 'const onWindowResize = (')
-    if (body == null || !/windowResizeIsPan\(/.test(body) || !/\)\)\)\s*onPan\(\)/.test(body)) violations.push('lib/useVisibleBand.ts: window resize 가 정본 windowResizeIsPan 으로 팬(onPan)을 가르지 않는다')
+    if (body == null || !/windowResizeIsPan\(/.test(body) || !/\)\)\)\s*\{?\s*onPan\(\)/.test(body)) violations.push('lib/useVisibleBand.ts: window resize 가 정본 windowResizeIsPan 으로 팬(onPan)을 가르지 않는다')
+    // 첫 인자는 가드 표식 검사여야 한다(검수 역주입 2026-10-20).
+    else if (!/const stamped = document\.documentElement\.hasAttribute\('data-kbd-open'\)/.test(body) || !/windowResizeIsPan\(stamped, keyboardCapableFocus\(\), readKbdSnapshot\(vv\)\)/.test(body)) violations.push('lib/useVisibleBand.ts: windowResizeIsPan 인자가 (가드 표식, 키보드 칸 포커스, 스냅샷) 이 아니다')
     if (!/window\.addEventListener\(['"]resize['"],\s*onWindowResize\)/.test(hook)) violations.push('lib/useVisibleBand.ts: window resize 를 onWindowResize 로 안 받는다')
   }
 }

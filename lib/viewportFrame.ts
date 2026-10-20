@@ -47,6 +47,18 @@ function frameSentinel(): HTMLElement | null {
 }
 
 /**
+ * 기준틀 상자의 지금 자리. 오류신고 계측(lib/viewportProbe sentinelRect)도 이 함수로 잰다(2026-10-20 검수,
+ * 상자를 만드는 곳이 두 벌이면 한쪽만 다른 조건으로 잰다). 실패는 null 로 삼킨다. 신고 버튼을 누른 순간에도
+ * 불리므로 여기서 던지면 신고창이 안 열린다.
+ */
+export function frameBoxRect(): DOMRect | null {
+  try {
+    const el = frameSentinel()
+    return el ? el.getBoundingClientRect() : null
+  } catch { return null }
+}
+
+/**
  * 이 순간의 키보드 스냅샷. 기준틀(H·T0)과 vv 세 값(높이·offsetTop·배율)을 한 번에 담는다.
  *
  * 상자를 못 재거나 값이 이상하면(높이 0, 폭이 문서 폭과 다름 = transform 조상 아래 틀어짐) 종전 틀
@@ -59,9 +71,8 @@ export function readKbdSnapshot(vv: VisualViewport): KbdSnapshot {
   let frameH = inner
   let frameTop = 0
   try {
-    const el = frameSentinel()
-    if (el) {
-      const r = el.getBoundingClientRect()
+    const r = frameBoxRect()
+    if (r) {
       const docW = document.documentElement.clientWidth
       if (Number.isFinite(r.height) && Number.isFinite(r.top) && r.height > 0 && Math.abs(r.width - docW) < 2) {
         frameH = r.height

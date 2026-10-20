@@ -36,7 +36,7 @@ export const REPORT_NOTE_MAX = 4000
 
 export type KbdTraceRow = {
   t: number            // performance.now() — 표에서는 신고창을 연 순간 기준 상대 ms 로만 쓴다
-  ev: string           // 사건 — vr·vs·wr·fi·fo·rs·rst·rep
+  ev: string           // 사건(vr·vs·wr·fi·fo·rs·rst·rep)
   verdict: string      // 가드 판정 꼬리표 — open·shut·phantom·focus·clear·· (+zoom)
   inner: number
   vvh: number | null

@@ -15,6 +15,7 @@
 //            가 지킨다(이 파일에 값 읽기가 새로 들어오면 그물이 막는다).
 
 import { runningAnimations, whenAnimationsSettled } from '@/lib/animationSettled'
+import { frameBoxRect } from '@/lib/viewportFrame'
 
 /** 소수 둘째 자리까지만 — vv 는 서브픽셀로 오는데 그 자릿수는 판독에 쓸모가 없다. */
 function num(v: number | undefined): string {
@@ -30,21 +31,13 @@ function num(v: number | undefined): string {
  * 남긴다. 신고 버튼을 누른 순간에도 이 함수로 한 번 잰다(components/ErrorReportButton openModal).
  * 그때는 원래 칸이 아직 포커스를 쥐고 있어 팬이 풀리기 전의 H·T0 가 남는다.
  *
- * 상자는 **이 함수 안에서만 산다.** 만들고 재고 같은 동기 실행 안에서 지운다. 한 프레임도 그려지지
- * 않고, 보이지 않고(visibility hidden), 누름을 안 받고(pointer-events none), 접근성 트리에도 안 선다
- * (aria-hidden). fixed 라 흐름 밖이어서 다른 요소의 자리를 안 바꾼다. 값만 읽는다.
+ * 2026-10-20 부터 상자는 키보드 기하 정본(lib/viewportFrame)이 body 끝에 하나 두고 계속 쓰는 그 상자다.
+ * 종전에는 여기서 따로 만들고 재고 지웠는데, 판정이 그 상자로 바뀐 뒤로는 상자가 두 벌이면 계측과 판정이
+ * 서로 다른 상자를 잰다. 보이지 않고(visibility hidden), 누름을 안 받고(pointer-events none), 접근성 트리에도
+ * 안 서고(aria-hidden), fixed 라 다른 요소의 자리를 안 바꾼다. 실패는 null 이다(신고창이 열려야 한다).
  */
 export function sentinelRect(): DOMRect | null {
-  // 신고 버튼을 누르는 순간에도 부른다. 계측이 던지면 신고창이 안 열리니 실패는 null 로 삼킨다.
-  try {
-    const body = document.body
-    if (!body) return null
-    const box = document.createElement('div')
-    box.setAttribute('aria-hidden', 'true')
-    box.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none'
-    body.appendChild(box)
-    try { return box.getBoundingClientRect() } finally { box.remove() }
-  } catch { return null }
+  return frameBoxRect()
 }
 
 /** 센티널 줄과 문서 쪽 두 값(documentElement.clientHeight·scrollingElement.scrollTop). */
