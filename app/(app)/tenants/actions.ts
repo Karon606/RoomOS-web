@@ -85,7 +85,7 @@ import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
-import { buildDueDayAdjustMemo } from '@/lib/dueDayAdjust'
+import { planDueDayAdjustCreate } from '@/lib/dueDayAdjust'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -4711,6 +4711,9 @@ export async function changeDueDay(
   newDueDay: string,
   targetMonth: string,
   adjustAmount: number, // 양수 = 과입금(환불), 음수 = 추가납부 필요
+  // 협의 금액(양수, 선택). 비우면 일할 규칙값 그대로. 적으면 그 금액으로 조정 행을 만들고 메모에 규칙값과 함께 남긴다.
+  // 방향은 규칙이 정한 대로다(신고 df82ce57, 운영자 승인 2026-10-20 C안 · "원단위 절삭이 필요할 수 있으므로 수동으로").
+  agreedAmount?: number | null,
 ): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -4726,6 +4729,11 @@ export async function changeDueDay(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 조정 행 모양을 쓰기 전에 정한다. 협의 금액이 틀리면 납부일도 안 바꾼다(반쪽 저장 금지).
+    const adjPlan = adjustAmount !== 0
+      ? planDueDayAdjustCreate({ fromDue: lease.dueDay, toDue: newDueDay, adjustAmount, agreedAmount: agreedAmount ?? null, rentAmount: lease.rentAmount })
+      : null
+    if (adjPlan && !adjPlan.ok) return adjPlan
 
     // 적용된 퇴실 일할 정산이 있으면 새 납부일 기준으로 재계산 (updateTenant·전환 버튼과 동일 정책).
     // 납입일 변경은 '자동 적용' 대상이 아님(false) — 이미 적용된 정산만 새 납부일로 재계산.
@@ -4755,14 +4763,12 @@ export async function changeDueDay(
     // 딸린 계약도 같은 날로. 되돌리기 스냅샷에 함께 실어야 적용취소가 전파분까지 원복한다.
     undoSnap.subLeases = await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, newDueDay.trim())
 
-    if (adjustAmount !== 0) {
+    if (adjPlan?.ok) {
       const maxSeq = await prisma.paymentRecord.aggregate({
         where: { leaseTermId, targetMonth, deletedAt: undefined },
         _max: { seqNo: true },
       })
       const seqNo = (maxSeq._max.seqNo ?? 0) + 1
-      const isRefund = adjustAmount > 0
-      const absAmt = Math.abs(adjustAmount)
 
       const adj = await prisma.paymentRecord.create({
         data: {
@@ -4771,12 +4777,13 @@ export async function changeDueDay(
           propertyId,
           targetMonth,
           expectedAmount: 0,
-          actualAmount:   adjustAmount,
-          isPaid:         isRefund,
+          // 금액·메모·완납은 lib/dueDayAdjust 정본이 정한다(기계 키 '[납입일변경]' 과 변경 전 납부일을 다른 자리가 읽는다).
+          // 협의 금액이 없으면 종전과 같은 금액·같은 메모 글자다.
+          actualAmount:   adjPlan.actualAmount,
+          isPaid:         adjPlan.isPaid,
           payDate:        new Date(),
           seqNo,
-          // 메모 모양은 lib/dueDayAdjust 정본이 만든다(기계 키 '[납입일변경]' 과 변경 전 납부일을 다른 자리가 읽는다).
-          memo: buildDueDayAdjustMemo({ from: lease.dueDay ?? '?', to: newDueDay, ruleAmount: absAmt, agreedAmount: null, kind: isRefund ? 'refund' : 'extra', note: '' }),
+          memo:           adjPlan.memo,
         },
       })
       undoSnap.adjustRecordId = adj.id

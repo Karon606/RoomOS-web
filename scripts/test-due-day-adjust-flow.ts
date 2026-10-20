@@ -7,6 +7,7 @@
 //   · 조정 행 전용 문은 방향+양수로 부호를 붙이고, 적용취소가 바이트 그대로 되돌린다
 //   · 남의 영업장 id·토큰으로는 아무것도 못 바꾼다
 //   · 조정 행은 현금영수증 켜기·후보·실입금에서 빠진다
+//   · 납입일 변경의 협의 금액 칸이 그 금액으로 조정 행을 만들고, 납입일 변경 적용취소가 그대로 덮는다
 //
 // 운영 DB 에는 절대 붙지 않는다(scripts/cr-flow-prisma-stub.ts 가 하네스 주소가 아니면 거부한다).
 import { execFileSync } from 'node:child_process'
@@ -208,6 +209,30 @@ async function main() {
   const strip9 = crl.signPaymentEditUndo(P1, { paymentId: BROKEN, before: { ...cur9, memo: '13만원 협의', actualAmount: 1 }, after: cur9, cr: { v: 1, keys: [], lines: [], stamps: [] } })
   eq('S9 서명이 맞아도 조정 행의 기계 키를 떼는 적용취소는 거절', (await rooms.undoPaymentEdit(J(strip9!))).ok, false)
   eq('S9 거절 뒤 그대로', await row(BROKEN), brokenBefore)
+
+  // ── S10 납입일 변경의 협의 금액 칸(승인 범위 C) ───────────────────────────
+  const L3 = await lease(P1)
+  await rec(L3, P1, { month: '2026-10', amount: 350000, pay: '2026-10-07' })
+  const c1 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, 130000)
+  if (!c1.ok) throw new Error(c1.error)
+  const ca = await row(c1.undo.adjustRecordId!)
+  eq('S10 협의 130,000 으로 조정 행 −130,000 · 메모에 규칙값과 협의값', [ca?.actualAmount, ca?.memo, ca?.payMethod], [-130000, '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)', null])
+  eq('S10 납부일 20 으로 바뀜', (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay, '20')
+  // 생성 뒤에 다시 고칠 수 있다(원단위 절삭은 수동, 운영자 요구 2026-10-20).
+  const c2 = await rooms.updateDueDayAdjust(c1.undo.adjustRecordId!, { direction: 'extra', amount: 128330, note: '' })
+  eq('S10 생성 뒤 수정도 된다(128,330)', [c2.ok, (await row(c1.undo.adjustRecordId!))?.memo], [true, '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 128,330원 (추가납부)'])
+  // 납입일 변경 적용취소가 협의 금액으로 만든 행까지 덮는다.
+  const cu = await tenants.undoChangeDueDay(J(c1.undo))
+  eq('S10 납입일 변경 적용취소 ok', cu.ok, true)
+  // undoChangeDueDay 는 조정 행을 deleteMany 로 지운다(종전 그대로, 하드 삭제). 남아 있지 않으면 지워진 것이다.
+  const gone = await row(c1.undo.adjustRecordId!)
+  eq('S10 조정 행 지워짐 · 납부일 9 로', [gone === null || !!gone.deletedAt, (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay], [true, '9'])
+  const c3 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, 0)
+  eq('S10 협의 0 거절', c3, { ok: false, error: adj.DUE_DAY_ADJUST_AMOUNT_INVALID })
+  eq('S10 거절이면 납부일도 안 바뀜', (await prisma.leaseTerm.findFirst({ where: { id: L3.id }, select: { dueDay: true } }))?.dueDay, '9')
+  const c4 = await tenants.changeDueDay(L3.id, '20', '2026-10', -128333, null)
+  if (!c4.ok) throw new Error(c4.error)
+  eq('S10 협의 비우면 규칙값 그대로(종전과 같은 메모)', [(await row(c4.undo.adjustRecordId!))?.actualAmount, (await row(c4.undo.adjustRecordId!))?.memo], [-128333, '[납입일변경] 9일→20 변경, 일할 128,333원 (추가납부)'])
 
   console.log(`[납입일 변경 조정 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
