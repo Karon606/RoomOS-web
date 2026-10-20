@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto'
 import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { billForLeaseMonth, isAfterMoveOutMonth, resolveDueDateForMonth } from '../lib/billing'
-import { buildDueDayAdjustMemo, dueDayAdjustSignMismatch, parseDueDayAdjustMemo } from '../lib/dueDayAdjust'
+import { attachDueDayAdjustsOne, buildDueDayAdjustMemo, dueDayAdjustSignMismatch, parseDueDayAdjustMemo } from '../lib/dueDayAdjust'
 import { kstYmdStr, ymdToDbDate } from '../lib/kstDate'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -67,15 +67,16 @@ async function plan(tx: Tx): Promise<Plan> {
   if (!Number.isInteger(AGREED) || AGREED <= 0) throw new Error(`협의 금액 ${AGREED} 이 1원 이상의 정수가 아니라 멈춘다`)
   if (!Number.isInteger(CASH) || CASH <= 0) throw new Error(`현금 ${CASH} 이 1원 이상의 정수가 아니라 멈춘다`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(PAY_YMD)) throw new Error(`납부일 ${PAY_YMD} 모양이 아니라 멈춘다`)
-  const lease = await tx.leaseTerm.findFirst({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 엔진은 빠뜨리면 멈춘다.
+  const lease = await attachDueDayAdjustsOne(tx as never, await tx.leaseTerm.findFirst({
     where: { id: LEASE_ID },
     select: {
-      propertyId: true, tenantId: true, status: true, rentAmount: true, dueDay: true, moveInDate: true, expectedMoveOut: true, isShortTerm: true,
+      id: true, propertyId: true, tenantId: true, status: true, rentAmount: true, dueDay: true, moveInDate: true, expectedMoveOut: true, isShortTerm: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
-  })
+  }))
   if (!lease || lease.room?.roomNo !== ROOM_NO) throw new Error('대상 계약이 513호가 아니라 멈춘다')
   if (lease.dueDay !== '20') throw new Error(`납부일이 '20' 이 아니라(${lease.dueDay}) 멈춘다`)
   if (AGREED > lease.rentAmount) throw new Error(`협의 금액이 이용료(${won(lease.rentAmount)})보다 커서 멈춘다`)

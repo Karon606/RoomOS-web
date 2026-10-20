@@ -21,6 +21,7 @@ import {
   billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth,
   type BillingLeaseFields,
 } from './billing'
+import { attachDueDayAdjusts, loadDueDayAdjustMap, withDueDayAdjusts } from './dueDayAdjust'
 import { fmtDateDot } from './fmtDate'
 import { dbDateMonthKey, kstDaysUntil, ymdToDbDate } from './kstDate'
 import { fmtRoomNo, roomNoWithRo } from './roomNo'
@@ -584,7 +585,7 @@ export async function getPaidRevenueByMonths(
   })
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
 
-  const [leases, payments, prevOwnerRows, checkedOutRows] = await Promise.all([
+  const [leasesFetched, payments, prevOwnerRows, checkedOutRows, dueDayAdjustMap] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: BILLABLE_STATUSES } },
       select: {
@@ -617,7 +618,10 @@ export async function getPaidRevenueByMonths(
       },
       _sum: { actualAmount: true },
     }),
+    // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 월과 무관해 한 번이다.
+    loadDueDayAdjustMap(prisma, { propertyId }),
   ])
+  const leases = withDueDayAdjusts(leasesFetched, dueDayAdjustMap)
 
   const prevOwnerByMonth = new Map<string, Set<string>>()
   for (const p of prevOwnerRows) {
@@ -720,7 +724,8 @@ export async function getReservedFullMonthRevenueByMonths(
   const out = new Map<string, ReservedRevenueBreakdown>()
   if (months.length === 0) return out
 
-  const reservedLeases = await prisma.leaseTerm.findMany({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본).
+  const reservedLeases = await attachDueDayAdjusts(prisma, await prisma.leaseTerm.findMany({
     where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
     select: {
       id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, dueDay: true, expectedMoveOut: true,
@@ -728,7 +733,7 @@ export async function getReservedFullMonthRevenueByMonths(
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
-  })
+  }))
   // 그 달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월. 판정은 residedInMonth 정본이다.
   // (다음달 입주 예정인 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
   for (const targetMonth of months) {

@@ -23,6 +23,7 @@ import {
   billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate,
 } from '@/lib/billing'
 import { BILLABLE_STATUSES } from '@/lib/leaseStatus'
+import { attachDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { shiftMonth } from '@/lib/moveCalendar'
 
 // 이 날짜 이후 생성분만 본다(분해 모드 도입 2026-08-24). 그 전 기록은 다른 경로의 역사다.
@@ -34,7 +35,8 @@ const KNOWN: Record<string, string> = {}
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 
-  const leases = await prisma.leaseTerm.findMany({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 화면과 같은 값을 재야 한다.
+  const leases = await attachDueDayAdjusts(prisma as never, await prisma.leaseTerm.findMany({
     where: { status: { in: BILLABLE_STATUSES } },
     select: {
       id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, dueDay: true,
@@ -51,7 +53,7 @@ async function main() {
         },
       },
     },
-  })
+  }))
 
   const hits: string[] = []
   const known: string[] = []

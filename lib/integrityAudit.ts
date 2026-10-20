@@ -4,14 +4,14 @@
 // 재적재하지 않는다 — done 처리 후 재발하면 다시 적재(해결 실패 감지).
 import { Prisma, type LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
-import { billForLeaseMonth } from '@/lib/billing'
+import { billForLeaseMonth, firstMonthAdjustExposure, monthOfDate } from '@/lib/billing'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration } from '@/lib/prorate'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { sameDueDay, dueDayFromMoveIn } from '@/lib/dueDay'
-import { dueDayAdjustSignMismatch, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
+import { attachDueDayAdjusts, dueDayAdjustSignMismatch, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
@@ -159,7 +159,8 @@ export async function runIntegrityAudit(
   // 규칙 5 — 할인 미반영 락인 (403호 패턴, 신고 70cde9d6: 납부 후 등록한 할인이 락인에 무효화돼 미납 과대 표시)
   // 원금 그대로 락인된 달만 검출 — 협의 락인(원금과 다른 금액)·일할 권위 월·단기는 제외.
   // 할인 등록 이전의 종결 월 소음 방지를 위해 가장 이른 할인 등록월부터만 본다.
-  const discountedLeases = await prisma.leaseTerm.findMany({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본).
+  const discountedLeases = await attachDueDayAdjusts(prisma, await prisma.leaseTerm.findMany({
     where: { isShortTerm: false, discounts: { some: {} } },
     select: {
       id: true, tenantId: true, propertyId: true, rentAmount: true, checkoutProratedMonth: true, status: true,
@@ -168,7 +169,7 @@ export async function runIntegrityAudit(
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true, createdAt: true } },
     },
-  })
+  }))
   for (const l of discountedLeases) {
     const earliest = l.discounts.reduce<Date | null>((m, d) => (!m || d.createdAt < m ? d.createdAt : m), null)
     if (!earliest) continue
@@ -181,8 +182,8 @@ export async function runIntegrityAudit(
     for (const r of recs) byMon.set(r.targetMonth, Math.max(byMon.get(r.targetMonth) ?? 0, r.expectedAmount))
     for (const [mon, lockedMax] of byMon) {
       if (l.checkoutProratedMonth === mon) continue
-      const base = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate }, mon, null)
-      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, discounts: l.discounts, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate }, mon, null)
+      const base = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
+      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, discounts: l.discounts, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
       if (disc >= base || lockedMax !== base) continue
       violations.push({
         signature: `[정합] discount-locked-expected · ${l.id} · ${mon}`,
@@ -306,6 +307,45 @@ export async function runIntegrityAudit(
       note: `${room ? `${fmtRoomNo(room)} ` : ''}${r.tenant?.name ?? ''}: ${Number(r.targetMonth.slice(5, 7))}월 납입일 변경 조정 기록의 ${why}. 수납 정보의 납입일 변경 조정에서 방향과 금액을 고쳐 주세요.`,
       tenantId: r.tenantId, propertyId: r.propertyId,
     })
+  }
+
+  // 규칙 10. 입주달 이중 셈이 종전 동작으로 남는 모양(운영자 승인 2026-10-20 방안 2의 나머지). 엔진은 조정 행과 첫 달 규칙이
+  // 같은 날수를 셀 때만 봉합한다. 사슬이 깨졌거나(조정 뒤 다른 경로로 납부일을 또 바꿈 등) 조정 행이 입주달이 아닌 달에 있고
+  // 입주달에 락이 없으면 같은 날수를 두 번 받을 수 있어 알린다. 판정은 lib/billing firstMonthAdjustExposure 정본.
+  {
+    const adjLeaseIds = [...new Set((await prisma.paymentRecord.findMany({
+      where: { ...dueDayAdjustWhere(), deletedAt: null }, select: { leaseTermId: true },
+    })).map(r => r.leaseTermId))]
+    const leases = adjLeaseIds.length === 0 ? [] : await attachDueDayAdjusts(prisma, await prisma.leaseTerm.findMany({
+      where: { id: { in: adjLeaseIds } },
+      select: {
+        id: true, tenantId: true, propertyId: true, status: true, rentAmount: true, dueDay: true, moveInDate: true, isShortTerm: true,
+        checkoutProratedAmount: true, checkoutProratedMonth: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+        room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
+        tenant: { select: { name: true } },
+        property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
+        paymentRecords: { where: { deletedAt: null, isDeposit: false, isPrevOwner: false }, select: { targetMonth: true, expectedAmount: true } },
+      },
+    }))
+    const WHY: Record<string, string> = {
+      unreadable: '입주달 납입일 변경 조정 기록의 메모를 읽을 수 없어',
+      'chain-gap': '입주달 납입일 변경 조정 기록들이 이어지지 않아',
+      'chain-end': '입주달 납입일 변경 조정 뒤 납부일이 다른 경로로 또 바뀌어',
+      'other-month': '납입일 변경 조정 기록이 입주달이 아닌 달에 있고 입주달 수납이 없어',
+    }
+    for (const l of leases) {
+      const inMonth = monthOfDate(l.moveInDate)
+      const locked = l.paymentRecords.filter(r => r.targetMonth === inMonth).reduce((m, r) => Math.max(m, r.expectedAmount), 0)
+      const cutoff = monthOfDate(l.property.prevOwnerCutoffDate ?? l.property.acquisitionDate)
+      const why = firstMonthAdjustExposure(l, { moveInMonthLocked: locked || null, cutoffMonth: cutoff })
+      if (!why) continue
+      violations.push({
+        signature: `[정합] due-day-adjust-first-month · ${l.id} · ${why}`,
+        note: `${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo)} ` : ''}${l.tenant.name}: ${WHY[why]} 입주달 일할을 두 번 받을 수 있습니다. 입주달 청구와 조정 기록을 확인해 주세요.`,
+        tenantId: l.tenantId, propertyId: l.propertyId,
+      })
+    }
   }
 
   // 적재 — 같은 서명의 open(아직 처리 전)·dismissed(운영자가 무시 선택) 신고가 있으면 건너뛴다.

@@ -361,7 +361,7 @@ async function moveInPropagationTests() {
     const rows: FakeMoveInLease[] = [
       { id: '601', moveInDate: D('2026-08-13'), status: 'ACTIVE', roomId: null, parentLeaseTermId: '509' },
     ]
-    const 단기 = (moveIn: Date | null) => ({ rentAmount: 300000, status: 'ACTIVE', isShortTerm: true, moveInDate: moveIn })
+    const 단기 = (moveIn: Date | null) => ({ dueDayAdjusts: [], rentAmount: 300000, status: 'ACTIVE', isShortTerm: true, moveInDate: moveIn })
     eq('청구 시작 · 옮기기 전 단기 자식은 8월분 청구', billForLeaseMonth(단기(rows[0].moveInDate), '2026-08', null), 300000)
     await propagateMoveInDateToSubLeases(fakeMoveInDb(rows, []), '509', D('2026-08-13'), D('2026-09-01'))
     eq('청구 시작 · 옮긴 뒤 단기 자식의 8월분은 0', billForLeaseMonth(단기(rows[0].moveInDate), '2026-08', null), 0)

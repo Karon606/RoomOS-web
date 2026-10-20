@@ -13,6 +13,7 @@
 // 메모 모양(빌더가 만드는 그대로, 협의 금액이 없으면 2026-10-20 이전 메모와 글자까지 같다).
 //   [납입일변경] {전}일→{후} 변경, 일할 {규칙값}원[, 협의 {협의값}원] ({추가납부|과입금})[ {설명}]
 import type { Prisma } from '@prisma/client'
+import type { DueDayDb } from './dueDay'
 
 export const DUE_DAY_ADJUST_PREFIX = '[납입일변경]'
 
@@ -33,6 +34,70 @@ export function dueDayAdjustWhere(): Prisma.PaymentRecordWhereInput {
  */
 export function notDueDayAdjustWhere(): Prisma.PaymentRecordWhereInput {
   return { AND: [{ OR: [{ memo: null }, { NOT: { memo: { startsWith: DUE_DAY_ADJUST_PREFIX } } }] }] }
+}
+
+/** 청구 엔진(lib/billing firstMonthRuleDueDay)이 읽는 조정 행 조각. */
+export type BillingDueDayAdjust = { targetMonth: string; memo: string | null; seqNo: number }
+
+/**
+ * 청구 엔진에 넘길 조정 행을 계약별로 읽는다. 엔진을 부르는 모든 자리가 이 정본으로 채운다
+ * (BillingLeaseFields.dueDayAdjusts 가 필수라 안 거친 자리는 tsc 가 잡는다).
+ * 쿼리는 한 번이다(영업장 범위 또는 leaseTermId IN, 메모 앞머리, 살아 있는 행). 영업장 범위는 계약 조회와 나란히(Promise.all)
+ * 돌릴 수 있어 화면 응답 시간을 늘리지 않는다. 소프트삭제 익스텐션이 없는 클라이언트(스크립트)에서도 같게 deletedAt 을 직접 건다.
+ */
+export async function loadDueDayAdjustMap(
+  db: Pick<DueDayDb, 'paymentRecord'>,
+  scope: { propertyId: string } | { leaseTermIds: readonly string[] },
+): Promise<Map<string, BillingDueDayAdjust[]>> {
+  const out = new Map<string, BillingDueDayAdjust[]>()
+  const ids = 'leaseTermIds' in scope ? [...new Set(scope.leaseTermIds)] : null
+  if (ids && ids.length === 0) return out
+  const rows = await db.paymentRecord.findMany({
+    where: { ...(ids ? { leaseTermId: { in: ids } } : { propertyId: (scope as { propertyId: string }).propertyId }), deletedAt: null, ...dueDayAdjustWhere() },
+    select: { leaseTermId: true, targetMonth: true, memo: true, seqNo: true },
+  })
+  for (const r of rows) out.set(r.leaseTermId, [...(out.get(r.leaseTermId) ?? []), ...dueDayAdjustsFrom([r])])
+  return out
+}
+
+/** 읽어 둔 지도로 계약마다 조정 행을 붙인다(쿼리 없음). 지도에 없는 계약은 빈 배열이다. */
+export function withDueDayAdjusts<T extends { id: string }>(
+  leases: readonly T[],
+  map: ReadonlyMap<string, readonly BillingDueDayAdjust[]>,
+): (T & { dueDayAdjusts: BillingDueDayAdjust[] })[] {
+  return leases.map(l => ({ ...l, dueDayAdjusts: [...(map.get(l.id) ?? [])] }))
+}
+
+/** 계약 묶음에 조정 행을 붙인다(leaseTermId IN 한 번). */
+export async function attachDueDayAdjusts<T extends { id: string }>(
+  db: Pick<DueDayDb, 'paymentRecord'>,
+  leases: readonly T[],
+): Promise<(T & { dueDayAdjusts: BillingDueDayAdjust[] })[]> {
+  if (leases.length === 0) return []
+  return withDueDayAdjusts(leases, await loadDueDayAdjustMap(db, { leaseTermIds: leases.map(l => l.id) }))
+}
+
+/**
+ * 이미 읽어 둔 그 계약의 수납 행에서 조정 행 조각만 고른다(쿼리 없이). 그 행들이 그 계약의 살아 있는 조정 행을
+ * 빠짐없이 담고 있을 때만 쓴다(수납 관리 getRoomPaymentStatus 의 조회는 조정 행을 달과 무관하게 늘 싣는다).
+ * attachDueDayAdjusts 도 이 함수로 고른다. 두 길의 판정이 갈리지 않는다.
+ */
+export function dueDayAdjustsFrom(
+  records: readonly { targetMonth: string; memo: string | null; seqNo: number; deletedAt?: Date | null }[],
+): BillingDueDayAdjust[] {
+  return records
+    .filter(r => !r.deletedAt && isDueDayAdjust(r.memo))
+    .map(r => ({ targetMonth: r.targetMonth, memo: r.memo, seqNo: r.seqNo }))
+}
+
+/** 계약 하나(findUnique·findFirst 결과)용. null 은 그대로 null. */
+export async function attachDueDayAdjustsOne<T extends { id: string }>(
+  db: Pick<DueDayDb, 'paymentRecord'>,
+  lease: T | null,
+): Promise<(T & { dueDayAdjusts: BillingDueDayAdjust[] }) | null> {
+  if (!lease) return null
+  const [out] = await attachDueDayAdjusts(db, [lease])
+  return out
 }
 
 /**

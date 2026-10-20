@@ -9,7 +9,9 @@ import {
   dueDayAdjustSignMismatch, dueDayAdjustWhere, notDueDayAdjustWhere, paymentMemoGuard,
   DUE_DAY_ADJUST_NOT_ADJUST, DUE_DAY_ADJUST_UNREADABLE, DUE_DAY_ADJUST_AMOUNT_INVALID, DUE_DAY_ADJUST_NOTE_INVALID,
   DUE_DAY_ADJUST_EDIT_ELSEWHERE, PAYMENT_PREFIX_RESERVED, PAYMENT_NEGATIVE_REFUSED, dueDayAdjustOverCap,
+  dueDayAdjustsFrom, withDueDayAdjusts, type BillingDueDayAdjust,
 } from '../lib/dueDayAdjust'
+import { billForLeaseMonth, firstMonthRule, firstMonthRuleDueDay, firstMonthAdjustExposure, type BillingLeaseFields } from '../lib/billing'
 
 let pass = 0
 const fails: string[] = []
@@ -127,6 +129,93 @@ eq('과입금 양수는 일치', dueDayAdjustSignMismatch({ memo: '[납입일변
 eq('추가납부 0원은 불일치', dueDayAdjustSignMismatch({ memo: M513, actualAmount: 0 }), '메모는 추가납부인데 금액이 0원입니다')
 eq('일반 행은 판정 안 함', dueDayAdjustSignMismatch({ memo: '보증금', actualAmount: -1 }), null)
 eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMismatch({ memo: '[납입일변경] 13만원', actualAmount: 130000 }), null)
+
+// ── 입주달 이중 셈 봉합(운영자 승인 2026-10-20 방안 2) ─────────────────
+// 입주달에 납입일을 바꾸면 첫 달 규칙(firstMonthGap)이 바꾼 뒤 납부일로 앞 구간을 다시 재 조정 행과 같은 날수를 두 번 셌다.
+// 엔진은 조건이 셋 다 참일 때만 바꾸기 전 납부일로 잰다(lib/billing firstMonthRuleDueDay 주석의 진리표).
+{
+  const adj = (targetMonth: string, memo: string, seqNo = 2): BillingDueDayAdjust => ({ targetMonth, memo, seqNo })
+  const lease = (o: Partial<BillingLeaseFields> = {}): BillingLeaseFields => ({
+    rentAmount: 350000, status: 'ACTIVE', dueDay: '20', moveInDate: '2026-10-09', isShortTerm: false, dueDayAdjusts: [], ...o,
+  })
+  const M513_AGREED = '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)'
+  const R513 = adj('2026-10', M513)
+
+  // 1. 입주달 변경 + 락 없음. 종전 478,333 이 350,000 으로(조정 행이 11일치를 센다).
+  eq('봉합 1 입주달 변경·락 없음: 만월만', billForLeaseMonth(lease({ dueDayAdjusts: [R513] }), '2026-10', null), 350000)
+  eq('봉합 1 대조 조정 행 없으면 종전(첫 달 규칙 그대로)', billForLeaseMonth(lease(), '2026-10', null), 478333)
+  // 2. 락이 있으면 락이 이긴다(513 운영 지금 상태, 결과 불변).
+  eq('봉합 2 락 350,000', billForLeaseMonth(lease({ dueDayAdjusts: [R513] }), '2026-10', 350000), 350000)
+  eq('봉합 2 락 478,333 도 그대로(락은 손대지 않는다)', billForLeaseMonth(lease({ dueDayAdjusts: [R513] }), '2026-10', 478333), 478333)
+  // 3. 입주달이 아닌 달의 조정 행은 보지 않는다(종전).
+  eq('봉합 3 다른 달 조정 행: 입주달 종전', billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-11', M513)] }), '2026-10', null), 478333)
+  eq('봉합 3 다른 달 조정 행: 그 달은 만월', billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-11', M513)] }), '2026-11', null), 350000)
+  // 4. 돌려줄 금액 방향(25일 입주, 25일에서 5일). 종전 일할 11일치만 128,333 위에 돌려줄 233,333 이 또 붙었다.
+  const back = lease({ moveInDate: '2026-10-25', dueDay: '5' })
+  eq('봉합 4 과입금 방향: 만월(돌려줄 금액이 그 몫을 센다)', billForLeaseMonth({ ...back, dueDayAdjusts: [adj('2026-10', '[납입일변경] 25일→5 변경, 일할 233,333원 (과입금)')] }, '2026-10', null), 350000)
+  eq('봉합 4 대조 종전', billForLeaseMonth(back, '2026-10', null), 128333)
+  // 5. 조정 행을 지우면(소프트삭제) 첫 달 규칙이 그 기간의 원천으로 돌아온다.
+  eq('봉합 5 소프트삭제 행은 고르지 않는다', dueDayAdjustsFrom([{ ...R513, deletedAt: new Date() }]), [])
+  eq('봉합 5 지운 뒤 종전', billForLeaseMonth(lease({ dueDayAdjusts: dueDayAdjustsFrom([{ ...R513, deletedAt: new Date() }]) }), '2026-10', null), 478333)
+  // 6. 협의 금액 행도 같은 기간이다(금액만 다르다).
+  eq('봉합 6 협의 금액 행', billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-10', M513_AGREED)] }), '2026-10', null), 350000)
+  // 7. 바꾸기 전에도 첫 달 규칙이 돌던 계약(5일 입주, 20일에서 25일). 바꾸기 전 앞 구간 15일은 남고 바꿈 5일만 조정 행이 센다.
+  const pre = lease({ moveInDate: '2026-10-05', dueDay: '25' })
+  eq('봉합 7 앞 구간 일부만 조정 행', billForLeaseMonth({ ...pre, dueDayAdjusts: [adj('2026-10', '[납입일변경] 20일→25 변경, 일할 58,333원 (추가납부)')] }, '2026-10', null), 350000 + 175000)
+  eq('봉합 7 대조 종전(20일치 전부)', billForLeaseMonth(pre, '2026-10', null), 350000 + 233333)
+  // 8. 두 번 바꿈(9→20, 20→25)이 이어지면 첫 행의 바꾸기 전 납부일.
+  const chain = [adj('2026-10', M513, 2), adj('2026-10', '[납입일변경] 20일→25 변경, 일할 58,333원 (추가납부)', 3)]
+  eq('봉합 8 이어진 사슬', billForLeaseMonth(lease({ dueDay: '25', dueDayAdjusts: chain }), '2026-10', null), 350000)
+  eq('봉합 8 seqNo 순으로 읽는다(배열 순서 무관)', billForLeaseMonth(lease({ dueDay: '25', dueDayAdjusts: [...chain].reverse() }), '2026-10', null), 350000)
+  // 9. 사슬 끝이 지금 납부일과 다르면(그 뒤 입주자 수정 폼으로 또 바꿈) 같은 날수가 아니다. 종전.
+  eq('봉합 9 사슬 끝 불일치: 종전', billForLeaseMonth(lease({ dueDay: '25', dueDayAdjusts: [R513] }), '2026-10', null), 350000 + 186666)
+  // 10. 사슬이 끊기면 종전.
+  eq('봉합 10 사슬 끊김: 종전', billForLeaseMonth(lease({ dueDay: '25', dueDayAdjusts: [R513, adj('2026-10', '[납입일변경] 15일→25 변경, 일할 116,666원 (추가납부)', 3)] }), '2026-10', null), 350000 + 186666)
+  // 11. 메모를 못 읽으면 종전.
+  eq('봉합 11 못 읽는 메모: 종전', billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-10', '[납입일변경] 13만원')] }), '2026-10', null), 478333)
+  // 12. 바꾸기 전 납부일이 없던 계약('?')은 규칙 무발동.
+  eq('봉합 12 바꾸기 전 납부일 없음', firstMonthRuleDueDay(lease({ dueDayAdjusts: [adj('2026-10', '[납입일변경] ?일→20 변경, 일할 1원 (추가납부)')] })), null)
+  eq('봉합 12 청구는 만월', billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-10', '[납입일변경] ?일→20 변경, 일할 1원 (추가납부)')] }), '2026-10', null), 350000)
+  // 13. '말일' 에서 바꾼 메모('말일일→')도 읽는다. 9/30 입주는 말일과 같은 날이라 무발동.
+  const eom = lease({ moveInDate: '2026-09-30', dueDay: '10' })
+  eq('봉합 13 말일에서 바꿈', billForLeaseMonth({ ...eom, dueDayAdjusts: [adj('2026-09', '[납입일변경] 말일일→10 변경, 일할 116,666원 (과입금)')] }, '2026-09', null), 350000)
+  eq('봉합 13 대조 종전', billForLeaseMonth(eom, '2026-09', null), 116666)
+  // 14. 단기는 첫 달 규칙 밖(종전).
+  eq('봉합 14 단기 무관', billForLeaseMonth(lease({ isShortTerm: true, dueDayAdjusts: [R513] }), '2026-10', null), 350000)
+  // 15. 판정 함수. 조정 행 없으면 지금 납부일.
+  eq('봉합 15 조정 행 없으면 지금 납부일', firstMonthRuleDueDay(lease()), '20')
+  eq('봉합 15 입주달 조정 행이면 바꾸기 전', firstMonthRuleDueDay(lease({ dueDayAdjusts: [R513] })), '9')
+  // 16. 513 재현. 10월 수납을 지우고 다시 등록하면 엔진이 청구를 세우고(savePayment 의 락), 조정 행이 더해진다.
+  const bill = billForLeaseMonth(lease({ dueDayAdjusts: [adj('2026-10', M513_AGREED)] }), '2026-10', null)
+  eq('봉합 16 513 재등록 청구(락으로 박힐 값)', bill, 350000)
+  eq('봉합 16 513 받을 돈 = 청구 + 추가로 받을 금액', bill - (-130000), 480000)
+  eq('봉합 16 480,000 을 받으면 미납 0', bill - (480000 + -130000), 0)
+  // 17. 지도에 없는 계약은 빈 배열.
+  eq('봉합 17 withDueDayAdjusts 기본값', withDueDayAdjusts([{ id: 'a' }], new Map([['b', [R513]]])), [{ id: 'a', dueDayAdjusts: [] }])
+  // 18. 입력 누락은 실행 중에도 멈춘다(scripts 는 tsc 밖이라 필수 칸이 안 걸린다).
+  const noAdj = { rentAmount: 350000, status: 'ACTIVE', dueDay: '20', moveInDate: '2026-10-09' } as unknown as BillingLeaseFields
+  let thrown = ''
+  try { billForLeaseMonth(noAdj, '2026-12', 350000) } catch (e) { thrown = (e as Error).message }
+  eq('봉합 18 조정 행 입력 없으면 락 갈래여도 멈춘다', thrown.includes('dueDayAdjusts'), true)
+  thrown = ''
+  try { firstMonthRuleDueDay(noAdj) } catch (e) { thrown = (e as Error).message }
+  eq('봉합 18 판정 함수도 멈춘다', thrown.includes('dueDayAdjusts'), true)
+  // 19. 떨어진 이유.
+  eq('봉합 19 사슬 끝 불일치 이유', firstMonthRule(lease({ dueDay: '25', dueDayAdjusts: [R513] })), { due: '25', fallback: 'chain-end' })
+  eq('봉합 19 사슬 끊김 이유', firstMonthRule(lease({ dueDay: '25', dueDayAdjusts: [R513, adj('2026-10', '[납입일변경] 15일→25 변경, 일할 116,666원 (추가납부)', 3)] })).fallback, 'chain-gap')
+  eq('봉합 19 못 읽음 이유', firstMonthRule(lease({ dueDayAdjusts: [adj('2026-10', '[납입일변경] 13만원')] })).fallback, 'unreadable')
+  eq('봉합 19 봉합되면 이유 없음', firstMonthRule(lease({ dueDayAdjusts: [R513] })), { due: '9', fallback: null })
+  // 20. 감사 규칙 10 판정(firstMonthAdjustExposure).
+  const X = (l: BillingLeaseFields, locked: number | null, cutoff: string | null = '2026-04') => firstMonthAdjustExposure(l, { moveInMonthLocked: locked, cutoffMonth: cutoff })
+  eq('감사 10 봉합된 입주달 조정은 알리지 않음', X(lease({ dueDayAdjusts: [R513] }), null), null)
+  eq('감사 10 사슬 끝 불일치는 락이 있어도 알림', X(lease({ dueDay: '25', dueDayAdjusts: [R513] }), 350000), 'chain-end')
+  eq('감사 10 다른 달 조정 + 입주달 락 없음 = 알림', X(lease({ dueDayAdjusts: [adj('2026-11', M513)] }), null), 'other-month')
+  eq('감사 10 다른 달 조정 + 입주달 락 있음 = 조용', X(lease({ dueDayAdjusts: [adj('2026-11', M513)] }), 350000), null)
+  eq('감사 10 다른 달 조정 + 입주달이 인수 전 = 조용(418호 모양)', X(lease({ dueDayAdjusts: [adj('2026-11', M513)] }), null, '2026-11'), null)
+  eq('감사 10 다른 달 조정이 입주달 청구를 안 바꾸면 조용', X(lease({ dueDay: '9', dueDayAdjusts: [adj('2026-11', M513)] }), null), null)
+  eq('감사 10 단기는 조용', X(lease({ isShortTerm: true, dueDay: '25', dueDayAdjusts: [R513] }), null), null)
+  eq('감사 10 조정 행 없으면 조용', X(lease(), null), null)
+}
 
 console.log(`\n납입일 변경 조정 진리표: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

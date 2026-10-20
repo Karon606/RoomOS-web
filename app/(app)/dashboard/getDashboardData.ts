@@ -10,7 +10,7 @@ import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbR
 import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
-import { dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere } from '@/lib/dueDayAdjust'
+import { dueDayBeforeChange, isDueDayAdjust, loadDueDayAdjustMap, notDueDayAdjustWhere, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -222,11 +222,13 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     },
     select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
   })
+  // 청구 엔진의 조정 행 입력(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 영업장 범위 한 번이라 아래 조회와 나란히 돈다.
+  const pDueDayAdjusts = loadDueDayAdjustMap(prisma, { propertyId })
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pExpenseCategories, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pMoveCalendar, pLastExpAggs, pOverduConfirmed, pPendingDepositLeases, pPendingDepositPaid, pNonRecurringPast, pScheduleMoves, pContactLeases] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pExpenseCategories, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pMoveCalendar, pLastExpAggs, pOverduConfirmed, pPendingDepositLeases, pPendingDepositPaid, pNonRecurringPast, pScheduleMoves, pContactLeases, pDueDayAdjusts] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
-    activeLeases,
+    activeLeasesFetched,
     payments,
     expenses,
     incomes,
@@ -533,7 +535,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   // 그 달 미수 모집단 — 진행 중 계약은 종전 그대로, 퇴실 완료는 그 달에 산 것만(residedInMonth 정본, 신고 70addd65).
   // 진행 중 계약에 날짜 게이트를 새로 걸지 않는 이유: 퇴실 예정일이 지났는데 아직 처리 전인 사람의
   // 이월 미수는 오늘도 받을 돈이다. 그 달 청구 여부는 아래 루프가 lib/billing 규칙으로 따로 정한다.
-  const unpaidLeasesRaw = unpaidLeasesFetched.filter(l => l.status !== 'CHECKED_OUT' || residedInMonth(l, targetMonth))
+  const dueDayAdjustMap = await pDueDayAdjusts
+  const activeLeases = withDueDayAdjusts(activeLeasesFetched, dueDayAdjustMap)
+  const unpaidLeasesRaw = withDueDayAdjusts(unpaidLeasesFetched, dueDayAdjustMap).filter(l => l.status !== 'CHECKED_OUT' || residedInMonth(l, targetMonth))
 
   // ── 이달 집계 ────────────────────────────────────────────────
   // 이달 실수납(이용료 축)은 정본 하나로 — lib/leaseStatus getPaidRevenue.
@@ -1359,7 +1363,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
                   || isCheckoutNoBillingMonthFor(l, leaseBillingEnd(l), mon,
                        resolveDueDateForMonth((l.overrideDueDayMonth === mon && l.overrideDueDay) ? l.overrideDueDay : l.dueDay, mon))))
                 ? 0
-                : billForLeaseMonth({ ...l, room: r }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
+                : billForLeaseMonth({ ...l, room: r, dueDayAdjusts: dueDayAdjustMap.get(l.id) ?? [] }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
       // 수납 상태는 방이 아니라 사람에게 붙는다 — 한 방에 둘이 살면 한 명은 냈고 한 명은 안 냈을 수 있다.
       // 판정식은 바로 위 비거주자 현황과 같은 것을 쓴다(새 규칙이 아니라 같은 정본의 두 번째 소비처).
       payStatus: (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const

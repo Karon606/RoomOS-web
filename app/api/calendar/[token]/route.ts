@@ -2,6 +2,7 @@
 // 토큰만으로 접근(공개) — 캘린더 앱은 쿠키 없이 가져가므로 비밀 토큰이 보안.
 import prisma from '@/lib/prisma'
 import { isCheckoutNoBillingMonthFor, billForLeaseMonth } from '@/lib/billing'
+import { loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { shouldShowTourEvent } from '@/lib/tourFeed'
 import { dueDateForMonth, isDeferredForMonth, resolveDueRaw } from '@/lib/dueDate'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -30,7 +31,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   })
   if (!property) return new Response('Not found', { status: 404 })
 
-  const leases = await prisma.leaseTerm.findMany({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 영업장 범위 한 번으로 나란히 읽는다.
+  const [leasesFetched, dueDayAdjustMap] = await Promise.all([prisma.leaseTerm.findMany({
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
       id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true, isShortTerm: true, moveInDate: true,
@@ -43,7 +45,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       tenant: { select: { name: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
-  })
+  }), loadDueDayAdjustMap(prisma, { propertyId: property.id })])
+  const leases = withDueDayAdjusts(leasesFetched, dueDayAdjustMap)
 
   // 납입 여부 — 이미 낸 달은 '납부 예정' 대신 실제 입금일에 '납입완료'로 표시(운영자 요청 2026-07-10).
   // 구독 캘린더는 피드를 주기적으로 다시 가져가므로, 납입되는 순간부터 예정 이벤트는 자동으로 사라진다.

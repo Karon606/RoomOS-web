@@ -4,6 +4,7 @@ import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { billForLeaseMonth } from '@/lib/billing'
 import { isRealRentPayment } from '@/lib/rentPaid'
+import { dueDayAdjustsFrom, type BillingDueDayAdjust } from '@/lib/dueDayAdjust'
 import { getMyRole } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -219,12 +220,16 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
   let paidSum = 0
   let lastRec: { payDate: Date; payMethod: string | null } | null = null
   let lockMax = 0
+  // 그 달 조정 행 — 청구 엔진의 입력(입주달 첫 달 규칙). 엔진은 입주달 조정 행만 보고 여기서 묻는 달은 viewMonth 하나라,
+  // 그 달 행에서 고르면 빠짐이 없다(lib/dueDayAdjust dueDayAdjustsFrom, 쿼리 추가 없음).
+  let dueDayAdjusts: BillingDueDayAdjust[] = []
   if (lease) {
     const recs = await prisma.paymentRecord.findMany({
       where: { leaseTermId: lease.id, targetMonth: viewMonth, isDeposit: false, isPrevOwner: false },
-      select: { actualAmount: true, expectedAmount: true, payDate: true, payMethod: true, isBillingAdjust: true, memo: true },
+      select: { actualAmount: true, expectedAmount: true, payDate: true, payMethod: true, isBillingAdjust: true, memo: true, targetMonth: true, seqNo: true },
       orderBy: { payDate: 'asc' },
     })
+    dueDayAdjusts = dueDayAdjustsFrom(recs)
     for (const r of recs) {
       lockMax = Math.max(lockMax, r.expectedAmount)   // 청구 락(조정 전표 포함) — 부분 납부 판정용
       // 실입금 판정은 lib/rentPaid 정본이 쥔다 — 서류 시트의 '이번 달 확인서 작성' 문이 같은
@@ -265,6 +270,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
             rentAmount: lease.rentAmount,
             status: lease.status,
             dueDay: lease.dueDay ?? null,
+            dueDayAdjusts,
             discounts: lease.discounts ?? [],
             checkoutProratedAmount: lease.checkoutProratedAmount ?? null,
             checkoutProratedMonth: lease.checkoutProratedMonth ?? null,

@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { billForLeaseMonth } from '@/lib/billing'
+import { attachDueDayAdjusts } from '@/lib/dueDayAdjust'
 
 const violations: string[] = []
 
@@ -44,9 +45,11 @@ if (!/isShortTerm: lease\.isShortTerm/.test(rentAmountFn) || !/moveInDate: lease
 async function main() {
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 
-const leases = await prisma.leaseTerm.findMany({
+// 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 엔진은 빠뜨리면 멈춘다.
+// dueDay 도 엔진 필수 칸이라 함께 싣는다(종전에는 빠져 첫 달 규칙이 늘 꺼진 채 판정했다. 이 그물은 청구 0 만 보므로 결과는 같다).
+const leases = await attachDueDayAdjusts(prisma as never, await prisma.leaseTerm.findMany({
   select: {
-    id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true,
+    id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, dueDay: true,
     checkoutProratedAmount: true, checkoutProratedMonth: true,
     discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
@@ -56,7 +59,7 @@ const leases = await prisma.leaseTerm.findMany({
       select: { id: true, targetMonth: true, expectedAmount: true, actualAmount: true },
     },
   },
-})
+}))
 
 for (const l of leases) {
   const byMonth = new Map<string, { locked: number; paid: number; ids: string[] }>()

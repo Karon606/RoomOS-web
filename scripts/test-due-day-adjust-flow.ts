@@ -8,6 +8,7 @@
 //   · 남의 영업장 id·토큰으로는 아무것도 못 바꾼다
 //   · 조정 행은 현금영수증 켜기·후보·실입금에서 빠진다
 //   · 납입일 변경의 협의 금액 칸이 그 금액으로 조정 행을 만들고, 납입일 변경 적용취소가 그대로 덮는다
+//   · 입주달에 납입일을 바꾼 뒤 그 달 수납을 지우고 다시 등록해도 같은 11일을 두 번 받지 않는다(S12, 운영자 승인 2026-10-20 방안 2)
 //
 // 운영 DB 에는 절대 붙지 않는다(scripts/cr-flow-prisma-stub.ts 가 하네스 주소가 아니면 거부한다).
 import { execFileSync } from 'node:child_process'
@@ -255,6 +256,35 @@ async function main() {
     const gone = await row(c.undo.adjustRecordId!)
     eq('S11 적용취소: 조정 행 소프트삭제 · 일반 수납 남음 · 납부일 9', [u.ok, !!gone?.deletedAt, !!(await row(PAID4)) && !(await row(PAID4))?.deletedAt, (await prisma.leaseTerm.findFirst({ where: { id: L4.id }, select: { dueDay: true } }))?.dueDay], [true, true, true, '9'])
     eq('S11 적용취소 뒤 그 달 완납 표시 재계산', (await row(PAID4))?.isPaid, true)
+  }
+
+  // ── S12 입주달 이중 셈(513 재현, 운영자 승인 2026-10-20 방안 2) ────────────────────────────
+  // 10/9 입주·9일 납부·10월 350,000 수납·11월 350,000 선납. 10월에 납부일을 20일로 바꾸고(협의 130,000) 10월 수납을 지운 뒤
+  // 다시 등록한다. 종전에는 락이 사라진 10월을 첫 달 규칙이 20일 기준 478,333 으로 세워 480,000 을 받아도 128,333 이 미납이었다.
+  {
+    const engine = await import('@/app/(app)/rooms/paymentEngine')
+    const { unpaidForLease } = await import('@/lib/billing')
+    const L5 = await lease(P1)
+    const OCT = await rec(L5, P1, { month: '2026-10', amount: 350000, pay: '2026-10-07' })
+    const NOV = await rec(L5, P1, { month: '2026-11', amount: 350000, pay: '2026-10-07' })
+    const c = await tenants.changeDueDay(L5.id, '20', '2026-10', -128333, 130000)
+    if (!c.ok || !c.undo) throw new Error('S12 변경 실패')
+    eq('S12 락이 있는 동안 10월 청구 350,000', await engine.serverBillForMonth(L5.id, '2026-10', 0), 350000)
+    const d = await rooms.deletePayment(OCT)
+    eq('S12 10월 수납 삭제', d.ok, true)
+    eq('S12 락이 사라져도 10월 청구 350,000(조정 행이 11일치를 센다)', await engine.serverBillForMonth(L5.id, '2026-10', 0), 350000)
+    const opts = await rooms.getTargetMonthOptions(L5.id, '2026-10')
+    eq('S12 귀속월 선택지 10월 청구 350,000 · 받은 돈 −130,000', opts.filter(o => o.month === '2026-10').map(o => [o.expectedAmount, o.paidAmount, o.status]), [[350000, -130000, 'unpaid']])
+    const sp = await rooms.savePayment({ leaseTermId: L5.id, tenantId: L5.tenantId, targetMonth: '2026-10', expectedAmount: 350000, actualAmount: 480000, payDate: '2026-10-21', payMethod: '계좌이체', forcedTargetMonth: '2026-10' })
+    eq('S12 재등록 480,000 은 10월에만 충당', sp.allocations, [{ targetMonth: '2026-10', amount: 480000 }])
+    const recs = await prisma.paymentRecord.findMany({ where: { leaseTermId: L5.id }, select: { targetMonth: true, expectedAmount: true, actualAmount: true, isDeposit: true, isPrevOwner: true, isBillingAdjust: true } })
+    eq('S12 재등록 행의 락 350,000(478,333 이 아니다)', recs.filter(r => r.targetMonth === '2026-10' && r.actualAmount === 480000).map(r => r.expectedAmount), [350000])
+    eq('S12 미납 0(10월 350,000 = 480,000 − 130,000, 11월 선납 그대로)', unpaidForLease(recs), 0)
+    eq('S12 11월 선납 행 그대로', [(await row(NOV))?.actualAmount, (await row(NOV))?.targetMonth, !!(await row(NOV))?.deletedAt], [350000, '2026-11', false])
+    eq('S12 11월 청구 350,000', await engine.serverBillForMonth(L5.id, '2026-11', 0), 350000)
+    // 조정 행을 지우면(납입일 변경 적용취소) 첫 달 규칙이 원천으로 돌아온다. 납부일도 9 로 돌아가 만월 그대로다.
+    eq('S12 납입일 변경 적용취소', (await tenants.undoChangeDueDay(J(c.undo))).ok, true)
+    eq('S12 적용취소 뒤 10월 청구 350,000(락)', await engine.serverBillForMonth(L5.id, '2026-10', 0), 350000)
   }
 
   console.log(`[납입일 변경 조정 통합] 통과 ${pass} / 실패 ${fail}`)

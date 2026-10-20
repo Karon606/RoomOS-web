@@ -7,6 +7,8 @@
 // 여기 규칙을 바꾸면 세 화면·푸시·수납 등록이 한 번에 같이 바뀐다.
 import { RentDiscountInput, discountedRent } from './rentDiscount'
 import { kstYmdStr } from './kstDate'
+import { sameDueDay } from './dueDay'
+import { isDueDayAdjust, parseDueDayAdjustMemo, type BillingDueDayAdjust } from './dueDayAdjust'
 
 export type BillingLeaseFields = {
   rentAmount: number
@@ -26,6 +28,10 @@ export type BillingLeaseFields = {
   // 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 납부일을 따로 정한 계약의 입주달이
   // 조용히 만월로 청구된다. status 와 같은 관례 — 이 타입이 곧 감지망이다.
   dueDay: string | null
+  // 이 계약의 살아 있는 납입일 변경 조정 행 — **필수**(없으면 빈 배열). 입주달 첫 달 규칙이 읽는다
+  // (아래 firstMonthRuleDueDay). 채우는 자리는 정본 하나다(lib/dueDayAdjust attachDueDayAdjusts).
+  // 옵셔널로 두면 select 에서 빠뜨린 화면만 입주달 일할을 두 번 받는다. dueDay 와 같은 관례로 이 타입이 감지망이다.
+  dueDayAdjusts: readonly BillingDueDayAdjust[]
   // 예약 인상(미래월 미리 반영) — 인상 적용월 이상의 달은 scheduledRent 로 청구한다.
   // "7/1부 인상"은 곧 "7월 이용료부터" 라서, 적용일 전에 7월분을 미리 납부해도 인상가가 맞다.
   // 둘 중 한 형태로 제공: 평탄화된 scheduledRent/rentUpdateMonth, 또는 room 객체(스케줄러가 baseRent로
@@ -53,7 +59,7 @@ export type BillingLeaseFields = {
 // 자기 순서로 이미 세워 두었고 필요한 것은 '그 달 기준액' 한 조각뿐이라, 종전에는 이 함수를
 // 손으로 두 벌 베껴 놓고 있었다(2026-08-12 구조 부채 정리). 손사본은 상태 분기를 빠뜨려
 // 비거주 계약에 거주 인상 예약을 물릴 수 있었다 — 418호 4.8배와 같은 클래스다.
-export function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
+export function effectiveBaseRent(l: Omit<BillingLeaseFields, 'dueDayAdjusts'>, mon: string): number {
   if (l.status === 'NON_RESIDENT') {
     const nrSched = l.room?.nonResidentScheduled ?? null
     const nrMon = l.room?.nonResidentRentDate ? monthOfDate(l.room.nonResidentRentDate) : null
@@ -145,11 +151,100 @@ export function firstMonthGap(moveInDate: Date | string, dueDay: string): { days
   return { days, fullMonthToo: pThis > day }
 }
 
+/**
+ * 입주달 첫 달 규칙이 읽을 납부일(운영자 승인 2026-10-20, 방안 2).
+ *
+ * 입주한 달에 납입일을 바꾸면(changeDueDay) 그 바꿈으로 늘거나 준 날수는 조정 행이 받을 돈·돌려줄 돈으로 이미 센다.
+ * 그런데 첫 달 규칙이 지금 납부일로 앞 구간을 다시 재면 같은 날수를 한 번 더 센다(513호. 10-09 입주, 9일에서 20일,
+ * 락이 없으면 청구 350,000 + 128,333 위에 조정 −128,333 이 또 붙는다). 그래서 그 경우에만 첫 달 규칙을
+ * **바꾸기 전 납부일**로 잰다. 조정 행이 그 바꿈의 유일한 원천이 된다(협의 금액·수동 수정이 모두 조정 행 기준이다).
+ *
+ * 바꾸기 전 납부일을 쓰는 것은 조정 행과 첫 달 규칙이 같은 날수를 셀 때뿐이다. 판정은 셋이 모두 참일 때다.
+ *   1. 입주달(moveInDate 의 달)을 귀속월로 둔 살아 있는 조정 행이 있다(다른 달 조정 행은 보지 않는다).
+ *   2. 그 행들의 메모를 모두 읽을 수 있고, seqNo 순으로 이어진다(앞 행의 바꾼 뒤 = 다음 행의 바꾸기 전).
+ *   3. 마지막 행의 바꾼 뒤가 지금 납부일과 같다(그 뒤 다른 경로로 납부일을 또 바꿨으면 같은 날수가 아니다).
+ * 하나라도 거짓이면 지금 납부일 그대로다(종전 동작). 참이면 첫 행의 바꾸기 전 납부일을 돌려준다.
+ * 바꾸기 전 납부일이 입주일과 같은 날이면 첫 달 규칙은 발동하지 않는다(513호, 만월만). 다르면 바꾸기 전에 이미 서 있던
+ * 앞 구간은 남고 바꿈으로 생긴 몫만 조정 행이 센다. 바꾸기 전 납부일이 없던 계약('?')은 null 이다(규칙 무발동).
+ * 락(우선순위 ②)이 먼저 이기므로 그 달 수납이 있으면 여기까지 오지 않는다.
+ */
+/**
+ * 조정 행 입력이 실려 왔는가. 타입(필수 칸)은 tsc 가 보는 앱 코드에서만 걸리고 scripts 는 tsconfig 밖이라,
+ * 실행 중에도 같은 계약을 강제한다. 빠뜨린 호출자는 조용히 종전 이중 셈으로 떨어지는 대신 여기서 멈춘다.
+ */
+function requireDueDayAdjusts(l: Pick<BillingLeaseFields, 'dueDayAdjusts'>): readonly BillingDueDayAdjust[] {
+  if (!Array.isArray(l.dueDayAdjusts)) throw new Error('청구 엔진 입력에 조정 행(dueDayAdjusts)이 없습니다. lib/dueDayAdjust 정본(attachDueDayAdjusts 등)으로 채워 주세요.')
+  return l.dueDayAdjusts
+}
+
+export function firstMonthRuleDueDay(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'dueDayAdjusts'>): string | null {
+  return firstMonthRule(l).due
+}
+
+/**
+ * 위 판정의 속사정까지. fallback 은 입주달 조정 행이 있는데 조건 2·3 이 깨져 지금 납부일로 떨어진 이유다
+ * (unreadable = 메모를 못 읽음, chain-gap = 사슬이 끊김, chain-end = 사슬 끝이 지금 납부일과 다름).
+ * 그 경우 락이 없으면 종전 이중 셈이 돌아오므로 정합 감사(lib/integrityAudit 규칙 10)가 이 값으로 알린다.
+ */
+export function firstMonthRule(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'dueDayAdjusts'>): {
+  due: string | null
+  fallback: null | 'unreadable' | 'chain-gap' | 'chain-end'
+} {
+  const inMonth = monthOfDate(l.moveInDate ?? null)
+  if (!inMonth) return { due: l.dueDay, fallback: null }
+  const rows = requireDueDayAdjusts(l)
+    .filter(r => r.targetMonth === inMonth && isDueDayAdjust(r.memo))
+    .slice()
+    .sort((a, b) => a.seqNo - b.seqNo)
+  if (rows.length === 0) return { due: l.dueDay, fallback: null }
+  const memos = rows.map(r => parseDueDayAdjustMemo(r.memo))
+  if (memos.some(m => m === null)) return { due: l.dueDay, fallback: 'unreadable' }
+  for (let i = 1; i < memos.length; i++) {
+    if (!sameDueDay(memos[i - 1]!.to, memos[i]!.from)) return { due: l.dueDay, fallback: 'chain-gap' }
+  }
+  if (!sameDueDay(memos[memos.length - 1]!.to, l.dueDay)) return { due: l.dueDay, fallback: 'chain-end' }
+  const from = memos[0]!.from
+  return { due: from === '?' ? null : from, fallback: null }
+}
+
+/**
+ * 입주달 이중 셈이 종전 동작으로 남는 모양인가(정합 감사 규칙 10의 판정 정본). 엔진은 같은 날수일 때만 봉합하고
+ * 나머지는 종전 그대로라, 그 나머지를 데이터에서 알린다. 돌려주는 값은 이유, 아니면 null.
+ *   - unreadable·chain-gap·chain-end: 입주달 조정 행이 있는데 firstMonthRule 이 지금 납부일로 떨어졌다(락 유무와 무관하게 알린다.
+ *     그 달 수납이 지워지는 순간 이중 셈이 된다).
+ *   - other-month: 조정 행이 입주달이 아닌 달에 있고, 입주달에 락이 없으며(지금 노출), 입주달이 청구 창(인수 기준월 이상) 안이고,
+ *     입주달 청구가 지금 납부일과 바꾸기 전 납부일로 갈린다(그 차이를 조정 행이 또 센다).
+ */
+export function firstMonthAdjustExposure(
+  l: BillingLeaseFields,
+  opts: { moveInMonthLocked: number | null; cutoffMonth: string | null },
+): null | 'unreadable' | 'chain-gap' | 'chain-end' | 'other-month' {
+  if (l.isShortTerm) return null
+  const inMonth = monthOfDate(l.moveInDate ?? null)
+  if (!inMonth) return null
+  const rule = firstMonthRule(l)
+  if (rule.fallback) return rule.fallback
+  if (opts.moveInMonthLocked && opts.moveInMonthLocked > 0) return null
+  if (opts.cutoffMonth && inMonth < opts.cutoffMonth) return null
+  const others = requireDueDayAdjusts(l)
+    .filter(r => r.targetMonth !== inMonth && isDueDayAdjust(r.memo))
+    .slice()
+    .sort((a, b) => (a.targetMonth === b.targetMonth ? a.seqNo - b.seqNo : a.targetMonth < b.targetMonth ? -1 : 1))
+  if (others.length === 0) return null
+  const first = parseDueDayAdjustMemo(others[0].memo)
+  if (!first) return null
+  const before = first.from === '?' ? null : first.from
+  const now = billForLeaseMonth(l, inMonth, null)
+  const then = billForLeaseMonth({ ...l, dueDay: before, dueDayAdjusts: [] }, inMonth, null)
+  return now !== then ? 'other-month' : null
+}
+
 export function billForLeaseMonth(
   l: BillingLeaseFields,
   mon: string,                  // 'YYYY-MM'
   locked?: number | null,       // 그 달 record들의 최대 expectedAmount (없으면 null)
 ): number {
+  requireDueDayAdjusts(l)   // 우선순위와 무관하게 늘 검사한다(어느 갈래로 빠지든 입력 누락은 누락이다)
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
   if (locked && locked > 0) return locked
   // 단기 입주월 단일 청구 — 일할·락인은 위에서 이미 존중(record 있는 달의 과거 결산 불변),
@@ -161,8 +256,10 @@ export function billForLeaseMonth(
   const base = discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
   // 입주달 첫 달 규칙(운영자 승인 2026-09-07) — 납부일이 입주일과 다를 때만 발동한다.
   // 락인(우선순위 ②)이 위에서 이미 이겼으므로 수납 기록이 있는 과거 입주달은 불변이다.
-  if (!l.isShortTerm && l.moveInDate && l.dueDay && monthOfDate(l.moveInDate) === mon) {
-    const gap = firstMonthGap(l.moveInDate, l.dueDay)
+  // 입주달에 납입일을 바꾼 계약은 바꾸기 전 납부일로 잰다(firstMonthRuleDueDay, 조정 행과 같은 날수를 두 번 세지 않게).
+  if (!l.isShortTerm && l.moveInDate && monthOfDate(l.moveInDate) === mon) {
+    const ruleDue = firstMonthRuleDueDay(l)
+    const gap = ruleDue ? firstMonthGap(l.moveInDate, ruleDue) : null
     if (gap) {
       const prorated = Math.floor(base * gap.days / 30)
       return gap.fullMonthToo ? base + prorated : prorated

@@ -40,7 +40,7 @@ import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecor
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 import { prepaidCarry } from '@/lib/prepaidCarry'
 import {
-  dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere, paymentEditGuard, paymentMemoGuard, planDueDayAdjustEdit,
+  attachDueDayAdjustsOne, dueDayAdjustsFrom, dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere, paymentEditGuard, paymentMemoGuard, planDueDayAdjustEdit,
   DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind,
 } from '@/lib/dueDayAdjust'
 
@@ -405,6 +405,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       billForLeaseMonth(
         { rentAmount: lease.rentAmount, status: lease.status, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
           isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null,   // 단기 입주월 단일 청구
+          // 입주달 첫 달 규칙의 조정 행 — 위 조회가 조정 행을 달과 무관하게 늘 싣으므로 쿼리 없이 고른다(lib/dueDayAdjust).
+          dueDayAdjusts: dueDayAdjustsFrom(allLeaseRecords),
           room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate,
                   nonResidentScheduled: room.nonResidentScheduled, nonResidentRentDate: room.nonResidentRentDate } },
         ms,
@@ -784,9 +786,11 @@ async function findFirstUnpaidMonth(
   expectedAmount: number,   // 클라이언트 제시값 — lease 조회 실패 시 fallback 으로만 사용
   viewMonth: string,
 ): Promise<string> {
-  const lease = await prisma.leaseTerm.findUnique({
+  // 조정 행은 청구 엔진 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust attachDueDayAdjusts 정본).
+  const lease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
+      id: true,
       moveInDate: true,
       dueDay: true,
       rentAmount: true,
@@ -799,7 +803,7 @@ async function findFirstUnpaidMonth(
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
-  })
+  }))
   if (!lease) return viewMonth
 
   const cutoffRaw = lease.property.prevOwnerCutoffDate ?? lease.property.acquisitionDate
@@ -915,16 +919,16 @@ export async function savePayment(data: {
   // 월별 청구액을 서버에서 직접 계산(일할→락인→할인, lib/billing 공용 규칙).
   // 클라이언트가 보낸 expectedAmount(할인 미반영 원금일 수 있음)를 그대로 record 에 락인하면
   // 읽기 엔진의 [저장 청구액 우선] 규칙이 할인을 무효화한다 — lease 조회 실패 시에만 fallback.
-  const billingLease = await prisma.leaseTerm.findUnique({
+  const billingLease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findUnique({
     where: { id: data.leaseTermId },
     select: {
-      rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영). 거주·비거주 두 축.
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
-  })
+  }))
 
   let remaining = data.actualAmount
   // forcedTargetMonth 명시 시 FIFO 우회, 아니면 가장 오래된 미수월부터 시작
@@ -1048,9 +1052,10 @@ export async function getTargetMonthOptions(
   // 같은 money 스코프를 본다. 막힌 역할에는 빈 목록이다(이 폼은 그 역할에게 안 열린다, 호출부가 catch 를 안 건다).
   const { propertyId, role } = await requirePropertyAccess()
   if (!canReadScope(role, 'money')) return []
-  const lease = await prisma.leaseTerm.findFirst({
+  const lease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findFirst({
     where: { id: leaseTermId, propertyId },
     select: {
+      id: true,            // 조정 행 붙이기(입주달 첫 달 규칙, lib/dueDayAdjust attachDueDayAdjusts)
       moveInDate: true,
       rentAmount: true,
       status: true,        // 비거주 축 분기(lib/billing effectiveBaseRent)
@@ -1066,7 +1071,7 @@ export async function getTargetMonthOptions(
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
-  })
+  }))
   if (!lease) return []
 
   const cutoffRaw = lease.property.prevOwnerCutoffDate ?? lease.property.acquisitionDate

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
 import { resolveMonthParam } from '@/lib/monthParam'
 import { billForLeaseMonth } from '@/lib/billing'
+import { loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { monthDbRange, yearDbRange, ymdToDbDate } from '@/lib/kstDate'
@@ -252,7 +253,7 @@ export async function GET(request: NextRequest) {
   let paymentSheet: object[]
 
   if (scope === 'month') {
-    const [leases, payments, property] = await Promise.all([
+    const [leasesFetched, payments, property, dueDayAdjustMap] = await Promise.all([
       prisma.leaseTerm.findMany({
         where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         include: {
@@ -273,7 +274,10 @@ export async function GET(request: NextRequest) {
         where: { id: propertyId },
         select: { acquisitionDate: true, prevOwnerCutoffDate: true },
       }),
+      // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본).
+      loadDueDayAdjustMap(prisma, { propertyId }),
     ])
+    const leases = withDueDayAdjusts(leasesFetched, dueDayAdjustMap)
 
     const cutoffDate: Date | null = property?.prevOwnerCutoffDate
       ? new Date(property.prevOwnerCutoffDate)

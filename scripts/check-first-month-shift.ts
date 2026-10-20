@@ -3,12 +3,14 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { billForLeaseMonth, monthOfDate } from '../lib/billing'
+import { attachDueDayAdjusts } from '../lib/dueDayAdjust'
 import { kstYmd } from '../lib/kstDate'
 async function main() {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
   const props = await db.property.findMany({ select: { id: true, acquisitionDate: true, prevOwnerCutoffDate: true } })
   const cutoffMonth = new Map(props.map(p => [p.id, monthOfDate(p.prevOwnerCutoffDate ?? p.acquisitionDate) ?? '0000-00']))
-  const leases = await db.leaseTerm.findMany({
+  // 조정 행은 청구 엔진의 입력이다(입주달 첫 달 규칙, lib/dueDayAdjust 정본). 엔진은 빠뜨리면 멈춘다.
+  const leases = await attachDueDayAdjusts(db as never, await db.leaseTerm.findMany({
     where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, isShortTerm: false },
     select: {
       id: true, propertyId: true, status: true, rentAmount: true, dueDay: true, moveInDate: true, isShortTerm: true,
@@ -18,7 +20,7 @@ async function main() {
       tenant: { select: { name: true } },
       paymentRecords: { where: { isDeposit: false, isPrevOwner: false, deletedAt: null }, select: { targetMonth: true, expectedAmount: true } },
     },
-  })
+  }))
   const { year, month } = kstYmd()
   const nowMon = `${year}-${String(month).padStart(2, '0')}`
   let latent = 0, visible = 0

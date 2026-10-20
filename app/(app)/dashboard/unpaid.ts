@@ -12,7 +12,7 @@
 
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
-import { dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
+import { dueDayBeforeChange, isDueDayAdjust, loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { leaseBillingEnd } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
@@ -51,7 +51,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   const targetMonth = kstMonthStr()        // = realTodayMonthStr (오늘 월)
   const realTodayMonthStr = targetMonth
 
-  const [property, unpaidLeasesRaw, allHistoricalPayments] = await Promise.all([
+  const [property, unpaidLeasesFetched, allHistoricalPayments, dueDayAdjustMap] = await Promise.all([
     prisma.property.findUnique({
       where: { id: propertyId },
       select: { acquisitionDate: true, prevOwnerCutoffDate: true },
@@ -92,7 +92,10 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       },
       select: { leaseTermId: true, targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, memo: true, isPrevOwner: true },
     }),
+    // 청구 엔진의 조정 행 입력(입주달 첫 달 규칙, lib/dueDayAdjust 정본) — 홈 미수와 같은 영업장 범위 한 번.
+    loadDueDayAdjustMap(prisma, { propertyId }),
   ])
+  const unpaidLeasesRaw = withDueDayAdjusts(unpaidLeasesFetched, dueDayAdjustMap)
 
   // [저장 청구액 우선] (lease, month)별 락인된 청구액 — 월세 변경의 과거 소급 방지.
   // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount)를 채택. record 없는 달은 현재 월세로 fallback.

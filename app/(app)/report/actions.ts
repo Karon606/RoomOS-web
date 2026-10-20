@@ -12,6 +12,7 @@ import { dbDateMonthKey, kstMonthStr, monthsDbRange, yearDbRange } from '@/lib/k
 import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { discountedRent } from '@/lib/rentDiscount'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -90,7 +91,8 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   }
 
   // 청구 대상 lease — 미수(5종 상태) 계산용. billForLeaseMonth 인자(일할·락인·할인·예약 인상)를 함께 조회.
-  const leases = await prisma.leaseTerm.findMany({
+  // 조정 행(입주달 첫 달 규칙의 입력, lib/dueDayAdjust 정본)은 영업장 범위 한 번으로 나란히 읽는다.
+  const [leasesFetched, dueDayAdjustMap] = await Promise.all([prisma.leaseTerm.findMany({
     where: {
       propertyId,
       status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CHECKED_OUT'] },
@@ -104,7 +106,8 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
-  })
+  }), loadDueDayAdjustMap(prisma, { propertyId })])
+  const leases = withDueDayAdjusts(leasesFetched, dueDayAdjustMap)
 
   // 매출 인식 lease 범위 — BILLABLE(ACTIVE/CHECKOUT_PENDING/NON_RESIDENT) + CHECKED_OUT.
   // RESERVED(선수납)·CANCELLED(취소 계약 수취액)는 매출에서 제외 (dashboard 와 통일).
@@ -371,7 +374,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
   //    - CHECKED_OUT 의 그 달 귀속 paymentRecord 합은 별도로 추가 인식 (단기·중도퇴실)
   //    이전 정책(호실 단위 baseRent)은 단기 입주(파트쿨리나 422호) / NON_RESIDENT(사무실호)
   //    / 호실 baseRent ≠ lease.rentAmount 차이 등 dashboard 와 불일치 케이스가 있었음.
-  const [billableLeases, property] = await Promise.all([
+  const [billableLeasesFetched, property, billableAdjustMap] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: BILLABLE_STATUSES }, rentAmount: { gt: 0 } },
       select: {
@@ -386,7 +389,10 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       where: { id: propertyId },
       select: { acquisitionDate: true, prevOwnerCutoffDate: true },
     }),
+    // 조정 행(입주달 첫 달 규칙의 입력, lib/dueDayAdjust 정본)
+    loadDueDayAdjustMap(prisma, { propertyId }),
   ])
+  const billableLeases = withDueDayAdjusts(billableLeasesFetched, billableAdjustMap)
   // 인수월(이 월부터 사용자 데이터). 그 이전은 평균 계산에서 제외해 0 데이터로 인한 왜곡 방지
   const acqRaw = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   const acquisitionMonthStr = acqRaw
