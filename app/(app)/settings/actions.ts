@@ -567,6 +567,55 @@ export async function deleteDiscountReason(name: string) {
   revalidatePath('/settings')
 }
 
+// 쇼핑몰 목록(2026-10-19 운영자 승인, 신고 a0636f36). 지출의 쇼핑몰 칸(Expense.channel)이 고르는 이름이다.
+// 직업 목록과 같은 문법이고 기본값은 빈 목록이다(쇼핑몰 이름을 코드에 박지 않는다, 멀티테넌트).
+// 지출 저장에서 처음 보는 쇼핑몰은 저장 흐름이 이 목록에 쌓는다(finance/actions resolveChannelForSave).
+// 이 목록의 이름은 구매처 자동완성·사업자번호 소급·번호로 이름 채우기에서 빠진다(lib/expenseChannel).
+// 이름을 바꾸면 이 영업장 지출의 쇼핑몰도 함께 바뀐다(RENAME_CASCADE.channelOptions, 적용취소 가능).
+export const getChannelOptions = cache(async function getChannelOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { channelOptions: true },
+  })
+  return parseOptionList('channelOptions', property?.channelOptions)
+})
+
+/** 쇼핑몰을 목록에 더한다(분류 관리 카드의 추가). */
+export async function addChannelOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const clean = normalizeOptionName('channelOptions', name)
+  if (!clean) return
+  const current = await getChannelOptions()
+  if (current.includes(clean)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { channelOptions: [...current, clean].join(',') },
+  })
+  revalidatePath('/finance')
+  revalidatePath('/settings')
+}
+
+/**
+ * 쇼핑몰을 목록에서 뺀다. **이미 저장된 지출의 쇼핑몰은 그대로 둔다.**
+ * 직업 빼기와 같은 계약이다. 고를 때만 안 보이고, 그 쇼핑몰이 적힌 지출은 글자 그대로 남는다.
+ * 목록에서 빠진 이름은 다시 구매처 자동완성·사업자번호 소급 대상이 된다(목록이 그 경계다).
+ */
+export async function deleteChannelOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getChannelOptions()
+  const next = current.filter(r => r !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { channelOptions: next.join(',') },
+  })
+  revalidatePath('/finance')
+  revalidatePath('/settings')
+}
+
 export async function addExpenseCategory(rawName: string) {
   await requireEdit()
   const name = normalizeOptionName('expenseCategories', rawName)
@@ -646,7 +695,7 @@ function assertOptionField(field: unknown): asserts field is ReorderableField {
 // 목록만 고친 저장(초기화·순서·빼기 적용취소·초기화 적용취소)이 같은 화면들을 무효화한다.
 function revalidateOptionList(field: ReorderableField) {
   revalidatePath('/settings')
-  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
+  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods' || field === 'channelOptions') {
     revalidatePath('/finance')
   }
   if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions' || field === 'workKindOptions') {
@@ -785,6 +834,9 @@ const RENAME_CASCADE: Record<ReorderableField, RenameTarget[]> = {
   // 본문에 {{job}} 을 적은 영업장은 이름을 바꾸면 그 뒤 새로 찍는 계약서에 새 이름이 나간다. 이미 발급된
   // PDF 와 서명본은 박제라 안 바뀐다(knowledge/domain-contracts). 운영 템플릿에는 {{job}} 이 없다(2026-10-13 조회).
   jobOptions:        [{ model: 'tenant', column: 'job' }],
+  // 쇼핑몰(2026-10-19). 이름이 바뀌면 그 이름으로 적힌 이 영업장 지출의 쇼핑몰도 함께 바뀐다(구매처 칸은 안 건드린다).
+  // 쇼핑몰은 라벨이라 금액·카드 정산 합계는 안 바뀐다.
+  channelOptions:    [{ model: 'expense', column: 'channel' }],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
@@ -860,7 +912,7 @@ export type RenameOptionResult = { ok: true; updated: number; undo: RenameUndo |
 const OPTION_LIST_SELECT = {
   roomTypeOptions: true, roomTierOptions: true, windowTypeOptions: true, directionOptions: true,
   incomeCategories: true, expenseCategories: true, paymentMethods: true, requestCategories: true,
-  workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true,
+  workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true, channelOptions: true,
 } as const satisfies Record<ReorderableField, true>
 
 // 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.
@@ -873,7 +925,7 @@ const renameDelegate = (db: unknown, model: string) => (db as Record<string, Ren
 // 이름 변경과 그 적용취소가 같은 화면들을 무효화한다.
 function revalidateRenamed(field: ReorderableField) {
   revalidatePath('/settings')
-  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
+  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods' || field === 'channelOptions') {
     revalidatePath('/finance')
   }
   if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {

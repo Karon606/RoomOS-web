@@ -25,6 +25,7 @@ import {
   getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
   getDiscountReasons, addDiscountReason, deleteDiscountReason,
   getJobOptions, addJobOption, deleteJobOption,
+  getChannelOptions, addChannelOption, deleteChannelOption,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
   exportAllData,
@@ -732,6 +733,30 @@ export default function SettingsForm({
     setJobs(r.items)
     return r.before
   }
+
+  // ── 쇼핑몰 ─────────────────────────────────────────────────────
+  // 지출의 쇼핑몰 칸(구매처와 다른 축, 주문을 받은 플랫폼)이 고르는 목록. 기본값이 없고 지출 저장에서 처음 보는 이름이 쌓인다.
+  // 초기화는 두지 않는다(기본값이 빈 목록이라 초기화가 곧 전부 빼기다). 순서·이름 변경·빼기만 한다.
+  const [channels, setChannels] = useState<string[]>([])
+  const [newChannel, setNewChannel] = useState('')
+  useEffect(() => { getChannelOptions().then(setChannels).catch(console.error) }, [])
+  const handleAddChannel = async () => {
+    const v = normalizeOptionName('channelOptions', newChannel); if (!v) return
+    await addChannelOption(v)
+    setChannels(prev => prev.includes(v) ? prev : [...prev, v]); setNewChannel('')
+  }
+  const handleDeleteChannel = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 쇼핑몰을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 지출의 쇼핑몰은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteChannelOption(name)
+    setChannels(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderChannels = async (items: string[]) => {
+    setChannels(items)
+    await reorderOptions('channelOptions', items)
+  }
+  const handleRenameChannel = (oldVal: string, newVal: string) =>
+    runRename('channelOptions', oldVal, newVal, setChannels)
 
   // ── 요청·컴플레인 카테고리 ───────────────────────────────────────
   const [requestCategs, setRequestCategs] = useState<string[]>([])
@@ -1491,6 +1516,21 @@ export default function SettingsForm({
             onRename={handleRenamePayMethod}
             onReset={handleResetPayMethods}
             placeholder="예: 자동이체, 지역화폐…"
+          />
+          <OptionSection
+            title="쇼핑몰 관리"
+            description="지출 등록·수정의 쇼핑몰 칸에서 고르는 이름입니다. 주문을 받은 플랫폼(오픈마켓)을 적고, 실제로 판 곳은 구매처에 적습니다. 지출에 새 쇼핑몰을 적으면 저장할 때 저절로 여기 쌓입니다. 목록에서 삭제해도 이미 저장된 지출의 쇼핑몰은 그대로 있습니다."
+            items={channels}
+            field="channelOptions"
+            setItems={setChannels}
+            getLabel={v => v}
+            newValue={newChannel}
+            onNewValueChange={setNewChannel}
+            onAdd={handleAddChannel}
+            onDelete={handleDeleteChannel}
+            onReorder={handleReorderChannels}
+            onRename={handleRenameChannel}
+            placeholder="예: 쿠팡, 지마켓…"
           />
           <OptionSection
             title="직업 관리"

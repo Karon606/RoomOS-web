@@ -25,7 +25,7 @@ export function cloneExpenseScalars(
 ): Prisma.ExpenseUncheckedCreateInput {
   return {
     date: e.date, amount: e.amount, category: e.category, detail: e.detail,
-    vendor: e.vendor, vendorBizNo: e.vendorBizNo, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
+    vendor: e.vendor, vendorBizNo: e.vendorBizNo, channel: e.channel, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
     receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
     targetRoomId: e.targetRoomId, breakdownJson: e.breakdownJson,
     itemLabel: e.itemLabel, costKind: e.costKind, brand: e.brand, productName: e.productName,

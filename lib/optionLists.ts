@@ -20,7 +20,7 @@ import { normalizeCategoryInput } from '@/lib/categoryInput'
 export type OptionListField =
   | 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions'
   | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories'
-  | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions' | 'discountReasons' | 'jobOptions'
+  | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions' | 'discountReasons' | 'jobOptions' | 'channelOptions'
 
 export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = {
   roomTypeOptions:   ['원룸', '미니룸'],
@@ -42,6 +42,9 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   // 생기지 않는다. 운영자가 분류 관리 탭에서 직접 더한다(신고 78bb0141, 기존 목록 불변).
   discountReasons:   ['프로모션', '양곡지원', '공공요금', '에너지바우처', '입실자 소개'],
   jobOptions:        ['직장인', '학생', '고시생', '취업준비생', '대학원생', '프리랜서', '자영업자', '아르바이트', '무직', '의료인', '교사 / 강사', '군인', '공무원', '연구원', '운전기사', '기술직', '서비스직', '건설업', '요식업', '예술 / 창작'],
+  // 쇼핑몰(지출의 Expense.channel 이 고르는 이름, 2026-10-19 운영자 승인). **기본값이 없다.** 쇼핑몰 이름을 코드에 박지 않는다
+  // (멀티테넌트). 지출 저장에서 처음 보는 이름이 저절로 쌓인다(finance/actions resolveChannelForSave).
+  channelOptions:    [],
 }
 
 /**
