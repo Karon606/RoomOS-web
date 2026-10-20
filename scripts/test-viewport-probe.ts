@@ -116,8 +116,8 @@ const TABLE_ROWS = [
   '0     rep ·       812   812 0      812 0       0  n   0     BODY',
 ]
 const LEGEND = [
-  'ev vr=vv resize · vs=vv scroll · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
-  'vs×n=판정·표식이 같은 팬 n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
+  'ev vr=vv resize · vs=vv scroll · wr=키보드가 선 동안의 window resize(팬으로 받음) · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
+  'vs×n=판정·표식이 같은 팬(vs·wr) n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
     + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
 eq('키보드 세션 표 — 상대 ms·열 맞춤·포커스는 바뀔 때만·H·T0·sy 열',
@@ -148,6 +148,10 @@ const pan = (t0: number, n: number, verdict: string) => Array.from({ length: n }
   eq('묶음 중간에 T0 가 팬과 따로 놀면 끊긴다', evsOf(t0Drift), 'vs vs vs vs vs rep')
   const shellPan = p.map(x => ({ ...x, H: null, T0: null }))
   eq('상자를 못 잰 셸 폼 팬은 판정·표식만으로 접는다', evsOf(shellPan), 'vs vs×5 rep')
+  // 키보드가 선 iOS 는 팬 한 프레임에 vv scroll 과 window resize(wr) 를 함께 낸다(2026-10-20). 번갈아 와도 한 묶음이다.
+  const mixed = p.flatMap(x => [x, { ...x, ev: 'wr', t: x.t + 1 }])
+  eq('vs·wr 가 번갈아 와도 한 팬 묶음으로 접는다', evsOf(mixed), 'vs wr×10 rep')
+  eq('wr 판정이 바뀌면 묶음이 끊긴다', evsOf([...p.slice(0, 3), { ...p[3], ev: 'wr', verdict: 'shut' }, p[4]]), 'vs vs×3 wr vs rep')
 }
 
 // 자리가 모자라면 **덜기 차례대로** 덜어낸다. 판정이나 표식이 바뀐 줄은 끝까지 남고, 마지막 줄

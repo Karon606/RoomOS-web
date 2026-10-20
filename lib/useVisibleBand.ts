@@ -24,6 +24,7 @@
 import { useEffect, type RefObject } from 'react'
 import { overlayInsets, bandHeight, insetBand, resumeAllowsShrink, type VvReading } from '@/lib/modalViewport'
 import { editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
+import { windowResizeIsPan } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
 
 export function useVisibleBand(opts: {
@@ -136,6 +137,16 @@ export function useVisibleBand(opts: {
     const resyncPass = (p: 1 | 2) => pass(resumeAllowsShrink(p, editableFocused()))
     const resync = () => { resyncPass(1); requestAnimationFrame(() => resyncPass(2)) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
+    // **키보드가 선 동안의 window resize 는 팬이다(2026-10-20, 신고 be5316e8).** iOS 는 팬할 때마다
+    // innerHeight 를 고쳐 보고하며 window resize 를 낸다. 종전에는 그때마다 복귀 재동기를 두 패스 돌았다.
+    // 이제 vv scroll 과 같은 onPan 한 번이다(인셋은 팬 위치를 따르고 높이는 커지는 쪽만 받는다).
+    // 키보드가 서 있는가는 가드의 표식(data-kbd-open)과 같은 정본 windowResizeIsPan 으로 묻는다.
+    // 판정을 여기서 새로 세우지 않는다. 가드가 없는 화면(표식 없음)은 종전 재동기 그대로다.
+    const onWindowResize = () => {
+      const stamped = document.documentElement.hasAttribute('data-kbd-open')
+      if (windowResizeIsPan(stamped, keyboardCapableFocus(), readKbdSnapshot(vv))) onPan()
+      else resync()
+    }
     both()
     // **자가 회복(2026-10-03).** 마운트 순간의 vv 가 낡았는데 그 뒤로 vv 이벤트가 하나도 안 오면
     // 종전에는 그 값이 닫힐 때까지 남았다. 열린 뒤 두 번만(300ms·1000ms) 다시 읽는다. 마감이 아니라
@@ -146,7 +157,7 @@ export function useVisibleBand(opts: {
     vv.addEventListener('resize', both)
     vv.addEventListener('scroll', onPan)
     window.addEventListener('pageshow', resync)
-    window.addEventListener('resize', resync)
+    window.addEventListener('resize', onWindowResize)
     window.addEventListener('orientationchange', resync)
     // 복귀 신호를 하나 더 듣는다 — visibilitychange·pageshow 가 빠지거나 늦는 복귀 경로 대비(2026-10-03 사양).
     window.addEventListener('focus', resync)
@@ -158,7 +169,7 @@ export function useVisibleBand(opts: {
       vv.removeEventListener('resize', both)
       vv.removeEventListener('scroll', onPan)
       window.removeEventListener('pageshow', resync)
-      window.removeEventListener('resize', resync)
+      window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('orientationchange', resync)
       window.removeEventListener('focus', resync)
       document.removeEventListener('visibilitychange', onVisibility)

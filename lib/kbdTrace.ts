@@ -36,7 +36,7 @@ export const REPORT_NOTE_MAX = 4000
 
 export type KbdTraceRow = {
   t: number            // performance.now() — 표에서는 신고창을 연 순간 기준 상대 ms 로만 쓴다
-  ev: string           // 사건 — vr·vs·fi·fo·rs·rst·rep
+  ev: string           // 사건 — vr·vs·wr·fi·fo·rs·rst·rep
   verdict: string      // 가드 판정 꼬리표 — open·shut·phantom·focus·clear·· (+zoom)
   inner: number
   vvh: number | null
@@ -152,8 +152,8 @@ function num(v: number | null): string {
 
 const COLS = ['t', 'ev', 'verdict', 'inner', 'vvh', 'top', 'H', 'T0', 'sy', 'kbd', 'inset', 'focus'] as const
 const LEGEND = [
-  'ev vr=vv resize · vs=vv scroll · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
-  'vs×n=판정·표식이 같은 팬 n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
+  'ev vr=vv resize · vs=vv scroll · wr=키보드가 선 동안의 window resize(팬으로 받음) · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
+  'vs×n=판정·표식이 같은 팬(vs·wr) n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
     + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
 
@@ -167,8 +167,13 @@ const LAST = 0      // 마지막 줄(신고창을 연 순간). 덜지 않는다
 /** 판정이 바뀐 줄 중 맨 나중까지 남기는 세션 첫 줄 수. */
 const FIRST_FLIPS_KEPT = 3
 
-/** 판정 꼬리표가 open·shut·phantom 인 사건. 이 셋의 꼬리표가 바뀌면 판정이 뒤집힌 것이다. */
-const JUDGED = new Set(['vr', 'vs', 'fi'])
+/** 판정 꼬리표가 open·shut·phantom 인 사건. 이 넷의 꼬리표가 바뀌면 판정이 뒤집힌 것이다. */
+const JUDGED = new Set(['vr', 'vs', 'wr', 'fi'])
+/**
+ * 팬 묶음으로 접을 수 있는 사건. 키보드가 선 iOS 는 팬 한 프레임에 vv scroll 과 window resize 를 함께
+ * 내므로(2026-10-20, 신고 be5316e8) 둘이 번갈아 와도 한 묶음으로 접는다. 안 그러면 큰 팬 한 번이 다시 수십 줄을 먹는다.
+ */
+const PAN_LIKE = new Set(['vs', 'wr'])
 
 /** 표 한 줄. 링버퍼 한 건이거나, 접힌 팬 묶음의 끝 줄(fold=묶음 건수)이다. */
 type Line = { r: KbdTraceRow; fold: number; rank: number }
@@ -180,7 +185,7 @@ type Line = { r: KbdTraceRow; fold: number; rank: number }
  * 성립한 것처럼 읽혔다). 포커스 조건은 대개 겹친다 — 포커스가 바뀌면 fo·fi 줄이 먼저 묶음을 끊는다.
  */
 function sameFold(a: KbdTraceRow, b: KbdTraceRow): boolean {
-  return a.ev === 'vs' && b.ev === 'vs' && a.verdict === b.verdict && a.open === b.open
+  return PAN_LIKE.has(a.ev) && PAN_LIKE.has(b.ev) && a.verdict === b.verdict && a.open === b.open
     && a.inset === b.inset && a.focus === b.focus && a.H === b.H
     // 상자를 못 잰 줄(모달 없는 셸 폼, H·T0 null)은 견줄 값이 없어 판정·표식만으로 접는다.
     && (a.T0 == null || b.T0 == null || Math.abs((a.T0 + (a.top ?? 0)) - (b.T0 + (b.top ?? 0))) < 1)
@@ -197,7 +202,7 @@ function toLines(all: KbdTraceRow[]): Line[] {
   for (let i = 0; i < all.length; i++) {
     const r = all[i]
     const flip = !prev || prev.open !== r.open || prev.inset !== r.inset || (JUDGED.has(r.ev) && r.verdict !== judged)
-    const rank = flip ? FLIP : r.ev === 'rst' ? RESTORE : r.ev === 'vs' || r.ev === 'vr' ? PLAIN : CONTEXT
+    const rank = flip ? FLIP : r.ev === 'rst' ? RESTORE : PAN_LIKE.has(r.ev) || r.ev === 'vr' ? PLAIN : CONTEXT
     if (JUDGED.has(r.ev)) judged = r.verdict
     prev = r
     out.push({ r, fold: 0, rank })

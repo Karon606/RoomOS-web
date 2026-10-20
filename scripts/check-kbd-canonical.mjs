@@ -163,9 +163,14 @@ need('lib/useVisibleBand.ts', [
     if (reads !== 0) {
       violations.push(`lib/useVisibleBand.ts. vv 값을 직접 읽는 자리가 ${reads} 군데다. 한 스냅샷이려면 정본 readKbdSnapshot 으로만 읽어야 한다`)
     }
+    // 인셋·높이가 쓰는 읽기는 pass 안의 한 번이다. 그 밖에서는 window resize 를 팬으로 볼지 묻는 한 자리만
+    // 허용한다(정본 windowResizeIsPan 의 인자, 7). 둘 다 같은 프레임이면 정본이 한 번 잰 값을 돌려준다.
+    const passBody = sliceBody(src, 'const pass = (') ?? ''
+    const inPass = [...passBody.matchAll(/\breadKbdSnapshot\(vv\)/g)].length
     const snaps = [...src.matchAll(/\breadKbdSnapshot\(vv\)/g)].length
-    if (snaps !== 1) {
-      violations.push(`lib/useVisibleBand.ts. readKbdSnapshot(vv) 를 부르는 자리가 ${snaps} 군데다. pass 안의 한 번뿐이어야 한다`)
+    const asPanArg = [...src.matchAll(/windowResizeIsPan\([^\n]*readKbdSnapshot\(vv\)\)/g)].length
+    if (inPass !== 1 || snaps - inPass !== asPanArg) {
+      violations.push(`lib/useVisibleBand.ts. readKbdSnapshot(vv) 가 pass 안 ${inPass} 군데, 그 밖 ${snaps - inPass} 군데다. pass 안의 한 번과 windowResizeIsPan 인자 자리만 허용한다`)
     }
   }
 }
@@ -300,7 +305,7 @@ need('components/ui/ConfirmDialog.tsx', [
 // 5) 0단계 계측(키보드 가림 패널 2026-10-13) — 센티널 상자와 직전 키보드 세션 링버퍼.
 // 후보 1(innerHeight 대신 fixed 상자 H·T0 기준틀) 시공 전에 client 원점 모형을 실기로 가리는
 // 자리다. 계측은 앱 동작을 한 픽셀도 안 바꿔야 하고, 값만 담아야 한다.
-const sliceBody = (src, head) => {
+function sliceBody(src, head) {
   const at = src.indexOf(head)
   if (at < 0) return null
   let depth = 0, start = -1
@@ -387,6 +392,7 @@ need('components/layout/ViewportOffsetGuard.tsx', [
   [/kbdTrace\('fi',/, 'focusin 을 링버퍼에 안 적는다'],
   [/kbdTrace\('rst',/, '복원(scrollTo 0,0) 발동을 링버퍼에 안 적는다'],
   [/kbdTrace\('rs',\s*'clear'\)/, '복귀 재동기를 링버퍼에 안 적는다'],
+  [/kbdTrace\('wr',\s*'open',\s*s\)/, '키보드가 선 동안의 window resize(팬으로 받음)를 링버퍼에 안 적는다'],
   // 판정 문장이 관찰 호출과 섞여 바뀌지 않았는지 — 0단계는 동작 무변화가 조건이다.
   [/if \(!keyboardOpen\(snapNow\(\)\)\) restore\(\)/, '팬 판정 문장이 바뀌었다. 0단계 계측은 판정을 건드리지 않는다'],
   [/if \(keyboardOpen\(snapNow\(\)\)\) scheduleReveal\(\)/, '칸-대-칸 재노출 판정 문장이 바뀌었다'],
@@ -462,6 +468,42 @@ need('app/(app)/errorReports.ts', [
     if (!/s\.frameH - \(s\.vvHeight \+ s\.offsetTop\)/.test(fn('overlapInset'))) violations.push('lib/keyboardViewport.ts: 겹침이 H − offsetTop − vv.height 가 아니다')
     // 반환 타입의 중괄호 때문에 sliceBody 가 본문을 못 자른다. 선언 바로 아래 줄을 본다.
     if (!/export function visibleBand\([^)]*\)[^\n]*\n\s*const top = s\.frameTop \+ s\.offsetTop\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 띠 위 끝이 T0 + offsetTop 이 아니다')
+  }
+}
+
+// 7) 키보드가 선 동안의 window resize 는 팬이다(2026-10-20, 신고 be5316e8 '화면이 톡톡튀고'). iOS 는 팬마다
+// innerHeight 를 고쳐 보고하며 window resize 를 낸다. 그것을 재동기로 받으면 가드가 --kbd-inset 을 다시 쓰고
+// 재노출·복원(scrollTo 0,0)이 돌아 '크기는 vv resize 에서만'(716e7b0c)을 window 쪽 문으로 비켜 간다.
+{
+  let kv = ''
+  try { kv = strip(readFileSync('lib/keyboardViewport.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const panFn = kv ? sliceBody(kv, 'export function windowResizeIsPan(') : null
+  if (panFn == null) violations.push('lib/keyboardViewport.ts: 정본 windowResizeIsPan 이 사라짐')
+  else if (!/stamped && editing && keyboardOpen\(s\)/.test(panFn)) violations.push('lib/keyboardViewport.ts: windowResizeIsPan 이 표식·포커스·기준틀 열림 셋을 다 묻지 않는다')
+
+  let guard = ''
+  try { guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (guard) {
+    if (/window\.addEventListener\(['"]resize['"],\s*resync\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: window resize 를 재동기로 바로 받는다. 키보드가 선 동안의 팬마다 인셋을 다시 쓰고 되감는다')
+    if (!/window\.addEventListener\(['"]resize['"],\s*onWindowResize\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: window resize 를 onWindowResize 로 안 받는다')
+    const body = sliceBody(guard, 'const onWindowResize = (')
+    // 팬 분기 = if (windowResizeIsPan( 부터 그 if 블록의 닫는 중괄호까지.
+    const at = body ? body.indexOf('if (windowResizeIsPan(') : -1
+    const branch = at < 0 ? null : sliceBody(body.slice(at), 'if (windowResizeIsPan(')
+    if (branch == null) violations.push('components/layout/ViewportOffsetGuard.tsx: onWindowResize 가 정본 windowResizeIsPan 으로 팬을 가르지 않는다')
+    else {
+      if (!/\breturn\b/.test(branch)) violations.push('components/layout/ViewportOffsetGuard.tsx: 팬 분기가 돌아가지 않고 재동기로 흘러간다')
+      const bad = /setProperty\(|removeAttribute\(|setAttribute\(|scrollTo\(|restore\(|scheduleReveal\(|onResize\(|resync\(/.exec(branch)
+      if (bad) violations.push(`components/layout/ViewportOffsetGuard.tsx. 키보드가 선 동안의 window resize 분기가 '${bad[0]}' 을 부른다. 판정만 갱신하고 인셋·표식·재노출·복원은 손대지 않는다`)
+    }
+  }
+  let hook = ''
+  try { hook = strip(readFileSync('lib/useVisibleBand.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (hook) {
+    if (/window\.addEventListener\(['"]resize['"],\s*resync\)/.test(hook)) violations.push('lib/useVisibleBand.ts: window resize 를 재동기로 바로 받는다. 키보드가 선 팬마다 두 패스씩 다시 쓴다')
+    const body = sliceBody(hook, 'const onWindowResize = (')
+    if (body == null || !/windowResizeIsPan\(/.test(body) || !/\)\)\)\s*onPan\(\)/.test(body)) violations.push('lib/useVisibleBand.ts: window resize 가 정본 windowResizeIsPan 으로 팬(onPan)을 가르지 않는다')
+    if (!/window\.addEventListener\(['"]resize['"],\s*onWindowResize\)/.test(hook)) violations.push('lib/useVisibleBand.ts: window resize 를 onWindowResize 로 안 받는다')
   }
 }
 

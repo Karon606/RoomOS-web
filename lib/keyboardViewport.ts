@@ -80,6 +80,22 @@ export function visibleBand(s: KbdSnapshot): { top: number; bottom: number } {
 }
 
 /**
+ * 이 window resize 를 팬으로 볼까. 키보드가 이미 서 있고(가드 표식), 키보드 칸에 포커스가 있고,
+ * 기준틀로도 여전히 열림일 때만 참이다(2026-10-20, 신고 be5316e8 '스크롤해서 올리면 화면이 톡톡튀고').
+ *
+ * 키보드가 선 iOS 는 팬할 때마다 innerHeight 를 고쳐 보고하며 window resize 를 낸다. 종전에는 그것을
+ * 복귀 재동기로 받아 가드가 --kbd-inset 을 다시 쓰고(팬 차감 크기라 매번 달라진다) 재노출을 다시 돌렸고,
+ * 열림이 거짓으로 뒤집히면 표식을 떼고 scrollTo(0, 0) 로 팬을 되감았다. 훅도 두 번 재동기했다.
+ * '크기는 vv resize 에서만 쓴다'(716e7b0c)는 팬 프레임에서 셸 여백을 다시 쓰지 말라는 규칙인데, 그
+ * resize 가 vv 가 아니라 window 쪽으로 들어와 규칙을 비켜 간 것이다. 참이면 받는 쪽은 판정만 갱신하고
+ * 인셋 재기록·재노출·복원을 하지 않는다. 키보드가 진짜 내려가는 resize 는 열림이 거짓이 되어 종전
+ * 경로로 간다(그때는 vv resize 도 온다).
+ */
+export function windowResizeIsPan(stamped: boolean, editing: boolean, s: KbdSnapshot): boolean {
+  return stamped && editing && keyboardOpen(s)
+}
+
+/**
  * 잔존 오프셋을 복원해도 되는가 — **진짜 닫힘(엡실론 이내)일 때만.**
  *
  * 종전에는 '열림 아님'이면 무조건 되감았다. 그러면 외장 키보드 단축바(약 55px, 문턱 미만)가

@@ -36,7 +36,7 @@
 // B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 와 app/admin/layout.tsx
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
-import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, windowResizeIsPan, type KbdSnapshot } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
 import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { phantomKeyboardGap } from '@/lib/modalViewport'
@@ -183,6 +183,19 @@ export default function ViewportOffsetGuard() {
       restore()
     }
     const resync = () => { resyncPass(); requestAnimationFrame(resyncPass) }
+    // **키보드가 선 동안의 window resize 는 팬이다(2026-10-20, 신고 be5316e8).** iOS 는 팬할 때마다
+    // innerHeight 를 고쳐 보고하며 이 이벤트를 낸다. 종전에는 위 재동기로 받아 --kbd-inset 을 팬 차감
+    // 크기로 다시 쓰고 재노출을 다시 돌려, '크기는 vv resize 에서만'(716e7b0c)을 window 쪽 문으로 비켜 갔다.
+    // 여기서는 판정만 새로 하고(기록 'wr'), 인셋·표식·재노출·복원은 손대지 않는다. 판정은 정본
+    // windowResizeIsPan 이 하고, 열림이 아니면(키보드가 내려가는 중) 종전 재동기 그대로다.
+    const onWindowResize = () => {
+      const s = snapNow()
+      if (windowResizeIsPan(root.hasAttribute(KBD_OPEN_ATTR), keyboardCapableFocus(), s)) {
+        kbdTrace('wr', 'open', s)
+        return
+      }
+      resync()
+    }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
     const onFocusIn = (e: FocusEvent) => {
@@ -203,7 +216,7 @@ export default function ViewportOffsetGuard() {
     document.addEventListener('focusin', onFocusIn, true)
     document.addEventListener('focusout', onFocusOut, true)
     window.addEventListener('pageshow', resync)
-    window.addEventListener('resize', resync)
+    window.addEventListener('resize', onWindowResize)
     window.addEventListener('orientationchange', resync)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
@@ -212,7 +225,7 @@ export default function ViewportOffsetGuard() {
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('focusout', onFocusOut, true)
       window.removeEventListener('pageshow', resync)
-      window.removeEventListener('resize', resync)
+      window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('orientationchange', resync)
       document.removeEventListener('visibilitychange', onVisibility)
       root.style.removeProperty(KBD_INSET)

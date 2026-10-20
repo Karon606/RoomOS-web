@@ -3,7 +3,7 @@
 // 8월의 키보드 회귀들을 헤드리스로 가둔다(키보드 패널 2026-09-02). 아이폰 16 Pro 실측 좌표계
 // (402x874, 키보드 열림 띠 538)와 iPad 줌·외장 바 시나리오를 스냅샷으로 고정한다.
 import {
-  keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand,
+  keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand, windowResizeIsPan,
   KBD_OPEN_PX, KBD_MAX_RATIO, TARGET_RATIO, REVEAL_GAP, ZOOM_NEUTRAL_SCALE, RESTORE_EPS,
   type KbdSnapshot,
 } from '../lib/keyboardViewport'
@@ -134,6 +134,27 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   }
   eq(`동치 전수 ${n} 조합 · 판정·겹침·복원·띠가 종전과 전부 같다`, diffs.slice(0, 3), [])
   console.log(`  동치 전수: ${n} 조합 · 다른 조합 ${diffs.length}`)
+}
+
+// ── 키보드가 선 동안의 window resize 는 팬(2026-10-20, 신고 be5316e8 '화면이 톡톡튀고') ─────
+// iOS 는 팬할 때마다 innerHeight 를 고쳐 보고하며 window resize 를 낸다. 참이면 받는 쪽은 판정만
+// 갱신하고 인셋 재기록·재노출·복원을 안 한다. 키보드가 내려가는 resize 는 거짓이라 종전 재동기로 간다.
+{
+  const open = (top: number): KbdSnapshot => ({ frameH: IPH, frameTop: -top, vvHeight: KB_VV, offsetTop: top, scale: 1 })
+  const shut: KbdSnapshot = { frameH: IPH, frameTop: 0, vvHeight: IPH, offsetTop: 0, scale: 1 }
+  const zoom: KbdSnapshot = { frameH: IPH, frameTop: 0, vvHeight: 700, offsetTop: 40, scale: 1.3 }
+  const rows: [string, boolean, boolean, KbdSnapshot, boolean][] = [
+    ['표식·포커스·열림 · 팬 0', true, true, open(0), true],
+    ['표식·포커스·열림 · 팬 190((b) 상태)', true, true, open(189.66), true],
+    ['표식·포커스·열림 · (c) 상태', true, true, STATES[2].s, true],
+    ['키보드가 내려감(열림 거짓)이면 재동기', true, true, shut, false],
+    ['표식 없음(키보드가 선 적 없음)이면 재동기', false, true, open(0), false],
+    ['포커스 없음(칸을 떠남)이면 재동기', true, false, open(0), false],
+    ['핀치 줌이면 재동기(줌 게이트)', true, true, zoom, false],
+  ]
+  for (const [name, stamped, editing, s, want] of rows) eq(`window resize · ${name}`, windowResizeIsPan(stamped, editing, s), want)
+  // 종전 틀(innerHeight 를 상자 높이로)이었다면 (c) 에서 열림이 거짓이라 팬이 재동기로 새어 되감겼다.
+  eq('종전 틀이면 (c) 의 window resize 가 재동기로 샜다', old.open(416, KB_VV, 1), false)
 }
 
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).
