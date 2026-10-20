@@ -4,6 +4,7 @@ import {
   channelVendorLabel, commonChannel, externalOrderCaption, orderSellerLabel, orderChannelSplit, channelSplitAgainst, mergeChannelConflict,
 } from '../lib/expenseChannel'
 import { canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, EXPENSE_FIELD_UNDO_KINDS } from '../lib/expenseFieldUndo'
+import { canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo } from '../lib/orderMergeUndo'
 
 let fail = 0
 let pass = 0
@@ -128,6 +129,29 @@ eq('묶기 충돌 없음: 하나 + 미기록', mergeChannelConflict([{ channel: 
   const gone = new Map(now); gone.delete(A)
   eq('행이 없어졌으면(남의 영업장·삭제) 안 한다', planExpenseFieldUndo(tok, gone), null)
   eq('용도 라벨마다 서명 domain 이 다르다', new Set(Object.values(EXPENSE_FIELD_UNDO_KINDS)).size, Object.keys(EXPENSE_FIELD_UNDO_KINDS).length)
+}
+
+// ── 주문 묶기 적용취소 ────────────────────────────────────────
+{
+  const T = '33333333-3333-4333-8333-333333333333', O1 = '44444444-4444-4444-8444-444444444444'
+  const A = '11111111-1111-4111-8111-111111111111', B = '22222222-2222-4222-8222-222222222222', S = '55555555-5555-4555-8555-555555555555'
+  const snap = { id: O1, code: '261019-002', externalOrderNo: null, shippingType: '선불', shippingMemo: null, createdAt: '2026-10-19T01:00:00.000Z' }
+  const u = { v: 1 as const, targetOrderId: T, createdTarget: false, moved: [{ id: A, before: null }, { id: B, before: O1 }, { id: S, before: O1 }], deletedOrders: [snap] }
+  eq('묶기 토큰 모양 통과', parseOrderMergeUndo(u)?.moved.length, 3)
+  eq('정규 본문은 순서 무관', canonicalOrderMergeUndo(u), canonicalOrderMergeUndo({ ...u, moved: [...u.moved].reverse() }))
+  eq('되살릴 주문이 옮긴 행의 원래 주문이 아니면 거부', parseOrderMergeUndo({ ...u, moved: [{ id: A, before: null }] }), null)
+  eq('대상 주문을 원래 주문이라 하면 거부', parseOrderMergeUndo({ ...u, moved: [{ id: A, before: T }], deletedOrders: [] }), null)
+  eq('빈 옮김은 거부', parseOrderMergeUndo({ ...u, moved: [] }), null)
+  const now = new Map<string, string | null>([[A, T], [B, T], [S, T]])
+  const plan = planOrderMergeUndo(u, now, new Set(), [A, B, S, 'x'])
+  eq('묶은 직후면 되돌린다(행은 원래 주문으로)', plan?.moves.map(m => m.to), [null, O1, O1])
+  eq('지운 주문을 되살린다', plan?.restoreOrders.map(o => o.id), [O1])
+  eq('대상 주문을 새로 만든 게 아니면 안 지운다', plan?.dropTarget, false)
+  eq('한 행이라도 다른 주문으로 갔으면 안 한다', planOrderMergeUndo(u, new Map([...now, [B, null]]), new Set(), [A, S]), null)
+  eq('되살릴 주문 id 가 이미 있으면 안 한다', planOrderMergeUndo(u, now, new Set([O1]), [A, B, S]), null)
+  const fresh = { ...u, createdTarget: true, moved: [{ id: A, before: null }, { id: B, before: null }], deletedOrders: [] }
+  eq('새로 만든 대상이 비면 지운다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B])?.dropTarget, true)
+  eq('새로 만든 대상에 그 뒤 다른 행이 붙었으면 남긴다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B, S])?.dropTarget, false)
 }
 
 console.log(`[구매처·쇼핑몰 규칙] ${pass}건 통과${fail ? `, ${fail}건 실패` : ''}`)

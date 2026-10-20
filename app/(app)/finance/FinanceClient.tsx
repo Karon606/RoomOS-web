@@ -18,7 +18,7 @@ import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
+  addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, undoMergeExpensesIntoOrder, findOrderByExternalNo,
   batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -1638,7 +1638,14 @@ export default function FinanceClient({
       try {
         const res = await mergeExpensesIntoOrder(ids)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `${ids.length}건을 한 주문으로 묶었습니다`)
+        // 묶기에도 적용취소가 있다(§16). 묶은 직후 모양 그대로일 때만 되돌리고, 지운 빈 주문은 같은 주문으로 되살린다.
+        const mergeUndo = res.undo
+        pushToast('success', `${ids.length}건을 한 주문으로 묶었습니다`, mergeUndo ? {
+          action: { label: '적용취소', run: () => { void undoMergeExpensesIntoOrder(mergeUndo).then(r => {
+            if (r.ok) { pushToast('info', '주문 묶기를 적용취소했습니다 · 묶기 전 주문으로 복귀'); router.refresh() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+        } : undefined)
         exitMergeMode(); setExpView('order'); router.refresh()
       } finally { release() }
     })

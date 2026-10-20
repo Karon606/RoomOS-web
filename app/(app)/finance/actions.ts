@@ -63,7 +63,8 @@ import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본과 글자 칸 일괄 변경 적용취소 토큰(2026-10-19 운영자 승인, 신고 a0636f36).
-import { normalizeChannel, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel } from '@/lib/expenseChannel'
+import { normalizeChannel, buildVendorBizMap, itemVendorFor, bizBackfillAllowed, commonChannel, mergeChannelConflict } from '@/lib/expenseChannel'
+import { ORDER_MERGE_UNDO_DOMAIN, canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo, type OrderMergeUndo, type OrderSnap } from '@/lib/orderMergeUndo'
 import {
   EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
   type ExpenseFieldUndo, type ExpenseFieldUndoKind, type ExpenseFieldUndoField,
@@ -2147,7 +2148,9 @@ export async function detachShippingFromOrder(expenseId: string): Promise<{ ok: 
 
 // 다중선택 병합 — 선택한 지출들을 한 주문으로 묶기(꾹 눌러 선택 UX용).
 // 이미 다른 주문에 속한 것도 대상 주문으로 이동, 비워진 주문은 배송비 라인을 옮긴 뒤 삭제.
-export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+// 한 주문(한 결제)은 한 쇼핑몰이다(2026-10-19 운영자 승인). 묶일 행(선택 행과 대상 주문의 기존 행)의 쇼핑몰이 서로 다르면 막는다.
+// 미기록 행은 세지 않는다(옛 행). 묶기에는 적용취소가 있다(묶기 직전 모양 토큰, lib/orderMergeUndo).
+export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok: true; undo?: OrderMergeUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2157,15 +2160,27 @@ export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok
     if (selected.length < 2) return { ok: false, error: '묶을 지출을 2건 이상 선택해주세요.' }
 
     const sourceOrderIds = [...new Set(selected.map(e => e.orderId).filter(Boolean) as string[])]
+    // 쇼핑몰 검사. 선택 행과 대상이 될 주문들의 다른 본품 행까지 본다(묶고 나면 한 주문이다).
+    const orderRows = sourceOrderIds.length
+      ? await prisma.expense.findMany({ where: { orderId: { in: sourceOrderIds }, propertyId, isShipping: false }, select: { channel: true } })
+      : []
+    const conflict = mergeChannelConflict([...selected, ...orderRows])
+    if (conflict) return { ok: false, error: `쇼핑몰이 다른 지출(${conflict.join(', ')})은 한 주문으로 묶을 수 없습니다. 같은 쇼핑몰에서 결제한 지출만 고르거나 쇼핑몰을 먼저 고쳐 주세요.` }
+
     let targetOrderId: string
+    let createdTarget = false
     if (sourceOrderIds.length > 0) {
       const orders = await prisma.expenseOrder.findMany({ where: { id: { in: sourceOrderIds }, propertyId }, orderBy: { createdAt: 'asc' }, select: { id: true } })
       targetOrderId = orders[0]?.id ?? sourceOrderIds[0]
     } else {
       const order = await prisma.expenseOrder.create({ data: { propertyId, code: await genOrderCode(propertyId), shippingType: null, shippingMemo: null } })
       targetOrderId = order.id
+      createdTarget = true
     }
 
+    // 적용취소 표. 옮긴 행(대상 주문에 이미 있던 행은 빼고)과 그 전 주문, 지운 빈 주문의 스냅샷.
+    const moved: OrderMergeUndo['moved'] = selected.filter(e => e.orderId !== targetOrderId).map(e => ({ id: e.id, before: e.orderId }))
+    const deletedOrders: OrderSnap[] = []
     await prisma.expense.updateMany({ where: { id: { in: selected.map(e => e.id) }, propertyId }, data: { orderId: targetOrderId } })
 
     // 비워진 source 주문 정리(배송비 라인은 대상으로 이동 후 빈 주문 삭제)
@@ -2173,15 +2188,65 @@ export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok
       if (oid === targetOrderId) continue
       const remain = await prisma.expense.count({ where: { orderId: oid, isShipping: false, propertyId } })
       if (remain === 0) {
+        const ships = await prisma.expense.findMany({ where: { orderId: oid, isShipping: true, propertyId }, select: { id: true } })
         await prisma.expense.updateMany({ where: { orderId: oid, isShipping: true, propertyId }, data: { orderId: targetOrderId } })
-        await prisma.expenseOrder.delete({ where: { id: oid } }).catch(() => {})
+        for (const sh of ships) moved.push({ id: sh.id, before: oid })
+        const snap = await prisma.expenseOrder.findFirst({ where: { id: oid, propertyId } })
+        const gone = await prisma.expenseOrder.deleteMany({ where: { id: oid, propertyId } })
+        if (snap && gone.count === 1) deletedOrders.push({ id: snap.id, code: snap.code, externalOrderNo: snap.externalOrderNo, shippingType: snap.shippingType, shippingMemo: snap.shippingMemo, createdAt: snap.createdAt.toISOString() })
       }
     }
+    revalidatePath('/finance'); revalidatePath('/inventory')
+    const undo = moved.length ? signOrderMergeUndo(propertyId, { v: 1, targetOrderId, createdTarget, moved, deletedOrders }) : null
+    return { ok: true, ...(undo ? { undo } : {}) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '묶기에 실패했습니다.' }
+  }
+}
+
+function signOrderMergeUndo(propertyId: string, body: Omit<OrderMergeUndo, 'sig'>): OrderMergeUndo | null {
+  const sig = signUndoBody(ORDER_MERGE_UNDO_DOMAIN, propertyId, canonicalOrderMergeUndo(body))
+  if (sig === null) return null
+  return sig ? { ...body, sig } : body
+}
+
+/**
+ * 주문 묶기 적용취소. 옮긴 행이 지금도 전부 그 주문에 있을 때만(묶은 직후 모양) 한 트랜잭션에서 되돌린다. 지운 주문은 같은 id 로
+ * 되살리고(그 id 가 비어 있을 때만), 묶기가 새로 만든 주문은 비면 지운다. 하나라도 어긋나면 아무것도 안 고친다.
+ */
+export async function undoMergeExpensesIntoOrder(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const u = parseOrderMergeUndo(raw)
+    if (!u) return { ok: false, error: FIELD_UNDO_INVALID }
+    const { sig, ...body } = u
+    if (!verifyUndoBody(ORDER_MERGE_UNDO_DOMAIN, propertyId, canonicalOrderMergeUndo(body), sig)) return { ok: false, error: FIELD_UNDO_INVALID }
+    const done = await prisma.$transaction(async tx => {
+      const target = await tx.expenseOrder.findFirst({ where: { id: u.targetOrderId, propertyId }, select: { id: true } })
+      if (!target) return false
+      const rows = await tx.expense.findMany({ where: { id: { in: u.moved.map(m => m.id) }, propertyId }, select: { id: true, orderId: true } })
+      const live = await tx.expenseOrder.findMany({ where: { id: { in: u.deletedOrders.map(o => o.id) } }, select: { id: true } })
+      const targetRows = await tx.expense.findMany({ where: { orderId: u.targetOrderId, propertyId }, select: { id: true } })
+      // 되돌아갈 주문(지우지 않은 것)도 이 영업장 주문이어야 한다.
+      const backTo = [...new Set(u.moved.map(m => m.before).filter((v): v is string => !!v && !u.deletedOrders.some(o => o.id === v)))]
+      if (backTo.length && (await tx.expenseOrder.count({ where: { id: { in: backTo }, propertyId } })) !== backTo.length) return false
+      const plan = planOrderMergeUndo(u, new Map(rows.map(r => [r.id, r.orderId])), new Set(live.map(o => o.id)), targetRows.map(r => r.id))
+      if (!plan) return false
+      for (const o of plan.restoreOrders) {
+        await tx.expenseOrder.create({ data: { id: o.id, propertyId, code: o.code, externalOrderNo: o.externalOrderNo, shippingType: o.shippingType, shippingMemo: o.shippingMemo, createdAt: new Date(o.createdAt) } })
+      }
+      for (const m of plan.moves) await tx.expense.updateMany({ where: { id: m.id, propertyId, orderId: u.targetOrderId }, data: { orderId: m.to } })
+      if (plan.dropTarget) await tx.expenseOrder.deleteMany({ where: { id: u.targetOrderId, propertyId } })
+      return true
+    })
+    if (!done) return { ok: false, error: '그 사이 주문 묶음이 다시 바뀌어 되돌리지 않았습니다. 주문별 보기에서 지금 상태를 확인해 주세요.' }
     revalidatePath('/finance'); revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '묶기에 실패했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
   }
 }
 
@@ -2213,6 +2278,14 @@ export async function attachShippingToOrder(input: {
 
     // 기존 주문 재사용(이미 묶인 게 있으면) 또는 새 주문 생성
     const existingOrderId = expenses.find(e => e.orderId)?.orderId ?? null
+    // 한 주문(한 결제)은 한 쇼핑몰이다(2026-10-19). 묶일 행(선택 행 + 재사용할 주문의 본품 행)의 쇼핑몰이 갈리면 막는다(미기록은 안 센다).
+    // 배송비 행은 그 주문의 쇼핑몰을 따른다.
+    const orderRows = existingOrderId
+      ? await prisma.expense.findMany({ where: { orderId: existingOrderId, propertyId, isShipping: false }, select: { channel: true } })
+      : []
+    const conflict = mergeChannelConflict([...expenses, ...orderRows])
+    if (conflict) return { ok: false, error: `쇼핑몰이 다른 지출(${conflict.join(', ')})은 한 주문으로 묶을 수 없습니다.` }
+    const orderChannel = commonChannel([...expenses, ...orderRows])
     let orderId: string
     if (existingOrderId) {
       orderId = existingOrderId
@@ -2257,7 +2330,7 @@ export async function attachShippingToOrder(input: {
       if (existingShip) {
         await prisma.expense.update({
           where: { id: existingShip.id },
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, createdAt: shipCreatedAt },
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, channel: orderChannel, createdAt: shipCreatedAt },
         })
       } else {
         await prisma.expense.create({
@@ -2269,6 +2342,7 @@ export async function attachShippingToOrder(input: {
             amount:             shipData.amount,
             detail:             shipData.detail,
             vendor:             rep.vendor,
+            channel:            orderChannel,   // 같은 결제라 그 주문의 쇼핑몰
             memo:               shipData.shippingMemo,
             payMethod:          rep.payMethod || '계좌이체',
             financialAccountId: rep.financialAccountId,
