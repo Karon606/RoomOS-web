@@ -25,6 +25,8 @@
 //   ⑩ (2026-10-19 신고 1daf641c) '채우기 전' 빈칸 해석이 세 화면(아이템별 폼·위치 패널·이력 수정 폼)에서 한 함수
 //      (lib/stockLedger calcLocMove)를 저장값과 함께 부른다. 묻는 행(미결)은 저장에 안 싣고 버튼을 막으며, 그 행에
 //      자리표시 '0' 이 없고, 안내문이 규칙과 맞고, 서버가 채움 ≤ 잔량·음수를 거부한다.
+//   ⑪ (2026-10-20 신고 5efc8a12) 창고 행이 두 화면에서 같은 Badge·같은 규칙 문장이고, 패널 비창고 행 캡션이 '창고(경로) 남음'
+//      이며, 패널 이름 줄이 배지 때문에 자라지 않는다. 창고 행에는 '다른 곳으로' 가 없다(검토 후 기각, 비창고 가지 안에만).
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -415,7 +417,9 @@ need('모달이 결과를 호출부에 넘긴다',
 need('모달이 적용취소 기대값도 함께 넘긴다',
   /createdAtMs: res\.createdAtMs, rowCount: res\.rowCount, markerSum: res\.markerSum/.test(tSubmit))
 // 행 버튼 — '그대로' 는 행 머리('저장 N' 과 같은 줄, 두 화면), '다른 곳으로' 는 패널 비허브 행의 입력칸 아래 줄.
-// (2단계 2026-10-12 — 종전 목업 '좌 다른 곳으로 · 우 옮김 없음' 한 줄을 승인 계획으로 바꿨다.) 허브 행에는 두지 않는다(§27.1).
+// (2단계 2026-10-12 — 종전 목업 '좌 다른 곳으로 · 우 옮김 없음' 한 줄을 승인 계획으로 바꿨다.) 허브 행에는 두지 않는다
+// (같은 일에 입구를 둘 만들지 않는다. 종전 인용 §27.1 은 저장 방식 규칙이라 근거가 아니었다. 2026-10-20 신고 5efc8a12 로
+// 창고 행 입구를 검토했고 기각했다 — knowledge/domain-inventory.md '패널 안 옮기기').
 need('비허브 행에 다른 곳으로가 있다',
   (client.match(/>\s*다른 곳으로\s*</g) ?? []).length === 1)
 const headCluster = (src) => {
@@ -549,7 +553,7 @@ need('창고 칸에 저장값이 남으면 경고와 비우기가 선다(두 화
 // 위 고정 창고 요약이 같은 값을 말하고, 패널은 품목마다 창고가 달라 한 줄 요약이 성립하지 않는다. 비대칭을 봉인한다 —
 // 폼에 되살아나면 같은 숫자가 한 화면에 행 수만큼 서고, 패널에서 빠지면 채울 창고를 볼 자리가 없다.
 need('창고 남음 줄은 위치 패널 행에만 있다(아이템별 폼은 고정 요약이 말한다)',
-  /\{hubStock\.pathName\} 남음/.test(locPanel) && !/\{(hubStock|hubLoc)\.pathName\} 남음/.test(itemForm) && !/const hubStock = /.test(itemForm),
+  /창고\(\{hubStock\.pathName\}\) 남음/.test(locPanel) && !/\{(hubStock|hubLoc)\.pathName\}\)? 남음/.test(itemForm) && !/const hubStock = /.test(itemForm),
   'knowledge/domain-inventory.md 화면도 한 벌 절의 예외 — 한쪽만 바꾸면 그 노트가 거짓이 된다')
 // 발끝 고정(2단계) — 저장 버튼은 상세 모달 발끝에 서고 form= 으로 이 폼에 붙는다. 'N곳' 은 저장에 실릴 칸 수라
 // 패치 조립부 그대로 센다(세는 규칙이 갈리면 '2곳 저장' 을 눌렀는데 3곳이 저장된다). 0 이면 비활성이다.
@@ -891,6 +895,42 @@ need('패널 임시저장 칩 기준값이 적은 글자만 담는다',
   /const snapshotOfInputs = \(\) => JSON\.stringify\(\{\s*\n\s*locId, date,\s*\n\s*rows: groups\.flatMap\(g => g\.items\.map\(r => \{ const k = locPairKey\(r\.id, g\.node\.id\); return \{ k, b: beforeQtys\[k\] \?\? '', a: afterQtys\[k\] \?\? '' \} \}\)\),/.test(locPanel) &&
   !/\.\.\.computeRow\(r, g\.node\.id\)/.test(locPanel),
   '저장값에 따라 갈리는 미결·최종값이 기준에 들어가면 다른 저장 뒤 칩이 거짓말을 한다')
+
+// ── ⑪ 창고 행이 두 화면에서 같은 말로 보인다 (2026-10-20 신고 5efc8a12 "왜 여기는 옮기는 옵션이 없어?") ──────
+// 품목 창고(hubLocationId)가 영업장 기본 창고가 아닌 칸(김치냉장고 하단)이면 위치 패널은 그 행이 창고라는 표시가 없었다.
+// 그룹 머리 배지는 영업장 기본 창고(node.isHub)만 보고, 행 머리에는 아무것도 없어서 한 칸뿐인 행이 왜 그런지 말을 못 했다.
+// 아이템별 폼은 행 머리에 '창고' Badge 를 두고 있었다. 형제 어긋남을 봉인한다.
+need("위치 패널 행 머리에도 품목 창고 Badge 가 선다(아이템별 폼과 같은 정본·같은 톤)",
+  (itemForm.match(/\{rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고<\/Badge>\}/g) ?? []).length === 1 &&
+  (locPanel.match(/\{rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고<\/Badge>\}/g) ?? []).length === 1,
+  '한쪽만 있으면 같은 칸이 화면에 따라 창고였다가 아니었다가 한다')
+need("패널 이름 줄이 글자 줄 높이(1.5em)로 묶여 배지가 줄을 키우지 않는다",
+  /<div className="flex h-\[1\.5em\] min-w-0 items-center gap-2 text-\[0\.8125rem\]">\s*\n\s*<p className="min-w-0 truncate text-\[0\.8125rem\] font-semibold text-\[var\(--warm-dark\)\]">\{r\.label\}<\/p>\s*\n\s*\{rowIsHub && <Badge/.test(locPanel),
+  '배지(20.5px)가 이름 글자(19.5px)보다 커서 창고 행 머리만 1px 자란다(독립 검수 2026-10-20)')
+need("패널 행의 창고 판정이 품목 창고(r.locations isHub)다",
+  /const rowIsHub = r\.locations\.find\(l => l\.id === node\.id\)\?\.isHub \?\? false/.test(locPanel),
+  'node.isHub(영업장 기본 창고)로 바꾸면 김치냉장고 하단처럼 기본 창고가 아닌 품목 창고에서 배지가 사라진다')
+need("패널 그룹 머리의 '기본 창고' 배지 체계는 그대로다",
+  /\{node\.isHub && <Badge tone="pale-amber">기본 창고<\/Badge>\}/.test(locPanel) &&
+  !/\{node\.isHub && <Badge[^>]*>창고<\/Badge>\}/.test(locPanel),
+  "그룹 머리는 영업장 기본 창고 축이다. '창고' 로 바꾸면 품목 창고 배지와 같은 낱말이 다른 사실을 말한다")
+need("창고 행 규칙 문장이 두 화면에서 한 상수다('비워 두면' 조건 포함)",
+  /const HUB_ROW_HINT = '비워 두면 다른 위치에 채운 만큼 여기서 자동으로 빠집니다\.'/.test(client) &&
+  (itemForm.match(/\{HUB_ROW_HINT\}/g) ?? []).length === 1 &&
+  (locPanel.match(/\{HUB_ROW_HINT\}/g) ?? []).length === 1 &&
+  !/비워 두면 채운 만큼 자동 차감됩니다/.test(client),
+  '한쪽만 고치면 같은 칸의 규칙이 화면마다 다른 말이 된다. 조건을 빼면 적은 값도 깎이는 것처럼 읽힌다')
+// 창고 행 '다른 곳으로' 는 검토 후 기각했다(2026-10-20 운영자 B안). 창고에서 꺼내 채우는 일은 도착지 행 '채운 후' 가 이미 하고,
+// 보관 자리 자체를 옮기는 일은 드물어 헤더 '위치 이동' 으로 된다. 입구가 둘이면 같은 일을 두 곳에 적어 이중 차감 길이 생긴다.
+need("'다른 곳으로' 는 비창고 가지 안에만 있다(창고 행 입구 기각)",
+  (() => {
+    const tern = locPanel.indexOf('{rowIsHub ? (')
+    const nonHub = locPanel.indexOf('비허브 위치 점검 — 채우기 전 / 채운 후', tern)
+    const btn = locPanel.indexOf('{prev != null && prev.qty !== 0 && !movePending && (')
+    const close = locPanel.indexOf('</>\n                          )}\n', nonHub)
+    return tern >= 0 && nonHub > tern && btn > nonHub && close > btn
+  })(),
+  '두 가지 밖으로 나가면 창고 행에도 서서 도착지 채운 후와 같은 일을 두 입구에서 하게 된다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

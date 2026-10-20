@@ -210,6 +210,10 @@ const CHECK_GUIDE_RESTOCK = '센 위치만 적으세요. 손대지 않은 위치
 // 색은 형제(옮기기 모달의 막힌 이유 줄)와 같은 --warm-muted 다. 경고가 아니라 버튼이 왜 안 눌리는지 말하는 줄이라
 // 정본을 따른다(크기는 이 화면 발끝의 12px 그대로). 행 아래 물음(PendingFillChoice)만 --warning-fg 다.
 // 세는 말은 그 화면의 저장 버튼과 같다(아이템별 폼 'N곳 저장', 위치 패널 'N건 저장').
+// 창고 행 입력칸 아래 규칙 한 줄 — 아이템별 폼과 위치 패널이 같은 문장을 쓴다(2026-10-20 신고 5efc8a12).
+// 종전 문장('비워 두면' 으로 시작해 '자동 차감' 으로 끝났다)은 무엇이 어디서 빠지는지를 말하지 않아, 이 칸이 다른 위치의 '채운 후'
+// 와 이어진 창고라는 사실이 안 보였다. '비워 두면' 조건은 남긴다 — 적으면 그 값이 그대로 저장된다(오른쪽 칸 '저장될 양').
+const HUB_ROW_HINT = '비워 두면 다른 위치에 채운 만큼 여기서 자동으로 빠집니다.'
 const pendingReasonItemForm = (n: number) => `'채우기 전'을 고를 위치가 ${n}곳 남았습니다.`
 const pendingReasonPanel = (n: number) => `'채우기 전'을 고를 품목이 ${n}건 남았습니다.`
 
@@ -4875,9 +4879,9 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                         </div>
                       </div>
                       {/* 버튼 대신 규칙을 말한다 — 늘 서 있다(2단계). 채움이 생길 때만 세우면 그 순간 이 행 아래가 밀린다.
-                          낱말은 같은 폼의 '자동 차감' 이다(안내문·창고 요약과 한 벌). */}
+                          문장은 위치 패널 창고 행과 한 벌(HUB_ROW_HINT, 2026-10-20 신고 5efc8a12). */}
                       {!hubStale && (
-                        <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">비워 두면 채운 만큼 자동 차감됩니다.</p>
+                        <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">{HUB_ROW_HINT}</p>
                       )}
                       {/* 저장값이 남아 있으면 같은 자리에서 경고하고 비우는 길을 준다. 비운 칸은 '안 셈'(entered 판정은 그대로,
                           hubMeasured 는 값이 비면 거짓)이라 서버가 옮긴 만큼 깎은 파생값을 남긴다. */}
@@ -6346,7 +6350,15 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               품목 이름이 먼저 잘린다). 그 줄 높이는 버튼 높이(28px)로 고정이다 — 적기 시작해 버튼이 사라질 때
                               아래 입력칸이 손가락 밑에서 뜨지 않게. */}
                           <div className="min-w-0">
-                            <p className="truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{r.label}</p>
+                            {/* 품목 창고 Badge — 아이템별 폼 행 머리와 같은 정본(§11 pale-amber, '창고'). 판정도 같다(rowIsHub =
+                                이 품목의 창고, hubLocationId 우선). 그룹 머리의 '기본 창고'(영업장 StorageLocation.isHub)와 다른 축이라
+                                둘이 함께 설 수 있다. 없을 때는 이 행이 왜 한 칸뿐인지 화면이 말을 못 했다(2026-10-20 신고 5efc8a12). */}
+                            {/* 줄 높이는 이름 글자의 줄 높이(1.5em)로 묶는다 — 배지(정본 크기)가 0.5px 씩 위아래로 넘쳐도 줄이 자라지 않아
+                                창고 행과 비창고 행의 머리 리듬이 같다(독립 검수 2026-10-20, 19.5 대 20.5px). */}
+                            <div className="flex h-[1.5em] min-w-0 items-center gap-2 text-[0.8125rem]">
+                              <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{r.label}</p>
+                              {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
+                            </div>
                             <div className="flex min-h-7 items-center gap-2">
                               <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
                               {prev != null && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prev.qty * 100) / 100}{stockUnit ?? ''}</strong></span>}
@@ -6362,14 +6374,16 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               상자를 걷었다). '직전'이 아니라 '저장된' 이다 — 입력칸에는 임시저장본이 들어 있을 수 있어서,
                               어느 숫자가 실제로 저장된 값인지 행마다 말해야 한다(운영자 신고 2026-09-14).
                               창고 잔량은 **이 패널에만** 행마다 선다(아이템별 폼은 위 고정 창고 요약이 같은 값을 말해 뺐다) —
-                              품목마다 창고가 달라 한 줄 요약이 성립하지 않는다. 기록이 없으면 0 이 아니라 '모름'이라 숫자를 만들지 않는다. */}
+                              품목마다 창고가 달라 한 줄 요약이 성립하지 않는다. 기록이 없으면 0 이 아니라 '모름'이라 숫자를 만들지 않는다.
+                              창고 잔량은 '창고(경로) 남음' 꼴이다(2026-10-20 신고 5efc8a12) — 경로만 적으면 그 칸이 이 품목의 창고라는
+                              사실이 안 보여 '채운 후' 가 어디서 빠지는지와 창고 행이 왜 한 칸인지가 끊겼다. */}
                           {((prev?.restockedQty != null && prev.restockedQty > 0) || (!rowIsHub && !!hubStock)) && (
-                            <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+                            <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">
                               {prev?.restockedQty != null && prev.restockedQty > 0 && <>저장된 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></>}
                               {prev?.restockedQty != null && prev.restockedQty > 0 && !rowIsHub && hubStock && ' · '}
                               {!rowIsHub && hubStock && (
                                 <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : undefined}>
-                                  {hubStock.pathName} 남음{' '}
+                                  창고({hubStock.pathName}) 남음{' '}
                                   {hubStock.qty == null
                                     ? <strong className="font-semibold">점검 기록 없음</strong>
                                     : <strong className={`font-semibold tabular-nums ${hubOverdrawn ? '' : 'text-[var(--warm-dark)]'}`}>{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
@@ -6412,7 +6426,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               </div>
                             </div>
                             {!hubStale && (
-                              <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">비워 두면 채운 만큼 자동 차감됩니다.</p>
+                              <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">{HUB_ROW_HINT}</p>
                             )}
                             {hubStale && (
                               <div className="flex items-center justify-between gap-2">
@@ -6446,7 +6460,9 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               )}
                               {/* 이 칸에서 다른 곳으로 옮기기 — 정본 RowActionBtn(neutral, §03 코랄 테두리 금지).
                                   허브(창고) 행에는 두지 않는다 — 창고에서 나가는 이동은 도착지 행의 '채운 후' 가 정본이다
-                                  (§27.1 같은 일을 두 입구로 만들지 않는다). 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이
+                                  (같은 일을 두 입구로 만들지 않는다 — 두 곳에 적으면 이중 차감 길이 생긴다. 근거는 domain-inventory
+                                  '패널 안 옮기기' 절이다. 종전 주석의 §27.1 은 저장 방식 규칙이라 근거가 아니었다). 2026-10-20 신고
+                                  5efc8a12 에 창고 행 입구를 검토했고 운영자가 기각했다(B안). 장부가 0(또는 기록 없음)인 칸에서는 옮길 것이
                                   없다 — 눌러도 막다른 모달이라 아예 그리지 않는다.
                                   '채우기 전'을 묻는 동안에도 숨긴다. 고르기 전에 옮기면 완료 핸들러(handleTransferDone)가 그 칸의
                                   미저장 입력을 비워 방금 적은 '채운 후'가 사라지고, 버튼 셋이 한 줄씩 서면 물음의 답처럼 읽힌다(웹디자이너). */}
