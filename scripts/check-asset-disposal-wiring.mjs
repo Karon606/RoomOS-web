@@ -194,7 +194,7 @@ function body(src, header) {
   need('mergeUnassignedGroup 을 찾음', fn.length > 0)
   // 읽는 조회 둘만 본다(뒤쪽 update·deleteMany 의 where 는 id 로 찍으므로 대상이 아니다).
   need('**미배정 조회 where 에 disposedAt: null**',
-    /findMany\(\{\s*where: \{ propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, disposedAt: null(, AND: \[PLACEABLE_WHERE\])? \}/.test(fn),
+    /findMany\(\{\s*where: \{ propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null, isCommonAsset: false, disposedAt: null(, AND: \[PLACEABLE_WHERE\])? \}/.test(fn),
     '빠지면 폐기 행이 합쳐져 사라진다 — 표시 오염이 아니라 데이터 소실이다')
   // 반대 방향이다 — '묶음이 아직 뜻이 있나' 를 세는 쪽에서는 **폐기 행도 세야** 한다.
   // 빼면 남은 것이 폐기뿐일 때 groupId 가 풀려 undoDisposalRow 가 제 짝을 못 찾는다.
@@ -278,7 +278,7 @@ function body(src, header) {
     /onChange=\{e => setMove\(m => m \? \{ \.\.\.m, to: e\.target\.value, replace: '' \} : m\)\}/.test(client),
     '안 비우면 버튼이 이유 한 줄 없이 죽는다')
   need('살아 있는 수량이 0이면 그 이유를 말한다',
-    /max <= 0[\s\S]{0,120}?여기 남아 있는 수량이 없어요\./.test(client),
+    /max <= 0[\s\S]{0,120}?여기 남아 있는 수량이 없습니다\./.test(client),
     '전량 폐기된 카드의 옮기기가 열자마자 죽던 같은 클래스')
   need('전량 폐기 카드의 수치는 --coral(§22 valueDanger)',
     /valueDanger=\{it\.disposedQty > 0 && it\.liveUnits <= 0\}/.test(client))
@@ -332,8 +332,9 @@ function body(src, header) {
     'sorted.length 는 카드 수다 — 같은 자리가 규격 둘로 갈리면 부푼다')
   need('그 자리 수를 화면이 실제로 찍는다', /\{spots\}곳/.test(client),
     '계산만 남기고 찍는 자리를 sorted.length 로 되돌리는 우회')
+  // 보관 위치(2026-10-19)가 있는 미배정은 보관 위치마다 한 자리다. 보관 위치가 없는 미배정은 종전대로 한 자리.
   need('자리 키가 미배정·공용 자재를 따로 센다',
-    /x\.isCommon \? 'common' : 'unassigned'/.test(client),
+    /x\.isCommon \? 'common' : x\.storedLocationId \? `store:\$\{x\.storedLocationId\}` : 'unassigned'/.test(client),
     "placeKeyOf 는 둘 다 '' 로 접는다 — 옮기기 목적지 키라 이 셈에는 못 쓴다")
 
   // 3) 규격 병기는 **무조건**. 조건을 달면 무라벨이 '같은 규격'과 '규격 미기록' 두 뜻을 진다.
@@ -419,7 +420,7 @@ function body(src, header) {
   // 4-G) 칩 수와 곳 수가 다른 이유를 캡션이 말한다. 종전엔 숫자가 틀려도 세면 맞았는데
   //      곳을 자리 수로 바로잡으면서 세면 안 맞게 됐다 — 두 신고가 다 칩을 세서 나온 문장이었다.
   need('캡션이 칩과 곳이 갈리는 이유를 말한다',
-    /같은 자리라도 규격이 다르면 따로 나와요\. 눌러서 그 위치 카드로 이동할 수 있어요/.test(client),
+    /같은 자리라도 규격이 다르면 따로 나옵니다\. 눌러서 그 위치 카드로 이동합니다/.test(client),
     '없으면 `22곳`인데 칩이 22개가 아닌 이유를 화면이 한 글자도 말하지 않는다')
 
   // 5) 설치·폐기 = 이 카드 한 자리. 범위를 적되 **품목 단위로 올리지 않는다**.
@@ -587,9 +588,11 @@ function body(src, header) {
   // 7) 곁가지 — 상세의 자리 이름이 정본 curPlace 하나로 수렴한다.
   need('상세 알약의 자리 이름이 curPlace 다', /const loc = curPlace\(it\)/.test(client),
     '네 갈래를 손으로 다시 짜면 출력이 같아도 한쪽만 고쳐 이름이 갈린다')
+  // 미배정 갈래는 보관 위치로 한 번 더 갈린다(2026-10-19). 낱말은 정본(storagePlace)에서만 온다.
   need('네 갈래 조립이 저장소에 한 벌뿐이다',
-    (client.match(/\? '공용 자재' : '미배정\(여분\)'/g) ?? []).length === 1,
-    'curPlace(:548) 한 자리에서만 조립한다')
+    (client.match(/\? '공용 자재' : it\.storedLocationName \? storedPlaceLabel\(it\.storedLocationName\) : UNASSIGNED_PLACE/g) ?? []).length === 1
+    && !/'미배정\(여분\)'/.test(client.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')),
+    'curPlace 한 자리에서만 조립한다(미배정 낱말은 storagePlace 정본)')
 }
 
 // ── ⓝ 폐기 입구 셋이 한 정본으로 모이는가 (운영자 오더 2026-09-21) ────────────────

@@ -70,6 +70,7 @@ import { roomChipText, roomsLabel } from './allocPlaceLabel'
 // 예정 호실 표기 정본. 방별 분배 묶음 모달의 자리 칸이 비품 수령 대기 카드 메타와 같은 말('519호 배정 예정')을 쓴다.
 // 지출 상세의 예정 줄은 폼 칸과 같은 '배정할 호실' 라벨에 방 이름만 쓴다(웹디자이너 패스 D5, 2차 N7).
 import { plannedRoomsMeta, SEP } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { storedPlaceLabel } from '@/app/(app)/inventory/assets/storagePlace'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -104,6 +105,7 @@ type Expense = {
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
   assignedLocationName: string | null   // 공용부 배정 행의 자리 이름(표기 경로) — getExpenses 가 싣는다. 방별 분배 라벨이 쓴다
+  storedLocationName: string | null     // 미배정 비품의 보관 위치 이름(표기 경로, 2026-10-19). 방별 분배 라벨·묶음 펼침이 '{위치} 보관'으로 쓴다
   // 비품의 배정 예정 호실(FK 없는 text). 받기 전 비품의 자리는 이것뿐이다(inventory/assets/receiptPlacement).
   // 번호는 화면이 rooms 로 찾는다. 지운 방이면 못 찾아 아무것도 안 그린다.
   targetRoomId: string | null
@@ -4227,7 +4229,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.assignedLocationName ?? plannedRoomsMeta([plannedRoomNoOf(r)]) ?? (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정'))))}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.assignedLocationName ?? plannedRoomsMeta([plannedRoomNoOf(r)]) ?? (r.allocationGroupId ? (r.storedLocationName ? storedPlaceLabel(r.storedLocationName) : '미배정') : (r.detail || r.itemLabel || '방 미배정'))))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{fmtWon(r.amount)}</span>

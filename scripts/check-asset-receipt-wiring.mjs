@@ -74,7 +74,9 @@ mustNot(A, a, 'undoAssetReceipt', [
 ])
 // F-1·F-2 미배정 접기·이력 되돌리기는 수령 전 물품 행을 집지 않는다(배정 정본 isPlaceable 의 조회 조건)
 must(A, a, 'mergeUnassignedGroup', [
-  [/roomId: null, assignedLocationId: null, disposedAt: null, AND: \[PLACEABLE_WHERE\] \}/, 'F-1 미배정 접기가 수령 대기 잔여까지 집는다(받은 조각이 수령 대기로 사라진다)'],
+  [/roomId: null, assignedLocationId: null, isCommonAsset: false, disposedAt: null, AND: \[PLACEABLE_WHERE\] \}/, 'F-1 미배정 접기가 수령 대기 잔여까지 집는다(받은 조각이 수령 대기로 사라진다). 공용 자재 행도 접지 않는다(2026-10-19)'],
+  [/const k = u\.storedLocationId \?\? ''/, '보관 위치가 다른 조각을 한 행으로 접는다(한쪽 창고 몫이 다른 창고로 옮겨진다, 2026-10-19)'],
+  [/const keepGroup = others \+ byStore\.size > 1/, '접은 뒤 묶음 잔존 판정이 보관 위치별 남는 행과 접지 않는 행을 함께 세지 않는다'],
   [/const others = await prisma\.expense\.count\(\{\s*where: \{ propertyId, allocationGroupId: groupId, id: \{ notIn: unassigned\.map\(u => u\.id\) \} \},/, 'F-1 묶음 뜻 세기(others)에서 수령 대기 행을 뺐다. groupId 가 풀린다'],
 ])
 must(A, a, 'revertAssignmentLog', [
@@ -189,8 +191,9 @@ must(AC, ac, null, [
   [/if \(choice === null \|\| choice === 'back'\) return/, 'S5 취소가 무변경이 아니다(§27.5)'],
   [/undoAssetReceipt\(undo\)/, 'S5 수령 토스트가 서버 토큰으로 되돌리지 않는다'],
   [/assign = choice === 'confirm'\s*\n/, "R-4 확인창 선택과 배정의 대응이 '배정'(confirm) 하나가 아니다('수령만'도 배정한다)"],
-  [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다'],
-  [/how\?\.assign \? \{ assign: true, expect: how\.expect \} : undefined/, 'N-4 배정 요청에 본 계획이 안 실린다'],
+  [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}, storeId \?\? null\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다(보관 위치도 같이 싣는다)'],
+  [/\.\.\.\(how\?\.assign \? \{ assign: true, expect: how\.expect \} : \{\}\), storedLocationId: storeId \}/, 'N-4 배정 요청에 본 계획이 안 실린다(수령 창의 보관 위치도 함께)'],
+  [/receiptAssignCopy\(plan, it\.itemLabel, unit, storeNameOf\(storeId\)\)/, '보관 위치 축 F2 창 문구가 고른 보관 위치를 말하지 않는다(미배정에 둔다고 거짓말)'],
   [/withAssign \? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE/, 'R-5 수령 적용취소 결과 토스트가 정본 문장(§16 형식)을 안 쓴다'],
   [/`이동을 적용취소했습니다\$\{SEP\}이\\u00a0이력은\\u00a0지워짐`/, "후속 검수 권장 2 이동 적용취소 결과의 구분점이 SEP 가 아니다(접히면 둘째 줄이 '·' 로 시작한다)"],
   [/id="assets-pending"/, 'S6 알림 딥링크가 닿을 수령 대기 섹션 id 가 없다'],

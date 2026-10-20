@@ -105,6 +105,52 @@ const AXES = [
     ],
     mustNot: [],
   },
+  // 비품 보관 위치(2026-10-19 storedLocationId). FK 는 영업장을 모른다. 화면·토큰에서 온 위치 id 는 영업장 위치여야 쓴다.
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'setAssetReceived',
+    must: [[/storageInProperty\(propertyId,\s*storeId\)/, '수령 창 보관 위치를 영업장 위치로 보지 않는다(남의 영업장 위치 FK)']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'addFreeAsset',
+    must: [[/storageInProperty\(propertyId,\s*input\.storedLocationId\)/, '무상 입수 보관 위치를 영업장 위치로 보지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'undoAssetUnreceive',
+    must: [
+      [/durableExpenseWhere\(propertyId,\s*trackedCats\),\s*id:\s*\{\s*in:\s*ids\s*\}/, '토큰의 지출이 이 영업장 비품인지 보지 않는다'],
+      [/updateMany\(\{\s*where:\s*\{\s*id:\s*r\.id,\s*propertyId,/, '수령 대기로 적용취소를 영업장 범위 없이 쓴다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'undoAddFreeAsset',
+    must: [[/deleteMany\(\{\s*where:\s*\{\s*id:\s*undo\.id,\s*propertyId,/, '무상 입수 적용취소가 영업장 범위 없이 지운다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'toggleStorageLocationHub',
+    must: [
+      [/storageLocation\.findFirst\(\{\s*where:\s*\{\s*id,\s*propertyId\s*\}/, '위치를 영업장 범위로 먼저 읽지 않는다'],
+      [/updateMany\(\{\s*where:\s*\{\s*propertyId,\s*isHub:\s*true,\s*NOT:\s*\{\s*id\s*\}\s*\}/, '다른 기본 창고 해제가 영업장 범위가 아니다(남의 영업장 기본 창고를 끈다)'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'restoreStorageHubs',
+    must: [
+      [/storageLocation\.count\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*ids\s*\},\s*propertyId\s*\}/, '되살릴 위치가 이 영업장 것인지 보지 않는다'],
+      [/updateMany\(\{\s*where:\s*\{\s*propertyId,\s*isHub:\s*true,\s*id:\s*\{\s*notIn:\s*ids\s*\}\s*\}/, '기본 창고 해제가 영업장 범위가 아니다'],
+    ],
+    mustNot: [],
+  },
 ]
 
 for (const ax of AXES) {

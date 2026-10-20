@@ -1286,6 +1286,11 @@ model Expense {
   assignedAt           DateTime?          @db.Date
   // 공용 자재 — 페인트·공구처럼 두고두고 공용으로 쓰는 비품. 방/공용부에 배분하지 않음(미배정과 구분: '의도된 공용').
   isCommonAsset        Boolean            @default(false)
+  // 보관 위치 — 배정 안 한 비품(여분)이 지금 어느 창고·선반에 놓여 있나(2026-10-19 운영자 승인, 신고 195e05c8·09ec10aa).
+  // 배정(roomId·assignedLocationId·isCommonAsset = 설치·배치)과 **다른 축**이다. 받은 + 안 놓인(isUnplaced) 행에만 산다.
+  // 배정·공용 자재·수령 대기로 가면 비운다. 수령 전 행은 늘 비어 있다. null = 보관 위치 미기록(칸이 생기기 전 행 포함, 백필 안 함).
+  storedLocationId     String?            @db.Uuid
+  storedLocation       StorageLocation?   @relation("ExpenseStoredLocation", fields: [storedLocationId], references: [id], onDelete: SetNull)
   // 이 지출이 어느 방 작업의 것인가 (도배·장판 등). **여러 지출이 한 작업에 붙는다** —
   // 자재를 여러 날 나눠 사고 시공은 하루다. 그래서 링크가 지출 쪽에 있다
   // (RoomCleaning.expenseId 는 1:1 이라 그 모양이 아니다).
@@ -1802,6 +1807,7 @@ model StorageLocation {
   transferSources     StockCheckLocation[] @relation("StockTransferSource")
   receivedExpenses    Expense[]            @relation("ExpenseReceivedLocation")
   assignedExpenses    Expense[]            @relation("ExpenseAssignedLocation")
+  storedExpenses      Expense[]            @relation("ExpenseStoredLocation")
   stockAdditions      StockAddition[]
   stockDisposals      StockDisposal[]
 

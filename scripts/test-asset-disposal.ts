@@ -155,14 +155,14 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
   const g = (o: Partial<DisposalGateRow> = {}): DisposalGateRow =>
     ({ receivedAt: new Date('2026-09-11'), excludeFromInventory: false, disposedAt: null, qtyValue: 1, qtyUnit: '개', ...o })
   eq('보유 3개에 3개 폐기는 통과', disposalDenial([g(), g(), g()], 3), null)
-  eq('보유 3개에 4개 폐기는 거부', disposalDenial([g(), g(), g()], 4), '지금 있는 수량(3개)보다 많아요.')
-  eq('거부 문구 정본', disposalDenyOver(3, '개'), '지금 있는 수량(3개)보다 많아요.')
-  eq('단위가 다르면 그 단위로 말한다', disposalDenyOver(2.5, 'm'), '지금 있는 수량(2.5m)보다 많아요.')
+  eq('보유 3개에 4개 폐기는 거부', disposalDenial([g(), g(), g()], 4), '지금 있는 수량(3개)보다 많습니다.')
+  eq('거부 문구 정본', disposalDenyOver(3, '개'), '지금 있는 수량(3개)보다 많습니다.')
+  eq('단위가 다르면 그 단위로 말한다', disposalDenyOver(2.5, 'm'), '지금 있는 수량(2.5m)보다 많습니다.')
   eq('전량(null)은 초과가 없다', disposalDenial([g(), g()], null), null)
   eq('0 이하는 거부', disposalDenial([g()], 0), DISPOSAL_DENY_NONPOSITIVE)
   eq('음수도 거부', disposalDenial([g()], -1), DISPOSAL_DENY_NONPOSITIVE)
   // 이미 폐기된 행은 보유량에서 빠진다 — 두 번 버리는 것을 막는다.
-  eq('폐기 행은 보유량에 안 센다', disposalDenial([g(), g({ disposedAt: '2026-09-16' })], 2), '지금 있는 수량(1개)보다 많아요.')
+  eq('폐기 행은 보유량에 안 센다', disposalDenial([g(), g({ disposedAt: '2026-09-16' })], 2), '지금 있는 수량(1개)보다 많습니다.')
   eq('전부 폐기된 묶음은 거부', disposalDenial([g({ disposedAt: '2026-09-16' })], 1), DISPOSAL_DENY_ALL_DISPOSED)
 }
 
@@ -172,7 +172,7 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
     ({ receivedAt: new Date('2026-09-11'), excludeFromInventory: false, disposedAt: null, qtyValue: 1, qtyUnit: '개', ...o })
   eq('수령 전 행이 있으면 거부', disposalDenial([g({ receivedAt: null })], 1), DISPOSAL_DENY_UNRECEIVED)
   eq('수령 전이 섞여도 거부', disposalDenial([g(), g({ receivedAt: null })], 1), DISPOSAL_DENY_UNRECEIVED)
-  eq('거부 문구 전문', DISPOSAL_DENY_UNRECEIVED, '아직 받지 않은 물건이에요. 주문 취소는 수령 대기에서 하세요.')
+  eq('거부 문구 전문', DISPOSAL_DENY_UNRECEIVED, '아직 받지 않은 물건입니다. 주문 취소는 수령 대기에서 하세요.')
   // 서비스·무형(시공비)은 수령 개념이 없다 — 화면의 '수령 대기' 버킷과 같은 축이다.
   eq('서비스는 수령 전이라도 통과', disposalDenial([g({ receivedAt: null, excludeFromInventory: true })], 1), null)
   // 순서 — 전부 폐기된 묶음이 먼저다(수령 여부를 물을 대상 자체가 없다).
@@ -231,12 +231,12 @@ const row = (o: Partial<RawAsset> = {}): RawAsset => ({
   const g = (o: Partial<DisposalGateRow> = {}): DisposalGateRow =>
     ({ receivedAt: new Date('2026-09-11'), excludeFromInventory: false, disposedAt: null, qtyValue: null, qtyUnit: '개', ...o })
   eq('미기록 3행에 3개 폐기는 통과', disposalDenial([g(), g(), g()], 3), null)
-  eq('미기록 3행에 4개 폐기는 거부', disposalDenial([g(), g(), g()], 4), '지금 있는 수량(3개)보다 많아요.')
+  eq('미기록 3행에 4개 폐기는 거부', disposalDenial([g(), g(), g()], 4), '지금 있는 수량(3개)보다 많습니다.')
   // 섞인 카드 — 기록 2 + 미기록 1. 게이트가 세는 수는 3이고 liveUnits 도 3이어야 한다.
   const [mix] = aggregateAssets([row({ qtyValue: 2 }), noQty()])
   eq('섞인 카드의 liveUnits', mix.liveUnits, 3)
   eq('섞인 카드의 게이트 수', disposalDenial([g({ qtyValue: 2 }), g()], 3), null)
-  eq('섞인 카드는 3을 넘으면 거부', disposalDenial([g({ qtyValue: 2 }), g()], 3.5), '지금 있는 수량(3개)보다 많아요.')
+  eq('섞인 카드는 3을 넘으면 거부', disposalDenial([g({ qtyValue: 2 }), g()], 3.5), '지금 있는 수량(3개)보다 많습니다.')
   // 폐기 쪽도 같은 셈법 — 미기록 행 하나를 버리면 1로 센다(0 이면 버린 것이 안 보인다).
   const [d] = aggregateAssets([noQty(), noQty({ disposedAt: '2026-09-16', disposalReason: '분실' })])
   eq('미기록 폐기도 1로 센다', d.disposedQty, 1)

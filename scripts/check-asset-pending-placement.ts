@@ -10,10 +10,15 @@
 //             isUnplaced 와 같은 셋, 2차 검수 R3).
 //   축 2(오류) 비품 물품이 아닌 행(소모품·서비스·배송비·품명 없음)에 targetRoomId 가 있다. 저장 규칙은 비운다.
 //   축 3(경고) targetRoomId 가 그 영업장에 없는 방을 가리킨다(방을 지웠다). 화면은 예정 없음으로 보고 묻지 않는다.
+//   축 4(오류) 보관 위치(storedLocationId, 2026-10-19)가 받은 + 안 놓인 행 밖에 있다(수령 전·방·공용부·공용 자재). 보관 위치는
+//             배정과 다른 축이고 받은 + 안 놓인 비품에만 산다(판정 정본 app/(app)/inventory/assets/storagePlace canHoldStorage).
+//   축 5(오류) 보관 위치가 다른 영업장 위치를 가리킨다(FK 는 영업장을 모른다).
+//   칸이 아직 운영 DB 에 없으면(마이그레이션 prisma/migrate_expense_stored_location.sql 적용 전) 축 4·5 는 건너뛰고 그 사실을 말한다.
+//   이 그물은 칸을 직접 SQL 로 읽는다(새 Prisma 클라이언트로 읽으면 칸이 없을 때 전체 조회가 죽어 축 1~3 까지 못 본다).
 //
 // 비품 물품의 축은 비품 화면 모집단(durableExpenseWhere)의 물품 갈래와 같다. 추적 카테고리는 영업장 설정 정본
 // (parseInventoryCategories)으로 읽는다. 파싱 규칙을 베끼지 않는다.
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { parseInventoryCategories } from '../app/(app)/inventory/categoryConfig'
 
@@ -22,6 +27,8 @@ async function main() {
   const errors: string[] = []
   const warns: string[] = []
   const props = await prisma.property.findMany({ select: { id: true, name: true, inventoryCategories: true } })
+  const storedCol = (await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint AS n FROM information_schema.columns WHERE table_name = 'expenses' AND column_name = 'storedLocationId'`))[0]?.n ?? BigInt(0)
+  if (!storedCol) warns.push('보관 위치 칸(expenses.storedLocationId)이 아직 없다(마이그레이션 적용 전). 축 4·5 를 건너뛴다')
   for (const p of props) {
     const tracked = parseInventoryCategories(p.inventoryCategories ?? null).map(c => c.cat)
     const goods = { propertyId: p.id, itemLabel: { not: null }, isShipping: false, excludeFromInventory: false, category: { notIn: tracked } }
@@ -48,6 +55,19 @@ async function main() {
       const alive = new Set((await prisma.room.findMany({ where: { id: { in: ids }, propertyId: p.id }, select: { id: true } })).map(r => r.id))
       const dead = ids.filter(id => !alive.has(id))
       if (dead.length) warns.push(`[${p.name}] 배정 예정 호실이 없는 방을 가리키는 지출 ${targets.filter(t => dead.includes(t.targetRoomId!)).length}건(방 ${dead.length}곳). 받을 때 묻지 않는다`)
+    }
+    if (storedCol) {
+      const badStore = await prisma.$queryRaw<{ id: string; itemLabel: string | null; why: string }[]>(Prisma.sql`
+        SELECT e.id, e."itemLabel",
+          CASE WHEN e."receivedAt" IS NULL THEN '수령 전' WHEN e."roomId" IS NOT NULL THEN '방 배정' WHEN e."assignedLocationId" IS NOT NULL THEN '공용부 배정' ELSE '공용 자재' END AS why
+        FROM expenses e
+        WHERE e."propertyId" = ${p.id}::uuid AND e."storedLocationId" IS NOT NULL
+          AND (e."receivedAt" IS NULL OR e."roomId" IS NOT NULL OR e."assignedLocationId" IS NOT NULL OR e."isCommonAsset" = true)`)
+      for (const e of badStore) errors.push(`[${p.name}] '${e.itemLabel ?? e.id.slice(0, 8)}'(id ${e.id.slice(0, 8)}) 이 ${e.why}인데 보관 위치가 있다. 보관 위치는 받은 + 안 놓인 행에만 산다`)
+      const foreign = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT e.id FROM expenses e JOIN storage_locations l ON l.id = e."storedLocationId"
+        WHERE e."propertyId" = ${p.id}::uuid AND l."propertyId" <> e."propertyId"`)
+      for (const e of foreign) errors.push(`[${p.name}] 지출 ${e.id.slice(0, 8)} 의 보관 위치가 다른 영업장 위치다`)
     }
   }
   await prisma.$disconnect()

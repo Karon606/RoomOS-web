@@ -5,6 +5,7 @@
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { hasFinalConsonant, withParticle } from '@/lib/koParticle'
 import { fmtQty, isUnplaced, type SpecKey } from './aggregate'
+import { storedPlaceLabel } from './storagePlace'
 import type { Prisma } from '@prisma/client'
 
 // '놓인 행'의 판정 정본(방·공용부·공용 자재 중 하나라도 있으면 놓인 것). 화면도 이 이름으로 부른다(2차 검수 R3).
@@ -213,17 +214,22 @@ export const restPendingDone = (n: number, unit: string) => `나머지 ${withPar
 
 export type ReceiptAssignCopy = { title: string; message: string; confirmLabel: string; altLabel: string }
 
+// 배정 안 한 몫이 갈 곳. 수령 창에서 보관 위치를 골랐으면 그 위치(표기 경로), 아니면 종전 '미배정'(2026-10-19 보관 위치 축).
+// 배정한 몫에는 보관 위치가 안 선다(배정과 보관은 다른 축, ./storagePlace).
+const restPlace = (storeName?: string | null) => storeName || '미배정'
+
 /**
  * F2 창 문구(UX 패널 보고 F2 대사 그대로). 버튼은 [취소][수령만][{방}에 배정]이고 단계는 normal(계획을 확인하는 물음).
  * 호실은 '에'를 써서 조사가 바뀌지 않게 하고, 품명·수량 뒤 조사는 정본(koParticle·roomNo)으로 붙인다.
+ * storeName 은 수령 창에서 고른 보관 위치(표기 경로)다. 배정 안 한 몫이 거기 놓인다고 말한다. 없으면 종전 '미배정에 둡니다'.
  */
-export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string): ReceiptAssignCopy | null {
+export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string, storeName?: string | null): ReceiptAssignCopy | null {
   const alt = '수령만'
   if (plan.kind === 'single') {
     const room = fmtRoomNo(plan.room.roomNo, '')
     if (!plan.partial) return {
       title: `${quoted(label)} ${room}에 배정할까요?`,
-      message: `구매할 때 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 미배정에\u00a0둡니다.`,
+      message: `구매할 때 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 수령만 하면 ${restPlace(storeName)}에\u00a0둡니다.`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
     return {
@@ -236,7 +242,7 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const parts = plan.rooms.map(r => `${fmtRoomNo(r.roomNo, '')} ${qtyText(r.units, unit)}`)
     const last = parts.length - 1
     parts[last] = withParticle(parts[last], '으로/로')
-    const rest = plan.rest > EPS ? ` 나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에\u00a0둡니다.` : ''
+    const rest = plan.rest > EPS ? ` 나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} ${restPlace(storeName)}에\u00a0둡니다.` : ''
     return {
       title: `'${label}' ${withParticle(qtyText(plan.units, unit), '을/를')} 적어 둔 방에 배정할까요?`,
       // 몫 사이 구분점은 SEP(세 방이면 '· 521호 1개로'가 줄머리에 섰다, 웹디자이너 가운뎃점 확인 d).
@@ -248,7 +254,7 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
     const room = fmtRoomNo(plan.room.roomNo, '')
     return {
       title: `'${label}' ${qtyText(plan.total, unit)} 중 ${withParticle(qtyText(plan.targeted, unit), '을/를')} ${room}에 배정할까요?`,
-      message: `구매할 때 ${qtyText(plan.targeted, unit)}만 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에\u00a0둡니다.`,
+      message: `구매할 때 ${qtyText(plan.targeted, unit)}만 ${roomNoWithRo(plan.room.roomNo, '')} 적었습니다. 나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} ${restPlace(storeName)}에\u00a0둡니다.`,
       confirmLabel: `${room}에 배정`, altLabel: alt,
     }
   }
@@ -258,34 +264,41 @@ export function receiptAssignCopy(plan: ReceiptPlan, label: string, unit: string
 /**
  * 받은 뒤 토스트(UX 패널 F2 토스트). choice: 'assign' = 배정을 골랐다, 'receive' = 수령만.
  * 적용취소 라벨은 배정을 함께 했으면 '적용취소', 수령만이면 형제(재고 수령 확인)와 같은 '수령 취소'.
- * 묻지 않은 수령(none)은 null. 화면이 종전 문구('수령 완료'·부분 수령 문구)를 그대로 쓴다.
+ * 묻지 않은 수령(none)은 null. 화면이 plainReceiveToast·partialReceiveToast 를 쓴다.
  * 머리 구분점은 SEP, ' 배정'은 앞 호실과 한 덩이다(끝줄에 '배정'만 남지 않게, 웹디자이너 가운뎃점 확인 b).
+ * storeName 은 수령 창에서 고른 보관 위치다. 배정 안 한 몫의 자리를 '미배정' 대신 '{위치} 보관'으로 말한다.
  */
-export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', unit: string): { text: string; detail?: string; actionLabel: string } | null {
+export function receiptToast(plan: ReceiptPlan, choice: 'assign' | 'receive', unit: string, storeName?: string | null): { text: string; detail?: string; actionLabel: string } | null {
   if (plan.kind === 'none') return null
+  const restHead = storeName ? storedPlaceLabel(storeName) : '미배정'
   if (choice === 'assign' && planAsks(plan)) {
     if (plan.kind === 'single') return plan.partial
       ? { text: `${qtyText(plan.units, unit)} 수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, detail: restPendingDone(r3(plan.total - plan.units), unit), actionLabel: '적용취소' }
       : { text: `수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, actionLabel: '적용취소' }
     if (plan.kind === 'multi') return {
       text: `수령 완료${SEP}${plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join(DOT)}\u00a0배정`,
-      ...(plan.rest > EPS ? { detail: `나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} 미배정에 두었습니다.` } : {}),
+      ...(plan.rest > EPS ? { detail: `나머지 ${withParticle(qtyText(plan.rest, unit), '은/는')} ${restPlace(storeName)}에 두었습니다.` } : {}),
       actionLabel: '적용취소',
     }
-    return { text: `수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, detail: `나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} 미배정에 두었습니다.`, actionLabel: '적용취소' }
+    return { text: `수령 완료${SEP}${fmtRoomNo(plan.room.roomNo, '')}\u00a0배정`, detail: `나머지 ${withParticle(qtyText(r3(plan.total - plan.targeted), unit), '은/는')} ${restPlace(storeName)}에 두었습니다.`, actionLabel: '적용취소' }
   }
   if (plan.kind === 'ambiguous') return {
-    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}미배정`,
-    detail: '어느 방 몫인지 정할 수 없어 미배정에 두었습니다. 미배정 카드에서 배정해\u00a0주세요.',
+    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}${restHead}`,
+    detail: `어느 방 몫인지 정할 수 없어 ${restPlace(storeName)}에 두었습니다. 미배정 카드에서 배정해\u00a0주세요.`,
     actionLabel: '수령 취소',
   }
-  // 수령만. 미배정에 뒀다고 말한다.
+  // 수령만. 배정 안 한 몫의 자리(보관 위치 또는 미배정)를 말한다.
   if (plan.kind === 'single' && plan.partial) return {
-    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}미배정`,
+    text: `${qtyText(plan.units, unit)} 수령 완료${SEP}${restHead}`,
     detail: restPendingDone(r3(plan.total - plan.units), unit),
     actionLabel: '수령 취소',
   }
-  return { text: `수령 완료${SEP}미배정`, actionLabel: '수령 취소' }
+  return { text: `수령 완료${SEP}${restHead}`, actionLabel: '수령 취소' }
+}
+
+/** 묻지 않은 전량 수령 토스트. 보관 위치를 골랐으면 '수령 완료 · 4층 415호 창고 보관', 아니면 종전 '수령 완료'. */
+export function plainReceiveToast(storeName?: string | null): string {
+  return storeName ? `수령 완료${SEP}${storedPlaceLabel(storeName)}` : '수령 완료'
 }
 
 // 적용취소가 막히는 때. 받은 뒤 그 행이 옮겨지거나 폐기·분할·수정됐다. 되돌리면 그 뒤 일이 사라진다.
@@ -308,9 +321,9 @@ export const ASSET_RECEIPT_UNDO_INVALID = '적용취소 정보가 유효하지 �
 export const ASSET_RECEIPT_ASSIGN_UNDONE = `수령과 배정을 적용취소했습니다${SEP}수령\u00a0대기로\u00a0복귀`
 export const ASSET_RECEIPT_UNDONE = '수령을 취소하고 수령 대기로 되돌렸습니다'
 
-/** 묻지 않은 부분 수령 토스트(비품 화면 형제 문구, D6). 받은 수량과 나머지. */
-export function partialReceiveToast(received: number, rest: number, unit: string): { text: string; detail: string } {
-  return { text: `${qtyText(received, unit)} 수령 완료`, detail: restPendingDone(rest, unit) }
+/** 묻지 않은 부분 수령 토스트(비품 화면 형제 문구, D6). 받은 수량과 나머지. 보관 위치를 골랐으면 머리에 그 자리를 잇는다. */
+export function partialReceiveToast(received: number, rest: number, unit: string, storeName?: string | null): { text: string; detail: string } {
+  return { text: `${qtyText(received, unit)} 수령 완료${storeName ? `${SEP}${storedPlaceLabel(storeName)}` : ''}`, detail: restPendingDone(rest, unit) }
 }
 
 // ── 수령 대기 상세·선택 알약의 자리 캡션(D8·D9, §22 ② 숨긴 동작 자리에 상태를 말하는 캡션) ─────────────
@@ -337,11 +350,12 @@ export type AssetReceiptUndo = {
   v: 1
   at: string   // 이번 수령 시각(ISO). 받은 행의 receivedAt 이 이 값 그대로일 때만 되돌린다
   // 통째로 받은 행. assigned 면 자리 넷(roomId·공용부·공용 표식·배정일)도 이번에 바꾼 것이다.
-  received: { id: string; assigned: boolean; prevAssignedAt: string | null; now: { roomId: string | null; isCommonAsset: boolean; itemLabel: string | null; qtyValue: number | null; amount: number } }[]
+  // now.storedLocationId 는 이번 수령이 둔 보관 위치(배정한 행은 늘 null). 되돌리면 비운다(수령 전 행은 늘 비어 있다).
+  received: { id: string; assigned: boolean; prevAssignedAt: string | null; now: { roomId: string | null; isCommonAsset: boolean; itemLabel: string | null; qtyValue: number | null; amount: number; storedLocationId: string | null } }[]
   // 부분 도착으로 쪼갠 원행(지금은 수령 대기 잔여). 원래 묶음 id·세부만 싣는다(수량·금액은 서버가 다시 센다).
   split: { id: string; prevGroupId: string | null; prevDetail: string | null; now: { qtyValue: number; amount: number; groupId: string; itemLabel: string | null } }[]
-  // 분할로 생긴 수령 조각. fromId 는 그 원행.
-  created: { id: string; fromId: string; roomId: string | null; isCommonAsset: boolean; qtyValue: number; amount: number }[]
+  // 분할로 생긴 수령 조각. fromId 는 그 원행. storedLocationId 는 그 조각이 받은 보관 위치(배정 조각은 null).
+  created: { id: string; fromId: string; roomId: string | null; isCommonAsset: boolean; qtyValue: number; amount: number; storedLocationId: string | null }[]
   logIds: string[]
   sig?: string
 }
@@ -354,9 +368,9 @@ export function canonicalAssetReceiptUndo(u: AssetReceiptUndo): string {
   const ts = (v: string | null) => (v == null ? null : new Date(v).toISOString())
   return JSON.stringify([
     u.v, ts(u.at),
-    u.received.map(r => [r.id, r.assigned, ts(r.prevAssignedAt), r.now.roomId, r.now.isCommonAsset, r.now.itemLabel, r.now.qtyValue, r.now.amount]),
+    u.received.map(r => [r.id, r.assigned, ts(r.prevAssignedAt), r.now.roomId, r.now.isCommonAsset, r.now.itemLabel, r.now.qtyValue, r.now.amount, r.now.storedLocationId]),
     u.split.map(s => [s.id, s.prevGroupId, s.prevDetail, s.now.qtyValue, s.now.amount, s.now.groupId, s.now.itemLabel]),
-    u.created.map(c => [c.id, c.fromId, c.roomId, c.isCommonAsset, c.qtyValue, c.amount]),
+    u.created.map(c => [c.id, c.fromId, c.roomId, c.isCommonAsset, c.qtyValue, c.amount, c.storedLocationId]),
     u.logIds,
   ])
 }
@@ -376,9 +390,9 @@ export function parseAssetReceiptUndo(x: unknown): AssetReceiptUndo | null {
   for (const r of u.received) {
     if (!r || !str(r.id) || typeof r.assigned !== 'boolean' || !(r.prevAssignedAt === null || isTs(r.prevAssignedAt))) return null
     const n = r.now
-    if (!n || !strOrNull(n.roomId) || typeof n.isCommonAsset !== 'boolean' || !strOrNull(n.itemLabel) || !numOrNull(n.qtyValue) || !num(n.amount)) return null
-    // 배정한 행은 방에 놓였고 공용 표식이 꺼져 있어야 한다(이번 쓰기가 만든 모양).
-    if (r.assigned && (!n.roomId || n.isCommonAsset)) return null
+    if (!n || !strOrNull(n.roomId) || typeof n.isCommonAsset !== 'boolean' || !strOrNull(n.itemLabel) || !numOrNull(n.qtyValue) || !num(n.amount) || !strOrNull(n.storedLocationId)) return null
+    // 배정한 행은 방에 놓였고 공용 표식이 꺼져 있어야 한다(이번 쓰기가 만든 모양). 놓인 행에는 보관 위치가 없다.
+    if (r.assigned && (!n.roomId || n.isCommonAsset || n.storedLocationId)) return null
   }
   const splitIds = new Set<string>()
   for (const s of u.split) {
@@ -390,10 +404,49 @@ export function parseAssetReceiptUndo(x: unknown): AssetReceiptUndo | null {
     splitIds.add(s.id)
   }
   for (const c of u.created) {
-    if (!c || !str(c.id) || !str(c.fromId) || !splitIds.has(c.fromId) || !strOrNull(c.roomId) || typeof c.isCommonAsset !== 'boolean' || !num(c.qtyValue) || !num(c.amount)) return null
+    if (!c || !str(c.id) || !str(c.fromId) || !splitIds.has(c.fromId) || !strOrNull(c.roomId) || typeof c.isCommonAsset !== 'boolean' || !num(c.qtyValue) || !num(c.amount) || !strOrNull(c.storedLocationId)) return null
+    if (c.roomId && c.storedLocationId) return null   // 방에 놓인 조각에는 보관 위치가 없다
   }
   if (!u.logIds.every(str)) return null
   const ids = [...u.received.map(r => r.id), ...u.split.map(s => s.id), ...u.created.map(c => c.id)]
   if (new Set(ids).size !== ids.length) return null
   return u as AssetReceiptUndo
+}
+
+// ── '수령 대기로' 적용취소 토큰(2026-10-19 보관 위치 축) ─────────────────────────────
+// 수령 대기로 돌리면 수령 시각과 보관 위치를 함께 지운다(수령 전 행은 보관 위치가 늘 비어 있다). 지운 두 칸을 되돌리는 토큰이다.
+// 서명 정본은 위 수령 토큰과 같고 용도만 다르다('asset-unreceive'). 되돌리는 칸은 이 둘뿐이고 행마다 CAS 를 건다(서버).
+export type AssetUnreceiveUndo = { v: 1; rows: { id: string; receivedAt: string; storedLocationId: string | null }[]; sig?: string }
+export const ASSET_UNRECEIVE_UNDO_DOMAIN = 'asset-unreceive'
+export const ASSET_UNRECEIVE_UNDO_STALE = '수령 대기로 돌린 뒤 이 비품을 다시 받았거나 바꿔서 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
+export const ASSET_UNRECEIVE_UNDONE = '수령 대기 변경을 적용취소했습니다'
+export function canonicalAssetUnreceiveUndo(u: AssetUnreceiveUndo): string {
+  return JSON.stringify([u.v, u.rows.map(r => [r.id, new Date(r.receivedAt).toISOString(), r.storedLocationId])])
+}
+export function parseAssetUnreceiveUndo(x: unknown): AssetUnreceiveUndo | null {
+  if (!x || typeof x !== 'object') return null
+  const u = x as Partial<AssetUnreceiveUndo>
+  if (u.v !== 1 || !Array.isArray(u.rows) || u.rows.length === 0 || u.rows.length > ASSET_RECEIPT_UNDO_MAX_ROWS) return null
+  if (u.sig !== undefined && typeof u.sig !== 'string') return null
+  for (const r of u.rows) {
+    if (!r || typeof r.id !== 'string' || typeof r.receivedAt !== 'string' || Number.isNaN(new Date(r.receivedAt).getTime())) return null
+    if (!(r.storedLocationId === null || typeof r.storedLocationId === 'string')) return null
+  }
+  if (new Set(u.rows.map(r => r.id)).size !== u.rows.length) return null
+  return u as AssetUnreceiveUndo
+}
+
+// ── 무상 입수 적용취소 토큰 ─────────────────────────────────────────────────────────
+// 무상 입수는 받은 상태로 보관 위치와 함께 생긴다. 적용취소는 만든 행 하나를 지운다(용도 'asset-free-add').
+export type AssetFreeUndo = { v: 1; id: string; sig?: string }
+export const ASSET_FREE_UNDO_DOMAIN = 'asset-free-add'
+export const ASSET_FREE_UNDO_STALE = '등록한 뒤 이 비품을 옮겼거나 바꿔서 적용취소할 수 없습니다. 비품 화면에서 직접 고쳐 주세요.'
+export const ASSET_FREE_UNDONE = '무상 입수를 적용취소했습니다'
+export const canonicalAssetFreeUndo = (u: AssetFreeUndo) => JSON.stringify([u.v, u.id])
+export function parseAssetFreeUndo(x: unknown): AssetFreeUndo | null {
+  if (!x || typeof x !== 'object') return null
+  const u = x as Partial<AssetFreeUndo>
+  if (u.v !== 1 || typeof u.id !== 'string' || !u.id) return null
+  if (u.sig !== undefined && typeof u.sig !== 'string') return null
+  return u as AssetFreeUndo
 }

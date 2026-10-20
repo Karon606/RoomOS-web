@@ -75,6 +75,7 @@ import {
   moveStorageLocation, placeStorageLocation, restoreStorageLocation, type LocationMoveUndo,
   deleteStorageLocation,
   toggleStorageLocationHub,
+  restoreStorageHubs,
   setItemHub,
   setItemLocations,
   reopenItemLocation,
@@ -7342,11 +7343,15 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     if (!res.impact) { setError(res.error); return }
     // 건수는 문장이 아니라 §14 영향 목록 박스로 센다 — 숫자가 문장에 섞이면 몇 건이 걸린
     // 삭제인지 한눈에 안 들어온다. 박스는 danger 에서만 서므로 level 은 danger 그대로다.
-    const { checkRows, linkedItems, addRows, dispRows } = res.impact
+    // 비품 두 줄(2026-10-19). 공용부에 배정한 비품은 지우면 미배정으로 내려가고, 여기 보관 중인 비품은 보관 위치가 비는데
+    // 종전에는 세지 않아 경고 없이 바뀌었다. 건수는 서버 실데이터(§14)이고 지출 행 수다.
+    const { checkRows, linkedItems, addRows, dispRows, assignedAssets, storedAssets } = res.impact
     const impact = [
       checkRows > 0 ? { label: '함께 지워지는 위치별 점검 기록', count: checkRows } : null,
       linkedItems > 0 ? { label: '풀리는 품목 위치 연결', count: linkedItems } : null,
       addRows + dispRows > 0 ? { label: '위치 표시가 사라지는 입수·폐기 기록', count: addRows + dispRows } : null,
+      assignedAssets > 0 ? { label: '미배정으로 바뀌는 공용부 비품 구매 기록', count: assignedAssets } : null,
+      storedAssets > 0 ? { label: '보관 위치가 지워지는 비품 구매 기록', count: storedAssets } : null,
     ].filter((x): x is { label: string; count: number } => x != null)
     const go = await confirmDialog({
       title: `'${name}' 위치에 기록이 있습니다`,
@@ -7559,9 +7564,11 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 // 이름 뒤에 조사를 손으로 붙이면 받침에 따라 '창고가/창고이' 가 갈린다 — 이름은
                 // 따옴표 안에 두고 조사는 뒤따르는 명사가 받는다.
                 closeMenu()
+                // 기본 창고는 한 곳이다(서버가 보장한다, 2026-10-19). 다른 기본 창고가 있으면 그것이 해제된다는 것을 같이 말한다.
+                const otherHubs = locs.filter(n => n.isHub && n.id !== menuNode.id)
                 if (!menuNode.isHub && !(await confirmDialog({
                   title: `'${menuNode.pathName}' 위치를 기본 창고로 지정할까요?`,
-                  message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 채울 때도 여기서 뺍니다.\n같은 메뉴를 다시 눌러 해제할 수 있습니다.',
+                  message: `품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 채울 때도 여기서 뺍니다.${otherHubs.length ? `\n지금 기본 창고인 ${otherHubs.map(n => `'${n.pathName}'`).join('·')} 위치는 해제됩니다.` : ''}\n같은 메뉴를 다시 눌러 해제할 수 있습니다.`,
                   level: 'caution', confirmLabel: '기본 창고로',
                 }))) return
                 setPending(true)
@@ -7569,8 +7576,10 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                 // 적용취소까지 달려 나간다.
                 const res = await toggleStorageLocationHub(menuNode.id, !menuNode.isHub)
                 if (!res.ok) { setPending(false); pushToast('error', res.error); return }
+                // 적용취소는 바꾸기 전 기본 창고 집합을 그대로 되살린다(해제된 옛 기본 창고까지).
+                const prevHubIds = res.prevHubIds
                 pushToast('success', menuNode.isHub ? '기본 창고 해제됨' : `'${menuNode.pathName}' 위치가 기본 창고가 되었습니다`, {
-                  action: { label: '적용취소', run: () => { void toggleStorageLocationHub(menuNode.id, menuNode.isHub).then(r => { if (!r.ok) { pushToast('error', r.error); return } reload(); onChanged?.(); pushToast('info', '기본 창고 변경을 적용취소했습니다') }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                  action: { label: '적용취소', run: () => { void restoreStorageHubs(prevHubIds).then(r => { if (!r.ok) { pushToast('error', r.error); return } reload(); onChanged?.(); pushToast('info', '기본 창고 변경을 적용취소했습니다') }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
                 })
                 reload()
                 setPending(false)

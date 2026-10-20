@@ -174,7 +174,7 @@ eq('N-4 계획 없이 배정 요청은 다르다', planExpectMismatch(rowsN4, un
 eq('N-4 예정 호실이 바뀌면 다르다', planExpectMismatch([row('a', 1, '520'), row('b', 1, null)], planExpectOf(rowsN4)), true)
 eq('N-4 행이 늘면 다르다', planExpectMismatch([...rowsN4, row('c', 1, '519')], planExpectOf(rowsN4)), true)
 // N-1 토큰 모양. 이 동작이 만들 수 없는 값은 받지 않는다
-const tok: AssetReceiptUndo = { v: 1, at: '2026-10-15T00:00:00.000Z', received: [{ id: 'r1', assigned: true, prevAssignedAt: null, now: { roomId: 'R519', isCommonAsset: false, itemLabel: '의자', qtyValue: 1, amount: 100 } }], split: [{ id: 's1', prevGroupId: null, prevDetail: '[의자] x 4개', now: { qtyValue: 2, amount: 50, groupId: 'g1', itemLabel: '의자' } }], created: [{ id: 'c1', fromId: 's1', roomId: 'R519', isCommonAsset: false, qtyValue: 2, amount: 50 }], logIds: ['l1'] }
+const tok: AssetReceiptUndo = { v: 1, at: '2026-10-15T00:00:00.000Z', received: [{ id: 'r1', assigned: true, prevAssignedAt: null, now: { roomId: 'R519', isCommonAsset: false, itemLabel: '의자', qtyValue: 1, amount: 100, storedLocationId: null } }], split: [{ id: 's1', prevGroupId: null, prevDetail: '[의자] x 4개', now: { qtyValue: 2, amount: 50, groupId: 'g1', itemLabel: '의자' } }], created: [{ id: 'c1', fromId: 's1', roomId: 'R519', isCommonAsset: false, qtyValue: 2, amount: 50, storedLocationId: null }], logIds: ['l1'] }
 eq('N-1 정상 토큰 통과', !!parseAssetReceiptUndo(JSON.parse(JSON.stringify(tok))), true)
 eq('N-1 옛 모양(rows·prev 금액) 거부', parseAssetReceiptUndo({ at: tok.at, rows: [{ id: 'x', prev: { amount: 1 } }], created: [], logIds: [] }), null)
 eq('N-1 묶음 id 를 다른 값으로 거부', parseAssetReceiptUndo({ ...tok, split: [{ ...tok.split[0], prevGroupId: 'other' }] }), null)

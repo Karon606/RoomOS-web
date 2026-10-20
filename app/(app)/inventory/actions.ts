@@ -3240,17 +3240,46 @@ export async function setStorageHub(id: string): Promise<{ ok: true } | { ok: fa
   }
 }
 
-export async function toggleStorageLocationHub(id: string, isHub: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+// 기본 창고 지정·해제(위치 관리 메뉴). **지정은 한 영업장 하나를 보장한다**(2026-10-19 보관 위치 축 봉합). 종전에는 이 위치만
+// 켜서 기본 창고가 여럿이 될 수 있었고, 그러면 비품 수령·무상 입수가 미리 고를 보관 위치가 모호해졌다(storagePlace defaultStorageId
+// 는 여럿이면 고르지 않는다). 지정하면 다른 기본 창고는 해제한다. prevHubIds 는 바꾸기 전 기본 창고 집합이고 적용취소가
+// restoreStorageHubs 로 그 집합을 그대로 되살린다(해제된 옛 기본 창고까지).
+export async function toggleStorageLocationHub(id: string, isHub: boolean): Promise<{ ok: true; prevHubIds: string[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
     if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
-    await prisma.storageLocation.update({ where: { id }, data: { isHub } })
-    revalidatePath('/inventory')
-    return { ok: true }
+    const prevHubIds = (await prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } })).map(l => l.id)
+    await prisma.$transaction([
+      ...(isHub ? [prisma.storageLocation.updateMany({ where: { propertyId, isHub: true, NOT: { id } }, data: { isHub: false } })] : []),
+      prisma.storageLocation.update({ where: { id }, data: { isHub } }),
+    ])
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return { ok: true, prevHubIds }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 기본 창고 집합 되살리기 — toggleStorageLocationHub 의 적용취소. 이 영업장 위치만 받고, 받은 집합만 기본 창고로 둔다.
+export async function restoreStorageHubs(hubIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const ids = [...new Set(hubIds)]
+    if (ids.length && (await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId } })) !== ids.length) {
+      return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    }
+    await prisma.$transaction([
+      prisma.storageLocation.updateMany({ where: { propertyId, isHub: true, id: { notIn: ids } }, data: { isHub: false } }),
+      ...(ids.length ? [prisma.storageLocation.updateMany({ where: { propertyId, id: { in: ids } }, data: { isHub: true } })] : []),
+    ])
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -3322,7 +3351,9 @@ export async function updateStorageLocation(id: string, name: string): Promise<
 //   총량(StockCheck.remainingQty)은 저장값이라 당장은 안 변하지만 다음 위치별 점검이
 //   살아남은 내역의 합으로 총량을 재계산하면서 그때 수량이 깎인다(지연 발화).
 //   일상적 정리는 삭제가 아니라 품목별 '숨김'을 쓴다.
-export type LocationDeleteImpact = { checkRows: number; linkedItems: number; addRows: number; dispRows: number }
+// assignedAssets = 이 공용부에 배정한 비품 행(지우면 FK 가 비워 미배정으로 내려간다), storedAssets = 이 위치에 보관 중인 비품 행
+// (지우면 보관 위치 미정이 된다). 둘 다 종전에는 세지 않아 경고 없이 바뀌었다(2026-10-19 보관 위치 축).
+export type LocationDeleteImpact = { checkRows: number; linkedItems: number; addRows: number; dispRows: number; assignedAssets: number; storedAssets: number }
 export async function deleteStorageLocation(id: string, force = false): Promise<
   { ok: true } | { ok: false; error: string; impact?: LocationDeleteImpact }
 > {
@@ -3340,15 +3371,17 @@ export async function deleteStorageLocation(id: string, force = false): Promise<
       const locPaths = await loadLocationPaths(propertyId)
       return { ok: false, error: `'${locPaths.pathName(id) ?? loc.name}' 아래에 위치 ${childCount}개가 있습니다. 먼저 옮기거나 삭제하세요.` }
     }
-    const [checkRows, linkedItems, addRows, dispRows] = await Promise.all([
+    const [checkRows, linkedItems, addRows, dispRows, assignedAssets, storedAssets] = await Promise.all([
       prisma.stockCheckLocation.count({ where: { storageLocationId: id } }),
       prisma.trackedItemLocation.count({ where: { storageLocationId: id } }),
       prisma.stockAddition.count({ where: { storageLocationId: id } }),
       prisma.stockDisposal.count({ where: { storageLocationId: id } }),
+      prisma.expense.count({ where: { propertyId, assignedLocationId: id } }),
+      prisma.expense.count({ where: { propertyId, storedLocationId: id } }),
     ])
-    const hasData = checkRows + linkedItems + addRows + dispRows > 0
+    const hasData = checkRows + linkedItems + addRows + dispRows + assignedAssets + storedAssets > 0
     if (hasData && !force) {
-      return { ok: false, error: '이 위치에는 기록이 있습니다.', impact: { checkRows, linkedItems, addRows, dispRows } }
+      return { ok: false, error: '이 위치에는 기록이 있습니다.', impact: { checkRows, linkedItems, addRows, dispRows, assignedAssets, storedAssets } }
     }
     // 삭제 **직후 헤더를 재계산한다**(C페이즈 조사 2026-08-03).
     //

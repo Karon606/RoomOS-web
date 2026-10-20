@@ -47,12 +47,12 @@ export type DisposalGateRow = {
 }
 
 // 수령 전 거부 — 판정 축은 화면의 '수령 대기' 버킷과 같다(서비스·무형은 수령 개념이 없다).
-export const DISPOSAL_DENY_UNRECEIVED = '아직 받지 않은 물건이에요. 주문 취소는 수령 대기에서 하세요.'
+export const DISPOSAL_DENY_UNRECEIVED = '아직 받지 않은 물건입니다. 주문 취소는 수령 대기에서 하세요.'
 export const DISPOSAL_DENY_NONPOSITIVE = '0보다 큰 수량을 입력하세요.'
-export const DISPOSAL_DENY_ALL_DISPOSED = '이미 폐기·분실로 기록된 항목이에요.'
+export const DISPOSAL_DENY_ALL_DISPOSED = '이미 폐기·분실로 기록된 항목입니다.'
 // 초과는 **거부**다. 클램프로 조용히 깎으면 운영자가 다른 수량이 빠진 걸 모른다.
 export const disposalDenyOver = (have: number, unit: string | null) =>
-  `지금 있는 수량(${fmtQty(have)}${unit ?? '개'})보다 많아요.`
+  `지금 있는 수량(${fmtQty(have)}${unit ?? '개'})보다 많습니다.`
 
 /** 폐기 게이트 넷. 통과면 null, 막히면 그 줄 전문. live = 아직 폐기 안 된 대상 행. */
 export function disposalDenial(rows: DisposalGateRow[], qty: number | null): string | null {
@@ -88,6 +88,10 @@ export type AssetItem = {
   locationId: string | null     // 공용부(StorageLocation) 배정 시
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
+  // 보관 위치(배정 안 한 여분이 놓인 창고·선반, ./storagePlace). 미배정 카드에만 선다. 이름은 표기 경로(pathName).
+  // 집계 키에 들어간다. 같은 품목이라도 보관 위치가 다르면 다른 카드다(옮기기가 그 창고 몫만 집어야 한다).
+  storedLocationId: string | null
+  storedLocationName: string | null
   isService: boolean            // 서비스·무형(시공비) — 자산 아님, 방별 비용 집계용
   assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
   // 수량 미기록(qtyValue null) 행까지 **게이트·분할과 같은 셈법**으로 센 살아 있는 몫.
@@ -125,6 +129,9 @@ export type RawAsset = {
   // 집계 키에 안 넣는다. 수령 대기 카드는 예정 호실이 달라도 한 카드다(받을 때 묻는 창이 갈래를 가른다).
   targetRoomId?: string | null
   targetRoomNo?: string | null
+  // 보관 위치(./storagePlace). 받은 + 안 놓인 행에만 값이 있다. 이름은 그 영업장에 지금 있는 위치일 때만(표기 경로).
+  storedLocationId?: string | null
+  storedLocationName?: string | null
 }
 
 // 순서 편집 맵 — 2계층. label = (category␟itemLabel)→라벨 rank, spec = (category␟itemLabel␟specKey)→규격 rank,
@@ -141,7 +148,8 @@ export type AssetOrderMaps = { label: Map<string, number>; spec: Map<string, num
 export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): AssetItem[] {
   const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
   for (const r of list) {
-    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : ''].join('␟')
+    // 보관 위치는 키 맨 끝이다. 칸이 빈 행(보관 위치 미기록·방·공용부·공용 자재)은 '' 라 종전 키와 같은 묶음이 된다.
+    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : '', r.storedLocationId ?? ''].join('␟')
     const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, specText: r.specText, rows: [] }
     g.rows.push(r); map.set(key, g)
   }
@@ -175,7 +183,8 @@ export function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): A
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
-      isCommon: rep.isCommon, isService: rep.isService, assignedAt, liveUnits,
+      isCommon: rep.isCommon, storedLocationId: rep.storedLocationId ?? null, storedLocationName: rep.storedLocationName ?? null,
+      isService: rep.isService, assignedAt, liveUnits,
       disposedAt: disposals[0]?.disposedAt ?? null, disposalReason: disposals[0]?.disposalReason ?? null,
       disposedQty, disposedIds: dead.map(r => r.id), disposals,
       breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, disposed: !!r.disposedAt, groupId: r.allocationGroupId, assignedAt: r.assignedAt, targetRoomId: r.targetRoomId ?? null, targetRoomNo: r.targetRoomNo ?? null, unplaced: isUnplaced(r.roomId, r.locationId, r.isCommon) }))

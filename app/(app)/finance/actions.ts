@@ -30,6 +30,7 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
 import { isDurableGoods, placementForSave, assignmentLogData } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { storedForSave } from '@/app/(app)/inventory/assets/storagePlace'
 // 소모품으로 적은 구매를 비품으로 바꾸는 저장(F1·F3, 계획서 2단계). 판정·문구·토큰은 순수층(conversionPlan),
 // 조회·검증·되돌림은 공용층(durableConvert), 자동 점검 걷기는 수령 취소 정본(receiptCancel)이다.
 import {
@@ -156,10 +157,12 @@ export async function getExpenses(targetMonth: string) {
   // 공용부(assignedLocationId)에 배정한 행의 자리 이름. 방별 분배 라벨이 방 축만 알아 이 행을 '미배정'으로
   // 적었다(신고 3e861137 후속, 고압호스 60cm 5층 공용 화장실 1개). 평면 name 이 아니라 표기 경로다.
   // 그런 행이 없는 달은 위치 조회를 아예 안 한다(목록 왕복을 늘리지 않는다).
-  const locPaths = rows.some(r => r.assignedLocationId) ? await loadLocationPaths(propertyId) : null
+  // 미배정 비품의 보관 위치(2026-10-19)도 같은 표기 경로로 싣는다. 방별 분배 라벨이 '미배정' 대신 '{위치} 보관'으로 말한다.
+  const locPaths = rows.some(r => r.assignedLocationId || r.storedLocationId) ? await loadLocationPaths(propertyId) : null
   return rows.map(r => ({
     ...r,
     assignedLocationName: r.assignedLocationId ? (locPaths?.pathName(r.assignedLocationId) ?? null) : null,
+    storedLocationName: r.storedLocationId ? (locPaths?.pathName(r.storedLocationId) ?? null) : null,
   }))
 }
 
@@ -1016,6 +1019,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         targetRoomId: true,
         // 비품 전환(F1·F3)의 판정(이번에 호실을 바꿨나)과 되돌릴 배정 세 칸(F3)·폐기 여부.
         roomId: true, assignedAt: true, assignedLocationId: true, isCommonAsset: true, disposedAt: true,
+        // 보관 위치(재무 폼은 안 받는다). 저장 뒤에도 받은 + 안 놓인 비품이면 지키고, 아니면 비운다(storedForSave).
+        storedLocationId: true,
       },
     })
     if (!existing) return { ok: false, error: '지출을 찾을 수 없습니다.' }
@@ -1035,10 +1040,15 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     // 호실 두 칸(roomId·targetRoomId). 수령 전 비품 물품은 예정 호실만, 받은 비품은 지금처럼, 그 밖은 예정 호실 비움.
     // 판정 정본 receiptPlacement.placementForSave. 분할 조각(방별 분배)도 원본의 수령 상태를 물려받으니 같은 판정이다.
     const saveTrackedCats = (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
-    const placeOf = (label: string | null | undefined, rowRoomId: string | null) => placementForSave({
-      durableGoods: isDurableGoods({ category, excludeFromInventory, itemLabel: label || null, isShipping: existing.isShipping }, saveTrackedCats),
-      received: !!existing.receivedAt, roomId: rowRoomId, formTarget, existingTarget: existing.targetRoomId,
-    })
+    const placeOf = (label: string | null | undefined, rowRoomId: string | null) => {
+      const durableGoods = isDurableGoods({ category, excludeFromInventory, itemLabel: label || null, isShipping: existing.isShipping }, saveTrackedCats)
+      const place = placementForSave({ durableGoods, received: !!existing.receivedAt, roomId: rowRoomId, formTarget, existingTarget: existing.targetRoomId })
+      // 보관 위치 축(./inventory/assets/storagePlace). 방에 배정하거나 소모품으로 바꾸면 비운다. 분배 조각은 원행 값을 따른다.
+      return { ...place, storedLocationId: storedForSave({
+        durableGoods, received: !!existing.receivedAt, roomId: place.roomId,
+        assignedLocationId: existing.assignedLocationId, isCommonAsset: existing.isCommonAsset, existingStored: existing.storedLocationId,
+      }) }
+    }
     // 비품 전환(F1 받기 전·F3 이미 받은 소모품). 등록과 같은 규칙으로 서버가 판정을 다시 돌린다. 수정은 이번에 카테고리나
     // 호실을 바꿨을 때만 묻는다(원래 값 existing). F3 은 품목 하나·호실 하나라 품목 나누기·방별 분배 경로를 타지 않는다.
     const durableFrom = ((formData.get('durableFrom') as string) || '').trim() || null
@@ -1376,7 +1386,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       const checks = autoCheckSnaps(cancelPlan.autoChecks)
       const done = await prisma.$transaction(async tx => {
         const cu = await applyReceiptCancel(tx, cancelPlan, { keepReceived: true })
-        const row = await tx.expense.update({ where: { id }, data: { ...singleUpdateData, assignedAt: assignDay, assignedLocationId: null, isCommonAsset: false } })
+        const row = await tx.expense.update({ where: { id }, data: { ...singleUpdateData, assignedAt: assignDay, assignedLocationId: null, isCommonAsset: false, storedLocationId: null } })
         const cards = await deleteEmptyCardsTx(tx, propertyId, retire.snapshots, [id])
         const log = await tx.assetAssignmentLog.create({ data: assignmentLogData(propertyId, row.itemLabel, row,
           { kind: 'none', label: '미배정' }, { kind: 'room', label: fmtRoomNo(room.roomNo, '') || '방' }, row.qtyValue ?? 1, assignDay) })
@@ -1842,6 +1852,8 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
       roomId: (fk: string) => prisma.room.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
       receivedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
       assignedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      // 보관 위치도 같은 클래스다. 삭제 사이 위치를 지웠으면(또는 남의 영업장 위치면) 비워서 복원한다.
+      storedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
     } as const
     for (const key of Object.keys(fkFinders) as (keyof typeof fkFinders)[]) {
       const fk = data[key]

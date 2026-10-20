@@ -10,6 +10,7 @@
 // 같은 위치가 다른 이름으로 보이면 안 된다(getExpenses 가 loadLocationPaths 정본으로 싣는다).
 import { fmtRoomNo } from '@/lib/roomNo'
 import { plannedRoomsMeta } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { storedPlaceLabel } from '@/app/(app)/inventory/assets/storagePlace'
 
 export type AllocPlaceRow = {
   room: { roomNo: string } | null
@@ -19,6 +20,8 @@ export type AllocPlaceRow = {
   // 받기 전 비품의 배정 예정 호실 번호(살아 있는 방만, 화면이 채운다). 방·공용부가 있는 행에서는 안 본다.
   // 수령 전 비품의 자리는 예정 호실뿐이라(inventory/assets/receiptPlacement) 이 칸이 없으면 '미배정'으로 읽힌다.
   plannedRoomNo?: string | null
+  // 미배정 비품의 보관 위치 표기 경로(2026-10-19). 방·공용부·예정 호실이 없는 행에서만 본다. 있으면 '미배정' 대신 '{위치} 보관'.
+  storedLocationName?: string | null
 }
 
 const isLoc = (r: AllocPlaceRow) => !r.room && !!r.assignedLocationName
@@ -60,9 +63,13 @@ export function roomsLabel(rows: AllocPlaceRow[]): string {
   const planned = plannedRoomsMeta(plannedNew.map(r => r.plannedRoomNo!))
   if (planned) parts.push(`${planned}${mixed ? qtyTail(plannedNew) : ''}`)
   if (pendingHere.length) parts.push(`수령 대기${qtyTail(pendingHere)}`)
-  if (unassigned.length > 0) {
-    const qty = unassigned.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
-    const unit = unassigned.find(r => r.qtyUnit)?.qtyUnit ?? '개'
+  // 미배정 몫은 보관 위치마다 한 토막('4층 415호 창고 보관 2개'), 보관 위치가 없는 몫만 종전 '미배정 N개'. 비품 화면 카드 자리 이름과 같은 말이다.
+  const storeNames = [...new Set(unassigned.map(r => r.storedLocationName).filter((n): n is string => !!n))]
+  for (const name of storeNames) parts.push(`${storedPlaceLabel(name)}${qtyTail(unassigned.filter(r => r.storedLocationName === name))}`)
+  const blank = unassigned.filter(r => !r.storedLocationName)
+  if (blank.length > 0) {
+    const qty = blank.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+    const unit = blank.find(r => r.qtyUnit)?.qtyUnit ?? '개'
     parts.push(qty > 0 ? `미배정 ${qty}${unit}` : '미배정')
   }
   return parts.join('·')

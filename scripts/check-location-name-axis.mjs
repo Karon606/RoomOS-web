@@ -273,6 +273,19 @@ function mustNot(file, block, label, pattern) {
   const resolve = slice(f, 'async function resolvePlace', 'export async function revertAssignmentLog')
   must(f, resolve, '배정 이력 되돌리기(resolvePlace)', /locPaths\.byPathName\(/)
   mustNot(f, resolve, '배정 이력 되돌리기(resolvePlace)', /storageLocation\.findFirst\([\s\S]*?name: label/)
+
+  // 보관 위치(2026-10-19 storedLocationId). 카드 이름·묶음 머리·이력 라벨·후보 목록·되찾기가 전부 표기 경로다.
+  // 보관 이력('storage')은 트리 뒤에 생겨 평면 이름 폴백이 없다(byName 금지).
+  must(f, assets, '비품 보관 위치 이름', /storedLocationName: locPaths\.pathName\(r\.storedLocationId\)/)
+  must(f, slice(f, 'export async function getStorageLocations', 'export type AssignTarget'), '보관 위치 후보', /pathName: r\.pathName/)
+  must(f, slice(f, 'async function placeLabel', 'const specOf = (r: SpecKey)'), '보관 이력 라벨(placeLabel)', /const name = locPaths\.pathName\(storedId\)/)
+  const storeResolve = slice(f, "if (kind === 'storage') {", "if (kind === 'location') {")
+  must(f, storeResolve, '보관 이력 되찾기(resolvePlace storage)', /locPaths\.byPathName\(label \?\? ''\)/)
+  mustNot(f, storeResolve, '보관 이력 되찾기(resolvePlace storage)', /byName\(/)
+}
+{
+  const f = 'app/(app)/finance/actions.ts'
+  must(f, slice(f, 'export async function getExpenses', 'export async function'), '재무 방별 분배의 보관 위치 이름', /storedLocationName: r\.storedLocationId \? \(locPaths\?\.pathName\(r\.storedLocationId\)/)
 }
 
 {

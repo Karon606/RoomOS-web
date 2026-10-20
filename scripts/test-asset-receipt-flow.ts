@@ -515,6 +515,185 @@ async function main() {
     eq('2차 무상 비품 구매일 = KST 오늘', e?.date.toISOString().slice(0, 10), kstToday())
   }
 
+
+  // ═══ 보관 위치 축(2026-10-19, 신고 195e05c8·09ec10aa · 운영자 승인 storedLocationId) ═══════════════════════
+  // 보관 위치는 받은 + 안 놓인 행에만 산다. 수령(수령만·배정·부분)·옮기기·되돌리기·접기·폐기·공용 자재·수령 대기로·무상 입수·
+  // 일괄 지정·위치 삭제·기본 창고까지 실제 쓰기로 돌려 바이트 동일·금액 합·남의 영업장을 본다.
+  {
+    const st = await import('@/app/(app)/inventory/assets/storagePlace')
+    const loc = async (pid: string, name: string, isHub = false, parentId: string | null = null) => (await prisma.storageLocation.create({ data: { propertyId: pid, name, isHub, parentId } })).id as string
+    const F4 = await loc(P1, 'ST4층')
+    const HUB = await loc(P1, '415호 창고', true, F4)
+    const SHELF = await loc(P1, 'ST선반')
+    const FOREIGN = await loc(P2, '남의 창고', true)
+    const stOf = async (id: string) => (await prisma.expense.findUnique({ where: { id } }))?.storedLocationId ?? null
+    const shapeS = async (label: string) => (await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: label }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }))
+      .map((r: { qtyValue: number | null; receivedAt: Date | null; roomId: string | null; storedLocationId: string | null; disposedAt: Date | null; isCommonAsset: boolean }) =>
+        [r.qtyValue, !!r.receivedAt, r.roomId ? 'room' : null, r.storedLocationId === HUB ? 'HUB' : r.storedLocationId === SHELF ? 'SHELF' : r.storedLocationId, !!r.disposedAt, r.isCommonAsset])
+    const sum = async (label: string) => (await prisma.expense.aggregate({ where: { propertyId: P1, itemLabel: label }, _sum: { amount: true } }))._sum.amount ?? 0
+
+    // ST1 후보는 영업장 위치 전부·기본 창고 먼저·표기 경로. 남의 영업장 위치는 없다. 공용부 배정 후보는 여전히 기본 창고를 뺀다.
+    const cands = await assets.getStorageLocations()
+    eq('ST1 보관 후보: 기본 창고 먼저·경로 이름·남의 창고 없음', [cands[0]?.id === HUB, cands[0]?.pathName, cands.some((c: { id: string }) => c.id === FOREIGN)], [true, 'ST4층 415호 창고', false])
+    eq('ST1 공용부 배정 후보는 기본 창고를 뺀다', (await assets.getAssignableLocations()).some((l: { id: string }) => l.id === HUB), false)
+    eq('ST1 미리 고르기 = 기본 창고 하나', st.defaultStorageId(cands), HUB)
+
+    // ST2 수령만 + 보관 위치. 적용취소 바이트 동일.
+    const A = await exp({ itemLabel: 'ST의자', qtyValue: 1, targetRoomId: R519 })
+    const a0 = await bytes({ id: A })
+    const r1 = await assets.setAssetReceived([A], true, null, { storedLocationId: HUB })
+    if (!r1.ok) throw new Error(r1.error)
+    eq('ST2 수령만: 받음·미배정·기본 창고 보관', [!!(await prisma.expense.findUnique({ where: { id: A } }))?.receivedAt, (await prisma.expense.findUnique({ where: { id: A } }))?.roomId, await stOf(A)], [true, null, HUB])
+    eq('ST2 수령만 적용취소: 바이트 동일(보관 위치도 비움)', [(await assets.undoAssetReceipt(J(r1.undo!))).ok, await bytes({ id: A })], [true, a0])
+    // ST3 수령 + 배정(F2). 배정한 몫에는 보관 위치가 안 선다.
+    const r2 = await assets.setAssetReceived([A], true, null, { ...(await withPlan([A])), storedLocationId: HUB })
+    if (!r2.ok) throw new Error(r2.error)
+    eq('ST3 배정: 519호·보관 위치 없음', [(await prisma.expense.findUnique({ where: { id: A } }))?.roomId === R519, await stOf(A)], [true, null])
+    eq('ST3 배정 적용취소: 바이트 동일', [(await assets.undoAssetReceipt(J(r2.undo!))).ok, await bytes({ id: A })], [true, a0])
+    // ST4 남의 영업장 위치·없는 위치는 거부하고 아무것도 안 바꾼다.
+    eq('ST4 남의 영업장 보관 위치 거부', await assets.setAssetReceived([A], true, null, { storedLocationId: FOREIGN }), { ok: false, error: st.STORE_NOT_FOUND })
+    eq('ST4 없는 보관 위치 거부', await assets.setAssetReceived([A], true, null, { storedLocationId: randomUUID() }), { ok: false, error: st.STORE_NOT_FOUND })
+    eq('ST4 거부면 무변경', await bytes({ id: A }), a0)
+
+    // ST5 부분 도착 + 보관 위치. 남는 수령 대기 원행은 비어 있고 받은 조각만 보관. 금액 합 불변·적용취소 바이트 동일.
+    const B = await exp({ itemLabel: 'ST선풍기', qtyValue: 4, amount: 100001 })
+    const b0 = await bytes({ itemLabel: 'ST선풍기' })
+    const r3 = await assets.setAssetReceived([B], true, 3, { storedLocationId: SHELF })
+    if (!r3.ok) throw new Error(r3.error)
+    eq('ST5 부분: 잔여 1 대기·보관 없음 / 받은 3 선반', await shapeS('ST선풍기'), [[1, false, null, null, false, false], [3, true, null, 'SHELF', false, false]])
+    eq('ST5 부분: 금액 합 불변', await sum('ST선풍기'), 100001)
+    eq('ST5 부분 적용취소: 바이트 동일', [(await assets.undoAssetReceipt(J(r3.undo!))).ok, await bytes({ itemLabel: 'ST선풍기' })], [true, b0])
+    // ST6 일부만 호실(some): 배정 몫은 비우고 나머지만 보관.
+    const C1 = await exp({ itemLabel: 'ST책상', qtyValue: 1, targetRoomId: R519, amount: 10000 })
+    const C2 = await exp({ itemLabel: 'ST책상', qtyValue: 1, amount: 10000 })
+    const c0 = await bytes({ itemLabel: 'ST책상' })
+    const r4 = await assets.setAssetReceived([C1, C2], true, null, { ...(await withPlan([C1, C2])), storedLocationId: HUB })
+    if (!r4.ok) throw new Error(r4.error)
+    eq('ST6 일부 호실: 519호 몫 보관 없음·나머지 기본 창고', [await stOf(C1), await stOf(C2)], [null, HUB])
+    eq('ST6 적용취소 바이트 동일', [(await assets.undoAssetReceipt(J(r4.undo!))).ok, await bytes({ itemLabel: 'ST책상' })], [true, c0])
+    // ST7 보관 위치를 바꾼 뒤엔 수령 적용취소를 거부한다(CAS, 다른 창고로 옮긴 사실을 지우지 않는다).
+    const r5 = await assets.setAssetReceived([A], true, null, { storedLocationId: HUB })
+    if (!r5.ok) throw new Error(r5.error)
+    eq('ST7 다른 보관 위치로 옮김', (await assets.assignAggregateToTarget([A], { kind: 'storage', id: SHELF }, null)).ok, true)
+    const a7 = await bytes({ id: A })
+    eq('ST7 옮긴 뒤 수령 적용취소 거부', await assets.undoAssetReceipt(J(r5.undo!)), { ok: false, error: rp.ASSET_RECEIPT_UNDO_STALE_RECEIVE })
+    eq('ST7 거부면 무변경', await bytes({ id: A }), a7)
+    eq('ST7 보관 이동 이력: 보관 → 보관(경로 라벨)', await logs('ST의자'), [['storage', 'ST4층 415호 창고', 'storage', 'ST선반', 1, false]])
+
+    // ST8 옮기기 이력 되돌리기 → 원래 보관 위치로. 방으로 옮기면 보관 위치를 비우고, 되돌리면 그 창고로 돌아온다.
+    const lg = (await prisma.assetAssignmentLog.findFirst({ where: { propertyId: P1, itemLabel: 'ST의자' } }))!
+    eq('ST8 보관 이동 되돌리기', (await assets.revertAssignmentLog(lg.id)).ok, true)
+    eq('ST8 기본 창고로 복귀', await stOf(A), HUB)
+    eq('ST8 방으로 옮기면 보관 위치 비움', [(await assets.assignAggregateToTarget([A], { kind: 'room', id: R520 }, null)).ok, await stOf(A)], [true, null])
+    const lg2 = (await prisma.assetAssignmentLog.findFirst({ where: { propertyId: P1, itemLabel: 'ST의자', toKind: 'room' } }))!
+    eq('ST8 이력 출발은 보관(storage)', [lg2.fromKind, lg2.fromLabel], ['storage', 'ST4층 415호 창고'])
+    eq('ST8 방 배정 되돌리기 → 기본 창고 보관으로', [(await assets.revertAssignmentLog(lg2.id)).ok, (await prisma.expense.findUnique({ where: { id: A } }))?.roomId, await stOf(A)], [true, null, HUB])
+
+    // ST9 부분 옮기기. 남는 원행은 보관 위치를 지키고 옮겨 간 조각만 새 위치. 다른 보관 위치 조각은 접지 않고, 같은 곳으로 돌아오면 접는다.
+    const D = await exp({ itemLabel: 'ST행거', qtyValue: 5, amount: 50000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    await prisma.expense.update({ where: { id: D }, data: { storedLocationId: HUB, detail: '[ST행거] x 5개' } })   // 접기가 세부를 다시 짓는 형식(분할·접기 정본)으로 둔다
+    const d0 = await bytes({ itemLabel: 'ST행거' })
+    eq('ST9 2개만 선반으로', (await assets.assignAggregateToTarget([D], { kind: 'storage', id: SHELF }, 2)).ok, true)
+    eq('ST9 남은 3 기본 창고·옮긴 2 선반(접지 않음)', await shapeS('ST행거'), [[3, true, null, 'HUB', false, false], [2, true, null, 'SHELF', false, false]])
+    eq('ST9 금액 합 불변', await sum('ST행거'), 50000)
+    const piece = (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'ST행거', storedLocationId: SHELF } }))!
+    eq('ST9 같은 곳으로 돌아오면 한 행으로 접힌다', [(await assets.assignAggregateToTarget([piece.id], { kind: 'storage', id: HUB }, null)).ok, await shapeS('ST행거')], [true, [[5, true, null, 'HUB', false, false]]])
+    // 접힌 뒤 행 바이트(묶음 id 풀림 포함)는 처음과 같다.
+    eq('ST9 왕복 뒤 바이트 동일', await bytes({ itemLabel: 'ST행거' }), d0)
+    // ST10 폐기는 위치 칸 원행 값을 지킨다(보관 위치 포함). 적용취소 바이트 동일.
+    const ds = await assets.disposeAssets([{ ids: [D], qty: 2 }], null, '파손')
+    if (!ds.ok) throw new Error(ds.error)
+    eq('ST10 폐기 조각도 기본 창고 보관 칸 유지', await shapeS('ST행거'), [[3, true, null, 'HUB', false, false], [2, true, null, 'HUB', true, false]])
+    eq('ST10 폐기 적용취소 바이트 동일', [(await assets.undoDisposeAsset(J(ds.undo))).ok, await bytes({ itemLabel: 'ST행거' })], [true, d0])
+
+    // ST11 공용 자재로 = 놓인 것 → 보관 위치 비움. 적용취소(스냅샷)가 보관 위치까지 되살린다.
+    const cm = await assets.setCommonAsset([D], true)
+    if (!cm.ok) throw new Error(cm.error)
+    eq('ST11 공용 자재: 보관 위치 비움', [await stOf(D), (await prisma.expense.findUnique({ where: { id: D } }))?.isCommonAsset], [null, true])
+    eq('ST11 공용 적용취소: 바이트 동일', [(await assets.undoBatchAssignAssets(J(cm.undo))).ok, await bytes({ itemLabel: 'ST행거' })], [true, d0])
+    // ST12 수령 대기로 = 보관 위치 비움. 적용취소(서명)가 수령 시각·보관 위치를 되살린다. 남의 영업장에서는 거부.
+    const ur = await assets.setAssetReceived([D], false)
+    if (!ur.ok) throw new Error(ur.error)
+    eq('ST12 수령 대기로: 수령 시각·보관 위치 비움', [!!(await prisma.expense.findUnique({ where: { id: D } }))?.receivedAt, await stOf(D), !!ur.unreceiveUndo], [false, null, true])
+    g.__CR_FLOW_PID = P2
+    eq('ST12 남의 영업장에서 적용취소 거부', (await assets.undoAssetUnreceive(J(ur.unreceiveUndo!))).ok, false)
+    g.__CR_FLOW_PID = P1
+    eq('ST12 위조(보관 위치 바꿔치기) 토큰 거부', await assets.undoAssetUnreceive({ ...J(ur.unreceiveUndo!), rows: [{ ...J(ur.unreceiveUndo!).rows[0], storedLocationId: FOREIGN }] }), { ok: false, error: rp.ASSET_RECEIPT_UNDO_INVALID })
+    eq('ST12 적용취소: 바이트 동일', [(await assets.undoAssetUnreceive(J(ur.unreceiveUndo!))).ok, await bytes({ itemLabel: 'ST행거' })], [true, d0])
+    eq('ST12 두 번째 적용취소 거부', (await assets.undoAssetUnreceive(J(ur.unreceiveUndo!))).ok, false)
+
+    // ST13 일괄 보관 지정(선택 알약 = batchAssignAssets 보관 대상). 적용취소 바이트 동일. 남의 영업장 위치는 거부.
+    const E1 = await exp({ itemLabel: 'ST거울', qtyValue: 1, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    const E2 = await exp({ itemLabel: 'ST선반장', qtyValue: 2, receivedAt: new Date('2026-10-01T00:00:00Z'), roomId: R519 })
+    const e0 = [await bytes({ id: E1 }), await bytes({ id: E2 })]
+    eq('ST13 남의 영업장 보관 위치로 일괄 거부', await assets.batchAssignAssets({ items: [{ ids: [E1], qty: null }], target: { kind: 'storage', id: FOREIGN } }), { ok: false, error: st.STORE_NOT_FOUND })
+    const bt = await assets.batchAssignAssets({ items: [{ ids: [E1], qty: null }, { ids: [E2], qty: null }], target: { kind: 'storage', id: HUB } })
+    if (!bt.ok) throw new Error(bt.error)
+    eq('ST13 일괄 보관: 둘 다 기본 창고·방 비움', [await stOf(E1), await stOf(E2), (await prisma.expense.findUnique({ where: { id: E2 } }))?.roomId], [HUB, HUB, null])
+    eq('ST13 일괄 보관 적용취소: 바이트 동일', [(await assets.undoBatchAssignAssets(J(bt.undo))).ok, [await bytes({ id: E1 }), await bytes({ id: E2 })]], [true, e0])
+    // ST14 적용취소 토큰에 남의 영업장 보관 위치를 넣으면 비운다(FK 는 영업장을 모른다).
+    eq('ST14 위조 보관 위치 토큰', (await assets.undoBatchAssignAssets({ restore: [{ ...J(bt.undo).restore[0], storedLocationId: FOREIGN }], deleteIds: [] })).ok, true)
+    eq('ST14 남의 영업장 위치는 안 들어간다', await stOf(E1), null)
+
+    // ST15 무상 입수 + 보관 위치. 적용취소는 만든 행을 지운다. 남의 영업장 위치 거부.
+    eq('ST15 무상 입수 남의 영업장 위치 거부', await assets.addFreeAsset({ itemLabel: 'ST무상', category: '비품', qtyValue: 1, storedLocationId: FOREIGN }), { ok: false, error: st.STORE_NOT_FOUND })
+    const fa = await assets.addFreeAsset({ itemLabel: 'ST무상', category: '비품', qtyValue: 1, storedLocationId: HUB })
+    if (!fa.ok) throw new Error(fa.error)
+    const fRow = await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'ST무상' } })
+    eq('ST15 무상 입수: 받음·기본 창고 보관', [!!fRow?.receivedAt, fRow?.storedLocationId === HUB, !!fa.undo], [true, true, true])
+    g.__CR_FLOW_PID = P2
+    eq('ST15 남의 영업장에서 적용취소 거부', (await assets.undoAddFreeAsset(J(fa.undo!))).ok, false)
+    g.__CR_FLOW_PID = P1
+    eq('ST15 무상 입수 적용취소: 행 지움', [(await assets.undoAddFreeAsset(J(fa.undo!))).ok, await prisma.expense.count({ where: { propertyId: P1, itemLabel: 'ST무상' } })], [true, 0])
+
+    // ST16 미배정 접기는 공용 자재 행을 끌어오지 않는다(isCommonAsset 조건 누락 봉합).
+    const G = await exp({ itemLabel: 'ST공구', qtyValue: 4, amount: 40000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    await assets.assignAggregateToTarget([G], { kind: 'room', id: R519 }, 2)   // 2 방 + 2 미배정(같은 묶음)
+    const gRoom = (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'ST공구', roomId: R519 } }))!
+    const gSpare = (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: 'ST공구', roomId: null } }))!
+    await assets.setCommonAsset([gSpare.id], true)
+    eq('ST16 방 몫 미배정으로(공용 자재와 같은 묶음)', (await assets.assignAggregateToTarget([gRoom.id], { kind: 'none' }, null)).ok, true)
+    eq('ST16 공용 자재 2 그대로·미배정 2 따로(안 접힘)', (await shapeS('ST공구')).map(r => [r[0], r[5]]).sort(), [[2, false], [2, true]])
+
+    // ST17 화면 집계. 보관 위치가 다르면 다른 카드, 이름은 표기 경로. 놓인 행에 남은 값은 표시층이 무시한다.
+    await prisma.expense.update({ where: { id: E2 }, data: { roomId: R519, storedLocationId: SHELF } })   // 불변식 위반 행을 일부러
+    const dur = await assets.getDurableItems()
+    const hanger = dur.unassigned.filter((x: { itemLabel: string }) => x.itemLabel === 'ST행거')
+    eq('ST17 미배정 카드 이름·보관 위치', hanger.map((x: { storedLocationName: string | null; qtyValue: number | null }) => [x.storedLocationName, x.qtyValue]), [['ST4층 415호 창고', 5]])
+    const shelfRoom = dur.rooms.flatMap((r: { items: { itemLabel: string; storedLocationId: string | null }[] }) => r.items).find((x: { itemLabel: string }) => x.itemLabel === 'ST선반장')
+    eq('ST17 방 카드에는 보관 위치가 안 선다(표시층 방어)', shelfRoom?.storedLocationId ?? null, null)
+    await prisma.expense.update({ where: { id: E2 }, data: { storedLocationId: null } })
+
+    // ST18 재무 수정. 받은 미배정 비품은 보관 위치를 지키고, 방을 고르거나 소모품으로 바꾸면 비운다.
+    const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f }
+    const H = await exp({ itemLabel: 'ST소파', qtyValue: 1, amount: 50000, receivedAt: new Date('2026-10-01T00:00:00Z') })
+    await prisma.expense.update({ where: { id: H }, data: { storedLocationId: HUB } })
+    const base = { id: H, date: '2026-10-13', amount: '50000', payMethod: '계좌이체', itemLabel: 'ST소파', qtyValue: '1', qtyUnit: '개' }
+    eq('ST18 그대로 저장: 보관 위치 유지', [(await fin.updateExpense(fd({ ...base, category: '수선유지비', roomId: '', memo: '메모' }))).ok, await stOf(H)], [true, HUB])
+    eq('ST18 방 지정 저장: 보관 위치 비움', [(await fin.updateExpense(fd({ ...base, category: '수선유지비', roomId: R519 }))).ok, await stOf(H)], [true, null])
+    // ST19 지출 삭제 적용취소는 보관 위치를 되살린다. 그 사이 위치를 지웠으면 비워서 복원한다(fkFinders).
+    await prisma.expense.update({ where: { id: H }, data: { roomId: null, storedLocationId: SHELF } })
+    const h0 = await bytes({ id: H })
+    const del = await fin.deleteExpense(H)
+    if (!del.ok) throw new Error(del.error)
+    eq('ST19 삭제 적용취소: 바이트 동일(보관 위치 포함)', [(await fin.undoDeleteExpense(J(del.undo))).ok, await bytes({ id: H })], [true, h0])
+
+    // ST20 위치 삭제는 공용부 배정·보관 비품을 세어 묻는다(force 전 거부).
+    await prisma.expense.update({ where: { id: E1 }, data: { assignedLocationId: SHELF } })
+    const di = await inv.deleteStorageLocation(SHELF)
+    eq('ST20 위치 삭제 영향에 비품 두 줄', di.ok ? null : [di.impact?.assignedAssets, di.impact?.storedAssets], [1, 1])
+    eq('ST20 거부면 위치 그대로', await prisma.storageLocation.count({ where: { id: SHELF } }), 1)
+
+    // ST21 기본 창고는 한 곳(지정하면 다른 기본 창고 해제). 적용취소는 옛 집합 그대로.
+    const t1 = await inv.toggleStorageLocationHub(F4, true)
+    eq('ST21 지정: 기본 창고 하나뿐', [t1.ok, (await prisma.storageLocation.findMany({ where: { propertyId: P1, isHub: true } })).map((l: { id: string }) => l.id === F4)], [true, [true]])
+    eq('ST21 남의 영업장 기본 창고는 안 건드린다', (await prisma.storageLocation.findUnique({ where: { id: FOREIGN } }))?.isHub, true)
+    eq('ST21 적용취소: 옛 기본 창고로', [(await inv.restoreStorageHubs(t1.ok ? t1.prevHubIds : [])).ok, (await prisma.storageLocation.findMany({ where: { propertyId: P1, isHub: true } })).map((l: { id: string }) => l.id === HUB)], [true, [true]])
+    eq('ST21 남의 영업장 위치로 되살리기 거부', (await inv.restoreStorageHubs([FOREIGN])).ok, false)
+    // 불변식 전수. 수령 전 행·놓인 행에 보관 위치가 없다.
+    eq('ST 불변식: 수령 전·놓인 행에 보관 위치 0', await prisma.expense.count({ where: { propertyId: P1, storedLocationId: { not: null }, OR: [{ receivedAt: null }, { roomId: { not: null } }, { assignedLocationId: { not: null } }, { isCommonAsset: true }] } }), 0)
+  }
+
   console.log(`[비품 수령·배정·수량 관문 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()
