@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { usePopoverAnchor } from './usePopoverAnchor'
 import { createPortal } from 'react-dom'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -27,6 +27,12 @@ interface DatePickerProps {
   maxDate?: string
   minDate?: string
   monthOnly?: boolean             // 월 단위 선택 — 월 뷰에서 시작, 월 클릭 시 'YYYY-MM-01' 반환·닫힘
+  /**
+   * 값이 비어 있을 때 열 달 — 'YYYY-MM' 또는 'YYYY-MM-DD'. 안 주면 오늘의 달이다.
+   * 열기 규칙(가이드 §12 'DatePicker 열기 규칙'): 열 때마다 **지금 값의 달**, 값이 없으면 이 기준 달을 연다.
+   * 지난번에 넘겨 보던 달을 이어서 열지 않는다.
+   */
+  defaultMonth?: string
   disabled?: boolean              // 저장 진행 중 재입력 차단(네이티브 input 의 disabled 자리를 대신한다)
   className?: string
   style?: React.CSSProperties
@@ -34,7 +40,7 @@ interface DatePickerProps {
 
 export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택', emptyLabel,
-  maxDate, minDate, monthOnly, disabled, className, style,
+  maxDate, minDate, monthOnly, defaultMonth, disabled, className, style,
 }: DatePickerProps) {
   // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19).
   // 아래 뷰 기본값·'올해로'도 같은 기준을 쓴다 — new Date() 는 서버(UTC)와 기기(KST)가 갈려
@@ -54,17 +60,25 @@ export function DatePicker({
   // 자리 산출은 공용 정본이 한다 — 국적 선택도 같은 산수를 쓴다(사본을 만들면 언젠가 갈린다).
   const { pos, triggerRef, measure } = usePopoverAnchor<HTMLButtonElement>()
 
-  // 외부에서 value가 바뀌면 뷰 동기화
-  useEffect(() => {
-    if (value) {
-      setViewYear(parseInt(value.slice(0, 4)))
-      setViewMonth(parseInt(value.slice(5, 7)) - 1)
-    }
-  }, [value])
+  // 종전의 '값이 바뀌면 뷰 동기화' 효과는 걷었다. 아래 열기 규칙이 여는 순간마다 값의 달을 잡으므로 닫혀 있는 동안
+  // 뷰를 따라 맞출 까닭이 없고, 같은 값이 다시 들어오면 그 효과는 돌지 않아 결함을 못 막았다(2026-10-20).
 
+  // 열기 규칙 — 열 때마다 지금 값의 달(값이 없으면 기준 달 → 오늘의 달)을 연다(신고 2026-10-19, 납부 확인서 발행일).
+  // 종전에는 뷰 상태가 마운트 때 한 번만 잡혀, 달을 넘겨 보다 고르지 않고 닫으면 다음에 열 때 그 넘겨 보던 달이 떴다.
+  // 값이 바뀌어도 같은 값이 다시 들어오면 위 효과가 안 돌아 같은 일이 났다. 여는 순간 다시 맞추면 둘 다 닫힌다.
+  const openAnchor = (): { y: number; m: number } => {
+    const src = value || (defaultMonth && /^\d{4}-\d{2}/.test(defaultMonth) ? defaultMonth : '')
+    return src
+      ? { y: parseInt(src.slice(0, 4), 10), m: parseInt(src.slice(5, 7), 10) - 1 }
+      : { y: todayYear, m: todayMonthIdx }
+  }
   const handleOpen = () => {
     if (disabled) return
     measure()
+    const { y, m } = openAnchor()
+    setViewYear(y)
+    setViewMonth(m)
+    setYearBase(Math.floor(y / 12) * 12)
     setView(monthOnly ? 'month' : 'day')
     setOpen(true)
   }
