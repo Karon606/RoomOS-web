@@ -1,0 +1,210 @@
+// 구매처·쇼핑몰 배선 감지망(verify:fast). 읽기 전용 소스 검사, 위반 시 exit 1. 실행: node scripts/check-expense-channel-wiring.mjs
+//
+// 왜 (2026-10-19 운영자 승인, 신고 a0636f36). 규칙 진리표(test-expense-channel)는 순수 함수만 본다. 판정이 맞아도 저장 경로가
+// 안 부르면 아무 일도 안 일어나고, 한 경로만 빠지면 그 경로로 들어온 행만 칸을 잃는다(분할 복제가 칸을 잃던 클래스와 같다).
+// 그래서 저장·도구·표시 자리가 정본을 실제로 부르는지 모양으로 본다. 축은 열둘이다.
+//   ⓐ 스키마·마이그레이션 두 칸(멱등 SQL) ⓑ 등록 저장(머리 쇼핑몰·배송비 두 갈래·품목별 구매처·합류 검사)
+//   ⓒ 수정 저장(부재 보존·주문 전체 적용·다품목 새 행) ⓓ 소급 제한과 적용취소 ⓔ 번호 지도·자동완성에서 쇼핑몰 이름 제외
+//   ⓕ 구매처 이름 변경·합치기·비우기(쇼핑몰 이름 막기·적용취소)와 쇼핑몰로 옮기기·지정·같은 주문 적용
+//   ⓖ 주문 묶기·사후 배송비 묶기(쇼핑몰 갈림 막기·묶기 적용취소) ⓗ 같은 주문번호 제안은 같은 쇼핑몰만
+//   ⓘ 일괄 수정·홈 승인·소모품 구매 수정 ⓙ 표시·검색·엑셀 ⓚ 폼(칸 순서·자리표시·서비스 숨김·품목별 구매처 접힌 줄)
+//   ⓛ **구매처를 쇼핑몰 자리에 대신 쓰는 표현 금지**(정본 lib/expenseChannel 과 카드 명세 이름 statementName 만 예외)
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+const violations = []
+const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:])\/\/[^\n]*/g, (_, p) => p)
+const read = f => { try { return readFileSync(f, 'utf8') } catch { violations.push(`${f}. 파일을 못 읽었다(못 읽으면 통과가 아니라 위반이다)`); return '' } }
+/** (export )?(async )?function 이름( 부터 다음 최상위 function·export 직전까지. */
+function region(src, name) {
+  const at = src.search(new RegExp(`(^|\\n)(export )?(async )?function ${name}\\(`))
+  if (at < 0) return null
+  const ends = [src.indexOf('\nexport ', at + 2), src.indexOf('\nasync function ', at + 2), src.indexOf('\nfunction ', at + 2)].filter(i => i > 0)
+  return src.slice(at, ends.length ? Math.min(...ends) : undefined)
+}
+function must(file, src, fn, checks) {
+  const body = fn ? region(src, fn) : src
+  if (body == null) { violations.push(`${file}. ${fn} 를 못 찾았다. 이름이 바뀌었으면 이 그물도 함께 고친다`); return }
+  for (const [re, msg] of checks) if (!re.test(body)) violations.push(`${file}${fn ? ` ${fn}` : ''}. ${msg}`)
+}
+
+// ── ⓐ 스키마·마이그레이션 ────────────────────────────────────────
+{
+  const schema = read('prisma/schema.prisma')
+  const exp = schema.slice(schema.indexOf('model Expense {'), schema.indexOf('model ExpenseOrder {'))
+  if (!/\n\s+channel\s+String\?/.test(exp)) violations.push('prisma/schema.prisma. Expense.channel(널 허용 글자)이 없다')
+  const prop = schema.slice(schema.indexOf('model Property {'), schema.indexOf('@@map("properties")'))
+  if (!/\n\s+channelOptions\s+String\?/.test(prop)) violations.push('prisma/schema.prisma. Property.channelOptions 가 없다')
+  const sql = read('prisma/migrate_expense_channel.sql')
+  if (!/ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "channel" TEXT/.test(sql)) violations.push('prisma/migrate_expense_channel.sql. expenses.channel 을 멱등(IF NOT EXISTS)으로 더하지 않는다')
+  if (!/ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "channelOptions" TEXT/.test(sql)) violations.push('prisma/migrate_expense_channel.sql. properties."channelOptions" 를 멱등으로 더하지 않는다')
+  if (!/lock_timeout/.test(sql)) violations.push('prisma/migrate_expense_channel.sql. 잠금 시간 제한(lock_timeout)이 없다')
+}
+
+const FA = 'app/(app)/finance/actions.ts'
+const fa = strip(read(FA))
+
+// ── ⓑ 등록 ───────────────────────────────────────────────────────
+must(FA, fa, 'addExpense', [
+  [/let channel = await resolveChannelForSave\(propertyId, formData\.get\('channel'\) as string\)/, '머리 쇼핑몰 칸을 정본(resolveChannelForSave)으로 안 읽는다'],
+  [/const baseRow = \{[\s\S]{0,400}\n\s+channel,\n/, '품목 행 바탕(baseRow)에 쇼핑몰이 없다(배송비 포함 행도 이 바탕을 쓴다)'],
+  [/\.\.\.\(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : \{\}\)/, '다품목 행이 품목별 구매처 정본(itemVendorFor)을 안 거친다'],
+  [/const multiVendor = multiItems\.length >= 2/, '품목별 구매처가 다품목에만 서지 않는다'],
+  [/mergeChannel|orderChannel !== channel/, '같은 주문 합류가 쇼핑몰이 다른 주문을 막지 않는다'],
+  [/if \(!channel && orderChannel\) channel = orderChannel/, '쇼핑몰을 비우고 합류할 때 그 주문의 쇼핑몰을 따르지 않는다'],
+])
+{
+  // 별도 배송비 행(합배송)도 같은 결제라 같은 쇼핑몰이다. 그 create 블록 안에 쇼핑몰 칸이 있어야 한다.
+  const b = region(fa, 'addExpense') ?? ''
+  const at = b.indexOf('const shippingCreate = isOrderMode')
+  const sc = at < 0 ? '' : b.slice(at, b.indexOf('if (multiItems) {', at))
+  if (!/\n\s+channel,\s*\n/.test(sc)) violations.push(`${FA} addExpense. 별도 배송비 행이 쇼핑몰을 안 싣는다`)
+}
+// ── ⓒ 수정 ───────────────────────────────────────────────────────
+must(FA, fa, 'updateExpense', [
+  [/const channelPresent = formData\.has\('channel'\)/, '쇼핑몰 칸 부재와 비움을 formData.has 로 가르지 않는다(form-clear-vs-absent)'],
+  [/resolveChannelForSave\(propertyId, formData\.get\('channel'\) as string, existing\.channel\)/, '자동 추가에 이전 값(existing.channel)을 안 넘긴다(뺀 이름이 되살아난다)'],
+  [/\.\.\.\(channelPresent \? \{ channel \} : \{\}\)/, '단일 수정이 칸 부재에서도 쇼핑몰을 덮는다'],
+  [/formData\.get\('channelScope'\) === 'order'/, "수정 폼 '주문 전체에 적용' 답을 안 읽는다"],
+  [/applyChannelToOrder\(propertyId, existing\.orderId!, id, channel\)/, '주문 전체 적용이 정본 도우미를 안 부른다'],
+  [/\.\.\.\(multiVendor \? itemVendorFor\(head, firstRow\.it\.vendor, vendorToBiz\) : \{\}\)/, '수정 다품목 첫 행이 품목별 구매처를 안 거친다'],
+  [/\.\.\.\(multiVendor \? itemVendorFor\(head, r\.it\.vendor, vendorToBiz\) : \{\}\)/, '수정 다품목 새 행이 품목별 구매처를 안 거친다'],
+])
+must(FA, fa, 'applyChannelToOrder', [
+  [/signFieldUndo\(propertyId, 'channel-order'/, '주문 전체 적용이 적용취소 토큰을 안 낸다'],
+  [/where: \{ propertyId, orderId, id: \{ not: selfId \} \}/, '주문 형제를 영업장 범위로 안 고른다'],
+])
+// ── ⓓ 소급 ───────────────────────────────────────────────────────
+must(FA, fa, 'backfillVendorBizNo', [
+  [/bizBackfillAllowed\(vendor, bizNo, await loadChannelNames\(propertyId\)\)/, '쇼핑몰 목록 이름을 소급에서 빼지 않는다'],
+  [/signFieldUndo\(propertyId, 'bizno-backfill'/, '소급이 바꾼 행 id 적용취소 토큰을 안 낸다'],
+])
+for (const fn of ['addExpense', 'updateExpense']) {
+  const b = region(fa, fn) ?? ''
+  for (const m of b.matchAll(/backfillVendorBizNo\(([^)]*)\)/g)) {
+    if (!/^propertyId, vendor \|\| null, vendorBizNo$/.test(m[1].trim())) violations.push(`${FA} ${fn}. 소급에 머리 구매처가 아닌 값(${m[1]})을 넘긴다(품목별 구매처로는 소급 안 함)`)
+  }
+}
+must(FA, fa, 'undoExpenseFieldChange', [
+  [/await requireEdit\(\)/, '적용취소에 편집 권한 검사가 없다'],
+  [/verifyUndoBody\(EXPENSE_FIELD_UNDO_KINDS\[u\.kind\], propertyId, canonicalExpenseFieldUndo\(body\), sig\)/, '적용취소가 용도 라벨별 서명을 안 본다'],
+  [/where: \{ id: \{ in: u\.rows\.map\(r => r\.id\) \}, propertyId \}/, '적용취소가 영업장 범위로 행을 안 읽는다'],
+  [/planExpenseFieldUndo\(u, now\)/, "적용취소가 '쓴 직후' 검사(planExpenseFieldUndo)를 안 거친다"],
+])
+// ── ⓔ 번호 지도·자동완성 ─────────────────────────────────────────
+must(FA, fa, 'getVendorBizMap', [[/buildVendorBizMap\(rows, await loadChannelNames\(propertyId\)\)/, '번호 지도가 쇼핑몰 목록 이름을 빼지 않는다']])
+must(FA, fa, 'getExpenseVendorSuggestions', [[/vendorSuggestionsWithoutChannels\(result, await loadChannelNames\(propertyId\)\)/, '구매처 자동완성이 쇼핑몰 목록 이름을 빼지 않는다']])
+must(FA, fa, 'loadVendorToBiz', [[/buildVendorBizMap\(rows, await loadChannelNames\(propertyId\)\)\.vendorToBiz/, '품목별 구매처 번호 찾기가 정본 지도를 안 쓴다']])
+// ── ⓕ 구매처 정리 ────────────────────────────────────────────────
+must(FA, fa, 'renameVendor', [
+  [/isChannelName\(oldName, channelNames\) \|\| isChannelName\(target, channelNames\)/, '쇼핑몰 목록 이름이 낀 이름 변경·합치기를 막지 않는다'],
+  [/signFieldUndo\(propertyId, 'vendor-rename'/, '구매처 이름 변경·합치기·비우기가 적용취소 토큰을 안 낸다'],
+  [/target \? \{ vendor: target \} : \{ vendor: null, vendorBizNo: null \}/, '구매처를 비울 때 사업자번호를 남긴다(주인 없는 번호)'],
+])
+must(FA, fa, 'vendorChannelOp', [
+  [/await requireEdit\(\)/, '쇼핑몰 정리에 편집 권한 검사가 없다'],
+  [/where: \{ propertyId, vendor: \{ in: names \} \}/, '쇼핑몰 정리가 영업장 범위로 안 고른다'],
+  [/h\.channel === null \|\| h\.channel === channel/, '쇼핑몰이 이미 다른 행을 덮는다'],
+  [/signFieldUndo\(propertyId, kind, result\.rows\)/, '쇼핑몰 정리가 적용취소 토큰을 안 낸다'],
+])
+must(FA, fa, 'applyChannelToSameOrders', [
+  [/verifyUndoBody\(EXPENSE_FIELD_UNDO_KINDS\[u\.kind\]/, '같은 주문 적용이 서명된 토큰에서만 행을 받지 않는다'],
+  [/channel: null \}, select: \{ id: true \}/, '같은 주문 적용이 미기록 행만 고르지 않는다'],
+])
+// ── ⓖ 주문 묶기·배송비 묶기 ──────────────────────────────────────
+must(FA, fa, 'mergeExpensesIntoOrder', [
+  [/mergeChannelConflict\(\[\.\.\.selected, \.\.\.orderRows\]\)/, '주문 묶기가 쇼핑몰 갈림을 안 막는다'],
+  [/signOrderMergeUndo\(propertyId/, '주문 묶기가 적용취소 토큰을 안 낸다'],
+])
+must(FA, fa, 'undoMergeExpensesIntoOrder', [
+  [/await requireEdit\(\)/, '묶기 적용취소에 편집 권한 검사가 없다'],
+  [/verifyUndoBody\(ORDER_MERGE_UNDO_DOMAIN/, '묶기 적용취소가 서명을 안 본다'],
+  [/planOrderMergeUndo\(/, "묶기 적용취소가 '묶은 직후' 검사를 안 거친다"],
+])
+must(FA, fa, 'attachShippingToOrder', [
+  [/mergeChannelConflict\(\[\.\.\.expenses, \.\.\.orderRows\]\)/, '사후 배송비 묶기가 쇼핑몰 갈림을 안 막는다'],
+])
+{
+  // 사후 배송비 행은 새로 만들 때도, 이미 있는 배송비 행을 고칠 때도 그 주문의 쇼핑몰을 싣는다(두 자리 다).
+  const b = region(fa, 'attachShippingToOrder') ?? ''
+  if ((b.match(/channel:\s+orderChannel/g) ?? []).length < 2) violations.push(`${FA} attachShippingToOrder. 사후 배송비 행(새로 만들기·고치기 둘 다)이 그 주문의 쇼핑몰을 안 싣는다`)
+}
+// ── ⓗ 같은 주문번호 제안 ─────────────────────────────────────────
+must(FA, fa, 'findOrderByExternalNo', [[/!want \|\| commonChannel\(o\.expenses\.filter\(e => !e\.isShipping\)\) === want/, '쇼핑몰이 정해져 있는데 다른 쇼핑몰 주문을 제안한다']])
+// ── ⓘ 일괄 수정·홈 승인·소모품 구매 수정 ─────────────────────────
+must(FA, fa, 'batchUpdateExpenses', [
+  [/const changingChannel = 'channel' in data/, '일괄 수정에 쇼핑몰 칸이 없다'],
+  [/if \(changingChannel\) fields\.channel = t\.channel/, '일괄 수정 적용취소 스냅샷에 쇼핑몰이 없다'],
+  [/if \(t\.isShipping && !onlyChannel\)/, '쇼핑몰만 바꾸는 일괄이 배송비 행을 뺀다(한 결제 = 한 쇼핑몰)'],
+])
+{
+  const PR = 'app/(app)/dashboard/pendingReceipt.ts'
+  const pr = strip(read(PR))
+  must(PR, pr, 'approvePendingReceipt', [
+    [/const channel = normalizeChannel\(final\.channel\)/, '홈 승인이 쇼핑몰을 안 싣는다'],
+    [/vendorBizNo: final\.vendor\?\.trim\(\) \? normalizeBizNo\(final\.vendorBizNo \?\? null\) : null/, '홈 승인이 사업자번호를 버린다(또는 구매처 없이 번호만 싣는다)'],
+  ])
+  const card = read('components/dashboard/PendingReceiptSection.tsx')
+  if (!/vendor\.trim\(\) === \(row\.inferredVendor \?\? ''\)\.trim\(\) \? row\.inferredVendorBizNo/.test(card)) violations.push('components/dashboard/PendingReceiptSection.tsx. 인식 번호를 구매처 칸이 인식값 그대로일 때만 싣지 않는다')
+  const IA = 'app/(app)/inventory/actions.ts'
+  must(IA, strip(read(IA)), 'updateExpenseFromInventory', [[/channelNext !== undefined \? \{ channel: channelNext \} : \{\}/, '소모품 구매 수정이 쇼핑몰 칸 부재를 지키지 않는다']])
+}
+// ── ⓙ 표시·검색·엑셀 ─────────────────────────────────────────────
+{
+  const FC = 'app/(app)/finance/FinanceClient.tsx'
+  const fc = read(FC)
+  if ((fc.match(/externalOrderCaption\(/g) ?? []).length < 4) violations.push(`${FC}. 주문 캡션·묶음 모달 부제·상세 주문 줄이 쇼핑몰 이름 규칙(externalOrderCaption)을 안 쓴다`)
+  if (/쇼핑몰 \$\{e\.order(\?)?\.externalOrderNo\}|· 쇼핑몰 \{detailExp\.order\.externalOrderNo\}/.test(fc)) violations.push(`${FC}. 주문번호 앞에 낱말 '쇼핑몰'을 고정으로 쓰는 옛 캡션이 남았다`)
+  if (!/<DetailRow label="쇼핑몰"\s+value=\{detailExp\.channel\} \/>\}\n\s+\{detailExp\.vendor && <DetailRow label="구매처"/.test(fc)) violations.push(`${FC}. 지출 상세에 '쇼핑몰' 줄이 구매처 위에 없다`)
+  if (!/orderSellerLabel\(nonShip\)/.test(fc)) violations.push(`${FC}. 주문별 보기 판매처 요약이 정본(orderSellerLabel)을 안 쓴다`)
+  if (!/\$\{e\.channel \?\? ''\}/.test(fc)) violations.push(`${FC}. 목록 즉석 검색이 쇼핑몰을 안 찾는다`)
+  if (!/\{ channel:\s+\{ contains: q, mode: 'insensitive' \} \}/.test(fa)) violations.push(`${FA}. 과거 구매 검색(searchExpenses)이 쇼핑몰을 안 찾는다`)
+  if (!/\{ channel: \{ contains: q, mode: 'insensitive' \} \}/.test(read('app/(app)/search/actions.ts'))) violations.push('app/(app)/search/actions.ts. 전역 검색이 쇼핑몰을 안 찾는다')
+  if (!/'쇼핑몰':\s+e\.channel \?\? '',\n\s+'구매처':/.test(strip(read('app/api/export/route.ts')))) violations.push("app/api/export/route.ts. 엑셀 '쇼핑몰' 열이 '구매처' 바로 앞에 없다")
+  for (const [f, re] of [
+    ['app/(app)/inventory/assets/AssetsClient.tsx', /channelVendorLabel\(it\.channel, it\.vendor\)/],
+    ['app/(app)/inventory/InventoryClient.tsx', /channelVendorLabel\(entry\.channel, entry\.vendor\)/],
+    ['app/(app)/card-settlement/CardSettlementClient.tsx', /statementName\(item\)/],
+  ]) if (!re.test(read(f))) violations.push(`${f}. 한 줄 요약 자리가 쇼핑몰 먼저 규칙을 안 쓴다`)
+}
+// ── ⓚ 폼 ─────────────────────────────────────────────────────────
+{
+  const FC = 'app/(app)/finance/FinanceClient.tsx'
+  const fc = read(FC)
+  if (/name="vendor"[^>]*placeholder="예: 쿠팡/.test(fc)) violations.push(`${FC}. 구매처 자리표시에 쿠팡이 남았다(쿠팡은 쇼핑몰 자리다)`)
+  if ((fc.match(/placeholder="예: 다이소, 철물24"/g) ?? []).length < 2) violations.push(`${FC}. 등록·수정 폼 구매처 자리표시가 '예: 다이소, 철물24' 가 아니다`)
+  const add = fc.indexOf('name="vendor" value={addExpVendor}'), addBiz = fc.indexOf('name="vendorBizNo" inputMode="numeric" value={addExpBizNo}'), addCh = fc.indexOf('name="channel" value={addExpChannel}'), addNo = fc.indexOf('name="externalOrderNo"')
+  if (!(add > 0 && add < addBiz && addBiz < addCh && addCh < addNo)) violations.push(`${FC}. 등록 폼 머리 칸 순서가 구매처 · 사업자등록번호 · 쇼핑몰 · 쇼핑몰 주문번호가 아니다`)
+  if (!/\{!addIsService && \(\s*<div className="space-y-1\.5">\s*<label[^>]*>쇼핑몰 <span[^>]*>\(선택 · 비우면 구매처와 같음\)/.test(fc)) violations.push(`${FC}. 등록 폼 쇼핑몰 칸이 서비스·무형에서 안 숨거나 안내('선택 · 비우면 구매처와 같음')가 없다`)
+  if (!/\{!detailExp\.excludeFromInventory && \(\s*<div className="space-y-1\.5">\s*<label[^>]*>쇼핑몰 /.test(fc)) violations.push(`${FC}. 수정 폼 쇼핑몰 칸이 없거나 서비스·무형에서 안 숨는다`)
+  if (!/결제대행사\(예: 네이버파이낸셜\)는 구매처에도 쇼핑몰에도 적지 않습니다\./.test(fc)) violations.push(`${FC}. 결제대행사 안내 문장이 없다`)
+  if (!/const vendorAllowed = allowMulti && items\.length >= 2/.test(fc) || !/구매처 따로 입력/.test(fc)) violations.push(`${FC}. 품목별 구매처 접힌 줄이 다품목에서만 서지 않는다`)
+  if (!/vendor: list\.length >= 2 && x\.vendor\?\.trim\(\) \? x\.vendor\.trim\(\) : undefined/.test(fc)) violations.push(`${FC}. 저장으로 보내는 품목 목록이 품목별 구매처를 다품목·빈 글자 규칙으로 안 거른다`)
+  if (!/placeholder:text-\[var\(--ink-m\)\][^']*\[appearance:textfield\]/.test(fc)) violations.push(`${FC}. 품목 카드 입력(smallNum) 자리표시 대비가 정본(--ink-m)이 아니다`)
+  if (!/channelSplitAgainst\(expenses\.filter\(x => x\.orderId === detailExp\.orderId && x\.id !== detailExp\.id\), next\)/.test(fc)) violations.push(`${FC}. 수정 폼이 주문 속 쇼핑몰 갈림을 묻지 않는다`)
+}
+// ── ⓛ 구매처를 쇼핑몰 자리에 대신 쓰지 않는다 ─────────────────────
+{
+  const walk = (dir, out = []) => { for (const n of readdirSync(dir)) { const p = join(dir, n); if (n === 'node_modules' || n.startsWith('.')) continue; if (statSync(p).isDirectory()) walk(p, out); else if (/\.tsx?$/.test(n)) out.push(p) } return out }
+  const files = [...walk('app'), ...walk('components'), ...walk('lib')].filter(f => f !== 'lib/expenseChannel.ts')
+  // 쇼핑몰 값 자리에 구매처를 끼워 넣는 모양: channel ?? vendor · channel || vendor · channel: …vendor · channel = …vendor
+  const BAD = [
+    /\bchannel[\w?.()]*\s*(\?\?|\|\|)\s*[\w?.()]*\bvendor\b/,
+    /\bchannel\s*:\s*[\w?.()]*\bvendor\b/,
+    /\bchannel\s*=\s*[\w?.()]*\bvendor\b/,
+  ]
+  for (const f of files) {
+    const lines = strip(readFileSync(f, 'utf8')).split('\n')
+    lines.forEach((ln, i) => {
+      if (/statementName/.test(ln)) return   // 카드 명세 이름(쇼핑몰, 없으면 구매처)은 승인된 표시 자리다
+      for (const re of BAD) if (re.test(ln)) violations.push(`${f}:${i + 1}. 구매처를 쇼핑몰 자리에 대신 쓴다. 비운 쇼핑몰은 미기록이다(lib/expenseChannel). 표시는 channelVendorLabel 을 쓴다`)
+    })
+  }
+}
+
+if (violations.length) {
+  console.error(`[구매처·쇼핑몰 배선] 위반 ${violations.length}건`)
+  for (const v of violations) console.error(`  - ${v}`)
+  process.exit(1)
+}
+console.log('[구매처·쇼핑몰 배선] 위반 0건')
