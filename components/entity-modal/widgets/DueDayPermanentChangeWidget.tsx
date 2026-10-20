@@ -37,7 +37,8 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
       if (res.ok && res.undo) {
         const u = res.undo
         pushToast('info', '변경을 취소하려면 적용취소를 누르세요', {
-          action: { label: '적용취소', run: () => { void undoChangeDueDay(u).then(r => { if (r.ok) pushToast('info', '납입일 변경을 적용취소했습니다'); else pushToast('error', r.error) }) } },
+          // 적용취소도 적용과 같이 부모가 다시 읽게 한다(안 그러면 새로고침 전까지 바뀐 납입일이 보인다).
+          action: { label: '적용취소', run: () => { void undoChangeDueDay(u).then(r => { if (r.ok) { pushToast('info', '납입일 변경을 적용취소했습니다'); onChange?.() } else pushToast('error', r.error) }) } },
         })
       }
       if (res.ok) {

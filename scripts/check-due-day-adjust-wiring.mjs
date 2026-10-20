@@ -93,6 +93,7 @@ need('납입일 변경 위젯에 협의 금액 칸(MoneyInput)과 전달', /<Mon
 for (const fn of ['savePayment', 'recordDepositReceived']) {
   need(`${fn} 가 메모 거절을 던지지 않고 돌려준다(운영 빌드는 던진 문구를 가린다)`, /if \(memoErr\) return \{ ok: false, error: memoErr \}/.test(body(rooms, `export async function ${fn}(`)))
 }
+need('납입일 변경 위젯이 적용취소 성공 뒤에도 부모를 다시 읽힌다(onChange)', /undoChangeDueDay\(u\)\.then\(r => \{ if \(r\.ok\) \{[^}]*onChange\?\.\(\)/.test(w))
 
 // ── ⑤ 입주달 이중 셈 봉합 ──────────────────────────────────────────
 const billing = strip(read('lib/billing.ts'))
