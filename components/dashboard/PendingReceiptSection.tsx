@@ -470,13 +470,15 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            {/* 세 칸은 한 줄에 하나씩 선다. 두 칸을 나란히 두면 좁은 카드(썸네일 옆)에서 자리표시가 칸 너비를 넘어
+                라벨 노릇을 못 한다(320px 칸 43px 에 '상호명 (선택)' 63px, 쇼핑몰 칸을 더할 때 하네스 실측). */}
+            <div className="grid grid-cols-1 gap-1.5">
               <input type="text" placeholder="상호명 (선택)" value={vendor} onChange={e => setVendor(e.target.value)}
                 className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
               <input type="text" placeholder="쇼핑몰 (선택)" aria-label="쇼핑몰 (선택 · 비우면 상호명과 같음)" value={channel} onChange={e => setChannel(e.target.value)}
                 className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
               <input type="text" placeholder="메모 (선택)" value={memo} onChange={e => setMemo(e.target.value)}
-                className="col-span-2 w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none" />
             </div>
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}

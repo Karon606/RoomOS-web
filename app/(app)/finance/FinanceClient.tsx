@@ -858,6 +858,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             const hasManual = (it.allocations ?? []).some(a => a.locked)   // 손으로 고친 방이 하나라도 있나
             // 자리표시 글자는 §12 정본 --ink-m 이다(종전에는 브라우저 기본 회색이라 크림 위 2.98:1, UX 패널 2026-10-19).
             const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
+            // 글자 칸(규격 직접·브랜드·제품명·품목별 구매처)은 왼쪽 정렬이다. smallNum 뒤에 text-left 를 덧붙이면 생성 CSS 차례상
+            // text-right 가 이겨 오른쪽으로 붙었다(하네스 실측 2026-10-20). 한 클래스에 두 정렬을 겹치지 않고 따로 둔다.
+            const smallText = smallNum.replace(' text-right ', ' text-left ')
             // 품목별 구매처(2026-10-19 운영자 승인, 신고 a0636f36). 오픈마켓 한 결제에 판매자가 여럿일 때만 쓴다. 다품목에서만 선다.
             // 열면 한 줄('구매처 [입력] 지우기'), 비우면 머리 구매처를 따른다. 사업자번호 칸은 없다(서버가 과거 기록에서 찾는다).
             const vendorAllowed = allowMulti && items.length >= 2
@@ -979,7 +982,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <input type="text" value={it.specText}
                       onChange={e => patchItem(idx, { specText: e.target.value })}
                       placeholder="예: 4x30mm"
-                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                      className={`flex-1 min-w-0 ${smallText}`} />
                     <button type="button" onClick={() => patchItem(idx, { specText: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">숫자 규격으로</button>
                   </div>
@@ -996,7 +999,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                       onChange={e => patchItem(idx, { vendor: e.target.value })}
                       placeholder={headVendor.trim() ? `비우면 ${headVendor.trim()}` : '비우면 위 구매처'}
                       aria-label="이 품목의 구매처"
-                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                      className={`flex-1 min-w-0 ${smallText}`} />
                     <button type="button" onClick={() => patchItem(idx, { vendor: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
                   </div>
@@ -1007,11 +1010,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <input type="text" value={it.brand ?? ''}
                       onChange={e => patchItem(idx, { brand: e.target.value })}
                       placeholder="예: 필립스"
-                      className={`w-20 shrink-0 ${smallNum} text-left`} />
+                      className={`w-20 shrink-0 ${smallText}`} />
                     <input type="text" value={it.productName ?? ''}
                       onChange={e => patchItem(idx, { productName: e.target.value })}
                       placeholder="제품명 (예: 3000 시리즈 HD9318/00)"
-                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                      className={`flex-1 min-w-0 ${smallText}`} />
                     <button type="button" onClick={() => patchItem(idx, { brand: undefined, productName: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
                   </div>
@@ -1301,7 +1304,8 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
             const changed = val.trim() !== r.vendor
             const checked = sel.has(r.vendor)
             return (
-              <div key={r.vendor}
+              <Fragment key={r.vendor}>
+              <div
                 className={`flex items-center gap-1.5 rounded-lg select-none ${selMode ? 'cursor-pointer -mx-1 px-1 py-0.5' : ''} ${checked ? 'bg-[var(--coral)]/5 ring-1 ring-inset ring-[var(--coral)]/30' : ''}`}
                 onClick={selMode ? () => toggleSel(r.vendor) : undefined}
                 {...press(!selMode ? () => { setSelMode(true); setSel(new Set([r.vendor])) } : undefined)}
@@ -1317,8 +1321,6 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
                   <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
                     className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 )}
-                {/* 쇼핑몰 목록에 있는 이름. 합치기·이름 변경이 막히고 '쇼핑몰로 옮기기'를 권한다(서버 renameVendor 와 같은 판정). */}
-                {r.isChannel && <Badge tone="pale-neutral" className="shrink-0">쇼핑몰</Badge>}
                 <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
                 {!selMode && (
                   <>
@@ -1332,6 +1334,12 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
                   </>
                 )}
               </div>
+              {/* 쇼핑몰 목록에 있는 이름. 합치기·이름 변경이 막히고(서버 renameVendor 와 같은 판정) 쇼핑몰 칸으로 옮기기를 권한다.
+                  행 안 배지로 두면 좁은 폭에서 이름 칸이 눌려 사라져(320px 이름 칸 6px, 하네스 실측) 행 아래 캡션 한 줄로 둔다. */}
+              {r.isChannel && (
+                <p className="pl-1 -mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-keep">쇼핑몰 목록에 있는 이름입니다. 선택한 뒤 아래 &apos;쇼핑몰&apos;로 쇼핑몰 칸에 옮기세요.</p>
+              )}
+              </Fragment>
             )
           })}
       </div>
@@ -1367,16 +1375,18 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
     {/* 쇼핑몰 정리 창도 구매처 관리 모달의 형제다(합치기 시트와 같은 까닭). 입력 하나 + 갈래 둘(세그먼트)이라 정본 Modal 이다. */}
     <Modal open={!!chSheet} onClose={() => setChSheet(null)} width="sm" title="쇼핑몰 정리"
       subtitle={chSheet ? `${chSheet.vendors.length === 1 ? chSheet.vendors[0] : `선택 ${chSheet.vendors.length}곳`} · 지출 ${chSheet.count}건` : undefined}
-      footer={<>
+      // 발끝은 일괄 편집 모달과 같은 문법(취소 secondary · 주 동작 primary, 반반). 주 동작 라벨은 짧은 동사다(320px·글자 125% 에서 한 줄, 하네스 실측).
+      footer={<div className="flex gap-2">
         <Btn type="button" variant="secondary" size="md" onClick={() => setChSheet(null)} className="flex-1">취소</Btn>
         <Btn type="button" variant="primary" size="md" onClick={() => void runChannel()} disabled={chBusy || !chName.trim()} className="flex-1">
-          {chBusy ? '저장 중…' : chMode === 'move' ? '쇼핑몰로 옮기기' : '쇼핑몰 지정'}
+          {chBusy ? '저장 중…' : chMode === 'move' ? '옮기기' : '지정하기'}
         </Btn>
-      </>}>
+      </div>}>
       <div className="space-y-3">
-        <SegmentedControl ariaLabel="쇼핑몰 정리 방식" value={chMode} onChange={setChMode} className="w-full"
-          options={[{ value: 'move', label: '쇼핑몰로 옮기기' }, { value: 'set', label: '쇼핑몰만 지정' }]} />
-        <p className="text-[0.6875rem] text-[var(--warm-mid)] leading-relaxed">
+        {/* 갈래 라벨은 구매처가 어떻게 되는지로 짧게 말한다(320px·글자 125% 에서 한 줄, 하네스 실측). 동작 이름은 아래 버튼이 말한다. */}
+        <SegmentedControl ariaLabel="구매처 처리" size="sm" value={chMode} onChange={setChMode}
+          options={[{ value: 'move', label: '구매처 비우기' }, { value: 'set', label: '구매처 그대로' }]} />
+        <p className="text-[0.6875rem] text-[var(--warm-mid)] leading-relaxed break-keep">
           {chMode === 'move'
             ? '구매처 자리에 쇼핑몰 이름이 적힌 경우입니다. 그 지출의 쇼핑몰에 아래 이름을 적고 구매처와 사업자등록번호를 비웁니다.'
             : '구매처는 그대로 두고 그 지출의 쇼핑몰만 아래 이름으로 적습니다.'}
@@ -1386,7 +1396,7 @@ function VendorManageModal({ onClose, onChanged, channelOptions }: { onClose: ()
           <input type="text" value={chName} onChange={e => setChName(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="vendor-mgmt-channels"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
           <datalist id="vendor-mgmt-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">쇼핑몰이 이미 다른 이름으로 적힌 지출은 건드리지 않습니다. 저장 뒤 적용취소할 수 있습니다.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">쇼핑몰이 이미 다른 이름으로 적힌 지출은 건드리지 않습니다. 저장 뒤 적용취소할 수 있습니다.</p>
         </div>
       </div>
     </Modal>
@@ -5246,7 +5256,7 @@ export default function FinanceClient({
                     <input type="text" name="channel" value={addExpChannel} onChange={e => setAddExpChannel(e.target.value)} placeholder="예: 쿠팡, 지마켓" list="add-exp-channels"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     <datalist id="add-exp-channels">{channelOptions.map(v => <option key={v} value={v} />)}</datalist>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">결제대행사(예: 네이버파이낸셜)는 구매처에도 쇼핑몰에도 적지 않습니다.</p>
                   </div>
                 )}
                 {/* #1 쇼핑몰 주문번호 — 영수증 OCR로 자동입력되며 수동 수정 가능. 진위확인·재주문 참조용(보조). */}
@@ -6019,7 +6029,8 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
     onDone()
   }
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  // 자리표시('미변경')는 §12 정본 --ink-m 이다. 종전에는 브라우저 기본 회색이라 크림 위 2.8:1 이었다(쇼핑몰 칸 하네스 실측, 같은 클래스 전수).
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]'
 
   return (
     <Modal open onClose={onClose} width="md" dirty={dirty}
