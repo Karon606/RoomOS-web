@@ -27,6 +27,7 @@
 //      자리표시 '0' 이 없고, 안내문이 규칙과 맞고, 서버가 채움 ≤ 잔량·음수를 거부한다.
 //   ⑪ (2026-10-20 신고 5efc8a12) 창고 행이 두 화면에서 같은 Badge·같은 규칙 문장이고, 패널 비창고 행 캡션이 '창고(경로) 남음'
 //      이며, 패널 이름 줄이 배지 때문에 자라지 않는다. 창고 행에는 '다른 곳으로' 가 없다(검토 후 기각, 비창고 가지 안에만).
+//      창고 '그대로'(canKeep)는 같은 품목의 다른 행이 '채우기 전'을 묻는 동안에도 숨는다(hubQuiet, 두 화면).
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -536,8 +537,8 @@ need("'그대로' 버튼이 두 화면 모두에 있다",
 //      ⓐ 만 있으면 입력 순서에 따라 값이 남는다(독립 검수 2026-10-12 재현) — 두 화면 모두.
 // 술어 하나(canKeep)가 두 조건을 진다 — 행이 비어 있을 때만, 그리고 창고 행은 이번 저장에 채움이 없을 때만.
 need("채움이 있으면 창고 행 '그대로' 를 안 그린다(두 화면)",
-  /const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !\(rowIsHub && restockSum > 0\)/.test(itemForm) &&
-  /const canKeep = prev != null && beforeStr === '' && afterStr === '' && !\(rowIsHub && itemMoves > 0\)/.test(locPanel) &&
+  /const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !\(rowIsHub && \(restockSum > 0 \|\| pendingLocCount > 0\)\)/.test(itemForm) &&
+  /const canKeep = prev != null && beforeStr === '' && afterStr === '' && hubQuiet/.test(locPanel) &&
   /\{canKeep && \(\s*\n\s*<RowActionBtn[\s\S]{0,240}?그대로/.test(itemForm) &&
   /\{canKeep && \(\s*\n\s*<RowActionBtn[\s\S]{0,240}?그대로/.test(locPanel),
   '옮기기 전 창고 양을 실측으로 박는 입구다 — 허브 패치가 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다')
@@ -931,6 +932,14 @@ need("'다른 곳으로' 는 비창고 가지 안에만 있다(창고 행 입구
     return tern >= 0 && nonHub > tern && btn > nonHub && close > btn
   })(),
   '두 가지 밖으로 나가면 창고 행에도 서서 도착지 채운 후와 같은 일을 두 입구에서 하게 된다')
+// 창고 '그대로' 의 미결 빈틈(독립 검수 2026-10-20). 미결 행('채우기 전'을 묻는 칸)은 calcLocMove 가 restocked 0 을 돌려 itemMoves 에
+// 안 잡힌다. 그 동안 창고 '그대로' 로 옮기기 전 저장값을 박으면 '저장값에서 채움' 을 고르는 순간 채움이 되어 유령 재고(P1-1) 자리가 된다.
+// 이름 있는 값 하나(hubQuiet = itemMoves === 0 && 미결 없음)를 canKeep 이 본다. 미결은 창고 행에서만 센다.
+need("창고 '그대로' 가 같은 품목의 미결 행이 있으면 숨는다(hubQuiet 한 값)",
+  /const hubQuiet = itemMoves === 0 && !\(rowIsHub && itemHasPending\(r\)\)/.test(locPanel) &&
+  /const itemHasPending = \(r: InventoryRow\) => groups\.some\(g =>\s*\n\s*g\.items\.some\(x => x\.id === r\.id\) &&\s*\n\s*!r\.locations\.find\(l => l\.id === g\.node\.id\)\?\.isHub &&\s*\n\s*computeRow\(r, g\.node\.id\)\.pending\)/.test(locPanel) &&
+  /const itemMoves = rowIsHub \? hubMoves : 0/.test(locPanel),
+  "미결을 안 보면 묻는 동안 '그대로' 로 박은 옮기기 전 값이 고른 뒤 채움과 겹쳐 두 번 남는다")
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

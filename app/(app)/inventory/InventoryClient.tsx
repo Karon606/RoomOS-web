@@ -4818,7 +4818,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                 // 행이 비어 있을 때만 선다. 창고 행은 **이번 저장에 채움이 있으면 서지 않는다**(1단계 유령 재고 규칙) —
                 // 저장된 값은 옮기기 전 창고 양이라, 그걸 실측으로 박으면 허브 패치가 맨 뒤에 덮어써 옮긴 만큼이 두 번 남는다.
                 // 글자는 이 한 자리뿐이다(check-draft-lifecycle 이 화면마다 1회로 센다).
-                const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !(rowIsHub && restockSum > 0)
+                // 미결 행(pendingLocCount)도 막는다 — 고르는 순간 채움이 되어 위치 패널 hubQuiet 와 같은 구멍이 된다(독립 검수 2026-10-20).
+                const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !(rowIsHub && (restockSum > 0 || pendingLocCount > 0))
                 return (
                   <div key={loc.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
                     {/* 행 머리 — 끝 칸 이름(13/600) + 창고 Badge, 오른쪽에 '저장 N'(12px tnum)과 '그대로'/'이번 채움'.
@@ -5640,6 +5641,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
     if (r.locations.find(l => l.id === g.node.id)?.isHub) return s
     return s + computeRow(r, g.node.id).restocked
   }, 0)
+  // 같은 순회로 — 이 품목의 비창고 행 중 '채우기 전'을 묻는(미결) 칸이 있는가. 미결 행은 restocked 가 0 이라
+  // itemRestockSum 에 안 잡히지만, 고르는 순간 채움이 되어 저장 때 창고에서 빠진다(독립 검수 2026-10-20).
+  const itemHasPending = (r: InventoryRow) => groups.some(g =>
+    g.items.some(x => x.id === r.id) &&
+    !r.locations.find(l => l.id === g.node.id)?.isHub &&
+    computeRow(r, g.node.id).pending)
 
   // 같은 점검에 이미 보충 마커가 있는데 이번에도 보충이 계산되는가 — 이중 차감의 유일한 입구다.
   // 판정 축은 아래 saveUnit 의 머지 조건과 같아야 한다(새 점검으로 저장되면 마커가 안 겹친다).
@@ -6334,6 +6341,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       const hubOverdrawn = hubLeft != null && hubLeft < -HUB_SHORT_EPS
                       const hubStock = hubLoc ? { pathName: hubLoc.pathName, qty: hubLeft } : null
                       const itemMoves = rowIsHub ? hubMoves : 0
+                      // 창고 행이 '조용한가' — 같은 품목의 다른 행에 채움도, 고를 채움(미결)도 없다. 창고 행 '그대로'(canKeep)가
+                      // 이 한 값을 본다. 미결 행은 restocked 가 0 이라 itemMoves 에 안 잡히는데, 그 동안 '그대로' 로 옮기기 전 저장값을
+                      // 박아 두면 '저장값에서 채움' 을 고르는 순간 채움이 되어 유령 재고(P1-1) 자리가 된다(독립 검수 2026-10-20).
+                      // 비창고 행은 늘 참이다(itemMoves 0, 미결은 창고 행에서만 센다).
+                      const hubQuiet = itemMoves === 0 && !(rowIsHub && itemHasPending(r))
                       // 창고 칸에 옮기기 전 저장값이 그대로 남았는데 이번 저장에 채움이 있다 — 아이템별 폼과 같은 판정(그 주석이 정본).
                       const hubStale = rowIsHub && itemMoves > 0 && beforeStr !== '' && prev != null && Number(beforeStr) === prev.qty
                       // 이 행의 입력칸에 든 값이 임시저장 복원본인가 — 복원 후 손대면 '수정됨'으로 바뀐다.
@@ -6342,7 +6354,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       // '그대로' — 저장된 값을 이번 실측으로 확정한다(종전 '옮김 없음'·'저장된 값' 을 합친 한 이름, 2단계).
                       // 행이 비어 있을 때만 선다. 창고 칸은 **이 품목의 이번 저장에 채움이 있으면 서지 않는다** —
                       // 아이템별 폼과 같은 규칙이다(그 주석이 정본, 도메인 P1-1 유령 재고). 글자는 이 한 자리뿐이다.
-                      const canKeep = prev != null && beforeStr === '' && afterStr === '' && !(rowIsHub && itemMoves > 0)
+                      const canKeep = prev != null && beforeStr === '' && afterStr === '' && hubQuiet
                       return (
                         <div key={k} style={{ marginLeft: indent }} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
                           {/* 행 머리 — 품목 이름(13/600)과 분류. 오른쪽 묶음('저장 N' · '그대로'/'이번 채움')은 아이템별 폼 행
