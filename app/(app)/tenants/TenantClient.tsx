@@ -89,6 +89,7 @@ import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STA
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
+import { isDueDayAdjust, dueDayAdjustLabel } from '@/lib/dueDayAdjust'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -2864,10 +2865,10 @@ export default function TenantClient({
         const payableLeases = roomLeaseRowOrder(
           tenant.leaseTerms.filter(l => ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'RESERVED'].includes(l.status)),
         )
-        const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
-        const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]') && !p.isDeposit)
+        const adjRecords = payHistory.filter(p => isDueDayAdjust(p.memo))
+        const regularRecords = payHistory.filter(p => !isDueDayAdjust(p.memo) && !p.isDeposit)
         // 목록에 그릴 집합 — 3개월 창. 위 regularRecords 는 금액 계산용이라 조회월 기준 그대로 둔다.
-        const regularWindow = payWindow.filter(p => !p.memo?.startsWith('[납입일변경]'))
+        const regularWindow = payWindow.filter(p => !isDueDayAdjust(p.memo))
         const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
@@ -3010,7 +3011,7 @@ export default function TenantClient({
                         {adjRecords.map(p => {
                           const isExtra = p.actualAmount < 0
                           const absAmt = Math.abs(p.actualAmount)
-                          const label = p.memo?.replace('[납입일변경] ', '') ?? ''
+                          const label = dueDayAdjustLabel(p.memo)
                           return (
                             <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5"
                               style={{

@@ -12,6 +12,7 @@
 
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
+import { dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { leaseBillingEnd } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
@@ -116,13 +117,10 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   // [납입일변경] 메모에서 변경 전 원래 dueDay 복원
   const originalDueDayByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
-    if (!p.memo?.includes('[납입일변경]')) continue
+    if (!isDueDayAdjust(p.memo)) continue
     const existing = originalDueDayByLease[p.leaseTermId]
-    const m = p.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
-    if (!m) continue
-    const t = m[1].trim()
-    const parsed = t.includes('말') ? 31 : Number(t)
-    if (isNaN(parsed) || parsed <= 0) continue
+    const parsed = dueDayBeforeChange(p.memo)
+    if (parsed === null) continue
     const recDate = new Date(p.payDate).getTime()
     const cur = (originalDueDayByLease as Record<string, number>)[`__date_${p.leaseTermId}`]
     if (existing === undefined || (cur !== undefined && recDate < cur)) {

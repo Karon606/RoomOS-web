@@ -85,6 +85,7 @@ import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
+import { buildDueDayAdjustMemo } from '@/lib/dueDayAdjust'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -4762,7 +4763,6 @@ export async function changeDueDay(
       const seqNo = (maxSeq._max.seqNo ?? 0) + 1
       const isRefund = adjustAmount > 0
       const absAmt = Math.abs(adjustAmount)
-      const typeLabel = isRefund ? '과입금' : '추가납부'
 
       const adj = await prisma.paymentRecord.create({
         data: {
@@ -4775,7 +4775,8 @@ export async function changeDueDay(
           isPaid:         isRefund,
           payDate:        new Date(),
           seqNo,
-          memo: `[납입일변경] ${lease.dueDay ?? '?'}일→${newDueDay} 변경, 일할 ${absAmt.toLocaleString()}원 (${typeLabel})`,
+          // 메모 모양은 lib/dueDayAdjust 정본이 만든다(기계 키 '[납입일변경]' 과 변경 전 납부일을 다른 자리가 읽는다).
+          memo: buildDueDayAdjustMemo({ from: lease.dueDay ?? '?', to: newDueDay, ruleAmount: absAmt, agreedAmount: null, kind: isRefund ? 'refund' : 'extra', note: '' }),
         },
       })
       undoSnap.adjustRecordId = adj.id

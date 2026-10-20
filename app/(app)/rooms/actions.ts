@@ -39,6 +39,7 @@ import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLoc
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 import { prepaidCarry } from '@/lib/prepaidCarry'
+import { dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -191,7 +192,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         OR: [
           { targetMonth: { lte: targetMonth } },
           { payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },
-          { memo: { contains: '[납입일변경]' } },
+          dueDayAdjustWhere(),
           { isPrevOwner: true },
         ],
       },
@@ -371,16 +372,10 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     {
       const allLeaseRecords_forMemo = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
       const changeRecord = allLeaseRecords_forMemo
-        .filter(p => p.memo?.includes('[납입일변경]'))
+        .filter(p => isDueDayAdjust(p.memo))
         .sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())[0]
-      if (changeRecord?.memo) {
-        const m = changeRecord.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
-        if (m) {
-          const t = m[1].trim()
-          const parsed = t.includes('말') ? 31 : Number(t)
-          if (!isNaN(parsed) && parsed > 0) originalDueDay = parsed
-        }
-      }
+      const parsed = dueDayBeforeChange(changeRecord?.memo)
+      if (parsed !== null) originalDueDay = parsed
     }
     const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && originalDueDay < cutoffDay)
 
@@ -823,18 +818,12 @@ async function findFirstUnpaidMonth(
   let baseDueDayNum = lease.dueDay?.includes('말') ? 31 : parseInt(lease.dueDay ?? '99', 10)
   if (cutoffDate) {
     const firstChangeMemo = await prisma.paymentRecord.findFirst({
-      where: { leaseTermId, memo: { contains: '[납입일변경]' } },
+      where: { leaseTermId, ...dueDayAdjustWhere() },
       orderBy: { payDate: 'asc' },
       select: { memo: true },
     })
-    if (firstChangeMemo?.memo) {
-      const m = firstChangeMemo.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
-      if (m) {
-        const t = m[1].trim()
-        const parsed = t.includes('말') ? 31 : Number(t)
-        if (!isNaN(parsed) && parsed > 0) baseDueDayNum = parsed
-      }
-    }
+    const parsed = dueDayBeforeChange(firstChangeMemo?.memo)
+    if (parsed !== null) baseDueDayNum = parsed
   }
 
   while (cy < vy || (cy === vy && cmn <= vm)) {

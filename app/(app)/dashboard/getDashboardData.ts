@@ -10,6 +10,7 @@ import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbR
 import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
+import { dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust } from '@/lib/dueDayAdjust'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -425,7 +426,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
           isDeposit: false,
           isPrevOwner: false,
           isBillingAdjust: false,
-          NOT: { memo: { contains: '[납입일변경]' } },
+          // 이 NOT 은 메모가 null 인 수납도 함께 뺀다(SQL NOT 의 null 규칙, lib/dueDayAdjust notDueDayAdjustWhere 주석).
+          // 2026-10-20 조정 행 판정을 모을 때 찾은 것이라 뜻을 바꾸지 않고 그대로 둔다(보고만, 별건).
+          NOT: dueDayAdjustWhere(),
           OR: [
             { payDate: monthWindow },
             { targetMonth },
@@ -627,13 +630,10 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   // [납입일변경] 메모에서 변경 전 원래 dueDay를 복원 (changeDueDay로 lease.dueDay가 영구 변경된 경우 대비)
   const originalDueDayByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
-    if (!p.memo?.includes('[납입일변경]')) continue
+    if (!isDueDayAdjust(p.memo)) continue
     const existing = originalDueDayByLease[p.leaseTermId]
-    const m = p.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
-    if (!m) continue
-    const t = m[1].trim()
-    const parsed = t.includes('말') ? 31 : Number(t)
-    if (isNaN(parsed) || parsed <= 0) continue
+    const parsed = dueDayBeforeChange(p.memo)
+    if (parsed === null) continue
     // 가장 이른 [납입일변경] 기록의 변경 전 값을 사용
     const recDate = new Date(p.payDate).getTime()
     const cur = (originalDueDayByLease as any)[`__date_${p.leaseTermId}`] as number | undefined
