@@ -93,7 +93,8 @@ export async function issueRentReceiptBatch(propertyId: string, body: RentReceip
     rows = await prisma.$transaction(tx => issueRentReceiptsInTx(tx, loaded.ctx, perMonth.map(m => ({
       tenantId: tenant.id, tenantName: tenant.name, leaseTermId: body.leaseTermId,
       fields: m.fields, nameStyle, targetMonth: m.month,
-    })), uploaded, receiptRequestTag(body.requestId)), { timeout })
+    // maxWait 를 따로 준다. 기본 2초는 연결이 바쁠 때 트랜잭션을 열지도 못하고 P2028 로 떨어진다(시험이 부하에서 들쭉날쭉 실패한 원인).
+    })), uploaded, receiptRequestTag(body.requestId)), { timeout, maxWait: 10_000 })
   } catch (err) {
     await trashUploaded(uploaded)
     const msg = rentReceiptIssueErrorMessage(err)

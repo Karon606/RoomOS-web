@@ -98,7 +98,7 @@ export async function POST(req: Request) {
       const [row] = await prisma.$transaction(tx => issueRentReceiptsInTx(tx, ctx, [{
         tenantId: tenant.id, tenantName: tenant.name, leaseTermId, fields,
         nameStyle: body.nameStyle ?? null, targetMonth: body.targetMonth ?? null,
-      }], uploaded, receiptRequestTag(body.requestId)), { timeout: 25_000 })
+      }], uploaded, receiptRequestTag(body.requestId)), { timeout: 25_000, maxWait: 10_000 })   // 기본 maxWait 2초는 바쁜 연결에서 P2028
       record = row
     } catch (err) {
       await trashUploaded(uploaded)
