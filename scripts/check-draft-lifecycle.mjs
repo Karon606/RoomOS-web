@@ -28,6 +28,8 @@
 //   ⑪ (2026-10-20 신고 5efc8a12) 창고 행이 두 화면에서 같은 Badge·같은 규칙 문장이고, 패널 비창고 행 캡션이 '창고(경로) 남음'
 //      이며, 패널 이름 줄이 배지 때문에 자라지 않는다. 창고 행에는 '다른 곳으로' 가 없다(검토 후 기각, 비창고 가지 안에만).
 //      창고 '그대로'(canKeep)는 같은 품목의 다른 행이 '채우기 전'을 묻는 동안에도 숨는다(hubQuiet, 두 화면).
+//   ⑫ (2026-10-21 운영자 요청) '옮김 없음' 복원 — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로. 한 상수·한 판정
+//      함수(canNoMove 진리표), 두 화면 같은 행 머리 자리.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -940,6 +942,45 @@ need("창고 '그대로' 가 같은 품목의 미결 행이 있으면 숨는다(
   /const itemHasPending = \(r: InventoryRow\) => groups\.some\(g =>\s*\n\s*g\.items\.some\(x => x\.id === r\.id\) &&\s*\n\s*!r\.locations\.find\(l => l\.id === g\.node\.id\)\?\.isHub &&\s*\n\s*computeRow\(r, g\.node\.id\)\.pending\)/.test(locPanel) &&
   /const itemMoves = rowIsHub \? hubMoves : 0/.test(locPanel),
   "미결을 안 보면 묻는 동안 '그대로' 로 박은 옮기기 전 값이 고른 뒤 채움과 겹쳐 두 번 남는다")
+
+// ── ⑫ '옮김 없음' 복원 (2026-10-21 운영자 "채우기 전과 후가 동일할 경우 '옮김 없음' 버튼이 … 필요해") ──────
+// 2026-10-12 2단계가 '옮김 없음'·'저장된 값' 을 '그대로' 하나로 합치면서 '채우기 전을 적은 행의 채운 후 = 채우기 전' 경우가
+// 사라졌다('그대로' 는 두 칸이 다 빈 행에만 선다). 이름을 나눠 되살린다 — 한 상수·한 판정 함수, 두 화면 같은 자리(행 머리 '저장값' 줄).
+const noMoveFnSrc = (client.match(/function canNoMove\(isHubRow: boolean, beforeStr: string, afterStr: string\): boolean \{\s*\n\s*return ([^\n]+)\n\}/) ?? [])[1] ?? ''
+need("'옮김 없음' 낱말이 한 상수다", /const NO_MOVE_LABEL = '옮김 없음'\n/.test(client) && !/>\s*옮김 없음\s*</.test(client),
+  '화면마다 글자를 따로 쓰면 한쪽만 바뀐다')
+need("'옮김 없음' 판정 함수가 있다", noMoveFnSrc !== '')
+// 진리표 — 판정 식을 그대로 꺼내 돌린다. (창고?, 채우기 전, 채운 후) → 서는가.
+if (noMoveFnSrc) {
+  // eslint-disable-next-line no-new-func
+  const canNoMove = new Function('isHubRow', 'beforeStr', 'afterStr', `return ${noMoveFnSrc.replace(/;$/, '')}`)
+  const cases = [
+    [false, '5', '', true],     // 채우기 전만 적음 — 선다
+    [false, '0', '', true],     // 0 을 센 행도 '옮김 없음' 으로 닫는다
+    [false, '5.', '', true],    // 입력 중 소수점 — Number('5.') = 5
+    [false, '', '', false],     // 빈 행은 '그대로' 몫
+    [false, '', '7', false],    // 채운 후만 — 미결/0 해석 몫(PendingFillChoice)
+    [false, '5', '7', false],   // 둘 다 적음 — 할 일 없음
+    [false, '5', '5', false],   // 이미 닫힘 — 버튼이 사라진다
+    [false, '.', '', false],    // NaN 은 복사하지 않는다
+    [true, '5', '', false],     // 창고 행은 '채운 후' 칸이 없다
+  ]
+  for (const [hub, b, a, want] of cases) {
+    need(`'옮김 없음' 진리표 (창고 ${hub}, 전 '${b}', 후 '${a}') → ${want}`, canNoMove(hub, b, a) === want)
+  }
+}
+// 두 화면 대칭 — 같은 함수·같은 상수·같은 정본 버튼, '채운 후'(afterQtys)에 '채우기 전' 글자를 그대로 넣는다.
+need("'옮김 없음' 이 두 화면 모두 canNoMove(rowIsHub, beforeStr, afterStr) 로 선다",
+  /\{canNoMove\(rowIsHub, beforeStr, afterStr\) && \(\s*\n\s*<RowActionBtn className="shrink-0" onClick=\{\(\) => \{ markEntered\(loc\.id\); setAfterQtys\(p => \(\{ \.\.\.p, \[loc\.id\]: beforeStr \}\)\) \}\}>\s*\n\s*\{NO_MOVE_LABEL\}\s*\n\s*<\/RowActionBtn>/.test(itemForm) &&
+  /\{canNoMove\(rowIsHub, beforeStr, afterStr\) && \(\s*\n\s*<RowActionBtn className="shrink-0" onClick=\{\(\) => setAfterQtys\(p => \(\{ \.\.\.p, \[k\]: beforeStr \}\)\)\}>\s*\n\s*\{NO_MOVE_LABEL\}\s*\n\s*<\/RowActionBtn>/.test(locPanel) &&
+  (client.match(/\{NO_MOVE_LABEL\}/g) ?? []).length === 2,
+  "한 화면만 있으면 같은 일이 화면마다 되다 말다 한다. beforeQtys 에 쓰면 '그대로' 와 같은 일이 된다")
+// 자리 — '그대로' 와 같은 행 머리 줄(min-h-7, 버튼 높이 28px 고정)이라 버튼이 서고 사라질 때 입력칸이 뜨지 않는다.
+need("'옮김 없음' 이 '그대로' 와 같은 행 머리 줄에 선다(두 화면)",
+  /canNoMove/.test(headCluster(itemForm)) && /canNoMove/.test(headCluster(locPanel)) &&
+  /<div className="flex min-h-7 items-center gap-2">\s*\n\s*\{g\.parent !== ''/.test(itemForm) &&
+  /<div className="flex min-h-7 items-center gap-2">\s*\n\s*<p className="min-w-0 flex-1 truncate text-\[0\.65625rem\]/.test(locPanel),
+  '입력칸 아래 줄로 내리거나 머리 줄 min-h 를 빼면 버튼이 사라질 때 칸이 손가락 밑에서 뜬다')
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

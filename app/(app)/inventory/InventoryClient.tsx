@@ -216,6 +216,15 @@ const CHECK_GUIDE_RESTOCK = '센 위치만 적으세요. 손대지 않은 위치
 // 종전 문장('비워 두면' 으로 시작해 '자동 차감' 으로 끝났다)은 무엇이 어디서 빠지는지를 말하지 않아, 이 칸이 다른 위치의 '채운 후'
 // 와 이어진 창고라는 사실이 안 보였다. '비워 두면' 조건은 남긴다 — 적으면 그 값이 그대로 저장된다(오른쪽 칸 '저장될 양').
 const HUB_ROW_HINT = '비워 두면 다른 위치에 채운 만큼 여기서 자동으로 빠집니다.'
+// 비창고 행 '옮김 없음'(2026-10-21 운영자 요청으로 복원) — '채우기 전'만 적은 행에서 '채운 후'를 같은 값으로 채운다(센 값 그대로,
+// 옮긴 것 없음). 행이 비었을 때의 '그대로'(저장값을 '채우기 전'에 넣는다)와 뜻이 달라 이름을 나눈다. 2026-10-12 2단계가 둘을
+// '그대로' 하나로 합치면서 이 경우가 사라졌다. 판정은 두 화면(아이템별 폼·위치 패널)이 이 함수 하나를 부른다. 창고 행은 '채운 후'
+// 칸이 없어 해당 없다. 저장 결과는 '채운 후'를 비워 둔 것과 같다(calcLocMove: 채움 0, 잔량 = 그 값) — 두 칸이 같은 값으로 닫혀
+// "이 행은 옮긴 것 없이 끝났다" 가 칸에 보이는 것이 이 버튼의 몫이다.
+const NO_MOVE_LABEL = '옮김 없음'
+function canNoMove(isHubRow: boolean, beforeStr: string, afterStr: string): boolean {
+  return !isHubRow && beforeStr !== '' && afterStr === '' && Number.isFinite(Number(beforeStr))
+}
 const pendingReasonItemForm = (n: number) => `'채우기 전'을 고를 위치가 ${n}곳 남았습니다.`
 const pendingReasonPanel = (n: number) => `'채우기 전'을 고를 품목이 ${n}건 남았습니다.`
 
@@ -4877,6 +4886,13 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                           그대로
                         </RowActionBtn>
                       )}
+                      {/* '옮김 없음' — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로(canNoMove 주석이 정본). '그대로'와
+                          같은 자리를 번갈아 쓴다(둘은 '채우기 전'이 비었는가로 갈려 함께 서지 않는다). */}
+                      {canNoMove(rowIsHub, beforeStr, afterStr) && (
+                        <RowActionBtn className="shrink-0" onClick={() => { markEntered(loc.id); setAfterQtys(p => ({ ...p, [loc.id]: beforeStr })) }}>
+                          {NO_MOVE_LABEL}
+                        </RowActionBtn>
+                      )}
                     </div>
                     {/* 지난 점검의 채움 — 저장본 축이다(이번 채움과 한 줄에 같은 +N 이 두 번 뜨지 않게 머리와 갈랐다).
                         면 없는 11px 캡션이다(2단계 — 회색 참고줄 상자를 걷었다). 행마다 서던 '{창고} 남음' 은 이 폼에서만
@@ -6417,6 +6433,12 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               {canKeep && (
                                 <RowActionBtn className="shrink-0" onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}>
                                   그대로
+                                </RowActionBtn>
+                              )}
+                              {/* '옮김 없음' — 아이템별 폼과 같은 판정·같은 자리(canNoMove 주석이 정본). */}
+                              {canNoMove(rowIsHub, beforeStr, afterStr) && (
+                                <RowActionBtn className="shrink-0" onClick={() => setAfterQtys(p => ({ ...p, [k]: beforeStr }))}>
+                                  {NO_MOVE_LABEL}
                                 </RowActionBtn>
                               )}
                             </div>

@@ -395,6 +395,14 @@ eq('채운 후 0: 잔량 0', mv('', '0', 2.5).finalN, 0)
 eq('직접 친 0: 채우기 전 0 이면 묻지 않는다', mv('0', '10', 2.5).pending, false)
 eq('직접 친 0: 채우기 전만 0 이면 값 0', mv('0', '', 2.5).beforeN, 0)
 eq('직접 친 0: 채우기 전만 0 이면 잔량 0', mv('0', '', 2.5).finalN, 0)
+// '옮김 없음'(2026-10-21 복원) — 채운 후 = 채우기 전. 채우기 전만 적은 행과 저장 결과가 같아야 한다(채움 0, 잔량 = 그 값).
+for (const [b, saved] of [['5', 2.5], ['0', 2.5], ['3', null], ['2.5', 2.5]] as const) {
+  const same = mv(b, b, saved), only = mv(b, '', saved)
+  eq(`옮김 없음 ${b}/${saved}: 채움 0`, same.restocked, 0)
+  eq(`옮김 없음 ${b}/${saved}: 묻지 않는다`, same.pending, false)
+  eq(`옮김 없음 ${b}/${saved}: 잔량 = 그 값`, same.finalN, Number(b))
+  eq(`옮김 없음 ${b}/${saved}: 채우기 전만 적은 행과 잔량이 같다`, same.finalN, only.finalN)
+}
 // 두 칸 다 빈칸은 안 센 위치다. 이 함수가 값을 만들지 않아야 entered=false 의 이월이 성립한다.
 eq('둘 다 빈칸: 묻지 않는다', mv('', '', 2.5).pending, false)
 eq('둘 다 빈칸: 전 없음', mv('', '', 2.5).beforeN, null)
