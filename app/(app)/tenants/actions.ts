@@ -34,7 +34,7 @@ import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMon
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
-import { propagateDueDayToSubLeases, dueDayFromMoveIn, cycleDayOf } from '@/lib/dueDay'
+import { propagateDueDayToSubLeases, dueDayFromMoveIn, cycleDayOf, cycleDayAfterDueChange, dueDayAfterCycle, dueDayParts, dueOnlyEarlierRefused, sameDueDay } from '@/lib/dueDay'
 import { propagateMoveInDateToSubLeases, restoreSubLeaseMoveInDates, moveInYmd as moveInYmdOf } from '@/lib/moveInDate'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
@@ -1191,6 +1191,13 @@ export async function updateTenant(formData: FormData): Promise<
   // 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
   const nextDueDay = DUE_PENDING_STATUSES.includes(status) ? (currentLease.dueDay ?? null)
     : (dueDay || (DUE_PENDING_STATUSES.includes(prevStatus) && moveInDate ? dueDayFromMoveIn(new Date(moveInDate)) : null))
+  // 이용 기간 시작일 — 폼은 납부일만 고친다. 기간 시작일이 따로 있는 계약(납부일만 옮김)이면 납부일이 기간 시작보다
+  // 앞으로 가지 못하고, 기간 시작과 같은 날로 돌리면 칸을 비운다(운영자 승인 2026-10-21, lib/dueDay cycleDayAfterDueChange).
+  const cycleNext = currentLease.cycleDay && !sameDueDay(nextDueDay, currentLease.dueDay)
+    ? cycleDayAfterDueChange(currentLease.cycleDay, nextDueDay)
+    : { cycleDay: currentLease.cycleDay ?? null }
+  if ('error' in cycleNext) return { ok: false, error: cycleNext.error }
+  const nextCycleDay = cycleNext.cycleDay
 
   // 퇴실 예정일 변경 판정 — 재검증 발화와 일할 정산 재계산이 같은 값을 봐야 한다.
   // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
@@ -1312,7 +1319,7 @@ export async function updateTenant(formData: FormData): Promise<
         discounts: currentLease.discounts,
       },
       // 정산은 기간으로 잰다. 폼은 납부일만 고치고 이용 기간 시작일(cycleDay)은 건드리지 않는다(cycleDayOf, 2026-10-21).
-      cycleDayOf({ cycleDay: currentLease.cycleDay, dueDay: dueDay || null }), newMoveOutIso,
+      cycleDayOf({ cycleDay: nextCycleDay, dueDay: dueDay || null }), newMoveOutIso,
       false,   // 자동 적용 안 함 — 아래 정책 주석 참조(2026-08-01)
     )
     prorationPatch = pr.data
@@ -1592,6 +1599,7 @@ export async function updateTenant(formData: FormData): Promise<
         depositAmount,
         cleaningFee,
         dueDay: nextDueDay,
+        cycleDay: nextCycleDay,
         moveInDate: moveInDate ? new Date(moveInDate) : null,
         // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
         // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
@@ -1643,7 +1651,8 @@ export async function updateTenant(formData: FormData): Promise<
     })
     // 딸린 계약의 납부일도 같은 트랜잭션에서 옮긴다 — 부모만 바뀌고 딸린 쪽이 옛 날에 남으면
     // 한 사람의 두 방 청구일이 갈린다(운영자 오더 2026-08-13).
-    await propagateDueDayToSubLeases(tx, leaseTermId, currentLease.dueDay, nextDueDay)
+    await propagateDueDayToSubLeases(tx, leaseTermId, currentLease.dueDay, nextDueDay,
+      currentLease.cycleDay || nextCycleDay ? { prev: currentLease.cycleDay ?? null, next: nextCycleDay } : undefined)
     // 입주일도 같은 자리에서 옮긴다(신고 eb66b990) — 입주일은 청구가 시작되는 달을 정하는 값이라
     // 갈리면 한 사람의 두 방이 서로 다른 달부터 청구된다. 딸린 계약의 거주 구간 이력까지 헬퍼가 함께 본다.
     await propagateMoveInDateToSubLeases(tx, leaseTermId, currentLease.moveInDate, moveInDate ? new Date(moveInDate) : null)
@@ -4715,6 +4724,13 @@ export async function unresolveTenantRequest(id: string): Promise<{ ok: true; pr
 }
 
 // 납입일 영구 변경 + 일할 조정 기록 생성
+//
+// 두 갈래(운영자 승인 2026-10-21, 504호).
+//   'cycle'   기간도 옮김. 이용 기간이 새 납입일부터 시작한다. 늘거나 준 날수만큼 조정 행(일할)을 만든다. 기간 시작일 칸은 비운다(납부일과 같아진다).
+//             일할의 옛 값은 지금 이용 기간 시작일(cycleDayOf)이다. 납부일만 옮겨 둔 계약을 기간째 옮기면 기간이 움직인 날수가 일할이다.
+//   'dueOnly' 납부일만 옮김. 이용 기간은 그대로이고 돈을 내는 날만 늦춘다. 조정 행·일할·퇴실 정산 재계산이 없다.
+//             기간 시작보다 늦은 날로만 옮긴다(앞당기기 거절, 3번). 기간 시작과 같은 날로 돌리면 기간 시작일 칸을 비운다.
+export type DueDayChangeMode = 'cycle' | 'dueOnly'
 export async function changeDueDay(
   leaseTermId: string,
   newDueDay: string,
@@ -4723,6 +4739,7 @@ export async function changeDueDay(
   // 협의 금액(양수, 선택). 비우면 일할 규칙값 그대로. 적으면 그 금액으로 조정 행을 만들고 메모에 규칙값과 함께 남긴다.
   // 방향은 규칙이 정한 대로다(신고 df82ce57, 운영자 승인 2026-10-20 C안 · "원단위 절삭이 필요할 수 있으므로 수동으로").
   agreedAmount?: number | null,
+  mode: DueDayChangeMode = 'cycle',
 ): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -4739,9 +4756,14 @@ export async function changeDueDay(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (mode !== 'cycle' && mode !== 'dueOnly') return { ok: false, error: '변경 방식을 골라 주세요.' }
+    const nextDue = newDueDay.trim()
+    const curCycle = cycleDayOf(lease)
+    if (mode === 'dueOnly') return await changeDueDayOnly(propertyId, leaseTermId, lease, nextDue, curCycle, adjustAmount, agreedAmount ?? null)
     // 조정 행 모양을 쓰기 전에 정한다. 협의 금액이 틀리면 납부일도 안 바꾼다(반쪽 저장 금지).
+    // 조정 행 메모의 '바꾸기 전' 은 기간이 옮겨 온 날(이용 기간 시작일)이다. 첫 달 규칙·인수월 판정이 그 값을 기간으로 읽는다.
     const adjPlan = adjustAmount !== 0
-      ? planDueDayAdjustCreate({ fromDue: lease.dueDay, toDue: newDueDay, adjustAmount, agreedAmount: agreedAmount ?? null, rentAmount: lease.rentAmount })
+      ? planDueDayAdjustCreate({ fromDue: curCycle, toDue: newDueDay, adjustAmount, agreedAmount: agreedAmount ?? null, rentAmount: lease.rentAmount })
       : null
     if (adjPlan && !adjPlan.ok) return adjPlan
 
@@ -4758,6 +4780,7 @@ export async function changeDueDay(
     const undoSnap: DueDayChangeUndo = {
       leaseTermId,
       prevDueDay: lease.dueDay,
+      prevCycleDay: lease.cycleDay ?? null,
       prevProration: {
         checkoutProratedAmount: lease.checkoutProratedAmount,
         checkoutProratedMonth: lease.checkoutProratedMonth,
@@ -4766,12 +4789,13 @@ export async function changeDueDay(
       adjustRecordId: null,
     }
 
+    // 기간째 옮기므로 기간 시작일 칸은 비운다(새 납입일이 곧 기간 시작이다).
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
-      data: { dueDay: newDueDay.trim(), ...pr.data },
+      data: { dueDay: nextDue, cycleDay: null, ...pr.data },
     })
-    // 딸린 계약도 같은 날로. 되돌리기 스냅샷에 함께 실어야 적용취소가 전파분까지 원복한다.
-    undoSnap.subLeases = await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, newDueDay.trim())
+    // 딸린 계약도 같은 날로(기간 시작일까지). 되돌리기 스냅샷에 함께 실어야 적용취소가 전파분까지 원복한다.
+    undoSnap.subLeases = await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, nextDue, { prev: lease.cycleDay ?? null, next: null })
 
     if (adjPlan?.ok) {
       const maxSeq = await prisma.paymentRecord.aggregate({
@@ -4815,14 +4839,61 @@ export async function changeDueDay(
   }
 }
 
+// 납부일만 옮김(운영자 승인 2026-10-21). 기간은 그대로라 조정 행·일할·퇴실 정산 재계산이 없다.
+// 'use server' 파일이라 export 하지 않는다(서버 액션 파일은 async 함수만 내보낸다, check-server-action-exports).
+async function changeDueDayOnly(
+  propertyId: string,
+  leaseTermId: string,
+  lease: { dueDay: string | null; cycleDay: string | null; isShortTerm: boolean; checkoutProratedAmount: number | null; checkoutProratedMonth: string | null; checkoutProrationUndo: unknown },
+  nextDue: string,
+  curCycle: string | null,
+  adjustAmount: number,
+  agreedAmount: number | null,
+): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo | null } | { ok: false; error: string }> {
+  if (lease.isShortTerm) return { ok: false, error: '단기 계약은 반복 납부일이 없어 납부일만 옮길 수 없습니다.' }
+  // 일할이 없는 갈래다. 화면이 금액을 실어 보내면 갈래가 섞인 것이라 거절한다(조정 행을 만들지 않는다).
+  if (adjustAmount !== 0 || (agreedAmount != null && agreedAmount !== 0)) return { ok: false, error: '납부일만 옮길 때는 일할 금액이 없습니다. 새로고침 후 다시 시도해 주세요.' }
+  if (!curCycle) return { ok: false, error: '이용 기간 시작일을 알 수 없어 납부일만 옮길 수 없습니다. 먼저 납부일을 정해 주세요.' }
+  const raw = dueDayParts(nextDue).raw
+  const n = Number(raw)
+  if (!(raw === '말일' || (Number.isInteger(n) && n >= 1 && n <= 31))) return { ok: false, error: '유효한 날짜를 입력하세요 (1~31 또는 말일)' }
+  if (!sameDueDay(nextDue, curCycle) && !dueDayAfterCycle(curCycle, nextDue)) return { ok: false, error: dueOnlyEarlierRefused(curCycle) }
+  if (sameDueDay(nextDue, lease.dueDay) && (lease.cycleDay ?? null) === (sameDueDay(nextDue, curCycle) ? null : curCycle)) {
+    return { ok: false, error: '기존 납입일과 동일합니다.' }
+  }
+  // 기간 시작과 같은 날로 돌리면 갈린 것이 아니다. 칸을 비운다(감사 규칙: 같은 값으로 남은 칸).
+  const nextCycle = sameDueDay(nextDue, curCycle) ? null : curCycle
+  const undoSnap: DueDayChangeUndo = {
+    leaseTermId,
+    prevDueDay: lease.dueDay,
+    prevCycleDay: lease.cycleDay ?? null,
+    prevProration: {
+      checkoutProratedAmount: lease.checkoutProratedAmount,
+      checkoutProratedMonth: lease.checkoutProratedMonth,
+      checkoutProrationUndo: lease.checkoutProrationUndo,
+    },
+    adjustRecordId: null,
+  }
+  await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { dueDay: nextDue, cycleDay: nextCycle } })
+  undoSnap.subLeases = await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, nextDue, { prev: lease.cycleDay ?? null, next: nextCycle })
+  revalidatePath('/tenants')
+  revalidatePath('/rooms')
+  revalidatePath('/dashboard')
+  const sig = signUndoBody(DUE_DAY_CHANGE_UNDO_DOMAIN, propertyId, canonicalDueDayChangeUndo(undoSnap))
+  const undo = sig === null ? null : { ...undoSnap, ...(sig ? { sig } : {}) }
+  return { ok: true, undo }
+}
+
 // 납입일 변경 적용취소 — 납입일·일할 정산 필드 원복 + 생성된 조정 기록 삭제
 export type DueDayChangeUndo = {
   leaseTermId: string
   prevDueDay: string | null
+  // 바꾸기 전 이용 기간 시작일(2026-10-21). 선택 항목이라 이 칸이 없던 시절의 스냅샷도 먹고, 그때는 기간 시작일을 건드리지 않는다.
+  prevCycleDay?: string | null
   prevProration: { checkoutProratedAmount: number | null; checkoutProratedMonth: string | null; checkoutProrationUndo: unknown }
   adjustRecordId: string | null
   // 함께 옮겨 간 딸린 계약의 원값. 선택 항목이라, 이 필드가 없던 시절에 받아 둔 스냅샷도 그대로 먹는다.
-  subLeases?: { id: string; prevDueDay: string | null }[]
+  subLeases?: { id: string; prevDueDay: string | null; prevCycleDay?: string | null }[]
   /** 서버 서명(cashReceiptLine signUndoBody, 용도 라벨 DUE_DAY_CHANGE_UNDO_DOMAIN). */
   sig?: string
 }
@@ -4836,7 +4907,9 @@ function stableJson(v: unknown): string {
   return `{${Object.keys(o).filter(k => o[k] !== undefined).sort().map(k => `${JSON.stringify(k)}:${stableJson(o[k])}`).join(',')}}`
 }
 function canonicalDueDayChangeUndo(u: DueDayChangeUndo): string {
-  return stableJson([u.leaseTermId, u.prevDueDay, u.prevProration, u.adjustRecordId, u.subLeases ?? []])
+  // 기간 시작일은 있을 때만 서명에 넣는다(이 칸이 없던 시절 토큰의 서명이 그대로 맞게).
+  const base = [u.leaseTermId, u.prevDueDay, u.prevProration, u.adjustRecordId, u.subLeases ?? []]
+  return stableJson(u.prevCycleDay === undefined ? base : [...base, { prevCycleDay: u.prevCycleDay }])
 }
 
 export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -4855,12 +4928,13 @@ export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true 
     await prisma.$transaction([
       prisma.leaseTerm.update({ where: { id: u.leaseTermId }, data: {
         dueDay: u.prevDueDay,
+        ...(u.prevCycleDay !== undefined ? { cycleDay: u.prevCycleDay } : {}),
         checkoutProratedAmount: u.prevProration.checkoutProratedAmount,
         checkoutProratedMonth: u.prevProration.checkoutProratedMonth,
         checkoutProrationUndo: u.prevProration.checkoutProrationUndo == null ? Prisma.DbNull : (u.prevProration.checkoutProrationUndo as Prisma.InputJsonValue),
       } }),
       // 함께 옮겼던 딸린 계약도 제자리로 — 전파분이 남으면 되돌린 것이 아니다.
-      ...(u.subLeases ?? []).map(s => prisma.leaseTerm.updateMany({ where: { id: s.id, propertyId }, data: { dueDay: s.prevDueDay } })),
+      ...(u.subLeases ?? []).map(s => prisma.leaseTerm.updateMany({ where: { id: s.id, propertyId }, data: { dueDay: s.prevDueDay, ...(s.prevCycleDay !== undefined ? { cycleDay: s.prevCycleDay } : {}) } })),
       ...(adj ? [prisma.paymentRecord.updateMany({ where: { id: adj.id, leaseTermId: u.leaseTermId, propertyId, deletedAt: null, ...dueDayAdjustWhere() }, data: { deletedAt: new Date() } })] : []),
     ])
     if (adj) await recalculatePayments(u.leaseTermId, adj.targetMonth, await serverBillForMonth(u.leaseTermId, adj.targetMonth, lease.rentAmount))
@@ -6483,13 +6557,27 @@ export async function batchUpdateTenants(
         return true
       })
 
+      // 납부일 일괄 변경은 이용 기간 시작일이 따로 있는 계약(납부일만 옮김)에서 기간보다 앞으로 못 가고, 같은 날이면 칸을 비운다
+      // (단건 폼과 같은 판정 lib/dueDay cycleDayAfterDueChange, 2026-10-21). 거절이 하나라도 있으면 아무것도 안 바꾼다.
+      const cycleClear: { id: string; prev: string }[] = []
+      if ('dueDay' in leaseFields) {
+        const nextDue = (leaseFields.dueDay ?? null) as string | null
+        for (const b of eligible) {
+          if (!b.cycleDay) continue
+          const r = cycleDayAfterDueChange(b.cycleDay, nextDue)
+          if ('error' in r) return { ok: false, error: r.error }
+          if (r.cycleDay === null) cycleClear.push({ id: b.id, prev: b.cycleDay })
+        }
+      }
       undo.leases = eligible.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(leaseFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
+      for (const c of cycleClear) { const u = undo.leases.find(x => x.id === c.id); if (u) u.fields.cycleDay = c.prev }
       if (eligible.length > 0) {
         const r = await prisma.leaseTerm.updateMany({
           where: { id: { in: eligible.map(b => b.id) } },
           data: leaseFields,
         })
         leaseCount = r.count
+        if (cycleClear.length > 0) await prisma.leaseTerm.updateMany({ where: { id: { in: cycleClear.map(c => c.id) } }, data: { cycleDay: null } })
         // 딸린 계약의 납부일도 함께 옮긴다(운영자 오더 2026-08-13). 일괄은 사람마다 메인 계약 하나만
         // 덮으므로, 딸린 계약은 여기서 부모를 따라가지 않으면 옛 날에 홀로 남는다.
         // 되돌리기 목록에 같은 모양으로 이어 붙여 적용취소 한 번이 전파분까지 되돌리게 한다.

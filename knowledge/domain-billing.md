@@ -316,3 +316,11 @@
 - 입력 칸 `BillingLeaseFields.cycleDay`·`SettlementLease.cycleDay` 는 필수다(select 누락을 tsc 가 잡는다). 감지망 `check-cycle-day-wiring`.
 - 배포 증명. 운영 활성 47계약 × 2026-08~12 2,895칸(청구·락 없는 청구·첫 달 기한·무청구·정산 기간·퇴실 일할)이 옛 엔진과 같다(0칸). 504호를 cycleDay '1' 로 둔 모의에서만 34칸이 바뀐다.
 - 적용 순서. `prisma/migrate_lease_cycle_day.sql` 을 먼저(칸 없이 새 클라이언트가 계약을 읽으면 'column does not exist'), 그다음 배포.
+
+### 납입일 변경 두 갈래 (2026-10-21, 같은 승인)
+- 위젯(`DueDayPermanentChangeWidget`) 맨 위 §12 세그먼트 [기간도 옮김] [납부일만 옮김]. 기본값 없음, 고르기 전 '변경 적용' 꺼짐. 필터용 SegmentedControl 이 아니다(role=radio, 36px).
+- 기간도 옮김(`changeDueDay(..., 'cycle')`): 일할 옛 값 = 지금 이용 기간 시작일(cycleDayOf), 조정 행 메모의 '바꾸기 전' 도 그 값, 저장 뒤 cycleDay 는 비운다.
+- 납부일만 옮김(`'dueOnly'`, 서버 `changeDueDayOnly`): 조정 행·일할·퇴실 정산 재계산 없음. 같은 달 안에서 기간 시작보다 늦은 날로만(`dueDayAfterCycle`, 앞당기기 거절 `dueOnlyEarlierRefused`). 기간 시작과 같은 날로 돌리면 cycleDay 를 비운다.
+- 적용취소 토큰(`DueDayChangeUndo.prevCycleDay`, 서명에 포함, 없던 시절 토큰은 서명 그대로 통과)과 딸린 계약 전파(`propagateDueDayToSubLeases` 의 cycle 인자)가 기간 칸까지 옮기고 되돌린다.
+- 입주자 수정 폼·일괄 수정이 납부일을 바꿀 때도 같은 판정(`cycleDayAfterDueChange`): 같은 날이면 칸 비움, 기간보다 앞이면 거절, 납부일을 비우면 칸도 비움.
+- 표기. 수납 정보 헤더·계약 정보 '납부일 매월 6일 · 이용 기간 1일~말일'(분리 계약일 때만). 계약서 '이용 기간' 표기는 다음 단계(504호 서명본 그대로).

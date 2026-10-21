@@ -1,7 +1,7 @@
 // 납부일 해석 정본(lib/dueDate) 회귀 테스트 — DB 불필요, 순수 함수 케이스 고정.
 // 전체 날짜형('YYYY-MM-DD')을 parseInt 로 읽어 연도(2026)가 날짜로 새는 클래스를 막는다(신고 998bff27).
 import { resolveDueRaw, effectiveDueRawForMonth, dueDateForMonth, overrideAbsDate, isDeferredForMonth, dueDayForCutoff } from '../lib/dueDate'
-import { cycleDayOf, cyclePeriodLabel, dueDayAfterCycle, hasSplitCycle } from '../lib/dueDay'
+import { cycleDayOf, cyclePeriodLabel, dueDayAfterCycle, hasSplitCycle, cycleDayAfterDueChange, dueOnlyEarlierRefused } from '../lib/dueDay'
 
 let pass = 0
 const fails: string[] = []
@@ -81,6 +81,14 @@ eq('납부일만 옮김: 6 은 1 뒤', dueDayAfterCycle('1', '6'), true)
 eq('납부일만 옮김: 말일은 29 뒤', dueDayAfterCycle('29', '말일'), true)
 eq('납부일만 옮김: 30 과 말일은 같은 날(거절)', dueDayAfterCycle('30', '말일'), false)
 eq('납부일만 옮김: 못 읽는 값 거절', dueDayAfterCycle('1', '없음'), false)
+
+// 폼·일괄 수정이 납부일을 바꿀 때 기간 칸(lib/dueDay cycleDayAfterDueChange)
+eq('폼: 칸 없는 계약은 그대로 null', JSON.stringify(cycleDayAfterDueChange(null, '20')), JSON.stringify({ cycleDay: null }))
+eq('폼: 기간 1 · 납부 6 → 10 이면 기간 유지', JSON.stringify(cycleDayAfterDueChange('1', '10')), JSON.stringify({ cycleDay: '1' }))
+eq('폼: 기간과 같은 날로 바꾸면 칸 비움', JSON.stringify(cycleDayAfterDueChange('1', '1')), JSON.stringify({ cycleDay: null }))
+eq('폼: 기간보다 앞이면 거절', JSON.stringify(cycleDayAfterDueChange('10', '5')), JSON.stringify({ error: dueOnlyEarlierRefused('10') }))
+eq('폼: 납부일을 비우면 칸도 비움', JSON.stringify(cycleDayAfterDueChange('1', null)), JSON.stringify({ cycleDay: null }))
+eq('거절 문구에 콜론·느낌표 없음', /[:!]$/.test(dueOnlyEarlierRefused('10')), false)
 
 console.log(`\n납부일 해석 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

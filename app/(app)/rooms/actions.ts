@@ -73,6 +73,8 @@ type RoomRow = {
   leaseTermId: string | null; depositAmount: number; cleaningFee: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
+  // 이용 기간 시작일(계약 칸 그대로, null 이면 납부일과 같다). 납부일만 옮긴 계약의 표기·납입일 변경 위젯이 읽는다(2026-10-21).
+  cycleDay: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
   cashReceiptIssued?: boolean   // 이달(viewMonth) 이용료 record 중 현금영수증 발행분 존재 — 표시 메타(오류신고 2bd8befa)
   firstUnpaidMonth: string | null
@@ -319,6 +321,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
+        cycleDay: lease.cycleDay ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: !!lease.reservationConfirmedAt,
@@ -353,6 +356,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
+        cycleDay: lease.cycleDay ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
@@ -639,6 +643,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
+        cycleDay: lease.cycleDay ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth,
         isReservationConfirmed: false,
@@ -672,6 +677,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDay: l.overrideDueDay ?? null,
       overrideDueDayMonth: l.overrideDueDayMonth ?? null,
       overrideDueDayReason: l.overrideDueDayReason ?? null,
+      cycleDay: lease.cycleDay ?? null,
       moveInDate, prevPaidThisMonth,
       firstUnpaidMonth,
       isReservationConfirmed: false,
@@ -713,7 +719,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         baseRent: room.baseRent,
         prevTenantName: prev?.tenant.name ?? null,
         prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
-        overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
+        overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null, cycleDay: null,
         moveInDate: null, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
@@ -3621,6 +3627,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     overrideDueDay: null,
     overrideDueDayMonth: null,
     overrideDueDayReason: null,
+    cycleDay: lease.cycleDay ?? null,
     moveInDate: lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null,
     prevPaidThisMonth: false,
     firstUnpaidMonth: null,

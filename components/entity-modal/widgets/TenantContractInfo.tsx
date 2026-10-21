@@ -7,6 +7,7 @@ import { fmtStayPeriod } from '@/lib/stayPeriod'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { fmtDateKor } from '@/lib/fmtDate'
 import { REGISTRATION_LABEL } from '@/lib/contractFieldOverrides'
+import { cyclePeriodLabel, hasSplitCycle } from '@/lib/dueDay'
 
 type Lease = {
   status: string
@@ -16,6 +17,8 @@ type Lease = {
   depositAmount: number
   cleaningFee: number
   dueDay: string | null
+  // 이용 기간 시작일(null 이면 납부일과 같다). 납부일만 옮긴 계약이면 '이용 기간' 을 함께 적는다(2026-10-21).
+  cycleDay?: string | null
   paymentTiming: string
   moveInDate: Date | string | null
   moveOutDate: Date | string | null
@@ -85,7 +88,11 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
         <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />
         {/* 거주 전 상태는 납부일 항목 숨김 — 아직 정해지지 않은 값(운영자 지적 2026-07-30).
             단기도 숨김 — 입주월 1회 전액 청구라 '매월 N일'이 성립하지 않는다. */}
-        {!isPending && !lease.isShortTerm && <Item label="납부일" value={fmtDueDay(lease.dueDay)} />}
+        {!isPending && !lease.isShortTerm && <Item label="납부일" value={hasSplitCycle({ cycleDay: lease.cycleDay ?? null, dueDay: lease.dueDay })
+          // 줄이 꺾이면 '이용 기간' 조각이 통째로 내려가게 한다(좁은 폭에서 '이용 기간 / 1일~말일' 로 갈리지 않게, 하네스 320px).
+          // nowrap 이 아니라 inline-block 이다. 칸보다 길면(320px·글자 125%) 조각 안에서 꺾여 칸 밖으로 넘치지 않는다.
+          ? <>{fmtDueDay(lease.dueDay)} · <span className="inline-block">{`이용 기간 ${cyclePeriodLabel(lease.cycleDay ?? null)}`}</span></>
+          : fmtDueDay(lease.dueDay)} />}
         <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
         {/* 문의 일시 · 투어 예정일 · 입주 희망일 — 리드가 걸어온 순서 그대로 선다.
             종전에는 문의 일시와 입주일이 삼항 한 벌로 얽혀 사이에 줄을 넣을 자리가 없었다.

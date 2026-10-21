@@ -123,7 +123,7 @@ need('감사 규칙 9(부호 축)', /dueDayAdjustSignMismatch\(r\)/.test(read('l
 const ten = read('app/(app)/tenants/actions.ts')
 need('납입일 변경이 협의 금액을 정본으로 넘긴다', /planDueDayAdjustCreate\(\{[^}]*agreedAmount: agreedAmount \?\? null/.test(body(ten, 'export async function changeDueDay(')))
 const w = strip(read('components/entity-modal/widgets/DueDayPermanentChangeWidget.tsx'))
-need('납입일 변경 위젯에 협의 금액 칸(MoneyInput)과 전달', /<MoneyInput /.test(w) && /changeDueDay\(leaseTermId, input\.trim\(\), targetMonth, adjustAmount, agreed > 0 \? agreed : null\)/.test(w))
+need('납입일 변경 위젯에 협의 금액 칸(MoneyInput)과 전달', /<MoneyInput /.test(w) && /changeDueDay\(leaseTermId, trimmed, targetMonth, adjustAmount, agreedArg, mode\)/.test(w) && /const agreedArg = mode === 'cycle' && agreed > 0 \? agreed : null/.test(w))
 for (const fn of ['savePayment', 'recordDepositReceived']) {
   need(`${fn} 가 메모 거절을 던지지 않고 돌려준다(운영 빌드는 던진 문구를 가린다)`, /if \(memoErr\) return \{ ok: false, error: memoErr \}/.test(body(rooms, `export async function ${fn}(`)))
 }

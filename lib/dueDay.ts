@@ -67,6 +67,27 @@ export function dueDayAfterCycle(cycleDay: string | null, dueDay: string | null)
   return c != null && d != null && d > c
 }
 
+/** 납부일만 옮기기·폼 수정이 기간 시작보다 앞으로 가려 할 때의 거절 문구(서버·화면·진리표가 같은 글자를 쓴다). */
+// inWidget 은 납입일 변경 위젯 안에서 보일 때다(고를 세그먼트가 바로 위에 있어 길을 다시 말하지 않는다).
+export function dueOnlyEarlierRefused(cycleDay: string | null, inWidget = false): string {
+  const c = dueDayParts(cycleDay).disp || '기간 시작일'
+  const way = inWidget ? `'기간도 옮김'을 고르세요` : `수납 정보의 납입일 변경에서 '기간도 옮김'을 고르세요`
+  return `납부일은 이용 기간 시작(${c})보다 앞으로 옮길 수 없습니다. 기간째 옮기려면 ${way}.`
+}
+
+/**
+ * 납부일을 새 값으로 바꿀 때 기간 시작일 칸이 어떻게 되는가(폼 수정·일괄 수정·납부일만 옮김이 같은 판정을 쓴다).
+ * 기간 시작일이 없는 계약은 그대로 null 이다. 새 납부일이 기간 시작과 같은 날이면 갈린 것이 아니라 null 로 접는다.
+ * 기간 시작보다 앞이면 거절(error). 새 납부일이 비면 기간 시작일도 비운다(가를 납부일이 없다).
+ */
+export function cycleDayAfterDueChange(curCycleDay: string | null, nextDueDay: string | null): { cycleDay: string | null } | { error: string } {
+  if (!curCycleDay) return { cycleDay: null }
+  if (!nextDueDay) return { cycleDay: null }
+  if (sameDueDay(curCycleDay, nextDueDay)) return { cycleDay: null }
+  if (!dueDayAfterCycle(curCycleDay, nextDueDay)) return { error: dueOnlyEarlierRefused(curCycleDay) }
+  return { cycleDay: curCycleDay }
+}
+
 /** '매월 1일~말일' 의 '1일~말일' 조각. 기간 시작이 1일이면 말일까지, 아니면 다음 달 전날까지다. */
 export function cyclePeriodLabel(cycleDay: string | null): string {
   const c = dueDayNumber(cycleDay)
@@ -105,6 +126,10 @@ export function dueDayFromMoveIn(moveIn: Date): string {
  *
  * 거주 전 단계의 딸린 계약에는 심지 않는다 — 그 상태에 납부일이 있는 것 자체가 오염이다.
  *
+ * 이용 기간 시작일(cycleDay)도 함께 옮길 때는 cycle 을 넘긴다(납입일 변경 위젯, 2026-10-21). 부모의 바뀐 뒤 값(이미
+ * 정규화된 값, 납부일과 같으면 null)을 그대로 따라 쓴다. 납부일은 그대로이고 기간만 움직이는 변경(기간도 옮김으로 6일에서 6일)도
+ * 따라가야 하므로 그때는 납부일이 같아도 멈추지 않는다. cycle 을 안 넘기면 종전 그대로 납부일만 옮긴다.
+ *
  * @returns 실제로 바뀐 계약의 되돌리기 스냅샷. 부를 자리에 적용취소가 있으면 이걸 함께 실어야 한다.
  */
 export async function propagateDueDayToSubLeases(
@@ -112,17 +137,32 @@ export async function propagateDueDayToSubLeases(
   parentLeaseTermId: string,
   prevDueDay: string | null,
   nextDueDay: string | null,
-): Promise<{ id: string; prevDueDay: string | null }[]> {
-  if (sameDueDay(prevDueDay, nextDueDay)) return []
+  cycle?: { prev: string | null; next: string | null },
+): Promise<{ id: string; prevDueDay: string | null; prevCycleDay?: string | null }[]> {
+  const cycleMoves = !!cycle && (cycle.prev ?? null) !== (cycle.next ?? null)
+  if (sameDueDay(prevDueDay, nextDueDay) && !cycleMoves) return []
+  if (!cycle) {
+    const subs = await db.leaseTerm.findMany({
+      where: { parentLeaseTermId, status: { in: DUE_PROPAGATION_STATUSES } },
+      select: { id: true, dueDay: true },
+    })
+    const targets = subs.filter(s => !s.dueDay || sameDueDay(s.dueDay, prevDueDay))
+    if (targets.length === 0) return []
+    await db.leaseTerm.updateMany({
+      where: { id: { in: targets.map(t => t.id) } },
+      data: { dueDay: nextDueDay },
+    })
+    return targets.map(t => ({ id: t.id, prevDueDay: t.dueDay }))
+  }
   const subs = await db.leaseTerm.findMany({
     where: { parentLeaseTermId, status: { in: DUE_PROPAGATION_STATUSES } },
-    select: { id: true, dueDay: true },
+    select: { id: true, dueDay: true, cycleDay: true },
   })
   const targets = subs.filter(s => !s.dueDay || sameDueDay(s.dueDay, prevDueDay))
   if (targets.length === 0) return []
   await db.leaseTerm.updateMany({
     where: { id: { in: targets.map(t => t.id) } },
-    data: { dueDay: nextDueDay },
+    data: { dueDay: nextDueDay, cycleDay: cycle.next },
   })
-  return targets.map(t => ({ id: t.id, prevDueDay: t.dueDay }))
+  return targets.map(t => ({ id: t.id, prevDueDay: t.dueDay, prevCycleDay: t.cycleDay ?? null }))
 }

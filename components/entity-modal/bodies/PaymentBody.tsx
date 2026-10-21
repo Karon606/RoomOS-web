@@ -31,6 +31,7 @@ type Settlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>
 type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
+import { cyclePeriodLabel, hasSplitCycle } from '@/lib/dueDay'
 import { reservationSplitPartsLabel } from '@/lib/reservationDeposit'
 
 export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSelectLease, openCheckoutProration }: {
@@ -258,9 +259,11 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
           const ovrActive = !!settlement.overrideDueDay && settlement.overrideDueDayMonth === month
           const d = settlement.dueDay
           const dayLabel = d.includes('-') ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : d.includes('말') ? '말일' : `${d}일`
+          // 납부일만 옮긴 계약은 이용 기간을 함께 적는다(운영자 승인 2026-10-21, cycleDay 가 있을 때만).
+          const periodTail = hasSplitCycle({ cycleDay: settlement.cycleDay, dueDay: d }) ? ` · 이용 기간 ${cyclePeriodLabel(settlement.cycleDay)}` : ''
           return <Row k="납부일" v={ovrActive
-            ? <>이달 {dayLabel} <span className="text-[var(--warning-fg)]">(임시)</span></>
-            : d.includes('말') ? '매월 말일' : `매월 ${d}일`} />
+            ? <>이달 {dayLabel} <span className="text-[var(--warning-fg)]">(임시)</span>{periodTail}</>
+            : `${d.includes('말') ? '매월 말일' : `매월 ${d}일`}${periodTail}`} />
         })()}
       </div>
 
@@ -404,6 +407,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                 targetMonth={month}
                 expected={settlement.expected}
                 currentDueDay={settlement.dueDay}
+                cycleDay={settlement.cycleDay}
                 onChange={refresh}
               />
             </>

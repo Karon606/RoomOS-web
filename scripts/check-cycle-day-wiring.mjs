@@ -11,6 +11,8 @@
 //      settlementPeriodFor 에 넘기는 객체는 cycleDay 를 싣는다.
 //   ④ 엔진의 첫 달 규칙·첫 달 기한·무청구 판정이 cycleDayOf 를 읽는다.
 //   ⑤ 납부 확인서 기간(rentCyclePeriod)·인수월 양도인 판정(수납 관리·홈 미납 두 곳)이 cycleDayOf 를 읽는다.
+//   ⑥ 납입일 변경 두 갈래. 서버가 갈래를 받고 납부일만 옮김은 앞당기기를 거절하며 조정 행을 안 만든다. 적용취소가 기간 칸을
+//      서명과 함께 되돌린다. 폼·일괄 수정이 같은 판정을 쓴다. 위젯은 기본값 없는 §12 세그먼트이고 일할 옛 값이 cycleDayOf 다.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -81,6 +83,28 @@ need('⑤ 조정 칩 인수월 판정도 cycleDayOf 를 넘긴다', /originalDue
 need('⑤ 인수월 판정 정본(lib/roomMonth originalDueDayOf)의 첫 인자는 기간 시작일', /export function originalDueDayOf\(cycleDay: string \| null,/.test(strip(read('lib/roomMonth.ts'))))
 for (const m of rooms.matchAll(/originalDueDayOf\(([^,]+),/g)) if (/^lease\.dueDay$/.test(m[1].trim())) fails.push('⑤ rooms/actions: originalDueDayOf 에 납부일을 넘긴다')
 need('⑤ 미수월 탐색(findFirstUnpaidMonth)의 인수월 판정이 cycleDayOf 를 읽는다', /const baseCycle = cycleDayOf\(lease\)\s*let baseDueDayNum = baseCycle/.test(rooms))
+
+// ── ⑥ 납입일 변경 두 갈래(위젯·서버) ───────────────────────────────
+const tenants = strip(read('app/(app)/tenants/actions.ts'))
+const change = body(tenants, 'export async function changeDueDay(')
+need('⑥ changeDueDay 가 갈래를 받고 납부일만 옮김을 따로 처리한다', /mode: DueDayChangeMode = 'cycle'/.test(change) && /if \(mode === 'dueOnly'\) return await changeDueDayOnly\(/.test(change))
+need('⑥ 기간도 옮김의 조정 행 메모 바꾸기 전 = 이용 기간 시작일', /planDueDayAdjustCreate\(\{ fromDue: curCycle,/.test(change))
+need('⑥ 기간도 옮김은 기간 칸을 비우고 딸린 계약에도 전파한다', /data: \{ dueDay: nextDue, cycleDay: null, \.\.\.pr\.data \}/.test(change) && /propagateDueDayToSubLeases\(prisma, leaseTermId, lease\.dueDay, nextDue, \{ prev: lease\.cycleDay \?\? null, next: null \}\)/.test(change))
+const only = body(tenants, 'async function changeDueDayOnly(')
+need('⑥ 납부일만 옮김은 앞당기기를 서버에서 거절한다', /!dueDayAfterCycle\(curCycle, nextDue\)\) return \{ ok: false, error: dueOnlyEarlierRefused\(curCycle\) \}/.test(only))
+need('⑥ 납부일만 옮김은 조정 행을 만들지 않는다', !/paymentRecord\.create/.test(only) && /adjustAmount !== 0/.test(only))
+need('⑥ 납부일만 옮김의 적용취소 스냅샷에 바꾸기 전 기간 칸·서명', /prevCycleDay: lease\.cycleDay \?\? null/.test(only) && /signUndoBody\(DUE_DAY_CHANGE_UNDO_DOMAIN/.test(only))
+need('⑥ 적용취소가 기간 칸을 되돌리고 서명에 넣는다', /cycleDay: u\.prevCycleDay/.test(body(tenants, 'export async function undoChangeDueDay(')) && /prevCycleDay: u\.prevCycleDay/.test(body(tenants, 'function canonicalDueDayChangeUndo(')))
+need('⑥ 폼 수정이 기간 칸을 같은 판정으로 정한다', /cycleDayAfterDueChange\(currentLease\.cycleDay, nextDueDay\)/.test(tenants) && /cycleDay: nextCycleDay,/.test(tenants))
+need('⑥ 일괄 수정도 같은 판정', /cycleDayAfterDueChange\(b\.cycleDay, nextDue\)/.test(tenants))
+const widget = strip(read('components/entity-modal/widgets/DueDayPermanentChangeWidget.tsx'))
+need('⑥ 위젯: 기본값 없는 세그먼트(role=radio, 36px), 필터용 SegmentedControl 아님', /useState<DueDayChangeMode \| null>\(null\)/.test(widget) && /role="radio"/.test(widget) && /h-9/.test(widget) && !/SegmentedControl/.test(widget))
+need('⑥ 위젯: 고르기 전 변경 적용 꺼짐', /const canApply = mode === 'cycle'[\s\S]*?: mode === 'dueOnly' &&/.test(widget) && /disabled=\{pending \|\| !canApply\}/.test(widget))
+need('⑥ 위젯: 기간도 옮김 일할의 옛 값이 cycleDayOf', /calcProRata\(expected, cycle, trimmed, targetMonth\)/.test(widget) && /const cycle = cycleDayOf\(\{ cycleDay, dueDay: currentDueDay \}\)/.test(widget))
+need('⑥ 위젯: 납부일만 옮김에서 협의 금액 칸이 없다(일할 상자가 있을 때만)', /\{calc && calc\.type !== 'none' && \(\s*<div className="space-y-1">\s*<p className="text-xs text-\[var\(--warm-muted\)\]">협의 금액/.test(widget))
+const pb = strip(read('components/entity-modal/bodies/PaymentBody.tsx'))
+need('⑥ 수납 정보가 위젯에 기간 칸을 넘기고 헤더에 이용 기간을 적는다', /cycleDay=\{settlement\.cycleDay\}/.test(pb) && /이용 기간 \$\{cyclePeriodLabel\(settlement\.cycleDay\)\}/.test(pb))
+need('⑥ 계약 정보에 이용 기간 표기', /이용 기간 \$\{cyclePeriodLabel\(lease\.cycleDay \?\? null\)\}/.test(strip(read('components/entity-modal/widgets/TenantContractInfo.tsx'))))
 
 if (fails.length) {
   console.error(`[기간 시작일 배선] 위반 ${fails.length}건`)

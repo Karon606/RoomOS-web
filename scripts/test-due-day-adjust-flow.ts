@@ -286,6 +286,50 @@ async function main() {
     eq('S12 적용취소 뒤 10월 청구 350,000(락)', await engine.serverBillForMonth(L5.id, '2026-10', 0), 350000)
   }
 
+  // ── S13 납부일만 옮김(운영자 승인 2026-10-21, 504호 모양) ────────────────────────────────
+  // 8/1 입주·납부일 1일·470,000. 납부일만 6일로 → 기간 1일 유지(cycleDay '1'), 조정 행 없음. 앞당기기 거절, 적용취소 원복,
+  // 딸린 계약 전파, 폼 정규화(같은 날이면 칸 비움·기간 앞이면 거절), 그 뒤 '기간도 옮김' 은 기간 시작일 기준 일할.
+  {
+    const engine = await import('@/app/(app)/rooms/paymentEngine')
+    const t = await prisma.tenant.create({ data: { name: '504', propertyId: P1 } })
+    const room = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const sub = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const L6 = await prisma.leaseTerm.create({ data: { tenantId: t.id, propertyId: P1, roomId: room.id, rentAmount: 470000, dueDay: '1', moveInDate: day('2026-08-01'), status: 'ACTIVE' } })
+    const S6 = await prisma.leaseTerm.create({ data: { tenantId: t.id, propertyId: P1, roomId: sub.id, rentAmount: 100000, dueDay: '1', moveInDate: day('2026-08-01'), status: 'NON_RESIDENT', parentLeaseTermId: L6.id } })
+    const st = async (id: string) => J(await prisma.leaseTerm.findFirst({ where: { id }, select: { dueDay: true, cycleDay: true } }))
+    const adjCount = async (id: string) => prisma.paymentRecord.count({ where: { leaseTermId: id, deletedAt: null, ...adj.dueDayAdjustWhere() } })
+    eq('S13 납부일만 옮김에 일할 금액을 실으면 거절', (await tenants.changeDueDay(L6.id, '6', '2026-11', -78333, null, 'dueOnly')).ok, false)
+    const c = await tenants.changeDueDay(L6.id, '6', '2026-11', 0, null, 'dueOnly')
+    if (!c.ok || !c.undo) throw new Error('S13 변경 실패')
+    eq('S13 납부일 6 · 기간 1 · 조정 행 없음', [await st(L6.id), await adjCount(L6.id)], [{ dueDay: '6', cycleDay: '1' }, 0])
+    eq('S13 딸린 계약도 같이(납부일 6 · 기간 1)', await st(S6.id), { dueDay: '6', cycleDay: '1' })
+    eq('S13 11월 청구 470,000', await engine.serverBillForMonth(L6.id, '2026-11', 0), 470000)
+    eq('S13 적용취소 토큰에 서명·바꾸기 전 기간 칸', [typeof c.undo.sig, c.undo.prevCycleDay], ['string', null])
+    eq('S13 지어낸 토큰(바꾸기 전 기간 칸 변조) 거절', (await tenants.undoChangeDueDay({ ...J(c.undo), prevCycleDay: '9' })).ok, false)
+    const u = await tenants.undoChangeDueDay(J(c.undo))
+    eq('S13 적용취소: 납부일 1 · 기간 칸 비움 · 딸린 계약도', [u.ok, await st(L6.id), await st(S6.id)], [true, { dueDay: '1', cycleDay: null }, { dueDay: '1', cycleDay: null }])
+    const c2 = await tenants.changeDueDay(L6.id, '6', '2026-11', 0, null, 'dueOnly')
+    if (!c2.ok) throw new Error('S13 재변경 실패')
+    eq('S13 같은 값 다시 옮기기는 동일 안내', (await tenants.changeDueDay(L6.id, '6', '2026-11', 0, null, 'dueOnly')).ok, false)
+    // 기간 20일 계약에서 납부일만 5일로(기간보다 앞) — 거절
+    const T7 = await prisma.tenant.create({ data: { name: '앞당김', propertyId: P1 } })
+    const R7 = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const L7 = await prisma.leaseTerm.create({ data: { tenantId: T7.id, propertyId: P1, roomId: R7.id, rentAmount: 300000, dueDay: '20', moveInDate: day('2026-08-20'), status: 'ACTIVE' } })
+    const early = await tenants.changeDueDay(L7.id, '5', '2026-11', 0, null, 'dueOnly')
+    eq('S13 기간보다 앞(20일 기간·납부 5일) 거절', [early.ok, early.ok ? '' : early.error, await st(L7.id)], [false, (await import('@/lib/dueDay')).dueOnlyEarlierRefused('20'), { dueDay: '20', cycleDay: null }])
+    // 기간 시작과 같은 날로 돌리면 칸을 비운다
+    const back = await tenants.changeDueDay(L6.id, '1', '2026-11', 0, null, 'dueOnly')
+    eq('S13 기간 시작과 같은 날로 되돌리면 칸 비움', [back.ok, await st(L6.id)], [true, { dueDay: '1', cycleDay: null }])
+    await tenants.changeDueDay(L6.id, '6', '2026-11', 0, null, 'dueOnly')
+    // 기간도 옮김(기간 1일에서 6일) — 일할 옛 값은 기간 시작일(1일). 조정 행 메모 '1일→6', 기간 칸 비움.
+    const c3 = await tenants.changeDueDay(L6.id, '6', '2026-11', -78333, null, 'cycle')
+    if (!c3.ok || !c3.undo) throw new Error('S13 기간도 옮김 실패')
+    eq('S13 기간도 옮김: 납부일 6 · 칸 비움 · 조정 행 메모 1일→6', [await st(L6.id), (await row(c3.undo.adjustRecordId!))?.memo], [{ dueDay: '6', cycleDay: null }, '[납입일변경] 1일→6 변경, 일할 78,333원 (추가납부)'])
+    eq('S13 딸린 계약도 기간 칸 비움', await st(S6.id), { dueDay: '6', cycleDay: null })
+    const u3 = await tenants.undoChangeDueDay(J(c3.undo))
+    eq('S13 기간도 옮김 적용취소: 납부일 6 · 기간 1 복원 · 조정 행 지움', [u3.ok, await st(L6.id), await st(S6.id), await adjCount(L6.id)], [true, { dueDay: '6', cycleDay: '1' }, { dueDay: '6', cycleDay: '1' }, 0])
+  }
+
   console.log(`[납입일 변경 조정 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()
