@@ -316,13 +316,14 @@ export function resolveDueDateForMonth(raw: string | null | undefined, mon: stri
   return new Date(y, m - 1, day, 23, 59, 59, 999)
 }
 
-// 선납 모델: 퇴실예정일이 그 월 납부일(서비스 기간 시작) 이전이면 그 기간을 안 쓰므로 청구 0.
+// 선납 모델: 퇴실예정일이 그 월 기간 시작 이전이면 그 기간을 안 쓰므로 청구 0.
 // lib/prorate calcCheckoutProration 이 null 을 반환하는 영역(일할 저장값이 없는 케이스).
 // 퇴실월 당월에만 적용 — 이후 월은 isAfterMoveOutMonth 로 제외.
+// 계약을 보는 화면은 이 함수 대신 isCheckoutNoBillingMonthFor 를 쓴다(경계를 계약에서 스스로 푼다).
 export function isCheckoutNoBillingMonth(
   expectedMoveOut: Date | string | null | undefined,
   mon: string,
-  dueDate: Date | null,         // 그 월의 실제 만기(override 반영은 호출부 책임)
+  dueDate: Date | null,         // 그 월의 기간 시작(경계) 날짜
 ): boolean {
   if (!expectedMoveOut || !dueDate) return false
   if (monthOfDate(expectedMoveOut) !== mon) return false
@@ -333,21 +334,23 @@ export function isCheckoutNoBillingMonth(
 // 그 값이 청구 권위(billForLeaseMonth 우선순위 ①)이므로 무청구를 적용하지 않는다.
 // 퇴실일 = 납부일 같은 날(경계일) 케이스에서 무청구 스킵이 정산액을 덮어 과납이 허수로 잡히던 문제 방지
 // (중도퇴실 환불 통합, 운영자 승인 2026-07-20). 호출부는 기존 isCheckoutNoBillingMonth 대신 이걸 쓴다.
+//
+// 경계는 **기간 시작**(이용 기간 시작일 cycleDayOf, 임시 조정은 보지 않는다)이다(운영자 승인 2026-10-21 10번).
+// '유예는 기한만 미루고 기간 경계는 옮기지 않는다'(lib/settlementPeriod) 원칙이 무청구 판정에도 같다. 종전에는 호출부가
+// 임시 조정이 반영된 기한을 넘겨, 정산(기간 경계)과 무청구(미룬 기한)가 같은 퇴실을 다르게 셌다. 그래서 날짜 인자를 없애고
+// 계약에서 스스로 푼다(호출부가 다른 날짜를 넘길 길 자체를 없앤다). 2026-10-21 운영 138계약 퇴실월 판정 변화 0건.
 export function isCheckoutNoBillingMonthFor(
   l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth' | 'moveInDate' | 'dueDay' | 'cycleDay'>,
   expectedMoveOut: Date | string | null | undefined,
   mon: string,
-  dueDate: Date | null,
 ): boolean {
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
   // 입주달 첫 달 규칙이 발동하는 달은 무청구가 아니다 — "퇴실예정일이 납부일 이전이면 0원"은
   // 그 기간을 안 썼다는 뜻인데, 입주달은 앞 구간(입주일부터)을 실제로 쓴다(2026-09-07). 앞 구간은 기간 시작일로 잰다.
   const cycle = cycleDayOf(l)
   if (l.moveInDate && cycle && monthOfDate(l.moveInDate) === mon && firstMonthGap(l.moveInDate, cycle)) return false
-  // 납부일만 옮긴 계약(기간 1일·납부일 6일)은 '그 기간을 안 썼는가' 를 기간 시작으로 가린다(운영자 승인 2026-10-21).
-  // 호출부가 넘긴 날짜는 납부 기한이라 12/3 퇴실이 6일 기한 앞이라는 이유로 3일 쓴 12월이 0원이 된다.
-  const boundary = hasSplitCycle(l) ? resolveDueDateForMonth(cycle, mon) : dueDate
-  return isCheckoutNoBillingMonth(expectedMoveOut, mon, boundary)
+  // 납부일만 옮긴 계약(기간 1일·납부일 6일)도 같다. 기한(6일)으로 가리면 12/3 퇴실이 3일 쓴 12월을 0원으로 만든다.
+  return isCheckoutNoBillingMonth(expectedMoveOut, mon, resolveDueDateForMonth(cycle, mon))
 }
 
 /**

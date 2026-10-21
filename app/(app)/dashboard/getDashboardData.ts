@@ -21,7 +21,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
-import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
+import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, firstMonthDueYmd } from '@/lib/billing'
 import { BILLABLE_STATUSES, checkedOutInMonthWhere, getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, leaseBillingEnd, leaseStayEnd, residedInMonth, roomAvailability, roomLeaseRowOrder, primaryRoomLease, OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
@@ -818,8 +818,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   // 양도인 정산 월·퇴실월 무청구(납부일 이전 퇴실)는 0. 완납 판정·예상 수입 모두 이 값 기준.
   const billThisMonth  = (l: typeof activeLeases[number]) => {
     if (prevOwnerMonthsByLease[l.id]?.has(targetMonth)) return 0
-    const dueRaw = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay) ? l.overrideDueDay : l.dueDay
-    if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
+    if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, targetMonth)) return 0
     return billForLeaseMonth(l, targetMonth, lockedExpectedByLeaseMonth[l.id]?.get(targetMonth) ?? null)
   }
   // 수납 현황 도넛의 완납 건수는 아래 미납 루프 뒤에서 배타 3분류로 센다(2026-08-12 회계 패널).
@@ -1068,7 +1067,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0 (rooms·unpaid.ts 와 동일, lib/billing 공용)
-      if (isCheckoutNoBillingMonthFor(l, billingEnd, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
+      if (isCheckoutNoBillingMonthFor(l, billingEnd, mon)) continue
       billableMonthList.push(mon)
     }
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·unpaid.ts 와 동일
@@ -1363,8 +1362,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       // 수납 관리 행(rowExpected)과 같은 규칙이다. 진행 중 계약은 종전 그대로 둔다(이번 달 화면 불변).
       amount:   (l.status === 'CHECKED_OUT' && (
                   isAfterMoveOutMonth(leaseBillingEnd(l), mon)
-                  || isCheckoutNoBillingMonthFor(l, leaseBillingEnd(l), mon,
-                       resolveDueDateForMonth((l.overrideDueDayMonth === mon && l.overrideDueDay) ? l.overrideDueDay : l.dueDay, mon))))
+                  || isCheckoutNoBillingMonthFor(l, leaseBillingEnd(l), mon)))
                 ? 0
                 : billForLeaseMonth({ ...l, room: r, dueDayAdjusts: dueDayAdjustMap.get(l.id) ?? [] }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
       // 수납 상태는 방이 아니라 사람에게 붙는다 — 한 방에 둘이 살면 한 명은 냈고 한 명은 안 냈을 수 있다.

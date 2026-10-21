@@ -13,6 +13,7 @@
 //   ⑤ 납부 확인서 기간(rentCyclePeriod)·인수월 양도인 판정(수납 관리·홈 미납 두 곳)이 cycleDayOf 를 읽는다.
 //   ⑥ 납입일 변경 두 갈래. 서버가 갈래를 받고 납부일만 옮김은 앞당기기를 거절하며 조정 행을 안 만든다. 적용취소가 기간 칸을
 //      서명과 함께 되돌린다. 폼·일괄 수정이 같은 판정을 쓴다. 위젯은 기본값 없는 §12 세그먼트이고 일할 옛 값이 cycleDayOf 다.
+//   ⑧ 무청구 판정은 날짜 인자가 없다(경계 = 기간 시작, 임시 조정 무시). 호출부가 기한 날짜를 넘기는 사본이 다시 생기면 잡는다.
 //   ⑦ 감사 규칙 11(기간 칸이 납부일과 같은 값으로 남음·거주 전 계약에 남음)이 판정 정본으로 적재된다.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -110,6 +111,28 @@ need('⑥ 계약 정보에 이용 기간 표기', /이용 기간 \$\{cyclePeriod
 // ── ⑦ 감사 규칙 11 ─────────────────────────────────────────────────
 const audit = strip(read('lib/integrityAudit.ts'))
 need('⑦ 감사가 기간 칸 판정 정본(cycleDayViolation)으로 규칙 11 을 적재한다', /const why = cycleDayViolation\(l\)/.test(audit) && /signature: `\[정합\] cycle-day-\$\{why\}/.test(audit))
+
+// ── ⑧ 무청구 판정 경계는 기간 시작(임시 조정 무시) ─────────────────────
+const nb = body(billing, 'export function isCheckoutNoBillingMonthFor(')
+need('⑧ 무청구 판정이 날짜 인자 없이 기간 시작일로 경계를 푼다', /mon: string,\n\): boolean \{/.test(nb) && /isCheckoutNoBillingMonth\(expectedMoveOut, mon, resolveDueDateForMonth\(cycle, mon\)\)/.test(nb))
+for (const f of sources) {
+  if (f === 'lib/billing.ts') continue
+  const src = strip(read(f))
+  // 괄호를 세어 최상위 인자 수를 본다. 셋을 넘으면 넷째 자리에 날짜(기한)를 다시 넘기는 것이다(이름이 무엇이든).
+  const NAME = 'isCheckoutNoBillingMonthFor('
+  for (let at = src.indexOf(NAME); at >= 0; at = src.indexOf(NAME, at + NAME.length)) {
+    if (/function\s+$/.test(src.slice(Math.max(0, at - 20), at))) continue
+    let depth = 0, args = 1, i = at + NAME.length - 1
+    for (; i < src.length; i++) {
+      const ch = src[i]
+      if (ch === '(' || ch === '{' || ch === '[') depth++
+      else if (ch === ')' || ch === '}' || ch === ']') { depth--; if (depth === 0) break }
+      else if (ch === ',' && depth === 1) args++
+    }
+    if (/,\s*\)$/.test(src.slice(at, i + 1))) args--   // 끝 쉼표
+    if (args !== 3) fails.push(`⑧ ${f}: 무청구 판정에 인자 ${args}개(경계는 계약에서 스스로 푼다, 날짜를 넘기지 않는다)`)
+  }
+}
 
 if (fails.length) {
   console.error(`[기간 시작일 배선] 위반 ${fails.length}건`)

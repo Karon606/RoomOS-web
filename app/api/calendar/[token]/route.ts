@@ -156,8 +156,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const dueDate = dueDateForMonth(l, monthStr)
         if (!dueDate) continue
         const dy = dueDate.getFullYear(), dm = dueDate.getMonth() + 1, day = dueDate.getDate()
-        // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)
-        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr, dueDate)) continue
+        // 퇴실월: 퇴실일이 그 달 기간 시작 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략). 경계는 기간 시작이다(미룬 기한 아님).
+        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr)) continue
         // 청구액은 billForLeaseMonth 정본을 쓴다. 종전에는 여기서 자기 규칙(일할 > 할인가)을 만들어
         // **예약 인상과 락인, 단기 이중청구 차단이 전부 빠져** 있었다(A페이즈 P2).
         // 캘린더는 외부로 나가는 문서라 금액이 틀리면 그대로 상대방에게 간다.

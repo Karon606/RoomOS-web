@@ -18,7 +18,7 @@
 import type { LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
 import {
-  billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth,
+  billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate,
   type BillingLeaseFields,
 } from './billing'
 import { attachDueDayAdjusts, loadDueDayAdjustMap, withDueDayAdjusts } from './dueDayAdjust'
@@ -675,8 +675,7 @@ function monthBillForRevenue(
 ): number {
   if (opts.isPrevOwnerMonth) return 0
   if (isAfterMoveOutMonth(l.expectedMoveOut ?? null, targetMonth)) return 0
-  const dueRaw = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay) ? l.overrideDueDay : (l.dueDay ?? null)
-  if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut ?? null, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
+  if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut ?? null, targetMonth)) return 0
   return billForLeaseMonth(l, targetMonth, opts.locked)
 }
 

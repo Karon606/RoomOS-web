@@ -20,7 +20,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import {
-  billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate,
+  billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate,
 } from '@/lib/billing'
 import { BILLABLE_STATUSES } from '@/lib/leaseStatus'
 import { attachDueDayAdjusts } from '@/lib/dueDayAdjust'
@@ -82,7 +82,7 @@ async function main() {
       if (recs.some(r => r.isPrevOwner)) return null
       if (ms === acqMonth) return null
       if (isAfterMoveOutMonth(l.expectedMoveOut, ms)
-        || isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, ms, resolveDueDateForMonth(l.dueDay, ms))) return null
+        || isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, ms)) return null
       const lockedMax = recs.filter(r => !r.isPrevOwner).reduce((mx, r) => Math.max(mx, r.expectedAmount), 0)
       const bill = billForLeaseMonth(l, ms, lockedMax > 0 ? lockedMax : null)
       const received = recs.reduce((s, r) => s + r.actualAmount, 0)

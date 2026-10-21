@@ -104,8 +104,8 @@ async function main() {
     for (const out of ['2026-11-03', '2026-12-15', '2026-12-31']) {
       const pb = calcCheckoutProration(cur.rentAmount, cycleDayOf(before), out, cur.moveIn)
       const pa = calcCheckoutProration(cur.rentAmount, cycleDayOf(after), out, cur.moveIn)
-      const nbB = isCheckoutNoBillingMonthFor(before, out, out.slice(0, 7), resolveDueDateForMonth('6', out.slice(0, 7)))
-      const nbA = isCheckoutNoBillingMonthFor(after, out, out.slice(0, 7), resolveDueDateForMonth('6', out.slice(0, 7)))
+      const nbB = isCheckoutNoBillingMonthFor(before, out, out.slice(0, 7))
+      const nbA = isCheckoutNoBillingMonthFor(after, out, out.slice(0, 7))
       const show = (x: typeof pa, nb: boolean) => (nb ? `${out.slice(0, 7)} 청구 0(무청구)` : '') + (x ? `${nb ? ' · ' : ''}${x.moveOutMonth}분 ${x.startYmd}부터 ${x.daysUsed}일 ${won(x.amount)}` : '')
       console.log(`   ${out} 퇴실: ${show(pb, nbB)} → ${show(pa, nbA)}`)
     }

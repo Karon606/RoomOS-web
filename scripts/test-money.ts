@@ -1160,9 +1160,19 @@ const RENT = 300000
   // 무청구 입주달 예외 — 입주달은 앞 구간을 실제로 쓴다.
   eq('입주달은 무청구 판정 제외',
     isCheckoutNoBillingMonthFor(
-      { checkoutProratedAmount: null, checkoutProratedMonth: null, moveInDate: new Date('2026-09-05T00:00:00Z'), dueDay: '20' },
-      new Date('2026-09-15T00:00:00Z'), '2026-09', new Date(2026, 8, 20, 23, 59, 59)),
+      { checkoutProratedAmount: null, checkoutProratedMonth: null, moveInDate: new Date('2026-09-05T00:00:00Z'), dueDay: '20', cycleDay: null },
+      new Date('2026-09-15T00:00:00Z'), '2026-09'),
     false)
+
+  // 무청구 경계는 기간 시작이다(임시 조정은 기한만 미룬다, 운영자 승인 2026-10-21 10번). 납부일 20일 계약의 11월 기한을 25일로
+  // 미뤄 두고 11/22 에 나가면, 종전 호출부는 미룬 기한(11/25)을 넘겨 11월을 0원으로 봤다. 기간(11/20~)은 이미 시작했다.
+  {
+    const L20 = { checkoutProratedAmount: null, checkoutProratedMonth: null, moveInDate: new Date('2026-05-20T00:00:00Z'), dueDay: '20', cycleDay: null }
+    eq('기간 시작 뒤 퇴실은 기한을 미뤄 둬도 무청구가 아니다', isCheckoutNoBillingMonthFor(L20, '2026-11-22', '2026-11'), false)
+    eq('기간 시작 전 퇴실은 무청구', isCheckoutNoBillingMonthFor(L20, '2026-11-19', '2026-11'), true)
+    eq('기간 시작일 당일 퇴실은 종전대로 무청구(경계 포함)', isCheckoutNoBillingMonthFor(L20, '2026-11-20', '2026-11'), true)
+    eq('정산도 같은 퇴실을 11월 기간 3일로 센다(두 축이 같은 경계)', settlementPeriodFor(L20, '2026-11-22')?.daysUsed, 3)
+  }
 
   // 퇴실 정산 입주월 보정 — 9/5 입주·납부일 20·9/15 퇴실이면 11일 사용, 귀속 9월.
   const sp = settlementPeriodFor({ dueDay: '20', moveInDate: new Date('2026-09-05T00:00:00Z') }, '2026-09-15')
@@ -1192,7 +1202,7 @@ const RENT = 300000
   const c1103 = calcCheckoutProration(470000, cyc, '2026-11-03', '2026-08-01')
   eq('504 11/3 퇴실 3일치 47,000', [c1103?.startYmd, c1103?.daysUsed, c1103?.amount], ['2026-11-01', 3, 47000])
   eq('504 11/3 퇴실 달은 무청구가 아니다(기한 11/6 을 넘겨도)',
-    isCheckoutNoBillingMonthFor(L504, '2026-11-03', '2026-11', new Date(2026, 10, 6, 23, 59, 59, 999)), false)
+    isCheckoutNoBillingMonthFor(L504, '2026-11-03', '2026-11'), false)
   // 대조. 같은 계약을 칸 없이(납부일 6일이 기간 시작) 재면 종전대로 6일부터다.
   const legacy = { ...L504, cycleDay: null }
   eq('칸 없으면 종전(12/15 퇴실은 12/6 부터 10일)', calcCheckoutProration(470000, cycleDayOf(legacy), '2026-12-15', '2026-08-01')?.daysUsed, 10)

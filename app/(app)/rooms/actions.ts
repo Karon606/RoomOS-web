@@ -28,13 +28,12 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { cycleDayOf } from '@/lib/dueDay'
-import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { parseOptionList, normalizeOptionName } from '@/lib/optionLists'
 import { depositComposition } from '@/lib/depositComposition'
-import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
 import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLockedExpectedForRentAmount, serverBillForMonth } from './paymentEngine'
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
@@ -439,7 +438,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const billingEnd = leaseBillingEnd(lease)
     const skipByMoveOut = (ms: string): boolean =>
       isAfterMoveOutMonth(billingEnd, ms)
-      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null, cycleDay: lease.cycleDay ?? null }, billingEnd, ms, effDueDateForMonth(ms))
+      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null, cycleDay: lease.cycleDay ?? null }, billingEnd, ms)
 
     let pastBillable = 0
     let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
@@ -810,7 +809,7 @@ async function findFirstUnpaidMonth(
 
     // 퇴실예정월 초과·퇴실월 무청구(납부일 이전 퇴실) — 미수월 후보에서 제외 (lib/billing 공용 규칙)
     if (isAfterMoveOutMonth(lease.expectedMoveOut, ms)
-        || isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms, resolveDueDateForMonth(lease.dueDay, ms))) {
+        || isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms)) {
       cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue
     }
 
@@ -1085,8 +1084,7 @@ export async function getTargetMonthOptions(
     // 단기 비청구월(입주월 외)이 여기 해당한다. 종전에는 무청구 퇴실월이 '미납 470,000원'
     // 선택지로 떠서 청구가 0인 달에 수납을 넣도록 유도했다(운영자 지적 2026-08-02, A-findings P2).
     // 판정은 읽기 화면과 같은 정본(lib/billing)을 쓴다 — 여기서 다시 짜면 또 갈린다.
-    const dueDateForMs = resolveDueDateForMonth(effectiveDueRawForMonth(lease, ms), ms)
-    if (isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms, dueDateForMs) || expected <= 0) {
+    if (isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms) || expected <= 0) {
       cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue
     }
     let status: TargetMonthOption['status']
@@ -3919,7 +3917,7 @@ async function dueDayAdjustStatusByMonth(
   const bill = (ms: string) => billForLeaseMonth({ ...lease, dueDayAdjusts }, ms, locked.get(ms) ?? null)
   const due = (ms: string) => effDueDateOf(lease, ms)
   const billingEnd = leaseBillingEnd(lease)
-  const skipByMoveOut = (ms: string) => isAfterMoveOutMonth(billingEnd, ms) || isCheckoutNoBillingMonthFor(lease, billingEnd, ms, due(ms))
+  const skipByMoveOut = (ms: string) => isAfterMoveOutMonth(billingEnd, ms) || isCheckoutNoBillingMonthFor(lease, billingEnd, ms)
   const originalDueDay = originalDueDayOf(cycleDayOf(lease), allLeaseRecords)   // 기간 시작(목록과 같은 기준)
   const sums = dueDayAdjustMonthSums(allLeaseRecords, cutoffDate)
   const today = kstYmd()
