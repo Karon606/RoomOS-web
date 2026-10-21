@@ -175,7 +175,7 @@ export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: re
   // 결과 문장은 320px 기본 글자에서 카드 머리 안내가 두 줄을 넘지 않게 짧게 쓴다(2026-10-22 실측).
   withholdReasons: {
     names: [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON],
-    effect: '퇴실 정산이 이 이름으로 청소비를 나누고 미리 고릅니다.',
+    effect: '퇴실 정산이 이 이름으로 청소비를 가르고 인수 사유를 미리 고릅니다.',
   },
 }
 
@@ -216,7 +216,7 @@ export function isReasonListField(f: OptionListField): f is ReasonListField {
 export function reservedOptionNameError(field: OptionListField, name: string): string | null {
   if (!isReasonListField(field)) return null
   const v = name.trim()
-  if (v === '기타' || /^기타\s*·/.test(v)) return "'기타' 는 목록 맨 끝에 늘 있는 항목이라 따로 넣지 않습니다."
+  if (v === '기타' || /^기타\s*·/.test(v)) return "'기타'는 목록 맨 끝에 늘 있는 항목이라 따로 넣지 않습니다."
   if (SYSTEM_STATUS_REASONS.includes(v)) return '앱이 상태 이력에 스스로 적는 이름이라 사유로 쓸 수 없습니다.'
   return null
 }

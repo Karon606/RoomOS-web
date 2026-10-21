@@ -561,8 +561,6 @@ export default function SettingsForm({
 
   const handleAddCancelReason = async () => {
     const v = normalizeOptionName('cancelReasons', newCancelReason); if (!v) return
-    // '기타'·'기타 · …'·시스템 라벨은 서버와 같은 문으로 먼저 막는다(lib/optionLists reservedOptionNameError).
-    const reserved = reservedOptionNameError('cancelReasons', v); if (reserved) { pushToast('error', reserved); return }
     const r = await addCancelReason(v); if (!r.ok) { pushToast('error', r.error); return }
     setCancelReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewCancelReason('')
   }
@@ -587,7 +585,6 @@ export default function SettingsForm({
 
   const handleAddCheckoutReason = async () => {
     const v = normalizeOptionName('checkoutReasons', newCheckoutReason); if (!v) return
-    const reserved = reservedOptionNameError('checkoutReasons', v); if (reserved) { pushToast('error', reserved); return }
     const r = await addCheckoutReason(v); if (!r.ok) { pushToast('error', r.error); return }
     setCheckoutReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewCheckoutReason('')
   }
@@ -613,7 +610,6 @@ export default function SettingsForm({
 
   const handleAddWithholdReason = async () => {
     const v = normalizeOptionName('withholdReasons', newWithholdReason); if (!v) return
-    const reserved = reservedOptionNameError('withholdReasons', v); if (reserved) { pushToast('error', reserved); return }
     const r = await addWithholdReason(v); if (!r.ok) { pushToast('error', r.error); return }
     setWithholdReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewWithholdReason('')
   }
@@ -1679,7 +1675,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="직업 관리"
-            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하고 저장하면 여기 쌓입니다. 입력 칸 아래 체크를 끄면 쌓지 않습니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            description="입주자 등록·수정에서 고르는 직업입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
             items={jobs}
             field="jobOptions"
             setItems={setJobs}
@@ -1696,7 +1692,7 @@ export default function SettingsForm({
           {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
           <OptionSection
             title="요청 카테고리 관리"
-            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
+            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 4종(시설·소음·청결·편의)을 사용합니다."
             items={requestCategs}
             field="requestCategories"
             setItems={setRequestCategs}
@@ -3048,13 +3044,15 @@ function OptionSection({
   // 중복 판정도 저장과 같은 정규화로 한다. '입실자, 소개' 는 '입실자 소개' 로 저장되니 이미 있으면 중복이다.
   const trimmed = normalizeOptionName(field, newValue)
   const isDuplicate = trimmed !== '' && items.includes(trimmed)
+  // 사유 목록에 못 넣는 이름('기타'·시스템 라벨)도 같은 자리에서 같은 모양으로 막는다(서버 입구와 같은 함수, 독립 검수).
+  const addError = isDuplicate ? '이미 존재하는 항목입니다.' : (trimmed !== '' ? reservedOptionNameError(field, trimmed) : null)
   // 코드가 글자로 판정하는 이름은 수정 버튼 대신 '이름 고정' 을 세우고, 결과 문장은 카드 머리에 한 번 적는다.
   // 다른 이름을 새로 추가해 쓰라고 권하지 않는다. 새 이름은 그 판정에 안 잡힌다(lib/optionLists 보호 이름 머리말).
   // 버튼을 눌러 보고서야 거절당하게 두지 않는다(§22 ② 쓸 수 없는 행 동작은 숨기고 같은 폭 캡션으로 말한다, 2026-10-13 등재).
   const fixedReason = onRename ? (items.map(v => protectedOptionReason(field, v)).find(r => r !== null) ?? null) : null
 
   const handleAdd = async () => {
-    if (isAdding || !trimmed || isDuplicate) return
+    if (isAdding || !trimmed || addError) return
     setIsAdding(true)
     try { await onAdd() } finally { setIsAdding(false) }
   }
@@ -3121,7 +3119,8 @@ function OptionSection({
   const editName = editingItem !== null ? normalizeOptionName(field, editingValue) : ''
   const editError = editingItem === null ? null
     : (protectedRenameError(field, editingItem, editName)
-      ?? (editName !== editingItem && items.includes(editName) ? '이미 존재하는 항목입니다.' : null))
+      ?? (editName !== editingItem && items.includes(editName) ? '이미 존재하는 항목입니다.' : null)
+      ?? (editName !== '' && editName !== editingItem ? reservedOptionNameError(field, editName) : null))
 
   const saveEdit = async () => {
     if (editingItem === null || !onRename || savingEdit || editError) return
@@ -3248,14 +3247,14 @@ function OptionSection({
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={placeholder ?? '입력…'}
             className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none transition-colors ${
-              isDuplicate ? 'border-[var(--danger-ring)] focus:border-[var(--danger-ring)]' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
+              addError ? 'border-[var(--danger-ring)] focus:border-[var(--danger-ring)]' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
-          <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}>
+          <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || !!addError}>
             {isAdding ? '…' : '등록'}
           </Btn>
         </div>
-        {isDuplicate && (
-          <p className="text-[0.6875rem] text-[var(--danger-fg)]">이미 존재하는 항목입니다.</p>
+        {addError && (
+          <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">{addError}</p>
         )}
       </div>
     </div>

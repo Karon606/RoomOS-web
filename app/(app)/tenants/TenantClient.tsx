@@ -4516,15 +4516,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               if (!statusReasonField) return null
               return (
                 <div className="mt-2 space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(statusVal)} <span className="font-normal opacity-60">(선택)</span></label>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(statusVal)} <span className="font-normal opacity-60">(선택)</span></label>
+                    {cancelReasonPrefill && cancelReasonVal === cancelReasonPrefill && (
+                      <span className="text-[0.65625rem] text-[var(--warm-muted)]">퇴실 예정 때 고른 사유</span>
+                    )}
+                  </div>
                   {/* 저장 칸은 cancelReason(저장 글자)·cancelReasonAddToList('1'·'0'). 서버가 영업장 목록으로 다시 잰다. */}
                   <CategorySelect addMode="ask" name="cancelReason" value={cancelReasonVal} onChange={setCancelReasonVal}
                     options={statusReasonOptions} emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
                     addToList={cancelReasonAdd} onAddToListChange={setCancelReasonAdd}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                  {cancelReasonPrefill && cancelReasonVal === cancelReasonPrefill && (
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
-                  )}
                 </div>
               )
             })()}

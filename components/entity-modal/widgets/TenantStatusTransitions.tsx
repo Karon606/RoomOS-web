@@ -752,15 +752,18 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               {reasonField && (() => {
                 return (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(active.def.toStatus)} <span className="font-normal opacity-60">(선택)</span></label>
+                    {/* 이어받은 사유 출처는 라벨 줄 오른쪽에 둔다. 칸 아래에 두면 '목록에 추가' 힌트와 겹쳐 읽힌다(독립 검수). */}
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(active.def.toStatus)} <span className="font-normal opacity-60">(선택)</span></label>
+                      {transReasonPrefill && transReason === transReasonPrefill && (
+                        <span className="text-[0.65625rem] text-[var(--warm-muted)]">퇴실 예정 때 고른 사유</span>
+                      )}
+                    </div>
                     {/* 목록은 영업장 설정(분류 관리)이고 '기타(직접 입력)' 아래 '목록에 추가' 체크가 선다(2026-10-22). */}
                     <CategorySelect addMode="ask" value={transReason} onChange={setTransReason}
                       options={reasonOptions} emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
                       addToList={transReasonAdd} onAddToListChange={setTransReasonAdd}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                    {transReasonPrefill && transReason === transReasonPrefill && (
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
-                    )}
                   </div>
                 )
               })()}

@@ -33,7 +33,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
 
-// 기본 5종만 고정색 — 운영자가 추가한 이름이나 목록에서 지워진 값은 아래 NEUTRAL_COLOR(기타와 동일 톤).
+// 기본 카테고리('기타' 포함 다섯 이름)만 고정색 — 운영자가 추가한 이름이나 목록에서 지워진 값은 아래 NEUTRAL_COLOR(기타와 동일 톤).
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string }> = {
   시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]'  },
   소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]'   },
@@ -383,7 +383,7 @@ export default function RequestsClient({
               <CategorySelect
                 value={addCategory} onChange={setAddCategory}
                 options={formCategoryOptions} emptyLabel="카테고리 없음"
-                addMode="auto" addToList={addCategoryToList} onAddToListChange={setAddCategoryToList} addLabel="이 카테고리를 목록에 추가"
+                addMode="auto" addToList={addCategoryToList} onAddToListChange={setAddCategoryToList} addLabel="이 카테고리를 목록에 추가" dense="xs"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
               />
             </div>
@@ -526,7 +526,7 @@ export default function RequestsClient({
       ) : (
         <ul className="space-y-2">
           {sorted.map((r, i) => {
-            // 기본 5종 밖(운영자 추가·삭제된 값)이어도 배지는 항상 렌더 — neutral 톤으로 떨어뜨린다.
+            // 고정색 다섯 이름 밖(운영자 추가·삭제된 값)이어도 배지는 항상 렌더 — neutral 톤으로 떨어뜨린다.
             const c        = r.category ? (CATEGORY_COLORS[r.category] ?? NEUTRAL_COLOR) : null
             const roomNo   = r.tenant?.leaseTerms[0]?.room?.roomNo
             // 등록 당시 호실 스냅샷 우선 — 없으면(구 데이터) 현행 호실로 폴백.

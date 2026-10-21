@@ -4,14 +4,15 @@
 import { useId, useState } from 'react'
 import { reasonPickOf, otherReason } from '@/lib/reasonLists'
 
-// '목록에 추가' 체크박스 아래 힌트. 사유(ask)와 저절로 쌓던 목록(auto)이 같은 문장을 쓴다(문법 하나, 운영자 결정 2026-10-22).
-const ADD_HINT = '체크하면 다음부터 목록에서 고를 수 있습니다. 목록 관리는 환경설정 > 분류 관리에서 합니다.'
+// '목록에 추가' 체크박스 아래 힌트. 사유(ask)와 저절로 쌓던 목록(auto)이 같은 한 문장을 쓴다(문법 하나, 운영자 결정 2 2026-10-22).
+// 체크박스 라벨이 이미 '목록에 추가' 를 말하므로 힌트는 고칠 자리만 말한다. 경로는 좁은 칸에서도 한 덩어리로 꺾는다(독립 검수).
+const ADD_HINT = <>목록은 <span className="whitespace-nowrap">환경설정 &gt; 분류 관리</span>에서 고칩니다.</>
 
 export default function CategorySelect({
   value, onChange, options, className, wrapperClassName,
   emptyLabel, placeholder = '카테고리를 직접 입력하세요',
   closeIconSize = 14, savedValue, name,
-  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted',
+  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted', dense,
 }: {
   value: string
   onChange: (v: string) => void
@@ -54,6 +55,11 @@ export default function CategorySelect({
    * --warm-muted 가 다크 4.46:1 이라 4.5 에 못 미친다. 그 자리는 같은 폼의 라벨과 같은 --warm-mid 를 쓴다(실측 2026-10-22).
    */
   hintTone?: 'muted' | 'mid'
+  /**
+   * 조밀한 폼에서 체크박스 라벨을 그 폼의 형제 체크박스('긴급')와 같은 크기·색으로 맞춘다. 'xs' 는 text-xs --warm-mid
+   * (요청 등록 모달), 'xxs' 는 0.65625rem 500 --warm-mid(입주자 요청 탭). 없으면 text-xs --warm-dark(보통 폼의 형제).
+   */
+  dense?: 'xs' | 'xxs'
 }) {
   const [customMode, setCustomMode] = useState(false)
   const [initialValue] = useState(value)
@@ -69,7 +75,7 @@ export default function CategorySelect({
   const closeBtn = (onClose: () => void) => (
     <button type="button" onClick={onClose}
       aria-label="목록에서 선택"
-      className="shrink-0 px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      className="shrink-0 -my-1.5 -mr-1.5 w-11 h-11 inline-flex items-center justify-center rounded-sm text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--tc-text)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   )
   const addBox = (
     <>
@@ -77,7 +83,7 @@ export default function CategorySelect({
         <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}
           aria-describedby={hintId}
           className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
-        <span className="text-xs text-[var(--warm-dark)] break-keep">{addLabel}</span>
+        <span className={`${dense === 'xxs' ? 'text-[0.65625rem] font-medium text-[var(--warm-mid)]' : dense === 'xs' ? 'text-xs text-[var(--warm-mid)]' : 'text-xs text-[var(--warm-dark)]'} break-keep`}>{addLabel}</span>
       </label>
       <p id={hintId} className={`text-[0.65625rem] ${hintTone === 'mid' ? 'text-[var(--warm-mid)]' : 'text-[var(--warm-muted)]'} leading-relaxed break-keep`}>{ADD_HINT}</p>
       {name && <input type="hidden" name={`${name}AddToList`} value={checked ? '1' : '0'} />}

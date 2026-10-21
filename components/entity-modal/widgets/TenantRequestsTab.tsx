@@ -145,7 +145,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
               <CategorySelect
                 value={newCategory} onChange={setNewCategory}
                 options={categories} emptyLabel="카테고리 없음" closeIconSize={12}
-                addMode="auto" addToList={newCategoryToList} onAddToListChange={setNewCategoryToList} addLabel="이 카테고리를 목록에 추가"
+                addMode="auto" addToList={newCategoryToList} onAddToListChange={setNewCategoryToList} addLabel="이 카테고리를 목록에 추가" dense="xxs"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
             </div>
             <div className="min-w-0">

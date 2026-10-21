@@ -657,9 +657,11 @@ const os = bodyOf(form, /function OptionSection\(/)
       const b = bodyOf(actions, new RegExp(`(?:export )?async function ${fn}\\(`))
       if (!b || !/reservedOptionNameError\(field, (name|newValue)\)/.test(stripComments(b))) violations.push(`${ACTIONS} · ${fn} 가 '기타'·시스템 라벨을 목록에 넣는 것을 막지(reservedOptionNameError) 않는다.`)
     }
-    for (const n of ['Cancel', 'Checkout', 'Withhold']) {
-      const b = bodyOf(form, new RegExp(`const handleAdd${n}Reason = async \\(`))
-      if (!b || !/reservedOptionNameError\(/.test(b)) violations.push(`${FORM} · handleAdd${n}Reason 가 서버와 같은 문(reservedOptionNameError)으로 먼저 막지 않는다. 눌러 보고서야 거절당한다.`)
+    // 화면은 추가 칸·이름 편집 칸에서 같은 함수로 인라인으로 막는다(중복과 같은 자리·모양, 등록·저장 버튼 끔, 독립 검수).
+    const osb = stripComments(bodyOf(form, /function OptionSection\(/) ?? '')
+    if (!/const addError = isDuplicate \? '이미 존재하는 항목입니다\.' : \(trimmed !== '' \? reservedOptionNameError\(field, trimmed\) : null\)/.test(osb)
+      || !/disabled=\{isAdding \|\| !trimmed \|\| !!addError\}/.test(osb) || !/\?\? \(editName !== '' && editName !== editingItem \? reservedOptionNameError\(field, editName\) : null\)/.test(osb)) {
+      violations.push(`${FORM} · OptionSection 이 '기타'·시스템 라벨을 추가·이름 편집 칸에서 인라인으로 막지 않는다. 눌러 보고서야 거절당한다.`)
     }
   }
 }

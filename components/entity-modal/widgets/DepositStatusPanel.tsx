@@ -517,7 +517,7 @@ export function DepositStatusPanel({
             <div className="space-y-1.5">
               <p className={labelCls}>반환하지 않는 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
               <CategorySelect addMode="ask" value={recReason} onChange={setRecReason}
-                options={withholdOptions} emptyLabel="사유 선택" placeholder="사유 입력"
+                options={withholdOptions} emptyLabel="선택하세요" placeholder="사유를 직접 입력하세요"
                 addToList={recAdd} onAddToListChange={setRecAdd} hintTone="mid" className={inputCls} />
             </div>
           )}
