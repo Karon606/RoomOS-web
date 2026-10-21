@@ -253,7 +253,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   // 두 사유 모두 저장 글자다(lib/reasonLists 규약). '기타' 로 적은 글은 '기타 · 글', 목록에 추가 체크는 따로 쥔다(2026-10-22).
   const [withholdReason, setWithholdReason] = useState('')
   const [withholdAdd, setWithholdAdd] = useState(false)
-  const [transReason, setTransReason] = useState('')   // 취소·퇴실 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
+  const [transReason, setTransReason] = useState('')   // 취소·퇴실 사유(선택). TenantStatusLog.reason 적재(e1b81629)
   const [transReasonAdd, setTransReasonAdd] = useState(false)
   // 미니폼을 연 시점의 이어받은 사유 — 지금 값이 이것과 같을 때만 출처 캡션을 단다(고치면 캡션이 사라진다).
   const [transReasonPrefill, setTransReasonPrefill] = useState<string | null>(null)

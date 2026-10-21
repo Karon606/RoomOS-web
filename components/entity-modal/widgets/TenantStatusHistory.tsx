@@ -207,7 +207,7 @@ function HistRow({ item, canEdit, pending, onEdit, onInvalidate, onRestore }: {
   )
 }
 
-// 사유 편집 — 전환 미니폼과 같은 문법(CategorySelect addMode 'ask'). 새 문법을 만들지 않는다.
+// 사유 편집. 전환 미니폼과 같은 문법(CategorySelect addMode 'ask')이고 새 문법을 만들지 않는다.
 // 칸은 저장 글자를 그대로 읽는다(lib/reasonLists reasonPickOf). 목록에 있으면 그 항목, '기타 · 글' 이면 기타 + 글,
 // 목록에서 뺀 항목·옛 이름이면 그 글자가 칸에 그대로 서고 손대지 않으면 그대로 저장된다(서버가 지금 값과 견준다).
 function ReasonEditModal({ item, onClose, onDone }: { item: HistItem; onClose: () => void; onDone: () => void }) {

@@ -1,5 +1,5 @@
 'use client'
-// 목록 끝 '기타(직접 입력)'으로 즉석 입력 전환되는 select — 요청·컴플레인 카테고리, 지출 카테고리, 규격·수량 단위, 사유 목록 공용.
+// 목록 끝 '기타(직접 입력)'으로 즉석 입력 전환되는 select. 요청·컴플레인 카테고리, 지출 카테고리, 규격·수량 단위, 사유 목록 공용.
 
 import { useId, useState } from 'react'
 import { reasonPickOf, otherReason } from '@/lib/reasonLists'
