@@ -95,6 +95,8 @@ eq('30 과 말일도 같은 날', cycleDayViolation({ status: 'NON_RESIDENT', du
 eq('거주 전(예약)에 남음', cycleDayViolation({ status: 'RESERVED', dueDay: '6', cycleDay: '1' }), 'pending')
 eq('거주 전(취소)에 남음', cycleDayViolation({ status: 'CANCELLED', dueDay: null, cycleDay: '1' }), 'pending')
 eq('퇴실 예정은 거주 중으로 본다', cycleDayViolation({ status: 'CHECKOUT_PENDING', dueDay: '6', cycleDay: '1' }), null)
+eq('납부일이 기간 시작보다 앞(기간 20·납부 5)', cycleDayViolation({ status: 'ACTIVE', dueDay: '5', cycleDay: '20' }), 'due-before-cycle')
+eq('납부일이 비었는데 칸만 남음', cycleDayViolation({ status: 'ACTIVE', dueDay: null, cycleDay: '1' }), 'due-before-cycle')
 
 console.log(`\n거주 전 납부일 감사 진리표: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

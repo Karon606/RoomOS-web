@@ -23,6 +23,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
 import { asDueDay } from '@/lib/contractFieldOverrides'
+import { cycleDayAfterDueChange, sameDueDay } from '@/lib/dueDay'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
 import { asSignLang, signLangForNationality, type SignLang } from '@/lib/signGuideText'
@@ -300,9 +301,12 @@ export async function setDueDayForContract(leaseTermId: string, dueDay: string):
     const { propertyId } = await requirePropertyAccess()
     const v = asDueDay(dueDay)
     if (!v) return { ok: false, error: '매월 납부일은 1부터 31 사이의 숫자 또는 말일로 입력해 주세요.' }
-    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, dueDay: true, cycleDay: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
-    await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { dueDay: v } })
+    // 납부일만 옮긴 계약(기간 칸 있음)이면 폼·일괄 수정과 같은 판정이다. 기간 시작보다 앞이면 거절, 같은 날이면 칸을 비운다(2026-10-21).
+    const cycleNext = sameDueDay(v, lease.dueDay) ? { cycleDay: lease.cycleDay ?? null } : cycleDayAfterDueChange(lease.cycleDay ?? null, v)
+    if ('error' in cycleNext) return { ok: false, error: cycleNext.error }
+    await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { dueDay: v, cycleDay: cycleNext.cycleDay } })
     // 닫힘 조건은 표시값 저장의 정본(closeStaleUnsignedLinks, app/contract/[tenantId]/actions.ts)과
     // 같은 다섯이다 — 동의서만 서명된 링크를 '서명 전'으로 오인해 닫는 사고(506호)의 규칙 그대로.
     const closed = await prisma.contractShareLink.updateMany({

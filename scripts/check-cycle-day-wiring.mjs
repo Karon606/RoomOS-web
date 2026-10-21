@@ -14,6 +14,8 @@
 //   ⑥ 납입일 변경 두 갈래. 서버가 갈래를 받고 납부일만 옮김은 앞당기기를 거절하며 조정 행을 안 만든다. 적용취소가 기간 칸을
 //      서명과 함께 되돌린다. 폼·일괄 수정이 같은 판정을 쓴다. 위젯은 기본값 없는 §12 세그먼트이고 일할 옛 값이 cycleDayOf 다.
 //   ⑧ 무청구 판정은 날짜 인자가 없다(경계 = 기간 시작, 임시 조정 무시). 호출부가 기한 날짜를 넘기는 사본이 다시 생기면 잡는다.
+//   ⑨ 독립 검수 후속. 일괄 수정(판정 순서·전파·적용취소 서명), 딸린 계약 상속, 우회 경로(계약서 문·시트), 내보내기 인수월,
+//      서버 일할 재계산, 감사 due-before-cycle.
 //   ⑦ 감사 규칙 11(기간 칸이 납부일과 같은 값으로 남음·거주 전 계약에 남음)이 판정 정본으로 적재된다.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -132,6 +134,23 @@ for (const f of sources) {
     if (/,\s*\)$/.test(src.slice(at, i + 1))) args--   // 끝 쉼표
     if (args !== 3) fails.push(`⑧ ${f}: 무청구 판정에 인자 ${args}개(경계는 계약에서 스스로 푼다, 날짜를 넘기지 않는다)`)
   }
+}
+
+// ── ⑨ 독립 검수 후속(2026-10-21) ─────────────────────────────────────
+{
+  const batch = body(tenants, 'export async function batchUpdateTenants(')
+  const iCycle = batch.indexOf('cycleDayAfterDueChange(b.cycleDay, nextDue)'), iTenantWrite = batch.indexOf('prisma.tenant.updateMany(')
+  need('⑨ 일괄 수정: 기간 칸 판정(거절)이 입주자 칸 저장보다 앞', iCycle > 0 && iTenantWrite > 0 && iCycle < iTenantWrite)
+  need('⑨ 일괄 수정: 딸린 계약 전파에 기간 칸을 넘기고 되돌리기에 prevCycleDay', /propagateDueDayToSubLeases\(prisma, b\.id, b\.dueDay, nextDue,\s*b\.cycleDay \? \{ prev: b\.cycleDay, next: nextCycle \} : undefined\)/.test(batch) && /cycleDay: m\.prevCycleDay/.test(batch))
+  need('⑨ 일괄 수정 적용취소: 서명 검증과 허용 칸 목록', /signUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(batch) && /verifyUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(body(tenants, 'export async function undoBatchUpdateTenants(')) && /BATCH_UNDO_LEASE_FIELDS = new Set\(\['depositAmount', 'dueDay', 'cycleDay', 'status', 'moveInFlexible', 'expectedMoveOut', 'autoCheckoutAt'\]\)/.test(tenants))
+  need('⑨ 딸린 계약 신규 생성이 부모 기간 칸을 물려받는다', /const cycleDay = await inheritedCycleDay\(prisma, f\.data\.parentLeaseTermId, f\.data\.dueDay\)/.test(tenants) && /data: \{ \.\.\.f\.data, cycleDay, propertyId, tenantId \}/.test(tenants))
+  need('⑨ 입주자 수정(부모 붙이기 포함)도 부모 기간 칸을 물려받는다', /\(await inheritedCycleDay\(prisma, parentForCycle, nextDueDay\)\) \?\? cycleNext\.cycleDay/.test(tenants))
+  need('⑨ 계약서 문 납부일이 같은 판정', /cycleDayAfterDueChange\(lease\.cycleDay \?\? null, v\)/.test(strip(read('app/(app)/tenants/contractShare.ts'))))
+  const imp = strip(read('app/api/import/route.ts'))
+  need('⑨ 시트 가져오기가 같은 판정·전파에 기간 칸', /cycleDayAfterDueChange\(activeLease\.cycleDay \?\? null, nextDueDay\)/.test(imp) && /propagateDueDayToSubLeases\(prisma, activeLease\.id, activeLease\.dueDay, nextDueDay,\s*activeLease\.cycleDay \|\| cycleNext\.cycleDay/.test(imp))
+  need('⑨ 내보내기 인수월 판정이 cycleDayOf(임시 조정 무시)', /const cycleForCutoff = cycleDayOf\(l\)/.test(strip(read('app/api/export/route.ts'))))
+  need('⑨ 기간도 옮김 일할을 서버가 DB 값으로 다시 잰다(화면 값은 비교용)', /const serverCalc = calcProRata\(viewExpectedForMonth\(lease, targetMonth\), curCycle, nextDue, targetMonth\)/.test(change) && /planDueDayAdjustCreate\(\{ fromDue: curCycle, toDue: newDueDay, adjustAmount: serverAdjust,/.test(change))
+  need('⑨ 감사 규칙 11 에 due-before-cycle 축', /if \(!dueDayAfterCycle\(lease\.cycleDay, lease\.dueDay\)\) return 'due-before-cycle'/.test(audit))
 }
 
 if (fails.length) {

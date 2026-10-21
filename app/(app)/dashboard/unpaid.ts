@@ -211,8 +211,9 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   // override 가 이 월(또는 이후 월)에 걸려 있고, 그 유예 날짜가 이 월 원래 납부일보다 늦으면
   // (= 미납 채무를 뒤로 미룬 경우) 유예 날짜 기준으로 경과일을 계산한다.
   // 2026-06-02 사용자 보고: 5월 미납을 6/1로 유예했는데 19일 경과로 잡히던 문제.
+  // 경과일은 기한(dueDay·임시 조정·첫 달 기한)으로 잰다. 입력 모양은 effectiveDueDayForMonth 와 같은 한 벌이다(첫 달 기한이 기간 칸을 읽는다).
   function daysOverdueForMonth(
-    l: { dueDay: string | null; cycleDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: Parameters<typeof effectiveDueDayForMonth>[0],
     monthStr: string,
   ): number | null {
     if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {

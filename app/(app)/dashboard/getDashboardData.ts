@@ -779,8 +779,9 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
 
   // 특정 미납 월의 경과일 — 납부일 유예 반영 (unpaid.ts daysOverdueForMonth 와 동일 규칙).
   // override 가 이 월(또는 이후)에 걸려 있고 유예 날짜가 원래 납부일보다 늦으면 유예 날짜 기준.
+  // 경과일은 기한(dueDay·임시 조정·첫 달 기한)으로 잰다. 입력 모양은 effectiveDueDayForMonth 와 같은 한 벌이다(첫 달 기한이 기간 칸을 읽는다).
   function daysOverdueForMonth(
-    l: { dueDay: string | null; cycleDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: Parameters<typeof effectiveDueDayForMonth>[0],
     monthStr: string,
   ): number | null {
     if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {

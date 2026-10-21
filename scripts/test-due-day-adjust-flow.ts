@@ -330,6 +330,75 @@ async function main() {
     eq('S13 기간도 옮김 적용취소: 납부일 6 · 기간 1 복원 · 조정 행 지움', [u3.ok, await st(L6.id), await st(S6.id), await adjCount(L6.id)], [true, { dueDay: '6', cycleDay: '1' }, { dueDay: '6', cycleDay: '1' }, 0])
   }
 
+  // ── S14 일괄 수정(독립 검수 2026-10-21) ─ 기간 칸 판정이 모든 쓰기 앞, 적용취소는 서명·허용 칸 ────────────────
+  {
+    const T = await prisma.tenant.create({ data: { name: '일괄', propertyId: P1, nationality: '한국' } })
+    const R = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const L = await prisma.leaseTerm.create({ data: { tenantId: T.id, propertyId: P1, roomId: R.id, rentAmount: 300000, dueDay: '25', cycleDay: '20', moveInDate: day('2026-08-20'), status: 'ACTIVE' } })
+    const st = async () => J(await prisma.leaseTerm.findFirst({ where: { id: L.id }, select: { dueDay: true, cycleDay: true } }))
+    const nat = async () => (await prisma.tenant.findFirst({ where: { id: T.id }, select: { nationality: true } }))?.nationality
+    const bad = await tenants.batchUpdateTenants([T.id], { nationality: '베트남', dueDay: '5' })
+    eq('S14 기간 20 계약을 일괄로 납부일 5 는 거절 · 국적도 안 바뀜', [bad.ok, await nat(), await st()], [false, '한국', { dueDay: '25', cycleDay: '20' }])
+    const ok = await tenants.batchUpdateTenants([T.id], { nationality: '베트남', dueDay: '20' })
+    if (!ok.ok || !ok.undo) throw new Error('S14 일괄 실패')
+    eq('S14 기간 시작과 같은 날이면 칸을 비움', [await nat(), await st()], ['베트남', { dueDay: '20', cycleDay: null }])
+    eq('S14 적용취소 토큰 서명', typeof ok.undo.sig, 'string')
+    const forged = J(ok.undo); forged.leases[0].fields.rentAmount = 1
+    eq('S14 허용 밖 칸(rentAmount)을 실은 토큰 거절', (await tenants.undoBatchUpdateTenants(forged)).ok, false)
+    const forged2 = J(ok.undo); forged2.leases[0].fields.dueDay = '1'
+    eq('S14 값을 바꾼 토큰은 서명에서 거절', (await tenants.undoBatchUpdateTenants(forged2)).ok, false)
+    const u = await tenants.undoBatchUpdateTenants(J(ok.undo))
+    eq('S14 적용취소: 국적·납부일·기간 칸 원복', [u.ok, await nat(), await st()], [true, '한국', { dueDay: '25', cycleDay: '20' }])
+  }
+
+  // ── S15 기간도 옮김의 일할은 서버가 DB 값으로 다시 잰다(임시 조정이 걸린 달) ──────────────────────────
+  {
+    const T = await prisma.tenant.create({ data: { name: '임시', propertyId: P1 } })
+    const R = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    // 납부일 1일, 11월만 임시로 10일. 화면은 임시일(10)을 지금 납부일로 읽어 10→6 을 '4일 앞당김(돌려줄 62,666)' 으로 보냈다.
+    const L = await prisma.leaseTerm.create({ data: { tenantId: T.id, propertyId: P1, roomId: R.id, rentAmount: 470000, dueDay: '1', overrideDueDay: '10', overrideDueDayMonth: '2026-11', moveInDate: day('2026-08-01'), status: 'ACTIVE' } })
+    const c = await tenants.changeDueDay(L.id, '6', '2026-11', 62666, null, 'cycle')
+    if (!c.ok || !c.undo) throw new Error('S15 변경 실패')
+    const r = await row(c.undo.adjustRecordId!)
+    eq('S15 서버가 1일→6 으로 다시 잼(추가로 받을 78,333)', [r?.actualAmount, r?.memo], [-78333, '[납입일변경] 1일→6 변경, 일할 78,333원 (추가납부)'])
+    eq('S15 화면 값과 달랐다는 안내', /다시 잰 78,333원/.test(c.notice ?? ''), true)
+    const u = await tenants.undoChangeDueDay(J(c.undo))
+    eq('S15 적용취소', u.ok, true)
+    const c2 = await tenants.changeDueDay(L.id, '6', '2026-11', -78333, null, 'cycle')
+    eq('S15 맞는 값을 보내면 안내 없음', c2.ok ? (c2.notice ?? '') : 'fail', '')
+  }
+
+  // ── S16 딸린 계약은 부모와 같은 납부일이면 부모의 기간 칸을 물려받는다(신규·부모 붙이는 수정) ──────────────
+  {
+    const dueLib = await import('@/lib/dueDay')
+    const T = await prisma.tenant.create({ data: { name: '부모', propertyId: P1 } })
+    const R = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const R2 = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const parent = await prisma.leaseTerm.create({ data: { tenantId: T.id, propertyId: P1, roomId: R.id, rentAmount: 470000, dueDay: '6', cycleDay: '1', moveInDate: day('2026-08-01'), status: 'ACTIVE' } })
+    eq('S16 판정: 같은 납부일이면 부모 칸', await dueLib.inheritedCycleDay(prisma, parent.id, '6'), '1')
+    eq('S16 판정: 다른 납부일이면 없음', await dueLib.inheritedCycleDay(prisma, parent.id, '10'), null)
+    eq('S16 판정: 부모 없으면 없음', await dueLib.inheritedCycleDay(prisma, null, '6'), null)
+    const fd = new FormData()
+    fd.set('tenantId', T.id); fd.set('roomId', R2.id); fd.set('status', 'NON_RESIDENT'); fd.set('rentAmount', '100000')
+    fd.set('dueDay', '6'); fd.set('moveInDate', '2026-08-01'); fd.set('parentLeaseTermId', parent.id)
+    const add = await tenants.addLeaseToTenant(fd)
+    const child = await prisma.leaseTerm.findFirst({ where: { parentLeaseTermId: parent.id }, select: { dueDay: true, cycleDay: true } })
+    eq('S16 신규 딸린 계약(부모와 같음)이 기간 칸 1 을 물려받음', [add.ok ? 'ok' : add.error, J(child)], ['ok', { dueDay: '6', cycleDay: '1' }])
+  }
+
+  // ── S17 계약서 문 납부일(setDueDayForContract)도 같은 판정 ─────────────────────────────────────────
+  {
+    const share = await import('@/app/(app)/tenants/contractShare')
+    const T = await prisma.tenant.create({ data: { name: '계약서', propertyId: P1 } })
+    const R = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P1 } })
+    const L = await prisma.leaseTerm.create({ data: { tenantId: T.id, propertyId: P1, roomId: R.id, rentAmount: 300000, dueDay: '25', cycleDay: '20', moveInDate: day('2026-08-20'), status: 'ACTIVE' } })
+    const st = async () => J(await prisma.leaseTerm.findFirst({ where: { id: L.id }, select: { dueDay: true, cycleDay: true } }))
+    const bad = await share.setDueDayForContract(L.id, '5')
+    eq('S17 기간보다 앞 거절', [bad.ok, await st()], [false, { dueDay: '25', cycleDay: '20' }])
+    const same = await share.setDueDayForContract(L.id, '20')
+    eq('S17 기간 시작과 같은 날이면 칸 비움', [same.ok, await st()], [true, { dueDay: '20', cycleDay: null }])
+  }
+
   console.log(`[납입일 변경 조정 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

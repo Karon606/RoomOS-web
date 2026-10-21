@@ -10,7 +10,7 @@ import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomStillOccupied } from '@/lib/roomOccupancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
-import { propagateDueDayToSubLeases } from '@/lib/dueDay'
+import { cycleDayAfterDueChange, propagateDueDayToSubLeases, sameDueDay } from '@/lib/dueDay'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
 import * as XLSX from 'xlsx'
@@ -233,6 +233,9 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
             // 계약서 URL 이 이미 formData.has() 로 같은 방어를 하고 있다. 그 문법에 맞춘다.
             const has = (k: string) => k in row && String(row[k] ?? '').trim() !== ''
             const nextDueDay = str(row['납부일']) || null
+            // 납부일만 옮긴 계약(기간 칸 있음)이면 폼·일괄 수정과 같은 판정이다. 기간 시작보다 앞이면 그 줄을 거절한다(2026-10-21).
+            const cycleNext = sameDueDay(nextDueDay, activeLease.dueDay) ? { cycleDay: activeLease.cycleDay ?? null } : cycleDayAfterDueChange(activeLease.cycleDay ?? null, nextDueDay)
+            if ('error' in cycleNext) throw new Error(cycleNext.error)
             await prisma.leaseTerm.update({
               where: { id: activeLease.id },
               data: {
@@ -240,12 +243,14 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
                 ...(has('보증금') ? { depositAmount: parseNum(row['보증금']) } : {}),
                 ...(has('청소비') ? { cleaningFee:   parseNum(row['청소비']) } : {}),
                 dueDay:        nextDueDay,
+                cycleDay:      cycleNext.cycleDay,
                 payMethod:     str(row['납부방법']) || null,
               },
             })
             // 딸린 계약의 납부일도 함께 옮긴다 — 시트에는 부모 한 줄만 있고 딸린 계약은 없다
             // (운영자 오더 2026-08-13). 저장 경로마다 규칙이 갈리지 않게 같은 헬퍼를 쓴다.
-            await propagateDueDayToSubLeases(prisma, activeLease.id, activeLease.dueDay, nextDueDay)
+            await propagateDueDayToSubLeases(prisma, activeLease.id, activeLease.dueDay, nextDueDay,
+              activeLease.cycleDay || cycleNext.cycleDay ? { prev: activeLease.cycleDay ?? null, next: cycleNext.cycleDay } : undefined)
           }
           result.imported++
           continue

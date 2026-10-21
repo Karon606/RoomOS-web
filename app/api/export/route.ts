@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
 import { resolveMonthParam } from '@/lib/monthParam'
 import { billForLeaseMonth } from '@/lib/billing'
+import { cycleDayOf } from '@/lib/dueDay'
 import { loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
@@ -300,9 +301,10 @@ export async function GET(request: NextRequest) {
       let prevPaidThisMonth = false
       if (cutoffDate && cutoffMonthStr && targetMonth === cutoffMonthStr) {
         const preAcqPaid = ps.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
-        const dueDayNum = effectiveDueDay?.includes('-')
-          ? new Date(effectiveDueDay + 'T00:00:00').getDate()
-          : effectiveDueDay?.includes('말') ? 31 : Number(effectiveDueDay ?? '1')
+        // 양도인이 받은 것은 그 기간 몫이라 기간 시작으로 본다(이용 기간 시작일 cycleDayOf, 임시 조정은 기한일 뿐이라 보지 않는다).
+        // 수납 관리·홈 미납과 같은 판정이다(2026-10-21, 종전에는 이 사본만 임시 조정 날짜로 쟀다).
+        const cycleForCutoff = cycleDayOf(l)
+        const dueDayNum = cycleForCutoff?.includes('말') ? 31 : Number(cycleForCutoff ?? '1')
         const dueDayBeforeCutoff = dueDayNum < cutoffDay
         prevPaidThisMonth = preAcqPaid >= l.rentAmount || dueDayBeforeCutoff
       }

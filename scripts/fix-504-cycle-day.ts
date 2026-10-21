@@ -12,7 +12,10 @@
 // 안전장치. 칸(cycleDay)이 운영 DB 에 없으면(prisma/migrate_lease_cycle_day.sql 미적용) 적용을 거부한다(예행은 칸을 비었다고 보고 보여 준다).
 // 지금 상태가 승인 때 본 모양(ACTIVE · 504호 · dueDay '6' · cycleDay 없음 · 살아 있는 납입일 변경 조정 행 없음)이 아니면 멈춘다.
 // 예행은 READ ONLY 트랜잭션이라 쓰기가 구조로 막힌다. 적용·되돌리기는 Serializable 한 트랜잭션이고 행을 잠근 뒤 다시 확인한다.
-// 되돌리기는 지금 값이 적용 직후 값과 같을 때만 적용 전으로 돌린다(그 사이 앱에서 납입일을 바꿨으면 멈춘다).
+// 되돌리기는 칸과 메모를 따로 본다. 기간 칸이 적용 직후 값('1')이면 되돌린다(그 사이 앱에서 기간을 바꿨으면 칸은 멈춘다).
+// 메모는 적용 직후 글자 그대로일 때만 되돌리고, 그 사이 운영자가 고쳤으면 그대로 둔다(고친 글을 지우지 않는다).
+// 딸린 계약(parentLeaseTermId = 504)이 있으면 적용을 멈춘다. 2026-10-21 운영 0건이라 지금은 걸리지 않는다.
+// 있으면 앱의 납입일 변경(납부일만 옮김)이 전파·적용취소까지 함께 하므로 그 길로 처리한다(이 스크립트가 전파를 손으로 베끼지 않는다).
 //
 // 실행: npx tsx --env-file=.env.local scripts/fix-504-cycle-day.ts [--apply | --revert <scripts/.fix-504-cycle-day-undo-*.json>]
 import fs from 'node:fs'
@@ -67,11 +70,13 @@ async function main() {
       if (!file) throw new Error('--revert 뒤에 되돌리기 파일 경로가 없다')
       const u = JSON.parse(fs.readFileSync(file, 'utf8')) as Undo
       if (u.leaseTermId !== LEASE_ID || u.tenantId !== cur.tenantId) throw new Error('되돌리기 파일이 이 계약 것이 아니다')
-      if (cur.cycleDay !== u.after.cycleDay || (cur.tenantMemo ?? null) !== u.after.tenantMemo) throw new Error('지금 값이 적용 직후 모양이 아니다(그 사이 바뀜). 되돌리지 않고 멈춘다')
-      await c.query(`update lease_terms set "cycleDay" = $2 where id = $1`, [LEASE_ID, u.before.cycleDay])
-      await c.query(`update tenants set memo = $2 where id = $1`, [u.tenantId, u.before.tenantMemo])
+      const cycleBack = cur.cycleDay === u.after.cycleDay
+      const memoBack = (cur.tenantMemo ?? null) === u.after.tenantMemo
+      if (!cycleBack && !memoBack) throw new Error('기간 칸과 메모가 모두 적용 직후 모양이 아니다(그 사이 바뀜). 되돌리지 않고 멈춘다')
+      if (cycleBack) await c.query(`update lease_terms set "cycleDay" = $2 where id = $1`, [LEASE_ID, u.before.cycleDay])
+      if (memoBack) await c.query(`update tenants set memo = $2 where id = $1`, [u.tenantId, u.before.tenantMemo])
       await c.query('COMMIT')
-      console.log(`되돌림 완료: 기간 시작일 ${u.before.cycleDay ?? '없음'} · 입주자 메모 적용 전 글자`)
+      console.log(`되돌림 완료: 기간 시작일 ${cycleBack ? `${u.before.cycleDay ?? '없음'} 으로` : `그대로(지금 '${cur.cycleDay ?? '없음'}', 그 사이 바뀜)`} · 입주자 메모 ${memoBack ? '적용 전 글자로' : '그대로(그 사이 고침)'}`)
       return
     }
 
@@ -80,6 +85,8 @@ async function main() {
     const adjRows = (await c.query(`select "targetMonth", memo, "seqNo", "deletedAt" from payment_records where "leaseTermId" = $1 and memo like '[납입일변경]%'`, [LEASE_ID])).rows
     const dueDayAdjusts = dueDayAdjustsFrom(adjRows)
     const liveAdjust = dueDayAdjusts.length
+    const subs = (await c.query(`select id, status, "dueDay" from lease_terms where "parentLeaseTermId" = $1 and status in ('ACTIVE','CHECKOUT_PENDING','NON_RESIDENT')`, [LEASE_ID])).rows
+    if (subs.length > 0) throw new Error(`딸린 계약 ${subs.length}건(${subs.map((x: { id: string }) => x.id.slice(0, 8)).join(', ')})이 있다. 앱의 납입일 변경(납부일만 옮김)으로 함께 처리한다. 멈춘다`)
     const okShape = cur.roomNo === ROOM_NO && cur.status === 'ACTIVE' && cur.dueDay === '6' && cur.cycleDay === null && liveAdjust === 0 && !cur.isShortTerm
     if (!okShape) throw new Error(`지금 모양이 승인 때(ACTIVE · 504호 · 납부일 '6' · 기간 시작일 없음 · 살아 있는 조정 행 0)와 다르다(조정 행 ${liveAdjust}). 멈춘다`)
 

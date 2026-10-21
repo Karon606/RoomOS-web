@@ -98,6 +98,19 @@ export function cyclePeriodLabel(cycleDay: string | null): string {
 }
 
 /**
+ * 딸린 계약이 부모와 같은 납부일이면 부모의 이용 기간 시작일도 물려받는다(독립 검수 2026-10-21).
+ * 폼은 '부모와 같음' 일 때 부모의 납부일을 그대로 제출하므로 납부일이 같으면 같음 모드다(propagateDueDayToSubLeases 와 같은 판정).
+ * 부모가 납부일만 옮긴 계약(기간 1일·납부일 6일)인데 딸린 계약이 납부일 6일만 받으면 그 계약의 기간은 6일부터로 갈린다.
+ * 부모가 없거나, 납부일이 다르거나, 부모에 기간 칸이 없으면 null 이다(종전과 같다).
+ */
+export async function inheritedCycleDay(db: Pick<DueDayDb, 'leaseTerm'>, parentLeaseTermId: string | null | undefined, dueDay: string | null | undefined): Promise<string | null> {
+  if (!parentLeaseTermId || !dueDay) return null
+  const p = await db.leaseTerm.findFirst({ where: { id: parentLeaseTermId }, select: { dueDay: true, cycleDay: true } })
+  if (!p?.cycleDay || !sameDueDay(p.dueDay, dueDay)) return null
+  return p.cycleDay
+}
+
+/**
  * 입주일 기준 납부일 파생 — 30일 이상이면 '말일'(등록 폼 applyDueDay 와 동일 규칙).
  *
  * 원래 app/(app)/tenants/actions.ts 안의 로컬 함수였다. 정합 감사(lib/integrityAudit)가 같은 규칙으로

@@ -10,7 +10,7 @@ import { calcCheckoutProration } from '@/lib/prorate'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
-import { sameDueDay, dueDayFromMoveIn, cycleDayOf } from '@/lib/dueDay'
+import { sameDueDay, dueDayFromMoveIn, cycleDayOf, dueDayAfterCycle } from '@/lib/dueDay'
 import { attachDueDayAdjusts, dueDayAdjustSignMismatch, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
 import { fmtRoomNo } from '@/lib/roomNo'
 
@@ -58,11 +58,14 @@ export function pendingDueDayViolation(lease: {
  *                남아 있으면 새 쓰기 경로가 정규화를 빠뜨린 것이다. 청구는 같지만 화면이 '이용 기간' 을 거짓으로 따로 적는다.
  *   pending      거주 전 상태(문의·투어·예약·취소)인데 cycleDay 가 있음. 납부일만 옮김은 거주 중 계약의 일이고, 예약으로 되돌린
  *                계약에 남으면 다시 입실할 때 지난 합의가 말없이 되살아난다.
+ *   due-before-cycle  납부일이 기간 시작보다 앞(또는 비었거나 못 읽음, lib/dueDay dueDayAfterCycle 거짓). 쓰기 문은 이를 거절하므로
+ *                남아 있으면 판정을 안 거친 경로가 있다는 뜻이다. 그 달 기한이 기간보다 먼저 와서 시작도 안 한 기간의 돈을 미리 받는다.
  */
-export function cycleDayViolation(lease: { status: string; dueDay: string | null; cycleDay: string | null }): null | 'same-as-due' | 'pending' {
+export function cycleDayViolation(lease: { status: string; dueDay: string | null; cycleDay: string | null }): null | 'same-as-due' | 'pending' | 'due-before-cycle' {
   if (!lease.cycleDay) return null
   if ((PENDING_DUE_DAY_STATUSES as string[]).includes(lease.status)) return 'pending'
   if (sameDueDay(lease.cycleDay, lease.dueDay)) return 'same-as-due'
+  if (!dueDayAfterCycle(lease.cycleDay, lease.dueDay)) return 'due-before-cycle'
   return null
 }
 
@@ -377,7 +380,9 @@ export async function runIntegrityAudit(
         signature: `[정합] cycle-day-${why} · ${l.id}`,
         note: why === 'same-as-due'
           ? `${who}: 이용 기간 시작일이 납부일과 같은 '${l.cycleDay}'로 남아 있습니다. 청구는 같지만 화면이 이용 기간을 따로 적습니다. 납입일 변경에서 납부일만 옮김으로 같은 날을 다시 고르면 비워집니다.`
-          : `${who}: 거주 전 상태(${l.status})인데 이용 기간 시작일 '${l.cycleDay}'가 남아 있습니다. 다시 입실하면 지난 납부일 합의가 그대로 살아납니다. 입실 뒤 납입일 변경에서 다시 정해 주세요.`,
+          : why === 'due-before-cycle'
+            ? `${who}: 납부일 '${l.dueDay ?? '없음'}'이 이용 기간 시작일 '${l.cycleDay}'보다 앞입니다. 그 달 기한이 기간보다 먼저 옵니다. 납입일 변경에서 기간도 옮김이나 납부일만 옮김으로 다시 정해 주세요.`
+            : `${who}: 거주 전 상태(${l.status})인데 이용 기간 시작일 '${l.cycleDay}'가 남아 있습니다. 다시 입실하면 지난 납부일 합의가 그대로 살아납니다. 입실 뒤 납입일 변경에서 다시 정해 주세요.`,
         tenantId: l.tenantId, propertyId: l.propertyId,
       })
     }
