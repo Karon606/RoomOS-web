@@ -15,8 +15,9 @@
 //   ⓒ 이름 변경이 기본값을 거친다: renameOption 이 parseOptionList 로 지금 목록을 읽는다(`?? ''` 금지).
 //   ⓓ 확인창: '기본값(' 뒤에는 정본에서 읽은 값(${...})만 온다. 손으로 적은 목록은 갈린다.
 //   ⓔ 할인 사유 이름 변경은 영업장 범위: 연쇄 표에 via: 'leaseTerm', 조건은 optionRenameWhere 한 곳.
-//   ⓕ '관리는 설정에서' 가 사실이다: showAddHint 를 쓰는 목록마다 분류 관리 탭에 그 카드가 있다. 추가 힌트는
-//      저장하면 실제로 더해질 때(직접 입력·기록에 저장된 값과 다른 새 값)만 선다.
+//   ⓕ '관리는 설정에서' 가 사실이다: '목록에 추가' 체크박스를 세우는 목록(addMode="auto", 2026-10-22 전 showAddHint)마다
+//      분류 관리 탭에 그 카드가 있다. 체크박스는 저장하면 실제로 더해질 때(직접 입력·기록에 저장된 값과 다른 새 값)만 서고
+//      기본은 켜짐이다(사유 목록 ask 는 기본 꺼짐, ⓛ). 끄면 서버가 목록에 안 더한다.
 //   ⓖ 적용취소가 모든 카드에 같고 지금 서버 목록 위에서 돈다: 삭제는 restoreOption(그 이름 하나를 뺄 때의
 //      자리에), 초기화는 undoResetOptions(서버가 쥐어 준 직전 목록에), 이름 변경은 바뀐 행 id 로. 서버 액션의
 //      목록 계산은 lib/optionLists 순수 함수(표는 test-discount-reasons)이고 액션은 그 함수를 저장된 칸 그대로
@@ -216,8 +217,8 @@ for (const m of form.matchAll(/title:\s*([`'"])([^\n]*?)\1/g)) {
   }
 }
 
-// ⓕ showAddHint 를 쓰는 목록마다 설정 카드.
-// 새 자리에서 showAddHint 를 쓰면 여기에 그 목록 칸을 적는다. 적지 않으면 붉게 선다.
+// ⓕ '목록에 추가' 체크박스(addMode="auto")를 쓰는 목록마다 설정 카드.
+// 새 자리에서 addMode="auto" 를 쓰면 여기에 그 목록 칸을 적는다. 적지 않으면 붉게 선다.
 const HINT_FIELD = {
   'app/(app)/requests/RequestsClient.tsx': 'requestCategories',
   'components/entity-modal/widgets/TenantRequestsTab.tsx': 'requestCategories',
@@ -229,18 +230,36 @@ const cardFields = new Set([...form.matchAll(/<OptionSection[\s\S]*?\n\s*field="
 for (const p of [...walk('app', [], /\.tsx$/), ...walk('components', [], /\.tsx$/)]) {
   if (p === 'components/ui/CategorySelect.tsx') continue
   const src = readFileSync(p, 'utf8')
-  if (!/\bshowAddHint\b/.test(src)) continue
+  if (/\bshowAddHint\b|\baddHintText\b/.test(src)) violations.push(`${p} · 옛 '저절로 추가됩니다' 힌트(showAddHint·addHintText)가 되살아났다. addMode="auto" 체크박스 한 문법이다.`)
+  if (!/addMode="auto"/.test(src)) continue
   const f = HINT_FIELD[p]
-  if (!f) { violations.push(`${p} · showAddHint('관리는 설정에서')를 쓰는데 어느 목록인지 이 그물에 안 적혔다. HINT_FIELD 에 적고 분류 관리 탭에 카드가 있는지 본다.`); continue }
+  if (!f) { violations.push(`${p} · addMode="auto"('관리는 설정에서')를 쓰는데 어느 목록인지 이 그물에 안 적혔다. HINT_FIELD 에 적고 분류 관리 탭에 카드가 있는지 본다.`); continue }
   if (!cardFields.has(f)) violations.push(`${p} · '관리는 설정에서' 라고 말하는데 분류 관리 탭에 ${f} 카드(OptionSection)가 없다. 거짓 약속이다.`)
 }
-// 힌트 '저장할 때 목록에 저절로 추가' 는 실제로 더해질 때만 선다. 직접 입력을 골랐거나 기록에 저장된 값과 다른
+// '목록에 추가' 체크박스는 실제로 더해질 때만 선다. 직접 입력을 골랐거나 기록에 저장된 값과 다른
 // 새 값을 쳤을 때다(서버는 이전 값과 같으면 안 더한다). 고치는 폼은 그 기록의 값을, 새 기록 폼은 '' 를 savedValue 로
 // 넘긴다(3차 검수). 지출 수정·지출 등록·입주자 직업이 그 자리다.
 {
   const cs = readFileSync('components/ui/CategorySelect.tsx', 'utf8')
-  if (!/showAddHint && \(customMode \|\| \(value !== '' && value !== baseline\)\)/.test(cs) || !/const baseline = savedValue \?\? initialValue/.test(cs)) {
-    violations.push(`components/ui/CategorySelect.tsx · 추가 힌트가 '실제로 목록에 더해질 때'(직접 입력·저장된 값과 다른 새 값)만 서지 않는다.`)
+  if (!/addMode === 'auto' && \(customMode \|\| \(value !== '' && value !== baseline\)\) && addBox/.test(cs) || !/const baseline = savedValue \?\? initialValue/.test(cs)) {
+    violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크박스가 '실제로 목록에 더해질 때'(직접 입력·저장된 값과 다른 새 값)만 서지 않는다.`)
+  }
+  // 끄면 목록에 안 더한다. 서버가 그 체크를 읽어야 체크박스가 거짓말이 아니다(2026-10-22 운영자 결정 2).
+  const OFF_READS = [
+    ['app/(app)/finance/actions.ts', /resolveExpenseCategoryForSave\(propertyId, categoryRaw, undefined, formData\.get\('categoryAddToList'\) !== '0'\)/, '지출 등록'],
+    ['app/(app)/finance/actions.ts', /resolveExpenseCategoryForSave\(propertyId, categoryRaw, existing\?\.category, formData\.get\('categoryAddToList'\) !== '0'\)/, '지출 수정'],
+    ['app/(app)/finance/actions.ts', /if \(addToList && nextList && value !== prev\)/, '지출 카테고리 적립'],
+    ['app/(app)/tenants/actions.ts', /if \(addToList && nextList && value !== prev\)/, '요청 카테고리 적립'],
+    ['app/(app)/tenants/actions.ts', /resolveRequestCategoryForSave\(propertyId, data\.category, undefined, data\.addCategoryToList !== false\)/, '요청 등록'],
+    ['app/(app)/tenants/actions.ts', /resolveRequestCategoryForSave\(propertyId, data\.category, before\.category, data\.addCategoryToList !== false\)/, '요청 수정'],
+    ['app/(app)/tenants/actions.ts', /if \(job && formData\.get\('jobAddToList'\) !== '0'\) await addJobOption\(job\)/, '입주자 등록 직업'],
+    ['app/(app)/tenants/actions.ts', /if \(job && job !== prevJob && formData\.get\('jobAddToList'\) !== '0'\) await addJobOption\(job\)/, '입주자 수정 직업'],
+    ['components/entity-modal/widgets/DiscountWidget.tsx', /if \(why && reasonToList && !reasonOptions\.includes\(why\)\)/, '할인 사유'],
+    ['app/(app)/requests/RequestsClient.tsx', /addCategoryToList,\n/, '요청 폼'],
+    ['components/entity-modal/widgets/TenantRequestsTab.tsx', /addCategoryToList: newCategoryToList/, '입주자 요청 탭'],
+  ]
+  for (const [p, re, what] of OFF_READS) {
+    if (!re.test(readFileSync(p, 'utf8'))) violations.push(`${p} · ${what} 이(가) '목록에 추가' 체크를 끈 것을 읽지 않는다. 꺼도 목록에 쌓인다.`)
   }
   const SAVED = [
     ['app/(app)/finance/FinanceClient.tsx', /value=\{editExpCategory\}[\s\S]{0,200}savedValue=\{detailExp\.category \?\? ''\}/, '지출 수정'],
@@ -559,7 +578,7 @@ const os = bodyOf(form, /function OptionSection\(/)
   {
     const cs = stripComments(readFileSync('components/ui/CategorySelect.tsx', 'utf8'))
     const ask = cs.slice(cs.indexOf("if (addMode === 'ask')"), cs.indexOf('const isInOptions'))
-    if (!/const \[ownAdd, setOwnAdd\] = useState\(false\)/.test(cs)) violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크의 기본이 꺼짐이 아니다(운영자 승인: 사유는 기본 꺼짐).`)
+    if (!/const \[ownAdd, setOwnAdd\] = useState\(addMode === 'auto'\)/.test(cs)) violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크의 기본이 사유(ask) 꺼짐·저절로 쌓던 목록(auto) 켜짐이 아니다(운영자 결정 2).`)
     if (!/reasonPickOf\(value, options\)/.test(ask) || !/pick\.kind === 'legacy' && <option value=\{pick\.value\}>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 저장 글자를 reasonPickOf 로 읽지 않거나 목록 밖 글자를 그대로 세우지 않는다. 뺀 항목·옛 이름이 빈 칸으로 뜨고 저장하면 지워진다.`)
     if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{o\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/select>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 '기타(직접 입력)' 이 목록 맨 끝 고정 항목이 아니다.`)
     if (!/onChange\(otherReason\(/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 직접 입력이 lib/reasonLists otherReason 으로 저장 글자를 만들지 않는다.`)

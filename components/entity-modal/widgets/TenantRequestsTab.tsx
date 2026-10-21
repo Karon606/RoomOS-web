@@ -54,6 +54,8 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [newTargetDate, setNewTargetDate] = useState('')
   // 카테고리·긴급 — /requests 등록 모달과 동일 항목(여기서만 빠져 미분류가 쌓이던 누락 봉합, 2026-07-27)
   const [newCategory, setNewCategory] = useState('')
+  // '이 카테고리를 목록에 추가'(기본 켜짐, 2026-10-22). 끄면 저장해도 목록에 안 더한다.
+  const [newCategoryToList, setNewCategoryToList] = useState(true)
   const [newUrgent, setNewUrgent] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   // 완료 처리가 묻는 완료일(운영자 지시 2026-09-17). 기본은 오늘이고 지난 날짜로 고칠 수 있다.
@@ -71,8 +73,8 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const handleCreate = () => {
     if (!newContent.trim()) return
     startTransition(async () => {
-      await createTenantRequest({ tenantId, content: newContent, requestDate: newReqDate, targetDate: newTargetDate || null, category: newCategory || null, isUrgent: newUrgent })
-      setNewContent(''); setNewTargetDate(''); setNewReqDate(kstYmdStr()); setNewCategory(''); setNewUrgent(false)
+      await createTenantRequest({ tenantId, content: newContent, requestDate: newReqDate, targetDate: newTargetDate || null, category: newCategory || null, addCategoryToList: newCategoryToList, isUrgent: newUrgent })
+      setNewContent(''); setNewTargetDate(''); setNewReqDate(kstYmdStr()); setNewCategory(''); setNewCategoryToList(true); setNewUrgent(false)
       await reload()
     })
   }
@@ -142,7 +144,8 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
               <label className="block text-[0.65625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>카테고리</label>
               <CategorySelect
                 value={newCategory} onChange={setNewCategory}
-                options={categories} emptyLabel="카테고리 없음" showAddHint closeIconSize={12}
+                options={categories} emptyLabel="카테고리 없음" closeIconSize={12}
+                addMode="auto" addToList={newCategoryToList} onAddToListChange={setNewCategoryToList} addLabel="이 카테고리를 목록에 추가"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
             </div>
             <div className="min-w-0">

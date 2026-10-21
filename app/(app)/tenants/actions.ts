@@ -1027,7 +1027,8 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   if (newLease) await recordOverlapAckIfAllowed(formData, newLease.id, user.sub)
   // 목록에 없는 직업을 적었으면 영업장 목록에 더한다 — 다음 사람에게도 고를 수 있게(지출
   // 카테고리와 같은 문법). 실패해도 입주자 저장은 이미 끝났으므로 삼킨다.
-  if (job) await addJobOption(job).catch(() => {})
+  // '이 직업을 목록에 추가' 를 끄면(jobAddToList '0', 2026-10-22) 목록에 안 더한다. 입주자 직업은 적은 글자 그대로 남는다.
+  if (job && formData.get('jobAddToList') !== '0') await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
   return { ok: true }
@@ -1831,7 +1832,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 목록에 없는 직업을 새로 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙). 직업이 그대로면 안 더한다.
   // 운영자가 목록에서 삭제한 직업이 그 직업을 가진 입주자 아무나 저장할 때마다 되살아나면 삭제가 저장 한 번에
   // 무효가 된다(독립 검수 2026-10-13).
-  if (job && job !== prevJob) await addJobOption(job).catch(() => {})
+  if (job && job !== prevJob && formData.get('jobAddToList') !== '0') await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
   revalidatePath('/rooms')
@@ -4524,14 +4525,15 @@ function mainLeaseOnly<T extends { status: string; moveInDate?: Date | string | 
 // 신규면 Property.requestCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
 // 고치는 요청이 원래 쓰던 카테고리(prev)는 다시 더하지 않는다. 목록에서 뺀 항목이 그 요청을 저장할 때마다
 // 되살아나지 않게 한다(지출 카테고리와 같은 규칙, 새로 적은 값만 더한다).
-async function resolveRequestCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
+// addToList 가 false 면(폼의 '이 카테고리를 목록에 추가' 를 끔, 2026-10-22) 목록에 안 더하고 값은 적은 글자 그대로 남는다.
+async function resolveRequestCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null, addToList = true): Promise<string | null> {
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { requestCategories: true } as any,
   })
   const list = parseRequestCategories((property as any)?.requestCategories)
   const { value, nextList } = resolveCategoryForSave(list, raw)
-  if (nextList && value !== prev) {
+  if (addToList && nextList && value !== prev) {
     await prisma.property.update({
       where: { id: propertyId },
       data: { requestCategories: nextList.join(',') } as any,
@@ -4547,6 +4549,8 @@ export async function createTenantRequest(data: {
   requestDate: string
   targetDate: string | null
   category?: string | null
+  /** '이 카테고리를 목록에 추가' 체크(기본 켜짐, 2026-10-22). false 면 목록에 안 더한다. */
+  addCategoryToList?: boolean
   isUrgent?: boolean
   commonPlace?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -4554,7 +4558,7 @@ export async function createTenantRequest(data: {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
-    const category = await resolveRequestCategoryForSave(propertyId, data.category)
+    const category = await resolveRequestCategoryForSave(propertyId, data.category, undefined, data.addCategoryToList !== false)
     // 등록 시점 호실을 고정 — 이사·퇴실 뒤에도 '당시 호실'로 남는다(공용부는 null).
     const roomNoSnapshot = await getRoomNoSnapshot(data.tenantId)
     await prisma.tenantRequest.create({
@@ -4601,6 +4605,8 @@ export async function updateTenantRequest(id: string, data: {
   category?: string | null
   isUrgent?: boolean
   commonPlace?: string | null
+  /** '이 카테고리를 목록에 추가' 체크(기본 켜짐, 2026-10-22). false 면 목록에 안 더한다. */
+  addCategoryToList?: boolean
   /** 적용취소 전용 — 값이 있으면 그대로 원복하고 재파생하지 않는다. */
   roomNoSnapshot?: string | null
 }): Promise<{ ok: true; prev: TenantRequestSnapshot } | { ok: false; error: string }> {
@@ -4620,7 +4626,7 @@ export async function updateTenantRequest(id: string, data: {
     })
     if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
 
-    const category = await resolveRequestCategoryForSave(propertyId, data.category, before.category)
+    const category = await resolveRequestCategoryForSave(propertyId, data.category, before.category, data.addCategoryToList !== false)
     // 호실 스냅샷은 대상(입주자)이 실제로 바뀔 때만 다시 뽑는다 — 요청일 소급 변경에는 불변.
     // 적용취소로 값이 넘어오면 재파생 없이 그 값 그대로 원복한다.
     const nextTenantId = data.tenantId ?? null

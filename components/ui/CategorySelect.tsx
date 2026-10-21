@@ -10,8 +10,8 @@ const ADD_HINT = '체크하면 다음부터 목록에서 고를 수 있습니다
 export default function CategorySelect({
   value, onChange, options, className, wrapperClassName,
   emptyLabel, placeholder = '카테고리를 직접 입력하세요',
-  closeIconSize = 14, showAddHint = false, addHintText, savedValue, name,
-  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가',
+  closeIconSize = 14, savedValue, name,
+  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted',
 }: {
   value: string
   onChange: (v: string) => void
@@ -25,10 +25,6 @@ export default function CategorySelect({
   placeholder?: string
   /** X 아이콘 크기 — 조밀한 폼은 12px. */
   closeIconSize?: number
-  /** 입력창 활성 시 '저장하면 목록에 추가' 인라인 힌트 노출(단위 입력에는 해당 없음). */
-  showAddHint?: boolean
-  /** 힌트 문구. 목록이 카테고리가 아닌 자리(할인 사유·직업)는 그 낱말로 말한다. 없으면 카테고리 문구. */
-  addHintText?: string
   /**
    * 이 폼이 고치는 기록에 이미 저장된 값. 그 값 그대로 저장하면 목록에 안 더해진다(이전 값과 같으면 안 더한다).
    * 새 기록을 만드는 폼은 '' 를 넘긴다(무엇을 적든 새 값이다). 안 넘기면 처음 받은 값으로 본다.
@@ -41,17 +37,27 @@ export default function CategorySelect({
    * 목록 항목이면 그 이름, '기타(직접 입력)' 로 적은 글은 '기타 · 글'(글이 없으면 '기타')이고, 둘 다 아닌 글자(목록에서
    * 뺀 항목·옛 이름)는 칸에 그 글자 그대로 한 줄 서서 손대지 않으면 그대로 저장된다. 직접 입력 아래에 '목록에 추가'
    * 체크박스가 서고 기본은 꺼짐이다. 체크하면 저장할 때 서버가 그 글을 목록에 넣고 기록은 맨 글자로 남긴다.
+   *
+   * 'auto' 는 종전부터 저장할 때 목록에 저절로 쌓던 자리(할인 사유·직업·지출 카테고리·요청 카테고리)다. value 는 적은
+   * 글자 그대로이고, 저장하면 실제로 목록에 더해질 때(직접 입력을 골랐거나 기록에 저장된 값과 다른 새 값)만 같은
+   * 체크박스가 선다. 기본은 켜짐이고 끄면 목록에 안 넣는다(값은 적은 글자 그대로, 운영자 결정 2 2026-10-22).
+   * 없으면(단위·쇼핑몰·수행자) 체크박스 없이 종전 그대로다.
    */
-  addMode?: 'ask'
-  /** '목록에 추가' 체크 상태. 넘기지 않으면 칸이 스스로 쥔다(기본 꺼짐). */
+  addMode?: 'ask' | 'auto'
+  /** '목록에 추가' 체크 상태. 넘기지 않으면 칸이 스스로 쥔다(ask 기본 꺼짐, auto 기본 켜짐). */
   addToList?: boolean
   onAddToListChange?: (v: boolean) => void
   /** 체크박스 라벨. 목록이 사유가 아닌 자리는 그 낱말로 말한다. */
   addLabel?: string
+  /**
+   * 힌트 글자색. 기본은 --warm-muted(형제 힌트와 같은 토큰). 한 단 올린 표면(--cream-soft, 보증금 패널 폼) 위에서는
+   * --warm-muted 가 다크 4.46:1 이라 4.5 에 못 미친다. 그 자리는 같은 폼의 라벨과 같은 --warm-mid 를 쓴다(실측 2026-10-22).
+   */
+  hintTone?: 'muted' | 'mid'
 }) {
   const [customMode, setCustomMode] = useState(false)
   const [initialValue] = useState(value)
-  const [ownAdd, setOwnAdd] = useState(false)
+  const [ownAdd, setOwnAdd] = useState(addMode === 'auto')
   // 'ask' 칸에서 방금 '기타(직접 입력)' 을 골랐을 때만 입력칸에 커서를 둔다. 저장된 '기타 · 글' 을 연 수정 화면이나
   // 이어받은 사유로 연 폼까지 커서를 끌어오면 위 칸을 채우던 손이 끊긴다.
   const [pickedOther, setPickedOther] = useState(false)
@@ -73,7 +79,7 @@ export default function CategorySelect({
           className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
         <span className="text-xs text-[var(--warm-dark)] break-keep">{addLabel}</span>
       </label>
-      <p id={hintId} className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{ADD_HINT}</p>
+      <p id={hintId} className={`text-[0.65625rem] ${hintTone === 'mid' ? 'text-[var(--warm-mid)]' : 'text-[var(--warm-muted)]'} leading-relaxed break-keep`}>{ADD_HINT}</p>
       {name && <input type="hidden" name={`${name}AddToList`} value={checked ? '1' : '0'} />}
     </>
   )
@@ -137,12 +143,10 @@ export default function CategorySelect({
           />
           {closeBtn(() => { setCustomMode(false); onChange('') })}
         </div>
-        {/* 힌트는 저장하면 실제로 목록에 더해질 때만 선다. 운영자가 '기타(직접 입력)' 를 직접 골랐거나, 기록에 저장된
+        {/* 체크박스는 저장하면 실제로 목록에 더해질 때만 선다. 운영자가 '기타(직접 입력)' 를 직접 골랐거나, 기록에 저장된
             값(baseline)과 다른 새 값을 쳤을 때다. 기록에서 온 목록 밖 값 그대로면 저장해도 안 더해진다(이전 값과
-            같으면 안 더한다). 새 기록 폼은 savedValue '' 라 기본값이 목록 밖이어도 힌트가 선다(3차 검수). */}
-        {showAddHint && (customMode || (value !== '' && value !== baseline)) && (
-          <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">{addHintText ?? '새로 입력한 카테고리는 저장할 때 목록에 저절로 추가됩니다. 목록 관리는 환경설정 > 분류 관리에서 합니다.'}</p>
-        )}
+            같으면 안 더한다). 새 기록 폼은 savedValue '' 라 기본값이 목록 밖이어도 선다(3차 검수). */}
+        {addMode === 'auto' && (customMode || (value !== '' && value !== baseline)) && addBox}
       </div>
     )
   }

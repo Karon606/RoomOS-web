@@ -34,6 +34,8 @@ export function DiscountWidget({ leaseTermId, onChange }: {
   // 직접 적은 사유는 저장할 때 그 목록에 쌓인다(직업 목록과 같은 문법).
   const [reason, setReason] = useState('')
   const [reasonOptions, setReasonOptions] = useState<string[]>([])
+  // '이 사유를 목록에 추가'(기본 켜짐, 2026-10-22). 끄면 할인에만 붙고 목록에는 안 더한다.
+  const [reasonToList, setReasonToList] = useState(true)
 
   const reload = async () => { setDiscs(await getRentDiscounts(leaseTermId)) }
   useEffect(() => { reload() /* eslint-disable-next-line */ }, [leaseTermId])
@@ -59,12 +61,12 @@ export function DiscountWidget({ leaseTermId, onChange }: {
       }), { success: '할인 적용됨' })
       if (!res.ok) return
       // 목록에 없는 사유를 적었으면 영업장 목록에 더한다 — 다음에도 고를 수 있게.
-      if (why && !reasonOptions.includes(why)) {
+      if (why && reasonToList && !reasonOptions.includes(why)) {
         await addDiscountReason(why).catch(() => {})
         setReasonOptions(await getDiscountReasons().catch(() => reasonOptions))
       }
       await reload()
-      setShowForm(false); setValue(0); setStart(''); setEnd(''); setReason('')
+      setShowForm(false); setValue(0); setStart(''); setEnd(''); setReason(''); setReasonToList(true)
       onChange?.()
     })
   }
@@ -223,8 +225,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             emptyLabel="사유 선택 (선택)"
             placeholder="할인 사유를 직접 입력하세요"
             closeIconSize={12}
-            showAddHint
-            addHintText="새로 입력한 사유는 할인을 적용할 때 목록에 저절로 추가됩니다. 목록 관리는 환경설정 > 분류 관리에서 합니다."
+            addMode="auto" addToList={reasonToList} onAddToListChange={setReasonToList}
             className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none" />
           <div className="flex gap-2">
             <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>

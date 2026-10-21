@@ -98,6 +98,8 @@ export default function RequestsClient({
   const [addCommonPlace, setAddCommonPlace] = useState('')
   const [addContent,    setAddContent]    = useState('')
   const [addCategory,   setAddCategory]  = useState<string>('')
+  // '이 카테고리를 목록에 추가'(기본 켜짐, 2026-10-22). 끄면 저장해도 목록에 안 더한다.
+  const [addCategoryToList, setAddCategoryToList] = useState(true)
   const [addUrgent,     setAddUrgent]    = useState(false)
   const [addReqDate,    setAddReqDate]   = useState(kstYmdStr())
   const [addTargetDate, setAddTargetDate] = useState('')
@@ -243,6 +245,7 @@ export default function RequestsClient({
     setAddCommonPlace('')
     setAddContent('')
     setAddCategory('')
+    setAddCategoryToList(true)
     setAddUrgent(false)
     setAddReqDate(kstYmdStr())
     setAddTargetDate('')
@@ -256,6 +259,7 @@ export default function RequestsClient({
     setAddCommonPlace(r.commonPlace ?? '')
     setAddContent(r.content)
     setAddCategory(r.category ?? '')
+    setAddCategoryToList(true)
     setAddUrgent(r.isUrgent)
     setAddReqDate(kstYmdStr(new Date(r.requestDate)))
     setAddTargetDate(r.targetDate ? kstYmdStr(new Date(r.targetDate)) : '')
@@ -270,6 +274,7 @@ export default function RequestsClient({
       requestDate: addReqDate,
       targetDate:  addTargetDate || null,
       category:    addCategory || null,
+      addCategoryToList,
       isUrgent:    addUrgent,
       commonPlace: addSubject === 'common' ? (addCommonPlace || null) : null,
     }
@@ -377,7 +382,8 @@ export default function RequestsClient({
               <label className="text-xs text-[var(--warm-muted)]">카테고리</label>
               <CategorySelect
                 value={addCategory} onChange={setAddCategory}
-                options={formCategoryOptions} emptyLabel="카테고리 없음" showAddHint
+                options={formCategoryOptions} emptyLabel="카테고리 없음"
+                addMode="auto" addToList={addCategoryToList} onAddToListChange={setAddCategoryToList} addLabel="이 카테고리를 목록에 추가"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
               />
             </div>

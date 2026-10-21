@@ -172,9 +172,10 @@ export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: re
   },
   // 미반환 사유 둘(2026-10-22). '청소비' 는 퇴실 정산이 이 글자로 몰취를 청소비와 나누고 청소비 잔고를 센다
   // (tenants/actions recordDepositReturn·cleaningActions). '인수 승계 보증금' 은 인수 전 입주자 퇴실에서 앱이 미리 고른다.
+  // 결과 문장은 320px 기본 글자에서 카드 머리 안내가 두 줄을 넘지 않게 짧게 쓴다(2026-10-22 실측).
   withholdReasons: {
     names: [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON],
-    effect: '퇴실 정산이 이 이름으로 청소비를 나누고 인수 전 입주자의 사유를 미리 고릅니다.',
+    effect: '퇴실 정산이 이 이름으로 청소비를 나누고 미리 고릅니다.',
   },
 }
 

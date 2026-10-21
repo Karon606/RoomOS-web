@@ -700,10 +700,12 @@ export async function undoExpenseFieldChange(raw: unknown): Promise<{ ok: true; 
 // 고치는 지출이 원래 쓰던 카테고리(prev)는 목록에 다시 더하지 않는다. 운영자가 목록에서 삭제한 카테고리가
 // 그 지출을 다시 저장할 때마다 되살아나면 삭제가 저장 한 번에 무효가 된다.
 // 새로 적은 값만 더한다(독립 검수 2026-10-13).
-async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null): Promise<string | null> {
+// addToList 가 false 면(폼의 '이 카테고리를 목록에 추가' 를 끔, 2026-10-22) 목록에 안 더하고 값은 적은 글자 그대로 남는다.
+// 지출 카테고리는 원래 목록 밖 글자(목록에서 뺀 카테고리)도 그대로 두는 칸이라 '기타 · ' 꼴로 바꾸지 않는다.
+async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined, prev?: string | null, addToList = true): Promise<string | null> {
   const list = await getExpenseCategories()
   const { value, nextList } = resolveCategoryForSave(list, raw)
-  if (nextList && value !== prev) {
+  if (addToList && nextList && value !== prev) {
     await prisma.property.update({
       where: { id: propertyId },
       data: { expenseCategories: nextList.join(',') } as any,
@@ -791,7 +793,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const shippingIncluded  = parseAmount(formData.get('shippingIncluded')) || 0
 
     if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
-    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
+    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, undefined, formData.get('categoryAddToList') !== '0')
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
     // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 머리 한 칸이 이 등록의 모든 행(품목·방별 조각·배송비)에 같이 선다(한 결제 = 한 쇼핑몰).
     // 비우면 미기록이다. 구매처를 이 칸으로 끌어 쓰지 않는다(lib/expenseChannel).
@@ -1176,7 +1178,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
     // 이 지출이 원래 쓰던 카테고리를 다시 저장할 때는 목록에 되살리지 않는다(prev, 새로 적은 값만 더한다).
-    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, existing?.category)
+    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw, existing?.category, formData.get('categoryAddToList') !== '0')
     if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
     // 호실 두 칸(roomId·targetRoomId). 수령 전 비품 물품은 예정 호실만, 받은 비품은 지금처럼, 그 밖은 예정 호실 비움.
     // 판정 정본 receiptPlacement.placementForSave. 분할 조각(방별 분배)도 원본의 수령 상태를 물려받으니 같은 판정이다.

@@ -1679,7 +1679,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="직업 관리"
-            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하면 저장할 때 저절로 여기 쌓입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            description="입주자 등록·수정에서 고르는 직업입니다. 목록에 없는 직업을 직접 입력하고 저장하면 여기 쌓입니다. 입력 칸 아래 체크를 끄면 쌓지 않습니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
             items={jobs}
             field="jobOptions"
             setItems={setJobs}

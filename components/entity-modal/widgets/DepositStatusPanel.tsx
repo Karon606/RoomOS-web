@@ -518,7 +518,7 @@ export function DepositStatusPanel({
               <p className={labelCls}>반환하지 않는 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
               <CategorySelect addMode="ask" value={recReason} onChange={setRecReason}
                 options={withholdOptions} emptyLabel="사유 선택" placeholder="사유 입력"
-                addToList={recAdd} onAddToListChange={setRecAdd} className={inputCls} />
+                addToList={recAdd} onAddToListChange={setRecAdd} hintTone="mid" className={inputCls} />
             </div>
           )}
           {/* 취소 좌 · 확인 우(§13·§14). 종전 이 폼만 반대라 한 패널 안에 서로 반대인 두 폼이 서 있었다. */}

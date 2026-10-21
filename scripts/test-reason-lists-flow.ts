@@ -229,6 +229,26 @@ async function main() {
     eq('청소비 몫은 청소비 카테고리(판정 그대로)', (await prisma.extraIncome.findMany({ where: { id: { in: r5.extraIncomeIds } }, select: { category: true, amount: true } })).map(x => [x.category, x.amount]), [['청소비', 20000]])
   }
 
+  // ── 5. 저절로 쌓던 목록: '목록에 추가' 를 끄면 안 쌓이고 값은 적은 글자 그대로(운영자 결정 2) ──────────
+  {
+    const fin = await import('@/app/(app)/finance/actions')
+    const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f }
+    const expList = async () => (await prisma.property.findUnique({ where: { id: P1 }, select: { expenseCategories: true } }))?.expenseCategories ?? null
+    const items = (label: string, amount: number) => JSON.stringify([{ label, qtyValue: '1', qtyUnit: '개', amount }])
+    const base = { date: '2026-10-18', payMethod: '계좌이체', qtyValue: '1', qtyUnit: '개' }
+    const r1 = await fin.addExpense(fd({ ...base, amount: '1000', category: '세탁 세제', categoryAddToList: '0', itemLabel: '끔품목', itemsJson: items('끔품목', 1000) }))
+    eq('지출: 끄면 목록에 안 쌓인다(칸 그대로)', [r1.ok, await expList()], [true, null])
+    eq('지출: 값은 적은 글자 그대로', (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: '끔품목' } }))?.category, '세탁 세제')
+    const r2 = await fin.addExpense(fd({ ...base, amount: '1000', category: '세탁 세제', itemLabel: '켬품목', itemsJson: items('켬품목', 1000) }))
+    eq('지출: 체크 칸이 없으면(종전 호출) 쌓인다', [r2.ok, (await expList())?.endsWith(',세탁 세제')], [true, true])
+    const reqList = async () => (await prisma.property.findUnique({ where: { id: P1 }, select: { requestCategories: true } }))?.requestCategories ?? null
+    const q1 = await tenants.createTenantRequest({ tenantId: null, content: '끔', requestDate: '2026-10-18', targetDate: null, category: '주차', addCategoryToList: false, commonPlace: '복도' })
+    eq('요청: 끄면 목록에 안 쌓인다', [q1.ok, await reqList()], [true, null])
+    eq('요청: 값은 적은 글자 그대로', (await prisma.tenantRequest.findFirst({ where: { propertyId: P1, content: '끔' } }))?.category, '주차')
+    const q2 = await tenants.createTenantRequest({ tenantId: null, content: '켬', requestDate: '2026-10-18', targetDate: null, category: '주차', commonPlace: '복도' })
+    eq('요청: 켜면(기본) 쌓인다', [q2.ok, (await reqList())?.endsWith(',주차')], [true, true])
+  }
+
   // 상태 전환(applyStatusTransition)·입주자 수정(updateTenant)은 하네스 관문 대역의 사용자 id 가 uuid 가 아니라 이력 행을
   // 못 만든다(changedById). 두 경로가 같은 reasonForSave 를 지나는지는 check-option-lists ⓛ 가 배선으로 본다.
 
