@@ -4071,9 +4071,14 @@ export async function getAllPaymentsByLease(leaseTermId: string) {
       isDeposit: true, isPrevOwner: true, payMethod: true, memo: true,
     },
   })
+  // 납입일 변경 조정 행은 들어온 돈이 아니라 그 달 받을 돈을 고치는 줄이다. 수납 행·건수·합계에서 떼어 따로 보낸다(2026-10-21).
+  // 종전에는 합계에 −130,000 이 더해져 513호가 실제 받은 돈 550,000 대신 420,000 으로 보였다. 가르는 술어는 정본 isDueDayAdjust 다
+  // (이미 읽은 행을 가르므로 notDueDayAdjustWhere 쿼리를 더하지 않는다. 같은 기계 키 판정이다).
+  const paid = records.filter(r => !isDueDayAdjust(r.memo))
+  const adjusts = records.filter(r => isDueDayAdjust(r.memo))
   // 합계 — 양도인(현 소유주 매출 아님) 제외, 보증금 포함한 실제 수령액
-  const total = records.filter(r => !r.isPrevOwner).reduce((s, r) => s + r.actualAmount, 0)
-  return { records, total, count: records.length }
+  const total = paid.filter(r => !r.isPrevOwner).reduce((s, r) => s + r.actualAmount, 0)
+  return { records: paid, adjusts, total, count: paid.length }
 }
 
 // ── #14 월세 할인 (입주자별) ────────────────────────────────────────

@@ -1263,7 +1263,7 @@ export default function RoomsClient({
                                        ? -room.balance : 0
                   const totalUnpaid = carryUnpaid + viewUnpaid
                   if (totalUnpaid > 0) {
-                    return <span className="font-medium text-[var(--tc-text)]">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
+                    return <span className="font-medium text-[var(--tc-text)]">미수 −<MoneyDisplay amount={totalUnpaid} /></span>
                   }
                   if (room.balance > 0) {
                     return <span className="text-[var(--warm-mid)]">선납 +<MoneyDisplay amount={room.balance} /></span>

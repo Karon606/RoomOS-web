@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getAllPaymentsByLease } from '@/app/(app)/rooms/actions'
+import { dueDayAdjustDisplayMemo, dueDayAdjustKindOf, DUE_DAY_ADJUST_KIND_TEXT } from '@/lib/dueDayAdjust'
 
 type Data = Awaited<ReturnType<typeof getAllPaymentsByLease>>
 
@@ -53,9 +54,11 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
         <div className="px-3 pb-3">
           {loading ? (
             <SkeletonRows rows={3} className="py-1" />
-          ) : !data || data.records.length === 0 ? (
+          ) : !data || (data.records.length === 0 && data.adjusts.length === 0) ? (
             <p className="text-xs text-[var(--warm-muted)] py-3 text-center">수납 내역이 없습니다.</p>
           ) : (
+            <>
+            {data.records.length === 0 && <p className="text-xs text-[var(--warm-muted)] py-3 text-center">수납 내역이 없습니다.</p>}
             <ul className="divide-y divide-[var(--warm-border)]">
               {data.records.map(r => (
                 <li key={r.id} className="py-1.5">
@@ -73,6 +76,36 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
                 </li>
               ))}
             </ul>
+            {/* 납입일 변경 조정은 들어온 돈이 아니다. 위 수납 목록·건수·합계에 넣지 않고 아래에 따로 묶는다(2026-10-21).
+                형제 수납 내역(PaymentRecordList)이 같은 자리에 '납입일 변경 조정' 묶음을 두는 것과 같은 문법이고, 표시 규칙도 같다
+                (방향 제목·부호 없는 금액·표시 메모). 행 모양은 이 목록의 행 그대로이고 수단 칸은 비운다(조정 행에는 수단이 없다).
+                빈 수단 칸은 금액 열을 위 행과 맞추는 자리라 좁은 폭에서는 줄어든다(행 밖으로 안 나간다).
+                제목은 둘째 줄 앞에 둔다. 첫 줄에 넣으면 320px 에서 날짜·월분·금액·수단 칸과 함께 행 밖으로 넘친다. */}
+            {data.adjusts.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-[var(--warm-border)]">
+                <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)] py-1">납입일 변경 조정</p>
+                <ul className="divide-y divide-[var(--warm-border)]">
+                  {data.adjusts.map(r => {
+                    const kind = dueDayAdjustKindOf(r.actualAmount)
+                    const memo = dueDayAdjustDisplayMemo(r.memo)
+                    return (
+                      <li key={r.id} className="py-1.5">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="num text-[var(--warm-mid)] w-[82px] shrink-0">{fmtDate(r.payDate)}</span>
+                          <span className="text-[var(--warm-muted)] shrink-0">{Number(r.targetMonth.slice(5))}월분</span>
+                          <span className="num font-semibold text-[var(--warm-dark)] flex-1 text-right">{fmtWon(Math.abs(r.actualAmount))}</span>
+                          <span className="w-[60px] min-w-0 shrink" aria-hidden="true" />
+                        </div>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 pl-[90px] break-keep">
+                          {kind ? DUE_DAY_ADJUST_KIND_TEXT[kind] : '조정'}{memo ? ` · ${memo}` : ''}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}

@@ -11,6 +11,7 @@
 //      방향은 SegmentedControl. 납부일·방법·현금영수증 칸이 없다.
 //   ③-2 받았는지 상태(2026-10-21). 서버가 조정 행마다 adjustStatus 를 싣고(조정 행 없으면 쿼리 0), 묶음이 부호 없는 금액·
 //      형제와 같은 귀속월 칩·정본 상태 칩을 그린다. 행 isPaid 는 안 본다.
+//      전체 수납 내역(getAllPaymentsByLease·PaymentHistoryAll)은 조정 행을 합계·건수에서 빼고 아래 묶음에 같은 표시 규칙으로 그린다.
 //   ④ 서버 배선. updatePayment 가 paymentEditGuard 를, 현금영수증 켜기·미리보기가 조정 행 거절을, 실입금·발행 키·후보가
 //      조정 행 제외를, 감사가 부호 축을 부른다. 납입일 변경이 협의 금액을 정본 planDueDayAdjustCreate 로 넘긴다.
 //   ⑤ 입주달 이중 셈 봉합(운영자 승인 2026-10-20 방안 2). 엔진의 첫 달 규칙이 firstMonthRuleDueDay 로 재고, 입력 칸
@@ -102,6 +103,12 @@ need('묶음 줄2 에 귀속월 칩이 형제와 같은 클래스(PAY_CHIP_CLS·
 need('수납 내역 월분 칩이 같은 상수를 쓴다(PaymentRecordList)', /\$\{PAY_CHIP_CLS\} \$\{/.test(prl) && /PAY_CHIP_TONE\.month/.test(prl))
 need('묶음이 행 isPaid 로 상태를 정하지 않는다', !/isPaid/.test(dal))
 need('입주자 수납 모달의 행 타입이 adjustStatus 를 싣는다', /adjustStatus\?: DueDayAdjustStatus \| null/.test(tc))
+// 전체 수납 내역(2026-10-21 같은 클래스). 조정 행은 수납 목록·건수·합계 밖이고, 아래 묶음에서 같은 표시 규칙으로 선다.
+const gap = body(rooms, 'export async function getAllPaymentsByLease(')
+need('전체 수납 내역 합계·건수가 조정 행을 뺀다', /const paid = records\.filter\(r => !isDueDayAdjust\(r\.memo\)\)/.test(gap) && /const total = paid\.filter\(/.test(gap) && /count: paid\.length/.test(gap) && /records: paid/.test(gap))
+const pha = strip(read('components/entity-modal/widgets/PaymentHistoryAll.tsx'))
+need('전체 수납 내역이 조정 행을 부호 없는 금액·방향 제목·표시 메모로 그린다', /data\.adjusts\.map\(/.test(pha) && /fmtWon\(Math\.abs\(r\.actualAmount\)\)/.test(pha) && /DUE_DAY_ADJUST_KIND_TEXT\[kind\]/.test(pha) && /dueDayAdjustDisplayMemo\(r\.memo\)/.test(pha))
+need('전체 수납 내역의 수납 행에 조정 메모 원문이 다시 서지 않는다(수납 목록은 서버가 뗀 records)', !/isDueDayAdjust/.test(pha))
 need('감사 규칙 9(부호 축)', /dueDayAdjustSignMismatch\(r\)/.test(read('lib/integrityAudit.ts')))
 const ten = read('app/(app)/tenants/actions.ts')
 need('납입일 변경이 협의 금액을 정본으로 넘긴다', /planDueDayAdjustCreate\(\{[^}]*agreedAmount: agreedAmount \?\? null/.test(body(ten, 'export async function changeDueDay(')))
