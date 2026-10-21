@@ -25,8 +25,10 @@ import { RentSettlementSection, type RentSettlementValue } from '@/components/ch
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
-import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
-import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
+import { reasonFieldForStatus, reasonLabel } from '@/lib/statusReasons'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
+import { cleaningFeeDeductible,
   CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { reservationCompositionLabel, reservationSplitPartsLabel, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
@@ -231,6 +233,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
    */
   const [opening, setOpening] = useState(false)
   const [active, setActive] = useState<ActiveTransition>(null)
+  // 사유 목록은 영업장 설정에서 읽는다. 미니폼이 연 전이가 사유를 받을 때만 그 목록을 읽는다(2026-10-22).
+  const reasonField = active ? reasonFieldForStatus(active.def.toStatus) : null
+  const reasonOptions = useReasonOptions(reasonField)
+  const withholdOptions = useReasonOptions(active?.def.withDeposit ? 'withholdReasons' : null)
   // 호실 일정 시트 — 입실 처리가 계약 호실 점유로 거절당했을 때만 연다.
   const [earlyOpen, setEarlyOpen] = useState(false)
   // 같은 시트의 '미리 잡기' 모드 — 예약 상태에서 일정만 적어 둔다(상태는 안 바뀐다).
@@ -244,10 +250,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [transDefer, setTransDefer] = useState(false)
   // 반환하지 않는 사유 — 돈이 움직이는 결정이라 필수다(입실 취소 사유가 선택인 것과 다르다).
   // 다만 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다.
+  // 두 사유 모두 저장 글자다(lib/reasonLists 규약). '기타' 로 적은 글은 '기타 · 글', 목록에 추가 체크는 따로 쥔다(2026-10-22).
   const [withholdReason, setWithholdReason] = useState('')
-  const [withholdEtc, setWithholdEtc] = useState('')
-  const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
-  const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
+  const [withholdAdd, setWithholdAdd] = useState(false)
+  const [transReason, setTransReason] = useState('')   // 취소·퇴실 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
+  const [transReasonAdd, setTransReasonAdd] = useState(false)
   // 미니폼을 연 시점의 이어받은 사유 — 지금 값이 이것과 같을 때만 출처 캡션을 단다(고치면 캡션이 사라진다).
   const [transReasonPrefill, setTransReasonPrefill] = useState<string | null>(null)
   // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
@@ -325,7 +332,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
           setTransDefer(false)
-          setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
+          setTransReason(''); setTransReasonAdd(false); setWithholdReason(''); setWithholdAdd(false)
           setActive({
             def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0,
             resvCancelPrepaid: true,
@@ -342,7 +349,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
           setTransDefer(false)
-          setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
+          setTransReason(''); setTransReasonAdd(false); setWithholdReason(''); setWithholdAdd(false)
           setActive({
             def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true,
             rentShare: comp.rent,
@@ -358,7 +365,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     if (def.key === 'cancel') {
       setTransRefund(undefined)
       setTransDefer(false)
-      setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
+      setTransReason(''); setTransReasonAdd(false); setWithholdReason(''); setWithholdAdd(false)
       setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: 0, cleaningFee: 0 })
       return
     }
@@ -379,8 +386,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 퇴실 처리는 비우지 않고 퇴실 예정 때 고른 사유로 시작한다 — 비우면 통보 때 적어 둔 사유가
     // 예정 행에만 남고 퇴실 행은 빈 채 굳는다(506호 신고 2026-09-02). 판정은 lib/checkoutReason 정본.
     const inherited = def.field === 'moveOutDate' ? (lease.checkoutReason ?? null) : null
-    const pre = parseReason(inherited)
-    setTransReason(pre.selected); setTransReasonEtc(pre.etcText); setTransReasonPrefill(inherited)
+    setTransReason(inherited ?? ''); setTransReasonAdd(false); setWithholdAdd(false); setTransReasonPrefill(inherited)
     setRentTouched(false)
     // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
     cleaning.reset()
@@ -465,7 +471,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (!r.ok) { pushToast('error', r.error); return }
           const res = await applyStatusTransition({
             leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-            ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
+            ...(transReason ? { reason: transReason, addReasonToList: transReasonAdd } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { recordIds, cleaningIncomeIds, extraIncomeId, crUndo } = r
@@ -496,7 +502,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (r.receiptNotice) pushToast('info', r.receiptNotice)
           const res = await applyStatusTransition({
             leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-            ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
+            ...(transReason ? { reason: transReason, addReasonToList: transReasonAdd } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { prepaid, deposit } = r
@@ -524,7 +530,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           // 청소비 몫까지는 묻지 않는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(위 UI 와 같은 축).
           const cleaningPortion = active?.cleaningFee ?? 0
           const needReason = def.withDeposit === true && withheldNow > cleaningPortion
-          const reason = buildWithholdReason(withholdReason, withholdEtc)
+          const reason = withholdReason
           if (needReason && !reason) { pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return }
           // 전액을 돌려주지 않는 결정만 되묻는다. 청소비만 떼는 정상 퇴실에는 마찰을 만들지 않는다.
           // 이용료 전액 환불에는 이미 확인창이 있는데 몰취에는 없었다 — 방향이 반대였다.
@@ -542,7 +548,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             returnedAmount: transRefund,
             date: fields?.moveOutDate || kstYmdStr(),
             tenantName,
-            ...(reason ? { reason } : {}),
+            ...(reason ? { reason, addReasonToList: withholdAdd } : {}),
             ...(active?.resvCancel ? { context: 'reservationCancel' as const } : {}),
           })
           if (!r.ok) { pushToast('error', r.error); return }
@@ -567,8 +573,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           leaseTermId: lease.id, tenantId, toStatus, ...(fields ?? {}),
           // 사유를 받는 전이인지는 statusReasons 가 정한다 — 종전에는 여기서 def.key==='cancel' 로 따로 판정해
           // 폼과 저장이 각자 조건을 들고 있었다. 퇴실 사유를 받기 시작하면 그대로 갈린다.
-          ...(reasonsForStatus(def.toStatus) && buildReason(transReason, transReasonEtc)
-            ? { reason: buildReason(transReason, transReasonEtc) } : {}),
+          ...(reasonFieldForStatus(def.toStatus) && transReason
+            ? { reason: transReason, addReasonToList: transReasonAdd } : {}),
         })
         if (!res.ok) {
           // 본 방이 아직 안 비어 막힌 것이라면 그냥 막지 않는다 — 개강처럼 미룰 수 없는 사정으로
@@ -716,7 +722,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || buildReason(transReason, transReasonEtc) !== (transReasonPrefill ?? '') || withholdReason !== '' || withholdEtc !== '' || rentTouched}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== (transReasonPrefill ?? '') || withholdReason !== '' || rentTouched}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -743,23 +749,16 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               )}
               {/* 사유 — 어떤 전이에서 받을지는 statusReasons 가 정한다(입실 취소·퇴실 계열).
                   받는 곳과 나중에 고칠 수 있는 곳이 어긋나지 않게 판정을 한 곳에 뒀다. */}
-              {(() => {
-                const opts = reasonsForStatus(active.def.toStatus)
-                if (!opts) return null
+              {reasonField && (() => {
                 return (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(active.def.toStatus)} <span className="font-normal opacity-60">(선택)</span></label>
-                    <select value={transReason} onChange={e => setTransReason(e.target.value)}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      <option value="">기록 안 함</option>
-                      {opts.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                    {transReason === '기타' && (
-                      <input type="text" value={transReasonEtc} onChange={e => setTransReasonEtc(e.target.value)}
-                        placeholder="사유를 직접 입력하세요"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                    )}
-                    {transReasonPrefill && buildReason(transReason, transReasonEtc) === transReasonPrefill && (
+                    {/* 목록은 영업장 설정(분류 관리)이고 '기타(직접 입력)' 아래 '목록에 추가' 체크가 선다(2026-10-22). */}
+                    <CategorySelect addMode="ask" value={transReason} onChange={setTransReason}
+                      options={reasonOptions} emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+                      addToList={transReasonAdd} onAddToListChange={setTransReasonAdd}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    {transReasonPrefill && transReason === transReasonPrefill && (
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
                     )}
                   </div>
@@ -853,16 +852,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   {active.def.withDeposit === true && !transDefer && transRefund != null && active.depositAmount - transRefund > active.cleaningFee && (
                     <div className="space-y-1.5 pt-0.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
-                      <select value={withholdReason} onChange={e => setWithholdReason(e.target.value)}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                        <option value="">선택하세요</option>
-                        {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                      {withholdReason === '기타' && (
-                        <input type="text" value={withholdEtc} onChange={e => setWithholdEtc(e.target.value)}
-                          placeholder="사유를 직접 입력하세요"
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                      )}
+                      <CategorySelect addMode="ask" value={withholdReason} onChange={setWithholdReason}
+                        options={withholdOptions} emptyLabel="선택하세요" placeholder="사유를 직접 입력하세요"
+                        addToList={withholdAdd} onAddToListChange={setWithholdAdd}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                     </div>
                   )}
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">

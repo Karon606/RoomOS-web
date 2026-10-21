@@ -6,51 +6,44 @@
 //
 // 저장 위치는 TenantStatusLog.reason 이다. 화면 표시는 고객 카드의 상태 이력 위젯.
 
-/** 입실 취소 사유 (운영자 지시 2026-07-27) */
-export const CANCEL_REASONS = ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '연락 두절', '일정 변경', '기타'] as const
+// 목록은 영업장 설정에 있다(2026-10-22 운영자 승인). 입실 취소 사유는 Property.cancelReasons, 퇴실 사유는
+// Property.checkoutReasons 이고 기본값은 lib/optionLists OPTION_LIST_DEFAULTS 한 벌이다(종전 상수에서 '기타'만 뺐다).
+// '기타'는 목록에 없다. 고르는 자리 맨 끝에 늘 붙는 항목이고 저장 규약('기타 · <내용>')은 lib/reasonLists 가 쥔다.
+// 목록 내력(운영자 지시 2026-07-27·2026-08-03, 'LH선정' 2026-08-15·08-31, 내보낸 퇴실 셋 2026-08-31)은 knowledge/domain-reasons 에 있다.
+
+/** 이 전이에서 사유를 받는다면 그 목록 칸 이름, 안 받으면 null. 받는 곳과 고칠 수 있는 곳이 어긋나지 않게 한 곳에서 정한다. */
+export function reasonFieldForStatus(toStatus: string): 'cancelReasons' | 'checkoutReasons' | null {
+  if (toStatus === 'CANCELLED') return 'cancelReasons'
+  if (toStatus === 'CHECKOUT_PENDING' || toStatus === 'CHECKED_OUT') return 'checkoutReasons'
+  return null
+}
+
+/** 사유 목록 칸마다 그 사유가 남는 상태 이력의 toStatus. 이름 변경이 이 상태의 행만 따라간다(취소 사유와 퇴실 사유가 같은 칸에 산다). */
+export const REASON_FIELD_STATUSES = {
+  cancelReasons: ['CANCELLED'],
+  checkoutReasons: ['CHECKOUT_PENDING', 'CHECKED_OUT'],
+} as const
 
 /**
- * 퇴실 사유 (운영자 오더 2026-08-03). 목록은 여기 한 줄만 고치면 두 입력 경로에 함께 반영된다.
+ * 시스템이 상태 이력 사유 칸(TenantStatusLog.reason)에 스스로 적는 라벨 전수. 운영자가 고른 사유가 아니다.
  *
- * 'LH선정' — 공공임대로 나가는 퇴실이 잦다는 운영자 신고(a5bfbcea, 2026-08-15). 처음에는
- * 'LH당첨'이었는데 실제 용어가 선정이라 고쳤다(2026-08-31). '더 넓은 곳으로' 옆에 두는 것은
- * 둘 다 '집이 생겨 나간다'는 같은 갈래라서다.
- *
- * 뒤쪽 셋은 **내보낸 퇴실**이다(운영자 요구 2026-08-31). 종전에는 스스로 나가는 사유만 있어서
- * 계약을 어겨 내보낸 건을 '기타'에 손으로 적어야 했다. 나가는 이유와 내보내는 이유는 성격이
- * 다르고, 뒤에 통계를 볼 때도 갈라져 있어야 한다.
- *   · 계약 위반 — 규칙을 어겨 계약을 해지한 경우(계약서 4조 강제 퇴실).
- *   · 요금 미납 — 미납으로 해지한 경우. 계약 위반의 한 갈래지만 가장 흔해서 따로 둔다.
- *   · 무단 퇴실 — 말없이 사라진 경우. 종전부터 있었고 자리만 이 묶음으로 옮겼다.
+ * 종전에는 퇴실 사유 이어받기(lib/checkoutReason)가 '정본 목록에 있는가' 로 이 라벨을 걸렀다. 목록이 영업장마다
+ * 달라지면 그 판정이 영업장마다 갈리므로, 거꾸로 '시스템 라벨이 아닌가' 로 본다. 그래서 라벨을 적는 자리는
+ * 전부 이 상수를 쓴다(상태 이력 쓰기에 글자를 바로 적으면 scripts/test-reason-lists 가 붉게 선다). 사유 목록 이름으로도 못 쓴다.
  */
-export const CHECKOUT_REASONS = [
-  '계약 만료', '직장·학교 이동', '더 넓은 곳으로', 'LH선정', '가격 부담', '시설·환경 불만', '개인 사정',
-  '계약 위반', '요금 미납', '무단 퇴실',
-  '기타',
-] as const
-
-/** 선택값 + '기타' 자유 입력 -> 저장할 사유 문자열('' = 기록 안 함) */
-export function buildReason(selected: string, etcText: string): string {
-  if (!selected) return ''
-  if (selected !== '기타') return selected
-  const t = etcText.trim()
-  return t ? `기타 · ${t}` : '기타'
-}
-
-/** 저장된 문자열 -> 폼 상태 복원. 수정 화면이 저장값을 다시 select 로 되돌리려면 짝이 필요하다. */
-export function parseReason(stored: string | null | undefined): { selected: string; etcText: string } {
-  const v = (stored ?? '').trim()
-  if (!v) return { selected: '', etcText: '' }
-  if (v === '기타') return { selected: '기타', etcText: '' }
-  if (v.startsWith('기타 · ')) return { selected: '기타', etcText: v.slice('기타 · '.length) }
-  return { selected: v, etcText: '' }
-}
-
-/** 이 전이에서 사유를 받을 것인가. 받는 곳과 고칠 수 있는 곳이 어긋나지 않게 한 곳에서 정한다. */
-export function reasonsForStatus(toStatus: string): readonly string[] | null {
-  if (toStatus === 'CANCELLED') return CANCEL_REASONS
-  if (toStatus === 'CHECKOUT_PENDING' || toStatus === 'CHECKED_OUT') return CHECKOUT_REASONS
-  return null
+export const AUTO_CHECKOUT_SHORT_REASON = '단기 자동 전환'
+export const AUTO_CHECKOUT_MONTH_REASON = '퇴실 한 달 전 자동 전환'
+export const AUTO_CHECKOUT_UNDO_REASON = '자동 전환 되돌림'
+export const SHORT_STAY_EXTEND_REASON = '단기 연장'
+export const CHECKOUT_REVERT_REASON = '퇴실 적용취소'
+/** 단기 연장·감액 적용취소 행의 라벨. */
+export const shortStayUndoReason = (kind: 'extend' | 'decrease') => kind === 'decrease' ? '단기 감액 적용취소' : '단기 연장 적용취소'
+export const SYSTEM_STATUS_REASONS: readonly string[] = [
+  AUTO_CHECKOUT_SHORT_REASON, AUTO_CHECKOUT_MONTH_REASON, AUTO_CHECKOUT_UNDO_REASON, SHORT_STAY_EXTEND_REASON, CHECKOUT_REVERT_REASON,
+  shortStayUndoReason('extend'), shortStayUndoReason('decrease'),
+]
+export function isSystemStatusReason(reason: string | null | undefined): boolean {
+  return SYSTEM_STATUS_REASONS.includes((reason ?? '').trim())
 }
 
 /** 사유 입력 칸 라벨. 사유를 받지 않는 전이면 null —

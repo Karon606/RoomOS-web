@@ -21,7 +21,9 @@ import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, undoPaymentEdit, deletePayment, restorePayment, saveDepositPaymentForLease, getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
 import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease, recordDepositReturn } from '@/app/(app)/tenants/actions'
 import { kstYmdStr } from '@/lib/kstDate'
-import { WITHHOLD_REASONS, buildWithholdReason, CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
+import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
 // 보증금 수납 수단 정본 — 이름 없는 부분집합을 각 화면이 베끼면 그 자리들이 갈린다.
@@ -74,8 +76,11 @@ export function DepositStatusPanel({
   const [recOpen, setRecOpen] = useState(false)
   const [recAmount, setRecAmount] = useState(0)
   const [recDate, setRecDate] = useState('')
+  // 미반환 사유는 저장 글자다('기타 · 글', lib/reasonLists). 목록은 영업장 설정이고 '기타' 로 적은 글을
+  // 목록에 넣을지는 따로 쥔다(2026-10-22). 목록은 기록 폼을 열었을 때만 읽는다.
   const [recReason, setRecReason] = useState('')
-  const [recEtc, setRecEtc] = useState('')
+  const [recAdd, setRecAdd] = useState(false)
+  const withholdOptions = useReasonOptions(recOpen ? 'withholdReasons' : null)
   // 보증금 실입금 기록 미니폼 — 미수납·부분수납 상태의 1급 진입로(신고 98fb6fce·00c39371).
   // 사실이 표시되는 자리에 그 사실을 고칠 길이 없어서, 운영자가 '입주자 정보 수정' 폼으로 우회했다.
   const [recvOpen, setRecvOpen] = useState(false)
@@ -293,13 +298,13 @@ export function DepositStatusPanel({
     // 클릭한 날이었고, 그 값이 그대로 기타수익의 귀속월이 됐다. 퇴실일을 모르면 오늘로 떨어진다.
     setRecDate(moveOutYmd ?? kstYmdStr())
     setRecReason(carriedOver ? CARRIED_OVER_WITHHOLD_REASON : effectiveFee > 0 ? CLEANING_WITHHOLD_REASON : '')
-    setRecEtc('')
+    setRecAdd(false)
     setRecOpen(true)
   }
   const saveRecord = async () => {
     if (!tenantId || !tenantName) return
     const withheldNow = Math.max(0, refundBase - recAmount)
-    const reason = buildWithholdReason(recReason, recEtc)
+    const reason = recReason.trim()
     // 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(퇴실 처리 폼과 같은 축).
     if (withheldNow > effectiveFee && !reason) { pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return }
     // 전액 미반환 결정만 되묻는다 — 퇴실 처리 폼과 같은 방향(몰취에만 마찰).
@@ -315,7 +320,7 @@ export function DepositStatusPanel({
         () => recordDepositReturn({
           leaseTermId, tenantId, depositAmount: refundBase,
           returnedAmount: recAmount, date: recDate || kstYmdStr(), tenantName,
-          ...(withheldNow > 0 && reason ? { reason } : {}),
+          ...(withheldNow > 0 && reason ? { reason: recReason, addReasonToList: recAdd } : {}),
         }),
         { success: '반환 정산을 기록했습니다' },
       )
@@ -511,13 +516,9 @@ export function DepositStatusPanel({
           {Math.max(0, refundBase - recAmount) > effectiveFee && (
             <div className="space-y-1.5">
               <p className={labelCls}>반환하지 않는 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
-              <select value={recReason} onChange={e => setRecReason(e.target.value)} className={inputCls}>
-                <option value="">사유 선택</option>
-                {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              {recReason === '기타' && (
-                <input value={recEtc} onChange={e => setRecEtc(e.target.value)} placeholder="사유 입력" className={inputCls} />
-              )}
+              <CategorySelect addMode="ask" value={recReason} onChange={setRecReason}
+                options={withholdOptions} emptyLabel="사유 선택" placeholder="사유 입력"
+                addToList={recAdd} onAddToListChange={setRecAdd} className={inputCls} />
             </div>
           )}
           {/* 취소 좌 · 확인 우(§13·§14). 종전 이 폼만 반대라 한 패널 안에 서로 반대인 두 폼이 서 있었다. */}

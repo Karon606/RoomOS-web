@@ -13,7 +13,8 @@ import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { canTransition, transitionDeniedMessage, transitionStatusLabel } from '@/lib/leaseTransitions'
-import { reasonsForStatus } from '@/lib/statusReasons'
+import { reasonForSave } from '@/lib/reasonListSave'
+import { reasonFieldForStatus, AUTO_CHECKOUT_UNDO_REASON, SHORT_STAY_EXTEND_REASON, shortStayUndoReason } from '@/lib/statusReasons'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { depositComposition, splitWithheldDeposit, type DepositComposition } from '@/lib/depositComposition'
 import { cleaningFeeDeductible, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
@@ -1723,7 +1724,12 @@ export async function updateTenant(formData: FormData): Promise<
   if (status !== prevStatus) {
     // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
     // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
-    const cancelReason = reasonsForStatus(status) ? ((formData.get('cancelReason') as string | null)?.trim() || null) : null
+    // 화면이 보낸 글자는 영업장 목록으로 다시 잰다. 목록 밖 글은 '기타 · 글', 체크하면 목록에 더한다(lib/reasonLists, 2026-10-22).
+    const reasonField = reasonFieldForStatus(status)
+    const reasonSave = reasonField
+      ? await reasonForSave(propertyId, reasonField, formData.get('cancelReason') as string | null, { addToList: formData.get('cancelReasonAddToList') === '1' })
+      : null
+    const cancelReason = reasonSave?.reason ?? null
     await prisma.tenantStatusLog.create({
       data: {
         tenantId,
@@ -1735,6 +1741,7 @@ export async function updateTenant(formData: FormData): Promise<
         ...(cancelReason ? { reason: cancelReason } : {}),
       },
     })
+    await reasonSave?.commit()
   }
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
@@ -1868,6 +1875,8 @@ export async function recordDepositReturn(params: {
   date: string
   tenantName: string
   reason?: string
+  /** '기타' 로 적은 미반환 사유를 영업장 목록에 더한다(사유 고르는 칸의 '이 사유를 목록에 추가', 2026-10-22). */
+  addReasonToList?: boolean
   memo?: string
   // 신고 9b974be0: 부가수익 detail 문구 분기. 기본은 퇴실, 'reservationCancel'은 예약 취소 몰취.
   context?: 'checkout' | 'reservationCancel'
@@ -1913,6 +1922,10 @@ export async function recordDepositReturn(params: {
       return { ok: false, error: '정산일이 미래입니다. 아직 하지 않은 정산은 기록할 수 없습니다.' }
     }
     const refundDate = new Date(params.date)
+    // 사유는 영업장 목록으로 다시 잰다. 목록(과 청소비·인수 승계 보증금) 밖 글은 '기타 · 글'(lib/reasonLists, 2026-10-22).
+    // 아래 청소비 판정·부가수익 상세가 이 다듬은 글자를 읽는다.
+    const reasonSave = await reasonForSave(propertyId, 'withholdReasons', params.reason, { addToList: params.addReasonToList === true })
+    const reason = reasonSave.reason
 
     // 환불 이력 — 반환·미반환 양쪽 합쳐 한 건으로 기록
     const refund = await prisma.depositRefund.create({
@@ -1923,10 +1936,12 @@ export async function recordDepositReturn(params: {
         date:           refundDate,
         returnedAmount: returned,
         withheldAmount: withheld,
-        reason:         params.reason || null,
+        reason,
         memo:           params.memo || null,
       },
     })
+    // 기록이 선 뒤에만 목록에 더한다(저장이 막히면 목록에도 안 남는다).
+    await reasonSave.commit()
 
     const extraIncomeIds: string[] = []
     if (withheld > 0) {
@@ -1964,9 +1979,9 @@ export async function recordDepositReturn(params: {
       const carriedNote = carriedOver ? ' (인수 승계분)' : ''
       // 청소비 몫을 이미 따로 뗀 뒤라면 남은 몰취 행까지 '청소비' 라고 쓸 수 없다 — 카테고리와
       // 세부 항목이 서로 다른 말을 하는 행이 생긴다.
-      const forfeitReason = params.reason?.trim() === CLEANING_WITHHOLD_REASON && split.cleaning > 0
+      const forfeitReason = reason === CLEANING_WITHHOLD_REASON && split.cleaning > 0
         ? '보증금 미반환분'
-        : (params.reason?.trim() || '보증금 미반환분').replace(/^기타 · /, '')
+        : (reason || '보증금 미반환분').replace(/^기타 · /, '')
       const parts = [
         ...(split.cleaning > 0 ? [{
           category: CLEANING_FEE_CATEGORY as string,
@@ -2515,6 +2530,7 @@ export async function checkoutWithDepositRefund(params: {
   refundAmount: number
   moveOutDate?: string   // 실제 퇴실일 — 환불 기록 날짜도 같은 날로 맞춘다(정본 미니폼과 동일 규칙)
   reason?: string        // 미환불 사유 — 종전에는 이 경로에 전달 수단이 없어 홈 퇴실은 사유가 항상 비었다
+  addReasonToList?: boolean   // '기타' 로 적은 사유를 목록에 더한다(recordDepositReturn 이 다시 잰다)
   cleaningDate?: string | null   // 퇴실 청소 예정일 — 그대로 checkoutTenant 로 흘린다(판정은 그쪽 한 자리)
   /**
    * 함께 확정할 이용료 환불액 — 확정해 둔 퇴실 정산이 남아 있을 때만 넘어온다.
@@ -2558,7 +2574,7 @@ export async function checkoutWithDepositRefund(params: {
         returnedAmount: Math.max(0, Math.min(params.refundAmount, lease.depositAmount)),
         date:           dateStr,
         tenantName:     lease.tenant.name,
-        ...(params.reason ? { reason: params.reason } : {}),
+        ...(params.reason ? { reason: params.reason, addReasonToList: params.addReasonToList === true } : {}),
       })
       if (!refundRes.ok) return refundRes
       depositReceiptNotice = refundRes.receiptNotice ?? null
@@ -3829,6 +3845,8 @@ export async function applyStatusTransition(input: {
   reservationConfirmedAt?: string | null
   rentAmount?: number | null
   reason?: string | null   // 전이 사유(선택) — 취소 사유 수집(e1b81629), TenantStatusLog.reason에 기록
+  /** '기타' 로 적은 사유를 영업장 목록에 더한다(사유 고르는 칸의 '이 사유를 목록에 추가', 2026-10-22). */
+  addReasonToList?: boolean
   // 퇴실 청소 예정일(퇴실 확정 전이에서만 쓰인다). 필수로 올리지 않는 것은 이 함수가 전이 8종을
   // 전부 처리하고 호출부가 한 코드로 모든 전이를 넘기기 때문이다 — 퇴실 전용 값을 전 전이의
   // 필수로 만들면 예약 확정·투어 전환까지 더미를 채우게 되고 그 순간 규칙이 죽는다.
@@ -4073,6 +4091,13 @@ export async function applyStatusTransition(input: {
       revertReason = doneRow?.reason || CHECKOUT_REVERT_REASON
     }
     if (!isReservationToggle) {
+      // 화면이 보낸 사유는 영업장 목록으로 다시 잰다(lib/reasonLists, 2026-10-22). 사유를 받는 전이의 목록으로 재고,
+      // 퇴실 예정을 '그날 바꾸기' 로 고르면 지금 상태(거주중)로 저장되므로 퇴실일이 함께 온 그 경우는 퇴실 사유로 잰다.
+      // 사유를 받지 않는 전이에 실려 온 글은 남기지 않는다.
+      const reasonField = reasonFieldForStatus(input.toStatus) ?? (input.expectedMoveOut ? 'checkoutReasons' : null)
+      const reasonSave = revertReason == null && reasonField && input.reason
+        ? await reasonForSave(propertyId, reasonField, input.reason, { addToList: input.addReasonToList === true })
+        : null
       await prisma.tenantStatusLog.create({
         data: {
           tenantId: input.tenantId,
@@ -4080,10 +4105,11 @@ export async function applyStatusTransition(input: {
           propertyId,
           fromStatus: lease.status,
           toStatus: input.toStatus as LeaseStatus,
-          reason: revertReason ?? (input.reason || null),
+          reason: revertReason ?? (reasonSave?.reason ?? null),
           changedById: user.sub,
         },
       })
+      await reasonSave?.commit()
     }
 
     revalidatePath('/tenants')
@@ -5704,7 +5730,7 @@ export async function undoAutoCheckout(
       data: {
         tenantId: lease.tenantId, leaseTermId, propertyId,
         fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE',
-        reason: '자동 전환 되돌림', changedById: user.sub,
+        reason: AUTO_CHECKOUT_UNDO_REASON, changedById: user.sub,
       },
     })
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
@@ -6953,7 +6979,7 @@ export async function extendShortStay(
 
       if (lease.status === 'CHECKOUT_PENDING') {
         await tx.tenantStatusLog.create({
-          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE', changedById: user.sub, reason: '단기 연장' },
+          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE', changedById: user.sub, reason: SHORT_STAY_EXTEND_REASON },
         })
       }
     })
@@ -7043,7 +7069,7 @@ export async function undoShortStayExtension(leaseTermId: string): Promise<{ ok:
       }
       if (lease.status !== entry.prevStatus) {
         await tx.tenantStatusLog.create({
-          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: lease.status as LeaseStatus, toStatus: entry.prevStatus as LeaseStatus, changedById: user.sub, reason: `단기 ${label} 적용취소` },
+          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: lease.status as LeaseStatus, toStatus: entry.prevStatus as LeaseStatus, changedById: user.sub, reason: shortStayUndoReason(entry.kind === 'decrease' ? 'decrease' : 'extend') },
         })
       }
       // isPaid 재계산 — 이전 누적 기준

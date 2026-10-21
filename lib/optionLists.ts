@@ -16,11 +16,14 @@ import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD, FORFEIT_CATEGORY, PE
 import { CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY } from '@/app/(app)/room-manage/cleaningConstants'
 import { DEFAULT_INVENTORY_CATEGORIES } from '@/app/(app)/inventory/constants'
 import { normalizeCategoryInput } from '@/lib/categoryInput'
+import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
+import { SYSTEM_STATUS_REASONS } from '@/lib/statusReasons'
 
 export type OptionListField =
   | 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions'
   | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories'
   | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions' | 'discountReasons' | 'jobOptions' | 'channelOptions'
+  | 'cancelReasons' | 'checkoutReasons' | 'withholdReasons'
 
 export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = {
   roomTypeOptions:   ['원룸', '미니룸'],
@@ -45,6 +48,13 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   // 쇼핑몰(지출의 Expense.channel 이 고르는 이름, 2026-10-19 운영자 승인). **기본값이 없다.** 쇼핑몰 이름을 코드에 박지 않는다
   // (멀티테넌트). 지출 저장에서 처음 보는 이름이 저절로 쌓인다(finance/actions resolveChannelForSave).
   channelOptions:    [],
+  // 사유 목록 셋(2026-10-22 운영자 승인). 종전 코드 상수(lib/statusReasons·lib/depositWithholdReasons)에서 '기타'만 뺀 것이다.
+  // '기타'는 목록 항목이 아니다. 고르는 자리 맨 끝에 늘 붙고 그 저장 규약은 lib/reasonLists 가 쥔다(목록에 넣지 못한다).
+  // 퇴실 사유 뒤쪽 셋(계약 위반·요금 미납·무단 퇴실)은 내보낸 퇴실이다(2026-08-31, 통계에서 갈라져야 한다).
+  cancelReasons:     ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '연락 두절', '일정 변경'],
+  checkoutReasons:   ['계약 만료', '직장·학교 이동', '더 넓은 곳으로', 'LH선정', '가격 부담', '시설·환경 불만', '개인 사정', '계약 위반', '요금 미납', '무단 퇴실'],
+  // 미반환 사유. '미납 충당' 은 일부러 없다(세법상 임대수입이라 몰취로 분류하면 틀린다, lib/depositWithholdReasons 머리말).
+  withholdReasons:   [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON, '원상복구비', '계약 위반'],
 }
 
 /**
@@ -160,6 +170,12 @@ export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: re
     names: [...DEFAULT_INVENTORY_CATEGORIES.map(c => c.cat), CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY],
     effect: '재고 관리와 청소·작업 기록이 이 이름으로 지출을 묶고 만듭니다.',
   },
+  // 미반환 사유 둘(2026-10-22). '청소비' 는 퇴실 정산이 이 글자로 몰취를 청소비와 나누고 청소비 잔고를 센다
+  // (tenants/actions recordDepositReturn·cleaningActions). '인수 승계 보증금' 은 인수 전 입주자 퇴실에서 앱이 미리 고른다.
+  withholdReasons: {
+    names: [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON],
+    effect: '퇴실 정산이 이 이름으로 청소비를 나누고 인수 전 입주자의 사유를 미리 고릅니다.',
+  },
 }
 
 /** 이 이름을 바꿀 수 없으면 그 결과 문장(effect, 완결 문장), 바꿀 수 있으면 null. 화면과 서버가 같은 함수를 쓴다. */
@@ -179,6 +195,28 @@ export function protectedRenameError(field: OptionListField, oldValue: string, n
   if (from) return `이 이름은 바꿀 수 없습니다. ${from}`
   const to = protectedOptionReason(field, newValue)
   if (to) return `다른 항목을 이 이름으로 바꿀 수 없습니다. ${to}`
+  return null
+}
+
+/** 사유 목록 셋. 고르는 자리 맨 끝에 '기타' 가 늘 붙고, 목록에 없는 글은 '기타 · 글' 로 남는다(lib/reasonLists). */
+export const REASON_LIST_FIELDS = ['cancelReasons', 'checkoutReasons', 'withholdReasons'] as const
+export type ReasonListField = typeof REASON_LIST_FIELDS[number]
+export function isReasonListField(f: OptionListField): f is ReasonListField {
+  return (REASON_LIST_FIELDS as readonly string[]).includes(f)
+}
+
+/**
+ * 이 이름을 목록에 넣을 수 없는 까닭(완결 문장), 넣을 수 있으면 null. 손 추가·자동 추가·이름 변경이 같은 문을 지난다.
+ *
+ * 사유 목록에는 '기타' 와 '기타 · …' 꼴, 시스템 라벨('단기 자동 전환' 따위)을 못 넣는다. '기타' 는 고르는 자리가 늘 맨 끝에
+ * 붙이는 항목이라 목록에 또 서면 두 줄이 되고, '기타 · …' 는 직접 입력의 저장 규약과 겹쳐 목록 항목인지 직접 입력인지
+ * 가를 수 없다. 시스템 라벨을 목록에 넣으면 퇴실 사유 이어받기가 운영자가 고른 사유를 시스템 라벨로 읽고 건너뛴다.
+ */
+export function reservedOptionNameError(field: OptionListField, name: string): string | null {
+  if (!isReasonListField(field)) return null
+  const v = name.trim()
+  if (v === '기타' || /^기타\s*·/.test(v)) return "'기타' 는 목록 맨 끝에 늘 있는 항목이라 따로 넣지 않습니다."
+  if (SYSTEM_STATUS_REASONS.includes(v)) return '앱이 상태 이력에 스스로 적는 이름이라 사유로 쓸 수 없습니다.'
   return null
 }
 
@@ -246,8 +284,12 @@ export function optionListAfterResetUndo(field: OptionListField, raw: string | n
   return mergeResetUndo(before.map(v => normalizeOptionName(field, v)), OPTION_LIST_DEFAULTS[field], parseOptionList(field, raw))
 }
 
-/** 이름 변경이 따라가는 데이터 칸 하나. via 가 있으면 그 모델에 propertyId 가 없어 관계로 영업장을 거른다. */
-export type RenameTarget = { model: string; column: string; via?: 'leaseTerm' }
+/**
+ * 이름 변경이 따라가는 데이터 칸 하나. via 가 있으면 그 모델에 propertyId 가 없어 관계로 영업장을 거른다.
+ * statuses 가 있으면 그 상태(toStatus)의 행만 고른다. 상태 이력 사유 칸(TenantStatusLog.reason)에는 취소 사유와 퇴실 사유가
+ * 함께 살아서, 퇴실 사유 '계약 위반' 을 바꾸면 같은 글자의 취소 사유까지 바뀌면 안 된다(2026-10-22).
+ */
+export type RenameTarget = { model: string; column: string; via?: 'leaseTerm'; statuses?: readonly string[] }
 
 // 소프트삭제 모델. 삭제된 행의 값도 과거 표기라 함께 갱신한다. updateMany 는 익스텐션 필터 대상이
 // 아니라 삭제분까지 바꾸므로, count·findMany 에도 deletedAt 을 명시해 필터를 끈다(건수 일치).
@@ -263,6 +305,7 @@ export function optionRenameWhere(t: RenameTarget, propertyId: string, value: st
   const where: Record<string, unknown> = t.via === 'leaseTerm'
     ? { leaseTerm: { propertyId }, [t.column]: value }
     : { propertyId, [t.column]: value }
+  if (t.statuses) where.toStatus = { in: [...t.statuses] }
   if (RENAME_SOFT_DELETE_MODELS.has(t.model)) where.deletedAt = undefined
   return where
 }

@@ -20,8 +20,9 @@ export const CHECKOUT_REVERT_LABEL: Record<CheckoutRevertTarget, string> = {
   CHECKOUT_PENDING: '퇴실 예정',
 }
 
-/** 이력에 남기는 되돌림 표식 — 선례는 자동 전환 되돌리기의 '자동 전환 되돌림'이다. */
-export const CHECKOUT_REVERT_REASON = '퇴실 적용취소'
+/** 이력에 남기는 되돌림 표식 — 선례는 자동 전환 되돌리기의 '자동 전환 되돌림'이다.
+ *  정의는 시스템 라벨 전수와 한 자리다(lib/statusReasons SYSTEM_STATUS_REASONS, 퇴실 사유 이어받기가 이 집합으로 거른다). */
+export { CHECKOUT_REVERT_REASON } from '@/lib/statusReasons'
 
 export type CheckoutRevertBlock = 'depositRefund' | 'rentRefund' | 'roomOccupied'
 

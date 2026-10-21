@@ -25,7 +25,9 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
-import { buildReason, parseReason, reasonsForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
+import { reasonFieldForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { withParticle } from '@/lib/koParticle'
 
 import { fmtDateDot } from '@/lib/fmtDate'   // 날짜 표기 정본
@@ -205,28 +207,30 @@ function HistRow({ item, canEdit, pending, onEdit, onInvalidate, onRestore }: {
   )
 }
 
-// 사유 편집 — 전환 미니폼과 같은 문법(select + '기타' 자유 입력). 새 문법을 만들지 않는다.
+// 사유 편집 — 전환 미니폼과 같은 문법(CategorySelect addMode 'ask'). 새 문법을 만들지 않는다.
+// 칸은 저장 글자를 그대로 읽는다(lib/reasonLists reasonPickOf). 목록에 있으면 그 항목, '기타 · 글' 이면 기타 + 글,
+// 목록에서 뺀 항목·옛 이름이면 그 글자가 칸에 그대로 서고 손대지 않으면 그대로 저장된다(서버가 지금 값과 견준다).
 function ReasonEditModal({ item, onClose, onDone }: { item: HistItem; onClose: () => void; onDone: () => void }) {
-  const init = parseReason(item.reason)
-  const [sel, setSel] = useState(init.selected)
-  const [etc, setEtc] = useState(init.etcText)
+  const init = item.reason ?? ''
+  const [value, setValue] = useState(init)
+  const [addToList, setAddToList] = useState(false)
   const [pending, setPending] = useState(false)
-  const opts = reasonsForStatus(item.toStatus) ?? []
-  const dirty = sel !== init.selected || etc !== init.etcText
+  const opts = useReasonOptions(reasonFieldForStatus(item.toStatus))
+  const dirty = value !== init
 
   const save = async () => {
     if (pending) return
     setPending(true)
     try {
-      const next = buildReason(sel, etc) || null
-      const res = await updateStatusLogReason(item.id, next)
+      const res = await updateStatusLogReason(item.id, value.trim() || null, { addToList })
       if (!res.ok) { pushToast('error', res.error); return }
-      const prev = res.prev
+      const { prev, reason: next } = res
       const lab = reasonLabel(item.toStatus) ?? '사유'
       pushToast('success', next ? `${withParticle(lab, '을/를')} 저장했습니다` : `${withParticle(lab, '을/를')} 지웠습니다`, {
         // 상시 진입점은 같은 [수정] 버튼이다 — 텍스트는 되돌려 쓰는 것이 곧 적용취소라(§16)
         // 여기 토스트는 즉시 되돌리기용 편의다.
-        action: { label: '적용취소', run: () => { void updateStatusLogReason(item.id, prev).then(u => {
+        // 이전 값은 서버가 돌려준 그 글자 그대로 되돌린다(restore). 다시 재면 그사이 목록에서 뺀 이전 값에 '기타 · ' 가 붙는다.
+        action: { label: '적용취소', run: () => { void updateStatusLogReason(item.id, prev, { restore: true }).then(u => {
           if (u.ok) { pushToast('info', '사유를 되돌렸습니다'); onDone() }
           else pushToast('error', u.error)
         }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
@@ -248,16 +252,10 @@ function ReasonEditModal({ item, onClose, onDone }: { item: HistItem; onClose: (
       }>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(item.toStatus) ?? '사유'} <span className="font-normal opacity-60">(선택)</span></label>
-        <select value={sel} onChange={e => setSel(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-          <option value="">기록 안 함</option>
-          {opts.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-        {sel === '기타' && (
-          <input type="text" value={etc} onChange={e => setEtc(e.target.value)}
-            placeholder="사유를 직접 입력하세요"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-        )}
+        <CategorySelect addMode="ask" value={value} onChange={setValue}
+          options={opts} emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+          addToList={addToList} onAddToListChange={setAddToList}
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
           이 항목의 사유만 고칩니다. 상태와 변경 시각은 그대로 남습니다.
         </p>

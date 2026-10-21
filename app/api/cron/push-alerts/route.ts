@@ -17,6 +17,7 @@ import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
 import { approvedPushRecipients, ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
 import { canTransition } from '@/lib/leaseTransitions'
+import { AUTO_CHECKOUT_SHORT_REASON, AUTO_CHECKOUT_MONTH_REASON } from '@/lib/statusReasons'
 import {
   autoCheckoutDue, checkoutLeadKind,
   DEFAULT_SHORT_LEAD_DAYS, DEFAULT_NORMAL_LEAD_MONTHS,
@@ -101,7 +102,7 @@ export async function GET(req: Request) {
         fromStatus: lt.status, toStatus: 'CHECKOUT_PENDING',
         // 리드가 갈리므로 이유도 갈린다 — '단기 자동 전환' 하나로 두면 일반 건이 거짓 라벨을 단다.
         // changedById 가 없는 것이 '시스템이 했다'는 표시다.
-        reason: checkoutLeadKind(lease) === 'short' ? '단기 자동 전환' : '퇴실 한 달 전 자동 전환',
+        reason: checkoutLeadKind(lease) === 'short' ? AUTO_CHECKOUT_SHORT_REASON : AUTO_CHECKOUT_MONTH_REASON,
       },
     })
     flippedCount++

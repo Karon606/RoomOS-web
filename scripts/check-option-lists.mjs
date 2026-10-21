@@ -35,6 +35,11 @@
 //      그 기록을 다시 저장할 때마다 되살아나지 않는다.
 //   ⓚ 목록 서버 액션은 field 검사를 거친다: 칸 이름을 받아 `{ [field]: … }` 로 쓰는 액션은 무엇을 읽거나
 //      쓰기 전에 assertOptionField 로 정본 표의 칸인지 본다. 없으면 편집 권한으로 영업장 행 아무 칸에나 쓴다.
+//   ⓛ 사유 목록 셋(입실 취소·퇴실·보증금 미반환, 2026-10-22): 고르는 자리 전부가 CategorySelect addMode="ask" 이고
+//      ('관리는 설정에서' 라 말하므로 분류 관리 카드가 있다), 사유를 저장하는 서버 경로는 전부 reasonForSave 로 다시 잰다.
+//      옛 상수(reasonsForStatus·CANCEL_REASONS·CHECKOUT_REASONS·WITHHOLD_REASONS)는 없다. '기타 · 글' 을 만드는 자리는
+//      lib/reasonLists 한 곳이다. 이어받기 판정은 시스템 라벨 집합으로 하고, 이름 변경은 상태 이력을 toStatus 로 나눈다.
+//      '기타'·'기타 · …'·시스템 라벨은 손 추가·이름 변경 입구에서 막는다.
 //
 // 실행: node scripts/check-option-lists.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -516,7 +521,94 @@ const os = bodyOf(form, /function OptionSection\(/)
   if (n < 7) violations.push(`${ACTIONS} · 칸 이름을 받는 목록 서버 액션을 ${n}개만 찾았다(초기화·순서·삭제 적용취소·초기화 적용취소·건수·이름 변경·이름 변경 적용취소, 7 이상 기대).`)
 }
 
-console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
+// ⓛ 사유 목록 셋.
+{
+  // 사유 고르는 자리와 그 자리가 쓰는 목록. 새 자리가 사유 목록 훅(useReasonOptions)을 쓰면 여기에 적는다.
+  const ASK_SITES = {
+    'components/entity-modal/widgets/TenantStatusTransitions.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons'],
+    'components/entity-modal/widgets/TenantStatusHistory.tsx': ['cancelReasons', 'checkoutReasons'],
+    'app/(app)/tenants/TenantClient.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons'],
+    'app/(app)/dashboard/DashboardClient.tsx': ['withholdReasons'],
+    'components/entity-modal/widgets/DepositStatusPanel.tsx': ['withholdReasons'],
+  }
+  const ASK_COUNT = {
+    'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
+    'app/(app)/tenants/TenantClient.tsx': 2, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
+  }
+  for (const p of SOURCES) {
+    const code = stripComments(readFileSync(p, 'utf8'))
+    const at = i => code.slice(0, i).split('\n').length
+    for (const m of code.matchAll(/\b(reasonsForStatus|CANCEL_REASONS|CHECKOUT_REASONS|WITHHOLD_REASONS|buildWithholdReason|buildReason|parseReason)\b/g)) {
+      violations.push(`${p}:${at(m.index)} · 옛 사유 상수·규약 ${m[1]} 가 되살아났다. 목록은 영업장 설정(parseOptionList)이고 '기타' 규약은 lib/reasonLists 한 벌이다.`)
+    }
+    if (p !== 'lib/reasonLists.ts') {
+      for (const m of code.matchAll(/`기타 · \$\{/g)) violations.push(`${p}:${at(m.index)} · '기타 · 글' 을 손으로 만든다. lib/reasonLists otherReason 한 벌을 쓴다.`)
+    }
+    if (/\buseReasonOptions\(/.test(code) && p !== 'components/ui/useReasonOptions.ts' && !ASK_SITES[p]) {
+      violations.push(`${p} · 사유 목록을 읽는데 이 그물의 ASK_SITES 에 안 적혔다. 고르는 칸이 addMode="ask" 인지, 분류 관리 카드가 있는지 보고 적는다.`)
+    }
+  }
+  for (const [p, fields] of Object.entries(ASK_SITES)) {
+    const code = stripComments(readFileSync(p, 'utf8'))
+    const n = (code.match(/<CategorySelect addMode="ask"/g) ?? []).length
+    if (n < ASK_COUNT[p]) violations.push(`${p} · 사유 고르는 칸이 CategorySelect addMode="ask" 로 ${n}곳이다(${ASK_COUNT[p]} 기대). 맨 select 로 그리면 '목록에 추가' 가 빠지고 목록 밖 저장 글자가 빈 칸으로 뜬다.`)
+    if (/<select[^>]*value=\{(withholdReason|transReason|recReason|depoWithholdReason|cancelReasonVal|reason|sel)\}/.test(code)) violations.push(`${p} · 사유를 맨 select 로 고른다. CategorySelect addMode="ask" 를 쓴다.`)
+    for (const f of fields) if (!cardFields.has(f)) violations.push(`${p} · 사유 칸이 '목록 관리는 환경설정 > 분류 관리' 라고 말하는데 ${f} 카드가 없다.`)
+  }
+  // 고르는 칸의 정본 모양: 체크 기본 꺼짐, '기타(직접 입력)' 맨 끝, 목록 밖 저장 글자는 그 글자 그대로 한 줄, 저장 글자 숨은 칸.
+  {
+    const cs = stripComments(readFileSync('components/ui/CategorySelect.tsx', 'utf8'))
+    const ask = cs.slice(cs.indexOf("if (addMode === 'ask')"), cs.indexOf('const isInOptions'))
+    if (!/const \[ownAdd, setOwnAdd\] = useState\(false\)/.test(cs)) violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크의 기본이 꺼짐이 아니다(운영자 승인: 사유는 기본 꺼짐).`)
+    if (!/reasonPickOf\(value, options\)/.test(ask) || !/pick\.kind === 'legacy' && <option value=\{pick\.value\}>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 저장 글자를 reasonPickOf 로 읽지 않거나 목록 밖 글자를 그대로 세우지 않는다. 뺀 항목·옛 이름이 빈 칸으로 뜨고 저장하면 지워진다.`)
+    if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{o\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/select>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 '기타(직접 입력)' 이 목록 맨 끝 고정 항목이 아니다.`)
+    if (!/onChange\(otherReason\(/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 직접 입력이 lib/reasonLists otherReason 으로 저장 글자를 만들지 않는다.`)
+    if ((ask.match(/name && <input type="hidden" name=\{name\} value=\{value\} \/>/g) ?? []).length < 2) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 FormData 에 저장 글자를 싣지 않는다(입력칸 글만 실리면 '기타 · ' 가 빠진다).`)
+  }
+  // 사유를 저장하는 서버 경로는 영업장 목록으로 다시 재고(reasonForSave), 기록이 선 뒤에 목록에 더한다(commit).
+  const SAVE_PATHS = [
+    ['app/(app)/tenants/actions.ts', 'updateTenant'], ['app/(app)/tenants/actions.ts', 'applyStatusTransition'],
+    ['app/(app)/tenants/actions.ts', 'recordDepositReturn'], ['app/(app)/rooms/actions.ts', 'updateStatusLogReason'],
+  ]
+  for (const [p, fn] of SAVE_PATHS) {
+    const b = bodyOf(readFileSync(p, 'utf8'), new RegExp(`export async function ${fn}\\(`))
+    if (!b) { violations.push(`${p} · ${fn} 를 못 찾았다.`); continue }
+    const code = stripComments(b)
+    if (!/reasonForSave\(/.test(code) || !/\.commit\(\)/.test(code)) violations.push(`${p} · ${fn} 가 사유를 영업장 목록으로 다시 재지(reasonForSave) 않거나 목록 추가를 기록 뒤로 미루지(commit) 않는다. 목록 밖 글이 목록 항목인 척 남는다.`)
+  }
+  {
+    const b = bodyOf(readFileSync('app/(app)/rooms/actions.ts', 'utf8'), /export async function updateStatusLogReason\(/)
+    if (b && !/reasonForSave\([^)]*prev: row\.reason \}\)/.test(stripComments(b))) violations.push(`app/(app)/rooms/actions.ts · 상태 이력 사유 수정이 지금 값(prev)을 넘기지 않는다. 목록에서 뺀 사유를 그대로 저장해도 '기타 · ' 가 붙는다.`)
+  }
+  // 이어받기 판정은 시스템 라벨 집합으로 한다. 목록으로 재면 영업장마다 답이 갈린다.
+  {
+    const cr = stripComments(readFileSync('lib/checkoutReason.ts', 'utf8'))
+    if (!/isSystemStatusReason\(/.test(cr) || /parseOptionList|OPTION_LIST_DEFAULTS/.test(cr)) violations.push(`lib/checkoutReason.ts · 퇴실 사유 이어받기가 시스템 라벨 집합(isSystemStatusReason)으로 거르지 않고 목록으로 잰다.`)
+  }
+  // 이름 변경: 상태 이력은 toStatus 로 나누고, 미반환은 미반환 기록만(부가수익 상세 문장은 그때의 기록).
+  {
+    if (!/cancelReasons:\s*\[\{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES\.cancelReasons \}\]/.test(actions)
+      || !/checkoutReasons:\s*\[\{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES\.checkoutReasons \}\]/.test(actions)) {
+      violations.push(`${ACTIONS} · RENAME_CASCADE 의 취소·퇴실 사유가 상태 이력을 toStatus(REASON_FIELD_STATUSES)로 나누지 않는다. 같은 글자의 다른 사유까지 바뀐다.`)
+    }
+    if (!/withholdReasons:\s*\[\{ model: 'depositRefund', column: 'reason' \}\]/.test(actions)) violations.push(`${ACTIONS} · RENAME_CASCADE 의 미반환 사유가 미반환 기록(DepositRefund.reason) 하나만 따라가지 않는다.`)
+    const w = bodyOf(lib, /export function optionRenameWhere\(/)
+    if (!w || !/if \(t\.statuses\) where\.toStatus = \{ in: \[\.\.\.t\.statuses\] \}/.test(w)) violations.push(`${LIB} · optionRenameWhere 가 statuses 를 toStatus 조건으로 싣지 않는다.`)
+  }
+  // 목록에 못 넣는 이름은 손 추가·이름 변경·화면 추가가 같은 문으로 막는다.
+  {
+    for (const fn of ['addReasonOption', 'renameOption']) {
+      const b = bodyOf(actions, new RegExp(`(?:export )?async function ${fn}\\(`))
+      if (!b || !/reservedOptionNameError\(field, (name|newValue)\)/.test(stripComments(b))) violations.push(`${ACTIONS} · ${fn} 가 '기타'·시스템 라벨을 목록에 넣는 것을 막지(reservedOptionNameError) 않는다.`)
+    }
+    for (const n of ['Cancel', 'Checkout', 'Withhold']) {
+      const b = bodyOf(form, new RegExp(`const handleAdd${n}Reason = async \\(`))
+      if (!b || !/reservedOptionNameError\(/.test(b)) violations.push(`${FORM} · handleAdd${n}Reason 가 서버와 같은 문(reservedOptionNameError)으로 먼저 막지 않는다. 눌러 보고서야 거절당한다.`)
+    }
+  }
+}
+
+console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 · ⓛ 사유 목록 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

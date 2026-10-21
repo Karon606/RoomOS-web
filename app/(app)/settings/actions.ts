@@ -17,7 +17,8 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
-import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, isOptionListField, type OptionListField, type RenameTarget } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, isOptionListField, reservedOptionNameError, type OptionListField, type RenameTarget, type ReasonListField } from '@/lib/optionLists'
+import { REASON_FIELD_STATUSES } from '@/lib/statusReasons'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -615,6 +616,77 @@ export async function deleteChannelOption(name: string) {
   revalidatePath('/settings')
 }
 
+// ── 사유 목록 셋(2026-10-22 운영자 승인) ─────────────────────────────
+// 입실 취소 사유·퇴실 사유·보증금 미반환 사유. 할인 사유와 같은 문법이다. '기타' 는 목록 항목이 아니라 고르는 칸 맨 끝에
+// 늘 붙고, 거기서 적은 글은 '기타 · 글' 로 남거나 '이 사유를 목록에 추가' 를 체크하면 저장할 때 여기 쌓인다(lib/reasonLists).
+// 삭제는 목록에서만이다. 이미 남긴 사유(상태 이력·미반환 기록)는 글자 그대로 있다. 이름을 바꾸면 이 영업장의 그 사유
+// 기록이 따라간다(RENAME_CASCADE, 취소·퇴실은 상태로 나눈다). '기타 · 글' 로 남긴 기록은 목록 이름이 아니라 안 바뀐다.
+export const getCancelReasons = cache(async function getCancelReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { cancelReasons: true } })
+  return parseOptionList('cancelReasons', property?.cancelReasons)
+})
+export const getCheckoutReasons = cache(async function getCheckoutReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { checkoutReasons: true } })
+  return parseOptionList('checkoutReasons', property?.checkoutReasons)
+})
+export const getWithholdReasons = cache(async function getWithholdReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { withholdReasons: true } })
+  return parseOptionList('withholdReasons', property?.withholdReasons)
+})
+
+// 사유 목록 칸의 지금 목록. 조회 함수와 같은 정본이다(칸이 비면 기본값).
+async function reasonListNow(propertyId: string, field: ReasonListField): Promise<string[]> {
+  const p = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { cancelReasons: true, checkoutReasons: true, withholdReasons: true },
+  })
+  return parseOptionList(field, p?.[field])
+}
+
+/** 사유를 목록에 더한다(분류 관리 카드). '기타'·'기타 · …'·시스템 라벨은 못 넣는다(lib/optionLists reservedOptionNameError). */
+async function addReasonOption(field: ReasonListField, rawName: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireEdit()
+  const name = normalizeOptionName(field, rawName)
+  if (!name) return { ok: true }
+  const reserved = reservedOptionNameError(field, name)
+  if (reserved) return { ok: false, error: reserved }
+  const propertyId = await getPropertyId()
+  const current = await reasonListNow(propertyId, field)
+  if (current.includes(name)) return { ok: true }
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: [...current, name].join(',') } as Prisma.PropertyUpdateInput,
+  })
+  revalidatePath('/settings')
+  revalidatePath('/tenants')
+  return { ok: true }
+}
+
+/** 사유를 목록에서 뺀다. **이미 남긴 사유는 그대로 둔다**(할인 사유 빼기와 같은 계약). */
+async function deleteReasonOption(field: ReasonListField, name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await reasonListNow(propertyId, field)
+  const next = current.filter(r => r !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput,
+  })
+  revalidatePath('/settings')
+  revalidatePath('/tenants')
+}
+
+export async function addCancelReason(name: string) { return addReasonOption('cancelReasons', name) }
+export async function addCheckoutReason(name: string) { return addReasonOption('checkoutReasons', name) }
+export async function addWithholdReason(name: string) { return addReasonOption('withholdReasons', name) }
+export async function deleteCancelReason(name: string) { return deleteReasonOption('cancelReasons', name) }
+export async function deleteCheckoutReason(name: string) { return deleteReasonOption('checkoutReasons', name) }
+export async function deleteWithholdReason(name: string) { return deleteReasonOption('withholdReasons', name) }
+
 export async function addExpenseCategory(rawName: string) {
   await requireEdit()
   const name = normalizeOptionName('expenseCategories', rawName)
@@ -703,6 +775,7 @@ function revalidateOptionList(field: ReorderableField) {
   if (field === 'requestCategories') revalidatePath('/requests')
   if (field === 'discountReasons') revalidatePath('/rooms')
   if (field === 'jobOptions') revalidatePath('/tenants')
+  if (field === 'cancelReasons' || field === 'checkoutReasons' || field === 'withholdReasons') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
 }
 
 /**
@@ -836,6 +909,14 @@ const RENAME_CASCADE: Record<ReorderableField, RenameTarget[]> = {
   // 쇼핑몰(2026-10-19). 이름이 바뀌면 그 이름으로 적힌 이 영업장 지출의 쇼핑몰도 함께 바뀐다(구매처 칸은 안 건드린다).
   // 쇼핑몰은 라벨이라 금액·카드 정산 합계는 안 바뀐다.
   channelOptions:    [{ model: 'expense', column: 'channel' }],
+  // 사유 목록 셋(2026-10-22). 상태 이력(TenantStatusLog)은 propertyId 를 가지므로 영업장으로 바로 거르고, 취소 사유와
+  // 퇴실 사유가 같은 칸(reason)에 살아 toStatus 로 나눈다(statuses). '기타 · 글' 로 남긴 기록은 목록 이름과 같지 않아
+  // 안 바뀐다. 무효 처리한 행(deletedAt)도 그때의 표기라 함께 바뀐다(건수 고지와 실제가 같다, 소프트삭제 익스텐션 대상 아님).
+  cancelReasons:     [{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES.cancelReasons }],
+  checkoutReasons:   [{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES.checkoutReasons }],
+  // 미반환 사유는 미반환 기록(DepositRefund.reason)만 따라간다. 부가수익 상세 문장(ExtraIncome.detail)은 그때의 기록이라 안 바꾼다.
+  // '청소비'·'인수 승계 보증금' 은 보호 이름이라 이름 변경 입구에서 막힌다(lib/optionLists PROTECTED_OPTION_NAMES).
+  withholdReasons:   [{ model: 'depositRefund', column: 'reason' }],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
@@ -912,6 +993,7 @@ const OPTION_LIST_SELECT = {
   roomTypeOptions: true, roomTierOptions: true, windowTypeOptions: true, directionOptions: true,
   incomeCategories: true, expenseCategories: true, paymentMethods: true, requestCategories: true,
   workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true, channelOptions: true,
+  cancelReasons: true, checkoutReasons: true, withholdReasons: true,
 } as const satisfies Record<ReorderableField, true>
 
 // 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.
@@ -937,6 +1019,7 @@ function revalidateRenamed(field: ReorderableField) {
   if (RENAME_CASCADE[field].some(t => t.model === 'room')) revalidatePath('/rooms')
   if (field === 'discountReasons') { revalidatePath('/rooms'); revalidatePath('/tenants') }
   if (field === 'jobOptions') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
+  if (field === 'cancelReasons' || field === 'checkoutReasons' || field === 'withholdReasons') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
 }
 
 export async function renameOption(field: ReorderableField, oldValue: string, rawNewValue: string): Promise<RenameOptionResult> {
@@ -960,6 +1043,9 @@ export async function renameOption(field: ReorderableField, oldValue: string, ra
   // 화면은 그 이름의 수정 버튼을 안 세우지만, 입구는 서버다.
   const protectedError = protectedRenameError(field, oldValue, newValue)
   if (protectedError) return { ok: false, error: protectedError }
+  // 사유 목록에는 '기타'·'기타 · …'·시스템 라벨을 못 넣는다. 손 추가와 같은 문이다(lib/optionLists reservedOptionNameError).
+  const reservedError = reservedOptionNameError(field, newValue)
+  if (reservedError) return { ok: false, error: reservedError }
   // 목록에 없는 이름이면 아무것도 안 바꾼다. 성공으로 돌려주면 화면이 이름 변경 성공 토스트를 띄운다.
   if (!current.includes(oldValue)) return { ok: false, error: '목록에 없는 이름입니다. 새로고침 후 다시 시도해 주세요.' }
   if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }

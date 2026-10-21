@@ -1,5 +1,8 @@
-// 보증금 미환불 사유 선택지 정본 — 퇴실 정산 3경로(상태전환 미니폼·고객정보 환불창·홈 알림)가 공유.
-// '기타'는 자유 입력을 붙여 '기타 · <내용>' 으로 저장한다(cancelReasons 와 같은 규약).
+// 보증금 미환불 사유의 코드가 쓰는 이름과 청소비 공제 판정 — 퇴실 정산 4경로(상태전환 미니폼·고객정보 환불창·
+// 보증금 패널·홈 알림)가 공유.
+// 목록 자체는 영업장 설정이다(Property.withholdReasons, 2026-10-22 운영자 승인). 기본값은 lib/optionLists 한 벌이고
+// '기타'는 목록에 없이 고르는 자리 맨 끝에 붙어 '기타 · <내용>' 으로 저장한다(lib/reasonLists, 취소·퇴실 사유와 같은 규약).
+// 아래 두 이름(인수 승계 보증금·청소비)은 코드가 글자로 쓰므로 설정에서 이름을 못 바꾼다(lib/optionLists 보호 이름).
 //
 // 왜 필수인가. 돈이 실제로 움직이는 결정이라 분쟁이 생기면 근거가 필요하고, 세무 자료에서도
 // '보증금 몰취'가 왜 발생했는지 설명이 있어야 한다. 입실 취소 사유가 선택인 것과 다른 이유다.
@@ -18,11 +21,11 @@
 // 다른 영업장이 읽으면 뜻이 통하지 않는다. 설정으로 가르지는 않고 어휘만 중립화한다.
 // **이미 저장된 '키값' 문자열은 바꾸지 않는다.** DepositRefund.reason·ExtraIncome.detail 은 그때의
 // 기록이고, 화면 셋(고객 상세 환불 행·상태 이력·부가수익 상세)은 저장값을 그대로 찍는다.
-// 사유 셀렉트 셋은 전부 새 기록을 만드는 폼이라 옛 값을 되읽지 않는다. 그래서 목록에서 빠져도
+// 사유 셀렉트 넷은 전부 새 기록을 만드는 폼이라 옛 값을 되읽지 않는다. 그래서 목록에서 빠져도
 // 옛 기록의 표시가 깨지지 않는다(실측 2026-08-17: DepositRefund 11건 중 '키값' 4건, 표시 정상).
+// 설정에서 사유 이름을 바꿔도 미반환 기록(DepositRefund.reason)만 따라가고 부가수익 상세 문장(ExtraIncome.detail)은
+// 그때의 기록이라 안 바꾼다(2026-10-22).
 export const CARRIED_OVER_WITHHOLD_REASON = '인수 승계 보증금'
-
-export const WITHHOLD_REASONS = [CARRIED_OVER_WITHHOLD_REASON, '청소비', '원상복구비', '계약 위반', '기타'] as const
 
 // 사유 목록의 '청소비' 항 — 청소비 잔고 조회와 퇴실 정산 detail 이 같은 문자열을 본다.
 // 종전에는 cleaningActions 안에 사본이 있었다. 개명하면 한쪽만 바뀐다.
@@ -36,11 +39,4 @@ export const CLEANING_WITHHOLD_REASON = '청소비'
 // getCleaningFeeReceivedForLease 가 정본이며(순환 import 때문에 그 자리를 지킨다) 여기는 판정만 한다.
 export function cleaningFeeDeductible(contractFee: number, receivedSeparately: number): number {
   return receivedSeparately > 0 ? 0 : contractFee
-}
-
-export function buildWithholdReason(selected: string, etcText: string): string {
-  if (!selected) return ''
-  if (selected !== '기타') return selected
-  const t = etcText.trim()
-  return t ? `기타 · ${t}` : '기타'
 }

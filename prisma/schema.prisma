@@ -173,6 +173,12 @@ model Property {
   // 지출 저장에서 처음 보는 이름이 들어오면 이 영업장 목록에 쌓인다. 이 목록의 이름은 구매처 자동완성·사업자번호 소급·
   // 번호로 이름 채우기에서 빠진다(플랫폼 이름이 판매자 자리에 서지 않게, lib/expenseChannel).
   channelOptions     String?
+  // 사유 목록 셋 (콤마 구분, 비면 코드 기본값. 2026-10-22 운영자 승인). 입실 취소 사유·퇴실 사유·보증금 미반환 사유다.
+  // 종전에는 코드 상수(lib/statusReasons·lib/depositWithholdReasons)라 영업장이 고칠 수 없었다. 할인 사유와 같은 문법이고
+  // '기타'는 목록에 넣지 않는다(고르는 자리 맨 끝에 늘 붙는 항목이다, lib/reasonLists). 백필 없음(null = 지금 상수 그대로).
+  cancelReasons      String?
+  checkoutReasons    String?
+  withholdReasons    String?
   // 재고관리에 추적·표시할 카테고리 설정 (JSON: [{"cat":"부식비","alias":"식료품"},...]).
   // cat = 지출 카테고리(expenseCategories 중), alias = 재고관리 표시명. 순서 = 표시 순서.
   // null 이면 기본값(부식비→식료품·소모품비→소모품·폐기물 처리비→폐기물 처리용품).

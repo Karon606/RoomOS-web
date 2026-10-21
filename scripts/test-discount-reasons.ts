@@ -84,7 +84,7 @@ for (const f of fields) {
   eq(`${f} 기본값에 쉼표 든 항목 없음`, OPTION_LIST_DEFAULTS[f].some(v => v.includes(',')), false)
   eq(`${f} 기본값에 중복 없음`, new Set(OPTION_LIST_DEFAULTS[f]).size, OPTION_LIST_DEFAULTS[f].length)
 }
-eq('목록 열넷이 전부 정본에 있다(쇼핑몰 2026-10-19 포함)', fields.length, 14)
+eq('목록 열일곱이 전부 정본에 있다(쇼핑몰 2026-10-19, 사유 셋 2026-10-22 포함)', fields.length, 17)
 eq('쇼핑몰 목록은 기본값이 없다(쇼핑몰 이름을 코드에 박지 않는다)', parseOptionList('channelOptions', null), [])
 eq('쇼핑몰 이름의 쉼표는 공백으로', normalizeOptionName('channelOptions', '쿠팡, 로켓'), '쿠팡 로켓')
 eq('다 뺀 할인 사유는 빈 목록으로 남는다', parseOptionList('discountReasons', ''), [])
@@ -118,6 +118,8 @@ eq('공과금·관리비·임대료·세금/수수료·보증금 반환은 바�
   ['공과금', '관리비', '임대료', '세금/수수료', '보증금 반환'].map(n => protectedOptionReason('expenseCategories', n)), [null, null, null, null, null])
 eq('지출 보호 이름은 다섯(재고 셋 + 청소·작업 둘)', PROTECTED_OPTION_NAMES.expenseCategories?.names.length, 5)
 eq('부가수익 보호 이름은 넷(청소비·보증금 몰취·위약금·기타 임대수입)', PROTECTED_OPTION_NAMES.incomeCategories?.names.length, 4)
+eq('미반환 사유 청소비·인수 승계 보증금은 보호(퇴실 정산이 이 글자로 청소비를 나누고 미리 고른다)',
+  ['청소비', '인수 승계 보증금', '원상복구비'].map(n => protectedOptionReason('withholdReasons', n) !== null), [true, true, false])
 eq('할인 사유·직업에는 보호 이름이 없다',
   [protectedOptionReason('discountReasons', '프로모션'), protectedOptionReason('jobOptions', '학생')], [null, null])
 eq('보호 이름에서 바꾸기는 막는다',

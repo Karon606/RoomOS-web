@@ -24,6 +24,9 @@ import {
   reorderOptions, renameOption, undoRenameOption, countRenameTargets, resetOptionsToDefault, restoreOption, undoResetOptions, type RenameUndo, type OptionListResult,
   getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
   getDiscountReasons, addDiscountReason, deleteDiscountReason,
+  getCancelReasons, addCancelReason, deleteCancelReason,
+  getCheckoutReasons, addCheckoutReason, deleteCheckoutReason,
+  getWithholdReasons, addWithholdReason, deleteWithholdReason,
   getJobOptions, addJobOption, deleteJobOption,
   getChannelOptions, addChannelOption, deleteChannelOption,
   inviteMember, updateMemberRole, removeMember,
@@ -93,7 +96,7 @@ import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } fr
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
-import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, type OptionListField } from '@/lib/optionLists'
+import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, reservedOptionNameError, type OptionListField } from '@/lib/optionLists'
 
 type Property = {
   id: string
@@ -537,6 +540,99 @@ export default function SettingsForm({
     if (!(await confirmDialog({ title: `할인 사유를 기본값(${OPTION_LIST_DEFAULTS.discountReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
     const r = await resetOptionsToDefault('discountReasons')
     setDiscountReasons(r.items)
+    return r.before
+  }
+
+  // ── 사유 목록 셋(2026-10-22 운영자 승인) ──────────────────────────
+  // 입실 취소·퇴실·보증금 미반환에서 고르는 사유. 할인 사유 카드와 같은 문법이다. '기타(직접 입력)' 는 고르는 칸 맨 끝에
+  // 늘 붙어 이 목록에 없다. 고르는 칸에서 '이 사유를 목록에 추가' 를 체크하면 저장할 때 여기 쌓인다.
+  // 삭제는 목록에서만이다. 이미 남긴 사유(상태 이력·미반환 기록)는 글자 그대로 남는다.
+  const [cancelReasons, setCancelReasons] = useState<string[]>([])
+  const [newCancelReason, setNewCancelReason] = useState('')
+  const [checkoutReasons, setCheckoutReasons] = useState<string[]>([])
+  const [newCheckoutReason, setNewCheckoutReason] = useState('')
+  const [withholdReasons, setWithholdReasons] = useState<string[]>([])
+  const [newWithholdReason, setNewWithholdReason] = useState('')
+  useEffect(() => {
+    getCancelReasons().then(setCancelReasons).catch(console.error)
+    getCheckoutReasons().then(setCheckoutReasons).catch(console.error)
+    getWithholdReasons().then(setWithholdReasons).catch(console.error)
+  }, [])
+
+  const handleAddCancelReason = async () => {
+    const v = normalizeOptionName('cancelReasons', newCancelReason); if (!v) return
+    // '기타'·'기타 · …'·시스템 라벨은 서버와 같은 문으로 먼저 막는다(lib/optionLists reservedOptionNameError).
+    const reserved = reservedOptionNameError('cancelReasons', v); if (reserved) { pushToast('error', reserved); return }
+    const r = await addCancelReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setCancelReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewCancelReason('')
+  }
+  const handleDeleteCancelReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 상태 이력의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteCancelReason(name)
+    setCancelReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderCancelReasons = async (items: string[]) => {
+    setCancelReasons(items)
+    await reorderOptions('cancelReasons', items)
+  }
+  const handleRenameCancelReason = (oldVal: string, newVal: string) =>
+    runRename('cancelReasons', oldVal, newVal, setCancelReasons)
+  const handleResetCancelReasons = async () => {
+    if (!(await confirmDialog({ title: `입실 취소 사유를 기본값(${OPTION_LIST_DEFAULTS.cancelReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('cancelReasons')
+    setCancelReasons(r.items)
+    return r.before
+  }
+
+  const handleAddCheckoutReason = async () => {
+    const v = normalizeOptionName('checkoutReasons', newCheckoutReason); if (!v) return
+    const reserved = reservedOptionNameError('checkoutReasons', v); if (reserved) { pushToast('error', reserved); return }
+    const r = await addCheckoutReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setCheckoutReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewCheckoutReason('')
+  }
+  const handleDeleteCheckoutReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 상태 이력의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteCheckoutReason(name)
+    setCheckoutReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderCheckoutReasons = async (items: string[]) => {
+    setCheckoutReasons(items)
+    await reorderOptions('checkoutReasons', items)
+  }
+  const handleRenameCheckoutReason = (oldVal: string, newVal: string) =>
+    runRename('checkoutReasons', oldVal, newVal, setCheckoutReasons)
+  const handleResetCheckoutReasons = async () => {
+    // 기본값이 열 가지라 제목에 다 적으면 확인창이 길어진다. 직업 초기화와 같은 꼴로 묻는다.
+    if (!(await confirmDialog({ title: '퇴실 사유를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('checkoutReasons')
+    setCheckoutReasons(r.items)
+    return r.before
+  }
+
+  const handleAddWithholdReason = async () => {
+    const v = normalizeOptionName('withholdReasons', newWithholdReason); if (!v) return
+    const reserved = reservedOptionNameError('withholdReasons', v); if (reserved) { pushToast('error', reserved); return }
+    const r = await addWithholdReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setWithholdReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewWithholdReason('')
+  }
+  const handleDeleteWithholdReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 미반환 기록의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteWithholdReason(name)
+    setWithholdReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderWithholdReasons = async (items: string[]) => {
+    setWithholdReasons(items)
+    await reorderOptions('withholdReasons', items)
+  }
+  const handleRenameWithholdReason = (oldVal: string, newVal: string) =>
+    runRename('withholdReasons', oldVal, newVal, setWithholdReasons)
+  const handleResetWithholdReasons = async () => {
+    if (!(await confirmDialog({ title: `보증금 미반환 사유를 기본값(${OPTION_LIST_DEFAULTS.withholdReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('withholdReasons')
+    setWithholdReasons(r.items)
     return r.before
   }
 
@@ -1468,6 +1564,55 @@ export default function SettingsForm({
             onRename={handleRenameDiscountReason}
             onReset={handleResetDiscountReasons}
             placeholder="예: 입실자 소개, 장기 계약…"
+          />
+          {/* 사유 목록 셋(2026-10-22). 할인 사유와 같은 '고르는 사유' 갈래라 그 옆에 둔다. 상태가 흐르는 차례(입실 취소 · 퇴실 · 퇴실 정산)대로다. */}
+          <OptionSection
+            title="입실 취소 사유 관리"
+            description="입실 취소로 바꿀 때 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={cancelReasons}
+            field="cancelReasons"
+            setItems={setCancelReasons}
+            getLabel={v => v}
+            newValue={newCancelReason}
+            onNewValueChange={setNewCancelReason}
+            onAdd={handleAddCancelReason}
+            onDelete={handleDeleteCancelReason}
+            onReorder={handleReorderCancelReasons}
+            onRename={handleRenameCancelReason}
+            onReset={handleResetCancelReasons}
+            placeholder="예: 공실 없음, 선예약자 계약…"
+          />
+          <OptionSection
+            title="퇴실 사유 관리"
+            description="퇴실 예정이나 퇴실로 바꿀 때 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={checkoutReasons}
+            field="checkoutReasons"
+            setItems={setCheckoutReasons}
+            getLabel={v => v}
+            newValue={newCheckoutReason}
+            onNewValueChange={setNewCheckoutReason}
+            onAdd={handleAddCheckoutReason}
+            onDelete={handleDeleteCheckoutReason}
+            onReorder={handleReorderCheckoutReasons}
+            onRename={handleRenameCheckoutReason}
+            onReset={handleResetCheckoutReasons}
+            placeholder="예: 동반 거주, 군 입대…"
+          />
+          <OptionSection
+            title="보증금 미반환 사유 관리"
+            description="퇴실 정산에서 보증금 일부를 돌려주지 않을 때 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={withholdReasons}
+            field="withholdReasons"
+            setItems={setWithholdReasons}
+            getLabel={v => v}
+            newValue={newWithholdReason}
+            onNewValueChange={setNewWithholdReason}
+            onAdd={handleAddWithholdReason}
+            onDelete={handleDeleteWithholdReason}
+            onReorder={handleReorderWithholdReasons}
+            onRename={handleRenameWithholdReason}
+            onReset={handleResetWithholdReasons}
+            placeholder="예: 열쇠 분실, 시설 파손…"
           />
           <OptionSection
             title="부가수익 카테고리 관리"

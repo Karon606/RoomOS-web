@@ -9,7 +9,9 @@ import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
-import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
+import { reasonFieldForStatus, reasonLabel } from '@/lib/statusReasons'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { WISH_LEAD_STATUSES, LEAD_STAGE_LABEL, inquiryStageOf, type LeadStage } from '@/lib/wishMatch'
 import { isSameDayTurnover, plannedStayDenial } from '@/lib/roomAssignment'
@@ -79,7 +81,7 @@ import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/li
 import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
 import { DepositStatusPanel } from '@/components/entity-modal/widgets/DepositStatusPanel'
-import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
+import { CLEANING_WITHHOLD_REASON, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
@@ -742,6 +744,8 @@ export default function TenantClient({
     all[all.length - 1]?.focus()
   }
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string; compositionLabel: string | null } | null>(null)
+  // 미반환 사유 목록은 영업장 설정에서 읽는다(2026-10-22). 환불창이 열려 있을 때만 읽는다.
+  const withholdOptions = useReasonOptions(depositRefundModal ? 'withholdReasons' : null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   // '나중에 반환' — 아무것도 기록하지 않고 홈 알림(보증금 반환 대기)에 남긴다(운영자 승인 2026-09-01).
   const [depoLater, setDepoLater] = useState(false)
@@ -798,7 +802,8 @@ export default function TenantClient({
   const [depoWithholdReason, setDepoWithholdReason] = useState('')
   // 입실 때 받은 청소비 — 0 초과면 퇴실 공제를 하지 않는다(계약서 §2-4 either/or)
   const [depoCleaningPaid, setDepoCleaningPaid] = useState(0)
-  const [depoWithholdEtc, setDepoWithholdEtc] = useState('')
+  // 미반환 사유는 저장 글자다('기타 · 글', lib/reasonLists). '기타' 로 적은 글을 목록에 넣을지는 따로 쥔다(2026-10-22).
+  const [depoWithholdAdd, setDepoWithholdAdd] = useState(false)
   const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   // 수납 모달 청구·잔액 정본 — 클라 재계산(할인·인상 미반영) 대신 서버 settlement 사용(신고 50a2a69b)
@@ -1239,8 +1244,8 @@ export default function TenantClient({
     setDepoLater(false)
     setDepoCleaningPaid(cleaningPaid)
     // 청소비만 떼는 정상 퇴실은 답이 정해져 있다 — 프리셀렉트(변경 가능)
-    setDepoWithholdReason(deductible > 0 ? '청소비' : '')
-    setDepoWithholdEtc('')
+    setDepoWithholdReason(deductible > 0 ? CLEANING_WITHHOLD_REASON : '')
+    setDepoWithholdAdd(false)
     setDepositRefundDirty(false)
     // 이용료 환불 미리보기 — 그 기간 선납이 있으면 통합 환불 창에 이용료 섹션 표시.
     //
@@ -1457,7 +1462,7 @@ export default function TenantClient({
         // 퇴실에서 당연히 빠지고 고를 일이 아니다(형제 두 화면과 같은 축, 2026-08-30).
         // '나중에 반환'은 결정 자체를 미룬 것이라 사유도 확인창도 기록도 없다.
         const withheld = Math.max(0, depositAmount - depositReturnAmt)
-        if (!depoLater && withheld > cleaningFeeDeductible(cleaningFee, depoCleaningPaid) && !buildWithholdReason(depoWithholdReason, depoWithholdEtc)) {
+        if (!depoLater && withheld > cleaningFeeDeductible(cleaningFee, depoCleaningPaid) && !depoWithholdReason.trim()) {
           setError('반환하지 않는 사유를 선택해 주세요.'); pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return
         }
         if (!depoLater && depositReturnAmt === 0 && depositAmount > 0) {
@@ -1468,7 +1473,7 @@ export default function TenantClient({
           if (!(await confirmDialog({
             title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
             // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
-            message: `${fmtWon(depositAmount)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depositAmount, cleaningFeeDeductible(cleaningFee, depoCleaningPaid), fmtWon)} 기록됩니다.\n사유: ${buildWithholdReason(depoWithholdReason, depoWithholdEtc)}.`,
+            message: `${fmtWon(depositAmount)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depositAmount, cleaningFeeDeductible(cleaningFee, depoCleaningPaid), fmtWon)} 기록됩니다.\n사유: ${depoWithholdReason.trim()}.`,
             level: 'caution', confirmLabel: '전액 미반환으로 처리',
           }))) return
         }
@@ -1491,7 +1496,7 @@ export default function TenantClient({
           returnedAmount: depositReturnAmt,
           date: depositReturnDate,
           tenantName,
-          ...(buildWithholdReason(depoWithholdReason, depoWithholdEtc) ? { reason: buildWithholdReason(depoWithholdReason, depoWithholdEtc) } : {}),
+          ...(depoWithholdReason.trim() ? { reason: depoWithholdReason, addReasonToList: depoWithholdAdd } : {}),
         })
         if (!refundRes.ok) { setError(refundRes.error); pushToast('error', refundRes.error); return }
         setDepositRefundModal(null)
@@ -2175,16 +2180,10 @@ export default function TenantClient({
                     {!depoLater && dep - depositReturnAmt > cleaningFeeDeductible(fee, depoCleaningPaid) && (
                       <div className="space-y-1.5 pt-0.5">
                         <label className="text-xs font-medium text-[var(--warm-mid)] block">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
-                        <select value={depoWithholdReason} onChange={e => { setDepoWithholdReason(e.target.value); setDepositRefundDirty(true) }}
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                          <option value="">선택하세요</option>
-                          {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                        {depoWithholdReason === '기타' && (
-                          <input type="text" value={depoWithholdEtc} onChange={e => { setDepoWithholdEtc(e.target.value); setDepositRefundDirty(true) }}
-                            placeholder="사유를 직접 입력하세요"
-                            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                        )}
+                        <CategorySelect addMode="ask" value={depoWithholdReason} onChange={v => { setDepoWithholdReason(v); setDepositRefundDirty(true) }}
+                          options={withholdOptions} emptyLabel="선택하세요" placeholder="사유를 직접 입력하세요"
+                          addToList={depoWithholdAdd} onAddToListChange={setDepoWithholdAdd}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                       </div>
                     )}
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">반환하지 않은 몫은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFeeDeductible(fee, depoCleaningPaid), fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
@@ -3783,10 +3782,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 문의자를 입주자로 등록하게 만들었다(운영자 지시 2026-08-12). 수정 폼은 기존 상태 유지.
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'WAITING_TOUR')
   // 수정 폼에서 입실 취소로 바꿀 때도 사유를 받는다 — 상태전환 미니폼과 같은 선택지(운영자 지시 2026-07-27)
+  // 저장 글자다('기타 · 글', lib/reasonLists). '기타' 로 적은 글을 목록에 넣을지는 따로 쥔다(2026-10-22).
   const [cancelReasonVal, setCancelReasonVal] = useState('')
-  const [cancelReasonEtc, setCancelReasonEtc] = useState('')
+  const [cancelReasonAdd, setCancelReasonAdd] = useState(false)
   // 퇴실 예정에서 퇴실 처리로 바꿀 때 이어받은 사유. 아직 그 값 그대로면 출처 캡션을 단다.
   const [cancelReasonPrefill, setCancelReasonPrefill] = useState<string | null>(null)
+  // 이 저장이 상태를 바꾸고 그 전이가 사유를 받을 때만 그 목록(영업장 설정)을 읽는다.
+  const statusReasonField = statusVal !== lease?.status ? reasonFieldForStatus(statusVal) : null
+  const statusReasonOptions = useReasonOptions(statusReasonField)
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(해외 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   // 연락처 세 칸의 **지금 입력값**. 저장값이 아니라 이 값으로 아래 안내를 판정한다 —
@@ -4470,10 +4473,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   const inherited = v === 'CHECKED_OUT' && lease?.status === 'CHECKOUT_PENDING'
                     ? inheritableCheckoutReason(lease.statusLogs ?? [])
                     : null
-                  if (inherited) {
-                    const pre = parseReason(inherited)
-                    setCancelReasonVal(pre.selected); setCancelReasonEtc(pre.etcText)
-                  }
+                  if (inherited) setCancelReasonVal(inherited)
                   setCancelReasonPrefill(inherited)
                 }
               }}
@@ -4513,23 +4513,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 어떤 전이에서 받을지는 statusReasons 정본이 정한다. 입실 취소에 더해 퇴실 계열도 받는다
                 (운영자 오더 2026-08-03). 폼과 미니폼이 각자 조건을 들면 또 갈린다. */}
             {(() => {
-              const opts = statusVal !== lease?.status ? reasonsForStatus(statusVal) : null
-              if (!opts) return null
+              if (!statusReasonField) return null
               return (
                 <div className="mt-2 space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(statusVal)} <span className="font-normal opacity-60">(선택)</span></label>
-                  <select value={cancelReasonVal} onChange={e => setCancelReasonVal(e.target.value)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    <option value="">기록 안 함</option>
-                    {opts.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  {cancelReasonVal === '기타' && (
-                    <input type="text" value={cancelReasonEtc} onChange={e => setCancelReasonEtc(e.target.value)}
-                      placeholder="사유를 직접 입력하세요"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                  )}
-                  <input type="hidden" name="cancelReason" value={buildReason(cancelReasonVal, cancelReasonEtc)} />
-                  {cancelReasonPrefill && buildReason(cancelReasonVal, cancelReasonEtc) === cancelReasonPrefill && (
+                  {/* 저장 칸은 cancelReason(저장 글자)·cancelReasonAddToList('1'·'0'). 서버가 영업장 목록으로 다시 잰다. */}
+                  <CategorySelect addMode="ask" name="cancelReason" value={cancelReasonVal} onChange={setCancelReasonVal}
+                    options={statusReasonOptions} emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+                    addToList={cancelReasonAdd} onAddToListChange={setCancelReasonAdd}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  {cancelReasonPrefill && cancelReasonVal === cancelReasonPrefill && (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
                   )}
                 </div>

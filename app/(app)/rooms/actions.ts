@@ -25,7 +25,8 @@ import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { reasonsForStatus } from '@/lib/statusReasons'
+import { reasonFieldForStatus } from '@/lib/statusReasons'
+import { reasonForSave } from '@/lib/reasonListSave'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { cycleDayOf } from '@/lib/dueDay'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate } from '@/lib/billing'
@@ -4514,7 +4515,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
   // 사유를 아직 안 적은 행이 여럿이면 '어디에 적어야 하나'가 화면에 안 나온다.
   // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 입주자가 11명이다.
   // 기록 진입은 **가장 최근 종료 전이 한 행에만** 연다. 나머지는 이미 적힌 것만 읽고 고친다.
-  const latestEndId = rows.find(r => !r.deletedAt && r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus))?.id ?? null
+  const latestEndId = rows.find(r => !r.deletedAt && r.fromStatus !== r.toStatus && reasonFieldForStatus(r.toStatus))?.id ?? null
   return {
     canEdit: canEdit(role),
     items: rows.map(r => {
@@ -4524,7 +4525,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
       // 사유를 받는 전이만 고칠 수 있다(입실 취소·퇴실). '단기 연장' 같은 시스템 라벨은 손대지 않는다 —
       // 이 구분선이 있어야 '이력을 마음대로 고치는 앱'이 되지 않는다.
       // 무효 처리된 행은 사유 편집도 닫는다 — 없던 일로 한 행의 주석을 고칠 이유가 없다.
-      const editable = !r.deletedAt && r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus) !== null
+      const editable = !r.deletedAt && r.fromStatus !== r.toStatus && reasonFieldForStatus(r.toStatus) !== null
       return {
         id: r.id,
         fromStatus: r.fromStatus,
@@ -4555,8 +4556,12 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
 //   reason 은 운영자가 붙인 주석이다. 주석 교정은 이력 위조가 아니다.
 // 그래서 사유를 받는 전이(입실 취소·퇴실)의 로그만 열어준다.
 // 이전 값을 돌려줘서 호출부가 적용취소를 걸 수 있게 한다(§16).
-export async function updateStatusLogReason(logId: string, reason: string | null): Promise<
-  { ok: true; prev: string | null } | { ok: false; error: string }
+//
+// 화면이 보낸 글자는 영업장 목록으로 다시 잰다(lib/reasonLists, 2026-10-22). 지금 값 그대로면(목록에서 뺀 항목·옛 이름)
+// 그대로 두고, 목록 밖 글은 '기타 · 글' 로, 체크하면 목록에 더한다. 적용취소(restore)는 이 함수가 돌려준 이전 값을
+// 되돌려 쓰는 것이라 다시 재지 않는다. 다시 재면 목록에서 그사이 뺀 이전 값에 '기타 · ' 가 붙어 되돌리기가 거짓이 된다.
+export async function updateStatusLogReason(logId: string, reason: string | null, opts: { addToList?: boolean; restore?: boolean } = {}): Promise<
+  { ok: true; prev: string | null; reason: string | null } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -4567,13 +4572,18 @@ export async function updateStatusLogReason(logId: string, reason: string | null
     })
     if (!row) return { ok: false, error: '이력을 찾을 수 없습니다.' }
     if (row.deletedAt) return { ok: false, error: '무효 처리된 이력입니다. 적용취소한 뒤 수정하세요.' }
-    if (row.fromStatus === row.toStatus || !reasonsForStatus(row.toStatus)) {
+    const field = reasonFieldForStatus(row.toStatus)
+    if (row.fromStatus === row.toStatus || !field) {
       return { ok: false, error: '이 이력은 사유를 기록하는 항목이 아닙니다.' }
     }
-    const next = (reason ?? '').trim() || null
+    const save = opts.restore
+      ? { reason: (reason ?? '').trim() || null, commit: async () => {} }
+      : await reasonForSave(propertyId, field, reason, { addToList: opts.addToList === true, prev: row.reason })
+    const next = save.reason
     await prisma.tenantStatusLog.update({ where: { id: logId }, data: { reason: next } })
+    await save.commit()
     revalidatePath('/tenants')
-    return { ok: true, prev: row.reason }
+    return { ok: true, prev: row.reason, reason: next }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
