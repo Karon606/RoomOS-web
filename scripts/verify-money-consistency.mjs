@@ -751,7 +751,8 @@ if (!/<TenantStatusHistory/.test(tenantBody)) {
 for (const [file, src] of [['TenantStatusTransitions', readFileSync('components/entity-modal/widgets/TenantStatusTransitions.tsx', 'utf8')],
                            ['TenantClient', tenantClient],
                            ['tenants/actions', tenantsActions]]) {
-  if (!/reasonsForStatus\(/.test(src)) {
+  // 2026-10-22 사유 목록이 영업장 설정으로 옮겨 가며 정본 판정이 reasonFieldForStatus(어느 목록을 받는가)로 바뀌었다.
+  if (!/reasonFieldForStatus\(/.test(src)) {
     violations.push(`[소스] ${file} 이 사유 판정을 statusReasons 정본으로 하지 않는다 — 받는 곳과 고치는 곳이 갈린다`)
   }
 }
