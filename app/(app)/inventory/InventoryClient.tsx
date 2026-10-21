@@ -225,6 +225,12 @@ const NO_MOVE_LABEL = '옮김 없음'
 function canNoMove(isHubRow: boolean, beforeStr: string, afterStr: string): boolean {
   return !isHubRow && beforeStr !== '' && afterStr === '' && Number.isFinite(Number(beforeStr))
 }
+// '옮김 없음' 상태(채운 후 글자 = 채우기 전 글자)에서 '채우기 전'을 고치면 '채운 후'도 따라간다(독립 검수 2026-10-21).
+// 안 따라가면 복사본이 옛 값으로 남아 12.75 → 10 으로 고친 순간 채움 2.75 가 생겨 창고에서 빠진다(내리면 유령 채움, 올리면 잔량이 옛 값).
+// 두 화면 비창고 '채우기 전' onChange 가 이 함수 하나로 다음 '채운 후' 를 정한다. 다른 상태에서는 '채운 후' 를 건드리지 않는다.
+function followNoMove(prevBefore: string, prevAfter: string, nextBefore: string): string {
+  return prevBefore !== '' && prevAfter === prevBefore ? nextBefore : prevAfter
+}
 // 채움 수량 강조(2026-10-21 운영자 "새로 추가하는 아이템의 수가 빨간색으로 표시되어 있어서 … 눈에 잘 들어왔는데 가독성이
 // 떨어졌어"로 복원). 2026-10-12 2단계 전 운영 빌드는 채움 수량 '+N' 을 테라코타로 그렸는데 2단계가 --warm-dark 로 눌러 어떤 품목을
 // 몇 개 가져다 둘지가 눈에 안 들어왔다. 숫자만 강조하고 낱말 라벨(이번 채움·저장된 채움·채움 합계)은 --warm-muted·--warm-mid
@@ -4896,9 +4902,10 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                         창고 표시는 §22 정본 Badge 다 — 이 행은 **품목 창고**(hubLocationId 우선)라 '창고',
                         패널 그룹 머리는 영업장 기본 창고(StorageLocation.isHub)라 '기본 창고' 다(2026-10-12 낱말 통일). */}
                     <div className={ROW_HEAD_CLS}>
-                      {g.parent !== '' && <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
+                      {/* 칸 이름은 폭 0 에서 늘어난다(flex-[1_1_0%]) — 내용 폭 기준이면 긴 이름('상단 왼쪽 안쪽 칸')이 묶음을 밀어
+                          내용 기준으로 꺾여, 꺾임이 컨테이너 쿼리 밖에서 생기고 상태마다 줄 수가 바뀌었다(독립 검수 2026-10-21). */}
+                      {g.parent !== '' && <p className="min-w-0 flex-[1_1_0%] truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                       {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
-                      <span className="flex-1" />
                       <div className={ROW_HEAD_CLUSTER_CLS}>
                       {prevQty !== undefined && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prevQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
                       <div className={ROW_HEAD_ACT_CLS}>
@@ -4984,7 +4991,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                             <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
                             <QtyField unit={stockUnit} aria-label={`${loc.pathName} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' && !movePending ? '0' : undefined}
                               value={beforeStr}
-                              onChange={e => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })) }} />
+                              onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); markEntered(loc.id); const na = followNoMove(beforeStr, afterStr, v); if (na !== afterStr) setAfterQtys(p => ({ ...p, [loc.id]: na })); setBeforeQtys(p => ({ ...p, [loc.id]: v })) }} />
                           </div>
                           <div>
                             <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채운 후</p>
@@ -6546,7 +6553,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                   <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채우기 전</p>
                                   <QtyField unit={stockUnit} aria-label={`${node.pathName} ${r.label} 채우기 전`} placeholder={afterStr !== '' && beforeStr === '' && !movePending ? '0' : undefined}
                                     value={beforeStr}
-                                    onChange={e => setBeforeQtys(p => ({ ...p, [k]: e.target.value.replace(/[^0-9.]/g, '') }))} />
+                                    onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); const na = followNoMove(beforeStr, afterStr, v); if (na !== afterStr) setAfterQtys(p => ({ ...p, [k]: na })); setBeforeQtys(p => ({ ...p, [k]: v })) }} />
                                 </div>
                                 <div>
                                   <p className="mb-1 text-xs font-medium text-[var(--warm-mid)]">채운 후</p>

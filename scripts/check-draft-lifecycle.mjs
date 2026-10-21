@@ -31,6 +31,7 @@
 //   ⑫ (2026-10-21 운영자 요청) '옮김 없음' 복원 — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로. 한 상수·한 판정
 //      함수(canNoMove 진리표), 두 화면 같은 행 머리 자리.
 //   ⑬ (2026-10-21 운영자 요청) 채움 수량은 --tc-text — 한 상수 FILL_QTY_CLS, 점검 두 화면·이력 수정 폼(적는 화면), 라벨은 강조 안 함, 읽기 전용 이력 카드는 제외.
+//   ⑮ (2026-10-21 독립 검수) '옮김 없음' 뒤 '채우기 전' 수정에 '채운 후'가 따라감(followNoMove 진리표), FILL_QTY_CLS 7곳 봉인.
 //   ⑭ (2026-10-21) 행 머리 오른쪽 묶음이 줄 폭 14rem 아래에서 늘 다음 줄 끝으로 내려간다(컨테이너 쿼리, 두 화면 한 벌).
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
@@ -980,7 +981,8 @@ need("'옮김 없음' 이 두 화면 모두 canNoMove(rowIsHub, beforeStr, after
 // 자리 — '그대로' 와 같은 행 머리 줄(min-h-7, 버튼 높이 28px 고정)이라 버튼이 서고 사라질 때 입력칸이 뜨지 않는다.
 need("'옮김 없음' 이 '그대로' 와 같은 행 머리 줄에 선다(두 화면)",
   /canNoMove/.test(headCluster(itemForm)) && /canNoMove/.test(headCluster(locPanel)) &&
-  /<div className=\{ROW_HEAD_CLS\}>\s*\n\s*\{g\.parent !== ''/.test(itemForm) &&
+  /<div className=\{ROW_HEAD_CLS\}>[\s\S]{0,400}?\{g\.parent !== '' && <p className="min-w-0 flex-\[1_1_0%\] truncate/.test(itemForm) &&
+  !/<span className="flex-1" \/>\s*\n\s*<div className=\{ROW_HEAD_CLUSTER_CLS\}>/.test(itemForm) &&
   /<div className=\{ROW_HEAD_CLS\}>\s*\n\s*<p className="min-w-0 flex-1 truncate text-\[0\.65625rem\]/.test(locPanel),
   '입력칸 아래 줄로 내리거나 머리 줄 min-h 를 빼면 버튼이 사라질 때 칸이 손가락 밑에서 뜬다')
 
@@ -1020,6 +1022,34 @@ for (const [name, src] of [['아이템별 폼', itemForm], ['위치 패널', loc
     '하나라도 묶음 밖에 두면 좁은 줄에서 그것만 첫 줄에 남아 넘친다')
 }
 need('들여쓰기는 그대로다(LOC_INDENT_PX 12)', /const LOC_INDENT_PX = 12 /.test(client))
+
+// ── ⑮ 독립 검수 2026-10-21 ──────
+// (1) '옮김 없음' 뒤 '채우기 전'을 고치면 '채운 후' 도 따라간다. 복사본이 옛 값으로 남으면 12.75 → 10 에서 채움 2.75 가 창고에서 빠진다.
+const followSrc = (client.match(/function followNoMove\(prevBefore: string, prevAfter: string, nextBefore: string\): string \{\s*\n\s*return ([^\n]+)\n\}/) ?? [])[1] ?? ''
+need("'옮김 없음' 따라가기 함수가 있다", followSrc !== '')
+if (followSrc) {
+  // eslint-disable-next-line no-new-func
+  const f = new Function('prevBefore', 'prevAfter', 'nextBefore', `return ${followSrc.replace(/;$/, '')}`)
+  for (const [pb, pa, nb, want] of [
+    ['12.75', '12.75', '10', '10'],   // 검수 재현 — 내리면 따라간다
+    ['12.75', '12.75', '15', '15'],   // 올려도 따라간다
+    ['12.75', '12.75', '', ''],       // 비우면 같이 빈다(행 통째 이월)
+    ['5', '7', '6', '7'],             // 직접 적은 채운 후는 안 건드린다
+    ['', '', '3', ''],                // 빈 행에서 처음 적기 — 채운 후는 비운 채
+    ['', '7', '3', '7'],              // 채운 후만 적은 행(미결) — 안 건드린다
+    ['5', '', '6', ''],               // 옮김 없음 전 — 안 건드린다
+  ]) need(`따라가기 진리표 (전 '${pb}', 후 '${pa}', 새 전 '${nb}') → '${want}'`, f(pb, pa, nb) === want)
+}
+need("두 화면 비창고 '채우기 전' 이 followNoMove 로 '채운 후' 를 따라가게 한다",
+  /aria-label=\{`\$\{loc\.pathName\} 채우기 전`\}[^\n]*\n[^\n]*\n\s*onChange=\{e => \{ const v = e\.target\.value\.replace\(\/\[\^0-9\.\]\/g, ''\); markEntered\(loc\.id\); const na = followNoMove\(beforeStr, afterStr, v\); if \(na !== afterStr\) setAfterQtys\(p => \(\{ \.\.\.p, \[loc\.id\]: na \}\)\); setBeforeQtys/.test(itemForm) &&
+  /aria-label=\{`\$\{node\.pathName\} \$\{r\.label\} 채우기 전`\}[^\n]*\n[^\n]*\n\s*onChange=\{e => \{ const v = e\.target\.value\.replace\(\/\[\^0-9\.\]\/g, ''\); const na = followNoMove\(beforeStr, afterStr, v\); if \(na !== afterStr\) setAfterQtys\(p => \(\{ \.\.\.p, \[k\]: na \}\)\); setBeforeQtys/.test(locPanel),
+  "한 화면만 따라가면 다른 화면에서 고친 '채우기 전' 이 옛 복사본과 갈려 유령 채움이 창고에서 빠진다")
+// (3) 강조는 허용한 7곳에만. 저장값·잔량 같은 다른 수에 번지면 '+N' 이 다시 눈에 안 들어온다.
+need('FILL_QTY_CLS 는 정의 1 + 채움 7곳에만 쓴다(봉인)',
+  (client.match(/FILL_QTY_CLS/g) ?? []).length === 8 &&
+  (client.match(/font-semibold tabular-nums text-\[var\(--tc-text\)\]/g) ?? []).length === 1 &&
+  !/(저장값|잔량|남음|차감 후)[^\n]{0,40}FILL_QTY_CLS/.test(client),
+  '저장값·잔량에 강조를 쓰면 채움 수량만 붉다는 규칙이 무너진다. 같은 글자를 상수 밖에서 다시 쓰면 봉인을 우회한다')
 // 수제 '+N' 강조가 다른 색으로 남지 않는다 — '+{' 로 시작하는 채움 수 strong 은 전부 이 상수다. 이력 수정 폼 행 머리까지 세면 7곳.
 need("'+N' 채움 수 strong 이 전부 FILL_QTY_CLS 다(7곳)",
   (client.match(/<strong className=\{FILL_QTY_CLS\}>\+\{/g) ?? []).length === 7 &&
