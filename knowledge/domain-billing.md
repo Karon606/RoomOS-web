@@ -246,9 +246,15 @@
   (513호 조정 행 isPaid=false 인데 10월은 완납). 그 달 완납 정본식과 같은 근거로 잰다.
   남은 조정분 = min(max(0, 청구 − 그 달 전체 합(조정 행 포함)), 그 달 추가로 받을 금액 합). 양도인 행·인수 전 입금은 귀속월 선택지
   (`getTargetMonthOptions`)처럼 뺀다. 한 달에 조정 행이 여럿이면 같은 달 값. 정본 `dueDayAdjustMonthStatus`·`dueDayAdjustMonthSums`,
-  서버 `getPaymentsByLease` 가 조정 행마다 `adjustStatus` 를 싣는다(조정 행 있는 달만 `serverBillForMonth`, 없으면 쿼리 0).
-  칩: 0 = 수납 완료(success) · 다 남음 + 납부일 안 지남(당일·미래 달 포함) = 수납 전(neutral) · 다 남음 + 지남 = 미수납(warning) ·
-  일부 = 부족 N원(warning). 돌려줄 금액은 칩 없음. 돈 계산은 그대로다(표시만).
+  서버 `getPaymentsByLease` 가 조정 행마다 `adjustStatus` 를 싣는다(조정 행이 없으면 쿼리 0).
+  **청구·기한은 호실 목록과 같은 함수다**(`lib/roomMonth`, 독립 검수 2026-10-21 '통일'). 목록 `getRoomPaymentStatus` 의 지역 함수였던
+  `effDueDateForMonth`(다음 달에 걸린 늦은 임시조정 유예 포함)·인수월 양도인 처리(`acqMonthStateOf`)·락인(`lockedExpectedMapOf`)·
+  그 달 청구와 기한 도래(`roomMonthBill`)를 식 그대로 옮겨 목록과 칩이 같이 부른다. 그래서 같은 달에 목록이 완납(퇴실 무청구·양도인 달·
+  인수 선납 달 포함)이면 칩도 수납 완료이고, 기한은 **납부일 당일부터 옴**이다(목록 미납 묶음과 같다). 진리표에 목록·칩 일치 축이 있다.
+  dueDay 29~31 이 짧은 달에 걸리는 날짜 차이(목록은 그 달 말일로 접는다)는 종전 그대로다.
+  칩: 0 = 수납 완료(success) · 다 남음 + 기한 안 옴(미래 달 포함) = 수납 전(형제 월분 칩 톤, neutral 틴트는 --canvas 위 3.56:1 이라 안 쓴다) ·
+  다 남음 + 기한 옴 = 미수납(warning) · 일부 = 부족 N원(warning). 돌려줄 금액은 칩 없음. 돈 계산은 그대로다(표시만).
+  표시 메모에서 바꾸기 전 납부일이 '?' 인 행은 앞 조각을 빼고 '20일로 변경' 으로 보인다.
 - 카드 모양은 형제 수납 행과 같은 두 줄이다. 줄1 제목(--warm-mid text-xs) + 부호 없는 금액(--warm-dark), 줄2 귀속월 칩(형제 월분 칩 상수
   `paymentRowChip` 공유) + 상태 칩 + 표시 메모 `9일 → 20일 변경, 일할 128,333원, 협의 130,000원`(`dueDayAdjustDisplayMemo`, 말일은 '말일').
   방향은 제목이 말하므로 금액에 −·+ 를 안 붙이고 의미색 글자도 안 쓴다.

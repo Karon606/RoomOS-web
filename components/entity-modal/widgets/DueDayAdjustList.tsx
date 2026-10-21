@@ -141,7 +141,7 @@ export function DueDayAdjustList({ records, canEdit, readOnly = false, editable,
           <div key={p.id} className="rounded-sm px-3 py-2.5 space-y-1.5 bg-[var(--canvas)]">
             {/* 줄1: 방향 제목 + 금액(우측, 안 줄임). 방향은 제목이 말하므로 금액에 부호를 붙이지 않는다. */}
             <div className="flex items-baseline justify-between gap-2">
-              <p className="text-xs text-[var(--warm-mid)]">{kind ? DUE_DAY_ADJUST_KIND_TEXT[kind] : '조정'}</p>
+              <p className="text-xs text-[var(--warm-mid)] break-keep">{kind ? DUE_DAY_ADJUST_KIND_TEXT[kind] : '조정'}</p>
               <span className="num text-sm font-semibold whitespace-nowrap text-[var(--warm-dark)]">
                 {fmtWon(Math.abs(p.actualAmount))}
               </span>

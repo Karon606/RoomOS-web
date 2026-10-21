@@ -9,7 +9,6 @@ export const PAY_CHIP_TONE = {
   /** 월분 칩 기본(지연·선납이 아닌 귀속월). */
   month: 'bg-[var(--cream-2)] text-[var(--warm-mid)]',
   success: 'bg-[var(--success-bg)] text-[var(--success-fg)]',
-  neutral: 'bg-[var(--neutral-bg)] text-[var(--neutral-fg)]',
   warning: 'bg-[var(--warning-bg)] text-[var(--warning-fg)]',
   info: 'bg-[var(--info-bg)] text-[var(--info-fg)]',
 } as const

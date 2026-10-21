@@ -44,6 +44,9 @@ import {
   dueDayAdjustMonthStatus, dueDayAdjustMonthSums,
   DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind, type DueDayAdjustStatus,
 } from '@/lib/dueDayAdjust'
+import {
+  acqMonthStateOf, effDueDateForMonth as effDueDateOf, lockedExpectedMapOf, originalDueDayOf, roomMonthBill, viewExpectedForMonth,
+} from '@/lib/roomMonth'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -366,24 +369,13 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const cutoffMonthStr = cutoffDate
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
-    const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
     // 인수월 양도인 자동 처리 판정용 dueDay — 정확성을 위해 다음 우선순위로 결정:
     //   1) changeDueDay 기록 memo의 원본 dueDay (영구 변경 후에도 인수 시점 dueDay 복원)
     //   2) lease.dueDay (override 무시 — override는 특정 월 임시 조정이므로 acqMonth와 무관할 수 있음)
     // 그리고 acqMonth dueDay가 cutoffDay 이전이어야 양도인이 가져갔다고 판정.
-    const baseDueDay = lease.dueDay?.includes('말') ? 31 : Number(lease.dueDay ?? '1')
-    let originalDueDay = baseDueDay
-    {
-      const allLeaseRecords_forMemo = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
-      const changeRecord = allLeaseRecords_forMemo
-        .filter(p => isDueDayAdjust(p.memo))
-        .sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())[0]
-      const parsed = dueDayBeforeChange(changeRecord?.memo)
-      if (parsed !== null) originalDueDay = parsed
-    }
-    const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && originalDueDay < cutoffDay)
-
+    // 식은 lib/roomMonth 정본(납입일 변경 조정 칩과 같은 함수, 2026-10-21).
     const allLeaseRecords = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
+    const originalDueDay = originalDueDayOf(lease.dueDay, allLeaseRecords)
     // 양도인 정산 월 — 양도인이 받은 달. 현 소유주 청구·미납에서 제외.
     const prevOwnerMonths = new Set(allLeaseRecords.filter(p => p.isPrevOwner).map(p => p.targetMonth))
     // 양도인 몫 (payDate < cutoffDate) + 양도인 정산 record — 현 원장 계산에서 제외
@@ -395,12 +387,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 월세가 바뀌어도(거주→비거주 등) 과거가 현재 요율로 소급 재계산되지 않게 함.
     // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount)를 그 달 청구액으로 본다
     // (일할·부분납 record는 더 작으므로 무시됨). record 없는 달만 현재 월세(할인 반영)로 fallback.
-    const lockedExpectedByMonth = new Map<string, number>()
-    for (const p of postCutoffRecords) {
-      if (p.isDeposit) continue
-      const cur = lockedExpectedByMonth.get(p.targetMonth) ?? 0
-      if (p.expectedAmount > cur) lockedExpectedByMonth.set(p.targetMonth, p.expectedAmount)
-    }
+    const lockedExpectedByMonth = lockedExpectedMapOf(postCutoffRecords)
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — dashboard·unpaid.ts·savePayment 와 동일
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
@@ -414,49 +401,16 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         lockedExpectedByMonth.get(ms) ?? null,
       )
 
-    // 인수월에 양도인이 받은 금액 / 사용자가 받은 금액 (acqMonthPrePaid 판정용)
-    const acqMonthPaidToPrev = cutoffDate
-      ? allLeaseRecords
-          .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < cutoffDate)
-          .reduce((s, p) => s + p.actualAmount, 0)
-      : 0
-    // 정규 월 청구만 — '일할 추가' 같이 expectedAmount가 한 달 이용료 미만인 record는
-    // 양도인 자동 처리 판정에서 제외 (그렇지 않으면 일할 record 하나가 4월 청구를 락인시켜 이월액이 잘못 발생)
-    const acqMonthCurrentOpRecords = postCutoffRecords
-      .filter(p => p.targetMonth === acqMonthStr && p.expectedAmount >= expected)
-      .reduce((s, p) => s + p.actualAmount, 0)
-    const acqMonthPrePaid =
-      acqMonthPaidToPrev >= expected ||
-      (acqMonthDueBeforeCutoff && acqMonthCurrentOpRecords === 0)
+    // 인수월 양도인 처리(acqMonthPrePaid). 정규 월 청구만 센다 — '일할 추가' 같이 expectedAmount가 한 달 이용료 미만인 record는
+    // 양도인 자동 처리 판정에서 제외 (그렇지 않으면 일할 record 하나가 4월 청구를 락인시켜 이월액이 잘못 발생). 식은 lib/roomMonth.
+    const acq = acqMonthStateOf({ allLeaseRecords, postCutoffRecords, cutoffDate, acqMonthStr, cutoffMonthStr, expected, originalDueDay })
+    const acqMonthDueBeforeCutoff = acq.dueBeforeCutoff
+    const acqMonthCurrentOpRecords = acq.currentOpRecords
+    const acqMonthPrePaid = acq.prePaid
 
-    // 그 월의 effectiveDueDay를 실제 Date로 환산 (override · 말일 · 'YYYY-MM-DD' 모두 처리)
-    const resolveDueRaw = (raw: string | null, ry: number, rm: number): Date | null => {
-      if (!raw) return null
-      if (raw.includes('-')) {
-        const [fy, fm, fd] = raw.split('-').map(Number)
-        return new Date(fy, fm - 1, fd, 23, 59, 59, 999)
-      }
-      const last = new Date(ry, rm, 0).getDate()
-      let day: number
-      if (raw.includes('말')) day = last
-      else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, last) }
-      return new Date(ry, rm - 1, day, 23, 59, 59, 999)
-    }
-    const effDueDateForMonth = (monthStr: string): Date | null => {
-      const [my, mn] = monthStr.split('-').map(Number)
-      // 그 월에 직접 지정된 override — 무조건 적용 (기존 동작)
-      if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return resolveDueRaw(l.overrideDueDay, my, mn)
-      // 납부일 유예: override 가 이 월보다 이후 월에 걸려 있고 그 유예 날짜가 원래 납부일보다 늦으면
-      // (= 이 미납 채무를 뒤로 미룬 것) 유예 날짜를 적용 (2026-06-02 사용자 보고: 5월 미납 6/1 유예).
-      // unpaid.ts / dashboard page.tsx 의 daysOverdueForMonth 와 동일 규칙 — 한쪽 수정 시 동기화.
-      if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth > monthStr) {
-        const [oy, om] = l.overrideDueDayMonth.split('-').map(Number)
-        const overrideDate = resolveDueRaw(l.overrideDueDay, oy, om)
-        const origDate = resolveDueRaw(lease.dueDay, my, mn)
-        if (overrideDate && (!origDate || overrideDate.getTime() >= origDate.getTime())) return overrideDate
-      }
-      return resolveDueRaw(lease.dueDay, my, mn)
-    }
+    // 그 월의 기한 — override · 말일 · 'YYYY-MM-DD' · 다음 달에 걸린 늦은 유예(2026-06-02). 식은 lib/roomMonth effDueDateForMonth
+    // (unpaid.ts / dashboard page.tsx 의 daysOverdueForMonth 와 동일 규칙 — 한쪽 수정 시 동기화).
+    const effDueDateForMonth = (monthStr: string): Date | null => effDueDateOf({ dueDay: lease.dueDay, overrideDueDay: l.overrideDueDay, overrideDueDayMonth: l.overrideDueDayMonth }, monthStr)
     const todayKstEnd = new Date(kst.year, kst.month - 1, kst.day, 23, 59, 59, 999)
 
     // viewMonth 격리 — 그 달의 정산만 (이월액은 별도)
@@ -500,7 +454,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       .reduce((s, p) => s + p.actualAmount, 0)
 
     // viewMonth 청구권 도래 여부 사전 계산 (skipViewMonthBilled에서 사용)
-    const _isPastView = (yyyy < kst.year) || (yyyy === kst.year && mm < kst.month)
     const _viewDueDate = effDueDateForMonth(targetMonth)
     // 선납 모델: dueDay = 다음 서비스 기간 시작점. expectedMoveOut ≤ dueDay이면
     // 그 dueDay분 서비스를 사용하지 않으므로 납부 의무 없음 (502호: 5/6 dueDay지만 5/6 이전 퇴실)
@@ -509,12 +462,14 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // viewMonth 청구액 — 락인(그 달 record expectedAmount) 반영. 월세 변경 직후에도
     // 수납 페이지·미수납 위젯·푸시가 같은 당월 청구액을 보게 한다.
     const viewBill = billForMonth(targetMonth)
+    // 그 달 청구·기한 도래 — lib/roomMonth roomMonthBill 정본(납입일 변경 조정 칩과 같은 함수, 2026-10-21).
+    const viewFacts = roomMonthBill({ ms: targetMonth, bill: billForMonth, acqMonthStr, acqMonthPrePaid, prevOwnerMonths, skipByMoveOut, dueDate: _viewDueDate, today: kst })
     // (인수월 양도인 처리 / 미래월 / 퇴실 무청구이면 0)
-    const skipViewMonthBilled = (targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || isFutureMonth || checkoutNoBilling
+    const skipViewMonthBilled = viewFacts.skipped || isFutureMonth
     const viewBilled = skipViewMonthBilled ? 0 : viewBill
     // 행 표시용 청구액 — 무청구 퇴실월·양도인 월·인수 선납월은 0(홈 예상 매출과 동일 규칙, 2026-07-07).
     // 미래월은 표시 목적상 청구 예정액을 그대로 보여준다(잔액 계산만 스킵).
-    const rowExpected = ((targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || checkoutNoBilling) ? 0 : viewBill
+    const rowExpected = viewFacts.billed
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
     // 선납 이월 — 귀속월과 입금월이 갈리는 몫(표시 전용). 위 쿼리 OR절이 payDate ≤ 말일 record 를
     // 이미 싣고 있어 추가 조회가 없다. 양도인 몫은 postCutoffRecords 에서 이미 빠졌다.
@@ -565,9 +520,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const pastBalance = receivedBeforeMonth - billedBefore
 
     // viewMonth 청구권 도래 여부 (과거 viewMonth는 자동 도래, 현재월은 effDueDay 검사)
-    const isPastView = _isPastView
     const viewDueDate = _viewDueDate
-    const viewMonthDuePassed = isPastView || (viewDueDate ? viewDueDate <= todayKstEnd : false)
+    const viewMonthDuePassed = viewFacts.duePassed
 
     // 표시 필드 (월 격리)
     const cumulativeBalance = viewBalance                              // 잔액 = viewMonth 정산
@@ -3912,37 +3866,61 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
 }
 
 // 납입일 변경 조정 행의 '받았는지' 상태를 달마다 잰다(표시 전용, 돈 계산 무변경, lib/dueDayAdjust dueDayAdjustMonthStatus 정본).
-// 추가로 받을 금액 조정 행이 있는 달만 본다. 없으면 빈 지도이고 쿼리가 0이다. 청구는 서버 권위 serverBillForMonth(조정 행 입력 포함).
+// 추가로 받을 금액 조정 행이 있는 달만 본다. 없으면 빈 지도이고 쿼리가 0이다.
+// 청구·기한은 호실 목록(getRoomPaymentStatus)과 같은 함수(lib/roomMonth)로 같은 입력을 만들어 잰다(2026-10-21 독립 검수 '통일').
+// 그래서 같은 달에 목록이 완납이면(퇴실 무청구·양도인 달·인수 선납 달 포함) 칩도 수납 완료이고, 기한은 늦은 임시조정 유예를 따르며
+// 납부일 당일부터 옴이다. 입력도 목록과 같다. 그 계약의 보증금 아닌 행 전부(목록 조회가 싣는 그 달·조정 행·양도인 행을 다 담는다).
 async function dueDayAdjustStatusByMonth(
   leaseTermId: string,
   propertyId: string,
   rows: readonly { targetMonth: string; actualAmount: number; memo: string | null }[],
-  cutoff: Date | null,
+  property: { acquisitionDate: Date | null; prevOwnerCutoffDate: Date | null } | null,
 ): Promise<Map<string, DueDayAdjustStatus | null>> {
   const out = new Map<string, DueDayAdjustStatus | null>()
   const months = [...new Set(rows.filter(r => isDueDayAdjust(r.memo) && r.actualAmount < 0).map(r => r.targetMonth))]
   if (months.length === 0) return out
-  const [monthRows, lease] = await Promise.all([
-    prisma.paymentRecord.findMany({
-      where: { leaseTermId, propertyId, targetMonth: { in: months }, isDeposit: false },
-      select: { targetMonth: true, actualAmount: true, memo: true, isPrevOwner: true, payDate: true },
-    }),
+  const [lease, allLeaseRecords] = await Promise.all([
     prisma.leaseTerm.findFirst({
       where: { id: leaseTermId, propertyId },
-      select: { rentAmount: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true },
+      select: {
+        id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true, isShortTerm: true,
+        moveInDate: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, expectedMoveOut: true, moveOutDate: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+        room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
+      },
+    }),
+    prisma.paymentRecord.findMany({
+      where: { leaseTermId, propertyId, isDeposit: false },
+      select: { targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, isPrevOwner: true, memo: true, seqNo: true },
     }),
   ])
   if (!lease) return out
-  const sums = dueDayAdjustMonthSums(monthRows, cutoff)
-  const today = kstYmdStr()
-  await Promise.all(months.map(async m => {
+  // 목록과 같은 기준점. 인수월은 인수일, 양도인 귀속 기준은 따로 둔 날(없으면 인수일)이다.
+  const acqDate = property?.acquisitionDate ? new Date(property.acquisitionDate) : null
+  const acqMonthStr = acqDate ? `${acqDate.getFullYear()}-${String(acqDate.getMonth() + 1).padStart(2, '0')}` : '2000-01'
+  const cutoffRaw = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
+  const cutoffMonthStr = cutoffDate ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}` : acqMonthStr
+  const prevOwnerMonths = new Set(allLeaseRecords.filter(p => p.isPrevOwner).map(p => p.targetMonth))
+  const postCutoffRecords = allLeaseRecords.filter(p => !p.isPrevOwner && (!cutoffDate || new Date(p.payDate) >= cutoffDate))
+  const locked = lockedExpectedMapOf(postCutoffRecords)
+  const dueDayAdjusts = dueDayAdjustsFrom(allLeaseRecords)
+  const bill = (ms: string) => billForLeaseMonth({ ...lease, dueDayAdjusts }, ms, locked.get(ms) ?? null)
+  const due = (ms: string) => effDueDateOf(lease, ms)
+  const billingEnd = leaseBillingEnd(lease)
+  const skipByMoveOut = (ms: string) => isAfterMoveOutMonth(billingEnd, ms) || isCheckoutNoBillingMonthFor(lease, billingEnd, ms, due(ms))
+  const originalDueDay = originalDueDayOf(lease.dueDay, allLeaseRecords)
+  const sums = dueDayAdjustMonthSums(allLeaseRecords, cutoffDate)
+  const today = kstYmd()
+  for (const m of months) {
     const s = sums.get(m)
-    if (!s) return
-    const bill = await serverBillForMonth(leaseTermId, m, lease.rentAmount)
-    const due = resolveDueDateForMonth(effectiveDueRawForMonth(lease, m), m)
-    const dueYmd = due ? `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}` : null
-    out.set(m, dueDayAdjustMonthStatus({ bill, monthTotal: s.total, extraTotal: s.extra, dueYmd, todayYmd: today }))
-  }))
+    if (!s) continue
+    const acq = acqMonthStateOf({ allLeaseRecords, postCutoffRecords, cutoffDate, acqMonthStr, cutoffMonthStr, expected: viewExpectedForMonth(lease, m), originalDueDay })
+    const facts = roomMonthBill({ ms: m, bill, acqMonthStr, acqMonthPrePaid: acq.prePaid, prevOwnerMonths, skipByMoveOut, dueDate: due(m), today })
+    // 목록이 행을 통째로 완납 처리하는 두 경우(인수 전 달, 예약 단계)도 같게 청구 0 이다.
+    const billed = m < acqMonthStr || lease.status === 'RESERVED' ? 0 : facts.billed
+    out.set(m, dueDayAdjustMonthStatus({ bill: billed, monthTotal: s.total, extraTotal: s.extra, duePassed: facts.duePassed }))
+  }
   return out
 }
 
@@ -4010,7 +3988,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
     ({ ...r, cashReceiptKey: keyInfo.get(cashReceiptKey(r)) ?? null })
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   // 조정 행마다 그 달 받았는지(표시 전용, 2026-10-21). 조정 행이 없으면 쿼리를 안 더한다.
-  const adjustByMonth = await dueDayAdjustStatusByMonth(leaseTermId, propertyId, [...rawRecords, ...rawWindowRecords], cutoff)
+  const adjustByMonth = await dueDayAdjustStatusByMonth(leaseTermId, propertyId, [...rawRecords, ...rawWindowRecords], property)
   const withAdjust = <T extends { memo: string | null; actualAmount: number; targetMonth: string }>(r: T): T & { adjustStatus: DueDayAdjustStatus | null } =>
     ({ ...r, adjustStatus: isDueDayAdjust(r.memo) && r.actualAmount < 0 ? adjustByMonth.get(r.targetMonth) ?? null : null })
   const records = rawRecords.map(withKey).map(withAdjust)

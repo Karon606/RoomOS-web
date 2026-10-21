@@ -62,6 +62,11 @@ const ALLOW = [
     why: '단기 자동 퇴실 판정 상한 — KST 그날 끝은 UTC 로도 그날 안이라 날짜부가 안 밀린다',
   },
   {
+    file: 'lib/roomMonth.ts',
+    code: 'const todayEnd = new Date(i.today.year, i.today.month - 1, i.today.day, 23, 59, 59, 999)',
+    why: '호실 목록 viewMonthDuePassed 를 옮긴 정본(2026-10-21) — 위 todayKstEnd 와 같은 KST 그날 끝이고, 비교 상대도 그날 끝(resolveDueRawEnd)이라 날짜부가 안 밀린다',
+  },
+  {
     file: 'app/(app)/rooms/actions.ts',
     code: '{ payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },',
     why: "끝 경계만 있는 창 — KST·UTC 어느 쪽이든 그날 23:59 은 그날 안이라 날짜부가 안 밀린다",

@@ -15,6 +15,7 @@
 import type { Prisma } from '@prisma/client'
 import type { DueDayDb } from './dueDay'
 import { fmtWon } from './fmtMoney'
+import { withParticle } from './koParticle'
 
 export const DUE_DAY_ADJUST_PREFIX = '[납입일변경]'
 
@@ -178,7 +179,9 @@ export function dueDayAdjustDisplayMemo(memo: string | null | undefined): string
   if (!p) return dueDayAdjustDisplayLabel(memo)
   const day = (s: string) => (s.includes('말') ? '말일' : `${s}일`)
   const agreed = p.agreedAmount != null && p.agreedAmount !== p.ruleAmount ? `, 협의 ${fmtWon(p.agreedAmount)}` : ''
-  return `${day(p.from)} → ${day(p.to)} 변경, 일할 ${fmtWon(p.ruleAmount)}${agreed}${p.note ? ` ${p.note}` : ''}`
+  // 바꾸기 전 납부일을 몰라 '?' 로 저장된 행은 앞 조각을 빼고 '20일로 변경' 으로 보인다('?일 → 20일' 은 읽을 수 없는 글자다).
+  const change = p.from.trim() === '?' ? `${withParticle(day(p.to), '으로/로')} 변경` : `${day(p.from)} → ${day(p.to)} 변경`
+  return `${change}, 일할 ${fmtWon(p.ruleAmount)}${agreed}${p.note ? ` ${p.note}` : ''}`
 }
 
 // ── 받았는지 상태(표시 전용, 2026-10-21) ──────────────────────────────
@@ -189,23 +192,26 @@ export function dueDayAdjustDisplayMemo(memo: string | null | undefined): string
 
 export type DueDayAdjustStatus =
   | { kind: 'paid' }                        // 남은 조정분 0
-  | { kind: 'before' }                      // 다 남음, 납부일 안 지남(미래 달 포함)
-  | { kind: 'unpaid' }                      // 다 남음, 납부일 지남
+  | { kind: 'before' }                      // 다 남음, 기한 안 옴(미래 달 포함)
+  | { kind: 'unpaid' }                      // 다 남음, 기한 옴(납부일 당일부터, 호실 목록 미납 묶음과 같다)
   | { kind: 'short'; remaining: number }    // 일부 남음
 
-/** 그 달 상태. extraTotal 이 0 이면(추가로 받을 금액이 없는 달) null. 납부일 당일은 아직 안 지났다. */
+/**
+ * 그 달 상태. extraTotal 이 0 이면(추가로 받을 금액이 없는 달) null.
+ * bill·duePassed 는 호실 목록과 같은 판정(lib/roomMonth roomMonthBill)에서 온다. 그래서 목록이 그 달을 완납
+ * (청구 없는 달이거나 받은 돈 ≥ 청구)으로 보면 칩도 수납 완료다. 기한은 납부일 당일부터 옴이다(목록 미납 묶음과 같다).
+ */
 export function dueDayAdjustMonthStatus(input: {
   bill: number
   monthTotal: number
   extraTotal: number
-  dueYmd: string | null
-  todayYmd: string
+  duePassed: boolean
 }): DueDayAdjustStatus | null {
   if (input.extraTotal <= 0) return null
   const remaining = Math.min(Math.max(0, input.bill - input.monthTotal), input.extraTotal)
   if (remaining <= 0) return { kind: 'paid' }
   if (remaining < input.extraTotal) return { kind: 'short', remaining }
-  return input.dueYmd && input.todayYmd > input.dueYmd ? { kind: 'unpaid' } : { kind: 'before' }
+  return input.duePassed ? { kind: 'unpaid' } : { kind: 'before' }
 }
 
 /**
@@ -230,10 +236,11 @@ export function dueDayAdjustMonthSums(
 }
 
 /** 상태 칩 글자와 톤. 형제 보증금 패널(DepositStatusPanel)의 수납 상태 어휘와 같다. */
-export function dueDayAdjustStatusChip(s: DueDayAdjustStatus): { label: string; tone: 'success' | 'neutral' | 'warning' } {
+export function dueDayAdjustStatusChip(s: DueDayAdjustStatus): { label: string; tone: 'success' | 'month' | 'warning' } {
   switch (s.kind) {
     case 'paid': return { label: '수납 완료', tone: 'success' }
-    case 'before': return { label: '수납 전', tone: 'neutral' }
+    // '수납 전' 은 형제 월분 칩 톤(month)이다. neutral 틴트는 행 바탕 --canvas 위 3.56:1 이라 형제에 없는 조합이었다(독립 검수 2026-10-21).
+    case 'before': return { label: '수납 전', tone: 'month' }
     case 'unpaid': return { label: '미수납', tone: 'warning' }
     case 'short': return { label: `부족 ${fmtWon(s.remaining)}`, tone: 'warning' }
   }

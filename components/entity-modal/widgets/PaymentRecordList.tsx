@@ -548,7 +548,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             }`}>
             {/* 줄1: 회차·날짜·방법 + 금액(우측, 안 줄임) */}
             <div className="flex items-baseline justify-between gap-2">
-              <p className={`num text-xs ${p.isDeposit ? 'text-[var(--deposit-fg)]' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
+              <p className={`num text-xs break-keep ${p.isDeposit ? 'text-[var(--deposit-fg)]' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
                 {scope === 'month' && `${displaySeq}회차 · `}{fmtDate(p.payDate)} · {p.payMethod ?? '—'}
               </p>
               <span className={`num text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-[var(--deposit-fg)]' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>
