@@ -75,7 +75,7 @@ export default function CategorySelect({
   const closeBtn = (onClose: () => void) => (
     <button type="button" onClick={onClose}
       aria-label="목록에서 선택"
-      className="shrink-0 -my-1.5 -mr-1.5 w-11 h-11 inline-flex items-center justify-center rounded-sm text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--tc-text)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      className="shrink-0 -my-1.5 w-11 h-11 inline-flex items-center justify-center rounded-sm text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--tc-text)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   )
   const addBox = (
     <>

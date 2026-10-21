@@ -3157,8 +3157,9 @@ function OptionSection({
 
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
-      <div className="flex items-start justify-between gap-2 mb-1">
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
+      {/* 머리도 줄이 모자라면 꺾는다. 글자 125% 에서 '기본값으로 초기화' 가 카드 밖으로 나갔다(2026-10-22 실측). */}
+      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1 mb-1">
+        <h2 className="min-w-0 text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
         {onReset && (
           <button onClick={handleReset}
             className="shrink-0 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
@@ -3177,7 +3178,9 @@ function OptionSection({
         )}
         {(dragOrder ?? items).map((item, idx) => (
           // key는 값 자체(고유) — 재정렬 시 요소 identity 보존.
-          <div key={item} className={`flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${editingItem === item ? 'flex-wrap' : ''} ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
+          // 행은 줄이 모자라면 꺾인다(flex-wrap). 라벨은 최소 4rem 을 쥐고, 그 뒤 묶음(손잡이·수정·삭제)이 모자라면 다음 줄 오른쪽으로
+          // 내려간다. 종전에는 꺾이지 않아 320·360px x 글자 125% 에서 수정·삭제 단추가 카드 밖으로 나갔다(17장 공용, 2026-10-22 실측).
+          <div key={item} className={`flex flex-wrap items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
             {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button
@@ -3216,7 +3219,8 @@ function OptionSection({
               </>
             ) : (
               <>
-                <span className="flex-1 min-w-[2rem] break-keep [overflow-wrap:anywhere] text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+                <span className="flex-1 min-w-[4rem] basis-[4rem] break-keep [overflow-wrap:anywhere] text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+                <div className="ml-auto flex items-center gap-2 shrink-0">
                 {onReorder && (
                   <button type="button" aria-label={`${getLabel(item)} 순서 이동`}
                     onPointerDown={onHandleDown(idx)} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
@@ -3235,6 +3239,7 @@ function OptionSection({
                 ))}
                 <button onClick={() => handleDelete(item)}
                   className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
+                </div>
               </>
             )}
           </div>
@@ -3246,7 +3251,7 @@ function OptionSection({
             onChange={e => onNewValueChange(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={placeholder ?? '입력…'}
-            className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none transition-colors ${
+            className={`flex-1 min-w-0 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none transition-colors ${
               addError ? 'border-[var(--danger-ring)] focus:border-[var(--danger-ring)]' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
           <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || !!addError}>

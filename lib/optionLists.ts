@@ -175,7 +175,7 @@ export const PROTECTED_OPTION_NAMES: Partial<Record<OptionListField, { names: re
   // 결과 문장은 320px 기본 글자에서 카드 머리 안내가 두 줄을 넘지 않게 짧게 쓴다(2026-10-22 실측).
   withholdReasons: {
     names: [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON],
-    effect: '퇴실 정산이 이 이름으로 청소비를 가르고 인수 사유를 미리 고릅니다.',
+    effect: '퇴실 정산이 이 이름으로 청소비를 가르고 인수 사유를 고릅니다.',
   },
 }
 

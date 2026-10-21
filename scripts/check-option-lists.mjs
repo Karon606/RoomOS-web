@@ -666,7 +666,21 @@ const os = bodyOf(form, /function OptionSection\(/)
   }
 }
 
-console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 · ⓛ 사유 목록 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
+// ⓜ 카드 행이 좁은 폭·큰 글자에서 넘치지 않는다(2026-10-22 실측: 320·360px x 125% 에서 수정·삭제·초기화가 카드 밖으로 나갔다).
+// 행과 머리는 꺾이고(flex-wrap), 라벨은 최소 4rem(6rem 이면 360px 100% 에서도 행이 전부 두 줄로 꺾였다), 라벨 뒤 묶음은 ml-auto 로 다음 줄 오른쪽에 서며, 등록 칸은 min-w-0 이다.
+{
+  const code = stripComments(os ?? '')
+  const NEED = [
+    [/<div key=\{item\} className=\{`flex flex-wrap items-center gap-2 /, '행 flex-wrap'],
+    [/className="flex-1 min-w-\[4rem\] basis-\[4rem\] /, '라벨 최소 4rem'],
+    [/<div className="ml-auto flex items-center gap-2 shrink-0">/, '라벨 뒤 묶음 ml-auto'],
+    [/<div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1 mb-1">/, '머리 flex-wrap'],
+    [/className=\{`flex-1 min-w-0 bg-\[var\(--canvas\)\] border rounded-sm px-3 py-2\.5/, '등록 칸 min-w-0'],
+  ]
+  for (const [re, what] of NEED) if (!re.test(code)) violations.push(`${FORM} · OptionSection ${what} 가 빠졌다. 320·360px x 글자 125% 에서 단추가 카드 밖으로 나간다.`)
+}
+
+console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 · ⓛ 사유 목록 · ⓜ 카드 행 넘침 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
