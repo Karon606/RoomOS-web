@@ -33,6 +33,7 @@ import { confirmDeletePayment, previewWithin } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 import { isDueDayAdjust } from '@/lib/dueDayAdjust'
 import { DueDayAdjustList } from './DueDayAdjustList'
+import { PAY_CHIP_CLS, PAY_CHIP_TONE } from './paymentRowChip'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 
@@ -570,10 +571,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   // 어휘·색은 홈 정산 목록 정본을 따른다(dashboard/page.tsx). 지연은 warning, 선납은 info.
                   // 정반대 두 사실에 같은 색을 주면 안 되고, 이미 받은 돈에 예정색(await)을 쓰면 §03 위반이다.
                   return (
-                    <span className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
-                      late ? 'bg-[var(--warning-bg)] text-[var(--warning-fg)]'
-                      : prepay ? 'bg-[var(--info-bg)] text-[var(--info-fg)]'
-                      : 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
+                    <span className={`${PAY_CHIP_CLS} ${
+                      late ? PAY_CHIP_TONE.warning
+                      : prepay ? PAY_CHIP_TONE.info
+                      : PAY_CHIP_TONE.month
                     }`}>
                       {mon}월분{late ? ' 지연' : prepay ? ' 선납' : ''}
                     </span>

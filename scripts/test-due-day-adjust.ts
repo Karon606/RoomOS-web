@@ -10,6 +10,7 @@ import {
   DUE_DAY_ADJUST_NOT_ADJUST, DUE_DAY_ADJUST_UNREADABLE, DUE_DAY_ADJUST_AMOUNT_INVALID, DUE_DAY_ADJUST_NOTE_INVALID,
   DUE_DAY_ADJUST_EDIT_ELSEWHERE, PAYMENT_PREFIX_RESERVED, PAYMENT_NEGATIVE_REFUSED, dueDayAdjustOverCap,
   dueDayAdjustsFrom, withDueDayAdjusts, type BillingDueDayAdjust,
+  dueDayAdjustDisplayMemo, dueDayAdjustMonthStatus, dueDayAdjustMonthSums, dueDayAdjustStatusChip,
 } from '../lib/dueDayAdjust'
 import { billForLeaseMonth, firstMonthRule, firstMonthRuleDueDay, firstMonthAdjustExposure, type BillingLeaseFields } from '../lib/billing'
 
@@ -215,6 +216,59 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
   eq('감사 10 다른 달 조정이 입주달 청구를 안 바꾸면 조용', X(lease({ dueDay: '9', dueDayAdjusts: [adj('2026-11', M513)] }), null), null)
   eq('감사 10 단기는 조용', X(lease({ isShortTerm: true, dueDay: '25', dueDayAdjusts: [R513] }), null), null)
   eq('감사 10 조정 행 없으면 조용', X(lease(), null), null)
+}
+
+// ── 받았는지 상태(표시 전용, 2026-10-21 운영자 '받을 금액 자리에 받았다는 표시가 없다') ─────────────
+// 판정은 그 달 완납 정본식과 같은 근거다. 남은 조정분 = min(max(0, 청구 − 그 달 전체 합), 그 달 추가분 합). 행 isPaid 는 안 본다.
+{
+  const D = (y: string) => new Date(`${y}T03:00:00Z`)
+  const row = (targetMonth: string, actualAmount: number, memo: string | null = null, payDate = '2026-10-07', isPrevOwner = false) =>
+    ({ targetMonth, actualAmount, memo, isPrevOwner, payDate: D(payDate) })
+  const A513 = '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)'
+  const st = (rows: ReturnType<typeof row>[], bill: number, month: string, dueYmd: string | null, todayYmd: string, cutoff: Date | null = null) => {
+    const s = dueDayAdjustMonthSums(rows, cutoff).get(month)
+    return s ? dueDayAdjustMonthStatus({ bill, monthTotal: s.total, extraTotal: s.extra, dueYmd, todayYmd }) : null
+  }
+  // 513호 10월 운영 DB 실측(2026-10-21 읽기). 청구 350,000, 350,000(10-07) + 조정 −130,000 + 130,000(10-20). 조정 행 isPaid=false 였다.
+  const r513 = [row('2026-10', 350000), row('2026-10', -130000, A513, '2026-10-20'), row('2026-10', 130000, '2026년 10월분', '2026-10-20')]
+  eq('상태 513 10월 수납 완료', st(r513, 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'paid' })
+  eq('상태 513 합: 전체 350,000 · 추가분 130,000', dueDayAdjustMonthSums(r513, null).get('2026-10'), { total: 350000, extra: 130000 })
+  // 418호 5월 운영 DB 실측. 청구 400,000, 조정 −80,000(05-05) + 80,000 + 400,000(05-11).
+  const r418 = [row('2026-05', -80000, M418, '2026-05-05'), row('2026-05', 80000, null, '2026-05-11'), row('2026-05', 400000, null, '2026-05-11')]
+  eq('상태 418 5월 수납 완료', st(r418, 400000, '2026-05', '2026-05-08', '2026-10-21'), { kind: 'paid' })
+  // 받은 돈 350,000 만(조정분 하나도 안 받음). 납부일 지남이면 미수납, 안 지났으면 수납 전.
+  const r350 = [row('2026-10', 350000), row('2026-10', -130000, A513, '2026-10-20')]
+  eq('상태 350k 납부일 지남 = 미수납', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'unpaid' })
+  eq('상태 350k 납부일 당일 = 수납 전', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-20'), { kind: 'before' })
+  // 400,000 받음: 조정분 중 50,000 만 받음, 80,000 부족.
+  const r400 = [row('2026-10', 400000), row('2026-10', -130000, A513, '2026-10-20')]
+  eq('상태 400k 일부 = 부족 80,000', st(r400, 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'short', remaining: 80000 })
+  eq('칩 부족 글자', dueDayAdjustStatusChip({ kind: 'short', remaining: 80000 }), { label: '부족 80,000원', tone: 'warning' })
+  // 0원 받음: 이용료도 조정분도 다 남음(남은 조정분은 추가분 합으로 막힌다).
+  const r0 = [row('2026-10', -130000, A513, '2026-10-20')]
+  eq('상태 0원 납부일 지남 = 미수납', st(r0, 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'unpaid' })
+  // 미래 달은 납부일이 안 왔다.
+  eq('상태 미래 달 = 수납 전', st([row('2026-12', -130000, A513, '2026-10-20')], 350000, '2026-12', '2026-12-20', '2026-10-21'), { kind: 'before' })
+  eq('상태 납부일 모름 = 수납 전', st(r0, 350000, '2026-10', null, '2026-10-21'), { kind: 'before' })
+  // 돌려줄 금액만 있는 달은 상태가 없다(칩 없음).
+  eq('상태 돌려줄 금액만 = null', st([row('2026-10', 350000), row('2026-10', 100000, '[납입일변경] 15일→5 변경, 일할 100,000원 (과입금)')], 350000, '2026-10', '2026-10-05', '2026-10-21'), null)
+  // 조정 행 2개(같은 달). 추가분 합 180,000. 400,000 받으면 남은 = min(350,000 − 220,000, 180,000) = 130,000 → 부족.
+  const r2 = [row('2026-10', 400000), row('2026-10', -130000, A513, '2026-10-20'), row('2026-10', -50000, '[납입일변경] 20일→25 변경, 일할 50,000원 (추가납부)', '2026-10-21')]
+  eq('상태 조정 행 2개 일부 = 부족 130,000', st(r2, 350000, '2026-10', '2026-10-25', '2026-10-26'), { kind: 'short', remaining: 130000 })
+  eq('상태 조정 행 2개 다 받음 = 수납 완료', st([...r2, row('2026-10', 130000)], 350000, '2026-10', '2026-10-25', '2026-10-26'), { kind: 'paid' })
+  // 양도인 행·인수 전 입금은 뺀다(귀속월 선택지와 같은 방식). 인수 전 130,000 은 이 원장의 수납이 아니다.
+  const rPre = [row('2026-10', 350000, null, '2026-10-07'), row('2026-10', -130000, A513, '2026-10-20'), row('2026-10', 130000, null, '2026-10-01')]
+  eq('상태 인수 전 입금은 뺀다 = 미수납', st(rPre, 350000, '2026-10', '2026-10-20', '2026-10-21', D('2026-10-05')), { kind: 'unpaid' })
+  eq('상태 양도인 행은 뺀다 = 미수납', st([...r350, row('2026-10', 130000, null, '2026-10-20', true)], 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'unpaid' })
+  eq('합: 조정 행 없는 달은 안 낸다', dueDayAdjustMonthSums([row('2026-09', 350000)], null).size, 0)
+  eq('합: 지운 조정 행은 안 센다', dueDayAdjustMonthSums([{ ...row('2026-10', -130000, A513), deletedAt: D('2026-10-21') }], null).size, 0)
+  eq('칩 넷', [dueDayAdjustStatusChip({ kind: 'paid' }), dueDayAdjustStatusChip({ kind: 'before' }), dueDayAdjustStatusChip({ kind: 'unpaid' })],
+    [{ label: '수납 완료', tone: 'success' }, { label: '수납 전', tone: 'neutral' }, { label: '미수납', tone: 'warning' }])
+  // 표시 메모(§29 값 전환 표기). 저장 글자는 그대로다.
+  eq('표시 메모 513', dueDayAdjustDisplayMemo(A513), '9일 → 20일 변경, 일할 128,333원, 협의 130,000원')
+  eq('표시 메모 418', dueDayAdjustDisplayMemo(M418), '2일 → 8일 변경, 일할 80,000원')
+  eq('표시 메모 말일·설명', dueDayAdjustDisplayMemo('[납입일변경] 말일일→말일 변경, 일할 1,000원 (과입금) 현금 정산'), '말일 → 말일 변경, 일할 1,000원 현금 정산')
+  eq('표시 메모 옛 모양은 종전 표시', dueDayAdjustDisplayMemo('[납입일변경] 13만원으로 협의'), '13만원으로 협의')
 }
 
 console.log(`\n납입일 변경 조정 진리표: ${pass} 통과 / ${fails.length} 실패`)

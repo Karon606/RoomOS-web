@@ -14,8 +14,8 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import {
-  dueDayAdjustKindOf, dueDayAdjustDisplayLabel, parseDueDayAdjustMemo, buildDueDayAdjustMemo, DUE_DAY_ADJUST_KIND_TEXT, DUE_DAY_ADJUST_NOTE_MAX,
-  type DueDayAdjustKind,
+  dueDayAdjustKindOf, dueDayAdjustDisplayMemo, dueDayAdjustStatusChip, parseDueDayAdjustMemo, buildDueDayAdjustMemo, DUE_DAY_ADJUST_KIND_TEXT, DUE_DAY_ADJUST_NOTE_MAX,
+  type DueDayAdjustKind, type DueDayAdjustStatus,
 } from '@/lib/dueDayAdjust'
 import { updateDueDayAdjust, undoPaymentEdit } from '@/app/(app)/rooms/actions'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -23,8 +23,11 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { withSave, pushToast } from '@/lib/saveStatus'
+import { PAY_CHIP_CLS, PAY_CHIP_TONE } from './paymentRowChip'
 
-export type DueDayAdjustRecord = { id: string; actualAmount: number; memo: string | null; targetMonth: string }
+// adjustStatus 는 서버(rooms/actions getPaymentsByLease)가 그 달 완납 정본식으로 잰 '받았는지' 상태다(표시 전용).
+// 행의 isPaid 는 쓰지 않는다. 조정 행은 들어온 돈이 아니라 그 값이 그 달 완납과 따로 논다(513호 실측).
+export type DueDayAdjustRecord = { id: string; actualAmount: number; memo: string | null; targetMonth: string; adjustStatus?: DueDayAdjustStatus | null }
 
 // 메모 칸은 이 폼의 금액 칸(정본 MoneyInput)과 같은 상자다(§12 한 폼 안 입력 높이 혼용 금지). 형제 수정 폼의 44px 칸을
 // 쓰면 바로 위 MoneyInput(42px, 글자 125% 에서 52px)과 높이가 갈린다(하네스 실측 2026-10-20).
@@ -99,7 +102,7 @@ export function DueDayAdjustList({ records, canEdit, readOnly = false, editable,
         const parsed = parseDueDayAdjustMemo(p.memo)
         if (editingId === p.id && parsed) {
           // 저장하면 남을 메모(기계 키·방향 조각 뺀 표시, 방향은 위 세그먼트가 말한다). 규칙값과 협의값이 둘 다 보인다.
-          const previewMemo = dueDayAdjustDisplayLabel(buildDueDayAdjustMemo({ ...parsed, agreedAmount: amount > 0 ? amount : null, kind: dir, note }))
+          const previewMemo = dueDayAdjustDisplayMemo(buildDueDayAdjustMemo({ ...parsed, agreedAmount: amount > 0 ? amount : null, kind: dir, note }))
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
               <div className="space-y-1">
@@ -126,30 +129,36 @@ export function DueDayAdjustList({ records, canEdit, readOnly = false, editable,
           )
         }
         const kind = dueDayAdjustKindOf(p.actualAmount)
-        const fg = kind === 'extra' ? 'var(--danger-fg)' : kind === 'refund' ? 'var(--success-fg)' : 'var(--warm-mid)'
-        const label = dueDayAdjustDisplayLabel(p.memo)   // 방향은 제목이 말한다(표시만, 저장 메모는 그대로)
+        const label = dueDayAdjustDisplayMemo(p.memo)   // 방향은 제목이 말한다(표시만, 저장 메모는 그대로)
+        // 상태 칩은 추가로 받을 금액에만 선다. 돌려줄 금액은 받을 돈이 아니라 칩이 없다(귀속월 칩만).
+        const chip = kind === 'extra' && p.adjustStatus ? dueDayAdjustStatusChip(p.adjustStatus) : null
         const canTouch = canEdit && !readOnly
         const here = !editable || editable(p)
-        // 행 바탕은 형제 수납 행과 같은 --canvas 다. 방향은 제목·금액 글자색이 말한다. 종전 입주자 화면처럼 의미색으로
-        // 통째로 칠하면 그 위의 행 액션(중립 톤)과 캡션이 대비 4.5:1 에 못 미쳤다(라이트 4.49:1·다크 3.8:1, 하네스 실측).
+        // 형제 수납 행(PaymentRecordList)과 같은 두 줄 문법이다(2026-10-21 운영자 요청 '통일감'). 줄1 왼쪽은 형제의 '날짜 · 수단'
+        // 자리라 같은 --warm-mid text-xs, 오른쪽 금액도 형제와 같은 --warm-dark 다. 종전처럼 의미색 글자에 −130,000원 을 세우면
+        // 받았는데도 아직 받을 돈처럼 읽혔다(위 수납 내역에는 130,000원 수납이 있는데). 받았는지는 줄2 상태 칩이 말한다.
         return (
           <div key={p.id} className="rounded-sm px-3 py-2.5 space-y-1.5 bg-[var(--canvas)]">
-            {/* 줄1: 방향 + 금액(우측, 안 줄임). 음수는 §06 의 −(U+2212), 양수는 + 를 붙인다. */}
+            {/* 줄1: 방향 제목 + 금액(우측, 안 줄임). 방향은 제목이 말하므로 금액에 부호를 붙이지 않는다. */}
             <div className="flex items-baseline justify-between gap-2">
-              <p className="text-xs font-semibold" style={{ color: fg }}>{kind ? DUE_DAY_ADJUST_KIND_TEXT[kind] : '조정'}</p>
-              <span className="num text-sm font-semibold whitespace-nowrap" style={{ color: fg }}>
-                {p.actualAmount > 0 ? '+' : ''}{fmtWon(p.actualAmount)}
+              <p className="text-xs text-[var(--warm-mid)]">{kind ? DUE_DAY_ADJUST_KIND_TEXT[kind] : '조정'}</p>
+              <span className="num text-sm font-semibold whitespace-nowrap text-[var(--warm-dark)]">
+                {fmtWon(Math.abs(p.actualAmount))}
               </span>
             </div>
-            {/* 줄2: 기록 내용 + 행 액션. 형제 수납 행과 같은 두 줄 문법이다. */}
+            {/* 줄2: 귀속월 칩 + 상태 칩 + 메모, 오른쪽 행 액션. 형제 수납 행 줄2와 같은 구조·같은 flex-wrap 이다. */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              {/* 기록 내용은 형제 수납 행의 메모와 같은 --tc-text 다(--warm-mid 는 --canvas 위 4.11:1, 하네스 실측). */}
-              {label && <p className="num text-[0.6875rem] text-[var(--tc-text)] break-keep min-w-0">{label}</p>}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className={`${PAY_CHIP_CLS} ${PAY_CHIP_TONE.month}`}>{Number(p.targetMonth.slice(5))}월분</span>
+                {chip && <span className={`${PAY_CHIP_CLS} ${PAY_CHIP_TONE[chip.tone]}`}>{chip.label}</span>}
+                {/* 기록 내용은 형제 수납 행의 메모와 같은 --tc-text 다(--warm-mid 는 --canvas 위 4.11:1, 하네스 실측). */}
+                {label && <span className="text-[0.6875rem] text-[var(--tc-text)]">· {label}</span>}
+              </div>
               {canTouch && !here && lockedNote && (
                 <span className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{lockedNote(p)}</span>
               )}
               {canTouch && here && (
-                <div className="flex gap-1.5 ml-auto">
+                <div className="flex gap-1.5">
                   {/* 메모 모양을 못 읽는 옛 행은 고칠 길이 없다. 눌러야 거절되는 버튼을 두지 않는다. */}
                   {parsed && <RowActionBtn tone="neutral" onClick={() => startEdit(p)}>수정</RowActionBtn>}
                   <RowActionBtn tone="danger" disabled={deletingId === p.id} onClick={() => onDelete(p)}>삭제</RowActionBtn>

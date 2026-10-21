@@ -14,6 +14,7 @@
 //   [납입일변경] {전}일→{후} 변경, 일할 {규칙값}원[, 협의 {협의값}원] ({추가납부|과입금})[ {설명}]
 import type { Prisma } from '@prisma/client'
 import type { DueDayDb } from './dueDay'
+import { fmtWon } from './fmtMoney'
 
 export const DUE_DAY_ADJUST_PREFIX = '[납입일변경]'
 
@@ -165,6 +166,77 @@ export function dueDayAdjustLabel(memo: string | null | undefined): string {
  */
 export function dueDayAdjustDisplayLabel(memo: string | null | undefined): string {
   return dueDayAdjustLabel(memo).replace(/ \((추가납부|과입금)\)/, '')
+}
+
+/**
+ * 행 아래 표시 메모(2026-10-21 운영자 요청 '통일감'). 저장 글자 '9일→20 변경, 일할 128,333원, 협의 130,000원' 을
+ * §29 값 전환 표기('9일 → 20일', 띄어 쓰고 단위)로 보인다. 말일은 '말일'. 저장 메모는 그대로다(표시만).
+ * 빌더 모양이 아닌 옛 메모는 종전 표시(dueDayAdjustDisplayLabel)로 둔다.
+ */
+export function dueDayAdjustDisplayMemo(memo: string | null | undefined): string {
+  const p = parseDueDayAdjustMemo(memo)
+  if (!p) return dueDayAdjustDisplayLabel(memo)
+  const day = (s: string) => (s.includes('말') ? '말일' : `${s}일`)
+  const agreed = p.agreedAmount != null && p.agreedAmount !== p.ruleAmount ? `, 협의 ${fmtWon(p.agreedAmount)}` : ''
+  return `${day(p.from)} → ${day(p.to)} 변경, 일할 ${fmtWon(p.ruleAmount)}${agreed}${p.note ? ` ${p.note}` : ''}`
+}
+
+// ── 받았는지 상태(표시 전용, 2026-10-21) ──────────────────────────────
+// 조정 행은 들어온 돈이 아니라 그 달 받을 돈을 고치는 줄이라 행 자체의 isPaid 는 뜻이 없다(513호 실측 isPaid=false 인데
+// 그 달은 완납). 그래서 그 달 완납 정본식(그 달 수납 합(조정 행 포함) ≥ 그 달 청구)과 같은 근거로 남은 조정분을 잰다.
+//   남은 조정분 = min(max(0, 청구 − 그 달 전체 합), 그 달 추가로 받을 금액 합)
+// 한 달에 조정 행이 여럿이면 같은 달 값이다. 돌려줄 금액 방향은 상태가 없다(칩 없음). 돈 계산은 바꾸지 않는다.
+
+export type DueDayAdjustStatus =
+  | { kind: 'paid' }                        // 남은 조정분 0
+  | { kind: 'before' }                      // 다 남음, 납부일 안 지남(미래 달 포함)
+  | { kind: 'unpaid' }                      // 다 남음, 납부일 지남
+  | { kind: 'short'; remaining: number }    // 일부 남음
+
+/** 그 달 상태. extraTotal 이 0 이면(추가로 받을 금액이 없는 달) null. 납부일 당일은 아직 안 지났다. */
+export function dueDayAdjustMonthStatus(input: {
+  bill: number
+  monthTotal: number
+  extraTotal: number
+  dueYmd: string | null
+  todayYmd: string
+}): DueDayAdjustStatus | null {
+  if (input.extraTotal <= 0) return null
+  const remaining = Math.min(Math.max(0, input.bill - input.monthTotal), input.extraTotal)
+  if (remaining <= 0) return { kind: 'paid' }
+  if (remaining < input.extraTotal) return { kind: 'short', remaining }
+  return input.dueYmd && input.todayYmd > input.dueYmd ? { kind: 'unpaid' } : { kind: 'before' }
+}
+
+/**
+ * 달마다 그 달 수납 합(조정 행 포함)과 추가로 받을 금액 합. 조정 행이 있는 달만 낸다.
+ * 양도인 행과 인수 전 입금은 귀속월 선택지(rooms/actions getTargetMonthOptions)와 같은 방식으로 뺀다. 보증금은 넘기지 않는다.
+ */
+export function dueDayAdjustMonthSums(
+  rows: readonly { targetMonth: string; actualAmount: number; memo: string | null; isPrevOwner: boolean; payDate: Date; deletedAt?: Date | null }[],
+  cutoff: Date | null,
+): Map<string, { total: number; extra: number }> {
+  const out = new Map<string, { total: number; extra: number }>()
+  const months = new Set(rows.filter(r => !r.deletedAt && isDueDayAdjust(r.memo)).map(r => r.targetMonth))
+  for (const r of rows) {
+    if (r.deletedAt || !months.has(r.targetMonth) || r.isPrevOwner) continue
+    if (cutoff && new Date(r.payDate) < cutoff) continue
+    const s = out.get(r.targetMonth) ?? { total: 0, extra: 0 }
+    s.total += r.actualAmount
+    if (isDueDayAdjust(r.memo) && r.actualAmount < 0) s.extra += -r.actualAmount
+    out.set(r.targetMonth, s)
+  }
+  return out
+}
+
+/** 상태 칩 글자와 톤. 형제 보증금 패널(DepositStatusPanel)의 수납 상태 어휘와 같다. */
+export function dueDayAdjustStatusChip(s: DueDayAdjustStatus): { label: string; tone: 'success' | 'neutral' | 'warning' } {
+  switch (s.kind) {
+    case 'paid': return { label: '수납 완료', tone: 'success' }
+    case 'before': return { label: '수납 전', tone: 'neutral' }
+    case 'unpaid': return { label: '미수납', tone: 'warning' }
+    case 'short': return { label: `부족 ${fmtWon(s.remaining)}`, tone: 'warning' }
+  }
 }
 
 /** 부호로 방향을 읽는다. 0 은 방향이 없다. */

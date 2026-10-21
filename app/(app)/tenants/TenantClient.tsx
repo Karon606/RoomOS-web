@@ -89,7 +89,7 @@ import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STA
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
-import { isDueDayAdjust } from '@/lib/dueDayAdjust'
+import { isDueDayAdjust, type DueDayAdjustStatus } from '@/lib/dueDayAdjust'
 import { DueDayAdjustList } from '@/components/entity-modal/widgets/DueDayAdjustList'
 
 // ── 타입 ─────────────────────────────────────────────────────────
@@ -166,6 +166,8 @@ type PayRecord = {
   cashReceiptIssuedAt?: Date | string | null   // 발행 칩 표시(오류신고 c0936f89)
   // 그 키(같은 날·같은 수단)의 발행 줄과 이용료 합(서버 getPaymentsByLease). 발행 금액 캡션·수정 토스트의 재료.
   cashReceiptKey?: CashReceiptKeyView | null
+  // 납입일 변경 조정 행의 '받았는지' 상태(서버 getPaymentsByLease, 표시 전용). 조정 묶음(DueDayAdjustList)이 칩으로 그린다.
+  adjustStatus?: DueDayAdjustStatus | null
 }
 
 type LeaseTerm = {

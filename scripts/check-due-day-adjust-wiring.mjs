@@ -9,6 +9,8 @@
 //      PaymentRecordList 는 일반 행 목록에서 조정 행을 뺀다.
 //   ③ 묶음 컴포넌트는 전용 문(updateDueDayAdjust)으로 저장하고 적용취소(undoPaymentEdit)를 단다. 금액 칸은 정본 MoneyInput,
 //      방향은 SegmentedControl. 납부일·방법·현금영수증 칸이 없다.
+//   ③-2 받았는지 상태(2026-10-21). 서버가 조정 행마다 adjustStatus 를 싣고(조정 행 없으면 쿼리 0), 묶음이 부호 없는 금액·
+//      형제와 같은 귀속월 칩·정본 상태 칩을 그린다. 행 isPaid 는 안 본다.
 //   ④ 서버 배선. updatePayment 가 paymentEditGuard 를, 현금영수증 켜기·미리보기가 조정 행 거절을, 실입금·발행 키·후보가
 //      조정 행 제외를, 감사가 부호 축을 부른다. 납입일 변경이 협의 금액을 정본 planDueDayAdjustCreate 로 넘긴다.
 //   ⑤ 입주달 이중 셈 봉합(운영자 승인 2026-10-20 방안 2). 엔진의 첫 달 규칙이 firstMonthRuleDueDay 로 재고, 입력 칸
@@ -63,7 +65,9 @@ need('묶음 저장 토스트에 적용취소(undoPaymentEdit)', /label: '적용
 need('금액 칸은 정본 MoneyInput', /<MoneyInput /.test(dal))
 need('방향은 SegmentedControl', /<SegmentedControl /.test(dal))
 need('조정 행 수정 폼에 납부일·방법·현금영수증 칸이 없다', !/DatePicker|<select|현금영수증/.test(dal))
-need('금액 표시는 fmtWon(§06 U+2212)', /fmtWon\(p\.actualAmount\)/.test(dal))
+need('금액 표시는 부호 없는 fmtWon(방향은 제목이 말한다, 2026-10-21)', /fmtWon\(Math\.abs\(p\.actualAmount\)\)/.test(dal))
+need('조정 행 금액에 + 부호를 손으로 붙이지 않는다', !/>\s*0\s*\?\s*'\+'/.test(dal) && !/'\+'\s*:/.test(dal))
+need('조정 행 제목·금액에 의미색 글자(danger·success fg)를 쓰지 않는다', !/style=\{\{\s*color:/.test(dal) && !/--danger-fg/.test(dal))
 
 // ── ④ 서버 배선 ────────────────────────────────────────────────────
 const rooms = read('app/(app)/rooms/actions.ts')
@@ -84,7 +88,20 @@ need('카드 합계가 같은 집합을 쓴다', /\.\.\.notDueDayAdjustWhere\(\)
 for (const fn of ['savePayment', 'saveDepositPayment', 'saveCleaningFeePayment', 'saveReservationDeposit', 'recordDepositReceived', 'saveDepositPaymentForLease']) {
   need(`${fn} 가 메모 기계 키를 거절한다(paymentMemoGuard)`, /paymentMemoGuard\(/.test(body(rooms, `export async function ${fn}(`)))
 }
-need('조정 묶음 행 아래 표시가 방향 조각을 뗀다(dueDayAdjustDisplayLabel)', /dueDayAdjustDisplayLabel\(p\.memo\)/.test(dal))
+need('조정 묶음 행 아래 표시가 정본 표시 메모(dueDayAdjustDisplayMemo)다', /dueDayAdjustDisplayMemo\(p\.memo\)/.test(dal))
+
+// ── ③-2 받았는지 상태(2026-10-21 운영자 '받을 금액 자리에 받았다는 표시가 없다') ─────────────
+const stBody = body(rooms, 'async function dueDayAdjustStatusByMonth(')
+need('상태 헬퍼가 조정 행 없는 계약에 쿼리를 안 더한다(months.length === 0 이면 바로 돌아감)', /if \(months\.length === 0\) return out/.test(stBody))
+need('상태 헬퍼가 서버 권위 청구(serverBillForMonth)와 정본 판정(dueDayAdjustMonthStatus·dueDayAdjustMonthSums)을 쓴다', /serverBillForMonth\(leaseTermId, m,/.test(stBody) && /dueDayAdjustMonthStatus\(\{/.test(stBody) && /dueDayAdjustMonthSums\(monthRows, cutoff\)/.test(stBody))
+need('상태 헬퍼가 영업장 범위를 건다', /where: \{ leaseTermId, propertyId, targetMonth: \{ in: months \}, isDeposit: false \}/.test(stBody) && /where: \{ id: leaseTermId, propertyId \}/.test(stBody))
+const gpl = body(rooms, 'export async function getPaymentsByLease(')
+need('getPaymentsByLease 가 조정 행마다 adjustStatus 를 실어 보낸다(records·windowRecords 둘 다)', /dueDayAdjustStatusByMonth\(leaseTermId, propertyId, \[\.\.\.rawRecords, \.\.\.rawWindowRecords\], cutoff\)/.test(gpl) && /adjustStatus: isDueDayAdjust\(r\.memo\) && r\.actualAmount < 0/.test(gpl) && /rawRecords\.map\(withKey\)\.map\(withAdjust\)/.test(gpl) && /rawWindowRecords\.map\(withKey\)\.map\(withAdjust\)/.test(gpl))
+need('묶음이 상태 칩을 정본(dueDayAdjustStatusChip)으로, 추가로 받을 금액에만 그린다', /kind === 'extra' && p\.adjustStatus \? dueDayAdjustStatusChip\(p\.adjustStatus\)/.test(dal) && /PAY_CHIP_TONE\[chip\.tone\]/.test(dal))
+need('묶음 줄2 에 귀속월 칩이 형제와 같은 클래스(PAY_CHIP_CLS·PAY_CHIP_TONE.month)로 선다', /\$\{PAY_CHIP_CLS\} \$\{PAY_CHIP_TONE\.month\}`\}>\{Number\(p\.targetMonth\.slice\(5\)\)\}월분/.test(dal))
+need('수납 내역 월분 칩이 같은 상수를 쓴다(PaymentRecordList)', /\$\{PAY_CHIP_CLS\} \$\{/.test(prl) && /PAY_CHIP_TONE\.month/.test(prl))
+need('묶음이 행 isPaid 로 상태를 정하지 않는다', !/isPaid/.test(dal))
+need('입주자 수납 모달의 행 타입이 adjustStatus 를 싣는다', /adjustStatus\?: DueDayAdjustStatus \| null/.test(tc))
 need('감사 규칙 9(부호 축)', /dueDayAdjustSignMismatch\(r\)/.test(read('lib/integrityAudit.ts')))
 const ten = read('app/(app)/tenants/actions.ts')
 need('납입일 변경이 협의 금액을 정본으로 넘긴다', /planDueDayAdjustCreate\(\{[^}]*agreedAmount: agreedAmount \?\? null/.test(body(ten, 'export async function changeDueDay(')))

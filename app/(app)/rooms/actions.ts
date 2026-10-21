@@ -41,7 +41,8 @@ import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib
 import { prepaidCarry } from '@/lib/prepaidCarry'
 import {
   attachDueDayAdjustsOne, dueDayAdjustsFrom, dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere, paymentEditGuard, paymentMemoGuard, planDueDayAdjustEdit,
-  DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind,
+  dueDayAdjustMonthStatus, dueDayAdjustMonthSums,
+  DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind, type DueDayAdjustStatus,
 } from '@/lib/dueDayAdjust'
 
 async function getPropertyId() {
@@ -3910,6 +3911,41 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
   return null
 }
 
+// 납입일 변경 조정 행의 '받았는지' 상태를 달마다 잰다(표시 전용, 돈 계산 무변경, lib/dueDayAdjust dueDayAdjustMonthStatus 정본).
+// 추가로 받을 금액 조정 행이 있는 달만 본다. 없으면 빈 지도이고 쿼리가 0이다. 청구는 서버 권위 serverBillForMonth(조정 행 입력 포함).
+async function dueDayAdjustStatusByMonth(
+  leaseTermId: string,
+  propertyId: string,
+  rows: readonly { targetMonth: string; actualAmount: number; memo: string | null }[],
+  cutoff: Date | null,
+): Promise<Map<string, DueDayAdjustStatus | null>> {
+  const out = new Map<string, DueDayAdjustStatus | null>()
+  const months = [...new Set(rows.filter(r => isDueDayAdjust(r.memo) && r.actualAmount < 0).map(r => r.targetMonth))]
+  if (months.length === 0) return out
+  const [monthRows, lease] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: { leaseTermId, propertyId, targetMonth: { in: months }, isDeposit: false },
+      select: { targetMonth: true, actualAmount: true, memo: true, isPrevOwner: true, payDate: true },
+    }),
+    prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { rentAmount: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true },
+    }),
+  ])
+  if (!lease) return out
+  const sums = dueDayAdjustMonthSums(monthRows, cutoff)
+  const today = kstYmdStr()
+  await Promise.all(months.map(async m => {
+    const s = sums.get(m)
+    if (!s) return
+    const bill = await serverBillForMonth(leaseTermId, m, lease.rentAmount)
+    const due = resolveDueDateForMonth(effectiveDueRawForMonth(lease, m), m)
+    const dueYmd = due ? `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}` : null
+    out.set(m, dueDayAdjustMonthStatus({ bill, monthTotal: s.total, extraTotal: s.extra, dueYmd, todayYmd: today }))
+  }))
+  return out
+}
+
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
   // 금액 읽기 차단(제한 스태프) — 납부 내역 진입 자체 차단.
   if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
@@ -3972,9 +4008,13 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   const keyInfo = await crKeyInfoForLease(propertyId, leaseTermId, [...rawRecords, ...rawWindowRecords].map(r => r.payDate))
   const withKey = <T extends { leaseTermId: string; payDate: Date; payMethod: string | null }>(r: T): T & { cashReceiptKey: CrKeyInfo | null } =>
     ({ ...r, cashReceiptKey: keyInfo.get(cashReceiptKey(r)) ?? null })
-  const records = rawRecords.map(withKey)
-  const windowRecords = rawWindowRecords.map(withKey)
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  // 조정 행마다 그 달 받았는지(표시 전용, 2026-10-21). 조정 행이 없으면 쿼리를 안 더한다.
+  const adjustByMonth = await dueDayAdjustStatusByMonth(leaseTermId, propertyId, [...rawRecords, ...rawWindowRecords], cutoff)
+  const withAdjust = <T extends { memo: string | null; actualAmount: number; targetMonth: string }>(r: T): T & { adjustStatus: DueDayAdjustStatus | null } =>
+    ({ ...r, adjustStatus: isDueDayAdjust(r.memo) && r.actualAmount < 0 ? adjustByMonth.get(r.targetMonth) ?? null : null })
+  const records = rawRecords.map(withKey).map(withAdjust)
+  const windowRecords = rawWindowRecords.map(withKey).map(withAdjust)
   // 보증금 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 현황 줄·수납 모달 표시용.
   const depositAgg = await prisma.paymentRecord.aggregate({
     where: { leaseTermId, isDeposit: true, deletedAt: null },
