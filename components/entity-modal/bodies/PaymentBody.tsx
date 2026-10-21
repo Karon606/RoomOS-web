@@ -408,7 +408,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
               <DueDayPermanentChangeWidget
                 leaseTermId={leaseTermId}
                 targetMonth={month}
-                expected={settlement.expected}
+                // 일할 기준액은 서버 재계산과 같은 정본(RoomRow.rentBasis = viewExpectedForMonth)이다. settlement.expected 는 그 달 청구
+                // (락·첫 달 규칙 반영)라 입주달·월세 변경 뒤 락이 옛 금액인 달에 미리보기와 기록 금액이 갈렸다(독립 재검수 2026-10-21).
+                expected={settlement.rentBasis}
                 // 임시 조정을 뺀 계약 납부일이다. settlement.dueDay 는 그 달 임시일이 반영돼 영구 변경의 '현재'·기간·일할을 틀리게 만든다(독립 검수 2026-10-21).
                 currentDueDay={settlement.baseDueDay}
                 cycleDay={settlement.cycleDay}

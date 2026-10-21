@@ -108,7 +108,7 @@ need('⑥ 위젯: 기간도 옮김 일할의 옛 값이 cycleDayOf', /calcProRat
 need('⑥ 위젯: 납부일만 옮김에서 협의 금액 칸이 없다(일할 상자가 있을 때만)', /\{calc && calc\.type !== 'none' && \(\s*<div className="space-y-1">\s*<p className="text-xs text-\[var\(--warm-muted\)\]">협의 금액/.test(widget))
 const pb = strip(read('components/entity-modal/bodies/PaymentBody.tsx'))
 need('⑥ 수납 정보가 위젯에 기간 칸을 넘기고 헤더에 이용 기간을 적는다', /cycleDay=\{settlement\.cycleDay\}/.test(pb) && /이용 기간 \$\{cyclePeriodLabel\(settlement\.cycleDay\)\}/.test(pb))
-need('⑥ 계약 정보에 이용 기간 표기', /이용 기간 (\$\{|<span className="whitespace-nowrap">\{)cyclePeriodLabel\(lease\.cycleDay \?\? null\)\}/.test(strip(read('components/entity-modal/widgets/TenantContractInfo.tsx'))))
+need('⑥ 계약 정보에 이용 기간 표기(조각 사이에서만 꺾임)', /이용 기간 \{cyclePeriodParts\(lease\.cycleDay \?\? null\)\.map\(\(p, i\) => <span key=\{i\} className="whitespace-nowrap">/.test(strip(read('components/entity-modal/widgets/TenantContractInfo.tsx'))))
 
 // ── ⑦ 감사 규칙 11 ─────────────────────────────────────────────────
 const audit = strip(read('lib/integrityAudit.ts'))
@@ -143,8 +143,8 @@ for (const f of sources) {
   need('⑨ 일괄 수정: 기간 칸 판정(거절)이 입주자 칸 저장보다 앞', iCycle > 0 && iTenantWrite > 0 && iCycle < iTenantWrite)
   need('⑨ 일괄 수정: 딸린 계약 전파에 기간 칸을 넘기고 되돌리기에 prevCycleDay', /propagateDueDayToSubLeases\(prisma, b\.id, b\.dueDay, nextDue,\s*b\.cycleDay \? \{ prev: b\.cycleDay, next: nextCycle \} : undefined\)/.test(batch) && /cycleDay: m\.prevCycleDay/.test(batch))
   need('⑨ 일괄 수정 적용취소: 서명 검증과 허용 칸 목록', /signUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(batch) && /verifyUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(body(tenants, 'export async function undoBatchUpdateTenants(')) && /BATCH_UNDO_LEASE_FIELDS = new Set\(\['depositAmount', 'dueDay', 'cycleDay', 'status', 'moveInFlexible', 'expectedMoveOut', 'autoCheckoutAt'\]\)/.test(tenants))
-  need('⑨ 딸린 계약 신규 생성이 부모 기간 칸을 물려받는다', /const cycleDay = await inheritedCycleDay\(prisma, f\.data\.parentLeaseTermId, f\.data\.dueDay\)/.test(tenants) && /data: \{ \.\.\.f\.data, cycleDay, propertyId, tenantId \}/.test(tenants))
-  need('⑨ 입주자 수정(부모 붙이기 포함)도 부모 기간 칸을 물려받는다', /\(await inheritedCycleDay\(prisma, parentForCycle, nextDueDay\)\) \?\? cycleNext\.cycleDay/.test(tenants))
+  need('⑨ 딸린 계약 신규 생성이 부모 기간 칸을 물려받는다', /const cycleDay = await inheritedCycleDay\(prisma, f\.data\.parentLeaseTermId, f\.data\.dueDay, propertyId\)/.test(tenants) && /data: \{ \.\.\.f\.data, cycleDay, propertyId, tenantId \}/.test(tenants))
+  need('⑨ 입주자 수정(부모 붙이기 포함)도 부모 기간 칸을 물려받는다', /\(await inheritedCycleDay\(prisma, parentForCycle, nextDueDay, propertyId\)\) \?\? cycleNext\.cycleDay/.test(tenants))
   need('⑨ 계약서 문 납부일이 같은 판정', /cycleDayAfterDueChange\(lease\.cycleDay \?\? null, v\)/.test(strip(read('app/(app)/tenants/contractShare.ts'))))
   const imp = strip(read('app/api/import/route.ts'))
   need('⑨ 시트 가져오기가 같은 판정·전파에 기간 칸', /cycleDayAfterDueChange\(activeLease\.cycleDay \?\? null, nextDueDay\)/.test(imp) && /propagateDueDayToSubLeases\(prisma, activeLease\.id, activeLease\.dueDay, nextDueDay,\s*activeLease\.cycleDay \|\| cycleNext\.cycleDay/.test(imp))
@@ -155,6 +155,17 @@ for (const f of sources) {
   need('⑨ 위젯 예시가 정본 일할(cycleShiftExample)', /cycleShiftExample\(expected, cycle, targetMonth\)/.test(widget) && /export function cycleShiftExample\(/.test(strip(read('lib/prorate.ts'))))
   need('⑨ 감사 규칙 11 에 due-before-cycle 축', /if \(!dueDayAfterCycle\(lease\.cycleDay, lease\.dueDay\)\) return 'due-before-cycle'/.test(audit))
 }
+
+// ── ⑩ 재검수 후속 ─────────────────────────────────────────────────
+need('⑩ 상속 판정의 부모 조회가 영업장 범위', /where: \{ id: parentLeaseTermId, propertyId \}/.test(dueDayLib))
+{
+  const imp2 = strip(read('app/api/import/route.ts'))
+  const iJudge = imp2.indexOf('cycleDayAfterDueChange(activeLease.cycleDay ?? null, nextDueDay)'), iTenant = imp2.indexOf('await prisma.tenant.update({')
+  const iThrow = imp2.indexOf("if ('error' in cycleNext) throw new Error(cycleNext.error)")
+  need('⑩ 시트 가져오기: 기간 칸 판정과 거절이 그 줄의 입주자 칸 저장보다 앞', iJudge > 0 && iThrow > iJudge && iTenant > 0 && iThrow < iTenant)
+}
+
+need('⑩ 위젯 일할 기준액이 서버 재계산과 같은 정본(RoomRow.rentBasis = viewExpectedForMonth)', /expected=\{settlement\.rentBasis\}/.test(pb) && /const rentBasis = viewExpectedForMonth\(\{ \.\.\.lease, room, discounts: leaseDiscounts \}, targetMonth\)/.test(rooms))
 
 if (fails.length) {
   console.error(`[기간 시작일 배선] 위반 ${fails.length}건`)

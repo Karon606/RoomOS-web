@@ -88,13 +88,21 @@ export function cycleDayAfterDueChange(curCycleDay: string | null, nextDueDay: s
   return { cycleDay: curCycleDay }
 }
 
+/**
+ * 기간 표기를 꺾어도 되는 조각으로. 짧은 표기('1일~말일')는 한 조각, 긴 표기는 '20일~' 과 '다음 달 19일' 두 조각이다.
+ * 화면은 조각마다 줄바꿈을 막고 조각 사이에서만 꺾는다(좁은 폭에서 칸 밖으로 안 넘치게, 독립 재검수 2026-10-21).
+ */
+export function cyclePeriodParts(cycleDay: string | null): string[] {
+  const c = dueDayNumber(cycleDay)
+  if (c == null) return []
+  if (c === 1) return ['1일~말일']
+  if (c === 31) return ['말일~', '다음 달 말일 하루 전']   // 말일 시작 기간(이번 달 말일부터 다음 달 말일 하루 전까지)
+  return [`${c}일~`, `다음 달 ${c - 1}일`]
+}
+
 /** '매월 1일~말일' 의 '1일~말일' 조각. 기간 시작이 1일이면 말일까지, 아니면 다음 달 전날까지다. */
 export function cyclePeriodLabel(cycleDay: string | null): string {
-  const c = dueDayNumber(cycleDay)
-  if (c == null) return ''
-  if (c === 1) return '1일~말일'
-  if (c === 31) return '말일~다음 달 말일 하루 전'   // 말일 시작 기간(이번 달 말일부터 다음 달 말일 하루 전까지)
-  return `${c}일~다음 달 ${c - 1}일`
+  return cyclePeriodParts(cycleDay).join('')
 }
 
 /**
@@ -103,9 +111,10 @@ export function cyclePeriodLabel(cycleDay: string | null): string {
  * 부모가 납부일만 옮긴 계약(기간 1일·납부일 6일)인데 딸린 계약이 납부일 6일만 받으면 그 계약의 기간은 6일부터로 갈린다.
  * 부모가 없거나, 납부일이 다르거나, 부모에 기간 칸이 없으면 null 이다(종전과 같다).
  */
-export async function inheritedCycleDay(db: Pick<DueDayDb, 'leaseTerm'>, parentLeaseTermId: string | null | undefined, dueDay: string | null | undefined): Promise<string | null> {
+// 부모 조회는 영업장 범위다(남의 영업장 계약 id 를 부모로 실어 보내도 그 칸을 읽지 못하게, 독립 재검수 2026-10-21).
+export async function inheritedCycleDay(db: Pick<DueDayDb, 'leaseTerm'>, parentLeaseTermId: string | null | undefined, dueDay: string | null | undefined, propertyId: string): Promise<string | null> {
   if (!parentLeaseTermId || !dueDay) return null
-  const p = await db.leaseTerm.findFirst({ where: { id: parentLeaseTermId }, select: { dueDay: true, cycleDay: true } })
+  const p = await db.leaseTerm.findFirst({ where: { id: parentLeaseTermId, propertyId }, select: { dueDay: true, cycleDay: true } })
   if (!p?.cycleDay || !sameDueDay(p.dueDay, dueDay)) return null
   return p.cycleDay
 }

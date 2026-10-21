@@ -15,7 +15,7 @@ import { calcProRata, cycleShiftExample, PRORATE_BASE_DAYS } from '@/lib/prorate
 import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DUE_DAY_ADJUST_KIND_TEXT } from '@/lib/dueDayAdjust'
-import { cycleDayOf, cyclePeriodLabel, dueDayAfterCycle, dueDayParts, dueOnlyEarlierRefused, sameDueDay } from '@/lib/dueDay'
+import { cycleDayOf, cyclePeriodLabel, cyclePeriodParts, dueDayAfterCycle, dueDayParts, dueOnlyEarlierRefused, sameDueDay } from '@/lib/dueDay'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { withParticle } from '@/lib/koParticle'
 
@@ -177,7 +177,8 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           {/* 폭을 고정한다. 기간 줄이 있고 없음에 따라 입력칸 폭이 흔들리지 않게(독립 검수 2026-10-21). */}
           <div className="w-[5.5rem] shrink-0 text-xs pb-2.5 text-right break-keep" style={{ color: 'var(--warm-muted)' }}>
             현재 {dayText(currentDueDay) || '없음'}
-            {cycleDay && !sameDueDay(cycleDay, currentDueDay) && <span className="block">기간 {period}</span>}
+            {/* 긴 기간('20일~다음 달 19일')은 조각 사이에서만 꺾는다(좁은 열에서 '다음 / 달' 로 갈리지 않게). */}
+            {cycleDay && !sameDueDay(cycleDay, currentDueDay) && <span className="block">기간 {cyclePeriodParts(cycle).map((p, i) => <span key={i} className="whitespace-nowrap">{p}</span>)}</span>}
           </div>
         </div>
 

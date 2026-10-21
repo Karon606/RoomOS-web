@@ -6,6 +6,7 @@
 
 import { unpaidForLease, billedForLease, billForLeaseMonth, firstMonthGap, firstMonthDueYmd, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, type UnpaidRecord } from '@/lib/billing'
 import { cycleDayOf, dueDayAfterCycle } from '../lib/dueDay'
+import { viewExpectedForMonth } from '../lib/roomMonth'
 import { fmtManShort, fmtOfferRentAhead, fmtRentApplyFrom } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
@@ -1227,6 +1228,14 @@ const RENT = 300000
   eq('예시: 말일 시작(11월 30일) · 26일로 4일 돌려줌', cycleShiftExample(470000, '말일', '2026-11'), { to: 26, days: 4, amount: 62666, type: 'refund' })
   eq('예시: 말일 시작(12월 31일) · 26일로 5일 돌려줌', cycleShiftExample(470000, '말일', '2026-12'), { to: 26, days: 5, amount: 78333, type: 'refund' })
   eq('예시: 납부일 없음이면 예시 없음', cycleShiftExample(470000, null, '2026-11'), null)
+  // 납입일 변경 일할의 기준액은 그 달 청구가 아니라 이용료 기준액(viewExpectedForMonth)이다. 위젯과 서버가 같은 값을 쓴다(독립 재검수 2026-10-21).
+  {
+    const MI = new Date('2026-11-01T00:00:00Z')
+    const firstMonth = { rentAmount: 470000, status: 'ACTIVE', moveInDate: MI, dueDay: '6', cycleDay: null, dueDayAdjusts: [], checkoutProratedAmount: null, checkoutProratedMonth: null }
+    eq('입주달(첫 달 규칙 발동) 청구는 548,333 이지만 일할 기준액은 470,000', [billForLeaseMonth(firstMonth, '2026-11', null), viewExpectedForMonth(firstMonth, '2026-11')], [548333, 470000])
+    eq('월세 변경 뒤 락이 옛 금액(450,000)인 달도 기준액은 지금 이용료 470,000', [billForLeaseMonth(firstMonth, '2026-12', 450000), viewExpectedForMonth(firstMonth, '2026-12')], [450000, 470000])
+    eq('기준액으로 잰 일할(6일에서 10일, 4일)', calcProRata(viewExpectedForMonth(firstMonth, '2026-12'), '6', '10', '2026-12'), { days: 4, amount: 62666, type: 'extra' })
+  }
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

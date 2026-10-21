@@ -214,6 +214,14 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
         }
 
         if (resolution === 'overwrite') {
+          // 납부일만 옮긴 계약(기간 칸 있음)이면 폼·일괄 수정과 같은 판정이다. 기간 시작보다 앞이면 그 줄을 거절한다(2026-10-21).
+          // 판정은 그 줄의 입주자 칸 저장보다 앞이다. 거절되면 그 줄은 아무것도 안 바뀐다(독립 재검수 2026-10-21).
+          const activeLease = primaryTenantLease(existing.leaseTerms)
+          const nextDueDay = str(row['납부일']) || null
+          const cycleNext = !activeLease || !row['이용료'] || sameDueDay(nextDueDay, activeLease.dueDay)
+            ? { cycleDay: activeLease?.cycleDay ?? null }
+            : cycleDayAfterDueChange(activeLease.cycleDay ?? null, nextDueDay)
+          if ('error' in cycleNext) throw new Error(cycleNext.error)
           await prisma.tenant.update({
             where: { id: existing.id },
             data: {
@@ -226,16 +234,11 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               memo:        str(row['메모']) || null,
             },
           })
-          const activeLease = primaryTenantLease(existing.leaseTerms)
           if (activeLease && row['이용료']) {
             // 시트에 칸이 **없으면 미변경**이다. parseNum 은 빈칸을 0 으로 환원하므로,
             // 이용료 칸만 채운 시트를 올리면 기존 보증금·청소비가 0 으로 파괴적 갱신됐다(2026-08-02 조사).
             // 계약서 URL 이 이미 formData.has() 로 같은 방어를 하고 있다. 그 문법에 맞춘다.
             const has = (k: string) => k in row && String(row[k] ?? '').trim() !== ''
-            const nextDueDay = str(row['납부일']) || null
-            // 납부일만 옮긴 계약(기간 칸 있음)이면 폼·일괄 수정과 같은 판정이다. 기간 시작보다 앞이면 그 줄을 거절한다(2026-10-21).
-            const cycleNext = sameDueDay(nextDueDay, activeLease.dueDay) ? { cycleDay: activeLease.cycleDay ?? null } : cycleDayAfterDueChange(activeLease.cycleDay ?? null, nextDueDay)
-            if ('error' in cycleNext) throw new Error(cycleNext.error)
             await prisma.leaseTerm.update({
               where: { id: activeLease.id },
               data: {

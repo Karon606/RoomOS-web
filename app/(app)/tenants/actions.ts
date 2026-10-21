@@ -883,7 +883,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
     if (denial) return { ok: false, error: denial }
 
     // 딸린 계약이 부모와 같은 납부일이면 부모의 이용 기간 시작일도 함께 저장한다(lib/dueDay inheritedCycleDay).
-    const cycleDay = await inheritedCycleDay(prisma, f.data.parentLeaseTermId, f.data.dueDay)
+    const cycleDay = await inheritedCycleDay(prisma, f.data.parentLeaseTermId, f.data.dueDay, propertyId)
     const lease = await prisma.leaseTerm.create({
       data: { ...f.data, cycleDay, propertyId, tenantId },
       select: { id: true },
@@ -1202,7 +1202,7 @@ export async function updateTenant(formData: FormData): Promise<
   if ('error' in cycleNext) return { ok: false, error: cycleNext.error }
   // 부모와 같은 납부일인 딸린 계약은 부모의 기간 칸을 따른다(부모를 새로 붙이는 저장 포함, lib/dueDay inheritedCycleDay).
   const parentForCycle = parentLeaseTermId !== undefined ? parentLeaseTermId : currentLease.parentLeaseTermId
-  const nextCycleDay = (await inheritedCycleDay(prisma, parentForCycle, nextDueDay)) ?? cycleNext.cycleDay
+  const nextCycleDay = (await inheritedCycleDay(prisma, parentForCycle, nextDueDay, propertyId)) ?? cycleNext.cycleDay
 
   // 퇴실 예정일 변경 판정 — 재검증 발화와 일할 정산 재계산이 같은 값을 봐야 한다.
   // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
