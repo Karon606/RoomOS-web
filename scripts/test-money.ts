@@ -10,6 +10,7 @@ import { fmtManShort, fmtOfferRentAhead, fmtRentApplyFrom } from '../lib/fmtMone
 import {
   PRORATE_BASE_DAYS,
   calcProRata,
+  cycleShiftExample,
   calcCheckoutProration,
   shouldOfferCheckoutProration,
   calcCheckoutRefund,
@@ -1220,6 +1221,12 @@ const RENT = 300000
   eq('납부일 5 < 기간 20 거절(앞당기기)', dueDayAfterCycle('20', '5'), false)
   eq('같은 날 거절', dueDayAfterCycle('6', '6'), false)
   eq('말일 기간 뒤로는 없음', dueDayAfterCycle('말일', '31'), false)
+  // 기간도 옮김 예시(위젯 설명). 정본 calcProRata 로 재고, 24일~말일 시작이면 앞으로 옮겨 '돌려줄 금액' 이다(독립 검수 2026-10-21).
+  eq('예시: 1일 시작 · 6일로 5일 추가', cycleShiftExample(470000, '1', '2026-11'), { to: 6, days: 5, amount: 78333, type: 'extra' })
+  eq('예시: 24일 시작 · 19일로 5일 돌려줌', cycleShiftExample(470000, '24', '2026-11'), { to: 19, days: 5, amount: 78333, type: 'refund' })
+  eq('예시: 말일 시작(11월 30일) · 26일로 4일 돌려줌', cycleShiftExample(470000, '말일', '2026-11'), { to: 26, days: 4, amount: 62666, type: 'refund' })
+  eq('예시: 말일 시작(12월 31일) · 26일로 5일 돌려줌', cycleShiftExample(470000, '말일', '2026-12'), { to: 26, days: 5, amount: 78333, type: 'refund' })
+  eq('예시: 납부일 없음이면 예시 없음', cycleShiftExample(470000, null, '2026-11'), null)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

@@ -73,6 +73,8 @@ eq('분리: 갈린 계약', hasSplitCycle(split), true)
 eq('칸 없음: 기간 시작일 = 납부일', cycleDayOf({ dueDay: '6', cycleDay: null }), '6')
 eq('같은 날 칸은 갈린 것이 아님(30 과 말일)', hasSplitCycle({ dueDay: '말일', cycleDay: '30' }), false)
 eq('기간 표기 15일', cyclePeriodLabel('15'), '15일~다음 달 14일')
+eq('기간 표기 말일', cyclePeriodLabel('말일'), '말일~다음 달 말일 하루 전')
+eq('기간 표기 없음', cyclePeriodLabel(null), '')
 // 미납 경과일은 기한(6일)에서 센다. 11/9 이면 3일 경과(홈 미납·연체 판정이 쓰는 같은 차).
 const d9 = new Date(2026, 10, 9).getTime(), d6 = dueDateForMonth(split, '2026-11')!.getTime()
 eq('분리: 11/9 는 기한 11/6 에서 3일 경과', Math.round((d9 - d6) / 86400000), 3)

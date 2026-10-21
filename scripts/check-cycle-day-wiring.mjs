@@ -15,7 +15,7 @@
 //      서명과 함께 되돌린다. 폼·일괄 수정이 같은 판정을 쓴다. 위젯은 기본값 없는 §12 세그먼트이고 일할 옛 값이 cycleDayOf 다.
 //   ⑧ 무청구 판정은 날짜 인자가 없다(경계 = 기간 시작, 임시 조정 무시). 호출부가 기한 날짜를 넘기는 사본이 다시 생기면 잡는다.
 //   ⑨ 독립 검수 후속. 일괄 수정(판정 순서·전파·적용취소 서명), 딸린 계약 상속, 우회 경로(계약서 문·시트), 내보내기 인수월,
-//      서버 일할 재계산, 감사 due-before-cycle.
+//      서버 일할 재계산, 수납 정보의 임시 조정 뺀 납부일, 위젯 예시 정본, 감사 due-before-cycle.
 //   ⑦ 감사 규칙 11(기간 칸이 납부일과 같은 값으로 남음·거주 전 계약에 남음)이 판정 정본으로 적재된다.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -108,7 +108,7 @@ need('⑥ 위젯: 기간도 옮김 일할의 옛 값이 cycleDayOf', /calcProRat
 need('⑥ 위젯: 납부일만 옮김에서 협의 금액 칸이 없다(일할 상자가 있을 때만)', /\{calc && calc\.type !== 'none' && \(\s*<div className="space-y-1">\s*<p className="text-xs text-\[var\(--warm-muted\)\]">협의 금액/.test(widget))
 const pb = strip(read('components/entity-modal/bodies/PaymentBody.tsx'))
 need('⑥ 수납 정보가 위젯에 기간 칸을 넘기고 헤더에 이용 기간을 적는다', /cycleDay=\{settlement\.cycleDay\}/.test(pb) && /이용 기간 \$\{cyclePeriodLabel\(settlement\.cycleDay\)\}/.test(pb))
-need('⑥ 계약 정보에 이용 기간 표기', /이용 기간 \$\{cyclePeriodLabel\(lease\.cycleDay \?\? null\)\}/.test(strip(read('components/entity-modal/widgets/TenantContractInfo.tsx'))))
+need('⑥ 계약 정보에 이용 기간 표기', /이용 기간 (\$\{|<span className="whitespace-nowrap">\{)cyclePeriodLabel\(lease\.cycleDay \?\? null\)\}/.test(strip(read('components/entity-modal/widgets/TenantContractInfo.tsx'))))
 
 // ── ⑦ 감사 규칙 11 ─────────────────────────────────────────────────
 const audit = strip(read('lib/integrityAudit.ts'))
@@ -150,6 +150,9 @@ for (const f of sources) {
   need('⑨ 시트 가져오기가 같은 판정·전파에 기간 칸', /cycleDayAfterDueChange\(activeLease\.cycleDay \?\? null, nextDueDay\)/.test(imp) && /propagateDueDayToSubLeases\(prisma, activeLease\.id, activeLease\.dueDay, nextDueDay,\s*activeLease\.cycleDay \|\| cycleNext\.cycleDay/.test(imp))
   need('⑨ 내보내기 인수월 판정이 cycleDayOf(임시 조정 무시)', /const cycleForCutoff = cycleDayOf\(l\)/.test(strip(read('app/api/export/route.ts'))))
   need('⑨ 기간도 옮김 일할을 서버가 DB 값으로 다시 잰다(화면 값은 비교용)', /const serverCalc = calcProRata\(viewExpectedForMonth\(lease, targetMonth\), curCycle, nextDue, targetMonth\)/.test(change) && /planDueDayAdjustCreate\(\{ fromDue: curCycle, toDue: newDueDay, adjustAmount: serverAdjust,/.test(change))
+  need('⑨ 수납 정보가 위젯에 임시 조정을 뺀 납부일(baseDueDay)을 넘긴다', /currentDueDay=\{settlement\.baseDueDay\}/.test(pb))
+  need('⑨ 퇴실 정산 위젯 안내가 기간 시작일(cycleDayOf, 임시 조정 무시)', /currentDueDay=\{cycleDayOf\(\{ cycleDay: settlement\.cycleDay, dueDay: settlement\.baseDueDay \}\)\}/.test(pb))
+  need('⑨ 위젯 예시가 정본 일할(cycleShiftExample)', /cycleShiftExample\(expected, cycle, targetMonth\)/.test(widget) && /export function cycleShiftExample\(/.test(strip(read('lib/prorate.ts'))))
   need('⑨ 감사 규칙 11 에 due-before-cycle 축', /if \(!dueDayAfterCycle\(lease\.cycleDay, lease\.dueDay\)\) return 'due-before-cycle'/.test(audit))
 }
 

@@ -31,7 +31,7 @@ type Settlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>
 type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
-import { cyclePeriodLabel, hasSplitCycle } from '@/lib/dueDay'
+import { cycleDayOf, cyclePeriodLabel, hasSplitCycle } from '@/lib/dueDay'
 import { reservationSplitPartsLabel } from '@/lib/reservationDeposit'
 
 export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSelectLease, openCheckoutProration }: {
@@ -259,11 +259,14 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
           const ovrActive = !!settlement.overrideDueDay && settlement.overrideDueDayMonth === month
           const d = settlement.dueDay
           const dayLabel = d.includes('-') ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : d.includes('말') ? '말일' : `${d}일`
-          // 납부일만 옮긴 계약은 이용 기간을 함께 적는다(운영자 승인 2026-10-21, cycleDay 가 있을 때만).
-          const periodTail = hasSplitCycle({ cycleDay: settlement.cycleDay, dueDay: d }) ? ` · 이용 기간 ${cyclePeriodLabel(settlement.cycleDay)}` : ''
+          // 납부일만 옮긴 계약은 이용 기간을 함께 적는다(운영자 승인 2026-10-21, cycleDay 가 있을 때만). 갈린 계약인지는 임시 조정을
+          // 뺀 계약 납부일(baseDueDay)로 가린다. 꺾이면 '이용 기간' 조각이 통째로 내려가게 inline-block 이다(좁은 폭, 하네스 320px·125%).
+          const periodTail = hasSplitCycle({ cycleDay: settlement.cycleDay, dueDay: settlement.baseDueDay })
+            ? <> · <span className="inline-block">{`이용 기간 ${cyclePeriodLabel(settlement.cycleDay)}`}</span></>
+            : null
           return <Row k="납부일" v={ovrActive
             ? <>이달 {dayLabel} <span className="text-[var(--warning-fg)]">(임시)</span>{periodTail}</>
-            : `${d.includes('말') ? '매월 말일' : `매월 ${d}일`}${periodTail}`} />
+            : <>{d.includes('말') ? '매월 말일' : `매월 ${d}일`}{periodTail}</>} />
         })()}
       </div>
 
@@ -406,7 +409,8 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                 leaseTermId={leaseTermId}
                 targetMonth={month}
                 expected={settlement.expected}
-                currentDueDay={settlement.dueDay}
+                // 임시 조정을 뺀 계약 납부일이다. settlement.dueDay 는 그 달 임시일이 반영돼 영구 변경의 '현재'·기간·일할을 틀리게 만든다(독립 검수 2026-10-21).
+                currentDueDay={settlement.baseDueDay}
                 cycleDay={settlement.cycleDay}
                 onChange={refresh}
               />
@@ -419,7 +423,8 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
               <CheckoutProrationWidget
                 key={adjustKey}
                 leaseTermId={leaseTermId}
-                currentDueDay={settlement.dueDay}
+                // 퇴실 정산은 기간으로 잰다. 임시 조정은 기한일 뿐이고(서버 정산도 무시한다), 납부일만 옮긴 계약은 기간 시작일이다.
+                currentDueDay={cycleDayOf({ cycleDay: settlement.cycleDay, dueDay: settlement.baseDueDay })}
                 expectedMoveOut={settlement.expectedMoveOut}
                 checkoutProratedAmount={settlement.checkoutProratedAmount}
                 checkoutProratedMonth={settlement.checkoutProratedMonth}
@@ -445,9 +450,10 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
 function Row({ k, v, sub }: { k: string; v: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div className="py-1.5 border-b border-[var(--warm-border)]/50 last:border-0">
-      <div className="flex justify-between">
-        <span className="text-xs text-[var(--warm-muted)]">{k}</span>
-        <span className="text-sm text-[var(--warm-dark)]">{v}</span>
+      {/* 좁은 폭에서 값이 길면(이용 기간 표기) 라벨은 안 줄고 값만 오른쪽 정렬로 어절 단위로 꺾인다(하네스 320px·125%). */}
+      <div className="flex justify-between gap-3">
+        <span className="text-xs text-[var(--warm-muted)] shrink-0">{k}</span>
+        <span className="text-sm text-[var(--warm-dark)] text-right break-keep min-w-0">{v}</span>
       </div>
       {sub}
     </div>

@@ -8,15 +8,16 @@
 //               기간 시작보다 앞으로는 못 옮긴다(서버도 거절한다, tenants/actions changeDueDay).
 // 고르는 칸은 §12 상호배타 세그먼트(36px, 선택 --cream + 보더 테라코타)다. 필터·뷰 전환용 SegmentedControl(30px, tablist)이 아니다.
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition, type KeyboardEvent } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { changeDueDay, undoChangeDueDay, type DueDayChangeMode } from '@/app/(app)/tenants/actions'
-import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
+import { calcProRata, cycleShiftExample, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DUE_DAY_ADJUST_KIND_TEXT } from '@/lib/dueDayAdjust'
 import { cycleDayOf, cyclePeriodLabel, dueDayAfterCycle, dueDayParts, dueOnlyEarlierRefused, sameDueDay } from '@/lib/dueDay'
 import { withSave, pushToast } from '@/lib/saveStatus'
+import { withParticle } from '@/lib/koParticle'
 
 const MODE_OPTIONS: { value: DueDayChangeMode; label: string }[] = [
   { value: 'cycle', label: '기간도 옮김' },
@@ -51,12 +52,25 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
   const [agreed, setAgreed] = useState(0)
   const cycle = cycleDayOf({ cycleDay, dueDay: currentDueDay })
   const reset = () => { setMode(null); setInput(''); setAgreed(0) }
+  const radioRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // ARIA 라디오 패턴. 화살표로 고르고 포커스를 옮긴다(Tab 은 그룹에 한 번만 멈춘다).
+  const onRadioKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const cur = MODE_OPTIONS.findIndex(o => o.value === mode)
+    const next = (cur < 0 ? (step > 0 ? 0 : MODE_OPTIONS.length - 1) : (cur + step + MODE_OPTIONS.length) % MODE_OPTIONS.length)
+    setMode(MODE_OPTIONS[next].value); setAgreed(0)
+    radioRefs.current[next]?.focus()
+  }
 
   // 기간도 옮김 — 옛 값은 이용 기간 시작일이다(납부일만 옮겨 둔 계약은 기간이 움직인 날수가 일할이다).
   const trimmed = input.trim()
   const calc = mode === 'cycle' && trimmed ? calcProRata(expected, cycle, trimmed, targetMonth) : null
   // 납부일만 옮김 — 같은 달 안에서 기간 시작보다 늦어야 한다. 기간 시작과 같은 날이면 다시 하나로 접힌다.
-  const dueOnlyValid = mode === 'dueOnly' && trimmed !== '' && validDay(trimmed)
+  // 납부일이 없는 계약은 기간 시작일도 없어 납부일만 옮길 수 없다(문장이 '매월 입니다' 로 깨지지 않게 따로 안내한다).
+  const noCycle = !cyclePeriodLabel(cycle)
+  const dueOnlyValid = mode === 'dueOnly' && !noCycle && trimmed !== '' && validDay(trimmed)
   const dueOnlyBack = dueOnlyValid && sameDueDay(trimmed, cycle)
   const dueOnlyLater = dueOnlyValid && dueDayAfterCycle(cycle, trimmed)
   const dueOnlyNoop = dueOnlyValid && sameDueDay(trimmed, currentDueDay) && (dueOnlyBack ? !cycleDay : !!cycleDay)
@@ -92,23 +106,18 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
             <p className="text-xs font-medium text-[var(--warm-mid)]">납입일 영구 변경</p>
             <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">기간째 옮기거나 납부일만 옮깁니다</p>
           </div>
-          <button type="button" onClick={() => { setShowForm(true); reset() }}
-            className="text-[0.6875rem] px-2 py-1 rounded transition-colors shrink-0"
-            style={{ color: 'var(--tc-text)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
-            변경
-          </button>
+          <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(true); reset() }} className="shrink-0">변경</Btn>
         </div>
       </div>
     )
   }
 
-  // 그 계약 숫자로 든 예시(기간도 옮김). 기간 시작에서 5일 뒤로(말일 근처면 5일 앞으로) 옮기는 경우다.
-  const cycleNum = dueDayParts(cycle).raw === '말일' ? 31 : Number(dueDayParts(cycle).raw)
-  const exampleTo = Number.isInteger(cycleNum) && cycleNum > 0 ? (cycleNum <= 23 ? cycleNum + 5 : cycleNum - 5) : null
-  const exampleAmount = Math.floor((expected * 5) / PRORATE_BASE_DAYS)
+  // 그 계약 숫자로 든 예시(기간도 옮김). 기간 시작에서 5일 뒤로(24일~말일 시작이면 5일 앞으로) 옮기는 경우를
+  // 위젯과 같은 정본(calcProRata)으로 잰다. 앞으로 옮기면 방향이 '돌려줄 금액' 이고, 말일은 그 달 날수로 잰다.
+  const exampleCalc = cycleShiftExample(expected, cycle, targetMonth)
   const period = cyclePeriodLabel(cycle)
   // 아직 고를 수 있는 날이 아니면(앞당김·같은 날·빈칸) 문장이 그 날로 늦춘다고 말하지 않는다.
-  const newDayText = dueOnlyLater ? dayText(trimmed) : '새 날'
+  const newDayText = dueOnlyLater ? dayText(trimmed) : '새 납입일'
 
   return (
     <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
@@ -117,11 +126,14 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
 
         {/* §12 상호배타 세그먼트. 고르기 전에는 아무것도 선택되지 않는다(기본값 없음). 선택 보더는 --tc-text 다.
             라이트에서는 --tc 와 같은 #A03C2E 이고 다크에서만 밝아져 카드 위 3:1 을 지킨다(§12 포커스 링과 같은 이유). */}
-        <div role="radiogroup" aria-label="변경 방식" className="flex gap-1.5">
-          {MODE_OPTIONS.map(o => {
+        <div role="radiogroup" aria-label="변경 방식" className="flex gap-1.5" onKeyDown={onRadioKey}>
+          {MODE_OPTIONS.map((o, i) => {
             const on = mode === o.value
+            // 고른 것이 없으면 첫 칸이 Tab 자리다(로빙 tabindex).
+            const tabbable = on || (mode === null && i === 0)
             return (
-              <button key={o.value} type="button" role="radio" aria-checked={on}
+              <button key={o.value} type="button" role="radio" aria-checked={on} tabIndex={tabbable ? 0 : -1}
+                ref={el => { radioRefs.current[i] = el }}
                 onClick={() => { setMode(o.value); setAgreed(0) }}
                 className={`flex-1 h-9 rounded-sm px-2 text-sm whitespace-nowrap transition-colors ${FOCUS_RING}`}
                 style={on
@@ -136,16 +148,21 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
         {mode === 'cycle' && (
           <p className={CAPTION} style={{ color: 'var(--warm-mid)' }}>
             이용 기간이 새 납입일부터 시작합니다. 늘거나 준 날수만큼 일할 정산합니다.
-            {exampleTo != null && (
+            {exampleCalc && (
               <span className="block num" style={{ color: 'var(--warm-muted)' }}>
-                예) 매월 {dayText(cycle)}에서 {exampleTo}일로 옮기면 5일치 {fmtWon(exampleAmount)}을 {DUE_DAY_ADJUST_KIND_TEXT.extra}으로 기록합니다.
+                예) 매월 {dayText(cycle)}에서 {exampleCalc.to}일로 옮기면 {exampleCalc.days}일치 {fmtWon(exampleCalc.amount)}을 {DUE_DAY_ADJUST_KIND_TEXT[exampleCalc.type]}으로 기록합니다.
               </span>
             )}
           </p>
         )}
-        {mode === 'dueOnly' && (
+        {mode === 'dueOnly' && noCycle && (
+          <p className={CAPTION} style={{ color: 'var(--tc-text)' }}>납부일이 정해지지 않은 계약이라 이용 기간을 알 수 없습니다. 먼저 납부일을 정해 주세요.</p>
+        )}
+        {mode === 'dueOnly' && !noCycle && (
           <p className={CAPTION} style={{ color: 'var(--warm-mid)' }}>
-            이용 기간은 그대로 매월 {period}입니다. 돈을 내는 날만 {newDayText}로 늦춥니다. 일할 정산이 없고, 기간 끝에 퇴실하면 추가 금액이 없습니다.
+            {dueOnlyBack
+              ? `이용 기간은 그대로 매월 ${period}입니다. 납부일을 기간 시작일(${dayText(cycle)})로 되돌려 둘이 다시 같아집니다. 일할 정산이 없고 추가 금액은 0원입니다.`
+              : `이용 기간은 그대로 매월 ${period}입니다. 돈을 내는 날만 ${withParticle(newDayText, '으로/로')} 늦춥니다. 일할 정산이 없고, 기간 끝에 퇴실하면 추가 금액이 없습니다.`}
           </p>
         )}
 
@@ -157,7 +174,8 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
               className="w-full rounded-sm px-3 py-2.5 text-sm outline-none"
               style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
           </div>
-          <div className="text-xs pb-2.5 text-right" style={{ color: 'var(--warm-muted)' }}>
+          {/* 폭을 고정한다. 기간 줄이 있고 없음에 따라 입력칸 폭이 흔들리지 않게(독립 검수 2026-10-21). */}
+          <div className="w-[5.5rem] shrink-0 text-xs pb-2.5 text-right break-keep" style={{ color: 'var(--warm-muted)' }}>
             현재 {dayText(currentDueDay) || '없음'}
             {cycleDay && !sameDueDay(cycleDay, currentDueDay) && <span className="block">기간 {period}</span>}
           </div>
@@ -201,9 +219,6 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
             style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
             이용 기간 매월 {period} 그대로 · 납부일 매월 {dayText(trimmed)} · 추가 금액 0원
           </div>
-        )}
-        {mode === 'dueOnly' && dueOnlyBack && !dueOnlyNoop && (
-          <p className={CAPTION} style={{ color: 'var(--warm-mid)' }}>기간 시작과 같은 날이라 납부일과 이용 기간이 다시 하나로 맞춰집니다. 추가 금액은 0원입니다.</p>
         )}
         {mode === 'dueOnly' && dueOnlyValid && !dueOnlyLater && !dueOnlyBack && (
           <p className={CAPTION} style={{ color: 'var(--tc-text)' }}>{dueOnlyEarlierRefused(cycle, true)}</p>

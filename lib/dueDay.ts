@@ -93,7 +93,7 @@ export function cyclePeriodLabel(cycleDay: string | null): string {
   const c = dueDayNumber(cycleDay)
   if (c == null) return ''
   if (c === 1) return '1일~말일'
-  if (c === 31) return '말일~다음 달 말일 전날'
+  if (c === 31) return '말일~다음 달 말일 하루 전'   // 말일 시작 기간(이번 달 말일부터 다음 달 말일 하루 전까지)
   return `${c}일~다음 달 ${c - 1}일`
 }
 

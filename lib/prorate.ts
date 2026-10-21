@@ -2,6 +2,7 @@
 // 고객관리(TenantClient)·수납관리(RoomsClient) 공용.
 export const PRORATE_BASE_DAYS = 30
 import { settlementPeriodFor } from './settlementPeriod'
+import { dueDayParts } from './dueDay'
 
 export type ProRataResult =
   | { days: 0; amount: 0; type: 'none' }
@@ -30,6 +31,20 @@ export function calcProRata(
   if (diff === 0) return { days: 0, amount: 0, type: 'none' }
   const amount = Math.floor((Math.abs(diff) * rentAmount) / PRORATE_BASE_DAYS)
   return { days: Math.abs(diff), amount, type: diff > 0 ? 'extra' : 'refund' }
+}
+
+/**
+ * 기간도 옮김 예시. 기간 시작에서 5일 뒤(24일~말일 시작이면 5일 앞)로 옮길 때의 일할을 정본 calcProRata 로 잰다.
+ * 기간 시작일을 못 읽거나 일할이 없으면 null(예시를 안 보인다). 진리표(test-money)가 이 함수를 본다. 납입일 변경 위젯의 '기간도 옮김' 설명이 쓴다.
+ */
+export function cycleShiftExample(expected: number, cycle: string | null, targetMonth: string): { to: number; days: number; amount: number; type: 'extra' | 'refund' } | null {
+  const raw = dueDayParts(cycle).raw
+  const n = raw === '말일' ? 31 : Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > 31) return null
+  const to = n <= 23 ? n + 5 : n - 5
+  const c = calcProRata(expected, cycle, String(to), targetMonth)
+  if (!c || c.type === 'none') return null
+  return { to, days: c.days, amount: c.amount, type: c.type }
 }
 
 // ── 퇴실 정산(일할) ──────────────────────────────────────────────────

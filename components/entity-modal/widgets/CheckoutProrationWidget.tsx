@@ -254,7 +254,8 @@ export function CheckoutProrationWidget({
           <label className="text-xs text-[var(--warm-muted)]">퇴실 예정일</label>
           <DatePicker value={date} onChange={handleDate} className={inputCls} />
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-            납부일 {currentDueDay ? (currentDueDay.includes('말') ? '말일' : `${currentDueDay}일`) : '미정'} 부터 퇴실일까지(양끝 포함) 일수만큼 청구합니다.
+            {/* 정산 기간의 시작은 이용 기간 시작일이다(수납 정보가 cycleDayOf 를 넘긴다, 임시 조정 무시). 서버 정산(settlementPeriodFor)과 같은 날이다. */}
+            이용 기간 시작일 {currentDueDay ? (currentDueDay.includes('말') ? '말일' : `${currentDueDay}일`) : '미정'}부터 퇴실일까지(양끝 포함) 일수만큼 청구합니다.
           </p>
         </div>
 

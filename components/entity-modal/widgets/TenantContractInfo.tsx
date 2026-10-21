@@ -91,7 +91,7 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
         {!isPending && !lease.isShortTerm && <Item label="납부일" value={hasSplitCycle({ cycleDay: lease.cycleDay ?? null, dueDay: lease.dueDay })
           // 줄이 꺾이면 '이용 기간' 조각이 통째로 내려가게 한다(좁은 폭에서 '이용 기간 / 1일~말일' 로 갈리지 않게, 하네스 320px).
           // nowrap 이 아니라 inline-block 이다. 칸보다 길면(320px·글자 125%) 조각 안에서 꺾여 칸 밖으로 넘치지 않는다.
-          ? <>{fmtDueDay(lease.dueDay)} · <span className="inline-block">{`이용 기간 ${cyclePeriodLabel(lease.cycleDay ?? null)}`}</span></>
+          ? <>{fmtDueDay(lease.dueDay)} · <span className="inline-block break-keep">이용 기간 <span className="whitespace-nowrap">{cyclePeriodLabel(lease.cycleDay ?? null)}</span></span></>
           : fmtDueDay(lease.dueDay)} />}
         <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
         {/* 문의 일시 · 투어 예정일 · 입주 희망일 — 리드가 걸어온 순서 그대로 선다.
