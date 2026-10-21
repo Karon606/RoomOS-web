@@ -52,6 +52,20 @@ export function pendingDueDayViolation(lease: {
   return true
 }
 
+/**
+ * 규칙 11 판정 정본(이용 기간 시작일 칸, 운영자 승인 2026-10-21). 위반이면 이유를, 아니면 null.
+ *   same-as-due  cycleDay 가 납부일과 같은 날로 남음. 갈린 것이 아닌데 칸이 서 있다. 쓰는 문은 같은 날이면 비우므로(정규화)
+ *                남아 있으면 새 쓰기 경로가 정규화를 빠뜨린 것이다. 청구는 같지만 화면이 '이용 기간' 을 거짓으로 따로 적는다.
+ *   pending      거주 전 상태(문의·투어·예약·취소)인데 cycleDay 가 있음. 납부일만 옮김은 거주 중 계약의 일이고, 예약으로 되돌린
+ *                계약에 남으면 다시 입실할 때 지난 합의가 말없이 되살아난다.
+ */
+export function cycleDayViolation(lease: { status: string; dueDay: string | null; cycleDay: string | null }): null | 'same-as-due' | 'pending' {
+  if (!lease.cycleDay) return null
+  if ((PENDING_DUE_DAY_STATUSES as string[]).includes(lease.status)) return 'pending'
+  if (sameDueDay(lease.cycleDay, lease.dueDay)) return 'same-as-due'
+  return null
+}
+
 export async function runIntegrityAudit(
   prisma: PrismaDb,
   // 예행: 위반만 모아 돌려주고 신고는 적재하지 않는다 — 새 규칙이 실제 데이터를 잡는지 확인하는 길.
@@ -343,6 +357,27 @@ export async function runIntegrityAudit(
       violations.push({
         signature: `[정합] due-day-adjust-first-month · ${l.id} · ${why}`,
         note: `${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo)} ` : ''}${l.tenant.name}: ${WHY[why]} 입주달 일할을 두 번 받을 수 있습니다. 입주달 청구와 조정 기록을 확인해 주세요.`,
+        tenantId: l.tenantId, propertyId: l.propertyId,
+      })
+    }
+  }
+
+  // 규칙 11. 이용 기간 시작일 칸(cycleDay)이 남으면 안 되는 자리에 남음(운영자 승인 2026-10-21, 판정 정본 cycleDayViolation).
+  // 끝난 계약(퇴실 완료)은 지난 기록이라 보지 않는다. 질의는 칸이 선 계약만 실어 온다(대개 0~몇 건).
+  {
+    const withCycle = await prisma.leaseTerm.findMany({
+      where: { cycleDay: { not: null }, status: { not: 'CHECKED_OUT' } },
+      select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, cycleDay: true, tenant: { select: { name: true } }, room: { select: { roomNo: true } } },
+    })
+    for (const l of withCycle) {
+      const why = cycleDayViolation(l)
+      if (!why) continue
+      const who = `${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo)} ` : ''}${l.tenant.name}`
+      violations.push({
+        signature: `[정합] cycle-day-${why} · ${l.id}`,
+        note: why === 'same-as-due'
+          ? `${who}: 이용 기간 시작일이 납부일과 같은 '${l.cycleDay}'로 남아 있습니다. 청구는 같지만 화면이 이용 기간을 따로 적습니다. 납입일 변경에서 납부일만 옮김으로 같은 날을 다시 고르면 비워집니다.`
+          : `${who}: 거주 전 상태(${l.status})인데 이용 기간 시작일 '${l.cycleDay}'가 남아 있습니다. 다시 입실하면 지난 납부일 합의가 그대로 살아납니다. 입실 뒤 납입일 변경에서 다시 정해 주세요.`,
         tenantId: l.tenantId, propertyId: l.propertyId,
       })
     }

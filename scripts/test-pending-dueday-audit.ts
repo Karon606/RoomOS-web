@@ -5,7 +5,7 @@
 // 반대로 느슨하게 풀면 2026-07-30 신고의 원래 오염 — 희망일과 다른 임의값이 박혀 거주 전환의
 // 파생(dueDay 가 null 일 때만 돈다)이 안 돌고 옛 값이 청구일로 굳는 클래스 — 을 놓친다.
 // 그 두 경계를 이 진리표가 잡아 둔다.
-import { pendingDueDayViolation } from '../lib/integrityAudit'
+import { pendingDueDayViolation, cycleDayViolation } from '../lib/integrityAudit'
 import { dueDayFromMoveIn } from '../lib/dueDay'
 
 let pass = 0
@@ -86,6 +86,15 @@ eq('파생: 31일은 말일', dueDayFromMoveIn(day('2026-08-31')), '말일')
   if (savedTz === undefined) delete process.env.TZ
   else process.env.TZ = savedTz
 }
+
+// ── 규칙 11 이용 기간 시작일 칸(cycleDayViolation, 2026-10-21) ─────────────────────────
+eq('칸 없음은 정상', cycleDayViolation({ status: 'ACTIVE', dueDay: '6', cycleDay: null }), null)
+eq('분리 계약(기간 1·납부 6)은 정상', cycleDayViolation({ status: 'ACTIVE', dueDay: '6', cycleDay: '1' }), null)
+eq('납부일과 같은 날로 남음', cycleDayViolation({ status: 'ACTIVE', dueDay: '6', cycleDay: '6' }), 'same-as-due')
+eq('30 과 말일도 같은 날', cycleDayViolation({ status: 'NON_RESIDENT', dueDay: '말일', cycleDay: '30' }), 'same-as-due')
+eq('거주 전(예약)에 남음', cycleDayViolation({ status: 'RESERVED', dueDay: '6', cycleDay: '1' }), 'pending')
+eq('거주 전(취소)에 남음', cycleDayViolation({ status: 'CANCELLED', dueDay: null, cycleDay: '1' }), 'pending')
+eq('퇴실 예정은 거주 중으로 본다', cycleDayViolation({ status: 'CHECKOUT_PENDING', dueDay: '6', cycleDay: '1' }), null)
 
 console.log(`\n거주 전 납부일 감사 진리표: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

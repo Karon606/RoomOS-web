@@ -324,3 +324,5 @@
 - 적용취소 토큰(`DueDayChangeUndo.prevCycleDay`, 서명에 포함, 없던 시절 토큰은 서명 그대로 통과)과 딸린 계약 전파(`propagateDueDayToSubLeases` 의 cycle 인자)가 기간 칸까지 옮기고 되돌린다.
 - 입주자 수정 폼·일괄 수정이 납부일을 바꿀 때도 같은 판정(`cycleDayAfterDueChange`): 같은 날이면 칸 비움, 기간보다 앞이면 거절, 납부일을 비우면 칸도 비움.
 - 표기. 수납 정보 헤더·계약 정보 '납부일 매월 6일 · 이용 기간 1일~말일'(분리 계약일 때만). 계약서 '이용 기간' 표기는 다음 단계(504호 서명본 그대로).
+- 감사 규칙 11(`lib/integrityAudit cycleDayViolation`). `cycle-day-same-as-due` 기간 칸이 납부일과 같은 날로 남음(쓰기 문은 같은 날이면 비우므로 새 경로가 정규화를 빠뜨린 것),
+  `cycle-day-pending` 거주 전 계약에 기간 칸이 남음(다시 입실하면 지난 합의가 말없이 살아난다). 퇴실 완료는 보지 않는다.
