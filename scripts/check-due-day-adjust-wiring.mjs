@@ -95,7 +95,7 @@ need('조정 묶음 행 아래 표시가 정본 표시 메모(dueDayAdjustDispla
 const stBody = body(rooms, 'async function dueDayAdjustStatusByMonth(')
 need('상태 헬퍼가 조정 행 없는 계약에 쿼리를 안 더한다(months.length === 0 이면 바로 돌아감)', /if \(months\.length === 0\) return out/.test(stBody))
 need('상태 헬퍼가 목록과 같은 정본(roomMonthBill·acqMonthStateOf·effDueDateForMonth·lockedExpectedMapOf·originalDueDayOf)으로 청구·기한을 잰다',
-  /roomMonthBill\(\{ ms: m, bill,/.test(stBody) && /acqMonthStateOf\(\{/.test(stBody) && /effDueDateOf\(lease, ms\)/.test(stBody) && /lockedExpectedMapOf\(postCutoffRecords\)/.test(stBody) && /originalDueDayOf\(lease\.dueDay, allLeaseRecords\)/.test(stBody)
+  /roomMonthBill\(\{ ms: m, bill,/.test(stBody) && /acqMonthStateOf\(\{/.test(stBody) && /effDueDateOf\(lease, ms\)/.test(stBody) && /lockedExpectedMapOf\(postCutoffRecords\)/.test(stBody) && /originalDueDayOf\(cycleDayOf\(lease\), allLeaseRecords\)/.test(stBody)
   && /dueDayAdjustMonthStatus\(\{ bill: billed, monthTotal: s\.total, extraTotal: s\.extra, duePassed: facts\.duePassed \}\)/.test(stBody) && !/serverBillForMonth/.test(stBody))
 need('상태 헬퍼가 영업장 범위를 건다', /where: \{ leaseTermId, propertyId, isDeposit: false \}/.test(stBody) && /where: \{ id: leaseTermId, propertyId \}/.test(stBody))
 const grs = body(rooms, 'export async function getRoomPaymentStatus(')

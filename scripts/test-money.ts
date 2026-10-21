@@ -4,7 +4,8 @@
 // ① 의도한 규칙 변경인지 운영자 확인 → 기대값 갱신, ② 아니면 회귀이므로 코드 수정.
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
-import { unpaidForLease, billedForLease, billForLeaseMonth, firstMonthGap, firstMonthDueYmd, isCheckoutNoBillingMonthFor, type UnpaidRecord } from '@/lib/billing'
+import { unpaidForLease, billedForLease, billForLeaseMonth, firstMonthGap, firstMonthDueYmd, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, type UnpaidRecord } from '@/lib/billing'
+import { cycleDayOf, dueDayAfterCycle } from '../lib/dueDay'
 import { fmtManShort, fmtOfferRentAhead, fmtRentApplyFrom } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
@@ -1168,6 +1169,47 @@ const RENT = 300000
   eq('정산 시작이 입주일로 오른다', sp?.startYmd, '2026-09-05')
   eq('정산 사용일 11일', sp?.daysUsed, 11)
   eq('정산 귀속이 입주달', sp?.month, '2026-09')
+}
+
+// ── 이용 기간과 납부일 분리(납부일만 옮김) ── 운영자 승인 2026-10-21, 504호(470,000 · 입주 8/1 · 기간 1일 · 납부일 6일)
+// 기간 경계(청구 기간·퇴실 정산·첫 달 규칙·무청구)는 이용 기간 시작일(cycleDayOf)을, 기한은 납부일을 읽는다.
+{
+  const MI = new Date('2026-08-01T00:00:00Z')
+  const L504 = { rentAmount: 470000, status: 'ACTIVE', moveInDate: MI, dueDay: '6', cycleDay: '1', dueDayAdjusts: [], checkoutProratedAmount: null, checkoutProratedMonth: null }
+  const cyc = cycleDayOf(L504)
+  // ① 11월 청구 470,000 · 기간 11/1~11/30 · 기한 11/6
+  eq('504 11월 청구 470,000', billForLeaseMonth(L504, '2026-11', null), 470000)
+  const p11 = settlementPeriodFor(L504, '2026-11-30')
+  eq('504 11월 기간 11/1~11/30', [p11?.startYmd, p11?.mustLeaveYmd], ['2026-11-01', '2026-11-30'])
+  eq('504 11월 기한 11/6(납부일)', resolveDueDateForMonth(L504.dueDay, '2026-11')?.getDate(), 6)
+  // ② 12/31 퇴실 추가 0 — 기간 끝 퇴실이라 한 달 몫 그대로, 무청구도 아니다
+  const c1231 = calcCheckoutProration(470000, cyc, '2026-12-31', '2026-08-01')
+  eq('504 12/31 퇴실 추가 0(감액 0·초과 0)', [c1231?.amount, c1231?.reduction, settlementPeriodFor(L504, '2026-12-31')?.daysDiff], [470000, 0, 0])
+  // ③ 12/15 퇴실 15일치 235,000
+  const c1215 = calcCheckoutProration(470000, cyc, '2026-12-15', '2026-08-01')
+  eq('504 12/15 퇴실 15일치 235,000', [c1215?.startYmd, c1215?.daysUsed, c1215?.amount, c1215?.moveOutMonth], ['2026-12-01', 15, 235000, '2026-12'])
+  // ④ 11/3 퇴실 3일치 47,000 — 기한(11/6) 앞이어도 기간(11/1)은 시작했으니 무청구가 아니다
+  const c1103 = calcCheckoutProration(470000, cyc, '2026-11-03', '2026-08-01')
+  eq('504 11/3 퇴실 3일치 47,000', [c1103?.startYmd, c1103?.daysUsed, c1103?.amount], ['2026-11-01', 3, 47000])
+  eq('504 11/3 퇴실 달은 무청구가 아니다(기한 11/6 을 넘겨도)',
+    isCheckoutNoBillingMonthFor(L504, '2026-11-03', '2026-11', new Date(2026, 10, 6, 23, 59, 59, 999)), false)
+  // 대조. 같은 계약을 칸 없이(납부일 6일이 기간 시작) 재면 종전대로 6일부터다.
+  const legacy = { ...L504, cycleDay: null }
+  eq('칸 없으면 종전(12/15 퇴실은 12/6 부터 10일)', calcCheckoutProration(470000, cycleDayOf(legacy), '2026-12-15', '2026-08-01')?.daysUsed, 10)
+  eq('칸 없으면 종전(11/3 퇴실은 10월 기간)', calcCheckoutProration(470000, cycleDayOf(legacy), '2026-11-03', '2026-08-01')?.moveOutMonth, '2026-10')
+  // 첫 달 — 기간이 입주일과 같아 첫 달 규칙은 안 돌고(만월), 기한은 입주일이다(4번). 둘째 달부터 납부일.
+  eq('입주달 청구는 만월(첫 달 규칙 무발동)', billForLeaseMonth(L504, '2026-08', null), 470000)
+  eq('칸 없으면 입주달에 앞 구간 5일이 붙는다(종전)', billForLeaseMonth(legacy, '2026-08', null), 470000 + 78333)
+  eq('입주 첫 달 기한 = 입주일', firstMonthDueYmd(L504, '2026-08'), '2026-08-01')
+  eq('둘째 달부터 첫 달 기한 규칙 없음(납부일)', firstMonthDueYmd(L504, '2026-09'), null)
+  // 같은 날을 적은 칸은 갈린 것이 아니다 — 종전과 같은 결과
+  const same = { ...L504, cycleDay: '6' }
+  eq('cycleDay 가 납부일과 같으면 종전과 같다', [firstMonthDueYmd(same, '2026-08'), billForLeaseMonth(same, '2026-08', null), firstMonthDueYmd(same, '2026-09')], [firstMonthDueYmd(legacy, '2026-08'), billForLeaseMonth(legacy, '2026-08', null), null])
+  // 납부일만 옮기기는 늦추기만(같은 달 안에서 기간 시작보다 뒤)
+  eq('납부일 6 > 기간 1 허용', dueDayAfterCycle('1', '6'), true)
+  eq('납부일 5 < 기간 20 거절(앞당기기)', dueDayAfterCycle('20', '5'), false)
+  eq('같은 날 거절', dueDayAfterCycle('6', '6'), false)
+  eq('말일 기간 뒤로는 없음', dueDayAfterCycle('말일', '31'), false)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

@@ -40,9 +40,12 @@ export function effDueDateForMonth(l: DueLeaseFull, monthStr: string): Date | nu
   return resolveDueRawEnd(l.dueDay, my, mn)
 }
 
-/** 인수 시점 납부일. 첫 납입일 변경 조정 행의 '바꾸기 전' 값, 없으면 지금 dueDay(말일 31). */
-export function originalDueDayOf(dueDay: string | null, records: readonly Rec[]): number {
-  const base = dueDay?.includes('말') ? 31 : Number(dueDay ?? '1')
+/**
+ * 인수 시점 기간 시작일. 첫 납입일 변경 조정 행의 '바꾸기 전' 값, 없으면 지금 이용 기간 시작일(말일 31).
+ * 첫 인자는 lib/dueDay cycleDayOf(계약)다(양도인이 받은 것은 그 기간 몫이라 납부일이 아니라 기간 시작으로 본다, 2026-10-21).
+ */
+export function originalDueDayOf(cycleDay: string | null, records: readonly Rec[]): number {
+  const base = cycleDay?.includes('말') ? 31 : Number(cycleDay ?? '1')
   const first = records
     .filter(p => isDueDayAdjust(p.memo))
     .sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())[0]

@@ -10,7 +10,7 @@ import { calcCheckoutProration } from '@/lib/prorate'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
-import { sameDueDay, dueDayFromMoveIn } from '@/lib/dueDay'
+import { sameDueDay, dueDayFromMoveIn, cycleDayOf } from '@/lib/dueDay'
 import { attachDueDayAdjusts, dueDayAdjustSignMismatch, dueDayAdjustWhere } from '@/lib/dueDayAdjust'
 import { fmtRoomNo } from '@/lib/roomNo'
 
@@ -83,7 +83,7 @@ export async function runIntegrityAudit(
       contractShareLinks: { none: {} },
       contractFiles: { none: {} },
     },
-    select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, moveInDate: true, tenant: { select: { name: true } } },
+    select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, cycleDay: true, moveInDate: true, tenant: { select: { name: true } } },
   })
   for (const l of pendingWithDueDay) {
     // hasContractTrace 는 위 질의가 흔적 없는 계약만 실어 오므로 false 로 고정한다.
@@ -164,7 +164,7 @@ export async function runIntegrityAudit(
     where: { isShortTerm: false, discounts: { some: {} } },
     select: {
       id: true, tenantId: true, propertyId: true, rentAmount: true, checkoutProratedMonth: true, status: true,
-      dueDay: true, moveInDate: true,
+      dueDay: true, cycleDay: true, moveInDate: true,
       tenant: { select: { name: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true, createdAt: true } },
@@ -182,8 +182,8 @@ export async function runIntegrityAudit(
     for (const r of recs) byMon.set(r.targetMonth, Math.max(byMon.get(r.targetMonth) ?? 0, r.expectedAmount))
     for (const [mon, lockedMax] of byMon) {
       if (l.checkoutProratedMonth === mon) continue
-      const base = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
-      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, discounts: l.discounts, room: l.room, dueDay: l.dueDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
+      const base = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, room: l.room, dueDay: l.dueDay, cycleDay: l.cycleDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
+      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, discounts: l.discounts, room: l.room, dueDay: l.dueDay, cycleDay: l.cycleDay, moveInDate: l.moveInDate, dueDayAdjusts: l.dueDayAdjusts }, mon, null)
       if (disc >= base || lockedMax !== base) continue
       violations.push({
         signature: `[정합] discount-locked-expected · ${l.id} · ${mon}`,
@@ -202,7 +202,7 @@ export async function runIntegrityAudit(
   const refundedShort = await prisma.leaseTerm.findMany({
     where: { status: 'CHECKED_OUT', isShortTerm: false, moveInDate: { not: null }, moveOutDate: { not: null }, checkoutProrationUndo: { not: Prisma.DbNull } },
     select: {
-      id: true, tenantId: true, propertyId: true, dueDay: true, rentAmount: true, moveInDate: true, moveOutDate: true, checkoutProrationUndo: true,
+      id: true, tenantId: true, propertyId: true, dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true, moveOutDate: true, checkoutProrationUndo: true,
       tenant: { select: { name: true } },
       property: { select: { shortStayPolicy: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -217,10 +217,10 @@ export async function runIntegrityAudit(
     const moveInYmd = l.moveInDate!.toISOString().slice(0, 10)
     const moveOutYmd = l.moveOutDate!.toISOString().slice(0, 10)
     if (!isWithinOneCalendarMonth(moveInYmd, moveOutYmd)) continue
-    const period = settlementPeriodFor({ dueDay: l.dueDay, moveInDate: l.moveInDate }, moveOutYmd)
+    const period = settlementPeriodFor({ dueDay: l.dueDay, cycleDay: l.cycleDay, moveInDate: l.moveInDate }, moveOutYmd)
     if (!period) continue
     const monthlyRent = discountedRent(l.discounts, period.month, l.rentAmount)
-    const calc = calcCheckoutProration(monthlyRent, l.dueDay, moveOutYmd, moveInYmd)
+    const calc = calcCheckoutProration(monthlyRent, cycleDayOf(l), moveOutYmd, moveInYmd)
     if (!calc || moveOutYmd >= calc.mustLeaveYmd) continue
     const days = stayDaysOf(moveInYmd, moveOutYmd)
     if (days == null || days < 1) continue
@@ -319,7 +319,7 @@ export async function runIntegrityAudit(
     const leases = adjLeaseIds.length === 0 ? [] : await attachDueDayAdjusts(prisma, await prisma.leaseTerm.findMany({
       where: { id: { in: adjLeaseIds } },
       select: {
-        id: true, tenantId: true, propertyId: true, status: true, rentAmount: true, dueDay: true, moveInDate: true, isShortTerm: true,
+        id: true, tenantId: true, propertyId: true, status: true, rentAmount: true, dueDay: true, cycleDay: true, moveInDate: true, isShortTerm: true,
         checkoutProratedAmount: true, checkoutProratedMonth: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },

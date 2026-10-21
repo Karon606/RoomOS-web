@@ -7,7 +7,7 @@
 // 여기 규칙을 바꾸면 세 화면·푸시·수납 등록이 한 번에 같이 바뀐다.
 import { RentDiscountInput, discountedRent } from './rentDiscount'
 import { kstYmdStr } from './kstDate'
-import { sameDueDay } from './dueDay'
+import { cycleDayOf, hasSplitCycle, sameDueDay } from './dueDay'
 import { isDueDayAdjust, parseDueDayAdjustMemo, type BillingDueDayAdjust } from './dueDayAdjust'
 
 export type BillingLeaseFields = {
@@ -28,6 +28,10 @@ export type BillingLeaseFields = {
   // 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 납부일을 따로 정한 계약의 입주달이
   // 조용히 만월로 청구된다. status 와 같은 관례 — 이 타입이 곧 감지망이다.
   dueDay: string | null
+  // 이용 기간 시작일 — **필수**(값은 null 가능, null 이면 dueDay 와 같다. lib/dueDay cycleDayOf 정본).
+  // 입주달 첫 달 규칙·무청구 판정·첫 달 기한이 기간 경계로 읽는다(운영자 승인 2026-10-21, 504호 '납부일만 옮김').
+  // 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 납부일만 옮긴 계약의 첫 달·퇴실월이 납부일 기준으로 조용히 갈린다.
+  cycleDay: string | null
   // 이 계약의 살아 있는 납입일 변경 조정 행 — **필수**(없으면 빈 배열). 입주달 첫 달 규칙이 읽는다
   // (아래 firstMonthRuleDueDay). 채우는 자리는 정본 하나다(lib/dueDayAdjust attachDueDayAdjusts).
   // 옵셔널로 두면 select 에서 빠뜨린 화면만 입주달 일할을 두 번 받는다. dueDay 와 같은 관례로 이 타입이 감지망이다.
@@ -59,7 +63,7 @@ export type BillingLeaseFields = {
 // 자기 순서로 이미 세워 두었고 필요한 것은 '그 달 기준액' 한 조각뿐이라, 종전에는 이 함수를
 // 손으로 두 벌 베껴 놓고 있었다(2026-08-12 구조 부채 정리). 손사본은 상태 분기를 빠뜨려
 // 비거주 계약에 거주 인상 예약을 물릴 수 있었다 — 418호 4.8배와 같은 클래스다.
-export function effectiveBaseRent(l: Omit<BillingLeaseFields, 'dueDayAdjusts'>, mon: string): number {
+export function effectiveBaseRent(l: Omit<BillingLeaseFields, 'dueDayAdjusts' | 'cycleDay'>, mon: string): number {
   if (l.status === 'NON_RESIDENT') {
     const nrSched = l.room?.nonResidentScheduled ?? null
     const nrMon = l.room?.nonResidentRentDate ? monthOfDate(l.room.nonResidentRentDate) : null
@@ -177,7 +181,7 @@ function requireDueDayAdjusts(l: Pick<BillingLeaseFields, 'dueDayAdjusts'>): rea
   return l.dueDayAdjusts
 }
 
-export function firstMonthRuleDueDay(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'dueDayAdjusts'>): string | null {
+export function firstMonthRuleDueDay(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'cycleDay' | 'dueDayAdjusts'>): string | null {
   return firstMonthRule(l).due
 }
 
@@ -186,23 +190,28 @@ export function firstMonthRuleDueDay(l: Pick<BillingLeaseFields, 'moveInDate' | 
  * (unreadable = 메모를 못 읽음, chain-gap = 사슬이 끊김, chain-end = 사슬 끝이 지금 납부일과 다름).
  * 그 경우 락이 없으면 종전 이중 셈이 돌아오므로 정합 감사(lib/integrityAudit 규칙 10)가 이 값으로 알린다.
  */
-export function firstMonthRule(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'dueDayAdjusts'>): {
+//
+// 첫 달 규칙이 재는 것은 기간이다. 그래서 지금 값도, 사슬 끝과 견주는 값도 이용 기간 시작일(cycleDayOf)이다
+// (운영자 승인 2026-10-21). 조정 행은 '기간도 옮김' 변경만 만들고, '납부일만 옮김' 은 기간을 그대로 두어 조정 행이 없다.
+// cycleDay 가 없는 계약(지금 전부)은 cycleDayOf 가 dueDay 라 종전과 글자 하나 다르지 않다.
+export function firstMonthRule(l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'cycleDay' | 'dueDayAdjusts'>): {
   due: string | null
   fallback: null | 'unreadable' | 'chain-gap' | 'chain-end'
 } {
+  const cycle = cycleDayOf(l)
   const inMonth = monthOfDate(l.moveInDate ?? null)
-  if (!inMonth) return { due: l.dueDay, fallback: null }
+  if (!inMonth) return { due: cycle, fallback: null }
   const rows = requireDueDayAdjusts(l)
     .filter(r => r.targetMonth === inMonth && isDueDayAdjust(r.memo))
     .slice()
     .sort((a, b) => a.seqNo - b.seqNo)
-  if (rows.length === 0) return { due: l.dueDay, fallback: null }
+  if (rows.length === 0) return { due: cycle, fallback: null }
   const memos = rows.map(r => parseDueDayAdjustMemo(r.memo))
-  if (memos.some(m => m === null)) return { due: l.dueDay, fallback: 'unreadable' }
+  if (memos.some(m => m === null)) return { due: cycle, fallback: 'unreadable' }
   for (let i = 1; i < memos.length; i++) {
-    if (!sameDueDay(memos[i - 1]!.to, memos[i]!.from)) return { due: l.dueDay, fallback: 'chain-gap' }
+    if (!sameDueDay(memos[i - 1]!.to, memos[i]!.from)) return { due: cycle, fallback: 'chain-gap' }
   }
-  if (!sameDueDay(memos[memos.length - 1]!.to, l.dueDay)) return { due: l.dueDay, fallback: 'chain-end' }
+  if (!sameDueDay(memos[memos.length - 1]!.to, cycle)) return { due: cycle, fallback: 'chain-end' }
   const from = memos[0]!.from
   return { due: from === '?' ? null : from, fallback: null }
 }
@@ -235,7 +244,7 @@ export function firstMonthAdjustExposure(
   if (!first) return null
   const before = first.from === '?' ? null : first.from
   const now = billForLeaseMonth(l, inMonth, null)
-  const then = billForLeaseMonth({ ...l, dueDay: before, dueDayAdjusts: [] }, inMonth, null)
+  const then = billForLeaseMonth({ ...l, dueDay: before, cycleDay: null, dueDayAdjusts: [] }, inMonth, null)
   return now !== then ? 'other-month' : null
 }
 
@@ -325,16 +334,20 @@ export function isCheckoutNoBillingMonth(
 // 퇴실일 = 납부일 같은 날(경계일) 케이스에서 무청구 스킵이 정산액을 덮어 과납이 허수로 잡히던 문제 방지
 // (중도퇴실 환불 통합, 운영자 승인 2026-07-20). 호출부는 기존 isCheckoutNoBillingMonth 대신 이걸 쓴다.
 export function isCheckoutNoBillingMonthFor(
-  l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth' | 'moveInDate' | 'dueDay'>,
+  l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth' | 'moveInDate' | 'dueDay' | 'cycleDay'>,
   expectedMoveOut: Date | string | null | undefined,
   mon: string,
   dueDate: Date | null,
 ): boolean {
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
   // 입주달 첫 달 규칙이 발동하는 달은 무청구가 아니다 — "퇴실예정일이 납부일 이전이면 0원"은
-  // 그 기간을 안 썼다는 뜻인데, 입주달은 앞 구간(입주일부터)을 실제로 쓴다(2026-09-07).
-  if (l.moveInDate && l.dueDay && monthOfDate(l.moveInDate) === mon && firstMonthGap(l.moveInDate, l.dueDay)) return false
-  return isCheckoutNoBillingMonth(expectedMoveOut, mon, dueDate)
+  // 그 기간을 안 썼다는 뜻인데, 입주달은 앞 구간(입주일부터)을 실제로 쓴다(2026-09-07). 앞 구간은 기간 시작일로 잰다.
+  const cycle = cycleDayOf(l)
+  if (l.moveInDate && cycle && monthOfDate(l.moveInDate) === mon && firstMonthGap(l.moveInDate, cycle)) return false
+  // 납부일만 옮긴 계약(기간 1일·납부일 6일)은 '그 기간을 안 썼는가' 를 기간 시작으로 가린다(운영자 승인 2026-10-21).
+  // 호출부가 넘긴 날짜는 납부 기한이라 12/3 퇴실이 6일 기한 앞이라는 이유로 3일 쓴 12월이 0원이 된다.
+  const boundary = hasSplitCycle(l) ? resolveDueDateForMonth(cycle, mon) : dueDate
+  return isCheckoutNoBillingMonth(expectedMoveOut, mon, boundary)
 }
 
 /**
@@ -342,13 +355,17 @@ export function isCheckoutNoBillingMonthFor(
  * (운영자 승인 2026-09-07, 질문 2 = 가. 선납 모델 — 입주하는 날 첫 달 몫을 낸다).
  * 발동하지 않으면 null — 종전 만기(그 달 납부일)를 쓴다.
  */
+//
+// 납부일만 옮긴 계약(cycleDay 가 있고 납부일과 다름)은 첫 달 규칙이 안 돌아도 입주 첫 달 기한이 입주일이다
+// (운영자 승인 2026-10-21 4번). 기간이 입주일에 시작하니 그 달 몫도 입주하는 날 낸다. 둘째 달부터가 납부일이다.
 export function firstMonthDueYmd(
-  l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay'>,
+  l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay' | 'cycleDay'>,
   mon: string,
 ): string | null {
   if (!l.moveInDate || !l.dueDay) return null
   if (monthOfDate(l.moveInDate) !== mon) return null
-  if (!firstMonthGap(l.moveInDate, l.dueDay)) return null
+  const cycle = cycleDayOf(l)
+  if (!(cycle && firstMonthGap(l.moveInDate, cycle)) && !hasSplitCycle(l)) return null
   const d = new Date(l.moveInDate)
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }

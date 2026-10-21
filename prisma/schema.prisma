@@ -867,8 +867,12 @@ model LeaseTerm {
   depositAmount      Int                @default(0)
   cleaningFee        Int                @default(0)
   paymentTiming      PaymentTiming      @default(PREPAID)
-  dueDay             String?            // "15", "말일" 등 자유 텍스트
-  contactAlertDate   DateTime?          // 잠재고객 연락 알림 시작일 직접 지정 — 비우면 영업장 기본(입주 희망일 N일 전)
+  dueDay             String?            // "15", "말일" 등 자유 텍스트. 돈을 내는 날(납부 기한)
+  // 이용 기간 시작일 — null 이면 dueDay 와 같다(대다수 계약). 값이 있으면 기간은 이 날부터, 납부 기한은 dueDay 다
+  // (504호. 기간 1일~말일, 납부일 6일. 운영자 승인 2026-10-21). 읽는 정본은 lib/dueDay cycleDayOf 하나다.
+  // 기간 경계(청구 기간·퇴실 정산·첫 달 규칙·무청구)는 cycleDayOf, 기한(미납·연체·알림·문자)은 dueDay 를 읽는다.
+  cycleDay           String?
+  contactAlertDate  DateTime?          // 잠재고객 연락 알림 시작일 직접 지정 — 비우면 영업장 기본(입주 희망일 N일 전)
   overrideDueDay     String?            // 특정 월 임시 납부일
   overrideDueDayMonth String?           // 적용 대상 월 "YYYY-MM"
   overrideDueDayReason String?          // 조정 사유

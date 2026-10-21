@@ -13,6 +13,7 @@
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { dueDayBeforeChange, isDueDayAdjust, loadDueDayAdjustMap, withDueDayAdjusts } from '@/lib/dueDayAdjust'
+import { cycleDayOf } from '@/lib/dueDay'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { leaseBillingEnd } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
@@ -70,7 +71,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         expectedMoveOut: true,
         moveOutDate: true,   // 청구 끝(leaseBillingEnd) — 홈 미수 루프와 글자까지 같은 게이트를 쓰려고 읽는다
         status: true,
-        dueDay: true,
+        dueDay: true, cycleDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
         // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·dashboard page 와 동일)
@@ -131,12 +132,14 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       ;(originalDueDayByLease as Record<string, number>)[`__date_${p.leaseTermId}`] = recDate
     }
   }
-  function getOriginalDueDay(l: { id: string; dueDay: string | null }): number | null {
+  // 인수월 판정은 기간 시작으로 본다(양도인이 받은 것은 그 기간 몫이다). 그래서 납부일이 아니라 이용 기간 시작일(cycleDayOf)이다.
+  function getOriginalDueDay(l: { id: string; dueDay: string | null; cycleDay: string | null }): number | null {
     const restored = originalDueDayByLease[l.id]
     if (restored !== undefined) return restored
-    if (!l.dueDay) return null
-    if (l.dueDay.includes('말')) return 31
-    const n = parseInt(l.dueDay, 10)
+    const cycle = cycleDayOf(l)
+    if (!cycle) return null
+    if (cycle.includes('말')) return 31
+    const n = parseInt(cycle, 10)
     return isNaN(n) ? null : n
   }
 
@@ -159,13 +162,13 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   }
 
   function effectiveDueDayForMonth(
-    l: { dueDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; cycleDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): string | null {
     if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return l.overrideDueDay
     // 입주달 첫 달 규칙이 발동하면 기한은 입주일이다(운영자 승인 2026-09-07, 선납 모델).
     // 안 두면 9/25 입주·납부일 5일 계약이 입주 첫날부터 '20일 연체'로 뜬다.
-    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null }, monthStr)
+    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null; cycleDay: string | null }, monthStr)
     if (fm) return fm
     return l.dueDay
   }
@@ -209,7 +212,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   // (= 미납 채무를 뒤로 미룬 경우) 유예 날짜 기준으로 경과일을 계산한다.
   // 2026-06-02 사용자 보고: 5월 미납을 6/1로 유예했는데 19일 경과로 잡히던 문제.
   function daysOverdueForMonth(
-    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; cycleDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): number | null {
     if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {

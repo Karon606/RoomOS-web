@@ -36,6 +36,7 @@ import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaning
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
+import { cycleDayOf } from '@/lib/dueDay'
 import { CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { fmtRoomList } from '@/lib/roomNo'
 import { RESERVATION_PHONE_DENIAL_PREFIX } from '@/lib/tenantContact'
@@ -146,6 +147,8 @@ type Lease = {
   expectedMoveOut: Date | string | null
   rentAmount: number
   dueDay: string | null
+  /** 이용 기간 시작일(null 이면 dueDay 와 같다, lib/dueDay cycleDayOf). 퇴실 정산 제안이 기간으로 잰다. */
+  cycleDay: string | null
   isShortTerm: boolean
   reservationConfirmedAt: Date | string | null
   /** 앱이 자동으로 퇴실 예정으로 바꾼 시각 — 그 사실을 말하고 되돌릴 문을 여는 근거다. */
@@ -643,7 +646,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         // 정산 자체는 자동 적용 안 함 — 예 선택 시에만 수납 모달의 퇴실 정산 위젯으로 이동.
         const mo = fields?.expectedMoveOut
         if (def.field === 'expectedMoveOut' && mo
-            && shouldOfferCheckoutProration(lease.rentAmount, lease.dueDay, mo, kstYmdStr(), lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null, lease.isShortTerm)) {
+            && shouldOfferCheckoutProration(lease.rentAmount, cycleDayOf(lease), mo, kstYmdStr(), lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null, lease.isShortTerm)) {
           setProrateAsk({ date: mo })
         }
       } finally { release() }

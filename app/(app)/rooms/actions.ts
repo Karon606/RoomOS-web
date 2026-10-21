@@ -27,6 +27,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
+import { cycleDayOf } from '@/lib/dueDay'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
@@ -375,7 +376,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 그리고 acqMonth dueDay가 cutoffDay 이전이어야 양도인이 가져갔다고 판정.
     // 식은 lib/roomMonth 정본(납입일 변경 조정 칩과 같은 함수, 2026-10-21).
     const allLeaseRecords = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
-    const originalDueDay = originalDueDayOf(lease.dueDay, allLeaseRecords)
+    // 기간 시작으로 본다(양도인이 받은 것은 그 기간 몫). 납부일만 옮긴 계약은 이용 기간 시작일(cycleDayOf)이다.
+    const originalDueDay = originalDueDayOf(cycleDayOf({ cycleDay: lease.cycleDay ?? null, dueDay: lease.dueDay ?? null }), allLeaseRecords)
     // 양도인 정산 월 — 양도인이 받은 달. 현 소유주 청구·미납에서 제외.
     const prevOwnerMonths = new Set(allLeaseRecords.filter(p => p.isPrevOwner).map(p => p.targetMonth))
     // 양도인 몫 (payDate < cutoffDate) + 양도인 정산 record — 현 원장 계산에서 제외
@@ -392,7 +394,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
         { rentAmount: lease.rentAmount, status: lease.status, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
-          isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null,   // 단기 입주월 단일 청구
+          isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null, cycleDay: lease.cycleDay ?? null,   // 단기 입주월 단일 청구
           // 입주달 첫 달 규칙의 조정 행 — 위 조회가 조정 행을 달과 무관하게 늘 싣으므로 쿼리 없이 고른다(lib/dueDayAdjust).
           dueDayAdjusts: dueDayAdjustsFrom(allLeaseRecords),
           room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate,
@@ -433,7 +435,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const billingEnd = leaseBillingEnd(lease)
     const skipByMoveOut = (ms: string): boolean =>
       isAfterMoveOutMonth(billingEnd, ms)
-      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null }, billingEnd, ms, effDueDateForMonth(ms))
+      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null, cycleDay: lease.cycleDay ?? null }, billingEnd, ms, effDueDateForMonth(ms))
 
     let pastBillable = 0
     let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
@@ -747,7 +749,7 @@ async function findFirstUnpaidMonth(
     select: {
       id: true,
       moveInDate: true,
-      dueDay: true,
+      dueDay: true, cycleDay: true,
       rentAmount: true,
       status: true,        // 비거주 축 분기(lib/billing effectiveBaseRent)
       isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
@@ -777,7 +779,9 @@ async function findFirstUnpaidMonth(
 
   // 납입일변경 이력에서 인수 시점의 원본 납부일 복원 (buildLeaseRow와 동일 로직)
   // lease.dueDay는 변경 후 값일 수 있으므로 [납입일변경] 메모에서 원본을 추출
-  let baseDueDayNum = lease.dueDay?.includes('말') ? 31 : parseInt(lease.dueDay ?? '99', 10)
+  // 기간 시작으로 본다(buildLeaseRow 와 같은 이유, 이용 기간 시작일 cycleDayOf).
+  const baseCycle = cycleDayOf(lease)
+  let baseDueDayNum = baseCycle?.includes('말') ? 31 : parseInt(baseCycle ?? '99', 10)
   if (cutoffDate) {
     const firstChangeMemo = await prisma.paymentRecord.findFirst({
       where: { leaseTermId, ...dueDayAdjustWhere() },
@@ -880,7 +884,7 @@ export async function savePayment(data: {
     where: { id: data.leaseTermId },
     select: {
       id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
-      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
+      isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영). 거주·비거주 두 축.
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
@@ -1021,7 +1025,7 @@ export async function getTargetMonthOptions(
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
       // 무청구 퇴실월 판정용 — 그 달 만기를 알아야 한다(임시조정 포함)
-      dueDay: true,
+      dueDay: true, cycleDay: true,
       overrideDueDay: true,
       overrideDueDayMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -3407,7 +3411,7 @@ export async function getTenantDetail(tenantId: string) {
           shortStayExtensions: true,   // 단기 연장 이력 — 위젯의 연장 이력 줄·적용취소 진입점용
           checkoutProrationUndo: true, // 중도퇴실 환불 스냅샷(refund 키) — 상세의 상시 적용취소 진입점용(§16)
           rentAmount: true, depositAmount: true, cleaningFee: true,
-          dueDay: true, paymentTiming: true,
+          dueDay: true, cycleDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
           tourDate: true,   // e1b81629: 투어일 유무로 '문의'/'투어 예정' 파생 라벨 분기
           tourTime: true,   // 투어 예정 시각 — 계약 정보 위젯이 날짜와 한 줄로 적는다(신고 91b72261)
@@ -3511,7 +3515,7 @@ export async function getTenantQuickInfo(tenantId: string) {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         select: {
           id: true, status: true, rentAmount: true, depositAmount: true,
-          dueDay: true, moveInDate: true, moveOutDate: true, expectedMoveOut: true,
+          dueDay: true, cycleDay: true, moveInDate: true, moveOutDate: true, expectedMoveOut: true,
           isShortTerm: true,   // 단기는 '매월 N일' 납부일 표기가 성립하지 않는다(퀵 정보 표시 가드)
           room: { select: { roomNo: true } },
         },
@@ -3884,7 +3888,7 @@ async function dueDayAdjustStatusByMonth(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true, isShortTerm: true,
-        moveInDate: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, expectedMoveOut: true, moveOutDate: true,
+        moveInDate: true, dueDay: true, cycleDay: true, overrideDueDay: true, overrideDueDayMonth: true, expectedMoveOut: true, moveOutDate: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       },
@@ -3909,7 +3913,7 @@ async function dueDayAdjustStatusByMonth(
   const due = (ms: string) => effDueDateOf(lease, ms)
   const billingEnd = leaseBillingEnd(lease)
   const skipByMoveOut = (ms: string) => isAfterMoveOutMonth(billingEnd, ms) || isCheckoutNoBillingMonthFor(lease, billingEnd, ms, due(ms))
-  const originalDueDay = originalDueDayOf(lease.dueDay, allLeaseRecords)
+  const originalDueDay = originalDueDayOf(cycleDayOf(lease), allLeaseRecords)   // 기간 시작(목록과 같은 기준)
   const sums = dueDayAdjustMonthSums(allLeaseRecords, cutoffDate)
   const today = kstYmd()
   for (const m of months) {

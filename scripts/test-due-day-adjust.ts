@@ -138,7 +138,7 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
 {
   const adj = (targetMonth: string, memo: string, seqNo = 2): BillingDueDayAdjust => ({ targetMonth, memo, seqNo })
   const lease = (o: Partial<BillingLeaseFields> = {}): BillingLeaseFields => ({
-    rentAmount: 350000, status: 'ACTIVE', dueDay: '20', moveInDate: '2026-10-09', isShortTerm: false, dueDayAdjusts: [], ...o,
+    rentAmount: 350000, status: 'ACTIVE', dueDay: '20', cycleDay: null, moveInDate: '2026-10-09', isShortTerm: false, dueDayAdjusts: [], ...o,
   })
   const M513_AGREED = '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)'
   const R513 = adj('2026-10', M513)
@@ -217,6 +217,13 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
   eq('감사 10 다른 달 조정이 입주달 청구를 안 바꾸면 조용', X(lease({ dueDay: '9', dueDayAdjusts: [adj('2026-11', M513)] }), null), null)
   eq('감사 10 단기는 조용', X(lease({ isShortTerm: true, dueDay: '25', dueDayAdjusts: [R513] }), null), null)
   eq('감사 10 조정 행 없으면 조용', X(lease(), null), null)
+  // 21. 납부일만 옮김(cycleDay, 운영자 승인 2026-10-21). 첫 달 규칙과 사슬 끝은 기간 시작일(cycleDayOf)로 본다.
+  //     조정 행은 '기간도 옮김' 만 만든다. 그 뒤 납부일만 25일로 옮기면 기간은 20일 그대로라 사슬이 끊기지 않는다.
+  eq('분리 21 기간 9→20 뒤 납부일만 25: 사슬 이어짐', firstMonthRule(lease({ dueDay: '25', cycleDay: '20', dueDayAdjusts: [R513] })), { due: '9', fallback: null })
+  eq('분리 21 그 청구는 만월(조정 행이 원천)', billForLeaseMonth(lease({ dueDay: '25', cycleDay: '20', dueDayAdjusts: [R513] }), '2026-10', null), 350000)
+  eq('분리 21 칸 없이 납부일 25 면 종전(사슬 끝 불일치)', firstMonthRule(lease({ dueDay: '25', dueDayAdjusts: [R513] })).fallback, 'chain-end')
+  eq('분리 21 처음부터 납부일만 옮긴 계약(기간 9·납부 20, 9일 입주): 첫 달 규칙 무발동', billForLeaseMonth(lease({ cycleDay: '9' }), '2026-10', null), 350000)
+  eq('분리 21 감사 10 은 분리 계약을 알리지 않음', X(lease({ dueDay: '25', cycleDay: '20', dueDayAdjusts: [R513] }), null), null)
 }
 
 // ── 받았는지 상태(표시 전용, 2026-10-21 운영자 '받을 금액 자리에 받았다는 표시가 없다') ─────────────

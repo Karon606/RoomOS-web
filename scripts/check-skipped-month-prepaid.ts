@@ -39,7 +39,7 @@ async function main() {
   const leases = await attachDueDayAdjusts(prisma as never, await prisma.leaseTerm.findMany({
     where: { status: { in: BILLABLE_STATUSES } },
     select: {
-      id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, dueDay: true,
+      id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true,
       expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },

@@ -53,16 +53,18 @@ export type CheckoutProrationResult = {
   mustLeaveYmd: string   // 퇴실해야 하는 날(다음 기간 시작 −1일)
 }
 
+// 둘째 인자는 **이용 기간 시작일**이다(lib/dueDay cycleDayOf(계약)). 납부일만 옮긴 계약(504호, 기간 1일·납부일 6일)에
+// 납부일을 넘기면 기간이 6일부터로 잡혀 정산이 통째로 어긋난다(운영자 승인 2026-10-21). 호출부는 전부 cycleDayOf 를 넘긴다.
 export function calcCheckoutProration(
   monthlyRent: number,
-  dueDay: string | null,
+  cycleDay: string | null,
   expectedMoveOut: string,   // 'YYYY-MM-DD'
   moveInYmd?: string | null, // 'YYYY-MM-DD' — 입주 달 보정(기간 시작은 입주일보다 앞설 수 없다)
 ): CheckoutProrationResult | null {
   if (!monthlyRent || monthlyRent <= 0) return null
   // 기간·귀속월·사용 일수는 전부 정본이 정한다. 여기서 날짜 산술을 다시 하지 않는다 —
   // 손으로 다시 짠 계산이 말일·짧은 달·연말 경계에서 갈리는 것이 이 코드베이스의 반복된 사고다.
-  const period = settlementPeriodFor({ dueDay, moveInDate: moveInYmd ?? null }, expectedMoveOut)
+  const period = settlementPeriodFor({ dueDay: null, cycleDay, moveInDate: moveInYmd ?? null }, expectedMoveOut)
   if (!period) return null
   const amount = Math.floor((monthlyRent * period.daysUsed) / PRORATE_BASE_DAYS)
   return {
@@ -85,7 +87,7 @@ export function calcCheckoutProration(
 // 정산 자체를 자동 적용하진 않음 — 팝업으로 물어보기만.
 export function shouldOfferCheckoutProration(
   monthlyRent: number,
-  dueDay: string | null,
+  cycleDay: string | null,   // 이용 기간 시작일(cycleDayOf) — calcCheckoutProration 과 같다
   expectedMoveOut: string,   // 'YYYY-MM-DD'
   todayYmd: string,          // 'YYYY-MM-DD' (KST 오늘)
   moveInYmd?: string | null, // 입주 달 퇴실 보정(위와 동일)
@@ -94,7 +96,7 @@ export function shouldOfferCheckoutProration(
   // 단기 차단 — 정산 엔진의 단기 일할 차단(B페이즈 정책)과 같은 선. 엔진만 막고 제안 팝업이
   // 물으면 화면이 정책과 모순되는 제안을 한다(402호 황인정 단기 실사례, 운영자 신고 2026-08-13).
   if (isShortTerm) return false
-  const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut, moveInYmd)
+  const calc = calcCheckoutProration(monthlyRent, cycleDay, expectedMoveOut, moveInYmd)
   if (!calc || calc.reduction <= 0 || calc.daysUsed >= PRORATE_BASE_DAYS) return false
   return isMoveOutNear(expectedMoveOut, todayYmd)
 }

@@ -1,6 +1,7 @@
 // 납부일 해석 정본(lib/dueDate) 회귀 테스트 — DB 불필요, 순수 함수 케이스 고정.
 // 전체 날짜형('YYYY-MM-DD')을 parseInt 로 읽어 연도(2026)가 날짜로 새는 클래스를 막는다(신고 998bff27).
 import { resolveDueRaw, effectiveDueRawForMonth, dueDateForMonth, overrideAbsDate, isDeferredForMonth, dueDayForCutoff } from '../lib/dueDate'
+import { cycleDayOf, cyclePeriodLabel, dueDayAfterCycle, hasSplitCycle } from '../lib/dueDay'
 
 let pass = 0
 const fails: string[] = []
@@ -61,6 +62,25 @@ eq('cutoff: 없으면 null', dueDayForCutoff(null, '2026-07'), null)
 eq('cutoff: parseInt 오독 방어(2026 아님)', dueDayForCutoff('2026-08-07', '2026-07') !== 2026, true)
 // 심원재 실사례 — 7월 cutoff 비교에서 8/7 유예가 '인수 전'으로 오판되지 않아야 한다
 eq('cutoff: 심원재 8/7 유예는 cutoff 앞이 아님', (dueDayForCutoff('2026-08-07', '2026-07') ?? 0) < 15, false)
+
+// ── 이용 기간 1일·납부일 6일(납부일만 옮김, 운영자 승인 2026-10-21, 504호) ────────────
+// 기한은 납부일(6일)이고 기간은 cycleDay(1일)다. 기한 정본(dueDateForMonth)은 cycleDay 를 모른다(읽지 않는다).
+const split = { dueDay: '6', cycleDay: '1', overrideDueDay: null, overrideDueDayMonth: null }
+eq('분리: 11월 기한은 납부일 11/6', ymd(dueDateForMonth(split, '2026-11')), '2026-11-06')
+eq('분리: 기간 시작일은 1일', cycleDayOf(split), '1')
+eq('분리: 기간 표기', cyclePeriodLabel(cycleDayOf(split)), '1일~말일')
+eq('분리: 갈린 계약', hasSplitCycle(split), true)
+eq('칸 없음: 기간 시작일 = 납부일', cycleDayOf({ dueDay: '6', cycleDay: null }), '6')
+eq('같은 날 칸은 갈린 것이 아님(30 과 말일)', hasSplitCycle({ dueDay: '말일', cycleDay: '30' }), false)
+eq('기간 표기 15일', cyclePeriodLabel('15'), '15일~다음 달 14일')
+// 미납 경과일은 기한(6일)에서 센다. 11/9 이면 3일 경과(홈 미납·연체 판정이 쓰는 같은 차).
+const d9 = new Date(2026, 10, 9).getTime(), d6 = dueDateForMonth(split, '2026-11')!.getTime()
+eq('분리: 11/9 는 기한 11/6 에서 3일 경과', Math.round((d9 - d6) / 86400000), 3)
+eq('분리: 임시 조정은 기한만(10일) 미루고 기간은 그대로', ymd(dueDateForMonth({ ...split, overrideDueDay: '10', overrideDueDayMonth: '2026-11' }, '2026-11')), '2026-11-10')
+eq('납부일만 옮김: 6 은 1 뒤', dueDayAfterCycle('1', '6'), true)
+eq('납부일만 옮김: 말일은 29 뒤', dueDayAfterCycle('29', '말일'), true)
+eq('납부일만 옮김: 30 과 말일은 같은 날(거절)', dueDayAfterCycle('30', '말일'), false)
+eq('납부일만 옮김: 못 읽는 값 거절', dueDayAfterCycle('1', '없음'), false)
 
 console.log(`\n납부일 해석 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

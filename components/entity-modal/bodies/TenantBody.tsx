@@ -95,7 +95,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           lease={{
             id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
-            dueDay: lease.dueDay, isShortTerm: lease.isShortTerm,
+            dueDay: lease.dueDay, cycleDay: lease.cycleDay, isShortTerm: lease.isShortTerm,
             reservationConfirmedAt: lease.reservationConfirmedAt, autoCheckoutAt: lease.autoCheckoutAt ?? null,
             roomId: lease.room?.id ?? null,
             // 퇴실 예정 때 고른 사유 — 퇴실 미니폼이 이것으로 시작한다(506호 신고 2026-09-02).

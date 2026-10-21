@@ -48,7 +48,7 @@ export async function serverBillForMonth(leaseTermId: string, mon: string, fallb
     where: { id: leaseTermId },
     select: {
       id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
-      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
+      isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
@@ -74,7 +74,7 @@ export async function rewriteLockedExpectedForDiscountChange(
     where: { id: leaseTermId },
     select: {
       id: true, isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
-      dueDay: true, moveInDate: true,
+      dueDay: true, cycleDay: true, moveInDate: true,
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   }))
@@ -88,7 +88,7 @@ export async function rewriteLockedExpectedForDiscountChange(
   const months = [...new Set(recs.map(r => r.targetMonth))]
   for (const mon of months) {
     if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-    const base = { rentAmount: lease.rentAmount, status: lease.status, room: lease.room, dueDay: lease.dueDay, moveInDate: lease.moveInDate, dueDayAdjusts: lease.dueDayAdjusts }
+    const base = { rentAmount: lease.rentAmount, status: lease.status, room: lease.room, dueDay: lease.dueDay, cycleDay: lease.cycleDay, moveInDate: lease.moveInDate, dueDayAdjusts: lease.dueDayAdjusts }
     const before = billForLeaseMonth({ ...base, discounts: prevDiscounts }, mon, null)
     const after  = billForLeaseMonth({ ...base, discounts: nextDiscounts }, mon, null)
     if (before === after) continue
@@ -127,7 +127,7 @@ export async function rewriteLockedExpectedForRentSchedule(
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
       id: true, isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
-      dueDay: true, moveInDate: true,
+      dueDay: true, cycleDay: true, moveInDate: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
   }))
@@ -140,7 +140,7 @@ export async function rewriteLockedExpectedForRentSchedule(
     const months = [...new Set(recs.map(r => r.targetMonth))]
     for (const mon of months) {
       if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-      const base = { rentAmount: lease.rentAmount, status: lease.status, discounts: lease.discounts, dueDay: lease.dueDay, moveInDate: lease.moveInDate, dueDayAdjusts: lease.dueDayAdjusts }
+      const base = { rentAmount: lease.rentAmount, status: lease.status, discounts: lease.discounts, dueDay: lease.dueDay, cycleDay: lease.cycleDay, moveInDate: lease.moveInDate, dueDayAdjusts: lease.dueDayAdjusts }
       const before = billForLeaseMonth({ ...base, room: beforeRoom }, mon, null)
       const after  = billForLeaseMonth({ ...base, room: afterRoom }, mon, null)
       if (before === after) continue
@@ -177,7 +177,7 @@ export async function rewriteLockedExpectedForRentAmount(
   const lease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      id: true, isShortTerm: true, moveInDate: true, dueDay: true, checkoutProratedMonth: true, status: true,
+      id: true, isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true, checkoutProratedMonth: true, status: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
@@ -197,7 +197,7 @@ export async function rewriteLockedExpectedForRentAmount(
     // 422호 파트쿨리나 6월(262,500 락인 · 242,500 허수 미납)이 만들어진 것과 같은 모양이다.
     const base = {
       discounts: lease.discounts, status: lease.status, room: lease.room,
-      isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay, dueDayAdjusts: lease.dueDayAdjusts,
+      isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay, cycleDay: lease.cycleDay, dueDayAdjusts: lease.dueDayAdjusts,
     }
     const before = billForLeaseMonth({ ...base, rentAmount: prevRentAmount }, mon, null)
     const after  = billForLeaseMonth({ ...base, rentAmount: nextRentAmount }, mon, null)

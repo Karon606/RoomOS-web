@@ -30,6 +30,53 @@ export function sameDueDay(a: string | null | undefined, b: string | null | unde
 }
 
 /**
+ * 이용 기간 시작일 정본(운영자 승인 2026-10-21, 504호). 계약의 dueDay 한 칸은 두 뜻을 함께 졌다.
+ * 기간이 며칠에 시작하는가(주기)와 돈을 언제까지 내는가(기한)다. '납부일만 옮김' 계약은 둘이 갈린다
+ * (504호. 기간 매월 1일~말일, 납부일 6일). 그래서 주기는 cycleDay 칸에 따로 두고, 비어 있으면 dueDay 와 같다.
+ *
+ * 주기로 읽는 자리(청구 기간·퇴실 정산·입주달 첫 달 규칙·무청구 판정·납부 확인서 기간·인수월 양도인 판정)는
+ * 전부 이 함수를 부른다. 기한으로 읽는 자리(미납·연체·알림·문자 {납기일}·정렬·계약서 '매월 납부일')는 dueDay 그대로다.
+ * cycleDay 칸을 필수로 받는 이유는 select 에서 빠뜨리면 tsc 가 잡게 하려는 것이다(빠뜨리면 조용히 dueDay 로 떨어진다).
+ */
+export function cycleDayOf(l: { cycleDay: string | null; dueDay: string | null }): string | null {
+  return l.cycleDay ?? l.dueDay
+}
+
+/** 기간 시작과 납부일이 갈린 계약인가(cycleDay 가 있고 dueDay 와 다른 날). 같은 날이면 갈린 것이 아니다. */
+export function hasSplitCycle(l: { cycleDay: string | null; dueDay: string | null }): boolean {
+  return !!l.cycleDay && !sameDueDay(l.cycleDay, l.dueDay)
+}
+
+/** 날짜 칸 하나를 그 달 안의 일(1~31, 말일·30 이상은 31)로. 못 읽으면 null. */
+function dueDayNumber(v: string | null | undefined): number | null {
+  const raw = dueDayParts(v).raw
+  if (!raw) return null
+  if (raw === '말일') return 31
+  const n = parseInt(raw, 10)
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null
+}
+
+/**
+ * 납부일만 옮길 때 새 납부일이 기간 시작보다 늦은가(운영자 승인 2026-10-21 3번. 늦추기만 허용, 앞당기기 거절).
+ * 같은 달 안의 날로 견준다. 기간이 20일에 시작하는데 납부일을 5일로 두면 그 달 기한이 기간보다 먼저 와서
+ * 아직 시작도 안 한 기간의 돈을 미리 받게 된다. 같은 날이면 갈린 것이 아니라 거절한다(그건 그냥 기간과 같은 납부일이다).
+ */
+export function dueDayAfterCycle(cycleDay: string | null, dueDay: string | null): boolean {
+  const c = dueDayNumber(cycleDay)
+  const d = dueDayNumber(dueDay)
+  return c != null && d != null && d > c
+}
+
+/** '매월 1일~말일' 의 '1일~말일' 조각. 기간 시작이 1일이면 말일까지, 아니면 다음 달 전날까지다. */
+export function cyclePeriodLabel(cycleDay: string | null): string {
+  const c = dueDayNumber(cycleDay)
+  if (c == null) return ''
+  if (c === 1) return '1일~말일'
+  if (c === 31) return '말일~다음 달 말일 전날'
+  return `${c}일~다음 달 ${c - 1}일`
+}
+
+/**
  * 입주일 기준 납부일 파생 — 30일 이상이면 '말일'(등록 폼 applyDueDay 와 동일 규칙).
  *
  * 원래 app/(app)/tenants/actions.ts 안의 로컬 함수였다. 정합 감사(lib/integrityAudit)가 같은 규칙으로

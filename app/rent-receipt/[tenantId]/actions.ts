@@ -2,7 +2,8 @@
 
 import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
-import { billForLeaseMonth } from '@/lib/billing'
+import { billForLeaseMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { cycleDayOf, hasSplitCycle } from '@/lib/dueDay'
 import { isRealRentPayment } from '@/lib/rentPaid'
 import { dueDayAdjustsFrom, type BillingDueDayAdjust } from '@/lib/dueDayAdjust'
 import { getMyRole, requireEdit } from '@/lib/role'
@@ -76,7 +77,8 @@ export type RentReceiptData = {
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
 const kor = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return `${y}년 ${m}월 ${d}일` }
 
-// 월세 1달 선납 주기 — 납부일(dueDay) 기준(없으면 입주일의 일). 예) dueDay 5 → 6/5~7/4.
+// 월세 1달 선납 주기 — 이용 기간 시작일(cycleDayOf, 비어 있으면 납부일) 기준(없으면 입주일의 일). 예) 5일 → 6/5~7/4.
+// 납부일만 옮긴 계약(기간 1일·납부일 6일)은 기간이 1일~말일이다(운영자 승인 2026-10-21). 첫 인자에 납부일을 넘기면 6일~5일로 찍힌다.
 // anchorMonth('YYYY-MM')를 주면 그 달의 dueDay 를 주기 시작으로 잡는다(과거 달 발급). 없으면 오늘 기준 현재 주기.
 function rentCyclePeriod(dueDay: string | null, moveIn: Date | null, anchorMonth?: string | null): { start: string; end: string } {
   let day = parseInt((dueDay ?? '').replace(/[^0-9]/g, ''), 10)
@@ -167,8 +169,14 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
   const anchorMonth = isShortTerm && lease?.moveInDate
     ? new Date(lease.moveInDate).toISOString().slice(0, 7)
     : requestedMonth ?? (lease?.status === 'CHECKED_OUT' ? paidMonths[0]?.month ?? null : null)
-  const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null, anchorMonth)
-  const nextDue = dotPad(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
+  const cycle = rentCyclePeriod(lease ? cycleDayOf(lease) : null, lease?.moveInDate ?? null, anchorMonth)
+  // 다음 납부 예정일 — 기간과 납부일이 같은 계약(지금 거의 전부)은 다음 기간 시작일이고, 납부일만 옮긴 계약은
+  // 다음 기간 달의 납부일이다(504호. 11/1~11/30 다음은 12/1 이 아니라 12/6).
+  const nextCycleStart = new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10)
+  const nextDueDate = lease && hasSplitCycle(lease) ? resolveDueDateForMonth(lease.dueDay, nextCycleStart.slice(0, 7)) : null
+  const nextDue = dotPad(nextDueDate
+    ? `${nextDueDate.getFullYear()}-${String(nextDueDate.getMonth() + 1).padStart(2, '0')}-${String(nextDueDate.getDate()).padStart(2, '0')}`
+    : nextCycleStart)
   const [cy, cm] = cycle.start.split('-').map(Number)
   const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
   const todayMonth = todayKst.slice(0, 7)
@@ -322,7 +330,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
           {
             rentAmount: lease.rentAmount,
             status: lease.status,
-            dueDay: lease.dueDay ?? null,
+            dueDay: lease.dueDay ?? null, cycleDay: lease.cycleDay ?? null,
             dueDayAdjusts,
             discounts: lease.discounts ?? [],
             checkoutProratedAmount: lease.checkoutProratedAmount ?? null,

@@ -12,14 +12,20 @@
 // 어긋나 하루가 밀린다(실제로 겪은 버그). 하루 빼기만 UTC 산술로 하고 곧바로 문자열로 되돌린다.
 
 import { PRORATE_BASE_DAYS } from './prorate'
+import { cycleDayOf } from './dueDay'
 
 // 납부일 임시조정(overrideDueDay)은 **일부러 보지 않는다** — 운영자 확정 2026-08-01.
 //   "납부일 유예는 납부 기한을 미루는거지... 기간 시작을 옮기면 공짜로 사는 기간이 생기잖아"
 // 유예는 '언제까지 내도 되는가'를 미룰 뿐 서비스 기간의 경계를 옮기지 않는다. 초판에서 lib/dueDate 의
 // effectiveDueRawForMonth 를 그대로 끌어 쓴 것이 오류였고, 그 결과 8월분을 9/3 까지 유예받은 사람이
 // 8/20 에 퇴실하면 정산월이 두 달 전으로 가고 기간이 45일(월세의 150%)이 됐다.
+//
+// 기간 시작은 납부일이 아니라 **이용 기간 시작일**(lib/dueDay cycleDayOf)이다(운영자 승인 2026-10-21, 504호).
+// 납부일만 옮긴 계약(기간 1일~말일, 납부일 6일)은 기간이 1일에 시작하고 6일은 기한일 뿐이다. 유예와 같은 원칙이다.
+// cycleDay 칸이 필수인 이유는 cycleDayOf 와 같다(select 에서 빠뜨리면 조용히 납부일로 떨어진다).
 export type SettlementLease = {
-  dueDay?: string | null
+  dueDay: string | null
+  cycleDay: string | null
   moveInDate?: Date | string | null
 }
 
@@ -57,9 +63,9 @@ export function asYmd(v: Date | string | null | undefined): string | null {
   return toYmd(v.getUTCFullYear(), v.getUTCMonth() + 1, v.getUTCDate())
 }
 
-/** 그 달의 기간 시작일. 계약의 원래 납부일만 본다 — 임시조정은 기한만 미룰 뿐 기간을 옮기지 않는다. */
+/** 그 달의 기간 시작일. 계약의 이용 기간 시작일만 본다 — 임시조정은 기한만 미룰 뿐 기간을 옮기지 않는다. */
 function periodStartYmd(lease: SettlementLease, y: number, m: number): string | null {
-  const raw = lease.dueDay ?? null   // 임시조정은 보지 않는다(파일 상단 주석)
+  const raw = cycleDayOf({ cycleDay: lease.cycleDay ?? null, dueDay: lease.dueDay ?? null })   // 임시조정은 보지 않는다(파일 상단 주석)
   if (!raw) return null
   if (raw.includes('-')) return raw.slice(0, 10)
   const last = lastDayOf(y, m)

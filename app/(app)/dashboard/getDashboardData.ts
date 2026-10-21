@@ -11,6 +11,7 @@ import { expenseTargetMonth, targetMonthWhere } from '@/lib/expenseTargetMonth'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptIssuableAmount, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
 import { readAlertCutoffYmd } from '@/lib/alertCutoff'
 import { dueDayBeforeChange, isDueDayAdjust, loadDueDayAdjustMap, notDueDayAdjustWhere, withDueDayAdjusts } from '@/lib/dueDayAdjust'
+import { cycleDayOf } from '@/lib/dueDay'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -271,7 +272,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
       // room.id·tier·floor·windowType — 방 속성 세그먼트(아래 roomSegments)가 이 계약의 청구액을
       // 어느 칸에 넣을지 정하는 축이다. 청구 계산에는 관여하지 않는다(읽기만 늘린다).
-      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { id: true, tier: true, floor: true, windowType: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } } },
+      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, cycleDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { id: true, tier: true, floor: true, windowType: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -395,7 +396,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
             id: true, tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } }, status: true, rentAmount: true,
             // 사람별 실제 청구액(lib/billing) — 할인·일할·단기·예약 인상을 수납 관리와 같은 식으로 읽는다.
             // expectedMoveOut — 타일 퇴실 예정일 줄("8/14 퇴실"). 청구 판정에는 쓰지 않는다.
-            isShortTerm: true, moveInDate: true, dueDay: true, expectedMoveOut: true,
+            isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true, expectedMoveOut: true,
             // 퇴실 계약의 체류 끝(실제 퇴실일) — residedInMonth 판정과 타일 '9/30 퇴실' 줄.
             moveOutDate: true, overrideDueDay: true, overrideDueDayMonth: true,
             checkoutProratedAmount: true, checkoutProratedMonth: true,
@@ -464,7 +465,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         expectedMoveOut: true,
         moveOutDate: true,
         status: true,
-        dueDay: true,
+        dueDay: true, cycleDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
         // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·unpaid.ts 와 동일)
@@ -646,12 +647,14 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       ;(originalDueDayByLease as any)[`__date_${p.leaseTermId}`] = recDate
     }
   }
-  function getOriginalDueDay(l: { id: string; dueDay: string | null }): number | null {
+  // 인수월 판정은 기간 시작으로 본다(양도인이 받은 것은 그 기간 몫이다). 그래서 납부일이 아니라 이용 기간 시작일(cycleDayOf)이다.
+  function getOriginalDueDay(l: { id: string; dueDay: string | null; cycleDay: string | null }): number | null {
     const restored = originalDueDayByLease[l.id]
     if (restored !== undefined) return restored
-    if (!l.dueDay) return null
-    if (l.dueDay.includes('말')) return 31
-    const n = parseInt(l.dueDay, 10)
+    const cycle = cycleDayOf(l)
+    if (!cycle) return null
+    if (cycle.includes('말')) return 31
+    const n = parseInt(cycle, 10)
     return isNaN(n) ? null : n
   }
 
@@ -684,13 +687,13 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
 
   // 특정 월의 dueDay(override 적용)를 반환
   function effectiveDueDayForMonth(
-    l: { dueDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; cycleDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): string | null {
     if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return l.overrideDueDay
     // 입주달 첫 달 규칙이 발동하면 기한은 입주일이다(운영자 승인 2026-09-07, 선납 모델).
     // 안 두면 9/25 입주·납부일 5일 계약이 입주 첫날부터 '20일 연체'로 뜬다.
-    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null }, monthStr)
+    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null; cycleDay: string | null }, monthStr)
     if (fm) return fm
     return l.dueDay
   }
@@ -777,7 +780,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
   // 특정 미납 월의 경과일 — 납부일 유예 반영 (unpaid.ts daysOverdueForMonth 와 동일 규칙).
   // override 가 이 월(또는 이후)에 걸려 있고 유예 날짜가 원래 납부일보다 늦으면 유예 날짜 기준.
   function daysOverdueForMonth(
-    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; cycleDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): number | null {
     if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {

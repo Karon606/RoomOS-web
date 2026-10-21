@@ -35,7 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   const [leasesFetched, dueDayAdjustMap] = await Promise.all([prisma.leaseTerm.findMany({
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
-      id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true, isShortTerm: true, moveInDate: true,
+      id: true, dueDay: true, cycleDay: true, rentAmount: true, expectedMoveOut: true, status: true, isShortTerm: true, moveInDate: true,
       // 납부일 임시조정 — 없으면 미뤄둔 날짜가 피드에 반영되지 않는다(신고 998bff27)
       overrideDueDay: true, overrideDueDayMonth: true, overrideDueDayReason: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,

@@ -163,5 +163,17 @@ eq('asYmd(UTC Date)', asYmd(new Date(Date.UTC(2026, 7, 1))), '2026-08-01')
 eq('asYmd(문자열)', asYmd('2026-08-01T00:00:00.000Z'), '2026-08-01')
 eq('asYmd(null)', asYmd(null), null)
 
+// ── 이용 기간 시작일(cycleDay, 납부일만 옮김 · 운영자 승인 2026-10-21) ─────────────────
+// 기간은 cycleDay(1일)부터, 납부일(6일)은 기한일 뿐이다. 12/3 퇴실은 12월 기간 3일째다(납부일로 재면 11/6~12/5 의 기간).
+{
+  const p = settlementPeriodFor({ dueDay: '6', cycleDay: '1', moveInDate: '2026-08-01' }, '2026-12-03')!
+  eq('분리 12/3 귀속 12월', p.month, '2026-12')
+  eq('분리 12/3 시작 12/1', p.startYmd, '2026-12-01')
+  eq('분리 12/3 퇴실해야 하는 날 12/31', p.mustLeaveYmd, '2026-12-31')
+  eq('분리 12/3 사용 3일', p.daysUsed, 3)
+  const q = settlementPeriodFor({ dueDay: '6', cycleDay: null, moveInDate: '2026-08-01' }, '2026-12-03')!
+  eq('칸 없음 12/3 은 종전(11/6 시작)', [q.month, q.startYmd, q.mustLeaveYmd], ['2026-11', '2026-11-06', '2026-12-05'])
+}
+
 console.log(`\n퇴실 정산 기간: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)
