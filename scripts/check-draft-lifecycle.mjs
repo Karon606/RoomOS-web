@@ -31,6 +31,7 @@
 //   ⑫ (2026-10-21 운영자 요청) '옮김 없음' 복원 — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로. 한 상수·한 판정
 //      함수(canNoMove 진리표), 두 화면 같은 행 머리 자리.
 //   ⑬ (2026-10-21 운영자 요청) 채움 수량은 --tc-text — 한 상수 FILL_QTY_CLS, 점검 두 화면·이력 수정 폼(적는 화면), 라벨은 강조 안 함, 읽기 전용 이력 카드는 제외.
+//   ⑭ (2026-10-21) 행 머리 오른쪽 묶음이 줄 폭 14rem 아래에서 늘 다음 줄 끝으로 내려간다(컨테이너 쿼리, 두 화면 한 벌).
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -979,8 +980,8 @@ need("'옮김 없음' 이 두 화면 모두 canNoMove(rowIsHub, beforeStr, after
 // 자리 — '그대로' 와 같은 행 머리 줄(min-h-7, 버튼 높이 28px 고정)이라 버튼이 서고 사라질 때 입력칸이 뜨지 않는다.
 need("'옮김 없음' 이 '그대로' 와 같은 행 머리 줄에 선다(두 화면)",
   /canNoMove/.test(headCluster(itemForm)) && /canNoMove/.test(headCluster(locPanel)) &&
-  /<div className="flex min-h-7 items-center gap-2">\s*\n\s*\{g\.parent !== ''/.test(itemForm) &&
-  /<div className="flex min-h-7 items-center gap-2">\s*\n\s*<p className="min-w-0 flex-1 truncate text-\[0\.65625rem\]/.test(locPanel),
+  /<div className=\{ROW_HEAD_CLS\}>\s*\n\s*\{g\.parent !== ''/.test(itemForm) &&
+  /<div className=\{ROW_HEAD_CLS\}>\s*\n\s*<p className="min-w-0 flex-1 truncate text-\[0\.65625rem\]/.test(locPanel),
   '입력칸 아래 줄로 내리거나 머리 줄 min-h 를 빼면 버튼이 사라질 때 칸이 손가락 밑에서 뜬다')
 
 // ── ⑬ 채움 수량은 --tc-text (2026-10-21 운영자 "새로 추가하는 아이템의 수가 빨간색으로 … 가독성이 떨어졌어") ──────
@@ -1001,6 +1002,24 @@ for (const [name, src, re] of fillSites) need(`채움 수량이 FILL_QTY_CLS 다
 need('이력 카드 채움 캡션은 강조하지 않는다(적는 화면만)',
   /창고에서 \{fmtQty\(restockTotal, stockUnit\)\} 채움/.test(client) && /> 채움 \{fmtQty\(row\.restockedQty!, unit\)\}<\/span>/.test(client),
   '이력은 읽는 기록이라 절제한다. 적는 화면의 강조 규칙을 이력까지 넓히면 §03·§06 결정과 부딪힌다')
+
+// ── ⑭ 행 머리 오른쪽 묶음은 좁은 줄에서 다음 줄로 (2026-10-21, 320·360px 글자 125% 에서 '+N' 이 잘렸다) ──────
+// 판정은 내용이 아니라 줄 폭(컨테이너 쿼리)이다 — 내용 기준 wrap 이면 버튼이 서고 사라지거나 자릿수가 늘 때 줄 수가 바뀌어 입력칸이 뜬다.
+need('행 머리가 한 벌 상수이고 줄 폭(컨테이너 쿼리)으로 묶음을 내린다',
+  /const ROW_HEAD_CLS = '@container flex min-h-7 flex-wrap items-center gap-x-2'\n/.test(client) &&
+  /const ROW_HEAD_CLUSTER_CLS = 'ml-auto flex min-h-7 shrink-0 items-center justify-end gap-x-2 @max-\[14rem\]:basis-full @max-\[12\.5rem\]:flex-col @max-\[12\.5rem\]:items-end'\n/.test(client) &&
+  /const ROW_HEAD_ACT_CLS = 'flex min-h-7 items-center justify-end gap-2'\n/.test(client),
+  "컨테이너 쿼리를 빼면 좁은 줄에서 묶음이 넘쳐 '+N' 이 잘리고, 동작 자리 min-h-7 을 빼면 버튼이 사라질 때 줄이 줄어든다")
+for (const [name, src] of [['아이템별 폼', itemForm], ['위치 패널', locPanel]]) {
+  const a = src.indexOf('<div className={ROW_HEAD_CLUSTER_CLS}>')
+  const b = a < 0 ? -1 : src.indexOf('</div>', a)
+  const cl = b < 0 ? '' : src.slice(a, b)
+  need(`행 머리 오른쪽 묶음이 저장값·이번 채움·그대로·옮김 없음을 모두 담는다 — ${name}`,
+    (src.match(/<div className=\{ROW_HEAD_CLS\}>/g) ?? []).length === 1 &&
+    />저장값 <strong/.test(cl) && /<div className=\{ROW_HEAD_ACT_CLS\}>\s*\n\s*\{restocked > 0 && !rowIsHub && /.test(cl) && />이번 채움 <strong className=\{FILL_QTY_CLS\}>/.test(cl) && /\{canKeep && \(/.test(cl) && /\{canNoMove\(rowIsHub, beforeStr, afterStr\) && \(/.test(cl),
+    '하나라도 묶음 밖에 두면 좁은 줄에서 그것만 첫 줄에 남아 넘친다')
+}
+need('들여쓰기는 그대로다(LOC_INDENT_PX 12)', /const LOC_INDENT_PX = 12 /.test(client))
 // 수제 '+N' 강조가 다른 색으로 남지 않는다 — '+{' 로 시작하는 채움 수 strong 은 전부 이 상수다. 이력 수정 폼 행 머리까지 세면 7곳.
 need("'+N' 채움 수 strong 이 전부 FILL_QTY_CLS 다(7곳)",
   (client.match(/<strong className=\{FILL_QTY_CLS\}>\+\{/g) ?? []).length === 7 &&

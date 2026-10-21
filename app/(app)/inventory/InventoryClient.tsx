@@ -233,6 +233,18 @@ function canNoMove(isHubRow: boolean, beforeStr: string, afterStr: string): bool
 // '창고에서 N 채움'·위치 줄 '채움 N')는 넣지 않는다 — 테라코타 '+8kg' 은 §03·§06 절제 대상으로 걷은 자리다(check-inventory-view-default).
 // 위험 상자 안 이중 채움 물음 목록도 경고 색 문맥이라 예외(그 숫자는 --ink-s).
 const FILL_QTY_CLS = 'font-semibold tabular-nums text-[var(--tc-text)]'
+// 점검 행 머리 한 벌(아이템별 폼·위치 패널) — 왼쪽 이름/분류, 오른쪽 묶음('저장값' · '이번 채움 +N' 또는 '그대로'/'옮김 없음').
+// 좁은 줄(위치 패널 깊은 행은 들여쓰기 36px, 320·360px 글자 125%)에서는 오른쪽 묶음이 넘쳐 강조한 '+N' 이 잘렸다(2026-10-21).
+// 그래서 줄 폭이 14rem 아래면 묶음을 늘 다음 줄 끝으로 내린다. 넘칠 때만 내리면(내용 기준 flex-wrap) 버튼이 서고 사라지거나
+// '+N' 자릿수가 늘 때 줄 수가 바뀌어 입력칸이 손가락 밑에서 뜬다 — 그래서 판정을 내용이 아니라 **줄 폭**(컨테이너 쿼리)에 둔다.
+// 같은 폭에서는 상태와 무관하게 높이가 같다. 14rem 은 가장 긴 묶음('저장값 123.75kg' + '이번 채움 +12.25kg' ≈ 12.2rem)과 분류 몇 글자를
+// 담는 폭이고 rem 이라 글자 크기와 함께 커진다. 들여쓰기(LOC_INDENT_PX)는 그대로다.
+// 그보다 더 좁은 줄(12.5rem 아래 — 패널 깊은 행 320px 글자 125% 가 9.5rem)은 묶음 자체도 한 줄에 안 들어가 '저장값' 과 동작 자리
+// (이번 채움·그대로·옮김 없음)를 위아래로 세운다. 동작 자리(ROW_HEAD_ACT_CLS)는 비어 있어도 버튼 높이(min-h-7)를 늘 잡아,
+// 버튼이 서고 사라지거나 '+N' 이 나타나도 줄 높이가 그대로다.
+const ROW_HEAD_CLS = '@container flex min-h-7 flex-wrap items-center gap-x-2'
+const ROW_HEAD_CLUSTER_CLS = 'ml-auto flex min-h-7 shrink-0 items-center justify-end gap-x-2 @max-[14rem]:basis-full @max-[12.5rem]:flex-col @max-[12.5rem]:items-end'
+const ROW_HEAD_ACT_CLS = 'flex min-h-7 items-center justify-end gap-2'
 const pendingReasonItemForm = (n: number) => `'채우기 전'을 고를 위치가 ${n}곳 남았습니다.`
 const pendingReasonPanel = (n: number) => `'채우기 전'을 고를 품목이 ${n}건 남았습니다.`
 
@@ -4883,11 +4895,13 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                         버튼 높이(28px)로 고정이다 — 적기 시작해 버튼이 사라질 때 아래 입력칸이 손가락 밑에서 뜨지 않게.
                         창고 표시는 §22 정본 Badge 다 — 이 행은 **품목 창고**(hubLocationId 우선)라 '창고',
                         패널 그룹 머리는 영업장 기본 창고(StorageLocation.isHub)라 '기본 창고' 다(2026-10-12 낱말 통일). */}
-                    <div className="flex min-h-7 items-center gap-2">
+                    <div className={ROW_HEAD_CLS}>
                       {g.parent !== '' && <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                       {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
                       <span className="flex-1" />
+                      <div className={ROW_HEAD_CLUSTER_CLS}>
                       {prevQty !== undefined && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prevQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      <div className={ROW_HEAD_ACT_CLS}>
                       {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className={FILL_QTY_CLS}>+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                       {canKeep && (
                         <RowActionBtn className="shrink-0" onClick={() => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) })) }}>
@@ -4901,6 +4915,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                           {NO_MOVE_LABEL}
                         </RowActionBtn>
                       )}
+                      </div>
+                      </div>
                     </div>
                     {/* 지난 점검의 채움 — 저장본 축이다(이번 채움과 한 줄에 같은 +N 이 두 번 뜨지 않게 머리와 갈랐다).
                         면 없는 11px 캡션이다(2단계 — 회색 참고줄 상자를 걷었다). 행마다 서던 '{창고} 남음' 은 이 폼에서만
@@ -6434,9 +6450,11 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{r.label}</p>
                               {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
                             </div>
-                            <div className="flex min-h-7 items-center gap-2">
+                            <div className={ROW_HEAD_CLS}>
                               <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
+                              <div className={ROW_HEAD_CLUSTER_CLS}>
                               {prev != null && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prev.qty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                              <div className={ROW_HEAD_ACT_CLS}>
                               {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className={FILL_QTY_CLS}>+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               {canKeep && (
                                 <RowActionBtn className="shrink-0" onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}>
@@ -6449,6 +6467,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                                   {NO_MOVE_LABEL}
                                 </RowActionBtn>
                               )}
+                              </div>
+                              </div>
                             </div>
                           </div>
                           {/* 캡션 — 지난 점검의 채움(저장본 축)과 이 품목 창고의 지금 잔량. 면 없는 11px 다(2단계 — 회색 참고줄
