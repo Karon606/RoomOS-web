@@ -17,7 +17,7 @@
 
 import { useEffect, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { getTenantStatusHistory, updateStatusLogReason, invalidateStatusLog, restoreStatusLog } from '@/app/(app)/rooms/actions'
+import { getTenantStatusHistory, updateStatusLogReason, undoStatusLogReason, invalidateStatusLog, restoreStatusLog } from '@/app/(app)/rooms/actions'
 import { Section } from './Section'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
@@ -224,16 +224,16 @@ function ReasonEditModal({ item, onClose, onDone }: { item: HistItem; onClose: (
     try {
       const res = await updateStatusLogReason(item.id, value.trim() || null, { addToList })
       if (!res.ok) { pushToast('error', res.error); return }
-      const { prev, reason: next } = res
+      const { reason: next, undo } = res
       const lab = reasonLabel(item.toStatus) ?? '사유'
       pushToast('success', next ? `${withParticle(lab, '을/를')} 저장했습니다` : `${withParticle(lab, '을/를')} 지웠습니다`, {
         // 상시 진입점은 같은 [수정] 버튼이다 — 텍스트는 되돌려 쓰는 것이 곧 적용취소라(§16)
         // 여기 토스트는 즉시 되돌리기용 편의다.
-        // 이전 값은 서버가 돌려준 그 글자 그대로 되돌린다(restore). 다시 재면 그사이 목록에서 뺀 이전 값에 '기타 · ' 가 붙는다.
-        action: { label: '적용취소', run: () => { void updateStatusLogReason(item.id, prev, { restore: true }).then(u => {
+        // 이전 값은 서버가 서명한 토큰으로 그 글자 그대로 되돌린다(undoStatusLogReason). 토큰을 못 내면(운영 서명 키 없음) 숨긴다.
+        ...(undo ? { action: { label: '적용취소', run: () => { void undoStatusLogReason(undo).then(u => {
           if (u.ok) { pushToast('info', '사유를 되돌렸습니다'); onDone() }
           else pushToast('error', u.error)
-        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } } } : {}),
       })
       onClose()
       onDone()

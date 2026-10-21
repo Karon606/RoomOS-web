@@ -1,5 +1,6 @@
 // 사유 목록 통합 회귀. 실제 설정·이력 수정·보증금 미반환 저장·이름 변경·적용취소를 메모리 PGlite 위에서 돌린다. 실패 시 exit 1.
-// 실행: npx tsx --tsconfig scripts/tsconfig.cash-receipt-flow.json scripts/test-reason-lists-flow.ts
+// 실행: npx tsx --tsconfig scripts/tsconfig.reason-flow.json scripts/test-reason-lists-flow.ts
+// 관문 대역만 사유 하네스 전용이다(사용자 id 가 uuid 라 상태 전환이 이력 행을 만든다, scripts/reason-flow-access-stub).
 //
 // 왜 통합인가(2026-10-22 운영자 승인). 저장 규약 진리표(test-reason-lists)는 순수 함수만 본다. 서버 경로가 그 규약을 실제로
 // 거치는지(목록 밖 글은 '기타 · 글', 체크하면 목록 추가), 이름 변경이 상태 이력을 toStatus·영업장으로 나눠 따라가고
@@ -146,8 +147,13 @@ async function main() {
     const r4 = await rooms.updateStatusLogReason(A, '옛 사유')
     eq('지금 값 그대로면 목록 밖이어도 그대로', [r4.ok, await reasonOf(A)], [true, '옛 사유'])
     const r5 = await rooms.updateStatusLogReason(A, '변심')
-    const r6 = r5.ok ? await rooms.updateStatusLogReason(A, r5.prev, { restore: true }) : r5
-    eq('적용취소는 이전 글자 그대로(옛 사유에 기타 · 가 안 붙는다)', [r5.ok, r6.ok, await reasonOf(A)], [true, true, '옛 사유'])
+    if (!r5.ok || !r5.undo) throw new Error('undo token')
+    eq('적용취소 토큰은 서명된다', typeof r5.undo.sig, 'string')
+    eq('위조 토큰(이전 값 바꿈)은 거부', [(await rooms.undoStatusLogReason({ ...J(r5.undo), prev: '아무 글' })).ok, await reasonOf(A)], [false, '변심'])
+    eq('서명 없는 토큰은 거부', (await rooms.undoStatusLogReason({ logId: A, prev: '아무 글', next: '변심' })).ok, false)
+    const r6 = await rooms.undoStatusLogReason(J(r5.undo))
+    eq('적용취소는 이전 글자 그대로(옛 사유에 기타 · 가 안 붙는다)', [r6.ok, await reasonOf(A)], [true, '옛 사유'])
+    eq('같은 토큰 두 번째는 거부(지금 값이 바꾼 값이 아니다)', (await rooms.undoStatusLogReason(J(r5.undo))).ok, false)
     const S = await log(P1, T1, L1, 'CHECKOUT_PENDING', 'ACTIVE', '단기 연장')
     eq('사유를 받지 않는 전이는 못 고친다', (await rooms.updateStatusLogReason(S, '변심')).ok, false)
     g.__CR_FLOW_PID = P2
@@ -165,6 +171,8 @@ async function main() {
     const c4 = await log(P1, T1, L1, 'ACTIVE', 'CHECKOUT_PENDING', '계약 위반 퇴실')
     const c5 = await log(P1, T1, L1, 'CHECKOUT_PENDING', 'CHECKED_OUT', '계약 위반 퇴실')
     const c6 = await log(P1, T1, L1, 'RESERVED', 'CANCELLED', '계약 위반 퇴실')
+    const c8 = await log(P1, T1, L1, 'ACTIVE', 'ACTIVE', '계약 위반 퇴실')    // '그날 바꾸기' 행(거주중 그대로 + 퇴실 사유)
+    const c9 = await log(P1, T1, L1, 'CHECKOUT_PENDING', 'ACTIVE', '계약 위반 퇴실')  // 다른 전이(같은 글자)는 범위 밖
     const c7 = (await prisma.tenantStatusLog.create({ data: { propertyId: P1, tenantId: T1, leaseTermId: L1, fromStatus: 'RESERVED', toStatus: 'CANCELLED', reason: '변심', deletedAt: new Date('2026-10-01T00:00:00Z') } })).id as string
     const before = await allLogs()
     eq('건수 고지: 취소 변심은 이 영업장 취소 행만(무효 행 포함)', await settings.countRenameTargets('cancelReasons', '변심'), 2)
@@ -175,7 +183,8 @@ async function main() {
     eq('목록도 그 자리에서', (await settings.getCancelReasons())[0], '마음 바뀜')
     const r2 = await settings.renameOption('checkoutReasons', '계약 위반 퇴실', '강제 퇴실')
     if (!r2.ok) throw new Error(r2.error)
-    eq('퇴실 사유 이름 변경은 퇴실 예정·퇴실 행만(같은 글자의 취소 사유는 그대로)', [await reasonOf(c4), await reasonOf(c5), await reasonOf(c6)], ['강제 퇴실', '강제 퇴실', '계약 위반 퇴실'])
+    eq('퇴실 사유 이름 변경은 퇴실 예정·퇴실·그날 바꾸기 행만(같은 글자의 취소 사유·다른 전이는 그대로)',
+      [await reasonOf(c4), await reasonOf(c5), await reasonOf(c8), await reasonOf(c6), await reasonOf(c9)], ['강제 퇴실', '강제 퇴실', '강제 퇴실', '계약 위반 퇴실', '계약 위반 퇴실'])
     const u2 = await settings.undoRenameOption(J(r2.undo!))
     const u1 = await settings.undoRenameOption(J(r.undo!))
     eq('적용취소 둘 ok', [u2.ok, u1.ok], [true, true])
@@ -249,8 +258,58 @@ async function main() {
     eq('요청: 켜면(기본) 쌓인다', [q2.ok, (await reqList())?.endsWith(',주차')], [true, true])
   }
 
-  // 상태 전환(applyStatusTransition)·입주자 수정(updateTenant)은 하네스 관문 대역의 사용자 id 가 uuid 가 아니라 이력 행을
-  // 못 만든다(changedById). 두 경로가 같은 reasonForSave 를 지나는지는 check-option-lists ⓛ 가 배선으로 본다.
+  // ── 6. 상태 전환: 입실 취소 사유·뺀 사유를 이어받은 퇴실(독립 검수 R1) ─────────────────────
+  {
+    const T6 = await tenantIn(P1, '바')
+    const L6 = await leaseOf(P1, T6, 'RESERVED')
+    const r = await tenants.applyStatusTransition({ leaseTermId: L6, tenantId: T6, toStatus: 'CANCELLED', reason: '기타 · 엘리베이터 없음', addReasonToList: true })
+    if (!r.ok) throw new Error(r.error)
+    eq('전환: 체크하면 맨 글자', (await prisma.tenantStatusLog.findFirst({ where: { leaseTermId: L6, toStatus: 'CANCELLED' } }))?.reason, '엘리베이터 없음')
+    eq('전환: 목록 끝에 더함', (await settings.getCancelReasons()).at(-1), '엘리베이터 없음')
+    const T7 = await tenantIn(P1, '사')
+    const L7 = await leaseOf(P1, T7, 'RESERVED')
+    const r7 = await tenants.applyStatusTransition({ leaseTermId: L7, tenantId: T7, toStatus: 'CANCELLED', reason: '단기 자동 전환' })
+    if (!r7.ok) throw new Error(r7.error)
+    eq('전환: 시스템 라벨을 보내도 운영자 사유로 안 남는다', (await prisma.tenantStatusLog.findFirst({ where: { leaseTermId: L7, toStatus: 'CANCELLED' } }))?.reason, '기타 · 단기 자동 전환')
+    // 퇴실 예정 때 '개인 사정' 을 골랐는데 그 뒤 운영자가 목록에서 '개인 사정' 을 뺐다. 퇴실 처리 폼은 이어받은 '개인 사정' 으로 연다.
+    const T8 = await tenantIn(P1, '아')
+    const L8 = await leaseOf(P1, T8, 'CHECKOUT_PENDING')
+    await log(P1, T8, L8, 'ACTIVE', 'CHECKOUT_PENDING', '개인 사정')
+    await settings.deleteCheckoutReason('개인 사정')
+    eq('개인 사정은 목록에서 빠졌다', (await settings.getCheckoutReasons()).includes('개인 사정'), false)
+    const r8 = await tenants.applyStatusTransition({ leaseTermId: L8, tenantId: T8, toStatus: 'CHECKED_OUT', moveOutDate: '2026-10-20', reason: '개인 사정' })
+    if (!r8.ok) throw new Error(r8.error)
+    eq('뺀 사유를 이어받은 퇴실은 그 글자 그대로(기타 · 가 안 붙는다)', (await prisma.tenantStatusLog.findFirst({ where: { leaseTermId: L8, toStatus: 'CHECKED_OUT' } }))?.reason, '개인 사정')
+    const T9 = await tenantIn(P1, '자')
+    const L9 = await leaseOf(P1, T9, 'ACTIVE')
+    const r9 = await tenants.applyStatusTransition({ leaseTermId: L9, tenantId: T9, toStatus: 'CHECKOUT_PENDING', expectedMoveOut: '2026-12-31', reason: '개인 사정' })
+    if (!r9.ok) throw new Error(r9.error)
+    eq('이어받을 사유가 없는 새 퇴실 예정에 뺀 이름을 보내면 기타 · 글', (await prisma.tenantStatusLog.findFirst({ where: { leaseTermId: L9, toStatus: 'CHECKOUT_PENDING' } }))?.reason, '기타 · 개인 사정')
+  }
+
+  // ── 7. 목록을 고치는 입구: 순서·삭제 적용취소·초기화 적용취소·이름 변경 적용취소(독립 검수 N2), 동시 추가(N4) ──
+  {
+    const now = await settings.getWithholdReasons()
+    let threw = false
+    try { await settings.reorderOptions('withholdReasons', [...now, '기타']) } catch { threw = true }
+    eq('순서 저장으로 기타를 끼워 넣지 못한다', [threw, await settings.getWithholdReasons()], [true, now])
+    threw = false
+    try { await settings.reorderOptions('withholdReasons', now.slice(1)) } catch { threw = true }
+    eq('순서 저장이 이름을 빼지 못한다(지금 목록과 같은 이름 집합만)', [threw, await settings.getWithholdReasons()], [true, now])
+    await settings.reorderOptions('withholdReasons', [...now].reverse())
+    eq('같은 이름 집합이면 순서만 바뀐다', await settings.getWithholdReasons(), [...now].reverse())
+    eq('삭제 적용취소로 기타를 넣지 못한다', (await settings.restoreOption('cancelReasons', '기타', 0)).ok, false)
+    eq('초기화 적용취소로 시스템 라벨을 넣지 못한다', (await settings.undoResetOptions('checkoutReasons', ['단기 연장', '계약 만료'])).ok, false)
+    eq('이름 변경 적용취소로 기타를 되살리지 못한다', (await settings.undoRenameOption({ field: 'cancelReasons', oldValue: '기타', newValue: '변심', rows: [], wishIds: [], inventory: false })).ok, false)
+    const before = await settings.getCancelReasons()
+    const saves = await Promise.all(['동시 하나', '동시 둘', '동시 셋'].map(async (n, i) => {
+      const id = await log(P1, T1, L1, 'RESERVED', 'CANCELLED', null)
+      return rooms.updateStatusLogReason(id, '기타 · ' + n, { addToList: true }).then(r => [r.ok, i])
+    }))
+    eq('동시 저장 셋 ok', saves.map(x => x[0]), [true, true, true])
+    eq('동시에 더한 이름이 하나도 안 지워진다', (await settings.getCancelReasons()).slice(before.length).sort(), ['동시 둘', '동시 셋', '동시 하나'])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

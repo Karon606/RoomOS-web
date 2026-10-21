@@ -14,7 +14,7 @@ import {
   isReasonListField, REASON_LIST_FIELDS,
 } from '../lib/optionLists'
 import { planReasonSave, reasonPickOf, otherReason, otherReasonText, OTHER_REASON_PREFIX } from '../lib/reasonLists'
-import { REASON_FIELD_STATUSES, SYSTEM_STATUS_REASONS, reasonFieldForStatus, isSystemStatusReason } from '../lib/statusReasons'
+import { REASON_FIELD_STATUSES, REASON_FIELD_SELF_STATUSES, SYSTEM_STATUS_REASONS, reasonFieldForStatus, isSystemStatusReason } from '../lib/statusReasons'
 import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '../lib/depositWithholdReasons'
 
 let pass = 0
@@ -120,6 +120,8 @@ const CANCEL_T = { model: 'tenantStatusLog', column: 'reason', statuses: REASON_
 const CHECKOUT_T = { model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES.checkoutReasons }
 eq('취소 사유는 영업장 + 취소 행만', optionRenameWhere(CANCEL_T, 'P1', '변심'), { propertyId: 'P1', reason: '변심', toStatus: { in: ['CANCELLED'] } })
 eq('퇴실 사유는 영업장 + 퇴실 예정·퇴실 행만', optionRenameWhere(CHECKOUT_T, 'P1', '개인 사정'), { propertyId: 'P1', reason: '개인 사정', toStatus: { in: ['CHECKOUT_PENDING', 'CHECKED_OUT'] } })
+eq("퇴실 사유는 '그날 바꾸기' 행(거주중 그대로)도 고른다", optionRenameWhere({ ...CHECKOUT_T, selfStatuses: REASON_FIELD_SELF_STATUSES.checkoutReasons }, 'P1', '개인 사정'),
+  { propertyId: 'P1', reason: '개인 사정', OR: [{ toStatus: { in: ['CHECKOUT_PENDING', 'CHECKED_OUT'] } }, { fromStatus: 'ACTIVE', toStatus: 'ACTIVE' }] })
 eq('미반환 사유는 영업장 + 그 글자', optionRenameWhere({ model: 'depositRefund', column: 'reason' }, 'P1', '원상복구비'), { propertyId: 'P1', reason: '원상복구비' })
 {
   // 조건을 메모리 행에 대 본다(Prisma where 의 같음·in 뜻 그대로).

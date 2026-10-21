@@ -290,7 +290,7 @@ export function optionListAfterResetUndo(field: OptionListField, raw: string | n
  * statuses 가 있으면 그 상태(toStatus)의 행만 고른다. 상태 이력 사유 칸(TenantStatusLog.reason)에는 취소 사유와 퇴실 사유가
  * 함께 살아서, 퇴실 사유 '계약 위반' 을 바꾸면 같은 글자의 취소 사유까지 바뀌면 안 된다(2026-10-22).
  */
-export type RenameTarget = { model: string; column: string; via?: 'leaseTerm'; statuses?: readonly string[] }
+export type RenameTarget = { model: string; column: string; via?: 'leaseTerm'; statuses?: readonly string[]; selfStatuses?: readonly string[] }
 
 // 소프트삭제 모델. 삭제된 행의 값도 과거 표기라 함께 갱신한다. updateMany 는 익스텐션 필터 대상이
 // 아니라 삭제분까지 바꾸므로, count·findMany 에도 deletedAt 을 명시해 필터를 끈다(건수 일치).
@@ -306,7 +306,10 @@ export function optionRenameWhere(t: RenameTarget, propertyId: string, value: st
   const where: Record<string, unknown> = t.via === 'leaseTerm'
     ? { leaseTerm: { propertyId }, [t.column]: value }
     : { propertyId, [t.column]: value }
-  if (t.statuses) where.toStatus = { in: [...t.statuses] }
+  // selfStatuses 는 상태가 안 바뀐 행(from === to)도 고른다. 퇴실 예정 '그날 바꾸기' 행이 그것이다(lib/statusReasons).
+  if (t.statuses && t.selfStatuses) {
+    where.OR = [{ toStatus: { in: [...t.statuses] } }, ...t.selfStatuses.map(s => ({ fromStatus: s, toStatus: s }))]
+  } else if (t.statuses) where.toStatus = { in: [...t.statuses] }
   if (RENAME_SOFT_DELETE_MODELS.has(t.model)) where.deletedAt = undefined
   return where
 }

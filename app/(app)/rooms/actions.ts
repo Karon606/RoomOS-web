@@ -27,6 +27,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonFieldForStatus } from '@/lib/statusReasons'
 import { reasonForSave } from '@/lib/reasonListSave'
+import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { cycleDayOf } from '@/lib/dueDay'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate } from '@/lib/billing'
@@ -4558,10 +4559,11 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
 // 이전 값을 돌려줘서 호출부가 적용취소를 걸 수 있게 한다(§16).
 //
 // 화면이 보낸 글자는 영업장 목록으로 다시 잰다(lib/reasonLists, 2026-10-22). 지금 값 그대로면(목록에서 뺀 항목·옛 이름)
-// 그대로 두고, 목록 밖 글은 '기타 · 글' 로, 체크하면 목록에 더한다. 적용취소(restore)는 이 함수가 돌려준 이전 값을
-// 되돌려 쓰는 것이라 다시 재지 않는다. 다시 재면 목록에서 그사이 뺀 이전 값에 '기타 · ' 가 붙어 되돌리기가 거짓이 된다.
-export async function updateStatusLogReason(logId: string, reason: string | null, opts: { addToList?: boolean; restore?: boolean } = {}): Promise<
-  { ok: true; prev: string | null; reason: string | null } | { ok: false; error: string }
+// 그대로 두고, 목록 밖 글은 '기타 · 글' 로, 체크하면 목록에 더한다. 적용취소는 서버가 서명한 토큰(undo)으로만 한다
+// (undoStatusLogReason). 이전 값을 다시 재면 그사이 목록에서 뺀 이전 값에 '기타 · ' 가 붙고, 재지 않고 화면이 보낸 글을
+// 그대로 쓰면 아무 글이나 남길 수 있다(독립 검수 N1).
+export async function updateStatusLogReason(logId: string, reason: string | null, opts: { addToList?: boolean } = {}): Promise<
+  { ok: true; prev: string | null; reason: string | null; undo: StatusLogReasonUndo | null } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -4576,14 +4578,45 @@ export async function updateStatusLogReason(logId: string, reason: string | null
     if (row.fromStatus === row.toStatus || !field) {
       return { ok: false, error: '이 이력은 사유를 기록하는 항목이 아닙니다.' }
     }
-    const save = opts.restore
-      ? { reason: (reason ?? '').trim() || null, commit: async () => {} }
-      : await reasonForSave(propertyId, field, reason, { addToList: opts.addToList === true, prev: row.reason })
+    const save = await reasonForSave(propertyId, field, reason, { addToList: opts.addToList === true, prev: row.reason })
     const next = save.reason
     await prisma.tenantStatusLog.update({ where: { id: logId }, data: { reason: next } })
     await save.commit()
     revalidatePath('/tenants')
-    return { ok: true, prev: row.reason, reason: next }
+    const body = { logId, prev: row.reason, next }
+    const sig = signUndoBody(STATUS_LOG_REASON_UNDO_DOMAIN, propertyId, statusLogReasonUndoBody(body))
+    return { ok: true, prev: row.reason, reason: next, undo: sig === null ? null : { ...body, ...(sig ? { sig } : {}) } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+
+/** 상태 이력 사유 수정의 적용취소 토큰. 이전 값·바꾼 값·행을 서버가 서명한다(용도 라벨 STATUS_LOG_REASON_UNDO_DOMAIN). */
+export type StatusLogReasonUndo = { logId: string; prev: string | null; next: string | null; sig?: string }
+const STATUS_LOG_REASON_UNDO_DOMAIN = 'status-log-reason'
+const statusLogReasonUndoBody = (u: { logId: string; prev: string | null; next: string | null }) => JSON.stringify([u.logId, u.prev, u.next])
+
+/**
+ * 상태 이력 사유 수정 적용취소(§16). 서명이 맞고 지금 값이 바꾼 값(next) 그대로일 때만 이전 값으로 되돌린다.
+ * 이전 값은 그때 그 행에 있던 글자라 다시 재지 않는다(목록에서 그사이 뺀 이름이어도 그대로 돌아온다).
+ */
+export async function undoStatusLogReason(undo: StatusLogReasonUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const body = { logId: String(undo?.logId ?? ''), prev: undo?.prev ?? null, next: undo?.next ?? null }
+    if (!verifyUndoBody(STATUS_LOG_REASON_UNDO_DOMAIN, propertyId, statusLogReasonUndoBody(body), undo?.sig)) {
+      return { ok: false, error: '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.' }
+    }
+    const res = await prisma.tenantStatusLog.updateMany({
+      where: { id: body.logId, propertyId, deletedAt: null, reason: body.next },
+      data: { reason: body.prev },
+    })
+    if (res.count === 0) return { ok: false, error: '그사이 사유가 다시 바뀌어 되돌리지 않았습니다.' }
+    revalidatePath('/tenants')
+    return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

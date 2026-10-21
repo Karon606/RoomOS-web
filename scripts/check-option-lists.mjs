@@ -595,6 +595,41 @@ const os = bodyOf(form, /function OptionSection\(/)
     const code = stripComments(b)
     if (!/reasonForSave\(/.test(code) || !/\.commit\(\)/.test(code)) violations.push(`${p} · ${fn} 가 사유를 영업장 목록으로 다시 재지(reasonForSave) 않거나 목록 추가를 기록 뒤로 미루지(commit) 않는다. 목록 밖 글이 목록 항목인 척 남는다.`)
   }
+  // 퇴실 예정에서 퇴실로 갈 때 이어받은 사유는 지금 값이다(목록에서 뺐어도 '기타 · ' 를 안 붙인다, 독립 검수 R1).
+  {
+    const ta = readFileSync('app/(app)/tenants/actions.ts', 'utf8')
+    for (const fn of ['updateTenant', 'applyStatusTransition']) {
+      const b = stripComments(bodyOf(ta, new RegExp(`export async function ${fn}\\(`)) ?? '')
+      if (!/const reasonPrev = [^\n]*'CHECKED_OUT'[^\n]*'CHECKOUT_PENDING'[\s\S]{0,40}latestCheckoutReasonFor\(prisma, /.test(b) || !/prev: reasonPrev \}/.test(b)) {
+        violations.push(`app/(app)/tenants/actions.ts · ${fn} 가 퇴실 예정에서 퇴실로 갈 때 이어받은 사유를 지금 값(prev)으로 넘기지 않는다. 목록에서 뺀 사유가 '기타 · ' 로 바뀐다.`)
+      }
+    }
+  }
+  // 상태 이력 사유 되돌리기는 서명 토큰으로만(독립 검수 N1). 화면이 보낸 글을 재지 않고 쓰는 길(restore)이 없다.
+  {
+    const ra = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+    const u = stripComments(bodyOf(ra, /export async function undoStatusLogReason\(/) ?? '')
+    if (!/verifyUndoBody\(STATUS_LOG_REASON_UNDO_DOMAIN, propertyId, /.test(u) || !/reason: body\.next \}/.test(u)) violations.push(`app/(app)/rooms/actions.ts · undoStatusLogReason 가 서명(verifyUndoBody)과 지금 값(next) 대조로 막지 않는다. 아무 글이나 사유로 남길 수 있다.`)
+    if (/\brestore\b/.test(stripComments(bodyOf(ra, /export async function updateStatusLogReason\(/) ?? ''))) violations.push(`app/(app)/rooms/actions.ts · updateStatusLogReason 에 재지 않고 쓰는 길(restore)이 되살아났다.`)
+  }
+  // 목록을 고치는 다른 입구도 '기타'·시스템 라벨을 막는다(독립 검수 N2). 순서 저장은 지금 목록과 같은 이름 집합만.
+  {
+    const RES = {
+      reorderOptions: [/reservedOptionNameError\(field, v\)/, /!sameNameSet\(items, now\)/],
+      restoreOption: [/reservedOptionNameError\(field, r\.name\)/],
+      undoResetOptions: [/reservedOptionNameError\(field, v\)/],
+      undoRenameOption: [/reservedOptionNameError\(field, oldValue\)/],
+    }
+    for (const [fn, res] of Object.entries(RES)) {
+      const b = stripComments(bodyOf(actions, new RegExp(`export async function ${fn}\\(`)) ?? '')
+      for (const re of res) if (!re.test(b)) violations.push(`${ACTIONS} · ${fn} 가 사유 목록에 '기타'·시스템 라벨을 넣는 것을 막지 않는다(${re.source.replace(/\\/g, '').slice(0, 40)} 없음).`)
+    }
+  }
+  // 목록 추가는 원자적으로(영업장 행 잠금 뒤 읽고 쓰기, 독립 검수 N4).
+  {
+    const rs = stripComments(readFileSync('lib/reasonListSave.ts', 'utf8'))
+    if (!/prisma\.\$transaction\(async tx => \{\s*await tx\.\$queryRaw`SELECT 1 FROM "properties" WHERE "id" = \$\{propertyId\}::uuid FOR UPDATE`/.test(rs)) violations.push(`lib/reasonListSave.ts · 목록 추가가 영업장 행을 잠그지 않고 읽고 쓴다. 두 저장이 동시에 더하면 한쪽이 지워진다.`)
+  }
   {
     const b = bodyOf(readFileSync('app/(app)/rooms/actions.ts', 'utf8'), /export async function updateStatusLogReason\(/)
     if (b && !/reasonForSave\([^)]*prev: row\.reason \}\)/.test(stripComments(b))) violations.push(`app/(app)/rooms/actions.ts · 상태 이력 사유 수정이 지금 값(prev)을 넘기지 않는다. 목록에서 뺀 사유를 그대로 저장해도 '기타 · ' 가 붙는다.`)
@@ -607,12 +642,14 @@ const os = bodyOf(form, /function OptionSection\(/)
   // 이름 변경: 상태 이력은 toStatus 로 나누고, 미반환은 미반환 기록만(부가수익 상세 문장은 그때의 기록).
   {
     if (!/cancelReasons:\s*\[\{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES\.cancelReasons \}\]/.test(actions)
-      || !/checkoutReasons:\s*\[\{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES\.checkoutReasons \}\]/.test(actions)) {
+      || !/checkoutReasons:\s*\[\{ model: 'tenantStatusLog', column: 'reason', statuses: REASON_FIELD_STATUSES\.checkoutReasons, selfStatuses: REASON_FIELD_SELF_STATUSES\.checkoutReasons \}\]/.test(actions)) {
       violations.push(`${ACTIONS} · RENAME_CASCADE 의 취소·퇴실 사유가 상태 이력을 toStatus(REASON_FIELD_STATUSES)로 나누지 않는다. 같은 글자의 다른 사유까지 바뀐다.`)
     }
     if (!/withholdReasons:\s*\[\{ model: 'depositRefund', column: 'reason' \}\]/.test(actions)) violations.push(`${ACTIONS} · RENAME_CASCADE 의 미반환 사유가 미반환 기록(DepositRefund.reason) 하나만 따라가지 않는다.`)
     const w = bodyOf(lib, /export function optionRenameWhere\(/)
-    if (!w || !/if \(t\.statuses\) where\.toStatus = \{ in: \[\.\.\.t\.statuses\] \}/.test(w)) violations.push(`${LIB} · optionRenameWhere 가 statuses 를 toStatus 조건으로 싣지 않는다.`)
+    if (!w || !/else if \(t\.statuses\) where\.toStatus = \{ in: \[\.\.\.t\.statuses\] \}/.test(w)) violations.push(`${LIB} · optionRenameWhere 가 statuses 를 toStatus 조건으로 싣지 않는다.`)
+    // '그날 바꾸기' 행(거주중 그대로 + 퇴실 사유)도 퇴실 사유 이름 변경이 따라간다(독립 검수 N3).
+    if (!w || !/where\.OR = \[\{ toStatus: \{ in: \[\.\.\.t\.statuses\] \} \}, \.\.\.t\.selfStatuses\.map\(s => \(\{ fromStatus: s, toStatus: s \}\)\)\]/.test(w)) violations.push(`${LIB} · optionRenameWhere 가 상태가 안 바뀐 행(selfStatuses)을 고르지 않는다. 퇴실 예정 '그날 바꾸기' 행의 사유가 이름 변경에서 빠진다.`)
   }
   // 목록에 못 넣는 이름은 손 추가·이름 변경·화면 추가가 같은 문으로 막는다.
   {

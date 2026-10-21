@@ -27,19 +27,26 @@ export async function reasonForSave(
   return {
     reason: plan.reason,
     commit: async () => {
-      if (!plan.add) return
-      // 저장 사이에 다른 화면이 목록을 고쳤을 수 있어 지금 목록을 다시 읽어 끝에 붙인다.
-      const now = await prisma.property.findUnique({
-        where: { id: propertyId },
-        select: { cancelReasons: true, checkoutReasons: true, withholdReasons: true },
+      const add = plan.add
+      if (!add) return
+      // 원자적으로 붙인다(독립 검수 N4). 영업장 행을 잠그고(FOR UPDATE) 지금 목록을 다시 읽어 끝에 붙인다. 두 저장이 동시에
+      // 다른 이름을 더해도 한쪽이 지워지지 않는다. 칸이 null(기본값)이어도 parseOptionList 로 읽으므로 SQL 한 문장
+      // 덧붙이기(lib/channelOptions)와 달리 기본값을 잃지 않는다.
+      const added = await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT 1 FROM "properties" WHERE "id" = ${propertyId}::uuid FOR UPDATE`
+        const now = await tx.property.findUnique({
+          where: { id: propertyId },
+          select: { cancelReasons: true, checkoutReasons: true, withholdReasons: true },
+        })
+        const cur = parseOptionList(field, now?.[field])
+        if (cur.includes(add)) return false
+        await tx.property.update({
+          where: { id: propertyId },
+          data: { [field]: [...cur, add].join(',') } as Prisma.PropertyUpdateInput,
+        })
+        return true
       })
-      const cur = parseOptionList(field, now?.[field])
-      if (cur.includes(plan.add)) return
-      await prisma.property.update({
-        where: { id: propertyId },
-        data: { [field]: [...cur, plan.add].join(',') } as Prisma.PropertyUpdateInput,
-      })
-      revalidatePath('/settings')
+      if (added) revalidatePath('/settings')
     },
   }
 }

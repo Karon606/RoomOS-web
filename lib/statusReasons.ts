@@ -25,6 +25,16 @@ export const REASON_FIELD_STATUSES = {
 } as const
 
 /**
+ * 상태가 안 바뀐 채(from === to) 사유를 싣는 행. 퇴실 예정을 '그날 바꾸기' 로 고르면 상태 전환은 거주중 그대로
+ * 저장되고(ACTIVE → ACTIVE) 고른 퇴실 사유가 그 행에 남는다(tenants/actions applyStatusTransition). 이름 변경이 그 행도
+ * 따라가게 범위에 넣는다(독립 검수 N3). 거주중 그대로 행에 사유를 싣는 자리는 그 하나뿐이고(등록 행·재저장 행은 사유가
+ * 없다), 고르는 조건이 '목록 이름과 같은 글자' 라 시스템 라벨(목록 이름이 될 수 없다) 행은 안 걸린다.
+ */
+export const REASON_FIELD_SELF_STATUSES = {
+  checkoutReasons: ['ACTIVE'],
+} as const
+
+/**
  * 시스템이 상태 이력 사유 칸(TenantStatusLog.reason)에 스스로 적는 라벨 전수. 운영자가 고른 사유가 아니다.
  *
  * 종전에는 퇴실 사유 이어받기(lib/checkoutReason)가 '정본 목록에 있는가' 로 이 라벨을 걸렀다. 목록이 영업장마다

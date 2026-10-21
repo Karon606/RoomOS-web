@@ -1727,8 +1727,11 @@ export async function updateTenant(formData: FormData): Promise<
     // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
     // 화면이 보낸 글자는 영업장 목록으로 다시 잰다. 목록 밖 글은 '기타 · 글', 체크하면 목록에 더한다(lib/reasonLists, 2026-10-22).
     const reasonField = reasonFieldForStatus(status)
+    // 퇴실 예정에서 퇴실로 가면 화면은 예정 때 고른 사유로 시작한다. 그 사유는 이 계약의 지금 값이라 그사이 목록에서
+    // 뺐어도 '기타 · ' 를 붙이지 않는다(독립 검수 R1, 2026-10-22). 판정은 이어받기 정본(lib/checkoutReason).
+    const reasonPrev = status === 'CHECKED_OUT' && prevStatus === 'CHECKOUT_PENDING' ? await latestCheckoutReasonFor(prisma, leaseTermId) : null
     const reasonSave = reasonField
-      ? await reasonForSave(propertyId, reasonField, formData.get('cancelReason') as string | null, { addToList: formData.get('cancelReasonAddToList') === '1' })
+      ? await reasonForSave(propertyId, reasonField, formData.get('cancelReason') as string | null, { addToList: formData.get('cancelReasonAddToList') === '1', prev: reasonPrev })
       : null
     const cancelReason = reasonSave?.reason ?? null
     await prisma.tenantStatusLog.create({
@@ -4096,8 +4099,11 @@ export async function applyStatusTransition(input: {
       // 퇴실 예정을 '그날 바꾸기' 로 고르면 지금 상태(거주중)로 저장되므로 퇴실일이 함께 온 그 경우는 퇴실 사유로 잰다.
       // 사유를 받지 않는 전이에 실려 온 글은 남기지 않는다.
       const reasonField = reasonFieldForStatus(input.toStatus) ?? (input.expectedMoveOut ? 'checkoutReasons' : null)
+      // 퇴실 예정에서 퇴실로 가면 이어받은 사유가 이 계약의 지금 값이다(목록에서 뺐어도 그대로, 독립 검수 R1).
+      const reasonPrev = input.toStatus === 'CHECKED_OUT' && lease.status === 'CHECKOUT_PENDING'
+        ? await latestCheckoutReasonFor(prisma, input.leaseTermId) : null
       const reasonSave = revertReason == null && reasonField && input.reason
-        ? await reasonForSave(propertyId, reasonField, input.reason, { addToList: input.addReasonToList === true })
+        ? await reasonForSave(propertyId, reasonField, input.reason, { addToList: input.addReasonToList === true, prev: reasonPrev })
         : null
       await prisma.tenantStatusLog.create({
         data: {
