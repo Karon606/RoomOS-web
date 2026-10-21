@@ -225,6 +225,14 @@ const NO_MOVE_LABEL = '옮김 없음'
 function canNoMove(isHubRow: boolean, beforeStr: string, afterStr: string): boolean {
   return !isHubRow && beforeStr !== '' && afterStr === '' && Number.isFinite(Number(beforeStr))
 }
+// 채움 수량 강조(2026-10-21 운영자 "새로 추가하는 아이템의 수가 빨간색으로 표시되어 있어서 … 눈에 잘 들어왔는데 가독성이
+// 떨어졌어"로 복원). 2026-10-12 2단계 전 운영 빌드는 채움 수량 '+N' 을 테라코타로 그렸는데 2단계가 --warm-dark 로 눌러 어떤 품목을
+// 몇 개 가져다 둘지가 눈에 안 들어왔다. 숫자만 강조하고 낱말 라벨(이번 채움·저장된 채움·채움 합계)은 --warm-muted·--warm-mid
+// 그대로다. --tc-text 는 라이트 --coral, 다크 #C9614C(§19 페어, 다크 카드 4.63:1)라 두 모드에서 본문 대비를 넘는다.
+// 채움을 **적는** 자리(점검 두 화면 행 머리·저장된 채움·발끝 합계, 이력 수정 폼)는 모두 이 한 벌이다. 읽기 전용 이력 카드(타임라인
+// '창고에서 N 채움'·위치 줄 '채움 N')는 넣지 않는다 — 테라코타 '+8kg' 은 §03·§06 절제 대상으로 걷은 자리다(check-inventory-view-default).
+// 위험 상자 안 이중 채움 물음 목록도 경고 색 문맥이라 예외(그 숫자는 --ink-s).
+const FILL_QTY_CLS = 'font-semibold tabular-nums text-[var(--tc-text)]'
 const pendingReasonItemForm = (n: number) => `'채우기 전'을 고를 위치가 ${n}곳 남았습니다.`
 const pendingReasonPanel = (n: number) => `'채우기 전'을 고를 품목이 ${n}건 남았습니다.`
 
@@ -3948,7 +3956,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
                 <div className="flex min-h-7 items-center gap-2">
                   <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
                   <span className="flex-1" />
-                  {restocked > 0 && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                  {restocked > 0 && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className={FILL_QTY_CLS}>+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                   {/* 묻는 행에는 세우지 않는다. 누르면 '채운 후'에 빈 '채우기 전'이 복사돼 두 칸이 다 비고, 그 행은 기록에 있던
                       위치라 잔량 0 으로 저장됐다(웹디자이너·검수 지적). 고르는 줄의 '{저장값}에서 채움' 이 같은 일을 한다. */}
                   {!movePending && (
@@ -3985,7 +3993,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
               꺾였다). 360px 미만은 '합계' 를 떼고, 그래도 넘치면 둘째 칸이 통째로 다음 줄로 간다. */}
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-[var(--warm-mid)]">
             {restockSum > 0
-              ? <span className="whitespace-nowrap">채움<span className="max-[359px]:hidden"> 합계</span> <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+              ? <span className="whitespace-nowrap">채움<span className="max-[359px]:hidden"> 합계</span> <strong className={FILL_QTY_CLS}>+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
               : <span className="whitespace-nowrap text-[var(--warm-muted)]">채움 없음</span>}
             <span className="whitespace-nowrap">잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
@@ -4693,7 +4701,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
           발끝 윗줄 버튼(FOOT_TOP_BTN)이 글자를 13px 로 한 단계 줄이는 데 쓰는 것과 같은 경계다. */}
       {restockMode && (
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-[var(--warm-mid)]">
-          <span className="whitespace-nowrap"><span className="max-[359px]:hidden">이번 </span>채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+          <span className="whitespace-nowrap"><span className="max-[359px]:hidden">이번 </span>채움 <strong className={FILL_QTY_CLS}>+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
           <span className="whitespace-nowrap"><span className="max-[359px]:hidden">점검 후 </span>잔량 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
         </div>
       )}
@@ -4880,7 +4888,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                       {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
                       <span className="flex-1" />
                       {prevQty !== undefined && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prevQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                      {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className={FILL_QTY_CLS}>+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                       {canKeep && (
                         <RowActionBtn className="shrink-0" onClick={() => { markEntered(loc.id); setBeforeQtys(p => ({ ...p, [loc.id]: String(prevQty) })) }}>
                           그대로
@@ -4898,7 +4906,7 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                         면 없는 11px 캡션이다(2단계 — 회색 참고줄 상자를 걷었다). 행마다 서던 '{창고} 남음' 은 이 폼에서만
                         뺐다 — 위 고정 창고 요약이 같은 값을 말한다. 위치 패널은 품목마다 창고가 달라 그대로 둔다. */}
                     {lastRestocked != null && lastRestocked > 0 && (
-                      <p className="text-[0.6875rem] text-[var(--warm-muted)]">저장된 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></p>
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)]">저장된 채움 <strong className={FILL_QTY_CLS}>+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></p>
                     )}
                     {/* 임시저장 캡션 — 입력칸 위에, 그 행에만. 어느 숫자가 임시저장본이고 어느 것이
                         저장본인지 행 단위로 가른다. 위치 패널과 같은 정본 Badge·같은 톤이다. */}
@@ -6429,7 +6437,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                             <div className="flex min-h-7 items-center gap-2">
                               <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
                               {prev != null && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prev.qty * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                              {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                              {restocked > 0 && !rowIsHub && <span className="shrink-0 text-xs text-[var(--warm-muted)]">이번 채움 <strong className={FILL_QTY_CLS}>+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               {canKeep && (
                                 <RowActionBtn className="shrink-0" onClick={() => setBeforeQtys(p => ({ ...p, [k]: String(prev.qty) }))}>
                                   그대로
@@ -6452,7 +6460,7 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               사실이 안 보여 '채운 후' 가 어디서 빠지는지와 창고 행이 왜 한 칸인지가 끊겼다. */}
                           {((prev?.restockedQty != null && prev.restockedQty > 0) || (!rowIsHub && !!hubStock)) && (
                             <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">
-                              {prev?.restockedQty != null && prev.restockedQty > 0 && <>저장된 채움 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></>}
+                              {prev?.restockedQty != null && prev.restockedQty > 0 && <>저장된 채움 <strong className={FILL_QTY_CLS}>+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></>}
                               {prev?.restockedQty != null && prev.restockedQty > 0 && !rowIsHub && hubStock && ' · '}
                               {!rowIsHub && hubStock && (
                                 <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : undefined}>

@@ -30,6 +30,7 @@
 //      창고 '그대로'(canKeep)는 같은 품목의 다른 행이 '채우기 전'을 묻는 동안에도 숨는다(hubQuiet, 두 화면).
 //   ⑫ (2026-10-21 운영자 요청) '옮김 없음' 복원 — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로. 한 상수·한 판정
 //      함수(canNoMove 진리표), 두 화면 같은 행 머리 자리.
+//   ⑬ (2026-10-21 운영자 요청) 채움 수량은 --tc-text — 한 상수 FILL_QTY_CLS, 점검 두 화면·이력 수정 폼(적는 화면), 라벨은 강조 안 함, 읽기 전용 이력 카드는 제외.
 //
 // ⑥ 을 왜 더하나. 트리 뒤로 한 저장이 (품목, 위치) **여러 쌍**을 담는다. 이 셋이 하나라도
 // 빠지면 값은 저장되는데 장부가 조용히 틀어진다.
@@ -981,6 +982,34 @@ need("'옮김 없음' 이 '그대로' 와 같은 행 머리 줄에 선다(두 �
   /<div className="flex min-h-7 items-center gap-2">\s*\n\s*\{g\.parent !== ''/.test(itemForm) &&
   /<div className="flex min-h-7 items-center gap-2">\s*\n\s*<p className="min-w-0 flex-1 truncate text-\[0\.65625rem\]/.test(locPanel),
   '입력칸 아래 줄로 내리거나 머리 줄 min-h 를 빼면 버튼이 사라질 때 칸이 손가락 밑에서 뜬다')
+
+// ── ⑬ 채움 수량은 --tc-text (2026-10-21 운영자 "새로 추가하는 아이템의 수가 빨간색으로 … 가독성이 떨어졌어") ──────
+// 2단계 전 운영 빌드는 채움 수량 '+N' 을 테라코타로 그렸다. 2단계가 --warm-dark 로 눌러 몇 개 가져다 둘지가 안 보였다.
+// 숫자는 한 상수(FILL_QTY_CLS, --tc-text·굵게·tnum), 낱말 라벨은 --warm-muted/--warm-mid. 다크에서 읽히는 토큰이어야 한다(--coral 금지).
+need('채움 수량 클래스가 한 상수이고 다크에서 읽히는 --tc-text 다',
+  /const FILL_QTY_CLS = 'font-semibold tabular-nums text-\[var\(--tc-text\)\]'\n/.test(client))
+const fillSites = [
+  ['아이템별 폼 행 머리 이번 채움', itemForm, />이번 채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(restocked \* 100\) \/ 100\}/],
+  ['아이템별 폼 저장된 채움', itemForm, />저장된 채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(lastRestocked \* 100\) \/ 100\}/],
+  ['아이템별 폼 발끝 합계', itemForm, /<\/span>채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(restockSum \* 100\) \/ 100\}/],
+  ['위치 패널 행 머리 이번 채움', locPanel, />이번 채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(restocked \* 100\) \/ 100\}/],
+  ['위치 패널 저장된 채움', locPanel, />저장된 채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(prev\.restockedQty \* 100\) \/ 100\}/],
+  ['이력 수정 폼 행 머리·합계', client, /합계<\/span> <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(restockSum \* 100\) \/ 100\}/],
+]
+for (const [name, src, re] of fillSites) need(`채움 수량이 FILL_QTY_CLS 다 — ${name}`, re.test(src), '한 자리만 --warm-dark 로 남으면 같은 수가 화면마다 다른 무게로 보인다')
+// 읽기 전용 이력 카드는 넣지 않는다 — 테라코타 '+8kg' 은 §03·§06 절제 대상으로 걷은 자리다(check-inventory-view-default 가 그쪽을 지킨다).
+need('이력 카드 채움 캡션은 강조하지 않는다(적는 화면만)',
+  /창고에서 \{fmtQty\(restockTotal, stockUnit\)\} 채움/.test(client) && /> 채움 \{fmtQty\(row\.restockedQty!, unit\)\}<\/span>/.test(client),
+  '이력은 읽는 기록이라 절제한다. 적는 화면의 강조 규칙을 이력까지 넓히면 §03·§06 결정과 부딪힌다')
+// 수제 '+N' 강조가 다른 색으로 남지 않는다 — '+{' 로 시작하는 채움 수 strong 은 전부 이 상수다. 이력 수정 폼 행 머리까지 세면 7곳.
+need("'+N' 채움 수 strong 이 전부 FILL_QTY_CLS 다(7곳)",
+  (client.match(/<strong className=\{FILL_QTY_CLS\}>\+\{/g) ?? []).length === 7 &&
+  !/<strong className="[^"]*">\+\{Math\.round\((restocked|restockSum|lastRestocked|prev\.restockedQty)/.test(client),
+  "새 자리를 수제 클래스로 그리면 --warm-dark 로 눌린 2단계 결함이 그 자리에 다시 선다")
+// 라벨은 강조하지 않는다 — 숫자와 같은 색이면 줄 전체가 붉어져 무엇이 수인지 다시 안 보인다.
+need('채움 라벨은 --warm-muted/--warm-mid 다(숫자만 강조)',
+  !/text-\[var\(--tc-text\)\][^"\n]*">\s*(이번 채움|저장된 채움|채움 합계)/.test(client) &&
+  (client.match(/<span className="shrink-0 text-xs text-\[var\(--warm-muted\)\]">이번 채움 <strong className=\{FILL_QTY_CLS\}>/g) ?? []).length === 3)
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
