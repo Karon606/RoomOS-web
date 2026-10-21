@@ -106,13 +106,25 @@ async function main() {
   const d8 = await actions.getRentReceiptData(A.tenantId, '2026-08', 'rent', A.id)
   eq('고를 수 있는 달은 실입금 달만(조정 전표·납입일 조정 제외)', d8?.issuable.map(m => [m.month, m.amount, m.lastPayDate]),
     [['2026-09', 150000, '2026-09-18'], ['2026-08', 150000, '2026-09-18'], ['2026-07', 100000, '2026-07-15']])
-  eq('8월분 발행일 기본값 = 그 달 몫 마지막 입금일', d8?.defaultIssueDate, '2026-09-18')
+  eq('8월분 발행일 = 값 오늘 · 하한 9/18 · 달력 9월', d8?.issueDefaults, { value: today, minDate: '2026-09-18', openMonth: '2026-09' })
   const d6 = await actions.getRentReceiptData(A.tenantId, '2026-06', 'rent', A.id)
-  eq('실입금 없는 달 발행일 기본값 = 오늘', d6?.defaultIssueDate, today)
+  eq('실입금 없는 달 = 값 오늘 · 하한·달력 없음', d6?.issueDefaults, { value: today, minDate: null, openMonth: null })
   const dShort = await actions.getRentReceiptData(SHORT.tenantId, undefined, 'rent', SHORT.id)
   eq('단기는 여러 달 목록이 비어 있다', dShort?.issuable, [])
   const dDep = await actions.getRentReceiptData(A.tenantId, undefined, 'deposit', A.id)
-  eq('보증금 영수증 발행일 기본값 = 오늘, 목록 없음', [dDep?.defaultIssueDate, dDep?.issuable], [today, []])
+  eq('보증금 영수증 = 값 오늘 · 하한 없음 · 목록 없음', [dDep?.issueDefaults, dDep?.issuable], [{ value: today, minDate: null, openMonth: null }, []])
+
+  // ── 1-2. 한 달 발급도 입금일 앞 발행일을 서버에서 막는다(운영자 결정 2026-10-21, 한 장 라우트가 부르는 정본 검사) ──────
+  const early = (o: { kind?: 'rent' | 'deposit'; lease?: string | null; month?: string | null; date: string }) =>
+    issue.singleIssueDateError(prisma, P1, { kind: o.kind ?? 'rent', leaseTermId: o.lease === undefined ? A.id : o.lease, targetMonth: o.month === undefined ? '2026-08' : o.month, issueDate: o.date })
+  eq('한 달 8월분 8/21 = 거절(여러 달과 같은 문장)', await early({ date: '2026-08-21' }), '2026년 8월분의 발행일이 입금일(2026.09.18)보다 앞섭니다.')
+  eq('한 달 8월분 9/18 = 통과', await early({ date: '2026-09-18' }), null)
+  eq('한 달 입금 없는 달(조정 전표만) = 통과', await early({ month: '2026-06', date: '2026-06-01' }), null)
+  eq('보증금 영수증에는 걸지 않는다', await early({ kind: 'deposit', date: '2020-01-01' }), null)
+  eq('계약 미상이면 걸지 않는다', await early({ lease: null, date: '2020-01-01' }), null)
+  g.__CR_FLOW_PID = P2
+  eq('남의 영업장 기준으로는 그 계약 입금을 못 본다(통과 = 근거 없음)', await issue.singleIssueDateError(prisma, P2, { kind: 'rent', leaseTermId: A.id, targetMonth: '2026-08', issueDate: '2026-08-21' }), null)
+  g.__CR_FLOW_PID = P1
 
   // ── 2. 여러 달 발급 ────────────────────────────────────────────────
   const before = await table()

@@ -9,7 +9,7 @@ import { buildRentReceiptPdf, type RentReceiptFields } from '@/lib/rentReceiptPd
 import { ymdToDbDate } from '@/lib/kstDate'
 import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import {
-  RENT_RECEIPT_UNDO_DOMAIN, canonicalRentReceiptUndo,
+  RENT_RECEIPT_UNDO_DOMAIN, canonicalRentReceiptUndo, issuableRentMonths, issueDateBeforePaymentError,
   type RentReceiptIssueRow, type RentReceiptIssueUndo,
 } from '@/lib/rentReceiptMonths'
 
@@ -175,6 +175,24 @@ export async function issueRentReceiptsInTx(
     rows.push({ ...row, issuedAt: row.issuedAt.toISOString() })
   }
   return rows
+}
+
+/**
+ * 한 달 발급의 입금일 하한 검사 — 그 계약·그 귀속월 몫 마지막 실입금일보다 앞선 발행일이면 거절 문장(묶음과 같은 문장).
+ * 납부 확인서(rent)이고 계약·귀속월을 아는 때만 본다. 보증금 영수증·계약 미상·입금 기록 없는 달은 통과다.
+ * 실입금 술어와 달 묶기는 정본(issuableRentMonths)이 한다(운영자 결정 2026-10-21).
+ */
+export async function singleIssueDateError(
+  db: Pick<typeof prisma, 'paymentRecord'>, propertyId: string,
+  q: { kind: string | undefined; leaseTermId: string | null; targetMonth: string | null | undefined; issueDate: string },
+): Promise<string | null> {
+  if (q.kind === 'deposit' || !q.leaseTermId || !/^\d{4}-\d{2}$/.test(q.targetMonth ?? '')) return null
+  const recs = await db.paymentRecord.findMany({
+    where: { propertyId, leaseTermId: q.leaseTermId, targetMonth: q.targetMonth as string, isDeposit: false, isPrevOwner: false },
+    select: { targetMonth: true, actualAmount: true, isBillingAdjust: true, memo: true, payDate: true },
+  })
+  const m = issuableRentMonths(recs).find(x => x.month === q.targetMonth)
+  return issueDateBeforePaymentError(q.targetMonth as string, q.issueDate, m?.lastPayDate)
 }
 
 /** 같은 요청 표식으로 다른 내용이 왔다 — 앞서 낸 장을 돌려주지 않고 거절한다. */

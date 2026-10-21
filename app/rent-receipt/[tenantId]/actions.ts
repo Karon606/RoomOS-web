@@ -18,7 +18,7 @@ import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { depositComposition } from '@/lib/depositComposition'
 import {
-  issuableRentMonths, defaultIssueDate, type IssuableMonth,
+  issuableRentMonths, issueDateDefaults, type IssuableMonth,
   parseRentReceiptUndo, canonicalRentReceiptUndo, rentReceiptRowUnchanged,
   RENT_RECEIPT_UNDO_DOMAIN, RENT_RECEIPT_UNDO_STALE, RENT_RECEIPT_UNDO_INVALID,
 } from '@/lib/rentReceiptMonths'
@@ -58,11 +58,11 @@ export type RentReceiptData = {
   preResidence: boolean   // 입주 전 보증금(예약금 성격) — 거주 기간 비움 + 반환 조건 문구가 다르다
   nonResident: boolean    // 비거주 계약 — 살지 않으므로 '거주'가 아닌 '이용' 어휘를 쓴다
   /**
-   * 발행일 기본값 'YYYY-MM-DD' — 이 달 몫 마지막 실입금일, 실입금이 없으면 오늘(lib/rentReceiptMonths 정본).
-   * 종전에는 화면이 대상월과 무관하게 늘 오늘로 열어, 달력도 오늘의 달이 먼저 떴다(신고 2026-10-19).
-   * 보증금 영수증은 종전대로 오늘이다(월 축이 없다).
+   * 발행일 칸의 첫 상태(lib/rentReceiptMonths issueDateDefaults 정본, 운영자 결정 2026-10-21).
+   * value 는 오늘, minDate 는 이 달 몫 마지막 실입금일(그보다 앞선 날은 서버도 거절), openMonth 는 달력이 먼저 열 달(그 입금일의 달).
+   * 실입금이 없는 달과 보증금 영수증은 minDate·openMonth 가 null 이다(보증금은 월 축이 없어 하한도 없다).
    */
-  defaultIssueDate: string
+  issueDefaults: { value: string; minDate: string | null; openMonth: string | null }
   /**
    * 여러 달 발급에서 고를 수 있는 귀속월 — 이 계약에 실입금이 있는 달만, 최근 달이 앞(2026-10-20).
    * issuedAt 은 그 달 귀속의 살아 있는 발급본 중 가장 늦은 발행일(ISO). 고르기 전에 중복을 보이려는 것이다.
@@ -248,7 +248,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       kind,
       preResidence: notMovedIn,
       nonResident,
-      defaultIssueDate: todayKst,
+      issueDefaults: { value: todayKst, minDate: null, openMonth: null },
       issuable: [],
       leaseStatus: lease?.status ?? null,
     }
@@ -366,7 +366,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     kind,
     preResidence: false,
     nonResident,
-    defaultIssueDate: defaultIssueDate(paidSum > 0 && lastRec ? payDateYmd : null, todayKst),
+    issueDefaults: issueDateDefaults(paidSum > 0 && lastRec ? payDateYmd : null, todayKst),
     issuable: isShortTerm ? [] : paidMonths.map(m => ({ ...m, issuedAt: issuedByMonth.get(m.month) ?? null })),
     leaseStatus: lease?.status ?? null,
   }

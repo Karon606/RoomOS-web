@@ -7,7 +7,7 @@ import type { RentReceiptFields } from '@/lib/rentReceiptPdf'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
   loadRentReceiptIssueContext, buildRentReceiptPreview, issueRentReceiptsInTx, trashUploaded, signRentReceiptUndo,
-  receiptRequestTag, rentReceiptIssueErrorMessage,
+  receiptRequestTag, rentReceiptIssueErrorMessage, singleIssueDateError,
 } from '@/lib/rentReceiptIssue'
 import { assertNotFuture } from '@/lib/completionDate'
 
@@ -59,6 +59,12 @@ export async function POST(req: Request) {
     if (!assertNotFuture(body.fields.issueDate).ok) {
       return NextResponse.json({ ok: false, error: `발급일이 미래입니다(${body.fields.issueDate}). 아직 발급하지 않은 서류는 그 날짜로 기록할 수 없습니다.` }, { status: 400 })
     }
+    // 입금일보다 앞선 발행일도 그리기 전에 막는다 — 여러 달과 같은 정본 검사·같은 문장(운영자 결정 2026-10-21).
+    // 화면 DatePicker minDate 와 두 겹이다. 납부 확인서만 보고 보증금 영수증에는 걸지 않는다.
+    const early = await singleIssueDateError(prisma, propertyId, {
+      kind: body.fields.kind, leaseTermId: body.leaseTermId, targetMonth: body.targetMonth, issueDate: body.fields.issueDate,
+    })
+    if (early) return NextResponse.json({ ok: false, error: early }, { status: 400 })
 
     const tenant = await prisma.tenant.findFirst({ where: { id: body.tenantId, propertyId }, select: { id: true, name: true } })
     if (!tenant) return NextResponse.json({ ok: false, error: '입실자를 찾을 수 없습니다.' }, { status: 404 })

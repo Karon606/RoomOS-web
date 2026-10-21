@@ -45,16 +45,28 @@ export function issuableRentMonths(rows: readonly RentPaymentRow[]): IssuableMon
 }
 
 /**
- * 발행일 기본값 — 그 달 몫 마지막 실입금일. 실입금이 없는 달이면 오늘(종전 기본값).
+ * 발행일 칸의 첫 상태 — **값은 오늘**, 하한(minDate)은 그 달 몫 마지막 실입금일, 달력은 그 입금일의 달로 연다(openMonth).
  *
- * 왜 납부일인가(UX 패널 채택, 운영자 승인 2026-10-20 '추천대로'). 여러 달을 한 번에 뽑을 때 발행일이
- * 전부 오늘이면 7월분 종이가 10월에 나간 것처럼 읽힌다. 423호 운영자는 손으로 발행일을 소급하다
- * 8월분을 실입금(9/18)보다 앞선 8/21 로 적었다. 받기 전 날짜의 확인서는 허위 서류다.
- * 미래 입금일(앞당겨 적은 기록)이면 오늘로 자른다. 발행일은 미래일 수 없다(서버 assertNotFuture).
+ * 운영자 결정 2026-10-21 '추천대로'. 발행일은 종이를 실제로 내주는 날이라 기본값을 소급하지 않는다(오늘). 대신 달력은
+ * 그 달 몫을 받은 달로 열어, 소급이 필요할 때 손이 그 달에서 시작하게 한다. 입금일보다 앞선 날은 고를 수 없다(받기 전
+ * 날짜의 확인서는 허위 서류, 423호 8월분 8/21 < 실입금 9/18). 실입금이 없는 달이면 하한·여는 달이 없다(null).
+ * 입금일이 오늘보다 뒤인 기록은 없어야 하지만, 있으면 오늘로 잘라 하한이 상한(오늘)을 넘지 않게 한다.
  */
-export function defaultIssueDate(lastPayDate: string | null | undefined, today: string = kstYmdStr()): string {
-  if (!lastPayDate || !/^\d{4}-\d{2}-\d{2}$/.test(lastPayDate)) return today
-  return lastPayDate > today ? today : lastPayDate
+export function issueDateDefaults(
+  lastPayDate: string | null | undefined, today: string = kstYmdStr(),
+): { value: string; minDate: string | null; openMonth: string | null } {
+  if (!lastPayDate || !/^\d{4}-\d{2}-\d{2}$/.test(lastPayDate)) return { value: today, minDate: null, openMonth: null }
+  const pay = lastPayDate > today ? today : lastPayDate
+  return { value: today, minDate: pay, openMonth: pay.slice(0, 7) }
+}
+
+/**
+ * 입금일보다 앞선 발행일을 거절하는 문장 — 한 달·여러 달이 같은 문장을 쓴다(운영자 결정 2026-10-21, 한 달도 막는다).
+ * 통과하면 null. 입금 기록이 없으면(lastPayDate null) 막을 근거가 없어 통과다.
+ */
+export function issueDateBeforePaymentError(month: string, issueDate: string, lastPayDate: string | null | undefined): string | null {
+  if (!lastPayDate || issueDate >= lastPayDate) return null
+  return `${monthLabel(month)}의 발행일이 입금일(${lastPayDate.replace(/-/g, '.')})보다 앞섭니다.`
 }
 
 /** 묶음 한 번에 고를 수 있는 달 수 상한. 함수 시간 상한(60초) 안에서 장마다 PDF·업로드가 끝나야 한다(검수 2026-10-20, 12 → 6). */
@@ -65,8 +77,7 @@ export const RENT_RECEIPT_BATCH_MAX = 6
  * 그 달 몫 입금보다 앞서지 않는가. 통과하면 null, 아니면 화면에 갈 한국어 한 문장.
  *
  * 입금보다 앞선 발행일을 막는 이유. 받기 전 날짜의 납부 확인서는 허위 서류다(423호 8월분 8/21 < 실입금 9/18).
- * 한 달 화면은 운영자가 자동값을 고쳐 쓰는 자리라 막지 않지만(회계 오더 '자동값은 초기값일 뿐'), 묶음은 금액·납부일을
- * 서버가 기록에서 채우므로 기록과 어긋나는 날짜를 받을 이유가 없다.
+ * 입금일보다 앞선 발행일은 한 달 화면도 같은 문장으로 막는다(issueDateBeforePaymentError, 운영자 결정 2026-10-21).
  */
 export function batchRequestError(
   picks: readonly { month: string; issueDate: string }[],
@@ -85,7 +96,8 @@ export function batchRequestError(
     if (!m) return `${withParticle(monthLabel(p.month), '은/는')} 실제 입금 기록이 없어 묶음으로 발급할 수 없습니다.`
     if (!/^\d{4}-\d{2}-\d{2}$/.test(p.issueDate)) return `${monthLabel(p.month)}의 발행일이 비어 있습니다.`
     if (p.issueDate > today) return `${monthLabel(p.month)}의 발행일이 미래입니다.`
-    if (p.issueDate < m.lastPayDate) return `${monthLabel(p.month)}의 발행일이 입금일(${m.lastPayDate.replace(/-/g, '.')})보다 앞섭니다.`
+    const early = issueDateBeforePaymentError(p.month, p.issueDate, m.lastPayDate)
+    if (early) return early
   }
   return null
 }

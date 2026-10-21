@@ -7,7 +7,8 @@
 // 전부(98곳)가 같은 결함을 나눠 가졌다. 정본에서 고쳤고, 이 그물은 그 규칙이 조용히 풀리는 것과 손수 만든 달력이
 // 새로 서는 것을 잡는다.
 //
-//   ⓐ handleOpen 이 여는 순간 보는 달(연·월·연도 범위)을 다시 잡는다. 값 → 기준 달(defaultMonth) → 오늘 순서다.
+//   ⓐ handleOpen 이 여는 순간 보는 달(연·월·연도 범위)을 다시 잡는다. 화면이 여는 달(openMonth) → 값 → 기준 달(defaultMonth) → 오늘 순서다.
+//      openMonth 는 화면이 채운 기본값을 사용자가 아직 안 고친 동안만 넘긴다(2026-10-21).
 //   ⓑ 날짜 격자 달력은 DatePicker 하나다. 7칸 격자(grid-cols-7)에 날짜 칸을 그리는 파일이 또 서면 손수 만든 달력이다.
 //      요일 배열만으로는 안 본다. 날짜 표기 '(화)'를 만드는 형식 함수가 여럿이다(달력이 아니다).
 //   ⓒ 브라우저 기본 날짜 입력(type="date"·"month")은 명단에 있는 자리뿐이다(사유는 명단에 적는다).
@@ -33,8 +34,8 @@ const PICKER = 'components/ui/DatePicker.tsx'
     }
   }
   const anchor = s.match(/const openAnchor = [\s\S]*?\n {2}\}/)
-  if (!anchor || !/value \|\| \(defaultMonth/.test(anchor[0]) || !/todayYear/.test(anchor[0])) {
-    violations.push(`${PICKER} — 여는 달의 순서(값 → 기준 달 → 오늘)가 아니다.`)
+  if (!anchor || !/ym\(openMonth\) \|\| value \|\| ym\(defaultMonth\)/.test(anchor[0]) || !/todayYear/.test(anchor[0])) {
+    violations.push(`${PICKER} — 여는 달의 순서(여는 달 → 값 → 기준 달 → 오늘)가 아니다.`)
   }
   if (!/defaultMonth\?: string/.test(s)) violations.push(`${PICKER} — 기준 달(defaultMonth) 프롭이 사라졌다.`)
 }

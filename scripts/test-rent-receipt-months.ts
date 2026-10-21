@@ -3,7 +3,7 @@
 //
 // 신고 2026-10-19(납부영수증 여러 달) 승인 범위의 규칙을 고정한다. 실데이터 흐름은 test-rent-receipt-flow 가 본다.
 import {
-  issuableRentMonths, defaultIssueDate, batchRequestError, latestByTargetMonth, monthLabel, monthLabelShort, autoFormFields,
+  issuableRentMonths, issueDateDefaults, issueDateBeforePaymentError, batchRequestError, latestByTargetMonth, monthLabel, monthLabelShort, autoFormFields,
   canonicalRentReceiptUndo, parseRentReceiptUndo, rentReceiptRowUnchanged, RENT_RECEIPT_BATCH_MAX,
   type RentPaymentRow, type RentReceiptIssueRow,
 } from '../lib/rentReceiptMonths'
@@ -40,18 +40,29 @@ const T1: [string, RentPaymentRow[], [string, number, string][]][] = [
 ]
 for (const [name, rows, want] of T1) eq(`① ${name}`, issuableRentMonths(rows).map(m => [m.month, m.amount, m.lastPayDate]), want)
 
-// ── ② 발행일 기본값 ────────────────────────────────────────────────
+// ── ② 발행일 첫 상태(운영자 결정 2026-10-21: 값은 오늘, 하한은 그 달 몫 입금일, 달력은 그 입금일의 달) ──────────
 const TODAY = '2026-10-20'
-const T2: [string, string | null | undefined, string][] = [
-  ['입금일 그대로', '2026-09-18', '2026-09-18'],
-  ['오늘 입금', TODAY, TODAY],
-  ['미래 입금일은 오늘로 자른다', '2026-11-01', TODAY],
-  ['실입금 없음(null) = 오늘', null, TODAY],
-  ['undefined = 오늘', undefined, TODAY],
-  ['빈 문자열 = 오늘', '', TODAY],
-  ['형식이 틀리면 오늘', '2026-9-18', TODAY],
+type D2 = { value: string; minDate: string | null; openMonth: string | null }
+const T2: [string, string | null | undefined, D2][] = [
+  ['입금 있는 달 = 값 오늘 · 하한 입금일 · 달력 입금일의 달', '2026-09-18', { value: TODAY, minDate: '2026-09-18', openMonth: '2026-09' }],
+  ['8월분을 9월에 받음 = 달력은 9월', '2026-09-18', { value: TODAY, minDate: '2026-09-18', openMonth: '2026-09' }],
+  ['오늘 입금', TODAY, { value: TODAY, minDate: TODAY, openMonth: '2026-10' }],
+  ['미래 입금일(방어) = 하한·달력 오늘로 자름', '2026-11-01', { value: TODAY, minDate: TODAY, openMonth: '2026-10' }],
+  ['실입금 없음(null) = 하한·달력 없음', null, { value: TODAY, minDate: null, openMonth: null }],
+  ['undefined = 하한·달력 없음', undefined, { value: TODAY, minDate: null, openMonth: null }],
+  ['빈 문자열 = 하한·달력 없음', '', { value: TODAY, minDate: null, openMonth: null }],
+  ['형식이 틀리면 하한·달력 없음', '2026-9-18', { value: TODAY, minDate: null, openMonth: null }],
 ]
-for (const [name, v, want] of T2) eq(`② ${name}`, defaultIssueDate(v, TODAY), want)
+for (const [name, v, want] of T2) eq(`② ${name}`, issueDateDefaults(v, TODAY), want)
+const T2b: [string, string, string | null, string | null][] = [
+  ['입금일 당일 = 통과', '2026-09-18', '2026-09-18', null],
+  ['입금일 뒤 = 통과', '2026-10-01', '2026-09-18', null],
+  ['입금일 앞(423호 8월분 8/21) = 거절', '2026-08-21', '2026-09-18', '2026년 8월분의 발행일이 입금일(2026.09.18)보다 앞섭니다.'],
+  ['입금 기록 없음 = 막을 근거 없음', '2026-08-21', null, null],
+]
+for (const [name, d, pay, want] of T2b) eq(`② ${name}`, issueDateBeforePaymentError('2026-08', d, pay), want)
+eq('② 여러 달 검사도 같은 문장', batchRequestError([{ month: '2026-08', issueDate: '2026-08-21' }], [{ month: '2026-08', amount: 1, lastPayDate: '2026-09-18' }], TODAY),
+  issueDateBeforePaymentError('2026-08', '2026-08-21', '2026-09-18'))
 
 // ── ③ 묶음 요청 검사 ───────────────────────────────────────────────
 const ISS = [

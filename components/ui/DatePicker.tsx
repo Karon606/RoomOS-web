@@ -33,6 +33,12 @@ interface DatePickerProps {
    * 지난번에 넘겨 보던 달을 이어서 열지 않는다.
    */
   defaultMonth?: string
+  /**
+   * 값이 있어도 먼저 열 달 — 'YYYY-MM' 또는 'YYYY-MM-DD'. 화면이 채운 기본값을 사용자가 아직 안 고친 동안만 넘긴다
+   * (예: 납부 확인서 발행일은 값이 오늘이지만 달력은 그 달 몫 입금일의 달로 연다, 운영자 결정 2026-10-21).
+   * 사용자가 날짜를 고른 뒤에는 넘기지 않아 열기 규칙(지금 값의 달)으로 돌아간다.
+   */
+  openMonth?: string
   disabled?: boolean              // 저장 진행 중 재입력 차단(네이티브 input 의 disabled 자리를 대신한다)
   className?: string
   style?: React.CSSProperties
@@ -40,7 +46,7 @@ interface DatePickerProps {
 
 export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택', emptyLabel,
-  maxDate, minDate, monthOnly, defaultMonth, disabled, className, style,
+  maxDate, minDate, monthOnly, defaultMonth, openMonth, disabled, className, style,
 }: DatePickerProps) {
   // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19).
   // 아래 뷰 기본값·'올해로'도 같은 기준을 쓴다 — new Date() 는 서버(UTC)와 기기(KST)가 갈려
@@ -67,7 +73,8 @@ export function DatePicker({
   // 종전에는 뷰 상태가 마운트 때 한 번만 잡혀, 달을 넘겨 보다 고르지 않고 닫으면 다음에 열 때 그 넘겨 보던 달이 떴다.
   // 값이 바뀌어도 같은 값이 다시 들어오면 위 효과가 안 돌아 같은 일이 났다. 여는 순간 다시 맞추면 둘 다 닫힌다.
   const openAnchor = (): { y: number; m: number } => {
-    const src = value || (defaultMonth && /^\d{4}-\d{2}/.test(defaultMonth) ? defaultMonth : '')
+    const ym = (x?: string) => (x && /^\d{4}-\d{2}/.test(x) ? x : '')
+    const src = ym(openMonth) || value || ym(defaultMonth)
     return src
       ? { y: parseInt(src.slice(0, 4), 10), m: parseInt(src.slice(5, 7), 10) - 1 }
       : { y: todayYear, m: todayMonthIdx }

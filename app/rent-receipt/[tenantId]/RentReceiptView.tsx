@@ -22,7 +22,7 @@ import { fetchDocBytes } from '@/lib/docBytes'
 import { fmtDateDot } from '@/lib/fmtDate'
 import type { DocFrom } from '@/lib/docNav'
 import {
-  autoFormFields, defaultIssueDate, monthLabel, monthLabelShort, RENT_RECEIPT_BATCH_MAX,
+  autoFormFields, issueDateDefaults, monthLabel, monthLabelShort, RENT_RECEIPT_BATCH_MAX,
   type RentReceiptFormFields, type RentReceiptIssueUndo,
 } from '@/lib/rentReceiptMonths'
 import {
@@ -103,9 +103,11 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
     hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
   })))
-  // 발행일 기본값은 이 달 몫 마지막 실입금일이다(서버 정본 defaultIssueDate, 실입금이 없으면 오늘).
-  // 종전에는 대상월과 무관하게 늘 오늘이라 8월분을 열어도 달력이 10월로 떴다(신고 2026-10-19).
-  const [issueDate, setIssueDate] = useState(data.defaultIssueDate)
+  // 발행일 기본값은 오늘이고, 달력은 그 달 몫 입금일의 달로 연다(서버 정본 issueDateDefaults, 운영자 결정 2026-10-21).
+  // 사용자가 날짜를 고르면(issueTouched) 그다음부터는 고른 날짜의 달로 연다(DatePicker 열기 규칙).
+  const [issueDate, setIssueDateRaw] = useState(data.issueDefaults.value)
+  const [issueTouched, setIssueTouched] = useState(false)
+  const setIssueDate = (v: string) => { setIssueDateRaw(v); setIssueTouched(true) }
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
@@ -159,6 +161,8 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
   const [mode, setMode] = useState<'one' | 'many'>(canMany ? initialMode : 'one')
   // 고른 달 → 그 달의 발행일. 기본값은 그 달 몫 마지막 실입금일(달마다 각자), 사용자가 고치면 그 값.
   const [picks, setPicks] = useState<Record<string, string>>({})
+  // 발행일을 손으로 고친 달 — 고친 뒤에는 달력이 고른 날짜의 달로 열린다.
+  const [touchedRows, setTouchedRows] = useState<Set<string>>(() => new Set())
   const today = kstYmdStr()
   const togglePick = (month: string, lastPayDate: string) => setPicks(p => {
     if (p[month] !== undefined) { const { [month]: _drop, ...rest } = p; void _drop; return rest }
@@ -166,7 +170,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
       pushToast('info', `한 번에 ${RENT_RECEIPT_BATCH_MAX}달까지 고를 수 있습니다`)
       return p
     }
-    return { ...p, [month]: defaultIssueDate(lastPayDate, today) }
+    return { ...p, [month]: issueDateDefaults(lastPayDate, today).value }
   })
   // 화면 순서(최근 달이 위)가 아니라 달 순서로 발급한다 — 발행번호가 7월분부터 차례로 붙는다.
   const pickedMonths = Object.keys(picks).sort()
@@ -188,7 +192,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
     nationality: data.nationality,
     hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
-  })), issueDate: data.defaultIssueDate }))
+  })), issueDate: data.issueDefaults.value }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
   // 보증금은 월과 무관하다 — 이 자리가 말하는 것도 '대상월'이 아니라 입주 예정일이다.
   // 그런데 상대월 배지가 그대로 붙어, 8/29 에 8/31 입주 예정을 열면 '지난달'이 떴다
@@ -220,7 +224,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
   const reset = async () => {
     if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라집니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
     setNameStyle(DEFAULT_DOC_NAME_STYLE)
-    setF(buildInitial(data)); setIssueDate(data.defaultIssueDate)
+    setF(buildInitial(data)); setIssueDateRaw(data.issueDefaults.value); setIssueTouched(false)
     pushToast('info', '자동값으로 되돌렸습니다')
   }
 
@@ -495,7 +499,12 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
                 미래는 못 고른다(운영자 확정 2026-09-17 — "미래로 할 필요는 없을 듯, 필요하면 발급
                 전에 수동으로 바꾸면 되니까"). 서버 가드와 두 겹이다.
                 값을 비운 뒤 다시 열면 대상월의 달을 연다(DatePicker 열기 규칙). */}
-            <DatePicker value={issueDate} onChange={setIssueDate} maxDate={kstYmdStr()} defaultMonth={data.anchorMonth} className={inputCls} />
+            {/* 하한은 이 달 몫 마지막 입금일이다(납부 확인서만, 서버도 같은 문장으로 거절). 달력은 고치기 전까지 그 입금일의 달,
+                입금이 없으면 대상월로 연다. */}
+            <DatePicker value={issueDate} onChange={setIssueDate} maxDate={kstYmdStr()}
+              minDate={isDeposit ? undefined : data.issueDefaults.minDate ?? undefined}
+              openMonth={issueTouched || isDeposit ? undefined : (data.issueDefaults.openMonth ?? data.anchorMonth)}
+              defaultMonth={data.anchorMonth} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다(계약서·실거주 확인서와 같은 select). */}
@@ -581,8 +590,11 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
                   {on && (
                     <div className="-mt-0.5 px-3 pb-3 pl-[44px] space-y-1">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
-                      <DatePicker value={picks[m.month]} onChange={v => setPicks(p => ({ ...p, [m.month]: v }))}
-                        minDate={m.lastPayDate} maxDate={kstYmdStr()} defaultMonth={m.lastPayDate} className={inputCls} />
+                      {/* 값은 오늘, 달력은 고치기 전까지 그 달 몫 입금일의 달로 연다(운영자 결정 2026-10-21). */}
+                      <DatePicker value={picks[m.month]} onChange={v => { setPicks(p => ({ ...p, [m.month]: v })); setTouchedRows(t => new Set(t).add(m.month)) }}
+                        minDate={issueDateDefaults(m.lastPayDate, today).minDate ?? undefined} maxDate={kstYmdStr()}
+                        openMonth={touchedRows.has(m.month) ? undefined : issueDateDefaults(m.lastPayDate, today).openMonth ?? undefined}
+                        defaultMonth={m.lastPayDate} className={inputCls} />
                     </div>
                   )}
                 </li>

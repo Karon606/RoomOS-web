@@ -9,7 +9,8 @@
 //   ⓑ 한 장 라우트와 묶음 본체가 둘 다 issueRentReceiptsInTx 를 부른다. 묶음은 달마다 getRentReceiptData 자동값을
 //      autoFormFields 로 옮기고, 요청은 batchRequestError 로 검사한다. 화면 첫 값도 autoFormFields 를 지난다.
 //   ⓒ 적용취소는 서명 대조(용도 라벨) + 행 모양 CAS + 영업장 범위 + 지움 수 확인을 다 건다.
-//   ⓓ 고를 수 있는 달·발행일 기본값은 정본(issuableRentMonths·defaultIssueDate)이 내고 화면 발행일 첫 값은 서버 값이다.
+//   ⓓ 고를 수 있는 달·발행일 첫 상태는 정본(issuableRentMonths·issueDateDefaults)이 내고 화면 발행일 첫 값은 서버 값이다.
+//      입금일 앞 발행일은 한 달(서버 singleIssueDateError + 화면 minDate)과 여러 달이 같은 정본 문장으로 막는다(2026-10-21).
 //   ⓔ 서류 시트의 납부 확인서 최신은 귀속월 기준(latestRentFor)이다.
 //   ⓕ 전역 발급 이력 '다시 작성'이 그 장의 귀속월을 싣는다.
 //   ⓖ 발급 뒤 화면에 머물고 토스트에 적용취소를 단다(종전 router.push(back.href) 로 되돌아가면 적용취소 자리가 사라진다).
@@ -113,11 +114,21 @@ for (const f of [ONE, BATCH_ROUTE, BATCH]) {
 {
   const a = src(ACTIONS)
   if (!/issuableRentMonths\(/.test(a)) violations.push(`${ACTIONS} — 고를 수 있는 달을 정본으로 안 낸다.`)
-  if (!/defaultIssueDate\(/.test(a)) violations.push(`${ACTIONS} — 발행일 기본값을 정본으로 안 낸다.`)
+  if (!/issueDateDefaults\(/.test(a)) violations.push(`${ACTIONS} — 발행일 첫 상태를 정본으로 안 낸다.`)
   const v = src(VIEW)
-  if (!/useState\(data\.defaultIssueDate\)/.test(v)) violations.push(`${VIEW} — 발행일 첫 값이 서버 기본값(그 달 몫 마지막 입금일)이 아니다.`)
+  if (!/useState\(data\.issueDefaults\.value\)/.test(v)) violations.push(`${VIEW} — 발행일 첫 값이 서버 기본값(오늘)이 아니다.`)
+  if (!/minDate=\{isDeposit \? undefined : data\.issueDefaults\.minDate/.test(v)) violations.push(`${VIEW} — 한 달 발행일 칸에 입금일 하한(minDate)이 없다.`)
+  if (!/openMonth=\{issueTouched \|\| isDeposit \? undefined : \(data\.issueDefaults\.openMonth/.test(v)) violations.push(`${VIEW} — 한 달 달력이 그 달 입금일의 달로 안 열린다.`)
+  const one = src(ONE)
+  // 부르기만 하고 결과를 버리면 막은 것이 아니다 — 결과로 400 을 돌려주는 줄까지 본다(역주입에서 호출만 남긴 꼴이 통과했다).
+  if (!/const early = await singleIssueDateError\(prisma, propertyId/.test(one) || !/if \(early\) return NextResponse\.json\(\{ ok: false, error: early \}, \{ status: 400 \}\)/.test(one)) {
+    violations.push(`${ONE} — 한 달 발급이 입금일 앞 발행일을 서버에서 안 막는다(검사 결과로 400 을 돌려줘야 한다).`)
+  }
+  if (!/issueDateBeforePaymentError\(/.test(src(CORE))) violations.push(`${CORE} — 한 달 하한 검사가 정본 문장(issueDateBeforePaymentError)을 안 쓴다.`)
+  if (!/const early = issueDateBeforePaymentError\(/.test(src('lib/rentReceiptMonths.ts'))) violations.push(`lib/rentReceiptMonths.ts — 여러 달 검사가 한 달과 같은 정본 문장을 안 쓴다.`)
   if (/useState\(kstYmdStr\(\)\)/.test(v)) violations.push(`${VIEW} — 발행일 첫 값이 오늘로 되돌아갔다(신고 2026-10-19 달력 결함의 뿌리).`)
-  if (!/defaultIssueDate\(lastPayDate/.test(v)) violations.push(`${VIEW} — 여러 달의 달마다 발행일 기본값이 정본을 안 지난다.`)
+  if (!/issueDateDefaults\(lastPayDate, today\)\.value/.test(v)) violations.push(`${VIEW} — 여러 달의 달마다 발행일 기본값이 정본을 안 지난다.`)
+  if (!/openMonth=\{touchedRows\.has\(m\.month\) \? undefined : issueDateDefaults\(/.test(v)) violations.push(`${VIEW} — 여러 달 행 달력이 그 달 입금일의 달로 안 열린다.`)
 }
 
 // ⓔ 시트 최신 판정.
