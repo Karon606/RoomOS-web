@@ -158,7 +158,12 @@ eq('청소 옛 코드 OTHER 는 받기만 한다', LEGACY_FIXED_VALUES.cleaningR
 for (const n of ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER', 'NEW_CODE', 'X1', '퇴실 청소', '공사·도배 후', '입실 중 요청']) {
   eq(`청소 사유 목록에 못 넣는 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n) !== null, true)
 }
-for (const n of ['방역', 'Checkout', '퇴실청소 재요청', 'A동 소독']) eq(`청소 사유 목록에 넣을 수 있는 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n), null)
+// 공백만 다르거나 대소문자만 다른 코드·고정 라벨도 막는다(2차 독립 검수 R1).
+for (const n of ['퇴실청소', '공사·도배후', '입실중 요청', ' 입실 중  요청 ', 'Checkout', 'checkout', 'Check out', 'after_work', 'Other']) {
+  eq(`청소 사유 목록에 못 넣는 한 끗 다른 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n) !== null, true)
+}
+for (const n of ['방역', 'Deep clean', '퇴실청소 재요청', 'A동 소독', 'After Work']) eq(`청소 사유 목록에 넣을 수 있는 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n), null)
+eq('한 끗 다른 이름 판정도 청소 목록에서만', reservedOptionNameError('visitRouteOptions', '퇴실청소'), null)
 eq('코드 꼴 판정은 청소 목록에서만', reservedOptionNameError('visitRouteOptions', 'CHECKOUT'), null)
 const CL: string[] = ['방역']
 const TABLE2: Row[] = [

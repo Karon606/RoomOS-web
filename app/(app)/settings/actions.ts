@@ -1216,6 +1216,10 @@ export async function undoRenameOption(undo: RenameUndo): Promise<{ ok: true; it
   // 되돌릴 옛 이름이 사유 목록에 못 넣는 이름이면 표가 틀린 것이다(독립 검수 N2).
   const reservedOld = reservedOptionNameError(field, oldValue)
   if (reservedOld) return { ok: false, error: reservedOld }
+  // 되돌릴 대상(새 이름)도 같은 문을 지난다. 정상 이름 변경의 새 이름은 이미 이 문을 지났으니 걸릴 일이 없고, 걸리면 위조한 표다.
+  // 빠지면 청소 코드 행('CHECKOUT')이나 상태 이력의 시스템 라벨 행을 옛 이름 글자로 바꿔 퇴실 청소·받은 청소비 판정이 깨진다(2차 독립 검수 B1).
+  const reservedNew = reservedOptionNameError(field, newValue)
+  if (reservedNew) return { ok: false, error: '적용취소할 대상을 확인하지 못했습니다.' }
   // 되돌릴 행의 조건은 서버 표(RENAME_CASCADE)의 칸으로 만든다(lib/optionLists renameUndoPlan).
   const cascade = RENAME_CASCADE[field]
   const plan = cascade ? renameUndoPlan(cascade, undo, propertyId) : null

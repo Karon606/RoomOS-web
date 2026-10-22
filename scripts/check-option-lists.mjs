@@ -659,7 +659,8 @@ const os = bodyOf(form, /function OptionSection\(/)
       reorderOptions: [/reservedOptionNameError\(field, v\)/, /!sameNameSet\(items, now\)/],
       restoreOption: [/reservedOptionNameError\(field, r\.name\)/],
       undoResetOptions: [/reservedOptionNameError\(field, v\)/],
-      undoRenameOption: [/reservedOptionNameError\(field, oldValue\)/],
+      // 새 이름 쪽도 본다. 빠지면 위조 표가 청소 코드·시스템 라벨 행을 옛 이름 글자로 바꾼다(2차 독립 검수 B1).
+      undoRenameOption: [/reservedOptionNameError\(field, oldValue\)/, /reservedOptionNameError\(field, newValue\)/],
     }
     for (const [fn, res] of Object.entries(RES)) {
       const b = stripComments(bodyOf(actions, new RegExp(`export async function ${fn}\\(`)) ?? '')
@@ -816,10 +817,13 @@ const os = bodyOf(form, /function OptionSection\(/)
   for (const [p, re, what] of WIRING2) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
   // 저절로 쌓는 목록의 새 자리(작업 종류·부가수익·지출 카테고리 넷). 값은 맨 글자(autoOptionForSave)이고, 끄면 안 더하고,
   // 고치는 기록의 지금 값과 같으면 안 더한다(목록에서 뺀 카테고리가 저장마다 되살아나지 않는다). 더하기는 기록이 선 뒤(commit)다.
+  // 지금 값도 값과 같은 정규화를 거쳐 견준다(2차 독립 검수 D5, 공백이 불규칙한 인식 결과).
   {
     const rs2 = stripComments(readFileSync('lib/reasonListSave.ts', 'utf8'))
     const auto = bodyOf(rs2, /export async function autoOptionForSave\(/) ?? ''
-    if (!/resolveCategoryForSave\(parseOptionList\(field, p\?\.\[field\]\), raw\)/.test(auto) || !/opts\.addToList !== false && nextList && value && value !== \(opts\.prev \?\? null\)/.test(auto)) {
+    if (!/resolveCategoryForSave\(parseOptionList\(field, p\?\.\[field\]\), raw\)/.test(auto)
+      || !/const prev = opts\.prev \? normalizeCategoryInput\(opts\.prev\) : null/.test(auto)
+      || !/opts\.addToList !== false && nextList && value && value !== prev \?/.test(auto)) {
       violations.push(`lib/reasonListSave.ts · autoOptionForSave 가 목록 표기 맞춤·체크 끔·지금 값 비교 중 하나를 잃었다. 뺀 카테고리가 되살아나거나 끈 체크에도 목록에 쌓인다.`)
     }
     const AUTO_WIRING = [

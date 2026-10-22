@@ -197,6 +197,10 @@ async function main() {
     const forged = { ...J(r3.undo), rows: r3.undo.rows.map(x => ({ ...x, ids: [...x.ids, c3] })) }
     eq('위조 표 적용취소 ok(이 영업장 행만)', (await settings.undoRenameOption(forged)).ok, true)
     eq('남의 영업장 행은 그대로', await reasonOf(c3), '마음 바뀜')
+    // 새 이름 자리에 시스템 라벨을 넣은 위조 적용취소로 그 이력 행을 운영자 사유로 바꾸지 못한다(2차 독립 검수 B1).
+    const sys = await log(P1, T1, L1, 'ACTIVE', 'CHECKOUT_PENDING', '단기 자동 전환')
+    const forgedSys = await settings.undoRenameOption({ field: 'checkoutReasons', oldValue: '개인 사정', newValue: '단기 자동 전환', rows: [{ model: 'tenantStatusLog', column: 'reason', ids: [sys] }], wishIds: [], inventory: false })
+    eq('위조 적용취소로 시스템 라벨 이력 행을 못 바꾼다', [forgedSys.ok, await reasonOf(sys)], [false, '단기 자동 전환'])
   }
 
   // ── 4. 보증금 미반환 기록: 저장 규약·청소비 판정·이름 변경은 미반환 기록만 ────────────────
@@ -441,6 +445,15 @@ async function main() {
     const p2 = await pr('인식한 말')
     const a2 = await pend.approvePendingReceipt(p2, { date: '2026-10-20', amount: 5000, category: '운영자 카테고리', addCategoryToList: true })
     eq('홈 승인: 운영자가 적은 새 이름은 승인 뒤 목록 끝', [a2.ok, (await listOfAuto('expenseCategories'))?.endsWith(',운영자 카테고리')], [true, true])
+    // 인식 결과의 공백이 불규칙해도 같은 말이면 지금 값이다(2차 독립 검수 D5). 정규화 전 글자로 견주면 목록에 더한다.
+    const p3 = await pr(' 인식  두칸 ')
+    const a3 = await pend.approvePendingReceipt(p3, { date: '2026-10-20', amount: 5000, category: ' 인식  두칸 ', addCategoryToList: true })
+    eq('홈 승인: 인식한 카테고리가 공백만 불규칙해도 그대로면 안 쌓는다', [a3.ok, (await listOfAuto('expenseCategories'))?.split(',').includes('인식 두칸')], [true, false])
+    // 재고 보충 승인(품목 있음)은 카테고리를 목록에 안 쌓고 받은 글자 그대로 둔다(2차 독립 검수 그물 공백).
+    const beforeInv = await listOfAuto('expenseCategories')
+    const p4 = await pr('인식한 말')
+    const a4 = await pend.approvePendingReceipt(p4, { date: '2026-10-20', amount: 5000, category: '재고 승인 카테고리', itemLabel: '휴지', addCategoryToList: true })
+    eq('홈 승인(재고 보충): 목록에 안 쌓고 값은 받은 글자', [a4.ok, await listOfAuto('expenseCategories'), (await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: '휴지' } }))?.category], [true, beforeInv, '재고 승인 카테고리'])
   }
 
   // ── 11. 재고·비품(2차): 소모품 폐기 사유·무상 입수 출처·비품 폐기 사유. 저장 규약·지금 값 그대로·폐기 적용취소가 사유까지 되돌린다 ─────────
@@ -515,6 +528,9 @@ async function main() {
     eq('받은 청소비 부담은 퇴실 청소(CHECKOUT)에만', await Promise.all([c1.id, c2.id, c3.id].map(async id => (await prisma.roomCleaning.findUnique({ where: { id } }))?.fromCleaningFund)), [true, false, false])
     const ch1 = await clean.changeCleaningReason({ id: c1.id, reason: '방역' })
     eq('부담 표식이 선 퇴실 청소는 다른 사유로 못 바꾼다', [ch1.ok, await reasonOfC(c1.id)], [false, 'CHECKOUT'])
+    // 새 이름 자리에 코드를 넣은 위조 이름 변경 적용취소로도 못 바꾼다(2차 독립 검수 B1). 바뀌면 부담 표식만 남은 글자 행이 된다.
+    const forgedC = await settings.undoRenameOption({ field: 'cleaningReasons', oldValue: '위조 사유', newValue: 'CHECKOUT', rows: [{ model: 'roomCleaning', column: 'reason', ids: [c1.id] }], wishIds: [], inventory: false })
+    eq('위조 적용취소로 퇴실 청소 코드 행을 못 바꾼다', [forgedC.ok, await reasonOfC(c1.id), (await settings.getCleaningReasons()).includes('위조 사유')], [false, 'CHECKOUT', false])
     const ch2 = await clean.changeCleaningReason({ id: c2.id, reason: '기타 · 외벽 물청소' })
     eq('사유 변경: 체크 안 하면 기타 · 글(저장 글자를 돌려준다)', [ch2.ok && ch2.reason, await reasonOfC(c2.id)], ['기타 · 외벽 물청소', '기타 · 외벽 물청소'])
     const ch3 = await clean.changeCleaningReason({ id: c5.id, reason: 'OTHER' })

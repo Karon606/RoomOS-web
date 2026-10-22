@@ -252,6 +252,8 @@ export function isReasonListField(f: OptionListField): f is ReasonListField {
  * 청소 사유 목록에는 앱 코드 꼴(영문 대문자·숫자·밑줄, 'CHECKOUT' 따위)과 고정 라벨 셋(퇴실 청소·공사·도배 후·입실 중 요청)을
  * 못 넣는다. 저장 칸 하나(RoomCleaning.reason)에 코드와 글자가 함께 살아 코드 꼴 이름은 코드로 읽히고, 고정 라벨과 같은 글자는
  * 화면에서 앱 사유와 똑같이 보이는데 받은 청소비 부담·자동 퇴실 청소 판정('CHECKOUT')에서는 빠진다(2026-10-22 2차).
+ * 코드·고정 라벨과는 공백을 걷고 대소문자를 무시해 견준다(lib/categoryInput matchExistingCategory 와 같은 잣대). '퇴실청소'·'checkout'
+ * 처럼 한 끗 다른 이름이 고르는 칸에서 앱 사유 바로 뒤에 서서 헷갈리게 하는 길을 막는다(2차 독립 검수 R1).
  */
 export function reservedOptionNameError(field: OptionListField, name: string): string | null {
   if (!isReasonListField(field)) return null
@@ -260,7 +262,9 @@ export function reservedOptionNameError(field: OptionListField, name: string): s
   if (STATUS_REASON_FIELDS.includes(field) && SYSTEM_STATUS_REASONS.includes(v)) return '앱이 상태 이력에 스스로 적는 이름이라 사유로 쓸 수 없습니다.'
   if (field === 'cleaningReasons') {
     if (/^[A-Z][A-Z0-9_]*$/.test(v)) return '영문 대문자 이름은 앱이 쓰는 청소 사유 코드와 겹쳐 쓸 수 없습니다.'
-    if (CLEANING_REASON_CODES.some(c => cleaningReasonLabel(c) === v)) return '앱이 쓰는 청소 사유라 목록 맨 앞에 늘 있습니다.'
+    const key = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+    if ([...CLEANING_REASON_CODES, 'OTHER'].some(c => key(c) === key(v))) return '앱이 쓰는 청소 사유 코드와 같은 이름이라 쓸 수 없습니다.'
+    if (CLEANING_REASON_CODES.some(c => key(cleaningReasonLabel(c)) === key(v))) return '앱이 쓰는 청소 사유라 목록 맨 앞에 늘 있습니다.'
   }
   return null
 }

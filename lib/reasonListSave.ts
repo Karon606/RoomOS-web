@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
 import { parseOptionList, type OptionListField, type ReasonListField } from '@/lib/optionLists'
 import { planReasonSave } from '@/lib/reasonLists'
-import { resolveCategoryForSave } from '@/lib/categoryInput'
+import { normalizeCategoryInput, resolveCategoryForSave } from '@/lib/categoryInput'
 
 export type ReasonSave = { reason: string | null; commit: () => Promise<void> }
 
@@ -52,6 +52,8 @@ export type OptionSave = { value: string | null; commit: () => Promise<void> }
  * '기타 · ' 꼴로 바꾸지 않는다(이름 자체가 값인 목록이라 목록 밖 글자도 맨 글자로 둔다, 1차 결정 2). 목록 밖 새 이름이고
  * '목록에 추가' 가 꺼져 있지 않고(기본 켜짐, 체크 칸이 없는 종전 호출도 켜짐) 고치는 기록의 지금 값(prev)과 다르면
  * 기록이 선 뒤(commit) 목록 끝에 붙인다. 지금 값과 같으면 안 붙인다(목록에서 뺀 카테고리가 그 기록 저장마다 되살아나지 않는다).
+ * 지금 값도 값과 같은 정규화(normalizeCategoryInput)를 거쳐 견준다. 홈 영수증 인식 결과처럼 공백이 불규칙한 지금 값을
+ * 정규화 전 글자로 견주면 화면은 체크 칸을 안 보였는데 서버는 목록에 더한다(2차 독립 검수 D5).
  */
 export async function autoOptionForSave(
   propertyId: string,
@@ -61,7 +63,8 @@ export async function autoOptionForSave(
 ): Promise<OptionSave> {
   const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { workKindOptions: true, incomeCategories: true, expenseCategories: true } })
   const { value, nextList } = resolveCategoryForSave(parseOptionList(field, p?.[field]), raw)
-  const add = opts.addToList !== false && nextList && value && value !== (opts.prev ?? null) ? value : null
+  const prev = opts.prev ? normalizeCategoryInput(opts.prev) : null
+  const add = opts.addToList !== false && nextList && value && value !== prev ? value : null
   return {
     value,
     commit: async () => {
