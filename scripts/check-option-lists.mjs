@@ -554,7 +554,7 @@ const os = bodyOf(form, /function OptionSection\(/)
   const ASK_SITES = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons'],
     'components/entity-modal/widgets/TenantStatusHistory.tsx': ['cancelReasons', 'checkoutReasons'],
-    'app/(app)/tenants/TenantClient.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons', 'dueDayReasons'],
+    'app/(app)/tenants/TenantClient.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons', 'dueDayReasons', 'visitRouteOptions'],
     'app/(app)/dashboard/DashboardClient.tsx': ['withholdReasons'],
     'components/entity-modal/widgets/DepositStatusPanel.tsx': ['withholdReasons'],
     // 2차(2026-10-22). 납부일 임시 조정 사유는 수납 정보 위젯과 입주자 상세 두 자리에서 고른다.
@@ -568,7 +568,7 @@ const os = bodyOf(form, /function OptionSection\(/)
   }
   const ASK_COUNT = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
-    'app/(app)/tenants/TenantClient.tsx': 3, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
+    'app/(app)/tenants/TenantClient.tsx': 4, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
     'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': 1,
     'app/(app)/inventory/InventoryClient.tsx': 3, 'app/(app)/inventory/assets/AssetsClient.tsx': 2,
     'components/cleaning/CleaningPlanForm.tsx': 1, 'components/cleaning/CleaningRowBody.tsx': 1,
@@ -617,6 +617,19 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/assets/actions.ts', 'assignAggregateToTarget'],
     ['app/(app)/room-manage/cleaningActions.ts', 'createCleaning'], ['app/(app)/room-manage/cleaningActions.ts', 'changeCleaningReason'],
   ]
+  // 방문 경로(2차). 계약을 만드는 두 자리와 고치는 자리가 모두 visitRouteForSave(목록으로 다시 재기)를 거치고 기록 뒤에 목록에 더한다.
+  // 폼 글자를 그대로 적는 길(visitRoute || null)이 되살아나면 목록 밖 글이 맨 글자로 남는다.
+  {
+    const ta = stripComments(readFileSync('app/(app)/tenants/actions.ts', 'utf8'))
+    for (const fn of ['addTenant', 'addLeaseToTenant', 'updateTenant']) {
+      const b = bodyOf(ta, new RegExp(`export async function ${fn}\\(`)) ?? ''
+      if (!/visitRouteForSave\(propertyId, formData/.test(b) || !/\.commit\(\)/.test(b)) violations.push(`app/(app)/tenants/actions.ts · ${fn} 가 방문 경로를 영업장 목록으로 다시 재지(visitRouteForSave) 않거나 목록 추가를 기록 뒤로 미루지 않는다.`)
+    }
+    if (!/visitRouteForSave\(propertyId, formData, currentLease\.visitRoute\)/.test(ta)) violations.push(`app/(app)/tenants/actions.ts · 입주자 수정이 지금 방문 경로(prev)를 넘기지 않는다. 종전 자유 입력 경로에 기타 · 가 붙는다.`)
+    if (/visitRoute: visitRoute \|\| null|formData\.get\('visitRoute'\) as string\b(?! \| null)/.test(ta)) violations.push(`app/(app)/tenants/actions.ts · 방문 경로를 폼 글자 그대로 적는 길이 되살아났다.`)
+    const vr = bodyOf(ta, /async function visitRouteForSave\(/) ?? ''
+    if (!/reasonForSave\(propertyId, 'visitRouteOptions', formData\.get\('visitRoute'\) as string \| null, \{\s*addToList: formData\.get\('visitRouteAddToList'\) === '1', prev,/.test(vr)) violations.push(`app/(app)/tenants/actions.ts · visitRouteForSave 가 방문 경로 목록·체크(visitRouteAddToList)·지금 값으로 재지 않는다.`)
+  }
   for (const [p, fn] of SAVE_PATHS) {
     const b = bodyOf(readFileSync(p, 'utf8'), new RegExp(`export async function ${fn}\\(`))
     if (!b) { violations.push(`${p} · ${fn} 를 못 찾았다.`); continue }

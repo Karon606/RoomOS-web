@@ -520,6 +520,29 @@ async function main() {
     g.__CR_FLOW_PID = P1
   }
 
+  // ── 13. 방문 경로(2차): 계약 추가·입주자 수정. 저장 규약·지금 값 그대로(종전 자유 입력)·체크하면 목록 끝 ─────────
+  {
+    const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f }
+    const routeList = async () => (await prisma.property.findUnique({ where: { id: P1 }, select: { visitRouteOptions: true } }))?.visitRouteOptions ?? null
+    const T12 = await tenantIn(P1, '하')
+    const leaseIds = async () => (await prisma.leaseTerm.findMany({ where: { tenantId: T12 }, orderBy: { createdAt: 'asc' }, select: { id: true, visitRoute: true } }))
+    const a1 = await tenants.addLeaseToTenant(fd({ tenantId: T12, status: 'WAITING_TOUR', visitRoute: '지인 소개' }))
+    const a2 = await tenants.addLeaseToTenant(fd({ tenantId: T12, status: 'WAITING_TOUR', visitRoute: '기타 · 블로그 후기' }))
+    const a3 = await tenants.addLeaseToTenant(fd({ tenantId: T12, status: 'WAITING_TOUR', visitRoute: '기타 · 유학원 소개', visitRouteAddToList: '1' }))
+    const a4 = await tenants.addLeaseToTenant(fd({ tenantId: T12, status: 'WAITING_TOUR', visitRoute: '네이버지도' }))
+    eq('계약 추가 넷 ok', [a1.ok, a2.ok, a3.ok, a4.ok], [true, true, true, true])
+    eq('방문 경로: 목록·기타 · 글·체크하면 맨 글자·새 계약의 목록 밖 맨 글자는 기타 · 글', (await leaseIds()).map(l => l.visitRoute),
+      ['지인 소개', '기타 · 블로그 후기', '유학원 소개', '기타 · 네이버지도'])
+    eq('방문 경로: 체크한 이름은 목록 끝', await routeList(), '인터넷 검색,지도 앱,지인 소개,간판,직접 방문,유학원 소개')
+    // 입주자 수정: 종전 자유 입력으로 적힌 경로를 그대로 저장하면 그대로 남는다.
+    const L13 = (await leaseIds())[3].id
+    await prisma.leaseTerm.update({ where: { id: L13 }, data: { visitRoute: '네이버지도' } })
+    const up = await tenants.updateTenant(fd({ tenantId: T12, leaseTermId: L13, name: '하', status: 'WAITING_TOUR', visitRoute: '네이버지도' }))
+    eq('입주자 수정: 종전 자유 입력 경로 그대로면 그대로', [up.ok ? true : up.error, (await prisma.leaseTerm.findUnique({ where: { id: L13 } }))?.visitRoute], [true, '네이버지도'])
+    const up2 = await tenants.updateTenant(fd({ tenantId: T12, leaseTermId: L13, name: '하', status: 'WAITING_TOUR', visitRoute: '기타 · 현수막', visitRouteAddToList: '1' }))
+    eq('입주자 수정: 체크하면 맨 글자 + 목록 끝', [up2.ok ? true : up2.error, (await prisma.leaseTerm.findUnique({ where: { id: L13 } }))?.visitRoute, (await routeList())?.endsWith(',현수막')], [true, '현수막', true])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

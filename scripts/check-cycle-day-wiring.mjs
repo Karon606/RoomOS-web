@@ -143,7 +143,8 @@ for (const f of sources) {
   need('⑨ 일괄 수정: 기간 칸 판정(거절)이 입주자 칸 저장보다 앞', iCycle > 0 && iTenantWrite > 0 && iCycle < iTenantWrite)
   need('⑨ 일괄 수정: 딸린 계약 전파에 기간 칸을 넘기고 되돌리기에 prevCycleDay', /propagateDueDayToSubLeases\(prisma, b\.id, b\.dueDay, nextDue,\s*b\.cycleDay \? \{ prev: b\.cycleDay, next: nextCycle \} : undefined\)/.test(batch) && /cycleDay: m\.prevCycleDay/.test(batch))
   need('⑨ 일괄 수정 적용취소: 서명 검증과 허용 칸 목록', /signUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(batch) && /verifyUndoBody\(BATCH_TENANTS_UNDO_DOMAIN/.test(body(tenants, 'export async function undoBatchUpdateTenants(')) && /BATCH_UNDO_LEASE_FIELDS = new Set\(\['depositAmount', 'dueDay', 'cycleDay', 'status', 'moveInFlexible', 'expectedMoveOut', 'autoCheckoutAt'\]\)/.test(tenants))
-  need('⑨ 딸린 계약 신규 생성이 부모 기간 칸을 물려받는다', /const cycleDay = await inheritedCycleDay\(prisma, f\.data\.parentLeaseTermId, f\.data\.dueDay, propertyId\)/.test(tenants) && /data: \{ \.\.\.f\.data, cycleDay, propertyId, tenantId \}/.test(tenants))
+  // 2026-10-22 2차: 방문 경로는 영업장 목록으로 다시 잰 값(visitRoute.reason)을 같은 data 에 함께 싣는다.
+  need('⑨ 딸린 계약 신규 생성이 부모 기간 칸을 물려받는다', /const cycleDay = await inheritedCycleDay\(prisma, f\.data\.parentLeaseTermId, f\.data\.dueDay, propertyId\)/.test(tenants) && /data: \{ \.\.\.f\.data, (visitRoute: visitRoute\.reason, )?cycleDay, propertyId, tenantId \}/.test(tenants))
   need('⑨ 입주자 수정(부모 붙이기 포함)도 부모 기간 칸을 물려받는다', /\(await inheritedCycleDay\(prisma, parentForCycle, nextDueDay, propertyId\)\) \?\? cycleNext\.cycleDay/.test(tenants))
   need('⑨ 계약서 문 납부일이 같은 판정', /cycleDayAfterDueChange\(lease\.cycleDay \?\? null, v\)/.test(strip(read('app/(app)/tenants/contractShare.ts'))))
   const imp = strip(read('app/api/import/route.ts'))

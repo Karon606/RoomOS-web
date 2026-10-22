@@ -3806,6 +3806,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 이 저장이 상태를 바꾸고 그 전이가 사유를 받을 때만 그 목록(영업장 설정)을 읽는다.
   const statusReasonField = statusVal !== lease?.status ? reasonFieldForStatus(statusVal) : null
   const statusReasonOptions = useReasonOptions(statusReasonField)
+  // 방문 경로 — 영업장 목록에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask'). 저장 글자이고, 종전 자유 입력으로 적힌
+  // 경로('네이버지도' 따위)는 그 글자 그대로 한 줄 서서 손대지 않으면 그대로 저장된다(서버가 지금 값과 견준다).
+  const [visitRouteVal, setVisitRouteVal] = useState(lease?.visitRoute ?? '')
+  const visitRouteOptions = useReasonOptions('visitRouteOptions')
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(해외 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   // 연락처 세 칸의 **지금 입력값**. 저장값이 아니라 이 값으로 아래 안내를 판정한다 —
@@ -5259,7 +5263,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="소득공제">소득공제</option>
             <option value="지출증빙">지출증빙</option>
           </SelectField>
-          <Field label="방문 경로" name="visitRoute" defaultValue={lease?.visitRoute ?? ''} placeholder="소개, 네이버 등" />
+          <div className="space-y-1.5 min-w-0">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">방문 경로</label>
+            <CategorySelect addMode="ask" name="visitRoute" value={visitRouteVal} onChange={setVisitRouteVal}
+              options={visitRouteOptions} emptyLabel="미선택" placeholder="경로를 직접 입력하세요" addLabel="이 경로를 목록에 추가"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0" />
+          </div>
         </div>
         <WishSelector
           rooms={rooms}

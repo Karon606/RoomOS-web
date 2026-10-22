@@ -603,7 +603,7 @@ function readLeaseFields(formData: FormData) {
   const wishConditions      = formData.get('wishConditions') as string
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
   const moveInFlexible      = moveInFlexibleOf(formData)
-  const visitRoute          = formData.get('visitRoute') as string
+  // 방문 경로는 여기서 안 읽는다. 영업장 목록으로 다시 재야 해서(visitRouteForSave) 계약을 만드는 두 자리가 직접 싣는다.
   const tourDate            = formData.get('tourDate') as string
   const tourTime            = formData.get('tourTime') as string   // 'HH:MM' 또는 ''
   const inquiryAt           = formData.get('inquiryAt') as string
@@ -662,9 +662,19 @@ function readLeaseFields(formData: FormData) {
       keepAlertAfterInquiry,
       // 리드 밖(거주중 직등록·예약 확정 등)이면 접는다 — 매칭이 안 읽는 자리의 잔존은 거짓 표시(감지망 축 3)
       moveInFlexible: leavesWishLead(status, isReservedConfirmed ? new Date() : null) ? null : (moveInFlexible ?? null),
-      visitRoute: visitRoute || null,
     },
   }
+}
+
+/**
+ * 방문 경로 저장 값(2026-10-22 2차). 화면(CategorySelect addMode 'ask', FormData visitRoute·visitRouteAddToList)이 보낸 글자를
+ * 영업장 목록으로 다시 잰다(lib/reasonLists). 목록 밖 글은 '기타 · 글', 체크하면 계약을 쓴 뒤 목록에 더한다(commit).
+ * prev 는 고치는 계약의 지금 값이다. 그대로 저장하면 종전 자유 입력 글자('네이버지도' 따위)도 그대로 둔다.
+ */
+async function visitRouteForSave(propertyId: string, formData: FormData, prev?: string | null) {
+  return reasonForSave(propertyId, 'visitRouteOptions', formData.get('visitRoute') as string | null, {
+    addToList: formData.get('visitRouteAddToList') === '1', prev,
+  })
 }
 
 /**
@@ -885,10 +895,12 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
 
     // 딸린 계약이 부모와 같은 납부일이면 부모의 이용 기간 시작일도 함께 저장한다(lib/dueDay inheritedCycleDay).
     const cycleDay = await inheritedCycleDay(prisma, f.data.parentLeaseTermId, f.data.dueDay, propertyId)
+    const visitRoute = await visitRouteForSave(propertyId, formData)
     const lease = await prisma.leaseTerm.create({
-      data: { ...f.data, cycleDay, propertyId, tenantId },
+      data: { ...f.data, visitRoute: visitRoute.reason, cycleDay, propertyId, tenantId },
       select: { id: true },
     })
+    await visitRoute.commit()
     await afterLeaseCreated(f, { propertyId, tenantId, leaseId: lease.id })
     await recordOverlapAckIfAllowed(formData, lease.id, user.sub)
 
@@ -997,6 +1009,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const regNo = foreignRegNoPatch(formData, newTenantId)
   if (!regNo.ok) return { ok: false, error: regNo.error }
 
+  const visitRoute = await visitRouteForSave(propertyId, formData)
   const tenant = await prisma.tenant.create({
     data: {
       id: newTenantId,
@@ -1015,10 +1028,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       nationality: nationality || null,
       gender,
       job: job || null,
-      leaseTerms: { create: { ...f.data, propertyId } },
+      leaseTerms: { create: { ...f.data, visitRoute: visitRoute.reason, propertyId } },
       contacts: contactsToCreate.length > 0 ? { create: contactsToCreate } : undefined,
     },
   })
+  await visitRoute.commit()
 
   const newLease = await prisma.leaseTerm.findFirst({
     where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
@@ -1122,7 +1136,6 @@ export async function updateTenant(formData: FormData): Promise<
   // `|| null` 로 뭉뚱그리면 거주 정보를 저장할 때마다 예약 단계에서 받아 둔 답이 증발한다.
   const moveInFlexible     = moveInFlexibleOf(formData)
   const allowRoomOverlap   = formData.get('allowRoomOverlap') === 'true'
-  const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string | null   // null = 폼에 필드 없음(보존)
   const tourTime           = formData.get('tourTime') as string | null   // null = 폼에 필드 없음(보존)
   const inquiryAt          = formData.get('inquiryAt') as string | null  // null = 폼에 필드 없음(보존)
@@ -1168,12 +1181,16 @@ export async function updateTenant(formData: FormData): Promise<
       // 단기 청구 동기화(syncShortStayCharge) 입력 — 조건부 선점 기준값·이력 스냅샷용
       autoCheckoutAt: true, shortStayExtensions: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      // 방문 경로의 지금 값 — 그대로 저장하면 목록 밖 옛 글자도 그대로 둔다(2026-10-22 2차, visitRouteForSave prev).
+      visitRoute: true,
     },
   })
   if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
   // 고치기 전 직업도 여기서 읽는다. 아래 목록 자동 추가가 '새로 적은 직업' 만 더하도록 견준다.
   const ownTenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { job: true } })
   if (!ownTenant) return { ok: false, error: '입주자 정보를 찾을 수 없습니다.' }
+  // 방문 경로는 영업장 목록으로 다시 잰다. 지금 값 그대로면(종전 자유 입력 글자) 그대로, 체크하면 계약을 쓴 뒤 목록에 더한다.
+  const visitRouteSave = await visitRouteForSave(propertyId, formData, currentLease.visitRoute)
 
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
@@ -1650,7 +1667,7 @@ export async function updateTenant(formData: FormData): Promise<
         ...(leavesWishLead(status, isReservedConfirmed ? new Date() : null)
           ? { moveInFlexible: null }
           : (moveInFlexible === undefined ? {} : { moveInFlexible })),
-        visitRoute: visitRoute || null,
+        visitRoute: visitRouteSave.reason,
         // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등).
         // 단기 동기화 시엔 건너뛴다 — 일할이 락보다 우선이라 남으면 방금 올린 연장 청구가 통째로 무시된다.
         ...(shortPlan ? {} : prorationPatch),
@@ -1721,6 +1738,8 @@ export async function updateTenant(formData: FormData): Promise<
       })
     }
   }
+  // 계약을 쓴 뒤에 방문 경로 목록에 더한다(체크한 저장만, 2026-10-22 2차).
+  await visitRouteSave.commit()
 
   if (status !== prevStatus) {
     // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
