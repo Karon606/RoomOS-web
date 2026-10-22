@@ -19,7 +19,7 @@ import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
 import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, isOptionListField, isReasonListField, reservedOptionNameError, type OptionListField, type RenameTarget, type ReasonListField } from '@/lib/optionLists'
 import { REASON_FIELD_STATUSES, REASON_FIELD_SELF_STATUSES } from '@/lib/statusReasons'
-import { REASON_LIST_SELECT } from '@/lib/reasonListSave'
+import { REASON_LIST_SELECT, autoOptionForSave } from '@/lib/reasonListSave'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -2394,17 +2394,22 @@ export async function addRecurringExpense(data: {
   intervalMonths?: number; anchorMonth?: number | null; nextDueOverrideMonth?: string | null
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]
+  // 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(2026-10-22 2차, 화면 체크 기본 켜짐). 없으면 켜짐.
+  addCategoryToList?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
+    // 카테고리는 지출 등록과 같은 맨 글자 규약이다(목록 표기 맞춤, 새 이름은 기록 뒤에 목록에 더한다, lib/reasonListSave).
+    const categorySave = await autoOptionForSave(propertyId, 'expenseCategories', rawCategory, { addToList: addCategoryToList })
+    if (!categorySave.value) return { ok: false, error: '카테고리를 입력하세요.' }
     const hasItems = Array.isArray(items) && items.length > 0
     const derived = hasItems ? deriveFromItems(items!) : null
     const cycle = normalizeCycle(intervalMonths, anchorMonth, nextDueOverrideMonth)
     const rec = await prisma.recurringExpense.create({
       data: {
-        propertyId, ...rest, isActive: true, ...cycle,
+        propertyId, ...rest, category: categorySave.value, isActive: true, ...cycle,
         ...(derived ? { amount: derived.amount, isVariable: derived.isVariable } : {}),
         activeSince: activeSince ? new Date(activeSince) : null,
         ...(hasItems ? {
@@ -2412,6 +2417,7 @@ export async function addRecurringExpense(data: {
         } : {}),
       },
     })
+    await categorySave.commit()
     revalidatePath('/settings')
     return { ok: true, id: rec.id }
   } catch (e) {
@@ -2425,11 +2431,22 @@ export async function updateRecurringExpense(id: string, data: Partial<{
   intervalMonths: number; anchorMonth: number | null; nextDueOverrideMonth: string | null
   // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
   items: RecurringItemInput[]
+  // 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(2026-10-22 2차). 지금 카테고리 그대로면 안 더한다.
+  addCategoryToList: boolean
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
     const updateData: Record<string, unknown> = { ...rest }
+    // 카테고리를 실어 온 저장만 다시 잰다(활성 토글 따위는 안 건드린다). 맨 글자 규약은 지출 등록과 같다.
+    let categorySave: Awaited<ReturnType<typeof autoOptionForSave>> | null = null
+    if ('category' in data) {
+      const propertyId = await getPropertyId()
+      const prev = (await prisma.recurringExpense.findFirst({ where: { id, propertyId }, select: { category: true } }))?.category ?? null
+      categorySave = await autoOptionForSave(propertyId, 'expenseCategories', rawCategory, { addToList: addCategoryToList, prev })
+      if (!categorySave.value) return { ok: false, error: '카테고리를 입력하세요.' }
+      updateData.category = categorySave.value
+    }
     // 주기는 둘이 한 벌이다 — 매월로 되돌리면 기준 달을 null 로 정규화해 낡은 값이 유령으로
     // 남지 않게 한다(다시 격월로 바꿨을 때 옛 기준 달이 살아나면 도래 달이 제멋대로다).
     if ('intervalMonths' in data || 'anchorMonth' in data || 'nextDueOverrideMonth' in data) {
@@ -2469,6 +2486,7 @@ export async function updateRecurringExpense(id: string, data: Partial<{
     } else {
       await prisma.recurringExpense.update({ where: { id }, data: updateData })
     }
+    await categorySave?.commit()
     revalidatePath('/settings')
     return { ok: true }
   } catch (e) {

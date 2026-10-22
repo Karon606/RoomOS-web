@@ -45,6 +45,8 @@ export function RoomWorkPlanForm({
   // 첫 종류를 미리 골라 두지 않는다 — 형제 폼이 방을 미리 안 고르는 것과 같은 이유다.
   // 고른 적 없는 종류로 기록이 서면 그 거짓이 캘린더에 그대로 선다.
   const [kind, setKind] = useState('')
+  // 목록에 없는 종류를 적으면 저장할 때 작업 종류 목록에 더한다(기본 켜짐, 2026-10-22 2차). 끄면 이 기록만 그 이름이다.
+  const [kindToList, setKindToList] = useState(true)
   const [pickedRoom, setPickedRoom] = useState('')
   const [scheduled, setScheduled] = useState(kstYmdStr())
   // 맡길 업체·사람 — 담당을 '업체'로 골라도 어느 업체인지 적을 자리가 없었다(운영자 지적
@@ -79,7 +81,7 @@ export function RoomWorkPlanForm({
       try {
         const res = await createRoomWork({
           roomId: targetRoomId, kind, scheduledDate: scheduled,
-          performer: performer || null, performerName, memo,
+          performer: performer || null, performerName, memo, addKindToList: kindToList,
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '작업 예정 등록됨')
@@ -103,19 +105,18 @@ export function RoomWorkPlanForm({
 
       {/* 종류 — 개수를 앱이 모르므로(운영자가 추가한다) 형제 폼의 고정 칩 대신 select 를 쓴다.
           칩은 4종 고정이라 성립했다. 목록이 길어지면 칩이 여러 줄로 접혀 폼이 통째로 흔들린다.
-          목록이 비면 그 사실을 말한다 — 빈 select 를 내밀면 왜 못 고르는지 화면이 안 말한다. */}
+          목록 끝 '기타(직접 입력)' 으로 새 종류를 바로 적는다(2026-10-22 2차, CategorySelect addMode 'auto' 기본 켜짐).
+          종전에는 목록이 비면 '환경설정에서 먼저 만들어 주세요' 만 말하고 등록을 막았다. 값은 맨 글자다(지출 품목 글자 맞춤). */}
       <div className={dense ? '' : 'space-y-1.5'}>
-        {!dense && <label className={labelCls} htmlFor={`${uid}-kind`}>작업 종류</label>}
-        {kinds.length === 0 ? (
-          <p className="text-xs text-[var(--warm-muted)]">
-            환경설정 &gt; 분류 관리 &gt; 작업 종류 관리에서 종류를 먼저 만들어 주세요.
-          </p>
-        ) : (
-          <select id={`${uid}-kind`} value={kind} onChange={e => setKind(e.target.value)} className={inputCls}>
-            <option value="">종류 선택</option>
-            {kinds.map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
-        )}
+        {!dense && <p className={labelCls}>작업 종류</p>}
+        <CategorySelect
+          value={kind} onChange={setKind}
+          options={kinds} emptyLabel="종류 선택"
+          placeholder="작업 종류를 직접 입력하세요" closeIconSize={dense ? 12 : 14}
+          addMode="auto" addLabel="이 종류를 목록에 추가" savedValue=""
+          addToList={kindToList} onAddToListChange={setKindToList}
+          dense={dense ? 'xs' : undefined}
+          className={inputCls} />
       </div>
 
       <div className={dense ? 'flex items-center gap-2 text-xs text-[var(--ink-s)]' : 'space-y-1.5'}>

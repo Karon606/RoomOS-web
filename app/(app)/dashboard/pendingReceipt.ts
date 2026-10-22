@@ -16,6 +16,7 @@ import { loadChannelNames } from '@/lib/channelOptions'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { cleanUnit } from '@/lib/receiptOcr'
 import { isMonthKey, targetMonthForSave } from '@/lib/expenseTargetMonth'
+import { autoOptionForSave } from '@/lib/reasonListSave'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
@@ -266,6 +267,8 @@ export async function approvePendingReceipt(
     specValue?: string; specUnit?: string
     specText?: string          // 치수·용도 서술(계산 비관여)
     qtyValue?: string;  qtyUnit?: string
+    // 지출로 등록할 때 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(2026-10-22 2차, 화면 체크 기본 켜짐). 재고 보충에는 없다.
+    addCategoryToList?: boolean
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -276,7 +279,7 @@ export async function approvePendingReceipt(
     }
     const row = await prisma.pendingReceipt.findFirst({
       where: { id, propertyId, status: 'pending' },
-      select: { id: true, imageUrl: true, parsedJson: true },
+      select: { id: true, imageUrl: true, parsedJson: true, inferredCategory: true },
     })
     if (!row) return { ok: false, error: '대기 항목을 찾을 수 없습니다.' }
 
@@ -301,6 +304,12 @@ export async function approvePendingReceipt(
     const channel = rowChannel(channelForSave(final.channel, await loadChannelNames(propertyId)), final.vendor?.trim() || null)
     // 지출 저장 경로(addExpense)와 같은 접기 — 날짜의 달과 같으면 NULL(lib/expenseTargetMonth).
     const targetMonth = targetMonthForSave(isMonthKey(final.targetMonth) ? final.targetMonth : null, expDate)
+    // 지출로 등록하면 카테고리는 지출 등록과 같은 맨 글자 규약이다(목록 표기 맞춤, 새 이름은 승인 뒤 목록에 더한다, 2026-10-22 2차).
+    // 인식이 뽑은 카테고리 그대로면(prev) 안 더한다. 운영자가 고르거나 적은 새 이름만 목록에 오른다. 재고 보충(품목 있음)은 그대로다.
+    const categorySave = final.itemLabel ? null
+      : await autoOptionForSave(propertyId, 'expenseCategories', final.category, { addToList: final.addCategoryToList, prev: row.inferredCategory })
+    const category = categorySave ? categorySave.value : final.category
+    if (!category) return { ok: false, error: '날짜·금액·카테고리는 필수입니다.' }
     const exp = await prisma.$transaction(async tx => {
       const claim = await tx.pendingReceipt.updateMany({
         where: { id, propertyId, status: 'pending' },
@@ -313,7 +322,7 @@ export async function approvePendingReceipt(
           date: expDate,
           targetMonth,
           amount: final.amount,
-          category: final.category,
+          category,
           vendor: final.vendor?.trim() || null,
           // 인식한 사업자번호. 구매처를 비워도 번호는 남긴다(구매처 비우기와 같은 규칙, 운영자 결정 2026-10-20 C).
           vendorBizNo: normalizeBizNo(final.vendorBizNo ?? null),
@@ -336,6 +345,7 @@ export async function approvePendingReceipt(
       return e
     })
     if (!exp) return { ok: false, error: '이미 처리된 영수증입니다.' }
+    await categorySave?.commit()
     // 처음 보는 쇼핑몰이면 영업장 쇼핑몰 목록에 쌓는다(지출 등록과 같은 흐름, 정규화·중복 거르기는 그 액션이 한다).
     if (channel) await addChannelOption(channel).catch(() => {})
     // 운영자가 승인을 누른 뒤에만 적립한다 — 인식 시점에 쌓으면 잘못 뽑힌 말이 목록에 올라앉는다.

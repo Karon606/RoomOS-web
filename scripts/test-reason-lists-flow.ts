@@ -391,6 +391,58 @@ async function main() {
     eq('제 영업장은 지운다', await ovr(), { overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null })
   }
 
+  // ── 10. 저절로 쌓는 목록의 새 자리(2차): 작업 종류·부가수익·지출 카테고리. 맨 글자·끄면 안 쌓임·지금 값 그대로면 안 쌓임 ─────────
+  {
+    const work = await import('@/app/(app)/room-manage/workActions')
+    const fin = await import('@/app/(app)/finance/actions')
+    const pend = await import('@/app/(app)/dashboard/pendingReceipt')
+    const listOfAuto = async (f: 'workKindOptions' | 'incomeCategories' | 'expenseCategories') =>
+      (await prisma.property.findUnique({ where: { id: P1 }, select: { workKindOptions: true, incomeCategories: true, expenseCategories: true } }))?.[f] ?? null
+    const R1 = randomUUID()
+    await prisma.room.create({ data: { id: R1, propertyId: P1, roomNo: '901' } })
+    const w1 = await work.createRoomWork({ roomId: R1, kind: '방충망, 교체' })
+    eq('작업 종류: 새 이름은 쉼표를 걷은 맨 글자 + 목록 끝(기본 켜짐)', [w1.ok, w1.ok && (await prisma.roomWork.findUnique({ where: { id: w1.id } }))?.kind, await listOfAuto('workKindOptions')], [true, '방충망 교체', '도배,장판,방충망 교체'])
+    const w2 = await work.createRoomWork({ roomId: R1, kind: '도 배' })
+    eq('작업 종류: 목록 이름과 공백만 다르면 목록 표기', w2.ok && (await prisma.roomWork.findUnique({ where: { id: w2.id } }))?.kind, '도배')
+    const w3 = await work.createRoomWork({ roomId: R1, kind: '줄눈', addKindToList: false })
+    eq('작업 종류: 끄면 그 기록만 그 이름', [w3.ok && (await prisma.roomWork.findUnique({ where: { id: w3.id } }))?.kind, await listOfAuto('workKindOptions')], ['줄눈', '도배,장판,방충망 교체'])
+    eq('작업 종류: 기타 · 꼴로 바꾸지 않는다', (await prisma.roomWork.findMany({ where: { propertyId: P1 } })).some(w => w.kind.startsWith('기타 · ')), false)
+    const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f }
+    // 앞 장면의 퇴실 정산이 보증금 몰취·청소비를 저절로 더해 두었다(코드가 만드는 보호 이름). 그 뒤에 붙는지를 본다.
+    const incBefore = await listOfAuto('incomeCategories')
+    const inc1 = await fin.addExtraIncome(fd({ date: '2026-10-20', amount: '3000', category: '주차비', categoryAddToList: '1' }))
+    eq('부가수익: 체크하면 새 카테고리 목록 끝(새 영업장 기본값에 기타 없음)', [inc1.ok, await listOfAuto('incomeCategories'), incBefore?.startsWith('건조기,세탁기,자판기,이자수익,') && !incBefore.split(',').includes('기타')], [true, `${incBefore},주차비`, true])
+    const incAfter = `${incBefore},주차비`
+    const inc2 = await fin.addExtraIncome(fd({ date: '2026-10-20', amount: '3000', category: '기타 임대수입' }))
+    eq('부가수익: 체크 칸 없는 저장(수납 과납분)은 종전대로 안 쌓는다', [inc2.ok, await listOfAuto('incomeCategories')], [true, incAfter])
+    const inc3 = await fin.addExtraIncome(fd({ date: '2026-10-20', amount: '3000', category: '보관료', categoryAddToList: '0' }))
+    eq('부가수익: 끄면 안 쌓이고 값은 맨 글자', [inc3.ok, inc3.ok && (await prisma.extraIncome.findUnique({ where: { id: inc3.id } }))?.category, await listOfAuto('incomeCategories')], [true, '보관료', incAfter])
+    if (!inc2.ok) throw new Error('inc2')
+    const up = await fin.updateExtraIncome(fd({ id: inc2.id, date: '2026-10-21', amount: '4000', category: '기타 임대수입', categoryAddToList: '1' }))
+    eq('부가수익 수정: 목록 밖 지금 카테고리 그대로면(보호 이름) 안 쌓고 그대로', [up.ok, (await prisma.extraIncome.findUnique({ where: { id: inc2.id } }))?.category, await listOfAuto('incomeCategories')], [true, '기타 임대수입', incAfter])
+    const e1 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '관리비' } })
+    const before = await listOfAuto('expenseCategories')
+    const b1 = await fin.batchUpdateExpenses([e1.id], { category: '공용 전기' }, { addCategoryToList: false })
+    eq('일괄 수정: 끄면 안 쌓이고 값은 맨 글자', [b1.ok, (await prisma.expense.findUnique({ where: { id: e1.id } }))?.category, await listOfAuto('expenseCategories')], [true, '공용 전기', before])
+    const b2 = await fin.batchUpdateExpenses([e1.id], { category: '공용 전기' }, { addCategoryToList: true })
+    eq('일괄 수정: 켜면 목록 끝', [b2.ok, (await listOfAuto('expenseCategories'))?.endsWith(',공용 전기')], [true, true])
+    const rc = await settings.addRecurringExpense({ title: '정수기', amount: 30000, category: '정수기 렌탈', dueDay: 10, addCategoryToList: true })
+    eq('고정 지출 등록: 새 카테고리 목록 끝', [rc.ok, (await listOfAuto('expenseCategories'))?.endsWith(',정수기 렌탈')], [true, true])
+    if (!rc.ok) throw new Error('rc')
+    await prisma.recurringExpense.update({ where: { id: rc.id }, data: { category: '옛 카테고리' } })
+    const ru = await settings.updateRecurringExpense(rc.id, { title: '정수기', category: '옛 카테고리', addCategoryToList: true })
+    eq('고정 지출 수정: 목록 밖 지금 카테고리 그대로면 안 쌓는다', [ru.ok, (await listOfAuto('expenseCategories'))?.includes('옛 카테고리')], [true, false])
+    const ra = await settings.updateRecurringExpense(rc.id, { isActive: false })
+    eq('고정 지출 활성 토글은 카테고리를 안 건드린다', [ra.ok, (await prisma.recurringExpense.findUnique({ where: { id: rc.id } }))?.category], [true, '옛 카테고리'])
+    const pr = async (inferredCategory: string) => (await prisma.pendingReceipt.create({ data: { propertyId: P1, uploaderId: OWNER, imageUrl: 'x', inferredCategory } })).id as string
+    const p1 = await pr('인식한 말')
+    const a1 = await pend.approvePendingReceipt(p1, { date: '2026-10-20', amount: 5000, category: '인식한 말', addCategoryToList: true })
+    eq('홈 승인: 인식한 카테고리 그대로면 안 쌓는다(값은 맨 글자)', [a1.ok, (await listOfAuto('expenseCategories'))?.includes('인식한 말'), (await prisma.expense.findFirst({ where: { propertyId: P1, category: '인식한 말' } })) !== null], [true, false, true])
+    const p2 = await pr('인식한 말')
+    const a2 = await pend.approvePendingReceipt(p2, { date: '2026-10-20', amount: 5000, category: '운영자 카테고리', addCategoryToList: true })
+    eq('홈 승인: 운영자가 적은 새 이름은 승인 뒤 목록 끝', [a2.ok, (await listOfAuto('expenseCategories'))?.endsWith(',운영자 카테고리')], [true, true])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

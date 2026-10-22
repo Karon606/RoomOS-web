@@ -21,6 +21,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 import { OtherMonthNotice } from '@/components/ui/OtherMonthNotice'
 import { fmtRoomNo } from '@/lib/roomNo'
+import CategorySelect from '@/components/ui/CategorySelect'
 
 export type Income = Awaited<ReturnType<typeof getExtraIncomes>>[number]
 export type LeaseOption = Awaited<ReturnType<typeof getExtraIncomeLeaseOptions>>[number]
@@ -67,6 +68,11 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [editIncMethod, setEditIncMethod] = useState('계좌이체')
   const [editIncDate, setEditIncDate]     = useState('')
+  // 카테고리 — 목록 끝 '기타(직접 입력)' 과 '이 카테고리를 목록에 추가'(기본 켜짐)의 정본 칸(2026-10-22 2차, CategorySelect addMode 'auto').
+  // 수정 폼은 기록의 카테고리 그대로 연다. 종전 맨 select 는 목록에 없는 값(청소비가 목록에 없는 영업장의 청소비 수익 등)을
+  // 첫 항목으로 보여 줘, 다른 칸만 고쳐 저장해도 카테고리가 조용히 첫 항목으로 바뀌었다(청소비 환불 한도 셈에서 빠진다).
+  const [addIncCategory, setAddIncCategory]   = useState(incomeCategories[0] ?? '')
+  const [editIncCategory, setEditIncCategory] = useState('')
   // v2.0 §12 dirty — 수정/등록 폼 입력 시작 후 배경클릭 무시, Esc/X는 닫기 확인(Modal 내장 정책)
   const [editDirty, setEditDirty] = useState(false)
   const [addDirty, setAddDirty]   = useState(false)
@@ -156,7 +162,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         <span className="ml-auto text-sm font-bold text-[var(--success-fg)] num">
           합계: <MoneyDisplay amount={totalInc} />
         </span>
-        <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddDirty(false); setAddIncMethod('계좌이체'); setError('') }}>
+        <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddDirty(false); setAddIncMethod('계좌이체'); setAddIncCategory(incomeCategories[0] ?? ''); setError('') }}>
           + 수익 등록
         </Btn>
       </div>
@@ -267,6 +273,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                     setEditDirty(false)
                     setEditIncDate(toDateInput(detailInc.date))
                     setEditIncMethod(detailInc.payMethod ?? '계좌이체')
+                    setEditIncCategory(detailInc.category)
                     setError('')
                   }}>수정</Btn>
                 </div>
@@ -291,10 +298,9 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                    <select name="category" defaultValue={detailInc.category}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <CategorySelect name="category" value={editIncCategory} onChange={setEditIncCategory}
+                      options={incomeCategories} addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue={detailInc.category}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">입주자 연결 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
@@ -353,10 +359,9 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <CategorySelect name="category" value={addIncCategory} onChange={setAddIncCategory}
+                    options={incomeCategories} addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue=""
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">입주자 연결 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>

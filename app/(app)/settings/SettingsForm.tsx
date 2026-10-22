@@ -103,6 +103,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
 import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, reservedOptionNameError, type OptionListField } from '@/lib/optionLists'
+import CategorySelect from '@/components/ui/CategorySelect'
 
 type Property = {
   id: string
@@ -1106,6 +1107,8 @@ export default function SettingsForm({
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
   const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
+  // 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(기본 켜짐, 2026-10-22 2차). 폼을 열 때마다 켜짐으로 돌린다.
+  const [recCategoryToList, setRecCategoryToList] = useState(true)
   const [recPending, startRecTransition] = useTransition()
   // 행별 처리 중 잠금(전역 잠금 방지). 선례 RequestsClient:86 · admin UsersClient:100.
   // 토글·삭제는 서버 왕복 + router.refresh 라 눈에 보이는 딜레이가 있는데 표시가 없어
@@ -1172,10 +1175,12 @@ export default function SettingsForm({
     setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
     setRecItems([])
     setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`)
+    setRecCategoryToList(true)
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
+    setRecCategoryToList(true)
     setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
     setRecItems(r.items.map(it => ({ name: it.name, amount: String(it.amount), isVariable: it.isVariable })))
     setRecDueDayDisp(fmtRecDueDay(r.dueDay.toString()))
@@ -1206,6 +1211,7 @@ export default function SettingsForm({
       activeSince: recForm.activeSince || undefined,
       memo: recForm.memo || undefined,
       ...(itemsPayload !== undefined ? { items: itemsPayload } : {}),
+      addCategoryToList: recCategoryToList,
     }
     if (!data.title || !data.amount) return
     startRecTransition(async () => {
@@ -2261,11 +2267,12 @@ export default function SettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
-                  <select value={recForm.category} onChange={e => setRecForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                    {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
+                  {/* 재무 고정 지출 관리와 같은 칸이다(2026-10-22 2차). 목록 밖 카테고리로 등록된 고정 지출은 그 글자 그대로 열리고,
+                      새 이름을 적으면 '이 카테고리를 목록에 추가'(기본 켜짐)가 선다. 목록 관리 안내는 그 칸 아래 힌트가 말한다. */}
+                  <CategorySelect key={editingRec?.id ?? 'new'} value={recForm.category} onChange={v => setRecForm(p => ({ ...p, category: v }))}
+                    options={expenseCategs} addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue={editingRec?.category ?? ''}
+                    addToList={recCategoryToList} onAddToListChange={setRecCategoryToList}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>

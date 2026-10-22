@@ -34,6 +34,7 @@ import { useNavRouter } from '@/lib/useNavRouter'
 import { ocrFallbackAllowed } from '@/lib/ocrImage'
 import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
 import { TRACKED_CATEGORIES } from '@/app/(app)/inventory/constants'
+import CategorySelect from '@/components/ui/CategorySelect'
 
 // 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
 // 지출 카테고리 폴백은 분류 목록 기본값 정본(lib/optionLists)이다. 손으로 적은 사본은 정본과 갈린다.
@@ -215,6 +216,9 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
     }
     return row.inferredCategory ?? ''
   })
+  // 지출로 등록할 때 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(기본 켜짐, 2026-10-22 2차). 재고 보충에는 안 쓴다.
+  // 인식이 뽑은 카테고리 그대로면 체크 칸이 안 서고 서버도 안 더한다(잘못 뽑힌 말이 목록에 올라앉지 않게, savedValue·서버 prev).
+  const [categoryToList, setCategoryToList] = useState(true)
   const [vendor, setVendor] = useState(row.inferredVendor ?? '')
   // 쇼핑몰(주문을 받은 플랫폼, 2026-10-19). 비우면 미기록이다. 인식 결과로 채우지 않는다(영수증 인식 프롬프트는 운영자 실물 확인 뒤).
   const [channel, setChannel] = useState('')
@@ -294,6 +298,7 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
         vendorBizNo: row.inferredVendorBizNo && (!vendor.trim() || vendor.trim() === (row.inferredVendor ?? '').trim()) ? row.inferredVendorBizNo : undefined,
         channel: channel.trim() || undefined,
         memo: memo || undefined,
+        ...(isInventory ? {} : { addCategoryToList: categoryToList }),
         ...(isInventory ? {
           itemLabel: itemLabel.trim(),
           specValue: specValue || undefined,
@@ -464,11 +469,21 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
             <ExpenseTargetMonthField date={date} viewMonth={kstMonthStr()} onPick={setTargetMonth} dense />
             <div>
               <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
-              <select value={category} onChange={e => setCategory(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
-                <option value="">선택</option>
-                {(isInventory ? INVENTORY_CATEGORIES : EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              {/* 지출로 등록할 때는 지출 등록 폼과 같은 칸이다(목록 끝 '기타(직접 입력)' + '이 카테고리를 목록에 추가' 기본 켜짐,
+                  2026-10-22 2차). 재고 보충은 추적 카테고리 셋 중에서만 고른다(그 밖의 이름은 재고에 안 잡힌다). */}
+              {isInventory ? (
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
+                  <option value="">선택</option>
+                  {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <CategorySelect value={category} onChange={setCategory} options={EXPENSE_CATEGORIES} emptyLabel="선택"
+                  placeholder="카테고리를 직접 입력하세요" closeIconSize={12}
+                  addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue={row.inferredCategory ?? ''} dense="xxs"
+                  addToList={categoryToList} onAddToListChange={setCategoryToList}
+                  className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+              )}
               {isInventory && (
                 <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
                   ※ 재고 추적은 부식비/소모품비/폐기물 처리비만

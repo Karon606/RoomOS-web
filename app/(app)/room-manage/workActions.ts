@@ -23,6 +23,7 @@ import { splitWorkCost, isLaborItem } from '@/lib/roomWorkCost'
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
 import { type CleaningPerformer, WORK_EXPENSE_CATEGORY } from './cleaningConstants'
 import { matchesWork } from '@/lib/roomWorkMatch'
+import { autoOptionForSave } from '@/lib/reasonListSave'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
@@ -156,11 +157,18 @@ export async function createRoomWork(input: {
    */
   performerName?: string | null
   memo?: string | null
+  /**
+   * 목록에 없는 종류를 적었을 때 영업장 작업 종류 목록에 더할지(2026-10-22 2차, 기본 켜짐). 끄면 이 기록만 그 이름으로 남는다.
+   */
+  addKindToList?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
-    const kind = input.kind.trim()
+    // 종류는 맨 글자다. 목록 이름과 대소문자·공백만 다르면 목록 표기로 맞춘다(lib/reasonListSave autoOptionForSave).
+    // 지출 품목 글자 맞춤(lib/roomWorkMatch matchesWork)이 이 글자를 지출 품목명에서 찾으므로 '기타 · ' 꼴로 바꾸지 않는다.
+    const kindSave = await autoOptionForSave(propertyId, 'workKindOptions', input.kind, { addToList: input.addKindToList })
+    const kind = kindSave.value
     if (!kind) return { ok: false, error: '작업 종류를 골라 주세요.' }
     const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true } })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
@@ -177,6 +185,7 @@ export async function createRoomWork(input: {
       },
       select: { id: true },
     })
+    await kindSave.commit()
     revalidatePath('/room-manage')
     return { ok: true, id: row.id }
   } catch (err) {

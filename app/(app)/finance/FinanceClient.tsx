@@ -2257,6 +2257,8 @@ export default function FinanceClient({
   const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
+  // 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(기본 켜짐, 2026-10-22 2차). 폼을 열 때마다 켜짐으로 돌린다.
+  const [recMgmtCategoryToList, setRecMgmtCategoryToList] = useState(true)
   // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
   // (실기 신고 2026-08-19 "딜레이가 생겨서 작동 안 하는 줄 알았어"). 선례 RequestsClient:86.
   const [recMgmtBusyId, setRecMgmtBusyId] = useState<string | null>(null)
@@ -2280,6 +2282,7 @@ export default function FinanceClient({
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
     setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
+    setRecMgmtCategoryToList(true)
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -2294,6 +2297,7 @@ export default function FinanceClient({
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
     setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
+    setRecMgmtCategoryToList(true)
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -2331,6 +2335,7 @@ export default function FinanceClient({
       // 한 번 적은 값을 지울 방법이 사라진다(적용에는 적용취소가 늘 붙어야 한다).
       priorYearAmount: recMgmtForm.priorYearAmount ? Number(recMgmtForm.priorYearAmount.replace(/[^0-9]/g, '')) || null : null,
       memo: recMgmtForm.memo || undefined,
+      addCategoryToList: recMgmtCategoryToList,
     }
     startRecMgmtTransition(async () => {
       let res: { ok: boolean; error?: string }
@@ -5697,10 +5702,12 @@ export default function FinanceClient({
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
-                  <select value={recMgmtForm.category} onChange={e => setRecMgmtForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                    {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  {/* 지출 등록·수정과 같은 칸이다(2026-10-22 2차). 목록에 없는 카테고리로 등록된 고정 지출은 그 글자 그대로 열린다
+                      (종전 맨 select 는 첫 항목을 보여 줘 다른 칸만 고쳐도 카테고리가 바뀌었다). */}
+                  <CategorySelect key={editingRecMgmt?.id ?? 'new'} value={recMgmtForm.category} onChange={v => setRecMgmtForm(p => ({ ...p, category: v }))}
+                    options={expenseCategories} addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue={editingRecMgmt?.category ?? ''}
+                    addToList={recMgmtCategoryToList} onAddToListChange={setRecMgmtCategoryToList}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
@@ -5960,6 +5967,8 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
   const [date, setDate]         = useState('')
   const [tMonth, setTMonth]     = useState('')      // 귀속월 'YYYY-MM' — 빈 값은 미변경
   const [category, setCategory] = useState('')
+  // 목록 밖 새 카테고리를 적으면 지출 카테고리 목록에 더한다(지출 등록·수정과 같은 체크, 기본 켜짐, 2026-10-22 2차).
+  const [categoryToList, setCategoryToList] = useState(true)
   const [payMethod, setPayMethod] = useState('')
   const [accId, setAccId]       = useState('')
   const [accNm, setAccNm]       = useState('')
@@ -6051,7 +6060,7 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
     }
 
     setPending(true); setError('')
-    const res = await batchUpdateExpenses(selectedIds, data, withSiblings ? { channelToOrders: true } : undefined)
+    const res = await batchUpdateExpenses(selectedIds, data, { ...(withSiblings ? { channelToOrders: true } : {}), addCategoryToList: categoryToList })
     if (!res.ok) { setPending(false); setError(res.error); return }
     const sibUpdated = res.siblings
     const u = res.undo   // 서명된 토큰 그대로(허용 칸·쓴 직후 검사는 서버, lib/batchExpenseUndo). 없으면 적용취소를 숨긴다.
@@ -6100,10 +6109,10 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
-          <select value={category} onChange={e => setCategory(e.target.value)} className={inputCls}>
-            <option value="">미변경</option>
-            {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <CategorySelect value={category} onChange={setCategory} options={expenseCategories} emptyLabel="미변경"
+            addMode="auto" addLabel="이 카테고리를 목록에 추가" savedValue=""
+            addToList={categoryToList} onAddToListChange={setCategoryToList}
+            className={inputCls} />
         </div>
 
         <div className="space-y-1.5">

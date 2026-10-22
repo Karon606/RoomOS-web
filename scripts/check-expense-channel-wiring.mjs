@@ -291,7 +291,8 @@ must(FA, fa, 'batchUpdateExpenses', [
   const fc = read(FC)
   if (/altLabel: '이 건만 바꾸기'/.test(fc)) violations.push(`${FC} 수정 폼. '이 건만 바꾸기' 갈래가 남았다(결정 B, 주문 전체에 적용 / 취소만)`)
   if (/altLabel: '고른 것만'/.test(fc)) violations.push(`${FC} 일괄 편집. '고른 것만' 갈래가 남았다(결정 B)`)
-  if (!/batchUpdateExpenses\(selectedIds, data, withSiblings \? \{ channelToOrders: true \} : undefined\)/.test(fc)) violations.push(`${FC} 일괄 편집. '함께 적용' 을 서버 한 번(channelToOrders)으로 보내지 않는다`)
+  // 2026-10-22 2차: 같은 옵션 덩이에 카테고리 '목록에 추가' 체크(addCategoryToList)가 함께 실린다.
+  if (!/batchUpdateExpenses\(selectedIds, data, \{ \.\.\.\(withSiblings \? \{ channelToOrders: true \} : \{\}\), addCategoryToList: categoryToList \}\)/.test(fc)) violations.push(`${FC} 일괄 편집. '함께 적용' 을 서버 한 번(channelToOrders)으로 보내지 않는다`)
   if ((fc.match(/ORDER_CHANNEL_SPLIT_TAIL/g) ?? []).length < 3) violations.push(`${FC}. 주문 갈림 물음에 '먼저 주문에서 빼라' 안내가 없다(결정 B)`)
   for (const [state, v] of [['addExpChannel', 'addExpVendor'], ['editExpChannel', 'editExpVendor'], ['channel', 'vendor']]) {
     if (!new RegExp(`channelSameAsVendor\\(${state}, ${v}\\) &&`).test(fc)) violations.push(`${FC}. 쇼핑몰 칸(${state})이 구매처와 같을 때 비워 두라는 안내가 없다(결정 A)`)

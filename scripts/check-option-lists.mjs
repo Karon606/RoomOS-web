@@ -228,6 +228,11 @@ const HINT_FIELD = {
   'app/(app)/finance/FinanceClient.tsx': 'expenseCategories',
   'components/ui/JobSelect.tsx': 'jobOptions',
   'components/entity-modal/widgets/DiscountWidget.tsx': 'discountReasons',
+  // 2차(2026-10-22). 작업 종류·부가수익 카테고리·지출 카테고리 남은 자리(고정 지출 둘·일괄 수정·홈 승인).
+  'components/work/RoomWorkPlanForm.tsx': 'workKindOptions',
+  'app/(app)/rooms/IncomeSection.tsx': 'incomeCategories',
+  'app/(app)/settings/SettingsForm.tsx': 'expenseCategories',
+  'components/dashboard/PendingReceiptSection.tsx': 'expenseCategories',
 }
 const cardFields = new Set([...form.matchAll(/<OptionSection[\s\S]*?\n\s*field="(\w+)"/g)].map(m => m[1]))
 for (const p of [...walk('app', [], /\.tsx$/), ...walk('components', [], /\.tsx$/)]) {
@@ -754,6 +759,33 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/tenants/TenantClient.tsx', /setDueDayOverride\(leaseId, targetMonth, val, reason, \{ addToList \}\)/, '입주자 상세 납부일 임시 조정이 체크를 안 넘긴다'],
   ]
   for (const [p, re, what] of WIRING2) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
+  // 저절로 쌓는 목록의 새 자리(작업 종류·부가수익·지출 카테고리 넷). 값은 맨 글자(autoOptionForSave)이고, 끄면 안 더하고,
+  // 고치는 기록의 지금 값과 같으면 안 더한다(목록에서 뺀 카테고리가 저장마다 되살아나지 않는다). 더하기는 기록이 선 뒤(commit)다.
+  {
+    const rs2 = stripComments(readFileSync('lib/reasonListSave.ts', 'utf8'))
+    const auto = bodyOf(rs2, /export async function autoOptionForSave\(/) ?? ''
+    if (!/resolveCategoryForSave\(parseOptionList\(field, p\?\.\[field\]\), raw\)/.test(auto) || !/opts\.addToList !== false && nextList && value && value !== \(opts\.prev \?\? null\)/.test(auto)) {
+      violations.push(`lib/reasonListSave.ts · autoOptionForSave 가 목록 표기 맞춤·체크 끔·지금 값 비교 중 하나를 잃었다. 뺀 카테고리가 되살아나거나 끈 체크에도 목록에 쌓인다.`)
+    }
+    const AUTO_WIRING = [
+      ['app/(app)/room-manage/workActions.ts', /autoOptionForSave\(propertyId, 'workKindOptions', input\.kind, \{ addToList: input\.addKindToList \}\)[\s\S]*?prisma\.roomWork\.create[\s\S]*?await kindSave\.commit\(\)/, '작업 예정 등록이 종류를 맨 글자 규약으로 재고 기록 뒤에 목록에 더하지 않는다'],
+      ['components/work/RoomWorkPlanForm.tsx', /addKindToList: kindToList/, '작업 예정 폼이 체크를 넘기지 않는다'],
+      ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'incomeCategories', formData\.get\('category'\) as string, \{ addToList: formData\.get\('categoryAddToList'\) === '1' \}\)/, '부가수익 등록이 체크 칸이 실린 저장만 목록에 더하지 않는다(수납 과납분처럼 칸 없는 저장까지 쌓인다)'],
+      ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'incomeCategories', formData\.get\('category'\) as string, \{ addToList: formData\.get\('categoryAddToList'\) === '1', prev: prevCategory \}\)/, '부가수익 수정이 지금 카테고리(prev)와 견주지 않는다'],
+      ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'expenseCategories', data\.category, \{ addToList: opts\?\.addCategoryToList \}\)/, '지출 일괄 수정이 카테고리를 맨 글자 규약으로 재지 않는다'],
+      ['app/(app)/settings/actions.ts', /autoOptionForSave\(propertyId, 'expenseCategories', rawCategory, \{ addToList: addCategoryToList, prev \}\)/, '고정 지출 수정이 지금 카테고리(prev)와 견주지 않는다'],
+      ['app/(app)/dashboard/pendingReceipt.ts', /autoOptionForSave\(propertyId, 'expenseCategories', final\.category, \{ addToList: final\.addCategoryToList, prev: row\.inferredCategory \}\)/, '홈 승인이 인식이 뽑은 카테고리 그대로를 목록에 더한다(prev 없음)'],
+      ['components/dashboard/PendingReceiptSection.tsx', /savedValue=\{row\.inferredCategory \?\? ''\}/, '홈 승인 칸이 인식한 카테고리 그대로에도 체크를 세운다'],
+    ]
+    for (const [p, re, what] of AUTO_WIRING) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
+    // 맨 select 로 카테고리를 고르는 자리가 남지 않는다(목록 밖 값이 첫 항목으로 바뀌는 잠복 버그, 부가수익 수정 폼). 필터 칸은 '전체' 가 있어 예외다.
+    for (const [p, re] of [
+      ['app/(app)/rooms/IncomeSection.tsx', /<select name="category"/],
+      ['app/(app)/finance/FinanceClient.tsx', /<select value=\{(recMgmtForm\.category|category)\} onChange/],
+      ['app/(app)/settings/SettingsForm.tsx', /<select value=\{recForm\.category\}/],
+      ['components/work/RoomWorkPlanForm.tsx', /<select id=\{`\$\{uid\}-kind`\}/],
+    ]) if (re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · 카테고리·종류를 맨 select 로 고른다. 목록 밖 값이 첫 항목으로 보이고 저장하면 바뀐다. CategorySelect addMode="auto" 를 쓴다.`)
+  }
   for (const [p, re] of [['app/(app)/tenants/TenantClient.tsx', /overrideReason\.trim\(\)/], ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /reason\.trim\(\)/]]) {
     if (re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · 납부일 임시 조정 사유 저장 글자를 화면이 다듬는다. 글 없는 '기타 · ' 가 '기타 · 기타 ·' 로 남는다.`)
   }

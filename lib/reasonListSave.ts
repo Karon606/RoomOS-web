@@ -9,6 +9,7 @@ import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
 import { parseOptionList, type OptionListField, type ReasonListField } from '@/lib/optionLists'
 import { planReasonSave } from '@/lib/reasonLists'
+import { resolveCategoryForSave } from '@/lib/categoryInput'
 
 export type ReasonSave = { reason: string | null; commit: () => Promise<void> }
 
@@ -36,6 +37,35 @@ export async function reasonForSave(
       const add = plan.add
       if (!add) return
       if (await appendOptionName(propertyId, field, add)) revalidatePath('/settings')
+    },
+  }
+}
+
+/** 저절로 쌓는 목록 중 이 헬퍼가 받는 칸(2026-10-22 2차, 작업 종류·부가수익 카테고리·지출 카테고리의 새 자리). */
+export type AutoListField = 'workKindOptions' | 'incomeCategories' | 'expenseCategories'
+export type OptionSave = { value: string | null; commit: () => Promise<void> }
+
+/**
+ * 저절로 쌓는 목록(카테고리·종류, CategorySelect addMode 'auto')의 저장 값과 목록 적립.
+ *
+ * 값은 적은 글자 그대로다. 목록 이름과 대소문자·공백만 다르면 목록 표기로 맞추고(lib/categoryInput resolveCategoryForSave),
+ * '기타 · ' 꼴로 바꾸지 않는다(이름 자체가 값인 목록이라 목록 밖 글자도 맨 글자로 둔다, 1차 결정 2). 목록 밖 새 이름이고
+ * '목록에 추가' 가 꺼져 있지 않고(기본 켜짐, 체크 칸이 없는 종전 호출도 켜짐) 고치는 기록의 지금 값(prev)과 다르면
+ * 기록이 선 뒤(commit) 목록 끝에 붙인다. 지금 값과 같으면 안 붙인다(목록에서 뺀 카테고리가 그 기록 저장마다 되살아나지 않는다).
+ */
+export async function autoOptionForSave(
+  propertyId: string,
+  field: AutoListField,
+  raw: string | null | undefined,
+  opts: { addToList?: boolean; prev?: string | null } = {},
+): Promise<OptionSave> {
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { workKindOptions: true, incomeCategories: true, expenseCategories: true } })
+  const { value, nextList } = resolveCategoryForSave(parseOptionList(field, p?.[field]), raw)
+  const add = opts.addToList !== false && nextList && value && value !== (opts.prev ?? null) ? value : null
+  return {
+    value,
+    commit: async () => {
+      if (add && await appendOptionName(propertyId, field, add)) revalidatePath('/settings')
     },
   }
 }

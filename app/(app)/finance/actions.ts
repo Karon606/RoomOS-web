@@ -53,6 +53,7 @@ import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, 
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
+import { autoOptionForSave } from '@/lib/reasonListSave'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
@@ -1680,7 +1681,8 @@ export async function batchUpdateExpenses(
   },
   // 쇼핑몰을 바꿀 때 고른 행이 든 주문의 나머지 행도 같은 쇼핑몰로 맞춘다(화면의 '함께 적용', 결정 B). 그 행들은 쇼핑몰만 바뀌고
   // 적용취소 스냅샷에 함께 실린다. 끄면 갈림을 만드는 쓰기는 거절된다.
-  opts?: { channelToOrders?: boolean },
+  // addCategoryToList: 목록 밖 새 카테고리를 영업장 지출 카테고리 목록에 더할지(2026-10-22 2차, 화면 체크 기본 켜짐).
+  opts?: { channelToOrders?: boolean; addCategoryToList?: boolean },
 ): Promise<{ ok: true; updated: number; siblings: number; skipped: { reason: string; count: number }[]; undo?: BatchExpensesUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1786,7 +1788,9 @@ export async function batchUpdateExpenses(
     // 결제수단 외 공통 필드 — 적격 행 전체에 동일 적용
     const commonData: Record<string, unknown> = {}
     if (changingDate) commonData.date = new Date(data.date as string)
-    if (changingCategory) commonData.category = data.category
+    // 카테고리는 지출 등록·수정과 같은 맨 글자 규약이다(목록 표기 맞춤, 새 이름은 쓴 뒤에 목록에 더한다, 2026-10-22 2차).
+    const categorySave = changingCategory ? await autoOptionForSave(propertyId, 'expenseCategories', data.category, { addToList: opts?.addCategoryToList }) : null
+    if (categorySave) commonData.category = categorySave.value
     if (changingDetail) commonData.detail = data.detail || null
     if (changingMemo) commonData.memo = data.memo || null
     // 구매처·사업자번호 — 선택된 지출만 갱신(backfill 미호출: 같은 구매처의 다른 지출까지 덮으면 안 됨).
@@ -1858,6 +1862,7 @@ export async function batchUpdateExpenses(
       })))
       // 실제로 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
       if (changingChannel) await noteChannel(propertyId, [...byChannel.keys()].some(Boolean) ? channelValue : null)
+      await categorySave?.commit()
     }
 
     revalidatePath('/finance')
@@ -2706,7 +2711,10 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true; id
     const propertyId = await getPropertyId()
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
-    const category  = formData.get('category') as string
+    // 카테고리는 맨 글자다. 목록 밖 새 이름은 '이 카테고리를 목록에 추가'(기본 켜짐)일 때 기록 뒤에 목록에 더한다(2026-10-22 2차).
+    // 체크 칸이 실린 저장('1')만 더한다. 칸은 새 이름을 적었을 때만 서고, 수납 과납분처럼 코드가 부르는 저장(칸 없음)은 종전대로 안 더한다.
+    const categorySave = await autoOptionForSave(propertyId, 'incomeCategories', formData.get('category') as string, { addToList: formData.get('categoryAddToList') === '1' })
+    const category  = categorySave.value
     const detail    = formData.get('detail') as string
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
@@ -2733,6 +2741,7 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true; id
         tenantId, leaseTermId,
       },
     })
+    await categorySave.commit()
     revalidatePath('/finance'); revalidatePath('/rooms')
     return { ok: true, id: created.id }
   } catch (err) {
@@ -2748,7 +2757,10 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     const id        = formData.get('id') as string
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
-    const category  = formData.get('category') as string
+    // 지금 카테고리 그대로면 목록에 안 더한다(목록에서 뺀 카테고리가 이 기록 저장마다 되살아나지 않는다, 2026-10-22 2차).
+    const prevCategory = (await prisma.extraIncome.findFirst({ where: { id, propertyId }, select: { category: true } }))?.category ?? null
+    const categorySave = await autoOptionForSave(propertyId, 'incomeCategories', formData.get('category') as string, { addToList: formData.get('categoryAddToList') === '1', prev: prevCategory })
+    const category  = categorySave.value
     const detail    = formData.get('detail') as string
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
@@ -2784,6 +2796,7 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
         ...(link ?? {}),
       },
     })
+    await categorySave.commit()
     revalidatePath('/finance'); revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
