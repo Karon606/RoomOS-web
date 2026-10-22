@@ -16,10 +16,26 @@
 ## 사유 고르는 자리(전부 `addMode="ask"`)
 입실 취소·퇴실: 상태 전환 미니폼(TenantStatusTransitions)·입주자 수정 폼 상태 칸(TenantClient, FormData `cancelReason`·`cancelReasonAddToList`)·상태 이력 사유 수정(TenantStatusHistory). 미반환: 미니폼·입주자 환불창(TenantClient)·홈 퇴실 정산(DashboardClient)·보증금 패널 기록 폼(DepositStatusPanel, 힌트 `hintTone="mid"`, --cream-soft 위 --warm-muted 는 다크 4.46:1). 새 자리는 `scripts/check-option-lists` ⓛ ASK_SITES 에 적는다.
 
+## 2차 목록 여섯과 저절로 쌓는 목록의 남은 자리(2026-10-22, 2차 패널 '추천대로')
+원칙은 하나다. **ask** = 뜻을 모아 세는 사유·출처·경로('기타 · 글' 저장, '목록에 추가' 체크 기본 꺼짐). **auto** = 이름 자체가 값인 카테고리·종류(맨 글자 저장, 체크 기본 켜짐).
+- **칸 여섯**(`Property.dueDayReasons`·`cleaningReasons`·`stockDisposalReasons`·`stockSourceOptions`·`assetDisposalReasons`·`visitRouteOptions`, null = 기본값, 백필 없음, 운영 적용은 `prisma/migrate_reason_lists_2.sql` 먼저). 전부 `REASON_LIST_FIELDS`(ask). 기본값: 납부일 임시 조정 사유·청소 사유는 빈 목록, 소모품 폐기 '상함·부패, 유통기한 경과, 파손', 무상 입수 '무상, 기증, 이월', 비품 폐기 '시공 중 철거, 파손, 분실, 노후·고장으로 교체', 방문 경로 '인터넷 검색, 지도 앱, 지인 소개, 간판, 직접 방문'. 종전 소모품 폐기 저장 글자 '유통기한' 은 이제 '유통기한 경과' 로 선다(운영 폐기 0건).
+- **저장 검증은 칸 이름으로 한 벌**: `reasonForSave(propertyId, field, raw, { addToList, prev })`(`REASON_LIST_SELECT`), 목록 추가는 `appendOptionName`(행 잠금). 시스템 라벨 금지는 사유 셋(1차)에서만 본다.
+- **이름 변경이 따라가는 기록**: 납부일 임시 조정 `LeaseTerm.overrideDueDayReason`·방문 경로 `LeaseTerm.visitRoute`·청소 `RoomCleaning.reason`·비품 `Expense.disposalReason`, 재고 둘(`StockDisposal.reason`·`StockAddition.source`)은 propertyId 가 없어 `via: 'trackedItem'`(추적 품목으로 영업장). 메모 칸은 사유 규약 밖이다(메모 그대로).
+- **청소 사유**: 코드 셋 `CLEANING_REASON_CODES`(CHECKOUT 퇴실 청소·AFTER_WORK 공사·도배 후·DURING_STAY 입실 중 요청)은 고르는 칸 맨 앞 고정(`FIXED_OPTION_VALUES`), 그 뒤 영업장 목록, 맨 끝 '기타(직접 입력)'. 저장은 코드 또는 글자, 옛 'OTHER' 는 이행 없이 '기타' 로 보인다(`LEGACY_FIXED_VALUES` 로 서버가 받기만 한다). 화면 글자는 `cleaningReasonLabel` 한 벌(목록 행·사유 변경 칸·캘린더 '…청소'·토스트 '사유를 바꿨습니다 · A → B'). 목록에 못 넣는 이름: 영문 대문자 코드 꼴, 고정 라벨 셋. 직접 입력 글은 코드와 견주지 않는다('기타 · CHECKOUT' 은 퇴실 청소가 아니다). 받은 청소비 부담·자동 퇴실 청소의 'CHECKOUT' 판정 줄은 한 글자도 안 바뀌었다(통합 하네스: 부담은 CHECKOUT 에만). 사유 칩(코랄 채움, §03 위반)은 select 로 바꿨다. `createCleaning` 에 서버 검증이 생겼다(종전에는 화면 글자를 그대로 적었다).
+- **납부일 임시 조정**: 고르는 자리 둘(수납 정보 위젯·입주자 상세). `setDueDayOverride`·`clearDueDayOverride` 는 계약을 영업장 범위로 먼저 읽는다(운영자 승인 별건 권한, `check-action-property-scope`). 저장 글자를 돌려준다. 위젯 힌트는 `hintTone="mid"`(바탕 --warning-bg 에서 --warm-muted 다크 3.84:1).
+- **재고·비품**: 소모품 폐기·무상 입수(등록과 수정이 같은 칸, 수정은 prev 로 옛 자유 입력 '522호 이경호님' 을 그대로 둔다)·비품 폐기·교체(같은 목록, 교체 칸은 `CategorySelect groupLabel` 로 묶음). 비품 폐기 적용취소는 스냅샷의 `disposalReason` 까지 돌린다(전량 폐기 + 그사이 이름 변경 뒤 적용취소 바이트 동일, 통합 하네스). CAS 는 사유를 안 본다(폐기 전 사유로 돌리는 것이라 이름 변경과 다투지 않는다).
+- **방문 경로**: 입주자 등록·계약 추가·수정 모두 `visitRouteForSave`(tenants/actions). 옛 자유 입력 경로는 그 글자 그대로 한 줄 선다.
+- **auto 새 자리**: 작업 종류(`createRoomWork`, 맨 글자, 지출 품목 글자 맞춤 lib/roomWorkMatch 와 같은 글자)·부가수익 카테고리 등록·수정(체크 칸이 실린 저장 '1' 만 더한다. 수납 과납분처럼 칸 없는 저장은 종전대로 안 쌓는다. 수정 폼은 목록 밖 값('청소비' 가 목록에 없는 영업장)을 첫 항목으로 바꾸던 잠복 버그가 봉합됐다)·지출 카테고리 남은 넷(고정 지출 두 폼·일괄 수정·홈 승인. 홈 승인은 인식이 뽑은 카테고리 그대로면 체크 칸이 안 서고 서버도 안 더한다). 헬퍼는 `autoOptionForSave`(지금 값과 같으면 안 더함). 부가수익 기본값에서 '기타' 를 뺐다(목록을 저장한 운영 영업장은 그대로).
+- **분류 관리 묶음 머리 다섯**(호실 · 입주자 · 돈 · 청소·작업 · 재고·비품, 카드 스물셋, 가이드 §22). 기본값 없는 두 카드(납부일 임시 조정 사유·청소 사유)는 쇼핑몰처럼 초기화가 없다.
+- 체크박스 문구: 사유 '이 사유를 목록에 추가'·출처 '이 출처를 목록에 추가'·경로 '이 경로를 목록에 추가'·종류 '이 종류를 목록에 추가'·카테고리 '이 카테고리를 목록에 추가'.
+- 운영 DB 읽기(2026-10-22): 임시 조정 사유 18건 열 갈래('급여'·'급여지연' 따위)는 목록이 비어 전부 옛 글자 한 줄로 서고 그대로 저장된다. 청소 CHECKOUT 24·AFTER_WORK 5·DURING_STAY 1·OTHER 1('기타' 로 보임). 무상 입수 '무상' 11·'기증' 1·'522호 이경호님' 1. 방문 경로 17건 중 '직접 방문' 1건만 목록 이름이고 나머지는 옛 글자 그대로.
+
 ## 알려진 공백
-- 분류 관리 카드(OptionSection)는 320·360px × 글자 125% 에서 행 단추(수정·삭제)와 등록 단추가 카드 밖으로 넘친다. 기존 카드(할인 사유)도 같다(2026-10-22 하네스 실측). 카드 전부의 공용 문제라 이번 범위 밖.
-- 상태 전환·입주자 수정 경로의 통합 하네스는 관문 대역 사용자 id 가 uuid 가 아니라 이력 행을 못 만든다. 그 두 경로는 배선 그물(ⓛ)이 본다.
-- 2차 목록(결정 5)은 이번 범위 밖.
+- 상태 전환·입주자 수정 경로의 통합 하네스는 사유 전용 관문 대역(uuid 사용자)으로 돈다(2차에서 입주자 수정의 방문 경로까지 돈다).
+- 입주자 폼 '입실 문의 시각' 시각 칸(w-28)이 320·360px x 글자 125% 에서 줄 밖으로 넘친다(2차 하네스가 찾은 종전 문제, 이번 범위 밖).
+- 납부일 임시 조정 위젯의 칸 라벨('조정 납부일'·'사유 (선택)')은 --warm-muted 라 다크 바탕 대비 3.84:1 이다(종전 문제, 힌트만 올렸다).
+- `updateExtraIncome`·`updateRecurringExpense` 는 쓰기를 id 만으로 한다(권한-영업장범위 감사 클래스). 2차는 지금 값을 영업장 범위로 읽기만 더했다.
+- auto 칸은 목록 밖 저장 값으로 열면 직접 입력 칸에 커서가 간다(CategorySelect 종전 동작).
 
 ## 그물
-`scripts/test-reason-lists.ts`(진리표) · `scripts/test-reason-lists-flow.ts`(PGlite 통합) · `scripts/check-option-lists.mjs` ⓕ·ⓛ · `scripts/test-checkout-reason.ts` · `scripts/test-discount-reasons.ts`(목록 17·보호 이름). 운영 적용은 `prisma/migrate_reason_lists.sql` 먼저.
+`scripts/test-reason-lists.ts`(진리표, 2차 저장 규약·청소 코드/글자 해석·코드 꼴 금지) · `scripts/test-reason-lists-flow.ts`(PGlite 통합, 2차 장면 8~13) · `scripts/check-option-lists.mjs` ⓕ·ⓛ·ⓝ · `scripts/check-action-property-scope.mjs`(납부일 임시 조정 둘) · `scripts/test-checkout-reason.ts` · `scripts/test-discount-reasons.ts`(목록 23·보호 이름). 운영 적용은 `prisma/migrate_reason_lists.sql`, `prisma/migrate_reason_lists_2.sql` 먼저.

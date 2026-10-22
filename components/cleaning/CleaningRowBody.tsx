@@ -86,7 +86,7 @@ export function CleaningRowBody({
 }) {
   const [doneOpen, setDoneOpen] = useState(false)
   const [reschedOpen, setReschedOpen] = useState(false)
-  // 사유 변경 — 날짜 변경과 같은 자리·같은 문법의 인라인 폼. 고를 것이 여럿이라 확인창(두 갈래)이 안 맞는다.
+  // 사유 변경. 날짜 변경과 같은 자리·같은 문법의 인라인 폼. 고를 것이 여럿이라 확인창(두 갈래)이 안 맞는다.
   // 고르는 칸은 예정 등록 폼과 같은 칸이다(코드 셋 맨 앞 + 영업장 목록 + '기타(직접 입력)', 2026-10-22 2차). 목록은 폼이 열렸을 때만 읽는다.
   const [reasonOpen, setReasonOpen] = useState(false)
   const [reasonVal, setReasonVal] = useState<CleaningReason>('CHECKOUT')

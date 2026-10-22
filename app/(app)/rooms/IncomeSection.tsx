@@ -68,7 +68,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [editIncMethod, setEditIncMethod] = useState('계좌이체')
   const [editIncDate, setEditIncDate]     = useState('')
-  // 카테고리 — 목록 끝 '기타(직접 입력)' 과 '이 카테고리를 목록에 추가'(기본 켜짐)의 정본 칸(2026-10-22 2차, CategorySelect addMode 'auto').
+  // 카테고리. 목록 끝 '기타(직접 입력)' 과 '이 카테고리를 목록에 추가'(기본 켜짐)의 정본 칸(2026-10-22 2차, CategorySelect addMode 'auto').
   // 수정 폼은 기록의 카테고리 그대로 연다. 종전 맨 select 는 목록에 없는 값(청소비가 목록에 없는 영업장의 청소비 수익 등)을
   // 첫 항목으로 보여 줘, 다른 칸만 고쳐 저장해도 카테고리가 조용히 첫 항목으로 바뀌었다(청소비 환불 한도 셈에서 빠진다).
   const [addIncCategory, setAddIncCategory]   = useState(incomeCategories[0] ?? '')

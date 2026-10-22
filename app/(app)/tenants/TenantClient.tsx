@@ -3806,7 +3806,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 이 저장이 상태를 바꾸고 그 전이가 사유를 받을 때만 그 목록(영업장 설정)을 읽는다.
   const statusReasonField = statusVal !== lease?.status ? reasonFieldForStatus(statusVal) : null
   const statusReasonOptions = useReasonOptions(statusReasonField)
-  // 방문 경로 — 영업장 목록에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask'). 저장 글자이고, 종전 자유 입력으로 적힌
+  // 방문 경로. 영업장 목록에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask'). 저장 글자이고, 종전 자유 입력으로 적힌
   // 경로('네이버지도' 따위)는 그 글자 그대로 한 줄 서서 손대지 않으면 그대로 저장된다(서버가 지금 값과 견준다).
   const [visitRouteVal, setVisitRouteVal] = useState(lease?.visitRoute ?? '')
   const visitRouteOptions = useReasonOptions('visitRouteOptions')

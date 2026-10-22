@@ -1181,7 +1181,7 @@ export async function updateTenant(formData: FormData): Promise<
       // 단기 청구 동기화(syncShortStayCharge) 입력 — 조건부 선점 기준값·이력 스냅샷용
       autoCheckoutAt: true, shortStayExtensions: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      // 방문 경로의 지금 값 — 그대로 저장하면 목록 밖 옛 글자도 그대로 둔다(2026-10-22 2차, visitRouteForSave prev).
+      // 방문 경로의 지금 값. 그대로 저장하면 목록 밖 옛 글자도 그대로 둔다(2026-10-22 2차, visitRouteForSave prev).
       visitRoute: true,
     },
   })
