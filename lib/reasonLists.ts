@@ -1,4 +1,4 @@
-// 사유 목록(입실 취소·퇴실·보증금 미반환)의 '기타' 저장 규약 정본. 고르는 칸·수정 화면·서버 저장 검증이 이 한 벌을 쓴다.
+// 사유 목록(입실 취소·퇴실·보증금 미반환, 2차 여섯 lib/optionLists REASON_LIST_FIELDS)의 '기타' 저장 규약 정본. 고르는 칸·수정 화면·서버 저장 검증이 이 한 벌을 쓴다.
 //
 // 규약(2026-10-22 운영자 승인).
 //   · '기타' 는 목록 항목이 아니다. 고르는 칸 맨 끝에 늘 붙는다(CategorySelect addMode).
@@ -10,7 +10,7 @@
 //
 // 종전에는 build/parse 가 lib/statusReasons(buildReason·parseReason)와 lib/depositWithholdReasons(buildWithholdReason)에
 // 두 벌 있었다. 목록이 영업장 설정으로 가면서 한 벌로 모았다.
-import { normalizeOptionName, PROTECTED_OPTION_NAMES, reservedOptionNameError, type ReasonListField } from '@/lib/optionLists'
+import { normalizeOptionName, PROTECTED_OPTION_NAMES, FIXED_OPTION_VALUES, LEGACY_FIXED_VALUES, reservedOptionNameError, type ReasonListField } from '@/lib/optionLists'
 
 export const OTHER_REASON = '기타'
 export const OTHER_REASON_PREFIX = '기타 · '
@@ -59,6 +59,8 @@ export function reasonPickOf(stored: string | null | undefined, options: readonl
  *   · addToList 면 글을 목록 이름 정규화로 다듬어 맨 글자로 남기고 목록에 더한다. 목록에 넣을 수 없는 이름
  *     ('기타'·'기타 · …'·시스템 라벨)은 더하지 않고 '기타 · 글' 로 남긴다.
  *   · 그 밖의 글은 '기타 · 글'. 화면이 맨 글자를 보내도(옛 화면·위조) 목록 밖 글자가 목록 항목인 척 남지 않는다.
+ *   · 앱 고정 값(청소 사유 코드 셋, 옛 코드 'OTHER')은 맨 값 그대로 받는다. 직접 입력 글과는 견주지 않는다
+ *     (글에 'CHECKOUT' 을 적어도 퇴실 청소가 되지 않는다, 2026-10-22 2차).
  */
 export function planReasonSave(
   field: ReasonListField,
@@ -70,9 +72,10 @@ export function planReasonSave(
   if (!v) return { reason: null, add: null }
   if (opts.prev != null && v === opts.prev.trim()) return { reason: v, add: null }
   const known = [...list, ...(PROTECTED_OPTION_NAMES[field]?.names ?? [])]
+  const fixed = [...(FIXED_OPTION_VALUES[field] ?? []), ...(LEGACY_FIXED_VALUES[field] ?? [])]
   // 앞 공백만 걷고 본다. 다 걷으면 '기타 · ' 가 '기타 ·' 가 돼 직접 입력으로 안 읽힌다.
   const other = otherReasonText((raw ?? '').trimStart())
-  if (other === null && known.includes(v)) return { reason: v, add: null }
+  if (other === null && (known.includes(v) || fixed.includes(v))) return { reason: v, add: null }
   const text = (other ?? v).trim()
   if (!text) return { reason: OTHER_REASON, add: null }
   const name = normalizeOptionName(field, text)

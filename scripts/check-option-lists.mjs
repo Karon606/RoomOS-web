@@ -41,6 +41,9 @@
 //      옛 상수(reasonsForStatus·CANCEL_REASONS·CHECKOUT_REASONS·WITHHOLD_REASONS)는 없다. '기타 · 글' 을 만드는 자리는
 //      lib/reasonLists 한 곳이다. 이어받기 판정은 시스템 라벨 집합으로 하고, 이름 변경은 상태 이력을 toStatus 로 나눈다.
 //      '기타'·'기타 · …'·시스템 라벨은 손 추가·이름 변경 입구에서 막는다.
+//   ⓜ 카드 행 넘침(아래 블록 머리말).
+//   ⓝ 2차 목록 여섯(2026-10-22): 기타 규약 칸 등록·이름 변경 범위(재고 기록은 추적 품목으로)·저장 검증이 칸 이름으로 한 벌·
+//      분류 관리 묶음 머리 다섯과 카드 자리·2차 카드 손놀림(정규화·기본값 있는 칸만 초기화). 고르는 자리 축은 각 블록에 있다.
 //
 // 실행: node scripts/check-option-lists.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -680,7 +683,76 @@ const os = bodyOf(form, /function OptionSection\(/)
   for (const [re, what] of NEED) if (!re.test(code)) violations.push(`${FORM} · OptionSection ${what} 가 빠졌다. 320·360px x 글자 125% 에서 단추가 카드 밖으로 나간다.`)
 }
 
-console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 · ⓛ 사유 목록 · ⓜ 카드 행 넘침 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
+// ⓝ 2차 목록 여섯(2026-10-22 운영자 승인 '추천대로'): 기타 규약 칸·이름 변경 범위·칸 이름으로 한 벌인 저장 검증·묶음 머리·카드 손놀림.
+{
+  const SECOND = ['dueDayReasons', 'cleaningReasons', 'stockDisposalReasons', 'stockSourceOptions', 'assetDisposalReasons', 'visitRouteOptions']
+  // 정본 기본값의 항목 수(글자 배열로 적힌 칸만). 못 읽으면 -1.
+  const OPTION_LIST_DEFAULTS_LEN = f => {
+    const m = (defaultsBlock?.[1] ?? '').match(new RegExp(`^\\s{2}${f}:\\s*(\\[[^\\n]*\\])`, 'm'))
+    return m ? [...m[1].matchAll(/'([^']+)'/g)].length : -1
+  }
+  const reasonBlock = lib.match(/export const REASON_LIST_FIELDS = \[([\s\S]*?)\] as const/)?.[1] ?? ''
+  for (const f of SECOND) {
+    if (!reasonBlock.includes(`'${f}'`)) violations.push(`${LIB} · ${f} 가 기타 규약 칸(REASON_LIST_FIELDS)에 없다. 서버가 목록 밖 글을 맨 글자로 남기고 '기타'·코드 꼴 이름이 목록에 들어간다.`)
+  }
+  // 이름 변경이 따라가는 기록. 재고 기록 둘은 propertyId 가 없어 추적 품목으로 거른다(via: 'trackedItem'). 빼면 실행 오류이거나 남의 영업장 기록까지 바뀐다.
+  const CASCADE = {
+    dueDayReasons: /dueDayReasons:\s*\[\{ model: 'leaseTerm', column: 'overrideDueDayReason' \}\]/,
+    visitRouteOptions: /visitRouteOptions:\s*\[\{ model: 'leaseTerm', column: 'visitRoute' \}\]/,
+    cleaningReasons: /cleaningReasons:\s*\[\{ model: 'roomCleaning', column: 'reason' \}\]/,
+    stockDisposalReasons: /stockDisposalReasons:\s*\[\{ model: 'stockDisposal', column: 'reason', via: 'trackedItem' \}\]/,
+    stockSourceOptions: /stockSourceOptions:\s*\[\{ model: 'stockAddition', column: 'source', via: 'trackedItem' \}\]/,
+    assetDisposalReasons: /assetDisposalReasons:\s*\[\{ model: 'expense', column: 'disposalReason' \}\]/,
+  }
+  for (const [f, re] of Object.entries(CASCADE)) {
+    if (!re.test(actions)) violations.push(`${ACTIONS} · RENAME_CASCADE.${f} 가 그 목록을 쓰는 기록 칸(영업장 범위 포함)을 그대로 쥐지 않는다.`)
+  }
+  const w = bodyOf(lib, /export function optionRenameWhere\(/)
+  if (!w || !/t\.via === 'trackedItem'\s*\?\s*\{ trackedItem: \{ propertyId \}, \[t\.column\]: value \}/.test(w)) {
+    violations.push(`${LIB} · optionRenameWhere 가 추적 품목(trackedItem)으로 영업장을 거르는 갈래를 잃었다. 재고 기록 이름 변경이 남의 영업장까지 간다.`)
+  }
+  // 저장 검증과 지금 목록은 칸 이름으로 한 벌(REASON_LIST_SELECT)이다. 세 칸만 손으로 적은 select 가 되살아나면 2차 칸이 늘 기본값으로 읽힌다.
+  const rs = stripComments(readFileSync('lib/reasonListSave.ts', 'utf8'))
+  if (!/export const REASON_LIST_SELECT = \{/.test(rs) || !/satisfies Record<ReasonListField, true>/.test(rs) || !/select: REASON_LIST_SELECT \}\)/.test(rs)) {
+    violations.push(`lib/reasonListSave.ts · reasonForSave 가 칸 이름으로 고르는 한 벌(REASON_LIST_SELECT, ReasonListField 전부)을 안 쓴다.`)
+  }
+  if (/select: \{ cancelReasons: true, checkoutReasons: true, withholdReasons: true \}/.test(rs + stripComments(actions))) {
+    violations.push(`사유 칸 셋만 손으로 고르는 select 가 되살아났다. 2차 칸을 못 읽는다. REASON_LIST_SELECT 를 쓴다.`)
+  }
+  if (!/select: REASON_LIST_SELECT/.test(bodyOf(actions, /async function reasonListNow\(/) ?? '')) violations.push(`${ACTIONS} · reasonListNow 가 REASON_LIST_SELECT 로 읽지 않는다.`)
+  // 묶음 머리 다섯이 이 차례로 서고, 카드는 제 묶음 아래에 선다(가이드 §22 분류 관리 묶음 머리).
+  const GROUPS = {
+    '호실': ['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions'],
+    '입주자': ['jobOptions', 'visitRouteOptions', 'cancelReasons', 'checkoutReasons', 'requestCategories'],
+    '돈': ['discountReasons', 'dueDayReasons', 'withholdReasons', 'incomeCategories', 'expenseCategories', 'paymentMethods', 'channelOptions'],
+    '청소·작업': ['cleaningReasons', 'workKindOptions'],
+    '재고·비품': ['stockDisposalReasons', 'stockSourceOptions', 'assetDisposalReasons', 'qtyUnitOptions', 'specUnitOptions'],
+  }
+  const tab = form.slice(form.indexOf("{tab === 'options' && ("), form.indexOf("{tab === 'pricing' && ("))
+  const heads = [...tab.matchAll(/<OptionGroupHead title="([^"]+)" \/>/g)].map(m => ({ title: m[1], at: m.index }))
+  if (heads.map(h => h.title).join('|') !== Object.keys(GROUPS).join('|')) {
+    violations.push(`${FORM} · 분류 관리 묶음 머리가 '${Object.keys(GROUPS).join(' / ')}' 차례가 아니다(지금 '${heads.map(h => h.title).join(' / ')}').`)
+  }
+  const want = Object.entries(GROUPS).flatMap(([g, fs]) => fs.map(f => [f, g]))
+  for (const m of tab.matchAll(/<OptionSection[\s\S]*?\n\s*field="(\w+)"/g)) {
+    const head = heads.filter(h => h.at < m.index).at(-1)?.title
+    const g = Object.fromEntries(want)[m[1]]
+    if (head !== g) violations.push(`${FORM} · ${m[1]} 카드가 '${g ?? '(묶음 표에 없음)'}' 묶음이 아니라 '${head ?? '(머리 앞)'}' 아래에 선다.`)
+  }
+  if (want.length !== FIELDS.length) violations.push(`scripts/check-option-lists.mjs · ⓝ 묶음 표가 목록 ${FIELDS.length}칸 중 ${want.length}칸만 적었다. 새 목록은 묶음을 정해 여기 적는다.`)
+  // 카드 제목은 h3, 묶음 머리는 h2 다(제목 차례).
+  if (os && !/<h3 className="min-w-0 text-sm font-semibold text-\[var\(--warm-dark\)\]">\{title\}<\/h3>/.test(os)) violations.push(`${FORM} · OptionSection 카드 제목이 h3 이 아니다. 묶음 머리(h2) 아래 제목 차례가 깨진다.`)
+  // 2차 카드 손놀림은 형제 카드와 같은 손 핸들러다(추가 정규화는 ⓘ, 삭제 확인창 꼴은 check-undo-verb, 확인창 기본값은 ⓓ 가 본다).
+  // 초기화는 기본값이 있는 칸에만 선다. 기본값이 없는 칸의 초기화는 곧 전부 삭제다(쇼핑몰 카드와 같다).
+  for (const f of SECOND) {
+    const block = tab.match(new RegExp(`<OptionSection(?:(?!\\/>)[\\s\\S])*?field="${f}"(?:(?!\\/>)[\\s\\S])*?\\/>`))?.[0] ?? ''
+    if (!block) { violations.push(`${FORM} · ${f} 카드를 못 찾았다.`); continue }
+    const hasReset = /\bonReset=\{/.test(block)
+    if (hasReset !== OPTION_LIST_DEFAULTS_LEN(f) > 0) violations.push(`${FORM} · ${f} 카드의 초기화가 기본값 유무와 어긋난다(기본값 ${OPTION_LIST_DEFAULTS_LEN(f)}개, 초기화 ${hasReset ? '있음' : '없음'}).`)
+  }
+}
+
+console.log(`[분류 목록 정합] 축 ⓐ 조회 · ⓑ 초기화 · ⓒ 이름 변경 기본값 · ⓓ 확인창 · ⓔ 할인 사유 영업장 범위 · ⓕ 설정 카드 · ⓖ 적용취소 · ⓗ 보호 이름 · ⓘ 정규화 · ⓙ 새 값만 자동 추가 · ⓚ field 검사 · ⓛ 사유 목록 · ⓜ 카드 행 넘침 · ⓝ 2차 목록·묶음 머리 / 목록 ${FIELDS.length} · 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

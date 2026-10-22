@@ -179,6 +179,16 @@ model Property {
   cancelReasons      String?
   checkoutReasons    String?
   withholdReasons    String?
+  // 2차 목록 여섯 (콤마 구분, 비면 코드 기본값. 2026-10-22 운영자 승인 '추천대로'). 사유 목록 셋과 같은 '기타' 규약이다.
+  // 납부일 임시 조정 사유(LeaseTerm.overrideDueDayReason)·청소 사유(RoomCleaning.reason, 앱 코드 셋은 목록 밖 맨 앞 고정)·
+  // 소모품 폐기 사유(StockDisposal.reason)·무상 입수 출처(StockAddition.source)·비품 폐기 사유(Expense.disposalReason)·
+  // 방문 경로(LeaseTerm.visitRoute). 백필 없음. 이미 남긴 기록은 글자 그대로다(prisma/migrate_reason_lists_2.sql).
+  dueDayReasons        String?
+  cleaningReasons      String?
+  stockDisposalReasons String?
+  stockSourceOptions   String?
+  assetDisposalReasons String?
+  visitRouteOptions    String?
   // 재고관리에 추적·표시할 카테고리 설정 (JSON: [{"cat":"부식비","alias":"식료품"},...]).
   // cat = 지출 카테고리(expenseCategories 중), alias = 재고관리 표시명. 순서 = 표시 순서.
   // null 이면 기본값(부식비→식료품·소모품비→소모품·폐기물 처리비→폐기물 처리용품).

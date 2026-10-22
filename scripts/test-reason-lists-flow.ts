@@ -310,6 +310,60 @@ async function main() {
     eq('동시에 더한 이름이 하나도 안 지워진다', (await settings.getCancelReasons()).slice(before.length).sort(), ['동시 둘', '동시 셋', '동시 하나'])
   }
 
+  // ── 8. 2차 목록 여섯: 조회·못 넣는 이름·이름 변경 범위(재고 기록은 추적 품목으로)·적용취소 바이트 동일 ─────────
+  {
+    eq('2차 칸이 비면 기본값', [await settings.getStockDisposalReasons(), await settings.getCleaningReasons(), await settings.getDueDayReasons()],
+      [['상함·부패', '유통기한 경과', '파손'], [], []])
+    eq('청소 사유에 코드 꼴은 못 넣는다', (await settings.addCleaningReason('CHECKOUT')).ok, false)
+    eq('청소 사유에 고정 라벨은 못 넣는다', (await settings.addCleaningReason('퇴실 청소')).ok, false)
+    eq('방문 경로에 기타는 못 넣는다', (await settings.addVisitRouteOption('기타 · 블로그')).ok, false)
+    eq('못 넣는 이름 뒤 칸은 그대로(null)', [await prisma.property.findUnique({ where: { id: P1 }, select: { cleaningReasons: true, visitRouteOptions: true } })], [{ cleaningReasons: null, visitRouteOptions: null }])
+    for (const [add, n] of [[settings.addDueDayReason, '급여 지연'], [settings.addCleaningReason, '방역']] as const) eq(`보통 이름은 붙는다 '${n}'`, (await add(n)).ok, true)
+    const item = async (pid: string, label: string) => (await prisma.trackedItem.create({ data: { propertyId: pid, category: '소모품비', label } })).id as string
+    const I1 = await item(P1, '휴지'), I2 = await item(P2, '휴지')
+    const disp = async (tid: string, reason: string) => (await prisma.stockDisposal.create({ data: { trackedItemId: tid, date: new Date('2026-10-01T00:00:00Z'), disposedQty: 1, reason } })).id as string
+    const addi = async (tid: string, source: string) => (await prisma.stockAddition.create({ data: { trackedItemId: tid, date: new Date('2026-10-01T00:00:00Z'), addedQty: 1, source } })).id as string
+    const d1 = await disp(I1, '파손'), d2 = await disp(I1, '기타 · 파손'), d3 = await disp(I2, '파손')
+    const a1 = await addi(I1, '기증'), a2 = await addi(I2, '기증')
+    const exp = async (pid: string, disposalReason: string) => (await prisma.expense.create({ data: { propertyId: pid, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '수선유지비', disposedAt: new Date('2026-10-02T00:00:00Z'), disposalReason } })).id as string
+    const e1 = await exp(P1, '분실'), e2 = await exp(P2, '분실')
+    const T8 = await tenantIn(P1, '차'), T9 = await tenantIn(P2, '카')
+    const L8 = (await prisma.leaseTerm.create({ data: { propertyId: P1, tenantId: T8, status: 'ACTIVE', overrideDueDayReason: '급여 지연', visitRoute: '지인 소개' } })).id as string
+    const L9 = (await prisma.leaseTerm.create({ data: { propertyId: P2, tenantId: T9, status: 'ACTIVE', overrideDueDayReason: '급여 지연', visitRoute: '지인 소개' } })).id as string
+    const clean = async (pid: string, reason: string) => (await prisma.roomCleaning.create({ data: { propertyId: pid, roomId: randomUUID(), reason } })).id as string
+    const c1 = await clean(P1, '방역'), c2 = await clean(P1, 'CHECKOUT'), c3 = await clean(P2, '방역'), c4 = await clean(P1, 'OTHER')
+    const noStamp = <T extends Record<string, unknown>>(rows: T[]) => JSON.stringify(rows.map(({ updatedAt: _u, ...x }) => { void _u; return x }))
+    const snap = async () => [
+      noStamp(await prisma.stockDisposal.findMany({ orderBy: { id: 'asc' } })), noStamp(await prisma.stockAddition.findMany({ orderBy: { id: 'asc' } })),
+      noStamp(await prisma.expense.findMany({ where: { disposedAt: { not: null } }, orderBy: { id: 'asc' } })),
+      noStamp(await prisma.leaseTerm.findMany({ where: { id: { in: [L8, L9] } }, orderBy: { id: 'asc' } })),
+      noStamp(await prisma.roomCleaning.findMany({ orderBy: { id: 'asc' } })),
+    ].join('\n')
+    const before = await snap()
+    const RENAMES: [Parameters<typeof settings.renameOption>[0], string, string, number][] = [
+      ['stockDisposalReasons', '파손', '깨짐', 1], ['stockSourceOptions', '기증', '기부', 1], ['assetDisposalReasons', '분실', '잃어버림', 1],
+      ['dueDayReasons', '급여 지연', '급여일 지연', 1], ['cleaningReasons', '방역', '소독', 1], ['visitRouteOptions', '지인 소개', '지인 추천', 1],
+    ]
+    const undos: Awaited<ReturnType<typeof settings.renameOption>>[] = []
+    for (const [f, from, to, n] of RENAMES) {
+      eq(`${f} 건수 고지는 이 영업장만`, await settings.countRenameTargets(f, from), n)
+      const r = await settings.renameOption(f, from, to)
+      eq(`${f} 이름 변경 건수`, r.ok && r.updated, n)
+      undos.push(r)
+    }
+    eq('재고 폐기 사유는 이 영업장 추적 품목의 그 글자만(기타 · 글·남의 영업장 그대로)',
+      (await prisma.stockDisposal.findMany({ where: { id: { in: [d1, d2, d3] } }, orderBy: { id: 'asc' } })).map(d => [d.id, d.reason]).sort(),
+      [[d1, '깨짐'], [d2, '기타 · 파손'], [d3, '파손']].sort())
+    eq('무상 입수 출처', [(await prisma.stockAddition.findUnique({ where: { id: a1 } }))?.source, (await prisma.stockAddition.findUnique({ where: { id: a2 } }))?.source], ['기부', '기증'])
+    eq('비품 폐기 사유', [(await prisma.expense.findUnique({ where: { id: e1 } }))?.disposalReason, (await prisma.expense.findUnique({ where: { id: e2 } }))?.disposalReason], ['잃어버림', '분실'])
+    eq('임시 조정 사유·방문 경로', [await prisma.leaseTerm.findUnique({ where: { id: L8 }, select: { overrideDueDayReason: true, visitRoute: true } }), await prisma.leaseTerm.findUnique({ where: { id: L9 }, select: { overrideDueDayReason: true, visitRoute: true } })],
+      [{ overrideDueDayReason: '급여일 지연', visitRoute: '지인 추천' }, { overrideDueDayReason: '급여 지연', visitRoute: '지인 소개' }])
+    eq('청소 사유 이름 변경은 그 글자만(코드·옛 OTHER·남의 영업장 그대로)', await Promise.all([c1, c2, c3, c4].map(async id => (await prisma.roomCleaning.findUnique({ where: { id } }))?.reason)), ['소독', 'CHECKOUT', '방역', 'OTHER'])
+    for (const r of [...undos].reverse()) eq('2차 이름 변경 적용취소 ok', r.ok && r.undo ? (await settings.undoRenameOption(J(r.undo))).ok : false, true)
+    eq('2차 적용취소 뒤 기록 바이트 동일(updatedAt 제외)', await snap(), before)
+    eq('2차 적용취소 뒤 목록도 원래 이름', [await settings.getStockDisposalReasons(), await settings.getCleaningReasons()], [['상함·부패', '유통기한 경과', '파손'], ['방역']])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

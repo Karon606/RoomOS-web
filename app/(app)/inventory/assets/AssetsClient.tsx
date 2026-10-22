@@ -60,6 +60,7 @@ import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 // 같은 구매 계보 한 줄 순수층(짝을 카드 단위로 접는다) — 진리표 test-asset-disposal ⑮
 import { sameBuyIndex, lineageLine } from './lineage'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
 // 규격 표기 — 카드 제목과 같은 문구(specText 우선, 없으면 값+단위)
@@ -88,7 +89,8 @@ const DATE_FIELD_CLS = 'bg-[var(--canvas)] border border-[var(--warm-border)] ro
 // 이 화면의 셀렉트 한 벌 — 옮기기·나눠 배정·폐기가 같은 모양을 쓴다(402px 에서 세그먼트는 다섯이 안 들어간다).
 const SELECT_CLS = 'w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 // 폐기·분실 사유 — 운영자가 쓰는 말 그대로(5층 누수 수리, 504호 호스 막힘, 미배정 분실에서 나왔다).
-const DISPOSAL_REASONS = ['시공 중 철거', '파손', '분실', '노후·고장으로 교체', '기타']
+// 낱말은 분류 목록 기본값 정본(lib/optionLists assetDisposalReasons)이고 '기타' 는 맨 끝 고정이다(2026-10-22 2차).
+const DISPOSAL_REASONS = [...OPTION_LIST_DEFAULTS.assetDisposalReasons, '기타']
 
 type Target = { kind: 'room' | 'location'; id: string }
 

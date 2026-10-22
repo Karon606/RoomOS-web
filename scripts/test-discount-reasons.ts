@@ -84,7 +84,7 @@ for (const f of fields) {
   eq(`${f} 기본값에 쉼표 든 항목 없음`, OPTION_LIST_DEFAULTS[f].some(v => v.includes(',')), false)
   eq(`${f} 기본값에 중복 없음`, new Set(OPTION_LIST_DEFAULTS[f]).size, OPTION_LIST_DEFAULTS[f].length)
 }
-eq('목록 열일곱이 전부 정본에 있다(쇼핑몰 2026-10-19, 사유 셋 2026-10-22 포함)', fields.length, 17)
+eq('목록 스물셋이 전부 정본에 있다(쇼핑몰 2026-10-19, 사유 셋·2차 여섯 2026-10-22 포함)', fields.length, 23)
 eq('쇼핑몰 목록은 기본값이 없다(쇼핑몰 이름을 코드에 박지 않는다)', parseOptionList('channelOptions', null), [])
 eq('쇼핑몰 이름의 쉼표는 공백으로', normalizeOptionName('channelOptions', '쿠팡, 로켓'), '쿠팡 로켓')
 eq('다 뺀 할인 사유는 빈 목록으로 남는다', parseOptionList('discountReasons', ''), [])

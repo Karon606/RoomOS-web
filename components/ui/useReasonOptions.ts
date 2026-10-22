@@ -1,14 +1,23 @@
 'use client'
-// 사유 목록(입실 취소·퇴실·보증금 미반환)을 영업장 설정에서 읽어 오는 훅. 사유 고르는 칸(CategorySelect addMode 'ask')이 쓴다.
+// 사유 목록(입실 취소·퇴실·보증금 미반환, 2차 여섯)을 영업장 설정에서 읽어 오는 훅. 사유 고르는 칸(CategorySelect addMode 'ask')이 쓴다.
 
 import { useEffect, useState } from 'react'
-import { getCancelReasons, getCheckoutReasons, getWithholdReasons } from '@/app/(app)/settings/actions'
+import {
+  getCancelReasons, getCheckoutReasons, getWithholdReasons,
+  getDueDayReasons, getCleaningReasons, getStockDisposalReasons, getStockSourceOptions, getAssetDisposalReasons, getVisitRouteOptions,
+} from '@/app/(app)/settings/actions'
 import type { ReasonListField } from '@/lib/optionLists'
 
 const READ: Record<ReasonListField, () => Promise<string[]>> = {
   cancelReasons: getCancelReasons,
   checkoutReasons: getCheckoutReasons,
   withholdReasons: getWithholdReasons,
+  dueDayReasons: getDueDayReasons,
+  cleaningReasons: getCleaningReasons,
+  stockDisposalReasons: getStockDisposalReasons,
+  stockSourceOptions: getStockSourceOptions,
+  assetDisposalReasons: getAssetDisposalReasons,
+  visitRouteOptions: getVisitRouteOptions,
 }
 
 /**

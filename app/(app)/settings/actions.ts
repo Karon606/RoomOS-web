@@ -19,6 +19,7 @@ import { isReservedMailLocal } from '@/lib/mailFrom'
 import { resolveUnitForSave } from '@/lib/unitOptions'
 import { OPTION_LIST_DEFAULTS, parseOptionList, normalizeOptionName, protectedRenameError, optionListAfterRename, optionListAfterRenameUndo, optionListAfterRestore, optionListAfterResetUndo, optionRenameWhere, renameUndoPlan, isOptionListField, isReasonListField, reservedOptionNameError, type OptionListField, type RenameTarget, type ReasonListField } from '@/lib/optionLists'
 import { REASON_FIELD_STATUSES, REASON_FIELD_SELF_STATUSES } from '@/lib/statusReasons'
+import { REASON_LIST_SELECT } from '@/lib/reasonListSave'
 import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
@@ -636,13 +637,42 @@ export const getWithholdReasons = cache(async function getWithholdReasons(): Pro
   const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { withholdReasons: true } })
   return parseOptionList('withholdReasons', property?.withholdReasons)
 })
+// 2차 목록 여섯(2026-10-22). 사유 목록 셋과 같은 문법·같은 '기타' 규약이다(고르는 자리는 CategorySelect addMode 'ask').
+// 청소 사유 목록에는 앱 코드 셋(퇴실 청소·공사·도배 후·입실 중 요청)이 없다. 그 셋은 고르는 칸 맨 앞에 늘 선다(lib/optionLists FIXED_OPTION_VALUES).
+export const getDueDayReasons = cache(async function getDueDayReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { dueDayReasons: true } })
+  return parseOptionList('dueDayReasons', property?.dueDayReasons)
+})
+export const getCleaningReasons = cache(async function getCleaningReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningReasons: true } })
+  return parseOptionList('cleaningReasons', property?.cleaningReasons)
+})
+export const getStockDisposalReasons = cache(async function getStockDisposalReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { stockDisposalReasons: true } })
+  return parseOptionList('stockDisposalReasons', property?.stockDisposalReasons)
+})
+export const getStockSourceOptions = cache(async function getStockSourceOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { stockSourceOptions: true } })
+  return parseOptionList('stockSourceOptions', property?.stockSourceOptions)
+})
+export const getAssetDisposalReasons = cache(async function getAssetDisposalReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { assetDisposalReasons: true } })
+  return parseOptionList('assetDisposalReasons', property?.assetDisposalReasons)
+})
+export const getVisitRouteOptions = cache(async function getVisitRouteOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { visitRouteOptions: true } })
+  return parseOptionList('visitRouteOptions', property?.visitRouteOptions)
+})
 
-// 사유 목록 칸의 지금 목록. 조회 함수와 같은 정본이다(칸이 비면 기본값).
+// 사유 목록 칸의 지금 목록. 조회 함수와 같은 정본이다(칸이 비면 기본값). 칸 고르기는 저장 검증(lib/reasonListSave)과 한 벌이다.
 async function reasonListNow(propertyId: string, field: ReasonListField): Promise<string[]> {
-  const p = await prisma.property.findUnique({
-    where: { id: propertyId },
-    select: { cancelReasons: true, checkoutReasons: true, withholdReasons: true },
-  })
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: REASON_LIST_SELECT })
   return parseOptionList(field, p?.[field])
 }
 
@@ -665,8 +695,7 @@ async function addReasonOption(field: ReasonListField, rawName: string): Promise
     where: { id: propertyId },
     data: { [field]: [...current, name].join(',') } as Prisma.PropertyUpdateInput,
   })
-  revalidatePath('/settings')
-  revalidatePath('/tenants')
+  revalidateOptionList(field)
   return { ok: true }
 }
 
@@ -681,8 +710,7 @@ async function deleteReasonOption(field: ReasonListField, name: string) {
     where: { id: propertyId },
     data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput,
   })
-  revalidatePath('/settings')
-  revalidatePath('/tenants')
+  revalidateOptionList(field)
 }
 
 export async function addCancelReason(name: string) { return addReasonOption('cancelReasons', name) }
@@ -691,6 +719,18 @@ export async function addWithholdReason(name: string) { return addReasonOption('
 export async function deleteCancelReason(name: string) { return deleteReasonOption('cancelReasons', name) }
 export async function deleteCheckoutReason(name: string) { return deleteReasonOption('checkoutReasons', name) }
 export async function deleteWithholdReason(name: string) { return deleteReasonOption('withholdReasons', name) }
+export async function addDueDayReason(name: string) { return addReasonOption('dueDayReasons', name) }
+export async function addCleaningReason(name: string) { return addReasonOption('cleaningReasons', name) }
+export async function addStockDisposalReason(name: string) { return addReasonOption('stockDisposalReasons', name) }
+export async function addStockSourceOption(name: string) { return addReasonOption('stockSourceOptions', name) }
+export async function addAssetDisposalReason(name: string) { return addReasonOption('assetDisposalReasons', name) }
+export async function addVisitRouteOption(name: string) { return addReasonOption('visitRouteOptions', name) }
+export async function deleteDueDayReason(name: string) { return deleteReasonOption('dueDayReasons', name) }
+export async function deleteCleaningReason(name: string) { return deleteReasonOption('cleaningReasons', name) }
+export async function deleteStockDisposalReason(name: string) { return deleteReasonOption('stockDisposalReasons', name) }
+export async function deleteStockSourceOption(name: string) { return deleteReasonOption('stockSourceOptions', name) }
+export async function deleteAssetDisposalReason(name: string) { return deleteReasonOption('assetDisposalReasons', name) }
+export async function deleteVisitRouteOption(name: string) { return deleteReasonOption('visitRouteOptions', name) }
 
 export async function addExpenseCategory(rawName: string) {
   await requireEdit()
@@ -781,6 +821,15 @@ function revalidateOptionList(field: ReorderableField) {
   if (field === 'discountReasons') revalidatePath('/rooms')
   if (field === 'jobOptions') revalidatePath('/tenants')
   if (field === 'cancelReasons' || field === 'checkoutReasons' || field === 'withholdReasons') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
+  revalidateSecondLists(field)
+}
+
+// 2차 목록 여섯이 고르는 자리를 둔 화면. 목록·이름 변경 두 무효화가 같이 부른다.
+function revalidateSecondLists(field: ReorderableField) {
+  if (field === 'dueDayReasons' || field === 'visitRouteOptions') { revalidatePath('/tenants'); revalidatePath('/rooms') }
+  if (field === 'cleaningReasons') revalidatePath('/room-manage')
+  if (field === 'stockDisposalReasons' || field === 'stockSourceOptions') revalidatePath('/inventory')
+  if (field === 'assetDisposalReasons') { revalidatePath('/inventory'); revalidatePath('/inventory/assets') }
 }
 
 /**
@@ -936,6 +985,18 @@ const RENAME_CASCADE: Record<ReorderableField, RenameTarget[]> = {
   // 미반환 사유는 미반환 기록(DepositRefund.reason)만 따라간다. 부가수익 상세 문장(ExtraIncome.detail)은 그때의 기록이라 안 바꾼다.
   // '청소비'·'인수 승계 보증금' 은 보호 이름이라 이름 변경 입구에서 막힌다(lib/optionLists PROTECTED_OPTION_NAMES).
   withholdReasons:   [{ model: 'depositRefund', column: 'reason' }],
+  // 2차 목록 여섯(2026-10-22). 이 영업장 안에서 목록 이름과 글자가 같은 기록만 바뀐다. '기타 · 글' 로 남긴 기록은 목록 이름과 같지 않아 안 바뀐다.
+  // 납부일 임시 조정 사유·방문 경로는 계약(LeaseTerm, propertyId 있음) 칸이다. 임시 조정이 끝난 계약의 사유도 그때의 표기라 함께 바뀐다.
+  dueDayReasons:        [{ model: 'leaseTerm', column: 'overrideDueDayReason' }],
+  visitRouteOptions:    [{ model: 'leaseTerm', column: 'visitRoute' }],
+  // 청소 사유. 저장 칸에 앱 코드(CHECKOUT 따위)와 글자가 함께 사는데 코드 꼴 이름은 목록에 못 들어가(lib/optionLists reservedOptionNameError)
+  // 코드 행은 이름 변경에 걸리지 않는다. RoomCleaning 은 소프트삭제 익스텐션 대상이 아니라 건수 고지와 실제 변경이 삭제분을 함께 센다.
+  cleaningReasons:      [{ model: 'roomCleaning', column: 'reason' }],
+  // 소모품 폐기 사유·무상 입수 출처. 두 표에는 propertyId 가 없어 추적 품목으로 영업장을 거른다(via: 'trackedItem', optionRenameWhere).
+  stockDisposalReasons: [{ model: 'stockDisposal', column: 'reason', via: 'trackedItem' }],
+  stockSourceOptions:   [{ model: 'stockAddition', column: 'source', via: 'trackedItem' }],
+  // 비품 폐기 사유. 폐기된 지출 행의 사유 칸이다. 금액·수량·폐기일은 안 바뀐다.
+  assetDisposalReasons: [{ model: 'expense', column: 'disposalReason' }],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
@@ -1013,6 +1074,7 @@ const OPTION_LIST_SELECT = {
   incomeCategories: true, expenseCategories: true, paymentMethods: true, requestCategories: true,
   workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true, channelOptions: true,
   cancelReasons: true, checkoutReasons: true, withholdReasons: true,
+  dueDayReasons: true, cleaningReasons: true, stockDisposalReasons: true, stockSourceOptions: true, assetDisposalReasons: true, visitRouteOptions: true,
 } as const satisfies Record<ReorderableField, true>
 
 // 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.
@@ -1039,6 +1101,7 @@ function revalidateRenamed(field: ReorderableField) {
   if (field === 'discountReasons') { revalidatePath('/rooms'); revalidatePath('/tenants') }
   if (field === 'jobOptions') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
   if (field === 'cancelReasons' || field === 'checkoutReasons' || field === 'withholdReasons') { revalidatePath('/tenants'); revalidatePath('/dashboard') }
+  revalidateSecondLists(field)
 }
 
 export async function renameOption(field: ReorderableField, oldValue: string, rawNewValue: string): Promise<RenameOptionResult> {

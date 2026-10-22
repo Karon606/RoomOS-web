@@ -11,8 +11,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   OPTION_LIST_DEFAULTS, PROTECTED_OPTION_NAMES, parseOptionList, optionRenameWhere, reservedOptionNameError, protectedRenameError,
-  isReasonListField, REASON_LIST_FIELDS,
+  isReasonListField, REASON_LIST_FIELDS, FIXED_OPTION_VALUES, LEGACY_FIXED_VALUES,
 } from '../lib/optionLists'
+import { CLEANING_REASON_CODES } from '../app/(app)/room-manage/cleaningConstants'
 import { planReasonSave, reasonPickOf, otherReason, otherReasonText, OTHER_REASON_PREFIX } from '../lib/reasonLists'
 import { REASON_FIELD_STATUSES, REASON_FIELD_SELF_STATUSES, SYSTEM_STATUS_REASONS, reasonFieldForStatus, isSystemStatusReason } from '../lib/statusReasons'
 import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '../lib/depositWithholdReasons'
@@ -105,11 +106,14 @@ eq('직접 입력 글은 접두어 한 벌', otherReason('x'), `${OTHER_REASON_P
 eq('직접 입력이 아닌 글자', [otherReasonText('변심'), otherReasonText(''), otherReasonText(null)], [null, null, null])
 
 // ── 목록에 못 넣는 이름 ──────────────────────────────────────────
+const STATUS_FIELDS = ['cancelReasons', 'checkoutReasons', 'withholdReasons'] as const
 for (const f of REASON_LIST_FIELDS) {
   eq(`${f} · '기타'`, reservedOptionNameError(f, '기타') !== null, true)
   eq(`${f} · '기타 · 글'`, reservedOptionNameError(f, '기타 · 공실') !== null, true)
   eq(`${f} · '기타·글'(붙여 씀)`, reservedOptionNameError(f, '기타·공실') !== null, true)
-  for (const s of SYSTEM_STATUS_REASONS) eq(`${f} · 시스템 라벨 '${s}'`, reservedOptionNameError(f, s) !== null, true)
+  // 시스템 라벨은 상태 이력·퇴실 정산의 사유 셋에서만 막는다(퇴실 사유 이어받기가 그 글자를 건너뛴다). 2차 여섯에는 그 판정이 없다.
+  const status = (STATUS_FIELDS as readonly string[]).includes(f)
+  for (const s of SYSTEM_STATUS_REASONS) eq(`${f} · 시스템 라벨 '${s}' ${status ? '막음' : '받음'}`, reservedOptionNameError(f, s) !== null, status)
   eq(`${f} · '기타사유' 같은 보통 이름은 된다`, reservedOptionNameError(f, '기타사유'), null)
 }
 eq("다른 목록은 '기타' 를 막지 않는다(부가수익 기본값에 '기타' 가 있다)", reservedOptionNameError('incomeCategories', '기타'), null)
@@ -139,6 +143,48 @@ eq('미반환 사유는 영업장 + 그 글자', optionRenameWhere({ model: 'dep
   eq("퇴실 사유 이름 변경은 같은 글자의 취소 사유·남의 영업장·'기타 · 글'·다른 상태를 안 건드린다", match(optionRenameWhere(CHECKOUT_T, 'P1', '계약 위반')), ['a', 'e'])
   eq('취소 사유 이름 변경은 취소 행만', match(optionRenameWhere(CANCEL_T, 'P1', '계약 위반')), ['b'])
 }
+
+// ── 2차 목록 여섯(2026-10-22 운영자 승인 '추천대로') ─────────────────
+// 기본값은 종전 고르는 칸의 낱말에서 '기타' 만 뺀 것이고(소모품 폐기 '유통기한' 은 '유통기한 경과' 로 선다), 기본값이 없는 둘은 빈 목록이다.
+eq('2차 기본값', ['dueDayReasons', 'cleaningReasons', 'stockDisposalReasons', 'stockSourceOptions', 'assetDisposalReasons', 'visitRouteOptions'].map(f => parseOptionList(f as never, null)), [
+  [], [], ['상함·부패', '유통기한 경과', '파손'], ['무상', '기증', '이월'], ['시공 중 철거', '파손', '분실', '노후·고장으로 교체'],
+  ['인터넷 검색', '지도 앱', '지인 소개', '간판', '직접 방문'],
+])
+eq('2차 여섯은 전부 기타 규약 칸', ['dueDayReasons', 'cleaningReasons', 'stockDisposalReasons', 'stockSourceOptions', 'assetDisposalReasons', 'visitRouteOptions'].every(f => isReasonListField(f as never)), true)
+eq('저절로 쌓는 카테고리·종류는 기타 규약 칸이 아니다', ['workKindOptions', 'incomeCategories', 'expenseCategories', 'jobOptions', 'requestCategories', 'discountReasons'].map(f => isReasonListField(f as never)), [false, false, false, false, false, false])
+// 청소 사유: 앱 코드 셋은 목록 밖 맨 앞 고정이고, 코드 꼴·고정 라벨은 목록에 못 넣는다(한 칸에 코드와 글자가 함께 산다).
+eq('청소 고정 값은 코드 셋', FIXED_OPTION_VALUES.cleaningReasons, [...CLEANING_REASON_CODES])
+eq('청소 옛 코드 OTHER 는 받기만 한다', LEGACY_FIXED_VALUES.cleaningReasons, ['OTHER'])
+for (const n of ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER', 'NEW_CODE', 'X1', '퇴실 청소', '공사·도배 후', '입실 중 요청']) {
+  eq(`청소 사유 목록에 못 넣는 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n) !== null, true)
+}
+for (const n of ['방역', 'Checkout', '퇴실청소 재요청', 'A동 소독']) eq(`청소 사유 목록에 넣을 수 있는 이름 '${n}'`, reservedOptionNameError('cleaningReasons', n), null)
+eq('코드 꼴 판정은 청소 목록에서만', reservedOptionNameError('visitRouteOptions', 'CHECKOUT'), null)
+const CL: string[] = ['방역']
+const TABLE2: Row[] = [
+  ['청소 코드 그대로', 'cleaningReasons', CL, 'CHECKOUT', {}, { reason: 'CHECKOUT', add: null }],
+  ['청소 코드 공사·도배 후', 'cleaningReasons', CL, 'AFTER_WORK', {}, { reason: 'AFTER_WORK', add: null }],
+  ['옛 화면이 보낸 OTHER 는 그대로(이행 없음)', 'cleaningReasons', CL, 'OTHER', {}, { reason: 'OTHER', add: null }],
+  ['청소 목록 항목', 'cleaningReasons', CL, '방역', {}, { reason: '방역', add: null }],
+  ['직접 입력 글이 목록 이름과 같으면 그 항목', 'cleaningReasons', CL, '기타 · 방역', {}, { reason: '방역', add: null }],
+  ['직접 입력 글에 코드를 적어도 코드가 되지 않는다', 'cleaningReasons', CL, '기타 · CHECKOUT', {}, { reason: '기타 · CHECKOUT', add: null }],
+  ['코드 꼴은 체크해도 목록에 안 들어간다', 'cleaningReasons', CL, '기타 · NEW_CODE', { addToList: true }, { reason: '기타 · NEW_CODE', add: null }],
+  ['고정 라벨 글은 체크해도 목록에 안 들어간다', 'cleaningReasons', CL, '기타 · 퇴실 청소', { addToList: true }, { reason: '기타 · 퇴실 청소', add: null }],
+  ['목록 밖 맨 글자(위조 코드)는 기타 · 글', 'cleaningReasons', CL, 'FAKE_CODE', {}, { reason: '기타 · FAKE_CODE', add: null }],
+  ['청소 새 사유 체크하면 목록 추가', 'cleaningReasons', CL, '기타 · 곰팡이 제거', { addToList: true }, { reason: '곰팡이 제거', add: '곰팡이 제거' }],
+  ['무상 입수 출처 목록 항목', 'stockSourceOptions', OPTION_LIST_DEFAULTS.stockSourceOptions, '무상', {}, { reason: '무상', add: null }],
+  ['수정 화면이 옛 자유 입력 출처를 그대로 저장', 'stockSourceOptions', OPTION_LIST_DEFAULTS.stockSourceOptions, '522호 이경호님', { prev: '522호 이경호님' }, { reason: '522호 이경호님', add: null }],
+  ['새 기록이 목록 밖 출처를 맨 글자로 보내면 기타 · 글', 'stockSourceOptions', OPTION_LIST_DEFAULTS.stockSourceOptions, '522호 이경호님', {}, { reason: '기타 · 522호 이경호님', add: null }],
+  ['임시 조정 사유 목록이 비어도 지금 값 그대로면 그대로', 'dueDayReasons', [], '급여 지연', { prev: '급여 지연' }, { reason: '급여 지연', add: null }],
+  ['임시 조정 사유 새 글 체크하면 목록 추가', 'dueDayReasons', [], '기타 · 급여 지연', { addToList: true }, { reason: '급여 지연', add: '급여 지연' }],
+  ['방문 경로 옛 자유 입력 그대로', 'visitRouteOptions', OPTION_LIST_DEFAULTS.visitRouteOptions, '네이버지도', { prev: '네이버지도' }, { reason: '네이버지도', add: null }],
+  ['시스템 라벨 글자는 방문 경로 목록에 들어갈 수 있다(상태 이력 판정 밖)', 'visitRouteOptions', [], '기타 · 단기 연장', { addToList: true }, { reason: '단기 연장', add: '단기 연장' }],
+  ['비품 폐기 사유 목록 항목', 'assetDisposalReasons', OPTION_LIST_DEFAULTS.assetDisposalReasons, '분실', {}, { reason: '분실', add: null }],
+]
+for (const [name, field, list, raw, opts, want] of TABLE2) eq(`2차 저장 · ${name}`, planReasonSave(field, list, raw, opts), want)
+eq('재고 기록은 추적 품목으로 영업장을 거른다', optionRenameWhere({ model: 'stockDisposal', column: 'reason', via: 'trackedItem' }, 'P1', '파손'), { trackedItem: { propertyId: 'P1' }, reason: '파손' })
+eq('무상 입수 출처도', optionRenameWhere({ model: 'stockAddition', column: 'source', via: 'trackedItem' }, 'P1', '기증'), { trackedItem: { propertyId: 'P1' }, source: '기증' })
+eq('계약 칸은 영업장으로 바로', optionRenameWhere({ model: 'leaseTerm', column: 'overrideDueDayReason' }, 'P1', '급여 지연'), { propertyId: 'P1', overrideDueDayReason: '급여 지연' })
 
 // ── 시스템 라벨을 적는 자리는 상수만 쓴다 ─────────────────────────
 // 상태 이력 만들기 덩어리의 reason 칸에 글자를 바로 적으면 퇴실 사유 이어받기가 그 라벨을 운영자 사유로 읽는다.

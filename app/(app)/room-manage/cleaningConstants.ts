@@ -22,6 +22,11 @@ export const WORK_EXPENSE_CATEGORY = '수선유지비'
 export const CLEANING_REASON_LABEL: Record<CleaningReason, string> = {
   CHECKOUT: '퇴실 청소', AFTER_WORK: '공사·도배 후', DURING_STAY: '입실 중 요청', OTHER: '기타',
 }
+/**
+ * 앱이 쓰는 청소 사유 코드 셋(2026-10-22 2차). 고르는 칸 맨 앞에 늘 서고 설정 목록(Property.cleaningReasons)에 들지 않는다.
+ * 퇴실 청소(CHECKOUT)는 받은 청소비 부담과 퇴실 뒤 자동 청소가 이 글자로 판정한다. 'OTHER' 는 2차 전 '기타' 칩이 남긴 옛 코드라 여기 없다.
+ */
+export const CLEANING_REASON_CODES = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY'] as const
 export const CLEANING_PERFORMER_LABEL: Record<CleaningPerformer, string> = {
   SELF: '직접', VENDOR: '업체', THIRD_PARTY: '제3자',
 }

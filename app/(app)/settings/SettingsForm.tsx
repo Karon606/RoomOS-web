@@ -27,6 +27,12 @@ import {
   getCancelReasons, addCancelReason, deleteCancelReason,
   getCheckoutReasons, addCheckoutReason, deleteCheckoutReason,
   getWithholdReasons, addWithholdReason, deleteWithholdReason,
+  getDueDayReasons, addDueDayReason, deleteDueDayReason,
+  getCleaningReasons, addCleaningReason, deleteCleaningReason,
+  getStockDisposalReasons, addStockDisposalReason, deleteStockDisposalReason,
+  getStockSourceOptions, addStockSourceOption, deleteStockSourceOption,
+  getAssetDisposalReasons, addAssetDisposalReason, deleteAssetDisposalReason,
+  getVisitRouteOptions, addVisitRouteOption, deleteVisitRouteOption,
   getJobOptions, addJobOption, deleteJobOption,
   getChannelOptions, addChannelOption, deleteChannelOption,
   inviteMember, updateMemberRole, removeMember,
@@ -629,6 +635,164 @@ export default function SettingsForm({
     if (!(await confirmDialog({ title: `보증금 미반환 사유를 기본값(${OPTION_LIST_DEFAULTS.withholdReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
     const r = await resetOptionsToDefault('withholdReasons')
     setWithholdReasons(r.items)
+    return r.before
+  }
+
+  // ── 2차 목록 여섯(2026-10-22 운영자 승인 '추천대로') ──────────────
+  // 사유 목록 셋과 같은 문법·같은 손놀림이다. 고르는 칸은 CategorySelect addMode 'ask'(체크 기본 꺼짐)이고 '기타(직접 입력)' 은
+  // 이 목록에 없다. 삭제는 목록에서만이다(이미 남긴 기록은 글자 그대로). 기본값이 없는 둘(납부일 임시 조정 사유·청소 사유)은
+  // 쇼핑몰 카드처럼 초기화를 두지 않는다(빈 목록으로 되돌리는 것이 곧 전부 삭제다).
+  const [dueDayReasons, setDueDayReasons] = useState<string[]>([])
+  const [newDueDayReason, setNewDueDayReason] = useState('')
+  const [cleaningReasons, setCleaningReasons] = useState<string[]>([])
+  const [newCleaningReason, setNewCleaningReason] = useState('')
+  const [stockDisposalReasons, setStockDisposalReasons] = useState<string[]>([])
+  const [newStockDisposalReason, setNewStockDisposalReason] = useState('')
+  const [stockSources, setStockSources] = useState<string[]>([])
+  const [newStockSource, setNewStockSource] = useState('')
+  const [assetDisposalReasons, setAssetDisposalReasons] = useState<string[]>([])
+  const [newAssetDisposalReason, setNewAssetDisposalReason] = useState('')
+  const [visitRoutes, setVisitRoutes] = useState<string[]>([])
+  const [newVisitRoute, setNewVisitRoute] = useState('')
+  useEffect(() => {
+    getDueDayReasons().then(setDueDayReasons).catch(console.error)
+    getCleaningReasons().then(setCleaningReasons).catch(console.error)
+    getStockDisposalReasons().then(setStockDisposalReasons).catch(console.error)
+    getStockSourceOptions().then(setStockSources).catch(console.error)
+    getAssetDisposalReasons().then(setAssetDisposalReasons).catch(console.error)
+    getVisitRouteOptions().then(setVisitRoutes).catch(console.error)
+  }, [])
+
+  const handleAddDueDayReason = async () => {
+    const v = normalizeOptionName('dueDayReasons', newDueDayReason); if (!v) return
+    const r = await addDueDayReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setDueDayReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewDueDayReason('')
+  }
+  const handleDeleteDueDayReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 임시 조정의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteDueDayReason(name)
+    setDueDayReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderDueDayReasons = async (items: string[]) => {
+    setDueDayReasons(items)
+    await reorderOptions('dueDayReasons', items)
+  }
+  const handleRenameDueDayReason = (oldVal: string, newVal: string) =>
+    runRename('dueDayReasons', oldVal, newVal, setDueDayReasons)
+
+  const handleAddCleaningReason = async () => {
+    const v = normalizeOptionName('cleaningReasons', newCleaningReason); if (!v) return
+    const r = await addCleaningReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setCleaningReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewCleaningReason('')
+  }
+  const handleDeleteCleaningReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 청소 기록의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteCleaningReason(name)
+    setCleaningReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderCleaningReasons = async (items: string[]) => {
+    setCleaningReasons(items)
+    await reorderOptions('cleaningReasons', items)
+  }
+  const handleRenameCleaningReason = (oldVal: string, newVal: string) =>
+    runRename('cleaningReasons', oldVal, newVal, setCleaningReasons)
+
+  const handleAddStockDisposalReason = async () => {
+    const v = normalizeOptionName('stockDisposalReasons', newStockDisposalReason); if (!v) return
+    const r = await addStockDisposalReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setStockDisposalReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewStockDisposalReason('')
+  }
+  const handleDeleteStockDisposalReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 폐기 기록의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteStockDisposalReason(name)
+    setStockDisposalReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderStockDisposalReasons = async (items: string[]) => {
+    setStockDisposalReasons(items)
+    await reorderOptions('stockDisposalReasons', items)
+  }
+  const handleRenameStockDisposalReason = (oldVal: string, newVal: string) =>
+    runRename('stockDisposalReasons', oldVal, newVal, setStockDisposalReasons)
+  const handleResetStockDisposalReasons = async () => {
+    if (!(await confirmDialog({ title: `소모품 폐기 사유를 기본값(${OPTION_LIST_DEFAULTS.stockDisposalReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('stockDisposalReasons')
+    setStockDisposalReasons(r.items)
+    return r.before
+  }
+
+  const handleAddStockSource = async () => {
+    const v = normalizeOptionName('stockSourceOptions', newStockSource); if (!v) return
+    const r = await addStockSourceOption(v); if (!r.ok) { pushToast('error', r.error); return }
+    setStockSources(prev => prev.includes(v) ? prev : [...prev, v]); setNewStockSource('')
+  }
+  const handleDeleteStockSource = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 출처를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 입수 기록의 출처는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteStockSourceOption(name)
+    setStockSources(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderStockSources = async (items: string[]) => {
+    setStockSources(items)
+    await reorderOptions('stockSourceOptions', items)
+  }
+  const handleRenameStockSource = (oldVal: string, newVal: string) =>
+    runRename('stockSourceOptions', oldVal, newVal, setStockSources)
+  const handleResetStockSources = async () => {
+    if (!(await confirmDialog({ title: `무상 입수 출처를 기본값(${OPTION_LIST_DEFAULTS.stockSourceOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('stockSourceOptions')
+    setStockSources(r.items)
+    return r.before
+  }
+
+  const handleAddAssetDisposalReason = async () => {
+    const v = normalizeOptionName('assetDisposalReasons', newAssetDisposalReason); if (!v) return
+    const r = await addAssetDisposalReason(v); if (!r.ok) { pushToast('error', r.error); return }
+    setAssetDisposalReasons(prev => prev.includes(v) ? prev : [...prev, v]); setNewAssetDisposalReason('')
+  }
+  const handleDeleteAssetDisposalReason = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 사유를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 폐기·분실 기록의 사유는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteAssetDisposalReason(name)
+    setAssetDisposalReasons(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderAssetDisposalReasons = async (items: string[]) => {
+    setAssetDisposalReasons(items)
+    await reorderOptions('assetDisposalReasons', items)
+  }
+  const handleRenameAssetDisposalReason = (oldVal: string, newVal: string) =>
+    runRename('assetDisposalReasons', oldVal, newVal, setAssetDisposalReasons)
+  const handleResetAssetDisposalReasons = async () => {
+    if (!(await confirmDialog({ title: `비품 폐기 사유를 기본값(${OPTION_LIST_DEFAULTS.assetDisposalReasons.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('assetDisposalReasons')
+    setAssetDisposalReasons(r.items)
+    return r.before
+  }
+
+  const handleAddVisitRoute = async () => {
+    const v = normalizeOptionName('visitRouteOptions', newVisitRoute); if (!v) return
+    const r = await addVisitRouteOption(v); if (!r.ok) { pushToast('error', r.error); return }
+    setVisitRoutes(prev => prev.includes(v) ? prev : [...prev, v]); setNewVisitRoute('')
+  }
+  const handleDeleteVisitRoute = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 경로를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 입주자의 방문 경로는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteVisitRouteOption(name)
+    setVisitRoutes(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderVisitRoutes = async (items: string[]) => {
+    setVisitRoutes(items)
+    await reorderOptions('visitRouteOptions', items)
+  }
+  const handleRenameVisitRoute = (oldVal: string, newVal: string) =>
+    runRename('visitRouteOptions', oldVal, newVal, setVisitRoutes)
+  const handleResetVisitRoutes = async () => {
+    // 기본값이 다섯이라 제목에 다 적어도 두 줄 안이다(직업·퇴실 사유는 길어서 '기본값으로' 만 묻는다).
+    if (!(await confirmDialog({ title: `방문 경로를 기본값(${OPTION_LIST_DEFAULTS.visitRouteOptions.join(', ')})으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('visitRouteOptions')
+    setVisitRoutes(r.items)
     return r.before
   }
 
@@ -1456,8 +1620,8 @@ export default function SettingsForm({
 
       {/* 분류 관리 탭 — 앱이 쓰는 이름표를 한자리에 모았다(2026-08-19 IA 2단계).
           종전에는 같은 일(목록에 이름 하나 추가하기)이 호실 설정·수익·지출·기본정보·데이터·도구
-          네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(할인 사유·수납·지출 축) · 사람(직업·요청) · 품목 순이다.
-          앞의 열셋은 OptionSection 정본 하나로 같은 손놀림이고(삭제·초기화·이름 변경의 적용취소까지),
+          네 탭에 흩어져 있었다. 차례는 묶음 다섯(호실 · 입주자 · 돈 · 청소·작업 · 재고·비품, 2026-10-22 2차)이다.
+          목록 카드는 전부 OptionSection 정본 하나로 같은 손놀림이고(삭제·초기화·이름 변경의 적용취소까지),
           마지막 품목 세부스펙만 지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
       {tab === 'options' && (
         <div className="space-y-4">
@@ -1465,6 +1629,8 @@ export default function SettingsForm({
           <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
             &lsquo;호실 설정&rsquo; 탭과 &lsquo;수익·지출&rsquo; 탭에 있던 분류 항목이 이 탭으로 모였습니다.
           </div>
+          {/* 묶음 머리 다섯(2026-10-22 2차, 가이드 §22 분류 관리 묶음 머리). 카드가 스물셋이라 찾을 자리를 무엇에 붙는 이름표인가로 가른다. */}
+          <OptionGroupHead title="호실" />
           <OptionSection
             title="방타입 관리"
             description="호실 등록 시 선택할 수 있는 방 유형 목록입니다."
@@ -1529,39 +1695,40 @@ export default function SettingsForm({
             onReset={handleResetDirections}
             placeholder="예: 남동향, 남남동향…"
           />
+          <OptionGroupHead title="입주자" />
           <OptionSection
-            title="작업 종류 관리"
-            description="호실 관리 > 작업 탭에서 작업 기록 등록 시 선택할 종류입니다. 청소는 등록 칸이 따로 있어 이 목록에 없습니다."
-            items={workKinds}
-            field="workKindOptions"
-            setItems={setWorkKinds}
+            title="직업 관리"
+            description="입주자 등록·수정에서 고르는 직업입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            items={jobs}
+            field="jobOptions"
+            setItems={setJobs}
             getLabel={v => v}
-            newValue={newWorkKind}
-            onNewValueChange={setNewWorkKind}
-            onAdd={handleAddWorkKind}
-            onDelete={handleDeleteWorkKind}
-            onReorder={handleReorderWorkKinds}
-            onRename={handleRenameWorkKind}
-            onReset={handleResetWorkKinds}
-            placeholder="예: 도배, 장판, 방충망 교체…"
+            newValue={newJob}
+            onNewValueChange={setNewJob}
+            onAdd={handleAddJob}
+            onDelete={handleDeleteJob}
+            onReorder={handleReorderJobs}
+            onRename={handleRenameJob}
+            onReset={handleResetJobs}
+            placeholder="예: 프로그래머, 디자이너…"
           />
           <OptionSection
-            title="할인 사유 관리"
-            description="수납 정보 > 월 이용료 할인에서 할인을 추가할 때 고르는 사유입니다. 기록용 이름표라 금액 계산에는 쓰이지 않습니다. 목록에서 삭제해도 이미 적용된 할인의 사유는 그대로 남습니다."
-            items={discountReasons}
-            field="discountReasons"
-            setItems={setDiscountReasons}
+            title="방문 경로 관리"
+            description="입주자 등록·수정의 방문 경로에서 고르는 이름입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 저장된 입주자의 방문 경로는 그대로 있습니다."
+            items={visitRoutes}
+            field="visitRouteOptions"
+            setItems={setVisitRoutes}
             getLabel={v => v}
-            newValue={newDiscountReason}
-            onNewValueChange={setNewDiscountReason}
-            onAdd={handleAddDiscountReason}
-            onDelete={handleDeleteDiscountReason}
-            onReorder={handleReorderDiscountReasons}
-            onRename={handleRenameDiscountReason}
-            onReset={handleResetDiscountReasons}
-            placeholder="예: 입실자 소개, 장기 계약…"
+            newValue={newVisitRoute}
+            onNewValueChange={setNewVisitRoute}
+            onAdd={handleAddVisitRoute}
+            onDelete={handleDeleteVisitRoute}
+            onReorder={handleReorderVisitRoutes}
+            onRename={handleRenameVisitRoute}
+            onReset={handleResetVisitRoutes}
+            placeholder="예: 블로그, 유학원 소개…"
           />
-          {/* 사유 목록 셋(2026-10-22). 할인 사유와 같은 '고르는 사유' 갈래라 그 옆에 둔다. 상태가 흐르는 차례(입실 취소 · 퇴실 · 퇴실 정산)대로다. */}
+          {/* 사유 목록 둘(2026-10-22). 상태가 흐르는 차례(입실 취소 · 퇴실)대로다. 퇴실 정산의 미반환 사유는 돈 묶음에 있다. */}
           <OptionSection
             title="입실 취소 사유 관리"
             description="입실 취소로 바꿀 때 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
@@ -1593,6 +1760,55 @@ export default function SettingsForm({
             onRename={handleRenameCheckoutReason}
             onReset={handleResetCheckoutReasons}
             placeholder="예: 동반 거주, 군 입대…"
+          />
+          {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
+          <OptionSection
+            title="요청 카테고리 관리"
+            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 4종(시설·소음·청결·편의)을 사용합니다."
+            items={requestCategs}
+            field="requestCategories"
+            setItems={setRequestCategs}
+            getLabel={v => v}
+            newValue={newRequestCateg}
+            onNewValueChange={setNewRequestCateg}
+            onAdd={handleAddRequestCateg}
+            onDelete={handleDeleteRequestCateg}
+            onReorder={handleReorderRequestCategs}
+            onRename={handleRenameRequestCateg}
+            onReset={handleResetRequestCategs}
+            placeholder="예: 인터넷, 주차, 택배…"
+          />
+          <OptionGroupHead title="돈" />
+          <OptionSection
+            title="할인 사유 관리"
+            description="수납 정보 > 월 이용료 할인에서 할인을 추가할 때 고르는 사유입니다. 기록용 이름표라 금액 계산에는 쓰이지 않습니다. 목록에서 삭제해도 이미 적용된 할인의 사유는 그대로 남습니다."
+            items={discountReasons}
+            field="discountReasons"
+            setItems={setDiscountReasons}
+            getLabel={v => v}
+            newValue={newDiscountReason}
+            onNewValueChange={setNewDiscountReason}
+            onAdd={handleAddDiscountReason}
+            onDelete={handleDeleteDiscountReason}
+            onReorder={handleReorderDiscountReasons}
+            onRename={handleRenameDiscountReason}
+            onReset={handleResetDiscountReasons}
+            placeholder="예: 입실자 소개, 장기 계약…"
+          />
+          <OptionSection
+            title="납부일 임시 조정 사유 관리"
+            description="수납 정보 > 납부일 임시 조정에서 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={dueDayReasons}
+            field="dueDayReasons"
+            setItems={setDueDayReasons}
+            getLabel={v => v}
+            newValue={newDueDayReason}
+            onNewValueChange={setNewDueDayReason}
+            onAdd={handleAddDueDayReason}
+            onDelete={handleDeleteDueDayReason}
+            onReorder={handleReorderDueDayReasons}
+            onRename={handleRenameDueDayReason}
+            placeholder="예: 급여 지연, 수급비 입금일…"
           />
           <OptionSection
             title="보증금 미반환 사유 관리"
@@ -1673,38 +1889,86 @@ export default function SettingsForm({
             onRename={handleRenameChannel}
             placeholder="예: 쿠팡, 지마켓…"
           />
+          <OptionGroupHead title="청소·작업" />
           <OptionSection
-            title="직업 관리"
-            description="입주자 등록·수정에서 고르는 직업입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
-            items={jobs}
-            field="jobOptions"
-            setItems={setJobs}
+            title="청소 사유 관리"
+            description="청소 예정을 등록하거나 사유를 바꿀 때 고르는 사유입니다. 퇴실 청소, 공사·도배 후, 입실 중 요청은 앱이 쓰는 사유라 늘 맨 앞에 있습니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다."
+            items={cleaningReasons}
+            field="cleaningReasons"
+            setItems={setCleaningReasons}
             getLabel={v => v}
-            newValue={newJob}
-            onNewValueChange={setNewJob}
-            onAdd={handleAddJob}
-            onDelete={handleDeleteJob}
-            onReorder={handleReorderJobs}
-            onRename={handleRenameJob}
-            onReset={handleResetJobs}
-            placeholder="예: 프로그래머, 디자이너…"
+            newValue={newCleaningReason}
+            onNewValueChange={setNewCleaningReason}
+            onAdd={handleAddCleaningReason}
+            onDelete={handleDeleteCleaningReason}
+            onReorder={handleReorderCleaningReasons}
+            onRename={handleRenameCleaningReason}
+            placeholder="예: 방역, 곰팡이 제거…"
           />
-          {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
           <OptionSection
-            title="요청 카테고리 관리"
-            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 4종(시설·소음·청결·편의)을 사용합니다."
-            items={requestCategs}
-            field="requestCategories"
-            setItems={setRequestCategs}
+            title="작업 종류 관리"
+            description="호실 관리 > 작업 탭에서 작업 기록 등록 시 선택할 종류입니다. 청소는 등록 칸이 따로 있어 이 목록에 없습니다."
+            items={workKinds}
+            field="workKindOptions"
+            setItems={setWorkKinds}
             getLabel={v => v}
-            newValue={newRequestCateg}
-            onNewValueChange={setNewRequestCateg}
-            onAdd={handleAddRequestCateg}
-            onDelete={handleDeleteRequestCateg}
-            onReorder={handleReorderRequestCategs}
-            onRename={handleRenameRequestCateg}
-            onReset={handleResetRequestCategs}
-            placeholder="예: 인터넷, 주차, 택배…"
+            newValue={newWorkKind}
+            onNewValueChange={setNewWorkKind}
+            onAdd={handleAddWorkKind}
+            onDelete={handleDeleteWorkKind}
+            onReorder={handleReorderWorkKinds}
+            onRename={handleRenameWorkKind}
+            onReset={handleResetWorkKinds}
+            placeholder="예: 도배, 장판, 방충망 교체…"
+          />
+          <OptionGroupHead title="재고·비품" />
+          <OptionSection
+            title="소모품 폐기 사유 관리"
+            description="재고 관리 > 폐기 기록에서 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={stockDisposalReasons}
+            field="stockDisposalReasons"
+            setItems={setStockDisposalReasons}
+            getLabel={v => v}
+            newValue={newStockDisposalReason}
+            onNewValueChange={setNewStockDisposalReason}
+            onAdd={handleAddStockDisposalReason}
+            onDelete={handleDeleteStockDisposalReason}
+            onReorder={handleReorderStockDisposalReasons}
+            onRename={handleRenameStockDisposalReason}
+            onReset={handleResetStockDisposalReasons}
+            placeholder="예: 변색, 해충…"
+          />
+          <OptionSection
+            title="무상 입수 출처 관리"
+            description="재고 관리 > 무상 입수 기록에서 고르는 출처입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 출처는 그대로 있습니다."
+            items={stockSources}
+            field="stockSourceOptions"
+            setItems={setStockSources}
+            getLabel={v => v}
+            newValue={newStockSource}
+            onNewValueChange={setNewStockSource}
+            onAdd={handleAddStockSource}
+            onDelete={handleDeleteStockSource}
+            onReorder={handleReorderStockSources}
+            onRename={handleRenameStockSource}
+            onReset={handleResetStockSources}
+            placeholder="예: 주민센터 지원, 샘플…"
+          />
+          <OptionSection
+            title="비품 폐기 사유 관리"
+            description="비품 관리 > 폐기·분실과 교체에서 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            items={assetDisposalReasons}
+            field="assetDisposalReasons"
+            setItems={setAssetDisposalReasons}
+            getLabel={v => v}
+            newValue={newAssetDisposalReason}
+            onNewValueChange={setNewAssetDisposalReason}
+            onAdd={handleAddAssetDisposalReason}
+            onDelete={handleDeleteAssetDisposalReason}
+            onReorder={handleReorderAssetDisposalReasons}
+            onRename={handleRenameAssetDisposalReason}
+            onReset={handleResetAssetDisposalReasons}
+            placeholder="예: 도난, 입주자 반출…"
           />
           {/* 단위 어휘 — 저장할 때 새 단위가 저절로 쌓이므로, 여기는 쌓인 것을 정리하는 자리다.
               규격과 수량을 가른 이유는 저장 칸이 둘이고 어휘도 다르기 때문이다('박스'가 규격에,
@@ -2975,6 +3239,14 @@ const REMOVE_TOAST = {
 // 삭제 적용취소를 눌렀는데 그사이 같은 이름이 목록에 다시 생겨 바뀐 것이 없을 때. '원래 자리로 복귀' 는 거짓이다(3차 검수).
 const ALREADY_LISTED = (label: string) => `'${label}' 항목이 이미 목록에 있어 그대로 둡니다`
 
+/**
+ * 분류 관리 묶음 머리(2026-10-22 2차 등재, 가이드 §22). 카드 사이에 서는 h2 한 줄이고 카드 제목은 h3 다.
+ * 담는 쪽 간격(space-y-4) 위에 위는 넓히고(pt-2) 아래는 좁혀(-mb-2) 머리가 제 묶음 첫 카드에 붙는다. 접기·카운트는 없다.
+ */
+function OptionGroupHead({ title }: { title: string }) {
+  return <h2 className="px-1 pt-2 -mb-2 text-[0.8125rem] font-bold text-[var(--warm-dark)]">{title}</h2>
+}
+
 function OptionSection({
   title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
 }: {
@@ -3159,7 +3431,7 @@ function OptionSection({
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
       {/* 머리도 줄이 모자라면 꺾는다. 글자 125% 에서 '기본값으로 초기화' 가 카드 밖으로 나갔다(2026-10-22 실측). */}
       <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1 mb-1">
-        <h2 className="min-w-0 text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
+        <h3 className="min-w-0 text-sm font-semibold text-[var(--warm-dark)]">{title}</h3>
         {onReset && (
           <button onClick={handleReset}
             className="shrink-0 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
