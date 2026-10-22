@@ -478,6 +478,12 @@ async function main() {
     eq('그사이 이름이 바뀌어도 폐기 적용취소 ok', (await assets.undoDisposeAsset(J(ds1.undo))).ok, true)
     eq('폐기 적용취소 뒤 지출 바이트 동일(사유 null 포함, updatedAt 제외)', await exNoStamp([x1]), beforeX)
     eq('폐기 적용취소로 쪼갠 행이 사라진다', await prisma.expense.count({ where: { propertyId: P1, itemLabel: '전등' } }), 1)
+    // 전량 폐기는 원래 행에 사유가 적힌다(쪼갠 행이 없다). 적용취소가 그 사유까지 폐기 전(null)으로 돌려야 바이트가 같다.
+    const ds3 = await assets.disposeAssets([{ ids: [x1], qty: null }], '2026-10-03', '파손')
+    if (!ds3.ok) throw new Error(ds3.error)
+    eq('전량 폐기는 원래 행에 사유', (await prisma.expense.findUnique({ where: { id: x1 } }))?.disposalReason, '파손')
+    eq('전량 폐기 적용취소 ok', (await assets.undoDisposeAsset(J(ds3.undo))).ok, true)
+    eq('전량 폐기 적용취소 뒤 지출 바이트 동일(사유 null 로 돌아온다)', await exNoStamp([x1]), beforeX)
     const ds2 = await assets.disposeAssets([{ ids: [x1], qty: null }], '2026-10-03', '목록 밖 맨 글자')
     eq('비품 폐기: 목록 밖 맨 글자(위조)는 기타 · 글', [ds2.ok, (await prisma.expense.findUnique({ where: { id: x1 } }))?.disposalReason], [true, '기타 · 목록 밖 맨 글자'])
   }

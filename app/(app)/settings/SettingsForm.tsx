@@ -3248,10 +3248,11 @@ const ALREADY_LISTED = (label: string) => `'${label}' 항목이 이미 목록에
 
 /**
  * 분류 관리 묶음 머리(2026-10-22 2차 등재, 가이드 §22). 카드 사이에 서는 h2 한 줄이고 카드 제목은 h3 다.
- * 담는 쪽 간격(space-y-4) 위에 위는 넓히고(pt-2) 아래는 좁혀(-mb-2) 머리가 제 묶음 첫 카드에 붙는다. 접기·카운트는 없다.
+ * 담는 쪽 간격(space-y-4, 16px) 위에 위는 넓히고(pt-2, 앞 카드와 24px) 아래는 좁혀(mb-2 가 담는 쪽 아래 여백을 8px 로 바꾼다)
+ * 머리가 제 묶음 첫 카드에 붙는다. 음수 여백은 카드가 머리 글자를 덮었다(2026-10-22 하네스 실측). 접기·카운트는 없다.
  */
 function OptionGroupHead({ title }: { title: string }) {
-  return <h2 className="px-1 pt-2 -mb-2 text-[0.8125rem] font-bold text-[var(--warm-dark)]">{title}</h2>
+  return <h2 className="px-1 pt-2 mb-2 text-[0.8125rem] font-bold text-[var(--warm-dark)]">{title}</h2>
 }
 
 function OptionSection({

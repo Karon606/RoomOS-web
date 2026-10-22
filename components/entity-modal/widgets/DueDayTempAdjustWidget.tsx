@@ -236,8 +236,9 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
             </div>
             <div className="flex-1 min-w-[9rem] space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
+              {/* 힌트는 --warm-mid. 이 위젯 바탕(--warning-bg)에서 --warm-muted 는 다크 3.84:1 이다(2026-10-22 2차 실측). */}
               <CategorySelect addMode="ask" value={reason} onChange={setReason} options={reasonOptions}
-                emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+                emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요" hintTone="mid"
                 addToList={reasonToList} onAddToListChange={setReasonToList}
                 className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
             </div>
