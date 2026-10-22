@@ -8091,6 +8091,7 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
   // 목록을 읽는 동안(null)은 칸을 잠그고 비워 둔다. '기록 안 함' 이 섰다가 첫 사유로 바뀌던 깜빡임을 없앤다(2차 독립 검수).
   const reasonList = useReasonOptionList('stockDisposalReasons')
   const reasonOptions = reasonList ?? []
+  const reasonFieldId = useId()   // 사유 라벨(htmlFor)과 칸을 잇는다(접근 이름)
   const [pickedReason, setPickedReason] = useState<string | null>(null)
   const reason = pickedReason ?? reasonOptions[0] ?? ''
   const [reasonToList, setReasonToList] = useState(false)
@@ -8143,8 +8144,8 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
         </div>
       </div>
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-[var(--warm-mid)]">사유</label>
-        <CategorySelect addMode="ask" value={reason} onChange={setPickedReason} options={reasonOptions}
+        <label htmlFor={reasonFieldId} className="text-xs font-medium text-[var(--warm-mid)]">사유</label>
+        <CategorySelect addMode="ask" value={reason} onChange={setPickedReason} options={reasonOptions} id={reasonFieldId}
           emptyLabel={reasonList ? '기록 안 함' : ''} disabled={!reasonList} placeholder="사유를 직접 입력하세요"
           addToList={reasonToList} onAddToListChange={setReasonToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
@@ -8193,6 +8194,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
   // 목록을 읽는 동안(null)은 칸을 잠그고 비워 둔다(폐기 등록 폼과 같은 까닭, 2차 독립 검수).
   const sourceList = useReasonOptionList('stockSourceOptions')
   const sourceOptions = sourceList ?? []
+  const sourceFieldId = useId()   // 출처 라벨(htmlFor)과 칸을 잇는다(접근 이름)
   const [pickedSource, setPickedSource] = useState<string | null>(null)
   const source = pickedSource ?? sourceOptions[0] ?? ''
   const [sourceToList, setSourceToList] = useState(false)
@@ -8297,8 +8299,8 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
         </div>
       )}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-[var(--warm-mid)]">출처</label>
-        <CategorySelect addMode="ask" value={source} onChange={setPickedSource} options={sourceOptions}
+        <label htmlFor={sourceFieldId} className="text-xs font-medium text-[var(--warm-mid)]">출처</label>
+        <CategorySelect addMode="ask" value={source} onChange={setPickedSource} options={sourceOptions} id={sourceFieldId}
           emptyLabel={sourceList ? '기록 안 함' : ''} disabled={!sourceList} placeholder="출처를 직접 입력하세요" addLabel="이 출처를 목록에 추가"
           addToList={sourceToList} onAddToListChange={setSourceToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />

@@ -815,6 +815,8 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/tenants/TenantClient.tsx', /ariaLabel="납부일 조정 사유"[\s\S]{0,800}className="w-full h-\[calc\(2rem\+2px\)\]/, '입주자 상세 납부일 사유 칸이 접근 이름이나 옆 칸과 같은 높이를 잃었다'],
     ['app/(app)/tenants/TenantClient.tsx', /<div className="col-span-2 space-y-1\.5 min-w-0">\s*<label htmlFor=\{`visitRoute-\$\{formUid\}`\}[\s\S]{0,300}id=\{`visitRoute-\$\{formUid\}`\}/, '방문 경로 칸이 전폭(col-span-2)·라벨(htmlFor)을 잃었다(반폭이면 직접 입력 칸이 67px 로 준다)'],
     ['app/(app)/inventory/InventoryClient.tsx', /ariaLabel="출처"/, '무상 입수 수정 출처 칸이 접근 이름을 잃었다'],
+    ['app/(app)/inventory/InventoryClient.tsx', /<label htmlFor=\{reasonFieldId\}[^>]*>사유<\/label>\s*<CategorySelect [^\n]*id=\{reasonFieldId\}/, '소모품 폐기 사유 칸이 라벨(htmlFor)을 잃었다'],
+    ['app/(app)/inventory/InventoryClient.tsx', /<label htmlFor=\{sourceFieldId\}[^>]*>출처<\/label>\s*<CategorySelect [^\n]*id=\{sourceFieldId\}/, '무상 입수 등록 출처 칸이 라벨(htmlFor)을 잃었다'],
     // dense 칸 포커스 링은 --tc-text(§12). 빠지면 '기타' 를 고른 순간 브라우저 기본 파란 링이 선다.
     ['components/cleaning/CleaningPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '청소 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
     ['components/work/RoomWorkPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '작업 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
