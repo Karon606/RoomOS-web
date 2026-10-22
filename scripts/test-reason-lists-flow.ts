@@ -443,6 +443,45 @@ async function main() {
     eq('홈 승인: 운영자가 적은 새 이름은 승인 뒤 목록 끝', [a2.ok, (await listOfAuto('expenseCategories'))?.endsWith(',운영자 카테고리')], [true, true])
   }
 
+  // ── 11. 재고·비품(2차): 소모품 폐기 사유·무상 입수 출처·비품 폐기 사유. 저장 규약·지금 값 그대로·폐기 적용취소가 사유까지 되돌린다 ─────────
+  {
+    const inv = await import('@/app/(app)/inventory/actions')
+    const assets = await import('@/app/(app)/inventory/assets/actions')
+    const listOf2 = async (f: 'stockDisposalReasons' | 'stockSourceOptions' | 'assetDisposalReasons') =>
+      (await prisma.property.findUnique({ where: { id: P1 }, select: { stockDisposalReasons: true, stockSourceOptions: true, assetDisposalReasons: true } }))?.[f] ?? null
+    const item = (await prisma.trackedItem.create({ data: { propertyId: P1, category: '부식비', label: '쌀' } })).id as string
+    const ad1 = await inv.createStockAddition({ trackedItemId: item, date: '2026-10-01', addedQty: 10, source: '기증' })
+    eq('무상 입수: 목록 출처는 그대로', ad1.ok && (await prisma.stockAddition.findUnique({ where: { id: ad1.id } }))?.source, '기증')
+    const ad2 = await inv.createStockAddition({ trackedItemId: item, date: '2026-10-01', addedQty: 1, source: '기타 · 동네 기부', addSourceToList: true })
+    eq('무상 입수: 체크하면 맨 글자 + 목록 끝', [ad2.ok && (await prisma.stockAddition.findUnique({ where: { id: ad2.id } }))?.source, await listOf2('stockSourceOptions')], ['동네 기부', '무상,기증,이월,동네 기부'])
+    const ad3 = await inv.createStockAddition({ trackedItemId: item, date: '2026-10-01', addedQty: 1, source: '522호 이경호님' })
+    eq('무상 입수: 새 기록의 목록 밖 맨 글자는 기타 · 글', ad3.ok && (await prisma.stockAddition.findUnique({ where: { id: ad3.id } }))?.source, '기타 · 522호 이경호님')
+    if (!ad3.ok) throw new Error('ad3')
+    await prisma.stockAddition.update({ where: { id: ad3.id }, data: { source: '522호 이경호님' } })   // 종전 자유 입력으로 남은 출처
+    const up = await inv.updateStockAddition(ad3.id, { source: '522호 이경호님', memo: '샘플' })
+    eq('무상 입수 수정: 종전 자유 입력 출처 그대로면 그대로(메모는 메모)', [up.ok, await prisma.stockAddition.findUnique({ where: { id: ad3.id }, select: { source: true, memo: true } })], [true, { source: '522호 이경호님', memo: '샘플' }])
+    const dp1 = await inv.createStockDisposal({ trackedItemId: item, date: '2026-10-02', disposedQty: 1, reason: '기타 · 쥐가 먹음', memo: '창고 바닥' })
+    eq('소모품 폐기: 체크 안 하면 기타 · 글, 메모는 그대로', dp1.ok && await prisma.stockDisposal.findUnique({ where: { id: dp1.id }, select: { reason: true, memo: true } }), { reason: '기타 · 쥐가 먹음', memo: '창고 바닥' })
+    const dp2 = await inv.createStockDisposal({ trackedItemId: item, date: '2026-10-02', disposedQty: 1, reason: '기타 · 해충', addReasonToList: true })
+    eq('소모품 폐기: 체크하면 맨 글자 + 목록 끝', [dp2.ok && (await prisma.stockDisposal.findUnique({ where: { id: dp2.id } }))?.reason, await listOf2('stockDisposalReasons')], ['해충', '상함·부패,유통기한 경과,파손,해충'])
+    // 비품 폐기: 사유 저장 규약과 적용취소. 적용취소는 폐기 전 모양(사유 null)으로 돌리고, 그사이 사유 이름이 바뀌어도 같다.
+    const ex = async (qtyValue: number) => (await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-01T00:00:00Z'), amount: 50000, category: '수선유지비', itemLabel: '전등', qtyValue, qtyUnit: '개', receivedAt: new Date('2026-09-02T00:00:00Z') } })).id as string
+    const exNoStamp = async (ids: string[]) => JSON.stringify((await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: '전등' }, orderBy: { id: 'asc' } })).filter(r => ids.includes(r.id)).map(({ updatedAt: _u, ...x }) => { void _u; return x }))
+    const x1 = await ex(2)
+    const beforeX = await exNoStamp([x1])
+    const ds1 = await assets.disposeAssets([{ ids: [x1], qty: 1 }], '2026-10-03', '기타 · 도난', { addReasonToList: true })
+    if (!ds1.ok) throw new Error(ds1.error)
+    const disposedRow = await prisma.expense.findFirst({ where: { propertyId: P1, itemLabel: '전등', disposedAt: { not: null } } })
+    eq('비품 폐기: 체크하면 맨 글자 + 목록 끝', [disposedRow?.disposalReason, await listOf2('assetDisposalReasons')], ['도난', '시공 중 철거,파손,분실,노후·고장으로 교체,도난'])
+    const rn = await settings.renameOption('assetDisposalReasons', '도난', '도둑맞음')
+    eq('비품 폐기 사유 이름 변경이 폐기 행을 따라간다', [rn.ok, (await prisma.expense.findUnique({ where: { id: disposedRow!.id } }))?.disposalReason], [true, '도둑맞음'])
+    eq('그사이 이름이 바뀌어도 폐기 적용취소 ok', (await assets.undoDisposeAsset(J(ds1.undo))).ok, true)
+    eq('폐기 적용취소 뒤 지출 바이트 동일(사유 null 포함, updatedAt 제외)', await exNoStamp([x1]), beforeX)
+    eq('폐기 적용취소로 쪼갠 행이 사라진다', await prisma.expense.count({ where: { propertyId: P1, itemLabel: '전등' } }), 1)
+    const ds2 = await assets.disposeAssets([{ ids: [x1], qty: null }], '2026-10-03', '목록 밖 맨 글자')
+    eq('비품 폐기: 목록 밖 맨 글자(위조)는 기타 · 글', [ds2.ok, (await prisma.expense.findUnique({ where: { id: x1 } }))?.disposalReason], [true, '기타 · 목록 밖 맨 글자'])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

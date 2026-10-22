@@ -60,7 +60,8 @@ import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 // 같은 구매 계보 한 줄 순수층(짝을 카드 단위로 접는다) — 진리표 test-asset-disposal ⑮
 import { sameBuyIndex, lineageLine } from './lineage'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
 // 규격 표기 — 카드 제목과 같은 문구(specText 우선, 없으면 값+단위)
@@ -88,9 +89,8 @@ const mergeMetaOf = (it: AssetItem) => [
 const DATE_FIELD_CLS = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-0'
 // 이 화면의 셀렉트 한 벌 — 옮기기·나눠 배정·폐기가 같은 모양을 쓴다(402px 에서 세그먼트는 다섯이 안 들어간다).
 const SELECT_CLS = 'w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-// 폐기·분실 사유 — 운영자가 쓰는 말 그대로(5층 누수 수리, 504호 호스 막힘, 미배정 분실에서 나왔다).
-// 낱말은 분류 목록 기본값 정본(lib/optionLists assetDisposalReasons)이고 '기타' 는 맨 끝 고정이다(2026-10-22 2차).
-const DISPOSAL_REASONS = [...OPTION_LIST_DEFAULTS.assetDisposalReasons, '기타']
+// 폐기·분실 사유는 영업장 목록(환경설정 > 분류 관리 > 비품 폐기 사유)이다(2026-10-22 2차). 종전 화면 상수
+// ('시공 중 철거'·'파손'·'분실'·'노후·고장으로 교체'·'기타')에서 '기타' 만 뺀 것이 새 영업장 기본값이고, '기타(직접 입력)' 은 고르는 칸 맨 끝 고정이다.
 
 type Target = { kind: 'room' | 'location'; id: string }
 
@@ -113,11 +113,14 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   const defaultMoveTo = () => storeKey(hasStores ? defStore : null)
   // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
   const [adjQty, setAdjQty] = useState<{ id: string; v: string } | null>(null)   // 배정 수량 직접 조절 입력(카드별)
-  // replace: '' = 이미 있던 것 그대로 둠, 사유 문자열 = 교체(그만큼 폐기 기록, 배정과 한 트랜잭션)
-  const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string; src: string; replace: string } | null>(null)   // src: '' = 오래된 구매부터, 'YYYY-MM-DD' = 그 구매분에서만
+  // replace: '' = 이미 있던 것 그대로 둠, 사유 문자열 = 교체(그만큼 폐기 기록, 배정과 한 트랜잭션). 사유는 저장 글자다(lib/reasonLists).
+  // replaceToList = 교체 사유를 '기타' 로 적고 '이 사유를 목록에 추가' 를 켰는가(기본 꺼짐, 2026-10-22 2차).
+  const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string; src: string; replace: string; replaceToList?: boolean } | null>(null)   // src: '' = 오래된 구매부터, 'YYYY-MM-DD' = 그 구매분에서만
   // 폐기·분실 — 우리가 사서 넣은 자재가 그 자리에서 빠진 사건. 돈(amount)은 한 원도 안 움직인다.
-  const [dispose, setDispose] = useState<{ rows: { it: AssetItem; qty: string }[]; date: string; reason: string } | null>(null)
-  const openDispose = (its: AssetItem[]) => setDispose({ rows: its.map(it => ({ it, qty: '' })), date: kstYmdStr(), reason: DISPOSAL_REASONS[0] })
+  // 사유는 영업장 목록에서 고른다(CategorySelect addMode 'ask'). 열 때 목록 첫 사유를 미리 골라 둔다(종전 첫 항목 기본과 같다).
+  const disposalReasons = useReasonOptions('assetDisposalReasons')
+  const [dispose, setDispose] = useState<{ rows: { it: AssetItem; qty: string }[]; date: string; reason: string; toList: boolean } | null>(null)
+  const openDispose = (its: AssetItem[]) => setDispose({ rows: its.map(it => ({ it, qty: '' })), date: kstYmdStr(), reason: disposalReasons[0] ?? '', toList: false })
   // 수령 창 — 몇 개 왔는지(수량 2 이상)와 어디에 보관하는지(위치가 있을 때)를 한 창에서 묻는다(2026-10-19 보관 위치 축).
   // store = 보관 위치 id, '' = 보관 위치 모름. 기본 창고를 미리 골라 둔다(바꿀 수 있다). 잔여는 수령 대기 유지.
   // qty0·store0 = 연 순간 값(§12 dirty 판정. 바꾼 뒤에는 배경 누름을 무시하고 닫기를 확인한다).
@@ -707,7 +710,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
     const destLabel = toStore ? (storeNameOf(toStore.id) ? storedPlaceLabel(storeNameOf(toStore.id)!) : unknownDest()) : placeName(move.to)
     const fromLabel = curPlace(it)
     // 교체 — 배정과 폐기가 서버에서 한 트랜잭션이다. 적용취소도 토큰 하나.
-    const replace = !toNone && move.replace ? { reason: move.replace } : null
+    const replace = !toNone && move.replace ? { reason: move.replace, addToList: move.replaceToList === true } : null
     const unit = it.qtyUnit ?? '개'
     startTransition(async () => {
       const res = await assignAggregateToTarget(ids, target, q >= max ? null : q, toNone ? null : (move.date || null), replace)
@@ -755,7 +758,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       // 그 호출이 실패할 때 절반만 폐기된 채로 끝난다.
       const res = await disposeAssets(
         rows.map(r => ({ ids: r.it.ids, qty: r.qty >= r.max ? null : r.qty })),
-        dispose.date || null, dispose.reason)
+        dispose.date || null, dispose.reason, { addReasonToList: dispose.toList })
       if (!res.ok) { pushToast('error', res.error); return }
       setDispose(null); exitMerge()
       const unit = rows[0].it.qtyUnit ?? '개'
@@ -2313,14 +2316,13 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               {already && alreadyQty > 0 && (
                 <label className="block">
                   <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">{dest}에 이미 있는 {withEunNeun(`${fmtQty(alreadyQty)}${unit}`)} 어떻게 할까요?</span>
-                  <select value={move.replace} disabled={pending}
-                    onChange={e => setMove(m => m ? { ...m, replace: e.target.value } : m)}
-                    className={SELECT_CLS}>
-                    <option value="">그대로 둡니다 (추가로 넣기)</option>
-                    <optgroup label="교체 · 같은 수량만큼 폐기로 기록">
-                      {DISPOSAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </optgroup>
-                  </select>
+                  {/* 빈 값 = 그대로 둠, 묶음 안 = 그 사유로 교체(폐기·분실과 같은 목록, 맨 끝 '기타(직접 입력)', 2026-10-22 2차). */}
+                  <CategorySelect addMode="ask" value={move.replace} options={disposalReasons} disabled={pending}
+                    onChange={v => setMove(m => m ? { ...m, replace: v } : m)}
+                    emptyLabel="그대로 둡니다 (추가로 넣기)" groupLabel="교체 · 같은 수량만큼 폐기로 기록"
+                    placeholder="교체 사유를 직접 입력하세요"
+                    addToList={move.replaceToList === true} onAddToListChange={v => setMove(m => m ? { ...m, replaceToList: v } : m)}
+                    className={SELECT_CLS} />
                   {replaceOver && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(alreadyQty)}{unit})보다 많습니다.</p>}
                 </label>
               )}
@@ -2409,11 +2411,11 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               </label>
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">왜 빠졌나요?</span>
-                <select value={dispose.reason} disabled={pending}
-                  onChange={e => setDispose(d => d ? { ...d, reason: e.target.value } : d)}
-                  className={SELECT_CLS}>
-                  {DISPOSAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <CategorySelect addMode="ask" value={dispose.reason} options={disposalReasons} disabled={pending}
+                  onChange={v => setDispose(d => d ? { ...d, reason: v } : d)}
+                  emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+                  addToList={dispose.toList} onAddToListChange={v => setDispose(d => d ? { ...d, toList: v } : d)}
+                  className={SELECT_CLS} />
               </label>
               <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>

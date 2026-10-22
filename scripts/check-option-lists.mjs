@@ -559,11 +559,15 @@ const os = bodyOf(form, /function OptionSection\(/)
     'components/entity-modal/widgets/DepositStatusPanel.tsx': ['withholdReasons'],
     // 2차(2026-10-22). 납부일 임시 조정 사유는 수납 정보 위젯과 입주자 상세 두 자리에서 고른다.
     'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': ['dueDayReasons'],
+    // 소모품 폐기 사유(폐기 기록)·무상 입수 출처(등록·수정 같은 칸), 비품 폐기 사유(폐기·분실과 교체).
+    'app/(app)/inventory/InventoryClient.tsx': ['stockDisposalReasons', 'stockSourceOptions'],
+    'app/(app)/inventory/assets/AssetsClient.tsx': ['assetDisposalReasons'],
   }
   const ASK_COUNT = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
     'app/(app)/tenants/TenantClient.tsx': 3, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
     'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': 1,
+    'app/(app)/inventory/InventoryClient.tsx': 3, 'app/(app)/inventory/assets/AssetsClient.tsx': 2,
   }
   for (const p of SOURCES) {
     const code = stripComments(readFileSync(p, 'utf8'))
@@ -591,7 +595,9 @@ const os = bodyOf(form, /function OptionSection\(/)
     const ask = cs.slice(cs.indexOf("if (addMode === 'ask')"), cs.indexOf('const isInOptions'))
     if (!/const \[ownAdd, setOwnAdd\] = useState\(addMode === 'auto'\)/.test(cs)) violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크의 기본이 사유(ask) 꺼짐·저절로 쌓던 목록(auto) 켜짐이 아니다(운영자 결정 2).`)
     if (!/reasonPickOf\(value, options\)/.test(ask) || !/pick\.kind === 'legacy' && <option value=\{pick\.value\}>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 저장 글자를 reasonPickOf 로 읽지 않거나 목록 밖 글자를 그대로 세우지 않는다. 뺀 항목·옛 이름이 빈 칸으로 뜨고 저장하면 지워진다.`)
-    if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{o\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/select>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 '기타(직접 입력)' 이 목록 맨 끝 고정 항목이 아니다.`)
+    // 목록 항목 덩이(items)의 맨 끝이 '기타(직접 입력)' 이고, 그 덩이가 select 의 맨 끝에 선다(묶음 optgroup 으로 싸도 끝이다, 2026-10-22 2차).
+    if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{o\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/>/.test(ask)
+      || !/\{groupLabel \? <optgroup label=\{groupLabel\}>\{items\}<\/optgroup> : items\}\s*<\/select>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 '기타(직접 입력)' 이 목록 맨 끝 고정 항목이 아니다.`)
     if (!/onChange\(otherReason\(/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 직접 입력이 lib/reasonLists otherReason 으로 저장 글자를 만들지 않는다.`)
     if ((ask.match(/name && <input type="hidden" name=\{name\} value=\{value\} \/>/g) ?? []).length < 2) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 FormData 에 저장 글자를 싣지 않는다(입력칸 글만 실리면 '기타 · ' 가 빠진다).`)
   }
@@ -600,6 +606,9 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/tenants/actions.ts', 'updateTenant'], ['app/(app)/tenants/actions.ts', 'applyStatusTransition'],
     ['app/(app)/tenants/actions.ts', 'recordDepositReturn'], ['app/(app)/rooms/actions.ts', 'updateStatusLogReason'],
     ['app/(app)/rooms/actions.ts', 'setDueDayOverride'],
+    ['app/(app)/inventory/actions.ts', 'createStockDisposal'], ['app/(app)/inventory/actions.ts', 'createStockAddition'],
+    ['app/(app)/inventory/actions.ts', 'updateStockAddition'], ['app/(app)/inventory/assets/actions.ts', 'disposeAssets'],
+    ['app/(app)/inventory/assets/actions.ts', 'assignAggregateToTarget'],
   ]
   for (const [p, fn] of SAVE_PATHS) {
     const b = bodyOf(readFileSync(p, 'utf8'), new RegExp(`export async function ${fn}\\(`))
@@ -757,6 +766,15 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/rooms/actions.ts', /reasonForSave\(propertyId, 'dueDayReasons', reason, \{ addToList: opts\.addToList === true, prev: lease\.overrideDueDayReason \}\)/, '납부일 임시 조정 저장이 지금 사유(prev)와 체크를 넘겨 다시 재지 않는다'],
     ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /setDueDayOverride\(leaseTermId, overrideMonth, val, reason \|\| undefined, \{ addToList: reasonToList \}\)/, '수납 정보 납부일 임시 조정이 체크를 안 넘기거나 사유를 다듬어 보낸다'],
     ['app/(app)/tenants/TenantClient.tsx', /setDueDayOverride\(leaseId, targetMonth, val, reason, \{ addToList \}\)/, '입주자 상세 납부일 임시 조정이 체크를 안 넘긴다'],
+    // 재고·비품. 무상 입수 수정은 지금 출처(prev)로 재서 종전 자유 입력 글자('522호 이경호님')를 그대로 둔다. 메모는 사유가 아니라 메모 그대로다.
+    ['app/(app)/inventory/actions.ts', /reasonForSave\(propertyId, 'stockSourceOptions', data\.source, \{ addToList: data\.addSourceToList === true, prev: a\.source \}\)/, '무상 입수 수정이 지금 출처(prev)를 넘겨 다시 재지 않는다(옛 자유 입력 출처에 기타 · 가 붙는다)'],
+    ['app/(app)/inventory/actions.ts', /reasonForSave\(propertyId, 'stockDisposalReasons', data\.reason, \{ addToList: data\.addReasonToList === true \}\)[\s\S]{0,400}memo: data\.memo \|\| null/, '소모품 폐기가 사유를 다시 재지 않거나 메모를 사유 규약에 태운다'],
+    ['app/(app)/inventory/assets/actions.ts', /disposedAt: when, disposalReason: reasonSave\.reason/, '비품 폐기가 다시 잰 사유를 쓰지 않는다'],
+    ['app/(app)/inventory/assets/actions.ts', /disposalReason: replaceReason\?\.reason \?\? null/, '비품 교체가 다시 잰 사유를 쓰지 않는다'],
+    ['app/(app)/inventory/InventoryClient.tsx', /addSourceToList: sourceToList/, '무상 입수 등록·수정이 체크를 넘기지 않는다'],
+    ['app/(app)/inventory/InventoryClient.tsx', /addReasonToList: reasonToList/, '폐기 기록이 체크를 넘기지 않는다'],
+    ['app/(app)/inventory/assets/AssetsClient.tsx', /\{ addReasonToList: dispose\.toList \}/, '비품 폐기·분실이 체크를 넘기지 않는다'],
+    ['app/(app)/inventory/assets/AssetsClient.tsx', /groupLabel="교체 · 같은 수량만큼 폐기로 기록"/, '비품 교체 칸이 교체 묶음(optgroup)을 잃었다'],
   ]
   for (const [p, re, what] of WIRING2) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
   // 저절로 쌓는 목록의 새 자리(작업 종류·부가수익·지출 카테고리 넷). 값은 맨 글자(autoOptionForSave)이고, 끄면 안 더하고,

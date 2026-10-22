@@ -12,7 +12,7 @@ export default function CategorySelect({
   value, onChange, options, className, wrapperClassName,
   emptyLabel, placeholder = '카테고리를 직접 입력하세요',
   closeIconSize = 14, savedValue, name,
-  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted', dense,
+  addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted', dense, groupLabel, disabled,
 }: {
   value: string
   onChange: (v: string) => void
@@ -60,6 +60,13 @@ export default function CategorySelect({
    * (요청 등록 모달), 'xxs' 는 0.65625rem 500 --warm-mid(입주자 요청 탭). 없으면 text-xs --warm-dark(보통 폼의 형제).
    */
   dense?: 'xs' | 'xxs'
+  /**
+   * ask 칸의 목록 항목(옛 글자 한 줄·목록·'기타(직접 입력)')을 한 묶음(optgroup)으로 싼다. 빈 값 줄(emptyLabel)은 묶음 밖이다.
+   * 비품 교체 칸이 쓴다(빈 값 = 그대로 둠, 묶음 = 교체하며 그 사유로 폐기 기록, 2026-10-22 2차).
+   */
+  groupLabel?: string
+  /** 저장 중 잠금. 고르는 칸·직접 입력 칸·X·체크박스가 함께 잠긴다(맨 select 였던 자리의 disabled 를 그대로 잇는다). */
+  disabled?: boolean
 }) {
   const [customMode, setCustomMode] = useState(false)
   const [initialValue] = useState(value)
@@ -73,14 +80,14 @@ export default function CategorySelect({
   const setChecked = (v: boolean) => { if (addToList === undefined) setOwnAdd(v); onAddToListChange?.(v) }
 
   const closeBtn = (onClose: () => void) => (
-    <button type="button" onClick={onClose}
+    <button type="button" onClick={onClose} disabled={disabled}
       aria-label="목록에서 선택"
       className="shrink-0 -my-1.5 w-11 h-11 inline-flex items-center justify-center rounded-sm text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[var(--tc-text)]"><svg className="inline-block align-middle" width={closeIconSize} height={closeIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   )
   const addBox = (
     <>
       <label className="mt-1 flex items-center gap-2 cursor-pointer min-h-[var(--input-h-touch)] sm:min-h-0 sm:py-1">
-        <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}
+        <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} disabled={disabled}
           aria-describedby={hintId}
           className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
         <span className={`${dense === 'xxs' ? 'text-[0.65625rem] font-medium text-[var(--warm-mid)]' : dense === 'xs' ? 'text-xs text-[var(--warm-mid)]' : 'text-xs text-[var(--warm-dark)]'} break-keep`}>{addLabel}</span>
@@ -98,7 +105,7 @@ export default function CategorySelect({
           {name && <input type="hidden" name={name} value={value} />}
           <div className="flex items-center gap-1">
             <input
-              type="text" value={pick.text}
+              type="text" value={pick.text} disabled={disabled}
               onChange={e => onChange(otherReason(e.target.value))}
               placeholder={placeholder}
               className={`${className} flex-1 min-w-0`}
@@ -110,11 +117,19 @@ export default function CategorySelect({
         </div>
       )
     }
+    const items = (
+      <>
+        {/* 목록에 없는 저장 글자(뺀 항목·옛 이름)는 그 글자 그대로 한 줄 세운다. 손대지 않으면 그대로 저장된다. */}
+        {pick.kind === 'legacy' && <option value={pick.value}>{pick.value}</option>}
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="__custom__">기타(직접 입력)</option>
+      </>
+    )
     return (
       <div className={wrapperClassName}>
         {name && <input type="hidden" name={name} value={value} />}
         <select
-          value={value}
+          value={value} disabled={disabled}
           onChange={e => {
             const v = e.target.value
             if (v === '__custom__') { setPickedOther(true); onChange(otherReason('')) }
@@ -123,10 +138,7 @@ export default function CategorySelect({
           className={className}
         >
           {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
-          {/* 목록에 없는 저장 글자(뺀 항목·옛 이름)는 그 글자 그대로 한 줄 세운다. 손대지 않으면 그대로 저장된다. */}
-          {pick.kind === 'legacy' && <option value={pick.value}>{pick.value}</option>}
-          {options.map(o => <option key={o} value={o}>{o}</option>)}
-          <option value="__custom__">기타(직접 입력)</option>
+          {groupLabel ? <optgroup label={groupLabel}>{items}</optgroup> : items}
         </select>
       </div>
     )
@@ -141,7 +153,7 @@ export default function CategorySelect({
       <div className={wrapperClassName}>
         <div className="flex items-center gap-1">
           <input
-            type="text" name={name} value={value}
+            type="text" name={name} value={value} disabled={disabled}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
             className={`${className} flex-1 min-w-0`}
@@ -161,7 +173,7 @@ export default function CategorySelect({
     <div className={wrapperClassName}>
       <select
         name={name}
-        value={value}
+        value={value} disabled={disabled}
         onChange={e => {
           const v = e.target.value
           if (v === '__custom__') { setCustomMode(true); onChange('') }

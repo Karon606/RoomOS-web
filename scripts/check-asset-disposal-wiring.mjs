@@ -230,7 +230,8 @@ function body(src, header) {
 {
   const fn = body(actions, 'export async function assignAggregateToTarget(')
   need('assignAggregateToTarget 을 찾음', fn.length > 0)
-  need('교체 인자를 받는다', /replace\?: \{ reason: string \} \| null/.test(fn))
+  // 2026-10-22 2차: 교체 사유도 '이 사유를 목록에 추가'(addToList)를 함께 받는다(비품 폐기 사유 목록).
+  need('교체 인자를 받는다', /replace\?: \{ reason: string; addToList\?: boolean \} \| null/.test(fn))
   need('교체 대상 조회가 살아 있는 행만 본다', /disposedAt: null, id: \{ notIn: expenseIds \}/.test(fn))
   need('교체 대상이 공용 표식까지 같다', /isCommonAsset: false,\s*\n\s*disposedAt: null, id: \{ notIn: expenseIds \}/.test(fn),
     '공용 자재 행이 끌려오면 폐기 data 의 isCommonAsset: false 가 그 표식을 조용히 끈다')
@@ -274,7 +275,8 @@ function body(src, header) {
     '빈 문자열이나 0 표시로 바꾸면 폐기 없는 카드의 픽셀이 바뀐다')
   need('수령 대기가 섞이면 폐기 알약을 숨긴다',
     /!selItems\.some\(it => data\.pending\.some\(p => p\.id === it\.id\)\)[\s\S]{0,160}?폐기·분실/.test(client))
-  need('폐기 사유는 select 한 칸', /<select value=\{dispose\.reason\}/.test(client))
+  // 2026-10-22 2차: 한 칸은 사유 목록 정본 칸(CategorySelect addMode 'ask', 목록 끝 '기타(직접 입력)')이다.
+  need('폐기 사유는 select 한 칸', /<CategorySelect addMode="ask" value=\{dispose\.reason\}/.test(client))
   need('미리보기가 돈이 안 움직인다고 말한다', /비용 \$\{won\(totalAmt\)\}은 그대로입니다|비용 \{won\(totalAmt\)\}은 그대로입니다/.test(client))
   need('되돌리기 라벨은 적용취소 단일', /runUndoDisposalRow\(d\.id\)[\s\S]{0,320}?>적용취소</.test(client),
     '§16 어휘 — 이 목록에 "되돌리기" 를 쓰면 안 된다')

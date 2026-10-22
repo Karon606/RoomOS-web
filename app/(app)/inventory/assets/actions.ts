@@ -20,6 +20,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { loadLocationPaths } from '../locationPaths'
 // 배정일(@db.Date)은 KST 오늘로. 정본 날짜 헬퍼.
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { reasonForSave } from '@/lib/reasonListSave'
 
 // 집계·표기 규칙 정본은 순수층(./aggregate)에 산다 — 'use server' 파일은 async 함수만 내보낼 수 있어
 // 여기에 두면 진리표가 붙지 않는다. 이 파일은 조회·쓰기만 진다.
@@ -1204,7 +1205,8 @@ export async function assignAggregateToTarget(
   assignedAtYmd?: string | null,   // 배정일 직접 지정(YYYY-MM-DD, 미지정 = 오늘) — 운영자 요청 2026-07-08
   // 교체 — 새것을 그 자리에 넣으면서 **이미 그 자리에 있던 같은 품목 같은 수량**을 폐기로 기록한다.
   // 배정과 폐기가 한 트랜잭션이라 '넣었는데 뺀 기록이 없는' 중간 상태가 생기지 않는다(운영자 요청 2026-09-16).
-  replace?: { reason: string } | null,
+  // 사유는 폐기·분실과 같은 목록(비품 폐기 사유)으로 다시 잰다. addToList 는 '이 사유를 목록에 추가'(2026-10-22 2차, 기본 꺼짐).
+  replace?: { reason: string; addToList?: boolean } | null,
 ): Promise<{ ok: true; undo?: AssetAssignUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1241,6 +1243,9 @@ export async function assignAggregateToTarget(
     let ops = built.ops
     let createdIdx = built.createdOpIndexes
     let undoRows: ExpRow[] = []
+    const replaceReason = replace && !isNone
+      ? await reasonForSave(propertyId, 'assetDisposalReasons', replace.reason, { addToList: replace.addToList === true })
+      : null
 
     if (replace && !isNone) {
       // 교체 대상 = 그 자리에 **이미 있던** 같은 카드의 살아 있는 행(이번에 옮기는 행은 뺀다).
@@ -1264,7 +1269,7 @@ export async function assignAggregateToTarget(
       const disp = buildSplitOps(already, propertyId, {
         // 위치 세 칸은 원행 값 그대로 — 폐기는 자리를 안 옮긴다.
         roomId: tData.roomId, assignedLocationId: tData.assignedLocationId, isCommonAsset: false,
-        disposedAt: assignedAtVal ?? ymdToDbDate(kstYmdStr()), disposalReason: replace.reason,
+        disposedAt: assignedAtVal ?? ymdToDbDate(kstYmdStr()), disposalReason: replaceReason?.reason ?? null,
       }, movedQty)
       createdIdx = [...built.createdOpIndexes, ...disp.createdOpIndexes.map(i => i + ops.length)]
       ops = [...ops, ...disp.ops]
@@ -1272,6 +1277,7 @@ export async function assignAggregateToTarget(
     }
 
     const results = await prisma.$transaction(ops)
+    await replaceReason?.commit()
     if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
     await logAssignment(propertyId, rep0.itemLabel, rep0, fromState,
       await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false, tData.storedLocationId), movedQty, assignedAtVal)
@@ -1548,6 +1554,8 @@ export async function batchAssignAssets(
 // 이쪽만 보상 방식이면 짝이 안 맞고, 보상 호출 자체가 실패하면 절반만 폐기된 채로 끝난다.
 export async function disposeAssets(
   items: { ids: string[]; qty: number | null }[], dateYmd: string | null, reason: string | null,
+  // '이 사유를 목록에 추가'(2026-10-22 2차, 기본 꺼짐). 사유는 영업장 목록(비품 폐기 사유)으로 다시 잰다.
+  opts: { addReasonToList?: boolean } = {},
 ): Promise<{ ok: true; disposedQty: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1557,6 +1565,8 @@ export async function disposeAssets(
     // 기본 폐기일도 KST 오늘(@db.Date, 배정일과 같은 클래스, 검수 N-8).
     const when = dateYmd ? new Date(dateYmd) : ymdToDbDate(kstYmdStr())
     if (Number.isNaN(when.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    // 목록 밖 글은 '기타 · 글', 체크하면 기록 뒤에 목록에 더한다(lib/reasonLists). 적용취소는 폐기 전 사유(스냅샷)로 돌린다.
+    const reasonSave = await reasonForSave(propertyId, 'assetDisposalReasons', reason, { addToList: opts.addReasonToList === true })
 
     const ops: Prisma.PrismaPromise<unknown>[] = []
     const createdIdx: number[] = []
@@ -1574,7 +1584,7 @@ export async function disposeAssets(
       const built = buildSplitOps(live, propertyId, {
         // 위치 세 칸은 원행 값 그대로 — 폐기는 자리를 안 옮긴다. 그 방 버킷에 남아 비용의 행방을 잇는다.
         roomId: rep.roomId, assignedLocationId: rep.assignedLocationId, isCommonAsset: rep.isCommonAsset,
-        disposedAt: when, disposalReason: reason?.trim() || null,
+        disposedAt: when, disposalReason: reasonSave.reason,
       }, it.qty)
       createdIdx.push(...built.createdOpIndexes.map(i => i + ops.length))
       ops.push(...built.ops)
@@ -1583,6 +1593,7 @@ export async function disposeAssets(
     }
 
     const results = await prisma.$transaction(ops)
+    await reasonSave.commit()
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     const deleteIds = createdIdx.map(i => (results[i] as { id: string }).id)
     return { ok: true, disposedQty, undo: {
@@ -1598,8 +1609,9 @@ export async function disposeAssets(
 /** 한 품목 폐기 — disposeAssets 의 얇은 껍데기(판정·쓰기는 전부 그쪽 한 자리다). */
 export async function disposeAsset(
   expenseIds: string[], qty: number | null, dateYmd: string | null, reason: string | null,
+  opts: { addReasonToList?: boolean } = {},
 ): Promise<{ ok: true; disposedQty: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
-  return disposeAssets([{ ids: expenseIds, qty }], dateYmd, reason)
+  return disposeAssets([{ ids: expenseIds, qty }], dateYmd, reason, opts)
 }
 
 // 폐기 기록 한 줄 적용취소 — 상세의 '설치·폐기' 목록에서 부른다(토스트 토큰이 이미 사라진 뒤).

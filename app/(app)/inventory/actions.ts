@@ -28,6 +28,7 @@ import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
 import { applyLocationCheck, applyLocationChecks, detectHubShort, locValuesError, type LocCheckPatch, type LocBreakdown } from '@/lib/stockCheckMerge'
 import { transferCheckCreateData } from '@/lib/transferCheck'
 import { assertNotFuture } from '@/lib/completionDate'
+import { reasonForSave } from '@/lib/reasonListSave'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
@@ -1932,6 +1933,8 @@ export async function createStockAddition(data: {
   // 소급 등록(이미 점검이 지나간 날짜)일 때 그 뒤 점검의 저장 잔량도 함께 옮길지.
   // 미지정 = 기존 동작(기록만 남김). 클라가 previewStockAdditionShift 로 물어본 뒤에만 켠다.
   adjustFollowing?: boolean
+  // '이 출처를 목록에 추가'(2026-10-22 2차, 기본 꺼짐). 켜면 직접 적은 출처가 무상 입수 출처 목록 끝에 붙는다.
+  addSourceToList?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1939,6 +1942,8 @@ export async function createStockAddition(data: {
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
+    // 출처는 영업장 목록으로 다시 잰다(lib/reasonLists). 목록 밖 글은 '기타 · 글', 체크하면 목록에 더한다(기록이 선 뒤).
+    const sourceSave = await reasonForSave(propertyId, 'stockSourceOptions', data.source, { addToList: data.addSourceToList === true })
     // 미래 날짜 거부 — 지나지 않은 날의 입수는 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
     if (!assertNotFuture(data.date).ok) return { ok: false, error: `입수일이 미래입니다(${data.date}). 아직 받지 않은 물건은 입수로 기록할 수 없습니다.` }
@@ -1962,7 +1967,7 @@ export async function createStockAddition(data: {
           trackedItemId: data.trackedItemId,
           date: new Date(data.date),
           addedQty: data.addedQty,
-          source: data.source || null,
+          source: sourceSave.reason,
           memo: data.memo || null,
           storageLocationId: data.storageLocationId || null,
           createdAt,
@@ -1971,6 +1976,7 @@ export async function createStockAddition(data: {
       if (rows.length > 0) await applyShiftRows(tx, it.id, rows)
       return created
     })
+    await sourceSave.commit()
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
   } catch (err) {
@@ -2055,12 +2061,18 @@ export async function updateStockAddition(id: string, data: {
   storageLocationId?: string | null
   // 그 뒤 점검의 저장 잔량도 함께 옮길지. 미지정 = 기존 동작(기록만 수정).
   adjustFollowing?: boolean
+  // '이 출처를 목록에 추가'(2026-10-22 2차, 기본 꺼짐).
+  addSourceToList?: boolean
 }): Promise<{ ok: true; undo: StockAdditionEditUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    // 출처를 실어 온 수정만 다시 잰다. 지금 출처 그대로면(종전 자유 입력 글자 포함) 그대로 둔다(lib/reasonLists prev).
+    const sourceSave = data.source !== undefined
+      ? await reasonForSave(propertyId, 'stockSourceOptions', data.source, { addToList: data.addSourceToList === true, prev: a.source })
+      : null
     if (data.addedQty !== undefined && data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
     // 미래 날짜 거부 — 지나지 않은 날의 입수는 아직 일어나지 않은 일이다(운영자 확정 2026-09-17).
     // 화면 maxDate 와 두 겹이다. 정본은 lib/completionDate.
@@ -2095,13 +2107,14 @@ export async function updateStockAddition(id: string, data: {
         data: {
           ...(data.date ? { date: new Date(data.date) } : {}),
           ...(data.addedQty !== undefined ? { addedQty: data.addedQty } : {}),
-          ...(data.source !== undefined ? { source: data.source || null } : {}),
+          ...(sourceSave ? { source: sourceSave.reason } : {}),
           ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
           ...(data.storageLocationId !== undefined ? { storageLocationId: data.storageLocationId || null } : {}),
         },
       })
       if (rows.length > 0) undo.shift = await applyShiftRows(tx, a.trackedItemId, rows)
     })
+    await sourceSave?.commit()
     revalidatePath('/inventory')
     return { ok: true, undo }
   } catch (err) {
@@ -2139,6 +2152,8 @@ export async function undoUpdateStockAddition(undo: StockAdditionEditUndo): Prom
 export async function createStockDisposal(data: {
   trackedItemId: string; date: string; disposedQty: number; reason?: string; memo?: string
   storageLocationId?: string | null
+  // '이 사유를 목록에 추가'(2026-10-22 2차, 기본 꺼짐). 사유는 영업장 목록으로 다시 재고, 메모는 메모 그대로다.
+  addReasonToList?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -2185,16 +2200,18 @@ export async function createStockDisposal(data: {
         }
       }
     }
+    const reasonSave = await reasonForSave(propertyId, 'stockDisposalReasons', data.reason, { addToList: data.addReasonToList === true })
     const r = await prisma.stockDisposal.create({
       data: {
         trackedItemId: data.trackedItemId,
         date: new Date(data.date),
         disposedQty: data.disposedQty,
-        reason: data.reason || null,
+        reason: reasonSave.reason,
         memo: data.memo || null,
         storageLocationId: data.storageLocationId || null,
       },
     })
+    await reasonSave.commit()
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
   } catch (err) {
