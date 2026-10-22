@@ -17,7 +17,7 @@ import {
   type MoveCalendarLease, type MoveCalendarRange, type MoveWorkInput,
 } from '@/lib/moveCalendar'
 import {
-  CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
+  CLEANING_PERFORMER_LABEL, cleaningReasonLabel,
   type CleaningPerformer, type CleaningReason,
 } from '@/app/(app)/room-manage/cleaningConstants'
 
@@ -307,8 +307,10 @@ const MOVE_WORK_STATUSES = ['PLANNED', 'DONE'] as const
  * 사유 어휘를 여기서 다시 적지 않는다 — 사본이 곧 두 번째 진실이 된다. 정본 라벨을 그대로
  * 쓰되 명사가 없을 때만 한 낱말을 잇는다.
  */
+// 라벨은 청소 사유 글자 정본(cleaningReasonLabel) 한 벌이다(2026-10-22 2차). 영업장 목록 이름·'기타 · 글' 은 저장 글자 그대로라
+// '방역 청소'·'기타 · 곰팡이 제거 청소' 가 된다. 종전에는 코드 밖 글자를 '기타' 로 접었다(코드만 저장되던 때의 폴백).
 const cleaningKindLabel = (reason: CleaningReason): string => {
-  const label = CLEANING_REASON_LABEL[reason] ?? CLEANING_REASON_LABEL.OTHER
+  const label = cleaningReasonLabel(reason)
   return label.includes('청소') ? label : `${label} 청소`
 }
 

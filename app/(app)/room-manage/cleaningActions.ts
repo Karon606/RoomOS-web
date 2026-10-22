@@ -25,6 +25,7 @@ import { CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { assertNotFuture } from '@/lib/completionDate'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { reasonForSave } from '@/lib/reasonListSave'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -174,17 +175,23 @@ export async function createCleaning(input: {
   performerName?: string | null
   leaseTermId?: string | null
   memo?: string | null
+  /** '이 사유를 목록에 추가'(2026-10-22 2차, 기본 꺼짐). 켜면 '기타' 에 적은 사유가 청소 사유 목록 끝에 붙는다. */
+  addReasonToList?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true } })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    // 사유는 서버가 다시 잰다(2026-10-22 2차, 종전에는 화면이 보낸 글자를 그대로 적었다). 코드 셋(퇴실 청소 따위)은 그대로,
+    // 영업장 목록 이름은 그대로, 그 밖의 글은 '기타 · 글'(lib/reasonLists). 체크하면 기록이 선 뒤 목록 끝에 붙인다.
+    const reasonSave = await reasonForSave(propertyId, 'cleaningReasons', input.reason, { addToList: input.addReasonToList === true })
+    if (!reasonSave.reason) return { ok: false, error: '청소 사유를 골라 주세요.' }
     const row = await prisma.roomCleaning.create({
       data: {
         propertyId, roomId: input.roomId,
         leaseTermId: input.leaseTermId ?? null,
-        reason: input.reason,
+        reason: reasonSave.reason,
         scheduledDate: input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null,
         plannedPerformer: input.plannedPerformer ?? null,
         performerName: input.plannedPerformer && input.plannedPerformer !== 'SELF' ? (input.performerName?.trim() || null) : null,
@@ -192,6 +199,7 @@ export async function createCleaning(input: {
       },
       select: { id: true },
     })
+    await reasonSave.commit()
     revalidatePath('/room-manage')
     return { ok: true, id: row.id }
   } catch (err) {
@@ -409,7 +417,11 @@ export async function rescheduleCleaning(input: { id: string; date: string }): P
  * 붙은 건은 CHECKOUT 밖으로 못 나간다** — 나가면 없는 퇴실 건의 청소비에서 냈다는 기록이
  * 남는다. 그 경우 운영자가 먼저 완료를 되돌려 표식을 걷어야 한다.
  */
-export async function changeCleaningReason(input: { id: string; reason: CleaningReason }): Promise<{ ok: true } | { ok: false; error: string }> {
+//
+// 사유는 서버가 다시 잰다(2026-10-22 2차). 코드 셋 밖의 사유(영업장 목록 이름·'기타 · 글')도 받는다. 'CHECKOUT' 이 아닌 입력은
+// 다시 재도 'CHECKOUT' 이 되지 않는다(코드 꼴 이름은 목록에 못 들고 직접 입력 글은 코드와 견주지 않는다, lib/reasonLists).
+// 그래서 아래 부담 표식 판정은 입력 글자 그대로 본다. 저장된 글자를 돌려준다(화면 토스트가 그 글자를 쓴다).
+export async function changeCleaningReason(input: { id: string; reason: CleaningReason; addToList?: boolean }): Promise<{ ok: true; reason?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
@@ -422,9 +434,12 @@ export async function changeCleaningReason(input: { id: string; reason: Cleaning
     if (cur.fromCleaningFund && input.reason !== 'CHECKOUT') {
       return { ok: false, error: '받아둔 청소비로 부담한 건입니다. 완료를 먼저 적용취소해 그 표식을 걷은 뒤 사유를 바꿔 주세요.' }
     }
-    await prisma.roomCleaning.update({ where: { id: input.id }, data: { reason: input.reason } })
+    const save = await reasonForSave(propertyId, 'cleaningReasons', input.reason, { addToList: input.addToList === true, prev: cur.reason })
+    if (!save.reason) return { ok: false, error: '청소 사유를 골라 주세요.' }
+    await prisma.roomCleaning.update({ where: { id: input.id }, data: { reason: save.reason } })
+    await save.commit()
     revalidatePath('/room-manage')
-    return { ok: true }
+    return { ok: true, reason: save.reason }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
   }

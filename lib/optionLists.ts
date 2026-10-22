@@ -13,7 +13,7 @@ import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, normalizeUnitI
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { PAYMENT_METHODS, CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD, FORFEIT_CATEGORY, PENALTY_CATEGORY, OVERPAY_INCOME_CATEGORY } from '@/lib/incomeCategories'
-import { CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY, CLEANING_REASON_CODES, CLEANING_REASON_LABEL } from '@/app/(app)/room-manage/cleaningConstants'
+import { CLEANING_EXPENSE_CATEGORY, WORK_EXPENSE_CATEGORY, CLEANING_REASON_CODES, cleaningReasonLabel } from '@/app/(app)/room-manage/cleaningConstants'
 import { DEFAULT_INVENTORY_CATEGORIES } from '@/app/(app)/inventory/constants'
 import { normalizeCategoryInput } from '@/lib/categoryInput'
 import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
@@ -260,7 +260,7 @@ export function reservedOptionNameError(field: OptionListField, name: string): s
   if (STATUS_REASON_FIELDS.includes(field) && SYSTEM_STATUS_REASONS.includes(v)) return '앱이 상태 이력에 스스로 적는 이름이라 사유로 쓸 수 없습니다.'
   if (field === 'cleaningReasons') {
     if (/^[A-Z][A-Z0-9_]*$/.test(v)) return '영문 대문자 이름은 앱이 쓰는 청소 사유 코드와 겹쳐 쓸 수 없습니다.'
-    if (CLEANING_REASON_CODES.some(c => CLEANING_REASON_LABEL[c] === v)) return '앱이 쓰는 청소 사유라 목록 맨 앞에 늘 있습니다.'
+    if (CLEANING_REASON_CODES.some(c => cleaningReasonLabel(c) === v)) return '앱이 쓰는 청소 사유라 목록 맨 앞에 늘 있습니다.'
   }
   return null
 }

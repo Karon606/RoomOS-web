@@ -5,7 +5,13 @@
 // 실제로 방 상세가 통째로 안 떠서 호실·고객·수납이 전부 막혔다(운영자 신고 2026-08-05).
 // 그래서 값은 여기, 동작은 cleaningActions.ts 로 가른다.
 
-export type CleaningReason = 'CHECKOUT' | 'AFTER_WORK' | 'DURING_STAY' | 'OTHER'
+/** 앱이 쓰는 청소 사유 코드. 고르는 칸 맨 앞에 늘 선다(CLEANING_REASON_CODES). */
+export type CleaningReasonCode = 'CHECKOUT' | 'AFTER_WORK' | 'DURING_STAY'
+/**
+ * 청소 사유 저장 값(RoomCleaning.reason). 2026-10-22 2차부터 코드만이 아니다. 코드 셋, 영업장 목록(설정 > 분류 관리 > 청소 사유)의
+ * 이름, '기타 · 글'(글이 없으면 '기타'), 2차 전 '기타' 칩이 남긴 옛 코드 'OTHER' 중 하나다. 화면 글자는 cleaningReasonLabel 한 벌로 읽는다.
+ */
+export type CleaningReason = string
 export type CleaningStatus = 'PLANNED' | 'DONE' | 'SKIPPED'
 export type CleaningPerformer = 'SELF' | 'VENDOR' | 'THIRD_PARTY'
 
@@ -19,14 +25,23 @@ export const CLEANING_EXPENSE_CATEGORY = '청소용역비'
 // **두 상수를 글자로 읽는 감지망이 있다**(scripts/check-cleaning-expense-orphan.mjs, check-room-work-link.mjs). 자리를 옮기면 그 CANON 경로도 함께 고친다.
 export const WORK_EXPENSE_CATEGORY = '수선유지비'
 
-export const CLEANING_REASON_LABEL: Record<CleaningReason, string> = {
+export const CLEANING_REASON_LABEL: Record<CleaningReasonCode | 'OTHER', string> = {
   CHECKOUT: '퇴실 청소', AFTER_WORK: '공사·도배 후', DURING_STAY: '입실 중 요청', OTHER: '기타',
 }
 /**
  * 앱이 쓰는 청소 사유 코드 셋(2026-10-22 2차). 고르는 칸 맨 앞에 늘 서고 설정 목록(Property.cleaningReasons)에 들지 않는다.
  * 퇴실 청소(CHECKOUT)는 받은 청소비 부담과 퇴실 뒤 자동 청소가 이 글자로 판정한다. 'OTHER' 는 2차 전 '기타' 칩이 남긴 옛 코드라 여기 없다.
  */
-export const CLEANING_REASON_CODES = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY'] as const
+export const CLEANING_REASON_CODES: readonly CleaningReasonCode[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY']
+
+/**
+ * 청소 사유 저장 값의 화면 글자 정본(목록 행·사유 변경 칸·캘린더·토스트가 이 한 벌을 쓴다).
+ * 코드면 고정 라벨, 옛 코드 'OTHER' 면 '기타'(이행 없음, 그 행은 그대로 'OTHER' 로 남는다), 그 밖은 저장 글자 그대로다
+ * (목록 이름·'기타 · 글'). 코드 꼴 이름은 목록에 못 들어가 코드와 글자가 겹치지 않는다(lib/optionLists reservedOptionNameError).
+ */
+export function cleaningReasonLabel(stored: string): string {
+  return Object.hasOwn(CLEANING_REASON_LABEL, stored) ? CLEANING_REASON_LABEL[stored as CleaningReasonCode | 'OTHER'] : stored
+}
 export const CLEANING_PERFORMER_LABEL: Record<CleaningPerformer, string> = {
   SELF: '직접', VENDOR: '업체', THIRD_PARTY: '제3자',
 }

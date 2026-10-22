@@ -13,7 +13,7 @@ import {
   OPTION_LIST_DEFAULTS, PROTECTED_OPTION_NAMES, parseOptionList, optionRenameWhere, reservedOptionNameError, protectedRenameError,
   isReasonListField, REASON_LIST_FIELDS, FIXED_OPTION_VALUES, LEGACY_FIXED_VALUES,
 } from '../lib/optionLists'
-import { CLEANING_REASON_CODES } from '../app/(app)/room-manage/cleaningConstants'
+import { CLEANING_REASON_CODES, cleaningReasonLabel } from '../app/(app)/room-manage/cleaningConstants'
 import { planReasonSave, reasonPickOf, otherReason, otherReasonText, OTHER_REASON_PREFIX } from '../lib/reasonLists'
 import { REASON_FIELD_STATUSES, REASON_FIELD_SELF_STATUSES, SYSTEM_STATUS_REASONS, reasonFieldForStatus, isSystemStatusReason } from '../lib/statusReasons'
 import { CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '../lib/depositWithholdReasons'
@@ -182,6 +182,11 @@ const TABLE2: Row[] = [
   ['비품 폐기 사유 목록 항목', 'assetDisposalReasons', OPTION_LIST_DEFAULTS.assetDisposalReasons, '분실', {}, { reason: '분실', add: null }],
 ]
 for (const [name, field, list, raw, opts, want] of TABLE2) eq(`2차 저장 · ${name}`, planReasonSave(field, list, raw, opts), want)
+// 청소 사유 글자 정본(cleaningReasonLabel): 코드는 고정 라벨, 옛 OTHER 는 '기타'(이행 없음), 그 밖은 저장 글자 그대로.
+eq('청소 사유 라벨', ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER', '방역', '기타', '기타 · 곰팡이 제거'].map(cleaningReasonLabel),
+  ['퇴실 청소', '공사·도배 후', '입실 중 요청', '기타', '방역', '기타', '기타 · 곰팡이 제거'])
+eq('라벨 표 상속 이름은 라벨이 아니다', ['toString', 'constructor'].map(cleaningReasonLabel), ['toString', 'constructor'])
+eq('고정 라벨과 같은 글자는 목록에 못 들어가 코드 행과 화면 글자가 안 겹친다', CLEANING_REASON_CODES.every(c => reservedOptionNameError('cleaningReasons', cleaningReasonLabel(c)) !== null), true)
 eq('재고 기록은 추적 품목으로 영업장을 거른다', optionRenameWhere({ model: 'stockDisposal', column: 'reason', via: 'trackedItem' }, 'P1', '파손'), { trackedItem: { propertyId: 'P1' }, reason: '파손' })
 eq('무상 입수 출처도', optionRenameWhere({ model: 'stockAddition', column: 'source', via: 'trackedItem' }, 'P1', '기증'), { trackedItem: { propertyId: 'P1' }, source: '기증' })
 eq('계약 칸은 영업장으로 바로', optionRenameWhere({ model: 'leaseTerm', column: 'overrideDueDayReason' }, 'P1', '급여 지연'), { propertyId: 'P1', overrideDueDayReason: '급여 지연' })

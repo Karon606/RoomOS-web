@@ -482,6 +482,44 @@ async function main() {
     eq('비품 폐기: 목록 밖 맨 글자(위조)는 기타 · 글', [ds2.ok, (await prisma.expense.findUnique({ where: { id: x1 } }))?.disposalReason], [true, '기타 · 목록 밖 맨 글자'])
   }
 
+  // ── 12. 청소 사유(2차): 코드 셋 그대로·목록 이름·'기타 · 글'·서버 검증, 받은 청소비 부담은 'CHECKOUT' 에서만(불변) ─────────
+  {
+    const clean = await import('@/app/(app)/room-manage/cleaningActions')
+    const R3 = randomUUID()
+    await prisma.room.create({ data: { id: R3, propertyId: P1, roomNo: '902' } })
+    const reasonOfC = async (id: string) => (await prisma.roomCleaning.findUnique({ where: { id } }))?.reason ?? null
+    const c1 = await clean.createCleaning({ roomId: R3, reason: 'CHECKOUT' })
+    const c2 = await clean.createCleaning({ roomId: R3, reason: '방역' })              // 앞 장면에서 목록에 넣은 이름(적용취소 뒤 '방역')
+    const c3 = await clean.createCleaning({ roomId: R3, reason: '기타 · 퇴실 청소' })   // 고정 라벨과 같은 글을 적어도 코드가 아니다
+    const c4 = await clean.createCleaning({ roomId: R3, reason: 'FAKE_CODE' })
+    const c5 = await clean.createCleaning({ roomId: R3, reason: 'OTHER' })
+    const c6 = await clean.createCleaning({ roomId: R3, reason: '기타 · 곰팡이 제거', addReasonToList: true })
+    if (!c1.ok || !c2.ok || !c3.ok || !c4.ok || !c5.ok || !c6.ok) throw new Error('createCleaning')
+    eq('청소 등록: 코드·목록 이름·기타 · 글·위조 코드·옛 OTHER·체크', await Promise.all([c1.id, c2.id, c3.id, c4.id, c5.id, c6.id].map(reasonOfC)),
+      ['CHECKOUT', '방역', '기타 · 퇴실 청소', '기타 · FAKE_CODE', 'OTHER', '곰팡이 제거'])
+    eq('청소 등록: 체크한 사유는 목록 끝', (await settings.getCleaningReasons()).at(-1), '곰팡이 제거')
+    eq('청소 등록: 빈 사유는 거절', (await clean.createCleaning({ roomId: R3, reason: '' })).ok, false)
+    // 받은 청소비 부담 표식은 'CHECKOUT' 에서만 선다. 고정 라벨과 같은 글('기타 · 퇴실 청소')·목록 이름 행은 안 선다.
+    const T11 = await tenantIn(P1, '파')
+    await prisma.leaseTerm.create({ data: { propertyId: P1, tenantId: T11, roomId: R3, status: 'CHECKED_OUT', moveOutDate: new Date('2026-10-05T00:00:00Z'), cleaningFee: 30000 } })
+    for (const id of [c1.id, c2.id, c3.id]) {
+      const r = await clean.completeCleaning({ id, doneDate: '2026-10-10', performer: 'VENDOR', performerName: '업체', cost: 20000, fromCleaningFund: true })
+      if (!r.ok) throw new Error(r.error)
+    }
+    eq('받은 청소비 부담은 퇴실 청소(CHECKOUT)에만', await Promise.all([c1.id, c2.id, c3.id].map(async id => (await prisma.roomCleaning.findUnique({ where: { id } }))?.fromCleaningFund)), [true, false, false])
+    const ch1 = await clean.changeCleaningReason({ id: c1.id, reason: '방역' })
+    eq('부담 표식이 선 퇴실 청소는 다른 사유로 못 바꾼다', [ch1.ok, await reasonOfC(c1.id)], [false, 'CHECKOUT'])
+    const ch2 = await clean.changeCleaningReason({ id: c2.id, reason: '기타 · 외벽 물청소' })
+    eq('사유 변경: 체크 안 하면 기타 · 글(저장 글자를 돌려준다)', [ch2.ok && ch2.reason, await reasonOfC(c2.id)], ['기타 · 외벽 물청소', '기타 · 외벽 물청소'])
+    const ch3 = await clean.changeCleaningReason({ id: c5.id, reason: 'OTHER' })
+    eq('옛 OTHER 행을 그대로 저장하면 그대로(이행 없음)', [ch3.ok, await reasonOfC(c5.id)], [true, 'OTHER'])
+    const ch4 = await clean.changeCleaningReason({ id: c4.id, reason: 'DURING_STAY' })
+    eq('사유 변경: 코드 셋으로', [ch4.ok, await reasonOfC(c4.id)], [true, 'DURING_STAY'])
+    g.__CR_FLOW_PID = P2
+    eq('남의 영업장 청소는 사유를 못 바꾼다', [(await clean.changeCleaningReason({ id: c2.id, reason: 'AFTER_WORK' })).ok, await reasonOfC(c2.id)], [false, '기타 · 외벽 물청소'])
+    g.__CR_FLOW_PID = P1
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

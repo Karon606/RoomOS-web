@@ -13,6 +13,7 @@ export default function CategorySelect({
   emptyLabel, placeholder = '카테고리를 직접 입력하세요',
   closeIconSize = 14, savedValue, name,
   addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted', dense, groupLabel, disabled,
+  getLabel = (v: string) => v,
 }: {
   value: string
   onChange: (v: string) => void
@@ -67,6 +68,11 @@ export default function CategorySelect({
   groupLabel?: string
   /** 저장 중 잠금. 고르는 칸·직접 입력 칸·X·체크박스가 함께 잠긴다(맨 select 였던 자리의 disabled 를 그대로 잇는다). */
   disabled?: boolean
+  /**
+   * ask 칸 항목의 보이는 글자. 값과 글자가 다른 목록(청소 사유: 코드 'CHECKOUT' 을 '퇴실 청소' 로, 옛 'OTHER' 를 '기타' 로)이 넘긴다.
+   * 없으면 값 그대로다. 저장 글자는 언제나 값이다.
+   */
+  getLabel?: (v: string) => string
 }) {
   const [customMode, setCustomMode] = useState(false)
   const [initialValue] = useState(value)
@@ -120,8 +126,8 @@ export default function CategorySelect({
     const items = (
       <>
         {/* 목록에 없는 저장 글자(뺀 항목·옛 이름)는 그 글자 그대로 한 줄 세운다. 손대지 않으면 그대로 저장된다. */}
-        {pick.kind === 'legacy' && <option value={pick.value}>{pick.value}</option>}
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {pick.kind === 'legacy' && <option value={pick.value}>{getLabel(pick.value)}</option>}
+        {options.map(o => <option key={o} value={o}>{getLabel(o)}</option>)}
         <option value="__custom__">기타(직접 입력)</option>
       </>
     )

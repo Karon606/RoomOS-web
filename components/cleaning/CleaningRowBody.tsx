@@ -26,11 +26,12 @@ import {
   restoreCleaning, rescheduleCleaning, changeCleaningReason,
 } from '@/app/(app)/room-manage/cleaningActions'
 import {
-  CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL,
+  CLEANING_PERFORMER_LABEL, CLEANING_REASON_CODES, cleaningReasonLabel,
   type CleaningRow, type CleaningPerformer, type CleaningStatus, type CleaningReason,
   type CleaningFundStatus, type CleaningFundLease,
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -85,9 +86,12 @@ export function CleaningRowBody({
 }) {
   const [doneOpen, setDoneOpen] = useState(false)
   const [reschedOpen, setReschedOpen] = useState(false)
-  // 사유 변경 — 날짜 변경과 같은 자리·같은 문법의 인라인 폼. 고를 것이 넷이라 확인창(두 갈래)이 안 맞는다.
+  // 사유 변경 — 날짜 변경과 같은 자리·같은 문법의 인라인 폼. 고를 것이 여럿이라 확인창(두 갈래)이 안 맞는다.
+  // 고르는 칸은 예정 등록 폼과 같은 칸이다(코드 셋 맨 앞 + 영업장 목록 + '기타(직접 입력)', 2026-10-22 2차). 목록은 폼이 열렸을 때만 읽는다.
   const [reasonOpen, setReasonOpen] = useState(false)
   const [reasonVal, setReasonVal] = useState<CleaningReason>('CHECKOUT')
+  const [reasonToList, setReasonToList] = useState(false)
+  const listedReasons = useReasonOptions(reasonOpen ? 'cleaningReasons' : null)
   // 완료일은 오늘로 못 박지 않는다 — 어제 한 청소를 오늘 입력하면 이력이 하루 틀어지고,
   // 비용을 함께 넣은 건은 지출 date 까지 같이 틀어진다(신고 e1ad1c5b).
   const [doneDate, setDoneDate] = useState(kstYmdStr())
@@ -113,7 +117,7 @@ export function CleaningRowBody({
   // okMsg 를 함수로도 받는다 — 되돌리기 문구는 지출이 남았는지를 **서버가 돌려준 값**으로 갈라야 한다.
   // 클라가 들고 있는 목록으로 짐작하면 마지막 조회 이후 지출을 지운 경우와 어긋난다.
   // action 은 토스트 우측 적용취소 버튼(v2.0 §15·§16) — 삭제처럼 확인창만으로는 못 무르는 것에 단다.
-  type Done = { ok: true; id?: string; expenseKept?: boolean }
+  type Done = { ok: true; id?: string; expenseKept?: boolean; reason?: string }
   const run = (
     fn: () => Promise<Done | { ok: false; error: string }>,
     okMsg: string | ((res: Done) => string),
@@ -140,7 +144,7 @@ export function CleaningRowBody({
           </button>
         )}
         <StatusBadge tone={cleaningTone(r.status)}>{CLEANING_STATUS_LABEL[r.status]}</StatusBadge>
-        <span className="text-xs text-[var(--warm-dark)]">{CLEANING_REASON_LABEL[r.reason]}</span>
+        <span className="text-xs text-[var(--warm-dark)]">{cleaningReasonLabel(r.reason)}</span>
         {/* 날짜는 목록·표 정본 fmtDateDot(lib/fmtDate) — 위젯과 목록이 같은 날을 같은 글자로 쓴다.
             로컬 재정의('26.08.07')는 감사 B5 금지 대상이었고, 연도 없는 짧은 표기는 해가 바뀌면
             작년 8/7 과 올해 8/7 이 같은 글자가 된다. */}
@@ -342,20 +346,23 @@ export function CleaningRowBody({
         /* 사유 변경 — 날짜 변경과 같은 자리, 같은 문법. 사유는 회계에 관여하므로
            (CHECKOUT 일 때만 '받아둔 청소비로 부담'이 성립) 부담 표식이 붙은 건은 서버가 막는다. */
         <div className="mt-2 space-y-2">
-          <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            사유
-            <select value={reasonVal} onChange={e => setReasonVal(e.target.value as CleaningReason)}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]">
-              {(Object.keys(CLEANING_REASON_LABEL) as CleaningReason[]).map(k => (
-                <option key={k} value={k}>{CLEANING_REASON_LABEL[k]}</option>
-              ))}
-            </select>
+          {/* 라벨이 칸 왼쪽에 서고 칸이 남은 폭을 받는다. '기타' 를 고르면 칸 아래 체크박스·힌트가 칸 폭 그대로 붙는다. */}
+          <div className="flex items-start gap-2 text-xs text-[var(--ink-s)]">
+            <span className="shrink-0 py-1">사유</span>
+            <CategorySelect addMode="ask" value={reasonVal} onChange={setReasonVal}
+              options={[...CLEANING_REASON_CODES, ...listedReasons]} getLabel={cleaningReasonLabel}
+              placeholder="사유를 직접 입력하세요" closeIconSize={12} dense="xs"
+              addToList={reasonToList} onAddToListChange={setReasonToList}
+              wrapperClassName="flex-1 min-w-0"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
           </div>
           <div className="flex gap-2">
             <Btn variant="primary" size="sm" disabled={pending}
               onClick={() => {
-                run(() => changeCleaningReason({ id: r.id, reason: reasonVal }),
-                  `'${CLEANING_REASON_LABEL[reasonVal]}'으로 바꿨습니다`)
+                // 값 전환 표기(§29)로 무엇이 무엇으로 바뀌었는지 싣는다. 바뀐 글자는 서버가 다시 잰 저장 글자다('기타 · 글' 따위).
+                const from = cleaningReasonLabel(r.reason)
+                run(() => changeCleaningReason({ id: r.id, reason: reasonVal, addToList: reasonToList }),
+                  res => `사유를 바꿨습니다 · '${from}' → '${cleaningReasonLabel(res.reason ?? reasonVal)}'`)
                 setReasonOpen(false)
               }}>
               저장
@@ -412,7 +419,7 @@ export function CleaningRowBody({
               없었고, 그러면 걸린 지출 연결이 끊겼다(운영자 지적 2026-08-27). 확인창 하나로 받는다 —
               고를 것이 넷뿐이라 인라인 폼을 또 여는 것이 과하다(§14 choiceDialog 는 두 갈래용). */}
           <RowActionBtn tone="neutral" disabled={pending}
-            onClick={() => { setDoneOpen(false); setReschedOpen(false); setReasonVal(r.reason); setReasonOpen(true) }}>
+            onClick={() => { setDoneOpen(false); setReschedOpen(false); setReasonVal(r.reason); setReasonToList(false); setReasonOpen(true) }}>
             사유 변경
           </RowActionBtn>
           {r.status === 'PLANNED' && (

@@ -562,12 +562,16 @@ const os = bodyOf(form, /function OptionSection\(/)
     // 소모품 폐기 사유(폐기 기록)·무상 입수 출처(등록·수정 같은 칸), 비품 폐기 사유(폐기·분실과 교체).
     'app/(app)/inventory/InventoryClient.tsx': ['stockDisposalReasons', 'stockSourceOptions'],
     'app/(app)/inventory/assets/AssetsClient.tsx': ['assetDisposalReasons'],
+    // 청소 사유(예정 등록·사유 변경). 코드 셋이 맨 앞에 서고 그 뒤가 영업장 목록이다.
+    'components/cleaning/CleaningPlanForm.tsx': ['cleaningReasons'],
+    'components/cleaning/CleaningRowBody.tsx': ['cleaningReasons'],
   }
   const ASK_COUNT = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
     'app/(app)/tenants/TenantClient.tsx': 3, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
     'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': 1,
     'app/(app)/inventory/InventoryClient.tsx': 3, 'app/(app)/inventory/assets/AssetsClient.tsx': 2,
+    'components/cleaning/CleaningPlanForm.tsx': 1, 'components/cleaning/CleaningRowBody.tsx': 1,
   }
   for (const p of SOURCES) {
     const code = stripComments(readFileSync(p, 'utf8'))
@@ -594,9 +598,11 @@ const os = bodyOf(form, /function OptionSection\(/)
     const cs = stripComments(readFileSync('components/ui/CategorySelect.tsx', 'utf8'))
     const ask = cs.slice(cs.indexOf("if (addMode === 'ask')"), cs.indexOf('const isInOptions'))
     if (!/const \[ownAdd, setOwnAdd\] = useState\(addMode === 'auto'\)/.test(cs)) violations.push(`components/ui/CategorySelect.tsx · '목록에 추가' 체크의 기본이 사유(ask) 꺼짐·저절로 쌓던 목록(auto) 켜짐이 아니다(운영자 결정 2).`)
-    if (!/reasonPickOf\(value, options\)/.test(ask) || !/pick\.kind === 'legacy' && <option value=\{pick\.value\}>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 저장 글자를 reasonPickOf 로 읽지 않거나 목록 밖 글자를 그대로 세우지 않는다. 뺀 항목·옛 이름이 빈 칸으로 뜨고 저장하면 지워진다.`)
+    if (!/reasonPickOf\(value, options\)/.test(ask) || !/pick\.kind === 'legacy' && <option value=\{pick\.value\}>\{getLabel\(pick\.value\)\}/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 저장 글자를 reasonPickOf 로 읽지 않거나 목록 밖 글자를 그대로 세우지 않는다. 뺀 항목·옛 이름이 빈 칸으로 뜨고 저장하면 지워진다.`)
     // 목록 항목 덩이(items)의 맨 끝이 '기타(직접 입력)' 이고, 그 덩이가 select 의 맨 끝에 선다(묶음 optgroup 으로 싸도 끝이다, 2026-10-22 2차).
-    if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{o\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/>/.test(ask)
+    // 보이는 글자는 getLabel(기본 값 그대로), 값은 저장 글자다(청소 사유 코드를 고정 라벨로 보여 준다).
+    if (!/options\.map\(o => <option key=\{o\} value=\{o\}>\{getLabel\(o\)\}<\/option>\)\}\s*<option value="__custom__">기타\(직접 입력\)<\/option>\s*<\/>/.test(ask)
+      || !/getLabel = \(v: string\) => v,/.test(cs)
       || !/\{groupLabel \? <optgroup label=\{groupLabel\}>\{items\}<\/optgroup> : items\}\s*<\/select>/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 '기타(직접 입력)' 이 목록 맨 끝 고정 항목이 아니다.`)
     if (!/onChange\(otherReason\(/.test(ask)) violations.push(`components/ui/CategorySelect.tsx · ask 칸의 직접 입력이 lib/reasonLists otherReason 으로 저장 글자를 만들지 않는다.`)
     if ((ask.match(/name && <input type="hidden" name=\{name\} value=\{value\} \/>/g) ?? []).length < 2) violations.push(`components/ui/CategorySelect.tsx · ask 칸이 FormData 에 저장 글자를 싣지 않는다(입력칸 글만 실리면 '기타 · ' 가 빠진다).`)
@@ -609,6 +615,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/actions.ts', 'createStockDisposal'], ['app/(app)/inventory/actions.ts', 'createStockAddition'],
     ['app/(app)/inventory/actions.ts', 'updateStockAddition'], ['app/(app)/inventory/assets/actions.ts', 'disposeAssets'],
     ['app/(app)/inventory/assets/actions.ts', 'assignAggregateToTarget'],
+    ['app/(app)/room-manage/cleaningActions.ts', 'createCleaning'], ['app/(app)/room-manage/cleaningActions.ts', 'changeCleaningReason'],
   ]
   for (const [p, fn] of SAVE_PATHS) {
     const b = bodyOf(readFileSync(p, 'utf8'), new RegExp(`export async function ${fn}\\(`))
@@ -775,7 +782,24 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/InventoryClient.tsx', /addReasonToList: reasonToList/, '폐기 기록이 체크를 넘기지 않는다'],
     ['app/(app)/inventory/assets/AssetsClient.tsx', /\{ addReasonToList: dispose\.toList \}/, '비품 폐기·분실이 체크를 넘기지 않는다'],
     ['app/(app)/inventory/assets/AssetsClient.tsx', /groupLabel="교체 · 같은 수량만큼 폐기로 기록"/, '비품 교체 칸이 교체 묶음(optgroup)을 잃었다'],
+    // 청소 사유. 서버가 다시 재고(종전에는 화면 글자를 그대로 적었다), 사유 변경은 지금 값(prev)으로 잰다. 부담 표식 판정 줄은 입력 그대로 본다.
+    ['app/(app)/room-manage/cleaningActions.ts', /reasonForSave\(propertyId, 'cleaningReasons', input\.reason, \{ addToList: input\.addReasonToList === true \}\)[\s\S]{0,300}reason: reasonSave\.reason,/, '청소 예정 등록이 사유를 다시 재지 않는다'],
+    ['app/(app)/room-manage/cleaningActions.ts', /if \(cur\.fromCleaningFund && input\.reason !== 'CHECKOUT'\) \{[\s\S]{0,300}reasonForSave\(propertyId, 'cleaningReasons', input\.reason, \{ addToList: input\.addToList === true, prev: cur\.reason \}\)/, '청소 사유 변경이 부담 표식 판정 뒤 지금 값(prev)으로 다시 재지 않는다'],
+    // 고르는 칸: 코드 셋 맨 앞 + 영업장 목록, 보이는 글자는 라벨 함수 한 벌. 코랄 채움 칩(§03 위반)은 걷었다.
+    ['components/cleaning/CleaningPlanForm.tsx', /options=\{reasonOptions\} getLabel=\{cleaningReasonLabel\}/, '청소 예정 폼 사유 칸이 코드 셋·목록을 라벨 함수로 보여 주지 않는다'],
+    ['components/cleaning/CleaningPlanForm.tsx', /const reasonOptions = \[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]/, '청소 예정 폼 사유 칸이 코드 셋을 맨 앞에 두지 않는다'],
+    ['components/cleaning/CleaningRowBody.tsx', /options=\{\[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]\} getLabel=\{cleaningReasonLabel\}/, '청소 사유 변경 칸이 예정 폼과 같은 칸이 아니다'],
+    ['components/cleaning/CleaningRowBody.tsx', /\{cleaningReasonLabel\(r\.reason\)\}/, '청소 행이 사유를 라벨 함수로 읽지 않는다(목록 이름·기타 · 글이 빈 칸으로 선다)'],
+    ['lib/moveCalendarData.ts', /const label = cleaningReasonLabel\(reason\)/, '캘린더가 청소 사유를 라벨 함수로 읽지 않는다'],
   ]
+  // 청소 사유 라벨은 한 벌이다(cleaningConstants cleaningReasonLabel). 라벨 표를 사유 값으로 바로 찾는 자리가 되살아나면 목록 이름·'기타 · 글'
+  // 사유가 undefined 로 서거나 '기타' 로 접힌다. 코랄 채움 사유 칩(라디오 그룹 '청소 사유')도 되살아나지 않는다(§03).
+  for (const p of SOURCES) {
+    if (p === 'app/(app)/room-manage/cleaningConstants.ts') continue
+    const code = stripComments(readFileSync(p, 'utf8'))
+    if (/CLEANING_REASON_LABEL\[/.test(code)) violations.push(`${p} · 청소 사유 라벨 표를 값으로 바로 찾는다. cleaningReasonLabel 한 벌을 쓴다.`)
+    if (/aria-label="청소 사유"/.test(code)) violations.push(`${p} · 청소 사유를 칩(라디오 그룹)으로 고른다. 코랄 채움 선택 칩은 §03 위반이고 목록이 붙으면 칩이 접힌다. CategorySelect 를 쓴다.`)
+  }
   for (const [p, re, what] of WIRING2) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
   // 저절로 쌓는 목록의 새 자리(작업 종류·부가수익·지출 카테고리 넷). 값은 맨 글자(autoOptionForSave)이고, 끄면 안 더하고,
   // 고치는 기록의 지금 값과 같으면 안 더한다(목록에서 뺀 카테고리가 저장마다 되살아나지 않는다). 더하기는 기록이 선 뒤(commit)다.

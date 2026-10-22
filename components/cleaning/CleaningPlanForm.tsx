@@ -13,17 +13,17 @@ import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { createCleaning, getRecentCleaningPerformers } from '@/app/(app)/room-manage/cleaningActions'
 import {
-  CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
+  CLEANING_PERFORMER_LABEL, CLEANING_REASON_CODES, cleaningReasonLabel,
   type CleaningPerformer, type CleaningReason,
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
 import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 
 // 배타 선택 칩의 포커스 링 — §09 'focus-visible 링 전 컴포넌트 필수'. 이 파일이 다른 자리에서
-// 이미 쓰던 문법을 상수로 올려 세 자리가 같은 링을 쓰게 한다.
+// 이미 쓰던 문법을 상수로 올려 담당 칩이 같은 링을 쓰게 한다.
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]'
 
-const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
 /** 담당은 **선택**이라 '미정'이 먼저 서고 기본값이다. 빈 문자열이 곧 '아직 안 정함'이다. */
 const PLANNED_PERFORMERS: (CleaningPerformer | '')[] = ['', 'SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -41,7 +41,11 @@ export function CleaningPlanForm({
   const uid = useId()
   // 첫 방을 미리 골라 두지 않는다 — 고른 적 없는 방에 예정이 붙는 오등록이 조용히 성립한다.
   const [pickedRoom, setPickedRoom] = useState('')
+  // 사유는 저장 글자다(코드 셋·영업장 목록 이름·'기타 · 글', 2026-10-22 2차). 코드 셋이 늘 맨 앞에 서고 그 뒤가 영업장 목록이다.
   const [reason, setReason] = useState<CleaningReason>('CHECKOUT')
+  const [reasonToList, setReasonToList] = useState(false)
+  const listedReasons = useReasonOptions('cleaningReasons')
+  const reasonOptions = [...CLEANING_REASON_CODES, ...listedReasons]
   const [scheduled, setScheduled] = useState(kstYmdStr())
   // 담당은 미리 고르지 않는다. 완료 폼은 '업체'를 기본으로 두지만(대개 맡긴다) 그것은 **일어난
   // 일**을 적는 자리다. 계획 단계에서 기본값을 박으면 아직 안 정한 것이 '업체로 정함'으로
@@ -81,7 +85,7 @@ export function CleaningPlanForm({
       try {
         const res = await createCleaning({
           roomId: targetRoomId, reason, scheduledDate: scheduled,
-          plannedPerformer: plannedPerformer || null, performerName, memo,
+          plannedPerformer: plannedPerformer || null, performerName, memo, addReasonToList: reasonToList,
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '청소 예정 등록됨')
@@ -105,20 +109,15 @@ export function CleaningPlanForm({
 
       <div className={dense ? '' : 'space-y-1.5'}>
         {!dense && <p className={labelCls}>사유</p>}
-        {/* 배타 선택이라 소리로도 '고른 것' 이 들려야 한다 — 채움만으로는 화면 밖에 안 나간다
-            (WCAG 4.1.2, 배포 전 디자이너 패스). 보더는 선택 쪽도 투명으로 둬서 고를 때마다
-            오른쪽 형제가 2px 씩 밀리던 것을 없앤다. */}
-        <div role="radiogroup" aria-label="청소 사유" className="flex gap-1.5 flex-wrap">
-          {REASONS.map(v => (
-            <button key={v} type="button" role="radio" aria-checked={reason === v} onClick={() => setReason(v)}
-              className={`rounded-lg ${FOCUS_RING} ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
-              style={reason === v
-                ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
-                : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
-              {CLEANING_REASON_LABEL[v]}
-            </button>
-          ))}
-        </div>
+        {/* 사유는 select 다(2026-10-22 2차). 종전 코랄 채움 칩 넷은 §03 '선택 칩의 상태 표시에 코랄 채움 금지' 를 어겼고,
+            영업장 목록이 붙으면 개수를 앱이 몰라 칩이 여러 줄로 접힌다(형제 작업 등록 폼의 종류 칸과 같은 판정).
+            코드 셋(퇴실 청소·공사·도배 후·입실 중 요청)이 맨 앞, 그 뒤 영업장 목록, 맨 끝 '기타(직접 입력)' 이다. */}
+        <CategorySelect addMode="ask" value={reason} onChange={setReason}
+          options={reasonOptions} getLabel={cleaningReasonLabel}
+          placeholder="사유를 직접 입력하세요" closeIconSize={dense ? 12 : 14}
+          addToList={reasonToList} onAddToListChange={setReasonToList}
+          dense={dense ? 'xs' : undefined}
+          className={inputCls} />
       </div>
 
       <div className={dense ? 'flex items-center gap-2 text-xs text-[var(--ink-s)]' : 'space-y-1.5'}>
