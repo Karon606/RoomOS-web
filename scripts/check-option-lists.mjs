@@ -549,13 +549,16 @@ const os = bodyOf(form, /function OptionSection\(/)
   const ASK_SITES = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons'],
     'components/entity-modal/widgets/TenantStatusHistory.tsx': ['cancelReasons', 'checkoutReasons'],
-    'app/(app)/tenants/TenantClient.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons'],
+    'app/(app)/tenants/TenantClient.tsx': ['cancelReasons', 'checkoutReasons', 'withholdReasons', 'dueDayReasons'],
     'app/(app)/dashboard/DashboardClient.tsx': ['withholdReasons'],
     'components/entity-modal/widgets/DepositStatusPanel.tsx': ['withholdReasons'],
+    // 2차(2026-10-22). 납부일 임시 조정 사유는 수납 정보 위젯과 입주자 상세 두 자리에서 고른다.
+    'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': ['dueDayReasons'],
   }
   const ASK_COUNT = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
-    'app/(app)/tenants/TenantClient.tsx': 2, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
+    'app/(app)/tenants/TenantClient.tsx': 3, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
+    'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': 1,
   }
   for (const p of SOURCES) {
     const code = stripComments(readFileSync(p, 'utf8'))
@@ -591,6 +594,7 @@ const os = bodyOf(form, /function OptionSection\(/)
   const SAVE_PATHS = [
     ['app/(app)/tenants/actions.ts', 'updateTenant'], ['app/(app)/tenants/actions.ts', 'applyStatusTransition'],
     ['app/(app)/tenants/actions.ts', 'recordDepositReturn'], ['app/(app)/rooms/actions.ts', 'updateStatusLogReason'],
+    ['app/(app)/rooms/actions.ts', 'setDueDayOverride'],
   ]
   for (const [p, fn] of SAVE_PATHS) {
     const b = bodyOf(readFileSync(p, 'utf8'), new RegExp(`export async function ${fn}\\(`))
@@ -742,6 +746,17 @@ const os = bodyOf(form, /function OptionSection\(/)
   if (want.length !== FIELDS.length) violations.push(`scripts/check-option-lists.mjs · ⓝ 묶음 표가 목록 ${FIELDS.length}칸 중 ${want.length}칸만 적었다. 새 목록은 묶음을 정해 여기 적는다.`)
   // 카드 제목은 h3, 묶음 머리는 h2 다(제목 차례).
   if (os && !/<h3 className="min-w-0 text-sm font-semibold text-\[var\(--warm-dark\)\]">\{title\}<\/h3>/.test(os)) violations.push(`${FORM} · OptionSection 카드 제목이 h3 이 아니다. 묶음 머리(h2) 아래 제목 차례가 깨진다.`)
+  // 2차 고르는 자리 배선. 서버는 지금 값(prev)과 '목록에 추가' 체크를 받아 영업장 목록으로 다시 재고(reasonForSave) 기록 뒤에 목록에 더한다(commit).
+  // 화면은 저장 글자를 다듬지 않고 보낸다(끝 공백을 걷으면 글 없는 '기타 · ' 가 '기타 ·' 가 돼 '기타 · 기타 ·' 로 남는다).
+  const WIRING2 = [
+    ['app/(app)/rooms/actions.ts', /reasonForSave\(propertyId, 'dueDayReasons', reason, \{ addToList: opts\.addToList === true, prev: lease\.overrideDueDayReason \}\)/, '납부일 임시 조정 저장이 지금 사유(prev)와 체크를 넘겨 다시 재지 않는다'],
+    ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /setDueDayOverride\(leaseTermId, overrideMonth, val, reason \|\| undefined, \{ addToList: reasonToList \}\)/, '수납 정보 납부일 임시 조정이 체크를 안 넘기거나 사유를 다듬어 보낸다'],
+    ['app/(app)/tenants/TenantClient.tsx', /setDueDayOverride\(leaseId, targetMonth, val, reason, \{ addToList \}\)/, '입주자 상세 납부일 임시 조정이 체크를 안 넘긴다'],
+  ]
+  for (const [p, re, what] of WIRING2) if (!re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · ${what}.`)
+  for (const [p, re] of [['app/(app)/tenants/TenantClient.tsx', /overrideReason\.trim\(\)/], ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /reason\.trim\(\)/]]) {
+    if (re.test(stripComments(readFileSync(p, 'utf8')))) violations.push(`${p} · 납부일 임시 조정 사유 저장 글자를 화면이 다듬는다. 글 없는 '기타 · ' 가 '기타 · 기타 ·' 로 남는다.`)
+  }
   // 2차 카드 손놀림은 형제 카드와 같은 손 핸들러다(추가 정규화는 ⓘ, 삭제 확인창 꼴은 check-undo-verb, 확인창 기본값은 ⓓ 가 본다).
   // 초기화는 기본값이 있는 칸에만 선다. 기본값이 없는 칸의 초기화는 곧 전부 삭제다(쇼핑몰 카드와 같다).
   for (const f of SECOND) {

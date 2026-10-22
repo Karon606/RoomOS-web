@@ -830,6 +830,9 @@ export default function TenantClient({
   const [overrideDateInput, setOverrideDateInput] = useState('')
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
+  // 납부일 임시 조정 사유는 영업장 목록에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask'). 폼이 열렸을 때만 읽는다.
+  const [overrideReasonToList, setOverrideReasonToList] = useState(false)
+  const overrideReasonOptions = useReasonOptions(showOverrideForm ? 'dueDayReasons' : null)
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
@@ -3234,6 +3237,7 @@ export default function TenantClient({
                                   }
                                   setOverrideDateInput(initDate || kstYmdStr())
                                   setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
+                                  setOverrideReasonToList(false)
                                 }
                               }}
                               className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] transition-colors">
@@ -3251,8 +3255,10 @@ export default function TenantClient({
 
                         {showOverrideForm && (
                           <div className="space-y-2">
-                            <div className="flex gap-2">
-                              <div className="flex-1 space-y-1">
+                            {/* 날짜와 사유가 한 줄이다. 칸마다 최소 9rem 을 쥐고 모자라면 사유가 다음 줄로 내려간다(320·360px x 글자 125%,
+                                2026-10-22 2차 실측). 사유 칸은 '기타' 를 고르면 체크박스와 힌트가 붙어 키가 커진다. */}
+                            <div className="flex flex-wrap gap-2">
+                              <div className="flex-1 min-w-[9rem] space-y-1">
                                 <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                                 <DatePicker
                                   value={overrideDateInput}
@@ -3261,13 +3267,16 @@ export default function TenantClient({
                                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]"
                                 />
                               </div>
-                              <div className="flex-1 space-y-1">
+                              <div className="flex-1 min-w-[9rem] space-y-1">
                                 <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
-                                <input
-                                  type="text"
+                                <CategorySelect addMode="ask"
                                   value={overrideReason}
-                                  onChange={e => setOverrideReason(e.target.value)}
-                                  placeholder="예: 급여일 변경"
+                                  onChange={setOverrideReason}
+                                  options={overrideReasonOptions}
+                                  emptyLabel="기록 안 함"
+                                  placeholder="사유를 직접 입력하세요"
+                                  addToList={overrideReasonToList}
+                                  onAddToListChange={setOverrideReasonToList}
                                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
                                 />
                               </div>
@@ -3287,7 +3296,8 @@ export default function TenantClient({
                                   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
                                   val = dayNum >= lastDay ? '말일' : String(dayNum)
                                 }
-                                const reason = overrideReason.trim()
+                                // 저장 글자는 다듬지 않고 보낸다. 끝 공백을 걷으면 글 없는 '기타 · ' 가 '기타 ·' 가 돼 직접 입력으로 안 읽힌다(다듬기는 서버).
+                                const reason = overrideReason
                                 const leaseId = lease.id
                                 setShowOverrideForm(false)
                                 setDetailTenant(prev => {
@@ -3301,10 +3311,16 @@ export default function TenantClient({
                                     ),
                                   }
                                 })
+                                const addToList = overrideReasonToList
                                 startTransition(async () => {
                                   const release = trackSave()
                                   try {
-                                    await setDueDayOverride(leaseId, targetMonth, val, reason)
+                                    // 서버가 목록으로 다시 잰 글자('기타 · 글' 또는 목록에 더한 맨 글자)로 바로 맞춘다.
+                                    const saved = await setDueDayOverride(leaseId, targetMonth, val, reason, { addToList })
+                                    setDetailTenant(prev => prev && {
+                                      ...prev,
+                                      leaseTerms: prev.leaseTerms.map(lt => lt.id === leaseId ? { ...lt, overrideDueDayReason: saved.reason } : lt),
+                                    })
                                     refresh()
                                     pushToast('success', '이번 달 납부일 임시 변경됨')
                                   } finally { release() }

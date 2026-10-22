@@ -3363,31 +3363,46 @@ export async function undoOverpayExtraIncome(
 }
 
 // 납부일 임시 조정
+//
+// 계약은 영업장 범위로 먼저 읽는다(2026-10-22 2차, 운영자 승인 별건 권한). 종전에는 id 만으로 고쳐 남의 영업장 계약 id 를
+// 실어 보내면 그 계약의 납부일이 바뀌었다(권한-영업장범위 감사 클래스, scripts/check-action-property-scope).
+// 사유는 영업장 목록으로 다시 잰다(lib/reasonLists). 목록 밖 글은 '기타 · 글', '이 사유를 목록에 추가' 를 체크하면 목록에 더한다.
+// 지금 적힌 사유 그대로면(목록에 없는 옛 글 '급여지연' 따위) 그대로 둔다. 저장된 글자를 돌려준다(화면이 그 글자를 바로 쓴다).
 export async function setDueDayOverride(
   leaseTermId: string,
   targetMonth: string,
   overrideDueDay: string,
-  reason?: string
-) {
+  reason?: string,
+  opts: { addToList?: boolean } = {},
+): Promise<{ reason: string | null }> {
   await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, overrideDueDayReason: true } })
+  if (!lease) throw new Error('계약을 찾을 수 없습니다.')
+  const save = await reasonForSave(propertyId, 'dueDayReasons', reason, { addToList: opts.addToList === true, prev: lease.overrideDueDayReason })
   await prisma.leaseTerm.update({
-    where: { id: leaseTermId },
+    where: { id: lease.id },
     data: {
       overrideDueDay:      overrideDueDay || null,
       overrideDueDayMonth: overrideDueDay ? targetMonth : null,
-      overrideDueDayReason: reason || null,
+      overrideDueDayReason: save.reason,
     },
   })
+  await save.commit()
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/tenants')
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
+  return { reason: save.reason }
 }
 
 export async function clearDueDayOverride(leaseTermId: string) {
   await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
+  if (!lease) throw new Error('계약을 찾을 수 없습니다.')
   await prisma.leaseTerm.update({
-    where: { id: leaseTermId },
+    where: { id: lease.id },
     data: { overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null },
   })
   const { revalidatePath } = await import('next/cache')

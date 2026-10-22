@@ -164,6 +164,25 @@ const AXES = [
     ],
     mustNot: [],
   },
+  // 납부일 임시 조정과 그 삭제(2026-10-22 2차 사유 목록, 운영자 승인 별건 권한). 종전에는 계약을 id 만으로 고쳤다.
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'setDueDayOverride',
+    must: [
+      [/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}/, '계약을 영업장 범위로 먼저 읽지 않는다'],
+      [/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*lease\.id\s*\}/, '영업장 범위로 찾은 계약이 아닌 화면 id 로 쓴다'],
+    ],
+    mustNot: [[/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 고친다']],
+  },
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'clearDueDayOverride',
+    must: [
+      [/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}/, '계약을 영업장 범위로 먼저 읽지 않는다'],
+      [/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*lease\.id\s*\}/, '영업장 범위로 찾은 계약이 아닌 화면 id 로 쓴다'],
+    ],
+    mustNot: [[/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 고친다']],
+  },
   {
     file: 'app/(app)/inventory/actions.ts',
     fn: 'restoreStorageHubs',

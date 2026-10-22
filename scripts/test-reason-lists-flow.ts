@@ -364,6 +364,33 @@ async function main() {
     eq('2차 적용취소 뒤 목록도 원래 이름', [await settings.getStockDisposalReasons(), await settings.getCleaningReasons()], [['상함·부패', '유통기한 경과', '파손'], ['방역']])
   }
 
+  // ── 9. 납부일 임시 조정 사유(2차): 저장 규약·지금 값 그대로·남의 영업장 계약 거부(별건 권한) ─────────
+  {
+    const T10 = await tenantIn(P1, '타')
+    const L10 = (await prisma.leaseTerm.create({ data: { propertyId: P1, tenantId: T10, status: 'ACTIVE', overrideDueDayReason: '급여지연' } })).id as string
+    const ovr = async () => prisma.leaseTerm.findUnique({ where: { id: L10 }, select: { overrideDueDay: true, overrideDueDayMonth: true, overrideDueDayReason: true } })
+    const listNow = async () => (await prisma.property.findUnique({ where: { id: P1 }, select: { dueDayReasons: true } }))?.dueDayReasons ?? null
+    const before = await listNow()
+    const r1 = await rooms.setDueDayOverride(L10, '2026-11', '15', '급여지연')
+    eq('목록에 없는 옛 사유를 그대로 저장하면 그대로(기타 · 가 안 붙는다)', [r1.reason, await ovr()], ['급여지연', { overrideDueDay: '15', overrideDueDayMonth: '2026-11', overrideDueDayReason: '급여지연' }])
+    eq('체크 안 하면 기타 · 글', (await rooms.setDueDayOverride(L10, '2026-11', '15', '기타 · 수급비 입금일')).reason, '기타 · 수급비 입금일')
+    eq('글 없는 기타는 기타', (await rooms.setDueDayOverride(L10, '2026-11', '15', '기타 · ')).reason, '기타')
+    const r4 = await rooms.setDueDayOverride(L10, '2026-11', '15', '기타 · 월급날 변경', { addToList: true })
+    eq('체크하면 맨 글자 + 목록 끝', [r4.reason, await listNow()], ['월급날 변경', `${before},월급날 변경`])
+    eq('목록 밖 맨 글자(옛 화면·위조)는 기타 · 글', (await rooms.setDueDayOverride(L10, '2026-11', '15', '목록 밖 맨 글자')).reason, '기타 · 목록 밖 맨 글자')
+    const kept = await ovr()
+    g.__CR_FLOW_PID = P2
+    let threw = false
+    try { await rooms.setDueDayOverride(L10, '2026-12', '1', '기타 · 남의 영업장') } catch { threw = true }
+    eq('남의 영업장 계약은 납부일을 임시로 못 바꾼다', [threw, await ovr()], [true, kept])
+    threw = false
+    try { await rooms.clearDueDayOverride(L10) } catch { threw = true }
+    eq('남의 영업장 계약의 임시 조정을 못 지운다', [threw, await ovr()], [true, kept])
+    g.__CR_FLOW_PID = P1
+    await rooms.clearDueDayOverride(L10)
+    eq('제 영업장은 지운다', await ovr(), { overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null })
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

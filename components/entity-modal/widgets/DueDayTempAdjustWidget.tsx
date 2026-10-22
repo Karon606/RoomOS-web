@@ -13,6 +13,8 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { withParticle } from '@/lib/koParticle'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { useReasonOptions } from '@/components/ui/useReasonOptions'
 
 type Override = {
   overrideDueDay: string | null
@@ -46,7 +48,10 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
   const [pending, startTransition] = useTransition()
   const [showForm, setShowForm] = useState(false)
   const [dateInput, setDateInput] = useState('')
+  // 사유는 영업장 목록에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask'). reason 은 저장 글자다(lib/reasonLists).
   const [reason, setReason] = useState('')
+  const [reasonToList, setReasonToList] = useState(false)
+  const reasonOptions = useReasonOptions(showForm ? 'dueDayReasons' : null)
   // 조정 대상 청구 월 (기본 = 미납월 ?? 보는 달). 별도 옵션에서 변경 가능.
   const defaultMonth = firstUnpaidMonth ?? targetMonth
   const [overrideMonth, setOverrideMonth] = useState(defaultMonth)
@@ -99,6 +104,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
       }
       setDateInput(initDate || kstYmdStr())
       setReason(isActive ? (room.overrideDueDayReason ?? '') : '')
+      setReasonToList(false)
     }
   }
 
@@ -157,7 +163,8 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
     startTransition(async () => {
       const release = trackSave()
       try {
-        await setDueDayOverride(leaseTermId, overrideMonth, val, reason.trim() || undefined)
+        // 저장 글자는 다듬지 않고 보낸다(끝 공백을 걷으면 글 없는 '기타 · ' 가 직접 입력으로 안 읽힌다, 다듬기는 서버).
+        await setDueDayOverride(leaseTermId, overrideMonth, val, reason || undefined, { addToList: reasonToList })
         pushToast('success', `${monthLabel(overrideMonth)}분 납부일 임시 변경됨`)
         onChange?.()
       } catch (e) {
@@ -219,15 +226,19 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
               ))}
             </div>
           )}
-          <div className="flex gap-2">
-            <div className="flex-1 space-y-1">
+          {/* 날짜와 사유가 한 줄이다. 칸마다 최소 9rem 을 쥐고 모자라면 사유가 다음 줄로 내려간다(320·360px x 글자 125%,
+              2026-10-22 2차 실측, 입주자 상세의 같은 폼과 같은 꼴). */}
+          <div className="flex flex-wrap gap-2">
+            <div className="flex-1 min-w-[9rem] space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
               <DatePicker value={dateInput} onChange={setDateInput} minDate={`${overrideMonth}-01`}
                 className="bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]" />
             </div>
-            <div className="flex-1 space-y-1">
+            <div className="flex-1 min-w-[9rem] space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
-              <input type="text" placeholder="사유" value={reason} onChange={e => setReason(e.target.value)}
+              <CategorySelect addMode="ask" value={reason} onChange={setReason} options={reasonOptions}
+                emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+                addToList={reasonToList} onAddToListChange={setReasonToList}
                 className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
             </div>
           </div>
