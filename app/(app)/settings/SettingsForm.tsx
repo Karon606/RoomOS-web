@@ -1898,7 +1898,7 @@ export default function SettingsForm({
           <OptionGroupHead title="청소·작업" />
           <OptionSection
             title="청소 사유 관리"
-            description="청소 예정을 등록하거나 사유를 바꿀 때 고르는 사유입니다. 퇴실 청소, 공사·도배 후, 입실 중 요청은 앱이 쓰는 사유라 늘 맨 앞에 있습니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다."
+            description={<span>청소 예정을 등록하거나 사유를 바꿀 때 고르는 사유입니다. 퇴실 청소, <span className="whitespace-nowrap">공사·도배 후</span>, 입실 중 요청은 앱이 쓰는 사유라 고르는 칸 맨 앞에 늘 있습니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다.</span>}
             items={cleaningReasons}
             field="cleaningReasons"
             setItems={setCleaningReasons}
@@ -1962,7 +1962,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="비품 폐기 사유 관리"
-            description="비품 관리 > 폐기·분실과 교체에서 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
+            description="재고 관리 > 비품·자재의 폐기·분실과 옮기기(교체)에서 고르는 사유입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 남긴 사유는 그대로 있습니다."
             items={assetDisposalReasons}
             field="assetDisposalReasons"
             setItems={setAssetDisposalReasons}
@@ -3259,7 +3259,8 @@ function OptionSection({
   title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
 }: {
   title: string
-  description?: string
+  /** 설명 문장. 좁은 칸에서 꺾이면 안 되는 이름('공사·도배 후')을 한 덩어리로 묶는 자리만 JSX 를 넘긴다. */
+  description?: React.ReactNode
   items: string[]
   /** 이 카드의 목록 칸. 이름을 바꿀 수 없는 항목(lib/optionLists 보호 이름)을 서버와 같은 함수로 가리고,
    * 삭제·초기화·이름 변경의 적용취소가 이 칸을 서버에서 다시 고친다. */
@@ -3619,7 +3620,8 @@ function ItemSpecOptionsPanel() {
   // 카드 사이 간격은 담는 쪽(분류 관리 탭의 space-y-4)이 준다 — 제 mt 를 들고 있으면 이중이 된다.
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
-      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">품목 세부스펙</h2>
+      {/* 카드 제목은 h3(가이드). 재고·비품 묶음 머리가 h2 라 같은 h2 면 제목 목차가 깨진다(2차 독립 검수). */}
+      <h3 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">품목 세부스펙</h3>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         단가와 무관한 구분 정보(색상·사이즈·치수)입니다. 지출 입력 때 저장한 값이 자동으로 쌓이고, 품목 선택 시 칩으로 재사용됩니다.
       </p>
