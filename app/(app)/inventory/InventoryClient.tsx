@@ -110,7 +110,7 @@ import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEnt
 import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
 import { conflictingPathName } from '@/lib/locationPaths'
 import CategorySelect from '@/components/ui/CategorySelect'
-import { useReasonOptions } from '@/components/ui/useReasonOptions'
+import { useReasonOptions, useReasonOptionList } from '@/components/ui/useReasonOptions'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
 const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
@@ -4078,7 +4078,8 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
       </div>
       <div>
         <p className={EDIT_LABEL_CLS}>출처</p>
-        <CategorySelect addMode="ask" value={source} onChange={setSource} options={sourceOptions}
+        {/* 접근 이름은 형제 수량 칸처럼 aria-label 로 준다. 종전 글자칸은 placeholder 가 이름이었다(2차 독립 검수, 이름이 사라진 같은 클래스). */}
+        <CategorySelect addMode="ask" value={source} onChange={setSource} options={sourceOptions} ariaLabel="출처"
           emptyLabel="기록 안 함" placeholder="출처를 직접 입력하세요" addLabel="이 출처를 목록에 추가"
           addToList={sourceToList} onAddToListChange={setSourceToList}
           className={checkTextInputCls} />
@@ -8087,7 +8088,9 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
   const [qtyStr, setQtyStr] = useState('')
   // 사유는 영업장 목록(환경설정 > 분류 관리 > 소모품 폐기 사유)에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask').
   // 고르기 전에는 목록 첫 사유가 서 있다(종전 고정 칸의 기본 '상함·부패' 와 같은 손놀림). 고른 뒤에는 고른 값이다.
-  const reasonOptions = useReasonOptions('stockDisposalReasons')
+  // 목록을 읽는 동안(null)은 칸을 잠그고 비워 둔다. '기록 안 함' 이 섰다가 첫 사유로 바뀌던 깜빡임을 없앤다(2차 독립 검수).
+  const reasonList = useReasonOptionList('stockDisposalReasons')
+  const reasonOptions = reasonList ?? []
   const [pickedReason, setPickedReason] = useState<string | null>(null)
   const reason = pickedReason ?? reasonOptions[0] ?? ''
   const [reasonToList, setReasonToList] = useState(false)
@@ -8142,7 +8145,7 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">사유</label>
         <CategorySelect addMode="ask" value={reason} onChange={setPickedReason} options={reasonOptions}
-          emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
+          emptyLabel={reasonList ? '기록 안 함' : ''} disabled={!reasonList} placeholder="사유를 직접 입력하세요"
           addToList={reasonToList} onAddToListChange={setReasonToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
       </div>
@@ -8164,7 +8167,7 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
       {error && <p className="text-sm text-[var(--danger-fg)]">{error}</p>}
       <div className="flex gap-2 pt-1">
         <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={onCancel} disabled={pending}>취소</Btn>
-        <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={pending}>{pending ? '저장 중…' : '폐기 기록'}</Btn>
+        <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={pending || !reasonList}>{pending ? '저장 중…' : '폐기 기록'}</Btn>
       </div>
     </form>
   )
@@ -8187,7 +8190,9 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
   const [qtyOnly, setQtyOnly] = useState('')   // 규격 없는 품목용 단일 입력
   // 출처는 영업장 목록(환경설정 > 분류 관리 > 무상 입수 출처)에서 고른다(2026-10-22 2차, CategorySelect addMode 'ask').
   // 고르기 전에는 목록 첫 출처가 서 있다(종전 고정 칸의 기본 '무상' 과 같은 손놀림). 수정 폼(AdditionEditForm)과 같은 칸이다.
-  const sourceOptions = useReasonOptions('stockSourceOptions')
+  // 목록을 읽는 동안(null)은 칸을 잠그고 비워 둔다(폐기 등록 폼과 같은 까닭, 2차 독립 검수).
+  const sourceList = useReasonOptionList('stockSourceOptions')
+  const sourceOptions = sourceList ?? []
   const [pickedSource, setPickedSource] = useState<string | null>(null)
   const source = pickedSource ?? sourceOptions[0] ?? ''
   const [sourceToList, setSourceToList] = useState(false)
@@ -8294,7 +8299,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">출처</label>
         <CategorySelect addMode="ask" value={source} onChange={setPickedSource} options={sourceOptions}
-          emptyLabel="기록 안 함" placeholder="출처를 직접 입력하세요" addLabel="이 출처를 목록에 추가"
+          emptyLabel={sourceList ? '기록 안 함' : ''} disabled={!sourceList} placeholder="출처를 직접 입력하세요" addLabel="이 출처를 목록에 추가"
           addToList={sourceToList} onAddToListChange={setSourceToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
@@ -8318,7 +8323,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
-        <Btn type="submit" variant="primary" disabled={pending} fullWidth>
+        <Btn type="submit" variant="primary" disabled={pending || !sourceList} fullWidth>
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>

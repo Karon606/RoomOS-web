@@ -61,8 +61,9 @@ export function CleaningPlanForm({
   useEffect(() => { getRecentCleaningPerformers().then(setRecentPerformers).catch(() => {}) }, [])
 
   const targetRoomId = roomId ?? pickedRoom
+  // dense 칸도 포커스 링은 --tc-text 다(§12). 링을 안 걸면 '기타(직접 입력)' 을 고른 순간 브라우저 기본 파란 링이 선다(2차 독립 검수).
   const inputCls = dense
-    ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
+    ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30'
     : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]'
   const labelCls = dense
     ? 'text-xs text-[var(--ink-s)]'
@@ -77,6 +78,9 @@ export function CleaningPlanForm({
   // select 때문이다 — 거기서는 마우스 클릭에도 링이 서야 한다. 나머지 값은 `inputCls` 와 같다.
   const dateFieldCls =
     'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30'
+  // dense 예정일 트리거. dense inputCls 와 같은 값에 focus 접두만 focus-visible 이다(위와 같은 이유). 가로 flex 행이라 flex-1 min-w-0.
+  const denseDateCls =
+    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30 flex-1 min-w-0'
 
   const submit = () => {
     if (!targetRoomId) { pushToast('error', '호실을 골라 주세요.'); return }
@@ -108,11 +112,12 @@ export function CleaningPlanForm({
       )}
 
       <div className={dense ? '' : 'space-y-1.5'}>
-        {!dense && <p className={labelCls}>사유</p>}
+        {!dense && <label className={labelCls} htmlFor={`${uid}-reason`}>사유</label>}
         {/* 사유는 select 다(2026-10-22 2차). 종전 코랄 채움 칩 넷은 §03 '선택 칩의 상태 표시에 코랄 채움 금지' 를 어겼고,
             영업장 목록이 붙으면 개수를 앱이 몰라 칩이 여러 줄로 접힌다(형제 작업 등록 폼의 종류 칸과 같은 판정).
             코드 셋(퇴실 청소·공사·도배 후·입실 중 요청)이 맨 앞, 그 뒤 영업장 목록, 맨 끝 '기타(직접 입력)' 이다. */}
         <CategorySelect addMode="ask" value={reason} onChange={setReason}
+          id={`${uid}-reason`} ariaLabel={dense ? '청소 사유' : undefined}
           options={reasonOptions} getLabel={cleaningReasonLabel}
           placeholder="사유를 직접 입력하세요" closeIconSize={dense ? 12 : 14}
           addToList={reasonToList} onAddToListChange={setReasonToList}
@@ -127,7 +132,7 @@ export function CleaningPlanForm({
             flex-basis 를 auto 로 남겨 트리거 base 가 행 폭 전체가 되고, shrink 가 base 비례로
             분배되면서 옆의 한글 라벨('예정일')이 음절 단위로 꺾인다(CleaningRowBody 와 같은 자리). */}
         <DatePicker value={scheduled} onChange={setScheduled}
-          className={dense ? `${inputCls} flex-1 min-w-0` : dateFieldCls} />
+          className={dense ? denseDateCls : dateFieldCls} />
       </div>
 
       {/* 담당 — 운영자 요구가 "누가 청소할지도 표시되고" 라 계획 단계에서 받는다(2026-08-20).

@@ -350,15 +350,21 @@ export function CleaningRowBody({
           <div className="flex items-start gap-2 text-xs text-[var(--ink-s)]">
             <span className="shrink-0 py-1">사유</span>
             <CategorySelect addMode="ask" value={reasonVal} onChange={setReasonVal}
+              ariaLabel="청소 사유"
               options={[...CLEANING_REASON_CODES, ...listedReasons]} getLabel={cleaningReasonLabel}
               placeholder="사유를 직접 입력하세요" closeIconSize={12} dense="xs"
               addToList={reasonToList} onAddToListChange={setReasonToList}
               wrapperClassName="flex-1 min-w-0"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30" />
           </div>
           <div className="flex gap-2">
             <Btn variant="primary" size="sm" disabled={pending}
               onClick={() => {
+                // 보이는 사유가 그대로면 그냥 닫는다. 보내면 "'기타' → '기타'" 처럼 안 바뀐 값을 바꿨다고 말한다(2차 독립 검수).
+                // 옛 'OTHER' 행에서 '기타(직접 입력)' 을 비운 채 고른 것도 같은 '기타' 다(이행 없음, 행은 'OTHER' 그대로).
+                // 같은 글자라도 직접 입력 글에 '목록에 추가' 를 켰으면 보낸다(그 글이 목록에 오르고 기록이 맨 글자가 된다).
+                const willAdd = reasonToList && reasonVal.startsWith('기타 · ')
+                if (cleaningReasonLabel(reasonVal) === cleaningReasonLabel(r.reason) && !willAdd) { setReasonOpen(false); return }
                 // 값 전환 표기(§29)로 무엇이 무엇으로 바뀌었는지 싣는다. 바뀐 글자는 서버가 다시 잰 저장 글자다('기타 · 글' 따위).
                 const from = cleaningReasonLabel(r.reason)
                 run(() => changeCleaningReason({ id: r.id, reason: reasonVal, addToList: reasonToList }),

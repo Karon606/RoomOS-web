@@ -4,7 +4,7 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition, useMemo, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useState, useTransition, useMemo, useEffect, useRef, useCallback, useId, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { channelVendorLabel } from '@/lib/expenseChannel'
 import { useRouter, useSearchParams } from 'next/navigation'
 // 알림 딥링크 ?focus= 정본(재고 화면과 같은 훅). 비품 수령 대기 알림이 수령 대기 섹션으로 보낸다.
@@ -119,6 +119,8 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   // 폐기·분실 — 우리가 사서 넣은 자재가 그 자리에서 빠진 사건. 돈(amount)은 한 원도 안 움직인다.
   // 사유는 영업장 목록에서 고른다(CategorySelect addMode 'ask'). 열 때 목록 첫 사유를 미리 골라 둔다(종전 첫 항목 기본과 같다).
   const disposalReasons = useReasonOptions('assetDisposalReasons')
+  // 사유 칸(교체·폐기)의 질문 라벨을 잇는 id. 바깥을 label 로 싸면 '기타' 의 체크박스 label 이 그 안에 중첩된다(2차 독립 검수).
+  const reasonFieldId = useId()
   const [dispose, setDispose] = useState<{ rows: { it: AssetItem; qty: string }[]; date: string; reason: string; toList: boolean } | null>(null)
   const openDispose = (its: AssetItem[]) => setDispose({ rows: its.map(it => ({ it, qty: '' })), date: kstYmdStr(), reason: disposalReasons[0] ?? '', toList: false })
   // 수령 창 — 몇 개 왔는지(수량 2 이상)와 어디에 보관하는지(위치가 있을 때)를 한 창에서 묻는다(2026-10-19 보관 위치 축).
@@ -2314,17 +2316,18 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               {/* 교체 — 한 동작. 새것을 넣으면서 있던 것을 폐기로 남긴다(배정과 한 트랜잭션).
                   체크박스 대신 셀렉트 한 칸으로 받는다 — 켜기와 사유를 따로 묻지 않는다. */}
               {already && alreadyQty > 0 && (
-                <label className="block">
-                  <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">{dest}에 이미 있는 {withEunNeun(`${fmtQty(alreadyQty)}${unit}`)} 어떻게 할까요?</span>
+                <div>
+                  <label htmlFor={`${reasonFieldId}-replace`} className="block text-xs font-medium text-[var(--warm-mid)] mb-1">{dest}에 이미 있는 {withEunNeun(`${fmtQty(alreadyQty)}${unit}`)} 어떻게 할까요?</label>
                   {/* 빈 값 = 그대로 둠, 묶음 안 = 그 사유로 교체(폐기·분실과 같은 목록, 맨 끝 '기타(직접 입력)', 2026-10-22 2차). */}
                   <CategorySelect addMode="ask" value={move.replace} options={disposalReasons} disabled={pending}
+                    id={`${reasonFieldId}-replace`}
                     onChange={v => setMove(m => m ? { ...m, replace: v } : m)}
                     emptyLabel="그대로 둡니다 (추가로 넣기)" groupLabel="교체 · 같은 수량만큼 폐기로 기록"
                     placeholder="교체 사유를 직접 입력하세요"
                     addToList={move.replaceToList === true} onAddToListChange={v => setMove(m => m ? { ...m, replaceToList: v } : m)}
                     className={SELECT_CLS} />
                   {replaceOver && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(alreadyQty)}{unit})보다 많습니다.</p>}
-                </label>
+                </div>
               )}
               <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
@@ -2409,14 +2412,15 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   onChange={v => setDispose(d => d ? { ...d, date: v } : d)}
                   className={DATE_FIELD_CLS} />
               </label>
-              <label className="block">
-                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">왜 빠졌나요?</span>
+              <div>
+                <label htmlFor={`${reasonFieldId}-dispose`} className="block text-xs font-medium text-[var(--warm-mid)] mb-1">왜 빠졌나요?</label>
                 <CategorySelect addMode="ask" value={dispose.reason} options={disposalReasons} disabled={pending}
+                  id={`${reasonFieldId}-dispose`}
                   onChange={v => setDispose(d => d ? { ...d, reason: v } : d)}
                   emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요"
                   addToList={dispose.toList} onAddToListChange={v => setDispose(d => d ? { ...d, toList: v } : d)}
                   className={SELECT_CLS} />
-              </label>
+              </div>
               <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
                 {bad

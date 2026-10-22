@@ -26,12 +26,22 @@ const READ: Record<ReasonListField, () => Promise<string[]>> = {
  * 읽기에 실패하면 빈 목록에 '기타(직접 입력)' 만 남는다. 저장은 서버가 목록으로 다시 재므로 틀린 값이 남지 않는다.
  */
 export function useReasonOptions(field: ReasonListField | null): string[] {
+  return useReasonOptionList(field) ?? []
+}
+
+/**
+ * useReasonOptions 와 같되 읽기 전에는 null 이다(실패하면 빈 목록). 목록 첫 항목을 기본값으로 세우는 등록 폼이
+ * 읽는 동안 칸을 잠그고 비워 둘 때 쓴다. 빈 목록으로 그리면 '기록 안 함' 이 섰다가 첫 항목으로 바뀌어 깜빡이고,
+ * 그사이 저장하면 운영자가 고르지 않은 '기록 안 함' 이 남는다(2차 독립 검수).
+ */
+export function useReasonOptionList(field: ReasonListField | null): string[] | null {
   const [byField, setByField] = useState<Partial<Record<ReasonListField, string[]>>>({})
   useEffect(() => {
     if (!field) return
     let live = true
-    void READ[field]().then(list => { if (live) setByField(prev => ({ ...prev, [field]: list })) }).catch(() => {})
+    const put = (list: string[]) => { if (live) setByField(prev => ({ ...prev, [field]: list })) }
+    void READ[field]().then(put).catch(() => put([]))
     return () => { live = false }
   }, [field])
-  return field ? byField[field] ?? [] : []
+  return field ? byField[field] ?? null : []
 }

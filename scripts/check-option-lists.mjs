@@ -805,7 +805,29 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['components/cleaning/CleaningRowBody.tsx', /options=\{\[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]\} getLabel=\{cleaningReasonLabel\}/, '청소 사유 변경 칸이 예정 폼과 같은 칸이 아니다'],
     ['components/cleaning/CleaningRowBody.tsx', /\{cleaningReasonLabel\(r\.reason\)\}/, '청소 행이 사유를 라벨 함수로 읽지 않는다(목록 이름·기타 · 글이 빈 칸으로 선다)'],
     ['lib/moveCalendarData.ts', /const label = cleaningReasonLabel\(reason\)/, '캘린더가 청소 사유를 라벨 함수로 읽지 않는다'],
+    // 사유 칸 접근 이름·포커스·높이(2차 독립 검수). 맨 select·글자칸이 CategorySelect 로 바뀌며 이름(label htmlFor·aria-label·placeholder)이 사라졌다.
+    ['components/ui/CategorySelect.tsx', /(?:[\s\S]*?id=\{id\} aria-label=\{ariaLabel\}){4}/, 'CategorySelect 가 접근 이름(id·ariaLabel)을 고르는 칸·직접 입력 칸 넷 모두에 걸지 않는다'],
+    ['components/ui/CategorySelect.tsx', /autoFocus=\{customMode\}/, "auto 칸이 목록 밖 값으로 열려도 커서를 끌어와 모바일 키보드를 띄운다('기타(직접 입력)' 을 방금 골랐을 때만 둔다)"],
+    ['components/work/RoomWorkPlanForm.tsx', /htmlFor=\{`\$\{uid\}-kind`\}>작업 종류<\/label>[\s\S]{0,80}id=\{`\$\{uid\}-kind`\} ariaLabel=\{dense \? '작업 종류' : undefined\}/, '작업 예정 폼 종류 칸이 라벨(htmlFor)·dense 이름을 잃었다'],
+    ['components/cleaning/CleaningPlanForm.tsx', /htmlFor=\{`\$\{uid\}-reason`\}>사유<\/label>[\s\S]{0,400}id=\{`\$\{uid\}-reason`\} ariaLabel=\{dense \? '청소 사유' : undefined\}/, '청소 예정 폼 사유 칸이 라벨(htmlFor)·dense 이름을 잃었다'],
+    ['components/cleaning/CleaningRowBody.tsx', /ariaLabel="청소 사유"/, '청소 사유 변경 칸이 접근 이름을 잃었다'],
+    ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /ariaLabel="납부일 조정 사유"[\s\S]{0,300}className="w-full h-\[calc\(2rem\+2px\)\]/, '수납 정보 납부일 사유 칸이 접근 이름이나 옆 칸과 같은 높이를 잃었다'],
+    ['app/(app)/tenants/TenantClient.tsx', /ariaLabel="납부일 조정 사유"[\s\S]{0,800}className="w-full h-\[calc\(2rem\+2px\)\]/, '입주자 상세 납부일 사유 칸이 접근 이름이나 옆 칸과 같은 높이를 잃었다'],
+    ['app/(app)/tenants/TenantClient.tsx', /<div className="col-span-2 space-y-1\.5 min-w-0">\s*<label htmlFor=\{`visitRoute-\$\{formUid\}`\}[\s\S]{0,300}id=\{`visitRoute-\$\{formUid\}`\}/, '방문 경로 칸이 전폭(col-span-2)·라벨(htmlFor)을 잃었다(반폭이면 직접 입력 칸이 67px 로 준다)'],
+    ['app/(app)/inventory/InventoryClient.tsx', /ariaLabel="출처"/, '무상 입수 수정 출처 칸이 접근 이름을 잃었다'],
+    // dense 칸 포커스 링은 --tc-text(§12). 빠지면 '기타' 를 고른 순간 브라우저 기본 파란 링이 선다.
+    ['components/cleaning/CleaningPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '청소 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
+    ['components/work/RoomWorkPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '작업 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
+    ['components/cleaning/CleaningRowBody.tsx', /dense="xs"[\s\S]{0,300}text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30" \/>/, '청소 사유 변경 칸의 포커스 링이 --tc-text 가 아니다'],
+    // 손대지 않은 사유 저장은 닫기만 한다("'기타' → '기타'" 토스트 방지). 등록 폼은 목록을 읽는 동안 칸과 저장을 잠근다('기록 안 함' 깜빡임).
+    ['components/cleaning/CleaningRowBody.tsx', /if \(cleaningReasonLabel\(reasonVal\) === cleaningReasonLabel\(r\.reason\) && !willAdd\) \{ setReasonOpen\(false\); return \}/, '청소 사유를 안 바꾸고 저장해도 바꿨다고 말한다'],
+    ['app/(app)/inventory/InventoryClient.tsx', /emptyLabel=\{reasonList \? '기록 안 함' : ''\} disabled=\{!reasonList\}[\s\S]*disabled=\{pending \|\| !reasonList\}/, "폐기 등록 폼이 목록을 읽는 동안 '기록 안 함' 을 세우거나 저장을 안 잠근다"],
+    ['app/(app)/inventory/InventoryClient.tsx', /emptyLabel=\{sourceList \? '기록 안 함' : ''\} disabled=\{!sourceList\}[\s\S]*disabled=\{pending \|\| !sourceList\}/, "무상 입수 등록 폼이 목록을 읽는 동안 '기록 안 함' 을 세우거나 저장을 안 잠근다"],
   ]
+  // 비품 사유 칸(교체·폐기)을 바깥 label 로 싸지 않는다. '기타' 의 체크박스 label 이 그 안에 중첩된다(HTML 위반, 2차 독립 검수).
+  if (/<label className="block">(?:(?!<\/label>)[\s\S])*<CategorySelect/.test(stripComments(readFileSync('app/(app)/inventory/assets/AssetsClient.tsx', 'utf8')))) {
+    violations.push(`app/(app)/inventory/assets/AssetsClient.tsx · 사유 칸(CategorySelect)을 바깥 label 로 싼다. '기타' 의 체크박스 label 이 중첩된다. 바깥은 div, 질문은 label htmlFor 로 둔다.`)
+  }
   // 청소 사유 라벨은 한 벌이다(cleaningConstants cleaningReasonLabel). 라벨 표를 사유 값으로 바로 찾는 자리가 되살아나면 목록 이름·'기타 · 글'
   // 사유가 undefined 로 서거나 '기타' 로 접힌다. 코랄 채움 사유 칩(라디오 그룹 '청소 사유')도 되살아나지 않는다(§03).
   for (const p of SOURCES) {

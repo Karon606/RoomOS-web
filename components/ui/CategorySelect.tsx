@@ -14,6 +14,7 @@ export default function CategorySelect({
   closeIconSize = 14, savedValue, name,
   addMode, addToList, onAddToListChange, addLabel = '이 사유를 목록에 추가', hintTone = 'muted', dense, groupLabel, disabled,
   getLabel = (v: string) => v,
+  id, ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
@@ -73,6 +74,12 @@ export default function CategorySelect({
    * 없으면 값 그대로다. 저장 글자는 언제나 값이다.
    */
   getLabel?: (v: string) => string
+  /**
+   * 접근 이름. 고르는 칸과 직접 입력 칸 중 지금 선 쪽이 받는다. 보이는 라벨이 있으면 `<label htmlFor={id}>` 로 잇고,
+   * 라벨 글자가 없는 조밀한 자리는 ariaLabel 로 이름을 준다(2차 독립 검수, 맨 select 였던 자리의 이름이 사라졌다).
+   */
+  id?: string
+  ariaLabel?: string
 }) {
   const [customMode, setCustomMode] = useState(false)
   const [initialValue] = useState(value)
@@ -111,7 +118,7 @@ export default function CategorySelect({
           {name && <input type="hidden" name={name} value={value} />}
           <div className="flex items-center gap-1">
             <input
-              type="text" value={pick.text} disabled={disabled}
+              type="text" value={pick.text} disabled={disabled} id={id} aria-label={ariaLabel}
               onChange={e => onChange(otherReason(e.target.value))}
               placeholder={placeholder}
               className={`${className} flex-1 min-w-0`}
@@ -135,7 +142,7 @@ export default function CategorySelect({
       <div className={wrapperClassName}>
         {name && <input type="hidden" name={name} value={value} />}
         <select
-          value={value} disabled={disabled}
+          value={value} disabled={disabled} id={id} aria-label={ariaLabel}
           onChange={e => {
             const v = e.target.value
             if (v === '__custom__') { setPickedOther(true); onChange(otherReason('')) }
@@ -158,12 +165,14 @@ export default function CategorySelect({
     return (
       <div className={wrapperClassName}>
         <div className="flex items-center gap-1">
+          {/* 커서는 방금 '기타(직접 입력)' 을 골랐을 때만 둔다(customMode). 목록 밖 값으로 연 수정 폼까지 커서를 끌어오면
+              화면이 열리자마자 모바일 키보드가 올라온다(2차 독립 검수, ask 칸의 pickedOther 와 같은 규칙). */}
           <input
-            type="text" name={name} value={value} disabled={disabled}
+            type="text" name={name} value={value} disabled={disabled} id={id} aria-label={ariaLabel}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
             className={`${className} flex-1 min-w-0`}
-            autoFocus
+            autoFocus={customMode}
           />
           {closeBtn(() => { setCustomMode(false); onChange('') })}
         </div>
@@ -178,7 +187,7 @@ export default function CategorySelect({
   return (
     <div className={wrapperClassName}>
       <select
-        name={name}
+        name={name} id={id} aria-label={ariaLabel}
         value={value} disabled={disabled}
         onChange={e => {
           const v = e.target.value

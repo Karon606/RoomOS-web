@@ -230,17 +230,21 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
               2026-10-22 2차 실측, 입주자 상세의 같은 폼과 같은 꼴). */}
           <div className="flex flex-wrap gap-2">
             <div className="flex-1 min-w-[9rem] space-y-1">
-              <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
+              {/* 라벨도 힌트와 같은 --warm-mid. 이 바탕에서 --warm-muted 는 다크 3.84:1 이다(2차 독립 검수, 같은 클래스 봉합). */}
+              <label className="text-xs text-[var(--warm-mid)]">조정 납부일</label>
               <DatePicker value={dateInput} onChange={setDateInput} minDate={`${overrideMonth}-01`}
                 className="bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]" />
             </div>
             <div className="flex-1 min-w-[9rem] space-y-1">
-              <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
-              {/* 힌트는 --warm-mid. 이 위젯 바탕(--warning-bg)에서 --warm-muted 는 다크 3.84:1 이다(2026-10-22 2차 실측). */}
+              <label className="text-xs text-[var(--warm-mid)]">사유 (선택)</label>
+              {/* 힌트는 --warm-mid. 이 위젯 바탕(--warning-bg)에서 --warm-muted 는 다크 3.84:1 이다(2026-10-22 2차 실측).
+                  높이는 옆 날짜 칸·직접 입력 칸과 같은 줄 높이 + 위아래 여백 + 테두리로 박는다. select 는 줄 높이를 안 따라
+                  2px 낮았고 '기타' 를 고르면 글자칸으로 바뀌며 튀었다(2차 독립 검수, §12 한 폼 안 높이 혼용 금지). */}
               <CategorySelect addMode="ask" value={reason} onChange={setReason} options={reasonOptions}
+                ariaLabel="납부일 조정 사유"
                 emptyLabel="기록 안 함" placeholder="사유를 직접 입력하세요" hintTone="mid"
                 addToList={reasonToList} onAddToListChange={setReasonToList}
-                className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
+                className="w-full h-[calc(2rem+2px)] bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
             </div>
           </div>
           <button disabled={!dateInput || pending} onClick={handleSave}

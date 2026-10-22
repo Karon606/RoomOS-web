@@ -3269,7 +3269,9 @@ export default function TenantClient({
                               </div>
                               <div className="flex-1 min-w-[9rem] space-y-1">
                                 <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
+                                {/* 높이는 옆 날짜 칸·직접 입력 칸과 같게 박는다(수납 정보 위젯의 같은 칸과 같은 까닭, 2차 독립 검수). */}
                                 <CategorySelect addMode="ask"
+                                  ariaLabel="납부일 조정 사유"
                                   value={overrideReason}
                                   onChange={setOverrideReason}
                                   options={overrideReasonOptions}
@@ -3277,7 +3279,7 @@ export default function TenantClient({
                                   placeholder="사유를 직접 입력하세요"
                                   addToList={overrideReasonToList}
                                   onAddToListChange={setOverrideReasonToList}
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
+                                  className="w-full h-[calc(2rem+2px)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
                                 />
                               </div>
                             </div>
@@ -5263,9 +5265,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="소득공제">소득공제</option>
             <option value="지출증빙">지출증빙</option>
           </SelectField>
-          <div className="space-y-1.5 min-w-0">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">방문 경로</label>
+          {/* 두 칸 폭을 다 쓴다. 반폭이면 직접 입력 칸이 X 버튼(44px)에 밀려 67~69px 로 줄어 글이 잘리고, 체크 라벨·힌트가
+              여러 줄로 접힌다(2차 독립 검수, 상태 사유 칸과 같은 전폭). 라벨은 htmlFor 로 잇는다(종전 글자칸은 placeholder 가 이름이었다). */}
+          <div className="col-span-2 space-y-1.5 min-w-0">
+            <label htmlFor={`visitRoute-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">방문 경로</label>
             <CategorySelect addMode="ask" name="visitRoute" value={visitRouteVal} onChange={setVisitRouteVal}
+              id={`visitRoute-${formUid}`}
               options={visitRouteOptions} emptyLabel="미선택" placeholder="경로를 직접 입력하세요" addLabel="이 경로를 목록에 추가"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0" />
           </div>

@@ -62,8 +62,9 @@ export function RoomWorkPlanForm({
   useEffect(() => { getRecentCleaningPerformers().then(setRecentPerformers).catch(() => {}) }, [])
 
   const targetRoomId = roomId ?? pickedRoom
+  // dense 칸도 포커스 링은 --tc-text 다(§12). 링을 안 걸면 '기타(직접 입력)' 을 고른 순간 브라우저 기본 파란 링이 선다(2차 독립 검수).
   const inputCls = dense
-    ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
+    ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30'
     : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]'
   const labelCls = dense
     ? 'text-xs text-[var(--ink-s)]'
@@ -72,6 +73,9 @@ export function RoomWorkPlanForm({
   // 손가락으로 눌러 연 달력이 닫힌 뒤에도 링이 남는다.
   const dateFieldCls =
     'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30'
+  // dense 예정일 트리거. dense inputCls 와 같은 값에 focus 접두만 focus-visible 이다(위와 같은 이유). 가로 flex 행이라 flex-1 min-w-0.
+  const denseDateCls =
+    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30 flex-1 min-w-0'
 
   const submit = () => {
     if (!targetRoomId) { pushToast('error', '호실을 골라 주세요.'); return }
@@ -108,8 +112,9 @@ export function RoomWorkPlanForm({
           목록 끝 '기타(직접 입력)' 으로 새 종류를 바로 적는다(2026-10-22 2차, CategorySelect addMode 'auto' 기본 켜짐).
           종전에는 목록이 비면 '환경설정에서 먼저 만들어 주세요' 만 말하고 등록을 막았다. 값은 맨 글자다(지출 품목 글자 맞춤). */}
       <div className={dense ? '' : 'space-y-1.5'}>
-        {!dense && <p className={labelCls}>작업 종류</p>}
+        {!dense && <label className={labelCls} htmlFor={`${uid}-kind`}>작업 종류</label>}
         <CategorySelect
+          id={`${uid}-kind`} ariaLabel={dense ? '작업 종류' : undefined}
           value={kind} onChange={setKind}
           options={kinds} emptyLabel="종류 선택"
           placeholder="작업 종류를 직접 입력하세요" closeIconSize={dense ? 12 : 14}
@@ -124,7 +129,7 @@ export function RoomWorkPlanForm({
         {/* 정본 DatePicker — 네이티브 date 는 앱 캘린더 문법과 어긋난다(운영자 지적 2026-08-06).
             dense 는 가로 flex 행이라 flex-1 min-w-0 이 함께 필요하다(형제 폼과 같은 이유). */}
         <DatePicker value={scheduled} onChange={setScheduled}
-          className={dense ? `${inputCls} flex-1 min-w-0` : dateFieldCls} />
+          className={dense ? denseDateCls : dateFieldCls} />
       </div>
 
       <div className={dense ? '' : 'space-y-1.5'}>
