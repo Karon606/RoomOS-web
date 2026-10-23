@@ -19,12 +19,16 @@ export function WhyCaption({ id, children, action, className = '' }: {
       {children}
       {action && (
         <>
-          {' · '}
-          {/* 히트 44px 를 위아래 음수 여백으로 줄 높이 안에 접는다. 줄이 커지지 않고 누르는 자리만 넓다(RowActionBtn 과 같은 수). */}
-          <button type="button" onClick={action.onClick}
-            className="-my-[13px] inline-flex min-h-[44px] items-center whitespace-nowrap align-middle font-medium text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
-            {action.label}
-          </button>
+          {' '}
+          {/* 구분점과 링크를 한 덩이(nowrap)로 묶는다. 따로 두면 좁은 폭에서 ' ·' 가 줄 끝에 홀로 남는다.
+              히트 44px 는 위아래 음수 여백으로 줄 높이 안에 접는다. 줄이 커지지 않고 누르는 자리만 넓다(RowActionBtn 과 같은 수). */}
+          <span className="whitespace-nowrap">
+            {'· '}
+            <button type="button" onClick={action.onClick}
+              className="-my-[13px] inline-flex min-h-[44px] items-center whitespace-nowrap align-middle font-medium text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+              {action.label}
+            </button>
+          </span>
         </>
       )}
     </p>

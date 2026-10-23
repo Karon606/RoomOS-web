@@ -60,10 +60,12 @@ export function Btn({
   ...rest
 }: BtnProps) {
   const blocked = !!reason
+  const cls = btnClass(variant, size, `${fullWidth ? 'w-full' : ''} ${blocked ? 'opacity-50 cursor-not-allowed' : ''} ${className}`)
   return (
     <button
       type={type}
-      className={btnClass(variant, size, `${fullWidth ? 'w-full' : ''} ${blocked ? 'opacity-50 cursor-not-allowed' : ''} ${className}`)}
+      // 막힌 버튼은 눌림·호버 피드백(hover:·active: 색, active:scale)을 걷는다. 반응하면 눌리는 줄로 읽힌다.
+      className={blocked ? cls.split(/\s+/).filter(t => !/^(hover|active):/.test(t)).join(' ') : cls}
       {...rest}
       disabled={blocked ? undefined : disabled}
       aria-disabled={blocked ? true : rest['aria-disabled']}

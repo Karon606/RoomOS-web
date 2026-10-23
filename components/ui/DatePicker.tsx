@@ -40,7 +40,7 @@ interface DatePickerProps {
    */
   openMonth?: string
   disabled?: boolean              // 저장 진행 중 재입력 차단(네이티브 input 의 disabled 자리를 대신한다)
-  describedBy?: string            // 트리거의 aria-describedby — 잠긴 까닭을 말하는 WhyCaption id(가이드 §27.8). 안 주면 종전과 같다.
+  describedBy?: string            // 트리거의 aria-describedby. 잠긴 까닭을 말하는 WhyCaption id(가이드 §27.8). 안 주면 종전과 같다.
   className?: string
   style?: React.CSSProperties
 }

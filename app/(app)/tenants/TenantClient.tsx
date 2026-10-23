@@ -3693,7 +3693,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             </select>
           </div>
 
-          {/* 호실 선택 (최대 5개) — 다 차면 막고 같은 자리에서 이유와 푸는 법을 말한다(가이드 §27.8 ②).
+          {/* 호실 선택 (최대 5개). 다 차면 막고 같은 자리에서 이유와 푸는 법을 말한다(가이드 §27.8 ②).
               종전엔 칸만 흐려져 왜 안 열리는지 알 길이 없었다. */}
           <select
             value=""
@@ -3888,10 +3888,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 문의/투어 예정 = 같은 WAITING_TOUR의 표시 구분(파생) — select 옵션 분리용 UI 상태(운영자 승인 2026-07-19).
   // 투어일이 있으면 '투어 예정'으로 보이고, 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
   // '문의' 는 투어일이 있어도 고를 수 있다(2026-10-23 운영자 승인 '추천대로', 가이드 §27.8 ①). 고르면 폼 안에서만
-  // 투어일을 비우고 지운 값을 tourCleared 에 둔다. 저장해야 비워지고, 취소하면 아무것도 안 바뀐다.
-  // 상태 칸 아래 한 줄이 그 사실과 [투어일 되살리기] 를 말한다. 화면이 그 값을 그려야 해서 ref 가 아니라 state 다.
+  // 투어일을 비우고, 지운 값과 고르기 직전의 상태(status·uiWaitingKind)를 tourCleared 에 함께 쥔다.
+  // 저장해야 비워지고, 취소하면 아무것도 안 바뀐다. [투어일 되살리기] 는 쥔 값 그대로 돌려놓는다
+  // (입실 취소에서 왔으면 입실 취소로, 투어 예정에서 왔으면 투어 예정으로). 화면이 그 값을 그려야 해서 ref 가 아니라 state 다.
   const [uiWaitingKind, setUiWaitingKind] = useState<'INQUIRY' | 'TOUR'>(lease?.tourDate ? 'TOUR' : 'INQUIRY')
-  const [tourCleared, setTourCleared] = useState<string | null>(null)
+  const [tourCleared, setTourCleared] = useState<{ date: string; status: string; kind: 'INQUIRY' | 'TOUR' } | null>(null)
   const statusWhyId = `${formUid}-status-why`
   const shortMoveInWhyId = `${formUid}-short-movein-why`
   // 지난 투어일 판정 기준(KST) — 폼은 모달로 클라이언트에서만 마운트되므로 렌더 시 계산 안전
@@ -4502,14 +4503,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               onChange={e => {
                 const v = e.target.value
                 if (v === 'INQUIRY') {
-                  // 투어일이 있으면 폼 안에서만 비우고 지운 값을 쥔다(가이드 §27.8 ①). 막지 않고, 바뀐 것을 아래 한 줄로 보인다.
-                  if (tourDateVal) { setTourCleared(tourDateVal); setTourDateVal('') }
+                  // 투어일이 있으면 폼 안에서만 비우고, 지운 값과 직전 상태를 쥔다(가이드 §27.8 ①). 막지 않고, 바뀐 것을 아래 한 줄로 보인다.
+                  if (tourDateVal) { setTourCleared({ date: tourDateVal, status: statusVal, kind: uiWaitingKind }); setTourDateVal('') }
                   setStatusVal('WAITING_TOUR'); setUiWaitingKind('INQUIRY')
                   return
                 }
                 // '문의' 를 떠나면 그 때문에 비운 투어일을 돌려놓는다. 투어일을 비운 것은 '문의' 의 조건이었지
-                // 다른 상태가 바란 것이 아니다(입실 예약·입실 취소도 투어일을 이력으로 지닌다).
-                if (tourCleared && !tourDateVal) { setTourDateVal(tourCleared); setTourCleared(null) }
+                // 다른 상태가 바란 것이 아니다(입실 예약·입실 취소도 투어일을 이력으로 지닌다). 아래 모든 갈래보다 먼저 돈다.
+                // 상태는 지금 고른 값을 따르고 투어일만 돌려놓는다.
+                if (tourCleared && !tourDateVal) { setTourDateVal(tourCleared.date); setTourCleared(null) }
                 if (v === 'WAITING_TOUR') { setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') }
                 else {
                   setStatusVal(v)
@@ -4576,12 +4578,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 </div>
               )
             })()}
-            {/* '문의' 를 골라 투어일을 비운 경우 — 정의 캡션 자리에 바뀐 것과 되살리기 링크(§27.8 ①, 4566 링크와 같은 문법).
-                되살리기는 확인창 없이 투어일을 돌려놓고 '투어 예정' 으로 간다. */}
+            {/* '문의' 를 골라 투어일을 비운 경우. 정의 캡션 자리에 바뀐 것과 되살리기 링크를 둔다(§27.8 ①, 아래 '투어 완료로 변경' 링크와 같은 문법).
+                되살리기는 확인창 없이 투어일과 고르기 직전 상태를 함께 돌려놓는다(입실 취소에서 왔으면 입실 취소로). */}
             {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && tourCleared && (
               <WhyCaption id={statusWhyId} className="mt-1"
-                action={{ label: '투어일 되살리기', onClick: () => { setTourDateVal(tourCleared); setTourCleared(null); setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') } }}>
-                투어일({tourCleared.slice(0, 4) !== formToday.slice(0, 4) ? `${tourCleared.slice(0, 4)}년 ` : ''}{fmtMonthDayKor(tourCleared)})을 비웠습니다 · 저장하면 문의로 바뀝니다
+                action={{ label: '투어일 되살리기', onClick: () => { setTourDateVal(tourCleared.date); setStatusVal(tourCleared.status); setUiWaitingKind(tourCleared.kind); setTourCleared(null) } }}>
+                투어일({tourCleared.date.slice(0, 4) !== formToday.slice(0, 4) ? `${tourCleared.date.slice(0, 4)}년 ` : ''}{fmtMonthDayKor(tourCleared.date)})을 비웠습니다 · 저장하면 문의로 바뀝니다
               </WhyCaption>
             )}
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
@@ -4859,19 +4861,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     <DatePicker value={moveInVal} onChange={setMoveIn} placeholder={moveInLabel}
                       disabled={moveInSameAsParent} describedBy={moveInSameAsParent ? shortMoveInWhyId : undefined}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
-                    {/* 잠긴 까닭과 푸는 길을 칸 아래 한 줄로(가이드 §27.8 ②). 종전엔 칸만 흐려져 왜 못 고치는지 몰랐다.
-                        '따로 정하기' 칸은 거주 전이면 이 박스 위, 거주 단계면 아래에 서서 방향 낱말을 쓰지 않는다. */}
-                    {moveInSameAsParent && (
-                      <WhyCaption id={shortMoveInWhyId} className="mt-0.5">
-                        {withParticle(parentLease?.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약', '과/와')} 같은 날짜라서 고칠 수 없습니다 · &lsquo;입주일 따로 정하기&rsquo;를 켜면 됩니다
-                      </WhyCaption>
-                    )}
                   </div>
                   <div>
                     <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">퇴실일 (예정 퇴실일로 저장)</span>
                     <DatePicker value={shortOut} onChange={setShortOut} placeholder="퇴실일"
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
+                  {/* 잠긴 까닭과 푸는 길을 두 칸 아래 전폭 한 줄로(가이드 §27.8 ②). 종전엔 칸만 흐려져 왜 못 고치는지 몰랐다.
+                      반 칸에 두면 320px 에서 다섯 줄로 접혀 전폭에 둔다. 어느 계약과 같은지는 입주일 칸의 상속 안내가 이미 말해
+                      여기서 되풀이하지 않는다. '따로 정하기' 칸은 거주 전이면 이 박스 위, 거주 단계면 아래라 방향 낱말을 쓰지 않는다. */}
+                  {moveInSameAsParent && (
+                    <WhyCaption id={shortMoveInWhyId} className="col-span-2 -mt-1">
+                      메인 계약을 따라가는 입주일이라 고칠 수 없습니다 · &lsquo;입주일 따로 정하기&rsquo;를 켜면 됩니다
+                    </WhyCaption>
+                  )}
                 </div>
                 {/* 여기 값(shortOut)은 이 박스 바깥 위쪽의 hidden expectedMoveOut 하나로만 전송된다.
                     거주 단계(showExitDate)는 아래 '퇴실일' 필드가 같은 shortOut 을 쓰므로
