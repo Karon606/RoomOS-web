@@ -30,8 +30,8 @@ eq('읽기: 시각 없음', parseTourClearedMemo('투어일 2026-09-28 비움'),
 eq('읽기: 시각', parseTourClearedMemo('투어일 2026-09-28 14:00 비움'), { ymd: '2026-09-28', time: '14:00' })
 eq('읽기: 다른 메모는 null', parseTourClearedMemo('입주자 요청으로 메모'), null)
 eq('읽기: null', parseTourClearedMemo(null), null)
-eq('화면: 목록 날짜 표기', statusLogMemoText('투어일 2026-09-28 14:00 비움'), '투어일 2026.09.28 14:00 비움')
-eq('화면: 시각 없음', statusLogMemoText('투어일 2026-09-28 비움'), '투어일 2026.09.28 비움')
+eq('화면: 목록 날짜 표기 · 비운 투어일 말투', statusLogMemoText('투어일 2026-09-28 14:00 비움'), '비운 투어일 2026.09.28 14:00')
+eq('화면: 시각 없음', statusLogMemoText('투어일 2026-09-28 비움'), '비운 투어일 2026.09.28')
 eq('화면: 다른 메모는 그대로', statusLogMemoText('그냥 메모'), '그냥 메모')
 eq('화면: 지운 값만(같은 상태 행의 메모 줄)', [tourClearedValueText('투어일 2026-09-28 14:00 비움'), tourClearedValueText('투어일 2026-09-28 비움'), tourClearedValueText('그냥 메모'), tourClearedValueText(null)],
   ['2026.09.28 14:00', '2026.09.28', null, null])

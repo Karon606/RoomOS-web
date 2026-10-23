@@ -40,14 +40,14 @@ export function parseTourClearedMemo(memo: string | null | undefined): { ymd: st
 }
 
 /**
- * 상태 이력 화면에 보일 메모 글자. 투어일 비움 메모는 날짜를 목록 표기(2026.09.28)로 바꿔 보이고, 그 밖의 메모는 그대로다.
- * 저장은 2026-09-28 꼴이라 내보내기·검색에서 날짜로 읽히고, 화면은 같은 목록의 날짜 표기(fmtDateDot)와 맞춘다.
+ * 상태 이력 화면에 보일 메모 줄. 투어일 비움 메모는 `비운 투어일 2026.09.28 14:00`(전이 행·같은 상태 행이 같은 말투,
+ * 독립 검수 3), 그 밖의 메모는 그대로다. 저장은 2026-09-28 꼴이라 내보내기에서 날짜로 읽히고, 화면은 목록 날짜 표기(점)와 맞춘다.
  */
 export function statusLogMemoText(memo: string | null | undefined): string | null {
   const m = memo?.trim()
   if (!m) return null
   const v = tourClearedValueText(m)
-  return v ? `투어일 ${v} 비움` : m
+  return v ? `비운 투어일 ${v}` : m
 }
 
 /** 투어일 비움 메모가 지운 값의 화면 글자('2026.09.28 14:00'). 이 꼴이 아니면 null. */
@@ -57,7 +57,7 @@ export function tourClearedValueText(memo: string | null | undefined): string | 
 }
 
 /** 상태가 그대로인 저장에서 투어일만 비웠을 때 남기는 행. 상태가 함께 바뀌면 이 함수를 부르지 말고 그 전이 행에 memo 를 싣는다. */
-export async function createTourClearedLog(db: PrismaDb, row: {
+export async function createTourClearedLog(db: Pick<PrismaDb, 'tenantStatusLog'>, row: {
   tenantId: string; leaseTermId: string; propertyId: string; status: LeaseStatus; changedById: string | null; memo: string
 }): Promise<void> {
   await db.tenantStatusLog.create({

@@ -29,7 +29,7 @@ import { reasonFieldForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { withParticle } from '@/lib/koParticle'
-import { statusLogMemoText, tourClearedValueText } from '@/lib/tourClearLog'
+import { statusLogMemoText, tourClearedValueText, parseTourClearedMemo } from '@/lib/tourClearLog'
 
 import { fmtDateDot } from '@/lib/fmtDate'   // 날짜 표기 정본
 
@@ -39,15 +39,20 @@ type HistItem = Awaited<ReturnType<typeof getTenantStatusHistory>>['items'][numb
 
 const label = (s: string) => STATUS_LABEL[s] ?? s
 
-// 상태가 그대로이고 투어일 비움 메모만 실은 행(투어일만 비운 저장, lib/tourClearLog). '투어 예정에서 투어 예정으로' 라고 쓰면
-// 아무 일도 없던 행처럼 읽혀서 제목을 '투어일 비움' 으로 쓰고, 지운 값은 아래 메모 줄에 둔다(제목에 날짜·시각까지 넣으면
+// 상태가 그대로이고 투어일 비움 메모만 실은 행(투어일만 비운 저장, lib/tourClearLog). '예약에서 예약으로' 라고 쓰면
+// 아무 일도 없던 행처럼 읽혀서 제목을 바꾸고, 지운 값은 아래 메모 줄에 둔다(제목에 날짜·시각까지 넣으면
 // 320px · 글자 125% 에서 말줄임으로 잘린다, 하네스 실측). 다른 같은 상태 행(등록·사유 재저장)은 그대로다.
 const memoOnly = (it: HistItem) => it.fromStatus === it.toStatus && !it.isCreated && !it.reason && !!tourClearedValueText(it.memo)
 
+// 투어일을 비우고 투어 예정(WAITING_TOUR)에 닿은 행은 화면 말로 '문의'다(입주자 목록과 수정 폼의 파생 라벨과 같다).
+// '입실 취소에서 투어 예정으로' 아래에 '비운 투어일' 을 적으면 서로 모순이라(독립 검수 1) 도착 이름을 '문의'로 쓴다.
+// 투어 예정 그대로 비운 행은 '투어 예정에서 문의로' 다. 예약·투어 완료·입실 취소 그대로 비운 행은 '투어일 비움' 이다.
+const toLabel = (it: HistItem) => it.toStatus === 'WAITING_TOUR' && parseTourClearedMemo(it.memo) ? '문의' : label(it.toStatus)
+
 // 행 제목 — 확인창 문면과 목록이 같은 문장을 써야 무엇을 무효 처리하는지 헷갈리지 않는다.
 const rowTitle = (it: HistItem) =>
-  memoOnly(it) ? '투어일 비움'
-  : it.isCreated ? `${withRo(label(it.toStatus))} 등록` : `${label(it.fromStatus)}에서 ${withRo(label(it.toStatus))}`
+  memoOnly(it) && it.toStatus !== 'WAITING_TOUR' ? '투어일 비움'
+  : it.isCreated ? `${withRo(label(it.toStatus))} 등록` : `${label(it.fromStatus)}에서 ${withRo(toLabel(it))}`
 
 export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getTenantStatusHistory>> | null>(null)
@@ -164,8 +169,8 @@ function HistRow({ item, canEdit, pending, onEdit, onInvalidate, onRestore }: {
   // 사유를 받지 않는 전이의 reason 은 시스템 라벨('단기 연장')이라 '퇴실 사유:' 를 붙이지 않는다.
   const rLabel = reasonLabel(item.toStatus)
   const busy = pending === item.id
-  // 제목이 '투어일 비움' 인 행은 지운 값만 적는다(같은 말을 두 번 쓰지 않는다, §27.8 ⑤). 상태가 바뀐 행은 메모 전체다.
-  const memoLine = memoOnly(item) ? `비운 투어일 ${tourClearedValueText(item.memo)}` : statusLogMemoText(item.memo)
+  // 투어일 비움 메모는 어느 행이든 '비운 투어일 2026.09.28 14:00' 한 말투다(독립 검수 3).
+  const memoLine = statusLogMemoText(item.memo)
   // 무효 행은 흐리게 — 접힘 칸 안에서도 유효한 행과 같은 무게로 읽히면 안 된다.
   return (
     <li className={item.deleted ? 'opacity-55' : undefined}>

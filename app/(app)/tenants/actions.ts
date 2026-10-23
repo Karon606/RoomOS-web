@@ -1603,6 +1603,26 @@ export async function updateTenant(formData: FormData): Promise<
     moveAt = ymdToDbDate(moveDate)
   }
 
+  // 투어일을 비운 저장이면 비우기 전 값을 이력에 남긴다(lib/tourClearLog). 상태가 함께 바뀌면 그 전이 행에 싣고, 그대로면
+  // 같은 상태 행을 하나 만든다. 새 날짜로 바꾸는 저장은 null 이다(2026-10-23 운영자 승인 (가)안).
+  const tourMemo = tourClearedMemo(currentLease, tourDate)
+  // 상태 이력 행은 아래 계약 저장과 같은 트랜잭션에서 쓴다(독립 검수 2, 2026-10-23). 투어일만 지워지고 기록이 안 남거나,
+  // 상태만 바뀌고 전이 행이 빠지는 반쪽 저장을 막는다. 사유 재기(읽기)는 그 앞에서 끝내고 목록 추가(commit)는 저장 뒤다.
+  let reasonSave: Awaited<ReturnType<typeof reasonForSave>> | null = null
+  if (status !== prevStatus) {
+    // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
+    // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
+    // 화면이 보낸 글자는 영업장 목록으로 다시 잰다. 목록 밖 글은 '기타 · 글', 체크하면 목록에 더한다(lib/reasonLists, 2026-10-22).
+    const reasonField = reasonFieldForStatus(status)
+    // 퇴실 예정에서 퇴실로 가면 화면은 예정 때 고른 사유로 시작한다. 그 사유는 이 계약의 지금 값이라 그사이 목록에서
+    // 뺐어도 '기타 · ' 를 붙이지 않는다(독립 검수 R1, 2026-10-22). 판정은 이어받기 정본(lib/checkoutReason).
+    const reasonPrev = status === 'CHECKED_OUT' && prevStatus === 'CHECKOUT_PENDING' ? await latestCheckoutReasonFor(prisma, leaseTermId) : null
+    reasonSave = reasonField
+      ? await reasonForSave(propertyId, reasonField, formData.get('cancelReason') as string | null, { addToList: formData.get('cancelReasonAddToList') === '1', prev: reasonPrev })
+      : null
+  }
+  const cancelReason = reasonSave?.reason ?? null
+
   // 계약 수정 — 단기 동기화가 있으면 같은 트랜잭션에서 청구 락까지 함께 올린다(부분 반영 방지).
   await prisma.$transaction(async tx => {
     if (shortPlan) {
@@ -1696,6 +1716,23 @@ export async function updateTenant(formData: FormData): Promise<
       prevMoveInDate: currentLease.moveInDate,
       nextMoveInDate: moveInDate ? new Date(moveInDate) : null,
     })
+    // 상태 이력 — 계약과 함께 확정된다. 상태가 바뀌면 전이 행 하나(투어일 메모도 여기), 그대로면 투어일 비움 행만.
+    if (status !== prevStatus) {
+      await tx.tenantStatusLog.create({
+        data: {
+          tenantId,
+          leaseTermId,
+          propertyId,
+          fromStatus: prevStatus,
+          toStatus:   status,
+          changedById: user.sub,
+          ...(cancelReason ? { reason: cancelReason } : {}),
+          ...(tourMemo ? { memo: tourMemo } : {}),
+        },
+      })
+    } else if (tourMemo) {
+      await createTourClearedLog(tx, { tenantId, leaseTermId, propertyId, status, changedById: user.sub, memo: tourMemo })
+    }
   })
 
   // 호실 공실 상태 업데이트 (NON_RESIDENT는 isVacant에 영향 없음)
@@ -1745,40 +1782,8 @@ export async function updateTenant(formData: FormData): Promise<
   }
   // 계약을 쓴 뒤에 방문 경로 목록에 더한다(체크한 저장만, 2026-10-22 2차).
   await visitRouteSave.commit()
-
-  // 투어일을 비운 저장이면 비우기 전 값을 이력에 남긴다(lib/tourClearLog). 상태가 함께 바뀌면 그 전이 행에 싣고, 그대로면
-  // 같은 상태 행을 하나 만든다. 새 날짜로 바꾸는 저장은 null 이다(2026-10-23 운영자 승인 (가)안).
-  const tourMemo = tourClearedMemo(currentLease, tourDate)
-  if (status === prevStatus && tourMemo) {
-    await createTourClearedLog(prisma, { tenantId, leaseTermId, propertyId, status, changedById: user.sub, memo: tourMemo })
-  }
-
-  if (status !== prevStatus) {
-    // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
-    // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
-    // 화면이 보낸 글자는 영업장 목록으로 다시 잰다. 목록 밖 글은 '기타 · 글', 체크하면 목록에 더한다(lib/reasonLists, 2026-10-22).
-    const reasonField = reasonFieldForStatus(status)
-    // 퇴실 예정에서 퇴실로 가면 화면은 예정 때 고른 사유로 시작한다. 그 사유는 이 계약의 지금 값이라 그사이 목록에서
-    // 뺐어도 '기타 · ' 를 붙이지 않는다(독립 검수 R1, 2026-10-22). 판정은 이어받기 정본(lib/checkoutReason).
-    const reasonPrev = status === 'CHECKED_OUT' && prevStatus === 'CHECKOUT_PENDING' ? await latestCheckoutReasonFor(prisma, leaseTermId) : null
-    const reasonSave = reasonField
-      ? await reasonForSave(propertyId, reasonField, formData.get('cancelReason') as string | null, { addToList: formData.get('cancelReasonAddToList') === '1', prev: reasonPrev })
-      : null
-    const cancelReason = reasonSave?.reason ?? null
-    await prisma.tenantStatusLog.create({
-      data: {
-        tenantId,
-        leaseTermId,
-        propertyId,
-        fromStatus: prevStatus,
-        toStatus:   status,
-        changedById: user.sub,
-        ...(cancelReason ? { reason: cancelReason } : {}),
-        ...(tourMemo ? { memo: tourMemo } : {}),
-      },
-    })
-    await reasonSave?.commit()
-  }
+  // 사유 목록 추가는 이력 행이 선 뒤다(위 트랜잭션, lib/reasonLists).
+  await reasonSave?.commit()
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
   if (depositReceived && depositAmount > 0) {
