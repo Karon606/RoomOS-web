@@ -203,7 +203,7 @@ export function RoomWorkRowBody({
                 className={`rounded-lg px-2 py-1 text-xs ${FOCUS_RING}`}
                 style={performer === v
                   ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
-                  : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
+                  : { background: 'var(--canvas)', color: 'var(--seg-ink-off)', border: '1px solid var(--warm-border)' }}>
                 {CLEANING_PERFORMER_LABEL[v]}
               </button>
             ))}

@@ -230,7 +230,7 @@ export function CleaningRowBody({
                 className="px-2 py-1 rounded-lg text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
                 style={performer === pf
                   ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
-                  : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
+                  : { background: 'var(--canvas)', color: 'var(--seg-ink-off)', border: '1px solid var(--warm-border)' }}>
                 {CLEANING_PERFORMER_LABEL[pf]}
               </button>
             ))}

@@ -191,6 +191,11 @@
   /* Ink — v1.2 (s=soft, m=mute) */
   --ink-s:        var(--ink-3);        /* #7A6553 — 보조 텍스트 */
   --ink-m:        var(--ink-mute);     /* placeholder·메타 — 값은 --ink-mute 한 곳에서 정한다 */
+  /* 고르지 않은 칸 글자(SegmentedControl 비활성 칸 · 단일 선택 칩). 이 칸은 늘 --canvas(--cream-2) 위에 서는데
+     --ink-3(#7A6553)은 거기서 4.11:1 로 AA 미달이다. --warm-dark 로 올리면 고른 칸(--warm-dark + 떠오른 --cream 칩)과
+     글자가 같아지고 칩과 트랙의 차이는 1.25:1 뿐이라 위계가 무너진다. 그래서 그 사이 한 단을 둔다.
+     라이트 #6B5745 = --canvas 위 5.10:1, 다크는 --d-ink-s 그대로(검정 위 10.56:1, 다크 픽셀 무변경). (2026-10-23, 가이드 §23) */
+  --seg-ink-off:  #6b5745;
 
   /* Page bg — v1.1 cream-2 = v1.2 page (#E8DDD0) */
   --page:         var(--cream-2);
@@ -591,6 +596,7 @@ html.dark {
   --ink-mute:     var(--d-ink-m);
   --warm-dark:    var(--d-ink);
   --warm-mid:     var(--d-ink-s);
+  --seg-ink-off:  var(--d-ink-s);
   --warm-muted:   var(--d-ink-m);
   --warm-border:  var(--d-border);
   /* 강조 보더(§12 입력 보더 --border-s) 다크 짝 — 라이트값(rgba(61,36,24,.18))이 그대로 남으면 검은 바탕 위에서
@@ -751,6 +757,7 @@ html[data-kbd-open] .kbd-collapse { display: none; }
     --warm-dark:    #3d2418;
     --warm-mid:     #7a6553;
     --warm-muted:   #7a6553;
+    --seg-ink-off:  #6b5745;
     --warm-border:  #dccfbc;
     --border-s:     rgba(61,36,24,.18);   /* 다크 짝(--d-border-s)을 인쇄에서 라이트로 되돌린다(2단계 검수 9) */
     --persimmon-l:  #f2dfd8;

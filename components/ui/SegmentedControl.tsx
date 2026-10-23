@@ -6,7 +6,7 @@
 // 디자인 (Brand Guide):
 //   트랙: r-md(10) · border · bg cream-2 (페이지 톤 → 살짝 들어간 슬롯 느낌)
 //   활성 세그먼트: 떠오른 cream 칩(r-sm 계열 7) + shadow — 칩이 탭 사이를 미끄러져 이동(v2.0 §29)
-//   비활성: 투명 배경 + 뮤트 텍스트
+//   비활성: 투명 배경 + --seg-ink-off 텍스트(트랙 --cream-2 위 AA. --warm-mid 는 4.11:1 미달, globals.css 주석·가이드 §23)
 // 슬라이딩 칩: 세그먼트 폭이 제각각이라 offsetLeft/offsetWidth 실측으로 위치·크기를 잡고
 // left·width 트랜지션으로 이동. reduced-motion이면 트랜지션 없이 즉시 점프.
 
@@ -122,7 +122,7 @@ export function SegmentedControl<T extends string>({
             className={`${seg} relative z-[1] shrink-0 font-medium rounded-[7px] whitespace-nowrap transition-colors ${
               active
                 ? `text-[var(--warm-dark)]${thumb ? '' : ' bg-[var(--cream)] shadow-sm'}`
-                : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
+                : 'text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'
             }`}
           >
             {opt.label}

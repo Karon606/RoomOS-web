@@ -142,7 +142,7 @@ export function RoomWorkPlanForm({
               className={`rounded-lg ${FOCUS_RING} ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
               style={performer === v && v !== ''
                 ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
-                : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
+                : { background: 'var(--canvas)', color: 'var(--seg-ink-off)', border: '1px solid var(--warm-border)' }}>
               {v ? CLEANING_PERFORMER_LABEL[v] : '미정'}
             </button>
           ))}
