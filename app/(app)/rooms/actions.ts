@@ -41,6 +41,7 @@ import { recalculatePayments, rewriteLockedExpectedForDiscountChange, rewriteLoc
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 import { prepaidCarry } from '@/lib/prepaidCarry'
+import { parseTourClearedMemo } from '@/lib/tourClearLog'
 import {
   attachDueDayAdjustsOne, dueDayAdjustsFrom, dueDayAdjustWhere, dueDayBeforeChange, isDueDayAdjust, notDueDayAdjustWhere, paymentEditGuard, paymentMemoGuard, planDueDayAdjustEdit,
   dueDayAdjustMonthStatus, dueDayAdjustMonthSums,
@@ -4499,6 +4500,8 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
 export async function getTenantStatusHistory(tenantId: string): Promise<{
   canEdit: boolean
   items: { id: string; fromStatus: string; toStatus: string; reason: string | null; changedAt: string
+    /** 이력 메모. 지금은 투어일을 비운 저장이 남기는 '투어일 2026-09-28 비움' 뿐이다(lib/tourClearLog, 2026-10-23). */
+    memo: string | null
     isCreated: boolean; editable: boolean; canRecord: boolean; deleted: boolean
     /**
      * 실제로 그 일이 일어난 날 — 처리한 날과 다를 때만 채운다(2026-08-31 운영자 지적).
@@ -4518,7 +4521,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
     where: { propertyId, tenantId },
     orderBy: { changedAt: 'desc' },
     select: {
-      id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true, deletedAt: true,
+      id: true, fromStatus: true, toStatus: true, reason: true, memo: true, changedAt: true, changedById: true, deletedAt: true,
       // 사건일은 **돈이 읽는 그 칸**에서 읽는다. 사본을 만들면 언젠가 갈린다.
       leaseTerm: { select: { moveOutDate: true, moveInDate: true } },
     },
@@ -4537,7 +4540,8 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
     items: rows.map(r => {
       // 등록은 전이가 아니다. from === to 만으로는 부족하다 — 같은 상태로 재저장하면(퇴실 예정일만 변경)
       // 사람이 만든 from === to 로그가 생긴다(실측 2건). 등록 로그는 changedById 가 비어 있다.
-      const isCreated = r.fromStatus === r.toStatus && r.changedById === null
+      // 투어일 비움 행(같은 상태 + 메모)은 등록이 아니다. 화면이 그 메모 한 줄로 그린다(lib/tourClearLog).
+      const isCreated = r.fromStatus === r.toStatus && r.changedById === null && !parseTourClearedMemo(r.memo)
       // 사유를 받는 전이만 고칠 수 있다(입실 취소·퇴실). '단기 연장' 같은 시스템 라벨은 손대지 않는다 —
       // 이 구분선이 있어야 '이력을 마음대로 고치는 앱'이 되지 않는다.
       // 무효 처리된 행은 사유 편집도 닫는다 — 없던 일로 한 행의 주석을 고칠 이유가 없다.
@@ -4547,6 +4551,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
         fromStatus: r.fromStatus,
         toStatus: r.toStatus,
         reason: r.reason,
+        memo: r.memo,
         changedAt: r.changedAt.toISOString(),
         eventYmd: (() => {
           const ev = r.id === latestCheckedOutId ? ymd(r.leaseTerm?.moveOutDate)

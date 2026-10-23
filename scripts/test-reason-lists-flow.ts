@@ -565,6 +565,81 @@ async function main() {
     eq('입주자 수정: 체크하면 맨 글자 + 목록 끝', [up2.ok ? true : up2.error, (await prisma.leaseTerm.findUnique({ where: { id: L13 } }))?.visitRoute, (await routeList())?.endsWith(',현수막')], [true, '현수막', true])
   }
 
+  // ── 14. 투어일 비움 기록(2026-10-23 운영자 승인 (가)안, lib/tourClearLog) ─────────────────────────
+  // '문의'로 저장하면 투어일·시각이 지워진다. 비우는 저장마다 상태 이력 memo 에 비우기 전 값을 남긴다. 상태가 함께 바뀌면
+  // 그 전이 행 하나에, 그대로면 같은 상태 행 하나에. 새 날짜 저장·칸 없는 저장은 행이 없다. 남의 영업장 계약은 못 건드린다.
+  {
+    const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f }
+    const tourLease = async (pid: string, tenantId: string, status: string, tourTime: string | null) =>
+      (await prisma.leaseTerm.create({ data: { propertyId: pid, tenantId, status: status as never, tourDate: new Date('2026-09-28T00:00:00Z'), tourTime } })).id as string
+    const logsOf = async (leaseTermId: string) => prisma.tenantStatusLog.findMany({ where: { leaseTermId }, orderBy: { changedAt: 'asc' } })
+    const tourOf = async (id: string) => { const l = await prisma.leaseTerm.findUnique({ where: { id }, select: { tourDate: true, tourTime: true, status: true } }); return [l?.status, l?.tourDate?.toISOString().slice(0, 10) ?? null, l?.tourTime ?? null] }
+    const HU = '00000000-0000-4000-8000-00000000f10e'
+
+    // 가. 투어 예정 그대로 '문의'(같은 상태, 시각 있음) → 같은 상태 행 하나 + memo
+    const T14 = await tenantIn(P1, '거')
+    const L14 = await tourLease(P1, T14, 'WAITING_TOUR', '14:00')
+    const u1 = await tenants.updateTenant(fd({ tenantId: T14, leaseTermId: L14, name: '거', status: 'WAITING_TOUR', tourDate: '' }))
+    eq('문의 저장 ok, 투어일·시각 지워짐', [u1.ok ? true : u1.error, await tourOf(L14)], [true, ['WAITING_TOUR', null, null]])
+    const g1 = await logsOf(L14)
+    eq('같은 상태 행 하나 + memo(사유 없음, 사람이 남김)', g1.map(r => [r.fromStatus, r.toStatus, r.reason, r.memo, r.changedById]),
+      [['WAITING_TOUR', 'WAITING_TOUR', null, '투어일 2026-09-28 14:00 비움', HU]])
+    // 다시 저장해도(이미 비어 있음) 행이 안 는다.
+    await tenants.updateTenant(fd({ tenantId: T14, leaseTermId: L14, name: '거', status: 'WAITING_TOUR', tourDate: '' }))
+    eq('이미 빈 투어일을 또 비워도 행 없음', (await logsOf(L14)).length, 1)
+
+    // 나. 입실 취소에서 '문의'(상태 동반, 시각 없음) → 전이 행 하나에 memo, 행 둘 금지
+    const T15 = await tenantIn(P1, '너')
+    const L15 = await tourLease(P1, T15, 'CANCELLED', null)
+    const u2 = await tenants.updateTenant(fd({ tenantId: T15, leaseTermId: L15, name: '너', status: 'WAITING_TOUR', tourDate: '' }))
+    eq('상태 동반 저장 ok', [u2.ok ? true : u2.error, await tourOf(L15)], [true, ['WAITING_TOUR', null, null]])
+    eq('상태 동반 저장은 전이 행 하나에 memo', (await logsOf(L15)).map(r => [r.fromStatus, r.toStatus, r.reason, r.memo]),
+      [['CANCELLED', 'WAITING_TOUR', null, '투어일 2026-09-28 비움']])
+
+    // 다. 새 날짜로 바꾸는 저장·칸 없는 저장은 행이 없다
+    const T16 = await tenantIn(P1, '더')
+    const L16 = await tourLease(P1, T16, 'WAITING_TOUR', '10:00')
+    const u3 = await tenants.updateTenant(fd({ tenantId: T16, leaseTermId: L16, name: '더', status: 'WAITING_TOUR', tourDate: '2026-10-05', tourTime: '11:00' }))
+    eq('새 날짜 저장: 값은 바뀌고 행 없음', [u3.ok ? true : u3.error, await tourOf(L16), (await logsOf(L16)).length], [true, ['WAITING_TOUR', '2026-10-05', '11:00'], 0])
+    const u4 = await tenants.updateTenant(fd({ tenantId: T16, leaseTermId: L16, name: '더', status: 'WAITING_TOUR' }))
+    eq('칸 없는 저장: 투어일 보존, 행 없음', [u4.ok ? true : u4.error, await tourOf(L16), (await logsOf(L16)).length], [true, ['WAITING_TOUR', '2026-10-05', '11:00'], 0])
+    // 상태만 바꾸고 투어일은 그대로 두는 저장: 전이 행에 memo 가 없다.
+    const u5 = await tenants.updateTenant(fd({ tenantId: T16, leaseTermId: L16, name: '더', status: 'TOUR_DONE', tourDate: '2026-10-05', tourTime: '11:00' }))
+    eq('투어일 그대로 상태만: 전이 행에 memo 없음', [u5.ok ? true : u5.error, (await logsOf(L16)).map(r => [r.fromStatus, r.toStatus, r.memo])], [true, [['WAITING_TOUR', 'TOUR_DONE', null]]])
+
+    // 라. 입실 취소 그대로 투어일만 비움 → 같은 상태 행. 목록의 취소 단계는 진짜 취소 전이를 읽는다.
+    const T17 = await tenantIn(P1, '러')
+    const L17 = await tourLease(P1, T17, 'CANCELLED', null)
+    await prisma.tenantStatusLog.create({ data: { propertyId: P1, tenantId: T17, leaseTermId: L17, fromStatus: 'WAITING_TOUR', toStatus: 'CANCELLED', reason: '변심', changedById: HU, changedAt: new Date('2026-10-01T00:00:00Z') } })
+    const u6 = await tenants.updateTenant(fd({ tenantId: T17, leaseTermId: L17, name: '러', status: 'CANCELLED', tourDate: '' }))
+    eq('취소 그대로 비움: 같은 상태 행', [u6.ok ? true : u6.error, (await logsOf(L17)).map(r => [r.fromStatus, r.toStatus, r.reason, r.memo])],
+      [true, [['WAITING_TOUR', 'CANCELLED', '변심', null], ['CANCELLED', 'CANCELLED', null, '투어일 2026-09-28 비움']]])
+    const list = await tenants.getTenants()
+    const row17 = (list as unknown as { id: string; leaseTerms: { id: string; statusLogs?: { fromStatus: string; toStatus: string; reason: string | null }[] }[] }[])
+      .find(t => t.id === T17)?.leaseTerms.find(l => l.id === L17)
+    eq('목록: 최신 취소 행은 진짜 전이(취소 단계 = 투어 예정에서), 사유 그대로', row17?.statusLogs?.find(l => l.toStatus === 'CANCELLED'), { fromStatus: 'WAITING_TOUR', toStatus: 'CANCELLED', reason: '변심' })
+
+    // 마. 이력 화면·사유 수정·이름 변경·무효 처리가 메모 행을 깨지 않는다
+    const hist = await rooms.getTenantStatusHistory(T14)
+    eq('이력: memo 를 내리고 등록·사유 수정 대상이 아니다', hist.items.map(i => [i.fromStatus, i.toStatus, i.memo, i.isCreated, i.editable, i.canRecord]),
+      [['WAITING_TOUR', 'WAITING_TOUR', '투어일 2026-09-28 14:00 비움', false, false, false]])
+    const memoRow17 = (await logsOf(L17))[1].id
+    eq('사유 수정은 메모 행을 거부(같은 상태)', [(await rooms.updateStatusLogReason(memoRow17, '변심')).ok, (await logsOf(L17))[1].memo], [false, '투어일 2026-09-28 비움'])
+    const before = JSON.stringify(await logsOf(L17))
+    const rn = await settings.renameOption('cancelReasons', '변심', '마음 바뀜')
+    if (!rn.ok || !rn.undo) throw new Error('rename 14')
+    eq('이름 변경: 전이 행 사유만 바뀌고 메모 행은 그대로', (await logsOf(L17)).map(r => [r.reason, r.memo]), [['마음 바뀜', null], [null, '투어일 2026-09-28 비움']])
+    await settings.undoRenameOption(J(rn.undo))
+    eq('이름 변경 적용취소 뒤 바이트 동일', JSON.stringify(await logsOf(L17)), before)
+    eq('무효 처리·적용취소 뒤 메모 그대로', [(await rooms.invalidateStatusLog(memoRow17)).ok, (await rooms.restoreStatusLog(memoRow17)).ok, (await logsOf(L17))[1].memo, (await logsOf(L17))[1].deletedAt], [true, true, '투어일 2026-09-28 비움', null])
+
+    // 바. 남의 영업장 계약은 못 건드린다(행도 안 생긴다)
+    const T18 = await tenantIn(P2, '머')
+    const L18 = await tourLease(P2, T18, 'WAITING_TOUR', null)
+    const u7 = await tenants.updateTenant(fd({ tenantId: T18, leaseTermId: L18, name: '머', status: 'WAITING_TOUR', tourDate: '' }))
+    eq('남의 영업장: 거부, 투어일 그대로, 행 없음', [u7.ok, await tourOf(L18), (await logsOf(L18)).length], [false, ['WAITING_TOUR', '2026-09-28', null], 0])
+  }
+
 
   console.log(`[사유 목록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()

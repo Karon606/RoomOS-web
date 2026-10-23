@@ -195,7 +195,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       id: true, status: true, tourDate: true, tourTime: true, isShortTerm: true,
       room: { select: { roomNo: true } }, tenant: { select: { name: true } },
       // '투어 전 취소' 판정 — 최근 CANCELLED 전이의 fromStatus (TenantClient 188행과 동일 정본 패턴)
-      statusLogs: { where: { deletedAt: null, toStatus: 'CANCELLED' }, orderBy: { changedAt: 'desc' }, take: 1, select: { fromStatus: true } },
+      // 전이 행만 본다. 입실 취소 그대로 투어일만 비운 행(CANCELLED → CANCELLED, lib/tourClearLog)은 취소 단계가 아니다.
+      statusLogs: { where: { deletedAt: null, toStatus: 'CANCELLED', fromStatus: { not: 'CANCELLED' } }, orderBy: { changedAt: 'desc' }, take: 1, select: { fromStatus: true } },
     },
   })
   for (const l of tourLeases) {

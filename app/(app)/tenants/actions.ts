@@ -90,6 +90,7 @@ import { addJobOption } from '@/app/(app)/settings/actions'
 import { planDueDayAdjustCreate, dueDayAdjustWhere, PAYMENT_PREFIX_RESERVED } from '@/lib/dueDayAdjust'
 import { recalculatePayments, serverBillForMonth } from '@/app/(app)/rooms/paymentEngine'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { tourClearedMemo, createTourClearedLog } from '@/lib/tourClearLog'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -310,7 +311,9 @@ export async function getTenants() {
             // 채울 때(lib/checkoutReason) 그 행이 있어야 연장 전의 옛 사유가 새 퇴실에 붙지 않는다.
             where: {
               deletedAt: null,
-              OR: [{ toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } }, { fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE' }],
+              // 취소는 전이 행만 싣는다. 입실 취소 그대로 투어일만 비운 행(CANCELLED → CANCELLED, lib/tourClearLog)이
+              // 최신 취소 행으로 잡히면 취소 단계(어느 단계에서 취소됐나)가 사라진다.
+              OR: [{ toStatus: 'CANCELLED', fromStatus: { not: 'CANCELLED' } }, { toStatus: { in: ['CHECKOUT_PENDING', 'CHECKED_OUT'] } }, { fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE' }],
             },
             orderBy: { changedAt: 'desc' },
             take: 5,
@@ -1183,6 +1186,8 @@ export async function updateTenant(formData: FormData): Promise<
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       // 방문 경로의 지금 값. 그대로 저장하면 목록 밖 옛 글자도 그대로 둔다(2026-10-22 2차, visitRouteForSave prev).
       visitRoute: true,
+      // 투어일을 비우는 저장이면 비우기 전 값을 상태 이력 memo 에 남긴다(lib/tourClearLog, 2026-10-23 운영자 승인).
+      tourDate: true, tourTime: true,
     },
   })
   if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
@@ -1741,6 +1746,13 @@ export async function updateTenant(formData: FormData): Promise<
   // 계약을 쓴 뒤에 방문 경로 목록에 더한다(체크한 저장만, 2026-10-22 2차).
   await visitRouteSave.commit()
 
+  // 투어일을 비운 저장이면 비우기 전 값을 이력에 남긴다(lib/tourClearLog). 상태가 함께 바뀌면 그 전이 행에 싣고, 그대로면
+  // 같은 상태 행을 하나 만든다. 새 날짜로 바꾸는 저장은 null 이다(2026-10-23 운영자 승인 (가)안).
+  const tourMemo = tourClearedMemo(currentLease, tourDate)
+  if (status === prevStatus && tourMemo) {
+    await createTourClearedLog(prisma, { tenantId, leaseTermId, propertyId, status, changedById: user.sub, memo: tourMemo })
+  }
+
   if (status !== prevStatus) {
     // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
     // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
@@ -1762,6 +1774,7 @@ export async function updateTenant(formData: FormData): Promise<
         toStatus:   status,
         changedById: user.sub,
         ...(cancelReason ? { reason: cancelReason } : {}),
+        ...(tourMemo ? { memo: tourMemo } : {}),
       },
     })
     await reasonSave?.commit()
