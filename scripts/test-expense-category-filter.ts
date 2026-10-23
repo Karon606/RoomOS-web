@@ -108,7 +108,7 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
   must(`${f} — 선택지는 '전체' + catChoices`, !!seg && /\{ value: ALL_CATEGORIES, label: '전체' \}/.test(seg[0]) && /\.\.\.catChoices\.map/.test(seg[0]))
   must(`${f} — 선택지는 정본 expenseCategoryChoices 에 고른 값을 넘겨 만든다`, /const catChoices = expenseCategoryChoices\(\s*expenseCategories,[\s\S]{0,200}?expFilter\.category,\s*\)/.test(s))
   must(`${f} — 선택지 행에 미기록 예정 행 카테고리도 든다`, /const catChoices = expenseCategoryChoices\(\s*expenseCategories,\s*\[\.\.\.expenses\.map\(e => e\.category\), \.\.\.dueRecs\.filter\(r => !r\.recordedExpenseId\)\.map\(r => r\.category\)\],/.test(s))
-  must(`${f} — D-3 숨김 때문에 빈 카테고리는 숨김을 말하고 푸는 버튼을 준다`, /const catOnlyHidden = expFilter\.category !== ALL_CATEGORIES && !catHasNoRows && hiddenRecs\.length > 0/.test(s) && /결제일 D-3 밖이라 숨겨져 있습니다`\}[\s\S]{0,200}onClick=\{\(\) => setRecVisibility\('all'\)\}>숨긴 고정 지출 보기</.test(s))
+  must(`${f} — D-3 숨김 때문에 빈 카테고리는 숨김을 말하고 푸는 버튼을 준다`, /const catOnlyHidden = expFilter\.category !== ALL_CATEGORIES && !catHasNoRows && hiddenRecs\.length > 0/.test(s) && /결제일 D-3 밖이라 숨겨져 있습니다`\}[\s\S]{0,200}onClick=\{\(\) => setRecVisibility\('all'\)\}>숨긴 항목 보기</.test(s))
   if (seg) {
     const before = s.slice(0, s.indexOf(seg[0]))
     const sticky = before.lastIndexOf('sticky top-0')

@@ -3869,7 +3869,7 @@ export default function FinanceClient({
                   action={<Btn type="button" variant="secondary" size="sm" onClick={() => setExpFilter(f => ({ ...f, category: ALL_CATEGORIES }))}>전체 보기</Btn>} />
               : catOnlyHidden
               ? <EmptyState title={`${expFilter.category} 고정 지출 ${hiddenRecs.length}건이 결제일 D-3 밖이라 숨겨져 있습니다`} className="border-0 bg-transparent"
-                  action={<Btn type="button" variant="secondary" size="sm" onClick={() => setRecVisibility('all')}>숨긴 고정 지출 보기</Btn>} />
+                  action={<Btn type="button" variant="secondary" size="sm" onClick={() => setRecVisibility('all')}>숨긴 항목 보기</Btn>} />
               : <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
 
             // **전체 선택** — 지금 목록에 보이는 지출 전부(운영자 신고 2026-09-25 [27ae736e]).
