@@ -1154,6 +1154,8 @@ export default function FloorPlanEditor({
   const btnOn  = (color = 'var(--coral)') => `${btn} text-[var(--on-solid)] border-transparent`
   const btnOff = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
   const btnGray = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-mid)]`
+  // 편집·다중·변형 토글의 꺼진 상태. btnGray 는 적용취소·복사 같은 액션 6곳도 쓰므로 상수를 고치지 않고 토글만 갈라 낸다(가이드 §23 --seg-ink-off).
+  const btnToggleOff = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--seg-ink-off)]`
   const divider = <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
 
   // ── 그리기 중 preview 포인트 ──────────────────────────────
@@ -1196,18 +1198,18 @@ export default function FloorPlanEditor({
           style={{ background: 'var(--cream)' }}>
 
           <button onClick={toggleEditMode}
-            className={editMode ? `${btnOn()} bg-[var(--coral)]` : btnGray}>
+            className={editMode ? `${btnOn()} bg-[var(--coral)]` : btnToggleOff}>
             {editMode ? '편집 중' : '편집'}
           </button>
 
           {editMode && (<>
             {/* 다중·변형 모드 */}
             <button onClick={() => setMultiSelectMode(v => !v)}
-              className={multiSelectMode ? `${btnOn()} bg-[var(--info-solid)]` : btnGray}>
+              className={multiSelectMode ? `${btnOn()} bg-[var(--info-solid)]` : btnToggleOff}>
               다중{multiSelectMode && ' ✓'}
             </button>
             <button onClick={() => setTransformMode(v => !v)}
-              className={transformMode ? `${btnOn()} bg-[var(--deposit-fg)]` : btnGray}>
+              className={transformMode ? `${btnOn()} bg-[var(--deposit-fg)]` : btnToggleOff}>
               {transformMode ? '변형 중' : '변형'}
             </button>
 

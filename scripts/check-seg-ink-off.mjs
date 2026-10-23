@@ -14,6 +14,7 @@
 //   ⓕ role 과 상관없이 선택형 칩·세그먼트 버튼의 삼항 패턴(선택됨이면 채움, 아니면 --canvas·--cream-2 바탕)에서
 //      고르지 않은 쪽 글자가 위 미달 토큰이 아니다. 클래스 문자열 삼항과 style 객체 삼항 둘 다 본다
 //      (2026-10-23 독립 검수, ⓒ 가 role="radio" 파일만 봐서 지출 유형 세그먼트·추이 기간 칩 등을 놓쳤다).
+//      비선택 쪽이 상수 이름이면 같은 파일의 정의를 따라가고, style 객체의 키 순서는 따지지 않으며, && 조건식도 본다(재검수).
 //   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 미달 토큰이 아니다
 //      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
 //
@@ -23,7 +24,9 @@ import { join } from 'node:path'
 
 const violations = []
 const strip = s => s
-  .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
+  // 블록 주석은 줄 머리·공백·{ ( , ; 뒤에서만 연다. accept="image/*" 같은 문자열 속 '/*' 를 주석 시작으로 읽으면
+  // 다음 '*/' 까지 수백 줄이 지워져 그 안의 칩을 못 본다(배치도 편집기 툴바가 그렇게 빠져 있었다).
+  .replace(/(^|[\s{(,;])\/\*[\s\S]*?\*\//gm, (m, pre) => pre + m.slice(pre.length).replace(/[^\n]/g, ''))
   .replace(/^[^\S\n]*\/\/.*$/gm, '')
 
 // ⓐ 토큰 값과 대비
@@ -115,28 +118,49 @@ if (toggleChips < 3) violations.push(`토글 칩 정본 3곳(요청 '긴급만',
 // ⓕ 선택형 칩·세그먼트 삼항(role 무관)
 const BAD_TOKEN = '(?:warm-mid|ink-s|ink-3|warm-muted|ink-m|ink-mute)'
 const SOFT_BG = '(?:canvas|cream-2|page)'
-// ① 클래스 삼항: ? '선택 클래스' : '비선택 클래스' (줄을 넘겨도 된다)
-const TERN_CLASS = /\?\s*(['"`])([^'"`]*)\1\s*:\s*(['"`])([^'"`]*)\3/g
 const BG_CLASS = new RegExp(`(?:^|\\s)bg-\\[var\\(--${SOFT_BG}\\)\\]`)
 const BAD_TXT_CLASS = new RegExp(`(?:^|\\s)text-\\[var\\(--${BAD_TOKEN}\\)\\]`)
-// ② style 삼항: ? { ... } : { background: 'var(--canvas)', color: 'var(--warm-mid)' }
-const TERN_STYLE = new RegExp(`\\?\\s*\\{[^{}]*\\}\\s*:\\s*\\{\\s*background:\\s*'var\\(--${SOFT_BG}\\)',\\s*color:\\s*'var\\(--${BAD_TOKEN}\\)'`, 'g')
+const BG_STYLE = new RegExp(`background:\\s*'var\\(--${SOFT_BG}\\)'`)
+const BAD_STYLE = new RegExp(`(?:^|[\\s,{])color:\\s*'var\\(--${BAD_TOKEN}\\)'`)
+// ① 클래스 삼항: ? 선택 : 비선택. 양쪽 다 문자열이거나 상수 이름일 수 있다(상수는 같은 파일의 정의를 따라가 판정).
+const ARM = `((['"\`])[^'"\`]*\\2|[A-Za-z_$][\\w$]*)`
+const TERN_CLASS = new RegExp(`\\?\\s*${ARM}\\s*:\\s*${ARM.replace('\\2', '\\4')}`, 'g')
+// ② style 삼항: ? { ... } : { ... }. 비선택 객체 안에서 background·color 순서는 따지지 않는다.
+const TERN_STYLE = /\?\s*\{[^{}]*\}\s*:\s*\{([^{}]*)\}/g
+// ③ && 조건식: cond && '비선택 클래스'
+const AND_CLASS = /&&\s*(['"`])([^'"`]*)\1/g
 const lineOf = (src, idx) => src.slice(0, idx).split('\n').length
 // 삼항이 걸린 요소가 누를 수 있는 것(button·Link·a)일 때만 본다. span 배지의 상태색 삼항은 선택형 컨트롤이 아니다.
 const PRESSABLE = new Set(['button', 'Link', 'a'])
 const tagAt = (src, idx) => { const m = src.slice(Math.max(0, idx - 2000), idx).match(/<([A-Za-z][\w.]*)[^<]*$/); return m ? m[1] : null }
+// 예외: 월 선택의 '이번달'은 고르는 칸이 아니라 바로가기 액션이다. 바로 위 월 그리드(--warm-mid)와 같은 축에 두어야
+// 바로가기 글자가 고를 수 있는 달보다 진해지는 역전이 없다(2026-10-23 재검수). 그래서 이 한 자리는 이 그물이 보지 않는다.
+const isShortcut = (src, idx) => /이번달/.test(src.slice(idx, idx + 300))
+const armText = (consts, arm) => {
+  if (!arm) return ''
+  if (/^['"`]/.test(arm)) return arm.slice(1, -1)
+  return consts.get(arm) ?? ''
+}
 for (const f of walk('app', walk('components', []))) {
   const src = strip(readFileSync(f, 'utf8'))
+  const consts = new Map([...src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])([^'"`]*)\2/g)].map(m => [m[1], m[3]]))
+  const flag = (idx, what) => violations.push(`${f}:${lineOf(src, idx)} 선택형 칩·세그먼트의 고르지 않은 칸 ${what}. 옅은 바탕 위 AA 미달 토큰이라 --seg-ink-off 를 쓴다(가이드 §23).`)
   for (const m of src.matchAll(TERN_CLASS)) {
-    const on = m[2], off = m[4]
+    const on = armText(consts, m[1]), off = armText(consts, m[3])
     if (!BG_CLASS.test(off) || !BAD_TXT_CLASS.test(off)) continue
     if (BG_CLASS.test(on)) continue // 양쪽 다 옅은 바탕이면 선택형 채움 패턴이 아니다
-    if (!PRESSABLE.has(tagAt(src, m.index))) continue
-    violations.push(`${f}:${lineOf(src, m.index)} 선택형 칩·세그먼트의 고르지 않은 칸 글자가 옅은 바탕 위 AA 미달 토큰(${off.match(BAD_TXT_CLASS)[0].trim()})이다. text-[var(--seg-ink-off)] 를 쓴다(가이드 §23).`)
+    if (!PRESSABLE.has(tagAt(src, m.index)) || isShortcut(src, m.index)) continue
+    flag(m.index, `글자(${/^['"`]/.test(m[3]) ? '' : `상수 ${m[3]} → `}${off.match(BAD_TXT_CLASS)[0].trim()})`)
   }
   for (const m of src.matchAll(TERN_STYLE)) {
-    if (!PRESSABLE.has(tagAt(src, m.index))) continue
-    violations.push(`${f}:${lineOf(src, m.index)} 선택형 칩·세그먼트의 고르지 않은 칸 style 글자가 옅은 바탕 위 AA 미달 토큰이다. color: 'var(--seg-ink-off)' 를 쓴다(가이드 §23).`)
+    if (!BG_STYLE.test(m[1]) || !BAD_STYLE.test(m[1])) continue
+    if (!PRESSABLE.has(tagAt(src, m.index)) || isShortcut(src, m.index)) continue
+    flag(m.index, 'style 글자')
+  }
+  for (const m of src.matchAll(AND_CLASS)) {
+    if (!BG_CLASS.test(m[2]) || !BAD_TXT_CLASS.test(m[2])) continue
+    if (!PRESSABLE.has(tagAt(src, m.index)) || isShortcut(src, m.index)) continue
+    flag(m.index, `&& 조건식 글자(${m[2].match(BAD_TXT_CLASS)[0].trim()})`)
   }
 }
 

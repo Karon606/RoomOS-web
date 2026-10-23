@@ -297,7 +297,7 @@ function MonthPicker({
           className="flex-1 py-3 text-sm rounded-lg transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
           style={current === todayMonth
             ? { background: 'var(--persimmon)', color: 'var(--on-solid)', cursor: 'default' }
-            : { background: 'var(--canvas)', color: 'var(--seg-ink-off)' }}
+            : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
         >
           이번달
         </button>
