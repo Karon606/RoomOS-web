@@ -2385,6 +2385,32 @@ function normalizeCycle(
   return { intervalMonths: iv, anchorMonth: am, nextDueOverrideMonth: ov }
 }
 
+// 고정지출 등록·수정이 화면에서 받아 저장하는 칸(2026-10-23 독립 검수 블로커). 이 밖의 키는 버린다.
+// 화면 객체를 data 에 그대로 펼치면 propertyId·expenses: { connect }·financialAccount: { connect } 같은 키가 실려
+// 남의 영업장으로 옮기거나 남의 행을 붙이거나 결제 계정 검사를 비켜 간다. 관계는 검증한 FK 스칼라(financialAccountId)로만 넣는다.
+// 값은 맨 글자·숫자·참거짓만 받는다({ set }·{ connect } 같은 연산 객체는 거절).
+const RECURRING_FIELDS = {
+  title: 'string', amount: 'number', dueDay: 'number',
+  payMethod: 'string?', vendor: 'string?', financialAccountId: 'string?',
+  isAutoDebit: 'boolean', isVariable: 'boolean', alertDaysBefore: 'number', isActive: 'boolean',
+  priorYearAmount: 'number?', memo: 'string?',
+} as const
+type RecurringFields = Partial<{ title: string; amount: number; dueDay: number; payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; priorYearAmount: number | null; memo: string | null }>
+const RECURRING_INPUT_INVALID = '고정 지출 입력값이 올바르지 않습니다.'
+
+/** 허용 칸만 골라 낸다. 안 실려 온 칸(undefined)은 빼고, 형이 틀린 칸이 하나라도 있으면 null(저장 거절). */
+function pickRecurringFields(src: Record<string, unknown>): RecurringFields | null {
+  const out: Record<string, unknown> = {}
+  for (const [key, kind] of Object.entries(RECURRING_FIELDS)) {
+    const v = src[key]
+    if (v === undefined) continue
+    const base = kind.replace('?', '')
+    if (v === null ? !kind.endsWith('?') : typeof v !== base || (base === 'number' && !Number.isFinite(v))) return null
+    out[key] = v
+  }
+  return out as RecurringFields
+}
+
 // #1: 세부항목으로부터 부모의 합계·변동여부 파생
 function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVariable: boolean } {
   const amount = items.reduce((s, it) => s + (Number(it.amount) || 0), 0)
@@ -2405,11 +2431,14 @@ export async function addRecurringExpense(data: {
     await requireEdit()
     const propertyId = await getPropertyId()
     const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
+    // 화면 객체는 허용 칸만 골라 쓴다(propertyId 따위가 실려 와도 버린다, 2026-10-23 독립 검수 블로커).
+    const fields = pickRecurringFields(rest)
+    if (!fields || fields.title === undefined || fields.amount === undefined || fields.dueDay === undefined) return { ok: false, error: RECURRING_INPUT_INVALID }
     // 카테고리는 지출 등록과 같은 맨 글자 규약이다(목록 표기 맞춤, 새 이름은 기록 뒤에 목록에 더한다, lib/reasonListSave).
     const categorySave = await autoOptionForSave(propertyId, 'expenseCategories', rawCategory, { addToList: addCategoryToList })
     if (!categorySave.value) return { ok: false, error: '카테고리를 입력하세요.' }
     // 폼에서 온 결제 계정은 이 영업장 것만 받는다. 빈 값(지정 안 함)은 그대로 허용한다(2026-10-23 운영자 승인).
-    if (rest.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: rest.financialAccountId, propertyId }, select: { id: true } }))) {
+    if (fields.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: fields.financialAccountId, propertyId }, select: { id: true } }))) {
       return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
     const hasItems = Array.isArray(items) && items.length > 0
@@ -2417,7 +2446,8 @@ export async function addRecurringExpense(data: {
     const cycle = normalizeCycle(intervalMonths, anchorMonth, nextDueOverrideMonth)
     const rec = await prisma.recurringExpense.create({
       data: {
-        propertyId, ...rest, category: categorySave.value, isActive: true, ...cycle,
+        ...fields, title: fields.title, amount: fields.amount, dueDay: fields.dueDay,
+        propertyId, category: categorySave.value, isActive: true, ...cycle,
         ...(derived ? { amount: derived.amount, isVariable: derived.isVariable } : {}),
         activeSince: activeSince ? new Date(activeSince) : null,
         ...(hasItems ? {
@@ -2453,11 +2483,14 @@ export async function updateRecurringExpense(id: string, data: Partial<{
     })
     if (!cur) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
+    // 화면 객체는 허용 칸만 골라 쓴다. propertyId·관계 연산(connect) 따위가 실려 와도 버린다(2026-10-23 독립 검수 블로커).
+    const fields = pickRecurringFields(rest)
+    if (!fields) return { ok: false, error: RECURRING_INPUT_INVALID }
     // 결제 계정을 실어 온 저장만 본다. 이 영업장 계정이어야 하고, 빈 값(지정 해제)은 그대로 허용한다(2026-10-23 운영자 승인).
-    if (rest.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: rest.financialAccountId, propertyId }, select: { id: true } }))) {
+    if (fields.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: fields.financialAccountId, propertyId }, select: { id: true } }))) {
       return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
-    const updateData: Record<string, unknown> = { ...rest }
+    const updateData: Record<string, unknown> = { ...fields }
     // 카테고리를 실어 온 저장만 다시 잰다(활성 토글 따위는 안 건드린다). 맨 글자 규약은 지출 등록과 같다.
     let categorySave: Awaited<ReturnType<typeof autoOptionForSave>> | null = null
     if ('category' in data) {
@@ -2952,7 +2985,7 @@ export async function ungroupRecurringExpense(parentId: string): Promise<{ ok: t
     await requireEdit()
     const propertyId = await getPropertyId()
     const parent = await prisma.recurringExpense.findFirst({ where: { id: parentId, propertyId }, select: { groupSourceIds: true } })
-    if (!parent) return { ok: false, error: '항목을 찾을 수 없습니다.' }
+    if (!parent) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     const ids = Array.isArray(parent.groupSourceIds) ? (parent.groupSourceIds as string[]) : []
     if (ids.length === 0) return { ok: false, error: '묶기로 만든 항목이 아니거나 원본 정보가 없습니다.' }
     const restored = await prisma.$transaction(async (tx) => {

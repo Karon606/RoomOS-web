@@ -204,11 +204,22 @@ const AXES = [
     ],
     mustNot: [],
   })),
-  ...[['addRecurringExpense', 'rest'], ['updateRecurringExpense', 'rest'], ['groupRecurringExpenses', 'data']].map(([fn, obj]) => ({
+  ...[['addRecurringExpense', 'fields'], ['updateRecurringExpense', 'fields'], ['groupRecurringExpenses', 'data']].map(([fn, obj]) => ({
     file: 'app/(app)/settings/actions.ts',
     fn,
     must: [[new RegExp(`financialAccount\\.findFirst\\(\\{\\s*where:\\s*\\{\\s*id:\\s*${obj}\\.financialAccountId,\\s*propertyId\\s*\\}`), '폼의 결제 계정을 영업장 범위로 보지 않는다(남의 영업장 계좌가 이어진다)']],
     mustNot: [],
+  })),
+  // 고정지출 등록·수정은 화면 객체를 허용 칸 화이트리스트로만 거른다(2026-10-23 독립 검수 블로커). data 의 fields·updateData 는 이 조립을 거친 값이다.
+  ...['addRecurringExpense', 'updateRecurringExpense'].map(fn => ({
+    file: 'app/(app)/settings/actions.ts',
+    fn,
+    must: [
+      [/const fields = pickRecurringFields\(rest\)\n\s*if \(!fields\b[^\n]*return \{ ok: false, error: RECURRING_INPUT_INVALID \}/, '화면 객체를 허용 칸 화이트리스트로 거르지 않는다(propertyId·connect 가 실린다)'],
+      ...(fn === 'updateRecurringExpense' ? [[/const updateData: Record<string, unknown> = \{ \.\.\.fields \}/, '수정 data 를 거른 값(fields)에서 시작하지 않는다']] : []),
+      ...(fn === 'addRecurringExpense' ? [[/\.\.\.fields,[^\n]*\n\s*propertyId,/, '등록 data 에서 propertyId 가 거른 값 뒤에 와서 서버 값으로 서지 않는다']] : []),
+    ],
+    mustNot: [[/\.\.\.rest\b(?!\s*\}\s*=)/, '화면 객체(rest)를 그대로 펼친다']],
   })),
 ]
 
@@ -226,8 +237,23 @@ for (const ax of AXES) {
 // 같은 모델의 형제 쓰기(삭제·복원·기록·묶기 해제·트랜잭션 안 쓰기)까지 클래스로 막는다. 앱 코드(app·lib) 전부를 훑어
 // update·updateMany·delete·deleteMany·upsert 의 where 객체 안에 propertyId 가 없으면 위반이다. 세부항목은 부모 관계
 // 필터(recurringExpense: { propertyId })로 건다. where 를 변수로 넘기면 범위를 못 읽으므로 그것도 위반이다(닫힌 쪽으로 실패).
+//
+// 2차 보강(2026-10-23 독립 검수 블로커). 화면 객체를 data 에 펼치면 propertyId·expenses: { connect }·financialAccount: { connect }
+// 가 그대로 실려 남의 영업장으로 옮기거나 남의 행을 붙였다. 그래서 create·createMany·update·updateMany·upsert 의 data 를 본다.
+//   ⓐ data 안의 펼침(...이름)은 서버가 고른 값(SAFE_SPREADS)만. ⓑ data 를 변수로 넘기는 것은 SAFE_DATA_VARS 만(그 조립은 함수 축이 본다).
+//   ⓒ 기타수익·고정지출 create 의 data 에는 propertyId 가 있어야 한다. ⓓ 모델 대리자를 변수에 담거나 넘기지 않는다(별칭 금지).
+//   ⓔ 쓰기 개수는 정확한 수로 고정한다. 새 쓰기를 더하면 이 숫자도 함께 고친다(조용히 빠지거나 늘지 않게).
 const SCOPED_MODELS = ['extraIncome', 'recurringExpense', 'recurringExpenseItem']
-const WRITE_RE = new RegExp(`\\.(${SCOPED_MODELS.join('|')})\\.(update|updateMany|delete|deleteMany|upsert)\\(`, 'g')
+const MODEL_ALT = SCOPED_MODELS.join('|')
+const WHERE_OPS = ['update', 'updateMany', 'delete', 'deleteMany', 'upsert']
+const DATA_OPS = ['create', 'createMany', 'update', 'updateMany', 'upsert']
+// 줄바꿈·공백을 허용한다(prisma.extraIncome\n  .update(). 뒤의 \b 로 updateMany 와 update 를 가른다.
+const CALL_RE = new RegExp(`\\.\\s*(${MODEL_ALT})\\s*\\.\\s*(create|createMany|update|updateMany|delete|deleteMany|upsert)\\s*\\(`, 'g')
+// 모델 이름 뒤에 메서드 호출이 안 붙는 자리(별칭 할당·인자로 넘김·계산된 접근)는 위반이다.
+const ALIAS_RE = new RegExp(`\\b(prisma|tx|db|client|p)\\s*\\.\\s*(${MODEL_ALT})\\b(?!\\s*\\.\\s*\\w+\\s*\\()|\\[\\s*['"\`](${MODEL_ALT})['"\`]\\s*\\]`, 'g')
+const SAFE_SPREADS = new Set(['fields', 'cycle', 'link'])
+const SAFE_DATA_VARS = new Set(['updateData'])
+const EXPECTED = { where: 22, data: 24 }
 
 function walk(dir, out) {
   for (const name of readdirSync(dir)) {
@@ -253,47 +279,80 @@ function matchClose(src, open) {
   return -1
 }
 
-/** 인자 객체의 최상위 where 값. 객체면 { obj }, 변수 따위면 { raw }, 없으면 null. */
-function topLevelWhere(arg) {
+/** 인자 객체의 최상위 key 값. 객체면 { obj }, 그 밖의 식이면 { raw }(최상위 쉼표까지), 단축 속성이면 { raw: key }, 없으면 null. */
+function topLevel(arg, key) {
   let depth = 0
   for (let i = 0; i < arg.length; i++) {
     const c = arg[i]
     if (c === '{' || c === '(' || c === '[') depth++
     else if (c === '}' || c === ')' || c === ']') depth--
-    else if (depth === 1 && arg.startsWith('where', i) && !/[\w$]/.test(arg[i - 1] ?? '')) {
-      let j = i + 5
+    else if (depth === 1 && arg.startsWith(key, i) && !/[\w$]/.test(arg[i - 1] ?? '') && !/[\w$]/.test(arg[i + key.length] ?? '')) {
+      let j = i + key.length
       while (/\s/.test(arg[j])) j++
-      if (arg[j] !== ':') { // 단축 속성 { where }
-        return { raw: 'where' }
-      }
+      if (arg[j] !== ':') return { raw: key }
       j++
       while (/\s/.test(arg[j])) j++
       if (arg[j] === '{') { const e = matchClose(arg, j); return { obj: arg.slice(j, e + 1) } }
-      return { raw: arg.slice(j, j + 40).split(/[,\n]/)[0] }
+      let k = j, d = 0
+      for (; k < arg.length; k++) {
+        const ch = arg[k]
+        if (ch === '(' || ch === '{' || ch === '[') { k = matchClose(arg, k); if (k < 0) break; continue }
+        if (d === 0 && (ch === ',' || ch === '}')) break
+      }
+      return { raw: arg.slice(j, k < 0 ? undefined : k).trim() }
     }
   }
   return null
 }
 
-let modelWrites = 0
+/** data 값 하나를 본다: 펼침 허용 목록, 변수 허용 목록, (create 면) propertyId. */
+function checkData(at, val, { needProperty }) {
+  if (!val) { violations.push(`${at} · data 를 못 찾았다`); return }
+  const text = val.obj ?? val.raw
+  if (val.raw != null && /^[A-Za-z_$][\w$]*$/.test(val.raw)) {
+    if (!SAFE_DATA_VARS.has(val.raw)) violations.push(`${at} · data 를 변수(${val.raw})로 넘긴다. 화면 객체가 그대로 실릴 수 있다. 허용 칸만 골라 객체로 쓴다`)
+    return
+  }
+  for (const s of text.matchAll(/\.\.\.\s*([A-Za-z_$][\w$]*)/g)) {
+    if (!SAFE_SPREADS.has(s[1])) violations.push(`${at} · data 에 ${s[1]} 를 펼친다. 화면 객체를 펼치면 propertyId·관계 연산(connect)이 실린다. 허용 칸만 고른 값(fields)을 쓴다`)
+  }
+  if (needProperty && !/\bpropertyId\b/.test(text)) violations.push(`${at} · create 의 data 에 propertyId 가 없다. 어느 영업장 행인지 서버가 정하지 않는다`)
+}
+
+let whereCount = 0, dataCount = 0
 for (const file of [...walk('app', []), ...walk('lib', [])]) {
   const src = readFileSync(file, 'utf8')
-  for (const m of src.matchAll(WRITE_RE)) {
-    modelWrites++
+  const lineOf = idx => src.slice(0, idx).split('\n').length
+  for (const m of src.matchAll(ALIAS_RE)) {
+    violations.push(`${file}:${lineOf(m.index)} · 모델 대리자(${m[2] ?? m[3]})를 변수에 담거나 넘긴다. 별칭을 거치면 이 그물이 쓰기를 못 본다. prisma.모델.메서드( 로 바로 부른다`)
+  }
+  for (const m of src.matchAll(CALL_RE)) {
+    const [model, op] = [m[1], m[2]]
     const open = m.index + m[0].length - 1
     const close = matchClose(src, open)
-    const line = src.slice(0, m.index).split('\n').length
-    const at = `${file}:${line} ${m[1]}.${m[2]}`
+    const at = `${file}:${lineOf(m.index)} ${model}.${op}`
     if (close < 0) { violations.push(`${at} · 호출 괄호를 못 읽었다. 못 읽으면 통과가 아니라 위반이다`); continue }
-    const w = topLevelWhere(src.slice(open + 1, close).trim())
-    if (!w) { violations.push(`${at} · where 를 못 찾았다. 영업장 범위를 볼 수 없다`); continue }
-    if (w.raw != null) { violations.push(`${at} · where 를 변수(${w.raw.trim()})로 넘겨 영업장 범위를 못 읽는다. where 객체 안에 propertyId 를 직접 쓴다`); continue }
-    if (!/\bpropertyId\b/.test(w.obj)) violations.push(`${at} · where 에 propertyId 가 없다(id 만으로 쓴다). 다른 영업장 id 로 그 행을 바꿀 수 있다`)
+    const arg = src.slice(open + 1, close).trim()
+    if (WHERE_OPS.includes(op)) {
+      whereCount++
+      const w = topLevel(arg, 'where')
+      if (!w) violations.push(`${at} · where 를 못 찾았다. 영업장 범위를 볼 수 없다`)
+      else if (w.raw != null) violations.push(`${at} · where 를 변수(${w.raw})로 넘겨 영업장 범위를 못 읽는다. where 객체 안에 propertyId 를 직접 쓴다`)
+      else if (!/\bpropertyId\b/.test(w.obj)) violations.push(`${at} · where 에 propertyId 가 없다(id 만으로 쓴다). 다른 영업장 id 로 그 행을 바꿀 수 있다`)
+    }
+    if (DATA_OPS.includes(op)) {
+      dataCount++
+      const needProperty = op.startsWith('create') && model !== 'recurringExpenseItem'
+      if (op === 'upsert') {
+        checkData(`${at}(create)`, topLevel(arg, 'create'), { needProperty: model !== 'recurringExpenseItem' })
+        checkData(`${at}(update)`, topLevel(arg, 'update'), { needProperty: false })
+      } else checkData(at, topLevel(arg, 'data'), { needProperty })
+    }
   }
 }
-// 0건이면 정규식이 망가진 것이다. 훑을 쓰기가 사라졌다고 통과시키지 않는다.
-if (modelWrites === 0) violations.push('기타수익·고정지출 쓰기를 한 곳도 못 찾았다. 감지 정규식이 낡았다')
+if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)
+if (dataCount !== EXPECTED.data) violations.push(`data 를 싣는 쓰기가 ${dataCount}곳이다(고정 ${EXPECTED.data}). 새 쓰기를 더했거나 정규식이 낡았다. 펼침을 확인하고 EXPECTED 를 함께 고친다`)
 
-console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 ${modelWrites}곳 검사 / 위반 ${violations.length}건`)
+console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 where ${whereCount}곳·data ${dataCount}곳 검사 / 위반 ${violations.length}건`)
 for (const v of violations) console.log(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)

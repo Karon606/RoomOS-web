@@ -112,7 +112,7 @@ async function main() {
     eq('남의 영업장 고정지출 기록 거부', await fin.recordRecurringExpense({ recurringExpenseId: theirs, amount: 30000, date: '2026-10-10' }),
       { ok: false, error: RECURRING_GONE })
     eq('남의 영업장 고정지출에 내 지출이 안 이어진다', await expenseCount(), 0)
-    eq('남의 영업장 고정지출 묶기 해제 거부', (await settings.ungroupRecurringExpense(theirs)).ok, false)
+    eq('남의 영업장 고정지출 묶기 해제 거부', await settings.ungroupRecurringExpense(theirs), { ok: false, error: RECURRING_GONE })
     eq('남의 영업장 고정지출 삭제 거부', await settings.deleteRecurringExpense(theirs), { ok: false, error: RECURRING_GONE })
     eq('남의 영업장 고정지출·세부항목 무변경', await recurringRow(theirs), before)
 
@@ -180,6 +180,33 @@ async function main() {
       { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
     eq('고정지출 묶기 거절 뒤 부모가 안 생기고 원본 활성 유지', [await recCount(), (await prisma.recurringExpense.findUnique({ where: { id: src } }))?.isActive], [r1, true])
     eq('고정지출 묶기: 제 영업장 계좌 통과', (await settings.groupRecurringExpenses({ title: '묶음', category: '공과금', dueDay: 5, financialAccountId: A1, sourceIds: [src] })).ok, true)
+
+    // ── 독립 검수 재현 3건(2026-10-23): 화면 객체에 허용 밖 키를 실어 보낸다. 거절되거나 무시되고 행이 안 바뀐다 ──
+    // 재현마다 대상을 따로 둔다. 하나가 뚫려 행이 옮겨 가도 다음 재현이 '못 찾음'으로 덮여 가려지지 않게.
+    const E2 = (await prisma.expense.create({ data: { propertyId: P2, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '공과금' } })).id as string
+    // updatedAt 은 빈 수정에도 움직이므로 뺀 나머지를 바이트로 견준다.
+    const stable = async (id: string) => { const r = JSON.parse(await recurringRow(id)); delete r.rec.updatedAt; return JSON.stringify(r) }
+    const p2Count = async () => prisma.recurringExpense.count({ where: { propertyId: P2 } })
+    const p2Before = await p2Count()
+
+    const t1 = await recurring(P1, '재현 1 대상'), t1Before = await stable(t1)
+    await settings.updateRecurringExpense(t1, { propertyId: P2 } as never)
+    eq('재현 1 수정: propertyId 주입이 무시되고 행 무변경', await stable(t1), t1Before)
+    const injected = await settings.addRecurringExpense({ ...recBase, propertyId: P2 } as never)
+    eq('재현 1 등록: propertyId 주입이 무시되고 제 영업장에 선다',
+      [injected.ok, injected.ok ? (await prisma.recurringExpense.findUnique({ where: { id: injected.id } }))?.propertyId : null, await p2Count()], [true, P1, p2Before])
+
+    const t2 = await recurring(P1, '재현 2 대상'), t2Before = await stable(t2)
+    await settings.updateRecurringExpense(t2, { expenses: { connect: [{ id: E2 }] } } as never)
+    eq('재현 2: expenses connect 가 무시되고 남의 지출이 안 붙는다', (await prisma.expense.findUnique({ where: { id: E2 } }))?.recurringExpenseId, null)
+    eq('재현 2: 행 무변경', await stable(t2), t2Before)
+
+    const t3 = await recurring(P1, '재현 3 대상'), t3Before = await stable(t3)
+    await settings.updateRecurringExpense(t3, { financialAccount: { connect: { id: A2 } } } as never)
+    eq('재현 3: financialAccount connect 가 무시되고 남의 계좌가 안 붙는다', await stable(t3), t3Before)
+    eq('재현 3 변형: 연산 객체({ set })로 계좌를 넣으면 거절',
+      await settings.updateRecurringExpense(t3, { financialAccountId: { set: A2 } } as never), { ok: false, error: '고정 지출 입력값이 올바르지 않습니다.' })
+    eq('재현 3 변형 뒤 무변경', await stable(t3), t3Before)
   }
 
   console.log(`[기타수익·고정지출 영업장 범위 통합] 통과 ${pass} / 실패 ${fail}`)
