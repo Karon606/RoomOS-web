@@ -15,12 +15,12 @@ type FinTab = 'expense' | 'assets' | 'reserve'
 export default async function FinancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; tab?: string; cat?: string }>
+  searchParams: Promise<{ month?: string; tab?: string }>
 }) {
   await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
-  // cat = 지출 목록 카테고리 필터 초기값. 홈 지출 도넛의 '지출 관리에서 전체 보기'가 실어 보낸다 —
-  // 조각을 눌러 상위 5건까지 본 사람이 전체를 보러 올 때, 도착해서 필터를 다시 고르게 하지 않는다.
-  const { month, tab, cat } = await searchParams
+  // ?cat=(지출 목록 카테고리 필터, 홈 지출 도넛 '지출 관리에서 전체 보기'가 실어 보낸다)은 FinanceClient 가
+  // 주소에서 직접 읽는다. prop 으로 넘기면 뒤로가기 때 처음 그린 값이 되살아나 주소와 갈린다.
+  const { month, tab } = await searchParams
   const initialTab: FinTab | undefined =
     tab === 'expense' || tab === 'assets' || tab === 'reserve'
       ? tab
@@ -85,7 +85,6 @@ export default async function FinancePage({
       trackedCategories={trackedCategories}
       otherMonthPaid={otherMonthPaid}
       initialTab={initialTab}
-      initialCategory={cat && cat.trim() ? cat.trim() : undefined}
     />
   )
 }

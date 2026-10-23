@@ -7,6 +7,12 @@
 
 export const ALL_CATEGORIES = 'all'
 
+/** 주소 ?cat= 값을 필터 값으로. 앞뒤 공백을 걷고, 없거나 비면 '전체'다. 화면은 이 값만 초기값으로 쓴다(주소 하나만 진실). */
+export function parseCategoryParam(raw: string | null | undefined): string {
+  const v = (raw ?? '').trim()
+  return v ? v : ALL_CATEGORIES
+}
+
 /** 이 행이 고른 카테고리에 드는가. 'all' 이면 언제나 참이다(목록·예정 행·도래 없음·다른 달분 흔적이 같은 식을 쓴다). */
 export function matchesExpenseCategory(category: string, selected: string): boolean {
   return selected === ALL_CATEGORIES || category === selected
@@ -33,17 +39,21 @@ export function expenseTotalLabel(selected: string): string {
   return selected === ALL_CATEGORIES ? '실제 지출 합계' : `${selected} 합계`
 }
 
-/** 필터가 걸렸을 때 합계 아래 캡션. 건수는 걸러진 지출 기록 수, 금액은 이 달 전 카테고리 합이다. */
-export function categoryFilterCaption(count: number, monthTotal: number, fmt: (n: number) => string): string {
-  return `${count}건 · 이 달 전체 ${fmt(monthTotal)}`
+/**
+ * 필터가 걸렸을 때 합계 아래 캡션. 이 달 전 카테고리 합만 말한다.
+ * 건수는 넣지 않는다. 지출 기록 수·보이는 줄 수(주문·방 묶음)·주문 칩의 품목 수가 단위가 달라
+ * 한 화면에서 '5건'과 줄 셋과 '2품목'이 갈렸다(독립 검수 2026-10-23). 걸러진 금액은 바로 위 합계가 말한다.
+ */
+export function categoryFilterCaption(monthTotal: number, fmt: (n: number) => string): string {
+  return `이 달 전체 ${fmt(monthTotal)}`
 }
 
 /**
- * 주문별 보기 묶음 칩. 카테고리 필터로 주문의 일부 품목만 남으면 '주문 3건 중 2건', 다 남으면 종전 '주문 N품목'.
- * 품목 수는 배송비 행을 뺀 수다(배송비 행은 그 행의 카테고리로 따로 걸러진다). 품목 없이 배송비만 남으면 '주문 3건 중 배송비'.
+ * 주문별 보기 묶음 칩. 카테고리 필터로 주문의 일부 품목만 남으면 '주문 3품목 중 2품목', 다 남으면 종전 '주문 N품목'(단위가 같다).
+ * 품목 수는 배송비 행을 뺀 수다(배송비 행은 그 행의 카테고리로 따로 걸러진다). 품목 없이 배송비만 남으면 '주문 3품목 중 배송비'.
  */
 export function orderGroupChip(orderItemCount: number, shownItemCount: number): string {
   if (shownItemCount >= orderItemCount) return `주문 ${shownItemCount}품목`
-  if (shownItemCount === 0) return `주문 ${orderItemCount}건 중 배송비`
-  return `주문 ${orderItemCount}건 중 ${shownItemCount}건`
+  if (shownItemCount === 0) return `주문 ${orderItemCount}품목 중 배송비`
+  return `주문 ${orderItemCount}품목 중 ${shownItemCount}품목`
 }

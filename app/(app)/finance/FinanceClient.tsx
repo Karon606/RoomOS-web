@@ -92,7 +92,7 @@ import {
 } from '@/lib/appConfig'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { expenseItemBreakdown, type BreakdownBucket } from '@/lib/expenseItemBreakdown'
-import { ALL_CATEGORIES, matchesExpenseCategory, expenseCategoryChoices, expenseTotalLabel, categoryFilterCaption, orderGroupChip } from '@/lib/expenseCategoryFilter'
+import { ALL_CATEGORIES, parseCategoryParam, matchesExpenseCategory, expenseCategoryChoices, expenseTotalLabel, categoryFilterCaption, orderGroupChip } from '@/lib/expenseCategoryFilter'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 지출을 저장한 뒤 작업에 걸지 묻는 자리 — 판정·문답 모두 정본 하나를 쓴다.
 import { findWorkLinkCandidates, linkExpensesToWork, unlinkExpensesFromWork } from '@/app/(app)/room-manage/workActions'
@@ -1646,7 +1646,6 @@ export default function FinanceClient({
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
   trackedCategories, otherMonthPaid,
   initialTab,
-  initialCategory,
 }: {
   expenses: Expense[]
   financialAccounts: FinancialAccount[]
@@ -1672,7 +1671,6 @@ export default function FinanceClient({
   trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
   otherMonthPaid: { month: string; category: string; count: number; total: number }[]   // 이 달에 낸 다른 달분 흔적(합계 밖, getOtherMonthPaidExpenses)
   initialTab?: Tab
-  initialCategory?: string      // ?cat= — 홈 지출 도넛 드릴다운이 실어 보낸 카테고리 필터 초기값
 }) {
   const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   const router = useRouter()
@@ -1694,16 +1692,18 @@ export default function FinanceClient({
   const finColWidthsRef                 = useRef<Record<string, number>>(DEFAULT_FIN_WIDTHS)
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
-  // 카테고리 초기값은 ?cat= 이 있으면 그 값이다(홈 지출 도넛 드릴다운 착지·새로고침·공유 링크).
+  // 카테고리 초기값은 주소의 ?cat= 이다(홈 지출 도넛 드릴다운 착지·새로고침·공유 링크·뒤로가기). 서버가 준 prop 이 아니라
+  // 주소 하나만 진실로 읽는다. 뒤로가기로 돌아오면 Next 가 처음 그린 서버 값을 다시 쓰는데, 그사이 replaceState 로 바꾼
+  // 주소와 갈려 다른 카테고리가 섰다(독립 검수 2026-10-23).
+  const catInUrl = useSearchParams().get('cat')
   // 카테고리는 검색창 아래 1차 필터(SegmentedControl)가 쥐고, 나머지 칸은 필터 패널이 쥔다. 한 객체로 두는 것은
   // 쇼핑몰·구매처 같은 축이 늘어도 같은 자리에 붙게 하려는 것이다(lib/expenseCategoryFilter).
-  const [expFilter, setExpFilter] = useState({ method: 'all', category: initialCategory ?? ALL_CATEGORIES, finance: 'all', roomId: 'all', kind: 'all' })
+  const [expFilter, setExpFilter] = useState({ method: 'all', category: parseCategoryParam(catInUrl), finance: 'all', roomId: 'all', kind: 'all' })
   // 고른 카테고리를 주소(?cat=)에 둔다. 뒤로가기로 돌아오거나 새로고침·공유해도 같은 목록이 선다.
   // replaceState 라 기록이 쌓이지 않는다(카테고리를 고를 때마다 뒤로가기가 한 칸씩 늘면 화면을 못 떠난다).
   // 월 선택(MonthSelector)은 주소의 나머지 키를 그대로 실어 가므로 달을 바꿔도 필터가 따라간다.
   // 주소 쪽 cat 도 지켜본다. cat 없이 이 화면으로 이동했는데 화면이 그대로 살아 있으면(다른 달분 흔적 '9월 보기 ›')
   // 걸린 필터가 주소에서만 사라져 새로고침하면 다른 목록이 선다. 그때 다시 적어 둘을 맞춘다.
-  const catInUrl = useSearchParams().get('cat')
   useEffect(() => {
     const url = new URL(window.location.href)
     const want = expFilter.category === ALL_CATEGORIES ? null : expFilter.category
@@ -1720,7 +1720,7 @@ export default function FinanceClient({
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 카테고리별 지출 분석 카드의 품목 펼침(신고 bc5d1c06, 홈 지출 카테고리 문법). 단일 열림이고
   // ?cat= 으로 들어오면 그 카테고리를 열어 둔 채 시작한다.
-  const [openCategory, setOpenCategory] = useState<string | null>(initialCategory ?? null)
+  const [openCategory, setOpenCategory] = useState<string | null>(() => { const c = parseCategoryParam(catInUrl); return c === ALL_CATEGORIES ? null : c })
   const [showAllItems, setShowAllItems] = useState(false)
   // 조회 달이 바뀌면 펼침을 닫는다 — 앞 달에 열어 둔 카테고리가 새 달 세부로 이어지면 기준 달이 흐려진다.
   const [itemsMonth, setItemsMonth] = useState(targetMonth)
@@ -3641,14 +3641,14 @@ export default function FinanceClient({
           {/* 합계 + 액션 버튼 — 별도 줄 */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex flex-col items-start">
-              {/* 카테고리가 걸리면 라벨이 그 이름을 말하고, 아래 캡션이 건수와 이 달 전체를 함께 준다(걸러진 숫자를 달 전체로 읽지 않게). */}
+              {/* 카테고리가 걸리면 라벨이 그 이름을 말하고, 아래 캡션이 이 달 전체를 함께 준다(걸러진 숫자를 달 전체로 읽지 않게). */}
               <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">{`${expenseTotalLabel(expFilter.category)} `}<span className="text-[0.65625rem]">(예정 제외)</span></span>
               <span className="text-sm font-bold text-[var(--danger-fg)] num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
               {/* 이 줄은 페이지 면(--canvas) 위라 --warm-muted 는 라이트 4.11:1 로 본문 하한 미달이다. --warm-dark 로 둔다. */}
               {expFilter.category !== ALL_CATEGORIES && (
-                <span className="text-[0.65625rem] text-[var(--warm-dark)] num mt-0.5">{categoryFilterCaption(filteredExpenses.length, currentTotal, fmtWon)}</span>
+                <span className="text-[0.65625rem] text-[var(--warm-dark)] num mt-0.5">{categoryFilterCaption(currentTotal, fmtWon)}</span>
               )}
             </span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -3861,9 +3861,15 @@ export default function FinanceClient({
             const catHasNoRows = expFilter.category !== ALL_CATEGORIES
               && !expenses.some(e => matchesExpenseCategory(e.category, expFilter.category))
               && !dueRecs.some(r => !r.recordedExpenseId && matchesExpenseCategory(r.category, expFilter.category))
+            // 고른 카테고리에 예정 행만 있는데 '결제일 D-3' 보기가 그것을 숨겨 비었으면 숨김 때문이라고 말한다
+            // (카테고리 탓으로도, 필터 탓으로도 읽히지 않게). 푸는 법은 고정지출 보기를 '전체 보기'로 돌리는 것이다.
+            const catOnlyHidden = expFilter.category !== ALL_CATEGORIES && !catHasNoRows && hiddenRecs.length > 0
             const emptyState = catHasNoRows
               ? <EmptyState title={`이 달 ${expFilter.category} 지출이 없습니다`} className="border-0 bg-transparent"
                   action={<Btn type="button" variant="secondary" size="sm" onClick={() => setExpFilter(f => ({ ...f, category: ALL_CATEGORIES }))}>전체 보기</Btn>} />
+              : catOnlyHidden
+              ? <EmptyState title={`${expFilter.category} 고정 지출 ${hiddenRecs.length}건이 결제일 D-3 밖이라 숨겨져 있습니다`} className="border-0 bg-transparent"
+                  action={<Btn type="button" variant="secondary" size="sm" onClick={() => setRecVisibility('all')}>숨긴 고정 지출 보기</Btn>} />
               : <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
 
             // **전체 선택** — 지금 목록에 보이는 지출 전부(운영자 신고 2026-09-25 [27ae736e]).

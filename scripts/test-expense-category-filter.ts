@@ -8,7 +8,7 @@
 //     합계 라벨·캡션 · 빈 목록 · '목록에서 보기' · 판정 정본 단일 경유 · 엑셀은 필터를 따라가지 않음
 import fs from 'node:fs'
 import path from 'node:path'
-import { ALL_CATEGORIES, matchesExpenseCategory, expenseCategoryChoices, expenseTotalLabel, categoryFilterCaption, orderGroupChip } from '../lib/expenseCategoryFilter'
+import { ALL_CATEGORIES, parseCategoryParam, matchesExpenseCategory, expenseCategoryChoices, expenseTotalLabel, categoryFilterCaption, orderGroupChip } from '../lib/expenseCategoryFilter'
 import { fmtWon } from '../lib/fmtMoney'
 
 let pass = 0
@@ -66,14 +66,22 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
 {
   eq('필터 없으면 종전 글자', expenseTotalLabel(ALL_CATEGORIES), '실제 지출 합계')
   eq('필터면 카테고리 이름', expenseTotalLabel('부식비'), '부식비 합계')
-  eq('캡션', categoryFilterCaption(12, 2345000, fmtWon), '12건 · 이 달 전체 2,345,000원')
+  eq('캡션은 이 달 전체만(건수 단위 혼선 제거)', categoryFilterCaption(2345000, fmtWon), '이 달 전체 2,345,000원')
+}
+
+// ── 진리표 3b · ?cat= 진입(주소 하나만 진실) ─────────────────────────
+{
+  eq('없으면 전체', parseCategoryParam(null), ALL_CATEGORIES)
+  eq('빈 값이면 전체', parseCategoryParam('  '), ALL_CATEGORIES)
+  eq('앞뒤 공백은 걷는다', parseCategoryParam(' 부식비 '), '부식비')
+  eq('목록 밖 값도 그대로(선택지가 받아 준다)', expenseCategoryChoices(['부식비'], [], parseCategoryParam('없는분류')), ['없는분류'])
 }
 
 // ── 진리표 4 · 섞인 주문 메타(주문별 보기) ──────────────────────────
 {
   eq('다 남으면 종전 칩', orderGroupChip(3, 3), '주문 3품목')
-  eq('일부만 남으면 N건 중 M건', orderGroupChip(3, 2), '주문 3건 중 2건')
-  eq('배송비만 남으면', orderGroupChip(3, 0), '주문 3건 중 배송비')
+  eq('일부만 남으면 N품목 중 M품목(필터 끈 칩과 같은 단위)', orderGroupChip(3, 2), '주문 3품목 중 2품목')
+  eq('배송비만 남으면', orderGroupChip(3, 0), '주문 3품목 중 배송비')
   // 주문 하나: 부식비 2 + 소모품 1 + 배송비(부식비)
   const order = [
     { category: '부식비', amount: 10000, isShipping: false }, { category: '부식비', amount: 5000, isShipping: false },
@@ -81,7 +89,7 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
   ]
   const shown = order.filter(r => matchesExpenseCategory(r.category, '부식비'))
   eq('섞인 주문 금액은 맞는 행만(배송비는 그 행 카테고리)', shown.reduce((s, r) => s + r.amount, 0), 18000)
-  eq('섞인 주문 메타', orderGroupChip(order.filter(r => !r.isShipping).length, shown.filter(r => !r.isShipping).length), '주문 3건 중 2건')
+  eq('섞인 주문 메타', orderGroupChip(order.filter(r => !r.isShipping).length, shown.filter(r => !r.isShipping).length), '주문 3품목 중 2품목')
   const other = order.filter(r => matchesExpenseCategory(r.category, '소모품'))
   eq('다른 카테고리에선 배송비가 빠진다', [other.length, other.reduce((s, r) => s + r.amount, 0)], [1, 7000])
 }
@@ -99,6 +107,8 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
   must(`${f} — 카테고리 SegmentedControl(sm·scroll·value=expFilter.category)`, !!seg)
   must(`${f} — 선택지는 '전체' + catChoices`, !!seg && /\{ value: ALL_CATEGORIES, label: '전체' \}/.test(seg[0]) && /\.\.\.catChoices\.map/.test(seg[0]))
   must(`${f} — 선택지는 정본 expenseCategoryChoices 에 고른 값을 넘겨 만든다`, /const catChoices = expenseCategoryChoices\(\s*expenseCategories,[\s\S]{0,200}?expFilter\.category,\s*\)/.test(s))
+  must(`${f} — 선택지 행에 미기록 예정 행 카테고리도 든다`, /const catChoices = expenseCategoryChoices\(\s*expenseCategories,\s*\[\.\.\.expenses\.map\(e => e\.category\), \.\.\.dueRecs\.filter\(r => !r\.recordedExpenseId\)\.map\(r => r\.category\)\],/.test(s))
+  must(`${f} — D-3 숨김 때문에 빈 카테고리는 숨김을 말하고 푸는 버튼을 준다`, /const catOnlyHidden = expFilter\.category !== ALL_CATEGORIES && !catHasNoRows && hiddenRecs\.length > 0/.test(s) && /결제일 D-3 밖이라 숨겨져 있습니다`\}[\s\S]{0,200}onClick=\{\(\) => setRecVisibility\('all'\)\}>숨긴 고정 지출 보기</.test(s))
   if (seg) {
     const before = s.slice(0, s.indexOf(seg[0]))
     const sticky = before.lastIndexOf('sticky top-0')
@@ -110,7 +120,7 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
     && /url\.searchParams\.set\('cat', want\)/.test(s) && /url\.searchParams\.delete\('cat'\)/.test(s) && !/history\.pushState/.test(s)
     && /\}, \[expFilter\.category, catInUrl\]\)/.test(s))
   must(`${f} — 합계 라벨이 정본 라벨을 쓴다`, /\{`\$\{expenseTotalLabel\(expFilter\.category\)\} `\}<span className="text-\[0\.65625rem\]">\(예정 제외\)<\/span>/.test(s) && !/>실제 지출 합계 </.test(s))
-  must(`${f} — 필터 캡션이 걸러진 건수와 이 달 전체(currentTotal)를 말한다`, /expFilter\.category !== ALL_CATEGORIES && \([\s\S]{0,200}categoryFilterCaption\(filteredExpenses\.length, currentTotal, fmtWon\)/.test(s))
+  must(`${f} — 필터 캡션이 이 달 전체(currentTotal)를 말한다`, /expFilter\.category !== ALL_CATEGORIES && \([\s\S]{0,200}categoryFilterCaption\(currentTotal, fmtWon\)/.test(s))
   must(`${f} — 합계는 걸러진 목록 합이다`, /const totalExp = filteredExpenses\.reduce\(\(s, e\) => s \+ e\.amount, 0\)/.test(s))
   must(`${f} — 카테고리 판정은 정본 한 곳(손 판정 0)`, !/expFilter\.category (===|!==) 'all'/.test(s) && !/\.category\s*!==\s*expFilter\.category/.test(s) && !/\.category\s*===\s*expFilter\.category/.test(s))
   const uses = (s.match(/matchesExpenseCategory\(\w+\.category, expFilter\.category\)/g) ?? []).length
@@ -126,8 +136,26 @@ function must(name: string, ok: boolean) { if (ok) pass++; else fails.push(name)
   must(`${f} — 카테고리가 보이는 자리에 있으니 패널을 펼친 채 열지 않는다`, /const \[showExpFilters, setShowExpFilters\] = useState\(false\)/.test(s) && !/setShowExpFilters\(true\)/.test(s))
   const excel = s.match(/const handleExpenseExcel = \(\) => \{([\s\S]*?)\n  \}/)
   must(`${f} — 지출 엑셀은 필터를 따라가지 않는다`, !!excel && !/expFilter|filteredExpenses/.test(excel[1]))
-  must(`page.tsx — ?cat= 를 다듬어 초기값으로 넘긴다`, /initialCategory=\{cat && cat\.trim\(\) \? cat\.trim\(\) : undefined\}/.test(page))
-  must(`${f} — 초기값이 ?cat= 이다`, /category: initialCategory \?\? ALL_CATEGORIES/.test(s))
+  must(`page.tsx — ?cat= 를 prop 으로 넘기지 않는다(뒤로가기 때 옛 서버 값이 되살아남)`, !/initialCategory/.test(page) && !/initialCategory/.test(s))
+  must(`${f} — 초기값·세부 펼침이 주소 ?cat= 에서 온다`, /const catInUrl = useSearchParams\(\)\.get\('cat'\)/.test(s) && /category: parseCategoryParam\(catInUrl\)/.test(s)
+    && /useState<string \| null>\(\(\) => \{ const c = parseCategoryParam\(catInUrl\); return c === ALL_CATEGORIES \? null : c \}\)/.test(s)
+    && s.indexOf("const catInUrl = useSearchParams().get('cat')") < s.indexOf('const [expFilter, setExpFilter]'))
+}
+
+// ── 정본 SegmentedControl scroll 모드 · 고른 칸을 트랙 안으로 + 넘침 페이드 ─────────────
+{
+  const f = 'components/ui/SegmentedControl.tsx'
+  const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8')
+  const css = fs.readFileSync(path.join(__dirname, '../app/globals.css'), 'utf8')
+  must(`${f} — 트랙 ref 가 role=tablist 상자에 붙는다`, /ref=\{trackRef\}\s*role="tablist"/.test(s))
+  must(`${f} — 고른 칸 착지는 트랙 scrollTo 만(scrollIntoView 금지, 페이지 세로 불변)`, !/scrollIntoView/.test(s)
+    && /if \(!scroll \|\| !el \|\| !track\) return/.test(s) && /bring\(false\)/.test(s)
+    && /track\.scrollTo\(\{ left, behavior:/.test(s) && /\}, \[scroll, activeIdx, options\.length\]\)/.test(s))
+  must(`${f} — 고른 칸 폭이 바뀌어 잘리면 다시 맞춘다(웹폰트·글자 크기)`, /new ResizeObserver\(\(\) => bring\(true\)\)/.test(s) && /ro\.observe\(el\)/.test(s))
+  must(`${f} — 넘침 페이드 data-fade(스크롤·크기 변화마다)`, /track\.dataset\.fade = atStart \? 'right' : atEnd \? 'left' : 'both'/.test(s) && /track\.addEventListener\('scroll', update/.test(s) && /new ResizeObserver\(update\)/.test(s))
+  must(`globals.css — tablist data-fade 마스크 세 갈래`, ['right', 'left', 'both'].every(k => css.includes(`[role="tablist"][data-fade="${k}"]`)))
+}
+{
 }
 
 console.log(`expense-category-filter: ${pass} 통과, ${fails.length} 실패`)

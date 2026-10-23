@@ -10,7 +10,7 @@
 // 슬라이딩 칩: 세그먼트 폭이 제각각이라 offsetLeft/offsetWidth 실측으로 위치·크기를 잡고
 // left·width 트랜지션으로 이동. reduced-motion이면 트랜지션 없이 즉시 점프.
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 export type SegmentOption<T extends string> = {
   value: T
@@ -52,8 +52,53 @@ export function SegmentedControl<T extends string>({
     return () => ro.disconnect()
   }, [activeIdx, options.length, size])
 
+  // scroll 모드 · 넘침 페이드 — 잘리는 쪽 끝을 흐려 '더 있다'를 말한다(ViewTabs 와 같은 data-fade, 마스크 규칙은 globals.css).
+  const trackRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const track = trackRef.current
+    if (!scroll || !track) return
+    const update = () => {
+      if (track.scrollWidth <= track.clientWidth + 1) { delete track.dataset.fade; return }
+      const atStart = track.scrollLeft <= 1
+      const atEnd = track.scrollLeft >= track.scrollWidth - track.clientWidth - 1
+      track.dataset.fade = atStart ? 'right' : atEnd ? 'left' : 'both'
+    }
+    update()
+    track.addEventListener('scroll', update, { passive: true })
+    const ro = new ResizeObserver(update)
+    ro.observe(track)
+    return () => { track.removeEventListener('scroll', update); ro.disconnect() }
+  }, [scroll, options.length])
+
+  // scroll 모드 · 고른 칸을 트랙 안으로(첫 렌더 포함). ?cat= 로 뒤쪽 칸에 착지하면 고른 칸이 스크롤 밖이라
+  // 아무것도 안 골라진 화면으로 보였다(지출 카테고리 독립 검수 2026-10-23). 움직이는 것은 트랙 가로 스크롤뿐이다
+  // (요소를 화면으로 끌어오는 API 는 페이지 세로 위치까지 옮겨 쓰지 않는다, ViewTabs 와 같은 이유). 첫 착지는 즉시, 이후만 부드럽게.
+  // 칸 폭이 나중에 바뀌면(웹폰트 교체·글자 크기) 처음 맞춘 자리가 어긋나 고른 칸이 다시 잘린다. 고른 칸의 크기 변화를 지켜보고
+  // 그때 잘려 있으면만 다시 맞춘다(사람이 트랙을 밀어 둔 자리는 고른 칸이 보이는 한 건드리지 않는다).
+  const scrolledOnce = useRef(false)
+  useEffect(() => {
+    const el = btnRefs.current[activeIdx]
+    const track = trackRef.current
+    if (!scroll || !el || !track) return
+    const bring = (onlyIfClipped: boolean) => {
+      if (track.scrollWidth <= track.clientWidth) return
+      if (onlyIfClipped && el.offsetLeft >= track.scrollLeft && el.offsetLeft + el.offsetWidth <= track.scrollLeft + track.clientWidth) return
+      const max = track.scrollWidth - track.clientWidth
+      const left = Math.max(0, Math.min(max, el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2))
+      if (Math.abs(track.scrollLeft - left) < 1) return
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      track.scrollTo({ left, behavior: scrolledOnce.current && !onlyIfClipped && !reduce ? 'smooth' : 'auto' })
+    }
+    bring(false)
+    scrolledOnce.current = true
+    const ro = new ResizeObserver(() => bring(true))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [scroll, activeIdx, options.length])
+
   return (
     <div
+      ref={trackRef}
       role="tablist"
       aria-label={ariaLabel}
       className={`relative inline-flex items-center gap-0.5 p-0.5 rounded-[10px] border border-[var(--warm-border)] bg-[var(--cream-2)] ${
