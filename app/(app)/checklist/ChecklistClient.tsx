@@ -453,13 +453,13 @@ function FormModal({
               {PRESETS.map(p => (
                 <button key={p.days} type="button"
                   onClick={() => { setIntervalDays(p.days); setCustomMode(false) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--seg-ink-off)]'}`}>
                   {p.label}
                 </button>
               ))}
               <button type="button"
                 onClick={() => setCustomMode(true)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--seg-ink-off)]'}`}>
                 직접 입력
               </button>
             </div>

@@ -49,6 +49,7 @@
   --cream:#FBF6EF; --cream-soft:#F5EDE0; --cream-2 = --page = --canvas:#E8DDD0;
   (2026-07-12 정정, 코드가 진실: #F5EDE0은 --cream-soft, --cream-2는 --page/--canvas와 동일한 #E8DDD0. 이전 표기 '--cream-2:#F5EDE0'은 --cream-soft를 가리킨 오기. 본문의 'hover/입력/헤더 --cream-2'는 코드 토큰 그대로 #E8DDD0 계열로 해석한다.)
   --ink:#3D2418; --ink-s:#7A6553; --ink-m:#A89380;
+  --seg-ink-off:#6B5745;   /* 고르지 않은 칸 글자(세그먼트·선택형 칩·토글 칩). 다크는 --d-ink-s. --canvas 위 5.10:1, 규칙은 §23 (2026-10-23) */
   --success:#4E6834; --success-bg:rgba(85,108,58,.10);
   --overdue:var(--tc);   /* --overdue-bg 폐지 2026-08-12: 소비처가 홈 타일 하나뿐이었고 --band-overdue-bg 로 옮겼다. §04 "별도 --overdue-bg 없음"과의 어긋남도 함께 닫힘 */
   --border:rgba(61,36,24,.10); --border-s:rgba(61,36,24,.18);
@@ -296,8 +297,8 @@
 - ListPageShell 순서: 헤더(제목+우측 1~2 CTA/월선택) → 풀폭 SearchBar → 1차 필터(SegmentedControl — **코랄 채움 알약으로 모조 금지**, 2026-08-25: 필터 상태는 CTA 가 아니라 §03 코랄 절제 대상이다) → (정렬·표시항목) → 본문(모바일 카드 / 768px 이상 sticky 테이블) → EmptyState. 섹션 간격 12px.
 - SearchBar: 좌 돋보기 SVG + cream + 우 지우기 + 풀폭 약 40px. 항상 노출.
 - 식별자: 호실번호·입주자명 = --ink bold tnum. 테라코타는 OVERDUE·.attn에만.
-- 1차 필터 = SegmentedControl(라디오·단일, '전체'=해제). 토글 칩 금지. 고급필터는 별도 패널.
-- 고르지 않은 칸 글자 = `--seg-ink-off`(2026-10-23 운영자 결정 '진하게'). SegmentedControl 비활성 칸, 단일 선택 칩(청소·작업 담당/수행자), 토글 칩의 끈 상태(요청 '긴급만', 재고 위치 칩 2곳)가 같이 쓴다. 이 칸은 늘 `--canvas` 위라 종전 `--warm-mid` 는 실측 4.11:1 로 AA 미달이었다. 라이트 #6B5745 는 실측 5.10:1, 다크는 `--d-ink-s` 그대로 10.56:1(헤드리스 Chrome 100%, 계산된 색 기준). 고른 칸은 `--warm-dark` + 떠오른 `--cream` 칩(13.34:1)으로 한 단 위에 남고, hover 도 `--warm-dark` 다. `--warm-dark` 로 올리지 않는 이유는 고른 칸과 글자가 같아지면 칩과 트랙 차이 1.25:1 만 남아 위계가 무너지기 때문이다. ViewTabs 비활성은 §25 대로 `--warm-dark`(고른 칸이 `--tc-text` 라 위계가 색으로 선다). 감지망 `scripts/check-seg-ink-off.mjs`.
+- 1차 필터 = SegmentedControl(라디오·단일, '전체'=해제). 토글 칩 금지(목록 1차 필터 자리 한정이며, 아래 글자색 줄은 폼·설정 안의 칩까지 덮는 다른 범위다). 고급필터는 별도 패널.
+- 고르지 않은 칸 글자 = `--seg-ink-off`(2026-10-23 운영자 결정 '진하게'). SegmentedControl 비활성 칸, 선택형 칩·세그먼트 버튼(청소·작업 담당/수행자, 지출 유형, 추이 기간, 방 타입·등급, 점검 주기, 월 선택 '이번달', 모바일 메뉴 타일), 토글 칩의 끈 상태(요청 '긴급만', 재고 위치 칩 2곳)가 같이 쓴다. role 과 상관없이 '고르면 채움, 아니면 옅은 바탕' 삼항이면 이 토큰이다. 이 칸은 늘 `--canvas` 위라 종전 `--warm-mid` 는 실측 4.11:1 로 AA 미달이었다. 라이트 #6B5745 는 실측 5.10:1, 다크는 `--d-ink-s` 그대로 10.56:1(헤드리스 Chrome 100%, 계산된 색 기준). 고른 칸은 `--warm-dark` + 떠오른 `--cream` 칩(13.34:1)으로 한 단 위에 남고, hover 도 `--warm-dark` 다. `--warm-dark` 로 올리지 않는 이유는 고른 칸과 글자가 같아지면 칩과 트랙 차이 1.25:1 만 남아 위계가 무너지기 때문이다. ViewTabs 비활성은 §25 대로 `--warm-dark`(고른 칸이 `--tc-text` 라 위계가 색으로 선다). 감지망 `scripts/check-seg-ink-off.mjs`.
 - 선택 모드: '선택' 토글 → 체크박스(모바일 카드 좌 / 데스크탑 sticky 호실셀, 선택 시 coral 체크) → SelectionPillBar(unit 개/명/실) → 배치 액션. **전체 선택/전체 해제는 '선택 취소' 왼쪽 같은 Btn secondary sm**(선택 모드일 때만, 링크 금지 — 44px 타겟이 발견성을 만든다). 범위는 **지금 보이는 목록**이다(필터·검색 결과 포함, 달을 넘지 않는다). 고를 것이 0이면 버튼을 숨긴다. 담는 줄은 flex-wrap 필수. 정본 두 곳: 지출 목록, 현금영수증 탭(2026-09-25 등재). 수납 일괄: 미수 호실 자동필터 → 확인 Modal(합계 tnum + DatePicker + 방법 세그먼트) → 성공 토스트 [적용취소]. 금액은 서버 권위 재계산.
 - sticky 테이블: thead sticky top-0 z-30 cream · 식별자 열 sticky-left z-20 cream(§08 지역 예외) · 호실셀 좌 3px 상태색 · 열 리사이즈 · 768px 전환 시 상태 공유.
 - 모달 아키텍처: 복잡 상세=EntityModal / 단순 폼=Modal.

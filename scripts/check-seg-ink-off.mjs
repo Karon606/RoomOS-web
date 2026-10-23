@@ -11,6 +11,9 @@
 //      --ink-m 글자색이 그 파일에 없다.
 //   ⓒ role="radio" 칩을 가진 파일에서 --canvas 바탕 비선택 style 의 color 가 위 미달 토큰이 아니다.
 //   ⓓ ViewTabs 비활성(segInactive)은 --warm-dark 다(§25, 고른 칸이 --tc-text 라 색으로 위계가 선다).
+//   ⓕ role 과 상관없이 선택형 칩·세그먼트 버튼의 삼항 패턴(선택됨이면 채움, 아니면 --canvas·--cream-2 바탕)에서
+//      고르지 않은 쪽 글자가 위 미달 토큰이 아니다. 클래스 문자열 삼항과 style 객체 삼항 둘 다 본다
+//      (2026-10-23 독립 검수, ⓒ 가 role="radio" 파일만 봐서 지출 유형 세그먼트·추이 기간 칩 등을 놓쳤다).
 //   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 미달 토큰이 아니다
 //      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
 //
@@ -109,6 +112,34 @@ for (const f of walk('app', walk('components', []))) {
 }
 if (toggleChips < 3) violations.push(`토글 칩 정본 3곳(요청 '긴급만', 재고 위치 칩 2곳) 중 --seg-ink-off 를 쓰는 자리가 ${toggleChips}곳뿐이다. 자리를 옮겼다면 확인한다.`)
 
+// ⓕ 선택형 칩·세그먼트 삼항(role 무관)
+const BAD_TOKEN = '(?:warm-mid|ink-s|ink-3|warm-muted|ink-m|ink-mute)'
+const SOFT_BG = '(?:canvas|cream-2|page)'
+// ① 클래스 삼항: ? '선택 클래스' : '비선택 클래스' (줄을 넘겨도 된다)
+const TERN_CLASS = /\?\s*(['"`])([^'"`]*)\1\s*:\s*(['"`])([^'"`]*)\3/g
+const BG_CLASS = new RegExp(`(?:^|\\s)bg-\\[var\\(--${SOFT_BG}\\)\\]`)
+const BAD_TXT_CLASS = new RegExp(`(?:^|\\s)text-\\[var\\(--${BAD_TOKEN}\\)\\]`)
+// ② style 삼항: ? { ... } : { background: 'var(--canvas)', color: 'var(--warm-mid)' }
+const TERN_STYLE = new RegExp(`\\?\\s*\\{[^{}]*\\}\\s*:\\s*\\{\\s*background:\\s*'var\\(--${SOFT_BG}\\)',\\s*color:\\s*'var\\(--${BAD_TOKEN}\\)'`, 'g')
+const lineOf = (src, idx) => src.slice(0, idx).split('\n').length
+// 삼항이 걸린 요소가 누를 수 있는 것(button·Link·a)일 때만 본다. span 배지의 상태색 삼항은 선택형 컨트롤이 아니다.
+const PRESSABLE = new Set(['button', 'Link', 'a'])
+const tagAt = (src, idx) => { const m = src.slice(Math.max(0, idx - 2000), idx).match(/<([A-Za-z][\w.]*)[^<]*$/); return m ? m[1] : null }
+for (const f of walk('app', walk('components', []))) {
+  const src = strip(readFileSync(f, 'utf8'))
+  for (const m of src.matchAll(TERN_CLASS)) {
+    const on = m[2], off = m[4]
+    if (!BG_CLASS.test(off) || !BAD_TXT_CLASS.test(off)) continue
+    if (BG_CLASS.test(on)) continue // 양쪽 다 옅은 바탕이면 선택형 채움 패턴이 아니다
+    if (!PRESSABLE.has(tagAt(src, m.index))) continue
+    violations.push(`${f}:${lineOf(src, m.index)} 선택형 칩·세그먼트의 고르지 않은 칸 글자가 옅은 바탕 위 AA 미달 토큰(${off.match(BAD_TXT_CLASS)[0].trim()})이다. text-[var(--seg-ink-off)] 를 쓴다(가이드 §23).`)
+  }
+  for (const m of src.matchAll(TERN_STYLE)) {
+    if (!PRESSABLE.has(tagAt(src, m.index))) continue
+    violations.push(`${f}:${lineOf(src, m.index)} 선택형 칩·세그먼트의 고르지 않은 칸 style 글자가 옅은 바탕 위 AA 미달 토큰이다. color: 'var(--seg-ink-off)' 를 쓴다(가이드 §23).`)
+  }
+}
+
 // ⓓ ViewTabs 비활성
 {
   const f = 'components/ui/ViewTabs.tsx'
@@ -122,4 +153,4 @@ if (violations.length) {
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, SegmentedControl·단일 선택 칩·토글 칩·ViewTabs 비활성 글자)')
+console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, SegmentedControl·선택형 칩·세그먼트 삼항·토글 칩·ViewTabs 비활성 글자)')

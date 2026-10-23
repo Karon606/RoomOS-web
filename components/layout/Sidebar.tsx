@@ -421,7 +421,7 @@ function MobileMenu({
                     className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
                     style={isActive
                       ? { background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--tc-text)', border: '1px solid color-mix(in srgb, var(--coral) 30%, transparent)' }
-                      : { background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                      : { background: 'var(--canvas)', color: 'var(--seg-ink-off)', border: '1px solid var(--warm-border)' }}>
                     <Icon />
                     <span className="text-[0.6875rem] font-medium leading-tight">{label}</span>
                   </Link>

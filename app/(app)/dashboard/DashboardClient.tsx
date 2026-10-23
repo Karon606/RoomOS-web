@@ -1780,7 +1780,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               className="px-2.5 py-1 text-xs rounded-lg transition-colors font-medium disabled:opacity-50"
               style={trendRange === r.key
                 ? { background: 'var(--coral)', color: 'var(--on-solid)' }
-                : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                : { background: 'var(--canvas)', color: 'var(--seg-ink-off)' }}>
               {r.label}
             </button>
           ))}
