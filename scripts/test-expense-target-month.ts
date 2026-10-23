@@ -190,7 +190,7 @@ function fnBody(s: string, head: RegExp): string { const m = s.match(head); retu
     const depth = (seg.match(/<div\b/g) ?? []).length - (seg.match(/<\/div>/g) ?? []).length
     must(`${f}:${before.split('\n').length} — 귀속월 칸이 반폭 grid 칸 안에 있다(320px 에서 접힌다). 날짜 행 아래 전폭으로`, g >= 0 && depth <= 0)
   }
-  must(`${f} — 다른 달분 흔적 줄이 '낸' 어휘·카테고리 필터·숫자 강조로 선다`, /월에 낸 /.test(s) && /o\.category !== expFilter\.category/.test(s) && /fmtWon\(traceTotal\)/.test(s) && !/월 결제 · 다른 달분/.test(s))
+  must(`${f} — 다른 달분 흔적 줄이 '낸' 어휘·카테고리 필터·숫자 강조로 선다`, /월에 낸 /.test(s) && /matchesExpenseCategory\(o\.category, expFilter\.category\)/.test(s) && /fmtWon\(traceTotal\)/.test(s) && !/월 결제 · 다른 달분/.test(s))
   must(`${f} — 삭제 확인창이 '이번 달'이 아니라 귀속월로 말한다`, !/이번 달 (고정지출 )?기록/.test(s))
 }
 {

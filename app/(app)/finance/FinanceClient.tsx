@@ -92,6 +92,7 @@ import {
 } from '@/lib/appConfig'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { expenseItemBreakdown, type BreakdownBucket } from '@/lib/expenseItemBreakdown'
+import { ALL_CATEGORIES, matchesExpenseCategory, expenseCategoryChoices, expenseTotalLabel, categoryFilterCaption, orderGroupChip } from '@/lib/expenseCategoryFilter'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 지출을 저장한 뒤 작업에 걸지 묻는 자리 — 판정·문답 모두 정본 하나를 쓴다.
 import { findWorkLinkCandidates, linkExpensesToWork, unlinkExpensesFromWork } from '@/app/(app)/room-manage/workActions'
@@ -1693,13 +1694,29 @@ export default function FinanceClient({
   const finColWidthsRef                 = useRef<Record<string, number>>(DEFAULT_FIN_WIDTHS)
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
-  // 카테고리 초기값은 ?cat= 이 있으면 그 값이다(홈 지출 도넛 드릴다운 착지).
-  const [expFilter, setExpFilter] = useState({ method: 'all', category: initialCategory ?? 'all', finance: 'all', roomId: 'all', kind: 'all' })
+  // 카테고리 초기값은 ?cat= 이 있으면 그 값이다(홈 지출 도넛 드릴다운 착지·새로고침·공유 링크).
+  // 카테고리는 검색창 아래 1차 필터(SegmentedControl)가 쥐고, 나머지 칸은 필터 패널이 쥔다. 한 객체로 두는 것은
+  // 쇼핑몰·구매처 같은 축이 늘어도 같은 자리에 붙게 하려는 것이다(lib/expenseCategoryFilter).
+  const [expFilter, setExpFilter] = useState({ method: 'all', category: initialCategory ?? ALL_CATEGORIES, finance: 'all', roomId: 'all', kind: 'all' })
+  // 고른 카테고리를 주소(?cat=)에 둔다. 뒤로가기로 돌아오거나 새로고침·공유해도 같은 목록이 선다.
+  // replaceState 라 기록이 쌓이지 않는다(카테고리를 고를 때마다 뒤로가기가 한 칸씩 늘면 화면을 못 떠난다).
+  // 월 선택(MonthSelector)은 주소의 나머지 키를 그대로 실어 가므로 달을 바꿔도 필터가 따라간다.
+  // 주소 쪽 cat 도 지켜본다. cat 없이 이 화면으로 이동했는데 화면이 그대로 살아 있으면(다른 달분 흔적 '9월 보기 ›')
+  // 걸린 필터가 주소에서만 사라져 새로고침하면 다른 목록이 선다. 그때 다시 적어 둘을 맞춘다.
+  const catInUrl = useSearchParams().get('cat')
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const want = expFilter.category === ALL_CATEGORIES ? null : expFilter.category
+    if (url.searchParams.get('cat') === want) return
+    if (want === null) url.searchParams.delete('cat')
+    else url.searchParams.set('cat', want)
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [expFilter.category, catInUrl])
   const [expAmountMin, setExpAmountMin] = useState<number | undefined>(undefined)
   const [expAmountMax, setExpAmountMax] = useState<number | undefined>(undefined)
-  // 검색창 옆 필터 토글(정본 §23 호실관리 패턴). ?cat= 으로 들어오면 펼친 채로 연다 —
-  // 목록이 걸러져 있는데 왜 걸러졌는지가 접혀 있으면 '지출이 세 건뿐인 달'로 읽힌다.
-  const [showExpFilters, setShowExpFilters] = useState(!!initialCategory)
+  // 검색창 옆 필터 토글(정본 §23 호실관리 패턴). 카테고리는 패널 밖 1차 필터라 ?cat= 으로 들어와도
+  // 걸린 값이 늘 보인다. 그래서 패널을 펼친 채 열지 않는다.
+  const [showExpFilters, setShowExpFilters] = useState(false)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 카테고리별 지출 분석 카드의 품목 펼침(신고 bc5d1c06, 홈 지출 카테고리 문법). 단일 열림이고
   // ?cat= 으로 들어오면 그 카테고리를 열어 둔 채 시작한다.
@@ -2501,7 +2518,7 @@ export default function FinanceClient({
 
   const filteredExpenses = expenses.filter(e => {
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
-    if (expFilter.category !== 'all' && e.category  !== expFilter.category) return false
+    if (!matchesExpenseCategory(e.category, expFilter.category)) return false
     if (expFilter.finance  !== 'all' && e.financialAccountId !== expFilter.finance) return false
     // 패널 확장 필터 — 호실('none'=미지정)·구분(고정/일반)·금액 범위
     if (expFilter.roomId !== 'all' && (expFilter.roomId === 'none' ? !!e.roomId : e.roomId !== expFilter.roomId)) return false
@@ -2548,6 +2565,13 @@ export default function FinanceClient({
       ? `배송비${s.shippingType ? ` · ${s.shippingType}` : ''} · ${s.label}`
       : `주문 · ${s.label}`
     return { text, title: `주문 ${s.code}${s.shippingMemo ? ` · ${s.shippingMemo}` : ''}` }
+  }
+  // 주문별 보기 묶음 칩 — 카테고리 필터가 주문의 일부 품목만 남겼으면 '주문 3건 중 2건'(금액은 남은 행만 더한다).
+  // 필터가 없으면 종전 '주문 N품목' 그대로다(다른 패널 필터·검색으로 줄어든 묶음도 종전처럼 남은 수만 말한다).
+  const orderChipText = (e: Expense, grp: Expense[]) => {
+    const shown = grp.filter(r => !r.isShipping).length
+    const whole = expFilter.category !== ALL_CATEGORIES && e.orderId ? orderSummaries.get(e.orderId)?.count ?? shown : shown
+    return orderGroupChip(whole, shown)
   }
 
   const totalExp = filteredExpenses.reduce((s, e) => s + e.amount, 0)
@@ -3238,7 +3262,7 @@ export default function FinanceClient({
   const offCycleRecs     = activeRecs.filter(r =>
     !r.isDueThisMonth && !r.recordedExpenseId
     // 예정 행과 같은 필터를 탄다 — 카테고리로 좁혔는데 이 섹션만 남아 있으면 화면이 거짓말을 한다.
-    && (expFilter.category === 'all' || r.category === expFilter.category)
+    && matchesExpenseCategory(r.category, expFilter.category)
     && (expFilter.method === 'all' || r.payMethod === expFilter.method)
     && (expFilter.roomId === 'all' || expFilter.roomId === 'none'))
   const recUnrecordedCount = dueRecs.filter(r => !r.recordedExpenseId).length
@@ -3290,18 +3314,20 @@ export default function FinanceClient({
   const openCatItems = openCategory && openCatAmount > 0
     ? expenseItemBreakdown(expenses.filter(e => e.category === openCategory))
     : null
-  // 품목 행 탭 — 아래 지출 목록을 그 카테고리·품목으로 걸러 보여 준다. 배송비·품목 미지정은 이름으로
-  // 찾을 글자가 없어 카테고리만 건다.
-  const jumpToItem = (cat: string, b: BreakdownBucket) => {
+  // 아래 지출 목록을 그 카테고리(와 검색어)로 걸러 보여 준다. 세부 머리의 '목록에서 보기'와 품목 행 탭이 같이 쓴다.
+  // 다른 필터(결제수단·호실·금액 등)가 남아 있으면 목록 건수가 세부 내역과 달라 보인다. 이 카테고리만 남긴다.
+  // 카테고리는 검색창 아래 1차 필터에 보이므로 필터 패널을 펼치지 않는다.
+  const showCategoryInList = (cat: string, search: string) => {
     setTab('expense')
-    // 다른 필터(결제수단·호실 등)가 남아 있으면 목록 건수가 세부 내역과 달라 보인다. 이 카테고리만 남긴다.
     setExpFilter({ method: 'all', category: cat, finance: 'all', roomId: 'all', kind: 'all' })
-    setExpListSearch(b.kind === 'item' || b.kind === 'recurring' ? b.label : '')
-    // 걸린 필터가 접혀 있으면 '지출이 몇 건뿐인 달'로 읽힌다(?cat= 진입과 같은 이유로 펼친다).
-    setShowExpFilters(true)
+    setExpAmountMin(undefined); setExpAmountMax(undefined)
+    setExpListSearch(search)
     const el = document.getElementById('finance-tabs')
     if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
+  // 품목 행 탭 — 그 카테고리·품목으로 거른다. 배송비·품목 미지정은 이름으로 찾을 글자가 없어 카테고리만 건다.
+  const jumpToItem = (cat: string, b: BreakdownBucket) =>
+    showCategoryInList(cat, b.kind === 'item' || b.kind === 'recurring' ? b.label : '')
 
   const fmtMonthLabel = (m: string) => {
     const [y, mo] = m.split('-')
@@ -3426,7 +3452,18 @@ export default function FinanceClient({
                   <p className="text-xs font-semibold text-[var(--warm-dark)] flex-1 truncate">{openCategory}</p>
                   <p className="text-xs text-[var(--warm-dark)] num shrink-0">{fmtWon(openCatAmount)}</p>
                 </div>
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">세부 내역은 선택한 달 기준입니다</p>
+                {/* 범례 탭은 세부를 펼치기만 한다. 목록을 거르는 것은 이 링크다(운영자 승인 2026-10-23).
+                    구분점과 링크는 한 덩이로 줄바꿈되고, 누르는 자리는 줄 높이 안에 접은 44px 다(WhyCaption 과 같은 수). */}
+                <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-muted)] break-keep">
+                  세부 내역은 선택한 달 기준입니다{' '}
+                  <span className="whitespace-nowrap">
+                    {'· '}
+                    <button type="button" onClick={() => showCategoryInList(openCategory, '')}
+                      className="-my-[13px] inline-flex min-h-[44px] items-center whitespace-nowrap align-middle font-medium text-[var(--tc-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+                      목록에서 보기 ›
+                    </button>
+                  </span>
+                </p>
                 {/* 행마다 44px 히트영역(§09). 행 사이 간격 대신 행 높이가 리듬을 진다. */}
                 <div>
                   {shown.map(b => {
@@ -3499,14 +3536,21 @@ export default function FinanceClient({
         <div className="space-y-4">
           {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
           {(() => {
+            // 카테고리는 패널 밖 1차 필터라 개수에서 뺀다(보이는 자리에서 이미 말한다).
             const expFilterCount =
-              [expFilter.method, expFilter.category, expFilter.finance, expFilter.roomId, expFilter.kind].filter(v => v !== 'all').length +
+              [expFilter.method, expFilter.finance, expFilter.roomId, expFilter.kind].filter(v => v !== 'all').length +
               (expAmountMin != null || expAmountMax != null ? 1 : 0)
-            // 초기화는 패널 필터만 — 검색어는 유지(정본 호실관리와 동일 규칙)
+            // 초기화는 패널 필터만 — 검색어와 1차 필터(카테고리)는 유지(정본 호실관리와 동일 규칙)
             const resetExpFilters = () => {
-              setExpFilter({ method: 'all', category: 'all', finance: 'all', roomId: 'all', kind: 'all' })
+              setExpFilter(f => ({ ...f, method: 'all', finance: 'all', roomId: 'all', kind: 'all' }))
               setExpAmountMin(undefined); setExpAmountMax(undefined)
             }
+            // 1차 필터 선택지 — 이 달에 행(지출·예정)이 있는 카테고리만. 고른 값은 행이 없어도 선다.
+            const catChoices = expenseCategoryChoices(
+              expenseCategories,
+              [...expenses.map(e => e.category), ...dueRecs.filter(r => !r.recordedExpenseId).map(r => r.category)],
+              expFilter.category,
+            )
             const selCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
             return (
               <>
@@ -3530,13 +3574,6 @@ export default function FinanceClient({
                         <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))} className={selCls}>
                           <option value="all">전체</option>
                           {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
-                        <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))} className={selCls}>
-                          <option value="all">전체</option>
-                          {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       {financialAccounts.length > 0 && (
@@ -3581,16 +3618,38 @@ export default function FinanceClient({
                     </div>
                   </div>
                 )}
+                {/* 카테고리 1차 필터 — §23 SegmentedControl(라디오·단일, '전체'=해제). 형제(호실·입주자)처럼 패널 아래에 선다.
+                    sticky 아님(검색 줄만 붙는다). 이름이 길거나 많으면 트랙이 가로로 스크롤된다. 선택지가 없으면(빈 달) 세우지 않는다. */}
+                {catChoices.length > 0 && (
+                  <div className="flex">
+                    <SegmentedControl
+                      size="sm"
+                      scroll
+                      ariaLabel="지출 카테고리"
+                      value={expFilter.category}
+                      onChange={c => setExpFilter(f => ({ ...f, category: c }))}
+                      options={[
+                        { value: ALL_CATEGORIES, label: '전체' },
+                        ...catChoices.map(c => ({ value: c, label: c })),
+                      ]}
+                    />
+                  </div>
+                )}
               </>
             )
           })()}
           {/* 합계 + 액션 버튼 — 별도 줄 */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex flex-col items-start">
-              <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.65625rem]">(예정 제외)</span></span>
+              {/* 카테고리가 걸리면 라벨이 그 이름을 말하고, 아래 캡션이 건수와 이 달 전체를 함께 준다(걸러진 숫자를 달 전체로 읽지 않게). */}
+              <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">{`${expenseTotalLabel(expFilter.category)} `}<span className="text-[0.65625rem]">(예정 제외)</span></span>
               <span className="text-sm font-bold text-[var(--danger-fg)] num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
+              {/* 이 줄은 페이지 면(--canvas) 위라 --warm-muted 는 라이트 4.11:1 로 본문 하한 미달이다. --warm-dark 로 둔다. */}
+              {expFilter.category !== ALL_CATEGORIES && (
+                <span className="text-[0.65625rem] text-[var(--warm-dark)] num mt-0.5">{categoryFilterCaption(filteredExpenses.length, currentTotal, fmtWon)}</span>
+              )}
             </span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Btn variant="secondary" size="md" onClick={openRecMgmt}>
@@ -3658,7 +3717,7 @@ export default function FinanceClient({
             // 미확인 고정 지출 — 필터 적용 후 납부일 기준 날짜 부여
             const unconfirmedRecsFiltered = dueRecs.filter(r =>
               !r.recordedExpenseId &&
-              (expFilter.category === 'all' || r.category === expFilter.category) &&
+              matchesExpenseCategory(r.category, expFilter.category) &&
               (expFilter.method === 'all' || r.payMethod === expFilter.method) &&
               // 패널 확장 필터도 일관 전파 — 목록과 예정 행이 어긋나지 않게.
               // 고정지출엔 방이 없어 특정 호실 선택 시 숨김('미지정'은 방 없음이므로 표시), '일반 지출'만 보기 시 숨김.
@@ -3797,6 +3856,15 @@ export default function FinanceClient({
               dateStr.slice(0, 7) === targetMonth ? '' : ` · ${targetMonthLabel(targetMonth, dateStr)}`
 
             const isEmpty = items.length === 0
+            // 빈 목록 — 고른 카테고리에 이 달 행(지출·예정)이 하나도 없으면 그 사실을 말하고 [전체 보기]로 푼다.
+            // 행은 있는데 검색어·패널 필터로 비었으면 종전 문구다(카테고리 탓이라고 말하면 거짓이다).
+            const catHasNoRows = expFilter.category !== ALL_CATEGORIES
+              && !expenses.some(e => matchesExpenseCategory(e.category, expFilter.category))
+              && !dueRecs.some(r => !r.recordedExpenseId && matchesExpenseCategory(r.category, expFilter.category))
+            const emptyState = catHasNoRows
+              ? <EmptyState title={`이 달 ${expFilter.category} 지출이 없습니다`} className="border-0 bg-transparent"
+                  action={<Btn type="button" variant="secondary" size="sm" onClick={() => setExpFilter(f => ({ ...f, category: ALL_CATEGORIES }))}>전체 보기</Btn>} />
+              : <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
 
             // **전체 선택** — 지금 목록에 보이는 지출 전부(운영자 신고 2026-09-25 [27ae736e]).
             // 종전에는 행을 하나씩 눌러야 했다. 카드 하나를 통째로 다른 카드로 옮기려던 운영자가
@@ -3864,7 +3932,7 @@ export default function FinanceClient({
                   // 링크 없이 'N월에 보입니다'. 어휘는 '낸' — 이체·현금도 섞이는 목록이라 카드 말인 '결제'를 쓰지 않는다.
                   const traceBy = new Map<string, { count: number; total: number }>()
                   for (const o of otherMonthPaid) {
-                    if (expFilter.category !== 'all' && o.category !== expFilter.category) continue
+                    if (!matchesExpenseCategory(o.category, expFilter.category)) continue
                     const cur = traceBy.get(o.month) ?? { count: 0, total: 0 }
                     cur.count += o.count; cur.total += o.total
                     traceBy.set(o.month, cur)
@@ -3911,7 +3979,7 @@ export default function FinanceClient({
                 {/* 모바일 카드 */}
                 {isEmpty ? (
                   <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
-                    <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
+                    {emptyState}
                   </div>
                 ) : (
                   <div className="sm:hidden space-y-1.5">
@@ -3957,7 +4025,7 @@ export default function FinanceClient({
                                   <span className="text-[0.65625rem] text-[var(--tc-text)] font-medium min-w-0 truncate">{e.category}</span>
                                   {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                   {grp && (item.groupKind === 'order'
-                                    ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">주문 {grp.filter(r => !r.isShipping).length}품목</span>
+                                    ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{orderChipText(e, grp)}</span>
                                     : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(withPlan(grp))}</span>)}
                                   {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
                                 </div>
@@ -4023,7 +4091,7 @@ export default function FinanceClient({
                 {/* 데스크탑 테이블 */}
                 <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
                   {isEmpty ? (
-                    <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
+                    emptyState
                   ) : (
                     <table className="w-full" style={{
                       tableLayout: 'fixed',
@@ -4083,7 +4151,7 @@ export default function FinanceClient({
                                     <span className="truncate">{e.detail ?? '—'}</span>
                                     {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                     {grp && (item.groupKind === 'order'
-                                      ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
+                                      ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{orderChipText(e, grp)}</span>
                                       : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(withPlan(grp))}</span>)}
                                     {e.receiptUrl && <span className="text-[0.65625rem] text-[var(--tc-text)] shrink-0">영수증</span>}
                                   </div>
