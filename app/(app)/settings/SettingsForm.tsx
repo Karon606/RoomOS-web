@@ -104,6 +104,7 @@ import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } f
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
 import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, reservedOptionNameError, type OptionListField } from '@/lib/optionLists'
 import CategorySelect from '@/components/ui/CategorySelect'
+import { OptionGroupHead, OptionGroupJumps } from './OptionGroupNav'
 
 type Property = {
   id: string
@@ -1631,6 +1632,8 @@ export default function SettingsForm({
           마지막 품목 세부스펙만 지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
       {tab === 'options' && (
         <div className="space-y-4">
+          {/* 묶음 바로가기(2026-10-23 운영자 결정, 가이드 §22). 묶음 하나가 320px 에서 6~7화면이라 맨 위에서 묶음으로 바로 간다. */}
+          <OptionGroupJumps />
           {/* 이사 안내 — 사라진 두 탭을 찾던 사람에게. TODO(2026-09 하순 제거). */}
           <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
             &lsquo;호실 설정&rsquo; 탭과 &lsquo;수익·지출&rsquo; 탭에 있던 분류 항목이 이 탭으로 모였습니다.
@@ -3245,15 +3248,6 @@ const REMOVE_TOAST = {
 } as const
 // 삭제 적용취소를 눌렀는데 그사이 같은 이름이 목록에 다시 생겨 바뀐 것이 없을 때. '원래 자리로 복귀' 는 거짓이다(3차 검수).
 const ALREADY_LISTED = (label: string) => `'${label}' 항목이 이미 목록에 있어 그대로 둡니다`
-
-/**
- * 분류 관리 묶음 머리(2026-10-22 2차 등재, 가이드 §22). 카드 사이에 서는 h2 한 줄이고 카드 제목은 h3 다.
- * 담는 쪽 간격(space-y-4, 16px) 위에 위는 넓히고(pt-2, 앞 카드와 24px) 아래는 좁혀(mb-2 가 담는 쪽 아래 여백을 8px 로 바꾼다)
- * 머리가 제 묶음 첫 카드에 붙는다. 음수 여백은 카드가 머리 글자를 덮었다(2026-10-22 하네스 실측). 접기·카운트는 없다.
- */
-function OptionGroupHead({ title }: { title: string }) {
-  return <h2 className="px-1 pt-2 mb-2 text-[0.8125rem] font-bold text-[var(--warm-dark)]">{title}</h2>
-}
 
 function OptionSection({
   title, description, items, field, setItems, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
