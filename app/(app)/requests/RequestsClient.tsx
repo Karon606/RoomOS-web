@@ -490,7 +490,7 @@ export default function RequestsClient({
           className={`px-2.5 py-1 text-xs font-medium rounded-sm ring-1 transition-colors ${
             filterUrgent
               ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]'
-              : 'bg-[var(--canvas)] ring-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
+              : 'bg-[var(--canvas)] ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
           긴급만 {urgentCount}

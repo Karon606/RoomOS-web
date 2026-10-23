@@ -11,6 +11,8 @@
 //      --ink-m 글자색이 그 파일에 없다.
 //   ⓒ role="radio" 칩을 가진 파일에서 --canvas 바탕 비선택 style 의 color 가 위 미달 토큰이 아니다.
 //   ⓓ ViewTabs 비활성(segInactive)은 --warm-dark 다(§25, 고른 칸이 --tc-text 라 색으로 위계가 선다).
+//   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 미달 토큰이 아니다
+//      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
 //
 // 실행: node scripts/check-seg-ink-off.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -85,6 +87,28 @@ for (const f of walk('app', walk('components', []))) {
 }
 if (chipFiles < 4) violations.push(`단일 선택 칩 정본 4곳(청소·작업 담당/수행자) 중 --seg-ink-off 를 쓰는 파일이 ${chipFiles}곳뿐이다. 파일을 옮겼다면 확인한다.`)
 
+// ⓔ 토글 칩(aria-pressed) 끈 상태 글자
+let toggleChips = 0
+for (const f of walk('app', walk('components', []))) {
+  const src = strip(readFileSync(f, 'utf8'))
+  if (!src.includes('aria-pressed')) continue
+  // aria-pressed 를 단 요소의 여는 태그 안(그 줄부터 '>' 로 끝나는 줄까지, 최대 8줄)만 본다.
+  // 같은 파일의 다른 --canvas 바탕 글자(배지·캡션)는 이 그물의 대상이 아니다.
+  const lines = src.split('\n')
+  lines.forEach((line, i) => {
+    if (!line.includes('aria-pressed')) return
+    for (let j = i; j < Math.min(lines.length, i + 8); j++) {
+      const l = lines[j]
+      if (l.includes('bg-[var(--canvas)]')) {
+        if (l.includes('text-[var(--seg-ink-off)]')) toggleChips++
+        if (BAD_TEXT.test(l)) violations.push(`${f}:${j + 1} 토글 칩 끈 상태 글자가 --canvas 위 AA 미달 토큰(${l.match(BAD_TEXT)[0]})이다. text-[var(--seg-ink-off)] 를 쓴다(가이드 §23).`)
+      }
+      if (j > i && /[}'"]\)?}?>\s*$|^\s*>\s*$/.test(l)) break
+    }
+  })
+}
+if (toggleChips < 3) violations.push(`토글 칩 정본 3곳(요청 '긴급만', 재고 위치 칩 2곳) 중 --seg-ink-off 를 쓰는 자리가 ${toggleChips}곳뿐이다. 자리를 옮겼다면 확인한다.`)
+
 // ⓓ ViewTabs 비활성
 {
   const f = 'components/ui/ViewTabs.tsx'
@@ -98,4 +122,4 @@ if (violations.length) {
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, SegmentedControl·단일 선택 칩·ViewTabs 비활성 글자)')
+console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, SegmentedControl·단일 선택 칩·토글 칩·ViewTabs 비활성 글자)')

@@ -191,7 +191,7 @@
   /* Ink — v1.2 (s=soft, m=mute) */
   --ink-s:        var(--ink-3);        /* #7A6553 — 보조 텍스트 */
   --ink-m:        var(--ink-mute);     /* placeholder·메타 — 값은 --ink-mute 한 곳에서 정한다 */
-  /* 고르지 않은 칸 글자(SegmentedControl 비활성 칸 · 단일 선택 칩). 이 칸은 늘 --canvas(--cream-2) 위에 서는데
+  /* 고르지 않은 칸 글자(SegmentedControl 비활성 칸 · 단일 선택 칩 · 토글 칩 끈 상태). 이 칸은 늘 --canvas(--cream-2) 위에 서는데
      --ink-3(#7A6553)은 거기서 4.11:1 로 AA 미달이다. --warm-dark 로 올리면 고른 칸(--warm-dark + 떠오른 --cream 칩)과
      글자가 같아지고 칩과 트랙의 차이는 1.25:1 뿐이라 위계가 무너진다. 그래서 그 사이 한 단을 둔다.
      라이트 #6B5745 = --canvas 위 5.10:1, 다크는 --d-ink-s 그대로(검정 위 10.56:1, 다크 픽셀 무변경). (2026-10-23, 가이드 §23) */

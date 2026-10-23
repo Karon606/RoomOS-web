@@ -7947,7 +7947,7 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
                   aria-pressed={chosen.has(loc.id)}
                   className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-sm border transition-colors ${chosen.has(loc.id)
                     ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
-                    : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+                    : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
                   {chosen.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
                   {loc.pathName}
                 </button>
@@ -8036,7 +8036,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
             aria-pressed={selected.has(loc.id)}
             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-sm border transition-colors ${selected.has(loc.id)
               ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
-              : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+              : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
             {selected.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
             {loc.pathName}
           </button>
