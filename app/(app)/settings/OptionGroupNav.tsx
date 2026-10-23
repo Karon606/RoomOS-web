@@ -76,7 +76,7 @@ export function OptionGroupJumps() {
           크기는 설정 화면 캡션 정본 11px 이고, 색은 --warm-muted 가 아니라 --warm-dark 다. 이 줄은 --canvas 꽉 찬 면 위라
           --warm-muted 는 4.11:1 로 본문 하한 미달이다(§27.8 WhyCaption 면 규칙, ViewTabs 비활성 글자와 같은 판단).
           낭독기는 nav 이름이 같은 말을 하므로 캡션을 건너뛴다. */}
-      <p aria-hidden className="mb-0.5 text-[0.6875rem] font-medium text-[var(--warm-dark)]">바로가기</p>
+      <p aria-hidden className="mb-0.5 text-[0.6875rem] font-medium text-[var(--seg-ink-off)]">바로가기</p>
       <div ref={trackRef} data-fade-track
         className="-m-1 p-1 flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {OPTION_GROUPS.map(g => (
