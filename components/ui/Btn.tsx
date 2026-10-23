@@ -40,6 +40,11 @@ export type BtnProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'type
   size?: Size
   type?: 'button' | 'submit' | 'reset'
   fullWidth?: boolean
+  /**
+   * 막힌 이유를 말하는 WhyCaption 의 id(가이드 §27.8). 주면 버튼은 막힌다. 네이티브 disabled 대신 aria-disabled 로
+   * 막아 포커스가 닿고, aria-describedby 가 그 캡션을 읽는다. 클릭(제출 포함)은 먹지 않는다. 안 주면 종전과 같다.
+   */
+  reason?: string | null | false
 }
 
 export function Btn({
@@ -48,14 +53,22 @@ export function Btn({
   type = 'button',
   fullWidth = false,
   className = '',
+  reason,
+  disabled,
+  onClick,
   children,
   ...rest
 }: BtnProps) {
+  const blocked = !!reason
   return (
     <button
       type={type}
-      className={btnClass(variant, size, `${fullWidth ? 'w-full' : ''} ${className}`)}
+      className={btnClass(variant, size, `${fullWidth ? 'w-full' : ''} ${blocked ? 'opacity-50 cursor-not-allowed' : ''} ${className}`)}
       {...rest}
+      disabled={blocked ? undefined : disabled}
+      aria-disabled={blocked ? true : rest['aria-disabled']}
+      aria-describedby={blocked ? [reason, rest['aria-describedby']].filter(Boolean).join(' ') : rest['aria-describedby']}
+      onClick={blocked ? e => e.preventDefault() : onClick}
     >
       {children}
     </button>

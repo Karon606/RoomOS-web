@@ -402,6 +402,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
           : null
         // 기록 버튼. 읽는 중·서버 거절·발행할 것이 없는 키(none)·이미 다 덮인 키(keep)는 막는다. 통신 실패는 살린다.
         const crOnBlocked = crPv === null || (crPv !== 'net' && (!crPv.ok || crPv.kind === 'none' || crPv.kind === 'keep'))
+        const crWhyId = `${crCapId}-why`
         if (editingId === p.id) {
           // 발행 금액 미리보기(검수 F-A). 지금 입력에 대한 응답만 쓴다. 필요한데 아직 없으면 읽는 중이다.
           const editPv = editPvKey && editCrPv?.key === editPvKey ? editCrPv.res : null
@@ -656,7 +657,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                       <span className="num text-sm font-semibold text-[var(--warm-dark)] whitespace-nowrap">{fmtWon(crPvOk.amount)}</span>
                     ) : null}
                   </div>
-                  {crPvFail && <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{crPvFail}</p>}
+                  {/* 아래 두 이유 줄은 함께 서지 않는다(실패는 crPvOk 가 없을 때, keep·none 은 있을 때). 같은 id 를 나눠 쓰고
+                      기록 버튼이 막힐 때 그 id 를 reason 으로 가리킨다(가이드 §27.8 ③ 제출 버튼 위 한 줄 이유). */}
+                  {crPvFail && <p id={crWhyId} className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{crPvFail}</p>}
                   {/* 살아 있는 발행에 새 돈만 더하는 켜기(add)는 앞 발행일을 지킨다. 금액 덩이만 오른쪽(줄1 금액과 자릿수
                       정렬)이고 문장은 왼쪽이다(웹디자이너 R4). 덩이는 셋이라 좁은 칸에서도 행 밖으로 안 나간다(F1). */}
                   {crPvOk?.kind === 'add' && crPvOk.current && (
@@ -670,7 +673,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   )}
                   {crPvGap && <p className="num text-[0.65625rem] text-[var(--warm-mid)] break-keep">{crPvGap}</p>}
                   {(crPvOk?.kind === 'keep' || crPvOk?.kind === 'none') && (
-                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{crPvOk.kind === 'keep' ? CR_KEEP_PREVIEW : CR_NONE_PREVIEW}</p>
+                    <p id={crWhyId} className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{crPvOk.kind === 'keep' ? CR_KEEP_PREVIEW : CR_NONE_PREVIEW}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
@@ -681,7 +684,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 <div className="flex gap-1.5 flex-wrap items-center">
                   {/* 금액을 읽기 전·서버가 거절한 키·발행할 것이 없는 키(none)·이미 다 덮인 키(keep)는 누르지 않게 한다.
                       눌러야 거절되거나 아무 일도 안 일어나는 버튼이 된다. 통신 실패만은 살린다(서버가 최종 판정). */}
-                  <RowActionBtn tone="accent" disabled={pending || crOnBlocked} onClick={() => confirmCashReceiptOn(p, crShownYmd)}>발행 기록</RowActionBtn>
+                  {/* 읽는 중(crPv null)은 이유 줄이 아직 없어 네이티브 disabled 그대로다. 이유가 선 막힘만 reason 으로 잇는다. */}
+                  <RowActionBtn tone="accent" disabled={pending || crOnBlocked} reason={crOnBlocked && crPv !== null ? crWhyId : undefined}
+                    onClick={() => confirmCashReceiptOn(p, crShownYmd)}>발행 기록</RowActionBtn>
                   <RowActionBtn onClick={() => setCrAskId(null)}>취소</RowActionBtn>
                 </div>
               </div>

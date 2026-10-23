@@ -40,13 +40,14 @@ interface DatePickerProps {
    */
   openMonth?: string
   disabled?: boolean              // 저장 진행 중 재입력 차단(네이티브 input 의 disabled 자리를 대신한다)
+  describedBy?: string            // 트리거의 aria-describedby — 잠긴 까닭을 말하는 WhyCaption id(가이드 §27.8). 안 주면 종전과 같다.
   className?: string
   style?: React.CSSProperties
 }
 
 export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택', emptyLabel,
-  maxDate, minDate, monthOnly, defaultMonth, openMonth, disabled, className, style,
+  maxDate, minDate, monthOnly, defaultMonth, openMonth, disabled, describedBy, className, style,
 }: DatePickerProps) {
   // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19).
   // 아래 뷰 기본값·'올해로'도 같은 기준을 쓴다 — new Date() 는 서버(UTC)와 기기(KST)가 갈려
@@ -369,6 +370,7 @@ export function DatePicker({
         type="button"
         onClick={handleOpen}
         disabled={disabled}
+        aria-describedby={describedBy}
         className={`w-full text-left truncate disabled:opacity-40 ${className ?? ''}`}
         style={style}
       >

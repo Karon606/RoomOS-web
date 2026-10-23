@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { fileToOcrImage, ocrForm } from '@/lib/ocrImage'
 
@@ -1212,9 +1213,12 @@ export default function FloorPlanEditor({
 
             {divider}
 
-            {/* 되돌리기 */}
-            <button onClick={undo} disabled={!canUndo} className={`${btnGray} disabled:opacity-30`} title="되돌리기 (Ctrl+Z)">↩</button>
-            <button onClick={redo} disabled={!canRedo} className={`${btnGray} disabled:opacity-30`} title="다시실행 (Ctrl+Y)">↪</button>
+            {/* 편집 이력 — 이름을 글자로 적는다(가이드 §27.8 ④ title 만으로 말하지 않는다, §29 화살표 글자 금지).
+                종전엔 ↩·↪ 글자 하나에 이름이 title 에만 있어 터치 화면에서는 무슨 버튼인지 알 길이 없었다.
+                라벨은 §16 '적용취소' 단일과 rotate-ccw 아이콘을 따른다. 단축키는 aria-keyshortcuts 로 남긴다.
+                비활성(이력 없음)은 자명한 상태라 이유 캡션을 달지 않는다. */}
+            <button onClick={undo} disabled={!canUndo} className={`${btnGray} disabled:opacity-30`} aria-keyshortcuts="Control+Z"><span className="inline-flex mr-0.5"><RotateCcw /></span>적용취소</button>
+            <button onClick={redo} disabled={!canRedo} className={`${btnGray} disabled:opacity-30`} aria-keyshortcuts="Control+Y"><span className="inline-flex mr-0.5 -scale-x-100"><RotateCcw /></span>다시 적용</button>
 
             {divider}
 

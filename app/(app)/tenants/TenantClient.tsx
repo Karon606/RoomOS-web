@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId } from 'react'
-import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
+import { fmtDateKor as fmtDate, fmtMD, fmtMonthDayKor } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { MoveRoomNowButton, UndoRoomMoveButton } from '@/components/tenant/MoveRoomNowButton'
@@ -38,6 +38,7 @@ import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, 
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
+import { WhyCaption } from '@/components/ui/WhyCaption'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 import { Badge } from '@/components/ui/Badge'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -3624,6 +3625,9 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
     setSelected(prev => [...prev, roomNo])
   }
   const remove = (roomNo: string) => setSelected(prev => prev.filter(r => r !== roomNo))
+  const wishCapped = selected.length >= 5
+  const wishUid = useId()
+  const wishCapWhyId = `${wishUid}-wish-cap`
 
   // 폼 제출용 hidden 값 — 모드에 따라 한 쪽만 채움
   const wishRoomsValue = mode === 'rooms' ? selected.join(',') : ''
@@ -3689,14 +3693,16 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             </select>
           </div>
 
-          {/* 호실 선택 (최대 5개) */}
+          {/* 호실 선택 (최대 5개) — 다 차면 막고 같은 자리에서 이유와 푸는 법을 말한다(가이드 §27.8 ②).
+              종전엔 칸만 흐려져 왜 안 열리는지 알 길이 없었다. */}
           <select
             value=""
             onChange={e => { add(e.target.value); e.target.value = '' }}
-            disabled={selected.length >= 5}
+            disabled={wishCapped}
+            aria-describedby={wishCapped ? wishCapWhyId : undefined}
             className={selCls}
           >
-            <option value="">호실 선택… {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
+            <option value="">{wishCapped ? '호실 선택… (5개 모두 고름)' : `호실 선택… ${allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}`}</option>
             {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
               <option key={r.id} value={r.roomNo}>
                 {/* 비거주 점유 방은 공실이라 부르지 않는다. 종전엔 '가장 최근 계약 하나'로 물어
@@ -3705,6 +3711,9 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
               </option>
             ))}
           </select>
+          {wishCapped && (
+            <WhyCaption id={wishCapWhyId}>희망 호실은 5개까지라서 더 고를 수 없습니다 · 아래에서 하나를 빼면 됩니다</WhyCaption>
+          )}
 
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -3877,8 +3886,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [moveDateVal, setMoveDateVal] = useState(kstYmdStr())
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
   // 문의/투어 예정 = 같은 WAITING_TOUR의 표시 구분(파생) — select 옵션 분리용 UI 상태(운영자 승인 2026-07-19).
-  // 투어일이 있으면 '투어 예정' 강제('문의' 옵션 비활성), 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
+  // 투어일이 있으면 '투어 예정'으로 보이고, 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
+  // '문의' 는 투어일이 있어도 고를 수 있다(2026-10-23 운영자 승인 '추천대로', 가이드 §27.8 ①). 고르면 폼 안에서만
+  // 투어일을 비우고 지운 값을 tourCleared 에 둔다. 저장해야 비워지고, 취소하면 아무것도 안 바뀐다.
+  // 상태 칸 아래 한 줄이 그 사실과 [투어일 되살리기] 를 말한다. 화면이 그 값을 그려야 해서 ref 가 아니라 state 다.
   const [uiWaitingKind, setUiWaitingKind] = useState<'INQUIRY' | 'TOUR'>(lease?.tourDate ? 'TOUR' : 'INQUIRY')
+  const [tourCleared, setTourCleared] = useState<string | null>(null)
+  const statusWhyId = `${formUid}-status-why`
+  const shortMoveInWhyId = `${formUid}-short-movein-why`
   // 지난 투어일 판정 기준(KST) — 폼은 모달로 클라이언트에서만 마운트되므로 렌더 시 계산 안전
   const [formToday] = useState(() => kstYmdStr())
   const initialInquiry = splitDateTime(lease?.inquiryAt)
@@ -4486,8 +4501,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               value={statusVal !== 'WAITING_TOUR' ? statusVal : (!tourDateVal && uiWaitingKind === 'INQUIRY' ? 'INQUIRY' : 'WAITING_TOUR')}
               onChange={e => {
                 const v = e.target.value
-                if (v === 'INQUIRY')           { setStatusVal('WAITING_TOUR'); setUiWaitingKind('INQUIRY') }
-                else if (v === 'WAITING_TOUR') { setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') }
+                if (v === 'INQUIRY') {
+                  // 투어일이 있으면 폼 안에서만 비우고 지운 값을 쥔다(가이드 §27.8 ①). 막지 않고, 바뀐 것을 아래 한 줄로 보인다.
+                  if (tourDateVal) { setTourCleared(tourDateVal); setTourDateVal('') }
+                  setStatusVal('WAITING_TOUR'); setUiWaitingKind('INQUIRY')
+                  return
+                }
+                // '문의' 를 떠나면 그 때문에 비운 투어일을 돌려놓는다. 투어일을 비운 것은 '문의' 의 조건이었지
+                // 다른 상태가 바란 것이 아니다(입실 예약·입실 취소도 투어일을 이력으로 지닌다).
+                if (tourCleared && !tourDateVal) { setTourDateVal(tourCleared); setTourCleared(null) }
+                if (v === 'WAITING_TOUR') { setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') }
                 else {
                   setStatusVal(v)
                   // 퇴실 예정에서 퇴실 처리로 바꾸면 예정 때 고른 사유로 시작한다 — 비우면 통보 때 적어 둔 사유가
@@ -4499,10 +4522,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   setCancelReasonPrefill(inherited)
                 }
               }}
+              aria-describedby={tourCleared && !tourDateVal ? statusWhyId : undefined}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <optgroup label="문의·예약">
-                {/* 투어일이 있으면 '문의' 선택 불가 — 문의로 두려면 투어일을 먼저 비운다(자동으로 문의 복귀) */}
-                <option value="INQUIRY" disabled={!!tourDateVal}>문의</option>
+                {/* 투어일이 있어도 고를 수 있다. 고르면 위 onChange 가 폼 안에서 투어일을 비운다(2026-10-23, §27.8 ①). */}
+                <option value="INQUIRY">문의</option>
                 <option value="WAITING_TOUR">투어 예정</option>
                 <option value="TOUR_DONE">투어 완료</option>
                 <option value="RESERVED">입실 예약</option>
@@ -4552,8 +4576,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 </div>
               )
             })()}
+            {/* '문의' 를 골라 투어일을 비운 경우 — 정의 캡션 자리에 바뀐 것과 되살리기 링크(§27.8 ①, 4566 링크와 같은 문법).
+                되살리기는 확인창 없이 투어일을 돌려놓고 '투어 예정' 으로 간다. */}
+            {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && tourCleared && (
+              <WhyCaption id={statusWhyId} className="mt-1"
+                action={{ label: '투어일 되살리기', onClick: () => { setTourDateVal(tourCleared); setTourCleared(null); setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') } }}>
+                투어일({tourCleared.slice(0, 4) !== formToday.slice(0, 4) ? `${tourCleared.slice(0, 4)}년 ` : ''}{fmtMonthDayKor(tourCleared)})을 비웠습니다 · 저장하면 문의로 바뀝니다
+              </WhyCaption>
+            )}
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
-            {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && (
+            {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && !tourCleared && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">문의 = 연락만 받은 상태 · 투어일을 잡으면 &lsquo;투어 예정&rsquo;으로 바뀝니다</p>
             )}
             {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'TOUR' && (
@@ -4654,6 +4686,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   // 자동 전환은 문의·투어 예정(WAITING_TOUR)에서 사용자가 날짜를 편집한 직후에만.
                   // 예약·취소·완료 상태의 투어일은 이력 기록이라 상태를 건드리지 않는다(전문가 패널 합의).
                   setTourDateVal(date)
+                  // 새 투어일을 직접 고르면 '문의' 때문에 비워 둔 옛 값은 놓는다(되살리기 줄도 같이 내려간다).
+                  if (date) setTourCleared(null)
                   if (statusVal !== 'WAITING_TOUR') return
                   if (!date) { setUiWaitingKind('INQUIRY'); return }
                   if (date < kstYmdStr()) {
@@ -4823,8 +4857,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     {/* 메인 계약과 같음이면 여기서도 못 고친다. 이 칸은 아래 입주일과 같은 값이라
                         한쪽만 열어 두면 잠긴 날짜를 옆문으로 바꾸는 길이 된다(제출은 안 되고 계산만 흔들린다). */}
                     <DatePicker value={moveInVal} onChange={setMoveIn} placeholder={moveInLabel}
-                      disabled={moveInSameAsParent}
+                      disabled={moveInSameAsParent} describedBy={moveInSameAsParent ? shortMoveInWhyId : undefined}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
+                    {/* 잠긴 까닭과 푸는 길을 칸 아래 한 줄로(가이드 §27.8 ②). 종전엔 칸만 흐려져 왜 못 고치는지 몰랐다.
+                        '따로 정하기' 칸은 거주 전이면 이 박스 위, 거주 단계면 아래에 서서 방향 낱말을 쓰지 않는다. */}
+                    {moveInSameAsParent && (
+                      <WhyCaption id={shortMoveInWhyId} className="mt-0.5">
+                        {withParticle(parentLease?.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약', '과/와')} 같은 날짜라서 고칠 수 없습니다 · &lsquo;입주일 따로 정하기&rsquo;를 켜면 됩니다
+                      </WhyCaption>
+                    )}
                   </div>
                   <div>
                     <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">퇴실일 (예정 퇴실일로 저장)</span>
