@@ -419,6 +419,10 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   3차(독립 검수 블로커): 고정지출 등록·수정이 화면 객체를 data 에 펼쳐 propertyId 주입(남의 영업장으로 이동·생성)·expenses connect(남의 지출 붙이기)·financialAccount connect(계좌 검사 우회)가 됐다.
   settings 의 pickRecurringFields 화이트리스트(맨 값만, 연산 객체 거절)로 거르고 관계는 검증한 financialAccountId 스칼라로만 넣는다. 그물은 세 모델의 create·createMany·update·updateMany·upsert data 펼침을 허용 목록(fields·cycle·link)으로,
   data 변수는 updateData 만(조립은 함수 축), create 는 propertyId 필수, 대리자 별칭 금지, 줄바꿈 호출 허용, 쓰기 개수 고정(where 22·data 24, 새 쓰기를 더하면 함께 고친다). 역주입 2 + 보조 2 전부 발화.
+  4차(재검수 우회로): **펼침·data 변수는 이름이 아니라 출처로 허용한다.** 그 함수 안의 선언이 정본 꼴(PROVENANCE: fields=pickRecurringFields(rest)·cycle=normalizeCycle·link=서버가 짠 연결·updateData={ ...fields })이어야 하고,
+  그 뒤 Object.assign·defineProperty·Reflect.set·속성 대입·재대입은 적힌 꼴(updateData 의 category·activeSince·amount·isVariable, Object.assign(updateData, normalizeCycle(...)))만 통과. 펼침 식 ...( ) 안의 값 자리 이름도 같은 추적.
+  화이트리스트 표 RECURRING_FIELDS 는 스키마의 RecurringExpense 맨 칸만, pickRecurringFields 는 그 표만 돈다. 어느 모델 쓰기든 data 의 세 모델 관계 칸(스키마에서 읽음: extraIncomes·recurringExpenses·recurringExpense·items)에
+  쓰기 연산을 걸면 위반(고정지출 create 안 items create 만 허용). 별칭은 prisma·tx 대리자 할당·구조분해·계산된 접근만 잡는다(p.recurringExpense 같은 행 관계 읽기는 안 잡는다). 역주입 우회로 4 + 보조 2 전부 발화, 오탐 대조 통과.
 - **check-expense-channel-wiring · test-expense-channel · test-expense-channel-flow** (2026-10-20, verify:fast, 신고 a0636f36) · 구매처·쇼핑몰 배선 열두 축(스키마·등록·수정·소급·번호 지도·구매처 정리·묶기·주문번호 제안·일괄/홈/소모품·표시·폼·**구매처를 쇼핑몰 자리에 대신 쓰는 표현 금지**),
   규칙 진리표(품목별 번호 머리 상속 금지·소급 제한·요약·갈림·적용취소 토큰), PGlite 통합(저장 경로 전수·적용취소 바이트 동일·위조/교차 용도/남의 영업장 거부·장부 감사). 역주입 31건 전부 발화. 정본 [[domain-expense-channel]].
 - **check-order-channel-split** (2026-10-20, verify:db) · 한 주문 쇼핑몰 둘은 오류, 미기록 섞임·이름 하나 번호 둘·번호 하나 이름 둘·구매처 자리의 쇼핑몰 이름은 경고. 질의 정본 scripts/order-channel-audit.mjs. **운영 DB 에 칸이 없으면 붉게 선다**(SQL 먼저 적용).

@@ -240,20 +240,37 @@ for (const ax of AXES) {
 //
 // 2차 보강(2026-10-23 독립 검수 블로커). 화면 객체를 data 에 펼치면 propertyId·expenses: { connect }·financialAccount: { connect }
 // 가 그대로 실려 남의 영업장으로 옮기거나 남의 행을 붙였다. 그래서 create·createMany·update·updateMany·upsert 의 data 를 본다.
-//   ⓐ data 안의 펼침(...이름)은 서버가 고른 값(SAFE_SPREADS)만. ⓑ data 를 변수로 넘기는 것은 SAFE_DATA_VARS 만(그 조립은 함수 축이 본다).
-//   ⓒ 기타수익·고정지출 create 의 data 에는 propertyId 가 있어야 한다. ⓓ 모델 대리자를 변수에 담거나 넘기지 않는다(별칭 금지).
+//   ⓐ data 안의 펼침(...이름, ...(식))은 출처를 따라간 값만. ⓑ data 를 변수로 넘기는 것은 출처를 따라간 변수만.
+//   ⓒ 기타수익·고정지출 create 의 data 에는 propertyId 가 있어야 한다. ⓓ prisma·tx 의 모델 대리자를 변수에 담거나 구조분해하지 않는다.
 //   ⓔ 쓰기 개수는 정확한 수로 고정한다. 새 쓰기를 더하면 이 숫자도 함께 고친다(조용히 빠지거나 늘지 않게).
+// 3차 보강(2026-10-23 재검수 우회로). ⓕ 출처 추적: 펼치거나 data 로 넘기는 변수는 이름이 아니라 그 함수 안의 선언(화이트리스트
+//   pickRecurringFields·normalizeCycle·서버가 짠 연결)과 그 뒤 변경(Object.assign·속성 대입·재대입)을 따라가 허용한다.
+//   ⓖ 화이트리스트 자체: RECURRING_FIELDS 키는 RecurringExpense 의 맨 칸(관계·id·propertyId 아님)만, 고르는 함수는 그 표만 돈다.
+//   ⓗ 다른 모델을 거친 중첩 쓰기: 어느 모델 쓰기든 data 안에서 세 모델로 가는 관계 칸(스키마에서 읽음)에 쓰기 연산을 걸지 않는다.
 const SCOPED_MODELS = ['extraIncome', 'recurringExpense', 'recurringExpenseItem']
+const SCOPED_TYPES = ['ExtraIncome', 'RecurringExpense', 'RecurringExpenseItem']
 const MODEL_ALT = SCOPED_MODELS.join('|')
 const WHERE_OPS = ['update', 'updateMany', 'delete', 'deleteMany', 'upsert']
 const DATA_OPS = ['create', 'createMany', 'update', 'updateMany', 'upsert']
-// 줄바꿈·공백을 허용한다(prisma.extraIncome\n  .update(). 뒤의 \b 로 updateMany 와 update 를 가른다.
+// 줄바꿈·공백을 허용한다(prisma.extraIncome\n  .update(). 뒤의 \s*\( 로 updateMany 와 update 를 가른다.
 const CALL_RE = new RegExp(`\\.\\s*(${MODEL_ALT})\\s*\\.\\s*(create|createMany|update|updateMany|delete|deleteMany|upsert)\\s*\\(`, 'g')
-// 모델 이름 뒤에 메서드 호출이 안 붙는 자리(별칭 할당·인자로 넘김·계산된 접근)는 위반이다.
-const ALIAS_RE = new RegExp(`\\b(prisma|tx|db|client|p)\\s*\\.\\s*(${MODEL_ALT})\\b(?!\\s*\\.\\s*\\w+\\s*\\()|\\[\\s*['"\`](${MODEL_ALT})['"\`]\\s*\\]`, 'g')
-const SAFE_SPREADS = new Set(['fields', 'cycle', 'link'])
-const SAFE_DATA_VARS = new Set(['updateData'])
+// prisma·tx 대리자에 메서드 호출이 안 붙는 자리(별칭 할당·인자로 넘김)와 계산된 접근, 구조분해만 잡는다.
+// 행의 관계 읽기(p.recurringExpense·row.extraIncome)는 대리자가 아니라 잡지 않는다.
+const ALIAS_RE = new RegExp(`\\b(prisma|tx)\\s*\\.\\s*(${MODEL_ALT})\\b(?!\\s*\\.\\s*\\w+\\s*\\()|\\b(prisma|tx)\\s*\\[|\\{[^{}]*\\b(${MODEL_ALT})\\b[^{}]*\\}\\s*=\\s*(prisma|tx)\\b`, 'g')
 const EXPECTED = { where: 22, data: 24 }
+
+// ⓕ 출처 정본. 선언이 그 함수 안에 이 꼴로 있어야 하고, 그 뒤 변경은 여기 적은 꼴만 허용한다.
+const PROVENANCE = {
+  fields: { decl: /const fields = pickRecurringFields\(rest\)/ },
+  cycle: { decl: /const cycle = normalizeCycle\(/ },
+  link: { decl: /let link: \{ tenantId: string \| null; leaseTermId: string \| null \} \| null = null/, reassign: /^link = \{ tenantId, leaseTermId \}$/ },
+  updateData: {
+    decl: /const updateData: Record<string, unknown> = \{ \.\.\.fields \}/,
+    assignKeys: new Set(['category', 'activeSince', 'amount', 'isVariable']),
+    assignFrom: /^normalizeCycle\(/,
+  },
+}
+const SAFE_LITERALS = new Set(['null', 'undefined', 'true', 'false'])
 
 function walk(dir, out) {
   for (const name of readdirSync(dir)) {
@@ -293,11 +310,11 @@ function topLevel(arg, key) {
       j++
       while (/\s/.test(arg[j])) j++
       if (arg[j] === '{') { const e = matchClose(arg, j); return { obj: arg.slice(j, e + 1) } }
-      let k = j, d = 0
+      let k = j
       for (; k < arg.length; k++) {
         const ch = arg[k]
         if (ch === '(' || ch === '{' || ch === '[') { k = matchClose(arg, k); if (k < 0) break; continue }
-        if (d === 0 && (ch === ',' || ch === '}')) break
+        if (ch === ',' || ch === '}') break
       }
       return { raw: arg.slice(j, k < 0 ? undefined : k).trim() }
     }
@@ -305,18 +322,103 @@ function topLevel(arg, key) {
   return null
 }
 
-/** data 값 하나를 본다: 펼침 허용 목록, 변수 허용 목록, (create 면) propertyId. */
-function checkData(at, val, { needProperty }) {
-  if (!val) { violations.push(`${at} · data 를 못 찾았다`); return }
-  const text = val.obj ?? val.raw
-  if (val.raw != null && /^[A-Za-z_$][\w$]*$/.test(val.raw)) {
-    if (!SAFE_DATA_VARS.has(val.raw)) violations.push(`${at} · data 를 변수(${val.raw})로 넘긴다. 화면 객체가 그대로 실릴 수 있다. 허용 칸만 골라 객체로 쓴다`)
-    return
+/** 호출 위치를 감싼 함수의 시작(가장 가까운 function 선언). */
+function fnStartOf(src, idx) {
+  let best = 0
+  for (const m of src.slice(0, idx).matchAll(/(^|\n)[ \t]*(export\s+)?(async\s+)?function\s+\w+/g)) best = m.index
+  return best
+}
+
+/** ⓕ 변수 v 의 출처를 body(함수 시작부터 쓰기 직전까지) 안에서 따라간다. 위반 문구 배열을 돌려준다. */
+function provenanceIssues(v, body) {
+  const rule = PROVENANCE[v]
+  if (!rule) return [`${v} 는 출처 정본(PROVENANCE)에 없다. 화이트리스트에서 나온 값인지 따라갈 수 없다`]
+  const d = body.match(rule.decl)
+  if (!d) return [`${v} 의 선언이 정본 꼴(${rule.decl.source})이 아니다. 화이트리스트를 거치지 않은 값일 수 있다`]
+  const issues = []
+  const after = body.slice(d.index + d[0].length)
+  const esc = v.replace(/\$/g, '\\$')
+  for (const m of after.matchAll(new RegExp(`(Object\\.assign|Object\\.defineProperty|Object\\.defineProperties|Reflect\\.set)\\(\\s*${esc}\\b\\s*,\\s*([^\\n]*)`, 'g'))) {
+    if (!(m[1] === 'Object.assign' && rule.assignFrom && rule.assignFrom.test(m[2]))) issues.push(`${v} 에 ${m[1]}(${m[2].slice(0, 30).trim()}) 로 칸을 더한다. 화이트리스트 밖 키가 실린다`)
   }
+  for (const m of after.matchAll(new RegExp(`(?<![\\w$.])${esc}\\s*(\\.\\s*([\\w$]+)|\\[[^\\]]*\\])\\s*=(?!=)`, 'g'))) {
+    if (!(m[2] && rule.assignKeys?.has(m[2]))) issues.push(`${v}${m[1]} 에 대입한다. 허용 칸(${[...(rule.assignKeys ?? [])].join('·') || '없음'}) 밖이다`)
+  }
+  for (const m of after.matchAll(new RegExp(`(?<![\\w$.])${esc}\\s*=(?!=)[^\\n]*`, 'g'))) {
+    if (!(rule.reassign && rule.reassign.test(m[0].trim()))) issues.push(`${v} 를 다시 대입한다(${m[0].trim().slice(0, 40)}). 출처가 바뀐다`)
+  }
+  return issues
+}
+
+/** ⓐ 펼침 ...( 식 ) 안에서 값 자리에 선 맨 이름을 뽑는다. 삼항의 조건(뒤가 ?)은 값이 아니라 뺀다. */
+function valueIdentsInParen(expr) {
+  const out = []
+  for (const m of expr.matchAll(/(^|[?:(]|\?\?|\|\||&&)\s*([A-Za-z_$][\w$]*)\s*(?=$|[):]|\?\?|\|\||&&)/g)) {
+    if (!SAFE_LITERALS.has(m[2])) out.push(m[2])
+  }
+  return out
+}
+
+let body = ''
+/** data 값 하나를 본다: 펼침·변수의 출처, (create 면) propertyId. */
+function checkData(at, val, { needProperty, allowRaw }) {
+  if (!val) { violations.push(`${at} · data 를 못 찾았다`); return }
+  if (val.raw != null) {
+    if (/^[A-Za-z_$][\w$]*$/.test(val.raw)) {
+      for (const i of provenanceIssues(val.raw, body)) violations.push(`${at} · data 변수: ${i}`)
+      return
+    }
+    if (!(allowRaw && allowRaw.test(val.raw))) { violations.push(`${at} · data 를 식(${val.raw.slice(0, 40)})으로 넘긴다. 화면 객체가 실릴 수 있다. 객체로 칸을 적는다`); return }
+  }
+  const text = val.obj ?? val.raw
   for (const s of text.matchAll(/\.\.\.\s*([A-Za-z_$][\w$]*)/g)) {
-    if (!SAFE_SPREADS.has(s[1])) violations.push(`${at} · data 에 ${s[1]} 를 펼친다. 화면 객체를 펼치면 propertyId·관계 연산(connect)이 실린다. 허용 칸만 고른 값(fields)을 쓴다`)
+    for (const i of provenanceIssues(s[1], body)) violations.push(`${at} · data 펼침: ${i}`)
+  }
+  for (const s of text.matchAll(/\.\.\.\s*\(/g)) {
+    const open = s.index + s[0].length - 1
+    const close = matchClose(text, open)
+    const expr = text.slice(open + 1, close)
+    for (const id of valueIdentsInParen(expr)) for (const i of provenanceIssues(id, body)) violations.push(`${at} · data 펼침 식: ${i}`)
   }
   if (needProperty && !/\bpropertyId\b/.test(text)) violations.push(`${at} · create 의 data 에 propertyId 가 없다. 어느 영업장 행인지 서버가 정하지 않는다`)
+}
+
+// ⓗ 스키마에서 세 모델로 가는 관계 칸을 읽는다(모델 이름 → 칸 이름 목록).
+const schema = readFileSync('prisma/schema.prisma', 'utf8')
+const REL_FIELDS = new Map()
+{
+  let cur = null
+  for (const line of schema.split('\n')) {
+    const mm = line.match(/^model\s+(\w+)/)
+    if (mm) { cur = mm[1]; continue }
+    const fm = cur && line.match(new RegExp(`^\\s+(\\w+)\\s+(${SCOPED_TYPES.join('|')})(\\[\\])?\\??(\\s|$)`))
+    if (fm) REL_FIELDS.set(cur, [...(REL_FIELDS.get(cur) ?? []), fm[1]])
+  }
+}
+const REL_NAMES = [...new Set([...REL_FIELDS.values()].flat())]
+if (REL_NAMES.length === 0) violations.push('스키마에서 기타수익·고정지출로 가는 관계 칸을 못 읽었다. 중첩 쓰기 축이 장식이 된다')
+const NESTED_OPS = 'create|createMany|connect|connectOrCreate|update|updateMany|upsert|delete|deleteMany|set|disconnect'
+// 부모가 영업장 범위로 서는 자리의 자식 생성만 허용한다(고정지출 create 안의 세부항목 create).
+const NESTED_ALLOW = [{ model: 'recurringExpense', op: 'create', field: 'items', nested: 'create' }]
+const ANY_WRITE_RE = /\.\s*(\w+)\s*\.\s*(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|upsert)\s*\(/g
+const NESTED_RE = new RegExp(`\\b(${REL_NAMES.join('|')})\\s*:\\s*(\\{\\s*(${NESTED_OPS})\\b|[A-Za-z_$])`, 'g')
+
+// ⓖ 화이트리스트 자체를 본다.
+{
+  const sf = 'app/(app)/settings/actions.ts'
+  const s = readFileSync(sf, 'utf8')
+  const tbl = s.match(/const RECURRING_FIELDS = (\{[\s\S]*?\}) as const/)
+  const block = schema.match(/model RecurringExpense \{([\s\S]*?)\n\}/)
+  if (!tbl || !block) violations.push(`${sf} · RECURRING_FIELDS 표나 RecurringExpense 모델을 못 찾았다. 화이트리스트를 볼 수 없다`)
+  else {
+    const scalars = new Set([...block[1].matchAll(/^\s+(\w+)\s+(String|Int|Boolean|DateTime|Float|Decimal|Json|BigInt)\??(\s|$)/gm)].map(m => m[1]))
+    for (const k of ['id', 'propertyId', 'createdAt', 'updatedAt']) scalars.delete(k)
+    for (const m of tbl[1].matchAll(/(\w+)\s*:\s*'/g)) if (!scalars.has(m[1])) violations.push(`${sf} · RECURRING_FIELDS 에 ${m[1]} 가 있다. 맨 칸(관계·id·propertyId 아님)만 허용한다`)
+    const fn = s.match(/function pickRecurringFields\([\s\S]*?\n\}/)
+    if (!fn || !/for \(const \[key, kind\] of Object\.entries\(RECURRING_FIELDS\)\)/.test(fn[0]) || !/typeof v !== base/.test(fn[0]) || /\.\.\.\s*src|Object\.assign\(\s*out\s*,\s*src/.test(fn[0])) {
+      violations.push(`${sf} · pickRecurringFields 가 RECURRING_FIELDS 표만 돌며 형을 보는 꼴이 아니다. 화면 객체가 통째로 넘어간다`)
+    }
+  }
 }
 
 let whereCount = 0, dataCount = 0
@@ -324,7 +426,7 @@ for (const file of [...walk('app', []), ...walk('lib', [])]) {
   const src = readFileSync(file, 'utf8')
   const lineOf = idx => src.slice(0, idx).split('\n').length
   for (const m of src.matchAll(ALIAS_RE)) {
-    violations.push(`${file}:${lineOf(m.index)} · 모델 대리자(${m[2] ?? m[3]})를 변수에 담거나 넘긴다. 별칭을 거치면 이 그물이 쓰기를 못 본다. prisma.모델.메서드( 로 바로 부른다`)
+    violations.push(`${file}:${lineOf(m.index)} · prisma·tx 의 모델 대리자를 변수에 담거나 구조분해하거나 계산된 이름으로 꺼낸다. 별칭을 거치면 이 그물이 쓰기를 못 본다. prisma.모델.메서드( 로 바로 부른다`)
   }
   for (const m of src.matchAll(CALL_RE)) {
     const [model, op] = [m[1], m[2]]
@@ -333,6 +435,7 @@ for (const file of [...walk('app', []), ...walk('lib', [])]) {
     const at = `${file}:${lineOf(m.index)} ${model}.${op}`
     if (close < 0) { violations.push(`${at} · 호출 괄호를 못 읽었다. 못 읽으면 통과가 아니라 위반이다`); continue }
     const arg = src.slice(open + 1, close).trim()
+    body = src.slice(fnStartOf(src, m.index), m.index)
     if (WHERE_OPS.includes(op)) {
       whereCount++
       const w = topLevel(arg, 'where')
@@ -343,16 +446,35 @@ for (const file of [...walk('app', []), ...walk('lib', [])]) {
     if (DATA_OPS.includes(op)) {
       dataCount++
       const needProperty = op.startsWith('create') && model !== 'recurringExpenseItem'
+      // 세부항목 일괄 생성은 부모를 영업장 범위로 확인한 뒤 화면 배열을 칸별로 다시 짜는 꼴만 허용한다.
+      const allowRaw = model === 'recurringExpenseItem' && op === 'createMany' ? /^items\.map\(\(it, i\) => \(\{ recurringExpenseId: id, name: it\.name, amount: Number\(it\.amount\) \|\| 0, isVariable: !!it\.isVariable, sortOrder: i \}\)\)$/ : null
       if (op === 'upsert') {
         checkData(`${at}(create)`, topLevel(arg, 'create'), { needProperty: model !== 'recurringExpenseItem' })
         checkData(`${at}(update)`, topLevel(arg, 'update'), { needProperty: false })
-      } else checkData(at, topLevel(arg, 'data'), { needProperty })
+      } else checkData(at, topLevel(arg, 'data'), { needProperty, allowRaw })
+    }
+  }
+  // ⓗ 다른 모델(또는 같은 모델)을 거친 중첩 쓰기.
+  for (const m of src.matchAll(ANY_WRITE_RE)) {
+    const [model, op] = [m[1], m[2]]
+    const open = m.index + m[0].length - 1
+    const close = matchClose(src, open)
+    if (close < 0) continue
+    const arg = src.slice(open + 1, close)
+    const parts = op === 'upsert' ? [topLevel(arg, 'create'), topLevel(arg, 'update')] : [topLevel(arg, 'data')]
+    for (const part of parts) {
+      const text = part?.obj ?? part?.raw ?? ''
+      for (const n of text.matchAll(NESTED_RE)) {
+        const nestedOp = n[3] ?? '(변수)'
+        if (NESTED_ALLOW.some(a => a.model === model && a.op === op && a.field === n[1] && a.nested === nestedOp)) continue
+        violations.push(`${file}:${lineOf(m.index)} ${model}.${op} · data 의 ${n[1]}: ${nestedOp} 로 기타수익·고정지출을 중첩해서 쓴다. 영업장 범위·화이트리스트를 비켜 간다. 그 모델을 직접 부른다`)
+      }
     }
   }
 }
 if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)
 if (dataCount !== EXPECTED.data) violations.push(`data 를 싣는 쓰기가 ${dataCount}곳이다(고정 ${EXPECTED.data}). 새 쓰기를 더했거나 정규식이 낡았다. 펼침을 확인하고 EXPECTED 를 함께 고친다`)
 
-console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 where ${whereCount}곳·data ${dataCount}곳 검사 / 위반 ${violations.length}건`)
+console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 where ${whereCount}곳·data ${dataCount}곳 + 관계 칸 ${REL_NAMES.length}개 검사 / 위반 ${violations.length}건`)
 for (const v of violations) console.log(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)
