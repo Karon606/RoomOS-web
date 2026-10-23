@@ -1386,8 +1386,9 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
   // (e) 드릴다운 딥링크는 **두 화면이 맺은 계약**이다. 한쪽만 고치면 '전체 보기'가 필터 없이 착지해
   //     운영자가 카테고리를 다시 고르게 된다(그러면 조각을 눌러 온 뜻이 사라진다).
-  const finPage = readFileSync('app/(app)/finance/page.tsx', 'utf8')
-  if (!/cat\?: string/.test(finPage) || !/initialCategory=/.test(finPage)) {
+  //     2026-10-23 부터 ?cat= 은 서버 prop 이 아니라 FinanceClient 가 주소에서 직접 읽는다(뒤로가기 때 옛 값이 서지 않게).
+  const finClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
+  if (!/useSearchParams\(\)\.get\('cat'\)/.test(finClient) || !/category: parseCategoryParam\(catInUrl\)/.test(finClient)) {
     violations.push('[소스] 지출 관리가 ?cat= 을 안 받는다 — 홈 도넛 드릴다운의 전체 보기가 필터 없이 착지한다')
   }
   if (!/\/finance\?tab=expense&month=\$\{targetMonth\}&cat=\$\{encodeURIComponent/.test(dashClient)) {
