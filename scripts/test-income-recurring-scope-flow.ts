@@ -128,6 +128,60 @@ async function main() {
     eq('삭제 대조군 뒤에도 남의 항목 무변경', await recurringRow(theirs), before)
   }
 
+  // ── 폼에서 받는 연결 id(결제 계정·입주자·계약). 남의 영업장 id 는 거절, 빈 값은 허용 ──
+  {
+    const account = async (pid: string) => (await prisma.financialAccount.create({ data: { propertyId: pid, type: 'BANK_ACCOUNT', brand: '하네스은행' } })).id as string
+    const tenantIn = async (pid: string) => (await prisma.tenant.create({ data: { propertyId: pid, name: '가' } })).id as string
+    const leaseOf = async (pid: string, tenantId: string) => (await prisma.leaseTerm.create({ data: { propertyId: pid, tenantId, status: 'ACTIVE' as never } })).id as string
+    const A1 = await account(P1), A2 = await account(P2)
+    const T1 = await tenantIn(P1), T2 = await tenantIn(P2)
+    const L1 = await leaseOf(P1, T1), L2 = await leaseOf(P2, T2)
+    const base = { date: '2026-10-06', amount: '3000', category: '기타 임대수입' }
+    const incomeCount = async () => prisma.extraIncome.count({ where: { propertyId: P1 } })
+
+    const n0 = await incomeCount()
+    eq('수익 등록: 남의 계좌 거절', await fin.addExtraIncome(fd({ ...base, financialAccountId: A2 })), { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
+    eq('수익 등록: 남의 입주자 거절', await fin.addExtraIncome(fd({ ...base, tenantId: T2 })), { ok: false, error: '입주자를 찾을 수 없습니다.' })
+    eq('수익 등록: 남의 계약 거절', await fin.addExtraIncome(fd({ ...base, leaseTermId: L2 })), { ok: false, error: '계약 정보를 찾을 수 없습니다.' })
+    eq('수익 등록: 남의 계약 + 내 입주자도 거절', await fin.addExtraIncome(fd({ ...base, leaseTermId: L2, tenantId: T1 })), { ok: false, error: '계약 정보를 찾을 수 없습니다.' })
+    eq('수익 등록 거절 뒤 행이 안 생긴다', await incomeCount(), n0)
+
+    const ok = await fin.addExtraIncome(fd({ ...base, financialAccountId: A1, leaseTermId: L1 }))
+    eq('수익 등록: 제 영업장 계좌·계약 통과', ok.ok, true)
+    const id = ok.ok ? ok.id : ''
+    const linked = await prisma.extraIncome.findUnique({ where: { id }, select: { financialAccountId: true, tenantId: true, leaseTermId: true } })
+    eq('수익 등록: 계약에서 입주자 보충', linked, { financialAccountId: A1, tenantId: T1, leaseTermId: L1 })
+    eq('수익 등록: 빈 값 허용', (await fin.addExtraIncome(fd({ ...base, financialAccountId: '', leaseTermId: '', tenantId: '' }))).ok, true)
+
+    const before = await incomeRow(id)
+    const edit = (o: Record<string, string>) => fd({ id, ...base, financialAccountId: A1, leaseTermId: L1, ...o })
+    eq('수익 수정: 남의 계좌 거절', await fin.updateExtraIncome(edit({ financialAccountId: A2 })), { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
+    eq('수익 수정: 남의 입주자 거절', await fin.updateExtraIncome(edit({ leaseTermId: '', tenantId: T2 })), { ok: false, error: '입주자를 찾을 수 없습니다.' })
+    eq('수익 수정: 남의 계약 거절', await fin.updateExtraIncome(edit({ leaseTermId: L2 })), { ok: false, error: '계약 정보를 찾을 수 없습니다.' })
+    eq('수익 수정 거절 뒤 무변경', await incomeRow(id), before)
+    eq('수익 수정: 연결 해제(빈 값) 허용', await fin.updateExtraIncome(edit({ financialAccountId: '', leaseTermId: '', tenantId: '' })), { ok: true })
+
+    const recCount = async () => prisma.recurringExpense.count({ where: { propertyId: P1 } })
+    const r0 = await recCount()
+    const recBase = { title: '하네스 통신비', amount: 20000, category: '공과금', dueDay: 5 }
+    eq('고정지출 등록: 남의 계좌 거절', await settings.addRecurringExpense({ ...recBase, financialAccountId: A2 }), { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
+    eq('고정지출 등록 거절 뒤 행이 안 생긴다', await recCount(), r0)
+    const rec = await settings.addRecurringExpense({ ...recBase, financialAccountId: A1 })
+    eq('고정지출 등록: 제 영업장 계좌 통과', rec.ok, true)
+    const recId = rec.ok ? rec.id : ''
+    const recBefore = await recurringRow(recId)
+    eq('고정지출 수정: 남의 계좌 거절', await settings.updateRecurringExpense(recId, { financialAccountId: A2 }), { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
+    eq('고정지출 수정 거절 뒤 무변경', await recurringRow(recId), recBefore)
+    eq('고정지출 수정: 계좌 지정 해제(null) 허용', await settings.updateRecurringExpense(recId, { financialAccountId: null }), { ok: true })
+
+    const src = await recurring(P1, '묶을 원본')
+    const r1 = await recCount()
+    eq('고정지출 묶기: 남의 계좌 거절', await settings.groupRecurringExpenses({ title: '묶음', category: '공과금', dueDay: 5, financialAccountId: A2, sourceIds: [src] }),
+      { ok: false, error: '결제 계정을 찾을 수 없습니다.' })
+    eq('고정지출 묶기 거절 뒤 부모가 안 생기고 원본 활성 유지', [await recCount(), (await prisma.recurringExpense.findUnique({ where: { id: src } }))?.isActive], [r1, true])
+    eq('고정지출 묶기: 제 영업장 계좌 통과', (await settings.groupRecurringExpenses({ title: '묶음', category: '공과금', dueDay: 5, financialAccountId: A1, sourceIds: [src] })).ok, true)
+  }
+
   console.log(`[기타수익·고정지출 영업장 범위 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

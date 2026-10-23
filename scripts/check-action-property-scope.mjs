@@ -193,6 +193,23 @@ const AXES = [
     ],
     mustNot: [],
   },
+  // 기타수익·고정지출이 폼에서 받는 연결 id(2026-10-23 운영자 승인, 01 과 같은 클래스). 빈 값은 허용, 남의 영업장 id 는 거절.
+  ...['addExtraIncome', 'updateExtraIncome'].map(fn => ({
+    file: 'app/(app)/finance/actions.ts',
+    fn,
+    must: [
+      [/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}[^\n]*\n\s*if \(!lt\) return \{ ok: false/, '폼의 계약을 영업장 범위로 보고 없으면 닫지 않는다(남의 영업장 계약이 이어진다)'],
+      [/tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*tenantId,\s*propertyId\s*\}/, '폼의 입주자를 영업장 범위로 보지 않는다'],
+      [/financialAccount\.findFirst\(\{\s*where:\s*\{\s*id:\s*financialAccountId,\s*propertyId\s*\}/, '폼의 결제 계정을 영업장 범위로 보지 않는다'],
+    ],
+    mustNot: [],
+  })),
+  ...[['addRecurringExpense', 'rest'], ['updateRecurringExpense', 'rest'], ['groupRecurringExpenses', 'data']].map(([fn, obj]) => ({
+    file: 'app/(app)/settings/actions.ts',
+    fn,
+    must: [[new RegExp(`financialAccount\\.findFirst\\(\\{\\s*where:\\s*\\{\\s*id:\\s*${obj}\\.financialAccountId,\\s*propertyId\\s*\\}`), '폼의 결제 계정을 영업장 범위로 보지 않는다(남의 영업장 계좌가 이어진다)']],
+    mustNot: [],
+  })),
 ]
 
 for (const ax of AXES) {

@@ -2408,6 +2408,10 @@ export async function addRecurringExpense(data: {
     // 카테고리는 지출 등록과 같은 맨 글자 규약이다(목록 표기 맞춤, 새 이름은 기록 뒤에 목록에 더한다, lib/reasonListSave).
     const categorySave = await autoOptionForSave(propertyId, 'expenseCategories', rawCategory, { addToList: addCategoryToList })
     if (!categorySave.value) return { ok: false, error: '카테고리를 입력하세요.' }
+    // 폼에서 온 결제 계정은 이 영업장 것만 받는다. 빈 값(지정 안 함)은 그대로 허용한다(2026-10-23 운영자 승인).
+    if (rest.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: rest.financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     const hasItems = Array.isArray(items) && items.length > 0
     const derived = hasItems ? deriveFromItems(items!) : null
     const cycle = normalizeCycle(intervalMonths, anchorMonth, nextDueOverrideMonth)
@@ -2449,6 +2453,10 @@ export async function updateRecurringExpense(id: string, data: Partial<{
     })
     if (!cur) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
+    // 결제 계정을 실어 온 저장만 본다. 이 영업장 계정이어야 하고, 빈 값(지정 해제)은 그대로 허용한다(2026-10-23 운영자 승인).
+    if (rest.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: rest.financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     const updateData: Record<string, unknown> = { ...rest }
     // 카테고리를 실어 온 저장만 다시 잰다(활성 토글 따위는 안 건드린다). 맨 글자 규약은 지출 등록과 같다.
     let categorySave: Awaited<ReturnType<typeof autoOptionForSave>> | null = null
@@ -2520,6 +2528,10 @@ export async function groupRecurringExpenses(data: {
       select: { id: true, title: true, amount: true, isVariable: true },
     })
     if (sources.length === 0) return { ok: false, error: '선택한 항목을 찾을 수 없습니다.' }
+    // 폼에서 온 결제 계정은 이 영업장 것만 받는다. 빈 값은 그대로 허용한다(2026-10-23 운영자 승인).
+    if (data.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: data.financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     const items: RecurringItemInput[] = sources.map(s => ({ name: s.title, amount: s.amount, isVariable: s.isVariable }))
     const derived = deriveFromItems(items)
     const result = await prisma.$transaction(async (tx) => {

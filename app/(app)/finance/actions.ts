@@ -2722,9 +2722,17 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true; id
     // 입주자 연결(선택) — leaseTermId만 와도 tenantId를 계약에서 보충
     const leaseTermId = ((formData.get('leaseTermId') as string) || '').trim() || null
     let tenantId      = ((formData.get('tenantId') as string) || '').trim() || null
-    if (leaseTermId && !tenantId) {
+    // 폼에서 온 연결 id 는 이 영업장 것만 받는다. 빈 값(연결 없음)은 그대로 허용한다(2026-10-23 운영자 승인).
+    if (leaseTermId) {
       const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
-      tenantId = lt?.tenantId ?? null
+      if (!lt) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+      tenantId = tenantId ?? lt.tenantId
+    }
+    if (tenantId && !(await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '입주자를 찾을 수 없습니다.' }
+    }
+    if (financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
@@ -2778,11 +2786,19 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     if (leaseRaw !== null || tenantRaw !== null) {
       const leaseTermId = String(leaseRaw ?? '').trim() || null
       let tenantId      = String(tenantRaw ?? '').trim() || null
-      if (leaseTermId && !tenantId) {
+      // 폼에서 온 연결 id 는 이 영업장 것만 받는다. 빈 값('연결 안 함')은 그대로 허용한다(2026-10-23 운영자 승인).
+      if (leaseTermId) {
         const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
-        tenantId = lt?.tenantId ?? null
+        if (!lt) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+        tenantId = tenantId ?? lt.tenantId
+      }
+      if (tenantId && !(await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } }))) {
+        return { ok: false, error: '입주자를 찾을 수 없습니다.' }
       }
       link = { tenantId, leaseTermId }
+    }
+    if (financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
