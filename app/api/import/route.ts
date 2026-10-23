@@ -457,7 +457,7 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
       if (existing) {
         const resolution = resolutions[`income:${existing.id}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
-        await prisma.extraIncome.delete({ where: { id: existing.id } })
+        await prisma.extraIncome.deleteMany({ where: { id: existing.id, propertyId } })
       }
 
       await prisma.extraIncome.create({

@@ -6,7 +6,8 @@
 // (stayeum development/오류신고-정비/권한-영업장범위-감사.md), 봉합하는 함수마다 여기에 축을 더한다.
 //
 // 실행: node scripts/check-action-property-scope.mjs
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const violations = []
 
@@ -203,6 +204,79 @@ for (const ax of AXES) {
   for (const [re, msg] of ax.mustNot) if (re.test(body)) violations.push(`${ax.file} ${ax.fn} — ${msg}. 영업장 범위를 지나야 한다`)
 }
 
-console.log(`[영업장 범위] 함수 ${AXES.length}개 검사 / 위반 ${violations.length}건`)
+// ── 모델 전수 축: 기타수익·고정지출(+세부항목) 쓰기는 where 에 영업장을 건다 (2026-10-23 운영자 승인) ──
+// 함수 단위 축은 이름이 박힌 자리만 본다. updateExtraIncome·updateRecurringExpense 가 id 만으로 쓰던 것을 고치면서
+// 같은 모델의 형제 쓰기(삭제·복원·기록·묶기 해제·트랜잭션 안 쓰기)까지 클래스로 막는다. 앱 코드(app·lib) 전부를 훑어
+// update·updateMany·delete·deleteMany·upsert 의 where 객체 안에 propertyId 가 없으면 위반이다. 세부항목은 부모 관계
+// 필터(recurringExpense: { propertyId })로 건다. where 를 변수로 넘기면 범위를 못 읽으므로 그것도 위반이다(닫힌 쪽으로 실패).
+const SCOPED_MODELS = ['extraIncome', 'recurringExpense', 'recurringExpenseItem']
+const WRITE_RE = new RegExp(`\\.(${SCOPED_MODELS.join('|')})\\.(update|updateMany|delete|deleteMany|upsert)\\(`, 'g')
+
+function walk(dir, out) {
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name.startsWith('.')) continue
+    const p = join(dir, name)
+    if (statSync(p).isDirectory()) walk(p, out)
+    else if (/\.(ts|tsx|mjs|js)$/.test(name)) out.push(p)
+  }
+  return out
+}
+
+/** open 위치의 여는 괄호와 짝인 닫는 괄호 위치. 문자열·주석은 단순히 건너뛴다. */
+function matchClose(src, open) {
+  const pairs = { '(': ')', '{': '}', '[': ']' }
+  const stack = [pairs[src[open]]]
+  for (let i = open + 1; i < src.length; i++) {
+    const c = src[i]
+    if (c === "'" || c === '"' || c === '`') { const q = c; i++; while (i < src.length && src[i] !== q) { if (src[i] === '\\') i++; i++ } continue }
+    if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue }
+    if (pairs[c]) stack.push(pairs[c])
+    else if (c === stack[stack.length - 1]) { stack.pop(); if (!stack.length) return i }
+  }
+  return -1
+}
+
+/** 인자 객체의 최상위 where 값. 객체면 { obj }, 변수 따위면 { raw }, 없으면 null. */
+function topLevelWhere(arg) {
+  let depth = 0
+  for (let i = 0; i < arg.length; i++) {
+    const c = arg[i]
+    if (c === '{' || c === '(' || c === '[') depth++
+    else if (c === '}' || c === ')' || c === ']') depth--
+    else if (depth === 1 && arg.startsWith('where', i) && !/[\w$]/.test(arg[i - 1] ?? '')) {
+      let j = i + 5
+      while (/\s/.test(arg[j])) j++
+      if (arg[j] !== ':') { // 단축 속성 { where }
+        return { raw: 'where' }
+      }
+      j++
+      while (/\s/.test(arg[j])) j++
+      if (arg[j] === '{') { const e = matchClose(arg, j); return { obj: arg.slice(j, e + 1) } }
+      return { raw: arg.slice(j, j + 40).split(/[,\n]/)[0] }
+    }
+  }
+  return null
+}
+
+let modelWrites = 0
+for (const file of [...walk('app', []), ...walk('lib', [])]) {
+  const src = readFileSync(file, 'utf8')
+  for (const m of src.matchAll(WRITE_RE)) {
+    modelWrites++
+    const open = m.index + m[0].length - 1
+    const close = matchClose(src, open)
+    const line = src.slice(0, m.index).split('\n').length
+    const at = `${file}:${line} ${m[1]}.${m[2]}`
+    if (close < 0) { violations.push(`${at} · 호출 괄호를 못 읽었다. 못 읽으면 통과가 아니라 위반이다`); continue }
+    const w = topLevelWhere(src.slice(open + 1, close).trim())
+    if (!w) { violations.push(`${at} · where 를 못 찾았다. 영업장 범위를 볼 수 없다`); continue }
+    if (w.raw != null) { violations.push(`${at} · where 를 변수(${w.raw.trim()})로 넘겨 영업장 범위를 못 읽는다. where 객체 안에 propertyId 를 직접 쓴다`); continue }
+    if (!/\bpropertyId\b/.test(w.obj)) violations.push(`${at} · where 에 propertyId 가 없다(id 만으로 쓴다). 다른 영업장 id 로 그 행을 바꿀 수 있다`)
+  }
+}
+// 0건이면 정규식이 망가진 것이다. 훑을 쓰기가 사라졌다고 통과시키지 않는다.
+if (modelWrites === 0) violations.push('기타수익·고정지출 쓰기를 한 곳도 못 찾았다. 감지 정규식이 낡았다')
+
+console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 ${modelWrites}곳 검사 / 위반 ${violations.length}건`)
 for (const v of violations) console.log(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)

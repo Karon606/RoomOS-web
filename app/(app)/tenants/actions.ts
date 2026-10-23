@@ -2393,7 +2393,7 @@ export async function recordReservationPrepaidCancel(params: {
         await tx.paymentRecord.updateMany({ where: { id: { in: recordIds } }, data: { deletedAt } })
       }
       if (cleaningIncomeIds.length > 0) {
-        await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds } }, data: { deletedAt } })
+        await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt } })
       }
       const cashReceipt = await reconcileCrAfterRemoval(tx, crRefs)
       const crUndo = await finishCrUndo(tx, crBefore)

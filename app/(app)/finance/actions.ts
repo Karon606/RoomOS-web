@@ -2016,7 +2016,7 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
           // 미뤄 둔 회차가 조용히 사라진다. 지정 달이 이미 지났어도 앞으로의 위상 도래는
           // 안 막는다(판정이 지정보다 뒤의 위상을 살려 둔다).
           await tx.recurringExpense.update({
-            where: { id: target.recurringExpenseId },
+            where: { id: target.recurringExpenseId, propertyId },
             data:  { nextDueOverrideMonth: dueMonth },
           })
         }
@@ -2757,8 +2757,11 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     const id        = formData.get('id') as string
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
+    // 화면에서 온 id 다. 이 영업장 기록이 아니면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
     // 지금 카테고리 그대로면 목록에 안 더한다(목록에서 뺀 카테고리가 이 기록 저장마다 되살아나지 않는다, 2026-10-22 2차).
-    const prevCategory = (await prisma.extraIncome.findFirst({ where: { id, propertyId }, select: { category: true } }))?.category ?? null
+    const owned = await prisma.extraIncome.findFirst({ where: { id, propertyId }, select: { category: true } })
+    if (!owned) return { ok: false, error: '수익 기록을 찾을 수 없습니다.' }
+    const prevCategory = owned.category
     const categorySave = await autoOptionForSave(propertyId, 'incomeCategories', formData.get('category') as string, { addToList: formData.get('categoryAddToList') === '1', prev: prevCategory })
     const category  = categorySave.value
     const detail    = formData.get('detail') as string
@@ -2785,7 +2788,7 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
     await prisma.extraIncome.update({
-      where: { id },
+      where: { id, propertyId },
       data: {
         date: new Date(date),
         amount, category,
@@ -2807,15 +2810,21 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
 
 export async function deleteExtraIncome(id: string) {
   await requireEdit()
+  const propertyId = await getPropertyId()
   // 소프트삭제 — 조회 익스텐션이 자동 제외(수익 합산·리포트에서 빠짐). 적용취소는 restoreExtraIncome.
-  await prisma.extraIncome.update({ where: { id }, data: { deletedAt: new Date() } })
+  // 영업장 범위로만 쓴다. 남의 영업장 id 면 한 줄도 안 바뀌고 같은 말로 닫는다(2026-10-23 운영자 승인).
+  const r = await prisma.extraIncome.updateMany({ where: { id, propertyId }, data: { deletedAt: new Date() } })
+  if (r.count === 0) throw new Error('수익 기록을 찾을 수 없습니다.')
   revalidatePath('/finance'); revalidatePath('/rooms')
 }
 
 export async function restoreExtraIncome(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await prisma.extraIncome.update({ where: { id }, data: { deletedAt: null } })
+    const propertyId = await getPropertyId()
+    // 적용취소도 화면이 들고 온 id 다. 영업장 범위로만 되살린다(2026-10-23 운영자 승인).
+    const r = await prisma.extraIncome.updateMany({ where: { id, propertyId }, data: { deletedAt: null } })
+    if (r.count === 0) return { ok: false, error: '수익 기록을 찾을 수 없습니다.' }
     revalidatePath('/finance'); revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
@@ -2952,7 +2961,7 @@ async function resyncRecurringAnchor(tx: TxClient, recurringExpenseId: string, p
   }, null)
   const next = lastMonth ? (Number(lastMonth.slice(5)) || null) : null
   if (next !== rec.anchorMonth) {
-    await tx.recurringExpense.update({ where: { id: recurringExpenseId }, data: { anchorMonth: next } })
+    await tx.recurringExpense.update({ where: { id: recurringExpenseId, propertyId }, data: { anchorMonth: next } })
   }
 }
 
@@ -2984,8 +2993,9 @@ export async function recordRecurringExpense(data: {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (data.targetMonth != null && !isMonthKey(data.targetMonth)) return { ok: false, error: '귀속월 형식이 올바르지 않습니다.' }
-    const recurring = await prisma.recurringExpense.findUnique({
-      where: { id: data.recurringExpenseId },
+    // 화면에서 온 id 다. 영업장 범위로 찾아야 남의 영업장 항목에 내 지출을 잇거나 그 항목의 예약 금액을 지우지 않는다(2026-10-23 운영자 승인).
+    const recurring = await prisma.recurringExpense.findFirst({
+      where: { id: data.recurringExpenseId, propertyId },
       select: { category: true, title: true, payMethod: true, financialAccountId: true, vendor: true },
     })
     if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
@@ -3029,7 +3039,7 @@ export async function recordRecurringExpense(data: {
       })
       // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지
       await tx.recurringExpense.update({
-        where: { id: data.recurringExpenseId },
+        where: { id: data.recurringExpenseId, propertyId },
         // 다음 회차 지정은 그 한 번을 위한 것이라 기록되면 해제한다. '이번만' 으로 적었어도
         // 그 회차를 치른 것은 맞으므로 함께 푼다 — 안 그러면 지정 달이 영원히 도래로 남는다.
         data:  { pendingAmount: null, nextDueOverrideMonth: null },
@@ -3061,7 +3071,7 @@ export async function setRecurringPendingAmount(input: {
     })
     if (!found) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     await prisma.recurringExpense.update({
-      where: { id: input.recurringExpenseId },
+      where: { id: input.recurringExpenseId, propertyId },
       data:  { pendingAmount: input.amount },
     })
     revalidatePath('/finance')
@@ -3085,7 +3095,7 @@ export async function clearRecurringPendingAmount(input: {
     })
     if (!found) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     await prisma.recurringExpense.update({
-      where: { id: input.recurringExpenseId },
+      where: { id: input.recurringExpenseId, propertyId },
       data:  { pendingAmount: null },
     })
     revalidatePath('/finance')

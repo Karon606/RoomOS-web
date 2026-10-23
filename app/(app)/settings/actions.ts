@@ -2440,13 +2440,20 @@ export async function updateRecurringExpense(id: string, data: Partial<{
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    const propertyId = await getPropertyId()
+    // 화면에서 온 id 다. 이 영업장 항목이 아니면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
+    // 같은 행에서 카테고리(목록 추가 판정)와 주기 세 값(안 실려 온 값 채우기)을 함께 읽는다.
+    const cur = await prisma.recurringExpense.findFirst({
+      where: { id, propertyId },
+      select: { category: true, intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true },
+    })
+    if (!cur) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, addCategoryToList, category: rawCategory, ...rest } = data
     const updateData: Record<string, unknown> = { ...rest }
     // 카테고리를 실어 온 저장만 다시 잰다(활성 토글 따위는 안 건드린다). 맨 글자 규약은 지출 등록과 같다.
     let categorySave: Awaited<ReturnType<typeof autoOptionForSave>> | null = null
     if ('category' in data) {
-      const propertyId = await getPropertyId()
-      const prev = (await prisma.recurringExpense.findFirst({ where: { id, propertyId }, select: { category: true } }))?.category ?? null
+      const prev = cur.category
       categorySave = await autoOptionForSave(propertyId, 'expenseCategories', rawCategory, { addToList: addCategoryToList, prev })
       if (!categorySave.value) return { ok: false, error: '카테고리를 입력하세요.' }
       updateData.category = categorySave.value
@@ -2457,14 +2464,10 @@ export async function updateRecurringExpense(id: string, data: Partial<{
       // 세 값은 한 벌로 정규화한다 — 그래야 매월로 되돌릴 때 기준 달도 지정도 안 남는다.
       // 다만 **안 실려 온 값은 현재 행에서 채운다.** 정규화가 빠진 값을 기본값으로 읽으면
       // 회차 지정만 고쳤을 뿐인데 주기가 매월로 강등된다(intervalMonths undefined 는 1로 떨어진다).
-      const cur = await prisma.recurringExpense.findUnique({
-        where: { id },
-        select: { intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true },
-      })
       Object.assign(updateData, normalizeCycle(
-        'intervalMonths' in data ? intervalMonths : cur?.intervalMonths,
-        'anchorMonth' in data ? anchorMonth : cur?.anchorMonth,
-        'nextDueOverrideMonth' in data ? nextDueOverrideMonth : cur?.nextDueOverrideMonth,
+        'intervalMonths' in data ? intervalMonths : cur.intervalMonths,
+        'anchorMonth' in data ? anchorMonth : cur.anchorMonth,
+        'nextDueOverrideMonth' in data ? nextDueOverrideMonth : cur.nextDueOverrideMonth,
       ))
     }
     if ('activeSince' in data) {
@@ -2478,17 +2481,18 @@ export async function updateRecurringExpense(id: string, data: Partial<{
         updateData.amount = derived.amount
         updateData.isVariable = derived.isVariable
       }
+      // 세부항목(자식 행)도 부모의 영업장 범위로만 지운다. 부모 쓰기가 범위에서 빗나가면 묶음 전체가 되돌아간다.
       await prisma.$transaction([
-        prisma.recurringExpenseItem.deleteMany({ where: { recurringExpenseId: id } }),
+        prisma.recurringExpenseItem.deleteMany({ where: { recurringExpenseId: id, recurringExpense: { propertyId } } }),
         ...(hasItems
           ? [prisma.recurringExpenseItem.createMany({
               data: items.map((it, i) => ({ recurringExpenseId: id, name: it.name, amount: Number(it.amount) || 0, isVariable: !!it.isVariable, sortOrder: i })),
             })]
           : []),
-        prisma.recurringExpense.update({ where: { id }, data: updateData }),
+        prisma.recurringExpense.update({ where: { id, propertyId }, data: updateData }),
       ])
     } else {
-      await prisma.recurringExpense.update({ where: { id }, data: updateData })
+      await prisma.recurringExpense.update({ where: { id, propertyId }, data: updateData })
     }
     await categorySave?.commit()
     revalidatePath('/settings')
@@ -2555,7 +2559,10 @@ export async function groupRecurringExpenses(data: {
 export async function deleteRecurringExpense(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await prisma.recurringExpense.delete({ where: { id } })
+    const propertyId = await getPropertyId()
+    // 영업장 범위로만 지운다. 남의 영업장 id 면 한 줄도 안 지우고 같은 말로 닫는다(2026-10-23 운영자 승인).
+    const r = await prisma.recurringExpense.deleteMany({ where: { id, propertyId } })
+    if (r.count === 0) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
     revalidatePath('/settings')
     return { ok: true }
   } catch (e) {
@@ -2938,7 +2945,7 @@ export async function ungroupRecurringExpense(parentId: string): Promise<{ ok: t
     if (ids.length === 0) return { ok: false, error: '묶기로 만든 항목이 아니거나 원본 정보가 없습니다.' }
     const restored = await prisma.$transaction(async (tx) => {
       const r = await tx.recurringExpense.updateMany({ where: { id: { in: ids }, propertyId }, data: { isActive: true } })
-      await tx.recurringExpense.delete({ where: { id: parentId } })
+      await tx.recurringExpense.delete({ where: { id: parentId, propertyId } })
       return r.count
     })
     revalidatePath('/settings'); revalidatePath('/finance')

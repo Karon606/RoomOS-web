@@ -411,6 +411,10 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   로컬 래퍼는 같은 파일·import 를 따라가 자동 인정(실패가 밖으로 새야 래퍼다). 호출은 무조건 실행되고 await 되어야 센다(조건부·void·안 불리는 중첩 함수 안은 안 센다). catch 로 삼키고 흘러 나가는 문, redirect 만 빼고 다시 던지는 catch 는 문이 아니다(geminiKey 사고).
   ⓒ route.ts 처리기는 관문, 비밀이 없으면 닫히는 크론 확인(주석 뺀 본문에서 `!!secret &&` 류 + 첫 DB 호출 전 401), 공개 목록 중 하나. ⓓ `sendToSubscriptions` 를 부르는 함수는 같은 함수에서 `approvedPushRecipients`(lib/pushSend)로 거절·대기 계정을 거른다(본인 기기 시험 발송만 예외).
   알려진 위반 5건은 BASELINE(P3: errorReports 업로드 세션·신고 제출, ai-analysis·market-analyze·naver-places)이고 고치면 명단에서 지워야 통과한다(낡은 기준선도 운다). `--list` 로 기준선 포함 전체 목록. 역주입 37건(검수 18 + 대조 1 + 내 축 18).
+- **check-action-property-scope 모델 전수 축 · test-income-recurring-scope-flow** (2026-10-23, verify:fast, 운영자 승인 loop.md 4번 권한) 기타수익(ExtraIncome)·고정지출(RecurringExpense)·세부항목(RecurringExpenseItem) 쓰기는
+  app·lib 어디서든 where 객체 안에 propertyId 를 직접 건다(세부항목은 `recurringExpense: { propertyId }` 관계 필터). id 만 쓰거나 where 를 변수로 넘기면 위반, 쓰기 0곳이면 정규식이 낡은 것이라 위반.
+  화면 id 로 쓰는 액션은 영업장 범위로 먼저 읽거나 updateMany/deleteMany 건수로 닫고, 같은 말('수익 기록을 찾을 수 없습니다.'·'고정 지출 항목을 찾을 수 없습니다.')로 존재 여부를 안 흘린다.
+  PGlite 통합은 남의 영업장 id 로 수정·삭제·복원(적용취소)·기록·예약 금액·묶기 해제가 거부되고 행·세부항목이 바이트까지 그대로인지, 제 영업장 대조군이 통과하는지 본다. 역주입 정적 5 + 통합 3 전부 발화.
 - **check-expense-channel-wiring · test-expense-channel · test-expense-channel-flow** (2026-10-20, verify:fast, 신고 a0636f36) · 구매처·쇼핑몰 배선 열두 축(스키마·등록·수정·소급·번호 지도·구매처 정리·묶기·주문번호 제안·일괄/홈/소모품·표시·폼·**구매처를 쇼핑몰 자리에 대신 쓰는 표현 금지**),
   규칙 진리표(품목별 번호 머리 상속 금지·소급 제한·요약·갈림·적용취소 토큰), PGlite 통합(저장 경로 전수·적용취소 바이트 동일·위조/교차 용도/남의 영업장 거부·장부 감사). 역주입 31건 전부 발화. 정본 [[domain-expense-channel]].
 - **check-order-channel-split** (2026-10-20, verify:db) · 한 주문 쇼핑몰 둘은 오류, 미기록 섞임·이름 하나 번호 둘·번호 하나 이름 둘·구매처 자리의 쇼핑몰 이름은 경고. 질의 정본 scripts/order-channel-audit.mjs. **운영 DB 에 칸이 없으면 붉게 선다**(SQL 먼저 적용).
