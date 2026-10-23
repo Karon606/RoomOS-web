@@ -7,6 +7,7 @@
 //   ⓒ 머리가 목록에서 제 id 를 찾아 달고, 포커스를 받는다(tabIndex={-1}). 스크롤 여유(scroll-mt-4)를 든다.
 //   ⓓ 바로가기 줄이 탭 맨 위(첫 머리 앞)에 서고, 버튼을 목록에서 만들어 라벨이 머리 글자 그대로이며 그 id 로 간다.
 //   ⓔ 도착은 모션 축소 설정을 따르고 머리에 포커스를 준다. 넘침 페이드는 정본 마스크(globals.css data-fade-track)를 쓴다.
+//   ⓕ 트랙 앞에 이동 단서 캡션 '바로가기'(11px · --warm-dark)가 선다. 상자 버튼 줄이 2차 탭·필터로 읽히지 않게 한다.
 //
 // 실행: node scripts/check-option-group-jump.mjs
 import { readFileSync } from 'node:fs'
@@ -18,7 +19,8 @@ const strip = s => s
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
   .replace(/^[^\S\n]*\/\/.*$/gm, '')
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-const nav = strip(readFileSync(NAV, 'utf8'))
+// 바로가기 파일은 JSX 주석({/* */})을 줄째 먼저 걷는다. 주석 안만 비우면 여러 줄 주석의 닫는 } 가 줄 첫머리에 남아 함수 끝으로 읽힌다.
+const nav = strip(readFileSync(NAV, 'utf8').replace(/^[^\S\n]*\{\/\*[\s\S]*?\*\/\}[^\S\n]*\n/gm, ''))
 const form = strip(readFileSync(FORM, 'utf8'))
 const css = readFileSync(CSS, 'utf8')
 const violations = []
@@ -64,6 +66,11 @@ if (jumps && !/\{OPTION_GROUPS\.map\(g => \(\s*<Btn key=\{g\.id\} variant="secon
 if (jumps && !/matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/.test(jumps)) violations.push(`${NAV} · 바로가기 도착이 모션 축소 설정을 안 본다.`)
 if (jumps && !/head\.focus\(\{ preventScroll: true \}\)/.test(jumps)) violations.push(`${NAV} · 바로가기 도착이 머리에 포커스를 주지 않는다(키보드·화면 낭독기가 버튼 자리에 남는다).`)
 if (jumps && !/data-fade-track/.test(jumps)) violations.push(`${NAV} · 바로가기 트랙이 넘침 페이드 표식(data-fade-track)을 잃었다.`)
+// ⓕ 이동 단서 캡션. 상자 버튼 줄이 ViewTabs 밑에서 2차 탭·필터로 읽히지 않게 트랙 앞에 '바로가기' 캡션이 선다(2026-10-23 디자이너 검토).
+//    --canvas 면 위라 --warm-muted(4.11:1) 가 아니라 --warm-dark 다.
+const cap = jumps.match(/<p aria-hidden className="([^"]*)">바로가기<\/p>\s*<div ref=\{trackRef\} data-fade-track/)
+if (jumps && !cap) violations.push(`${NAV} · 바로가기 줄 앞에 이동 단서 캡션('바로가기')이 없다. 상자 버튼이 2차 탭·필터로 읽힌다.`)
+else if (cap && (!/text-\[0\.6875rem\]/.test(cap[1]) || !/text-\[var\(--warm-dark\)\]/.test(cap[1]))) violations.push(`${NAV} · 바로가기 캡션이 11px · --warm-dark 가 아니다(--canvas 위 --warm-muted 는 본문 하한 미달).`)
 for (const side of ['right', 'left', 'both']) {
   if (!css.includes(`[data-fade-track][data-fade="${side}"]`)) violations.push(`${CSS} · 넘침 페이드 마스크에 [data-fade-track][data-fade="${side}"] 가 없다. 바로가기 줄 끝이 흐려지지 않는다.`)
 }
