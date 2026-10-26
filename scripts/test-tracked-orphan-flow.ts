@@ -292,6 +292,27 @@ async function main() {
     eq("'같이 변경' 비추적 대조: 남은 구매가 없으면 종전대로 정리", [y4.ok && y4.retired, await has(alone)], ['deleted', false])
   }
 
+  // ── 4d. '같이 변경' 추적 분기에 같은 품명의 다른 재고 구매가 남았을 때(재검수 권고 2, 운영자 결정 대기 추천안) ───────────
+  {
+    const old = await card('나눔 품목', '소모품비')
+    await prisma.trackedItem.update({ where: { id: old }, data: { specUnit: 'L', trackUnit: 'spec' } })
+    const e = await exp('나눔 품목'); await exp('나눔 품목')
+    const s1 = await fin.updateExpense(edit(e, { category: '부식비' }))
+    const y = await inv.syncTrackedItemCategory(J(s1.ok ? s1.categoryMove! : null!))
+    const made = await prisma.trackedItem.findFirst({ where: { propertyId: P1, category: '부식비', label: '나눔 품목' } })
+    const oldRow = await prisma.trackedItem.findUnique({ where: { id: old } })
+    eq('갈라 만들기: 옛 카드는 옛 카테고리·옛 이름 그대로', [oldRow?.category, oldRow?.label], ['소모품비', '나눔 품목'])
+    eq('갈라 만들기: 새 카테고리에 카드를 새로 만들고 단위를 잇는다', [y.ok && y.moved, y.ok && !!y.split, !!made, made?.specUnit, made?.trackUnit], [false, true, true, 'L', 'spec'])
+    eq('갈라 만들기: 위조 토큰(다른 카드 id) 거부', await inv.undoSplitCardMove({ ...(y.ok ? J(y.split!) : null!), cardId: old }), { ok: false, error: '적용취소 정보가 유효하지 않습니다.' })
+    eq('갈라 만들기 적용취소: 새 카드만 지운다', [await inv.undoSplitCardMove(J(y.ok ? y.split! : null!)), await has(made!.id), await has(old)], [{ ok: true }, false, true])
+    // 같은 이름 카드가 새 카테고리에 이미 있으면 만들지 않고 그대로 둔다
+    const old2 = await card('나눔 있음', '소모품비'); const there = await card('나눔 있음', '부식비')
+    const e2 = await exp('나눔 있음'); await exp('나눔 있음')
+    const s2 = await fin.updateExpense(edit(e2, { category: '부식비' }))
+    const y2 = await inv.syncTrackedItemCategory(J(s2.ok ? s2.categoryMove! : null!))
+    eq('갈라 만들기 대조: 새 카테고리에 같은 이름 카드가 있으면 kept', [y2.ok && y2.kept, await has(old2), await has(there), await prisma.trackedItem.count({ where: { propertyId: P1, label: '나눔 있음' } })], [true, true, true, 2])
+  }
+
   // ── 4c. 품명 통합(mergeItemNames) 충돌 분기(R8 a)와 엑셀 가져오기 교체(R6) ───────────────────────
   {
     const oldId = await card('통합 옛이름')

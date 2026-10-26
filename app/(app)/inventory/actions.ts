@@ -43,7 +43,7 @@ import {
   QTY_FILL_DOMAIN, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED,
 } from './receiptQtyGate'
 // 품목 삭제 스냅샷·되살림 공용층(같은 id 로 되살린다)
-import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, retireTrackedItemIfOrphan, readCategoryMove, categoryMoveSigningAvailable, CARD_MOVE_STALE, type CategoryMoveToken, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
+import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, retireTrackedItemIfOrphan, readCategoryMove, categoryMoveSigningAvailable, CARD_MOVE_STALE, signCardSplit, readCardSplit, type CategoryMoveToken, type CardSplitUndo, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 // 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
 import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
@@ -4495,6 +4495,27 @@ export async function retireCardAfterExpenseCategoryChange(token: CategoryMoveTo
   }
 }
 
+// '같이 변경'이 갈라 만든 새 카드의 적용취소(재검수 권고 2). 서명 토큰의 카드만, 이 영업장 것만, 그 사이 기록(점검·입수·폐기·위치·
+// 임시저장)이 붙지 않았을 때만 지운다. 옮긴 지출은 그대로라 새 카테고리에서 카드 없는 구매로 돌아간다('같이 변경' 전과 같다).
+export async function undoSplitCardMove(token: CardSplitUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const t = readCardSplit(propertyId, token)
+    if (!t) return { ok: false, error: RESTORE_TRACKED_ITEM_FOREIGN }
+    if (!(await prisma.trackedItem.findFirst({ where: { id: t.cardId, propertyId }, select: { id: true } }))) return { ok: true }
+    const r = await prisma.trackedItem.deleteMany({
+      where: { id: t.cardId, propertyId, stockChecks: { none: {} }, additions: { none: {} }, disposals: { none: {} }, locations: { none: {} }, checkDrafts: { none: {} } },
+    })
+    if (r.count === 0) return { ok: false, error: '그 사이 이 카드에 재고 기록이 생겨 되돌리지 않았습니다.' }
+    revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
 // ── 지출 카테고리 수정 → 재고 품목 카테고리 동기화(운영자 확인 후 호출, 2026-07-10)
 //    같은 라벨 품목이 대상 카테고리에 이미 있으면 꼬임 방지를 위해 거부(병합은 재고 관리에서).
 //    대상이 비추적 카테고리(수선유지비 등)면 카드를 옮기지 않는다 — 옮기면 소모품 화면에 좀비 카드로 남고
@@ -4506,7 +4527,8 @@ export async function retireCardAfterExpenseCategoryChange(token: CategoryMoveTo
 // 같은 저장에서 품명도 바꿨으면(toLabel) 카드를 옮기며 이름도 맞춘다(옛 이름으로 옮기면 지출과 카드가 갈린다, 독립 검수 B2).
 // retiredCard: 대상 카테고리에 같은 이름 카드가 있어 옮길 수 없는데 옛 카드가 고아면 정리한 스냅샷(R8 b).
 // kept: 비추적 대상인데 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 카드를 그대로 둔 경우(R8 d).
-export async function syncTrackedItemCategory(token: CategoryMoveToken): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived'; deleteUndo?: TrackedItemDeleteUndo; archivedId?: string; kept?: boolean; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
+// split: 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 옛 카드는 두고 새 카테고리에 카드를 새로 만들었을 때의 되돌림 토큰(재검수 권고 2).
+export async function syncTrackedItemCategory(token: CategoryMoveToken): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived'; deleteUndo?: TrackedItemDeleteUndo; archivedId?: string; kept?: boolean; retiredCard?: TrackedItemDeleteUndo; split?: CardSplitUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -4536,6 +4558,19 @@ export async function syncTrackedItemCategory(token: CategoryMoveToken): Promise
       revalidatePath('/inventory'); revalidatePath('/finance')
       // 이미 숨긴 카드였으면 되돌릴 것이 없다. 숨김 해제를 주면 원래 상태보다 한 걸음 더 간다.
       return { ok: true, moved: false, retired: 'archived', ...(item.isArchived ? {} : { archivedId: item.id }) }
+    }
+
+    // 옛 카테고리에 같은 품명의 다른 재고 구매가 남았으면 옛 카드는 그것들의 카드다. 옮기지도 이름을 바꾸지도 않는다. 옮긴 지출 몫으로
+    // 새 카테고리에 카드를 새로 만든다(이미 같은 이름 카드가 있으면 지출이 그 카드에 붙으니 만들지 않는다). 종전에는 카드를 옮기고 이름까지
+    // 바꿔 남은 구매들이 카드를 잃었다(재검수 권고 2, 운영자 결정 대기 추천안). 단위 세 칸(규격·수량 단위·추적 단위)만 옛 카드에서 잇는다.
+    if ((await prisma.expense.count({ where: includedExpenseWhere(propertyId, fromCategory, label) })) > 0) {
+      const there = await prisma.trackedItem.findFirst({ where: { propertyId, label: newLabel, category: toCategory }, select: { id: true } })
+      if (there) return { ok: true, moved: false, kept: true }
+      const created = await prisma.trackedItem.create({
+        data: { propertyId, category: toCategory, label: newLabel, specUnit: item.specUnit, qtyUnit: item.qtyUnit, trackUnit: item.trackUnit },
+      })
+      revalidatePath('/inventory'); revalidatePath('/finance')
+      return { ok: true, moved: false, split: signCardSplit(propertyId, { v: 1, cardId: created.id, expenseId: m.t.expenseId }) }
     }
 
     const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label: newLabel, category: toCategory }, select: { id: true } })

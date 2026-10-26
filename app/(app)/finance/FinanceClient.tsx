@@ -42,7 +42,7 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift, undoDeleteTrackedItem, unarchiveTrackedItem, retireCardAfterExpenseCategoryChange } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift, undoDeleteTrackedItem, unarchiveTrackedItem, retireCardAfterExpenseCategoryChange, undoSplitCardMove } from '@/app/(app)/inventory/actions'
 import { pushRetiredCardToast, restoreRetiredCardFirst, retiredCardLine } from '@/app/(app)/inventory/retiredCardToast'
 import { askShiftRows } from '@/lib/stockShiftAsk'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -3128,6 +3128,17 @@ export default function FinanceClient({
               else if (sync.moved) pushToast('success', `재고 카드를 '${newCat}'(으)로 옮겼습니다`)
               // 옮길 자리에 같은 이름 카드가 있어 지출은 그 카드로 붙고, 고아가 된 옛 카드는 정리했다(R8 b).
               else if (sync.retiredCard) pushRetiredCardToast(sync.retiredCard, () => router.refresh())
+              // 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 옛 카드는 두고, 옮긴 지출 몫으로 새 카테고리에 카드를 새로 만들었다(재검수 권고 2).
+              else if (sync.split !== undefined) {
+                const split = sync.split
+                pushToast('success', `재고 카드를 '${newCat}'에 새로 만들었습니다`, {
+                  detail: `'${mv.fromCategory}'에 같은 품목의 다른 구매가 남아 그 카드는 그대로 둡니다.`,
+                  ...(split ? { action: { label: '적용취소', run: () => { void undoSplitCardMove(split).then(r => {
+                    if (r.ok) { pushToast('info', '재고 카드 만들기를 적용취소했습니다'); router.refresh() }
+                    else pushToast('error', r.error)
+                  }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
+                })
+              }
               // 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 카드는 그것들의 카드로 둔다(R8 d).
               else if (sync.kept) pushToast('info', '재고 카드는 그대로 둡니다', { detail: `'${mv.fromCategory}'에 같은 품목의 다른 구매가 남아 있습니다.` })
               // 비추적 카테고리행 — 카드를 옮기는 대신 정리(좀비 카드·이중 표시 방지, 2026-07-22)

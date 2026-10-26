@@ -418,6 +418,12 @@ const AXES = [
   },
   // '지출만'·'같이 변경' 은 카테고리 이동 토큰만 받는다(재검수 권고 1). 공용 관문(readMoveForExpense, 내보내지 않는 함수라 그 몸통은
   // check-tracked-orphan-wiring 이 본다)이 서명·지출 영업장·지금 카테고리를 본다.
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoSplitCardMove',
+    must: [[/const t = readCardSplit\(propertyId, token\)\n\s*if \(!t\) return \{ ok: false/, '갈라 만든 카드 되돌림 토큰을 이 영업장 서명으로 확인하지 않는다']],
+    mustNot: [[/trackedItem\.delete\(\{\s*where:\s*\{\s*id:\s*t\.cardId\s*\}/, '카드를 id 만으로 지운다']],
+  },
   ...['retireCardAfterExpenseCategoryChange', 'syncTrackedItemCategory'].map(fn => ({
     file: 'app/(app)/inventory/actions.ts',
     fn,

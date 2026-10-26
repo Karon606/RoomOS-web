@@ -62,6 +62,11 @@ need('지출 수정이 카테고리를 바꾸면 저장 전 값을 서명해 돌
   (fin.match(/signCategoryMove\(existing\.propertyId, \{ v: 1, expenseId: id, fromCategory: existing\.category, fromLabel: existing\.itemLabel, toCategory: category,/g) ?? []).length === 2)
 need("'같이 변경' 비추적 분기는 품목 삭제와 같은 계수로 남은 재고 구매를 센다(R8 d)",
   /const n = await itemRecordCounts\(propertyId, item\)\s*\n\s*if \(n\.expense > 0\) return \{ ok: true, moved: false, kept: true \}/.test(inv))
+need("'같이 변경' 추적 분기는 옛 카테고리에 재고 구매가 남으면 옛 카드를 두고 새 카드를 만들며 서명 토큰으로만 되돌린다(재검수 2)",
+  /if \(\(await prisma\.expense\.count\(\{ where: includedExpenseWhere\(propertyId, fromCategory, label\) \}\)\) > 0\) \{[\s\S]{0,900}split: signCardSplit\(propertyId, \{ v: 1, cardId: created\.id, expenseId: m\.t\.expenseId \}\)/.test(inv) &&
+  /const t = readCardSplit\(propertyId, token\)\n\s*if \(!t\) return \{ ok: false/.test(inv) &&
+  /void undoSplitCardMove\(split\)\.then/.test(fc),
+  '옮기면 남은 구매들이 카드를 잃는다. 토큰 없이 카드 id 를 받으면 재고 구매가 걸린 카드도 지운다')
 need("'같이 변경' 충돌 분기는 고아가 된 옛 카드를 정리한다(R8 b)",
   /if \(clash\) \{[\s\S]{0,200}retireTrackedItemIfOrphan\(tx, propertyId, fromCategory, label\)/.test(inv))
 need('품명 통합 충돌 분기가 정리하고 병합 적용취소가 먼저 되살린다(R8 a)',

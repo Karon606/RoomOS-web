@@ -174,3 +174,22 @@ export function readCategoryMove(propertyId: string, raw: unknown): { token: Cat
   const verified = categoryMoveSigningAvailable(propertyId) && verifyUndoBody(CARD_MOVE_TOKEN_DOMAIN, propertyId, canonicalCategoryMove(token), t.sig)
   return { token, verified }
 }
+
+// ── '같이 변경' 갈라 만들기 토큰(2026-10-27 재검수 권고 2, 운영자 결정 대기 추천안). 옛 카테고리에 같은 품명의 다른 재고 구매가 남아
+//    옛 카드는 그대로 두고, 옮긴 지출 몫으로 새 카테고리에 카드를 새로 만든 경우 그 카드를 되돌리는 토큰이다. 서명이 없으면 화면이
+//    아무 카드 id 나 넣어 재고 구매가 걸린 카드를 지울 수 있다(품목 삭제 판정은 재고 구매가 있으면 거부한다).
+export const CARD_SPLIT_TOKEN_DOMAIN = 'expense-card-split'
+export type CardSplitUndo = { v: 1; cardId: string; expenseId: string; sig?: string }
+const canonicalCardSplit = (t: CardSplitUndo) => JSON.stringify([t.v, t.cardId, t.expenseId])
+export function signCardSplit(propertyId: string, body: Omit<CardSplitUndo, 'sig'>): CardSplitUndo | null {
+  const t: CardSplitUndo = { v: 1, cardId: body.cardId, expenseId: body.expenseId }
+  const sig = signUndoBody(CARD_SPLIT_TOKEN_DOMAIN, propertyId, canonicalCardSplit(t))
+  if (sig === null) return null
+  return sig ? { ...t, sig } : t
+}
+export function readCardSplit(propertyId: string, raw: unknown): CardSplitUndo | null {
+  const t = raw as Partial<CardSplitUndo> | null
+  if (!t || t.v !== 1 || typeof t.cardId !== 'string' || !t.cardId || typeof t.expenseId !== 'string' || !t.expenseId) return null
+  const body: CardSplitUndo = { v: 1, cardId: t.cardId, expenseId: t.expenseId }
+  return verifyUndoBody(CARD_SPLIT_TOKEN_DOMAIN, propertyId, canonicalCardSplit(body), t.sig) ? body : null
+}
