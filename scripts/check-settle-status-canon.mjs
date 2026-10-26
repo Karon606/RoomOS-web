@@ -13,6 +13,15 @@
 //   ⓑ 고치는 두 함수의 **본문 안**에 settleStatusForEdit 호출이 있다.
 //   ⓒ 고치는 두 함수의 본문에 날것 재계산(`'신용카드' ? 'UNSETTLED'`)이 없다.
 //       만드는 경로의 같은 식은 건드리지 않는다 — 함수 본문으로 잘라서 보기 때문이다.
+//   ⓓ 배송비 행도 정본을 탄다(신고 2f0f9f4c, 2026-10-26). updateExpense 가 배송비 행이면 지금 상태를 그대로 쓰던
+//       갈래(`isShipping ? existing.settleStatus`)가 되살아나면 위반이다. 계좌이체로 고친 배송비가 미정산으로 남았던 자리다.
+//   ⓔ 정산상태를 쓰는 파일 전부(재무 액션·가져오기·홈 승인)에 날것 판정(`'신용카드' ? 'UNSETTLED'`,
+//       `=== '신용카드' ||`)이 없다. 만드는 경로도 settleStatusForNew 하나다. 홈 승인의 'SETTLED' 못박기는
+//       check-receipt-card-relay (4)가 본다(조회 조건의 settleStatus: 'SETTLED' 와 글자로 못 가르기 때문이다).
+//   ⓕ 읽는 쪽. 카드 정산 화면은 isDeferredRow 로 갚을 것만 묶고, 미정산 조회는 배송비 결제구분을 싣는다.
+//   ⓖ 미정산으로 되돌리는 자리(독립 검수 2026-10-26). unsettleExpenses 는 갚을 것만 돌리고, 정산 완료 목록은 체크카드를 안 싣고,
+//       지출 상세의 '정산 적용취소'는 갚을 것에만 선다. 주문 묶기가 배송비 행을 다른 결제구분 주문으로 옮기면 다시 판정하고
+//       묶기 전 값(settleBefore)을 토큰에 실어 적용취소가 돌려놓는다. 배송비 줄이 둘인 주문에 배송비를 묶으면 멈춘다.
 //   앵커(함수)를 못 찾으면 **침묵 통과가 아니라 위반**이다. 이름이 바뀌면 사람이 봐야 한다.
 import { readFileSync } from 'node:fs'
 
@@ -44,7 +53,7 @@ function regionOf(src, name) {
 }
 
 const canon = readFileSync(CANON, 'utf8')
-for (const fn of ['isCreditPay', 'settleStatusForNew', 'settleStatusForEdit']) {
+for (const fn of ['isCreditPay', 'isDeferredRow', 'settleStatusForNew', 'settleStatusForEdit']) {
   if (!new RegExp(`export function ${fn}\\b`).test(canon)) fails.push(`ⓐ ${CANON} 가 ${fn} 을 안 내보낸다`)
 }
 
@@ -56,6 +65,49 @@ for (const fn of EDIT_FNS) {
   if (RAW.test(body)) fails.push(`ⓒ ${fn} 안에 날것 재계산('신용카드' ? 'UNSETTLED')이 남아 있다`)
 }
 if (!src.includes(`from '@/lib/settleStatus'`)) fails.push(`ⓑ ${ACTIONS} 가 정본을 import 하지 않는다`)
+
+{
+  const body = regionOf(src, 'updateExpense') ?? ''
+  if (/isShipping\s*\?\s*existing\??\.settleStatus/.test(body)) fails.push('ⓓ updateExpense 가 배송비 행의 정산상태를 판정 없이 지킨다(신고 2f0f9f4c)')
+  if (!/isShipping:\s*existing\.isShipping/.test(body)) fails.push('ⓓ updateExpense 가 settleStatusForEdit 에 배송비 여부를 안 싣는다')
+}
+
+const WRITERS = [ACTIONS, 'app/api/import/route.ts', 'app/(app)/dashboard/pendingReceipt.ts']
+const RAW_ANY = [
+  [RAW, "'신용카드' ? 'UNSETTLED'"],
+  [/===\s*'신용카드'\s*\|\|/, "=== '신용카드' ||"],
+]
+for (const f of WRITERS) {
+  const s = strip(readFileSync(f, 'utf8'))
+  for (const [re, label] of RAW_ANY) if (re.test(s)) fails.push(`ⓔ ${f} 에 날것 정산 판정(${label})이 있다. settleStatusForNew·settleStatusForEdit 를 쓸 것`)
+}
+
+{
+  const client = strip(readFileSync('app/(app)/card-settlement/CardSettlementClient.tsx', 'utf8'))
+  if (!/isDeferredRow\(/.test(client)) fails.push('ⓕ 카드 정산 화면이 isDeferredRow 로 갚을 것만 묶지 않는다')
+  if (!/buildSettleGroups\(deferred\)/.test(client)) fails.push('ⓕ 카드 정산 화면이 미정산 전부를 카드 묶음에 넣는다')
+  if (!/strays\.length/.test(client)) fails.push('ⓕ 정산 대상이 아닌 미정산 행을 알리는 줄이 사라졌다(숨기지 말 것)')
+  const getter = regionOf(src, 'getUnsettledExpenses') ?? ''
+  if (!/order:\s*\{\s*select:\s*\{\s*shippingType:\s*true/.test(getter)) fails.push('ⓕ getUnsettledExpenses 가 배송비 결제구분을 싣지 않는다')
+}
+
+{
+  const un = regionOf(src, 'unsettleExpenses') ?? ''
+  if (!/isDeferredRow\(/.test(un)) fails.push('ⓖ unsettleExpenses 가 갚을 것만 미정산으로 돌리지 않는다(체크카드가 미정산이 된다)')
+  const settled = regionOf(src, 'getSettledCardExpenses') ?? ''
+  if (/'체크카드'/.test(settled)) fails.push('ⓖ getSettledCardExpenses 가 체크카드를 정산 완료 목록에 싣는다(적용취소로 미정산이 된다)')
+  const merge = regionOf(src, 'mergeExpensesIntoOrder') ?? ''
+  if (!/settleStatusForEdit\(/.test(merge) || !/settleBefore/.test(merge)) fails.push('ⓖ mergeExpensesIntoOrder 가 옮긴 배송비 행의 정산상태를 다시 판정하지 않거나 묶기 전 값을 토큰에 안 싣는다')
+  const undoMerge = regionOf(src, 'undoMergeExpensesIntoOrder') ?? ''
+  if (!/m\.settleBefore/.test(undoMerge)) fails.push('ⓖ undoMergeExpensesIntoOrder 가 묶기 전 정산상태를 돌려놓지 않는다(왕복이 깨진다)')
+  const attach = regionOf(src, 'attachShippingToOrder') ?? ''
+  if (!/shipRows\.length > 1/.test(attach)) fails.push('ⓖ attachShippingToOrder 가 배송비 줄이 둘 이상인 주문에서 하나만 고친다')
+  const fc = strip(readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8'))
+  if (!/settleStatus === 'SETTLED' && isDeferredRow\(/.test(fc)) fails.push("ⓖ 지출 상세의 '정산 적용취소'가 갚을 것이 아닌 행에도 선다")
+  if (!/const settledCardCount = selected\.filter\([^\n]*isDeferredRow\(/.test(fc)) fails.push('ⓖ 일괄 편집이 정산완료 체크카드까지 정산완료 카드 지출로 센다')
+  const cs = strip(readFileSync('app/(app)/card-settlement/CardSettlementClient.tsx', 'utf8'))
+  if ((cs.match(/res\.skipped > 0/g) ?? []).length < 2 || !/res\.skipped > 0/.test(fc)) fails.push('ⓖ 정산 적용취소가 건너뛴 건(정산 대상 아님)을 알리지 않는다')
+}
 
 if (fails.length) {
   console.error('[정산상태 정본 배선] 위반 ' + fails.length + '건')

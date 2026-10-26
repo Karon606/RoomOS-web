@@ -34,6 +34,7 @@ import {
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 import { matchReceiptCard, cardPayMethod } from '@/lib/cardMatch'
+import { isDeferredRow } from '@/lib/settleStatus'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
 import { channelSplitAgainst, splitSiblingsText, channelForSave, rowChannel, channelSameAsVendor, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL, externalOrderCaption, orderSellerLabel, channelVendorLabel, VENDOR_CHANNEL_LOCKED } from '@/lib/expenseChannel'
 import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
@@ -3244,7 +3245,9 @@ export default function FinanceClient({
   const handleUnsettle = async (id: string) => {
     if (!(await confirmDialog({ title: '이 지출을 미정산 상태로 되돌릴까요?', confirmLabel: '되돌리기' }))) return
     startTransition(async () => {
-      await unsettleExpenses([id]); setDetailExp(null); router.refresh()
+      const res = await unsettleExpenses([id]); setDetailExp(null); router.refresh()
+      // 갚을 것만 미정산으로 돌아간다(lib/settleStatus). 건너뛴 건은 같은 '· N건 제외' 꼬리로 알린다.
+      if (res.skipped > 0) pushToast('info', `미정산으로 되돌리지 않았습니다 · 정산 대상이 아닌 ${res.skipped}건 제외`)
     })
   }
 
@@ -4843,7 +4846,8 @@ export default function FinanceClient({
                   <Btn variant="danger" size="md" onClick={() => handleDeleteExp(detailExp)} disabled={isPending}>
                     {detailExp.recurringExpenseId ? `${Number(expenseTargetMonth(detailExp).slice(5, 7))}월분 기록 취소` : '삭제'}
                   </Btn>
-                  {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
+                  {/* 정산 적용취소는 갚을 것(신용카드·후불 배송비)에만 선다. 체크카드는 즉시 빠진 돈이라 미정산이 될 수 없다(lib/settleStatus, 신고 2f0f9f4c 검수). */}
+                  {detailExp.settleStatus === 'SETTLED' && isDeferredRow({ payMethod: detailExp.payMethod, isShipping: detailExp.isShipping, shippingType: detailExp.order?.shippingType ?? null }) && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
                       className="min-h-[44px] px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-ring)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
                       정산 적용취소
@@ -6058,7 +6062,7 @@ export default function FinanceClient({
     {showBatchEdit && (
       <BatchEditExpensesModal
         selectedIds={mergeSelHere}
-        selected={expenses.filter(e => mergeSel.has(e.id)).map(e => ({ settleStatus: e.settleStatus, payMethod: e.payMethod, recurringExpenseId: e.recurringExpenseId }))}
+        selected={expenses.filter(e => mergeSel.has(e.id)).map(e => ({ settleStatus: e.settleStatus, payMethod: e.payMethod, recurringExpenseId: e.recurringExpenseId, isShipping: e.isShipping, shippingType: e.order?.shippingType ?? null }))}
         channelOptions={channelOptions}
         orderSiblings={(() => {
           const picked = new Set(mergeSelHere)
@@ -6086,7 +6090,7 @@ export default function FinanceClient({
 // 선택한 지출들의 공통 필드를 한 번에 수정. 전 필드 '미변경' 기본, 채운 항목만 전송(BatchEditTenantsModal 문법 이식).
 export function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, viewMonth, onClose, onDone, channelOptions, orderSiblings }: {
   selectedIds: string[]
-  selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null }[]
+  selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null; isShipping: boolean; shippingType: string | null }[]
   channelOptions: string[]
   // 고른 지출이 든 주문의 고르지 않은 다른 행(배송비 행 포함, 지금 보는 달). 쇼핑몰을 바꿀 때 함께 적용할지 묻는다.
   // 고른 행이 든 주문의 고르지 않은 행(쇼핑몰 '함께 적용' 물음이 건수와 다른 이름 여부를 읽는다).
@@ -6142,7 +6146,9 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
   const pickAcc = (id: string) => { setAccId(id); const found = financialAccounts.find(a => a.id === id); setAccNm(found ? accName(found) : '') }
 
   // 위험 조합 인라인 경고 — 클라 선택 집합에서 건수 계산
-  const settledCardCount = selected.filter(s => s.settleStatus === 'SETTLED' && (s.payMethod === '신용카드' || s.payMethod === '체크카드')).length
+  // 정산완료된 갚을 것(lib/settleStatus isDeferredRow). 체크카드는 정산한 적이 없어 세지 않는다. 일괄 편집은 배송비 행을 결제수단 변경에서
+  // 빼므로 실제로는 정산완료 신용카드 행이다. 신용카드로 옮기면 정산완료가 지켜지고, 다른 결제수단으로 옮기면 카드 정산 완료 내역에서 빠진다.
+  const settledCardCount = selected.filter(s => !s.isShipping && s.settleStatus === 'SETTLED' && isDeferredRow({ payMethod: s.payMethod, isShipping: s.isShipping, shippingType: s.shippingType })).length
   const recurringCount   = selected.filter(s => !!s.recurringExpenseId).length
 
   // 변경 요약 1줄 — 채운 필드만
@@ -6218,8 +6224,8 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
         {/* 위험 조합 경고 */}
-        {payMethod && settledCardCount > 0 && (
-          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">정산완료된 카드 지출 {settledCardCount}건이 포함되어 있습니다. 결제수단을 변경하면 정산 상태가 다시 계산됩니다.</p>
+        {payMethod && payMethod !== '신용카드' && settledCardCount > 0 && (
+          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">정산완료된 신용카드 지출 {settledCardCount}건이 포함되어 있습니다. 신용카드가 아닌 결제수단으로 바꾸면 카드 정산의 정산 완료 내역에서 빠집니다.</p>
         )}
         {(date || tMonth) && recurringCount > 0 && (
           <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">고정지출에서 기록된 지출 {recurringCount}건은 {date && tMonth ? '날짜·귀속월' : date ? '날짜' : '귀속월'} 변경에서 제외됩니다.</p>

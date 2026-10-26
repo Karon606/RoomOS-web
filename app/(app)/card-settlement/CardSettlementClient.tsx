@@ -17,6 +17,8 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { pushToast } from '@/lib/saveStatus'
 import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
+import { isDeferredRow } from '@/lib/settleStatus'
+import { expenseTargetMonth } from '@/lib/expenseTargetMonth'
 
 /** 카드 명세와 맞춰 보는 이름. 쇼핑몰, 없으면 구매처. 화면 두 목록(미정산·정산 완료)이 같은 함수를 쓴다. */
 const statementName = (e: { channel: string | null; vendor: string | null }): string | null => e.channel?.trim() || e.vendor?.trim() || null
@@ -28,6 +30,9 @@ type UnsettledExpense = {
   // 카드 명세의 가맹점은 대개 주문을 받은 플랫폼이다. 줄 맨 앞에 쇼핑몰, 없으면 구매처를 쓴다(2026-10-19, lib/expenseChannel).
   vendor: string | null; channel: string | null
   financialAccountId: string | null
+  // 정산 판정(lib/settleStatus isDeferredRow) 재료. 정산 완료 목록은 order 를 안 실어 선택 칸이다.
+  payMethod: string | null; isShipping: boolean
+  order?: { shippingType: string | null } | null
   financialAccount: {
     id: string; brand: string; alias: string | null
     cutOffDay: number | null; payDay: number | null
@@ -155,7 +160,14 @@ export default function CardSettlementClient({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  const settleGroups = buildSettleGroups(unsettledExpenses)
+  // 갚을 것만 카드별로 묶는다. 그 밖에 미정산으로 남은 행(예: 계좌이체로 고친 배송비)은 카드 묶음에 섞지 않고
+  // 숨기지도 않는다. 한 줄로 건수를 말하고 지출 관리로 보낸다(신고 2f0f9f4c, 운영자 승인 2026-10-26).
+  const deferred = unsettledExpenses.filter(e => isDeferredRow({ payMethod: e.payMethod, isShipping: e.isShipping, shippingType: e.order?.shippingType ?? null }))
+  const strays = unsettledExpenses.filter(e => !deferred.includes(e))
+  const settleGroups = buildSettleGroups(deferred)
+  // 정산 대상이 아닌 미정산 행이 걸친 달. 안내 줄은 가장 이른 달을 말하고 여러 달이면 '외'를 붙인다. 링크는 그 달 목록으로 간다.
+  const strayMonths = [...new Set(strays.map(e => expenseTargetMonth(e)))].sort()
+  const strayMonthLabel = strayMonths.length ? `${Number(strayMonths[0].slice(5, 7))}월${strayMonths.length > 1 ? ' 외' : ''}` : ''
   // 정산 완료 내역은 선택한 달의 '청구월'분만. (미정산은 월 무관 전체 유지)
   const settledGroups = buildSettleGroups(settledCardExpenses).filter(g => g.billMonth === targetMonth)
   const monthLabel = `${Number(targetMonth.slice(5))}월`
@@ -168,9 +180,11 @@ export default function CardSettlementClient({
   // 적용취소에는 확인창을 안 세운다(§16 진입점 1·2, §14 는 잃을 것이 있을 때만).
   const undoSettle = (ids: string[]) =>
     startTransition(async () => {
-      await unsettleExpenses(ids)
+      const res = await unsettleExpenses(ids)
       router.refresh()
-      pushToast('info', '정산을 적용취소했습니다 · 미정산으로 복귀', {
+      // 갚을 것만 미정산으로 돌아간다(lib/settleStatus). 건너뛴 건은 재무 일괄 편집 토스트와 같은 '· N건 제외' 꼬리로 알린다.
+      const skipTail = res.skipped > 0 ? ` · 정산 대상이 아닌 ${res.skipped}건 제외` : ''
+      pushToast('info', '정산을 적용취소했습니다 · 미정산으로 복귀' + skipTail, {
         action: { label: '적용취소', run: () => { startTransition(async () => { await settleCardExpenses(ids); router.refresh() }) } },
       })
     })
@@ -338,10 +352,21 @@ export default function CardSettlementClient({
 
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미정산 신용카드 대금 합산</h2>
-        <p className="text-xs text-[var(--warm-muted)] mb-5">청구 마감 여부로 확정·예정을 구분합니다.</p>
+        <p className={`text-xs text-[var(--warm-muted)] ${strays.length > 0 ? 'mb-2' : 'mb-5'}`}>청구 마감 여부로 확정·예정을 구분합니다.</p>
+        {/* 정산 대상(갚을 것)이 아닌데 미정산으로 남은 행. 숨기지 않고 형제 화면의 스코프 밖 안내 문법(짧은 명사구 + 'N건 더 있음 ·
+            어디서 보기 ›', 재고 '다른 카테고리에 N건 더 있음'·계약서 '발급 대기에 N건 더 있음')으로 알린다. 버튼 생김새·터치 영역도 형제와 같다.
+            지출 관리에는 이 행들만 거르는 주소 칸이 없어 가장 이른 달 목록으로 보낸다. 그 행을 열어 저장하면 정산상태가 정본으로
+            다시 정해진다(lib/settleStatus). 데이터 그물 check-settle-status-drift 가 같은 판정을 본다. */}
+        {strays.length > 0 && (
+          <button type="button" onClick={() => router.push(`/finance?tab=expense&month=${strayMonths[0]}`)}
+            className="mb-5 block text-left text-xs text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors break-keep">
+            정산 대상이 아닌 미정산 지출 <span className="font-semibold text-[var(--warm-dark)]">{strays.length}건</span>({strayMonthLabel}) 더 있음 · 지출 관리에서 보기 ›
+          </button>
+        )}
 
         {settleGroups.length === 0 ? (
-          <EmptyState title="미정산 건이 없습니다" />
+          // 위 안내 줄이 선 때(정산 대상이 아닌 미정산만 남음) '미정산 건이 없습니다'는 그 줄과 부딪친다. 그때는 카드 대금이 없다고만 말한다.
+          <EmptyState title={strays.length > 0 ? '정산할 카드 대금이 없습니다' : '미정산 건이 없습니다'} />
         ) : (
           <div className="space-y-6">
             {/* 확정 청구분 — 마감돼 금액이 고정된 출금 대상. 결제월이 섞이면 월별로 나눠 헤더에 월을 앞세운다. */}
@@ -441,7 +466,10 @@ export default function CardSettlementClient({
                   <button
                     onClick={async () => {
                       if (!(await confirmDialog({ title: `'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소할까요?`, confirmLabel: '전체 취소' }))) return
-                      startTransition(async () => { await unsettleExpenses(g.items.map(i => i.id)); router.refresh() })
+                      startTransition(async () => {
+                        const res = await unsettleExpenses(g.items.map(i => i.id)); router.refresh()
+                        if (res.skipped > 0) pushToast('info', `정산을 적용취소했습니다 · 정산 대상이 아닌 ${res.skipped}건 제외`)
+                      })
                     }}
                     disabled={isPending}
                     className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-3 py-1.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] rounded-lg transition-colors disabled:opacity-40">

@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
-import { settleStatusForEdit } from '@/lib/settleStatus'
+import { settleStatusForEdit, settleStatusForNew, isDeferredRow } from '@/lib/settleStatus'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
@@ -266,12 +266,15 @@ export async function searchExpenses(query: string): Promise<ExpenseSearchResult
   }))
 }
 
+// 카드 정산의 미정산 목록. 갚을 것(lib/settleStatus isDeferredRow)만 카드별로 묶고, 그 밖에 미정산으로 남은 행은
+// 화면이 숨기지 않고 따로 한 줄로 알린다(신고 2f0f9f4c). 판정에 쓰라고 배송비 행의 주문 결제구분을 함께 싣는다.
 export async function getUnsettledExpenses() {
   const propertyId = await getPropertyId()
   return prisma.expense.findMany({
     where: { propertyId, settleStatus: 'UNSETTLED' },
     orderBy: { date: 'asc' },
     include: {
+      order: { select: { shippingType: true } },
       financialAccount: {
         select: {
           id: true, brand: true, alias: true,
@@ -298,11 +301,14 @@ export async function getSettledCardExpenses(targetMonth?: string) {
     where: {
       propertyId,
       settleStatus: 'SETTLED',
-      payMethod: { in: ['신용카드', '체크카드'] },
+      // 정산 완료 내역은 갚았던 것(lib/settleStatus isDeferredRow)만이다. 체크카드는 즉시 빠진 돈이라 정산한 적이 없고,
+      // 여기 서면 '정산 적용취소'로 미정산이 될 수 있었다(신고 2f0f9f4c 검수). 미정산 목록과 같은 두 갈래다.
+      OR: [{ payMethod: '신용카드' }, { isShipping: true, order: { shippingType: '신용' } }],
       date: { gte: since },
     },
     orderBy: { date: 'asc' },
     include: {
+      order: { select: { shippingType: true } },
       financialAccount: {
         select: {
           id: true, brand: true, alias: true,
@@ -873,7 +879,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       qtyUnit:     formQtyUnit,
     })
 
-    const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+    const baseSettleStatus: SettleStatus = settleStatusForNew(payMethod)
 
     // 품목 합계 검증을 주문 생성보다 먼저 — 실패 시 고아 주문 방지 (합산형 배송비는 차감 후 비교)
     if (multiItems) {
@@ -947,9 +953,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
 
     // 배송비 별도 지출 라인(합배송) — 주문에 연결, 재고 계산 제외.
     //   카드결제(신용카드)면 본 지출과 동일하게 미정산, 배송비 자체가 후불('신용')이어도 미정산.
-    //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그)
-    const shippingSettle: SettleStatus =
-      (payMethod === '신용카드' || orderShippingType === '신용') ? 'UNSETTLED' : 'SETTLED'
+    //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그) 판정은 정본 lib/settleStatus 하나다.
+    const shippingSettle: SettleStatus = settleStatusForNew(payMethod || '계좌이체', {
+      isShipping: true,
+      shippingType: orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType) ? orderShippingType : null,
+    })
     const shippingCreate = isOrderMode
       ? prisma.expense.create({
           data: {
@@ -1156,6 +1164,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         storedLocationId: true,
         // 쇼핑몰(칸이 안 오면 지킨다)·주문(주문 전체 적용의 범위).
         channel: true, orderId: true,
+        // 배송비 행의 정산상태는 그 주문의 배송비 결제구분('신용'이면 후불)도 본다(lib/settleStatus 정본, 신고 2f0f9f4c).
+        order: { select: { shippingType: true } },
       },
     })
     if (!existing) return { ok: false, error: '지출을 찾을 수 없습니다.' }
@@ -1244,15 +1254,19 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const matchedBefore = existing?.receivedAt && !existing.excludeFromInventory && existing.itemLabel && !existing.isShipping
       ? await matchedTrackedItemForExpense(propertyId, { category: existing.category, itemLabel: existing.itemLabel, qtyUnit: existing.qtyUnit })
       : null
-    // 배송비 라인은 결제구분(선불/착불/신용)에 따라 settleStatus 가 별도 관리됨 —
-    // 일반 수정 저장이 payMethod 기준으로 재계산해 '신용(미정산)'을 조용히 정산완료로 뒤집지 않게 보존.
-    const baseSettleStatus: SettleStatus = existing?.isShipping
-      ? existing.settleStatus
-      : settleStatusForEdit({
-          prevPayMethod: existing?.payMethod,
-          nextPayMethod: payMethod,
-          current: (existing?.settleStatus ?? 'SETTLED') as SettleStatus,
-        }) as SettleStatus
+    // 정산상태는 배송비 행도 같은 정본으로 다시 판정한다(신고 2f0f9f4c, 운영자 승인 2026-10-26).
+    // 종전에는 배송비 행이면 지금 상태를 통째로 지켜, 신용카드 주문의 배송비를 계좌이체로 고쳐도 미정산이 남아
+    // 카드 정산 화면에 계좌로 낸 배송비가 섞였다. 배송비 결제구분이 '신용'(후불)이면 결제수단과 무관하게 갚을 것이라
+    // 그 미정산은 그대로 남는다. 이 저장은 주문의 결제구분을 안 바꾸므로 전후 같은 값을 싣는다.
+    const shipType = existing.isShipping ? (existing.order?.shippingType ?? null) : null
+    const baseSettleStatus: SettleStatus = settleStatusForEdit({
+      prevPayMethod: existing.payMethod,
+      nextPayMethod: payMethod,
+      current: (existing.settleStatus ?? 'SETTLED') as SettleStatus,
+      isShipping: existing.isShipping,
+      prevShippingType: shipType,
+      nextShippingType: shipType,
+    }) as SettleStatus
 
     // 다중 품목/방별 분배 편집: 품목 2개+ 또는 방별 분배 있으면 분할.
     // 첫 행은 현재 row 업데이트, 나머지(추가 품목·방별 행·미지정 나머지)는 새 row.
@@ -2284,6 +2298,9 @@ export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok
       createdTarget = true
     }
 
+    // 대상 주문의 배송비 결제구분. 비워진 주문의 배송비 행이 여기로 오면 정산상태를 이 값으로 다시 판정한다(lib/settleStatus).
+    const targetShipType = createdTarget ? null
+      : (await prisma.expenseOrder.findFirst({ where: { id: targetOrderId, propertyId }, select: { shippingType: true } }))?.shippingType ?? null
     // 적용취소 표. 옮긴 행(대상 주문에 이미 있던 행은 빼고)과 그 전 주문, 지운 빈 주문의 스냅샷.
     const moved: OrderMergeUndo['moved'] = selected.filter(e => e.orderId !== targetOrderId).map(e => ({ id: e.id, before: e.orderId }))
     const deletedOrders: OrderSnap[] = []
@@ -2294,10 +2311,21 @@ export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok
       if (oid === targetOrderId) continue
       const remain = await prisma.expense.count({ where: { orderId: oid, isShipping: false, propertyId } })
       if (remain === 0) {
-        const ships = await prisma.expense.findMany({ where: { orderId: oid, isShipping: true, propertyId }, select: { id: true } })
-        await prisma.expense.updateMany({ where: { orderId: oid, isShipping: true, propertyId }, data: { orderId: targetOrderId } })
-        for (const sh of ships) moved.push({ id: sh.id, before: oid })
         const snap = await prisma.expenseOrder.findFirst({ where: { id: oid, propertyId } })
+        const ships = await prisma.expense.findMany({ where: { orderId: oid, isShipping: true, propertyId }, select: { id: true, payMethod: true, settleStatus: true } })
+        await prisma.expense.updateMany({ where: { orderId: oid, isShipping: true, propertyId }, data: { orderId: targetOrderId } })
+        // 배송비 행의 결제구분은 그 주문 머리에 있다. 결제구분이 다른 주문으로 옮겨졌으면 정산상태를 다시 판정하고(신고 2f0f9f4c 검수),
+        // 바뀐 행은 묶기 전 값을 적용취소 토큰에 실어 되돌림이 그대로 돌려놓게 한다.
+        for (const sh of ships) {
+          const next = settleStatusForEdit({
+            prevPayMethod: sh.payMethod, nextPayMethod: sh.payMethod, current: sh.settleStatus as SettleStatus,
+            isShipping: true, prevShippingType: snap?.shippingType ?? null, nextShippingType: targetShipType,
+          }) as SettleStatus
+          if (next !== sh.settleStatus) {
+            await prisma.expense.updateMany({ where: { id: sh.id, propertyId, settleStatus: sh.settleStatus }, data: { settleStatus: next } })
+            moved.push({ id: sh.id, before: oid, settleBefore: sh.settleStatus as SettleStatus })
+          } else moved.push({ id: sh.id, before: oid })
+        }
         const gone = await prisma.expenseOrder.deleteMany({ where: { id: oid, propertyId } })
         if (snap && gone.count === 1) deletedOrders.push({ id: snap.id, code: snap.code, externalOrderNo: snap.externalOrderNo, shippingType: snap.shippingType, shippingMemo: snap.shippingMemo, createdAt: snap.createdAt.toISOString() })
       }
@@ -2343,7 +2371,15 @@ export async function undoMergeExpensesIntoOrder(raw: unknown): Promise<{ ok: tr
       for (const o of plan.restoreOrders) {
         await tx.expenseOrder.create({ data: { id: o.id, propertyId, code: o.code, externalOrderNo: o.externalOrderNo, shippingType: o.shippingType, shippingMemo: o.shippingMemo, createdAt: new Date(o.createdAt) } })
       }
-      for (const m of plan.moves) await tx.expense.updateMany({ where: { id: m.id, propertyId, orderId: u.targetOrderId }, data: { orderId: m.to } })
+      for (const m of plan.moves) {
+        // 묶기가 정산상태를 다시 판정해 바꾼 배송비 행이면 묶기 전 값으로 돌린다. 그 사이 다시 바뀌었으면(묶기가 쓴 값이 아니면) 그 칸은 두고 주문만 돌린다.
+        if (m.settleBefore) {
+          const wrote = m.settleBefore === 'SETTLED' ? 'UNSETTLED' : 'SETTLED'
+          const back = await tx.expense.updateMany({ where: { id: m.id, propertyId, orderId: u.targetOrderId, settleStatus: wrote }, data: { orderId: m.to, settleStatus: m.settleBefore } })
+          if (back.count === 1) continue
+        }
+        await tx.expense.updateMany({ where: { id: m.id, propertyId, orderId: u.targetOrderId }, data: { orderId: m.to } })
+      }
       if (plan.dropTarget) await tx.expenseOrder.deleteMany({ where: { id: u.targetOrderId, propertyId } })
       return true
     })
@@ -2394,6 +2430,10 @@ export async function attachShippingToOrder(input: {
     if (conflict) return { ok: false, error: `쇼핑몰이 다른 지출(${conflict.join(', ')})은 한 주문으로 묶을 수 없습니다.` }
     const orderChannel = commonChannel([...expenses, ...orderRows])
     let orderId: string
+    // 이미 있는 배송비 행의 정산상태를 고칠 때 '직전 결제구분'과 비교한다(lib/settleStatus settleStatusForEdit).
+    const prevShipType = existingOrderId
+      ? (await prisma.expenseOrder.findFirst({ where: { id: existingOrderId, propertyId }, select: { shippingType: true } }))?.shippingType ?? null
+      : null
     if (existingOrderId) {
       orderId = existingOrderId
       // 배송비가 있을 때만 배송 메타 갱신(0=묶기만이면 기존 배송정보 보존)
@@ -2428,17 +2468,27 @@ export async function attachShippingToOrder(input: {
       const shipData = {
         amount,
         detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
-        // 배송비는 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산.
-        settleStatus:       ((rep.payMethod === '신용카드' || shipType === '신용') ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
+        // 새 배송비 행은 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산(정본 lib/settleStatus).
+        settleStatus:       settleStatusForNew(rep.payMethod || '계좌이체', { isShipping: true, shippingType: shipType }) as SettleStatus,
         shippingMemo:       input.shippingMemo || null,
       }
-      // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성
-      const existingShip = await prisma.expense.findFirst({ where: { orderId, isShipping: true, propertyId } })
+      // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성. 주문 묶기로 배송비 줄이 둘 이상 모인 주문은 어느 줄을 고칠지
+      // 정할 수 없으니 묻지 않고 멈춘다(하나만 고치면 나머지가 옛 금액·옛 정산상태로 남는다, 신고 2f0f9f4c 검수).
+      const shipRows = await prisma.expense.findMany({ where: { orderId, isShipping: true, propertyId }, take: 2 })
+      if (shipRows.length > 1) return { ok: false, error: '이 주문에는 배송비 줄이 둘 이상 있어 어느 줄을 고칠지 정할 수 없습니다. 지출 관리에서 배송비 줄을 하나로 정리한 뒤 다시 묶어 주세요.' }
+      const existingShip = shipRows[0] ?? null
       if (existingShip) {
+        // 이미 있는 배송비 행은 결제수단을 안 바꾼다. 정산상태도 그 행의 결제수단과 결제구분 전후로 고치는 규칙을 탄다
+        // (갈래가 그대로면 정산완료를 지킨다, 갚을 것이 아니게 되면 정산완료). 종전에는 대표 지출 결제수단으로 새로 계산했다.
+        const shipSettle = settleStatusForEdit({
+          prevPayMethod: existingShip.payMethod, nextPayMethod: existingShip.payMethod,
+          current: existingShip.settleStatus as SettleStatus,
+          isShipping: true, prevShippingType: prevShipType, nextShippingType: shipType,
+        }) as SettleStatus
         await prisma.expense.update({
           where: { id: existingShip.id },
           // 쇼핑몰은 정해졌을 때만 적는다. 미기록 주문이면 배송비 행의 값을 그대로 둔다(null 로 덮지 않는다).
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: rowChannel(orderChannel, existingShip.vendor) } : {}), createdAt: shipCreatedAt },
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipSettle, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: rowChannel(orderChannel, existingShip.vendor) } : {}), createdAt: shipCreatedAt },
         })
       } else {
         await prisma.expense.create({
@@ -2668,14 +2718,21 @@ export async function settleCardExpenses(ids: string[]) {
   revalidatePath('/finance')
 }
 
-export async function unsettleExpenses(ids: string[]) {
+// 정산 적용취소. 갚을 것(lib/settleStatus isDeferredRow)만 미정산으로 돌린다. 체크카드·계좌이체처럼 즉시 빠진 돈은
+// 미정산이 될 수 없다(신고 2f0f9f4c 검수: 체크카드 행이 '정산 적용취소'로 미정산이 되어 규칙을 깼다). 건너뛴 수를 돌려준다.
+export async function unsettleExpenses(ids: string[]): Promise<{ count: number; skipped: number }> {
   await requireEdit()
   const propertyId = await getPropertyId()
-  await prisma.expense.updateMany({
-    where: { id: { in: ids }, propertyId },
-    data: { settleStatus: 'UNSETTLED' },
+  const rows = await prisma.expense.findMany({
+    where: { id: { in: ids }, propertyId, settleStatus: 'SETTLED' },
+    select: { id: true, payMethod: true, isShipping: true, order: { select: { shippingType: true } } },
   })
+  const deferredIds = rows.filter(r => isDeferredRow({ payMethod: r.payMethod, isShipping: r.isShipping, shippingType: r.order?.shippingType ?? null })).map(r => r.id)
+  const res = deferredIds.length
+    ? await prisma.expense.updateMany({ where: { id: { in: deferredIds }, propertyId, settleStatus: 'SETTLED' }, data: { settleStatus: 'UNSETTLED' } })
+    : { count: 0 }
   revalidatePath('/finance')
+  return { count: res.count, skipped: ids.length - res.count }
 }
 
 // ── 부가 수익 ────────────────────────────────────────────────────
@@ -3101,7 +3158,7 @@ export async function recordRecurringExpense(data: {
           payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
           financialAccountId:  resolvedAccountId,
           memo:                data.memo ?? null,
-          settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+          settleStatus:        settleStatusForNew(data.payMethod ?? recurring.payMethod),
           recurringExpenseId:  data.recurringExpenseId,
           breakdownJson:       hasBreakdown ? JSON.stringify(data.breakdown) : null,
           excludeFromAnchor:   data.keepCycle === true,

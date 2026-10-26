@@ -1,4 +1,5 @@
 import { canEdit } from '@/lib/role'
+import { settleStatusForNew } from '@/lib/settleStatus'
 import { deleteExpense } from '@/app/(app)/finance/actions'
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
@@ -423,7 +424,7 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
           detail,
           memo:        str(row['메모']) || null,
           payMethod,
-          settleStatus: payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+          settleStatus: settleStatusForNew(payMethod),
         },
       })
       result.imported++

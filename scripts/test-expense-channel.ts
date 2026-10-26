@@ -163,6 +163,13 @@ eq('묶기 충돌 없음: 하나 + 미기록', mergeChannelConflict([{ channel: 
   const fresh = { ...u, createdTarget: true, moved: [{ id: A, before: null }, { id: B, before: null }], deletedOrders: [] }
   eq('새로 만든 대상이 비면 지운다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B])?.dropTarget, true)
   eq('새로 만든 대상에 그 뒤 다른 행이 붙었으면 남긴다', planOrderMergeUndo(fresh, new Map([[A, T], [B, T]]), new Set(), [A, B, S])?.dropTarget, false)
+  // 배송비 행이 결제구분이 다른 주문으로 옮겨져 정산상태가 바뀐 경우(신고 2f0f9f4c 검수). 묶기 전 값을 실어 왕복을 지킨다.
+  const withSettle = { ...u, moved: [{ id: A, before: null }, { id: B, before: O1 }, { id: S, before: O1, settleBefore: 'UNSETTLED' as const }] }
+  eq('정산상태가 안 바뀐 토큰의 서명 본문은 종전과 같다', canonicalOrderMergeUndo(u).includes('settleBefore'), false)
+  eq('묶기 전 정산상태가 서명 본문에 든다', canonicalOrderMergeUndo(withSettle).includes('"settleBefore":"UNSETTLED"'), true)
+  eq('묶기 전 정산상태가 토큰을 지난다', parseOrderMergeUndo(withSettle)?.moved.find(m => m.id === S)?.settleBefore, 'UNSETTLED')
+  eq('정산상태 값이 이상하면 거부', parseOrderMergeUndo({ ...u, moved: [{ id: A, before: null }, { id: B, before: O1 }, { id: S, before: O1, settleBefore: 'PAID' }] }), null)
+  eq('되돌림 계획이 묶기 전 정산상태를 나른다', planOrderMergeUndo(parseOrderMergeUndo(withSettle)!, now, new Set(), [A, B, S])?.moves.find(m => m.id === S)?.settleBefore, 'UNSETTLED')
 }
 
 // ── 운영자 결정 2026-10-20 A: 쇼핑몰이 그 행 구매처와 같은 이름이면 비운다 ──────────

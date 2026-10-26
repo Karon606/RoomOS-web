@@ -291,6 +291,42 @@ async function main() {
     await prisma.expense.delete({ where: { id: i2.id } })   // 일부러 만든 갈림 행을 치운다(아래 장부 그물 시험이 깨끗한 장부에서 시작하게)
   }
 
+  // ── 9-b. 정산상태(신고 2f0f9f4c 독립 검수): 정산 적용취소는 갚을 것만, 주문 묶기의 배송비 재판정과 적용취소 왕복,
+  //        배송비 줄이 둘인 주문에 배송비 묶기 거절. 만든 행·주문은 끝에서 치운다(아래 장부 시험이 그대로 시작하게).
+  {
+    const d = new Date('2026-10-19T00:00:00Z')
+    const mkRow = (data: Record<string, unknown>) => prisma.expense.create({ data: { propertyId: P1, date: d, amount: 1000, category: '수선유지비', ...data } })
+    const chk = await mkRow({ payMethod: '체크카드', settleStatus: 'SETTLED' })
+    const crd = await mkRow({ payMethod: '신용카드', settleStatus: 'SETTLED' })
+    const un = await fin.unsettleExpenses([chk.id, crd.id])
+    const st = async (id: string) => (await prisma.expense.findUnique({ where: { id } }))?.settleStatus
+    eq('정산 적용취소: 체크카드는 미정산이 안 되고 신용카드만 돌아간다', [await st(chk.id), await st(crd.id), un], ['SETTLED', 'UNSETTLED', { count: 1, skipped: 1 }])
+    eq('정산 완료 목록에 체크카드는 없다', (await fin.getSettledCardExpenses('2026-10')).some((e: { id: string }) => e.id === chk.id), false)
+    // 후불(신용) 주문의 배송비 행(계좌이체·미정산)이 선불 주문으로 옮겨지면 갚을 것이 아니라 정산완료, 적용취소는 바이트 동일
+    const oA = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261019-201', shippingType: '선불', createdAt: new Date('2026-10-19T01:00:00Z') } })
+    const oB = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261019-202', shippingType: '신용', createdAt: new Date('2026-10-19T02:00:00Z') } })
+    const a1 = await mkRow({ payMethod: '계좌이체', orderId: oA.id })
+    const b1 = await mkRow({ payMethod: '계좌이체', orderId: oB.id })
+    const bs = await mkRow({ payMethod: '계좌이체', orderId: oB.id, isShipping: true, settleStatus: 'UNSETTLED', excludeFromInventory: true, amount: 3000 })
+    const ids2 = [a1.id, b1.id, bs.id]
+    const before2 = await exactAll(ids2)
+    const rm = await fin.mergeExpensesIntoOrder([a1.id, b1.id])
+    if (!rm.ok) throw new Error(rm.error)
+    eq('묶기: 선불 주문으로 옮긴 후불 배송비는 정산완료로 다시 판정', [(await prisma.expense.findUnique({ where: { id: bs.id } }))?.orderId === oA.id, await st(bs.id)], [true, 'SETTLED'])
+    const ru = await fin.undoMergeExpensesIntoOrder(J(rm.undo!))
+    eq('묶기 적용취소: 배송비 정산상태까지 바이트 동일', [ru.ok, await exactAll(ids2)], [true, before2])
+    // 배송비 줄이 둘인 주문은 어느 줄을 고칠지 못 정해 멈춘다(하나만 고치면 나머지가 옛 금액으로 남는다)
+    const oC = await prisma.expenseOrder.create({ data: { propertyId: P1, code: '261019-203', shippingType: '선불' } })
+    const c1 = await mkRow({ payMethod: '계좌이체', orderId: oC.id })
+    const cs1 = await mkRow({ payMethod: '계좌이체', orderId: oC.id, isShipping: true, excludeFromInventory: true, amount: 500 })
+    const cs2 = await mkRow({ payMethod: '계좌이체', orderId: oC.id, isShipping: true, excludeFromInventory: true, amount: 700 })
+    const beforeC = await exactAll([cs1.id, cs2.id])
+    const rc = await fin.attachShippingToOrder({ expenseIds: [c1.id], amount: 900, shippingType: '선불' })
+    eq('배송비 줄 둘인 주문에 배송비 묶기는 멈추고 아무것도 안 바꾼다', [rc.ok, await exactAll([cs1.id, cs2.id])], [false, beforeC])
+    await prisma.expense.deleteMany({ where: { id: { in: [chk.id, crd.id, ...ids2, c1.id, cs1.id, cs2.id] } } })
+    await prisma.expenseOrder.deleteMany({ where: { id: { in: [oA.id, oB.id, oC.id] } } })
+  }
+
   // ── 10. 일괄 수정: 쇼핑몰 지정·비우기·적용취소 바이트 동일 ────────────────────────────────
   {
     const a = (await rowsOf('단일전구'))[0], b = (await rowsOf('쇼핑몰없음'))[0]

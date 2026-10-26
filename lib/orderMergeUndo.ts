@@ -14,8 +14,10 @@ export type OrderMergeUndo = {
   v: 1
   targetOrderId: string
   createdTarget: boolean
-  /** 옮긴 행(품목·배송비)과 묶기 전 주문. null = 주문 없던 행. */
-  moved: { id: string; before: string | null }[]
+  /** 옮긴 행(품목·배송비)과 묶기 전 주문. null = 주문 없던 행.
+   *  settleBefore: 배송비 행이 결제구분이 다른 주문으로 옮겨져 정산상태가 다시 판정돼 바뀐 경우의 묶기 전 값(lib/settleStatus,
+   *  신고 2f0f9f4c 검수). 되돌림이 그 값으로 돌려놓는다. 안 바뀐 행에는 없다(종전 토큰과 서명 본문이 같다). */
+  moved: { id: string; before: string | null; settleBefore?: 'SETTLED' | 'UNSETTLED' }[]
   /** 묶기가 지운 빈 주문(같은 id 로 되살린다). */
   deletedOrders: OrderSnap[]
   sig?: string
@@ -28,7 +30,7 @@ const strOrNull = (v: unknown): v is string | null => v === null || typeof v ===
 export function canonicalOrderMergeUndo(u: Omit<OrderMergeUndo, 'sig'>): string {
   return JSON.stringify({
     v: 1, targetOrderId: u.targetOrderId, createdTarget: u.createdTarget,
-    moved: [...u.moved].sort((a, b) => a.id.localeCompare(b.id)).map(m => ({ id: m.id, before: m.before })),
+    moved: [...u.moved].sort((a, b) => a.id.localeCompare(b.id)).map(m => ({ id: m.id, before: m.before, ...(m.settleBefore ? { settleBefore: m.settleBefore } : {}) })),
     deletedOrders: [...u.deletedOrders].sort((a, b) => a.id.localeCompare(b.id)).map(o => ({
       id: o.id, code: o.code, externalOrderNo: o.externalOrderNo, shippingType: o.shippingType, shippingMemo: o.shippingMemo, createdAt: o.createdAt,
     })),
@@ -46,8 +48,9 @@ export function parseOrderMergeUndo(raw: unknown): OrderMergeUndo | null {
     const mm = m as Record<string, unknown>
     if (!mm || !isUuid(mm.id) || seen.has(mm.id) || !(mm.before === null || isUuid(mm.before))) return null
     if (mm.before === u.targetOrderId) return null   // 원래 대상 주문에 있던 행은 옮긴 행이 아니다
+    if (mm.settleBefore !== undefined && mm.settleBefore !== 'SETTLED' && mm.settleBefore !== 'UNSETTLED') return null
     seen.add(mm.id)
-    moved.push({ id: mm.id, before: mm.before as string | null })
+    moved.push({ id: mm.id, before: mm.before as string | null, ...(mm.settleBefore ? { settleBefore: mm.settleBefore as 'SETTLED' | 'UNSETTLED' } : {}) })
   }
   const deletedOrders: OrderSnap[] = []
   const del = new Set<string>()
@@ -73,14 +76,14 @@ export function planOrderMergeUndo(
   nowOrderOf: ReadonlyMap<string, string | null>,
   liveOrderIds: ReadonlySet<string>,
   targetRowIds: readonly string[],
-): { restoreOrders: OrderSnap[]; moves: { id: string; to: string | null }[]; dropTarget: boolean } | null {
+): { restoreOrders: OrderSnap[]; moves: { id: string; to: string | null; settleBefore?: 'SETTLED' | 'UNSETTLED' }[]; dropTarget: boolean } | null {
   for (const m of u.moved) if (nowOrderOf.get(m.id) !== u.targetOrderId) return null
   for (const o of u.deletedOrders) if (liveOrderIds.has(o.id)) return null
   const movedIds = new Set(u.moved.map(m => m.id))
   const remain = targetRowIds.filter(id => !movedIds.has(id))
   return {
     restoreOrders: u.deletedOrders,
-    moves: u.moved.map(m => ({ id: m.id, to: m.before })),
+    moves: u.moved.map(m => ({ id: m.id, to: m.before, ...(m.settleBefore ? { settleBefore: m.settleBefore } : {}) })),
     dropTarget: u.createdTarget && remain.length === 0,
   }
 }
