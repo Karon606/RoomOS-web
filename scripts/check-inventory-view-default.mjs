@@ -258,7 +258,16 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     /const n = await itemRecordCounts\(propertyId, it\)\s*\n\s*if \(n\.total > 0\)/.test(actions) &&
     /itemRecordCounts\(propertyId, item\),/.test(actions) && /deletable: records\.total === 0,/.test(actions) &&
     !/onDelete=\{data\.timeline\.length/.test(foot),
-    "이력 건수로 가르면 재고 제외 지출만 있는 품목에서 '보이는데 서버가 거부'가 난다(검수 실측 옥상 폐기물처리)")
+    "이력 건수로 가르면 화면과 서버가 갈린다(2026-10-12 검수)")
+  // 지출은 재고에 들어가는 구매만 센다(2026-10-26 운영자 승인, 신고 f3866bca). 재고 제외까지 세면 서비스 지출에 잘못 선 카드
+  // (옥상 폐기물처리, 재고 제외 지출 2건)를 지울 길이 없다. 조건은 공용층 한 곳(includedExpenseWhere)이다.
+  {
+    const snapSrc = stripComments(readFileSync('app/(app)/inventory/trackedItemSnapshot.ts', 'utf8'))
+    need('품목 삭제 계수의 지출은 재고에 들어가는 구매만이다(재고 제외·배송비 행 빼고)',
+      /prisma\.expense\.count\(\{ where: includedExpenseWhere\(propertyId, it\.category, it\.label\) \}\)/.test(actions) &&
+      /export function includedExpenseWhere\(propertyId: string, category: string, label: string\) \{\s*return \{ propertyId, category, itemLabel: label, excludeFromInventory: false, isShipping: false \}/.test(snapSrc),
+      '재고 제외 지출까지 세면 잘못 선 카드가 영영 안 지워진다(신고 f3866bca)')
+  }
   // 되살림 몸통은 공용층(trackedItemSnapshot restoreTrackedItemTx)이다. 재무의 비품 전환도 같은 몸통을 쓴다(2026-10-15).
   const snap = stripComments(readFileSync('app/(app)/inventory/trackedItemSnapshot.ts', 'utf8'))
   need('품목 삭제에 적용취소가 있다(같은 id 로 되살림)',

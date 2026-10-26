@@ -81,3 +81,11 @@ export async function restoreTrackedItemTx(tx: InventoryTx, propertyId: string, 
   }
   return 'restored'
 }
+
+// ── 카드에 걸린 지출로 셀 것. 재고 계산에 들어가는 구매만이다(재고 제외·배송비 행은 뺀다).
+//    품목 삭제 판정(actions itemRecordCounts)이 이 조건을 쓴다.
+//    종전 품목 삭제 판정은 재고 제외 지출까지 세서, 서비스 지출에 잘못 선 카드(옥상 폐기물처리, 재고 제외 지출 2건)를
+//    지울 길이 없었다(2026-10-26 운영자 승인, 신고 f3866bca).
+export function includedExpenseWhere(propertyId: string, category: string, label: string) {
+  return { propertyId, category, itemLabel: label, excludeFromInventory: false, isShipping: false }
+}

@@ -43,7 +43,7 @@ import {
   QTY_FILL_DOMAIN, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED,
 } from './receiptQtyGate'
 // 품목 삭제 스냅샷·되살림 공용층(같은 id 로 되살린다)
-import { trackedItemDeleteSnapshot, restoreTrackedItemTx, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
+import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 // 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
 import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
@@ -183,8 +183,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   // unitHint = 표시 전용 단위 폴백(overview.resolveUnitHint 정본) — 카드 qtyUnit 이 비었을 때만 쓰인다.
   item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }
   timeline: TimelineEntry[]
-  // 품목 삭제가 서버에서 통과하는가 — 거부 판정과 **같은 계수**(itemRecordCounts)로 낸다. 이력(timeline)은 재고 제외 지출과
-  // 다른 단위 지출을 안 보여 줘 그것으로 가르면 '이력 0건인데 서버 거부'가 생긴다(2026-10-12 검수, 옥상 폐기물처리 실측).
+  // 품목 삭제가 서버에서 통과하는가. 거부 판정과 **같은 계수**(itemRecordCounts)로 낸다. 이력(timeline)은 다른 단위 지출을
+  // 안 보여 줘 그것으로 가르면 '이력 0건인데 서버 거부'가 생긴다(2026-10-12 검수). 재고 제외 지출은 2026-10-26 부터 안 센다.
   deletable: boolean
 } | null> {
   const propertyId = await getPropertyId()
@@ -4391,11 +4391,13 @@ export async function undoCloseItemLocation(undo: CloseLocationUndo): Promise<{ 
 
 // ── 품목에 딸린 기록 수 — 삭제 가능 판정의 정본 한 곳(2026-10-12 재고 정비 3단계 검수).
 //    삭제 거부(deleteTrackedItemIfEmpty)와 상세 메뉴의 '품목 삭제' 노출(getInventoryDetail.deletable)이 이 함수 하나를 쓴다.
-//    지출은 품명(카테고리+라벨)으로 잇는 기록이라 재고 제외·다른 단위까지 **전부** 센다 — 품목을 지우면 그 지출이 가리킬
-//    카드가 사라진다. 이력 화면은 그중 일부만 보여 주므로 이력 건수로 가르면 화면과 서버가 갈린다.
+//    지출은 품명(카테고리+라벨)으로 잇는 기록이고 **재고에 들어가는 구매만** 센다(재고 제외·배송비 행은 뺀다, 조건 정본
+//    includedExpenseWhere). 2026-10-26 운영자 승인으로 바꿨다(신고 f3866bca). 종전에는 재고 제외까지 전부 세서, 서비스 지출에
+//    잘못 선 카드(옥상 폐기물처리, 재고 제외 지출 2건)를 지울 길이 없었다. 재고 제외 지출은 카드를 가리키지 않으니(잔량·시드가
+//    같은 조건을 건다) 카드를 지워도 끊기는 것이 없다. 다른 단위 지출은 그대로 센다. 이력 화면 건수로 가르지 않는 까닭은 같다.
 async function itemRecordCounts(propertyId: string, it: { id: string; category: string; label: string }) {
   const [expense, check, addition, disposal] = await Promise.all([
-    prisma.expense.count({ where: { propertyId, category: it.category, itemLabel: it.label } }),
+    prisma.expense.count({ where: includedExpenseWhere(propertyId, it.category, it.label) }),
     prisma.stockCheck.count({ where: { trackedItemId: it.id } }),
     prisma.stockAddition.count({ where: { trackedItemId: it.id } }),
     prisma.stockDisposal.count({ where: { trackedItemId: it.id } }),

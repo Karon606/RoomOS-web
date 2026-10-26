@@ -2357,7 +2357,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
             <Btn variant="secondary" size="md" className={`flex-1 ${FOOT_TOP_BTN}`} onClick={() => setMode('addition')}>무상 입수</Btn>
             <Btn variant="secondary" size="md" className={`flex-1 ${FOOT_TOP_BTN}`} onClick={() => setTransferOpen(true)}>위치 이동</Btn>
             {/* 품목 삭제는 서버가 지울 수 있을 때만 메뉴에 선다 — 판정은 서버 거부와 같은 계수 한 곳(itemRecordCounts)이
-                낸 deletable 이다. 이력 건수로 가르면 재고 제외 지출만 있는 품목에서 '이력 0건인데 거부'가 났다(검수 실측). */}
+                낸 deletable 이다. 이력 건수로 가르면 화면과 서버가 갈린다. 재고 제외 지출만 있는 품목은 2026-10-26 부터 지울 수 있다
+                (신고 f3866bca, 옥상 폐기물처리). */}
             <DetailManageMenu pending={pending}
               onReconcile={() => setMode('reconcile')} onSettings={() => setMode('settings')} onArchive={handleArchive}
               onDelete={data.deletable ? handleDeleteItem : undefined} />
