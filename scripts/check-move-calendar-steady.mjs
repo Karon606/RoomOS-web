@@ -184,7 +184,7 @@ if (!/const excludedNote = excludedRoomsNote\(data\.excludedRoomCount\)/.test(sr
   const noteAt = src.indexOf('{excludedNote && (')
   const noteTag = noteAt < 0 ? null : tagAround(src.slice(noteAt), '<p ')
   if (noteAt < 0 || cardAt < 0 || noteAt < cardAt || divDepth(src, cardAt, noteAt) !== 1 || !noteTag || !/borderTop/.test(noteTag) || !/\bbreak-keep\b/.test(noteTag)) {
-    violations.push(`${SRC}: 안내 줄이 카드 안 끝 줄(카드 바로 안, 구분선 1px)이 아니다. 카드 밖 --canvas 위에서는 --ink-m 이 AA 미달이다(라이트 4.11:1).`)
+    violations.push(`${SRC}: 안내 줄이 카드 안 끝 줄(카드 바로 안, 구분선 1px)이 아니다. 카드 안 끝 줄이 정본 자리다. 처음 이 자리를 정한 근거는 카드 밖 --canvas 위 --ink-m 4.11:1 이었다(2026-10-26 전 #7A6553, 지금 5.18:1).`)
   }
 }
 

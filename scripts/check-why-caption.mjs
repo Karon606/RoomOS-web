@@ -4,16 +4,20 @@
 // 비활성이었고, 이유는 코드 주석에만 있었다. 운영자 원문 "이렇게 묻지 않도록 비활성화 된 이유와 풀 수 있는 방법을
 // 간단하게 확인할 수 있는게 있으면 좋겠어". 고친 자리가 다시 막히거나, 이유가 title 로 숨어 들어가면 붉게 선다.
 //
-// 축 셋.
+// 축 넷.
 //   ⓐ 정본 모양. WhyCaption(10.5px · --warm-muted · 링크 --tc-text · 링크 히트 44px · id · 구분점과 링크 한 덩이),
 //      Btn·RowActionBtn 의 reason 이 aria-disabled + aria-describedby 를 달고 클릭을 막는다, DatePicker describedBy.
 //   ⓑ 상태 칸 '문의'. option 이 열려 있고, 고르면 투어일을 비우며 지운 값과 직전 상태를 쥐고, 되살리기 링크가 그 값과
 //      직전 상태를 그대로 돌려놓는다. '문의' 를 떠날 때의 투어일 복귀는 모든 갈래 앞이다. 캡션은 select 의 aria-describedby 로 이어진다.
+//   ⓓ 놓이는 면(2026-10-26 개정). 불투명 면(--canvas·--cream·--cream-soft·--cream-3)은 check-seg-ink-off ⓖ 가 보조 잉크
+//      4.5:1 을 보장하므로 따로 보지 않는다. 캡션이 반투명 틴트 면(bg-[var(--x)]/NN · -bg 토큰 · style rgba/color-mix) 안에
+//      서면 그 자리를 아래 MEASURED 표에 라이트·다크 실측과 함께 적어야 한다(표에 없으면 붉게). 캡션 자체는 바탕을 갖지 않는다.
 //   ⓒ 1차 자리. 단기 입주일 잠김·희망 호실 5개 상한은 WhyCaption 을 describedby 로 잇고, '발행 기록' 은 reason 을 쓰며,
 //      배치도 적용취소·다시 적용은 title 만으로 이름을 말하지 않고 화살표 글자를 쓰지 않는다.
 //
 // 실행: node scripts/check-why-caption.mjs
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const strip = s => s
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, m => m.replace(/[^\n]/g, ''))
@@ -128,9 +132,54 @@ const tc = read(TC)
   if (redo) need(/다시 적용<\/button>$/.test(redo[0]), `${FP}: 다시 적용 버튼에 글자 라벨이 없다.`)
 }
 
+// ⓓ 놓이는 면. 불투명 면은 ⓖ(check-seg-ink-off)가 보장하고, 반투명 틴트 면은 실측해 이 표에 적는다.
+//    키는 '파일#캡션 id 식', 값은 실측 대비(헤드리스 Chrome, 계산된 색). 둘 다 4.5 이상이어야 한다.
+const MEASURED = {
+  // 단기 요금 박스 입주일 잠김. 모달 --cream 위 --canvas/50 박스(2026-10-26 실측, 보조 잉크 #6A5644 · 다크 --d-ink-m #948270).
+  'app/(app)/tenants/TenantClient.tsx#shortMoveInWhyId': { light: 5.81, dark: 5.37, surface: 'bg-[var(--canvas)]/50' },
+}
+{
+  const s = read(WHY)
+  const p = s.match(/<p id=\{id\} className=\{`([^`]*)`\}/)
+  need(!!p && !/(^|\s)bg-/.test(p[1]), `${WHY}: 캡션이 자기 바탕(bg-)을 갖는다. 대비는 놓이는 면이 정한다(§27.8).`)
+  const walkTsx = (dir, out = []) => { for (const n of readdirSync(dir)) { if (n === 'node_modules' || n.startsWith('.')) continue; const f = join(dir, n); statSync(f).isDirectory() ? walkTsx(f, out) : n.endsWith('.tsx') && out.push(f) } return out }
+  // 여는 태그의 끝('>')을 중괄호 깊이를 따져 찾는다(onClick={() => ...} 의 '>' 를 끝으로 읽지 않게).
+  const tagEnd = (src, from) => { let d = 0; for (let k = from; k < src.length; k++) { const c = src[k]; if (c === '{') d++; else if (c === '}') d--; else if (c === '>' && d === 0) return k } return -1 }
+  const TINT = /(?:^|[\s"'`])bg-\[var\(--[\w-]+\)\]\/\d+|(?:^|[\s"'`])bg-\[var\(--[\w-]+-bg\)\]|background:\s*'(?:rgba|color-mix)/
+  const OPAQUE = /(?:^|[\s"'`])bg-\[var\(--[\w-]+\)\](?!\/)|background:\s*'var\(--[\w-]+\)'/
+  let seen = 0
+  for (const f of [...walkTsx('app'), ...walkTsx('components')]) {
+    if (f === WHY) continue
+    const src = read(f)
+    for (const m of src.matchAll(/<WhyCaption\s+id=\{([^}]+)\}/g)) {
+      seen++
+      const tags = [...src.slice(0, m.index).matchAll(/<(\/?)([A-Za-z][\w.]*)/g)].map(t => {
+        const end = tagEnd(src, t.index)
+        return { close: t[1] === '/', self: end > 0 && src[end - 1] === '/', text: end > 0 ? src.slice(t.index, end + 1) : '' }
+      })
+      let depth = 0, verdict = null, found = 0
+      for (let k = tags.length - 1; k >= 0 && found < 8 && !verdict; k--) {
+        const t = tags[k]
+        if (t.close) { depth++; continue }
+        if (t.self) continue
+        if (depth > 0) { depth--; continue }
+        found++
+        const own = t.text.replace(/(?:hover|focus|active|disabled|focus-visible|group-hover|sm|md|lg|dark):[^\s"'`]+/g, '')
+        if (TINT.test(own)) verdict = 'tint'
+        else if (OPAQUE.test(own)) verdict = 'opaque'
+      }
+      if (verdict !== 'tint') continue
+      const key = `${f}#${m[1].trim()}`
+      const row = MEASURED[key]
+      need(!!row && row.light >= 4.5 && row.dark >= 4.5, `${key}: WhyCaption 이 반투명 틴트 면 위에 선다. 불투명 면은 보조 잉크가 4.5:1 을 보장하지만 틴트는 겹친 결과가 달라 실측해 MEASURED 표에 적는다(§27.8).`)
+    }
+  }
+  need(seen >= 3, `WhyCaption 쓰는 자리가 ${seen}곳뿐이다(1차 자리 3곳). 이름을 바꿨다면 ⓓ 를 옮긴다.`)
+}
+
 if (violations.length) {
   console.error(`check-why-caption: 위반 ${violations.length}건`)
   for (const v of violations) console.error('  - ' + v)
   process.exit(1)
 }
-console.log('check-why-caption: 통과 (정본 모양 · 상태 칸 문의 · 1차 자리 5곳)')
+console.log('check-why-caption: 통과 (정본 모양 · 상태 칸 문의 · 1차 자리 5곳 · 놓이는 면)')

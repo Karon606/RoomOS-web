@@ -422,7 +422,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
         {canMany && (
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
             {/* 라벨은 캔버스 위라 --warm-dark 다. 형제 라벨 색(--warm-mid)은 카드(--cream) 위 값이고 캔버스 위에서는
-                라이트 4.11:1 로 본문 하한에 못 미친다(하네스 실측). */}
+                라이트 4.11:1 로 본문 하한에 못 미쳤다(하네스 실측, 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). */}
             <p className="text-xs font-medium text-[var(--warm-dark)]">발급할 달</p>
             <SegmentedControl<'one' | 'many'> size="sm" className="ml-auto" ariaLabel="발급할 달" value={mode} onChange={setMode}
               options={[{ value: 'one', label: '한 달' }, { value: 'many', label: '여러 달' }]} />
@@ -611,7 +611,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
         </div>
 
         {/* 비활성 이유는 버튼 글자가 아니라 버튼 위 한 줄이 말한다(가이드 §22 ② '하단 이유 한 줄 + 버튼 비활성').
-            캔버스 위 글자라 --warm-dark 다(형제 보조 글자색은 캔버스 위에서 라이트 4.11:1). */}
+            캔버스 위 글자라 --warm-dark 다(형제 보조 글자색은 캔버스 위에서 라이트 4.11:1 이었다. 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). */}
         <div className="space-y-1.5">
           {pickedMonths.length === 0 && data.issuable.length > 0 && (
             <p className="text-xs text-[var(--warm-dark)]">발급할 달을 고르세요.</p>

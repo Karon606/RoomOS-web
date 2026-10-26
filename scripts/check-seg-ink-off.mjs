@@ -10,15 +10,17 @@
 //      4.5:1 이상이다. 값을 바꾸면 여기서 대비를 다시 계산한다.
 //   ⓑ SegmentedControl 비활성 칸 글자가 text-[var(--seg-ink-off)] 이고, --warm-mid·--ink-s·--ink-3·--warm-muted·
 //      --ink-m 글자색이 그 파일에 없다.
-//   ⓒ role="radio" 칩을 가진 파일에서 --canvas 바탕 비선택 style 의 color 가 위 미달 토큰이 아니다.
+//   ⓒ role="radio" 칩을 가진 파일에서 --canvas 바탕 비선택 style 의 color 가 위 보조 잉크 토큰이 아니다.
 //   ⓓ ViewTabs 비활성(segInactive)은 --warm-dark 다(§25, 고른 칸이 --tc-text 라 색으로 위계가 선다).
 //   ⓕ role 과 상관없이 선택형 칩·세그먼트 버튼의 삼항 패턴(선택됨이면 채움, 아니면 --canvas·--cream-2 바탕)에서
-//      고르지 않은 쪽 글자가 위 미달 토큰이 아니다. 클래스 문자열 삼항과 style 객체 삼항 둘 다 본다
+//      고르지 않은 쪽 글자가 위 보조 잉크 토큰이 아니다. 클래스 문자열 삼항과 style 객체 삼항 둘 다 본다
 //      (2026-10-23 독립 검수, ⓒ 가 role="radio" 파일만 봐서 지출 유형 세그먼트·추이 기간 칩 등을 놓쳤다).
 //      비선택 쪽이 상수 이름이면 같은 파일의 정의를 따라가고, style 객체의 키 순서는 따지지 않으며, && 조건식도 본다(재검수).
-//   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 미달 토큰이 아니다
+//   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 보조 잉크 토큰이 아니다
 //      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
-//   ⓖ 보조 잉크(--ink-3 · --warm-mid · --warm-muted · --ink-mute · --ink-s · --ink-m · --seg-ink-off)가 라이트(:root, 인쇄)에서
+//   ⓑ~ⓕ 는 2026-10-26 전에는 대비(--canvas 위 4.11:1)를 지켰다. 지금은 라이트에서 보조 잉크와 --seg-ink-off 가 같은 값이라
+//      대비가 아니라 칸 글자의 정본 이름을 지킨다. '이 칸 글자를 --warm-dark 로 올리지 않는다'(§23)는 규칙이 그 이름에 걸려 있다.
+//   ⓖ 보조 잉크(--ink-3 · --warm-mid · --warm-muted · --ink-mute · --ink-s · --ink-m · --seg-ink-off · --neutral-fg)가 라이트(:root, 인쇄)에서
 //      한 값으로 풀리고(같은 갈색 두 벌 금지), 라이트 불투명 면 넷(--canvas · --cream · --cream-soft · --cream-3) 위 4.5:1
 //      이상이며, 본문 --ink-2 와 2.0:1 이상 떨어져 위계가 남는다. 다크(html.dark)는 --ink-3 · --ink-mute 가 --d-page ·
 //      --d-card · --d-card-2 위 4.5:1 이상이다(--d-ink-m 이 --d-card-2 위 4.46 이라 2026-10-26 #948270 으로 밝혔다). 배지·캡션 17곳·배치도 회색 버튼·월 선택 '이번달'이 --canvas 위 4.11:1 이던 것을
@@ -65,7 +67,7 @@ checkPair('html.dark', darkBlock, rootBlock, 'd-page')
 checkPair('@media print', printBlock, rootBlock, 'cream-2')
 
 // ⓖ 보조 잉크 한 값 · 라이트 면 넷 AA · 본문과 위계 · 다크
-const SECONDARY = ['ink-3', 'warm-mid', 'warm-muted', 'ink-mute', 'ink-s', 'ink-m', 'seg-ink-off']
+const SECONDARY = ['ink-3', 'warm-mid', 'warm-muted', 'ink-mute', 'ink-s', 'ink-m', 'seg-ink-off', 'neutral-fg']
 const LIGHT_SURFACES = ['canvas', 'cream', 'cream-soft', 'cream-3']
 const HIERARCHY_MIN = 2.0
 const checkSecondary = (label, b, fb) => {
@@ -105,7 +107,7 @@ const BAD_TEXT = /text-\[var\(--(?:warm-mid|ink-s|ink-3|warm-muted|ink-m|ink-mut
   const src = strip(readFileSync(f, 'utf8'))
   if (!src.includes('text-[var(--seg-ink-off)]')) violations.push(`${f} 비활성 칸 글자가 text-[var(--seg-ink-off)] 가 아니다(--canvas 위 AA, 가이드 §23).`)
   src.split('\n').forEach((line, i) => {
-    if (BAD_TEXT.test(line)) violations.push(`${f}:${i + 1} 칸 글자에 AA 미달 토큰(${line.match(BAD_TEXT)[0]})이 있다. --canvas 위 4.11:1 이다. text-[var(--seg-ink-off)] 를 쓴다.`)
+    if (BAD_TEXT.test(line)) violations.push(`${f}:${i + 1} 칸 글자에 보조 잉크 토큰(${line.match(BAD_TEXT)[0]})이 있다. 칸 글자 정본은 text-[var(--seg-ink-off)] 다(가이드 §23).`)
   })
 }
 
@@ -128,7 +130,7 @@ for (const f of walk('app', walk('components', []))) {
   if (!src.includes('role="radio"')) continue
   if (src.includes("color: 'var(--seg-ink-off)'")) chipFiles++
   src.split('\n').forEach((line, i) => {
-    if (BAD_CHIP.test(line)) violations.push(`${f}:${i + 1} 단일 선택 칩 비선택 글자가 --canvas 위 AA 미달 토큰이다. color: 'var(--seg-ink-off)' 를 쓴다(가이드 §23).`)
+    if (BAD_CHIP.test(line)) violations.push(`${f}:${i + 1} 단일 선택 칩 비선택 글자가 보조 잉크 토큰이다. 칸 글자 정본 color: 'var(--seg-ink-off)' 를 쓴다(가이드 §23).`)
   })
 }
 if (chipFiles < 4) violations.push(`단일 선택 칩 정본 4곳(청소·작업 담당/수행자) 중 --seg-ink-off 를 쓰는 파일이 ${chipFiles}곳뿐이다. 파일을 옮겼다면 확인한다.`)
@@ -147,7 +149,7 @@ for (const f of walk('app', walk('components', []))) {
       const l = lines[j]
       if (l.includes('bg-[var(--canvas)]')) {
         if (l.includes('text-[var(--seg-ink-off)]')) toggleChips++
-        if (BAD_TEXT.test(l)) violations.push(`${f}:${j + 1} 토글 칩 끈 상태 글자가 --canvas 위 AA 미달 토큰(${l.match(BAD_TEXT)[0]})이다. text-[var(--seg-ink-off)] 를 쓴다(가이드 §23).`)
+        if (BAD_TEXT.test(l)) violations.push(`${f}:${j + 1} 토글 칩 끈 상태 글자가 보조 잉크 토큰(${l.match(BAD_TEXT)[0]})이다. 칸 글자 정본 text-[var(--seg-ink-off)] 를 쓴다(가이드 §23).`)
       }
       if (j > i && /[}'"]\)?}?>\s*$|^\s*>\s*$/.test(l)) break
     }
@@ -184,7 +186,7 @@ const armText = (consts, arm) => {
 for (const f of walk('app', walk('components', []))) {
   const src = strip(readFileSync(f, 'utf8'))
   const consts = new Map([...src.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])([^'"`]*)\2/g)].map(m => [m[1], m[3]]))
-  const flag = (idx, what) => violations.push(`${f}:${lineOf(src, idx)} 선택형 칩·세그먼트의 고르지 않은 칸 ${what}. 옅은 바탕 위 AA 미달 토큰이라 --seg-ink-off 를 쓴다(가이드 §23).`)
+  const flag = (idx, what) => violations.push(`${f}:${lineOf(src, idx)} 선택형 칩·세그먼트의 고르지 않은 칸 ${what}. 보조 잉크 토큰 대신 칸 글자 정본 --seg-ink-off 를 쓴다(가이드 §23).`)
   for (const m of src.matchAll(TERN_CLASS)) {
     const on = armText(consts, m[1]), off = armText(consts, m[3])
     if (!BG_CLASS.test(off) || !BAD_TXT_CLASS.test(off)) continue
@@ -209,7 +211,7 @@ for (const f of walk('app', walk('components', []))) {
   const f = 'components/ui/ViewTabs.tsx'
   const m = strip(readFileSync(f, 'utf8')).match(/const segInactive\s*=\s*'([^']*)'/)
   if (!m) violations.push(`${f} segInactive 를 찾지 못했다. 이름을 바꿨다면 이 그물(ⓓ)도 옮긴다.`)
-  else if (!m[1].includes('text-[var(--warm-dark)]')) violations.push(`${f} segInactive 글자가 --warm-dark 가 아니다. 페이지 배경 위라 --warm-mid 는 4.11:1 미달이다(가이드 §25).`)
+  else if (!m[1].includes('text-[var(--warm-dark)]')) violations.push(`${f} segInactive 글자가 --warm-dark 가 아니다. 고른 칸이 --tc-text 라 고르지 않은 칸은 --warm-dark 로 색 위계를 세운다(가이드 §25).`)
 }
 
 if (violations.length) {

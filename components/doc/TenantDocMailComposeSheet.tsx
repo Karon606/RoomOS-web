@@ -187,7 +187,7 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-[var(--warm-mid)]">첨부 파일</p>
               {/* 표면은 --cream-soft 다. --canvas 는 다크에서 #000 이라 --cream 모달 안에 검은 구멍이
-                  뚫리고, 라이트에서도 그 위 10.5px 보조 글자가 §28 하한(4.11:1)에 못 미친다.
+                  뚫리고, 라이트에서도 그 위 10.5px 보조 글자가 §28 하한에 못 미쳤다(4.11:1. 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)).
                   형제 시트가 같은 숫자로 이미 두 번 옮겨 간 자리다. */}
               <ul className="rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] divide-y divide-[var(--warm-border)]">
                 {draft.attachments.map(a => (

@@ -73,8 +73,8 @@ export function OptionGroupJumps() {
     <nav aria-label="분류 묶음 바로가기">
       {/* 이동 단서 캡션(2026-10-23 디자이너 검토). 상자 버튼 다섯이 ViewTabs 바로 밑에 서면 2차 탭·필터로 읽혀 누르면 그 묶음만
           남을 거라 기대하게 된다. 버튼마다 › 를 붙이는 §29 이동 표기보다 줄 앞 한 마디가 덜 시끄럽고 320px 넘침도 늘리지 않는다.
-          크기는 설정 화면 캡션 정본 11px 이고, 색은 --warm-muted 가 아니라 --warm-dark 다. 이 줄은 --canvas 꽉 찬 면 위라
-          --warm-muted 는 4.11:1 로 본문 하한 미달이다(§27.8 WhyCaption 면 규칙, ViewTabs 비활성 글자와 같은 판단).
+          크기는 설정 화면 캡션 정본 11px 이고, 색은 --seg-ink-off 다(--canvas 위 5.18:1, §03). --warm-dark 는 버튼 글자와 같아
+          캡션이 줄의 여섯째 항목처럼 읽혀 쓰지 않는다(디자이너 재검토). 처음엔 --warm-muted 가 이 면에서 4.11:1 이라 갈랐다(2026-10-26 전 #7A6553).
           낭독기는 nav 이름이 같은 말을 하므로 캡션을 건너뛴다. */}
       <p aria-hidden className="mb-0.5 text-[0.6875rem] font-medium text-[var(--seg-ink-off)]">바로가기</p>
       <div ref={trackRef} data-fade-track

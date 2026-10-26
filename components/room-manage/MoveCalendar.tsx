@@ -696,7 +696,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
 
           {/* 카드 끝 한 줄. 행으로 안 세운 창고·사무실(운영자 결정 2026-10-19). 문구와 0 판정은 lib 정본.
               카드 머리(범례)와 같은 자리 문법이다(px-2 · 구분선 1px). 카드 **안**이라 바탕이 --cream 이고
-              --ink-m 이 AA 를 넘는다(카드 밖 --canvas 위에서는 라이트 4.11:1 로 미달, 실측). */}
+              --ink-m 이 AA 를 넘는다(카드 밖 --canvas 위에서는 라이트 4.11:1 로 미달이었다, 실측. 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). */}
           {excludedNote && (
             <p className="break-keep px-2 py-2 text-[0.65625rem]" style={{ color: 'var(--ink-m)', borderTop: '1px solid var(--warm-border)' }}>
               {excludedNote}

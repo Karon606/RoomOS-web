@@ -1285,7 +1285,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : storeGroups ? (
               // 보관 위치별 묶음(§22 SectionHeader, 위치 마커 + 이름 + 개수). 차례는 기본 창고 → 트리 차례 → 보관 위치 미정.
-              // 미정 머리는 장소가 아니라 상태라 위치 마커를 안 달고 이름은 일반 색이다(웹디자이너 패스, 낮춘 색은 캔버스 위 4.11 로 본문 하한 미달).
+              // 미정 머리는 장소가 아니라 상태라 위치 마커를 안 달고 이름은 일반 색이다(웹디자이너 패스, 낮춘 색은 캔버스 위 4.11 로 본문 하한 미달이었다. 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)).
               // 카드 메타에는 장소를 되풀이하지 않는다.
               storeGroups.map(g => (
                 <div key={g.id ?? 'none'}>

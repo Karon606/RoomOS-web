@@ -3646,7 +3646,7 @@ export default function FinanceClient({
               <span className="text-sm font-bold text-[var(--danger-fg)] num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
-              {/* 이 줄은 페이지 면(--canvas) 위라 --warm-muted 는 라이트 4.11:1 로 본문 하한 미달이다. --warm-dark 로 둔다. */}
+              {/* 이 줄은 페이지 면(--canvas) 위라 --warm-muted 는 라이트 4.11:1 로 본문 하한 미달이었다(2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). --warm-dark 로 둔다. */}
               {expFilter.category !== ALL_CATEGORIES && (
                 <span className="text-[0.65625rem] text-[var(--warm-dark)] num mt-0.5">{categoryFilterCaption(currentTotal, fmtWon)}</span>
               )}

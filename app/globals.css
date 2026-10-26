@@ -146,7 +146,8 @@
   --deposit-fg:   #8A6843;  --deposit-bg: rgba(200,160,125,.16); --deposit-ring: rgba(200,160,125,.40);
   --reserve-fg:   #6E5C49;  --reserve-bg: rgba(140,122,102,.14); --reserve-ring: rgba(140,122,102,.32);
   --overdue-fg:   #A03C2E;  --overdue-solid: #A03C2E;            /* 배지 글자 cream */
-  --neutral-fg:   #7A6553;  --neutral-bg: rgba(61,36,24,.08);    --neutral-ring: rgba(61,36,24,.14);
+  --neutral-fg:   var(--ink-3);  --neutral-bg: rgba(61,36,24,.08);    --neutral-ring: rgba(61,36,24,.14);
+  /* --neutral-fg 는 보조 잉크 별칭이다(2026-10-26, 종전 같은 값 리터럴 #7A6553 이라 보조 잉크를 내릴 때 따라오지 못했다). 다크는 아래 #C7B5A2 = --d-ink-s. */
   /* in-progress(점검·처리 중) — §14.4 / §21 재고 b-inspect. 카멜 계열, status 5단계와 별개. 틴트 전용(solid 없음) */
   --inspect-fg:   #7A5A32;  --inspect-bg: rgba(200,160,125,.18); --inspect-ring: rgba(200,160,125,.50);
 

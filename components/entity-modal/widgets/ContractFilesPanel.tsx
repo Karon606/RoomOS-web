@@ -590,7 +590,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
               // 나가던 구조가 '앱에서 인쇄가 안 된다'의 절반이었다. 열람은 '보기'가 전담한다(§22 solid 1개).
               // 행 표면은 --cream 이다. 종전 --canvas 는 §03 이 정한 **페이지 배경** 토큰이라
               // 그 위에서는 배지·보조줄 대비가 통째로 내려앉았다(라이트 [현재] 4.16 · 보조줄 4.11 로
-              // 둘 다 AA 미달). 형제 화면(/contracts)과 같은 모달 안 형제 칸들이 이미 --cream 이다.
+              // 둘 다 AA 미달. 보조줄은 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). 형제 화면(/contracts)과 같은 모달 안 형제 칸들이 이미 --cream 이다.
               // 액션을 모바일에서 아래 줄로 내리는 것도 형제 정본을 따른다 — 한 줄을 고집하다
               // 이름 칸이 100px 대로 눌린 신고가 이미 있었다(71753b36, ContractsClient:301).
               <li key={f.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)]">

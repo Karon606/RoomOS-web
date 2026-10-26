@@ -151,7 +151,7 @@ export function DueDayAdjustList({ records, canEdit, readOnly = false, editable,
               <div className="flex items-center gap-1 flex-wrap">
                 <span className={`${PAY_CHIP_CLS} ${PAY_CHIP_TONE.month}`}>{Number(p.targetMonth.slice(5))}월분</span>
                 {chip && <span className={`${PAY_CHIP_CLS} ${PAY_CHIP_TONE[chip.tone]}`}>{chip.label}</span>}
-                {/* 기록 내용은 형제 수납 행의 메모와 같은 --tc-text 다(--warm-mid 는 --canvas 위 4.11:1, 하네스 실측). */}
+                {/* 기록 내용은 형제 수납 행의 메모와 같은 --tc-text 다(--warm-mid 는 --canvas 위 4.11:1 이었다, 하네스 실측. 2026-10-26 전 #7A6553 기준 4.11:1, 지금 5.18:1(§03)). */}
                 {label && <span className="text-[0.6875rem] text-[var(--tc-text)]">· {label}</span>}
               </div>
               {canTouch && !here && lockedNote && (

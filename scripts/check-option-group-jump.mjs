@@ -67,7 +67,7 @@ if (jumps && !/matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/.test
 if (jumps && !/head\.focus\(\{ preventScroll: true \}\)/.test(jumps)) violations.push(`${NAV} · 바로가기 도착이 머리에 포커스를 주지 않는다(키보드·화면 낭독기가 버튼 자리에 남는다).`)
 if (jumps && !/data-fade-track/.test(jumps)) violations.push(`${NAV} · 바로가기 트랙이 넘침 페이드 표식(data-fade-track)을 잃었다.`)
 // ⓕ 이동 단서 캡션. 상자 버튼 줄이 ViewTabs 밑에서 2차 탭·필터로 읽히지 않게 트랙 앞에 '바로가기' 캡션이 선다(2026-10-23 디자이너 검토).
-//    --canvas 면 위라 --warm-muted(4.11:1) 가 아니라 --seg-ink-off(5.10:1) 다. --warm-dark 는 버튼 글자와 같아 캡션이 여섯째 항목처럼 읽힌다.
+//    색은 --seg-ink-off 다(--canvas 위 5.18:1, 2026-10-26 부터 --warm-muted 와 같은 값. 그 전에는 --warm-muted 가 4.11:1 미달이라 갈랐다). --warm-dark 는 버튼 글자와 같아 캡션이 여섯째 항목처럼 읽힌다.
 const cap = jumps.match(/<p aria-hidden className="([^"]*)">바로가기<\/p>\s*<div ref=\{trackRef\} data-fade-track/)
 if (jumps && !cap) violations.push(`${NAV} · 바로가기 줄 앞에 이동 단서 캡션('바로가기')이 없다. 상자 버튼이 2차 탭·필터로 읽힌다.`)
 else if (cap && (!/text-\[0\.6875rem\]/.test(cap[1]) || !/text-\[var\(--seg-ink-off\)\]/.test(cap[1]))) violations.push(`${NAV} · 바로가기 캡션이 11px · --seg-ink-off 가 아니다(--canvas 위 --warm-muted 는 본문 하한 미달, --warm-dark 는 버튼 글자와 같아 위계가 없다).`)
