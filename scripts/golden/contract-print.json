@@ -1,0 +1,22 @@
+{
+  "contract:full": {
+    "sha256": "2009967c959b4a4bc9e3cdfdf622a7ad7db6306c28920319a4d2e0db18f0d44d",
+    "length": 17727
+  },
+  "contract:minimal": {
+    "sha256": "d1b1d94f9d0a162c45862f01754fb69199b06fecbbfe488dd09ef2407fc6e05f",
+    "length": 14029
+  },
+  "contract:merged": {
+    "sha256": "cba6ac73394774d6eaa8a51dca63720ca43327eb1f5276ae8a6781aa9aead578",
+    "length": 16575
+  },
+  "footer:14mm": {
+    "sha256": "9f690151a765ef2b677a9448d5362f4890732b8506af6f577993534e492f5135",
+    "length": 484
+  },
+  "footer:no-font": {
+    "sha256": "a021729a62f4a4139724e4b816f9827c4352fb0e24161f15da60de8f182f6b25",
+    "length": 343
+  }
+}

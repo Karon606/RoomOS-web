@@ -18,6 +18,8 @@ import { buildContractPrintHtml, type PrintContractData } from '../lib/contractP
 import { DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, propertyContractAddenda } from '../lib/contract'
 import { resolveContractTranslation, TRANSLATION_LANGS } from '../lib/contractTranslation'
 import { buildContractTranslationPrintHtml, TRANSLATION_SCRIPT_FONT } from '../lib/contractTranslationPrintHtml'
+import { buildReportPrintHtml } from '../lib/reportPrintHtml'
+import { printPageNumberFooterTemplate, PRINT_BRAND_HEADER_CSS, PRINT_BRAND_FOOTER_CSS, PRINT_WORDMARK_HTML } from '../lib/printBrandHtml'
 
 const violations: string[] = []
 
@@ -113,6 +115,42 @@ for (const lang of TRANSLATION_LANGS) {
   if (size < MIN_FONT_BYTES) {
     violations.push(`${lang} 의 글꼴 ${p} 가 ${size}바이트다(${MIN_FONT_BYTES} 이상이라야 한다) — LFS 포인터이거나 받다 만 파일이다`)
   }
+}
+
+// ── 축 1-d. 결산 보고서 종이 ──────────────────────────────────────────────
+// 아이폰 홈화면 앱의 공유 시트 인쇄가 받는 세 번째 종이다(2026-10-26, 신고 2e41ddb1). 전년 칸과
+// 카테고리 표, 로고가 서는 갈래를 채워 부른다. 쪽 번호 꼬리말 틀도 본문 밖 독립 문서라 따로 본다.
+// 브랜딩 ON 이라 머리띠·꼬리말은 계약서와 같은 공용 조각(lib/printBrandHtml)이라야 한다. 새로 그리면
+// 한쪽만 고쳐져 같은 영업장의 서류 머리가 서로 다르게 생긴다.
+const rpRows = Array.from({ length: 12 }, (_, i) => ({
+  month: `2026-${String(i + 1).padStart(2, '0')}`, billedAmount: 1000, revenue: 900, extraIncome: 10,
+  expense: 500, profit: i === 4 ? -1 : 410, unpaidAmount: 100,
+}))
+const rpSummary = {
+  year: '2026', rows: rpRows, totalBilled: 12000, totalRevenue: 10800, totalExtraIncome: 120,
+  totalExpense: 6000, totalProfit: 4920, endingUnpaid: 100,
+  expenseByCategory: [{ category: '검사<분류>', amount: 6000, percent: 100 }],
+  prevYear: { rows: rpRows.map(r => ({ ...r, month: r.month.replace('2026', '2025') })), totalRevenue: 9000, totalProfit: 4000 },
+}
+const rpHtml = buildReportPrintHtml(rpSummary, {
+  brand: {
+    businessInfo: { name: '검사영업장', registrationNo: '000-00-00000', ceoName: '검사대표', address: '검사 주소 1층' },
+    phone: '010-0000-0000', logoImageUrl: DUMMY_PNG,
+  },
+  todayMonth: '2026-10', printedOn: '2026년 10월 26일 (월)', pretendardBase64: 'ZHVtbXk=',
+})
+assertSelfContained(rpHtml, '결산 보고서 HTML')
+assertSelfContained(printPageNumberFooterTemplate('ZHVtbXk=', '검사영업장', 20), '결산 보고서 꼬리말')
+for (const [piece, what] of [[PRINT_BRAND_HEADER_CSS, '머리띠 CSS'], [PRINT_BRAND_FOOTER_CSS, '꼬리말 CSS'], [PRINT_WORDMARK_HTML, '워드마크'], ['<div class="doc-header">', '머리띠'], ['<div class="foot-biz">', '사업자 꼬리말']] as const) {
+  if (!rpHtml.includes(piece)) {
+    violations.push(`결산 보고서 HTML 에 공용 ${what} 조각이 없다. 브랜딩은 lib/printBrandHtml 을 그대로 쓴다(계약서와 같은 머리·꼬리)`)
+  }
+}
+if (countFontFaces(rpHtml) !== 1) {
+  violations.push(`결산 보고서 HTML 의 임베드 폰트가 ${countFontFaces(rpHtml)}벌이다(1벌이라야 한다). @sparticuz chromium 에는 한글 폰트가 없어 종이가 통째로 두부가 된다`)
+}
+if (rpHtml.includes('<분류>')) {
+  violations.push('결산 보고서 HTML 이 카테고리 이름을 이스케이프하지 않는다. 운영자가 적은 이름이 마크업으로 섞여 표가 깨진다')
 }
 
 // ── 축 2. 폰트 번들 명단 대조 ──────────────────────────────────────────────
