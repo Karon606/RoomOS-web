@@ -389,20 +389,20 @@ const AXES = [
     must: [[new RegExp(`if \\(!\\(await locationsInProperty\\(propertyId, \\[${v}\\]\\)\\)\\) \\{?\\s*return \\{ ok: false`), '토큰의 위치 id 를 영업장 위치로 보고 아니면 닫지 않는다']],
     mustNot: [],
   })),
-  // 되돌리기 공용층은 품목이 사라진 경우(병합)와 남의 영업장을 가른다. 사라지면 조정만 건너뛰고, 부르는 쪽은 복원을 마저 하고 알린다.
+  // 되돌리기 공용층은 품목이 사라진 경우(병합)와 남의 영업장을 말로만 가르고 둘 다 던진다(재검수 2026-10-23). 조정만 건너뛰는
+  // 부분 복원은 대상 품목 재고를 틀리게 남긴다. 수령 취소 적용취소는 자동 점검·조정의 품목이 사라졌으면 쓰기 전에 거절한다.
   {
     file: 'app/(app)/inventory/ledgerShift.ts',
     fn: 'revertShiftRows',
-    must: [[/if \(await tx\.trackedItem\.findUnique\(\{ where: \{ id: undo\.trackedItemId \}[^\n]*throw new Error\('다른 영업장의 기록입니다\.'\)\n\s*return 'itemGone'/, '품목이 사라진 경우와 남의 영업장을 가르지 않는다(병합 뒤 적용취소가 틀린 말로 통째 실패한다)']],
-    mustNot: [],
+    must: [[/if \(await tx\.trackedItem\.findUnique\(\{ where: \{ id: undo\.trackedItemId \}[^\n]*throw new Error\('다른 영업장의 기록입니다\.'\)\n\s*throw new Error\(ITEM_MERGED_UNDO_DENIED\)/, '품목이 사라졌을 때 던지지 않는다(조정을 건너뛴 부분 복원이 재고를 틀리게 남긴다)']],
+    mustNot: [[/return 'itemGone'/, '사라진 품목의 조정을 건너뛰고 복원을 이어 간다']],
   },
-  ...['undoDeleteExpense', 'undoCancelReceipt'].map(fn => ({
-    file: fn === 'undoDeleteExpense' ? 'app/(app)/finance/actions.ts' : 'app/(app)/inventory/actions.ts',
-    fn,
-    must: [[/\(await revertShiftRows\(tx, propertyId, undo\.shift\)\) === 'itemGone'/, '조정을 건너뛴 사실을 받아 알리지 않는다'], [/SHIFT_ITEM_GONE_NOTICE/, '건너뛴 사유를 돌려주지 않는다']],
-    mustNot: [],
-    noOrder: true,   // 관문이 아니라 복원 뒤 알림을 보는 축이다
-  })),
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoCancelReceipt',
+    must: [[/const itemIds = \[\.\.\.new Set\(\[\.\.\.undo\.autoChecks\.map\(c => c\.trackedItemId\), \.\.\.\(undo\.shift \? \[undo\.shift\.trackedItemId\] : \[\]\)\]\)\][\s\S]*?ITEM_MERGED_UNDO_DENIED/, '자동 점검·조정의 품목이 사라졌을 때 복원 전체를 거절하지 않는다(수령만 되살아 재고가 틀린다)']],
+    mustNot: [[/if \(!ownItems\.has\(c\.trackedItemId\)\) continue/, '사라진 품목의 자동 점검을 건너뛰고 수령만 되살린다']],
+  },
 ]
 // 표식 뒤 축에 순서 검사를 켠다.
 {

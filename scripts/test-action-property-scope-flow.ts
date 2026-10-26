@@ -55,7 +55,7 @@ async function main() {
   const market = await import('@/app/(app)/market-analysis/actions')
   const rooms = await import('@/app/(app)/rooms/actions')
   const inventory = await import('@/app/(app)/inventory/actions')
-  const { revertShiftRows, SHIFT_ITEM_GONE_NOTICE } = await import('@/app/(app)/inventory/ledgerShift')
+  const { revertShiftRows } = await import('@/app/(app)/inventory/ledgerShift')
   const cleaning = await import('@/app/(app)/room-manage/cleaningActions')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
 
@@ -314,7 +314,7 @@ async function main() {
 
   // ── 재고·지출 적용취소 토큰 ──
   {
-    const item = async (pid: string) => (await prisma.trackedItem.create({ data: { propertyId: pid, category: '부식비', label: '쌀' } })).id as string
+    const item = async (pid: string, label = '쌀') => (await prisma.trackedItem.create({ data: { propertyId: pid, category: '부식비', label } })).id as string
     const loc = async (pid: string) => (await prisma.storageLocation.create({ data: { propertyId: pid, name: '창고' } })).id as string
     const I1 = await item(P1), I2 = await item(P2)
     const LOC1 = await loc(P1), LOC2 = await loc(P2)
@@ -377,20 +377,33 @@ async function main() {
     eq('수령 취소 적용취소: 남의 영업장 받은 위치 거절', await inventory.undoCancelReceipt(rcUndo), { ok: false, error: '다른 영업장의 기록입니다.' })
     eq('수령 취소 적용취소 거절 뒤 수령 안 됨', (await prisma.expense.findUnique({ where: { id: E1 } }))?.receivedAt, null)
 
-    // b. 토스트 창 안에 품목이 병합되어 사라졌으면 조정만 건너뛰고 복원은 마저 하며 사유를 정확히 알린다.
-    const GONE_ITEM = randomUUID()   // 병합으로 지워진 품목(행 없음)
-    eq('재고 되돌리기: 사라진 품목은 건너뜀', await prisma.$transaction(async tx => revertShiftRows(tx, P1, { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] })).catch(e => (e as Error).message), 'itemGone')
-    eq('수령 취소 적용취소: 품목이 사라졌으면 복원하고 알림', await inventory.undoCancelReceipt({
+    // b(재검수 2026-10-23). 수령 취소·지출 삭제를 '뒤 점검 조정'으로 한 뒤 토스트 창 안에 그 품목을 병합하면 깎인 점검이
+    // 대상 품목으로 넘어가고 원본 품목 행은 지워진다(카드 병합 4단계와 같은 결과를 직접 만든다). 이때 복원 전체를 거절해야
+    // 대상 품목 재고가 수령분만큼 틀리게 남지 않는다. 부분 복원(수령만·지출만)은 하지 않는다.
+    const SRC = await item(P1, '병합 원본'), DST = await item(P1, '병합 대상')
+    const C3 = (await prisma.stockCheck.create({ data: { trackedItemId: SRC, date: new Date('2026-10-03T00:00:00Z'), remainingQty: 5 } })).id as string
+    await prisma.stockCheck.update({ where: { id: C3 }, data: { trackedItemId: DST } })   // 병합: 점검이 대상으로 넘어간다
+    await prisma.trackedItem.delete({ where: { id: SRC } })                              // 병합: 원본 행을 지운다
+    const mergedShift = { trackedItemId: SRC, checks: [{ id: C3, remainingQty: 8, locs: [] }], createdLinks: [] }
+    const c3Before = await checkRow(C3)
+    const MERGED = '그 사이 품목이 합쳐져 되돌릴 수 없습니다.'
+    eq('재고 되돌리기: 병합으로 사라진 품목은 던진다', await prisma.$transaction(async tx => revertShiftRows(tx, P1, mergedShift)).then(() => 'done', e => (e as Error).message), MERGED)
+    eq('수령 취소 + 병합: 복원 전체 거절', await inventory.undoCancelReceipt({
       ...rcUndo, receivedLocationId: LOC1,
-      autoChecks: [{ id: randomUUID(), trackedItemId: GONE_ITEM, dateMs: Date.parse('2026-10-02T00:00:00Z'), createdAtMs: Date.parse('2026-10-02T00:00:00Z'), remainingQty: 1, memo: null, isReconcile: false, locations: [] }],
-      shift: { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] },
-    }), { ok: true, notice: `그 사이 품목이 합쳐지거나 지워져 자동 점검 1건은 되살리지 못했습니다. ${SHIFT_ITEM_GONE_NOTICE}` })
-    eq('수령 복원 반영', (await prisma.expense.findUnique({ where: { id: E1 } }))?.receivedLocationId, LOC1)
+      autoChecks: [{ id: randomUUID(), trackedItemId: SRC, dateMs: Date.parse('2026-10-02T00:00:00Z'), createdAtMs: Date.parse('2026-10-02T00:00:00Z'), remainingQty: 3, memo: null, isReconcile: false, locations: [] }],
+      shift: mergedShift,
+    }), { ok: false, error: MERGED })
+    eq('수령 취소 + 병합 거절 뒤 수령 안 됨·대상 품목 점검 무변경', [(await prisma.expense.findUnique({ where: { id: E1 } }))?.receivedAt, await checkRow(C3)], [null, c3Before])
+    eq('수령 취소 + 병합: 조정만 사라진 품목이어도 거절', (await inventory.undoCancelReceipt({ ...rcUndo, receivedLocationId: LOC1, shift: mergedShift })).ok, false)
     const expId2 = randomUUID()
-    eq('지출 삭제 적용취소: 품목이 사라졌으면 복원하고 알림', await fin.undoDeleteExpense({
-      expense: { ...expSnap, id: expId2 }, order: null, shippingRows: [], freedSiblingIds: [], stockCheckIds: [], reserveTxIds: [],
-      shift: { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] },
-    }), { ok: true, notice: SHIFT_ITEM_GONE_NOTICE })
+    eq('지출 삭제 + 병합: 복원 전체 거절', await fin.undoDeleteExpense({
+      expense: { ...expSnap, id: expId2 }, order: null, shippingRows: [], freedSiblingIds: [], stockCheckIds: [], reserveTxIds: [], shift: mergedShift,
+    }), { ok: false, error: MERGED })
+    eq('지출 삭제 + 병합 거절 뒤 지출 안 생김·대상 품목 점검 무변경', [await prisma.expense.count({ where: { id: expId2 } }), await checkRow(C3)], [0, c3Before])
+    // 대조군: 재고 조정이 없는 지출 삭제의 복원은 그대로 된다.
+    eq('지출 삭제(조정 없음) 복원: 통과', await fin.undoDeleteExpense({
+      expense: { ...expSnap, id: expId2 }, order: null, shippingRows: [], freedSiblingIds: [], stockCheckIds: [], reserveTxIds: [], shift: null,
+    }), { ok: true })
     eq('지출 복원 반영', await prisma.expense.count({ where: { id: expId2 } }), 1)
     const E3 = (await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '부식비' } })).id as string
     eq('수령 취소 적용취소: 남의 영업장 품목은 여전히 거절(트랜잭션째)', await inventory.undoCancelReceipt({ ...rcUndo, expenseId: E3, receivedLocationId: LOC1, shift: { trackedItemId: I2, checks: [], createdLinks: [] } }),

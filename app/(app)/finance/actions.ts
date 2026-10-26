@@ -47,7 +47,7 @@ import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 재고 원장 전파(점보롤 백로그 1번) — 수령완료 구매의 수량 정정·삭제가 뒤 점검의 저장 잔량을
 // 함께 옮기게 한다. 계산 정본은 lib/stockLedger, 적용·되돌리기는 inventory/ledgerShift 공용층.
-import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, SHIFT_ITEM_GONE_NOTICE, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
+import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
 import type { ShiftRow } from '@/lib/stockLedger'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
@@ -2078,7 +2078,7 @@ function pickScalars<T>(src: unknown, keys: Set<string>): T | null {
   return Object.fromEntries(Object.entries(src as Record<string, unknown>).filter(([k]) => keys.has(k))) as T
 }
 
-export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2128,7 +2128,7 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
       shippingRows.push(row)
     }
     const orderSnap = pickScalars<Prisma.ExpenseOrderUncheckedCreateInput & { id: string; updatedAt?: string | Date }>(undo.order, EXPENSE_ORDER_SCALARS)
-    const shiftGone = await prisma.$transaction(async tx => {
+    await prisma.$transaction(async tx => {
       // 주문 복원 — 삭제됐으면 스냅샷으로 재생성, 스냅샷이 없거나 다른 주문이면 orderId 강등
       if (data.orderId) {
         // 주문도 이 영업장 것만 있는 것으로 본다. 남의 영업장 주문이면 아래에서 강등된다.
@@ -2175,12 +2175,13 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
         await tx.reserveTransaction.updateMany({ where: { id: { in: undo.reserveTxIds }, propertyId }, data: { expenseId: data.id } })
       }
       // 삭제와 함께 옮겼던 점검 조정 복원. 스냅샷 그대로(품목의 영업장·점검 스코프 검증은 revertShiftRows 내장)
-      // 그 사이 품목이 병합으로 사라졌으면 조정만 건너뛰고 지출 복원은 마저 한다(2026-10-23 검수).
-      return undo.shift ? (await revertShiftRows(tx, propertyId, undo.shift)) === 'itemGone' : false
+      // 그 사이 품목이 병합으로 사라졌으면 revertShiftRows 가 던져 지출 복원까지 트랜잭션째 되돌린다(2026-10-23 재검수).
+      // 조정만 건너뛰면 대상 품목 재고가 틀리게 남는다. 재고 조정이 없는 삭제의 복원은 그대로 된다.
+      if (undo.shift) await revertShiftRows(tx, propertyId, undo.shift)
     })
     revalidatePath('/finance')
     if (undo.stockCheckIds.length > 0 || undo.shift) revalidatePath('/inventory')
-    return shiftGone ? { ok: true, notice: SHIFT_ITEM_GONE_NOTICE } : { ok: true }
+    return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
