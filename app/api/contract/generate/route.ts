@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, driveImageDataUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, contractPrintVars, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
+import { printPageNumberFooterTemplate } from '@/lib/printBrandHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, resolveSubLeaseAddendum,
   resolveRoomScheduleAddendum,
@@ -613,17 +614,8 @@ export async function POST(req: Request) {
         if (pageCount > 1) {
           // 다중 페이지 — v2.0 §26·v2.0 §26: 꼬리말에 페이지번호(좌) + 영업장명(우).
           // 단일 페이지는 페이지번호 생략(v2.0 §26). @sparticuz chromium 한글폰트 없음 → 꼬리말에도 Pretendard 임베드.
-          const bizNameEsc = (printData.businessInfo.name || '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          // 폰트를 못 구했으면 @font-face 를 넣지 않는다 — 빈 src 는 로딩 실패로 대기를 만든다(본문 쪽과 같은 규칙).
-          const footerFontCss = pretendardBase64
-            ? `@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}`
-            : ''
-          const footerTemplate =
-            `<style>${footerFontCss}*{margin:0;padding:0}</style>` +
-            `<div style="font-family:'Pretendard',sans-serif;font-size:8pt;color:#6B5D4F;width:100%;padding:0 14mm;display:flex;justify-content:space-between;align-items:center;">` +
-            `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
-            `<span>${bizNameEsc}</span></div>`
+          // 틀은 자체 브랜딩 종이 공용 조각이다(결산 보고서 종이가 같은 틀을 쓴다). 좌우 14mm 는 본문 여백.
+          const footerTemplate = printPageNumberFooterTemplate(pretendardBase64, printData.businessInfo.name, 14)
           return await printPdf({
             ...baseOpts,
             margin: baseMargin,   // 상하좌우 동일(대칭) — 푸터는 14mm 하단 여백 안에 렌더

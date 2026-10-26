@@ -11,6 +11,11 @@ import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
 import { asResolvedContractTranslation, contractTranslationAddendum } from '@/lib/contractTranslation'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
+// 로고 머리띠·사업자정보·꼬리말은 자체 브랜딩 종이 공용 조각이다(결산 보고서 종이가 같은 것을 쓴다).
+import {
+  printBrandHeaderHtml, printBrandFootBizHtml,
+  PRINT_BRAND_HEADER_CSS, PRINT_BRAND_FOOTER_CSS, PRINT_WORDMARK_CSS, PRINT_WORDMARK_HTML,
+} from '@/lib/printBrandHtml'
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 파일을 읽는다. 이후 요청은 메모리 캐시 사용.
 const PRETENDARD_URL = 'https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2'
@@ -235,8 +240,6 @@ export function buildContractPrintHtml(d: PrintContractData): string {
         </tr>`
 
   const biz = d.businessInfo
-  const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${escape(biz.registrationNo)}` : '', biz.ceoName ? `대표 ${escape(biz.ceoName)}` : ''].filter(Boolean).join(' · ')
-  const bizMeta2 = [biz.address ? escape(biz.address) : '', d.phone ? escape(d.phone) : ''].filter(Boolean).join(' · ')
 
   // 잔여 소지품 임의처분 동의서 — enabled 일 때만 별도 페이지로 이어 출력
   // 전입신고 칸 머리 — 서버 조립이 정본 함수로 정해 실어 준다. 안 실리면(옛 호출부) 내국인 표기.
@@ -275,8 +278,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="dc-sign"><span class="dc-sign-lbl">${escape(o.signLabel)}</span><span class="dc-sign-line">${escape(d.tenant.name)}</span><span class="dc-sign-seal">${o.signatureDataUrl ? `<img class="dc-sign-img" src="${o.signatureDataUrl}" alt="서명" />` : '(서명 또는 인)'}</span></div>
       ${o.toLine ? `<div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>` : ''}
       <div class="doc-footer">
-        <div class="foot-biz"><span class="nm">${escape(biz.name || '')}</span>${biz.registrationNo ? ` · 사업자등록번호 ${escape(biz.registrationNo)}` : ''}${biz.ceoName ? ` · 대표 ${escape(biz.ceoName)}` : ''}${bizMeta2 ? `<br>${bizMeta2}` : ''}</div>
-        <div class="wordmark">made with <span class="wm"><span class="wm-stay">stay</span><span class="wm-eum">eum</span></span></div>
+        <div class="foot-biz">${printBrandFootBizHtml(d)}</div>
+        ${PRINT_WORDMARK_HTML}
       </div>
     </div>`
 
@@ -328,15 +331,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .paper { position: relative; }
 
   /* 헤더 */
-  .doc-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 3mm; gap: 6mm; }
-  .biz { display: flex; gap: 4mm; align-items: flex-start; }
-  .biz-logo { width: 13mm; height: 13mm; border: 0.6pt solid var(--p-rule); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .biz-logo img { max-width: 11mm; max-height: 11mm; width: auto; height: auto; object-fit: contain; }
-  .biz-name { font-size: 13pt; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin-bottom: 1mm; }
-  .biz-meta { font-size: 8pt; color: var(--p-muted); line-height: 1.5; }
-  .issue { text-align: right; font-size: 8pt; color: var(--p-muted); line-height: 1.65; flex-shrink: 0; white-space: nowrap; }
-  .issue .num { color: var(--p-ink); font-weight: 500; }
-  .tc-rule { height: 1.6pt; background: var(--p-tc); margin-bottom: 4mm; }
+${PRINT_BRAND_HEADER_CSS}
 
   /* 제목 */
   .doc-title-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4mm; }
@@ -399,10 +394,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .seal-stamp { height: 18mm; width: auto; max-width: 22mm; object-fit: contain; }
 
   /* 푸터 */
-  .doc-footer { border-top: 0.6pt solid var(--p-rule); padding-top: 3mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; }
-  .foot-biz { font-size: 8pt; color: var(--p-muted); line-height: 1.55; }
-  .foot-biz .nm { color: var(--p-ink); font-weight: 600; }
-  .wordmark { font-size: 8pt; color: var(--p-muted); white-space: nowrap; }
+${PRINT_BRAND_FOOTER_CSS}
   /* 잔여 소지품 임의처분 동의서 */
   .paper.disposal { page-break-before: always; break-before: page; padding-top: 4mm; }
   .dc-title { font-size: 15pt; font-weight: 800; text-align: center; letter-spacing: -.02em; margin: 2mm 0 7mm; }
@@ -417,9 +409,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .dc-sign-seal { color: var(--p-muted); font-size: 9pt; }
   .dc-sign-img { height: 11mm; width: auto; max-width: 38mm; object-fit: contain; vertical-align: middle; }
   .dc-to { text-align: center; font-size: 11pt; font-weight: 700; margin: 8mm 0 4mm; }
-  .wordmark .wm { font-weight: 600; }
-  .wordmark .wm-stay { color: var(--p-ink); }
-  .wordmark .wm-eum { color: var(--p-tc); }
+${PRINT_WORDMARK_CSS}
 
   /* 페이지 분할 보호 */
   body { widows: 2; orphans: 2; }
@@ -429,20 +419,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 </head>
 <body>
   <div class="paper">
-    <div class="doc-header">
-      <div class="biz">
-        <div class="biz-logo">${d.logoImageUrl ? `<img src="${escape(d.logoImageUrl)}" alt="logo" />` : ''}</div>
-        <div>
-          <div class="biz-name">${escape(biz.name || '')}</div>
-          <div class="biz-meta">${bizMeta1}${bizMeta1 && bizMeta2 ? '<br>' : ''}${bizMeta2}</div>
-        </div>
-      </div>
-      <div class="issue">
-        계약번호 <span class="num">No. ${escape(d.contractNo)}</span><br>
-        계약일 ${escape(d.signDate)}
-      </div>
-    </div>
-    <div class="tc-rule"></div>
+    ${printBrandHeaderHtml(d, `계약번호 <span class="num">No. ${escape(d.contractNo)}</span><br>
+        계약일 ${escape(d.signDate)}`)}
 
     <div class="doc-title-row">
       <div class="doc-title">${escape(d.template.title)}</div>
@@ -516,9 +494,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
     <div class="doc-footer">
       <div class="foot-biz">
-        <span class="nm">${escape(biz.name || '')}</span>${biz.registrationNo ? ` · 사업자등록번호 ${escape(biz.registrationNo)}` : ''}${biz.ceoName ? ` · 대표 ${escape(biz.ceoName)}` : ''}${bizMeta2 ? `<br>${bizMeta2}` : ''}
+        ${printBrandFootBizHtml(d)}
       </div>
-      <div class="wordmark">made with <span class="wm"><span class="wm-stay">stay</span><span class="wm-eum">eum</span></span></div>
+      ${PRINT_WORDMARK_HTML}
     </div>
   </div>
   ${disposalHtml}
