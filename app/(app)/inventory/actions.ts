@@ -59,6 +59,13 @@ async function getPropertyId() {
   return propertyId
 }
 
+// 화면·토큰에서 온 위치 id 가 전부 이 영업장 위치인가(2026-10-23 운영자 승인). 빈 값은 건너뛴다.
+async function locationsInProperty(propertyId: string, ids: (string | null | undefined)[]): Promise<boolean> {
+  const want = [...new Set(ids.filter((v): v is string => !!v))]
+  if (want.length === 0) return true
+  return (await prisma.storageLocation.count({ where: { id: { in: want }, propertyId } })) === want.length
+}
+
 // 금액 읽기 권한 — 재고 축 전체에 이 검사가 한 군데도 없었다(C페이즈 조사 2026-08-03).
 // LIMITED_STAFF 는 설계상 '재고 쓰기 허용, 금액 읽기 차단'인데 /inventory 가 라우트 화이트리스트에
 // 있어서 평균 단가·최근 단가·수령 대기 금액·월별 구매금액·단가 추이를 전부 봤다.
@@ -1413,8 +1420,13 @@ export async function undoUpdateStockCheck(undo: StockCheckEditUndo): Promise<{ 
     if (!c || c.trackedItem.propertyId !== propertyId || c.trackedItemId !== undo.trackedItemId) {
       return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
     }
+    // 되살릴 위치 행의 위치 id 도 토큰에서 온 값이다. 이 영업장 위치만 받는다.
+    if (!(await locationsInProperty(propertyId, undo.locations.flatMap(l => [l.storageLocationId, l.fromLocationId])))) {
+      return { ok: false, error: '다른 영업장의 기록입니다.' }
+    }
     await prisma.$transaction(async (tx) => {
-      if (undo.shift) await revertShiftRows(tx, undo.shift)
+      // 토큰의 품목을 믿지 않고 위에서 확인한 이 점검의 품목으로 되돌린다(형제 2곳과 같은 꼴).
+      if (undo.shift) await revertShiftRows(tx, propertyId, { ...undo.shift, trackedItemId: c.trackedItemId })
       await tx.stockCheck.update({
         where: { id: undo.checkId },
         data: {
@@ -1563,12 +1575,25 @@ export async function undoDeleteStockCheck(undo: StockCheckUndo): Promise<{ ok: 
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const exists = await prisma.stockCheck.findUnique({ where: { id: undo.id }, select: { id: true } })
     if (exists) return { ok: true }   // 중복 클릭 멱등
+    // 토큰은 화면이 들고 온 값이다(2026-10-23 운영자 승인). 위치 행은 칸을 하나씩 골라 다시 짜고(통째로 넘기면 중첩
+    // create·connect 로 남의 영업장 행이 생기거나 붙는다), 위치 id 는 이 영업장 위치만, 원천 지출은 이 영업장 지출일 때만 잇는다.
+    if (!(await locationsInProperty(propertyId, undo.locations.flatMap(l => [l.storageLocationId, l.fromLocationId])))) {
+      return { ok: false, error: '다른 영업장의 기록입니다.' }
+    }
+    const sourceExpenseId = undo.sourceExpenseId
+      && (await prisma.expense.findFirst({ where: { id: undo.sourceExpenseId, propertyId }, select: { id: true } }))
+      ? undo.sourceExpenseId : null
     await prisma.stockCheck.create({
       data: {
         id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
         remainingQty: undo.remainingQty, memo: undo.memo, isReconcile: undo.isReconcile,
-        sourceExpenseId: undo.sourceExpenseId,
-        locationBreakdown: { create: undo.locations },
+        sourceExpenseId,
+        locationBreakdown: {
+          create: undo.locations.map(l => ({
+            storageLocationId: l.storageLocationId, remainingQty: l.remainingQty, restockedQty: l.restockedQty,
+            fromHubQty: l.fromHubQty, fromLocationId: l.fromLocationId, carried: l.carried ?? null,
+          })),
+        },
       },
     })
     revalidatePath('/inventory')
@@ -2039,7 +2064,7 @@ export async function undoDeleteStockAddition(undo: StockAdditionUndo): Promise<
           addedQty: undo.addedQty, source: undo.source, memo: undo.memo, storageLocationId: undo.storageLocationId,
         },
       })
-      if (undo.shift) await revertShiftRows(tx, { ...undo.shift, trackedItemId: undo.trackedItemId })
+      if (undo.shift) await revertShiftRows(tx, propertyId, { ...undo.shift, trackedItemId: undo.trackedItemId })
     })
     revalidatePath('/inventory')
     return { ok: true }
@@ -2138,7 +2163,7 @@ export async function undoUpdateStockAddition(undo: StockAdditionEditUndo): Prom
           source: undo.before.source, memo: undo.before.memo, storageLocationId: undo.before.storageLocationId,
         },
       })
-      if (undo.shift) await revertShiftRows(tx, { ...undo.shift, trackedItemId: a.trackedItemId })
+      if (undo.shift) await revertShiftRows(tx, propertyId, { ...undo.shift, trackedItemId: a.trackedItemId })
     })
     revalidatePath('/inventory')
     return { ok: true }
@@ -4536,7 +4561,7 @@ export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: 
           },
         })
       }
-      if (undo.shift) await revertShiftRows(tx, undo.shift)
+      if (undo.shift) await revertShiftRows(tx, propertyId, undo.shift)
     })
     revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }

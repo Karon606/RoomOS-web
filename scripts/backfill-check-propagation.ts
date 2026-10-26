@@ -34,7 +34,10 @@ const checkId = argv.find(a => !a.startsWith('--'))
 
 async function revert(file: string) {
   const undo = JSON.parse(readFileSync(file, 'utf8')) as LedgerShiftUndo
-  await prisma.$transaction(async tx => { await revertShiftRows(tx, undo) })
+  // 되돌리기 공용층이 품목의 영업장을 확인한다(2026-10-23). 운영자 스크립트라 품목에서 영업장을 읽어 넘긴다.
+  const item = await prisma.trackedItem.findUnique({ where: { id: undo.trackedItemId }, select: { propertyId: true } })
+  if (!item) { console.error('스냅샷의 품목을 찾을 수 없다.'); process.exit(1) }
+  await prisma.$transaction(async tx => { await revertShiftRows(tx, item.propertyId, undo) })
   console.log(`\n되돌렸다 — 점검 ${undo.checks.length}건을 전파 전 값으로 복귀.`)
   await prisma.$disconnect()
 }

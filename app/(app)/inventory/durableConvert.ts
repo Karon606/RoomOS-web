@@ -204,7 +204,7 @@ export async function applyDurableConvertUndo(tx: InventoryTx, propertyId: strin
   }
   if (undo.shift) {
     if ((await tx.trackedItem.count({ where: { id: undo.shift.trackedItemId, propertyId } })) !== 1) throw INVALID
-    await revertShiftRows(tx, undo.shift)
+    await revertShiftRows(tx, propertyId, undo.shift)
   }
   if (undo.logIds.length) await tx.assetAssignmentLog.deleteMany({ where: { id: { in: undo.logIds }, propertyId } })
 }

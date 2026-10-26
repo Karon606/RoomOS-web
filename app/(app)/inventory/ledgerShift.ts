@@ -310,7 +310,13 @@ export async function applyShiftRows(
 }
 
 // 조정 되돌리기 — 페이로드는 클라이언트발이므로 점검 id 를 반드시 품목 스코프로 검증한다(B1 선례).
-export async function revertShiftRows(tx: InventoryTx, undo: LedgerShiftUndo): Promise<void> {
+// 품목도 이 영업장 것이어야 한다(2026-10-23 운영자 승인). 종전에는 부르는 쪽마다 품목을 따로 확인했고, 두 곳(점검 수정·
+// 수령 취소 적용취소)과 지출 삭제 적용취소가 토큰의 품목을 안 봐서 남의 영업장 점검 잔량·위치 링크를 덮어썼다.
+// 그래서 확인을 여기 한 자리로 모은다. 남의 품목이면 던져 트랜잭션째 되돌린다.
+export async function revertShiftRows(tx: InventoryTx, propertyId: string, undo: LedgerShiftUndo): Promise<void> {
+  if (!(await tx.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } }))) {
+    throw new Error('다른 영업장의 기록입니다.')
+  }
   const ids = undo.checks.map(c => c.id)
   if (ids.length > 0) {
     const owned = await tx.stockCheck.findMany({

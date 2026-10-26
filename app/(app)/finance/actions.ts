@@ -1650,7 +1650,7 @@ export async function undoExpenseStockShift(undo: LedgerShiftUndo): Promise<{ ok
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    await prisma.$transaction(async tx => { await revertShiftRows(tx, undo) })
+    await prisma.$transaction(async tx => { await revertShiftRows(tx, propertyId, undo) })
     revalidatePath('/inventory')
     revalidatePath('/finance')
     return { ok: true }
@@ -2068,12 +2068,23 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
 // 지출 삭제 적용취소 — 스냅샷으로 주문·지출·배송비 라인을 재생성하고 링크를 재연결.
 // 적대검증 필수 4건 반영: 주문 항상 스냅샷 복원, 사라진 부모 FK null 강등,
 // 형제 orderId 조건부 복원, 고정지출 재기록 후 복원 시 이중 집계 차단.
+// 지출 삭제 적용취소 토큰의 행은 맨 칸(스칼라)만 골라 되살린다(2026-10-23 운영자 승인). 통째로 create 에 넘기면 관계 칸
+// (autoStockChecks·reserveSettlements·order 의 connect·create)이 실려 남의 영업장 점검·예비비·주문 행이 이 지출에 붙는다.
+// 칸 목록은 Prisma 가 스키마에서 낸 정본(ScalarFieldEnum)이라 칸이 늘어도 따로 고칠 표가 없다.
+const EXPENSE_SCALARS = new Set<string>(Object.values(Prisma.ExpenseScalarFieldEnum))
+const EXPENSE_ORDER_SCALARS = new Set<string>(Object.values(Prisma.ExpenseOrderScalarFieldEnum))
+function pickScalars<T>(src: unknown, keys: Set<string>): T | null {
+  if (!src || typeof src !== 'object') return null
+  return Object.fromEntries(Object.entries(src as Record<string, unknown>).filter(([k]) => keys.has(k))) as T
+}
+
 export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     type ExpenseRowSnap = Prisma.ExpenseUncheckedCreateInput & { id: string; updatedAt?: string | Date }
-    const data = { ...undo.expense } as ExpenseRowSnap
+    const data = pickScalars<ExpenseRowSnap>(undo.expense, EXPENSE_SCALARS)
+    if (!data) return { ok: false, error: '다른 영업장의 기록입니다.' }
     delete data.updatedAt   // @updatedAt은 재생성 시 자동
     if (data.propertyId !== propertyId) return { ok: false, error: '다른 영업장의 기록입니다.' }
     // 멱등 — 이미 복원돼 있으면 성공
@@ -2097,16 +2108,31 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
       assignedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
       // 보관 위치도 같은 클래스다. 삭제 사이 위치를 지웠으면(또는 남의 영업장 위치면) 비워서 복원한다.
       storedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      // 작업 연결도 같은 클래스다(2026-10-23). 남의 영업장 작업이면 비워서 복원한다.
+      roomWorkId: (fk: string) => prisma.roomWork.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
     } as const
-    for (const key of Object.keys(fkFinders) as (keyof typeof fkFinders)[]) {
-      const fk = data[key]
-      if (fk && !(await fkFinders[key](fk))) data[key] = null
+    const dropForeignFks = async (row: ExpenseRowSnap) => {
+      for (const key of Object.keys(fkFinders) as (keyof typeof fkFinders)[]) {
+        const fk = row[key]
+        if (fk && !(await fkFinders[key](fk))) row[key] = null
+      }
     }
-    const orderSnap = undo.order as (Prisma.ExpenseOrderUncheckedCreateInput & { id: string; updatedAt?: string | Date }) | null
+    await dropForeignFks(data)
+    // 배송비 라인도 같은 토큰에서 온다. 맨 칸만 고르고, 이 영업장 행이 아니면 복원 전체를 거절한다.
+    const shippingRows: ExpenseRowSnap[] = []
+    for (const s of undo.shippingRows) {
+      const row = pickScalars<ExpenseRowSnap>(s, EXPENSE_SCALARS)
+      if (!row || row.propertyId !== propertyId) return { ok: false, error: '다른 영업장의 기록입니다.' }
+      delete row.updatedAt
+      await dropForeignFks(row)
+      shippingRows.push(row)
+    }
+    const orderSnap = pickScalars<Prisma.ExpenseOrderUncheckedCreateInput & { id: string; updatedAt?: string | Date }>(undo.order, EXPENSE_ORDER_SCALARS)
     await prisma.$transaction(async tx => {
       // 주문 복원 — 삭제됐으면 스냅샷으로 재생성, 스냅샷이 없거나 다른 주문이면 orderId 강등
       if (data.orderId) {
-        const oe = await tx.expenseOrder.findFirst({ where: { id: data.orderId }, select: { id: true } })
+        // 주문도 이 영업장 것만 있는 것으로 본다. 남의 영업장 주문이면 아래에서 강등된다.
+        const oe = await tx.expenseOrder.findFirst({ where: { id: data.orderId, propertyId }, select: { id: true } })
         if (!oe) {
           if (orderSnap && orderSnap.id === data.orderId && orderSnap.propertyId === propertyId) {
             const snap = { ...orderSnap }
@@ -2128,11 +2154,9 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
         await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
       }
       // 주문 정리로 함께 지워진 배송비 라인 복원(이미 있으면 건너뜀)
-      for (const s of undo.shippingRows) {
-        const row = { ...s } as ExpenseRowSnap
-        delete row.updatedAt
+      for (const row of shippingRows) {
         if (await tx.expense.findFirst({ where: { id: row.id }, select: { id: true } })) continue
-        if (row.orderId && !(await tx.expenseOrder.findFirst({ where: { id: row.orderId }, select: { id: true } }))) row.orderId = null
+        if (row.orderId && !(await tx.expenseOrder.findFirst({ where: { id: row.orderId, propertyId }, select: { id: true } }))) row.orderId = null
         await tx.expense.create({ data: row })
       }
       // 형제 orderId 조건부 복원 — 그 사이 다른 주문에 묶였으면 그 병합을 존중(orderId null인 것만)
@@ -2143,14 +2167,15 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
         })
       }
       // 수령 자동 점검·예비비 정산 재링크 — 그 사이 지워진 행은 no-op
+      // 토큰의 id 목록이라 이 영업장 행만 다시 잇는다(2026-10-23 운영자 승인). 점검은 품목의 영업장으로 건다.
       if (undo.stockCheckIds.length > 0) {
-        await tx.stockCheck.updateMany({ where: { id: { in: undo.stockCheckIds } }, data: { sourceExpenseId: data.id } })
+        await tx.stockCheck.updateMany({ where: { id: { in: undo.stockCheckIds }, trackedItem: { propertyId } }, data: { sourceExpenseId: data.id } })
       }
       if (undo.reserveTxIds.length > 0) {
-        await tx.reserveTransaction.updateMany({ where: { id: { in: undo.reserveTxIds } }, data: { expenseId: data.id } })
+        await tx.reserveTransaction.updateMany({ where: { id: { in: undo.reserveTxIds }, propertyId }, data: { expenseId: data.id } })
       }
-      // 삭제와 함께 옮겼던 점검 조정 복원 — 스냅샷 그대로(품목 스코프 검증은 revertShiftRows 내장)
-      if (undo.shift) await revertShiftRows(tx, undo.shift)
+      // 삭제와 함께 옮겼던 점검 조정 복원. 스냅샷 그대로(품목의 영업장·점검 스코프 검증은 revertShiftRows 내장)
+      if (undo.shift) await revertShiftRows(tx, propertyId, undo.shift)
     })
     revalidatePath('/finance')
     if (undo.stockCheckIds.length > 0 || undo.shift) revalidatePath('/inventory')
