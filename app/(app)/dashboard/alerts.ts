@@ -19,7 +19,7 @@ import { dayDbRange, kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
-import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
+import { isContractIssued, issuingLeaseId, issueReminderApplies } from '@/lib/contractIssue'
 import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurringStatus'
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -157,6 +157,8 @@ export async function computeAlerts(propertyId: string, viewerRole?: Role): Prom
         leaseTerm: { select: {
           room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true,
           signatureSignedAt: true, disposalSignatureSignedAt: true, documentSignatures: true,
+          // 입실 취소한 계약은 발급·남은 서명 알림을 안 낸다(lib/contractIssue issueReminderApplies).
+          status: true,
         } },
         tenant: { select: { id: true, name: true } },
       },
@@ -327,6 +329,9 @@ export async function computeAlerts(propertyId: string, viewerRole?: Role): Prom
     const docMarks = Object.values(parseDocSignedAt(link.docSignedAt))
     const signalAt = link.signedAt ?? link.disposalSignedAt ?? (docMarks.length ? new Date(docMarks.sort()[0]) : null)
     if (!signalAt) continue
+    // 입실을 취소한 계약은 '발급 필요'도 '남은 서명'도 말하지 않는다(신고 0fd00b7e). 아래 두 카테고리
+    // (signed·signpartial)가 모두 이 줄 뒤라 한 번에 닫힌다. 상태가 돌아오면 알림도 돌아온다.
+    if (!issueReminderApplies(link.leaseTerm.status)) continue
     // 딸린 계약의 종이는 부모 합본 한 장이다 — 그 종이가 생기면 이 알림도 함께 끝난다.
     // 발급 대기 목록과 같은 한 값을 본다(lib/contractIssue issuingLeaseId).
     const issueLeaseId = issuingLeaseId(link.leaseTermId, link.leaseTerm.parentLeaseTermId)

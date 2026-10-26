@@ -14,7 +14,7 @@ import { requireEdit } from '@/lib/role'
 import { buildContractData, type ContractData } from '@/lib/contractData'
 // 인쇄 사실 사영(15축)은 lib 정본을 쓴다 — 발급본 박제(ContractFile.issuedSnapshot)와 같은 축이어야 한다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
-import { isContractIssued } from '@/lib/contractIssue'
+import { isContractIssued, issueReminderApplies } from '@/lib/contractIssue'
 import { isCurrentSignatureLink } from '@/lib/contractVersion'
 import { driveImageDataUrl } from '@/lib/google-drive'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
@@ -514,6 +514,8 @@ export async function getContractShareState(tenantId: string): Promise<
             select: {
               signatureImageUrl: true, signatureSignedAt: true,
               disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+              // 입실 취소한 계약은 '계약서 발급'을 주 동작으로 올리지 않는다(lib/contractIssue issueReminderApplies).
+              status: true,
             },
           },
         },
@@ -530,7 +532,8 @@ export async function getContractShareState(tenantId: string): Promise<
                          ?? tenant.contacts.find(c => !c.isEmergency)
     // 서명이 들어온 링크에 대해서만 발급 여부를 따진다(그 외에는 물어볼 것이 없다)
     let needsIssue = false
-    if (link?.signedAt && !link.closedAt) {
+    // 입실을 취소한 계약도 묻지 않는다 — 홈 알림·발급 대기와 한 함수다(신고 0fd00b7e).
+    if (link?.signedAt && !link.closedAt && issueReminderApplies(link.leaseTerm?.status)) {
       const files = await prisma.contractFile.findMany({
         where: { driveFileId: { not: '' }, propertyId, leaseTermId: link.leaseTermId, deletedAt: null },
         select: { leaseTermId: true, createdAt: true },

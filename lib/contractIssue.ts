@@ -33,3 +33,21 @@ export function isContractIssued(
     f.leaseTermId === leaseTermId && f.createdAt.getTime() >= signedAt.getTime(),
   )
 }
+
+/**
+ * 이 계약에 '발급하세요'·'남은 서명 받기'를 **지금 말할 때인가** — 계약 상태 축(신고 0fd00b7e).
+ *
+ * 서명은 받았는데 입실을 취소한 계약(CANCELLED)은 발급할 종이가 아니다. 종전에는 세 자리(발급 대기
+ * 목록·홈 알림·계약서 패널)가 링크(closedAt: null)와 서명만 보고 판정해, 입실 취소 뒤에도 '발급 대기'와
+ * '원격 서명 완료 · 계약서 발급 필요'가 남았다. 계약 상태를 보는 축이 아예 없었다.
+ *
+ * 이 함수는 **말할지만** 가른다. 계약서를 폐기하거나 링크를 닫거나 서명·보증금 기록을 건드리지 않는다.
+ * 그래서 되돌리기는 저절로다 — 입실 취소를 적용취소해 상태가 돌아오면 알림도 돌아온다.
+ * 수동 발급 경로(계약서 화면)는 막지 않는다. 취소된 계약이라도 종이가 필요하면 손으로 낸다.
+ *
+ * 상태를 모르는 값(null·undefined)은 종전대로 말한다 — 축이 없던 시절의 답을 그대로 둔다.
+ * 퇴실(CHECKED_OUT)은 그대로 말한다. 살다 나간 계약의 서명본은 보관할 종이다.
+ */
+export function issueReminderApplies(leaseStatus: string | null | undefined): boolean {
+  return leaseStatus !== 'CANCELLED'
+}

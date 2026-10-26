@@ -9,7 +9,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { signStageSlots } from '../lib/disposalSignGate'
 import { signAlertDue } from '../lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, linkSignSlots } from '../lib/signDocuments'
-import { isContractIssued, issuingLeaseId } from '../lib/contractIssue'
+import { isContractIssued, issuingLeaseId, issueReminderApplies } from '../lib/contractIssue'
 
 async function main() {
   const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -25,6 +25,8 @@ async function main() {
         select: {
           parentLeaseTermId: true, signatureImageUrl: true, signatureSignedAt: true,
           disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+          // 홈 알림 게이트의 계약 상태 축(신고 0fd00b7e) — 재현이 아니라 정본 함수를 같이 부른다.
+          status: true,
         },
       },
     },
@@ -46,7 +48,8 @@ async function main() {
       hasContractSignature: !!l.signedAt, hasDisposalSignature: !!l.disposalSignedAt,
       submitted: !!l.submittedAt, linkDead: !!l.lockedAt || l.expiresAt <= new Date(),
     })
-    const visible = !!signalAt && !issued && due && before !== 'none'
+    // 입실 취소한 계약은 홈 알림에 안 뜬다(alerts.ts 와 같은 정본 issueReminderApplies).
+    const visible = !!signalAt && issueReminderApplies(l.leaseTerm.status) && !issued && due && before !== 'none'
 
     if (before === after) continue
     if (visible) { shown++; shownChanged.push(`${l.createdAt.toISOString().slice(0, 10)} ${l.tenant.name} | ${before} -> ${after}`) }

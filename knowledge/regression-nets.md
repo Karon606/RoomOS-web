@@ -444,3 +444,6 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   규칙 진리표(품목별 번호 머리 상속 금지·소급 제한·요약·갈림·적용취소 토큰), PGlite 통합(저장 경로 전수·적용취소 바이트 동일·위조/교차 용도/남의 영업장 거부·장부 감사). 역주입 31건 전부 발화. 정본 [[domain-expense-channel]].
 - **check-order-channel-split** (2026-10-20, verify:db) · 한 주문 쇼핑몰 둘은 오류, 미기록 섞임·이름 하나 번호 둘·번호 하나 이름 둘·구매처 자리의 쇼핑몰 이름은 경고. 질의 정본 scripts/order-channel-audit.mjs. **운영 DB 에 칸이 없으면 붉게 선다**(SQL 먼저 적용).
 - **test-clone-field-loss · check-clone-field-loss** (2026-10-20) · 분할 복제 유실 복구 판정 진리표(verify:fast)와 장부 감시(verify:db, 정본화 뒤 조각 유실은 오류·그 전은 경고). 백필은 scripts/fix-clone-field-loss(예행 기본).
+- **check-issue-reminder-wiring · test-issue-reminder** (2026-10-26, verify:fast, 신고 0fd00b7e) · 발급 알림의 계약 상태 축. 세 소비처(발급 대기 목록·홈 알림과 푸시·계약서 패널 needsIssue)가
+  lib/contractIssue `issueReminderApplies` 를 import 하고 import 줄과 줄 끝 주석을 지운 본문에서 **실제로 부르는지**, 결과가 분기에 쓰이는 가드 꼴인지, 인자가 계약 상태인지, 발급 판정(isContractIssued)보다 앞인지, 서명 칸을 읽는 그 leaseTerm select 가
+  `status: true` 를 읽는지 본다. 진리표는 스키마의 LeaseStatus 전부를 표로 덮는다(CANCELLED 만 침묵, 새 상태는 답을 적기 전까지 붉다). 역주입은 [[domain-contracts]] '입실 취소 뒤 발급 알림' 절.

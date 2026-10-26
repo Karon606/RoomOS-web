@@ -7,7 +7,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
-import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
+import { isContractIssued, issuingLeaseId, issueReminderApplies } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
@@ -179,6 +179,8 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
             room: { select: { roomNo: true } },
             // 서명 dataURL 은 안 읽는다 — leaseSignSlots 가 있는지 없는지로만 쓴다(alerts.ts 와 같은 처방).
             signatureSignedAt: true, disposalSignatureSignedAt: true, documentSignatures: true,
+            // 입실 취소한 계약은 발급 대기에 안 세운다(lib/contractIssue issueReminderApplies, 신고 0fd00b7e).
+            status: true,
             // 딸린 계약이면 발급할 종이는 부모 것이다 — 대기 한 줄이 부모를 가리켜야 발급이 된다.
             parentLeaseTermId: true,
             parentLeaseTerm: { select: { room: { select: { roomNo: true } } } },
@@ -211,6 +213,9 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
     const docMarks = Object.values(parseDocSignedAt(l.docSignedAt))
     const signalAt = l.signedAt ?? l.disposalSignedAt ?? (docMarks.length ? new Date(docMarks.sort()[0]) : null)
     if (!signalAt) continue
+    // 입실을 취소한 계약은 발급할 종이가 아니다. 서명·링크·보증금 기록은 그대로 두고 말만 안 한다 —
+    // 취소를 적용취소하면 이 줄이 저절로 돌아온다. 판정은 홈 알림·계약서 패널과 한 함수다.
+    if (!issueReminderApplies(l.leaseTerm.status)) continue
     // 딸린 계약의 대기는 부모 한 줄로 선다 — 그 계약의 종이가 부모 합본이기 때문이다.
     // 지목·해소 판정·중복 제거가 전부 이 한 값을 본다(lib/contractIssue 정본).
     const issueLeaseId = issuingLeaseId(l.leaseTermId, l.leaseTerm.parentLeaseTermId)

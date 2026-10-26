@@ -546,3 +546,31 @@ zh 搬离·押金, zht 遷出·押金, 이용료는 사전의 그 말). 붙여�
 - E. 새 박제 칸이 필요 없다. 새로 찍히는 **값**이 없고 문장은 `template` 안이며 printedFacts 의 `template`
   축이 본문을 통비교한다. 서명 계약은 양쪽이 같은 박제라 드리프트가 안 뜬다.
 - F. 위 그물. verify:fast(코드)와 verify:db(`--db`)에 원래 등록된 파일을 넓혔다.
+
+## 입실 취소 뒤 발급 알림 (2026-10-26, 신고 0fd00b7e)
+
+서명은 받았는데 입실을 취소한 계약에 `/contracts` '발급 대기'와 홈 알림 '원격 서명 완료 · 계약서 발급 필요'가
+그대로 남았다. 세 자리(발급 대기 `getPendingIssueContracts` · 홈 알림과 푸시 `computeAlerts` · 계약서 패널
+`getContractShareState.needsIssue`)가 링크(`closedAt: null`)와 서명만 보고 판정했고 **계약 상태 축이 없었다.**
+
+- 정본은 `lib/contractIssue` 의 `issueReminderApplies(leaseStatus)` 하나다. CANCELLED 만 false 이고 퇴실(CHECKED_OUT)은
+  그대로 말한다(살다 나간 계약의 서명본은 보관할 종이다). 상태를 모르면(null) 종전대로 말한다.
+- **말할지만 가른다.** 계약서 폐기·링크 닫기·서명과 보증금 기록은 안 건드린다. 그래서 적용취소가 따로 없다 —
+  입실 취소를 되돌려 상태가 돌아오면 알림도 돌아온다. 수동 발급(계약서 화면)은 막지 않는다.
+- 홈 알림은 signed·signpartial 두 카테고리가 한 루프라 호출 한 줄로 둘 다 닫힌다(취소된 계약에 '남은 서명 받기'도 할 일이 아니다).
+- 상태는 링크가 가리키는 계약(link.leaseTerm)의 것이다. 딸린 계약은 지목만 부모로 가고 상태는 제 것을 본다.
+- 그물 `check-issue-reminder-wiring`(import·import 와 줄 끝 주석까지 지운 본문의 호출·결과가 분기에 쓰이는 가드 꼴·인자가 상태·
+  발급 판정보다 앞·서명 칸 select 안의 `status: true`)과 진리표 `test-issue-reminder`(스키마 LeaseStatus 전부). 역주입 12종 전부 빨강
+  (세 자리 호출 삭제 import 유지 셋·줄 끝 주석 무력화·결과 버리는 맨 호출 둘·select status 삭제 둘·패널 import 를 가짜 함수로·
+  인자 바꿔치기·정본 늘 true·정본이 퇴실도 침묵). 원복은 백업 `cp` + `cmp`.
+- 실DB 대조 `scripts/check-sign-axis-shift.ts`(verify:db)가 홈 알림 게이트를 재현하던 자리도 같은 정본을 import 해 부른다.
+
+### 체크리스트 A~F 대조
+- A. 서명 진행 판정은 그대로다. signStage·leaseSignSlots·linkSignSlots 호출과 쿼리의 `disposalSignedAt` 조건을 안 바꿨고,
+  새 조회 자리가 없다. 동의서를 끈 영업장도 상태 축만 더해질 뿐 같다. 반쪽 표시(발급 대기 '동의서 서명 대기'·signpartial)는
+  살아 있는 계약에서 그대로 보인다.
+- B. 성명 해당 없음. 종이에 찍히는 값이 없다.
+- C. 새 AlertCategory 없음. cron 은 computeAlerts·summarizeAlerts 그대로라 푸시도 같이 조용해진다.
+- D. 링크를 닫는 경로도 만드는 경로도 새로 없다.
+- E. 새 박제 칸 없음. 종이에 새로 찍히는 값이 없다.
+- F. 위 그물을 verify:fast 에 등록했고 import 유지·호출 삭제 역주입을 포함했다.
