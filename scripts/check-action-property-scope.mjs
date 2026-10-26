@@ -221,6 +221,164 @@ const AXES = [
     ],
     mustNot: [[/\.\.\.rest\b(?!\s*\}\s*=)/, '화면 객체(rest)를 그대로 펼친다']],
   })),
+  // ── 2차 확대(2026-10-23 운영자 승인): 같은 클래스 sweep. 화면·토큰의 id 는 영업장 범위로 먼저 읽거나, 연결 id 는 저장 전에 영업장 것인지 본다 ──
+  // 결제 계정을 거는 다른 폼. updateExpense·기타수익과 같은 관문이다.
+  ...[['addExpense', 'financialAccountId'], ['batchUpdateExpenses', 'data\\.financialAccountId'], ['recordRecurringExpense', 'data\\.financialAccountId'],
+    ['addReserveDeposit', 'input\\.linkedAccountId'], ['addReserveWithdrawDirect', 'input\\.linkedAccountId'], ['saveFinancialAccount', 'linkedAccountId'], ['saveFinancialAccount', '']].map(([fn, v]) => ({
+    file: 'app/(app)/finance/actions.ts',
+    fn,
+    // v 가 빈 글자면 단축 속성(where: { id, propertyId }, 수정할 계정 자신)이다.
+    must: [[new RegExp(`financialAccount\\.findFirst\\(\\{\\s*where:\\s*\\{\\s*id${v ? `:\\s*${v}` : ''},\\s*propertyId\\s*\\}`), `폼의 결제 계정(${v.replace(/\\\\/g, '') || '수정할 계정 id'})을 영업장 범위로 보지 않는다(남의 영업장 계좌가 이어진다)`]],
+    mustNot: [],
+  })),
+  // 계약을 화면 id 로 읽는 전이·정산 문. id 만으로 읽으면 남의 계약 상태·방·일할이 바뀐다.
+  ...[['checkoutTenant', 'leaseTermId'], ['moveInTenant', 'leaseTermId'], ['confirmReservationToActive', 'leaseTermId'], ['applyStatusTransition', 'input\\.leaseTermId'],
+    ['setCheckoutProration', 'leaseTermId'], ['clearCheckoutProration', 'leaseTermId'], ['checkoutWithDepositRefund', 'params\\.leaseTermId']].map(([fn, v]) => ({
+    file: 'app/(app)/tenants/actions.ts',
+    fn,
+    must: [[new RegExp(`leaseTerm\\.findFirst\\(\\{\\s*where:\\s*\\{\\s*id:\\s*${v},\\s*propertyId\\s*\\}`), '계약을 영업장 범위로 먼저 읽지 않는다']],
+    mustNot: [[new RegExp(`leaseTerm\\.findUnique\\(\\{\\s*where:\\s*\\{\\s*id:\\s*${v}\\s*\\}`), '계약을 화면 id 만으로 읽는다']],
+  })),
+  // 이력·환불·수익 행에 싣는 입주자 id 도 영업장 사람만.
+  ...[['checkoutTenant', 'tenantId'], ['moveInTenant', 'tenantId'], ['applyStatusTransition', 'input\\.tenantId'], ['deleteTenant', 'tenantId'],
+    ['recordDepositReturn', 'params\\.tenantId'], ['recordReservationPrepaidCancel', 'params\\.tenantId']].map(([fn, v]) => ({
+    file: 'app/(app)/tenants/actions.ts',
+    fn,
+    must: [[new RegExp(`if \\(!\\(await tenantInProperty\\(propertyId,\\s*${v}\\)\\)\\) return \\{ ok: false`), '화면의 입주자 id 를 영업장 사람으로 보고 아니면 닫지 않는다']],
+    mustNot: [],
+  })),
+  ...['recordDepositReturn', 'recordReservationPrepaidCancel'].map(fn => ({
+    file: 'app/(app)/tenants/actions.ts',
+    fn,
+    must: [[/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*params\.leaseTermId,\s*propertyId\s*\}[^\n]*\n\s*return \{ ok: false/, '화면의 계약 id 를 영업장 범위로 보고 아니면 닫지 않는다']],
+    mustNot: [],
+  })),
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'deleteTenant',
+    must: [[/tenant\.delete\(\{\s*where:\s*\{\s*id:\s*tenantId,\s*propertyId\s*\}/, '입주자 삭제가 영업장 범위가 아니다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'batchUpdateTenants',
+    must: [[/const allLive = await prisma\.leaseTerm\.findMany\(\{\s*where:\s*\{\s*tenantId:\s*\{\s*in:\s*tenantIds\s*\},\s*propertyId,/, '고를 계약을 영업장 범위로 읽지 않는다(남의 입주자 계약 보증금·상태가 바뀐다)']],
+    mustNot: [],
+  },
+  ...['createTenantRequest', 'updateTenantRequest'].map(fn => ({
+    file: 'app/(app)/tenants/actions.ts',
+    fn,
+    must: [[/if \(data\.tenantId && !\(await prisma\.tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*data\.tenantId,\s*propertyId\s*\}/, '폼의 입주자를 영업장 범위로 보지 않는다(남의 입주자 호실이 스냅샷으로 샌다)']],
+    mustNot: [],
+  })),
+  // 수납·청소비: 계약·입주자 id 짝을 영업장 범위로 본다.
+  ...['savePayment', 'saveDepositPayment', 'saveCleaningFeePayment'].map(fn => ({
+    file: 'app/(app)/rooms/actions.ts',
+    fn,
+    must: [[/const scopeErr = await leaseTenantScopeDenial\(propertyId, data\.leaseTermId, data\.tenantId\); if \(scopeErr\) return/, '수납의 계약·입주자 id 를 영업장 범위로 보지 않는다(남의 계약 미납·이월이 다시 계산된다)']],
+    mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*data\.leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
+  })),
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'saveReservationDeposit',
+    must: [[/prisma\.tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*data\.tenantId,\s*propertyId\s*\}/, '예약금의 입주자 id 를 영업장 범위로 보지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/room-manage/cleaningActions.ts',
+    fn: 'createCleaning',
+    must: [[/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.leaseTermId,\s*propertyId\s*\}/, '청소에 잇는 계약을 영업장 범위로 보지 않는다(청소비 부담 귀속이 남의 계약으로 간다)']],
+    mustNot: [],
+  },
+  // 호실 관리: 화면 id 를 영업장 범위로 먼저 확인하고, 일괄 편집·적용취소는 허용 칸만.
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'updateRoom',
+    must: [[/room\.findFirst\(\{\s*where:\s*\{\s*id,\s*propertyId\s*\}[^\n]*\n\s*if \(!prevRoom\) return \{ ok: false, error: ROOM_GONE \}/, '호실을 영업장 범위로 먼저 읽고 없으면 닫지 않는다']],
+    mustNot: [[/room\.findUnique\(\{\s*where:\s*\{\s*id\s*\}/, '호실을 화면 id 만으로 읽는다']],
+  },
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'deleteRoom',
+    must: [[/const owned = await prisma\.room\.findFirst\(\{\s*where:\s*\{\s*id,\s*propertyId\s*\}[^\n]*\n\s*if \(!owned\) return \{ ok: false, error: ROOM_GONE \}\n\s*\n\s*const activeLeases/, '호실을 영업장 범위로 먼저 확인하지 않는다(건수 안내·연쇄 삭제가 남의 방에 돈다)']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'batchUpdateRooms',
+    must: [
+      [/const roomFields = pickBatchRoomFields\(data\)\n\s*if \(!roomFields\) return \{ ok: false, error: BATCH_ROOM_INPUT_INVALID \}/, '화면 객체를 허용 칸으로 거르지 않는다(propertyId·roomNo·마스터키가 실린다)'],
+      [/leaseTerm\.findMany\(\{\s*where:\s*\{\s*roomId:\s*\{\s*in:\s*roomIds\s*\},\s*propertyId,/, '계약 스냅샷을 영업장 범위로 뜨지 않는다(남의 계약이 적용취소 토큰에 실린다)'],
+    ],
+    mustNot: [[/\bdata\.\w+\s*=(?!=)/, '화면 객체(data)를 고쳐 쓴다. 거른 값(roomFields)만 쓴다']],
+  },
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'undoBatchUpdateRooms',
+    must: [
+      [/const roomFields = pickBatchRoomFields\(x\.fields\)\n\s*if \(!roomFields\) return \{ ok: false, error: BATCH_ROOM_INPUT_INVALID \}\n\s*restore\.push\(\{ id: x\.id, roomFields \}\)/, '토큰의 방 칸을 허용 칸으로 거르지 않는다'],
+      [/leaseTerm\.updateMany\(\{\s*where:\s*\{\s*id:\s*l\.id,\s*propertyId\s*\}/, '토큰의 계약을 영업장 범위 없이 되돌린다'],
+    ],
+    mustNot: [[/Object\.fromEntries\(Object\.entries\(x\.fields\)/, '토큰 객체를 통째로 data 로 바꾼다']],
+  },
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'undoApplyScheduledRent',
+    must: [[/leaseTerm\.updateMany\(\{\s*where:\s*\{\s*id:\s*l\.id,\s*propertyId\s*\}/, '토큰의 계약을 영업장 범위 없이 되돌린다']],
+    mustNot: [[/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*l\.id\s*\}/, '토큰의 계약을 id 만으로 고친다']],
+  },
+  // 시세 조사: 경쟁업체를 붙일 조사는 이 영업장 것.
+  {
+    file: 'app/(app)/market-analysis/actions.ts',
+    fn: 'addCompetitor',
+    must: [[/marketSurvey\.findFirst\(\{\s*where:\s*\{\s*id:\s*surveyId,\s*propertyId\s*\}/, '붙일 조사를 영업장 범위로 보지 않는다(남의 영업장 조사에 행이 붙는다)']],
+    mustNot: [],
+  },
+  // 체크리스트 완료: 항목을 영업장 범위로 먼저 읽어야 이력(자식) 생성이 남의 항목에 붙지 않는다.
+  {
+    file: 'app/(app)/checklist/actions.ts',
+    fn: 'markChecklistDone',
+    must: [[/checklist\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.id,\s*propertyId\s*\}[^\n]*\n\s*if \(!cur\) return \{ ok: false/, '항목을 영업장 범위로 먼저 읽고 없으면 닫지 않는다']],
+    mustNot: [],
+  },
+  // 재고 적용취소 토큰.
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoDeleteStockCheck',
+    must: [
+      [/locationsInProperty\(propertyId, undo\.locations\.flatMap\(l => \[l\.storageLocationId, l\.fromLocationId\]\)\)/, '토큰의 위치 id 를 영업장 위치로 보지 않는다'],
+      [/expense\.findFirst\(\{\s*where:\s*\{\s*id:\s*undo\.sourceExpenseId,\s*propertyId\s*\}/, '토큰의 원천 지출을 영업장 범위로 보지 않는다'],
+    ],
+    mustNot: [[/create:\s*undo\.locations\b(?!\s*\.)/, '토큰 배열을 중첩 create 에 통째로 넘긴다']],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoUpdateStockCheck',
+    must: [
+      [/revertShiftRows\(tx, propertyId, \{ \.\.\.undo\.shift, trackedItemId: c\.trackedItemId \}\)/, '토큰의 품목 대신 확인한 점검의 품목으로 되돌리지 않는다'],
+      [/locationsInProperty\(propertyId, undo\.locations\.flatMap\(l => \[l\.storageLocationId, l\.fromLocationId\]\)\)/, '토큰의 위치 id 를 영업장 위치로 보지 않는다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/inventory/ledgerShift.ts',
+    fn: 'revertShiftRows',
+    must: [[/export async function revertShiftRows\(tx: InventoryTx, propertyId: string, undo: LedgerShiftUndo\)[^\n]*\n(\s*\/\/[^\n]*\n)*\s*if \(!\(await tx\.trackedItem\.findFirst\(\{ where: \{ id: undo\.trackedItemId, propertyId \}/, '되돌리기 공용층이 품목의 영업장을 먼저 보지 않는다(부르는 쪽이 빠뜨리면 남의 점검을 덮는다)']],
+    mustNot: [],
+  },
+  // 지출 삭제 적용취소: 토큰 행은 맨 칸만, 배송비 줄은 이 영업장 것만, id 목록 재연결은 영업장 범위로.
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'undoDeleteExpense',
+    must: [
+      [/const data = pickScalars<ExpenseRowSnap>\(undo\.expense, EXPENSE_SCALARS\)/, '토큰의 지출 행을 맨 칸으로 거르지 않는다(관계 칸 connect 가 실린다)'],
+      [/const row = pickScalars<ExpenseRowSnap>\(s, EXPENSE_SCALARS\)\n\s*if \(!row \|\| row\.propertyId !== propertyId\) return/, '배송비 줄을 맨 칸·영업장으로 거르지 않는다'],
+      [/pickScalars<[^>]*>\(undo\.order, EXPENSE_ORDER_SCALARS\)/, '토큰의 주문 행을 맨 칸으로 거르지 않는다'],
+      [/stockCheck\.updateMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*undo\.stockCheckIds\s*\},\s*trackedItem:\s*\{\s*propertyId\s*\}/, '점검 재연결이 영업장 범위가 아니다'],
+      [/reserveTransaction\.updateMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*undo\.reserveTxIds\s*\},\s*propertyId\s*\}/, '예비비 재연결이 영업장 범위가 아니다'],
+    ],
+    mustNot: [[/\{\s*\.\.\.undo\.expense\s*\}|\{\s*\.\.\.s\s*\}\s*as\s*ExpenseRowSnap/, '토큰 객체를 그대로 펼친다']],
+  },
 ]
 
 for (const ax of AXES) {
@@ -333,8 +491,10 @@ function fnStartOf(src, idx) {
 function provenanceIssues(v, body) {
   const rule = PROVENANCE[v]
   if (!rule) return [`${v} 는 출처 정본(PROVENANCE)에 없다. 화이트리스트에서 나온 값인지 따라갈 수 없다`]
-  const d = body.match(rule.decl)
-  if (!d) return [`${v} 의 선언이 정본 꼴(${rule.decl.source})이 아니다. 화이트리스트를 거치지 않은 값일 수 있다`]
+  // 같은 이름을 여러 함수가 쓰면 정본 꼴이 여럿이다(결제 계정 data: 화면 저장·엑셀 가져오기). 그 함수 안에 하나가 있어야 한다.
+  const decls = Array.isArray(rule.decl) ? rule.decl : [rule.decl]
+  const d = decls.map(re => body.match(re)).find(Boolean)
+  if (!d) return [`${v} 의 선언이 정본 꼴(${decls.map(re => re.source).join(' · ')})이 아니다. 화이트리스트를 거치지 않은 값일 수 있다`]
   const issues = []
   const after = body.slice(d.index + d[0].length)
   const esc = v.replace(/\$/g, '\\$')
@@ -472,9 +632,145 @@ for (const file of [...walk('app', []), ...walk('lib', [])]) {
     }
   }
 }
+// ── 2차 모델 묶음 전수 축 (2026-10-23 운영자 승인 확대) ──
+// 결제 계정·체크리스트(+이력)·입주자 요청·시세 조사(+경쟁업체)는 앱 코드 전부, 호실은 호실 관리 액션 파일에서 쓰기마다 본다.
+//   ⓐ where 최상위에 propertyId(자식 모델은 부모 관계 필터 { 부모: { propertyId } })가 서야 한다. 변수 where 는 위반.
+//   ⓑ data 의 펼침·변수는 1차와 같은 출처 추적(PROVENANCE)만 통과. 식으로 넘기는 data 는 적힌 꼴(ALLOW_RAW2)만.
+//   ⓒ 자기 영업장 칸이 있는 모델의 create data 에는 propertyId 가 있어야 한다.
+//   ⓓ 대리자 별칭 금지(1차 ALIAS 와 같은 꼴), 중첩 쓰기로 이 모델들의 관계 칸을 건드리지 않는다(호실은 범위가 넓어 뺀다).
+//   ⓔ 모델마다 쓰기 개수를 고정한다.
+// 일괄 편집 허용 칸 표(BATCH_ROOM_FIELDS)는 Room 의 맨 칸 중 위험 칸(id·propertyId·roomNo·isVacant·마스터키 등)이 아닌 것만이어야 한다.
+const SCOPE2 = {
+  financialAccount: { parent: null },
+  checklist: { parent: null },
+  checklistLog: { parent: 'checklist' },
+  tenantRequest: { parent: null },
+  marketSurvey: { parent: null },
+  marketCompetitor: { parent: 'marketSurvey' },
+  room: { parent: null, files: ['app/(app)/room-manage/actions.ts'] },
+}
+const SCOPE2_TYPES = { financialAccount: 'FinancialAccount', checklist: 'Checklist', checklistLog: 'ChecklistLog', tenantRequest: 'TenantRequest', marketSurvey: 'MarketSurvey', marketCompetitor: 'MarketCompetitor' }
+// 식으로 넘겨도 되는 data(파일·모델·정확한 글자). 거른 값을 담은 배열의 원소만 허용한다.
+const ALLOW_RAW2 = [{ file: 'app/(app)/room-manage/actions.ts', model: 'room', raw: /^x\.roomFields$/ }]
+const EXPECTED2 = {
+  financialAccount: { where: 4, data: 5 },
+  checklist: { where: 4, data: 4 },
+  checklistLog: { where: 1, data: 1 },
+  tenantRequest: { where: 5, data: 7 },
+  marketSurvey: { where: 2, data: 2 },
+  marketCompetitor: { where: 2, data: 2 },
+  room: { where: 7, data: 7 },
+}
+const MODEL2_ALT = Object.keys(SCOPE2).join('|')
+const CALL2_RE = new RegExp(`\\.\\s*(${MODEL2_ALT})\\s*\\.\\s*(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|delete|deleteMany|upsert)\\s*\\(`, 'g')
+const ALIAS2_RE = new RegExp(`\\b(prisma|tx)\\s*\\.\\s*(${MODEL2_ALT})\\b(?!\\s*\\.\\s*\\w+\\s*\\()|\\{[^{}]*\\b(${MODEL2_ALT})\\b[^{}]*\\}\\s*=\\s*(prisma|tx)\\b`, 'g')
+// 1차 출처 정본에 2차 data 변수를 더한다. 결제 계정 data 는 서버가 폼 값을 칸별로 짠 객체, 호실 일괄 편집은 허용 칸 표를 거친 값이다.
+PROVENANCE.data = { decl: [/const data = \{\n\s*type:\s*type as any,\n\s*brand,/, /const data = \{\n\s*type, brand, alias,\n/] }
+PROVENANCE.roomFields = { decl: /const roomFields = pickBatchRoomFields\((data|x\.fields)\)/, assignKeys: new Set(['rentUpdateDate']) }
+
+const REL2 = new Map()
+{
+  let cur = null
+  const types = Object.values(SCOPE2_TYPES)
+  for (const line of schema.split('\n')) {
+    const mm = line.match(/^model\s+(\w+)/)
+    if (mm) { cur = mm[1]; continue }
+    const fm = cur && line.match(new RegExp(`^\\s+(\\w+)\\s+(${types.join('|')})(\\[\\])?\\??(\\s|$)`))
+    if (fm) REL2.set(cur, [...(REL2.get(cur) ?? []), fm[1]])
+  }
+}
+const REL2_NAMES = [...new Set([...REL2.values()].flat())]
+if (REL2_NAMES.length === 0) violations.push('스키마에서 2차 모델로 가는 관계 칸을 못 읽었다. 중첩 쓰기 축이 장식이 된다')
+const NESTED2_RE = new RegExp(`\\b(${REL2_NAMES.join('|')})\\s*:\\s*(\\{\\s*(${NESTED_OPS})\\b|[A-Za-z_$])`, 'g')
+
+// 허용 칸 표 BATCH_ROOM_FIELDS 를 본다.
+{
+  const rf = 'app/(app)/room-manage/actions.ts'
+  const s = readFileSync(rf, 'utf8')
+  const tbl = s.match(/const BATCH_ROOM_FIELDS = (\{[\s\S]*?\}) as const/)
+  const block = schema.match(/model Room \{([\s\S]*?)\n\}/)
+  if (!tbl || !block) violations.push(`${rf} · BATCH_ROOM_FIELDS 표나 Room 모델을 못 찾았다. 일괄 편집 화이트리스트를 볼 수 없다`)
+  else {
+    const scalars = new Set([...block[1].matchAll(/^\s+(\w+)\s+(String|Int|Boolean|DateTime|Float|Decimal|Json|BigInt)\??(\s|$)/gm)].map(m => m[1]))
+    for (const k of ['id', 'propertyId', 'createdAt', 'updatedAt', 'roomNo', 'isVacant', 'doorMasterKeyEnc', 'showOnSite']) scalars.delete(k)
+    for (const m of tbl[1].matchAll(/(\w+)\s*:\s*'/g)) if (!scalars.has(m[1])) violations.push(`${rf} · BATCH_ROOM_FIELDS 에 ${m[1]} 가 있다. 일괄 편집은 위험 칸(id·propertyId·roomNo·isVacant·마스터키·공개)이 아닌 맨 칸만 허용한다`)
+    const fn = s.match(/function pickBatchRoomFields\([\s\S]*?\n\}/)
+    if (!fn || !/for \(const \[key, kind\] of Object\.entries\(BATCH_ROOM_FIELDS\)\)/.test(fn[0]) || !/typeof v !== base/.test(fn[0]) || /\.\.\.\s*s\b|Object\.assign\(\s*out\s*,\s*s/.test(fn[0])) {
+      violations.push(`${rf} · pickBatchRoomFields 가 BATCH_ROOM_FIELDS 표만 돌며 형을 보는 꼴이 아니다. 화면 객체가 통째로 넘어간다`)
+    }
+  }
+}
+
+const count2 = Object.fromEntries(Object.keys(SCOPE2).map(k => [k, { where: 0, data: 0 }]))
+let revertCalls = 0
+for (const file of [...walk('app', []), ...walk('lib', [])]) {
+  const src = readFileSync(file, 'utf8')
+  const lineOf = idx => src.slice(0, idx).split('\n').length
+  for (const m of src.matchAll(ALIAS2_RE)) {
+    const model = m[2] ?? m[3]
+    if (SCOPE2[model]?.files && !SCOPE2[model].files.includes(file)) continue
+    violations.push(`${file}:${lineOf(m.index)} · prisma·tx 의 ${model} 대리자를 변수에 담거나 구조분해한다. 별칭을 거치면 이 그물이 쓰기를 못 본다`)
+  }
+  // 재고 되돌리기 공용층은 언제나 영업장을 받는다.
+  for (const m of src.matchAll(/\brevertShiftRows\(\s*tx\s*,\s*([^,)]+)/g)) {
+    revertCalls++
+    if (m[1].trim() !== 'propertyId' && !file.endsWith('ledgerShift.ts')) violations.push(`${file}:${lineOf(m.index)} · revertShiftRows 둘째 인자가 영업장(propertyId)이 아니다(${m[1].trim()})`)
+  }
+  for (const m of src.matchAll(CALL2_RE)) {
+    const [model, op] = [m[1], m[2]]
+    const cfg = SCOPE2[model]
+    if (cfg.files && !cfg.files.includes(file)) continue
+    const open = m.index + m[0].length - 1
+    const close = matchClose(src, open)
+    const at = `${file}:${lineOf(m.index)} ${model}.${op}`
+    if (close < 0) { violations.push(`${at} · 호출 괄호를 못 읽었다. 못 읽으면 통과가 아니라 위반이다`); continue }
+    const arg = src.slice(open + 1, close).trim()
+    body = src.slice(fnStartOf(src, m.index), m.index)
+    if (WHERE_OPS.includes(op) || op === 'updateManyAndReturn') {
+      count2[model].where++
+      const w = topLevel(arg, 'where')
+      if (!w) violations.push(`${at} · where 를 못 찾았다. 영업장 범위를 볼 수 없다`)
+      else if (w.raw != null) violations.push(`${at} · where 를 변수(${w.raw})로 넘겨 영업장 범위를 못 읽는다`)
+      else if (cfg.parent) {
+        const rel = topLevel(w.obj, cfg.parent)
+        if (!rel?.obj || !topLevel(rel.obj, 'propertyId')) violations.push(`${at} · where 에 부모 관계 필터(${cfg.parent}: { propertyId })가 없다. 다른 영업장 행을 바꿀 수 있다`)
+      } else if (!topLevel(w.obj, 'propertyId')) violations.push(`${at} · where 최상위에 propertyId 가 없다(id 만으로 쓴다). 다른 영업장 id 로 그 행을 바꿀 수 있다`)
+    }
+    if (op.startsWith('create') || op.startsWith('update') || op === 'upsert') {
+      count2[model].data++
+      const needProperty = op.startsWith('create') && !cfg.parent
+      const allow = ALLOW_RAW2.find(a => a.file === file && a.model === model)
+      if (op === 'upsert') {
+        checkData(`${at}(create)`, topLevel(arg, 'create'), { needProperty: !cfg.parent })
+        checkData(`${at}(update)`, topLevel(arg, 'update'), { needProperty: false })
+      } else checkData(at, topLevel(arg, 'data'), { needProperty, allowRaw: allow?.raw })
+    }
+  }
+  for (const m of src.matchAll(ANY_WRITE_RE)) {
+    const [model, op] = [m[1], m[2]]
+    const open = m.index + m[0].length - 1
+    const close = matchClose(src, open)
+    if (close < 0) continue
+    const arg = src.slice(open + 1, close)
+    const parts = op === 'upsert' ? [topLevel(arg, 'create'), topLevel(arg, 'update')] : [topLevel(arg, 'data')]
+    for (const part of parts) {
+      const text = part?.obj ?? part?.raw ?? ''
+      for (const n of text.matchAll(NESTED2_RE)) {
+        violations.push(`${file}:${lineOf(m.index)} ${model}.${op} · data 의 ${n[1]}: ${n[3] ?? '(변수)'} 로 2차 모델을 중첩해서 쓴다. 영업장 범위를 비켜 간다. 그 모델을 직접 부른다`)
+      }
+    }
+  }
+}
+for (const [model, c] of Object.entries(count2)) {
+  const e = EXPECTED2[model]
+  if (c.where !== e.where || c.data !== e.data) violations.push(`${model} 쓰기가 where ${c.where}·data ${c.data}곳이다(고정 where ${e.where}·data ${e.data}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED2 를 함께 고친다`)
+}
+if (revertCalls < 7) violations.push(`revertShiftRows 호출이 ${revertCalls}곳만 보인다(7곳 이상). 정규식이 낡았다`)
+
 if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)
 if (dataCount !== EXPECTED.data) violations.push(`data 를 싣는 쓰기가 ${dataCount}곳이다(고정 ${EXPECTED.data}). 새 쓰기를 더했거나 정규식이 낡았다. 펼침을 확인하고 EXPECTED 를 함께 고친다`)
 
-console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 where ${whereCount}곳·data ${dataCount}곳 + 관계 칸 ${REL_NAMES.length}개 검사 / 위반 ${violations.length}건`)
+const w2 = Object.values(count2).reduce((s, c) => s + c.where, 0), d2 = Object.values(count2).reduce((s, c) => s + c.data, 0)
+console.log(`[영업장 범위] 함수 ${AXES.length}개 + 기타수익·고정지출 쓰기 where ${whereCount}곳·data ${dataCount}곳 + 관계 칸 ${REL_NAMES.length}개 + 2차 묶음 ${Object.keys(SCOPE2).length}모델 where ${w2}곳·data ${d2}곳·관계 칸 ${REL2_NAMES.length}개 검사 / 위반 ${violations.length}건`)
 for (const v of violations) console.log(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)

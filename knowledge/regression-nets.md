@@ -424,6 +424,15 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   화이트리스트 표 RECURRING_FIELDS 는 스키마의 RecurringExpense 맨 칸만, pickRecurringFields 는 그 표만 돈다. 어느 모델 쓰기든 data 의 세 모델 관계 칸(스키마에서 읽음: extraIncomes·recurringExpenses·recurringExpense·items)에
   쓰기 연산을 걸면 위반(고정지출 create 안 items create 만 허용). 별칭은 prisma·tx 대리자 할당·구조분해·계산된 접근만 잡는다(p.recurringExpense 같은 행 관계 읽기는 안 잡는다). 역주입 우회로 4 + 보조 2 전부 발화, 오탐 대조 통과.
   5차(비우기, 운영자 승인): 고정지출 결제 수단·거래처·메모를 한 번 적으면 못 지웠다. 두 폼(SettingsForm handleSaveRec·FinanceClient handleSaveRecMgmt)이 비운 칸을 `|| undefined` 로 실어 서버가 '안 실려 옴'으로 읽었다. **비운 칸은 null, 안 실린 칸은 그대로**(pickRecurringFields 는 이미 null 을 받는다, 범위 무변경). 재무 폼은 거래처 칸이 없어 거래처를 안 싣는다(실으면 환경설정에서 적은 거래처가 재무 폼 저장마다 지워진다). 통합에 세 칸 적기·하나씩 비우기·재무 폼 꼴(거래처 보존)·undefined 무변경·null 등록과 두 폼 짝(정적)을 더했다. 역주입 화면 2·서버 1 발화.
+- **check-action-property-scope 2차 묶음 · test-action-property-scope-flow** (2026-10-23, verify:fast, 운영자 승인 확대) 같은 클래스를 다섯 묶음과 sweep 으로 넓혔다.
+  모델 전수 축: 결제 계정(FinancialAccount)·체크리스트(Checklist, 이력 ChecklistLog 는 `checklist: { propertyId }`)·입주자 요청(TenantRequest)·시세 조사(MarketSurvey, 경쟁업체 MarketCompetitor 는 `marketSurvey: { propertyId }`)는 app·lib 전부,
+  호실(Room)은 room-manage/actions.ts 에서 쓰기마다 where **최상위** propertyId(자식은 부모 관계 필터)를 본다. data 는 1차와 같은 출처 추적(결제 계정 data = 서버가 폼 값을 칸별로 짠 객체, 호실 일괄 편집 roomFields = pickBatchRoomFields),
+  create 는 propertyId 필수, 대리자 별칭·구조분해 금지, 이 모델들로 가는 관계 칸 중첩 쓰기 금지(호실은 범위가 넓어 뺐다), 모델별 쓰기 개수 고정(EXPECTED2). 일괄 편집 허용 칸 표 BATCH_ROOM_FIELDS 는 Room 의 위험 칸(id·propertyId·roomNo·isVacant·마스터키·공개)이 아닌 맨 칸만.
+  함수 축(sweep): 다른 폼의 결제 계정·연결 계좌(addExpense·batchUpdateExpenses·recordRecurringExpense·예비비 둘·saveFinancialAccount), 계약 전이·정산 7곳의 `leaseTerm.findFirst({ id, propertyId })`(findUnique 금지),
+  이력·환불·수익 행의 입주자 id(tenantInProperty), deleteTenant·batchUpdateTenants·leaseSaveDenial 호실, 요청의 입주자, 수납 셋의 leaseTenantScopeDenial·예약금 입주자, 청소의 계약, 호실 수정·삭제의 선확인, 일괄 편집·적용취소 허용 칸, 예약가 적용취소 계약 범위,
+  경쟁업체 추가의 조사, 재고 되돌리기 공용층(revertShiftRows 가 영업장을 받아 품목을 먼저 보고, 호출 7곳 전부 둘째 인자 propertyId), 점검 삭제 적용취소(위치 행 칸별 재조립·위치·원천 지출 범위), 지출 삭제 적용취소(ScalarFieldEnum 으로 맨 칸만, 배송비 줄 영업장, id 목록 재연결 범위).
+  PGlite 통합 96건: 다섯 묶음 + 계약·수납 + 재고·지출 토큰에서 남의 영업장 id 는 같은 말로 거절되고 행이 바이트까지 그대로, 허용 밖 칸(propertyId·roomNo·마스터키·관계 connect)은 무시, 제 영업장 대조군은 통과.
+  역주입: 모델별 실코드 11건(감지망 11/11, 통합 10/11, 경쟁업체 삭제는 앞선 범위 읽기가 막아 통합으로는 안 보이는 이중 방어라 수정 쪽 주입으로 대신 확인) + 우회로 8건(별칭·구조분해·줄바꿈·where 변수·create propertyId 누락·화면 객체 펼침·중첩 connect·revertShiftRows 인자) 전부 발화. 27375d4d 코드로 돌리면 위반 96건.
 - **check-expense-channel-wiring · test-expense-channel · test-expense-channel-flow** (2026-10-20, verify:fast, 신고 a0636f36) · 구매처·쇼핑몰 배선 열두 축(스키마·등록·수정·소급·번호 지도·구매처 정리·묶기·주문번호 제안·일괄/홈/소모품·표시·폼·**구매처를 쇼핑몰 자리에 대신 쓰는 표현 금지**),
   규칙 진리표(품목별 번호 머리 상속 금지·소급 제한·요약·갈림·적용취소 토큰), PGlite 통합(저장 경로 전수·적용취소 바이트 동일·위조/교차 용도/남의 영업장 거부·장부 감사). 역주입 31건 전부 발화. 정본 [[domain-expense-channel]].
 - **check-order-channel-split** (2026-10-20, verify:db) · 한 주문 쇼핑몰 둘은 오류, 미기록 섞임·이름 하나 번호 둘·번호 하나 이름 둘·구매처 자리의 쇼핑몰 이름은 경고. 질의 정본 scripts/order-channel-audit.mjs. **운영 DB 에 칸이 없으면 붉게 선다**(SQL 먼저 적용).
