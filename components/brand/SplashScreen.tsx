@@ -81,7 +81,7 @@ export function SplashScreen({ immediate = false }: {
         </div>
         {phase !== 'normal' && (
           <p className="text-[12.5px]" style={{
-            color: 'var(--ink-s, #7A6553)',
+            color: 'var(--ink-s, #6A5644)',
             animation: 'sy-sp-caption 400ms ease forwards',
           }}>
             연결이 느립니다. 계속 시도 중입니다

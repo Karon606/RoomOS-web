@@ -2066,7 +2066,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   // InventoryClient 의 위치 칩 `{pathName} · {qty}`). 종전에는 gap-1 4px 뿐이었는데
                   // 같은 12px 낱말 사이 띄어쓰기가 3.25px 라 0.75px 차이였고, 네 토막이 한 덩어리
                   // 문장으로 읽혔다. 색으로도 못 가른다 — 라이트에서는 --warm-mid 와 --warm-muted 가
-                  // 같은 #7a6553 이라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
+                  // 같은 #6a5644 라(globals.css §05 주석, 라이트 램프가 2단으로 접힌다) 시공자가
                   // 기댄 색 티어가 아예 없다. 다크에서만 살아 있는 층에 의지하면 안 된다.
                   const sep = <span aria-hidden="true" className="text-[var(--warm-muted)]">·</span>
                   // 자리 이름만 줄인다. locationName 은 조상까지 이은 전체 경로라 4단계면 칩 하나가

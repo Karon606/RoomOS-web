@@ -126,7 +126,7 @@ export function SplashIntro({ skipDraw = false }: { skipDraw?: boolean }) {
         </div>
 
         {net !== 'normal' && (
-          <p className="text-[12.5px]" style={{ color: 'var(--ink-s, #7A6553)', animation: 'sy-in-caption 400ms ease forwards' }}>
+          <p className="text-[12.5px]" style={{ color: 'var(--ink-s, #6A5644)', animation: 'sy-in-caption 400ms ease forwards' }}>
             연결이 느립니다. 계속 시도 중입니다
           </p>
         )}

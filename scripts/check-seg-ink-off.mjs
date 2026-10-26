@@ -2,8 +2,9 @@
 //
 // 왜 필요한가. SegmentedControl 비활성 칸과 단일 선택 칩은 늘 --canvas(--cream-2) 위에 서는데, 종전 글자색
 // --warm-mid(#7A6553)는 거기서 4.11:1 로 AA(4.5:1) 미달이었다(2026-10-23 운영자 결정 '진하게'). 정본은
-// --seg-ink-off(라이트 #6B5745 5.10:1, 다크 --d-ink-s 10.56:1)다. --warm-dark 로 올리면 고른 칸과 글자가 같아져
-// 위계가 무너지므로 그 사이 한 단을 둔다(가이드 §23).
+// --seg-ink-off(다크 --d-ink-s 10.56:1)다. --warm-dark 로 올리면 고른 칸과 글자가 같아져 위계가 무너지므로 그 사이
+// 한 단을 둔다(가이드 §23). 2026-10-26 부터 보조 잉크 --ink-3 자체를 #6A5644(--canvas 위 5.18:1)로 내려 --seg-ink-off 는
+// 그 별칭이다(종전 따로 #6B5745). ⓖ 가 보조 잉크 한 값의 대비와 위계를 지킨다.
 //
 //   ⓐ globals.css 의 --seg-ink-off 가 라이트(:root, 인쇄)에서 --cream-2 위, 다크(html.dark)에서 --d-page 위
 //      4.5:1 이상이다. 값을 바꾸면 여기서 대비를 다시 계산한다.
@@ -17,6 +18,11 @@
 //      비선택 쪽이 상수 이름이면 같은 파일의 정의를 따라가고, style 객체의 키 순서는 따지지 않으며, && 조건식도 본다(재검수).
 //   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 미달 토큰이 아니다
 //      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
+//   ⓖ 보조 잉크(--ink-3 · --warm-mid · --warm-muted · --ink-mute · --ink-s · --ink-m · --seg-ink-off)가 라이트(:root, 인쇄)에서
+//      한 값으로 풀리고(같은 갈색 두 벌 금지), 라이트 불투명 면 넷(--canvas · --cream · --cream-soft · --cream-3) 위 4.5:1
+//      이상이며, 본문 --ink-2 와 2.0:1 이상 떨어져 위계가 남는다. 다크(html.dark)는 --ink-3 · --ink-mute 가 --d-page ·
+//      --d-card · --d-card-2 위 4.5:1 이상이다(--d-ink-m 이 --d-card-2 위 4.46 이라 2026-10-26 #948270 으로 밝혔다). 배지·캡션 17곳·배치도 회색 버튼·월 선택 '이번달'이 --canvas 위 4.11:1 이던 것을
+//      자리마다가 아니라 값 한 곳에서 고친 결과를 지킨다(2026-10-23 운영자 승인, 2026-10-26 시공, 가이드 §03).
 //
 // 실행: node scripts/check-seg-ink-off.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -57,6 +63,40 @@ const checkPair = (label, b, fb, bgName) => {
 checkPair(':root(라이트)', rootBlock, null, 'cream-2')
 checkPair('html.dark', darkBlock, rootBlock, 'd-page')
 checkPair('@media print', printBlock, rootBlock, 'cream-2')
+
+// ⓖ 보조 잉크 한 값 · 라이트 면 넷 AA · 본문과 위계 · 다크
+const SECONDARY = ['ink-3', 'warm-mid', 'warm-muted', 'ink-mute', 'ink-s', 'ink-m', 'seg-ink-off']
+const LIGHT_SURFACES = ['canvas', 'cream', 'cream-soft', 'cream-3']
+const HIERARCHY_MIN = 2.0
+const checkSecondary = (label, b, fb) => {
+  const ink = resolve(b, valueIn(b, 'ink-3') ?? valueIn(fb, 'ink-3'), fb)
+  if (!ink) { violations.push(`app/globals.css ${label}: --ink-3 를 6자리 hex 로 풀지 못했다. 토큰 이름·자리를 바꿨다면 이 그물(ⓖ)도 옮긴다.`); return }
+  for (const name of SECONDARY) {
+    const v = resolve(b, valueIn(b, name) ?? valueIn(fb, name), fb)
+    if (!v) violations.push(`app/globals.css ${label}: --${name} 를 6자리 hex 로 풀지 못했다(ⓖ).`)
+    else if (v.toLowerCase() !== ink.toLowerCase()) violations.push(`app/globals.css ${label}: --${name} ${v} 가 --ink-3 ${ink} 와 다르다. 라이트 보조 잉크는 한 값이다(같은 갈색 두 벌 금지, 가이드 §03).`)
+  }
+  for (const s of LIGHT_SURFACES) {
+    const bg = resolve(b, valueIn(b, s) ?? valueIn(fb, s), fb)
+    if (!bg) { violations.push(`app/globals.css ${label}: --${s} 를 6자리 hex 로 풀지 못했다(ⓖ).`); continue }
+    const r = ratio(ink, bg)
+    if (r < 4.5) violations.push(`app/globals.css ${label}: 보조 잉크 --ink-3 ${ink} 가 --${s} ${bg} 위 ${r.toFixed(2)}:1 로 AA 4.5:1 미달이다(가이드 §03).`)
+  }
+  const body = resolve(b, valueIn(b, 'ink-2') ?? valueIn(fb, 'ink-2'), fb)
+  if (!body) violations.push(`app/globals.css ${label}: --ink-2 를 6자리 hex 로 풀지 못했다(ⓖ).`)
+  else if (ratio(ink, body) < HIERARCHY_MIN) violations.push(`app/globals.css ${label}: 보조 잉크 ${ink} 와 본문 --ink-2 ${body} 의 차이가 ${ratio(ink, body).toFixed(2)}:1 로 ${HIERARCHY_MIN}:1 미만이다. 보조가 본문과 붙어 위계가 무너진다(가이드 §03).`)
+}
+checkSecondary(':root(라이트)', rootBlock, null)
+checkSecondary('@media print', printBlock, rootBlock)
+for (const name of ['ink-3', 'ink-mute']) {
+  const fg = resolve(darkBlock, valueIn(darkBlock, name), rootBlock)
+  for (const s of ['d-page', 'd-card', 'd-card-2']) {
+    const bg = resolve(darkBlock, valueIn(darkBlock, s), rootBlock)
+    if (!fg || !bg) { violations.push(`app/globals.css html.dark: --${name} 또는 --${s} 를 6자리 hex 로 풀지 못했다(ⓖ).`); continue }
+    const r = ratio(fg, bg)
+    if (r < 4.5) violations.push(`app/globals.css html.dark: --${name} ${fg} 가 --${s} ${bg} 위 ${r.toFixed(2)}:1 로 AA 4.5:1 미달이다(가이드 §28).`)
+  }
+}
 
 // ⓑ SegmentedControl
 const BAD_TEXT = /text-\[var\(--(?:warm-mid|ink-s|ink-3|warm-muted|ink-m|ink-mute)\)\]/
@@ -177,4 +217,4 @@ if (violations.length) {
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, SegmentedControl·선택형 칩·세그먼트 삼항·토글 칩·ViewTabs 비활성 글자)')
+console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, 보조 잉크 한 값·라이트 면 넷 AA·본문 위계, SegmentedControl·선택형 칩·세그먼트 삼항·토글 칩·ViewTabs 비활성 글자)')
