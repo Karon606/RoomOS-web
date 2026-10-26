@@ -2306,7 +2306,7 @@ export default function SettingsForm({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처 (선택)</label>
                   <input type="text" value={recForm.vendor} onChange={e => setRecForm(p => ({ ...p, vendor: e.target.value }))}
-                    placeholder="예: 한국전력, 아리수, KT"
+                    placeholder="예: 한국전력, KT"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">기록되는 지출의 구매처로 자동 입력됩니다.</p>
                 </div>

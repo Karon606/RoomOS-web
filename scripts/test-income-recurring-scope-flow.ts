@@ -212,7 +212,7 @@ async function main() {
 
   // ── 고정지출 결제 수단·거래처·메모 비우기(2026-10-23 운영자 승인) ──
   // 두 폼이 비운 칸을 `|| undefined` 로 실어 서버가 '안 실려 옴(그대로 둠)'으로 읽었고, 한 번 적은 값을 지울 길이 없었다.
-  // 비운 칸은 null 로 실어 지우고, 안 실린 칸은 그대로 둔다. 재무 폼은 거래처 칸이 없어 거래처를 안 싣는다.
+  // 비운 칸은 null 로 실어 지우고, 안 실린 칸은 그대로 둔다. 재무 폼은 2026-10-27 까지 거래처 칸이 없어 거래처를 안 실었다(지금은 칸이 있어 지금 값을 싣는다).
   {
     const three = async (id: string) => {
       const r = await prisma.recurringExpense.findUnique({ where: { id }, select: { payMethod: true, vendor: true, memo: true } })
@@ -230,11 +230,12 @@ async function main() {
     eq('비우기: 메모 null', await settings.updateRecurringExpense(c, { memo: null }), { ok: true })
     eq('비우기: 세 칸 모두 지워짐', await three(c), [null, null, null])
 
-    // 재무 폼 꼴. 거래처를 안 싣고 결제 수단·메모를 비운 저장은 환경설정에서 적은 거래처를 지우지 않는다.
+    // 거래처를 안 싣고 결제 수단·메모를 비운 저장은 환경설정에서 적은 거래처를 지우지 않는다(부재 보존).
+    // 재무 폼은 2026-10-27(신고 5fa9cf43)부터 구매처 칸이 있어 지금 값을 채워 열고 싣는다. 서버의 부재 보존은 그대로 지킨다.
     const f = await recurring(P1, '재무 폼 대상')
     await settings.updateRecurringExpense(f, full)
-    eq('재무 폼 꼴 저장 통과', await settings.updateRecurringExpense(f, { title: '재무 폼 대상 2', payMethod: null, memo: null, financialAccountId: null }), { ok: true })
-    eq('재무 폼 꼴: 거래처는 그대로, 둘은 지워짐', await three(f), [null, '한국전력', null])
+    eq('거래처 안 실린 저장 통과', await settings.updateRecurringExpense(f, { title: '재무 폼 대상 2', payMethod: null, memo: null, financialAccountId: null }), { ok: true })
+    eq('거래처 안 실린 저장: 거래처는 그대로, 둘은 지워짐', await three(f), [null, '한국전력', null])
     eq('안 실린 칸(undefined)은 그대로 둔다', await settings.updateRecurringExpense(f, { payMethod: undefined, vendor: undefined, memo: undefined, title: '재무 폼 대상 3' }), { ok: true })
     eq('안 실린 칸 뒤 무변경', await three(f), [null, '한국전력', null])
 
@@ -250,8 +251,8 @@ async function main() {
     const ff = handler('app/(app)/finance/FinanceClient.tsx', 'handleSaveRecMgmt')
     eq('화면 짝: 환경설정 폼이 비운 결제 수단·거래처·메모를 null 로 싣는다',
       [/payMethod: recForm\.payMethod \|\| null,/.test(sf), /vendor: recForm\.vendor\.trim\(\) \|\| null,/.test(sf), /memo: recForm\.memo \|\| null,/.test(sf)], [true, true, true])
-    eq('화면 짝: 재무 폼이 비운 결제 수단·메모를 null 로 싣고 거래처는 안 싣는다',
-      [/payMethod: recMgmtForm\.payMethod \|\| null,/.test(ff), /memo: recMgmtForm\.memo \|\| null,/.test(ff), /\bvendor\s*:/.test(ff)], [true, true, false])
+    eq('화면 짝: 재무 폼이 비운 결제 수단·구매처·메모를 null 로 싣는다(신고 5fa9cf43, 구매처 칸 신설)',
+      [/payMethod: recMgmtForm\.payMethod \|\| null,/.test(ff), /vendor: recMgmtForm\.vendor\.trim\(\) \|\| null,/.test(ff), /memo: recMgmtForm\.memo \|\| null,/.test(ff)], [true, true, true])
   }
 
   console.log(`[기타수익·고정지출 영업장 범위 통합] 통과 ${pass} / 실패 ${fail}`)

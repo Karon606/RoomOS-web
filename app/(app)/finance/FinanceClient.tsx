@@ -2294,7 +2294,7 @@ export default function FinanceClient({
   const [recGroupMode, setRecGroupMode] = useState(false)
   const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
   const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
   // 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(기본 켜짐, 2026-10-22 2차). 폼을 열 때마다 켜짐으로 돌린다.
@@ -2321,7 +2321,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
     setRecMgmtCategoryToList(true)
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
@@ -2336,7 +2336,7 @@ export default function FinanceClient({
   }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
     setRecMgmtCategoryToList(true)
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
@@ -2362,9 +2362,10 @@ export default function FinanceClient({
       amount: Number(recMgmtForm.amount.replace(/[^0-9]/g, '')),
       category: recMgmtForm.category,
       dueDay: parseInt(recMgmtForm.dueDay) || 25,
-      // 결제 수단·메모도 비운 칸은 null 이다(아래 전년 금액과 같은 규칙). 거래처는 이 폼에 칸이 없어 싣지 않는다.
-      // 실으면 환경설정에서 적은 거래처가 이 폼 저장마다 지워진다. 안 실린 칸은 서버가 그대로 둔다.
+      // 결제 수단·구매처·메모도 비운 칸은 null 이다(아래 전년 금액과 같은 규칙). 구매처 칸은 지금 값으로 채워 열리므로
+      // 손대지 않은 저장은 환경설정에서 적은 값을 그대로 다시 싣는다(신고 5fa9cf43).
       payMethod: recMgmtForm.payMethod || null,
+      vendor: recMgmtForm.vendor.trim() || null,
       financialAccountId: recMgmtForm.financialAccountId || null,
       isAutoDebit: recMgmtForm.isAutoDebit,
       isVariable: recMgmtForm.isVariable,
@@ -5939,10 +5940,19 @@ export default function FinanceClient({
                     </select>
                   </div>
                 )}
+                {/* 구매처. 환경설정 고정지출 폼과 같은 칸·자리(결제 수단 다음), 같은 자리표시·캡션(신고 5fa9cf43). */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">구매처 (선택)</label>
+                  <input type="text" value={recMgmtForm.vendor} onChange={e => setRecMgmtForm(p => ({ ...p, vendor: e.target.value }))}
+                    placeholder="예: 한국전력, KT"
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">기록되는 지출의 구매처로 자동 입력됩니다.</p>
+                </div>
                 <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  {/* 320px 에서 옆 '변동 금액' 설명에 밀려 글자가 세로로 접히지 않게 줄이지 않는다. */}
+                  <label className="flex items-center gap-2 cursor-pointer shrink-0">
                     <input type="checkbox" checked={recMgmtForm.isAutoDebit} onChange={e => setRecMgmtForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
-                    <span className="text-xs text-[var(--warm-dark)]">자동이체</span>
+                    <span className="text-xs text-[var(--warm-dark)] whitespace-nowrap">자동이체</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={recMgmtForm.isVariable} onChange={e => setRecMgmtForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
@@ -6077,6 +6087,7 @@ export default function FinanceClient({
         rec={recordingRec.rec}
         financialAccounts={financialAccounts}
         paymentMethods={paymentMethods}
+        vendorSuggestions={vendorSuggestions}
         defaultDate={recordingRec.dueDate}
         dueMonth={recordingRec.dueMonth}
         onClose={() => setRecordingRec(null)}

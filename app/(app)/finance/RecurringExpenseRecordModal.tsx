@@ -42,11 +42,13 @@ export function effectivePayMethods(
 }
 
 export function RecurringExpenseRecordModal({
-  rec, financialAccounts, paymentMethods, defaultDate, dueMonth, onClose, onDone,
+  rec, financialAccounts, paymentMethods, vendorSuggestions, defaultDate, dueMonth, onClose, onDone,
 }: {
   rec: RecurringExpenseWithStatus
   financialAccounts: RecModalAccount[]
   paymentMethods: string[]
+  /** 구매처 자동완성 후보(지출 이력, getExpenseVendorSuggestions). 일반 지출 폼의 구매처 칸과 같은 목록이다. */
+  vendorSuggestions: string[]
   /** 예정 행에서 열 때 그 행의 납부 예정일('YYYY-MM-DD')을 프리필 — 없으면 오늘(대시보드 알림 등) */
   defaultDate?: string
   /** 이 기록이 치를 회차의 기본 달 'YYYY-MM' — 진입 경로의 예정 달(재무 조회 달·홈 알림의 달). 없으면 현황의 달. */
@@ -87,6 +89,8 @@ export function RecurringExpenseRecordModal({
   const [targetMonth, setTargetMonth] = useState(baseMonth)
   const monthOpts = [-1, 0, 1].map(n => shiftMonthKey(baseMonth, n))
   const [memo, setMemo]           = useState(rec.memo ?? '')
+  // 구매처(납부처, 신고 5fa9cf43). 항목의 기본 구매처로 채워 연다. 지우면 이 기록은 구매처 없이 저장된다.
+  const [vendor, setVendor]       = useState(rec.vendor ?? '')
   // #6: 가장 최근 실제 기록의 결제수단·계좌를 기본값으로(지난달 처리 방식 자동 대기)
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
   const [accId, setAccId]         = useState(rec.lastFinancialAccountId ?? rec.financialAccountId ?? '')
@@ -177,6 +181,14 @@ export function RecurringExpenseRecordModal({
               {rec.category}
             </div>
           </div>
+          {/* 구매처. 일반 지출 폼의 구매처 칸과 같은 낱말·자동완성 목록. 고정지출 폼 셋이 자리표시를 함께 쓴다. */}
+          <div className="space-y-1.5">
+            <label htmlFor="rec-record-vendor" className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
+            <input id="rec-record-vendor" type="text" value={vendor} onChange={e => setVendor(e.target.value)}
+              placeholder="예: 한국전력, KT" list="rec-record-vendors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+            <datalist id="rec-record-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
@@ -240,7 +252,7 @@ export function RecurringExpenseRecordModal({
           <div className="flex flex-col gap-2 pt-1">
             <div className="flex gap-2">
               <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setError(''); onClose() }}>취소</Btn>
-              <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold"
+              <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold break-keep"
                 disabled={isPending || !date || amount <= 0}
                 onClick={() => {
                   setError('')
@@ -282,6 +294,8 @@ export function RecurringExpenseRecordModal({
                       payMethod: payMethod || undefined,
                       financialAccountId: accId || undefined,
                       memo: memo || undefined,
+                      // 빈 칸은 null 로 싣는다. undefined 면 서버가 '안 실려 옴'으로 읽어 항목 값을 쓴다(form-clear-vs-absent).
+                      vendor: vendor.trim() || null,
                       breakdown: items.length > 0 ? items : undefined,
                       keepCycle: keep,
                       targetMonth,

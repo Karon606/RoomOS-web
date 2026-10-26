@@ -31,7 +31,7 @@ import { fmtKorMoney, fmtManShort, fmtOfferRentAhead, fmtWon } from '@/lib/fmtMo
 import { MoneyEquation, expectedRevenueTerms, paidRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge, type EquationTerm } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
-import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
+import { getRecurringExpensesWithStatus, getFinancialAccounts, getExpenseVendorSuggestions, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getOpenCheckoutCleaning } from '@/app/(app)/tenants/actions'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
@@ -2440,6 +2440,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
   // 9/30 출금 알림을 10/1 에 열었을 때 10월분으로 적힌다.
   const [recordingRec, setRecordingRec]           = useState<{ rec: RecurringExpenseWithStatus; dueDate?: string; dueMonth: string } | null>(null)
   const [recAccounts, setRecAccounts]             = useState<RecModalAccount[]>([])
+  const [recVendors, setRecVendors]               = useState<string[]>([])   // 구매처 자동완성(지출 이력), 열 때 받는다
   // 알림은 id 만 들고 있다(SSR 페이로드 비대화 방지) — 열 때 현황·계좌를 받아 지출관리와 같은 폼을 띄운다.
   const handleStartRecord = async (alert: AlertItem) => {
     const id = alert.recurringExpenseId
@@ -2447,9 +2448,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
     // 알림이 말하는 회차의 달로 현황을 읽는다 — 자동이체 영업일 시프트로 예정일이 다음 달로 넘어가도
     // 회차는 알림을 만든 달이다(recurringDueMonth). 그 칸이 없는 옛 페이로드는 예정일의 달, 그마저 없으면 이번 달.
     const dueMonth = alert.recurringDueMonth ?? alert.recurringDueDate?.slice(0, 7) ?? kstMonthStr()
-    const [recs, accounts] = await Promise.all([
+    // 구매처 후보는 자동완성일 뿐이라 못 받아도 폼은 연다(빈 목록이면 직접 적는다).
+    const [recs, accounts, vendors] = await Promise.all([
       getRecurringExpensesWithStatus(dueMonth),
       getFinancialAccounts(),
+      getExpenseVendorSuggestions().catch(() => [] as string[]),
     ])
     const rec = recs.find(r => r.id === id)
     // 스테일 알림 — 목록에서 사라졌거나 이미 그 회차 기록이 있으면 폼을 열지 않는다.
@@ -2459,6 +2462,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       return
     }
     setRecAccounts(accounts)
+    setRecVendors(vendors)
     // 예정일은 지났거나 오늘일 때만 날짜로 채운다. 알림은 예정일 며칠 전(D-N)부터 뜨는데, 미래 예정일을 넘기면
     // 모달이 열 때마다 '오늘 날짜로 바꿀까요?'를 묻는다(웹디자이너 패스). 그 경우 오늘로 연다. 회차 달은 항상 넘긴다.
     const due = alert.recurringDueDate
@@ -3346,6 +3350,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
           rec={recordingRec.rec}
           financialAccounts={recAccounts}
           paymentMethods={paymentMethods}
+          vendorSuggestions={recVendors}
           defaultDate={recordingRec.dueDate}
           dueMonth={recordingRec.dueMonth}
           onClose={() => setRecordingRec(null)}

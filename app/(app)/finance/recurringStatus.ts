@@ -18,6 +18,8 @@ export type RecurringExpenseWithStatus = {
   category: string
   dueDay: number
   payMethod: string | null
+  // 기본 구매처(납부처). 기록 모달이 이 값을 프리필한다(신고 5fa9cf43). 비면 null.
+  vendor: string | null
   financialAccountId: string | null
   isAutoDebit: boolean
   isVariable: boolean
@@ -177,6 +179,7 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       category:          re.category,
       dueDay:            re.dueDay,
       payMethod:         re.payMethod,
+      vendor:            re.vendor ?? null,
       financialAccountId: re.financialAccountId,
       isAutoDebit:       re.isAutoDebit,
       isVariable:        isVar,

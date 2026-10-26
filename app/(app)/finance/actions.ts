@@ -3156,6 +3156,11 @@ export async function recordRecurringExpense(data: {
   payMethod?: string
   financialAccountId?: string
   memo?: string
+  /**
+   * 이 기록의 구매처(납부처, 신고 5fa9cf43). 칸이 실려 오면 그 값이고 빈 글자·null 은 비운다.
+   * 안 실려 오면 항목의 기본 구매처를 쓴다(form-clear-vs-absent). 모달은 빈 칸을 null 로 싣는다.
+   */
+  vendor?: string | null
   // #1 관리비 묶음: 세부항목별 실제 금액. 있으면 amount는 무시하고 합계로 기록 + breakdown 보관.
   breakdown?: { name: string; amount: number; isVariable: boolean }[]
   /**
@@ -3196,6 +3201,8 @@ export async function recordRecurringExpense(data: {
 
     const storedTargetMonth = targetMonthForSave(data.targetMonth, new Date(data.date))
     const slot = expenseTargetMonth({ targetMonth: storedTargetMonth, date: new Date(data.date) })
+    // 칸이 있으면 그 값(비우면 null), 없으면 항목 값. `|| recurring.vendor` 로 접으면 비운 칸이 항목 값으로 되살아난다.
+    const recordVendor = 'vendor' in data ? (data.vendor?.trim() || null) : (recurring.vendor ?? null)
 
     await prisma.$transaction(async tx => {
       // 같은 항목·같은 회차는 한 번만 — 판정은 삭제취소 가드(undoDeleteExpense)와 같은 식, 귀속월 정본.
@@ -3212,7 +3219,7 @@ export async function recordRecurringExpense(data: {
           amount:              recordedAmount,
           category:            recurring.category,
           detail:              recurring.title,
-          vendor:              recurring.vendor ?? null,
+          vendor:              recordVendor,
           payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
           financialAccountId:  resolvedAccountId,
           memo:                data.memo ?? null,
