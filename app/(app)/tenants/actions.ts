@@ -4601,6 +4601,10 @@ export async function createTenantRequest(data: {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
+    // 폼의 입주자는 이 영업장 사람만 받는다(2026-10-23 운영자 승인). 빈 값은 공용부 요청이다.
+    if (data.tenantId && !(await prisma.tenant.findFirst({ where: { id: data.tenantId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '입주자를 찾을 수 없습니다.' }
+    }
     const category = await resolveRequestCategoryForSave(propertyId, data.category, undefined, data.addCategoryToList !== false)
     // 등록 시점 호실을 고정 — 이사·퇴실 뒤에도 '당시 호실'로 남는다(공용부는 null).
     const roomNoSnapshot = await getRoomNoSnapshot(data.tenantId)
@@ -4668,6 +4672,10 @@ export async function updateTenantRequest(id: string, data: {
       },
     })
     if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
+    // 바꿔 거는 입주자도 이 영업장 사람만 받는다(2026-10-23 운영자 승인). 남의 입주자의 호실이 스냅샷으로 새지 않게.
+    if (data.tenantId && !(await prisma.tenant.findFirst({ where: { id: data.tenantId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '입주자를 찾을 수 없습니다.' }
+    }
 
     const category = await resolveRequestCategoryForSave(propertyId, data.category, before.category, data.addCategoryToList !== false)
     // 호실 스냅샷은 대상(입주자)이 실제로 바뀔 때만 다시 뽑는다 — 요청일 소급 변경에는 불변.
@@ -4678,7 +4686,7 @@ export async function updateTenantRequest(id: string, data: {
       : nextTenantId !== before.tenantId ? await getRoomNoSnapshot(nextTenantId)
       : undefined
     await prisma.tenantRequest.update({
-      where: { id },
+      where: { id, propertyId },
       data: {
         tenantId:    nextTenantId,
         content:     data.content.trim(),
@@ -4755,17 +4763,19 @@ export async function resolveTenantRequest(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await getPropertyId()
+    const { propertyId } = await getPropertyId()
     const guard = assertNotFuture(resolvedDate)
     if (!guard.ok) return { ok: false, error: guard.reason }
     // 기존 값 보존 — 날짜를 안 넘긴 재완료가 이력의 날짜를 오늘로 밀면 안 된다.
-    const before = await prisma.tenantRequest.findUnique({ where: { id }, select: { resolvedAt: true } })
+    // 화면에서 온 id 다. 영업장 범위로 읽고 쓴다. 남의 영업장 요청이면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
+    const before = await prisma.tenantRequest.findFirst({ where: { id, propertyId }, select: { resolvedAt: true } })
+    if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
     await prisma.tenantRequest.update({
-      where: { id },
+      where: { id, propertyId },
       data: {
         resolvedAt: restoreResolvedAt
           ? new Date(restoreResolvedAt)
-          : resolveCompletionAt({ picked: resolvedDate, existing: before?.resolvedAt ?? null, column: 'timestamp' }),
+          : resolveCompletionAt({ picked: resolvedDate, existing: before.resolvedAt, column: 'timestamp' }),
         // memo 를 안 실어 보낸 호출(입주자 정보 › 요청·컴플레인 탭)은 기존 메모를 그대로 둔다.
         // 종전에는 undefined 도 null 로 덮어, 완료 › 적용취소 › 재완료 세 걸음에 /requests 에서
         // 적어 둔 처리 메모가 소리 없이 사라졌다. 비우기 경로는 남긴다 — 빈 문자열을 실어 보내면
@@ -4792,11 +4802,12 @@ export async function unresolveTenantRequest(id: string): Promise<{ ok: true; pr
   try {
     // 완료 쪽과 대칭 — 완료가 편집 권한을 요구하는데 되돌리기가 안 요구하면 뷰어가 상태를 바꾼다.
     await requireEdit()
-    await getPropertyId()
-    const before = await prisma.tenantRequest.findUnique({ where: { id }, select: { resolvedAt: true } })
-    await prisma.tenantRequest.update({ where: { id }, data: { resolvedAt: null } })
+    const { propertyId } = await getPropertyId()
+    const before = await prisma.tenantRequest.findFirst({ where: { id, propertyId }, select: { resolvedAt: true } })
+    if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
+    await prisma.tenantRequest.update({ where: { id, propertyId }, data: { resolvedAt: null } })
     revalidatePath('/tenants'); revalidatePath('/requests'); revalidatePath('/dashboard')
-    return { ok: true, prevResolvedAt: before?.resolvedAt ? before.resolvedAt.toISOString() : null }
+    return { ok: true, prevResolvedAt: before.resolvedAt ? before.resolvedAt.toISOString() : null }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -6002,9 +6013,11 @@ export async function clearCheckoutProration(
 export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await getPropertyId()
+    const { propertyId } = await getPropertyId()
     // 소프트삭제 — 적용취소(restoreTenantRequest) 가능. 모든 조회는 deletedAt:null 필터로 제외.
-    await prisma.tenantRequest.update({ where: { id }, data: { deletedAt: new Date() } })
+    // 영업장 범위로만 쓴다. 남의 영업장 id 면 한 줄도 안 바꾸고 같은 말로 닫는다(2026-10-23 운영자 승인).
+    const r = await prisma.tenantRequest.updateMany({ where: { id, propertyId }, data: { deletedAt: new Date() } })
+    if (r.count === 0) return { ok: false, error: '요청을 찾을 수 없습니다.' }
     revalidatePath('/tenants')
     revalidatePath('/requests')
     revalidatePath('/dashboard')
@@ -6018,8 +6031,10 @@ export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { 
 export async function restoreTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await getPropertyId()
-    await prisma.tenantRequest.update({ where: { id }, data: { deletedAt: null } })
+    const { propertyId } = await getPropertyId()
+    // 적용취소도 화면이 들고 온 id 다. 영업장 범위로만 되살린다.
+    const r = await prisma.tenantRequest.updateMany({ where: { id, propertyId }, data: { deletedAt: null } })
+    if (r.count === 0) return { ok: false, error: '요청을 찾을 수 없습니다.' }
     revalidatePath('/tenants')
     revalidatePath('/requests')
     revalidatePath('/dashboard')
