@@ -6506,7 +6506,10 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               사실이 안 보여 '채운 후' 가 어디서 빠지는지와 창고 행이 왜 한 칸인지가 끊겼다. */}
                           {((prev?.restockedQty != null && prev.restockedQty > 0) || (!rowIsHub && !!hubStock)) && (
                             <p className="break-keep text-[0.6875rem] text-[var(--warm-muted)]">
-                              {prev?.restockedQty != null && prev.restockedQty > 0 && <>저장된 채움 <strong className={FILL_QTY_CLS}>+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></>}
+                              {/* 채움 마커는 마지막 점검 기록(row.lastCheckDate 와 같은 기록)에서 온다. 언제 채운 것인지 그 기록의 점검일을
+                                  붙인다(신고 befc0779). 점검일은 날짜 칸이라 입력 시각(lastCheckCreatedAt)과 섞지 않는다(둘은 다른 날일 수 있다).
+                                  표기는 짧은 인라인 정본 fmtMDYearIfOther('10/26', 해가 다르면 '2025. 10/26'). 괄호 묶음은 한 덩이로 꺾인다. */}
+                              {prev?.restockedQty != null && prev.restockedQty > 0 && <>저장된 채움 <strong className={FILL_QTY_CLS}>+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong>{r.lastCheckDate && <> <span className="whitespace-nowrap">({fmtMDYearIfOther(r.lastCheckDate)} 점검)</span></>}</>}
                               {prev?.restockedQty != null && prev.restockedQty > 0 && !rowIsHub && hubStock && ' · '}
                               {!rowIsHub && hubStock && (
                                 <span className={hubOverdrawn ? 'text-[var(--danger-fg)]' : undefined}>

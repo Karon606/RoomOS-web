@@ -999,6 +999,12 @@ const fillSites = [
   ['위치 패널 저장된 채움', locPanel, />저장된 채움 <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(prev\.restockedQty \* 100\) \/ 100\}/],
   ['이력 수정 폼 행 머리·합계', client, /합계<\/span> <strong className=\{FILL_QTY_CLS\}>\+\{Math\.round\(restockSum \* 100\) \/ 100\}/],
 ]
+// 위치 패널의 '저장된 채움' 은 그 마커가 나온 기록(마지막 점검)의 점검일을 붙인다(신고 befc0779, 2026-10-26).
+// 점검일(날짜 칸)만 쓰고 입력 시각과 섞지 않는다. 둘은 다른 날일 수 있어 섞으면 없는 시각을 만든다.
+need('위치 패널 저장된 채움에 그 기록의 점검일이 붙는다(점검일만, 짧은 인라인 정본)',
+  /\{r\.lastCheckDate && <> <span className="whitespace-nowrap">\(\{fmtMDYearIfOther\(r\.lastCheckDate\)\} 점검\)<\/span><\/>\}/.test(locPanel) &&
+  !/저장된 채움[^\n]*lastCheckCreatedAt/.test(locPanel),
+  "언제 채운 것인지 없으면 지난 채움을 오늘 채움으로 읽는다. 시각을 붙이면 점검일과 입력 시각이 다른 날인 기록에서 틀린 말이 된다")
 for (const [name, src, re] of fillSites) need(`채움 수량이 FILL_QTY_CLS 다 — ${name}`, re.test(src), '한 자리만 --warm-dark 로 남으면 같은 수가 화면마다 다른 무게로 보인다')
 // 읽기 전용 이력 카드는 넣지 않는다 — 테라코타 '+8kg' 은 §03·§06 절제 대상으로 걷은 자리다(check-inventory-view-default 가 그쪽을 지킨다).
 need('이력 카드 채움 캡션은 강조하지 않는다(적는 화면만)',
