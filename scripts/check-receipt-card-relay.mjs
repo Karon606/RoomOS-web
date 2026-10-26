@@ -96,15 +96,36 @@ for (const f of Object.keys(FIELDS)) {
   }
 }
 
-// (3) 지출 폼 — 확인형 고지와 양방향 브랜드 매칭.
+// (3) 지출 폼 — 확인형 고지와 정본 매칭(lib/cardMatch, 신고 eee44d8d 2026-10-26).
+//     매칭 순서(끝 4자리 > 카드사 + 별칭 낱말 > 카드사만)의 값은 scripts/test-card-match.ts 진리표가 지킨다.
+//     여기서는 배선만 본다. 폼이 정본을 부르는가, 못 맞혔을 때 기본값 카드를 비우고 그 사실을 되살리기와 함께 말하는가.
 {
+  const canon = read('lib/cardMatch.ts')
+  for (const [re, why] of [
+    [/export function matchReceiptCard\b/, '정본 매칭 함수가 사라짐'],
+    [/f\.includes\(p\.flat\)/, '카드사를 못 알아본 표기의 한 방향(영수증 표기가 계정 표기를 품는 경우)이 사라짐'],
+    [/p\.flat\.includes\(f\)/, '카드사를 못 알아본 표기의 반대 방향이 사라짐. 한 방향만 보면 표기가 조금만 달라도 못 맞힌다'],
+    [/parse\(`\$\{a\.brand\} \$\{a\.alias \?\? ''\}`\)/, '계정 쪽 표기(브랜드·별칭) 대조가 사라짐'],
+    [/const GENERIC = new Set\(/, "뜻 없는 낱말('카드'·'체크'·'현금' 등) 거르기가 사라짐. 일반 표기가 아무 카드에나 붙는다"],
+    [/PAY_APP/, "간편결제 앱 이름('삼성페이' 등) 거르기가 사라짐. 삼성페이가 삼성카드로 맞춰진다"],
+  ]) if (!re.test(canon)) violations.push(`lib/cardMatch.ts — ${why}`)
+
   const src = read('app/(app)/finance/FinanceClient.tsx')
   for (const [re, why] of [
     [/setAddCardHint\(/, '못 맞힌 카드 표기를 담아 두는 자리가 사라짐. 실패가 다시 조용해진다'],
-    [/addCardHint && !cardAccounts\.some\(/, '고지 한 줄이 사라짐. 운영자는 영수증이 무엇을 봤는지 못 본다'],
-    [/ocrCardName\.includes\(n\)/, '브랜드 매칭의 한 방향(영수증 표기가 계정 표기를 품는 경우)이 사라짐'],
-    [/n\.includes\(ocrCardName\)/, '브랜드 매칭의 반대 방향이 사라짐. 한 방향만 보면 표기가 조금만 달라도 못 맞힌다'],
-    [/\[a\.brand, a\.alias \?\? '', accName\(a\)\]/, '계정 쪽 표기 셋(브랜드·별칭·표시명) 대조가 사라짐'],
+    [/addCardHint && \(!cardAccounts\.some\(/, '고지 한 줄이 사라짐. 운영자는 영수증이 무엇을 봤는지 못 본다'],
+    [/matchReceiptCard\(/, '지출 폼이 정본 매칭(lib/cardMatch)을 안 부른다. 홈 승인과 판정이 갈린다'],
+    [/addCardHint\.candidates/, '후보가 둘 이상일 때 이름을 보이는 자리가 사라짐'],
+    [/if \(!userPickedPayRef\.current\) \{\s*if \(matchedCard\)/, '직접 고른 결제수단을 영수증 매칭이 덮는다(맞힌 갈래도 userPickedPayRef 를 지켜야 한다)'],
+    [/\} else if \(cardMatch\.kind !== 'none'\) \{/, '못 맞혔을 때 직전 지출의 기본값 카드를 비우는 자리가 사라짐(신고 eee44d8d 의 원인)'],
+    [/setAddCardCleared\(\{ id: prevCard\.id/, '비운 직전 카드를 쥐지 않는다. 무엇을 비웠는지 말할 수 없다(§27.8 ①)'],
+    [/직전 카드 되살리기/, '비운 직전 카드를 되살리는 링크가 사라짐(적용취소 원칙)'],
+    [/addCardCleared\.reason === 'ambiguous'/, "비운 이유(맞는 카드 없음·후보 여럿)를 가르지 않는다. 후보 여럿인데 '달라'라고 말한다"],
+    [/if \(prevCard && !prevInCandidates\)/, '직전 카드가 후보 안에 있어도 비운다(영수증과 어긋나지 않는 값을 잃는다)'],
+    [/setAddCardSuggest\(\{ id: matchedCard\.id/, '직접 고른 카드와 영수증 카드가 달라도 조용히 지나간다(영수증 카드는 B입니다 한 줄)'],
+    [/userPickedPayRef\.current = true/, '운영자가 직접 고른 결제수단 표시가 사라짐. 고른 카드까지 지워진다'],
+    [/카드를 고르지 않았습니다\. 이대로 저장할까요\?/, '신용카드인데 카드를 안 고른 저장의 확인이 사라짐'],
+    [/addExpMethod === '신용카드' && !addExpAccId && cardAccounts\.some\(a => a\.type === 'CREDIT_CARD'\)/, '카드 미선택 확인이 신용카드 계정만 세지 않는다(고를 신용카드가 없는데 묻는다)'],
   ]) if (!re.test(src)) violations.push(`app/(app)/finance/FinanceClient.tsx — ${why}`)
 
   // 자동 기입 금지 — payMethod 는 **매칭에 성공했을 때만** 쓴다(운영자 결정: 확인형).

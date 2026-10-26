@@ -33,6 +33,7 @@ import {
 } from './actions'
 import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
+import { matchReceiptCard, cardPayMethod } from '@/lib/cardMatch'
 // 구매처(실제 판매자)·쇼핑몰(주문을 받은 플랫폼) 규칙 정본(2026-10-19 운영자 승인, 신고 a0636f36).
 import { channelSplitAgainst, splitSiblingsText, channelForSave, rowChannel, channelSameAsVendor, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL, externalOrderCaption, orderSellerLabel, channelVendorLabel, VENDOR_CHANNEL_LOCKED } from '@/lib/expenseChannel'
 import type { ExpenseFieldUndo } from '@/lib/expenseFieldUndo'
@@ -66,6 +67,7 @@ import { recurringDueDateFor, recurringCycleLabel, recurringCycleWord, RECURRING
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { expenseTargetMonth, shiftMonthKey, targetMonthLabel } from '@/lib/expenseTargetMonth'
 import { TargetMonthChip } from '@/components/ui/TargetMonthChip'
+import { WhyCaption } from '@/components/ui/WhyCaption'
 import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 // 방별 분배 묶음의 자리 라벨(방 · 공용부 · 미배정) 정본 — 순수층이라 진리표가 붙는다
@@ -1808,7 +1810,21 @@ export default function FinanceClient({
   const [addExpAccId, setAddExpAccId]     = useState('')
   const [addExpAccName, setAddExpAccName] = useState('')
   // 영수증이 본 결제수단 표기 — 등록된 카드와 못 맞혔을 때만 남는다(확인형 고지, 신고 73c18e13).
-  const [addCardHint, setAddCardHint] = useState<{ name: string; last4: string } | null>(null)
+  // candidates: 카드사가 같은 후보가 둘 이상일 때 그 계정들(lib/cardMatch, 신고 eee44d8d).
+  const [addCardHint, setAddCardHint] = useState<{ name: string; last4: string; candidates: { id: string; name: string }[] } | null>(null)
+  // 운영자가 결제수단·계좌·카드를 직접 골랐나. 안 골랐으면 지금 카드는 직전 지출의 기본값(lastPayDefaults)이다.
+  // 직접 고른 결제수단·카드는 영수증 매칭이 맞혀도 못 맞혀도 덮지 않는다(userPickedCategoryRef 와 같은 규약). 같은 폼에서 영수증을
+  // 다시 올려도 지킨다(고른 사람의 뜻이 그 폼 안에서는 그대로다). 새 폼(openAddExpense)에서만 풀린다. 대신 영수증이 다른 카드로
+  // 맞으면 조용히 지나가지 않고 addCardSuggest 한 줄로 알린다.
+  const userPickedPayRef = useRef(false)
+  // 영수증 매칭이 비운 직전 카드(가이드 §27.8 ①). 칸 아래 한 줄로 무엇을 왜 비웠는지 말하고 되살리기 링크를 둔다.
+  // reason: unmatched(맞는 카드 없음) · ambiguous(후보가 여럿이고 직전 카드는 그 안에 없음).
+  const [addCardCleared, setAddCardCleared] = useState<{ id: string; name: string; reason: 'unmatched' | 'ambiguous' } | null>(null)
+  // 직접 고른 결제수단을 지키는 동안 영수증이 다른 카드 한 장으로 맞았을 때 그 카드(되돌릴 수 있는 'B로 바꾸기' 링크와 함께 보인다).
+  const [addCardSuggest, setAddCardSuggest] = useState<{ id: string; name: string; method: string } | null>(null)
+  // 비동기 인식 뒤에도 지금 칸 값을 읽으려고 렌더마다 맞춘다(무엇을 비웠는지 쥐려면 함수형 갱신만으로는 모자란다).
+  const addPayNowRef = useRef({ accId: '' })
+  addPayNowRef.current = { accId: addExpAccId }
   const [editExpMethod, setEditExpMethod]   = useState('계좌이체')
   const [editExpAccId, setEditExpAccId]     = useState('')
   const [editExpAccName, setEditExpAccName] = useState('')
@@ -1977,42 +1993,47 @@ export default function FinanceClient({
     if (d.vendorBizNo) setAddExpBizNo(formatBizNoInput(d.vendorBizNo))
     if (d.orderNo) setAddExtOrderNo(d.orderNo)
     if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
-    // 영수증에 보이는 카드사·마스킹 번호로 결제수단 매칭 — 카드형 계좌만, 후보가 딱 1건일 때만 채운다.
-    // 복수·0건이면 손대지 않음(오매칭 방지 — 기존 lastPayDefaults 값 유지).
+    // 영수증에 보이는 카드사·마스킹 번호로 결제수단 매칭 — 카드형 계좌만, 한 장으로 정해질 때만 채운다.
+    // 순서는 정본 lib/cardMatch 하나다(끝 4자리 > 카드사 + 별칭 낱말 > 카드사만, 신고 eee44d8d 2026-10-26 승인 a안).
     //
-    // **못 맞혀도 조용히 버리지 않는다(신고 73c18e13, 2026-09-17).** 운영자 원문 — "영수증에 사용한
-    // 결제수단이 현대카드라고 되어있는데 왜 그 데이터는 활용을 안하는거지?". 종전에는 실패하면
-    // 원문을 메모에도 안 남기고 고지도 안 한 채 직전 결제수단(기본 '계좌이체')이 조용히 남았다.
-    // 지금은 영수증에 보이는 표기를 화면에 한 줄로 말해 주고 운영자가 고르게 한다 — **확인형**이다.
-    // 자동으로 payMethod 를 써 넣지 않는 것은 그 칸이 정산 상태(settleStatus)를 파생시키기 때문이다.
-    const matchNorm = (v: string) => v.replace(/\s/g, '').toLowerCase()
-    const ocrCardName = matchNorm(d.cardName ?? '')
-    const byLast4 = d.cardLast4
-      ? cardAccounts.filter(a => (a.identifier ?? '').replace(/\D/g, '').slice(-4) === d.cardLast4)
-      : []
-    // 브랜드 매칭은 **양방향**이다. 종전에는 `영수증 표기가 브랜드를 품는가` 한 방향만 봐서,
-    // 브랜드가 '현대카드 M2'인데 영수증이 '현대카드'로 찍히면 못 맞혔다. 계정 쪽 표기도 셋을 본다
-    // (브랜드·별칭·표시명) — 어느 하나가 영수증 표기와 서로를 품으면 같은 카드다.
-    // 한 글자 표기는 아무 데나 걸리므로 부분 일치는 두 글자부터 인정한다.
-    const byBrand = ocrCardName
-      ? cardAccounts.filter(a => [a.brand, a.alias ?? '', accName(a)].map(matchNorm).filter(Boolean)
-          .some(n => n === ocrCardName
-            || (n.length >= 2 && ocrCardName.includes(n))
-            || (ocrCardName.length >= 2 && n.includes(ocrCardName))))
-      : []
-    const matchedCard = byLast4.length === 1 ? byLast4[0]
-      : byLast4.length === 0 && byBrand.length === 1 ? byBrand[0]
-      : null
-    if (matchedCard) {
-      const cardMethod = matchedCard.type === 'CREDIT_CARD' ? '신용카드' : '체크카드'
-      if (effectivePaymentMethods.includes(cardMethod)) setAddExpMethod(cardMethod)
-      setAddExpAccId(matchedCard.id)
-      setAddExpAccName(accName(matchedCard))
+    // **못 맞혀도 조용히 버리지 않는다(신고 73c18e13, 2026-09-17).** 영수증에 보이는 표기를 화면에 한 줄로
+    // 말해 주고 운영자가 고르게 한다(확인형). 자동으로 payMethod 를 써 넣지 않는 것은 그 칸이 정산 상태를 파생시키기 때문이다.
+    //
+    // **못 맞혔는데 직전 지출의 카드가 남아 있으면 비운다(신고 eee44d8d).** 영수증은 롯데플래티늄인데 폼이 직전 지출의
+    // 롯데카드를 그대로 들고 저장됐고, 카드가 골라져 있어 안내 줄도 숨었다. 운영자가 직접 고른 카드는 안 건드린다.
+    // 영수증에 카드 정보가 없으면(kind 'none') 직전 카드를 그대로 둔다.
+    const cardMatch = matchReceiptCard({ cardName: d.cardName, cardLast4: d.cardLast4 }, cardAccounts)
+    const matchedCard = cardMatch.kind === 'matched' ? cardMatch.account : null
+    setAddCardSuggest(null)
+    if (!userPickedPayRef.current) {
+      if (matchedCard) {
+        const cardMethod = cardPayMethod(matchedCard)
+        if (effectivePaymentMethods.includes(cardMethod)) setAddExpMethod(cardMethod)
+        setAddExpAccId(matchedCard.id)
+        setAddExpAccName(accName(matchedCard))
+        setAddCardCleared(null)
+      } else if (cardMatch.kind !== 'none') {
+        // 지금 칸이 카드일 때만 비운다(계좌이체 기본값의 이체 계좌는 영수증 카드와 무관하다).
+        // 후보가 여럿이고 직전 카드가 그 안에 있으면 비우지 않는다. 영수증과 어긋나지 않는 카드를 지우면 오히려 맞을 수 있는 값을 잃는다.
+        // 그때는 안내 상자가 후보를 보이고 '지금 고른 카드가 맞는지 확인'을 말한다.
+        const prevCard = cardAccounts.find(a => a.id === addPayNowRef.current.accId)
+        const prevInCandidates = cardMatch.kind === 'ambiguous' && !!prevCard && cardMatch.candidates.some(c => c.id === prevCard.id)
+        if (prevCard && !prevInCandidates) {
+          setAddExpAccId('')
+          setAddExpAccName('')
+          setAddCardCleared({ id: prevCard.id, name: accName(prevCard), reason: cardMatch.kind === 'ambiguous' ? 'ambiguous' : 'unmatched' })
+        }
+      }
+    } else if (matchedCard && matchedCard.id !== addPayNowRef.current.accId) {
+      // 직접 고른 결제수단은 지키되, 영수증이 다른 카드로 맞았다는 사실은 한 줄로 말한다(설정에서 끈 결제수단이면 말하지 않는다).
+      const cardMethod = cardPayMethod(matchedCard)
+      if (effectivePaymentMethods.includes(cardMethod)) setAddCardSuggest({ id: matchedCard.id, name: accName(matchedCard), method: cardMethod })
     }
     // 못 맞힌 표기는 화면이 말한다. 카드 미등록·후보 여럿·표기 불일치가 전부 이 한 줄로 모인다.
     const hintName = (d.cardName ?? '').trim()
-    setAddCardHint(!matchedCard && (hintName || d.cardLast4)
-      ? { name: hintName, last4: d.cardLast4 ?? '' } : null)
+    setAddCardHint(cardMatch.kind === 'ambiguous' || cardMatch.kind === 'unmatched'
+      ? { name: hintName, last4: d.cardLast4 ?? '', candidates: cardMatch.kind === 'ambiguous' ? cardMatch.candidates.map(a => ({ id: a.id, name: accName(a) })) : [] }
+      : null)
     if (d.items.length > 0) {
       // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
       // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
@@ -2233,7 +2254,7 @@ export default function FinanceClient({
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   // 로컬 미리보기도 함께 비운다. 안 비우면 같은 세션에서 다음 폼을 열었을 때 직전 영수증 이미지가 새 주소를 덮는다.
-  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpChannel(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setError('') }
+  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; userPickedPayRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpChannel(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setAddCardCleared(null); setAddCardSuggest(null); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -2698,7 +2719,17 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        // 비품 전환 물음(F1). 사슬 맨 앞이다. '비품으로 저장'이면 카테고리를 비품 카테고리로 싣고, '그대로 저장'이면 쓰였을
+        // 신용카드인데 카드를 안 골랐으면 한 번 묻는다(신고 eee44d8d). 영수증 카드와 못 맞혀 기본값 카드를 비운 뒤
+        // 그대로 저장되면 카드 정산에서 '미지정 카드'로 따로 모이고 정산 처리를 못 한다. 고를 신용카드 계정이 있을 때만 묻는다.
+        if (addExpMethod === '신용카드' && !addExpAccId && cardAccounts.some(a => a.type === 'CREDIT_CARD')) {
+          const go = await confirmDialog({
+            title: '카드를 고르지 않았습니다. 이대로 저장할까요?',
+            message: "카드를 고르지 않은 신용카드 지출은 카드 정산에서 '미지정 카드'로 따로 모이고 정산 처리를 할 수 없습니다.",
+            confirmLabel: '그대로 저장',
+          })
+          if (!go) return
+        }
+        // 비품 전환 물음(F1). 카드 확인 다음, 물음 사슬의 맨 앞이다. '비품으로 저장'이면 카테고리를 비품 카테고리로 싣고, '그대로 저장'이면 쓰였을
         // 카테고리를 durableFrom 으로 함께 싣는다(서버가 같은 판정을 다시 돌려 맞을 때만 받는다). 자리는 서버 정본
         // placementForSave 가 정한다(대상 호실이 배정 예정 호실로, 방별 분배 조각은 각 조각의 호실로).
         const addFormCat = (fd.get('category') as string) || addExpCategory
@@ -5470,29 +5501,42 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
                   <select name="payMethod" value={addExpMethod}
-                    onChange={e => { setAddExpMethod(e.target.value); setAddExpAccId(''); setAddExpAccName('') }}
+                    onChange={e => { userPickedPayRef.current = true; setAddCardCleared(null); setAddExpMethod(e.target.value); setAddExpAccId(''); setAddExpAccName('') }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   {/* 영수증이 본 결제수단 — 등록 카드와 못 맞혔을 때만. 자동으로 채우지 않고 말해 준다
                       (확인형, 운영자 결정 2026-09-17). 카드를 고르면 사라진다. 형제 안내줄과 같은 문법. */}
-                  {addCardHint && !cardAccounts.some(a => a.id === addExpAccId) && (
-                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
+                  {/* 카드를 고르면 사라진다(운영자 결정 2026-09-17). 다만 지금 고른 카드가 여러 후보 중 하나일 때는 남겨 후보를 보인다. */}
+                  {addCardHint && (!cardAccounts.some(a => a.id === addExpAccId) || addCardHint.candidates.some(c => c.id === addExpAccId)) && (
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2 break-keep">
                       {/* 값이 굵은 글씨 안이라 조사를 손으로 붙이면 '신한카드로'·'국민카드으로'가 갈린다.
                           '입니다'는 어떤 명사에도 붙어 조사 정본을 부를 자리 자체가 없다. */}
                       {addCardHint.name
                         ? <>영수증에 보이는 결제수단은 <strong className="text-[var(--warm-mid)]">{addCardHint.name}</strong>입니다.</>
                         : <>영수증에 보이는 카드번호 끝 4자리는 <strong className="text-[var(--warm-mid)]">{addCardHint.last4}</strong>입니다.</>}
                       {addCardHint.name && addCardHint.last4 ? ` 카드번호 끝 4자리는 ${addCardHint.last4}입니다.` : ''}
-                      {cardAccounts.length === 0 ? ' 자산 관리에 카드를 등록하면 다음부터 자동으로 맞춰집니다.' : (addExpMethod === '신용카드' || addExpMethod === '체크카드') ? ' 아래에서 맞는 카드를 골라 주세요.' : ' 결제수단을 신용카드나 체크카드로 바꾸면 카드를 고를 수 있습니다.'}
+                      {/* 카드사가 같은 후보가 둘 이상이면 이름을 보인다(lib/cardMatch, 신고 eee44d8d). 고르는 것은 운영자다. */}
+                      {addCardHint.candidates.length > 1 && <> 맞는 카드 후보는 <strong className="text-[var(--warm-mid)]">{addCardHint.candidates.map(c => c.name).join(', ')}</strong>입니다.</>}
+                      {cardAccounts.length === 0 ? ' 자산 관리에 카드를 등록하면 다음부터 자동으로 맞춰집니다.' : addCardHint.candidates.some(c => c.id === addExpAccId) ? ' 지금 고른 카드가 맞는지 확인해 주세요.' : (addExpMethod === '신용카드' || addExpMethod === '체크카드') ? ' 아래에서 맞는 카드를 골라 주세요.' : ' 결제수단을 신용카드나 체크카드로 바꾸면 카드를 고를 수 있습니다.'}
                     </p>
+                  )}
+                  {/* 직접 고른 결제수단은 지키고, 영수증이 다른 카드로 맞았으면 그 사실과 바꾸는 링크를 한 줄로(§27.8 ①, 조용히 지나가지 않는다).
+                      바꾼 뒤에도 고른 값이라 다시 덮이지 않고, 원래 카드는 칸에서 다시 고르면 된다. */}
+                  {addCardSuggest && addCardSuggest.id !== addExpAccId && (
+                    <WhyCaption id="add-card-suggest"
+                      action={{ label: `${withParticle(addCardSuggest.name, '으로/로')} 바꾸기`, onClick: () => {
+                        setAddExpMethod(addCardSuggest.method); setAddExpAccId(addCardSuggest.id); setAddExpAccName(addCardSuggest.name); setAddCardSuggest(null)
+                      } }}>
+                      영수증 카드는 {addCardSuggest.name}입니다
+                    </WhyCaption>
                   )}
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
                     <select value={addExpAccId}
-                      onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
+                      onChange={e => { userPickedPayRef.current = true; setAddCardCleared(null); pickAccount(e.target.value, setAddExpAccId, setAddExpAccName) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
@@ -5502,19 +5546,31 @@ export default function FinanceClient({
                 {(addExpMethod === '신용카드' || addExpMethod === '체크카드') && cardAccounts.length > 0 && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카드 선택</label>
-                    <select value={addExpAccId}
-                      onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
+                    <select value={addExpAccId} aria-describedby={addCardCleared ? 'add-card-cleared' : undefined}
+                      onChange={e => { userPickedPayRef.current = true; setAddCardCleared(null); pickAccount(e.target.value, setAddExpAccId, setAddExpAccName) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                     </select>
+                    {/* 영수증 매칭이 비운 직전 카드(가이드 §27.8 ①). 무엇을 비웠는지 말하고 그 자리에서 되살린다. 저장 전이라 폼 안에서만 바뀐다. */}
+                    {addCardCleared && (
+                      <WhyCaption id="add-card-cleared"
+                        action={{ label: '직전 카드 되살리기', onClick: () => {
+                          userPickedPayRef.current = true
+                          setAddExpAccId(addCardCleared.id); setAddExpAccName(addCardCleared.name); setAddCardCleared(null)
+                        } }}>
+                        {addCardCleared.reason === 'ambiguous'
+                          ? <>영수증 카드를 한 장으로 정하지 못해 직전 지출의 카드({addCardCleared.name})를 비웠습니다</>
+                          : <>영수증 카드와 맞는 등록 카드가 없어 직전 지출의 카드({addCardCleared.name})를 비웠습니다</>}
+                      </WhyCaption>
+                    )}
                   </div>
                 )}
                 {prepaidAccounts.length > 0 && prepaidAccounts.some(a => addExpMethod === a.brand || addExpMethod === accName(a)) && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택</label>
                     <select value={addExpAccId}
-                      onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
+                      onChange={e => { userPickedPayRef.current = true; setAddCardCleared(null); pickAccount(e.target.value, setAddExpAccId, setAddExpAccName) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
