@@ -149,6 +149,11 @@ async function getPropertyId() {
   return { user: { sub: userId }, propertyId, role }
 }
 
+// 화면에서 온 입주자 id 가 이 영업장 사람인가(2026-10-23 운영자 승인). 이력·환불·수익 행에 남의 영업장 입주자가 걸리지 않게 쓰기 전에 본다.
+async function tenantInProperty(propertyId: string, tenantId: string): Promise<boolean> {
+  return !!(await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } }))
+}
+
 // 입주자 목록 조회
 
 // 퇴실하면 청소 예정을 자동으로 만든다(신고 b21e4e98 3단계).
@@ -739,6 +744,7 @@ async function phoneContactsOf(tenantId: string): Promise<TenantPhoneContact[]> 
  *   null 일 때만 쓴다 — 예약 확정 문이 볼 것이 이것뿐이기 때문이다.
  */
 async function leaseSaveDenial(
+  propertyId: string,
   f: ReturnType<typeof readLeaseFields>,
   tenantId: string | null,
   newContacts: readonly TenantPhoneContact[] = [],
@@ -780,6 +786,8 @@ async function leaseSaveDenial(
       },
     },
   }) : null
+  // 폼의 호실은 이 영업장 방만 받는다(2026-10-23 운영자 승인). 남의 방에 계약이 서고 그 방이 '점유'로 바뀌지 않게.
+  if (f.roomId && (!roomForGuard || roomForGuard.propertyId !== propertyId)) return '호실 정보를 찾을 수 없습니다.'
   // 남이 임시로 잡아 둔 구간 — 계약은 아직 없으므로 제외할 것도 없다.
   const plannedStays = roomForGuard && f.roomId
     ? await plannedStaysInRoom(roomForGuard.propertyId, f.roomId, null)
@@ -808,7 +816,7 @@ async function afterLeaseCreated(
   ctx: { propertyId: string; tenantId: string; leaseId: string },
 ) {
   if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(f.status) && f.roomId) {
-    await prisma.room.update({ where: { id: f.roomId }, data: { isVacant: false } })
+    await prisma.room.update({ where: { id: f.roomId, propertyId: ctx.propertyId }, data: { isVacant: false } })
   }
   // NON_RESIDENT, WAITING_TOUR, TOUR_DONE는 isVacant에 영향 없음
 
@@ -893,7 +901,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
     if (!tenant) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     const f = readLeaseFields(formData)
-    const denial = await leaseSaveDenial(f, tenantId)
+    const denial = await leaseSaveDenial(propertyId, f, tenantId)
     if (denial) return { ok: false, error: denial }
 
     // 딸린 계약이 부모와 같은 납부일이면 부모의 이용 기간 시작일도 함께 저장한다(lib/dueDay inheritedCycleDay).
@@ -988,7 +996,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   // 올려도 저장 순서·중복 확인창 순서는 그대로다.
   // 만든 순서가 곧 createdAt 순서다 — 한 트랜잭션에 들어가 값이 같아지므로 정본의 2차 키(id)를
   // 순번으로 매겨 같은 순서를 재현한다.
-  const denial = await leaseSaveDenial(f, null, contactsToCreate.map((x, i) => ({
+  const denial = await leaseSaveDenial(propertyId, f, null, contactsToCreate.map((x, i) => ({
     id: String(i).padStart(3, '0'),
     contactType: x.contactType,
     contactValue: x.contactValue,
@@ -1928,6 +1936,12 @@ export async function recordDepositReturn(params: {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
+    // 화면에서 온 계약·입주자 id 다. 이 영업장 것만 받는다(2026-10-23 운영자 승인). 예약 취소 갈래는 서버 기준액을
+    // 건너뛰므로 이 확인이 없으면 남의 영업장 계약·입주자가 내 환불·수익 행에 걸린다.
+    if (!(await prisma.leaseTerm.findFirst({ where: { id: params.leaseTermId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    }
+    if (!(await tenantInProperty(propertyId, params.tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     // 멱등 가드 — 같은 계약에 환불 이력이 이미 있으면 새로 만들지 않는다.
     // 퇴실 상태 재저장마다 (DepositRefund + ExtraIncome) 쌍이 새로 생겨 중복되던 문제(신고 13438ec9).
@@ -2352,6 +2366,11 @@ export async function recordReservationPrepaidCancel(params: {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
+    // 화면에서 온 계약·입주자 id 다. 이 영업장 것만 받는다(2026-10-23 운영자 승인, 위약금 행에 남의 입주자가 걸리지 않게).
+    if (!(await prisma.leaseTerm.findFirst({ where: { id: params.leaseTermId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    }
+    if (!(await tenantInProperty(propertyId, params.tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     const [records, cleaningIncomes] = await Promise.all([
       prisma.paymentRecord.findMany({
@@ -2595,8 +2614,10 @@ export async function checkoutWithDepositRefund(params: {
 }): Promise<{ ok: true; notice?: string; taxNotice?: RentRefundTaxNotice } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: params.leaseTermId },
+    const { propertyId } = await getPropertyId()
+    // 영업장 범위로 읽는다. id 만으로 읽으면 남의 계약 보증금·입주자 이름으로 환불 기록을 짓는다(2026-10-23 운영자 승인).
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: params.leaseTermId, propertyId },
       select: { depositAmount: true, tenant: { select: { name: true } } },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
@@ -2651,11 +2672,13 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
 
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 화면에서 온 id 다. 영업장 범위로 읽어야 남의 계약을 거주중으로 올리고 남의 방을 점유로 바꾸지 않는다(2026-10-23 운영자 승인).
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
     select: { roomId: true, status: true, dueDay: true, cycleDay: true, moveInDate: true },
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+  if (!(await tenantInProperty(propertyId, tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
   // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
   const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
@@ -2732,8 +2755,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
 
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: leaseTermId },
+    // 영업장 범위로 읽는다(2026-10-23 운영자 승인). id 만으로 읽으면 남의 예약을 거주중으로 올린다.
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
       select: {
         id: true, status: true, tenantId: true, roomId: true, reservationConfirmedAt: true,
         rentAmount: true, moveInDate: true, dueDay: true, cycleDay: true, roomSchedule: true,
@@ -3791,11 +3815,13 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   await requireEdit()
   const { propertyId } = await getPropertyId()
 
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 화면에서 온 id 다. 영업장 범위로 읽어야 남의 계약을 퇴실시키고 남의 방을 공실로 돌리지 않는다(2026-10-23 운영자 승인).
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
     select: { roomId: true, status: true },
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+  if (!(await tenantInProperty(propertyId, tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
   // 미래 퇴실일 거부(운영자 확정 2026-09-17). 앞날을 잡는 것은 expectedMoveOut 의 몫이다.
   if (!assertNotFuture(moveOutDate).ok) {
@@ -3903,8 +3929,9 @@ export async function applyStatusTransition(input: {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: input.leaseTermId },
+    // 화면에서 온 id 다. 영업장 범위로 읽는다(2026-10-23 운영자 승인). id 만으로 읽으면 남의 계약 상태·방·퇴실 부수처리가 돈다.
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: input.leaseTermId, propertyId },
       select: {
         roomId: true, status: true, dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true, reservationConfirmedAt: true,
         // 예약 확정 문이 볼 사람 — 인자로 온 tenantId 가 아니라 **이 계약의 주인**을 본다.
@@ -3915,6 +3942,7 @@ export async function applyStatusTransition(input: {
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!(await tenantInProperty(propertyId, input.tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     // 미래 퇴실일 거부(운영자 확정 2026-09-17). 실제로 나간 날은 지난 날이고, 앞날을 잡는 것은
     // expectedMoveOut 의 몫이다 — 그래서 이 가드는 moveOutDate 에만 건다. 화면 maxDate 와 두 겹이다.
@@ -4467,6 +4495,10 @@ export async function deleteTenant(tenantId: string, opts?: { force?: boolean })
 > {
   try {
     await requireEdit()
+    const { propertyId } = await getPropertyId()
+    // 화면에서 온 id 다. 영업장 범위로 먼저 확인한다(2026-10-23 운영자 승인). 이 확인이 없으면 남의 영업장 입주자가
+    // 계약·수납까지 연쇄로 영구 삭제되고, 건수 안내로 남의 기록이 있는지도 새어 나간다.
+    if (!(await tenantInProperty(propertyId, tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     // 이력 확인 — 복구 불가 삭제임을 건수와 함께 동의받는다
     if (!opts?.force) {
@@ -4493,11 +4525,11 @@ export async function deleteTenant(tenantId: string, opts?: { force?: boolean })
         where: { roomId, tenantId: { not: tenantId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       })
       if (!remaining) {
-        await prisma.room.update({ where: { id: roomId }, data: { isVacant: true } })
+        await prisma.room.update({ where: { id: roomId, propertyId }, data: { isVacant: true } })
       }
     }
 
-    await prisma.tenant.delete({ where: { id: tenantId } })
+    await prisma.tenant.delete({ where: { id: tenantId, propertyId } })
     revalidatePath('/tenants')
     return { ok: true }
   } catch (err) {
@@ -5844,8 +5876,9 @@ export async function setCheckoutProration(
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: leaseTermId },
+    // 영업장 범위로 읽는다(2026-10-23 운영자 승인). id 만으로 읽으면 남의 계약 일할 정산을 쓴다.
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
       select: {
         status: true, tenantId: true, dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true,
         expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
@@ -5934,8 +5967,9 @@ export async function clearCheckoutProration(
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: leaseTermId },
+    // 영업장 범위로 읽는다(2026-10-23 운영자 승인). id 만으로 읽으면 남의 계약 일할 정산을 지운다.
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
       select: {
         status: true, tenantId: true, checkoutProrationUndo: true,
         expectedMoveOut: true, checkoutProratedAmount: true,
@@ -6622,9 +6656,11 @@ export async function batchUpdateTenants(
     let nextStatus: string | null = null
     const cycleClear: { id: string; prev: string }[] = []
     if (Object.keys(leaseFields).length > 0) {
+      // 화면 id 에 남의 영업장 입주자가 섞여도 그 사람 계약은 고르지 않는다(2026-10-23 운영자 승인).
       const allLive = await prisma.leaseTerm.findMany({
         where: {
           tenantId: { in: tenantIds },
+          propertyId,
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
         // rentAmount·moveInDate — 아래 청구 상태 백스톱의 입력(단건 경로 applyStatusTransition 과 같은 판정).
