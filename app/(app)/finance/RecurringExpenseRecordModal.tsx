@@ -195,7 +195,7 @@ export function RecurringExpenseRecordModal({
           </div>
           {payMethod === '계좌이체' && bankAccounts.length > 0 && (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">이체 계좌</label>
               <select value={accId} onChange={e => setAccId(e.target.value)}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                 <option value="">선택 안함</option>

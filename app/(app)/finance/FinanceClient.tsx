@@ -4473,7 +4473,8 @@ export default function FinanceClient({
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">결제 연결 계좌</label>
+                    {/* 카드 대금이 빠져나가는 계좌. 카드 정산 화면과 같은 이름 '출금계좌'다(신고 2f0f9f4c 라벨 정리). */}
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">출금계좌</label>
                     <select name="linkedAccountId"
                       defaultValue={editingAcc?.linkedAccountId ?? ''}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
@@ -4541,7 +4542,7 @@ export default function FinanceClient({
                                 {a.owner && <span>{a.owner}</span>}
                                 {a.payDay && <span>결제일: {displayDay(a.payDay)}</span>}
                                 {a.cutOffDay && <span>기준일: {displayDay(a.cutOffDay)}</span>}
-                                {a.linkedAccount && <span>출금: {accName(a.linkedAccount)}</span>}
+                                {a.linkedAccount && <span>출금계좌: {accName(a.linkedAccount)}</span>}
                               </div>
                             </div>
                             <button
@@ -5157,7 +5158,7 @@ export default function FinanceClient({
                   </div>
                   {editExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">이체 계좌</label>
                       <select value={editExpAccId}
                         onChange={e => pickAccount(e.target.value, setEditExpAccId, setEditExpAccName)}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
@@ -5538,7 +5539,7 @@ export default function FinanceClient({
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">이체 계좌</label>
                     <select value={addExpAccId}
                       onChange={e => { userPickedPayRef.current = true; setAddCardCleared(null); pickAccount(e.target.value, setAddExpAccId, setAddExpAccName) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
@@ -5873,7 +5874,7 @@ export default function FinanceClient({
                 </div>
                 {recMgmtForm.payMethod === '계좌이체' && bankAccounts.length > 0 && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌 (선택)</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">이체 계좌 (선택)</label>
                     <select value={recMgmtForm.financialAccountId} onChange={e => setRecMgmtForm(p => ({ ...p, financialAccountId: e.target.value }))}
                       className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                       <option value="">선택 안함</option>
@@ -6291,7 +6292,7 @@ export function BatchEditExpensesModal({ selectedIds, selected, expenseCategorie
         </div>
         {payMethod === '계좌이체' && bankAccounts.length > 0 && (
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">이체 계좌</label>
             <select value={accId} onChange={e => pickAcc(e.target.value)} className={inputCls}>
               <option value="">선택 안함</option>
               {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
