@@ -73,6 +73,7 @@ import {
   EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
   type ExpenseFieldUndo, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
+import { RECURRING_TEMPLATE_VENDOR_UNDO_DOMAIN, canonicalRecurringVendorUndo, parseRecurringVendorUndo, type RecurringVendorUndo } from '@/lib/recurringVendorUndo'
 import { signFieldUndo, applyChannelToOrder } from './orderChannelApply'
 import { BATCH_EXPENSES_UNDO_DOMAIN, canonicalBatchExpensesUndo, parseBatchExpensesUndo, planBatchExpensesUndo, undoValue, type BatchExpensesUndo, type BatchUndoValue } from '@/lib/batchExpenseUndo'
 
@@ -3161,6 +3162,11 @@ export async function recordRecurringExpense(data: {
    * 안 실려 오면 항목의 기본 구매처를 쓴다(form-clear-vs-absent). 모달은 빈 칸을 null 로 싣는다.
    */
   vendor?: string | null
+  /**
+   * 이 기록의 구매처를 항목의 기본 구매처로도 저장한다(모달 '이 항목의 기본 구매처로 저장', 결정 C).
+   * 지출 생성과 같은 트랜잭션에서 항목을 고치고, 바꿨으면 적용취소 토큰(templateVendorUndo)을 돌려준다.
+   */
+  saveVendorAsDefault?: boolean
   // #1 관리비 묶음: 세부항목별 실제 금액. 있으면 amount는 무시하고 합계로 기록 + breakdown 보관.
   breakdown?: { name: string; amount: number; isVariable: boolean }[]
   /**
@@ -3175,7 +3181,7 @@ export async function recordRecurringExpense(data: {
    * 없으면 date 의 달이다. date 의 달과 같으면 NULL 로 접어 저장한다(lib/expenseTargetMonth targetMonthForSave).
    */
   targetMonth?: string | null
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; templateVendorUndo?: RecurringVendorUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -3203,6 +3209,9 @@ export async function recordRecurringExpense(data: {
     const slot = expenseTargetMonth({ targetMonth: storedTargetMonth, date: new Date(data.date) })
     // 칸이 있으면 그 값(비우면 null), 없으면 항목 값. `|| recurring.vendor` 로 접으면 비운 칸이 항목 값으로 되살아난다.
     const recordVendor = 'vendor' in data ? (data.vendor?.trim() || null) : (recurring.vendor ?? null)
+    // 항목 기본값으로도 저장. 적은 값이 항목 값과 다를 때만 쓴다(같으면 쓸 것도 되돌릴 것도 없다).
+    const templateBefore = recurring.vendor ?? null
+    const saveTemplateVendor = data.saveVendorAsDefault === true && recordVendor !== templateBefore
 
     await prisma.$transaction(async tx => {
       // 같은 항목·같은 회차는 한 번만 — 판정은 삭제취소 가드(undoDeleteExpense)와 같은 식, 귀속월 정본.
@@ -3237,13 +3246,57 @@ export async function recordRecurringExpense(data: {
         // 그 회차를 치른 것은 맞으므로 함께 푼다 — 안 그러면 지정 달이 영원히 도래로 남는다.
         data:  { pendingAmount: null, nextDueOverrideMonth: null },
       })
+      // 기본 구매처 저장(결정 C). 읽은 뒤 그사이 항목 값이 바뀌었으면 기록째 되돌린다(조건부 갱신, 전부 아니면 안 함).
+      if (saveTemplateVendor) {
+        const r = await tx.recurringExpense.updateMany({
+          where: { id: data.recurringExpenseId, propertyId, vendor: templateBefore },
+          data:  { vendor: recordVendor },
+        })
+        if (r.count !== 1) throw new Error('그 사이 이 항목의 기본 구매처가 바뀌었습니다. 창을 닫고 다시 열어 주세요.')
+      }
       await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
     })
     revalidatePath('/finance')
     revalidatePath('/dashboard')
+    if (saveTemplateVendor) {
+      revalidatePath('/settings')
+      const body = { v: 1 as const, recurringExpenseId: data.recurringExpenseId, before: templateBefore, after: recordVendor }
+      const sig = signUndoBody(RECURRING_TEMPLATE_VENDOR_UNDO_DOMAIN, propertyId, canonicalRecurringVendorUndo(body))
+      // 운영에서 서명 키가 없으면(null) 토큰을 내지 않는다. 화면은 적용취소를 안 띄운다(다른 서명 토큰과 같은 규칙).
+      if (sig !== null) return { ok: true, templateVendorUndo: sig ? { ...body, sig } : body }
+    }
     return { ok: true }
   } catch (e) {
     if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+const TEMPLATE_VENDOR_UNDO_CONFLICT = '그 사이 이 항목의 기본 구매처가 다시 바뀌어 되돌리지 않았습니다. 고정 지출 관리에서 지금 값을 확인해 주세요.'
+
+/**
+ * 기록 모달 '이 항목의 기본 구매처로 저장'의 적용취소(결정 C). 항목 구매처만 그때 값으로 되돌린다. 기록한 지출은 그대로다.
+ * 토큰 모양·서명(용도 라벨 recurring-template-vendor-v1)·영업장 범위를 보고, 지금 항목 구매처가 '쓴 직후' 값일 때만 고친다.
+ */
+export async function undoRecurringTemplateVendor(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const u = parseRecurringVendorUndo(raw)
+    if (!u) return { ok: false, error: FIELD_UNDO_INVALID }
+    const { sig, ...body } = u
+    if (!verifyUndoBody(RECURRING_TEMPLATE_VENDOR_UNDO_DOMAIN, propertyId, canonicalRecurringVendorUndo(body), sig)) return { ok: false, error: FIELD_UNDO_INVALID }
+    const r = await prisma.recurringExpense.updateMany({
+      where: { id: u.recurringExpenseId, propertyId, vendor: u.after },
+      data:  { vendor: u.before },
+    })
+    if (r.count !== 1) return { ok: false, error: TEMPLATE_VENDOR_UNDO_CONFLICT }
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
     return { ok: false, error: (e as Error).message }
   }
 }

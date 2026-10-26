@@ -14,10 +14,39 @@ import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringE
 import { isRecurringDueMonth, nextRecurringDueMonth, recurringCycleWord } from '@/lib/recurringDueDate'
 import { shiftMonthKey, targetMonthLabel } from '@/lib/expenseTargetMonth'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
+import { pushToast } from '@/lib/saveStatus'
+import { withParticle } from '@/lib/koParticle'
+import type { RecurringVendorUndo } from '@/lib/recurringVendorUndo'
 import {
-  recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
+  recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount, undoRecurringTemplateVendor,
   type RecurringExpenseWithStatus,
 } from './actions'
+
+/** 기록이 끝났을 때 부르는 쪽에 넘기는 결과. 기본 구매처를 함께 바꿨으면 그 적용취소 토큰이 실린다. */
+export type RecurringRecordDone = { templateVendorUndo?: RecurringVendorUndo }
+
+/**
+ * 기록 성공 토스트 정본(재무 카드·홈 알림 공용). 기본 구매처를 함께 바꿨으면 둘째 줄로 말하고
+ * '구매처 적용취소'로 항목 구매처만 되돌린다(결정 C). 기록한 지출은 그대로라 액션 낱말에 '구매처'를 붙여 가른다(§16 명사 보강).
+ */
+export function pushRecurringRecordedToast(done: RecurringRecordDone, onUndone: () => void) {
+  const u = done.templateVendorUndo
+  if (!u) { pushToast('success', '지출이 기록되었습니다'); return }
+  pushToast('success', '지출이 기록되었습니다', {
+    detail: u.after
+      // 조사는 따옴표 밖 이름의 끝소리로 고른다('대동빌딩'으로 · 'KT'로).
+      ? `이 항목의 기본 구매처를 '${u.after}'${withParticle(u.after, '으로/로').slice(u.after.length)} 저장했습니다.`
+      : '이 항목의 기본 구매처를 비웠습니다.',
+    action: {
+      label: '구매처 적용취소',
+      run: () => { void undoRecurringTemplateVendor(u).then(r => {
+        if (!r.ok) { pushToast('error', r.error); return }
+        pushToast('info', '기본 구매처 저장을 적용취소했습니다')
+        onUndone()
+      }).catch(() => pushToast('error', '적용취소에 실패했습니다. 다시 시도해 주세요.')) },
+    },
+  })
+}
 
 // 모달이 필요로 하는 계좌 필드만 — Prisma FinancialAccount·FinanceClient 타입 모두 대입 가능.
 export type RecModalAccount = { id: string; type: string; brand: string; alias: string | null }
@@ -54,8 +83,8 @@ export function RecurringExpenseRecordModal({
   /** 이 기록이 치를 회차의 기본 달 'YYYY-MM' — 진입 경로의 예정 달(재무 조회 달·홈 알림의 달). 없으면 현황의 달. */
   dueMonth?: string
   onClose: () => void
-  /** 지출 기록 성공 시에만 호출 — 닫기·refresh·토스트는 caller 몫 */
-  onDone: () => void
+  /** 지출 기록 성공 시에만 호출. 닫기·refresh·토스트는 caller 몫(토스트는 pushRecurringRecordedToast 정본) */
+  onDone: (done: RecurringRecordDone) => void
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -91,6 +120,10 @@ export function RecurringExpenseRecordModal({
   const [memo, setMemo]           = useState(rec.memo ?? '')
   // 구매처(납부처, 신고 5fa9cf43). 항목의 기본 구매처로 채워 연다. 지우면 이 기록은 구매처 없이 저장된다.
   const [vendor, setVendor]       = useState(rec.vendor ?? '')
+  // '이 항목의 기본 구매처로 저장'(결정 C). 적은 값이 항목 값과 다를 때만 보인다.
+  // 기본값은 항목이 비어 있으면 켜짐(처음 적는 납부처를 다음 달에도 쓰게), 다른 값이 있으면 꺼짐(이번만 다른 곳일 수 있다).
+  const [saveVendorDefault, setSaveVendorDefault] = useState(() => !rec.vendor)
+  const vendorDiffers = (vendor.trim() || null) !== (rec.vendor ?? null)
   // #6: 가장 최근 실제 기록의 결제수단·계좌를 기본값으로(지난달 처리 방식 자동 대기)
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
   const [accId, setAccId]         = useState(rec.lastFinancialAccountId ?? rec.financialAccountId ?? '')
@@ -188,6 +221,14 @@ export function RecurringExpenseRecordModal({
               placeholder="예: 한국전력, KT" list="rec-record-vendors"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
             <datalist id="rec-record-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
+            {/* 체크박스는 분류 관리 '목록에 추가' 정본(CategorySelect addBox)과 같은 줄 문법. 확인창은 띄우지 않는다(§14, 토스트 적용취소). */}
+            {vendorDiffers && (
+              <label className="mt-1 flex items-center gap-2 cursor-pointer min-h-[var(--input-h-touch)] sm:min-h-0 sm:py-1">
+                <input type="checkbox" checked={saveVendorDefault} onChange={e => setSaveVendorDefault(e.target.checked)}
+                  className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
+                <span className="text-xs text-[var(--warm-dark)] break-keep">이 항목의 기본 구매처로 저장</span>
+              </label>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -296,12 +337,13 @@ export function RecurringExpenseRecordModal({
                       memo: memo || undefined,
                       // 빈 칸은 null 로 싣는다. undefined 면 서버가 '안 실려 옴'으로 읽어 항목 값을 쓴다(form-clear-vs-absent).
                       vendor: vendor.trim() || null,
+                      saveVendorAsDefault: vendorDiffers && saveVendorDefault,
                       breakdown: items.length > 0 ? items : undefined,
                       keepCycle: keep,
                       targetMonth,
                     })
                     if (!res.ok) { setError(res.error); return }
-                    onDone()
+                    onDone({ templateVendorUndo: res.templateVendorUndo })
                   })
                 }}>
                 {isPending ? '기록 중…' : '지출로 기록 (납부 완료)'}

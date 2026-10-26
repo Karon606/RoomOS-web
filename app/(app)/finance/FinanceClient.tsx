@@ -31,7 +31,7 @@ import {
   type RecurringExpenseWithStatus,
   type ExpenseSearchResult,
 } from './actions'
-import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
+import { RecurringExpenseRecordModal, accName, effectivePayMethods, pushRecurringRecordedToast } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 import { matchReceiptCard, cardPayMethod } from '@/lib/cardMatch'
 import { isDeferredRow } from '@/lib/settleStatus'
@@ -6091,7 +6091,7 @@ export default function FinanceClient({
         defaultDate={recordingRec.dueDate}
         dueMonth={recordingRec.dueMonth}
         onClose={() => setRecordingRec(null)}
-        onDone={() => { setRecordingRec(null); router.refresh(); pushToast('success', '지출이 기록되었습니다') }}
+        onDone={done => { setRecordingRec(null); router.refresh(); pushRecurringRecordedToast(done, () => router.refresh()) }}
       />
     )}
 

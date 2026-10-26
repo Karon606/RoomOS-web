@@ -484,7 +484,8 @@ const CALL_RE = new RegExp(`\\.\\s*(${MODEL_ALT})\\s*\\.\\s*(create|createMany|u
 // prisma·tx 대리자에 메서드 호출이 안 붙는 자리(별칭 할당·인자로 넘김)와 계산된 접근, 구조분해만 잡는다.
 // 행의 관계 읽기(p.recurringExpense·row.extraIncome)는 대리자가 아니라 잡지 않는다.
 const ALIAS_RE = new RegExp(`\\b(prisma|tx)\\s*\\.\\s*(${MODEL_ALT})\\b(?!\\s*\\.\\s*\\w+\\s*\\()|\\b(prisma|tx)\\s*\\[|\\{[^{}]*\\b(${MODEL_ALT})\\b[^{}]*\\}\\s*=\\s*(prisma|tx)\\b`, 'g')
-const EXPECTED = { where: 22, data: 24 }
+// 2026-10-27(신고 5fa9cf43 결정 C): 기록의 '기본 구매처로 저장'과 그 적용취소, 고정지출 쓰기 2곳(둘 다 where 에 propertyId, data 는 vendor 한 칸).
+const EXPECTED = { where: 24, data: 26 }
 
 // ⓕ 출처 정본. 선언이 그 함수 안에 이 꼴로 있어야 하고, 그 뒤 변경은 여기 적은 꼴만 허용한다.
 const PROVENANCE = {

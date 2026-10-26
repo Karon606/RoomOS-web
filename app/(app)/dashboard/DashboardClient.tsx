@@ -32,7 +32,7 @@ import { MoneyEquation, expectedRevenueTerms, paidRevenueTerms, operatingProfitT
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, getExpenseVendorSuggestions, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
-import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
+import { RecurringExpenseRecordModal, pushRecurringRecordedToast, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getOpenCheckoutCleaning } from '@/app/(app)/tenants/actions'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
@@ -3354,7 +3354,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
           defaultDate={recordingRec.dueDate}
           dueMonth={recordingRec.dueMonth}
           onClose={() => setRecordingRec(null)}
-          onDone={() => { setRecordingRec(null); pushToast('success', '지출이 기록되었습니다'); router.refresh() }}
+          onDone={done => { setRecordingRec(null); pushRecurringRecordedToast(done, () => router.refresh()); router.refresh() }}
         />
       )}
       {tenantInfoId && (
