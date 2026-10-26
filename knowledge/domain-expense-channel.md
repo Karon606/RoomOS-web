@@ -102,4 +102,30 @@ prisma/migrate_expense_channel.sql 을 **먼저** 적용(lock_timeout 5s, 멱등
   번호 하나 이름 둘·구매처 자리의 쇼핑몰 이름은 경고, 질의 정본 scripts/order-channel-audit.mjs)
 - test-clone-field-loss · check-clone-field-loss · check-asset-disposal-wiring(복제 정본)
 
+## 고정지출의 구매처(납부처) (2026-10-27 운영자 승인, 신고 5fa9cf43)
+
+신고 원문 "지출내역에서 (구매말고 임대료나 통신비, 보험, 정수기 등) 납부처? 적는 곳이 없었네". 칸은 이미 있었다
+(`RecurringExpense.vendor` 가 기록 때 `Expense.vendor` 로 간다, 6d1cf1ea). 매달 누르는 두 자리(기록 모달·재무 '고정 지출 관리' 폼)에
+칸이 없었고 환경설정 폼에만 있었다. 운영 실측 고정지출 기록 91건 중 구매처 4건, 임대료 7건 전부 빈칸이었다.
+
+- **A. 스키마 무변경.** 마스터 테이블·납부처 컬럼을 따로 만들지 않고 빠진 입력 경로만 뚫었다.
+- **B. 낱말은 '구매처' 하나.** 고정지출 폼 셋(기록 모달·재무 관리 폼·환경설정 폼) 자리표시 '예: 한국전력, KT', 두 관리 폼 캡션
+  '기록되는 지출의 구매처로 자동 입력됩니다.'. '거래처' 전 화면 개명은 별건이다.
+- **기록 모달 칸**(카테고리 아래 전폭 한 줄): 항목 구매처로 채워 열고, 자동완성은 일반 지출 폼과 같은 목록(getExpenseVendorSuggestions,
+  홈 알림 경로는 열 때 받는다). 서버 recordRecurringExpense 는 `'vendor' in data` 면 그 값(trim, 비면 null), 없으면 항목 값([[form-clear-vs-absent]]).
+  모달은 빈 칸을 null 로 싣는다.
+- **C. '이 항목의 기본 구매처로 저장'** 체크(확인창 없음, §14). 적은 값이 항목 값과 다를 때만 보이고, 기본은 항목이 비면 켜짐·값이 있으면 꺼짐.
+  지출 생성과 같은 트랜잭션에서 조건부 갱신(지금 값이 읽은 값일 때만, 아니면 기록째 거절)한다. 기록 토스트 '구매처 적용취소'가 항목 구매처만
+  되돌린다(기록한 지출은 그대로라 낱말에 '구매처'를 붙여 가른다). 토큰 lib/recurringVendorUndo, 서명 용도 라벨 `recurring-template-vendor-v1`.
+- **D. 소급.** 두 관리 폼에서 구매처를 새로 적어 저장하면 "이 항목으로 기록한 과거 지출 중 구매처가 빈 N건에도 채울까요?"를 한 번 묻는다(0건이면 무표시).
+  대상은 { 영업장, 이 항목, 구매처 null } 뿐이고 값은 저장된 항목 구매처다. 제목·메모에서 이름을 뽑지 않는다. 적용취소는 ExpenseFieldUndo 용도 라벨
+  `recurring-vendor-backfill`. 묻는 자리 정본 finance/recurringVendorBackfillAsk(환경설정 폼 연결은 점검 체크리스트 작업과 겹쳐 따로 대기, 아래).
+- **E. 목록.** 고정지출 기록 행에만 구매처를 작은 캡션으로('건물 임대료 · 대동빌딩'). 물품 행은 7df4b16a(2026-07-06) 숨김 그대로. 판정 정본 FinanceClient fixedVendorCaption.
+- **F. 이름 변경·합치기·비우기가 항목까지.** renameVendor 가 같은 트랜잭션에서 `recurringExpense` 의 같은 이름도 고치고, 적용취소 토큰에 항목 줄(`recurring`)을 싣는다.
+  항목 줄은 `vendor-rename` 에만 실리고(다른 용도면 모양 검사가 거절), 없으면 서명 본문이 종전과 같다. 되돌림은 지출과 항목이 모두 '쓴 직후'일 때만.
+  verify:db `check-recurring-vendor-drift` 가 항목 구매처와 최근 기록 구매처가 갈린 항목을 경고로 센다(질의 정본 scripts/recurring-vendor-audit.mjs).
+- 쇼핑몰로 옮기기(구매처 비우기 갈래)는 F 의 범위 밖이라 항목을 안 따라간다. 운영 실측(2026-10-27, 읽기 전용) 고정 지출 항목 16개 중 구매처가 적힌 것 1개, 쇼핑몰 목록 이름 0개.
+  대신 항목 구매처가 쇼핑몰 목록 이름이면 소급을 묻지 않고 거절하며('…채울 수 없습니다 · …고치면 됩니다'), verify:db 가 그런 항목을 경고로 센다(auditRecurringVendorChannel).
+- 이름 변경·합치기·비우기 토스트는 따라 바뀐 항목 수를 둘째 줄로 말한다('고정 지출 항목 N개의 구매처도 바꿨습니다.', 0개면 생략). 항목이 그사이 고쳐지거나 지워져 적용취소가 막히면 그 까닭을 말한다.
+
 관련: [[domain-inventory]] · [[form-clear-vs-absent]] · [[regression-nets]]

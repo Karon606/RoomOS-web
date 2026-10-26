@@ -6888,3 +6888,11 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 곁가지: 10a5b47e 키보드 계측 단언이 performance.now() 소수의 '010'에 걸려 흔들리던 것, 24 PGlite 가 트리거 실패에 Z 를 두 번 보내 하네스 응답 짝이 밀리던 것(verify:fast 7회 중 1회 25P02).
 - 운영자 결정 대기: 크론 푸시 역할 승격(env 슈퍼관리자의 낮은 역할 줄, 운영 해당 0, loop.md 4번 승인 후 푸시), 이메일 출처(관문=클레임, 크론=사용자 행) 통일 방향, 함께 적은 품목 소모품 이력이면 전환 대신 따로 등록 안내(결정 6 을 좁힘)·대상 카테고리 품명 이력 우선(결정 1 구체화), 제한 스태프 종 알림의 미납·고정지출 금액 노출(권한 P3 와 함께).
 - 별건: 옛 띄운 구분점 토스트 약 41곳, 미서명 적용취소 토큰 셋(ReceiptCancelUndo·LedgerShiftUndo·TrackedItemDeleteUndo), 받은 소모품을 카테고리 칸에서 바로 비품으로 바꾸는 길은 전환 정리를 안 탐, 카테고리 이력 창 옛 조사, 비품 선택 알약 닫기 버튼 화면 밖·카운트 다크 대비, updateExpense 바깥 catch 의 DB 원문, 다른 PGlite 하네스의 겹친 Z 위험.
+
+## 2026-10-27 신고 5fa9cf43 고정지출 납부처 입력 (운영자 승인 계획 '전부 추천안')
+- 원인: 칸(RecurringExpense.vendor·Expense.vendor)은 있었는데 기록 모달·재무 '고정 지출 관리' 폼에 칸이 없었다(환경설정 폼에만). 운영 실측 고정지출 기록 91건 중 구매처 4건.
+- 1 입력 경로: 기록 모달 구매처 칸(항목 값 프리필·지출 이력 자동완성, 홈 알림은 열 때 후보를 받는다), recordRecurringExpense `'vendor' in data`, 재무 관리 폼 칸(환경설정과 같은 자리·자리표시·캡션), 자리표시 셋 '예: 한국전력, KT'.
+- 2 '이 항목의 기본 구매처로 저장'(값이 다를 때만, 빈 항목이면 기본 켜짐, 같은 트랜잭션 조건부 갱신, 토스트 '구매처 적용취소', 서명 recurring-template-vendor-v1).
+- 3 소급 묻기(재무 관리 폼, 0건 무표시, { 영업장, 항목, 구매처 null } 만, 적용취소 recurring-vendor-backfill). 4 이름 변경·합치기·비우기가 항목까지(토큰 항목 줄, verify:db 경고 check-recurring-vendor-drift). 5 목록 캡션은 고정지출 행만.
+- 그물: check-recurring-vendor-wiring(12축)·test-recurring-vendor-flow(PGlite 63건)·check-recurring-vendor-drift, 역주입 9건 발화. 노트 [[domain-expense-channel]] '고정지출의 구매처'.
+- 대기: 환경설정 고정지출 폼의 소급 묻기 연결(같은 시기 점검 체크리스트 작업이 SettingsForm 을 고치고 있어 이번엔 자리표시만 바꿨다, 별도 패치로 둠).
