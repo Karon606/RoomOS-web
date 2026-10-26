@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
     // 참고용 번역본 검수 PDF — chromium + Pretendard(한국어 줄) + 언어별 Noto(한자·가나·벵골).
     // fonts-i18n 을 fonts 에 섞지 않는다 — 위 두 라우트가 쓰지도 않는 9MB 를 지게 된다.
     '/api/contract-translation/pdf': ['./node_modules/@sparticuz/chromium/**/*', './public/fonts/**', './public/fonts-i18n/**'],
+    // 결산 보고서 PDF. 아이폰 홈화면 앱의 공유 시트 인쇄용(신고 2e41ddb1). chromium + Pretendard.
+    '/api/report/pdf': ['./node_modules/@sparticuz/chromium/**/*', './public/fonts/**'],
   },
   experimental: {
     serverActions: {
