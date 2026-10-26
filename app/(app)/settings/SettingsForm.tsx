@@ -104,7 +104,7 @@ import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } f
 import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
 import { OPTION_LIST_DEFAULTS, protectedOptionReason, protectedRenameError, normalizeOptionName, reservedOptionNameError, type OptionListField } from '@/lib/optionLists'
 import CategorySelect from '@/components/ui/CategorySelect'
-import { OptionGroupHead, OptionGroupJumps } from './OptionGroupNav'
+import { OptionGroupHead, OptionGroupJumps, OptionGroupTopLink } from './OptionGroupNav'
 
 type Property = {
   id: string
@@ -2017,6 +2017,8 @@ export default function SettingsForm({
           {/* 품목 세부스펙 사전 — 데이터·도구 탭에서 옮겨 왔다(신고 ba9feb6b).
               적립된 게 없으면 카드 자체가 서지 않는다. */}
           <ItemSpecOptionsPanel />
+          {/* 탭 맨 끝의 맨 위로(가이드 §22). 가장 깊은 자리에서도 바로가기 줄로 돌아가는 길이 끊기지 않는다. */}
+          <OptionGroupTopLink />
         </div>
       )}
 

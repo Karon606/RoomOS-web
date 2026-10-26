@@ -1,4 +1,4 @@
-// 분류 관리 묶음 머리마다 바로가기 버튼과 도착 id 가 한 벌로 있는지 지키는 감지망. 읽기 전용, 위반 시 exit 1.
+// 분류 관리 묶음 머리마다 바로가기 버튼과 도착 id 가 한 벌로 있고, 머리마다 '맨 위로' 가 바로가기 줄로 돌아가는지 지키는 감지망. 읽기 전용, 위반 시 exit 1.
 //
 // 2026-10-23 운영자 결정(가이드 §22 분류 관리 묶음 머리 · 묶음 바로가기). 탭 맨 위 줄의 버튼 하나가 묶음 머리 하나로 데려간다.
 // 머리를 하나 더하고 목록(OPTION_GROUPS)을 안 고치면 그 묶음만 버튼이 없고, id 를 잃으면 버튼이 눌려도 아무 데도 안 간다.
@@ -8,6 +8,9 @@
 //   ⓓ 바로가기 줄이 탭 맨 위(첫 머리 앞)에 서고, 버튼을 목록에서 만들어 라벨이 머리 글자 그대로이며 그 id 로 간다.
 //   ⓔ 도착은 모션 축소 설정을 따르고 머리에 포커스를 준다. 넘침 페이드는 정본 마스크(globals.css data-fade-track)를 쓴다.
 //   ⓕ 트랙 앞에 이동 단서 캡션 '바로가기'(11px · --seg-ink-off)가 선다. 상자 버튼 줄이 2차 탭·필터로 읽히지 않게 한다.
+//   ⓖ 첫 머리를 뺀 머리마다 같은 줄에 '맨 위로' 글자 링크가 서고 탭 맨 끝에 하나 더 선다(2026-10-23 운영자 승인·독립 검수). 도착은 바로가기 줄(nav)이다.
+//      링크는 상자 Btn 이 아니라 11px · --seg-ink-off 글자이고 꺾쇠(›)가 없으며 히트 44px 이고 h2 밖에 선다. 머리 줄의 히트 상자는 글자 아래 맞춤으로
+//      위로 올려 제 묶음 첫 카드를 덮지 않는다. 도착은 스크롤러(.app-main)를 맨 위로 올리고 모션 축소를 따르며 nav 에 포커스를 준다.
 //
 // 실행: node scripts/check-option-group-jump.mjs
 import { readFileSync } from 'node:fs'
@@ -71,6 +74,46 @@ if (jumps && !/data-fade-track/.test(jumps)) violations.push(`${NAV} · 바로�
 const cap = jumps.match(/<p aria-hidden className="([^"]*)">바로가기<\/p>\s*<div ref=\{trackRef\} data-fade-track/)
 if (jumps && !cap) violations.push(`${NAV} · 바로가기 줄 앞에 이동 단서 캡션('바로가기')이 없다. 상자 버튼이 2차 탭·필터로 읽힌다.`)
 else if (cap && (!/text-\[0\.6875rem\]/.test(cap[1]) || !/text-\[var\(--seg-ink-off\)\]/.test(cap[1]))) violations.push(`${NAV} · 바로가기 캡션이 11px · --seg-ink-off 가 아니다(--canvas 위 --warm-muted 는 본문 하한 미달, --warm-dark 는 버튼 글자와 같아 위계가 없다).`)
+// ⓖ 맨 위로. 머리 줄(OptionGroupHead)에 링크가 들어 있어야 머리 다섯이 모두 링크를 갖는다(ⓑ 가 머리가 이 컴포넌트만 거치는지 지킨다).
+const NAV_ID = nav.match(/export const OPTION_GROUP_NAV_ID = '([^']*)'/)?.[1]
+if (!NAV_ID || !/^[a-z][a-z0-9-]*$/.test(NAV_ID)) violations.push(`${NAV} · 바로가기 줄 id 정본(OPTION_GROUP_NAV_ID)이 없거나 꼴이 틀렸다.`)
+else if (groups.some(g => g.id === NAV_ID)) violations.push(`${NAV} · 바로가기 줄 id '${NAV_ID}' 가 묶음 머리 id 와 겹친다.`)
+if (jumps && !/<nav id=\{OPTION_GROUP_NAV_ID\} tabIndex=\{-1\} aria-label="분류 묶음 바로가기"/.test(jumps)) violations.push(`${NAV} · 바로가기 줄(nav)이 id={OPTION_GROUP_NAV_ID} 와 tabIndex={-1} 을 안 든다. '맨 위로' 가 돌아와도 포커스가 머리 링크에 남는다.`)
+// 링크 정본은 TopLinkButton 하나다. 머리 줄과 탭 끝이 같은 글자 문법을 쓴다.
+const link = nav.match(/function TopLinkButton\([\s\S]*?\n\}/)?.[0] ?? ''
+const up = link.match(/<button type="button" onClick=\{toGroupNav\}\s+className=\{`\$\{className\} ([^`]*)`\}>\s*맨 위로\s*<\/button>/)
+if (!up) violations.push(`${NAV} · '맨 위로' 글자 링크 정본(TopLinkButton: button, onClick={toGroupNav}, 글자는 '맨 위로' 만)을 못 찾았다.`)
+else {
+  const c = up[1]
+  if (!/\bmin-h-\[44px\]/.test(c) || !/\bmin-w-\[44px\]/.test(c)) violations.push(`${NAV} · '맨 위로' 히트가 44px 아래다(min-h-[44px] · min-w-[44px]).`)
+  if (!/text-\[0\.6875rem\]/.test(c) || !/text-\[var\(--seg-ink-off\)\]/.test(c)) violations.push(`${NAV} · '맨 위로' 가 바로가기 캡션과 같은 11px · --seg-ink-off 글자가 아니다(큰 글자·진한 색은 머리와 겨룬다).`)
+  if (/\b(?:border|bg-|rounded-(?:md|lg|xl|full))/.test(c)) violations.push(`${NAV} · '맨 위로' 가 상자(테두리·바탕)를 입었다. 머리와 겨루지 않게 글자 링크로 둔다.`)
+}
+if (/맨 위로(?:\s|&nbsp;|<[^>]*>)*›/.test(nav)) violations.push(`${NAV} · '맨 위로' 에 꺾쇠(›)가 붙었다. 오른쪽 표시가 위로 가는 동작과 어긋난다.`)
+// 머리 줄. 첫 머리는 바로가기 줄 바로 밑이라 링크가 없고, 나머지 머리는 링크를 든다. 히트 상자는 글자를 아래에 두어(items-end pb-1) 위로 선다.
+const headUse = head.match(/\{title !== OPTION_GROUPS\[0\]\.title && <TopLinkButton className="([^"]*)" \/>\}/)
+if (head && !headUse) violations.push(`${NAV} · 묶음 머리 줄이 '첫 머리를 뺀 머리마다 맨 위로'(title !== OPTION_GROUPS[0].title && <TopLinkButton />) 꼴이 아니다.`)
+else if (headUse && !(/\bitems-end\b/.test(headUse[1]) && /\bpb-1\b/.test(headUse[1]) && /-mt-3\.5\b/.test(headUse[1]) && /-mb-1\.5\b/.test(headUse[1]))) {
+  violations.push(`${NAV} · 머리 줄 '맨 위로' 의 히트 상자 자리가 바뀌었다(items-end pb-1 -mt-3.5 -mb-1.5). 가운데 맞춤이면 아래로 5.8px 넘쳐 제 묶음 첫 카드를 덮는다(2026-10-23 실측).`)
+}
+// 탭 맨 끝. 마지막 묶음 마지막 카드 뒤에 하나만 선다.
+const endLink = nav.match(/export function OptionGroupTopLink\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+if (!/<TopLinkButton className="[^"]*" \/>/.test(endLink)) violations.push(`${NAV} · 탭 끝 맨 위로(OptionGroupTopLink)가 정본 TopLinkButton 을 쓰지 않는다.`)
+const ends = [...tab.matchAll(/<OptionGroupTopLink \/>/g)]
+if (ends.length !== 1) violations.push(`${FORM} · 분류 관리 탭 끝 맨 위로(<OptionGroupTopLink />)가 ${ends.length}개다. 하나만 둔다.`)
+else if (!/^\s*(?:\{\s*\}\s*)*<\/div>\s*\)\}\s*(?:\{\s*\}\s*)*$/.test(tab.slice(ends[0].index + '<OptionGroupTopLink />'.length))) {
+  violations.push(`${FORM} · 탭 끝 맨 위로가 탭 맨 끝(마지막 카드 뒤)에 있지 않다.`)
+}
+if (head && /<h2[\s\S]*?맨 위로[\s\S]*?<\/h2>/.test(head)) violations.push(`${NAV} · '맨 위로' 가 h2 안에 들었다. 머리 이름(낭독·목차)에 링크 글자가 섞인다.`)
+if (head && /<Btn\b/.test(head)) violations.push(`${NAV} · 묶음 머리 줄에 상자 Btn 이 섰다. '맨 위로' 는 글자 링크다.`)
+const toNav = nav.match(/function toGroupNav\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+if (!toNav) violations.push(`${NAV} · '맨 위로' 도착 함수(toGroupNav)를 못 찾았다.`)
+else {
+  if (!/document\.getElementById\(OPTION_GROUP_NAV_ID\)/.test(toNav)) violations.push(`${NAV} · '맨 위로' 의 도착이 바로가기 줄(OPTION_GROUP_NAV_ID)이 아니다.`)
+  if (!/matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/.test(toNav)) violations.push(`${NAV} · '맨 위로' 가 모션 축소 설정을 안 본다.`)
+  if (!/nav\.closest\('\.app-main'\)\?\.scrollTo\(\{ top: 0,/.test(toNav)) violations.push(`${NAV} · '맨 위로' 가 셸 스크롤러(.app-main)를 맨 위로 올리지 않는다.`)
+  if (!/nav\.focus\(\{ preventScroll: true \}\)/.test(toNav)) violations.push(`${NAV} · '맨 위로' 가 바로가기 줄에 포커스를 주지 않는다(키보드·낭독기가 머리 자리에 남는다).`)
+}
 for (const side of ['right', 'left', 'both']) {
   if (!css.includes(`[data-fade-track][data-fade="${side}"]`)) violations.push(`${CSS} · 넘침 페이드 마스크에 [data-fade-track][data-fade="${side}"] 가 없다. 바로가기 줄 끝이 흐려지지 않는다.`)
 }
@@ -80,4 +123,4 @@ if (violations.length) {
   for (const v of violations) console.error('  - ' + v)
   process.exit(1)
 }
-console.log(`check-option-group-jump: 통과 · 묶음 ${groups.length}개(${want}) 머리·버튼·id 한 벌`)
+console.log(`check-option-group-jump: 통과 · 묶음 ${groups.length}개(${want}) 머리·버튼·id 한 벌, 둘째 머리부터와 탭 끝의 '맨 위로' 가 바로가기 줄(${NAV_ID})로`)
