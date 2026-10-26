@@ -3,12 +3,13 @@
 import prisma from '@/lib/prisma'
 import { rowChannel } from '@/lib/expenseChannel'
 import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
-import { EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, type ExpenseFieldUndo, type ExpenseFieldUndoKind } from '@/lib/expenseFieldUndo'
+import { EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, type ExpenseFieldUndo, type ExpenseFieldUndoKind, type RecurringVendorChange } from '@/lib/expenseFieldUndo'
 
 /** 글자 칸 일괄 변경 적용취소 토큰에 서버 서명을 붙인다. 운영에서 키가 없으면 토큰을 내지 않는다(화면은 적용취소를 숨긴다). */
-export function signFieldUndo(propertyId: string, kind: ExpenseFieldUndoKind, rows: ExpenseFieldUndo['rows']): ExpenseFieldUndo | null {
-  if (rows.length === 0) return null
-  const body = { v: 1 as const, kind, rows }
+export function signFieldUndo(propertyId: string, kind: ExpenseFieldUndoKind, rows: ExpenseFieldUndo['rows'], recurring?: RecurringVendorChange[]): ExpenseFieldUndo | null {
+  if (rows.length === 0 && !recurring?.length) return null
+  // 항목 줄(고정지출 구매처)은 있을 때만 싣는다. 없으면 종전 토큰과 같은 모양·서명이다.
+  const body: Omit<ExpenseFieldUndo, 'sig'> = recurring?.length ? { v: 1, kind, rows, recurring } : { v: 1, kind, rows }
   const sig = signUndoBody(EXPENSE_FIELD_UNDO_KINDS[kind], propertyId, canonicalExpenseFieldUndo(body))
   if (sig === null) return null
   return sig ? { ...body, sig } : body

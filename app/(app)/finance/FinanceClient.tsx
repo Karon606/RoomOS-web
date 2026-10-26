@@ -1202,18 +1202,23 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
     setMerging(true)
     const release = trackSave()
     try {
-      let total = 0
+      let total = 0, recTotal = 0
       const undos: ExpenseFieldUndo[] = []
       for (const v of sources) {
         const res = await renameVendor(v, destVendor)
         if (!res.ok) { pushToast('error', res.error); return }
         total += res.updated
+        recTotal += res.recurringUpdated
         if (res.undo) undos.push(res.undo)
       }
       // 합치기에도 적용취소가 있다(2026-10-19). 합친 구매처마다 그때 바꾼 행만 되돌린다.
-      pushToast('success', `'${destVendor}'(으)로 합침 · 지출 ${total}건 반영`, undos.length === sources.length && undos.length > 0 ? {
-        action: { label: '적용취소', run: () => { void runVendorUndos(undos, '구매처 합치기를 적용취소했습니다') } },
-      } : undefined)
+      // 같은 이름의 고정 지출 항목도 따라 바뀌었으면 둘째 줄로 말한다(신고 5fa9cf43 결정 F, 0개면 생략).
+      pushToast('success', `'${destVendor}'(으)로 합침 · 지출 ${total}건 반영`, {
+        ...(recTotal > 0 ? { detail: recurringVendorFollowLine(recTotal, true) } : {}),
+        ...(undos.length === sources.length && undos.length > 0 ? {
+          action: { label: '적용취소', run: () => { void runVendorUndos(undos, '구매처 합치기를 적용취소했습니다') } },
+        } : {}),
+      })
       setSheet(null); exitSel(); await load(); onChanged()
     } finally { release(); setMerging(false) }
   }
@@ -1289,9 +1294,11 @@ export function VendorManageModal({ onClose, onChanged, channelOptions }: { onCl
       const res = await renameVendor(oldName, newName)
       if (res.ok) {
         const undo = res.undo
-        pushToast('success', newName ? `'${oldName}' 을 '${newName}' 으로 (${res.updated}건 반영)` : `'${oldName}' 구매처 비움 (${res.updated}건)`, undo ? {
-          action: { label: '적용취소', run: () => { void runVendorUndos([undo], newName ? '구매처 이름 변경을 적용취소했습니다' : '구매처 비우기를 적용취소했습니다') } },
-        } : undefined)
+        pushToast('success', newName ? `'${oldName}' 을 '${newName}' 으로 (${res.updated}건 반영)` : `'${oldName}' 구매처 비움 (${res.updated}건)`, {
+          // 같은 이름의 고정 지출 항목도 따라 바뀌었으면 둘째 줄로 말한다(신고 5fa9cf43 결정 F, 0개면 생략).
+          ...(res.recurringUpdated > 0 ? { detail: recurringVendorFollowLine(res.recurringUpdated, !!newName) } : {}),
+          ...(undo ? { action: { label: '적용취소', run: () => { void runVendorUndos([undo], newName ? '구매처 이름 변경을 적용취소했습니다' : '구매처 비우기를 적용취소했습니다') } } } : {}),
+        })
         setEdits(p => { const n = { ...p }; delete n[oldName]; return n })
         await load(); onChanged()
       } else pushToast('error', res.error)
@@ -1642,6 +1649,11 @@ type ReserveTxn = {
 type SettleableExpense = {
   id: string; date: Date; amount: number; category: string; detail: string | null
   settledSum: number; remaining: number
+}
+
+// 구매처 이름 변경·합치기·비우기 토스트 둘째 줄. 같은 이름의 고정 지출 항목도 따라 바뀐 수를 말한다(결정 F).
+function recurringVendorFollowLine(n: number, renamed: boolean): string {
+  return renamed ? `고정 지출 항목 ${n}개의 구매처도 바꿨습니다.` : `고정 지출 항목 ${n}개의 구매처도 비웠습니다.`
 }
 
 type CategoryTotal = { category: string; total: number }

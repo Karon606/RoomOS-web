@@ -70,7 +70,7 @@ import { VENDOR_CHANNEL_LOCKED, ORDER_CHANNEL_SPLIT_DENIED, rowChannel, wouldSpl
 import { loadChannelNames, appendChannelOption } from '@/lib/channelOptions'
 import { ORDER_MERGE_UNDO_DOMAIN, canonicalOrderMergeUndo, parseOrderMergeUndo, planOrderMergeUndo, type OrderMergeUndo, type OrderSnap } from '@/lib/orderMergeUndo'
 import {
-  EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo,
+  EXPENSE_FIELD_UNDO_KINDS, canonicalExpenseFieldUndo, parseExpenseFieldUndo, planExpenseFieldUndo, planRecurringVendorUndo,
   type ExpenseFieldUndo, type ExpenseFieldUndoField,
 } from '@/lib/expenseFieldUndo'
 import { RECURRING_TEMPLATE_VENDOR_UNDO_DOMAIN, canonicalRecurringVendorUndo, parseRecurringVendorUndo, type RecurringVendorUndo } from '@/lib/recurringVendorUndo'
@@ -670,6 +670,8 @@ async function loadVendorToBiz(propertyId: string): Promise<Record<string, strin
 
 const FIELD_UNDO_INVALID = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 const FIELD_UNDO_CONFLICT = '그 사이 해당 지출이 다시 바뀌어 되돌리지 않았습니다. 지출 내역에서 지금 상태를 확인해 주세요.'
+/** 구매처 이름 변경의 적용취소가 고정지출 항목 때문에 막혔을 때(항목이 그사이 고쳐졌거나 지워짐). 지출도 함께 안 되돌린다. */
+const FIELD_UNDO_RECURRING_CONFLICT = '그 사이 고정 지출 항목의 구매처가 바뀌거나 항목이 삭제되어 되돌리지 않았습니다. 고정 지출 관리에서 지금 상태를 확인해 주세요.'
 
 /**
  * 글자 칸 일괄 변경의 적용취소(쇼핑몰 주문 전체 적용·사업자번호 소급·구매처 이름 변경/합치기/비우기·쇼핑몰로 옮기기·쇼핑몰 지정).
@@ -692,10 +694,21 @@ export async function undoExpenseFieldChange(raw: unknown): Promise<{ ok: true; 
       const now = new Map(rows.map(r => [r.id, { channel: r.channel, vendor: r.vendor, vendorBizNo: r.vendorBizNo } as Record<ExpenseFieldUndoField, string | null>]))
       const plan = planExpenseFieldUndo(u, now)
       if (!plan) return null
+      // 구매처 이름 변경이 함께 고친 고정지출 항목(결정 F). 항목도 지금이 '쓴 직후'일 때만, 지출과 한 트랜잭션에서 되돌린다.
+      const recIds = (u.recurring ?? []).map(r => r.id)
+      const recNow = recIds.length > 0
+        ? new Map((await tx.recurringExpense.findMany({ where: { id: { in: recIds }, propertyId }, select: { id: true, vendor: true } })).map(r => [r.id, r.vendor]))
+        : new Map<string, string | null>()
+      const recPlan = planRecurringVendorUndo(u, recNow)
+      if (!recPlan) return 'recurring' as const
       for (const p of plan) await tx.expense.updateMany({ where: { id: p.id, propertyId }, data: p.data })
+      for (const p of recPlan) await tx.recurringExpense.updateMany({ where: { id: p.id, propertyId }, data: { vendor: p.vendor } })
       return plan.length
     })
     if (restored === null) return { ok: false, error: FIELD_UNDO_CONFLICT }
+    if (restored === 'recurring') return { ok: false, error: FIELD_UNDO_RECURRING_CONFLICT }
+    // 항목 줄을 되돌렸으면 항목을 보여 주는 화면도 갱신한다(renameVendor 와 같은 자리).
+    if ((u.recurring ?? []).length > 0) { revalidatePath('/settings'); revalidatePath('/dashboard') }
     revalidatePath('/finance')
     return { ok: true, restored }
   } catch (err) {
@@ -3919,31 +3932,42 @@ export async function getVendorUsage(): Promise<{ vendor: string; count: number;
 //   · 쇼핑몰 목록 이름이 낀 이름 변경·합치기는 막는다. 플랫폼 이름은 판매자가 아니라서 판매자끼리 합치면 사업자번호가 섞인다.
 //     그 이름의 행은 '쇼핑몰로 옮기기'로 쇼핑몰 칸에 옮긴다. 비우기는 막지 않는다.
 //   · 구매처 비우기는 종전대로 구매처 이름만 비운다. 사업자번호는 남긴다(운영자 결정 2026-10-20 C, 번호는 영수증에서 온 사실이다).
-export async function renameVendor(oldName: string, newName: string): Promise<{ ok: true; updated: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }> {
+// 2026-10-27(신고 5fa9cf43 결정 F): 같은 이름의 고정지출 항목 기본 구매처도 같은 트랜잭션에서 따라간다. 안 따라가면 다음 기록이
+//   옛 이름으로 다시 적혀 이름 변경·합치기가 매달 풀린다. 적용취소 토큰의 항목 줄(recurring)이 그 항목까지 되돌린다.
+export async function renameVendor(oldName: string, newName: string): Promise<{ ok: true; updated: number; recurringUpdated: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const target = newName.trim()
     if (!oldName) return { ok: false, error: '대상 구매처가 없습니다.' }
-    if (target === oldName) return { ok: true, updated: 0 }
+    if (target === oldName) return { ok: true, updated: 0, recurringUpdated: 0 }
     const channelNames = await loadChannelNames(propertyId)
     // 막는 까닭은 화면 캡션과 한 벌이다(lib/expenseChannel VENDOR_CHANNEL_LOCKED).
     if (target && (isChannelName(oldName, channelNames) || isChannelName(target, channelNames))) return { ok: false, error: VENDOR_CHANNEL_LOCKED }
-    const rows = await prisma.$transaction(async tx => {
+    const { rows, recs } = await prisma.$transaction(async tx => {
       const hit = await tx.expense.findMany({ where: { propertyId, vendor: oldName }, select: { id: true, vendor: true, vendorBizNo: true } })
-      if (hit.length === 0) return hit
-      await tx.expense.updateMany({
-        where: { id: { in: hit.map(h => h.id) }, propertyId, vendor: oldName },
-        data: { vendor: target || null },
-      })
-      return hit
+      if (hit.length > 0) {
+        await tx.expense.updateMany({
+          where: { id: { in: hit.map(h => h.id) }, propertyId, vendor: oldName },
+          data: { vendor: target || null },
+        })
+      }
+      const recHit = await tx.recurringExpense.findMany({ where: { propertyId, vendor: oldName }, select: { id: true } })
+      if (recHit.length > 0) {
+        await tx.recurringExpense.updateMany({
+          where: { id: { in: recHit.map(r => r.id) }, propertyId, vendor: oldName },
+          data: { vendor: target || null },
+        })
+      }
+      return { rows: hit, recs: recHit }
     })
     const undo = signFieldUndo(propertyId, 'vendor-rename', rows.map(r => ({
       id: r.id,
       changes: [{ field: 'vendor' as const, before: r.vendor, after: target || null }],
-    })))
+    })), recs.map(r => ({ id: r.id, before: oldName, after: target || null })))
+    if (recs.length > 0) { revalidatePath('/settings'); revalidatePath('/dashboard') }
     revalidatePath('/finance')
-    return { ok: true, updated: rows.length, ...(undo ? { undo } : {}) }
+    return { ok: true, updated: rows.length, recurringUpdated: recs.length, ...(undo ? { undo } : {}) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

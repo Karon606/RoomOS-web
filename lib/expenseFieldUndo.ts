@@ -20,10 +20,14 @@ export const EXPENSE_FIELD_UNDO_KINDS = {
 export type ExpenseFieldUndoKind = keyof typeof EXPENSE_FIELD_UNDO_KINDS
 
 export type ExpenseFieldChange = { field: ExpenseFieldUndoField; before: string | null; after: string | null }
+/** 고정지출 항목(RecurringExpense) 구매처 한 칸의 전후. 구매처 이름 변경·합치기·비우기가 항목까지 따라갈 때만 실린다(신고 5fa9cf43 결정 F). */
+export type RecurringVendorChange = { id: string; before: string | null; after: string | null }
 export type ExpenseFieldUndo = {
   v: 1
   kind: ExpenseFieldUndoKind
   rows: { id: string; changes: ExpenseFieldChange[] }[]
+  /** 함께 바뀐 고정지출 항목 구매처. 없으면 키 자체가 없다(옛 토큰과 서명 본문이 같다). */
+  recurring?: RecurringVendorChange[]
   sig?: string
 }
 
@@ -32,7 +36,9 @@ export function canonicalExpenseFieldUndo(u: Omit<ExpenseFieldUndo, 'sig'>): str
   const rows = [...u.rows]
     .map(r => ({ id: r.id, changes: [...r.changes].sort((a, b) => a.field.localeCompare(b.field)).map(c => ({ field: c.field, before: c.before, after: c.after })) }))
     .sort((a, b) => a.id.localeCompare(b.id))
-  return JSON.stringify({ v: 1, kind: u.kind, rows })
+  // 항목 줄은 있을 때만 본문에 넣는다. 그래야 항목을 안 건드린 토큰의 서명 본문이 종전과 한 글자도 같다.
+  const recurring = (u.recurring ?? []).map(r => ({ id: r.id, before: r.before, after: r.after })).sort((a, b) => a.id.localeCompare(b.id))
+  return JSON.stringify(recurring.length > 0 ? { v: 1, kind: u.kind, rows, recurring } : { v: 1, kind: u.kind, rows })
 }
 
 const isStrOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
@@ -43,7 +49,21 @@ export function parseExpenseFieldUndo(raw: unknown): ExpenseFieldUndo | null {
   if (!raw || typeof raw !== 'object') return null
   const u = raw as Record<string, unknown>
   if (u.v !== 1 || typeof u.kind !== 'string' || !Object.hasOwn(EXPENSE_FIELD_UNDO_KINDS, u.kind) || !Array.isArray(u.rows)) return null
-  if (u.rows.length === 0 || u.rows.length > 5000) return null
+  // 항목 줄은 구매처 이름 변경(vendor-rename)에만 실린다. 다른 용도에 실려 오면 위조로 본다.
+  let recurring: RecurringVendorChange[] | undefined
+  if (u.recurring !== undefined) {
+    if (u.kind !== 'vendor-rename' || !Array.isArray(u.recurring) || u.recurring.length === 0 || u.recurring.length > 500) return null
+    recurring = []
+    const seenRec = new Set<string>()
+    for (const r of u.recurring as unknown[]) {
+      if (!r || typeof r !== 'object') return null
+      const rr = r as Record<string, unknown>
+      if (typeof rr.id !== 'string' || !UUID.test(rr.id) || seenRec.has(rr.id) || !isStrOrNull(rr.before) || !isStrOrNull(rr.after) || rr.before === rr.after) return null
+      seenRec.add(rr.id)
+      recurring.push({ id: rr.id, before: rr.before, after: rr.after })
+    }
+  }
+  if ((u.rows.length === 0 && !recurring) || u.rows.length > 5000) return null
   const rows: ExpenseFieldUndo['rows'] = []
   const seen = new Set<string>()
   for (const r of u.rows as unknown[]) {
@@ -63,7 +83,7 @@ export function parseExpenseFieldUndo(raw: unknown): ExpenseFieldUndo | null {
     }
     rows.push({ id: rr.id, changes })
   }
-  return { v: 1, kind: u.kind as ExpenseFieldUndoKind, rows, ...(typeof u.sig === 'string' ? { sig: u.sig } : {}) }
+  return { v: 1, kind: u.kind as ExpenseFieldUndoKind, rows, ...(recurring ? { recurring } : {}), ...(typeof u.sig === 'string' ? { sig: u.sig } : {}) }
 }
 
 /**
@@ -84,6 +104,22 @@ export function planExpenseFieldUndo(
       data[c.field] = c.before
     }
     out.push({ id: r.id, data })
+  }
+  return out
+}
+
+/**
+ * 항목 줄의 되돌림 계획. 지금 항목 구매처(now)가 토큰의 '쓴 직후'와 모두 같아야 한다. 하나라도 다르거나 항목이 없으면 null(전부 안 함).
+ * 항목 줄이 없는 토큰은 빈 계획([])이다.
+ */
+export function planRecurringVendorUndo(
+  undo: ExpenseFieldUndo,
+  now: ReadonlyMap<string, string | null>,
+): { id: string; vendor: string | null }[] | null {
+  const out: { id: string; vendor: string | null }[] = []
+  for (const r of undo.recurring ?? []) {
+    if (!now.has(r.id) || (now.get(r.id) ?? null) !== r.after) return null
+    out.push({ id: r.id, vendor: r.before })
   }
   return out
 }
