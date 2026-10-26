@@ -31,7 +31,7 @@ import { assertNotFuture } from '@/lib/completionDate'
 import { reasonForSave } from '@/lib/reasonListSave'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
-import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
+import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, SHIFT_ITEM_GONE_NOTICE, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
@@ -2057,6 +2057,8 @@ export async function undoDeleteStockAddition(undo: StockAdditionUndo): Promise<
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const exists = await prisma.stockAddition.findUnique({ where: { id: undo.id }, select: { id: true } })
     if (exists) return { ok: true }
+    // 토큰의 위치 id 는 화면이 들고 온 값이다. 이 영업장 위치만 받는다(2026-10-23 검수, 점검 적용취소와 같은 클래스).
+    if (!(await locationsInProperty(propertyId, [undo.storageLocationId]))) return { ok: false, error: '다른 영업장의 기록입니다.' }
     await prisma.$transaction(async tx => {
       await tx.stockAddition.create({
         data: {
@@ -2155,6 +2157,8 @@ export async function undoUpdateStockAddition(undo: StockAdditionEditUndo): Prom
     const propertyId = await getPropertyId()
     const a = await prisma.stockAddition.findUnique({ where: { id: undo.id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    // 되돌릴 위치 id 도 토큰에서 온 값이다. 이 영업장 위치만 받는다(2026-10-23 검수).
+    if (!(await locationsInProperty(propertyId, [undo.before.storageLocationId]))) return { ok: false, error: '다른 영업장의 기록입니다.' }
     await prisma.$transaction(async tx => {
       await tx.stockAddition.update({
         where: { id: undo.id },
@@ -2278,6 +2282,8 @@ export async function undoDeleteStockDisposal(undo: StockDisposalUndo): Promise<
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const exists = await prisma.stockDisposal.findUnique({ where: { id: undo.id }, select: { id: true } })
     if (exists) return { ok: true }
+    // 폐기 적용취소도 같은 클래스다(2026-10-23 검수). 토큰의 위치 id 는 이 영업장 위치만 받는다.
+    if (!(await locationsInProperty(propertyId, [undo.storageLocationId]))) return { ok: false, error: '다른 영업장의 기록입니다.' }
     await prisma.stockDisposal.create({
       data: {
         id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
@@ -4526,7 +4532,7 @@ export async function undoConfirmReceipt(
 
 // 수령 취소 적용취소 — 자동 점검을 원형(입력 시각 포함)으로 재생성하고 조정을 스냅샷으로 되돌린다.
 // createdAt 을 살리지 않으면 구매 반영 경계(receivedAt > 점검.createdAt)가 조용히 달라진다.
-export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -4534,17 +4540,27 @@ export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: 
     if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
     if (exp.receivedAt) return { ok: true }   // 멱등 — 이미 복원됨(또는 재수령됨)
     // 페이로드는 클라이언트발 — 점검 스냅샷의 품목이 이 영업장 소속인지 검증(B1 선례).
+    // 품목이 사라진 경우(토스트 창 안의 병합이 원본을 지운다)와 남의 영업장인 경우를 가른다(2026-10-23 검수).
+    // 남의 영업장 품목이 하나라도 있으면 거절, 사라진 품목의 자동 점검은 되살릴 자리가 없어 건너뛰고 알린다.
     const itemIds = [...new Set(undo.autoChecks.map(c => c.trackedItemId))]
+    const ownItems = new Set<string>()
     if (itemIds.length > 0) {
-      const owned = await prisma.trackedItem.count({ where: { id: { in: itemIds }, propertyId } })
-      if (owned !== itemIds.length) return { ok: false, error: '다른 영업장의 기록입니다.' }
+      for (const r of await prisma.trackedItem.findMany({ where: { id: { in: itemIds }, propertyId }, select: { id: true } })) ownItems.add(r.id)
+      const missing = itemIds.filter(id => !ownItems.has(id))
+      if (missing.length > 0 && (await prisma.trackedItem.count({ where: { id: { in: missing } } })) > 0) return { ok: false, error: '다른 영업장의 기록입니다.' }
     }
-    await prisma.$transaction(async tx => {
+    // 위치 id(받은 위치·자동 점검 위치 행)도 토큰에서 온 값이다. 이 영업장 위치만 받는다(2026-10-23 검수).
+    if (!(await locationsInProperty(propertyId, [undo.receivedLocationId, ...undo.autoChecks.flatMap(c => c.locations.map(lb => lb.storageLocationId))]))) {
+      return { ok: false, error: '다른 영업장의 기록입니다.' }
+    }
+    const skippedChecks = undo.autoChecks.filter(c => !ownItems.has(c.trackedItemId)).length
+    const shiftGone = await prisma.$transaction(async tx => {
       await tx.expense.update({
         where: { id: undo.expenseId },
         data: { receivedAt: new Date(undo.receivedAtMs), receivedLocationId: undo.receivedLocationId },
       })
       for (const c of undo.autoChecks) {
+        if (!ownItems.has(c.trackedItemId)) continue
         const exists = await tx.stockCheck.findUnique({ where: { id: c.id }, select: { id: true } })
         if (exists) continue
         await tx.stockCheck.create({
@@ -4561,10 +4577,14 @@ export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: 
           },
         })
       }
-      if (undo.shift) await revertShiftRows(tx, propertyId, undo.shift)
+      return undo.shift ? (await revertShiftRows(tx, propertyId, undo.shift)) === 'itemGone' : false
     })
     revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true }
+    const notice = [
+      skippedChecks > 0 ? `그 사이 품목이 합쳐지거나 지워져 자동 점검 ${skippedChecks}건은 되살리지 못했습니다.` : null,
+      shiftGone ? SHIFT_ITEM_GONE_NOTICE : null,
+    ].filter(Boolean).join(' ')
+    return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }

@@ -222,6 +222,8 @@ const AXES = [
     mustNot: [[/\.\.\.rest\b(?!\s*\}\s*=)/, '화면 객체(rest)를 그대로 펼친다']],
   })),
   // ── 2차 확대(2026-10-23 운영자 승인): 같은 클래스 sweep. 화면·토큰의 id 는 영업장 범위로 먼저 읽거나, 연결 id 는 저장 전에 영업장 것인지 본다 ──
+  // 이 표식 뒤의 축은 순서도 본다(검수 2026-10-23). 관문 문장이 있어도 그보다 앞에서 id 만으로 쓰면 이미 늦다.
+  { orderFrom: true },
   // 결제 계정을 거는 다른 폼. updateExpense·기타수익과 같은 관문이다.
   ...[['addExpense', 'financialAccountId'], ['batchUpdateExpenses', 'data\\.financialAccountId'], ['recordRecurringExpense', 'data\\.financialAccountId'],
     ['addReserveDeposit', 'input\\.linkedAccountId'], ['addReserveWithdrawDirect', 'input\\.linkedAccountId'], ['saveFinancialAccount', 'linkedAccountId'], ['saveFinancialAccount', '']].map(([fn, v]) => ({
@@ -379,14 +381,54 @@ const AXES = [
     ],
     mustNot: [[/\{\s*\.\.\.undo\.expense\s*\}|\{\s*\.\.\.s\s*\}\s*as\s*ExpenseRowSnap/, '토큰 객체를 그대로 펼친다']],
   },
+  // 입수·폐기·수령 취소 적용취소의 위치 id(검수 2026-10-23, 점검 적용취소와 같은 클래스).
+  ...[['undoDeleteStockAddition', 'undo\\.storageLocationId'], ['undoUpdateStockAddition', 'undo\\.before\\.storageLocationId'], ['undoDeleteStockDisposal', 'undo\\.storageLocationId'],
+    ['undoCancelReceipt', 'undo\\.receivedLocationId, \\.\\.\\.undo\\.autoChecks\\.flatMap\\(c => c\\.locations\\.map\\(lb => lb\\.storageLocationId\\)\\)']].map(([fn, v]) => ({
+    file: 'app/(app)/inventory/actions.ts',
+    fn,
+    must: [[new RegExp(`if \\(!\\(await locationsInProperty\\(propertyId, \\[${v}\\]\\)\\)\\) \\{?\\s*return \\{ ok: false`), '토큰의 위치 id 를 영업장 위치로 보고 아니면 닫지 않는다']],
+    mustNot: [],
+  })),
+  // 되돌리기 공용층은 품목이 사라진 경우(병합)와 남의 영업장을 가른다. 사라지면 조정만 건너뛰고, 부르는 쪽은 복원을 마저 하고 알린다.
+  {
+    file: 'app/(app)/inventory/ledgerShift.ts',
+    fn: 'revertShiftRows',
+    must: [[/if \(await tx\.trackedItem\.findUnique\(\{ where: \{ id: undo\.trackedItemId \}[^\n]*throw new Error\('다른 영업장의 기록입니다\.'\)\n\s*return 'itemGone'/, '품목이 사라진 경우와 남의 영업장을 가르지 않는다(병합 뒤 적용취소가 틀린 말로 통째 실패한다)']],
+    mustNot: [],
+  },
+  ...['undoDeleteExpense', 'undoCancelReceipt'].map(fn => ({
+    file: fn === 'undoDeleteExpense' ? 'app/(app)/finance/actions.ts' : 'app/(app)/inventory/actions.ts',
+    fn,
+    must: [[/\(await revertShiftRows\(tx, propertyId, undo\.shift\)\) === 'itemGone'/, '조정을 건너뛴 사실을 받아 알리지 않는다'], [/SHIFT_ITEM_GONE_NOTICE/, '건너뛴 사유를 돌려주지 않는다']],
+    mustNot: [],
+    noOrder: true,   // 관문이 아니라 복원 뒤 알림을 보는 축이다
+  })),
 ]
+// 표식 뒤 축에 순서 검사를 켠다.
+{
+  const at = AXES.findIndex(a => a.orderFrom)
+  if (at < 0) violations.push('순서 검사 표식(orderFrom)을 못 찾았다. 순서 축이 장식이 된다')
+  else { AXES.splice(at, 1); for (let i = at; i < AXES.length; i++) AXES[i].order = !AXES[i].noOrder }
+}
+// 쓰기 호출(모델 대리자 메서드·원시 SQL). 순서 축은 관문 문장보다 앞에 이것이 있으면 위반이다.
+const WRITE_CALL = /\.\s*\w+\s*\.\s*(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|delete|deleteMany|upsert)\s*\(|\$executeRaw/
+// 축 문장이 쓰기 자체인가(앞 점 없이 tenant.delete( 로 시작하는 축도 있다).
+const WRITE_STMT = /\b\w+\s*\.\s*(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|delete|deleteMany|upsert)\s*\(/
 
 for (const ax of AXES) {
   let src = ''
   try { src = readFileSync(ax.file, 'utf8') } catch { violations.push(`${ax.file} — 파일을 못 읽었다. 못 읽으면 통과가 아니라 위반이다`); continue }
   const body = bodyOf(src, ax.fn)
   if (body == null) { violations.push(`${ax.file} — ${ax.fn} 를 못 찾았다. 이름이 바뀌었으면 이 축도 함께 고친다`); continue }
-  for (const [re, msg] of ax.must) if (!re.test(body)) violations.push(`${ax.file} ${ax.fn} — ${msg}. 다른 영업장 id 로 그 행을 읽거나 바꿀 수 있다`)
+  for (const [re, msg] of ax.must) {
+    const m = body.match(re)
+    if (!m) { violations.push(`${ax.file} ${ax.fn} — ${msg}. 다른 영업장 id 로 그 행을 읽거나 바꿀 수 있다`); continue }
+    // 순서 축: 관문(읽기·확인)보다 앞선 쓰기를 막는다. 축 자체가 쓰기 문장이면(where 범위를 보는 축) 순서는 안 본다.
+    if (ax.order && !WRITE_STMT.test(m[0])) {
+      const w = body.slice(0, m.index).match(WRITE_CALL)
+      if (w) violations.push(`${ax.file} ${ax.fn} — 관문(${msg.split('(')[0]}) 보다 앞에서 쓴다(${w[0].trim()}). 확인 전에 화면 id 로 쓰면 늦다`)
+    }
+  }
   for (const [re, msg] of ax.mustNot) if (re.test(body)) violations.push(`${ax.file} ${ax.fn} — ${msg}. 영업장 범위를 지나야 한다`)
 }
 

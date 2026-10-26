@@ -313,9 +313,15 @@ export async function applyShiftRows(
 // 품목도 이 영업장 것이어야 한다(2026-10-23 운영자 승인). 종전에는 부르는 쪽마다 품목을 따로 확인했고, 두 곳(점검 수정·
 // 수령 취소 적용취소)과 지출 삭제 적용취소가 토큰의 품목을 안 봐서 남의 영업장 점검 잔량·위치 링크를 덮어썼다.
 // 그래서 확인을 여기 한 자리로 모은다. 남의 품목이면 던져 트랜잭션째 되돌린다.
-export async function revertShiftRows(tx: InventoryTx, propertyId: string, undo: LedgerShiftUndo): Promise<void> {
+// 품목 행이 아예 없으면 다른 경우다(검수 2026-10-23). 토스트 창 안에 그 품목을 병합하면 병합이 원본 행을 지운다
+// (inventory/actions 의 카드 병합 4단계). 옮겼던 점검도 병합 대상으로 넘어가 되돌릴 자리가 없으므로 종전처럼 조정만
+// 건너뛰고 'itemGone' 을 돌려준다. 부르는 쪽은 지출·수령 복원을 마저 하고 그 사실(SHIFT_ITEM_GONE_NOTICE)을 알린다.
+export type RevertShiftResult = 'done' | 'itemGone'
+export const SHIFT_ITEM_GONE_NOTICE = '그 사이 품목이 합쳐지거나 지워져 함께 옮겼던 점검 조정은 되돌리지 못했습니다.'
+export async function revertShiftRows(tx: InventoryTx, propertyId: string, undo: LedgerShiftUndo): Promise<RevertShiftResult> {
   if (!(await tx.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } }))) {
-    throw new Error('다른 영업장의 기록입니다.')
+    if (await tx.trackedItem.findUnique({ where: { id: undo.trackedItemId }, select: { id: true } })) throw new Error('다른 영업장의 기록입니다.')
+    return 'itemGone'
   }
   const ids = undo.checks.map(c => c.id)
   if (ids.length > 0) {
@@ -351,4 +357,5 @@ export async function revertShiftRows(tx: InventoryTx, propertyId: string, undo:
       await tx.trackedItemLocation.deleteMany({ where: { trackedItemId: undo.trackedItemId, storageLocationId: locId } })
     }
   }
+  return 'done'
 }

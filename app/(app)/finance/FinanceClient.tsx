@@ -3199,7 +3199,7 @@ export default function FinanceClient({
         setDetailExp(null); router.refresh()
         pushToast('success', isFixed ? `${slotMon} 기록이 취소되었습니다` : '삭제됨', {
           action: { label: '적용취소', run: () => { void undoDeleteExpense(res.undo).then(r => {
-            if (r.ok) { pushToast('info', isFixed ? `${slotMon} 기록을 복원했습니다` : '지출을 복원했습니다'); router.refresh() }
+            if (r.ok) { pushToast('info', isFixed ? `${slotMon} 기록을 복원했습니다` : '지출을 복원했습니다', r.notice ? { detail: r.notice } : undefined); router.refresh() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
         })

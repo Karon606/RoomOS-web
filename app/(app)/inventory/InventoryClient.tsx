@@ -3035,7 +3035,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             pushToast('success', '수령을 취소했습니다', {
               ...(cancelUndo.shift ? { detail: `점검 ${cancelUndo.shift.checks.length}건의 잔량도 함께 뺐습니다.` } : {}),
               action: { label: '적용취소', run: () => { void undoCancelReceipt(cancelUndo).then(r => {
-                if (r.ok) { pushToast('info', '수령 상태를 복원했습니다'); onChanged() }
+                if (r.ok) { pushToast('info', '수령 상태를 복원했습니다', r.notice ? { detail: r.notice } : undefined); onChanged() }
                 else pushToast('error', r.error)
               }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
             })

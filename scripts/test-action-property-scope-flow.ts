@@ -43,6 +43,7 @@ async function main() {
   await pg.exec(schemaSql())
   // 하네스 관문 대역의 사용자 id 는 uuid 가 아니다('cr-flow-harness'). 점검 기록자 칸만 글자로 풀어 대조군이 돌게 한다(앱 스키마는 그대로).
   await pg.exec('ALTER TABLE checklist_logs ALTER COLUMN "checkedBy" TYPE text')
+  await pg.exec('ALTER TABLE tenant_status_logs ALTER COLUMN "changedById" TYPE text')
   const server = new PGLiteSocketServer({ db: pg, port: PORT, host: '127.0.0.1' })
   await server.start()
 
@@ -54,7 +55,8 @@ async function main() {
   const market = await import('@/app/(app)/market-analysis/actions')
   const rooms = await import('@/app/(app)/rooms/actions')
   const inventory = await import('@/app/(app)/inventory/actions')
-  const { revertShiftRows } = await import('@/app/(app)/inventory/ledgerShift')
+  const { revertShiftRows, SHIFT_ITEM_GONE_NOTICE } = await import('@/app/(app)/inventory/ledgerShift')
+  const cleaning = await import('@/app/(app)/room-manage/cleaningActions')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
@@ -282,6 +284,32 @@ async function main() {
     eq('퇴실 처리 반영', (await prisma.leaseTerm.findUnique({ where: { id: L1 } }))?.status, 'CHECKED_OUT')
     const T3 = await tenantIn(P1, '지울 사람')
     eq('입주자 삭제: 제 영업장 통과', await tenants.deleteTenant(T3), { ok: true })
+
+    // 대조군(검수 2026-10-23): 관문을 단 문들이 제 영업장 계약으로는 그대로 돈다.
+    const RM4 = await roomIn(P1, '304'), RM5 = await roomIn(P1, '305')
+    const T4 = await tenantIn(P1, '입실 예정'), T5 = await tenantIn(P1, '확정 예약')
+    const L4 = await leaseIn(P1, T4, RM4, 'RESERVED')
+    await prisma.leaseTerm.update({ where: { id: L4 }, data: { moveInDate: new Date('2026-10-01T00:00:00Z') } })
+    eq('입실 처리: 제 영업장 통과', await tenants.moveInTenant(L4, T4), { ok: true })
+    eq('입실 처리 반영', [(await prisma.leaseTerm.findUnique({ where: { id: L4 } }))?.status, (await prisma.room.findUnique({ where: { id: RM4 } }))?.isVacant], ['ACTIVE', false])
+    const L5 = await leaseIn(P1, T5, RM5, 'RESERVED')
+    await prisma.leaseTerm.update({ where: { id: L5 }, data: { moveInDate: new Date('2026-10-01T00:00:00Z'), reservationConfirmedAt: new Date('2026-09-20T00:00:00Z') } })
+    eq('예약 확정 → 거주: 제 영업장 통과', await tenants.confirmReservationToActive(L5), { ok: true })
+    eq('예약 확정 → 거주 반영', (await prisma.leaseTerm.findUnique({ where: { id: L5 } }))?.status, 'ACTIVE')
+    const pr = await tenants.setCheckoutProration(L4, '2026-11-15')
+    eq('퇴실 일할 설정: 제 영업장 통과', pr.ok ? true : pr.error, true)
+    const dep = await rooms.saveDepositPayment({ leaseTermId: L4, tenantId: T4, targetMonth: '2026-10', depositAmount: 50000, rentAmount: 300000, totalPaid: 50000, payDate: '2026-10-01', payMethod: '계좌이체' })
+    eq('보증금 수납: 제 영업장 통과', dep.ok ? true : dep.error, true)
+    await prisma.leaseTerm.update({ where: { id: L5 }, data: { cleaningFee: 30000 } })
+    const cf = await rooms.saveCleaningFeePayment({ leaseTermId: L5, tenantId: T5, targetMonth: '2026-10', cleaningFee: 30000, rentAmount: 300000, totalPaid: 30000, payDate: '2026-10-01', payMethod: '계좌이체' })
+    eq('청소비 수납: 제 영업장 통과', cf.ok ? true : cf.error, true)
+    const rd = await rooms.saveReservationDeposit({ leaseTermId: L5, tenantId: T5, mode: 'none', amount: 0, payDate: '2026-10-01', payMethod: '계좌이체' })
+    eq('예약금 모드 저장: 제 영업장 통과', rd.ok ? true : rd.error, true)
+    eq('예약금: 남의 영업장 입주자 거절', await rooms.saveReservationDeposit({ leaseTermId: L5, tenantId: T2, mode: 'none', amount: 0, payDate: '2026-10-01', payMethod: '계좌이체' }), { ok: false, error: '입주자를 찾을 수 없습니다.' })
+    const cl = await cleaning.createCleaning({ roomId: RM4, reason: 'CHECKOUT', leaseTermId: L4 })
+    eq('청소 등록: 제 영업장 계약 통과', cl.ok ? (await prisma.roomCleaning.findUnique({ where: { id: cl.id } }))?.leaseTermId : cl.error, L4)
+    eq('청소 등록: 남의 영업장 계약 거절', await cleaning.createCleaning({ roomId: RM4, reason: 'CHECKOUT', leaseTermId: L2 }), { ok: false, error: '계약 정보를 찾을 수 없습니다.' })
+    eq('대조군 뒤에도 남의 영업장 행 무변경', await theirs(), before)
   }
 
   // ── 재고·지출 적용취소 토큰 ──
@@ -332,6 +360,42 @@ async function main() {
       order: null, shippingRows: [], freedSiblingIds: [], stockCheckIds: [C2], reserveTxIds: [R2],
     }), { ok: true })
     eq('지출 삭제 적용취소 뒤 남의 점검·예비비 무변경', [await checkRow(C2), JSON.stringify(await prisma.reserveTransaction.findUnique({ where: { id: R2 } }))], [before, reserveBefore])
+
+    // a(검수 2026-10-23). 입수·폐기·수령 취소 적용취소의 위치 id 도 이 영업장 위치만.
+    const addId = randomUUID()
+    const addUndo = { id: addId, trackedItemId: I1, date: '2026-10-01T00:00:00.000Z', addedQty: 2, source: null, memo: null, storageLocationId: LOC2 }
+    eq('입수 삭제 적용취소: 남의 영업장 위치 거절', await inventory.undoDeleteStockAddition(addUndo), { ok: false, error: '다른 영업장의 기록입니다.' })
+    eq('입수 삭제 적용취소: 제 영업장 위치 통과', await inventory.undoDeleteStockAddition({ ...addUndo, storageLocationId: LOC1 }), { ok: true })
+    eq('입수 수정 적용취소: 남의 영업장 위치 거절', await inventory.undoUpdateStockAddition({ id: addId, before: { date: '2026-10-01T00:00:00.000Z', addedQty: 2, source: null, memo: null, storageLocationId: LOC2 } } as never),
+      { ok: false, error: '다른 영업장의 기록입니다.' })
+    eq('입수 위치 무변경', (await prisma.stockAddition.findUnique({ where: { id: addId } }))?.storageLocationId, LOC1)
+    const dispId = randomUUID()
+    eq('폐기 삭제 적용취소: 남의 영업장 위치 거절', await inventory.undoDeleteStockDisposal({ id: dispId, trackedItemId: I1, date: '2026-10-01T00:00:00.000Z', disposedQty: 1, reason: null, memo: null, storageLocationId: LOC2 } as never),
+      { ok: false, error: '다른 영업장의 기록입니다.' })
+    const E1 = (await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '부식비' } })).id as string
+    const rcUndo = { expenseId: E1, receivedAtMs: Date.parse('2026-10-02T00:00:00Z'), receivedLocationId: LOC2, autoChecks: [], shift: null }
+    eq('수령 취소 적용취소: 남의 영업장 받은 위치 거절', await inventory.undoCancelReceipt(rcUndo), { ok: false, error: '다른 영업장의 기록입니다.' })
+    eq('수령 취소 적용취소 거절 뒤 수령 안 됨', (await prisma.expense.findUnique({ where: { id: E1 } }))?.receivedAt, null)
+
+    // b. 토스트 창 안에 품목이 병합되어 사라졌으면 조정만 건너뛰고 복원은 마저 하며 사유를 정확히 알린다.
+    const GONE_ITEM = randomUUID()   // 병합으로 지워진 품목(행 없음)
+    eq('재고 되돌리기: 사라진 품목은 건너뜀', await prisma.$transaction(async tx => revertShiftRows(tx, P1, { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] })).catch(e => (e as Error).message), 'itemGone')
+    eq('수령 취소 적용취소: 품목이 사라졌으면 복원하고 알림', await inventory.undoCancelReceipt({
+      ...rcUndo, receivedLocationId: LOC1,
+      autoChecks: [{ id: randomUUID(), trackedItemId: GONE_ITEM, dateMs: Date.parse('2026-10-02T00:00:00Z'), createdAtMs: Date.parse('2026-10-02T00:00:00Z'), remainingQty: 1, memo: null, isReconcile: false, locations: [] }],
+      shift: { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] },
+    }), { ok: true, notice: `그 사이 품목이 합쳐지거나 지워져 자동 점검 1건은 되살리지 못했습니다. ${SHIFT_ITEM_GONE_NOTICE}` })
+    eq('수령 복원 반영', (await prisma.expense.findUnique({ where: { id: E1 } }))?.receivedLocationId, LOC1)
+    const expId2 = randomUUID()
+    eq('지출 삭제 적용취소: 품목이 사라졌으면 복원하고 알림', await fin.undoDeleteExpense({
+      expense: { ...expSnap, id: expId2 }, order: null, shippingRows: [], freedSiblingIds: [], stockCheckIds: [], reserveTxIds: [],
+      shift: { trackedItemId: GONE_ITEM, checks: [], createdLinks: [] },
+    }), { ok: true, notice: SHIFT_ITEM_GONE_NOTICE })
+    eq('지출 복원 반영', await prisma.expense.count({ where: { id: expId2 } }), 1)
+    const E3 = (await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-01T00:00:00Z'), amount: 1000, category: '부식비' } })).id as string
+    eq('수령 취소 적용취소: 남의 영업장 품목은 여전히 거절(트랜잭션째)', await inventory.undoCancelReceipt({ ...rcUndo, expenseId: E3, receivedLocationId: LOC1, shift: { trackedItemId: I2, checks: [], createdLinks: [] } }),
+      { ok: false, error: '다른 영업장의 기록입니다.' })
+    eq('남의 품목 거절 뒤 수령 안 됨', (await prisma.expense.findUnique({ where: { id: E3 } }))?.receivedAt, null)
   }
 
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
