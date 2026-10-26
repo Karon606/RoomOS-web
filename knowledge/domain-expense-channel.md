@@ -119,7 +119,7 @@ prisma/migrate_expense_channel.sql 을 **먼저** 적용(lock_timeout 5s, 멱등
   되돌린다(기록한 지출은 그대로라 낱말에 '구매처'를 붙여 가른다). 토큰 lib/recurringVendorUndo, 서명 용도 라벨 `recurring-template-vendor-v1`.
 - **D. 소급.** 두 관리 폼에서 구매처를 새로 적어 저장하면 "이 항목으로 기록한 과거 지출 중 구매처가 빈 N건에도 채울까요?"를 한 번 묻는다(0건이면 무표시).
   대상은 { 영업장, 이 항목, 구매처 null } 뿐이고 값은 저장된 항목 구매처다. 제목·메모에서 이름을 뽑지 않는다. 적용취소는 ExpenseFieldUndo 용도 라벨
-  `recurring-vendor-backfill`. 묻는 자리 정본 finance/recurringVendorBackfillAsk(환경설정 폼 연결은 점검 체크리스트 작업과 겹쳐 따로 대기, 아래).
+  `recurring-vendor-backfill`. 묻는 자리 정본 finance/recurringVendorBackfillAsk(재무 관리 폼·환경설정 폼 둘 다 부른다).
 - **E. 목록.** 고정지출 기록 행에만 구매처를 작은 캡션으로('건물 임대료 · 대동빌딩'). 물품 행은 7df4b16a(2026-07-06) 숨김 그대로. 판정 정본 FinanceClient fixedVendorCaption.
 - **F. 이름 변경·합치기·비우기가 항목까지.** renameVendor 가 같은 트랜잭션에서 `recurringExpense` 의 같은 이름도 고치고, 적용취소 토큰에 항목 줄(`recurring`)을 싣는다.
   항목 줄은 `vendor-rename` 에만 실리고(다른 용도면 모양 검사가 거절), 없으면 서명 본문이 종전과 같다. 되돌림은 지출과 항목이 모두 '쓴 직후'일 때만.

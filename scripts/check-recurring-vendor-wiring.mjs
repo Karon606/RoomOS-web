@@ -110,6 +110,14 @@ if (!/getExpenseVendorSuggestions\(\)\.catch\(/.test(dc)) violations.push(`${DC}
   if (!/value=\{recMgmtForm\.vendor\}/.test(f)) violations.push(`${FC}. 관리 폼에 구매처 칸이 없다`)
   if (/거래처는 이 폼에 칸이 없어/.test(fc)) violations.push(`${FC}. '거래처는 이 폼에 칸이 없어' 옛 주석이 남았다(칸이 생겼다)`)
 }
+// 환경설정 고정지출 폼도 같은 정본으로 소급을 묻는다(결정 D, 두 관리 폼).
+{
+  const save = strip(sf).match(/\n  const handleSaveRec = \(\) => \{[\s\S]*?\n  \}\n/)?.[0] ?? ''
+  if (!/import \{ askRecurringVendorBackfill \} from '@\/app\/\(app\)\/finance\/recurringVendorBackfillAsk'/.test(sf)) violations.push(`${SF}. 소급 묻기 정본(askRecurringVendorBackfill)을 가져오지 않는다`)
+  if (!/if \(editingRec\) void askRecurringVendorBackfill\(\{ recurringExpenseId: editingRec\.id, prevVendor: editingRec\.vendor, nextVendor: data\.vendor,/.test(save)) violations.push(`${SF} handleSaveRec. 구매처를 새로 적은 저장 뒤 과거 빈 구매처 소급을 묻지 않는다(결정 D)`)
+  const okAt = save.indexOf("showToast(editingRec ? '고정 지출 수정됨'"), askAt = save.indexOf('askRecurringVendorBackfill(')
+  if (okAt < 0 || askAt < okAt) violations.push(`${SF} handleSaveRec. 소급 묻기가 저장 성공 뒤가 아니다(실패한 저장에 묻는다)`)
+}
 
 // ── ⓕ 허용 칸 표 ─────────────────────────────────────────────────
 if (!/payMethod: 'string\?', vendor: 'string\?'/.test(read('app/(app)/settings/actions.ts'))) violations.push("app/(app)/settings/actions.ts. RECURRING_FIELDS 에 vendor: 'string?' 가 없다(두 폼의 구매처 저장이 버려진다)")

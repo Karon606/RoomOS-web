@@ -51,6 +51,7 @@ import {
   getDocMailSettings, updateDocMailTemplate, renderDocMailSample,
   getAiSettings, saveAiSettings,
 } from './actions'
+import { askRecurringVendorBackfill } from '@/app/(app)/finance/recurringVendorBackfillAsk'
 import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum } from '@/lib/contract'
 import type { DocMailTemplate } from '@/lib/docMail'
@@ -1233,6 +1234,8 @@ export default function SettingsForm({
         setShowRecForm(false)
         showToast(editingRec ? '고정 지출 수정됨' : '고정 지출 추가됨')
         router.refresh()  // 대시보드 등 다른 페이지의 캐시된 데이터도 갱신
+        // 구매처를 새로 적었으면 과거 빈 구매처에도 채울지 한 번 묻는다(신고 5fa9cf43 결정 D, 재무 관리 폼과 같은 정본).
+        if (editingRec) void askRecurringVendorBackfill({ recurringExpenseId: editingRec.id, prevVendor: editingRec.vendor, nextVendor: data.vendor, onChanged: () => router.refresh() })
       } catch (e) {
         showToast(`저장 실패: ${(e as Error).message}`)
       }

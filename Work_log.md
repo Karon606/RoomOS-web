@@ -6895,4 +6895,4 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 2 '이 항목의 기본 구매처로 저장'(값이 다를 때만, 빈 항목이면 기본 켜짐, 같은 트랜잭션 조건부 갱신, 토스트 '구매처 적용취소', 서명 recurring-template-vendor-v1).
 - 3 소급 묻기(재무 관리 폼, 0건 무표시, { 영업장, 항목, 구매처 null } 만, 적용취소 recurring-vendor-backfill). 4 이름 변경·합치기·비우기가 항목까지(토큰 항목 줄, verify:db 경고 check-recurring-vendor-drift). 5 목록 캡션은 고정지출 행만.
 - 그물: check-recurring-vendor-wiring(12축)·test-recurring-vendor-flow(PGlite 63건)·check-recurring-vendor-drift, 역주입 9건 발화. 노트 [[domain-expense-channel]] '고정지출의 구매처'.
-- 대기: 환경설정 고정지출 폼의 소급 묻기 연결(같은 시기 점검 체크리스트 작업이 SettingsForm 을 고치고 있어 이번엔 자리표시만 바꿨다, 별도 패치로 둠).
+- 검수 반영(같은 날): 환경설정 폼 소급 묻기 연결, 항목 줄 적용취소 뒤 /settings·/dashboard 갱신, 이름 변경 토스트에 따라 바뀐 항목 수, 쇼핑몰 이름 항목 소급 거절과 경고 축, 항목 까닭 적용취소 문장, 제목과 같은 구매처 캡션 생략, 기록 모달 주 버튼 어절 줄바꿈·관리 폼 '자동이체' 접힘.
