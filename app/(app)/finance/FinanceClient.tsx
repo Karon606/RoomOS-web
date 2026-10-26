@@ -5933,9 +5933,9 @@ export default function FinanceClient({
                       {/* flex-wrap + break-keep — 품명이 배지에 밀리지 않고 먼저 자리를 가진다. */}
                       <div className="flex flex-wrap items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
-                        {isParent && <Badge tone="pale-neutral">묶음 {r.items.length}</Badge>}
+                        {isParent && <Badge tone="neutral">묶음 {r.items.length}</Badge>}
                         {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                        {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
+                        {!r.isActive && <Badge tone="neutral">비활성</Badge>}
                         {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}
                       </div>
                       <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">

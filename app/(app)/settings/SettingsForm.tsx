@@ -2358,9 +2358,9 @@ export default function SettingsForm({
                         가진다. 말줄임은 최후순위라 truncate 를 걷었다. */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
-                      {r.items.length > 0 && <Badge tone="pale-neutral">묶음 {r.items.length}</Badge>}
+                      {r.items.length > 0 && <Badge tone="neutral">묶음 {r.items.length}</Badge>}
                       {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                      {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
+                      {!r.isActive && <Badge tone="neutral">비활성</Badge>}
                     </div>
                     <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
                       {recurringCycleLabel(r)} {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
@@ -3813,7 +3813,7 @@ function SignDocumentsCard({ initial }: { initial: SignDocument[] }) {
       <div className="min-w-0 sm:flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{d.title}</p>
-          {d.retiredAt && <Badge tone="pale-neutral">사용 안 함</Badge>}
+          {d.retiredAt && <Badge tone="neutral">사용 안 함</Badge>}
         </div>
         <p className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{d.body.split('\n')[0]}</p>
       </div>

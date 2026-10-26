@@ -18,6 +18,10 @@
 //      비선택 쪽이 상수 이름이면 같은 파일의 정의를 따라가고, style 객체의 키 순서는 따지지 않으며, && 조건식도 본다(재검수).
 //   ⓔ 토글 칩(aria-pressed)을 가진 파일에서 --canvas 바탕 줄의 글자색 클래스가 위 보조 잉크 토큰이 아니다
 //      (요청 '긴급만', 재고 위치 칩 2곳. 2026-10-23 같은 실패라 함께 묶음).
+//   ⓗ pale-neutral 틴트 배지(Badge tone="pale-neutral")가 --canvas·--cream-2·--page 불투명 면에 바로 서지 않는다. 그 면에서는
+//      --neutral-bg(.08) 위 보조 잉크가 4.49:1 로 한 끗 미달이라 solid neutral(--cream-3 바탕, 4.52:1)을 쓴다(2026-10-26, 고정지출 행
+//      '묶음'·'비활성' 두 화면과 분류 관리 '사용 안 함'). 배지를 감싼 요소를 거슬러 올라가 처음 바탕을 가진 요소로 판정한다.
+//      tone 을 변수로 넘기는 자리(정산 패널 등)는 정적으로 못 보므로 이 축 밖이다.
 //   ⓑ~ⓕ 는 2026-10-26 전에는 대비(--canvas 위 4.11:1)를 지켰다. 지금은 라이트에서 보조 잉크와 --seg-ink-off 가 같은 값이라
 //      대비가 아니라 칸 글자의 정본 이름을 지킨다. '이 칸 글자를 --warm-dark 로 올리지 않는다'(§23)는 규칙이 그 이름에 걸려 있다.
 //   ⓖ 보조 잉크(--ink-3 · --warm-mid · --warm-muted · --ink-mute · --ink-s · --ink-m · --seg-ink-off · --neutral-fg)가 라이트(:root, 인쇄)에서
@@ -206,6 +210,37 @@ for (const f of walk('app', walk('components', []))) {
   }
 }
 
+// ⓗ --canvas 면 위 pale-neutral 금지
+{
+  const tagEnd = (src, from) => { let d = 0; for (let k = from; k < src.length; k++) { const c = src[k]; if (c === '{') d++; else if (c === '}') d--; else if (c === '>' && d === 0) return k } return -1 }
+  const ANY_BG = /(?:^|[\s"'`])bg-\[[^\]]+\]|background:\s*'/
+  const PAGE_BG = /(?:^|[\s"'`])bg-\[var\(--(?:canvas|cream-2|page)\)\](?!\/)|background:\s*'var\(--(?:canvas|cream-2|page)\)'/
+  let paleSeen = 0
+  for (const f of walk('app', walk('components', []))) {
+    const src = strip(readFileSync(f, 'utf8'))
+    for (const m of src.matchAll(/<Badge\b[^>]*\btone="pale-neutral"/g)) {
+      paleSeen++
+      const tags = [...src.slice(0, m.index).matchAll(/<(\/?)([A-Za-z][\w.]*)/g)].map(t => {
+        const end = tagEnd(src, t.index)
+        return { close: t[1] === '/', self: end > 0 && src[end - 1] === '/', text: end > 0 ? src.slice(t.index, end + 1) : '' }
+      })
+      let depth = 0, found = 0
+      for (let k = tags.length - 1; k >= 0 && found < 8; k--) {
+        const t = tags[k]
+        if (t.close) { depth++; continue }
+        if (t.self) continue
+        if (depth > 0) { depth--; continue }
+        found++
+        const own = t.text.replace(/(?:hover|focus|active|disabled|focus-visible|group-hover|sm|md|lg|dark):[^\s"'`]+/g, '')
+        if (!ANY_BG.test(own)) continue
+        if (PAGE_BG.test(own)) violations.push(`${f}:${lineOf(src, m.index)} pale-neutral 배지가 --canvas 면에 바로 선다. --neutral-bg 위 보조 잉크가 4.49:1 로 미달이라 tone="neutral"(solid, 4.52:1)을 쓴다(가이드 §11).`)
+        break
+      }
+    }
+  }
+  if (paleSeen < 3) violations.push(`pale-neutral 배지 자리가 ${paleSeen}곳뿐이다. Badge 이름이나 tone 문법을 바꿨다면 ⓗ 를 옮긴다.`)
+}
+
 // ⓓ ViewTabs 비활성
 {
   const f = 'components/ui/ViewTabs.tsx'
@@ -219,4 +254,4 @@ if (violations.length) {
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, 보조 잉크 한 값·라이트 면 넷 AA·본문 위계, SegmentedControl·선택형 칩·세그먼트 삼항·토글 칩·ViewTabs 비활성 글자)')
+console.log('check-seg-ink-off: OK (--seg-ink-off 라이트·다크·인쇄 AA, 보조 잉크 한 값·라이트 면 넷 AA·본문 위계·canvas 면 pale-neutral 금지, SegmentedControl·선택형 칩·세그먼트 삼항·토글 칩·ViewTabs 비활성 글자)')
