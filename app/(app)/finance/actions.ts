@@ -806,6 +806,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (formRoomIds.length > 0 && (await prisma.room.count({ where: { id: { in: formRoomIds }, propertyId } })) !== formRoomIds.length) {
       return { ok: false, error: '호실 정보를 찾을 수 없습니다.' }
     }
+    // 결제 계정 id 도 이 영업장 것만 받는다. updateExpense 와 같은 관문(2026-10-23 운영자 승인, 남의 영업장 계좌가 이어진다).
+    if (financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     // 수령 전 비품 물품의 자리는 배정할 호실(targetRoomId) 하나뿐이다. roomId 는 비운다(판정 정본 receiptPlacement).
     // 등록하는 지출은 늘 수령 전이다. 비품 물품이 아니면 targetRoomId 를 비운다.
     const saveTrackedCats = (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
@@ -1712,6 +1716,10 @@ export async function batchUpdateExpenses(
     // 결제수단 변경 시 계좌·카드(선불) 정보 동반 필수 — 미지정이면 stale 계좌가 남는다
     if (wantsPayMethod && (!('financialAccountId' in data) || !('financeName' in data))) {
       return { ok: false, error: '결제수단을 변경하려면 계좌·카드 정보가 함께 필요합니다.' }
+    }
+    // 화면이 고른 결제 계정도 이 영업장 것만 받는다(2026-10-23 운영자 승인). 비우기(null)는 허용.
+    if (data.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: data.financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
 
     // 대상 스냅샷 겸 스킵 판정 — 변경 필드 원값도 함께 캡처(적용취소용)
@@ -2877,6 +2885,14 @@ export async function saveFinancialAccount(formData: FormData): Promise<{ ok: tr
     const linkedAccountId = formData.get('linkedAccountId') as string
 
     if (!brand) return { ok: false, error: '금융사명은 필수입니다.' }
+    // 수정은 화면에서 온 id 다. 이 영업장 계정이 아니면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
+    if (id && !(await prisma.financialAccount.findFirst({ where: { id, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
+    // 카드에 잇는 출금 계좌도 이 영업장 계정만 받는다. 남의 영업장 계좌가 내 카드에 이어지지 않게.
+    if (linkedAccountId && !(await prisma.financialAccount.findFirst({ where: { id: linkedAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
 
     const parseDay = (raw: string) => {
       if (!raw) return null
@@ -2897,7 +2913,8 @@ export async function saveFinancialAccount(formData: FormData): Promise<{ ok: tr
     }
 
     if (id) {
-      await prisma.financialAccount.update({ where: { id }, data })
+      const r = await prisma.financialAccount.updateMany({ where: { id, propertyId }, data })
+      if (r.count === 0) return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     } else {
       await prisma.financialAccount.create({ data: { ...data, propertyId } })
     }
@@ -2909,16 +2926,23 @@ export async function saveFinancialAccount(formData: FormData): Promise<{ ok: tr
   }
 }
 
-export async function deleteFinancialAccount(id: string) {
+// 삭제·해지도 화면에서 온 id 다. 영업장 범위로만 쓰고, 남의 영업장 id 면 한 줄도 안 바꾸고 같은 말로 닫는다(2026-10-23 운영자 승인).
+export async function deleteFinancialAccount(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit()
-  await prisma.financialAccount.delete({ where: { id } })
+  const propertyId = await getPropertyId()
+  const r = await prisma.financialAccount.deleteMany({ where: { id, propertyId } })
+  if (r.count === 0) return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
   revalidatePath('/finance')
+  return { ok: true }
 }
 
-export async function deactivateFinancialAccount(id: string) {
+export async function deactivateFinancialAccount(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit()
-  await prisma.financialAccount.update({ where: { id }, data: { isActive: false } })
+  const propertyId = await getPropertyId()
+  const r = await prisma.financialAccount.updateMany({ where: { id, propertyId }, data: { isActive: false } })
+  if (r.count === 0) return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
   revalidatePath('/finance')
+  return { ok: true }
 }
 
 // ── 고정 지출 현황 ───────────────────────────────────────────────
@@ -3016,6 +3040,10 @@ export async function recordRecurringExpense(data: {
     })
     if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
 
+    // 화면이 실어 온 결제 계정은 이 영업장 것만 받는다(2026-10-23 운영자 승인). 안 실려 오면 항목의 계정을 쓴다.
+    if (data.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: data.financialAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     const resolvedAccountId = data.financialAccountId ?? recurring.financialAccountId ?? null
 
     // #1: 세부항목이 있으면 합계로 기록하고 내역을 breakdownJson 에 보관(장부엔 1줄)
@@ -3223,6 +3251,10 @@ export async function addReserveDeposit(input: { amount: number; date: string; s
     await requireEdit()
     const propertyId = await getPropertyId()
     if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    // 연결 계좌는 화면에서 온 id 다. 이 영업장 계정만 받는다(2026-10-23 운영자 승인).
+    if (input.linkedAccountId && !(await prisma.financialAccount.findFirst({ where: { id: input.linkedAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     // sourceMonth 형식 검증 — "YYYY-MM"
     if (input.sourceMonth && !/^\d{4}-\d{2}$/.test(input.sourceMonth)) {
       return { ok: false, error: '출처 월 형식이 잘못되었습니다 (YYYY-MM).' }
@@ -3252,6 +3284,10 @@ export async function addReserveWithdrawDirect(input: { amount: number; date: st
     await requireEdit()
     const propertyId = await getPropertyId()
     if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    // 연결 계좌는 화면에서 온 id 다. 이 영업장 계정만 받는다(2026-10-23 운영자 승인).
+    if (input.linkedAccountId && !(await prisma.financialAccount.findFirst({ where: { id: input.linkedAccountId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+    }
     const balance = await getReserveBalance()
     if (input.amount > balance) return { ok: false, error: `잔고 부족 · 현재 예비비 ${balance.toLocaleString()}원` }
     await prisma.reserveTransaction.create({

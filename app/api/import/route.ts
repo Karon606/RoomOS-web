@@ -556,7 +556,7 @@ async function importSettings(rows: Record<string, unknown>[], propertyId: strin
 
         const resolution = resolutions[`setting:${existing.id}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
-        await prisma.financialAccount.update({ where: { id: existing.id }, data })
+        await prisma.financialAccount.update({ where: { id: existing.id, propertyId }, data })
       } else {
         await prisma.financialAccount.create({ data: { ...data, propertyId } })
       }

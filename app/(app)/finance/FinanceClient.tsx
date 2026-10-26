@@ -3229,7 +3229,8 @@ export default function FinanceClient({
   const handleDeleteAsset = async (id: string) => {
     if (!(await confirmDialog({ title: '이 자산을 완전히 삭제할까요?', message: '기존 지출·수익 기록과의 연결도 끊어집니다.', level: 'danger', confirmLabel: '영구 삭제' }))) return
     startTransition(async () => {
-      await deleteFinancialAccount(id)
+      const res = await deleteFinancialAccount(id)
+      if (!res.ok) { setAssetError(res.error); return }
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
@@ -3237,7 +3238,8 @@ export default function FinanceClient({
   const handleDeactivateAsset = async (id: string) => {
     if (!(await confirmDialog({ title: '이 자산을 해지 처리할까요?', message: '기존 기록은 유지되며 신규 사용은 불가합니다.', level: 'caution', confirmLabel: '해지' }))) return
     startTransition(async () => {
-      await deactivateFinancialAccount(id)
+      const res = await deactivateFinancialAccount(id)
+      if (!res.ok) { setAssetError(res.error); return }
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
