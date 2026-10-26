@@ -41,6 +41,7 @@ import {
   loadDurableConvertFacts, verifyDurableConvert, emptyAutoCards, deleteEmptyCardsTx, autoCheckSnaps,
   applyDurableConvertUndo, DurableConvertUndoError,
 } from '@/app/(app)/inventory/durableConvert'
+import { retireTrackedItemIfOrphan, restoreTrackedItemTx, signCategoryMove, type TrackedItemDeleteUndo, type CategoryMoveToken } from '@/app/(app)/inventory/trackedItemSnapshot'
 import { planReceiptCancel, applyReceiptCancel } from '@/app/(app)/inventory/receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다).
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
@@ -1074,6 +1075,24 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
   }
 }
 
+// 지출 수정 뒤 옛 품명 카드 정리(신고 f3866bca). 같은 카테고리 안에서 품명을 바꿨거나(새 이름 카드가 이미 있어 개명 전파가
+// 안 된 경우), 다품목으로 나누며 원래 품목 줄을 뺐거나, 재고 제외로 바꿔 옛 품명 카드에 재고 구매가 0 이 되면 고아다.
+// 카테고리를 바꾼 저장은 여기서 안 본다. 저장 뒤 화면이 '같이 변경 / 지출만'을 묻고, '지출만'이면 그때 정리한다
+// (retireCardAfterExpenseCategoryChange). 같이 변경이면 카드가 새 카테고리로 옮겨 가야 해서 먼저 지우면 안 된다.
+// 저장은 이미 끝났다. 정리가 실패해도 저장을 실패로 돌려주지 않는다. 카드는 남는다. 감지 check-tracked-orphans 는 그 품명 지출 흔적이
+// 남은 고아만 실패로 세고, 흔적이 없는 고아(같은 카테고리 안 품명 변경으로 남은 카드가 그렇다)는 '참고' 목록에만 올린다.
+async function retireOldLabelCard(propertyId: string, category: string, label: string | null | undefined): Promise<TrackedItemDeleteUndo | null> {
+  if (!label) return null
+  try {
+    const r = await prisma.$transaction(tx => retireTrackedItemIfOrphan(tx, propertyId, category, label))
+    if (r) revalidatePath('/inventory')
+    return r
+  } catch (e) {
+    console.error('[updateExpense] 저장 뒤 옛 품명 카드 정리 실패(카드 남김)', e)
+    return null
+  }
+}
+
 // 지출에서 품목명을 바꾸면 재고 품목(TrackedItem) 카드·형제 지출의 itemLabel까지 함께 바꾼다(진짜 이름변경).
 // 새 이름이 같은 카테고리의 다른 기존 품목과 겹치면 전파하지 않음(병합이 필요한 상황) → false.
 // (재고관리 쪽 updateTrackedItem 의 라벨 전파와 동일 규칙 — 지출 편집에서도 동기화되게)
@@ -1101,7 +1120,7 @@ async function propagateItemLabelRename(
   return true
 }
 
-export async function updateExpense(formData: FormData): Promise<{ ok: true; backfilled?: number; backfillUndo?: ExpenseFieldUndo; channelUndo?: ExpenseFieldUndo; stockShift?: LedgerShiftUndo | null; durableUndo?: DurableConvertUndo } | { ok: false; error: string }> {
+export async function updateExpense(formData: FormData): Promise<{ ok: true; backfilled?: number; backfillUndo?: ExpenseFieldUndo; channelUndo?: ExpenseFieldUndo; stockShift?: LedgerShiftUndo | null; durableUndo?: DurableConvertUndo; retiredCard?: TrackedItemDeleteUndo; categoryMove?: CategoryMoveToken } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1147,6 +1166,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       // receivedAt: 방별 분배로 갈라지는 새 조각이 '수령완료'를 물려받게(미수령으로 되돌아가는 것 방지)
       // 수량·규격·단위·제외 — 수령완료 구매의 재고 전파 게이트가 전후 환산 입수량을 비교하는 데 쓴다.
       select: {
+        // 영업장. 고아 카드 정리는 지출 행의 값을 쓴다(화면 값을 안 받는다).
+        propertyId: true,
         isShipping: true, settleStatus: true, itemLabel: true, category: true, receivedAt: true,
         // payMethod: 정산상태 규칙이 '직전 갈래'와 비교해야 한다(lib/settleStatus 정본)
         payMethod: true,
@@ -1427,7 +1448,13 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       // 실제로 적힌 행이 있을 때만 목록에 쌓는다(결정 A).
       if (channelPresent) await noteChannel(propertyId, (multiResults as { channel: string | null }[]).some(m => m.channel) ? channel : null, existing.channel)
       revalidatePath('/finance')
-      const tail = { backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}) }
+      // 원래 품목 줄을 빼고 나눴으면 옛 품명 카드가 고아일 수 있다(같은 카테고리일 때만, 정리 판정은 정본이 다시 센다).
+      const retiredCard = !convertPlan && existing.category === category ? await retireOldLabelCard(existing.propertyId, existing.category, existing.itemLabel) : null
+      // 카테고리를 바꿨으면 저장 전 (카테고리, 품명)을 서명해 돌려준다. 화면이 '같이 변경 / 지출만'을 물을 때 이 값으로 옛 카드를 찾는다.
+      const categoryMove = !convertPlan && existing.itemLabel && existing.category !== category
+        ? signCategoryMove(existing.propertyId, { v: 1, expenseId: id, fromCategory: existing.category, fromLabel: existing.itemLabel, toCategory: category, toLabel: firstRow.it.label || null })
+        : null
+      const tail = { backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}), ...(retiredCard ? { retiredCard } : {}), ...(categoryMove ? { categoryMove } : {}) }
       if (!convertPlan) return { ok: true, ...tail }
       // 전환 토큰. 품목 행(첫 행 + 새 행, 배송비 행 빼고)과 그때 예정 호실·품목 칸, 실제로 지운 카드만.
       const madeRows = multiResults.slice(0, 1 + restRows.length) as (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[]
@@ -1632,6 +1659,14 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         if (await propagateItemLabelRename(propertyId, category, existing.itemLabel, itemLabel)) revalidatePath('/inventory')
       } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
     }
+    // 옛 품명 카드 정리. 개명이 전파됐으면 옛 이름 카드가 없어 아무것도 안 한다. 비품 전환은 제 카드 정리가 따로 있다.
+    const labelMoved = formData.has('itemLabel') && (itemLabel || null) !== existing.itemLabel
+    const retiredCard = !convertPlan && existing.category === category && (labelMoved || (excludeFromInventory && !existing.excludeFromInventory))
+      ? await retireOldLabelCard(existing.propertyId, existing.category, existing.itemLabel) : null
+    // 카테고리를 바꿨으면 저장 전 (카테고리, 품명)을 서명해 돌려준다(독립 검수 B2). 비품 전환은 제 카드 정리가 따로 있다.
+    const categoryMove = !convertPlan && existing.itemLabel && existing.category !== category
+      ? signCategoryMove(existing.propertyId, { v: 1, expenseId: id, fromCategory: existing.category, fromLabel: existing.itemLabel, toCategory: category, toLabel: labelAfter })
+      : null
     await noteUnits(newUnitsOnly([specUnit], existing?.specUnit), newUnitsOnly([qtyUnit], existing?.qtyUnit))
     // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다. 종전에는 이 경로만 새서, 8/25 기록을
     // 9/2 로 고치면 실제 기록은 9월인데 기준은 8월에 남았다(2026-08-31 패널 조사에서 발견).
@@ -1648,7 +1683,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     revalidatePath('/finance')
     return {
       ok: true, backfilled: bf.count, ...(bf.undo ? { backfillUndo: bf.undo } : {}), ...(channelUndo ? { channelUndo } : {}),
-      ...(stockShift ? { stockShift } : {}), ...(durableUndo ? { durableUndo } : {}),
+      ...(stockShift ? { stockShift } : {}), ...(durableUndo ? { durableUndo } : {}), ...(retiredCard ? { retiredCard } : {}),
+      ...(categoryMove ? { categoryMove } : {}),
     }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1967,7 +2003,11 @@ export type ExpenseDeleteUndo = {
   clearedOverride?: string | null
 }
 
-export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }): Promise<{ ok: true; undo: ExpenseDeleteUndo } | { ok: false; error: string }> {
+// retiredCard: 이 삭제로 그 품명 카드가 고아가 되어 같은 트랜잭션에서 정리됐으면 그 스냅샷(신고 f3866bca). 지출 삭제 적용취소
+// 토큰(ExpenseDeleteUndo)과 따로 돌려준다. 화면은 '재고 카드 …도 정리됨 · 적용취소' 를 띄우고, 삭제의 적용취소도 카드를 먼저 되살린다.
+// keepOrphanCard: 카드 정리를 끈다. 적용취소 길이 없는 부르는 쪽(엑셀 가져오기 '교체')이 쓴다. 그 자리에서 카드를 지우면 되살릴 길이
+// 없다(독립 검수 R6). 남은 카드는 감지 check-tracked-orphans 가 실패나 참고 목록으로 올린다.
+export async function deleteExpense(id: string, opts?: { adjustStock?: boolean; keepOrphanCard?: boolean }): Promise<{ ok: true; undo: ExpenseDeleteUndo; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()   // 영업장 스코프 — 기존 누락 보강(멀티테넌트, §4 2026-07-14)
@@ -1994,7 +2034,7 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
         }
       }
     }
-    const undo = await prisma.$transaction(async tx => {
+    const { undo, retiredCard } = await prisma.$transaction(async tx => {
       const target = await tx.expense.findFirst({ where: { id, propertyId } })
       if (!target) throw new Error('지출을 찾을 수 없습니다.')
       const order = target.orderId ? await tx.expenseOrder.findFirst({ where: { id: target.orderId } }) : null
@@ -2060,7 +2100,10 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
           await tx.expenseOrder.deleteMany({ where: { id: target.orderId } })
         }
       }
-      return {
+      // 그 품명의 마지막 재고 구매를 지웠고 카드에 다른 기록도 없으면 카드도 정리한다(고아 카드, 신고 f3866bca).
+      // 영업장은 지운 지출 행의 값이다. 재고 제외·배송비 행을 지운 것이면 카드 쪽 셈이 안 바뀌어 대개 아무것도 안 한다.
+      const retiredCard = opts?.keepOrphanCard ? null : await retireTrackedItemIfOrphan(tx, target.propertyId, target.category, target.itemLabel)
+      const undo: ExpenseDeleteUndo = {
         expense: target as unknown as Record<string, unknown>,
         order: order as unknown as Record<string, unknown> | null,
         shippingRows, freedSiblingIds,
@@ -2069,10 +2112,11 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
         shift,
         clearedOverride,
       }
+      return { undo, retiredCard }
     })
     revalidatePath('/finance')
-    if (undo.stockCheckIds.length > 0 || undo.shift) revalidatePath('/inventory')
-    return { ok: true, undo }
+    if (undo.stockCheckIds.length > 0 || undo.shift || retiredCard) revalidatePath('/inventory')
+    return { ok: true, undo, ...(retiredCard ? { retiredCard } : {}) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
@@ -2620,11 +2664,15 @@ export async function mergeItemNames(canonical: string, members: string[]): Prom
     // 되돌리기용 — 변경 전 지출/소모품 라벨 기록
     const affExp = await prisma.expense.findMany({ where: { propertyId, itemLabel: { in: olds } }, select: { id: true, itemLabel: true } })
     const trackedToRename: { id: string; oldLabel: string }[] = []
+    // 대표명 카드와 겹쳐 개명하지 못한 옛 카드. 지출이 모두 대표명으로 옮겨 가 고아가 되면 같은 트랜잭션에서 정리하고,
+    // 그 스냅샷을 병합 기록에 실어 병합 적용취소가 같은 id 로 되살린다(독립 검수 R8 a, 2026-10-27). 기록이 남은 카드는 종전대로 둔다(재고 병합 안내).
+    const conflictCards: { category: string; label: string }[] = []
     for (const old of olds) {
       const t = await prisma.trackedItem.findFirst({ where: { propertyId, label: old }, select: { id: true, category: true } })
       if (t) {
         const conflict = await prisma.trackedItem.findUnique({ where: { propertyId_category_label: { propertyId, category: t.category, label: canon } }, select: { id: true } })
         if (!conflict) trackedToRename.push({ id: t.id, oldLabel: old })  // 충돌 시 카드 병합은 재고관리 병합 사용
+        else conflictCards.push({ category: t.category, label: old })
       }
     }
     // 새로 만들 별칭(기존에 없던 키만 — undo 때만 삭제, 기존 별칭은 보존)
@@ -2638,6 +2686,11 @@ export async function mergeItemNames(canonical: string, members: string[]): Prom
     await prisma.$transaction(async (tx) => {
       await tx.expense.updateMany({ where: { propertyId, itemLabel: { in: olds } }, data: { itemLabel: canon } })
       for (const t of trackedToRename) await tx.trackedItem.update({ where: { id: t.id }, data: { label: canon } })
+      const retiredCards: TrackedItemDeleteUndo[] = []
+      for (const c of conflictCards) {
+        const r = await retireTrackedItemIfOrphan(tx, propertyId, c.category, c.label)
+        if (r) retiredCards.push(r)
+      }
       for (const old of olds) {
         const key = normalizeItemName(old)
         await tx.itemNameAlias.upsert({
@@ -2649,7 +2702,7 @@ export async function mergeItemNames(canonical: string, members: string[]): Prom
       await tx.itemNameMergeRun.create({
         data: {
           propertyId, canonical: canon, memberCount: olds.length, newAliasKeys,
-          affected: { expenses: affExp.map(e => ({ id: e.id, oldLabel: e.itemLabel })), tracked: trackedToRename },
+          affected: { expenses: affExp.map(e => ({ id: e.id, oldLabel: e.itemLabel })), tracked: trackedToRename, ...(retiredCards.length ? { retiredCards } : {}) } as unknown as Prisma.InputJsonValue,
         },
       })
     })
@@ -2686,8 +2739,13 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
       assets?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText?: string | null; oldQtyValue?: number | null; oldQtyUnit: string | null; oldDetail: string | null }[]
       // 비품 합치기가 함께 옮긴 배정 이력(2026-09-16 이력 고아 봉합). 옛 이력에는 이 키가 없다.
       assetLogs?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText: string | null }[]
+      // 개명하지 못해 고아가 된 옛 카드의 스냅샷(2026-10-27). 옛 기록에는 이 키가 없다.
+      retiredCards?: TrackedItemDeleteUndo[]
     } | null
     await prisma.$transaction(async (tx) => {
+      // 정리한 옛 카드를 같은 id 로 먼저 되살린다(지출이 옛 이름으로 돌아오면 이을 카드가 있어야 한다). 그 사이 같은 이름 카드가
+      // 생겼으면(clash) 되살리지 않고 지출만 돌린다. 영업장은 세션 값이다.
+      for (const c of aff?.retiredCards ?? []) await restoreTrackedItemTx(tx, propertyId, c)
       for (const e of aff?.expenses ?? []) { try { await tx.expense.update({ where: { id: e.id }, data: { itemLabel: e.oldLabel } }) } catch { /* 삭제된 행 무시 */ } }
       for (const t of aff?.tracked ?? []) { try { await tx.trackedItem.update({ where: { id: t.id }, data: { label: t.oldLabel } }) } catch { /* skip */ } }
       // 비품 합치기(combineAssets) 원복 — 이름·사양·단위·detail 통째 복구.

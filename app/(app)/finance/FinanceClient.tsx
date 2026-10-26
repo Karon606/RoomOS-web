@@ -42,7 +42,8 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift, undoDeleteTrackedItem, unarchiveTrackedItem } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift, undoDeleteTrackedItem, unarchiveTrackedItem, retireCardAfterExpenseCategoryChange } from '@/app/(app)/inventory/actions'
+import { pushRetiredCardToast, restoreRetiredCardFirst, retiredCardLine } from '@/app/(app)/inventory/retiredCardToast'
 import { askShiftRows } from '@/lib/stockShiftAsk'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getPendingReceiptImage, finalizePendingReceipt } from '@/app/(app)/dashboard/pendingReceipt'
@@ -3098,20 +3099,37 @@ export default function FinanceClient({
         }
         const res = await updateExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
+        // 품명을 바꾸거나 원래 품목 줄을 빼고 나눠 옛 품명 카드가 고아가 됐으면 서버가 정리했다(신고 f3866bca).
+        if (res.retiredCard) pushRetiredCardToast(res.retiredCard, () => router.refresh())
         // 카테고리 변경 + 품목 있음 → 재고 품목도 같이 옮길지 확인(종량제봉투 꼬임 재발 방지, 운영자 요청 2026-07-10)
+        // 묻는 값은 서버가 서명해 돌려준 카테고리 이동 토큰(저장 전·뒤 카테고리와 품명)이다. 화면 상태(detailExp)에서 읽으면
+        // 품명까지 함께 바꾼 저장에서 옛 카드와 새 품명이 갈린다(독립 검수 B2, 2026-10-27). 토큰이 없으면 카테고리를 안 바꾼 저장이다.
         {
-          const newCat = String(fd.get('category') ?? '')
-          const label = detailExp?.itemLabel ?? ''
-          // 비품 전환으로 저장했으면 묻지 않는다. 답이 이미 나왔고, 빈 자동 카드는 저장이 같은 트랜잭션에서 정리했다.
-          if (!durableConv && label && newCat && detailExp && newCat !== detailExp.category) {
-            if (await confirmDialog({
-              title: '재고 품목 카테고리도 같이 바꿀까요?',
-              message: `'${label}' 품목이 '${detailExp.category}' 재고에 등록돼 있다면 '${newCat}'(으)로 함께 이동합니다. 안 바꾸면 재고와 지출의 카테고리가 어긋날 수 있어요.`,
-              confirmLabel: '같이 변경', cancelLabel: '지출만',
-            })) {
-              const sync = await syncTrackedItemCategory(label, detailExp.category, newCat)
+          const mv = res.categoryMove
+          // 비품 전환으로 저장했으면 서버가 토큰을 안 낸다. 답이 이미 나왔고, 빈 자동 카드는 저장이 같은 트랜잭션에서 정리했다.
+          if (!durableConv && mv) {
+            const newCat = mv.toCategory
+            // 정본 3지선다(§27). 취소·닫기는 null 이라 카드를 건드리지 않는다(종전 확인창은 닫기도 '지출만'으로 읽혔다, 독립 검수 R3).
+            // 한 흐름의 낱말은 '재고 카드' 하나다(물음·정리 토스트·고아 정리 토스트, 재검수 권고 4). 문체는 앱 정본 '-습니다'.
+            const pick = await choiceDialog({
+              title: '재고 카드 카테고리도 같이 바꿀까요?',
+              message: `'${mv.fromLabel}' 재고 카드가 '${mv.fromCategory}'에 있으면 '${newCat}'(으)로 함께 옮깁니다. 지출만 바꾸면 카드는 '${mv.fromCategory}'에 남고, 그 카드에 남은 구매·기록이 없으면 정리합니다.`,
+              confirmLabel: '같이 변경', altLabel: '지출만', cancelLabel: '취소',
+            })
+            // '지출만'. 카드는 옛 카테고리에 남는다. 그 카드에 재고 구매·기록이 하나도 안 남았으면 고아라 정리한다(신고 f3866bca).
+            if (pick === 'alt') {
+              const r = await retireCardAfterExpenseCategoryChange(mv)
+              if (!r.ok) pushToast('error', r.error)
+              else if (r.retiredCard) pushRetiredCardToast(r.retiredCard, () => router.refresh())
+            }
+            if (pick === 'confirm') {
+              const sync = await syncTrackedItemCategory(mv)
               if (!sync.ok) pushToast('error', sync.error)
-              else if (sync.moved) pushToast('success', `재고 품목을 '${newCat}'(으)로 옮겼습니다`)
+              else if (sync.moved) pushToast('success', `재고 카드를 '${newCat}'(으)로 옮겼습니다`)
+              // 옮길 자리에 같은 이름 카드가 있어 지출은 그 카드로 붙고, 고아가 된 옛 카드는 정리했다(R8 b).
+              else if (sync.retiredCard) pushRetiredCardToast(sync.retiredCard, () => router.refresh())
+              // 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 카드는 그것들의 카드로 둔다(R8 d).
+              else if (sync.kept) pushToast('info', '재고 카드는 그대로 둡니다', { detail: `'${mv.fromCategory}'에 같은 품목의 다른 구매가 남아 있습니다.` })
               // 비추적 카테고리행 — 카드를 옮기는 대신 정리(좀비 카드·이중 표시 방지, 2026-07-22)
               // 정리에도 적용취소가 있다(§16). 지운 카드는 같은 id 로 되살리고, 숨긴 카드는 숨김을 푼다.
               // 지출 카테고리 수정은 그대로 남는다(되돌리는 것은 카드 정리뿐이다).
@@ -3119,13 +3137,13 @@ export default function FinanceClient({
                 const { deleteUndo, archivedId } = sync
                 const undoRetire = deleteUndo ? () => undoDeleteTrackedItem(deleteUndo) : archivedId ? () => unarchiveTrackedItem(archivedId) : null
                 // 결과는 짧게, 까닭은 둘째 줄로(§15 장문형, 웹디자이너 패스 D10. 320px 에서 4줄이던 한 덩이).
-                pushToast('info', '소모품 카드를 정리했습니다', {
+                pushToast('info', '재고 카드를 정리했습니다', {
                   // 둘째 줄은 한 문장(웹디자이너 2차 N6). 주어는 품목이다(3차 검수 참고). 비품·자재에서 관리되는 것은 카테고리가
                   // 아니라 이 품목이다. 카테고리 뒤에 '카테고리라'를 붙여 조사가 이름 받침에 안 매인다. '비품·자재'는 좁은 폭에서 가운뎃점에서
                   // 갈려 '비품 화면'으로 쓴다(웹디자이너 10). 실측 320px·글자 125% 세 줄, 브라우저 확대 125%(256px) 다섯 줄(2b C2).
                   detail: `이 품목은 '${newCat}' 카테고리라 비품 화면에서 관리됩니다.`,
                   ...(undoRetire ? { action: { label: '적용취소', run: () => { void undoRetire().then(r => {
-                    if (r.ok) { pushToast('info', `소모품 카드 정리를 적용취소했습니다${SEP}목록에\u00a0다시\u00a0표시`); router.refresh() }
+                    if (r.ok) { pushToast('info', `재고 카드 정리를 적용취소했습니다${SEP}목록에\u00a0다시\u00a0표시`); router.refresh() }
                     else pushToast('error', r.error)
                   }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } } } : {}),
                 })
@@ -3229,8 +3247,12 @@ export default function FinanceClient({
         const res = await deleteExpense(exp.id, adjustStock ? { adjustStock } : undefined)
         if (!res.ok) { pushToast('error', res.error); return }
         setDetailExp(null); router.refresh()
+        // 이 삭제로 카드가 고아가 되어 정리됐으면(retiredCard) 한 토스트의 둘째 줄로 알리고, 적용취소 한 번이 카드를 먼저 같은 id 로
+        // 되살린 뒤 지출을 복원한다(신고 f3866bca, 재검수 권고 4). 형제 '지출 수정됨 · 재고 점검 N건의 잔량도 함께 조정했습니다' 와 같은 문법이다.
+        const retiredCard = res.retiredCard
         pushToast('success', isFixed ? `${slotMon} 기록이 취소되었습니다` : '삭제됨', {
-          action: { label: '적용취소', run: () => { void undoDeleteExpense(res.undo).then(r => {
+          ...(retiredCard ? { detail: retiredCardLine(retiredCard) } : {}),
+          action: { label: '적용취소', run: () => { void restoreRetiredCardFirst(retiredCard).then(() => undoDeleteExpense(res.undo)).then(r => {
             if (r.ok) { pushToast('info', isFixed ? `${slotMon} 기록을 복원했습니다` : '지출을 복원했습니다'); router.refresh() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
@@ -4824,7 +4846,11 @@ export default function FinanceClient({
                         pushToast('success', '재고 계산에 다시 포함됨', shiftedCount > 0 ? {
                           detail: `재고 점검 ${shiftedCount}건의 잔량도 함께 더했습니다.`,
                           action: { label: '적용취소', run: () => { void excludeExpenseFromInventory(detailExp.id, { adjustFollowing: true }).then(u => {
-                            if (u.ok) { pushToast('info', '재고 계산에서 다시 제외했습니다.'); router.refresh() }
+                            if (u.ok) {
+                              pushToast('info', '재고 계산에서 다시 제외했습니다.'); router.refresh()
+                              // 다시 제외로 그 품명 카드가 고아가 되면 서버가 정리한다(신고 f3866bca).
+                              if (u.retiredCard) pushRetiredCardToast(u.retiredCard, () => router.refresh())
+                            }
                             else pushToast('error', u.error)
                           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
                         } : undefined)

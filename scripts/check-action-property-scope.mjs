@@ -403,6 +403,27 @@ const AXES = [
     must: [[/const itemIds = \[\.\.\.new Set\(\[\.\.\.undo\.autoChecks\.map\(c => c\.trackedItemId\), \.\.\.\(undo\.shift \? \[undo\.shift\.trackedItemId\] : \[\]\)\]\)\][\s\S]*?ITEM_MERGED_UNDO_DENIED/, '자동 점검·조정의 품목이 사라졌을 때 복원 전체를 거절하지 않는다(수령만 되살아 재고가 틀린다)']],
     mustNot: [[/if \(!ownItems\.has\(c\.trackedItemId\)\) continue/, '사라진 품목의 자동 점검을 건너뛰고 수령만 되살린다']],
   },
+  // 재고 카드 삭제·되살림·고아 정리(2026-10-27 독립 검수 R2). 카드 id·토큰은 화면에서 온다.
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'deleteTrackedItemIfEmpty',
+    must: [[/trackedItem\.findFirst\(\{\s*where:\s*\{\s*id,\s*propertyId\s*\}[^\n]*\n\s*if \(!it\) return \{ ok: false/, '지울 카드를 영업장 범위로 먼저 읽고 없으면 닫지 않는다']],
+    mustNot: [[/trackedItem\.delete\(\{\s*where:\s*\{\s*id\s*\}\s*\}\)[\s\S]*trackedItem\.findFirst/, '확인보다 먼저 지운다']],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoDeleteTrackedItem',
+    must: [[/const propertyId = await getPropertyId\(\)\n\s*const r = await prisma\.\$transaction\(tx => restoreTrackedItemTx\(tx, propertyId, undo\)\)/, '되살림의 영업장을 세션에서 정하지 않는다(토큰의 영업장을 믿는다)']],
+    mustNot: [[/undo\.propertyId|propertyId: undo\./, '토큰의 영업장 값을 쓴다']],
+  },
+  // '지출만'·'같이 변경' 은 카테고리 이동 토큰만 받는다(재검수 권고 1). 공용 관문(readMoveForExpense, 내보내지 않는 함수라 그 몸통은
+  // check-tracked-orphan-wiring 이 본다)이 서명·지출 영업장·지금 카테고리를 본다.
+  ...['retireCardAfterExpenseCategoryChange', 'syncTrackedItemCategory'].map(fn => ({
+    file: 'app/(app)/inventory/actions.ts',
+    fn,
+    must: [[/const m = await readMoveForExpense\(propertyId, token\)\n\s*if \(!m\.ok\) return m/, '카테고리 이동 토큰을 공용 관문으로 확인하지 않는다(날값으로 카드를 옮기거나 지운다)']],
+    mustNot: [[/\(label: string, fromCategory: string, toCategory: string/, '날값(품명·카테고리)을 받는다']],
+  })),
 ]
 // 표식 뒤 축에 순서 검사를 켠다.
 {

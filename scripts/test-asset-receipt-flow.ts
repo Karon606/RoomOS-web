@@ -49,6 +49,7 @@ async function main() {
   const prisma = (await import('@/lib/prisma')).default
   const assets = await import('@/app/(app)/inventory/assets/actions')
   const inv = await import('@/app/(app)/inventory/actions')
+  const snapMod = await import('@/app/(app)/inventory/trackedItemSnapshot')
   const fin = await import('@/app/(app)/finance/actions')
   const rp = await import('@/app/(app)/inventory/assets/receiptPlacement')
   const gate = await import('@/app/(app)/inventory/receiptQtyGate')
@@ -273,7 +274,10 @@ async function main() {
   // ── S2 '같이 변경' 카드 정리를 적용취소로 같은 id 로 되살린다 ───────────────────────────
   {
     const card = await prisma.trackedItem.create({ data: { propertyId: P1, category: '소모품비', label: '갈란츠 냉장고', trackUnit: 'spec', specUnit: 'L' } })
-    const r = await inv.syncTrackedItemCategory('갈란츠 냉장고', '소모품비', '수선유지비')
+    // '같이 변경'은 지출 수정이 서명해 돌려준 카테고리 이동 토큰만 받는다(2026-10-27 고아 카드 재검수 권고 1). 이미 옮긴 지출과 그 토큰을 세운다.
+    const movedExp = (await prisma.expense.create({ data: { propertyId: P1, date: day('2026-10-14'), amount: 1, category: '수선유지비', itemLabel: '갈란츠 냉장고' } })).id as string
+    const mv = J(snapMod.signCategoryMove(P1, { v: 1, expenseId: movedExp, fromCategory: '소모품비', fromLabel: '갈란츠 냉장고', toCategory: '수선유지비', toLabel: '갈란츠 냉장고' }))
+    const r = await inv.syncTrackedItemCategory(mv)
     eq('S2 빈 카드 삭제 + 토큰', r.ok ? [r.retired, !!r.deleteUndo] : r, ['deleted', true])
     eq('S2 카드 없음', await prisma.trackedItem.count({ where: { id: card.id } }), 0)
     if (r.ok && r.deleteUndo) {
@@ -281,7 +285,7 @@ async function main() {
       eq('S2 적용취소: 같은 id 로 되살림', [u.ok, (await prisma.trackedItem.findUnique({ where: { id: card.id } }))?.label], [true, '갈란츠 냉장고'])
     }
     await prisma.stockCheck.create({ data: { trackedItemId: card.id, date: day('2026-10-14'), remainingQty: 1 } })
-    const r2 = await inv.syncTrackedItemCategory('갈란츠 냉장고', '소모품비', '수선유지비')
+    const r2 = await inv.syncTrackedItemCategory(mv)
     eq('S2 기록 있으면 숨김 + 토큰', r2.ok ? [r2.retired, r2.archivedId === card.id] : r2, ['archived', true])
     if (r2.ok && r2.archivedId) {
       const u2 = await inv.unarchiveTrackedItem(r2.archivedId)

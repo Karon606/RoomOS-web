@@ -111,6 +111,7 @@ import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '
 import { conflictingPathName } from '@/lib/locationPaths'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { useReasonOptions, useReasonOptionList } from '@/components/ui/useReasonOptions'
+import { restoreRetiredCardFirst, retiredCardLine } from './retiredCardToast'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
 const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
@@ -2456,7 +2457,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} cardQtyUnit={data.item.qtyUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} cardQtyUnit={data.item.qtyUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} onGone={() => { onChange(); onClose() }} loadingId={loadingId} />)}
                   </ul>
                 )}
               </div>
@@ -2830,7 +2831,7 @@ const TL_GLYPH_OUT = <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
 const TL_CARD = 'rounded-md border border-[var(--warm-border)] px-3 py-2'
 const TL_CAPTION = 'text-[0.6875rem] text-[var(--warm-muted)] break-keep [overflow-wrap:anywhere]'
 
-function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
+function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, onGone, loadingId }: {
   entry: TimelineEntry; trackedItemId: string; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   // 품목 카드의 수량 단위. 구매 수량이 비어 도착 수량을 받을 때 칸 단위로 쓴다(서버 fillQtyUnit 과 같은 순서).
   cardQtyUnit?: string | null
@@ -2842,6 +2843,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
   onDeleteDisposal: (id: string) => void
   onConfirmReceipt?: (id: string, locationId?: string, qty?: number, fillQty?: number) => void
   onChanged: () => void
+  // 이 행의 쓰기로 품목 카드 자체가 정리됐을 때(재고 제외로 고아가 된 카드, 신고 f3866bca). 모달을 닫고 목록만 다시 읽는다.
+  onGone?: () => void
   loadingId: string | null
 }) {
   const pending = loadingId === entry.id
@@ -3079,15 +3082,20 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
           // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능. 함께 조정했다면 포함도 같은 대칭 조정으로.
+          // 이 제외로 카드가 고아가 되어 정리됐으면(retiredCard) 제외의 적용취소가 카드를 먼저 같은 id 로 되살린다.
           const undoAdjust = adjustFollowing
+          const retiredCard = res.retiredCard
+          // 카드 정리도 같은 토스트의 둘째 줄로 알린다(적용취소 한 번에 둘 다 되돌린다, 재검수 권고 4).
+          const detail = [undoAdjust ? '반영돼 있던 점검 잔량도 함께 뺐습니다.' : null, retiredCard ? retiredCardLine(retiredCard) : null].filter(Boolean).join(' ')
           pushToast('success', '구매를 재고에서 제외했습니다', {
-            ...(undoAdjust ? { detail: '반영돼 있던 점검 잔량도 함께 뺐습니다.' } : {}),
-            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id, undoAdjust ? { adjustFollowing: true } : undefined).then(r => {
+            ...(detail ? { detail } : {}),
+            action: { label: '적용취소', run: () => { void restoreRetiredCardFirst(retiredCard).then(() => includeExpenseInInventory(entry.id, undoAdjust ? { adjustFollowing: true } : undefined)).then(r => {
               if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
               else pushToast('error', r.error)
             }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
           })
-          onChanged()
+          if (retiredCard) (onGone ?? onChanged)()
+          else onChanged()
         }}
         pending={savePending}
         error={editError}

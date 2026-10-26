@@ -49,8 +49,9 @@ must(FC, fc, [
   [/const durableAsk = detailExp && !detailExp\.isShipping && !detailExp\.excludeFromInventory && editItems\.length > 0\s*\? await askDurableConvert\(\{/, 'B2 수정이 품목 저장에서 전환 물음을 부르지 않는다'],
   [/if \(durableConv\.plan\.adjust\.needs\) fd\.set\('convertAdjust', '1'\)/, 'B4·R1 조정이 필요한 F3 에 함께 조정 표식을 싣지 않는다(수가 0 이어도)'],
   [/`지출 등록됨\$\{SEP\}\$\{Number\(savedTm\.slice\(5, 7\)\)\}월분`/, "2b R1 등록 토스트 머리줄 '· 9월분' 구분점 앞을 묶지 않는다(접히면 둘째 줄이 '·' 로 시작한다)"],
-  [/`소모품 카드 정리를 적용취소했습니다\$\{SEP\}목록에\\u00a0다시\\u00a0표시`/, "후속 검수 권장 2 카드 정리 적용취소 결과의 구분점이 SEP 가 아니다(접히면 둘째 줄이 '·' 로 시작한다)"],
-  [/if \(!durableConv && label && newCat && detailExp && newCat !== detailExp\.category\) \{/, "B2 전환한 저장에서 '재고 품목 카테고리도 같이 바꿀까요?'를 띄운다(답이 이미 나왔다)"],
+  [/`재고 카드 정리를 적용취소했습니다\$\{SEP\}목록에\\u00a0다시\\u00a0표시`/, "후속 검수 권장 2 카드 정리 적용취소 결과의 구분점이 SEP 가 아니다(접히면 둘째 줄이 '·' 로 시작한다)"],
+  // 2026-10-27 고아 카드 독립 검수 B2: 물음의 값은 서버가 서명한 카테고리 이동 토큰(res.categoryMove)이고, 전환한 저장은 서버가 토큰을 안 낸다(두 겹).
+  [/if \(!durableConv && mv\) \{/, "B2 전환한 저장에서 '재고 품목 카테고리도 같이 바꿀까요?'를 띄운다(답이 이미 나왔다)"],
   [/if \(!durableConv && detailExp\?\.receivedAt && savedItems\.length === 1\) \{/, 'B4 전환한 저장에서 수량 정정 물음을 띄운다(수령분은 전환이 통째로 걷는다)'],
   [/if \(!durableAsk\.asked\) \{\s*const decided = await confirmCategoryAgainstHistory\(/, '디자이너 8 전환 창을 띄운 등록에서 카테고리 이력 물음이 다시 뜬다(답과 상관없이 건너뛴다)'],
   [/label: CONVERT_UNDO_LABEL, run: \(\) => runDurableUndo\(addUndo, 'F1', durableConv\.from\)/, 'B3·디자이너 2 등록 토스트가 전환 적용취소를 싣지 않는다'],

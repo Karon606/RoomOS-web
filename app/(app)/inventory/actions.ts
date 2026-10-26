@@ -43,7 +43,7 @@ import {
   QTY_FILL_DOMAIN, canonicalQtyFill, INVENTORY_RECEIPT_DENY_UNTRACKED,
 } from './receiptQtyGate'
 // 품목 삭제 스냅샷·되살림 공용층(같은 id 로 되살린다)
-import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
+import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, retireTrackedItemIfOrphan, readCategoryMove, categoryMoveSigningAvailable, CARD_MOVE_STALE, type CategoryMoveToken, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 // 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
 import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
@@ -2395,17 +2395,19 @@ export async function updateExpenseFromInventory(id: string, data: {
   }
 }
 
-export async function excludeExpenseFromInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+// retiredCard: 이 제외로 그 품명 카드가 고아가 되어 정리됐으면 그 스냅샷(화면이 '재고 카드 …도 정리됨 · 적용취소' 로 알리고
+// 제외의 적용취소도 카드를 먼저 같은 id 로 되살린다). 정본 retireTrackedItemIfOrphan(신고 f3866bca).
+export async function excludeExpenseFromInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   return setExpenseInventoryExclusion(id, true, opts)
 }
 
 // 재고 제외 적용취소(다시 포함) — 제외가 일방향이라 실수 시 되돌릴 수 없던 문제의 역방향 액션.
 // adjustFollowing 은 제외가 조정한 점검을 대칭 계획(planStockShift 삭제 대칭)으로 되살린다.
-export async function includeExpenseInInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function includeExpenseInInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   return setExpenseInventoryExclusion(id, false, opts)
 }
 
-async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2447,13 +2449,21 @@ async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?:
       durableGoods: goodsAfter, received: !!e.receivedAt, roomId: place.roomId,
       assignedLocationId: e.assignedLocationId, isCommonAsset: e.isCommonAsset, existingStored: e.storedLocationId,
     })
-    await prisma.$transaction(async tx => {
+    // 제외로 그 품명의 재고 구매가 0 이 되고 다른 기록도 없으면 카드를 같은 트랜잭션에서 정리한다(고아 카드, 신고 f3866bca).
+    // 영업장은 지출 행의 값이다(위에서 세션 영업장과 같은지 확인했다).
+    const retiredCard = await prisma.$transaction(async tx => {
       await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude, roomId: place.roomId, targetRoomId: place.targetRoomId, storedLocationId } })
       if (rows.length > 0 && itemId) await applyShiftRows(tx, itemId, rows)
+      return exclude ? retireTrackedItemIfOrphan(tx, e.propertyId, e.category, e.itemLabel) : null
     })
+    // 다시 포함했는데 그 품명 카드가 없으면(정리됐거나 처음부터 없었다) 지출 저장과 같은 증분 시드로 카드를 세운다.
+    // 시드는 카드가 이미 있으면(제외의 적용취소가 같은 id 로 먼저 되살린 경우 포함) 건너뛰고, 숨긴 묶음은 다시 만들지 않는다.
+    // 같은 카테고리에 비슷한 이름 카드(정규화 이름이 같거나 LINK 규칙)가 있으면 새 카드를 만들지 않고 결정 대기로 보류한다.
+    // 그 구매는 재고 화면의 병합 배너(getPendingMergeDecisions)에서 어느 카드에 넣을지 고른다(독립 검수 R4, 동작은 시드 정본 그대로).
+    if (!exclude && e.itemLabel) await seedTrackedItemsFromExpenses([e.itemLabel]).catch(() => {})
     revalidatePath('/inventory')
     revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, ...(retiredCard ? { retiredCard } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4450,6 +4460,41 @@ export async function undoDeleteTrackedItem(undo: TrackedItemDeleteUndo): Promis
   }
 }
 
+// ── 카테고리 이동 토큰 확인(두 답의 공용 관문). 모양이 틀리거나, 키가 있는데 서명이 안 맞거나, 지출이 이 영업장 것이 아니거나,
+//    지금 카테고리가 토큰의 저장 뒤 카테고리와 다르면(그 사이 다시 바꿨다) 막는다. unsigned 는 키가 없어 서명 없이 나간 토큰이다.
+async function readMoveForExpense(propertyId: string, raw: unknown): Promise<{ ok: true; t: CategoryMoveToken; unsigned: boolean } | { ok: false; error: string }> {
+  const r = readCategoryMove(propertyId, raw)
+  if (!r) return { ok: false, error: CARD_MOVE_STALE }
+  const unsigned = !r.verified
+  if (unsigned && categoryMoveSigningAvailable(propertyId)) return { ok: false, error: CARD_MOVE_STALE }
+  const e = await prisma.expense.findFirst({ where: { id: r.token.expenseId, propertyId }, select: { category: true } })
+  if (!e) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+  if (e.category !== r.token.toCategory || r.token.fromCategory === r.token.toCategory) return { ok: false, error: CARD_MOVE_STALE }
+  return { ok: true, t: r.token, unsigned }
+}
+
+// ── 지출 카테고리를 바꾼 뒤 '지출만'(재고 카드는 안 옮김)으로 답했을 때의 옛 카드 정리(신고 f3866bca).
+//    옛 카드는 저장 **전** (카테고리, 품명)으로 찾는다. 그 값은 지출 수정이 서명해 돌려준 토큰(CategoryMoveToken)에서만 읽는다
+//    (독립 검수 B2, 2026-10-27). 영업장은 세션이다. 옛 카드에 재고 구매·기록이 하나도 안 남았으면 고아라 정리한다(정본 retireTrackedItemIfOrphan).
+//    서명 키가 없어 서명 없이 나간 토큰이면 카드는 건드리지 않는다(지출만 바뀐 그대로, 재검수 권고 5).
+export async function retireCardAfterExpenseCategoryChange(token: CategoryMoveToken): Promise<{ ok: true; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const m = await readMoveForExpense(propertyId, token)
+    if (!m.ok) return m
+    if (m.unsigned) return { ok: true }
+    const t = m.t
+    const retiredCard = await prisma.$transaction(tx => retireTrackedItemIfOrphan(tx, propertyId, t.fromCategory, t.fromLabel))
+    if (!retiredCard) return { ok: true }
+    revalidatePath('/inventory')
+    return { ok: true, retiredCard }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '재고 카드 정리에 실패했습니다.' }
+  }
+}
+
 // ── 지출 카테고리 수정 → 재고 품목 카테고리 동기화(운영자 확인 후 호출, 2026-07-10)
 //    같은 라벨 품목이 대상 카테고리에 이미 있으면 꼬임 방지를 위해 거부(병합은 재고 관리에서).
 //    대상이 비추적 카테고리(수선유지비 등)면 카드를 옮기지 않는다 — 옮기면 소모품 화면에 좀비 카드로 남고
@@ -4457,22 +4502,30 @@ export async function undoDeleteTrackedItem(undo: TrackedItemDeleteUndo): Promis
 //    이 경우 재고 기록 없으면 카드 삭제, 있으면 숨김(isArchived) 처리하고 결과를 알린다.
 //    정리 둘 다 적용취소가 있다(§16). 삭제는 품목 삭제와 같은 스냅샷(TrackedItemDeleteUndo)으로 같은 id 로
 //    되살리고(undoDeleteTrackedItem), 숨김은 숨김 해제(unarchiveTrackedItem)로 되돌린다. 종전에는 둘 다 없었다.
-export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived'; deleteUndo?: TrackedItemDeleteUndo; archivedId?: string } | { ok: false; error: string }> {
+// 값은 지출 수정이 서명해 돌려준 카테고리 이동 토큰에서만 읽는다(재검수 권고 1, 서버 액션을 직접 불러 날값을 넣는 길을 닫는다).
+// 같은 저장에서 품명도 바꿨으면(toLabel) 카드를 옮기며 이름도 맞춘다(옛 이름으로 옮기면 지출과 카드가 갈린다, 독립 검수 B2).
+// retiredCard: 대상 카테고리에 같은 이름 카드가 있어 옮길 수 없는데 옛 카드가 고아면 정리한 스냅샷(R8 b).
+// kept: 비추적 대상인데 옛 카테고리에 같은 품명의 다른 재고 구매가 남아 카드를 그대로 둔 경우(R8 d).
+export async function syncTrackedItemCategory(token: CategoryMoveToken): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived'; deleteUndo?: TrackedItemDeleteUndo; archivedId?: string; kept?: boolean; retiredCard?: TrackedItemDeleteUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    if (!label.trim() || fromCategory === toCategory) return { ok: true, moved: false }
+    const m = await readMoveForExpense(propertyId, token)
+    if (!m.ok) return m
+    const { fromLabel: label, fromCategory, toCategory } = m.t
     const item = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: fromCategory }, include: { locations: true, checkDrafts: true } })
     if (!item) return { ok: true, moved: false }
+    const newLabel = m.t.toLabel?.trim() || label
 
     const trackedCats = await getTrackedCategories(propertyId)
     if (!trackedCats.includes(toCategory)) {
       // 비추적행 — 재고 카드는 정리하고, 물건 자체는 비품·자재 화면(지출 기반)이 이어받는다.
-      const [checkCount, addCount, dispCount] = await Promise.all([
-        prisma.stockCheck.count({ where: { trackedItemId: item.id } }),
-        prisma.stockAddition.count({ where: { trackedItemId: item.id } }),
-        prisma.stockDisposal.count({ where: { trackedItemId: item.id } }),
-      ])
+      // 판정은 품목 삭제와 같은 계수(itemRecordCounts)다. 종전에는 점검·입수·폐기만 세서, 옛 카테고리에 같은 품명의 다른 재고 구매가
+      // 남아 있어도 카드를 지웠다(그 구매들이 재고에서 사라지는 데이터 손실 방향, 독립 검수 R8 d 2026-10-27). 남아 있으면 카드는
+      // 그것들의 카드라 옮기지도 숨기지도 지우지도 않는다.
+      const n = await itemRecordCounts(propertyId, item)
+      if (n.expense > 0) return { ok: true, moved: false, kept: true }
+      const [checkCount, addCount, dispCount] = [n.check, n.addition, n.disposal]
       if (checkCount + addCount + dispCount === 0) {
         const deleteUndo = await trackedItemDeleteSnapshot(propertyId, item)
         await prisma.trackedItem.delete({ where: { id: item.id } })
@@ -4485,9 +4538,15 @@ export async function syncTrackedItemCategory(label: string, fromCategory: strin
       return { ok: true, moved: false, retired: 'archived', ...(item.isArchived ? {} : { archivedId: item.id }) }
     }
 
-    const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: toCategory }, select: { id: true } })
-    if (clash) return { ok: false, error: `'${toCategory}'에 같은 이름의 품목이 이미 있습니다. 재고 관리에서 병합해 주세요.` }
-    await prisma.trackedItem.update({ where: { id: item.id }, data: { category: toCategory } })
+    const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label: newLabel, category: toCategory }, select: { id: true } })
+    if (clash) {
+      // 옮길 자리에 같은 이름 카드가 있다. 지출은 그 카드에 붙는다. 옛 카드에 재고 구매·기록이 하나도 안 남았으면 고아라 정리한다
+      // (독립 검수 R8 b, 정본 retireTrackedItemIfOrphan). 남았으면 종전대로 병합을 안내한다.
+      const retiredCard = await prisma.$transaction(tx => retireTrackedItemIfOrphan(tx, propertyId, fromCategory, label))
+      if (retiredCard) { revalidatePath('/inventory'); revalidatePath('/finance'); return { ok: true, moved: false, retiredCard } }
+      return { ok: false, error: `'${toCategory}'에 같은 이름의 품목이 이미 있습니다. 재고 관리에서 병합해 주세요.` }
+    }
+    await prisma.trackedItem.update({ where: { id: item.id }, data: { category: toCategory, ...(newLabel !== label ? { label: newLabel } : {}) } })
     revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true, moved: true }
   } catch (err) {
