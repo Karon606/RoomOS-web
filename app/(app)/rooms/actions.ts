@@ -56,6 +56,14 @@ async function getPropertyId() {
   return propertyId
 }
 
+// 화면에서 온 계약·입주자 id 가 이 영업장 것인가(2026-10-23 운영자 승인). 아니면 거절 문구, 맞으면 null.
+// 수납·청소비 행에 남의 영업장 계약이 걸리면 그 계약의 미납·이월이 다시 계산되고 남의 입주자가 내 장부에 선다.
+async function leaseTenantScopeDenial(propertyId: string, leaseTermId: string, tenantId: string): Promise<string | null> {
+  if (!(await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } }))) return '계약 정보를 찾을 수 없습니다.'
+  if (!(await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } }))) return '입주자를 찾을 수 없습니다.'
+  return null
+}
+
 // ============================================================
 type RoomRow = {
   roomId: string; roomNo: string; type: string | null; floor: string | null; windowType: string | null; direction: string | null
@@ -893,6 +901,7 @@ export async function savePayment(data: {
   await requireEdit()
   { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
+  { const scopeErr = await leaseTenantScopeDenial(propertyId, data.leaseTermId, data.tenantId); if (scopeErr) return { ok: false, error: scopeErr } }
   // 스탬프는 루프 **밖에서 한 번** 정한다. 안에서 부르면 쪼개진 record 마다 밀리초가 갈려
   // '한 결제 = 한 발행'이라는 사실이 흐려진다(형제 묶음 판정도 createdAt 근사에 기댄다).
   const crStamp = resolveCashReceiptIssuedAt({
@@ -903,8 +912,8 @@ export async function savePayment(data: {
   // 월별 청구액을 서버에서 직접 계산(일할→락인→할인, lib/billing 공용 규칙).
   // 클라이언트가 보낸 expectedAmount(할인 미반영 원금일 수 있음)를 그대로 record 에 락인하면
   // 읽기 엔진의 [저장 청구액 우선] 규칙이 할인을 무효화한다 — lease 조회 실패 시에만 fallback.
-  const billingLease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findUnique({
-    where: { id: data.leaseTermId },
+  const billingLease = await attachDueDayAdjustsOne(prisma, await prisma.leaseTerm.findFirst({
+    where: { id: data.leaseTermId, propertyId },
     select: {
       id: true, rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       isShortTerm: true, moveInDate: true, dueDay: true, cycleDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
@@ -1250,6 +1259,7 @@ export async function saveDepositPayment(data: {
   await requireEdit()
   { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
+  { const scopeErr = await leaseTenantScopeDenial(propertyId, data.leaseTermId, data.tenantId); if (scopeErr) return { ok: false, error: scopeErr } }
   // 보증금 몫과 초과분(이용료) 몫은 한 결제다 — 스탬프도 하나를 나눠 쓴다.
   const crStamp = resolveCashReceiptIssuedAt({
     issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
@@ -1479,6 +1489,7 @@ export async function saveCleaningFeePayment(data: {
     await requireEdit()
     { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
     const propertyId = await getPropertyId()
+    { const scopeErr = await leaseTenantScopeDenial(propertyId, data.leaseTermId, data.tenantId); if (scopeErr) return { ok: false, error: scopeErr } }
     const feeActual = Math.max(0, Math.min(data.totalPaid, data.cleaningFee))
     if (feeActual <= 0) return { ok: false, error: '청소비 금액이 올바르지 않습니다.' }
 
@@ -1556,6 +1567,8 @@ export async function saveReservationDeposit(data: {
       },
     })
     if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
+    // 입주자 id 도 화면에서 온 값이다. 이 영업장 사람만 받는다(2026-10-23 운영자 승인).
+    if (!(await prisma.tenant.findFirst({ where: { id: data.tenantId, propertyId }, select: { id: true } }))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     // 수납 시점에 모드 확정 — 이후 선납 환불(record 소프트삭제) 뒤에도 '안 받음'과 구분 가능.
     await prisma.leaseTerm.update({

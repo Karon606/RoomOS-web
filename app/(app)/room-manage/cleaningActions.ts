@@ -183,6 +183,10 @@ export async function createCleaning(input: {
     const { propertyId } = await requirePropertyAccess()
     const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true } })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    // 연결할 계약도 화면에서 온 값이다. 이 영업장 계약만 받는다(2026-10-23 운영자 승인, 청소비 부담 귀속이 남의 계약으로 가지 않게).
+    if (input.leaseTermId && !(await prisma.leaseTerm.findFirst({ where: { id: input.leaseTermId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    }
     // 사유는 서버가 다시 잰다(2026-10-22 2차, 종전에는 화면이 보낸 글자를 그대로 적었다). 코드 셋(퇴실 청소 따위)은 그대로,
     // 영업장 목록 이름은 그대로, 그 밖의 글은 '기타 · 글'(lib/reasonLists). 체크하면 기록이 선 뒤 목록 끝에 붙인다.
     const reasonSave = await reasonForSave(propertyId, 'cleaningReasons', input.reason, { addToList: input.addReasonToList === true })
