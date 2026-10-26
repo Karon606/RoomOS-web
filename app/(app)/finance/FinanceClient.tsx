@@ -1658,6 +1658,14 @@ function recurringVendorFollowLine(n: number, renamed: boolean): string {
 
 type CategoryTotal = { category: string; total: number }
 
+// 고정지출 행의 구매처(납부처) 캡션(신고 5fa9cf43 결정 E). 고정지출 기록 행에만 '건물 임대료 · 대동빌딩' 꼴로 붙인다.
+// 물품 행은 2026-07-06 '목록에서 구매처 숨김'(7df4b16a) 그대로다. 내역이 비어 구매처가 이미 본문 자리에 선 행과 묶음 행은 안 붙인다.
+// 제목과 구매처가 같은 이름이면('KT' · 'KT') 같은 말을 두 번 하지 않는다.
+function fixedVendorCaption(e: { recurringExpenseId: string | null; detail: string | null; vendor: string | null }, grouped: boolean): string | null {
+  if (!e.recurringExpenseId || grouped || !e.detail || !e.vendor) return null
+  return e.detail.trim() === e.vendor.trim() ? null : e.vendor
+}
+
 export default function FinanceClient({
   expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions, channelOptions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
@@ -4123,8 +4131,9 @@ export default function FinanceClient({
                                     : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(withPlan(grp))}</span>)}
                                   {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
                                 </div>
-                                {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
-                                <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
+                                {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능.
+                                    고정지출 행만 예외로 작은 캡션을 붙인다(신고 5fa9cf43 결정 E, fixedVendorCaption). */}
+                                <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}{(() => { const v = fixedVendorCaption(e, !!grp); return v ? <span className="text-[0.6875rem] text-[var(--warm-muted)]"> · {v}</span> : null })()}</p>
                                 {grp && (item.groupKind === 'order'
                                   ? <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{(() => { const c = externalOrderCaption(e.order?.externalOrderNo, grp); return c ? ` · ${c}` : '' })()}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                   : <p className="text-[0.6875rem] text-[var(--tc-text)] truncate mt-0.5">{roomsLabel(withPlan(grp))}</p>)}
@@ -4242,7 +4251,8 @@ export default function FinanceClient({
                                 </td>
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="truncate">{e.detail ?? '—'}</span>
+                                    {/* 고정지출 행만 구매처를 작은 캡션으로 붙인다(결정 E, 모바일 카드와 같은 판정 fixedVendorCaption). */}
+                                    <span className="truncate">{e.detail ?? '—'}{(() => { const v = fixedVendorCaption(e, !!grp); return v ? <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {v}</span> : null })()}</span>
                                     {item.dateStr.slice(0, 7) === targetMonth && <TargetMonthChip e={e} />}
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{orderChipText(e, grp)}</span>
