@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, type ReactNode } from 'react'
+import { useMemo, useState, useTransition, type ReactNode } from 'react'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { ViewTabs } from '@/components/ui/ViewTabs'
@@ -13,11 +13,14 @@ import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtDateKor } from '@/lib/fmtDate'
 import { kstMonthStr } from '@/lib/kstDate'
 import { useNavRouter } from '@/lib/useNavRouter'
+import { printNeedsShareSheet, useShareSheetPrint } from '@/lib/useDocPrint'
+import { REPORT_BASIS_NOTES } from '@/lib/reportShared'
+import { humanError } from '@/lib/saveStatus'
 
 const fmt = (n: number) => n === 0 ? '—' : fmtWon(n)   // 0 특례만 로컬, 표기는 정본(감사 B4)
 const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
 
-export default function ReportClient({ summary, years, forecast }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary }) {
+export default function ReportClient({ summary, years, forecast, propertyId }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary; propertyId: string }) {
   const router = useNavRouter()   // 이동에 진행바 동반(F페이즈)
   const [tab, setTab] = useState<'past' | 'forecast' | 'ai'>('past')
   const handleYear = (y: string) => router.push(`/report?year=${y}`)
@@ -101,7 +104,38 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
     URL.revokeObjectURL(url)
   }
 
-  const handlePrint = () => window.print()
+  // 인쇄. 운반로 분기는 lib/useDocPrint 정본이다(신고 2e41ddb1). 데스크톱·안드로이드·아이폰 사파리는
+  // 종전 그대로 화면을 window.print() 로 찍는다. 아이폰 홈화면 앱만 그 호출이 무동작이라, 탭할 때
+  // 서버가 이 연도의 종이를 PDF 로 만들어(/api/report/pdf) 공유 시트의 [프린트]로 넘긴다.
+  // 미리 만들지 않는다(chromium 은 탭에만). 받은 바이트는 영업장·연도별로 이 화면이 들고 있다가 다시 쓴다.
+  // 화면이 그린 영업장을 함께 보내, 다른 탭에서 영업장이 바뀌었으면 라우트가 409 로 멈춘다.
+  const reportPdf = useMemo(() => ({
+    key: `${propertyId}:${summary.year}`,
+    load: async (): Promise<ArrayBuffer> => {
+      const fallback = '결산 보고서 PDF 를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.'
+      let res: Response
+      try {
+        res = await fetch(`/api/report/pdf?year=${encodeURIComponent(summary.year)}&propertyId=${encodeURIComponent(propertyId)}`)
+      } catch (e) {
+        // 통신 실패(아이폰의 "Load failed" 같은 영어)를 그대로 토스트에 올리지 않는다
+        throw new Error(humanError(e, fallback))
+      }
+      if (!res.ok) throw new Error(humanError((await res.json().catch(() => null) as { error?: string } | null)?.error, fallback))
+      // 로그인 화면 같은 다른 응답을 PDF 로 싸서 넘기지 않는다
+      if (!res.headers.get('content-type')?.includes('application/pdf')) throw new Error(fallback)
+      return res.arrayBuffer()
+    },
+  }), [propertyId, summary.year])
+  const printViaSheet = useShareSheetPrint(reportPdf, `결산보고서-${summary.year}년`)
+  // 첫 탭은 종이를 만드는 데 몇 초 걸린다. 그동안 다시 눌러 공유가 두 번 시도되지 않게 막는다
+  // (번역본 미리보기 버튼과 같은 문법, '만드는 중…' + disabled).
+  const [printBusy, setPrintBusy] = useState(false)
+  const handlePrint = () => {
+    if (!printNeedsShareSheet()) { window.print(); return }
+    if (printBusy) return
+    setPrintBusy(true)
+    void printViaSheet().finally(() => setPrintBusy(false))
+  }
 
   return (
     <div className="space-y-6 report-page">
@@ -129,8 +163,8 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               <Btn type="button" variant="secondary" size="sm" className="no-print" onClick={handleExportCSV}>
                 CSV 다운로드
               </Btn>
-              <Btn type="button" variant="secondary" size="sm" className="no-print" onClick={handlePrint}>
-                인쇄·PDF
+              <Btn type="button" variant="secondary" size="sm" className="no-print" onClick={handlePrint} disabled={printBusy}>
+                {printBusy ? '만드는 중…' : '인쇄'}
               </Btn>
               <select
                 value={summary.year}
@@ -418,12 +452,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       <div className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-1.5">
         <p className="font-semibold text-[var(--warm-mid)]">산정 기준</p>
         <ul className="space-y-1 list-disc pl-4">
-          <li>청구액. 그 달 발생한 이용료 청구액이며 할인, 일할계산, 예약 인상을 반영합니다.</li>
-          <li>수납액. 받은 이용료를 해당 월 몫(귀속월)으로 배부하며 월 이용료를 상한으로 합니다. 보증금과 양도인 정산분은 제외합니다.</li>
-          <li>미수 증감. 전월 대비 월말 미수 잔액의 변화입니다. 선납 초과분이나 예약, 취소 계약의 수취액이 있는 달에는 청구액에서 수납액을 뺀 값과 정확히 일치하지 않을 수 있습니다.</li>
-          <li>월말 미수 잔액. 그 월말까지 받았어야 할 이용료 중 아직 회수되지 않은 채권 잔액입니다. 청구액은 할인과 일할계산을 반영합니다.</li>
-          <li>운영이익. 세금, 감가상각비, 대출이자 반영 전 금액입니다.</li>
-          <li>보증금. 돌려드릴 돈이므로 수익에 포함하지 않습니다. 취소된 계약의 수취액은 수납액에 포함하지 않으며 부가수익으로 등록해 관리합니다.</li>
+          {REPORT_BASIS_NOTES.map(n => <li key={n}>{n}</li>)}
         </ul>
       </div>
       </>}
