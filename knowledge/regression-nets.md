@@ -150,6 +150,7 @@ F 페이즈에서 "감지망은 만들어만 두면 안 돌아간다"를 고쳤�
 
 - `check-deposit-settlement` 퇴실 보증금 정산 누락 (신고 249b5652)
 - `check-tracked-categories` 비추적 카테고리 활성 카드 (서빙집게 사건)
+- `check-tracked-orphans` 고아 재고 카드(신고 f3866bca 옥상 폐기물처리, 2026-10-26·27). **실패**는 재고 구매 0·기록 0·손질 안 한 카드 중 그 품명 지출 흔적이 있는 것뿐이고 0건이 정상. 흔적 없는 빈 카드와 손질한 빈 카드는 **참고**(생성일·경과 일수·비슷한 이름 카드)로만 보인다. `--property` 로 거르고 `--label` 은 `--property` 없이 거부. `--fix --property <id> --id <카드 id>` 는 고른 카드만 스냅샷 파일(scripts/.fix-tracked-orphans-undo-*.json)을 먼저 쓰고 지우며 `--undo <파일>` 이 같은 id 로 되살린다. 생성 경로 정리 정본은 `retireTrackedItemIfOrphan`.
 - `check-spec-dims` 규격 차원 불일치 (신고 0d6242f0)
 
 세 번째는 판정도 틀렸다. **차원 불일치 자체는 정상이다** — '라면 120g x 100개'는 올바른 입력이다.
