@@ -38,6 +38,15 @@ const issueGroupKey = (c: { id: string; leaseTermId: string | null }) => canonIs
 // 퇴실 그룹: 퇴실 완료 + 입실 취소. 연결 계약이 없는(status null) 파일은 거주중 쪽에 둔다.
 const isDeparted = (status: string | null) => status === 'CHECKED_OUT' || status === 'CANCELLED'
 
+// 본 목록과 폐기본 칸이 함께 쓰는 검색 술어 — 이름·파일명·계약번호·호실. q 는 다듬고 소문자로 낮춘 값이다.
+// 계약번호가 화면에 뜨는 이름이 됐으니 검색도 그 이름을 받아야 한다.
+const matchesQuery = (c: ContractListRow, q: string) => !q || (
+  c.tenantName.toLowerCase().includes(q) ||
+  c.fileName.toLowerCase().includes(q) ||
+  (c.contractNo ?? '').toLowerCase().includes(q) ||
+  (c.roomNo ?? '').toLowerCase().includes(q)
+)
+
 // pending prop 은 pendingIssues 로 받는다 — 아래 useTransition 의 pending 과 이름이 겹친다.
 export default function ContractsClient({ contracts, pending: pendingIssues }: { contracts: ContractListRow[]; pending: PendingIssueRow[] }) {
   const router = useRouter()
@@ -81,7 +90,11 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   })
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
-  const departedCount = useMemo(() => contracts.filter(c => isDeparted(c.status)).length, [contracts])
+  // 머리말·거주 세그먼트·선택 버튼이 세는 집합 — 본 목록에 설 수 있는 행(폐기본·숨김 판본 제외).
+  // 전량으로 세면 폐기본 한 부가 '퇴실 1' 로 잡혀, 눌러도 그 행이 없는 숫자가 된다(신고 0fd00b7e).
+  // 배지·삭제 안내용 groupCount·currentIds 는 아래처럼 전량 그대로다.
+  const liveContracts = useMemo(() => contracts.filter(c => !c.voidedAt && !c.hidden), [contracts])
+  const departedCount = useMemo(() => liveContracts.filter(c => isDeparted(c.status)).length, [liveContracts])
 
   // 같은 계약에 몇 부인가 — **필터·검색 전 전체**에서 센다. 보이는 행만 세면 출처 필터로 형제가
   // 가려졌을 때 [현재] 가 사라지거나 삭제 안내가 "남는 게 없다"고 거짓말을 한다.
@@ -105,22 +118,17 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = contracts.filter(c => {
-      // 폐기본은 기본으로 접는다(운영자 결정 2026-08-20) — 숨김이지 삭제가 아니다.
+      // 폐기본은 본 목록에 절대 안 선다. 펼치면 토글 바로 밑 전용 칸(voidedRows)에 모인다(신고 0fd00b7e).
+      // 종전에는 펼침이 본 목록의 필터만 풀어, 폐기본 한 부가 서명일 정렬 깊숙이(13번째 행, 화면 밖)
+      // 끼어들거나 기본 '거주중' 필터에 걸려 아예 안 나와, 눌러도 아무 일이 없는 것처럼 보였다.
+      // 칸의 생김새(안내 한 줄·배지·취소선·흐림·보내기와 인쇄 없음)는 입주자 정보 계약서 칸(ContractFilesPanel)을 따랐다.
       // 세는 일(groupCount·currentIds)은 여전히 전량으로 하므로 배지·안내는 흔들리지 않는다.
-      // 선택 모드에서는 펼쳐 둔 상태여도 뺀다 — 다건 보내기는 효력 없는 종이를 담으면 안 된다.
       // 토글이 꺼진 영업장의 파생 판본 — 펼치는 길도 없다. 데이터는 그대로이고 켜면 돌아온다.
       if (c.hidden) return false
-      if ((!showVoided || selectMode) && c.voidedAt) return false
+      if (c.voidedAt) return false
       if (residency !== 'all' && (residency === 'departed') !== isDeparted(c.status)) return false
       if (source !== 'all' && c.source !== source) return false
-      if (!q) return true
-      return (
-        c.tenantName.toLowerCase().includes(q) ||
-        c.fileName.toLowerCase().includes(q) ||
-        // 계약번호가 화면에 뜨는 이름이 됐으니 검색도 그 이름을 받아야 한다
-        (c.contractNo ?? '').toLowerCase().includes(q) ||
-        (c.roomNo ?? '').toLowerCase().includes(q)
-      )
+      return matchesQuery(c, q)
     })
     // 입실자별에서만 같은 사람의 발급본을 붙여 세우고 그 안을 최신순으로 둔다 — 여러 부를 나란히
     // 놓고 비교하는 것이 이 정렬의 용도다. 기본 최신순은 손대지 않는다(종전 화면 그대로).
@@ -132,9 +140,20 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
           || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )
     return list
-  }, [contracts, query, residency, source, sort, showVoided, selectMode])
-  // 접혀 있는 폐기본이 몇 부인가 — 0부면 펼치기 줄 자체를 그리지 않는다.
-  const voidedCount = useMemo(() => contracts.filter(c => c.voidedAt && !c.hidden).length, [contracts])
+  }, [contracts, query, residency, source, sort])
+  // 폐기본 칸 — 발급 대기 칸과 같은 문법이다. 검색어(본 목록과 같은 술어)에만 반응하고 거주·출처는
+  // 안 따른다(§27.6 검색 스코프). 거주를 따르면 입실 취소 계약의 폐기본이 기본 '거주중' 에 걸려 펼쳐도
+  // 안 나온다(종전 결함). 토글이 말하는 부수는 이 칸의 행 수 그대로라 '1부 보기'로 빈 칸이 열리지 않는다.
+  // 검색으로 가려진 폐기본은 따로 알리지 않는다 — 본 목록도 검색으로 가린 행은 안 세고, 발급 대기의
+  // '전체에서 보기' 는 거주·출처만 푸는 링크라 검색에 가린 행을 되살릴 수 없다.
+  const voidedRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return contracts
+      .filter(c => c.voidedAt && !c.hidden && matchesQuery(c, q))
+      .sort((a, b) => new Date(b.signedAt).getTime() - new Date(a.signedAt).getTime())
+  }, [contracts, query])
+  // 검색 범위 안 0부면 펼치기 줄 자체를 그리지 않는다.
+  const voidedCount = voidedRows.length
 
   // 발급 대기 행은 파일이 아니라 '아직 파일이 없는 계약'이다. 그래서 검색어(이름·호실)에만 반응한다.
   // 출처 필터는 앱 서명·스캔이라는 파일의 속성이라 대기 행이 답할 수 없고, 발급 대기는 언제나 거주중이라
@@ -194,7 +213,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       <div className="space-y-2">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">계약서</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">여기는 모아보기 화면입니다. 새 계약서 작성·서명·스캔 업로드는 입주자 관리에서 입주자를 눌러 진행하세요. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">여기는 모아보기 화면입니다. 새 계약서 작성·서명·스캔 업로드는 입주자 관리에서 입주자를 눌러 진행하세요. 거주중 {liveContracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
         </div>
         <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={query} onChange={setQuery} placeholder="이름·호실·파일명 검색" />
@@ -206,9 +225,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
             value={residency}
             onChange={setResidency}
             options={[
-              { value: 'current', label: `거주중 ${contracts.length - departedCount}` },
+              { value: 'current', label: `거주중 ${liveContracts.length - departedCount}` },
               { value: 'departed', label: `퇴실 ${departedCount}` },
-              { value: 'all', label: `전체 ${contracts.length}` },
+              { value: 'all', label: `전체 ${liveContracts.length}` },
             ]}
           />
           <SegmentedControl
@@ -233,7 +252,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
             ]}
           />
           {/* 다중 'PDF 보내기' 선택 — 파일 공유 지원 기기에서만 노출 */}
-          {canShare && contracts.length > 0 && (
+          {canShare && liveContracts.length > 0 && (
             <Btn type="button" variant="secondary" size="sm" className="ml-auto"
               onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
               {selectMode ? '선택 취소' : '선택'}
@@ -249,14 +268,61 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
             발급 대기에 <span className="font-semibold text-[var(--warm-dark)]">{pendingHidden}건</span> 더 있음 · 전체에서 보기 ›
           </button>
         )}
-        {/* 폐기한 계약서 펼치기 — 형제 화면(입주자 정보 계약서 칸)과 같은 문법.
-            숨김이지 삭제가 아니라는 사실을 부수로 말한다. 0부면 줄 자체가 없다. */}
+        {/* 폐기한 계약서 펼치기 — 토글과 칸의 생김새는 입주자 정보 계약서 칸(ContractFilesPanel)의
+            폐기 접힘 칸을 따랐다. 폐기와 폐기 적용취소는 그쪽에만 있고 여기는 모아보기라 열람·삭제뿐이다.
+            토글 바로 밑에 안내 한 줄과 전용 칸이 열리고, 본 목록에는 폐기본이 섞이지 않는다.
+            숨김이지 삭제가 아니라는 사실을 부수로 말한다. 검색 범위 안 0부면 줄 자체가 없다.
+            선택 모드에선 감춘다 — 다건 보내기는 효력 없는 종이를 담으면 안 된다. */}
         {voidedCount > 0 && !selectMode && (
-          <button type="button" onClick={() => setShowVoided(v => !v)}
-            className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
-            {showVoided ? '폐기한 계약서 숨기기' : `폐기한 계약서 ${voidedCount}부 보기`}
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-          </button>
+          <div>
+            {/* -my-2 min-h-[44px] 는 보이는 크기를 그대로 두고 히트만 넓히는 정본 수법(RowActionBtn). */}
+            <button type="button" onClick={() => setShowVoided(v => !v)}
+              aria-expanded={showVoided}
+              className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+              {showVoided ? '폐기한 계약서 숨기기' : `폐기한 계약서 ${voidedCount}부 보기`}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {showVoided && (
+              <div id="contracts-voided">
+                {/* 주어는 '이 계약서'다. '이 계약'이라고 쓰면 계약 자체가 없어진 것으로 읽힌다(형제 문장 그대로). */}
+                <p className="mt-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
+                  폐기한 계약서는 계약 문서로서 효력이 없습니다. 발급 기록과 원본 파일은 증거로 그대로 보관되며, 이미 밖으로 나간 종이가 있으면 회수하거나 정정본을 다시 전달해 주세요.
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {voidedRows.map(c => (
+                    <li key={c.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)] opacity-55">
+                      <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
+                        {/* danger 트라이어드는 §04 무효 계열이다. 지위 배지는 이 하나뿐이다. */}
+                        <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm font-medium bg-[var(--danger-bg)] text-[var(--danger-fg)]">폐기됨</span>
+                        <div className="flex-1 min-w-0 basis-full sm:basis-auto">
+                          <span className="block text-xs text-[var(--warm-dark)] truncate line-through">
+                            {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName} · {fmtDate(c.signedAt)}
+                          </span>
+                          {c.contractNo ? (
+                            <button type="button" onClick={() => setDetailId(c.id)}
+                              className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
+                              계약번호 {c.contractNo}
+                            </button>
+                          ) : (
+                            <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{c.fileName}</p>
+                          )}
+                        </div>
+                      </div>
+                      {/* 보내기·인쇄는 두지 않는다 — 효력 없는 종이를 내보내는 길을 열어두면 안 된다.
+                          열람과 파일 정리는 남긴다(형제 화면과 같은 구성). */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
+                        <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                          disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
+                          {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
+                        </Btn>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -306,7 +372,10 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       {rows.length === 0 && pendingRows.length === 0 ? (
         <EmptyState
           title={contracts.length === 0 ? '계약서가 아직 없습니다' : '조건에 맞는 계약서가 없습니다'}
-          description={contracts.length === 0 ? '입주자 정보에서 계약서를 작성해 서명받거나 스캔본을 올리면 여기에 모입니다.' : '검색어나 필터를 조정해 보세요.'}
+          description={contracts.length === 0 ? '입주자 정보에서 계약서를 작성해 서명받거나 스캔본을 올리면 여기에 모입니다.'
+            // 폐기본 칸이 위에 서 있으면 그 행들이 '조건에 맞는 계약서'로 읽혀 빈 화면 문장과 부딪친다.
+            // 본 목록이 효력 있는 계약서만 세운다는 사실을 한 문장 더한다.
+            : voidedCount > 0 ? '검색어나 필터를 조정해 보세요. 폐기한 계약서는 위 칸에 따로 모입니다.' : '검색어나 필터를 조정해 보세요.'}
         />
       ) : (
         <div>
@@ -358,11 +427,6 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   {sort === 'tenant' && (groupCount.get(issueGroupKey(c)) ?? 1) > 1 && currentIds.has(c.id) && (
                     <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--success-bg)] text-[var(--success-fg)]">현재</span>
                   )}
-                  {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
-                      정렬과 무관하게 늘 띄운다: [현재] 와 달리 옆 행과 비교할 것 없이 그 자체로 사실이다. */}
-                  {c.voidedAt && (
-                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--danger-bg)] text-[var(--danger-fg)]">폐기됨</span>
-                  )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>
                 {/* 계약번호가 사람이 부를 이름이다. 파일명은 자동 생성 문자열이라 아무도 못 부른다.
@@ -394,6 +458,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
                 <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
                 {/* 보내기·인쇄는 폐기본에서 걷는다 — 효력 없는 종이를 밖으로 내보내는 길을 열어두면 안 된다.
+                    폐기본은 본 목록 필터가 이미 빼지만 여기서도 한 번 더 막는다(두 겹, 필터 하나가 풀려도 안 샌다).
                     보내기는 그 밖에서는 조건 없이 띄운다(형제 2화면과 같게). canShare 로 숨기면 기기마다
                     행이 달라져 학습이 안 되고, 데스크톱에도 다운로드 폴백과 안내 토스트가 있다. */}
                 {!c.voidedAt && (
