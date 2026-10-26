@@ -29,6 +29,40 @@ async function getPropertyId() {
   return { user: { sub: userId }, propertyId, role }
 }
 
+// 화면에서 온 호실 id 가 이 영업장 방이 아닐 때의 말. 있는지 없는지 가리지 않는다(2026-10-23 운영자 승인).
+const ROOM_GONE = '호실을 찾을 수 없습니다.'
+
+// 일괄 편집이 바꿀 수 있는 칸(2026-10-23 운영자 승인). 화면 객체·적용취소 토큰은 이 표의 칸만 골라 쓴다.
+// 그대로 data 에 펼치면 propertyId·roomNo·isVacant·doorMasterKeyEnc 같은 칸이 실려 방을 남의 영업장으로 옮기거나 덮어쓴다.
+const BATCH_ROOM_FIELDS = {
+  type: 'string?', tier: 'string?', baseRent: 'number', scheduledRent: 'number?',
+  rentUpdateDate: 'date?', windowType: 'string?', direction: 'string?',
+} as const
+type BatchRoomFields = Partial<{ type: string | null; tier: string | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: Date | null; windowType: string | null; direction: string | null }>
+const BATCH_ROOM_INPUT_INVALID = '일괄 수정 입력값이 올바르지 않습니다.'
+
+/** 허용 칸만 골라 낸다. 안 실려 온 칸(undefined)은 빼고, 형이 틀린 칸이 하나라도 있으면 null(저장 거절). 날짜는 Date·ISO 문자열 둘 다 받는다. */
+function pickBatchRoomFields(src: unknown): BatchRoomFields | null {
+  if (!src || typeof src !== 'object') return null
+  const s = src as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, kind] of Object.entries(BATCH_ROOM_FIELDS)) {
+    const v = s[key]
+    if (v === undefined) continue
+    if (v === null) { if (!kind.endsWith('?')) return null; out[key] = null; continue }
+    const base = kind.replace('?', '')
+    if (base === 'date') {
+      const d = v instanceof Date ? v : typeof v === 'string' ? new Date(v) : null
+      if (!d || Number.isNaN(d.getTime())) return null
+      out[key] = d
+      continue
+    }
+    if (typeof v !== base || (base === 'number' && !Number.isFinite(v))) return null
+    out[key] = v
+  }
+  return out as BatchRoomFields
+}
+
 // 호실 목록 조회
 export async function getRooms() {
   const { propertyId, role } = await getPropertyId()
@@ -235,6 +269,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
 // 호실 수정
 export async function updateRoom(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit()
+  const { propertyId } = await getPropertyId()
 
   const id      = formData.get('id') as string
   const roomNo  = formData.get('roomNo') as string
@@ -279,10 +314,13 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
     return { ok: false, error: '비거주 예약 이용료와 적용 예정일은 함께 입력해야 합니다. (적용일이 없으면 인상·인하가 적용되지 않습니다)' }
   }
 
-  const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
+  // 화면에서 온 id 다. 영업장 범위로 읽고, 남의 영업장 방이면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
+  // 이 확인이 없으면 남의 방 이용료가 바뀌고 그 방 계약의 임대료·선납 락까지 따라 바뀐다.
+  const prevRoom = await prisma.room.findFirst({ where: { id, propertyId }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
+  if (!prevRoom) return { ok: false, error: ROOM_GONE }
 
   await prisma.room.update({
-    where: { id },
+    where: { id, propertyId },
     data: {
       roomNo:    roomNo.trim(),
       type:      type || null,
@@ -344,6 +382,11 @@ export async function deleteRoom(id: string, opts?: { force?: boolean }): Promis
 > {
   try {
   await requireEdit()
+  const { propertyId } = await getPropertyId()
+  // 화면에서 온 id 다. 영업장 범위로 먼저 확인한다(2026-10-23 운영자 승인). 이 확인이 없으면 남의 방과 그 방의
+  // 과거 계약·수납 기록까지 연쇄로 지워지고, 건수 안내로 남의 영업장 기록이 있는지도 새어 나간다.
+  const owned = await prisma.room.findFirst({ where: { id, propertyId }, select: { id: true } })
+  if (!owned) return { ok: false, error: ROOM_GONE }
 
   const activeLeases = await prisma.leaseTerm.count({
     where: {
@@ -382,7 +425,7 @@ export async function deleteRoom(id: string, opts?: { force?: boolean }): Promis
     await prisma.leaseTerm.deleteMany({ where: { id: { in: oldLeaseIds } } })
   }
 
-  await prisma.room.delete({ where: { id } })
+  await prisma.room.delete({ where: { id, propertyId } })
   revalidatePath('/room-manage')
   return { ok: true }
   } catch (err) {
@@ -520,7 +563,7 @@ export async function setRoomShowOnSite(roomId: string, show: boolean): Promise<
     })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
     if (show && room._count.photos === 0) return { ok: false, error: '등록된 사진이 없어요. 사진을 먼저 올린 뒤 공개할 수 있습니다.' }
-    await prisma.room.update({ where: { id: roomId }, data: { showOnSite: show } })
+    await prisma.room.update({ where: { id: roomId, propertyId }, data: { showOnSite: show } })
     revalidatePath('/room-manage')
     revalidatePath('/dashboard')
     revalidatePath('/settings')   // 웹사이트 탭의 '소개 페이지 반영 대기' 목록이 이 값으로 서 있다
@@ -642,7 +685,7 @@ export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true;
     }
 
     await prisma.room.update({
-      where: { id: roomId },
+      where: { id: roomId, propertyId },
       data: {
         baseRent:       newRent,
         scheduledRent:  null,
@@ -673,11 +716,12 @@ export async function undoApplyScheduledRent(u: ScheduledRentUndo): Promise<{ ok
     const room = await prisma.room.findFirst({ where: { id: u.roomId, propertyId }, select: { id: true } })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
     await prisma.$transaction([
-      prisma.room.update({ where: { id: u.roomId }, data: {
+      prisma.room.update({ where: { id: u.roomId, propertyId }, data: {
         baseRent: u.prevBaseRent, scheduledRent: u.prevScheduledRent,
         rentUpdateDate: u.prevRentUpdateDate ? new Date(u.prevRentUpdateDate) : null,
       } }),
-      ...u.leases.map(l => prisma.leaseTerm.update({ where: { id: l.id }, data: { rentAmount: l.prevRentAmount } })),
+      // 토큰의 계약 id 는 화면이 들고 온 값이다. 이 영업장 계약만 되돌린다(남의 계약 임대료를 덮지 않게, 2026-10-23 운영자 승인).
+      ...u.leases.map(l => prisma.leaseTerm.updateMany({ where: { id: l.id, propertyId }, data: { rentAmount: l.prevRentAmount } })),
     ])
     revalidatePath('/room-manage'); revalidatePath('/rooms'); revalidatePath('/tenants')
     return { ok: true }
@@ -704,29 +748,32 @@ export async function batchUpdateRooms(
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (roomIds.length === 0) return { ok: false, error: '선택된 호실이 없습니다.' }
-    if (Object.keys(data).length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
+    // 화면 객체는 허용 칸만 골라 쓴다(위 BATCH_ROOM_FIELDS). 아래 쓰기·스냅샷은 전부 거른 값(roomFields)으로 한다.
+    const roomFields = pickBatchRoomFields(data)
+    if (!roomFields) return { ok: false, error: BATCH_ROOM_INPUT_INVALID }
+    if (Object.keys(roomFields).length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
 
     // 예약 이용료는 적용 예정일과 함께여야 함(적용일 없으면 인상·인하가 적용 안 됨). 예약 삭제 시 적용일도 함께 제거.
-    if (data.scheduledRent != null && data.rentUpdateDate == null) {
+    if (roomFields.scheduledRent != null && roomFields.rentUpdateDate == null) {
       return { ok: false, error: '예약 이용료를 설정하려면 적용 예정일도 함께 지정해야 합니다.' }
     }
-    if (data.scheduledRent === null) data.rentUpdateDate = null
-    if (typeof data.rentUpdateDate === 'string') data.rentUpdateDate = new Date(data.rentUpdateDate)
+    if (roomFields.scheduledRent === null) roomFields.rentUpdateDate = null
 
     // baseRent 동기화 판정용 — 변경 전 기준가 확보 (updateMany 가 덮어쓰기 전에)
-    const prevRents = data.baseRent != null
+    const prevRents = roomFields.baseRent != null
       ? await prisma.room.findMany({ where: { id: { in: roomIds }, propertyId }, select: { id: true, baseRent: true } })
       : []
 
     // 되돌리기 스냅샷 — 바뀔 필드들의 원값(감사 백로그 2026-07-10)
-    const keys = Object.keys(data)
+    const keys = Object.keys(roomFields)
     const beforeRooms = await prisma.room.findMany({
       where: { id: { in: roomIds }, propertyId },
       select: { id: true, type: true, tier: true, baseRent: true, scheduledRent: true, rentUpdateDate: true, windowType: true, direction: true, nonResidentScheduled: true, nonResidentRentDate: true },
     })
-    const beforeLeases = data.baseRent != null
+    // 계약 스냅샷도 이 영업장 것만 뜬다. 화면 id 에 남의 방이 섞여도 그 방 계약이 적용취소 토큰에 실리지 않는다.
+    const beforeLeases = roomFields.baseRent != null
       ? await prisma.leaseTerm.findMany({
-          where: { roomId: { in: roomIds }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+          where: { roomId: { in: roomIds }, propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
           select: { id: true, rentAmount: true },
         })
       : []
@@ -740,14 +787,14 @@ export async function batchUpdateRooms(
 
     const r = await prisma.room.updateMany({
       where: { id: { in: roomIds }, propertyId },
-      data,
+      data: roomFields,
     })
 
     // baseRent 변경 시 활성 계약의 rentAmount 동기화 — 단, 계약별 협의 임대료
     // (방 기준가와 다르게 설정된 rentAmount)는 덮어쓰지 않는다. 일괄 변경이
     // 개별 협의가를 흔적 없이 지우던 문제 방지.
     let skippedNegotiated = 0
-    if (data.baseRent != null) {
+    if (roomFields.baseRent != null) {
       for (const room of prevRents) {
         const synced = await prisma.leaseTerm.updateMany({
           where: {
@@ -755,7 +802,7 @@ export async function batchUpdateRooms(
             status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
             rentAmount: room.baseRent,   // 기준가 그대로 쓰던 계약만 따라감
           },
-          data: { rentAmount: data.baseRent },
+          data: { rentAmount: roomFields.baseRent },
         })
         const total = await prisma.leaseTerm.count({
           where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
@@ -765,10 +812,10 @@ export async function batchUpdateRooms(
     }
 
     // 인상 예약 일괄 변경 → 락인 되쓰기 (단건 경로와 동일 규칙). 한쪽만 걸면 다른 경로로 빠져나간다.
-    if ('scheduledRent' in data || 'rentUpdateDate' in data) {
+    if ('scheduledRent' in roomFields || 'rentUpdateDate' in roomFields) {
       const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/paymentEngine')
-      const nextSched = 'scheduledRent' in data ? (data.scheduledRent ?? null) : undefined
-      const nextDate = 'rentUpdateDate' in data ? ((data.rentUpdateDate as Date | null) ?? null) : undefined
+      const nextSched = 'scheduledRent' in roomFields ? (roomFields.scheduledRent ?? null) : undefined
+      const nextDate = 'rentUpdateDate' in roomFields ? (roomFields.rentUpdateDate ?? null) : undefined
       for (const b of beforeRooms) {
         const after = {
           scheduledRent: nextSched !== undefined ? nextSched : b.scheduledRent,
@@ -805,9 +852,16 @@ export async function undoBatchUpdateRooms(u: BatchRoomsUndo): Promise<{ ok: tru
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
+    // 토큰은 화면이 들고 온 값이다. 방 칸은 일괄 편집 허용 칸만 골라 되돌리고, 계약은 이 영업장 것만 되돌린다(2026-10-23 운영자 승인).
+    const restore: { id: string; roomFields: BatchRoomFields }[] = []
+    for (const x of u.rooms) {
+      const roomFields = pickBatchRoomFields(x.fields)
+      if (!roomFields) return { ok: false, error: BATCH_ROOM_INPUT_INVALID }
+      restore.push({ id: x.id, roomFields })
+    }
     await prisma.$transaction([
-      ...u.rooms.map(x => prisma.room.updateMany({ where: { id: x.id, propertyId }, data: Object.fromEntries(Object.entries(x.fields).map(([k, v]) => [k, k === 'rentUpdateDate' && typeof v === 'string' ? new Date(v) : v])) as never })),
-      ...u.leases.map(l => prisma.leaseTerm.updateMany({ where: { id: l.id }, data: { rentAmount: l.rentAmount } })),
+      ...restore.map(x => prisma.room.updateMany({ where: { id: x.id, propertyId }, data: x.roomFields })),
+      ...u.leases.map(l => prisma.leaseTerm.updateMany({ where: { id: l.id, propertyId }, data: { rentAmount: l.rentAmount } })),
     ])
     revalidatePath('/room-manage'); revalidatePath('/rooms'); revalidatePath('/tenants')
     return { ok: true }
