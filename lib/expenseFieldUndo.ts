@@ -15,6 +15,7 @@ export const EXPENSE_FIELD_UNDO_KINDS = {
   'vendor-rename': 'expense-vendor-rename-v1',      // 구매처 이름 변경·합치기·비우기
   'vendor-to-channel': 'expense-vendor-to-channel-v1', // 구매처를 쇼핑몰로 옮기기
   'vendor-set-channel': 'expense-vendor-set-channel-v1', // 이 구매처 지출 전부에 쇼핑몰 지정(같은 주문 함께 적용 포함)
+  'recurring-vendor-backfill': 'expense-recurring-vendor-backfill-v1', // 고정지출 기본 구매처를 그 항목의 과거 빈 구매처에 채우기(신고 5fa9cf43)
 } as const
 export type ExpenseFieldUndoKind = keyof typeof EXPENSE_FIELD_UNDO_KINDS
 

@@ -32,6 +32,7 @@ import {
   type ExpenseSearchResult,
 } from './actions'
 import { RecurringExpenseRecordModal, accName, effectivePayMethods, pushRecurringRecordedToast } from './RecurringExpenseRecordModal'
+import { askRecurringVendorBackfill } from './recurringVendorBackfillAsk'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 import { matchReceiptCard, cardPayMethod } from '@/lib/cardMatch'
 import { isDeferredRow } from '@/lib/settleStatus'
@@ -2380,10 +2381,11 @@ export default function FinanceClient({
       memo: recMgmtForm.memo || null,
       addCategoryToList: recMgmtCategoryToList,
     }
+    const editing = editingRecMgmt
     startRecMgmtTransition(async () => {
       let res: { ok: boolean; error?: string }
-      if (editingRecMgmt) {
-        res = await updateRecurringExpense(editingRecMgmt.id, data)
+      if (editing) {
+        res = await updateRecurringExpense(editing.id, data)
       } else {
         res = await addRecurringExpense(data)
       }
@@ -2393,6 +2395,8 @@ export default function FinanceClient({
       setShowRecMgmtForm(false)
       setEditingRecMgmt(null)
       router.refresh()
+      // 구매처를 새로 적었으면 과거 빈 구매처에도 채울지 한 번 묻는다(결정 D). 새 항목은 과거 기록이 없어 안 묻는다.
+      if (editing) void askRecurringVendorBackfill({ recurringExpenseId: editing.id, prevVendor: editing.vendor, nextVendor: data.vendor, onChanged: () => router.refresh() })
     })
   }
   // 종전에는 두 핸들러 모두 결과를 버려서, 실패해도 목록만 다시 그려지고 아무 말이 없었다

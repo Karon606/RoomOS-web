@@ -3272,6 +3272,57 @@ export async function recordRecurringExpense(data: {
   }
 }
 
+/** 소급 거절 문장(§27.8 ⑤ 두 마디). 쇼핑몰 목록의 이름은 판매자 자리 자동 기능에서 빠진다([[domain-expense-channel]] '목록이 경계다'). */
+const RECURRING_VENDOR_CHANNEL_DENIED = '쇼핑몰 목록의 이름이라 과거 지출의 구매처로 채울 수 없습니다 · 이 항목의 구매처를 실제로 받는 곳으로 고치면 됩니다.'
+
+/**
+ * 고정지출 기본 구매처를 그 항목으로 기록한 과거 지출 중 구매처가 빈 행에 채울지 묻기 전에 센다(결정 D, 0건이면 화면은 안 묻는다).
+ * 값은 화면이 아니라 저장된 항목 구매처다. 항목이 이 영업장 것이 아니거나 구매처가 비었으면 0.
+ */
+export async function countRecurringVendorBackfill(recurringExpenseId: string): Promise<{ ok: true; count: number; vendor: string | null } | { ok: false; error: string }> {
+  try {
+    const propertyId = await getPropertyId()
+    const rec = await prisma.recurringExpense.findFirst({ where: { id: recurringExpenseId, propertyId }, select: { vendor: true } })
+    if (!rec) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+    if (!rec.vendor) return { ok: true, count: 0, vendor: null }
+    // 쇼핑몰 목록 이름은 판매자가 아니라서 과거 지출에 구매처로 채우지 않는다(묻지도 않는다, 사업자번호 소급과 같은 경계).
+    if (isChannelName(rec.vendor, await loadChannelNames(propertyId))) return { ok: true, count: 0, vendor: null }
+    const count = await prisma.expense.count({ where: { propertyId, recurringExpenseId, vendor: null } })
+    return { ok: true, count, vendor: rec.vendor }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/**
+ * 고정지출 기본 구매처 소급(결정 D). 대상은 { 이 영업장, 이 항목으로 기록한 지출, 구매처 빈 행 } 뿐이다. 이미 적힌 구매처는 안 덮고,
+ * 제목·메모에서 이름을 뽑아 채우지 않는다. 채운 행 id 를 적용취소 토큰(ExpenseFieldUndo 'recurring-vendor-backfill')에 싣는다.
+ * 사업자번호 소급(backfillVendorBizNo)과 같은 꼴이다. 한 문장 UPDATE … RETURNING 이라 고르기와 쓰기 사이에 채워진 행은 안 섞인다.
+ */
+export async function backfillRecurringVendor(recurringExpenseId: string): Promise<{ ok: true; count: number; undo?: ExpenseFieldUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rec = await prisma.recurringExpense.findFirst({ where: { id: recurringExpenseId, propertyId }, select: { vendor: true } })
+    if (!rec) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+    const vendor = rec.vendor?.trim() || null
+    if (!vendor) return { ok: false, error: '이 항목에 기본 구매처가 없습니다.' }
+    if (isChannelName(vendor, await loadChannelNames(propertyId))) return { ok: false, error: RECURRING_VENDOR_CHANNEL_DENIED }
+    const ids = (await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      UPDATE "expenses" SET "vendor" = ${vendor}, "updatedAt" = now()
+      WHERE "propertyId" = ${propertyId}::uuid AND "recurringExpenseId" = ${recurringExpenseId}::uuid AND "vendor" IS NULL
+      RETURNING "id"`)).map(r => r.id)
+    revalidatePath('/finance')
+    if (ids.length === 0) return { ok: true, count: 0 }
+    const undo = signFieldUndo(propertyId, 'recurring-vendor-backfill', ids.map(id => ({ id, changes: [{ field: 'vendor' as const, before: null, after: vendor }] })))
+    return { ok: true, count: ids.length, ...(undo ? { undo } : {}) }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
 const TEMPLATE_VENDOR_UNDO_CONFLICT = '그 사이 이 항목의 기본 구매처가 다시 바뀌어 되돌리지 않았습니다. 고정 지출 관리에서 지금 값을 확인해 주세요.'
 
 /**
