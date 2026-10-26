@@ -5,7 +5,7 @@
 //   ⓐ 묶음 목록 정본(OPTION_GROUPS)의 id 가 비지 않고 서로 다르다.
 //   ⓑ 분류 관리 탭의 머리(<OptionGroupHead title=… />)가 목록과 같은 이름·같은 차례로 하나씩 선다.
 //   ⓒ 머리가 목록에서 제 id 를 찾아 달고, 포커스를 받는다(tabIndex={-1}). 스크롤 여유(scroll-mt-4)를 든다.
-//   ⓓ 바로가기 줄이 탭 맨 위(첫 머리 앞)에 서고, 버튼을 목록에서 만들어 라벨이 머리 글자 그대로이며 그 id 로 간다.
+//   ⓓ 바로가기 줄이 탭 맨 위(첫 머리 바로 앞, 사이에 아무것도 없이)에 서고, 버튼을 목록에서 만들어 라벨이 머리 글자 그대로이며 그 id 로 간다.
 //   ⓔ 도착은 모션 축소 설정을 따르고 머리에 포커스를 준다. 넘침 페이드는 정본 마스크(globals.css data-fade-track)를 쓴다.
 //   ⓕ 트랙 앞에 이동 단서 캡션 '바로가기'(11px · --seg-ink-off)가 선다. 상자 버튼 줄이 2차 탭·필터로 읽히지 않게 한다.
 //   ⓖ 첫 머리를 뺀 머리마다 같은 줄에 '맨 위로' 글자 링크가 서고 탭 맨 끝에 하나 더 선다(2026-10-23 운영자 승인·독립 검수). 도착은 바로가기 줄(nav)이다.
@@ -59,6 +59,9 @@ if (head && !/title: OptionGroupTitle/.test(head)) violations.push(`${NAV} · Op
 const jumpAt = tab.indexOf('<OptionGroupJumps />')
 if (jumpAt < 0) violations.push(`${FORM} · 분류 관리 탭에 묶음 바로가기 줄(<OptionGroupJumps />)이 없다.`)
 else if (heads.length && jumpAt > heads[0].at) violations.push(`${FORM} · 묶음 바로가기 줄이 첫 묶음 머리 뒤에 선다. 탭 맨 위에 둔다.`)
+// 바로가기 줄 바로 다음이 첫 머리다. 그 사이에 안내 상자가 서면 '맨 위로' 로 돌아온 눈이 버튼 줄과 첫 묶음 사이에서 끊긴다
+// (만료된 이사 안내 '분류 항목이 이 탭으로 모였습니다' 를 2026-10-23 운영자 승인으로 걷었다).
+else if (heads.length && tab.slice(jumpAt + '<OptionGroupJumps />'.length, heads[0].at).replace(/\{\s*\}/g, '').trim()) violations.push(`${FORM} · 묶음 바로가기 줄과 첫 묶음 머리 사이에 다른 것이 섰다. 바로가기 줄 바로 다음이 첫 머리다.`)
 const jumps = nav.match(/export function OptionGroupJumps\([\s\S]*?\n\}/)?.[0] ?? ''
 if (!jumps) violations.push(`${NAV} · OptionGroupJumps 를 못 찾았다.`)
 if (jumps && !/\{OPTION_GROUPS\.map\(g => \(\s*<Btn key=\{g\.id\} variant="secondary" size="sm"[\s\S]{0,200}onClick=\{\(\) => go\(g\.id\)\}>\s*\{g\.title\}\s*<\/Btn>/.test(jumps)) {

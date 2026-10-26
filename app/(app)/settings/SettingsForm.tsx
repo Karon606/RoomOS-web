@@ -1543,7 +1543,7 @@ export default function SettingsForm({
         <ItemNameMergePanel />
 
         {/* 이사 안내 — 여기 있던 둘이 어디로 갔는지(2026-08-19 IA 2단계). 옛 자리에 그대로 세운다.
-            TODO(2026-09 하순 제거). */}
+            걷을 기한은 두지 않는다. 날짜가 아니라 "이제 아무도 옛 자리를 안 찾는다" 를 보고 걷는다(운영자 지적 2026-09-22, 기본정보 탭 이사 안내 주석과 같은 판단). */}
         <div className="rounded-xl px-3 py-2 mt-4 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-0.5" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
           <p>단기 입실 정책은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책 탭</span>으로 옮겼습니다.</p>
           <p>품목 세부스펙은 <span className="font-semibold text-[var(--warm-dark)]">분류 관리 탭</span>으로 옮겼습니다.</p>
@@ -1634,10 +1634,6 @@ export default function SettingsForm({
         <div className="space-y-4">
           {/* 묶음 바로가기(2026-10-23 운영자 결정, 가이드 §22). 묶음 하나가 320px 에서 6~7화면이라 맨 위에서 묶음으로 바로 간다. */}
           <OptionGroupJumps />
-          {/* 이사 안내 — 사라진 두 탭을 찾던 사람에게. TODO(2026-09 하순 제거). */}
-          <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-            &lsquo;호실 설정&rsquo; 탭과 &lsquo;수익·지출&rsquo; 탭에 있던 분류 항목이 이 탭으로 모였습니다.
-          </div>
           {/* 묶음 머리 다섯(2026-10-22 2차, 가이드 §22 분류 관리 묶음 머리). 카드가 스물셋이라 찾을 자리를 무엇에 붙는 이름표인가로 가른다. */}
           <OptionGroupHead title="호실" />
           <OptionSection
@@ -2029,7 +2025,7 @@ export default function SettingsForm({
         <div className="space-y-4">
           {/* 이사 안내 — '수익·지출' 탭을 찾던 사람에게 어디로 갈렸는지 알린다.
               카드가 아니라 페이지 바탕 위라 --canvas 가 맞다(계약서 탭 로고 안내와 같은 자리).
-              TODO(2026-09 하순 제거). */}
+              걷을 기한은 두지 않는다. 날짜가 아니라 "이제 아무도 옛 자리를 안 찾는다" 를 보고 걷는다(운영자 지적 2026-09-22, 기본정보 탭 이사 안내 주석과 같은 판단). */}
           <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
             &lsquo;수익·지출&rsquo; 탭은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책</span>과 <span className="font-semibold text-[var(--warm-dark)]">분류 관리</span>로 나뉘었습니다. 고정 지출 관리는 이 탭 아래에 있습니다.
           </div>
