@@ -15,6 +15,9 @@ async function getPropertyId() {
   return { propertyId, userId }
 }
 
+// 화면에서 온 id 가 이 영업장 항목이 아닐 때의 말. 있는지 없는지 가리지 않는다(2026-10-23 운영자 승인).
+const CHECKLIST_GONE = '점검 항목을 찾을 수 없습니다.'
+
 export type ChecklistRow = {
   id: string
   title: string
@@ -132,12 +135,14 @@ export async function updateChecklist(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    const { propertyId } = await getPropertyId()
     if (!input.title.trim()) return { ok: false, error: '제목을 입력해주세요.' }
     if (!Number.isFinite(input.intervalDays) || input.intervalDays < 1) {
       return { ok: false, error: '주기는 1일 이상이어야 합니다.' }
     }
-    await prisma.checklist.update({
-      where: { id: input.id },
+    // 영업장 범위로만 고친다. 남의 영업장 id 면 한 줄도 안 바꾸고 같은 말로 닫는다.
+    const r = await prisma.checklist.updateMany({
+      where: { id: input.id, propertyId },
       data: {
         title: input.title.trim(),
         memo: input.memo?.trim() || null,
@@ -146,6 +151,7 @@ export async function updateChecklist(input: {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     })
+    if (r.count === 0) return { ok: false, error: CHECKLIST_GONE }
     revalidatePath('/checklist')
     revalidatePath('/dashboard')
     return { ok: true }
@@ -158,7 +164,9 @@ export async function updateChecklist(input: {
 export async function deleteChecklist(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await prisma.checklist.delete({ where: { id } })
+    const { propertyId } = await getPropertyId()
+    const r = await prisma.checklist.deleteMany({ where: { id, propertyId } })
+    if (r.count === 0) return { ok: false, error: CHECKLIST_GONE }
     revalidatePath('/checklist')
     revalidatePath('/dashboard')
     return { ok: true }
@@ -188,7 +196,7 @@ export async function markChecklistDone(input: {
 }): Promise<{ ok: true; logId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { userId } = await getPropertyId()
+    const { userId, propertyId } = await getPropertyId()
     const guard = assertNotFuture(input.doneDate)
     if (!guard.ok) return { ok: false, error: guard.reason }
     // 로그는 매번 새 줄이라 '기존 값'이 없다 — 지난 점검 시각을 물려받으면 이번 점검이 사라진다.
@@ -198,12 +206,14 @@ export async function markChecklistDone(input: {
     // 지난 점검을 뒤늦게 적을 수 있게 되면서 lastCheckedAt 이 **뒤로 밀 수 있다.** 9/15 에 점검한
     // 항목에 9/10 을 적으면 다음 예정일이 앞당겨져 멀쩡한 항목이 '경과'로 뜬다. 마지막 점검은
     // 언제나 가장 늦은 로그다 — deleteChecklistLog 가 삭제 후 하는 재계산과 같은 규칙이다.
-    const cur = await prisma.checklist.findUnique({ where: { id: input.id }, select: { lastCheckedAt: true } })
-    const last = cur?.lastCheckedAt && cur.lastCheckedAt > at ? cur.lastCheckedAt : at
+    // 화면에서 온 id 다. 영업장 범위로 읽어야 남의 영업장 항목에 내 점검 기록이 붙지 않는다(2026-10-23 운영자 승인).
+    const cur = await prisma.checklist.findFirst({ where: { id: input.id, propertyId }, select: { lastCheckedAt: true } })
+    if (!cur) return { ok: false, error: CHECKLIST_GONE }
+    const last = cur.lastCheckedAt && cur.lastCheckedAt > at ? cur.lastCheckedAt : at
     // 적용취소(undo)용으로 생성된 로그 id를 반환 — 취소는 기존 deleteChecklistLog 재사용.
     const [, log] = await prisma.$transaction([
       prisma.checklist.update({
-        where: { id: input.id },
+        where: { id: input.id, propertyId },
         data: { lastCheckedAt: last },
       }),
       prisma.checklistLog.create({
@@ -231,19 +241,22 @@ export async function markChecklistDone(input: {
 export async function deleteChecklistLog(logId: string): Promise<{ ok: true; prev: { checklistId: string; checkedAt: string; memo: string | null } } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const log = await prisma.checklistLog.findUnique({
-      where: { id: logId },
+    const { propertyId } = await getPropertyId()
+    // 이력 줄은 영업장 칸이 없다. 부모 항목의 영업장으로 건다(남의 영업장 이력을 지우고 그 항목의 마지막 점검일을 되쓰지 않게).
+    const log = await prisma.checklistLog.findFirst({
+      where: { id: logId, checklist: { propertyId } },
       select: { checklistId: true, checkedAt: true, memo: true },
     })
     if (!log) return { ok: false, error: '로그를 찾을 수 없습니다.' }
-    await prisma.checklistLog.delete({ where: { id: logId } })
+    const r = await prisma.checklistLog.deleteMany({ where: { id: logId, checklist: { propertyId } } })
+    if (r.count === 0) return { ok: false, error: '로그를 찾을 수 없습니다.' }
     // 마지막 점검일 재계산
     const latest = await prisma.checklistLog.findFirst({
       where: { checklistId: log.checklistId },
       orderBy: { checkedAt: 'desc' },
     })
     await prisma.checklist.update({
-      where: { id: log.checklistId },
+      where: { id: log.checklistId, propertyId },
       data: { lastCheckedAt: latest ? latest.checkedAt : null },
     })
     revalidatePath('/checklist')
