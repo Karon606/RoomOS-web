@@ -1201,8 +1201,10 @@ export default function SettingsForm({
       amount: effectiveAmount,
       category: recForm.category,
       dueDay: parseInt(recForm.dueDay) || 25,
-      payMethod: recForm.payMethod || undefined,
-      vendor: recForm.vendor.trim() || undefined,
+      // 비운 칸은 undefined 가 아니라 null 로 싣는다. undefined 는 서버가 '안 실려 옴(그대로 둠)'으로 읽어
+      // 한 번 고른 결제 수단·적은 거래처·메모를 지울 길이 없었다(재무 폼 전년 금액과 같은 규칙).
+      payMethod: recForm.payMethod || null,
+      vendor: recForm.vendor.trim() || null,
       isAutoDebit: recForm.isAutoDebit,
       isVariable: recItemsActive ? recItemsHasVariable : recForm.isVariable,
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
@@ -1210,7 +1212,7 @@ export default function SettingsForm({
       anchorMonth: recForm.anchorMonth ? Number(recForm.anchorMonth) : null,
       nextDueOverrideMonth: recForm.nextDueOverrideMonth || null,
       activeSince: recForm.activeSince || undefined,
-      memo: recForm.memo || undefined,
+      memo: recForm.memo || null,
       ...(itemsPayload !== undefined ? { items: itemsPayload } : {}),
       addCategoryToList: recCategoryToList,
     }

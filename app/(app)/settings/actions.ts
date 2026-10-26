@@ -2420,7 +2420,7 @@ function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVaria
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number | null; memo?: string
+  payMethod?: string | null; vendor?: string | null; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number | null; memo?: string | null
   intervalMonths?: number; anchorMonth?: number | null; nextDueOverrideMonth?: string | null
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]

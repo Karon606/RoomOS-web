@@ -5,6 +5,7 @@
 // 예약 금액·묶기 해제)가 화면에서 온 id 만으로 써서 다른 영업장 행을 바꿀 수 있었다. 정적 감지망(check-action-property-scope)은
 // where 글자만 본다. 남의 영업장 id 를 넣으면 실제로 거절되고 그 행이 한 바이트도 안 바뀌는지, 제 영업장 행은 그대로 되는지는
 // 실제 쓰기를 돌려야 보인다. 대역·운영 DB 차단은 비품 전환 하네스(scripts/test-durable-convert-flow.ts)와 같은 판이다.
+// 고정지출 결제 수단·거래처·메모 비우기(2026-10-23 운영자 승인)도 여기서 돈다. 비운 칸은 null 로 지우고 안 실린 칸은 그대로 둔다.
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -207,6 +208,50 @@ async function main() {
     eq('재현 3 변형: 연산 객체({ set })로 계좌를 넣으면 거절',
       await settings.updateRecurringExpense(t3, { financialAccountId: { set: A2 } } as never), { ok: false, error: '고정 지출 입력값이 올바르지 않습니다.' })
     eq('재현 3 변형 뒤 무변경', await stable(t3), t3Before)
+  }
+
+  // ── 고정지출 결제 수단·거래처·메모 비우기(2026-10-23 운영자 승인) ──
+  // 두 폼이 비운 칸을 `|| undefined` 로 실어 서버가 '안 실려 옴(그대로 둠)'으로 읽었고, 한 번 적은 값을 지울 길이 없었다.
+  // 비운 칸은 null 로 실어 지우고, 안 실린 칸은 그대로 둔다. 재무 폼은 거래처 칸이 없어 거래처를 안 싣는다.
+  {
+    const three = async (id: string) => {
+      const r = await prisma.recurringExpense.findUnique({ where: { id }, select: { payMethod: true, vendor: true, memo: true } })
+      return [r?.payMethod, r?.vendor, r?.memo]
+    }
+    const full = { payMethod: '계좌이체', vendor: '한국전력', memo: '매달 10일 자동이체' }
+
+    const c = await recurring(P1, '비우기 대상')
+    eq('비우기: 세 칸 적기', await settings.updateRecurringExpense(c, full), { ok: true })
+    eq('비우기: 세 칸 적힘', await three(c), ['계좌이체', '한국전력', '매달 10일 자동이체'])
+    eq('비우기: 결제 수단 null', await settings.updateRecurringExpense(c, { payMethod: null }), { ok: true })
+    eq('비우기: 결제 수단만 지워지고 둘은 그대로', await three(c), [null, '한국전력', '매달 10일 자동이체'])
+    eq('비우기: 거래처 null', await settings.updateRecurringExpense(c, { vendor: null }), { ok: true })
+    eq('비우기: 거래처만 지워지고 메모는 그대로', await three(c), [null, null, '매달 10일 자동이체'])
+    eq('비우기: 메모 null', await settings.updateRecurringExpense(c, { memo: null }), { ok: true })
+    eq('비우기: 세 칸 모두 지워짐', await three(c), [null, null, null])
+
+    // 재무 폼 꼴. 거래처를 안 싣고 결제 수단·메모를 비운 저장은 환경설정에서 적은 거래처를 지우지 않는다.
+    const f = await recurring(P1, '재무 폼 대상')
+    await settings.updateRecurringExpense(f, full)
+    eq('재무 폼 꼴 저장 통과', await settings.updateRecurringExpense(f, { title: '재무 폼 대상 2', payMethod: null, memo: null, financialAccountId: null }), { ok: true })
+    eq('재무 폼 꼴: 거래처는 그대로, 둘은 지워짐', await three(f), [null, '한국전력', null])
+    eq('안 실린 칸(undefined)은 그대로 둔다', await settings.updateRecurringExpense(f, { payMethod: undefined, vendor: undefined, memo: undefined, title: '재무 폼 대상 3' }), { ok: true })
+    eq('안 실린 칸 뒤 무변경', await three(f), [null, '한국전력', null])
+
+    // 등록도 비운 칸을 null 로 받는다(두 폼이 등록·수정에 같은 객체를 넘긴다).
+    const added = await settings.addRecurringExpense({ title: '비운 등록', amount: 1000, category: '공과금', dueDay: 5, payMethod: null, vendor: null, memo: null })
+    eq('등록: 비운 칸 null 통과', added.ok, true)
+    eq('등록: 세 칸 null', added.ok ? await three(added.id) : null, [null, null, null])
+
+    // 화면 짝(정적). 서버가 null 을 받아도 폼이 undefined 를 실으면 다시 못 지운다.
+    const { readFileSync } = await import('node:fs')
+    const handler = (file: string, fn: string) => readFileSync(path.join(ROOT, file), 'utf8').match(new RegExp(`\\n  const ${fn} = \\(\\) => \\{[\\s\\S]*?\\n  \\}\\n`))?.[0] ?? ''
+    const sf = handler('app/(app)/settings/SettingsForm.tsx', 'handleSaveRec')
+    const ff = handler('app/(app)/finance/FinanceClient.tsx', 'handleSaveRecMgmt')
+    eq('화면 짝: 환경설정 폼이 비운 결제 수단·거래처·메모를 null 로 싣는다',
+      [/payMethod: recForm\.payMethod \|\| null,/.test(sf), /vendor: recForm\.vendor\.trim\(\) \|\| null,/.test(sf), /memo: recForm\.memo \|\| null,/.test(sf)], [true, true, true])
+    eq('화면 짝: 재무 폼이 비운 결제 수단·메모를 null 로 싣고 거래처는 안 싣는다',
+      [/payMethod: recMgmtForm\.payMethod \|\| null,/.test(ff), /memo: recMgmtForm\.memo \|\| null,/.test(ff), /\bvendor\s*:/.test(ff)], [true, true, false])
   }
 
   console.log(`[기타수익·고정지출 영업장 범위 통합] 통과 ${pass} / 실패 ${fail}`)

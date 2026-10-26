@@ -2339,7 +2339,9 @@ export default function FinanceClient({
       amount: Number(recMgmtForm.amount.replace(/[^0-9]/g, '')),
       category: recMgmtForm.category,
       dueDay: parseInt(recMgmtForm.dueDay) || 25,
-      payMethod: recMgmtForm.payMethod || undefined,
+      // 결제 수단·메모도 비운 칸은 null 이다(아래 전년 금액과 같은 규칙). 거래처는 이 폼에 칸이 없어 싣지 않는다.
+      // 실으면 환경설정에서 적은 거래처가 이 폼 저장마다 지워진다. 안 실린 칸은 서버가 그대로 둔다.
+      payMethod: recMgmtForm.payMethod || null,
       financialAccountId: recMgmtForm.financialAccountId || null,
       isAutoDebit: recMgmtForm.isAutoDebit,
       isVariable: recMgmtForm.isVariable,
@@ -2351,7 +2353,7 @@ export default function FinanceClient({
       // 비운 칸은 undefined 가 아니라 null 로 보낸다. undefined 는 Prisma 가 '변경 없음'으로 읽어
       // 한 번 적은 값을 지울 방법이 사라진다(적용에는 적용취소가 늘 붙어야 한다).
       priorYearAmount: recMgmtForm.priorYearAmount ? Number(recMgmtForm.priorYearAmount.replace(/[^0-9]/g, '')) || null : null,
-      memo: recMgmtForm.memo || undefined,
+      memo: recMgmtForm.memo || null,
       addCategoryToList: recMgmtCategoryToList,
     }
     startRecMgmtTransition(async () => {
