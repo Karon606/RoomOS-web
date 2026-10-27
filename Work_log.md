@@ -6896,3 +6896,13 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 3 소급 묻기(재무 관리 폼, 0건 무표시, { 영업장, 항목, 구매처 null } 만, 적용취소 recurring-vendor-backfill). 4 이름 변경·합치기·비우기가 항목까지(토큰 항목 줄, verify:db 경고 check-recurring-vendor-drift). 5 목록 캡션은 고정지출 행만.
 - 그물: check-recurring-vendor-wiring(12축)·test-recurring-vendor-flow(PGlite 63건)·check-recurring-vendor-drift, 역주입 9건 발화. 노트 [[domain-expense-channel]] '고정지출의 구매처'.
 - 검수 반영(같은 날): 환경설정 폼 소급 묻기 연결, 항목 줄 적용취소 뒤 /settings·/dashboard 갱신, 이름 변경 토스트에 따라 바뀐 항목 수, 쇼핑몰 이름 항목 소급 거절과 경고 축, 항목 까닭 적용취소 문장, 제목과 같은 구매처 캡션 생략, 기록 모달 주 버튼 어절 줄바꿈·관리 폼 '자동이체' 접힘.
+
+## 2026-10-27 신고 2911c217 퇴실·청소·입실 전 점검 체크리스트 1차 (운영자 승인 계획, 4단계 + 독립 검수 반영 + 운영자 결정 넷)
+- 발단: 519호 입실 고객 컴플레인(청소 덜 됨·외부 신발장에 남의 신발). 청소 완료가 결과 확인 자리 없는 사건으로 끝났고, 입실 처리가 방 준비 상태를 안 봤다.
+- 1단계: RoomInspection·RoomInspectionItem 표 + 영업장 목록 칸 넷(prisma/migrate_room_inspection.sql, 운영 적용은 운영자 확인 뒤), 분류 관리 '청소·작업' 묶음에 카드 넷.
+- 2단계: 생성·걷기 정본 lib/roomInspectionEnsure(server-only), 화면 문 inspectionActions(모든 쓰기 영업장 범위), 퇴실 부수 처리·퇴실을 무르는 모든 경로·청소 완료/적용취소/삭제/복원 배선. 그물 check-room-inspection-axis·test-room-inspection-flow.
+- 3단계: 행 정본 InspectionRowBody·등록 InspectionPlanForm(방 모달에만), 작업 탭 행·접미 N, 방 모달 셋째 종류, 카드 보조줄 문법 통일. 가이드 §22 항목 완료 체크 등재.
+- 4단계: 홈 퇴실 처리 '퇴실 점검 · 열기', 청소 완료 뒤 '청소 검수 · 열기', 입실 처리가 열린 입실 전 점검을 '안 함'으로 닫고 입실 토스트 둘째 줄로 알림(입실 적용취소가 되연다), 상태 위젯 '입실 처리' 앞 WhyCaption. 지식 domain-room-inspection.
+- 독립 검수 반영: 항목 쓰기 무갱신·항목 하나 잠금(R1), 진행 '점검 N/M' 한 벌·상자 판정 셋(R2), 수정 폼 퇴실 무르기의 청소·점검 걷기(R3), 입실 경로 실제 자리(R5), 끝낸 검수 보존 통합 케이스(R6), 예정 점검 겹침 막기(R7), FK ON UPDATE CASCADE·라벨 상한·'문제' 한 번 쓰기(R9).
+- 운영자 결정: ① 손수 등록은 방 모달만 ② 시공 자재 제외 ③ 입실이 입실 전 점검을 닫고 적용취소가 되연다 ④ 판정 토글은 토스트 없음.
+- 별건: 다크 info 배지 토큰(R8), 홈 알림·푸시(2차).
