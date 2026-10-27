@@ -33,6 +33,10 @@ import {
   getStockSourceOptions, addStockSourceOption, deleteStockSourceOption,
   getAssetDisposalReasons, addAssetDisposalReason, deleteAssetDisposalReason,
   getVisitRouteOptions, addVisitRouteOption, deleteVisitRouteOption,
+  getCheckoutInspectionItems, addCheckoutInspectionItem, deleteCheckoutInspectionItem,
+  getCleaningInspectionItems, addCleaningInspectionItem, deleteCleaningInspectionItem,
+  getMoveinInspectionItems, addMoveinInspectionItem, deleteMoveinInspectionItem,
+  getInspectionExcludedItems, addInspectionExcludedItem, deleteInspectionExcludedItem,
   getJobOptions, addJobOption, deleteJobOption,
   getChannelOptions, addChannelOption, deleteChannelOption,
   inviteMember, updateMemberRole, removeMember,
@@ -798,6 +802,114 @@ export default function SettingsForm({
     setVisitRoutes(r.items)
     return r.before
   }
+
+  // ── 방 점검 항목 넷(2026-10-27 운영자 승인, 신고 2911c217) ──────────────
+  // 형제 카드와 같은 손놀림이다. 점검을 만들 때 그때의 목록을 항목으로 베끼므로 삭제·이름 변경이 이미 남긴 점검을 안 바꾼다.
+  // 제외 품목은 기본값이 없어 초기화를 두지 않는다(쇼핑몰 카드와 같은 판정).
+  const [checkoutInspItems, setCheckoutInspItems] = useState<string[]>([])
+  const [newCheckoutInspItem, setNewCheckoutInspItem] = useState('')
+  const [cleaningInspItems, setCleaningInspItems] = useState<string[]>([])
+  const [newCleaningInspItem, setNewCleaningInspItem] = useState('')
+  const [moveinInspItems, setMoveinInspItems] = useState<string[]>([])
+  const [newMoveinInspItem, setNewMoveinInspItem] = useState('')
+  const [inspExcluded, setInspExcluded] = useState<string[]>([])
+  const [newInspExcluded, setNewInspExcluded] = useState('')
+  useEffect(() => {
+    getCheckoutInspectionItems().then(setCheckoutInspItems).catch(console.error)
+    getCleaningInspectionItems().then(setCleaningInspItems).catch(console.error)
+    getMoveinInspectionItems().then(setMoveinInspItems).catch(console.error)
+    getInspectionExcludedItems().then(setInspExcluded).catch(console.error)
+  }, [])
+
+  const handleAddCheckoutInspItem = async () => {
+    const v = normalizeOptionName('checkoutInspectionItems', newCheckoutInspItem); if (!v) return
+    const r = await addCheckoutInspectionItem(v); if (!r.ok) { pushToast('error', r.error); return }
+    setCheckoutInspItems(prev => prev.includes(v) ? prev : [...prev, v]); setNewCheckoutInspItem('')
+  }
+  const handleDeleteCheckoutInspItem = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 항목을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 점검 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteCheckoutInspectionItem(name)
+    setCheckoutInspItems(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderCheckoutInspItems = async (items: string[]) => {
+    setCheckoutInspItems(items)
+    await reorderOptions('checkoutInspectionItems', items)
+  }
+  const handleRenameCheckoutInspItem = (oldVal: string, newVal: string) =>
+    runRename('checkoutInspectionItems', oldVal, newVal, setCheckoutInspItems)
+  const handleResetCheckoutInspItems = async () => {
+    if (!(await confirmDialog({ title: `퇴실 점검 항목을 기본값(${OPTION_LIST_DEFAULTS.checkoutInspectionItems.length}개)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('checkoutInspectionItems')
+    setCheckoutInspItems(r.items)
+    return r.before
+  }
+
+  const handleAddCleaningInspItem = async () => {
+    const v = normalizeOptionName('cleaningInspectionItems', newCleaningInspItem); if (!v) return
+    const r = await addCleaningInspectionItem(v); if (!r.ok) { pushToast('error', r.error); return }
+    setCleaningInspItems(prev => prev.includes(v) ? prev : [...prev, v]); setNewCleaningInspItem('')
+  }
+  const handleDeleteCleaningInspItem = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 항목을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 점검 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteCleaningInspectionItem(name)
+    setCleaningInspItems(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderCleaningInspItems = async (items: string[]) => {
+    setCleaningInspItems(items)
+    await reorderOptions('cleaningInspectionItems', items)
+  }
+  const handleRenameCleaningInspItem = (oldVal: string, newVal: string) =>
+    runRename('cleaningInspectionItems', oldVal, newVal, setCleaningInspItems)
+  const handleResetCleaningInspItems = async () => {
+    if (!(await confirmDialog({ title: `청소 검수 항목을 기본값(${OPTION_LIST_DEFAULTS.cleaningInspectionItems.length}개)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('cleaningInspectionItems')
+    setCleaningInspItems(r.items)
+    return r.before
+  }
+
+  const handleAddMoveinInspItem = async () => {
+    const v = normalizeOptionName('moveinInspectionItems', newMoveinInspItem); if (!v) return
+    const r = await addMoveinInspectionItem(v); if (!r.ok) { pushToast('error', r.error); return }
+    setMoveinInspItems(prev => prev.includes(v) ? prev : [...prev, v]); setNewMoveinInspItem('')
+  }
+  const handleDeleteMoveinInspItem = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 항목을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 점검 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteMoveinInspectionItem(name)
+    setMoveinInspItems(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderMoveinInspItems = async (items: string[]) => {
+    setMoveinInspItems(items)
+    await reorderOptions('moveinInspectionItems', items)
+  }
+  const handleRenameMoveinInspItem = (oldVal: string, newVal: string) =>
+    runRename('moveinInspectionItems', oldVal, newVal, setMoveinInspItems)
+  const handleResetMoveinInspItems = async () => {
+    if (!(await confirmDialog({ title: `입실 전 점검 항목을 기본값(${OPTION_LIST_DEFAULTS.moveinInspectionItems.length}개)으로 초기화할까요?`, level: 'caution', confirmLabel: '초기화' }))) return null
+    const r = await resetOptionsToDefault('moveinInspectionItems')
+    setMoveinInspItems(r.items)
+    return r.before
+  }
+
+  const handleAddInspExcluded = async () => {
+    const v = normalizeOptionName('inspectionExcludedItems', newInspExcluded); if (!v) return
+    const r = await addInspectionExcludedItem(v); if (!r.ok) { pushToast('error', r.error); return }
+    setInspExcluded(prev => prev.includes(v) ? prev : [...prev, v]); setNewInspExcluded('')
+  }
+  const handleDeleteInspExcluded = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 품목을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 점검 기록은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    await deleteInspectionExcludedItem(name)
+    setInspExcluded(prev => prev.filter(t => t !== name))
+    return true
+  }
+  const handleReorderInspExcluded = async (items: string[]) => {
+    setInspExcluded(items)
+    await reorderOptions('inspectionExcludedItems', items)
+  }
+  const handleRenameInspExcluded = (oldVal: string, newVal: string) =>
+    runRename('inspectionExcludedItems', oldVal, newVal, setInspExcluded)
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
   const [members, setMembers] = useState<MemberWithUser[]>(initialMembers)
@@ -1930,6 +2042,70 @@ export default function SettingsForm({
             onRename={handleRenameWorkKind}
             onReset={handleResetWorkKinds}
             placeholder="예: 도배, 장판, 방충망 교체…"
+          />
+          {/* 방 점검 항목 넷(2026-10-27, 신고 2911c217). 점검을 만들 때 그때의 목록을 항목으로 베낀다. */}
+          <OptionSection
+            title="퇴실 점검 항목 관리"
+            description="퇴실일에 방을 확인할 때 짚는 항목입니다. 파손, 남은 짐, 열쇠 반납처럼 그 방을 나간 뒤 바로 봐야 할 것을 적습니다. 목록에서 삭제해도 이미 남긴 점검 기록은 그대로 있습니다."
+            items={checkoutInspItems}
+            field="checkoutInspectionItems"
+            setItems={setCheckoutInspItems}
+            getLabel={v => v}
+            newValue={newCheckoutInspItem}
+            onNewValueChange={setNewCheckoutInspItem}
+            onAdd={handleAddCheckoutInspItem}
+            onDelete={handleDeleteCheckoutInspItem}
+            onReorder={handleReorderCheckoutInspItems}
+            onRename={handleRenameCheckoutInspItem}
+            onReset={handleResetCheckoutInspItems}
+            placeholder="예: 방충망, 도어락 배터리…"
+          />
+          <OptionSection
+            title="청소 검수 항목 관리"
+            description="청소를 마친 뒤 결과를 확인할 때 짚는 항목입니다. 먼지, 얼룩, 침구 세탁처럼 업체나 직접 한 청소가 제대로 됐는지 볼 것을 적습니다. 목록에서 삭제해도 이미 남긴 점검 기록은 그대로 있습니다."
+            items={cleaningInspItems}
+            field="cleaningInspectionItems"
+            setItems={setCleaningInspItems}
+            getLabel={v => v}
+            newValue={newCleaningInspItem}
+            onNewValueChange={setNewCleaningInspItem}
+            onAdd={handleAddCleaningInspItem}
+            onDelete={handleDeleteCleaningInspItem}
+            onReorder={handleReorderCleaningInspItems}
+            onRename={handleRenameCleaningInspItem}
+            onReset={handleResetCleaningInspItems}
+            placeholder="예: 거울 얼룩, 문틀 먼지…"
+          />
+          <OptionSection
+            title="입실 전 점검 항목 관리"
+            description="다음 입주자가 들어오기 전에 짚는 항목입니다. 외부 신발장, 전등, 온수처럼 입실 날 바로 쓰는 것을 적습니다. 목록에서 삭제해도 이미 남긴 점검 기록은 그대로 있습니다."
+            items={moveinInspItems}
+            field="moveinInspectionItems"
+            setItems={setMoveinInspItems}
+            getLabel={v => v}
+            newValue={newMoveinInspItem}
+            onNewValueChange={setNewMoveinInspItem}
+            onAdd={handleAddMoveinInspItem}
+            onDelete={handleDeleteMoveinInspItem}
+            onReorder={handleReorderMoveinInspItems}
+            onRename={handleRenameMoveinInspItem}
+            onReset={handleResetMoveinInspItems}
+            placeholder="예: 우편함 정리, 환영 안내문…"
+          />
+          <OptionSection
+            title="점검 제외 품목 관리"
+            description="퇴실 점검을 만들 때 그 방에 배정된 비품 품명이 항목으로 저절로 들어갑니다. 여기 적은 품명은 넣지 않습니다. 목록에서 삭제해도 이미 남긴 점검 기록은 그대로 있습니다."
+            items={inspExcluded}
+            field="inspectionExcludedItems"
+            setItems={setInspExcluded}
+            getLabel={v => v}
+            newValue={newInspExcluded}
+            onNewValueChange={setNewInspExcluded}
+            onAdd={handleAddInspExcluded}
+            onDelete={handleDeleteInspExcluded}
+            onReorder={handleReorderInspExcluded}
+            onRename={handleRenameInspExcluded}
+            placeholder="예: 실크벽지, 장판…"
           />
           <OptionGroupHead title="재고·비품" />
           <OptionSection

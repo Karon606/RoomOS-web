@@ -732,6 +732,62 @@ export async function deleteStockSourceOption(name: string) { return deleteReaso
 export async function deleteAssetDisposalReason(name: string) { return deleteReasonOption('assetDisposalReasons', name) }
 export async function deleteVisitRouteOption(name: string) { return deleteReasonOption('visitRouteOptions', name) }
 
+// ── 방 점검 항목 목록 넷(2026-10-27 운영자 승인, 신고 2911c217) ──────────────
+// 퇴실 점검·청소 검수·입실 전 점검 항목과 퇴실 점검에 저절로 넣지 않을 비품 품명이다. 고르는 칸이 아니라 점검을 만들 때 베끼는
+// 목록이라 '기타' 규약이 없다. 점검이 만들어질 때 그때의 목록을 항목 이름으로 베껴 두므로(RoomInspectionItem.label) 이름 변경이 따라갈
+// 기록이 없고(RENAME_CASCADE 빈 표), 삭제도 목록에서만 빠진다. 읽는 정본은 parseOptionList 다(칸이 비면 코드 기본값).
+type InspectionListField = 'checkoutInspectionItems' | 'cleaningInspectionItems' | 'moveinInspectionItems' | 'inspectionExcludedItems'
+const INSPECTION_LIST_SELECT = {
+  checkoutInspectionItems: true, cleaningInspectionItems: true, moveinInspectionItems: true, inspectionExcludedItems: true,
+} as const satisfies Record<InspectionListField, true>
+
+async function inspectionListNow(propertyId: string, field: InspectionListField): Promise<string[]> {
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: INSPECTION_LIST_SELECT })
+  if (field === 'checkoutInspectionItems') return parseOptionList('checkoutInspectionItems', p?.checkoutInspectionItems)
+  if (field === 'cleaningInspectionItems') return parseOptionList('cleaningInspectionItems', p?.cleaningInspectionItems)
+  if (field === 'moveinInspectionItems') return parseOptionList('moveinInspectionItems', p?.moveinInspectionItems)
+  return parseOptionList('inspectionExcludedItems', p?.inspectionExcludedItems)
+}
+export async function getCheckoutInspectionItems(): Promise<string[]> { return inspectionListNow(await getPropertyId(), 'checkoutInspectionItems') }
+export async function getCleaningInspectionItems(): Promise<string[]> { return inspectionListNow(await getPropertyId(), 'cleaningInspectionItems') }
+export async function getMoveinInspectionItems(): Promise<string[]> { return inspectionListNow(await getPropertyId(), 'moveinInspectionItems') }
+export async function getInspectionExcludedItems(): Promise<string[]> { return inspectionListNow(await getPropertyId(), 'inspectionExcludedItems') }
+
+async function addInspectionListItem(field: InspectionListField, rawName: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireEdit()
+  const name = normalizeOptionName(field, rawName)
+  if (!name) return { ok: true }
+  const propertyId = await getPropertyId()
+  const current = await inspectionListNow(propertyId, field)
+  if (current.includes(name)) return { ok: true }
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: [...current, name].join(',') } as Prisma.PropertyUpdateInput,
+  })
+  revalidateOptionList(field)
+  return { ok: true }
+}
+async function deleteInspectionListItem(field: InspectionListField, name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await inspectionListNow(propertyId, field)
+  const next = current.filter(v => v !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: next.join(',') } as Prisma.PropertyUpdateInput,
+  })
+  revalidateOptionList(field)
+}
+export async function addCheckoutInspectionItem(name: string) { return addInspectionListItem('checkoutInspectionItems', name) }
+export async function addCleaningInspectionItem(name: string) { return addInspectionListItem('cleaningInspectionItems', name) }
+export async function addMoveinInspectionItem(name: string) { return addInspectionListItem('moveinInspectionItems', name) }
+export async function addInspectionExcludedItem(name: string) { return addInspectionListItem('inspectionExcludedItems', name) }
+export async function deleteCheckoutInspectionItem(name: string) { return deleteInspectionListItem('checkoutInspectionItems', name) }
+export async function deleteCleaningInspectionItem(name: string) { return deleteInspectionListItem('cleaningInspectionItems', name) }
+export async function deleteMoveinInspectionItem(name: string) { return deleteInspectionListItem('moveinInspectionItems', name) }
+export async function deleteInspectionExcludedItem(name: string) { return deleteInspectionListItem('inspectionExcludedItems', name) }
+
 export async function addExpenseCategory(rawName: string) {
   await requireEdit()
   const name = normalizeOptionName('expenseCategories', rawName)
@@ -830,6 +886,8 @@ function revalidateSecondLists(field: ReorderableField) {
   if (field === 'cleaningReasons') revalidatePath('/room-manage')
   if (field === 'stockDisposalReasons' || field === 'stockSourceOptions') revalidatePath('/inventory')
   if (field === 'assetDisposalReasons') { revalidatePath('/inventory'); revalidatePath('/inventory/assets') }
+  // 방 점검 항목 넷은 호실 관리 작업 탭이 점검을 만들 때 읽는다.
+  if (field === 'checkoutInspectionItems' || field === 'cleaningInspectionItems' || field === 'moveinInspectionItems' || field === 'inspectionExcludedItems') revalidatePath('/room-manage')
 }
 
 /**
@@ -997,6 +1055,11 @@ const RENAME_CASCADE: Record<ReorderableField, RenameTarget[]> = {
   stockSourceOptions:   [{ model: 'stockAddition', column: 'source', via: 'trackedItem' }],
   // 비품 폐기 사유. 폐기된 지출 행의 사유 칸이다. 금액·수량·폐기일은 안 바뀐다.
   assetDisposalReasons: [{ model: 'expense', column: 'disposalReason' }],
+  // 방 점검 항목 넷(2026-10-27). 점검 항목은 만들 때 베낀 스냅샷이라 이름 변경이 따라갈 기록이 없다. 목록 글자만 바뀐다.
+  checkoutInspectionItems: [],
+  cleaningInspectionItems: [],
+  moveinInspectionItems:   [],
+  inspectionExcludedItems: [],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
@@ -1075,6 +1138,7 @@ const OPTION_LIST_SELECT = {
   workKindOptions: true, specUnitOptions: true, qtyUnitOptions: true, discountReasons: true, jobOptions: true, channelOptions: true,
   cancelReasons: true, checkoutReasons: true, withholdReasons: true,
   dueDayReasons: true, cleaningReasons: true, stockDisposalReasons: true, stockSourceOptions: true, assetDisposalReasons: true, visitRouteOptions: true,
+  checkoutInspectionItems: true, cleaningInspectionItems: true, moveinInspectionItems: true, inspectionExcludedItems: true,
 } as const satisfies Record<ReorderableField, true>
 
 // 연쇄 대상 모델을 이름으로 부르는 자리. 칸 이름이 목록마다 달라 정적 타입으로는 못 쓴다.

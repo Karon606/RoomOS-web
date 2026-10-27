@@ -189,6 +189,13 @@ model Property {
   stockSourceOptions   String?
   assetDisposalReasons String?
   visitRouteOptions    String?
+  // 방 점검 항목 목록 넷 (콤마 구분, 비면 코드 기본값. 2026-10-27 운영자 승인, 신고 2911c217). 퇴실 점검·청소 검수·입실 전 점검 항목과
+  // 퇴실 점검에 저절로 들어가지 않을 비품 품명이다. 점검을 만들 때 그때의 목록을 항목으로 베껴 두므로(RoomInspectionItem.label)
+  // 목록을 고치거나 이름을 바꿔도 이미 만든 점검은 그대로다(prisma/migrate_room_inspection.sql).
+  checkoutInspectionItems String?
+  cleaningInspectionItems String?
+  moveinInspectionItems   String?
+  inspectionExcludedItems String?
   // 재고관리에 추적·표시할 카테고리 설정 (JSON: [{"cat":"부식비","alias":"식료품"},...]).
   // cat = 지출 카테고리(expenseCategories 중), alias = 재고관리 표시명. 순서 = 표시 순서.
   // null 이면 기본값(부식비→식료품·소모품비→소모품·폐기물 처리비→폐기물 처리용품).
@@ -332,6 +339,8 @@ model Property {
   roomStays           RoomStay[]
 
   cleanings          RoomCleaning[]
+  roomInspections     RoomInspection[]
+  roomInspectionItems RoomInspectionItem[]
   documentFieldOverrides DocumentFieldOverride[]
   foreignRegNoViews  ForeignRegNoView[]
   roomMasterKeyViews RoomMasterKeyView[]
@@ -582,6 +591,7 @@ model Room {
   roomStays  RoomStay[]
   cleanings  RoomCleaning[]
   roomWorks  RoomWork[]
+  roomInspections RoomInspection[]
   overlapAcks LeaseOverlapAck[]
   masterKeyViews RoomMasterKeyView[]
 
@@ -633,6 +643,70 @@ model RoomCleaning {
   @@index([roomId, doneDate])
   @@index([leaseTermId])
   @@map("room_cleanings")
+}
+
+// ============================================================
+// [4-a] RoomInspection — 퇴실 점검·청소 검수·입실 전 점검 (2026-10-27, 신고 2911c217)
+// ============================================================
+// 왜 따로 두나. 청소 완료(RoomCleaning)는 완료일·수행자·비용만 받는 사건이라 '제대로 됐나'를 적을 자리가
+// 없었다(519호 입실 컴플레인: 청소가 덜 됐고 신발장에 남의 신발). 기존 체크리스트(Checklist)는 영업장 단위로
+// 주기 반복하는 다른 축이라 방·단계에 묶을 수 없다.
+//
+// 항목은 표다(Json 아님). 항목마다 결과·확인 시각·메모가 따로 바뀌고, 즉시 저장과 적용취소가 항목 한 줄 단위다.
+// 항목 이름(label)은 만들 때 영업장 목록(Property.*InspectionItems)과 그 방 비품 품명에서 베낀 스냅샷이다.
+// 목록 이름을 바꾸거나 비품을 폐기해도 이미 만든 점검의 항목은 그대로다.
+// 회계에 접점이 없다. 돈을 만들지도 가리키지도 않는다(비품 행 id 는 어느 지출에서 왔는지 표시용이다).
+model RoomInspection {
+  id         String    @id @default(uuid()) @db.Uuid
+  propertyId String    @db.Uuid
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomId     String    @db.Uuid
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  // 어느 퇴실 건인가. 퇴실 처리가 만든 퇴실 점검·입실 전 점검만 값이 있다. 퇴실 적용취소가 이 값으로 걷는다.
+  leaseTermId String?  @db.Uuid
+  leaseTerm   LeaseTerm? @relation(fields: [leaseTermId], references: [id], onDelete: SetNull)
+  // 어느 청소의 검수인가. 청소 완료가 만든 청소 검수만 값이 있다. RoomCleaning.expenseId 와 같은 uuid 칸이다(FK 없음).
+  cleaningId String?   @db.Uuid
+
+  stage      String                            // CHECKOUT | AFTER_CLEANING | BEFORE_MOVEIN
+  status     String    @default("PLANNED")     // PLANNED | DONE | SKIPPED. 검수 미통과는 넷째 상태가 아니라 항목 NG 에서 파생한다
+  scheduledDate DateTime? @db.Date
+  doneDate      DateTime? @db.Date             // 운영자가 고른 완료일(lib/completionDate)
+  doneBy        String?                        // 완료로 기록한 계정 id(로그). 화면에는 안 쓴다
+  memo       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  inspectionItems RoomInspectionItem[]
+
+  @@index([propertyId, status])
+  @@index([roomId, stage])
+  @@index([leaseTermId])
+  @@map("room_inspections")
+}
+
+model RoomInspectionItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  inspectionId String    @db.Uuid
+  inspection   RoomInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  propertyId   String    @db.Uuid
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  label      String                            // 만들 때 베낀 항목 이름(스냅샷)
+  sortOrder  Int       @default(0)
+  source     String    @default("TEMPLATE")    // TEMPLATE(영업장 목록) | ASSET(그 방 비품) | MANUAL(손수 더함)
+  expenseId  String?   @db.Uuid                // ASSET 항목이 온 비품 지출 행(FK 없음)
+  result     String    @default("PENDING")     // PENDING | OK | NG | NA
+  checkedAt  DateTime?                         // 결과를 누른 시각(로그). 완료일과 다른 축이다
+  note       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([inspectionId, sortOrder])
+  @@map("room_inspection_items")
 }
 
 // ============================================================
@@ -934,6 +1008,7 @@ model LeaseTerm {
   // 발급본(ContractFile)과 그 박제는 손대지 않는다 — 그쪽은 voidedAt 도장만 찍힌다.
   contractVersionArchive    Json?
   cleanings                 RoomCleaning[]
+  roomInspections           RoomInspection[]
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지

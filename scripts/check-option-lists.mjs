@@ -764,7 +764,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     '호실': ['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions'],
     '입주자': ['jobOptions', 'visitRouteOptions', 'cancelReasons', 'checkoutReasons', 'requestCategories'],
     '돈': ['discountReasons', 'dueDayReasons', 'withholdReasons', 'incomeCategories', 'expenseCategories', 'paymentMethods', 'channelOptions'],
-    '청소·작업': ['cleaningReasons', 'workKindOptions'],
+    '청소·작업': ['cleaningReasons', 'workKindOptions', 'checkoutInspectionItems', 'cleaningInspectionItems', 'moveinInspectionItems', 'inspectionExcludedItems'],
     '재고·비품': ['stockDisposalReasons', 'stockSourceOptions', 'assetDisposalReasons', 'qtyUnitOptions', 'specUnitOptions'],
   }
   const tab = form.slice(form.indexOf("{tab === 'options' && ("), form.indexOf("{tab === 'pricing' && ("))

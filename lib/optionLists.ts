@@ -25,6 +25,7 @@ export type OptionListField =
   | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions' | 'discountReasons' | 'jobOptions' | 'channelOptions'
   | 'cancelReasons' | 'checkoutReasons' | 'withholdReasons'
   | 'dueDayReasons' | 'cleaningReasons' | 'stockDisposalReasons' | 'stockSourceOptions' | 'assetDisposalReasons' | 'visitRouteOptions'
+  | 'checkoutInspectionItems' | 'cleaningInspectionItems' | 'moveinInspectionItems' | 'inspectionExcludedItems'
 
 export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = {
   roomTypeOptions:   ['원룸', '미니룸'],
@@ -70,6 +71,14 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   // 비품 폐기 사유. 종전 화면 상수(inventory/assets DISPOSAL_REASONS)에서 '기타' 만 뺐다. 운영자가 쓰는 말 그대로다.
   assetDisposalReasons: ['시공 중 철거', '파손', '분실', '노후·고장으로 교체'],
   visitRouteOptions:    ['인터넷 검색', '지도 앱', '지인 소개', '간판', '직접 방문'],
+  // 방 점검 항목 셋(2026-10-27 운영자 승인, 신고 2911c217). 점검을 만들 때 그때의 목록을 항목으로 베낀다(RoomInspectionItem.label 스냅샷).
+  // 그래서 이름 변경이 따라갈 기록이 없다(RENAME_CASCADE 는 빈 표). 낱말은 영업장을 가리지 않는 말로 쓴다(멀티테넌트).
+  // 퇴실 점검에는 그 방에 배정된 비품 품명이 저절로 더해진다(lib/roomInspectionSeed). 아래 제외 품목에 적은 품명은 빠진다.
+  checkoutInspectionItems: ['벽지·장판 훼손', '가구 파손(책상·의자·침대)', '가전 작동(TV 겸용 모니터·냉장고)', '수동 추가 비품(공유기·셋탑박스·리모컨)', '열쇠·비밀번호 변경', '남은 짐·쓰레기', '욕실 배수·곰팡이'],
+  cleaningInspectionItems: ['책상·선반 먼지', '매트리스 커버·베개 커버 세탁 교체', '옷장 안 얼룩·냄새', '환풍기·에어컨 필터', '변기·세면대 물때', '샤워 배수구', '냉장고 내부', '창틀·블라인드', '침대 밑·바닥 모서리', '쓰레기통'],
+  moveinInspectionItems:   ['외부 신발장 타인 물품', '전등·콘센트', '와이파이', '온수', '환기·냄새', '침구 세트', '열쇠·비밀번호 준비', '방 번호판', '벌레 흔적'],
+  // 퇴실 점검에 저절로 넣지 않을 비품 품명. 기본값이 없다(품명을 코드에 박지 않는다).
+  inspectionExcludedItems: [],
 }
 
 /**
