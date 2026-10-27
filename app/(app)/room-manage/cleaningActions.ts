@@ -26,6 +26,7 @@ import { ymdToDbDate } from '@/lib/kstDate'
 import { assertNotFuture } from '@/lib/completionDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { reasonForSave } from '@/lib/reasonListSave'
+import { ensureRoomInspection, clearCleaningInspection, inspectionFailureNotice } from '@/lib/roomInspectionEnsure'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -236,7 +237,7 @@ export async function completeCleaning(input: {
   performerName?: string | null
   cost?: number | null
   fromCleaningFund?: boolean
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; inspection?: { id: string; roomId: string; itemCount: number }; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
@@ -318,9 +319,16 @@ export async function completeCleaning(input: {
         },
       })
     })
+    // 청소 검수를 만든다(2026-10-27, 신고 2911c217). 완료를 무르고 다시 완료하면 그때 걷힌 검수가 체크 그대로 되살아난다.
+    // 예정일은 청소 완료일이다(완료 직후 확인하는 일). 실패해도 완료는 그대로이고 한 줄로 알린다.
+    const insp = await ensureRoomInspection(propertyId, { roomId: cur.roomId, stage: 'AFTER_CLEANING', cleaningId: cur.id, scheduledDate: doneDate })
+    const notice = inspectionFailureNotice([insp])
     revalidatePath('/room-manage')
     revalidatePath('/finance')
-    return { ok: true }
+    // 이번에 만들거나 되살린 검수만 화면이 '청소 검수 N항목 · 열기' 로 잇는다. 이미 열려 있던 검수는 새로 알릴 것이 없다.
+    const fresh = (insp.kind === 'created' || insp.kind === 'revived') && insp.id
+      ? { id: insp.id, roomId: cur.roomId, itemCount: insp.itemCount } : undefined
+    return { ok: true, ...(fresh ? { inspection: fresh } : {}), ...(notice ? { notice } : {}) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '처리에 실패했습니다.' }
   }
@@ -357,6 +365,8 @@ export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKep
       where: { id },
       data: { status: 'PLANNED', doneDate: null, performer: null, fromCleaningFund: false },
     })
+    // 그 청소의 예정 검수를 걷는다. 끝낸 검수는 남긴다. 다시 완료하면 completeCleaning 이 되살린다.
+    await clearCleaningInspection(propertyId, id)
     revalidatePath('/room-manage')
     return { ok: true, expenseKept: !!cur.expenseId }
   } catch (err) {

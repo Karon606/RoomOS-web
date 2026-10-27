@@ -719,10 +719,17 @@ const SCOPE2 = {
   marketSurvey: { parent: null },
   marketCompetitor: { parent: 'marketSurvey' },
   room: { parent: null, files: ['app/(app)/room-manage/actions.ts'] },
+  // 방 점검 두 표(2026-10-27, 신고 2911c217). 둘 다 자기 영업장 칸이 있다. 항목도 점검을 거치지 않고 propertyId 로 바로 거른다.
+  roomInspection: { parent: null },
+  roomInspectionItem: { parent: null },
 }
-const SCOPE2_TYPES = { financialAccount: 'FinancialAccount', checklist: 'Checklist', checklistLog: 'ChecklistLog', tenantRequest: 'TenantRequest', marketSurvey: 'MarketSurvey', marketCompetitor: 'MarketCompetitor' }
+const SCOPE2_TYPES = { financialAccount: 'FinancialAccount', checklist: 'Checklist', checklistLog: 'ChecklistLog', tenantRequest: 'TenantRequest', marketSurvey: 'MarketSurvey', marketCompetitor: 'MarketCompetitor', roomInspection: 'RoomInspection', roomInspectionItem: 'RoomInspectionItem' }
 // 식으로 넘겨도 되는 data(파일·모델·정확한 글자). 거른 값을 담은 배열의 원소만 허용한다.
-const ALLOW_RAW2 = [{ file: 'app/(app)/room-manage/actions.ts', model: 'room', raw: /^x\.roomFields$/ }]
+const ALLOW_RAW2 = [
+  { file: 'app/(app)/room-manage/actions.ts', model: 'room', raw: /^x\.roomFields$/ },
+  // 점검 항목 일괄 생성. 서버가 정한 항목(lib/roomInspectionSeed)을 칸별로 다시 짜고, 점검 id·영업장은 서버 값이다.
+  { file: 'lib/roomInspectionEnsure.ts', model: 'roomInspectionItem', raw: /^items\.map\(it => \(\{ inspectionId: row\.id, propertyId, label: it\.label, sortOrder: it\.sortOrder, source: it\.source, expenseId: it\.expenseId \}\)\)$/ },
+]
 const EXPECTED2 = {
   financialAccount: { where: 4, data: 5 },
   checklist: { where: 4, data: 4 },
@@ -731,6 +738,8 @@ const EXPECTED2 = {
   marketSurvey: { where: 2, data: 2 },
   marketCompetitor: { where: 2, data: 2 },
   room: { where: 7, data: 7 },
+  roomInspection: { where: 8, data: 9 },
+  roomInspectionItem: { where: 4, data: 6 },
 }
 const MODEL2_ALT = Object.keys(SCOPE2).join('|')
 const CALL2_RE = new RegExp(`\\.\\s*(${MODEL2_ALT})\\s*\\.\\s*(create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|delete|deleteMany|upsert)\\s*\\(`, 'g')

@@ -32,6 +32,8 @@ import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoCheckout'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
+import { ensureCheckoutInspections, clearCheckoutInspections, inspectionFailureNotice, checkoutInspectionForLease, openMoveInInspectionSummary } from '@/lib/roomInspectionEnsure'
+import { moveInInspectionNotice } from '@/app/(app)/room-manage/inspectionConstants'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
@@ -216,9 +218,12 @@ async function applyCheckoutSideEffects(
     } catch { /* 방 갱신 실패가 퇴실을 되돌리지 않는다 */ }
   }
   const cleaningRes = await ensureCheckoutCleaning(propertyId, opts.roomId, leaseTermId, { cleaningYmd: opts.cleaningYmd })
+  // 퇴실 점검(예정일 = 퇴실일)과 입실 전 점검(예정일 없음)을 만든다(2026-10-27, 신고 2911c217). 실패해도 던지지 않는다.
+  const inspections = await ensureCheckoutInspections(propertyId, opts.roomId, leaseTermId)
   // 거주 구간 마감 — 열린 구간이 없으면 no-op.
   try { await closeStay(prisma, leaseTermId) } catch { /* 구간 이력이 퇴실을 막지 않는다 */ }
-  return checkoutCleaningNotice(cleaningRes)
+  const notices = [checkoutCleaningNotice(cleaningRes), inspectionFailureNotice([inspections.checkout, inspections.movein])].filter(Boolean)
+  return notices.length ? notices.join(' ') : null
 }
 
 // 만든 결과. 종전에는 셋 다 조용했다 — 자동 생성이 뒤에서 도는 부수효과였고 운영자는 그것이
@@ -2611,7 +2616,7 @@ export async function checkoutWithDepositRefund(params: {
   // 환불 뒤 홈택스·카드사 조치 안내를 화면까지 물려준다. 종전에는 서버가 만들어 놓고 이 경로가
   // 통째로 버려서, 현금영수증을 발행한 계약을 홈 알림에서 퇴실 처리하면 앱 매출만 조용히 줄고
   // 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
-}): Promise<{ ok: true; notice?: string; taxNotice?: RentRefundTaxNotice } | { ok: false; error: string }> {
+}): Promise<{ ok: true; notice?: string; taxNotice?: RentRefundTaxNotice; inspection?: { roomId: string; itemCount: number } } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -2659,7 +2664,8 @@ export async function checkoutWithDepositRefund(params: {
     }
     // 퇴실 쪽이 남긴 청소 안내를 그대로 물려준다 — 홈 경로도 같은 말을 듣는다.
     const notice = [checkoutRes.notice, rentNotice, depositReceiptNotice].filter(Boolean).join(' ') || null
-    return { ok: true, ...(notice ? { notice } : {}), ...(taxNotice ? { taxNotice } : {}) }
+    // 퇴실 점검 안내도 그대로 물려준다(홈 퇴실 처리 토스트의 '열기', 2026-10-27).
+    return { ok: true, ...(notice ? { notice } : {}), ...(taxNotice ? { taxNotice } : {}), ...(checkoutRes.inspection ? { inspection: checkoutRes.inspection } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2667,7 +2673,7 @@ export async function checkoutWithDepositRefund(params: {
 }
 
 // 입실 처리 (입실예정 → 거주중)
-export async function moveInTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function moveInTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
@@ -2715,11 +2721,20 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   })
 
   revalidatePath('/tenants')
-  return { ok: true }
+  // 그 방의 입실 전 점검이 남았으면 막지 않고 알린다(운영자 결정 3: 경고만, 2026-10-27).
+  const notice = await moveInNotice(propertyId, lease.roomId)
+  return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+// 입실 처리 뒤 안내 — 그 방에 열린 입실 전 점검이 있으면 진행과 함께 한 문장. 읽기 실패는 입실을 뒤집지 않는다.
+async function moveInNotice(propertyId: string, roomId: string | null): Promise<string | null> {
+  if (!roomId) return null
+  const open = await openMoveInInspectionSummary(propertyId, roomId).catch(() => null)
+  return open ? moveInInspectionNotice(open.checked, open.total) : null
 }
 
 /**
@@ -2750,7 +2765,7 @@ async function moveInBlock(roomId: string, exceptLeaseId: string): Promise<{ roo
 
 // 예약 확정 → 거주중 전환 (대시보드 알림에서 사용). 호실이 공실이 아니면 거부.
 // code 를 함께 주는 것은 호출부가 '조기 입실로 이을 자리'를 문구 대조로 알아내지 않게 하려는 것이다.
-export async function confirmReservationToActive(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
+export async function confirmReservationToActive(leaseTermId: string): Promise<{ ok: true; notice?: string } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
@@ -2818,7 +2833,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
-    return { ok: true }
+    // 오늘 들어가는 방(일정이 있으면 그 방)의 입실 전 점검이 남았으면 알린다. 막지 않는다(운영자 결정 3).
+    const notice = await moveInNotice(propertyId, planned?.roomId ?? lease.roomId)
+    return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3810,7 +3827,7 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
 // 퇴실 처리
 // cleaningDate = 퇴실 청소 예정일(퇴실 미니폼 입력). 안 보내면 퇴실일에서 기본값을 뽑고,
 // 빈 문자열·null 이면 '미정'이라 날짜 없이 만든다. 판정은 lib/checkoutCleaning 정본이 한다.
-export async function checkoutTenant(leaseTermId: string, tenantId: string, moveOutDate?: string, cleaningDate?: string | null): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+export async function checkoutTenant(leaseTermId: string, tenantId: string, moveOutDate?: string, cleaningDate?: string | null): Promise<{ ok: true; notice?: string; inspection?: { roomId: string; itemCount: number } } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
@@ -3855,8 +3872,12 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   })
 
   revalidatePath('/tenants')
+  revalidatePath('/room-manage')
+  // 이 퇴실이 만든 퇴실 점검 — 홈 퇴실 처리 토스트가 '퇴실 점검 N항목 · 열기' 로 잇는다(2026-10-27).
+  const insp = await checkoutInspectionForLease(propertyId, leaseTermId)
+  const inspection = insp ? { roomId: insp.roomId, itemCount: insp.itemCount } : undefined
   // 청소 예정이 안 만들어졌으면 그 사실만 얹는다. 퇴실은 이미 끝났고 여기서 실패로 뒤집지 않는다.
-  return cleaningNoticeText ? { ok: true, notice: cleaningNoticeText } : { ok: true }
+  return { ok: true, ...(cleaningNoticeText ? { notice: cleaningNoticeText } : {}), ...(inspection ? { inspection } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4132,6 +4153,8 @@ export async function applyStatusTransition(input: {
         if (!occupiedByOther) {
           // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
           await clearAutoCheckoutCleaning(propertyId, input.leaseTermId)
+          // 그 퇴실이 만든 예정 점검(퇴실 점검·입실 전 점검)도 걷는다. 끝낸 점검은 남긴다(lib/roomInspectionEnsure).
+          await clearCheckoutInspections(propertyId, input.leaseTermId)
           await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
         }
       }

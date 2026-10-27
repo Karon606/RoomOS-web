@@ -71,6 +71,10 @@ const ALLOW = [
     file: 'app/(app)/finance/actions.ts', column: 'undoneAt',
     why: '품목명 병합 되돌리기를 **누른 시각**이다. 같은 이유로 로그다',
   },
+  {
+    file: 'app/(app)/room-manage/inspectionActions.ts', column: 'checkedAt',
+    why: '방 점검 항목 결과를 **누른 시각**이다(2026-10-27). 점검이 일어난 날은 점검 완료일(RoomInspection.doneDate)이 따로 묻고 미래를 막는다',
+  },
 ]
 const allowed = (file, column) => ALLOW.some(a => a.file === file && a.column === column)
 
@@ -137,6 +141,7 @@ const SERVER = [
   { file: 'app/(app)/checklist/actions.ts', fn: 'markChecklistDone', what: '점검 완료' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork', what: '작업 완료', guardOnly: true },
   { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'completeCleaning', what: '청소 완료', guardOnly: true },
+  { file: 'app/(app)/room-manage/inspectionActions.ts', fn: 'completeInspection', what: '방 점검 완료', guardOnly: true },
 ]
 for (const s of SERVER) {
   const body = fnBody(strip(readFileSync(join(ROOT, s.file), 'utf8')), s.fn)
@@ -188,6 +193,7 @@ const GUARD_SITES = [
   { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'rescheduleCleaning', word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork',    word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'rescheduleRoomWork',  word: '완료일' },
+  { file: 'app/(app)/room-manage/inspectionActions.ts', fn: 'completeInspection', word: '완료일' },
   { file: 'app/(app)/checklist/actions.ts', fn: 'markChecklistDone', word: '완료일' },
   // 엑셀 임포트는 화면이 아니라 **시트**가 말을 정한다. 요청 시트의 머리가 '해결일'이고
   // (app/api/export/route.ts 가 그 이름으로 내보낸다) 임포트도 그 칸을 읽는다.
