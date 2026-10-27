@@ -4012,6 +4012,8 @@ export async function applyStatusTransition(input: {
       where: { id: input.leaseTermId, propertyId },
       select: {
         roomId: true, status: true, dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true, reservationConfirmedAt: true,
+        // 종속 가드(거주계로 올라오는 전환)가 볼 메인 계약 지목.
+        parentLeaseTermId: true,
         // 예약 확정 문이 볼 사람 — 인자로 온 tenantId 가 아니라 **이 계약의 주인**을 본다.
         tenantId: true,
         roomSchedule: true,
@@ -4058,6 +4060,17 @@ export async function applyStatusTransition(input: {
     // 정본은 lib/leaseTransitions 하나다. 되돌리기는 운영상 필요해 막지 않는다 — 실측으로도 쓰인다.
     if (!canTransition(lease.status, input.toStatus)) {
       return { ok: false, error: transitionDeniedMessage(lease.status, input.toStatus) }
+    }
+
+    // 종속 가드 — 거주계로 올라오는 전환(비거주·문의·종료에서 예약·거주중·퇴실 예정으로)은 수정 폼의
+    // climbingIntoResidence 와 같은 선으로 묻는다(2026-10-27). '비거주 계약만' 방에 혼자 선 비거주 계약을
+    // 상태 위젯으로 거주중에 올리면 메인 계약 없는 거주 계약이 생기던 길이다. 판정은 정본 한 벌이다.
+    if (lease.roomId && ROOM_RESIDENT_STATUSES.includes(input.toStatus) && !ROOM_RESIDENT_STATUSES.includes(lease.status)) {
+      const denial = await subordinationDenial({
+        roomId: lease.roomId, status: input.toStatus, parentLeaseTermId: lease.parentLeaseTermId,
+        tenantId: lease.tenantId, selfLeaseTermId: input.leaseTermId,
+      })
+      if (denial) return { ok: false, error: denial }
     }
 
     // 예약을 거주중으로 올리는 전이는 본 방이 비어야 한다 — 홈 알림 경로와 같은 규칙을 쓴다.
@@ -6738,7 +6751,8 @@ export async function batchUpdateTenants(
 
     // 계약 쪽 계획을 먼저 세운다. 납부일 일괄 변경의 기간 칸 판정(거절)이 입주자 칸 저장보다 앞이어야
     // 거절될 때 아무것도 안 바뀐다(독립 검수 2026-10-21, 종전에는 국적·성별이 먼저 저장된 뒤 거절됐다).
-    type LiveLease = { id: string; tenantId: string; depositAmount: number; dueDay: string | null; cycleDay: string | null; status: LeaseStatus; expectedMoveOut: Date | null; autoCheckoutAt: Date | null; rentAmount: number; moveInDate: Date | null; roomId: string | null }
+    type LiveLease = { id: string; tenantId: string; depositAmount: number; dueDay: string | null; cycleDay: string | null; status: LeaseStatus; expectedMoveOut: Date | null; autoCheckoutAt: Date | null; rentAmount: number; moveInDate: Date | null; roomId: string | null
+      parentLeaseTermId: string | null; room: { standaloneLeaseAllowed: boolean; nonResidentStandaloneAllowed: boolean } | null }
     let eligible: LiveLease[] = []
     let nextStatus: string | null = null
     const cycleClear: { id: string; prev: string }[] = []
@@ -6751,7 +6765,9 @@ export async function batchUpdateTenants(
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
         // rentAmount·moveInDate — 아래 청구 상태 백스톱의 입력(단건 경로 applyStatusTransition 과 같은 판정).
-        select: { id: true, tenantId: true, depositAmount: true, dueDay: true, cycleDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true, roomId: true },
+        select: { id: true, tenantId: true, depositAmount: true, dueDay: true, cycleDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true, roomId: true,
+          // 종속 가드 입력 — 거주계로 올리는 일괄이 메인 계약 없는 계약을 단독 불가 방에 세우지 않게(2026-10-27).
+          parentLeaseTermId: true, room: { select: { standaloneLeaseAllowed: true, nonResidentStandaloneAllowed: true } } },
       })
       // 사람당 메인 계약 하나만 덮는다(2026-08-13). 종전에는 이 where 가 그 사람의 살아 있는 계약을
       // 전부 집어, 방을 둘 쓰는 사람(509호 거주 + 601호 창고)에게 일괄 편집을 걸면 보증금·납부일·상태가
@@ -6777,6 +6793,17 @@ export async function batchUpdateTenants(
         // (addTenant·updateTenant·applyStatusTransition 이 이미 같은 문장으로 막는 자리).
         if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(nextStatus) && b.rentAmount > 0 && !b.moveInDate) {
           bump('입주일 없음'); return false
+        }
+        // 종속 가드 — 단건 전환(applyStatusTransition)·수정 폼과 같은 선과 같은 정본이다. 메인 계약이 있으면
+        // 그 지목은 이미 저장 때 검증됐고 일괄은 지목을 바꾸지 않으므로 메인 계약 없는 계약만 묻는다.
+        if (b.room && !b.parentLeaseTermId && ROOM_RESIDENT_STATUSES.includes(nextStatus) && !ROOM_RESIDENT_STATUSES.includes(b.status)
+          && leaseSubordinationDenial({
+            roomStandaloneAllowed: b.room.standaloneLeaseAllowed,
+            roomNonResidentStandaloneAllowed: b.room.nonResidentStandaloneAllowed,
+            incomingStatus: nextStatus, parentLeaseTermId: null, parent: null,
+            selfTenantId: b.tenantId, selfLeaseTermId: b.id, selfHasSubLeases: false,
+          })) {
+          bump('메인 계약 없음'); return false
         }
         return true
       })

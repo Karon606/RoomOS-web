@@ -139,6 +139,8 @@
   메인 계약이 필수이며 거부 문구가 출구 둘(메인 계약 고르기·비거주자로 바꾸기)을 말한다. 판정 한 줄은
   `lib/roomAssignment.ts` 의 `standaloneLeaseOk`, 감지망 `check-lease-subordination` 축 ② 가 같은 예외를 둔다.
   종전 602호 임시 조치(체크를 꺼서 거주 계약까지 혼자 들어가던 상태)는 이 설정으로 대체한다.
+  거주계로 올라오는 전환(비거주·문의·종료에서 예약·거주중·퇴실 예정으로)은 수정 폼·상태 위젯(applyStatusTransition)·
+  일괄 편집(batchUpdateTenants, 건너뜀 사유 '메인 계약 없음') 세 경로가 같은 정본 가드를 탄다.
   영업장 전역 스위치는 두지 않는다(방마다 고른다). 마이그레이션 `prisma/migrate_room_nonresident_standalone.sql`.
 - **비거주 겹침과 전입신고 경고** (2026-10-27, 운영자 승인) — 비거주 계약은 거주자가 있는 방에 겹쳐도 된다.
   전입신고는 **막지 않고 경고**한다. 판정·문장 정본 `lib/roomAssignment.ts` 의 `registrationConflictWarning`.

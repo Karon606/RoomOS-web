@@ -371,6 +371,34 @@ async function main() {
     eq('입실 적용취소는 입실한 방만 연다', [(await state(IM1))[0], (await state(IM2))[0]], ['PLANNED', 'SKIPPED'])
   }
 
+  // ── 9. 종속 가드 — 메인 계약 없는 계약을 거주계로 올리는 전환(2026-10-27, '비거주 계약만' 방) ─────────────
+  // 상태 위젯(applyStatusTransition)과 일괄 편집(batchUpdateTenants)도 수정 폼과 같은 정본(leaseSubordinationDenial)을 탄다.
+  {
+    const { NON_RESIDENT_ONLY_STANDALONE_ERROR, STANDALONE_LEASE_ERROR } = await import('@/lib/roomAssignment')
+    const flagRoom = async (roomNo: string, nonResidentStandaloneAllowed: boolean) => {
+      const id = await roomIn(P1, roomNo)
+      await prisma.room.update({ where: { id }, data: { standaloneLeaseAllowed: false, nonResidentStandaloneAllowed } })
+      return id
+    }
+    const statusOf = async (id: string) => (await prisma.leaseTerm.findUnique({ where: { id } }))?.status
+    const RO = await flagRoom('602', true)
+    const TO = await tenantIn(P1, '비거주단독')
+    const LO = await leaseIn(P1, TO, RO, 'NON_RESIDENT')
+    eq('비거주만 방 · 단독 비거주를 위젯으로 거주중에 올리면 거부',
+      [await tenants.applyStatusTransition({ leaseTermId: LO, tenantId: TO, toStatus: 'ACTIVE' }), await statusOf(LO)],
+      [{ ok: false, error: NON_RESIDENT_ONLY_STANDALONE_ERROR }, 'NON_RESIDENT'])
+    const bO = await tenants.batchUpdateTenants([TO], { status: 'ACTIVE' })
+    eq('비거주만 방 · 일괄로 거주중에 올려도 건너뛴다',
+      [bO.ok && bO.leaseCount, bO.ok && bO.skipped, await statusOf(LO)], [0, [{ reason: '메인 계약 없음', count: 1 }], 'NON_RESIDENT'])
+    eq('비거주만 방 · 거주계로 올리지 않는 전환(입실 취소)은 그대로 된다',
+      (await tenants.applyStatusTransition({ leaseTermId: LO, tenantId: TO, toStatus: 'CANCELLED' })).ok, true)
+    const RX = await flagRoom('603', false)
+    const TX = await tenantIn(P1, '불가방')
+    const LX = await leaseIn(P1, TX, RX, 'NON_RESIDENT')
+    eq('불가 방 · 단독 비거주를 거주중으로 올리면 불가 문구로 거부',
+      await tenants.applyStatusTransition({ leaseTermId: LX, tenantId: TX, toStatus: 'ACTIVE' }), { ok: false, error: STANDALONE_LEASE_ERROR })
+  }
+
   // ── 7. 남의 영업장 id 로는 아무것도 못 바꾼다 ─────────────────────────────────
   g.__CR_FLOW_PID = P2
   const R2 = await roomIn(P2, '601')
