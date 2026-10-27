@@ -12,8 +12,12 @@
 //   · 점검 완료·안 함·삭제·복원·항목 삭제·손수 더하기는 토스트 [적용취소](§16)가 있다. 점검 상태 쓰기만 부모를 다시 읽는다.
 // 체크 상자는 22px r7 정본(§22 '항목 완료 체크')이고 누르는 자리는 44px 다. 판정 셋이 모두 상자에 보인다(확인 = 코랄 채움 + 체크,
 // 문제 = warning 틴트 + 가로줄, 해당 없음 = 중립 틴트 + 가로줄). 진행 '점검 N/M' 의 N 이 곧 채워진 상자 수다.
+// 같은 판정을 배지·상자·토글로 세 번 말하지 않는다(디자이너 재검수). 상자 + 눌린 토글 칩 + (문제면) 메모가 전부다.
+// 토글 칩은 형제 '긴급만' 필터 칩 문법이다(RequestsClient). 켜짐은 의미색 트라이어드(문제 = warning, 해당 없음 = neutral), 꺼짐은 테두리 + --seg-ink-off.
+// 꺼짐 바탕만 투명이다. '긴급만' 은 페이지 면(--canvas) 위라 바탕이 --canvas 인데, 이 칩은 카드 안에 서서 --canvas 를 쓰면 다크에서 검은 알약이 된다.
+// '문제' 의 색 뜻은 warning(amber) 하나다(상자·칩·미통과 캡션).
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
@@ -52,8 +56,28 @@ const BOX_CLS: Record<InspectionItemResult, string> = {
   PENDING: 'border-[var(--warm-border)] bg-[var(--cream)] text-transparent',
 }
 
+// 토글 칩 — 누르는 자리 44px(RowActionBtn 과 같은 수), 보이는 칩은 '긴급만' 필터 칩과 같은 꼴. aria-pressed 로 켜짐을 말한다.
+const CHIP_HIT = '-my-2 min-h-[44px] inline-flex items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] disabled:opacity-50'
+const CHIP_ON: Record<'warning' | 'neutral', string> = {
+  warning: 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-[var(--warning-ring)]',
+  neutral: 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]',
+}
+function ToggleChip({ on, tone, disabled, onClick, children }: {
+  on: boolean; tone: 'warning' | 'neutral'; disabled?: boolean; onClick: () => void; children: React.ReactNode
+}) {
+  return (
+    <button type="button" aria-pressed={on} disabled={disabled} onClick={onClick} className={CHIP_HIT}>
+      <span className={`text-[0.65625rem] font-medium px-2.5 py-1 rounded-sm ring-1 transition-colors ${on
+        ? CHIP_ON[tone]
+        : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
+        {children}
+      </span>
+    </button>
+  )
+}
+
 export function InspectionRowBody({
-  row: r, canEdit, deleted = false, showActions = true, autoOpen = false, onOpenRoom, onChanged,
+  row: r, canEdit, deleted = false, showActions = true, autoOpen = false, onOpenRoom, onChanged, onItemsSettled,
 }: {
   row: InspectionRow
   canEdit: boolean
@@ -69,6 +93,11 @@ export function InspectionRowBody({
   /** 호실번호 버튼 — 영업장 교차 목록에서만 선다. */
   onOpenRoom?: (roomId: string) => void
   onChanged: () => void
+  /**
+   * 항목을 바꾼 뒤 행을 접거나 화면이 사라질 때 한 번(재검수 권고 5). 항목 쓰기는 화면을 다시 그리지 않으므로(R1) 수·배지가 낡는다.
+   * 그 순간 onChanged 를 한 번 부르고, 방 모달처럼 부모 화면(호실 목록 카드)까지 맞춰야 하는 자리는 이 콜백으로 router.refresh 를 건다.
+   */
+  onItemsSettled?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<InspectionItemRow[] | null>(null)
@@ -85,6 +114,16 @@ export function InspectionRowBody({
   // 저장 중인 항목들. 잠금은 그 항목 하나다(독립 검수 R1). 다른 항목은 그동안에도 누를 수 있다.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const [pending, startTransition] = useTransition()
+  // 항목을 바꿨는가. 바꿨으면 접을 때·사라질 때 한 번 부모를 맞춘다(권고 5). 최신 콜백은 ref 로 쥔다(사라질 때 읽는다).
+  const itemsDirty = useRef(false)
+  const settleRef = useRef<() => void>(() => {})
+  settleRef.current = () => {
+    if (!itemsDirty.current) return
+    itemsDirty.current = false
+    onChanged()
+    onItemsSettled?.()
+  }
+  useEffect(() => () => settleRef.current(), [])
 
   const editable = canEdit && !deleted && r.status === 'PLANNED'
   const stage = INSPECTION_STAGE_LABEL[r.stage]
@@ -99,6 +138,7 @@ export function InspectionRowBody({
   }
   const toggleOpen = () => {
     if (!open && items === null) loadItems()
+    if (open) settleRef.current()
     setOpen(o => !o)
   }
   useEffect(() => {
@@ -137,6 +177,7 @@ export function InspectionRowBody({
     try {
       const res = await fn()
       if (!res.ok) { pushToast('error', res.error); return }
+      itemsDirty.current = true
       onOk(res as Extract<T, { ok: true }>)
     } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') } finally {
       release()
@@ -147,6 +188,25 @@ export function InspectionRowBody({
   // 판정 토글 — 토스트가 없다(운영자 결정 ④). 같은 자리를 다시 누르면 미확인으로 돌아간다.
   const setResult = (it: InspectionItemRow, result: InspectionItemResult, note?: string | null) =>
     void itemRun(it.id, () => setInspectionItemResult({ itemId: it.id, result, ...(note !== undefined ? { note } : {}) }), res => replaceItem(res.item))
+
+  // 문제 메모 저장. 문제로 켜면서 처음 적는 메모는 판정 토글이라 토스트가 없다(결정 ④). 이미 적힌 메모를 고치면 옛 글이 사라지므로
+  // 토스트 [적용취소] 로 옛 글을 되살린다(재검수 권고 6a).
+  const saveNote = (it: InspectionItemRow, text: string) => {
+    const prevNote = it.note
+    const editing = !!prevNote && prevNote !== (text.trim() || null)
+    void itemRun(it.id, () => setInspectionItemResult({ itemId: it.id, result: 'NG', note: text }), res => {
+      replaceItem(res.item)
+      if (!editing) return
+      pushToast('success', `'${it.label}' 메모를 고쳤습니다`, { action: {
+        label: '적용취소',
+        run: () => { void setInspectionItemResult({ itemId: it.id, result: res.item.result, note: prevNote }).then(back => {
+          if (!back.ok) { pushToast('error', back.error); return }
+          replaceItem(back.item); itemsDirty.current = true
+          pushToast('info', `'${it.label}' 메모를 되살렸습니다`)
+        }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) },
+      } })
+    })
+  }
 
   const addItem = () => {
     const label = newLabel.trim()
@@ -250,12 +310,8 @@ export function InspectionRowBody({
                         {it.label}
                         {it.source === 'ASSET' && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">비품</span>}
                       </p>
-                      {(it.result === 'NG' || it.result === 'NA') && (
-                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          <StatusBadge tone={it.result === 'NG' ? 'unpaid' : 'info'}>{it.result === 'NG' ? '문제' : '해당 없음'}</StatusBadge>
-                        </p>
-                      )}
-                      {it.note && noteFor !== it.id && (
+                      {/* 메모는 문제일 때만 보인다. 문제를 끄면 저장된 채 숨고, 다시 문제로 켜면 돌아온다(권고 6b). */}
+                      {it.result === 'NG' && it.note && noteFor !== it.id && (
                         <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] break-words">{it.note}</p>
                       )}
                       {noteFor === it.id ? (
@@ -265,24 +321,24 @@ export function InspectionRowBody({
                             placeholder="무엇이 문제인지 (선택)" aria-label={`${it.label} 문제 메모`} className={`w-full ${DENSE_INPUT_CLS}`} />
                           <div className="flex gap-2">
                             <Btn variant="primary" size="sm" disabled={locked}
-                              onClick={() => { setResult(it, 'NG', noteVal); setNoteFor(null) }}>저장</Btn>
+                              onClick={() => { saveNote(it, noteVal); setNoteFor(null) }}>저장</Btn>
                             <Btn variant="secondary" size="sm" onClick={() => setNoteFor(null)}>취소</Btn>
                           </div>
                         </div>
                       ) : editable && (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           {/* 문제·해당 없음은 켜고 끄는 토글이다(aria-pressed). 켜진 것을 다시 누르면 미확인으로 돌아간다. */}
-                          <RowActionBtn tone={it.result === 'NG' ? 'accent' : 'neutral'} pressed={it.result === 'NG'} disabled={locked}
+                          <ToggleChip tone="warning" on={it.result === 'NG'} disabled={locked}
                             onClick={() => {
                               if (it.result === 'NG') { setResult(it, 'PENDING'); return }
                               setNoteVal(it.note ?? ''); setNoteFor(it.id)
-                            }}>문제</RowActionBtn>
+                            }}>문제</ToggleChip>
                           {it.result === 'NG' && (
                             <RowActionBtn tone="neutral" disabled={locked}
                               onClick={() => { setNoteVal(it.note ?? ''); setNoteFor(it.id) }}>메모</RowActionBtn>
                           )}
-                          <RowActionBtn tone={it.result === 'NA' ? 'accent' : 'neutral'} pressed={it.result === 'NA'} disabled={locked}
-                            onClick={() => setResult(it, it.result === 'NA' ? 'PENDING' : 'NA')}>해당 없음</RowActionBtn>
+                          <ToggleChip tone="neutral" on={it.result === 'NA'} disabled={locked}
+                            onClick={() => setResult(it, it.result === 'NA' ? 'PENDING' : 'NA')}>해당 없음</ToggleChip>
                           {itemEdit && (
                             <RowActionBtn tone="danger" disabled={locked} className="ml-auto" onClick={() => removeItem(it)}>삭제</RowActionBtn>
                           )}
@@ -316,7 +372,7 @@ export function InspectionRowBody({
 
       {!canEdit && !deleted ? (
         <div className="mt-1.5 flex gap-1.5 flex-wrap items-center">
-          <RowActionBtn tone="neutral" expanded={open} onClick={toggleOpen}>{open ? '항목 접기' : '항목 보기'}</RowActionBtn>
+          <RowActionBtn tone="neutral" expanded={open} onClick={toggleOpen}>{open ? '항목 접기' : '항목 펼치기'}</RowActionBtn>
         </div>
       ) : deleted ? (
         canEdit && (
@@ -343,7 +399,7 @@ export function InspectionRowBody({
       ) : (
         <div className="mt-1.5 flex gap-1.5 flex-wrap items-center">
           <RowActionBtn tone={r.status === 'PLANNED' ? 'accent' : 'neutral'} expanded={open} onClick={toggleOpen}>
-            {open ? '항목 접기' : r.status === 'PLANNED' ? '점검하기' : '항목 보기'}
+            {open ? '항목 접기' : '항목 펼치기'}
           </RowActionBtn>
           {r.status === 'PLANNED' && (
             <RowActionBtn tone="accent" disabled={pending} onClick={() => { setDoneDate(kstYmdStr()); setDoneOpen(true) }}>점검 완료</RowActionBtn>

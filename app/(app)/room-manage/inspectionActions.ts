@@ -102,7 +102,7 @@ export async function getOpenMoveInInspection(roomId: string): Promise<{ id: str
 }
 
 /**
- * 손수 등록(호실 관리 작업 탭 '+ 점검 등록', 방 모달 '점검 등록'). 배포 전에 이미 빈 방처럼 자동 생성이 안 지나간 방을 위한 문이다.
+ * 손수 등록(방 모달(호실 상세) 작업 이력의 '점검 등록', 2026-10-27 운영자 결정 ①). 배포 전에 이미 빈 방처럼 자동 생성이 안 지나간 방을 위한 문이다.
  * 같은 방에 같은 단계의 열린 점검이 있으면 막는다(자동 생성과 같은 판정). 적용취소는 삭제(deleteInspection)다.
  */
 export async function createInspection(input: { roomId: string; stage: InspectionStage; scheduledDate?: string | null }): Promise<{ ok: true; id: string; itemCount: number } | Fail> {

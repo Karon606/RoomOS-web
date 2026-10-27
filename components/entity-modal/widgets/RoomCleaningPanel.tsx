@@ -15,6 +15,7 @@
 // 여기 남는 것은 이 위젯만의 것 — 그 방의 이력 조회, 받은 청소비 잔고 줄, 예정 남음 경고.
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useCanEdit } from '@/components/RoleContext'
@@ -37,6 +38,8 @@ import type {
 
 export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const canEdit = useCanEdit()
+  // 점검 항목을 바꾼 뒤 행을 접거나 모달을 닫으면 호실 목록 카드(점검 N/M)를 한 번 맞춘다(재검수 권고 5).
+  const router = useRouter()
   const [rows, setRows] = useState<CleaningRow[] | null>(null)
   const [works, setWorks] = useState<RoomWorkRow[] | null>(null)
   // 방 점검(퇴실 점검·청소 검수·입실 전 점검, 2026-10-27). 셋째 종류로 같은 목록에 선다.
@@ -228,7 +231,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                   onOpenInspection={i => { setUserOpen(true); setFocusInspection(i.id) }} />
               ) : m.sort === 'i' ? (
                 <InspectionRowBody row={m.inspection} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload}
-                  autoOpen={focusInspection === m.inspection.id} />
+                  onItemsSettled={() => router.refresh()} autoOpen={focusInspection === m.inspection.id} />
               ) : (
                 <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing}
                   recentPerformers={recentPerformers} onChanged={reload} />

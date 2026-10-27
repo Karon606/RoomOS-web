@@ -33,7 +33,7 @@ import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoChecko
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { ensureCheckoutInspections, clearCheckoutInspections, inspectionFailureNotice, checkoutInspectionForLease, closeMoveInInspectionOnMoveIn, reopenMoveInInspectionOnUndo } from '@/lib/roomInspectionEnsure'
-import { moveInInspectionClosedText } from '@/app/(app)/room-manage/inspectionConstants'
+import { moveInInspectionClosedText, isMoveInTransition, isMoveInUndoTransition } from '@/app/(app)/room-manage/inspectionConstants'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
@@ -837,6 +837,8 @@ async function afterLeaseCreated(
   // 거주 구간 이력 — 호실이 있으면 열린 구간을 만든다(파생 기록, 추가 write). 종료 상태로 만든 계약은 바로 마감.
   await ensureOpenStay(prisma, ctx.leaseId)
   if (isStayTerminalStatus(f.status)) await closeStay(prisma, ctx.leaseId)
+  // 거주중으로 바로 등록하면 그 방의 입실이다(이전 상태 없음). 열린 입실 전 점검을 닫는다(운영자 결정 ③, 차단 1).
+  const inspectionNotice = await moveInInspectionOnTransition(ctx.propertyId, ctx.leaseId, f.roomId ?? null, null, f.status)
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
   if (f.depositReceived && f.depositAmount > 0) {
@@ -852,6 +854,7 @@ async function afterLeaseCreated(
     // 이미 기록됨 같은 거절은 종전처럼 넘기되, 메모 기계 키 거절만은 호출자에게 올린다(조정 행으로 읽힐 메모를 조용히 버리지 않게).
     if (dep && !dep.ok && dep.error === PAYMENT_PREFIX_RESERVED) throw new Error(dep.error)
   }
+  return inspectionNotice
 }
 
 /**
@@ -896,7 +899,7 @@ const DUPLICATE_ACK = 'allowDuplicateTenant'
  * 일이 사람 정보를 덮는 일이 되어, 창고 계약을 만들다가 거주 계약의 연락처가 바뀔 수 있다.
  * 가드·뒤처리는 addTenant 와 문자 그대로 같은 함수를 쓴다.
  */
-export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
@@ -917,13 +920,13 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
       select: { id: true },
     })
     await visitRoute.commit()
-    await afterLeaseCreated(f, { propertyId, tenantId, leaseId: lease.id })
+    const notice = await afterLeaseCreated(f, { propertyId, tenantId, leaseId: lease.id })
     await recordOverlapAckIfAllowed(formData, lease.id, user.sub)
 
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
-    return { ok: true }
+    return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -931,7 +934,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
 }
 
 // 입주자 추가
-export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function addTenant(formData: FormData): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
@@ -1053,7 +1056,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const newLease = await prisma.leaseTerm.findFirst({
     where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
   })
-  if (newLease) await afterLeaseCreated(f, { propertyId, tenantId: tenant.id, leaseId: newLease.id })
+  const notice = newLease ? await afterLeaseCreated(f, { propertyId, tenantId: tenant.id, leaseId: newLease.id }) : null
   if (newLease) await recordOverlapAckIfAllowed(formData, newLease.id, user.sub)
   // 목록에 없는 직업을 적었으면 영업장 목록에 더한다 — 다음 사람에게도 고를 수 있게(지출
   // 카테고리와 같은 문법). 실패해도 입주자 저장은 이미 끝났으므로 삼킨다.
@@ -1061,7 +1064,8 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   if (job && formData.get('jobAddToList') !== '0') await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
-  return { ok: true }
+  revalidatePath('/room-manage')
+  return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1887,11 +1891,14 @@ export async function updateTenant(formData: FormData): Promise<
     await clearAutoCheckoutCleaning(propertyId, leaseTermId)
     await clearCheckoutInspections(propertyId, leaseTermId)
   }
-  // 예약에서 거주중으로 들어오는 저장 — 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③). 거주중에서 입실 예약으로 무르는 저장은
-  // 그 입실이 닫은 점검을 되연다(전환 위젯의 입실 적용취소와 같은 짝).
-  const moveInNoticeText = prevStatus === 'RESERVED' && status === 'ACTIVE'
-    ? (await closeMoveInInspection(propertyId, newRoomId ?? prevRoomId ?? null, leaseTermId))?.text ?? null : null
-  if (prevStatus === 'ACTIVE' && status === 'RESERVED') await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
+  // 입실을 만드는 저장(거주중이 아닌 상태에서 거주중으로) — 그 방의 열린 입실 전 점검을 닫는다. 거주중에서 입주 전 단계로 무르는 저장은
+  // 그 입실이 닫은 점검을 되연다(운영자 결정 ③, 판정 정본 isMoveInTransition, 차단 1).
+  let moveInNoticeText = await moveInInspectionOnTransition(propertyId, leaseTermId, newRoomId ?? prevRoomId ?? null, prevStatus, status)
+  // 거주 중 방 이동(이 폼에서 호실을 바꾼 저장) — 옮겨 들어가는 방의 입실이다. 이 폼은 적용취소 대신 다시 저장으로 되돌린다.
+  if (!moveInNoticeText && (prevStatus === 'ACTIVE' || prevStatus === 'CHECKOUT_PENDING') && (status === 'ACTIVE' || status === 'CHECKOUT_PENDING')
+      && newRoomId && newRoomId !== prevRoomId) {
+    moveInNoticeText = (await closeMoveInInspection(propertyId, newRoomId, leaseTermId))?.text ?? null
+  }
 
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
@@ -2735,8 +2742,8 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
 
   revalidatePath('/tenants')
   revalidatePath('/room-manage')
-  // 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③).
-  const notice = (await closeMoveInInspection(propertyId, lease.roomId, leaseTermId))?.text
+  // 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③, 판정 정본).
+  const notice = await moveInInspectionOnTransition(propertyId, leaseTermId, lease.roomId, lease.status, 'ACTIVE')
   return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2749,6 +2756,17 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
 async function closeMoveInInspection(propertyId: string, roomId: string | null, leaseTermId: string): Promise<{ pending: number; text: string } | null> {
   const closed = await closeMoveInInspectionOnMoveIn(propertyId, roomId, leaseTermId)
   return closed ? { pending: closed.pending, text: moveInInspectionClosedText(closed.pending) } : null
+}
+
+/**
+ * 상태 전이 하나가 방 점검에 주는 일(2026-10-27 독립 재검수 차단 1·2). 판정은 정본 isMoveInTransition·isMoveInUndoTransition 하나다.
+ * 입실이면 그 방(roomId, 일정이 있으면 오늘 들어가는 방)의 열린 입실 전 점검을 닫고 둘째 줄 문장을 돌려준다.
+ * 입실 되돌리기면 그 계약이 닫은 입실 전 점검을 되연다. 상태를 쓰는 모든 경로(계약 생성 포함, 이전 상태 null)가 이 함수를 지난다.
+ */
+async function moveInInspectionOnTransition(propertyId: string, leaseTermId: string, roomId: string | null, prev: string | null, next: string): Promise<string | null> {
+  if (isMoveInTransition(prev, next)) return (await closeMoveInInspection(propertyId, roomId, leaseTermId))?.text ?? null
+  if (isMoveInUndoTransition(prev, next)) await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
+  return null
 }
 
 /**
@@ -2848,7 +2866,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
     // 오늘 들어가는 방(일정이 있으면 그 방)의 열린 입실 전 점검을 닫는다(운영자 결정 ③).
-    const notice = (await closeMoveInInspection(propertyId, planned?.roomId ?? lease.roomId, leaseTermId))?.text
+    const notice = await moveInInspectionOnTransition(propertyId, leaseTermId, planned?.roomId ?? lease.roomId, 'RESERVED', 'ACTIVE')
     return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -3237,14 +3255,14 @@ export async function startLeaseWithRoomSchedule(input: {
     if (derivedDueDay) await propagateDueDayToSubLeases(prisma, lease.id, lease.dueDay, derivedDueDay)
     await reanchorReservationPrepaid(lease.id)
     // 오늘 들어가는 방(일정의 첫 방)의 열린 입실 전 점검을 닫는다(운영자 결정 ③, 다른 입실 경로와 같은 함수).
-    const inspClosed = await closeMoveInInspection(propertyId, schedule[0]?.roomId ?? lease.roomId, lease.id)
+    const inspClosedText = await moveInInspectionOnTransition(propertyId, lease.id, schedule[0]?.roomId ?? lease.roomId, lease.status, 'ACTIVE')
 
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     const next = nextRoomMove(schedule, input.moveInDate)
     const nextRoom = next
       ? await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
       : null
-    const notice = [next ? `${fmtDateDot(next.at)}에 ${roomNoWithRo(nextRoom?.roomNo ?? '', '')} 옮기라고 홈에서 알립니다.` : null, inspClosed?.text ?? null]
+    const notice = [next ? `${fmtDateDot(next.at)}에 ${roomNoWithRo(nextRoom?.roomNo ?? '', '')} 옮기라고 홈에서 알립니다.` : null, inspClosedText]
       .filter(Boolean).join(' ') || undefined
     return { ok: true, notice }
   } catch (err) {
@@ -3649,13 +3667,13 @@ export async function advanceRoomSchedule(input: {
       }
     })
 
+    // 일정 이사는 옮겨 들어가는 방의 입실이다(차단 1). 그 방의 열린 입실 전 점검을 닫는다. 적용취소(undoRoomMove)는 그 방 것만 되연다.
+    const moveInspText = (await closeMoveInInspection(propertyId, next.roomId, lease.id))?.text ?? null
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     const after = schedule[idx + 2]
     const room = await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
-    return {
-      ok: true,
-      notice: after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${withParticle(fmtRoomNo(room?.roomNo ?? '', ''), '이/가')} 계약 호실입니다.`,
-    }
+    const scheduleText = after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${withParticle(fmtRoomNo(room?.roomNo ?? '', ''), '이/가')} 계약 호실입니다.`
+    return { ok: true, notice: [scheduleText, moveInspText].filter(Boolean).join(' ') }
   } catch (e) {
     if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
     return { ok: false, error: (e as Error).message ?? '옮기지 못했습니다.' }
@@ -3791,6 +3809,8 @@ export async function undoRoomMove(input: { leaseTermId: string; moveYmd: string
         await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
       }
     })
+    // 이사를 무르면 그 이사가 닫은 입실 전 점검(옮겨 들어갔던 방 것)만 되연다(차단 2, advanceRoomSchedule 의 짝).
+    await reopenMoveInInspectionOnUndo(propertyId, input.leaseTermId, { roomId: moved.roomId })
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     return { ok: true }
   } catch (e) {
@@ -3830,6 +3850,8 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
         }
       }
     })
+    // 호실 일정 입실을 무르면(입주자 화면 '입실 처리를 적용취소') 그 입실이 닫은 입실 전 점검을 되연다(차단 2, startLeaseWithRoomSchedule 의 짝).
+    await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
 
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     return { ok: true }
@@ -4236,16 +4258,15 @@ export async function applyStatusTransition(input: {
     // 예약에서 거주중으로(입주자 상태 위젯 '입실 처리') — 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③). 화면의 실제 입실 경로가
     // 여기다(홈 알림은 confirmReservationToActive). 일정이 있으면 오늘 들어가는 방으로 본다. 닫은 사실은 notice 가 아니라
     // moveInInspectionClosed 로 돌려준다. 위젯이 입실 토스트의 둘째 줄로 말한다(§15 장문형). 입실 적용취소는 그 점검을 되연다.
-    const moveInClosed = lease.status === 'RESERVED' && input.toStatus === 'ACTIVE'
-      ? await closeMoveInInspection(propertyId, scheduledSegmentOn(parseRoomSchedule(lease.roomSchedule), kstYmdStr())?.roomId ?? lease.roomId, input.leaseTermId) : null
-    if (lease.status === 'ACTIVE' && input.toStatus === 'RESERVED') await reopenMoveInInspectionOnUndo(propertyId, input.leaseTermId)
+    const moveInClosedText = await moveInInspectionOnTransition(propertyId, input.leaseTermId,
+      scheduledSegmentOn(parseRoomSchedule(lease.roomSchedule), kstYmdStr())?.roomId ?? lease.roomId, lease.status, input.toStatus)
     const finalNote = [notice, staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null]
       .filter(Boolean).join(' ') || null
     return {
       ok: true,
       ...(finalNote ? { notice: finalNote } : {}),
       ...(roomBusy ? { roomBusy } : {}),
-      ...(moveInClosed ? { moveInInspectionClosed: moveInClosed.text } : {}),
+      ...(moveInClosedText ? { moveInInspectionClosed: moveInClosedText } : {}),
     }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -6662,7 +6683,7 @@ export async function batchUpdateTenants(
     // 퇴실 예정일(YYYY-MM-DD) — status 가 CHECKOUT_PENDING 일 때만 유효(신고 204522b7). 빈 값 = 미변경.
     expectedMoveOut?: string
   },
-): Promise<{ ok: true; tenantCount: number; leaseCount: number; skipped: { reason: string; count: number }[]; undo: BatchTenantsUndo | null } | { ok: false; error: string }> {
+): Promise<{ ok: true; tenantCount: number; leaseCount: number; skipped: { reason: string; count: number }[]; undo: BatchTenantsUndo | null; inspectionNotice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -6692,13 +6713,14 @@ export async function batchUpdateTenants(
     // 사유별 제외 건수 — 일괄 편집 정본 문법(finance batchUpdateExpenses 와 같은 모양·같은 토스트).
     const skippedCounts: Record<string, number> = {}
     const bump = (reason: string) => { skippedCounts[reason] = (skippedCounts[reason] ?? 0) + 1 }
+    let inspectionsClosed = 0
 
     // 되돌리기 스냅샷 — 덮어쓰기 전 원값(감사 백로그 2026-07-10, 일괄 수납 undo와 동일 패턴)
     const undo: BatchTenantsUndo = { tenants: [], leases: [] }
 
     // 계약 쪽 계획을 먼저 세운다. 납부일 일괄 변경의 기간 칸 판정(거절)이 입주자 칸 저장보다 앞이어야
     // 거절될 때 아무것도 안 바뀐다(독립 검수 2026-10-21, 종전에는 국적·성별이 먼저 저장된 뒤 거절됐다).
-    type LiveLease = { id: string; tenantId: string; depositAmount: number; dueDay: string | null; cycleDay: string | null; status: LeaseStatus; expectedMoveOut: Date | null; autoCheckoutAt: Date | null; rentAmount: number; moveInDate: Date | null }
+    type LiveLease = { id: string; tenantId: string; depositAmount: number; dueDay: string | null; cycleDay: string | null; status: LeaseStatus; expectedMoveOut: Date | null; autoCheckoutAt: Date | null; rentAmount: number; moveInDate: Date | null; roomId: string | null }
     let eligible: LiveLease[] = []
     let nextStatus: string | null = null
     const cycleClear: { id: string; prev: string }[] = []
@@ -6711,7 +6733,7 @@ export async function batchUpdateTenants(
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
         // rentAmount·moveInDate — 아래 청구 상태 백스톱의 입력(단건 경로 applyStatusTransition 과 같은 판정).
-        select: { id: true, tenantId: true, depositAmount: true, dueDay: true, cycleDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true },
+        select: { id: true, tenantId: true, depositAmount: true, dueDay: true, cycleDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true, roomId: true },
       })
       // 사람당 메인 계약 하나만 덮는다(2026-08-13). 종전에는 이 where 가 그 사람의 살아 있는 계약을
       // 전부 집어, 방을 둘 쓰는 사람(509호 거주 + 601호 창고)에게 일괄 편집을 걸면 보증금·납부일·상태가
@@ -6799,11 +6821,15 @@ export async function batchUpdateTenants(
             prevRoomId: null, nextRoomId: null,
             prevStatus: b.status, nextStatus,
           })
+          // 일괄 상태 변경도 입실이면 그 방의 열린 입실 전 점검을 닫고, 입실 되돌리기면 되연다(판정 정본, 차단 1).
+          if (await moveInInspectionOnTransition(propertyId, b.id, b.roomId, b.status, nextStatus)) inspectionsClosed++
         }
       }
     }
 
     const skipped = Object.entries(skippedCounts).map(([reason, count]) => ({ reason, count }))
+    // 닫힌 입실 전 점검 — 일괄 편집 토스트의 둘째 줄(운영자 결정 ③). 한 건이 아닐 수 있어 수만 말한다.
+    const inspectionNotice = inspectionsClosed > 0 ? `입실 전 점검 ${inspectionsClosed}건이 남은 채 닫혔습니다 · 일괄 수정을 적용취소하면 다시 열립니다` : null
     // 전부 걸러진 저장은 '변경할 항목이 없습니다'가 아니다 — 왜 안 바뀌었는지가 답이라
     // 사유를 실어 정상 응답으로 돌려주고 토스트가 그것을 말한다(제외가 0건일 때만 종전 문구).
     if (tenantCount === 0 && leaseCount === 0 && skipped.length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
@@ -6812,7 +6838,7 @@ export async function batchUpdateTenants(
     // 적용취소 토큰은 서버가 서명한다(화면을 거쳐 돌아오는 값이라 지어낸 id·칸으로 남의 계약을 덮지 못하게, 독립 검수 2026-10-21).
     // 운영에서 서명 키가 없으면 토큰을 내지 않는다(null). 화면은 그때 적용취소를 숨긴다(납입일 변경 토큰과 같은 규칙).
     const sig = signUndoBody(BATCH_TENANTS_UNDO_DOMAIN, propertyId, canonicalBatchTenantsUndo(undo))
-    return { ok: true, tenantCount, leaseCount, skipped, undo: sig === null ? null : { ...undo, ...(sig ? { sig } : {}) } }
+    return { ok: true, tenantCount, leaseCount, skipped, undo: sig === null ? null : { ...undo, ...(sig ? { sig } : {}) }, inspectionNotice: inspectionNotice ?? undefined }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -7271,7 +7297,7 @@ export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok:
       .map(x => ({ id: x.id, status: (x.fields as Record<string, unknown>).status }))
       .filter((x): x is { id: string; status: string } => typeof x.status === 'string')
     const stayBefore = stayUndo.length > 0
-      ? await prisma.leaseTerm.findMany({ where: { id: { in: stayUndo.map(x => x.id) }, propertyId }, select: { id: true, status: true } })
+      ? await prisma.leaseTerm.findMany({ where: { id: { in: stayUndo.map(x => x.id) }, propertyId }, select: { id: true, status: true, roomId: true } })
       : []
     await prisma.$transaction([
       ...u.tenants.map(x => prisma.tenant.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })),
@@ -7285,6 +7311,8 @@ export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok:
         prevRoomId: null, nextRoomId: null,
         prevStatus: b.status, nextStatus: restored.status,
       })
+      // 일괄 수정이 입실로 닫은 입실 전 점검을 되연다(입실 되돌리기 판정, 차단 2). 되돌림이 거꾸로 입실이면 닫는다.
+      await moveInInspectionOnTransition(propertyId, b.id, b.roomId, b.status, restored.status)
     }
     revalidatePath('/tenants'); revalidatePath('/rooms')
     return { ok: true }

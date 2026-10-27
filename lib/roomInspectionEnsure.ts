@@ -213,7 +213,8 @@ export async function checkoutInspectionForLease(propertyId: string, leaseTermId
 
 /**
  * 입실이 그 방의 열린 입실 전 점검을 '안 함'으로 닫는다(2026-10-27 운영자 결정 ③). 입실을 만드는 모든 경로가 부른다
- * (상태 위젯 입실 처리·수정 폼 거주중 전환·홈 알림 입실·moveInTenant). 사람이 들어간 방의 입실 전 점검은 더 할 수 없는 일이라
+ * (거주중이 아닌 상태에서 거주중으로 가는 모든 전이·거주중 계약 생성·거주 중 방 이동, 판정 정본 isMoveInTransition).
+ * 사람이 들어간 방의 입실 전 점검은 더 할 수 없는 일이라
  * 예정으로 남겨 두면 거주 중인 방에 '점검 남음' 이 선다. 끝낸 판정은 그대로 남는다(상태만 닫는다).
  *
  * 누가 닫았는지는 doneBy 로그 칸에 `auto-movein:<계약 id>` 로 남긴다. 입실 적용취소가 이 표식으로 **그 입실이 닫은 점검만** 되연다
@@ -233,10 +234,12 @@ export async function closeMoveInInspectionOnMoveIn(propertyId: string, roomId: 
       prisma.roomInspectionItem.count({ where: { inspectionId: open.id, propertyId } }),
       prisma.roomInspectionItem.count({ where: { inspectionId: open.id, propertyId, result: 'PENDING' } }),
     ])
-    await prisma.roomInspection.update({
-      where: { id: open.id, propertyId },
+    // 조건부 쓰기다(독립 재검수 권고 3). 읽은 뒤 그사이 누가 끝내거나 닫았으면 0건이라 닫았다고 말하지 않는다.
+    const done = await prisma.roomInspection.updateMany({
+      where: { id: open.id, propertyId, status: 'PLANNED', deletedAt: null },
       data: { status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId) },
     })
+    if (done.count === 0) return null
     return { id: open.id, pending, total }
   } catch { return null }
 }
@@ -245,10 +248,11 @@ export async function closeMoveInInspectionOnMoveIn(propertyId: string, roomId: 
  * 입실 적용취소(거주중 -> 입실 예약)가 그 입실이 닫은 입실 전 점검을 예정으로 되연다. 같은 방·같은 단계에 이미 다른 예정 점검이 있으면
  * 되열지 않는다(열린 할 일이 둘 서지 않게). 실패해도 던지지 않는다.
  */
-export async function reopenMoveInInspectionOnUndo(propertyId: string, leaseTermId: string): Promise<void> {
+export async function reopenMoveInInspectionOnUndo(propertyId: string, leaseTermId: string, opts: { roomId?: string } = {}): Promise<void> {
   try {
+    // roomId 를 주면 그 방만 되연다(방 이동 적용취소는 옮겨 들어간 방 하나만 무른다). 안 주면 그 계약이 닫은 것 전부(입실 적용취소).
     const closed = await prisma.roomInspection.findMany({
-      where: { propertyId, stage: 'BEFORE_MOVEIN', status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId), deletedAt: null },
+      where: { propertyId, stage: 'BEFORE_MOVEIN', status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId), deletedAt: null, ...(opts.roomId ? { roomId: opts.roomId } : {}) },
       select: { id: true, roomId: true },
     })
     for (const row of closed) {
@@ -257,7 +261,11 @@ export async function reopenMoveInInspectionOnUndo(propertyId: string, leaseTerm
         select: { id: true },
       })
       if (other) continue
-      await prisma.roomInspection.update({ where: { id: row.id, propertyId }, data: { status: 'PLANNED', doneBy: null } })
+      // 조건부 쓰기(권고 3). 그사이 손으로 고쳤으면(상태·표식이 바뀌었으면) 건드리지 않는다.
+      await prisma.roomInspection.updateMany({
+        where: { id: row.id, propertyId, status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId), deletedAt: null },
+        data: { status: 'PLANNED', doneBy: null },
+      })
     }
   } catch { /* 점검은 입실 되돌리기를 막지 않는다 */ }
 }

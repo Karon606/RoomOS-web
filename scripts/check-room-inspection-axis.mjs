@@ -205,8 +205,19 @@ for (const file of SOURCES) {
   const itemRun = r.match(/const itemRun = async[\s\S]*?\n  \}\n/)?.[0] ?? ''
   if (!itemRun || /onChanged\(/.test(itemRun) || !/setBusy\(prev => new Set\(prev\)\.add\(key\)\)/.test(itemRun)) violations.push(`${ROW} · 항목 쓰기가 그 항목 하나만 잠그지 않거나 부모를 다시 읽는다(R1).`)
   if (/disabled=\{!editable \|\| pending\}/.test(r) || !/const locked = !editable \|\| busy\.has\(it\.id\)\n/.test(r)) violations.push(`${ROW} · 항목 잠금이 그 항목 하나(busy)가 아니라 행 전체(pending)에 묶였다. 연달아 체크가 막힌다(R1).`)
-  if (!/if \(it\.result === 'NG'\) \{ setResult\(it, 'PENDING'\); return \}\s*setNoteVal\(it\.note \?\? ''\); setNoteFor\(it\.id\)/.test(r) || !/setResult\(it, 'NG', noteVal\)/.test(r)) violations.push(`${ROW} · '문제' 가 메모 칸을 먼저 열고 저장 한 번에 문제 + 메모를 남기는 토글이 아니다(R9).`)
-  if (!/pressed=\{it\.result === 'NG'\}/.test(r) || !/pressed=\{it\.result === 'NA'\}/.test(r) || !/setResult\(it, it\.result === 'NA' \? 'PENDING' : 'NA'\)/.test(r)) violations.push(`${ROW} · 문제·해당 없음이 켜고 끄는 토글(aria-pressed, 다시 누르면 미확인)이 아니다.`)
+  if (!/if \(it\.result === 'NG'\) \{ setResult\(it, 'PENDING'\); return \}\s*setNoteVal\(it\.note \?\? ''\); setNoteFor\(it\.id\)/.test(r) || !/saveNote\(it, noteVal\)/.test(r) || !/setInspectionItemResult\(\{ itemId: it\.id, result: 'NG', note: text \}\)/.test(r)) violations.push(`${ROW} · '문제' 가 메모 칸을 먼저 열고 저장 한 번에 문제 + 메모를 남기는 토글이 아니다(R9).`)
+  if (!/<ToggleChip tone="warning" on=\{it\.result === 'NG'\}/.test(r) || !/<ToggleChip tone="neutral" on=\{it\.result === 'NA'\}/.test(r) || !/setResult\(it, it\.result === 'NA' \? 'PENDING' : 'NA'\)/.test(r) || !/aria-pressed=\{on\}/.test(r)) violations.push(`${ROW} · 문제·해당 없음이 켜고 끄는 토글 칩(aria-pressed, 다시 누르면 미확인)이 아니다.`)
+  // 칩은 형제 '긴급만' 필터 칩 문법(켜짐 = 의미색 트라이어드, 꺼짐 = --canvas + --seg-ink-off). '문제' 색 뜻은 warning 하나(디자이너 재검수).
+  if (!/warning: 'bg-\[var\(--warning-bg\)\] text-\[var\(--warning-fg\)\] ring-\[var\(--warning-ring\)\]'/.test(r) || !/bg-transparent ring-\[var\(--warm-border\)\] text-\[var\(--seg-ink-off\)\]/.test(r)) violations.push(`${ROW} · 토글 칩이 '긴급만' 칩 문법(켜짐 warning 트라이어드·꺼짐 테두리 + seg-ink-off, 카드 안이라 바탕 투명)이 아니다.`)
+  // 같은 판정을 배지로 또 말하지 않는다(상자 + 눌린 칩 + 메모). 메모는 문제일 때만 보이고 끄면 저장된 채 숨는다(권고 6b).
+  if (/<StatusBadge tone=\{it\.result/.test(r) || /'문제' : '해당 없음'/.test(r)) violations.push(`${ROW} · 문제·해당 없음을 배지로 또 말한다(상자·칩·배지 세 번).`)
+  if (!/\{it\.result === 'NG' && it\.note && noteFor !== it\.id && \(/.test(r)) violations.push(`${ROW} · 메모가 문제가 아닐 때도 보인다(문제를 끄면 숨고 다시 켜면 돌아와야 한다).`)
+  // 이미 적힌 메모를 고치면 옛 글을 되살리는 [적용취소] 가 있다(권고 6a).
+  if (!/const editing = !!prevNote && prevNote !== \(text\.trim\(\) \|\| null\)/.test(r) || !/note: prevNote \}\)\.then\(back =>/.test(r)) violations.push(`${ROW} · 메모를 고쳐 저장하면 옛 글을 되살릴 길(토스트 적용취소)이 없다.`)
+  // 항목을 바꿨으면 접을 때·사라질 때 한 번 맞춘다(권고 5). 방 모달은 router.refresh 로 호실 카드까지.
+  if (!/if \(open\) settleRef\.current\(\)/.test(r) || !/useEffect\(\(\) => \(\) => settleRef\.current\(\), \[\]\)/.test(r) || !/itemsDirty\.current = true\n\s*onOk\(/.test(r)) violations.push(`${ROW} · 항목을 바꾼 뒤 접거나 사라질 때 수·배지를 맞추지 않는다(R1 낡은 표시, 권고 5).`)
+  if (!/onItemsSettled=\{\(\) => router\.refresh\(\)\}/.test(strip(read('components/entity-modal/widgets/RoomCleaningPanel.tsx')))) violations.push(`RoomCleaningPanel · 점검 항목을 바꾼 뒤 모달을 닫거나 접을 때 호실 목록을 맞추지 않는다(권고 5).`)
+  if (!/\{open \? '항목 접기' : '항목 펼치기'\}/.test(r)) violations.push(`${ROW} · 행 여닫기 이름이 '항목 펼치기 / 항목 접기' 짝이 아니다.`)
   // 판정 셋이 상자에 보인다(R2). 진행 'N' 이 판정을 마친 항목 수라 상자와 어긋나지 않는다.
   if (!/NG: 'border-\[var\(--warning-fg\)\] bg-\[var\(--warning-bg\)\]/.test(r) || !/NA: 'border-\[var\(--warm-border\)\] bg-\[var\(--neutral-bg\)\]/.test(r) || !/BOX_CLS\[it\.result\]/.test(r)) violations.push(`${ROW} · 상자가 문제·해당 없음을 안 보인다. 진행 '점검 N/M' 의 N 과 채워진 상자 수가 갈린다(R2).`)
   // 진행 문장은 정본 하나(R2). 행·카드 보조줄이 손으로 숫자 문장을 짓지 않는다.
@@ -249,7 +260,7 @@ for (const file of SOURCES) {
   // 입실이 닫은 입실 전 점검은 입실 토스트의 둘째 줄이다(운영자 결정 ③). 상태 위젯은 moveInInspectionClosed 를 detail 로, 홈 입실은 notice 를 detail 로.
   const d = strip(read('app/(app)/dashboard/DashboardClient.tsx'))
   if (!/if \(res\.inspection\) \{[\s\S]{0,200}INSPECTION_STAGE_LABEL\.CHECKOUT[\s\S]{0,160}label: '열기', run: \(\) => entityModal\.open\(\{ kind: 'room', roomId: insp\.roomId \}\)/.test(d)) violations.push(`DashboardClient · 홈 퇴실 처리가 퇴실 점검 '열기' 토스트를 안 띄운다.`)
-  if (!/confirmReservationToActive\(reservationDueLeaseId\)[\s\S]{0,900}if \(res\.notice\) pushToast\('info', '입실 처리됨', \{ detail: res\.notice \}\)/.test(d)) violations.push(`DashboardClient · 홈 입실 처리가 닫힌 입실 전 점검 안내를 입실 토스트 둘째 줄로 안 싣는다.`)
+  if (!/confirmReservationToActive\(reservationDueLeaseId\)[\s\S]{0,900}pushToast\('success', '입실 처리됨', res\.notice \? \{ detail: res\.notice \} : undefined\)/.test(d)) violations.push(`DashboardClient · 홈 입실 처리 토스트가 늘 같은 '입실 처리됨' 이 아니거나 닫힌 입실 전 점검을 둘째 줄로 안 싣는다.`)
   const w = strip(read('components/entity-modal/widgets/TenantStatusTransitions.tsx'))
   if (!/const detail = 'moveInInspectionClosed' in res \? res\.moveInInspectionClosed : undefined/.test(w) || !/\.\.\.\(detail \? \{ detail \} : \{\}\)/.test(w)) violations.push(`TenantStatusTransitions · 입실 처리 토스트가 닫힌 입실 전 점검을 둘째 줄로 안 말한다(운영자 결정 ③).`)
   if (!/getOpenMoveInInspection\(moveInRoomId\)/.test(w) || !/<WhyCaption id=\{moveInWhyId\}[\s\S]{0,200}label: '점검 열기'/.test(w) || !/aria-describedby=\{def\.key === 'moveIn' && moveInInsp \? moveInWhyId : undefined\}/.test(w)) violations.push(`TenantStatusTransitions · '입실 처리' 앞 입실 전 점검 안내 줄(WhyCaption · 점검 열기 · describedby)을 잃었다.`)
@@ -274,23 +285,86 @@ for (const file of SOURCES) {
   if (leaves < 2) violations.push(`${TENANTS} · 퇴실을 무르는 경로를 ${leaves}곳만 찾았다(상태 위젯·수정 폼 둘 이상). 판정이 낡았다.`)
   const ut = fnBody(t, 'updateTenant') ?? ''
   if (!/if \(prevStatus === 'CHECKED_OUT' && status !== 'CHECKED_OUT'\) \{\s*await clearAutoCheckoutCleaning\(propertyId, leaseTermId\)\s*await clearCheckoutInspections\(propertyId, leaseTermId\)/.test(ut)) violations.push(`${TENANTS} · updateTenant 의 퇴실 무르기(CHECKED_OUT 에서 다른 상태로)가 청소 예정·예정 점검을 걷지 않는다(R3).`)
-  // 입실을 만드는 모든 경로(예약 선납 재앵커를 부르는 곳이 곧 입실 경로다)는 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③).
-  let moveIns = 0
-  for (const m of t.matchAll(/export async function (\w+)\(/g)) {
-    const b = fnBody(t, m[1]) ?? ''
-    if (!/reanchorReservationPrepaid\(/.test(b)) continue
-    moveIns++
-    if (!/closeMoveInInspection\(propertyId, /.test(b)) violations.push(`${TENANTS} · ${m[1]} 가 입실을 만드는데 그 방의 열린 입실 전 점검을 닫지 않는다(운영자 결정 ③).`)
+  // ── 입실(운영자 결정 ③, 독립 재검수 차단 1·2) ──
+  // 판정은 정본 isMoveInTransition 하나다(다음 상태 거주중이고 이전 상태가 거주가 아님. 계약 생성은 이전 상태 null).
+  const cst2 = strip(read(CONST))
+  if (!/export function isMoveInTransition\(prev: string \| null, next: string\): boolean \{\s*return next === 'ACTIVE' && prev !== 'ACTIVE' && prev !== 'CHECKOUT_PENDING'/.test(cst2)) violations.push(`${CONST} · 입실 판정 정본이 '다음 거주중 · 이전 거주 아님' 이 아니다(차단 1).`)
+  const helper = fnBody(t, 'moveInInspectionOnTransition') ?? ''
+  if (!/if \(isMoveInTransition\(prev, next\)\) return \(await closeMoveInInspection\(/.test(helper) || !/if \(isMoveInUndoTransition\(prev, next\)\) await reopenMoveInInspectionOnUndo\(propertyId, leaseTermId\)/.test(helper)) violations.push(`${TENANTS} · moveInInspectionOnTransition 이 정본 판정 둘로 닫기·되열기를 하지 않는다.`)
+  // 지점 기준(fail closed). 계약 상태를 바꾸거나 계약을 만들거나 방을 옮기는 함수는 거주 구간을 함께 맞춘다(저장소 불변식).
+  // 그래서 계약 생성·거주 구간 도우미·거주중 쓰기가 보이는 함수는 전부 입실 훅을 부르거나, 입실이 아닌 까닭이 아래 표에 있어야 한다.
+  const MARK = /leaseTerm\.create\(|leaseTerms: \{ create|recordRoomChange\(|syncRoomStayOnSave\(|ensureOpenStay\(|status: 'ACTIVE'[,\s}]/
+  // 훅은 직접 부르기만 센다. 계약 생성 두 곳은 afterLeaseCreated 에 맡기는데, 그 몸통이 직접 훅을 불러야만 위임으로 인정한다.
+  const HOOK = /moveInInspectionOnTransition\(|closeMoveInInspection\(|closeMoveInInspectionOnMoveIn\(/
+  const tenantsSrc = strip(read(TENANTS))
+  const afterBody = (fnBody(tenantsSrc, 'afterLeaseCreated') ?? '').split('\n').slice(1).join('\n')
+  const DELEGATE_OK = HOOK.test(afterBody)
+  if (!DELEGATE_OK) violations.push(`${TENANTS} · afterLeaseCreated(계약 생성 공통부)가 입실 훅을 안 부른다. 거주중으로 바로 등록해도 입실 전 점검이 안 닫힌다(차단 1).`)
+  const NOT_MOVE_IN = {
+    'app/(app)/tenants/actions.ts#undoAutoCheckout': '퇴실 예정에서 거주중으로 되돌림. 계속 사는 것이라 입실이 아니다',
+    'app/(app)/tenants/actions.ts#setCheckoutProration': '퇴실 예정으로 가는 전이',
+    'app/(app)/tenants/actions.ts#clearCheckoutProration': '퇴실 예정 정산 되돌림. 거주·퇴실 예정 사이만 오간다',
+    'app/(app)/tenants/actions.ts#getTenants': '조회(거주중 조건)',
+    'lib/moveInDate.ts#restoreSubLeaseMoveInDates': '딸린 계약 입주일 되돌림. 상태·방이 안 바뀐다',
+    'lib/moveInDate.ts#propagateMoveInDateToSubLeases': '딸린 계약 입주일 전파. 상태·방이 안 바뀐다',
+    'app/(app)/dashboard/getDashboardData.ts#getDashboardData': '조회(거주중 조건)',
+    'app/api/cron/push-alerts/route.ts#GET': '조회(거주중 조건으로 퇴실 예정 자동 전환 후보를 고른다). 거주중에서 나가는 전이뿐',
+    'lib/autoCheckout.ts#resolveCheckoutTiming': '퇴실 예정 시점 선택(거주중 유지 또는 퇴실 예정). 이미 사는 계약이다',
+    'lib/billing.ts#offerRentForMonth': '청구 계산 입력 값. 쓰기가 아니다',
   }
-  if (moveIns < 4) violations.push(`${TENANTS} · 입실 경로를 ${moveIns}곳만 찾았다(상태 위젯·수정 폼·홈 알림·moveInTenant 넷). 판정이 낡았다.`)
-  for (const fn of ['applyStatusTransition', 'updateTenant']) {
-    if (!/await reopenMoveInInspectionOnUndo\(propertyId, /.test(fnBody(t, fn) ?? '')) violations.push(`${TENANTS} · ${fn} 의 입실 적용취소(거주중에서 입실 예약으로)가 그 입실이 닫은 입실 전 점검을 되열지 않는다(운영자 결정 ③).`)
+  // 닫는 함수마다 짝인 적용취소가 되열어야 한다(차단 2). 짝이 없는 것은 그 까닭을 적는다.
+  const UNDO_PAIR = {
+    'app/(app)/tenants/actions.ts#applyStatusTransition': 'app/(app)/tenants/actions.ts#applyStatusTransition',
+    'app/(app)/tenants/actions.ts#updateTenant': 'app/(app)/tenants/actions.ts#updateTenant',
+    'app/(app)/tenants/actions.ts#moveInTenant': 'app/(app)/tenants/actions.ts#applyStatusTransition',
+    'app/(app)/tenants/actions.ts#confirmReservationToActive': 'app/(app)/tenants/actions.ts#applyStatusTransition',
+    'app/(app)/tenants/actions.ts#startLeaseWithRoomSchedule': 'app/(app)/tenants/actions.ts#undoRoomSchedule',
+    'app/(app)/tenants/actions.ts#advanceRoomSchedule': 'app/(app)/tenants/actions.ts#undoRoomMove',
+    'app/(app)/tenants/actions.ts#batchUpdateTenants': 'app/(app)/tenants/actions.ts#undoBatchUpdateTenants',
+    'app/(app)/tenants/actions.ts#undoBatchUpdateTenants': 'app/(app)/tenants/actions.ts#undoBatchUpdateTenants',
+    'app/(app)/tenants/actions.ts#afterLeaseCreated': null,          // 계약 생성(addTenant·addLeaseToTenant). 등록 취소는 계약 삭제라 적용취소가 없다
+    'app/(app)/tenants/actions.ts#addTenant': null,
+    'app/(app)/tenants/actions.ts#addLeaseToTenant': null,
+    'app/(app)/tenants/actions.ts#moveInInspectionOnTransition': null, // 정본 도움 함수 자신
+    'app/(app)/tenants/actions.ts#closeMoveInInspection': null,
+    'app/api/import/route.ts#createTenantAndLease': null,             // 엑셀 가져오기. 적용취소가 없다(계약 삭제로 정리)
   }
+  const fnsOf = src => [...src.matchAll(/(?:^|\n)(?:export\s+)?(?:async\s+)?function\s+(\w+)\(/g)].map(m => m[1])
+  const SCAN = [...walk('app'), ...walk('lib')].filter(f => /\.ts$/.test(f) && !['lib/roomStay.ts', 'lib/roomInspectionEnsure.ts'].includes(f))
+  let points = 0
+  const closers = []
+  for (const file of SCAN) {
+    const src = strip(read(file))
+    if (!MARK.test(src) && !HOOK.test(src)) continue
+    for (const name of new Set(fnsOf(src))) {
+      // 첫 줄(선언)을 걷는다. 함수 이름이 훅 이름이면 자기 선언이 훅으로 세어진다.
+      const b = (fnBody(src, name) ?? '').split('\n').slice(1).join('\n')
+      const key = `${file}#${name}`
+      const hooked = HOOK.test(b) || (DELEGATE_OK && /afterLeaseCreated\(/.test(b))
+      if (HOOK.test(b)) closers.push(key)
+      if (!MARK.test(b)) continue
+      points++
+      if (hooked || NOT_MOVE_IN[key]) continue
+      violations.push(`${file} · ${name} 가 계약 생성·상태 쓰기·방 이동 지점인데 입실 훅(moveInInspectionOnTransition·closeMoveInInspection)을 안 부르고, 입실이 아닌 까닭도 NOT_MOVE_IN 에 없다(차단 1).`)
+    }
+  }
+  if (points < 12) violations.push(`입실 지점을 ${points}곳만 찾았다(12곳 이상 기대). 판정이 낡았다.`)
+  for (const key of closers) {
+    if (!(key in UNDO_PAIR)) { violations.push(`${key} · 입실 전 점검을 닫는데 짝인 적용취소가 표(UNDO_PAIR)에 없다(차단 2).`); continue }
+    const undo = UNDO_PAIR[key]
+    if (!undo) continue
+    const [uf, un] = undo.split('#')
+    const ub = fnBody(strip(read(uf)), un) ?? ''
+    if (!/reopenMoveInInspectionOnUndo\(propertyId, |moveInInspectionOnTransition\(/.test(ub)) violations.push(`${undo} · ${key} 의 적용취소인데 그 입실이 닫은 입실 전 점검을 되열지 않는다(차단 2).`)
+  }
+  // 방 이동 적용취소는 옮겨 들어갔던 방 하나만 되연다(입실 전체를 되열면 앞서 들어간 방까지 열린다).
+  if (!/await reopenMoveInInspectionOnUndo\(propertyId, input\.leaseTermId, \{ roomId: moved\.roomId \}\)/.test(fnBody(t, 'undoRoomMove') ?? '')) violations.push(`${TENANTS} · undoRoomMove 가 옮겨 들어갔던 방의 입실 전 점검만 되열지 않는다.`)
+  // 동시성(권고 3) — 닫기·되열기는 조건부 쓰기다. 읽은 뒤 그사이 바뀐 점검은 건드리지 않는다.
   const e = strip(read(ENSURE))
   const close = fnBody(e, 'closeMoveInInspectionOnMoveIn') ?? ''
-  if (!/stage: 'BEFORE_MOVEIN', status: 'PLANNED', deletedAt: null/.test(close) || !/data: \{ status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\) \}/.test(close)) violations.push(`${ENSURE} · 입실이 닫는 것이 '그 방의 열린 입실 전 점검을 그 입실 표식과 함께 안 함으로' 가 아니다.`)
+  if (!/where: \{ id: open\.id, propertyId, status: 'PLANNED', deletedAt: null \},\s*data: \{ status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\) \}/.test(close) || !/if \(done\.count === 0\) return null/.test(close)) violations.push(`${ENSURE} · 입실 닫기가 '예정일 때만' 조건부 쓰기가 아니거나 못 닫았는데 닫았다고 말한다(권고 3).`)
   const reopen = fnBody(e, 'reopenMoveInInspectionOnUndo') ?? ''
-  if (!/status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\), deletedAt: null/.test(reopen) || !/if \(other\) continue/.test(reopen)) violations.push(`${ENSURE} · 입실 적용취소가 그 입실이 닫은 점검만 고르지 않거나 열린 점검과 겹쳐 되연다(손으로 '안 하기로' 한 점검까지 열린다).`)
+  if (!/where: \{ id: row\.id, propertyId, status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\), deletedAt: null \}/.test(reopen) || !/if \(other\) continue/.test(reopen)) violations.push(`${ENSURE} · 입실 적용취소가 '그 입실 표식이 있는 안 함일 때만' 조건부로 되열지 않거나 열린 점검과 겹쳐 연다(권고 3).`)
   // 청소 삭제·삭제 적용취소(운영자 판단 ③). 삭제는 예정 검수만 걷고, 완료된 청소를 되살리면 걷힌 검수만 되살린다(새로 만들지 않는다).
   const c = strip(read(CLEANING))
   if (!/await clearCleaningInspection\(propertyId, id\)/.test(fnBody(c, 'deleteCleaning') ?? '')) violations.push(`${CLEANING} · 청소 삭제가 그 청소의 예정 검수를 안 걷는다.`)

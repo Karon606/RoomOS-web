@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { seedInspectionItems, isInspectableAsset } from '../lib/roomInspectionSeed'
+import { isMoveInTransition, isMoveInUndoTransition } from '../app/(app)/room-manage/inspectionConstants'
 
 const ROOT = path.resolve(__dirname, '..')
 const PORT = 57000 + Math.floor(Math.random() * 900)
@@ -48,6 +49,17 @@ const J = <T>(x: T): T => JSON.parse(JSON.stringify(x))   // 화면을 거쳐 �
   })
   eq('목록 먼저, 비품 뒤, 빈칸·중복·제외 품목은 한 번도 안 선다', items.map(i => [i.label, i.sortOrder, i.source]), [['벽지', 0, 'TEMPLATE'], ['의자', 1, 'TEMPLATE'], ['책상', 2, 'ASSET']])
   eq('비품을 안 넣는 단계는 목록만', seedInspectionItems({ stage: 'BEFORE_MOVEIN', template: ['온수'], excluded: [], trackedCategories: [], assetStages: ['CHECKOUT'], assets: [row({})] }).map(i => i.label), ['온수'])
+}
+
+// 입실 판정 정본 진리표(차단 1). 다음 거주중 · 이전 거주 아님. 계약 생성은 이전 null.
+{
+  const T: [string | null, string, boolean][] = [
+    ['RESERVED', 'ACTIVE', true], ['TOUR_DONE', 'ACTIVE', true], ['WAITING_TOUR', 'ACTIVE', true], ['CANCELLED', 'ACTIVE', true],
+    ['NON_RESIDENT', 'ACTIVE', true], ['CHECKED_OUT', 'ACTIVE', true], [null, 'ACTIVE', true],
+    ['CHECKOUT_PENDING', 'ACTIVE', false], ['ACTIVE', 'ACTIVE', false], [null, 'RESERVED', false], ['RESERVED', 'CHECKOUT_PENDING', false],
+  ]
+  eq('입실 판정 진리표', T.map(([a, b]) => isMoveInTransition(a, b)), T.map(x => x[2]))
+  eq('입실 되돌리기 판정', [isMoveInUndoTransition('ACTIVE', 'RESERVED'), isMoveInUndoTransition('ACTIVE', 'CANCELLED'), isMoveInUndoTransition('ACTIVE', 'CHECKED_OUT'), isMoveInUndoTransition('CHECKOUT_PENDING', 'RESERVED')], [true, true, false, false])
 }
 
 function schemaSql(): string {
@@ -261,6 +273,75 @@ async function main() {
   await insp.deleteInspection(MK2)
   eq('겹치는 예정이 없어지면 되연다', await insp.reopenInspection(MK), { ok: true })
   eq('예정이 있으면 예정 점검 복원이 막힌다', await insp.restoreInspection(MK2), { ok: false, error: SIB })
+
+  // ── 8. 입실을 만드는 모든 경로와 그 짝 적용취소(독립 재검수 차단 1·2, 권고 3) ─────────────────────
+  {
+    const mvOpen = async (roomId: string) => (await insp.createInspection({ roomId, stage: 'BEFORE_MOVEIN' })) as { ok: true; id: string }
+    const state = async (id: string) => prisma.roomInspection.findUnique({ where: { id } }).then(x => [x?.status, x?.doneBy ?? null])
+    // 예약이 아닌 상태(투어 완료)에서 거주중으로 가도 입실이다.
+    const R6 = await roomIn(P1, '506'); const I6 = (await mvOpen(R6)).id
+    const T6 = await tenantIn(P1, '투어')
+    const L6 = await leaseIn(P1, T6, R6, 'TOUR_DONE')
+    const t6 = await tenants.applyStatusTransition({ leaseTermId: L6, tenantId: T6, toStatus: 'ACTIVE' })
+    eq('투어 완료에서 거주중도 입실이라 닫는다', [t6.ok, (await state(I6))[0]], [true, 'SKIPPED'])
+    // 일괄 편집 상태 변경도 같은 판정이다. 적용취소가 되연다.
+    const R7 = await roomIn(P1, '507'); const I7 = (await mvOpen(R7)).id
+    const T7 = await tenantIn(P1, '일괄')
+    const L7 = await leaseIn(P1, T7, R7, 'RESERVED')
+    const b7 = await tenants.batchUpdateTenants([T7], { status: 'ACTIVE' })
+    eq('일괄 거주중 전환이 닫고 둘째 줄을 낸다', [b7.ok, (await state(I7))[0], b7.ok && b7.inspectionNotice?.startsWith('입실 전 점검 1건이 남은 채 닫혔습니다')], [true, 'SKIPPED', true])
+    if (b7.ok && b7.undo) {
+      eq('일괄 적용취소', (await tenants.undoBatchUpdateTenants(J(b7.undo))).ok, true)
+      eq('일괄 적용취소가 그 입실이 닫은 점검을 되연다', await state(I7), ['PLANNED', null])
+    } else {
+      eq('일괄 적용취소 토큰(하네스 서명 키)', b7.ok && b7.undo !== null, true)
+    }
+    void L7
+    // 다른 계약 격리(권고 3). 다른 계약의 입실 적용취소는 이 점검을 안 연다.
+    const R8 = await roomIn(P1, '508'); const I8 = (await mvOpen(R8)).id
+    const T8a = await tenantIn(P1, '갑'); const T8b = await tenantIn(P1, '을')
+    const L8a = await leaseIn(P1, T8a, R8, 'RESERVED')
+    const R8b = await roomIn(P1, '518')
+    const L8b = await leaseIn(P1, T8b, R8b, 'ACTIVE')
+    await tenants.applyStatusTransition({ leaseTermId: L8a, tenantId: T8a, toStatus: 'ACTIVE' })
+    eq('갑의 입실이 닫는다', (await state(I8))[0], 'SKIPPED')
+    await tenants.applyStatusTransition({ leaseTermId: L8b, tenantId: T8b, toStatus: 'RESERVED' })
+    eq('을의 입실 적용취소는 갑이 닫은 점검을 안 연다', (await state(I8))[0], 'SKIPPED')
+    await tenants.applyStatusTransition({ leaseTermId: L8a, tenantId: T8a, toStatus: 'RESERVED' })
+    eq('갑의 입실 적용취소가 연다', await state(I8), ['PLANNED', null])
+    // 그사이 손으로 고친 점검은 되열기가 안 건드린다(조건부 쓰기, 권고 3).
+    await tenants.applyStatusTransition({ leaseTermId: L8a, tenantId: T8a, toStatus: 'ACTIVE' })
+    await prisma.roomInspection.update({ where: { id: I8 }, data: { doneBy: 'someone-else' } })
+    await tenants.applyStatusTransition({ leaseTermId: L8a, tenantId: T8a, toStatus: 'RESERVED' })
+    eq('표식이 바뀐 점검은 안 열린다', await state(I8), ['SKIPPED', 'someone-else'])
+    // 방 이동 적용취소는 옮겨 들어갔던 방 하나만 되연다(차단 1·2).
+    const RA = await roomIn(P1, '509'); const RB = await roomIn(P1, '510')
+    const IA = (await mvOpen(RA)).id; const IB = (await mvOpen(RB)).id
+    const T9 = await tenantIn(P1, '이사')
+    const L9 = await leaseIn(P1, T9, RB, 'ACTIVE')
+    const D = new Date('2026-10-20T00:00:00Z')
+    await prisma.roomStay.create({ data: { leaseTermId: L9, roomId: RA, propertyId: P1, startDate: new Date('2026-10-01T00:00:00Z'), endDate: D } })
+    await prisma.roomStay.create({ data: { leaseTermId: L9, roomId: RB, propertyId: P1, startDate: D, endDate: null } })
+    await prisma.roomInspection.updateMany({ where: { id: { in: [IA, IB] } }, data: { status: 'SKIPPED', doneBy: `auto-movein:${L9}` } })
+    // 하네스 연결은 하나라, 기존 undoRoomMove·undoRoomSchedule 이 트랜잭션 안에서 전역 클라이언트(roomStillOccupied)를 부르면 시간 초과로 멈춘다
+    // (그 함수들의 기존 모양, 별건). 그 호출은 방에 다른 열린 구간이 없을 때만 돌므로 다른 계약의 열린 구간을 하나 둔다. 점검 판정과는 무관하다.
+    const Lx = await leaseIn(P1, await tenantIn(P1, '이웃'), RB, 'NON_RESIDENT')
+    await prisma.roomStay.create({ data: { leaseTermId: Lx, roomId: RB, propertyId: P1, startDate: new Date('2026-09-01T00:00:00Z'), endDate: null } })
+    eq('이사 적용취소', (await tenants.undoRoomMove({ leaseTermId: L9, moveYmd: '2026-10-20' })).ok, true)
+    eq('옮겨 들어갔던 방만 되열리고 앞 방은 그대로', [(await state(IB))[0], (await state(IA))[0]], ['PLANNED', 'SKIPPED'])
+    // 호실 일정 입실 적용취소(입주자 화면 '입실 처리를 적용취소')가 되연다(차단 2).
+    const RS = await roomIn(P1, '511'); const IS = (await mvOpen(RS)).id
+    const TS = await tenantIn(P1, '일정')
+    const LS = await leaseIn(P1, TS, RS, 'ACTIVE')
+    await prisma.leaseTerm.update({ where: { id: LS }, data: { roomSchedule: [{ roomId: RS, from: '2026-10-01', to: '2026-10-10' }, { roomId: R8, from: '2026-10-10', to: null }] } })
+    await prisma.roomInspection.update({ where: { id: IS }, data: { status: 'SKIPPED', doneBy: `auto-movein:${LS}` } })
+    for (const rid of [RS, R8]) {
+      const Ly = await leaseIn(P1, await tenantIn(P1, '이웃2'), rid, 'NON_RESIDENT')
+      await prisma.roomStay.create({ data: { leaseTermId: Ly, roomId: rid, propertyId: P1, startDate: new Date('2026-09-01T00:00:00Z'), endDate: null } })
+    }
+    eq('호실 일정 입실 적용취소', (await tenants.undoRoomSchedule(LS)).ok, true)
+    eq('호실 일정 입실 적용취소가 되연다', await state(IS), ['PLANNED', null])
+  }
 
   // ── 7. 남의 영업장 id 로는 아무것도 못 바꾼다 ─────────────────────────────────
   g.__CR_FLOW_PID = P2

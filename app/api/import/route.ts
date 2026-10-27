@@ -8,6 +8,8 @@ import prisma from '@/lib/prisma'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
+import { closeMoveInInspectionOnMoveIn } from '@/lib/roomInspectionEnsure'
+import { isMoveInTransition } from '@/app/(app)/room-manage/inspectionConstants'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomStillOccupied } from '@/lib/roomOccupancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
@@ -382,6 +384,8 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
     if (newLease) {
       await ensureOpenStay(prisma, newLease.id)
       if (isStayTerminalStatus(status)) await closeStay(prisma, newLease.id)
+      // 거주중으로 들여온 계약은 그 방의 입실이다(판정 정본, 2026-10-27 차단 1). 열린 입실 전 점검을 '안 함'으로 닫는다. 가져오기는 적용취소가 없다(계약 삭제로 정리한다).
+      if (isMoveInTransition(null, status)) await closeMoveInInspectionOnMoveIn(propertyId, room.id, newLease.id)
     }
   }
 

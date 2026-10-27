@@ -105,6 +105,20 @@ export function inspectionProgressText(judged: number, total: number): string {
   return `점검 ${judged}/${total}`
 }
 
+/**
+ * 입실 판정 정본(2026-10-27 독립 재검수 차단 1). 다음 상태가 거주중이고 이전 상태가 거주(거주중·퇴실 예정)가 아니면 입실이다.
+ * 계약 생성은 이전 상태가 없다(null). 예약·투어·문의·입실 취소·비거주·퇴실 완료에서 거주중으로 가는 전이가 모두 입실이다.
+ * 퇴실 예정에서 거주중으로 돌아오는 것(퇴실 예정 취소·자동 전환 되돌리기)은 계속 사는 것이라 입실이 아니다.
+ * 상태 위젯·수정 폼·일괄 편집·홈 알림·호실 일정 입실·계약 생성·엑셀 가져오기가 이 한 함수로 가른다.
+ */
+export function isMoveInTransition(prev: string | null, next: string): boolean {
+  return next === 'ACTIVE' && prev !== 'ACTIVE' && prev !== 'CHECKOUT_PENDING'
+}
+/** 입실 되돌리기 판정. 거주중에서 입주 전 단계(예약·투어·입실 취소)로 돌아가면 그 입실이 닫은 입실 전 점검을 되연다. */
+export function isMoveInUndoTransition(prev: string | null, next: string): boolean {
+  return prev === 'ACTIVE' && (next === 'RESERVED' || next === 'TOUR_DONE' || next === 'WAITING_TOUR' || next === 'CANCELLED')
+}
+
 /** 입실이 닫은 입실 전 점검의 표식(doneBy 로그 칸). 입실 적용취소가 이 표식으로 그 입실이 닫은 점검만 되연다(운영자 결정 ③). */
 export function moveInClosedMarker(leaseTermId: string): string {
   return `auto-movein:${leaseTermId}`
@@ -125,5 +139,6 @@ export function moveInInspectionClosedText(pending: number): string {
 }
 /** '입실 처리' 버튼 앞 안내 줄(§27.8 WhyCaption 문형). 막지 않는다. 입실하면 그 점검이 닫힌다는 것을 미리 말한다. */
 export function moveInInspectionCaption(judged: number, total: number): string {
-  return `입실 전 점검이 끝나지 않았습니다(${inspectionProgressText(judged, total)}). 입실 처리하면 '안 함'으로 닫힙니다`
+  // '점검' 을 두 번 말하지 않게 진행은 항목 수로 적는다(디자이너 재검수).
+  return `입실 전 점검이 끝나지 않았습니다(${total}항목 중 ${judged}항목 판정). 입실 처리하면 '안 함'으로 닫힙니다`
 }

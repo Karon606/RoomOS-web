@@ -1213,6 +1213,8 @@ export default function TenantClient({
     startTransition(async () => {
       const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
       if (!res.ok) { showSaveDenial(res.error); return }
+      // 거주중으로 바로 등록해 그 방의 입실 전 점검이 닫혔으면 알린다(2026-10-27 운영자 결정 ③).
+      if (res.notice) pushToast('info', res.notice)
       setShowAdd(false); refresh()
     })
   }
@@ -1225,6 +1227,7 @@ export default function TenantClient({
     startTransition(async () => {
       const res = await withSave(() => addLeaseToTenant(fd), { success: '계약 추가됨' })
       if (!res.ok) { showSaveDenial(res.error); return }
+      if (res.notice) pushToast('info', res.notice)
       setAddLeaseTenant(null); setAddLeaseDirty(false); refresh()
     })
   }
@@ -5660,6 +5663,8 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
       // 건너뛴 건은 사유별로 꼬리에 붙인다 — 지출 일괄 편집과 같은 문법(FinanceClient skipMsg).
       const skipMsg = res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : ''
       pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료${skipMsg}`, {
+        // 일괄 상태 변경이 입실 전 점검을 닫았으면 둘째 줄(운영자 결정 ③).
+        ...(res.inspectionNotice ? { detail: res.inspectionNotice } : {}),
         // 서명 키가 없는 운영 환경이면 토큰이 null 이다. 그때는 적용취소를 숨긴다(납입일 변경 토스트와 같은 규칙).
         ...(u ? { action: { label: '적용취소', run: () => { void undoBatchUpdateTenants(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다'); else pushToast('error', r.error) }) } } } : {}),
       })
