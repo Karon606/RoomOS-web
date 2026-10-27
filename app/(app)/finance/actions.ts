@@ -2796,7 +2796,8 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
       for (const r of aff?.rowSpecs ?? []) {
         const row = await tx.expense.findFirst({ where: { id: r.id, propertyId, ...r.next }, select: { itemLabel: true, qtyValue: true, qtyUnit: true } })
         if (!row) throw new Error(ROW_SPEC_UNDO_STALE)
-        await tx.expense.updateMany({ where: { id: r.id, propertyId, ...r.next }, data: { ...r.old, detail: buildAssetDetail({ ...row, ...r.old }) } })
+        const w = await tx.expense.updateMany({ where: { id: r.id, propertyId, ...r.next }, data: { ...r.old, detail: buildAssetDetail({ ...row, ...r.old }) } })
+        if (w.count !== 1) throw new Error(ROW_SPEC_UNDO_STALE)   // 조회와 쓰기 사이에 바뀌면 되돌림 전체를 멈춘다
       }
       // 정리한 옛 카드를 같은 id 로 먼저 되살린다(지출이 옛 이름으로 돌아오면 이을 카드가 있어야 한다). 그 사이 같은 이름 카드가
       // 생겼으면(clash) 되살리지 않고 지출만 돌린다. 영업장은 세션 값이다.
