@@ -161,6 +161,43 @@ async function main() {
   const [green] = await iv.reconcileOcrItemsWithHistory(P1, [{ label: '매트리스 커버 (방수)', specText: '싱글/그린' }])
   eq('색이 다르면 맞추지 않는다(이전 표기와 다름)', [green.specText, green.specNote?.kind], ['싱글/그린', 'differs'])
 
+  // ── 5. 지난 기록 변형 목록(이력 제안 패널) ─────────────────────────────────────────────────
+  {
+    const v = await fin.getItemVariants(['매트리스 커버 (방수)', '원목무늬 장판'])
+    const cover = v.filter(x => x.itemLabel === '매트리스 커버 (방수)').map(x => x.specText).sort()
+    eq('커버는 색상마다 변형 하나', cover, ['싱글/그레이', '싱글/퍼플'])
+    const floor = v.filter(x => x.itemLabel === L)
+    eq('표기만 다른 장판은 변형 하나, 대표 표기는 많이 쓴 쪽', [floor.length, floor[0]?.specText, floor[0]?.count], [1, OLD, 5])
+    eq('변형은 원문 조합을 모두 쥔다(저장 게이트 판정용)', floor[0]?.raws.map(r => r.specText).sort(), [OCR, OLD].sort())
+    eq('단가는 그 변형 유상 최신 행의 금액 ÷ 기준수량(개당 기록이면 수량만)', [floor[0]?.unitPrice, floor[0]?.basisUnit], [13000, 'm'])
+    g.__CR_FLOW_PID = P2
+    eq('남의 영업장 변형은 안 보인다', (await fin.getItemVariants(['매트리스 커버 (방수)'])).length, 0)
+    g.__CR_FLOW_PID = P1
+  }
+
+  // ── 6. 규격별 나누기 개명은 적용취소가 남는다(D5, splitTrackedItemLabel) ────────────────────────
+  {
+    const card = await prisma.trackedItem.create({ data: { propertyId: P1, category: '소모품비', label: '마대', trackUnit: 'qty', qtyUnit: '장' } })
+    const e1 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-01T00:00:00Z'), amount: 5000, category: '소모품비', itemLabel: '마대', specValue: 20, specUnit: 'L', qtyValue: 10, qtyUnit: '장' } })
+    const e2 = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-02T00:00:00Z'), amount: 5000, category: '소모품비', itemLabel: '마대', specValue: 20, specUnit: 'L', qtyValue: 10, qtyUnit: null } })
+    const other = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-09-02T00:00:00Z'), amount: 5000, category: '부식비', itemLabel: '마대', qtyValue: 1, qtyUnit: '개' } })
+    const aliasBefore = await prisma.itemNameAlias.count({ where: { propertyId: P1 } })
+    const r = await fin.splitTrackedItemLabel(card.id, '마대 20L')
+    eq('나누기 개명 성공 + 기록', [r.ok, r.ok ? r.renamedExpenses : -1], [true, 2])
+    const lbl = async (id: string) => (await prisma.expense.findUnique({ where: { id } }))?.itemLabel
+    eq('같은 카테고리 지출(단위 느슨 일치)만 개명', [await lbl(e1.id), await lbl(e2.id), await lbl(other.id)], ['마대 20L', '마대 20L', '마대'])
+    eq('카드도 개명', (await prisma.trackedItem.findUnique({ where: { id: card.id } }))?.label, '마대 20L')
+    eq('별칭을 만들지 않는다', await prisma.itemNameAlias.count({ where: { propertyId: P1 } }), aliasBefore)
+    eq('목록이 규격별 나누기로 말한다', (await fin.getItemNameMergeRuns()).find(x => r.ok && x.id === r.runId)?.kind, 'split')
+    eq('적용취소 성공', (await fin.undoItemNameMerge(r.ok ? r.runId : '')).ok, true)
+    eq('적용취소가 지출·카드 이름을 되돌린다', [await lbl(e1.id), await lbl(e2.id), (await prisma.trackedItem.findUnique({ where: { id: card.id } }))?.label], ['마대', '마대', '마대'])
+    await prisma.trackedItem.create({ data: { propertyId: P1, category: '소모품비', label: '마대 20L', trackUnit: 'qty' } })
+    eq('같은 이름 카드가 있으면 거부(무변경)', [(await fin.splitTrackedItemLabel(card.id, '마대 20L')).ok, await lbl(e1.id)], [false, '마대'])
+    g.__CR_FLOW_PID = P2
+    eq('남의 영업장 카드는 못 찾는다', (await fin.splitTrackedItemLabel(card.id, '마대 X')).ok, false)
+    g.__CR_FLOW_PID = P1
+  }
+
   console.log(`[영수증 지난 기록 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

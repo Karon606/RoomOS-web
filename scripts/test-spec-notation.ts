@@ -5,7 +5,7 @@
 //   · 숫자가 하나라도 다르면 다르다(1.8T 대 2.0T). 부분집합은 같지 않다('폭183cm' 대 '183cm, 1.8T').
 //   · 글자 토큰(색상·향)이 다르면 다르다. 매트리스 커버 색상 다섯·주방세제 향은 갈라져야 한다(운영 DB 전수, 오합병 0).
 //   · 빈 값끼리는 같다.
-import { specNotationKey, sameSpecNotation, specKeyOf, reconcileSpecWithHistory, specNoteText, type SpecHistoryRow } from '../lib/specNotation'
+import { specNotationKey, sameSpecNotation, specKeyOf, reconcileSpecWithHistory, specNoteText, classifySpecChoice, type SpecHistoryRow } from '../lib/specNotation'
 
 let pass = 0
 const fails: string[] = []
@@ -104,6 +104,17 @@ eq('숫자 규격만 읽힌 품목은 건드리지 않는다', reconcileSpecWith
 eq('지난 기록이 없으면 흔적 없음', reconcileSpecWithHistory({ specText: '183cm, 1.8T' }, []).note, null)
 eq('받침 있는 표기 뒤 조사', specNoteText({ kind: 'aligned', receipt: { specText: '애플민트향' }, history: '2.1L 애플민트향' }).text,
   "영수증 표기 '애플민트향' 을 지난 기록 표기 '2.1L 애플민트향' 으로 맞췄습니다")
+
+// ── 저장 때 규격 정체성(classifySpecChoice) ─────────────────────────
+const covers = [{ specText: '싱글/그레이' }, { specText: '싱글/퍼플' }]
+eq('같은 표기면 same', classifySpecChoice({ specText: '싱글/그레이' }, covers), 'same')
+eq('색이 다르면 new(묻는다)', classifySpecChoice({ specText: '싱글/그린' }, covers), 'new')
+eq('표기만 다르면 notation-only(묻지 않고 맞춘다)', classifySpecChoice({ specText: '183cm, 1.8T' }, [{ specText: '폭 183cm · 두께 1.8T' }]), 'notation-only')
+eq('숫자 규격 2.1L 대 2100ml 은 notation-only(소모품 크기 게이트는 침묵)', classifySpecChoice({ specValue: 2.1, specUnit: 'L' }, [{ specValue: 2100, specUnit: 'ml' }]), 'notation-only')
+eq('숫자 규격 10L 대 20L 은 new(크기 게이트가 묻는다)', classifySpecChoice({ specValue: 10, specUnit: 'L' }, [{ specValue: 20, specUnit: 'L' }]), 'new')
+eq('폼 문자열 값도 같은 답', classifySpecChoice({ specValue: '20', specUnit: 'L' }, [{ specValue: 20, specUnit: 'L' }]), 'same')
+eq('지난 기록이 없으면 new', classifySpecChoice({ specText: 'x' }, []), 'new')
+eq('규격을 비웠는데 지난 기록에 규격 없음이 있으면 same', classifySpecChoice({}, [{ specValue: null, specUnit: null, specText: null }]), 'same')
 
 if (fails.length) {
   console.error(`[규격 표기 동치] 통과 ${pass} / 실패 ${fails.length}`)

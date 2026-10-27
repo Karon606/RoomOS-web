@@ -25,7 +25,7 @@ import { Prisma, type SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
-import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inventory/actions'
+import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 // 공용부 이름은 비품 화면과 같은 표기 경로(pathName) 정본 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
@@ -52,7 +52,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
 import type { ShiftRow } from '@/lib/stockLedger'
 import { buildReceiptOcrPrompt, buildVocabBlock, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
-import { loadSpecHistory, reconcileOcrItemsWithHistory } from '@/lib/itemVariants'
+import { loadSpecHistory, loadItemVariants, reconcileOcrItemsWithHistory, type ItemVariant } from '@/lib/itemVariants'
 import { specNotationKey } from '@/lib/specNotation'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { normalizeBizNo } from '@/lib/bizNo'
@@ -436,6 +436,16 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     unitPrice,
     trackedCategories: tracked.map(t => t.category),
   }
+}
+
+// 지난 기록 변형 목록(이력 제안 패널, 2026-10-27 4단계). 품명 칸에 적는 동안 비슷한 기존 품명들의 변형(규격 · 구매처 ·
+// 최근일 · 단가 · 건수)을 보여 주고, 행을 누르면 그 변형 전체로 채운다. 장부 파생 정본은 lib/itemVariants loadItemVariants.
+// 저장 때 묻기(비품·자재 서술 규격이 지난 기록 어느 표기와도 동치가 아닐 때)도 이 목록의 원문 조합(raws)으로 판정한다.
+export type { ItemVariant } from '@/lib/itemVariants'
+export async function getItemVariants(labels: string[]): Promise<ItemVariant[]> {
+  const { propertyId } = await requirePropertyAccess()
+  if (!Array.isArray(labels)) return []
+  return loadItemVariants(propertyId, labels.filter((l): l is string => typeof l === 'string').slice(0, 8)).catch(() => [])
 }
 
 type ItemPick = {
@@ -2737,8 +2747,9 @@ export async function mergeItemNames(canonical: string, members: string[]): Prom
 }
 
 // kind — 'row-spec' 은 비품 행별 규격 수정(setAssetRowSpec, 2026-10-27)이 남긴 기록이다. 이름 통일이 아니라 규격 한 행을 고친
-// 것이라 목록이 '규격 수정' 으로 말한다. 기록의 affected.kind 에서 읽고, 없는 옛 기록은 전부 'merge' 다.
-export type ItemNameMergeRunRow = { id: string; canonical: string; memberCount: number; createdAt: Date; kind: 'merge' | 'row-spec' }
+// 것이라 목록이 '규격 수정' 으로 말한다. 'split' 은 저장 게이트 '나누기' 가 옛 카드를 개명한 기록(splitTrackedItemLabel)이다.
+// 기록의 affected.kind 에서 읽고, 없는 옛 기록은 전부 'merge' 다.
+export type ItemNameMergeRunRow = { id: string; canonical: string; memberCount: number; createdAt: Date; kind: 'merge' | 'row-spec' | 'split' }
 export async function getItemNameMergeRuns(): Promise<ItemNameMergeRunRow[]> {
   const propertyId = await getPropertyId()
   try {
@@ -2749,7 +2760,7 @@ export async function getItemNameMergeRuns(): Promise<ItemNameMergeRunRow[]> {
     })
     return rows.map(({ affected, ...r }) => ({
       ...r,
-      kind: (affected as { kind?: string } | null)?.kind === 'row-spec' ? 'row-spec' as const : 'merge' as const,
+      kind: (() => { const k = (affected as { kind?: string } | null)?.kind; return k === 'row-spec' || k === 'split' ? k : 'merge' as const })(),
     }))
   } catch { return [] }
 }
@@ -4360,10 +4371,41 @@ export async function getSizeIdentityInfo(category: string, labels: string[]): P
 }
 
 
-// 품명 정체성 게이트가 '나누기' 선택 시 구 카드를 '{라벨} {기존규격}' 으로 개명하는 통로.
-// 개명 로직(동명 충돌 검사 + 지출 라벨 전파)은 재고 정본 updateTrackedItem 하나뿐이라 그대로 재사용한다.
-export async function renameTrackedItemLabel(id: string, label: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requirePropertyAccess()
-  const r = await updateTrackedItem(id, { label })
-  return r.ok ? { ok: true } : { ok: false, error: r.error }
+// 품명 정체성 게이트가 '나누기' 선택 시 구 카드를 '{라벨} {기존규격}' 으로 개명하는 통로(2026-10-27 D5 로 교체).
+// 종전 renameTrackedItemLabel 은 재고 정본 updateTrackedItem 을 그대로 불러 **적용취소가 없었다**(§16). 개명 규칙은 그대로다
+// (같은 카테고리·같은 이름 카드가 있으면 거부, 같은 카테고리·옛 이름·단위 느슨 일치 지출을 함께 개명). 다른 점은 한 트랜잭션에
+// 품명 병합 기록(itemNameMergeRun, kind 'split', affected.expenses·tracked)을 남겨 undoItemNameMerge 가 되돌린다는 것뿐이다.
+// 별칭은 만들지 않는다(영수증 인식이 옛 이름을 새 이름으로 바꿔 읽으면 안 된다. 둘은 다른 물건이다).
+export async function splitTrackedItemLabel(id: string, label: string): Promise<{ ok: true; runId: string; renamedExpenses: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId }, select: { id: true, label: true, category: true, qtyUnit: true } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const next = label.trim()
+    if (!next || next === it.label) return { ok: false, error: '바꿀 이름이 같습니다.' }
+    const dup = await prisma.trackedItem.findUnique({ where: { propertyId_category_label: { propertyId, category: it.category, label: next } }, select: { id: true } })
+    if (dup && dup.id !== id) return { ok: false, error: `이미 같은 라벨의 품목이 있습니다: ${next}` }
+    const where = {
+      propertyId, category: it.category, itemLabel: it.label,
+      ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
+    }
+    const out = await prisma.$transaction(async tx => {
+      const exps = await tx.expense.findMany({ where, select: { id: true, itemLabel: true } })
+      if (exps.length) await tx.expense.updateMany({ where: { id: { in: exps.map(e => e.id) }, propertyId }, data: { itemLabel: next } })
+      await tx.trackedItem.update({ where: { id: it.id }, data: { label: next } })
+      const run = await tx.itemNameMergeRun.create({
+        data: {
+          propertyId, canonical: next, memberCount: 1, newAliasKeys: [],
+          affected: { kind: 'split', expenses: exps.map(e => ({ id: e.id, oldLabel: e.itemLabel })), tracked: [{ id: it.id, oldLabel: it.label }] },
+        },
+      })
+      return { runId: run.id, renamedExpenses: exps.length }
+    })
+    revalidatePath('/inventory'); revalidatePath('/finance'); revalidatePath('/settings')
+    return { ok: true, ...out }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '이름을 바꾸지 못했습니다.' }
+  }
 }

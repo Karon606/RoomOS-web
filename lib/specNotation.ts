@@ -172,3 +172,26 @@ export function specNoteText(note: SpecNote): { text: string; revert: string | n
       return { text: `지난 기록 규격이 ${note.count}가지라 채우지 않았습니다.`, revert: null }
   }
 }
+
+// ── 저장 때 규격 정체성 판정(2026-10-27 운영자 승인, 4단계) ───────────────────────────────
+// 지금 적은 규격이 그 품명의 지난 기록과 어떤 관계인가. 세 갈래 하나로 저장 게이트 둘이 같은 답을 쓴다.
+//   'same'          지난 기록 어느 조합과 글자까지 같다.
+//   'notation-only' 표기만 다르고 같은 규격이다(2.1L 대 2100ml, '183cm, 1.8T' 대 '폭 183cm · 두께 1.8T').
+//   'new'           어느 지난 기록과도 동치가 아니다(색상·치수가 다른 물건일 수 있다).
+// 소모품 수량 카드의 크기 게이트(규격을 품명으로 승격)와 비품·자재 서술 규격 게이트(나누기 / 같은 품목)가 이것을 부른다.
+type SpecLike = { specValue?: number | string | null; specUnit?: string | null; specText?: string | null }
+const rawOf = (s: SpecLike) => {
+  const v = s.specValue == null || s.specValue === '' ? null : Number(s.specValue)
+  return `${v != null && Number.isFinite(v) && v > 0 ? numText(v) : ''}␟${v != null && v > 0 ? (s.specUnit ?? '').trim() : ''}␟${(s.specText ?? '').trim()}`
+}
+export function classifySpecChoice(now: SpecLike, history: SpecLike[]): 'same' | 'notation-only' | 'new' {
+  const nk = specKeyOf(now)
+  const raw = rawOf(now)
+  let notation = false
+  for (const h of history) {
+    if (specKeyOf(h) !== nk) continue
+    if (rawOf(h) === raw) return 'same'
+    notation = true
+  }
+  return notation ? 'notation-only' : 'new'
+}

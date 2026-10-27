@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, renameTrackedItemLabel, getDurableConvertFacts, undoDurableConvert } from './actions'
+import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, splitTrackedItemLabel, undoItemNameMerge, getItemVariants, getDurableConvertFacts, undoDurableConvert, type ItemVariant } from './actions'
 // 소모품으로 적은 구매를 비품으로 바꿀지 묻는 판정·문구 정본(계획서 2단계 F1·F3). 서버 저장도 같은 판정을 다시 돌린다.
 import {
   conversionPlan, conversionPrecheck, conversionCopy, conversionToast, conversionUndoneText, convertItemsFrom, itemFacets,
   CONVERT_UNDO_LABEL, type ConvertPlan, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
-import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
+import { specMultiplier, splitSizeLabel } from '@/lib/units'
 import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
 import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { groupUnitMismatches, type UnitSource } from '@/lib/unitMismatch'
@@ -61,7 +61,7 @@ import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
 import { specSetCount, durableSetCount } from '@/lib/setStructure'
-import { specNoteText, type SpecNote } from '@/lib/specNotation'
+import { specNoteText, specDisplay, specKeyOf, classifySpecChoice, type SpecNote } from '@/lib/specNotation'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
@@ -257,6 +257,20 @@ export type ItemPickState = {
   specRevert?: { specValue: string; specUnit: string; specText?: string; unitBasis: UnitBasis }
   // 지난번 숫자 규격을 한 번 눌러 채울 값(specNote 'offer'). 돈의 축이라 조용히 채우지 않는다(독립 검수 권고 2).
   specOffer?: { specValue: string; specUnit: string; specText?: string; unitBasis: UnitBasis }
+  // 지난 기록에서 불러온 규격(이력 제안 패널 행·직전 구매 채움, 2026-10-27 4단계). 저장 때 '불러온 값을 고쳤나' 를 이것과 견준다.
+  specLoaded?: { specValue: string; specUnit: string; specText?: string }
+}
+
+// 따옴표로 감싼 값 뒤 조사만(값의 받침으로 고른다, lib/koParticle).
+const josaOf = (w: string, pair: Parameters<typeof withParticle>[1]) => withParticle(w, pair).slice(w.length)
+
+// 품목 고르기 칸들의 한 순간 모습 — 이력 제안 패널 '되살리기' 가 고르기 직전 모습 전체를 돌려놓는다(§27.8 ①).
+type PickerSnapshot = {
+  customLabel: string; specValue: string; specUnit: string; qtyValue: string; qtyUnit: string
+  amountStr: string; unitStr: string; priceMode: 'amount' | 'unit'; unitBasis: UnitBasis; basisTouched: boolean
+  noSpec: boolean; specTextMode: boolean; specText: string
+  brand: string; productName: string; brandFromLast: boolean; brandOpen: boolean
+  prevUnits: Awaited<ReturnType<typeof getLastItemUnits>>
 }
 
 // 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
@@ -291,7 +305,7 @@ export function fmtItemDetail(d: ItemPickState): string {
  */
 function itemsForSave(list: ItemPickState[], dropAlloc: boolean) {
   return list.map(x => ({
-    ...x, setHint: undefined, setAsked: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined, allocations: dropAlloc ? undefined : x.allocations,
+    ...x, setHint: undefined, setAsked: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined, specLoaded: undefined, allocations: dropAlloc ? undefined : x.allocations,
     vendor: list.length >= 2 && x.vendor?.trim() ? x.vendor.trim() : undefined,
   }))
 }
@@ -349,6 +363,90 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
     if (score >= 0.6 && score < 1 && (!best || score > best.score)) best = { name: c, score }
   }
   return best?.name ?? null
+}
+
+// ── 이력 제안 패널(가이드 §12 등재, 2026-10-27 운영자 승인) ──────────────────────────────────
+// 품명 칸에 적는 동안 비슷한 기존 품명의 지난 기록 변형(규격 · 구매처 · 최근일 · 단가 · 건수)을 품명 칸 바로 아래 44px 행으로 보인다.
+// 행을 누르면 그 행 전체로 채우고(호출부가 '지난번 값' 캡션과 되살리기를 단다), 끝 행은 "'{입력}' 새 품목으로" 다.
+// 구매처 칸처럼 '쿠'만 쳐도 '쿠팡(주)' 가 뜨는 datalist 문법을 따르되, 한 줄 값이 아니라 메타가 붙는 변형이라 패널로 선다
+// (datalist 는 메타 없는 단일 값에만 쓴다). 모바일은 3행 + 더 보기(넓은 화면은 5행).
+/** 입력과 비슷한 기존 품명(정확 일치 > 앞부분 일치 > 포함). 공백·대소문자 무시. */
+export function matchItemLabels(input: string, labels: string[], limit = 5): string[] {
+  const norm = (x: string) => x.trim().replace(/\s+/g, '').toLowerCase()
+  const q = norm(input)
+  if (!q) return []
+  const scored: { l: string; s: number }[] = []
+  for (const l of labels) {
+    const n = norm(l)
+    if (!n) continue
+    const sc = n === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : -1
+    if (sc >= 0) scored.push({ l, s: sc })
+  }
+  return scored.sort((a, b) => a.s - b.s).slice(0, limit).map(x => x.l)
+}
+/** 변형 한 줄 메타 — 규격 · 구매처 · 최근일 · 단가 · 건수. 없는 토막은 뺀다(줄표로 채우지 않는다). */
+// 날짜는 같은 기능의 캡션('지난번 값으로 채웠습니다. … 10월 20일 구매')과 같은 'M월 D일'(해가 다르면 'YYYY년 M월 D일')이다.
+export function variantDate(ymd: string): string {
+  if (!ymd) return ''
+  const md = `${Number(ymd.slice(5, 7))}월 ${Number(ymd.slice(8, 10))}일`
+  return ymd.slice(0, 4) !== kstYmdStr().slice(0, 4) ? `${ymd.slice(0, 4)}년 ${md}` : md
+}
+export function variantMeta(v: ItemVariant): string {
+  const price = v.unitPrice != null ? `${v.basisUnit ? `${v.basisUnit}당 ` : ''}${fmtWon(v.unitPrice)}` : ''
+  return [specDisplay(v) || '규격 없음', v.vendor ?? '', variantDate(v.lastDate), price, `${v.count}건`].filter(Boolean).join(' · ')
+}
+export function ItemHistoryPanel({ variants, input, onPick, onNew, idPrefix, caption }: {
+  variants: ItemVariant[]
+  input?: string                    // 있으면 끝 행 "'{입력}' 새 품목으로" 를 세운다
+  onPick: (v: ItemVariant) => void
+  onNew?: () => void
+  idPrefix: string
+  caption?: React.ReactNode         // 패널 머리 한 줄(영수증 품목 카드에서 상자를 한 겹 더 두르지 않게 패널 안에 둔다)
+}) {
+  const [expanded, setExpanded] = useState(false)
+  if (variants.length === 0) return null
+  const row = 'w-full min-h-[44px] px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--cream-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--tc-text)]'
+  return (
+    <div role="group" aria-label="지난 기록" id={`${idPrefix}-history`}
+      className="rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] divide-y divide-[var(--warm-border)] overflow-hidden">
+      {caption && <div className="px-2.5 py-1.5">{caption}</div>}
+      {variants.map((v, i) => (
+        <button key={`${v.itemLabel}␟${v.key}`} type="button" onClick={() => onPick(v)}
+          className={`${row} block ${!expanded && i >= 3 ? 'max-sm:hidden' : ''} ${!expanded && i >= 5 ? 'hidden' : ''}`}>
+          <span className="block truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{v.itemLabel}</span>
+          {/* 메타는 줄바꿈을 허용한다. 320px 에서 잘라 내면 건수·단가가 사라진다(독립 검수 권고 5). */}
+          <span className="block break-keep text-[0.71875rem] leading-snug text-[var(--ink-m)]">{variantMeta(v)}</span>
+        </button>
+      ))}
+      {!expanded && variants.length > 3 && (
+        <button type="button" onClick={() => setExpanded(true)}
+          className={`${row} text-[0.71875rem] font-medium text-[var(--tc-text)] ${variants.length > 5 ? '' : 'sm:hidden'}`}>
+          {/* 남은 개수(접힌 행 수). 좁은 화면은 3행, 넓은 화면은 5행을 보인 뒤다. */}
+          <span className="sm:hidden">더 보기 ({variants.length - 3})</span>
+          {variants.length > 5 && <span className="max-sm:hidden">더 보기 ({variants.length - 5})</span>}
+        </button>
+      )}
+      {input && onNew && (
+        <button type="button" onClick={onNew} className={`${row} text-[0.8125rem] font-medium text-[var(--tc-text)]`}>
+          {`'${input}' 새 품목으로`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// 영수증 품목의 지난 기록 변형이 둘 이상이라 채우지 않았을 때(specNote 'choose') 그 품목 카드 안에서 고르는 행들.
+// 홈 승인 카드의 '지난 기록 N건 · 지출 등록에서 고르기' 가 여기로 온다. 행 모양은 이력 제안 패널과 같다.
+function OcrVariantRows({ label, onPick, idPrefix, caption }: { label: string; onPick: (v: ItemVariant) => void; idPrefix: string; caption: React.ReactNode }) {
+  const [vars, setVars] = useState<ItemVariant[]>([])
+  useEffect(() => {
+    let alive = true
+    getItemVariants([label]).then(v => { if (alive) setVars(v.filter(x => x.key)) }).catch(() => {})
+    return () => { alive = false }
+  }, [label])
+  // 변형을 못 읽었으면 캡션만 --cream 상자에 선다(카드 바탕 --coral-pale 은 다크에서 보조 잉크 4.09:1).
+  if (vars.length === 0) return <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">{caption}</div>
+  return <ItemHistoryPanel idPrefix={idPrefix} variants={vars} onPick={onPick} caption={caption} />
 }
 
 // 내보내기는 화면 실측 하네스(실제 컴포넌트를 묶어 잰다)용이다. 앱 안에서는 이 파일만 쓴다.
@@ -412,6 +510,14 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   const [brandOptions, setBrandOptions] = useState<{ brands: string[]; products: string[] }>({ brands: [], products: [] })
   // 규격 단계별 입력(위저드) — 새 품목(과거 단위·프리셋 기본값 없음)이면 자동, 버튼으로 상시 호출
   const [wizardOpen, setWizardOpen]   = useState(false)
+  // 이력 제안 패널(2026-10-27 4단계, 가이드 §12). 품명 칸에 적는 동안 비슷한 기존 품명의 지난 기록 변형을 보인다.
+  const [histVariants, setHistVariants] = useState<ItemVariant[]>([])
+  // "'{입력}' 새 품목으로" 를 고른 품명 — 그 글자로는 패널을 다시 띄우지 않고 비슷한 품명 확인창도 건너뛴다(이미 답했다).
+  const [newChosen, setNewChosen] = useState<string | null>(null)
+  // 지난번 값으로 채운 흔적 — 캡션 문장과 되살릴 직전 모습 전체(§27.8 ① 되살리기는 고르기 직전 모습 전체로 돌아간다).
+  const [picked, setPicked] = useState<{ text: string; restore: PickerSnapshot } | null>(null)
+  // 불러온 규격(품명 + 규격 세 칸). 담을 때 품목에 실어 저장 게이트가 '불러온 값을 고쳤나' 를 본다.
+  const loadedSpecRef = useRef<{ label: string; spec: { specValue: string; specUnit: string; specText?: string } } | null>(null)
   const applyWizard = (r: SpecWizardResult) => {
     setQtyUnit(r.qtyUnit); if (r.qtyValue) setQtyValue(r.qtyValue)
     if (r.specText) { setSpecTextMode(true); setNoSpec(false); setSpecText(r.specText); setSpecValue(''); setSpecUnit('') }
@@ -436,6 +542,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
     setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
+    setHistVariants([]); setPicked(null); setNewChosen(null); loadedSpecRef.current = null
   }, [category])
 
   // 단가 기준 기본값 — 판정은 정본 하나(lib/unitBasis)가 한다. 길이·부피·추적단위 규칙의 경위는
@@ -494,28 +601,89 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     }
   }
 
-  // '직접 입력'에서 기존 품목명을 타이핑/제안 선택한 경우에도 동일 프리필 — 칩 선택과 경로만 다를 뿐 같은 품목.
+  // 직전 모습 전체 — 지난번 값으로 채우기 전 폼 칸들. 되살리기가 이것을 그대로 돌려놓는다.
+  const snapshot = (): PickerSnapshot => ({
+    customLabel, specValue, specUnit, qtyValue, qtyUnit, amountStr, unitStr, priceMode, unitBasis, basisTouched,
+    noSpec, specTextMode, specText, brand, productName, brandFromLast, brandOpen, prevUnits,
+  })
+  const restoreSnapshot = (r: PickerSnapshot) => {
+    setCustomLabel(r.customLabel); setSpecValue(r.specValue); setSpecUnit(r.specUnit); setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
+    setAmountStr(r.amountStr); setUnitStr(r.unitStr); setPriceMode(r.priceMode); setUnitBasis(r.unitBasis); setBasisTouched(r.basisTouched)
+    setNoSpec(r.noSpec); setSpecTextMode(r.specTextMode); setSpecText(r.specText)
+    setBrand(r.brand); setProductName(r.productName); setBrandFromLast(r.brandFromLast); setBrandOpen(r.brandOpen); setPrevUnits(r.prevUnits)
+    lastFetchedRef.current = r.customLabel.trim()
+    loadedSpecRef.current = null
+    setPicked(null)
+  }
+  // 지난번 값 캡션 문장 — 무엇을 어디서 가져왔는지 한 줄로(규격 · 최근 구매일).
+  const pickedText = (spec: string, date: string | null) =>
+    `지난번 값으로 채웠습니다. ${spec || '규격 없음'}${date ? ` · ${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일 구매` : ''}`
+  // 이력 제안 패널의 행 하나로 채운다 — 그 행 전체(규격·단위·단가 기준·단가·브랜드). 금액은 수량을 넣으면 단가로 다시 낸다.
+  function applyVariant(v: ItemVariant) {
+    const before = snapshot()
+    lastFetchedRef.current = v.itemLabel
+    setCustomLabel(v.itemLabel)
+    if (v.specText) { setSpecTextMode(true); setNoSpec(false); setSpecText(v.specText); setSpecValue(''); setSpecUnit('') }
+    else { setSpecTextMode(false); setSpecText(''); setSpecValue(v.specValue); setSpecUnit(v.specUnit) }
+    if (v.qtyUnit) setQtyUnit(v.qtyUnit)
+    // 단가 기준은 그 변형에 기록된 것만 고정한다(기록이 없으면 정본 규칙, lib/unitBasis — 날조 금지)
+    if (v.unitBasis) { setUnitBasis(v.unitBasis); setBasisTouched(true) } else setBasisTouched(false)
+    if (v.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(v.unitPrice)) }
+    setBrand(v.brand ?? ''); setProductName(v.productName ?? '')
+    setBrandFromLast(!!(v.brand || v.productName)); setBrandOpen(!!(v.brand || v.productName))
+    loadedSpecRef.current = { label: v.itemLabel, spec: v.specText ? { specValue: '', specUnit: '', specText: v.specText } : { specValue: v.specValue, specUnit: v.specUnit } }
+    setPicked({ text: pickedText(specDisplay(v), v.lastDate), restore: before })
+    // 카테고리 경고·세부스펙 칩·단위 안내는 지난 기록 맥락(prevUnits)이 낸다 — 칸은 이미 채웠으니 맥락만 받는다.
+    getLastItemUnits(v.itemLabel).then(last => setPrevUnits(last)).catch(() => {})
+    getBrandSuggestions(v.itemLabel).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 */ })
+  }
+
+  // '직접 입력'에서 기존 품목명을 타이핑/제안 선택한 경우 — 칩 선택과 경로만 다를 뿐 같은 품목.
+  // 지난 기록 변형이 하나뿐이면 묻지 않고 직전 구매로 채우고 '지난번 값' 캡션과 되살리기를 단다. 둘 이상이면 채우지 않고
+  // 이력 제안 패널에서 고르게 둔다(색상이 다른 커버를 아무거나 채우면 틀린 값이 조용히 저장된다, 2026-10-27 운영자 승인).
   const lastFetchedRef = useRef('')
   async function maybePrefillCustom(raw: string) {
     const label = raw.trim()
     if (!label || lastFetchedRef.current === label) return
     if (!detailSuggestions.includes(label)) return   // 기존 품목일 때만 (새 품명 타이핑 중 오발동 방지)
     lastFetchedRef.current = label
-    const last = await getLastItemUnits(label)
-    if (last) applyLastContext(last)
+    const before = snapshot()
+    const [last, vars] = await Promise.all([getLastItemUnits(label), getItemVariants([label]).catch(() => [] as ItemVariant[])])
+    if (last && vars.length <= 1) {
+      applyLastContext(last)
+      loadedSpecRef.current = { label, spec: last.specText ? { specValue: '', specUnit: '', specText: last.specText } : { specValue: last.specValue ?? '', specUnit: last.specValue ? (last.specUnit ?? '') : '' } }
+      setPicked({ text: pickedText(specDisplay({ specValue: last.specText ? null : last.specValue, specUnit: last.specUnit, specText: last.specText }), vars[0]?.lastDate ?? null), restore: before })
+    } else if (last) setPrevUnits(last)
     getBrandSuggestions(label).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 — 못 받아도 입력은 된다 */ })
   }
+  // 품명 칸에 적는 동안 비슷한 기존 품명의 변형을 불러온다(200ms 쉼 뒤 한 번). 채운 뒤·새 품목으로 고른 뒤에는 멈춘다.
+  useEffect(() => {
+    if (activeLabel !== '__custom__') return
+    const q = customLabel.trim()
+    if (!q || picked || newChosen === q) { setHistVariants([]); return }
+    const labels = matchItemLabels(q, detailSuggestions)
+    if (!labels.length) { setHistVariants([]); return }
+    let alive = true
+    const t = setTimeout(() => {
+      getItemVariants(labels).then(v => { if (alive) setHistVariants(v) }).catch(() => { if (alive) setHistVariants([]) })
+    }, 200)
+    return () => { alive = false; clearTimeout(t) }
+  }, [activeLabel, customLabel, picked, newChosen, detailSuggestions])
 
   async function openPreset(label: string) {
     setActiveLabel(label)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
     const def = itemDefaultsFor(label)
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
-    setPrevUnits(null)
+    setPrevUnits(null); setPicked(null); loadedSpecRef.current = null
     setFetching(true)
     try {
       const last = await getLastItemUnits(label)
-      if (last) applyLastContext(last)
+      if (last) {
+        applyLastContext(last)
+        // 직전 구매로 채운 규격도 '불러온 값' 이다 — 고쳐서 저장하면 저장 게이트가 견준다.
+        loadedSpecRef.current = { label, spec: last.specText ? { specValue: '', specUnit: '', specText: last.specText } : { specValue: last.specValue ?? '', specUnit: last.specValue ? (last.specUnit ?? '') : '' } }
+      }
       getBrandSuggestions(label).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 */ })
       // 완전히 새로운 품목(과거 기록도 프리셋 기본값도 없음) → 단계별 입력 자동 안내
       if (!last && !def) setWizardOpen(true)
@@ -535,7 +703,8 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     }
     // 유사한 기존 품명이 있으면 같은 품목인지 확인 (다른 제품일 수 있어 승인받기) (#B)
     let finalLabel = label
-    const similar = findSimilarItemName(label, detailSuggestions)
+    // 이력 제안 패널에서 "'{입력}' 새 품목으로" 를 이미 골랐으면 비슷한 품명을 또 묻지 않는다.
+    const similar = newChosen === label ? null : findSimilarItemName(label, detailSuggestions)
     if (similar) {
       const useExisting = await confirmDialog({
         title: '비슷한 품목이 있어요',
@@ -574,8 +743,11 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
       productName: productName.trim() || undefined,
       qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice,
       unitBasis: specTextMode ? 'qty' : unitBasis,   // 서술 규격은 계산 비관여 → 개당 단가
+      // 지난 기록에서 불러온 규격(같은 품명일 때만). 저장 게이트가 '불러온 값을 고쳤나' 를 본다.
+      ...(loadedSpecRef.current && loadedSpecRef.current.label === finalLabel ? { specLoaded: loadedSpecRef.current.spec } : {}),
     }
     onChange([...items, data])
+    loadedSpecRef.current = null; setPicked(null); setNewChosen(null); setHistVariants([])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel('')
     // 다음 품목으로 브랜드가 넘어가면 안 된다 — 진라면 담고 휴지 담는데 '오뚜기'가 남는다.
@@ -649,6 +821,23 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     if (it.amount != null) patchItem(idx, { specValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined, ...noNote })
     else if (it.unitPrice != null) patchItem(idx, { specValue, amount: Math.round(it.unitPrice * q), ...noNote })
     else patchItem(idx, { specValue, ...noNote })
+  }
+  // 영수증 품목에서 지난 기록 변형 하나를 고른다(변형이 둘 이상이라 채우지 않았던 품목). 규격·단위·기준만 가져오고
+  // 금액·수량은 영수증 그대로 둔 채 단가를 다시 낸다. 고른 흔적은 '채움' 캡션 + 되살리기로 남는다(영수증 원문으로).
+  function pickVariantForItem(idx: number, v: ItemVariant) {
+    const it = items[idx]
+    const prior = { specValue: it.specValue, specUnit: it.specUnit, specText: it.specText, unitBasis: basisOf(it) }
+    const spec = v.specText ? { specValue: it.specValue && v.specValue ? v.specValue : '', specUnit: it.specValue && v.specValue ? v.specUnit : '', specText: v.specText } : { specValue: v.specValue, specUnit: v.specUnit, specText: undefined }
+    const qtyUnit = it.qtyUnit || v.qtyUnit || ''
+    const unitBasis = v.unitBasis ?? resolveUnitBasis({ specUnit: spec.specUnit, qtyUnit, specText: spec.specText })
+    const q = (Number(it.qtyValue) || 1) * (unitBasis === 'spec' ? (Number(spec.specValue) || 1) : 1)
+    patchItem(idx, {
+      ...spec, qtyUnit, unitBasis,
+      unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice,
+      specNote: { kind: 'filled', receipt: { specValue: prior.specValue, specUnit: prior.specUnit, specText: prior.specText }, history: specDisplay(v) },
+      specRevert: prior,
+      specLoaded: { specValue: spec.specValue, specUnit: spec.specUnit, specText: spec.specText },
+    })
   }
   // 지난번 숫자 규격을 한 번 눌러 채운다(specNote 'offer'). 금액은 그대로, 단가만 새 기준수량으로. 채운 뒤에는 '채움' 캡션 + '비우기'.
   function applyItemOffer(idx: number) {
@@ -1047,16 +1236,18 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
                     카드 바탕(--coral-pale)은 다크에서 보조 잉크가 4.09:1 이라, 같은 카드의 세트 확인 줄처럼 --cream 상자에 앉힌다. */}
                 {it.specNote && (() => {
                   const t = specNoteText(it.specNote)
-                  return (
-                    <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">
-                      <WhyCaption id={`ocr-spec-note-${idx}`}
-                        action={it.specNote.kind === 'offer'
-                          ? (it.specOffer ? { label: '채우기', onClick: () => applyItemOffer(idx) } : undefined)
-                          : t.revert && it.specRevert ? { label: t.revert, onClick: () => revertItemSpec(idx) } : undefined}>
-                        {t.text}
-                      </WhyCaption>
-                    </div>
+                  const caption = (
+                    <WhyCaption id={`ocr-spec-note-${idx}`}
+                      action={it.specNote.kind === 'offer'
+                        ? (it.specOffer ? { label: '채우기', onClick: () => applyItemOffer(idx) } : undefined)
+                        : t.revert && it.specRevert ? { label: t.revert, onClick: () => revertItemSpec(idx) } : undefined}>
+                      {t.text}
+                    </WhyCaption>
                   )
+                  // 변형 고르기는 캡션을 패널 머리에 앉혀 겹을 하나 줄인다(카드 > 패널, 독립 검수 권고 5).
+                  if (it.specNote.kind === 'choose')
+                    return <OcrVariantRows idPrefix={`ocr-item-${idx}`} label={it.label} onPick={v => pickVariantForItem(idx, v)} caption={caption} />
+                  return <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">{caption}</div>
                 })()}
                 {/* 담은 품목의 브랜드·제품명 — **여기서 바로 고칠 수 있어야 한다**.
                     수정 화면은 이 카드만 보이므로 읽기 전용으로 두면 과거 지출에 브랜드를 넣을
@@ -1226,12 +1417,19 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
           </div>
           <div className="space-y-1">
             <label className="text-[0.65625rem] text-[var(--warm-muted)]">품목명</label>
+            {/* 품명 자동완성은 이력 제안 패널이다(§12, 2026-10-27). 품명마다 변형·메타가 붙어 datalist(메타 없는 한 줄 값)로는 못 말한다. */}
             <input type="text" placeholder="예: 고추장" value={customLabel}
-              onChange={e => { setCustomLabel(e.target.value); maybePrefillCustom(e.target.value) }}
+              onChange={e => { setCustomLabel(e.target.value); if (picked) setPicked(null); maybePrefillCustom(e.target.value) }}
               onBlur={e => maybePrefillCustom(e.target.value)} className={textCls}
-              list="item-detail-suggestions" />
-            {detailSuggestions.length > 0 && (
-              <datalist id="item-detail-suggestions">{detailSuggestions.map(d => <option key={d} value={d} />)}</datalist>
+              aria-describedby={picked ? 'item-picked-why' : histVariants.length ? 'item-custom-history' : undefined} />
+            {picked ? (
+              <WhyCaption id="item-picked-why" action={{ label: '되살리기', onClick: () => restoreSnapshot(picked.restore) }}>
+                {picked.text}
+              </WhyCaption>
+            ) : (
+              <ItemHistoryPanel idPrefix="item-custom" variants={histVariants} input={customLabel.trim()}
+                onPick={applyVariant}
+                onNew={() => { setNewChosen(customLabel.trim()); setHistVariants([]) }} />
             )}
           </div>
           {SpecQtyInputs()}
@@ -2828,6 +3026,8 @@ export default function FinanceClient({
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const release = trackSave()
+      // 저장 결과 토스트 다음에 띄울 둘째 토스트(규격별 나누기 개명의 적용취소, D5). 저장이 중간에 멈춰도 띄운다.
+      const afterSave: (() => void)[] = []
       try {
         // 신용카드인데 카드를 안 골랐으면 한 번 묻는다(신고 eee44d8d). 영수증 카드와 못 맞혀 기본값 카드를 비운 뒤
         // 그대로 저장되면 카드 정산에서 '미지정 카드'로 따로 모이고 정산 처리를 못 한다. 고를 신용카드 계정이 있을 때만 묻는다.
@@ -2881,11 +3081,10 @@ export default function FinanceClient({
         {
           const cat = (fd.get('category') as string) || addExpCategory
           const sizeText = (v: number, u: string) => `${Number(v.toFixed(6))}${u}`
-          // 물리 동치 — 2.1L 과 2100ml 은 같은 규격이다. 환산 불가(차원이 다름)면 다른 규격으로 본다.
-          const sameSize = (a: { value: number; unit: string }, b: { value: number; unit: string }) => {
-            const c = convertUnit(a.value, a.unit, b.unit)
-            return c != null && Math.abs(c - b.value) < 1e-9
-          }
+          // 물리 동치 — 2.1L 과 2100ml 은 같은 규격이다. 판정은 정본 classifySpecChoice 하나(lib/specNotation, 2026-10-27
+          // 서술 규격 게이트와 한 벌). 'new' 가 아니면(글자까지 같거나 표기만 다르면) 같은 규격이다.
+          const sameSize = (a: { value: number; unit: string }, b: { value: number; unit: string }) =>
+            classifySpecChoice({ specValue: a.value, specUnit: a.unit }, [{ specValue: b.value, specUnit: b.unit }]) !== 'new'
           const cands = finalItems.filter(it => {
             const label = (it.label ?? '').trim()
             if (!label || /\d/.test(label)) return false          // 규격이 이미 이름에 있으면 침묵
@@ -2914,7 +3113,7 @@ export default function FinanceClient({
               else sizes.push({ ...h })
             }
             if (!sizes.length) continue
-            if (sizes.some(s => sameSize(now, s))) continue       // 써 본 규격이면 침묵 — 이력이 곧 기억이다
+            if (classifySpecChoice({ specValue: now.value, specUnit: now.unit }, sizes.map(x => ({ specValue: x.value, specUnit: x.unit }))) !== 'new') continue   // 써 본 규격이면 침묵 — 이력이 곧 기억이다
             const nowText = sizeText(now.value, now.unit)
             const only = sizes.length === 1 ? sizes[0] : null
             const oldText = only ? sizeText(only.value, only.unit) : ''
@@ -2933,16 +3132,74 @@ export default function FinanceClient({
             if (choice !== 'confirm') continue                     // 같은 품목으로 — 다음 같은 규격 구매는 이력에 잡혀 침묵
             // 나누기 — 이번 구매는 새 품명으로. 이력이 단일이면 구 카드도 규격을 붙여 개명한다.
             // 안 붙이면 옛 규격 지출이 규격 없는 품명 아래 남아 어느 쪽 물건인지 알 수 없게 된다.
+            // 옛 카드 개명은 적용취소가 남는 액션이다(2026-10-27 D5, splitTrackedItemLabel → 품명 병합 기록). 토스트는 저장 결과 다음
+            // 둘째 줄로 띄운다(저장이 뒤 게이트에서 멈춰도 개명은 이미 됐으니 그때도 띄운다, finally).
             if (only) {
-              const r = await renameTrackedItemLabel(card.cardId, `${label} ${oldText}`)
+              const renamed = `${label} ${oldText}`
+              const r = await splitTrackedItemLabel(card.cardId, renamed)
                 .catch(() => ({ ok: false as const, error: '기존 품목 이름을 바꾸지 못했습니다.' }))
               if (!r.ok) pushToast('error', r.error)               // 동명 카드 충돌 등 — 새 품명 저장은 그대로 진행
+              else afterSave.push(() => pushToast('info', `기존 품목 이름을 '${renamed}' ${josaOf(renamed, '으로/로')} 바꿨습니다`, {
+                action: { label: '적용취소', run: () => { void undoItemNameMerge(r.runId).then(u => {
+                  if (u.ok) { pushToast('info', `'${label}' 이름을 되돌렸습니다`); router.refresh() } else pushToast('error', u.error)
+                }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+              }))
             }
             finalItems = finalItems.map((x, xi) => xi === i ? { ...x, label: `${label} ${nowText}` } : x)
             split = true
           }
           // 바꾼 품명이 후속 게이트·저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 품명이다.
           if (split) fd.set('itemsJson', JSON.stringify(itemsForSave(finalItems, addIsDurable)))
+        }
+        // 비품·자재 서술 규격 게이트(2026-10-27 운영자 승인, 4단계). 비품은 서술 규격이 카드를 가른다(knowledge/domain-inventory).
+        // 지난 기록에서 불러온 규격을 고쳤고, 고친 값이 그 품명의 어느 지난 기록 표기와도 동치가 아닐 때만 한 번 묻는다.
+        // 세 조건이 다 맞아야 묻는다(소모품은 서술 규격이 메모라 묻지 않는다). 표기만 다르면 묻지 않고 지난 기록 표기로 맞춘다.
+        // [나누기] 고친 값 그대로(카드가 따로 선다) · [같은 품목] 불러온 값으로 되돌려 저장 · [취소] 저장 중단(무변경).
+        if (addIsDurable || durableConv) {
+          const loadedOf = (it: ItemPickState) => it.specLoaded
+          const changed = (it: ItemPickState) => {
+            const l = loadedOf(it)
+            if (!l) return false
+            const raw = (x: { specValue?: string; specUnit?: string; specText?: string }) => `${(x.specValue ?? '').trim()}␟${(x.specValue ?? '').trim() ? (x.specUnit ?? '').trim() : ''}␟${(x.specText ?? '').trim()}`
+            return raw(it) !== raw(l)
+          }
+          const cands = finalItems.map((it, i) => ({ it, i })).filter(({ it }) => it.label?.trim() && changed(it))
+          if (cands.length) {
+            const vars = await getItemVariants(cands.map(c => c.it.label.trim())).catch(() => [] as ItemVariant[])
+            let specChanged = false
+            for (const { it, i } of cands) {
+              const label = it.label.trim()
+              const mine = vars.filter(v => v.itemLabel === label)
+              const now = { specValue: it.specValue, specUnit: it.specUnit, specText: it.specText }
+              const verdict = classifySpecChoice(now, mine.flatMap(v => v.raws))
+              if (verdict === 'same') continue
+              const loaded = loadedOf(it)!
+              let target: { specValue: string; specUnit: string; specText?: string } | null = null
+              if (verdict === 'notation-only') {
+                const v = mine.find(x => x.key === specKeyOf(now))
+                // 대표 변형의 세 칸 그대로(숫자·서술을 섞지 않는다, 독립 검수 권고 1)
+                if (v) target = { specValue: v.specValue, specUnit: v.specUnit, specText: v.specText ?? undefined }
+              } else {
+                const nowText = specDisplay(now) || '규격 없음'
+                const oldText = specDisplay(loaded) || '규격 없음'
+                const choice = await choiceDialog({
+                  title: `'${label}' ${josaOf(label, '을/를')} '${nowText}' ${josaOf(nowText, '으로/로')} 저장할까요?`,
+                  message: `지금까지 '${oldText}' ${josaOf(oldText, '으로/로')} 적었습니다.`,
+                  confirmLabel: '나누기', altLabel: '같은 품목', level: 'caution',
+                })
+                if (choice === null || choice === 'back') return       // 취소·X = 저장 중단(무변경)
+                if (choice === 'alt') target = loaded
+              }
+              if (!target) continue
+              // 규격이 바뀌면 금액은 그대로 두고 단가만 다시 낸다(정본 basis 규칙).
+              const next = { ...it, specValue: target.specValue, specUnit: target.specUnit, specText: target.specText }
+              const basis = resolveUnitBasis({ recorded: next.unitBasis, specUnit: next.specUnit, qtyUnit: next.qtyUnit, specText: next.specText })
+              const q = (Number(next.qtyValue) || 1) * (basis === 'spec' ? (Number(next.specValue) || 1) : 1)
+              finalItems = finalItems.map((x, xi) => xi === i ? { ...next, unitPrice: next.amount != null && q > 0 ? Math.round(next.amount / q) : next.unitPrice } : x)
+              specChanged = true
+            }
+            if (specChanged) fd.set('itemsJson', JSON.stringify(itemsForSave(finalItems, addIsDurable)))
+          }
         }
         // 용량 단위로 잔량을 세는 품목인데 용량이 비었으면 한 번 묻는다(신고 27f91356, 운영자 제안).
         // 막지 않는다 — 넣기 싫으면 그대로 저장하고, 그 구매는 개수로 집계된다.
@@ -3071,8 +3328,9 @@ export default function FinanceClient({
         else pushToast('success', addedText)
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시). 소급에도 적용취소가 있다(§16).
         if (res.backfilled) toastBackfill(res.backfilled, res.backfillUndo)
+        for (const t of afterSave.splice(0)) t()
         await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
-      } finally { release() }
+      } finally { for (const t of afterSave.splice(0)) t(); release() }
     })
   }
   /**

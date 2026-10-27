@@ -20,6 +20,22 @@ function bodyOf(src, name) {
 }
 
 const AXES = [
+  // 지난 기록 변형 목록·규격별 나누기 개명(2026-10-27 영수증 묶음 4단계·D5, 독립 검수 권고 3). 영업장은 세션 값이다.
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'getItemVariants',
+    must: [[/const \{ propertyId \} = await requirePropertyAccess\(\)[\s\S]{0,200}loadItemVariants\(propertyId,/, '변형 목록을 세션 영업장으로 읽지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/finance/actions.ts',
+    fn: 'splitTrackedItemLabel',
+    must: [
+      [/trackedItem\.findFirst\(\{\s*where:\s*\{\s*id,\s*propertyId\s*\}/, '카드를 영업장 범위로 읽지 않는다'],
+      [/tx\.expense\.updateMany\(\{ where: \{ id: \{ in: exps\.map\(e => e\.id\) \}, propertyId \}/, '지출 개명을 영업장 범위로 쓰지 않는다'],
+    ],
+    mustNot: [[/trackedItem\.findUnique\(\{\s*where:\s*\{\s*id\s*\}/, '카드를 id 만으로 읽는다']],
+  },
   // 비품 행별 규격 수정(2026-10-27 D1, 영수증 묶음 독립 검수 권고 3). 행을 영업장 범위로 읽고, 쓰기는 그 행 id 만.
   {
     file: 'app/(app)/inventory/assets/actions.ts',
