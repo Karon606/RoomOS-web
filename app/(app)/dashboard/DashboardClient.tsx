@@ -548,8 +548,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
     // 그 전날까지만 성립한다. 그래서 이 자리에서 시트를 열면 언제나 못 넣는 폼을 보여 주게 된다.
     // 조기 입실의 진입점은 입주자 카드의 '입실 처리'다(계약 시작일 전에 누르는 자리).
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
-    // 그 방의 입실 전 점검이 남았으면 막지 않고 알린다(운영자 결정 3, 서버가 문장을 정한다).
-    if (res.notice) pushToast('info', res.notice)
+    // 입실이 그 방의 열린 입실 전 점검을 닫았으면 그 사실이 입실 토스트의 둘째 줄이다(운영자 결정 ③, 서버가 문장을 정한다).
+    if (res.notice) pushToast('info', '입실 처리됨', { detail: res.notice })
     router.refresh()
     onClose()
   }

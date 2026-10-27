@@ -41,6 +41,7 @@ const J = <T>(x: T): T => JSON.parse(JSON.stringify(x))   // 화면을 거쳐 �
   eq('재고 제외 표시는 빠진다', isInspectableAsset(row({ excludeFromInventory: true }), tracked), false)
   eq('품명 없는 행은 빠진다', isInspectableAsset(row({ itemLabel: '  ' }), tracked), false)
   eq('추적 카테고리(소모품)는 빠진다', isInspectableAsset(row({ category: '소모품비' }), tracked), false)
+  eq('방 작업 시공 자재(roomWorkId)는 빠진다(운영자 결정 ②)', isInspectableAsset(row({ roomWorkId: randomUUID() }), tracked), false)
   const items = seedInspectionItems({
     stage: 'CHECKOUT', template: ['벽지', ' 벽지 ', '', '의자'], excluded: ['공유기'], trackedCategories: tracked, assetStages: ['CHECKOUT'],
     assets: [row({ itemLabel: '책상' }), row({ itemLabel: '의자' }), row({ itemLabel: '공유기' }), row({ itemLabel: '책상 ' })],
@@ -106,6 +107,7 @@ async function main() {
   await asset(P1, R1, '배송비', { isShipping: true })
   await asset(P1, R1, '침대', { receivedAt: null })                    // 수령 전
   await asset(P1, R1, '공유기')                                        // 제외 품목
+  await asset(P1, R1, '실크벽지', { roomWorkId: randomUUID() })        // 방 작업 시공 자재(운영자 결정 ②)
   eq('제외 품목 추가', await settings.addInspectionExcludedItem('공유기'), { ok: true })
 
   const co = await tenants.checkoutTenant(L1, T1, '2026-10-20')
@@ -115,7 +117,7 @@ async function main() {
   const CO = live1.find(r => r.stage === 'CHECKOUT')!.id
   const MV = live1.find(r => r.stage === 'BEFORE_MOVEIN')!.id
   const coLabels = await labelsOf(CO)
-  eq('퇴실 점검 = 목록 7 + 비품 2(의자·책상, 제외·폐기·소모품·배송비·수령 전·재고 제외는 빠짐)', [coLabels.length, coLabels.slice(7)], [9, ['의자', '책상']])
+  eq('퇴실 점검 = 목록 7 + 비품 2(의자·책상, 제외·폐기·소모품·배송비·수령 전·재고 제외·시공 자재는 빠짐)', [coLabels.length, coLabels.slice(7)], [9, ['의자', '책상']])
   eq('퇴실 처리 결과가 퇴실 점검 항목 수를 싣는다', co.ok && co.inspection, { roomId: R1, itemCount: 9 })
   eq('입실 전 점검 = 목록 9, 비품 없음', (await labelsOf(MV)).length, 9)
 
@@ -192,14 +194,50 @@ async function main() {
   eq('그 청소의 검수는 하나', (await rowsOf({ propertyId: P1, cleaningId: C1 })).length, 1)
   const cc3 = await cleaning.completeCleaning({ id: C1, doneDate: '2026-10-21', performer: 'SELF' })
   eq('열린 검수가 있으면 새로 알리지 않는다', cc3.ok && cc3.inspection, undefined)
+  // 끝낸 검수는 청소 완료 적용취소에도 남는다(독립 검수 R6). 다시 완료해도 새로 안 만든다.
+  eq('청소 검수 완료', await insp.completeInspection({ id: AC.id, doneDate: '2026-10-21' }), { ok: true })
+  eq('청소 완료 적용취소(검수는 완료 상태)', (await cleaning.reopenCleaning(C1)).ok, true)
+  eq('끝낸 검수는 걷히지 않는다', await prisma.roomInspection.findUnique({ where: { id: AC.id } }).then(x => [x?.status, x?.deletedAt]), ['DONE', null])
+  const cc4 = await cleaning.completeCleaning({ id: C1, doneDate: '2026-10-21', performer: 'SELF' })
+  eq('끝낸 검수가 있으면 재완료가 새로 안 만들고 알리지도 않는다', [cc4.ok && cc4.inspection, (await rowsOf({ propertyId: P1, cleaningId: C1 })).length], [undefined, 1])
+  // 청소 삭제 → 예정 검수만 걷힘, 삭제 적용취소 → 체크 그대로 되살림(운영자 판단 ③). 옛 청소를 되살려도 검수를 새로 만들지 않는다.
+  const C2 = (await prisma.roomCleaning.create({ data: { propertyId: P1, roomId: R1, reason: 'DURING_STAY', status: 'PLANNED' } })).id
+  const cd = await cleaning.completeCleaning({ id: C2, doneDate: '2026-10-22', performer: 'SELF' })
+  const AC2 = cd.ok && cd.inspection ? cd.inspection.id : ''
+  const ac2Item = (await insp.getInspectionItems(AC2))[0].id
+  await insp.setInspectionItemResult({ itemId: ac2Item, result: 'NA' })
+  eq('청소 삭제', await cleaning.deleteCleaning(C2), { ok: true })
+  eq('지운 청소의 예정 검수는 걷힌다', (await prisma.roomInspection.findUnique({ where: { id: AC2 } }))?.deletedAt !== null, true)
+  eq('청소 삭제 적용취소', await cleaning.restoreCleaning(C2), { ok: true })
+  eq('되살린 청소의 검수가 체크 그대로 돌아온다', [(await prisma.roomInspection.findUnique({ where: { id: AC2 } }))?.deletedAt, (await prisma.roomInspectionItem.findUnique({ where: { id: ac2Item } }))?.result], [null, 'NA'])
+  const C3 = (await prisma.roomCleaning.create({ data: { propertyId: P1, roomId: R1, reason: 'DURING_STAY', status: 'DONE', doneDate: new Date('2026-09-01T00:00:00Z'), deletedAt: new Date() } })).id
+  eq('검수 없던 옛 완료 청소 되살리기', await cleaning.restoreCleaning(C3), { ok: true })
+  eq('옛 청소를 되살려도 검수를 새로 만들지 않는다', (await rowsOf({ propertyId: P1, cleaningId: C3 })).length, 0)
 
-  // ── 5. 입실 처리 → 막지 않고 알린다 ─────────────────────────────────────────
+  // ── 5. 입실 처리 → 그 방의 열린 입실 전 점검을 '안 함'으로 닫고, 입실 적용취소는 되연다(운영자 결정 ③) ─────────
   const T2 = await tenantIn(P1, '나')
   const L2 = await leaseIn(P1, T2, R1, 'RESERVED')
+  eq('입실 전: 열린 입실 전 점검 조회', await insp.getOpenMoveInInspection(R1), { id: MV, checked: 1, total: 10 })
   const mi = await tenants.moveInTenant(L2, T2)
   eq('입실 전 점검이 남아도 입실은 된다', [mi.ok, (await prisma.leaseTerm.findUnique({ where: { id: L2 } }))?.status], [true, 'ACTIVE'])
-  eq('입실 결과가 진행을 알린다', mi.ok && mi.notice?.startsWith('입실 전 점검이 끝나지 않았습니다(확인 1/10)'), true)
-  eq('열린 입실 전 점검 조회', await insp.getOpenMoveInInspection(R1), { id: MV, checked: 1, total: 10 })
+  eq('입실 결과가 닫힌 점검을 알린다(남은 9항목)', mi.ok && mi.notice?.startsWith('입실 전 점검 9항목이 남은 채 닫혔습니다'), true)
+  const mvRow = async () => prisma.roomInspection.findUnique({ where: { id: MV } }).then(x => [x?.status, x?.doneBy?.startsWith('auto-movein:') ?? false])
+  eq('입실이 닫은 점검은 안 함 + 입실 표식', await mvRow(), ['SKIPPED', true])
+  eq('닫힌 뒤 열린 입실 전 점검 없음', await insp.getOpenMoveInInspection(R1), null)
+  eq('판정은 그대로 남는다', (await prisma.roomInspectionItem.findUnique({ where: { id: A } }))?.result, 'NG')
+  const und = await tenants.applyStatusTransition({ leaseTermId: L2, tenantId: T2, toStatus: 'RESERVED' })
+  eq('입실 적용취소 통과', und.ok, true)
+  eq('입실 적용취소가 그 입실이 닫은 점검을 되연다', await mvRow(), ['PLANNED', false])
+  const st = await tenants.applyStatusTransition({ leaseTermId: L2, tenantId: T2, toStatus: 'ACTIVE' })
+  eq('상태 위젯 입실 처리가 닫고 둘째 줄 문장을 돌려준다', [st.ok, st.ok && st.moveInInspectionClosed?.startsWith('입실 전 점검 9항목이 남은 채 닫혔습니다')], [true, true])
+  eq('상태 위젯 경로도 닫는다', await mvRow(), ['SKIPPED', true])
+  await tenants.applyStatusTransition({ leaseTermId: L2, tenantId: T2, toStatus: 'RESERVED' })
+  eq('다시 되열림', await mvRow(), ['PLANNED', false])
+  eq('손으로 안 하기로', await insp.skipInspection(MV), { ok: true })
+  await tenants.applyStatusTransition({ leaseTermId: L2, tenantId: T2, toStatus: 'ACTIVE' })
+  await tenants.applyStatusTransition({ leaseTermId: L2, tenantId: T2, toStatus: 'RESERVED' })
+  eq('손으로 안 하기로 한 점검은 입실 적용취소가 되열지 않는다', await mvRow(), ['SKIPPED', false])
+  eq('안 함 적용취소(손으로)', await insp.reopenInspection(MV), { ok: true })
 
   // ── 6. 손수 등록·안 함·삭제와 적용취소 ───────────────────────────────────────
   const R3 = await roomIn(P1, '502')
@@ -214,6 +252,15 @@ async function main() {
   eq('삭제분은 영업장 목록에 삭제됨으로 실린다', (await insp.getPropertyInspections()).some(r => r.id === MK && r.deletedAt !== null), true)
   eq('복원', await insp.restoreInspection(MK), { ok: true })
   eq('복원 뒤 항목 그대로', (await insp.getRoomInspections(R3))[0]?.total, 9)
+  // 같은 방·같은 단계 예정 점검이 둘 서지 않는다(독립 검수 R7). 되열기·되살리기가 손수 등록과 같은 문을 지난다.
+  const SIB = '이 호실에는 아직 안 끝난 입실 전 점검이 있습니다. 그 점검을 마치거나 안 하기로 한 뒤 되돌리면 됩니다.'
+  await insp.skipInspection(MK)
+  const mk2 = await insp.createInspection({ roomId: R3, stage: 'BEFORE_MOVEIN' })
+  const MK2 = mk2.ok ? mk2.id : ''
+  eq('예정이 있으면 안 함 적용취소가 막힌다', await insp.reopenInspection(MK), { ok: false, error: SIB })
+  await insp.deleteInspection(MK2)
+  eq('겹치는 예정이 없어지면 되연다', await insp.reopenInspection(MK), { ok: true })
+  eq('예정이 있으면 예정 점검 복원이 막힌다', await insp.restoreInspection(MK2), { ok: false, error: SIB })
 
   // ── 7. 남의 영업장 id 로는 아무것도 못 바꾼다 ─────────────────────────────────
   g.__CR_FLOW_PID = P2

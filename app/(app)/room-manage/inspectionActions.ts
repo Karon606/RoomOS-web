@@ -169,7 +169,8 @@ export async function setInspectionItemResult(input: {
     } else {
       saved = await prisma.roomInspectionItem.update({ where: { id: cur.id, propertyId }, data: { result: input.result, note, checkedAt: new Date() }, select: { checkedAt: true } })
     }
-    revalidatePath('/room-manage')
+    // 항목 쓰기는 화면을 다시 그리지 않는다(독립 검수 R1). 행이 들고 있는 항목을 서버 응답으로 바로 고치고, 수·배지는
+    // 점검 상태 쓰기(완료·안 함·삭제·되살림)나 다음 조회 때 맞춰진다. 체크마다 영업장 전체 목록을 다시 읽던 비용을 걷는다.
     return {
       ok: true,
       prev: { result: cur.result as InspectionItemResult, note: cur.note, checkedAt: cur.checkedAt ? cur.checkedAt.toISOString() : null },
@@ -196,7 +197,6 @@ export async function addInspectionItem(input: { inspectionId: string; label: st
       data: { inspectionId: input.inspectionId, propertyId, label, sortOrder: (last?.sortOrder ?? -1) + 1, source: 'MANUAL' },
       select: { id: true, sortOrder: true },
     })
-    revalidatePath('/room-manage')
     return { ok: true, item: { id: row.id, label, sortOrder: row.sortOrder, source: 'MANUAL', result: 'PENDING', note: null, checkedAt: null } }
   } catch (err) { return errorOf(err, '추가에 실패했습니다.') }
 }
@@ -213,7 +213,6 @@ export async function removeInspectionItem(itemId: string): Promise<{ ok: true; 
     if (!got.ok) return { ok: false, error: got.error }
     const cur = got.cur
     await prisma.roomInspectionItem.delete({ where: { id: cur.id, propertyId } })
-    revalidatePath('/room-manage')
     return {
       ok: true,
       snapshot: {
@@ -236,7 +235,7 @@ export async function restoreInspectionItem(snapshot: InspectionItemSnapshot): P
     const insp = await prisma.roomInspection.findFirst({ where: { id: snapshot.inspectionId, propertyId, deletedAt: null }, select: { status: true } })
     if (!insp) return { ok: false, error: INSPECTION_GONE }
     if (insp.status !== 'PLANNED') return { ok: false, error: INSPECTION_LOCKED }
-    const label = normalizeCategoryInput(snapshot.label)
+    const label = normalizeCategoryInput(snapshot.label).slice(0, INSPECTION_LABEL_MAX)
     if (!label) return { ok: false, error: '되살릴 항목을 확인하지 못했습니다.' }
     const source: InspectionItemSource = INSPECTION_SOURCES.includes(snapshot.source) ? snapshot.source : 'MANUAL'
     const result: InspectionItemResult = INSPECTION_RESULTS.includes(snapshot.result) ? snapshot.result : 'PENDING'
@@ -250,14 +249,27 @@ export async function restoreInspectionItem(snapshot: InspectionItemSnapshot): P
       data: { inspectionId: snapshot.inspectionId, propertyId, label, sortOrder, source, expenseId: expenseOk ? snapshot.expenseId : null, result, checkedAt, note },
       select: { id: true },
     })
-    revalidatePath('/room-manage')
     return { ok: true, item: { id: row.id, label, sortOrder, source, result, note, checkedAt: checkedAt ? checkedAt.toISOString() : null } }
   } catch (err) { return errorOf(err, '되살리지 못했습니다.') }
 }
 
 /** 살아 있는 점검을 이 영업장 안에서 찾는다. */
 async function liveInspection(propertyId: string, id: string) {
-  return prisma.roomInspection.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true, status: true } })
+  return prisma.roomInspection.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true, status: true, roomId: true, stage: true } })
+}
+
+/**
+ * 이 점검을 예정으로 세우면 같은 방·같은 단계의 예정 점검이 둘이 되는가(독립 검수 R7). 되면 손수 등록과 같은 정본 문형의 까닭을 준다.
+ * 열린 할 일이 둘 서면 '청소 필요' 처럼 숫자가 실제보다 커지고, 어느 쪽을 체크해야 하는지 갈린다.
+ */
+async function openSiblingError(propertyId: string, row: { id: string; roomId: string; stage: string }): Promise<string | null> {
+  const other = await prisma.roomInspection.findFirst({
+    where: { propertyId, roomId: row.roomId, stage: row.stage, status: 'PLANNED', deletedAt: null, id: { not: row.id } },
+    select: { id: true },
+  })
+  if (!other) return null
+  const label = INSPECTION_STAGE_LABEL[row.stage as InspectionStage] ?? '점검'
+  return `이 호실에는 아직 안 끝난 ${withParticle(label, '이/가')} 있습니다. 그 점검을 마치거나 안 하기로 한 뒤 되돌리면 됩니다.`
 }
 
 /**
@@ -288,6 +300,8 @@ export async function reopenInspection(id: string): Promise<{ ok: true } | Fail>
     const { propertyId } = await requirePropertyAccess()
     const cur = await liveInspection(propertyId, id)
     if (!cur) return { ok: false, error: INSPECTION_GONE }
+    const clash = await openSiblingError(propertyId, cur)
+    if (clash) return { ok: false, error: clash }
     await prisma.roomInspection.update({ where: { id: cur.id, propertyId }, data: { status: 'PLANNED', doneDate: null, doneBy: null } })
     revalidatePath('/room-manage')
     return { ok: true }
@@ -326,8 +340,13 @@ export async function restoreInspection(id: string): Promise<{ ok: true } | Fail
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomInspection.findFirst({ where: { id, propertyId, deletedAt: { not: null } }, select: { id: true } })
+    const cur = await prisma.roomInspection.findFirst({ where: { id, propertyId, deletedAt: { not: null } }, select: { id: true, status: true, roomId: true, stage: true } })
     if (!cur) return { ok: false, error: INSPECTION_GONE }
+    // 되살릴 것이 예정 점검이면 같은 방·같은 단계의 예정 점검과 겹치지 않아야 한다(R7). 끝낸 점검은 겹쳐도 된다(기록이다).
+    if (cur.status === 'PLANNED') {
+      const clash = await openSiblingError(propertyId, cur)
+      if (clash) return { ok: false, error: clash }
+    }
     await prisma.roomInspection.update({ where: { id: cur.id, propertyId }, data: { deletedAt: null } })
     revalidatePath('/room-manage')
     return { ok: true }

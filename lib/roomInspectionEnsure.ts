@@ -17,11 +17,11 @@ import { withParticle } from '@/lib/koParticle'
 import { seedInspectionItems } from '@/lib/roomInspectionSeed'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import {
-  INSPECTION_TEMPLATE_FIELD, INSPECTION_ASSET_STAGES, INSPECTION_STAGE_LABEL,
+  INSPECTION_TEMPLATE_FIELD, INSPECTION_ASSET_STAGES, INSPECTION_STAGE_LABEL, moveInClosedMarker,
   type InspectionStage,
 } from '@/app/(app)/room-manage/inspectionConstants'
 
-export type EnsureInspectionKind = 'created' | 'revived' | 'skipped-open' | 'skipped-exists' | 'failed'
+export type EnsureInspectionKind = 'created' | 'revived' | 'skipped-open' | 'skipped-exists' | 'skipped-none' | 'failed'
 export type EnsureInspectionResult = { kind: EnsureInspectionKind; id: string | null; stage: InspectionStage; itemCount: number }
 
 /** 그 단계 항목을 정한다. 영업장 목록·제외 품목·비품 행을 읽어 순수 함수(lib/roomInspectionSeed)에 넘긴다. */
@@ -41,9 +41,11 @@ async function planItems(propertyId: string, roomId: string, stage: InspectionSt
         where: {
           propertyId, roomId, receivedAt: { not: null }, disposedAt: null, isShipping: false, excludeFromInventory: false,
           itemLabel: { not: null }, category: { notIn: trackedCategories },
+          // 방 작업(도배·장판)에 묶인 시공 자재는 점검할 비품이 아니다(2026-10-27 운영자 결정 ②).
+          roomWorkId: null,
         },
         orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-        select: { id: true, itemLabel: true, category: true, receivedAt: true, disposedAt: true, isShipping: true, excludeFromInventory: true },
+        select: { id: true, itemLabel: true, category: true, receivedAt: true, disposedAt: true, isShipping: true, excludeFromInventory: true, roomWorkId: true },
       })
     : []
   return seedInspectionItems({
@@ -95,6 +97,11 @@ export async function ensureRoomInspection(propertyId: string, input: {
   leaseTermId?: string | null
   cleaningId?: string | null
   scheduledDate?: Date | null
+  /**
+   * 되살리기만 한다(걷힌 것이 없으면 새로 안 만든다). 청소 삭제 적용취소가 쓴다. 이 기능 전에 끝난 옛 청소를 되살렸다고
+   * 그 청소의 검수가 새로 생기면, 지운 적 없는 할 일이 생긴다(2026-10-27 운영자 판단 ③ 반영 때의 보수적 판단).
+   */
+  reviveOnly?: boolean
 }): Promise<EnsureInspectionResult> {
   const stage = input.stage
   try {
@@ -126,6 +133,7 @@ export async function ensureRoomInspection(propertyId: string, input: {
         return { kind: 'revived', id: gone.id, stage, itemCount }
       }
     }
+    if (input.reviveOnly) return { kind: 'skipped-none', id: null, stage, itemCount: 0 }
     const made = await createRoomInspection(propertyId, input)
     return { kind: 'created', id: made.id, stage, itemCount: made.itemCount }
   } catch {
@@ -201,4 +209,55 @@ export async function checkoutInspectionForLease(propertyId: string, leaseTermId
     const itemCount = await prisma.roomInspectionItem.count({ where: { inspectionId: row.id, propertyId } })
     return { id: row.id, roomId: row.roomId, itemCount }
   } catch { return null }
+}
+
+/**
+ * 입실이 그 방의 열린 입실 전 점검을 '안 함'으로 닫는다(2026-10-27 운영자 결정 ③). 입실을 만드는 모든 경로가 부른다
+ * (상태 위젯 입실 처리·수정 폼 거주중 전환·홈 알림 입실·moveInTenant). 사람이 들어간 방의 입실 전 점검은 더 할 수 없는 일이라
+ * 예정으로 남겨 두면 거주 중인 방에 '점검 남음' 이 선다. 끝낸 판정은 그대로 남는다(상태만 닫는다).
+ *
+ * 누가 닫았는지는 doneBy 로그 칸에 `auto-movein:<계약 id>` 로 남긴다. 입실 적용취소가 이 표식으로 **그 입실이 닫은 점검만** 되연다
+ * (손으로 '안 하기로' 한 점검은 표식이 없어 안 열린다). 칸을 새로 두지 않는 것은 스키마 변경이 계획 밖이라서다.
+ * 실패해도 던지지 않는다(입실은 이미 끝났다). 닫았으면 남은 항목 수를 돌려준다(입실 토스트 둘째 줄).
+ */
+export async function closeMoveInInspectionOnMoveIn(propertyId: string, roomId: string | null, leaseTermId: string): Promise<{ id: string; pending: number; total: number } | null> {
+  if (!roomId) return null
+  try {
+    const open = await prisma.roomInspection.findFirst({
+      where: { propertyId, roomId, stage: 'BEFORE_MOVEIN', status: 'PLANNED', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    })
+    if (!open) return null
+    const [total, pending] = await Promise.all([
+      prisma.roomInspectionItem.count({ where: { inspectionId: open.id, propertyId } }),
+      prisma.roomInspectionItem.count({ where: { inspectionId: open.id, propertyId, result: 'PENDING' } }),
+    ])
+    await prisma.roomInspection.update({
+      where: { id: open.id, propertyId },
+      data: { status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId) },
+    })
+    return { id: open.id, pending, total }
+  } catch { return null }
+}
+
+/**
+ * 입실 적용취소(거주중 -> 입실 예약)가 그 입실이 닫은 입실 전 점검을 예정으로 되연다. 같은 방·같은 단계에 이미 다른 예정 점검이 있으면
+ * 되열지 않는다(열린 할 일이 둘 서지 않게). 실패해도 던지지 않는다.
+ */
+export async function reopenMoveInInspectionOnUndo(propertyId: string, leaseTermId: string): Promise<void> {
+  try {
+    const closed = await prisma.roomInspection.findMany({
+      where: { propertyId, stage: 'BEFORE_MOVEIN', status: 'SKIPPED', doneBy: moveInClosedMarker(leaseTermId), deletedAt: null },
+      select: { id: true, roomId: true },
+    })
+    for (const row of closed) {
+      const other = await prisma.roomInspection.findFirst({
+        where: { propertyId, roomId: row.roomId, stage: 'BEFORE_MOVEIN', status: 'PLANNED', deletedAt: null },
+        select: { id: true },
+      })
+      if (other) continue
+      await prisma.roomInspection.update({ where: { id: row.id, propertyId }, data: { status: 'PLANNED', doneBy: null } })
+    }
+  } catch { /* 점검은 입실 되돌리기를 막지 않는다 */ }
 }

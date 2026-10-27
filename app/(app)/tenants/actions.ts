@@ -32,8 +32,8 @@ import { assertNotFuture, resolveCompletionAt } from '@/lib/completionDate'
 import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoCheckout'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
-import { ensureCheckoutInspections, clearCheckoutInspections, inspectionFailureNotice, checkoutInspectionForLease, openMoveInInspectionSummary } from '@/lib/roomInspectionEnsure'
-import { moveInInspectionNotice } from '@/app/(app)/room-manage/inspectionConstants'
+import { ensureCheckoutInspections, clearCheckoutInspections, inspectionFailureNotice, checkoutInspectionForLease, closeMoveInInspectionOnMoveIn, reopenMoveInInspectionOnUndo } from '@/lib/roomInspectionEnsure'
+import { moveInInspectionClosedText } from '@/app/(app)/room-manage/inspectionConstants'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
@@ -1880,6 +1880,19 @@ export async function updateTenant(formData: FormData): Promise<
     })
   }
 
+  // 퇴실을 무른 저장(CHECKED_OUT 에서 다른 상태로, 수정 폼 뒷문) — 그 퇴실이 자동으로 만든 청소 예정과 예정 점검을 걷는다
+  // (2026-10-27 독립 검수 R3). 종전에는 전환 위젯 경로(applyStatusTransition)에만 있어 이 폼으로 무르면 거주 중인 방에 '청소 필요'가 남았다.
+  // 끝낸 청소·점검은 사실이라 남긴다(두 함수 모두 예정만 고른다).
+  if (prevStatus === 'CHECKED_OUT' && status !== 'CHECKED_OUT') {
+    await clearAutoCheckoutCleaning(propertyId, leaseTermId)
+    await clearCheckoutInspections(propertyId, leaseTermId)
+  }
+  // 예약에서 거주중으로 들어오는 저장 — 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③). 거주중에서 입실 예약으로 무르는 저장은
+  // 그 입실이 닫은 점검을 되연다(전환 위젯의 입실 적용취소와 같은 짝).
+  const moveInNoticeText = prevStatus === 'RESERVED' && status === 'ACTIVE'
+    ? (await closeMoveInInspection(propertyId, newRoomId ?? prevRoomId ?? null, leaseTermId))?.text ?? null : null
+  if (prevStatus === 'ACTIVE' && status === 'RESERVED') await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
+
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
   // 목록에 없는 직업을 새로 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙). 직업이 그대로면 안 더한다.
@@ -1899,7 +1912,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
   const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
-  const finalNotice = [baseNotice, rentRewriteNotice, checkoutSideNotice,
+  const finalNotice = [baseNotice, rentRewriteNotice, checkoutSideNotice, moveInNoticeText,
     staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
   return {
     ok: true,
@@ -2721,8 +2734,9 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   })
 
   revalidatePath('/tenants')
-  // 그 방의 입실 전 점검이 남았으면 막지 않고 알린다(운영자 결정 3: 경고만, 2026-10-27).
-  const notice = await moveInNotice(propertyId, lease.roomId)
+  revalidatePath('/room-manage')
+  // 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③).
+  const notice = (await closeMoveInInspection(propertyId, lease.roomId, leaseTermId))?.text
   return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2730,11 +2744,11 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   }
 }
 
-// 입실 처리 뒤 안내 — 그 방에 열린 입실 전 점검이 있으면 진행과 함께 한 문장. 읽기 실패는 입실을 뒤집지 않는다.
-async function moveInNotice(propertyId: string, roomId: string | null): Promise<string | null> {
-  if (!roomId) return null
-  const open = await openMoveInInspectionSummary(propertyId, roomId).catch(() => null)
-  return open ? moveInInspectionNotice(open.checked, open.total) : null
+// 입실 처리가 그 방의 열린 입실 전 점검을 '안 함'으로 닫고(운영자 결정 ③) 닫았으면 그 사실 한 문장을 준다. 입실을 만드는 모든 경로가
+// 이 한 함수를 지난다(moveInTenant·confirmReservationToActive·updateTenant·applyStatusTransition). 실패는 입실을 뒤집지 않는다.
+async function closeMoveInInspection(propertyId: string, roomId: string | null, leaseTermId: string): Promise<{ pending: number; text: string } | null> {
+  const closed = await closeMoveInInspectionOnMoveIn(propertyId, roomId, leaseTermId)
+  return closed ? { pending: closed.pending, text: moveInInspectionClosedText(closed.pending) } : null
 }
 
 /**
@@ -2833,8 +2847,8 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
-    // 오늘 들어가는 방(일정이 있으면 그 방)의 입실 전 점검이 남았으면 알린다. 막지 않는다(운영자 결정 3).
-    const notice = await moveInNotice(propertyId, planned?.roomId ?? lease.roomId)
+    // 오늘 들어가는 방(일정이 있으면 그 방)의 열린 입실 전 점검을 닫는다(운영자 결정 ③).
+    const notice = (await closeMoveInInspection(propertyId, planned?.roomId ?? lease.roomId, leaseTermId))?.text
     return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -3222,16 +3236,17 @@ export async function startLeaseWithRoomSchedule(input: {
 
     if (derivedDueDay) await propagateDueDayToSubLeases(prisma, lease.id, lease.dueDay, derivedDueDay)
     await reanchorReservationPrepaid(lease.id)
+    // 오늘 들어가는 방(일정의 첫 방)의 열린 입실 전 점검을 닫는다(운영자 결정 ③, 다른 입실 경로와 같은 함수).
+    const inspClosed = await closeMoveInInspection(propertyId, schedule[0]?.roomId ?? lease.roomId, lease.id)
 
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     const next = nextRoomMove(schedule, input.moveInDate)
     const nextRoom = next
       ? await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
       : null
-    return {
-      ok: true,
-      notice: next ? `${fmtDateDot(next.at)}에 ${roomNoWithRo(nextRoom?.roomNo ?? '', '')} 옮기라고 홈에서 알립니다.` : undefined,
-    }
+    const notice = [next ? `${fmtDateDot(next.at)}에 ${roomNoWithRo(nextRoom?.roomNo ?? '', '')} 옮기라고 홈에서 알립니다.` : null, inspClosed?.text ?? null]
+      .filter(Boolean).join(' ') || undefined
+    return { ok: true, notice }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3946,6 +3961,8 @@ export async function applyStatusTransition(input: {
     roomNo: string; moveInYmd: string; freeFrom: string | null
     occupantName: string | null; occupantTenantId: string | null; sameDayHandover: boolean
   }
+  /** 입실 처리가 그 방의 열린 입실 전 점검을 닫았으면 그 둘째 줄 문장(운영자 결정 ③). */
+  moveInInspectionClosed?: string
 } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
   try {
     await requireEdit()
@@ -4216,12 +4233,19 @@ export async function applyStatusTransition(input: {
     // 운영자는 어느 길로 갔느냐에 따라 물음을 못 본다 — 실측에서 그렇게 놓쳤다(2026-08-26).
     const staleCleared = await clearStaleRoomSchedule(propertyId, input.leaseTermId)
     const roomBusy = await reservationRoomBusy(propertyId, input.leaseTermId)
+    // 예약에서 거주중으로(입주자 상태 위젯 '입실 처리') — 그 방의 열린 입실 전 점검을 닫는다(운영자 결정 ③). 화면의 실제 입실 경로가
+    // 여기다(홈 알림은 confirmReservationToActive). 일정이 있으면 오늘 들어가는 방으로 본다. 닫은 사실은 notice 가 아니라
+    // moveInInspectionClosed 로 돌려준다. 위젯이 입실 토스트의 둘째 줄로 말한다(§15 장문형). 입실 적용취소는 그 점검을 되연다.
+    const moveInClosed = lease.status === 'RESERVED' && input.toStatus === 'ACTIVE'
+      ? await closeMoveInInspection(propertyId, scheduledSegmentOn(parseRoomSchedule(lease.roomSchedule), kstYmdStr())?.roomId ?? lease.roomId, input.leaseTermId) : null
+    if (lease.status === 'ACTIVE' && input.toStatus === 'RESERVED') await reopenMoveInInspectionOnUndo(propertyId, input.leaseTermId)
     const finalNote = [notice, staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null]
       .filter(Boolean).join(' ') || null
     return {
       ok: true,
       ...(finalNote ? { notice: finalNote } : {}),
       ...(roomBusy ? { roomBusy } : {}),
+      ...(moveInClosed ? { moveInInspectionClosed: moveInClosed.text } : {}),
     }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

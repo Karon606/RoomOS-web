@@ -4,7 +4,8 @@
 // (운영자 승인 2026-10-27). 그래서 여기서 정한 글자가 곧 그 점검의 기록이다.
 //
 // 비품 규칙(승인 계획 그대로). 그 영업장·그 방 지출 행 중 받았고(receivedAt) 폐기 안 했고(disposedAt) 배송비 줄이 아니고
-// 재고 제외 표시가 없고 품명이 있으며 소모품으로 추적하는 카테고리가 아닌 것. 분류 관리 '점검 제외 품목' 에 적은 품명은 뺀다.
+// 재고 제외 표시가 없고 품명이 있으며 소모품으로 추적하는 카테고리가 아닌 것. 방 작업(도배·장판)에 묶인 시공 자재(roomWorkId)는 뺀다
+// (2026-10-27 운영자 결정 ②). 분류 관리 '점검 제외 품목' 에 적은 품명도 뺀다.
 // 같은 품명이 여러 행이면 한 항목이다(의자 둘을 따로 샀어도 '의자' 하나를 본다). 영업장 목록에 이미 있는 이름도 한 번만 선다.
 
 export type SeedStage = 'CHECKOUT' | 'AFTER_CLEANING' | 'BEFORE_MOVEIN'
@@ -17,6 +18,8 @@ export type SeedAssetRow = {
   disposedAt: Date | string | null
   isShipping: boolean
   excludeFromInventory: boolean
+  /** 방 작업(도배·장판)에 묶인 시공 자재면 그 작업 id. 있으면 빠진다(2026-10-27 운영자 결정 ②). */
+  roomWorkId?: string | null
 }
 
 export type SeedItem = {
@@ -34,6 +37,7 @@ export function inspectionLabelKey(label: string): string {
 /** 이 지출 행이 퇴실 점검에 들어갈 비품인가. DB 조회 조건과 같은 규칙을 한 번 더 본다(조회가 넓어져도 여기서 걸린다). */
 export function isInspectableAsset(row: SeedAssetRow, trackedCategories: readonly string[]): boolean {
   if (!row.receivedAt || row.disposedAt) return false
+  if (row.roomWorkId) return false
   if (row.isShipping || row.excludeFromInventory) return false
   if (!row.itemLabel || !inspectionLabelKey(row.itemLabel)) return false
   if (trackedCategories.includes(row.category)) return false

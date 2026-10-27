@@ -738,7 +738,7 @@ const EXPECTED2 = {
   marketSurvey: { where: 2, data: 2 },
   marketCompetitor: { where: 2, data: 2 },
   room: { where: 7, data: 7 },
-  roomInspection: { where: 8, data: 9 },
+  roomInspection: { where: 10, data: 11 },
   roomInspectionItem: { where: 4, data: 6 },
 }
 const MODEL2_ALT = Object.keys(SCOPE2).join('|')

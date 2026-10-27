@@ -97,9 +97,17 @@ export type InspectionItemSnapshot = {
 /** 결과를 고친 항목의 이전 값. 적용취소가 이 값으로 같은 액션을 다시 부른다(inspectionActions setInspectionItemResult). */
 export type InspectionItemPrev = { result: InspectionItemResult; note: string | null; checkedAt: string | null }
 
-/** 진행 수 문장. 행·배지·안내가 같은 모양으로 쓴다. */
-export function inspectionProgressText(checked: number, total: number): string {
-  return `확인 ${checked}/${total}`
+/**
+ * 진행 수 문장 정본 '점검 N/M'(독립 검수 R2). 행·카드 보조줄('청소 필요'·'점검 남음')·입실 안내가 이 한 함수를 쓴다.
+ * N 은 판정을 마친 항목(확인·문제·해당 없음) 수다. 항목 상자도 셋 모두 채워 보여 주므로(InspectionRowBody) 상자 수와 N 이 같다.
+ */
+export function inspectionProgressText(judged: number, total: number): string {
+  return `점검 ${judged}/${total}`
+}
+
+/** 입실이 닫은 입실 전 점검의 표식(doneBy 로그 칸). 입실 적용취소가 이 표식으로 그 입실이 닫은 점검만 되연다(운영자 결정 ③). */
+export function moveInClosedMarker(leaseTermId: string): string {
+  return `auto-movein:${leaseTermId}`
 }
 
 /** 결과를 고른 항목 수(확인·문제·해당 없음). 화면이 항목을 들고 있을 때 서버 수와 같은 규칙으로 센다. */
@@ -108,12 +116,14 @@ export function countChecked(items: readonly { result: InspectionItemResult }[])
 }
 
 /**
- * 입실을 막지 않고 알리는 문장 둘(운영자 결정 3: 경고만). 입실 처리 결과 안내(notice)와 '입실 처리' 버튼 앞 안내 줄이 쓴다.
- * 버튼 앞 줄은 이유 한 마디 뒤에 '점검 열기' 링크가 푸는 법이다(가이드 §27.8 WhyCaption 문형).
+ * 입실 처리가 열린 입실 전 점검을 닫을 때의 둘째 줄(운영자 결정 ③, §15 장문형 둘째 줄). 남은 항목이 없으면 닫았다는 사실만 말한다.
  */
-export function moveInInspectionNotice(checked: number, total: number): string {
-  return `입실 전 점검이 끝나지 않았습니다(${inspectionProgressText(checked, total)}). 입실은 처리했고, 호실 작업 이력에서 점검을 마치면 됩니다.`
+export function moveInInspectionClosedText(pending: number): string {
+  return pending > 0
+    ? `입실 전 점검 ${pending}항목이 남은 채 닫혔습니다 · 입실을 적용취소하면 다시 열립니다`
+    : '입실 전 점검을 완료 기록 없이 닫았습니다 · 입실을 적용취소하면 다시 열립니다'
 }
-export function moveInInspectionCaption(checked: number, total: number): string {
-  return `입실 전 점검이 끝나지 않았습니다(${inspectionProgressText(checked, total)}). 입실 처리는 그대로 할 수 있습니다`
+/** '입실 처리' 버튼 앞 안내 줄(§27.8 WhyCaption 문형). 막지 않는다. 입실하면 그 점검이 닫힌다는 것을 미리 말한다. */
+export function moveInInspectionCaption(judged: number, total: number): string {
+  return `입실 전 점검이 끝나지 않았습니다(${inspectionProgressText(judged, total)}). 입실 처리하면 '안 함'으로 닫힙니다`
 }

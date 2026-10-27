@@ -236,15 +236,15 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
    */
   const [opening, setOpening] = useState(false)
   const [active, setActive] = useState<ActiveTransition>(null)
-  // 그 방의 열린 입실 전 점검(2026-10-27, 신고 2911c217). 입실 예약일 때만 읽는다. '입실 처리' 는 막지 않고 버튼 줄 아래 한 줄로 알린다
-  // (운영자 결정 3: 경고만). 읽기 실패는 줄을 안 세운다(입실을 붙잡을 이유가 아니다).
-  const [moveInInsp, setMoveInInsp] = useState<{ checked: number; total: number } | null>(null)
+  // 그 방의 열린 입실 전 점검(2026-10-27, 신고 2911c217). 입실 예약일 때만 읽는다. '입실 처리' 는 막지 않고 버튼 줄 아래 한 줄로
+  // 입실하면 그 점검이 '안 함'으로 닫힌다고 미리 말한다(운영자 결정 ③). 읽기 실패는 줄을 안 세운다(입실을 붙잡을 이유가 아니다).
+  const [moveInInsp, setMoveInInsp] = useState<{ judged: number; total: number } | null>(null)
   const moveInRoomId = lease.status === 'RESERVED' ? lease.roomId : null
   useEffect(() => {
     if (!moveInRoomId) { setMoveInInsp(null); return }
     let alive = true
     getOpenMoveInInspection(moveInRoomId)
-      .then(r => { if (alive) setMoveInInsp(r ? { checked: r.checked, total: r.total } : null) })
+      .then(r => { if (alive) setMoveInInsp(r ? { judged: r.checked, total: r.total } : null) })
       .catch(() => { if (alive) setMoveInInsp(null) })
     return () => { alive = false }
   }, [moveInRoomId])
@@ -648,9 +648,12 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           pushToast('info', `${tenantName}님 · ${def.doneToast}`)
         } else {
           const undoable = UNDO_AFTER[def.key]
-          pushToast('success', `${tenantName}님 · ${def.successToast ?? `${def.label} 완료`}`, undoable
-            ? { action: { label: '적용취소', run: () => runUndoAfter(undoable) } }
-            : undefined)
+          // 입실 처리가 그 방의 열린 입실 전 점검을 닫았으면 그 사실이 이 토스트의 둘째 줄이다(운영자 결정 ③, §15 장문형).
+          const detail = 'moveInInspectionClosed' in res ? res.moveInInspectionClosed : undefined
+          pushToast('success', `${tenantName}님 · ${def.successToast ?? `${def.label} 완료`}`, {
+            ...(undoable ? { action: { label: '적용취소', run: () => runUndoAfter(undoable) } } : {}),
+            ...(detail ? { detail } : {}),
+          })
         }
         if (deferNow && depoBase > 0) pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
         if (res.notice) pushToast('info', res.notice)
@@ -714,7 +717,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       {lease.status === 'RESERVED' && lease.roomId && moveInInsp && (
         <WhyCaption id={moveInWhyId} className="-mt-1 pb-1"
           action={{ label: '점검 열기', onClick: () => entityModal.open({ kind: 'room', roomId: lease.roomId as string }) }}>
-          {moveInInspectionCaption(moveInInsp.checked, moveInInsp.total)}
+          {moveInInspectionCaption(moveInInsp.judged, moveInInsp.total)}
         </WhyCaption>
       )}
 

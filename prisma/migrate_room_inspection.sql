@@ -7,6 +7,7 @@
 -- 백필 없음. 지금 비어 있는 방에는 점검이 없다(호실 관리 > 작업 > '+ 점검 등록' 으로 손수 만든다). 기존 영업장 목록 칸은 전부 NULL 로 남는다.
 --
 -- 물리 테이블명은 @@map, 칸 이름은 camelCase 그대로다. 멱등(IF NOT EXISTS)이라 두 번 실행해도 같다.
+-- 외래키는 ON UPDATE CASCADE 를 함께 둔다(Prisma 기본·migrate_expense_order.sql 관례).
 -- 보안: 두 표 모두 RLS 를 켠다(정책 없음 = anon 전부 차단, 앱은 postgres 롤 Prisma 로 우회. migrate_expense_order.sql 과 같은 관례).
 --
 -- 적용 순서: 이 SQL 을 운영 DB 에 먼저 적용한 뒤 코드를 배포한다. 새 Prisma 클라이언트는 영업장을 select 없이 읽을 때 새 칸 넷을 함께
@@ -24,9 +25,9 @@ SET lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS "room_inspections" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  "propertyId" UUID NOT NULL REFERENCES "properties"("id") ON DELETE CASCADE,
-  "roomId" UUID NOT NULL REFERENCES "rooms"("id") ON DELETE CASCADE,
-  "leaseTermId" UUID REFERENCES "lease_terms"("id") ON DELETE SET NULL,
+  "propertyId" UUID NOT NULL REFERENCES "properties"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "roomId" UUID NOT NULL REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "leaseTermId" UUID REFERENCES "lease_terms"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   "cleaningId" UUID,
   "stage" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'PLANNED',
@@ -45,8 +46,8 @@ ALTER TABLE "room_inspections" ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE IF NOT EXISTS "room_inspection_items" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  "inspectionId" UUID NOT NULL REFERENCES "room_inspections"("id") ON DELETE CASCADE,
-  "propertyId" UUID NOT NULL REFERENCES "properties"("id") ON DELETE CASCADE,
+  "inspectionId" UUID NOT NULL REFERENCES "room_inspections"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "propertyId" UUID NOT NULL REFERENCES "properties"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   "label" TEXT NOT NULL,
   "sortOrder" INTEGER NOT NULL DEFAULT 0,
   "source" TEXT NOT NULL DEFAULT 'TEMPLATE',

@@ -481,6 +481,8 @@ export async function deleteCleaning(id: string): Promise<{ ok: true } | { ok: f
     const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true } })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
     await prisma.roomCleaning.update({ where: { id }, data: { deletedAt: new Date() } })
+    // 지운 청소의 예정 검수도 걷는다(2026-10-27 운영자 판단 ③, 완료 적용취소와 같은 클래스). 끝낸 검수는 사실이라 남긴다.
+    await clearCleaningInspection(propertyId, id)
     revalidatePath('/room-manage')
     return { ok: true }
   } catch (err) {
@@ -493,9 +495,14 @@ export async function restoreCleaning(id: string): Promise<{ ok: true } | { ok: 
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId }, select: { id: true } })
+    const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId }, select: { id: true, roomId: true, status: true, doneDate: true } })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
     await prisma.roomCleaning.update({ where: { id }, data: { deletedAt: null } })
+    // 완료된 청소를 되살리면 삭제 때 걷힌 예정 검수도 되살린다(체크 그대로). 걷힌 것이 없으면 새로 만들지 않고(reviveOnly),
+    // 열린 검수가 따로 있으면 건너뛴다(lib/roomInspectionEnsure).
+    if (cur.status === 'DONE') {
+      await ensureRoomInspection(propertyId, { roomId: cur.roomId, stage: 'AFTER_CLEANING', cleaningId: cur.id, scheduledDate: cur.doneDate, reviveOnly: true })
+    }
     revalidatePath('/room-manage')
     return { ok: true }
   } catch (err) {

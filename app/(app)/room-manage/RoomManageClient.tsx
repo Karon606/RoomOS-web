@@ -8,8 +8,7 @@ import { RoomWorkRowBody } from '@/components/work/RoomWorkRowBody'
 import { RoomWorkPlanForm } from '@/components/work/RoomWorkPlanForm'
 import type { RoomWorkRow } from './workActions'
 import { InspectionRowBody } from '@/components/inspection/InspectionRowBody'
-import { InspectionPlanForm } from '@/components/inspection/InspectionPlanForm'
-import { INSPECTION_STAGES, INSPECTION_STAGE_LABEL, type InspectionRow } from './inspectionConstants'
+import { INSPECTION_STAGES, inspectionProgressText, type InspectionRow } from './inspectionConstants'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { MoveCalendar } from '@/components/room-manage/MoveCalendar'
@@ -288,7 +287,7 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
 }) {
   const [segRaw, setSeg] = useState<CleaningSeg>('PLANNED')
   // 무엇을 등록할지 — null 이면 닫힘. 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 문법).
-  const [adding, setAdding] = useState<null | 'cleaning' | 'work' | 'inspection'>(null)
+  const [adding, setAdding] = useState<null | 'cleaning' | 'work'>(null)
 
   // 살아 있는 행과 삭제분을 한 번에 받는다(getPropertyCleanings). 아래 모든 집계는 살아 있는 것만 센다.
   const live = rows.filter(r => !r.deletedAt)
@@ -349,11 +348,10 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
           <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={monthFunded} /></span>
         </p>
         {/* CTA 둘 — 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 판단). §23 은 1~2개를 허용한다. */}
-        {/* 점검 등록이 셋째다(2026-10-27, 승인 계획). 좁은 폭에서는 줄을 넘겨 오른쪽에 모인다(가로로 넘치지 않게 flex-wrap). */}
+        {/* 점검 손수 등록은 방 모달(호실 상세) 작업 이력에만 둔다(2026-10-27 운영자 결정 ①). 점검은 퇴실·청소 완료가 저절로 만든다. */}
         {canEdit && (
-          <div className="ml-auto flex flex-wrap justify-end gap-2">
+          <div className="ml-auto flex gap-2">
             <Btn variant="secondary" size="md" onClick={() => setAdding('work')}>+ 작업 등록</Btn>
-            <Btn variant="secondary" size="md" onClick={() => setAdding('inspection')}>+ 점검 등록</Btn>
             <Btn variant="primary" size="md" onClick={() => setAdding('cleaning')}>+ 청소 등록</Btn>
           </div>
         )}
@@ -380,7 +378,7 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
       {shown.length === 0 && shownWorks.length === 0 && shownInsp.length === 0 ? (
         <EmptyState
           title={segLabel ? `'${segLabel}' 상태인 작업이 없습니다` : '작업 기록이 없습니다'}
-          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소·점검·작업 등록으로 시작할 수 있습니다.'}
+          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소 등록이나 작업 등록으로 시작할 수 있습니다.'}
         />
       ) : (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
@@ -424,10 +422,6 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
           여기서만 호실 선택이 앞에 붙는다. */}
       <SharedModal open={adding === 'cleaning'} onClose={() => setAdding(null)} title="청소 예정 등록">
         <CleaningPlanForm rooms={rooms}
-          onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
-      </SharedModal>
-      <SharedModal open={adding === 'inspection'} onClose={() => setAdding(null)} title="점검 등록">
-        <InspectionPlanForm rooms={rooms}
           onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
       </SharedModal>
       <SharedModal open={adding === 'work'} onClose={() => setAdding(null)} title="작업 예정 등록">
@@ -1145,7 +1139,8 @@ export default function RoomManageClient({
     // 그 방의 열린 점검 중 흐름 차례(퇴실 · 청소 · 입실 전)로 맨 앞 하나. 배지는 늘리지 않는다(§11 최대 2개, 넷째 금지).
     // 청소가 남았으면 '청소 필요' 의 보조줄에 진행을 잇고, 청소 없이 점검만 남았으면 같은 자리에 '점검 남음' 이 선다.
     const insp = INSPECTION_STAGES.map(st => openInspections.find(i => i.roomId === room.id && i.stage === st)).find(Boolean) ?? null
-    const inspSub = insp && insp.total > 0 ? `점검 ${insp.checked}/${insp.total}` : null
+    // 보조줄 문법은 두 배지가 같다(독립 검수 R2): '10.28(화) 예정 · 점검 2/7'. 진행 문장은 정본 inspectionProgressText 하나다.
+    const inspSub = insp && insp.total > 0 ? inspectionProgressText(insp.checked, insp.total) : null
     // Status Row 팁/틴트 톤 — **예외 상태(배지가 서는 것)만**. 거주중·공실은 정상값이라
     // 베이스가 말한다(2026-08-25 정비, lib/statusColors leaseTipTone 과 같은 판정).
     const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : null
@@ -1186,7 +1181,7 @@ export default function RoomManageClient({
                 청소 필요
               </StatusBadge>
             ) : insp && (
-              <StatusBadge tone="await" sub={insp.total > 0 ? `${INSPECTION_STAGE_LABEL[insp.stage]} ${insp.checked}/${insp.total}` : INSPECTION_STAGE_LABEL[insp.stage]}>
+              <StatusBadge tone="await" sub={[insp.scheduledDate ? `${fmtMDDay(insp.scheduledDate)} 예정` : null, inspSub].filter(Boolean).join(' · ') || undefined}>
                 점검 남음
               </StatusBadge>
             )}
