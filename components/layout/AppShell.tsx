@@ -56,7 +56,7 @@ export default function AppShell({
         {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
             이렇게 해야 router.refresh() 중에도 헤더 영역이 깜박이지 않는다. */}
         <Suspense fallback={
-          <div className="h-14 md:h-16 shrink-0"
+          <div className="h-14 md:h-16 shrink-0 fixed inset-x-0 top-[var(--sysbar-h)] md:static"
                style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }} />
         }>
           <Header
@@ -65,6 +65,8 @@ export default function AppShell({
             startNavigation={startNavigation}
           />
         </Suspense>
+        {/* 모바일 헤더는 fixed(iOS 26 상단 유리 흐림 회피, Header 주석) — 흐름 안 자리는 이 받침이 잡는다. */}
+        <div aria-hidden className="h-14 shrink-0 md:hidden" />
 
         {/* 보이지 않는 월 동기화기 — 자정 롤오버·재진입 시 router.refresh().
             useSearchParams를 쓰므로 Suspense 경계 필요. 보이는 월 컨트롤은 MonthSelector(페이지 상단). */}
