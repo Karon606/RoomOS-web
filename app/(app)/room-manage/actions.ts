@@ -287,6 +287,8 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   const nonResidentVacant = formData.get('nonResidentVacant') !== '0'   // 기본 켜짐(공실로 표시)
   // 단독 계약 가능 여부(2026-08-13) — 반전 체크박스라 hidden 값이 '0' 일 때만 불가다. 기본 켜짐(가능).
   const standaloneLeaseAllowed = formData.get('standaloneLeaseAllowed') !== '0'
+  // '비거주 계약만'(2026-10-27) — 단독 불가 방에서만 뜻이 있다. 가능으로 두면 늘 false 로 맞춘다(세 갈래가 두 칸, lib/roomAssignment).
+  const nonResidentStandaloneAllowed = !standaloneLeaseAllowed && formData.get('nonResidentStandaloneAllowed') === '1'
 
   // 가격 예약 시스템 필드
   const scheduledRentRaw = formData.get('scheduledRent')
@@ -333,6 +335,7 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
       noMoveInReport,
       nonResidentVacant,
       standaloneLeaseAllowed,
+      nonResidentStandaloneAllowed,
       areaPyeong,
       areaM2,
       scheduledRent,

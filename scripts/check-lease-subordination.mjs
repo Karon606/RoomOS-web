@@ -15,6 +15,10 @@
 // 부모 없이 남는다. 저장 가드는 새로 들어오는 것만 보고(이미 확정된 건을 재저장조차 못 하게
 // 막으면 그게 회귀다) 이미 있는 것은 안 본다. 그 빈자리를 세는 것이 이 축의 일이다.
 // 이 상태의 계약은 합본에 실리지 않아 601호가 계약서에서 통째로 빠진 채 발급된다.
+// 예외(2026-10-27) — '비거주 계약만' 방(nonResidentStandaloneAllowed=true)의 비거주 계약은 메인 계약 없이
+// 서는 것이 설정의 뜻이라 세지 않는다. 그 방에서 거주계·문의 단계가 혼자 서 있으면 그대로 센다
+// (비거주 단독 계약을 상태 칸으로 거주중에 올린 경우가 그 모양이다). 판정은 lib/roomAssignment 의
+// standaloneLeaseOk 를 옮겨 적은 것이다.
 //
 // 기준선 0/0. 종속 계약이 생기기 전에는 두 축 모두 후보 자체가 없다.
 
@@ -47,7 +51,10 @@ function orphanInNoStandaloneRoom(l) {
   if (l.parentLeaseTermId) return null
   if (!l.room || l.room.standaloneLeaseAllowed) return null
   if (!ALIVE.includes(l.status)) return null
-  return `${l.room.roomNo}호는 단독 계약이 불가한 방인데 메인 계약이 없다`
+  if (l.status === 'NON_RESIDENT' && l.room.nonResidentStandaloneAllowed) return null
+  return l.room.nonResidentStandaloneAllowed
+    ? `${l.room.roomNo}호는 비거주 계약만 단독으로 되는 방인데 ${l.status} 계약에 메인 계약이 없다`
+    : `${l.room.roomNo}호는 단독 계약이 불가한 방인데 메인 계약이 없다`
 }
 
 // ── 자가 역주입 ── 그물이 실제로 발화하는가. 실데이터가 0건이라 이 확인이 없으면
@@ -57,7 +64,8 @@ const 역주입 = [
   ['축① 남의 계약', brokenSubordination({ id: 'a', tenantId: 't', parentLeaseTermId: 'p', parent: { tenantId: 'u', status: 'ACTIVE', parentLeaseTermId: null } })],
   ['축① 죽은 부모', brokenSubordination({ id: 'a', tenantId: 't', parentLeaseTermId: 'p', parent: { tenantId: 't', status: 'CHECKED_OUT', parentLeaseTermId: null } })],
   ['축① 2단 종속', brokenSubordination({ id: 'a', tenantId: 't', parentLeaseTermId: 'p', parent: { tenantId: 't', status: 'ACTIVE', parentLeaseTermId: 'g' } })],
-  ['축② 단독 불가 방 고아', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'NON_RESIDENT', room: { roomNo: '601', standaloneLeaseAllowed: false } })],
+  ['축② 단독 불가 방 고아', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'NON_RESIDENT', room: { roomNo: '601', standaloneLeaseAllowed: false, nonResidentStandaloneAllowed: false } })],
+  ['축② 비거주만 방의 거주 고아', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'ACTIVE', room: { roomNo: '602', standaloneLeaseAllowed: false, nonResidentStandaloneAllowed: true } })],
 ]
 const 미발화 = 역주입.filter(([, r]) => r === null).map(([n]) => n)
 // 성한 값에는 침묵해야 한다 — 무조건 발화하는 그물은 발화하지 않는 그물과 똑같이 쓸모없다.
@@ -66,13 +74,14 @@ const 오탐 = [
   ['단독 계약', brokenSubordination({ id: 'a', tenantId: 't', parentLeaseTermId: null, parent: null })],
   ['단독 가능 방', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'ACTIVE', room: { roomNo: '509', standaloneLeaseAllowed: true } })],
   ['끝난 계약은 안 본다', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'CHECKED_OUT', room: { roomNo: '601', standaloneLeaseAllowed: false } })],
+  ['비거주만 방의 비거주 단독', orphanInNoStandaloneRoom({ parentLeaseTermId: null, status: 'NON_RESIDENT', room: { roomNo: '602', standaloneLeaseAllowed: false, nonResidentStandaloneAllowed: true } })],
 ].filter(([, r]) => r !== null).map(([n]) => n)
 
 const leases = await prisma.leaseTerm.findMany({
   select: {
     id: true, tenantId: true, status: true, parentLeaseTermId: true,
     tenant: { select: { name: true } },
-    room: { select: { roomNo: true, standaloneLeaseAllowed: true } },
+    room: { select: { roomNo: true, standaloneLeaseAllowed: true, nonResidentStandaloneAllowed: true } },
     parentLeaseTerm: { select: { tenantId: true, status: true, parentLeaseTermId: true } },
   },
 })

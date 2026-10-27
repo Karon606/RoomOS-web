@@ -522,6 +522,8 @@ export async function getRoomsForSelect() {
       id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, nonResidentVacant: true, type: true, floor: true, windowType: true, direction: true, noMoveInReport: true,
       // 단독 계약 불가 방인가 — 폼의 '딸릴 계약' 셀렉트가 필수로 바뀌는 조건(서버 가드와 같은 사실).
       standaloneLeaseAllowed: true,
+      // '비거주 계약만' 방인가(2026-10-27) — 비거주 상태면 메인 계약이 필수가 아니다(서버 가드와 같은 사실).
+      nonResidentStandaloneAllowed: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         // take:1 을 뺐다 — 방이 '언제 비는지'와 '이미 예약이 걸렸는지'는 계약 하나만 봐서는 알 수 없다.
@@ -698,12 +700,12 @@ async function visitRouteForSave(propertyId: string, formData: FormData, prev?: 
  * 새 입주자의 첫 계약(tenantId 미정)은 딸릴 대상 자체가 없으므로 부모 조회를 하지 않는다.
  */
 async function subordinationDenial(
-  input: { roomId: string; parentLeaseTermId: string | null; tenantId: string | null; selfLeaseTermId: string | null },
+  input: { roomId: string; status: string; parentLeaseTermId: string | null; tenantId: string | null; selfLeaseTermId: string | null },
 ): Promise<string | null> {
-  const { roomId, parentLeaseTermId, tenantId, selfLeaseTermId } = input
+  const { roomId, status, parentLeaseTermId, tenantId, selfLeaseTermId } = input
   // 방이 없는 계약(문의·투어)은 단독 계약 규칙의 대상이 아니다 — 없는 방 설정을 '불가'로 읽으면 안 된다.
   const room = roomId
-    ? await prisma.room.findUnique({ where: { id: roomId }, select: { standaloneLeaseAllowed: true } })
+    ? await prisma.room.findUnique({ where: { id: roomId }, select: { standaloneLeaseAllowed: true, nonResidentStandaloneAllowed: true } })
     : null
   const parent = parentLeaseTermId && tenantId
     ? await prisma.leaseTerm.findFirst({
@@ -717,6 +719,8 @@ async function subordinationDenial(
     : false
   return leaseSubordinationDenial({
     roomStandaloneAllowed: room?.standaloneLeaseAllowed ?? true,
+    roomNonResidentStandaloneAllowed: room?.nonResidentStandaloneAllowed ?? false,
+    incomingStatus: status,
     parentLeaseTermId,
     parent,
     selfTenantId: tenantId,
@@ -811,7 +815,7 @@ async function leaseSaveDenial(
 
   // 종속 가드 — 생성 경로는 늘 묻는다. 부모 지목도, 단독 계약 불가 방도 이 한 줄이 본다.
   return subordinationDenial({
-    roomId: f.roomId, parentLeaseTermId: f.parentLeaseTermId, tenantId, selfLeaseTermId: null,
+    roomId: f.roomId, status: f.status, parentLeaseTermId: f.parentLeaseTermId, tenantId, selfLeaseTermId: null,
   })
 }
 
@@ -1330,6 +1334,7 @@ export async function updateTenant(formData: FormData): Promise<
     const effectiveParent = parentEdited ? parentLeaseTermId : currentLease.parentLeaseTermId
     const denial = await subordinationDenial({
       roomId: newRoomId ?? '',
+      status,
       parentLeaseTermId: effectiveParent,
       tenantId,
       selfLeaseTermId: leaseTermId,

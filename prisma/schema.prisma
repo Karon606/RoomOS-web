@@ -567,6 +567,10 @@ model Room {
   // (lib/roomAssignment 의 leaseSubordinationDenial 이 정본, 등록·계약 추가·수정·엑셀 가져오기 공용).
   // nonResidentVacant 와는 다른 질문이다 — 저쪽은 '공실로 세는가', 이쪽은 '혼자 계약이 되는가'.
   standaloneLeaseAllowed Boolean @default(true)
+  // 단독 계약 불가 방에서도 비거주 계약만은 이 방 하나로 맺을 수 있는가 (2026-10-27, 601~604호 사례).
+  // 호실 관리 편집의 '단독 계약' 세 갈래가 두 칸으로 저장된다. 가능 = true/false, 비거주 계약만 = false/true,
+  // 불가 = false/false. standaloneLeaseAllowed 가 true 면 이 칸은 읽지 않는다(prisma/migrate_room_nonresident_standalone.sql).
+  nonResidentStandaloneAllowed Boolean @default(false)
   // 도어락 마스터키 (2026-10-08, prisma/migrate_room_master_key.sql). **평문 금지** — lib/pii 의 AES-256-GCM 암호문이고
   // AAD 가 이 방의 id 다. 읽기 스코프 'security'(소유자만, lib/auth/routeScope)라 그 밖의 역할에는 존재 여부도 안 내려간다.
   // lib/prisma 가 전역 omit 으로 빼 두어 select 없는 조회(엑셀·백업·목록)에는 절대 실리지 않는다.

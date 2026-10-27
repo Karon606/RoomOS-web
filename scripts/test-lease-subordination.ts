@@ -10,7 +10,8 @@
 import {
   leaseSubordinationDenial, roomAssignmentBlockReason,
   findOverlapAck, isSameDayTurnover, occupancyOverlapSpan,
-  STANDALONE_LEASE_ERROR, STANDALONE_LEASE_IMPORT_ERROR,
+  STANDALONE_LEASE_ERROR, STANDALONE_LEASE_IMPORT_ERROR, NON_RESIDENT_ONLY_STANDALONE_ERROR,
+  standaloneLeaseModeOf, standaloneLeaseFlagsOf,
 } from '../lib/roomAssignment'
 import { propagateDueDayToSubLeases, sameDueDay } from '../lib/dueDay'
 import { propagateMoveInDateToSubLeases, sameMoveInDate, moveInYmd } from '../lib/moveInDate'
@@ -36,6 +37,8 @@ const 부모509 = { id: '509', tenantId: '김', status: 'ACTIVE', parentLeaseTer
 type Input = Parameters<typeof leaseSubordinationDenial>[0]
 const base: Input = {
   roomStandaloneAllowed: true,
+  roomNonResidentStandaloneAllowed: false,
+  incomingStatus: 'ACTIVE',
   parentLeaseTermId: null,
   parent: null,
   selfTenantId: '김',
@@ -53,6 +56,26 @@ eq('무회귀 · 단독 가능 방을 수정 저장', denial({ selfLeaseTermId: 
 eq('단독 불가 방 + 부모 없음은 거부', denial({ roomStandaloneAllowed: false }), STANDALONE_LEASE_ERROR)
 eq('단독 불가 방 + 부모 있으면 통과',
   denial({ roomStandaloneAllowed: false, parentLeaseTermId: '509', parent: 부모509 }), null)
+
+// ── '비거주 계약만' 방(2026-10-27, 601~604호) ── 비거주 계약만 메인 계약 없이 선다.
+const 비거주만 = { roomStandaloneAllowed: false, roomNonResidentStandaloneAllowed: true }
+eq('비거주만 방 · 비거주 계약은 혼자 통과',
+  denial({ ...비거주만, incomingStatus: 'NON_RESIDENT' }), null)
+eq('비거주만 방 · 거주 계약은 혼자 거부(출구 둘 문구)',
+  denial({ ...비거주만, incomingStatus: 'ACTIVE' }), NON_RESIDENT_ONLY_STANDALONE_ERROR)
+eq('비거주만 방 · 입실 예약도 혼자 거부',
+  denial({ ...비거주만, incomingStatus: 'RESERVED' }), NON_RESIDENT_ONLY_STANDALONE_ERROR)
+eq('비거주만 방 · 거주 계약도 메인 계약이 있으면 통과',
+  denial({ ...비거주만, incomingStatus: 'ACTIVE', parentLeaseTermId: '509', parent: 부모509 }), null)
+eq('불가 방 · 비거주 계약도 혼자 거부',
+  denial({ roomStandaloneAllowed: false, incomingStatus: 'NON_RESIDENT' }), STANDALONE_LEASE_ERROR)
+// 두 칸이 어긋난 값(가능인데 비거주 칸도 켜짐)은 가능이다 — 가능이면 비거주 칸을 읽지 않는다.
+eq('가능 방 · 비거주 칸이 켜져 있어도 거주 계약 통과',
+  denial({ roomStandaloneAllowed: true, roomNonResidentStandaloneAllowed: true }), null)
+// 세 갈래와 두 칸의 왕복 — 화면 세그먼트가 고른 값이 그대로 돌아와야 한다.
+for (const mode of ['ALL', 'NON_RESIDENT_ONLY', 'NONE'] as const) {
+  eq(`세 갈래 왕복 · ${mode}`, standaloneLeaseModeOf(standaloneLeaseFlagsOf(mode)), mode)
+}
 
 // ── 부모의 자격 ──
 blocked('부모를 못 찾으면 거부', denial({ parentLeaseTermId: '없음', parent: null }), true)
@@ -86,6 +109,7 @@ const sheet = (patch: Partial<Parameters<typeof roomAssignmentBlockReason>[0]>) 
   incoming: { status: 'ACTIVE', moveIn: '2026-08-01', moveOut: null },
   nonResidentOccupied: false,
   roomStandaloneAllowed: true,
+  roomNonResidentStandaloneAllowed: false,
   others: [],
   plannedStays: [],
   ...patch,
@@ -95,6 +119,11 @@ eq('시트 · 단독 불가 방은 거부', sheet({ roomStandaloneAllowed: false
 eq('시트 · 단독 불가 방은 명의(비거주)도 거부',
   sheet({ roomStandaloneAllowed: false, incoming: { status: 'NON_RESIDENT', moveIn: null, moveOut: null } }),
   STANDALONE_LEASE_IMPORT_ERROR)
+eq('시트 · 비거주만 방의 비거주는 통과',
+  sheet({ roomStandaloneAllowed: false, roomNonResidentStandaloneAllowed: true, incoming: { status: 'NON_RESIDENT', moveIn: null, moveOut: null } }),
+  null)
+eq('시트 · 비거주만 방의 거주는 거부',
+  sheet({ roomStandaloneAllowed: false, roomNonResidentStandaloneAllowed: true }), STANDALONE_LEASE_IMPORT_ERROR)
 // 종료 상태는 방을 잡지 않는다 — 퇴실자 시트가 단독 불가 방 때문에 막히면 그것이 회귀다.
 eq('시트 · 종료 계약은 단독 불가 방이어도 통과',
   sheet({ roomStandaloneAllowed: false, incoming: { status: 'CHECKED_OUT', moveIn: '2026-01-01', moveOut: '2026-07-31' } }), null)

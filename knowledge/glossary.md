@@ -132,6 +132,14 @@
   '공실 집계에서 제외'가 이 설정의 유일한 출구라 거부 문구가 그 체크박스를 지목한다. 판정 정본 lib/vacancy.ts.
 - **단독 계약이 불가한 방** — `standaloneLeaseAllowed=false`. 저장할 때 메인 계약을 반드시 골라야 한다.
   시트로는 메인 계약을 지목할 자리가 없어 가져오기는 통째로 막고 '계약 추가'로 보낸다.
+- **단독 계약 세 갈래** (개정 2026-10-27, 운영자 승인 — 601~604호) — 호실 관리 편집의 '단독 계약' 세그먼트
+  **가능 / 비거주 계약만 / 불가**. 저장은 두 칸이다. 가능 = `standaloneLeaseAllowed=true`,
+  비거주 계약만 = `false` + `nonResidentStandaloneAllowed=true`, 불가 = `false` + `false`.
+  '비거주 계약만' 방은 비거주 계약이면 메인 계약 없이 저장되고(등록·수정·엑셀 공통), 거주계·문의 단계는
+  메인 계약이 필수이며 거부 문구가 출구 둘(메인 계약 고르기·비거주자로 바꾸기)을 말한다. 판정 한 줄은
+  `lib/roomAssignment.ts` 의 `standaloneLeaseOk`, 감지망 `check-lease-subordination` 축 ② 가 같은 예외를 둔다.
+  종전 602호 임시 조치(체크를 꺼서 거주 계약까지 혼자 들어가던 상태)는 이 설정으로 대체한다.
+  영업장 전역 스위치는 두지 않는다(방마다 고른다). 마이그레이션 `prisma/migrate_room_nonresident_standalone.sql`.
 
 ## 소개 페이지 (운영자 확정 2026-08-18)
 

@@ -38,6 +38,43 @@ export const NON_RESIDENT_ROOM_ERROR =
 export const STANDALONE_LEASE_ERROR =
   '해당 호실은 단독 계약이 불가한 방(다른 계약에 묶어야 하는 방)으로 설정돼 있습니다. 메인 계약을 함께 골라 주세요.'
 
+// '비거주 계약만' 방(standaloneLeaseAllowed=false, nonResidentStandaloneAllowed=true)에 거주계·문의 단계 계약을
+// 메인 계약 없이 저장하려 할 때의 안내(2026-10-27). 출구가 둘이라 둘 다 말한다. 폼의 메인 계약 칸 캡션이
+// 같은 문장을 그대로 쓴다(서버와 화면이 한 벌, 가이드 §27.8 ⑤).
+export const NON_RESIDENT_ONLY_STANDALONE_ERROR =
+  '비거주 계약만 단독으로 할 수 있는 방이라서 거주 계약을 혼자 저장할 수 없습니다. 메인 계약을 고르거나 상태를 비거주자로 바꾸면 됩니다.'
+
+/**
+ * 방의 '단독 계약' 세 갈래(2026-10-27 운영자 승인). 호실 관리 편집의 세그먼트 값이고 저장은 두 칸이다.
+ *   ALL               가능 — standaloneLeaseAllowed=true (nonResidentStandaloneAllowed 는 읽지 않고 false 로 저장)
+ *   NON_RESIDENT_ONLY 비거주 계약만 — false / true
+ *   NONE              불가 — false / false
+ */
+export type StandaloneLeaseMode = 'ALL' | 'NON_RESIDENT_ONLY' | 'NONE'
+
+export type StandaloneLeaseFlags = { standaloneLeaseAllowed: boolean; nonResidentStandaloneAllowed: boolean }
+
+export function standaloneLeaseModeOf(room: StandaloneLeaseFlags): StandaloneLeaseMode {
+  if (room.standaloneLeaseAllowed) return 'ALL'
+  return room.nonResidentStandaloneAllowed ? 'NON_RESIDENT_ONLY' : 'NONE'
+}
+
+export function standaloneLeaseFlagsOf(mode: StandaloneLeaseMode): StandaloneLeaseFlags {
+  return {
+    standaloneLeaseAllowed: mode === 'ALL',
+    nonResidentStandaloneAllowed: mode === 'NON_RESIDENT_ONLY',
+  }
+}
+
+/**
+ * 이 상태의 계약이 이 방에 메인 계약 없이 설 수 있는가. 등록·수정(leaseSubordinationDenial)·엑셀
+ * (roomAssignmentBlockReason)·폼의 메인 계약 필수 표시가 이 한 줄을 쓴다. 감지망
+ * check-lease-subordination 축 ② 가 같은 식을 옮겨 적는다(.mjs 라 가져오지 못한다).
+ */
+export function standaloneLeaseOk(room: StandaloneLeaseFlags, status: string): boolean {
+  return room.standaloneLeaseAllowed || (status === 'NON_RESIDENT' && room.nonResidentStandaloneAllowed)
+}
+
 // 같은 사정을 시트에 말하는 문구. 메인 계약은 시트에 적을 자리가 없으므로
 // 출구가 다르다 — 문구가 하나뿐이면 가져오기에서 막힌 운영자는 고를 수 없는 것을 고르라는 말을 듣는다.
 export const STANDALONE_LEASE_IMPORT_ERROR =
@@ -71,19 +108,29 @@ export type ParentLeaseRow = {
  *
  * 방이 없는 계약(문의·투어 단계)은 첫 규칙의 대상이 아니다. 호출부가 roomStandaloneAllowed 에
  * true 를 넘긴다 — 방 설정이 없는 것을 '불가'로 읽으면 방 미배정 계약이 통째로 막힌다.
+ *
+ * 첫 규칙의 예외(2026-10-27) — '비거주 계약만' 방(roomNonResidentStandaloneAllowed)은 비거주 계약이면
+ * 메인 계약 없이 통과한다. 그 방에 다른 상태로 혼자 들어오면 출구 둘을 말하는 문구로 거부한다.
  */
 export function leaseSubordinationDenial(input: {
   roomStandaloneAllowed: boolean
+  /** 단독 계약 불가 방에서도 비거주 계약만은 혼자 되는가(Room.nonResidentStandaloneAllowed). 방이 없으면 false. */
+  roomNonResidentStandaloneAllowed: boolean
+  /** 저장될 계약의 상태 — 첫 규칙의 예외가 비거주 계약에만 열린다. */
+  incomingStatus: string
   parentLeaseTermId: string | null
   parent: ParentLeaseRow | null
   selfTenantId: string | null
   selfLeaseTermId: string | null
   selfHasSubLeases: boolean
 }): string | null {
-  const { roomStandaloneAllowed, parentLeaseTermId, parent, selfTenantId, selfLeaseTermId, selfHasSubLeases } = input
+  const { roomStandaloneAllowed, roomNonResidentStandaloneAllowed, incomingStatus,
+    parentLeaseTermId, parent, selfTenantId, selfLeaseTermId, selfHasSubLeases } = input
 
   if (!parentLeaseTermId) {
-    return roomStandaloneAllowed ? null : STANDALONE_LEASE_ERROR
+    const flags = { standaloneLeaseAllowed: roomStandaloneAllowed, nonResidentStandaloneAllowed: roomNonResidentStandaloneAllowed }
+    if (standaloneLeaseOk(flags, incomingStatus)) return null
+    return roomNonResidentStandaloneAllowed ? NON_RESIDENT_ONLY_STANDALONE_ERROR : STANDALONE_LEASE_ERROR
   }
   if (selfLeaseTermId && parentLeaseTermId === selfLeaseTermId) {
     return '계약을 자기 자신의 메인 계약으로 고를 수는 없습니다.'
@@ -298,6 +345,8 @@ export function roomAssignmentBlockReason(input: {
   nonResidentOccupied: boolean
   /** 이 방만으로 계약이 되는가(Room.standaloneLeaseAllowed). 방을 못 찾았으면 호출부가 true 를 넘긴다. */
   roomStandaloneAllowed: boolean
+  /** 단독 불가 방에서 비거주 계약만은 혼자 되는가(Room.nonResidentStandaloneAllowed). 방을 못 찾았으면 false. */
+  roomNonResidentStandaloneAllowed: boolean
   others: RoomAssignmentOccupant[]
   /** 남이 이 방을 임시 거처로 잡아 둔 구간. 시트에는 일정 열이 없어 늘 DB 에서만 온다. */
   plannedStays: readonly PlannedStaySpan[]
@@ -311,7 +360,12 @@ export function roomAssignmentBlockReason(input: {
   if (!isNonResident && input.nonResidentOccupied) return NON_RESIDENT_ROOM_ERROR
   // 축 ⑤ — 단독 계약 불가 방(다른 계약에 묶어야 하는 방). 시트에는 메인 계약을 적을 자리가
   // 없으므로 통째로 막고 앱의 '계약 추가'로 보낸다. 화면 경로는 메인 계약을 골라 통과할 수 있다.
-  if (!input.roomStandaloneAllowed) return STANDALONE_LEASE_IMPORT_ERROR
+  // '비거주 계약만' 방의 비거주 계약은 메인 계약이 필요 없으니 화면과 같이 통과한다(2026-10-27).
+  const standaloneFlags = {
+    standaloneLeaseAllowed: input.roomStandaloneAllowed,
+    nonResidentStandaloneAllowed: input.roomNonResidentStandaloneAllowed,
+  }
+  if (!standaloneLeaseOk(standaloneFlags, status)) return STANDALONE_LEASE_IMPORT_ERROR
   // 축 ② 곁 — 남이 임시로 잡아 둔 기간. 화면 경로와 같은 판정 한 벌이다.
   const planned = plannedStayDenial({
     incomingStatus: status, moveIn: input.incoming.moveIn, moveOut: input.incoming.moveOut,
