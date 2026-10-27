@@ -12,7 +12,8 @@ import 'server-only'
 
 import prisma from '@/lib/prisma'
 import { parseOptionList } from '@/lib/optionLists'
-import { accName, effectivePayMethods } from '@/lib/payMethodOptions'
+import { accName, effectivePayMethods, accountTypesFor } from '@/lib/payMethodOptions'
+import { settleStatusForEdit } from '@/lib/settleStatus'
 
 // 트랜잭션 클라이언트도 받는다. 확장된 실제 클라이언트에서 뽑는다(Prisma.TransactionClient 와 안 맞는다, finance/actions TxClient 와 같은 이유).
 type Db = Pick<Parameters<Parameters<typeof prisma.$transaction>[0]>[0], 'expense' | 'property' | 'financialAccount'>
@@ -33,50 +34,54 @@ function payOfRow(r: LastPayRow): WorkPay {
   return { payMethod: r.payMethod as string, financialAccountId: acc ? r.financialAccountId : null, financeName: acc ? accName(acc) : null }
 }
 
-/** 영업장 결제수단 목록 첫 값(선불 계정 브랜드 병합 뒤). 목록이 비면 '계좌이체'(지출 폼 기본값과 같다). */
-async function fallbackPay(db: Db, propertyId: string): Promise<WorkPay> {
-  const [prop, accounts] = await Promise.all([
+/** 지금 영업장이 쓰는 결제수단 선택지(목록 + 선불 계정 브랜드). 영업장에서 뺀 수단은 기본값으로 따라가지 않는다(독립 검수 권고 1). */
+async function propertyMethods(db: Db, propertyId: string): Promise<{ methods: string[]; accounts: { id: string; type: string; brand: string; alias: string | null }[] }> {
+  const [prop, accs] = await Promise.all([
     db.property.findFirst({ where: { id: propertyId }, select: { paymentMethods: true } }),
-    db.financialAccount.findMany({ where: { propertyId, isActive: true }, select: { type: true, brand: true, alias: true } }),
+    db.financialAccount.findMany({ where: { propertyId, isActive: true }, select: { id: true, type: true, brand: true, alias: true } }),
   ])
-  const methods = effectivePayMethods(parseOptionList('paymentMethods', prop?.paymentMethods), accounts)
-  return { payMethod: methods[0] ?? '계좌이체', financialAccountId: null, financeName: null }
+  const accounts = accs.map(a => ({ ...a, type: String(a.type) }))
+  return { methods: effectivePayMethods(parseOptionList('paymentMethods', prop?.paymentMethods), accounts), accounts }
 }
 
 /**
  * 같은 업체 → 같은 카테고리 → 영업장 목록 첫 값. 직전은 지출 날짜 기준(같은 날이면 늦게 만든 것). 배송비 줄과 결제수단 빈 줄은 안 본다.
- * 업체는 앞뒤 공백을 걷은 글자 그대로 맞춘다.
+ * 업체는 앞뒤 공백을 걷은 글자 그대로 맞춘다. 직전 지출의 수단이 지금 영업장 선택지에 없으면(설정에서 뺐다) 그 단계를 건너뛴다.
+ * 목록이 비면 '계좌이체'(지출 폼 기본값과 같다).
  */
 export async function defaultPayMethodFor(db: Db, propertyId: string, opts: { vendor?: string | null; category: string }): Promise<WorkPay> {
+  const { methods } = await propertyMethods(db, propertyId)
   const vendor = opts.vendor?.trim() || null
-  if (vendor) {
+  if (vendor && methods.length > 0) {
     const byVendor = await db.expense.findFirst({
-      where: { propertyId, vendor, isShipping: false, payMethod: { not: null } },
+      where: { propertyId, vendor, isShipping: false, payMethod: { in: methods } },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       select: LAST_PAY_SELECT,
     })
     if (byVendor) return payOfRow(byVendor)
   }
-  const byCategory = await db.expense.findFirst({
-    where: { propertyId, category: opts.category, isShipping: false, payMethod: { not: null } },
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-    select: LAST_PAY_SELECT,
-  })
-  if (byCategory) return payOfRow(byCategory)
-  return fallbackPay(db, propertyId)
+  if (methods.length > 0) {
+    const byCategory = await db.expense.findFirst({
+      where: { propertyId, category: opts.category, isShipping: false, payMethod: { in: methods } },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      select: LAST_PAY_SELECT,
+    })
+    if (byCategory) return payOfRow(byCategory)
+  }
+  return { payMethod: methods[0] ?? '계좌이체', financialAccountId: null, financeName: null }
 }
 
 /**
  * 화면 기본값 한 벌. 고를 업체 후보마다의 기본값(①)과 업체를 모를 때의 기본값(②·③)을 한 번에 돌려준다.
- * 화면은 업체 이름이 바뀔 때마다 서버를 다시 부르지 않고 이 표에서 고른다. 후보에 없는 이름이면 fallback 이다
- * (그때 저장 값은 화면이 보인 그 값이다. 서버 규칙 ①은 값 없이 온 저장에만 쓴다).
+ * 화면은 업체 이름이 바뀔 때마다 서버를 다시 부르지 않고 이 표에서 고른다. 후보에 없는 이름이면 fallback 이다.
  */
 export async function workPayDefaults(db: Db, propertyId: string, opts: { vendors: string[]; category: string }): Promise<{ byVendor: Record<string, WorkPay>; fallback: WorkPay }> {
+  const { methods } = await propertyMethods(db, propertyId)
   const names = [...new Set(opts.vendors.map(v => v.trim()).filter(Boolean))].slice(0, 20)
   const byVendor: Record<string, WorkPay> = {}
-  if (names.length > 0) {
+  if (names.length > 0 && methods.length > 0) {
     const rows = await db.expense.findMany({
-      where: { propertyId, vendor: { in: names }, isShipping: false, payMethod: { not: null } },
+      where: { propertyId, vendor: { in: names }, isShipping: false, payMethod: { in: methods } },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       select: { vendor: true, ...LAST_PAY_SELECT },
       take: 500,
@@ -87,7 +92,8 @@ export async function workPayDefaults(db: Db, propertyId: string, opts: { vendor
 }
 
 /**
- * 저장할 결제수단을 확정한다. 화면이 보낸 결제수단이 있으면 그것, 없으면 기본값 규칙. 결제 계정은 이 영업장 것만 받는다(없으면 거부).
+ * 저장할 결제수단을 확정한다. 화면이 보낸 결제수단이 있으면 그것, 없으면 기본값 규칙. 결제 계정은 이 영업장 것만 받고(없으면 거부),
+ * 그 결제수단이 고르는 종류의 계정이어야 한다(계좌이체 = 통장, 카드 = 카드, 선불 브랜드 = 그 선불 계정, 독립 검수 권고 2).
  * 결제수단을 안 보냈는데 계정만 온 것은 받지 않는다(어느 수단의 계정인지 모른다).
  */
 export async function resolveWorkPay(
@@ -99,7 +105,20 @@ export async function resolveWorkPay(
   if (method.length > 50) return { ok: false, error: '결제수단 이름이 너무 깁니다.' }
   if (!input.financialAccountId) return { ok: true, pay: { payMethod: method, financialAccountId: null, financeName: null } }
   if (!UUID.test(input.financialAccountId)) return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
-  const acc = await db.financialAccount.findFirst({ where: { id: input.financialAccountId, propertyId }, select: { id: true, brand: true, alias: true } })
+  const acc = await db.financialAccount.findFirst({ where: { id: input.financialAccountId, propertyId }, select: { id: true, type: true, brand: true, alias: true } })
   if (!acc) return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
+  const { accounts } = await propertyMethods(db, propertyId)
+  const types = accountTypesFor(method, accounts)
+  if (!types || !types.includes(String(acc.type))) return { ok: false, error: `${method}에는 이 결제 계정을 고를 수 없습니다. 결제수단에 맞는 계정을 고르면 됩니다.` }
   return { ok: true, pay: { payMethod: method, financialAccountId: acc.id, financeName: accName(acc) } }
+}
+
+/**
+ * 이미 있는 지출의 결제수단을 바꿀 때의 정산상태. 정본 settleStatusForEdit 를 따르되, 옛 결제수단이 비어 있던 행(결제수단 입력 전 시절)은
+ * 지금 상태를 지킨다(독립 검수 B1). 그 행들은 이미 정산이 끝난 돈이라 신용카드로 채운다고 미정산으로 되살리면 카드 정산에 다시 오른다.
+ * 그 행의 정리는 운영자 확인 뒤 백필(scripts/backfill-expense-paymethod.ts) 몫이다.
+ */
+export function settleStatusForPayEdit(o: { prevPayMethod: string | null; nextPayMethod: string; current: 'SETTLED' | 'UNSETTLED'; isShipping: boolean }): 'SETTLED' | 'UNSETTLED' {
+  if (o.prevPayMethod == null) return o.current
+  return settleStatusForEdit({ prevPayMethod: o.prevPayMethod, nextPayMethod: o.nextPayMethod, current: o.current, isShipping: o.isShipping })
 }

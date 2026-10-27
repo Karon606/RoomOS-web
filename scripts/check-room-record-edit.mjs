@@ -82,17 +82,28 @@ for (const r of Object.values(ROWS)) {
   need(/className=\{MENU_ROW_DANGER\}/.test(s) && /border-t border-\[var\(--warm-border\)\]/.test(s), `ⓓ ${SHELL} · 파괴 항목이 구분선 아래 --danger-fg 행이 아니다.`)
   need(/aria-expanded=\{open\}/.test(s) && /menuKeyNav\(e, close\)/.test(s), `ⓓ ${SHELL} · 관리 메뉴 키보드 문법(aria-expanded·↑↓·Tab 닫기)을 잃었다.`)
   need(/saveReason && <WhyCaption id=\{reasonId\}>/.test(s) && /reason=\{saveReason \? reasonId : undefined\}/.test(s), `ⓓ ${SHELL} · 저장이 막힐 때 이유 한 줄(§27.8 ③)이 없다.`)
+  need(/export const RECORD_EDIT_DIRTY_NOTE = '고친 내용은 저장되지 않습니다\.'/.test(s) && /const run = \(f: \(dirty: boolean\) => void\) => \{ close\(\); f\(dirty\) \}/.test(s), `ⓓ ${SHELL} · 관리 메뉴가 고친 상태(dirty)를 항목에 넘기지 않는다(권고 6).`)
   need(/export function recordEditUndoAction\(/.test(s) && /undoRoomRecordEdit\(undo\)/.test(s) && /label: '적용취소'/.test(s), `ⓓ ${SHELL} · 저장 토스트 적용취소 정본(recordEditUndoAction → undoRoomRecordEdit)이 없다.`)
   const UPDATE = { work: 'updateRoomWork', cleaning: 'updateCleaning', inspection: 'updateInspection' }
   for (const [k, r] of Object.entries(ROWS)) {
     const m = read(r.modalFile)
     need(/<RecordEditShell /.test(m), `ⓓ ${r.modalFile} · 공용 껍데기(RecordEditShell)를 안 쓴다.`)
-    need(new RegExp(`${UPDATE[k]}\\(\\{[\\s\\S]{0,120}expectedUpdatedAt: r\\.updatedAt`).test(m), `ⓓ ${r.modalFile} · 저장이 연 시각(expectedUpdatedAt)을 안 실어 조건부 쓰기가 안 된다.`)
-    need(/recordEditUndoAction\(res\.undo,/.test(m), `ⓓ ${r.modalFile} · 저장 토스트에 [적용취소] 가 없다(§16).`)
+    // 저장 함수 **안에서** 본다(독립 검수 권고 5). 파일 어딘가의 같은 글자(줄 고치기 토스트 등)가 대신 통과시키지 않게 한다.
+    // 그 Modal 컴포넌트 몸통 안의 저장 함수다(같은 파일의 줄 고치기 컴포넌트에도 save 가 있다).
+    const saveAt = m.indexOf('\n  const save = async () => {', m.indexOf(`export function ${r.modal}(`))
+    const saveEnd = saveAt < 0 ? -1 : m.indexOf('\n  }\n', saveAt)
+    const save = saveAt < 0 || saveEnd < 0 ? '' : m.slice(saveAt, saveEnd)
+    need(!!save, `ⓓ ${r.modalFile} · 저장 함수(const save = async () => {)를 못 찾았다.`)
+    need(new RegExp(`${UPDATE[k]}\\(\\{[\\s\\S]{0,160}expectedUpdatedAt: opened(At|\\.updatedAt)`).test(save), `ⓓ ${r.modalFile} · 저장이 연 순간 붙잡은 버전(expectedUpdatedAt)을 안 실어 조건부 쓰기가 안 된다.`)
+    need((save.match(/recordEditUndoAction\(res\.undo,/g) ?? []).length === 1, `ⓓ ${r.modalFile} · 저장 토스트에 [적용취소] 가 없다(§16).`)
+    // 연 순간의 버전을 useState 로 붙잡는다(권고 4). 열린 동안 부모가 목록을 다시 읽어도 그 값으로 견준다.
+    need(/const \[opened(At)?\] = useState\(/.test(m), `ⓓ ${r.modalFile} · 연 순간의 updatedAt 을 붙잡지 않는다(부모가 다시 읽으면 새 버전으로 덮여 조건부 쓰기가 무력해진다).`)
+    // 고친 상태에서 관리 항목을 실행하면 고친 내용이 저장되지 않는다는 말을 확인창에 싣는다(권고 6).
+    need((m.match(/onSelect: async \(dirty: boolean\)/g) ?? []).length >= 2 && /withDirtyNote\(/.test(m), `ⓓ ${r.modalFile} · 관리 항목 확인창이 '고친 내용은 저장되지 않습니다' 를 안 싣는다.`)
     need(/title=\{`\$\{[^}]+\} 수정`\}|title="청소 수정"/.test(m), `ⓓ ${r.modalFile} · 제목이 '{이름} 수정' 꼴이 아니다.`)
   }
   const wm = read(ROWS.work.modalFile)
-  need(/updateWorkExpense\(\{ workId, expenseId: line\.id, amount, vendor \}\)/.test(wm) && /recordEditUndoAction\(res\.undo, `'\$\{line\.label\}' 지출`/.test(wm), `ⓓ ${ROWS.work.modalFile} · 여러 건 걸린 작업의 줄 고치기가 그 작업 범위·적용취소를 안 탄다(결정 7).`)
+  need(/updateWorkExpense\(\{ workId, expenseId: line\.id, amount, vendor, expectedUpdatedAt: line\.updatedAt \}\)/.test(wm) && /recordEditUndoAction\(res\.undo, `'\$\{line\.label\}' 지출`/.test(wm), `ⓓ ${ROWS.work.modalFile} · 여러 건 걸린 작업의 줄 고치기가 그 작업 범위·적용취소를 안 탄다(결정 7).`)
   need(/지출 화면 열기/.test(wm), `ⓓ ${ROWS.work.modalFile} · 여러 건 걸린 작업에서 지출 화면으로 가는 길이 없다(결정 7).`)
 }
 
@@ -101,11 +112,13 @@ for (const r of Object.values(ROWS)) {
   const items = (f, keys) => {
     const m = read(f)
     for (const k of keys) need(new RegExp(`key: '${k}'`).test(m), `ⓔ ${f} · 관리 메뉴에 '${k}' 항목이 없다.`)
-    need(/key: 'delete', label: '삭제', danger: true, onSelect: async \(\) => \{\s*(\/\/[^\n]*\n\s*)*(const linkedCost[^\n]*\n\s*)?if \(!\(await confirmDialog\(/.test(m), `ⓔ ${f} · 삭제가 danger 이거나 확인창을 먼저 띄우지 않는다.`)
+    need(/key: 'delete', label: '삭제', danger: true, onSelect: async \(dirty: boolean\) => \{\s*(\/\/[^\n]*\n\s*)*(const linkedCost[^\n]*\n\s*)?if \(!\(await confirmDialog\(/.test(m), `ⓔ ${f} · 삭제가 danger 이거나 확인창을 먼저 띄우지 않는다.`)
   }
   items(ROWS.work.modalFile, ['reopen', 'delete'])
   items(ROWS.cleaning.modalFile, ['skip', 'reopen', 'delete'])
   items(ROWS.inspection.modalFile, ['skip', 'reopen', 'delete'])
+  // 확인창이 없던 상태 적용취소도 고친 상태일 때는 한 번 묻는다(권고 6).
+  for (const f of [ROWS.cleaning.modalFile, ROWS.inspection.modalFile]) need(/if \(!\(await confirmDiscardEdits\(dirty, `\$\{what\} 적용취소`\)\)\) return/.test(read(f)), `ⓔ ${f} · 고친 상태에서 상태 적용취소를 실행해도 묻지 않는다.`)
   need(/\.\.\.\(done \? \[\{ key: 'reopen'/.test(read(ROWS.work.modalFile)), `ⓔ ${ROWS.work.modalFile} · 완료 적용취소가 완료 건에만 서지 않는다(쓸 수 없는 항목은 숨긴다).`)
 }
 

@@ -526,19 +526,25 @@ async function main() {
       if (!r.ok) throw new Error(r.error)
     }
     eq('받은 청소비 부담은 퇴실 청소(CHECKOUT)에만', await Promise.all([c1.id, c2.id, c3.id].map(async id => (await prisma.roomCleaning.findUnique({ where: { id } }))?.fromCleaningFund)), [true, false, false])
-    const ch1 = await clean.changeCleaningReason({ id: c1.id, reason: '방역' })
+    // 사유 변경 문은 한 건 수정(updateCleaning) 하나다(2026-10-27, changeCleaningReason 을 걷어 열린 서버 액션을 줄였다). 날짜·메모는 지금 값 그대로 싣는다.
+    const changeReason = async (id: string, reason: string) => {
+      const c = (await prisma.roomCleaning.findUnique({ where: { id } }))!
+      const d = c.status === 'DONE' ? c.doneDate : c.scheduledDate
+      return clean.updateCleaning({ id, expectedUpdatedAt: c.updatedAt.toISOString(), date: d ? d.toISOString().slice(0, 10) : null, reason, memo: c.memo })
+    }
+    const ch1 = await changeReason(c1.id, '방역')
     eq('부담 표식이 선 퇴실 청소는 다른 사유로 못 바꾼다', [ch1.ok, await reasonOfC(c1.id)], [false, 'CHECKOUT'])
     // 새 이름 자리에 코드를 넣은 위조 이름 변경 적용취소로도 못 바꾼다(2차 독립 검수 B1). 바뀌면 부담 표식만 남은 글자 행이 된다.
     const forgedC = await settings.undoRenameOption({ field: 'cleaningReasons', oldValue: '위조 사유', newValue: 'CHECKOUT', rows: [{ model: 'roomCleaning', column: 'reason', ids: [c1.id] }], wishIds: [], inventory: false })
     eq('위조 적용취소로 퇴실 청소 코드 행을 못 바꾼다', [forgedC.ok, await reasonOfC(c1.id), (await settings.getCleaningReasons()).includes('위조 사유')], [false, 'CHECKOUT', false])
-    const ch2 = await clean.changeCleaningReason({ id: c2.id, reason: '기타 · 외벽 물청소' })
-    eq('사유 변경: 체크 안 하면 기타 · 글(저장 글자를 돌려준다)', [ch2.ok && ch2.reason, await reasonOfC(c2.id)], ['기타 · 외벽 물청소', '기타 · 외벽 물청소'])
-    const ch3 = await clean.changeCleaningReason({ id: c5.id, reason: 'OTHER' })
+    const ch2 = await changeReason(c2.id, '기타 · 외벽 물청소')
+    eq('사유 변경: 체크 안 하면 기타 · 글', [ch2.ok, await reasonOfC(c2.id)], [true, '기타 · 외벽 물청소'])
+    const ch3 = await changeReason(c5.id, 'OTHER')
     eq('옛 OTHER 행을 그대로 저장하면 그대로(이행 없음)', [ch3.ok, await reasonOfC(c5.id)], [true, 'OTHER'])
-    const ch4 = await clean.changeCleaningReason({ id: c4.id, reason: 'DURING_STAY' })
+    const ch4 = await changeReason(c4.id, 'DURING_STAY')
     eq('사유 변경: 코드 셋으로', [ch4.ok, await reasonOfC(c4.id)], [true, 'DURING_STAY'])
     g.__CR_FLOW_PID = P2
-    eq('남의 영업장 청소는 사유를 못 바꾼다', [(await clean.changeCleaningReason({ id: c2.id, reason: 'AFTER_WORK' })).ok, await reasonOfC(c2.id)], [false, '기타 · 외벽 물청소'])
+    eq('남의 영업장 청소는 사유를 못 바꾼다', [(await changeReason(c2.id, 'AFTER_WORK')).ok, await reasonOfC(c2.id)], [false, '기타 · 외벽 물청소'])
     g.__CR_FLOW_PID = P1
   }
 

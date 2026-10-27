@@ -12,7 +12,8 @@ export const ROOM_RECORD_EDIT_UNDO_DOMAIN = 'room-record-edit-v1'
 export type RecordSnap = Record<string, string | number | boolean | null>
 
 /** 함께 고친 지출 한 줄의 칸 스냅샷. id 와 아래 칸들. */
-export const EXPENSE_SNAP_FIELDS = ['date', 'amount', 'vendor', 'detail', 'itemLabel', 'payMethod', 'financialAccountId', 'financeName', 'settleStatus'] as const
+// updatedAt 은 되돌림 전 '쓴 직후' 대조와 조건부 쓰기에만 쓴다(되돌릴 때 쓰는 칸이 아니다, 독립 검수 권고 3).
+export const EXPENSE_SNAP_FIELDS = ['date', 'amount', 'vendor', 'detail', 'itemLabel', 'payMethod', 'financialAccountId', 'financeName', 'settleStatus', 'updatedAt'] as const
 export type ExpenseSnapField = typeof EXPENSE_SNAP_FIELDS[number]
 export type ExpenseSnap = { id: string } & { [K in ExpenseSnapField]: string | number | null }
 

@@ -60,7 +60,9 @@ for (const f of ALLOW) if (!seen.has(f)) fails.push(`ⓐ ${f} · 허용 목록�
   if (/estimate/i.test(complete)) fails.push('ⓒ completeRoomWork 가 견적을 읽는다. 완료 지출 금액은 화면이 적은 시공비(cost)뿐이다')
   const row = strip(readFileSync('components/work/RoomWorkRowBody.tsx', 'utf8'))
   if (!/if \(est\) setCost\(String\(est\)\)/.test(row) || !/견적에서 채웠습니다/.test(row)) fails.push('ⓒ RoomWorkRowBody · 완료 폼이 견적을 시공비 칸 처음 값으로 채우고 그 사실을 말하지 않는다')
-  if (!/`견적 \$\{fmtWon\(r\.estimateAmount\)\} → 실제 \$\{fmtWon\(r\.cost\)\}`/.test(row)) fails.push('ⓒ RoomWorkRowBody · 견적과 실제 시공비가 다를 때 값 전환 표기(§29)가 없다')
+  // 견적과 실제는 값이 바뀐 것이 아니라 비교라 가운뎃점으로 나란히 적는다(§29 화살표는 값 전환에만, 독립 검수 권고 7). '실제' 는 시공 몫이라 '실제 시공비'.
+  if (!/`견적 \$\{fmtWon\(r\.estimateAmount\)\} · 실제 시공비 \$\{fmtWon\(r\.cost\)\}`/.test(row)) fails.push('ⓒ RoomWorkRowBody · 견적과 실제 시공비가 다를 때 비교 표기(견적 X원 · 실제 시공비 Y원)가 없다')
+  if (/견적[^`\n]*→/.test(row)) fails.push('ⓒ RoomWorkRowBody · 견적 비교에 화살표를 쓴다(값 전환이 아니다, §29)')
   const rev = (w.split('export async function reopenRoomWork(')[1] ?? '').split('\nexport ')[0]
   if (/estimateAmount/.test(rev)) fails.push('ⓒ reopenRoomWork 가 견적을 건드린다. 완료 적용취소에도 견적은 남는다')
 }

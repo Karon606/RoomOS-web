@@ -7,11 +7,11 @@
 // 확인창·토스트는 종전 행의 것 그대로다(독립 검수 R7 의 겹침 막기는 서버가 그대로 한다).
 
 import { useId, useState } from 'react'
-import { RecordEditShell, recordEditUndoAction, type RecordManageItem } from '@/components/ui/RecordEditShell'
+import { RecordEditShell, recordEditUndoAction, confirmDiscardEdits, withDirtyNote, type RecordManageItem } from '@/components/ui/RecordEditShell'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast, trackSave } from '@/lib/saveStatus'
-import { fmtMDDay } from '@/lib/fmtDate'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
 import {
@@ -35,11 +35,13 @@ export function InspectionEditModal({ row: r, z, onClose, onChanged }: {
   const stage = INSPECTION_STAGE_LABEL[r.stage]
   const planned = r.status === 'PLANNED'
   const shownDate = r.status === 'DONE' ? r.doneDate : r.scheduledDate
+  // 연 순간의 버전(updatedAt). 열린 동안 부모가 목록을 다시 읽어도 이 값으로 견준다(독립 검수 권고 4).
+  const [openedAt] = useState(r.updatedAt)
   const [date, setDate] = useState(r.scheduledDate ?? '')
   const [memo, setMemo] = useState(r.memo ?? '')
   const [pending, setPending] = useState(false)
   const dirty = (planned && date !== (r.scheduledDate ?? '')) || memo !== (r.memo ?? '')
-  const subtitle = `${fmtRoomNo(r.roomNo)} · ${shownDate ? `${INSPECTION_STATUS_LABEL[r.status]} ${fmtMDDay(shownDate)}` : '예정일 미정'}`
+  const subtitle = `${fmtRoomNo(r.roomNo)} · ${shownDate ? `${INSPECTION_STATUS_LABEL[r.status]} ${fmtDateDot(shownDate)}` : '예정일 미정'}`
 
   const save = async () => {
     if (pending) return
@@ -47,7 +49,7 @@ export function InspectionEditModal({ row: r, z, onClose, onChanged }: {
     setPending(true)
     const release = trackSave()
     try {
-      const res = await updateInspection({ id: r.id, expectedUpdatedAt: r.updatedAt, ...(planned ? { scheduledDate: date || null } : {}), memo })
+      const res = await updateInspection({ id: r.id, expectedUpdatedAt: openedAt, ...(planned ? { scheduledDate: date || null } : {}), memo })
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', `${stage} 기록을 고쳤습니다`, recordEditUndoAction(res.undo, `${stage} 기록`, onChanged))
       onClose(); onChanged()
@@ -67,15 +69,16 @@ export function InspectionEditModal({ row: r, z, onClose, onChanged }: {
     } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') } finally { release() }
   }
   const manage: RecordManageItem[] = [
-    ...(planned ? [{ key: 'skip', label: '안 하기로', onSelect: async () => {
-      if (!(await confirmDialog({ title: `이 ${withParticle(stage, '을/를')} 안 하기로 할까요?`, message: "기록은 남고 상태만 바뀝니다. 관리 메뉴의 '안 함 적용취소'로 되돌릴 수 있습니다.", confirmLabel: '안 하기로', level: 'caution' }))) return
+    ...(planned ? [{ key: 'skip', label: '안 하기로', onSelect: async (dirty: boolean) => {
+      if (!(await confirmDialog({ title: `이 ${withParticle(stage, '을/를')} 안 하기로 할까요?`, message: withDirtyNote("기록은 남고 상태만 바뀝니다. 관리 메뉴의 '안 함 적용취소'로 되돌릴 수 있습니다.", dirty), confirmLabel: '안 하기로', level: 'caution' }))) return
       void runManage(() => skipInspection(r.id), '안 하기로 표시됨', { run: () => reopenInspection(r.id), msg: '안 함을 적용취소했습니다 · 예정으로 복귀' })
-    } }] : [{ key: 'reopen', label: r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소', onSelect: () => {
+    } }] : [{ key: 'reopen', label: r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소', onSelect: async (dirty: boolean) => {
       const what = r.status === 'DONE' ? '완료' : '안 함'
+      if (!(await confirmDiscardEdits(dirty, `${what} 적용취소`))) return
       void runManage(() => reopenInspection(r.id), `${what} 적용취소됨`)
     } }]),
-    { key: 'delete', label: '삭제', danger: true, onSelect: async () => {
-      if (!(await confirmDialog({ title: `이 ${stage} 기록을 삭제할까요?`, message: '기록이 목록에서 사라집니다. 체크한 항목은 함께 보관되어 복원하면 돌아옵니다.', confirmLabel: '삭제', level: 'danger' }))) return
+    { key: 'delete', label: '삭제', danger: true, onSelect: async (dirty: boolean) => {
+      if (!(await confirmDialog({ title: `이 ${stage} 기록을 삭제할까요?`, message: withDirtyNote('기록이 목록에서 사라집니다. 체크한 항목은 함께 보관되어 복원하면 돌아옵니다.', dirty), confirmLabel: '삭제', level: 'danger' }))) return
       void runManage(() => deleteInspection(r.id), '삭제됨', { run: () => restoreInspection(r.id), msg: '점검 기록을 복원했습니다' })
     } },
   ]

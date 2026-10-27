@@ -47,7 +47,7 @@ export async function undoRoomRecordEdit(raw: unknown): Promise<{ ok: true } | {
       const w = u.kind === 'work' || u.kind === 'work-expense'
         ? await tx.roomWork.findFirst({
           where: { id: u.id, propertyId, deletedAt: null },
-          select: { id: true, kind: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true, estimateAmount: true },
+          select: { id: true, kind: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true, estimateAmount: true, updatedAt: true },
         })
         : null
       if ((u.kind === 'work' || u.kind === 'work-expense') && !w) conflict()
@@ -55,48 +55,50 @@ export async function undoRoomRecordEdit(raw: unknown): Promise<{ ok: true } | {
       const c = u.kind === 'cleaning'
         ? await tx.roomCleaning.findFirst({
           where: { id: u.id, propertyId, deletedAt: null },
-          select: { reason: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true, leaseTermId: true },
+          select: { reason: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true, leaseTermId: true, updatedAt: true },
         })
         : null
       const relink = str(before.expenseId)
       if (u.kind === 'cleaning') {
-        if (!c || !snapMatches({ ...c, scheduledDate: ymd(c.scheduledDate), doneDate: ymd(c.doneDate) }, after)) conflict()
+        if (!c || !snapMatches({ ...c, scheduledDate: ymd(c.scheduledDate), doneDate: ymd(c.doneDate), updatedAt: undefined }, after)) conflict()
         // 비용 0 으로 끊은 연결을 되살리는데 그 지출이 그사이 지워졌으면 끊긴 링크가 된다. 되살리지 않는다.
         if (relink && relink !== str(after.expenseId) && !u.expense && !(await tx.expense.findFirst({ where: { id: relink, propertyId }, select: { id: true } }))) conflict()
       }
       const i = u.kind === 'inspection'
-        ? await tx.roomInspection.findFirst({ where: { id: u.id, propertyId, deletedAt: null }, select: { scheduledDate: true, memo: true } })
+        ? await tx.roomInspection.findFirst({ where: { id: u.id, propertyId, deletedAt: null }, select: { scheduledDate: true, memo: true, updatedAt: true } })
         : null
       if (u.kind === 'inspection' && (!i || !snapMatches({ scheduledDate: ymd(i.scheduledDate), memo: i.memo }, after))) conflict()
 
       // ② 쓰기 — 기록을 쓰기 전 모습으로.
+      // 되돌리는 쓰기도 조건부다(독립 검수 권고 3). 위에서 읽은 그 모습(updatedAt) 그대로일 때만 쓰고, 아니면 전부 되감는다.
+      const once = (n: number) => { if (n !== 1) conflict() }
       if (u.kind === 'work') {
-        await tx.roomWork.updateMany({
-          where: { id: u.id, propertyId },
+        once((await tx.roomWork.updateMany({
+          where: { id: u.id, propertyId, updatedAt: w!.updatedAt },
           data: {
             kind: str(before.kind) ?? w!.kind, scheduledDate: toDate(before.scheduledDate), doneDate: toDate(before.doneDate),
             performer: str(before.performer), performerName: str(before.performerName), memo: str(before.memo),
             estimateAmount: Number.isInteger(before.estimateAmount) ? Number(before.estimateAmount) : null,
           },
-        })
+        })).count)
       } else if (u.kind === 'cleaning') {
-        await tx.roomCleaning.updateMany({
-          where: { id: u.id, propertyId },
+        once((await tx.roomCleaning.updateMany({
+          where: { id: u.id, propertyId, updatedAt: c!.updatedAt },
           data: {
             reason: str(before.reason) ?? c!.reason, scheduledDate: toDate(before.scheduledDate), doneDate: toDate(before.doneDate),
             performer: str(before.performer), performerName: str(before.performerName), memo: str(before.memo),
             expenseId: relink, fromCleaningFund: before.fromCleaningFund === true, leaseTermId: str(before.leaseTermId),
           },
-        })
+        })).count)
       } else if (u.kind === 'inspection') {
-        await tx.roomInspection.updateMany({ where: { id: u.id, propertyId }, data: { scheduledDate: toDate(before.scheduledDate), memo: str(before.memo) } })
+        once((await tx.roomInspection.updateMany({ where: { id: u.id, propertyId, updatedAt: i!.updatedAt }, data: { scheduledDate: toDate(before.scheduledDate), memo: str(before.memo) } })).count)
       }
       // 함께 고친 지출 — 고친 줄은 쓰기 전 칸으로, 이 수정이 만든 줄은 지운다(쓴 직후 그대로인 것만 여기까지 온다).
       if (u.expense && exp) {
         const b: ExpenseSnap | null = u.expense.before
         if (b) {
-          await tx.expense.updateMany({
-            where: { id: b.id, propertyId },
+          once((await tx.expense.updateMany({
+            where: { id: b.id, propertyId, updatedAt: exp.updatedAt },
             data: {
               date: toDate(b.date) ?? exp.date,
               amount: Number.isInteger(b.amount) ? Number(b.amount) : exp.amount,
@@ -108,9 +110,10 @@ export async function undoRoomRecordEdit(raw: unknown): Promise<{ ok: true } | {
               financeName: str(b.financeName),
               settleStatus: b.settleStatus === 'UNSETTLED' ? 'UNSETTLED' : 'SETTLED',
             },
-          })
+          })).count)
         } else {
-          await tx.expense.deleteMany({ where: { id: u.expense.after.id, propertyId } })
+          // 수정이 만든 지출 — 토큰의 updatedAt 과 같은(쓴 직후 그대로인) 것만 지운다(권고 3).
+          once((await tx.expense.deleteMany({ where: { id: u.expense.after.id, propertyId, updatedAt: exp.updatedAt } })).count)
         }
       }
     })

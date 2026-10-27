@@ -617,8 +617,8 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/actions.ts', 'createStockDisposal'], ['app/(app)/inventory/actions.ts', 'createStockAddition'],
     ['app/(app)/inventory/actions.ts', 'updateStockAddition'], ['app/(app)/inventory/assets/actions.ts', 'disposeAssets'],
     ['app/(app)/inventory/assets/actions.ts', 'assignAggregateToTarget'],
-    ['app/(app)/room-manage/cleaningActions.ts', 'createCleaning'], ['app/(app)/room-manage/cleaningActions.ts', 'changeCleaningReason'],
-    ['app/(app)/room-manage/cleaningActions.ts', 'updateCleaning'],
+    // 사유 변경 문은 한 건 수정(updateCleaning) 하나다(2026-10-27, changeCleaningReason 을 걷었다).
+    ['app/(app)/room-manage/cleaningActions.ts', 'createCleaning'], ['app/(app)/room-manage/cleaningActions.ts', 'updateCleaning'],
   ]
   // 방문 경로(2차). 계약을 만드는 두 자리와 고치는 자리가 모두 visitRouteForSave(목록으로 다시 재기)를 거치고 기록 뒤에 목록에 더한다.
   // 폼 글자를 그대로 적는 길(visitRoute || null)이 되살아나면 목록 밖 글이 맨 글자로 남는다.
@@ -801,7 +801,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/assets/AssetsClient.tsx', /groupLabel="교체 · 같은 수량만큼 폐기로 기록"/, '비품 교체 칸이 교체 묶음(optgroup)을 잃었다'],
     // 청소 사유. 서버가 다시 재고(종전에는 화면 글자를 그대로 적었다), 사유 변경은 지금 값(prev)으로 잰다. 부담 표식 판정 줄은 입력 그대로 본다.
     ['app/(app)/room-manage/cleaningActions.ts', /reasonForSave\(propertyId, 'cleaningReasons', input\.reason, \{ addToList: input\.addReasonToList === true \}\)[\s\S]{0,300}reason: reasonSave\.reason,/, '청소 예정 등록이 사유를 다시 재지 않는다'],
-    ['app/(app)/room-manage/cleaningActions.ts', /if \(cur\.fromCleaningFund && input\.reason !== 'CHECKOUT'\) \{[\s\S]{0,300}reasonForSave\(propertyId, 'cleaningReasons', input\.reason, \{ addToList: input\.addToList === true, prev: cur\.reason \}\)/, '청소 사유 변경이 부담 표식 판정 뒤 지금 값(prev)으로 다시 재지 않는다'],
+    ['app/(app)/room-manage/cleaningActions.ts', /if \(cur\.fromCleaningFund && input\.reason !== 'CHECKOUT' && input\.fromCleaningFund !== false\) return \{ ok: false, error: FUND_REASON_BLOCK \}\s*const save = await reasonForSave\(propertyId, 'cleaningReasons', input\.reason, \{ addToList: input\.addReasonToList === true, prev: cur\.reason \}\)/, '청소 한 건 수정이 부담 표식 판정 뒤 지금 값(prev)으로 다시 재지 않는다'],
     // 고르는 칸: 코드 셋 맨 앞 + 영업장 목록, 보이는 글자는 라벨 함수 한 벌. 코랄 채움 칩(§03 위반)은 걷었다.
     ['components/cleaning/CleaningPlanForm.tsx', /options=\{reasonOptions\} getLabel=\{cleaningReasonLabel\}/, '청소 예정 폼 사유 칸이 코드 셋·목록을 라벨 함수로 보여 주지 않는다'],
     ['components/cleaning/CleaningPlanForm.tsx', /const reasonOptions = \[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]/, '청소 예정 폼 사유 칸이 코드 셋을 맨 앞에 두지 않는다'],

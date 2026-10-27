@@ -52,7 +52,7 @@ need('판정이 저장 액션 밖이다', !readFileSync('app/(app)/finance/actio
   need('한 건 수정이 같은 판정 정본(matchesWork)을 쓴다', /matchesWork\(e, \{ roomId: cur\.roomId, kind, doneDate: date, scheduledDate: null \}\)/.test(up))
   need('한 건 수정은 후보가 있으면 거부한다', /free\.some\(e => matchesWork\([\s\S]{0,120}\)\)\) \{\s*return \{ ok: false, error:/.test(up))
   need('한 건 수정은 지출을 작업에 묶지 않는다', !/roomWorkId: cur\.id, costKind|updateMany\(\{ where: \{ id: \{ in:/.test(up.replace(/roomWorkId: cur\.id,\n\s*itemLabel/, '')))
-  need('여러 건 걸린 작업은 금액을 안 받는다', /if \(wantsCost && cur\.expenses\.length > 1\) return \{ ok: false/.test(up))
+  need('시공 줄 하나가 아닌 작업은 금액을 안 받는다(줄마다 고친다)', /\} else if \(wantsCost && cur\.expenses\.length > 0\) \{\s*return \{ ok: false/.test(up))
 }
 
 // 자동으로 묶는 분기가 하나도 없어야 한다.

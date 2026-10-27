@@ -492,3 +492,7 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 - **check-work-estimate** (2026-10-27, verify:fast, 승인 계획 3단계) · 작업 견적(RoomWork.estimateAmount)이 돈 계산에 안 섞인다. 허용 파일 6곳(fail closed·낡은 목록도 위반), 집계(_sum·aggregate·groupBy·reduce)·금액·지출 쓰기 근처 금지,
   completeRoomWork 가 견적을 안 읽음·reopenRoomWork 가 견적을 안 지움·완료 폼 프리필과 '견적에서 채웠습니다'·값 전환 표기, 스키마 칸·SQL 멱등, 등록. 통합 test-room-record-edit-flow 에 견적 8건(지출·합계 무변경 포함, 64건).
   역주입: 지출 생성 금액에 견적 섞기(2건 발화)·완료 적용취소가 견적 지우기(그물 + 통합 2건 발화).
+- **독립 검수 반영(2026-10-27, 차단 B1~B3·권고)** · check-work-expense-paymethod ⓐ 영업장 선택지 안의 수단만·계정 종류 대조·옛 빈 결제수단 정산상태 유지, ⓑ 빈 결제수단 기본값 덮기 금지, ⓕ 한 건 수정 지출 쓰기는 바뀐 칸만·updatedAt 조건(updateMany)·유일한 시공 줄.
+  check-room-record-edit ⓓ 저장 함수 안에서 연 순간 버전·적용취소 한 번·useState 로 붙잡기·고친 상태 확인 문구, ⓔ 상태 적용취소 확인. check-work-estimate 비교 표기(화살표 금지). drift 그물은 알려진 id 목록 대조.
+  통합 test-room-record-edit-flow 80건(메모만 수정 시 지출 바이트 무변경·자재 1건 작업·지출 먼저 고친 뒤 저장 STALE·업체 안 덮기·뺀 수단 건너뛰기·계정 종류·만든 지출 그사이 고침). test-reason-lists-flow 의 사유 변경을 updateCleaning 으로.
+  역주입 13종 발화(정적 5·통합 8, 만든 지출 삭제 조건 하나는 위 '쓴 직후' 대조가 먼저 막아 통합으로는 못 보인다).

@@ -12,17 +12,18 @@ const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : nu
 /** 지출 행에서 토큰 스냅샷을 짓는다. 칸은 EXPENSE_SNAP_FIELDS 와 같다. */
 export function expenseSnapOf(e: {
   id: string; date: Date; amount: number; vendor: string | null; detail: string | null; itemLabel: string | null
-  payMethod: string | null; financialAccountId: string | null; financeName: string | null; settleStatus: string
+  payMethod: string | null; financialAccountId: string | null; financeName: string | null; settleStatus: string; updatedAt: Date
 }): ExpenseSnap {
   return {
     id: e.id, date: ymd(e.date), amount: e.amount, vendor: e.vendor, detail: e.detail, itemLabel: e.itemLabel,
     payMethod: e.payMethod, financialAccountId: e.financialAccountId, financeName: e.financeName, settleStatus: e.settleStatus,
+    updatedAt: e.updatedAt.toISOString(),
   }
 }
 /** 토큰에 실을 지출 칸 select. */
 export const EXPENSE_SNAP_SELECT = {
   id: true, date: true, amount: true, vendor: true, detail: true, itemLabel: true,
-  payMethod: true, financialAccountId: true, financeName: true, settleStatus: true,
+  payMethod: true, financialAccountId: true, financeName: true, settleStatus: true, updatedAt: true,
 } as const
 
 /**

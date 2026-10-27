@@ -60,6 +60,7 @@ async function main() {
   const roomIn = async (pid: string, roomNo: string) => (await prisma.room.create({ data: { propertyId: pid, roomNo, baseRent: 300000, isVacant: true } })).id as string
   const R1 = await roomIn(P1, '501'), R2 = await roomIn(P1, '502'), R3 = await roomIn(P1, '503'), RX = await roomIn(P2, '601')
   const exp = (id: string) => prisma.expense.findUnique({ where: { id } })
+  const expUpd = async (id: string) => (await prisma.expense.findUnique({ where: { id } }))!.updatedAt.toISOString()
   const expOfWork = (workId: string) => prisma.expense.findMany({ where: { roomWorkId: workId }, orderBy: { createdAt: 'asc' } })
   const updatedAt = async (table: 'roomWork' | 'roomCleaning' | 'roomInspection', id: string) =>
     ((await (prisma[table] as unknown as { findUnique: (a: unknown) => Promise<{ updatedAt: Date } | null> }).findUnique({ where: { id } }))!.updatedAt).toISOString()
@@ -96,7 +97,7 @@ async function main() {
   // ── 2. 작업 한 건 수정: 지출 1건 유지·종류 따라 품목명·결제수단 정본·적용취소 ─────────
   const wu = await work.updateRoomWork({
     id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2026-10-05', kind: '장판', performer: 'VENDOR', performerName: '대방장판',
-    memo: '  돌출부 포함 ', cost: 170000, payMethod: '신용카드', financialAccountId: CARD,
+    memo: '  돌출부 포함 ', cost: 170000, costExpenseId: we[0].id, costExpenseUpdatedAt: await expUpd(we[0].id), payMethod: '신용카드', financialAccountId: CARD,
   })
   const w1 = await prisma.roomWork.findUnique({ where: { id: W1 } })
   const we2 = await expOfWork(W1)
@@ -106,7 +107,7 @@ async function main() {
   eq('계좌이체에서 신용카드로 바꾸면 미정산(고치는 경로 정본)', [we2[0]?.payMethod, we2[0]?.financeName, we2[0]?.settleStatus], ['신용카드', '하나카드 (업무)', 'UNSETTLED'])
   eq('연 뒤 바뀐 기록은 거부(조건부 쓰기)', (await work.updateRoomWork({ id: W1, expectedUpdatedAt: '2026-01-01T00:00:00.000Z', date: '2026-10-05', kind: '장판', performer: 'VENDOR' })).ok, false)
   eq('미래 완료일 거부', (await work.updateRoomWork({ id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2099-01-01', kind: '장판', performer: 'VENDOR' })).ok, false)
-  eq('걸린 1건을 0원으로는 안 바꾼다', (await work.updateRoomWork({ id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2026-10-05', kind: '장판', performer: 'VENDOR', cost: 0 })).ok, false)
+  eq('걸린 1건을 0원으로는 안 바꾼다', (await work.updateRoomWork({ id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2026-10-05', kind: '장판', performer: 'VENDOR', cost: 0, costExpenseId: we[0].id, costExpenseUpdatedAt: await expUpd(we[0].id) })).ok, false)
 
   const undoW = wu.ok ? wu.undo : null
   eq('적용취소 토큰이 서명돼 나온다', !!undoW?.sig, true)
@@ -120,7 +121,7 @@ async function main() {
   eq('두 번째 적용취소는 거부(지금이 쓴 직후가 아니다)', (await edit.undoRoomRecordEdit(J(undoW))).ok, false)
 
   // 그사이 바뀌면 거부 — 수정 뒤 지출 금액이 다른 곳에서 바뀌었다.
-  const wu2 = await work.updateRoomWork({ id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2026-10-04', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', cost: 160000, payMethod: '계좌이체', financialAccountId: BANK })
+  const wu2 = await work.updateRoomWork({ id: W1, expectedUpdatedAt: await updatedAt('roomWork', W1), date: '2026-10-04', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', cost: 160000, costExpenseId: we3[0].id, costExpenseUpdatedAt: await expUpd(we3[0].id), payMethod: '계좌이체', financialAccountId: BANK })
   await prisma.expense.update({ where: { id: we3[0].id }, data: { amount: 161000 } })
   eq('그사이 지출이 바뀌면 적용취소 거부', (await edit.undoRoomRecordEdit(J(wu2.ok ? wu2.undo : null))).ok, false)
   eq('거부된 적용취소는 기록을 안 건드린다', (await prisma.roomWork.findUnique({ where: { id: W1 } }))?.kind, '도배')
@@ -131,9 +132,9 @@ async function main() {
   await prisma.expense.create({ data: { propertyId: P1, roomId: R2, roomWorkId: W2, date: new Date('2026-10-01T00:00:00Z'), amount: 8000, category: '수선유지비', itemLabel: '실리콘', payMethod: '현금' } })
   eq('여러 건 걸린 작업은 금액 폼 거부', (await work.updateRoomWork({ id: W2, expectedUpdatedAt: await updatedAt('roomWork', W2), date: '2026-10-10', kind: '실리콘', performer: 'VENDOR', cost: 60000 })).ok, false)
   eq('금액 없이는 여러 건 걸린 작업도 고친다', (await work.updateRoomWork({ id: W2, expectedUpdatedAt: await updatedAt('roomWork', W2), date: '2026-10-11', kind: '실리콘', performer: 'VENDOR', memo: '욕실' })).ok, true)
-  const ue = await work.updateWorkExpense({ workId: W2, expenseId: m1, amount: 55000, vendor: '글로벌코킹' })
+  const ue = await work.updateWorkExpense({ workId: W2, expenseId: m1, amount: 55000, vendor: '글로벌코킹', expectedUpdatedAt: await expUpd(m1) })
   eq('줄마다 고치기', [ue.ok, (await exp(m1))?.amount, (await exp(m1))?.vendor], [true, 55000, '글로벌코킹'])
-  eq('다른 작업의 지출은 그 작업 문으로 못 고친다', (await work.updateWorkExpense({ workId: W1, expenseId: m1, amount: 1 })).ok, false)
+  eq('다른 작업의 지출은 그 작업 문으로 못 고친다', (await work.updateWorkExpense({ workId: W1, expenseId: m1, amount: 1, expectedUpdatedAt: await expUpd(m1) })).ok, false)
   eq('줄 고치기 적용취소', (await edit.undoRoomRecordEdit(J(ue.ok ? ue.undo : null))).ok, true)
   eq('줄 금액·업체가 돌아온다', [(await exp(m1))?.amount, (await exp(m1))?.vendor], [50000, null])
 
@@ -161,13 +162,14 @@ async function main() {
   const cu1 = await cleaning.updateCleaning({
     id: C2, expectedUpdatedAt: await updatedAt('roomCleaning', C2), date: '2026-10-18', reason: 'CHECKOUT', performer: 'VENDOR', performerName: '새업체',
     cost: 35000, payMethod: '신용카드', financialAccountId: CARD, fromCleaningFund: true, memo: '창틀 포함',
+    expenseUpdatedAt: await expUpd((await prisma.roomCleaning.findUnique({ where: { id: C2 } }))!.expenseId!),
   })
   const c2 = await prisma.roomCleaning.findUnique({ where: { id: C2 } })
   const e2b = await exp(c2!.expenseId!)
   eq('청소 수정 통과·부담 표식과 귀속 계약', [cu1.ok, c2?.doneDate?.toISOString().slice(0, 10), c2?.fromCleaningFund, c2?.leaseTermId, c2?.memo], [true, '2026-10-18', true, LT, '창틀 포함'])
   eq('청소 날짜 변경이 지출 date 를 데려간다·금액·카드', [e2b?.date.toISOString().slice(0, 10), e2b?.amount, e2b?.financeName, e2b?.settleStatus], ['2026-10-18', 35000, '하나카드 (업무)', 'UNSETTLED'])
   eq('부담 표식 건은 표식을 함께 안 끄면 퇴실 청소 밖으로 못 간다', (await cleaning.updateCleaning({ id: C2, expectedUpdatedAt: await updatedAt('roomCleaning', C2), date: '2026-10-18', reason: 'AFTER_WORK', performer: 'VENDOR', cost: 35000 })).ok, false)
-  const cu2 = await cleaning.updateCleaning({ id: C2, expectedUpdatedAt: await updatedAt('roomCleaning', C2), date: '2026-10-18', reason: 'AFTER_WORK', performer: 'VENDOR', performerName: '새업체', cost: 35000, payMethod: '신용카드', financialAccountId: CARD, fromCleaningFund: false })
+  const cu2 = await cleaning.updateCleaning({ id: C2, expectedUpdatedAt: await updatedAt('roomCleaning', C2), date: '2026-10-18', reason: 'AFTER_WORK', performer: 'VENDOR', performerName: '새업체', cost: 35000, payMethod: '신용카드', financialAccountId: CARD, fromCleaningFund: false, expenseUpdatedAt: await expUpd(c2!.expenseId!) })
   eq('표식을 함께 끄면 바꾼다', [cu2.ok, (await prisma.roomCleaning.findUnique({ where: { id: C2 } }))?.fromCleaningFund, (await prisma.roomCleaning.findUnique({ where: { id: C2 } }))?.reason], [true, false, 'AFTER_WORK'])
   eq('적용취소로 사유·표식이 돌아온다', [(await edit.undoRoomRecordEdit(J(cu2.ok ? cu2.undo : null))).ok, (await prisma.roomCleaning.findUnique({ where: { id: C2 } }))?.reason, (await prisma.roomCleaning.findUnique({ where: { id: C2 } }))?.fromCleaningFund], [true, 'CHECKOUT', true])
   eq('앞 수정도 적용취소(날짜·지출·표식 전부)', (await edit.undoRoomRecordEdit(J(cu1.ok ? cu1.undo : null))).ok, true)
@@ -188,6 +190,72 @@ async function main() {
   const cu5 = await cleaning.updateCleaning({ id: C3, expectedUpdatedAt: await updatedAt('roomCleaning', C3), date: null, reason: '방역', addReasonToList: false, memo: '예약' })
   const c3 = await prisma.roomCleaning.findUnique({ where: { id: C3 } })
   eq('예정 청소: 예정일 비우기·목록 밖 사유는 기타 · 글', [cu5.ok, c3?.scheduledDate, c3?.reason, c3?.memo], [true, null, '기타 · 방역', '예약'])
+
+  // ── 3b. 독립 검수 차단 B1·B2·B3: 실제로 바뀐 칸만 쓴다 ─────────────────────────────
+  const snapExp = async (id: string) => JSON.stringify(await prisma.expense.findUnique({ where: { id } }))
+  // B1 청소 — 결제수단 빈 옛 지출(정산완료). 메모만 고친 저장은 지출을 한 바이트도 안 바꾼다.
+  const RB = await roomIn(P1, '504')
+  const OLD = (await prisma.expense.create({ data: { propertyId: P1, roomId: RB, date: new Date('2026-09-01T00:00:00Z'), amount: 20000, category: '청소용역비', vendor: '고시클린', settleStatus: 'SETTLED' } })).id
+  const CB = (await prisma.roomCleaning.create({ data: { propertyId: P1, roomId: RB, reason: 'DURING_STAY', status: 'DONE', doneDate: new Date('2026-09-01T00:00:00Z'), performer: 'VENDOR', performerName: '고시클린', expenseId: OLD } })).id
+  const oldSnap = await snapExp(OLD)
+  const b1 = await cleaning.updateCleaning({ id: CB, expectedUpdatedAt: await updatedAt('roomCleaning', CB), date: '2026-09-01', reason: 'DURING_STAY', performer: 'VENDOR', performerName: '고시클린', cost: 20000, memo: '창문 포함', expenseUpdatedAt: await expUpd(OLD) })
+  eq('B1 청소: 메모만 고치면 결제수단 빈 옛 지출이 바이트 무변경(기본값으로 안 덮고 정산완료 유지)', [b1.ok, await snapExp(OLD) === oldSnap, (await exp(OLD))?.payMethod ?? null, (await exp(OLD))?.settleStatus], [true, true, null, 'SETTLED'])
+  // 완료 처리를 다시 해도(결제수단 안 보냄) 빈 결제수단을 채우지 않는다.
+  await cleaning.reopenCleaning(CB)
+  await cleaning.completeCleaning({ id: CB, doneDate: '2026-09-01', performer: 'VENDOR', performerName: '고시클린', cost: 20000 })
+  eq('B1 재완료: 결제수단 안 보내면 빈 채로·정산완료 유지', [(await exp(OLD))?.payMethod ?? null, (await exp(OLD))?.settleStatus], [null, 'SETTLED'])
+  // 사용자가 고르면 쓴다. 옛 값이 비어 있었으면 정산상태는 지금 상태(정산완료)를 지킨다.
+  const b1c = await cleaning.updateCleaning({ id: CB, expectedUpdatedAt: await updatedAt('roomCleaning', CB), date: '2026-09-01', reason: 'DURING_STAY', performer: 'VENDOR', performerName: '고시클린', cost: 20000, payMethod: '신용카드', financialAccountId: CARD, expenseUpdatedAt: await expUpd(OLD) })
+  eq('B1 고른 결제수단은 쓰고, 옛 빈 행의 정산완료는 지킨다', [b1c.ok, (await exp(OLD))?.payMethod, (await exp(OLD))?.settleStatus], [true, '신용카드', 'SETTLED'])
+  // B1 작업 — 결제수단 빈 시공 줄, 메모만.
+  const WB = (await prisma.roomWork.create({ data: { propertyId: P1, roomId: RB, kind: '도배', status: 'DONE', doneDate: new Date('2026-09-02T00:00:00Z'), performer: 'VENDOR', performerName: '대방도배사' } })).id
+  const WBE = (await prisma.expense.create({ data: { propertyId: P1, roomId: RB, roomWorkId: WB, date: new Date('2026-09-02T00:00:00Z'), amount: 140000, category: '수선유지비', itemLabel: '도배 시공', costKind: 'LABOR', vendor: '대방도배사', settleStatus: 'SETTLED' } })).id
+  const wbSnap = await snapExp(WBE)
+  const b1w = await work.updateRoomWork({ id: WB, expectedUpdatedAt: await updatedAt('roomWork', WB), date: '2026-09-02', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', memo: '천장 포함', cost: 140000, costExpenseId: WBE, costExpenseUpdatedAt: await expUpd(WBE) })
+  eq('B1 작업: 메모만 고치면 시공 줄 바이트 무변경', [b1w.ok, await snapExp(WBE) === wbSnap], [true, true])
+  // B2 — 지출 화면에서 시공 줄 업체를 고쳐 둔 작업. 수행자 이름을 안 바꾼 저장은 그 업체를 안 덮는다.
+  await prisma.expense.update({ where: { id: WBE }, data: { vendor: '대방도배사(주)' } })
+  const b2v = await work.updateRoomWork({ id: WB, expectedUpdatedAt: await updatedAt('roomWork', WB), date: '2026-09-02', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', memo: '천장 포함 2', costExpenseId: WBE, costExpenseUpdatedAt: await expUpd(WBE) })
+  eq('B2 시공 줄: 이름을 안 바꾸면 지출 화면에서 고친 업체를 안 덮는다', [b2v.ok, (await exp(WBE))?.vendor], [true, '대방도배사(주)'])
+  // B2 — 걸린 1건이 자재 줄인 작업. 메모·수행자 이름을 고쳐도 자재 지출 업체는 그대로, 시공비 칸으로는 못 고친다.
+  const WM = (await prisma.roomWork.create({ data: { propertyId: P1, roomId: RB, kind: '장판', status: 'DONE', doneDate: new Date('2026-09-03T00:00:00Z'), performer: 'VENDOR', performerName: '대방도배사' } })).id
+  const MAT = (await prisma.expense.create({ data: { propertyId: P1, roomId: RB, roomWorkId: WM, date: new Date('2026-08-20T00:00:00Z'), amount: 135000, category: '수선유지비', itemLabel: '원목무늬 장판', costKind: 'MATERIAL', vendor: '쿠팡', payMethod: '신용카드' } })).id
+  const matSnap = await snapExp(MAT)
+  eq('B2 목록 행: 자재 줄은 시공 줄이 아니다', (await work.listRoomWorks(RB)).find(w => w.id === WM)?.linkedExpenses.map(e => e.labor), [false])
+  const b2 = await work.updateRoomWork({ id: WM, expectedUpdatedAt: await updatedAt('roomWork', WM), date: '2026-09-03', kind: '장판', performer: 'VENDOR', performerName: '다른장판', memo: '거실' })
+  eq('B2 자재 1건 작업: 메모·이름을 고쳐도 자재 지출 바이트 무변경', [b2.ok, await snapExp(MAT) === matSnap], [true, true])
+  eq('B2 자재 줄은 시공비 칸으로 못 고친다', (await work.updateRoomWork({ id: WM, expectedUpdatedAt: await updatedAt('roomWork', WM), date: '2026-09-03', kind: '장판', performer: 'VENDOR', cost: 1, costExpenseId: MAT, costExpenseUpdatedAt: await expUpd(MAT) })).ok, false)
+  // B3 — 지출 화면에서 먼저 고친 금액을 수정 폼이 옛 값으로 되돌리지 않는다.
+  const openedAt = await expUpd(WBE)
+  await new Promise(res => setTimeout(res, 5))
+  await prisma.expense.update({ where: { id: WBE }, data: { amount: 145000 } })   // 지출 화면에서 먼저 고침
+  eq('B3 작업: 연 뒤 지출이 바뀌었으면 금액 저장은 STALE', [(await work.updateRoomWork({ id: WB, expectedUpdatedAt: await updatedAt('roomWork', WB), date: '2026-09-02', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', cost: 150000, costExpenseId: WBE, costExpenseUpdatedAt: openedAt })).ok, (await exp(WBE))?.amount], [false, 145000])
+  const b3m = await work.updateRoomWork({ id: WB, expectedUpdatedAt: await updatedAt('roomWork', WB), date: '2026-09-02', kind: '도배', performer: 'VENDOR', performerName: '대방도배사', memo: '천장', cost: 145000, costExpenseId: WBE, costExpenseUpdatedAt: openedAt })
+  eq('B3 작업: 바뀐 칸이 없으면 지출을 안 건드려 먼저 고친 금액이 남는다', [b3m.ok, (await exp(WBE))?.amount], [true, 145000])
+  const cOpened = await expUpd(OLD)
+  await new Promise(res => setTimeout(res, 5))
+  await prisma.expense.update({ where: { id: OLD }, data: { amount: 22000 } })
+  eq('B3 청소: 연 뒤 지출이 바뀌었으면 금액 저장은 STALE', [(await cleaning.updateCleaning({ id: CB, expectedUpdatedAt: await updatedAt('roomCleaning', CB), date: '2026-09-01', reason: 'DURING_STAY', performer: 'VENDOR', performerName: '고시클린', cost: 25000, expenseUpdatedAt: cOpened })).ok, (await exp(OLD))?.amount], [false, 22000])
+  const b3c = await cleaning.updateCleaning({ id: CB, expectedUpdatedAt: await updatedAt('roomCleaning', CB), date: '2026-09-01', reason: 'DURING_STAY', performer: 'VENDOR', performerName: '고시클린', memo: '먼지', expenseUpdatedAt: cOpened })
+  eq('B3 청소: 비용을 안 바꾼 저장(비용 안 실음)은 먼저 고친 금액을 남긴다', [b3c.ok, (await exp(OLD))?.amount, (await prisma.roomCleaning.findUnique({ where: { id: CB } }))?.memo], [true, 22000, '먼지'])
+  eq('B3 줄 고치기: 연 뒤 바뀐 줄은 STALE', (await work.updateWorkExpense({ workId: WM, expenseId: MAT, amount: 1000, expectedUpdatedAt: '2026-01-01T00:00:00.000Z' })).ok, false)
+  // 권고 2 — 결제수단과 맞지 않는 계정 거부.
+  eq('권고 2: 계좌이체에 카드 계정은 거부', (await cleaning.updateCleaning({ id: CB, expectedUpdatedAt: await updatedAt('roomCleaning', CB), date: '2026-09-01', reason: 'DURING_STAY', performer: 'VENDOR', performerName: '고시클린', cost: 22000, payMethod: '계좌이체', financialAccountId: CARD, expenseUpdatedAt: await expUpd(OLD) })).ok, false)
+  // 권고 3 — 수정이 만든 지출을 그사이 누가 고쳤으면 적용취소가 지우지 않는다.
+  const WN = (await prisma.roomWork.create({ data: { propertyId: P1, roomId: RB, kind: '실리콘', status: 'DONE', doneDate: new Date('2026-09-05T00:00:00Z'), performer: 'SELF' } })).id
+  const wn = await work.updateRoomWork({ id: WN, expectedUpdatedAt: await updatedAt('roomWork', WN), date: '2026-09-05', kind: '실리콘', performer: 'VENDOR', performerName: '글로벌코킹', cost: 30000, payMethod: '현금' })
+  const madeExp = (await expOfWork(WN))[0]
+  await new Promise(res => setTimeout(res, 5))
+  await prisma.expense.update({ where: { id: madeExp.id }, data: { memo: '영수증 붙임' } })
+  eq('권고 3: 만든 지출을 그사이 고쳤으면 적용취소 거부(지우지 않는다)', [(await edit.undoRoomRecordEdit(J(wn.ok ? wn.undo : null))).ok, (await expOfWork(WN)).length], [false, 1])
+  // 권고 1 — 영업장에서 뺀 결제수단은 기본값으로 따라가지 않는다.
+  const P3 = randomUUID()
+  await prisma.property.create({ data: { id: P3, name: '하네스 3', ownerId: OWNER, paymentMethods: '현금,계좌이체' } })
+  await prisma.expense.create({ data: { propertyId: P3, date: new Date('2026-09-01T00:00:00Z'), amount: 1000, category: '청소용역비', vendor: '고시클린', payMethod: '신용카드' } })
+  g.__CR_FLOW_PID = P3
+  const opt3 = await payOpts.getWorkPayOptions('cleaning', ['고시클린'])
+  g.__CR_FLOW_PID = P1
+  eq('권고 1: 뺀 결제수단(신용카드)은 업체·카테고리 기본값에서 건너뛴다', [opt3.byVendor['고시클린'] ?? null, opt3.fallback.payMethod], [null, '현금'])
 
   // ── 4. 점검 한 건 수정: 예정은 날짜·메모, 끝낸 점검은 메모만 ───────────────────────
   const made = await insp.createInspection({ roomId: R3, stage: 'BEFORE_MOVEIN' })

@@ -33,6 +33,8 @@ import { RoomWorkEditModal } from '@/components/work/RoomWorkEditModal'
 // 형제 행과 같은 껍데기·같은 이유(오류신고 c2ab5b83 — 안 넘기면 맨글자로 그려진다).
 const DENSE_DATE_CLS =
   'flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
+// 촘촘한 완료 폼 라벨 폭 — 완료일·시공비·결제수단·계좌 칸이 같은 자리에서 시작한다(권고 8, PayMethodField dense 와 같은 값).
+const DENSE_LABEL_CLS = 'w-14 shrink-0'
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
@@ -145,11 +147,12 @@ export function RoomWorkRowBody({
       )}
 
       {/* 견적은 §11 보조줄(3단계, 2026-10-27). 돈이 아니라 메모라 칩 줄의 굵은 금액(실제 시공비)과 자리를 나눈다.
-          완료 건에서 실제 시공비가 견적과 다르면 값 전환 표기(§29)로 둘을 함께 적는다. */}
+          완료 건에서 실제 시공비가 견적과 다르면 둘을 가운뎃점으로 나란히 적는다. 값이 바뀐 것이 아니라 비교라 화살표를 쓰지 않는다(§29, 독립 검수 권고 7).
+          '실제 시공비' 는 이 행 금액과 같은 시공 몫이다(자재비는 안 든다). */}
       {r.estimateAmount != null && (
         <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] num${deleted ? ' opacity-60' : ''}`}>
           {r.status === 'DONE' && r.cost > 0 && r.cost !== r.estimateAmount
-            ? `견적 ${fmtWon(r.estimateAmount)} → 실제 ${fmtWon(r.cost)}`
+            ? `견적 ${fmtWon(r.estimateAmount)} · 실제 시공비 ${fmtWon(r.cost)}`
             : `견적 ${fmtWon(r.estimateAmount)}`}
         </p>
       )}
@@ -188,7 +191,7 @@ export function RoomWorkRowBody({
             ))}
           </div>
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            완료일
+            <span className={DENSE_LABEL_CLS}>완료일</span>
             {/* 미래는 못 고른다 — 아직 안 한 작업을 완료로 적을 수는 없다(운영자 확정 2026-09-17).
                 바로 위 날짜 변경 줄은 완료 건에만 이 상한을 걸고 있었는데 여기만 비어 있었다. */}
             <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className={DENSE_DATE_CLS} />
@@ -214,18 +217,15 @@ export function RoomWorkRowBody({
           {/* 형제 행과 같은 칸이다 — 폭 w-28 · 뒤에 '원'. MoneyInput 정본은 className 을 안 받고
               이 자리는 촘촘한 행이라 형제가 쓰는 문법을 그대로 쓴다. */}
           <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            시공비
+            <span className={DENSE_LABEL_CLS}>시공비</span>
             <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(e.target.value)}
               placeholder="0" min={0}
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
             원
           </label>
+          {/* 시공비 안내는 시공비 칸 바로 밑이다(독립 검수 권고 8). 결제수단 칸이 그 사이에 끼면 무엇에 딸린 말인지 흐려진다. */}
           {fromEstimate && r.estimateAmount != null && cost === String(r.estimateAmount) && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">견적에서 채웠습니다.</p>
-          )}
-          {payAsked && pay.ready && (
-            <PayMethodField dense methods={pay.methods} accounts={pay.accounts}
-              payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
           )}
           {r.expenseCount > 0 ? (
             /* 금액은 지출 쪽이 정본이라 여기서 못 고친다. 그런데 종전에는 "지출 화면에서
@@ -242,6 +242,10 @@ export function RoomWorkRowBody({
           ) : Number(cost || 0) > 0 ? (
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요. 살 때 이미 지출로 잡혔습니다.</p>
           ) : null}
+          {payAsked && pay.ready && (
+            <PayMethodField dense methods={pay.methods} accounts={pay.accounts}
+              payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
+          )}
           <div className="flex gap-1.5 flex-wrap items-center">
             <RowActionBtn tone="accent" disabled={pending}
               onClick={async () => {
@@ -290,7 +294,7 @@ export function RoomWorkRowBody({
               // (운영자 지적 2026-08-28). 한 건일 때만이다. 여러 건이면 어느 줄의 금액인지 모른다.
               const only = r.linkedExpenses.length === 1 ? r.linkedExpenses[0] : null
               // 걸린 지출의 결제수단이 있으면 그것이 처음 값이다(없으면 업체를 따라가는 기본값).
-              pay.reset(only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null)
+              pay.reset(only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null, !!only)
               if (only) {
                 setCost(String(only.amount))
                 if (only.vendor) { setPerformerName(only.vendor); setPerformer('VENDOR') }

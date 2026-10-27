@@ -62,16 +62,20 @@ function callsOf(body, op) {
   const s = strip(read(f))
   if (!/^import 'server-only'/m.test(s)) fails.push(`ⓐ ${f} 가 server-only 가 아니다(화면이 기본값 규칙을 직접 부를 수 있다)`)
   const def = bodyOf(s, 'defaultPayMethodFor') ?? ''
-  const iV = def.search(/where:\s*\{\s*propertyId,\s*vendor,/), iC = def.search(/where:\s*\{\s*propertyId,\s*category:\s*opts\.category,/), iF = def.search(/return fallbackPay\(db, propertyId\)/)
+  const iV = def.search(/where:\s*\{\s*propertyId,\s*vendor,/), iC = def.search(/where:\s*\{\s*propertyId,\s*category:\s*opts\.category,/), iF = def.search(/return \{ payMethod: methods\[0\] \?\? '계좌이체'/)
   if (!(iV >= 0 && iC > iV && iF > iC)) fails.push(`ⓐ ${f} defaultPayMethodFor 의 차례가 같은 업체 → 같은 카테고리 → 영업장 목록 첫 값이 아니다(운영자 승인 결정 3)`)
-  if (!/isShipping:\s*false,\s*payMethod:\s*\{\s*not:\s*null\s*\}/.test(def)) fails.push(`ⓐ ${f} 직전 지출을 고를 때 배송비 줄·결제수단 빈 줄을 안 거른다`)
-  const fb = s.slice(s.indexOf('async function fallbackPay'), s.indexOf('export async function defaultPayMethodFor'))
-  if (!/effectivePayMethods\(parseOptionList\('paymentMethods'/.test(fb)) fails.push(`ⓐ ${f} 영업장 목록 첫 값이 지출 폼과 같은 선택지 정본(effectivePayMethods)에서 오지 않는다`)
+  // 직전 지출의 수단은 지금 영업장 선택지 안의 것만 따라간다(설정에서 뺀 수단을 기본값으로 되살리지 않는다, 독립 검수 권고 1).
+  if ((def.match(/isShipping:\s*false,\s*payMethod:\s*\{\s*in:\s*methods\s*\}/g) ?? []).length !== 2) fails.push(`ⓐ ${f} 직전 지출을 고를 때 배송비 줄을 안 거르거나 영업장 선택지 밖의 수단(뺀 수단·빈 줄)을 따라간다`)
+  const pm = s.slice(s.indexOf('async function propertyMethods'), s.indexOf('export async function defaultPayMethodFor'))
+  if (!/effectivePayMethods\(parseOptionList\('paymentMethods'/.test(pm)) fails.push(`ⓐ ${f} 영업장 선택지가 지출 폼과 같은 정본(effectivePayMethods)에서 오지 않는다`)
   const res = bodyOf(s, 'resolveWorkPay') ?? ''
   if (!res) fails.push(`ⓐ ${f} 에서 resolveWorkPay 를 못 찾았다`)
   if (!/financialAccount\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.financialAccountId,\s*propertyId\s*\}/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 결제 계정을 영업장 범위로 읽지 않는다(남의 영업장 카드가 걸린다)`)
   if (!/financeName:\s*accName\(acc\)/.test(res) || /input\.financeName/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 표시명을 계정에서 다시 짓지 않는다(화면 글자를 믿는다)`)
   if (!/if \(!method\) return \{ ok: true, pay: await defaultPayMethodFor\(/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 값 없이 온 저장을 기본값 규칙으로 채우지 않는다(null 이 남는다)`)
+  if (!/const types = accountTypesFor\(method, accounts\)\s*if \(!types \|\| !types\.includes\(String\(acc\.type\)\)\) return \{ ok: false/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 결제수단과 맞지 않는 계정(계좌이체에 카드 등)을 받는다(독립 검수 권고 2)`)
+  const se = s.slice(s.indexOf('export function settleStatusForPayEdit'))
+  if (!/if \(o\.prevPayMethod == null\) return o\.current/.test(se)) fails.push(`ⓐ ${f} 옛 결제수단이 비어 있던 지출의 정산상태를 지키지 않는다(정산완료가 미정산으로 되살아난다, 독립 검수 B1)`)
 }
 
 // ⓑ 쓰기 함수
@@ -97,10 +101,29 @@ for (const [file, fn] of WRITERS) {
   }
   for (const c of callsOf(body, 'update')) {
     if (c == null) { fails.push(`ⓑ ${fn} expense.update 괄호를 못 읽었다`); continue }
-    if (/payMethod/.test(c) && !/settleStatusForEdit\(/.test(c)) fails.push(`ⓑ ${fn} 의 expense.update 가 결제수단을 바꾸면서 정산상태를 고치는 경로 정본(settleStatusForEdit)을 안 탄다`)
+    if (/payMethod/.test(c) && !/settleStatusForPayEdit\(/.test(c)) fails.push(`ⓑ ${fn} 의 expense.update 가 결제수단을 바꾸면서 정산상태 정본(settleStatusForPayEdit)을 안 탄다`)
   }
-  // 한 건 고치는 갈래가 data 를 따로 모으는 꼴(workActions next 객체)이면 그 객체 쪽을 본다.
-  if (/next\.payMethod = pay\.payMethod/.test(body) && !/next\.settleStatus = settleStatusForEdit\(/.test(body)) fails.push(`ⓑ ${fn} 이 걸린 지출의 결제수단을 바꾸면서 정산상태를 정본으로 다시 정하지 않는다`)
+  // 한 건 고치는 갈래가 data 를 따로 모으는 꼴(next·expNext 객체)이면 그 객체 쪽을 본다.
+  if (/(next|expNext)\.payMethod = pay\.payMethod/.test(body) && !/(next|expNext)\.settleStatus = settleStatusForPayEdit\(/.test(body)) fails.push(`ⓑ ${fn} 이 걸린 지출의 결제수단을 바꾸면서 정산상태를 정본으로 다시 정하지 않는다`)
+  // 이미 있는 지출의 결제수단은 화면이 고른 값이 있을 때만 쓴다. 빈 결제수단을 기본값으로 덮는 갈래(sentPay || !…payMethod) 금지(B1).
+  if (/sentPay \|\| !\w+\.payMethod/.test(body)) fails.push(`ⓑ ${fn} 이 결제수단 빈 옛 지출을 기본값으로 덮는다(메모만 고쳐도 정산상태가 바뀐다, 독립 검수 B1)`)
+}
+
+// ⓕ 한 건 수정의 지출 쓰기(독립 검수 B2·B3). 있는 지출은 실제로 바뀐 칸만, 화면이 읽은 updatedAt 그대로일 때만(updateMany + count) 쓴다.
+//    작업 시공비 칸은 유일한 시공 줄만 고친다(자재 줄 금지). 업체는 수행자 이름을 바꿨을 때만 따라간다.
+for (const [file, fn] of [['app/(app)/room-manage/workActions.ts', 'updateRoomWork'], ['app/(app)/room-manage/cleaningActions.ts', 'updateCleaning'], ['app/(app)/room-manage/workActions.ts', 'updateWorkExpense']]) {
+  const body = bodyOf(strip(read(file)), fn) ?? ''
+  if (!body) { fails.push(`ⓕ ${file} 에서 ${fn} 을 못 찾았다`); continue }
+  if (/\.expense\.update\(/.test(body)) fails.push(`ⓕ ${fn} 이 지출을 조건 없이 고친다(expense.update). 화면이 읽은 updatedAt 을 건 updateMany 로 쓴다(B3)`)
+  for (const c of callsOf(body, 'updateMany')) if (c != null && !/updatedAt:/.test(c)) fails.push(`ⓕ ${fn} 의 지출 updateMany 에 updatedAt 조건이 없다(지출 화면에서 먼저 고친 값을 덮는다, B3)`)
+}
+{
+  const w = bodyOf(strip(read('app/(app)/room-manage/workActions.ts')), 'updateRoomWork') ?? ''
+  if (!/laborLines\.length !== 1 \|\| laborLines\[0\]\.id !== target\.id/.test(w)) fails.push('ⓕ updateRoomWork 시공비 칸이 유일한 시공 줄로 좁혀지지 않는다(자재 줄 업체·금액이 덮인다, B2)')
+  if (!/if \(name !== \(cur\.performerName \?\? null\) && name !== target\.vendor\) next\.vendor = name/.test(w)) fails.push('ⓕ updateRoomWork 가 수행자 이름을 안 바꿔도 지출 업체를 덮는다(B2)')
+  if (!/if \(wantsCost && cost !== target\.amount\) next\.amount = cost/.test(w)) fails.push('ⓕ updateRoomWork 가 금액이 그대로여도 지출 금액을 쓴다')
+  const c = bodyOf(strip(read('app/(app)/room-manage/cleaningActions.ts')), 'updateCleaning') ?? ''
+  if (!/if \(name !== \(cur\.performerName \?\? null\)\) \{\s*expNext\.vendor = name/.test(c) || !/date\.getTime\(\) !== cur\.doneDate\.getTime\(\)\) expNext\.date = date/.test(c)) fails.push('ⓕ updateCleaning 이 바뀌지 않은 업체·날짜를 지출에 쓴다(B1)')
 }
 
 // ⓒ 화면 조회
@@ -137,6 +160,6 @@ for (const [f, call] of [
   }
 }
 
-console.log(`[작업·청소 지출 결제수단] 축 ⓐ 정본 · ⓑ 쓰기 ${WRITERS.length}곳 · ⓒ 화면 조회 · ⓓ 완료 폼 · ⓔ 등록 / 위반 ${fails.length}건`)
+console.log(`[작업·청소 지출 결제수단] 축 ⓐ 정본 · ⓑ 쓰기 ${WRITERS.length}곳 · ⓒ 화면 조회 · ⓓ 완료 폼 · ⓔ 등록 · ⓕ 한 건 수정 바뀐 칸만·조건부 / 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 process.exit(fails.length ? 1 : 0)

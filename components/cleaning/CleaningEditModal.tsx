@@ -10,7 +10,7 @@
 // 관리 메뉴는 완료 적용취소·안 하기로·안 함 적용취소·삭제이고 확인창·토스트는 종전 행의 것 그대로다.
 
 import { useEffect, useId, useState } from 'react'
-import { RecordEditShell, recordEditUndoAction, type RecordManageItem } from '@/components/ui/RecordEditShell'
+import { RecordEditShell, recordEditUndoAction, confirmDiscardEdits, withDirtyNote, type RecordManageItem } from '@/components/ui/RecordEditShell'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import CategorySelect from '@/components/ui/CategorySelect'
@@ -21,7 +21,7 @@ import { PayMethodField } from '@/components/finance/PayMethodField'
 import { useWorkPay } from '@/components/work/useWorkPay'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtMDDay } from '@/lib/fmtDate'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import {
@@ -51,6 +51,8 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
   const uid = useId()
   const fundWhyId = `${uid}-fund-why`
   const done = r.status === 'DONE'
+  // 연 순간의 버전(updatedAt). 열린 동안 부모가 목록을 다시 읽어도 이 값으로 견준다(독립 검수 권고 4·B3).
+  const [opened] = useState(() => ({ updatedAt: r.updatedAt, expenseUpdatedAt: r.expenseUpdatedAt }))
   const init = {
     date: (done ? r.doneDate : r.scheduledDate) ?? '',
     reason: r.reason,
@@ -78,7 +80,7 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
   const fund = fundProp !== undefined ? fundProp : localFund
 
   const payAsked = done && cost > 0
-  const pay = useWorkPay({ kind: 'cleaning', enabled: payAsked, vendor: performer === 'SELF' ? '' : name, vendors: recentPerformers, known: r.cost ? { payMethod: r.payMethod, financialAccountId: r.financialAccountId } : null })
+  const pay = useWorkPay({ kind: 'cleaning', enabled: payAsked, vendor: performer === 'SELF' ? '' : name, vendors: recentPerformers, known: r.cost ? { payMethod: r.payMethod, financialAccountId: r.financialAccountId } : null, existing: !!r.cost })
   // 부담 칸은 퇴실 청소에만 선다. 이미 부담 표식이 붙은 건은 사유를 바꿔도 끌 수 있게 남긴다.
   const fundShown = done && (reason === 'CHECKOUT' || r.fromCleaningFund)
   const fundBlocked = done && r.fromCleaningFund && reason !== 'CHECKOUT' && useFund
@@ -96,7 +98,7 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
     // 까닭은 사유 칸 아래 캡션이 말한다. 여기는 푸는 법만 보탠다(§27.8 ⑤).
     : fundBlocked ? '받아둔 청소비로 부담을 끄거나 사유를 퇴실 청소로 두면 저장할 수 있습니다.'
     : null
-  const subtitle = `${fmtRoomNo(r.roomNo)} · ${init.date ? `${STATUS_WORD[r.status]} ${fmtMDDay(init.date)}` : '예정일 미정'}`
+  const subtitle = `${fmtRoomNo(r.roomNo)} · ${init.date ? `${STATUS_WORD[r.status]} ${fmtDateDot(init.date)}` : '예정일 미정'}`
 
   const save = async () => {
     if (pending || saveReason) return
@@ -113,9 +115,10 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
     const release = trackSave()
     try {
       const res = await updateCleaning({
-        id: r.id, expectedUpdatedAt: r.updatedAt, date: date || null, reason: reasonChanged ? reason : r.reason, addReasonToList: reasonChanged && reasonToList, memo,
+        id: r.id, expectedUpdatedAt: opened.updatedAt, expenseUpdatedAt: opened.expenseUpdatedAt, date: date || null, reason: reasonChanged ? reason : r.reason, addReasonToList: reasonChanged && reasonToList, memo,
         ...(done ? {
-          performer, performerName: performer === 'SELF' ? null : name, cost,
+          // 걸린 지출이 있으면 비용은 바꿨을 때만 싣는다(지출 화면에서 먼저 고친 금액을 연 값으로 되돌리지 않게, B3).
+          performer, performerName: performer === 'SELF' ? null : name, ...(r.cost && cost === init.cost ? {} : { cost }),
           fromCleaningFund: fundShown ? useFund && reason === 'CHECKOUT' && cost > 0 : false,
           ...(payAsked ? pay.payload : {}),
         } : {}),
@@ -140,23 +143,25 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
     } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') } finally { release() }
   }
   const manage: RecordManageItem[] = [
-    ...(r.status === 'PLANNED' ? [{ key: 'skip', label: '안 하기로', onSelect: async () => {
-      if (!(await confirmDialog({ title: '이 청소를 안 하기로 할까요?', message: "기록은 남고 상태만 바뀝니다. 관리 메뉴의 '안 함 적용취소'로 되돌릴 수 있습니다.", confirmLabel: '안 하기로', level: 'caution' }))) return
+    ...(r.status === 'PLANNED' ? [{ key: 'skip', label: '안 하기로', onSelect: async (dirty: boolean) => {
+      if (!(await confirmDialog({ title: '이 청소를 안 하기로 할까요?', message: withDirtyNote("기록은 남고 상태만 바뀝니다. 관리 메뉴의 '안 함 적용취소'로 되돌릴 수 있습니다.", dirty), confirmLabel: '안 하기로', level: 'caution' }))) return
       void runManage(() => skipCleaning(r.id), '안 하기로 표시됨')
     } }] : []),
     // §16 라벨은 '적용취소' 단일. 완료와 안 함 두 곳에서 뜨니 명사를 보강한다. 지출이 남았는지는 서버가 돌려준 expenseKept 로 말한다.
-    ...(r.status !== 'PLANNED' ? [{ key: 'reopen', label: r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소', onSelect: () => {
+    ...(r.status !== 'PLANNED' ? [{ key: 'reopen', label: r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소', onSelect: async (dirty: boolean) => {
       const what = r.status === 'DONE' ? '완료' : '안 함'
+      // 확인창이 없던 항목이라 고친 상태일 때만 한 번 묻는다(권고 6).
+      if (!(await confirmDiscardEdits(dirty, `${what} 적용취소`))) return
       void runManage(() => reopenCleaning(r.id), res => res.expenseKept ? `${what} 적용취소됨 · 기록된 지출은 그대로 남습니다` : `${what} 적용취소됨`)
     } }] : []),
-    { key: 'delete', label: '삭제', danger: true, onSelect: async () => {
+    { key: 'delete', label: '삭제', danger: true, onSelect: async (dirty: boolean) => {
       // 지출이 걸려 있으면 문구를 가른다(결함 D1). 삭제는 청소 기록만 지우고 지출은 남긴다.
       const linkedCost = r.cost != null && r.cost > 0 ? r.cost : null
       if (!(await confirmDialog({
         title: '이 청소 기록을 삭제할까요?',
-        message: linkedCost != null
+        message: withDirtyNote(linkedCost != null
           ? `기록이 목록에서 사라집니다. 함께 기록된 지출 ${fmtWon(linkedCost)}은 지출 관리에 그대로 남습니다.`
-          : '기록이 목록에서 사라집니다.',
+          : '기록이 목록에서 사라집니다.', dirty),
         confirmLabel: '삭제', level: 'danger',
       }))) return
       void runManage(() => deleteCleaning(r.id), '삭제됨', { run: () => restoreCleaning(r.id), msg: '청소 기록을 복원했습니다', fail: '복원 중 통신 오류가 발생했습니다' })
@@ -210,7 +215,7 @@ export function CleaningEditModal({ row: r, z, fund: fundProp, recentPerformers,
             <p className={LABEL_CLS}>비용</p>
             <MoneyInput value={cost} onChange={setCost} />
             <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-muted)] break-keep">
-              {r.cost ? '걸린 지출의 금액·업체·결제수단을 함께 고칩니다. 0으로 두면 지출은 남기고 연결만 끊습니다.' : '적으면 지출이 함께 기록되어 그 방 비용에 잡힙니다.'}
+              {r.cost ? '걸린 지출에서 바꾼 칸(날짜·금액·업체·결제수단)만 함께 고칩니다. 0으로 두면 지출은 남기고 연결만 끊습니다.' : '적으면 지출이 함께 기록되어 그 방 비용에 잡힙니다.'}
             </p>
           </div>
           {payAsked && pay.ready && (

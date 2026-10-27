@@ -25,8 +25,8 @@ import { type CleaningPerformer, WORK_EXPENSE_CATEGORY } from './cleaningConstan
 import { matchesWork } from '@/lib/roomWorkMatch'
 import { autoOptionForSave } from '@/lib/reasonListSave'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { settleStatusForNew, settleStatusForEdit } from '@/lib/settleStatus'
-import { resolveWorkPay } from '@/lib/workPayDefault'
+import { settleStatusForNew } from '@/lib/settleStatus'
+import { resolveWorkPay, settleStatusForPayEdit } from '@/lib/workPayDefault'
 import { expenseSnapOf, EXPENSE_SNAP_SELECT, signRoomRecordEdit } from '@/lib/roomRecordEditSign'
 import { ROOM_RECORD_STALE, type RoomRecordEditUndo, type RecordSnap } from '@/lib/roomRecordEditUndo'
 
@@ -76,7 +76,13 @@ export type RoomWorkRow = {
    * 2026-08-28 — "비용을 넣어도 새로 안만들거면 그냥 미리 금액을 넣어주고 업체나 사람도
    * 미리 넣어주면 되는거 아냐?"
    */
-  linkedExpenses: { id: string; amount: number; label: string; vendor: string | null; payMethod: string | null; financialAccountId: string | null }[]
+  linkedExpenses: {
+    id: string; amount: number; label: string; vendor: string | null; payMethod: string | null; financialAccountId: string | null
+    /** 시공(공임) 줄인가 — 한 건 수정의 시공비 칸은 시공 줄이 하나일 때만 그 줄을 고친다(자재 줄은 읽기 전용, 독립 검수 B2). */
+    labor: boolean
+    /** 그 지출의 마지막 고친 시각(ISO). 수정 폼이 연 뒤 지출 화면에서 바뀌었는지 서버가 견준다(독립 검수 B3). */
+    updatedAt: string
+  }[]
   /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
   materialCost: number
   expenseCount: number
@@ -102,7 +108,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true, deletedAt: true, updatedAt: true, estimateAmount: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true, updatedAt: true } },
     },
   })
   return rows.map(r => {
@@ -120,6 +126,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
         payMethod: e.payMethod, financialAccountId: e.financialAccountId,
+        labor: isLaborItem(e.itemLabel, e.detail, e.costKind), updatedAt: e.updatedAt.toISOString(),
       })),
     }
   })
@@ -136,7 +143,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true, updatedAt: true, estimateAmount: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true, updatedAt: true } },
     },
   })
   return rows.map(r => {
@@ -153,6 +160,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
         payMethod: e.payMethod, financialAccountId: e.financialAccountId,
+        labor: isLaborItem(e.itemLabel, e.detail, e.costKind), updatedAt: e.updatedAt.toISOString(),
       })),
     }
   })
@@ -319,12 +327,13 @@ export async function completeRoomWork(input: {
         if (cost > 0 && cost !== only.amount) next.amount = cost
         const name = input.performerName?.trim() || null
         if (name !== (only.vendor ?? null)) next.vendor = name
-        // 결제수단 — 화면이 고른 값이 있거나 지출이 비어 있을 때만 바꾼다. 정산상태는 고치는 경로 정본(카드에서 카드면 지금 상태를 지킨다).
-        if ((sentPay || !only.payMethod) && (pay.payMethod !== only.payMethod || pay.financialAccountId !== only.financialAccountId)) {
+        // 결제수단 — 화면이 그 칸을 골라 보냈을 때만 바꾼다(독립 검수 B1). 옛 지출의 빈 결제수단을 기본값으로 덮지 않는다(그 정리는 백필 몫).
+        // 정산상태는 정본(카드에서 카드면 지금 상태 유지), 옛 값이 비어 있었으면 지금 상태를 지킨다(settleStatusForPayEdit).
+        if (sentPay && (pay.payMethod !== only.payMethod || pay.financialAccountId !== only.financialAccountId)) {
           next.payMethod = pay.payMethod
           next.financialAccountId = pay.financialAccountId
           next.financeName = pay.financeName
-          next.settleStatus = settleStatusForEdit({ prevPayMethod: only.payMethod, nextPayMethod: pay.payMethod, current: only.settleStatus, isShipping: only.isShipping })
+          next.settleStatus = settleStatusForPayEdit({ prevPayMethod: only.payMethod, nextPayMethod: pay.payMethod, current: only.settleStatus, isShipping: only.isShipping })
         }
         if (Object.keys(next).length > 0) await tx.expense.update({ where: { id: only.id, propertyId }, data: next })
       }
@@ -456,7 +465,9 @@ export async function setExpenseCostKind(expenseId: string, costKind: 'LABOR' | 
  */
 export async function updateWorkExpense(input: {
   workId: string; expenseId: string; amount?: number; vendor?: string | null
-}): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | { ok: false; error: string }> {
+  /** 화면이 그 줄을 읽었을 때의 지출 updatedAt(ISO). 그사이 지출 화면에서 바뀌었으면 거부한다(독립 검수 B3). */
+  expectedUpdatedAt: string
+}): Promise<{ ok: true; undo: RoomRecordEditUndo | null; updatedAt: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
@@ -470,14 +481,20 @@ export async function updateWorkExpense(input: {
       data.amount = Math.round(input.amount)
     }
     if (input.vendor !== undefined) data.vendor = input.vendor?.trim() || null
-    if (Object.keys(data).length === 0) return { ok: true, undo: null }
+    // 실제로 바뀐 칸만 쓴다(독립 검수 B1·B2 와 같은 원칙).
+    if (data.amount === cur.amount) delete data.amount
+    if (data.vendor !== undefined && data.vendor === cur.vendor) delete data.vendor
+    if (Object.keys(data).length === 0) return { ok: true, undo: null, updatedAt: cur.updatedAt.toISOString() }
+    if (!input.expectedUpdatedAt || cur.updatedAt.toISOString() !== input.expectedUpdatedAt) return { ok: false, error: ROOM_RECORD_STALE }
     const before = expenseSnapOf(cur)
-    // 조건부 쓰기 — 읽은 뒤 그사이 이 줄이 바뀌었으면 안 쓴다.
-    const r = await prisma.expense.updateMany({ where: { id: cur.id, propertyId, roomWorkId: work.id, amount: cur.amount, vendor: cur.vendor }, data })
+    // 조건부 쓰기 — 화면이 읽은 뒤 그사이 이 줄이 바뀌었으면 안 쓴다.
+    const r = await prisma.expense.updateMany({ where: { id: cur.id, propertyId, roomWorkId: work.id, updatedAt: cur.updatedAt }, data })
     if (r.count === 0) return { ok: false, error: ROOM_RECORD_STALE }
-    const after = { ...before, ...data }
+    const fresh = await prisma.expense.findFirst({ where: { id: cur.id, propertyId }, select: EXPENSE_SNAP_SELECT })
+    if (!fresh) return { ok: false, error: ROOM_RECORD_STALE }
+    const after = expenseSnapOf(fresh)
     revalidatePath('/room-manage'); revalidatePath('/finance')
-    return { ok: true, undo: signRoomRecordEdit(propertyId, { kind: 'work-expense', id: work.id, before: {}, after: {}, expense: { before, after } }) }
+    return { ok: true, updatedAt: fresh.updatedAt.toISOString(), undo: signRoomRecordEdit(propertyId, { kind: 'work-expense', id: work.id, before: {}, after: {}, expense: { before, after } }) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
   }
@@ -512,7 +529,10 @@ const PERFORMER_VALUES: readonly string[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
  *
  * 칸. 예정 건은 예정일(비울 수 있다)·종류·담당·업체·메모. 완료 건은 완료일(미래 거부)·종류·수행자·업체·메모와 시공비·결제수단.
  * 시공비(완료 건만, cost 를 실었을 때만).
- *   · 걸린 지출 1건 — 그 지출의 금액·업체(=업체 이름)·결제수단을 고친다. 지출 날짜는 안 옮긴다(작업 날짜와 지출 날짜는 다른 축, 종전 날짜 변경과 같다).
+ *   · 시공 줄 1건(costExpenseId) — 그 지출의 금액·업체(=업체 이름)·결제수단 중 **실제로 바뀐 칸만** 쓴다(독립 검수 B1·B2). 메모만 고친 저장은
+ *     지출을 한 바이트도 안 바꾼다. 업체는 수행자 이름을 바꿨을 때만, 결제수단은 화면이 그 칸을 골라 보냈을 때만 쓴다. 화면이 읽은 지출 updatedAt 과
+ *     다르면 거부한다(지출 화면에서 먼저 고친 값을 옛 값으로 되돌리지 않게, B3). 자재 줄은 이 칸으로 안 고친다(읽기 전용, 줄 고치기).
+ *     지출 날짜는 안 옮긴다(작업 날짜와 지출 날짜는 다른 축, 종전 날짜 변경과 같다).
  *     지출 품목명이 정확히 '{옛 종류} 시공' 이면(완료가 만든 줄) 새 종류로 품목명·내역을 고친다(결정 6). 손으로 적은 이름은 안 건드린다.
  *     0원은 받지 않는다(지출을 지우는 판단은 지출 화면 몫이다).
  *   · 여러 건 — 금액 칸을 받지 않는다(어느 줄의 돈인지 모른다, 결정 7). 줄마다 updateWorkExpense 로 고친다.
@@ -530,6 +550,11 @@ export async function updateRoomWork(input: {
   performerName?: string | null
   memo?: string | null
   cost?: number | null
+  /** 시공비 칸이 고치는 시공 줄(걸린 시공 지출이 하나일 때). 없으면 시공비는 새 지출(걸린 지출이 없을 때만)이다. */
+  costExpenseId?: string | null
+  /** 화면이 그 시공 줄을 읽었을 때의 지출 updatedAt(ISO, B3). */
+  costExpenseUpdatedAt?: string | null
+  /** 결제수단 — 이미 있는 지출이면 화면이 그 칸을 골랐을 때만 싣는다(B1). 새 지출이면 화면이 보인 기본값을 싣는다. */
   payMethod?: string | null
   financialAccountId?: string | null
   /** 견적 금액(원). 안 실으면 그대로, 0 이하·null 이면 지운다. 지출과 무관하다(3단계, 2026-10-27). */
@@ -544,7 +569,7 @@ export async function updateRoomWork(input: {
         id: true, roomId: true, kind: true, status: true, scheduledDate: true, doneDate: true,
         performer: true, performerName: true, memo: true, updatedAt: true, estimateAmount: true,
         room: { select: { roomNo: true } },
-        expenses: { select: { ...EXPENSE_SNAP_SELECT, isShipping: true } },
+        expenses: { select: { ...EXPENSE_SNAP_SELECT, isShipping: true, costKind: true } },
       },
     })
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
@@ -579,9 +604,18 @@ export async function updateRoomWork(input: {
     const wantsCost = input.cost != null
     if (wantsCost && !done) return { ok: false, error: '예정 작업에는 시공비를 적지 않습니다. 완료 처리에서 적습니다.' }
     const cost = wantsCost ? Math.max(0, Math.round(Number(input.cost) || 0)) : 0
-    if (wantsCost && cur.expenses.length > 1) return { ok: false, error: `이 작업에는 지출 ${cur.expenses.length}건이 걸려 있어 금액은 줄마다 고칩니다.` }
-    if (wantsCost && cur.expenses.length === 1 && cost <= 0) return { ok: false, error: '시공비를 0원으로 바꾸려면 지출 화면에서 그 지출을 지웁니다.' }
-    if (wantsCost && cur.expenses.length === 0 && cost > 0) {
+    const laborLines = cur.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind))
+    // 화면은 시공 줄이 있으면 그 줄(costExpenseId)을 늘 싣고, 시공비는 바꿨을 때만 싣는다(연 값과 같으면 안 싣는다).
+    const target = done && input.costExpenseId ? cur.expenses.find(e => e.id === input.costExpenseId) ?? null : null
+    if (input.costExpenseId) {
+      if (!done) return { ok: false, error: '예정 작업에는 시공비를 적지 않습니다. 완료 처리에서 적습니다.' }
+      // 고칠 줄은 이 작업에 걸린 **유일한 시공 줄**이어야 한다. 자재 줄은 이 칸으로 안 고친다(B2).
+      if (!target || laborLines.length !== 1 || laborLines[0].id !== target.id) return { ok: false, error: '이 작업의 시공비 줄이 바뀌었습니다. 창을 닫고 다시 열어 주세요.' }
+      if (wantsCost && cost <= 0) return { ok: false, error: '시공비를 0원으로 바꾸려면 지출 화면에서 그 지출을 지웁니다.' }
+    } else if (wantsCost && cur.expenses.length > 0) {
+      return { ok: false, error: `이 작업에는 지출 ${cur.expenses.length}건이 걸려 있어 금액은 줄마다 고칩니다.` }
+    }
+    if (wantsCost && !target && cost > 0) {
       const free = await prisma.expense.findMany({
         where: { propertyId, roomId: cur.roomId, roomWorkId: null, date: date! },
         select: { id: true, date: true, amount: true, itemLabel: true, detail: true, vendor: true, roomId: true, roomWorkId: true },
@@ -590,13 +624,39 @@ export async function updateRoomWork(input: {
         return { ok: false, error: '같은 날 이 방에 이미 적어 둔 시공 지출이 있습니다. 완료를 적용취소한 뒤 다시 완료하면 그 지출을 걸 수 있습니다.' }
       }
     }
-    const touchExpense = wantsCost && (cur.expenses.length === 1 || cost > 0)
     const sentPay = !!input.payMethod?.trim()
-    const payRes = touchExpense
+    // 결제수단 확정이 필요한 때 — 새 지출을 만들 때, 또는 있는 시공 줄에 화면이 결제수단을 골라 보냈을 때.
+    const creating = wantsCost && !target && cost > 0
+    const payRes = creating || (target && sentPay)
       ? await resolveWorkPay(prisma, propertyId, { payMethod: input.payMethod, financialAccountId: input.financialAccountId, vendor: name, category: WORK_EXPENSE_CATEGORY })
       : null
     if (payRes && !payRes.ok) return payRes
     const pay = payRes?.ok ? payRes.pay : null
+
+    // 있는 시공 줄에 쓸 칸 — 실제로 바뀐 것만(B1·B2). 비면 지출은 안 건드린다.
+    const next: {
+      amount?: number; vendor?: string | null; itemLabel?: string; detail?: string
+      payMethod?: string; financialAccountId?: string | null; financeName?: string | null; settleStatus?: 'SETTLED' | 'UNSETTLED'
+    } = {}
+    if (target) {
+      if (wantsCost && cost !== target.amount) next.amount = cost
+      // 업체는 수행자 이름을 바꿨을 때만 따라간다. 지출 화면에서 고친 업체를 메모 저장이 덮지 않는다.
+      if (name !== (cur.performerName ?? null) && name !== target.vendor) next.vendor = name
+      // 완료가 만든 시공 줄이면 종류 이름을 따라간다(결정 6). 손으로 적은 품목명은 그대로다.
+      if (kind !== cur.kind && target.itemLabel === `${cur.kind} 시공`) {
+        next.itemLabel = `${kind} 시공`
+        next.detail = `${fmtRoomNo(cur.room.roomNo, '')} ${kind}${name ? ` · ${name}` : ''}`
+      }
+      if (pay && (pay.payMethod !== target.payMethod || pay.financialAccountId !== target.financialAccountId)) {
+        next.payMethod = pay.payMethod
+        next.financialAccountId = pay.financialAccountId
+        next.financeName = pay.financeName
+        next.settleStatus = settleStatusForPayEdit({ prevPayMethod: target.payMethod, nextPayMethod: pay.payMethod, current: target.settleStatus, isShipping: target.isShipping })
+      }
+    }
+
+    // 쓸 칸이 있을 때만 화면이 읽은 그 지출 그대로인지 본다(B3). 바뀐 칸이 없으면 지출 화면에서 먼저 고친 값이 그대로 남는다.
+    if (target && Object.keys(next).length > 0 && (!input.costExpenseUpdatedAt || target.updatedAt.toISOString() !== input.costExpenseUpdatedAt)) return { ok: false, error: ROOM_RECORD_STALE }
 
     const before = workSnapOf(cur)
     const after = workSnapOf({ kind, scheduledDate: done ? cur.scheduledDate : date, doneDate: done ? date : cur.doneDate, performer, performerName: name, memo, estimateAmount })
@@ -613,29 +673,16 @@ export async function updateRoomWork(input: {
         },
       })
       if (w.count !== 1) throw new Error(ROOM_RECORD_STALE)
-      if (!touchExpense || !pay) return
-      if (cur.expenses.length === 1) {
-        const only = cur.expenses[0]
-        const next: {
-          amount: number; vendor: string | null; itemLabel?: string; detail?: string
-          payMethod?: string; financialAccountId?: string | null; financeName?: string | null; settleStatus?: 'SETTLED' | 'UNSETTLED'
-        } = { amount: cost, vendor: name }
-        // 완료가 만든 시공 줄이면 종류 이름을 따라간다(결정 6). 손으로 적은 품목명은 그대로다.
-        if (kind !== cur.kind && only.itemLabel === `${cur.kind} 시공`) {
-          next.itemLabel = `${kind} 시공`
-          next.detail = `${fmtRoomNo(cur.room.roomNo, '')} ${kind}${name ? ` · ${name}` : ''}`
-        }
-        // 결제수단 — 화면이 고른 값이 있거나 지출이 비어 있을 때만 바꾼다. 정산상태는 고치는 경로 정본.
-        if ((sentPay || !only.payMethod) && (pay.payMethod !== only.payMethod || pay.financialAccountId !== only.financialAccountId)) {
-          next.payMethod = pay.payMethod
-          next.financialAccountId = pay.financialAccountId
-          next.financeName = pay.financeName
-          next.settleStatus = settleStatusForEdit({ prevPayMethod: only.payMethod, nextPayMethod: pay.payMethod, current: only.settleStatus, isShipping: only.isShipping })
-        }
-        const e = await tx.expense.update({ where: { id: only.id, propertyId }, data: next, select: EXPENSE_SNAP_SELECT })
-        expense = { before: expenseSnapOf(only), after: expenseSnapOf(e) }
+      if (target && Object.keys(next).length > 0) {
+        // 화면이 읽은 그 지출 그대로일 때만 쓴다(B3). 아니면 전부 되감는다.
+        const e = await tx.expense.updateMany({ where: { id: target.id, propertyId, roomWorkId: cur.id, updatedAt: target.updatedAt }, data: next })
+        if (e.count !== 1) throw new Error(ROOM_RECORD_STALE)
+        const fresh = await tx.expense.findFirst({ where: { id: target.id, propertyId }, select: EXPENSE_SNAP_SELECT })
+        if (!fresh) throw new Error(ROOM_RECORD_STALE)
+        expense = { before: expenseSnapOf(target), after: expenseSnapOf(fresh) }
         return
       }
+      if (!creating || !pay) return
       const e = await tx.expense.create({
         data: {
           propertyId, date: date!, amount: cost,

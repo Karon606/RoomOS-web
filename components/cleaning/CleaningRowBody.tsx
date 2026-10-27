@@ -249,7 +249,7 @@ export function CleaningRowBody({
             ))}
           </div>
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            완료일
+            <span className="w-14 shrink-0">완료일</span>
             {/* 정본 DatePicker — 앞으로 한 청소는 없으므로 오늘까지만 고를 수 있다. */}
             <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className={DENSE_DATE_CLS} />
           </div>
@@ -271,7 +271,7 @@ export function CleaningRowBody({
           {/* 비용을 적으면 지출이 함께 만들어져 그 방 비용에 잡힌다. 비우면 지출을 안 만든다.
               직접 청소에도 이 칸이 뜬다 — 노동은 공짜여도 세제·용품값은 실제로 나간 돈이다. */}
           <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            비용
+            <span className="w-14 shrink-0">비용</span>
             <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(e.target.value)}
               placeholder="0" min={0}
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
@@ -354,7 +354,7 @@ export function CleaningRowBody({
                   // 연결이 끊기고 그 지출이 고아가 된다 — 걸려 있는 금액을 그대로 채워 둔다.
                   setCost(r.cost ? String(r.cost) : '')
                   // 걸린 지출의 결제수단이 있으면 그것이 처음 값이다(없으면 업체를 따라가는 기본값).
-                  pay.reset(r.cost ? { payMethod: r.payMethod, financialAccountId: r.financialAccountId } : null)
+                  pay.reset(r.cost ? { payMethod: r.payMethod, financialAccountId: r.financialAccountId } : null, !!r.cost)
                   // 잔고를 안 받아 왔으면 지금 받는다(교차 목록은 방마다 달라 미리 다 받으면 방 수만큼 조회다).
                   let f = fundProp
                   if (f === undefined) {

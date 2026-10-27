@@ -27,6 +27,8 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
 }) {
   const uid = useId()
   const options = payMethod && !methods.includes(payMethod) ? [payMethod, ...methods] : methods
+  // 이미 있는 지출의 결제수단이 비어 있으면 빈 칸으로 보인다(고르기 전에는 아무것도 저장하지 않는다, 독립 검수 B1).
+  const blank = payMethod === ''
   const types = payMethod ? accountTypesFor(payMethod, accounts) : null
   const pickable = types ? accounts.filter(a => types.includes(a.type)) : []
   const accLabel = types ? ACCOUNT_LABEL[types[0]] : ''
@@ -36,15 +38,16 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-          <label htmlFor={`${uid}-m`} className="shrink-0">결제수단</label>
+          <label htmlFor={`${uid}-m`} className="w-14 shrink-0">결제수단</label>
           <select id={`${uid}-m`} value={payMethod} disabled={disabled}
             onChange={e => onChange(e.target.value, '')} className={cls}>
+            {blank && <option value="">비어 있음</option>}
             {options.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         {pickable.length > 0 && (
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            <label htmlFor={`${uid}-a`} className="shrink-0">{accLabel}</label>
+            <label htmlFor={`${uid}-a`} className="w-14 shrink-0">{accLabel}</label>
             <select id={`${uid}-a`} value={accountId} disabled={disabled}
               onChange={e => onChange(payMethod, e.target.value)} className={cls}>
               <option value="">선택 안함</option>
@@ -63,6 +66,7 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
         <label htmlFor={`${uid}-m`} className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
         <select id={`${uid}-m`} value={payMethod} disabled={disabled}
           onChange={e => onChange(e.target.value, '')} className={cls}>
+          {blank && <option value="">비어 있음</option>}
           {options.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>

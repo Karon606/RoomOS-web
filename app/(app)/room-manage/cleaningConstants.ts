@@ -69,6 +69,8 @@ export type CleaningRow = {
   /** 걸린 지출의 결제수단·결제 계정. 지출이 없으면 null. 다시 완료하는 폼이 아는 값을 미리 채운다(2026-10-27). */
   payMethod: string | null
   financialAccountId: string | null
+  /** 걸린 지출의 마지막 고친 시각(ISO). 한 건 수정이 그 지출에 쓸 때 견준다(독립 검수 B3). */
+  expenseUpdatedAt: string | null
   fromCleaningFund: boolean
   // 소프트삭제 시각. 살아 있는 행은 null 이다.
   // 영업장 목록 조회만 삭제분을 함께 실어 온다 — 복원 진입점('삭제됨 보기')이 그 화면에 있고,

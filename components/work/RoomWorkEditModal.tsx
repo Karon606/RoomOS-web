@@ -8,7 +8,7 @@
 // 지출 날짜는 옮기지 않는다(자재를 여러 날 산 것까지 걸린다). 관리 메뉴는 완료 적용취소(완료 건)·삭제다. 확인창·토스트는 종전 행의 것 그대로다.
 
 import { useEffect, useId, useState } from 'react'
-import { RecordEditShell, recordEditUndoAction, type RecordManageItem } from '@/components/ui/RecordEditShell'
+import { RecordEditShell, recordEditUndoAction, withDirtyNote, type RecordManageItem } from '@/components/ui/RecordEditShell'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -19,7 +19,7 @@ import { PayMethodField } from '@/components/finance/PayMethodField'
 import { useWorkPay } from '@/components/work/useWorkPay'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtMDDay } from '@/lib/fmtDate'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import {
@@ -38,7 +38,7 @@ const PLANNED_PERFORMERS: (CleaningPerformer | '')[] = ['', 'SELF', 'VENDOR', 'T
 
 /** 걸린 지출 한 줄 금액·업체 고치기 — 여러 건 걸린 작업에서만 선다. 저장하면 바로 그 줄만 고치고 토스트 [적용취소] 가 있다. */
 function LinkedExpenseLine({ workId, line, kind, onSaved }: {
-  workId: string; line: RoomWorkRow['linkedExpenses'][number]; kind: string; onSaved: (next: { amount: number; vendor: string | null }) => void
+  workId: string; line: RoomWorkRow['linkedExpenses'][number]; kind: string; onSaved: (next: { amount: number; vendor: string | null; updatedAt?: string }) => void
 }) {
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState(line.amount)
@@ -61,10 +61,11 @@ function LinkedExpenseLine({ workId, line, kind, onSaved }: {
     setBusy(true)
     const release = trackSave()
     try {
-      const res = await updateWorkExpense({ workId, expenseId: line.id, amount, vendor })
+      // 화면이 읽은 그 줄(updatedAt) 그대로일 때만 쓴다. 그사이 지출 화면에서 바뀌었으면 서버가 거부한다(독립 검수 B3).
+      const res = await updateWorkExpense({ workId, expenseId: line.id, amount, vendor, expectedUpdatedAt: line.updatedAt })
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', `'${line.label}' 지출을 고쳤습니다`, recordEditUndoAction(res.undo, `'${line.label}' 지출`, () => onSaved({ amount: line.amount, vendor: line.vendor })))
-      onSaved({ amount, vendor: vendor.trim() || null })
+      onSaved({ amount, vendor: vendor.trim() || null, updatedAt: res.updatedAt })
       setOpen(false)
     } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') } finally { release(); setBusy(false) }
   }
@@ -90,8 +91,14 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
 }) {
   const uid = useId()
   const done = r.status === 'DONE'
-  const only = r.linkedExpenses.length === 1 ? r.linkedExpenses[0] : null
-  const many = r.linkedExpenses.length > 1
+  // 시공비 칸이 고치는 줄 — 걸린 시공(공임) 줄이 **하나**일 때만 그 줄이다(독립 검수 B2). 자재 줄은 시공비 칸으로 안 고치고
+  // 아래 읽기 전용 줄 목록(줄마다 금액·업체 고치기)에 선다. 시공 줄이 둘 이상이어도 줄 목록이다.
+  const laborLines = r.linkedExpenses.filter(e => e.labor)
+  const only = laborLines.length === 1 ? laborLines[0] : null
+  const otherLines = r.linkedExpenses.filter(e => e.id !== only?.id)
+  const costField = done && (!!only || r.linkedExpenses.length === 0)
+  // 연 순간의 버전(updatedAt). 열린 동안 부모가 목록을 다시 읽어도 이 값으로 견준다(독립 검수 권고 4).
+  const [opened] = useState(() => ({ updatedAt: r.updatedAt, costExpenseId: only?.id ?? null, costExpenseUpdatedAt: only?.updatedAt ?? null }))
   const init = {
     date: (done ? r.doneDate : r.scheduledDate) ?? '',
     kind: r.kind,
@@ -110,13 +117,14 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
   const [cost, setCost] = useState(init.cost)
   const [memo, setMemo] = useState(init.memo)
   const [estimate, setEstimate] = useState(init.estimate)
-  const [lines, setLines] = useState(r.linkedExpenses)
+  const [lines, setLines] = useState(otherLines)
   const [pending, setPending] = useState(false)
   useEffect(() => { getWorkKindOptions().then(setKinds).catch(() => setKinds([])) }, [])
 
   const showName = done || (performer !== '' && performer !== 'SELF')
-  const payAsked = done && !many && cost > 0
-  const pay = useWorkPay({ kind: 'work', enabled: payAsked, vendor: name, vendors: recentPerformers, known: only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null })
+  const payAsked = costField && cost > 0
+  // 이미 있는 시공 줄이면 결제수단 칸을 건드렸을 때만 싣는다(B1). 새로 만들 지출이면 보인 기본값을 싣는다.
+  const pay = useWorkPay({ kind: 'work', enabled: payAsked, vendor: name, vendors: recentPerformers, known: only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null, existing: !!only })
 
   const dirty = date !== init.date || kind !== init.kind || performer !== (init.performer || (done ? 'VENDOR' : '')) || name !== init.name
     || cost !== init.cost || memo !== init.memo || estimate !== init.estimate || pay.changed
@@ -125,7 +133,8 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
     : done && only && cost <= 0 ? '걸린 지출이 있어 시공비를 0원으로 둘 수 없습니다 · 지출을 지우려면 지출 화면에서 지우면 됩니다.'
     : null
   const statusWord = done ? '완료' : '예정'
-  const subtitle = `${fmtRoomNo(r.roomNo)} · ${init.date ? `${statusWord} ${fmtMDDay(init.date)}` : '예정일 미정'}`
+  // 날짜는 정본 ReasonEditModal 과 같은 fmtDateDot(권고 9).
+  const subtitle = `${fmtRoomNo(r.roomNo)} · ${init.date ? `${statusWord} ${fmtDateDot(init.date)}` : '예정일 미정'}`
 
   const save = async () => {
     if (pending || saveReason) return
@@ -134,10 +143,15 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
     const release = trackSave()
     try {
       const res = await updateRoomWork({
-        id: r.id, expectedUpdatedAt: r.updatedAt, date: date || null, kind, addKindToList: kindToList,
+        id: r.id, expectedUpdatedAt: opened.updatedAt, date: date || null, kind, addKindToList: kindToList,
         performer: performer || null, performerName: showName ? name : null, memo,
         estimateAmount: estimate > 0 ? estimate : null,
-        ...(done && !many ? { cost, ...(payAsked ? pay.payload : {}) } : {}),
+        // 시공비 칸이 선 때만 싣는다. 있는 시공 줄이면 그 줄과 연 순간 버전을 함께(서버가 바뀐 칸만 쓴다, B1·B2·B3).
+        ...(costField ? {
+          // 있는 시공 줄이면 시공비는 바꿨을 때만 싣는다(서버가 지출 화면에서 먼저 고친 금액을 연 값으로 되돌리지 않게, B3).
+          ...(only ? { costExpenseId: opened.costExpenseId, costExpenseUpdatedAt: opened.costExpenseUpdatedAt, ...(cost !== init.cost ? { cost } : {}) } : { cost }),
+          ...(payAsked ? pay.payload : {}),
+        } : {}),
       })
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', `${kind} 기록을 고쳤습니다`, recordEditUndoAction(res.undo, `${kind} 기록`, onChanged))
@@ -159,18 +173,18 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
     } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') } finally { release() }
   }
   const manage: RecordManageItem[] = [
-    ...(done ? [{ key: 'reopen', label: '완료 적용취소', onSelect: async () => {
+    ...(done ? [{ key: 'reopen', label: '완료 적용취소', onSelect: async (dirty: boolean) => {
       if (!(await confirmDialog({
         title: `${r.kind} 완료를 적용취소할까요?`,
-        message: r.expenseCount > 0
+        message: withDirtyNote(r.expenseCount > 0
           ? `예정으로 되돌립니다. 걸린 지출 ${r.expenseCount}건은 그대로 남습니다. 다시 완료해도 두 벌이 안 생깁니다.`
-          : '예정으로 되돌립니다. 기록은 남습니다.',
+          : '예정으로 되돌립니다. 기록은 남습니다.', dirty),
         level: 'caution', confirmLabel: '적용취소',
       }))) return
       void runManage(() => reopenRoomWork(r.id), '완료를 적용취소했습니다')
     } }] : []),
-    { key: 'delete', label: '삭제', danger: true, onSelect: async () => {
-      if (!(await confirmDialog({ title: `${r.kind} 기록을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    { key: 'delete', label: '삭제', danger: true, onSelect: async (dirty: boolean) => {
+      if (!(await confirmDialog({ title: `${r.kind} 기록을 삭제할까요?`, ...(dirty ? { message: withDirtyNote('기록이 목록에서 사라집니다.', dirty) } : {}), level: 'caution', confirmLabel: '삭제' }))) return
       void runManage(() => deleteRoomWork(r.id), '작업 기록 삭제됨', () => restoreRoomWork(r.id), '삭제를 취소했습니다')
     } },
   ]
@@ -215,9 +229,26 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
         <p className={LABEL_CLS}>견적 금액 (선택)</p>
         <MoneyInput value={estimate} onChange={setEstimate} />
       </div>
-      {done && (many ? (
+      {costField && (
+        <>
+          <div className="space-y-1.5">
+            <p className={LABEL_CLS}>시공비</p>
+            <MoneyInput value={cost} onChange={setCost} />
+            {/* 여기 넣을 것은 시공비(이번에 새로 나간 돈)뿐이다. 자재는 살 때 이미 지출로 잡혔다(domain-room-work). */}
+            <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-muted)] break-keep">
+              {only
+                ? '걸린 시공 지출에서 바꾼 칸(금액·업체·결제수단)만 함께 고칩니다. 지출 날짜는 그대로입니다.'
+                : cost > 0 ? '지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요.' : '비워 두면 지출을 만들지 않습니다.'}
+            </p>
+          </div>
+          {payAsked && pay.ready && (
+            <PayMethodField methods={pay.methods} accounts={pay.accounts} payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
+          )}
+        </>
+      )}
+      {done && lines.length > 0 && (
         <div className="space-y-1.5">
-          <p className={LABEL_CLS}>걸린 지출 {lines.length}건</p>
+          <p className={LABEL_CLS}>{costField ? `그 밖의 걸린 지출 ${lines.length}건` : `걸린 지출 ${lines.length}건`}</p>
           <ul className="divide-y divide-[var(--warm-border)]/60">
             {lines.map(l => (
               <LinkedExpenseLine key={l.id} workId={r.id} line={l} kind={r.kind}
@@ -230,23 +261,7 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
               className="underline text-[var(--tc-text)] font-medium">지출 화면 열기</button>
           </p>
         </div>
-      ) : (
-        <>
-          <div className="space-y-1.5">
-            <p className={LABEL_CLS}>시공비</p>
-            <MoneyInput value={cost} onChange={setCost} />
-            {/* 여기 넣을 것은 시공비(이번에 새로 나간 돈)뿐이다. 자재는 살 때 이미 지출로 잡혔다(domain-room-work). */}
-            <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-muted)] break-keep">
-              {only
-                ? '걸린 지출의 금액·업체·결제수단을 함께 고칩니다. 지출 날짜는 그대로입니다.'
-                : cost > 0 ? '지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요.' : '비워 두면 지출을 만들지 않습니다.'}
-            </p>
-          </div>
-          {payAsked && pay.ready && (
-            <PayMethodField methods={pay.methods} accounts={pay.accounts} payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
-          )}
-        </>
-      ))}
+      )}
       <div className="space-y-1.5">
         <label className={LABEL_CLS} htmlFor={`${uid}-memo`}>메모 (선택)</label>
         <input id={`${uid}-memo`} type="text" value={memo} onChange={e => setMemo(e.target.value)} maxLength={500} placeholder="메모 (선택)" className={INPUT_CLS} />

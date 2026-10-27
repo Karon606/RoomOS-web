@@ -21,11 +21,26 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { usePopoverAnchor } from '@/components/ui/usePopoverAnchor'
 import { WhyCaption } from '@/components/ui/WhyCaption'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { undoRoomRecordEdit } from '@/app/(app)/room-manage/recordEditActions'
 import type { RoomRecordEditUndo } from '@/lib/roomRecordEditUndo'
 
-export type RecordManageItem = { key: string; label: string; onSelect: () => void; danger?: boolean }
+/**
+ * 관리 메뉴 한 줄. onSelect 는 폼을 고친 상태인지(dirty)를 받는다. 고친 상태면 확인창 문구에 RECORD_EDIT_DIRTY_NOTE 를 붙이고,
+ * 확인창이 없던 항목도 그때는 한 번 묻는다(독립 검수 권고 6). 항목을 실행하면 창이 닫혀 고친 내용이 저장되지 않기 때문이다.
+ */
+export type RecordManageItem = { key: string; label: string; onSelect: (dirty: boolean) => void; danger?: boolean }
+
+/** 고친 내용을 버리게 되는 관리 동작의 확인 문구에 붙는 한 줄. */
+export const RECORD_EDIT_DIRTY_NOTE = '고친 내용은 저장되지 않습니다.'
+/** 확인창이 없던 관리 항목을 고친 상태에서 실행할 때 한 번 묻는다. 고친 게 없으면 바로 참. */
+export async function confirmDiscardEdits(dirty: boolean, action: string): Promise<boolean> {
+  if (!dirty) return true
+  return confirmDialog({ title: `${action}할까요?`, message: RECORD_EDIT_DIRTY_NOTE, confirmLabel: action, level: 'caution' })
+}
+/** 확인창 본문에 고친 내용 안내를 붙인다. */
+export const withDirtyNote = (message: string, dirty: boolean) => (dirty ? `${message} ${RECORD_EDIT_DIRTY_NOTE}` : message)
 
 /** 수정 저장 토스트의 적용취소 — 저장 직전 모습 전체로(서버가 서명한 토큰, undoRoomRecordEdit). 토큰이 없으면(운영 서명 키 없음) 버튼을 숨긴다. */
 export function recordEditUndoAction(undo: RoomRecordEditUndo | null, what: string, onChanged: () => void) {
@@ -54,7 +69,7 @@ function menuKeyNav(e: React.KeyboardEvent<HTMLElement>, onTab: () => void) {
   items[next]?.focus()
 }
 
-function ManageMenu({ items, disabled }: { items: RecordManageItem[]; disabled?: boolean }) {
+function ManageMenu({ items, disabled, dirty }: { items: RecordManageItem[]; disabled?: boolean; dirty: boolean }) {
   const [open, setOpen] = useState(false)
   const plain = items.filter(i => !i.danger)
   const danger = items.filter(i => i.danger)
@@ -74,7 +89,7 @@ function ManageMenu({ items, disabled }: { items: RecordManageItem[]; disabled?:
     return () => document.removeEventListener('keydown', onKey, true)
   }, [open, triggerRef])
   const close = () => { setOpen(false); triggerRef.current?.querySelector('button')?.focus() }
-  const run = (f: () => void) => { close(); f() }
+  const run = (f: (dirty: boolean) => void) => { close(); f(dirty) }
   return (
     <>
       <span ref={triggerRef} className="shrink-0">
@@ -124,7 +139,7 @@ export function RecordEditShell({
           {saveReason && <WhyCaption id={reasonId}>{saveReason}</WhyCaption>}
           <div className="flex gap-2">
             <Btn variant="secondary" size="md" onClick={onClose} disabled={pending} className="flex-1">취소</Btn>
-            {manage.length > 0 && <ManageMenu items={manage} disabled={pending} />}
+            {manage.length > 0 && <ManageMenu items={manage} disabled={pending} dirty={dirty} />}
           </div>
           <Btn variant="primary" size="md" fullWidth onClick={onSave} disabled={pending} reason={saveReason ? reasonId : undefined}>
             {pending ? '저장 중…' : '저장'}
