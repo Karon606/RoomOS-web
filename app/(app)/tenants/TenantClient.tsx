@@ -39,6 +39,7 @@ import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntry
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { WhyCaption } from '@/components/ui/WhyCaption'
+import { nextRentOnChange, rentFieldCaption, savedLeaseRent, type RentSwap } from '@/lib/leaseRentAutofill'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 import { Badge } from '@/components/ui/Badge'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -3950,25 +3951,36 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
     ? `${inquiryDateVal}T${inquiryTimeVal || '00:00'}`
     : ''
 
+  // 월 이용료 자동 채움은 새 계약과 빈 칸에만 한다(lib/leaseRentAutofill 정본, 2026-10-27 운영자 승인, 홍은주 602호 사건).
+  // 저장된 금액이 있는 수정 폼은 호실·상태를 바꿔도 값을 그대로 두고 칸 아래 한 줄(rentCaption)로 방 기준가를 알린다.
+  // 비거주 이용료가 빈 방은 어느 경우에도 기본 이용료로 대체하지 않는다. 종전에는 둘 다 무조건 덮어 15만 원 계약이 3만 원으로 저장됐다.
+  const savedRent = savedLeaseRent(lease)
+  // '기준가로 바꾸기' 를 누른 직후의 기억(되살리기 값). 폼 안에만 있고 저장해야 반영된다(§27.8 ①).
+  const [rentSwap, setRentSwap] = useState<RentSwap | null>(null)
+  // 폼이 마지막으로 자동으로 채운 값. 기준가 없는 방으로 바뀌면 이 값 그대로일 때만 비운다(손으로 적은 값은 그대로, 독립 검수 B2).
+  const autoRentRef = useRef<number | undefined>(undefined)
+  const applyRentAutofill = (roomId: string, isNR: boolean) => {
+    if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기(수동 입력값이라 해제해도 보존)
+    const room = rooms.find(r => r.id === roomId) ?? null
+    // 호실을 '호실 선택'(빈 값)으로 되돌리면 자동으로 채웠던 이용료만 함께 비운다(오류신고 d3bd5717). 저장된 금액은 그대로다.
+    const next = nextRentOnChange({ saved: savedRent, current: rentAmount, room, isNR, autoFilled: autoRentRef.current })
+    if (next.kind === 'set') { setRentAmount(next.value); autoRentRef.current = next.value }
+  }
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
     setSelectedRoomId(roomId)
-    if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기(수동 입력값이라 해제해도 보존)
-    const room = rooms.find(r => r.id === roomId)
-    // 호실을 '호실 선택'(빈 값)으로 되돌리면 자동으로 채웠던 이용료도 함께 비운다 —
-    // 종전엔 여기서 그냥 return 이라 직전 호실의 이용료가 남았음(오류신고 d3bd5717).
-    if (!room) { setRentAmount(undefined); return }
-    const isNR = statusVal === 'NON_RESIDENT'
-    setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
+    applyRentAutofill(roomId, statusVal === 'NON_RESIDENT')
   }
 
-  // 비거주자 ↔ 일반 전환 시 해당 호실의 적정 이용료로 자동 교체
+  // 거주·비거주 전환 시. 새 계약·빈 칸이면 그 호실의 적정 이용료로 채운다(저장된 금액은 그대로, 위 정본).
+  // 수정 폼은 여는 순간(첫 실행) 채우지 않는다. 0원으로 저장된 계약(예약 등)을 열기만 해도 기본가로 바뀌던 자리다(독립 검수 권고 1).
+  const statusEffectFirst = useRef(true)
   useEffect(() => {
-    if (isShortTerm || !selectedRoomId) return
-    const room = rooms.find(r => r.id === selectedRoomId)
-    if (!room) return
-    const isNR = statusVal === 'NON_RESIDENT'
-    setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
+    const first = statusEffectFirst.current
+    statusEffectFirst.current = false
+    if (first && lease?.id) return
+    if (!selectedRoomId) return
+    applyRentAutofill(selectedRoomId, statusVal === 'NON_RESIDENT')
   }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 이사 판정 — 살던 방이 있는데 다른 방으로 바뀌는 저장. 서버가 거주 구간을 쪼개는 조건
@@ -5135,6 +5147,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           const selectedRoom = rooms.find(r => r.id === selectedRoomId)
           const isNR = statusVal === 'NON_RESIDENT'
           const hasNRRate = isNR && selectedRoom?.nonResidentRent != null
+          // 칸 아래 한 줄. 값을 그대로 둔 이유와 한 번 눌러 바꾸는 링크(WhyCaption 정본, §27.8 ①). 단기는 수동 입력이라 안 뜬다.
+          const caption = isShortTerm ? null : rentFieldCaption({
+            saved: savedRent != null ? { roomNo: lease?.room?.roomNo ?? null, rent: savedRent } : null,
+            current: rentAmount,
+            room: selectedRoom ?? null,
+            isNR,
+            changed: selectedRoomId !== (lease?.room?.id ?? '') || isNR !== (lease?.status === 'NON_RESIDENT'),
+            swap: rentSwap,
+          })
+          const rentWhyId = `${formUid}-rent-why`
           return (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
@@ -5145,11 +5167,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   <Badge tone="pale-blue">비거주 전용</Badge>
                 )}
               </div>
-              <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
-              {isNR && selectedRoom && selectedRoom.nonResidentRent == null && (
-                <p className="text-[0.65625rem] text-[var(--warning-fg)]">
-                  이 호실에 비거주 이용료가 설정되어 있지 않습니다. 호실 관리에서 먼저 설정해 주세요.
-                </p>
+              <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" describedBy={caption ? rentWhyId : undefined} />
+              {caption && (
+                <WhyCaption id={rentWhyId} action={caption.kind === 'keep'
+                  ? { label: caption.actionLabel, onClick: () => { setRentSwap({ from: rentAmount ?? 0, to: caption.value, roomId: selectedRoomId, isNR }); setRentAmount(caption.value) } }
+                  : caption.kind === 'swapped'
+                    ? { label: caption.actionLabel, onClick: () => { setRentAmount(caption.value); setRentSwap(null) } }
+                    : undefined}>
+                  {caption.text}
+                </WhyCaption>
               )}
             </div>
           )

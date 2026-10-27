@@ -92,6 +92,7 @@ import { addJobOption } from '@/app/(app)/settings/actions'
 import { planDueDayAdjustCreate, dueDayAdjustWhere, PAYMENT_PREFIX_RESERVED } from '@/lib/dueDayAdjust'
 import { recalculatePayments, serverBillForMonth } from '@/app/(app)/rooms/paymentEngine'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { nrRentEqualsBaseNotice } from '@/lib/leaseRentAutofill'
 import { tourClearedMemo, createTourClearedLog } from '@/lib/tourClearLog'
 
 /**
@@ -1932,8 +1933,12 @@ export async function updateTenant(formData: FormData): Promise<
   // 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
   const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
+  // 비거주 계약이 비거주 이용료 없는 방에서 기본 이용료와 같은 금액이면 한 번 알린다(거부 아님, lib/leaseRentAutofill 정본).
+  // 홍은주 602호 사건의 모양이다. 폼은 이제 기본 이용료로 덮지 않지만, 손으로 그렇게 적었을 수 있어 저장 때 한 번 더 본다.
+  const nrRoom = status === 'NON_RESIDENT' && newRoomId ? await prisma.room.findFirst({ where: { id: newRoomId, propertyId }, select: { roomNo: true, baseRent: true, nonResidentRent: true } }) : null
+  const nrNotice = nrRentEqualsBaseNotice({ status, isShortTerm, rentAmount: shortPlan ? shortPlan.targetRent : rentAmount, room: nrRoom })
   const finalNotice = [baseNotice, rentRewriteNotice, checkoutSideNotice, moveInNoticeText,
-    staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
+    staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null, nrNotice].filter(Boolean).join(' ') || null
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),

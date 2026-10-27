@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 
 export function MoneyInput({
-  name, defaultValue, value, onChange, placeholder
+  name, defaultValue, value, onChange, placeholder, describedBy
 }: {
   name?: string
   defaultValue?: number
   value?: number        // controlled: 외부에서 값 주입 시 (호실 선택 자동 입력 등)
   onChange?: (v: number) => void
   placeholder?: string
+  describedBy?: string  // 칸 아래 안내 한 줄(WhyCaption)의 id. 읽기 보조기가 칸과 함께 읽는다(§27.8)
 }) {
   const init = value ?? defaultValue
   const [display, setDisplay] = useState(init ? init.toLocaleString() : '')
@@ -44,6 +45,7 @@ export function MoneyInput({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={placeholder ?? '0원'}
+        aria-describedby={describedBy}
         className="mono tnum w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
       />
     </div>
