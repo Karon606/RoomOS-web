@@ -51,7 +51,12 @@ export default function ErrorReportButton() {
     const navRect = nav?.getBoundingClientRect()
     const navReserve = navRect && navRect.height > 0 ? Math.max(0, window.innerHeight - navRect.top) : 0
     const maxY = window.innerHeight - BTN_SIZE - EDGE - navReserve
-    return { x: Math.max(EDGE, Math.min(p.x, maxX)), y: Math.max(EDGE, Math.min(p.y, maxY)) }
+    // 상단 헤더(상태바 포함) 영역도 제외 — iOS 26 사파리는 화면 위 가장자리 근처의 고정 요소 색을 상태바 쪽으로 번지게 칠해서,
+    // 버튼을 헤더 높이로 올리면 상태바에 붉은 번짐이 생겼다(2026-10-27 운영자 제보). 헤더 버튼을 가리던 문제도 같이 닫힌다.
+    const header = document.querySelector('[data-app-header]')
+    const headerRect = header?.getBoundingClientRect()
+    const minY = headerRect && headerRect.height > 0 ? Math.max(EDGE, headerRect.bottom + EDGE) : EDGE
+    return { x: Math.max(EDGE, Math.min(p.x, maxX)), y: Math.max(minY, Math.min(p.y, maxY)) }
   }
 
   useEffect(() => {
