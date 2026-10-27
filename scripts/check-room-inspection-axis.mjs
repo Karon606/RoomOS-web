@@ -15,6 +15,7 @@
 //      홈 알림 끄기 키 'inspection:' 도 그 파일의 inspectionMuteKey 만 만든다.
 //   ⓔ 항목 잠금: 항목 결과·더하기·빼기·되살리기는 예정 점검에서만(끝낸 점검의 결과가 조용히 바뀌지 않는다).
 //   ⓖ 행 UI: 정본 부품(StatusBadge·RowActionBtn·fmtDateDot·DatePicker 상한)·22px r7 체크와 44px 히트·쓰기마다 [적용취소] 짝·두 자리 배선·카드 배지 넷째 금지.
+//   ⓗ 흐름 안 한 줄: 홈 퇴실·입실 토스트, 입주자 상태 위젯 입실 처리 앞 WhyCaption, 청소 완료 뒤 청소 검수 '열기'.
 //   ⓕ 비품 규칙: 퇴실 점검 비품 조회가 승인 조건 일곱(영업장·방·받음·폐기 안 함·배송비 아님·재고 제외 아님·품명 있음)과
 //      추적 카테고리 제외를 갖고, 순수 함수가 같은 조건을 한 번 더 본다.
 //
@@ -209,6 +210,27 @@ for (const file of SOURCES) {
   if (!/initialInspections=\{inspections\}/.test(strip(read('app/(app)/room-manage/page.tsx')))) violations.push(`room-manage/page.tsx · 점검 목록을 화면에 안 넘긴다.`)
 }
 
-console.log(`[방 점검 배선] 축 ⓐ 조회 deletedAt · ⓑ 퇴실·청소 양 경로 · ⓒ 생성 문 · ⓓ 라벨 한 벌 · ⓔ 항목 잠금 · ⓕ 비품 규칙 · ⓖ 행 UI·적용취소 / 위반 ${violations.length}건`)
+// ⓗ 흐름 안 한 줄(4단계). 서버가 돌려준 점검 안내가 화면에서 버려지지 않는다.
+//    홈 퇴실 처리 → '퇴실 점검 N항목 · 열기'(그 호실 모달), 홈 입실 처리 → notice, 입주자 상태 위젯 '입실 처리' 앞 WhyCaption + '점검 열기',
+//    청소 완료 토스트 뒤 '청소 검수 N항목 · 열기'(방 상세는 그 검수를 펼치고 목록은 그 방을 연다). 서버 결과는 checkoutWithDepositRefund 가 물려준다.
+{
+  const t = strip(read(TENANTS))
+  const cwr = fnBody(t, 'checkoutWithDepositRefund') ?? ''
+  if (!/checkoutRes\.inspection \? \{ inspection: checkoutRes\.inspection \}/.test(cwr)) violations.push(`${TENANTS} · checkoutWithDepositRefund 가 퇴실 점검 안내를 화면에 안 물려준다.`)
+  for (const fn of ['moveInTenant', 'confirmReservationToActive']) {
+    if (!/const notice = await moveInNotice\(propertyId, /.test(fnBody(t, fn) ?? '')) violations.push(`${TENANTS} · ${fn} 가 열린 입실 전 점검을 알리지 않는다(막지 않고 알린다, 운영자 결정 3).`)
+  }
+  const d = strip(read('app/(app)/dashboard/DashboardClient.tsx'))
+  if (!/if \(res\.inspection\) \{[\s\S]{0,200}INSPECTION_STAGE_LABEL\.CHECKOUT[\s\S]{0,160}label: '열기', run: \(\) => entityModal\.open\(\{ kind: 'room', roomId: insp\.roomId \}\)/.test(d)) violations.push(`DashboardClient · 홈 퇴실 처리가 퇴실 점검 '열기' 토스트를 안 띄운다.`)
+  if (!/confirmReservationToActive\(reservationDueLeaseId\)[\s\S]{0,800}if \(res\.notice\) pushToast\('info', res\.notice\)/.test(d)) violations.push(`DashboardClient · 홈 입실 처리가 입실 전 점검 안내(notice)를 버린다.`)
+  const w = strip(read('components/entity-modal/widgets/TenantStatusTransitions.tsx'))
+  if (!/getOpenMoveInInspection\(moveInRoomId\)/.test(w) || !/<WhyCaption id=\{moveInWhyId\}[\s\S]{0,200}label: '점검 열기'/.test(w) || !/aria-describedby=\{def\.key === 'moveIn' && moveInInsp \? moveInWhyId : undefined\}/.test(w)) violations.push(`TenantStatusTransitions · '입실 처리' 앞 입실 전 점검 안내 줄(WhyCaption · 점검 열기 · describedby)을 잃었다.`)
+  const c = strip(read('components/cleaning/CleaningRowBody.tsx'))
+  if (!/completeCleaning\(\{ id: r\.id,[\s\S]{0,900}announceInspection\)/.test(c) || !/INSPECTION_STAGE_LABEL\.AFTER_CLEANING/.test(c)) violations.push(`CleaningRowBody · 청소 완료가 만든 청소 검수를 알리지 않는다.`)
+  const pnl = strip(read('components/entity-modal/widgets/RoomCleaningPanel.tsx'))
+  if (!/onOpenInspection=\{i => \{ setUserOpen\(true\); setFocusInspection\(i\.id\) \}\}/.test(pnl) || !/autoOpen=\{focusInspection === m\.inspection\.id\}/.test(pnl)) violations.push(`RoomCleaningPanel · 청소 검수 '열기' 가 그 검수를 펼치지 않는다.`)
+}
+
+console.log(`[방 점검 배선] 축 ⓐ 조회 deletedAt · ⓑ 퇴실·청소 양 경로 · ⓒ 생성 문 · ⓓ 라벨 한 벌 · ⓔ 항목 잠금 · ⓕ 비품 규칙 · ⓖ 행 UI·적용취소 · ⓗ 흐름 안 한 줄 / 위반 ${violations.length}건`)
 for (const v of violations) console.error(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)

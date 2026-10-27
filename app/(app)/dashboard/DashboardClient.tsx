@@ -14,6 +14,7 @@ import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, getTenantUnpaidTarget, type TrendRange, type TrendPoint, type TenantUnpaidTarget } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { INSPECTION_STAGE_LABEL } from '@/app/(app)/room-manage/inspectionConstants'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import nextDynamic from 'next/dynamic'
@@ -510,6 +511,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
   todayYmd: string
 }) {
   const router = useRouter()
+  // 퇴실 처리 토스트의 '열기' 가 그 호실 모달(작업 이력의 퇴실 점검)을 연다(2026-10-27, 신고 2911c217).
+  const entityModal = useEntityModal()
   const isRecurring = !!alert.recurringExpenseId
   const reservationDueLeaseId = alert.reservationDueLeaseId
   const moveOutLeaseId = alert.moveOutLeaseId
@@ -545,6 +548,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
     // 그 전날까지만 성립한다. 그래서 이 자리에서 시트를 열면 언제나 못 넣는 폼을 보여 주게 된다.
     // 조기 입실의 진입점은 입주자 카드의 '입실 처리'다(계약 시작일 전에 누르는 자리).
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    // 그 방의 입실 전 점검이 남았으면 막지 않고 알린다(운영자 결정 3, 서버가 문장을 정한다).
+    if (res.notice) pushToast('info', res.notice)
     router.refresh()
     onClose()
   }
@@ -586,6 +591,13 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
     // 서버가 만들어 준 안내를 통째로 버려서, 현금영수증을 발행한 계약을 여기서 퇴실 처리하면
     // 앱 매출만 조용히 줄고 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
     for (const line of refundTaxNoticeLines(res.taxNotice)) pushToast('info', line)
+    // 이 퇴실이 만든 퇴실 점검(2026-10-27). [열기] 는 그 호실 모달이다. 홈 알림 창은 닫히고 토스트가 남는다.
+    if (res.inspection) {
+      const insp = res.inspection
+      pushToast('info', `${INSPECTION_STAGE_LABEL.CHECKOUT} ${insp.itemCount}항목이 준비됐습니다`, {
+        action: { label: '열기', run: () => entityModal.open({ kind: 'room', roomId: insp.roomId }) },
+      })
+    }
     setRefundModalOpen(false)
     router.refresh()
     onClose()

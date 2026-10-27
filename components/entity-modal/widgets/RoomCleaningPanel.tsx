@@ -43,6 +43,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [inspections, setInspections] = useState<InspectionRow[] | null>(null)
   // 무엇을 등록할지 — null 이면 닫힘. 청소·작업·점검은 받는 칸이 달라 폼이 갈린다.
   const [adding, setAdding] = useState<null | 'cleaning' | 'work' | 'inspection'>(null)
+  // 청소 완료 토스트의 '열기' 로 펼칠 청소 검수. 그 행이 항목을 펼친 채로 선다.
+  const [focusInspection, setFocusInspection] = useState<string | null>(null)
   // 접힘 — 형제 카드(지출 내역·요청 내역)와 같은 A형이다. 운영자 지적 2026-08-27 —
   // "작업이력은 그게 없어서 너무 길어보여. 통일감있게 수정 필요."
   //
@@ -222,9 +224,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
             <li key={`${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
               {m.sort === 'c' ? (
                 <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
-                  canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
+                  canEdit={canEdit} showActions={canEdit && editing} onChanged={reload}
+                  onOpenInspection={i => { setUserOpen(true); setFocusInspection(i.id) }} />
               ) : m.sort === 'i' ? (
-                <InspectionRowBody row={m.inspection} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
+                <InspectionRowBody row={m.inspection} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload}
+                  autoOpen={focusInspection === m.inspection.id} />
               ) : (
                 <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing}
                   recentPerformers={recentPerformers} onChanged={reload} />

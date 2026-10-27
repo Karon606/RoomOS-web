@@ -32,6 +32,7 @@ import {
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { useReasonOptions } from '@/components/ui/useReasonOptions'
+import { INSPECTION_STAGE_LABEL } from '@/app/(app)/room-manage/inspectionConstants'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -61,7 +62,7 @@ export const cleaningTone = (s: CleaningStatus): BadgeTone =>
   (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
 
 export function CleaningRowBody({
-  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, showActions = true, onOpenRoom, onChanged,
+  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, showActions = true, onOpenRoom, onOpenInspection, onChanged,
 }: {
   row: CleaningRow
   /**
@@ -82,6 +83,11 @@ export function CleaningRowBody({
   deleted?: boolean
   /** 호실번호 버튼 — 영업장 교차 목록에서만 선다(방 상세는 이미 그 방이다). */
   onOpenRoom?: (roomId: string) => void
+  /**
+   * 청소 완료가 만든 청소 검수로 가는 문(2026-10-27, 신고 2911c217). 완료 토스트 뒤 '청소 검수 N항목 · 열기' 토스트의 [열기] 가 부른다.
+   * 방 상세는 그 검수 행을 펼치고, 교차 목록은 그 방 모달을 연다. 안 주면 [열기] 없이 사실만 알린다.
+   */
+  onOpenInspection?: (inspection: { id: string; roomId: string }) => void
   onChanged: () => void
 }) {
   const [doneOpen, setDoneOpen] = useState(false)
@@ -117,11 +123,13 @@ export function CleaningRowBody({
   // okMsg 를 함수로도 받는다 — 되돌리기 문구는 지출이 남았는지를 **서버가 돌려준 값**으로 갈라야 한다.
   // 클라가 들고 있는 목록으로 짐작하면 마지막 조회 이후 지출을 지운 경우와 어긋난다.
   // action 은 토스트 우측 적용취소 버튼(v2.0 §15·§16) — 삭제처럼 확인창만으로는 못 무르는 것에 단다.
-  type Done = { ok: true; id?: string; expenseKept?: boolean; reason?: string }
+  type Done = { ok: true; id?: string; expenseKept?: boolean; reason?: string; inspection?: { id: string; roomId: string; itemCount: number }; notice?: string }
+  // after — 결과 토스트 뒤에 이어 할 일(청소 완료 뒤 청소 검수 안내). 결과 토스트가 먼저 서야 무엇에 딸린 안내인지 읽힌다.
   const run = (
     fn: () => Promise<Done | { ok: false; error: string }>,
     okMsg: string | ((res: Done) => string),
     action?: ToastAction,
+    after?: (res: Done) => void,
   ) =>
     startTransition(async () => {
       const release = trackSave()
@@ -129,9 +137,18 @@ export function CleaningRowBody({
         const res = await fn()
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', typeof okMsg === 'function' ? okMsg(res) : okMsg, action ? { action } : undefined)
+        after?.(res)
         onChanged()
       } finally { release() }
     })
+  // 청소 완료가 이번에 만들거나 되살린 청소 검수를 알린다. 검수를 못 만들었으면 그 사실 한 줄이다(서버 notice).
+  const announceInspection = (res: Done) => {
+    if (res.notice) pushToast('info', res.notice)
+    const insp = res.inspection
+    if (!insp) return
+    const text = `${INSPECTION_STAGE_LABEL.AFTER_CLEANING} ${insp.itemCount}항목이 준비됐습니다`
+    pushToast('info', text, onOpenInspection ? { action: { label: '열기', run: () => onOpenInspection({ id: insp.id, roomId: insp.roomId }) } } : undefined)
+  }
 
   return (
     <>
@@ -311,7 +328,8 @@ export function CleaningRowBody({
                   { label: '적용취소', run: () => { void reopenCleaning(r.id).then(res => {
                     if (res.ok) { pushToast('info', '완료를 적용취소했습니다 · 예정으로 복귀'); onChanged() }
                     else pushToast('error', res.error)
-                  }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } })
+                  }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
+                  announceInspection)
                 setDoneOpen(false); setPerformerName(''); setCost(''); setUseFund(false)
               }}>
               완료

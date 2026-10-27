@@ -188,9 +188,10 @@ export function InspectionRowBody({
       </div>
       {r.memo && <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words${deleted ? ' opacity-60' : ''}`}>{r.memo}</p>}
 
-      {/* 항목 — 펼쳤을 때만. 첫 조회는 뼈대(§17). */}
+      {/* 항목 — 펼쳤을 때만. 첫 조회는 뼈대(§17). 면은 --cream + 테두리다. --canvas 는 페이지 배경 토큰이라 다크에서 카드 안에
+          검은 구멍이 뚫린다(TenantDocBundleSheet 와 같은 판정). */}
       {open && (
-        <div className="mt-2 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-2.5 py-1.5">
+        <div className="mt-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1.5">
           {items === null ? (
             <SkeletonRows rows={3} className="py-1" />
           ) : loadFailed ? (

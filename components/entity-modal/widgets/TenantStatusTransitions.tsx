@@ -4,7 +4,7 @@
 // applyStatusTransition·recordDepositReturn 서버액션 그대로 호출. 추출은 UI/state 만 이동.
 // transitionsFor() 정의 그대로 이주.
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
@@ -37,6 +37,9 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { WhyCaption } from '@/components/ui/WhyCaption'
+import { getOpenMoveInInspection } from '@/app/(app)/room-manage/inspectionActions'
+import { moveInInspectionCaption } from '@/app/(app)/room-manage/inspectionConstants'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
 import { cycleDayOf } from '@/lib/dueDay'
 import { CLOSED_STATUSES } from '@/lib/leaseStatus'
@@ -233,6 +236,19 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
    */
   const [opening, setOpening] = useState(false)
   const [active, setActive] = useState<ActiveTransition>(null)
+  // 그 방의 열린 입실 전 점검(2026-10-27, 신고 2911c217). 입실 예약일 때만 읽는다. '입실 처리' 는 막지 않고 버튼 줄 아래 한 줄로 알린다
+  // (운영자 결정 3: 경고만). 읽기 실패는 줄을 안 세운다(입실을 붙잡을 이유가 아니다).
+  const [moveInInsp, setMoveInInsp] = useState<{ checked: number; total: number } | null>(null)
+  const moveInRoomId = lease.status === 'RESERVED' ? lease.roomId : null
+  useEffect(() => {
+    if (!moveInRoomId) { setMoveInInsp(null); return }
+    let alive = true
+    getOpenMoveInInspection(moveInRoomId)
+      .then(r => { if (alive) setMoveInInsp(r ? { checked: r.checked, total: r.total } : null) })
+      .catch(() => { if (alive) setMoveInInsp(null) })
+    return () => { alive = false }
+  }, [moveInRoomId])
+  const moveInWhyId = `${lease.id}-movein-inspection`
   // 사유 목록은 영업장 설정에서 읽는다. 미니폼이 연 전이가 사유를 받을 때만 그 목록을 읽는다(2026-10-22).
   const reasonField = active ? reasonFieldForStatus(active.def.toStatus) : null
   const reasonOptions = useReasonOptions(reasonField)
@@ -684,7 +700,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       <div className="flex flex-wrap gap-2 py-2">
         {transitions.map(def => (
           <Btn key={def.key} type="button" variant={def.tone ?? 'secondary'} size="sm"
-            disabled={pending || opening} onClick={() => handleClick(def)} className="font-semibold">
+            disabled={pending || opening} onClick={() => handleClick(def)} className="font-semibold"
+            aria-describedby={def.key === 'moveIn' && moveInInsp ? moveInWhyId : undefined}>
             {/* 되돌리기에는 rotate-ccw 를 앞세운다(§16). 변형은 줄 형제를 따라 secondary 그대로 —
                 아이콘만 더하고 색을 바꾸면 이 줄에서 혼자 다른 무게로 선다. */}
             {def.undo && <RotateCcw />}
@@ -692,6 +709,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           </Btn>
         ))}
       </div>
+
+      {/* 입실 전 점검이 남은 방 — 막지 않고 이유 한 마디와 '점검 열기'(그 호실 모달의 작업 이력)를 둔다(§27.8 WhyCaption 문형). */}
+      {lease.status === 'RESERVED' && lease.roomId && moveInInsp && (
+        <WhyCaption id={moveInWhyId} className="-mt-1 pb-1"
+          action={{ label: '점검 열기', onClick: () => entityModal.open({ kind: 'room', roomId: lease.roomId as string }) }}>
+          {moveInInspectionCaption(moveInInsp.checked, moveInInsp.total)}
+        </WhyCaption>
+      )}
 
       {/* 신고 9b974be0: 확정된 예약은 확정일 표시 */}
       {lease.status === 'RESERVED' && lease.reservationConfirmedAt && (

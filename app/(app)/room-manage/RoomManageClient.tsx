@@ -388,7 +388,8 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
             {shown.map(r => (
               <li key={r.id} className="px-4 py-3">
                 <CleaningRowBody row={r} recentPerformers={recentPerformers} canEdit={canEdit}
-                  deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
+                  deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged}
+                  onOpenInspection={i => onOpenRoom(i.roomId)} />
               </li>
             ))}
             {/* 점검은 청소 바로 뒤다(청소를 끝내고 검수한다). 행 표시·조작은 방 상세와 같은 정본이다. */}
