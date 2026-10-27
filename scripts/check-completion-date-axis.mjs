@@ -268,6 +268,7 @@ const SCREENS = [
   { file: 'app/(app)/checklist/ChecklistClient.tsx', what: '체크리스트 카드·점검 모달', dateFields: 2 },
   { file: 'components/work/RoomWorkRowBody.tsx', what: '작업 행 완료 폼', dateFields: 2 },
   { file: 'components/cleaning/CleaningRowBody.tsx', what: '청소 행 완료 폼', dateFields: 2 },
+  { file: 'components/inspection/InspectionRowBody.tsx', what: '방 점검 행 완료 폼', dateFields: 1 },
 ]
 for (const s of SCREENS) {
   const raw = readFileSync(join(ROOT, s.file), 'utf8')

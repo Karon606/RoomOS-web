@@ -7,6 +7,9 @@ import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { RoomWorkRowBody } from '@/components/work/RoomWorkRowBody'
 import { RoomWorkPlanForm } from '@/components/work/RoomWorkPlanForm'
 import type { RoomWorkRow } from './workActions'
+import { InspectionRowBody } from '@/components/inspection/InspectionRowBody'
+import { InspectionPlanForm } from '@/components/inspection/InspectionPlanForm'
+import { INSPECTION_STAGES, INSPECTION_STAGE_LABEL, type InspectionRow } from './inspectionConstants'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { MoveCalendar } from '@/components/room-manage/MoveCalendar'
@@ -270,8 +273,10 @@ function suggestBaseRent(rooms: Room[], type: string, tier: string, windowType: 
 // 액션 줄 좌측(지출 관리), 등록은 Modal(지출·수익 등록). 날짜는 목록·표 정본 fmtDateDot 이다.
 type CleaningSeg = CleaningStatus | '' | 'DELETED'
 
-function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEdit, onOpenRoom, onChanged }: {
+function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerformers, canEdit, onOpenRoom, onChanged }: {
   rows: CleaningRow[]
+  /** 방 점검(퇴실 점검·청소 검수·입실 전 점검, 2026-10-27). 삭제분까지 실려 온다(getPropertyInspections). 같은 세그먼트에 든다. */
+  inspections: InspectionRow[]
   /** 청소가 아닌 작업(도배·장판 등). 같은 목록에 선다 — 캘린더에 뜨는 것이 여기 없으면 닿을 길이 없다. */
   works: RoomWorkRow[]
   rooms: { id: string; roomNo: string }[]
@@ -283,17 +288,22 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
 }) {
   const [segRaw, setSeg] = useState<CleaningSeg>('PLANNED')
   // 무엇을 등록할지 — null 이면 닫힘. 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 문법).
-  const [adding, setAdding] = useState<null | 'cleaning' | 'work'>(null)
+  const [adding, setAdding] = useState<null | 'cleaning' | 'work' | 'inspection'>(null)
 
   // 살아 있는 행과 삭제분을 한 번에 받는다(getPropertyCleanings). 아래 모든 집계는 살아 있는 것만 센다.
   const live = rows.filter(r => !r.deletedAt)
-  const deleted = rows.filter(r => r.deletedAt)
+  const deletedCleanings = rows.filter(r => r.deletedAt)
+  const liveInsp = inspections.filter(i => !i.deletedAt)
+  const deletedInsp = inspections.filter(i => i.deletedAt)
+  // '삭제됨' 세그먼트는 청소와 점검의 복원 문이다(둘 다 소프트삭제). 수는 둘을 합친다.
+  const deleted = deletedCleanings
   // 마지막 삭제분을 되살리면 그 세그먼트 자체가 사라진다. 선택값을 그대로 두면 아무것도 안 켜진
   // 컨트롤이 남으므로 '전체'로 떨군다.
-  const seg: CleaningSeg = segRaw === 'DELETED' && deleted.length === 0 ? '' : segRaw
+  const seg: CleaningSeg = segRaw === 'DELETED' && deleted.length + deletedInsp.length === 0 ? '' : segRaw
   const counts = live.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
   // 작업도 같은 세그먼트에 든다. '안 함'은 작업에 없는 상태라 청소 수 그대로다.
   const workCounts = works.reduce((acc, w) => { acc[w.status] = (acc[w.status] ?? 0) + 1; return acc }, {} as Record<'PLANNED' | 'DONE', number>)
+  const inspCounts = liveInsp.reduce((acc, i) => { acc[i.status] = (acc[i.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
 
   // 예정은 **임박한 것부터**다. 서버 정렬(최근순)은 완료 이력에는 맞지만 예정에는 거꾸로라
   // 기본 세그먼트에서 가장 먼 날이 맨 위에 섰다(형제: 퇴실 예정 퇴실일 asc, 입실 예정 입주일 asc).
@@ -312,6 +322,11 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
         .sort((a, b) => (a.scheduledDate ?? '9999').localeCompare(b.scheduledDate ?? '9999'))
     : seg === 'DONE' ? works.filter(w => w.status === 'DONE')
     : works
+  // 점검은 청소와 같은 상태 셋이라 같은 규칙으로 거른다. 예정은 임박한 것부터, 날짜 없는 입실 전 점검은 뒤로.
+  const shownInsp = seg === 'DELETED' ? deletedInsp
+    : seg === 'PLANNED' ? liveInsp.filter(i => i.status === 'PLANNED').sort((a, b) => (a.scheduledDate ?? '9999').localeCompare(b.scheduledDate ?? '9999'))
+    : seg ? liveInsp.filter(i => i.status === seg)
+    : liveInsp
 
   // 합계는 **세그먼트와 무관하게** 이번 달 전체에서 낸다. 필터에 따라 움직이면 같은 이름의 숫자가
   // 화면 조작마다 달라져 "이번 달 청소비"라는 이름이 거짓이 된다.
@@ -334,9 +349,11 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
           <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={monthFunded} /></span>
         </p>
         {/* CTA 둘 — 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 판단). §23 은 1~2개를 허용한다. */}
+        {/* 점검 등록이 셋째다(2026-10-27, 승인 계획). 좁은 폭에서는 줄을 넘겨 오른쪽에 모인다(가로로 넘치지 않게 flex-wrap). */}
         {canEdit && (
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
             <Btn variant="secondary" size="md" onClick={() => setAdding('work')}>+ 작업 등록</Btn>
+            <Btn variant="secondary" size="md" onClick={() => setAdding('inspection')}>+ 점검 등록</Btn>
             <Btn variant="primary" size="md" onClick={() => setAdding('cleaning')}>+ 청소 등록</Btn>
           </div>
         )}
@@ -352,18 +369,18 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
         value={seg}
         onChange={setSeg}
         options={[
-          { value: 'PLANNED', label: `예정 ${(counts.PLANNED ?? 0) + (workCounts.PLANNED ?? 0)}` },
-          { value: 'DONE',    label: `완료 ${(counts.DONE ?? 0) + (workCounts.DONE ?? 0)}` },
-          { value: 'SKIPPED', label: `안 함 ${counts.SKIPPED ?? 0}` },
-          { value: '',        label: `전체 ${live.length + works.length}` },
-          ...(deleted.length > 0 ? [{ value: 'DELETED' as const, label: `삭제됨 ${deleted.length}` }] : []),
+          { value: 'PLANNED', label: `예정 ${(counts.PLANNED ?? 0) + (workCounts.PLANNED ?? 0) + (inspCounts.PLANNED ?? 0)}` },
+          { value: 'DONE',    label: `완료 ${(counts.DONE ?? 0) + (workCounts.DONE ?? 0) + (inspCounts.DONE ?? 0)}` },
+          { value: 'SKIPPED', label: `안 함 ${(counts.SKIPPED ?? 0) + (inspCounts.SKIPPED ?? 0)}` },
+          { value: '',        label: `전체 ${live.length + works.length + liveInsp.length}` },
+          ...(deleted.length + deletedInsp.length > 0 ? [{ value: 'DELETED' as const, label: `삭제됨 ${deleted.length + deletedInsp.length}` }] : []),
         ]}
       />
 
-      {shown.length === 0 && shownWorks.length === 0 ? (
+      {shown.length === 0 && shownWorks.length === 0 && shownInsp.length === 0 ? (
         <EmptyState
           title={segLabel ? `'${segLabel}' 상태인 작업이 없습니다` : '작업 기록이 없습니다'}
-          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소 등록이나 작업 등록으로 시작할 수 있습니다.'}
+          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소·점검·작업 등록으로 시작할 수 있습니다.'}
         />
       ) : (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
@@ -372,6 +389,12 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
               <li key={r.id} className="px-4 py-3">
                 <CleaningRowBody row={r} recentPerformers={recentPerformers} canEdit={canEdit}
                   deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
+              </li>
+            ))}
+            {/* 점검은 청소 바로 뒤다(청소를 끝내고 검수한다). 행 표시·조작은 방 상세와 같은 정본이다. */}
+            {shownInsp.map(i => (
+              <li key={i.id} className="px-4 py-3">
+                <InspectionRowBody row={i} canEdit={canEdit} deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
               </li>
             ))}
             {/* 작업은 청소 뒤에 선다. 두 표를 날짜로 섞어 정렬하지 않는 이유는 이 목록이 세그먼트
@@ -402,6 +425,10 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
         <CleaningPlanForm rooms={rooms}
           onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
       </SharedModal>
+      <SharedModal open={adding === 'inspection'} onClose={() => setAdding(null)} title="점검 등록">
+        <InspectionPlanForm rooms={rooms}
+          onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
+      </SharedModal>
       <SharedModal open={adding === 'work'} onClose={() => setAdding(null)} title="작업 예정 등록">
         <RoomWorkPlanForm rooms={rooms}
           onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
@@ -414,6 +441,7 @@ export default function RoomManageClient({
   initialRooms,
   initialCleanings,
   initialWorks,
+  initialInspections,
   recentPerformers,
   roomTypes,
   roomTiers,
@@ -427,6 +455,8 @@ export default function RoomManageClient({
   // initialRooms 와 같은 이유로 prop 을 직접 쓴다.
   initialCleanings: CleaningRow[]
   initialWorks: RoomWorkRow[]
+  // 영업장 전체 방 점검(삭제분 포함, 2026-10-27) — '작업' 뷰 행과 카드 배지의 공통 재료.
+  initialInspections: InspectionRow[]
   // 최근에 맡긴 업체·사람 — 청소 완료 폼 이름 칸 선택지. 서버에서 함께 받아 클라 왕복을 없앤다.
   recentPerformers: string[]
   roomTypes: string[]
@@ -447,6 +477,8 @@ export default function RoomManageClient({
   const rooms = initialRooms
   // 살아 있는 청소 — 카드 배지·뷰 탭 접미 N 이 함께 딛는 한 벌(서버가 삭제분까지 실어 온다).
   const liveCleanings = initialCleanings.filter(c => !c.deletedAt)
+  // 열린(예정) 방 점검 — 카드 배지와 탭 접미 N 이 함께 딛는다.
+  const openInspections = initialInspections.filter(i => !i.deletedAt && i.status === 'PLANNED')
   // 단기 퇴실 도래 판정의 기준월 — 이 화면은 월 선택이 없으므로 '이번 달'(KST) 고정.
   const targetMonth = kstMonthStr()
   const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
@@ -594,7 +626,8 @@ export default function RoomManageClient({
   // ?at= 이 바뀔 때마다(스크롤이 멎을 때마다) 다시 그려지며 새 함수가 되어 MoveCalendar 의 memo 가
   // 깨지고, 트랙 수백 칸이 그 주기로 다시 그려진다(MoveCalendar 머리의 memo 주석).
   const goWorksTab = useCallback(() => setViewTab('cleaning'), [])
-  const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
+  // 접미 N 은 예정 청소 + 예정 점검 수다(2026-10-27). 작업(도배·장판)은 종전대로 안 센다.
+  const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length + openInspections.length
   // 보고 있는 탭을 URL 에 남긴다 — 캘린더가 트랙 위치(?at=)를 적어 두는데 탭이 URL 에 없으면
   // 그 주소를 북마크·공유했을 때 캘린더가 아니라 호실 목록이 열린다. replaceState 라 히스토리가
   // 안 쌓이고 서버도 다시 안 돈다(첫 인자 null 이 필수 — lib/monthParam 주석 참조).
@@ -1108,6 +1141,10 @@ export default function RoomManageClient({
       : null
     // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
     const cleaning = openCleanings[room.id]
+    // 그 방의 열린 점검 중 흐름 차례(퇴실 · 청소 · 입실 전)로 맨 앞 하나. 배지는 늘리지 않는다(§11 최대 2개, 넷째 금지).
+    // 청소가 남았으면 '청소 필요' 의 보조줄에 진행을 잇고, 청소 없이 점검만 남았으면 같은 자리에 '점검 남음' 이 선다.
+    const insp = INSPECTION_STAGES.map(st => openInspections.find(i => i.roomId === room.id && i.stage === st)).find(Boolean) ?? null
+    const inspSub = insp && insp.total > 0 ? `점검 ${insp.checked}/${insp.total}` : null
     // Status Row 팁/틴트 톤 — **예외 상태(배지가 서는 것)만**. 거주중·공실은 정상값이라
     // 베이스가 말한다(2026-08-25 정비, lib/statusColors leaseTipTone 과 같은 판정).
     const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : null
@@ -1143,9 +1180,13 @@ export default function RoomManageClient({
                 일정을 못 읽는다(운영자 요청 2026-08-10). D-day 는 붙이지 않는다 — 남은 날수가
                 아니라 무슨 요일에 오는가가 이 자리의 정보다. 날짜를 비워 등록한 건은 보조줄 없음.
                 뱃지는 늘리지 않는다 — 이 줄은 이미 상태·전입신고 불가와 셋이 나눠 쓰고 있다. */}
-            {cleaning && (
-              <StatusBadge tone="await" sub={cleaning.scheduledDate ? `${fmtMDDay(cleaning.scheduledDate)} 예정` : undefined}>
+            {cleaning ? (
+              <StatusBadge tone="await" sub={[cleaning.scheduledDate ? `${fmtMDDay(cleaning.scheduledDate)} 예정` : null, inspSub].filter(Boolean).join(' · ') || undefined}>
                 청소 필요
+              </StatusBadge>
+            ) : insp && (
+              <StatusBadge tone="await" sub={insp.total > 0 ? `${INSPECTION_STAGE_LABEL[insp.stage]} ${insp.checked}/${insp.total}` : INSPECTION_STAGE_LABEL[insp.stage]}>
+                점검 남음
               </StatusBadge>
             )}
           </div>
@@ -1287,7 +1328,7 @@ export default function RoomManageClient({
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
-        <CleaningView rows={initialCleanings} works={initialWorks} rooms={rooms} targetMonth={targetMonth}
+        <CleaningView rows={initialCleanings} works={initialWorks} inspections={initialInspections} rooms={rooms} targetMonth={targetMonth}
           recentPerformers={recentPerformers} canEdit={canEditUi}
           onOpenRoom={roomId => { entityModal.open({ kind: 'room', roomId }); setError('') }}
           onChanged={() => router.refresh()} />

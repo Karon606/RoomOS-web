@@ -14,6 +14,7 @@
 //   ⓓ 라벨 한 벌: 단계 이름 셋('퇴실 점검'·'청소 검수'·'입실 전 점검')을 따옴표 낱말로 적는 자리는 inspectionConstants 뿐이다.
 //      홈 알림 끄기 키 'inspection:' 도 그 파일의 inspectionMuteKey 만 만든다.
 //   ⓔ 항목 잠금: 항목 결과·더하기·빼기·되살리기는 예정 점검에서만(끝낸 점검의 결과가 조용히 바뀌지 않는다).
+//   ⓖ 행 UI: 정본 부품(StatusBadge·RowActionBtn·fmtDateDot·DatePicker 상한)·22px r7 체크와 44px 히트·쓰기마다 [적용취소] 짝·두 자리 배선·카드 배지 넷째 금지.
 //   ⓕ 비품 규칙: 퇴실 점검 비품 조회가 승인 조건 일곱(영업장·방·받음·폐기 안 함·배송비 아님·재고 제외 아님·품명 있음)과
 //      추적 카테고리 제외를 갖고, 순수 함수가 같은 조건을 한 번 더 본다.
 //
@@ -173,6 +174,41 @@ for (const file of SOURCES) {
   }
 }
 
-console.log(`[방 점검 배선] 축 ⓐ 조회 deletedAt · ⓑ 퇴실·청소 양 경로 · ⓒ 생성 문 · ⓓ 라벨 한 벌 · ⓔ 항목 잠금 · ⓕ 비품 규칙 / 위반 ${violations.length}건`)
+// ⓖ 행 UI 정본과 적용취소(가이드 §16·§22·§27.1). 행은 형제 청소 행과 같은 정본 부품을 쓰고, 쓰기마다 토스트 [적용취소] 가 짝이 있다.
+//    항목 체크는 22px r7(§22) 이고 누르는 자리는 44px 다. 작업 목록·방 상세 두 자리가 같은 행을 부르고, 카드 배지는 넷째로 늘지 않는다.
+{
+  const ROW = 'components/inspection/InspectionRowBody.tsx'
+  const r = strip(read(ROW))
+  for (const [re, what] of [
+    [/<StatusBadge tone=\{inspectionTone\(r\.status\)\}>/, '상태 배지(StatusBadge, 청소 행과 같은 톤 셋)'],
+    [/fmtDateDot\(/, '날짜 표기 정본 fmtDateDot'],
+    [/<RowActionBtn /, '행 동작 정본 RowActionBtn'],
+    [/maxDate=\{kstYmdStr\(\)\}/, '완료일 미래 상한'],
+    [/role="checkbox" aria-checked=\{ok\}/, '항목 체크의 접근 역할(role=checkbox·aria-checked)'],
+    [/min-h-\[44px\] min-w-\[44px\]/, '항목 체크 히트 44px'],
+    [/h-\[22px\] w-\[22px\] place-items-center rounded-\[7px\]/, '항목 체크 22px r7(§22)'],
+  ]) if (!re.test(r)) violations.push(`${ROW} · ${what} 을 잃었다.`)
+  const PAIRS = [
+    ['항목 결과', /setInspectionItemResult\(\{ itemId: it\.id, result,[\s\S]{0,400}undo\(async \(\) => \{\s*const back = await setInspectionItemResult\(\{ itemId: it\.id, result: res\.prev\.result, note: res\.prev\.note, restoreCheckedAt: res\.prev\.checkedAt \}\)/],
+    ['항목 더하기', /addInspectionItem\([\s\S]{0,300}undo\(\(\) => removeInspectionItem\(res\.item\.id\)/],
+    ['항목 삭제', /removeInspectionItem\(it\.id\)[\s\S]{0,300}label: '적용취소',\s*run: \(\) => \{ void restoreInspectionItem\(res\.snapshot\)/],
+    ['완료', /completeInspection\(\{ id: r\.id, doneDate \}\)[\s\S]{0,200}undo\(\(\) => reopenInspection\(r\.id\)/],
+    ['안 하기로', /skipInspection\(r\.id\)[\s\S]{0,200}undo\(\(\) => reopenInspection\(r\.id\)/],
+    ['삭제', /deleteInspection\(r\.id\), '삭제됨'[\s\S]{0,200}undo\(\(\) => restoreInspection\(r\.id\)/],
+    ['복원', /restoreInspection\(r\.id\), '점검 기록 복원됨'[\s\S]{0,200}undo\(\(\) => deleteInspection\(r\.id\)/],
+  ]
+  for (const [what, re] of PAIRS) if (!re.test(r)) violations.push(`${ROW} · '${what}' 쓰기에 토스트 [적용취소] 짝이 없다(§16, 모든 쓰기에 적용취소).`)
+  if (!/label: '적용취소'/.test(r)) violations.push(`${ROW} · 적용취소 라벨이 '적용취소' 가 아니다(§16).`)
+  const PLAN = 'components/inspection/InspectionPlanForm.tsx'
+  if (!/createInspection\([\s\S]{0,400}label: '적용취소', run: \(\) => \{ void deleteInspection\(res\.id\)/.test(strip(read(PLAN)))) violations.push(`${PLAN} · 손수 등록 토스트에 [적용취소](그 점검 삭제)가 없다.`)
+  const panel = strip(read('components/entity-modal/widgets/RoomCleaningPanel.tsx'))
+  if (!/<InspectionRowBody row=\{m\.inspection\}/.test(panel) || !/getRoomInspections\(roomId, \{ includeDeleted: true \}\)/.test(panel)) violations.push(`RoomCleaningPanel · 방 상세 작업 이력이 점검 행이나 삭제분 복원 문을 잃었다.`)
+  const rm = strip(read('app/(app)/room-manage/RoomManageClient.tsx'))
+  if (!/<InspectionRowBody row=\{i\}/.test(rm)) violations.push(`RoomManageClient · 작업 목록이 점검 행(정본 InspectionRowBody)을 안 그린다.`)
+  if (!/\{cleaning \? \([\s\S]{0,400}청소 필요[\s\S]{0,80}\) : insp && \([\s\S]{0,300}점검 남음/.test(rm)) violations.push(`RoomManageClient · 카드 배지가 '청소 필요' 와 '점검 남음' 을 한 자리에서 가르지 않는다. 배지를 넷째로 늘리면 §11 최대 2개를 넘긴다.`)
+  if (!/initialInspections=\{inspections\}/.test(strip(read('app/(app)/room-manage/page.tsx')))) violations.push(`room-manage/page.tsx · 점검 목록을 화면에 안 넘긴다.`)
+}
+
+console.log(`[방 점검 배선] 축 ⓐ 조회 deletedAt · ⓑ 퇴실·청소 양 경로 · ⓒ 생성 문 · ⓓ 라벨 한 벌 · ⓔ 항목 잠금 · ⓕ 비품 규칙 · ⓖ 행 UI·적용취소 / 위반 ${violations.length}건`)
 for (const v of violations) console.error(`  - ${v}`)
 process.exit(violations.length ? 1 : 0)

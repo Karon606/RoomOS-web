@@ -24,6 +24,10 @@ import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { RoomWorkRowBody } from '@/components/work/RoomWorkRowBody'
 import { RoomWorkPlanForm } from '@/components/work/RoomWorkPlanForm'
 import { listRoomWorks, type RoomWorkRow } from '@/app/(app)/room-manage/workActions'
+import { InspectionRowBody } from '@/components/inspection/InspectionRowBody'
+import { InspectionPlanForm } from '@/components/inspection/InspectionPlanForm'
+import { getRoomInspections } from '@/app/(app)/room-manage/inspectionActions'
+import { INSPECTION_STAGE_LABEL, type InspectionRow } from '@/app/(app)/room-manage/inspectionConstants'
 import {
   getRoomCleanings, getCleaningFundStatus, getRecentCleaningPerformers,
 } from '@/app/(app)/room-manage/cleaningActions'
@@ -35,8 +39,10 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const canEdit = useCanEdit()
   const [rows, setRows] = useState<CleaningRow[] | null>(null)
   const [works, setWorks] = useState<RoomWorkRow[] | null>(null)
-  // 무엇을 등록할지 — null 이면 닫힘. 청소와 그 밖의 작업은 받는 칸이 달라 폼이 갈린다.
-  const [adding, setAdding] = useState<null | 'cleaning' | 'work'>(null)
+  // 방 점검(퇴실 점검·청소 검수·입실 전 점검, 2026-10-27). 셋째 종류로 같은 목록에 선다.
+  const [inspections, setInspections] = useState<InspectionRow[] | null>(null)
+  // 무엇을 등록할지 — null 이면 닫힘. 청소·작업·점검은 받는 칸이 달라 폼이 갈린다.
+  const [adding, setAdding] = useState<null | 'cleaning' | 'work' | 'inspection'>(null)
   // 접힘 — 형제 카드(지출 내역·요청 내역)와 같은 A형이다. 운영자 지적 2026-08-27 —
   // "작업이력은 그게 없어서 너무 길어보여. 통일감있게 수정 필요."
   //
@@ -79,9 +85,10 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       listRoomWorks(roomId),
       // 추천 목록만 실패를 삼킨다. 이름 칸 편의값 하나 때문에 이력 전체가 '불러오지 못했습니다'가 되면 안 된다.
       getRecentCleaningPerformers().catch(() => [] as string[]),
+      getRoomInspections(roomId),
     ])
-      .then(([v, f, w, p]) => { setRows(v); setFund(f); setWorks(w); setRecentPerformers(p); setLoadFailed(false) })
-      .catch(() => { setRows([]); setFund(null); setWorks([]); setLoadFailed(true) })
+      .then(([v, f, w, p, i]) => { setRows(v); setFund(f); setWorks(w); setRecentPerformers(p); setInspections(i); setLoadFailed(false) })
+      .catch(() => { setRows([]); setFund(null); setWorks([]); setInspections([]); setLoadFailed(true) })
   }
   useEffect(reload, [roomId])
 
@@ -92,8 +99,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   // 있다고 적어 뒀지만 **그 화면이 실재하지 않았다**(2026-08-28 전수 확인).
   const loadTrash = () => {
     setTrashOpen(true)
-    void Promise.all([getRoomCleanings(roomId, { includeDeleted: true }), listRoomWorks(roomId, { includeDeleted: true })])
-      .then(([cs, ws]) => setTrash(mergeRows(cs.filter(c => c.deletedAt), ws.filter(w => w.deleted))))
+    void Promise.all([getRoomCleanings(roomId, { includeDeleted: true }), listRoomWorks(roomId, { includeDeleted: true }), getRoomInspections(roomId, { includeDeleted: true })])
+      .then(([cs, ws, is]) => setTrash(mergeRows(cs.filter(c => c.deletedAt), ws.filter(w => w.deleted), is.filter(i => i.deletedAt))))
       .catch(() => setTrash([]))
   }
 
@@ -102,21 +109,26 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
 
   const open = rows?.find(r => r.status === 'PLANNED') ?? null
   const openWork = works?.find(w => w.status === 'PLANNED') ?? null
+  const openInspection = inspections?.find(i => i.status === 'PLANNED') ?? null
   // 접힘 판정 — 예정이 하나라도 있으면 펴진다. 손으로 접거나 편 것이 규칙보다 강하다.
   // 로딩 중에는 예정 수를 모르므로 접힘으로 열었다가 데이터가 오면 펴진다(reload 가 돌아도
   // userOpen 은 안 지운다 — 그러면 완료 처리 한 번에 운영자가 접어 둔 것이 다시 펴진다).
   const plannedCount = (rows?.filter(r => r.status === 'PLANNED').length ?? 0)
     + (works?.filter(w => w.status === 'PLANNED').length ?? 0)
+    + (inspections?.filter(i => i.status === 'PLANNED').length ?? 0)
   const panelOpen = userOpen ?? plannedCount > 0
 
   // 두 표를 **한 목록**으로 세운다. 정렬 축은 그 행이 화면에서 말하는 날짜다 — 완료 건은 완료일,
   // 예정 건은 예정일. 날짜가 없는 행(예정일 미정)은 맨 뒤로 민다. 날짜가 같으면 청소를 먼저 둔다
   // (퇴실 청소가 도배·장판보다 앞서는 것이 실제 순서다).
+  // 점검은 같은 날이면 청소 뒤, 작업 앞에 선다(청소를 끝내고 검수한다).
   type Merged =
-    | { sort: 'c'; id: string; at: string; cleaning: CleaningRow; work?: undefined }
-    | { sort: 'w'; id: string; at: string; work: RoomWorkRow; cleaning?: undefined }
+    | { sort: 'c'; id: string; at: string; cleaning: CleaningRow; work?: undefined; inspection?: undefined }
+    | { sort: 'w'; id: string; at: string; work: RoomWorkRow; cleaning?: undefined; inspection?: undefined }
+    | { sort: 'i'; id: string; at: string; inspection: InspectionRow; cleaning?: undefined; work?: undefined }
+  const SORT_RANK = { c: 0, i: 1, w: 2 } as const
   // 삭제분 목록도 같은 정렬을 쓰게 함수로 뺀다 — 두 벌이면 한쪽만 순서가 달라진다.
-  function mergeRows(cs: CleaningRow[], ws: RoomWorkRow[]): Merged[] {
+  function mergeRows(cs: CleaningRow[], ws: RoomWorkRow[], is: InspectionRow[] = []): Merged[] {
     return [
       ...cs.map((r): Merged => ({
         sort: 'c', id: r.id, at: (r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? '', cleaning: r,
@@ -124,15 +136,18 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       ...ws.map((w): Merged => ({
         sort: 'w', id: w.id, at: (w.status === 'DONE' ? w.doneDate : w.scheduledDate) ?? '', work: w,
       })),
+      ...is.map((i): Merged => ({
+        sort: 'i', id: i.id, at: (i.status === 'DONE' ? i.doneDate : i.scheduledDate) ?? '', inspection: i,
+      })),
     ].sort((a, b) => {
-      if (!a.at && !b.at) return 0
+      if (!a.at && !b.at) return SORT_RANK[a.sort] - SORT_RANK[b.sort]
       if (!a.at) return 1
       if (!b.at) return -1
       if (a.at !== b.at) return a.at < b.at ? 1 : -1
-      return a.sort === b.sort ? 0 : a.sort === 'c' ? -1 : 1
+      return SORT_RANK[a.sort] - SORT_RANK[b.sort]
     })
   }
-  const merged: Merged[] = mergeRows(rows ?? [], works ?? [])
+  const merged: Merged[] = mergeRows(rows ?? [], works ?? [], inspections ?? [])
 
   // 받은 청소비로 부담한 건이 있는 계약만 잔고를 보여준다. 부담이 없으면 보여줄 잔고도 없다.
   const fundedLeases = [...new Set((rows ?? [])
@@ -151,7 +166,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
           **토글과 등록 버튼은 형제다.** 버튼 안에 버튼은 HTML 상 무효이고 hydration 경고가 난다. */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <button type="button" onClick={() => setUserOpen(!panelOpen)} aria-expanded={panelOpen}
-          className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left">
+          className="flex-1 min-w-[10rem] flex items-center justify-between gap-2 text-left">
           <span className="text-xs font-semibold text-[var(--warm-dark)]">작업 이력</span>
           <span className="text-xs">
             {plannedCount > 0 && <strong className="text-[var(--tc-text)]">예정 {plannedCount}</strong>}
@@ -164,10 +179,13 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
         {/* 버튼이 둘인 것은 받는 칸이 다르기 때문이다. 청소는 사유 4종·받은 청소비 부담을 더 묻고,
             그 밖의 작업은 환경설정에서 만든 종류를 고른다. §23 은 헤더 CTA 1~2개를 허용한다.
             **접혀 있으면 감춘다** — 안 보이는 목록에 뭘 더하는 문만 서 있으면 안 된다. */}
+        {/* 점검 등록이 셋째다(2026-10-27). 좁은 폭에서는 버튼 줄이 통째로 다음 줄로 내려가 오른쪽에 선다. 그래서 제목 토글에
+            최소 폭(10rem)을 준다. 없으면 버튼 셋이 제목을 한 글자씩 세로로 접는다(320px 실측). */}
         {canEdit && !adding && panelOpen && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Btn variant="secondary" size="sm" onClick={() => setAdding('cleaning')}>청소 등록</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setAdding('work')}>작업 등록</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setAdding('inspection')}>점검 등록</Btn>
           </div>
         )}
       </div>
@@ -179,6 +197,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
           {adding === 'cleaning' ? (
             <CleaningPlanForm roomId={roomId} dense
               onDone={() => { setAdding(null); reload() }} onCancel={() => setAdding(null)} />
+          ) : adding === 'inspection' ? (
+            <InspectionPlanForm roomId={roomId} dense
+              onDone={() => { setAdding(null); reload() }} onCancel={() => setAdding(null)} />
           ) : (
             <RoomWorkPlanForm roomId={roomId} dense
               onDone={() => { setAdding(null); reload() }} onCancel={() => setAdding(null)} />
@@ -189,7 +210,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       {/* 첫 조회는 뼈대다 — 인라인 '불러오는 중…' 은 §17 원칙 금지고, 같은 폴더 형제 위젯
           아홉 곳(상태 이력·수납 기록·보증금·이사 이력·입주 가능한 방 등)이 전부 이 문법이다.
           행 두 개는 그 형제들이 쓰는 수치 그대로 — 이 목록도 보통 한두 행으로 열린다. */}
-      {rows === null || works === null ? (
+      {rows === null || works === null || inspections === null ? (
         <SkeletonRows rows={2} className="py-1" />
       ) : loadFailed ? (
         <p className="text-xs text-[var(--danger-fg)]">작업 이력을 불러오지 못했습니다.</p>
@@ -202,6 +223,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
               {m.sort === 'c' ? (
                 <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
                   canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
+              ) : m.sort === 'i' ? (
+                <InspectionRowBody row={m.inspection} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
               ) : (
                 <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing}
                   recentPerformers={recentPerformers} onChanged={reload} />
@@ -229,10 +252,13 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       {openWork && (
         <p className="mt-2 text-xs text-[var(--warning-fg)]">{openWork.kind} 예정이 남아 있습니다.</p>
       )}
+      {openInspection && (
+        <p className="mt-2 text-xs text-[var(--warning-fg)] break-keep">{INSPECTION_STAGE_LABEL[openInspection.stage]} 예정이 남아 있습니다. 호실 목록에도 표시됩니다.</p>
+      )}
       {/* 편집 토글 — 헤더가 아니라 목록 아래다. 헤더에 넣으면 셰브론 + 등록 둘 + 편집으로 넷이 되어
           §23 의 'CTA 1~2개'를 넘기고 320px 에서 접힌다. 접혀 있으면 이 버튼도 함께 숨어
           버튼이 0개가 된다. 데이터가 오기 전에는 안 그린다 — 눌러도 아무 일이 없다. */}
-      {canEdit && rows !== null && works !== null && merged.length > 0 && (
+      {canEdit && rows !== null && works !== null && inspections !== null && merged.length > 0 && (
         <div className="mt-2 flex justify-end">
           <Btn variant="secondary" size="sm" onClick={() => setEditing(e => !e)}>
             {editing ? '편집 완료' : '편집'}
@@ -257,6 +283,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     {m.sort === 'c' ? (
                       <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
                         canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
+                    ) : m.sort === 'i' ? (
+                      <InspectionRowBody row={m.inspection} canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
                     ) : (
                       <RoomWorkRowBody row={m.work} canEdit={canEdit} deleted
                         recentPerformers={recentPerformers} onChanged={() => { reload(); loadTrash() }} />
