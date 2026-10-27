@@ -12,7 +12,7 @@ import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { Fragment, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -22,6 +22,7 @@ import {
   type PendingReceiptRow,
 } from '@/app/(app)/dashboard/pendingReceipt'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast, humanError } from '@/lib/saveStatus'
@@ -44,10 +45,12 @@ const FALLBACK_EXPENSE_CATEGORIES: string[] = [...OPTION_LIST_DEFAULTS.expenseCa
 // 재고 카테고리 폴백도 손으로 적지 않는다. 재고 쪽 정본(inventory/constants)을 쓴다(3차 검수).
 const FALLBACK_INVENTORY_CATEGORIES: string[] = [...TRACKED_CATEGORIES]
 
-const KIND_LABEL: Record<string, { label: string; color: string }> = {
-  expense:   { label: '지출(영수증)', color: 'var(--tc-text)' },
-  inventory: { label: '재고/물품',     color: 'var(--success-fg)' },
-  unknown:   { label: '미분류',        color: 'var(--warm-mid)' },
+// AI 가 붙인 종류는 상태가 아니라 메타 정보다. §11 메타 칩(--canvas · --warm-muted · ring --warm-border · r-sm)으로 말하고
+// 색을 싣지 않는다(종전 color-mix 손 배지는 의미색 트라이어드 밖이었다, 2026-10-27 D4).
+const KIND_LABEL: Record<string, { label: string }> = {
+  expense:   { label: '지출(영수증)' },
+  inventory: { label: '재고/물품' },
+  unknown:   { label: '미분류' },
 }
 
 function fmtAgo(d: Date | string): string {
@@ -235,6 +238,8 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
   const [qtyValue, setQtyValue] = useState(row.qtyValue ?? '')
   const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
   const [specText, setSpecText] = useState(row.specText ?? '')
+  // 서술 규격 줄은 인식 결과·지난 기록 맞추기·단계별 입력이 서술 규격을 가져왔을 때 선다(비워도 남는다. 지우는 중에 줄이 사라지면 칸이 튄다).
+  const [specTextOpen, setSpecTextOpen] = useState(() => !!(row.specText || (row.specNote && 'receipt' in row.specNote && row.specNote.receipt.specText)))
   // 지난 기록에 맞춘 흔적(2026-10-27). 되살리거나 규격 칸을 손으로 고치면 캡션을 내린다(더는 사실이 아니다).
   const [specNoteOn, setSpecNoteOn] = useState(!!row.specNote)
   // 지난번 숫자 규격 '채우기'(offer)를 누르면 그 자리 캡션이 '채움 + 비우기' 로 바뀐다(독립 검수 권고 2).
@@ -286,7 +291,8 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
     setSetHint(null)
   }
   const applyWizard = (r: SpecWizardResult) => {
-    setSpecValue(r.specValue); setSpecUnit(r.specUnit); setSpecText(r.specText)
+    setSpecValue(r.specValue); setSpecUnit(r.specUnit); setSpecText(r.specText); if (r.specText) setSpecTextOpen(true)
+    setSpecNoteOn(false)
     if (r.qtyValue) setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
   }
 
@@ -344,16 +350,13 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
       </button>
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: 'var(--cream)', color: kindInfo.color, border: `1px solid color-mix(in srgb, ${kindInfo.color} 25%, transparent)` }}>
+          <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
             {kindInfo.label}
           </span>
-          {editingMode && (
-            <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded"
-              style={{ background: isInventory ? 'var(--success-bg)' : 'color-mix(in srgb, var(--coral) 12.5%, transparent)', color: isInventory ? 'var(--success-fg)' : 'var(--coral)' }}>
-              {isInventory ? '재고 등록 중' : '지출 등록 중'}
-            </span>
-          )}
+          {/* 진행 상태는 정본 Badge 다. 카드 바탕이 --canvas 라 중립은 solid(§11, pale-neutral 은 이 면에서 4.49:1 로 미달). */}
+          {editingMode && (isInventory
+            ? <Badge tone="pale-green">재고 등록 중</Badge>
+            : <Badge tone="neutral">지출 등록 중</Badge>)}
           <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{fmtAgo(row.createdAt)}</span>
         </div>
 
@@ -367,12 +370,15 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                 <p className="text-sm" style={{ color: 'var(--warm-dark)' }}>
                   {row.itemLabel ?? row.notes ?? row.inferredVendor ?? '(AI 분류 정보 없음)'}
                 </p>
+                {/* 값이 없는 토막은 줄표로 채우지 않고 뺀다(§29, 2026-10-27 D4). 구분자 ' · ' 는 있는 토막 사이에만 선다. */}
                 <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>
-                  {row.inferredDate ?? '—'}
-                  {row.inferredAmount != null && <> · <span className="font-semibold">{fmtWon(row.inferredAmount)}</span></>}
-                  {row.inferredCategory && <> · {row.inferredCategory}</>}
-                  {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
-                  {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
+                  {[
+                    row.inferredDate,
+                    row.inferredAmount != null ? <span key="amt" className="font-semibold">{fmtWon(row.inferredAmount)}</span> : null,
+                    row.inferredCategory,
+                    row.qtyValue ? `${row.qtyValue}${row.qtyUnit ?? '개'}` : null,
+                    row.specValue ? `${row.specValue}${row.specUnit ?? ''}` : null,
+                  ].filter(Boolean).map((part, i) => <Fragment key={i}>{i > 0 && ' · '}{part}</Fragment>)}
                 </p>
               </>
             )}
@@ -438,7 +444,6 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                       <input type="text" placeholder="ml" value={specUnit} onChange={e => { setSpecUnit(e.target.value); setSpecNoteOn(false) }}
                         className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
-                    {specText.trim() && <p className="mt-0.5 text-[0.65625rem] text-[var(--tc-text)]">서술 규격: {specText}</p>}
                   </div>
                   <div>
                     <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>
@@ -450,6 +455,16 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                     </div>
                   </div>
                 </div>
+                {/* 서술 규격 — 지출 등록 폼의 '규격(직접)' 줄과 같은 한 줄 입력이다(종전엔 읽기 전용 문장이라 고칠 수 없었다, D4).
+                    인식한 서술 규격이 있을 때만 선다. 비워도 줄은 남아 다시 적을 수 있다. */}
+                {specTextOpen && (
+                  <div className="flex items-center gap-1.5">
+                    <label htmlFor={`pr-spectext-${row.id}`} className="text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>규격(직접)</label>
+                    <input id={`pr-spectext-${row.id}`} type="text" value={specText} placeholder="예: 4x30mm"
+                      onChange={e => { setSpecText(e.target.value); setSpecNoteOn(false) }}
+                      className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  </div>
+                )}
                 {/* 지난 기록 규격 맞추기 캡션(2026-10-27, 지출 등록 폼과 같은 문장 정본 lib/specNotation specNoteText).
                     변형이 둘 이상이면 채우지 않고 지출 등록 폼(정밀 OCR·다품목, 기존 딥링크)에서 고르게 보낸다. */}
                 {specNote && (specNote.kind === 'choose' ? (

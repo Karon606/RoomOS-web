@@ -11,6 +11,10 @@
 //   ⓓ 틴트 배지에 ring 이 없다(§11 2026-09 개정). 정본 두 파일과, 정본 밖에서 같은 문법을 손으로
 //      쓴 자리(-bg + -fg + ring-1)를 함께 본다. 정본만 걷으면 모조가 새 이질감이 된다.
 //      메타 칩(bg --canvas + ring --warm-border)과 폼 에러 박스·선택 보더의 ring 은 대상이 아니다.
+//   ⓔ 배지 모양 줄(py-0.5 + rounded 의 span)이 style 에서 color-mix 로 색을 섞지 않는다(2026-10-27 D4, 홈 영수증 카드).
+//      color-mix 로 지은 틴트는 §04 트라이어드 밖이라 다크 틴트표를 못 탄다. 상태는 정본 Badge, 메타 정보는 §11 메타 칩이다.
+//      좁은 축이다. 이번에 고친 화면만 본다(COLOR_MIX_SURFACES). 같은 꼴이 남은 자리는 홈 '알림'·'이달 미수납' 머리의 건수 칩 둘
+//      (숫자 카운터는 §11 범위 밖)과 환경설정 푸시 이력의 출처 칩 하나다. 그 화면을 고칠 때 여기에 더한다(빼는 일은 없다).
 //
 // 실행: node scripts/check-badge-tokens.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -59,6 +63,25 @@ for (const f of walk('app', walk('components', []))) {
   })
 }
 
-console.log(`[배지 토큰] 정본 ${FILES.length}파일 + 손 배지 검사 / 위반 ${violations.length}건`)
+// ⓔ 배지 모양 줄의 style color-mix — 여는 태그 하나를 중괄호 깊이로 잘라 본다(style={{ … }} 의 '>' 를 끝으로 읽지 않게).
+{
+  const tagEnd = (src, from) => { let d = 0; for (let k = from; k < src.length; k++) { const c = src[k]; if (c === '{') d++; else if (c === '}') d--; else if (c === '>' && d === 0) return k } return -1 }
+  const COLOR_MIX_SURFACES = ['components/dashboard/PendingReceiptSection.tsx']
+  for (const f of COLOR_MIX_SURFACES) {
+    const src = stripComments(readFileSync(f, 'utf8'))
+    for (const m of src.matchAll(/<span\b/g)) {
+      const end = tagEnd(src, m.index)
+      if (end < 0) continue
+      const tag = src.slice(m.index, end + 1)
+      const cls = tag.match(/className=(?:"([^"]*)"|\{`([^`]*)`\})/)
+      const c = cls ? (cls[1] ?? cls[2] ?? '') : ''
+      if (!/(?:^|\s)py-0\.5(?:\s|$)/.test(c) || !/(?:^|\s)rounded(?:-\w+)?(?:\s|$)/.test(c)) continue
+      if (!/style=\{\{[\s\S]*color-mix\(/.test(tag)) continue
+      violations.push(`${f}:${src.slice(0, m.index).split('\n').length} 배지 모양 줄이 style 에서 color-mix 로 색을 섞는다. 상태는 정본 Badge, 메타 정보는 §11 메타 칩으로(§04 트라이어드).`)
+    }
+  }
+}
+
+console.log(`[배지 토큰] 정본 ${FILES.length}파일 + 손 배지 검사(ⓓ ring · ⓔ color-mix) / 위반 ${violations.length}건`)
 for (const v of violations) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
