@@ -3475,7 +3475,15 @@ export async function getTenantDetail(tenantId: string) {
           // shortStayPolicy — 단기 계약의 예약금 처리가 영업장 공통 기본값보다 앞선다(본문이 같은 정본으로 해석).
           property: { select: { contactLeadDays: true, reservationDepositMode: true, shortStayPolicy: true } },
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
-          room: { select: { id: true, roomNo: true } },
+          // 그 방의 거주계·비거주 계약과 전입신고 값 — 계약 정보 카드의 전입신고 경고 재료다(2026-10-27,
+          // lib/roomAssignment registrationConflictWarning). 명단은 ROOM_GUARD_STATUSES 와 같다.
+          room: { select: {
+            id: true, roomNo: true, noMoveInReport: true,
+            leaseTerms: {
+              where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+              select: { id: true, status: true, registrationStatus: true, tenant: { select: { name: true } } },
+            },
+          } },
           // 퇴실 예정 때 고른 사유를 퇴실 처리 미니폼이 이어받을 근거(lib/checkoutReason 정본이 고른다).
           // 최신 몇 행이면 된다 — 예정 구간 밖의 전이를 만나면 판정이 멈춘다. deletedAt 은 손수 적는다
           // (중첩 관계 조회는 소프트삭제 자동필터가 안 걸린다).

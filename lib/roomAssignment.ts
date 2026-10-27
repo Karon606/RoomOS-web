@@ -440,3 +440,62 @@ export function plannedStayDenial(input: {
     + `${dot(hit.to)}부터 입주 가능합니다. `
     + `그 기간에 배정하려면 ${hit.tenantName}님의 거주 호실 일정을 먼저 바꿔 주세요.`
 }
+
+// ── 전입신고 경고(2026-10-27 운영자 승인) ─────────────────────────────
+//
+// 비거주 계약은 거주자가 있는 방에 겹쳐도 된다(roomAssignmentDenial 이 허용한다). 다만 그동안 두 계약의
+// 전입 주소가 같은 방 하나가 되고, 거주하지 않는 쪽이 그 주소로 신고하면 주민등록법상 거짓 신고가 될 수 있다.
+// 그래서 막지 않고 알린다. 저장은 늘 통과하고, 폼(입주자 등록·수정·이사)과 상세(계약 정보)가 이 한 벌의
+// 사유 목록을 같은 문장으로 그린다. 문장은 여기 하나다(화면마다 따로 적으면 같은 사실이 다르게 불린다).
+
+/** 비거주 계약을 거주 중인 사람이 있는 방에 둘 때 — 호실 칸 아래. */
+export const NON_RESIDENT_WITH_RESIDENT_WARNING =
+  '이 호실에는 거주 중인 입주자가 있습니다. 비거주 계약이 겹친 동안 두 계약의 전입 주소가 같아집니다.'
+
+/** 거주계의 전입신고를 신고예정·신고완료로 두는데 같은 방에 비거주 계약이 있을 때 — 전입신고 칸 아래·상세 값 옆. */
+export function residentWithNonResidentWarning(nonResidentNames: readonly string[]): string {
+  return `같은 호실에 비거주 계약(${nonResidentNames.join('·')})이 있어 전입신고 주소가 겹칩니다. 거주하지 않는 쪽의 신고는 주민등록법상 거짓 신고로 다뤄질 수 있습니다.`
+}
+
+/** 전입신고 불가 방(Room.noMoveInReport)에 신고예정·신고완료로 둘 때 — 전입신고 칸 아래. 방 특성 체크박스의 '등록 시 경고' 약속이다. */
+export const NO_MOVE_IN_REPORT_ROOM_WARNING = '이 호실은 전입신고 불가로 설정된 방입니다.'
+
+export type RegistrationWarningCode = 'NON_RESIDENT_WITH_RESIDENT' | 'RESIDENT_WITH_NON_RESIDENT' | 'NO_MOVE_IN_REPORT_ROOM'
+export type RegistrationWarning = { code: RegistrationWarningCode; message: string }
+
+/** 그 방에 지금 사는 사람 — 경고 문장이 '거주 중인 입주자'라고 말하므로 예약은 넣지 않는다. */
+const LIVING_STATUSES: readonly string[] = ['ACTIVE', 'CHECKOUT_PENDING']
+/** 그 주소로 신고했거나 할 계약 — 미신고(NOT_REPORTED)는 주소가 겹치지 않는다. */
+const REPORTING_REGISTRATION: readonly string[] = ['PLANNED', 'REGISTERED']
+
+/**
+ * 이 계약을 이 방에 두면 생기는 전입신고 경고 — 없으면 빈 배열. 막지 않는다(경고만).
+ *
+ * `roomLeases` 는 그 방의 다른 계약이다(호출부가 본인 계약을 뺀다). 사유마다 보는 상태가 정해져 있어
+ * (거주 중 = 거주중·퇴실 예정, 비거주 = 비거주) 문의·투어 줄이 섞여 와도 답이 바뀌지 않는다.
+ *   · 비거주 계약 + 그 방에 거주 중인 사람 → NON_RESIDENT_WITH_RESIDENT. 비거주 쪽 전입신고 값과 무관하다
+ *     (신고예정·신고완료로 두는 경우도 이 사유 하나가 덮는다. 같은 사실을 두 자리에 또 적지 않는다, §27.8 ⑤).
+ *   · 거주계 + 신고예정·신고완료 + 그 방에 비거주 계약 → RESIDENT_WITH_NON_RESIDENT(비거주 계약 이름).
+ *   · 전입신고 불가 방 + 신고예정·신고완료(거주계·비거주) → NO_MOVE_IN_REPORT_ROOM.
+ */
+export function registrationConflictWarning(
+  incoming: { status: string; registrationStatus: string | null },
+  roomLeases: readonly { status: string; registrationStatus: string | null; tenantName: string }[],
+  room: { noMoveInReport: boolean },
+): RegistrationWarning[] {
+  const out: RegistrationWarning[] = []
+  const reporting = REPORTING_REGISTRATION.includes(incoming.registrationStatus ?? '')
+  if (incoming.status === 'NON_RESIDENT' && roomLeases.some(l => LIVING_STATUSES.includes(l.status))) {
+    out.push({ code: 'NON_RESIDENT_WITH_RESIDENT', message: NON_RESIDENT_WITH_RESIDENT_WARNING })
+  }
+  if (RESIDENT_STATUSES.includes(incoming.status) && reporting) {
+    const names = roomLeases.filter(l => l.status === 'NON_RESIDENT').map(l => l.tenantName)
+    if (names.length > 0) {
+      out.push({ code: 'RESIDENT_WITH_NON_RESIDENT', message: residentWithNonResidentWarning(names) })
+    }
+  }
+  if (room.noMoveInReport && reporting && ROOM_GUARD_STATUSES.includes(incoming.status)) {
+    out.push({ code: 'NO_MOVE_IN_REPORT_ROOM', message: NO_MOVE_IN_REPORT_ROOM_WARNING })
+  }
+  return out
+}

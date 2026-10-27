@@ -203,6 +203,8 @@ export async function validateMoveDate(
     /** 이 저장으로 확정될 값 — DB 의 현재 값이 아니다. 호실과 날짜를 한 번에 바꾸는 저장이 있다. */
     moveInDate: string | null
     moveOutDate: string | null
+    /** 옮기는 계약의 상태(이 저장으로 확정될 값). 비거주와 거주는 서로의 '다음 사람'이 아니다. */
+    status: string
   },
 ): Promise<string | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.at)) return '이사일 형식이 올바르지 않습니다.'
@@ -224,9 +226,13 @@ export async function validateMoveDate(
   // 빈 방만 고르게 하므로 새 방 쪽은 이미 막혀 있지만, 옛 방을 보는 가드는 어디에도 없었다.
   const others = await db.leaseTerm.findMany({
     where: { roomId: p.fromRoomId, id: { not: leaseTermId }, status: { in: OCCUPYING_STATUSES } },
-    select: { moveInDate: true, moveOutDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+    select: { status: true, moveInDate: true, moveOutDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
   })
   for (const o of others) {
+    // 거주·비거주 쌍은 겹쳐도 되는 짝이다(비거주는 명의라 방을 차지하지 않는다, roomAssignmentDenial 과 같은 선).
+    // 비거주가 거주자보다 먼저 들어와 있던 방에서 비거주를 옮기면 어떤 이사일도 '뒤에 온 거주자와 겹침'으로
+    // 막히던 잔여를 닫는다(2026-10-27, fc286a74 의 짝).
+    if ((p.status === 'NON_RESIDENT') !== (o.status === 'NON_RESIDENT')) continue
     const inYmd = o.moveInDate ? ymdOf(o.moveInDate) : null
     const outYmd = o.moveOutDate ? ymdOf(o.moveOutDate) : o.expectedMoveOut ? ymdOf(o.expectedMoveOut) : null
     // 이 사람이 들어오기 전(또는 같은 날)부터 그 방에 있던 사람은 '다음 사람'이 아니다. 비거주·거주 공존처럼

@@ -12,6 +12,7 @@ import {
   findOverlapAck, isSameDayTurnover, occupancyOverlapSpan,
   STANDALONE_LEASE_ERROR, STANDALONE_LEASE_IMPORT_ERROR, NON_RESIDENT_ONLY_STANDALONE_ERROR,
   standaloneLeaseModeOf, standaloneLeaseFlagsOf,
+  registrationConflictWarning, NON_RESIDENT_WITH_RESIDENT_WARNING, NO_MOVE_IN_REPORT_ROOM_WARNING,
 } from '../lib/roomAssignment'
 import { propagateDueDayToSubLeases, sameDueDay } from '../lib/dueDay'
 import { propagateMoveInDateToSubLeases, sameMoveInDate, moveInYmd } from '../lib/moveInDate'
@@ -404,7 +405,7 @@ async function moveInPropagationTests() {
 // 없이 두 칸에 그대로 쓰므로, 여기서 막지 못한 날짜는 곧바로 역전 구간이나 없던 겹침이 된다.
 // 그 둘은 캘린더에서 빨간 충돌 줄로 올라오고 운영자는 방금 자기가 만든 것인 줄 모른다.
 
-type FakeOther = { moveInDate: Date | null; moveOutDate: Date | null; expectedMoveOut: Date | null; name: string }
+type FakeOther = { moveInDate: Date | null; moveOutDate: Date | null; expectedMoveOut: Date | null; name: string; status?: string }
 
 function fakeMoveDateDb(openStart: Date | null, others: FakeOther[]) {
   return {
@@ -413,6 +414,7 @@ function fakeMoveDateDb(openStart: Date | null, others: FakeOther[]) {
     },
     leaseTerm: {
       findMany: async () => others.map(o => ({
+        status: o.status ?? 'ACTIVE',
         moveInDate: o.moveInDate, moveOutDate: o.moveOutDate, expectedMoveOut: o.expectedMoveOut,
         tenant: { name: o.name },
       })),
@@ -421,11 +423,12 @@ function fakeMoveDateDb(openStart: Date | null, others: FakeOther[]) {
 }
 
 const TODAY_MV = '2026-08-20'
-const mv = (at: string, p?: { openStart?: string | null; others?: FakeOther[]; moveIn?: string | null; moveOut?: string | null }) =>
+const mv = (at: string, p?: { openStart?: string | null; others?: FakeOther[]; moveIn?: string | null; moveOut?: string | null; status?: string }) =>
   validateMoveDate(fakeMoveDateDb(p?.openStart === null ? null : D(p?.openStart ?? '2026-01-05'), p?.others ?? []), 'L', {
     at, fromRoomId: 'r506', today: TODAY_MV,
     moveInDate: p?.moveIn === undefined ? '2026-01-05' : p.moveIn,
     moveOutDate: p?.moveOut ?? null,
+    status: p?.status ?? 'ACTIVE',
   })
 
 async function moveDateTests() {
@@ -452,11 +455,41 @@ async function moveDateTests() {
     await mv('2026-08-15', { others: [{ moveInDate: D('2026-01-05'), moveOutDate: null, expectedMoveOut: null, name: '같은날' }] }), null)
   eq('이사일 · 이미 나간 사람과는 안 겹친다',
     await mv('2026-08-15', { others: [{ moveInDate: D('2025-01-01'), moveOutDate: D('2025-12-31'), expectedMoveOut: null, name: '옛사람' }] }), null)
+  // 거주·비거주 쌍은 겹쳐도 되는 짝이다(2026-10-27). 비거주를 옮길 때 뒤에 들어온 거주자는 다음 사람이 아니다.
+  eq('이사일 · 비거주를 옮길 때 뒤에 온 거주자와는 안 겹친다',
+    await mv('2026-08-11', { others: 다음사람, status: 'NON_RESIDENT' }), null)
+  blocked('이사일 · 거주를 옮길 때 뒤에 온 거주자와는 그대로 겹친다',
+    await mv('2026-08-11', { others: 다음사람, status: 'ACTIVE' }), true)
+  blocked('이사일 · 비거주끼리는 그대로 겹친다',
+    await mv('2026-08-11', { others: [{ ...다음사람[0], status: 'NON_RESIDENT' }], status: 'NON_RESIDENT' }), true)
+}
+
+// ── 전입신고 경고(2026-10-27) ── 막지 않고 알린다. 사유 목록만 본다.
+function registrationWarningTests() {
+  const codes = (...a: Parameters<typeof registrationConflictWarning>) => registrationConflictWarning(...a).map(w => w.code)
+  const 거주자 = { status: 'ACTIVE', registrationStatus: 'REGISTERED', tenantName: '이상경' }
+  const 비거주 = { status: 'NON_RESIDENT', registrationStatus: 'PLANNED', tenantName: '홍은주' }
+  const 보통방 = { noMoveInReport: false }
+  eq('경고 · 비거주를 거주자 있는 방에', codes({ status: 'NON_RESIDENT', registrationStatus: 'NOT_REPORTED' }, [거주자], 보통방), ['NON_RESIDENT_WITH_RESIDENT'])
+  eq('경고 · 비거주를 신고예정으로 둬도 사유는 하나', codes({ status: 'NON_RESIDENT', registrationStatus: 'PLANNED' }, [거주자], 보통방), ['NON_RESIDENT_WITH_RESIDENT'])
+  eq('경고 · 문장은 정본 상수', registrationConflictWarning({ status: 'NON_RESIDENT', registrationStatus: null }, [거주자], 보통방)[0]?.message, NON_RESIDENT_WITH_RESIDENT_WARNING)
+  eq('경고 · 예약만 있는 방은 거주 중이 아니다', codes({ status: 'NON_RESIDENT', registrationStatus: 'PLANNED' }, [{ ...거주자, status: 'RESERVED' }], 보통방), [])
+  eq('경고 · 빈 방의 비거주는 조용하다', codes({ status: 'NON_RESIDENT', registrationStatus: 'PLANNED' }, [], 보통방), [])
+  eq('경고 · 거주자 신고예정 + 같은 방 비거주', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [비거주], 보통방), ['RESIDENT_WITH_NON_RESIDENT'])
+  eq('경고 · 비거주 이름을 지목한다', registrationConflictWarning({ status: 'ACTIVE', registrationStatus: 'REGISTERED' }, [비거주], 보통방)[0]?.message.includes('비거주 계약(홍은주)'), true)
+  eq('경고 · 거주자 미신고면 겹칠 주소가 없다', codes({ status: 'ACTIVE', registrationStatus: 'NOT_REPORTED' }, [비거주], 보통방), [])
+  eq('경고 · 문의 단계 줄은 거른다', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [{ ...비거주, status: 'WAITING_TOUR' }], 보통방), [])
+  eq('경고 · 전입신고 불가 방', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [], { noMoveInReport: true }), ['NO_MOVE_IN_REPORT_ROOM'])
+  eq('경고 · 전입신고 불가 방 문장', registrationConflictWarning({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [], { noMoveInReport: true })[0]?.message, NO_MOVE_IN_REPORT_ROOM_WARNING)
+  eq('경고 · 전입신고 불가 방이라도 미신고면 조용하다', codes({ status: 'ACTIVE', registrationStatus: 'NOT_REPORTED' }, [], { noMoveInReport: true }), [])
+  eq('경고 · 전입신고 불가 방의 문의 단계는 조용하다', codes({ status: 'WAITING_TOUR', registrationStatus: 'PLANNED' }, [], { noMoveInReport: true }), [])
+  eq('경고 · 둘이 함께', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [비거주], { noMoveInReport: true }), ['RESIDENT_WITH_NON_RESIDENT', 'NO_MOVE_IN_REPORT_ROOM'])
 }
 
 void dueDayPropagationTests()
   .then(moveInPropagationTests)
   .then(moveDateTests)
+  .then(registrationWarningTests)
   .then(() => {
     console.log(`\n계약 종속 가드 회귀: ${pass} 통과 / ${fail} 실패`)
     if (fail > 0) process.exit(1)

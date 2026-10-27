@@ -91,7 +91,7 @@ import { withParticle } from '@/lib/koParticle'
 import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STATUSES } from '@/lib/leaseStatus'
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
-import { PARENT_LEASE_STATUSES, standaloneLeaseOk, NON_RESIDENT_ONLY_STANDALONE_ERROR } from '@/lib/roomAssignment'
+import { PARENT_LEASE_STATUSES, standaloneLeaseOk, NON_RESIDENT_ONLY_STANDALONE_ERROR, registrationConflictWarning } from '@/lib/roomAssignment'
 import { isDueDayAdjust, type DueDayAdjustStatus } from '@/lib/dueDayAdjust'
 import { DueDayAdjustList } from '@/components/entity-modal/widgets/DueDayAdjustList'
 
@@ -112,6 +112,9 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   reservations: { leaseId: string; tenantName: string; moveIn: string; moveOut: string | null }[]
   // 남이 이 방을 임시 거처로 잡아 둔 구간 — 서버 가드(plannedStayDenial)와 같은 재료다.
   plannedStays: { leaseId: string; tenantId: string; tenantName: string; from: string; to: string }[]
+  noMoveInReport: boolean            // 전입신고 불가 방 — 전입신고 칸 아래 경고(2026-10-27)
+  // 그 방의 거주계·비거주 계약과 전입신고 값 — 전입신고 경고(registrationConflictWarning)의 재료다.
+  guardLeases: { leaseId: string; status: string; registrationStatus: string; tenantName: string }[]
 }
 
 // 호실 선택 자격 — 폼 세 곳(선택 비활성·겹침 캡션·저장 확인창)이 같은 판정을 쓴다.
@@ -3882,6 +3885,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   })()
 
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
+  // 전입신고 값 — 경고(같은 방 비거주·전입신고 불가 방)가 고르는 대로 따라오게 상태로 든다(2026-10-27).
+  const [registrationVal, setRegistrationVal] = useState(lease?.registrationStatus ?? 'PLANNED')
   // '메인 계약' 선택 — 창고류 방(공실 집계 제외)이 묶일 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
   const [parentVal, setParentVal] = useState(lease?.parentLeaseTermId ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
@@ -5044,6 +5049,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             )
           })()}
 
+          {/* 전입신고 경고 1(2026-10-27) — 비거주 계약을 거주 중인 사람이 있는 방에 둘 때. 막지 않고 알린다.
+              판정·문장은 lib/roomAssignment registrationConflictWarning 한 벌이다(상세 계약 정보와 같은 함수). */}
+          {(() => {
+            const sel = rooms.find(r => r.id === selectedRoomId)
+            if (!sel) return null
+            const w = registrationConflictWarning(
+              { status: statusVal, registrationStatus: registrationVal },
+              sel.guardLeases.filter(l => l.leaseId !== lease?.id), sel,
+            ).find(x => x.code === 'NON_RESIDENT_WITH_RESIDENT')
+            if (!w) return null
+            return <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed break-keep">{w.message}</p>
+          })()}
+
           {/* 이사일 — 살던 사람이 방을 옮길 때만. '실제 퇴실일'(아래) 과 같은 조건부 날짜 칸 문법이다.
               이 칸이 없던 동안 거주 구간의 경계가 '저장을 누른 날'로 박혔다(lib/roomStay recordRoomChange
               의 at 인자를 넘기는 호출부가 저장소에 0곳이었다). 그 날짜가 곧 캘린더의 두 막대가 갈리는
@@ -5285,12 +5303,29 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               계약만 추가(leaseOnly)에는 그리지 않는다 — 신고는 주소 하나에 사람 한 명의 사실이라
               방을 둘 써도 한 건이고, 상세도 메인 계약만 읽는다(TenantBody). */}
           {!leaseOnly && (
-            <SelectField label={isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) ? '체류지 변경신고' : '전입신고'} name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
+            <SelectField label={isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) ? '체류지 변경신고' : '전입신고'} name="registrationStatus" value={registrationVal} onChange={setRegistrationVal}>
               <option value="PLANNED">신고예정</option>
               <option value="REGISTERED">신고완료</option>
               <option value="NOT_REPORTED">미신고</option>
             </SelectField>
           )}
+          {/* 전입신고 경고 2(2026-10-27) — 신고예정·신고완료인데 같은 방에 비거주 계약이 있거나 전입신고 불가 방일 때.
+              막지 않고 알린다. 반 칸이면 320px 에서 여러 줄로 접혀 격자 밑 전폭에 둔다(§27.8 놓이는 면 규칙과 같은 이유).
+              전입신고 칸이 없는 계약 추가(leaseOnly)에는 그리지 않는다. */}
+          {!leaseOnly && (() => {
+            const sel = rooms.find(r => r.id === selectedRoomId)
+            if (!sel) return null
+            const ws = registrationConflictWarning(
+              { status: statusVal, registrationStatus: registrationVal },
+              sel.guardLeases.filter(l => l.leaseId !== lease?.id), sel,
+            ).filter(x => x.code !== 'NON_RESIDENT_WITH_RESIDENT')
+            if (ws.length === 0) return null
+            return (
+              <div className="col-span-2 -mt-1 space-y-0.5">
+                {ws.map(w => <p key={w.code} className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed break-keep">{w.message}</p>)}
+              </div>
+            )
+          })()}
           {showExitDate && (
             // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
             // 어느 쪽을 고쳐도 같은 값이 저장되고 미리보기 금액도 따라온다(운영자 신고 2026-07-26).

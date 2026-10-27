@@ -52,6 +52,13 @@
 //
 // 운영이 실제로 2실 거주를 하기로 하면 이 축은 오탐이 된다. 그때는 규칙을 바꾸는 것이 아니라
 // **기준선을 갱신**한다(BASELINE_TWO_RESIDENCES) — 지금 기준선은 0 이다.
+//
+// 축 ⑤ 같은 방에 거주계(입실 예약·거주중·퇴실 예정) 신고완료와 비거주 신고완료가 함께 있는 방.
+//
+// 왜 이게 사고인가 — 비거주 계약은 거주자가 있는 방에 겹쳐도 된다(2026-10-27 운영자 승인). 다만 두 계약이
+// 모두 그 방 주소로 전입신고를 마쳤다면, 거주하지 않는 쪽의 신고는 주민등록법상 거짓 신고가 될 수 있다.
+// 저장은 막지 않고 폼·상세가 경고한다(lib/roomAssignment registrationConflictWarning). 이 축은 경고를 지나
+// 실제로 둘 다 신고완료가 된 방을 이름으로 부른다. 신고예정은 아직 신고 전이라 세지 않는다. 기준선 0.
 import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -87,6 +94,34 @@ const sameDayTurnover = (a, b) => {
   const turns = (front, back) => front.moveOut === day && back.moveIn === day && (front.moveIn === null || front.moveIn < day)
   return turns(a, b) || turns(b, a)
 }
+/**
+ * 축 ⑤ 판정 — 이 방의 계약들에 거주계 신고완료와 비거주 신고완료가 함께 있는가. 있으면 사유, 없으면 null.
+ * @param leases [{ status, registrationStatus, tenant: { name } }]
+ */
+const registrationClash = (leases) => {
+  const done = leases.filter(l => l.registrationStatus === 'REGISTERED')
+  const res = done.filter(l => OCCUPYING_STATUSES.includes(l.status))
+  const nr = done.filter(l => l.status === 'NON_RESIDENT')
+  if (res.length === 0 || nr.length === 0) return null
+  return `거주 ${res.map(l => l.tenant?.name ?? '-').join('·')} 와 비거주 ${nr.map(l => l.tenant?.name ?? '-').join('·')} 가 모두 전입신고 완료`
+}
+// 자가 역주입 — 실데이터가 0건이면 침묵이 건강함인지 빈 그물인지 모른다(check-lease-subordination 과 같은 문법).
+const 역주입5 = [
+  ['축⑤ 거주 신고완료 + 비거주 신고완료', registrationClash([
+    { status: 'ACTIVE', registrationStatus: 'REGISTERED', tenant: { name: '이상경' } },
+    { status: 'NON_RESIDENT', registrationStatus: 'REGISTERED', tenant: { name: '홍은주' } }])],
+].filter(([, r]) => r === null).map(([n]) => n)
+const 오탐5 = [
+  ['비거주 신고예정', registrationClash([
+    { status: 'ACTIVE', registrationStatus: 'REGISTERED', tenant: { name: '이상경' } },
+    { status: 'NON_RESIDENT', registrationStatus: 'PLANNED', tenant: { name: '홍은주' } }])],
+  ['거주자 미신고', registrationClash([
+    { status: 'ACTIVE', registrationStatus: 'NOT_REPORTED', tenant: { name: '이상경' } },
+    { status: 'NON_RESIDENT', registrationStatus: 'REGISTERED', tenant: { name: '홍은주' } }])],
+  ['비거주만 신고완료', registrationClash([
+    { status: 'NON_RESIDENT', registrationStatus: 'REGISTERED', tenant: { name: '홍은주' } }])],
+].filter(([, r]) => r !== null).map(([n]) => n)
+
 /** 두 계약 id 로 만드는 확인 색인 키 — 앞뒤 순서를 묻지 않는다(날짜가 밀리면 순서가 바뀐다). */
 const pairKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
 
@@ -100,7 +135,7 @@ async function main() {
       property: { select: { name: true } },
       leaseTerms: {
         where: { status: { in: [...OCCUPYING_STATUSES, 'NON_RESIDENT'] } },
-        select: { id: true, status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+        select: { id: true, status: true, registrationStatus: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
       },
     },
   })
@@ -162,7 +197,12 @@ async function main() {
   const axis1 = []
   const axis2 = []
   const axis3 = []
+  const axis5 = []
   for (const r of rooms) {
+    // ── 축 ⑤ — 점유 계약 유무와 무관하게 방의 계약 전부로 묻는다(비거주만 있는 방도 걸러 낸다).
+    const clash = registrationClash(r.leaseTerms)
+    if (clash) axis5.push({ property: r.property?.name ?? '?', roomNo: r.roomNo, detail: clash })
+
     // 계획 구간을 의사 점유로 더한다. 같은 계약의 본 줄과 자기 임시 구간이 서로 걸리지 않게
     // 같은 id 쌍은 아래 루프가 건너뛴다.
     const occ = [
@@ -252,6 +292,12 @@ async function main() {
     '겹치는 쪽의 입주일 또는 퇴실 예정일을 옮기거나, 한쪽을 다른 방으로 옮긴다.')
   bad += report('공실 집계 제외 방(창고·사무실)에 거주·예약 계약이 있다', axis3,
     '그 계약을 다른 방으로 옮기거나, 호실 관리 편집에서 공실 집계에서 제외를 해제한다.')
+  bad += report('같은 방에 거주계 전입신고 완료와 비거주 전입신고 완료가 함께 있다', axis5,
+    '실제로 거주하지 않는 쪽의 전입신고 상태를 확인해 바로잡는다(거짓 신고 위험). 계약은 그대로 둬도 된다.')
+  if (역주입5.length || 오탐5.length) {
+    console.error(`[입주 가능 정합] 축 5 자가 점검 실패 · 미발화 ${역주입5.join(', ') || '없음'} · 오탐 ${오탐5.join(', ') || '없음'}`)
+    bad += 1
+  }
   if (axis4.length > BASELINE_TWO_RESIDENCES) {
     bad += report('한 사람이 거주 계약을 2건 이상 들고 있다(다호실은 비거주 부계약만 허용)', axis4,
       '한쪽을 비거주(창고·사무실 명의)로 바꾸거나 종료한다. 2실 거주가 실제 운영 방침이 되면 이 스크립트의 BASELINE_TWO_RESIDENCES 를 갱신한다.')
@@ -266,7 +312,7 @@ async function main() {
 
   await prisma.$disconnect()
   if (bad > 0) process.exit(1)
-  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 입주자 ${people.length}명 검사 / 위반 0건 · 확인된 겹침 ${ackedPairs}건 (축 4종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES})`)
+  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 입주자 ${people.length}명 검사 / 위반 0건 · 확인된 겹침 ${ackedPairs}건 (축 5종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES}, 축 5 자가 점검 통과)`)
 }
 
 main()

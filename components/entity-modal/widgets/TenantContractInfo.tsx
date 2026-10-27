@@ -73,7 +73,11 @@ const fmtTourAt = (d: Date | string | null | undefined, hm: string | null | unde
 
 // foreign 은 부모가 정본(isForeignForDocuments)으로 판정해 내린다 — 위젯이 판정을 복제하면
 // 계약서 종이의 체류지 변경신고 라벨과 갈릴 수 있다(운영자 오더 2026-09-07).
-export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; foreign?: boolean }) {
+export function TenantContractInfo({ lease, foreign = false, registrationNote = null }: {
+  lease: Lease; foreign?: boolean
+  /** 전입신고 값 옆 보조 글 — 같은 방 비거주 계약과 신고 주소가 겹치는 동안만(2026-10-27, registrationConflictWarning). */
+  registrationNote?: string | null
+}) {
   const isPending = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
   // 아직 들어오기 전(또는 끝난) 계약인가 — 문의 일시·투어 예정일이 뜨는 조건 한 벌.
   // 거주 단계에 투어 예정일을 남기면 이미 지난 약속이 앞으로의 일정처럼 읽힌다.
@@ -133,6 +137,10 @@ export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; f
             중간에 끼우면 그 확정을 흔들기 때문이다. */}
         <Item label={foreign ? '체류지 변경신고' : '전입신고'}
           value={REGISTRATION_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
+        {/* 경고 문장은 반 칸이면 320px 에서 여러 줄로 접혀 격자 전폭에 둔다. 막지 않는 알림이라 warning-fg 캡션이다. */}
+        {registrationNote && (
+          <p className="col-span-2 -mt-1 text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed break-keep">{registrationNote}</p>
+        )}
       </Grid>
     </Section>
   )

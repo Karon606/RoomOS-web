@@ -80,7 +80,7 @@ import { checkoutRevertTarget, checkoutRevertBlock, checkoutRevertBlockMessage,
   CHECKOUT_REVERT_LABEL, CHECKOUT_REVERT_REASON } from '@/lib/checkoutRevert'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
-  plannedStayDenial, roomRequiredDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
+  plannedStayDenial, roomRequiredDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
 import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { reservationConfirmPhoneDenial, type TenantPhoneContact } from '@/lib/tenantContact'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
@@ -527,7 +527,7 @@ export async function getRoomsForSelect() {
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         // take:1 을 뺐다 — 방이 '언제 비는지'와 '이미 예약이 걸렸는지'는 계약 하나만 봐서는 알 수 없다.
-        select: { id: true, status: true, moveInDate: true, expectedMoveOut: true, isShortTerm: true, tenant: { select: { name: true } } },
+        select: { id: true, status: true, registrationStatus: true, moveInDate: true, expectedMoveOut: true, isShortTerm: true, tenant: { select: { name: true } } },
         orderBy: { createdAt: 'desc' },
       },
     },
@@ -586,6 +586,11 @@ export async function getRoomsForSelect() {
         .map(l => ({ leaseId: l.id, tenantName: l.tenant.name, moveIn: ymd(l.moveInDate)!, moveOut: ymd(l.expectedMoveOut) })),
       // 남이 임시 거처로 잡아 둔 구간 — leaseId 는 화면이 본인 것을 빼는 데 쓴다.
       plannedStays: plansByRoom.get(r.id) ?? [],
+      // 그 방의 거주계·비거주 계약과 전입신고 값 — 폼의 전입신고 경고(lib/roomAssignment registrationConflictWarning)
+      // 재료다(2026-10-27). leaseId 는 화면이 본인 계약을 빼는 데 쓴다.
+      guardLeases: leaseTerms
+        .filter(l => ROOM_GUARD_STATUSES.includes(l.status))
+        .map(l => ({ leaseId: l.id, status: l.status, registrationStatus: l.registrationStatus as string, tenantName: l.tenant.name })),
     }
   })
 }
@@ -1620,6 +1625,7 @@ export async function updateTenant(formData: FormData): Promise<
       // 이 저장으로 확정될 값으로 본다 — 호실과 날짜를 한 번에 바꾸는 저장이 있다.
       moveInDate: moveInDate || null,
       moveOutDate: (status === 'CHECKED_OUT' ? actualMoveOut : null) || newMoveOutIso,
+      status,
     })
     if (err) return { ok: false, error: err }
     moveAt = ymdToDbDate(moveDate)
@@ -3617,7 +3623,7 @@ export async function advanceRoomSchedule(input: {
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: input.leaseTermId, propertyId },
       select: {
-        id: true, roomId: true, moveInDate: true, moveOutDate: true, roomSchedule: true,
+        id: true, roomId: true, status: true, moveInDate: true, moveOutDate: true, roomSchedule: true,
         roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 },
       },
     })
@@ -3639,6 +3645,7 @@ export async function advanceRoomSchedule(input: {
       today: kstYmdStr(new Date()),
       moveInDate: lease.moveInDate ? kstYmdStr(lease.moveInDate) : null,
       moveOutDate: lease.moveOutDate ? kstYmdStr(lease.moveOutDate) : null,
+      status: lease.status,
     })
     if (err) return { ok: false, error: err }
 

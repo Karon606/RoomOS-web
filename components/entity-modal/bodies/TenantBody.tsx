@@ -28,6 +28,7 @@ import { TenantBasicInfo } from '../widgets/TenantBasicInfo'
 import { ShortStayInfoWidget } from '../widgets/ShortStayInfoWidget'
 import { TenantContactInfo } from '../widgets/TenantContactInfo'
 import { TenantContractInfo } from '../widgets/TenantContractInfo'
+import { registrationConflictWarning } from '@/lib/roomAssignment'
 import { TenantWishRooms } from '../widgets/TenantWishRooms'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { isForeignForDocuments } from '@/lib/documentName'
@@ -121,7 +122,14 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease}
-        foreign={isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoMasked })} />}
+        foreign={isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoMasked })}
+        // 전입신고 경고 3(2026-10-27) — 거주자가 신고예정·신고완료이고 같은 방에 비거주 계약이 있는 동안만. 폼과 같은 함수다.
+        registrationNote={lease.room ? registrationConflictWarning(
+          { status: lease.status, registrationStatus: lease.registrationStatus },
+          lease.room.leaseTerms.filter(l => l.id !== lease.id)
+            .map(l => ({ status: l.status, registrationStatus: l.registrationStatus, tenantName: l.tenant.name })),
+          lease.room,
+        ).find(w => w.code === 'RESIDENT_WITH_NON_RESIDENT')?.message ?? null : null} />}
       {/* 입주 가능한 방 — 아직 방이 없는 리드에게만. 조건(계약 정보) 바로 아래에 두는 것은
           "이 조건이면 어느 방이 되는가"가 그 조건을 읽은 다음의 질문이기 때문이다. */}
       {lease && <TenantWishRooms lease={lease} />}
