@@ -115,6 +115,39 @@ need('적용 직후 재판정을 한다',
 need('재판정이 미부착이면 성공 토스트를 안 띄운다',
   /if \(stuck\.length > 0\) \{[\s\S]{0,400}?\} else \{\s*\n\s*pushToast\('success', '병합 처리 완료'\)/.test(client))
 
+// ── ⑤ 비품 행별 규격 수정(2026-10-27 운영자 승인, 영수증 묶음 별건 D1) ─────────────────
+// 종전 setAssetRowSpec 은 규격 세 칸만 바꿔 detail 이 옛 표기로 남고, 배정된 행을 고치면 이력이 고아가 되고, 적용취소가 없었다.
+// 합치기와 같은 병합 기록·같은 이력 이동 도우미를 쓰는지 본다(새 규칙 금지).
+{
+  const assetsSrc = readFileSync('app/(app)/inventory/assets/actions.ts', 'utf8')
+  const rowSpec = body(assetsSrc, 'export async function setAssetRowSpec(')
+  need('setAssetRowSpec 을 찾음', rowSpec.length > 0)
+  need('행별 규격 수정이 소모품(추적) 카테고리를 거부한다', /trackedCats\.includes\(row\.category\)/.test(rowSpec),
+    'setAssetQtyUnit 형제와 같은 가드. 소모품의 규격은 잔량 산식의 입력값이다')
+  need('행별 규격 수정이 한 트랜잭션이다', (rowSpec.match(/prisma\.\$transaction\(/g) ?? []).length === 1)
+  need('detail 을 함께 다시 짓는다', /detail: buildAssetDetail\(\{ \.\.\.row, \.\.\.next \}\)/.test(rowSpec))
+  need('옛 키를 쓰는 다른 행이 없을 때만 이력을 옮긴다',
+    /const logRows = others === 0 \? await findMovableAssignmentLogs\(propertyId, \[row\], dest\) : \[\]/.test(rowSpec) && /await moveAssignmentLogsTx\(tx, logRows, dest\)/.test(rowSpec),
+    '같은 규격의 다른 행이 남아 있으면 그 이력은 그 행들 것이다')
+  need('합치기도 같은 이동 도우미를 쓴다(규칙 한 벌)',
+    /await findMovableAssignmentLogs\(propertyId, srcs, dest\)/.test(body(assetsSrc, 'export async function combineAssets(')))
+  need('행별 규격 수정이 병합 기록(kind row-spec · memberCount 1 · 규격 세 칸만)을 남긴다',
+    /itemNameMergeRun\.create\([\s\S]{0,200}?memberCount: 1[\s\S]{0,120}?kind: 'row-spec'[\s\S]{0,400}?rowSpecs: \[\{ id: row\.id, old: \{ specValue: row\.specValue, specUnit: row\.specUnit, specText: row\.specText \?\? null \}, next \}\]/.test(rowSpec)
+    && !/oldQtyValue|oldDetail/.test(rowSpec), '수량·detail 을 실으면 뒤에 나눠 배정·수량 수정한 것까지 적용취소가 되감는다(독립 검수 B2)')
+  {
+    const undoSrc = body(finance, 'export async function undoItemNameMerge(')
+    need('규격 수정 적용취소가 지금 규격이 넣은 값일 때만 되돌린다(낡은 기록 거부)',
+      /cur\.specValue !== r\.next\.specValue/.test(undoSrc) && /tx\.expense\.updateMany\(\{ where: \{ id: r\.id, propertyId, \.\.\.r\.next \}, data: \{ \.\.\.r\.old, detail: buildAssetDetail\(\{ \.\.\.row, \.\.\.r\.old \}\) \} \}\)/.test(undoSrc))
+  }
+  need('옮긴 이력의 옛값을 기록에 싣는다', /assetLogs: logRows\.map\(l => \(\{ id: l\.id, oldLabel: l\.itemLabel, oldSpecValue: l\.specValue, oldSpecUnit: l\.specUnit, oldSpecText: l\.specText \}\)\)/.test(rowSpec))
+  need('runId 를 돌려준다', /return \{ ok: true, runId \}/.test(rowSpec))
+  const assetsClient = readFileSync('app/(app)/inventory/assets/AssetsClient.tsx', 'utf8')
+  need('규격 저장 토스트에 [적용취소] 가 있고 병합 적용취소를 부른다',
+    /pushToast\('success', '규격 저장됨\. 규격이 다르면 별도 카드로 분리됩니다',\s*runId \? \{ action: \{ label: '적용취소', run: \(\) => undoCombine\(runId, '규격 수정을 적용취소했습니다'\) \} \} : undefined\)/.test(assetsClient))
+  const panel = readFileSync('app/(app)/settings/ItemNameMergePanel.tsx', 'utf8')
+  need('환경설정 병합 목록이 규격 수정 기록을 규격 수정으로 말한다', /r\.kind === 'row-spec' \? '규격 수정'/.test(panel))
+}
+
 console.log(`\n[단위 정본 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

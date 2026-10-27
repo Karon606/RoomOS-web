@@ -260,7 +260,9 @@ function body(src, header) {
   need('withDisposedSiblings 가 폐기 행만 데려온다', /disposedAt: \{ not: null \}, OR: keys/.test(actions))
   // 합치기 이력 고아 봉합 — 지출만 바꾸면 그 카드의 배정 이력이 아무 카드에도 안 붙는다.
   const fn = body(actions, 'export async function combineAssets(')
-  need('합치기가 배정 이력도 대상 값으로 옮긴다', /tx\.assetAssignmentLog\.updateMany\(/.test(fn))
+  // 옮기는 쓰기는 도움 함수 하나다(2026-10-27, 행별 규격 수정 setAssetRowSpec 과 한 벌).
+  const mover = body(actions, 'async function moveAssignmentLogsTx(')
+  need('합치기가 배정 이력도 대상 값으로 옮긴다', /await moveAssignmentLogsTx\(tx, logRows, dest\)/.test(fn) && /tx\.assetAssignmentLog\.updateMany\(/.test(mover))
   need('옮긴 이력의 옛값을 적용취소 payload 에 싣는다', /assetLogs: logRows\.map\(l => \(\{ id: l\.id, oldLabel: l\.itemLabel/.test(fn))
   const undo = readFileSync('app/(app)/finance/actions.ts', 'utf8')
   need('적용취소가 배정 이력도 원복한다', /aff\?\.assetLogs \?\? \[\][\s\S]{0,200}?assetAssignmentLog\.update\(/.test(undo))

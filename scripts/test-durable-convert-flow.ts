@@ -506,6 +506,57 @@ async function main() {
     eq('R7 품명 이력 카테고리(관리비)로 실으면 받는다', [r.ok, (await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: 'R7선반', amount: 30000 } })).map((e: { category: string; targetRoomId: string | null }) => [e.category, e.targetRoomId === R519])], [true, [['관리비', true]]])
   }
 
+  // ── 비품 행별 규격 수정(setAssetRowSpec, 2026-10-27 D1) ─────────────────────────────
+  // 한 트랜잭션에 규격·detail·배정 이력을 함께 바꾸고, 병합 기록(kind 'row-spec')을 남겨 undoItemNameMerge 가 바이트까지 되돌린다.
+  // 이력은 옛 키를 쓰는 다른 행이 없을 때만 옮긴다(남아 있으면 그 이력은 그 행들 것이다). 소모품 카테고리는 거부한다.
+  {
+    const L = 'D1원목장판'
+    const mk = (amount: number) => prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount, category: '수선유지비', itemLabel: L, specText: '183cm, 1.8T', qtyValue: 2, qtyUnit: 'm', detail: `[${L}] 183cm, 1.8T x 2m`, roomId: R519, receivedAt: new Date('2026-10-20T00:00:00Z') } })
+    const a = await mk(52000)
+    const lg = await prisma.assetAssignmentLog.create({ data: { propertyId: P1, itemLabel: L, specText: '183cm, 1.8T', fromKind: 'none', toKind: 'room', toLabel: '519호', qty: 2 } })
+    const before = await exact(a.id)
+    const r = await assets.setAssetRowSpec(a.id, null, null, '폭 183cm · 두께 1.8T')
+    eq('D1 규격 수정이 run 을 돌려준다', r.ok && typeof r.runId === 'string' && r.runId.length > 0, true)
+    const after = await prisma.expense.findUnique({ where: { id: a.id } })
+    eq('D1 규격·detail 이 함께 바뀐다', [after?.specText, after?.detail, after?.amount, after?.qtyValue], ['폭 183cm · 두께 1.8T', `[${L}] 폭 183cm · 두께 1.8T x 2m`, 52000, 2])
+    eq('D1 옛 키의 다른 행이 없으면 배정 이력이 새 키로 옮겨 간다', (await prisma.assetAssignmentLog.findUnique({ where: { id: lg.id } }))?.specText, '폭 183cm · 두께 1.8T')
+    const run = r.ok && r.runId ? await prisma.itemNameMergeRun.findUnique({ where: { id: r.runId } }) : null
+    eq('D1 병합 기록은 규격 수정(kind row-spec · memberCount 1)', [run?.memberCount, (run?.affected as { kind?: string } | null)?.kind], [1, 'row-spec'])
+    eq('D1 목록이 규격 수정으로 말한다', (await fin.getItemNameMergeRuns()).find(x => x.id === (r.ok ? r.runId : ''))?.kind, 'row-spec')
+    eq('D1 적용취소 성공', (await fin.undoItemNameMerge(r.ok && r.runId ? r.runId : '')).ok, true)
+    eq('D1 적용취소가 지출 행을 바이트까지 되돌린다', await exact(a.id), before)
+    eq('D1 적용취소가 배정 이력도 옛 키로 되돌린다', (await prisma.assetAssignmentLog.findUnique({ where: { id: lg.id } }))?.specText, '183cm, 1.8T')
+    // 같은 옛 키 행이 하나 더 있으면 이력은 그대로(그 행들 것이다)
+    await mk(26000)
+    const r2 = await assets.setAssetRowSpec(a.id, null, null, '폭 183cm · 두께 1.8T')
+    eq('D1 옛 키 행이 남으면 이력을 옮기지 않는다', [r2.ok, (await prisma.assetAssignmentLog.findUnique({ where: { id: lg.id } }))?.specText], [true, '183cm, 1.8T'])
+    eq('D1 바뀐 것이 없으면 기록을 안 남긴다', await assets.setAssetRowSpec(a.id, null, null, '폭 183cm · 두께 1.8T'), { ok: true, runId: null })
+    const t = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount: 3000, category: '소모품비', itemLabel: 'D1세제', specValue: 2.1, specUnit: 'L', qtyValue: 1, qtyUnit: '개' } })
+    const tBefore = await exact(t.id)
+    eq('D1 소모품(추적) 카테고리는 거부', await assets.setAssetRowSpec(t.id, 2100, 'ml', null), { ok: false, error: '소모품(재고추적) 품목의 규격은 재고관리 화면에서 바꿔주세요.' })
+    eq('D1 거부면 무변경', await exact(t.id), tBefore)
+    g.__CR_FLOW_PID = P2
+    eq('D1 남의 영업장 행은 못 찾는다', (await assets.setAssetRowSpec(a.id, null, null, 'x')).ok, false)
+    g.__CR_FLOW_PID = P1
+    // 독립 검수 B2 — 규격 수정 뒤 수량을 고치고 나눠 배정해도 적용취소는 규격만 되돌린다(수량·나눈 행은 그대로, detail 은 지금 행으로).
+    const L2 = 'D1커튼'
+    const c = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00Z'), amount: 60000, category: '수선유지비', itemLabel: L2, specText: '그레이', qtyValue: 4, qtyUnit: '개', detail: `[${L2}] 그레이 x 4개`, receivedAt: new Date('2026-10-20T00:00:00Z') } })
+    const rc = await assets.setAssetRowSpec(c.id, null, null, '그레이 암막')
+    eq('B2 수량 정정 성공', (await assets.setAssetRowQty(c.id, 5)).ok, true)
+    eq('B2 나눠 배정 성공(2개 519호)', (await assets.assignAggregateToTarget([c.id], { kind: 'room', id: R519 }, 2)).ok, true)
+    const kids = await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: L2 }, orderBy: { qtyValue: 'asc' } })
+    eq('B2 적용취소 성공', (await fin.undoItemNameMerge(rc.ok && rc.runId ? rc.runId : '')).ok, true)
+    const back = await prisma.expense.findUnique({ where: { id: c.id } })
+    eq('B2 적용취소가 규격만 되돌리고 수량·detail 은 지금 행 기준', [back?.specText, back?.qtyValue, back?.detail], ['그레이', kids.find(k => k.id === c.id)?.qtyValue, `[${L2}] 그레이 x ${kids.find(k => k.id === c.id)?.qtyValue}개`])
+    eq('B2 나눠 배정된 다른 행은 건드리지 않는다', (await prisma.expense.findMany({ where: { propertyId: P1, itemLabel: L2, id: { not: c.id } } })).map(k => [k.specText, k.qtyValue]), kids.filter(k => k.id !== c.id).map(k => [k.specText, k.qtyValue]))
+    // 낡은 기록 — 규격 수정 뒤 규격을 또 고쳤으면 첫 기록 적용취소는 거부하고 무변경
+    const r3 = await assets.setAssetRowSpec(c.id, null, null, '네이비')
+    await assets.setAssetRowSpec(c.id, null, null, '네이비 암막')
+    const mid = await exact(c.id)
+    eq('B2 규격이 그 뒤에 또 바뀌면 적용취소 거부', (await fin.undoItemNameMerge(r3.ok && r3.runId ? r3.runId : '')).ok, false)
+    eq('B2 거부면 무변경', await exact(c.id), mid)
+  }
+
   // ── 남의 영업장·다른 용도·고친 토큰 ───────────────────────────────────────────────
   {
     const L = '토큰냉장고'

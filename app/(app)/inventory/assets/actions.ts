@@ -554,16 +554,59 @@ export async function undoAssetUnreceive(undoRaw: AssetUnreceiveUndo): Promise<{
 // 구매 행별 규격 지정·수정 — 그룹 키에 규격이 포함되므로 규격이 달라지면 별도 카드로 분리된다.
 // 사이즈가 달라 단가가 다른 제품(의자발커버 등)이 한 카드로 묶여 배정이 임의로 되던 문제 해결(오류신고 3707bf65).
 // 금액·수량은 불변 — 규격 표기만 변경(§4: 재고 수학은 내구재 카테고리 밖이라 무영향).
-export async function setAssetRowSpec(expenseId: string, specValue: number | null, specUnit: string | null, specText?: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+//
+// 한 트랜잭션에 셋을 함께 한다(2026-10-27 운영자 승인, 영수증 묶음 별건 D1). 종전에는 규격 세 칸만 바꿔
+//   · detail 문자열이 옛 규격으로 남아 목록·검색이 옛 표기를 말했고,
+//   · 배정 이력(AssetAssignmentLog, 조회 키 = 품명 + 규격 3종)이 옛 키에 남아 배정된 행을 고치면 그 이력이 어느 카드에도 안 붙었고,
+//   · 적용취소가 없었다(§16).
+// 이력은 **옛 키를 쓰는 다른 행이 없을 때만** 새 키로 옮긴다. 같은 규격의 다른 행이 남아 있으면 그 이력은 그 행들 것이다.
+// 옮기는 규칙(규격 정확 일치·all-null 모호함)은 합치기와 한 벌이다(findMovableAssignmentLogs). 적용취소는 합치기와 같은
+// 품명 병합 기록(itemNameMergeRun, kind 'row-spec')에 실어 undoItemNameMerge 가 되돌린다.
+export async function setAssetRowSpec(expenseId: string, specValue: number | null, specUnit: string | null, specText?: string | null): Promise<{ ok: true; runId: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const row = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true } })
+    const row = await prisma.expense.findFirst({
+      where: { id: expenseId, propertyId },
+      select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, specText: true, qtyValue: true, qtyUnit: true, detail: true },
+    })
     if (!row) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
-    await prisma.expense.update({ where: { id: expenseId }, data: { specValue, specUnit, specText: specText ?? null } })
-    revalidatePath('/inventory/assets')
-    return { ok: true }
+    // setAssetQtyUnit 형제와 같은 거부 — 소모품의 규격은 잔량 산식의 입력값이라 비품 화면에서 손대지 않는다.
+    const trackedCats = await getTrackedCategories(propertyId)
+    if (trackedCats.includes(row.category))
+      return { ok: false, error: '소모품(재고추적) 품목의 규격은 재고관리 화면에서 바꿔주세요.' }
+    const next = { specValue, specUnit, specText: specText ?? null }
+    if (next.specValue === row.specValue && next.specUnit === row.specUnit && next.specText === (row.specText ?? null)) return { ok: true, runId: null }
+    const others = await prisma.expense.count({
+      where: { propertyId, itemLabel: row.itemLabel, ...specOf(row), id: { not: row.id } },
+    })
+    const dest = { itemLabel: row.itemLabel, ...next }
+    const logRows = others === 0 ? await findMovableAssignmentLogs(propertyId, [row], dest) : []
+    let runId = ''
+    await prisma.$transaction(async (tx) => {
+      await tx.expense.update({
+        where: { id: row.id },
+        data: { ...next, detail: buildAssetDetail({ ...row, ...next }) },
+      })
+      await moveAssignmentLogsTx(tx, logRows, dest)
+      const run = await tx.itemNameMergeRun.create({
+        data: {
+          propertyId, canonical: row.itemLabel ?? '', memberCount: 1, newAliasKeys: [],
+          affected: {
+            kind: 'row-spec',
+            // 규격 세 칸만 싣는다(독립 검수 B2). 수량·단위·detail 을 실으면 그 뒤에 나눠 배정·수량 수정한 것까지 적용취소가 되감는다.
+            // detail 은 적용취소 시점의 행으로 다시 짓고, 지금 규격이 이때 넣은 값과 같을 때만 되돌린다(undoItemNameMerge).
+            rowSpecs: [{ id: row.id, old: { specValue: row.specValue, specUnit: row.specUnit, specText: row.specText ?? null }, next }],
+            assetLogs: logRows.map(l => ({ id: l.id, oldLabel: l.itemLabel, oldSpecValue: l.specValue, oldSpecUnit: l.specUnit, oldSpecText: l.specText })),
+          },
+        },
+      })
+      runId = run.id
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance'); revalidatePath('/settings')
+    return { ok: true, runId }
   } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -843,38 +886,9 @@ export async function combineAssets(
       return (srcIsSet && destPerPiece && s.specValue && s.qtyValue != null) ? s.qtyValue * s.specValue : s.qtyValue
     }
 
-    // 배정 이력도 함께 옮긴다 — 이력 고아 봉합(2026-09-16).
-    //
-    // 이력(AssetAssignmentLog)은 조회 키가 (itemLabel + 규격 3종)이다. 지출만 대상 이름으로
-    // 바꾸면 그 카드의 옛 이력은 아무 카드에도 안 붙어 화면에서 통째로 사라진다 —
-    // "이 자재가 어느 방에 언제 갔나"의 기록이 합치기 한 번에 증발하던 결함이다.
-    // 규격은 **정확히 일치하는 것만** 옮긴다. 규격 미상(all-null) 이력은 그 라벨의 다른 카드
-    // 것일 수도 있어 손대면 엉뚱한 카드로 끌려간다.
-    const srcKeysAll = [...new Map(srcs.map(s => [
-      serializeSpecKey(s) + '␟' + (s.itemLabel ?? ''),
-      { itemLabel: s.itemLabel, specValue: s.specValue, specUnit: s.specUnit, specText: s.specText },
-    ])).values()].filter(k =>
-      k.itemLabel !== dest.itemLabel || k.specValue !== dest.specValue
-      || k.specUnit !== dest.specUnit || (k.specText ?? null) !== (dest.specText ?? null))
-    // 규격이 all-null 인 키는 조심해서 받는다(장부 검수 2026-09-16). 그 라벨에 규격이 2종 이상이면
-    // all-null 이력은 '규격 미상'이라 어느 카드 것인지 알 수 없다 — 끌고 가면 엉뚱한 카드에 붙는다.
-    // 그 라벨의 규격 조합이 하나뿐일 때만 모호함이 없다(migrate-asset-log-spec 백필과 같은 규칙).
-    const srcKeys: typeof srcKeysAll = []
-    for (const k of srcKeysAll) {
-      if (!specUnknown(k)) { srcKeys.push(k); continue }
-      const combos = await prisma.expense.findMany({
-        where: { propertyId, itemLabel: k.itemLabel },
-        select: { specValue: true, specUnit: true, specText: true },
-        distinct: ['specValue', 'specUnit', 'specText'],
-      })
-      if (combos.length <= 1) srcKeys.push(k)
-    }
-    const logRows = srcKeys.length
-      ? await prisma.assetAssignmentLog.findMany({
-        where: { propertyId, OR: srcKeys.map(k => ({ itemLabel: k.itemLabel, ...specOf(k) })) },
-        select: { id: true, itemLabel: true, specValue: true, specUnit: true, specText: true },
-      })
-      : []
+    // 배정 이력도 함께 옮긴다 — 이력 고아 봉합(2026-09-16). 옮길 이력을 고르는 규칙은 findMovableAssignmentLogs 한 곳이다
+    // (행별 규격 수정 setAssetRowSpec 과 한 벌).
+    const logRows = await findMovableAssignmentLogs(propertyId, srcs, dest)
 
     let runId = ''
     await prisma.$transaction(async (tx) => {
@@ -888,12 +902,7 @@ export async function combineAssets(
           },
         })
       }
-      if (logRows.length) {
-        await tx.assetAssignmentLog.updateMany({
-          where: { id: { in: logRows.map(l => l.id) } },
-          data: { itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, specText: dest.specText ?? null },
-        })
-      }
+      await moveAssignmentLogsTx(tx, logRows, dest)
       const oldLabels = [...new Set(srcs.map(s => s.itemLabel).filter(Boolean))]
       const run = await tx.itemNameMergeRun.create({
         data: {
@@ -1012,6 +1021,48 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
 const specOf = (r: SpecKey): SpecKey => ({ specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, specText: r.specText ?? null })
 // 규격 미상 = 컬럼 추가 전 기록 중 백필 불가였던 것(그 라벨에 규격이 2종 이상이라 어느 쪽인지 알 수 없음).
 const specUnknown = (r: SpecKey) => r.specValue == null && r.specUnit == null && r.specText == null
+
+// 품명·규격이 바뀌는 쓰기(합치기 combineAssets · 행별 규격 수정 setAssetRowSpec)가 함께 옮길 배정 이력을 고른다.
+//
+// 이력(AssetAssignmentLog)은 조회 키가 (itemLabel + 규격 3종)이다. 지출만 새 이름·규격으로 바꾸면 그 카드의 옛 이력은
+// 아무 카드에도 안 붙어 화면에서 통째로 사라진다 — "이 자재가 어느 방에 언제 갔나"의 기록이 증발하던 결함(2026-09-16).
+// 규격은 **정확히 일치하는 것만** 옮긴다. 규격이 all-null 인 키는 조심해서 받는다(장부 검수 2026-09-16). 그 라벨에 규격이
+// 2종 이상이면 all-null 이력은 '규격 미상'이라 어느 카드 것인지 알 수 없다 — 끌고 가면 엉뚱한 카드에 붙는다.
+// 그 라벨의 규격 조합이 하나뿐일 때만 모호함이 없다(migrate-asset-log-spec 백필과 같은 규칙).
+type LogKey = { itemLabel: string | null } & SpecKey
+async function findMovableAssignmentLogs(propertyId: string, srcs: LogKey[], dest: LogKey) {
+  const srcKeysAll = [...new Map(srcs.map(s => [
+    serializeSpecKey(s) + '␟' + (s.itemLabel ?? ''),
+    { itemLabel: s.itemLabel, specValue: s.specValue, specUnit: s.specUnit, specText: s.specText },
+  ])).values()].filter(k =>
+    k.itemLabel !== dest.itemLabel || k.specValue !== dest.specValue
+    || k.specUnit !== dest.specUnit || (k.specText ?? null) !== (dest.specText ?? null))
+  const srcKeys: typeof srcKeysAll = []
+  for (const k of srcKeysAll) {
+    if (!specUnknown(k)) { srcKeys.push(k); continue }
+    const combos = await prisma.expense.findMany({
+      where: { propertyId, itemLabel: k.itemLabel },
+      select: { specValue: true, specUnit: true, specText: true },
+      distinct: ['specValue', 'specUnit', 'specText'],
+    })
+    if (combos.length <= 1) srcKeys.push(k)
+  }
+  return srcKeys.length
+    ? await prisma.assetAssignmentLog.findMany({
+      where: { propertyId, OR: srcKeys.map(k => ({ itemLabel: k.itemLabel, ...specOf(k) })) },
+      select: { id: true, itemLabel: true, specValue: true, specUnit: true, specText: true },
+    })
+    : []
+}
+// 고른 이력을 새 이름·규격으로 옮긴다(호출부 트랜잭션 안). 옛값은 호출부가 병합 기록(affected.assetLogs)에 행마다 싣는다.
+type AssetsTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+async function moveAssignmentLogsTx(tx: AssetsTx, logRows: { id: string }[], dest: LogKey) {
+  if (!logRows.length) return
+  await tx.assetAssignmentLog.updateMany({
+    where: { id: { in: logRows.map(l => l.id) } },
+    data: { itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, specText: dest.specText ?? null },
+  })
+}
 
 // 배정 변경 이력 한 줄의 모양은 순수층(./receiptPlacement assignmentLogData)에 산다. 이력을 남기는 자리 셋(logAssignment·수령 배정·
 // 재무의 비품 전환 F3)이 같은 칸을 쓴다.

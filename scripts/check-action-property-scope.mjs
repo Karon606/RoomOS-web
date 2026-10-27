@@ -20,6 +20,13 @@ function bodyOf(src, name) {
 }
 
 const AXES = [
+  // 비품 행별 규격 수정(2026-10-27 D1, 영수증 묶음 독립 검수 권고 3). 행을 영업장 범위로 읽고, 쓰기는 그 행 id 만.
+  {
+    file: 'app/(app)/inventory/assets/actions.ts',
+    fn: 'setAssetRowSpec',
+    must: [[/expense\.findFirst\(\{\s*where:\s*\{\s*id:\s*expenseId,\s*propertyId\s*\}/, '구매 행을 영업장 범위로 읽지 않는다']],
+    mustNot: [[/expense\.findUnique\(\{\s*where:\s*\{\s*id:\s*expenseId\s*\}/, '구매 행을 id 만으로 읽는다']],
+  },
   // 납입일 영구 변경과 그 적용취소, 조정 행 전용 수정 문(신고 df82ce57 독립 검수 2026-10-20).
   {
     file: 'app/(app)/tenants/actions.ts',

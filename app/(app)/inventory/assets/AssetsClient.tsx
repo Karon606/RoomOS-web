@@ -199,7 +199,10 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
     startTransition(async () => {
       const res = await setAssetRowSpec(b.id, s.v.trim() ? Number(s.v) : null, s.u.trim() || null, s.t.trim() || null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '규격 저장됨. 규격이 다르면 별도 카드로 분리됩니다')
+      // 적용취소는 합치기와 같은 병합 기록이다(§16, 2026-10-27 D1). 바뀐 것이 없으면 기록도 없어 버튼을 안 단다.
+      const runId = res.runId
+      pushToast('success', '규격 저장됨. 규격이 다르면 별도 카드로 분리됩니다',
+        runId ? { action: { label: '적용취소', run: () => undoCombine(runId, '규격 수정을 적용취소했습니다') } } : undefined)
       setDetailItem(null)
       router.refresh()
     })
@@ -487,10 +490,10 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   })
 
   // v2.0 §16 적용취소 — 토스트 액션·환경설정 '품명 병합' 둘 다(사용자 결정)
-  const undoCombine = (runId: string) => startTransition(async () => {
+  const undoCombine = (runId: string, done = '합치기를 적용취소했습니다') => startTransition(async () => {
     const res = await undoItemNameMerge(runId)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('success', '합치기를 적용취소했습니다')
+    pushToast('success', done)
     router.refresh()
   })
   // 합치기 실행 — combineAssets(대상=남는 카드, src=합쳐질 지출들). 적용취소는 토스트 + 환경설정 '품명 병합'.

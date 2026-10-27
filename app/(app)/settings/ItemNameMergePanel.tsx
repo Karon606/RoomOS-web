@@ -42,13 +42,17 @@ export function ItemNameMergePanel() {
     getItemNameMergeRuns().then(setRuns).catch(() => {})
   }
 
-  const doUndo = async (id: string, canonical: string) => {
-    if (!(await confirmDialog({ title: '이 병합을 적용취소할까요?', message: `'${canonical}'(으)로 통일했던 지출·소모품 이름을 병합 전으로 되돌립니다.`, confirmLabel: '적용취소' }))) return
+  const doUndo = async (id: string, canonical: string, kind: ItemNameMergeRunRow['kind']) => {
+    // 비품 행별 규격 수정 기록은 이름이 아니라 그 행의 규격을 되돌린다(2026-10-27 D1).
+    const ask = kind === 'row-spec'
+      ? { title: '이 규격 수정을 적용취소할까요?', message: `'${canonical}' 구매 행의 규격을 고치기 전으로 되돌립니다.` }
+      : { title: '이 병합을 적용취소할까요?', message: `'${canonical}'(으)로 통일했던 지출·소모품 이름을 병합 전으로 되돌립니다.` }
+    if (!(await confirmDialog({ ...ask, confirmLabel: '적용취소' }))) return
     setBusy(`u${id}`)
     const res = await undoItemNameMerge(id)
     setBusy(null)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('success', '병합 적용취소됨 · 이름 원복')
+    pushToast('success', kind === 'row-spec' ? '규격 수정 적용취소됨 · 규격 원복' : '병합 적용취소됨 · 이름 원복')
     setRuns(prev => prev.filter(r => r.id !== id))
   }
 
@@ -94,9 +98,9 @@ export function ItemNameMergePanel() {
             {runs.map(r => (
               <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-[var(--warm-dark)] truncate">
-                  {r.canonical} <span className="text-[var(--warm-muted)]">· {r.memberCount}개 통일</span>
+                  {r.canonical} <span className="text-[var(--warm-muted)]">· {r.kind === 'row-spec' ? '규격 수정' : `${r.memberCount}개 통일`}</span>
                 </span>
-                <button type="button" onClick={() => doUndo(r.id, r.canonical)} disabled={busy === `u${r.id}`}
+                <button type="button" onClick={() => doUndo(r.id, r.canonical, r.kind)} disabled={busy === `u${r.id}`}
                   className="shrink-0 text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                   {busy === `u${r.id}` ? '취소 중…' : '적용취소'}
                 </button>

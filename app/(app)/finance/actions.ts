@@ -30,6 +30,7 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
 import { isDurableGoods, placementForSave, assignmentLogData } from '@/app/(app)/inventory/assets/receiptPlacement'
+import { buildAssetDetail } from '@/app/(app)/inventory/assets/aggregate'
 import { storedForSave } from '@/app/(app)/inventory/assets/storagePlace'
 // 소모품으로 적은 구매를 비품으로 바꾸는 저장(F1·F3, 계획서 2단계). 판정·문구·토큰은 순수층(conversionPlan),
 // 조회·검증·되돌림은 공용층(durableConvert), 자동 점검 걷기는 수령 취소 정본(receiptCancel)이다.
@@ -2728,18 +2729,26 @@ export async function mergeItemNames(canonical: string, members: string[]): Prom
   }
 }
 
-export type ItemNameMergeRunRow = { id: string; canonical: string; memberCount: number; createdAt: Date }
+// kind — 'row-spec' 은 비품 행별 규격 수정(setAssetRowSpec, 2026-10-27)이 남긴 기록이다. 이름 통일이 아니라 규격 한 행을 고친
+// 것이라 목록이 '규격 수정' 으로 말한다. 기록의 affected.kind 에서 읽고, 없는 옛 기록은 전부 'merge' 다.
+export type ItemNameMergeRunRow = { id: string; canonical: string; memberCount: number; createdAt: Date; kind: 'merge' | 'row-spec' }
 export async function getItemNameMergeRuns(): Promise<ItemNameMergeRunRow[]> {
   const propertyId = await getPropertyId()
   try {
-    return await prisma.itemNameMergeRun.findMany({
+    const rows = await prisma.itemNameMergeRun.findMany({
       where: { propertyId, undoneAt: null },
       orderBy: { createdAt: 'desc' }, take: 30,
-      select: { id: true, canonical: true, memberCount: true, createdAt: true },
+      select: { id: true, canonical: true, memberCount: true, createdAt: true, affected: true },
     })
+    return rows.map(({ affected, ...r }) => ({
+      ...r,
+      kind: (affected as { kind?: string } | null)?.kind === 'row-spec' ? 'row-spec' as const : 'merge' as const,
+    }))
   } catch { return [] }
 }
 
+type RowSpec = { specValue: number | null; specUnit: string | null; specText: string | null }
+const ROW_SPEC_UNDO_STALE = '그 뒤에 이 구매 행의 규격이 바뀌어 적용취소하지 않았습니다. 비품 화면에서 규격을 직접 고쳐 주세요.'
 // 병합 1건 적용취소 — 지출·소모품 라벨을 옛명으로 원복 + 이 병합이 새로 만든 별칭만 삭제.
 export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -2755,8 +2764,22 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
       assetLogs?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText: string | null }[]
       // 개명하지 못해 고아가 된 옛 카드의 스냅샷(2026-10-27). 옛 기록에는 이 키가 없다.
       retiredCards?: TrackedItemDeleteUndo[]
+      // 비품 행별 규격 수정(setAssetRowSpec, kind 'row-spec')의 규격 세 칸 전후. 수량·detail 은 싣지 않는다(독립 검수 B2).
+      rowSpecs?: { id: string; old: RowSpec; next: RowSpec }[]
     } | null
+    // 규격 수정 적용취소는 지금 규격이 그때 넣은 값 그대로일 때만 한다(낡은 기록 거부). 하나라도 바뀌었으면 아무것도 안 바꾼다.
+    for (const r of aff?.rowSpecs ?? []) {
+      const cur = await prisma.expense.findFirst({ where: { id: r.id, propertyId }, select: { specValue: true, specUnit: true, specText: true } })
+      if (!cur || cur.specValue !== r.next.specValue || cur.specUnit !== r.next.specUnit || (cur.specText ?? null) !== r.next.specText)
+        return { ok: false, error: ROW_SPEC_UNDO_STALE }
+    }
     await prisma.$transaction(async (tx) => {
+      // 규격 수정 되돌리기 — 규격 세 칸만 옛값으로, detail 은 지금 행(수량·단위 그대로)으로 다시 짓는다. 조건부 쓰기라 사이에 바뀌면 멈춘다.
+      for (const r of aff?.rowSpecs ?? []) {
+        const row = await tx.expense.findFirst({ where: { id: r.id, propertyId, ...r.next }, select: { itemLabel: true, qtyValue: true, qtyUnit: true } })
+        if (!row) throw new Error(ROW_SPEC_UNDO_STALE)
+        await tx.expense.updateMany({ where: { id: r.id, propertyId, ...r.next }, data: { ...r.old, detail: buildAssetDetail({ ...row, ...r.old }) } })
+      }
       // 정리한 옛 카드를 같은 id 로 먼저 되살린다(지출이 옛 이름으로 돌아오면 이을 카드가 있어야 한다). 그 사이 같은 이름 카드가
       // 생겼으면(clash) 되살리지 않고 지출만 돌린다. 영업장은 세션 값이다.
       for (const c of aff?.retiredCards ?? []) await restoreTrackedItemTx(tx, propertyId, c)
