@@ -33,6 +33,8 @@ import {
 import { fmtRoomNo } from '@/lib/roomNo'
 import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { INSPECTION_STAGE_LABEL } from '@/app/(app)/room-manage/inspectionConstants'
+import { PayMethodField } from '@/components/finance/PayMethodField'
+import { useWorkPay } from '@/components/work/useWorkPay'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -109,6 +111,9 @@ export function CleaningRowBody({
   const [useFund, setUseFund] = useState(false)
   const [localFund, setLocalFund] = useState<CleaningFundStatus | null>(null)
   const [pending, startTransition] = useTransition()
+  // 결제수단 — 비용이 있을 때만 묻는다(2026-10-27 운영자 지적). 기본값은 같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값.
+  const payAsked = Number(cost || 0) > 0
+  const pay = useWorkPay({ kind: 'cleaning', enabled: doneOpen && payAsked, vendor: performer === 'SELF' ? '' : performerName, vendors: recentPerformers })
 
   // 부르는 쪽이 주면 그것, 안 주면 완료 폼을 열 때 받아 둔 것.
   const fund = fundProp !== undefined ? fundProp : localFund
@@ -281,6 +286,10 @@ export function CleaningRowBody({
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
             원
           </label>
+          {payAsked && pay.ready && (
+            <PayMethodField dense methods={pay.methods} accounts={pay.accounts}
+              payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
+          )}
           {/* 받은 청소비는 반환의무 없는 확정 수입이라 이 체크는 회계를 안 바꾼다. 어느 돈으로 냈는지
               적는 표식일 뿐이고, 퇴실 청소에만 붙는다 — 그 외에는 귀속시킬 퇴실 계약이 없다. */}
           {r.reason === 'CHECKOUT' && (() => {
@@ -322,7 +331,7 @@ export function CleaningRowBody({
                 // 비용을 넣은 건은 지출 date 도 이 날짜를 따라간다(completeCleaning 이 생성·수정 양쪽에서 doneDate 를 쓴다).
                 // 완료 직후 토스트에 §16 진입점 1 을 단다 — reopenCleaning 하나가 부담 표식(fromCleaningFund)까지
                 // 함께 되돌리므로 여기서 따로 풀 것이 없다. 편집 모드 뒤의 원위치 버튼은 진입점 2 로 그대로 남는다.
-                run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund }),
+                run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund, ...(c > 0 ? pay.payload : {}) }),
                   fromFund ? '청소 완료 · 받은 청소비에서 부담으로 기록됨'
                     : c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨',
                   { label: '적용취소', run: () => { void reopenCleaning(r.id).then(res => {
@@ -411,6 +420,8 @@ export function CleaningRowBody({
                   // 되돌린 건은 지출이 그대로 걸려 있다. 비용 칸을 비워 두면 0 으로 다시 완료돼
                   // 연결이 끊기고 그 지출이 고아가 된다 — 걸려 있는 금액을 그대로 채워 둔다.
                   setCost(r.cost ? String(r.cost) : '')
+                  // 걸린 지출의 결제수단이 있으면 그것이 처음 값이다(없으면 업체를 따라가는 기본값).
+                  pay.reset(r.cost ? { payMethod: r.payMethod, financialAccountId: r.financialAccountId } : null)
                   // 잔고를 안 받아 왔으면 지금 받는다(교차 목록은 방마다 달라 미리 다 받으면 방 수만큼 조회다).
                   let f = fundProp
                   if (f === undefined) {

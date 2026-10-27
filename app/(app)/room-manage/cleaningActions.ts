@@ -27,6 +27,8 @@ import { assertNotFuture } from '@/lib/completionDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { reasonForSave } from '@/lib/reasonListSave'
 import { ensureRoomInspection, clearCleaningInspection, inspectionFailureNotice } from '@/lib/roomInspectionEnsure'
+import { settleStatusForNew, settleStatusForEdit } from '@/lib/settleStatus'
+import { resolveWorkPay } from '@/lib/workPayDefault'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -64,11 +66,11 @@ async function loadCleaningRows(
   })
   const expIds = rows.map(r => r.expenseId).filter((v): v is string => !!v)
   const exps = expIds.length
-    ? await prisma.expense.findMany({ where: { id: { in: expIds } }, select: { id: true, amount: true } })
+    ? await prisma.expense.findMany({ where: { id: { in: expIds } }, select: { id: true, amount: true, payMethod: true, financialAccountId: true } })
     : []
-  const amountByExpense = new Map(exps.map(e => [e.id, e.amount]))
+  const expById = new Map(exps.map(e => [e.id, e]))
   const costById: Record<string, number> = {}
-  for (const r of rows) if (r.expenseId) costById[r.id] = amountByExpense.get(r.expenseId) ?? 0
+  for (const r of rows) if (r.expenseId) costById[r.id] = expById.get(r.expenseId)?.amount ?? 0
 
   return rows.map(r => ({
     id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, leaseTermId: r.leaseTermId,
@@ -79,6 +81,9 @@ async function loadCleaningRows(
     performerName: r.performerName, memo: r.memo,
     // 금액은 지출에서 읽는다. 여기 복사해 두면 지출에서 고쳤을 때 갈린다.
     cost: costById[r.id] ?? null,
+    // 걸린 지출의 결제수단·계정 — 다시 완료하는 폼이 아는 값을 미리 채운다(2026-10-27).
+    payMethod: r.expenseId ? (expById.get(r.expenseId)?.payMethod ?? null) : null,
+    financialAccountId: r.expenseId ? (expById.get(r.expenseId)?.financialAccountId ?? null) : null,
     fromCleaningFund: r.fromCleaningFund,
     deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
   }))
@@ -237,6 +242,12 @@ export async function completeCleaning(input: {
   performerName?: string | null
   cost?: number | null
   fromCleaningFund?: boolean
+  /**
+   * 청소비를 낸 결제수단과 결제 계정(2026-10-27 운영자 지적). 비용이 있을 때만 쓴다. 안 오면 lib/workPayDefault 규칙으로 채운다
+   * (같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값). 계정은 이 영업장 것만 받는다.
+   */
+  payMethod?: string | null
+  financialAccountId?: string | null
 }): Promise<{ ok: true; inspection?: { id: string; roomId: string; itemCount: number }; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -256,25 +267,40 @@ export async function completeCleaning(input: {
     const cost = Math.max(0, Math.round(input.cost ?? 0))
     // 퇴실 청소가 아니면 부담 표식을 무시한다. 비용 0(직접 청소)도 부담할 것이 없다.
     const fromFund = !!input.fromCleaningFund && cost > 0 && cur.reason === 'CHECKOUT'
+    // 결제수단 확정. 화면이 안 보냈으면 기본값 규칙이다. 있는 지출을 고치는데 안 보냈으면 그 지출의 수단을 지킨다(비어 있으면 규칙으로 채운다).
+    const sentPay = !!input.payMethod?.trim()
+    const payRes = await resolveWorkPay(prisma, propertyId, {
+      payMethod: input.payMethod, financialAccountId: input.financialAccountId,
+      vendor: input.performerName, category: CLEANING_EXPENSE_CATEGORY,
+    })
+    if (!payRes.ok) return payRes
+    const pay = payRes.pay
 
     await prisma.$transaction(async tx => {
       let expenseId = cur.expenseId
       // expenseId 는 관계가 아니라 uuid 칸이라 지출 화면에서 그 지출을 지우면 끊긴 채로 남는다
       // (Expense 에는 소프트삭제 칸이 없어 하드 삭제다). 없는 것을 고치려 들면 트랜잭션이 통째로
       // 깨져 완료 처리 자체가 실패하므로, 먼저 살아 있는지 보고 없으면 안 걸린 것으로 친다.
+      let alive: { id: string; payMethod: string | null; financialAccountId: string | null; settleStatus: 'SETTLED' | 'UNSETTLED'; isShipping: boolean } | null = null
       if (expenseId) {
-        const alive = await tx.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true } })
+        alive = await tx.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, payMethod: true, financialAccountId: true, settleStatus: true, isShipping: true } })
         if (!alive) expenseId = null
       }
       // 다시 완료 처리하면 **있는 지출을 고친다.** 지우고 새로 만들면 운영자가 지출 화면에서
       // 손본 것(구매처·메모·영수증)이 통째로 사라지고 되돌릴 길이 없다. Expense 에는 소프트삭제 칸이 없다.
-      if (expenseId && cost > 0) {
+      if (expenseId && cost > 0 && alive) {
+        // 결제수단은 화면이 고른 값이 있거나 지출이 비어 있을 때만 바꾼다. 정산상태는 고치는 경로 정본이다(카드에서 카드면 지금 상태 유지).
+        const payChange = (sentPay || !alive.payMethod) && (pay.payMethod !== alive.payMethod || pay.financialAccountId !== alive.financialAccountId)
         await tx.expense.update({
-          where: { id: expenseId },
+          where: { id: expenseId, propertyId },
           data: {
             date: doneDate, amount: cost,
             detail: `${fmtRoomNo(cur.room.roomNo, '')} 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
+            ...(payChange ? {
+              payMethod: pay.payMethod, financialAccountId: pay.financialAccountId, financeName: pay.financeName,
+              settleStatus: settleStatusForEdit({ prevPayMethod: alive.payMethod, nextPayMethod: pay.payMethod, current: alive.settleStatus, isShipping: alive.isShipping }),
+            } : {}),
           },
         })
       } else if (expenseId && cost === 0) {
@@ -292,6 +318,11 @@ export async function completeCleaning(input: {
             vendor: input.performerName?.trim() || null,
             // 서비스·무형이라 재고 계산에서 뺀다. 방에 귀속돼 있어 방별 비용 집계에는 들어간다.
             excludeFromInventory: true,
+            // 결제수단과 정산상태(2026-10-27). 신용카드면 미정산으로 카드 정산에 오른다(lib/settleStatus 만드는 경로 정본).
+            payMethod: pay.payMethod,
+            financialAccountId: pay.financialAccountId,
+            financeName: pay.financeName,
+            settleStatus: settleStatusForNew(pay.payMethod),
           },
           select: { id: true },
         })

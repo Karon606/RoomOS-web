@@ -25,6 +25,8 @@ import { type CleaningPerformer, WORK_EXPENSE_CATEGORY } from './cleaningConstan
 import { matchesWork } from '@/lib/roomWorkMatch'
 import { autoOptionForSave } from '@/lib/reasonListSave'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { settleStatusForNew, settleStatusForEdit } from '@/lib/settleStatus'
+import { resolveWorkPay } from '@/lib/workPayDefault'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -66,7 +68,7 @@ export type RoomWorkRow = {
    * 2026-08-28 — "비용을 넣어도 새로 안만들거면 그냥 미리 금액을 넣어주고 업체나 사람도
    * 미리 넣어주면 되는거 아냐?"
    */
-  linkedExpenses: { id: string; amount: number; label: string; vendor: string | null }[]
+  linkedExpenses: { id: string; amount: number; label: string; vendor: string | null; payMethod: string | null; financialAccountId: string | null }[]
   /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
   materialCost: number
   expenseCount: number
@@ -92,7 +94,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true, deletedAt: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
   })
   return rows.map(r => {
@@ -109,6 +111,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
+        payMethod: e.payMethod, financialAccountId: e.financialAccountId,
       })),
     }
   })
@@ -125,7 +128,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
   })
   return rows.map(r => {
@@ -141,6 +144,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
+        payMethod: e.payMethod, financialAccountId: e.financialAccountId,
       })),
     }
   })
@@ -215,6 +219,12 @@ export async function completeRoomWork(input: {
   performerName?: string | null
   cost?: number | null
   mode?: 'ask' | 'link' | 'create'
+  /**
+   * 시공비를 낸 결제수단과 결제 계정(2026-10-27 운영자 지적 "작업 단에서도 결제수단을 뭘로할지 물어보는 옵션"). 비용이 있을 때만 쓴다.
+   * 안 오면 lib/workPayDefault 규칙(같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값)으로 채운다. 계정은 이 영업장 것만 받는다.
+   */
+  payMethod?: string | null
+  financialAccountId?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string } | { ok: false; needsChoice: true; candidates: WorkLinkCandidate[] }> {
   try {
     await requireEdit()
@@ -224,7 +234,7 @@ export async function completeRoomWork(input: {
       select: {
         id: true, roomId: true, kind: true,
         room: { select: { roomNo: true } },
-        expenses: { select: { id: true, amount: true, vendor: true } },
+        expenses: { select: { id: true, amount: true, vendor: true, payMethod: true, financialAccountId: true, settleStatus: true, isShipping: true } },
       },
     })
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
@@ -255,6 +265,16 @@ export async function completeRoomWork(input: {
       }
     }
 
+    // 결제수단 확정 — 지출을 만들거나 고칠 때만 쓴다. 화면이 안 보냈으면 기본값 규칙이다(null 을 남기지 않는다).
+    // 걸린 지출 한 건을 고치는데 화면이 안 보냈으면 그 지출의 수단을 지킨다(비어 있을 때만 규칙으로 채운다).
+    const sentPay = !!input.payMethod?.trim()
+    const payRes = await resolveWorkPay(prisma, propertyId, {
+      payMethod: input.payMethod, financialAccountId: input.financialAccountId,
+      vendor: input.performerName, category: WORK_EXPENSE_CATEGORY,
+    })
+    if (!payRes.ok) return payRes
+    const pay = payRes.pay
+
     await prisma.$transaction(async tx => {
       await tx.roomWork.update({
         where: { id: cur.id },
@@ -281,11 +301,21 @@ export async function completeRoomWork(input: {
       // 붙여 둔 경우가 있어 아무 줄이나 고치면 엉뚱한 돈이 바뀐다. 그때는 화면이 지출 쪽으로 보낸다.
       if (cur.expenses.length === 1) {
         const only = cur.expenses[0]
-        const next: { amount?: number; vendor?: string | null } = {}
+        const next: {
+          amount?: number; vendor?: string | null
+          payMethod?: string; financialAccountId?: string | null; financeName?: string | null; settleStatus?: 'SETTLED' | 'UNSETTLED'
+        } = {}
         if (cost > 0 && cost !== only.amount) next.amount = cost
         const name = input.performerName?.trim() || null
         if (name !== (only.vendor ?? null)) next.vendor = name
-        if (Object.keys(next).length > 0) await tx.expense.update({ where: { id: only.id }, data: next })
+        // 결제수단 — 화면이 고른 값이 있거나 지출이 비어 있을 때만 바꾼다. 정산상태는 고치는 경로 정본(카드에서 카드면 지금 상태를 지킨다).
+        if ((sentPay || !only.payMethod) && (pay.payMethod !== only.payMethod || pay.financialAccountId !== only.financialAccountId)) {
+          next.payMethod = pay.payMethod
+          next.financialAccountId = pay.financialAccountId
+          next.financeName = pay.financeName
+          next.settleStatus = settleStatusForEdit({ prevPayMethod: only.payMethod, nextPayMethod: pay.payMethod, current: only.settleStatus, isShipping: only.isShipping })
+        }
+        if (Object.keys(next).length > 0) await tx.expense.update({ where: { id: only.id, propertyId }, data: next })
       }
       if (cost > 0 && cur.expenses.length === 0) {
         await tx.expense.create({
@@ -306,6 +336,11 @@ export async function completeRoomWork(input: {
             // 시공비는 무형 서비스라 재고 계산에 들면 안 된다. 형제인 completeCleaning 은
             // 원래 이 값을 세우는데 여기만 빠져 있었다(실측 2건이 false 였다).
             excludeFromInventory: true,
+            // 결제수단과 정산상태(2026-10-27). 신용카드면 미정산으로 카드 정산에 오른다(lib/settleStatus 만드는 경로 정본).
+            payMethod: pay.payMethod,
+            financialAccountId: pay.financialAccountId,
+            financeName: pay.financeName,
+            settleStatus: settleStatusForNew(pay.payMethod),
           },
         })
       }

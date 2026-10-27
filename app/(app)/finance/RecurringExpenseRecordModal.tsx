@@ -17,6 +17,7 @@ import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { withParticle } from '@/lib/koParticle'
 import type { RecurringVendorUndo } from '@/lib/recurringVendorUndo'
+import { accName, effectivePayMethods } from '@/lib/payMethodOptions'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount, undoRecurringTemplateVendor,
   type RecurringExpenseWithStatus,
@@ -51,24 +52,9 @@ export function pushRecurringRecordedToast(done: RecurringRecordDone, onUndone: 
 // 모달이 필요로 하는 계좌 필드만 — Prisma FinancialAccount·FinanceClient 타입 모두 대입 가능.
 export type RecModalAccount = { id: string; type: string; brand: string; alias: string | null }
 
-// 계좌 표시명 — 별칭이 있으면 '브랜드 (별칭)'. 지출 폼 공통(FinanceClient 도 이걸 쓴다).
-export function accName(a: { brand: string; alias: string | null } | null) {
-  if (!a) return ''
-  return a.alias ? `${a.brand} (${a.alias})` : a.brand
-}
-
-// 등록된 선불 계정 브랜드를 결제수단 목록에 자동 병합 — 지출 폼 공통 파생.
-export function effectivePayMethods(
-  paymentMethods: string[],
-  accounts: { type: string; brand: string; alias: string | null }[],
-) {
-  const methods = [...paymentMethods]
-  for (const acc of accounts.filter(a => a.type === 'PREPAID')) {
-    const name = acc.brand ?? accName(acc)
-    if (name && !methods.includes(name)) methods.push(name)
-  }
-  return methods
-}
+// 계좌 표시명·결제수단 선택지는 lib/payMethodOptions 정본이다(작업·청소 완료 폼과 서버 기본값이 함께 쓴다, 2026-10-27).
+// 종전 import 자리(FinanceClient)가 그대로 돌게 여기서 다시 내보낸다.
+export { accName, effectivePayMethods }
 
 export function RecurringExpenseRecordModal({
   rec, financialAccounts, paymentMethods, vendorSuggestions, defaultDate, dueMonth, onClose, onDone,

@@ -27,6 +27,8 @@ import {
 import {
   CLEANING_PERFORMER_LABEL, type CleaningPerformer,
 } from '@/app/(app)/room-manage/cleaningConstants'
+import { PayMethodField } from '@/components/finance/PayMethodField'
+import { useWorkPay } from '@/components/work/useWorkPay'
 
 // 형제 행과 같은 껍데기·같은 이유(오류신고 c2ab5b83 — 안 넘기면 맨글자로 그려진다).
 const DENSE_DATE_CLS =
@@ -67,6 +69,10 @@ export function RoomWorkRowBody({
   // 빈 문자열이다. 숫자 0 으로 두면 칸에 '0' 이 찍혀 뒤에 이어 친 값이 '0140000' 이 된다
   // (운영자 지적 2026-08-27). 형제인 청소 행이 이미 이 문법이다 — 0 은 placeholder 로만 보인다.
   const [cost, setCost] = useState('')
+  // 결제수단 — 시공비가 지출을 새로 만들거나 걸린 한 건을 고칠 때만 묻는다(2026-10-27 운영자 지적). 여러 건이 걸려 있으면
+  // 완료가 지출을 안 건드리므로 묻지 않는다. 기본값은 같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값(lib/workPayDefault).
+  const payAsked = Number(cost || 0) > 0 && r.expenseCount <= 1
+  const pay = useWorkPay({ kind: 'work', enabled: doneOpen && payAsked, vendor: performerName, vendors: recentPerformers })
   // 날짜 변경 — 청소 행과 같은 문법(오류신고 2026-08-25, 예정 건에 이 문이 아예 없었다).
   const [reschedOpen, setReschedOpen] = useState(false)
   const [reschedDate, setReschedDate] = useState('')
@@ -241,6 +247,10 @@ export function RoomWorkRowBody({
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
             원
           </label>
+          {payAsked && pay.ready && (
+            <PayMethodField dense methods={pay.methods} accounts={pay.accounts}
+              payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
+          )}
           {r.expenseCount > 0 ? (
             /* 금액은 지출 쪽이 정본이라 여기서 못 고친다. 그런데 종전에는 "지출 화면에서
                고칩니다"라고만 하고 **거기까지 가는 길이 없었다**(운영자 지적 2026-08-27).
@@ -259,7 +269,7 @@ export function RoomWorkRowBody({
           <div className="flex gap-1.5 flex-wrap items-center">
             <RowActionBtn tone="accent" disabled={pending}
               onClick={async () => {
-                const args = { id: r.id, doneDate, performer, performerName, cost: Number(cost || 0) }
+                const args = { id: r.id, doneDate, performer, performerName, cost: Number(cost || 0), ...(payAsked ? pay.payload : {}) }
                 // 먼저 묻는다(mode 기본 'ask'). 걸릴 만한 지출이 있으면 서버가 **아무것도 쓰지 않고**
                 // 후보를 돌려준다 — 자동으로 묶는 분기는 어디에도 없다.
                 const probe = await completeRoomWork(args)
@@ -303,6 +313,8 @@ export function RoomWorkRowBody({
               // 이미 걸린 지출이 있으면 그 값을 미리 채운다 — 아는 것을 다시 묻지 않는다
               // (운영자 지적 2026-08-28). 한 건일 때만이다. 여러 건이면 어느 줄의 금액인지 모른다.
               const only = r.linkedExpenses.length === 1 ? r.linkedExpenses[0] : null
+              // 걸린 지출의 결제수단이 있으면 그것이 처음 값이다(없으면 업체를 따라가는 기본값).
+              pay.reset(only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null)
               if (only) {
                 setCost(String(only.amount))
                 if (only.vendor) { setPerformerName(only.vendor); setPerformer('VENDOR') }

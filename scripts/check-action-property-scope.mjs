@@ -286,6 +286,13 @@ const AXES = [
     must: [[/prisma\.tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*data\.tenantId,\s*propertyId\s*\}/, '예약금의 입주자 id 를 영업장 범위로 보지 않는다']],
     mustNot: [],
   },
+  // 작업·청소 지출의 결제 계정(2026-10-27). 화면이 고른 계정 id 를 이 영업장 것만 받는다(남의 영업장 카드가 지출에 걸리면 그 카드 정산에 오른다).
+  {
+    file: 'lib/workPayDefault.ts',
+    fn: 'resolveWorkPay',
+    must: [[/financialAccount\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.financialAccountId,\s*propertyId\s*\}/, '결제 계정을 영업장 범위로 읽지 않는다']],
+    mustNot: [[/financialAccount\.findUnique\(/, '결제 계정을 id 만으로 읽는다']],
+  },
   {
     file: 'app/(app)/room-manage/cleaningActions.ts',
     fn: 'createCleaning',

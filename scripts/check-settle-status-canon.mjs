@@ -72,7 +72,8 @@ if (!src.includes(`from '@/lib/settleStatus'`)) fails.push(`ⓑ ${ACTIONS} 가 �
   if (!/isShipping:\s*existing\.isShipping/.test(body)) fails.push('ⓓ updateExpense 가 settleStatusForEdit 에 배송비 여부를 안 싣는다')
 }
 
-const WRITERS = [ACTIONS, 'app/api/import/route.ts', 'app/(app)/dashboard/pendingReceipt.ts']
+// 작업·청소 완료가 만드는 지출도 정산상태를 정한다(2026-10-27, 결제수단을 묻게 됐다). 몸통 배선은 check-work-expense-paymethod 가 본다.
+const WRITERS = [ACTIONS, 'app/api/import/route.ts', 'app/(app)/dashboard/pendingReceipt.ts', 'app/(app)/room-manage/workActions.ts', 'app/(app)/room-manage/cleaningActions.ts']
 const RAW_ANY = [
   [RAW, "'신용카드' ? 'UNSETTLED'"],
   [/===\s*'신용카드'\s*\|\|/, "=== '신용카드' ||"],
