@@ -499,5 +499,5 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 - **test-spec-notation · check-receipt-history-wiring · test-receipt-history-flow** (2026-10-27, verify:fast, 영수증 규격 표기 기억 운영자 승인) · 규격 표기 동치·영수증 맞추기·저장 판정(classifySpecChoice) 진리표, 영수증을 읽는 두 자리와 딥링크가 맞추기 도우미를 부르는지·지출 폼이 AI 서술 규격을 그대로 대입하지 않는지·사전 쓰기 0·홈 카드 캡션과 '지출 등록에서 고르기'·이력 제안 패널·비품 서술 규격 게이트·renameTrackedItemLabel 0(축 ⓐ~ⓛ), PGlite 통합(맞춘 값 저장 뒤 비품 카드 하나·사전 안 늘어남·변형 목록·나누기 개명 적용취소). 정본 [[domain-inventory]] '규격 표기 기억'.
 - **check-spec-notation-split** (2026-10-27, verify:db) · 같은 품명 안 표기만 다른 같은 서술 규격 갈림. 2026-10-28 전 행끼리면 경고(정리 대기), 이후 행이 끼면 실패. 운영 예행: 장판 1건 경고.
 - **test-set-hint** (2026-10-27, verify:fast, 신고 bc5bae0c) · 'N개 묶음·세트·팩' 감지·종전 'N개입' 회귀·40개 묶음 x 4 = 160개 개당 단가·프롬프트 묶음 규칙.
-- **check-coral-chip-fill** (2026-10-27, verify:fast, D2) · 지출·재고·단계별 입력·홈 영수증 카드에서 고르는 칩 켜짐의 코랄(감) 솔리드 채움 0(체크 상자 제외). 같은 꼴이 남은 화면(호실 관리 필터·호실 일정 종류/등급·체크리스트 주기·배치도 편집기)은 범위 밖.
+- **check-coral-chip-fill** (2026-10-27, verify:fast, D2 + 후속 클래스 봉합) · 저장소 전체(app·components)에서 고르는 칩·필터 버튼 켜짐의 코랄(감) 솔리드 채움 0. 체크 상자(작은 정사각형·text-transparent)·스위치 트랙(rounded-full 글자 없음)·실행 단추(채움 쪽 hover)·사진 위 오버레이(흰·검정 반투명)는 모양으로 빠진다. 예외 명단 없음.
 - **check-badge-tokens ⓔ · check-merge-unit-wiring ⑤** (2026-10-27) · 홈 영수증 카드 배지 모양 줄의 color-mix 0(D4). 비품 행별 규격 수정의 한 트랜잭션·detail·이력 이동 조건·병합 기록·토스트 적용취소(D1, 통합은 test-durable-convert-flow 'D1').

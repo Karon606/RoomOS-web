@@ -994,11 +994,13 @@ export default function RoomsClient({
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 스크롤 시 상단 고정 */}
       <div className="flex gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" className="flex-1" />
+        {/* 필터 버튼에 코랄 솔리드 금지(§03). 켜짐은 형제 화면(입주자 관리)과 같은 코랄 보더 + 테라코타 글자다(2026-10-27). */}
         <button type="button" onClick={() => setShowFilters(v => !v)}
-          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+          aria-expanded={showFilters}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5 ${
             showFilters || activeFilterCount > 0
-              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+              ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--tc-text)]'
+              : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-dark)]'
           }`}>
           필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
         </button>

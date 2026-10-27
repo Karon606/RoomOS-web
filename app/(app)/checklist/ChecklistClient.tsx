@@ -451,15 +451,16 @@ function FormModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>점검 주기 *</label>
             <div className="flex gap-1.5 flex-wrap">
               {PRESETS.map(p => (
-                <button key={p.days} type="button"
+                // 고른 주기 칩. 코랄 채움 금지(§03·§23), '긴급만'·점검 토글 칩과 같은 문법(2026-10-27).
+                <button key={p.days} type="button" aria-pressed={intervalDays === p.days && !customMode}
                   onClick={() => { setIntervalDays(p.days); setCustomMode(false) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--seg-ink-off)]'}`}>
+                  className={`px-3 py-1.5 rounded-sm ring-1 text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]' : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
                   {p.label}
                 </button>
               ))}
-              <button type="button"
+              <button type="button" aria-pressed={customMode}
                 onClick={() => setCustomMode(true)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--seg-ink-off)]'}`}>
+                className={`px-3 py-1.5 rounded-sm ring-1 text-xs font-medium transition-colors ${customMode ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]' : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
                 직접 입력
               </button>
             </div>

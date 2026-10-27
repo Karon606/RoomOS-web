@@ -1340,10 +1340,11 @@ export default function RoomManageClient({
         <button
           type="button"
           onClick={() => setShowFilters(v => !v)}
-          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+          aria-expanded={showFilters}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5 ${
             showFilters || activeFilterCount > 0
-              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+              ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--tc-text)]'
+              : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-dark)]'
           }`}
         >
           필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
@@ -2079,9 +2080,9 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
           <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
           <div className="flex gap-1 flex-wrap">
             {['미변경', ...roomTypes].map(t => (
-              <button key={t} type="button"
+              <button key={t} type="button" aria-pressed={(t === '미변경' && !type) || type === t}
                 onClick={() => setType(t === '미변경' ? '' : t)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] border-[var(--warm-border)]'}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-sm ring-1 transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]' : 'bg-transparent text-[var(--seg-ink-off)] ring-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
                 {t}
               </button>
             ))}
@@ -2092,9 +2093,9 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
           <label className="text-xs font-medium text-[var(--warm-mid)]">등급</label>
           <div className="flex gap-1 flex-wrap">
             {['미변경', ...roomTiers].map(t => (
-              <button key={t} type="button"
+              <button key={t} type="button" aria-pressed={(t === '미변경' && !tier) || tier === t}
                 onClick={() => setTier(t === '미변경' ? '' : t)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !tier) || tier === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] border-[var(--warm-border)]'}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-sm ring-1 transition-colors ${(t === '미변경' && !tier) || tier === t ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]' : 'bg-transparent text-[var(--seg-ink-off)] ring-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
                 {t}
               </button>
             ))}
