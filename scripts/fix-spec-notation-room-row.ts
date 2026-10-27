@@ -8,11 +8,12 @@
 // (itemNameMergeRun)이 한 트랜잭션이고, 적용취소는 그 기록을 되돌리는 undoItemNameMerge 다(환경설정 '품명 병합' 목록에서도 된다).
 // 행별 규격 수정(setAssetRowSpec)은 쓰지 않는다. 그것은 운영자가 한 행을 고칠 때의 통로다.
 //   · 대상 행: 같은 영업장·같은 품명 안에서 서술 규격이 정본 specNotationKey 로 동치인데 글자가 다른 표기 중 **많이 쓴 표기가 아닌** 쪽,
-//     그중 방에 배정된 행(roomId 있음). 창고·미배정 행은 건드리지 않는다.
+//     그중 방에 배정된 행(roomId 있음). 창고·미배정 행은 건드리지 않는다. --include-unplaced 를 주면 창고·미배정 행도 함께 합친다
+//     (2026-10-27 운영자가 창고 두 카드 정리도 맡김).
 //   · 합칠 상대(dest): 같은 영업장·품명·카테고리에서 많이 쓴 표기를 가진 행 중 수량 단위·숫자 규격이 대상 행과 같은 가장 최근 행.
 //     없으면 건너뛴다(combineAssets 는 단위를 상대 것으로 맞추므로 단위가 다르면 수량이 흔들린다).
 //
-// 실행: npx tsx --env-file=.env.local --tsconfig scripts/tsconfig.fix-asset-combine.json scripts/fix-spec-notation-room-row.ts [--apply | --revert <undo.json>]
+// 실행: npx tsx --env-file=.env.local --tsconfig scripts/tsconfig.fix-asset-combine.json scripts/fix-spec-notation-room-row.ts [--include-unplaced] [--apply | --revert <undo.json>]
 // 되돌림 파일: 저장소 루트의 scripts/.fix-spec-notation-undo-<시각>.json(.gitignore 대상)
 import fs from 'node:fs'
 import path from 'node:path'
@@ -21,10 +22,11 @@ import { specNotationKey } from '@/lib/specNotation'
 
 const ROOT = path.resolve(__dirname, '..')
 const g = globalThis as unknown as { __FIX_PID?: string }
+const INCLUDE_UNPLACED = process.argv.includes('--include-unplaced')
 
 type Plan = {
   propertyId: string; itemLabel: string
-  src: { id: string; date: string; roomId: string; specText: string; qtyValue: number | null; qtyUnit: string | null }
+  src: { id: string; date: string; roomId: string | null; specText: string; qtyValue: number | null; qtyUnit: string | null }
   dest: { id: string; specText: string }
 }
 type UndoFile = { createdAt: string; runs: (Plan & { runId: string })[] }
@@ -55,7 +57,7 @@ async function buildPlan(): Promise<{ plans: Plan[]; skipped: string[] }> {
       const major = list[0].text
       for (const minor of list.slice(1)) {
         const srcs = await prisma.expense.findMany({
-          where: { propertyId, itemLabel, specText: minor.text, roomId: { not: null }, isShipping: false },
+          where: { propertyId, itemLabel, specText: minor.text, ...(INCLUDE_UNPLACED ? {} : { roomId: { not: null } }), isShipping: false },
           select: { id: true, date: true, roomId: true, category: true, specText: true, specValue: true, specUnit: true, qtyValue: true, qtyUnit: true },
           orderBy: { date: 'asc' },
         })
@@ -68,7 +70,7 @@ async function buildPlan(): Promise<{ plans: Plan[]; skipped: string[] }> {
           if (!dest) { skipped.push(`${itemLabel} 행 ${s.id.slice(0, 8)}: '${major}' 표기에 수량 단위(${s.qtyUnit ?? '없음'})·카테고리가 같은 상대가 없어 건너뜀`); continue }
           plans.push({
             propertyId, itemLabel,
-            src: { id: s.id, date: s.date.toISOString().slice(0, 10), roomId: s.roomId as string, specText: s.specText as string, qtyValue: s.qtyValue, qtyUnit: s.qtyUnit },
+            src: { id: s.id, date: s.date.toISOString().slice(0, 10), roomId: s.roomId, specText: s.specText as string, qtyValue: s.qtyValue, qtyUnit: s.qtyUnit },
             dest: { id: dest.id, specText: dest.specText as string },
           })
         }
@@ -78,7 +80,8 @@ async function buildPlan(): Promise<{ plans: Plan[]; skipped: string[] }> {
   return { plans, skipped }
 }
 
-async function roomNoOf(id: string): Promise<string> {
+async function roomNoOf(id: string | null): Promise<string> {
+  if (!id) return '미배정'
   const r = await prisma.room.findUnique({ where: { id }, select: { roomNo: true } })
   return r?.roomNo ?? id.slice(0, 6)
 }
@@ -101,7 +104,7 @@ async function main() {
 
   const { plans, skipped } = await buildPlan()
   for (const p of plans) {
-    console.log(`${p.itemLabel} · ${await roomNoOf(p.src.roomId)}호 · ${p.src.date} · ${p.src.qtyValue ?? ''}${p.src.qtyUnit ?? ''}: '${p.src.specText}' -> '${p.dest.specText}' (행 ${p.src.id.slice(0, 8)}, 상대 ${p.dest.id.slice(0, 8)})`)
+    console.log(`${p.itemLabel} · ${await roomNoOf(p.src.roomId)}${p.src.roomId ? '호' : ''} · ${p.src.date} · ${p.src.qtyValue ?? ''}${p.src.qtyUnit ?? ''}: '${p.src.specText}' -> '${p.dest.specText}' (행 ${p.src.id.slice(0, 8)}, 상대 ${p.dest.id.slice(0, 8)})`)
   }
   for (const s of skipped) console.log(`건너뜀: ${s}`)
   console.log(`대상 ${plans.length}행 · 건너뜀 ${skipped.length}행`)
