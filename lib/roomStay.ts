@@ -229,6 +229,9 @@ export async function validateMoveDate(
   for (const o of others) {
     const inYmd = o.moveInDate ? ymdOf(o.moveInDate) : null
     const outYmd = o.moveOutDate ? ymdOf(o.moveOutDate) : o.expectedMoveOut ? ymdOf(o.expectedMoveOut) : null
+    // 이 사람이 들어오기 전(또는 같은 날)부터 그 방에 있던 사람은 '다음 사람'이 아니다. 비거주·거주 공존처럼
+    // 처음부터 함께 있던 체류라 이사일을 언제로 잡든 새로 생기는 겹침이 아니다(2026-10-27 418호 홍은주·이상경).
+    if (start && inYmd && inYmd <= start) continue
     if (!occupancyOverlaps({ moveIn: start, moveOut: p.at }, { moveIn: inYmd, moveOut: outYmd })) continue
     if (isSameDayTurnover({ moveIn: start, moveOut: p.at }, { moveIn: inYmd, moveOut: outYmd })) continue
     return `이사일을 ${p.at} 로 두면 ${o.tenant.name}님 체류와 겹칩니다. 실제로 옮긴 날을 확인해 주세요.`

@@ -416,6 +416,11 @@ async function moveDateTests() {
   eq('이사일 · 다음 사람이 들어오기 전이면 통과', await mv('2026-08-09', { others: 다음사람 }), null)
   eq('이사일 · 나가는 그날 들어오는 것은 사고가 아니다(당일 회전)', await mv('2026-08-10', { others: 다음사람 }), null)
   blocked('이사일 · 다음 사람이 들어온 뒤로 늦추면 겹친다', await mv('2026-08-11', { others: 다음사람 }), true)
+  // 처음부터 함께 있던 사람(비거주·거주 공존) — 이사일과 무관한 기존 공존이라 막지 않는다(418호 사례).
+  eq('이사일 · 먼저 들어와 함께 있던 사람은 다음 사람이 아니다',
+    await mv('2026-08-15', { others: [{ moveInDate: D('2025-12-20'), moveOutDate: null, expectedMoveOut: null, name: '먼저' }] }), null)
+  eq('이사일 · 같은 날 함께 들어온 사람도 다음 사람이 아니다',
+    await mv('2026-08-15', { others: [{ moveInDate: D('2026-01-05'), moveOutDate: null, expectedMoveOut: null, name: '같은날' }] }), null)
   eq('이사일 · 이미 나간 사람과는 안 겹친다',
     await mv('2026-08-15', { others: [{ moveInDate: D('2025-01-01'), moveOutDate: D('2025-12-31'), expectedMoveOut: null, name: '옛사람' }] }), null)
 }
