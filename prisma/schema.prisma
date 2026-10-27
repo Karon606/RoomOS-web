@@ -672,8 +672,8 @@ model RoomInspection {
   status     String    @default("PLANNED")     // PLANNED | DONE | SKIPPED. 검수 미통과는 넷째 상태가 아니라 항목 NG 에서 파생한다
   scheduledDate DateTime? @db.Date
   doneDate      DateTime? @db.Date             // 운영자가 고른 완료일(lib/completionDate)
-  // 누가·무엇이 닫았나(로그, 화면에는 안 쓴다). 완료로 기록한 계정 id, 또는 입실이 '안 함'으로 닫았으면 표식
-  // `auto-movein:<계약 id>`(inspectionConstants moveInClosedMarker). 입실 적용취소가 이 표식으로 그 입실이 닫은 점검만 되연다.
+  // 누가·무엇이 닫았나(로그, 화면에는 안 쓴다). 완료로 기록한 계정 id, 또는 입실·방 이동이 '안 함'으로 닫았으면 표식
+  // `auto-movein:<계약 id>`·`auto-move:<계약 id>`(inspectionConstants moveInClosedMarker). 적용취소가 이 표식으로 그 처리가 닫은 점검만 되연다.
   doneBy        String?
   memo       String?
 

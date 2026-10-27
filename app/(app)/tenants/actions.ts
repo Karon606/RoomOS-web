@@ -33,7 +33,7 @@ import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoChecko
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { ensureCheckoutInspections, clearCheckoutInspections, inspectionFailureNotice, checkoutInspectionForLease, closeMoveInInspectionOnMoveIn, reopenMoveInInspectionOnUndo } from '@/lib/roomInspectionEnsure'
-import { moveInInspectionClosedText, isMoveInTransition, isMoveInUndoTransition } from '@/app/(app)/room-manage/inspectionConstants'
+import { moveInInspectionClosedText, isMoveInTransition, isMoveInUndoTransition, undoesMoveIn, type MoveInCloser } from '@/app/(app)/room-manage/inspectionConstants'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
@@ -1894,10 +1894,12 @@ export async function updateTenant(formData: FormData): Promise<
   // 입실을 만드는 저장(거주중이 아닌 상태에서 거주중으로) — 그 방의 열린 입실 전 점검을 닫는다. 거주중에서 입주 전 단계로 무르는 저장은
   // 그 입실이 닫은 점검을 되연다(운영자 결정 ③, 판정 정본 isMoveInTransition, 차단 1).
   let moveInNoticeText = await moveInInspectionOnTransition(propertyId, leaseTermId, newRoomId ?? prevRoomId ?? null, prevStatus, status)
-  // 거주 중 방 이동(이 폼에서 호실을 바꾼 저장) — 옮겨 들어가는 방의 입실이다. 이 폼은 적용취소 대신 다시 저장으로 되돌린다.
+  // 거주 중 방 이동(이 폼에서 호실을 바꾼 저장) — 옮겨 들어가는 방의 입실이라 그 방의 열린 입실 전 점검을 닫는다(표식은 이사 쪽).
+  // 이 저장에는 짝인 적용취소가 없다(운영자 확인 2026-10-27). 방을 되돌려 다시 저장해도 닫힌 점검은 자동으로 열리지 않으니
+  // 방 모달(호실 상세) 작업 이력에서 그 점검의 '안 함' 을 적용취소해 다시 연다.
   if (!moveInNoticeText && (prevStatus === 'ACTIVE' || prevStatus === 'CHECKOUT_PENDING') && (status === 'ACTIVE' || status === 'CHECKOUT_PENDING')
       && newRoomId && newRoomId !== prevRoomId) {
-    moveInNoticeText = (await closeMoveInInspection(propertyId, newRoomId, leaseTermId))?.text ?? null
+    moveInNoticeText = (await closeMoveInInspection(propertyId, newRoomId, leaseTermId, 'move'))?.text ?? null
   }
 
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
@@ -2753,19 +2755,21 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
 
 // 입실 처리가 그 방의 열린 입실 전 점검을 '안 함'으로 닫고(운영자 결정 ③) 닫았으면 그 사실 한 문장을 준다. 입실을 만드는 모든 경로가
 // 이 한 함수를 지난다(moveInTenant·confirmReservationToActive·updateTenant·applyStatusTransition). 실패는 입실을 뒤집지 않는다.
-async function closeMoveInInspection(propertyId: string, roomId: string | null, leaseTermId: string): Promise<{ pending: number; text: string } | null> {
-  const closed = await closeMoveInInspectionOnMoveIn(propertyId, roomId, leaseTermId)
+async function closeMoveInInspection(propertyId: string, roomId: string | null, leaseTermId: string, by: MoveInCloser = 'movein'): Promise<{ pending: number; text: string } | null> {
+  const closed = await closeMoveInInspectionOnMoveIn(propertyId, roomId, leaseTermId, by)
   return closed ? { pending: closed.pending, text: moveInInspectionClosedText(closed.pending) } : null
 }
 
 /**
- * 상태 전이 하나가 방 점검에 주는 일(2026-10-27 독립 재검수 차단 1·2). 판정은 정본 isMoveInTransition·isMoveInUndoTransition 하나다.
+ * 상태 전이 하나가 방 점검에 주는 일(2026-10-27 독립 재검수 차단 1·2). 판정은 정본 isMoveInTransition 과 그 역 하나다.
  * 입실이면 그 방(roomId, 일정이 있으면 오늘 들어가는 방)의 열린 입실 전 점검을 닫고 둘째 줄 문장을 돌려준다.
- * 입실 되돌리기면 그 계약이 닫은 입실 전 점검을 되연다. 상태를 쓰는 모든 경로(계약 생성 포함, 이전 상태 null)가 이 함수를 지난다.
+ * 입실 되돌리기면 그 계약의 입실이 닫은 입실 전 점검을 되연다(이사가 닫은 점검은 안 연다). 상태를 쓰는 모든 경로(계약 생성 포함, 이전 상태 null)가 이 함수를 지난다.
+ * undo 는 되돌림이 확실한 경로(일괄 수정 적용취소)만 켠다. 그때는 정확한 역(undoesMoveIn)으로 비거주·퇴실 완료에서 들어온 입실도 되열고,
+ * 일반 전이는 진짜 퇴실을 되돌림으로 읽지 않게 좁은 판정(isMoveInUndoTransition)을 쓴다.
  */
-async function moveInInspectionOnTransition(propertyId: string, leaseTermId: string, roomId: string | null, prev: string | null, next: string): Promise<string | null> {
+async function moveInInspectionOnTransition(propertyId: string, leaseTermId: string, roomId: string | null, prev: string | null, next: string, opts: { undo?: boolean } = {}): Promise<string | null> {
   if (isMoveInTransition(prev, next)) return (await closeMoveInInspection(propertyId, roomId, leaseTermId))?.text ?? null
-  if (isMoveInUndoTransition(prev, next)) await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
+  if (opts.undo ? prev !== null && undoesMoveIn(prev, next) : isMoveInUndoTransition(prev, next)) await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
   return null
 }
 
@@ -3667,8 +3671,9 @@ export async function advanceRoomSchedule(input: {
       }
     })
 
-    // 일정 이사는 옮겨 들어가는 방의 입실이다(차단 1). 그 방의 열린 입실 전 점검을 닫는다. 적용취소(undoRoomMove)는 그 방 것만 되연다.
-    const moveInspText = (await closeMoveInInspection(propertyId, next.roomId, lease.id))?.text ?? null
+    // 일정 이사는 옮겨 들어가는 방의 입실이다(차단 1). 그 방의 열린 입실 전 점검을 이사 표식으로 닫는다. 적용취소(undoRoomMove)는 그 방 것만 되열고,
+    // 입실 적용취소(applyStatusTransition·undoRoomSchedule)는 이사 표식을 안 본다(재확인 차단 2).
+    const moveInspText = (await closeMoveInInspection(propertyId, next.roomId, lease.id, 'move'))?.text ?? null
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     const after = schedule[idx + 2]
     const room = await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
@@ -3809,8 +3814,8 @@ export async function undoRoomMove(input: { leaseTermId: string; moveYmd: string
         await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
       }
     })
-    // 이사를 무르면 그 이사가 닫은 입실 전 점검(옮겨 들어갔던 방 것)만 되연다(차단 2, advanceRoomSchedule 의 짝).
-    await reopenMoveInInspectionOnUndo(propertyId, input.leaseTermId, { roomId: moved.roomId })
+    // 이사를 무르면 그 이사가 닫은 입실 전 점검(이사 표식, 옮겨 들어갔던 방 것)만 되연다(차단 2, advanceRoomSchedule 의 짝).
+    await reopenMoveInInspectionOnUndo(propertyId, input.leaseTermId, { roomId: moved.roomId, by: 'move' })
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     return { ok: true }
   } catch (e) {
@@ -3851,6 +3856,7 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
       }
     })
     // 호실 일정 입실을 무르면(입주자 화면 '입실 처리를 적용취소') 그 입실이 닫은 입실 전 점검을 되연다(차단 2, startLeaseWithRoomSchedule 의 짝).
+    // 입실 표식만 보므로 그 뒤 일정 이사로 닫은 다른 방 점검은 안 열린다(재확인 차단 2).
     await reopenMoveInInspectionOnUndo(propertyId, leaseTermId)
 
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
@@ -7311,8 +7317,9 @@ export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok:
         prevRoomId: null, nextRoomId: null,
         prevStatus: b.status, nextStatus: restored.status,
       })
-      // 일괄 수정이 입실로 닫은 입실 전 점검을 되연다(입실 되돌리기 판정, 차단 2). 되돌림이 거꾸로 입실이면 닫는다.
-      await moveInInspectionOnTransition(propertyId, b.id, b.roomId, b.status, restored.status)
+      // 일괄 수정이 입실로 닫은 입실 전 점검을 되연다. 되돌림이 확실한 자리라 입실의 정확한 역으로 가른다(재확인 차단 2).
+      // 비거주·퇴실 완료에서 거주중으로 바꾼 일괄 수정을 무를 때도 열린다(토스트 '일괄 수정을 적용취소하면 다시 열립니다'). 되돌림이 거꾸로 입실이면 닫는다.
+      await moveInInspectionOnTransition(propertyId, b.id, b.roomId, b.status, restored.status, { undo: true })
     }
     revalidatePath('/tenants'); revalidatePath('/rooms')
     return { ok: true }

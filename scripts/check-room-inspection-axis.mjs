@@ -289,8 +289,18 @@ for (const file of SOURCES) {
   // 판정은 정본 isMoveInTransition 하나다(다음 상태 거주중이고 이전 상태가 거주가 아님. 계약 생성은 이전 상태 null).
   const cst2 = strip(read(CONST))
   if (!/export function isMoveInTransition\(prev: string \| null, next: string\): boolean \{\s*return next === 'ACTIVE' && prev !== 'ACTIVE' && prev !== 'CHECKOUT_PENDING'/.test(cst2)) violations.push(`${CONST} · 입실 판정 정본이 '다음 거주중 · 이전 거주 아님' 이 아니다(차단 1).`)
+  // 되돌리기 판정은 입실 판정의 정확한 역에서 나온다(재확인 차단 2). 일반 전이용은 그 역 가운데 입주 전 단계만(진짜 퇴실은 안 연다).
+  if (!/export function undoesMoveIn\(current: string, restored: string\): boolean \{\s*return isMoveInTransition\(restored, current\)/.test(cst2)
+      || !/export function isMoveInUndoTransition\(prev: string \| null, next: string\): boolean \{\s*return prev !== null && undoesMoveIn\(prev, next\) && PRE_MOVE_IN_STATUSES\.includes\(next\)/.test(cst2)
+      || !/const PRE_MOVE_IN_STATUSES = \['RESERVED', 'TOUR_DONE', 'WAITING_TOUR', 'CANCELLED'\]/.test(cst2)) violations.push(`${CONST} · 입실 되돌리기 판정이 입실 판정의 정확한 역(undoesMoveIn)에서 나오지 않거나 일반 전이용이 입주 전 단계 밖으로 넓어졌다(재확인 차단 2).`)
   const helper = fnBody(t, 'moveInInspectionOnTransition') ?? ''
-  if (!/if \(isMoveInTransition\(prev, next\)\) return \(await closeMoveInInspection\(/.test(helper) || !/if \(isMoveInUndoTransition\(prev, next\)\) await reopenMoveInInspectionOnUndo\(propertyId, leaseTermId\)/.test(helper)) violations.push(`${TENANTS} · moveInInspectionOnTransition 이 정본 판정 둘로 닫기·되열기를 하지 않는다.`)
+  if (!/if \(isMoveInTransition\(prev, next\)\) return \(await closeMoveInInspection\(propertyId, roomId, leaseTermId\)\)/.test(helper) || !/if \(opts\.undo \? prev !== null && undoesMoveIn\(prev, next\) : isMoveInUndoTransition\(prev, next\)\) await reopenMoveInInspectionOnUndo\(propertyId, leaseTermId\)/.test(helper)) violations.push(`${TENANTS} · moveInInspectionOnTransition 이 정본 판정(입실·정확한 역·일반 전이 역)으로 닫기·되열기를 하지 않는다.`)
+  // 일괄 수정 적용취소는 되돌림이 확실한 자리라 정확한 역으로 되연다(재확인 차단 2). 빠지면 비거주·퇴실 완료에서 들어온 입실이 안 열린다.
+  if (!/await moveInInspectionOnTransition\(propertyId, b\.id, b\.roomId, b\.status, restored\.status, \{ undo: true \}\)/.test(fnBody(t, 'undoBatchUpdateTenants') ?? '')) violations.push(`${TENANTS} · undoBatchUpdateTenants 가 입실의 정확한 역({ undo: true })으로 되열지 않는다(재확인 차단 2).`)
+  // 방 이동이 닫는 점검은 이사 표식이다. 입실 적용취소가 그 방까지 되열지 않게(재확인 차단 2).
+  for (const fn of ['advanceRoomSchedule', 'updateTenant']) {
+    if (!/closeMoveInInspection\([^)]*, 'move'\)/.test(fnBody(t, fn) ?? '')) violations.push(`${TENANTS} · ${fn} 의 방 이동 닫기가 이사 표식('move')이 아니다. 입실 적용취소가 이사로 닫은 다른 방 점검까지 연다(재확인 차단 2).`)
+  }
   // 지점 기준(fail closed). 계약 상태를 바꾸거나 계약을 만들거나 방을 옮기는 함수는 거주 구간을 함께 맞춘다(저장소 불변식).
   // 그래서 계약 생성·거주 구간 도우미·거주중 쓰기가 보이는 함수는 전부 입실 훅을 부르거나, 입실이 아닌 까닭이 아래 표에 있어야 한다.
   const MARK = /leaseTerm\.create\(|leaseTerms: \{ create|recordRoomChange\(|syncRoomStayOnSave\(|ensureOpenStay\(|status: 'ACTIVE'[,\s}]/
@@ -358,13 +368,16 @@ for (const file of SOURCES) {
     if (!/reopenMoveInInspectionOnUndo\(propertyId, |moveInInspectionOnTransition\(/.test(ub)) violations.push(`${undo} · ${key} 의 적용취소인데 그 입실이 닫은 입실 전 점검을 되열지 않는다(차단 2).`)
   }
   // 방 이동 적용취소는 옮겨 들어갔던 방 하나만 되연다(입실 전체를 되열면 앞서 들어간 방까지 열린다).
-  if (!/await reopenMoveInInspectionOnUndo\(propertyId, input\.leaseTermId, \{ roomId: moved\.roomId \}\)/.test(fnBody(t, 'undoRoomMove') ?? '')) violations.push(`${TENANTS} · undoRoomMove 가 옮겨 들어갔던 방의 입실 전 점검만 되열지 않는다.`)
+  if (!/await reopenMoveInInspectionOnUndo\(propertyId, input\.leaseTermId, \{ roomId: moved\.roomId, by: 'move' \}\)/.test(fnBody(t, 'undoRoomMove') ?? '')) violations.push(`${TENANTS} · undoRoomMove 가 옮겨 들어갔던 방의 이사가 닫은 입실 전 점검만 되열지 않는다.`)
+  // 입실 적용취소는 입실 표식만 본다(이사 표식을 넘기면 이사로 닫은 방까지 열린다).
+  if (!/await reopenMoveInInspectionOnUndo\(propertyId, leaseTermId\)\n/.test(fnBody(t, 'undoRoomSchedule') ?? '')) violations.push(`${TENANTS} · undoRoomSchedule 이 입실 표식만으로 되열지 않는다(재확인 차단 2).`)
   // 동시성(권고 3) — 닫기·되열기는 조건부 쓰기다. 읽은 뒤 그사이 바뀐 점검은 건드리지 않는다.
   const e = strip(read(ENSURE))
   const close = fnBody(e, 'closeMoveInInspectionOnMoveIn') ?? ''
-  if (!/where: \{ id: open\.id, propertyId, status: 'PLANNED', deletedAt: null \},\s*data: \{ status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\) \}/.test(close) || !/if \(done\.count === 0\) return null/.test(close)) violations.push(`${ENSURE} · 입실 닫기가 '예정일 때만' 조건부 쓰기가 아니거나 못 닫았는데 닫았다고 말한다(권고 3).`)
+  if (!/where: \{ id: open\.id, propertyId, status: 'PLANNED', deletedAt: null \},\s*data: \{ status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId, by\) \}/.test(close) || !/if \(done\.count === 0\) return null/.test(close)) violations.push(`${ENSURE} · 입실 닫기가 '예정일 때만' 조건부 쓰기가 아니거나 못 닫았는데 닫았다고 말한다(권고 3).`)
   const reopen = fnBody(e, 'reopenMoveInInspectionOnUndo') ?? ''
-  if (!/where: \{ id: row\.id, propertyId, status: 'SKIPPED', doneBy: moveInClosedMarker\(leaseTermId\), deletedAt: null \}/.test(reopen) || !/if \(other\) continue/.test(reopen)) violations.push(`${ENSURE} · 입실 적용취소가 '그 입실 표식이 있는 안 함일 때만' 조건부로 되열지 않거나 열린 점검과 겹쳐 연다(권고 3).`)
+  if (!/const marker = moveInClosedMarker\(leaseTermId, opts\.by \?\? 'movein'\)/.test(reopen) || !/doneBy: marker, deletedAt: null, \.\.\.\(opts\.roomId/.test(reopen)
+      || !/where: \{ id: row\.id, propertyId, status: 'SKIPPED', doneBy: marker, deletedAt: null \}/.test(reopen) || !/if \(other\) continue/.test(reopen)) violations.push(`${ENSURE} · 입실 적용취소가 '그 입실 표식이 있는 안 함일 때만' 조건부로 되열지 않거나 열린 점검과 겹쳐 연다(권고 3).`)
   // 청소 삭제·삭제 적용취소(운영자 판단 ③). 삭제는 예정 검수만 걷고, 완료된 청소를 되살리면 걷힌 검수만 되살린다(새로 만들지 않는다).
   const c = strip(read(CLEANING))
   if (!/await clearCleaningInspection\(propertyId, id\)/.test(fnBody(c, 'deleteCleaning') ?? '')) violations.push(`${CLEANING} · 청소 삭제가 그 청소의 예정 검수를 안 걷는다.`)

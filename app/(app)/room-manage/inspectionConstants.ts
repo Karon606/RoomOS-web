@@ -114,14 +114,33 @@ export function inspectionProgressText(judged: number, total: number): string {
 export function isMoveInTransition(prev: string | null, next: string): boolean {
   return next === 'ACTIVE' && prev !== 'ACTIVE' && prev !== 'CHECKOUT_PENDING'
 }
-/** 입실 되돌리기 판정. 거주중에서 입주 전 단계(예약·투어·입실 취소)로 돌아가면 그 입실이 닫은 입실 전 점검을 되연다. */
+/**
+ * 입실의 정확한 역(2026-10-27 재확인 차단 2). 지금 상태(current)에서 복원할 상태(restored)로 가는 것이
+ * 복원할 상태에서 지금 상태로 간 입실(isMoveInTransition)을 되돌리는 것이면 참이다. 비거주·퇴실 완료에서 거주중으로 간 입실의 역도 잡힌다.
+ * 되돌림이 확실한 경로(일괄 수정 적용취소)만 이 판정으로 되연다.
+ */
+export function undoesMoveIn(current: string, restored: string): boolean {
+  return isMoveInTransition(restored, current)
+}
+const PRE_MOVE_IN_STATUSES = ['RESERVED', 'TOUR_DONE', 'WAITING_TOUR', 'CANCELLED']
+/**
+ * 입실 되돌리기 판정(일반 전이용). 정확한 역(undoesMoveIn) 가운데 입주 전 단계(예약·투어·입실 취소)로 가는 것만 참이다.
+ * 상태 위젯·수정 폼·일괄 편집 저장은 그 전이가 되돌림인지 진짜 전이인지 모른다. 거주중에서 비거주·퇴실 완료로 가는 것은 진짜 전이일 수 있어
+ * 여기서 빼고(진짜 퇴실이 입실 전 점검을 되열면 안 된다), 거주중에서 입주 전 단계로 가는 것은 입실을 무르는 것밖에 없어 넣는다.
+ */
 export function isMoveInUndoTransition(prev: string | null, next: string): boolean {
-  return prev === 'ACTIVE' && (next === 'RESERVED' || next === 'TOUR_DONE' || next === 'WAITING_TOUR' || next === 'CANCELLED')
+  return prev !== null && undoesMoveIn(prev, next) && PRE_MOVE_IN_STATUSES.includes(next)
 }
 
-/** 입실이 닫은 입실 전 점검의 표식(doneBy 로그 칸). 입실 적용취소가 이 표식으로 그 입실이 닫은 점검만 되연다(운영자 결정 ③). */
-export function moveInClosedMarker(leaseTermId: string): string {
-  return `auto-movein:${leaseTermId}`
+/** 입실 전 점검을 닫은 쪽. 입실(상태 전이·계약 생성·호실 일정 입실)과 방 이동(일정 이사·수정 폼 호실 변경)을 표식으로 가른다. */
+export type MoveInCloser = 'movein' | 'move'
+/**
+ * 입실 전 점검을 자동으로 닫은 표식(doneBy 로그 칸). 적용취소가 이 표식으로 그 처리가 닫은 점검만 되연다(운영자 결정 ③).
+ * 입실 적용취소는 `auto-movein:` 만, 이사 적용취소는 `auto-move:` 중 옮겨 들어간 방 것만 본다(재확인 차단 2). 그래서 입실을 무를 때
+ * 나중에 일정 이사로 닫은 다른 방 점검은 안 열린다.
+ */
+export function moveInClosedMarker(leaseTermId: string, by: MoveInCloser = 'movein'): string {
+  return by === 'move' ? `auto-move:${leaseTermId}` : `auto-movein:${leaseTermId}`
 }
 
 /** 결과를 고른 항목 수(확인·문제·해당 없음). 화면이 항목을 들고 있을 때 서버 수와 같은 규칙으로 센다. */
