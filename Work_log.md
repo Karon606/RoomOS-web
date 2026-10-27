@@ -6923,3 +6923,17 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   권고 1(뺀 수단 건너뛰기)·2(계정 종류)·3(적용취소 조건부)·4(연 순간 버전)·5(그물 사각)·6(고친 상태 확인 문구)·7(견적 비교 표기)·8(완료 폼 안내 자리·라벨 폭)·9(부제 fmtDateDot)·11(changeCleaningReason 제거)·12(drift id 목록)를 반영했다.
 ## 2026-10-27 영수증 규격 표기 기억·세트 수량·지난 기록 목록 + 별건 D1~D5 (운영자 승인 계획 '전부 추천안', 1·2·4단계, 독립 검수 차단 3·권고 반영)
 원목무늬 장판이 '폭 183cm · 두께 1.8T' 와 영수증 자동 읽기의 '183cm, 1.8T' 로 비품 카드 둘이 된 사건에서 출발했다. 규격 표기 동치 정본(lib/specNotation, 숫자+단위는 양으로·글자는 집합·중복 토큰은 센다)을 세우고, 영수증을 읽는 두 자리와 딥링크가 지난 기록 표기로 맞추게 했다(lib/itemVariants, 캡션 + 되살리기, 숫자 규격은 '채우기' 한 번). 세부스펙 사전(ItemSpecOption)은 읽기만. '40개 묶음 x 4 = 160개' 세트 감지와 프롬프트 규칙, 비품은 규격으로 나뉘어 와도 세트 확인창이 선다(lib/setStructure). 직접 입력 품명 칸에 이력 제안 패널(가이드 §12)과 저장 때 묻기(classifySpecChoice, 비품·자재만). 별건: D1 비품 행별 규격 수정 적용취소(규격 세 칸만·낡은 기록 거부), D2 코랄 채움 선택 칩 걷기(클래스 전체, check-coral-chip-fill), D3 em dash, D4 홈 영수증 카드 배지, D5 규격별 나누기 개명 적용취소(splitTrackedItemLabel). 장판 정리: 창고 두 카드는 운영자 '합치기', 방(522호) 1행은 scripts/fix-spec-notation-room-row.ts(예행만, 실행은 운영자 확인 뒤). 사전 표기 정리·ItemSpecOption drop·Expense 인덱스는 2차. 정본 [[domain-inventory]] '규격 표기 기억'.
+
+## 2026-10-27 계약 금액 자동 채움 봉합 + 방 이용료 저장의 계약 동기화 (운영자 승인 '추천대로', 홍은주 602호 사건)
+- 1단계 폼: 입주자 폼 월 이용료 자동 채움은 새 계약과 빈 칸에만(lib/leaseRentAutofill). 저장된 금액은 호실·상태를 바꿔도 그대로, 칸 아래 WhyCaption
+  '418호 150,000원 그대로입니다 · 602호 기준 30,000원으로 바꾸기'(누르면 되살리기), 비거주 이용료 없는 방은 기본 이용료로 대체 안 함. 종전 경고 p 를 WhyCaption 으로.
+  MoneyInput describedBy. updateTenant 사건 모양 안내(거부 아님). 그물 check-lease-rent-autofill, 진리표 test-lease-rent-autofill.
+- 2단계 방 저장: 정본 lib/roomRentSync(followers · leaseIds+expect · all). updateRoom 두 축 한 트랜잭션, 미리보기 previewRoomRentSync, 확인창 choiceDialog
+  [계약에 적용 / 호실만 저장 / 취소], 토스트 [적용취소](undoRoomRentSync, 서명 토큰 room-rent-sync-v1), 호실 수정 폼 이용료 칸 아래 '계약 N건이 이 금액과 다릅니다 · 계약에 적용'.
+  일괄 편집·즉시 적용·예약 도래가 같은 정본(동작 불변). 그물 check-room-rent-sync, 진리표 test-room-rent-sync-text, 통합 test-room-rent-sync-flow(①~⑪ · ③b),
+  check-action-property-scope 에 두 액션. test-action-property-scope-flow 의 '호실 수정 기준가 동기화' 기대는 새 규칙(협의가 그대로)으로 고쳤다.
+- 3단계: verify:db check-lease-rent-drift(운영 1건 = 사건 당사자, 기준선). 가이드 §27.9, knowledge/domain-billing 절.
+- 독립 검수 반영(2026-10-28): B1 이용료 칸을 비운 저장이 계약을 0원으로 옮기던 것을 정본에서 막음(계약 그대로), B2 거주로 자동 채운 값이 비거주 전환 뒤 남던 것을 비움(손으로 적은 값은 그대로).
+  권고 반영: 수정 폼 첫 실행 채움 없음, 호실 수정 followers 단기 제외(일괄 편집은 종전대로), 적용 뒤 새 수납 기록이 있으면 적용취소 거부, 확인창에 기록 없는 지난 달 수·함께 바뀌는 계약 수, 토스트 첫 줄에 축.
+  §16 진입점 2·3 없음과 choiceDialog 줄바꿈은 knowledge/domain-billing 에 알고 받아들인 한계로 적음.
+- 운영자 확인 대기: 602호 홍은주 계약 3만 원을 15만 원으로 둘지(배포 뒤 호실 수정 폼 '계약에 적용', 기록 없는 달부터, 적용취소 가능).
