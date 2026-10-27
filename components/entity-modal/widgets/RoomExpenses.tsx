@@ -2,11 +2,14 @@
 
 // 이 방에 배정된 지출(누적) — 방 상세에서 "어떤 방에 얼마 들어갔는지" 확인용.
 // 지출 등록 시 '대상 호실'로 배정된 Expense 를 방별로 모아 보여준다.
+// 날짜 칸은 배정일(2026-07-28 운영자 오더)이라, 지출한 날로 오해하지 않게 펼친 목록 위 한 줄로 축을 밝히고
+// 구매일은 다를 때만 끝에 '7/1 구매' 로 병기한다(2026-10-27 운영자 지적·패널 결론, 행마다 '배정' 반복은 소음이라 기각).
 
 import { useEffect, useState } from 'react'
 import { getRoomExpenses } from '@/app/(app)/rooms/actions'
 
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
+import { fmtMDYearIfOther } from '@/lib/fmtDate'
 
 export function RoomExpenses({ roomId }: { roomId: string }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomExpenses>> | null>(null)
@@ -29,15 +32,19 @@ export function RoomExpenses({ roomId }: { roomId: string }) {
         </span>
       </button>
       {open && (
-        <ul className="mt-2 space-y-1.5 border-t border-[var(--warm-border)]/60 pt-2">
+        <div className="mt-2 border-t border-[var(--warm-border)]/60 pt-2">
+        {data.items.some(it => it.purchaseDate) && (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1.5">이 방에 배정한 날 순. 구매한 날이 다르면 뒤에 적습니다.</p>
+        )}
+        <ul className="space-y-1.5">
           {data.items.map(it => {
             // 품목명 우선 표시 — detail('[슬라이드바 거치대] x 1개') 또는 itemLabel, 없으면 카테고리.
             const name = it.detail || it.itemLabel || it.category
             // 날짜열은 배정일(없으면 구매일) — 배정일과 구매일이 다른 행만 sub 끝에 구매일 병기
-            const sub = [(it.detail || it.itemLabel) ? it.category : null, it.vendor, it.memo, it.purchaseDate ? `구매 ${it.purchaseDate.slice(5)}` : null].filter(Boolean).join(' · ')
+            const sub = [(it.detail || it.itemLabel) ? it.category : null, it.vendor, it.memo, it.purchaseDate ? `${fmtMDYearIfOther(it.purchaseDate)} 구매` : null].filter(Boolean).join(' · ')
             return (
               <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem]">
-                <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{it.date.slice(5)}</span>
+                <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{fmtMDYearIfOther(it.date)}</span>
                 <span className="flex-1 min-w-0 truncate">
                   <span className="text-[var(--warm-dark)]">{name}</span>
                   {sub && <span className="text-[var(--warm-muted)]"> · {sub}</span>}
@@ -47,6 +54,7 @@ export function RoomExpenses({ roomId }: { roomId: string }) {
             )
           })}
         </ul>
+        </div>
       )}
     </section>
   )
