@@ -9,6 +9,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
 import { viewportProbe, probeAfterEntrance, probeReport, sentinelRect } from '@/lib/viewportProbe'
 import { kbdTraceFreeze, kbdTraceTable, REPORT_NOTE_MAX, type KbdTraceFrozen } from '@/lib/kbdTrace'
+import { readPadTrace, padTraceText } from '@/lib/signPadTrace'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -188,7 +189,11 @@ export default function ErrorReportButton() {
     const probe = probeReport(openedProbeRef.current, viewportProbe())
     // 키보드 세션 표는 계측 덩이 맨 끝에 붙는다. 서버가 메모를 REPORT_NOTE_MAX 에서 자르므로 메모·
     // 계측이 쓰고 남은 자리만큼만 싣는다(넘치면 정본이 판정이 그대로인 줄부터 덜어낸다).
-    const trace = probe ? kbdTraceTable(traceRef.current, REPORT_NOTE_MAX - note.trim().length - probe.length - 16) : ''
+    // 서명 패드 계측(신고 c6eb427d). 이 탭에서 최근 6시간 안에 연 패드 세션의 수만 담는다(좌표·이미지 없음, lib/signPadTrace 머리말).
+    // 대면 서명은 계약서 화면(앱 셸 밖이라 신고 버튼이 없다)에서 받고, 돌아와 입주자 화면에서 신고하므로 탭 저장소로 넘긴다.
+    const padText = padTraceText(readPadTrace(), Date.now())
+    const pad = padText ? `[서명 패드]\n${padText}` : ''
+    const trace = probe ? kbdTraceTable(traceRef.current, REPORT_NOTE_MAX - note.trim().length - probe.length - pad.length - 18) : ''
     try {
       // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
       const imageFileIds: string[] = []
@@ -209,7 +214,7 @@ export default function ErrorReportButton() {
       // 계측을 메모 **뒤에** 덧붙인다(2026-09-08). 운영자가 읽는 문장이 먼저고 계측은 뒤다 —
       // 메모가 길어 서버에서 잘리더라도 밀려나는 것은 계측 쪽이다.
       // 담는 것과 안 담는 것(개인정보 경계)은 lib/viewportProbe 머리말에 있다. 값은 안 담는다.
-      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${[probe, trace].filter(Boolean).join('\n')}`].filter(Boolean).join('\n\n')
+      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${[probe, trace].filter(Boolean).join('\n')}`, pad].filter(Boolean).join('\n\n')
 
       const res = await submitErrorReport({
         url: snapshot.url,

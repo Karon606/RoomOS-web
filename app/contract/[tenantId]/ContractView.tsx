@@ -11,7 +11,14 @@ import Link from 'next/link'
 // 정적 import — 동적 import 시절에는 모듈이 도착하기 전에 그은 획이 조용히 버려졌다.
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
 import SignaturePad from 'signature_pad'
-import { isSignatureInkEnough } from '@/lib/signatureInk'
+import { isSignatureInkEnough, signatureInkLength } from '@/lib/signatureInk'
+// 서명 패드 계측(수만, 좌표·이미지 없음) — 오류신고 '[서명 패드]' 로 덧붙는다(신고 c6eb427d).
+import { writePadSession, type PadSession } from '@/lib/signPadTrace'
+// 서명 펜 굵기(CSS px, 배율 1 기준). 판정과 무관한 그리기 값이다.
+const PAD_MIN_W = 1.2
+const PAD_MAX_W = 3.0
+// 상태 줄 문장 열쇠(lib/signGuideText 8개 언어).
+const PAD_STATUS_KEY = { idle: 'pad.stIdle', drawing: 'pad.stDrawing', ok: 'pad.stOk', short: 'pad.stShort' } as const
 import { smsBodyFor, t, bi, biLine, subLangOf, SIGN_LANG_LABEL, type SignLang } from '@/lib/signGuideText'
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
@@ -997,9 +1004,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 패드 안에서 보여줄 오류 — 토스트는 layout viewport 하단 고정이라 핀치줌 확대 중에는
   // 화면 밖으로 밀린다. 서명이 거부된 사실을 패드를 보는 눈이 그 자리에서 알아야 한다.
   const [signError, setSignError] = useState<string | null>(null)
-  const openSign = (target: string) => { setSignTarget(target); setSignError(null); setSignOpen(true) }
+  const openSign = (target: string) => { setSignTarget(target); setSignError(null); setPadInk('idle'); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<SignaturePad | null>(null)
+  // 패드 밑 상태 줄(2026-10-26 운영자 승인, 신고 c6eb427d). 대기 · 긋는 중 · 받음(잉크가 판정 바닥 이상) · 짧음(거절 전 예고).
+  // 판정은 확인 버튼과 같은 정본 isSignatureInkEnough 다. 확인 버튼은 disabled 가 아니라 잉크가 차기 전 회색, 차면 코랄이다.
+  const [padInk, setPadInk] = useState<'idle' | 'drawing' | 'ok' | 'short'>('idle')
+  // 이번 패드 세션 계측(수만). 확인 거절·저장이 여기에 센다. 패드가 닫힐 때 sessionStorage 에 남긴다(lib/signPadTrace).
+  const padSessionRef = useRef<PadSession | null>(null)
   // 핀치줌으로 확대한 상태에서도 패드가 보이는 화면(visual viewport) 안에 머물게 오버레이 기하를 직접 기입한다.
   // 금지: 이 모달과 그 조상에 CSS transform 을 절대 걸지 말 것. signature_pad 는 clientX - rect.left 로
   // 획 좌표를 잡는데, transform 이 끼면 그 계약이 깨져 획이 손끝에서 어긋난다.
@@ -1010,14 +1022,54 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   useEffect(() => {
     if (!signOpen || !sigCanvasRef.current) return
     const canvas = sigCanvasRef.current
+    // 굵기 1.2~3.0(종전 0.7~2.4). 빠른 획이 최소 굵기로 그려져 dpr 3 화면에서 흐려 '안 써졌다' 로 읽혔다(신고 c6eb427d).
+    // 굵기만 바꾼다. 서명 인정 판정(총 획 길이 60px, lib/signatureInk)은 손대지 않는다.
     const pad = new SignaturePad(canvas, {
       backgroundColor: 'rgba(255,255,255,0)',
       penColor: '#1a1a1a',
-      minWidth: 0.7,
-      maxWidth: 2.4,
+      minWidth: PAD_MIN_W,
+      maxWidth: PAD_MAX_W,
     })
     sigPadRef.current = pad
+    // 상태 줄 — 라이브러리 공개 이벤트(beginStroke·endStroke)만 듣는다. 획 판정은 확인 버튼과 같은 정본이다.
+    const onBegin = () => { setPadInk('drawing'); setSignError(null); if (padSessionRef.current) padSessionRef.current.strokes++ }
+    const onEnd = () => {
+      const strokes = pad.toData()
+      setPadInk(strokes.length === 0 ? 'idle' : isSignatureInkEnough(strokes) ? 'ok' : 'short')
+    }
+    pad.addEventListener('beginStroke', onBegin)
+    pad.addEventListener('endStroke', onEnd)
     const vv = window.visualViewport
+    // 계측 — 오버레이에서 capture 로 듣는다(패드 밖 누름·동시 터치·빼앗긴 획을 세려면 캔버스 바깥까지 봐야 한다).
+    // 라이브러리 입력 경로 판정을 그대로 옮겼다(signature_pad on(): Macintosh UA + ontouchstart 면 touch 이벤트).
+    const overlay = sigOverlayRef.current
+    const rect0 = canvas.getBoundingClientRect()
+    const sess: PadSession = {
+      at: Date.now(),
+      path: /Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document ? 'touch' : 'pointer',
+      // 화면 크기는 layout 폭(clientWidth)이다. innerWidth·vv 폭은 핀치로 줄어 확대 상쇄의 씨앗이라 이 파일에서 안 읽는다(check-doc-zoom).
+      vw: document.documentElement.clientWidth, vh: document.documentElement.clientHeight, padW: Math.round(rect0.width), padH: Math.round(rect0.height),
+      zoom: vv?.scale || 1,
+      strokes: 0, cancels: 0, multiMax: 0, touchDowns: 0, penDowns: 0, mouseDowns: 0, outsideDowns: 0,
+      inkPx: 0, rejectsEmpty: 0, rejectsShort: 0, outcome: 'closed',
+    }
+    padSessionRef.current = sess
+    const activePointers = new Set<number>()
+    const onPDown = (e: PointerEvent) => {
+      if (e.pointerType === 'pen') sess.penDowns++; else if (e.pointerType === 'mouse') sess.mouseDowns++; else sess.touchDowns++
+      if (e.target !== canvas) sess.outsideDowns++
+      activePointers.add(e.pointerId)
+      sess.multiMax = Math.max(sess.multiMax, activePointers.size)
+    }
+    const onPUp = (e: PointerEvent) => { activePointers.delete(e.pointerId) }
+    const onPCancel = (e: PointerEvent) => { activePointers.delete(e.pointerId); sess.cancels++ }
+    const onTStart = (e: TouchEvent) => { sess.multiMax = Math.max(sess.multiMax, e.touches.length) }
+    const onTCancel = () => { sess.cancels++ }
+    overlay?.addEventListener('pointerdown', onPDown, true)
+    overlay?.addEventListener('pointerup', onPUp, true)
+    overlay?.addEventListener('pointercancel', onPCancel, true)
+    overlay?.addEventListener('touchstart', onTStart, { capture: true, passive: true })
+    overlay?.addEventListener('touchcancel', onTCancel, { capture: true, passive: true })
     // canvas.width 재대입은 비트맵을 통째로 지운다. iOS 는 핀치줌·주소창 수축에도 resize 를 쏘므로
     // (위 배율 계산 주석 참조) 그리던 서명이 손도 안 뗐는데 사라졌다. 목표 크기가 지금과 같으면
     // 아무것도 하지 않고, 정말 변했을 때(회전 등)만 스트로크를 백업했다가 되돌린다 — 버리지 않는다.
@@ -1043,8 +1095,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       canvas.height = Math.round(r.height * ratio)
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.scale(ratio, ratio)
-      pad.minWidth = 0.7 / z
-      pad.maxWidth = 2.4 / z
+      pad.minWidth = PAD_MIN_W / z
+      pad.maxWidth = PAD_MAX_W / z
       pad.fromData(strokes)
       prevW = r.width; prevH = r.height; prevRatio = ratio
     }
@@ -1081,6 +1133,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       vv?.removeEventListener('resize', onViewportChange)
       vv?.removeEventListener('scroll', onViewportChange)
       window.removeEventListener('resize', setupCanvas)
+      pad.removeEventListener('beginStroke', onBegin)
+      pad.removeEventListener('endStroke', onEnd)
+      overlay?.removeEventListener('pointerdown', onPDown, true)
+      overlay?.removeEventListener('pointerup', onPUp, true)
+      overlay?.removeEventListener('pointercancel', onPCancel, true)
+      overlay?.removeEventListener('touchstart', onTStart, { capture: true })
+      overlay?.removeEventListener('touchcancel', onTCancel, { capture: true })
+      writePadSession(sess)
+      padSessionRef.current = null
       pad.off()
       sigPadRef.current = null
     }
@@ -1100,7 +1161,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   }, [remote, submitted])
   const handleSignConfirm = async () => {
     const pad = sigPadRef.current
+    const sess = padSessionRef.current
     if (!pad || pad.isEmpty()) {
+      if (sess) sess.rejectsEmpty++
       const msg = remote ? bi(signLang, 'pad.errEmpty') : '서명을 입력해주세요.'
       setSignError(msg)
       pushToast('error', msg)
@@ -1108,7 +1171,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
     // 점 몇 개로는 서명이 아니다(조정미님 동의서 실사례 — 점 2개가 서명으로 저장됐다).
     // isEmpty() 는 탭 한 번에도 false 라, 획의 총 길이를 정본(lib/signatureInk)으로 잰다.
+    if (sess) sess.inkPx = Math.round(signatureInkLength(pad.toData()))
     if (!isSignatureInkEnough(pad.toData())) {
+      if (sess) sess.rejectsShort++
       // 사전 병기 — 원격이면 링크에 박제된 언어, 운영자 화면이면 한국어 + 영어.
       const msg = bi(signLang, 'pad.errShort')
       setSignError(msg)
@@ -1116,6 +1181,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       return
     }
     setSignError(null)
+    if (sess) sess.outcome = 'saved'
     const url = pad.toDataURL('image/png')
     if (remote) {
       if (!shareToken || remoteSubmitting) return
@@ -2300,11 +2366,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
       {signOpen && (
-        <div ref={sigOverlayRef} className="sig-overlay no-print" onClick={() => setSignOpen(false)}>
-          <div className="sig-modal" onClick={e => e.stopPropagation()}>
+        // 잉크가 있으면 배경 누름을 무시한다(가이드 §12 'dirty 후 배경클릭 무시'). 손목·손날이 패드 밖 배경에 닿으면 서명이
+        // 통째로 사라졌다(신고 c6eb427d). X·취소는 그대로 닫는다.
+        <div ref={sigOverlayRef} className="sig-overlay no-print" onClick={() => { if (sigPadRef.current && !sigPadRef.current.isEmpty()) return; setSignOpen(false) }}>
+          <div className="sig-modal" role="dialog" aria-modal="true" aria-labelledby="sig-title" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
-                <div className="sig-title" style={{ whiteSpace: 'pre-line' }}>{remote
+                <div id="sig-title" className="sig-title" style={{ whiteSpace: 'pre-line' }}>{remote
                   ? (signTarget === 'contract' ? bi(signLang, 'pad.titleContract') : bi(signLang, 'pad.titleDoc', { title: titleOf(signTarget) }))
                   : (signTarget === 'contract' ? '입실자 서명' : `${titleOf(signTarget)} 서명`)}</div>
                 <div className="sig-sub" style={{ whiteSpace: 'pre-line' }}>
@@ -2322,16 +2390,27 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <canvas ref={sigCanvasRef} className="sig-canvas" onPointerDown={() => setSignError(null)} />
               <div className="sig-baseline" />
             </div>
-            {signError && <div className="sig-error" role="alert">{signError}</div>}
+            {/* 상태 줄 — 긋는 동안 '받고 있다' 를 말한다. 오류가 서 있으면 오류가 그 자리를 대신한다(같은 말을 두 번 안 한다).
+                원격은 사전 병기(한국어 정본 줄 + 선택 언어 줄), 운영자 화면은 한국어. 높이는 줄 수만큼 미리 잡아 상태가 바뀌어도 버튼이 안 뛴다. */}
+            <div className={`sig-feedback${remote ? ' sig-feedback-bi' : ''}`}>
+              {signError
+                ? <div className="sig-error" role="alert">{signError}</div>
+                : (
+                  <div className={`sig-status sig-status-${padInk}`} aria-live="polite">
+                    {remote ? bi(signLang, PAD_STATUS_KEY[padInk]) : t('ko', PAD_STATUS_KEY[padInk])}
+                  </div>
+                )}
+            </div>
             <div className="sig-actions">
-              <button onClick={() => sigPadRef.current?.clear()} className="toolbar-btn-secondary">
+              <button onClick={() => { sigPadRef.current?.clear(); setPadInk('idle') }} className="toolbar-btn-secondary">
                 {remote ? biLine(signLang, 'pad.clear') : '지우기'}
               </button>
               <div style={{ flex: 1 }} />
               <button onClick={() => setSignOpen(false)} className="toolbar-btn-secondary">
                 {remote ? biLine(signLang, 'pad.cancel') : '취소'}
               </button>
-              <button onClick={handleSignConfirm} disabled={remoteSubmitting} className="toolbar-print">
+              {/* disabled 로 두지 않는다(눌러도 반응이 없으면 고장으로 읽힌다). 잉크가 차기 전 회색, 차면 코랄(knowledge/domain-contracts '회색에서 코랄로'). */}
+              <button onClick={handleSignConfirm} disabled={remoteSubmitting} className={padInk === 'ok' ? 'toolbar-print' : 'toolbar-print sig-confirm-wait'}>
                 {remoteSubmitting
                   ? (remote ? biLine(signLang, 'pad.saving') : '저장 중…')
                   : (remote ? biLine(signLang, 'pad.confirm') : '확인')}
@@ -2680,8 +2759,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
            padding 이 폭 밖으로 더해지지 않게 border-box 로 둔다. transform 은 금지(좌표 계약). */
         /* 모든 px 치수에 --sig-inv(=1/배율) 를 곱한다 — 핀치줌으로 z 배 확대해도 패드가 평소 크기로 보인다.
            JS 가 변수를 안 기입한 환경(vv 없음)에서는 폴백 1 이라 아래 값들이 리터럴 그대로다. */
-        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: calc(16px * var(--sig-inv, 1)); }
-        .sig-modal { width: 100%; max-width: calc(640px * var(--sig-inv, 1)); background: var(--cream); border-radius: calc(18px * var(--sig-inv, 1)); padding: calc(18px * var(--sig-inv, 1)) calc(18px * var(--sig-inv, 1)) calc(16px * var(--sig-inv, 1)); box-shadow: 0 calc(20px * var(--sig-inv, 1)) calc(60px * var(--sig-inv, 1)) rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: calc(14px * var(--sig-inv, 1)); }
+        /* touch-action·user-select 은 오버레이와 모달 전체(신고 c6eb427d). 캔버스만 none 이면 두 터치의 공통 조상(오버레이) 규칙으로
+           브라우저가 손목·둘째 손가락을 핀치로 가져가 첫 손가락에 pointercancel 이 오고 획이 끊긴다. 패드가 열린 동안은 핀치가 필요 없다.
+           --sig-inv 기하(핀치로 이미 확대한 채 열었을 때)는 그대로다. */
+        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: calc(16px * var(--sig-inv, 1)); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .sig-modal { touch-action: none; user-select: none; -webkit-user-select: none; width: 100%; max-width: calc(640px * var(--sig-inv, 1)); background: var(--cream); border-radius: calc(18px * var(--sig-inv, 1)); padding: calc(18px * var(--sig-inv, 1)) calc(18px * var(--sig-inv, 1)) calc(16px * var(--sig-inv, 1)); box-shadow: 0 calc(20px * var(--sig-inv, 1)) calc(60px * var(--sig-inv, 1)) rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: calc(14px * var(--sig-inv, 1)); }
         .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(12px * var(--sig-inv, 1)); }
         .sig-title { font-size: calc(15px * var(--sig-inv, 1)); font-weight: 700; color: var(--ink); margin-bottom: calc(4px * var(--sig-inv, 1)); }
         .sig-sub { font-size: calc(12px * var(--sig-inv, 1)); color: var(--ink-s); line-height: 1.5; }
@@ -2689,6 +2771,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .sig-close:hover { background: #f3eee5; }
         .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; border-radius: calc(12px * var(--sig-inv, 1)); touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+        /* 폰 폭에서 패드를 키운다(종전 16/7, 402px 폰 실측 약 334x146). 크게 쓰는 사람의 획이 칸 밖에서 시작하면 아예 안 시작된다. */
+        @media (max-width: 479px) { .sig-canvas-wrap { aspect-ratio: 16 / 9; min-height: calc(180px * var(--sig-inv, 1)); } }
+        /* 상태 줄과 오류 상자는 한 칸(.sig-feedback)을 번갈아 쓴다. 칸 높이를 미리 잡아 거절 순간 버튼이 안 뛴다(웹디자이너 패스).
+           36px = 오류 상자 한 줄(12px x 1.5 + 위아래 8 + 테두리 1). 병기는 언어에 따라 둘째 줄이 꺾일 수 있어 72px(JA·RU 'stOk' 320px). */
+        .sig-feedback { min-height: calc(36px * var(--sig-inv, 1)); display: flex; flex-direction: column; justify-content: center; }
+        .sig-feedback-bi { min-height: calc(72px * var(--sig-inv, 1)); }
+        .sig-status { font-size: calc(12px * var(--sig-inv, 1)); line-height: 1.5; white-space: pre-line; color: var(--ink-s); }
+        .sig-status-drawing { color: var(--ink); }
+        .sig-status-ok { color: var(--success-fg); font-weight: 600; }
+        .sig-status-short { color: var(--warning-fg); font-weight: 600; }
+        /* 아직 안 켜진 확인 — .remote-submit-wait 와 같은 문법(opacity 없이 글자색이 회색을 진다). */
+        .sig-modal .toolbar-print.sig-confirm-wait { background: var(--cream); color: var(--ink-s); border: calc(1px * var(--sig-inv, 1)) solid var(--cream-3); }
+        .sig-modal .toolbar-print.sig-confirm-wait:hover { background: var(--cream-soft); }
         .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; pointer-events: none; }
         .sig-error { font-size: calc(12px * var(--sig-inv, 1)); line-height: 1.5; white-space: pre-line; color: var(--danger-fg); background: var(--danger-bg); border: calc(1px * var(--sig-inv, 1)) solid var(--danger-ring); border-radius: calc(8px * var(--sig-inv, 1)); padding: calc(8px * var(--sig-inv, 1)) calc(10px * var(--sig-inv, 1)); }
         .sig-actions { display: flex; align-items: center; gap: calc(8px * var(--sig-inv, 1)); }
