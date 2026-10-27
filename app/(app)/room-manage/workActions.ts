@@ -31,6 +31,8 @@ import { expenseSnapOf, EXPENSE_SNAP_SELECT, signRoomRecordEdit } from '@/lib/ro
 import { ROOM_RECORD_STALE, type RoomRecordEditUndo, type RecordSnap } from '@/lib/roomRecordEditUndo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
+/** 견적 금액 정리. 양의 정수만 남기고 그 밖(0·음수·빈 값·숫자 아님)은 견적 없음(null)이다. */
+const estimateOf = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : null)
 
 export type RoomWorkRow = {
   id: string
@@ -45,6 +47,8 @@ export type RoomWorkRow = {
   memo: string | null
   /** 마지막으로 고친 시각(ISO). 한 건 수정 폼이 연 뒤 다른 곳에서 바뀌었는지 서버가 견준다(조건부 쓰기). */
   updatedAt: string
+  /** 견적 금액(원). 돈이 아니라 메모다. 지출을 안 만들고 어떤 합계에도 안 든다(2026-10-27, 그물 check-work-estimate). null = 견적 없음. */
+  estimateAmount: number | null
   /** 삭제된 행인가 — includeDeleted 로 실어 온 목록에서만 true 가 있다(복원만 할 수 있다). */
   deleted?: boolean
   /** 이 작업에 붙은 지출의 합. 여러 건이 붙을 수 있다(자재 여러 날 + 시공 하루). */
@@ -96,7 +100,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
     select: {
       id: true, roomId: true, kind: true, status: true,
       scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true, deletedAt: true, updatedAt: true,
+      performer: true, performerName: true, memo: true, deletedAt: true, updatedAt: true, estimateAmount: true,
       room: { select: { roomNo: true } },
       expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
@@ -108,7 +112,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       status: r.status as 'PLANNED' | 'DONE',
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
-      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(),
+      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(), estimateAmount: r.estimateAmount,
       cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
       deleted: !!r.deletedAt,
@@ -130,7 +134,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
     select: {
       id: true, roomId: true, kind: true, status: true,
       scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true, updatedAt: true,
+      performer: true, performerName: true, memo: true, updatedAt: true, estimateAmount: true,
       room: { select: { roomNo: true } },
       expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
@@ -142,7 +146,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       status: r.status as 'PLANNED' | 'DONE',
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
-      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(),
+      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(), estimateAmount: r.estimateAmount,
       cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
@@ -165,6 +169,8 @@ export async function createRoomWork(input: {
    */
   performerName?: string | null
   memo?: string | null
+  /** 견적 금액(원, 선택). 지출을 만들지 않는다. 0 이하·비우면 견적 없음(null). */
+  estimateAmount?: number | null
   /**
    * 목록에 없는 종류를 적었을 때 영업장 작업 종류 목록에 더할지(2026-10-22 2차, 기본 켜짐). 끄면 이 기록만 그 이름으로 남는다.
    */
@@ -190,6 +196,7 @@ export async function createRoomWork(input: {
         // 담당이 '직접'이거나 미정이면 이름을 안 남긴다 — 안 보이는 값이 저장되면 안 된다.
         performerName: input.performer && input.performer !== 'SELF' ? (input.performerName?.trim() || null) : null,
         memo: input.memo?.trim() || null,
+        estimateAmount: estimateOf(input.estimateAmount),
       },
       select: { id: true },
     })
@@ -491,8 +498,8 @@ export async function unlinkExpensesFromWork(expenseIds: string[]): Promise<{ ok
 }
 
 /** 작업 기록 칸 스냅샷(적용취소 토큰). 칸은 lib/roomRecordEditUndo RECORD_SNAP_FIELDS.work 와 같다. */
-function workSnapOf(w: { kind: string; scheduledDate: Date | null; doneDate: Date | null; performer: string | null; performerName: string | null; memo: string | null }): RecordSnap {
-  return { kind: w.kind, scheduledDate: ymd(w.scheduledDate), doneDate: ymd(w.doneDate), performer: w.performer, performerName: w.performerName, memo: w.memo }
+function workSnapOf(w: { kind: string; scheduledDate: Date | null; doneDate: Date | null; performer: string | null; performerName: string | null; memo: string | null; estimateAmount: number | null }): RecordSnap {
+  return { kind: w.kind, scheduledDate: ymd(w.scheduledDate), doneDate: ymd(w.doneDate), performer: w.performer, performerName: w.performerName, memo: w.memo, estimateAmount: w.estimateAmount }
 }
 
 const PERFORMER_VALUES: readonly string[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
@@ -525,6 +532,8 @@ export async function updateRoomWork(input: {
   cost?: number | null
   payMethod?: string | null
   financialAccountId?: string | null
+  /** 견적 금액(원). 안 실으면 그대로, 0 이하·null 이면 지운다. 지출과 무관하다(3단계, 2026-10-27). */
+  estimateAmount?: number | null
 }): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -533,7 +542,7 @@ export async function updateRoomWork(input: {
       where: { id: input.id, propertyId, deletedAt: null },
       select: {
         id: true, roomId: true, kind: true, status: true, scheduledDate: true, doneDate: true,
-        performer: true, performerName: true, memo: true, updatedAt: true,
+        performer: true, performerName: true, memo: true, updatedAt: true, estimateAmount: true,
         room: { select: { roomNo: true } },
         expenses: { select: { ...EXPENSE_SNAP_SELECT, isShipping: true } },
       },
@@ -564,6 +573,7 @@ export async function updateRoomWork(input: {
     const name = done ? (input.performerName?.trim() || null) : (performer && performer !== 'SELF' ? (input.performerName?.trim() || null) : null)
     const memo = input.memo?.trim() || null
     if (memo && memo.length > 500) return { ok: false, error: '메모는 500자까지 적습니다.' }
+    const estimateAmount = input.estimateAmount === undefined ? cur.estimateAmount : estimateOf(input.estimateAmount)
 
     // 시공비 — 완료 건만.
     const wantsCost = input.cost != null
@@ -589,7 +599,7 @@ export async function updateRoomWork(input: {
     const pay = payRes?.ok ? payRes.pay : null
 
     const before = workSnapOf(cur)
-    const after = workSnapOf({ kind, scheduledDate: done ? cur.scheduledDate : date, doneDate: done ? date : cur.doneDate, performer, performerName: name, memo })
+    const after = workSnapOf({ kind, scheduledDate: done ? cur.scheduledDate : date, doneDate: done ? date : cur.doneDate, performer, performerName: name, memo, estimateAmount })
     let expense: RoomRecordEditUndo['expense']
 
     await prisma.$transaction(async tx => {
@@ -599,7 +609,7 @@ export async function updateRoomWork(input: {
         data: {
           kind,
           ...(done ? { doneDate: date } : { scheduledDate: date }),
-          performer, performerName: name, memo,
+          performer, performerName: name, memo, estimateAmount,
         },
       })
       if (w.count !== 1) throw new Error(ROOM_RECORD_STALE)

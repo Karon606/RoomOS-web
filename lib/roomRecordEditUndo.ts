@@ -21,7 +21,7 @@ export const ROOM_RECORD_EDIT_KINDS: readonly RoomRecordEditKind[] = ['work', 'c
 
 /** 종류마다 기록 스냅샷에 실리는 칸. 이 밖의 칸이 실려 오면 위조로 본다. 지출 한 줄 수정(work-expense)은 기록 칸이 없다. */
 export const RECORD_SNAP_FIELDS: Record<RoomRecordEditKind, readonly string[]> = {
-  work: ['kind', 'scheduledDate', 'doneDate', 'performer', 'performerName', 'memo'],
+  work: ['kind', 'scheduledDate', 'doneDate', 'performer', 'performerName', 'memo', 'estimateAmount'],
   cleaning: ['reason', 'scheduledDate', 'doneDate', 'performer', 'performerName', 'memo', 'expenseId', 'fromCleaningFund', 'leaseTermId'],
   inspection: ['scheduledDate', 'memo'],
   'work-expense': [],

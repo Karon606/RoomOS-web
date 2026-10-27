@@ -99,6 +99,7 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
     name: r.performerName ?? '',
     cost: only ? only.amount : 0,
     memo: r.memo ?? '',
+    estimate: r.estimateAmount ?? 0,
   }
   const [date, setDate] = useState(init.date)
   const [kind, setKind] = useState(init.kind)
@@ -108,6 +109,7 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
   const [name, setName] = useState(init.name)
   const [cost, setCost] = useState(init.cost)
   const [memo, setMemo] = useState(init.memo)
+  const [estimate, setEstimate] = useState(init.estimate)
   const [lines, setLines] = useState(r.linkedExpenses)
   const [pending, setPending] = useState(false)
   useEffect(() => { getWorkKindOptions().then(setKinds).catch(() => setKinds([])) }, [])
@@ -117,7 +119,7 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
   const pay = useWorkPay({ kind: 'work', enabled: payAsked, vendor: name, vendors: recentPerformers, known: only ? { payMethod: only.payMethod, financialAccountId: only.financialAccountId } : null })
 
   const dirty = date !== init.date || kind !== init.kind || performer !== (init.performer || (done ? 'VENDOR' : '')) || name !== init.name
-    || cost !== init.cost || memo !== init.memo || pay.changed
+    || cost !== init.cost || memo !== init.memo || estimate !== init.estimate || pay.changed
   const saveReason = done && !date ? '완료일을 골라야 저장할 수 있습니다 · 완료일을 고르면 됩니다.'
     : !kind.trim() ? '작업 종류를 골라야 저장할 수 있습니다 · 종류를 고르면 됩니다.'
     : done && only && cost <= 0 ? '걸린 지출이 있어 시공비를 0원으로 둘 수 없습니다 · 지출을 지우려면 지출 화면에서 지우면 됩니다.'
@@ -134,6 +136,7 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
       const res = await updateRoomWork({
         id: r.id, expectedUpdatedAt: r.updatedAt, date: date || null, kind, addKindToList: kindToList,
         performer: performer || null, performerName: showName ? name : null, memo,
+        estimateAmount: estimate > 0 ? estimate : null,
         ...(done && !many ? { cost, ...(payAsked ? pay.payload : {}) } : {}),
       })
       if (!res.ok) { pushToast('error', res.error); return }
@@ -206,6 +209,11 @@ export function RoomWorkEditModal({ row: r, z, recentPerformers, onClose, onChan
         ) : (
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="업체·사람 이름 (선택)" aria-label="업체·사람 이름" className={INPUT_CLS} />
         ))}
+      </div>
+      {/* 견적 금액 — 돈이 아니라 메모다(지출을 안 만들고 합계에 안 든다). 완료를 적용취소해도 남는다(3단계, 2026-10-27). */}
+      <div className="space-y-1.5">
+        <p className={LABEL_CLS}>견적 금액 (선택)</p>
+        <MoneyInput value={estimate} onChange={setEstimate} />
       </div>
       {done && (many ? (
         <div className="space-y-1.5">

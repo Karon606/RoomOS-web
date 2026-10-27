@@ -6916,3 +6916,6 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 2단계 한 건 수정: 방 모달 작업 이력 '편집' 모드를 걷고 행 [수정] → 그 한 건만 고치는 Modal(RecordEditShell + 작업·청소·점검 수정 Modal). 서버 updateRoomWork·updateCleaning·updateInspection(조건부 쓰기, 한 트랜잭션),
   updateWorkExpense 는 그 작업 범위로 좁히고 적용취소를 달았다. 저장 적용취소는 서명 토큰 undoRoomRecordEdit(저장 직전 모습 전체, 그사이 바뀌면 거부). 관리 메뉴 §13, 가이드 §27.1 등재, 날짜 변경 문 둘 제거.
   그물 check-room-record-edit·test-room-record-edit-flow(PGlite).
+- 3단계 견적: RoomWork.estimateAmount(prisma/migrate_room_work_estimate.sql, 멱등, 운영 적용은 운영자 확인 뒤). 예정 등록·한 건 수정 폼 칸, 행 보조줄 '견적 X원'·'견적 X원 → 실제 Y원', 완료 폼 시공비 프리필 '견적에서 채웠습니다'.
+  지출을 만들지 않고 합계·결산·카드 정산에 안 섞인다(그물 check-work-estimate). 완료 적용취소에도 남는다.
+- 운영자 확인 대기: 결제수단 빈 9건의 실제 수단(scripts/backfill-expense-paymethod.ts 목록 모드로 보여 준다), 견적 칸 마이그레이션 운영 적용.

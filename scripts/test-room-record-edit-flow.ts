@@ -199,6 +199,24 @@ async function main() {
   eq('끝낸 점검은 날짜를 못 고친다(잠금)', (await insp.updateInspection({ id: I1, expectedUpdatedAt: await updatedAt('roomInspection', I1), scheduledDate: '2026-11-02', memo: null })).ok, false)
   eq('끝낸 점검도 메모는 고친다', (await insp.updateInspection({ id: I1, expectedUpdatedAt: await updatedAt('roomInspection', I1), memo: '확인 완료' })).ok, true)
 
+  // ── 4b. 견적(3단계): 지출을 안 만들고, 합계에 안 들고, 완료 적용취소에도 남고, 수정 적용취소가 되돌린다 ─────
+  const expCount = async () => prisma.expense.count({ where: { propertyId: P1 } })
+  const expSum = async () => (await prisma.expense.aggregate({ where: { propertyId: P1 }, _sum: { amount: true } }))._sum.amount
+  const [n0, s0] = [await expCount(), await expSum()]
+  const ce = await work.createRoomWork({ roomId: R2, kind: '도배', scheduledDate: '2026-11-10', estimateAmount: 150000 })
+  const WE = ce.ok ? ce.id : ''
+  eq('견적을 적은 예정 등록은 지출을 안 만든다', [(await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount, await expCount(), await expSum()], [150000, n0, s0])
+  eq('0·음수 견적은 견적 없음', [(await work.createRoomWork({ roomId: R2, kind: '장판', estimateAmount: -5 })).ok, (await prisma.roomWork.findFirst({ where: { roomId: R2, kind: '장판' } }))?.estimateAmount ?? null], [true, null])
+  eq('목록 행이 견적을 싣는다', (await work.listRoomWorks(R2)).find(w => w.id === WE)?.estimateAmount, 150000)
+  const eu = await work.updateRoomWork({ id: WE, expectedUpdatedAt: await updatedAt('roomWork', WE), date: '2026-11-10', kind: '도배', performer: null, estimateAmount: 170000 })
+  eq('수정 폼이 견적을 고친다(지출 무변경)', [eu.ok, (await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount, await expCount()], [true, 170000, n0])
+  eq('견적 수정 적용취소', [(await edit.undoRoomRecordEdit(J(eu.ok ? eu.undo : null))).ok, (await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount], [true, 150000])
+  await work.completeRoomWork({ id: WE, doneDate: '2026-10-20', performer: 'VENDOR', cost: 160000, mode: 'create', payMethod: '현금' })
+  eq('완료 지출 금액은 견적이 아니라 적은 시공비', [(await expOfWork(WE)).map(e => e.amount), (await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount], [[160000], 150000])
+  await work.reopenRoomWork(WE)
+  eq('완료 적용취소에도 견적은 남는다', (await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount, 150000)
+  eq('견적을 안 실은 수정은 견적을 그대로 둔다', [(await work.updateRoomWork({ id: WE, expectedUpdatedAt: await updatedAt('roomWork', WE), date: '2026-11-11', kind: '도배', performer: null })).ok, (await prisma.roomWork.findUnique({ where: { id: WE } }))?.estimateAmount], [true, 150000])
+
   // ── 5. 남의 영업장 ─────────────────────────────────────────────────────────
   g.__CR_FLOW_PID = P2
   const WX = (await prisma.roomWork.create({ data: { propertyId: P2, roomId: RX, kind: '도배', status: 'PLANNED' } })).id

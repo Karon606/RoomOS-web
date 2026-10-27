@@ -47,11 +47,11 @@ export async function undoRoomRecordEdit(raw: unknown): Promise<{ ok: true } | {
       const w = u.kind === 'work' || u.kind === 'work-expense'
         ? await tx.roomWork.findFirst({
           where: { id: u.id, propertyId, deletedAt: null },
-          select: { id: true, kind: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true },
+          select: { id: true, kind: true, scheduledDate: true, doneDate: true, performer: true, performerName: true, memo: true, estimateAmount: true },
         })
         : null
       if ((u.kind === 'work' || u.kind === 'work-expense') && !w) conflict()
-      if (u.kind === 'work' && !snapMatches({ kind: w!.kind, scheduledDate: ymd(w!.scheduledDate), doneDate: ymd(w!.doneDate), performer: w!.performer, performerName: w!.performerName, memo: w!.memo }, after)) conflict()
+      if (u.kind === 'work' && !snapMatches({ kind: w!.kind, scheduledDate: ymd(w!.scheduledDate), doneDate: ymd(w!.doneDate), performer: w!.performer, performerName: w!.performerName, memo: w!.memo, estimateAmount: w!.estimateAmount }, after)) conflict()
       const c = u.kind === 'cleaning'
         ? await tx.roomCleaning.findFirst({
           where: { id: u.id, propertyId, deletedAt: null },
@@ -76,6 +76,7 @@ export async function undoRoomRecordEdit(raw: unknown): Promise<{ ok: true } | {
           data: {
             kind: str(before.kind) ?? w!.kind, scheduledDate: toDate(before.scheduledDate), doneDate: toDate(before.doneDate),
             performer: str(before.performer), performerName: str(before.performerName), memo: str(before.memo),
+            estimateAmount: Number.isInteger(before.estimateAmount) ? Number(before.estimateAmount) : null,
           },
         })
       } else if (u.kind === 'cleaning') {

@@ -66,6 +66,8 @@ export function RoomWorkRowBody({
   // 빈 문자열이다. 숫자 0 으로 두면 칸에 '0' 이 찍혀 뒤에 이어 친 값이 '0140000' 이 된다
   // (운영자 지적 2026-08-27). 형제인 청소 행이 이미 이 문법이다 — 0 은 placeholder 로만 보인다.
   const [cost, setCost] = useState('')
+  // 완료 폼 시공비를 견적에서 채웠는가(3단계, 2026-10-27). 채운 값 그대로인 동안만 '견적에서 채웠습니다' 를 말한다.
+  const [fromEstimate, setFromEstimate] = useState(false)
   // 결제수단 — 시공비가 지출을 새로 만들거나 걸린 한 건을 고칠 때만 묻는다(2026-10-27 운영자 지적). 여러 건이 걸려 있으면
   // 완료가 지출을 안 건드리므로 묻지 않는다. 기본값은 같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값(lib/workPayDefault).
   const payAsked = Number(cost || 0) > 0 && r.expenseCount <= 1
@@ -142,6 +144,16 @@ export function RoomWorkRowBody({
         </ul>
       )}
 
+      {/* 견적은 §11 보조줄(3단계, 2026-10-27). 돈이 아니라 메모라 칩 줄의 굵은 금액(실제 시공비)과 자리를 나눈다.
+          완료 건에서 실제 시공비가 견적과 다르면 값 전환 표기(§29)로 둘을 함께 적는다. */}
+      {r.estimateAmount != null && (
+        <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] num${deleted ? ' opacity-60' : ''}`}>
+          {r.status === 'DONE' && r.cost > 0 && r.cost !== r.estimateAmount
+            ? `견적 ${fmtWon(r.estimateAmount)} → 실제 ${fmtWon(r.cost)}`
+            : `견적 ${fmtWon(r.estimateAmount)}`}
+        </p>
+      )}
+
       {/* 메모는 §11 보조줄. 길이를 모르는 자유 입력이라 칩 줄에 끼우면 줄이 무너진다. */}
       {r.memo && (
         <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words${deleted ? ' opacity-60' : ''}`}>{r.memo}</p>
@@ -208,6 +220,9 @@ export function RoomWorkRowBody({
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
             원
           </label>
+          {fromEstimate && r.estimateAmount != null && cost === String(r.estimateAmount) && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">견적에서 채웠습니다.</p>
+          )}
           {payAsked && pay.ready && (
             <PayMethodField dense methods={pay.methods} accounts={pay.accounts}
               payMethod={pay.payMethod} accountId={pay.accountId} onChange={pay.onChange} />
@@ -280,6 +295,10 @@ export function RoomWorkRowBody({
                 setCost(String(only.amount))
                 if (only.vendor) { setPerformerName(only.vendor); setPerformer('VENDOR') }
               }
+              // 걸린 지출이 없고 견적이 있으면 시공비 칸을 견적으로 채운다(3단계). 견적은 지출이 아니라 이 칸의 처음 값일 뿐이다.
+              const est = !only && r.expenseCount === 0 && r.estimateAmount ? r.estimateAmount : null
+              if (est) setCost(String(est))
+              setFromEstimate(!!est)
               setDoneOpen(true)
             }}>완료 처리</RowActionBtn>
           )}

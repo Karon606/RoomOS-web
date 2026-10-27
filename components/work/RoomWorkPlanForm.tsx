@@ -22,6 +22,7 @@ import {
 import { fmtRoomNo } from '@/lib/roomNo'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { getRecentCleaningPerformers } from '@/app/(app)/room-manage/cleaningActions'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 
 // 형제 폼과 같은 링. §09 'focus-visible 링 전 컴포넌트 필수'.
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]'
@@ -55,6 +56,9 @@ export function RoomWorkPlanForm({
   const [recentPerformers, setRecentPerformers] = useState<string[]>([])
   const [performer, setPerformer] = useState<CleaningPerformer | ''>('')
   const [memo, setMemo] = useState('')
+  // 견적 금액(선택, 2026-10-27 운영자 요청 "완료 전이라도 금액은 미리 입력할 수 있는 옵션"). 돈이 아니라 메모다. 지출을 안 만든다.
+  // 완료 폼이 시공비 칸을 이 값으로 미리 채운다. 빈 문자열이 곧 견적 없음이다(0 을 박으면 칸에 '0' 이 찍힌다).
+  const [estimate, setEstimate] = useState('')
   const [pending, startTransition] = useTransition()
 
   useEffect(() => { getWorkKindOptions().then(setKinds).catch(console.error) }, [])
@@ -86,6 +90,7 @@ export function RoomWorkPlanForm({
         const res = await createRoomWork({
           roomId: targetRoomId, kind, scheduledDate: scheduled,
           performer: performer || null, performerName, memo, addKindToList: kindToList,
+          estimateAmount: Number(estimate || 0) > 0 ? Number(estimate) : null,
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '작업 예정 등록됨')
@@ -165,6 +170,22 @@ export function RoomWorkPlanForm({
           </div>
         )}
       </div>
+
+      {/* 견적 금액 — 촘촘한 폼은 형제 완료 폼 시공비 칸과 같은 문법(폭 w-28 · 뒤 '원'), 넓은 폼은 정본 MoneyInput. */}
+      {dense ? (
+        <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+          견적
+          <input type="number" inputMode="numeric" value={estimate} onChange={e => setEstimate(e.target.value)}
+            placeholder="0" min={0} aria-label="견적 금액 (선택)"
+            className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
+          원
+        </label>
+      ) : (
+        <div className="space-y-1.5">
+          <p className={labelCls}>견적 금액 (선택)</p>
+          <MoneyInput value={Number(estimate || 0)} onChange={v => setEstimate(v > 0 ? String(v) : '')} />
+        </div>
+      )}
 
       <div className={dense ? '' : 'space-y-1.5'}>
         {!dense && <label className={labelCls} htmlFor={`${uid}-memo`}>메모 (선택)</label>}

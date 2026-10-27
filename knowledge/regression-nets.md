@@ -489,3 +489,6 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   세 Modal 의 조건부 쓰기·저장 적용취소·제목, 여러 건 걸린 작업의 줄 고치기와 지출 화면 길, 관리 메뉴 항목과 삭제 확인창, '삭제된 기록 보기' 상시, 가이드 §27.1 등재, 화면의 server-only 모듈 금지, 등록.
   같은 날 check-option-lists(청소 사유 칸 자리 이동·작업 종류 칸 HINT·체크·savedValue), check-room-inspection-axis(안 하기로·삭제 짝 자리 이동·행 [수정]), check-completion-date-axis(행 날짜 칸 1·Modal 날짜 칸 1, 날짜 변경 문 둘 제거), check-kbd-canonical(관리 메뉴 투명층 ALLOW)을 고쳤다.
   역주입: 패널 editing 되살림·청소 수정 저장 적용취소 제거·작업 탭 recentPerformers 제거 셋 모두 발화.
+- **check-work-estimate** (2026-10-27, verify:fast, 승인 계획 3단계) · 작업 견적(RoomWork.estimateAmount)이 돈 계산에 안 섞인다. 허용 파일 6곳(fail closed·낡은 목록도 위반), 집계(_sum·aggregate·groupBy·reduce)·금액·지출 쓰기 근처 금지,
+  completeRoomWork 가 견적을 안 읽음·reopenRoomWork 가 견적을 안 지움·완료 폼 프리필과 '견적에서 채웠습니다'·값 전환 표기, 스키마 칸·SQL 멱등, 등록. 통합 test-room-record-edit-flow 에 견적 8건(지출·합계 무변경 포함, 64건).
+  역주입: 지출 생성 금액에 견적 섞기(2건 발화)·완료 적용취소가 견적 지우기(그물 + 통합 2건 발화).

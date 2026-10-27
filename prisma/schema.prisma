@@ -739,6 +739,10 @@ model RoomWork {
   performer     String?                        // SELF | VENDOR | THIRD_PARTY
   performerName String?                        // 업체명·사람 이름 자유 입력
   memo       String?
+  // 견적 금액(원, 2026-10-27 운영자 요청 "작업 완료 전에 견적 금액을 미리 받을 수도 있으니"). **돈이 아니라 메모다.**
+  // 지출을 만들지 않고, 어떤 합계·결산·카드 정산에도 안 든다(그물 check-work-estimate). 완료 폼이 시공비 칸을 이 값으로 미리 채울 뿐이고,
+  // 실제 돈은 완료가 만드는 지출(Expense.roomWorkId)이다. 완료를 적용취소해도 남는다. null = 견적 없음. 마이그레이션 prisma/migrate_room_work_estimate.sql.
+  estimateAmount Int?
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
