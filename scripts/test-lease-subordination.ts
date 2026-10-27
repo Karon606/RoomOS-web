@@ -460,7 +460,9 @@ async function moveDateTests() {
     await mv('2026-08-11', { others: 다음사람, status: 'NON_RESIDENT' }), null)
   blocked('이사일 · 거주를 옮길 때 뒤에 온 거주자와는 그대로 겹친다',
     await mv('2026-08-11', { others: 다음사람, status: 'ACTIVE' }), true)
-  blocked('이사일 · 비거주끼리는 그대로 겹친다',
+  // 판정식 단위 확인이다. 실제 조회는 거주계(OCCUPYING_STATUSES)만 읽어 비거주 행이 오지 않으므로, 이 케이스는
+  // '쌍 제외 줄이 비거주끼리까지 빼지는 않는다'(조회를 넓혀도 그대로)만 고정한다.
+  blocked('이사일 · 쌍 제외 줄은 비거주끼리를 빼지 않는다(판정식 단위)',
     await mv('2026-08-11', { others: [{ ...다음사람[0], status: 'NON_RESIDENT' }], status: 'NON_RESIDENT' }), true)
 }
 
@@ -484,6 +486,8 @@ function registrationWarningTests() {
   eq('경고 · 전입신고 불가 방이라도 미신고면 조용하다', codes({ status: 'ACTIVE', registrationStatus: 'NOT_REPORTED' }, [], { noMoveInReport: true }), [])
   eq('경고 · 전입신고 불가 방의 문의 단계는 조용하다', codes({ status: 'WAITING_TOUR', registrationStatus: 'PLANNED' }, [], { noMoveInReport: true }), [])
   eq('경고 · 둘이 함께', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [비거주], { noMoveInReport: true }), ['RESIDENT_WITH_NON_RESIDENT', 'NO_MOVE_IN_REPORT_ROOM'])
+  eq('경고 · 같은 방 비거주가 미신고면 주소가 겹치지 않는다', codes({ status: 'ACTIVE', registrationStatus: 'REGISTERED' }, [{ ...비거주, registrationStatus: 'NOT_REPORTED' }], 보통방), [])
+  eq('경고 · 같은 방 비거주가 신고완료여도 겹친다', codes({ status: 'ACTIVE', registrationStatus: 'PLANNED' }, [{ ...비거주, registrationStatus: 'REGISTERED' }], 보통방), ['RESIDENT_WITH_NON_RESIDENT'])
 }
 
 void dueDayPropagationTests()

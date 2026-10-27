@@ -21,8 +21,9 @@ const OPTIONS: { value: StandaloneLeaseMode; label: string }[] = [
 
 const CAPTION: Record<StandaloneLeaseMode, string> = {
   ALL: '이 방 하나로 계약할 수 있습니다',
-  NON_RESIDENT_ONLY: '거주 계약은 메인 계약에 묶어야 합니다. 비거주 계약은 이 방 하나로 할 수 있습니다',
-  NONE: '모든 계약을 다른 계약에 묶어야 합니다. 계약 저장 때 메인 계약을 고릅니다',
+  // 한 문장 캡션은 형제 '일정 조절'처럼 끝 마침표가 없고, 두 문장 캡션은 한 캡션 안에서 통일해 끝에도 마침표를 둔다.
+  NON_RESIDENT_ONLY: '거주 계약은 메인 계약에 묶어야 합니다. 비거주 계약은 이 방 하나로 할 수 있습니다.',
+  NONE: '모든 계약을 다른 계약에 묶어야 합니다. 계약 저장 때 메인 계약을 고릅니다.',
 }
 
 export function StandaloneLeaseField({ initial }: { initial: StandaloneLeaseFlags }) {

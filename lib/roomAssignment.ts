@@ -475,7 +475,7 @@ const REPORTING_REGISTRATION: readonly string[] = ['PLANNED', 'REGISTERED']
  * (거주 중 = 거주중·퇴실 예정, 비거주 = 비거주) 문의·투어 줄이 섞여 와도 답이 바뀌지 않는다.
  *   · 비거주 계약 + 그 방에 거주 중인 사람 → NON_RESIDENT_WITH_RESIDENT. 비거주 쪽 전입신고 값과 무관하다
  *     (신고예정·신고완료로 두는 경우도 이 사유 하나가 덮는다. 같은 사실을 두 자리에 또 적지 않는다, §27.8 ⑤).
- *   · 거주계 + 신고예정·신고완료 + 그 방에 비거주 계약 → RESIDENT_WITH_NON_RESIDENT(비거주 계약 이름).
+ *   · 거주계 + 신고예정·신고완료 + 그 방에 신고예정·신고완료인 비거주 계약 → RESIDENT_WITH_NON_RESIDENT(비거주 계약 이름).
  *   · 전입신고 불가 방 + 신고예정·신고완료(거주계·비거주) → NO_MOVE_IN_REPORT_ROOM.
  */
 export function registrationConflictWarning(
@@ -489,7 +489,10 @@ export function registrationConflictWarning(
     out.push({ code: 'NON_RESIDENT_WITH_RESIDENT', message: NON_RESIDENT_WITH_RESIDENT_WARNING })
   }
   if (RESIDENT_STATUSES.includes(incoming.status) && reporting) {
-    const names = roomLeases.filter(l => l.status === 'NON_RESIDENT').map(l => l.tenantName)
+    // 상대 비거주도 그 주소로 신고했거나 할 때만 주소가 겹친다(미신고 비거주와는 겹칠 주소가 없다).
+    const names = roomLeases
+      .filter(l => l.status === 'NON_RESIDENT' && REPORTING_REGISTRATION.includes(l.registrationStatus ?? ''))
+      .map(l => l.tenantName)
     if (names.length > 0) {
       out.push({ code: 'RESIDENT_WITH_NON_RESIDENT', message: residentWithNonResidentWarning(names) })
     }
