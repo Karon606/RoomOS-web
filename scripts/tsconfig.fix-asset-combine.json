@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/lib/auth/propertyAccess": ["./fix-asset-access-stub.ts"],
+      "@/lib/role": ["./dashboard-role-stub.ts"],
+      "@/lib/supabase/server": ["./cr-flow-next-stub.ts"],
+      "next/cache": ["./cr-flow-next-stub.ts"],
+      "next/headers": ["./cr-flow-next-stub.ts"],
+      "next/navigation": ["./cr-flow-next-stub.ts"],
+      "server-only": ["./server-only-stub.ts"],
+      "@/*": ["../*"]
+    }
+  }
+}
