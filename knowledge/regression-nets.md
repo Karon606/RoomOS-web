@@ -478,3 +478,9 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   화면 조회의 편집 권한·정본 표, getLastPayDefaults 미사용, 완료 폼 두 곳의 칸·payload·처음 값, 등록(verify:fast·check-settle-status-canon 명단).
   장부 축: 청소·작업에 걸린 결제수단 빈 지출 수. 백필 전 알려진 7건까지 경고, 넘으면 위반. 백필 뒤 0 으로 내린다.
   역주입: 지출 생성의 settleStatusForNew 삭제·결제 계정 조회의 propertyId 삭제(check-action-property-scope 도 발화)·알려진 수 낮춤 셋 모두 발화.
+- **test-room-record-edit-flow** (2026-10-27, verify:fast, PGlite, tsconfig.reason-flow, 운영자 지적 작업 이력 한 건 수정) · 결제수단 기본값 차례(목록 첫 값 → 같은 업체 → 같은 카테고리, 계정까지)·신용카드 미정산·값 없는 완료 채움·남의 영업장 계정 거부,
+  작업 한 건 수정(지출 1건 유지·종류 따라 품목명·지출 날짜 불변·정산상태 고치는 경로 정본·조건부 쓰기·미래 완료일·0원 거부), 적용취소(서명·위조 거부·전체 복원·두 번째 거부·그사이 지출 또는 기록이 바뀌면 거부),
+  여러 건 걸린 작업 금액 폼 거부와 줄마다 고치기(그 작업 범위·적용취소), 0건 완료 작업 시공비 생성과 적용취소의 삭제, 같은 날 미연결 시공 지출이면 거부, 예정 작업 시공비 거부,
+  청소 날짜가 지출 date 를 데려감·부담 표식 사유 가드(함께 끄면 통과)·비용 0 연결 끊기와 되살림(지워진 지출이면 거부)·예정 청소 사유 재기, 점검 수정(끝낸 점검 날짜 잠금·메모는 고침), 남의 영업장 쓰기·토큰 거부와 바이트 무변경.
+  같은 날 check-action-property-scope 에 한 건 수정·줄 고치기·적용취소 축과 roomInspection 쓰기 수(where 12·data 13), check-completion-date-axis GUARD_SITES 둘, check-option-lists 저장 경로·종류 prev, check-work-link-wiring 한 건 수정 축(후보 있으면 거부·자동 연결 없음)을 더했다.
+  역주입: 기록 칸 대조 끔(지출 없는 수정 케이스를 더한 뒤 발화)·미연결 시공 지출 거부 제거(그물·통합 둘 다 발화)·청소 조회 영업장 범위 제거(발화).

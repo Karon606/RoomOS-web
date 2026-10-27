@@ -27,6 +27,8 @@ import { autoOptionForSave } from '@/lib/reasonListSave'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { settleStatusForNew, settleStatusForEdit } from '@/lib/settleStatus'
 import { resolveWorkPay } from '@/lib/workPayDefault'
+import { expenseSnapOf, EXPENSE_SNAP_SELECT, signRoomRecordEdit } from '@/lib/roomRecordEditSign'
+import { ROOM_RECORD_STALE, type RoomRecordEditUndo, type RecordSnap } from '@/lib/roomRecordEditUndo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -41,6 +43,8 @@ export type RoomWorkRow = {
   performer: CleaningPerformer | null
   performerName: string | null
   memo: string | null
+  /** 마지막으로 고친 시각(ISO). 한 건 수정 폼이 연 뒤 다른 곳에서 바뀌었는지 서버가 견준다(조건부 쓰기). */
+  updatedAt: string
   /** 삭제된 행인가 — includeDeleted 로 실어 온 목록에서만 true 가 있다(복원만 할 수 있다). */
   deleted?: boolean
   /** 이 작업에 붙은 지출의 합. 여러 건이 붙을 수 있다(자재 여러 날 + 시공 하루). */
@@ -92,7 +96,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
     select: {
       id: true, roomId: true, kind: true, status: true,
       scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true, deletedAt: true,
+      performer: true, performerName: true, memo: true, deletedAt: true, updatedAt: true,
       room: { select: { roomNo: true } },
       expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
@@ -104,7 +108,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       status: r.status as 'PLANNED' | 'DONE',
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
-      performerName: r.performerName, memo: r.memo,
+      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(),
       cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
       deleted: !!r.deletedAt,
@@ -126,7 +130,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
     select: {
       id: true, roomId: true, kind: true, status: true,
       scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true,
+      performer: true, performerName: true, memo: true, updatedAt: true,
       room: { select: { roomNo: true } },
       expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true, payMethod: true, financialAccountId: true } },
     },
@@ -138,7 +142,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       status: r.status as 'PLANNED' | 'DONE',
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
-      performerName: r.performerName, memo: r.memo,
+      performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(),
       cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
@@ -438,22 +442,35 @@ export async function setExpenseCostKind(expenseId: string, costKind: 'LABOR' | 
  * **운영자는 안다** — 화면이 줄을 안 보여줬을 뿐이다(운영자 지적 2026-08-28 — "지출로 가보면
  * 같은 업체에 묶여있기도 하거니와 방번호까지 다 지정되어있는데 왜 몰라?"). 줄을 보이고
  * 그 줄에서 고치게 하면 모호할 것이 없다.
+ *
+ * 2026-10-27 승인 계획 결정 7. 한 건 수정 폼에서 여러 건 걸린 작업의 줄마다 [금액·업체 고치기]가 이 문을 부른다.
+ * **그 작업에 걸린 지출만** 고친다(workId 로 좁힌다). 종전에는 어느 작업에든 걸린 지출이면 고칠 수 있었다.
+ * 종전 즉시 저장 금액 칸에는 적용취소가 없었다(§16 위반). 이제 쓰기 전·쓴 직후를 서명 토큰으로 돌려준다(undoRoomRecordEdit).
  */
-export async function updateWorkExpense(
-  expenseId: string, patch: { amount?: number; vendor?: string | null },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function updateWorkExpense(input: {
+  workId: string; expenseId: string; amount?: number; vendor?: string | null
+}): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
+    const work = await prisma.roomWork.findFirst({ where: { id: input.workId, propertyId, deletedAt: null }, select: { id: true } })
+    if (!work) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
+    const cur = await prisma.expense.findFirst({ where: { id: input.expenseId, propertyId, roomWorkId: work.id }, select: EXPENSE_SNAP_SELECT })
+    if (!cur) return { ok: false, error: '이 작업에 걸린 지출을 찾을 수 없습니다.' }
     const data: { amount?: number; vendor?: string | null } = {}
-    if (patch.amount != null && patch.amount >= 0) data.amount = Math.round(patch.amount)
-    if (patch.vendor !== undefined) data.vendor = patch.vendor?.trim() || null
-    if (Object.keys(data).length === 0) return { ok: true }
-    // roomWorkId 가 붙은 지출만 — 이 문으로 아무 지출이나 고칠 수 없어야 한다.
-    const r = await prisma.expense.updateMany({ where: { id: expenseId, propertyId, roomWorkId: { not: null } }, data })
-    if (r.count === 0) return { ok: false, error: '작업에 걸린 지출을 찾을 수 없습니다.' }
+    if (input.amount != null) {
+      if (!Number.isFinite(input.amount) || input.amount <= 0) return { ok: false, error: '금액은 0원보다 커야 합니다. 이 지출을 지우려면 지출 화면에서 지웁니다.' }
+      data.amount = Math.round(input.amount)
+    }
+    if (input.vendor !== undefined) data.vendor = input.vendor?.trim() || null
+    if (Object.keys(data).length === 0) return { ok: true, undo: null }
+    const before = expenseSnapOf(cur)
+    // 조건부 쓰기 — 읽은 뒤 그사이 이 줄이 바뀌었으면 안 쓴다.
+    const r = await prisma.expense.updateMany({ where: { id: cur.id, propertyId, roomWorkId: work.id, amount: cur.amount, vendor: cur.vendor }, data })
+    if (r.count === 0) return { ok: false, error: ROOM_RECORD_STALE }
+    const after = { ...before, ...data }
     revalidatePath('/room-manage'); revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, undo: signRoomRecordEdit(propertyId, { kind: 'work-expense', id: work.id, before: {}, after: {}, expense: { before, after } }) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
   }
@@ -470,6 +487,170 @@ export async function unlinkExpensesFromWork(expenseIds: string[]): Promise<{ ok
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
+/** 작업 기록 칸 스냅샷(적용취소 토큰). 칸은 lib/roomRecordEditUndo RECORD_SNAP_FIELDS.work 와 같다. */
+function workSnapOf(w: { kind: string; scheduledDate: Date | null; doneDate: Date | null; performer: string | null; performerName: string | null; memo: string | null }): RecordSnap {
+  return { kind: w.kind, scheduledDate: ymd(w.scheduledDate), doneDate: ymd(w.doneDate), performer: w.performer, performerName: w.performerName, memo: w.memo }
+}
+
+const PERFORMER_VALUES: readonly string[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
+
+/**
+ * 작업 기록 **한 건** 수정(2026-10-27 운영자 지적·승인 계획 2단계). 방 모달·작업 탭 행의 [수정] → Modal 폼이 부른다.
+ *
+ * 운영자 원문 요지. "특정 내역만 수정하고 싶은데 편집을 누르니 내역 전체를 수정할 수 있게 되버리네… 날짜는 날짜변경을 따로 눌러야하고
+ * 업체나 상세 내역은 수정을 못하네". 그래서 그 건의 날짜·종류·수행자·업체·시공비·결제수단·메모를 **한 트랜잭션**에서 고친다.
+ *
+ * 칸. 예정 건은 예정일(비울 수 있다)·종류·담당·업체·메모. 완료 건은 완료일(미래 거부)·종류·수행자·업체·메모와 시공비·결제수단.
+ * 시공비(완료 건만, cost 를 실었을 때만).
+ *   · 걸린 지출 1건 — 그 지출의 금액·업체(=업체 이름)·결제수단을 고친다. 지출 날짜는 안 옮긴다(작업 날짜와 지출 날짜는 다른 축, rescheduleRoomWork 와 같다).
+ *     지출 품목명이 정확히 '{옛 종류} 시공' 이면(완료가 만든 줄) 새 종류로 품목명·내역을 고친다(결정 6). 손으로 적은 이름은 안 건드린다.
+ *     0원은 받지 않는다(지출을 지우는 판단은 지출 화면 몫이다).
+ *   · 여러 건 — 금액 칸을 받지 않는다(어느 줄의 돈인지 모른다, 결정 7). 줄마다 updateWorkExpense 로 고친다.
+ *   · 0건 — 금액이 있으면 시공 지출을 새로 만든다(완료의 'create' 와 같은 줄). 같은 날 이 방에 걸릴 만한 미연결 지출이 있으면
+ *     만들지 않고 거부한다(413호처럼 같은 돈이 두 벌 적히지 않게). 그때는 완료를 적용취소하고 다시 완료해 그 지출을 건다.
+ * 열었을 때의 updatedAt 과 지금이 다르면 거부한다(조건부 쓰기). 저장 직전 모습을 서명 토큰으로 돌려준다(undoRoomRecordEdit).
+ */
+export async function updateRoomWork(input: {
+  id: string
+  expectedUpdatedAt: string
+  date: string | null
+  kind: string
+  addKindToList?: boolean
+  performer: CleaningPerformer | null
+  performerName?: string | null
+  memo?: string | null
+  cost?: number | null
+  payMethod?: string | null
+  financialAccountId?: string | null
+}): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomWork.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: {
+        id: true, roomId: true, kind: true, status: true, scheduledDate: true, doneDate: true,
+        performer: true, performerName: true, memo: true, updatedAt: true,
+        room: { select: { roomNo: true } },
+        expenses: { select: { ...EXPENSE_SNAP_SELECT, isShipping: true } },
+      },
+    })
+    if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
+    if (cur.updatedAt.toISOString() !== input.expectedUpdatedAt) return { ok: false, error: ROOM_RECORD_STALE }
+    const done = cur.status === 'DONE'
+
+    // 날짜 — 완료 건은 완료일(꼭 있어야 하고 미래 거부), 예정 건은 예정일(비울 수 있다).
+    let date: Date | null = null
+    if (input.date) {
+      date = ymdToDbDate(input.date)
+      if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    }
+    if (done) {
+      if (!date) return { ok: false, error: '완료일을 골라 주세요.' }
+      const fg = assertNotFuture(input.date)
+      if (!fg.ok) return { ok: false, error: fg.reason }
+    }
+    // 종류 — 예정 등록과 같은 맨 글자 규약. 지금 값(prev)과 같으면 목록에 안 더한다(목록에서 뺀 종류가 저장마다 되살아나지 않게).
+    const kindSave = await autoOptionForSave(propertyId, 'workKindOptions', input.kind, { addToList: input.addKindToList, prev: cur.kind })
+    const kind = kindSave.value
+    if (!kind) return { ok: false, error: '작업 종류를 골라 주세요.' }
+    // 수행자 — 완료 건은 셋 중 하나(완료 폼과 같다), 예정 건은 비울 수 있다(미정).
+    const performer = input.performer && PERFORMER_VALUES.includes(input.performer) ? input.performer : null
+    if (done && !performer) return { ok: false, error: '수행자를 골라 주세요.' }
+    // 업체 이름 — 완료 건은 완료 폼처럼 늘 받고, 예정 건은 맡긴 경우에만 남긴다(예정 등록과 같다, 안 보이는 값을 저장하지 않는다).
+    const name = done ? (input.performerName?.trim() || null) : (performer && performer !== 'SELF' ? (input.performerName?.trim() || null) : null)
+    const memo = input.memo?.trim() || null
+    if (memo && memo.length > 500) return { ok: false, error: '메모는 500자까지 적습니다.' }
+
+    // 시공비 — 완료 건만.
+    const wantsCost = input.cost != null
+    if (wantsCost && !done) return { ok: false, error: '예정 작업에는 시공비를 적지 않습니다. 완료 처리에서 적습니다.' }
+    const cost = wantsCost ? Math.max(0, Math.round(Number(input.cost) || 0)) : 0
+    if (wantsCost && cur.expenses.length > 1) return { ok: false, error: `이 작업에는 지출 ${cur.expenses.length}건이 걸려 있어 금액은 줄마다 고칩니다.` }
+    if (wantsCost && cur.expenses.length === 1 && cost <= 0) return { ok: false, error: '시공비를 0원으로 바꾸려면 지출 화면에서 그 지출을 지웁니다.' }
+    if (wantsCost && cur.expenses.length === 0 && cost > 0) {
+      const free = await prisma.expense.findMany({
+        where: { propertyId, roomId: cur.roomId, roomWorkId: null, date: date! },
+        select: { id: true, date: true, amount: true, itemLabel: true, detail: true, vendor: true, roomId: true, roomWorkId: true },
+      })
+      if (free.some(e => matchesWork(e, { roomId: cur.roomId, kind, doneDate: date, scheduledDate: null }))) {
+        return { ok: false, error: '같은 날 이 방에 이미 적어 둔 시공 지출이 있습니다. 완료를 적용취소한 뒤 다시 완료하면 그 지출을 걸 수 있습니다.' }
+      }
+    }
+    const touchExpense = wantsCost && (cur.expenses.length === 1 || cost > 0)
+    const sentPay = !!input.payMethod?.trim()
+    const payRes = touchExpense
+      ? await resolveWorkPay(prisma, propertyId, { payMethod: input.payMethod, financialAccountId: input.financialAccountId, vendor: name, category: WORK_EXPENSE_CATEGORY })
+      : null
+    if (payRes && !payRes.ok) return payRes
+    const pay = payRes?.ok ? payRes.pay : null
+
+    const before = workSnapOf(cur)
+    const after = workSnapOf({ kind, scheduledDate: done ? cur.scheduledDate : date, doneDate: done ? date : cur.doneDate, performer, performerName: name, memo })
+    let expense: RoomRecordEditUndo['expense']
+
+    await prisma.$transaction(async tx => {
+      // 조건부 쓰기 — 연 뒤 그사이 바뀌었으면 안 쓴다(전부 되감긴다).
+      const w = await tx.roomWork.updateMany({
+        where: { id: cur.id, propertyId, deletedAt: null, updatedAt: cur.updatedAt },
+        data: {
+          kind,
+          ...(done ? { doneDate: date } : { scheduledDate: date }),
+          performer, performerName: name, memo,
+        },
+      })
+      if (w.count !== 1) throw new Error(ROOM_RECORD_STALE)
+      if (!touchExpense || !pay) return
+      if (cur.expenses.length === 1) {
+        const only = cur.expenses[0]
+        const next: {
+          amount: number; vendor: string | null; itemLabel?: string; detail?: string
+          payMethod?: string; financialAccountId?: string | null; financeName?: string | null; settleStatus?: 'SETTLED' | 'UNSETTLED'
+        } = { amount: cost, vendor: name }
+        // 완료가 만든 시공 줄이면 종류 이름을 따라간다(결정 6). 손으로 적은 품목명은 그대로다.
+        if (kind !== cur.kind && only.itemLabel === `${cur.kind} 시공`) {
+          next.itemLabel = `${kind} 시공`
+          next.detail = `${fmtRoomNo(cur.room.roomNo, '')} ${kind}${name ? ` · ${name}` : ''}`
+        }
+        // 결제수단 — 화면이 고른 값이 있거나 지출이 비어 있을 때만 바꾼다. 정산상태는 고치는 경로 정본.
+        if ((sentPay || !only.payMethod) && (pay.payMethod !== only.payMethod || pay.financialAccountId !== only.financialAccountId)) {
+          next.payMethod = pay.payMethod
+          next.financialAccountId = pay.financialAccountId
+          next.financeName = pay.financeName
+          next.settleStatus = settleStatusForEdit({ prevPayMethod: only.payMethod, nextPayMethod: pay.payMethod, current: only.settleStatus, isShipping: only.isShipping })
+        }
+        const e = await tx.expense.update({ where: { id: only.id, propertyId }, data: next, select: EXPENSE_SNAP_SELECT })
+        expense = { before: expenseSnapOf(only), after: expenseSnapOf(e) }
+        return
+      }
+      const e = await tx.expense.create({
+        data: {
+          propertyId, date: date!, amount: cost,
+          category: WORK_EXPENSE_CATEGORY,
+          roomId: cur.roomId,
+          roomWorkId: cur.id,
+          itemLabel: `${kind} 시공`,
+          costKind: 'LABOR',
+          detail: `${fmtRoomNo(cur.room.roomNo, '')} ${kind}${name ? ` · ${name}` : ''}`,
+          vendor: name,
+          excludeFromInventory: true,
+          payMethod: pay.payMethod,
+          financialAccountId: pay.financialAccountId,
+          financeName: pay.financeName,
+          settleStatus: settleStatusForNew(pay.payMethod),
+        },
+        select: EXPENSE_SNAP_SELECT,
+      })
+      expense = { before: null, after: expenseSnapOf(e) }
+    })
+    await kindSave.commit()
+    revalidatePath('/room-manage'); if (expense) revalidatePath('/finance')
+    return { ok: true, undo: signRoomRecordEdit(propertyId, { kind: 'work', id: cur.id, before, after, ...(expense ? { expense } : {}) }) }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '수정에 실패했습니다.' }
   }
 }
 

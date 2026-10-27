@@ -29,6 +29,8 @@ import { reasonForSave } from '@/lib/reasonListSave'
 import { ensureRoomInspection, clearCleaningInspection, inspectionFailureNotice } from '@/lib/roomInspectionEnsure'
 import { settleStatusForNew, settleStatusForEdit } from '@/lib/settleStatus'
 import { resolveWorkPay } from '@/lib/workPayDefault'
+import { expenseSnapOf, EXPENSE_SNAP_SELECT, signRoomRecordEdit } from '@/lib/roomRecordEditSign'
+import { ROOM_RECORD_STALE, type RoomRecordEditUndo, type RecordSnap } from '@/lib/roomRecordEditUndo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -60,7 +62,7 @@ async function loadCleaningRows(
       reason: true, status: true, scheduledDate: true, doneDate: true,
       plannedPerformer: true,
       performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true,
-      deletedAt: true,
+      deletedAt: true, updatedAt: true,
       room: { select: { roomNo: true } },
     },
   })
@@ -78,7 +80,7 @@ async function loadCleaningRows(
     scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
     plannedPerformer: (r.plannedPerformer as CleaningPerformer | null) ?? null,
     performer: (r.performer as CleaningPerformer | null) ?? null,
-    performerName: r.performerName, memo: r.memo,
+    performerName: r.performerName, memo: r.memo, updatedAt: r.updatedAt.toISOString(),
     // 금액은 지출에서 읽는다. 여기 복사해 두면 지출에서 고쳤을 때 갈린다.
     cost: costById[r.id] ?? null,
     // 걸린 지출의 결제수단·계정 — 다시 완료하는 폼이 아는 값을 미리 채운다(2026-10-27).
@@ -487,6 +489,182 @@ export async function changeCleaningReason(input: { id: string; reason: Cleaning
     return { ok: true, reason: save.reason }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
+  }
+}
+
+/** 청소 기록 칸 스냅샷(적용취소 토큰). 칸은 lib/roomRecordEditUndo RECORD_SNAP_FIELDS.cleaning 과 같다. */
+function cleaningSnapOf(c: {
+  reason: string; scheduledDate: Date | null; doneDate: Date | null; performer: string | null; performerName: string | null
+  memo: string | null; expenseId: string | null; fromCleaningFund: boolean; leaseTermId: string | null
+}): RecordSnap {
+  return {
+    reason: c.reason, scheduledDate: ymd(c.scheduledDate), doneDate: ymd(c.doneDate), performer: c.performer, performerName: c.performerName,
+    memo: c.memo, expenseId: c.expenseId, fromCleaningFund: c.fromCleaningFund, leaseTermId: c.leaseTermId,
+  }
+}
+
+const CLEANING_PERFORMERS: readonly string[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
+/** 부담 표식이 붙은 건을 퇴실 청소 밖으로 옮기려 할 때. 수정 폼 WhyCaption 과 한 벌이다. */
+const FUND_REASON_BLOCK = '받아둔 청소비로 부담한 건이라 퇴실 청소 밖으로 바꿀 수 없습니다. 받아둔 청소비로 부담을 끄면 됩니다.'
+
+/**
+ * 청소 기록 **한 건** 수정(2026-10-27 운영자 지적·승인 계획 2단계). 방 모달·작업 탭 행의 [수정] → Modal 폼이 부른다.
+ *
+ * 칸. 모든 상태가 날짜(완료 건은 완료일, 미래 거부 · 그 밖은 예정일, 비울 수 있다)·사유·메모를 고친다.
+ * 완료 건은 수행자·업체 이름·비용·결제수단·받아둔 청소비로 부담(퇴실 청소만)도 고친다.
+ * 걸린 지출(1:1)은 같은 트랜잭션에서 날짜(=완료일)·금액·업체·내역·결제수단을 함께 고친다. 청소 날짜를 바꾸면 지출 날짜가 따라가
+ * 카드 청구월이 바뀔 수 있다(결정 8, 종전 rescheduleCleaning 과 같다). 비용을 0 으로 바꾸면 지출을 지우지 않고 연결만 끊는다(화면이 먼저 묻는다).
+ * 걸린 지출이 없는데 비용을 적으면 새로 만든다(완료 처리와 같은 줄).
+ *
+ * 사유는 서버가 다시 잰다(lib/reasonListSave, 지금 값 prev). **부담 표식이 붙은 건은 퇴실 청소 밖으로 못 나간다** — 이 저장이
+ * 부담 표식을 함께 끄지 않으면(fromCleaningFund: false) 거부한다(changeCleaningReason 과 같은 규칙, 수정 폼은 그 자리에서 끌 수 있다).
+ * 열었을 때의 updatedAt 과 지금이 다르면 거부한다(조건부 쓰기). 저장 직전 모습을 서명 토큰으로 돌려준다(undoRoomRecordEdit).
+ */
+export async function updateCleaning(input: {
+  id: string
+  expectedUpdatedAt: string
+  date: string | null
+  reason: CleaningReason
+  addReasonToList?: boolean
+  performer?: CleaningPerformer | null
+  performerName?: string | null
+  cost?: number | null
+  payMethod?: string | null
+  financialAccountId?: string | null
+  fromCleaningFund?: boolean
+  memo?: string | null
+}): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomCleaning.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: {
+        id: true, roomId: true, status: true, reason: true, scheduledDate: true, doneDate: true,
+        performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true, leaseTermId: true, updatedAt: true,
+        room: { select: { roomNo: true } },
+      },
+    })
+    if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
+    if (cur.updatedAt.toISOString() !== input.expectedUpdatedAt) return { ok: false, error: ROOM_RECORD_STALE }
+    const done = cur.status === 'DONE'
+
+    let date: Date | null = null
+    if (input.date) {
+      date = ymdToDbDate(input.date)
+      if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    }
+    if (done) {
+      if (!date) return { ok: false, error: '완료일을 골라 주세요.' }
+      const fg = assertNotFuture(input.date)
+      if (!fg.ok) return { ok: false, error: fg.reason }
+    }
+    // 부담 표식 판정은 입력 글자 그대로 본다('CHECKOUT' 이 아닌 입력은 다시 재도 'CHECKOUT' 이 되지 않는다, changeCleaningReason 과 같다).
+    if (cur.fromCleaningFund && input.reason !== 'CHECKOUT' && input.fromCleaningFund !== false) return { ok: false, error: FUND_REASON_BLOCK }
+    const save = await reasonForSave(propertyId, 'cleaningReasons', input.reason, { addToList: input.addReasonToList === true, prev: cur.reason })
+    if (!save.reason) return { ok: false, error: '청소 사유를 골라 주세요.' }
+    const reason = save.reason
+    const memo = input.memo?.trim() || null
+    if (memo && memo.length > 500) return { ok: false, error: '메모는 500자까지 적습니다.' }
+
+    // 완료 건만 — 수행자·업체·비용·부담. 그 밖의 상태는 지금 값 그대로다.
+    let performer = cur.performer, name = cur.performerName, fromFund = cur.fromCleaningFund, leaseTermId = cur.leaseTermId
+    let expenseId = cur.expenseId
+    const wantsCost = done && input.cost != null
+    const cost = wantsCost ? Math.max(0, Math.round(Number(input.cost) || 0)) : 0
+    if (done) {
+      if (input.performer !== undefined) {
+        if (!input.performer || !CLEANING_PERFORMERS.includes(input.performer)) return { ok: false, error: '수행자를 골라 주세요.' }
+        performer = input.performer
+        // 직접 청소는 이름 칸이 없다(완료 폼과 같다, 안 보이는 값을 저장하지 않는다).
+        name = performer === 'SELF' ? null : (input.performerName?.trim() || null)
+      }
+      if (wantsCost) fromFund = !!input.fromCleaningFund && cost > 0 && reason === 'CHECKOUT'
+      else if (reason !== 'CHECKOUT') fromFund = false
+    }
+    let alive: ({ isShipping: boolean } & Parameters<typeof expenseSnapOf>[0]) | null = null
+    if (cur.expenseId) alive = await prisma.expense.findFirst({ where: { id: cur.expenseId, propertyId }, select: { ...EXPENSE_SNAP_SELECT, isShipping: true } })
+    const touchExpense = wantsCost && (cost > 0 || !!alive)
+    const sentPay = !!input.payMethod?.trim()
+    const payRes = wantsCost && cost > 0
+      ? await resolveWorkPay(prisma, propertyId, { payMethod: input.payMethod, financialAccountId: input.financialAccountId, vendor: name, category: CLEANING_EXPENSE_CATEGORY })
+      : null
+    if (payRes && !payRes.ok) return payRes
+    const pay = payRes?.ok ? payRes.pay : null
+
+    const before = cleaningSnapOf(cur)
+    let expense: RoomRecordEditUndo['expense']
+    let after: RecordSnap = before
+
+    await prisma.$transaction(async tx => {
+      const detail = `${fmtRoomNo(cur.room.roomNo, '')} 청소${name ? ` · ${name}` : ''}`
+      if (touchExpense) {
+        if (alive && cost > 0 && pay) {
+          const payChange = (sentPay || !alive.payMethod) && (pay.payMethod !== alive.payMethod || pay.financialAccountId !== alive.financialAccountId)
+          const e = await tx.expense.update({
+            where: { id: alive.id, propertyId },
+            data: {
+              date: date!, amount: cost, detail, vendor: name,
+              ...(payChange ? {
+                payMethod: pay.payMethod, financialAccountId: pay.financialAccountId, financeName: pay.financeName,
+                settleStatus: settleStatusForEdit({ prevPayMethod: alive.payMethod, nextPayMethod: pay.payMethod, current: alive.settleStatus as 'SETTLED' | 'UNSETTLED', isShipping: alive.isShipping }),
+              } : {}),
+            },
+            select: EXPENSE_SNAP_SELECT,
+          })
+          expense = { before: expenseSnapOf(alive), after: expenseSnapOf(e) }
+        } else if (alive && cost === 0) {
+          // 비용 0 — 지출을 지우지 않고 연결만 끊는다. 지우는 판단은 지출 화면 몫이다.
+          expenseId = null
+        } else if (!alive && cost > 0 && pay) {
+          const e = await tx.expense.create({
+            data: {
+              propertyId, date: date!, amount: cost,
+              category: CLEANING_EXPENSE_CATEGORY,
+              roomId: cur.roomId,
+              detail, vendor: name,
+              excludeFromInventory: true,
+              payMethod: pay.payMethod,
+              financialAccountId: pay.financialAccountId,
+              financeName: pay.financeName,
+              settleStatus: settleStatusForNew(pay.payMethod),
+            },
+            select: EXPENSE_SNAP_SELECT,
+          })
+          expenseId = e.id
+          expense = { before: null, after: expenseSnapOf(e) }
+        }
+      } else if (done && alive && date && cur.doneDate && date.getTime() !== cur.doneDate.getTime()) {
+        // 비용 칸을 안 실은 저장도 완료일을 바꾸면 지출 날짜가 따라간다(종전 rescheduleCleaning 과 같은 짝).
+        const e = await tx.expense.update({ where: { id: alive.id, propertyId }, data: { date }, select: EXPENSE_SNAP_SELECT })
+        expense = { before: expenseSnapOf(alive), after: expenseSnapOf(e) }
+      }
+      // 부담 표식을 새로 켰는데 귀속 계약이 없으면 완료 처리와 같은 규칙으로 한 번 잇는다.
+      if (fromFund && !leaseTermId) {
+        const cands = await tx.leaseTerm.findMany({
+          where: { roomId: cur.roomId, propertyId, status: { in: ['CHECKED_OUT', 'CHECKOUT_PENDING'] } },
+          select: { id: true, moveOutDate: true, expectedMoveOut: true },
+        })
+        leaseTermId = pickLatestCheckoutLease(cands)
+      }
+      const next = {
+        reason, memo,
+        scheduledDate: done ? cur.scheduledDate : date,
+        doneDate: done ? date : cur.doneDate,
+        performer, performerName: name, expenseId, fromCleaningFund: fromFund, leaseTermId,
+      }
+      const w = await tx.roomCleaning.updateMany({
+        where: { id: cur.id, propertyId, deletedAt: null, updatedAt: cur.updatedAt },
+        data: next,
+      })
+      if (w.count !== 1) throw new Error(ROOM_RECORD_STALE)
+      after = cleaningSnapOf(next)
+    })
+    await save.commit()
+    revalidatePath('/room-manage'); if (expense || expenseId !== cur.expenseId) revalidatePath('/finance')
+    return { ok: true, undo: signRoomRecordEdit(propertyId, { kind: 'cleaning', id: cur.id, before, after, ...(expense ? { expense } : {}) }) }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '수정에 실패했습니다.' }
   }
 }
 

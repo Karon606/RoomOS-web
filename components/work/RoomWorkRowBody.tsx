@@ -147,7 +147,7 @@ export function RoomWorkRowBody({
                     onBlur={ev => {
                       const next = Number(ev.target.value || 0)
                       if (next === e.amount || next < 0) return
-                      run(() => updateWorkExpense(e.id, { amount: next }), '금액을 고쳤습니다')
+                      run(() => updateWorkExpense({ workId: r.id, expenseId: e.id, amount: next }), '금액을 고쳤습니다')
                     }}
                     className="w-24 shrink-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 text-right num text-[var(--warm-dark)]" />
                   <span className="shrink-0">원</span>

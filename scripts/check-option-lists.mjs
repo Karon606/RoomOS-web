@@ -616,6 +616,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['app/(app)/inventory/actions.ts', 'updateStockAddition'], ['app/(app)/inventory/assets/actions.ts', 'disposeAssets'],
     ['app/(app)/inventory/assets/actions.ts', 'assignAggregateToTarget'],
     ['app/(app)/room-manage/cleaningActions.ts', 'createCleaning'], ['app/(app)/room-manage/cleaningActions.ts', 'changeCleaningReason'],
+    ['app/(app)/room-manage/cleaningActions.ts', 'updateCleaning'],
   ]
   // 방문 경로(2차). 계약을 만드는 두 자리와 고치는 자리가 모두 visitRouteForSave(목록으로 다시 재기)를 거치고 기록 뒤에 목록에 더한다.
   // 폼 글자를 그대로 적는 길(visitRoute || null)이 되살아나면 목록 밖 글이 맨 글자로 남는다.
@@ -853,6 +854,8 @@ const os = bodyOf(form, /function OptionSection\(/)
     const AUTO_WIRING = [
       ['app/(app)/room-manage/workActions.ts', /autoOptionForSave\(propertyId, 'workKindOptions', input\.kind, \{ addToList: input\.addKindToList \}\)[\s\S]*?prisma\.roomWork\.create[\s\S]*?await kindSave\.commit\(\)/, '작업 예정 등록이 종류를 맨 글자 규약으로 재고 기록 뒤에 목록에 더하지 않는다'],
       ['components/work/RoomWorkPlanForm.tsx', /addKindToList: kindToList/, '작업 예정 폼이 체크를 넘기지 않는다'],
+      // 한 건 수정(2026-10-27). 지금 종류(prev)와 같으면 목록에 안 더한다(목록에서 뺀 종류가 저장마다 되살아나지 않게). 더하기는 기록 뒤다.
+      ['app/(app)/room-manage/workActions.ts', /autoOptionForSave\(propertyId, 'workKindOptions', input\.kind, \{ addToList: input\.addKindToList, prev: cur\.kind \}\)[\s\S]*?prisma\.\$transaction[\s\S]*?await kindSave\.commit\(\)/, '작업 한 건 수정이 지금 종류(prev)와 견주지 않거나 기록 뒤에 목록에 더하지 않는다'],
       ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'incomeCategories', formData\.get\('category'\) as string, \{ addToList: formData\.get\('categoryAddToList'\) === '1' \}\)/, '부가수익 등록이 체크 칸이 실린 저장만 목록에 더하지 않는다(수납 과납분처럼 칸 없는 저장까지 쌓인다)'],
       ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'incomeCategories', formData\.get\('category'\) as string, \{ addToList: formData\.get\('categoryAddToList'\) === '1', prev: prevCategory \}\)/, '부가수익 수정이 지금 카테고리(prev)와 견주지 않는다'],
       ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'expenseCategories', data\.category, \{ addToList: opts\?\.addCategoryToList \}\)/, '지출 일괄 수정이 카테고리를 맨 글자 규약으로 재지 않는다'],

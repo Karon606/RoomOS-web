@@ -44,6 +44,17 @@ need('지출 쪽이 연결 적용취소를 건다', fin.includes('unlinkExpenses
 // 저장 트랜잭션 안에 판정을 넣으면 저장이 그만큼 위험해진다.
 need('판정이 저장 액션 밖이다', !readFileSync('app/(app)/finance/actions.ts', 'utf8').includes('matchesWork'))
 
+// 한 건 수정(2026-10-27). 걸린 지출이 없는 완료 작업에 시공비를 적을 때도 걸릴 만한 미연결 지출을 같은 판정으로 보고,
+// 있으면 **새로 만들지도 묶지도 않고** 거부한다(413호 두 벌 방지). 자동 연결 분기를 만들지 않는다.
+{
+  const up = (work.split('export async function updateRoomWork(')[1] ?? '').split('\nexport ')[0]
+  need('한 건 수정이 있다', up.length > 0)
+  need('한 건 수정이 같은 판정 정본(matchesWork)을 쓴다', /matchesWork\(e, \{ roomId: cur\.roomId, kind, doneDate: date, scheduledDate: null \}\)/.test(up))
+  need('한 건 수정은 후보가 있으면 거부한다', /free\.some\(e => matchesWork\([\s\S]{0,120}\)\)\) \{\s*return \{ ok: false, error:/.test(up))
+  need('한 건 수정은 지출을 작업에 묶지 않는다', !/roomWorkId: cur\.id, costKind|updateMany\(\{ where: \{ id: \{ in:/.test(up.replace(/roomWorkId: cur\.id,\n\s*itemLabel/, '')))
+  need('여러 건 걸린 작업은 금액을 안 받는다', /if \(wantsCost && cur\.expenses\.length > 1\) return \{ ok: false/.test(up))
+}
+
 // 자동으로 묶는 분기가 하나도 없어야 한다.
 need('자동 연결 분기 없음', !/mode\s*=\s*['"]link['"]\s*;?\s*\/\/\s*auto/.test(work))
 

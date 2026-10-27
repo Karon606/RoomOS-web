@@ -74,6 +74,8 @@ export type InspectionRow = {
   scheduledDate: string | null
   doneDate: string | null
   memo: string | null
+  /** 마지막으로 고친 시각(ISO). 한 건 수정 폼이 연 뒤 다른 곳에서 바뀌었는지 서버가 견준다(조건부 쓰기). */
+  updatedAt: string
   deletedAt: string | null
   total: number
   /** 결과를 고른 항목(확인·문제·해당 없음). */

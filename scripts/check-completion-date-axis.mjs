@@ -193,6 +193,9 @@ const GUARD_SITES = [
   { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'rescheduleCleaning', word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork',    word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'rescheduleRoomWork',  word: '완료일' },
+  // 한 건 수정(2026-10-27). 완료 건의 날짜 칸 라벨이 '완료일' 이다.
+  { file: 'app/(app)/room-manage/workActions.ts', fn: 'updateRoomWork',      word: '완료일' },
+  { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'updateCleaning',  word: '완료일' },
   { file: 'app/(app)/room-manage/inspectionActions.ts', fn: 'completeInspection', word: '완료일' },
   { file: 'app/(app)/checklist/actions.ts', fn: 'markChecklistDone', word: '완료일' },
   // 엑셀 임포트는 화면이 아니라 **시트**가 말을 정한다. 요청 시트의 머리가 '해결일'이고

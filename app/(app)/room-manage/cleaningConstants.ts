@@ -63,6 +63,8 @@ export type CleaningRow = {
   performer: CleaningPerformer | null
   performerName: string | null
   memo: string | null
+  /** 마지막으로 고친 시각(ISO). 한 건 수정 폼이 연 뒤 다른 곳에서 바뀌었는지 서버가 견준다(조건부 쓰기). */
+  updatedAt: string
   cost: number | null
   /** 걸린 지출의 결제수단·결제 계정. 지출이 없으면 null. 다시 완료하는 폼이 아는 값을 미리 채운다(2026-10-27). */
   payMethod: string | null

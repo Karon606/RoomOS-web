@@ -78,6 +78,9 @@ function callsOf(body, op) {
 const WRITERS = [
   ['app/(app)/room-manage/workActions.ts', 'completeRoomWork'],
   ['app/(app)/room-manage/cleaningActions.ts', 'completeCleaning'],
+  // 한 건 수정(2026-10-27 2단계)도 걸린 지출을 고치거나 새로 만든다.
+  ['app/(app)/room-manage/workActions.ts', 'updateRoomWork'],
+  ['app/(app)/room-manage/cleaningActions.ts', 'updateCleaning'],
 ]
 for (const [file, fn] of WRITERS) {
   const body = bodyOf(strip(read(file)), fn)

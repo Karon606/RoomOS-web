@@ -22,6 +22,8 @@ import { assertNotFuture } from '@/lib/completionDate'
 import { normalizeCategoryInput } from '@/lib/categoryInput'
 import { withParticle } from '@/lib/koParticle'
 import { createRoomInspection, openMoveInInspectionSummary } from '@/lib/roomInspectionEnsure'
+import { signRoomRecordEdit } from '@/lib/roomRecordEditSign'
+import { ROOM_RECORD_STALE, type RoomRecordEditUndo } from '@/lib/roomRecordEditUndo'
 import {
   INSPECTION_STAGES, INSPECTION_RESULTS, INSPECTION_SOURCES, INSPECTION_STAGE_LABEL,
   INSPECTION_GONE, INSPECTION_ITEM_GONE, INSPECTION_LOCKED, INSPECTION_LABEL_MAX,
@@ -44,7 +46,7 @@ async function loadInspectionRows(where: { propertyId: string; roomId?: string }
     orderBy: [{ doneDate: 'desc' }, { scheduledDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, roomId: true, leaseTermId: true, cleaningId: true, stage: true, status: true,
-      scheduledDate: true, doneDate: true, memo: true, deletedAt: true,
+      scheduledDate: true, doneDate: true, memo: true, deletedAt: true, updatedAt: true,
       room: { select: { roomNo: true } },
     },
   })
@@ -63,7 +65,7 @@ async function loadInspectionRows(where: { propertyId: string; roomId?: string }
   return rows.map(r => ({
     id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, leaseTermId: r.leaseTermId, cleaningId: r.cleaningId,
     stage: r.stage as InspectionStage, status: r.status as InspectionStatus,
-    scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate), memo: r.memo,
+    scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate), memo: r.memo, updatedAt: r.updatedAt.toISOString(),
     deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
     ...(tally.get(r.id) ?? { total: 0, checked: 0, ng: 0 }),
   }))
@@ -306,6 +308,48 @@ export async function reopenInspection(id: string): Promise<{ ok: true } | Fail>
     revalidatePath('/room-manage')
     return { ok: true }
   } catch (err) { return errorOf(err, '되돌리기에 실패했습니다.') }
+}
+
+/**
+ * 점검 **한 건** 수정(2026-10-27 승인 계획 2단계). 행 [수정] → Modal 폼이 부른다. 예정 점검은 예정일(비울 수 있다)과 메모,
+ * 끝낸 점검(완료·안 함)은 메모만 고친다(항목 판정은 행 안에서 그대로, 끝낸 점검의 항목 잠금도 그대로다).
+ * 열었을 때의 updatedAt 과 지금이 다르면 거부한다(조건부 쓰기). 저장 직전 모습을 서명 토큰으로 돌려준다(undoRoomRecordEdit).
+ */
+export async function updateInspection(input: {
+  id: string; expectedUpdatedAt: string; scheduledDate?: string | null; memo?: string | null
+}): Promise<{ ok: true; undo: RoomRecordEditUndo | null } | Fail> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomInspection.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: { id: true, status: true, scheduledDate: true, memo: true, updatedAt: true },
+    })
+    if (!cur) return { ok: false, error: INSPECTION_GONE }
+    if (cur.updatedAt.toISOString() !== input.expectedUpdatedAt) return { ok: false, error: ROOM_RECORD_STALE }
+    const memo = input.memo?.trim() || null
+    if (memo && memo.length > 500) return { ok: false, error: '메모는 500자까지 적습니다.' }
+    let scheduledDate = cur.scheduledDate
+    if (input.scheduledDate !== undefined && ymd(cur.scheduledDate) !== (input.scheduledDate || null)) {
+      if (cur.status !== 'PLANNED') return { ok: false, error: '끝낸 점검은 메모만 고칩니다. 날짜를 고치려면 완료나 안 함을 먼저 적용취소합니다.' }
+      scheduledDate = input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null
+      if (scheduledDate && Number.isNaN(scheduledDate.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    }
+    const w = await prisma.roomInspection.updateMany({
+      where: { id: cur.id, propertyId, deletedAt: null, updatedAt: cur.updatedAt },
+      data: { scheduledDate, memo },
+    })
+    if (w.count !== 1) return { ok: false, error: ROOM_RECORD_STALE }
+    revalidatePath('/room-manage')
+    return {
+      ok: true,
+      undo: signRoomRecordEdit(propertyId, {
+        kind: 'inspection', id: cur.id,
+        before: { scheduledDate: ymd(cur.scheduledDate), memo: cur.memo },
+        after: { scheduledDate: ymd(scheduledDate), memo },
+      }),
+    }
+  } catch (err) { return errorOf(err, '수정에 실패했습니다.') }
 }
 
 /** 안 하기로 함. 지우지 않고 상태로 남긴다(청소 '안 하기로' 와 같은 문법). 적용취소는 reopenInspection 이다. */

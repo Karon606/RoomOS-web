@@ -286,6 +286,45 @@ const AXES = [
     must: [[/prisma\.tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*data\.tenantId,\s*propertyId\s*\}/, '예약금의 입주자 id 를 영업장 범위로 보지 않는다']],
     mustNot: [],
   },
+  // 작업 이력 한 건 수정과 적용취소(2026-10-27). 화면 id 를 영업장 범위로 읽고, 조건부 쓰기도 영업장을 건다. 토큰은 서명을 대조한다.
+  {
+    file: 'app/(app)/room-manage/workActions.ts',
+    fn: 'updateRoomWork',
+    must: [
+      [/roomWork\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.id,\s*propertyId,\s*deletedAt:\s*null\s*\}/, '작업을 영업장 범위로 읽지 않는다'],
+      [/roomWork\.updateMany\(\{\s*where:\s*\{\s*id:\s*cur\.id,\s*propertyId,/, '작업 쓰기에 영업장을 걸지 않는다'],
+    ],
+    mustNot: [[/roomWork\.findUnique\(/, '작업을 id 만으로 읽는다']],
+  },
+  {
+    file: 'app/(app)/room-manage/workActions.ts',
+    fn: 'updateWorkExpense',
+    must: [[/expense\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.expenseId,\s*propertyId,\s*roomWorkId:\s*work\.id\s*\}/, '그 작업에 걸린 지출로 좁혀 읽지 않는다(아무 작업의 지출이나 고친다)']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/room-manage/cleaningActions.ts',
+    fn: 'updateCleaning',
+    must: [
+      [/roomCleaning\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.id,\s*propertyId,\s*deletedAt:\s*null\s*\}/, '청소를 영업장 범위로 읽지 않는다'],
+      [/roomCleaning\.updateMany\(\{\s*where:\s*\{\s*id:\s*cur\.id,\s*propertyId,/, '청소 쓰기에 영업장을 걸지 않는다'],
+      [/expense\.findFirst\(\{\s*where:\s*\{\s*id:\s*cur\.expenseId,\s*propertyId\s*\}/, '걸린 지출을 영업장 범위로 읽지 않는다'],
+    ],
+    mustNot: [[/roomCleaning\.findUnique\(/, '청소를 id 만으로 읽는다']],
+  },
+  {
+    file: 'app/(app)/room-manage/recordEditActions.ts',
+    fn: 'undoRoomRecordEdit',
+    must: [
+      [/verifyUndoBody\(ROOM_RECORD_EDIT_UNDO_DOMAIN, propertyId,/, '적용취소 토큰 서명을 대조하지 않는다'],
+      [/expense\.findFirst\(\{\s*where:\s*\{\s*id:\s*u\.expense\.after\.id,\s*propertyId\s*\}/, '토큰의 지출을 영업장 범위로 읽지 않는다'],
+      [/if \(u\.kind === 'work' && !snapMatches\(/, "기록이 '쓴 직후' 그대로인지 쓰기 전에 보지 않는다"],
+    ],
+    mustNot: [
+      [/\.(roomWork|roomCleaning|roomInspection|expense)\.(findUnique|update|delete)\(\{\s*where:\s*\{\s*id:\s*(u\.id|u\.expense\.after\.id|b\.id)\s*\}/, '토큰의 기록·지출을 id 만으로 읽거나 쓴다'],
+      [/expense\.deleteMany\(\{\s*where:\s*\{\s*id:\s*u\.expense\.after\.id\s*\}/, '만든 지출을 지울 때 영업장을 걸지 않는다'],
+    ],
+  },
   // 작업·청소 지출의 결제 계정(2026-10-27). 화면이 고른 계정 id 를 이 영업장 것만 받는다(남의 영업장 카드가 지출에 걸리면 그 카드 정산에 오른다).
   {
     file: 'lib/workPayDefault.ts',
@@ -745,7 +784,8 @@ const EXPECTED2 = {
   marketSurvey: { where: 2, data: 2 },
   marketCompetitor: { where: 2, data: 2 },
   room: { where: 7, data: 7 },
-  roomInspection: { where: 10, data: 11 },
+  // 2026-10-27 한 건 수정: updateInspection 과 그 적용취소(undoRoomRecordEdit) 쓰기 2곳(둘 다 where 에 propertyId, data 는 날짜·메모 두 칸).
+  roomInspection: { where: 12, data: 13 },
   roomInspectionItem: { where: 4, data: 6 },
 }
 const MODEL2_ALT = Object.keys(SCOPE2).join('|')
