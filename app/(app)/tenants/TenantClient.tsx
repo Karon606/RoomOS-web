@@ -91,7 +91,7 @@ import { withParticle } from '@/lib/koParticle'
 import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STATUSES } from '@/lib/leaseStatus'
 // 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
 import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
-import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
+import { PARENT_LEASE_STATUSES, standaloneLeaseOk, NON_RESIDENT_ONLY_STANDALONE_ERROR } from '@/lib/roomAssignment'
 import { isDueDayAdjust, type DueDayAdjustStatus } from '@/lib/dueDayAdjust'
 import { DueDayAdjustList } from '@/components/entity-modal/widgets/DueDayAdjustList'
 
@@ -105,6 +105,7 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
   vacancyExcluded: boolean           // 비거주 점유 방(창고·사무실) — 서버 가드와 같은 정본 술어(lib/vacancy)
   standaloneLeaseAllowed: boolean    // 이 방만으로 계약이 되는가 — false 면 '메인 계약'이 필수다(2026-08-13)
+  nonResidentStandaloneAllowed: boolean // 단독 불가 방이라도 비거주 계약이면 메인 계약이 필수가 아니다(2026-10-27)
   // 퇴실 예정일이 잡힌 점유 계약들의 구간 — 겹침 문구가 '마지막 날짜'가 아니라 실제로 막고 선 계약을 지목하게.
   occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
   // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
@@ -5063,14 +5064,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         {/* 메인 계약 (2026-08-13, 다호실 2단계) — 이 계약이 어느 계약에 묶이는가.
             고를 것이 있을 때만 그린다. 단독 계약이 불가한 방을 고르면 필수가 되고,
             그 방을 고르지 않았으면 '없음'이 그대로 기본이다(종전 저장과 같은 값).
-            판정은 서버(lib/roomAssignment)가 다시 본다 — 화면에만 있는 규칙은 규칙이 아니다. */}
+            '비거주 계약만' 방(2026-10-27)은 상태가 비거주자일 때만 필수가 풀린다. 필수 판정은 서버 가드와
+            같은 한 줄(standaloneLeaseOk)이고, 판정은 서버(lib/roomAssignment)가 다시 본다 — 화면에만 있는 규칙은 규칙이 아니다. */}
         {parentLeases.length > 0 && (() => {
           const selectedRoom = rooms.find(r => r.id === selectedRoomId)
-          const required = selectedRoom ? !selectedRoom.standaloneLeaseAllowed : false
+          const required = selectedRoom ? !standaloneLeaseOk(selectedRoom, statusVal) : false
+          // 비거주 계약이면 혼자 되는 방 — 막힌 이유와 푸는 법 둘을 서버 거부 문장 그대로 말한다(§27.8 ⑤, WhyCaption 정본).
+          // 메인 계약을 이미 골랐으면 막힘이 풀린 것이라 말하지 않는다(그때는 아래 창고류 권고가 같은 버튼을 가진다).
+          const nonResidentOnly = required && parentVal === '' && !!selectedRoom?.nonResidentStandaloneAllowed
+          const parentWhyId = `${formUid}-parent-why`
           return (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">메인 계약{required ? ' *' : ''}</label>
               <select name="parentLeaseTermId" value={parentVal} onChange={e => setParentVal(e.target.value)} required={required}
+                aria-describedby={nonResidentOnly ? parentWhyId : undefined}
                 onWheel={e => e.stopPropagation()}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                 <option value="">없음 (단독 계약)</option>
@@ -5080,11 +5087,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   </option>
                 ))}
               </select>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-                {required
-                  ? '이 호실은 단독 계약이 불가한 방입니다. 메인 계약을 골라 주세요.'
-                  : '계약서는 메인 계약의 계약서 한 장에 합쳐서 인쇄됩니다. 청구와 수납은 계약별로 따로입니다.'}
-              </p>
+              {nonResidentOnly ? (
+                <WhyCaption id={parentWhyId} action={{ label: '비거주자로 변경', onClick: () => setStatusVal('NON_RESIDENT') }}>
+                  {NON_RESIDENT_ONLY_STANDALONE_ERROR}
+                </WhyCaption>
+              ) : (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                  {required
+                    ? '이 호실은 단독 계약이 불가한 방입니다. 메인 계약을 골라 주세요.'
+                    : '계약서는 메인 계약의 계약서 한 장에 합쳐서 인쇄됩니다. 청구와 수납은 계약별로 따로입니다.'}
+                </p>
+              )}
               {/* 창고류 방이 딸릴 때 비거주자 권고 — 자동 전환 금지(멀쩡한 방 둘을 혼자 계약할 수 있다,
                   운영자 오더 2026-08-13). 버튼은 화면 상태만 바꾸고 저장은 여전히 저장 버튼이다(투어일 힌트 전례).
                   실사고: 601호가 '투어 대기'인 채 묶여 합본 계약서에 안 실렸다 — 발급은 발급 대상 상태만 싣는다. */}
