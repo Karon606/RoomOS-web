@@ -35,10 +35,13 @@ const GROUPS: Group[] = [
   { id: 'free',   label: '기타',      hint: '직접 입력',                units: [],                                  specUnits: DEFAULT_SPEC_UNITS, mode: 'free', basis: 'spec' },
 ]
 
+// 고르는 칩. 켜짐을 코랄 채움으로 말하지 않는다(§03 코랄 채움은 CTA 몫, §23 선택 칩). 정본은 '긴급만'·점검 토글 칩
+// 문법이다. 켜짐 --neutral-bg + --warm-dark + ring --warm-border, 꺼짐 투명 + ring + --seg-ink-off. 누르는 자리 40px 은 그대로.
+// 켜고 끄는 칩은 aria-pressed 로 켜짐을 말한다(단위를 골라 다음 단계로 넘어가는 단추는 상태가 없어 달지 않는다).
 const chip = (on: boolean) =>
-  `min-h-[40px] px-3.5 rounded-lg border text-sm font-medium transition-colors ${
-    on ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]'
-       : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`
+  `min-h-[40px] px-3.5 rounded-sm ring-1 text-sm font-medium transition-colors ${
+    on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+       : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
 const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
 export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = false, z = 260 }: {
@@ -126,8 +129,8 @@ export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = f
               <>
                 <p className="text-sm text-[var(--warm-dark)]">낱개 품목이에요. 규격이 필요한가요?</p>
                 <div className="flex flex-wrap gap-1.5">
-                  <button type="button" className={chip(pieceMode === 'none')} onClick={() => { setPieceMode('none'); setSpecText('') }}>규격 없음 (수량만)</button>
-                  <button type="button" className={chip(pieceMode === 'text')} onClick={() => setPieceMode('text')}>치수·용도 서술</button>
+                  <button type="button" aria-pressed={pieceMode === 'none'} className={chip(pieceMode === 'none')} onClick={() => { setPieceMode('none'); setSpecText('') }}>규격 없음 (수량만)</button>
+                  <button type="button" aria-pressed={pieceMode === 'text'} className={chip(pieceMode === 'text')} onClick={() => setPieceMode('text')}>치수·용도 서술</button>
                 </div>
                 {pieceMode === 'text' && (
                   <input value={specText} onChange={e => setSpecText(e.target.value)} autoFocus
@@ -145,7 +148,7 @@ export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = f
                   )}
                   <div className="flex flex-wrap gap-1.5">
                     {group.specUnits.map(u => (
-                      <button key={u} type="button" className={chip(specUnit === u)} onClick={() => setSpecUnit(u)}>{u}</button>
+                      <button key={u} type="button" aria-pressed={specUnit === u} className={chip(specUnit === u)} onClick={() => setSpecUnit(u)}>{u}</button>
                     ))}
                   </div>
                 </div>

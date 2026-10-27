@@ -744,11 +744,12 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
           {(prevUnits?.specOptions?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1">
               {prevUnits!.specOptions.map(o => (
-                <button key={o} type="button" onClick={() => setSpecText(specText === o ? '' : o)}
-                  className={`px-2 py-1 text-[0.65625rem] rounded-md border transition-colors ${
+                // 고른 세부스펙 칩. 켜짐을 코랄 채움으로 말하지 않는다(§03·§23). '긴급만'·점검 토글 칩과 같은 문법이다.
+                <button key={o} type="button" aria-pressed={specText === o} onClick={() => setSpecText(specText === o ? '' : o)}
+                  className={`px-2 py-1 text-[0.65625rem] font-medium rounded-sm ring-1 transition-colors ${
                     specText === o
-                      ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]'
-                      : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-mid)] hover:border-[var(--coral)]'}`}>
+                      ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+                      : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
                   {o}
                 </button>
               ))}
