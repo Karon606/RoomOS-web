@@ -75,9 +75,10 @@ need('전환 버튼이 --tc-text 를 쓴다', /text-\[var\(--tc-text\)\]/.test(s
   '--coral 은 다크 카드 위 2.78:1 로 §28 본문 대비 미달이다')
 need('전환 버튼에 포커스 링이 있다',
   /focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-\[var\(--tc-text\)\]/.test(switchBtn))
+// 유형 세그먼트는 2026-10-27 부터 정본 SegmentedControl 이다(고른 칸 코랄 채움 걷기, check-coral-chip-fill). 부르는 곳은 같은 switchAddType 하나다.
 need('전환은 세그먼트와 같은 한 곳을 부른다',
   /onSwitchType=\{\(\) => void switchAddType\(!addIsService\)\}/.test(client) &&
-  /onClick=\{\(\) => void switchAddType\(false\)\}/.test(client) && /onClick=\{\(\) => void switchAddType\(true\)\}/.test(client),
+  /onChange=\{v => void switchAddType\(v === 'service'\)\}/.test(client),
   '전환 동작이 두 벌이면 비우는 칸이 한쪽에만 늘어난다')
 
 // ── ③-B 입력이 지워지는 전환은 먼저 묻는다 ────────────────────────

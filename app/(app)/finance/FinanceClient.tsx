@@ -105,6 +105,11 @@ import { askExpenseWorkLink } from '@/components/work/workLinkPrompt'
 
 // ── Types ───────────────────────────────────────────────────────
 
+// 배송비 결제 방식 세 칸(주문 묶기 창·등록 폼 합배송 공용). 세그먼트 정본이 받는 꼴이다.
+const SHIP_TYPE_OPTIONS = [
+  { value: '선불', label: '선불' }, { value: '착불', label: '착불' }, { value: '신용', label: '신용' },
+] as const satisfies readonly { value: '선불' | '착불' | '신용'; label: string }[]
+
 type FAcc = { brand: string; alias: string | null }
 
 type Expense = {
@@ -3653,11 +3658,13 @@ export default function FinanceClient({
               <>
                 <div className="flex gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
                   <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" className="flex-1" />
+                  {/* 필터 버튼에 코랄 솔리드 금지(§03). 켜짐은 형제 화면(입주자 관리 검색창 옆 필터)과 같은 코랄 보더 + 테라코타 글자다. */}
                   <button type="button" onClick={() => setShowExpFilters(v => !v)}
-                    className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    aria-expanded={showExpFilters}
+                    className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5 ${
                       showExpFilters || expFilterCount > 0
-                        ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-                        : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+                        ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--tc-text)]'
+                        : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-dark)]'
                     }`}>
                     필터{expFilterCount > 0 ? ` ${expFilterCount}` : ''}
                   </button>
@@ -5153,14 +5160,9 @@ export default function FinanceClient({
                         })()}
                         <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">이 주문의 배송비 (없으면 비워두기)</p>
                         <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원 (없으면 비워두기)" />
-                        <div className="flex items-center gap-1.5">
-                          {(['선불', '착불', '신용'] as const).map(t => (
-                            <button key={t} type="button" onClick={() => setAttachShipType(t)}
-                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-                              {t}
-                            </button>
-                          ))}
-                        </div>
+                        {/* 배송비 결제 방식. 셋 중 하나를 고르는 자리라 세그먼트 정본이다(코랄 채움 금지, §03·§23). */}
+                        <SegmentedControl<typeof attachShipType> size="sm" ariaLabel="배송비 결제 방식" value={attachShipType}
+                          onChange={setAttachShipType} options={SHIP_TYPE_OPTIONS} />
                         <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
                           placeholder="배송 메모 (선택)"
                           className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
@@ -5434,11 +5436,11 @@ export default function FinanceClient({
                 {/* #2 유형 — 물품 구매(품목 필수) vs 서비스·무형(품목 없이 금액만) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>
-                  <div className="inline-flex w-full rounded-lg border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-                    <button type="button" onClick={() => void switchAddType(false)}
-                      className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
-                    <button type="button" onClick={() => void switchAddType(true)}
-                      className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
+                  {/* 둘 중 하나를 고르는 자리라 세그먼트 정본을 쓴다. 고른 칸을 코랄로 채우지 않는다(§03 코랄 채움은 CTA 몫, §23). */}
+                  <div>
+                    <SegmentedControl<'goods' | 'service'> ariaLabel="유형" value={addIsService ? 'service' : 'goods'}
+                      onChange={v => void switchAddType(v === 'service')}
+                      options={[{ value: 'goods', label: '물품 구매' }, { value: 'service', label: '서비스·무형' }]} />
                   </div>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                     {addIsService ? '시공비·인건비 등. 세부 항목으로 내역을 쪼개되, 재고/비품엔 안 잡힙니다.' : '실물 구매. 품목을 입력해야 재고/비품에 잡힙니다.'}
@@ -5518,14 +5520,9 @@ export default function FinanceClient({
                   {addOrderMode && (
                     <div className="pl-5 space-y-2">
                       <MoneyInput value={addOrderShipping} onChange={setAddOrderShipping} placeholder="배송비 0원" />
-                      <div className="flex items-center gap-1.5">
-                        {(['선불', '착불', '신용'] as const).map(t => (
-                          <button key={t} type="button" onClick={() => setAddOrderShipType(t)}
-                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addOrderShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-                            {t}
-                          </button>
-                        ))}
-                      </div>
+                      {/* 배송비 결제 방식. 위 주문 묶기 창과 같은 세그먼트 정본(코랄 채움 금지, §03·§23). */}
+                      <SegmentedControl<typeof addOrderShipType> size="sm" ariaLabel="배송비 결제 방식" value={addOrderShipType}
+                        onChange={setAddOrderShipType} options={SHIP_TYPE_OPTIONS} />
                       <input type="text" value={addOrderShipMemo} onChange={e => setAddOrderShipMemo(e.target.value)}
                         placeholder="배송 메모 (선택)"
                         className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />

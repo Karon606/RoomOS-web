@@ -2686,16 +2686,13 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty }: {
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => { setTrackUnit('spec'); onDirty?.() }}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'spec' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-            규격 단위{row.specUnit ? ` (${row.specUnit})` : ''}
-          </button>
-          <button type="button" onClick={() => { setTrackUnit('qty'); onDirty?.() }}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'qty' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-            수량 단위{row.qtyUnit ? ` (${row.qtyUnit})` : ''}
-          </button>
-        </div>
+        {/* 둘 중 하나를 고르는 자리라 세그먼트 정본을 쓴다. 고른 칸을 코랄로 채우지 않는다(§03 코랄 채움은 CTA 몫, §23). */}
+        <SegmentedControl<'spec' | 'qty'> size="sm" ariaLabel="재고 추적 단위" value={trackUnit}
+          onChange={v => { setTrackUnit(v); onDirty?.() }}
+          options={[
+            { value: 'spec', label: `규격 단위${row.specUnit ? ` (${row.specUnit})` : ''}` },
+            { value: 'qty', label: `수량 단위${row.qtyUnit ? ` (${row.qtyUnit})` : ''}` },
+          ]} />
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
           잘라서 쓰는 품목인지로 갈립니다. 장판은 잘라 쓰니 m 로 세고, 빨래줄 10m 한 세트는 통으로 쓰니 세트로 셉니다.<br/>
           규격 단위: 쌀 1포대(20kg) 같이 규격으로 환산해서 추적 (kg, 매, ml).<br/>
@@ -5177,10 +5174,11 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
     else pushToast('error', res.error)
   }
 
+  // 위치를 고르는 칩. 켜짐을 코랄 채움으로 말하지 않는다(§03·§23). '긴급만'·점검 토글 칩과 같은 문법이고 누르는 자리 40px 은 그대로다.
   const chip = (on: boolean, disabled = false) =>
-    `min-h-[40px] px-3 rounded-lg border text-sm font-medium transition-colors ${disabled ? 'opacity-40' : ''} ${
-      on ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]'
-         : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`
+    `min-h-[40px] px-3 rounded-sm ring-1 text-sm font-medium transition-colors ${disabled ? 'opacity-40' : ''} ${
+      on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+         : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
 
   const submit = async () => {
     if (!canSubmit || !item) return
@@ -5237,7 +5235,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
               <label className="text-xs font-medium text-[var(--warm-mid)]">2. 어디에서 꺼낼까요?</label>
               <div className="flex flex-wrap gap-1.5">
                 {locStock.filter(l => l.qty > 0 || swapMode).map(l => (
-                  <button key={l.id} type="button" className={chip(fromId === l.id)}
+                  <button key={l.id} type="button" aria-pressed={fromId === l.id} className={chip(fromId === l.id)}
                     // 남은 양은 출발지에 매인 값이다 — 출발지를 바꾸면 앞 위치의 실측이 남으면 안 된다.
                     onClick={() => { setFromId(l.id); setSrcLeftStr(''); if (toId === l.id) setToId('') }}>
                     {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
@@ -5254,7 +5252,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
               <div className="flex flex-wrap gap-1.5">
                 {/* 숨긴 위치는 목적지에서 제외 — 숨긴 곳으로 재고를 넣게 두면 안 된다(2단계). 출발지는 재고 있으면 보여야 함(무필터). */}
                 {locStock.filter(l => l.id !== fromId && !l.closed).map(l => (
-                  <button key={l.id} type="button" className={chip(toId === l.id)}
+                  <button key={l.id} type="button" aria-pressed={toId === l.id} className={chip(toId === l.id)}
                     onClick={() => setToId(l.id)}>
                     {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
                   </button>
@@ -5461,10 +5459,11 @@ function HubShortDialog({ pending, onResolved, onExit }: {
     onExit(reason)
   }
 
+  // 옮겨 올 위치를 고르는 칩. 위 옮기기 창과 같은 문법(코랄·감 채움 금지, §03·§23).
   const chip = (on: boolean) =>
-    `min-h-[40px] px-3 rounded-lg border text-sm font-medium transition-colors ${
-      on ? 'bg-[var(--persimmon)] border-[var(--persimmon)] text-[var(--on-solid)]'
-         : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--persimmon)]'}`
+    `min-h-[40px] px-3 rounded-sm ring-1 text-sm font-medium transition-colors ${
+      on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+         : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
 
   return (
     // 위·아래 유틸리티에 보이는 띠 인셋을 더한다(정본 useVisibleBand, 키보드 패널 2026-09-02
@@ -5506,7 +5505,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {donors.map(l => (
-                  <button key={l.id} type="button" className={chip(fromId === l.id)} onClick={() => setFromId(l.id)} disabled={busy}>
+                  <button key={l.id} type="button" aria-pressed={fromId === l.id} className={chip(fromId === l.id)} onClick={() => setFromId(l.id)} disabled={busy}>
                     {l.pathName} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
