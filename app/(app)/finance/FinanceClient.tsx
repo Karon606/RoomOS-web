@@ -900,7 +900,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
                 {it.labelSimilarTo && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--warning-bg)] ring-1 ring-[var(--warning-ring)] px-2 py-1.5">
                     <span className="text-[0.65625rem] text-[var(--warning-fg)] flex-1 min-w-[8rem]">
-                      비슷한 품명이 이미 있어요 — <strong>{it.labelSimilarTo}</strong>. 같은 물건이면 이름을 맞춰야 재고에 함께 잡혀요.
+                      비슷한 품명이 이미 있어요 · <strong>{`'${it.labelSimilarTo}'`}</strong>. 같은 물건이면 이름을 맞춰야 재고에 함께 잡혀요.
                     </span>
                     <button type="button" onClick={() => patchItem(idx, { label: it.labelSimilarTo!, labelSimilarTo: undefined })}
                       className="text-[0.65625rem] font-semibold text-[var(--warning-fg)] underline shrink-0">이 이름으로</button>
