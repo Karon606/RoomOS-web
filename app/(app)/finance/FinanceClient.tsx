@@ -60,6 +60,7 @@ import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
+import { specSetCount, durableSetCount } from '@/lib/setStructure'
 import { specNoteText, type SpecNote } from '@/lib/specNotation'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -249,6 +250,8 @@ export type ItemPickState = {
   unitBasis?: UnitBasis
   // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
   allocations?: { roomId: string; qty: string; locked?: boolean }[]
+  // 비품 세트 확인에 이미 답했나(개수로 환산 또는 '1개 그대로'). 화면 전용이라 저장에 안 싣는다.
+  setAsked?: boolean
   // 영수증 인식 규격을 지난 기록에 맞춘 흔적(2026-10-27, lib/specNotation)과 되살릴 영수증 원문 규격. 화면 전용이라 저장에 안 싣는다.
   specNote?: SpecNote
   specRevert?: { specValue: string; specUnit: string; specText?: string; unitBasis: UnitBasis }
@@ -259,13 +262,21 @@ export type ItemPickState = {
 // 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
 // 세트 확인 칩(applySetHint)과 저장 게이트(confirmDurableSetItems)가 같은 규칙을 쓰도록 한 곳에 둔다.
 export function durableSetCountPatch(it: ItemPickState, count: number): Partial<ItemPickState> {
-  const newQty = (Number(it.qtyValue) || 1) * count
+  const c = durableSetCount(it.qtyValue, count, it.amount)
   return {
-    qtyValue: String(newQty), qtyUnit: '개',
+    qtyValue: String(c.qty), qtyUnit: '개',
     specValue: '', specUnit: '', unitBasis: 'qty',
-    unitPrice: it.amount != null ? Math.round(it.amount / newQty) : it.unitPrice,
-    setHint: undefined,
+    unitPrice: c.unitPrice ?? it.unitPrice,
+    setHint: undefined, setAsked: true,
   }
+}
+// 저장 전 세트 확인 대상의 구성 수 — 세트 의심(setHint, 규격 없음)이거나, 영수증에서 온 비품 품목이 규격 N개로 나뉘어 온 경우
+// (lib/setStructure specSetCount, 독립 검수 B1). 이미 답한 품목(setAsked)은 다시 묻지 않는다.
+function pendingSetCount(it: ItemPickState): number | null {
+  if (it.setAsked) return null
+  if (it.setHint && !(Number(it.specValue) > 1)) return it.setHint.count
+  if (it.ocrRaw != null) return specSetCount(it)
+  return null
 }
 
 export function fmtItemDetail(d: ItemPickState): string {
@@ -280,7 +291,7 @@ export function fmtItemDetail(d: ItemPickState): string {
  */
 function itemsForSave(list: ItemPickState[], dropAlloc: boolean) {
   return list.map(x => ({
-    ...x, setHint: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined, allocations: dropAlloc ? undefined : x.allocations,
+    ...x, setHint: undefined, setAsked: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined, allocations: dropAlloc ? undefined : x.allocations,
     vendor: list.length >= 2 && x.vendor?.trim() ? x.vendor.trim() : undefined,
   }))
 }
@@ -2756,23 +2767,24 @@ export default function FinanceClient({
   // 내구재 세트 확인(저장 게이트, 신고 91b812ce) — 칩에서 미승인·미거절인 채 남은 비품 세트 항목을
   // 등록·수정 저장 전 1회 확답받는다. 반환: undefined=대상 없음(원본 유지)·null=취소(저장 중단)·배열=결정 완료.
   async function confirmDurableSetItems(items: ItemPickState[]): Promise<ItemPickState[] | null | undefined> {
-    const hasPending = items.some(it => it.setHint && !(Number(it.specValue) > 1))
+    const hasPending = items.some(it => pendingSetCount(it) != null)
     if (!hasPending) return undefined
     const out = [...items]
     for (let i = 0; i < out.length; i++) {
-      const it = out[i]; const h = it.setHint
-      if (!h || Number(it.specValue) > 1) continue
-      const newQty = (Number(it.qtyValue) || 1) * h.count
-      const perPiece = it.amount != null ? Math.round(it.amount / newQty) : (h.perPiece || 0)
+      const it = out[i]
+      const count = pendingSetCount(it)
+      if (count == null) continue
+      const c = durableSetCount(it.qtyValue, count, it.amount)
+      const perPiece = c.unitPrice ?? (it.setHint?.perPiece || 0)
       const choice = await choiceDialog({
         title: `${it.label} 세트 확인`,
-        message: `${h.count}개 1세트 상품으로 보입니다. ${newQty}개로 등록할까요? 개당 단가는 금액을 ${withParticle(String(newQty), '으로/로')} 나눠 ${fmtWon(perPiece)}으로 계산됩니다.`,
-        confirmLabel: `${newQty}개로 등록`,
-        altLabel: '1개 그대로',
+        message: `${count}개 1세트 상품으로 보입니다. ${c.qty}개로 등록할까요? 개당 단가는 금액을 ${withParticle(String(c.qty), '으로/로')} 나눠 ${fmtWon(perPiece)}으로 계산됩니다.`,
+        confirmLabel: `${c.qty}개로 등록`,
+        altLabel: `${Number(it.qtyValue) || 1}개 그대로`,
         cancelLabel: '취소',
       })
-      if (choice === null) return null   // 취소 → 저장 중단(무변경)
-      out[i] = choice === 'confirm' ? { ...it, ...durableSetCountPatch(it, h.count) } : { ...it, setHint: undefined }
+      if (choice === null || choice === 'back') return null   // 취소 → 저장 중단(무변경)
+      out[i] = choice === 'confirm' ? { ...it, ...durableSetCountPatch(it, count) } : { ...it, setHint: undefined, setAsked: true }
     }
     return out
   }

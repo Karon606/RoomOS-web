@@ -73,7 +73,7 @@ const fin = read(FIN), pr = read(PR), fc = read(FC), prs = read(PRS), ocr = read
   need(`ⓒ ${FC}: 지난번 숫자 규격을 조용히 채운다(제안 'offer' 는 '채우기' 한 번 누름이어야 한다, 돈의 축)`,
     /label: '채우기', onClick: \(\) => applyItemOffer\(idx\)/.test(fc) && /const offer = note && note\.kind === 'offer' \? pickOf\(it, fill, note\.spec\) : null/.test(fc))
   need(`ⓒ ${FC}: 품목 카드에 맞춘 흔적 캡션(specNoteText + 되살리기)이 없다`, /const t = specNoteText\(it\.specNote\)/.test(fc) && /onClick: \(\) => revertItemSpec\(idx\)/.test(fc))
-  need(`ⓒ ${FC}: 화면 전용 칸(specNote·specRevert)이 저장으로 샌다`, /setHint: undefined, specNote: undefined, specRevert: undefined/.test(body(fc, 'function itemsForSave(')))
+  need(`ⓒ ${FC}: 화면 전용 칸(specNote·specRevert)이 저장으로 샌다`, /setHint: undefined, (?:setAsked: undefined, )?specNote: undefined, specRevert: undefined/.test(body(fc, 'function itemsForSave(')))
 }
 // ⓓ
 {

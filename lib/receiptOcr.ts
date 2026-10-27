@@ -138,6 +138,7 @@ ${kindLines}  "date": "YYYY-MM-DD",          // 결제일·주문일만. '도착
 - totalAmount는 반드시 부가세 포함 최종 결제 금액. 공급가액(과세금액)·부가세가 따로 표시된 영수증이면 그 합(=합계/총액)을 쓰고, 공급가액만 넣지 마세요
 - items의 amount도 부가세 포함 가격으로. 품목이 부가세 별도 단가로 표시돼 있으면 부가세를 각 품목에 비례 배분해 포함시키고, items 합계가 totalAmount와 일치하게 하세요
 - specText는 색상·사이즈·재질처럼 숫자 단위로 못 적는 서술형 규격만(예: '싱글/그레이', '1200x600mm', 'XL'). 용량·개수 같은 숫자 규격은 specValue/specUnit·qtyValue/qtyUnit에 넣으세요
+- 묶음 상품(N개 묶음·세트·팩 x M)은 specValue 에 N, specUnit 에 '개', qtyValue 에 M 을 넣으세요. 예: '칫솔 40개 묶음' 을 4개 샀으면 specValue "40", specUnit "개", qtyValue "4"(실물 160개). 'N개입'도 같습니다. 묶음 수 N 을 qtyValue 에 곱해 넣지 마세요
 - brand·productName은 **영수증에 실제로 보이는 표기만** 넣으세요. 브랜드가 안 보이면 생략하고 **절대 추측해서 만들지 마세요**(품목명으로 제조사를 유추하는 것도 금지)
 - productName은 영수증 원문의 제품 표기 그대로(예: '진라면 매운맛', '룸앤 TV 27TQ600SW'). label은 통일 품명이므로 **label과 같은 값을 productName에 복사하지 마세요** — 원문이 통일 품명과 같으면 productName을 생략하세요
 - 색상·사이즈·용량은 productName이 아니라 specText·specValue에 넣으세요. 원문 제품 표기 안에 섞여 있으면 제품명 쪽에서는 빼도 됩니다

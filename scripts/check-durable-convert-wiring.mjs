@@ -169,6 +169,14 @@ must(DC, region(dc, 'receiptConvertPreview'), [
 const RC = 'app/(app)/inventory/receiptCancel.ts'
 must(RC, region(read(RC), 'planReceiptCancel'), [[/\} else if \(autoChecks\.length > 0 && await laterCheckExists\(\)\) \{[\s\S]{0,300}return \{ ok: false, error: RECEIPT_CANCEL_LATER \}/, 'R1 함께 조정 갈래가 매칭 카드 없을 때 이후 점검 가드를 건너뛴다']], ' planReceiptCancel')
 
+// 비품 세트 확인(신고 91b812ce)이 영수증 묶음 규칙(규격 N개 · 수량 M, 신고 bc5bae0c) 뒤에도 선다(2026-10-27 독립 검수 B1).
+{
+  const FC2 = 'app/(app)/finance/FinanceClient.tsx'
+  const fc2 = read(FC2)
+  if (!/if \(it\.ocrRaw != null\) return specSetCount\(it\)/.test(fc2) || !/const count = pendingSetCount\(it\)/.test(fc2))
+    violations.push(`${FC2}: 비품 세트 확인이 규격으로 나뉘어 온 영수증 품목(lib/setStructure specSetCount)을 대상으로 삼지 않는다. '의자 4개 세트 x 1' 이 의자 1개로 저장된다`)
+}
+
 console.log(`[비품 전환 배선] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 process.exit(violations.length ? 1 : 0)
