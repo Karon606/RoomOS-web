@@ -51,7 +51,9 @@ import { fmtRoomNo } from '@/lib/roomNo'
 // 함께 옮기게 한다. 계산 정본은 lib/stockLedger, 적용·되돌리기는 inventory/ledgerShift 공용층.
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
 import type { ShiftRow } from '@/lib/stockLedger'
-import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { buildReceiptOcrPrompt, buildVocabBlock, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { loadSpecHistory, reconcileOcrItemsWithHistory } from '@/lib/itemVariants'
+import { specNotationKey } from '@/lib/specNotation'
 import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
@@ -381,12 +383,26 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     // 카테고리 목록 포함 — 다른 카테고리로 잘못 등록하면 같은 품목이 하나 더 생기므로 폼에서 경고
     prisma.trackedItem.findMany({ where: { propertyId, label: itemLabel, isArchived: false }, select: { trackUnit: true, category: true } }),
   ])
-  const specOptions = await prisma.itemSpecOption.findMany({
-    where: { propertyId, itemLabel },
-    orderBy: { createdAt: 'asc' },
-    take: 20,
-    select: { label: true },
-  }).then(rows => rows.map(r => r.label)).catch(() => [] as string[])
+  // 세부스펙 칩 — 장부에서 파생한다(2026-10-27). 표기만 다른 같은 규격은 한 칩(그 묶음에서 가장 많이 쓴 표기)이고,
+  // 많이 쓴 순이다. 사전(ItemSpecOption)은 읽기 소스로만 남아 장부의 어느 표기와도 동치가 아닌 것만 뒤에 붙는다.
+  const specOptions = await (async () => {
+    const hist = (await loadSpecHistory(propertyId, [itemLabel])).get(itemLabel) ?? []
+    const byKey = new Map<string, { text: string; count: number; total: number }>()
+    for (const h of hist) {
+      const t = (h.specText ?? '').trim()
+      if (!t) continue
+      const k = specNotationKey(t)
+      const cur = byKey.get(k)
+      if (!cur) byKey.set(k, { text: t, count: h.count, total: h.count })
+      else { cur.total += h.count; if (h.count > cur.count) { cur.text = t; cur.count = h.count } }
+    }
+    const fromLedger = [...byKey.values()].sort((a, b) => b.total - a.total).map(x => x.text)
+    const dict = await prisma.itemSpecOption.findMany({
+      where: { propertyId, itemLabel }, orderBy: { createdAt: 'asc' }, take: 20, select: { label: true },
+    }).then(rows => rows.map(r => r.label)).catch(() => [] as string[])
+    const extra = dict.filter(d => !byKey.has(specNotationKey(d)))
+    return [...fromLedger, ...extra].slice(0, 20)
+  })().catch(() => [] as string[])
   if (!row && tracked.length === 0 && specOptions.length === 0) return null
   // 직전 기준은 **기록이 있을 때만** 돌려준다(신고 73c18e13, 2026-09-17).
   // 종전에는 기록이 없어도 규격 값이 있다는 이유로 'spec' 을 지어냈고, 받는 쪽이 그것을 사람이
@@ -533,7 +549,7 @@ export async function analyzeReceiptWithGemini(formData: FormData): Promise<{ ok
         }),
         prisma.expense.findMany({
           where: { propertyId: ocrPropertyId, itemLabel: { not: null } },
-          select: { itemLabel: true, specUnit: true, qtyUnit: true },
+          select: { itemLabel: true, specUnit: true, qtyUnit: true, specText: true },
           orderBy: { createdAt: 'desc' },
           take: 300,
         }),
@@ -543,16 +559,23 @@ export async function analyzeReceiptWithGemini(formData: FormData): Promise<{ ok
         const k = t.label.trim()
         if (k && !seen.has(k)) seen.set(k, { spec: t.specUnit, qty: t.qtyUnit })
       }
+      // 품목별 규격 표기(2026-10-27) — 같은 품목이면 지난 기록 표기를 따르게 사전에 싣는다. 동치 표기는 많이 쓴 하나로 접는다.
+      const notes = new Map<string, Map<string, { text: string; count: number }>>()
       for (const r of rows) {
         const k = (r.itemLabel ?? '').trim()
         if (k && !seen.has(k)) seen.set(k, { spec: r.specUnit, qty: r.qtyUnit })
+        const t = (r.specText ?? '').trim()
+        if (!k || !t) continue
+        const m = notes.get(k) ?? new Map<string, { text: string; count: number }>()
+        const nk = specNotationKey(t)
+        const cur = m.get(nk)
+        if (!cur) m.set(nk, { text: t, count: 1 }); else cur.count++
+        notes.set(k, m)
       }
-      const vocab = [...seen.entries()].slice(0, Math.max(60, tracked.length)).map(([label, u]) =>
-        `${label}${u.spec || u.qty ? ` (규격단위 ${u.spec ?? '—'} · 수량단위 ${u.qty ?? '—'})` : ''}`)
-      if (vocab.length) vocabBlock = `
-
-이 사업장에서 쓰는 품목명·단위 목록 (인식한 품목이 이 중 하나와 같은 물건이면, 상표명·표기가 달라도 반드시 이 이름과 단위 표기를 그대로 쓰세요. 예: '모나리자 키친타올'도 목록에 '키친타월 (롤타입)'이 있으면 그 이름으로):
-- ${vocab.join('\n- ')}`
+      vocabBlock = buildVocabBlock([...seen.entries()].slice(0, Math.max(60, tracked.length)).map(([label, u]) => ({
+        label, specUnit: u.spec, qtyUnit: u.qty,
+        notations: [...(notes.get(label)?.values() ?? [])].sort((a, b) => b.count - a.count).slice(0, 2).map(x => x.text),
+      })))
     } catch { /* 사전 조회 실패해도 OCR 자체는 정상 동작 */ }
 
     // 카테고리 후보는 영업장 설정에서 — 기본 13종을 하드코딩하면 커스텀 카테고리가 OCR 분류에서 배제된다(멀티테넌트, 운영자 승인 2026-07-14)
@@ -576,10 +599,12 @@ export async function analyzeReceiptWithGemini(formData: FormData): Promise<{ ok
       const aliasRows = await prisma.itemNameAlias.findMany({ where: { propertyId: ocrPropertyId }, select: { aliasKey: true, preferredLabel: true } })
       aliasMap = new Map(aliasRows.map(a => [a.aliasKey, a.preferredLabel]))
     } catch { /* 별칭 테이블 미적용(SQL 전)이어도 OCR 자체는 정상 동작 */ }
-    const aliasedItems: ReceiptOcrItem[] = data.items.map(it => {
+    const aliasedItems: ReceiptOcrItem[] = await reconcileOcrItemsWithHistory(ocrPropertyId, data.items.map(it => {
       const pref = aliasMap.get(normalizeItemName(it.label))
       return { ...it, rawLabel: it.label, label: pref ?? it.label }
-    })
+    }))
+    // ↑ 지난 기록 규격 맞추기(lib/itemVariants, 2026-10-27). 별칭으로 품명을 맞춘 뒤, 세트 감지 전에 돈다 — 채운 규격(20개입 등)이
+    // 있으면 세트를 되물을 까닭이 없다. 홈 찍어올리기(pendingReceipt)도 같은 도우미를 부른다.
 
     // 세트 상품 의심 감지 — 온라인 영수증은 품목당 합계 위주라 실물 수량이 안 보임(운영자 2026-07-06).
     // 라벨 'N개입' 표기 또는 과거 개당 단가의 정확한 N배면 힌트를 붙여 클라이언트가 되묻게 한다.
@@ -604,20 +629,9 @@ async function captureItemNameAliases(propertyId: string, items: ItemPick[]): Pr
   await captureItemNameAliasPairs(propertyId, items.map(it => ({ raw: it.ocrRaw, label: it.label })))
 }
 
-// 저장 시 세부스펙 적립(신고 ba9feb6b) — 품목별 사전(item_spec_options)에 upsert.
-// 한 번 입력한 색상·사이즈·치수는 다음 입력에서 칩으로 재사용, 설정에서 수정·삭제. best-effort.
-async function captureItemSpecOptions(propertyId: string, items: ItemPick[]): Promise<void> {
-  for (const it of items) {
-    const label = it.label?.trim()
-    const spec = it.specText?.trim()
-    if (!label || !spec) continue
-    await prisma.itemSpecOption.upsert({
-      where: { propertyId_itemLabel_label: { propertyId, itemLabel: label, label: spec } },
-      update: {},
-      create: { propertyId, itemLabel: label, label: spec },
-    }).catch(() => {})
-  }
-}
+// 세부스펙 사전(item_spec_options)은 2026-10-27 부터 저장 때 쌓지 않는다(영수증 규격 표기 기억 1단계).
+// 지난 기록 칩은 장부(Expense)에서 파생하고(getLastItemUnits specOptions), 사전은 읽기 소스로만 남는다. 저장마다 쌓던 사전이
+// 장부와 갈려('폭183cm' 은 장부에 없다) 표기 갈림을 키웠다. 테이블 정리(drop)는 2차다.
 
 // 사업자등록번호 소급 보정 — 같은 구매처의 과거 지출 중 번호가 비어(NULL) 있는 행에만 이 번호를 채운다.
 // 항목 신설로 과거 누락분을 새 인식이 들어올 때마다 소급 보정 — 과거 이력이 정리되면 제거 가능(운영자 2026-07-23).
@@ -1042,7 +1056,6 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       await noteChannel(propertyId, (made as { channel: string | null }[]).some(m => m.channel) ? channel : null)
       await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
-      await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
       // 비품으로 바꾼 등록은 카테고리가 추적 밖이라 시드가 카드를 만들지 않는다(seed 가 추적 카테고리만 본다).
       await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean), { declaredTrackUnit }).catch(() => {})
@@ -1075,7 +1088,6 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const made = await prisma.$transaction(ops)
     await noteChannel(propertyId, (made as { channel: string | null }[]).some(m => m.channel) ? channel : null)
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
-    await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
     if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel], { declaredTrackUnit }).catch(() => {})
@@ -1448,7 +1460,6 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
           },
         })] : []),
       ])
-      await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
       await noteUnits(newUnitsOnly(multiItems.map(i => i.specUnit), existing?.specUnit), newUnitsOnly(multiItems.map(i => i.qtyUnit), existing?.qtyUnit))
       // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다(기록·삭제·삭제취소와 같은 클래스).
       // 저장은 위 배열 트랜잭션에서 이미 끝났다. 맞춤이 실패해도 실패로 돌려주지 않는다. 돌려주면 화면이 폼을 그대로 두고
@@ -1662,10 +1673,6 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       revalidatePath('/inventory')
     } else {
       await prisma.expense.update({ where: { id }, data: singleUpdateData })
-    }
-    // 세부스펙 적립 — 수정 저장으로 들어온 서술형 규격도 품목 사전에 upsert(best-effort)
-    if (formData.has('specText') && specTextRaw && itemLabel) {
-      await captureItemSpecOptions(propertyId, [{ label: itemLabel, specText: specTextRaw }]).catch(() => {})
     }
     // 추적 소모품(부식·소모품·폐기물)의 품목명을 바꾸면 재고 카드·형제 지출까지 함께 변경(진짜 이름변경).
     // 카테고리가 그대로일 때만. 전파 실패는 지출 저장을 막지 않음(재고관리에서 수동 정리 가능).

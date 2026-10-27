@@ -35,6 +35,8 @@ import { ocrFallbackAllowed } from '@/lib/ocrImage'
 import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
 import { TRACKED_CATEGORIES } from '@/app/(app)/inventory/constants'
 import CategorySelect from '@/components/ui/CategorySelect'
+import { WhyCaption } from '@/components/ui/WhyCaption'
+import { specNoteText, type SpecNote } from '@/lib/specNotation'
 
 // 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
 // 지출 카테고리 폴백은 분류 목록 기본값 정본(lib/optionLists)이다. 손으로 적은 사본은 정본과 갈린다.
@@ -233,6 +235,23 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
   const [qtyValue, setQtyValue] = useState(row.qtyValue ?? '')
   const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
   const [specText, setSpecText] = useState(row.specText ?? '')
+  // 지난 기록에 맞춘 흔적(2026-10-27). 되살리거나 규격 칸을 손으로 고치면 캡션을 내린다(더는 사실이 아니다).
+  const [specNoteOn, setSpecNoteOn] = useState(!!row.specNote)
+  // 지난번 숫자 규격 '채우기'(offer)를 누르면 그 자리 캡션이 '채움 + 비우기' 로 바뀐다(독립 검수 권고 2).
+  const [noteNow, setNoteNow] = useState<SpecNote | null>(row.specNote)
+  const specNote = specNoteOn ? noteNow : null
+  const revertSpecNote = () => {
+    const n = noteNow
+    if (!n) return
+    if (n.kind === 'offer') {
+      setNoteNow({ kind: 'filled', receipt: { specValue, specUnit, specText }, history: n.history })
+      setSpecValue(n.spec.specValue ?? ''); setSpecUnit(n.spec.specUnit ?? ''); if (n.spec.specText) setSpecText(n.spec.specText)
+      return
+    }
+    if (n.kind !== 'aligned' && n.kind !== 'filled') return
+    setSpecValue(n.receipt.specValue ?? ''); setSpecUnit(n.receipt.specUnit ?? ''); setSpecText(n.receipt.specText ?? '')
+    setSpecNoteOn(false)
+  }
   const [wizOpen, setWizOpen] = useState(false)
   // 세트 상품 의심(주문 1=실물 N) — 폼 열릴 때 1회 감지, 승인 전 "1세트에 몇 개?" 확인(운영자 2026-07-06)
   const [setHint, setSetHint] = useState<Awaited<ReturnType<typeof checkSetHint>>>(null)
@@ -414,9 +433,9 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                         className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--tc-text)] underline decoration-dotted underline-offset-2">단계별</button>
                     </label>
                     <div className="flex gap-1">
-                      <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
+                      <input type="text" placeholder="300" value={specValue} onChange={e => { setSpecValue(e.target.value); setSpecNoteOn(false) }}
                         className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
-                      <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
+                      <input type="text" placeholder="ml" value={specUnit} onChange={e => { setSpecUnit(e.target.value); setSpecNoteOn(false) }}
                         className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
                     {specText.trim() && <p className="mt-0.5 text-[0.65625rem] text-[var(--tc-text)]">서술 규격: {specText}</p>}
@@ -431,6 +450,19 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
                     </div>
                   </div>
                 </div>
+                {/* 지난 기록 규격 맞추기 캡션(2026-10-27, 지출 등록 폼과 같은 문장 정본 lib/specNotation specNoteText).
+                    변형이 둘 이상이면 채우지 않고 지출 등록 폼(정밀 OCR·다품목, 기존 딥링크)에서 고르게 보낸다. */}
+                {specNote && (specNote.kind === 'choose' ? (
+                  <WhyCaption id={`pr-spec-${row.id}`}
+                    action={{ label: '지출 등록에서 고르기', onClick: () => router.push(`/finance?pendingReceipt=${row.id}`) }}>
+                    지난 기록 {specNote.count}가지
+                  </WhyCaption>
+                ) : (
+                  <WhyCaption id={`pr-spec-${row.id}`}
+                    action={specNoteText(specNote).revert ? { label: specNoteText(specNote).revert!, onClick: revertSpecNote } : undefined}>
+                    {specNoteText(specNote).text}
+                  </WhyCaption>
+                ))}
                 {setHint && !(Number(specValue) > 1) && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
                     <span className="text-[0.65625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">

@@ -14,6 +14,7 @@
 // 시스템은 구분의 종류(용량·색·향)를 해석하지 않는다(knowledge/domain-inventory). 여기서 하는 일은 '같은 글을 다르게 적었나' 뿐이다.
 // 수량 단위(qtyUnit)는 건드리지 않는다.
 import { canonicalUnit, convertUnit } from './units'
+import { withParticle, type ParticlePair } from './koParticle'
 
 // 차원별 기준 단위 — lib/units UNIT_DIMS 의 배율 1 단위와 같다.
 const BASE_UNITS = ['ml', 'g', 'mm'] as const
@@ -77,4 +78,97 @@ export function specKeyOf(s: { specValue?: number | string | null; specUnit?: st
   const v = s.specValue == null || s.specValue === '' ? null : Number(s.specValue)
   const num = v != null && Number.isFinite(v) && v > 0 ? `${numText(v)}${(s.specUnit ?? '').trim()}` : ''
   return specNotationKey([num, s.specText ?? ''].filter(Boolean).join(' '))
+}
+
+// ── 영수증 인식 규격을 지난 기록에 맞추기(2026-10-27 운영자 승인) ─────────────────────────────
+// 영수증 자동 읽기는 AI 가 읽은 글자를 그대로 넣었다. 같은 품명을 예전에 산 적이 있으면 그때 적은 표기를 따른다.
+//   · 영수증 서술 규격이 지난 기록 표기와 **동치**면 지난 기록 표기(그 묶음에서 가장 많이 쓴 표기)로 맞춘다(aligned).
+//     묻지 않고 맞추되 화면이 그렇다고 말하고 되살리기를 둔다('영수증 표기로 되돌리기').
+//   · 숫자가 하나라도 다르면 맞추지 않는다. 지난 기록 서술 표기가 있으면 '이전 표기와 규격이 다릅니다' 만 말한다(differs).
+//   · 영수증에 규격이 아예 없고 지난 기록 규격이 **하나뿐**이면 서술 규격은 그것으로 빈 칸을 채운다(filled, 되살리기 '비우기').
+//     숫자 규격(40개·750mm)은 단가 기준수량에 들어가는 돈의 축이라 조용히 채우지 않고, 캡션 '지난번 {규격} · 채우기' 로
+//     한 번 눌러 채우게 둔다(offer, 독립 검수 권고 2).
+//     둘 이상이면 채우지 않고 몇 가지인지만 넘긴다(choose). 규격 없이 산 기록은 변형으로 세지 않는다(없는 정보일 뿐이다).
+//   · 숫자 규격만 읽힌 품목은 건드리지 않는다(단가 계산에 들어가는 칸이라 여기서 바꾸지 않는다).
+export type SpecFields = { specValue?: string; specUnit?: string; specText?: string }
+export type SpecNote =
+  | { kind: 'aligned'; receipt: SpecFields; history: string }
+  | { kind: 'filled'; receipt: SpecFields; history: string }
+  | { kind: 'offer'; spec: SpecFields; history: string }
+  | { kind: 'differs'; history: string[] }
+  | { kind: 'choose'; count: number }
+/** 지난 기록 한 조합(품명 하나 안의 규격 세 칸 + 건수). Expense groupBy 그대로다. */
+export type SpecHistoryRow = { specValue: number | null; specUnit: string | null; specText: string | null; count: number }
+
+/** 지난 기록 규격을 사람이 읽는 한 줄로(서술 규격이 있으면 그것, 숫자 규격이면 값+단위, 둘 다면 둘 다). */
+export function specDisplay(s: { specValue?: number | string | null; specUnit?: string | null; specText?: string | null }): string {
+  const v = s.specValue == null || s.specValue === '' ? null : Number(s.specValue)
+  const num = v != null && Number.isFinite(v) && v > 0 ? `${numText(v)}${(s.specUnit ?? '').trim()}` : ''
+  return [num, (s.specText ?? '').trim()].filter(Boolean).join(' ')
+}
+
+export function reconcileSpecWithHistory(item: SpecFields, history: SpecHistoryRow[]): { spec: SpecFields; note: SpecNote | null } {
+  const spec: SpecFields = { specValue: item.specValue, specUnit: item.specUnit, specText: item.specText }
+  const text = (item.specText ?? '').trim()
+  // 서술 표기 묶음 — 동치 키마다 가장 많이 쓴 표기(같으면 먼저 온 것)
+  const byText = new Map<string, { text: string; count: number; total: number }>()
+  for (const h of history) {
+    const t = (h.specText ?? '').trim()
+    if (!t) continue
+    const k = specNotationKey(t)
+    const cur = byText.get(k)
+    if (!cur) byText.set(k, { text: t, count: h.count, total: h.count })
+    else { cur.total += h.count; if (h.count > cur.count) { cur.text = t; cur.count = h.count } }
+  }
+  if (text) {
+    const hit = byText.get(specNotationKey(text))
+    if (hit) {
+      if (hit.text === text) return { spec, note: null }
+      return { spec: { ...spec, specText: hit.text }, note: { kind: 'aligned', receipt: { ...spec }, history: hit.text } }
+    }
+    if (byText.size === 0) return { spec, note: null }
+    return { spec, note: { kind: 'differs', history: [...byText.values()].sort((a, b) => b.total - a.total).map(x => x.text) } }
+  }
+  const hasNum = !!(item.specValue ?? '').trim() && Number(item.specValue) > 0
+  if (hasNum) return { spec, note: null }
+  // 규격이 아예 없다 — 규격을 가진 지난 기록 변형(동치 키 묶음)을 센다
+  const variants = new Map<string, SpecHistoryRow>()
+  for (const h of history) {
+    const k = specKeyOf(h)
+    if (!k) continue
+    const cur = variants.get(k)
+    if (!cur || h.count > cur.count) variants.set(k, h)
+  }
+  if (variants.size === 0) return { spec, note: null }
+  if (variants.size > 1) return { spec, note: { kind: 'choose', count: variants.size } }
+  const v = [...variants.values()][0]
+  const numeric = v.specValue != null && v.specValue > 0
+  const filled: SpecFields = {
+    specValue: v.specValue != null && v.specValue > 0 ? numText(v.specValue) : '',
+    specUnit: v.specValue != null && v.specValue > 0 ? (v.specUnit ?? '') : '',
+    specText: (v.specText ?? '').trim() || undefined,
+  }
+  if (numeric) return { spec, note: { kind: 'offer', spec: filled, history: specDisplay(v) } }
+  return { spec: filled, note: { kind: 'filled', receipt: { ...spec }, history: specDisplay(v) } }
+}
+
+// 따옴표로 감싼 값 뒤 조사만(값의 받침으로 고른다, lib/koParticle).
+const josa = (w: string, pair: ParticlePair) => withParticle(w, pair).slice(w.length)
+
+/** 화면에 띄울 캡션 문장(정본 한 벌 — 지출 등록 폼과 홈 영수증 카드가 같은 말을 쓴다). */
+export function specNoteText(note: SpecNote): { text: string; revert: string | null } {
+  switch (note.kind) {
+    case 'aligned': {
+      const r = note.receipt.specText ?? ''
+      return { text: `영수증 표기 '${r}' ${josa(r, '을/를')} 지난 기록 표기 '${note.history}' ${josa(note.history, '으로/로')} 맞췄습니다`, revert: '영수증 표기로 되돌리기' }
+    }
+    case 'filled':
+      return { text: `영수증에 규격이 없어 지난 기록 규격 '${note.history}' ${josa(note.history, '으로/로')} 채웠습니다`, revert: '비우기' }
+    case 'offer':
+      return { text: `영수증에 규격이 없습니다. 지난번 ${note.history}`, revert: '채우기' }
+    case 'differs':
+      return { text: note.history.length === 1 ? `이전 표기와 규격이 다릅니다. 지난 기록은 '${note.history[0]}' 입니다.` : '이전 표기와 규격이 다릅니다.', revert: null }
+    case 'choose':
+      return { text: `지난 기록 규격이 ${note.count}가지라 채우지 않았습니다.`, revert: null }
+  }
 }

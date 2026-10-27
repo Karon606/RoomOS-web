@@ -60,6 +60,7 @@ import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
+import { specNoteText, type SpecNote } from '@/lib/specNotation'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
@@ -248,6 +249,11 @@ export type ItemPickState = {
   unitBasis?: UnitBasis
   // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
   allocations?: { roomId: string; qty: string; locked?: boolean }[]
+  // 영수증 인식 규격을 지난 기록에 맞춘 흔적(2026-10-27, lib/specNotation)과 되살릴 영수증 원문 규격. 화면 전용이라 저장에 안 싣는다.
+  specNote?: SpecNote
+  specRevert?: { specValue: string; specUnit: string; specText?: string; unitBasis: UnitBasis }
+  // 지난번 숫자 규격을 한 번 눌러 채울 값(specNote 'offer'). 돈의 축이라 조용히 채우지 않는다(독립 검수 권고 2).
+  specOffer?: { specValue: string; specUnit: string; specText?: string; unitBasis: UnitBasis }
 }
 
 // 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
@@ -274,7 +280,7 @@ export function fmtItemDetail(d: ItemPickState): string {
  */
 function itemsForSave(list: ItemPickState[], dropAlloc: boolean) {
   return list.map(x => ({
-    ...x, setHint: undefined, allocations: dropAlloc ? undefined : x.allocations,
+    ...x, setHint: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined, allocations: dropAlloc ? undefined : x.allocations,
     vendor: list.length >= 2 && x.vendor?.trim() ? x.vendor.trim() : undefined,
   }))
 }
@@ -627,9 +633,35 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     const specValue = raw.replace(/[^0-9.]/g, '')
     const it = items[idx]
     const q = (Number(it.qtyValue) || 1) * (basisOf(it) === 'spec' ? (specValue ? (Number(specValue) || 1) : 1) : 1)
-    if (it.amount != null) patchItem(idx, { specValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
-    else if (it.unitPrice != null) patchItem(idx, { specValue, amount: Math.round(it.unitPrice * q) })
-    else patchItem(idx, { specValue })
+    // 손으로 고친 규격이면 '지난 기록에 맞췄습니다' 캡션은 더는 사실이 아니다(specNote 를 내린다).
+    const noNote = { specNote: undefined, specRevert: undefined, specOffer: undefined }
+    if (it.amount != null) patchItem(idx, { specValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined, ...noNote })
+    else if (it.unitPrice != null) patchItem(idx, { specValue, amount: Math.round(it.unitPrice * q), ...noNote })
+    else patchItem(idx, { specValue, ...noNote })
+  }
+  // 지난번 숫자 규격을 한 번 눌러 채운다(specNote 'offer'). 금액은 그대로, 단가만 새 기준수량으로. 채운 뒤에는 '채움' 캡션 + '비우기'.
+  function applyItemOffer(idx: number) {
+    const it = items[idx]; const o = it.specOffer
+    if (!o || it.specNote?.kind !== 'offer') return
+    const prior = { specValue: it.specValue, specUnit: it.specUnit, specText: it.specText, unitBasis: basisOf(it) }
+    const q = baseQtyOf({ ...it, specValue: o.specValue, specUnit: o.specUnit, specText: o.specText, unitBasis: o.unitBasis })
+    patchItem(idx, {
+      specValue: o.specValue, specUnit: o.specUnit, specText: o.specText, unitBasis: o.unitBasis,
+      unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice,
+      specNote: { kind: 'filled', receipt: { specValue: prior.specValue, specUnit: prior.specUnit, specText: prior.specText }, history: it.specNote.history },
+      specRevert: prior, specOffer: undefined,
+    })
+  }
+  // 지난 기록에 맞춘 규격을 영수증 원문으로 되살린다(§27.8 ① 되살리기, 확인창 없음). 금액은 그대로 두고 단가만 다시 낸다.
+  function revertItemSpec(idx: number) {
+    const it = items[idx]; const r = it.specRevert
+    if (!r) return
+    const q = baseQtyOf({ ...it, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, unitBasis: r.unitBasis })
+    patchItem(idx, {
+      specValue: r.specValue, specUnit: r.specUnit, specText: r.specText, unitBasis: r.unitBasis,
+      unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice,
+      specNote: undefined, specRevert: undefined,
+    })
   }
   // 단가 기준 전환(규격당 ↔ 개당) — 금액은 그대로 두고 단가만 새 기준으로 재계산
   function toggleItemBasis(idx: number) {
@@ -643,7 +675,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   function convertItemToTextSpec(idx: number) {
     const it = items[idx]
     const q = Number(it.qtyValue) || 1
-    patchItem(idx, { specText: it.specText ?? '', specValue: '', specUnit: '', unitBasis: 'qty', unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice })
+    patchItem(idx, { specText: it.specText ?? '', specValue: '', specUnit: '', unitBasis: 'qty', unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice, specNote: undefined, specRevert: undefined, specOffer: undefined })
   }
   // 전체 수량(qtyValue)을 '잠기지 않은' 방들에 정수 최소단위로 균등 분배(앞 방부터 1씩). 잠긴 방 수량은 보존.
   // 정수 단위로 계산해 Σ(방 수량)==전체 를 오차 0 으로 보장(부동소수 누적 회피). 소수는 최대 2자리.
@@ -762,7 +794,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
           )}
           <input type="text" placeholder="예: 4x30mm · 폭 183cm, 싱글/그레이" value={specText}
             onChange={e => setSpecText(e.target.value)} className={textCls} />
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">새로 입력한 세부스펙은 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">지난 구매에 적은 세부스펙이 칩으로 뜹니다. 같은 물건이면 칩을 눌러 같은 표기로 적어 주세요.</p>
         </div>
         )}
         {/* 브랜드·제품명 — 접힌 한 줄. 폼이 이미 길어 항상 펴 두면 매번 스크롤이 는다.
@@ -993,13 +1025,28 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
                   <div className="flex items-center gap-1.5">
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">규격(직접)</span>
                     <input type="text" value={it.specText}
-                      onChange={e => patchItem(idx, { specText: e.target.value })}
+                      onChange={e => patchItem(idx, { specText: e.target.value, specNote: undefined, specRevert: undefined, specOffer: undefined })}
                       placeholder="예: 4x30mm"
                       className={`flex-1 min-w-0 ${smallText}`} />
-                    <button type="button" onClick={() => patchItem(idx, { specText: undefined })}
+                    <button type="button" onClick={() => patchItem(idx, { specText: undefined, specNote: undefined, specRevert: undefined, specOffer: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">숫자 규격으로</button>
                   </div>
                 )}
+                {/* 영수증 규격을 지난 기록에 맞춘 흔적(2026-10-27). 묻지 않고 맞추되 그렇다고 말하고 되살리기를 둔다(§27.8 ①).
+                    카드 바탕(--coral-pale)은 다크에서 보조 잉크가 4.09:1 이라, 같은 카드의 세트 확인 줄처럼 --cream 상자에 앉힌다. */}
+                {it.specNote && (() => {
+                  const t = specNoteText(it.specNote)
+                  return (
+                    <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">
+                      <WhyCaption id={`ocr-spec-note-${idx}`}
+                        action={it.specNote.kind === 'offer'
+                          ? (it.specOffer ? { label: '채우기', onClick: () => applyItemOffer(idx) } : undefined)
+                          : t.revert && it.specRevert ? { label: t.revert, onClick: () => revertItemSpec(idx) } : undefined}>
+                        {t.text}
+                      </WhyCaption>
+                    </div>
+                  )
+                })()}
                 {/* 담은 품목의 브랜드·제품명 — **여기서 바로 고칠 수 있어야 한다**.
                     수정 화면은 이 카드만 보이므로 읽기 전용으로 두면 과거 지출에 브랜드를 넣을
                     길이 없다(운영자 지적 2026-08-27). 문법은 바로 위 '규격(직접)' 줄과 같다.
@@ -2120,9 +2167,11 @@ export default function FinanceClient({
       // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
       // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
       // specText(색상·사이즈 등 서술형 규격)가 있으면 처음부터 텍스트 규격 모드로 열림(숫자 규격 비움·개당 단가).
-      setAddItems(ocrItems.map((it, i) => {
-        const fill = lastFills[i]
-        const hasTextSpec = !!(it.specText && it.specText.trim())
+      // 규격 칸은 서버가 지난 기록에 맞춘 값(lib/itemVariants reconcileOcrItemsWithHistory)을 쓴다. AI 글자를 여기서 그대로
+      // 대입하지 않는다 — '183cm, 1.8T' 가 지난 기록 '폭 183cm · 두께 1.8T' 와 카드가 갈린 직접 원인이다(2026-10-27).
+      // 맞춘 품목은 specNote 에 영수증 원문을 쥐고 있어, 같은 규칙으로 영수증 원문 품목도 지어 되살리기(specRevert)를 남긴다.
+      const pickOf = (it: (typeof ocrItems)[number], fill: (typeof lastFills)[number], spec: { specValue?: string; specUnit?: string; specText?: string }) => {
+        const hasTextSpec = !!(spec.specText && spec.specText.trim())
         // 서술 규격(애플민트향)이 있어도 **숫자 규격(2.1L)을 버리지 않는다** — 신고 1fd2e22b.
         //
         // 종전에는 서술 규격이 잡히면 specValue·specUnit 을 비웠다. 그 결과 두 가지가 한꺼번에 틀어졌다.
@@ -2136,25 +2185,41 @@ export default function FinanceClient({
         // 기준은 **반드시 싣는다.** 종전에는 서술 규격이 없으면 undefined 로 두어, 영수증으로 담은
         // 품목이 부피든 길이든 무조건 규격당으로 읽혔다(basisOf 의 옛 `?? 'spec'`). 판정은 정본 하나
         // (lib/unitBasis) — 직전 구매에 기록이 있으면 그대로, 없으면 규칙이 답한다.
-        const specUnitHere = (it.specUnit ?? '') || (fill?.specUnit ?? '')
+        const specUnitHere = (spec.specUnit ?? '') || (fill?.specUnit ?? '')
         const qtyUnitHere  = (it.qtyUnit  ?? '') || (fill?.qtyUnit  ?? '')
         const basis = resolveUnitBasis({
           recorded: fill?.recordedBasis, specUnit: specUnitHere, qtyUnit: qtyUnitHere,
-          specText: hasTextSpec ? it.specText : null, trackUnit: fill?.trackUnit,
+          specText: hasTextSpec ? spec.specText : null, trackUnit: fill?.trackUnit,
         })
-        const specMulHere = basis === 'spec' ? (Number(it.specValue) || 1) : 1
+        const specMulHere = basis === 'spec' ? (Number(spec.specValue) || 1) : 1
         return {
-          label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
-          specValue: it.specValue ?? '',
+          specValue: spec.specValue ?? '',
           specUnit:  specUnitHere,
-          specText:  hasTextSpec ? it.specText!.trim() : undefined,
-          brand:       it.brand?.trim() || undefined,
-          productName: it.productName?.trim() || undefined,
+          specText:  hasTextSpec ? spec.specText!.trim() : undefined,
           unitBasis: basis,
-          qtyValue: it.qtyValue ?? '', qtyUnit: qtyUnitHere,
-          amount: it.amount,
+          qtyUnit: qtyUnitHere,
           // 정본 baseQtyOf 와 같은 규칙 — 기준수량 = 수량 × (spec 기준일 때만 규격값)
           unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * specMulHere)) : undefined,
+        }
+      }
+      setAddItems(ocrItems.map((it, i) => {
+        const fill = lastFills[i]
+        const now = pickOf(it, fill, { specValue: it.specValue, specUnit: it.specUnit, specText: it.specText })
+        const note = it.specNote
+        const receipt = note && (note.kind === 'aligned' || note.kind === 'filled') ? pickOf(it, fill, note.receipt) : null
+        const offer = note && note.kind === 'offer' ? pickOf(it, fill, note.spec) : null
+        return {
+          label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
+          specValue: now.specValue, specUnit: now.specUnit, specText: now.specText,
+          brand:       it.brand?.trim() || undefined,
+          productName: it.productName?.trim() || undefined,
+          unitBasis: now.unitBasis,
+          qtyValue: it.qtyValue ?? '', qtyUnit: now.qtyUnit,
+          amount: it.amount,
+          unitPrice: now.unitPrice,
+          specNote: note,
+          specRevert: receipt ? { specValue: receipt.specValue, specUnit: receipt.specUnit, specText: receipt.specText, unitBasis: receipt.unitBasis } : undefined,
+          specOffer: offer ? { specValue: offer.specValue, specUnit: offer.specUnit, specText: offer.specText, unitBasis: offer.unitBasis } : undefined,
         }
       }))
       setAddExpAmount(ocrItems.reduce((s, it) => s + it.amount, 0))

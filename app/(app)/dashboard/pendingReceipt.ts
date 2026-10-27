@@ -20,6 +20,8 @@ import { autoOptionForSave } from '@/lib/reasonListSave'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { reconcileOcrItemsWithHistory } from '@/lib/itemVariants'
+import type { SpecNote } from '@/lib/specNotation'
 import { uploadToDrive, downloadDriveBytes, buildReceiptImageUrl } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -121,6 +123,15 @@ async function applyLearnedItemAlias(propertyId: string, inferred: GeminiResult)
   return inferred
 }
 
+// 지난 기록 규격 맞추기 — 지출 등록 OCR(analyzeReceiptWithGemini)과 같은 도우미(lib/itemVariants, 2026-10-27).
+// 홈 승인 카드는 items[0] 하나를 쓰므로 요약 칸(specValue·specUnit)도 맞춘 값으로 다시 쓴다. 안 그러면 카드 칸과 딥링크 폼이 갈린다.
+async function reconcileInferred(propertyId: string, inferred: GeminiResult): Promise<GeminiResult> {
+  if (!inferred.items?.length) return inferred
+  const items = await reconcileOcrItemsWithHistory(propertyId, inferred.items)
+  const first = items[0]
+  return { ...inferred, items, specValue: first?.specValue, specUnit: first?.specUnit }
+}
+
 // 사진 업로드 → Drive 보관 + AI 분류 → pending row.
 export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
@@ -152,6 +163,8 @@ export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: tr
 
     // 2.5) 학습된 별칭 적용 — 과거에 사용자가 고쳐 확정한 품목명이 있으면 추론 결과를 선호명으로 치환.
     inferred = await applyLearnedItemAlias(propertyId, inferred)
+    // 2.6) 지난 기록 규격 맞추기 — 같은 품명을 예전에 산 적이 있으면 그때 표기를 따른다(별칭 다음).
+    inferred = await reconcileInferred(propertyId, inferred)
 
     // 3) row 적재
     const row = await prisma.pendingReceipt.create({
@@ -193,6 +206,7 @@ export type PendingReceiptRow = {
   specValue: string | null
   specUnit:  string | null
   specText:  string | null   // 서술형 규격(색상·사이즈 등) — 재고 등록 인라인 프리필용
+  specNote:  SpecNote | null // 지난 기록에 맞춘 흔적(items[0]) — 카드가 캡션·되살리기·'지출 등록에서 고르기' 줄을 띄운다
   qtyValue:  string | null
   qtyUnit:   string | null
   errorMsg:  string | null   // AI 인식 실패 사유(있으면 카드가 '인식 실패' + [다시 인식])
@@ -213,7 +227,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
       },
     })
     return rows.map(r => {
-      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string; vendorBizNo?: string; _error?: string; items?: { specText?: string }[] } | null) ?? null
+      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string; vendorBizNo?: string; _error?: string; items?: { specText?: string; specNote?: SpecNote }[] } | null) ?? null
       return {
         id: r.id,
         imageUrl: r.imageUrl,
@@ -229,6 +243,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
         specValue: parsed?.specValue ?? null,
         specUnit:  parsed?.specUnit  ?? null,
         specText:  parsed?.items?.[0]?.specText ?? null,
+        specNote:  parsed?.items?.[0]?.specNote ?? null,
         qtyValue:  parsed?.qtyValue  ?? null,
         qtyUnit:   parsed?.qtyUnit   ?? null,
         errorMsg:  parsed?._error    ?? null,
@@ -385,7 +400,8 @@ export async function getPendingReceiptImage(id: string): Promise<{ ok: true; ba
       orderNo: parsed?.orderNo,
       cardName: parsed?.cardName,
       cardLast4: parsed?.cardLast4,
-      items: parsed?.items ?? [],
+      // 이 기능 전에 올린 대기 항목도 같은 규칙으로 맞춘다. 이미 맞춘 품목(specNote)은 건드리지 않는다(영수증 원문 보존).
+      items: await reconcileOcrItemsWithHistory(propertyId, parsed?.items ?? []),
     }
     return { ok: true, base64: buf.toString('base64'), mime, imageUrl: row.imageUrl, ocr, ocrError: parsed?._error ?? null }
   } catch (e) {
@@ -414,6 +430,7 @@ export async function retryPendingReceiptAnalyze(id: string): Promise<{ ok: true
     }
     inferred._meta = { mime }
     inferred = await applyLearnedItemAlias(propertyId, inferred)
+    inferred = await reconcileInferred(propertyId, inferred)
     await prisma.pendingReceipt.update({
       where: { id },
       data: {

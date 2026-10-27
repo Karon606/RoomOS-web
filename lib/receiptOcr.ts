@@ -2,6 +2,7 @@
 // 'use server' 아님. 서버 전용(fetch·apiKey 사용) 순수 헬퍼 — 서버 액션에서 호출한다.
 
 import type { SetHint } from '@/lib/setHint'
+import type { SpecNote } from '@/lib/specNotation'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { kstYmdStr } from '@/lib/kstDate'
 
@@ -56,6 +57,8 @@ export type ReceiptOcrItem = {
   qtyValue?: string;  qtyUnit?: string
   amount: number
   setHint?: SetHint   // 세트 상품 의심(주문 1=실물 N) — 호출부에서 채움
+  // 지난 기록에 맞춘 흔적(lib/itemVariants reconcileOcrItemsWithHistory). 영수증 원문 규격을 쥐고 있어 화면이 되살린다.
+  specNote?: SpecNote
 }
 export type ReceiptOcrResult = {
   date?: string         // YYYY-MM-DD
@@ -69,6 +72,24 @@ export type ReceiptOcrResult = {
   cardLast4?: string    // 마스킹 카드번호에서 보이는 끝 4자리 — 4자리 숫자 아니면 undefined
   kind?: 'expense' | 'inventory' | 'unknown'   // 홈 격상 경로에서만 요청(withKind)
   notes?: string        // 한 줄 요약 — 홈 카드 표시용(withKind)
+}
+
+// 이 사업장 품목 사전 블록 — 품목명·관행 단위·**품목별 규격 표기**(2026-10-27). 영수증 인식이 운영자가 쓰는 이름·단위·표기로
+// 수렴하게 한다. 규격 표기를 안 넘기면 같은 장판을 '183cm, 1.8T' 로 읽어 지난 기록 '폭 183cm · 두께 1.8T' 와 카드가 갈린다.
+// 표기는 그 품목에서 많이 쓴 순으로 둘까지만 싣는다(프롬프트 길이). 인식 뒤 맞추기는 lib/itemVariants 가 다시 한다(AI 를 믿지 않는다).
+export type ReceiptVocabEntry = { label: string; specUnit: string | null; qtyUnit: string | null; notations: string[] }
+export function buildVocabBlock(entries: ReceiptVocabEntry[]): string {
+  if (!entries.length) return ''
+  const lines = entries.map(e => {
+    const parts: string[] = []
+    if (e.specUnit || e.qtyUnit) parts.push(`규격단위 ${e.specUnit ?? '없음'} · 수량단위 ${e.qtyUnit ?? '없음'}`)
+    if (e.notations.length) parts.push(`규격 표기 ${e.notations.map(n => `'${n}'`).join(' 또는 ')}`)
+    return `${e.label}${parts.length ? ` (${parts.join(' · ')})` : ''}`
+  })
+  return `
+
+이 사업장에서 쓰는 품목명·단위·규격 표기 목록 (인식한 품목이 이 중 하나와 같은 물건이면, 상표명·표기가 달라도 반드시 이 이름과 단위 표기를 그대로 쓰세요. 예: '모나리자 키친타올'도 목록에 '키친타월 (롤타입)'이 있으면 그 이름으로. 규격 표기가 적힌 품목은 같은 규격이면 specText 를 그 표기 그대로 쓰세요. 숫자가 다르면 영수증에 보이는 대로 쓰세요):
+- ${lines.join('\n- ')}`
 }
 
 // 정밀 OCR 프롬프트 생성. withKind 면 분류(kind)·요약(notes) 필드를 함께 요청(홈 격상 경로).
