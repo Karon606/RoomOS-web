@@ -100,3 +100,23 @@
 - **배포 전 행.** 운영 실측(2026-10-27) 결제수단 빈 지출 9건(청소 5, 작업 2, 작업에 안 걸린 수선유지비 0원 2), 전부 정산완료. 운영자에게 목록을 보여 실제 수단을
   확인한 뒤 `scripts/backfill-expense-paymethod.ts`(예행 기본, --apply 조건부, --revert, 정산상태 SETTLED 고정)로 채운다. 앱이 짐작해 채우지 않는다.
 - 그물. `check-work-expense-paymethod`(정적, verify:fast) · `check-work-expense-paymethod-drift`(장부, verify:db, 백필 전 알려진 7건까지는 경고).
+
+## 한 건 수정 (2026-10-27 운영자 지적, 승인 계획 2단계)
+
+운영자 원문 요지. "특정 내역만 수정하고 싶은데 편집을 누르니 내역 전체를 수정할 수 있게 되버리네… 다른 내역을 잘못 건드리면 바뀌어서 불안해.
+금액만 바꿀 수 있고 날짜는 날짜변경을 따로 눌러야하고 업체나 상세 내역은 수정을 못하네".
+
+- **방 모달 작업 이력의 '편집' 모드는 없다.** 행마다 [수정](RowActionBtn neutral) → 그 한 건만 고치는 Modal(`components/work/RoomWorkEditModal`,
+  껍데기 `components/ui/RecordEditShell`). 되돌림·삭제는 Modal 발끝 `관리` 메뉴(완료 적용취소·삭제). 행 상시 버튼은 [완료 처리](예정)와 [수정] 뿐이다.
+  호실 관리 작업 탭이 같은 행을 같은 props 로 부르고 층만 다르다(방 모달 안 260, 페이지 200). 가이드 §27.1 끝에 등재했다.
+- **칸**: 날짜(완료일·예정일) → 종류(CategorySelect auto, 지금 종류면 목록에 안 더함) → 수행자 칩 + 업체 → 시공비 ₩(완료 건) → 결제수단(+카드) → 메모.
+  서버 `updateRoomWork` 한 트랜잭션, 연 시각(updatedAt)과 다르면 거부(조건부 쓰기).
+- **걸린 지출 1건**이면 그 지출의 금액·업체·결제수단을 고친다(정산상태는 settleStatusForEdit). 품목명이 정확히 '{옛 종류} 시공' 이면 새 종류로
+  품목명·내역을 고친다(결정 6, 완료가 만든 줄만). **지출 날짜는 안 옮긴다.** 0원은 받지 않는다(지출 화면에서 지운다).
+- **여러 건**이면 금액 칸 대신 읽기 전용 줄 목록. 줄마다 [금액·업체 고치기](`updateWorkExpense`, 그 작업에 걸린 지출만, 적용취소 있음) 또는 '지출 화면 열기'(결정 7).
+  종전 즉시 저장 금액 칸(적용취소 없음, §16 위반)은 걷었다.
+- **0건**인 완료 작업에 시공비를 적으면 시공 지출을 새로 만든다. 같은 날 이 방에 걸릴 만한 미연결 시공 지출이 있으면(lib/roomWorkMatch) 만들지 않고 거부한다(두 벌 방지).
+- **적용취소**: 저장 토스트 [적용취소] 가 저장 직전 모습 전체(작업 칸 + 함께 고친 지출, 만든 지출은 지운다)로 되돌린다. 서명 토큰(lib/roomRecordEditUndo, 용도 room-record-edit-v1)이고
+  지금이 '쓴 직후' 그대로일 때만(하나라도 다르면 아무것도 안 함). 정본 `app/(app)/room-manage/recordEditActions.ts undoRoomRecordEdit`.
+- 종전 `rescheduleRoomWork`(날짜 변경 문)는 행 안 폼과 함께 걷었다.
+- 그물. `check-room-record-edit`(배선) · `test-room-record-edit-flow`(PGlite) · `check-work-link-wiring` 한 건 수정 축.

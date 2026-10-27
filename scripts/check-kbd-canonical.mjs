@@ -22,6 +22,7 @@ const ALLOW = new Map([
   ['components/ui/ImageLightbox.tsx', '이미지 라이트박스 — 입력 없음'],
   ['components/layout/Sidebar.tsx', '모바일 드로어 딤 — 입력 없음'],
   ['components/ui/DatePicker.tsx', '탭 조작 팝오버(자리는 usePopoverAnchor) — 소프트 키보드가 안 뜬다'],
+  ['components/ui/RecordEditShell.tsx', '한 건 수정 Modal 발끝 관리 메뉴의 외부클릭 닫기 투명층(재고 상세 발끝 메뉴와 같은 문법). 메뉴는 버튼뿐이고 입력 폼은 정본 Modal 안'],
 ])
 
 function walk(dir, out = []) {

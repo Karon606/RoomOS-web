@@ -58,25 +58,15 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   // (§11 최대 2개를 이미 넘겼다) 이 위젯 말고는 앱 어디에도 안 뜬다. 접어서 숨기면 그 사실이
   // 앱에서 사라진다. 손으로 접거나 편 것은 그 세션 동안 규칙보다 강하다.
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
-  // 편집 모드 — 끄면 행 조작이 안 보인다. 운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해".
-  //
-  // **[삭제]가 아니라 [완료 적용취소]가 진짜 위험했다.** 삭제는 확인창과 되돌리기 토스트를
-  // 둘 다 갖췄는데 완료 적용취소는 즉발이었다(같은 날 확인창을 달았다). 그래서 '삭제만 감추기'가
-  // 아니라 전부 감춘다 — 가르면 무엇이 감춰지는지를 운영자가 외워야 하고, 직관대로 가르면
-  // 정작 위험한 것만 남는다.
-  //
-  // 새 문법이 아니다. 선택 모드(계약서·입주자·재고 세 화면)가 같은 껍데기로 "모드 켜면
-  // 개별 액션 숨김"을 이미 한다(§23 — 숨김이지 비활성이 아니다).
-  //
-  // 기억하지 않는다. 켜진 채로 기억되면 다음에 열 때 운영자가 무서워한 그 화면이 그대로 뜬다.
-  const [editing, setEditing] = useState(false)
-  // 방을 바꾸면(방 전환 세그먼트) 편집·접힘을 원래대로 — 앞 방에서 켠 편집이 따라가면
-  // 새 방이 열리자마자 조작이 서 있게 된다. effect 가 아니라 렌더 중 조정이다(React 권장 패턴,
-  // MonthSelector 가 쓰는 그 문법) — effect 에서 setState 를 부르면 리렌더가 한 번 더 돈다.
+  // 종전 '편집' 모드(2026-08-27, 운영자 지적 "뭔가 눌릴까봐 불안해")는 걷었다(2026-10-27). 하나를 켜면 목록 전체 행의 날짜 변경·
+  // 적용취소·삭제와 즉시 저장 금액 칸이 한꺼번에 서서, 운영자 원문 "특정 내역만 수정하고 싶은데 편집을 누르니 내역 전체를 수정할 수 있게
+  // 되버리네… 다른 내역을 잘못 건드리면 바뀌어서 불안해" 가 그 결과였다. 이제 행마다 [수정] 이 그 한 건만 여는 Modal 이고,
+  // 되돌림·삭제는 그 Modal 발끝 `관리` 메뉴다(가이드 §27.1·§13). 호실 관리 작업 탭이 같은 행을 같은 props 로 부른다.
+  // 방을 바꾸면(방 전환 세그먼트) 접힘·삭제분 보기를 원래대로 — effect 가 아니라 렌더 중 조정이다(React 권장 패턴).
   const [trashOpen, setTrashOpen] = useState(false)
   const [trash, setTrash] = useState<Merged[] | null>(null)
   const [syncedRoom, setSyncedRoom] = useState(roomId)
-  if (syncedRoom !== roomId) { setSyncedRoom(roomId); setEditing(false); setUserOpen(null); setTrashOpen(false); setTrash(null) }
+  if (syncedRoom !== roomId) { setSyncedRoom(roomId); setUserOpen(null); setTrashOpen(false); setTrash(null) }
   // 최근에 맡긴 업체·사람 — 완료 폼 이름 칸 선택지. 없는 영업장은 손으로 적는다.
   const [recentPerformers, setRecentPerformers] = useState<string[]>([])
 
@@ -97,7 +87,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   }
   useEffect(reload, [roomId])
 
-  // 삭제분 — 편집 모드에서 '삭제된 N건 보기'를 눌렀을 때만 조회한다.
+  // 삭제분 — '삭제된 기록 보기'를 눌렀을 때만 조회한다(링크는 목록 아래 상시).
   //
   // **§16 의 2순위 진입점이다.** 종전에는 삭제를 되돌릴 길이 토스트(6초)뿐이라 놓치면
   // 앱 어디에도 복원 진입점이 없었다. 코드 주석은 호실 관리 '청소' 뷰에 '삭제됨 보기'가
@@ -227,13 +217,13 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
             <li key={`${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
               {m.sort === 'c' ? (
                 <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
-                  canEdit={canEdit} showActions={canEdit && editing} onChanged={reload}
+                  canEdit={canEdit} modalZ={260} onChanged={reload}
                   onOpenInspection={i => { setUserOpen(true); setFocusInspection(i.id) }} />
               ) : m.sort === 'i' ? (
-                <InspectionRowBody row={m.inspection} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload}
+                <InspectionRowBody row={m.inspection} canEdit={canEdit} modalZ={260} onChanged={reload}
                   onItemsSettled={() => router.refresh()} autoOpen={focusInspection === m.inspection.id} />
               ) : (
-                <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing}
+                <RoomWorkRowBody row={m.work} canEdit={canEdit} modalZ={260}
                   recentPerformers={recentPerformers} onChanged={reload} />
               )}
             </li>
@@ -262,19 +252,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       {openInspection && (
         <p className="mt-2 text-xs text-[var(--warning-fg)] break-keep">{INSPECTION_STAGE_LABEL[openInspection.stage]} 예정이 남아 있습니다. 호실 목록에도 표시됩니다.</p>
       )}
-      {/* 편집 토글 — 헤더가 아니라 목록 아래다. 헤더에 넣으면 셰브론 + 등록 둘 + 편집으로 넷이 되어
-          §23 의 'CTA 1~2개'를 넘기고 320px 에서 접힌다. 접혀 있으면 이 버튼도 함께 숨어
-          버튼이 0개가 된다. 데이터가 오기 전에는 안 그린다 — 눌러도 아무 일이 없다. */}
-      {canEdit && rows !== null && works !== null && inspections !== null && merged.length > 0 && (
-        <div className="mt-2 flex justify-end">
-          <Btn variant="secondary" size="sm" onClick={() => setEditing(e => !e)}>
-            {editing ? '편집 완료' : '편집'}
-          </Btn>
-        </div>
-      )}
-      {/* 삭제분 — 편집 모드에서만 연다. §16 의 2순위 진입점이고, 종전에는 없었다.
-          평소에는 목록을 늘리지 않으려고 조회조차 안 한다(누를 때 가져온다). */}
-      {canEdit && editing && (
+      {/* 삭제분 — §16 의 2순위 진입점. 링크는 목록 아래 상시이고(2026-10-27 편집 모드를 걷으며 늘 선다),
+          평소에는 목록을 늘리지 않으려고 조회조차 안 한다(누를 때 가져온다). 데이터가 오기 전에는 안 그린다. */}
+      {canEdit && rows !== null && works !== null && inspections !== null && (
         trashOpen ? (
           <div className="mt-2 border-t border-[var(--warm-border)] pt-2">
             <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1.5">삭제된 기록</p>
@@ -289,11 +269,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                   <li key={`t-${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
                     {m.sort === 'c' ? (
                       <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
-                        canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
+                        canEdit={canEdit} modalZ={260} deleted onChanged={() => { reload(); loadTrash() }} />
                     ) : m.sort === 'i' ? (
-                      <InspectionRowBody row={m.inspection} canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
+                      <InspectionRowBody row={m.inspection} canEdit={canEdit} modalZ={260} deleted onChanged={() => { reload(); loadTrash() }} />
                     ) : (
-                      <RoomWorkRowBody row={m.work} canEdit={canEdit} deleted
+                      <RoomWorkRowBody row={m.work} canEdit={canEdit} modalZ={260} deleted
                         recentPerformers={recentPerformers} onChanged={() => { reload(); loadTrash() }} />
                     )}
                   </li>

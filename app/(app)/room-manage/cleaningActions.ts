@@ -408,51 +408,6 @@ export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKep
 }
 
 /**
- * 그 행에 보이는 날짜를 바꾼다. 예정·안 함 건은 예정일, 완료 건은 완료일이다.
- * 화면의 동사는 어느 쪽이든 '날짜 변경' 하나라 서버 동사도 하나로 둔다.
- *
- * 완료 건의 완료일은 지출 date 와 짝이라 **연결된 지출의 날짜도 함께 옮긴다.**
- * completeCleaning 이 생성·수정 양쪽에서 doneDate 를 지출 date 로 쓰고 있어,
- * 여기만 안 옮기면 청소 이력과 지출 화면의 같은 건이 서로 다른 날을 말한다.
- *
- * 종전에는 예정 상태에서만 열려 있었다. 완료일을 고칠 문이 없으니 운영자가 되돌리기로
- * 우회했고, 그 우회로가 지출을 두 건으로 불리던 경로였다(reopenCleaning 주석 참고).
- */
-export async function rescheduleCleaning(input: { id: string; date: string }): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await requireEdit()
-    const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomCleaning.findFirst({
-      where: { id: input.id, propertyId, deletedAt: null },
-      select: { id: true, status: true, expenseId: true },
-    })
-    if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    const date = ymdToDbDate(input.date)
-    if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
-
-    if (cur.status !== 'DONE') {
-      await prisma.roomCleaning.update({ where: { id: input.id }, data: { scheduledDate: date } })
-      revalidatePath('/room-manage')
-      return { ok: true }
-    }
-    // 여기부터는 완료일이다 — 미래를 막는다(예정일은 위에서 이미 빠져나갔다).
-    const fg = assertNotFuture(input.date)
-    if (!fg.ok) return { ok: false, error: fg.reason }
-    await prisma.$transaction(async tx => {
-      await tx.roomCleaning.update({ where: { id: input.id }, data: { doneDate: date } })
-      // updateMany 라 지출이 이미 지워졌으면 조용히 0건이다. update 였다면 없는 것을 고치려다
-      // 트랜잭션이 깨져 완료일 변경까지 실패한다.
-      if (cur.expenseId) await tx.expense.updateMany({ where: { id: cur.expenseId, propertyId }, data: { date } })
-    })
-    revalidatePath('/room-manage')
-    revalidatePath('/finance')
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
-  }
-}
-
-/**
  * 청소 사유 변경 — 잘못 고른 사유를 고친다.
  *
  * 왜 필요한가. 사유는 만들 때만 받고 그 뒤로는 못 바꿨다. 8/17 청소를 '공사·도배 후'로

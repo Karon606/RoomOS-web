@@ -9,7 +9,8 @@
 // 쓰기는 두 무게다(독립 검수 R1, 운영자 결정 ④).
 //   · 항목 판정(확인·문제·해당 없음)은 켜고 끄는 토글이다. 토스트 없이 바로 저장하고, 다시 누르면 되돌아가는 것이 적용취소다.
 //     행이 든 항목만 고치고 화면 전체를 다시 그리지 않는다. 잠금도 그 항목 하나뿐이라 연달아 체크할 수 있다.
-//   · 점검 완료·안 함·삭제·복원·항목 삭제·손수 더하기는 토스트 [적용취소](§16)가 있다. 점검 상태 쓰기만 부모를 다시 읽는다.
+//   · 점검 완료·복원·항목 삭제·손수 더하기는 토스트 [적용취소](§16)가 있다. 점검 상태 쓰기만 부모를 다시 읽는다.
+//   · 예정일·메모 고치기와 안 하기로·상태 적용취소·삭제는 [수정] 이 여는 한 건 수정 Modal(InspectionEditModal, 2026-10-27)이 맡는다.
 // 체크 상자는 22px r7 정본(§22 '항목 완료 체크')이고 누르는 자리는 44px 다. 판정 셋이 모두 상자에 보인다(확인 = 코랄 채움 + 체크,
 // 문제 = warning 틴트 + 가로줄, 해당 없음 = 중립 틴트 + 가로줄). 진행 '점검 N/M' 의 N 이 곧 채워진 상자 수다.
 // 같은 판정을 배지·상자·토글로 세 번 말하지 않는다(디자이너 재검수). 상자 + 눌린 토글 칩 + (문제면) 메모가 전부다.
@@ -28,11 +29,11 @@ import { pushToast, trackSave, type ToastAction } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { withParticle } from '@/lib/koParticle'
 import {
   getInspectionItems, setInspectionItemResult, addInspectionItem, removeInspectionItem, restoreInspectionItem,
-  completeInspection, reopenInspection, skipInspection, deleteInspection, restoreInspection,
+  completeInspection, reopenInspection, deleteInspection, restoreInspection,
 } from '@/app/(app)/room-manage/inspectionActions'
+import { InspectionEditModal } from '@/components/inspection/InspectionEditModal'
 import {
   INSPECTION_STAGE_LABEL, INSPECTION_STATUS_LABEL, INSPECTION_LABEL_MAX, inspectionProgressText, countChecked,
   type InspectionRow, type InspectionItemRow, type InspectionStatus, type InspectionItemResult,
@@ -77,17 +78,18 @@ function ToggleChip({ on, tone, disabled, onClick, children }: {
 }
 
 export function InspectionRowBody({
-  row: r, canEdit, deleted = false, showActions = true, autoOpen = false, onOpenRoom, onChanged, onItemsSettled,
+  row: r, canEdit, deleted = false, modalZ, autoOpen = false, onOpenRoom, onChanged, onItemsSettled,
 }: {
   row: InspectionRow
   canEdit: boolean
   /** 삭제된 행 — 복원만 할 수 있다. */
   deleted?: boolean
   /**
-   * 관리 동작(안 하기로·상태 적용취소·삭제)을 세울 것인가. 기본 true(목록 화면). 방 모달은 편집 모드에서만 켠다
-   * (형제 청소 행과 같은 규칙). **예정 점검의 '점검하기'·'점검 완료' 와 항목 판정은 이 값과 무관하게 선다.**
+   * 한 건 수정 Modal 의 층(2026-10-27). 방 모달(EntityModal) 안이면 260, 페이지(호실 관리 작업 탭)면 200.
+   * 종전 '편집' 모드(showActions)는 걷었다. 행에는 [항목 펼치기]·[점검 완료](예정)·[수정] 만 상시로 서고, 안 하기로·상태 적용취소·삭제는
+   * 그 Modal 발끝 `관리` 메뉴다(가이드 §27.1·§13). 항목 판정은 행 안에서 그대로다.
    */
-  showActions?: boolean
+  modalZ: 200 | 260
   /** 처음부터 항목을 펼친다(퇴실·청소 완료 토스트의 '열기' 로 들어온 자리). */
   autoOpen?: boolean
   /** 호실번호 버튼 — 영업장 교차 목록에서만 선다. */
@@ -103,10 +105,11 @@ export function InspectionRowBody({
   const [items, setItems] = useState<InspectionItemRow[] | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [doneOpen, setDoneOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [doneDate, setDoneDate] = useState(kstYmdStr())
   const [newLabel, setNewLabel] = useState('')
   // 항목 편집 — 켜야 항목 삭제·손수 더하기가 선다. 체크 줄마다 삭제가 상시로 서면 겨눈 체크 옆을 스쳐 눌린다
-  // (방 모달 작업 이력의 '편집' 과 같은 판단, 운영자 지적 2026-08-27). 기억하지 않는다.
+  // (운영자 지적 2026-08-27 의 판단, 이 점검 한 건의 항목 안에서만 켠다). 기억하지 않는다.
   const [itemEdit, setItemEdit] = useState(false)
   // 문제 메모를 적는 항목 하나. '문제' 를 누르면 먼저 이 칸이 열리고 저장 한 번에 문제 + 메모가 함께 남는다(독립 검수 R9).
   const [noteFor, setNoteFor] = useState<string | null>(null)
@@ -351,7 +354,7 @@ export function InspectionRowBody({
             </ul>
           )}
           {/* 손수 더하기 — 목록에 없는 비품(공유기·셋탑 같은 것)을 이 점검에만 더한다. 영업장 목록은 분류 관리에서 고친다.
-              항목 편집을 켜야 선다. 토글은 목록 아래 오른쪽이다(방 모달 작업 이력의 '편집' 자리와 같다). */}
+              항목 편집을 켜야 선다. 토글은 목록 아래 오른쪽이다. */}
           {editable && items !== null && !loadFailed && (
             <div className="mt-1.5 space-y-2 border-t border-[var(--warm-border)]/60 pt-2">
               {itemEdit && (
@@ -404,37 +407,11 @@ export function InspectionRowBody({
           {r.status === 'PLANNED' && (
             <RowActionBtn tone="accent" disabled={pending} onClick={() => { setDoneDate(kstYmdStr()); setDoneOpen(true) }}>점검 완료</RowActionBtn>
           )}
-          {showActions && (<>
-            {r.status === 'PLANNED' && (
-              <RowActionBtn tone="neutral" disabled={pending}
-                onClick={async () => {
-                  if (!(await confirmDialog({ title: `이 ${withParticle(stage, '을/를')} 안 하기로 할까요?`, message: "기록은 남고 상태만 바뀝니다. 같은 자리의 '안 함 적용취소'로 되돌릴 수 있습니다.", confirmLabel: '안 하기로', level: 'caution' }))) return
-                  run(() => skipInspection(r.id), '안 하기로 표시됨', undefined,
-                    () => undo(() => reopenInspection(r.id), '안 함을 적용취소했습니다 · 예정으로 복귀'))
-                }}>
-                안 하기로
-              </RowActionBtn>
-            )}
-            {r.status !== 'PLANNED' && (
-              <RowActionBtn tone="accent" disabled={pending}
-                onClick={() => {
-                  const what = r.status === 'DONE' ? '완료' : '안 함'
-                  run(() => reopenInspection(r.id), `${what} 적용취소됨`)
-                }}>
-                {r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소'}
-              </RowActionBtn>
-            )}
-            <RowActionBtn tone="danger" disabled={pending} className="ml-auto"
-              onClick={async () => {
-                if (!(await confirmDialog({ title: `이 ${stage} 기록을 삭제할까요?`, message: '기록이 목록에서 사라집니다. 체크한 항목은 함께 보관되어 복원하면 돌아옵니다.', confirmLabel: '삭제', level: 'danger' }))) return
-                run(() => deleteInspection(r.id), '삭제됨', undefined,
-                  () => undo(() => restoreInspection(r.id), '점검 기록을 복원했습니다'))
-              }}>
-              삭제
-            </RowActionBtn>
-          </>)}
+          {/* 한 건 수정 — 예정일·메모와 관리 메뉴(안 하기로·완료/안 함 적용취소·삭제)를 그 한 건만 여는 Modal 에 모았다(2026-10-27). */}
+          <RowActionBtn tone="neutral" disabled={pending} onClick={() => { setDoneOpen(false); setEditOpen(true) }}>수정</RowActionBtn>
         </div>
       )}
+      {editOpen && <InspectionEditModal row={r} z={modalZ} onClose={() => setEditOpen(false)} onChanged={onChanged} />}
     </>
   )
 }

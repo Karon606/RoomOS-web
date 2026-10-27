@@ -6908,3 +6908,11 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 재검수 3차: 입실 판정 정본 isMoveInTransition 하나로 모든 입실 경로(계약 생성·투어 완료 등 예약 아닌 상태에서 거주중·일괄 편집·엑셀 가져오기·방 이동)를 덮고, 닫는 경로마다 짝인 적용취소(호실 일정 입실 적용취소·이사 적용취소 포함)가 되열게 했다. 닫기·되열기 조건부 쓰기, 접을 때·모달 닫을 때 한 번 맞춤, 메모 고침 적용취소, '긴급만' 칩 문법 토글과 배지 중복 제거.
 - 재확인 4차: 일괄 수정 적용취소는 입실의 정확한 역(undoesMoveIn)으로 비거주·퇴실 완료에서 들어온 입실도 되열고(일반 전이는 입주 전 단계만, 진짜 퇴실은 안 연다), 입실과 방 이동의 닫은 표식을 auto-movein·auto-move 로 갈라 입실 적용취소가 이사로 닫은 방을 안 열게 했다. 수정 폼 호실 변경은 짝 없음 그대로(운영자 확인).
 - 별건: 다크 info 배지 토큰(R8), 홈 알림·푸시(2차).
+
+## 2026-10-27 작업 이력 결제수단·한 건 수정·견적 (운영자 지적, 승인 계획 '전부 추천안')
+- 1단계 결제수단: 작업·청소 완료 폼이 비용을 적으면 결제수단(+계좌·카드)을 묻는다(components/finance/PayMethodField·components/work/useWorkPay). 기본값 정본 lib/workPayDefault(같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값),
+  서버도 값이 없으면 같은 규칙으로 채운다. 만들 때 settleStatusForNew·고칠 때 settleStatusForEdit(신용카드면 미정산으로 카드 정산). 결제 계정은 그 영업장 것만, 표시명은 계정에서. effectivePayMethods·accName 은 lib/payMethodOptions 로 옮기고 기록 모달이 다시 내보낸다.
+  결제수단 빈 기존 지출(운영 9건, 작업·청소 연결 7건)은 운영자 확인 뒤 scripts/backfill-expense-paymethod.ts(예행 기본, 실행 안 함). 그물 check-work-expense-paymethod·check-work-expense-paymethod-drift(경고 7).
+- 2단계 한 건 수정: 방 모달 작업 이력 '편집' 모드를 걷고 행 [수정] → 그 한 건만 고치는 Modal(RecordEditShell + 작업·청소·점검 수정 Modal). 서버 updateRoomWork·updateCleaning·updateInspection(조건부 쓰기, 한 트랜잭션),
+  updateWorkExpense 는 그 작업 범위로 좁히고 적용취소를 달았다. 저장 적용취소는 서명 토큰 undoRoomRecordEdit(저장 직전 모습 전체, 그사이 바뀌면 거부). 관리 메뉴 §13, 가이드 §27.1 등재, 날짜 변경 문 둘 제거.
+  그물 check-room-record-edit·test-room-record-edit-flow(PGlite).

@@ -230,6 +230,8 @@ const HINT_FIELD = {
   'components/entity-modal/widgets/DiscountWidget.tsx': 'discountReasons',
   // 2차(2026-10-22). 작업 종류·부가수익 카테고리·지출 카테고리 남은 자리(고정 지출 둘·일괄 수정·홈 승인).
   'components/work/RoomWorkPlanForm.tsx': 'workKindOptions',
+  // 작업 한 건 수정(2026-10-27). 예정 등록과 같은 종류 칸이다.
+  'components/work/RoomWorkEditModal.tsx': 'workKindOptions',
   'app/(app)/rooms/IncomeSection.tsx': 'incomeCategories',
   'app/(app)/settings/SettingsForm.tsx': 'expenseCategories',
   'components/dashboard/PendingReceiptSection.tsx': 'expenseCategories',
@@ -562,16 +564,16 @@ const os = bodyOf(form, /function OptionSection\(/)
     // 소모품 폐기 사유(폐기 기록)·무상 입수 출처(등록·수정 같은 칸), 비품 폐기 사유(폐기·분실과 교체).
     'app/(app)/inventory/InventoryClient.tsx': ['stockDisposalReasons', 'stockSourceOptions'],
     'app/(app)/inventory/assets/AssetsClient.tsx': ['assetDisposalReasons'],
-    // 청소 사유(예정 등록·사유 변경). 코드 셋이 맨 앞에 서고 그 뒤가 영업장 목록이다.
+    // 청소 사유(예정 등록·한 건 수정). 코드 셋이 맨 앞에 서고 그 뒤가 영업장 목록이다. 사유 변경은 행 안 폼에서 한 건 수정 Modal 로 옮겼다(2026-10-27).
     'components/cleaning/CleaningPlanForm.tsx': ['cleaningReasons'],
-    'components/cleaning/CleaningRowBody.tsx': ['cleaningReasons'],
+    'components/cleaning/CleaningEditModal.tsx': ['cleaningReasons'],
   }
   const ASK_COUNT = {
     'components/entity-modal/widgets/TenantStatusTransitions.tsx': 2, 'components/entity-modal/widgets/TenantStatusHistory.tsx': 1,
     'app/(app)/tenants/TenantClient.tsx': 4, 'app/(app)/dashboard/DashboardClient.tsx': 1, 'components/entity-modal/widgets/DepositStatusPanel.tsx': 1,
     'components/entity-modal/widgets/DueDayTempAdjustWidget.tsx': 1,
     'app/(app)/inventory/InventoryClient.tsx': 3, 'app/(app)/inventory/assets/AssetsClient.tsx': 2,
-    'components/cleaning/CleaningPlanForm.tsx': 1, 'components/cleaning/CleaningRowBody.tsx': 1,
+    'components/cleaning/CleaningPlanForm.tsx': 1, 'components/cleaning/CleaningEditModal.tsx': 1,
   }
   for (const p of SOURCES) {
     const code = stripComments(readFileSync(p, 'utf8'))
@@ -803,7 +805,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     // 고르는 칸: 코드 셋 맨 앞 + 영업장 목록, 보이는 글자는 라벨 함수 한 벌. 코랄 채움 칩(§03 위반)은 걷었다.
     ['components/cleaning/CleaningPlanForm.tsx', /options=\{reasonOptions\} getLabel=\{cleaningReasonLabel\}/, '청소 예정 폼 사유 칸이 코드 셋·목록을 라벨 함수로 보여 주지 않는다'],
     ['components/cleaning/CleaningPlanForm.tsx', /const reasonOptions = \[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]/, '청소 예정 폼 사유 칸이 코드 셋을 맨 앞에 두지 않는다'],
-    ['components/cleaning/CleaningRowBody.tsx', /options=\{\[\.\.\.CLEANING_REASON_CODES, \.\.\.listedReasons\]\} getLabel=\{cleaningReasonLabel\}/, '청소 사유 변경 칸이 예정 폼과 같은 칸이 아니다'],
+    ['components/cleaning/CleaningEditModal.tsx', /options=\{\[\.\.\.CLEANING_REASON_CODES, \.\.\.listed\]\} getLabel=\{cleaningReasonLabel\}/, '청소 한 건 수정의 사유 칸이 예정 폼과 같은 칸이 아니다'],
     ['components/cleaning/CleaningRowBody.tsx', /\{cleaningReasonLabel\(r\.reason\)\}/, '청소 행이 사유를 라벨 함수로 읽지 않는다(목록 이름·기타 · 글이 빈 칸으로 선다)'],
     ['lib/moveCalendarData.ts', /const label = cleaningReasonLabel\(reason\)/, '캘린더가 청소 사유를 라벨 함수로 읽지 않는다'],
     // 사유 칸 접근 이름·포커스·높이(2차 독립 검수). 맨 select·글자칸이 CategorySelect 로 바뀌며 이름(label htmlFor·aria-label·placeholder)이 사라졌다.
@@ -811,7 +813,7 @@ const os = bodyOf(form, /function OptionSection\(/)
     ['components/ui/CategorySelect.tsx', /autoFocus=\{customMode\}/, "auto 칸이 목록 밖 값으로 열려도 커서를 끌어와 모바일 키보드를 띄운다('기타(직접 입력)' 을 방금 골랐을 때만 둔다)"],
     ['components/work/RoomWorkPlanForm.tsx', /htmlFor=\{`\$\{uid\}-kind`\}>작업 종류<\/label>[\s\S]{0,80}id=\{`\$\{uid\}-kind`\} ariaLabel=\{dense \? '작업 종류' : undefined\}/, '작업 예정 폼 종류 칸이 라벨(htmlFor)·dense 이름을 잃었다'],
     ['components/cleaning/CleaningPlanForm.tsx', /htmlFor=\{`\$\{uid\}-reason`\}>사유<\/label>[\s\S]{0,400}id=\{`\$\{uid\}-reason`\} ariaLabel=\{dense \? '청소 사유' : undefined\}/, '청소 예정 폼 사유 칸이 라벨(htmlFor)·dense 이름을 잃었다'],
-    ['components/cleaning/CleaningRowBody.tsx', /ariaLabel="청소 사유"/, '청소 사유 변경 칸이 접근 이름을 잃었다'],
+    ['components/cleaning/CleaningEditModal.tsx', /ariaLabel="청소 사유"/, '청소 한 건 수정의 사유 칸이 접근 이름을 잃었다'],
     ['components/entity-modal/widgets/DueDayTempAdjustWidget.tsx', /ariaLabel="납부일 조정 사유"[\s\S]{0,300}className="w-full h-\[calc\(2rem\+2px\)\]/, '수납 정보 납부일 사유 칸이 접근 이름이나 옆 칸과 같은 높이를 잃었다'],
     ['app/(app)/tenants/TenantClient.tsx', /ariaLabel="납부일 조정 사유"[\s\S]{0,800}className="w-full h-\[calc\(2rem\+2px\)\]/, '입주자 상세 납부일 사유 칸이 접근 이름이나 옆 칸과 같은 높이를 잃었다'],
     ['app/(app)/tenants/TenantClient.tsx', /<div className="col-span-2 space-y-1\.5 min-w-0">\s*<label htmlFor=\{`visitRoute-\$\{formUid\}`\}[\s\S]{0,300}id=\{`visitRoute-\$\{formUid\}`\}/, '방문 경로 칸이 전폭(col-span-2)·라벨(htmlFor)을 잃었다(반폭이면 직접 입력 칸이 67px 로 준다)'],
@@ -821,9 +823,9 @@ const os = bodyOf(form, /function OptionSection\(/)
     // dense 칸 포커스 링은 --tc-text(§12). 빠지면 '기타' 를 고른 순간 브라우저 기본 파란 링이 선다.
     ['components/cleaning/CleaningPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '청소 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
     ['components/work/RoomWorkPlanForm.tsx', /\? 'w-full [^']*px-2 py-1 text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30'/, '작업 예정 폼 dense 칸의 포커스 링이 --tc-text 가 아니다'],
-    ['components/cleaning/CleaningRowBody.tsx', /dense="xs"[\s\S]{0,300}text-xs text-\[var\(--warm-dark\)\] outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30" \/>/, '청소 사유 변경 칸의 포커스 링이 --tc-text 가 아니다'],
+    ['components/cleaning/CleaningEditModal.tsx', /const INPUT_CLS = '[^']*outline-none focus:ring-2 focus:ring-\[var\(--tc-text\)\]\/30[^']*'[\s\S]*ariaLabel="청소 사유"[\s\S]{0,300}className=\{INPUT_CLS\} \/>/, '청소 한 건 수정의 사유 칸 포커스 링이 --tc-text 가 아니다'],
     // 손대지 않은 사유 저장은 닫기만 한다("'기타' → '기타'" 토스트 방지). 등록 폼은 목록을 읽는 동안 칸과 저장을 잠근다('기록 안 함' 깜빡임).
-    ['components/cleaning/CleaningRowBody.tsx', /if \(cleaningReasonLabel\(reasonVal\) === cleaningReasonLabel\(r\.reason\) && !willAdd\) \{ setReasonOpen\(false\); return \}/, '청소 사유를 안 바꾸고 저장해도 바꿨다고 말한다'],
+    ['components/cleaning/CleaningEditModal.tsx', /const reasonChanged = cleaningReasonLabel\(reason\) !== cleaningReasonLabel\(init\.reason\) \|\| \(reasonToList && reason\.startsWith\('기타 · '\)\)[\s\S]*reason: reasonChanged \? reason : r\.reason/, '청소 사유를 안 바꾸고 저장해도 바꾼 글자를 보낸다(옛 OTHER 가 기타로 바뀐다)'],
     ['app/(app)/inventory/InventoryClient.tsx', /emptyLabel=\{reasonList \? '기록 안 함' : ''\} disabled=\{!reasonList\}[\s\S]*disabled=\{pending \|\| !reasonList\}/, "폐기 등록 폼이 목록을 읽는 동안 '기록 안 함' 을 세우거나 저장을 안 잠근다"],
     ['app/(app)/inventory/InventoryClient.tsx', /emptyLabel=\{sourceList \? '기록 안 함' : ''\} disabled=\{!sourceList\}[\s\S]*disabled=\{pending \|\| !sourceList\}/, "무상 입수 등록 폼이 목록을 읽는 동안 '기록 안 함' 을 세우거나 저장을 안 잠근다"],
   ]
@@ -854,6 +856,8 @@ const os = bodyOf(form, /function OptionSection\(/)
     const AUTO_WIRING = [
       ['app/(app)/room-manage/workActions.ts', /autoOptionForSave\(propertyId, 'workKindOptions', input\.kind, \{ addToList: input\.addKindToList \}\)[\s\S]*?prisma\.roomWork\.create[\s\S]*?await kindSave\.commit\(\)/, '작업 예정 등록이 종류를 맨 글자 규약으로 재고 기록 뒤에 목록에 더하지 않는다'],
       ['components/work/RoomWorkPlanForm.tsx', /addKindToList: kindToList/, '작업 예정 폼이 체크를 넘기지 않는다'],
+      ['components/work/RoomWorkEditModal.tsx', /addKindToList: kindToList/, '작업 한 건 수정 폼이 체크를 넘기지 않는다'],
+      ['components/work/RoomWorkEditModal.tsx', /savedValue=\{r\.kind\}/, '작업 한 건 수정 종류 칸이 지금 종류(savedValue)를 몰라 그대로인 값에도 체크를 세운다'],
       // 한 건 수정(2026-10-27). 지금 종류(prev)와 같으면 목록에 안 더한다(목록에서 뺀 종류가 저장마다 되살아나지 않게). 더하기는 기록 뒤다.
       ['app/(app)/room-manage/workActions.ts', /autoOptionForSave\(propertyId, 'workKindOptions', input\.kind, \{ addToList: input\.addKindToList, prev: cur\.kind \}\)[\s\S]*?prisma\.\$transaction[\s\S]*?await kindSave\.commit\(\)/, '작업 한 건 수정이 지금 종류(prev)와 견주지 않거나 기록 뒤에 목록에 더하지 않는다'],
       ['app/(app)/finance/actions.ts', /autoOptionForSave\(propertyId, 'incomeCategories', formData\.get\('category'\) as string, \{ addToList: formData\.get\('categoryAddToList'\) === '1' \}\)/, '부가수익 등록이 체크 칸이 실린 저장만 목록에 더하지 않는다(수납 과납분처럼 칸 없는 저장까지 쌓인다)'],

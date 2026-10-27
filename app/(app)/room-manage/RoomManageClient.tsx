@@ -387,7 +387,8 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
           <ul className="divide-y divide-[var(--warm-border)]/50">
             {shown.map(r => (
               <li key={r.id} className="px-4 py-3">
-                <CleaningRowBody row={r} recentPerformers={recentPerformers} canEdit={canEdit}
+                {/* 행 props 는 방 모달 작업 이력과 같다(2026-10-27, 한 건 수정 Modal). 층만 다르다(페이지라 200, 방 모달은 260). */}
+                <CleaningRowBody row={r} recentPerformers={recentPerformers} canEdit={canEdit} modalZ={200}
                   deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged}
                   onOpenInspection={i => onOpenRoom(i.roomId)} />
               </li>
@@ -395,7 +396,7 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
             {/* 점검은 청소 바로 뒤다(청소를 끝내고 검수한다). 행 표시·조작은 방 상세와 같은 정본이다. */}
             {shownInsp.map(i => (
               <li key={i.id} className="px-4 py-3">
-                <InspectionRowBody row={i} canEdit={canEdit} deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
+                <InspectionRowBody row={i} canEdit={canEdit} modalZ={200} deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
               </li>
             ))}
             {/* 작업은 청소 뒤에 선다. 두 표를 날짜로 섞어 정렬하지 않는 이유는 이 목록이 세그먼트
@@ -411,7 +412,7 @@ function CleaningView({ rows, works, inspections, rooms, targetMonth, recentPerf
                     {fmtRoomNo(w.roomNo)}
                   </button>
                   <div className="min-w-0 flex-1">
-                    <RoomWorkRowBody row={w} canEdit={canEdit} onChanged={onChanged} />
+                    <RoomWorkRowBody row={w} canEdit={canEdit} modalZ={200} recentPerformers={recentPerformers} onChanged={onChanged} />
                   </div>
                 </div>
               </li>

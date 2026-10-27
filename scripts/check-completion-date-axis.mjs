@@ -190,10 +190,9 @@ const GUARD_SITES = [
   { file: 'app/(app)/inventory/actions.ts', fn: 'updateStockAddition',  word: '입수일' },
   { file: 'app/(app)/inventory/actions.ts', fn: 'createStockDisposal',  word: '폐기일' },
   { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'completeCleaning',   word: '완료일' },
-  { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'rescheduleCleaning', word: '완료일' },
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'completeRoomWork',    word: '완료일' },
-  { file: 'app/(app)/room-manage/workActions.ts', fn: 'rescheduleRoomWork',  word: '완료일' },
-  // 한 건 수정(2026-10-27). 완료 건의 날짜 칸 라벨이 '완료일' 이다.
+  // 한 건 수정(2026-10-27). 완료 건의 날짜 칸 라벨이 '완료일' 이다. 종전 날짜 변경 문(rescheduleCleaning·rescheduleRoomWork)은
+  // 행 안 날짜 변경 폼과 함께 걷었다(한 건 수정 Modal 로 모였다).
   { file: 'app/(app)/room-manage/workActions.ts', fn: 'updateRoomWork',      word: '완료일' },
   { file: 'app/(app)/room-manage/cleaningActions.ts', fn: 'updateCleaning',  word: '완료일' },
   { file: 'app/(app)/room-manage/inspectionActions.ts', fn: 'completeInspection', word: '완료일' },
@@ -269,8 +268,11 @@ const SCREENS = [
   { file: 'app/(app)/requests/RequestsClient.tsx', what: '/requests 완료 확인 줄', dateFields: 1 },
   { file: 'components/entity-modal/widgets/TenantRequestsTab.tsx', what: '입주자 정보 › 요청·컴플레인 탭', dateFields: 1 },
   { file: 'app/(app)/checklist/ChecklistClient.tsx', what: '체크리스트 카드·점검 모달', dateFields: 2 },
-  { file: 'components/work/RoomWorkRowBody.tsx', what: '작업 행 완료 폼', dateFields: 2 },
-  { file: 'components/cleaning/CleaningRowBody.tsx', what: '청소 행 완료 폼', dateFields: 2 },
+  // 행 안 날짜 변경 폼은 한 건 수정 Modal 로 옮겼다(2026-10-27). 행은 완료 폼 하나, Modal 은 완료 건 날짜 칸 하나다.
+  { file: 'components/work/RoomWorkRowBody.tsx', what: '작업 행 완료 폼', dateFields: 1 },
+  { file: 'components/cleaning/CleaningRowBody.tsx', what: '청소 행 완료 폼', dateFields: 1 },
+  { file: 'components/work/RoomWorkEditModal.tsx', what: '작업 한 건 수정(완료 건 완료일)', dateFields: 1 },
+  { file: 'components/cleaning/CleaningEditModal.tsx', what: '청소 한 건 수정(완료 건 완료일)', dateFields: 1 },
   { file: 'components/inspection/InspectionRowBody.tsx', what: '방 점검 행 완료 폼', dateFields: 1 },
 ]
 for (const s of SCREENS) {

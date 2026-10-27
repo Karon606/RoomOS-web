@@ -22,19 +22,18 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import {
-  getCleaningFundStatus, completeCleaning, reopenCleaning, skipCleaning, deleteCleaning,
-  restoreCleaning, rescheduleCleaning, changeCleaningReason,
+  getCleaningFundStatus, completeCleaning, reopenCleaning, deleteCleaning, restoreCleaning,
 } from '@/app/(app)/room-manage/cleaningActions'
 import {
-  CLEANING_PERFORMER_LABEL, CLEANING_REASON_CODES, cleaningReasonLabel,
-  type CleaningRow, type CleaningPerformer, type CleaningStatus, type CleaningReason,
+  CLEANING_PERFORMER_LABEL, cleaningReasonLabel,
+  type CleaningRow, type CleaningPerformer, type CleaningStatus,
   type CleaningFundStatus, type CleaningFundLease,
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { useReasonOptions } from '@/components/ui/useReasonOptions'
 import { INSPECTION_STAGE_LABEL } from '@/app/(app)/room-manage/inspectionConstants'
 import { PayMethodField } from '@/components/finance/PayMethodField'
 import { useWorkPay } from '@/components/work/useWorkPay'
+import { CleaningEditModal } from '@/components/cleaning/CleaningEditModal'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -64,18 +63,15 @@ export const cleaningTone = (s: CleaningStatus): BadgeTone =>
   (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
 
 export function CleaningRowBody({
-  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, showActions = true, onOpenRoom, onOpenInspection, onChanged,
+  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, modalZ, onOpenRoom, onOpenInspection, onChanged,
 }: {
   row: CleaningRow
   /**
-   * 조작 버튼을 세울 것인가. **기본은 true 다** — 호실 관리 목록 등 다른 호출부가 종전
-   * 그대로 돌아야 한다. 기본을 false 로 두면 그 화면들의 조작이 통째로 사라진다.
-   *
-   * 호실 모달만 false 를 넘겨 보기 모드로 연다. 완료된 일 옆에 조작이 상시로 서 있으면
-   * 겨눈 것 옆을 스쳐 눌린다(운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해").
-   * **예정 행의 [완료 처리]는 이 값과 무관하게 선다** — 안 끝난 일은 바로 끝낼 수 있어야 한다.
+   * 한 건 수정 Modal 의 층(2026-10-27). 방 모달(EntityModal) 안이면 260, 페이지(호실 관리 작업 탭)면 200.
+   * 종전 '편집' 모드(showActions)는 걷었다. 목록 전체가 한꺼번에 고칠 수 있게 되는 것을 운영자가 불안해했다(2026-10-27 지적).
+   * 이제 행마다 [수정] 이 그 한 건만 여는 Modal 이고, 되돌림·삭제는 그 Modal 발끝 `관리` 메뉴에 있다(가이드 §27.1·§13).
    */
-  showActions?: boolean
+  modalZ: 200 | 260
 
   /** 받은 청소비 잔고. undefined 면 완료 폼을 열 때 이 컴포넌트가 그 방 것을 직접 조회한다. */
   fund?: CleaningFundStatus | null
@@ -93,17 +89,12 @@ export function CleaningRowBody({
   onChanged: () => void
 }) {
   const [doneOpen, setDoneOpen] = useState(false)
-  const [reschedOpen, setReschedOpen] = useState(false)
-  // 사유 변경. 날짜 변경과 같은 자리·같은 문법의 인라인 폼. 고를 것이 여럿이라 확인창(두 갈래)이 안 맞는다.
-  // 고르는 칸은 예정 등록 폼과 같은 칸이다(코드 셋 맨 앞 + 영업장 목록 + '기타(직접 입력)', 2026-10-22 2차). 목록은 폼이 열렸을 때만 읽는다.
-  const [reasonOpen, setReasonOpen] = useState(false)
-  const [reasonVal, setReasonVal] = useState<CleaningReason>('CHECKOUT')
-  const [reasonToList, setReasonToList] = useState(false)
-  const listedReasons = useReasonOptions(reasonOpen ? 'cleaningReasons' : null)
+  // 한 건 수정 Modal(날짜·사유·수행자·업체·비용·결제수단·부담·메모, 관리 메뉴의 완료 적용취소·안 하기로·안 함 적용취소·삭제).
+  // 종전에 행 안에서 따로 열던 날짜 변경·사유 변경 폼이 이 Modal 로 모였다(2026-10-27).
+  const [editOpen, setEditOpen] = useState(false)
   // 완료일은 오늘로 못 박지 않는다 — 어제 한 청소를 오늘 입력하면 이력이 하루 틀어지고,
   // 비용을 함께 넣은 건은 지출 date 까지 같이 틀어진다(신고 e1ad1c5b).
   const [doneDate, setDoneDate] = useState(kstYmdStr())
-  const [reschedDate, setReschedDate] = useState(kstYmdStr())
   // 기본은 '업체'. 청소는 대개 맡기고, 직접 한 경우가 예외다(운영자 지적 2026-08-10, 신고 c2a87782).
   const [performer, setPerformer] = useState<CleaningPerformer>('VENDOR')
   const [performerName, setPerformerName] = useState('')
@@ -330,7 +321,7 @@ export function CleaningRowBody({
                 const fromFund = useFund && r.reason === 'CHECKOUT' && c > 0
                 // 비용을 넣은 건은 지출 date 도 이 날짜를 따라간다(completeCleaning 이 생성·수정 양쪽에서 doneDate 를 쓴다).
                 // 완료 직후 토스트에 §16 진입점 1 을 단다 — reopenCleaning 하나가 부담 표식(fromCleaningFund)까지
-                // 함께 되돌리므로 여기서 따로 풀 것이 없다. 편집 모드 뒤의 원위치 버튼은 진입점 2 로 그대로 남는다.
+                // 함께 되돌리므로 여기서 따로 풀 것이 없다. 수정 Modal 관리 메뉴의 '완료 적용취소' 가 진입점 2 로 남는다.
                 run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund, ...(c > 0 ? pay.payload : {}) }),
                   fromFund ? '청소 완료 · 받은 청소비에서 부담으로 기록됨'
                     : c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨',
@@ -346,63 +337,6 @@ export function CleaningRowBody({
             <Btn variant="secondary" size="sm" onClick={() => { setDoneOpen(false); setUseFund(false) }}>취소</Btn>
           </div>
         </div>
-      ) : reschedOpen ? (
-        /* 날짜 변경 — 완료 입력과 같은 자리, 같은 문법. 고치는 날짜는 그 행에 보이는 날짜다.
-           완료 건이면 완료일이고, 앞으로 한 청소는 없으니 완료일 입력과 같은 상한을 건다. */
-        <div className="mt-2 space-y-2">
-          <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            {r.status === 'DONE' ? '완료일' : '예정일'}
-            <DatePicker value={reschedDate} onChange={setReschedDate}
-              maxDate={r.status === 'DONE' ? kstYmdStr() : undefined} className={DENSE_DATE_CLS} />
-          </div>
-          <div className="flex gap-2">
-            <Btn variant="primary" size="sm" disabled={pending || !reschedDate}
-              onClick={() => {
-                // 완료 건은 지출 date 도 이 날짜를 따라간다(rescheduleCleaning 이 한 트랜잭션에서 함께 옮긴다).
-                run(() => rescheduleCleaning({ id: r.id, date: reschedDate }),
-                  r.status !== 'DONE' ? '예정일 변경됨'
-                    : r.cost ? '완료일 변경됨 · 지출 날짜도 함께 바뀜' : '완료일 변경됨')
-                setReschedOpen(false)
-              }}>
-              저장
-            </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setReschedOpen(false)}>취소</Btn>
-          </div>
-        </div>
-      ) : reasonOpen ? (
-        /* 사유 변경 — 날짜 변경과 같은 자리, 같은 문법. 사유는 회계에 관여하므로
-           (CHECKOUT 일 때만 '받아둔 청소비로 부담'이 성립) 부담 표식이 붙은 건은 서버가 막는다. */
-        <div className="mt-2 space-y-2">
-          {/* 라벨이 칸 왼쪽에 서고 칸이 남은 폭을 받는다. '기타' 를 고르면 칸 아래 체크박스·힌트가 칸 폭 그대로 붙는다. */}
-          <div className="flex items-start gap-2 text-xs text-[var(--ink-s)]">
-            <span className="shrink-0 py-1">사유</span>
-            <CategorySelect addMode="ask" value={reasonVal} onChange={setReasonVal}
-              ariaLabel="청소 사유"
-              options={[...CLEANING_REASON_CODES, ...listedReasons]} getLabel={cleaningReasonLabel}
-              placeholder="사유를 직접 입력하세요" closeIconSize={12} dense="xs"
-              addToList={reasonToList} onAddToListChange={setReasonToList}
-              wrapperClassName="flex-1 min-w-0"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30" />
-          </div>
-          <div className="flex gap-2">
-            <Btn variant="primary" size="sm" disabled={pending}
-              onClick={() => {
-                // 보이는 사유가 그대로면 그냥 닫는다. 보내면 "'기타' → '기타'" 처럼 안 바뀐 값을 바꿨다고 말한다(2차 독립 검수).
-                // 옛 'OTHER' 행에서 '기타(직접 입력)' 을 비운 채 고른 것도 같은 '기타' 다(이행 없음, 행은 'OTHER' 그대로).
-                // 같은 글자라도 직접 입력 글에 '목록에 추가' 를 켰으면 보낸다(그 글이 목록에 오르고 기록이 맨 글자가 된다).
-                const willAdd = reasonToList && reasonVal.startsWith('기타 · ')
-                if (cleaningReasonLabel(reasonVal) === cleaningReasonLabel(r.reason) && !willAdd) { setReasonOpen(false); return }
-                // 값 전환 표기(§29)로 무엇이 무엇으로 바뀌었는지 싣는다. 바뀐 글자는 서버가 다시 잰 저장 글자다('기타 · 글' 따위).
-                const from = cleaningReasonLabel(r.reason)
-                run(() => changeCleaningReason({ id: r.id, reason: reasonVal, addToList: reasonToList }),
-                  res => `사유를 바꿨습니다 · '${from}' → '${cleaningReasonLabel(res.reason ?? reasonVal)}'`)
-                setReasonOpen(false)
-              }}>
-              저장
-            </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setReasonOpen(false)}>취소</Btn>
-          </div>
-        </div>
       ) : (
         /* 행 액션은 RowActionBtn 정본 — 맨 텍스트 버튼은 히트영역이 글자 높이(16px)라
            §09 터치 타깃 44px 에 못 미친다. 형제(수납·보증금 목록)와 같은 문법이다. */
@@ -411,7 +345,6 @@ export function CleaningRowBody({
             <RowActionBtn tone="accent" disabled={pending}
               onClick={() => {
                 startTransition(async () => {
-                  setReschedOpen(false)
                   // 기본 '업체' — 폼이 열리자마자 이름 칸이 뜬다. 되돌린 건은 그때 적어 둔 이름이
                   // 남아 있어 그것부터 쓰고(다시 받아 적으면 오타로 갈린다), 없으면 최근에 맡긴 곳.
                   setPerformer('VENDOR')
@@ -438,72 +371,14 @@ export function CleaningRowBody({
               완료 처리
             </RowActionBtn>
           )}
-          {/* 여기부터는 편집 모드에서만 선다(형제 작업 행과 같은 규칙).
-              **[완료 처리]는 위에 남는다** — 안 끝난 일은 바로 끝낼 수 있어야 한다. */}
-          {showActions && (<>
-          {/* 날짜 변경은 상태를 안 가린다. 완료 건이면 완료일을 고친다. */}
-          <RowActionBtn tone="neutral" disabled={pending}
-            onClick={() => {
-              setDoneOpen(false)
-              setReschedDate((r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? kstYmdStr())
-              setReschedOpen(true)
-            }}>
-            날짜 변경
-          </RowActionBtn>
-          {/* 사유 변경 — 종전에는 만들 때만 고를 수 있어 잘못 고르면 지우고 다시 만드는 수밖에
-              없었고, 그러면 걸린 지출 연결이 끊겼다(운영자 지적 2026-08-27). 확인창 하나로 받는다 —
-              고를 것이 넷뿐이라 인라인 폼을 또 여는 것이 과하다(§14 choiceDialog 는 두 갈래용). */}
-          <RowActionBtn tone="neutral" disabled={pending}
-            onClick={() => { setDoneOpen(false); setReschedOpen(false); setReasonVal(r.reason); setReasonToList(false); setReasonOpen(true) }}>
-            사유 변경
-          </RowActionBtn>
-          {r.status === 'PLANNED' && (
-            <RowActionBtn tone="neutral" disabled={pending}
-              onClick={async () => {
-                if (!(await confirmDialog({ title: '이 청소를 안 하기로 할까요?', message: '기록은 남고 상태만 바뀝니다. 같은 자리의 \'안 함 적용취소\'로 되돌릴 수 있습니다.', confirmLabel: '안 하기로', level: 'caution' }))) return
-                run(() => skipCleaning(r.id), '안 하기로 표시됨')
-              }}>
-              안 하기로
-            </RowActionBtn>
-          )}
-          {/* §16 라벨은 '적용취소' 단일. 완료와 안 함 두 곳에서 뜨니 명사를 보강해 무엇을 무르는지 밝힌다.
-              지출이 남았는지는 서버가 돌려준 expenseKept 로 말한다. */}
-          {r.status !== 'PLANNED' && (
-            <RowActionBtn tone="accent" disabled={pending}
-              onClick={() => {
-                const what = r.status === 'DONE' ? '완료' : '안 함'
-                run(() => reopenCleaning(r.id), res =>
-                  res.expenseKept ? `${what} 적용취소됨 · 기록된 지출은 그대로 남습니다` : `${what} 적용취소됨`)
-              }}>
-              {r.status === 'DONE' ? '완료 적용취소' : '안 함 적용취소'}
-            </RowActionBtn>
-          )}
-          <RowActionBtn tone="danger" disabled={pending} className="ml-auto"
-            onClick={async () => {
-              // 지출이 걸려 있으면 문구를 가른다(결함 D1). 삭제는 청소 기록만 지우고 지출은 남기는데
-              // 종전 확인창은 그 사실에 침묵했다 — 되돌리기는 이미 말해 주던 것을 삭제만 안 했다.
-              const linkedCost = r.cost != null && r.cost > 0 ? r.cost : null
-              if (!(await confirmDialog({
-                title: '이 청소 기록을 삭제할까요?',
-                message: linkedCost != null
-                  ? `기록이 목록에서 사라집니다. 함께 기록된 지출 ${fmtWon(linkedCost)}은 지출 관리에 그대로 남습니다.`
-                  : '기록이 목록에서 사라집니다.',
-                confirmLabel: '삭제', level: 'danger',
-              }))) return
-              // 소프트삭제라 되살릴 수 있다(결함 D2) — 지출 삭제 토스트와 같은 적용취소 문법.
-              // 토스트가 사라진 뒤에는 호실 관리 '청소' 뷰의 '삭제됨 보기'가 2순위 진입점이다(§16).
-              run(() => deleteCleaning(r.id), '삭제됨', {
-                label: '적용취소',
-                run: () => { void restoreCleaning(r.id).then(res => {
-                  if (res.ok) { pushToast('info', '청소 기록을 복원했습니다'); onChanged() }
-                  else pushToast('error', res.error)
-                }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) },
-              })
-            }}>
-            삭제
-          </RowActionBtn>
-          </>)}
+          {/* 한 건 수정 — 그 행 하나만 고치는 Modal 을 연다(2026-10-27). 날짜 변경·사유 변경·안 하기로·적용취소·삭제가 따로 서던 자리를 모았다.
+              되돌림·삭제는 Modal 발끝 `관리` 메뉴다. 행에는 [완료 처리](예정)와 [수정] 둘만 상시로 선다. */}
+          <RowActionBtn tone="neutral" disabled={pending} onClick={() => { setDoneOpen(false); setEditOpen(true) }}>수정</RowActionBtn>
         </div>
+      )}
+      {editOpen && (
+        <CleaningEditModal row={r} z={modalZ} fund={fundProp} recentPerformers={recentPerformers}
+          onClose={() => setEditOpen(false)} onChanged={onChanged} />
       )}
     </>
   )

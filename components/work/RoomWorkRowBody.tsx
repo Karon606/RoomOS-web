@@ -1,6 +1,6 @@
 'use client'
 
-// 작업 행의 표시·조작 — 완료 처리·적용취소·삭제·복원 (2026-08-25, 신고 b21e4e98 후속).
+// 작업 행의 표시·조작 — 완료 처리·한 건 수정·복원 (2026-08-25, 신고 b21e4e98 후속. 2026-10-27 한 건 수정 Modal).
 //
 // components/cleaning/CleaningRowBody 를 거울로 삼았다. 그 파일을 재사용하지 않은 것은
 // 거기에 청소 전용 조작(안 함 처리·받은 청소비 부담·잔고 조회)이 얽혀 있어, 파라미터로
@@ -15,13 +15,12 @@ import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { DatePicker } from '@/components/ui/DatePicker'
 import CategorySelect from '@/components/ui/CategorySelect'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast, trackSave, type ToastAction } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
-  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork, updateWorkExpense,
+  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, unlinkExpensesFromWork,
   type RoomWorkRow,
 } from '@/app/(app)/room-manage/workActions'
 import {
@@ -29,6 +28,7 @@ import {
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { PayMethodField } from '@/components/finance/PayMethodField'
 import { useWorkPay } from '@/components/work/useWorkPay'
+import { RoomWorkEditModal } from '@/components/work/RoomWorkEditModal'
 
 // 형제 행과 같은 껍데기·같은 이유(오류신고 c2ab5b83 — 안 넘기면 맨글자로 그려진다).
 const DENSE_DATE_CLS =
@@ -41,21 +41,18 @@ const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 const workTone = (s: 'PLANNED' | 'DONE'): BadgeTone => (s === 'DONE' ? 'paid' : 'await')
 
 export function RoomWorkRowBody({
-  row: r, canEdit, deleted = false, showActions = true, recentPerformers = [], onChanged,
+  row: r, canEdit, deleted = false, recentPerformers, modalZ, onChanged,
 }: {
   row: RoomWorkRow
   canEdit: boolean
   /** 최근에 맡긴 업체·사람 — 이름 칸 선택지. 비면 자유 입력으로 떨어진다(형제 청소 행과 같다). */
-  recentPerformers?: string[]
+  recentPerformers: string[]
   /**
-   * 조작 버튼을 세울 것인가. **기본은 true 다** — 호실 관리 목록 등 다른 호출부가 종전
-   * 그대로 돌아야 한다. 기본을 false 로 두면 그 화면들의 조작이 통째로 사라진다.
-   *
-   * 호실 모달만 false 를 넘겨 보기 모드로 연다. 완료된 일 옆에 조작이 상시로 서 있으면
-   * 겨눈 것 옆을 스쳐 눌린다(운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해").
-   * **예정 행의 [완료 처리]는 이 값과 무관하게 선다** — 안 끝난 일은 바로 끝낼 수 있어야 한다.
+   * 한 건 수정 Modal 의 층(2026-10-27). 방 모달(EntityModal) 안이면 260, 페이지(호실 관리 작업 탭)면 200.
+   * 종전 '편집' 모드(showActions)는 걷었다. 목록 전체가 한꺼번에 고칠 수 있게 되는 것을 운영자가 불안해했다(2026-10-27 지적).
+   * 이제 행마다 [수정] 이 그 한 건만 여는 Modal 이고, 되돌림·삭제는 그 Modal 발끝 `관리` 메뉴에 있다(가이드 §27.1·§13).
    */
-  showActions?: boolean
+  modalZ: 200 | 260
 
   /** 삭제된 행 — 복원만 할 수 있다. */
   deleted?: boolean
@@ -73,9 +70,8 @@ export function RoomWorkRowBody({
   // 완료가 지출을 안 건드리므로 묻지 않는다. 기본값은 같은 업체 직전 → 같은 카테고리 직전 → 영업장 목록 첫 값(lib/workPayDefault).
   const payAsked = Number(cost || 0) > 0 && r.expenseCount <= 1
   const pay = useWorkPay({ kind: 'work', enabled: doneOpen && payAsked, vendor: performerName, vendors: recentPerformers })
-  // 날짜 변경 — 청소 행과 같은 문법(오류신고 2026-08-25, 예정 건에 이 문이 아예 없었다).
-  const [reschedOpen, setReschedOpen] = useState(false)
-  const [reschedDate, setReschedDate] = useState('')
+  // 한 건 수정 Modal(날짜·종류·수행자·업체·시공비·결제수단·메모, 관리 메뉴의 완료 적용취소·삭제).
+  const [editOpen, setEditOpen] = useState(false)
 
   const run = (
     fn: () => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -132,7 +128,7 @@ export function RoomWorkRowBody({
           종전에는 '시공 2건'이라고만 하고 내용을 안 보여줬다(운영자 지적 2026-08-28 —
           "시공 2건이 뭔지도 못보고 시공업체도 못봐"). 걸린 지출이 여럿일 때 "어느 줄인지
           앱이 모른다"고 했던 것도 같은 원인이다 — 운영자는 안다. 화면이 안 보여줬을 뿐이다.
-          편집 모드에서는 그 줄에서 바로 금액을 고친다. */}
+          금액은 [수정] Modal 에서 고친다(줄마다 '금액·업체 고치기'. 종전 즉시 저장 칸은 적용취소가 없어 걷었다). */}
       {r.linkedExpenses.length > 0 && (
         <ul className={`mt-1 space-y-0.5${deleted ? ' opacity-60' : ''}`}>
           {r.linkedExpenses.map(e => (
@@ -140,21 +136,7 @@ export function RoomWorkRowBody({
               <span className="min-w-0 flex-1 truncate">
                 {e.label}{e.vendor ? ` · ${e.vendor}` : ''}
               </span>
-              {showActions ? (
-                <>
-                  <input type="number" inputMode="numeric" min={0}
-                    defaultValue={e.amount}
-                    onBlur={ev => {
-                      const next = Number(ev.target.value || 0)
-                      if (next === e.amount || next < 0) return
-                      run(() => updateWorkExpense({ workId: r.id, expenseId: e.id, amount: next }), '금액을 고쳤습니다')
-                    }}
-                    className="w-24 shrink-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 text-right num text-[var(--warm-dark)]" />
-                  <span className="shrink-0">원</span>
-                </>
-              ) : (
-                <span className="shrink-0 num">{fmtWon(e.amount)}</span>
-              )}
+              <span className="shrink-0 num">{fmtWon(e.amount)}</span>
             </li>
           ))}
         </ul>
@@ -177,27 +159,6 @@ export function RoomWorkRowBody({
             })}>
             복원
           </RowActionBtn>
-        </div>
-      ) : reschedOpen ? (
-        /* 날짜 변경 — 완료 입력과 같은 자리, 같은 문법. 고치는 날짜는 그 행에 보이는 날짜다.
-           완료 건은 지나간 일이라 오늘까지로 막고, 예정 건은 앞날을 잡는 자리라 안 막는다. */
-        <div className="mt-2 space-y-2">
-          <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            {r.status === 'DONE' ? '완료일' : '예정일'}
-            <DatePicker value={reschedDate} onChange={setReschedDate}
-              maxDate={r.status === 'DONE' ? kstYmdStr() : undefined} className={DENSE_DATE_CLS} />
-          </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <RowActionBtn tone="accent" disabled={pending || !reschedDate}
-              onClick={() => {
-                run(() => rescheduleRoomWork({ id: r.id, date: reschedDate }),
-                  r.status === 'DONE' ? '완료일 변경됨' : '예정일 변경됨')
-                setReschedOpen(false)
-              }}>
-              저장
-            </RowActionBtn>
-            <RowActionBtn onClick={() => setReschedOpen(false)}>취소</RowActionBtn>
-          </div>
         </div>
       ) : doneOpen ? (
         /* 완료 입력 — 그 줄에서 바로 받는다. 별도 모달을 띄우면 창이 또 쌓인다(형제 행과 같다). */
@@ -258,7 +219,7 @@ export function RoomWorkRowBody({
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">
               {r.expenseCount === 1
                 ? '이미 걸린 지출의 금액과 업체를 여기서 고칩니다. 새 지출을 만들지 않습니다.'
-                : `이미 지출 ${r.expenseCount}건이 걸려 있어 새로 만들지 않습니다. 줄마다 고치려면 위 목록에서 편집을 켜세요.`}{' '}
+                : `이미 지출 ${r.expenseCount}건이 걸려 있어 새로 만들지 않습니다. 줄마다 금액은 완료 뒤 수정에서 고칩니다.`}{' '}
               <button type="button"
                 onClick={() => { window.location.assign(`/finance?month=${(r.doneDate ?? r.scheduledDate ?? kstYmdStr()).slice(0, 7)}`) }}
                 className="underline text-[var(--tc-text)] font-medium">지출 화면 열기</button>
@@ -322,58 +283,14 @@ export function RoomWorkRowBody({
               setDoneOpen(true)
             }}>완료 처리</RowActionBtn>
           )}
-          {/* 여기부터는 편집 모드에서만 선다. 완료된 일 옆에 조작이 상시로 서 있으면
-              겨눈 것 옆을 스쳐 눌린다 — 히트영역이 보이는 박스보다 위아래 9px 넓은데 간격이 6px 다.
-              **[완료 처리]는 위에 남는다**: 안 끝난 일은 바로 끝낼 수 있어야 한다. */}
-          {showActions && (<>
-          {/* 날짜 변경 — 예정·완료 둘 다에 선다. 청소 행에는 있는데 여기만 없어서 예정 날짜를
-              고칠 길이 아예 없었다(운영자 신고 2026-08-25). 여는 순간 그 행의 현재 날짜를 담는다. */}
-          <RowActionBtn disabled={pending}
-            onClick={() => {
-              setReschedDate((r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? kstYmdStr())
-              setDoneOpen(false)
-              setReschedOpen(true)
-            }}>
-            날짜 변경
-          </RowActionBtn>
-          {/* 종전에는 확인창도 되돌리기도 없이 **즉발**했다. 한 번 스치면 완료가 예정으로
-              돌아가고 그 방이 다시 '할 일'로 뜬다 — 무엇을 눌렀는지 모른 채 데이터가 틀어진다.
-              되돌리기 토스트가 아니라 확인창인 이유는, 이 조작 자체가 이미 되돌리기라
-              그것을 또 되돌리는 것이 헷갈리기 때문이다.
-              라벨도 '완료 되돌리기'에서 형제 청소 행과 같은 '완료 적용취소'로 맞춘다(§16 단일). */}
-          {r.status === 'DONE' && (
-            <RowActionBtn disabled={pending}
-              onClick={async () => {
-                if (!(await confirmDialog({
-                  title: `${r.kind} 완료를 적용취소할까요?`,
-                  message: r.expenseCount > 0
-                    ? `예정으로 되돌립니다. 걸린 지출 ${r.expenseCount}건은 그대로 남습니다 — 다시 완료해도 두 벌이 안 생깁니다.`
-                    : '예정으로 되돌립니다. 기록은 남습니다.',
-                  level: 'caution', confirmLabel: '적용취소',
-                }))) return
-                run(() => reopenRoomWork(r.id), '완료를 적용취소했습니다')
-              }}>
-              완료 적용취소
-            </RowActionBtn>
-          )}
-          {/* 삭제만 오른쪽 끝으로 민다 — 형제 청소 행에는 원래 있고 여기만 없었다.
-              버튼 히트영역이 보이는 박스보다 위아래 9px 씩 넓은데 간격이 6px 이라,
-              옆 버튼을 겨누다 스치는 것이 오탭의 직접 원인이었다. */}
-          <RowActionBtn tone="danger" disabled={pending} className="ml-auto"
-            onClick={async () => {
-              if (!(await confirmDialog({ title: `${r.kind} 기록을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
-              run(() => deleteRoomWork(r.id), '작업 기록 삭제됨', {
-                label: '적용취소',
-                run: () => { void restoreRoomWork(r.id).then(res => {
-                  if (res.ok) { pushToast('info', '삭제를 취소했습니다'); onChanged() }
-                  else pushToast('error', res.error)
-                }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) },
-              })
-            }}>
-            삭제
-          </RowActionBtn>
-          </>)}
+          {/* 한 건 수정 — 그 행 하나만 고치는 Modal 을 연다(2026-10-27). 날짜 변경·완료 적용취소·삭제가 따로 서던 자리를 모았다.
+              되돌림·삭제는 Modal 발끝 `관리` 메뉴다. 행에는 [완료 처리](예정)와 [수정] 둘만 상시로 선다. */}
+          <RowActionBtn tone="neutral" disabled={pending} onClick={() => { setDoneOpen(false); setEditOpen(true) }}>수정</RowActionBtn>
         </div>
+      )}
+      {editOpen && (
+        <RoomWorkEditModal row={r} z={modalZ} recentPerformers={recentPerformers}
+          onClose={() => setEditOpen(false)} onChanged={onChanged} />
       )}
     </div>
   )

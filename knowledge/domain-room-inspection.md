@@ -91,3 +91,9 @@
 - `check-option-lists` 묶음 표, `check-completion-date-axis`, `check-action-property-scope`, `test-discount-reasons` 목록 수(27).
 
 관련 [[domain-cleaning]] [[domain-checkout-revert]] [[domain-completion-date]] [[domain-reasons]] [[alert-mutes]].
+
+## 한 건 수정 (2026-10-27)
+
+행 [수정] → `components/inspection/InspectionEditModal`. 예정 점검은 예정일(비울 수 있다)·메모, 끝낸 점검은 메모만(서버 `updateInspection` 도 날짜를 거부). 항목 판정은 행 안 그대로다.
+안 하기로·완료/안 함 적용취소·삭제는 Modal 발끝 `관리` 메뉴로 옮겼다(확인창·토스트·R7 겹침 막기 그대로). 행 상시 버튼은 [항목 펼치기]·[점검 완료](예정)·[수정].
+check-room-inspection-axis ⓖ 가 안 하기로·삭제 적용취소 짝을 Modal 파일에서 본다. check-action-property-scope roomInspection 쓰기 수 where 12·data 13.

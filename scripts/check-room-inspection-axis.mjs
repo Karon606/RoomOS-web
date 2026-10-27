@@ -193,11 +193,21 @@ for (const file of SOURCES) {
     ['항목 더하기', /addInspectionItem\([\s\S]{0,400}label: '적용취소',\s*run: \(\) => \{ void removeInspectionItem\(res\.item\.id\)/],
     ['항목 삭제', /removeInspectionItem\(it\.id\)[\s\S]{0,400}label: '적용취소',\s*run: \(\) => \{ void restoreInspectionItem\(res\.snapshot\)/],
     ['완료', /completeInspection\(\{ id: r\.id, doneDate \}\)[\s\S]{0,200}undo\(\(\) => reopenInspection\(r\.id\)/],
-    ['안 하기로', /skipInspection\(r\.id\)[\s\S]{0,200}undo\(\(\) => reopenInspection\(r\.id\)/],
-    ['삭제', /deleteInspection\(r\.id\), '삭제됨'[\s\S]{0,200}undo\(\(\) => restoreInspection\(r\.id\)/],
+
     ['복원', /restoreInspection\(r\.id\), '점검 기록 복원됨'[\s\S]{0,200}undo\(\(\) => deleteInspection\(r\.id\)/],
   ]
   for (const [what, re] of PAIRS) if (!re.test(r)) violations.push(`${ROW} · '${what}' 쓰기에 토스트 [적용취소] 짝이 없다(§16, 모든 쓰기에 적용취소).`)
+  // 안 하기로·삭제는 한 건 수정 Modal 발끝 관리 메뉴로 옮겼다(2026-10-27, 가이드 §27.1). 거기서도 토스트 [적용취소] 짝이 있어야 한다.
+  {
+    const EDIT = 'components/inspection/InspectionEditModal.tsx'
+    const em = strip(read(EDIT))
+    for (const [what, re] of [
+      ['안 하기로', /skipInspection\(r\.id\), '안 하기로 표시됨', \{ run: \(\) => reopenInspection\(r\.id\)/],
+      ['삭제', /deleteInspection\(r\.id\), '삭제됨', \{ run: \(\) => restoreInspection\(r\.id\)/],
+      ['한 건 수정', /updateInspection\([\s\S]{0,300}recordEditUndoAction\(res\.undo,/],
+    ]) if (!re.test(em)) violations.push(`${EDIT} · '${what}' 쓰기에 토스트 [적용취소] 짝이 없다(§16, 모든 쓰기에 적용취소).`)
+    if (!/<RowActionBtn tone="neutral" disabled=\{pending\} onClick=\{\(\) => \{ setDoneOpen\(false\); setEditOpen\(true\) \}\}>수정<\/RowActionBtn>/.test(r) || !/<InspectionEditModal row=\{r\} z=\{modalZ\}/.test(r)) violations.push(`${ROW} · 행 [수정] 이 한 건 수정 Modal 을 안 연다.`)
+  }
   // 판정 토글(확인·문제·해당 없음)은 토스트가 없고(운영자 결정 ④) 그 항목만 잠그며 부모를 다시 읽지 않는다(독립 검수 R1).
   // 다시 누르면 미확인으로 돌아가는 것이 적용취소다. '문제' 는 메모 칸을 먼저 열고 저장 한 번에 문제 + 메모를 남긴다(R9).
   const setResult = r.match(/const setResult = [^\n]*\n[^\n]*/)?.[0] ?? ''

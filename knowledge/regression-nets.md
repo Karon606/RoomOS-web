@@ -484,3 +484,8 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
   청소 날짜가 지출 date 를 데려감·부담 표식 사유 가드(함께 끄면 통과)·비용 0 연결 끊기와 되살림(지워진 지출이면 거부)·예정 청소 사유 재기, 점검 수정(끝낸 점검 날짜 잠금·메모는 고침), 남의 영업장 쓰기·토큰 거부와 바이트 무변경.
   같은 날 check-action-property-scope 에 한 건 수정·줄 고치기·적용취소 축과 roomInspection 쓰기 수(where 12·data 13), check-completion-date-axis GUARD_SITES 둘, check-option-lists 저장 경로·종류 prev, check-work-link-wiring 한 건 수정 축(후보 있으면 거부·자동 연결 없음)을 더했다.
   역주입: 기록 칸 대조 끔(지출 없는 수정 케이스를 더한 뒤 발화)·미연결 시공 지출 거부 제거(그물·통합 둘 다 발화)·청소 조회 영업장 범위 제거(발화).
+- **check-room-record-edit** (2026-10-27, verify:fast, 운영자 지적 작업 이력 한 건 수정) · 편집 모드 폐지(패널 editing·'편집' 토글, 행 showActions·행 안 날짜/사유 폼·즉시 저장 금액 칸 금지),
+  행 [수정](RowActionBtn neutral)과 Modal z={modalZ}, 두 자리 props(방 모달 260·작업 탭 200·recentPerformers), 껍데기(Modal sm·dirty·캡션·발끝 두 줄·관리 메뉴 위로/오른쪽·파괴 행 구분선·키보드·저장 막힘 이유·저장 적용취소 정본),
+  세 Modal 의 조건부 쓰기·저장 적용취소·제목, 여러 건 걸린 작업의 줄 고치기와 지출 화면 길, 관리 메뉴 항목과 삭제 확인창, '삭제된 기록 보기' 상시, 가이드 §27.1 등재, 화면의 server-only 모듈 금지, 등록.
+  같은 날 check-option-lists(청소 사유 칸 자리 이동·작업 종류 칸 HINT·체크·savedValue), check-room-inspection-axis(안 하기로·삭제 짝 자리 이동·행 [수정]), check-completion-date-axis(행 날짜 칸 1·Modal 날짜 칸 1, 날짜 변경 문 둘 제거), check-kbd-canonical(관리 메뉴 투명층 ALLOW)을 고쳤다.
+  역주입: 패널 editing 되살림·청소 수정 저장 적용취소 제거·작업 탭 recentPerformers 제거 셋 모두 발화.

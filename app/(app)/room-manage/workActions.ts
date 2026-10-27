@@ -505,7 +505,7 @@ const PERFORMER_VALUES: readonly string[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
  *
  * 칸. 예정 건은 예정일(비울 수 있다)·종류·담당·업체·메모. 완료 건은 완료일(미래 거부)·종류·수행자·업체·메모와 시공비·결제수단.
  * 시공비(완료 건만, cost 를 실었을 때만).
- *   · 걸린 지출 1건 — 그 지출의 금액·업체(=업체 이름)·결제수단을 고친다. 지출 날짜는 안 옮긴다(작업 날짜와 지출 날짜는 다른 축, rescheduleRoomWork 와 같다).
+ *   · 걸린 지출 1건 — 그 지출의 금액·업체(=업체 이름)·결제수단을 고친다. 지출 날짜는 안 옮긴다(작업 날짜와 지출 날짜는 다른 축, 종전 날짜 변경과 같다).
  *     지출 품목명이 정확히 '{옛 종류} 시공' 이면(완료가 만든 줄) 새 종류로 품목명·내역을 고친다(결정 6). 손으로 적은 이름은 안 건드린다.
  *     0원은 받지 않는다(지출을 지우는 판단은 지출 화면 몫이다).
  *   · 여러 건 — 금액 칸을 받지 않는다(어느 줄의 돈인지 모른다, 결정 7). 줄마다 updateWorkExpense 로 고친다.
@@ -651,39 +651,6 @@ export async function updateRoomWork(input: {
     return { ok: true, undo: signRoomRecordEdit(propertyId, { kind: 'work', id: cur.id, before, after, ...(expense ? { expense } : {}) }) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '수정에 실패했습니다.' }
-  }
-}
-
-/**
- * 날짜 변경 — 그 행에 보이는 날짜를 고친다. 예정 건이면 예정일, 완료 건이면 완료일이다.
- * 청소의 rescheduleCleaning 과 같은 문법이되, **지출 날짜는 안 옮긴다** — 작업의 지출은
- * 자재를 여러 날 나눠 산 것까지 걸려 있어(1:N) 한 날짜로 몰면 그 사실이 사라진다.
- * 청소는 1:1 이라 함께 옮기는 것이 맞았다.
- */
-export async function rescheduleRoomWork(input: { id: string; date: string }): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await requireEdit()
-    const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomWork.findFirst({
-      where: { id: input.id, propertyId, deletedAt: null },
-      select: { id: true, status: true },
-    })
-    if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
-    const date = ymdToDbDate(input.date)
-    if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
-    // 완료 건의 날짜만 미래를 막는다. 예정 건은 앞날을 잡는 자리라 안 막는다(화면과 같은 갈래).
-    if (cur.status === 'DONE') {
-      const fg = assertNotFuture(input.date)
-      if (!fg.ok) return { ok: false, error: fg.reason }
-    }
-    await prisma.roomWork.update({
-      where: { id: cur.id },
-      data: cur.status === 'DONE' ? { doneDate: date } : { scheduledDate: date },
-    })
-    revalidatePath('/room-manage')
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, error: (err as Error).message ?? '날짜 변경에 실패했습니다.' }
   }
 }
 
