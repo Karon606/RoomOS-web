@@ -173,8 +173,15 @@ must(IC, ic, null, [
 const AC = 'app/(app)/inventory/assets/AssetsClient.tsx'
 const ac = read(AC)
 must(AC, ac, null, [
-  [/<optgroup label=\{STORE_GROUP_LABEL\}>/, "옮기기 목록에 '여분으로 보관 (배정 안 함)' 무리가 없다"],
-  [/<option value=\{storeKey\(null\)\}>\{STORE_UNKNOWN_OPTION\}<\/option>/, "옮기기 목록에 '보관 위치 모름'이 없다"],
+  [/<PillButton primary onClick=\{openBatch\}>일괄 옮기기<\/PillButton>/, "선택 알약 주 버튼이 '일괄 옮기기'(일괄 옮기기 창 열기)가 아니다"],
+  [/if \(parseStoreKey\(batchAssign\.to\)\) \{ runBatchStore\(batchAssign\.to\); return \}/, '일괄 옮기기 창의 여분 보관 칸이 보관 대상으로 안 간다'],
+  // 신고 0c37bc53(2026-10-26 운영자 승인): 목적지 세 자리(옮기기·일괄 옮기기·나눠 배정)가 정본 DestinationPicker 하나를 쓴다.
+  [/<DestinationPicker label="어디로 옮길까요\?" value=\{move\.to\}/, '옮기기 모달이 목적지 고르기 정본(DestinationPicker)을 안 쓴다'],
+  [/<DestinationPicker label="어디로 옮길까요\?" value=\{batchAssign\.to\}/, '일괄 옮기기 창이 목적지 고르기 정본(DestinationPicker)을 안 쓴다'],
+  [/<DestinationPicker label="방·공용부 추가" value="" [\s\S]{0,200}groups=\{\['room', 'loc'\]\}/, "나눠 배정의 '방·공용부 추가' 가 DestinationPicker(방·공용부 두 칸)가 아니다"],
+  [/defaultDestGroup\(isUnplaced\(it\.roomId \?\? null, it\.locationId \?\? null, !!it\.isCommon\)\)/, '옮기기 처음 칸이 정본 defaultDestGroup(미배정이면 여분 보관, 아니면 방)이 아니다'],
+  [/disabled=\{pending \|\| !picked \|\| over \|\| same/, '옮기기 모달에서 방·공용부 칸 목적지를 고르기 전에 옮기기가 열린다'],
+  [/disabled=\{pending \|\| !picked \|\| overAny\}/, '일괄 옮기기 창에서 목적지를 고르기 전에 옮기기가 열린다'],
   [/\(it\.storedLocationId \?\? null\) === toStore\.id\)/, '이미 미배정이어도 보관 위치가 다르면 옮길 수 있어야 한다(같은 곳 판정)'],
   [/hasStores \? \(/, '위치가 0곳일 때 보관 위치 UI 를 숨기는 갈래가 없다'],
   [/const defStore = defaultStorageId\(storages\)/, '미리 고르기가 정본(기본 창고 하나일 때만)이 아니다'],
@@ -186,10 +193,6 @@ must(AC, ac, null, [
   [/storeMeta=\{!!q\}/, '카드 메타의 보관 위치 토막이 묶음이 풀린 화면(검색)에서만 서야 한다'],
   // 금액은 2026-10-20 부터 메타 줄 끝에 따로 선다(말줄임이 금액부터 자르지 않게). 보관 위치 토막은 여전히 맨 앞이다.
   [/const head = place \? `\$\{place\} · \$\{rest\}` : rest/, '풀린 화면의 보관 위치 토막이 맨 앞 차례가 아니다'],
-  [/const storeOptionLabel = \(s: \{ pathName: string; isHub: boolean \}\) => `\$\{s\.pathName\}에 보관\$\{s\.isHub \? ' \(기본 창고\)' : ''\}`/, "옮기기 목록의 보관 선택지가 '{경로}에 보관'이 아니다(공용부 무리와 같은 이름이 겹친다)"],
-  [/\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}[\s\S]{0,2000}\{storages\.map\(s => <option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>\)\}|\{storeOptionLabel\(s\)\}[\s\S]*\{storeOptionLabel\(s\)\}/, '일괄 옮기기·옮기기 두 목록이 같은 보관 선택지 표기를 안 쓴다'],
-  [/<PillButton primary onClick=\{\(\) => setPillMode\('assign'\)\}>일괄 옮기기<\/PillButton>/, "선택 알약 주 버튼이 '일괄 옮기기'가 아니다"],
-  [/if \(parseStoreKey\(v\)\) \{ runBatchStore\(v\); return \}/, '일괄 옮기기 select 의 여분으로 보관 무리가 보관 대상으로 안 간다'],
   [/const placeIn = \(it: AssetItem\) =>/, '문장 속 장소(경로 그대로) 정본이 없다'],
   [/subtitle=\{`지금 \$\{fromIn\}에/, "옮기기 부제가 문장 속 장소가 아니라 라벨('…보관에')이다"],
   [/logPlaceLabel\(r\.fromKind, r\.fromLabel\)/, "배정 변경 이력이 보관 이력을 '{위치} 보관'으로 안 읽는다"],
@@ -202,7 +205,27 @@ mustNot(AC, ac, null, [
   [/415|제기역/, '보관 위치를 하드코딩했다(멀티테넌트)'],
   [/rcvAsk/, '카드 안 인라인 수령 물음이 남았다(수령 창 하나로 모았다)'],
   [/setPillMode\('store'\)/, "선택 알약에 '보관 위치' 버튼이 따로 섰다(360·412 에서 닫기·폐기가 밀린다, 웹디자이너 패스)"],
+  [/<optgroup /, '목적지 select 에 optgroup 이 남았다. 무리는 세그먼트로 고른다(신고 0c37bc53, DestinationPicker)'],
   [/undoBatchAssignAssets\(undo\)\s*\n\s*if \(!res\.ok\) \{ pushToast\('error', res\.error\); return \}\s*\n\s*pushToast\('info', '되돌렸습니다'\)/, '공용 자재 적용취소가 원상태 스냅샷으로 덮는다'],
+])
+
+// ── 목적지 고르기 정본(DestinationPicker, 신고 0c37bc53) ─────────────────
+const DP = 'app/(app)/inventory/assets/DestinationPicker.tsx'
+const dp = read(DP)
+must(DP, dp, null, [
+  [/<SegmentedControl<DestGroup> size="md"/, '목적지 무리를 정본 SegmentedControl md 로 고르지 않는다(가이드 §12 상호배타는 세그먼트)'],
+  [/store: STORE_SEGMENT_LABEL, room: '방', loc: '공용부'/, "세그먼트 칸 이름이 '여분 보관 / 방 / 공용부' 가 아니다"],
+  [/aria-label=\{STORE_GROUP_LABEL\}/, "여분 보관 select 의 aria-label 이 무리 이름 '여분으로 보관 (배정 안 함)' 이 아니다"],
+  [/<option key=\{s\.id\} value=\{storeKey\(s\.id\)\}>\{storeOptionLabel\(s\)\}<\/option>/, "보관 선택지가 '{경로}에 보관' 정본(storeOptionLabel)이 아니다"],
+  [/<option value=\{storeKey\(null\)\}>\{STORE_UNKNOWN_OPTION\}<\/option>/, "여분 보관 칸에 '보관 위치 모름'이 없다"],
+  [/hasStores \? \(/, '위치가 0곳일 때 보관 select 를 숨기는 갈래가 없다'],
+  [/onChange\(g === 'store' \? storeDefault : ''\)/, '칸을 바꿀 때 여분 보관은 기본 보관 값, 방·공용부는 빈 값(미리 안 고름)이 아니다'],
+  [/group === 'store' && <p[^>]*>\{STORE_SEGMENT_CAPTION\}<\/p>/, '여분 보관 칸에서만 서는 캡션이 없다'],
+  [/g !== 'loc' \|\| locations\.length > 0/, '공용부가 0곳이면 공용부 칸을 숨기지 않는다'],
+])
+mustNot(DP, dp, null, [
+  [/<optgroup /, '목적지 select 에 optgroup 이 남았다(무리는 세그먼트로 고른다)'],
+  [/value: 'all'|label: '전체'/, "목적지 세그먼트에 '전체' 칸이 섰다(§23 필터로 읽힌다)"],
 ])
 
 console.log(`[비품 보관 위치 배선] 위반 ${violations.length}건`)

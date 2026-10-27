@@ -12,6 +12,12 @@ export const STORE_GROUP_LABEL = '여분으로 보관 (배정 안 함)'   // 옮
 export const STORE_UNKNOWN_OPTION = '보관 위치 모름'             // 그 무리 안 '모름' 선택지
 export const STORE_UNKNOWN_HEAD = '보관 위치 미정'               // 미배정 묶음 머리(칸이 빈 행)
 export const UNASSIGNED_PLACE = '미배정(여분)'                    // 보관 위치가 없는 미배정 카드의 자리 이름(종전 그대로)
+// 목적지 세그먼트 칸 이름(가이드 §29 2~6자). 무리 이름 STORE_GROUP_LABEL 은 그 칸 아래 select 의 aria-label 과 수령 창에 남는다
+// (2026-10-26 운영자 승인, 신고 0c37bc53 '미배정분 보관 위치 선택항목이 배정하는 방들의 리스트와 섞여').
+export const STORE_SEGMENT_LABEL = '여분 보관'
+export const STORE_SEGMENT_CAPTION = '배정하지 않고 보관 위치만 적습니다'
+/** 옮기기·일괄 옮기기 목록의 보관 선택지. '{경로}에 보관'(공용부 칸의 같은 이름과 안 겹친다). 수령 창·무상 입수는 경로 그대로. */
+export const storeOptionLabel = (s: { pathName: string; isHub: boolean }) => `${s.pathName}에 보관${s.isHub ? ' (기본 창고)' : ''}`
 /** 보관 위치가 있는 미배정 카드의 자리 이름. '4층 415호 창고 보관'. 이름은 표기 경로(pathName)다. */
 export const storedPlaceLabel = (pathName: string) => `${pathName} 보관`
 
@@ -58,6 +64,23 @@ export function parseStoreKey(v: string): { id: string | null } | null {
   if (!v.startsWith('store:')) return null
   const id = v.slice('store:'.length)
   return { id: id || null }
+}
+
+// ── 목적지 무리(세그먼트 칸) ──────────────────────────────────────────────
+// 옮기기 목적지는 성격이 다른 셋이다. 여분 보관(미배정 + 보관 위치 메모)·방·공용부(배정). 한 select 의 optgroup 셋이면
+// iOS 휠·Android 목록에서 회색 머리줄 하나라 한 두루마리가 된다(신고 0c37bc53, 보관 19 + 방 50 + 공용부 17 = 86행).
+// 그래서 세그먼트로 무리를 먼저 고르고 그 무리만 담은 select 를 보인다(가이드 §12 '상호배타는 세그먼트'). 정본 컴포넌트 DestinationPicker.
+export type DestGroup = 'store' | 'room' | 'loc'
+/** 목적지 키의 무리. 빈 값·모르는 접두어는 null(아직 안 골랐다). */
+export function destGroupOf(v: string): DestGroup | null {
+  if (v.startsWith('store:')) return 'store'
+  if (v.startsWith('room:') && v.length > 'room:'.length) return 'room'
+  if (v.startsWith('loc:') && v.length > 'loc:'.length) return 'loc'
+  return null
+}
+/** 처음 고를 칸. 지금 안 놓인(미배정) 것만 옮기면 여분 보관, 하나라도 방·공용부에 놓였으면 방. */
+export function defaultDestGroup(allUnplaced: boolean): DestGroup {
+  return allUnplaced ? 'store' : 'room'
 }
 
 /** 배정 변경 이력 한 줄의 자리 표기. 보관(storage)은 '{경로} 보관', 미배정(none)·빈 라벨은 '미배정'(DB 라벨은 되찾기 열쇠라 안 고친다). */

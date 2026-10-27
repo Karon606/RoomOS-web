@@ -42,9 +42,11 @@ import {
 } from './receiptPlacement'
 // 보관 위치 축(배정 안 한 여분이 놓인 창고·선반, 2026-10-19). 낱말·후보 순서·미리 고르기·목적지 키의 정본.
 import {
-  STORE_GROUP_LABEL, STORE_UNKNOWN_OPTION, STORE_UNKNOWN_HEAD, UNASSIGNED_PLACE, storedPlaceLabel, defaultStorageId,
-  storeKey, parseStoreKey, logPlaceLabel,
+  STORE_UNKNOWN_OPTION, STORE_UNKNOWN_HEAD, UNASSIGNED_PLACE, storedPlaceLabel, defaultStorageId,
+  storeKey, parseStoreKey, logPlaceLabel, defaultDestGroup,
 } from './storagePlace'
+// 옮기기 목적지 고르기 정본(세그먼트 여분 보관 / 방 / 공용부 + 그 무리만 담은 select, 신고 0c37bc53).
+import { DestinationPicker } from './DestinationPicker'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -111,6 +113,12 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   const storeNameOf = (id: string | null | undefined) => (id ? storages.find(s => s.id === id)?.pathName ?? null : null)
   // 옮기기 목적지 기본값. 위치가 있으면 기본 창고(없으면 '보관 위치 모름'), 위치가 없으면 종전 '미배정(여분)으로'.
   const defaultMoveTo = () => storeKey(hasStores ? defStore : null)
+  // 옮기기 모달 열기. 처음 칸은 미배정 카드면 여분 보관(기본 보관 값을 미리 고름), 방·공용부·공용 자재에 있으면 방(미리 안 고름,
+  // 50행 중 하나를 짐작하지 않는다). 정본 defaultDestGroup(2026-10-26 운영자 승인, 신고 0c37bc53).
+  const openMove = (it: AssetItem) => {
+    const g = defaultDestGroup(isUnplaced(it.roomId ?? null, it.locationId ?? null, !!it.isCommon))
+    setMove({ it, to: g === 'store' ? defaultMoveTo() : '', qty: '', date: kstYmdStr(), src: '', replace: '' })
+  }
   // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
   const [adjQty, setAdjQty] = useState<{ id: string; v: string } | null>(null)   // 배정 수량 직접 조절 입력(카드별)
   // replace: '' = 이미 있던 것 그대로 둠, 사유 문자열 = 교체(그만큼 폐기 기록, 배정과 한 트랜잭션). 사유는 저장 글자다(lib/reasonLists).
@@ -169,13 +177,13 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   })
   const [search, setSearch] = useState('')   // v2.0 §23 상시 검색 — 품목·구매처·카테고리 클라 필터
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
-  const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
   // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
-  const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
+  // 일괄 옮기기 창. to = 목적지 키('store:…' | 'room:id' | 'loc:id' | '' = 아직 안 고름), group0 = 처음 칸(DestinationPicker).
+  const [batchAssign, setBatchAssign] = useState<{ to: string; group0: 'store' | 'room'; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
   // 1대N 나눠 배정 — 한 품목을 여러 방·공용부에 수량 지정해 한 번에 분배(rows.key = 'room:id' | 'loc:id')
   const [dist, setDist] = useState<{ it: AssetItem; assignedAt: string; rows: { key: string; qty: string }[] } | null>(null)
   const openDistribute = (it: AssetItem) => setDist({ it, assignedAt: kstYmdStr(), rows: [] })
-  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
+  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()) }
   // 합치기 바텀시트 — v2.0 §22 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; sourceId?: string; sourceMeta?: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string, srcId?: string) => void } | null>(null)
   // 비품 상세 풀화면 — v2.0 §22 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
@@ -545,19 +553,16 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   })
   // 같은 구역·분류의 다른 카드(합치기 대상 후보)
   const siblingsOf = (list: AssetItem[], it: AssetItem) => list.filter(s => s.id !== it.id && s.category === it.category)
-  // 하단 바 대상 선택 → 수량 시트 오픈(품목별 기본 전량). 'room:id' | 'loc:id'
-  const onBatchPick = (v: string) => {
-    if (!v || selItems.length === 0) return
-    // 여분으로 보관 무리는 수량 시트 없이 전량 옮긴다(배정일·수량을 묻는 것은 방·공용부 배정뿐이다).
-    if (parseStoreKey(v)) { runBatchStore(v); return }
-    const [k, id] = v.split(':')
-    const label = k === 'room'
-      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '')
-      : (locations.find(l => l.id === id)?.pathName ?? '')
+  // 선택 알약 '일괄 옮기기' → 일괄 옮기기 창(옮기기 모달과 같은 목적지 문법, 신고 0c37bc53). 종전에는 알약 안 select 에
+  // optgroup 셋을 품었는데 320px 알약에는 세그먼트가 안 들어가서 창 하나로 모았다. 품목별 배정 수량은 기본 전량.
+  // 처음 칸은 고른 것이 전부 미배정이면 여분 보관(기본 보관 값 미리 고름), 하나라도 놓였으면 방(미리 안 고름).
+  const openBatch = () => {
+    if (selItems.length === 0) return
+    const g = defaultDestGroup(selItems.every(it => isUnplaced(it.roomId ?? null, it.locationId ?? null, !!it.isCommon)))
     setBatchAssign({
-      target: { kind: k === 'room' ? 'room' : 'location', id },
-      label,
-      assignedAt: kstYmdStr(),   // 배정일 — 기본 오늘, 시트에서 변경 가능(운영자 요청 2026-07-08)
+      to: g === 'store' ? defaultMoveTo() : '',
+      group0: g === 'store' ? 'store' : 'room',
+      assignedAt: kstYmdStr(),   // 배정일 — 기본 오늘, 창에서 변경 가능(운영자 요청 2026-07-08)
       rows: selItems.map(it => ({ it, qty: String(it.qtyValue ?? 1) })),
     })
   }
@@ -571,7 +576,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
     startTransition(async () => {
       const res = await batchAssignAssets({ items: selItems.map(it => ({ ids: it.ids, qty: null })), target: { kind: 'storage', id: st.id } })
       if (!res.ok) { pushToast('error', res.error); return }
-      exitMerge()
+      setBatchAssign(null); exitMerge()
       // 성공 토스트는 명사형(§29). 위치를 비웠으면 '보관 위치 미정'(그 묶음 머리와 같은 말).
       pushToast('success', name ? `${name}에 ${res.assigned}개 품목 보관됨` : `${res.assigned}개 품목 ${STORE_UNKNOWN_HEAD}`, {
         action: { label: '적용취소', run: () => undoBatch(res.undo) },
@@ -590,8 +595,12 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
 
   // 수량 시트 확정 → 일괄 배정 실행
   const runBatchAssign = () => {
-    if (!batchAssign) return
-    const target = batchAssign.target
+    if (!batchAssign || !batchAssign.to) return
+    // 여분 보관 칸은 수량 없이 전량 옮긴다(배정일·수량을 묻는 것은 방·공용부 배정뿐이다).
+    if (parseStoreKey(batchAssign.to)) { runBatchStore(batchAssign.to); return }
+    const [k, id] = batchAssign.to.split(':')
+    const target: Target = { kind: k === 'room' ? 'room' : 'location', id }
+    const label = placeName(batchAssign.to)
     const items = batchAssign.rows.map(r => {
       const max = r.it.qtyValue ?? 1
       let q = Number(r.qty)
@@ -603,7 +612,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       const res = await batchAssignAssets({ items, target, assignedAt: batchAssign.assignedAt || null })
       if (!res.ok) { pushToast('error', res.error); return }
       setBatchAssign(null); exitMerge()
-      pushToast('success', `${batchAssign.label}에 ${res.assigned}개 품목 배정됨`, {
+      pushToast('success', `${label}에 ${res.assigned}개 품목 배정됨`, {
         action: { label: '적용취소', run: () => undoBatch(res.undo) },
       })
       router.refresh()
@@ -653,8 +662,6 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : it.storedLocationName ? storedPlaceLabel(it.storedLocationName) : UNASSIGNED_PLACE)
   const placeIn = (it: AssetItem) =>
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : it.storedLocationName ?? UNASSIGNED_PLACE)
-  // 옮기기·일괄 옮기기 목록의 보관 선택지. '{경로}에 보관'(공용부 무리의 같은 이름과 안 겹친다). 수령 창·무상 입수는 경로 그대로.
-  const storeOptionLabel = (s: { pathName: string; isHub: boolean }) => `${s.pathName}에 보관${s.isHub ? ' (기본 창고)' : ''}`
   // '보관 위치 모름'을 고른 행선지 이름. 위치가 있으면 그 묶음 머리와 같은 '보관 위치 미정', 없으면 종전 '미배정(여분)'.
   const unknownDest = () => (hasStores ? STORE_UNKNOWN_HEAD : UNASSIGNED_PLACE)
   // 카드 제목·배치 현황 칩·설치·폐기 머리가 같은 규격 문자열을 쓴다. 세 자리가 각자 조립하면
@@ -700,7 +707,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
 
   // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로). 빈 수량 = 전량.
   const runMove = () => {
-    if (!move) return
+    if (!move || !move.to) return
     const it = moveSrc ?? move.it
     const buy = move.src ? buysOf(it).get(move.src) : null
     const ids = buy ? buy.ids : it.ids
@@ -1052,7 +1059,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   </button>
                 )}
                 <button type="button" disabled={pending}
-                  onClick={() => setMove({ it, to: defaultMoveTo(), qty: '', date: kstYmdStr(), src: '', replace: '' })}
+                  onClick={() => openMove(it)}
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '옮기기' : '배정하기'}
                 </button>
@@ -1354,47 +1361,18 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       {/* 선택 모드 하단 알약 — v2.0 §22 SelectionPillBar(탭 공용). ① 방·공용부 일괄 배정 ② 합치기(대표로 통일). */}
       {mergeMode && mergeSel.size > 0 && (
         <SelectionPillBar count={mergeSel.size} onClose={exitMerge}>
-          {pillMode === 'menu' && (
-            <>
-              {/* 수령 대기가 섞이면 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 같은 게이트,
-                  receiptPlacement assignDenialUnreceived). 폐기·분실과 같은 판정이다. */}
-              {!selItems.some(it => data.pending.some(p => p.id === it.id)) ? (
-                <PillButton primary onClick={() => setPillMode('assign')}>일괄 옮기기</PillButton>
-              ) : (
-                // 숨긴 동작 자리에 까닭 한 줄(§22 ②, 웹디자이너 패스 D8). 문장은 서버 거부와 한 벌이다.
-                <span className="min-w-0 break-keep text-[0.65625rem] leading-snug text-white/75">{ASSET_ASSIGN_PENDING_REASON_SHORT}</span>
-              )}
-              {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
-              {/* 수령 대기가 섞이면 숨긴다 — 아직 받지도 않은 물건을 버릴 수는 없다(서버도 같은 게이트) */}
-              {!selItems.some(it => data.pending.some(p => p.id === it.id)) && (
-                <PillButton onClick={() => openDispose(selItems)}>폐기·분실</PillButton>
-              )}
-            </>
+          {/* 수령 대기가 섞이면 숨긴다. 받기 전 자리는 배정 예정 호실뿐이고 받을 때 정한다(서버도 같은 게이트,
+              receiptPlacement assignDenialUnreceived). 폐기·분실과 같은 판정이다. */}
+          {!selItems.some(it => data.pending.some(p => p.id === it.id)) ? (
+            <PillButton primary onClick={openBatch}>일괄 옮기기</PillButton>
+          ) : (
+            // 숨긴 동작 자리에 까닭 한 줄(§22 ②, 웹디자이너 패스 D8). 문장은 서버 거부와 한 벌이다.
+            <span className="min-w-0 break-keep text-[0.65625rem] leading-snug text-white/75">{ASSET_ASSIGN_PENDING_REASON_SHORT}</span>
           )}
-          {pillMode === 'assign' && (
-            <>
-              {/* 옮기기 모달과 같은 세 무리(여분으로 보관 / 방 / 공용부, 웹디자이너 패스). 알약 버튼을 따로 두면 360·412 에서 닫기·폐기가 밀린다. */}
-              <select autoFocus defaultValue="" disabled={pending} onChange={e => onBatchPick(e.target.value)}
-                aria-label="옮길 곳 선택"
-                className="h-9 max-w-[44vw] rounded-md bg-white/[0.13] px-2 text-sm text-white outline-none">
-                <option value="" disabled>옮길 곳 선택…</option>
-                {hasStores && (
-                  <optgroup label={STORE_GROUP_LABEL}>
-                    {storages.map(s => <option key={s.id} value={storeKey(s.id)}>{storeOptionLabel(s)}</option>)}
-                    <option value={storeKey(null)}>{STORE_UNKNOWN_OPTION}</option>
-                  </optgroup>
-                )}
-                <optgroup label="방">
-                  {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
-                </optgroup>
-                {locations.length > 0 && (
-                  <optgroup label="공용부">
-                    {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
-                  </optgroup>
-                )}
-              </select>
-              <PillButton onClick={() => setPillMode('menu')}>뒤로</PillButton>
-            </>
+          {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
+          {/* 수령 대기가 섞이면 숨긴다 — 아직 받지도 않은 물건을 버릴 수는 없다(서버도 같은 게이트) */}
+          {!selItems.some(it => data.pending.some(p => p.id === it.id)) && (
+            <PillButton onClick={() => openDispose(selItems)}>폐기·분실</PillButton>
           )}
         </SelectionPillBar>
       )}
@@ -1407,51 +1385,79 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
           onConfirm={sheet.onConfirm} pending={pending} />
       )}
 
-      {/* 일괄 배정 수량 시트 — 품목별 배정 수량(기본 전량) + 적용취소(v2.0 §16) */}
-      {batchAssign && (
+      {/* 일괄 옮기기 — 옮기기 모달과 같은 목적지 문법(DestinationPicker, 신고 0c37bc53) + 방·공용부면 배정일·품목별 수량(기본 전량)
+          + 적용취소(v2.0 §16). 여분 보관은 종전처럼 수량 없이 전량이다. */}
+      {batchAssign && (() => {
+        const toStore = !!parseStoreKey(batchAssign.to)
+        const picked = batchAssign.to !== ''
+        const overAny = !toStore && batchAssign.rows.some(r => Number(r.qty) > (r.it.qtyValue ?? 1))
+        return (
         <Modal
           open
           onClose={() => setBatchAssign(null)}
-          title={`일괄 배정 · ${batchAssign.label}`}
-          subtitle={`${batchAssign.rows.length}개 품목 · 품목별 배정 수량을 정하세요(기본 전량, 나머지는 여분 유지)`}
+          title="일괄 옮기기"
+          subtitle={`${batchAssign.rows.length}개 품목`}
           width="sm"
           footer={
             <div className="flex gap-2 justify-end">
               <Btn variant="secondary" size="md" onClick={() => setBatchAssign(null)} disabled={pending}>취소</Btn>
-              <Btn variant="primary" size="md" onClick={runBatchAssign} disabled={pending || batchAssign.rows.some(r => Number(r.qty) > (r.it.qtyValue ?? 1))}>{pending ? '배정 중…' : '배정'}</Btn>
+              <Btn variant="primary" size="md" onClick={runBatchAssign} disabled={pending || !picked || overAny}>
+                {pending ? '옮기는 중…' : '옮기기'}
+              </Btn>
             </div>
           }
         >
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
-            <div className="w-44">
-              <DatePicker value={batchAssign.assignedAt} disabled={pending}
-                onChange={v => setBatchAssign(b => b ? { ...b, assignedAt: v } : b)}
-                className={DATE_FIELD_CLS} />
-            </div>
-            <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
+          <div className="space-y-3">
+            <DestinationPicker label="어디로 옮길까요?" value={batchAssign.to} disabled={pending}
+              onChange={v => setBatchAssign(b => b ? { ...b, to: v } : b)}
+              groups={['store', 'room', 'loc']} initialGroup={batchAssign.group0}
+              rooms={rooms} locations={locations} storages={storages} storeDefault={defaultMoveTo()}
+              emptyLabel={g => g === 'room' ? '방을 고르세요' : '공용부를 고르세요'} />
+            {/* 막힌 주 버튼의 이유(§27.8 ③). 단건 옮기기 모달의 미리보기와 같은 문장이다. 머리(부제)는 칸을 바꿔도 같은 한 줄로 둔다(320px 머리 높이가 안 뛰게). */}
+            {!picked && <p className="text-xs text-[var(--warm-muted)]">옮길 곳을 고르세요.</p>}
+            {picked && (
+              <p className="text-xs text-[var(--warm-muted)]">{toStore ? '고른 품목을 전량 옮깁니다.' : '품목별 배정 수량을 정하세요. 비우면 전량이고 나머지는 여분으로 남습니다.'}</p>
+            )}
+            {!toStore && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
+                <div className="w-44">
+                  <DatePicker value={batchAssign.assignedAt} disabled={pending}
+                    onChange={v => setBatchAssign(b => b ? { ...b, assignedAt: v } : b)}
+                    className={DATE_FIELD_CLS} />
+                </div>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
+              </div>
+            )}
+            <ul className="space-y-2">
+              {batchAssign.rows.map((r, idx) => {
+                const max = r.it.qtyValue ?? 1
+                const over = !toStore && Number(r.qty) > max
+                return (
+                  <li key={r.it.id} className="rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
+                      {toStore ? (
+                        <span className="text-xs text-[var(--warm-muted)] shrink-0 tabular-nums">전량 {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
+                      ) : (
+                        <>
+                          {/* controlled number 는 '1.' 중간상태를 빈 값으로 소독해 1.2 가 2 가 되므로 텍스트 + inputMode 로 받는다. */}
+                          <input inputMode="decimal" value={r.qty} disabled={pending} aria-label={`${r.it.itemLabel} 배정 수량`}
+                            onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x) } : b)}
+                            className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+                          <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
+                        </>
+                      )}
+                    </div>
+                    {over && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(max)}{r.it.qtyUnit ?? '개'})보다 많습니다.</p>}
+                  </li>
+                )
+              })}
+            </ul>
           </div>
-          <ul className="space-y-2">
-            {batchAssign.rows.map((r, idx) => {
-              const max = r.it.qtyValue ?? 1
-              const over = Number(r.qty) > max
-              return (
-                <li key={r.it.id} className="rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
-                    {/* controlled number 는 '1.' 중간상태를 빈 값으로 소독해 1.2 가 2 가 되므로 텍스트 + inputMode 로 받는다. */}
-                    <input inputMode="decimal" value={r.qty} disabled={pending}
-                      onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x) } : b)}
-                      className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
-                    <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
-                  </div>
-                  {over && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(max)}{r.it.qtyUnit ?? '개'})보다 많습니다.</p>}
-                </li>
-              )
-            })}
-          </ul>
         </Modal>
-      )}
+        )
+      })()}
 
       {/* 1대N 나눠 배정 — 한 품목을 여러 방·공용부에 수량 지정 분배, 잔여는 출발지 유지 */}
       {dist && (() => {
@@ -1465,8 +1471,6 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
         const rest = Math.round((max - sum) * 1000) / 1000
         const over = sum > max + 1e-9
         const chips = recentRooms.filter(r => !used.has('room:' + r.roomId))
-        const freeRooms = rooms.filter(r => !used.has('room:' + r.id))
-        const freeLocs = locations.filter(l => !used.has('loc:' + l.id))
         const addRow = (key: string) => setDist(d => d && !d.rows.some(r => r.key === key) ? { ...d, rows: [...d.rows, { key, qty: '' }] } : d)
         return (
           <Modal open onClose={() => setDist(null)} z={260} width="sm"
@@ -1502,23 +1506,13 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   </ul>
                 </div>
               )}
-              <label className="block">
-                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">방·공용부 추가</span>
-                <select value="" disabled={pending} onChange={e => { if (e.target.value) addRow(e.target.value) }}
-                  className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="">고르면 아래 목록에 추가됩니다</option>
-                  {freeRooms.length > 0 && (
-                    <optgroup label="방">
-                      {freeRooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
-                    </optgroup>
-                  )}
-                  {freeLocs.length > 0 && (
-                    <optgroup label="공용부">
-                      {freeLocs.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-              </label>
+              {/* 방·공용부 추가 — 옮기기와 같은 목적지 문법(DestinationPicker, 신고 0c37bc53). 여분 보관 칸은 없다(나눠 배정은 배정만). */}
+              <DestinationPicker label="방·공용부 추가" value="" disabled={pending}
+                onChange={v => { if (v) addRow(v) }}
+                groups={['room', 'loc']} initialGroup="room"
+                rooms={rooms} locations={locations} storages={storages} storeDefault=""
+                excludeKeys={used}
+                emptyLabel={() => '고르면 아래 목록에 추가됩니다'} />
               {dist.rows.length > 0 && (
                 <ul className="space-y-2">
                   {dist.rows.map((r, idx) => {
@@ -1806,7 +1800,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">{pendingPlaceCaption(plannedRoomsMeta(it.breakdown.filter(b => !b.disposed && b.unplaced).map(b => b.targetRoomNo)))}</span>
                 ) : (
                 <button type="button"
-                  onClick={() => setMove({ it, to: defaultMoveTo(), qty: '', date: kstYmdStr(), src: '', replace: '' })}
+                  onClick={() => openMove(it)}
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--tc-text)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
@@ -2236,11 +2230,12 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
         const toStoreName = toStore ? storeNameOf(toStore.id) : null
         const dest = toStore ? (toStoreName ? storedPlaceLabel(toStoreName) : unknownDest()) : placeName(move.to)
         const fromIn = placeIn(it)   // 부제·'나머지 …에 남음' 문장 속 장소. 전환 표기(from → dest)는 라벨 그대로
+        const picked = move.to !== ''   // 방·공용부 칸은 미리 고르지 않는다(DestinationPicker). 고르기 전에는 옮기기를 막는다.
         const same = (!!toStore && !it.roomId && !it.locationId && !it.isCommon && (it.storedLocationId ?? null) === toStore.id)
           || (!!it.roomId && move.to === `room:${it.roomId}`)
           || (!!it.locationId && move.to === `loc:${it.locationId}`)
         // 교체 — 가려는 자리에 **이미 있던** 같은 품목. 있을 때만 묻는다(504호 고압호스 사례).
-        const already = toNone || same ? undefined
+        const already = toNone || same || !picked ? undefined
           : allItems.find(x => x.id !== it.id && itemIdentity(x) === itemIdentity(it) && placeKeyOf(x) === move.to)
         const alreadyQty = already?.qtyValue ?? 0
         const replaceOver = !!move.replace && q > alreadyQty + 1e-9
@@ -2251,37 +2246,20 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
             footer={
               <div className="flex gap-2 justify-end">
                 <Btn variant="secondary" size="md" onClick={() => setMove(null)} disabled={pending}>취소</Btn>
-                <Btn variant="primary" size="md" onClick={runMove} disabled={pending || over || same || q <= 0 || replaceOver}>
+                <Btn variant="primary" size="md" onClick={runMove} disabled={pending || !picked || over || same || q <= 0 || replaceOver}>
                   {pending ? '옮기는 중…' : move.replace ? '교체' : '옮기기'}
                 </Btn>
               </div>
             }>
             <div className="space-y-3">
-              <label className="block">
-                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어디로 옮길까요?</span>
-                <select value={move.to} disabled={pending}
-                  onChange={e => setMove(m => m ? { ...m, to: e.target.value, replace: '' } : m)}
-                  className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  {/* 여분으로 보관(배정 안 함) 무리 — 그 영업장 위치 전부(기본 창고 먼저) + '보관 위치 모름'.
-                      위치가 0곳이면 무리 없이 종전 한 줄(미배정(여분)으로)만 선다. */}
-                  {hasStores ? (
-                    <optgroup label={STORE_GROUP_LABEL}>
-                      {storages.map(s => <option key={s.id} value={storeKey(s.id)}>{storeOptionLabel(s)}</option>)}
-                      <option value={storeKey(null)}>{STORE_UNKNOWN_OPTION}</option>
-                    </optgroup>
-                  ) : (
-                    <option value={storeKey(null)}>{UNASSIGNED_PLACE}으로</option>
-                  )}
-                  <optgroup label="방">
-                    {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
-                  </optgroup>
-                  {locations.length > 0 && (
-                    <optgroup label="공용부">
-                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.pathName}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-              </label>
+              {/* 목적지 — 세그먼트(여분 보관 / 방 / 공용부) + 그 무리만 담은 select(정본 DestinationPicker, 신고 0c37bc53).
+                  위치가 0곳이면 여분 보관 칸은 select 없이 종전 행선지 '미배정(여분)으로' 를 글자로 말한다. */}
+              <DestinationPicker label="어디로 옮길까요?" value={move.to} disabled={pending}
+                onChange={v => setMove(m => m ? { ...m, to: v, replace: '' } : m)}
+                groups={['store', 'room', 'loc']}
+                initialGroup={defaultDestGroup(isUnplaced(it.roomId ?? null, it.locationId ?? null, !!it.isCommon))}
+                rooms={rooms} locations={locations} storages={storages} storeDefault={defaultMoveTo()}
+                emptyLabel={g => g === 'room' ? '방을 고르세요' : '공용부를 고르세요'} />
               {buyDates.length > 1 && (
                 <label className="block">
                   <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어느 구매분에서 뺄까요?</span>
@@ -2334,15 +2312,17 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               )}
               <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
                 <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
-                {same
+                {!picked
+                  ? <p className="text-[var(--warm-muted)]">옮길 곳을 고르세요.</p>
+                  : same
                   ? <p className="text-[var(--warm-muted)]">지금 있는 곳과 같은 곳입니다. 다른 곳을 골라주세요.</p>
                   : max <= 0
                   ? <p className="text-[var(--warm-muted)]">여기 남아 있는 수량이 없습니다. 폐기·분실로 기록된 것은 옮길 수 없습니다.</p>
                   : <p className="text-[var(--warm-dark)]">{from} → <span className="font-semibold">{dest}</span> · {q > 0 ? `${fmtQty(q)}${unit}` : '수량을 입력하세요'}{q > 0 && q < max ? ` (나머지 ${withEunNeun(`${fmtQty(Math.round((max - q) * 1000) / 1000)}${unit}`)} ${fromIn}에 남음)` : ''}</p>}
-                {q > 0 && !same && move.replace && !replaceOver && (
+                {picked && q > 0 && !same && move.replace && !replaceOver && (
                   <p className="mt-0.5 text-[var(--warm-dark)]">{dest}에 있던 <span className="font-semibold">{fmtQty(q)}{unit}</span>{eunNeunOf(unit)} 폐기·분실로 기록됩니다 · {dest}에 든 비용은 그대로입니다</p>
                 )}
-                {q > 0 && !same && (
+                {picked && q > 0 && !same && (
                   <p className="mt-0.5 text-[var(--warm-muted)]">{buy ? `${move.src.slice(2)} 구매분에서 차감` : buyDates.length > 1 ? '오래된 구매분부터 차감' : ''}</p>
                 )}
               </div>

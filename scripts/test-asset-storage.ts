@@ -6,6 +6,7 @@
 import {
   storageCandidates, defaultStorageId, canHoldStorage, storedForSave, storeKey, parseStoreKey, logPlaceLabel, storedPlaceLabel,
   STORE_GROUP_LABEL, STORE_UNKNOWN_OPTION, STORE_UNKNOWN_HEAD, UNASSIGNED_PLACE,
+  STORE_SEGMENT_LABEL, STORE_SEGMENT_CAPTION, storeOptionLabel, destGroupOf, defaultDestGroup,
 } from '../app/(app)/inventory/assets/storagePlace'
 import {
   receiptAssignCopy, receiptToast, plainReceiveToast, partialReceiveToast, SEP,
@@ -28,6 +29,19 @@ eq('① 모름 선택지', STORE_UNKNOWN_OPTION, '보관 위치 모름')
 eq('① 미정 묶음 머리', STORE_UNKNOWN_HEAD, '보관 위치 미정')
 eq('① 보관 자리 이름', storedPlaceLabel('4층 415호 창고'), '4층 415호 창고 보관')
 eq('① 보관 위치 없는 미배정 자리 이름(종전)', UNASSIGNED_PLACE, '미배정(여분)')
+// ①b 목적지 세그먼트(신고 0c37bc53, 2026-10-26 운영자 승인). 칸 이름은 §29 2~6자, 무리 이름은 select aria-label·수령 창에 남는다.
+eq('①b 세그먼트 칸 이름', STORE_SEGMENT_LABEL, '여분 보관')
+eq('①b 여분 보관 칸 캡션', STORE_SEGMENT_CAPTION, '배정하지 않고 보관 위치만 적습니다')
+eq('①b 보관 선택지 표기', storeOptionLabel({ pathName: '4층 415호 창고', isHub: true }), '4층 415호 창고에 보관 (기본 창고)')
+eq('①b 보관 선택지 표기(기본 창고 아님)', storeOptionLabel({ pathName: '옥상', isHub: false }), '옥상에 보관')
+eq('①b 보관 키의 무리', destGroupOf('store:x'), 'store')
+eq('①b 보관 위치 모름도 여분 보관 무리', destGroupOf('store:'), 'store')
+eq('①b 방 키의 무리', destGroupOf('room:r1'), 'room')
+eq('①b 공용부 키의 무리', destGroupOf('loc:l1'), 'loc')
+eq('①b 빈 값은 아직 안 고름', destGroupOf(''), null)
+eq('①b id 없는 방 키는 안 고름', destGroupOf('room:'), null)
+eq('①b 미배정만이면 처음 칸은 여분 보관', defaultDestGroup(true), 'store')
+eq('①b 놓인 것이 있으면 처음 칸은 방', defaultDestGroup(false), 'room')
 
 // ② 후보 순서·미리 고르기. 기본 창고 먼저, 나머지는 받은 차례(트리 DFS) 그대로. 하드코딩 없음.
 const L = (id: string, isHub = false) => ({ id, pathName: id, isHub })

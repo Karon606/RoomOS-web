@@ -294,7 +294,8 @@ function body(src, header) {
 //    버튼이 **화면에 없는 컨트롤의 이름**(`교체`)을 달고 죽어 있게 된다.
 {
   need('목적지를 바꾸면 교체 사유를 비운다',
-    /onChange=\{e => setMove\(m => m \? \{ \.\.\.m, to: e\.target\.value, replace: '' \} : m\)\}/.test(client),
+    // 2026-10-26 목적지는 정본 DestinationPicker 가 값을 넘긴다(신고 0c37bc53). 비우는 자리는 그 onChange 다.
+    /onChange=\{v => setMove\(m => m \? \{ \.\.\.m, to: v, replace: '' \} : m\)\}/.test(client),
     '안 비우면 버튼이 이유 한 줄 없이 죽는다')
   need('살아 있는 수량이 0이면 그 이유를 말한다',
     /max <= 0[\s\S]{0,120}?여기 남아 있는 수량이 없습니다\./.test(client),

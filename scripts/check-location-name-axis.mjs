@@ -293,9 +293,20 @@ function mustNot(file, block, label, pattern) {
   const src = read(f)
   if (src == null) violations.push(`${f} — 파일이 없다.`)
   else {
-    must(f, src, '공용부 배정 select·라벨', /\.pathName\b/g, 5)
+    // 목적지 select 셋은 2026-10-26 정본 DestinationPicker 로 옮겼다(신고 0c37bc53). 여기 남은 것은 라벨·이름 조립 자리다.
+    must(f, src, '공용부 배정 라벨', /\.pathName\b/g, 4)
     mustNot(f, src, '공용부 배정 select·라벨', /locations\.find\(l => l\.id === id\)\?\.name/)
     mustNot(f, src, '공용부 배정 select', /value=\{'loc:' \+ l\.id\}>\{l\.name\}/)
+  }
+}
+
+{
+  const f = 'app/(app)/inventory/assets/DestinationPicker.tsx'
+  const src = read(f)
+  if (src == null) violations.push(`${f} — 파일이 없다.`)
+  else {
+    must(f, src, '공용부 목적지 select(보관 선택지는 storeOptionLabel 이 pathName 을 쓴다)', /\.pathName\b/g, 1)
+    mustNot(f, src, '공용부 목적지 select', /value=\{'loc:' \+ l\.id\}>\{l\.name\}/)
   }
 }
 
