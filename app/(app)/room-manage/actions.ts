@@ -17,12 +17,19 @@ import {
 } from '@/lib/google-drive'
 import { looksLike360 } from '@/lib/driveImage'
 import { applyScheduledRentsFor } from '@/lib/scheduledRent'
-import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { kstMonthStr, kstYmdStr, kstMonthKey } from '@/lib/kstDate'
 import { buildMoveCalendar, monthLastDay, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
 import { fetchMoveLeases, loadMoveRange } from '@/lib/moveCalendarData'
 import { createOverlapAck, softDeleteOverlapAck } from '@/lib/overlapAck'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { withParticle } from '@/lib/koParticle'
+import { syncLeaseRentForRoom, unrecordedPastMonths, RoomRentSyncStale, ROOM_RENT_SYNC_STALE, RENT_AXIS_STATUSES, type RentAxis, type RentSyncApplied } from '@/lib/roomRentSync'
+import {
+  ROOM_RENT_SYNC_UNDO_DOMAIN, canonicalRoomRentSyncUndo, parseRoomRentSyncUndo,
+  ROOM_RENT_SYNC_UNDO_INVALID, ROOM_RENT_SYNC_UNDO_CONFLICT, ROOM_RENT_SYNC_UNDO_BILLED, type RoomRentSyncUndo,
+} from '@/lib/roomRentSyncUndo'
+import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
+import { displayName } from '@/lib/displayName'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -267,7 +274,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
 }
 
 // 호실 수정
-export async function updateRoom(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function updateRoom(formData: FormData): Promise<{ ok: true; sync?: RoomRentSyncSummary; undo?: RoomRentSyncUndo } | { ok: false; error: string }> {
   await requireEdit()
   const { propertyId } = await getPropertyId()
 
@@ -318,43 +325,64 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
 
   // 화면에서 온 id 다. 영업장 범위로 읽고, 남의 영업장 방이면 있는지 없는지 말하지 않고 닫는다(2026-10-23 운영자 승인).
   // 이 확인이 없으면 남의 방 이용료가 바뀌고 그 방 계약의 임대료·선납 락까지 따라 바뀐다.
-  const prevRoom = await prisma.room.findFirst({ where: { id, propertyId }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
+  const prevRoom = await prisma.room.findFirst({ where: { id, propertyId }, select: { roomNo: true, baseRent: true, nonResidentRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
   if (!prevRoom) return { ok: false, error: ROOM_GONE }
 
-  await prisma.room.update({
-    where: { id, propertyId },
-    data: {
-      roomNo:    roomNo.trim(),
-      type:      type || null,
-      tier:      tier || null,
-      baseRent,
-      memo:      memo || null,
-      floor,
-      windowType: windowType || null,
-      direction:  direction || null,
-      noMoveInReport,
-      nonResidentVacant,
-      standaloneLeaseAllowed,
-      nonResidentStandaloneAllowed,
-      areaPyeong,
-      areaM2,
-      scheduledRent,
-      rentUpdateDate,
-      nonResidentRent,
-      nonResidentScheduled,
-      nonResidentRentDate,
-    },
-  })
+  // 확인창에서 고른 계약(축별 id)과 그때 본 계약의 updatedAt. 화면 값이라 모양만 거르고, 범위·조건은 정본(syncLeaseRentForRoom)이 본다.
+  const picked = parseRentSyncPick(formData.get('rentSyncLeaseIds'), formData.get('rentSyncExpect'))
+  if (!picked) return { ok: false, error: '계약 적용 정보가 올바르지 않습니다. 창을 닫고 다시 열어 주세요.' }
 
-  // baseRent 변경 시 활성 계약의 rentAmount 동기화
-  if (prevRoom && prevRoom.baseRent !== baseRent) {
-    await prisma.leaseTerm.updateMany({
-      where: {
-        roomId: id,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
-      },
-      data: { rentAmount: baseRent },
+  // 방 저장과 계약 이용료 동기화는 한 트랜잭션이다(2026-10-27 운영자 승인, 홍은주 602호 사건). 종전에는 기본 이용료가 바뀌면 그 방 거주 계약을
+  // 협의가까지 확인 없이 전부 덮었고 비거주 이용료는 계약을 안 따라갔다. 이제 두 축 모두 옛 기준가 그대로인 계약만 따라가고(followers),
+  // 기준가와 다른 계약은 운영자가 확인창에서 고른 것만 옮긴다(leaseIds). 고른 계약이 그사이 바뀌었으면 방 저장까지 함께 되감는다(STALE).
+  let synced: { resident: RentSyncApplied[]; nonResident: RentSyncApplied[] }
+  const syncAt = new Date()   // 적용취소가 '그 뒤 새 수납 기록' 을 가려낼 기준 시각
+  try {
+    synced = await prisma.$transaction(async tx => {
+      await tx.room.update({
+        where: { id, propertyId },
+        data: {
+          roomNo:    roomNo.trim(),
+          type:      type || null,
+          tier:      tier || null,
+          baseRent,
+          memo:      memo || null,
+          floor,
+          windowType: windowType || null,
+          direction:  direction || null,
+          noMoveInReport,
+          nonResidentVacant,
+          standaloneLeaseAllowed,
+          nonResidentStandaloneAllowed,
+          areaPyeong,
+          areaM2,
+          scheduledRent,
+          rentUpdateDate,
+          nonResidentRent,
+          nonResidentScheduled,
+          nonResidentRentDate,
+        },
+      })
+      const out: { resident: RentSyncApplied[]; nonResident: RentSyncApplied[] } = { resident: [], nonResident: [] }
+      const axes: [RentAxis, number | null, number | null][] = [
+        ['resident', prevRoom.baseRent, baseRent],
+        ['nonResident', prevRoom.nonResidentRent, nonResidentRent],
+      ]
+      for (const [axis, prevRent, nextRent] of axes) {
+        if (nextRent == null) continue   // 비거주 이용료를 끄면 계약은 그대로 둔다(따라갈 기준가가 없다).
+        if (prevRent !== nextRent) {
+          out[axis].push(...(await syncLeaseRentForRoom(tx, { propertyId, roomId: id, axis, prevRent, nextRent, excludeShortTerm: true })).applied)
+        }
+        const ids = picked.leaseIds[axis]
+        if (ids.length > 0) {
+          out[axis].push(...(await syncLeaseRentForRoom(tx, { propertyId, roomId: id, axis, prevRent, nextRent, leaseIds: ids, expect: picked.expect })).applied)
+        }
+      }
+      return out
     })
+  } catch (err) {
+    if (err instanceof RoomRentSyncStale) return { ok: false, error: ROOM_RENT_SYNC_STALE }
+    throw err
   }
 
   // 인상 예약 변경 → 락인 되쓰기. 없으면 이미 선납된 달의 락이 인상을 이겨 인상분이 영원히 미청구로 남는다
@@ -375,7 +403,173 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   revalidatePath('/room-manage')
   revalidatePath('/rooms')
   revalidatePath('/tenants')
-  return { ok: true }
+  const applied = [...synced.resident, ...synced.nonResident]
+  if (applied.length === 0) return { ok: true }
+  // 토스트 문장(이름·전후 금액)과 적용취소 토큰. 서명 키가 없는 운영이면 토큰을 내지 않는다(화면이 [적용취소] 를 숨긴다).
+  const names = await leaseNames(propertyId, applied.map(a => a.id))
+  const sync: RoomRentSyncSummary = {
+    roomNo: roomNo.trim(),
+    resident: synced.resident.length ? { next: baseRent, leases: synced.resident.map(a => ({ name: names.get(a.id) ?? '', from: a.from, to: a.to })) } : undefined,
+    nonResident: synced.nonResident.length && nonResidentRent != null ? { next: nonResidentRent, leases: synced.nonResident.map(a => ({ name: names.get(a.id) ?? '', from: a.from, to: a.to })) } : undefined,
+  }
+  const undo = signRoomRentSync(propertyId, {
+    roomId: id,
+    at: syncAt.toISOString(),
+    room: { before: { baseRent: prevRoom.baseRent, nonResidentRent: prevRoom.nonResidentRent }, after: { baseRent, nonResidentRent } },
+    leases: applied.map(a => ({ id: a.id, before: a.from, after: a.to })),
+  })
+  return { ok: true, sync, ...(undo ? { undo } : {}) }
+}
+
+// ── 방 이용료 저장의 계약 동기화(2026-10-27 운영자 승인, 홍은주 602호 사건) ─────────────────────────────
+// 정본은 lib/roomRentSync syncLeaseRentForRoom. 화면은 저장 전에 previewRoomRentSync 로 '기준가와 다른 계약' 을 받아
+// 있으면 choiceDialog 로 묻고, 고른 계약 id 를 updateRoom 에 실어 보낸다. 적용취소는 undoRoomRentSync(서명 토큰).
+
+/** 토스트가 쓰는 결과. 축마다 새 기준가와 옮긴 계약(이름·전후 금액). */
+export type RoomRentSyncSummary = {
+  roomNo: string
+  resident?: { next: number; leases: { name: string; from: number; to: number }[] }
+  nonResident?: { next: number; leases: { name: string; from: number; to: number }[] }
+}
+/** 저장 전 미리보기. followers 는 저절로 따라갈 계약, differing 은 기준가와 달라 물어야 할 계약(단기 제외). */
+export type RoomRentAxisPreview = {
+  prevRent: number | null
+  nextRent: number
+  followers: { id: string; name: string; rentAmount: number }[]
+  differing: { id: string; name: string; rentAmount: number; updatedAt: string; unrecordedPastMonths: number }[]
+}
+
+function parseRentSyncPick(rawIds: FormDataEntryValue | null, rawExpect: FormDataEntryValue | null):
+  { leaseIds: Record<RentAxis, string[]>; expect: Record<string, string> } | null {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const empty = { leaseIds: { resident: [], nonResident: [] }, expect: {} }
+  if (rawIds == null || rawIds === '') return empty
+  try {
+    const ids = JSON.parse(String(rawIds)) as Record<string, unknown>
+    const exp = rawExpect ? JSON.parse(String(rawExpect)) as Record<string, unknown> : {}
+    const list = (v: unknown) => (v === undefined ? [] : Array.isArray(v) && v.every(x => typeof x === 'string' && UUID.test(x)) ? v as string[] : null)
+    const resident = list(ids.resident), nonResident = list(ids.nonResident)
+    if (!resident || !nonResident || !exp || typeof exp !== 'object' || Array.isArray(exp)) return null
+    const expect: Record<string, string> = {}
+    for (const [k, v] of Object.entries(exp)) {
+      if (!UUID.test(k) || typeof v !== 'string' || Number.isNaN(new Date(v).getTime())) return null
+      expect[k] = v
+    }
+    return { leaseIds: { resident, nonResident }, expect }
+  } catch { return null }
+}
+
+async function leaseNames(propertyId: string, ids: string[]): Promise<Map<string, string>> {
+  const rows = await prisma.leaseTerm.findMany({
+    where: { id: { in: ids }, propertyId },
+    select: { id: true, tenant: { select: { name: true, englishName: true, nickname: true, displayNameStyle: true } } },
+  })
+  return new Map(rows.map(r => [r.id, r.tenant ? displayName(r.tenant, r.tenant.displayNameStyle) : '']))
+}
+
+function signRoomRentSync(propertyId: string, u: Omit<RoomRentSyncUndo, 'sig' | 'v'>): RoomRentSyncUndo | null {
+  const body: Omit<RoomRentSyncUndo, 'sig'> = { v: 1, ...u }
+  const sig = signUndoBody(ROOM_RENT_SYNC_UNDO_DOMAIN, propertyId, canonicalRoomRentSyncUndo(body))
+  if (sig === null) return null
+  return { ...body, ...(sig ? { sig } : {}) }
+}
+
+/**
+ * 저장 전 미리보기(읽기). 값을 안 넘긴 축은 지금 방 값을 기준으로 본다(호실 수정 폼의 '계약 N건이 이 금액과 다릅니다' 줄).
+ * 비거주 이용료가 없거나 끈 방(null)은 비거주 축을 보지 않는다.
+ */
+export async function previewRoomRentSync(roomId: string, next: { baseRent?: number; nonResidentRent?: number | null }): Promise<
+  { ok: true; roomNo: string; resident: RoomRentAxisPreview; nonResident: RoomRentAxisPreview | null } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { propertyId, role } = await getPropertyId()
+    if (!canReadScope(role, 'money')) return { ok: false, error: '이용료를 볼 권한이 없습니다.' }
+    const room = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { roomNo: true, baseRent: true, nonResidentRent: true } })
+    if (!room) return { ok: false, error: ROOM_GONE }
+    const leases = await prisma.leaseTerm.findMany({
+      where: { roomId, propertyId, status: { in: [...RENT_AXIS_STATUSES.resident, ...RENT_AXIS_STATUSES.nonResident] } },
+      select: { id: true, status: true, rentAmount: true, isShortTerm: true, updatedAt: true, moveInDate: true, tenant: { select: { name: true, englishName: true, nickname: true, displayNameStyle: true } } },
+      orderBy: { moveInDate: 'asc' },
+    })
+    // 기록이 없는 지난 달은 락이 없어 새 금액으로 계산된다(미납 등). 확인창이 그 수를 미리 말한다(독립 검수 권고 4).
+    // 첫 달은 입주월과 인수 기준월 중 늦은 쪽(대시보드 미납과 같은 기준, app/(app)/dashboard/unpaid.ts).
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { prevOwnerCutoffDate: true, acquisitionDate: true } })
+    const cutoff = prop?.prevOwnerCutoffDate ?? prop?.acquisitionDate ?? null
+    const cutoffMonth = cutoff ? kstMonthKey(cutoff) : null
+    const recs = await prisma.paymentRecord.findMany({ where: { propertyId, leaseTermId: { in: leases.map(l => l.id) }, isDeposit: false }, select: { leaseTermId: true, targetMonth: true } })
+    const recorded = new Map<string, Set<string>>()
+    for (const r of recs) { if (!recorded.has(r.leaseTermId)) recorded.set(r.leaseTermId, new Set()); recorded.get(r.leaseTermId)!.add(r.targetMonth) }
+    const curMonth = kstMonthStr()
+    const pastUnrecorded = (l: typeof leases[number]) => {
+      if (!l.moveInDate) return 0
+      const mi = kstMonthKey(l.moveInDate)
+      return unrecordedPastMonths(cutoffMonth && cutoffMonth > mi ? cutoffMonth : mi, curMonth, recorded.get(l.id) ?? new Set())
+    }
+    const axis = (a: RentAxis, prevRent: number | null, nextRent: number): RoomRentAxisPreview => {
+      const mine = leases.filter(l => (RENT_AXIS_STATUSES[a] as string[]).includes(l.status))
+      const name = (l: typeof leases[number]) => (l.tenant ? displayName(l.tenant, l.tenant.displayNameStyle) : '')
+      const isFollower = (l: typeof leases[number]) => prevRent != null && l.rentAmount === prevRent
+      // 칸을 비운 저장(0원 이하)은 계약을 건드리지 않는다(정본과 같은 규칙, 독립 검수 B1).
+      if (nextRent <= 0) return { prevRent, nextRent, followers: [], differing: [] }
+      return {
+        prevRent, nextRent,
+        followers: prevRent !== nextRent ? mine.filter(l => isFollower(l) && !l.isShortTerm).map(l => ({ id: l.id, name: name(l), rentAmount: l.rentAmount })) : [],
+        differing: mine.filter(l => !isFollower(l) && !l.isShortTerm && l.rentAmount !== nextRent)
+          .map(l => ({ id: l.id, name: name(l), rentAmount: l.rentAmount, updatedAt: l.updatedAt.toISOString(), unrecordedPastMonths: pastUnrecorded(l) })),
+      }
+    }
+    const nextNR = next.nonResidentRent !== undefined ? next.nonResidentRent : room.nonResidentRent
+    return {
+      ok: true,
+      roomNo: room.roomNo,
+      resident: axis('resident', room.baseRent, next.baseRent ?? room.baseRent),
+      nonResident: nextNR == null ? null : axis('nonResident', room.nonResidentRent, nextNR),
+    }
+  } catch (err) {
+    if ((err as { digest?: string } | null)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/** 방 이용료 저장의 계약 동기화 적용취소. 방 값과 계약 금액이 쓴 직후 그대로일 때만 전부 되돌린다. */
+export async function undoRoomRentSync(raw: unknown): Promise<{ ok: true; leases: { from: number; to: number }[] } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const u = parseRoomRentSyncUndo(raw)
+    if (!u || !verifyUndoBody(ROOM_RENT_SYNC_UNDO_DOMAIN, propertyId, canonicalRoomRentSyncUndo(u), u.sig)) {
+      return { ok: false, error: ROOM_RENT_SYNC_UNDO_INVALID }
+    }
+    await prisma.$transaction(async tx => {
+      const room = await tx.room.findFirst({ where: { id: u.roomId, propertyId }, select: { baseRent: true, nonResidentRent: true } })
+      if (!room) throw new RoomRentUndoConflict(ROOM_RENT_SYNC_UNDO_INVALID)
+      if (room.baseRent !== u.room.after.baseRent || room.nonResidentRent !== u.room.after.nonResidentRent) throw new RoomRentUndoConflict()
+      const r = await tx.room.updateMany({
+        where: { id: u.roomId, propertyId, baseRent: u.room.after.baseRent, nonResidentRent: u.room.after.nonResidentRent },
+        data: { baseRent: u.room.before.baseRent, nonResidentRent: u.room.before.nonResidentRent },
+      })
+      if (r.count !== 1) throw new RoomRentUndoConflict()
+      // 적용한 뒤 그 계약에 수납 기록(락)이 새로 생겼으면 새 금액으로 이미 청구가 잠긴 것이라 되돌리지 않는다(독립 검수 권고 3).
+      const billed = await tx.paymentRecord.count({ where: { propertyId, leaseTermId: { in: u.leases.map(l => l.id) }, isDeposit: false, createdAt: { gt: new Date(u.at) } } })
+      if (billed > 0) throw new RoomRentUndoConflict(ROOM_RENT_SYNC_UNDO_BILLED)
+      for (const l of u.leases) {
+        // 토큰의 계약 id 는 화면이 들고 온 값이다. 이 영업장 그 방 계약이 쓴 직후 금액 그대로일 때만 되돌린다.
+        const w = await tx.leaseTerm.updateMany({ where: { id: l.id, propertyId, roomId: u.roomId, rentAmount: l.after }, data: { rentAmount: l.before } })
+        if (w.count !== 1) throw new RoomRentUndoConflict()
+      }
+    })
+    revalidatePath('/room-manage'); revalidatePath('/rooms'); revalidatePath('/tenants')
+    return { ok: true, leases: u.leases.map(l => ({ from: l.after, to: l.before })) }
+  } catch (err) {
+    if ((err as { digest?: string } | null)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (err instanceof RoomRentUndoConflict) return { ok: false, error: err.message }
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+class RoomRentUndoConflict extends Error {
+  constructor(message = ROOM_RENT_SYNC_UNDO_CONFLICT) { super(message); this.name = 'RoomRentUndoConflict' }
 }
 
 // 호실 삭제 — 과거 계약·수납(매출) 기록까지 연쇄 영구 삭제되므로,
@@ -696,10 +890,8 @@ export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true;
       },
     })
 
-    await prisma.leaseTerm.updateMany({
-      where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-      data: { rentAmount: newRent },
-    })
+    // 예약가 즉시 적용은 협의가 포함 전 계약이다(2026-06-29 운영자 결정, 정본의 'all' 갈래로 옮겼고 동작은 같다).
+    await syncLeaseRentForRoom(prisma, { propertyId, roomId, axis: 'resident', prevRent: room.baseRent, nextRent: newRent, all: true })
 
     revalidatePath('/room-manage')
     revalidatePath('/rooms')
@@ -796,21 +988,12 @@ export async function batchUpdateRooms(
     // baseRent 변경 시 활성 계약의 rentAmount 동기화 — 단, 계약별 협의 임대료
     // (방 기준가와 다르게 설정된 rentAmount)는 덮어쓰지 않는다. 일괄 변경이
     // 개별 협의가를 흔적 없이 지우던 문제 방지.
+    // 기준가 그대로 쓰던 계약만 따라간다(정본 followers 갈래, 호실 수정과 같은 함수).
     let skippedNegotiated = 0
     if (roomFields.baseRent != null) {
       for (const room of prevRents) {
-        const synced = await prisma.leaseTerm.updateMany({
-          where: {
-            roomId: room.id,
-            status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
-            rentAmount: room.baseRent,   // 기준가 그대로 쓰던 계약만 따라감
-          },
-          data: { rentAmount: roomFields.baseRent },
-        })
-        const total = await prisma.leaseTerm.count({
-          where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        })
-        skippedNegotiated += total - synced.count
+        const res = await syncLeaseRentForRoom(prisma, { propertyId, roomId: room.id, axis: 'resident', prevRent: room.baseRent, nextRent: roomFields.baseRent })
+        skippedNegotiated += res.skipped.length
       }
     }
 

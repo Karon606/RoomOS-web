@@ -11,6 +11,7 @@
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { scheduledRentApplyCutoff } from '@/lib/billing'
+import { syncLeaseRentForRoom } from '@/lib/roomRentSync'
 
 export async function applyScheduledRentsFor(propertyId: string) {
   // '오늘'은 KST 기준(lib/billing 정본). 로컬 자정이면 서버(UTC)에서 KST 00~09 시 동안
@@ -55,20 +56,15 @@ export async function applyScheduledRentsFor(propertyId: string) {
 
     await prisma.room.update({ where: { id: room.id }, data })
 
+    // 예약 도래는 협의가 포함 전 계약이다(2026-06-29 운영자 결정). 정본(lib/roomRentSync)의 'all' 갈래로 옮겼고 동작은 같다.
     if (data.baseRent != null) {
-      await prisma.leaseTerm.updateMany({
-        where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        data: { rentAmount: data.baseRent as number },
-      })
+      await syncLeaseRentForRoom(prisma, { propertyId, roomId: room.id, axis: 'resident', prevRent: null, nextRent: data.baseRent as number, all: true })
     }
 
     // 비거주 축의 거울 — 예약 필드를 비우기 전에 계약 rentAmount 로 옮겨야 한다.
     // 없으면 적용일이 경과하는 순간 선반영과 모순된다(청구 엔진이 예약값을 잃어 구가로 회귀).
     if (data.nonResidentRent != null) {
-      await prisma.leaseTerm.updateMany({
-        where: { roomId: room.id, status: 'NON_RESIDENT' },
-        data: { rentAmount: data.nonResidentRent as number },
-      })
+      await syncLeaseRentForRoom(prisma, { propertyId, roomId: room.id, axis: 'nonResident', prevRent: null, nextRent: data.nonResidentRent as number, all: true })
     }
   }))
 

@@ -398,6 +398,26 @@ const AXES = [
     must: [[/leaseTerm\.updateMany\(\{\s*where:\s*\{\s*id:\s*l\.id,\s*propertyId\s*\}/, '토큰의 계약을 영업장 범위 없이 되돌린다']],
     mustNot: [[/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*l\.id\s*\}/, '토큰의 계약을 id 만으로 고친다']],
   },
+  // 방 이용료 저장의 계약 동기화(2026-10-27 운영자 승인, 홍은주 602호 사건). 미리보기는 영업장 범위 방·계약만 읽고,
+  // 적용취소 토큰은 서명 대조 뒤 이 영업장 그 방 계약만 되돌린다.
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'previewRoomRentSync',
+    must: [
+      [/room\.findFirst\(\{ where: \{ id: roomId, propertyId \}[^\n]*\n\s*if \(!room\) return \{ ok: false, error: ROOM_GONE \}/, '호실을 영업장 범위로 먼저 읽고 없으면 닫지 않는다'],
+      [/leaseTerm\.findMany\(\{\s*where: \{ roomId, propertyId,/, '계약을 영업장 범위로 읽지 않는다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/room-manage/actions.ts',
+    fn: 'undoRoomRentSync',
+    must: [
+      [/verifyUndoBody\(ROOM_RENT_SYNC_UNDO_DOMAIN, propertyId,/, '적용취소 토큰 서명을 대조하지 않는다'],
+      [/tx\.leaseTerm\.updateMany\(\{ where: \{ id: l\.id, propertyId, roomId: u\.roomId,/, '토큰의 계약을 영업장·방 범위 없이 되돌린다'],
+    ],
+    mustNot: [[/leaseTerm\.update\(\{\s*where:\s*\{\s*id:\s*l\.id\s*\}/, '토큰의 계약을 id 만으로 고친다']],
+  },
   // 시세 조사: 경쟁업체를 붙일 조사는 이 영업장 것.
   {
     file: 'app/(app)/market-analysis/actions.ts',
@@ -806,7 +826,8 @@ const EXPECTED2 = {
   tenantRequest: { where: 5, data: 7 },
   marketSurvey: { where: 2, data: 2 },
   marketCompetitor: { where: 2, data: 2 },
-  room: { where: 7, data: 7 },
+  // 2026-10-27 방 이용료 계약 동기화: 적용취소(undoRoomRentSync)의 방 값 되돌림 1곳(where 에 propertyId·쓴 직후 값, data 는 두 이용료 칸).
+  room: { where: 8, data: 8 },
   // 2026-10-27 한 건 수정: updateInspection 과 그 적용취소(undoRoomRecordEdit) 쓰기 2곳(둘 다 where 에 propertyId, data 는 날짜·메모 두 칸).
   roomInspection: { where: 12, data: 13 },
   roomInspectionItem: { where: 4, data: 6 },

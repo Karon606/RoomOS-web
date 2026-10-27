@@ -212,7 +212,9 @@ async function main() {
 
     // 대조군
     eq('호실 수정: 제 영업장 통과', await roomManage.updateRoom(fd({ id: RM1, roomNo: '101', baseRent: '310000' })), { ok: true })
-    eq('호실 수정: 기준가와 활성 계약 임대료 동기화', [(await prisma.room.findUnique({ where: { id: RM1 } }))?.baseRent, (await prisma.leaseTerm.findUnique({ where: { id: LE1 } }))?.rentAmount], [310000, 310000])
+    // 2026-10-27 운영자 승인(홍은주 602호 사건): 기준가(300,000)와 다른 협의가(290,000) 계약은 확인창에서 고르지 않으면 따라가지 않는다.
+    // 옛 기준가 그대로인 계약만 저절로 따라간다(lib/roomRentSync, 통합 회귀 test-room-rent-sync-flow).
+    eq('호실 수정: 기준가는 바뀌고 협의가 계약은 그대로', [(await prisma.room.findUnique({ where: { id: RM1 } }))?.baseRent, (await prisma.leaseTerm.findUnique({ where: { id: LE1 } }))?.rentAmount], [310000, 290000])
     const RM3 = await roomIn(P1, '103')
     eq('호실 삭제: 제 영업장 빈 방 통과', await roomManage.deleteRoom(RM3), { ok: true })
     eq('호실 삭제 반영', await prisma.room.count({ where: { id: RM3 } }), 0)

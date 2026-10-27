@@ -18,7 +18,7 @@ import { kstMonthOf, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { displayName } from '@/lib/displayName'
 import { fmtRentApplyFrom } from '@/lib/fmtMoney'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, previewRoomRentSync, undoRoomRentSync, type RoomRentAxisPreview, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -28,7 +28,9 @@ import { Btn } from '@/components/ui/Btn'
 import { useCanEdit, useCanReadScope } from '@/components/RoleContext'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Modal as SharedModal } from '@/components/ui/Modal'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { WhyCaption } from '@/components/ui/WhyCaption'
+import { rentSyncDialogCopy, rentSyncToastText, rentSyncUndoText, rentDriftCaption, type RentAxisKey } from '@/lib/roomRentSyncText'
 import { useUrlState } from '@/lib/useUrlState'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
@@ -565,6 +567,12 @@ export default function RoomManageClient({
   const [editWindowType, setEditWindowType] = useState('')
   const [editBaseRent, setEditBaseRent]     = useState(0)
   const [editRentSuggested, setEditRentSuggested] = useState(false)
+  // 비거주 월이용료. 계약과 다른지 견주려고 controlled 로 든다(2026-10-27, 홍은주 602호 사건).
+  const [editNrRent, setEditNrRent]         = useState<number | undefined>(undefined)
+  // 이 방에서 지금 방 금액과 다른 계약(축별, 단기 제외). 폼을 열 때 읽어 이용료 칸 아래 한 줄로 알린다(원위치 진입점).
+  const [rentDrift, setRentDrift] = useState<{ roomId: string; resident: RoomRentAxisPreview['differing']; nonResident: RoomRentAxisPreview['differing'] } | null>(null)
+  // 그 한 줄의 '계약에 적용' 을 누른 축. 폼 안에만 있고 저장할 때 그 계약까지 함께 적용한다(§27.8 ①, '그대로 두기' 로 되돌린다).
+  const [rentApplyQueued, setRentApplyQueued] = useState<Record<RentAxisKey, boolean>>({ resident: false, nonResident: false })
 
   // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
   // handledOpenRef: 같은 요청은 1회만 처리 — initialRooms 갱신(저장 후 refresh)마다
@@ -764,6 +772,14 @@ export default function RoomManageClient({
     setEditWindowType(room.windowType ?? '')
     setEditBaseRent(room.baseRent)
     setEditRentSuggested(false)
+    setEditNrRent(room.nonResidentRent ?? undefined)
+    setRentDrift(null)
+    setRentApplyQueued({ resident: false, nonResident: false })
+    if (!hideMoney) {
+      void previewRoomRentSync(room.id, {}).then(r => {
+        if (r.ok) setRentDrift({ roomId: room.id, resident: r.resident.differing, nonResident: r.nonResident?.differing ?? [] })
+      }).catch(() => { /* 한 줄 안내는 부가 정보다. 못 읽어도 폼은 선다(저장 때 다시 묻는다) */ })
+    }
     setError('')
   }
 
@@ -886,9 +902,35 @@ export default function RoomManageClient({
   const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const formData = new FormData(e.currentTarget)
+    const room = editRoom
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 방 이용료를 바꾸면 옛 기준가 그대로인 계약은 저절로 따라가고, 기준가와 다른 계약(협의가·기준가 없던 계약)은 여기서 묻는다
+        // (2026-10-27 운영자 승인, 홍은주 602호 사건, 정본 lib/roomRentSync). 취소는 무변경이다(§27.5).
+        if (room && !hideMoney) {
+          const nextBase = Number(formData.get('baseRent')) || 0
+          const nextNR = formData.get('nonResidentEnabled') === '1' ? Number(formData.get('nonResidentRent') || 0) : null
+          const pv = await previewRoomRentSync(room.id, { baseRent: nextBase, nonResidentRent: nextNR })
+          if (!pv.ok) { pushToast('error', pv.error); return }
+          const pick: Record<RentAxisKey, string[]> = { resident: [], nonResident: [] }
+          const expect: Record<string, string> = {}
+          for (const axis of ['resident', 'nonResident'] as const) {
+            const a = pv[axis]
+            if (!a || a.differing.length === 0) continue
+            const changed = a.prevRent !== a.nextRent
+            let apply = !changed && rentApplyQueued[axis]
+            if (changed) {
+              const copy = rentSyncDialogCopy({ roomNo: pv.roomNo, axis, nextRent: a.nextRent, differing: a.differing, followers: a.followers.length })
+              const choice = await choiceDialog({ ...copy, level: 'normal' })
+              if (choice === null) return
+              apply = choice === 'confirm'
+            }
+            if (apply) for (const d of a.differing) { pick[axis].push(d.id); expect[d.id] = d.updatedAt }
+          }
+          formData.set('rentSyncLeaseIds', JSON.stringify(pick))
+          formData.set('rentSyncExpect', JSON.stringify(expect))
+        }
         const res = await updateRoom(formData)
         if (res && !res.ok) { pushToast('error', res.error); return }
         closeEdit()
@@ -896,7 +938,16 @@ export default function RoomManageClient({
         // URL ?roomId&edit=1 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음
         // (full reload 시 ref 초기화로 수정 팝업이 되돌아오던 글리치 해소).
         router.refresh()
-        pushToast('success', '호실 수정됨')
+        if (res.sync) {
+          const t = rentSyncToastText(res.sync)
+          const undo = res.undo
+          pushToast('success', t.message, {
+            ...(t.detail ? { detail: t.detail } : {}),
+            ...(undo ? { action: { label: '적용취소', run: () => { void undoRoomRentSync(undo).then(r => { if (r.ok) { router.refresh(); pushToast('info', rentSyncUndoText(r.leases)) } else pushToast('error', r.error) }) } } } : {}),
+          })
+        } else {
+          pushToast('success', '호실 수정됨')
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '오류가 발생했습니다.'
         setError(msg); pushToast('error', msg)
@@ -1765,10 +1816,20 @@ export default function RoomManageClient({
             <TierSection value={editTier} onChange={v => { setEditTier(v); suggestEdit(editType, v, editWindowType) }} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
-              <MoneyInput name="baseRent" value={editBaseRent} onChange={v => { setEditBaseRent(v); setEditRentSuggested(false) }} />
+              <MoneyInput name="baseRent" value={editBaseRent} onChange={v => { setEditBaseRent(v); setEditRentSuggested(false) }}
+                describedBy={rentDrift?.roomId === editRoom.id && rentDrift.resident.length > 0 && editBaseRent === editRoom.baseRent ? `${editRoom.id}-rent-drift` : undefined} />
               {editRentSuggested && (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">같은 조건 방 기준 기본값입니다. 방마다 다르면 수정하세요.</p>
               )}
+              {/* 이 금액과 다른 계약. 금액을 그대로 둘 때만 뜬다(바꾸면 저장할 때 확인창이 묻는다). */}
+              {rentDrift?.roomId === editRoom.id && rentDrift.resident.length > 0 && editBaseRent === editRoom.baseRent && (() => {
+                const c = rentDriftCaption(rentDrift.resident.length, rentApplyQueued.resident)
+                return (
+                  <WhyCaption id={`${editRoom.id}-rent-drift`} action={{ label: c.actionLabel, onClick: () => setRentApplyQueued(q => ({ ...q, resident: !q.resident })) }}>
+                    {c.text}
+                  </WhyCaption>
+                )
+              })()}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1801,7 +1862,16 @@ export default function RoomManageClient({
                 <div className="space-y-3 pt-1">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">비거주 월이용료</label>
-                    <MoneyInput name="nonResidentRent" defaultValue={editRoom.nonResidentRent ?? undefined} placeholder="0원" />
+                    <MoneyInput name="nonResidentRent" value={editNrRent} onChange={setEditNrRent} placeholder="0원"
+                      describedBy={rentDrift?.roomId === editRoom.id && rentDrift.nonResident.length > 0 && editRoom.nonResidentRent != null && editNrRent === editRoom.nonResidentRent ? `${editRoom.id}-nr-rent-drift` : undefined} />
+                    {rentDrift?.roomId === editRoom.id && rentDrift.nonResident.length > 0 && editRoom.nonResidentRent != null && editNrRent === editRoom.nonResidentRent && (() => {
+                      const c = rentDriftCaption(rentDrift.nonResident.length, rentApplyQueued.nonResident)
+                      return (
+                        <WhyCaption id={`${editRoom.id}-nr-rent-drift`} action={{ label: c.actionLabel, onClick: () => setRentApplyQueued(q => ({ ...q, nonResident: !q.nonResident })) }}>
+                          {c.text}
+                        </WhyCaption>
+                      )
+                    })()}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
