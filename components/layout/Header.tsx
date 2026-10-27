@@ -71,7 +71,6 @@ export default function Header({
        위에 붙은 고정 요소는 그 색을 이어 칠하는 쪽으로 다룬다. 헤더가 흐르는 요소라 로고·영업장명·종이
        흐리게 보였다(2026-10-27 운영자 제보). 자리는 AppShell 의 모바일 받침(h-14)이 잡는다. 데스크톱은 종전대로 흐름 안. */
     <header
-      data-app-header
       data-peek-hide
       className="h-14 md:h-16 flex items-center justify-between gap-2 px-3 md:px-6 shrink-0 fixed inset-x-0 top-[var(--sysbar-h)] md:static z-[var(--z-sticky)]"
       style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
