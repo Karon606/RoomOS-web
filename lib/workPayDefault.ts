@@ -13,7 +13,7 @@ import 'server-only'
 import prisma from '@/lib/prisma'
 import { parseOptionList } from '@/lib/optionLists'
 import { accName, effectivePayMethods, accountTypesFor } from '@/lib/payMethodOptions'
-import { settleStatusForEdit } from '@/lib/settleStatus'
+import { settleStatusForEdit, isDeferredRow } from '@/lib/settleStatus'
 
 // 트랜잭션 클라이언트도 받는다. 확장된 실제 클라이언트에서 뽑는다(Prisma.TransactionClient 와 안 맞는다, finance/actions TxClient 와 같은 이유).
 type Db = Pick<Parameters<Parameters<typeof prisma.$transaction>[0]>[0], 'expense' | 'property' | 'financialAccount'>
@@ -118,7 +118,10 @@ export async function resolveWorkPay(
  * 지금 상태를 지킨다(독립 검수 B1). 그 행들은 이미 정산이 끝난 돈이라 신용카드로 채운다고 미정산으로 되살리면 카드 정산에 다시 오른다.
  * 그 행의 정리는 운영자 확인 뒤 백필(scripts/backfill-expense-paymethod.ts) 몫이다.
  */
-export function settleStatusForPayEdit(o: { prevPayMethod: string | null; nextPayMethod: string; current: 'SETTLED' | 'UNSETTLED'; isShipping: boolean }): 'SETTLED' | 'UNSETTLED' {
-  if (o.prevPayMethod == null) return o.current
-  return settleStatusForEdit({ prevPayMethod: o.prevPayMethod, nextPayMethod: o.nextPayMethod, current: o.current, isShipping: o.isShipping })
+export function settleStatusForPayEdit(o: { prevPayMethod: string | null; nextPayMethod: string; current: 'SETTLED' | 'UNSETTLED'; isShipping: boolean; shippingType?: string | null }): 'SETTLED' | 'UNSETTLED' {
+  if (o.prevPayMethod == null) {
+    // 지금 상태를 지키는 것은 새 값이 갚을 것일 때만이다. 갚을 것이 아니면 정본 규칙대로 언제나 정산완료(재확인 4).
+    return isDeferredRow({ payMethod: o.nextPayMethod, isShipping: o.isShipping, shippingType: o.shippingType }) ? o.current : 'SETTLED'
+  }
+  return settleStatusForEdit({ prevPayMethod: o.prevPayMethod, nextPayMethod: o.nextPayMethod, current: o.current, isShipping: o.isShipping, prevShippingType: o.shippingType, nextShippingType: o.shippingType })
 }

@@ -75,7 +75,7 @@ function callsOf(body, op) {
   if (!/if \(!method\) return \{ ok: true, pay: await defaultPayMethodFor\(/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 값 없이 온 저장을 기본값 규칙으로 채우지 않는다(null 이 남는다)`)
   if (!/const types = accountTypesFor\(method, accounts\)\s*if \(!types \|\| !types\.includes\(String\(acc\.type\)\)\) return \{ ok: false/.test(res)) fails.push(`ⓐ ${f} resolveWorkPay 가 결제수단과 맞지 않는 계정(계좌이체에 카드 등)을 받는다(독립 검수 권고 2)`)
   const se = s.slice(s.indexOf('export function settleStatusForPayEdit'))
-  if (!/if \(o\.prevPayMethod == null\) return o\.current/.test(se)) fails.push(`ⓐ ${f} 옛 결제수단이 비어 있던 지출의 정산상태를 지키지 않는다(정산완료가 미정산으로 되살아난다, 독립 검수 B1)`)
+  if (!/if \(o\.prevPayMethod == null\) \{[\s\S]*?isDeferredRow\([\s\S]*?\? o\.current : 'SETTLED'/.test(se)) fails.push(`ⓐ ${f} 옛 결제수단이 비어 있던 지출의 정산상태를 '새 값이 갚을 것이면 지금 상태, 아니면 정산완료'로 정하지 않는다(독립 검수 B1·재확인 4)`)
 }
 
 // ⓑ 쓰기 함수
