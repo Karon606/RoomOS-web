@@ -670,14 +670,28 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       monthlyMap[`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`] = null
     }
     // 구간 시리즈(itemChecks·intervalConsumed)는 위 평균 소모율 계산과 공유 — 여기선 월별 귀속만.
-    for (const { curr, consumed } of intervalConsumed) {
+    // 일수(days)·끝 점검일(lastDate)도 같은 귀속으로 모은다(2026-10-26 운영자 승인, 신고 9d26a7ee). 진행 중인 달이 23일치인데
+    // 만월 옆에 그대로 서서 '10월이 줄었다' 로 읽혔다. 하루당 = 그 달에 귀속된 소모 / 그 구간들의 일수 합이다(평균 소모율과 같은
+    // '포함된 구간 일수의 합' 분모, 소모를 일별로 쪼개 지어내지 않는다). 화면은 '10 · 23일까지' 와 '이번 달 하루 · 지난달' 을 단다.
+    const monthlyDays: Record<string, number> = {}
+    const monthlyLast: Record<string, string> = {}
+    for (const { curr, consumed, days } of intervalConsumed) {
       const key = kstKey(curr.date)
-      if (key in monthlyMap) monthlyMap[key] = (monthlyMap[key] ?? 0) + consumed
+      if (!(key in monthlyMap)) continue
+      monthlyMap[key] = (monthlyMap[key] ?? 0) + consumed
+      monthlyDays[key] = (monthlyDays[key] ?? 0) + days
+      const d = curr.date.toISOString().slice(0, 10)   // @db.Date(그 날의 UTC 자정) 그대로가 KST 달력일이다
+      if (!monthlyLast[key] || d > monthlyLast[key]) monthlyLast[key] = d
     }
     // 월 단위 음수(그 달 입고가 사용량보다 많아 순증한 경우)는 사용량 0 으로 클램프 — '사용량' 은 음수일 수 없음.
     // 단 미관측(null)은 클램프 대상이 아니다 — 0 으로 내리면 '안 씀' 과 다시 뭉개진다.
     const monthlyConsumption = Object.entries(monthlyMap)
-      .map(([month, qty]) => ({ month, qty: qty == null ? null : Math.max(0, qty) }))
+      .map(([month, qty]) => ({
+        month,
+        qty: qty == null ? null : Math.max(0, qty),
+        days: qty == null ? null : (monthlyDays[month] ?? null),
+        lastDate: qty == null ? null : (monthlyLast[month] ?? null),
+      }))
 
     // isHub 는 '이 품목의 허브' — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
     const itemLinks = allItemLocations.filter(l => l.trackedItemId === it.id)

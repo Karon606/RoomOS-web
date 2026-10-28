@@ -91,7 +91,8 @@ export type InventoryRow = {
   currentLocationBreakdown: LocationQtyEntry[]
   // 최근 6개월 사용량 (YYYY-MM 오래된 것부터, 마지막 슬롯 = 진행 중인 이번 달).
   // qty: 0 = 점검했으나 안 씀, null = 그 달엔 점검 자체가 없음(미관측). 둘을 뭉개면 추적 시작 전 달이 '사용량 0' 으로 보인다.
-  monthlyConsumption: { month: string; qty: number | null }[]
+  // days = 그 달에 귀속된 점검 구간 일수의 합(하루당 분모), lastDate = 그 달 마지막 점검일 'YYYY-MM-DD'. 미관측(null)이면 둘 다 null.
+  monthlyConsumption: { month: string; qty: number | null; days: number | null; lastDate: string | null }[]
 }
 
 export type PricePoint = {

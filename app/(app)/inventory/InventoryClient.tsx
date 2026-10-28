@@ -105,6 +105,8 @@ import {
 // 수령 수량 관문 정본(순수). 화면이 '수량을 물을 구매'를 서버와 같은 셈으로 가린다.
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
+// 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
+import { partialMonthTail, perDayCaption } from './consumptionSeries'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
 import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
@@ -1612,13 +1614,16 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                   // 브라우저 TZ 에 따라 월 경계에서 어긋난다(서버가 kstDay 를 쓰는 이유와 동일).
                   const isCurrent = i === lastIdx
                   const monthNum = Number(m.month.slice(5))
+                  // 진행 중인 달은 축 라벨 둘째 줄에 'N일까지' 를 글자로 단다(신고 9d26a7ee). hover 툴팁은 터치 화면에 없다.
+                  const tail = partialMonthTail(m, isCurrent)
                   const tip = m.qty == null
                     ? `${monthNum}월 · 점검 기록 없음`
-                    : `${monthNum}월 · ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '사용 없음'}${isCurrent ? ' (진행 중)' : ''}`
+                    : `${monthNum}월 · ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '사용 없음'}${tail ? ` (${tail})` : isCurrent ? ' (진행 중)' : ''}`
                   return (
                     <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                      {/* 숫자 글자는 --tc-text(라이트는 코랄 그대로, 다크는 밝힌 값). --coral 글자는 다크 카드 위 2.78:1 로 미달이다(§12·§28, 웹디자이너 패스). */}
                       <span className="text-[0.65625rem] font-medium leading-none tabular-nums"
-                        style={{ color: m.qty == null ? 'var(--warm-muted)' : 'var(--coral)' }}>
+                        style={{ color: m.qty == null ? 'var(--warm-muted)' : 'var(--tc-text)' }}>
                         {m.qty == null ? '·' : fmtBarQty(m.qty)}
                       </span>
                       {/* 진행 중인 달은 트랙 전체에 --inspect-bg — 만월과 나란히 놓여 급감으로 오독되는 것 방지 */}
@@ -1641,11 +1646,20 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                           fontWeight: isCurrent ? 500 : undefined,
                           opacity: m.qty == null ? 0.6 : undefined,
                         }}>{monthNum}</span>
+                      {tail && (
+                        // 꼬리는 끝 슬롯 오른쪽에 붙인다(슬롯보다 넓어도 카드 안쪽 여백 밖으로 안 나가게, 웹디자이너 패스).
+                        <span className="self-end text-[0.65625rem] leading-none whitespace-nowrap font-medium" style={{ color: 'var(--inspect-fg)' }}>{tail}</span>
+                      )}
                     </div>
                   )
                 })}
               </div>
             )
+          })()}
+          {/* 하루당 비교 — 진행 중인 달과 지난달을 같은 잣대로(그 달에 귀속된 구간 일수 합이 분모, 지어낸 값 아님). */}
+          {(() => {
+            const cap = perDayCaption(row.monthlyConsumption, stockUnit)
+            return cap ? <p className="mt-1.5 text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">{cap}</p> : null
           })()}
         </div>
       )}
