@@ -68,6 +68,10 @@ const MUST = [
   ['ⓒ', 'app/(app)/search/actions.ts', /type: 'tenant',\s+label: '고객'/, 1, '검색 묶음'],
   ['ⓒ', 'app/(app)/dashboard/DashboardClient.tsx', /\{ key: 'tenants',\s+label: '고객' \}/, 1, '홈 탭'],
   ['ⓒ', 'app/(app)/dashboard/DashboardClient.tsx', /label: '고객 등록', desc: '고객을 등록하고/, 1, '시작 체크리스트'],
+  // 홈 고객 탭의 계약 합계 둘 — 숫자는 계약(거주·예약·퇴실 예정·비거주)만 센다. 옆에 '문의·투어'가 따로 서므로
+  // '전체'라 부르면 숫자보다 넓은 말이 된다(운영자 결정 2026-10-28, 숫자 뜻 그대로 '계약 중 고객').
+  ['ⓒ', 'app/(app)/dashboard/DashboardClient.tsx', /label="계약 중 고객"/, 1, "홈 고객 탭 계약 합계 카드"],
+  ['ⓒ', 'app/(app)/dashboard/DashboardClient.tsx', /centerSub="계약 중 고객"/, 1, '홈 고객 탭 상태 도넛 가운데'],
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', />고객 관리<\/h1>/, 1, '페이지 제목'],
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /\+ 고객 등록/, 1, '등록 버튼'],
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /title="고객 등록"/, 1, '등록 모달 제목'],

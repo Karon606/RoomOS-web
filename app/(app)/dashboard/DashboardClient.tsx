@@ -2034,7 +2034,7 @@ function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boo
       {/* 이 탭의 숫자는 조회한 달이 아니라 오늘의 계약이다 — 과거 달을 볼 때만 범위를 한 줄로 고지한다(§27.6 문형) */}
       {isPastView && <p className="text-[0.65625rem] text-[var(--warm-muted)]">고객 현황은 오늘 기준입니다</p>}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label={`전체 고객 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
+        <StatCard label="계약 중 고객" value={`${data.totalTenants}명`} sub="" />
         <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
         <StatCard label="입실 예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
         <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
@@ -2071,7 +2071,7 @@ function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boo
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>상태별 현황</h3>
           <div className="flex items-center gap-4">
-            <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="고객" />
+            <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="계약 중 고객" />
             <div className="space-y-2.5 flex-1">
               {[
                 { label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active },
