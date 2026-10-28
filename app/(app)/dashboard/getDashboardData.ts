@@ -1690,7 +1690,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         dotColor:  'var(--success-fg)',
         timeLabel: `날짜 불가 ${g.excludedCount}명`,
         muteKey:   `wish:${g.roomNo}`,
-        detail:    `${withParticle(fmtRoomNo(g.roomNo, ''), '을/를')} 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
+        detail:    `${withParticle(fmtRoomNo(g.roomNo, ''), '을/를')} 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 고객 목록 카드에 사유가 표시됩니다.`,
         wishRoomNo: g.roomNo,
       })
       continue

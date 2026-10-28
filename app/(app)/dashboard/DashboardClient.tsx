@@ -496,7 +496,7 @@ function ExcludedByDateCaption({ count }: { count?: number }) {
   if (!count) return null
   return (
     <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
-      입주 희망일이 맞지 않아 제외 {count}명. 입주자 목록 카드에 사유가 표시됩니다.
+      입주 희망일이 맞지 않아 제외 {count}명. 고객 목록 카드에 사유가 표시됩니다.
     </p>
   )
 }
@@ -768,9 +768,9 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
               : alert.category === 'inventory' ? '재고 관리에서 보기 ›'
               : alert.category === 'request' ? '요청·컴플레인에서 보기 ›'
               : alert.category === 'receipt' ? '현금영수증 탭에서 보기 ›'
-              : alert.category === 'depositReturn' ? '입주자 관리에서 보기 ›'
+              : alert.category === 'depositReturn' ? '고객 관리에서 보기 ›'
               : alert.wishCandidates && alert.wishCandidates.length > 0 ? '호실 관리로 이동 ›'
-              : '입주자 관리에서 보기 ›'}
+              : '고객 관리에서 보기 ›'}
           </Link>
           {/* 알림 끄기 — 일 처리와 무관하게 이 알림이 더 필요 없을 때(운영자 지시 2026-09-02).
               일을 진행하는 버튼들 아래 마지막에 선다. 끈 건은 알림 맨 아래 '끈 알림'에 남아
@@ -2032,9 +2032,9 @@ function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boo
   return (
     <div className="space-y-5">
       {/* 이 탭의 숫자는 조회한 달이 아니라 오늘의 계약이다 — 과거 달을 볼 때만 범위를 한 줄로 고지한다(§27.6 문형) */}
-      {isPastView && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주자 현황은 오늘 기준입니다</p>}
+      {isPastView && <p className="text-[0.65625rem] text-[var(--warm-muted)]">고객 현황은 오늘 기준입니다</p>}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label={`전체 입주자 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
+        <StatCard label={`전체 고객 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
         <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
         <StatCard label="입실 예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
         <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
@@ -2071,7 +2071,7 @@ function TenantsTab({ data, isPastView }: { data: DashboardData; isPastView: boo
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>상태별 현황</h3>
           <div className="flex items-center gap-4">
-            <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
+            <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="고객" />
             <div className="space-y-2.5 flex-1">
               {[
                 { label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active },
@@ -2374,7 +2374,7 @@ type Tab = 'overview' | 'finance' | 'tenants' | 'ai'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: '현황' },
   { key: 'finance',  label: '재무' },
-  { key: 'tenants',  label: '입주자' },
+  { key: 'tenants',  label: '고객' },
   { key: 'ai',       label: 'AI 분석' },
 ]
 
@@ -2536,7 +2536,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
         const ob = data.onboarding
         const steps = [
           { done: ob.hasRooms,    label: '호실 등록',   desc: '운영할 방(호실)을 먼저 만들어 주세요.',   href: '/room-manage' },
-          { done: ob.hasTenants,  label: '입주자 등록', desc: '입주자를 등록하고 호실에 배정합니다.',     href: '/tenants' },
+          { done: ob.hasTenants,  label: '고객 등록', desc: '고객을 등록하고 호실에 배정합니다.',     href: '/tenants' },
           { done: ob.hasPayments, label: '첫 수납 기록', desc: '이용료를 받으면 수납 관리에 기록합니다.',  href: '/rooms' },
         ]
         const doneCount = steps.filter(s => s.done).length
