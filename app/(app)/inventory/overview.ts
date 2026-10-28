@@ -7,6 +7,7 @@ import { indexLocations } from './locationPaths'
 import { specMultiplier, convertUnit } from '@/lib/units'
 import { kstMonthStr, monthDbRange } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
+import { dedupSameDay, effTime, kstDay, dbDateMs, unitMatches, sumPurchasesMem, sumLedgerMem, intervalConsumption } from './consumptionSeries'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -220,44 +221,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     }),
   ])
 
-  // 같은 날 여러 점검 dedup — 가장 늦은 createdAt 만 유효한 점검으로 간주.
-  // 사용자가 같은 날 임시 점검 후 확정 점검을 다시 하는 패턴 + 그 사이 큰 잔량 jump 가
-  // 가짜 소모로 누적되던 문제 (라면 187 / 쌀 159) 해결.
-  function dedupSameDay<T extends { date: Date; createdAt: Date; isReconcile?: boolean }>(arr: T[]): T[] {
-    const map = new Map<string, T>()
-    for (const c of arr) {
-      const day = `${c.date.getUTCFullYear()}-${c.date.getUTCMonth()}-${c.date.getUTCDate()}`
-      const existing = map.get(day)
-      if (!existing) { map.set(day, c); continue }
-      const winner = c.createdAt > existing.createdAt ? c : existing
-      // 같은 날에 '전체 보정'이 있었으면 살아남는 점검도 보정으로 취급 —
-      // 보정 후 같은 날 일반/자동수령 점검이 생기면 보정이 통째로 무효화되어
-      // 직전 구간의 분실·오차가 가짜 소모로 잡히던 문제 방지.
-      const hadReconcile = !!existing.isReconcile || !!c.isReconcile
-      map.set(day, hadReconcile && !winner.isReconcile ? { ...winner, isReconcile: true } : winner)
-    }
-    return Array.from(map.values()).sort((a, b) =>
-      a.date.getTime() - b.date.getTime() || a.createdAt.getTime() - b.createdAt.getTime()
-    )
-  }
-
-  // 점검의 '실제 발생 시각' — 입고/구매 구간 귀속 기준. 타임라인 정렬과 동일 규칙.
-  //  · 입력 당일(KST) 점검이면 createdAt(실제 점검 시각), 과거 보정 입력(백필)이면 date.
-  // 이유: 수령 즉시 자동 생성되는 점검(sourceExpenseId)은 그 구매를 이미 잔량에 반영한다.
-  //  구매를 점검 date(자정) 기준으로 귀속하면, 같은 날 자동점검이 baseline 인데도 구매가
-  //  '그 다음 구간'에 입고로 또 더해져 사용량이 부풀려졌음 (수세미: 사서 분산만 했는데 10 소모로 둔갑).
-  //  effTime 기준으로 비교하면 수령 시각과 같은(또는 이전) 점검 baseline 에 흡수되어 중복 안 됨.
-  const KST = 9 * 3600000
-  const kstDay = (d: Date) => new Date(d.getTime() + KST).toISOString().slice(0, 10)
-  // 백필(나중 입력) 점검 — 그 날짜의 KST 자정 + 입력시각(createdAt)의 하루중 경과시간.
-  //   타임라인 표시 정렬(actions.ts getInventoryItemDetail)과 동일 규칙으로 통일(2026-06-09).
-  //   같은 날 입력 점검(자동수령 등)은 createdAt 그대로 → 기존 보호 로직(중복 입고 방지) 영향 없음.
-  const kstMidnightMs = (d: Date) => Math.floor((d.getTime() + KST) / 86400000) * 86400000 - KST
-  const kstTodMs = (d: Date) => (d.getTime() + KST) % 86400000
-  const effTime = (c: { date: Date; createdAt: Date }): Date =>
-    kstDay(c.createdAt) === kstDay(c.date)
-      ? c.createdAt
-      : new Date(kstMidnightMs(c.date) + kstTodMs(c.createdAt))
+  // 같은 날 dedup(dedupSameDay)·점검의 실제 발생 시각(effTime)·KST 달력일(kstDay)은 순수층 consumptionSeries 로 옮겼다
+  // (2026-10-26, 신고 9d26a7ee 2단계: 품목 상세 '소모 추이' 서버 액션이 같은 구간 셈을 써야 해서). 규칙은 한 글자도 안 바꿨다.
 
   // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
   // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).
@@ -342,7 +307,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   // ⚠️ @db.Date 칸(StockAddition.date·StockDisposal.date·Expense.date)은 Prisma 가 인자를
   //   **UTC 날짜로 잘라** 보낸다(실측 2026-09-11). 그래서 effTime(시각이 붙은 값)으로 잡은
   //   구간 경계도 SQL 에서는 그 날짜로 비교됐다. 메모리 비교도 같은 절단을 거쳐야 답이 같다.
-  const dbDateMs = (d: Date) => Math.floor(d.getTime() / 86400000) * 86400000
+  // dbDateMs·unitMatches·sumPurchasesMem·sumLedgerMem 은 순수층 consumptionSeries 정본이다(위와 같은 이유, 규칙 그대로).
   const purchaseKey = (category: string, label: string) => `${category} ${label}`
   const purchasesByItem = new Map<string, typeof allPurchases>()
   for (const p of allPurchases) {
@@ -352,51 +317,6 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     arr.push(p)
     purchasesByItem.set(k, arr)
   }
-  // qtyUnit 느슨 매칭 — sumPurchases 머리말의 그 규칙(null 이거나 같으면 같은 품목).
-  const unitMatches = (rowUnit: string | null, itemUnit: string | null) =>
-    itemUnit ? (rowUnit == null || rowUnit === itemUnit) : true
-
-  const sumPurchasesMem = (
-    rows: typeof allPurchases, qtyUnit: string | null,
-    afterReceivedAt: Date | null, beforeReceivedAt: Date | null,
-    useSpecBase: boolean, itemUnit: string | null,
-  ): number => {
-    let s = 0
-    for (const r of rows) {
-      if (r.receivedAt == null) continue
-      if (!unitMatches(r.qtyUnit, qtyUnit)) continue
-      if (afterReceivedAt && !(r.receivedAt.getTime() > afterReceivedAt.getTime())) continue
-      if (beforeReceivedAt && !(r.receivedAt.getTime() <= beforeReceivedAt.getTime())) continue
-      const q = r.qtyValue ?? 0
-      if (!useSpecBase) { s += q; continue }
-      const spec = specMultiplier(r.specValue, r.specUnit, itemUnit)
-      s += spec != null ? q * spec : q
-    }
-    return s
-  }
-
-  // sumAdditions·sumDisposals 의 date·createdAt 경계 규칙(오류신고 a1e048e8) 그대로.
-  const sumLedgerMem = <T extends { date: Date; createdAt: Date }>(
-    rows: T[], qtyOf: (r: T) => number,
-    from: Date | null, to: Date | null, fromCreatedAt?: Date | null,
-  ): number => {
-    const toMs = to ? dbDateMs(to) : null
-    const fromMs = from != null ? dbDateMs(from) : null
-    let s = 0
-    for (const r of rows) {
-      const d = r.date.getTime()
-      if (toMs != null && !(d <= toMs)) continue
-      if (fromMs != null) {
-        const ok = fromCreatedAt != null
-          ? (d > fromMs || (d === fromMs && r.createdAt.getTime() > fromCreatedAt.getTime()))
-          : d > fromMs
-        if (!ok) continue
-      }
-      s += qtyOf(r)
-    }
-    return s
-  }
-
   const resolveUnitHintMem = (rows: typeof allPurchases, qtyUnit: string | null): string | null => {
     const units = new Set(
       rows
@@ -526,27 +446,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     //   부수효과: 백필된 잘못된 점검값도 인접 두 구간에서 +/− 로 상쇄되어 면역 (2026-06-01 사용자 보고).
     // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
     // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
-    const intervalPairs: { prev: (typeof itemChecks)[number]; curr: (typeof itemChecks)[number] }[] = []
-    for (let i = 1; i < itemChecks.length; i++) {
-      if (itemChecks[i].isReconcile) continue
-      intervalPairs.push({ prev: itemChecks[i - 1], curr: itemChecks[i] })
-    }
-    // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
-    // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
-    // 구간 간 의존 없음. 조회 없이 위 일괄 조회분을 구간 술어로 걸러 더한다(구간 하나에 3회씩
-    // 왕복하던 자리 — 품목 28개에 구간 최대 80이면 렌더 한 번에 수천 쿼리였다).
-    const intervalConsumed = intervalPairs.map(({ prev, curr }) => {
-      const purchases = sumPurchasesMem(itemPurchases, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit)
-      const additions = sumLedgerMem(itemAdds, a => a.addedQty, effTime(prev), effTime(curr))
-      const disposals = sumLedgerMem(itemDisps, d => d.disposedQty, effTime(prev), effTime(curr))
-      return {
-        curr,
-        consumed: (prev.remainingQty + purchases + additions - disposals) - curr.remainingQty,
-        // 구간 일수를 구간에 동봉 — 보정 구간을 소모에서 빼면 분모에서도 같이 빠져야 하므로.
-        // date 는 @db.Date(그 날의 UTC 자정)라 이 나눗셈은 반올림 오차 없는 정수.
-        days: Math.max(1, Math.round((curr.date.getTime() - prev.date.getTime()) / 86400000)),
-      }
-    })
+    // 구간 셈 정본은 consumptionSeries.intervalConsumption(보정 구간 제외·effTime 입고 귀속·부호 그대로). 품목 상세 '소모 추이'와 한 벌이다.
+    const intervalConsumed = intervalConsumption({ checks: itemChecks, purchases: itemPurchases, adds: itemAdds, disps: itemDisps, qtyUnit: it.qtyUnit, useSpec, specUnit: it.specUnit })
 
     // ── 평균 소모율 — 최근 30일 '합산' 기준 (단일 구간 추정 폐기, 2026-07-17).
     // 종전엔 마지막 두 점검 사이 한 구간만으로 냈다. 점검 간격이 1~3일이라 표본이 1개뿐이었고,

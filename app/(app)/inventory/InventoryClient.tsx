@@ -43,6 +43,7 @@ import { classifyChecks, checkMemoText, type CheckKind } from '@/lib/stockCheckK
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias, CHECK_GUIDE_PANEL, LOC_PANEL_EMPTY_HINT } from './constants'
 import {
   getInventoryDetail,
+  getConsumptionSeries,
   getPriceHistory,
   getMonthlyInflow,
   getSameCategoryItems,
@@ -106,7 +107,7 @@ import {
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
-import { partialMonthTail, perDayCaption } from './consumptionSeries'
+import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
 import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
@@ -2164,7 +2165,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
   const setMode = (m: DetailMode) => setModeState({ mode: m, dirty: false })
   // 보기 모드에는 입력이 없다 — 거기서 dirty 가 서면 닫기 확인이 거짓말을 한다.
   const markDirty = () => setModeState(s => (s.dirty || s.mode === 'view' ? s : { ...s, dirty: true }))
-  const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
+  const [tab, setTab]   = useState<'timeline' | 'trend' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
   const [loadingId, setLoadingId] = useState<string | null>(null)
@@ -2451,6 +2452,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
               onChange={id => setTab(id as typeof tab)}
               tabs={[
                 { id: 'timeline', label: '이력' },
+                { id: 'trend',    label: '소모 추이' },
                 { id: 'monthly',  label: '월별 입수' },
                 { id: 'price',    label: '단가 추이' },
               ]}
@@ -2475,6 +2477,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                   </ul>
                 )}
               </div>
+            )}
+            {tab === 'trend' && (
+              <ConsumptionTrend trackedItemId={trackedItemId} stockUnit={detailStockUnit} />
             )}
             {tab === 'monthly' && (
               <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
@@ -2506,6 +2511,99 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
       </ErrorBoundary>
     )}
     </>
+  )
+}
+
+// 품목 상세 '소모 추이'(2026-10-26 운영자 승인, 신고 9d26a7ee 2단계). 연·분기·월·주·일로 넓히고 좁혀 보며 앞뒤로 옮긴다.
+// 서버는 탭을 열 때 한 번 구간 전체를 주고(getConsumptionSeries), 전환·이동은 순수층 trendWindow 가 다시 묶는다.
+// 귀속은 카드와 같은 구간 끝 날짜, 일 단위는 여러 날 구간을 띠 하나로(쪼개지 않는다). 기간 고르기는 정본 SegmentedControl(§23 '추이 기간').
+function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string; stockUnit: string | null }) {
+  const [data, setData] = useState<{ today: string; intervals: SeriesInterval[] } | null | undefined>(undefined)
+  const [gran, setGran] = useState<Gran>('month')
+  const [offset, setOffset] = useState(0)
+  useEffect(() => {
+    let alive = true
+    getConsumptionSeries(trackedItemId).then(r => { if (alive) setData(r) }).catch(() => { if (alive) setData(null) })
+    return () => { alive = false }
+  }, [trackedItemId])
+  if (data === undefined) {
+    return <div className="space-y-2" aria-busy="true">{[0, 1].map(i => <div key={i} className="h-24 rounded-xl bg-[var(--canvas)] animate-pulse" />)}</div>
+  }
+  if (!data || data.intervals.length === 0) {
+    return <p className="text-sm text-[var(--warm-muted)] text-center py-8">아직 점검 구간이 없습니다. 재고 점검을 두 번 이상 하면 소모 추이가 잡힙니다.</p>
+  }
+  const fmt = (q: number) => fmtQty(q, stockUnit)
+  const fmtBar = (q: number): string => q >= 1000 ? (q / 1000).toFixed(q >= 10000 ? 0 : 1) + 'k' : q >= 100 ? String(Math.round(q)) : (q % 1 === 0 ? String(q) : q.toFixed(1))
+  const w = trendWindow(data.intervals, gran, data.today, offset)
+  const isDay = gran === 'day'
+  // 일 단위 띠 높이는 하루 평균(합계 / 띠 폭), 그 밖은 칸 합계.
+  const heightOf = (b: (typeof w.buckets)[number]) => b.qty == null ? 0 : isDay ? b.qty / b.span : b.qty
+  const max = Math.max(...w.buckets.map(heightOf), 1e-9)
+  const summary = windowSummary(w.buckets, stockUnit, fmt)
+  const compare = trendCompare(w.buckets, gran, offset, stockUnit)
+  const note = isDay ? dayViewNote(w.buckets) : null
+  // 일 단위 띠가 덮는 앞 칸들(그 칸들은 띠 하나로 그린다).
+  const covered = new Set<number>()
+  if (isDay) w.buckets.forEach((b, i) => { if (b.qty != null) for (let k = 1; k < b.span; k++) covered.add(i - k) })
+  const navBtn = 'inline-flex items-center justify-center w-11 h-11 -my-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-[var(--tc-text)]'
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <span className="block text-xs font-medium text-[var(--warm-mid)]">기간</span>
+        <SegmentedControl<Gran> size="sm" ariaLabel="추이 기간" value={gran}
+          onChange={g => { setGran(g); setOffset(0) }}
+          options={(['year', 'quarter', 'month', 'week', 'day'] as const).map(g => ({ value: g, label: GRAN_LABEL[g] }))} />
+      </div>
+      <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
+        <div className="flex items-center justify-between gap-1">
+          <button type="button" className={navBtn} aria-label="이전 기간" disabled={!w.hasPrev} onClick={() => setOffset(o => o + 1)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+          </button>
+          {/* 범위 글은 두 줄 높이를 늘 잡는다(기간을 바꿀 때 막대 영역이 위아래로 안 뛰게, 웹디자이너 패스). */}
+          <span className="flex min-h-[2.6em] items-center justify-center text-center text-[0.6875rem] leading-[1.3] text-[var(--warm-mid)] tabular-nums break-keep">{w.range}</span>
+          <button type="button" className={navBtn} aria-label="다음 기간" disabled={!w.hasNext} onClick={() => setOffset(o => Math.max(0, o - 1))}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
+        </div>
+        <div className="grid items-end gap-0.5" style={{ gridTemplateColumns: `repeat(${w.buckets.length}, minmax(0, 1fr))` }}>
+          {w.buckets.map((b, i) => {
+            // 일 단위 띠는 그 구간이 걸친 날들 위에 하나로 선다(끝 칸에서 왼쪽으로 span 칸). 띠가 덮은 칸은 따로 안 그린다.
+            // 모든 칸에 열을 못박는다(자동 배치에 맡기면 띠 옆 칸들이 밀린다).
+            if (covered.has(i)) return null
+            const col = isDay && b.qty != null && b.span > 1 ? `${i + 2 - b.span} / span ${b.span}` : `${i + 1}`
+            const tip = b.qty == null ? `${b.label} · 점검 기록 없음` : `${b.label} · ${b.qty > 0 ? fmt(b.qty) : '사용 없음'} · 구간 ${b.n}개${b.tail ? ` (${b.tail})` : ''}`
+            return (
+              <div key={b.key} className="flex flex-col items-center gap-0.5 min-w-0" style={{ gridColumn: col, gridRow: 1 }} title={tip}>
+                <span className="text-[0.625rem] font-medium leading-none tabular-nums" style={{ color: b.qty == null ? 'var(--warm-muted)' : 'var(--tc-text)' }}>
+                  {b.qty == null ? '·' : fmtBar(b.qty)}
+                </span>
+                <div className="w-full flex items-end rounded-sm" style={{ height: '72px', background: b.current ? 'var(--inspect-bg)' : undefined }}>
+                  {b.qty != null && (
+                    <div className="w-full rounded-sm" style={{ height: b.qty > 0 ? `${Math.max(6, Math.round((heightOf(b) / max) * 100))}%` : '2px', background: 'var(--coral)', opacity: isDay && b.span > 1 ? 0.45 : 0.75 }} />
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {w.buckets.map((b, i) => (
+            // 끝 칸은 오른쪽 정렬(꼬리 'N일까지' 가 칸보다 넓을 때 상자 밖으로 안 나가게).
+            <div key={`l-${b.key}`} className={`self-start flex flex-col min-w-0 ${i === w.buckets.length - 1 ? 'items-end' : 'items-center'}`} style={{ gridColumn: i + 1, gridRow: 2 }}>
+              <span className="text-[0.625rem] leading-none whitespace-nowrap" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)', fontWeight: b.current ? 500 : undefined, opacity: b.qty == null && !covered.has(i) ? 0.6 : undefined }}>{b.label}</span>
+              {/* 둘째 줄. 진행 중 꼬리는 --inspect-fg, 해가 바뀌는 칸의 연도는 칸 이름과 같은 --warm-muted. */}
+              {b.tail && <span className="mt-0.5 text-[0.625rem] leading-none whitespace-nowrap font-medium" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)' }}>{b.tail}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+      {(summary || compare || note) && (
+        <div className="space-y-0.5 text-[0.6875rem] text-[var(--warm-muted)] tabular-nums break-keep">
+          {compare && <p>{compare}</p>}
+          {summary && <p>{summary}</p>}
+          {note && <p>{note}</p>}
+        </div>
+      )}
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">점검과 점검 사이 소모를 그 구간이 끝난 날의 칸에 넣습니다. 점이 찍힌 칸은 점검 기록이 없는 칸입니다.</p>
+    </div>
   )
 }
 

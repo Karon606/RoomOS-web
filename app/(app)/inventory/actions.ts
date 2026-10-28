@@ -20,6 +20,7 @@ import { parseOptionList } from '@/lib/optionLists'
 import { loadLocationPaths, indexLocations, conflictingPathName } from './locationPaths'
 import { MAX_DEPTH, depthOf, siblingNameTaken, preserveName, subtreeIds, wouldCycle, type LocationRow } from '@/lib/locationTree'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
+import { dedupSameDay, intervalConsumption, kstDay, type SeriesInterval } from './consumptionSeries'
 import { noteUnitsUsed, addChannelOption } from '@/app/(app)/settings/actions'
 import { channelForSave, rowChannel, wouldSplitOrder, channelSplitAgainst, ORDER_CHANNEL_SPLIT_DENIED } from '@/lib/expenseChannel'
 import { loadChannelNames } from '@/lib/channelOptions'
@@ -179,6 +180,51 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
 }
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
+// 품목 상세 '소모 추이' 탭(2026-10-26 운영자 승인, 신고 9d26a7ee 2단계 "연단위, 분기, 월별, 주별, 일별까지 추이를 볼 수 있으면").
+// 품목 하나의 전 기간 점검 구간을 한 번 보낸다. 연·분기·월·주·일 전환과 앞뒤 이동은 화면이 순수층 trendWindow 로 다시 묶는다(전환마다 왕복 없음).
+// 개요(overview)는 7개월만 읽어 전 품목 렌더마다 돌므로 거기에 얹지 않는다(loop.md §2). 구간 셈은 개요와 같은 정본(intervalConsumption)이고,
+// 규격 단위 임시 추정(비었을 때 같은 품목 구매의 규격 단위, DB 에 안 씀)도 개요와 같은 규칙이다. 읽기 전용이라 적용취소 대상이 아니다.
+export async function getConsumptionSeries(trackedItemId: string): Promise<{
+  today: string
+  intervals: SeriesInterval[]
+} | null> {
+  const propertyId = await getPropertyId()
+  const item = await prisma.trackedItem.findFirst({
+    where: { id: trackedItemId, propertyId },
+    select: { id: true, category: true, label: true, qtyUnit: true, specUnit: true, trackUnit: true },
+  })
+  if (!item) return null
+  const [checks, adds, disps, purchases] = await Promise.all([
+    prisma.stockCheck.findMany({
+      where: { trackedItemId: item.id },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      select: { date: true, createdAt: true, remainingQty: true, isReconcile: true },
+    }),
+    prisma.stockAddition.findMany({ where: { trackedItemId: item.id }, select: { date: true, createdAt: true, addedQty: true } }),
+    prisma.stockDisposal.findMany({ where: { trackedItemId: item.id }, select: { date: true, createdAt: true, disposedQty: true } }),
+    prisma.expense.findMany({
+      where: { propertyId, category: item.category, itemLabel: item.label, excludeFromInventory: false },
+      select: { qtyUnit: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true },
+      orderBy: { date: 'desc' },
+    }),
+  ])
+  let specUnit = item.specUnit
+  if (item.trackUnit !== 'qty' && !(specUnit && specUnit.trim())) {
+    specUnit = purchases.find(p => p.specUnit != null && p.specValue != null && p.specValue > 0)?.specUnit ?? specUnit   // 메모리에만
+  }
+  const useSpec = item.trackUnit !== 'qty' && !!(specUnit && specUnit.trim())
+  const series = intervalConsumption({ checks: dedupSameDay(checks), purchases, adds, disps, qtyUnit: item.qtyUnit, useSpec, specUnit })
+  return {
+    today: kstDay(new Date()),
+    intervals: series.map(iv => ({
+      start: iv.prev.date.toISOString().slice(0, 10),   // @db.Date(그 날의 UTC 자정) 그대로가 KST 달력일이다
+      end: iv.curr.date.toISOString().slice(0, 10),
+      consumed: iv.consumed,
+      days: iv.days,
+    })),
+  }
+}
+
 export async function getInventoryDetail(trackedItemId: string): Promise<{
   // unitHint = 표시 전용 단위 폴백(overview.resolveUnitHint 정본) — 카드 qtyUnit 이 비었을 때만 쓰인다.
   item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }

@@ -1511,3 +1511,14 @@ space-y-3 delayed-fallback` 을 직접 낸다. 보기 골격은 실제처럼 두
   예측 막대는 여전히 그리지 않는다(2026-07-17 결정).
 - 첫 달(추적 시작 달)도 부분 달이지만 이번 승인 범위는 진행 중인 달뿐이다.
 - 정본 `app/(app)/inventory/consumptionSeries.ts`, 진리표 `scripts/test-consumption-series.ts`, 그물 `scripts/check-consumption-series-wiring.mjs`.
+
+### 2단계: 품목 상세 '소모 추이' 탭 (같은 승인)
+- 품목 상세 탭 `이력 / 소모 추이 / 월별 입수 / 단가 추이`. 기간 SegmentedControl sm `연 / 분기 / 월 / 주 / 일`(기본 월), 좌우 44px 버튼으로 앞뒤 창
+  (연 5 · 분기 8 · 월 12 · 주 12 · 일 14칸), 범위 글 `2025년 11월 ~ 2026년 10월`.
+- 서버 액션 `getConsumptionSeries(trackedItemId)` 가 그 품목 전 기간 구간을 한 번 보내고(라면 실측 108구간 약 7KB) 화면이 `trendWindow` 로 다시 묶는다.
+  개요(7개월, 전 품목 렌더마다 돈다)에는 얹지 않았다(loop.md §2). 승인 계획의 '(단위, 범위) 인자' 대신 한 번에 보내고 화면이 묶는 쪽을 택했다.
+- **구간 셈 정본을 하나로 뺐다.** 개요 안에 있던 dedupSameDay·effTime·kstDay·dbDateMs·unitMatches·sumPurchasesMem·sumLedgerMem 과 구간 셈을
+  `consumptionSeries.intervalConsumption` 으로 옮기고 개요와 액션이 같이 부른다. 규칙은 그대로다(verify-overview-parity 전후 바이트 동일).
+- 귀속은 구간 끝 날짜. 주는 월요일 시작. 일 단위는 여러 날 구간을 띠 하나로 그린다(높이 = 그 구간 하루 평균, 숫자 = 합계, 옅은 색).
+  요일 비교 표본은 하루 간격 구간뿐이라 일 단위에 `하루 간격 점검 N일 · 여러 날 묶인 구간 M개` 를 단다.
+- 3·4단계(1인당·층별·국적·성별·날씨·AI·이상 알림)는 개인정보 최소 인원 규칙·날씨 자료 출처·'비정상' 기준을 운영자가 정한 뒤 별도 기획이다.
