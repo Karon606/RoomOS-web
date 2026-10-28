@@ -32,7 +32,27 @@ const violations = []
 function codeLines(f) {
   const src = readFileSync(f, 'utf8')
     .replace(/(^|[\s{;(),])\/\*[\s\S]*?\*\//gm, m => m.replace(/[^\n]/g, ' '))
-  return src.split('\n').map(l => l.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
+  return src.split('\n').map(stripLineComment)
+}
+
+/**
+ * 줄 끝 // 주석만 뗀다. 따옴표 안의 '//'(문구 속 ' // ', URL)는 그대로 둔다 — 정규식 한 줄로 떼면
+ * 문자열 안의 ' // ' 뒤 문구가 사라져 거기 선 위반이 침묵한다(독립 검수 2026-10-28).
+ * 여러 줄 템플릿은 줄마다 따옴표 상태를 새로 세므로 완전하지 않다. 놓치는 쪽이 아니라 덜 떼는 쪽으로 기운다.
+ */
+function stripLineComment(line) {
+  let q = ''
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (q) {
+      if (c === '\\') { i++; continue }
+      if (c === q) q = ''
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') { q = c; continue }
+    if (c === '/' && line[i + 1] === '/' && line[i - 1] !== ':') return line.slice(0, i)
+  }
+  return line
 }
 
 function walk(dir, out = []) {
@@ -48,7 +68,8 @@ function walk(dir, out = []) {
 const FILES = ['app', 'components', 'lib'].flatMap(d => walk(d))
 
 // ⓐ·ⓑ 전수
-const SCREEN_NAMES = /입주자 ?(관리|등록|목록)/
+// 조사가 낀 꼴('입주자를 등록하면')도 같은 화면 이름의 동작이다.
+const SCREEN_NAMES = /입주자(를|을)? ?(관리|등록|목록)/
 // 시트 이름 '입주자관리'는 내보낸 파일을 다시 읽는 열쇠라 바꾸지 않는다(옛 백업이 안 읽힌다).
 const SHEET_KEY = /'입주자관리'|"입주자관리"/
 const FUNNEL_CTX = /(문의|투어)[^'"`<>{}]{0,20}입주자/
@@ -77,6 +98,14 @@ const MUST = [
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /title="고객 등록"/, 1, '등록 모달 제목'],
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /success: '고객 등록됨'/, 1, '등록 토스트'],
   ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /'등록된 고객이 없습니다'/g, 2, '빈 상태(모바일·PC)'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /'고객을 등록하면 이곳에 표시됩니다\.'/g, 2, '빈 상태 설명(모바일·PC)'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /'조건에 맞는 고객이 없습니다'/g, 2, '필터 0건 빈 상태(모바일·PC)'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /ariaLabel="고객 정렬 기준"/, 1, '정렬 이름'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /title="고객 일괄 편집"/, 1, '일괄 편집 제목'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /pushToast\('success', `고객 \$\{res\.tenantCount\}명/, 1, '일괄 편집 토스트'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /confirmLabel: '새 고객으로 등록'/, 1, '중복 등록 확인 버튼'],
+  ['ⓒ', 'app/(app)/tenants/TenantClient.tsx', /그 고객 상세의 '계약 추가'를 쓰세요\. 동명이인이라 정말 새 고객이면/, 1, '중복 등록 확인 문장'],
+  ['ⓒ', 'app/(app)/tenants/actions.ts', /그 고객 상세에서 '계약 추가'를 써 주세요/, 1, '중복 등록 서버 문장'],
   ['ⓓ', 'lib/noticeTargets.ts', /resident: '입주자'/, 1, "단체 공지 '입주자' 그룹(지금 사는 사람)"],
   ['ⓓ', 'components/entity-modal/widgets/RoomBasicInfo.tsx', /'비거주자' : '입주자'/, 1, '호실 카드의 사람 칸'],
   ['ⓓ', 'app/(app)/dashboard/DashboardClient.tsx', /누적 미납 \(현 입주자\)/, 1, "홈 '현 입주자' 지표"],

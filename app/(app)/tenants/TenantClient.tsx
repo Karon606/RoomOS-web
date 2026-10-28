@@ -2297,7 +2297,7 @@ export default function TenantClient({
         <EmptyState
           className="sm:hidden"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '이 조건에 맞는 고객이 없습니다'}
+          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '조건에 맞는 고객이 없습니다'}
           description={search.trim() ? '다른 검색어로 시도해 보세요.' : initialTenants.length === 0 ? '고객을 등록하면 이곳에 표시됩니다.' : '다른 상태 탭이나 필터를 골라 보세요.'}
         />
       ) : (
@@ -2486,7 +2486,7 @@ export default function TenantClient({
         <EmptyState
           className="hidden sm:block"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '이 조건에 맞는 고객이 없습니다'}
+          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '조건에 맞는 고객이 없습니다'}
           description={search.trim() ? '다른 검색어로 시도해 보세요.' : initialTenants.length === 0 ? '고객을 등록하면 이곳에 표시됩니다.' : '다른 상태 탭이나 필터를 골라 보세요.'}
         />
       ) : (
@@ -2819,7 +2819,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={addLeaseDirty}
           onClose={() => { setAddLeaseTenant(null); setAddLeaseDirty(false) }}
           title={`계약 추가 · ${addLeaseTenant.name}`}
-          subtitle="이 고객에게 계약을 하나 더 만듭니다. 이름·연락처 등 입주자 정보는 바뀌지 않습니다.">
+          subtitle="이 고객에게 계약을 하나 더 만듭니다. 이름·연락처는 바뀌지 않습니다.">
             <form key={`lease-${addLeaseTenant.id}`} onSubmit={handleAddLease} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddLeaseDirty(true))} onChange={() => setAddLeaseDirty(true)}>
               <input type="hidden" name="tenantId" value={addLeaseTenant.id} />

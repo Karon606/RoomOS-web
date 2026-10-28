@@ -1682,7 +1682,7 @@ export default function SettingsForm({
         <SmsTemplateCard
           kind="notice"
           title="단체 공지 문자 템플릿"
-          description="고객 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
+          description="고객 관리의 [단체 문자]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
           emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] 7월 15일(수) 오전 10시부터 12시까지 전 층 수도 점검이 있습니다. 이용에 참고 부탁드립니다.&rdquo;</>}
           namePlaceholder="예: 수도 점검 공지"
           bodyLabel="문자 내용"
