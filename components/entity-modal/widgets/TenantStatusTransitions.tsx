@@ -634,7 +634,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (!rr.ok && !rr.error.startsWith('이미 환불 처리된')) {
             // 퇴실은 이미 끝났다. 환불만 못 했다는 사실을 알리고 어디서 마저 하는지 말한다.
             pushToast('error', `퇴실은 됐지만 이용료 환불이 실패했습니다. ${rr.error}`, {
-              detail: '입주자 관리에서 그 사람을 열고 수정으로 다시 시도해 주세요.',
+              detail: '고객 관리에서 그 사람을 열고 수정으로 다시 시도해 주세요.',
             })
           }
           // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다. 종전에는 이 경로가

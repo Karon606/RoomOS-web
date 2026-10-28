@@ -282,7 +282,7 @@ export default function ErrorReportButton() {
             autoCorrect="on"
             autoCapitalize="sentences"
             spellCheck={true}
-            placeholder="예: 수납 저장을 눌렀더니 금액이 0으로 바뀌었어요. 예: 입주자 목록에서 방 번호로 바로 찾을 수 있으면 좋겠어요."
+            placeholder="예: 수납 저장을 눌렀더니 금액이 0으로 바뀌었어요. 예: 고객 목록에서 방 번호로 바로 찾을 수 있으면 좋겠어요."
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none"
           />
 

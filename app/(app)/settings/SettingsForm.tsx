@@ -784,7 +784,7 @@ export default function SettingsForm({
     setVisitRoutes(prev => prev.includes(v) ? prev : [...prev, v]); setNewVisitRoute('')
   }
   const handleDeleteVisitRoute = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 경로를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 입주자의 방문 경로는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 경로를 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 고객의 방문 경로는 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteVisitRouteOption(name)
     setVisitRoutes(prev => prev.filter(t => t !== name))
     return true
@@ -1087,7 +1087,7 @@ export default function SettingsForm({
     setJobs(prev => [...prev, v]); setNewJob('')
   }
   const handleDeleteJob = async (name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 직업을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 입주자의 직업은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
+    if (!(await confirmDialog({ title: `'${name}' 직업을 목록에서 삭제할까요?`, message: '목록에서만 빠집니다. 이미 저장된 고객의 직업은 그대로 있습니다.', level: 'caution', confirmLabel: '삭제' }))) return false
     await deleteJobOption(name)
     setJobs(prev => prev.filter(t => t !== name))
     return true
@@ -1557,7 +1557,7 @@ export default function SettingsForm({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">연락할 때 알림 (며칠 전부터)</label>
-              <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 입주자의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
+              <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 고객의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
               <div className="flex items-center gap-2">
                 <input type="text" name="contactLeadDays" inputMode="numeric"
                   defaultValue={String(property?.contactLeadDays ?? 14)}
@@ -1682,7 +1682,7 @@ export default function SettingsForm({
         <SmsTemplateCard
           kind="notice"
           title="단체 공지 문자 템플릿"
-          description="입주자 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
+          description="고객 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
           emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] 7월 15일(수) 오전 10시부터 12시까지 전 층 수도 점검이 있습니다. 이용에 참고 부탁드립니다.&rdquo;</>}
           namePlaceholder="예: 수도 점검 공지"
           bodyLabel="문자 내용"
@@ -1820,7 +1820,7 @@ export default function SettingsForm({
           <OptionGroupHead title="입주자" />
           <OptionSection
             title="직업 관리"
-            description="입주자 등록·수정에서 고르는 직업입니다. 목록에서 삭제해도 이미 저장된 입주자의 직업은 그대로 있습니다."
+            description="고객 등록·수정에서 고르는 직업입니다. 목록에서 삭제해도 이미 저장된 고객의 직업은 그대로 있습니다."
             items={jobs}
             field="jobOptions"
             setItems={setJobs}
@@ -1836,7 +1836,7 @@ export default function SettingsForm({
           />
           <OptionSection
             title="방문 경로 관리"
-            description="입주자 등록·수정의 방문 경로에서 고르는 이름입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 저장된 입주자의 방문 경로는 그대로 있습니다."
+            description="고객 등록·수정의 방문 경로에서 고르는 이름입니다. 기타(직접 입력)는 목록 끝에 늘 있어 여기 넣지 않습니다. 목록에서 삭제해도 이미 저장된 고객의 방문 경로는 그대로 있습니다."
             items={visitRoutes}
             field="visitRouteOptions"
             setItems={setVisitRoutes}
@@ -4948,7 +4948,7 @@ function ShortStayPolicyCard() {
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">단기 입실 정책</h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-        1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 입주자 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
+        1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 고객 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
       </p>
       {!p ? (
         <SkeletonRows rows={3} />

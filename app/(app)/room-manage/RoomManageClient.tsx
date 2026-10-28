@@ -2135,7 +2135,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
       })
     }
     if ((res.skippedNegotiated ?? 0) > 0) {
-      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 입주자 관리에서 개별 변경하세요.`)
+      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 고객 관리에서 개별 변경하세요.`)
     }
     onDone()
   }
