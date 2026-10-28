@@ -63,7 +63,7 @@ async function main() {
   } else {
     console.log(`유예 ${DEPOSIT_RETURN_GRACE_DAYS}일 넘긴 보증금 미반환 ${overdue.length}건:`)
     for (const o of overdue) console.log(`  ${o}`)
-    console.log('실제 반환 여부를 확인하고 입주자 카드의 보증금 항목에서 소급 기록할 것.')
+    console.log('실제 반환 여부를 확인하고 고객 카드의 보증금 항목에서 소급 기록할 것.')
     process.exitCode = 1
   }
   await prisma.$disconnect()

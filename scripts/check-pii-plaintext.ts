@@ -147,7 +147,7 @@ async function main() {
   const PLAINTEXT_READERS = new Map<string, string>([
     [join('lib', 'contractData.ts'), '계약서 렌더 데이터 조립 — 종이의 생년월일 칸을 이 번호가 대체한다'],
     [join('app', 'api', 'contract', 'generate', 'route.ts'), '발급 PDF 인쇄 + 박제용 지문 생성'],
-    [join('app', '(app)', 'tenants', 'actions.ts'), '입주자 화면 [보기](revealForeignRegNo) — 유일하게 열람 기록을 남기는 문'],
+    [join('app', '(app)', 'tenants', 'actions.ts'), '고객 화면 [보기](revealForeignRegNo) — 유일하게 열람 기록을 남기는 문'],
     [join('app', '(app)', 'tenants', 'contractShare.ts'), '서명본 스냅샷을 읽는 순간 복호해 끼움(저장값 무변경)'],
     [join('app', 'sign', '[token]', 'page.tsx'), '생년월일 게이트 통과 후 원격 화면 렌더 시 주입'],
   ])

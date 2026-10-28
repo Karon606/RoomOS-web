@@ -312,7 +312,7 @@ async function main() {
 
   await prisma.$disconnect()
   if (bad > 0) process.exit(1)
-  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 입주자 ${people.length}명 검사 / 위반 0건 · 확인된 겹침 ${ackedPairs}건 (축 5종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES}, 축 5 자가 점검 통과)`)
+  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 고객 ${people.length}명 검사 / 위반 0건 · 확인된 겹침 ${ackedPairs}건 (축 5종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES}, 축 5 자가 점검 통과)`)
 }
 
 main()
