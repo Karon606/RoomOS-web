@@ -1029,7 +1029,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true; notice?
   // 조용히 두 사람이 된다. 확인창을 지나온 폼만 통과시킨다(화면이 '계약 추가' 경로를 권한다).
   if (formData.get(DUPLICATE_ACK) !== '1') {
     const dup = await findDuplicateTenant(name, contactValue)
-    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세에서 '계약 추가'를 써 주세요.` }
+    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세에서 '계약 추가'를 써 주세요.` }
   }
 
   // 암호문 AAD 가 이 행의 id 라 id 를 먼저 정해 둔다. 만들고 나서 두 번째 문으로 채우면
@@ -6723,7 +6723,7 @@ export async function batchUpdateTenants(
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    if (tenantIds.length === 0) return { ok: false, error: '선택된 입주자가 없습니다.' }
+    if (tenantIds.length === 0) return { ok: false, error: '선택된 고객이 없습니다.' }
 
     const tenantFields: Record<string, unknown> = {}
     if ('nationality' in data) tenantFields.nationality = data.nationality

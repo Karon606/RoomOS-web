@@ -1207,16 +1207,16 @@ export default function TenantClient({
       const where = dup.roomNo ? `${fmtRoomNo(dup.roomNo)} ` : ''
       const ok = await confirmDialog({
         title: `${dup.name}님은 이미 등록돼 있습니다`,
-        message: `${where}${STATUS_LABEL[dup.status ?? ''] ?? '등록됨'} 상태로 같은 연락처가 저장돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세의 '계약 추가'를 쓰세요. 동명이인이라 정말 새 입주자면 그대로 등록합니다.`,
+        message: `${where}${STATUS_LABEL[dup.status ?? ''] ?? '등록됨'} 상태로 같은 연락처가 저장돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세의 '계약 추가'를 쓰세요. 동명이인이라 정말 새 고객이면 그대로 등록합니다.`,
         level: 'caution',
-        confirmLabel: '새 입주자로 등록',
+        confirmLabel: '새 고객으로 등록',
         cancelLabel: '취소',
       })
       if (!ok) return
       fd.set('allowDuplicateTenant', '1')
     }
     startTransition(async () => {
-      const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
+      const res = await withSave(() => addTenant(fd), { success: '고객 등록됨' })
       if (!res.ok) { showSaveDenial(res.error); return }
       // 거주중으로 바로 등록해 그 방의 입실 전 점검이 닫혔으면 알린다(2026-10-27 운영자 결정 ③).
       if (res.notice) pushToast('info', res.notice)
@@ -1906,7 +1906,7 @@ export default function TenantClient({
           shrink-0 이 없으면 360dp 이하에서 flex 가 버튼을 압축해 글자가 낱자로 쪼개진다(신고 aea83d6b 클래스).
           ml-auto 는 두 줄로 접혔을 때도 버튼군을 우측에 붙여 둔다. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">고객 관리</h1>
         {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit가 최종 방어(감사 D3) */}
         {canEdit && (
         <div className="flex items-center gap-2 shrink-0 ml-auto">
@@ -1915,7 +1915,7 @@ export default function TenantClient({
           </Btn>
           <Btn variant="primary" size="md"
             onClick={() => { setAddTenantDirty(false); setShowAdd(true); setError('') }}>
-            + 입주자 등록
+            + 고객 등록
           </Btn>
         </div>
         )}
@@ -2091,7 +2091,7 @@ export default function TenantClient({
       {/* 모바일 정렬 + 표시 항목 */}
       <div className="sm:hidden flex items-center justify-between gap-2">
         <SortSelect<SortKey>
-          ariaLabel="입주자 정렬 기준"
+          ariaLabel="고객 정렬 기준"
           value={sortKey}
           dir={sortDir}
           onChange={sk => { setSortKey(sk); setSortDir('asc') }}
@@ -2297,8 +2297,8 @@ export default function TenantClient({
         <EmptyState
           className="sm:hidden"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '입주자를 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : '등록된 고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
         />
       ) : (
         <div className="sm:hidden space-y-2">
@@ -2486,8 +2486,8 @@ export default function TenantClient({
         <EmptyState
           className="hidden sm:block"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '입주자를 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : '등록된 고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
         />
       ) : (
         <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-310px)]">
@@ -2745,7 +2745,7 @@ export default function TenantClient({
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
         <Modal open width="lg" dirty={addTenantDirty}
-          onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="입주자 등록">
+          onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="고객 등록">
             <form onSubmit={handleAdd} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
@@ -5736,7 +5736,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
       const u = res.undo
       // 건너뛴 건은 사유별로 꼬리에 붙인다 — 지출 일괄 편집과 같은 문법(FinanceClient skipMsg).
       const skipMsg = res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : ''
-      pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료${skipMsg}`, {
+      pushToast('success', `고객 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료${skipMsg}`, {
         // 일괄 상태 변경이 입실 전 점검을 닫았으면 둘째 줄(운영자 결정 ③).
         ...(res.inspectionNotice ? { detail: res.inspectionNotice } : {}),
         // 서명 키가 없는 운영 환경이면 토큰이 null 이다. 그때는 적용취소를 숨긴다(납입일 변경 토스트와 같은 규칙).
@@ -5753,7 +5753,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     <Modal open onClose={onClose} width="md" dirty={dirty}
       // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
       bodyClassName=""
-      title="입주자 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
+      title="고객 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
