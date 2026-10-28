@@ -2091,7 +2091,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       timeLabel: days === 0 ? '오늘 퇴실' : `퇴실 ${days}일 경과`,
       detail:    `반환할 보증금 ${fmtWon(l.basis)}
 퇴실일 ${outYmd ?? '미상'}
-계좌를 받으면 입주자를 열어 보증금 항목에서 반환 정산을 기록하세요. 기록하면 이 알림이 사라집니다.`,
+계좌를 받으면 고객을 열어 보증금 항목에서 반환 정산을 기록하세요. 기록하면 이 알림이 사라집니다.`,
       tenantId:  l.tenant.id,
       leaseTermId: l.id,
       sortKey:   -days,

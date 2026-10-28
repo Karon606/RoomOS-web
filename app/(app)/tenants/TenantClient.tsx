@@ -2297,8 +2297,8 @@ export default function TenantClient({
         <EmptyState
           className="sm:hidden"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '등록된 고객이 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '이 조건에 맞는 고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : initialTenants.length === 0 ? '고객을 등록하면 이곳에 표시됩니다.' : '다른 상태 탭이나 필터를 골라 보세요.'}
         />
       ) : (
         <div className="sm:hidden space-y-2">
@@ -2486,8 +2486,8 @@ export default function TenantClient({
         <EmptyState
           className="hidden sm:block"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '등록된 고객이 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : initialTenants.length === 0 ? '등록된 고객이 없습니다' : '이 조건에 맞는 고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : initialTenants.length === 0 ? '고객을 등록하면 이곳에 표시됩니다.' : '다른 상태 탭이나 필터를 골라 보세요.'}
         />
       ) : (
         <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-310px)]">
@@ -2819,7 +2819,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={addLeaseDirty}
           onClose={() => { setAddLeaseTenant(null); setAddLeaseDirty(false) }}
           title={`계약 추가 · ${addLeaseTenant.name}`}
-          subtitle="이 입주자에게 계약을 하나 더 만듭니다. 이름·연락처 등 입주자 정보는 바뀌지 않습니다.">
+          subtitle="이 고객에게 계약을 하나 더 만듭니다. 이름·연락처 등 입주자 정보는 바뀌지 않습니다.">
             <form key={`lease-${addLeaseTenant.id}`} onSubmit={handleAddLease} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddLeaseDirty(true))} onChange={() => setAddLeaseDirty(true)}>
               <input type="hidden" name="tenantId" value={addLeaseTenant.id} />
@@ -5417,7 +5417,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
       {!leaseOnly && (
       <FormSection title="메모">
-        <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
+        <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="고객 특이사항"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
       )}
@@ -5821,7 +5821,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 예정일 (계약 전체 적용)</label>
               <DatePicker value={exitDate} onChange={setExitDate} placeholder="미변경" className={inputCls} />
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">입력하면 선택한 {selectedIds.length}명 모두 같은 날짜로 저장됩니다. 기존 개별 날짜도 덮어씁니다. 일할 정산은 각 입주자 카드에서 개별 진행하세요.</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">입력하면 선택한 {selectedIds.length}명 모두 같은 날짜로 저장됩니다. 기존 개별 날짜도 덮어씁니다. 일할 정산은 각 고객 카드에서 개별 진행하세요.</p>
             </div>
           )}
         </div>
