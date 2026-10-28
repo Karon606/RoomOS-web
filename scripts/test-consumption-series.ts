@@ -1,6 +1,6 @@
 // 재고 소모 추이 표기 진리표(신고 9d26a7ee). 진행 중인 달 라벨, 하루당, 캡션. 실패 시 exit 1.
 // 실행: npx tsx scripts/test-consumption-series.ts
-import { perDayText, partialMonthTail, perDayCaption, bucketKey, shiftKey, trendWindow, windowSummary, trendCompare, dayViewNote, intervalConsumption, dedupSameDay, type MonthSlot, type SeriesInterval } from '../app/(app)/inventory/consumptionSeries'
+import { showsBarValues, bucketReadout, bucketTitle, perDayText, partialMonthTail, perDayCaption, bucketKey, shiftKey, trendWindow, windowSummary, trendCompare, dayViewNote, intervalConsumption, dedupSameDay, type MonthSlot, type SeriesInterval } from '../app/(app)/inventory/consumptionSeries'
 
 let pass = 0
 const fails: string[] = []
@@ -54,17 +54,18 @@ const IV: SeriesInterval[] = [
 ]
 {
   const w = trendWindow(IV, 'month', '2026-10-25', 0)
-  eq('⑤ 월 6칸', w.buckets.length, 6)
-  eq('⑤ 끝 칸이 이번 달', w.buckets[5].key, '2026-10')
-  eq('⑤ 10월 합·일수·구간', [w.buckets[5].qty, w.buckets[5].days, w.buckets[5].n, w.buckets[5].oneDay], [138, 23, 2, 1])
-  eq('⑤ 10월 꼬리', w.buckets[5].tail, '23일까지')
-  eq('⑤ 9월은 꼬리 없음', w.buckets[4].tail, null)
+  eq('⑤ 월 12칸(1년치, 2026-10-28 운영자 결정)', w.buckets.length, 12)
+  eq('⑤ 끝 칸이 이번 달', w.buckets[11].key, '2026-10')
+  eq('⑤ 10월 합·일수·구간', [w.buckets[11].qty, w.buckets[11].days, w.buckets[11].n, w.buckets[11].oneDay], [138, 23, 2, 1])
+  eq('⑤ 10월 꼬리', w.buckets[11].tail, '23일까지')
+  eq('⑤ 9월은 꼬리 없음', w.buckets[10].tail, null)
   eq('⑤ 관측 없는 달은 null', w.buckets[0].qty, null)
   eq('⑤ 앞 창 없음(첫 구간이 창 안)', w.hasPrev, false)
   eq('⑤ 최근 창은 다음 없음', w.hasNext, false)
-  eq('⑤ 범위 글(같은 해면 뒤 연도 생략)', w.range, '2026년 5월 ~ 10월')
-  eq('⑤ 해가 다르면 둘 다 연도', trendWindow(IV, 'month', '2026-03-10', 0).range, '2025년 10월 ~ 2026년 3월')
-  eq('⑤ 해가 바뀌는 월 칸 둘째 줄에 연도', trendWindow(IV, 'month', '2026-03-10', 0).buckets.map(b => b.tail), [null, null, null, '2026년', null, null])
+  eq('⑤ 범위 글(해가 다르면 둘 다 연도)', w.range, '2025년 11월 ~ 2026년 10월')
+  eq('⑤ 범위 글(같은 해면 뒤 연도 생략)', trendWindow(IV, 'month', '2026-12-10', 0).range, '2026년 1월 ~ 12월')
+  eq('⑤ 해가 다르면 둘 다 연도', trendWindow(IV, 'month', '2026-03-10', 0).range, '2025년 4월 ~ 2026년 3월')
+  eq('⑤ 해가 바뀌는 월 칸 둘째 줄에 연도', trendWindow(IV, 'month', '2026-03-10', 0).buckets.map(b => b.tail), [null, null, null, null, null, null, null, null, null, '2026년', null, null])
   eq('⑤ 일 범위는 점 날짜', trendWindow(IV, 'day', '2026-10-25', 0).range, '2026.10.12 ~ 10.25')
   eq('⑤ 주 범위는 첫 월요일 ~ 끝 일요일', trendWindow(IV, 'week', '2026-10-25', 0).range, '2026.8.31 ~ 10.25')
   eq('⑤ 분기 범위(해가 다름)', trendWindow(IV, 'quarter', '2026-10-25', 0).range, '25년 1분기 ~ 26년 4분기')
@@ -90,12 +91,12 @@ const IV: SeriesInterval[] = [
 }
 {
   const w = trendWindow(IV, 'month', '2026-10-25', 1)
-  eq('⑤ 앞 창 범위', w.range, '2025년 11월 ~ 2026년 4월')
+  eq('⑤ 앞 창 범위', w.range, '2024년 11월 ~ 2025년 10월')
   eq('⑤ 분기 해 바뀜 칸 연도', trendWindow(IV, 'quarter', '2026-10-25', 0).buckets[4].tail, '2026년')
   eq('⑤ 앞 창은 다음 있음', w.hasNext, true)
 }
 eq('⑤ 주 칸 이름은 달이 바뀌는 칸만 월/일', trendWindow(IV, 'week', '2026-10-25', 0).buckets.map(b => b.label), ['8/31', '9/7', '14', '21', '28', '10/5', '12', '19'])
-eq('⑤ 음수 칸은 0(사용량은 음수일 수 없다)', trendWindow([{ start: '2026-10-01', end: '2026-10-02', consumed: -5, days: 1 }], 'month', '2026-10-25', 0).buckets[5].qty, 0)
+eq('⑤ 음수 칸은 0(사용량은 음수일 수 없다)', trendWindow([{ start: '2026-10-01', end: '2026-10-02', consumed: -5, days: 1 }], 'month', '2026-10-25', 0).buckets[11].qty, 0)
 
 // ⑥ 구간 셈 정본(개요와 공용). 보정 구간 제외, 입고 상쇄(부호 그대로), 같은 날 dedup.
 {
@@ -117,6 +118,19 @@ eq('⑤ 음수 칸은 0(사용량은 음수일 수 없다)', trendWindow([{ star
   eq('⑥ 같은 날 dedup 뒤 첫 구간', [iv[0].consumed, iv[0].days], [10, 1])
   eq('⑥ 입고 구간은 부호 그대로(70 + 100 - 160 = 10)', [iv[1].consumed, iv[1].days], [10, 1])
 }
+
+// ⑦ 칸이 많으면 막대 위 숫자 대신 고른 칸 읽기 줄(2026-10-28 운영자 결정, 월 12칸).
+eq('⑦ 월·일은 막대 숫자 없음', [showsBarValues('month'), showsBarValues('day')], [false, false])
+eq('⑦ 연·분기·주는 막대 숫자', [showsBarValues('year'), showsBarValues('quarter'), showsBarValues('week')], [true, true, true])
+{
+  const w = trendWindow(IV, 'month', '2026-10-25', 0)
+  eq('⑦ 진행 중 칸 읽기', bucketReadout(w.buckets[11], 'month', '봉', q => `${q}봉`), '2026년 10월 · 138봉 · 하루 6.0봉 · 23일까지')
+  eq('⑦ 지난 칸 읽기(꼬리 없음)', bucketReadout(w.buckets[10], 'month', '봉', q => `${q}봉`), '2026년 9월 · 190봉 · 하루 6.3봉')
+  eq('⑦ 미관측 칸 읽기', bucketReadout(w.buckets[0], 'month', '봉', q => `${q}봉`), '2025년 11월 · 점검 기록 없음')
+  const y = trendWindow(IV, 'month', '2026-03-10', 0)
+  eq('⑦ 해 바뀜 연도는 읽기 줄에 꼬리로 안 붙는다', bucketReadout(y.buckets[9], 'month', '봉', q => `${q}봉`), '2026년 1월 · 점검 기록 없음')
+}
+eq('⑦ 칸 이름', ['2026', '2026-Q4', '2026-10', '2026-10-19', '2026-10-27'].map((k, i) => bucketTitle(k, (['year', 'quarter', 'month', 'week', 'day'] as const)[i])), ['2026년', '2026년 4분기', '2026년 10월', '2026.10.19 주', '2026.10.27'])
 
 console.log(`[소모 추이 표기] 통과 ${pass} / 실패 ${fails.length}`)
 for (const f of fails) console.log('  - ' + f)

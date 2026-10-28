@@ -107,7 +107,7 @@ import {
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
-import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
+import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, showsBarValues, bucketReadout, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
 import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
@@ -2521,6 +2521,8 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
   const [data, setData] = useState<{ today: string; intervals: SeriesInterval[] } | null | undefined>(undefined)
   const [gran, setGran] = useState<Gran>('month')
   const [offset, setOffset] = useState(0)
+  // 고른 칸(창 안 위치). null = 끝 칸(가장 최근). 기간·창을 바꾸면 끝 칸으로 돌아간다.
+  const [sel, setSel] = useState<number | null>(null)
   useEffect(() => {
     let alive = true
     getConsumptionSeries(trackedItemId).then(r => { if (alive) setData(r) }).catch(() => { if (alive) setData(null) })
@@ -2542,6 +2544,10 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
   const summary = windowSummary(w.buckets, stockUnit, fmt)
   const compare = trendCompare(w.buckets, gran, offset, stockUnit)
   const note = isDay ? dayViewNote(w.buckets) : null
+  // 칸이 많으면(월 12·일 14) 막대 위 숫자를 빼고 고른 칸의 값을 한 줄로 읽는다(320px 에서 세 자리 숫자가 붙던 것, 2026-10-28 운영자 결정).
+  const valuesOnBars = showsBarValues(gran)
+  const selIdx = sel ?? w.buckets.length - 1
+  const readout = bucketReadout(w.buckets[selIdx], gran, stockUnit, fmt)
   // 일 단위 띠가 덮는 앞 칸들(그 칸들은 띠 하나로 그린다).
   const covered = new Set<number>()
   if (isDay) w.buckets.forEach((b, i) => { if (b.qty != null) for (let k = 1; k < b.span; k++) covered.add(i - k) })
@@ -2551,20 +2557,22 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
       <div className="space-y-1.5">
         <span className="block text-xs font-medium text-[var(--warm-mid)]">기간</span>
         <SegmentedControl<Gran> size="sm" ariaLabel="추이 기간" value={gran}
-          onChange={g => { setGran(g); setOffset(0) }}
+          onChange={g => { setGran(g); setOffset(0); setSel(null) }}
           options={(['year', 'quarter', 'month', 'week', 'day'] as const).map(g => ({ value: g, label: GRAN_LABEL[g] }))} />
       </div>
       <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
         <div className="flex items-center justify-between gap-1">
-          <button type="button" className={navBtn} aria-label="이전 기간" disabled={!w.hasPrev} onClick={() => setOffset(o => o + 1)}>
+          <button type="button" className={navBtn} aria-label="이전 기간" disabled={!w.hasPrev} onClick={() => { setOffset(o => o + 1); setSel(null) }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
           </button>
           {/* 범위 글은 두 줄 높이를 늘 잡는다(기간을 바꿀 때 막대 영역이 위아래로 안 뛰게, 웹디자이너 패스). */}
           <span className="flex min-h-[2.6em] items-center justify-center text-center text-[0.6875rem] leading-[1.3] text-[var(--warm-mid)] tabular-nums break-keep">{w.range}</span>
-          <button type="button" className={navBtn} aria-label="다음 기간" disabled={!w.hasNext} onClick={() => setOffset(o => Math.max(0, o - 1))}>
+          <button type="button" className={navBtn} aria-label="다음 기간" disabled={!w.hasNext} onClick={() => { setOffset(o => Math.max(0, o - 1)); setSel(null) }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
           </button>
         </div>
+        {/* 고른 칸 읽기 줄. 막대를 누르면 바뀐다(기본은 끝 칸). 숫자가 막대 위에 서는 칸 수에서도 같은 줄로 하루당·꼬리를 읽는다. */}
+        <p className="text-center text-[0.6875rem] font-medium text-[var(--warm-dark)] tabular-nums break-keep" aria-live="polite">{readout}</p>
         <div className="grid items-end gap-0.5" style={{ gridTemplateColumns: `repeat(${w.buckets.length}, minmax(0, 1fr))` }}>
           {w.buckets.map((b, i) => {
             // 일 단위 띠는 그 구간이 걸친 날들 위에 하나로 선다(끝 칸에서 왼쪽으로 span 칸). 띠가 덮은 칸은 따로 안 그린다.
@@ -2573,16 +2581,19 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
             const col = isDay && b.qty != null && b.span > 1 ? `${i + 2 - b.span} / span ${b.span}` : `${i + 1}`
             const tip = b.qty == null ? `${b.label} · 점검 기록 없음` : `${b.label} · ${b.qty > 0 ? fmt(b.qty) : '사용 없음'} · 구간 ${b.n}개${b.tail ? ` (${b.tail})` : ''}`
             return (
-              <div key={b.key} className="flex flex-col items-center gap-0.5 min-w-0" style={{ gridColumn: col, gridRow: 1 }} title={tip}>
+              // 칸 하나가 누르는 자리다(읽기 줄을 바꾼다). 고른 칸은 막대를 진하게, 나머지는 그대로.
+              <button key={b.key} type="button" className="flex flex-col items-center gap-0.5 min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-[var(--tc-text)]"
+                style={{ gridColumn: col, gridRow: 1 }} title={tip} aria-pressed={i === selIdx} aria-label={bucketReadout(b, gran, stockUnit, fmt)}
+                onClick={() => setSel(i)}>
                 <span className="text-[0.625rem] font-medium leading-none tabular-nums" style={{ color: b.qty == null ? 'var(--warm-muted)' : 'var(--tc-text)' }}>
-                  {b.qty == null ? '·' : fmtBar(b.qty)}
+                  {b.qty == null ? '·' : valuesOnBars ? fmtBar(b.qty) : '\u00a0'}
                 </span>
                 <div className="w-full flex items-end rounded-sm" style={{ height: '72px', background: b.current ? 'var(--inspect-bg)' : undefined }}>
                   {b.qty != null && (
-                    <div className="w-full rounded-sm" style={{ height: b.qty > 0 ? `${Math.max(6, Math.round((heightOf(b) / max) * 100))}%` : '2px', background: 'var(--coral)', opacity: isDay && b.span > 1 ? 0.45 : 0.75 }} />
+                    <div className="w-full rounded-sm" style={{ height: b.qty > 0 ? `${Math.max(6, Math.round((heightOf(b) / max) * 100))}%` : '2px', background: 'var(--coral)', opacity: i === selIdx ? 1 : isDay && b.span > 1 ? 0.45 : 0.75 }} />
                   )}
                 </div>
-              </div>
+              </button>
             )
           })}
           {w.buckets.map((b, i) => (

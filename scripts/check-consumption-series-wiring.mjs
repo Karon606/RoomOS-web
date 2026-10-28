@@ -51,6 +51,11 @@ need(IC, ic, /\{ id: 'trend',\s*label: '소모 추이' \}/, "품목 상세에 '�
 need(IC, ic, /getConsumptionSeries\(trackedItemId\)\.then/, "'소모 추이' 가 서버 액션을 부르지 않는다")
 need(IC, ic, /<SegmentedControl<Gran> size="sm" ariaLabel="추이 기간"/, '기간 고르기가 정본 SegmentedControl 이 아니다')
 need(IC, ic, /const w = trendWindow\(data\.intervals, gran, data\.today, offset\)/, '창 묶음이 정본 trendWindow(서버 오늘)가 아니다')
+// 2026-10-28 운영자 결정: 월 12칸. 칸이 많으면 막대 위 숫자 대신 막대를 눌러 고른 칸을 한 줄로 읽는다(형제 정본 홈 추이 차트).
+need(IC, ic, /const valuesOnBars = showsBarValues\(gran\)/, '막대 위 숫자 여부가 정본 showsBarValues 가 아니다(320px 월 12칸에서 세 자리 숫자가 붙는다)')
+need(IC, ic, /\{b\.qty == null \? '·' : valuesOnBars \? fmtBar\(b\.qty\) : /, '칸이 많을 때도 막대 위 숫자를 그린다')
+need(IC, ic, /const readout = bucketReadout\(w\.buckets\[selIdx\], gran, stockUnit, fmt\)/, '고른 칸 읽기 줄이 정본 bucketReadout 이 아니다')
+need(IC, ic, /aria-pressed=\{i === selIdx\}[\s\S]{0,160}onClick=\{\(\) => setSel\(i\)\}/, '막대를 눌러 칸을 고를 수 없다(값을 볼 길이 없다)')
 
 console.log(`[소모 추이 배선] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)

@@ -164,9 +164,13 @@ export function intervalConsumption<C extends CheckRow>(i: {
 // 그 구간이 걸친 날들 위의 띠 하나로 그린다(span). 띠 높이는 그 구간의 하루 평균, 띠 위 숫자는 구간 합계다. 쪼개면 없는 정보를 지어낸다.
 export type Gran = 'year' | 'quarter' | 'month' | 'week' | 'day'
 export const GRAN_LABEL: Record<Gran, string> = { year: '연', quarter: '분기', month: '월', week: '주', day: '일' }
-/** 한 화면에 보이는 칸 수. 320px 모달에서 칸 위 숫자(세 자리)와 칸 이름이 서로 안 겹치는 폭으로 정했다(실측: 월 12칸은 숫자가 붙었다).
- *  월 6칸은 카드 막대와 같은 폭이고, 계절 비교는 분기·연 칸이나 앞 창으로 본다. 일 14칸은 값이 두 자리라 한 칸 약 18px 에 든다. */
-export const TREND_WINDOW: Record<Gran, number> = { year: 5, quarter: 8, month: 6, week: 8, day: 14 }
+/** 한 화면에 보이는 칸 수. 월은 1년치 12칸(2026-10-28 운영자 결정 '1년치 한눈에'). 320px 에서 칸이 약 18px 라 세 자리 숫자가 붙으므로
+ *  칸 수가 TREND_VALUE_MAX_COLS 를 넘으면 막대 위 숫자를 빼고, 막대를 눌러 고른 칸의 값을 범위 글 아래 한 줄로 읽는다
+ *  (형제 정본: 홈 추이 차트 TrendChart 는 막대 위 숫자 없이 누르면 값이 뜬다). */
+export const TREND_WINDOW: Record<Gran, number> = { year: 5, quarter: 8, month: 12, week: 8, day: 14 }
+export const TREND_VALUE_MAX_COLS = 8
+/** 막대 위 숫자를 그릴 칸 수인가. */
+export const showsBarValues = (g: Gran) => TREND_WINDOW[g] <= TREND_VALUE_MAX_COLS
 /** 서버가 보내는 구간 하나. start·end 는 KST 달력일 'YYYY-MM-DD'(@db.Date 그대로). */
 export type SeriesInterval = { start: string; end: string; consumed: number; days: number }
 export type TrendBucket = {
@@ -310,4 +314,21 @@ export function dayViewNote(buckets: readonly TrendBucket[]): string | null {
   const multi = buckets.reduce((s, b) => s + (b.n - b.oneDay), 0)
   if (one + multi === 0) return null
   return `하루 간격 점검 ${one}일 · 여러 날 묶인 구간 ${multi}개. 옅은 띠는 여러 날 구간이고 높이는 그 구간의 하루 평균입니다.`
+}
+
+/** 칸 하나의 온전한 이름. 연 '2026년', 분기 '2026년 4분기', 월 '2026년 10월', 주 '2026.10.19 주', 일 '2026.10.27'. */
+export function bucketTitle(key: string, g: Gran): string {
+  if (g === 'year') return `${key}년`
+  if (g === 'quarter') return `${key.slice(0, 4)}년 ${key.slice(6)}분기`
+  if (g === 'month') return `${key.slice(0, 4)}년 ${Number(key.slice(5, 7))}월`
+  const d = `${key.slice(0, 4)}.${Number(key.slice(5, 7))}.${Number(key.slice(8, 10))}`
+  return g === 'week' ? `${d} 주` : d
+}
+/** 고른 칸 읽기 줄 '2026년 10월 · 164봉 · 하루 6.1봉 · 27일까지'. 미관측이면 '2026년 4월 · 점검 기록 없음'. */
+export function bucketReadout(b: TrendBucket, g: Gran, unit: string | null, fmt: (q: number) => string): string {
+  const head = bucketTitle(b.key, g)
+  if (b.qty == null) return `${head} · 점검 기록 없음`
+  const per = perDayText(b.qty, b.days, unit)
+  const tail = b.current ? b.tail : null
+  return [head, b.qty > 0 ? fmt(b.qty) : '사용 없음', per ? `하루 ${per}` : null, tail].filter(Boolean).join(' · ')
 }

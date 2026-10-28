@@ -47,7 +47,7 @@ for (const k of ['pad.stIdle', 'pad.stDrawing', 'pad.stOk', 'pad.stShort'] as co
   }
 }
 eq('④ 한국어 정본 문장', ['pad.stIdle', 'pad.stDrawing', 'pad.stOk', 'pad.stShort'].map(k => t('ko', k as never)),
-  ['손가락 끝으로 성함을 써 주세요', '서명 받는 중…', '서명 받음 · 확인을 누르세요', '조금 더 길게 써 주세요'])
+  ['이 칸에 성함을 써 주세요', '서명 받는 중…', '서명 받음 · 확인을 누르세요', '조금 더 길게 써 주세요'])
 
 console.log(`[서명 패드 계측·상태 줄] 통과 ${pass} / 실패 ${fails.length}`)
 for (const f of fails) console.log('  - ' + f)
