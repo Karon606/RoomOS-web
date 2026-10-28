@@ -12,7 +12,7 @@ import { useSettleEntrance } from '@/lib/useSettleEntrance'
 const PAGES = [
   { href: '/dashboard', label: '홈' },
   { href: '/room-manage', label: '방' },
-  { href: '/tenants', label: '입주자' },
+  { href: '/tenants', label: '고객' },
   { href: '/rooms', label: '수납' },
   { href: '/finance', label: '지출' },
   { href: '/inventory', label: '재고' },

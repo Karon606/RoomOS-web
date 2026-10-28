@@ -203,7 +203,7 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
 
           {showNoResult && (
             <div className="p-4">
-              <EmptyState title="검색 결과가 없습니다" description={`'${norm.q}'에 해당하는 입주자·호실·지출·재고가 없습니다.`} />
+              <EmptyState title="검색 결과가 없습니다" description={`'${norm.q}'에 해당하는 고객·호실·지출·재고가 없습니다.`} />
             </div>
           )}
 

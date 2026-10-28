@@ -289,7 +289,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   }))
 
   const groupDefs: Record<SearchGroupType, SearchGroup> = {
-    tenant:  { type: 'tenant',  label: '입주자', hits: tenantHits,  hasMore: allTenants.length > TAKE_SHOW, moreHref: `/tenants?q=${enc}` },
+    tenant:  { type: 'tenant',  label: '고객', hits: tenantHits,  hasMore: allTenants.length > TAKE_SHOW, moreHref: `/tenants?q=${enc}` },
     room:    { type: 'room',    label: '호실',   hits: roomHits,    hasMore: rooms.length > TAKE_SHOW,      moreHref: `/room-manage?q=${enc}` },
     expense: { type: 'expense', label: '지출',   hits: expenseHits, hasMore: expenses.length > TAKE_SHOW,   moreHref: `/finance?q=${enc}` },
     item:    { type: 'item',    label: '재고',   hits: itemHits,    hasMore: items.length > TAKE_SHOW,      moreHref: `/inventory?q=${enc}` },
