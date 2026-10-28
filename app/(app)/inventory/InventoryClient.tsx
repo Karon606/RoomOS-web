@@ -107,7 +107,7 @@ import {
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
-import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, showsBarValues, bucketReadout, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
+import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, showsBarValues, bucketReadout, barHeightValue, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
 // 사본을 만들면 '옮기기'가 회색으로 막은 자리와 서버가 실제로 거부하는 자리가 언젠가 갈린다.
 import { MAX_DEPTH, depthOf, siblingNameTaken, subtreeIds, preserveName } from '@/lib/locationTree'
@@ -2518,6 +2518,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
 // 서버는 탭을 열 때 한 번 구간 전체를 주고(getConsumptionSeries), 전환·이동은 순수층 trendWindow 가 다시 묶는다.
 // 귀속은 카드와 같은 구간 끝 날짜, 일 단위는 여러 날 구간을 띠 하나로(쪼개지 않는다). 기간 고르기는 정본 SegmentedControl(§23 '추이 기간').
 function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string; stockUnit: string | null }) {
+  // undefined = 불러오는 중, null = 불러오지 못함(서버 실패·품목 없음), 그 밖 = 받은 구간. 실패를 빈 상태(구간 0)와 가른다(독립 검수 R7).
   const [data, setData] = useState<{ today: string; intervals: SeriesInterval[] } | null | undefined>(undefined)
   const [gran, setGran] = useState<Gran>('month')
   const [offset, setOffset] = useState(0)
@@ -2531,22 +2532,27 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
   if (data === undefined) {
     return <div className="space-y-2" aria-busy="true">{[0, 1].map(i => <div key={i} className="h-24 rounded-xl bg-[var(--canvas)] animate-pulse" />)}</div>
   }
-  if (!data || data.intervals.length === 0) {
+  if (data === null) {
+    return <p className="text-sm text-[var(--danger-fg)] text-center py-8" role="alert">소모 추이를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+  }
+  if (data.intervals.length === 0) {
     return <p className="text-sm text-[var(--warm-muted)] text-center py-8">아직 점검 구간이 없습니다. 재고 점검을 두 번 이상 하면 소모 추이가 잡힙니다.</p>
   }
   const fmt = (q: number) => fmtQty(q, stockUnit)
   const fmtBar = (q: number): string => q >= 1000 ? (q / 1000).toFixed(q >= 10000 ? 0 : 1) + 'k' : q >= 100 ? String(Math.round(q)) : (q % 1 === 0 ? String(q) : q.toFixed(1))
   const w = trendWindow(data.intervals, gran, data.today, offset)
   const isDay = gran === 'day'
-  // 일 단위 띠 높이는 하루 평균(합계 / 띠 폭), 그 밖은 칸 합계.
-  const heightOf = (b: (typeof w.buckets)[number]) => b.qty == null ? 0 : isDay ? b.qty / b.span : b.qty
+  // 막대 높이 정본 barHeightValue(일 단위는 합계 / 구간 일수, 잘린 띠 폭으로 나누지 않는다).
+  const heightOf = (b: (typeof w.buckets)[number]) => barHeightValue(b, gran)
   const max = Math.max(...w.buckets.map(heightOf), 1e-9)
   const summary = windowSummary(w.buckets, stockUnit, fmt)
   const compare = trendCompare(w.buckets, gran, offset, stockUnit)
   const note = isDay ? dayViewNote(w.buckets) : null
   // 칸이 많으면(월 12·일 14) 막대 위 숫자를 빼고 고른 칸의 값을 한 줄로 읽는다(320px 에서 세 자리 숫자가 붙던 것, 2026-10-28 운영자 결정).
   const valuesOnBars = showsBarValues(gran)
-  const selIdx = sel ?? w.buckets.length - 1
+  // 기본으로 고른 칸은 관측이 있는 가장 최근 칸(오늘 점검 전이면 오늘 칸이 비어 '점검 기록 없음' 만 읽히던 것). 없으면 끝 칸.
+  const lastSeen = w.buckets.map(b => b.qty != null).lastIndexOf(true)
+  const selIdx = sel ?? (lastSeen >= 0 ? lastSeen : w.buckets.length - 1)
   const readout = bucketReadout(w.buckets[selIdx], gran, stockUnit, fmt)
   // 일 단위 띠가 덮는 앞 칸들(그 칸들은 띠 하나로 그린다).
   const covered = new Set<number>()
@@ -2588,7 +2594,7 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
                 <span className="text-[0.625rem] font-medium leading-none tabular-nums" style={{ color: b.qty == null ? 'var(--warm-muted)' : 'var(--tc-text)' }}>
                   {b.qty == null ? '·' : valuesOnBars ? fmtBar(b.qty) : '\u00a0'}
                 </span>
-                <div className="w-full flex items-end rounded-sm" style={{ height: '72px', background: b.current ? 'var(--inspect-bg)' : undefined }}>
+                <div className="w-full flex items-end rounded-sm" style={{ height: '72px', background: b.current && b.qty != null ? 'var(--inspect-bg)' : undefined }}>
                   {b.qty != null && (
                     <div className="w-full rounded-sm" style={{ height: b.qty > 0 ? `${Math.max(6, Math.round((heightOf(b) / max) * 100))}%` : '2px', background: 'var(--coral)', opacity: i === selIdx ? 1 : isDay && b.span > 1 ? 0.45 : 0.75 }} />
                   )}
@@ -2598,7 +2604,7 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
           })}
           {w.buckets.map((b, i) => (
             // 끝 칸은 오른쪽 정렬(꼬리 'N일까지' 가 칸보다 넓을 때 상자 밖으로 안 나가게).
-            <div key={`l-${b.key}`} className={`self-start flex flex-col min-w-0 ${i === w.buckets.length - 1 ? 'items-end' : 'items-center'}`} style={{ gridColumn: i + 1, gridRow: 2 }}>
+            <div key={`l-${b.key}`} className={`self-start flex flex-col min-w-0 ${i === w.buckets.length - 1 && b.tail ? 'items-end' : 'items-center'}`} style={{ gridColumn: i + 1, gridRow: 2 }}>
               <span className="text-[0.625rem] leading-none whitespace-nowrap" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)', fontWeight: b.current ? 500 : undefined, opacity: b.qty == null && !covered.has(i) ? 0.6 : undefined }}>{b.label}</span>
               {/* 둘째 줄. 진행 중 꼬리는 --inspect-fg, 해가 바뀌는 칸의 연도는 칸 이름과 같은 --warm-muted. */}
               {b.tail && <span className="mt-0.5 text-[0.625rem] leading-none whitespace-nowrap font-medium" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)' }}>{b.tail}</span>}

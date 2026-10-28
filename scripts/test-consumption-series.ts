@@ -1,6 +1,6 @@
 // 재고 소모 추이 표기 진리표(신고 9d26a7ee). 진행 중인 달 라벨, 하루당, 캡션. 실패 시 exit 1.
 // 실행: npx tsx scripts/test-consumption-series.ts
-import { showsBarValues, bucketReadout, bucketTitle, perDayText, partialMonthTail, perDayCaption, bucketKey, shiftKey, trendWindow, windowSummary, trendCompare, dayViewNote, intervalConsumption, dedupSameDay, type MonthSlot, type SeriesInterval } from '../app/(app)/inventory/consumptionSeries'
+import { barHeightValue, showsBarValues, bucketReadout, bucketTitle, perDayText, partialMonthTail, perDayCaption, bucketKey, shiftKey, trendWindow, windowSummary, trendCompare, dayViewNote, intervalConsumption, dedupSameDay, type MonthSlot, type SeriesInterval } from '../app/(app)/inventory/consumptionSeries'
 
 let pass = 0
 const fails: string[] = []
@@ -131,6 +131,16 @@ eq('⑦ 연·분기·주는 막대 숫자', [showsBarValues('year'), showsBarVal
   eq('⑦ 해 바뀜 연도는 읽기 줄에 꼬리로 안 붙는다', bucketReadout(y.buckets[9], 'month', '봉', q => `${q}봉`), '2026년 1월 · 점검 기록 없음')
 }
 eq('⑦ 칸 이름', ['2026', '2026-Q4', '2026-10', '2026-10-19', '2026-10-27'].map((k, i) => bucketTitle(k, (['year', 'quarter', 'month', 'week', 'day'] as const)[i])), ['2026년', '2026년 4분기', '2026년 10월', '2026.10.19 주', '2026.10.27'])
+
+// ⑧ 막대 높이(독립 검수 B1). 일 단위는 합계 / 구간 일수. 창 시작에서 잘린 띠도 하루 평균은 그대로다.
+{
+  const w = trendWindow(IV, 'day', '2026-10-25', 0)
+  const b22 = w.buckets.find(b => b.key === '2026-10-22')!
+  eq('⑧ 잘린 띠(폭 11, 구간 22일 132봉)의 하루 높이 6', barHeightValue(b22, 'day'), 6)
+  eq('⑧ 하루 구간 높이는 그 날 소모', barHeightValue(w.buckets.find(b => b.key === '2026-10-23')!, 'day'), 6)
+  eq('⑧ 월 단위는 칸 합계', barHeightValue(trendWindow(IV, 'month', '2026-10-25', 0).buckets[11], 'month'), 138)
+  eq('⑧ 미관측은 0', barHeightValue(w.buckets[0], 'day'), 0)
+}
 
 console.log(`[소모 추이 표기] 통과 ${pass} / 실패 ${fails.length}`)
 for (const f of fails) console.log('  - ' + f)

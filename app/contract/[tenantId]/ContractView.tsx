@@ -1057,7 +1057,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     const activePointers = new Set<number>()
     const onPDown = (e: PointerEvent) => {
       if (e.pointerType === 'pen') sess.penDowns++; else if (e.pointerType === 'mouse') sess.mouseDowns++; else sess.touchDowns++
-      if (e.target !== canvas) sess.outsideDowns++
+      // 패드 밖 누름은 손목·손날 후보다. 버튼(지우기·취소·확인·닫기) 누름은 빼고 센다(독립 검수 R6).
+      if (e.target !== canvas && !(e.target instanceof Element && e.target.closest('button'))) sess.outsideDowns++
       activePointers.add(e.pointerId)
       sess.multiMax = Math.max(sess.multiMax, activePointers.size)
     }
@@ -2759,11 +2760,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
            padding 이 폭 밖으로 더해지지 않게 border-box 로 둔다. transform 은 금지(좌표 계약). */
         /* 모든 px 치수에 --sig-inv(=1/배율) 를 곱한다 — 핀치줌으로 z 배 확대해도 패드가 평소 크기로 보인다.
            JS 가 변수를 안 기입한 환경(vv 없음)에서는 폴백 1 이라 아래 값들이 리터럴 그대로다. */
-        /* touch-action·user-select 은 오버레이와 모달 전체(신고 c6eb427d). 캔버스만 none 이면 두 터치의 공통 조상(오버레이) 규칙으로
-           브라우저가 손목·둘째 손가락을 핀치로 가져가 첫 손가락에 pointercancel 이 오고 획이 끊긴다. 패드가 열린 동안은 핀치가 필요 없다.
+        /* 오버레이와 모달은 touch-action: pan-y(신고 c6eb427d, 독립 검수 R1). 캔버스만 none 이고 오버레이가 auto 면 두 터치의 공통 조상 규칙으로
+           브라우저가 손목·둘째 손가락을 핀치로 가져가 첫 손가락에 pointercancel 이 오고 획이 끊긴다. pan-y 는 핀치 확대를 막고 세로 스크롤만 남긴다.
+           세로 스크롤을 남기는 까닭은 작은 폰(320x460)에서 원격 병기 모달이 화면보다 길 때 확인 버튼까지 밀어 올릴 길이어서다(overflow-y auto,
+           모달은 margin auto 로 가운데, 넘치면 위가 잘리지 않고 스크롤된다). 패드(캔버스·틀)는 그대로 none 이다.
            --sig-inv 기하(핀치로 이미 확대한 채 열었을 때)는 그대로다. */
-        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: calc(16px * var(--sig-inv, 1)); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-        .sig-modal { touch-action: none; user-select: none; -webkit-user-select: none; width: 100%; max-width: calc(640px * var(--sig-inv, 1)); background: var(--cream); border-radius: calc(18px * var(--sig-inv, 1)); padding: calc(18px * var(--sig-inv, 1)) calc(18px * var(--sig-inv, 1)) calc(16px * var(--sig-inv, 1)); box-shadow: 0 calc(20px * var(--sig-inv, 1)) calc(60px * var(--sig-inv, 1)) rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: calc(14px * var(--sig-inv, 1)); }
+        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; overflow-y: auto; overscroll-behavior: contain; padding: calc(16px * var(--sig-inv, 1)); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .sig-modal { margin: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; width: 100%; max-width: calc(640px * var(--sig-inv, 1)); background: var(--cream); border-radius: calc(18px * var(--sig-inv, 1)); padding: calc(18px * var(--sig-inv, 1)) calc(18px * var(--sig-inv, 1)) calc(16px * var(--sig-inv, 1)); box-shadow: 0 calc(20px * var(--sig-inv, 1)) calc(60px * var(--sig-inv, 1)) rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: calc(14px * var(--sig-inv, 1)); }
         .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(12px * var(--sig-inv, 1)); }
         .sig-title { font-size: calc(15px * var(--sig-inv, 1)); font-weight: 700; color: var(--ink); margin-bottom: calc(4px * var(--sig-inv, 1)); }
         .sig-sub { font-size: calc(12px * var(--sig-inv, 1)); color: var(--ink-s); line-height: 1.5; }
@@ -2773,6 +2776,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
         /* 폰 폭에서 패드를 키운다(종전 16/7, 402px 폰 실측 약 334x146). 크게 쓰는 사람의 획이 칸 밖에서 시작하면 아예 안 시작된다. */
         @media (max-width: 479px) { .sig-canvas-wrap { aspect-ratio: 16 / 9; min-height: calc(180px * var(--sig-inv, 1)); } }
+        /* 짧은 화면(높이 560px 미만, 작은 폰·가로 키보드 등)은 종전 16/7 로 돌아가 제목과 확인 버튼이 한 화면에 들게 한다(독립 검수 R1). */
+        @media (max-width: 479px) and (max-height: 559px) { .sig-canvas-wrap { aspect-ratio: 16 / 7; min-height: 0; } }
         /* 상태 줄과 오류 상자는 한 칸(.sig-feedback)을 번갈아 쓴다. 칸 높이를 미리 잡아 거절 순간 버튼이 안 뛴다(웹디자이너 패스).
            36px = 오류 상자 한 줄(12px x 1.5 + 위아래 8 + 테두리 1). 병기는 언어에 따라 둘째 줄이 꺾일 수 있어 72px(JA·RU 'stOk' 320px). */
         .sig-feedback { min-height: calc(36px * var(--sig-inv, 1)); display: flex; flex-direction: column; justify-content: center; }

@@ -35,9 +35,15 @@ const cv = strip(cvRaw)
   }
 }
 // ⓑ
+// 독립 검수 R1(2026-10-28): 오버레이·모달은 pan-y(핀치 금지 + 세로 스크롤만), 오버레이는 넘치면 스크롤된다. auto 로 되돌아가면 핀치가 획을 빼앗는다.
 for (const sel of ['sig-overlay', 'sig-modal']) {
   const rule = cvRaw.match(new RegExp(`\\.${sel} \\{[^}]*\\}`))
-  if (!rule || !/touch-action: none/.test(rule[0])) violations.push(`${CV} — .${sel} 에 touch-action: none 이 없다(패드 밖 터치가 핀치로 빼앗겨 획이 끊긴다)`)
+  if (!rule || !/touch-action: (none|pan-y)/.test(rule[0])) violations.push(`${CV} — .${sel} 에 touch-action: pan-y(또는 none)가 없다(패드 밖 터치가 핀치로 빼앗겨 획이 끊긴다)`)
+}
+{
+  const ov = cvRaw.match(/\.sig-overlay \{[^}]*\}/)?.[0] ?? ''
+  if (!/overflow-y: auto/.test(ov)) violations.push(`${CV} — .sig-overlay 가 넘칠 때 스크롤되지 않는다(작은 폰에서 확인 버튼이 화면 밖에 갇힌다, 독립 검수 R1)`)
+  if (!/@media \(max-width: 479px\) and \(max-height: 559px\) \{ \.sig-canvas-wrap \{ aspect-ratio: 16 \/ 7; min-height: 0; \} \}/.test(cvRaw)) violations.push(`${CV} — 짧은 화면에서 패드를 16/7 로 되돌리는 규칙이 없다(독립 검수 R1)`)
 }
 if (!/\.sig-canvas \{[^}]*touch-action: none/.test(cvRaw)) violations.push(`${CV} — .sig-canvas 의 touch-action: none 이 사라졌다`)
 if (!/@media \(max-width: 479px\) \{ \.sig-canvas-wrap \{ aspect-ratio: 16 \/ 9; min-height: calc\(180px \* var\(--sig-inv, 1\)\); \} \}/.test(cvRaw)) violations.push(`${CV} — 폰 폭 패드 키우기(16/9, 최소 180px)가 없다`)

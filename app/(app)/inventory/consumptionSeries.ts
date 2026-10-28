@@ -332,3 +332,12 @@ export function bucketReadout(b: TrendBucket, g: Gran, unit: string | null, fmt:
   const tail = b.current ? b.tail : null
   return [head, b.qty > 0 ? fmt(b.qty) : '사용 없음', per ? `하루 ${per}` : null, tail].filter(Boolean).join(' · ')
 }
+
+/**
+ * 막대 높이 값. 일 단위는 그 구간의 하루 평균(합계 / 구간 일수)이고 그 밖은 칸 합계다.
+ * 분모는 **구간 일수(days)** 다. 창 시작에서 잘린 띠 폭(span)으로 나누면 잘린 만큼 띠가 높아진다(독립 검수 B1).
+ */
+export function barHeightValue(b: TrendBucket, g: Gran): number {
+  if (b.qty == null) return 0
+  return g === 'day' ? (b.days > 0 ? b.qty / b.days : b.qty) : b.qty
+}
