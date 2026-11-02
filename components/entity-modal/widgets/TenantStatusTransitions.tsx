@@ -294,7 +294,6 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const confirmHintId = useId()
   const toggleConfirmNow = (on: boolean) => {
     setConfirmNow(on)
-    if (on && confirmLine == null) void reservationReceivedLine(lease.id, lease.reservationDepositMode).then(setConfirmLine)
   }
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
@@ -418,6 +417,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     setTransReason(inherited ?? ''); setTransReasonAdd(false); setWithholdAdd(false); setTransReasonPrefill(inherited)
     setRentTouched(false)
     setConfirmNow(false); setConfirmLine(null)
+    // 예약금 줄은 창을 열 때 미리 읽는다. 체크할 때 읽으면 캡션이 늦게 끼어들어 높이가 출렁인다(웹디자이너 패스).
+    if (def.key === 'reserve') void reservationReceivedLine(lease.id, lease.reservationDepositMode).then(setConfirmLine)
     // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
     cleaning.reset()
     setTransDate(
@@ -778,12 +779,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       {active && (
         <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== (transReasonPrefill ?? '') || withholdReason !== '' || rentTouched || confirmNow}
           onClose={() => { if (!pending) setActive(null) }}
-          title={`${active.tenantName}님 · ${active.def.label}`}
+          // 제목이 길면 320px 에서 동사가 말줄임으로 잘린다. 노드 제목(h2 break-keep)으로 두 줄로 접는다(51689850 선례).
+          title={<h2 className="text-base font-bold text-[var(--warm-dark)] break-keep">{`${active.tenantName}님 · ${active.def.label}`}</h2>}
           footer={
             <div className="flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
               {/* §10 — 확정 라벨은 항상 동사다. '확인'은 무엇이 일어나는지 말하지 않는다. */}
-              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : active.def.label}</Btn>
+              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : active.def.key === 'reserve' && confirmNow ? '예약하고 확정' : active.def.label}</Btn>
             </div>
           }>
             <div className="space-y-3">
@@ -846,7 +848,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   <p id={confirmHintId} className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep whitespace-pre-line">
                     {confirmNow
                       ? [confirmLine, lease.roomId ? null : '호실 미지정 상태로 확정합니다. 이후 호실을 지정할 수 있습니다.', '확정하면 입실 일정과 입주일 알림이 열립니다.'].filter(Boolean).join('\n')
-                      : '확정은 나중에 예약 확정 버튼으로도 할 수 있습니다.'}
+                      : '확정은 나중에 ‘예약 확정’ 버튼으로도 할 수 있습니다.'}
                   </p>
                 </div>
               )}

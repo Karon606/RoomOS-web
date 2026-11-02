@@ -620,12 +620,15 @@ export default function RoomsClient({
   // 묶음 머리 오른쪽 순서 글자(카드 SectionHeader 와 표 머리 행 쌍둥이가 이 한 함수를 쓴다). 본 묶음은 누르면 그 묶음 안 순서만
   // 뒤집히는 글자 버튼이다(신고 89dd37e8). 11px 글자 + 정렬 글리프, 바탕·테두리 없음(코랄 채움·칩 아님). 누르는 자리 44px 는
   // 음수 여백으로 머리 줄 높이 안에 접는다(분류 관리 '맨 위로' 글자 링크와 같은 문법). 꼬리는 늘 같은 순서라 글자만 선다.
-  const groupOrderControl = (g: StatusGroup) => {
-    if (!isBodyGroup(g)) return <span className="text-[0.6875rem] text-[var(--warm-muted)]">{statusGroupOrderText(g, false)}</span>
+  // 데스크톱 표 머리 행(줄 약 28px)에서는 44px 상자가 위아래 데이터 행(누르면 수납 창)을 덮어 sm 이상에서 접지 않는다(웹디자이너 패스).
+  // 글자색은 --warm-mid 다. 누를 수 있는 글자라 꼬리 묶음의 설명 글자(--warm-muted)보다 한 단계 짙게 세워 둘을 가른다.
+  // table: 표 머리 행은 종전처럼 이름과 같은 굵기(font-semibold)로 선다.
+  const groupOrderControl = (g: StatusGroup, table = false) => {
+    if (!isBodyGroup(g)) return <span className={`text-[0.6875rem] ${table ? 'font-semibold ' : ''}text-[var(--warm-muted)]`}>{statusGroupOrderText(g, false)}</span>
     const flipped = !!groupFlips[g]
     return (
       <button type="button" onClick={() => toggleGroupFlip(g)} aria-label={statusGroupFlipLabel(g, flipped)}
-        className="-my-3.5 min-h-[44px] min-w-[44px] px-1 -mx-1 shrink-0 inline-flex items-center justify-end gap-1 rounded-sm text-[0.6875rem] font-medium text-[var(--warm-mid)] hover:text-[var(--warm-dark)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+        className="-my-3.5 min-h-[44px] min-w-[44px] sm:my-0 sm:min-h-0 px-1 -mx-1 shrink-0 inline-flex items-center justify-end gap-1 rounded-sm text-[0.6875rem] font-medium text-[var(--warm-mid)] hover:text-[var(--warm-dark)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
         {statusGroupOrderText(g, flipped)}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
           <path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4" />
@@ -1397,7 +1400,7 @@ export default function RoomsClient({
                     <td colSpan={tableColCount} className="px-4 py-1.5">
                       <div className="sticky left-4 inline-flex items-center gap-2">
                         <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{STATUS_GROUP_LABEL[head]}</span>
-                        {groupOrderControl(head)}
+                        {groupOrderControl(head, true)}
                       </div>
                     </td>
                   </tr>

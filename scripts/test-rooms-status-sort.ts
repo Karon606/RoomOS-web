@@ -363,20 +363,21 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
     ok(`${name} 퇴실 완료 날짜 절은 다른 절 뒤에서 늘 '퇴실'을 단다`, !part.includes('checkedOutSub(room)') && count(part, 'checkedOutSub(room, true)') === 3)
     ok(`${name} 옛 분기 조건이 없다(showCheckout·isAwaiting·isPaid 분기·noBillReason 분기·유예 재판정)`,
       !/showCheckout|const isAwaiting =|if \(!room\.isPaid\) \{|if \(room\.noBillReason\) \{|if \(isDeferredNow\(room, targetMonth\)\)|room\.status === 'RESERVED' \?/.test(part))
-    ok(`${name} 묶음 머리를 그린다(순서 글자는 한 함수)`, part.includes('statusGroupHead(idx)') && part.includes('STATUS_GROUP_LABEL[head]') && part.includes('groupOrderControl(head)'))
+    ok(`${name} 묶음 머리를 그린다(순서 글자는 한 함수)`, part.includes('statusGroupHead(idx)') && part.includes('STATUS_GROUP_LABEL[head]') && part.includes('groupOrderControl(head'))
   }
   ok('표 머리 행은 colSpan 한 칸(지출 표 날짜 머리 문법)', table.includes('colSpan={tableColCount}') && table.includes('bg-[var(--canvas)]/50 border-b border-[var(--warm-border)]'))
   ok('카드 머리는 §22 SectionHeader(숫자 없음)', /<SectionHeader first=\{idx === 0\} name=\{STATUS_GROUP_LABEL\[head\]\}\s+trailing=/.test(card) && !/<SectionHeader[^>]*count=/.test(card))
   ok('정렬은 sortRowsByPaymentStatus 정본(화살표는 묶음 순서, 머리는 묶음 안 순서)', rc.includes("sortKey === 'status'\n    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', groupFlips, targetMonth })"))
   {
-    const i = rc.indexOf('const groupOrderControl = (g: StatusGroup) => {')
+    const i = rc.indexOf('const groupOrderControl = (g: StatusGroup, table = false) => {')
     const ctl = i < 0 ? '' : rc.slice(i, rc.indexOf('\n  }\n', i))
     ok('순서 글자 버튼을 찾았다', ctl.length > 0)
     ok('본 묶음만 버튼, 꼬리는 글자', ctl.includes('if (!isBodyGroup(g)) return <span') && ctl.includes('<button type="button" onClick={() => toggleGroupFlip(g)}'))
     ok('버튼 접근 이름은 정본 문장', ctl.includes('aria-label={statusGroupFlipLabel(g, flipped)}'))
     ok('버튼은 11px 글자 + 누르는 자리 44px(음수 여백)', ctl.includes('min-h-[44px]') && ctl.includes('-my-3.5') && ctl.includes('text-[0.6875rem]'))
     ok('버튼에 코랄 채움·칩 테두리 없음, 포커스 링 --tc-text', !/bg-\[var\(--(coral|persimmon)|border border|ring-1/.test(ctl) && ctl.includes('focus-visible:outline-[var(--tc-text)]'))
-    ok('카드·표 둘 다 같은 함수', count(rc, 'groupOrderControl(head)') === 2)
+    ok('카드·표 둘 다 같은 함수', count(rc, 'groupOrderControl(head') === 2)
+    ok('표 머리 꼬리 글자는 종전 굵기, 표에서는 44px 상자를 접지 않는다', rc.includes('groupOrderControl(head, true)') && ctl.includes("table ? 'font-semibold ' : ''") && ctl.includes('sm:my-0 sm:min-h-0'))
   }
   ok('묶음 뒤집기 기억 새 키·try/catch', rc.includes("const GROUPDIR_KEY = 'stayeum_rooms_groupdir'")
     && rc.includes('try { setGroupFlips(parseGroupFlips(localStorage.getItem(GROUPDIR_KEY))) } catch {}')

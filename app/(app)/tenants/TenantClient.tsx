@@ -4658,7 +4658,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               // 동작 그대로 말한다(2026-11-02, 신고 507e1a0d). 예약은 방을 고르는 순간 그 방을 잡는다(lib/leaseStatus OCCUPYING_STATUSES 에
               // RESERVED 가 통째로 들어 있다). 확정이 더하는 것은 연락처·입주 희망일 문과 입실 일정·입주일 알림이다. 종전 문장은 거꾸로
               // '확정을 체크하면 방을 잡는다' 고 말했다.
-              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">입실 예약 = 들어오기로 한 상태 · 호실을 고르면 그 방은 바로 잡힙니다. 아래 &lsquo;예약 확정&rsquo;은 연락처와 입주 희망일을 받아 입실 일정과 입주일 알림을 엽니다</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">입실 예약 = 들어오기로 한 상태 (호실을 고르면 그 방은 바로 잡힙니다 · 확정하면 입실 일정과 입주일 알림이 열립니다)</p>
             )}
             {statusVal === 'CANCELLED' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">입실 취소 = 문의·투어·예약이 더 진행되지 않은 경우 (기록은 보존됩니다)</p>
