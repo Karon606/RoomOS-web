@@ -5668,7 +5668,8 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             )}
             {fromLoc && moveQty > 0 && (
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">
-                {fromLoc.pathName}에서 {hubPath ? `창고(${hubPath})` : '창고'}로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
+                {/* 수량 뒤 조사는 단위 읽기 정본(withQtyParticle, '5롤을'·'20kg을'), 창고 이름 뒤 조사는 괄호 앞 말에 맞춘다. */}
+                {fromLoc.pathName}에서 {withParticle(hubPath ? `창고(${hubPath})` : '창고', '으로/로')} {withQtyParticle(fmtQty(moveQty, unit), '을/를')} 옮기고 채움을 마칩니다
               </p>
             )}
           </div>
@@ -6560,8 +6561,9 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                         name={
                           <span className="inline-flex items-center gap-1.5">
                             {/* 트리 행은 그 노드 한 칸의 이름이다 — 조상 경로는 들여쓰기가 말한다. */}
-                            <span className={items.length === 0 ? 'font-semibold text-[var(--warm-muted)]' : undefined}>{node.name}</span>
+                            {/* 창고 표식은 이름 앞이다('창고(경로)' 와 같은 차례, 신고 4ea36301 독립 검수). 뒤에 붙으면 '415호 창고 기본 창고' 로 겹친다. */}
                             {node.isHub && <Badge tone="pale-amber">기본 창고</Badge>}
+                            <span className={items.length === 0 ? 'font-semibold text-[var(--warm-muted)]' : undefined}>{node.name}</span>
                           </span>
                         }
                         count={`${items.length}품목`}
@@ -7022,8 +7024,8 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf, allRow }: {
                   {isSel && (
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
                   )}
-                  <span className="flex-1 min-w-0 truncate text-sm">{node.name}</span>
                   {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
+                  <span className="flex-1 min-w-0 truncate text-sm">{node.name}</span>
                   <span className="mono text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{itemCountOf(node.id)}품목</span>
                 </button>
               )
@@ -7905,6 +7907,7 @@ function LocationSettingsModal({ rows, onClose, onChanged }: { rows: InventoryRo
                       <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
                     </svg>
                   </button>
+                  {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
                   {node.locationClosedAt ? (
                     // 사용 중지한 위치는 제자리에 남는다(이력·이름 점유). 배지는 행 바탕이 --canvas 라 solid neutral(§11 2026-10-26).
                     // 배지 낱말도 동작과 같은 '사용 중지' 다(독립 검수 권고 6, 한 개념 한 낱말).
@@ -7920,7 +7923,6 @@ function LocationSettingsModal({ rows, onClose, onChanged }: { rows: InventoryRo
                   ) : (
                     <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{node.name}</span>
                   )}
-                  {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
                   {/* 메뉴가 뜰 자리의 기준점 — RowActionBtn 은 히트영역과 크롬을 나눈 정본이라
                       이벤트를 내주지 않는다. 행마다 감싼 span 을 앵커로 쓴다. */}
                   <span className="shrink-0" ref={el => { if (el) rowAnchors.current.set(node.id, el); else rowAnchors.current.delete(node.id) }}>

@@ -413,8 +413,17 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
   need("위치 이름 옆 창고 Badge 는 이름 앞이다",
     !/\{(l|loc)\.pathName\}<\/p>\s*\n\s*<Badge tone="pale-amber"[^>]*>창고</.test(client) &&
     !/\{leaf\}<\/p>\}\s*\n\s*\{(rowIsHub|loc\.isHub) && <Badge/.test(client) &&
-    !/\{loc\.pathName\}\{loc\.isHub && <Badge/.test(client),
+    !/\{loc\.pathName\}\{loc\.isHub && <Badge/.test(client) &&
+    // 위치 관리·패널 그룹 머리·위치 고르기의 '기본 창고' 도 같은 차례다(독립 검수 같은 클래스)
+    !/\{node\.name\}<\/span>\s*\n\s*\{node\.isHub && <Badge/.test(client) && !/<\/span>\s*\n\s*\)\}\s*\n\s*\{node\.isHub && <Badge/.test(client) &&
+    (client.match(/\{node\.isHub && <Badge tone="pale-amber"[^>]*>기본 창고<\/Badge>\}/g) ?? []).length === 3,
     "'415호 창고 [창고]' 로 이름 바로 뒤에서 겹쳐 읽힌다")
+  {
+    const assetsSrc = readFileSync('app/(app)/inventory/assets/AssetsClient.tsx', 'utf8') + readFileSync('app/(app)/inventory/assets/storagePlace.ts', 'utf8')
+    need("비품 쪽 기본 창고도 '기본 창고(경로)' 한 꼴이다(이름 뒤 ' (기본 창고)' 꼬리 없음)",
+      !/' \(기본 창고\)'/.test(assetsSrc) && (assetsSrc.match(/`기본 창고\(\$\{s\.pathName\}\)`/g) ?? []).length === 3,
+      '재고 화면과 비품 화면이 같은 창고를 다른 꼴로 부른다')
+  }
   need("보정은 정본 Badge 하나로 말한다('전체 보정' 글자와 미니 배지 중복 제거)",
     /\{entry\.isReconcile && <Badge tone="pale-amber" className="ml-1\.5">보정<\/Badge>\}/.test(row) && !/'전체 보정'/.test(row) && !/bg-\[var\(--honey\)\]\/15/.test(row),
     '같은 말을 두 번 하는 장식이고 수제 honey 배지는 §11 트라이어드 밖이다')

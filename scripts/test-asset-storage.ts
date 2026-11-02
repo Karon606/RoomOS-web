@@ -32,7 +32,7 @@ eq('① 보관 위치 없는 미배정 자리 이름(종전)', UNASSIGNED_PLACE,
 // ①b 목적지 세그먼트(신고 0c37bc53, 2026-10-26 운영자 승인). 칸 이름은 §29 2~6자, 무리 이름은 select aria-label·수령 창에 남는다.
 eq('①b 세그먼트 칸 이름', STORE_SEGMENT_LABEL, '여분 보관')
 eq('①b 여분 보관 칸 캡션', STORE_SEGMENT_CAPTION, '배정하지 않고 보관 위치만 적습니다')
-eq('①b 보관 선택지 표기', storeOptionLabel({ pathName: '4층 415호 창고', isHub: true }), '4층 415호 창고에 보관 (기본 창고)')
+eq('①b 보관 선택지 표기', storeOptionLabel({ pathName: '4층 415호 창고', isHub: true }), '기본 창고(4층 415호 창고)에 보관')
 eq('①b 보관 선택지 표기(기본 창고 아님)', storeOptionLabel({ pathName: '옥상', isHub: false }), '옥상에 보관')
 eq('①b 보관 키의 무리', destGroupOf('store:x'), 'store')
 eq('①b 보관 위치 모름도 여분 보관 무리', destGroupOf('store:'), 'store')

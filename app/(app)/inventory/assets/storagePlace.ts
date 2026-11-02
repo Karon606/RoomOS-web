@@ -17,7 +17,8 @@ export const UNASSIGNED_PLACE = '미배정(여분)'                    // 보관
 export const STORE_SEGMENT_LABEL = '여분 보관'
 export const STORE_SEGMENT_CAPTION = '배정하지 않고 보관 위치만 적습니다'
 /** 옮기기·일괄 옮기기 목록의 보관 선택지. '{경로}에 보관'(공용부 칸의 같은 이름과 안 겹친다). 수령 창·무상 입수는 경로 그대로. */
-export const storeOptionLabel = (s: { pathName: string; isHub: boolean }) => `${s.pathName}에 보관${s.isHub ? ' (기본 창고)' : ''}`
+// 기본 창고는 재고 화면과 같은 꼴 '기본 창고(경로)' 로 앞에 말한다(신고 4ea36301 독립 검수, 이름 뒤 괄호 꼬리는 쓰지 않는다).
+export const storeOptionLabel = (s: { pathName: string; isHub: boolean }) => `${s.isHub ? `기본 창고(${s.pathName})` : s.pathName}에 보관`
 /** 보관 위치가 있는 미배정 카드의 자리 이름. '4층 415호 창고 보관'. 이름은 표기 경로(pathName)다. */
 export const storedPlaceLabel = (pathName: string) => `${pathName} 보관`
 

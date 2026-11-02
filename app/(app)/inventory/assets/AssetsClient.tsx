@@ -1607,7 +1607,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   <select value={rcv.store} disabled={pending}
                     onChange={e => setRcv(r => r ? { ...r, store: e.target.value } : r)}
                     className={SELECT_CLS}>
-                    {pickStores.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
+                    {pickStores.map(s => <option key={s.id} value={s.id}>{s.isHub ? `기본 창고(${s.pathName})` : s.pathName}</option>)}
                     <option value="">{STORE_UNKNOWN_OPTION}</option>
                   </select>
                   {/* 배정 물음이 이어질 때만 말한다(그 몫은 방에 서서 보관 위치가 없다). 아니면 캡션을 두지 않는다(웹디자이너 패스). */}
@@ -1686,7 +1686,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                 <select value={freeForm.store} disabled={pending}
                   onChange={e => setFreeForm(f => f ? { ...f, store: e.target.value } : f)}
                   className={SELECT_CLS}>
-                  {pickStores.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
+                  {pickStores.map(s => <option key={s.id} value={s.id}>{s.isHub ? `기본 창고(${s.pathName})` : s.pathName}</option>)}
                   <option value="">{STORE_UNKNOWN_OPTION}</option>
                 </select>
               </label>
