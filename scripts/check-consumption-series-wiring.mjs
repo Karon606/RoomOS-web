@@ -29,6 +29,11 @@ need(IC, ic, /const tail = partialMonthTail\(m, isCurrent\)/, '진행 중인 달
 need(IC, ic, /\{tail && \(\s*<span[^>]*>\{tail\}<\/span>/, "진행 중인 달 'N일까지' 가 글자로 안 선다(hover 툴팁은 터치 화면에 없다)")
 need(IC, ic, /const cap = perDayCaption\(row\.monthlyConsumption, stockUnit\)/, '하루당 캡션을 정본으로 만들지 않는다')
 need(IC, ic, /const isCurrent = i === lastIdx/, '진행 중 판정이 마지막 슬롯(구조적)이 아니다')
+// 카드 월별 막대의 축 라벨은 막대와 다른 행이다(2026-11-02 신고 9c41d8ad). 한 세로 묶음에 쌓고 바깥을 items-end 로 맞추면 꼬리가 붙은
+// 끝 칸만 막대가 솟는다. 정본은 상세 '소모 추이' 의 grid 2행이다.
+need(IC, ic, /<div className="grid items-end gap-x-1 gap-y-0\.5" style=\{\{ gridTemplateColumns: `repeat\(\$\{row\.monthlyConsumption\.length\}, minmax\(0, 1fr\)\)` \}\}>/, "카드 월별 막대가 grid 2행이 아니다(꼬리 칸만 막대가 솟는다)")
+need(IC, ic, /style=\{\{ gridColumn: i \+ 1, gridRow: 1 \}\}[\s\S]{0,3000}style=\{\{ gridColumn: i \+ 1, gridRow: 2 \}\}/, '카드 월별 막대의 라벨 행이 막대 행과 갈리지 않는다')
+need(IC, ic, /^(?![\s\S]*<div className="flex items-end gap-1">\s*\n\s*\{row\.monthlyConsumption\.map)/, "카드 월별 막대가 옛 flex items-end 한 묶음으로 돌아갔다")
 
 // ⓓ
 need(OV, ov, /import \{[^}]*\bintervalConsumption\b[^}]*\} from '\.\/consumptionSeries'/, '개요가 구간 셈 정본(consumptionSeries)을 import 하지 않는다')
