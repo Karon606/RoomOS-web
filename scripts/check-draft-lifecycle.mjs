@@ -1010,7 +1010,8 @@ need('위치 패널 저장된 채움에 그 기록의 점검일이 붙는다(점
 for (const [name, src, re] of fillSites) need(`채움 수량이 FILL_QTY_CLS 다 — ${name}`, re.test(src), '한 자리만 --warm-dark 로 남으면 같은 수가 화면마다 다른 무게로 보인다')
 // 읽기 전용 이력 카드는 넣지 않는다 — 테라코타 '+8kg' 은 §03·§06 절제 대상으로 걷은 자리다(check-inventory-view-default 가 그쪽을 지킨다).
 need('이력 카드 채움 캡션은 강조하지 않는다(적는 화면만)',
-  /창고에서 \{fmtQty\(restockTotal, stockUnit\)\} 채움/.test(client) && /> 채움 \{fmtQty\(row\.restockedQty!, unit\)\}<\/span>/.test(client),
+  // 2026-11-02(신고 4ea36301) 위치 줄 개정 뒤 채움은 받은 위치 줄의 '창고에서 N 채움' 한 자리다(합계 요약 줄 없음).
+  /<span className="whitespace-nowrap">창고에서 \{fmtQty\(row\.restockedQty!, unit\)\} 채움<\/span>/.test(client) && !/FILL_QTY_CLS[^\n]*row\.restockedQty/.test(client),
   '이력은 읽는 기록이라 절제한다. 적는 화면의 강조 규칙을 이력까지 넓히면 §03·§06 결정과 부딪힌다')
 
 // ── ⑭ 행 머리 오른쪽 묶음은 좁은 줄에서 다음 줄로 (2026-10-21, 320·360px 글자 125% 에서 '+N' 이 잘렸다) ──────

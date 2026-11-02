@@ -392,15 +392,29 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     /<TimelineHead glyph=\{kind\.kind === 'swap' \|\| kind\.kind === 'move' \? TL_GLYPH_MOVE : kind\.kind === 'receipt' \? TL_GLYPH_IN : TL_GLYPH_CHECK\}/.test(row) &&
     /const TL_GLYPH_MOVE = <svg/.test(client),
     '아무도 세지 않은 맞바꿈·수령 반영에 체크(센 기록)를 달면 머리 종류와 글리프가 다른 말을 한다')
+  // 이력 카드 위치 줄(2026-11-02 신고 4ea36301, UX 권고안 승인). 위치마다 한 줄 경로 그대로, 채움은 받은 위치 줄에
+  // '· 창고에서 N 채움', 창고 행은 줄 끝 정본 꼴 '창고(경로) N', 직접 셌을 때만 '· 직접 셈'. 아래 합계 요약 줄은 없다(같은 말 두 번).
   need('창고 실측과 자동 차감을 가른다(getInventoryDetail 이 carried 를 싣는다)',
-    /carried: lb\.carried,/.test(detailFn) && /hubRow\?\.carried === false \? ` · 창고 실측 \$\{fmtQty\(hubRow\.qty, stockUnit\)\}` : ''/.test(row) &&
-    /창고에서 \{fmtQty\(restockTotal, stockUnit\)\} 채움/.test(row) && !/창고에서 자동 차감\)/.test(row) && !/↳/.test(row),
+    /carried: lb\.carried,/.test(detailFn) && /\{isHub && row\.carried === false && <span className="text-\[var\(--warm-muted\)\]"> · 직접 셈<\/span>\}/.test(lines) &&
+    !/창고에서 자동 차감\)/.test(row) && !/↳/.test(row),
     "창고를 직접 센 점검에 '(창고에서 자동 차감)' 이라 적던 거짓말(도메인 P1-3) · 경로 화살표는 §29 위반")
-  need('위치 줄은 정본 splitLocPath 로 묶고 창고 표식은 Badge, 채움은 캡션이다',
-    /splitLocPath\(meta\)/.test(lines) && /meta && meta\.pathName === row\.locationName/.test(lines) &&
-    /<Badge tone="pale-amber" className="ml-1 leading-4">창고<\/Badge>/.test(lines) && /채움 \{fmtQty\(row\.restockedQty!, unit\)\}/.test(lines) &&
+  need('위치 줄은 위치마다 한 줄 경로 그대로, 창고는 줄 끝 창고(경로), 채움은 받은 위치 줄에 붙는다',
+    /\{isHub \? `창고\(\$\{row\.locationName\}\)` : row\.locationName\}/.test(lines) &&
+    /const ordered = \[\.\.\.rows\.filter\(r => r\.locationId !== hubId\), \.\.\.rows\.filter\(r => r\.locationId === hubId\)\]/.test(lines) &&
+    /창고에서 \{fmtQty\(row\.restockedQty!, unit\)\} 채움/.test(lines) &&
+    !/<Badge/.test(lines) && !/splitLocPath/.test(lines) && !/restockTotal/.test(row) && !/창고 실측/.test(row) &&
     !/--tc-text/.test(lines) && !/text-\[var\(--tc-text\)\][^"]*">\+/.test(row) && !/text-\[var\(--tc-text\)\] mt-0\.5/.test(row),
-    "칸마다 전체 경로 칩이 세로로 쌓였다 · 테라코타 '+8kg' 은 §03·§06 절제 대상")
+    "부모 경로로 묶어 한 줄에 칸을 이으면 어느 숫자가 어느 칸 잔량이고 어느 것이 채움인지 흐리다 · '415호 창고 [창고]' 는 겹쳐 읽힌다 · 테라코타 '+8kg' 은 §03·§06 절제 대상")
+  // 형제 자리(신고 4ea36301). 창고 표시 글자는 '창고(경로)' 한 꼴이고, 이름 뒤 ' (창고)' 꼬리는 다시 서지 않는다.
+  // 위치 이름 옆 Badge '창고' 는 이름 앞이다(이름 뒤에 붙으면 '415호 창고 창고' 로 겹친다).
+  need("창고 표시 글자는 '창고(경로)' 한 꼴이다(이름 뒤 ' (창고)' 꼬리 없음)",
+    !/' \(창고\)'/.test(client) && (client.match(/`창고\(\$\{/g) ?? []).length >= 10,
+    '카드 칩·점검 칸 라벨·select·위치 칩·옮기기 창이 저마다 다른 꼴이면 같은 창고가 다른 이름으로 읽힌다')
+  need("위치 이름 옆 창고 Badge 는 이름 앞이다",
+    !/\{(l|loc)\.pathName\}<\/p>\s*\n\s*<Badge tone="pale-amber"[^>]*>창고</.test(client) &&
+    !/\{leaf\}<\/p>\}\s*\n\s*\{(rowIsHub|loc\.isHub) && <Badge/.test(client) &&
+    !/\{loc\.pathName\}\{loc\.isHub && <Badge/.test(client),
+    "'415호 창고 [창고]' 로 이름 바로 뒤에서 겹쳐 읽힌다")
   need("보정은 정본 Badge 하나로 말한다('전체 보정' 글자와 미니 배지 중복 제거)",
     /\{entry\.isReconcile && <Badge tone="pale-amber" className="ml-1\.5">보정<\/Badge>\}/.test(row) && !/'전체 보정'/.test(row) && !/bg-\[var\(--honey\)\]\/15/.test(row),
     '같은 말을 두 번 하는 장식이고 수제 honey 배지는 §11 트라이어드 밖이다')
@@ -443,7 +457,7 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     '같은 목록의 수정 폼 셋이 라벨 크기·입력 보더·높이·삭제 버튼 모양이 갈리면 이질감이다(§10 raw 버튼 금지 · §12 한 폼 안 입력 높이)')
   // 수령 위치 칩 — 색만으로 창고를 가르지 않는다(WCAG 1.4.1).
   need("수령 위치 칩은 행 버튼이고 창고는 낱말(Badge '창고')로 가른다",
-    /\{loc\.pathName\}\{loc\.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고<\/Badge>\}/.test(row) &&
+    /\{loc\.isHub && <Badge tone="pale-amber" className="mr-1 leading-none">창고<\/Badge>\}\{loc\.pathName\}/.test(row) &&
     />\s*위치 없이 확정\s*<\/RowActionBtn>/.test(row) && /<RowActionBtn onClick=\{\(\) => setShowLocationPicker\(false\)\}>취소<\/RowActionBtn>/.test(row) &&
     !/border-\[var\(--honey\)\] bg-\[var\(--honey\)\]\/10/.test(row) && /<QtyField unit=\{entry\.qtyUnit \?\? '개'\} aria-label="도착 수량"/.test(row),
     '종전 honey 면만으로 창고를 가렸다 — 색을 못 보는 사람에게 단서가 없다 · 32px 미만 글자 버튼')

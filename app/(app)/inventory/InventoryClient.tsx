@@ -1590,7 +1590,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                 const isHubChip = row.locations.find(l => l.id === lb.locationId)?.isHub ?? false
                 return (
                 <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">
-                  {lb.locationName}{isHubChip ? ' (창고)' : ''} {fmtQty(lb.qty, stockUnit)}
+                  {isHubChip ? `창고(${lb.locationName})` : lb.locationName} {fmtQty(lb.qty, stockUnit)}
                 </span>
                 )
               })
@@ -3067,10 +3067,6 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
     const kindLabel = kind.kind === 'swap' ? '맞바꿈' : kind.kind === 'move' ? '위치 이동' : kind.kind === 'receipt' ? '수령 반영' : '점검'
     const memoText = checkMemoText(entry.memo, kind)
     const hubId = itemLocations.find(l => l.isHub)?.id ?? null
-    const restockTotal = entry.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
-    // 창고를 직접 센 점검(창고 행 carried:false)과 자동 차감 이월을 가른다(도메인 P1-3). 종전 줄은 창고를 센 점검에도
-    // '(창고에서 자동 차감)' 이라 적었다. 표식 이전 행(null)은 모르는 것이라 실측이라 말하지 않는다.
-    const hubRow = hubId ? entry.locationBreakdown.find(lb => lb.locationId === hubId) : undefined
     return (
       <li className={TL_CARD}>
         {/* 수령 반영은 읽기 전용이다(운영자 결정 3) — 고치는 길은 그 구매 카드의 수정(수령 취소)이다. 서버 가드는 두지 않았다. */}
@@ -3086,17 +3082,14 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
           {kind.kind === 'swap' || kind.kind === 'move' ? (
             // 맞바꿈·이동은 바뀐 칸만, 값 전환 표기로(§29). 총량이 실제로 같을 때만 '총량 변화 없음'.
             <>
-              <TimelineLocLines unit={stockUnit} hubId={hubId} itemLocations={itemLocations}
+              <TimelineLocLines unit={stockUnit} hubId={hubId}
                 rows={kind.changes.map(c => ({ locationId: c.locationId, locationName: c.locationName, qty: c.to, from: c.from }))} />
               {kind.totalSame && <p className={TL_CAPTION}>총량 변화 없음</p>}
             </>
           ) : (
-            <TimelineLocLines unit={stockUnit} hubId={hubId} itemLocations={itemLocations} rows={entry.locationBreakdown} />
-          )}
-          {restockTotal > 0 && (
-            <p className={TL_CAPTION}>
-              창고에서 {fmtQty(restockTotal, stockUnit)} 채움{hubRow?.carried === false ? ` · 창고 실측 ${fmtQty(hubRow.qty, stockUnit)}` : ''}
-            </p>
+            // 채움은 받은 위치 줄에, 창고를 직접 센 표식은 창고 줄에 붙는다. 아래에 합계 요약 줄은 두지 않는다(같은 말 두 번).
+            // 창고를 직접 센 점검(창고 행 carried:false)과 자동 차감 이월을 가른다(도메인 P1-3). 표식 이전 행(null)은 실측이라 말하지 않는다.
+            <TimelineLocLines unit={stockUnit} hubId={hubId} rows={entry.locationBreakdown} />
           )}
           {/* (레거시) 명시적 이동 유입 — fromHubQty 가 있는 점검만 */}
           {entry.locationBreakdown
@@ -3338,7 +3331,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             <div className="flex flex-wrap gap-x-1.5 gap-y-3">
               {itemLocations.filter(loc => !(hiddenLocationIds ?? []).includes(loc.id) && !loc.locationClosedAt).map(loc => (
                 <RowActionBtn key={loc.id} disabled={pending} onClick={() => confirmAt(loc.id)}>
-                  {loc.pathName}{loc.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고</Badge>}
+                  {/* 창고 표식은 이름 앞이다(정본 꼴 '창고(경로)' 와 같은 차례). 이름 뒤에 붙이면 '415호 창고 창고' 로 겹쳐 읽힌다(신고 4ea36301). */}
+                  {loc.isHub && <Badge tone="pale-amber" className="mr-1 leading-none">창고</Badge>}{loc.pathName}
                 </RowActionBtn>
               ))}
               <RowActionBtn disabled={pending} onClick={() => confirmAt(undefined)}>
@@ -3429,50 +3423,36 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
   )
 }
 
-// 이력 카드 위치 줄 — 부모 경로로 묶어 '4층 주방 김치냉장고 · 상단 4kg · 하단 8kg' 한 줄씩(재고 화면 정비 4단계).
-// 종전 칩은 칸마다 전체 경로를 들고 세로로 쌓여 네 줄이 됐다. 묶음은 2단계 점검 폼과 같은 정본(splitLocPath, 끝 칸
-// 이름이 표기 경로 꼬리와 글자째 같을 때만 가른다)이고 차례는 서버가 준 트리 순서 그대로다(이웃끼리만 묶는다).
-// 이 기록의 이름이 지금 표기 경로와 다르면(숨긴·떼어 낸 위치) 가르지 않고 통째다. 창고 행 표식은 점검 폼과 같은
-// 낱말 '창고'(§22 Badge), 채움은 '채움 8kg' 캡션이다(종전 테라코타 '+8kg' 은 §03·§06 절제 대상). 맞바꿈·이동은
-// from 이 있어 값 전환 표기(§29 '8kg → 4kg')로 그린다 — 조사로 이으면 kg 뒤 '으로/로' 가 갈린다.
-function TimelineLocLines({ rows, itemLocations, hubId, unit }: {
-  rows: { locationId: string; locationName: string; qty: number; restockedQty?: number; from?: number }[]
-  itemLocations: StorageLocationItem[]; hubId: string | null; unit: string | null
+// 이력 카드 위치 줄 — 위치마다 한 줄, 경로 그대로('4층 공용 화장실 1롤'). 신고 4ea36301(2026-11-02, UX 권고안 승인).
+// 종전에는 부모 경로로 묶어 '4층 · 공용 화장실 1롤 채움 1롤 · 415호 창고 [창고] 5롤' 처럼 한 줄에 칸을 이어 붙여, 어느 숫자가
+// 어느 칸의 잔량이고 어느 것이 채운 양인지, 창고 표식이 이름 바로 뒤에서 '창고 창고' 로 겹치는지가 흐렸다.
+//   · 채움은 받은 위치 줄에 붙인다('· 창고에서 1롤 채움'). 채운 위치가 둘 이상이어도 각 줄에 붙이고 합계 줄은 두지 않는다.
+//   · 창고 행은 줄 끝에 정본 꼴 '창고(경로) 5롤'(위치별 점검 패널 캡션과 같은 꼴, 신고 5efc8a12). 직접 셌을 때만 '· 직접 셈'.
+//   · 맞바꿈·이동은 from 이 있어 값 전환 표기(§29 '8kg → 4kg')로 그린다.
+// 창고 표식은 지금 품목 창고(hubId)로 그린다. 점검 행에 당시 창고 스냅샷 칸이 없다(스키마, 운영자 결정 대기).
+function TimelineLocLines({ rows, hubId, unit }: {
+  rows: { locationId: string; locationName: string; qty: number; restockedQty?: number; from?: number; carried?: boolean | null }[]
+  hubId: string | null; unit: string | null
 }) {
   if (rows.length === 0) return null
-  const groups = rows.reduce<{ parent: string; items: { row: (typeof rows)[number]; leaf: string }[] }[]>((gs, row) => {
-    const meta = itemLocations.find(x => x.id === row.locationId)
-    const { parent, leaf } = meta && meta.pathName === row.locationName ? splitLocPath(meta) : { parent: '', leaf: row.locationName }
-    const last = gs[gs.length - 1]
-    if (last && parent !== '' && last.parent === parent) last.items.push({ row, leaf })
-    else gs.push({ parent, items: [{ row, leaf }] })
-    return gs
-  }, [])
+  const ordered = [...rows.filter(r => r.locationId !== hubId), ...rows.filter(r => r.locationId === hubId)]
   return (
     <>
-      {groups.map(g => (
-        // leading-5 — 창고 Badge(위아래 2px)가 선 줄과 안 선 줄의 높이를 같게 둔다.
-        <p key={g.items[0].row.locationId} className="break-keep text-xs leading-5 text-[var(--warm-mid)]">
-          {g.parent !== '' && <span className="text-[var(--warm-muted)]">{g.parent} · </span>}
-          {g.items.map(({ row, leaf }, i) => (
-            <span key={row.locationId}>
-              {i > 0 && ' · '}
-              {/* 칸 하나(이름·표식·수치)는 한 덩이로 다음 줄로 넘어간다(inline-block) — 줄 끝에서 '하단' 과 그 값이 갈라지면
-                  어느 칸의 값인지 흐려진다. 한 줄보다 긴 이름일 때만 덩이 안에서 낱말 단위로 꺾인다. 수치는 늘 붙어 있다. */}
-              <span className="inline-block max-w-full">
-                {leaf}
-                <span className="whitespace-nowrap">
-                {row.locationId === hubId && <Badge tone="pale-amber" className="ml-1 leading-4">창고</Badge>}
-                {' '}
-                {row.from != null && <><span className="tabular-nums">{fmtQty(row.from, unit)}</span>{' → '}</>}
-                <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{fmtQty(row.qty, unit)}</strong>
-                {(row.restockedQty ?? 0) > 0 && <span className="text-[var(--warm-muted)]"> 채움 {fmtQty(row.restockedQty!, unit)}</span>}
-                </span>
-              </span>
+      {ordered.map(row => {
+        const isHub = row.locationId === hubId
+        return (
+          <p key={row.locationId} className="break-keep text-xs leading-5 text-[var(--warm-mid)]">
+            {isHub ? `창고(${row.locationName})` : row.locationName}{' '}
+            {/* 수치는 늘 붙어 있다 — 줄 끝에서 이름과 값이 갈라지면 어느 칸의 값인지 흐려진다. */}
+            <span className="whitespace-nowrap">
+              {row.from != null && <><span className="tabular-nums">{fmtQty(row.from, unit)}</span>{' → '}</>}
+              <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{fmtQty(row.qty, unit)}</strong>
             </span>
-          ))}
-        </p>
-      ))}
+            {(row.restockedQty ?? 0) > 0 && <span className="text-[var(--warm-muted)]"> · <span className="whitespace-nowrap">창고에서 {fmtQty(row.restockedQty!, unit)} 채움</span></span>}
+            {isHub && row.carried === false && <span className="text-[var(--warm-muted)]"> · 직접 셈</span>}
+          </p>
+        )
+      })}
     </>
   )
 }
@@ -3643,7 +3623,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
               {tlLocations.map(l => (
                 <div key={l.id}>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">
-                    {l.pathName}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
+                    {l.isHub ? `창고(${l.pathName})` : l.pathName} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
                   </p>
                   <input type="text" inputMode="decimal" autoComplete="off" value={actuals[l.id] ?? ''}
                     onChange={e => setActuals(p => ({ ...p, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -3940,7 +3920,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">
                           {vLocs(r).map(l => (
                             <div key={l.id}>
-                              <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.pathName}{l.isHub ? ' (창고)' : ''}</p>
+                              <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.isHub ? `창고(${l.pathName})` : l.pathName}</p>
                               <input type="text" inputMode="decimal" autoComplete="off" disabled={!restockDone}
                                 value={actuals[r.id]?.[l.id] ?? ''} onChange={e => setVal(r.id, l.id, e.target.value)}
                                 className={`w-full ${inputCls}`} />
@@ -4122,8 +4102,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
               return (
                 <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
                   <div className="flex min-h-7 items-center gap-2">
-                    <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
                     <Badge tone="pale-amber" className="shrink-0">창고</Badge>
+                    <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
                     <span className="flex-1" />
                     <span className="shrink-0 text-xs text-[var(--warm-muted)]">이전 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(hubBefore * 100) / 100}{stockUnit ?? ''}</strong></span>
                   </div>
@@ -4268,7 +4248,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
             <option value="">위치 없이 기록</option>
             {/* 사용 중지한 위치는 새로 고를 수 없다. 이 기록에 이미 적힌 위치면 그대로 둔다(이력 고치기). */}
             {itemLocations.filter(loc => !loc.locationClosedAt || loc.id === entry.storageLocationId).map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.isHub ? `창고(${loc.pathName})` : loc.pathName}</option>
             ))}
           </select>
         </div>
@@ -5092,8 +5072,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                     <div className={ROW_HEAD_CLS}>
                       {/* 칸 이름은 폭 0 에서 늘어난다(flex-[1_1_0%]) — 내용 폭 기준이면 긴 이름('상단 왼쪽 안쪽 칸')이 묶음을 밀어
                           내용 기준으로 꺾여, 꺾임이 컨테이너 쿼리 밖에서 생기고 상태마다 줄 수가 바뀌었다(독립 검수 2026-10-21). */}
-                      {g.parent !== '' && <p className="min-w-0 flex-[1_1_0%] truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                       {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
+                      {g.parent !== '' && <p className="min-w-0 flex-[1_1_0%] truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                       <div className={ROW_HEAD_CLUSTER_CLS}>
                       {prevQty !== undefined && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prevQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
                       <div className={ROW_HEAD_ACT_CLS}>
@@ -5213,8 +5193,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
               {g.rows.map(({ loc, leaf }) => (
                 <div key={loc.id} className="grid grid-cols-2 items-center gap-2 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
                   <div className="flex min-w-0 items-center gap-2">
-                    {g.parent !== '' && <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                     {loc.isHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
+                    {g.parent !== '' && <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{leaf}</p>}
                   </div>
                   {/* '0' 은 뜻이 맞는 자리다 — 첫 점검이라 이월할 직전값이 없어 빈 위치는 0 으로 남는다(합계도 0 으로 센다). */}
                   <QtyField unit={stockUnit} aria-label={`${loc.pathName} 잔량`} placeholder="0"
@@ -5322,7 +5302,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
   const unit = item ? (item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint ?? '개') : (item.specUnit ?? item.qtyUnit ?? item.unitHint ?? '개')) : '개'
   const fromLoc = locStock?.find(l => l.id === fromId) ?? null
   const toLoc = locStock?.find(l => l.id === toId) ?? null
-  // 칩의 '(창고)' 는 **이 품목의 창고**다(카드·상세·점검 폼과 같은 판정, overview 의 hubLocationId 우선).
+  // 칩의 '창고(경로)' 는 **이 품목의 창고**다(카드·상세·점검 폼과 같은 판정, overview 의 hubLocationId 우선).
   // locStock 의 isHub 는 영업장 기본 창고라, 그걸 찍으면 한 흐름 안에서 창고가 둘로 뜬다(검수 2026-10-12).
   const itemHubId = item?.locations.find(l => l.isHub)?.id ?? null
   const qty = Number(qtyStr) || 0
@@ -5410,7 +5390,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                   <button key={l.id} type="button" aria-pressed={fromId === l.id} className={chip(fromId === l.id)}
                     // 남은 양은 출발지에 매인 값이다 — 출발지를 바꾸면 앞 위치의 실측이 남으면 안 된다.
                     onClick={() => { setFromId(l.id); setSrcLeftStr(''); if (toId === l.id) setToId('') }}>
-                    {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.id === itemHubId ? `창고(${l.pathName})` : l.pathName} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -5426,7 +5406,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId, initialFromI
                 {locStock.filter(l => l.id !== fromId && !l.closed).map(l => (
                   <button key={l.id} type="button" aria-pressed={toId === l.id} className={chip(toId === l.id)}
                     onClick={() => setToId(l.id)}>
-                    {l.pathName}{l.id === itemHubId ? ' (창고)' : ''} · {fmtQty(l.qty, unit)}
+                    {l.id === itemHubId ? `창고(${l.pathName})` : l.pathName} · {fmtQty(l.qty, unit)}
                   </button>
                 ))}
               </div>
@@ -5546,6 +5526,8 @@ function HubShortDialog({ pending, onResolved, onExit }: {
   const allowedIds = new Set(othersInfo.map(o => o.locationId))
   const donors = (locs ?? []).filter(l => l.id !== hubId && l.qty > 0 && !l.closed && allowedIds.has(l.id))
   const fromLoc = donors.find(l => l.id === fromId) ?? null
+  // 창고 이름은 정본 꼴 '창고(경로)' 로 말한다(이력 카드·위치 패널과 같은 꼴, 신고 4ea36301). 목록을 받기 전에는 '창고'.
+  const hubPath = (locs ?? []).find(l => l.id === hubId)?.pathName ?? null
   const moveQty = fromLoc ? Math.min(shortfall, fromLoc.qty) : 0
 
   const undoTransfersOnly = async () => {
@@ -5662,7 +5644,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
 
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-3">
           <p className="text-xs text-[var(--warm-mid)]">
-            창고 현재 {fmtQty(hubQty, unit)} · 이번 채움 {fmtQty(hubQty + shortfall, unit)}
+            {hubPath ? `창고(${hubPath})` : '창고'} 현재 {fmtQty(hubQty, unit)} · 이번 채움 {fmtQty(hubQty + shortfall, unit)}
           </p>
           <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
             창고 장부가 실물과 다를 수 있어요. 실제 재고가 더 많다면 먼저 확인해 맞춰주세요.
@@ -5685,7 +5667,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             )}
             {fromLoc && moveQty > 0 && (
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">
-                {fromLoc.pathName}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
+                {fromLoc.pathName}에서 {hubPath ? `창고(${hubPath})` : '창고'}로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
               </p>
             )}
           </div>
@@ -8669,7 +8651,7 @@ function HideLocationModal({ row, locationId, onClose, onDone }: {
           <div className="flex flex-wrap gap-1.5">
             {targets.map(l => (
               <button key={l.id} type="button" aria-pressed={toId === l.id} className={chip(toId === l.id)} onClick={() => setToId(l.id)}>
-                {l.pathName}{l.isHub ? ' (창고)' : ''} · {fmtQty(qtyAt(l.id), unit)}
+                {l.isHub ? `창고(${l.pathName})` : l.pathName} · {fmtQty(qtyAt(l.id), unit)}
               </button>
             ))}
           </div>
@@ -8925,7 +8907,7 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
             {pickLocs.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
+              <option key={loc.id} value={loc.id}>{loc.isHub ? `창고(${loc.pathName})` : loc.pathName}</option>
             ))}
           </select>
         </div>
