@@ -49,6 +49,7 @@ import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { askCheckoutTiming } from '@/components/tenant/checkoutTimingPrompt'
+import { openEditInPlace, editHref } from '@/lib/editDoor'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -608,7 +609,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           // 이 창에는 연락처 칸이 없어서 문구만으로는 어디를 고칠지 알 수 없다.
           if (res.error.startsWith(RESERVATION_PHONE_DENIAL_PREFIX)) {
             pushToast('error', res.error, {
-              action: { label: '입주자 정보', run: () => router.push(`/tenants?tenantId=${tenantId}&edit=1`) },
+              // 편집 문 정본(lib/editDoor) — 입주자 관리 화면이면 제자리에서, 아니면 클릭마다 새 nonce 로 간다.
+              action: { label: '입주자 정보', run: () => { if (!openEditInPlace('tenant', tenantId)) router.push(editHref('tenant', tenantId)) } },
             })
             return
           }

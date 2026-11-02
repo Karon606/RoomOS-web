@@ -27,6 +27,8 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useCanEdit, useCanReadScope } from '@/components/RoleContext'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { registerEditOpener, shouldOpenEdit } from '@/lib/editDoor'
+import { recordCrumb } from '@/lib/errorBreadcrumbs'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { WhyCaption } from '@/components/ui/WhyCaption'
@@ -574,21 +576,31 @@ export default function RoomManageClient({
   // 그 한 줄의 '계약에 적용' 을 누른 축. 폼 안에만 있고 저장할 때 그 계약까지 함께 적용한다(§27.8 ①, '그대로 두기' 로 되돌린다).
   const [rentApplyQueued, setRentApplyQueued] = useState<Record<RentAxisKey, boolean>>({ resident: false, nonResident: false })
 
-  // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
+  // URL ?roomId=xxx 자동 열기 — ?edit=<nonce> 면 편집 폼, 아니면 Prism 셸의 호실 면.
   // handledOpenRef: 같은 요청은 1회만 처리 — initialRooms 갱신(저장 후 refresh)마다
-  // effect 가 재실행되며 닫은 폼이 옛 데이터로 재오픈되던 레이스 방지(입주자 관리 edit=1 버그와 동일 패턴).
+  // effect 가 재실행되며 닫은 폼이 옛 데이터로 재오픈되던 레이스 방지(입주자 관리 edit 버그와 동일 패턴).
+  // 편집 요청의 키는 'roomId:nonce' 다(lib/editDoor shouldOpenEdit, 신고 352716da). 다른 페이지의 [수정]이
+  // 클릭마다 다른 edit 값을 실으므로, 정리 신호를 놓쳐도 다음 클릭은 늘 새 요청이다.
   const searchParams = useSearchParams()
   const handledOpenRef = useRef<string | null>(null)
   useEffect(() => {
     const roomId = searchParams.get('roomId')
     if (!roomId) { handledOpenRef.current = null; return }
-    const key = `${roomId}:${searchParams.get('edit') ?? ''}`
-    if (handledOpenRef.current === key) return
     const found = initialRooms.find(r => r.id === roomId)
+    const edit = searchParams.get('edit')
+    if (edit) {
+      const d = shouldOpenEdit(handledOpenRef.current, { id: roomId, edit }, !!found)
+      handledOpenRef.current = d.key
+      if (!d.open) { recordCrumb('action', `편집 문 건너뜀 room ${d.reason}`); return }
+      recordCrumb('action', '편집 문 열림 room')
+      openEdit(found!)   // openEdit 이 상세 셸을 닫는다
+      return
+    }
+    const key = `${roomId}:`
+    if (handledOpenRef.current === key) return
     if (!found) return
     handledOpenRef.current = key
-    if (searchParams.get('edit') === '1') openEdit(found)
-    else entityModal.open({ kind: 'room', roomId })
+    entityModal.open({ kind: 'room', roomId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, initialRooms])
 
@@ -783,12 +795,23 @@ export default function RoomManageClient({
     setError('')
   }
 
-  // URL ?roomId·?edit=1 정리 — 안 지우면 저장/닫기 후에도 파라미터가 남는다.
+  // 같은 화면 안의 상세 셸 [수정] — 내비게이션 없이 폼을 바로 연다(lib/editDoor, openEdit 이 셸을 닫는다).
+  // 목록에 없는 방이면 false 를 돌려 셸이 주소 이동으로 폴백한다. 렌더마다 새로 서는 openEdit·initialRooms 는 ref 로 잇는다.
+  const editDoorRef = useRef({ rooms: initialRooms, openEdit })
+  useEffect(() => { editDoorRef.current = { rooms: initialRooms, openEdit } })
+  useEffect(() => registerEditOpener('room', id => {
+    const found = editDoorRef.current.rooms.find(r => r.id === id)
+    if (!found) return false
+    editDoorRef.current.openEdit(found)
+    return true
+  }), [])
+
+  // URL ?roomId·?edit 정리 — 안 지우면 저장/닫기 후에도 파라미터가 남는다.
   // 그 상태에서 같은 방을 다시 [수정](EntityModal)하면 router.push 가 '동일 URL' 이라 무시되고
   // handledOpenRef 도 그대로라 useEffect 가 openEdit 을 호출하지 않아 → 셸만 닫히고 편집 폼이
   // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(입주자 관리 clearTenantUrlParams 와 동일 패턴).
   const clearRoomUrlParams = () => {
-    if (searchParams.get('edit') === '1' || searchParams.get('roomId')) {
+    if (searchParams.get('edit') || searchParams.get('roomId')) {
       // 렌더 시점 스냅샷이 아니라 **지금의 실제 URL** 로 재구성한다 — 캘린더 트랙이
       // history.replaceState 로 적어 둔 위치를 옛 스냅샷이 되돌려 쓰던 레이스 방지
       // (lib/useUrlState 가 같은 이유로 같은 문법을 쓴다).
@@ -935,7 +958,7 @@ export default function RoomManageClient({
         if (res && !res.ok) { pushToast('error', res.error); return }
         closeEdit()
         // 전체 새로고침(window.reload) 대신 soft refresh — 토스트가 살아남고,
-        // URL ?roomId&edit=1 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음
+        // URL ?roomId&edit 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음
         // (full reload 시 ref 초기화로 수정 팝업이 되돌아오던 글리치 해소).
         router.refresh()
         if (res.sync) {

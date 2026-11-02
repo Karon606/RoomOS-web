@@ -28,6 +28,8 @@ import { useNavRouter } from '@/lib/useNavRouter'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { TenantDocBundleSheet } from '@/components/doc/TenantDocBundleSheet'
+import { openEditInPlace, editHref, type EditDoorKind } from '@/lib/editDoor'
+import { recordCrumb } from '@/lib/errorBreadcrumbs'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
@@ -342,16 +344,30 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 잠깐 사라지는 창 때문에 뭔가 잘못 눌렀나? 싶은 불안감이 생겨."
   //
   // 전환(startTransition) 중에는 React 가 이 창을 그대로 세워 두므로, 전환이 끝난 뒤에 닫으면
-  // 화면이 끊기지 않는다. 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다.
+  // 화면이 끊기지 않는다. 목적지 폼이 서면 그 페이지가 이 창을 닫는다(entityModal.close).
+  //
+  // 상한은 길게 둔다(2026-11-02, 신고 352716da). 종전 1.5초 상한은 콜드 스타트처럼 전환이 늦을 때
+  // 폼이 서기 전에 이 창부터 닫아, [수정]을 누르면 창이 튕겨 나가는 것으로 보였다. 상한은 창이
+  // 영영 갇히지 않게 하는 안전망일 뿐이고, 그동안은 뼈대(opening)가 '여는 중'을 말한다.
+  const NAV_CLOSE_CAP_MS = 8000
   const navClosing = useRef(false)
   const [opening, setOpening] = useState(false)
+  // 목적지 페이지가 먼저 이 창을 닫으면(언마운트) 상한 타이머도 함께 걷는다. 남겨 두면 8초 뒤에
+  // 그사이 새로 연 다른 상세 창을 닫아 버린다.
+  const capTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (capTimer.current) clearTimeout(capTimer.current) }, [])
   const navigateThenClose = (href: string) => {
     navClosing.current = true
     setOpening(true)
     startTransition(() => { navRouter.push(href) })
-    // 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다. 정상 경로에서는 아래 effect 가
-    // 먼저 닫으므로 이 타이머가 하는 일이 없다.
-    setTimeout(() => { if (navClosing.current) { navClosing.current = false; onClose() } }, 1500)
+    if (capTimer.current) clearTimeout(capTimer.current)
+    capTimer.current = setTimeout(() => {
+      capTimer.current = null
+      if (!navClosing.current) return
+      navClosing.current = false
+      recordCrumb('action', `편집 문 상한 닫힘 ${href}`)
+      onClose()
+    }, NAV_CLOSE_CAP_MS)
   }
   useEffect(() => {
     if (!navClosing.current || isPending) return
@@ -359,10 +375,19 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     onClose()
   }, [isPending, onClose])
 
+  // 편집 문 — 이 화면에 그 편집 폼이 있으면 내비게이션 없이 바로 연다(lib/editDoor, 폼을 연 페이지가 이 창을 닫는다).
+  // 없으면 그 페이지로 간다. 이때 edit 값은 클릭마다 새 nonce 라 같은 대상을 다시 눌러도 목적지가 새 요청으로 본다.
+  const openEditDoor = (kind: EditDoorKind, id: string) => {
+    if (openEditInPlace(kind, id)) { recordCrumb('action', `편집 문 제자리 ${kind}`); return }
+    const href = editHref(kind, id)
+    recordCrumb('action', `편집 문 이동 ${href}`)
+    navigateThenClose(href)
+  }
+
   // 수정은 페이지 종속 편집 폼이 있는 /room-manage 로 위임 (Phase 2.5 에서 위젯 편집 모드로 대체 예정).
   const handleEditRoom = () => {
     if (!shownRoomId) return
-    navigateThenClose(`/room-manage?roomId=${shownRoomId}&edit=1`)
+    openEditDoor('room', shownRoomId)
   }
 
   // 입주자 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
@@ -397,7 +422,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   }
   const handleEditTenant = () => {
     if (!links?.tenantId) return
-    navigateThenClose(`/tenants?tenantId=${links.tenantId}&edit=1`)
+    openEditDoor('tenant', links.tenantId)
   }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.

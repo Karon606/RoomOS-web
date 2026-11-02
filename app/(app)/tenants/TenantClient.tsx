@@ -54,6 +54,8 @@ import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/deposit
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { registerEditOpener, shouldOpenEdit } from '@/lib/editDoor'
+import { recordCrumb } from '@/lib/errorBreadcrumbs'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import BirthdateInput from '@/components/ui/BirthdateInput'
@@ -871,12 +873,12 @@ export default function TenantClient({
   // effect 가 다시 돌 때마다 셸이 재오픈되면 안에서 옮겨 둔 면(수납·호실)이 초기화된다.
   // tenantId 가 URL 에서 사라지면(clearTenantUrlParams) ref 를 비워 다음 알림 클릭을 다시 받는다 —
   // 파라미터 정리는 tenantId 를 지우므로 여기서 재오픈으로 되돌아오는 고리가 생기지 않는다.
-  // edit=1 은 아래 훅 담당 — 여기서 같이 처리하면 한 요청에 셸과 편집 폼이 둘 다 뜬다.
+  // edit 은 아래 훅 담당 — 여기서 같이 처리하면 한 요청에 셸과 편집 폼이 둘 다 뜬다.
   const openedTenantRef = useRef<string | null>(null)
   useEffect(() => {
     const tenantId = searchParams.get('tenantId')
     if (!tenantId) { openedTenantRef.current = null; return }
-    if (searchParams.get('edit') === '1') return
+    if (searchParams.get('edit')) return
     if (openedTenantRef.current === tenantId) return
     const found = initialTenants.find(t => t.id === tenantId)
     if (!found) return
@@ -889,22 +891,39 @@ export default function TenantClient({
     })
   }, [searchParams, initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ?edit=1 변화 감지 — Prism [수정] 버튼 클릭 시 호출됨.
-  // ⚠️ 한 edit 요청(tenantId+edit=1)당 폼을 '한 번만' 연다(handledEditRef). 안 그러면 저장 후
-  //   detailEditMode 가 false 로 바뀌는 순간 useEffect 가 재실행돼(아직 URL 에 edit=1 잔존) 폼을
-  //   옛 데이터로 다시 여는 레이스 발생 → 깜빡임·2중 팝업·수정 전 내용 표시 (2026-06-05 사용자 보고).
-  //   edit 가 사라지면 ref 를 리셋해 다음 [수정] 요청은 정상 처리.
+  // ?edit=<nonce> 변화 감지 — 다른 페이지(홈·호실 등)의 상세 셸 [수정]이 여기로 올 때.
+  // ⚠️ 한 edit 요청당 폼을 '한 번만' 연다(handledEditRef). 안 그러면 저장 후 detailEditMode 가 false 로
+  //   바뀌는 순간 useEffect 가 재실행돼(아직 URL 에 edit 잔존) 폼을 옛 데이터로 다시 여는 레이스 발생
+  //   (2026-06-05 사용자 보고).
+  // 키는 'tenantId:nonce' 다(lib/editDoor shouldOpenEdit, 신고 352716da). 종전 키는 tenantId 뿐이라
+  //   저장 없이 닫은 뒤 URL 정리를 이 훅이 못 보면 ref 가 남아 다음 [수정]을 건너뛰었다. 이제 클릭마다
+  //   edit 값이 달라 다음 클릭은 늘 새 요청이다. 같은 화면 안의 [수정]은 아래 opener 가 내비게이션 없이 연다.
   const handledEditRef = useRef<string | null>(null)
   useEffect(() => {
     const tenantId = searchParams.get('tenantId')
-    const edit = searchParams.get('edit')
-    if (edit !== '1' || !tenantId) { handledEditRef.current = null; return }
-    if (handledEditRef.current === tenantId) return
-    const found = initialTenants.find(t => t.id === tenantId)
-    if (!found) return
-    handledEditRef.current = tenantId
+    const found = tenantId ? initialTenants.find(t => t.id === tenantId) : undefined
+    const d = shouldOpenEdit(handledEditRef.current, { id: tenantId, edit: searchParams.get('edit') }, !!found)
+    handledEditRef.current = d.key
+    if (!d.open) {
+      if (d.reason !== 'no-param') recordCrumb('action', `편집 문 건너뜀 tenant ${d.reason}`)
+      return
+    }
+    recordCrumb('action', '편집 문 열림 tenant')
+    setDetailTenant(found!); setDetailEditMode(true)
+    entityModal.close()
+  }, [searchParams, initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 같은 화면 안의 상세 셸 [수정] — 내비게이션 없이 폼을 바로 연다(lib/editDoor). 폼이 서면 셸을 닫는다.
+  // 목록에 없는 사람이면 false 를 돌려 셸이 주소 이동으로 폴백한다.
+  const tenantsRef = useRef(initialTenants)
+  useEffect(() => { tenantsRef.current = initialTenants }, [initialTenants])
+  useEffect(() => registerEditOpener('tenant', id => {
+    const found = tenantsRef.current.find(t => t.id === id)
+    if (!found) return false
     setDetailTenant(found); setDetailEditMode(true)
-  }, [searchParams, initialTenants])
+    entityModal.close()
+    return true
+  }), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {
@@ -1298,11 +1317,11 @@ export default function TenantClient({
     return true
   }
 
-  // URL ?edit=1·?tenantId 정리 — 안 지우면 저장/새로고침 후 edit 감지 useEffect 가 폼을 다시 염(깜빡·유지 버그).
+  // URL ?edit·?tenantId 정리 — 안 지우면 저장/새로고침 후 edit 감지 useEffect 가 폼을 다시 염(깜빡·유지 버그).
   // tenantId 가 사라지면 위 자동 오픈 훅은 openedTenantRef 만 비우고 끝난다(재오픈 없음) — 정리와 재오픈이
   // 서로를 부르는 고리가 되지 않는 지점이라 여기서 명시해 둔다.
   const clearTenantUrlParams = () => {
-    if (searchParams.get('edit') === '1' || searchParams.get('tenantId')) {
+    if (searchParams.get('edit') || searchParams.get('tenantId')) {
       const params = new URLSearchParams(searchParams.toString())
       params.delete('edit'); params.delete('tenantId')
       const qs = params.toString()

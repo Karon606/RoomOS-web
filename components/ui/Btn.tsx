@@ -31,8 +31,18 @@ const BASE = 'inline-flex items-center justify-center gap-1.5 font-medium transi
 // 버튼 클래스 단일 출처 — Btn 을 못 쓰는 자리(SendDocButton 처럼 className 만 받는 정본 컴포넌트,
 // 파일 input 을 감싸는 <label>)에서 §10 토큰을 손으로 베끼지 않게 한다. 손복사가 남으면 토큰을
 // 바꿀 때 그 자리만 뒤처진다(§10 "raw button 직접 작성 금지"의 실질 취지).
+//
+// 글자색 덧씌우기(2026-11-02, 신고 352716da 곁가지). 호출부가 className 으로 글자색(text-[var(--danger-fg)] 등)을
+// 주면 변형의 글자색을 뺀다. 둘을 한 요소에 같이 두면 어느 쪽이 이기는지는 className 순서가 아니라 생성 CSS
+// 차례가 정해, 상세 셸 발끝 '삭제'(ghost + --danger-fg)가 회색(--warm-mid)으로 그려졌다(§13 발끝 함정과 같은 꼴).
+// 크기 글자(text-xs, text-[13px])는 색이 아니라 건드리지 않는다.
+const TEXT_COLOR = /^text-\[(?:var\(|color:|#)/
 export function btnClass(variant: Variant = 'primary', size: Size = 'md', extra = ''): string {
-  return `${BASE} ${VARIANT_CLS[variant]} ${SIZE_CLS[size]} ${extra}`
+  const overridesColor = extra.split(/\s+/).some(t => TEXT_COLOR.test(t))
+  const variantCls = overridesColor
+    ? VARIANT_CLS[variant].split(' ').filter(t => !TEXT_COLOR.test(t)).join(' ')
+    : VARIANT_CLS[variant]
+  return `${BASE} ${variantCls} ${SIZE_CLS[size]} ${extra}`
 }
 
 export type BtnProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
