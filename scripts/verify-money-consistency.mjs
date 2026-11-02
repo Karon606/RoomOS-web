@@ -1802,7 +1802,12 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push('[소스] getMonthPaymentAggregates 가 발행일 창을 lib/kstDate 정본(kstMonthTsRange)으로 안 만든다 — UTC 창을 쓰면 KST 자정 경계 발행분이 전달로 떨어진다')
     }
     // 달 판정은 순수 함수 정본이 한다 — 화면·테스트·서버가 같은 식을 봐야 축이 갈리지 않는다.
-    if (!/paymentCardMonth\(/.test(aggFn[0]) || !/cashReceiptMonth\(/.test(aggFn[0])) {
+    // 카드 축은 수납 방법 필터 정본(lib/payMethodFilter aggregateMonthPayments)에 맡길 수 있다. 그때는 그 함수가 정본을 불러야 한다.
+    const payMethodLib = readFileSync('lib/payMethodFilter.ts', 'utf8')
+    const aggPay = payMethodLib.match(/export function aggregateMonthPayments[\s\S]*?\n}/)
+    const cardMonthViaCanon = /paymentCardMonth\(/.test(aggFn[0])
+      || (/aggregateMonthPayments\(/.test(aggFn[0]) && !!aggPay && /paymentCardMonth\(/.test(aggPay[0]))
+    if (!cardMonthViaCanon || !/cashReceiptMonth\(/.test(aggFn[0])) {
       violations.push('[소스] getMonthPaymentAggregates 가 축 판정 정본(paymentCardMonth·cashReceiptMonth)을 안 쓴다 — 판정 사본이 생기면 테스트가 지키는 것과 화면이 보는 것이 갈린다')
     }
     // 카드 봉인의 마지막 방어선 — 발행 줄에 카드가 섞이면 그 금액이 두 합계에 겹쳐 든다.
