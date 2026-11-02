@@ -4,7 +4,7 @@
 // 왜(신고 6ab4f868·a016642e, 2026-11-02). 배송비 행이 본품의 결제수단을 복사해 착불 5건이 모두 신용카드·미정산으로 태어났다.
 // 기본값(착불 = 계좌이체), '같은 수단' 의 뜻, 미기록 판정, 첫 수령 판정이 화면·서버·감지망에서 한 벌인지 본다.
 import {
-  SHIP_PAY_SAME, defaultShipPay, sameShipPayLabel, resolveShipPay, isCodShipPending, asksCodAtReceipt,
+  SHIP_PAY_SAME, shipTypeLabel, defaultShipPay, sameShipPayLabel, resolveShipPay, isCodShipPending, asksCodAtReceipt,
 } from '../lib/codShipping'
 import { settleStatusForNew } from '../lib/settleStatus'
 
@@ -57,6 +57,11 @@ eq('A2 하나 받은 뒤', asksCodAtReceipt({ shippingType: '착불' }, [r(false
 eq('A3 배송비 행이 이미 있음', asksCodAtReceipt({ shippingType: '착불' }, [r(false, false), r(true, false)]), false)
 eq('A4 선불', asksCodAtReceipt({ shippingType: '선불' }, [r(false, false)]), false)
 eq('A5 문자열 날짜도 받은 것', asksCodAtReceipt({ shippingType: '착불' }, [{ isShipping: false, receivedAt: '2026-11-01' }]), false)
+
+// T 결제구분 화면 라벨 · 값 '신용' 은 그대로, 보이는 글자만 '후불'
+eq('T1 신용은 후불', shipTypeLabel('신용'), '후불')
+eq('T2 선불·착불 그대로', [shipTypeLabel('선불'), shipTypeLabel('착불')], ['선불', '착불'])
+eq('T3 없음은 빈 글자', shipTypeLabel(null), '')
 
 console.log(`[착불 배송비 판정] 통과 ${pass} · 실패 ${fail}`)
 process.exit(fail > 0 ? 1 : 0)

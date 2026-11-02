@@ -60,8 +60,11 @@ export function asksCodAtReceipt(
 
 // ── 화면 문구 정본(등록 폼·수령 자리 셋·상세 줄이 같은 문장) ─────────────────────────
 export const SHIP_PAY_LABEL = '배송비 결제수단'
+// 배송비 결제구분의 화면 라벨(운영자 승인 2026-11-02). 저장 값 '신용'(후불)은 그대로다. 그 값을 정산 판정 정본(lib/settleStatus
+// isDeferredRow)과 카드 정산 조회·감지망이 읽어서 값까지 바꾸면 그 판정과 옛 행이 함께 갈린다. 바로 밑 '신용카드' 와 헷갈려 라벨만 '후불'.
+export const SHIP_TYPE_LABEL: Record<string, string> = { 선불: '선불', 착불: '착불', 신용: '후불' }
+export const shipTypeLabel = (v: string | null | undefined): string => (v ? (SHIP_TYPE_LABEL[v] ?? v) : '')
 export const SHIP_PAY_COD_CAPTION = '착불은 받을 때 따로 내는 경우가 많아 계좌이체로 두었습니다. 다르면 바꿔 주세요.'
-export const COD_AMOUNT_PLACEHOLDER = '배송비 (모르면 비워 두기)'
 export const COD_AMOUNT_CAPTION = '비워 두면 수령 확인할 때 적습니다.'
 export const COD_RECEIPT_LABEL = '착불 배송비는 얼마였나요? (선택)'
 export const COD_RECEIPT_CAPTION = '비워 두면 나중에 지출 상세 [수정]에서 적습니다.'

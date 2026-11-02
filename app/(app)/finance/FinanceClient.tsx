@@ -85,7 +85,7 @@ import { storedPlaceLabel } from '@/app/(app)/inventory/assets/storagePlace'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PayMethodField } from '@/components/finance/PayMethodField'
 import {
-  SHIP_PAY_SAME, SHIP_PAY_LABEL, SHIP_PAY_COD_CAPTION, COD_AMOUNT_PLACEHOLDER, COD_AMOUNT_CAPTION, COD_UNRECORDED,
+  SHIP_PAY_SAME, SHIP_PAY_LABEL, SHIP_PAY_COD_CAPTION, COD_AMOUNT_CAPTION, COD_UNRECORDED, SHIP_TYPE_LABEL, shipTypeLabel,
   defaultShipPay, sameShipPayLabel, isCodShipPending, type ShipPayChoice,
 } from '@/lib/codShipping'
 import { closeCodShipping, undoCloseCodShipping } from './shipPayActions'
@@ -116,7 +116,8 @@ import { askExpenseWorkLink } from '@/components/work/workLinkPrompt'
 
 // 배송비 결제 방식 세 칸(주문 묶기 창·등록 폼 합배송 공용). 세그먼트 정본이 받는 꼴이다.
 const SHIP_TYPE_OPTIONS = [
-  { value: '선불', label: '선불' }, { value: '착불', label: '착불' }, { value: '신용', label: '신용' },
+  // 라벨은 표시 정본(lib/codShipping SHIP_TYPE_LABEL), 값 '신용' 은 저장·정산 판정 그대로(운영자 승인 2026-11-02 '후불').
+  { value: '선불', label: SHIP_TYPE_LABEL['선불'] }, { value: '착불', label: SHIP_TYPE_LABEL['착불'] }, { value: '신용', label: SHIP_TYPE_LABEL['신용'] },
 ] as const satisfies readonly { value: '선불' | '착불' | '신용'; label: string }[]
 
 type FAcc = { brand: string; alias: string | null }
@@ -2903,7 +2904,7 @@ export default function FinanceClient({
     const s = orderSummaries.get(e.orderId)
     if (!s) return null
     const text = e.isShipping
-      ? `배송비${s.shippingType ? ` · ${s.shippingType}` : ''} · ${s.label}`
+      ? `배송비${s.shippingType ? ` · ${shipTypeLabel(s.shippingType)}` : ''} · ${s.label}`
       : `주문 · ${s.label}`
     return { text, title: `주문 ${s.code}${s.shippingMemo ? ` · ${s.shippingMemo}` : ''}` }
   }
@@ -3690,8 +3691,9 @@ export default function FinanceClient({
     void closeCodShipping(orderId).then(r => {
       if (!r.ok) { pushToast('error', r.error); return }
       setDetailExp(null); router.refresh()
+      const undo = r.undo
       pushToast('success', '배송비 없음으로 닫았습니다', {
-        action: { label: '적용취소', run: () => { void undoCloseCodShipping(orderId).then(u => {
+        action: { label: '적용취소', run: () => { void undoCloseCodShipping(undo).then(u => {
           if (u.ok) { pushToast('info', '배송비 미기록으로 되돌렸습니다'); router.refresh() }
           else pushToast('error', u.error)
         }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
@@ -5199,7 +5201,7 @@ export default function FinanceClient({
                     <DetailRow label="주문 묶음" value={
                       <span className="text-[var(--warm-dark)]">
                         {(() => { const s = orderSummaries.get(detailExp.order!.id); return s ? s.label : detailExp.order!.code })()}
-                        {detailExp.order.shippingType && <span className="ml-1 text-[var(--warm-muted)]">· 배송 {detailExp.order.shippingType}</span>}
+                        {detailExp.order.shippingType && <span className="ml-1 text-[var(--warm-muted)]">· 배송 {shipTypeLabel(detailExp.order.shippingType)}</span>}
                         {/* 착불인데 배송비 줄이 없다(받을 때 비워 뒀다). 사실만 말하고 아래 줄에서 닫는 길을 준다(신고 a016642e). */}
                         <span className="ml-1 whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)]">({detailExp.order.code})</span>
                         {/* 쇼핑몰 주문번호. 낱말 '쇼핑몰' 자리에 그 주문의 쇼핑몰 이름(하나로 모일 때만, lib/expenseChannel externalOrderCaption). */}
@@ -5490,16 +5492,28 @@ export default function FinanceClient({
                       배송비 라인 자체엔 둘 다 비노출(자기 자신을 묶는 모순 방지). */}
                   {!detailExp.isShipping && (
                   <>
+                  {(() => {
+                    // 배송비 선택은 등록 폼과 같은 세그먼트 문법(운영자 승인 2026-11-02). 종전 체크박스 둘('한 주문으로 묶기'·'이 지출 금액에 합산')은
+                    // 켜면 서로를 끄는 상호배타였다(§12 상호배타는 체크박스 금지). 상태 둘(editHasShipping·editShipSeparate)과 저장 경로는 그대로다.
+                    // '없음' 은 묶여 있던 주문이면 저장할 때 묶음을 푼다(종전 체크 해제와 같다).
+                    const mode: 'none' | 'include' | 'separate' = editHasShipping ? 'include' : editShipSeparate ? 'separate' : 'none'
+                    const pickMode = (m: typeof mode) => {
+                      setEditHasShipping(m === 'include'); setEditShipSeparate(m === 'separate')
+                      if (m !== 'include') setEditShipping(undefined)
+                    }
+                    return (
                   <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-[var(--warm-mid)]">주문 묶음 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
-                    <label className="flex items-center gap-2 min-h-[44px] -my-2 text-xs text-[var(--warm-dark)] cursor-pointer">
-                      <input type="checkbox" checked={editShipSeparate}
-                        onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
-                        className="w-[22px] h-[22px] shrink-0 accent-[var(--coral)]" />
-                      <span><strong>다른 지출과 한 주문으로 묶기</strong> · 같은 날 항목을 골라 한 주문번호로</span>
-                    </label>
-                    {editShipSeparate && detailExp && (
-                      <div className="pl-[30px] space-y-2">
+                    <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비·주문 묶음 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
+                    <SegmentedControl<typeof mode> size="sm" ariaLabel="배송비 기록 방식" value={mode} onChange={pickMode}
+                      options={[{ value: 'none', label: '없음' }, { value: 'include', label: '금액에 합산' }, { value: 'separate', label: '주문으로 묶기' }]} />
+                    {mode === 'include' && (
+                      <div className="space-y-1">
+                        <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비" />
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">총액에만 더하고 품목 단가에는 넣지 않습니다.</p>
+                      </div>
+                    )}
+                    {mode === 'separate' && detailExp && (
+                      <div className="space-y-2">
                         {/* **고를 항목이 먼저다.** 이게 이 기능의 본체이고 배송비는 딸린 선택지다. */}
                         {(() => {
                           const sibs = expenses.filter(e =>
@@ -5534,7 +5548,7 @@ export default function FinanceClient({
                         })()}
                         {/* 라벨 문법은 바로 아래 '배송비 결제수단' 과 같은 12px/500(§12, 웹디자이너 패스). */}
                         <p className="text-xs font-medium text-[var(--warm-mid)]">이 주문의 배송비</p>
-                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder={attachShipType === '착불' ? COD_AMOUNT_PLACEHOLDER : '배송비 (없으면 비워 두기)'} />
+                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 (없으면 비워 두기)" />
                         {/* 배송비 결제 방식. 셋 중 하나를 고르는 자리라 세그먼트 정본이다(코랄 채움 금지, §03·§23). 바꾸면 결제수단 기본값도 따라간다. */}
                         <SegmentedControl<typeof attachShipType> size="sm" ariaLabel="배송비 결제 방식" value={attachShipType}
                           onChange={t => { setAttachShipType(t); setAttachShipPay(defaultShipPay(t)) }} options={SHIP_TYPE_OPTIONS} />
@@ -5548,25 +5562,12 @@ export default function FinanceClient({
                           placeholder="배송 메모 (선택)" aria-label="배송 메모"
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                         {/* 방향을 가리키는 말('아래에서')을 뺀다 — 목록이 위로 올라와 문장이 틀렸었다. */}
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">고른 항목이 같은 주문번호로 묶입니다. 배송비를 적으면 배송비 1건도 함께 기록되고, 비워 두면 묶기만 됩니다. 체크를 풀고 저장하면 묶음이 해제됩니다.</p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">고른 항목이 같은 주문번호로 묶입니다. 배송비를 적으면 배송비 1건도 함께 기록되고, 비워 두면 묶기만 됩니다. '없음' 으로 바꾸고 저장하면 묶음이 해제됩니다.</p>
                       </div>
                     )}
                   </div>
-                  <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
-                    <label className="flex items-center gap-2 min-h-[44px] -my-2 text-xs text-[var(--warm-dark)] cursor-pointer">
-                      <input type="checkbox" checked={editHasShipping}
-                        onChange={e => { setEditHasShipping(e.target.checked); if (e.target.checked) setEditShipSeparate(false); else setEditShipping(undefined) }}
-                        className="w-[22px] h-[22px] shrink-0 accent-[var(--coral)]" />
-                      <span><strong>이 지출 금액에 합산</strong></span>
-                    </label>
-                    {editHasShipping && (
-                      <div className="pl-[30px] space-y-1">
-                        <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비" />
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">총액에만 더하고 품목 단가에는 넣지 않습니다.</p>
-                      </div>
-                    )}
-                  </div>
+                    )
+                  })()}
                   </>
                   )}
                   <div className="space-y-1.5">
@@ -5902,7 +5903,8 @@ export default function FinanceClient({
                   {mode === 'separate' && (
                     <div className="space-y-2">
                       <div className="space-y-1">
-                        <MoneyInput value={addOrderShipping} onChange={v => setAddOrderShipping(v || undefined)} placeholder={cod ? COD_AMOUNT_PLACEHOLDER : '배송비'} />
+                        {/* 착불이면 '비워 두면 수령 확인할 때 적습니다' 한 줄만(자리표시와 같은 말을 두 번 하지 않는다, 독립 검수 2026-11-02). */}
+                        <MoneyInput value={addOrderShipping} onChange={v => setAddOrderShipping(v || undefined)} placeholder="배송비" />
                         {cod && <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{COD_AMOUNT_CAPTION}</p>}
                       </div>
                       {/* 배송비 결제 방식. 위 주문 묶기 창과 같은 세그먼트 정본(코랄 채움 금지, §03·§23). 바꾸면 결제수단 기본값도 따라간다. */}

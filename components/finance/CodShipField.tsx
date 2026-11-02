@@ -15,11 +15,14 @@ import { COD_RECEIPT_LABEL, COD_RECEIPT_CAPTION, SHIP_PAY_LABEL } from '@/lib/co
 export type CodShipValue = { amount?: number; payMethod: string; accountId: string }
 export const codShipInitial = (): CodShipValue => ({ amount: undefined, payMethod: '계좌이체', accountId: '' })
 
-// 선택지는 한 화면에서 한 번만 읽는다(같은 목록을 칸마다 다시 부르지 않는다).
-let optsCache: Promise<ShipPayOptions> | null = null
+// 선택지 캐시는 영업장 키로 나눈다(독립 검수 2026-11-02). 영업장을 바꾼 뒤 남의 영업장 계정이 보이지 않게, 칸이 설 때마다 지금 영업장
+// 값을 서버에서 받고(같은 순간 여러 칸은 요청 하나로 합친다), 받은 영업장 키에 담아 같은 영업장 칸이 다시 설 때 먼저 그린다.
+const optsByProperty = new Map<string, ShipPayOptions>()
+let inflight: Promise<ShipPayOptions & { propertyId: string }> | null = null
+let lastPropertyId: string | null = null
 function loadOpts() {
-  if (!optsCache) optsCache = getShipPayOptions().catch(e => { optsCache = null; throw e })
-  return optsCache
+  if (!inflight) inflight = getShipPayOptions().finally(() => { inflight = null })
+  return inflight.then(o => { optsByProperty.set(o.propertyId, o); lastPropertyId = o.propertyId; return o })
 }
 
 export function CodShipField({ value, onChange, suffix, disabled = false, labelClassName }: {
@@ -32,20 +35,22 @@ export function CodShipField({ value, onChange, suffix, disabled = false, labelC
   labelClassName?: string
 }) {
   const uid = useId()
-  const [opts, setOpts] = useState<ShipPayOptions | null>(null)
+  const [opts, setOpts] = useState<ShipPayOptions | null>(() => (lastPropertyId ? optsByProperty.get(lastPropertyId) ?? null : null))
   useEffect(() => { let on = true; loadOpts().then(o => { if (on) setOpts(o) }).catch(() => {}); return () => { on = false } }, [])
   return (
     <div className="space-y-1.5">
       <p id={`${uid}-l`} className={labelClassName ?? 'text-xs font-medium text-[var(--warm-mid)]'}>
         {COD_RECEIPT_LABEL}{suffix && <span className="font-normal text-[var(--warm-muted)]"> {suffix}</span>}
       </p>
-      <MoneyInput value={value.amount} onChange={v => onChange({ ...value, amount: v || undefined })} placeholder="배송비" describedBy={`${uid}-c`} />
+      <MoneyInput value={value.amount} onChange={v => onChange({ ...value, amount: v || undefined })} placeholder="배송비"
+        labelledBy={`${uid}-l`} describedBy={`${uid}-c`} disabled={disabled} />
+      {/* 비워 두면 어떻게 되는지는 금액 칸 바로 아래 한 줄(그 칸에 붙은 말이다, 독립 검수 2026-11-02). */}
+      <p id={`${uid}-c`} className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{COD_RECEIPT_CAPTION}</p>
       {opts && (
         <PayMethodField label={SHIP_PAY_LABEL} methods={opts.methods} accounts={opts.accounts} disabled={disabled}
           payMethod={value.payMethod} accountId={value.accountId}
           onChange={(m, a) => onChange({ ...value, payMethod: m, accountId: a })} />
       )}
-      <p id={`${uid}-c`} className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{COD_RECEIPT_CAPTION}</p>
     </div>
   )
 }

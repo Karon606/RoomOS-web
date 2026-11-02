@@ -51,7 +51,8 @@ must(A, a, 'setAssetReceived', [
   [/planTargetOf\(/, 'S5 배정 대상 행을 정본(planTargetOf)으로 고르지 않는다'],
   [/assetAssignmentLog\.create\(\{ data: assignmentLogData\(/, 'S5 수령 배정이 배정 변경 이력을 같은 트랜잭션에 남기지 않는다'],
   [/kind: 'none', label: '미배정' \}/, "S5 이력 출발이 '미배정'이 아니다(정본 placeLabel 표기)"],
-  [/await prisma\.\$transaction\(ops\)/, 'S5 수령·배정·이력이 한 트랜잭션이 아니다'],
+  // 착불 배송비 관문(2026-11-02 검수)이 맨 앞에 서는 꼴도 같은 한 트랜잭션이다.
+  [/await prisma\.\$transaction\(ops\)|await prisma\.\$transaction\(\[\.\.\.codGuard, \.\.\.ops\]\)/, 'S5 수령·배정·이력이 한 트랜잭션이 아니다'],
   [/logIds: logIdx\.map/, 'S5 적용취소 토큰에 만든 이력 줄이 없다(되돌려도 이력이 남는다)'],
   [/cloneExpenseScalars\(e, propertyId, \{/, '부분 수령 분할이 복제 정본(cloneExpenseScalars)을 안 쓴다. 예정 호실 등 칸이 빠진다'],
 ])

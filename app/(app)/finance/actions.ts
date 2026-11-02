@@ -19,6 +19,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { settleStatusForEdit, settleStatusForNew, isDeferredRow } from '@/lib/settleStatus'
 import { shipPayForSave, shipSettle } from './shipPay'
+import { shipTypeLabel } from '@/lib/codShipping'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
@@ -1018,7 +1019,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
             date:               new Date(date),
             category,
             amount:             orderShipping,
-            detail:             `배송비${orderShippingType ? ` (${orderShippingType})` : ''}`,
+            detail:             `배송비${orderShippingType ? ` (${shipTypeLabel(orderShippingType)})` : ''}`,   // 화면 라벨(신용은 후불), 값은 주문 칸
             vendor:             vendor || null,
             vendorBizNo:        vendorBizNo,
             channel:            rowChannel(channel, vendor || null),   // 배송비 행도 같은 결제라 같은 쇼핑몰(머리 구매처 기준)
@@ -2580,7 +2581,7 @@ export async function attachShippingToOrder(input: {
       const shipCreatedAt = new Date(anchorMs + 1000)
       const shipData = {
         amount,
-        detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
+        detail:             `배송비${shipType ? ` (${shipTypeLabel(shipType)})` : ''}`,
         shippingMemo:       input.shippingMemo || null,
       }
       // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성. 주문 묶기로 배송비 줄이 둘 이상 모인 주문은 어느 줄을 고칠지

@@ -47,7 +47,7 @@ import { storageCandidates, STORE_NOT_FOUND } from './storagePlace'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 분할 복제 목록 정본(스키마 대조 그물 check-asset-disposal-wiring). 소모품 부분 수령도 같은 함수를 부른다.
 import { cloneExpenseScalars } from '../expenseClone'
-import { codAskOrderIds, codShipCreateData, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
+import { codAskOrderIds, codShipCreateData, codShipGuardOps, isCodShipGuardError, COD_SHIP_NOT_ASKED, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -469,7 +469,9 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     }
     const codIdx = codCreate?.ok && codCreate.data ? ops.length : -1
     if (codCreate?.ok && codCreate.data) ops.push(prisma.expense.create({ data: codCreate.data }))
-    const results = await prisma.$transaction(ops)
+    // 착불 배송비 줄을 만들면 맨 앞에 관문 둘(그 주문 잠금 + 잠근 뒤 다시 보기). 결과 차례는 관문 수만큼 밀린다.
+    const codGuard = codCreate?.ok && codCreate.data?.orderId ? codShipGuardOps(propertyId, codCreate.data.orderId as string, exps.map(e => e.id)) : []
+    const results = (await prisma.$transaction([...codGuard, ...ops]).catch(e => { if (isCodShipGuardError(e)) throw new Error(COD_SHIP_NOT_ASKED); throw e })).slice(codGuard.length)
     const codShipUndo = codIdx >= 0 ? codShipUndoOf(results[codIdx] as { id: string; orderId: string | null; amount: number; updatedAt: Date }) : null
     const body: AssetReceiptUndo = {
       v: 1,

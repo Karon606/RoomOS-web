@@ -55,7 +55,7 @@ import {
 import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, retireTrackedItemIfOrphan, readCategoryMove, categoryMoveSigningAvailable, CARD_MOVE_STALE, signCardSplit, readCardSplit, type CategoryMoveToken, type CardSplitUndo, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 // 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
 import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
-import { codAskOrderIds, codShipCreateData, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
+import { codAskOrderIds, codShipCreateData, codShipGuardOps, isCodShipGuardError, COD_SHIP_NOT_ASKED, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
 import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
@@ -4589,7 +4589,10 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       }
     }
 
+    // 착불 배송비 줄을 만들면 맨 앞에 관문 둘(그 주문 잠금 + 잠근 뒤 다시 보기). 동시에 받아도 줄이 하나다.
+    const codGuard = codCreate?.orderId ? codShipGuardOps(propertyId, codCreate.orderId as string, [expense.id]) : []
     const rcvTx = await prisma.$transaction([
+      ...codGuard,
       prisma.expense.update({
         where: { id: expense.id },
         data: {
@@ -4601,7 +4604,7 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       ...(autoCheck ? [prisma.stockCheck.create({ data: autoCheck })] : []),
       // 착불 배송비 줄도 같은 트랜잭션(수령만 되고 배송비가 빠지거나 그 반대가 없다).
       ...(codCreate ? [prisma.expense.create({ data: codCreate })] : []),
-    ])
+    ]).catch(e => { if (isCodShipGuardError(e)) throw new Error(COD_SHIP_NOT_ASKED); throw e })
     const codShipUndo = codCreate ? codShipUndoOf(rcvTx[rcvTx.length - 1] as { id: string; orderId: string | null; amount: number; updatedAt: Date }) : null
     if (codCreate) revalidatePath('/finance')
 

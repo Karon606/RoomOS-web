@@ -156,6 +156,31 @@ async function main() {
     eq('R4 줄은 남는다', (await shipsOf(COD_ORDER)).length, 1)
     await prisma.expense.deleteMany({ where: { orderId: COD_ORDER, isShipping: true } })
   }
+  // ── R5b 화면을 연 뒤 다른 수령이 먼저 배송비를 적었으면(동시 수령) 트랜잭션 안에서 다시 보고 거부한다 ─────────────
+  {
+    // 사전 판정은 통과하고 트랜잭션 직전에 배송비 줄이 생기는 경합을, 같은 주문 키 잠금 뒤 재확인이 막는지 본다.
+    const sp2 = await import('@/app/(app)/finance/shipPay')
+    const pre = await sp2.codAskOrderIds(P1, [COD_ORDER])
+    eq('R5b 사전 판정은 물을 주문', pre.has(COD_ORDER), true)
+    const ship = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-28T00:00:00Z'), amount: 4000, category: '소모품비', orderId: COD_ORDER, isShipping: true, excludeFromInventory: true } })
+    const guard = await prisma.$transaction([...sp2.codShipGuardOps(P1, COD_ORDER, [COD_ITEM]), prisma.expense.count({ where: { id: COD_ITEM } })]).then(() => 'passed', e => sp2.isCodShipGuardError(e) ? 'guarded' : String(e))
+    eq('R5b 줄이 이미 있으면 관문이 막는다', guard, 'guarded')
+    await prisma.expense.delete({ where: { id: ship.id } })
+    const guard2 = await prisma.$transaction([...sp2.codShipGuardOps(P1, COD_ORDER, [COD_ITEM]), prisma.expense.count({ where: { id: COD_ITEM } })]).then(() => 'passed', e => String(e))
+    eq('R5b 줄이 없으면 관문 통과', guard2, 'passed')
+    // 동시에 두 번 받기(같은 주문 두 행): 줄은 하나만 생긴다
+    const r1 = await fin.addExpense(fd({ ...head, amount: '6000', itemsJson: JSON.stringify([{ label: '동시A', qtyValue: '1', qtyUnit: '개', amount: 3000 }, { label: '동시B', qtyValue: '1', qtyUnit: '개', amount: 3000 }]),
+      orderShipping: '0', orderShippingType: '착불', orderShipPayMethod: '계좌이체', orderShipAccountId: '' }))
+    eq('R5b 두 품목 착불 등록 ok', r1.ok, true)
+    const a = await rowOf('동시A'), b = await rowOf('동시B')
+    const both = await Promise.all([
+      inv.confirmReceipt(a.id, undefined, undefined, undefined, { amount: 3000, payMethod: '현금', accountId: null }),
+      inv.confirmReceipt(b.id, undefined, undefined, undefined, { amount: 3000, payMethod: '현금', accountId: null }),
+    ])
+    // 하네스(PGlite 소켓 한 연결)에서 두 트랜잭션이 엇갈린 직후 첫 읽기가 늦게 보일 때가 있어 한 박자 쉬고 센다.
+    await new Promise(r => setTimeout(r, 100))
+    eq('R5b 동시 수령 · 배송비 줄 하나 · 하나는 거부', [await prisma.expense.count({ where: { orderId: a.orderId, isShipping: true } }), both.filter(x => x.ok).length], [1, 1])
+  }
   // ── R5 물을 주문이 아닌데 배송비가 오면 거부(아무것도 안 바뀐다) ───────────────────────────────────────
   {
     const a = await rowOf('선불품')
@@ -171,12 +196,17 @@ async function main() {
     eq('R6 부분 수령 적용취소 ok · 줄 없음', [u.ok, (await shipsOf(COD_ORDER)).length], [true, 0])
   }
 
+  const a5Order = (await rowOf('선불품')).orderId!
   // ── C1 '없었음' 으로 닫기와 적용취소 ───────────────────────────────────────────────────────────
   {
     const c = await sp.closeCodShipping(COD_ORDER)
     eq('C1 닫기 ok · 결제구분 비움', [c.ok, (await prisma.expenseOrder.findUnique({ where: { id: COD_ORDER } }))?.shippingType ?? null], [true, null])
     eq('C1 닫힌 주문은 수령 때 안 묻는다', (await computeInventoryOverview(P1)).flatMap(x => x.pendingPurchases).find(p => p.id === COD_ITEM)?.codAsk, false)
-    const u = await sp.undoCloseCodShipping(COD_ORDER)
+    // 토큰은 닫은 그 주문의 닫은 직후 모습이다. 다른 주문 id·다른 시각이면 거부(CAS, 독립 검수 2026-11-02).
+    const tok = c.ok ? c.undo : { orderId: COD_ORDER, closedAt: new Date().toISOString() }
+    eq('C1 다른 시각 토큰 거부', (await sp.undoCloseCodShipping({ ...tok, closedAt: new Date(Date.parse(tok.closedAt) - 1000).toISOString() })).ok, false)
+    eq('C1 다른 주문 토큰 거부', (await sp.undoCloseCodShipping({ ...tok, orderId: a5Order })).ok, false)
+    const u = await sp.undoCloseCodShipping(tok)
     eq('C1 적용취소 ok · 다시 착불', [u.ok, (await prisma.expenseOrder.findUnique({ where: { id: COD_ORDER } }))?.shippingType], [true, '착불'])
     g.__CR_FLOW_PID = P2
     eq('C2 남의 영업장은 못 닫는다', (await sp.closeCodShipping(COD_ORDER)).ok, false)

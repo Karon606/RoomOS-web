@@ -13,6 +13,10 @@
 //   ⓕ [수령 취소] 셋이 배송비 줄 조각을 넘긴다(소모품 전량·부분, 비품)
 //   ⓖ 상세가 '배송비 미기록' 을 말하고 '없었음' 으로 닫는 길과 그 적용취소가 있다
 //   ⓗ 주문 결제수단 갈림 그물(check-order-card-split)은 배송비 줄을 계속 뺀다(착불은 다른 것이 정상)
+//   ⓘ 수령 트랜잭션 맨 앞에 관문(그 주문 잠금 + 잠근 뒤 재확인)이 선다. 동시에 받아도 배송비 줄이 하나다(독립 검수 2026-11-02)
+//   ⓙ 지출 수정 폼 배송비 선택도 세그먼트(체크박스 금지), '없었음' 적용취소는 닫은 토큰(CAS)
+//   ⓚ 결제구분 '신용' 은 화면에서 '후불'(정본 shipTypeLabel), 저장 값과 정산 판정은 '신용' 그대로
+//   ⓛ 수령 자리 금액 칸은 라벨로 이름이 서고 막힘이 전달되며, 캡션은 금액 칸 바로 아래
 import { readFileSync } from 'node:fs'
 
 const read = p => readFileSync(p, 'utf8')
@@ -75,14 +79,28 @@ need('ⓕ 서버 수령 취소가 같은 트랜잭션에서 줄을 지운다', c
 
 // ⓖ
 need('ⓖ 상세가 배송비 미기록을 말한다', /codPendingOf\(detailExp\) && \(\s*<span[^>]*>\s*\{COD_UNRECORDED\}/.test(fclient))
-need('ⓖ 없었음으로 닫기와 적용취소', /closeCodShipping\(orderId\)/.test(fclient) && /undoCloseCodShipping\(orderId\)/.test(fclient))
+need('ⓖ 없었음으로 닫기와 적용취소', /closeCodShipping\(orderId\)/.test(fclient) && /undoCloseCodShipping\(undo\)/.test(fclient))
 
 // ⓗ
 need('ⓗ 주문 결제수단 갈림 그물은 배송비 줄을 뺀다', /orderId: \{ not: null \}, isShipping: false/.test(split))
+
+const shipPay = read('app/(app)/finance/shipPay.ts')
+const spa = read('app/(app)/finance/shipPayActions.ts')
+const cod = read('lib/codShipping.ts')
+const field = read('components/finance/CodShipField.tsx')
+need('ⓘ 관문이 주문 키로 잠그고 잠근 뒤 다시 본다', /pg_advisory_xact_lock\(hashtext\(\$\{'cod-ship:' \+ orderId\}\)\)/.test(shipPay) && /NOT EXISTS \(SELECT 1 FROM "expenses" s WHERE s\."orderId" = o\."id" AND s\."isShipping" = true\)/.test(shipPay))
+need('ⓘ 소모품 수령 트랜잭션 맨 앞에 관문', /prisma\.\$transaction\(\[\s*\.\.\.codGuard,/.test(inv))
+need('ⓘ 비품 수령 트랜잭션 맨 앞에 관문', /prisma\.\$transaction\(\[\.\.\.codGuard, \.\.\.ops\]\)/.test(aact))
+need('ⓙ 수정 폼에 배송비 체크박스가 없다', !/checked=\{editHasShipping\}/.test(fclient) && !/checked=\{editShipSeparate\}/.test(fclient) && /label: '주문으로 묶기'/.test(fclient))
+need('ⓙ 닫기 적용취소는 토큰 CAS', /updatedAt: at, expenses: \{ none: \{ isShipping: true \} \}/.test(spa))
+need('ⓚ 표시 라벨 정본', /신용: '후불'/.test(cod) && /label: SHIP_TYPE_LABEL\['신용'\]/.test(fclient))
+need('ⓚ 상세·목록이 표시 라벨을 쓴다', /배송 \{shipTypeLabel\(detailExp\.order\.shippingType\)\}/.test(fclient) && /\$\{shipTypeLabel\(s\.shippingType\)\}/.test(fclient) && !/· 배송 \{detailExp\.order\.shippingType\}/.test(fclient))
+need('ⓚ 저장 값 신용 그대로', /const SHIPPING_TYPES = \['선불', '착불', '신용'\] as const/.test(finance))
+need('ⓛ 금액 칸 이름·막힘·캡션 자리', /labelledBy=\{`\$\{uid\}-l`\} describedBy=\{`\$\{uid\}-c`\} disabled=\{disabled\}/.test(field) && field.indexOf('COD_RECEIPT_CAPTION}</p>') < field.indexOf('<PayMethodField'))
 
 if (fails.length) {
   console.error(`[착불 배송비 배선] 위반 ${fails.length}건`)
   for (const f of fails) console.error(`  ${f}`)
   process.exit(1)
 }
-console.log('[착불 배송비 배선] 축 ⓐ 배송비 줄 자기 수단 · ⓑ 착불 금액 없이 주문 · ⓒ 등록 폼 세그먼트·수단 칸 · ⓓ 수정 폼 묶기 수단·적용취소·날짜 · ⓔ 수령 자리 셋 · ⓕ 수령 취소 조각 · ⓖ 미기록·없었음 · ⓗ 갈림 그물 착불 예외 / 위반 0건')
+console.log('[착불 배송비 배선] 축 ⓐ 배송비 줄 자기 수단 · ⓑ 착불 금액 없이 주문 · ⓒ 등록 폼 세그먼트·수단 칸 · ⓓ 수정 폼 묶기 수단·적용취소·날짜 · ⓔ 수령 자리 셋 · ⓕ 수령 취소 조각 · ⓖ 미기록·없었음 · ⓗ 갈림 그물 착불 예외 · ⓘ 수령 관문 · ⓙ 수정 폼 세그먼트·닫기 CAS · ⓚ 후불 라벨 · ⓛ 금액 칸 이름 / 위반 0건')

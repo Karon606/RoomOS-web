@@ -13,7 +13,7 @@ import { effectivePayMethods } from '@/lib/payMethodOptions'
 
 export type ShipPayOptions = { methods: string[]; accounts: { id: string; type: string; brand: string; alias: string | null }[] }
 
-export async function getShipPayOptions(): Promise<ShipPayOptions> {
+export async function getShipPayOptions(): Promise<ShipPayOptions & { propertyId: string }> {
   await requireEdit()
   const { propertyId } = await requirePropertyAccess()
   const [prop, accounts] = await Promise.all([
@@ -24,6 +24,7 @@ export async function getShipPayOptions(): Promise<ShipPayOptions> {
     }),
   ])
   return {
+    propertyId,
     methods: effectivePayMethods(parseOptionList('paymentMethods', prop?.paymentMethods), accounts),
     accounts: accounts.map(a => ({ id: a.id, type: String(a.type), brand: a.brand, alias: a.alias })),
   }
@@ -35,7 +36,9 @@ const CLOSE_STALE = '그 사이 이 주문의 배송비가 바뀌었습니다. �
  * 미기록 착불을 '배송비 없었음' 으로 닫는다. 착불 결제구분을 비운다(배송비가 없던 주문). 지금도 착불이고 배송비 행이 없을 때만(CAS).
  * 되돌리면 다시 '착불 · 배송비 미기록' 이 된다.
  */
-export async function closeCodShipping(orderId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 닫기 적용취소 토큰. 닫은 그 주문이고 닫은 직후 그대로일 때만 되돌린다(갱신 시각 CAS, 독립 검수 2026-11-02).
+export type CodCloseUndo = { orderId: string; closedAt: string }
+export async function closeCodShipping(orderId: string): Promise<{ ok: true; undo: CodCloseUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
@@ -44,21 +47,24 @@ export async function closeCodShipping(orderId: string): Promise<{ ok: true } | 
       data: { shippingType: null },
     })
     if (r.count !== 1) return { ok: false, error: CLOSE_STALE }
+    const o = await prisma.expenseOrder.findFirst({ where: { id: orderId, propertyId }, select: { updatedAt: true } })
     revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/inventory/assets')
-    return { ok: true }
+    return { ok: true, undo: { orderId, closedAt: (o?.updatedAt ?? new Date()).toISOString() } }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
-/** '없었음' 의 적용취소. 그 뒤 결제구분을 다시 고르거나 배송비 행이 생겼으면 거부한다. */
-export async function undoCloseCodShipping(orderId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/** '없었음' 의 적용취소. 닫은 그 주문이 닫은 직후 그대로일 때만(갱신 시각 CAS). 그 뒤 결제구분을 다시 고르거나 배송비 행이 생겼으면 거부한다. */
+export async function undoCloseCodShipping(u: CodCloseUndo): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
+    const at = new Date(u?.closedAt ?? '')
+    if (typeof u?.orderId !== 'string' || Number.isNaN(at.getTime())) return { ok: false, error: CLOSE_STALE }
     const r = await prisma.expenseOrder.updateMany({
-      where: { id: orderId, propertyId, shippingType: null, expenses: { none: { isShipping: true } } },
+      where: { id: u.orderId, propertyId, shippingType: null, updatedAt: at, expenses: { none: { isShipping: true } } },
       data: { shippingType: '착불' },
     })
     if (r.count !== 1) return { ok: false, error: CLOSE_STALE }

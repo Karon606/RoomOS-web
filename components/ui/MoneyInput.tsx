@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 
 export function MoneyInput({
-  name, defaultValue, value, onChange, placeholder, describedBy
+  name, defaultValue, value, onChange, placeholder, describedBy, labelledBy, disabled
 }: {
   name?: string
   defaultValue?: number
@@ -12,6 +12,8 @@ export function MoneyInput({
   onChange?: (v: number) => void
   placeholder?: string
   describedBy?: string  // 칸 아래 안내 한 줄(WhyCaption)의 id. 읽기 보조기가 칸과 함께 읽는다(§27.8)
+  labelledBy?: string   // 칸 이름이 되는 라벨 요소 id(라벨이 <label for> 로 못 이어지는 자리)
+  disabled?: boolean
 }) {
   const init = value ?? defaultValue
   const [display, setDisplay] = useState(init ? init.toLocaleString() : '')
@@ -46,6 +48,8 @@ export function MoneyInput({
         onBlur={() => setFocused(false)}
         placeholder={placeholder ?? '0원'}
         aria-describedby={describedBy}
+        aria-labelledby={labelledBy}
+        disabled={disabled}
         className="mono tnum w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
       />
     </div>

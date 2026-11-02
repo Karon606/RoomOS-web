@@ -3,7 +3,7 @@
 // 지출 등록·주문 묶기(finance/actions), 소모품 수령(inventory/actions), 비품 수령(inventory/assets/actions)이 같은 판정을 탄다.
 // 순수 판정과 문구는 lib/codShipping, 미정산 판정은 lib/settleStatus 정본이다(여기서 다시 짓지 않는다).
 import prisma, { type PrismaDb } from '@/lib/prisma'
-import type { Prisma, SettleStatus } from '@prisma/client'
+import { Prisma, type SettleStatus } from '@prisma/client'
 import { accName, accountTypesFor } from '@/lib/payMethodOptions'
 import { resolveShipPay, asksCodAtReceipt, SHIP_PAY_SAME } from '@/lib/codShipping'
 import { settleStatusForNew } from '@/lib/settleStatus'
@@ -103,6 +103,30 @@ export async function codShipCreateData(
       excludeFromInventory: true,
     },
   }
+}
+
+/**
+ * 수령 트랜잭션 맨 앞에 넣는 관문 둘(배열 트랜잭션용). 화면을 연 뒤 같은 주문의 다른 수령이 먼저 배송비를 적었거나 본품을 받았으면
+ * 그 트랜잭션 전체를 실패시킨다(동시에 두 번 받으면 배송비 줄이 둘 생기던 틈, 독립 검수 2026-11-02).
+ *   1) 그 주문 키로 트랜잭션 잠금(pg_advisory_xact_lock). 같은 주문의 두 수령은 차례로 선다.
+ *   2) 잠근 뒤 다시 본다. 여전히 착불이고 배송비 줄이 없고 이번에 받는 행 말고 받은 본품이 없어야 한다. 아니면 0 으로 나눠 실패한다
+ *      (배열 트랜잭션은 결과로 분기할 수 없어 SQL 오류로 멈춘다). 부르는 쪽은 isCodShipGuardError 로 그 실패를 거부 문장으로 바꾼다.
+ */
+export function codShipGuardOps(propertyId: string, orderId: string, receivingIds: string[]): Prisma.PrismaPromise<unknown>[] {
+  return [
+    prisma.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'cod-ship:' + orderId}))`),
+    prisma.$queryRaw(Prisma.sql`
+      SELECT 1 / (CASE WHEN EXISTS (
+        SELECT 1 FROM "expense_orders" o
+        WHERE o."id" = ${orderId}::uuid AND o."propertyId" = ${propertyId}::uuid AND o."shippingType" = '착불'
+          AND NOT EXISTS (SELECT 1 FROM "expenses" s WHERE s."orderId" = o."id" AND s."isShipping" = true)
+          AND NOT EXISTS (SELECT 1 FROM "expenses" r WHERE r."orderId" = o."id" AND r."isShipping" = false
+                          AND r."receivedAt" IS NOT NULL AND NOT (r."id" = ANY(${receivingIds}::uuid[])))
+      ) THEN 1 ELSE 0 END) AS ok`),
+  ]
+}
+export function isCodShipGuardError(err: unknown): boolean {
+  return /division by zero/i.test(String((err as Error)?.message ?? err))
 }
 
 export function codShipUndoOf(row: { id: string; orderId: string | null; amount: number; updatedAt: Date }): CodShipUndo | null {
