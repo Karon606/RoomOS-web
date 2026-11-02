@@ -1,4 +1,4 @@
-// 보관 위치 트리 쓰기 액션의 배선 감지망 — 여덟 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
+// 보관 위치 트리 쓰기 액션의 배선 감지망 — 아홉 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 소스 가드인가. 이동·생성·삭제·순서의 거부 규칙은 DB 가 있어야 실행되는 서버 액션이라
 // 순수 진리표(scripts/test-location-tree.ts)로 덮을 수 없다. 순수 판정 함수는 이미 그 진리표가
@@ -24,6 +24,10 @@
 //     부모에 놓은 뒤 그 층에서 짧은 옛 이름(`상단`)을 먼저 세우려 하면, 이름을 늘린 이유였던 그
 //     형제와 겹친다. 순서를 뒤집으면 깊어지는 방향이 깨진다. 그래서 되돌리기도 한 트랜잭션이고
 //     규칙은 **최종 상태에 대해서만** 본다.
+//   ⓘ 품목 위치 숨김(옮기고 숨기기, 2026-10-28 1단계)이 **원자**이고 되돌림이 안전한가. (1) 이관 점검이 숨김·창고 승격과
+//     같은 트랜잭션 배열 안에서 선다(종전엔 따로 만들어 뒤가 실패하면 재고만 옮겨진 반쪽이 남았다). (2) 창고 승격 값이
+//     정본 hubAfterClose 를 지난다(새 창고가 영업장 기본 창고면 null). (3) 적용취소가 이관 점검의 기대값(만든 시각·행 수·
+//     보충 마커)을 대조해 얹힌 점검을 지우지 않는다. (4) 화면이 그 두 액션을 부르고, 수령 위치 고르기가 숨긴 위치를 거른다.
 //
 // 실행: node scripts/check-location-actions-wiring.mjs
 import { readFileSync } from 'node:fs'
@@ -245,9 +249,40 @@ for (const fn of [
     '모달 안에 reasonOf 사본이 되살아났다')
 }
 
+// ⓘ 품목 위치 숨김 — 원자 · 허브 승격 정본 · 적용취소 기대값 · 화면 배선.
+{
+  const b = block('export async function closeItemLocation', 'export async function reopenItemLocation')
+  must(b, '숨김', /ops\.push\(prisma\.stockCheck\.create\(/, '이관 점검이 트랜잭션 배열(ops) 안에서 서지 않는다')
+  mustNot(b, '숨김', /await prisma\.stockCheck\.create\(/, '이관 점검을 트랜잭션 밖에서 따로 만든다 — 뒤 쓰기가 실패하면 재고만 옮겨진 반쪽이 남는다')
+  must(b, '숨김', /await prisma\.\$transaction\(ops\)/, '이관·숨김·창고 승격이 한 트랜잭션이 아니다')
+  must(b, '숨김', /hubAfterClose\(newHub, /, '창고 승격 값이 정본(hubAfterClose)을 안 지난다 — 기본 창고를 따르던 품목이 명시값에 묶인다')
+  must(b, '숨김', /transferExpect: created \?/, '적용취소 기대값(transferExpect)을 안 돌려준다')
+  must(b, '숨김', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  const u = block('export async function undoCloseItemLocation', 'export async function getHiddenLocationMoves')
+  must(u, '숨김 적용취소', /c\.createdAt\.getTime\(\) === exp\.createdAtMs/, '이관 점검 만든 시각을 대조하지 않는다')
+  must(u, '숨김 적용취소', /c\.locationBreakdown\.length === exp\.rowCount/, '이관 점검 행 수를 대조하지 않는다 — 머지된 실측까지 지운다')
+  must(u, '숨김 적용취소', /markerSum - exp\.markerSum/, '보충 마커 합을 대조하지 않는다')
+  must(u, '숨김 적용취소', /stockCheck\.count\(\{ where: \{ trackedItemId: undo\.trackedItemId, id: \{ not: undo\.transferCheckId \}, createdAt: \{ gt: c\.createdAt \} \} \}\)/, '이관 뒤에 선 점검을 세지 않는다 — 같은 날 절대값 점검 뒤 되돌리면 숨기기 전으로 복귀가 거짓이 된다')
+  must(u, '숨김 적용취소', /if \(!same \|\| later > 0\)/, '이관 뒤 점검이 있어도 되돌린다')
+  must(u, '숨김 적용취소', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  const modal = block('function HideLocationModal(', 'function DisposalForm(', ui)
+  must(modal, '숨김 창', /closeItemLocation\(\{/, '옮기고 숨기기 창이 서버 액션을 안 부른다')
+  must(modal, '숨김 창', /undoCloseItemLocation\(undo\)/, '토스트 적용취소가 숨김 적용취소 액션을 안 부른다')
+  const sec = block('function LocationAssignSection(', 'function HideLocationModal(', ui)
+  must(sec, '보관 위치 칩', /label: '옮기고 숨기기'/, '재고 남은 칩 캡션에 옮기고 숨기기 링크가 없다')
+  // 옮길 위치가 없을 때의 문장은 서버 거부와 한 벌이다(독립 검수 차단 1). 손으로 적은 사본이 되살아나면 거짓 안내가 돌아온다.
+  must(sec, '보관 위치 칩', /stockedHideDenied\(l\.pathName, left, false\)/, '옮길 위치가 없을 때의 캡션이 서버 거부 정본(stockedHideDenied)이 아니다')
+  mustNot(sec, '보관 위치 칩', /옮길 다른 위치를 켜고 저장하면 됩니다/, '끈 채로 저장하라는 거짓 안내가 되살아났다 — 그대로 하면 서버가 거부한다')
+  must(block('export async function setItemLocations', 'export async function batchSetItemLocations'), '위치 떼기 거부', /stockedHideDenied\(locName\(m\.storageLocationId\), '재고가', /, '서버 거부 문장이 캡션 정본(stockedHideDenied)과 한 벌이 아니다')
+  // 수령 위치 필터는 상세 모달이 숨긴 위치 집합을 실어 보내야 산다(독립 검수 권고 2). prop 이 빠지면 필터가 빈 집합으로 조용히 꺼진다.
+  must(block('function DetailModal(', 'function SettingsForm(', ui), '수령 위치', /hiddenLocationIds=\{row\.hiddenLocationIds\} checkKind=/, '상세 모달이 이력 행에 숨긴 위치 집합을 안 넘긴다 — 수령 위치 필터가 꺼진다')
+  mustNot(sec, '보관 위치 칩', /closeItemLocation\(/, '저장 버튼 자리에서 숨김을 직접 부른다 — 저장은 늘 저장만(§27.1)')
+  must(ui, '수령 위치', /itemLocations\.filter\(loc => !\(hiddenLocationIds \?\? \[\]\)\.includes\(loc\.id\)/, '수령 위치 고르기가 숨긴 위치를 안 거른다')
+}
+
 if (violations.length > 0) {
   for (const v of violations) console.error(`FAIL  ${v}`)
   console.error(`\n위치 트리 쓰기 배선 위반 ${violations.length}건. 판정 정본은 lib/locationTree, 진리표는 scripts/test-location-tree.ts.`)
   process.exit(1)
 }
-console.log('OK    위치 트리 쓰기 여덟 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치·원자 적용취소)이 배선돼 있다.')
+console.log('OK    위치 트리 쓰기 아홉 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치·원자 적용취소·품목 위치 숨김)이 배선돼 있다.')

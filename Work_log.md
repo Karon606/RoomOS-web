@@ -6937,3 +6937,10 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
   권고 반영: 수정 폼 첫 실행 채움 없음, 호실 수정 followers 단기 제외(일괄 편집은 종전대로), 적용 뒤 새 수납 기록이 있으면 적용취소 거부, 확인창에 기록 없는 지난 달 수·함께 바뀌는 계약 수, 토스트 첫 줄에 축.
   §16 진입점 2·3 없음과 choiceDialog 줄바꿈은 knowledge/domain-billing 에 알고 받아들인 한계로 적음.
 - 운영자 확인 대기: 602호 홍은주 계약 3만 원을 15만 원으로 둘지(배포 뒤 호실 수정 폼 '계약에 적용', 기록 없는 달부터, 적용취소 가능).
+
+## 2026-10-28 보관 위치 닫기 1단계 · 품목별 옮기고 숨기기 (운영자 승인 '추천대로', 스키마 없음)
+- 품목 설정 '보관 위치' 칩에서 재고 남은 칩을 끄면 WhyCaption '{경로}에 20kg이 남아 있습니다 · 옮기고 숨기기'. 링크는 Modal sm '남은 재고를 옮기고 숨깁니다'(상세 모달의 형제), 열린 위치 칩 · 창고 승격 캡션 · 토스트 [적용취소]. '숨긴 위치' 캡션 '10월 28일 숨김 · 20kg은 603호 창고로 옮겨짐'. 수령 위치 고르기에서 숨긴 빈 위치 제외.
+- 서버 closeItemLocation: 이관 점검을 트랜잭션 안으로, 창고 승격 값 정본(lib/locationClose hubAfterClose, 기본 창고면 null), 적용취소 기대값(transferExpect) 대조. getHiddenLocationMoves 신설(읽기).
+- 감지망 check-location-actions-wiring ⓘ, 진리표 test-location-close, 통합 test-location-close-flow H 절(verify:fast). 가이드 §22, knowledge/domain-inventory '옮기고 숨기기' 절(백업 누락 메모 해소 확인).
+- 독립 검수 반영(같은 날): 옮길 위치가 없을 때 캡션이 '끈 채로 저장' 을 안내해 그대로 하면 거부되던 것을 '이 칸은 켠 채로 다른 위치를 켜고 저장한 뒤 여기서 옮기기' 로, 서버 거부와 한 함수(stockedHideDenied). 적용취소는 이관 뒤 이 품목에 점검이 하나라도 서면 거부. 그물 ⓘ 에 상세 모달의 hiddenLocationIds 전달. 기록만 둔 두 가지는 context-notes.
+

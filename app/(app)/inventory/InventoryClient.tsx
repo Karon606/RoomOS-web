@@ -35,9 +35,12 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useCanEditScope } from '@/components/RoleContext'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
+import { WhyCaption } from '@/components/ui/WhyCaption'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
+// 수량 뒤 조사('20kg이')는 단위 읽기로 고른다(정본 lib/locationClose).
+import { withQtyParticle, stockedHideDenied } from '@/lib/locationClose'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { classifyChecks, checkMemoText, type CheckKind } from '@/lib/stockCheckKind'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias, CHECK_GUIDE_PANEL, LOC_PANEL_EMPTY_HINT } from './constants'
@@ -82,6 +85,9 @@ import {
   setItemHub,
   setItemLocations,
   reopenItemLocation,
+  closeItemLocation,
+  undoCloseItemLocation,
+  getHiddenLocationMoves,
   batchSetItemLocations,
   saveStockCheckDraft,
   deleteStockCheckDraft,
@@ -2197,6 +2203,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [transferOpen, setTransferOpen] = useState(false)   // 품목별 위치 이동(신고 0d911b19, 명칭 97839062)
+  // 품목 설정 '보관 위치' 칩을 끈 위치에 재고가 남았을 때 여는 '옮기고 숨기기' 창(운영자 승인 2026-10-28 1단계).
+  // 설정 폼은 상세 모달 안에 있으므로 창은 위치 이동 창처럼 상세 모달의 형제로 띄운다(check-no-nested-overlay).
+  const [hideLocId, setHideLocId] = useState<string | null>(null)
 
   const handleDeleteItem = async () => {
     if (!(await confirmDialog({ title: '이 품목을 삭제할까요?', message: '지출·점검·입수 기록이 하나도 없는 품목만 삭제됩니다(잘못 생성된 품목 정리용). 기록이 있으면 숨김을 사용하세요.', level: 'danger', confirmLabel: '삭제' }))) return
@@ -2423,7 +2432,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
           onDirty={markDirty} onUndone={refreshAfterUndo} />
       ) : mode === 'settings' ? (
         <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }}
-          onDirty={markDirty}
+          onDirty={markDirty} onHideLocation={setHideLocId}
           onGone={() => { onChange(); onClose() }} />
       ) : (
         <>
@@ -2473,7 +2482,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} cardQtyUnit={data.item.qtyUnit} itemLocations={data.item.locations} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} onGone={() => { onChange(); onClose() }} loadingId={loadingId} />)}
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} cardQtyUnit={data.item.qtyUnit} itemLocations={data.item.locations} hiddenLocationIds={row.hiddenLocationIds} checkKind={e.type === 'check' ? checkKinds.get(e.id) : undefined} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} onGone={() => { onChange(); onClose() }} loadingId={loadingId} />)}
                   </ul>
                 )}
               </div>
@@ -2509,6 +2518,11 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
           onClose={() => setTransferOpen(false)}
           onDone={() => { setTransferOpen(false); reload(); onChange() }} />
       </ErrorBoundary>
+    )}
+    {hideLocId && (
+      <HideLocationModal row={row} locationId={hideLocId}
+        onClose={() => setHideLocId(null)}
+        onDone={() => { setHideLocId(null); reload(); onChange() }} />
     )}
     </>
   )
@@ -2734,8 +2748,10 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
   )
 }
 
-function SettingsForm({ row, onCancel, onDone, onGone, onDirty }: {
+function SettingsForm({ row, onCancel, onDone, onGone, onDirty, onHideLocation }: {
   row: InventoryRow; onCancel: () => void; onDone: () => void
+  /** 재고가 남은 보관 위치의 '옮기고 숨기기' 창을 연다(상세 모달이 형제로 띄운다). */
+  onHideLocation?: (locationId: string) => void
   /** 입력 이벤트 없이 값이 바뀌는 자리(추적 단위 버튼)를 상세 모달에 알린다(§12 dirty) */
   onDirty?: () => void
   /** 이 카드 자체가 합쳐져 사라진 경우 — 삭제된 id 를 다시 조회하지 않도록 상세를 닫는다 */
@@ -2879,7 +2895,7 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty }: {
         </p>
       </div>
       {/* 위치 할당 섹션 */}
-      <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
+      <LocationAssignSection row={row} onHideLocation={onHideLocation} />
       {/* 병합 섹션 — 같은 카테고리 다른 카드로 통합 */}
       <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} onGone={onGone} />
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
@@ -2957,11 +2973,13 @@ const TL_GLYPH_OUT = <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
 const TL_CARD = 'rounded-md border border-[var(--warm-border)] px-3 py-2'
 const TL_CAPTION = 'text-[0.6875rem] text-[var(--warm-muted)] break-keep [overflow-wrap:anywhere]'
 
-function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, itemLocations, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, onGone, loadingId }: {
+function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, itemLocations, hiddenLocationIds, checkKind, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, onGone, loadingId }: {
   entry: TimelineEntry; trackedItemId: string; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   // 품목 카드의 수량 단위. 구매 수량이 비어 도착 수량을 받을 때 칸 단위로 쓴다(서버 fillQtyUnit 과 같은 순서).
   cardQtyUnit?: string | null
   itemLocations: StorageLocationItem[]
+  // 숨긴(비어 있는) 위치 — 수령 위치 고르기에서 뺀다. 카드 칩과 같은 서버 술어(overview)라 재고가 든 숨긴 위치는 남는다.
+  hiddenLocationIds?: string[]
   // 점검 기록의 종류(lib/stockCheckKind) — 직전 점검과 견줘야 가릴 수 있어 이력 전체를 본 상세 모달이 넘긴다.
   checkKind?: CheckKind
   onDeleteCheck: (id: string) => void
@@ -3294,7 +3312,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             {/* 위치는 정본 행 버튼이고 창고는 낱말(Badge '창고')로 가른다 — 종전 honey 면만으로 가르면 색을 못 보는 사람에게는
                 어느 칸이 창고인지 단서가 없다(WCAG 1.4.1). 줄 사이 gap-y-3 — 행 버튼 히트(44px)가 윗줄과 덜 겹치게. */}
             <div className="flex flex-wrap gap-x-1.5 gap-y-3">
-              {itemLocations.map(loc => (
+              {itemLocations.filter(loc => !(hiddenLocationIds ?? []).includes(loc.id)).map(loc => (
                 <RowActionBtn key={loc.id} disabled={pending} onClick={() => confirmAt(loc.id)}>
                   {loc.pathName}{loc.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고</Badge>}
                 </RowActionBtn>
@@ -8108,9 +8126,12 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
 }
 
 // ── 품목별 위치 할당 (SettingsForm 내 서브 섹션)
-function LocationAssignSection({ trackedItemId, initialLocations }: {
-  trackedItemId: string; initialLocations: StorageLocationItem[]
+function LocationAssignSection({ row, onHideLocation }: {
+  row: InventoryRow
+  onHideLocation?: (locationId: string) => void
 }) {
+  const trackedItemId = row.id
+  const initialLocations = row.locations
   const router = useRouter()
   // 3-상태: 열린 링크(선택 토글) / 숨긴 링크(다시 표시) / 미연결(선택 토글). closedAt 으로 구분.
   const openIds = initialLocations.filter(l => l.closedAt == null).map(l => l.id)
@@ -8120,11 +8141,37 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
   const [pending, setPending]     = useState(false)
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState('')
+  // 숨긴 위치마다 그때 옮긴 양과 간 곳(숨김 이관 기록). 캡션 '10월 28일 숨김 · 20kg은 603호 창고로 옮겨짐'.
+  const [hiddenMoves, setHiddenMoves] = useState<Map<string, { qty: number; toPathName: string }>>(new Map())
+  const unit = rowUnit(row)
+  const qtyAt = (id: string) => Math.max(0, row.currentLocationBreakdown.find(b => b.locationId === id)?.qty ?? 0)
 
   useEffect(() => { getStorageLocations().then(setAllLocs) }, [])
+  const closedKey = closedLocs.map(l => `${l.id}:${l.closedAt}`).join(',')
+  useEffect(() => {
+    if (!closedKey) return   // 숨긴 위치가 없으면 캡션도 없다(지도는 숨긴 위치 행에서만 읽힌다)
+    void getHiddenLocationMoves(trackedItemId).then(r => {
+      if (r.ok) setHiddenMoves(new Map(r.moves.map(m => [m.locationId, { qty: m.qty, toPathName: m.toPathName }])))
+    })
+  }, [trackedItemId, closedKey])
+  // 서버에서 다시 열린 위치(숨김 적용취소 · 다시 표시)는 선택에도 넣는다. state 는 refresh 로 재초기화되지 않아,
+  // 안 넣으면 되살린 위치가 다음 '위치 저장' 때 빠진 것으로 분류돼 조용히 재숨김된다(17aebf8 과 같은 클래스).
+  // 렌더 중 이전 값과 견주어 맞춘다(effect 안 setState 는 한 번 더 그린다).
+  const openKey = openIds.join(',')
+  const [prevOpenKey, setPrevOpenKey] = useState(openKey)
+  if (prevOpenKey !== openKey) {
+    const prev = new Set(prevOpenKey ? prevOpenKey.split(',') : [])
+    setPrevOpenKey(openKey)
+    const reopened = openIds.filter(id => !prev.has(id))
+    if (reopened.length > 0) setSelected(s => { const n = new Set(s); reopened.forEach(id => n.add(id)); return n })
+  }
 
   if (allLocs.length === 0) return null
   const closedIds = new Set(closedLocs.map(l => l.id))
+  // 칩을 끈 위치 중 재고가 남은 곳 — 저장하면 서버가 거부하므로 그 자리에서 '옮기고 숨기기' 로 잇는다(결정 13).
+  // 저장 버튼은 늘 저장만 한다(§27.1 혼용 회피). 옮길 열린 위치가 없으면 링크 대신 푸는 법을 말한다(§27.8 ⑤).
+  const stocked = initialLocations.filter(l => l.closedAt == null && !selected.has(l.id) && qtyAt(l.id) >= 0.001)
+  const moveTargets = (id: string) => initialLocations.filter(l => l.closedAt == null && l.id !== id)
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -8182,6 +8229,19 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
           </button>
         ))}
       </div>
+      {stocked.map(l => {
+        const left = withQtyParticle(fmtQty(qtyAt(l.id), unit), '이/가')
+        return moveTargets(l.id).length > 0 && onHideLocation ? (
+          <WhyCaption key={l.id} id={`loc-stocked-${l.id}`} action={{ label: '옮기고 숨기기', onClick: () => onHideLocation(l.id) }}>
+            {l.pathName}에 {left} 남아 있습니다
+          </WhyCaption>
+        ) : (
+          // 옮길 열린 위치가 없을 때. 문장은 서버 거부와 한 벌(stockedHideDenied). 이 칸은 켠 채로 저장해야 한다.
+          <WhyCaption key={l.id} id={`loc-stocked-${l.id}`}>
+            {stockedHideDenied(l.pathName, left, false)}
+          </WhyCaption>
+        )
+      })}
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <Btn
         type="button"
@@ -8200,17 +8260,100 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
       {closedLocs.length > 0 && (
         <div className="pt-1.5 border-t border-[var(--warm-border)]/40 space-y-1">
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">숨긴 위치</p>
-          {closedLocs.map(loc => (
-            <div key={loc.id} className="flex items-center justify-between gap-2">
-              <span className="text-xs text-[var(--warm-muted)]">{loc.pathName}</span>
-              <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
-            </div>
-          ))}
+          {closedLocs.map(loc => {
+            const mv = hiddenMoves.get(loc.id)
+            return (
+              <div key={loc.id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="block text-xs text-[var(--warm-muted)]">{loc.pathName}</span>
+                  {/* 낱말 단위로 꺾는다(break-keep). 320px 에서 '옮겨/짐' 처럼 한 낱말이 두 줄로 갈렸다(스크린샷 확인). */}
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
+                    {fmtMonthDayKor(loc.closedAt)} 숨김{mv && <> · {withQtyParticle(fmtQty(mv.qty, unit), '은/는')} {withParticle(mv.toPathName, '으로/로')} 옮겨짐</>}
+                  </span>
+                </div>
+                <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
+                  className="shrink-0 text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
+              </div>
+            )
+          })}
         </div>
       )}
       <p className="text-[0.65625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다. 비어 있는 위치는 선택을 해제하면 화면에서 숨겨지고, 지난 기록은 그대로 남습니다.</p>
     </div>
+  )
+}
+
+// ── 남은 재고를 옮기고 숨기기(운영자 승인 2026-10-28 1단계). 품목 설정 '보관 위치' 칩을 끈 위치에 재고가 남았을 때
+//    그 자리 캡션의 링크로 연다. 목적지는 이 품목의 열린 보관 위치(서버 closeItemLocation 이 받는 범위와 같다).
+//    칩은 위치 이동 창의 위치 칩과 같은 문법이다(코랄 채움 없음, 40px, 이름 · 잔량). 이관·숨김·창고 승격은 서버 한
+//    트랜잭션이고, 토스트 [적용취소] 는 이관 점검이 만든 그대로일 때만 되돌린다(undoCloseItemLocation 기대값 비교).
+function HideLocationModal({ row, locationId, onClose, onDone }: {
+  row: InventoryRow
+  locationId: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const unit = rowUnit(row)
+  const qtyAt = (id: string) => Math.max(0, row.currentLocationBreakdown.find(b => b.locationId === id)?.qty ?? 0)
+  const target = row.locations.find(l => l.id === locationId) ?? null
+  const targets = row.locations.filter(l => l.closedAt == null && l.id !== locationId)
+  const [toId, setToId] = useState(targets.length === 1 ? targets[0].id : '')
+  const [busy, setBusy] = useState(false)
+  const reasonId = useId()
+  if (!target) return null
+  const qtyText = fmtQty(qtyAt(locationId), unit)
+
+  const chip = (on: boolean) =>
+    `min-h-[40px] px-3 rounded-sm ring-1 text-sm font-medium transition-colors ${
+      on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+         : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
+
+  const submit = async () => {
+    if (!toId || busy) return
+    setBusy(true)
+    const release = trackSave()
+    try {
+      const res = await closeItemLocation({ trackedItemId: row.id, storageLocationId: locationId, moveToLocationId: toId })
+      if (!res.ok) { pushToast('error', res.error); return }
+      const undo = res.undo
+      const moved = res.moved
+      pushToast('success', `${withParticle(target.pathName, '을/를')} 숨겼습니다`, {
+        ...(moved ? { detail: `${row.label} ${fmtQty(moved.qty, unit)} · ${withParticle(moved.toPathName, '으로/로')} 이동` } : {}),
+        ...(undo ? { action: { label: '적용취소', run: () => { void undoCloseItemLocation(undo).then(r => {
+          if (r.ok) { pushToast('info', '위치 숨김을 적용취소했습니다 · 숨기기 전으로 복귀'); onDone() }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } } } : {}),
+      })
+      onDone()
+    } finally { release(); setBusy(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="남은 재고를 옮기고 숨깁니다" width="sm" dirty={toId !== '' && targets.length > 1}
+      footer={
+        <ModalFooterActions onCancel={onClose}>
+          <Btn variant="primary" onClick={submit} disabled={busy} reason={!toId ? reasonId : undefined}>
+            {busy ? '처리 중…' : '옮기고 숨기기'}
+          </Btn>
+        </ModalFooterActions>
+      }>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">{target.pathName}의 {row.label} {withQtyParticle(qtyText, '을/를')} 어디로 옮길까요?</label>
+          <div className="flex flex-wrap gap-1.5">
+            {targets.map(l => (
+              <button key={l.id} type="button" aria-pressed={toId === l.id} className={chip(toId === l.id)} onClick={() => setToId(l.id)}>
+                {l.pathName}{l.isHub ? ' (창고)' : ''} · {fmtQty(qtyAt(l.id), unit)}
+              </button>
+            ))}
+          </div>
+          {target.isHub && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">옮긴 위치가 이 품목의 새 창고가 됩니다</p>
+          )}
+        </div>
+        {!toId && <WhyCaption id={reasonId}>옮길 위치를 고르면 숨길 수 있습니다</WhyCaption>}
+      </div>
+    </Modal>
   )
 }
 
