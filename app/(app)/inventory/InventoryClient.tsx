@@ -629,10 +629,6 @@ function fmtUnitPrice(v: number): string {
   return `${(Math.round(v * 100) / 100).toLocaleString()}원`
 }
 
-// 제품 표기 날짜(가이드 §22). 'YYYY-MM-DD' 를 올해면 'MM.DD', 해가 다르면 'YYYY.MM.DD'. 점으로 잇는 것만 fmtDateDot 과 같고, 올해면 연도를 뺀다.
-function fmtMixDate(ymd: string): string {
-  return ymd.slice(0, 4) === kstYmdStr().slice(0, 4) ? ymd.slice(5).replace('-', '.') : ymd.replace(/-/g, '.')
-}
 // 섞였을 때 상세 추정 한 줄(가이드 §22). 남아 있을 제품이 둘 이상일 때만 선다. 수량 표기는 카드와 같은 fmtQty 다.
 function shelfEstimateText(mix: MadeMix, unit: string | null): string | null {
   if (mix.onShelf.length < 2) return null
@@ -1611,16 +1607,17 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           )}
         </div>
       </div>
-      {/* 구매한 제품(가이드 §22 제품 표기). 최근 12개월, 많이 산 순 최대 3줄 + '외 N종'. 브랜드별 단가는 이 자리에만 둔다(결정 D).
-          단가 단위는 위 '평균 단가' 와 같은 priceUnit 이다. 원문은 자르지 않고 낱말 단위로 줄을 바꾼다. */}
+      {/* 구매한 제품(가이드 §22 제품 표기). 최근 12개월, 많이 산 순(횟수, 같으면 최근) 최대 3줄 + '외 N종'. 브랜드별 단가는 이 자리에만 둔다(결정 D).
+          단가는 위 '평균 단가' 와 같은 꼴 `590원/봉`(fmtUnitPrice + /priceUnit)이고, 날짜는 같은 펼침의 '최근 점검' 과 같은 정본 fmtDate(YYYY.MM.DD)다.
+          한 카드 안에서 단가·날짜 꼴이 둘이면 이질감이다(독립 검수 차단 1). 원문은 자르지 않고 낱말 단위로 줄을 바꾼다. */}
       {row.productMix.history.length > 0 && (
         <div className="pt-1.5 border-t border-[var(--warm-border)]/60">
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">구매한 제품 (최근 12개월)</p>
           <ul className="space-y-0.5">
             {row.productMix.history.slice(0, 3).map(h => (
               <li key={h.key} className="text-[0.6875rem] text-[var(--warm-mid)] tabular-nums break-keep [overflow-wrap:anywhere]">
-                {/* 토막(횟수·마지막·단가)은 덩이째 줄을 바꾼다. '봉당' 과 '590원' 이 갈라지지 않게. 원문만 낱말 단위로 접힌다. */}
-                {[h.text, `${h.count}회`, `마지막 ${fmtMixDate(h.lastDate)}`, h.unitPrice != null ? `${priceUnit ? `${priceUnit}당 ` : ''}${fmtUnitPrice(h.unitPrice)}` : '']
+                {/* 토막(횟수·마지막·단가)은 덩이째 줄을 바꾼다. 단가 숫자와 단위가 갈라지지 않게. 원문만 낱말 단위로 접힌다. */}
+                {[h.text, `${h.count}회`, `마지막 ${fmtDate(h.lastDate)}`, h.unitPrice != null ? `${fmtUnitPrice(h.unitPrice)}${priceUnit ? `/${priceUnit}` : ''}` : '']
                   .filter(Boolean).map((t, i) => <Fragment key={i}>{i > 0 && ' · '}{i === 0 ? t : <span className="whitespace-nowrap">{t}</span>}</Fragment>)}
               </li>
             ))}
@@ -2049,7 +2046,7 @@ function DetailViewSummary({ row, hubPicker, lastKind, ghost = false }: {
             <span className={label}>{g('제품')}</span>
             <span className={`${value} [overflow-wrap:anywhere]`}>
               {/* 줄이 바뀌면 날짜 덩이만 내려간다. 가운뎃점은 앞 제품명에 붙는다(줄이 점으로 시작하지 않게, 독립 웹디자이너 패스). */}
-              {g(row.productMix.last.text)}<span className="text-[var(--warm-muted)]">{g(' · ')}</span><span className="whitespace-nowrap text-[var(--warm-muted)]">{g(`${fmtMixDate(row.productMix.last.receivedOn)} 수령`)}</span>
+              {g(row.productMix.last.text)}<span className="text-[var(--warm-muted)]">{g(' · ')}</span><span className="whitespace-nowrap text-[var(--warm-muted)]">{g(`${fmtDate(row.productMix.last.receivedOn)} 수령`)}</span>
               {est && <span className="mt-0.5 block text-xs text-[var(--warm-mid)]">{g(est)}</span>}
             </span>
           </div>
