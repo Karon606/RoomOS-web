@@ -337,18 +337,23 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       onClose(); router.refresh()
     })
   }
-  // 다른 페이지의 편집 폼으로 넘기는 문 — **목적지가 설 때까지 이 창을 닫지 않는다**.
+  // 다른 페이지의 편집 폼으로 넘기는 문 — 주소가 바뀔 때까지 이 창을 뼈대로 세워 둔다.
   //
   // 종전에는 push 직후 바로 닫아서, 목적지 페이지가 그려지기 전까지 아무것도 없는 화면이
   // 잠깐 보였다. 운영자 지적(2026-08-26) — "상세정보 창이 사라졌다가 조금 후에 수정 창이 떠.
   // 잠깐 사라지는 창 때문에 뭔가 잘못 눌렀나? 싶은 불안감이 생겨."
   //
-  // 전환(startTransition) 중에는 React 가 이 창을 그대로 세워 두므로, 전환이 끝난 뒤에 닫으면
-  // 화면이 끊기지 않는다. 목적지 폼이 서면 그 페이지가 이 창을 닫는다(entityModal.close).
+  // 실제 동작(2026-11-02 독립 검수 R3 로 주석을 동작에 맞췄다). 이 창은 셋 중 먼저 오는 것에 닫힌다.
+  //   ① 주소가 바뀌는 순간 — Provider 의 pathname effect 가 스택을 비운다. 목적지에 loading.tsx 가 있어 그 뼈대가
+  //      먼저 커밋되면 이 창은 **폼보다 먼저** 닫히고, 폼은 목적지 훅(shouldOpenEdit)이 페이지가 서는 대로 연다.
+  //   ② 전환(startTransition)이 끝날 때 — 아래 isPending effect.
+  //   ③ 상한 8초 — 전환이 끝나지 않아도 창이 갇히지 않게 하는 안전망. 그동안은 뼈대(opening)가 '여는 중'을 말한다.
+  // 목적지 훅의 entityModal.close() 는 ①②가 이미 닫은 뒤라 대개 할 일이 없다(같은 화면 제자리 열기에서만 실제로 닫는다).
+  // 폼이 설 때까지 이 창을 붙잡아 두는 쪽(설계 의도)은 ①을 건드려야 해 보류했다. 그러려면 주소가 바뀐 뒤에도 이 창이
+  // 새 페이지 위에 남는 길을 열어야 하고, 목적지가 대상을 못 찾으면 8초 동안 남의 페이지 위에 뼈대가 선다.
   //
-  // 상한은 길게 둔다(2026-11-02, 신고 352716da). 종전 1.5초 상한은 콜드 스타트처럼 전환이 늦을 때
-  // 폼이 서기 전에 이 창부터 닫아, [수정]을 누르면 창이 튕겨 나가는 것으로 보였다. 상한은 창이
-  // 영영 갇히지 않게 하는 안전망일 뿐이고, 그동안은 뼈대(opening)가 '여는 중'을 말한다.
+  // 상한을 늘린 이유(2026-11-02, 신고 352716da). 종전 1.5초 상한은 콜드 스타트처럼 전환이 늦을 때 주소가 바뀌기도 전에
+  // 이 창부터 닫아, [수정]을 누르면 창이 튕겨 나가는 것으로 보였다.
   const NAV_CLOSE_CAP_MS = 8000
   const navClosing = useRef(false)
   const [opening, setOpening] = useState(false)
@@ -375,7 +380,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     onClose()
   }, [isPending, onClose])
 
-  // 편집 문 — 이 화면에 그 편집 폼이 있으면 내비게이션 없이 바로 연다(lib/editDoor, 폼을 연 페이지가 이 창을 닫는다).
+  // 편집 문 — 이 화면에 그 편집 폼이 있으면 내비게이션 없이 바로 연다(lib/editDoor, 폼을 연 opener 가 이 창을 닫는다).
   // 없으면 그 페이지로 간다. 이때 edit 값은 클릭마다 새 nonce 라 같은 대상을 다시 눌러도 목적지가 새 요청으로 본다.
   const openEditDoor = (kind: EditDoorKind, id: string) => {
     if (openEditInPlace(kind, id)) { recordCrumb('action', `편집 문 제자리 ${kind}`); return }

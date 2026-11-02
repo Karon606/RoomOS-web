@@ -862,7 +862,7 @@ export default function TenantClient({
   // colWidths 변경 시 ref 동기화
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
 
-  // URL 파라미터 — /tenants?tenantId=xxx → 셸 열기, &edit=1 → 자체 편집 폼(페이지 종속) 열기.
+  // URL 파라미터 — /tenants?tenantId=xxx → 셸 열기, &edit=<nonce> → 자체 편집 폼(페이지 종속) 열기(lib/editDoor).
   // Phase 2.3c (2026-05-30): 상세 팝업은 전역 Prism 셸로 마이그레이션. 편집 폼만 페이지에 잔존.
   //
   // deps 는 아래 edit 훅과 같다. mount 1회(deps=[])로 두면 **이미 /tenants 에 있는 상태**에서 종 알림이

@@ -180,10 +180,24 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   eq('대표 행 묶음은 미납', s.roomGroup.get('room-415'), 'unpaid')
   eq('키 출처는 미납 행(9/5): 8/20 뒤, 10/8 앞', s.rows.map(r => r.id), ['523', '415a', '415b', '409'])
   eq('머리 뒤집기도 같은 키', order([first, late, a, b], false, '2026-10', { unpaid: true }), ['409', '415a', '415b', '523'])
-  // 같은 묶음 행이 둘이면 기본 방향 키가 앞선 행이 대표다(방향과 무관)
+  // 같은 묶음 행이 둘이면 그 묶음의 지금 순서로 앞선 행이 대표다
   const two = [unpaid('416', '25', '2026-10', { id: '416a' }), unpaid('416', '2', '2026-10', { id: '416b' }), unpaid('409', '8', '2026-10', { id: '409' })]
   eq('같은 묶음 둘이면 더 오래된 키', order(two, false), ['416a', '416b', '409'])
-  eq('같은 묶음 둘 머리 뒤집기', order(two, false, '2026-10', { unpaid: true }), ['409', '416a', '416b'])
+  // 뒤집으면 대표도 그 순서로 고른다(최근 미납 순이면 더 늦은 기한 10/25 가 대표, 독립 검수 R5)
+  eq('같은 묶음 둘 머리 뒤집기(대표는 더 늦은 기한)', order(two, false, '2026-10', { unpaid: true }), ['416a', '416b', '409'])
+  // 완납 최근 납부 순이면 그 방에서 가장 늦게 낸 행이 대표다(독립 검수 R5). 종전처럼 가장 이른 날(10/3)을 고르면 412(10/15) 뒤로 밀린다.
+  const paidTwo = [paid('418', '2026-10-03', { id: '418a' }), paid('418', '2026-10-20', { id: '418b' }), paid('412', '2026-10-15', { id: '412' })]
+  eq('완납 대표 행은 최근 순이면 가장 늦은 날', order(paidTwo, false), ['418a', '418b', '412'])
+  eq('완납 대표 행은 뒤집으면 가장 이른 날', order(paidTwo, false, '2026-10', { paid: true }), ['418a', '418b', '412'])
+  const paidTwo2 = [paid('418', '2026-10-03', { id: '418a' }), paid('418', '2026-10-12', { id: '418b' }), paid('412', '2026-10-08', { id: '412' })]
+  eq('완납 대표 행 최근 순(10/12 > 10/8)', order(paidTwo2, false), ['418a', '418b', '412'])
+  eq('완납 대표 행 뒤집기(10/3 < 10/8)', order(paidTwo2, false, '2026-10', { paid: true }), ['418a', '418b', '412'])
+  const paidTwo3 = [paid('418', '2026-10-03', { id: '418a' }), paid('418', '2026-10-06', { id: '418b' }), paid('412', '2026-10-05', { id: '412' })]
+  eq('완납 대표 행 최근 순(10/6 > 10/5)', order(paidTwo3, false), ['418a', '418b', '412'])
+  eq('완납 대표 행 뒤집기(10/3 < 10/5)', order(paidTwo3, false, '2026-10', { paid: true }), ['418a', '418b', '412'])
+  const paidTwo4 = [paid('418', '2026-10-03', { id: '418a' }), paid('418', '2026-10-04', { id: '418b' }), paid('412', '2026-10-05', { id: '412' })]
+  eq('완납 대표 행 최근 순(10/4 < 10/5 라 412 먼저)', order(paidTwo4, false), ['412', '418a', '418b'])
+  eq('완납 대표 행 뒤집기(10/3 < 10/5 라 418 먼저)', order(paidTwo4, false, '2026-10', { paid: true }), ['418a', '418b', '412'])
 }
 
 // ── 14. 519형: 퇴실 완료 청구 없음 + 입실 예약이면 청구 없음 꼬리, 서버 순서 그대로 ──
@@ -279,7 +293,7 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
     for (const r of input) byRoom.set(r.roomId, [...(byRoom.get(r.roomId) ?? []), r])
     const serverOrder = [...byRoom.values()].flat()
     const A = run(serverOrder, false), B = run(serverOrder, true), C = run(serverOrder, false, '2026-10', ALL_FLIPPED)
-    const blocks = (res: typeof A) => {
+    const blocks = (res: typeof A, flips: GroupFlips = {}) => {
       const seen: { id: string; g: StatusGroup; key: string | null; roomNo: string }[] = []
       let prev = ''
       for (const r of res.rows) {
@@ -288,12 +302,18 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
         const g = res.roomGroup.get(r.roomId)!
         const roomRows = res.rows.filter(x => x.roomId === r.roomId)
         const best = roomRows.map(x => ({ g: paymentStatusGroup(x, '2026-10', TODAY), x })).filter(o => o.g === g)
-          .map(o => statusSortKey(o.x, g, '2026-10')).sort((p, q) => (p == null ? 1 : q == null ? -1 : p < q ? -1 : p > q ? 1 : 0))[0] ?? null
+          .map(o => statusSortKey(o.x, g, '2026-10')).sort((p, q) => {
+            if (p == null) return q == null ? 0 : 1
+            if (q == null) return -1
+            const desc = (g === 'paid') !== !!flips[g as 'unpaid' | 'awaiting' | 'paid']
+            const c = p < q ? -1 : p > q ? 1 : 0
+            return desc ? -c : c
+          })[0] ?? null
         seen.push({ id: r.roomId, g, key: best, roomNo: r.roomNo })
       }
       return seen
     }
-    const a = blocks(A), b = blocks(B), c = blocks(C)
+    const a = blocks(A), b = blocks(B), c = blocks(C, ALL_FLIPPED)
     const tail = (xs: typeof a) => xs.filter(x => TAIL.includes(x.g)).map(x => x.id)
     const inGroup = (xs: typeof a, g: StatusGroup) => xs.filter(x => x.g === g)
     // 꼬리는 셋 다 같다
@@ -310,12 +330,17 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
         if (wrong) violations++
         if (p.key === q.key && p.roomNo.localeCompare(q.roomNo, 'ko', { numeric: true }) > 0) violations++
       }
-      // 머리 뒤집기는 키 있는 방의 키 수열을 정확히 뒤집고, 동률은 여전히 호실 오름
+      // 머리 뒤집기는 그 묶음 안 순서를 반대 방향으로 세운다(대표 행도 그 방향으로 고른다, 독립 검수 R5). 동률은 여전히 호실 오름.
+      // 방마다 행이 하나면 키 수열이 정확히 뒤집힌다.
       const keyedC = gc.filter(x => x.key != null)
-      if (JSON.stringify(keyedA.map(x => x.key).reverse()) !== JSON.stringify(keyedC.map(x => x.key))) violations++
       for (let i = 1; i < keyedC.length; i++) {
-        if (keyedC[i].key === keyedC[i - 1].key && keyedC[i - 1].roomNo.localeCompare(keyedC[i].roomNo, 'ko', { numeric: true }) > 0) violations++
+        const p = keyedC[i - 1], q = keyedC[i]
+        const wrong = g === 'paid' ? p.key! > q.key! : p.key! < q.key!
+        if (wrong) violations++
+        if (p.key === q.key && p.roomNo.localeCompare(q.roomNo, 'ko', { numeric: true }) > 0) violations++
       }
+      const singleRow = gc.every(x => (byRoom.get(x.id) ?? []).length === 1)
+      if (singleRow && JSON.stringify(keyedA.map(x => x.key).reverse()) !== JSON.stringify(keyedC.map(x => x.key))) violations++
       // 키 없는 방은 셋 다 자기 묶음 끝에 같은 순서로
       const nullsA = ga.filter(x => x.key == null), nullsC = gc.filter(x => x.key == null)
       if (JSON.stringify(nullsA.map(x => x.id)) !== JSON.stringify(nullsC.map(x => x.id))) violations++
@@ -379,6 +404,8 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
     ok('카드·표 둘 다 같은 함수', count(rc, 'groupOrderControl(head') === 2)
     ok('표 머리 꼬리 글자는 종전 굵기, 표에서는 44px 상자를 접지 않는다', rc.includes('groupOrderControl(head, true)') && ctl.includes("table ? 'font-semibold ' : ''") && ctl.includes('sm:my-0 sm:min-h-0'))
   }
+  ok('정렬 기억 읽기는 하나씩 try 로 감싼다(한 읽기가 던져도 다음 읽기는 돈다, 독립 검수 R6)',
+    /try \{\n\s*const k = localStorage\.getItem\(SORTKEY_KEY\)[\s\S]{0,120}\} catch \{\}\n\s*try \{\n\s*const d = localStorage\.getItem\(SORTDIR_KEY\)[\s\S]{0,100}\} catch \{\}/.test(rc))
   ok('묶음 뒤집기 기억 새 키·try/catch', rc.includes("const GROUPDIR_KEY = 'stayeum_rooms_groupdir'")
     && rc.includes('try { setGroupFlips(parseGroupFlips(localStorage.getItem(GROUPDIR_KEY))) } catch {}')
     && rc.includes('try { localStorage.setItem(GROUPDIR_KEY, JSON.stringify(next)) } catch {}'))

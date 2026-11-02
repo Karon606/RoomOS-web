@@ -10,6 +10,8 @@
 //     상세 창을 닫는다(종 알림의 openEntityModal 과 같은 모듈 pub/sub 문법).
 //  2) 다른 페이지 — push 하되 edit 값을 클릭마다 다르게(nonce) 싣고, 목적지 훅은 'id:nonce' 를 키로 본다.
 //     그러면 정리 신호를 놓쳐도 다음 클릭은 늘 새 요청이다.
+//     이 갈래에서 상세 창은 주소가 바뀌는 순간(또는 전환이 끝날 때) 닫히고, 폼은 목적지 페이지가 서는 대로 열린다
+//     (EntityModal navigateThenClose 주석). 목적지 훅의 셸 닫기는 이미 닫힌 뒤라 대개 할 일이 없다.
 
 export type EditDoorKind = 'tenant' | 'room'
 

@@ -416,10 +416,15 @@ export default function RoomsClient({
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   useEffect(() => {
-    const k = localStorage.getItem(SORTKEY_KEY)
-    if (k && SORTKEY_VALUES.includes(k as SortKey)) setSortKey(k as SortKey)
-    const d = localStorage.getItem(SORTDIR_KEY)
-    if (d === 'asc' || d === 'desc') setSortDir(d)
+    // 읽기마다 따로 감싼다. 저장소가 막힌 창(사생활 보호 모드 등)에서 한 읽기가 던지면 같은 effect 의 다음 읽기까지 멈춘다(독립 검수 R6).
+    try {
+      const k = localStorage.getItem(SORTKEY_KEY)
+      if (k && SORTKEY_VALUES.includes(k as SortKey)) setSortKey(k as SortKey)
+    } catch {}
+    try {
+      const d = localStorage.getItem(SORTDIR_KEY)
+      if (d === 'asc' || d === 'desc') setSortDir(d)
+    } catch {}
     try { setGroupFlips(parseGroupFlips(localStorage.getItem(GROUPDIR_KEY))) } catch {}
   }, [])
   // 묶음 머리 순서 글자로 뒤집은 묶음. 하이드레이션을 위해 빈 값으로 시작해 마운트 뒤 복원한다(위 두 값과 같은 문법).

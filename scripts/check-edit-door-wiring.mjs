@@ -61,7 +61,17 @@ if (!/edit=\$\{n\}/.test(door) || !/editNonce\(\)/.test(door)) errs.push('ⓐ li
 // ⓑ 목적지 훅
 for (const p of DESTS) {
   const src = strip(readFileSync(p, 'utf8'))
-  if (!/shouldOpenEdit\(/.test(src)) errs.push(`ⓑ ${p} 목적지 훅이 shouldOpenEdit 로 판정하지 않는다`)
+  // 존재만이 아니라 인자를 본다(독립 검수 R2). edit 자리에는 URL 의 edit 값이 그대로 가야 한다 — 고정값을 넘기면 키가 다시
+  // 'id:고정값' 이 되어 정리 신호를 놓친 다음 클릭을 또 건너뛴다. 판정 키(d.key)를 ref 에 되돌려 쓰는지도 본다.
+  const call = src.match(/const d = shouldOpenEdit\((\w+)\.current, \{ id: (\w+), edit(?:: ([^}]+?))? \}, !!found\)/)
+  if (!call) errs.push(`ⓑ ${p} 목적지 훅이 shouldOpenEdit(ref.current, { id, edit }, !!found) 꼴로 판정하지 않는다`)
+  else {
+    const [, ref, , editArg = 'edit'] = call
+    const editOk = editArg.trim() === "searchParams.get('edit')"
+      || (/^\w+$/.test(editArg.trim()) && new RegExp(`const ${editArg.trim()} = searchParams\\.get\\('edit'\\)\\s*(\\n|;)`).test(src))
+    if (!editOk) errs.push(`ⓑ ${p} shouldOpenEdit 의 edit 인자가 URL 의 edit 값이 아니다 :: ${editArg.trim()}`)
+    if (!new RegExp(`${ref}\\.current = d\\.key`).test(src)) errs.push(`ⓑ ${p} 판정 키(d.key)를 ${ref} 에 되돌려 쓰지 않는다`)
+  }
   if (!/registerEditOpener\(/.test(src)) errs.push(`ⓑ ${p} 제자리 opener(registerEditOpener)가 없다`)
   if (/get\('edit'\)\s*[!=]==?\s*'1'/.test(src)) errs.push(`ⓑ ${p} edit 을 고정값 '1' 과 견준다`)
 }

@@ -259,14 +259,19 @@ export function sortRowsByPaymentStatus<T extends PaymentStatusRow>(
     if (room) room.rows.push(r)
     else rooms.set(r.roomId, { id: r.roomId, roomNo: r.roomNo, first: i, rows: [r], group: 'reserved', key: null })
   })
+  // 묶음 안 순서가 키 내림인가(완납 기본은 최근 납부 순, 머리에서 뒤집으면 반대).
+  const keyDesc = (g: StatusGroup) => isBodyGroup(g) && BODY_KEY_DESC[g] !== !!flips[g]
+  // 키 비교를 그 묶음의 지금 순서로. 키 없는 쪽은 어느 순서든 뒤다.
+  const cmpInGroup = (g: StatusGroup, a: string | null, b: string | null) =>
+    a != null && b != null && keyDesc(g) ? -cmpKeyNullLast(a, b) : cmpKeyNullLast(a, b)
   for (const room of rooms.values()) {
-    // 가장 급한 묶음의 행 중 키가 가장 이른 행이 그 방을 대표한다(같으면 서버 순서 앞쪽).
-    // 대표를 순서와 무관하게 고르므로 머리에서 뒤집은 묶음은 기본 순서를 정확히 뒤집은 것이 된다.
+    // 가장 급한 묶음의 행 중 **그 묶음의 지금 순서로** 가장 앞선 행이 그 방을 대표한다(같으면 서버 순서 앞쪽).
+    // 완납 최근 납부 순이면 가장 늦게 낸 행이 대표다(독립 검수 R5, 종전에는 방향과 무관하게 가장 이른 날을 골랐다).
     let best: { rank: number; key: string | null } | null = null
     for (const r of room.rows) {
       const g = GROUP_OF_KIND[paymentBadgeKind(r, targetMonth, today)]
       const cand = { rank: URGENCY.indexOf(g), key: statusSortKey(r, g, targetMonth) }
-      if (!best || cand.rank < best.rank || (cand.rank === best.rank && cmpKeyNullLast(cand.key, best.key) < 0)) best = cand
+      if (!best || cand.rank < best.rank || (cand.rank === best.rank && cmpInGroup(g, cand.key, best.key) < 0)) best = cand
     }
     room.group = URGENCY[best!.rank]
     room.key = best!.key
@@ -279,9 +284,7 @@ export function sortRowsByPaymentStatus<T extends PaymentStatusRow>(
   const sortedRooms = [...rooms.values()].sort((a, b) => {
     const ra = rankOf(a.group), rb = rankOf(b.group)
     if (ra !== rb) return ra - rb
-    let c = 0
-    if (a.key == null || b.key == null) c = cmpKeyNullLast(a.key, b.key)          // 키 없는 행은 양방향 모두 끝
-    else { c = cmpKeyNullLast(a.key, b.key); if (isBodyGroup(a.group) && BODY_KEY_DESC[a.group] !== !!flips[a.group]) c = -c }
+    let c = cmpInGroup(a.group, a.key, b.key)                                     // 키 없는 행은 양방향 모두 끝
     if (c === 0) c = a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })     // 동률은 방향 무관 호실 오름차순
     if (c === 0) c = a.first - b.first
     return c
