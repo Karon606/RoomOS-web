@@ -59,6 +59,7 @@ import {
   isBodyGroup, statusGroupFlipLabel, parseGroupFlips, type GroupFlips, type BodyGroup,
 } from '@/lib/roomsStatusSort'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { PAY_METHOD_FILTER_OPTIONS, rowHasMethodPay, methodPayLine, type MethodPay, type MethodTotal } from '@/lib/payMethodFilter'
 
 // 뷰 전환 탭(v2.0 §25) — URL ?tab= 값과 같은 문자열이다. 홈 KPI 딥링크가 이 값으로 들어온다.
 type ViewTabId = 'rooms' | 'income' | 'deposit' | 'receipt'
@@ -104,6 +105,8 @@ type RoomStatus = {
   lastPayDate: string | null
   // 그 달 몫을 받은 날(서버 표시 전용). 완납 묶음 정렬 키이자 완납 보조줄 날짜다(lib/roomsStatusSort).
   viewMonthPaidAt?: string | null
+  // 이 달(입금일 축)에 받은 이용료 건(서버 표시 전용). 수납 방법 필터의 거름·보조줄이 읽는다(lib/payMethodFilter).
+  methodPays?: MethodPay[]
   nextDueDate: string | null
   nextDueAmount: number
   expectedMoveOut: string | null
@@ -377,7 +380,7 @@ export default function RoomsClient({
   myRole: string
   incomes: Income[]
   incomeCategories: string[]
-  payAggregates: { cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }
+  payAggregates: { cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number; byMethod: Record<string, MethodTotal> }
   // 홈 예상 수입과의 다리 — 이 화면 청구액엔 안 잡히고 홈에는 잡히는 항(서버 계산 정본, 표시 전용)
   reservedExpected: number
   checkedOutRecognized: number
@@ -408,6 +411,8 @@ export default function RoomsClient({
   const [dueDayFilter, setDueDayFilter]   = useState<'' | DueDayBucket>('')
   const [rentMinFilter, setRentMinFilter] = useState<number | undefined>(undefined)
   const [rentMaxFilter, setRentMaxFilter] = useState<number | undefined>(undefined)
+  // 수납 방법. 이 달에 그 수단으로 받은 이용료가 있는 행만(입금일 축, 신고 390345ad). '' 는 전체.
+  const [methodFilter, setMethodFilter]   = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
@@ -551,10 +556,13 @@ export default function RoomsClient({
   const activeFilterCount =
     (floorFilter ? 1 : 0) +
     (panelPayFiltersValid && dueDayFilter ? 1 : 0) +
-    (panelPayFiltersValid && (rentMinFilter != null || rentMaxFilter != null) ? 1 : 0)
+    (panelPayFiltersValid && (rentMinFilter != null || rentMaxFilter != null) ? 1 : 0) +
+    (panelPayFiltersValid && methodFilter ? 1 : 0)
   const resetFilters = () => {
-    setFloorFilter(''); setDueDayFilter(''); setRentMinFilter(undefined); setRentMaxFilter(undefined)
+    setFloorFilter(''); setDueDayFilter(''); setRentMinFilter(undefined); setRentMaxFilter(undefined); setMethodFilter('')
   }
+  // 켜진 수납 방법. 공실 보기에선 무의미라 꺼진 것으로 본다(렌더·적용·계수가 같은 판정, 유령 필터 방지)
+  const activeMethod = panelPayFiltersValid ? methodFilter : ''
 
   const filtered = occupied.filter(r => {
     if (floorFilter && getRoomFloor(r) !== floorFilter) return false
@@ -562,6 +570,7 @@ export default function RoomsClient({
     if (dueDayFilter && dueDayBucketOf(effectiveDueDayStr(r), targetMonth) !== dueDayFilter) return false
     if (rentMinFilter != null && r.expected < rentMinFilter) return false
     if (rentMaxFilter != null && r.expected > rentMaxFilter) return false
+    if (activeMethod && !rowHasMethodPay(r.methodPays, activeMethod)) return false
     if (filter === 'unpaid')   return !r.isPaid
     if (filter === 'checkout') return isCheckoutRoom(r)
     if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
@@ -1023,6 +1032,19 @@ export default function RoomsClient({
             </p>
           </>
         )}
+        {/* 수납 방법 필터가 켜졌을 때만. 카드 줄과 같은 자리·같은 글꼴·같은 입금일 축(한정어는 숫자 앞 상시 텍스트).
+            값은 서버 집계 정본(lib/payMethodFilter aggregateMonthPayments)이다. 보이는 행으로 되계산하지 않는다. */}
+        {activeMethod && (
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+            입금일 기준 {activeMethod} 수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.byMethod[activeMethod]?.sum ?? 0)}</span>
+            <span className="num"> ({payAggregates.byMethod[activeMethod]?.count ?? 0}건)</span>
+            <InfoHint title="수납 방법 합계">
+              <span className="block">받은 날(입금일)이 이 달인 이용료만 셉니다. 귀속월이 다른 달이어도 이 달에 받았으면 들어가고, 행 아래에 몇 월분인지 적습니다.</span>
+              <span className="block mt-1.5">보증금은 돌려줄 돈이라 빠집니다. 그래서 신용카드와 결제선생을 더한 값은 위 카드 수납 줄보다 카드로 받은 보증금만큼 작을 수 있습니다.</span>
+              <span className="block mt-1.5">환불하면 그 수납의 받은 금액이 줄어 이 합계도 그만큼 줄어듭니다.</span>
+            </InfoHint>
+          </p>
+        )}
       </div>
 
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 스크롤 시 상단 고정 */}
@@ -1061,6 +1083,16 @@ export default function RoomsClient({
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                   <option value="">전체</option>
                   {DUE_DAY_BUCKET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+            {panelPayFiltersValid && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">수납 방법</label>
+                <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  {PAY_METHOD_FILTER_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
             )}
@@ -1333,6 +1365,10 @@ export default function RoomsClient({
                   </span>
                 )}
               </div>
+              {/* 수납 방법 필터가 켜졌을 때만. 그 수단으로 이 달에 받은 건(입금일·금액·다른 달분이면 몇 월분). 표와 같은 문장 정본 */}
+              {activeMethod && methodPayLine(room.methodPays, activeMethod, targetMonth) && (
+                <p className="mt-1.5 text-[0.6875rem] text-[var(--warm-muted)] num break-keep">{methodPayLine(room.methodPays, activeMethod, targetMonth)}</p>
+              )}
               {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
               {!selectMode && totalUnpaid > 0 && (
                 <div className="mt-2.5 flex justify-end">
@@ -1440,6 +1476,10 @@ export default function RoomsClient({
                   <td className={`px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 transition-colors ${stickyRowBg}`}
                     style={{ left: colWidths.roomNo, width: colWidths.tenantName, minWidth: colWidths.tenantName, maxWidth: colWidths.tenantName }}>
                     <span className="truncate block">{room.tenantName}</span>
+                    {/* 수납 방법 필터가 켜졌을 때만. 카드와 같은 문장 정본(methodPayLine), 좁은 칸이라 접어 쓴다 */}
+                    {activeMethod && methodPayLine(room.methodPays, activeMethod, targetMonth) && (
+                      <span className="block mt-0.5 text-[0.6875rem] font-normal text-[var(--warm-muted)] num whitespace-normal break-keep">{methodPayLine(room.methodPays, activeMethod, targetMonth)}</span>
+                    )}
                   </td>
 
                   {colVis.contact && (

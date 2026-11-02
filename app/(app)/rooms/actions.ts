@@ -10,7 +10,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
 import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
 import {
-  cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate,
+  cashReceiptMonth, isCashReceiptEligible, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate,
   cashReceiptKey, cashReceiptLineView, planCashReceiptEdit, planCashReceiptEntry, planCashReceiptOn, planCashReceiptRemoval,
   summarizeCashReceiptKey, CR_ZERO_ROW_REFUSED, EMPTY_CASH_RECEIPT_UNDO,
   type CashReceiptIncl, type CashReceiptLineView, type CashReceiptUndo,
@@ -25,6 +25,7 @@ import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { aggregateMonthPayments, methodPaysOf, type MethodPay, type MethodTotal } from '@/lib/payMethodFilter'
 import { reasonFieldForStatus } from '@/lib/statusReasons'
 import { reasonForSave } from '@/lib/reasonListSave'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
@@ -102,6 +103,9 @@ type RoomRow = {
   // 표시·정렬 전용(완납 묶음 키·완납 보조줄, 신고 db65cce9). 선납이 섞이는 lastPayDate 와 다른 축이다.
   // 진행 중 계약 행(buildLeaseRow)에서만 채운다. 예약·인수 전·공실은 미정의.
   viewMonthPaidAt?: string | null
+  // 이 달(입금일 축)에 받은 이용료 건. 수납 방법 필터의 행 거름과 보조줄이 읽는다(lib/payMethodFilter 정본, 신고 390345ad).
+  // 진행 중 계약 행(buildLeaseRow, 지난·이번 달)에서만 채운다. 표시 전용이라 어떤 금액 계산에도 들지 않는다.
+  methodPays?: MethodPay[]
   // 다음 청구 도래일 (오늘 이후 가장 가까운 dueDay, override·말일 등 반영). 'YYYY-MM-DD'
   nextDueDate: string | null
   // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
@@ -279,6 +283,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
   const buildLeaseRow = (room: typeof rooms[number], lease: LeaseWithOverride, prevTenantName: string | null, prevContact: string | null): RoomRow => {
     const l = lease as LeaseWithOverride
+    // 이 달(입금일 축) 이용료 입금 건. 수납 방법 필터의 행 거름·보조줄 재료(표시 전용, lib/payMethodFilter 정본, 신고 390345ad).
+    // **분기보다 먼저** 만든다. 예약·인수 전·미래 달 행이 일찍 반환되면서 이 칸이 빠져 요약 줄(서버 집계)과 보이는 행이 갈렸다
+    // (독립 검수 B1, 10월 519호 예약자의 10/31 현금 250,000원 11월분). 아래 네 반환이 모두 이 값을 싣는다.
+    // 거름은 아래 postCutoffRecords 와 같다(양도인 몫·컷오프 이전 제외, 조회가 이미 보증금을 뺐다). 나머지는 정본이 한다.
+    const methodPays = methodPaysOf(allRecordsThruMonth.filter(p =>
+      p.leaseTermId === lease.id && !p.isPrevOwner && (!cutoffDate || new Date(p.payDate) >= cutoffDate)), targetMonth)
     // #14 월세 할인 — 그 달 청구액 = rentAmount - 할인(월별). 단위테스트된 lib/rentDiscount 헬퍼 사용.
     const leaseDiscounts = (lease as { discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }).discounts ?? []
     // 퇴실 일할 정산 — 그 달(checkoutProratedMonth)은 저장된 일할액으로 청구를 덮어씀
@@ -346,6 +356,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isReservationConfirmed: !!lease.reservationConfirmedAt,
         latePaidAt: null,
         lastPayDate: null,
+        methodPays,
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -383,6 +394,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isReservationConfirmed: false,
         latePaidAt: null,
         lastPayDate: null,
+        methodPays,
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -673,6 +685,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         latePaidAt,
         lastPayDate,
         viewMonthPaidAt,
+        methodPays,
         nextDueDate,
         nextDueAmount,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -709,6 +722,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       latePaidAt,
       lastPayDate,
       viewMonthPaidAt,
+      methodPays,
       nextDueDate,
       nextDueAmount,
       // 퇴실 완료 행(그 달에 살다 나간 계약)은 실제로 나간 날이 '9/30 퇴실' 보조줄이다(체류 끝 정본 leaseStayEnd).
@@ -2539,7 +2553,11 @@ export async function previewPaymentEditCr(
 // 건다. 실측 해당 0건이라 오늘 값은 어느 규칙이든 같다 — 규칙이 맞는 쪽을 적어 둔다.
 //
 // 주의: where에 deletedAt 키를 넣지 말 것 — 소프트삭제 익스텐션 opt-out이 오발동한다(적대검증 필수 3).
-export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }> {
+//
+// 수납 방법 칸(byMethod)도 여기서 같이 낸다(신고 390345ad). 카드 줄과 같은 입금일 축·같은 조회 행이고, 판정은
+// lib/payMethodFilter 정본 하나(aggregateMonthPayments)가 한다. 칸은 이용료만 세고 카드 줄은 보증금을 넣으므로
+// 카드 줄 = 신용카드 칸 + 결제선생 칸 + cardDepositSum 이다(그물 test-pay-method-filter).
+export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number; cardDepositSum: number; byMethod: Record<string, MethodTotal> }> {
   const propertyId = await getPropertyId()
   const [y, m] = targetMonth.split('-').map(Number)
   const property = await prisma.property.findUnique({
@@ -2564,7 +2582,7 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
         // 납입일 변경 조정 행은 받은 돈이 아니다. 현금영수증 쪽과 같은 집합으로 둔다(신고 df82ce57).
         ...notDueDayAdjustWhere(),
       },
-      select: { actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true },
+      select: { actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true, isDeposit: true, isPrevOwner: true, memo: true },
     }),
     prisma.cashReceipt.findMany({
       where: {
@@ -2583,10 +2601,8 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
       select: { issuedAt: true, amount: true, payMethod: true },
     }),
   ])
-  let cashReceiptSum = 0, cashReceiptCount = 0, cardSum = 0, cardCount = 0
-  for (const r of cardRows) {
-    if (paymentCardMonth(r) === targetMonth) { cardSum += r.actualAmount; cardCount += 1 }
-  }
+  let cashReceiptSum = 0, cashReceiptCount = 0
+  const { cardSum, cardCount, cardDepositSum, byMethod } = aggregateMonthPayments(cardRows, targetMonth)
   for (const r of receipts) {
     // 카드 봉인의 마지막 방어선. 발행 줄을 만드는 길이 전부 봉인을 지나므로 여기 걸릴 일은
     // 없지만, 걸린다면 그건 봉인이 뚫린 것이고 그 금액이 두 합계에 겹쳐 든다.
@@ -2595,7 +2611,7 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
     cashReceiptSum += r.amount
     cashReceiptCount += 1
   }
-  return { cashReceiptSum, cashReceiptCount, cardSum, cardCount }
+  return { cashReceiptSum, cashReceiptCount, cardSum, cardCount, cardDepositSum, byMethod }
 }
 
 // ── 발행 줄 쓰기 ────────────────────────────────────────────────

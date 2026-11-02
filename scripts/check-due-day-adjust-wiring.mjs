@@ -85,7 +85,7 @@ need('실입금 판정이 조정 행을 뺀다', /!isDueDayAdjust\(r\.memo\)/.te
 const gd = strip(read('app/(app)/dashboard/getDashboardData.ts'))
 need('홈 현금영수증 미발행 알림(crPays)이 조정 행을 뺀다', /actualAmount: \{ gt: 0 \}, \.\.\.notDueDayAdjustWhere\(\) \}/.test(gd))
 need('홈 활동 피드가 정본 조각으로 조정 행만 뺀다(null 메모 살림)', !/NOT: \{ memo:/.test(gd) && !/NOT: dueDayAdjustWhere\(\)/.test(gd))
-need('카드 합계가 같은 집합을 쓴다', /\.\.\.notDueDayAdjustWhere\(\),\n\s*\},\n\s*select: \{ actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true \}/.test(body(rooms, 'export async function getMonthPaymentAggregates(')))
+need('카드 합계가 같은 집합을 쓴다', /\.\.\.notDueDayAdjustWhere\(\),\n\s*\},\n\s*select: \{ actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true[^}]*\}/.test(body(rooms, 'export async function getMonthPaymentAggregates(')))
 for (const fn of ['savePayment', 'saveDepositPayment', 'saveCleaningFeePayment', 'saveReservationDeposit', 'recordDepositReceived', 'saveDepositPaymentForLease']) {
   need(`${fn} 가 메모 기계 키를 거절한다(paymentMemoGuard)`, /paymentMemoGuard\(/.test(body(rooms, `export async function ${fn}(`)))
 }
