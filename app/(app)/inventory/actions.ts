@@ -13,7 +13,7 @@ import { redirect } from 'next/navigation'
 // 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
 import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
-import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeDecisionRow, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { parseOptionList } from '@/lib/optionLists'
 // 위치 표기 경로(트리) — 화면에 찍는 위치 이름은 전부 여기서 나온 pathName 이다.
@@ -36,6 +36,8 @@ import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPl
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
+import { normalizeLabel, sizeConflicts, muteApplies, attachedToCard, planSubLabels } from './seedLabel'
+import { ensureReceiptAnchor } from './receiptAnchor'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { withParticle } from '@/lib/koParticle'
 // 위치 숨김 허브 승격 값·이관 메모 읽기 정본(순수, 진리표 scripts/test-location-close.ts).
@@ -2530,47 +2532,7 @@ async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?:
 // ── 기존 지출 내역에서 (category, itemLabel, qtyUnit) 자동 시드
 // 같은 (category, label) 안에서 spec/qtyUnit 변형이 여럿이면 sub-label을 붙여 별도 카드로 추적.
 // 예) 음식물쓰레기봉투 5L vs 10L → 별도 카드 / 키친타월 (롤) vs (팩) → 별도 카드
-// 라벨 정규화 — 병합 후보 매칭용. 소문자화 + 괄호내용·규격/수량 표기·공백·구분자 제거.
-// "종량제쓰레기봉투 (20L)" / "종량제쓰레기봉투 50L" → 둘 다 "종량제쓰레기봉투"
-function normalizeLabel(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, ' ')                                                // 괄호와 내용
-    .replace(/\d+(\.\d+)?\s*(l|ml|g|kg|m|매|개|롤|포|포대|팩|박스|개입|구|호)?/g, ' ') // 숫자(+단위)
-    .replace(/[\s\-_.,/]+/g, '')                                               // 공백·구분자
-    .trim()
-}
-
-// 이름에 박힌 크기 표시. 봉투처럼 **크기가 곧 다른 물건**인 품목에서 이것이 다르면 같은 것이 아니다.
-// normalizeLabel 은 병합 후보를 넓게 찾으려고 숫자·단위를 지우는데, 그 공격성 때문에
-// "종량제쓰레기봉투 (50L)" 과 "종량제쓰레기봉투 (20L)" 이 같은 키가 됐고 앱이 둘 중 어디에 넣을지
-// 물었다. 물을 일이 아니다 — 이름에 50L 이라고 적혀 있다(운영자 지적 2026-08-05).
-// normalizeLabel 자체는 안 건드린다. 그 값이 병합 규칙(LINK·MUTE)의 키라 바꾸면 기존 규칙이 끊긴다.
-// 아래 단위 집합은 lib/units.ts 의 splitSizeLabel(표시용 크기 캡션 분리)과 동일하다 — 바꾸면 양쪽을 함께.
-function sizeSignature(s: string): string {
-  const m = s.toLowerCase().match(/\d+(\.\d+)?\s*(l|ml|g|kg|cm|mm|m|인치)\b/g)
-  return m ? m.map(x => x.replace(/\s+/g, '')).sort().join(',') : ''
-}
-
-/** 크기가 둘 다 적혀 있고 서로 다르면 병합 후보가 아니다. 한쪽만 적혀 있으면 판단하지 않는다. */
-function sizeConflicts(a: string, b: string): boolean {
-  const sa = sizeSignature(a), sb = sizeSignature(b)
-  return !!sa && !!sb && sa !== sb
-}
-
-function deriveSubLabel(base: string, specValue: number | null, specUnit: string | null, qtyUnit: string | null): string {
-  // 이미 라벨에 사이즈/타입이 있으면 그대로
-  if (/\d+\s*(L|ml|g|kg|매|개|m)\b/.test(base) || /\([^)]+\)/.test(base)) return base
-  const parts: string[] = []
-  if (specValue && specValue > 0 && specUnit) {
-    parts.push(`${specValue}${specUnit}`)
-  }
-  if (qtyUnit) {
-    parts.push(`(${qtyUnit})`)
-  }
-  return parts.length > 0 ? `${base} ${parts.join(' ')}` : base
-}
-
+// 이름 판정(정규화 키·크기 표시·하위 이름·붙음·거절 규칙)은 ./seedLabel 한 벌이다. 진리표 scripts/test-seed-relabel.ts.
 // onlyLabels: 지출 저장 직후 그 품목들만 증분 시드(자동 카드 생성, 신고 269baf9f).
 // 미지정 = 전체 스캔(재고 화면의 '과거 지출 일괄 불러오기' 버튼). 병합 규칙(LINK/MUTE)·중복 판정은 동일 경로.
 // opts.dryRun 이면 아무것도 쓰지 않고 **결정 대기 목록만** 돌려준다. 판정 규칙을 복제하지 않으려고
@@ -2593,7 +2555,11 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
         // 이미 같은 조건을 걸고 있어(같은 파일 74·125·192·706행) 카드만 반대편에 서 있었다.
         excludeFromInventory: false,
       },
-      select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
+      select: {
+        id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true,
+        // 결정 대기 줄의 근거(병합 확인 창이 '언제·어디서·얼마·규격×수량·브랜드'를 보여 준다)
+        date: true, vendor: true, amount: true, qtyValue: true, brand: true, productName: true,
+      },
     })
 
     // 1) 5-tuple로 그룹: (category, itemLabel, specValue, specUnit, qtyUnit)
@@ -2602,6 +2568,7 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
       category: string; baseLabel: string
       specValue: number | null; specUnit: string | null; qtyUnit: string | null
       expenseIds: string[]
+      rows: MergeDecisionRow[]
     }
     const groups = new Map<GroupKey, Group>()
     for (const r of rows) {
@@ -2612,11 +2579,16 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
         g = {
           category: r.category, baseLabel: r.itemLabel,
           specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, qtyUnit: r.qtyUnit ?? null,
-          expenseIds: [],
+          expenseIds: [], rows: [],
         }
         groups.set(key, g)
       }
       g.expenseIds.push(r.id)
+      g.rows.push({
+        id: r.id, fromLabel: r.itemLabel, date: r.date.toISOString(), vendor: r.vendor ?? null, amount: r.amount,
+        specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, qtyValue: r.qtyValue ?? null, qtyUnit: r.qtyUnit ?? null,
+        brand: r.brand ?? null, productName: r.productName ?? null, currentCard: null,
+      })
     }
 
     // 2) 같은 (category, baseLabel) 안에 그룹이 여럿이면 sub-label 부여
@@ -2629,10 +2601,10 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
       byBase.get(k)!.push(g)
     }
 
-    // looseMatch 카드 사전 조회 — 같은 (category, baseLabel)이 이미 병합용 카드인지
-    // 사용자가 삭제(archive)한 카드는 재생성/재흡수 대상에서 제외
-    const looseMatchKeys = new Set<string>()
+    // 같은 (category, baseLabel) 카드 사전 조회.
+    // 사용자가 삭제(archive)한 카드는 재생성/재흡수 대상에서 제외. 활성 카드는 '붙음' 판정에 쓴다.
     const archivedBaseKeys = new Set<string>()  // baseLabel 카드가 archived인 경우
+    const activeBaseCard = new Map<string, { qtyUnit: string | null }>()
     await Promise.all(
       Array.from(byBase.keys()).map(async k => {
         const [cat, lbl] = k.split('|')
@@ -2641,24 +2613,19 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
           select: { qtyUnit: true, isArchived: true },
         })
         if (found?.isArchived) archivedBaseKeys.add(k)
-        else if (found && found.qtyUnit === null) looseMatchKeys.add(k)
+        else if (found) activeBaseCard.set(k, { qtyUnit: found.qtyUnit })
       }),
     )
 
+    // **이미 카드에 붙은 지출은 시드가 옮기지 않는다**(신고 573b2e06). 같은 품명에 규격이 섞이면 종전에는 모든 묶음에
+    // 하위 이름을 붙여, 원래 카드에 붙어 있던 5월 세탁조크리너 지출까지 '세탁조크리너 1개 (개)' 로 옮겨 카드를 갈랐다.
+    // 붙은 묶음(활성 카드 같은 이름 + 수량 단위 느슨 일치)은 이름을 그대로 두고, 하위 이름은 붙지 않은 묶음에만 붙인다.
+    // 병합 카드(수량 단위 무시)가 있으면 모든 묶음이 붙은 것이라 종전처럼 원래 이름으로 흡수된다.
+    // 증분(지출 저장·대기 영수증 승인·재고 다시 포함)과 전체 스캔(결정 대기 배너)이 모두 이 한 함수를 지난다.
     const finalLabel = new Map<Group, string>()
     for (const [k, list] of byBase) {
-      if (looseMatchKeys.has(k)) {
-        // 병합된 카드가 이미 존재 → 모든 그룹을 baseLabel로 흡수
-        for (const g of list) finalLabel.set(g, g.baseLabel)
-        continue
-      }
-      if (list.length === 1) {
-        finalLabel.set(list[0], list[0].baseLabel)
-        continue
-      }
-      for (const g of list) {
-        finalLabel.set(g, deriveSubLabel(g.baseLabel, g.specValue, g.specUnit, g.qtyUnit))
-      }
+      const card = activeBaseCard.get(k)
+      for (const [g, label] of planSubLabels(list, g => attachedToCard(card, g.qtyUnit))) finalLabel.set(g, label)
     }
 
     // 3) TrackedItem 생성/조회 + expense itemLabel 마이그레이션
@@ -2682,11 +2649,16 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
     }
     const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId } })
     const linkMap = new Map<string, string[]>()   // `${cat}|${norm}` -> targetItemIds
-    const muteSet = new Set<string>()             // `${cat}|${norm}|${targetItemId}`
+    const muteSrc = new Map<string, string>()     // `${cat}|${norm}|${targetItemId}` -> 거절을 만든 이름
     for (const r of rules) {
       const key = `${r.category}|${r.normLabel}`
       if (r.kind === 'LINK') { if (!linkMap.has(key)) linkMap.set(key, []); linkMap.get(key)!.push(r.targetItemId) }
-      else if (r.kind === 'MUTE') muteSet.add(`${key}|${r.targetItemId}`)
+      else if (r.kind === 'MUTE') muteSrc.set(`${key}|${r.targetItemId}`, r.sourceLabel)
+    }
+    // 거절은 크기까지 같은 이름에만 걸린다. '450ml 은 따로' 가 '530ml' 까지 막지 않게(키는 그대로, seedLabel.muteApplies).
+    const muted = (key: string, tid: string, label: string) => {
+      const src = muteSrc.get(`${key}|${tid}`)
+      return src != null && muteApplies(src, label)
     }
 
     for (const g of groups.values()) {
@@ -2714,52 +2686,62 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
         const cand = new Map<string, { itemId: string; label: string }>()
         for (const it of (norm2items.get(key) ?? [])) {
           if (it.label === label) continue
-          if (muteSet.has(`${key}|${it.id}`)) continue
+          if (muted(key, it.id, label)) continue
           if (sizeConflicts(label, it.label)) continue   // 50L 과 20L 은 다른 물건이다
           cand.set(it.id, { itemId: it.id, label: it.label })
         }
         for (const tid of (linkMap.get(key) ?? [])) {
-          if (muteSet.has(`${key}|${tid}`)) continue
+          if (muted(key, tid, label)) continue
           const it = itemById.get(tid)
           // 운영자가 직접 맺은 LINK 규칙은 크기가 달라도 존중한다. 사람이 정한 것을 코드가 뒤집지 않는다.
           if (it) cand.set(tid, { itemId: tid, label: it.label })
         }
         if (cand.size > 0) {
           pendingDecisions.push({
-            newLabel: label, category: g.category, expenseIds: g.expenseIds,
+            newLabel: label, category: g.category, expenseIds: g.expenseIds, rows: g.rows,
             specUnit: g.specUnit, qtyUnit: g.qtyUnit,
             candidates: Array.from(cand.values()),
           })
           continue   // 사용자 결정 전까지 생성·마이그레이션 보류
         }
         if (!opts?.dryRun) {
-          await prisma.trackedItem.create({
-            data: {
-              propertyId,
-              category: g.category,
-              label,
-              specUnit: g.specUnit,
-              qtyUnit: g.qtyUnit,
-              // 잔량을 길이로 셀지 개수로 셀지는 "잘라 쓰는 품목인가" 하나로 갈린다.
-              // 운영자가 저장 직전에 답했으면 그 값, 아니면 판정 정본이 정한다(lib/trackUnitGate).
-              // 답은 baseLabel 로 왔는데 규격이 갈려 sub-label 이 붙는 경우가 있어 둘 다 본다.
-              trackUnit: resolveTrackUnitForNewCard({
-                categoryDefault: defaultTrackUnitForCategory(g.category),
+          // 카드 생성·이름 이전·첫 점검(앵커)은 한 트랜잭션. 받은 구매가 새 카드로 오면 점검이 없어 잔량이 비므로
+          // 받은 몫을 첫 점검으로 앉힌다(./receiptAnchor, 점검·입수·폐기 0 일 때만).
+          migrated += await prisma.$transaction(async tx => {
+            const card = await tx.trackedItem.create({
+              data: {
+                propertyId,
+                category: g.category,
+                label,
                 specUnit: g.specUnit,
                 qtyUnit: g.qtyUnit,
-                declared: opts?.declaredTrackUnit?.[label] ?? opts?.declaredTrackUnit?.[g.baseLabel] ?? null,
-              }),
-            },
+                // 잔량을 길이로 셀지 개수로 셀지는 "잘라 쓰는 품목인가" 하나로 갈린다.
+                // 운영자가 저장 직전에 답했으면 그 값, 아니면 판정 정본이 정한다(lib/trackUnitGate).
+                // 답은 baseLabel 로 왔는데 규격이 갈려 sub-label 이 붙는 경우가 있어 둘 다 본다.
+                trackUnit: resolveTrackUnitForNewCard({
+                  categoryDefault: defaultTrackUnitForCategory(g.category),
+                  specUnit: g.specUnit,
+                  qtyUnit: g.qtyUnit,
+                  declared: opts?.declaredTrackUnit?.[label] ?? opts?.declaredTrackUnit?.[g.baseLabel] ?? null,
+                }),
+              },
+            })
+            const moved = label !== g.baseLabel && g.expenseIds.length > 0
+              ? (await tx.expense.updateMany({ where: { id: { in: g.expenseIds }, propertyId, itemLabel: g.baseLabel }, data: { itemLabel: label } })).count
+              : 0
+            await ensureReceiptAnchor(tx, card)
+            return moved
           })
-        }
+        } else if (label !== g.baseLabel) migrated += g.expenseIds.length
         created++
+        continue
       }
-      // 라벨이 변경된 그룹의 expense rows의 itemLabel을 새 라벨로 업데이트
+      // 라벨이 변경된 그룹의 expense rows의 itemLabel을 새 라벨로 업데이트(그 이름의 카드가 이미 있다)
       if (label !== g.baseLabel && g.expenseIds.length > 0) {
         if (opts?.dryRun) { migrated += g.expenseIds.length }
         else {
           const r = await prisma.expense.updateMany({
-            where: { id: { in: g.expenseIds } },
+            where: { id: { in: g.expenseIds }, propertyId, itemLabel: g.baseLabel },
             data: { itemLabel: label },
           })
           migrated += r.count
@@ -2781,45 +2763,88 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
 // 자동등록 후 사용자가 선택한 병합 결정을 반영.
 // choice.merge: 지출을 대상 카드로 귀속 + LINK 규칙 기록(다음에 추천).
 // choice.new: 새 카드 생성 + 거절한 후보는 MUTE 규칙 기록(다시 추천 안 함).
+//
+// 한 인터랙티브 트랜잭션이다(신고 573b2e06). 종전에는 이름 이전·카드 생성·규칙이 따로 써져 중간에 멈추면 반쪽이 남았고,
+// 화면이 넘긴 지출 id 를 그대로 믿어 **이미 카드에 붙은 지출도 옮겼다**. 지금은
+//   · 서버가 지출을 영업장 범위로 다시 읽고, 하나라도 지금 카드에 붙어 있으면 전체를 거부한다(시드도 그런 지출을 결정에 안 싣는다).
+//   · 지출마다 화면이 본 이름(fromLabel)에서만 옮긴다. 하나라도 그 사이 바뀌었으면 전체를 되돌린다(MERGE_DECISION_STALE).
+//   · 받는 카드에 점검이 하나도 없으면 받은 몫을 첫 점검으로 앉힌다(./receiptAnchor).
+//   · 두 갈래 모두 적용취소 기록을 남긴다(merge = IMPORT, new = NEW). 돌려준 undoId 로 토스트가 되돌린다(§16).
+const MERGE_DECISION_STALE = '그 사이 구매 이름이 바뀌었습니다. 화면을 새로고침한 뒤 다시 골라 주세요.'
+const MERGE_DECISION_ATTACHED = '이미 품목에 붙어 있는 구매가 섞여 있습니다. 화면을 새로고침한 뒤 다시 골라 주세요.'
+class MergeDecisionDenied extends Error {}
+
 export async function applyMergeDecision(input: {
   category: string
   newLabel: string
-  expenseIds: string[]
+  expenses: { id: string; fromLabel: string }[]
   specUnit?: string | null
   qtyUnit?: string | null
   choice:
     | { kind: 'merge'; targetItemId: string }
     | { kind: 'new'; declinedItemIds?: string[] }
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; undoId: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { category, newLabel, expenseIds } = input
+    const { category, newLabel } = input
+    const expenseIds = Array.from(new Set(input.expenses.map(e => e.id)))
+    const fromOf = new Map(input.expenses.map(e => [e.id, e.fromLabel]))
     const nrm = normalizeLabel(newLabel)
+    const appliedAtMs = Date.now()
+    const choice = input.choice
 
-    if (input.choice.kind === 'merge') {
-      const target = await prisma.trackedItem.findFirst({ where: { id: input.choice.targetItemId, propertyId } })
-      if (!target) return { ok: false, error: '대상 품목을 찾을 수 없습니다.' }
-      if (expenseIds.length > 0) {
-        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: target.label } })
+    const undoId = await prisma.$transaction(async tx => {
+      // 1) 지출을 영업장 범위로 다시 읽는다. 영업장 밖·지워진 id 가 하나라도 있으면 거부.
+      const rows = expenseIds.length > 0
+        ? await tx.expense.findMany({ where: { id: { in: expenseIds }, propertyId }, select: { id: true, category: true, itemLabel: true, qtyUnit: true } })
+        : []
+      if (rows.length !== expenseIds.length) throw new MergeDecisionDenied(MERGE_DECISION_STALE)
+      // 2) 지금 카드에 붙은 지출이 섞여 있으면 거부(붙음 = 활성 카드 같은 이름 + 수량 단위 느슨 일치, ./seedLabel).
+      const fromLabels = Array.from(new Set(rows.map(r => r.itemLabel).filter((l): l is string => !!l)))
+      const cards = fromLabels.length > 0
+        ? await tx.trackedItem.findMany({ where: { propertyId, category, label: { in: fromLabels }, isArchived: false }, select: { label: true, qtyUnit: true } })
+        : []
+      for (const r of rows) {
+        if (r.category !== category || r.itemLabel !== fromOf.get(r.id)) throw new MergeDecisionDenied(MERGE_DECISION_STALE)
+        if (attachedToCard(cards.find(c => c.label === r.itemLabel), r.qtyUnit)) throw new MergeDecisionDenied(MERGE_DECISION_ATTACHED)
       }
-      // 라벨만 고치면 끝이 아니다 — 부착 판정은 5튜플 동치라 수량단위가 다른 구매는 계속 어긋나
-      // 영원히 미부착으로 남는다(신고 5ba35bfc). 지출 단위를 카드 값으로 덮어쓰면 '개 30 = 박스 1'
-      // 에서 수량이 왜곡되므로, 카드끼리 병합이 쓰는 길 그대로 대상 카드를 단위 무시로 바꾼다.
-      const targetQtyUnitBefore = shouldLoosenTargetUnit(input.qtyUnit, target.qtyUnit) ? target.qtyUnit : null
-      if (targetQtyUnitBefore != null) {
-        await prisma.trackedItem.update({ where: { id: target.id }, data: { qtyUnit: null } })
+      // 3) 지출마다 화면이 본 이름에서만 옮긴다(CAS). 하나라도 어긋나면 트랜잭션 전체를 되돌린다.
+      const relabel = async (next: string) => {
+        const moved: { id: string; prev: string; next: string }[] = []
+        for (const r of rows) {
+          const prev = r.itemLabel as string
+          const c = await tx.expense.updateMany({ where: { id: r.id, propertyId, category, itemLabel: prev }, data: { itemLabel: next } })
+          if (c.count !== 1) throw new MergeDecisionDenied(MERGE_DECISION_STALE)
+          moved.push({ id: r.id, prev, next })
+        }
+        return moved
       }
-      await prisma.trackedItemMergeRule.upsert({
-        where: { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: target.id } },
-        update: { kind: 'LINK', sourceLabel: newLabel },
-        create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: target.id, kind: 'LINK' },
-      })
-      // 되돌리기(병합 해제) 복원 정보 — 지출을 원래 라벨로 분리할 수 있게 기록.
-      // 단위 무시로 바꾼 것도 여기 실어야 원복된다(적용취소는 항상 있어야 한다).
-      if (expenseIds.length > 0 || targetQtyUnitBefore != null) {
-        try {
-          await prisma.trackedItemMergeUndo.create({
+
+      if (choice.kind === 'merge') {
+        const target = await tx.trackedItem.findFirst({ where: { id: choice.targetItemId, propertyId } })
+        if (!target) throw new MergeDecisionDenied('대상 품목을 찾을 수 없습니다.')
+        const moved = await relabel(target.label)
+        // 라벨만 고치면 끝이 아니다 — 부착 판정은 5튜플 동치라 수량단위가 다른 구매는 계속 어긋나
+        // 영원히 미부착으로 남는다(신고 5ba35bfc). 지출 단위를 카드 값으로 덮어쓰면 '개 30 = 박스 1'
+        // 에서 수량이 왜곡되므로, 카드끼리 병합이 쓰는 길 그대로 대상 카드를 단위 무시로 바꾼다.
+        const targetQtyUnitBefore = shouldLoosenTargetUnit(input.qtyUnit, target.qtyUnit) ? target.qtyUnit : null
+        if (targetQtyUnitBefore != null) {
+          await tx.trackedItem.update({ where: { id: target.id }, data: { qtyUnit: null } })
+        }
+        const ruleKey = { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: target.id } }
+        const rulePrev = await tx.trackedItemMergeRule.findUnique({ where: ruleKey, select: { kind: true, sourceLabel: true } })
+        await tx.trackedItemMergeRule.upsert({
+          where: ruleKey,
+          update: { kind: 'LINK', sourceLabel: newLabel },
+          create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: target.id, kind: 'LINK' },
+        })
+        // 점검 0 카드로 합치면 받은 몫을 첫 점검으로(점검 있는 카드에는 절대값 앵커를 박지 않는다)
+        const anchorCheckId = await ensureReceiptAnchor(tx, { ...target, qtyUnit: targetQtyUnitBefore != null ? null : target.qtyUnit })
+        // 되돌리기(병합 해제) 복원 정보 — 지출을 원래 라벨로 분리할 수 있게 기록.
+        // 단위 무시로 바꾼 것도 여기 실어야 원복된다(적용취소는 항상 있어야 한다).
+        if (expenseIds.length > 0 || targetQtyUnitBefore != null) {
+          const u = await tx.trackedItemMergeUndo.create({
             data: {
               propertyId, targetItemId: target.id,
               label: `${newLabel} → ${target.label}`,
@@ -2828,41 +2853,71 @@ export async function applyMergeDecision(input: {
                 specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null,
                 targetQtyUnitBefore,
                 expenseIds,
+                expenses: moved, rulePrev, anchorCheckId, appliedAtMs,
               },
             },
+            select: { id: true },
           })
-        } catch { /* 복원정보 테이블 미적용 — 병합은 계속 */ }
+          return u.id
+        }
+        return null
       }
-    } else {
-      const existing = await prisma.trackedItem.findUnique({
+
+      // 새 품목으로 등록
+      const existing = await tx.trackedItem.findUnique({
         where: { propertyId_category_label: { propertyId, category, label: newLabel } },
-        select: { id: true, isArchived: true },
       })
+      let cardAction: 'created' | 'unarchived' | 'existing' = 'existing'
+      let card = existing
       if (existing?.isArchived) {
-        await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+        card = await tx.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+        cardAction = 'unarchived'
       } else if (!existing) {
-        await prisma.trackedItem.create({
+        card = await tx.trackedItem.create({
           data: {
             propertyId, category, label: newLabel,
             specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null,
-            trackUnit: category === '폐기물 처리비' ? 'qty' : 'spec',
+            // 시드가 카드를 세울 때와 같은 판정 정본(lib/trackUnitGate). 묻는 자리가 없으니 답은 비어 있다.
+            trackUnit: resolveTrackUnitForNewCard({
+              categoryDefault: defaultTrackUnitForCategory(category),
+              specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null, declared: null,
+            }),
           },
         })
+        cardAction = 'created'
       }
-      if (expenseIds.length > 0) {
-        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId, itemLabel: { not: newLabel } }, data: { itemLabel: newLabel } })
+      const moved = await relabel(newLabel)
+      // 거절한 후보는 이 영업장 카드여야 한다. 직전 규칙 상태를 적용취소 기록에 싣는다.
+      const declined = Array.from(new Set(choice.declinedItemIds ?? []))
+      if (declined.length > 0) {
+        const own = await tx.trackedItem.count({ where: { id: { in: declined }, propertyId } })
+        if (own !== declined.length) throw new MergeDecisionDenied('다른 영업장의 품목입니다.')
       }
-      for (const tid of (input.choice.declinedItemIds ?? [])) {
-        await prisma.trackedItemMergeRule.upsert({
-          where: { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: tid } },
+      const rules: { targetItemId: string; prev: { kind: string; sourceLabel: string } | null }[] = []
+      for (const tid of declined) {
+        const ruleKey = { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: tid } }
+        const prev = await tx.trackedItemMergeRule.findUnique({ where: ruleKey, select: { kind: true, sourceLabel: true } })
+        await tx.trackedItemMergeRule.upsert({
+          where: ruleKey,
           update: { kind: 'MUTE', sourceLabel: newLabel },
           create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: tid, kind: 'MUTE' },
         })
+        rules.push({ targetItemId: tid, prev })
       }
-    }
+      const anchorCheckId = await ensureReceiptAnchor(tx, card!)
+      const u = await tx.trackedItemMergeUndo.create({
+        data: {
+          propertyId, targetItemId: card!.id,
+          label: `${newLabel} · 새 품목으로 등록`,
+          payload: { kind: 'NEW', category, normLabel: nrm, cardId: card!.id, cardAction, appliedAtMs, expenses: moved, rules, anchorCheckId },
+        },
+        select: { id: true },
+      })
+      return u.id
+    })
     revalidatePath('/inventory')
     revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, undoId }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2921,9 +2976,68 @@ export async function getMergeUndos(): Promise<MergeUndoRow[]> {
     id: u.id,
     label: u.label,
     targetLabel: labelById.get(u.targetItemId) ?? null,
-    kind: ((u.payload as any)?.kind === 'CARD' ? 'CARD' : 'IMPORT') as 'IMPORT' | 'CARD',
+    kind: (() => { const k = (u.payload as any)?.kind; return k === 'CARD' || k === 'NEW' ? k : 'IMPORT' })() as 'IMPORT' | 'CARD' | 'NEW',
     createdAt: u.createdAt.toISOString(),
   }))
+}
+
+const MERGE_UNDO_STALE = '그 뒤 구매 이름이 바뀌어 되돌릴 수 없습니다.'
+const MERGE_UNDO_LATER = '그 뒤 이 품목에 재고 점검·입수·폐기 기록이 있어 되돌릴 수 없습니다.'
+
+// 적용 뒤 그 카드에 생긴 점검·입수·폐기 수. 적용 때 앉힌 앵커는 뺀다.
+async function laterLedgerCount(tx: InventoryTx, itemId: string, appliedAtMs: number, anchorCheckId: string | null): Promise<number> {
+  const after = new Date(appliedAtMs)
+  const [c, a, d] = await Promise.all([
+    tx.stockCheck.count({ where: { trackedItemId: itemId, createdAt: { gt: after }, ...(anchorCheckId ? { id: { not: anchorCheckId } } : {}) } }),
+    tx.stockAddition.count({ where: { trackedItemId: itemId, createdAt: { gt: after } } }),
+    tx.stockDisposal.count({ where: { trackedItemId: itemId, createdAt: { gt: after } } }),
+  ])
+  return c + a + d
+}
+
+// '새 품목으로 등록' 적용취소(kind NEW). 거부 조건은 하나라도 맞으면 아무것도 안 바꾼다(위치 사용 중지 적용취소와 같은 문법).
+//   · 토큰의 카드·지출이 이 영업장 것이 아니다 · 지출 이름이 그 뒤 바뀌었다 · 등록 뒤 그 카드에 점검·입수·폐기가 생겼다
+//   · 새로 만들거나 숨김을 푼 카드에 그 뒤 다른 구매가 붙었다(되돌리면 그 구매가 카드를 잃는다)
+// 되돌림: 지출 이름 원복(CAS) · 거절 규칙을 직전 상태로 · 앵커 삭제 · 카드는 만들었으면 지우고 숨김을 풀었으면 다시 숨긴다.
+async function undoNewMergeDecisionTx(tx: InventoryTx, propertyId: string, undoId: string, p: {
+  category: string; normLabel: string; cardId: string; cardAction: 'created' | 'unarchived' | 'existing'; appliedAtMs: number
+  expenses: { id: string; prev: string; next: string }[]
+  rules: { targetItemId: string; prev: { kind: string; sourceLabel: string } | null }[]
+  anchorCheckId: string | null
+}): Promise<void> {
+  const card = await tx.trackedItem.findFirst({ where: { id: p.cardId, propertyId }, select: { id: true, category: true, label: true, qtyUnit: true } })
+  if (!card) throw new MergeDecisionDenied('등록한 품목을 찾을 수 없습니다.')
+  const ids = p.expenses.map(m => m.id)
+  const now = ids.length > 0 ? await tx.expense.findMany({ where: { id: { in: ids }, propertyId }, select: { id: true, itemLabel: true } }) : []
+  if (now.length !== ids.length) throw new MergeDecisionDenied('다른 영업장의 기록입니다.')
+  if (p.rules.length > 0) {
+    const own = await tx.trackedItem.count({ where: { id: { in: p.rules.map(r => r.targetItemId) }, propertyId } })
+    if (own !== new Set(p.rules.map(r => r.targetItemId)).size) throw new MergeDecisionDenied('다른 영업장의 기록입니다.')
+  }
+  for (const m of p.expenses) if (now.find(r => r.id === m.id)?.itemLabel !== m.next) throw new MergeDecisionDenied(MERGE_UNDO_STALE)
+  if (await laterLedgerCount(tx, card.id, p.appliedAtMs, p.anchorCheckId) > 0) throw new MergeDecisionDenied(MERGE_UNDO_LATER)
+  if (p.cardAction !== 'existing') {
+    const others = await tx.expense.count({
+      where: {
+        propertyId, category: card.category, itemLabel: card.label, id: { notIn: ids }, excludeFromInventory: false,
+        ...(card.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: card.qtyUnit }] } : {}),
+      },
+    })
+    if (others > 0) throw new MergeDecisionDenied('그 뒤 다른 구매가 이 품목에 붙어 되돌릴 수 없습니다.')
+  }
+  for (const m of p.expenses) {
+    const c = await tx.expense.updateMany({ where: { id: m.id, propertyId, itemLabel: m.next }, data: { itemLabel: m.prev } })
+    if (c.count !== 1) throw new MergeDecisionDenied(MERGE_UNDO_STALE)
+  }
+  for (const r of p.rules) {
+    const where = { propertyId, category: p.category, normLabel: p.normLabel, targetItemId: r.targetItemId }
+    if (r.prev) await tx.trackedItemMergeRule.updateMany({ where, data: { kind: r.prev.kind, sourceLabel: r.prev.sourceLabel } })
+    else await tx.trackedItemMergeRule.deleteMany({ where: { ...where, kind: 'MUTE' } })
+  }
+  if (p.anchorCheckId) await tx.stockCheck.deleteMany({ where: { id: p.anchorCheckId, trackedItemId: card.id } })
+  if (p.cardAction === 'created') await tx.trackedItem.delete({ where: { id: card.id } })
+  else if (p.cardAction === 'unarchived') await tx.trackedItem.update({ where: { id: card.id }, data: { isArchived: true } })
+  await tx.trackedItemMergeUndo.delete({ where: { id: undoId } })
 }
 
 // 병합 해제 — payload 로 지출·점검·카드를 원상복구하고 LINK 규칙·복원정보를 제거.
@@ -2935,32 +3049,55 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
     if (!undo) return { ok: false, error: '되돌릴 병합 정보를 찾을 수 없습니다.' }
     const p = undo.payload as any
 
-    if (p?.kind === 'IMPORT') {
+    if (p?.kind === 'NEW') {
+      // 병합 확인의 '새 품목으로 등록' 적용취소(신고 573b2e06). 토큰과 지금 행이 하나라도 어긋나면 전체 거부.
+      await prisma.$transaction(tx => undoNewMergeDecisionTx(tx, propertyId, undo.id, p))
+    } else if (p?.kind === 'IMPORT') {
       const { origLabel, category, specUnit, qtyUnit, expenseIds } = p
-      // 1) 원래 라벨 카드 보장 (없으면 생성, 숨김이면 복구)
-      const existing = await prisma.trackedItem.findUnique({
-        where: { propertyId_category_label: { propertyId, category, label: origLabel } },
-        select: { id: true, isArchived: true },
-      })
-      if (!existing) {
-        await prisma.trackedItem.create({
-          data: { propertyId, category, label: origLabel, specUnit: specUnit ?? null, qtyUnit: qtyUnit ?? null,
-                  trackUnit: category === '폐기물 처리비' ? 'qty' : 'spec' },
-        })
-      } else if (existing.isArchived) {
-        await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
-      }
-      // 2) 지출 라벨 원복
-      if (Array.isArray(expenseIds) && expenseIds.length > 0) {
-        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: origLabel } })
-      }
-      // 2.5) 대상 카드 qtyUnit 원복 (부착시키려고 looseMatch 로 null 됐던 경우) — 카드 병합 원복과 동형.
-      if (p.targetQtyUnitBefore != null) {
-        await prisma.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
-      }
-      // 3) LINK 규칙 제거 (다시 자동 흡수 안 되게)
-      await prisma.trackedItemMergeRule.deleteMany({
-        where: { propertyId, category, normLabel: normalizeLabel(origLabel), targetItemId: undo.targetItemId, kind: 'LINK' },
+      // 새 기록(2026-11-02 부터)은 지출마다 원래 이름·바꾼 이름을 싣는다. 옛 기록은 origLabel 하나뿐이라 종전 경로로 둔다.
+      const moved: { id: string; prev: string; next: string }[] | null = Array.isArray(p.expenses) ? p.expenses : null
+      await prisma.$transaction(async tx => {
+        if (moved) {
+          // 1) 지출마다 원래 이름으로(CAS). 그 사이 이름이 바뀐 지출이 하나라도 있으면 전체 거부.
+          for (const m of moved) {
+            const c = await tx.expense.updateMany({ where: { id: m.id, propertyId, category, itemLabel: m.next }, data: { itemLabel: m.prev } })
+            if (c.count !== 1) throw new MergeDecisionDenied(MERGE_UNDO_STALE)
+          }
+          // 2) 합칠 때 앉힌 첫 점검(앵커)은 그 뒤 기록이 없을 때만 걷는다.
+          if (p.anchorCheckId) {
+            if (await laterLedgerCount(tx, undo.targetItemId, p.appliedAtMs, p.anchorCheckId) > 0) throw new MergeDecisionDenied(MERGE_UNDO_LATER)
+            await tx.stockCheck.deleteMany({ where: { id: p.anchorCheckId, trackedItemId: undo.targetItemId } })
+          }
+        } else {
+          // 옛 기록: 원래 라벨 카드 보장 (없으면 생성, 숨김이면 복구) 뒤 지출을 그 라벨로
+          const existing = await tx.trackedItem.findUnique({
+            where: { propertyId_category_label: { propertyId, category, label: origLabel } },
+            select: { id: true, isArchived: true },
+          })
+          if (!existing) {
+            await tx.trackedItem.create({
+              data: { propertyId, category, label: origLabel, specUnit: specUnit ?? null, qtyUnit: qtyUnit ?? null,
+                      trackUnit: category === '폐기물 처리비' ? 'qty' : 'spec' },
+            })
+          } else if (existing.isArchived) {
+            await tx.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+          }
+          if (Array.isArray(expenseIds) && expenseIds.length > 0) {
+            await tx.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: origLabel } })
+          }
+        }
+        // 2.5) 대상 카드 qtyUnit 원복 (부착시키려고 looseMatch 로 null 됐던 경우) — 카드 병합 원복과 동형.
+        if (p.targetQtyUnitBefore != null) {
+          await tx.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
+        }
+        // 3) 규칙: 직전 상태가 실려 있으면 그대로 되돌리고, 없으면 LINK 제거 (다시 자동 흡수 안 되게)
+        const ruleWhere = { propertyId, category, normLabel: normalizeLabel(origLabel), targetItemId: undo.targetItemId }
+        if (moved && p.rulePrev) {
+          await tx.trackedItemMergeRule.updateMany({ where: ruleWhere, data: { kind: p.rulePrev.kind, sourceLabel: p.rulePrev.sourceLabel } })
+        } else {
+          await tx.trackedItemMergeRule.deleteMany({ where: { ...ruleWhere, kind: 'LINK' } })
+        }
+        if (moved) await tx.trackedItemMergeUndo.delete({ where: { id: undo.id } })
       })
     } else {
       // kind === 'CARD'

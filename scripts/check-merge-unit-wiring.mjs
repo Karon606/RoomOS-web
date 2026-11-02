@@ -113,7 +113,7 @@ need('적용 직후 재판정을 한다',
   /await getPendingMergeDecisions\(\)\.catch/.test(client),
   '"완료" 라고 해놓고 실제로는 안 붙는 종류를 잡는 자리다')
 need('재판정이 미부착이면 성공 토스트를 안 띄운다',
-  /if \(stuck\.length > 0\) \{[\s\S]{0,400}?\} else \{\s*\n\s*pushToast\('success', '병합 처리 완료'\)/.test(client))
+  /if \(stuck\.length > 0\) \{[\s\S]{0,600}?\} else \{\s*\n[^\n]*\n\s*pushToast\('success', `구매 \$\{n\}건을 품목에 넣었습니다`/.test(client))
 
 // ── ⑤ 비품 행별 규격 수정(2026-10-27 운영자 승인, 영수증 묶음 별건 D1) ─────────────────
 // 종전 setAssetRowSpec 은 규격 세 칸만 바꿔 detail 이 옛 표기로 남고, 배정된 행을 고치면 이력이 고아가 되고, 적용취소가 없었다.

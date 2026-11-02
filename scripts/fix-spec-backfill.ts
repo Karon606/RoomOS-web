@@ -62,7 +62,13 @@ async function main() {
     console.log(`  현재  ${fmt(row as Patch)}`)
     console.log(`  변경  ${fmt(target)}`)
 
-    if (apply || revert) await prisma.expense.update({ where: { id: t.id }, data: target })
+    // 지금 값이 이 스크립트가 아는 값(적용이면 손대기 전, 되돌림이면 적용값)일 때만 쓴다(CAS).
+    // 2026-11-01 운영자가 세탁조크리너 지출의 규격을 530ml 로 고쳤다. 대조 없이 --revert 하면 그 값을 null 로 덮었다(신고 573b2e06).
+    if (apply || revert) {
+      const expect = revert ? t.next : t.prev
+      const r = await prisma.expense.updateMany({ where: { id: t.id, ...expect }, data: target })
+      if (r.count !== 1) { console.error(`  건너뜀 — 지금 값이 ${fmt(expect)} 이 아니다(그 사이 바뀜)`); missing++ }
+    }
   }
 
   if (missing) process.exitCode = 1

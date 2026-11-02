@@ -121,7 +121,7 @@ import {
 } from './actions'
 // 수령 수량 관문 정본(순수). 화면이 '수량을 물을 구매'를 서버와 같은 셈으로 가린다.
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
-import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
+import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeDecisionRow, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
 import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, showsBarValues, bucketReadout, barHeightValue, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
 // 트리 판정 정본(순수) — 깊이 상한과 앞부분 떼기 미리보기를 화면이 서버와 같은 함수로 센다.
@@ -7044,6 +7044,23 @@ function LocationTreePicker({ locs, value, onChange, itemCountOf, allRow }: {
 
 // ── 병합 확인 모달 ──────────────────────────────────────────
 // 자동등록에서 후보가 있는 새 라벨들 — 기존 카드에 합칠지 / 새로 등록할지 선택.
+// 줄마다 그 구매가 무엇인지(언제·어디서·얼마·규격×수량·브랜드·지금 품목)를 보여 준다. 이름만으로는 어느 구매인지
+// 알 수 없어 5월 세탁조크리너를 엉뚱한 카드로 보냈다(신고 573b2e06). 고르기는 칩(aria-pressed), 결과는 토스트 하나 + [적용취소].
+// 따옴표로 감싼 값 + 조사. 조사는 따옴표 안 낱말에 맞춘다('세탁조크리너 450ml'는).
+function quotedWith(word: string, pair: '은/는' | '을/를' | '이/가'): string {
+  return `'${word}'${withParticle(word, pair).slice(word.length)}`
+}
+
+function mergeRowLines(r: MergeDecisionRow): [string, string, string] {
+  const [y, m, d] = r.date.slice(0, 10).split('-').map(Number)
+  const head = [`${y}년 ${m}월 ${d}일`, r.vendor, fmtWon(r.amount)].filter(Boolean).join(' · ')
+  const spec = r.specValue != null && r.specValue > 0 ? `${r.specValue}${r.specUnit ?? ''}` : ''
+  const qty = r.qtyValue != null ? `${r.qtyValue}${r.qtyUnit ?? ''}` : ''
+  const made = [r.brand, r.productName].filter(Boolean).join(' ')
+  const body = [[spec, qty].filter(Boolean).join(' × '), made].filter(Boolean).join(' · ')
+  return [head, body, r.currentCard ? `지금 '${r.currentCard}'` : '지금 품목 없음']
+}
+
 function MergeDecisionModal({ decisions, onClose, onDone }: {
   decisions: MergeDecision[]; onClose: () => void; onDone: () => void
 }) {
@@ -7054,36 +7071,70 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
+  const chip = (on: boolean) =>
+    `min-h-11 px-3 rounded-sm ring-1 text-sm font-medium text-left transition-colors ${
+      on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+         : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
+
+  // 적용취소는 적용한 순서의 역순으로 한 건씩(각 건이 서버에서 토큰과 지금 행을 대조한다).
+  const undoAll = (ids: string[]) => () => {
+    void (async () => {
+      for (const id of [...ids].reverse()) {
+        const u = await unmergeTrackedItem(id).catch(() => ({ ok: false as const, error: '적용취소 중 통신 오류가 발생했습니다' }))
+        if (!u.ok) { pushToast('error', u.error); onDone(); return }
+      }
+      pushToast('info', '병합 확인을 적용취소했습니다 · 재고에 못 붙은 구매로 복귀')
+      onDone()
+    })()
+  }
+
   const apply = async () => {
     setPending(true); setError('')
     const release = trackSave()
+    const undoIds: string[] = []
+    const lines: string[] = []
     try {
       for (let i = 0; i < decisions.length; i++) {
         const d = decisions[i]
         const choice = choices[i] ?? '__new__'
+        // 지출마다 화면이 본 이름을 함께 보낸다. 그 사이 바뀌었으면 서버가 전체를 되돌린다.
+        const expenses = d.rows.map(r => ({ id: r.id, fromLabel: r.fromLabel }))
         const res = choice === '__new__'
           ? await applyMergeDecision({
-              category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
+              category: d.category, newLabel: d.newLabel, expenses,
               specUnit: d.specUnit, qtyUnit: d.qtyUnit,
               choice: { kind: 'new', declinedItemIds: d.candidates.map(c => c.itemId) },
             })
           : await applyMergeDecision({
               // 단위도 함께 보낸다 — 대상 카드와 다르면 서버가 카드를 단위 무시로 바꿔야 실제로 붙는다.
-              category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
+              category: d.category, newLabel: d.newLabel, expenses,
               specUnit: d.specUnit, qtyUnit: d.qtyUnit,
               choice: { kind: 'merge', targetItemId: choice },
             })
-        if (!res.ok) { pushToast('error', res.error); setPending(false); release(); return }
+        if (!res.ok) {
+          // 앞서 적용한 결정이 있으면 그것도 되돌릴 수 있게 한다(§16).
+          pushToast('error', res.error, undoIds.length ? { action: { label: '적용취소', run: undoAll(undoIds) } } : undefined)
+          setPending(false); release()
+          if (undoIds.length) onDone()
+          return
+        }
+        if (res.undoId) undoIds.push(res.undoId)
+        const target = d.candidates.find(c => c.itemId === choice)?.label
+        lines.push(target ? `${quotedWith(d.newLabel, '은/는')} '${target}'에 합침` : `${quotedWith(d.newLabel, '은/는')} 새 품목으로 등록`)
       }
       // 적용 직후 재판정 — '완료' 라고 해놓고 실제로는 안 붙는 종류를 여기서 잡는다(신고 5ba35bfc).
       // 판정은 배너와 같은 정본(getPendingMergeDecisions)을 그대로 쓴다. 규칙을 베끼면 화면과 갈린다.
       const appliedIds = new Set(decisions.flatMap(d => d.expenseIds))
       const stuck = (await getPendingMergeDecisions().catch(() => [] as MergeDecision[]))
         .filter(d => d.expenseIds.some(id => appliedIds.has(id)))
+      const undoAction = undoIds.length ? { action: { label: '적용취소', run: undoAll(undoIds) } } : {}
       if (stuck.length > 0) {
-        pushToast('error', `${stuck.map(d => d.newLabel).join(', ')} 는 아직 재고에 못 붙었습니다. '재고에 못 붙은 구매' 에서 한 번 더 확인해 주세요.`)
+        const names = stuck.map(d => d.newLabel)
+        const said = [...names.slice(0, -1).map(n => `'${n}'`), quotedWith(names[names.length - 1], '은/는')].join(', ')
+        pushToast('error', `${said} 아직 재고에 못 붙었습니다`, { detail: "'재고에 못 붙은 구매' 에서 한 번 더 확인해 주세요.", ...undoAction })
       } else {
-        pushToast('success', '병합 처리 완료')
+        const n = decisions.reduce((s, d) => s + d.rows.length, 0)
+        pushToast('success', `구매 ${n}건을 품목에 넣었습니다`, { detail: lines.join(' · '), ...undoAction })
       }
       onDone()
     } catch {
@@ -7097,33 +7148,45 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
     <Modal open onClose={onClose} width="md" title="병합 확인"
       subtitle="새로 들어온 품목을 기존 카드에 합칠지 선택하세요"
       footer={
-        <div className="flex gap-2">
-          <Btn variant="secondary" onClick={onClose} disabled={pending} fullWidth>취소</Btn>
-          <Btn variant="primary" onClick={apply} disabled={pending} fullWidth>{pending ? '처리 중…' : '적용'}</Btn>
-        </div>
+        <ModalFooterActions onCancel={pending ? undefined : onClose}>
+          <Btn variant="primary" onClick={apply} disabled={pending}>{pending ? '저장 중…' : '저장'}</Btn>
+        </ModalFooterActions>
       }>
       <div className="space-y-4">
         {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
         {decisions.map((d, i) => (
-          <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-3 last:border-0">
+          <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-4 last:border-0 last:pb-0">
             <p className="text-sm font-medium text-[var(--warm-dark)]">
               <span className="text-[var(--tc-text)]">{d.newLabel}</span>
-              <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1.5">{d.category} · 지출 {d.expenseIds.length}건</span>
+              <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1.5">{d.category} · 구매 {d.rows.length}건</span>
             </p>
-            <div className="space-y-1.5">
+            <ul className="space-y-1.5">
+              {d.rows.map(r => {
+                const [head, body, now] = mergeRowLines(r)
+                return (
+                  <li key={r.id} className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]/60 px-3 py-2 text-xs leading-relaxed">
+                    <p className="text-[var(--warm-dark)] tabular-nums break-keep">{head}</p>
+                    {body && <p className="text-[var(--warm-mid)] tabular-nums break-keep">{body}</p>}
+                    <p className="text-[var(--warm-muted)]">{now}</p>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${d.newLabel} 넣을 곳`}>
               {d.candidates.map(c => (
-                <label key={c.itemId} className="flex items-center gap-2 text-sm text-[var(--warm-dark)] cursor-pointer">
-                  <input type="radio" name={`merge-${i}`} checked={choices[i] === c.itemId}
-                    onChange={() => setChoices(p => ({ ...p, [i]: c.itemId }))} />
-                  <span>기존 <strong>{c.label}</strong>에 합치기</span>
-                </label>
+                <button key={c.itemId} type="button" aria-pressed={choices[i] === c.itemId} className={chip(choices[i] === c.itemId)}
+                  onClick={() => setChoices(p => ({ ...p, [i]: c.itemId }))}>
+                  기존 {c.label}에 합치기
+                </button>
               ))}
-              <label className="flex items-center gap-2 text-sm text-[var(--warm-mid)] cursor-pointer">
-                <input type="radio" name={`merge-${i}`} checked={choices[i] === '__new__'}
-                  onChange={() => setChoices(p => ({ ...p, [i]: '__new__' }))} />
-                <span>새 품목으로 등록 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(다음부턴 안 물어봄)</span></span>
-              </label>
+              <button type="button" aria-pressed={choices[i] === '__new__'} className={chip(choices[i] === '__new__')}
+                onClick={() => setChoices(p => ({ ...p, [i]: '__new__' }))}>
+                새 품목으로 등록
+              </button>
             </div>
+            {choices[i] === '__new__' && d.candidates.length > 0 && (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">다음 구매부터 묻지 않습니다</p>
+            )}
           </div>
         ))}
       </div>
@@ -7151,10 +7214,15 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
     })
   }
 
-  const undo = async (id: string) => {
+  const undo = async (id: string, kind: MergeUndoRow['kind']) => {
     const ok = await confirmDialog({
       title: '이 병합을 적용취소할까요?',
-      message: '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n카드 병합이었던 경우 위치별 재고 연결·창고 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.',
+      // 병합 확인 창에서 고른 것(IMPORT·NEW)은 구매가 원래 이름으로 돌아가 다시 확인 대기에 선다(2026-11-02 부터 기록).
+      message: kind === 'CARD'
+        ? '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n위치별 재고 연결·창고 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.'
+        : kind === 'NEW'
+          ? "그 구매가 원래 이름으로 돌아가 '재고에 못 붙은 구매'에 다시 섭니다. 이때 새로 만든 품목은 지워집니다."
+          : "합쳤던 구매가 원래 이름으로 돌아가 '재고에 못 붙은 구매'에 다시 섭니다.",
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
@@ -7186,7 +7254,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                 {undos.map(u => (
                   <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
-                    <button type="button" onClick={() => undo(u.id)} disabled={pendingId === u.id}
+                    <button type="button" onClick={() => undo(u.id, u.kind)} disabled={pendingId === u.id}
                       className="text-[0.6875rem] font-medium text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">적용취소</button>
                   </div>
                 ))}

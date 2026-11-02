@@ -7,7 +7,7 @@ import {
   conversionPlan, conversionPrecheck, conversionCopy, conversionToast, conversionUndoneText, convertItemsFrom, itemFacets,
   CONVERT_UNDO_LABEL, type ConvertPlan, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
-import { specMultiplier, splitSizeLabel } from '@/lib/units'
+import { specMultiplier, splitSizeLabel, isConvertibleUnit } from '@/lib/units'
 import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
 import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { groupUnitMismatches, type UnitSource } from '@/lib/unitMismatch'
@@ -3103,8 +3103,12 @@ export default function FinanceClient({
             if (!cands.includes(it)) continue
             const label = it.label.trim()
             const card = info[label]
-            if (!card || card.trackUnit !== 'qty') continue       // 카드가 없거나 규격으로 세는 카드면 침묵
+            if (!card) continue                                   // 카드가 없으면 나눌 것도 없다(침묵)
             const now = { value: Number(it.specValue), unit: (it.specUnit ?? '').trim() }
+            // 개수로 세는 카드이거나, 규격으로 세는데 새 규격이 카드 단위로 환산되지 않으면 묻는다(신고 573b2e06).
+            // 종전에는 규격으로 세는 카드면 늘 침묵해, 카드 단위가 '개'인 세탁조크리너에 450ml 을 적어도 묻지 않고 저장했다.
+            // 그 구매는 수량만 더해져 같은 물건으로 섞이거나, 시드가 이름을 갈라 원래 카드의 지출까지 옮겼다.
+            if (card.trackUnit !== 'qty' && specMultiplier(now.value, now.unit, card.specUnit) != null) continue
             // 이력 규격을 물리 동치로 묶는다 — 2.1L·2100ml 두 표기가 '혼재'로 읽히지 않게.
             const sizes: { value: number; unit: string; count: number }[] = []
             for (const h of card.specHistory) {
@@ -3115,15 +3119,19 @@ export default function FinanceClient({
             if (!sizes.length) continue
             if (classifySpecChoice({ specValue: now.value, specUnit: now.unit }, sizes.map(x => ({ specValue: x.value, specUnit: x.unit }))) !== 'new') continue   // 써 본 규격이면 침묵 — 이력이 곧 기억이다
             const nowText = sizeText(now.value, now.unit)
-            const only = sizes.length === 1 ? sizes[0] : null
+            // 옛 규격이 수량 단위('1개')면 그것은 크기가 아니다. 옛 카드를 '세탁조크리너 1개' 로 개명하지 않고 이번 구매만 나눈다.
+            const single = sizes.length === 1 ? sizes[0] : null
+            const only = single && isConvertibleUnit(single.unit) ? single : null
             const oldText = only ? sizeText(only.value, only.unit) : ''
             const choice = await choiceDialog({
               title: `'${label}' 를 ${nowText} 규격으로 저장할까요?`,
               message: only
                 ? `지금까지 이 품목은 ${oldText} 규격으로만 등록했습니다. 서로 다른 품목으로 관리하려면 구분을 품명에 표시합니다. `
                   + `나누면 이번 구매는 '${label} ${nowText}' 로, 기존 품목과 지출은 '${label} ${oldText}' 로 나뉩니다.`
-                : `이 품목은 여러 규격(${sizes.map(s => sizeText(s.value, s.unit)).join(', ')})을 같은 품목으로 관리하고 있습니다. `
-                  + `나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`,
+                : single
+                  ? `지금까지 이 품목은 개수로만 등록했습니다. 나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`
+                  : `이 품목은 여러 규격(${sizes.map(s => sizeText(s.value, s.unit)).join(', ')})을 같은 품목으로 관리하고 있습니다. `
+                    + `나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`,
               confirmLabel: only ? '규격별로 나누기' : `'${label} ${nowText}' 로 분리`,
               altLabel: '같은 품목으로',
               level: 'caution',

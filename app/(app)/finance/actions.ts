@@ -4337,6 +4337,7 @@ export async function getTrackedCardLabels(category: string, labels: string[]): 
 export async function getSizeIdentityInfo(category: string, labels: string[]): Promise<Record<string, {
   cardId: string
   trackUnit: string
+  specUnit: string | null
   qtyUnit: string | null
   specHistory: { value: number; unit: string; count: number }[]
 }>> {
@@ -4346,7 +4347,7 @@ export async function getSizeIdentityInfo(category: string, labels: string[]): P
   // 활성 카드가 있는 품명만 대상 — 카드가 없으면 나눌 것도 없다(침묵).
   const cards = await prisma.trackedItem.findMany({
     where: { propertyId, category, label: { in: names }, isArchived: false },
-    select: { id: true, label: true, trackUnit: true, qtyUnit: true },
+    select: { id: true, label: true, trackUnit: true, specUnit: true, qtyUnit: true },
   })
   if (!cards.length) return {}
   const rows = await prisma.expense.groupBy({
@@ -4362,13 +4363,13 @@ export async function getSizeIdentityInfo(category: string, labels: string[]): P
     },
     _count: { _all: true },
   })
-  const out: Record<string, { cardId: string; trackUnit: string; qtyUnit: string | null; specHistory: { value: number; unit: string; count: number }[] }> = {}
+  const out: Record<string, { cardId: string; trackUnit: string; specUnit: string | null; qtyUnit: string | null; specHistory: { value: number; unit: string; count: number }[] }> = {}
   for (const c of cards) {
     const hist = rows
       .filter(r => r.itemLabel === c.label && r.specValue != null && r.specValue > 0 && (r.specUnit ?? '').trim() !== '')
       .map(r => ({ value: r.specValue as number, unit: (r.specUnit as string).trim(), count: r._count._all }))
       .sort((a, b) => b.count - a.count)
-    out[c.label] = { cardId: c.id, trackUnit: c.trackUnit, qtyUnit: c.qtyUnit, specHistory: hist }
+    out[c.label] = { cardId: c.id, trackUnit: c.trackUnit, specUnit: c.specUnit, qtyUnit: c.qtyUnit, specHistory: hist }
   }
   return out
 }

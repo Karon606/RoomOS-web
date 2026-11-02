@@ -148,11 +148,28 @@ export type LocationQtyEntry = {
 
 // 영수증→재고 자동등록 시, 새 라벨에 대한 병합 후보(기존 카드)
 export type MergeCandidate = { itemId: string; label: string }
+// 결정 대기 줄 하나 = 지출 하나. 병합 확인 창이 '언제·어디서·얼마·규격×수량·브랜드·지금 품목'을 보여 주는 근거이고,
+// fromLabel 은 적용할 때 서버가 지출마다 대조하는 값(그 사이 이름이 바뀌었으면 전체를 되돌린다)이다.
+export type MergeDecisionRow = {
+  id: string
+  fromLabel: string
+  date: string              // ISO
+  vendor: string | null
+  amount: number
+  specValue: number | null
+  specUnit: string | null
+  qtyValue: number | null
+  qtyUnit: string | null
+  brand: string | null
+  productName: string | null
+  currentCard: string | null  // 지금 붙어 있는 카드 이름(결정 대기 지출은 붙지 않은 것만 오므로 보통 null)
+}
 // 사용자 확인이 필요한 병합 결정 — 새 라벨 + 후보 카드들
 export type MergeDecision = {
   newLabel: string          // 새로 만들려던 라벨
   category: string
   expenseIds: string[]      // 이 결정에 묶인 지출들
+  rows: MergeDecisionRow[]  // 같은 지출의 줄 정보(expenseIds 와 같은 순서)
   specUnit: string | null
   qtyUnit: string | null
   candidates: MergeCandidate[]
@@ -171,7 +188,7 @@ export type MergeUndoRow = {
   id: string
   label: string                // "원라벨 → 대상라벨"
   targetLabel: string | null
-  kind: 'IMPORT' | 'CARD'
+  kind: 'IMPORT' | 'CARD' | 'NEW'   // NEW = 병합 확인의 '새 품목으로 등록'
   createdAt: string            // ISO
 }
 
