@@ -2952,7 +2952,8 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty, onHideLocation }
               {' '}· 저장된 점검·입수 기록이 함께 환산됩니다. 영수증은 그대로 두어도 자동 환산됩니다.
             </p>
           )}
-          {unitMsg && <p className="text-[0.65625rem] text-[var(--danger-fg)]">{unitMsg}</p>}
+          {/* 막힌 까닭은 정본 한 줄(§27.8). 작성 중인 점검이 있으면 서버가 거부하고 그 문장이 여기 선다(독립 검수 2026-11-02). */}
+          {unitMsg && <WhyCaption id={`unit-convert-why-${row.id}`}>{unitMsg}</WhyCaption>}
         </div>
       )}
       <div className="space-y-1.5">

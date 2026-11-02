@@ -9,6 +9,7 @@
 // 규격 이력이 없거나 카드 단위로 환산되지 않는 규격이 있으면, 바꿀 기록(점검·입수·폐기)이 있을 때 거부하고 까닭을 말한다.
 // 바꿀 기록이 없으면 배수가 필요 없다(구매는 계산 때 새 단위로 다시 센다).
 import { specMultiplier } from './units'
+import { withParticle } from './koParticle'
 
 export type TrackUnit = 'spec' | 'qty'
 export type TrackUnitSwitchPlan =
@@ -39,7 +40,7 @@ export function planTrackUnitSwitch(input: {
     const m = specMultiplier(p.specValue, p.specUnit, input.cardSpecUnit)
     const label = `${fmt(p.specValue!)}${p.specUnit ?? ''}`
     if (m == null) {
-      return { ok: false, reason: 'dimension', message: `구매 규격 ${label} 은 카드 단위(${input.cardSpecUnit})로 환산되지 않아 지난 점검 값을 바꿀 배수를 정할 수 없습니다.` }
+      return { ok: false, reason: 'dimension', message: `구매 규격 ${withParticle(label, '은/는')} 카드 단위(${input.cardSpecUnit})로 환산되지 않아 지난 점검 값을 바꿀 배수를 정할 수 없습니다.` }
     }
     if (!ms.some(x => sameNum(x.m, m))) ms.push({ m, label })
   }
@@ -47,11 +48,15 @@ export function planTrackUnitSwitch(input: {
     return { ok: false, reason: 'none', message: '구매 규격 기록이 없어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.' }
   }
   if (ms.length > 1) {
-    return { ok: false, reason: 'mixed', message: `구매 규격이 ${ms.map(x => x.label).join(', ')} 로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.` }
+    return { ok: false, reason: 'mixed', message: `구매 규격이 ${withParticle(ms.map(x => x.label).join(', '), '으로/로')} 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.` }
   }
   const m = ms[0].m
   return { ok: true, factor: before ? 1 / m : m, multiplier: m }
 }
+
+// 작성 중인 점검(StockCheckDraft)의 칸 값(beforeQtys·afterQtys)은 그 카드 단위로 적혀 있다. 단위를 바꾸면 그 글자가 옛 단위로 남아
+// 이어 쓰면 옛 단위 값이 새 단위로 저장된다(독립 검수 차단 2026-11-02). 드래프트를 고쳐 쓰지 않고 거부한다(규격 L·ml 변환도 같다).
+export const TRACK_UNIT_DRAFT_DENIED = '작성 중인 점검이 있어 단위를 바꿀 수 없습니다. 점검을 마치거나 지운 뒤 바꿔 주세요.'
 
 /** 수령 자동 점검 메모(`[수령 자동] +N단위`)를 새 단위로 다시 쓴다. 그 꼴이 아니면 null(손대지 않는다). */
 export function rescaleReceiptMemo(memo: string | null, factor: number, unit: string): string | null {

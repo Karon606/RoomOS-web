@@ -10,6 +10,7 @@
 //   ⓒ 적용취소는 배수를 다시 세고(토큰을 믿지 않는다) 전환 뒤 기록·합계 변화를 거부한다
 //   ⓓ 품목 설정 화면은 토글에서 미리보기를, 저장에서 전환 + 적용취소 토스트를 부르고 설정 저장에 trackUnit 을 싣지 않는다
 //   ⓔ 거부 까닭은 토글 아래 WhyCaption 한 줄이다
+//   ⓕ 작성 중인 점검(드래프트)이 있으면 전환·미리보기·적용취소·L/ml 변환이 거부한다(칸 값이 옛 단위로 남는다, 독립 검수 차단)
 import { readFileSync } from 'node:fs'
 
 const inv = readFileSync('app/(app)/inventory/actions.ts', 'utf8')
@@ -51,9 +52,17 @@ const updCall = form.slice(form.indexOf('await updateTrackedItem(row.id, {'), fo
 need('ⓓ 설정 저장에 trackUnit 을 싣지 않는다', updCall.length > 0 && !/trackUnit/.test(updCall))
 need('ⓔ 거부 까닭은 WhyCaption', /unitAsk && !unitAsk\.ok && <WhyCaption id=\{`track-unit-why-\$\{row\.id\}`\}>\{unitAsk\.error\}<\/WhyCaption>/.test(form))
 
+const pv = body(inv, 'export async function previewTrackUnitSwitch(')
+const cu = body(inv, 'export async function changeTrackedItemUnit(')
+need('ⓕ 사실에 드래프트 수를 싣는다', /db\.stockCheckDraft\.count\(\{ where: \{ trackedItemId: it\.id \} \}\)/.test(inv))
+need('ⓕ 미리보기가 드래프트를 거부', /plan\.factor !== 1 && f\.drafts > 0\) return \{ ok: false, error: TRACK_UNIT_DRAFT_DENIED \}/.test(pv))
+need('ⓕ 전환이 드래프트를 거부', /plan\.factor !== 1 && f\.drafts > 0\) throw new Error\(TRACK_UNIT_DRAFT_DENIED\)/.test(sw))
+need('ⓕ 적용취소가 드래프트를 거부', /back\.factor !== 1 && f\.drafts > 0\) throw new Error\(TRACK_UNIT_DRAFT_DENIED\)/.test(un))
+need('ⓕ L/ml 변환도 드래프트를 거부', /stockCheckDraft\.count\(\{ where: \{ trackedItemId: id \} \}\) > 0\) return \{ ok: false, error: TRACK_UNIT_DRAFT_DENIED \}/.test(cu))
+
 if (fails.length) {
   console.error(`[추적 단위 전환 배선] 위반 ${fails.length}건`)
   for (const f of fails) console.error(`  ${f}`)
   process.exit(1)
 }
-console.log('[추적 단위 전환 배선] 축 ⓐ 설정 저장은 단위를 못 바꿈 · ⓑ 정본 배수·한 트랜잭션·CAS · ⓒ 적용취소 재계산·거부 · ⓓ 화면 미리보기·전환·적용취소 · ⓔ WhyCaption / 위반 0건')
+console.log('[추적 단위 전환 배선] 축 ⓐ 설정 저장은 단위를 못 바꿈 · ⓑ 정본 배수·한 트랜잭션·CAS · ⓒ 적용취소 재계산·거부 · ⓓ 화면 미리보기·전환·적용취소 · ⓔ WhyCaption · ⓕ 드래프트 거부 / 위반 0건')

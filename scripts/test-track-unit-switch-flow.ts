@@ -142,6 +142,27 @@ async function main() {
     eq('T9 원래 토큰은 되돌림', [u4.ok, await bytes(SOAP) === before], [true, true])
   }
 
+  // ── 작성 중인 점검이 있으면 전환·L/ml 변환·적용취소를 거부한다(독립 검수 차단) ─────────────────────────────
+  {
+    const draft = await prisma.stockCheckDraft.create({ data: { trackedItemId: SOAP, locationId: null, data: { mode: 'item', beforeQtys: { x: '4500' }, afterQtys: { x: '4000' } } } })
+    const b = await bytes(SOAP)
+    const pv = await inv.previewTrackUnitSwitch(SOAP, 'qty')
+    eq('D1 미리보기 거부 · 까닭', pv.ok ? 'ok' : pv.error, '작성 중인 점검이 있어 단위를 바꿀 수 없습니다. 점검을 마치거나 지운 뒤 바꿔 주세요.')
+    const sw = await inv.switchTrackUnit(SOAP, 'qty', { from: 'spec' })
+    eq('D2 전환 거부 · 바이트 그대로', [sw.ok, await bytes(SOAP) === b], [false, true])
+    const cu = await inv.changeTrackedItemUnit(SOAP, 'L')
+    eq('D3 L 변환도 거부 · 바이트 그대로', [cu.ok, !cu.ok && cu.error, await bytes(SOAP) === b], [false, '작성 중인 점검이 있어 단위를 바꿀 수 없습니다. 점검을 마치거나 지운 뒤 바꿔 주세요.', true])
+    await prisma.stockCheckDraft.delete({ where: { id: draft.id } })
+    // 전환 뒤 드래프트가 생기면 적용취소도 거부
+    const sw2 = await inv.switchTrackUnit(SOAP, 'qty', { from: 'spec' })
+    const d2 = await prisma.stockCheckDraft.create({ data: { trackedItemId: SOAP, locationId: null, data: { mode: 'item', afterQtys: { x: '9' } } } })
+    const u = sw2.ok ? await inv.undoSwitchTrackUnit(sw2.undo) : { ok: true }
+    eq('D4 전환 뒤 드래프트면 적용취소 거부', u.ok, false)
+    await prisma.stockCheckDraft.delete({ where: { id: d2.id } })
+    const u2 = sw2.ok ? await inv.undoSwitchTrackUnit(sw2.undo) : { ok: false }
+    eq('D4 드래프트 지우면 적용취소 ok · 바이트 그대로', [u2.ok, await bytes(SOAP) === b], [true, true])
+  }
+
   // ── 섞인 카드(450ml·500ml): 기록이 있으면 거부, 아무것도 안 바뀐다 ────────────────────────────────────
   {
     const MIX = await card('섞인세제')
@@ -150,7 +171,7 @@ async function main() {
     await prisma.stockCheck.create({ data: { trackedItemId: MIX, date: new Date('2026-10-06T00:00:00Z'), remainingQty: 1500 } })
     const b = await bytes(MIX)
     const pv = await inv.previewTrackUnitSwitch(MIX, 'qty')
-    eq('M1 미리보기 거부 · 까닭', pv.ok ? 'ok' : pv.error, '구매 규격이 450ml, 500ml 로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
+    eq('M1 미리보기 거부 · 까닭', pv.ok ? 'ok' : pv.error, '구매 규격이 450ml, 500ml로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
     const sw = await inv.switchTrackUnit(MIX, 'qty', { from: 'spec' })
     eq('M2 전환 거부 · 바이트 그대로', [sw.ok, await bytes(MIX) === b], [false, true])
   }

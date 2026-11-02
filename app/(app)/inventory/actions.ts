@@ -34,7 +34,7 @@ import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, ITEM_MERGED_UNDO_DENIED, type LedgerShiftUndo, type InventoryTx } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
-import { planTrackUnitSwitch, rescaleReceiptMemo, type TrackUnit } from '@/lib/trackUnitSwitch'
+import { planTrackUnitSwitch, rescaleReceiptMemo, TRACK_UNIT_DRAFT_DENIED, type TrackUnit } from '@/lib/trackUnitSwitch'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { normalizeLabel, sizeConflicts, muteApplies, attachedToCard, planSubLabels } from './seedLabel'
@@ -552,6 +552,8 @@ export async function changeTrackedItemUnit(id: string, newUnit: string): Promis
     if (factor == null) {
       return { ok: false, error: `단위 차원이 달라 변환할 수 없습니다 (${it.specUnit} ↔ ${target}).` }
     }
+    // 작성 중인 점검의 칸 값은 지금 단위로 적혀 있다. 바꾸면 옛 단위 글자가 새 단위로 저장된다(독립 검수 2026-11-02).
+    if (await prisma.stockCheckDraft.count({ where: { trackedItemId: id } }) > 0) return { ok: false, error: TRACK_UNIT_DRAFT_DENIED }
 
     const checkIds = (await prisma.stockCheck.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(c => c.id)
     const additionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(a => a.id)
@@ -652,7 +654,7 @@ export type TrackUnitSwitchUndo = {
 type SwitchDb = InventoryTx
 const stockUnitOf = (trackUnit: string, it: { specUnit: string | null; qtyUnit: string | null }) => trackUnit === 'qty' ? (it.qtyUnit ?? '') : (it.specUnit ?? '')
 async function trackUnitFacts(db: SwitchDb, propertyId: string, it: { id: string; category: string; label: string; qtyUnit: string | null; specUnit: string | null }) {
-  const [checks, additions, disposals, purchases] = await Promise.all([
+  const [checks, additions, disposals, purchases, drafts] = await Promise.all([
     db.stockCheck.findMany({ where: { trackedItemId: it.id }, select: { id: true, remainingQty: true, memo: true, createdAt: true } }),
     db.stockAddition.findMany({ where: { trackedItemId: it.id }, select: { id: true, addedQty: true, createdAt: true } }),
     db.stockDisposal.findMany({ where: { trackedItemId: it.id }, select: { id: true, disposedQty: true, createdAt: true } }),
@@ -664,8 +666,10 @@ async function trackUnitFacts(db: SwitchDb, propertyId: string, it: { id: string
       },
       select: { specValue: true, specUnit: true },
     }),
+    // 작성 중인 점검(드래프트). 값을 바꾸는 전환이면 거부한다(TRACK_UNIT_DRAFT_DENIED).
+    db.stockCheckDraft.count({ where: { trackedItemId: it.id } }),
   ])
-  return { checks, additions, disposals, purchases }
+  return { checks, additions, disposals, purchases, drafts }
 }
 const sumsOf = (f: Awaited<ReturnType<typeof trackUnitFacts>>) => ({
   checks: f.checks.reduce((s, c) => s + c.remainingQty, 0),
@@ -690,6 +694,7 @@ export async function previewTrackUnitSwitch(id: string, to: TrackUnit): Promise
       hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0,
     })
     if (!plan.ok) return { ok: false, error: plan.message }
+    if (plan.factor !== 1 && f.drafts > 0) return { ok: false, error: TRACK_UNIT_DRAFT_DENIED }
     return { ok: true, factor: plan.factor, multiplier: plan.multiplier, checks: f.checks.length, additions: f.additions.length, disposals: f.disposals.length }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -718,6 +723,7 @@ export async function switchTrackUnit(id: string, to: TrackUnit, expect: { from:
         hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0,
       })
       if (!plan.ok) throw new Error(plan.message)
+      if (plan.factor !== 1 && f.drafts > 0) throw new Error(TRACK_UNIT_DRAFT_DENIED)
       const moved = await tx.trackedItem.updateMany({ where: { id, propertyId, trackUnit: expect.from }, data: { trackUnit: to } })
       if (moved.count !== 1) throw new Error('그 사이 추적 단위가 바뀌었습니다. 화면을 새로고침해 주세요.')
       const memos: TrackUnitSwitchUndo['memos'] = []
@@ -764,6 +770,8 @@ export async function undoSwitchTrackUnit(u: TrackUnitSwitchUndo): Promise<{ ok:
       if (!close(sums.checks, u.sums.checks) || !close(sums.additions, u.sums.additions) || !close(sums.disposals, u.sums.disposals)) throw new Error(TRACK_UNIT_UNDO_STALE)
       const back = planTrackUnitSwitch({ from: u.to, to: u.from, cardSpecUnit: it.specUnit, purchases: f.purchases, hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0 })
       if (!back.ok || !close(back.factor * u.factor, 1)) throw new Error(TRACK_UNIT_UNDO_STALE)
+      // 전환 뒤 쓰기 시작한 점검은 새 단위로 적혀 있다. 되돌리면 그 글자가 옛 단위로 읽힌다.
+      if (back.factor !== 1 && f.drafts > 0) throw new Error(TRACK_UNIT_DRAFT_DENIED)
       const moved = await tx.trackedItem.updateMany({ where: { id: it.id, propertyId, trackUnit: u.to }, data: { trackUnit: u.from } })
       if (moved.count !== 1) throw new Error(TRACK_UNIT_UNDO_STALE)
       if (back.factor !== 1) await scaleStockValues(f.checks.map(c => c.id), f.additions.map(a => a.id), f.disposals.map(d => d.id), back.factor, tx)

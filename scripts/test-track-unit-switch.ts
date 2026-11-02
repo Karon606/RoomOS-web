@@ -41,7 +41,11 @@ eq('N1 카드 규격 단위 없음', ok(planTrackUnitSwitch({ from: 'spec', to: 
 // 거부 문장 · 까닭과 규격을 말한다(마침표로 끝난다)
 {
   const r = planTrackUnitSwitch({ from: 'spec', to: 'qty', cardSpecUnit: 'ml', purchases: [P(450, 'ml'), P(500, 'ml')], hasRecords: true })
-  eq('M1 섞임 문장', r.ok ? null : r.message, '구매 규격이 450ml, 500ml 로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
+  eq('M1 섞임 문장(조사 정본)', r.ok ? null : r.message, '구매 규격이 450ml, 500ml로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
+  const k = planTrackUnitSwitch({ from: 'spec', to: 'qty', cardSpecUnit: 'kg', purchases: [P(2.7, 'kg'), P(3, 'kg')], hasRecords: true })
+  eq('M2 숫자 끝 조사', k.ok ? null : k.message, '구매 규격이 2.7kg, 3kg로 섞여 있어 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
+  const d = planTrackUnitSwitch({ from: 'spec', to: 'qty', cardSpecUnit: 'ml', purchases: [P(450, 'g')], hasRecords: true })
+  eq('M3 환산 불가 문장(조사 정본)', d.ok ? null : d.message, '구매 규격 450g는 카드 단위(ml)로 환산되지 않아 지난 점검 값을 바꿀 배수를 정할 수 없습니다.')
 }
 
 // R 수령 자동 메모 다시 쓰기
