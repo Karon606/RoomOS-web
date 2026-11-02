@@ -4,11 +4,14 @@
 //
 // 보는 것.
 //   A. 한 번 제출(lib/reserveTransition reserveSubmitFields)로 투어 완료에서 확정된 예약까지 간다. 이력 행은 하나다.
-//      적용취소(reserveUndo) 한 호출이 상태·확정·입주 희망일·호실 공실을 전환 전 값으로 되돌린다.
+//      적용취소(reserveUndo) 한 호출이 상태·확정·입주 희망일·조절 여부·호실 공실을 전환 전 값으로 되돌린다.
 //   B. 본인 연락처가 없으면 서버 확정 문이 거부하고 계약은 바이트 그대로다(예약도 반쪽으로 안 남는다).
-//   C. 종전 두 단계(전환 뒤 예약 확정)를 거꾸로 두 번(확정 적용취소, 전환 적용취소) 되돌리면 A 와 같은 끝 상태다.
+//   C. 전환 뒤 '예약 확정' 을 따로 누르고 전환 토스트 [적용취소] 를 누르면 거부한다(확정만 남은 투어 단계 반쪽 금지, 독립 검수 B1).
+//      확정 적용취소까지 한 뒤에도 확정이 조절 여부를 접었으면 기대값과 달라 거부, 조절 여부가 원래 비어 있었으면 전환 전 그대로 돌아간다.
 //   D. 체크 안 한 전환의 적용취소는 확정 칸을 건드리지 않는다.
 //   E. 그 방을 다른 계약이 잡고 있으면 투어 단계로 물려도 공실로 덮지 않는다.
+//   F. 전환 뒤 입주 희망일을 고쳤으면 적용취소가 거부한다(고친 날짜를 덮지 않는다).
+//   G. 기존 토스트 적용취소(투어 완료·입실 처리)도 기대값 대조를 지난다.
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -110,13 +113,15 @@ async function main() {
   g.__CR_FLOW_PID = P1
   const TODAY = '2026-11-02'
   let roomSeq = 0
-  const setup = async (name: string, status: string, opts: { phone?: boolean; moveIn?: string | null } = {}) => {
+  const setup = async (name: string, status: string, opts: { phone?: boolean; moveIn?: string | null; flex?: boolean | null } = {}) => {
     const room = await prisma.room.create({ data: { propertyId: P1, roomNo: `9${String(++roomSeq).padStart(2, '0')}`, isVacant: true } })
     const tenant = await prisma.tenant.create({ data: { propertyId: P1, name } })
     if (opts.phone !== false) await prisma.tenantContact.create({ data: { tenantId: tenant.id, contactType: 'PHONE', contactValue: '010-1234-5678', isPrimary: true } })
     const lease = await prisma.leaseTerm.create({ data: {
       propertyId: P1, tenantId: tenant.id, roomId: room.id, status: status as never,
       moveInDate: opts.moveIn ? new Date(opts.moveIn) : null,
+      // 조절 여부는 실제로 세운다(독립 검수 R1). 기본 true(조절 가능), 확정이 접는 값이라 적용취소가 되살려야 한다.
+      moveInFlexible: opts.flex === undefined ? true : opts.flex,
     } })
     return { roomId: room.id as string, tenantId: tenant.id as string, leaseId: lease.id as string }
   }
@@ -127,73 +132,110 @@ async function main() {
   }
   const logCount = async (leaseId: string) => prisma.tenantStatusLog.count({ where: { leaseTermId: leaseId } })
   const ymd = (d: unknown) => (d ? String(d).slice(0, 10) : null)
+  const go = (s: { leaseId: string; tenantId: string }, toStatus: string, extra: Record<string, unknown> = {}) =>
+    tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus, ...extra })
+  const undo = (s: { leaseId: string; tenantId: string }, u: ReturnType<typeof reserveUndo>) => go(s, u.toStatus, { ...u.fields, expect: u.expect })
 
   // ── A. 한 번 제출과 한 번 적용취소 ─────────────────────────────────────
   {
     const s = await setup('가', 'TOUR_DONE', { moveIn: '2026-11-15' })
     const before = await snap(s.leaseId, s.roomId)
-    const r = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', true, TODAY) })
+    eq('A 셋업 조절 여부 true', before.moveInFlexible, true)
+    const r = await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', true, TODAY))
     eq('A 전환 성공', r.ok, true)
     const after = await snap(s.leaseId, s.roomId)
-    eq('A 예약 + 확정 + 희망일', [after.status, ymd(after.reservationConfirmedAt), ymd(after.moveInDate)], ['RESERVED', TODAY, '2026-11-20'])
+    eq('A 예약 + 확정 + 희망일, 확정이 조절 여부를 접음', [after.status, ymd(after.reservationConfirmedAt), ymd(after.moveInDate), after.moveInFlexible], ['RESERVED', TODAY, '2026-11-20', null])
     eq('A 이력 행 하나(투어 완료에서 입실 예약)', await logCount(s.leaseId), 1)
-    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15' }, true)
-    const ru = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: u.toStatus, ...u.fields })
+    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15', moveInFlexible: true }, { moveInYmd: '2026-11-20', confirmedYmd: TODAY })
+    const ru = await undo(s, u)
     eq('A 적용취소 성공', ru.ok, true)
-    const back = await snap(s.leaseId, s.roomId)
-    eq('A 적용취소 뒤 상태·확정·희망일·공실이 전환 전 그대로', { ...back, moveInFlexible: null }, { ...before, moveInFlexible: null })
+    eq('A 적용취소 뒤 상태·확정·희망일·조절 여부·공실이 전환 전 그대로', await snap(s.leaseId, s.roomId), before)
     eq('A 적용취소는 새 이력 행(입실 예약에서 투어 완료)', await logCount(s.leaseId), 2)
+    eq('A 같은 적용취소를 두 번 누르면 거부', (await undo(s, u)).ok, false)
   }
 
   // ── B. 연락처 없음은 통째로 거부 ───────────────────────────────────────
   {
     const s = await setup('나', 'TOUR_DONE', { phone: false, moveIn: '2026-11-15' })
     const before = JSON.stringify(await prisma.leaseTerm.findUnique({ where: { id: s.leaseId } }))
-    const r = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', true, TODAY) })
+    const r = await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', true, TODAY))
     eq('B 거부', r.ok, false)
     eq('B 거부 문장은 연락처 문', !r.ok && r.error.startsWith('예약 확정'), true)
     eq('B 계약 바이트 그대로', JSON.stringify(await prisma.leaseTerm.findUnique({ where: { id: s.leaseId } })), before)
     eq('B 이력 행 없음', await logCount(s.leaseId), 0)
-    const r2 = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', false, TODAY) })
+    const r2 = await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', false, TODAY))
     eq('B 체크를 끄면 전환은 된다(종전 그대로)', [r2.ok, (await snap(s.leaseId, s.roomId)).status, (await snap(s.leaseId, s.roomId)).reservationConfirmedAt], [true, 'RESERVED', null])
   }
 
-  // ── C. 종전 두 단계와 끝 상태가 같다 ────────────────────────────────────
+  // ── C. 전환 뒤 따로 확정한 것을 전환 토스트로 되돌리면 거부(독립 검수 B1 재현) ──────────
   {
     const s = await setup('다', 'TOUR_DONE', { moveIn: '2026-11-15' })
-    const before = await snap(s.leaseId, s.roomId)
-    await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', false, TODAY) })
-    await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', reservationConfirmedAt: TODAY })
-    const mid = await snap(s.leaseId, s.roomId)
-    eq('C 두 단계 뒤 예약 + 확정', [mid.status, ymd(mid.reservationConfirmedAt)], ['RESERVED', TODAY])
-    // 확정 적용취소(버튼) 다음 전환 적용취소(토스트) — 차례대로
-    const r1 = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', reservationConfirmedAt: null })
-    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15' }, false)
-    const r2 = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: u.toStatus, ...u.fields })
-    eq('C 두 번 되돌리기 성공', [r1.ok, r2.ok], [true, true])
-    eq('C 끝 상태가 전환 전과 같다', { ...(await snap(s.leaseId, s.roomId)), moveInFlexible: null }, { ...before, moveInFlexible: null })
+    await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', false, TODAY))
+    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15', moveInFlexible: true }, { moveInYmd: '2026-11-20', confirmedYmd: null })
+    await go(s, 'RESERVED', { reservationConfirmedAt: TODAY })   // 6초 안에 '예약 확정' 버튼
+    const mid = JSON.stringify(await prisma.leaseTerm.findUnique({ where: { id: s.leaseId } }))
+    const logsMid = await logCount(s.leaseId)
+    const r = await undo(s, u)
+    eq('C 확정 뒤 전환 적용취소는 거부', [r.ok, !r.ok && r.error.startsWith('그사이 이 계약이 바뀌어')], [false, true])
+    eq('C 거부 뒤 계약 바이트 그대로(투어 단계 + 확정 반쪽 없음)', JSON.stringify(await prisma.leaseTerm.findUnique({ where: { id: s.leaseId } })), mid)
+    eq('C 거부 뒤 이력 행 그대로', await logCount(s.leaseId), logsMid)
+    // 확정 적용취소(버튼)까지 해도 확정이 접은 조절 여부가 기대값(true)과 달라 거부한다
+    await go(s, 'RESERVED', { reservationConfirmedAt: null })
+    eq('C 확정 적용취소 뒤에도 조절 여부가 달라 거부', (await undo(s, u)).ok, false)
+    // 조절 여부가 원래 비어 있던 계약은 두 번 되돌리면 전환 전 그대로
+    const s2 = await setup('다2', 'TOUR_DONE', { moveIn: '2026-11-15', flex: null })
+    const before2 = await snap(s2.leaseId, s2.roomId)
+    await go(s2, 'RESERVED', reserveSubmitFields('2026-11-20', false, TODAY))
+    await go(s2, 'RESERVED', { reservationConfirmedAt: TODAY })
+    await go(s2, 'RESERVED', { reservationConfirmedAt: null })
+    const u2 = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15', moveInFlexible: null }, { moveInYmd: '2026-11-20', confirmedYmd: null })
+    eq('C 확정 적용취소 다음 전환 적용취소, 끝 상태가 전환 전과 같다', [(await undo(s2, u2)).ok, await snap(s2.leaseId, s2.roomId)], [true, before2])
   }
 
   // ── D. 체크 안 한 전환의 적용취소는 확정 칸을 안 건드린다 ───────────────
   {
     const s = await setup('라', 'WAITING_TOUR', { moveIn: null })
     const before = await snap(s.leaseId, s.roomId)
-    await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', false, TODAY) })
-    const u = reserveUndo({ status: 'WAITING_TOUR', moveInYmd: null }, false)
+    await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', false, TODAY))
+    eq('D 체크 안 한 전환은 조절 여부를 그대로 둔다', (await snap(s.leaseId, s.roomId)).moveInFlexible, true)
+    const u = reserveUndo({ status: 'WAITING_TOUR', moveInYmd: null, moveInFlexible: true }, { moveInYmd: '2026-11-20', confirmedYmd: null })
     eq('D 적용취소 값에 확정 칸 없음', 'reservationConfirmedAt' in u.fields, false)
-    const r = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: u.toStatus, ...u.fields })
-    eq('D 적용취소 성공·전환 전 그대로', [r.ok, await snap(s.leaseId, s.roomId)], [true, before])
+    eq('D 적용취소 성공·전환 전 그대로', [(await undo(s, u)).ok, await snap(s.leaseId, s.roomId)], [true, before])
   }
 
   // ── E. 그 방을 다른 계약이 잡고 있으면 적용취소가 공실로 덮지 않는다(점유 확인 정본) ──────────
   {
     const s = await setup('마', 'TOUR_DONE', { moveIn: '2026-11-15' })
-    await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: 'RESERVED', ...reserveSubmitFields('2026-11-20', true, TODAY) })
+    await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', true, TODAY))
     const other = await prisma.tenant.create({ data: { propertyId: P1, name: '바' } })
     await prisma.leaseTerm.create({ data: { propertyId: P1, tenantId: other.id, roomId: s.roomId, status: 'ACTIVE', moveInDate: new Date('2026-10-01') } })
-    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15' }, true)
-    const r = await tenants.applyStatusTransition({ leaseTermId: s.leaseId, tenantId: s.tenantId, toStatus: u.toStatus, ...u.fields })
+    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15', moveInFlexible: true }, { moveInYmd: '2026-11-20', confirmedYmd: TODAY })
+    const r = await undo(s, u)
     eq('E 적용취소 성공·다른 거주 계약이 있어 공실 아님', [r.ok, (await snap(s.leaseId, s.roomId)).status, (await snap(s.leaseId, s.roomId)).isVacant], [true, 'TOUR_DONE', false])
+  }
+
+  // ── F. 전환 뒤 희망일을 고쳤으면 거부 ───────────────────────────────────
+  {
+    const s = await setup('사', 'TOUR_DONE', { moveIn: '2026-11-15' })
+    await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', true, TODAY))
+    await prisma.leaseTerm.update({ where: { id: s.leaseId }, data: { moveInDate: new Date('2026-11-25') } })   // 수정 폼에서 희망일을 고침
+    const u = reserveUndo({ status: 'TOUR_DONE', moveInYmd: '2026-11-15', moveInFlexible: true }, { moveInYmd: '2026-11-20', confirmedYmd: TODAY })
+    const r = await undo(s, u)
+    eq('F 고친 희망일은 덮지 않는다', [r.ok, (await snap(s.leaseId, s.roomId)).status, ymd((await snap(s.leaseId, s.roomId)).moveInDate)], [false, 'RESERVED', '2026-11-25'])
+  }
+
+  // ── G. 기존 토스트 적용취소도 기대값 대조 ─────────────────────────────
+  {
+    const s = await setup('아', 'WAITING_TOUR', { moveIn: null })
+    await go(s, 'TOUR_DONE')
+    await go(s, 'RESERVED', reserveSubmitFields('2026-11-20', false, TODAY))   // 투어 완료 토스트가 떠 있는 사이 다음 단계로
+    eq('G 투어 완료 적용취소는 상태가 바뀌었으면 거부', [(await go(s, 'WAITING_TOUR', { expect: { status: 'TOUR_DONE' } })).ok, (await snap(s.leaseId, s.roomId)).status], [false, 'RESERVED'])
+    const r = await go(s, 'ACTIVE', { moveInDate: '2026-11-02' })
+    eq('G 입실 처리', r.ok, true)
+    eq('G 입실 적용취소는 입주일이 그대로면 된다', (await go(s, 'RESERVED', { expect: { status: 'ACTIVE', moveInDate: '2026-11-02' } })).ok, true)
+    await go(s, 'ACTIVE', { moveInDate: '2026-11-02' })
+    await prisma.leaseTerm.update({ where: { id: s.leaseId }, data: { moveInDate: new Date('2026-11-01') } })
+    eq('G 입실 적용취소는 입주일을 고쳤으면 거부', [(await go(s, 'RESERVED', { expect: { status: 'ACTIVE', moveInDate: '2026-11-02' } })).ok, (await snap(s.leaseId, s.roomId)).status], [false, 'ACTIVE'])
   }
 
   console.log(`[입실 예약 전환 · 바로 예약 확정 통합] 통과 ${pass} / 실패 ${fail}`)

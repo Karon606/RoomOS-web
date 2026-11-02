@@ -160,6 +160,8 @@ type Lease = {
   cycleDay: string | null
   isShortTerm: boolean
   reservationConfirmedAt: Date | string | null
+  /** 입주 희망일 조절 여부(null = 아직 안 물어봄). 입실 예약 전환 적용취소가 되돌리는 값이다. */
+  moveInFlexible?: boolean | null
   /** 앱이 자동으로 퇴실 예정으로 바꾼 시각 — 그 사실을 말하고 되돌릴 문을 여는 근거다. */
   autoCheckoutAt?: Date | string | null
   roomId: string | null
@@ -292,9 +294,6 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [confirmNow, setConfirmNow] = useState(false)
   const [confirmLine, setConfirmLine] = useState<string | null>(null)
   const confirmHintId = useId()
-  const toggleConfirmNow = (on: boolean) => {
-    setConfirmNow(on)
-  }
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
   if (transitions.length === 0) return null
@@ -474,11 +473,12 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
    * 여기만 따로 액션을 두면 6초 안에 누른 사람과 나중에 버튼으로 누른 사람이 다른 결과를 본다.
    * 확인창은 없다 — 토스트 액션은 방금 한 일을 무르는 자리라 되묻는 것이 도리어 마찰이다.
    */
-  const runUndoAfter = (u: { toStatus: string; toast: string; fields?: Omit<Parameters<typeof applyStatusTransition>[0], 'leaseTermId' | 'tenantId' | 'toStatus'> }) => {
+  // expect = 앞선 전환이 쓴 값. 서버가 지금 값과 대조해 다르면 거부한다(§27.1 CAS, 독립 검수 B1). 토스트 적용취소는 늘 싣는다.
+  const runUndoAfter = (u: { toStatus: string; toast: string; fields?: Omit<Parameters<typeof applyStatusTransition>[0], 'leaseTermId' | 'tenantId' | 'toStatus' | 'expect'>; expect: NonNullable<Parameters<typeof applyStatusTransition>[0]['expect']> }) => {
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await applyStatusTransition({ leaseTermId: lease.id, tenantId, toStatus: u.toStatus, ...(u.fields ?? {}) })
+        const res = await applyStatusTransition({ leaseTermId: lease.id, tenantId, toStatus: u.toStatus, ...(u.fields ?? {}), expect: u.expect })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('info', `${tenantName}님 · ${u.toast}`)
         onChange?.()
@@ -665,12 +665,17 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         } else if (def.key === 'reserve') {
           // 입실 예약 전환(과 함께 한 확정)의 적용취소 — 전환 전 상태·입주 희망일로, 확정했으면 확정까지 한 호출로 되돌린다.
           const confirmedNow = !!fields?.reservationConfirmedAt
-          const undo = reserveUndo({ status: lease.status, moveInYmd: toDateInput(lease.moveInDate) || null }, confirmedNow)
+          const undo = reserveUndo(
+            { status: lease.status, moveInYmd: toDateInput(lease.moveInDate) || null, moveInFlexible: lease.moveInFlexible ?? null },
+            { moveInYmd: fields?.moveInDate ?? '', confirmedYmd: fields?.reservationConfirmedAt ?? null },
+          )
           pushToast('success', `${tenantName}님 · ${reserveDoneToast(confirmedNow)}`, {
             action: { label: '적용취소', run: () => runUndoAfter(undo) },
           })
         } else {
-          const undoable = UNDO_AFTER[def.key]
+          // 기대값은 이 전환이 쓴 상태와(입실 처리면) 입주일이다. 그사이 바뀌었으면 서버가 되돌리지 않는다(독립 검수 B1).
+          const base = UNDO_AFTER[def.key]
+          const undoable = base && { ...base, expect: { status: def.toStatus, ...(fields?.moveInDate !== undefined ? { moveInDate: fields.moveInDate || null } : {}) } }
           // 입실 처리가 그 방의 열린 입실 전 점검을 닫았으면 그 사실이 이 토스트의 둘째 줄이다(운영자 결정 ③, §15 장문형).
           const detail = 'moveInInspectionClosed' in res ? res.moveInInspectionClosed : undefined
           pushToast('success', `${tenantName}님 · ${def.successToast ?? `${def.label} 완료`}`, {
@@ -840,7 +845,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               {active.def.key === 'reserve' && (
                 <div className="space-y-1">
                   <label className="flex items-center gap-2 cursor-pointer min-h-[var(--input-h-touch)] sm:min-h-0 sm:py-1">
-                    <input type="checkbox" checked={confirmNow} onChange={e => toggleConfirmNow(e.target.checked)}
+                    <input type="checkbox" checked={confirmNow} onChange={e => setConfirmNow(e.target.checked)}
                       disabled={pending} aria-describedby={confirmHintId}
                       className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
                     <span className="text-xs text-[var(--warm-dark)] break-keep">바로 예약 확정</span>

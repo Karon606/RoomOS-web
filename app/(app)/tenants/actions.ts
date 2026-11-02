@@ -3944,6 +3944,31 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   }
 }
 
+// 적용취소 기대값 — applyStatusTransition expect. 실린 칸만 where 조건이 된다(날짜는 전환이 보낸 'YYYY-MM-DD' 그대로 new Date).
+const TRANSITION_UNDO_STALE = '그사이 이 계약이 바뀌어 되돌리지 않았습니다. 지금 상태를 확인한 뒤 필요하면 직접 고쳐 주세요.'
+type TransitionExpectWhere = { status: LeaseStatus; reservationConfirmedAt?: Date | null; moveInDate?: Date | null; moveInFlexible?: boolean | null }
+function transitionExpectWhere(e: { status: string; reservationConfirmedAt?: string | null; moveInDate?: string | null; moveInFlexible?: boolean | null } | undefined): TransitionExpectWhere | null {
+  if (!e) return null
+  const day = (v: string | null) => (v ? new Date(v) : null)
+  return {
+    status: e.status as LeaseStatus,
+    ...(e.reservationConfirmedAt !== undefined ? { reservationConfirmedAt: day(e.reservationConfirmedAt) } : {}),
+    ...(e.moveInDate !== undefined ? { moveInDate: day(e.moveInDate) } : {}),
+    ...(e.moveInFlexible !== undefined ? { moveInFlexible: e.moveInFlexible } : {}),
+  }
+}
+function transitionExpectHolds(
+  lease: { status: string; reservationConfirmedAt: Date | null; moveInDate: Date | null; moveInFlexible: boolean | null },
+  w: TransitionExpectWhere,
+): boolean {
+  const same = (a: Date | null, b: Date | null | undefined) => (a?.getTime() ?? null) === (b?.getTime() ?? null)
+  if (lease.status !== w.status) return false
+  if ('reservationConfirmedAt' in w && !same(lease.reservationConfirmedAt, w.reservationConfirmedAt)) return false
+  if ('moveInDate' in w && !same(lease.moveInDate, w.moveInDate)) return false
+  if ('moveInFlexible' in w && lease.moveInFlexible !== w.moveInFlexible) return false
+  return true
+}
+
 // 상태값 → 호실 공실 여부 (null = 호실 상태 변경 안 함)
 function roomVacantForStatus(status: string): boolean | null {
   if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status)) return false
@@ -3999,6 +4024,14 @@ export async function applyStatusTransition(input: {
   // 전부 처리하고 호출부가 한 코드로 모든 전이를 넘기기 때문이다 — 퇴실 전용 값을 전 전이의
   // 필수로 만들면 예약 확정·투어 전환까지 더미를 채우게 되고 그 순간 규칙이 죽는다.
   cleaningDate?: string | null
+  /** 입주 희망일 조절 여부를 이 값으로 되돌린다(적용취소 전용). 리드를 떠나는 전환이면 접기가 이긴다. */
+  moveInFlexible?: boolean | null
+  /**
+   * 적용취소의 기대값(§27.1 CAS, 2026-11-02 독립 검수 B1). 앞선 전환이 쓴 값이 지금도 그대로일 때만 되돌린다.
+   * 실린 칸만 대조하고 하나라도 다르면 아무것도 안 쓰고 거부한다. 쓰기도 같은 조건의 updateMany 라 그사이 끼어든 저장을 덮지 않는다.
+   * 예: 입실 예약 전환 뒤 '예약 확정' 을 누르고 전환 토스트의 [적용취소] 를 누르면, 확정 시각만 남은 투어 단계 반쪽이 생겼다.
+   */
+  expect?: { status: string; reservationConfirmedAt?: string | null; moveInDate?: string | null; moveInFlexible?: boolean | null }
 }): Promise<{
   ok: true; notice?: string
   /** 입주 희망일이 바뀌었는데 그날 계약 호실이 아직 차 있다 — 화면이 그때까지 지낼 방을 권한다. */
@@ -4017,6 +4050,7 @@ export async function applyStatusTransition(input: {
       where: { id: input.leaseTermId, propertyId },
       select: {
         roomId: true, status: true, dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true, reservationConfirmedAt: true,
+        moveInFlexible: true,
         // 종속 가드(거주계로 올라오는 전환)가 볼 메인 계약 지목.
         parentLeaseTermId: true,
         // 예약 확정 문이 볼 사람 — 인자로 온 tenantId 가 아니라 **이 계약의 주인**을 본다.
@@ -4028,6 +4062,10 @@ export async function applyStatusTransition(input: {
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     if (!(await tenantInProperty(propertyId, input.tenantId))) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
+
+    // 적용취소 기대값 대조(위 expect 주석). 날짜 칸은 전환이 쓴 'YYYY-MM-DD' 를 같은 변환(new Date)으로 견준다.
+    const casWhere = transitionExpectWhere(input.expect)
+    if (casWhere && !transitionExpectHolds(lease, casWhere)) return { ok: false, error: TRANSITION_UNDO_STALE }
 
     // 미래 퇴실일 거부(운영자 확정 2026-09-17). 실제로 나간 날은 지난 날이고, 앞날을 잡는 것은
     // expectedMoveOut 의 몫이다 — 그래서 이 가드는 moveOutDate 에만 건다. 화면 maxDate 와 두 겹이다.
@@ -4138,6 +4176,7 @@ export async function applyStatusTransition(input: {
         ? (input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null)
         : lease.reservationConfirmedAt
       if (leavesWishLead(input.toStatus, finalReservedAt)) data.moveInFlexible = null
+      else if (input.moveInFlexible !== undefined) data.moveInFlexible = input.moveInFlexible
     }
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
     // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생 — 거주 전 단계는 납부일을 비워두므로(2026-07-30) 진입 시 채운다
@@ -4182,7 +4221,13 @@ export async function applyStatusTransition(input: {
         data.autoCheckoutAt = null
       }
     }
-    await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+    if (casWhere) {
+      // 대조와 쓰기 사이에 끼어든 저장을 덮지 않는다 — 같은 조건으로 쓰고 0행이면 거부(아직 아무것도 안 썼다).
+      const w = await prisma.leaseTerm.updateMany({ where: { id: input.leaseTermId, propertyId, ...casWhere }, data })
+      if (w.count === 0) return { ok: false, error: TRANSITION_UNDO_STALE }
+    } else {
+      await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+    }
     // 딸린 계약도 같은 날로 — 위 자동 파생이 부모의 빈 납부일을 채운 경우다(운영자 오더 2026-08-13).
     if (typeof data.dueDay === 'string') {
       await propagateDueDayToSubLeases(prisma, input.leaseTermId, lease.dueDay, data.dueDay)

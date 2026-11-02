@@ -6,6 +6,7 @@
 //      성공 토스트의 적용취소 reserveUndo 를 runUndoAfter 로). 체크 칸 '바로 예약 확정' 은 캡션과 aria-describedby 로 잇는다.
 //   ⓒ 입주자 수정 폼의 입실 예약 캡션이 동작과 반대로 말하지 않는다('확정을 체크하면 방을 잡는다' 류 금지).
 //   ⓓ 상태 전환 서버는 점유에서 투어 단계로 물리면 그 방을 놓는다(적용취소 왕복이 공실을 되돌리는 근거).
+//   ⓔ 토스트 적용취소는 기대값(expect)을 싣고, 서버는 쓰기 전에 대조하고 같은 조건의 updateMany 로 쓴다(§27.1 CAS, 독립 검수 B1).
 //
 // 그물은 주석을 안 본다 — 설명 글자가 걸리거나 통과시키지 않게 주석을 먼저 걷는다.
 import { readFileSync } from 'node:fs'
@@ -60,6 +61,11 @@ if (!ok || !/reserveUndo\(/.test(ok) || !/runUndoAfter\(/.test(ok) || !/label:\s
 if (!/const runUndoAfter = \([\s\S]{0,600}?applyStatusTransition\(\{[^}]*\.\.\.\(u\.fields \?\? \{\}\)/.test(w)) errs.push('ⓑ runUndoAfter 가 적용취소 값(fields)을 싣지 않는다')
 if (!/바로 예약 확정/.test(w)) errs.push("ⓑ 체크 칸 '바로 예약 확정' 이 없다")
 if (!/checked=\{confirmNow\}[\s\S]{0,200}aria-describedby=\{confirmHintId\}/.test(w) || !/id=\{confirmHintId\}/.test(w)) errs.push('ⓑ 체크 칸과 캡션이 aria-describedby 로 이어지지 않는다')
+if (!/applyStatusTransition\(\{ leaseTermId: lease\.id, tenantId, toStatus: u\.toStatus, \.\.\.\(u\.fields \?\? \{\}\), expect: u\.expect \}\)/.test(w)) errs.push('ⓔ runUndoAfter 가 기대값(expect)을 싣지 않는다')
+if (!/expect:\s*NonNullable</.test(w)) errs.push('ⓔ runUndoAfter 의 expect 가 필수가 아니다(빠뜨린 적용취소가 대조 없이 돈다)')
+{
+  if (!/const undoable = base && \{ \.\.\.base, expect: \{ status: def\.toStatus/.test(w)) errs.push('ⓔ 기존 토스트 적용취소(UNDO_AFTER)가 기대값을 싣지 않는다')
+}
 if (!/dirty=\{[^}]*confirmNow/.test(w)) errs.push('ⓑ 체크 칸을 켠 미니폼이 dirty 로 잡히지 않는다')
 
 // ⓒ 수정 폼 캡션
@@ -75,5 +81,12 @@ if (!/const vac = roomVacantForStatus\(input\.toStatus\)\s*\?\?\s*\(\['ACTIVE', 
   errs.push('ⓓ applyStatusTransition 이 점유에서 투어 단계로 물릴 때 방을 놓지 않는다')
 }
 
-console.log(`[입실 예약 흐름 배선] 축 ⓐ 주 버튼 하나 · ⓑ 바로 예약 확정 값·적용취소 · ⓒ 수정 폼 캡션 · ⓓ 투어 단계로 물리면 방을 놓음 / 위반 ${errs.length}건`)
+// ⓔ 서버 CAS
+if (!/const casWhere = transitionExpectWhere\(input\.expect\)\s*\n\s*if \(casWhere && !transitionExpectHolds\(lease, casWhere\)\) return/.test(fn)) errs.push('ⓔ applyStatusTransition 이 쓰기 전에 기대값을 대조하지 않는다')
+if (!/if \(casWhere\) \{[\s\S]{0,400}prisma\.leaseTerm\.updateMany\(\{ where: \{ id: input\.leaseTermId, propertyId, \.\.\.casWhere \}, data \}\)[\s\S]{0,120}count === 0\) return/.test(fn)) errs.push('ⓔ applyStatusTransition 의 적용취소 쓰기가 같은 조건 updateMany(0행 거부)가 아니다')
+const rt = strip(readFileSync('lib/reserveTransition.ts', 'utf8'))
+if (!/expect: \{ status: 'RESERVED', reservationConfirmedAt: wrote\.confirmedYmd, moveInDate: wrote\.moveInYmd, moveInFlexible: flexAfter \}/.test(rt)) errs.push('ⓔ reserveUndo 기대값이 전환이 쓴 네 칸(상태·확정·희망일·조절 여부)이 아니다')
+if (!/moveInFlexible: prev\.moveInFlexible/.test(rt)) errs.push('ⓔ reserveUndo 가 조절 여부를 되돌리지 않는다(독립 검수 R1)')
+
+console.log(`[입실 예약 흐름 배선] 축 ⓐ 주 버튼 하나 · ⓑ 바로 예약 확정 값·적용취소 · ⓒ 수정 폼 캡션 · ⓓ 투어 단계로 물리면 방을 놓음 · ⓔ 적용취소 기대값 대조 / 위반 ${errs.length}건`)
 if (errs.length) { for (const e of errs) console.error('  ' + e); process.exit(1) }

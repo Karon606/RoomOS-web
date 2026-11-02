@@ -6,6 +6,7 @@
 // 진리표 scripts/test-reserve-transition.ts, 실제 쓰기 왕복은 scripts/test-reserve-confirm-flow.ts(PGlite).
 import { transitionStatusLabel } from '@/lib/leaseTransitions'
 import { withParticle } from '@/lib/koParticle'
+import { leavesWishLead } from '@/lib/wishMatch'
 
 export type ReserveFields = {
   moveInDate: string
@@ -23,19 +24,32 @@ export function reserveConfirmDenial(moveInYmd: string, confirmNow: boolean): st
 }
 
 /**
- * 적용취소 값 — 전환 전 상태와 입주 희망일로 되돌리고, 함께 확정했으면 확정도 지운다. **한 호출**이다.
+ * 적용취소 값 — 전환 전 상태·입주 희망일·조절 여부로 되돌리고, 함께 확정했으면 확정도 지운다. **한 호출**이다.
  * 확정만 남기고 상태가 돌아가거나(투어 단계의 확정 계약), 상태만 남고 확정이 빠지는 반쪽이 없게 둘을 같이 싣는다.
  * 확정을 체크하지 않았으면 reservationConfirmedAt 을 아예 안 싣는다(서버 '안 보냄 = 그대로').
+ *
+ * expect 는 이 전환이 쓴 값이다(§27.1 CAS, 독립 검수 B1). 서버가 지금 값과 대조해 하나라도 다르면 거부한다.
+ * 전환 뒤 '예약 확정' 을 따로 눌렀거나 희망일을 고쳤으면 되돌리지 않는다(되돌리면 확정만 남은 반쪽이 생기거나 고친 날짜가 덮인다).
+ * 조절 여부(moveInFlexible)는 확정이 리드에서 빼며 접는다(lib/wishMatch leavesWishLead). 전환 뒤 기대값도 그 규칙으로 낸다.
  */
-export function reserveUndo(prev: { status: string; moveInYmd: string | null }, confirmedNow: boolean): {
+export function reserveUndo(
+  prev: { status: string; moveInYmd: string | null; moveInFlexible: boolean | null },
+  wrote: { moveInYmd: string; confirmedYmd: string | null },
+): {
   toStatus: string
-  fields: { moveInDate: string | null; reservationConfirmedAt?: null }
+  fields: { moveInDate: string | null; moveInFlexible: boolean | null; reservationConfirmedAt?: null }
+  expect: { status: 'RESERVED'; reservationConfirmedAt: string | null; moveInDate: string; moveInFlexible: boolean | null }
   toast: string
 } {
+  const confirmedNow = wrote.confirmedYmd != null
   const what = confirmedNow ? '입실 예약 전환과 예약 확정을' : '입실 예약 전환을'
+  const flexAfter = leavesWishLead('RESERVED', confirmedNow ? new Date(wrote.confirmedYmd as string) : null) ? null : prev.moveInFlexible
   return {
     toStatus: prev.status,
-    fields: confirmedNow ? { moveInDate: prev.moveInYmd, reservationConfirmedAt: null } : { moveInDate: prev.moveInYmd },
+    fields: confirmedNow
+      ? { moveInDate: prev.moveInYmd, moveInFlexible: prev.moveInFlexible, reservationConfirmedAt: null }
+      : { moveInDate: prev.moveInYmd, moveInFlexible: prev.moveInFlexible },
+    expect: { status: 'RESERVED', reservationConfirmedAt: wrote.confirmedYmd, moveInDate: wrote.moveInYmd, moveInFlexible: flexAfter },
     toast: `${what} 적용취소했습니다 · ${withParticle(transitionStatusLabel(prev.status), '으로/로')} 복귀`,
   }
 }
