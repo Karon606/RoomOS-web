@@ -4,7 +4,7 @@
 // applyStatusTransition·recordDepositReturn 서버액션 그대로 호출. 추출은 UI/state 만 이동.
 // transitionsFor() 정의 그대로 이주.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useId, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
@@ -50,6 +50,7 @@ import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { askCheckoutTiming } from '@/components/tenant/checkoutTimingPrompt'
 import { openEditInPlace, editHref } from '@/lib/editDoor'
+import { reserveSubmitFields, reserveConfirmDenial, reserveUndo, reserveDoneToast } from '@/lib/reserveTransition'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -116,7 +117,9 @@ function transitionsFor(status: string, confirmed = false, isShortTerm = false):
         // §16 라벨은 '적용취소' 하나다. 예약 확정을 무르는 이 버튼만 '해제' 로 남아 있었다.
         ? { key: 'unconfirm', label: '확정 적용취소', toStatus: 'RESERVED', tone: 'secondary', kind: 'unconfirm', undo: true }
         : { key: 'confirm',   label: '예약 확정', toStatus: 'RESERVED', tone: 'primary',   kind: 'confirm' },
-      { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
+      // §22 주 버튼은 한 줄에 하나다(2026-11-02 웹디자이너 지적, 신고 507e1a0d). 확정 전에는 '예약 확정' 이 다음 걸음이라
+      // 그것이 주 버튼이고 입실 처리는 secondary 로 선다. 확정한 뒤에는 남은 다음 걸음이 입실 처리라 그것이 주 버튼이다.
+      { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: confirmed ? 'primary' : 'secondary' },
       // 입주일에 계약 호실이 아직 안 빌 때 머물 방을 미리 정해 두는 자리. 계약서를 서명 전에
       // 뽑아도 일정이 찍히려면 이 길이 있어야 한다(운영자 지적 2026-08-26).
       // 상태를 안 바꾸므로 toStatus 는 제자리다 — handleClick 이 key 로 가로채 창만 연다.
@@ -284,6 +287,15 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   // 퇴실 청소 예정일 — 아직 안 건드렸으면 퇴실일(transDate)을 따라 움직인다(정본 훅).
   const cleaning = useCheckoutCleaningDate()
   const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
+  // '입실 예약 전환' 미니폼의 '바로 예약 확정'(2026-11-02 운영자 승인, 신고 507e1a0d 안 A). 기본 꺼짐이다.
+  // 켜면 한 번 제출로 예약과 확정을 함께 하고(lib/reserveTransition), 확정 확인창이 말하던 예약금 줄을 캡션으로 세운다.
+  const [confirmNow, setConfirmNow] = useState(false)
+  const [confirmLine, setConfirmLine] = useState<string | null>(null)
+  const confirmHintId = useId()
+  const toggleConfirmNow = (on: boolean) => {
+    setConfirmNow(on)
+    if (on && confirmLine == null) void reservationReceivedLine(lease.id, lease.reservationDepositMode).then(setConfirmLine)
+  }
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
   if (transitions.length === 0) return null
@@ -405,6 +417,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     const inherited = def.field === 'moveOutDate' ? (lease.checkoutReason ?? null) : null
     setTransReason(inherited ?? ''); setTransReasonAdd(false); setWithholdAdd(false); setTransReasonPrefill(inherited)
     setRentTouched(false)
+    setConfirmNow(false); setConfirmLine(null)
     // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
     cleaning.reset()
     setTransDate(
@@ -460,11 +473,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
    * 여기만 따로 액션을 두면 6초 안에 누른 사람과 나중에 버튼으로 누른 사람이 다른 결과를 본다.
    * 확인창은 없다 — 토스트 액션은 방금 한 일을 무르는 자리라 되묻는 것이 도리어 마찰이다.
    */
-  const runUndoAfter = (u: { toStatus: string; toast: string }) => {
+  const runUndoAfter = (u: { toStatus: string; toast: string; fields?: Omit<Parameters<typeof applyStatusTransition>[0], 'leaseTermId' | 'tenantId' | 'toStatus'> }) => {
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await applyStatusTransition({ leaseTermId: lease.id, tenantId, toStatus: u.toStatus })
+        const res = await applyStatusTransition({ leaseTermId: lease.id, tenantId, toStatus: u.toStatus, ...(u.fields ?? {}) })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('info', `${tenantName}님 · ${u.toast}`)
         onChange?.()
@@ -648,6 +661,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         // TOAST_DUR_ACTION 6000 을 고른다). 토스트는 보조라 사라져도 버튼 줄에서 언제든 되돌릴 수 있다.
         if (def.doneToast) {
           pushToast('info', `${tenantName}님 · ${def.doneToast}`)
+        } else if (def.key === 'reserve') {
+          // 입실 예약 전환(과 함께 한 확정)의 적용취소 — 전환 전 상태·입주 희망일로, 확정했으면 확정까지 한 호출로 되돌린다.
+          const confirmedNow = !!fields?.reservationConfirmedAt
+          const undo = reserveUndo({ status: lease.status, moveInYmd: toDateInput(lease.moveInDate) || null }, confirmedNow)
+          pushToast('success', `${tenantName}님 · ${reserveDoneToast(confirmedNow)}`, {
+            action: { label: '적용취소', run: () => runUndoAfter(undo) },
+          })
         } else {
           const undoable = UNDO_AFTER[def.key]
           // 입실 처리가 그 방의 열린 입실 전 점검을 닫았으면 그 사실이 이 토스트의 둘째 줄이다(운영자 결정 ③, §15 장문형).
@@ -690,7 +710,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       if (!(await confirmRentSettlement(rentSettlement, depositNow))) return
     }
     const fields: TransitionFields = {}
-    if (active.def.field === 'moveInDate')      fields.moveInDate = transDate
+    if (active.def.key === 'reserve') {
+      const denial = reserveConfirmDenial(transDate, confirmNow)
+      if (denial) { pushToast('error', denial); return }
+      Object.assign(fields, reserveSubmitFields(transDate, confirmNow, kstYmdStr()))
+    } else if (active.def.field === 'moveInDate') fields.moveInDate = transDate
     if (active.def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
     if (active.def.field === 'moveOutDate')     fields.moveOutDate = transDate
     if (active.def.field === 'rentAmount')      fields.rentAmount = transRent ?? 0
@@ -752,7 +776,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== (transReasonPrefill ?? '') || withholdReason !== '' || rentTouched}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== (transReasonPrefill ?? '') || withholdReason !== '' || rentTouched || confirmNow}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -807,6 +831,23 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   <DatePicker value={transDate} onChange={setTransDate}
                     maxDate={active.def.field === 'moveOutDate' ? kstYmdStr() : undefined}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--persimmon)] focus-visible:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors" />
+                </div>
+              )}
+              {/* 바로 예약 확정 — 입실 예약 전환에서만. 형제 체크 칸(CategorySelect '목록에 추가')과 같은 생김새다.
+                  확정 확인창이 하던 말(예약금 줄·호실 미지정)은 체크했을 때 캡션이 한다. 게이트는 서버 확정 문 한 벌이다. */}
+              {active.def.key === 'reserve' && (
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer min-h-[var(--input-h-touch)] sm:min-h-0 sm:py-1">
+                    <input type="checkbox" checked={confirmNow} onChange={e => toggleConfirmNow(e.target.checked)}
+                      disabled={pending} aria-describedby={confirmHintId}
+                      className="w-4 h-4 shrink-0 accent-[var(--coral)]" />
+                    <span className="text-xs text-[var(--warm-dark)] break-keep">바로 예약 확정</span>
+                  </label>
+                  <p id={confirmHintId} className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep whitespace-pre-line">
+                    {confirmNow
+                      ? [confirmLine, lease.roomId ? null : '호실 미지정 상태로 확정합니다. 이후 호실을 지정할 수 있습니다.', '확정하면 입실 일정과 입주일 알림이 열립니다.'].filter(Boolean).join('\n')
+                      : '확정은 나중에 예약 확정 버튼으로도 할 수 있습니다.'}
+                  </p>
                 </div>
               )}
               {/* 청소 예정일 — 퇴실 확정에서만, 그리고 호실이 있을 때만 선다. 호실이 없으면
