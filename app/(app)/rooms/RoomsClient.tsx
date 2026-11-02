@@ -564,20 +564,29 @@ export default function RoomsClient({
   // 켜진 수납 방법. 공실 보기에선 무의미라 꺼진 것으로 본다(렌더·적용·계수가 같은 판정, 유령 필터 방지)
   const activeMethod = panelPayFiltersValid ? methodFilter : ''
 
-  const filtered = occupied.filter(r => {
+  // 패널 필터(층·납부일·월 이용료·수납 방법)만 통과한 행. 목록과 상태 칩 숫자가 이 한 집합을 센다.
+  // 칩은 필터라 숫자가 곧 그 목록의 행 수여야 한다(아래 SegmentedControl 주석). 종전에는 칩이 패널 필터 전 전체를 세서
+  // 수납 방법·층을 켜면 '전체 3명' 아래 목록이 2장이었다(독립 검수 R1, 2026-11-02 운영자 승인). 패널이 꺼져 있으면 occupied 그대로다.
+  const panelRows = occupied.filter(r => {
     if (floorFilter && getRoomFloor(r) !== floorFilter) return false
     // 패널 필터 — 월 이용료는 expected(그 달 청구액·일할 반영) 기준, 표시·합계와 동일 기준
     if (dueDayFilter && dueDayBucketOf(effectiveDueDayStr(r), targetMonth) !== dueDayFilter) return false
     if (rentMinFilter != null && r.expected < rentMinFilter) return false
     if (rentMaxFilter != null && r.expected > rentMaxFilter) return false
     if (activeMethod && !rowHasMethodPay(r.methodPays, activeMethod)) return false
-    if (filter === 'unpaid')   return !r.isPaid
-    if (filter === 'checkout') return isCheckoutRoom(r)
-    if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
-    if (filter === 'paid')     return isPaidRoom(r)
-    if (filter === 'adjusted') return isAdjustedRoom(r)
     return true
   })
+  // 상태 칩 판정 한 벌 — 목록 거름과 칩 숫자가 같은 함수를 부른다.
+  const matchesStatus = (r: RoomStatus, f: RoomFilter): boolean => {
+    if (f === 'unpaid')   return !r.isPaid
+    if (f === 'checkout') return isCheckoutRoom(r)
+    if (f === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
+    if (f === 'paid')     return isPaidRoom(r)
+    if (f === 'adjusted') return isAdjustedRoom(r)
+    return true
+  }
+  const statusCount = (f: RoomFilter) => panelRows.filter(r => matchesStatus(r, f)).length
+  const filtered = panelRows.filter(r => matchesStatus(r, filter))
 
   // 같은 호실의 행은 어떤 정렬에서도 붙어 있어야 한다(디자인 패널 2026-08-11).
   // 행이 계약 단위가 되면서 한 방에 행이 둘일 수 있는데, 기본 정렬이 '수납 상태'라 402호 거주(미납 그룹)와
@@ -733,11 +742,12 @@ export default function RoomsClient({
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 요약 통계
-  const unpaidCount   = occupied.filter(r => !r.isPaid).length
-  const checkoutCount = occupied.filter(r => isCheckoutRoom(r)).length
-  const awaitingCount = occupied.filter(r => isAwaitingRoom(r) && !isCheckoutRoom(r)).length
-  const paidCount     = occupied.filter(isPaidRoom).length
-  const adjustedCount = occupied.filter(r => isAdjustedRoom(r)).length
+  // 칩 숫자는 패널 필터를 거친 행에서 센다(위 panelRows·matchesStatus, 목록과 한 집합)
+  const unpaidCount   = statusCount('unpaid')
+  const checkoutCount = statusCount('checkout')
+  const awaitingCount = statusCount('awaiting')
+  const paidCount     = statusCount('paid')
+  const adjustedCount = statusCount('adjusted')
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
@@ -1126,7 +1136,7 @@ export default function RoomsClient({
           // 하는데, 행은 방이 아니라 계약 단위다. 418호(거주 + 비거주)만으로도 이미 방 수보다 컸고 402·404·503
           // 다중 계약이 들어오면 더 벌어진다. 공실만 방에만 있는 사실이라 '실'을 유지한다.
           options={[
-            { value: 'all',      label: `전체 ${occupied.length}명` },
+            { value: 'all',      label: `전체 ${panelRows.length}명` },
             { value: 'unpaid',   label: `미납 ${unpaidCount}명` },
             { value: 'checkout', label: `퇴실 예정 ${checkoutCount}명` },
             { value: 'awaiting', label: `납부 예정 ${awaitingCount}명` },

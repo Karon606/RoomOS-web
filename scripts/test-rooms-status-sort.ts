@@ -413,7 +413,8 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
   ok('완납 칩은 종전 조건에서 입실 예약만 뺀다(승인 범위, 청구 없음은 칩에 남는다)',
     rc.includes("r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r) && paymentBadgeKind(r, targetMonth) !== 'reserved'")
     && !rc.includes('statusGroupOfKind(')
-    && rc.includes("if (filter === 'paid')     return isPaidRoom(r)") && rc.includes('const paidCount     = occupied.filter(isPaidRoom).length'))
+    // 목록 거름과 칩 숫자는 한 판정(matchesStatus)을 패널 필터 뒤 행에 쓴다(2026-11-02 R1, scripts/check-rooms-chip-count.mjs).
+    && rc.includes("if (f === 'paid')     return isPaidRoom(r)") && rc.includes("const paidCount     = statusCount('paid')"))
   ok('칩 안내에 입실 예약은 전체에서만', rc.includes('입실 예약은 전체에서만 보입니다.'))
   ok('표 묶음 머리는 이름 바로 뒤 순서 설명, 왼쪽에 붙어 선다', /colSpan=\{tableColCount\}[^\n]*\n\s*<div className="sticky left-4 inline-flex items-center gap-2">/.test(table))
   ok('판정 함수를 화면이 따로 정의하지 않는다', !/function (getDueInfo|getEffectiveDueInfo|isDeferredNow|unpaidBadgeLabel)\b/.test(rc))
