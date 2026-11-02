@@ -23,7 +23,7 @@
 
 ## 백업
 
-설정의 전체 JSON 백업(exportAllData)에 `propertyNotes` 가 들어간다(삭제분 제외, 같은 날 방 작업·방 점검도 함께 넣었다). 엑셀 내보내기에는 없다.
+설정의 전체 JSON 백업(exportAllData)에 `propertyNotes` 가 들어간다(삭제분 제외, 같은 날 방 작업·방 점검·청소 기록도 함께 넣었다). 엑셀 내보내기에는 없다.
 
 ## 감지망
 

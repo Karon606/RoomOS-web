@@ -2683,7 +2683,7 @@ export async function exportAllData(): Promise<string> {
   await requireOwner()
   const propertyId = await getPropertyId()
 
-  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests, storageLocations, trackedItems, trackedItemLocations, stockChecks, stockAdditions, stockDisposals, roomWorks, roomInspections, propertyNotes] = await Promise.all([
+  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests, storageLocations, trackedItems, trackedItemLocations, stockChecks, stockAdditions, stockDisposals, roomWorks, roomInspections, propertyNotes, roomCleanings] = await Promise.all([
     prisma.property.findUnique({ where: { id: propertyId } }),
     prisma.room.findMany({ where: { propertyId }, include: { photos: true } }),
     prisma.tenant.findMany({ where: { propertyId } }),
@@ -2712,6 +2712,8 @@ export async function exportAllData(): Promise<string> {
     prisma.roomWork.findMany({ where: { propertyId, deletedAt: null } }),
     prisma.roomInspection.findMany({ where: { propertyId, deletedAt: null }, include: { inspectionItems: true } }),
     prisma.propertyNote.findMany({ where: { propertyId, deletedAt: null } }),
+    // 청소 기록도 같은 클래스다(사람이 적은 기록, 사본 없음. 2026-11-02 운영자 승인). 삭제분은 같은 규약으로 뺀다.
+    prisma.roomCleaning.findMany({ where: { propertyId, deletedAt: null } }),
   ])
 
   return JSON.stringify({
@@ -2739,6 +2741,7 @@ export async function exportAllData(): Promise<string> {
     roomWorks,
     roomInspections,
     propertyNotes,
+    roomCleanings,
   }, null, 2)
 }
 

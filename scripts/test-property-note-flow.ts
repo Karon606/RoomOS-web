@@ -89,7 +89,7 @@ eq('분류 선택지 가나다·겹침 없음', noteTagOptions([{ tag: '청소' 
   }
   const st = strip(read('app/(app)/settings/actions.ts'))
   const exp = st.slice(st.indexOf('export async function exportAllData('), st.indexOf('\nexport ', st.indexOf('export async function exportAllData(') + 1))
-  for (const [m, k] of [['propertyNote', 'propertyNotes'], ['roomWork', 'roomWorks'], ['roomInspection', 'roomInspections']]) {
+  for (const [m, k] of [['propertyNote', 'propertyNotes'], ['roomWork', 'roomWorks'], ['roomInspection', 'roomInspections'], ['roomCleaning', 'roomCleanings']]) {
     ok(`백업에 ${k}(삭제분 제외)`, new RegExp(`prisma\\.${m}\\.findMany\\(\\{ where: \\{ propertyId, deletedAt: null \\}`).test(exp) && new RegExp(`\\n\\s+${k},`).test(exp))
   }
   ok('백업 점검은 항목째', /prisma\.roomInspection\.findMany\(\{[^\n]*include: \{ inspectionItems: true \}/.test(exp))
