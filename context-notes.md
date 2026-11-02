@@ -2506,4 +2506,3 @@ RentReceiptsClient:186 · AssetsClient:1623)은 **괄호를 안 쓴다.** 그런
 ## 2026-10-28 보관 위치 닫기 1단계 · 독립 검수 기록만(2단계 후보)
 - '옮긴 위치가 이 품목의 새 창고가 됩니다' 캡션은 화면 row.locations[].isHub(hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 창고) 축이다. 서버 승격 판정은 resolveItemHubLocationId(열린 링크 안에서 hubLocationId > 기본 창고 > DFS 첫 열린 링크)라, 기본 창고가 이 품목에 안 이어진 품목처럼 DFS 폴백으로 창고가 정해진 경우 캡션이 안 뜨는데 서버는 승격하거나 그 반대가 될 수 있다. 화면 쌍둥이(overview.resolveHubSync) 결과를 row 에 실어 캡션이 그것을 읽게 하는 것이 2단계 후보다.
 - 재고 0 인 창고(실효 허브) 칩을 끄고 '위치 저장' 하면 setItemLocations 가 '이 품목의 창고입니다. 먼저 다른 위치를 창고로 지정해주세요' 로 거부한다(기존 동작, 이번에 안 바꿈). closeItemLocation 은 이 경우도 승격하며 숨길 수 있으니 같은 캡션 링크로 잇는 것이 2단계 후보다.
-

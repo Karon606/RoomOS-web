@@ -8329,7 +8329,8 @@ function HideLocationModal({ row, locationId, onClose, onDone }: {
   }
 
   return (
-    <Modal open onClose={onClose} title="남은 재고를 옮기고 숨깁니다" width="sm" dirty={toId !== '' && targets.length > 1}
+    // 제목은 노드로 넘겨 두 줄까지 접는다(웹디자이너 패스). 문자열이면 공용 Modal 이 truncate 해 320px 에서 동사가 잘린다.
+    <Modal open onClose={onClose} title={<h2 className="text-base font-bold text-[var(--warm-dark)] break-keep">남은 재고를 옮기고 숨깁니다</h2>} width="sm" dirty={toId !== '' && targets.length > 1}
       footer={
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" onClick={submit} disabled={busy} reason={!toId ? reasonId : undefined}>

@@ -6943,4 +6943,3 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 서버 closeItemLocation: 이관 점검을 트랜잭션 안으로, 창고 승격 값 정본(lib/locationClose hubAfterClose, 기본 창고면 null), 적용취소 기대값(transferExpect) 대조. getHiddenLocationMoves 신설(읽기).
 - 감지망 check-location-actions-wiring ⓘ, 진리표 test-location-close, 통합 test-location-close-flow H 절(verify:fast). 가이드 §22, knowledge/domain-inventory '옮기고 숨기기' 절(백업 누락 메모 해소 확인).
 - 독립 검수 반영(같은 날): 옮길 위치가 없을 때 캡션이 '끈 채로 저장' 을 안내해 그대로 하면 거부되던 것을 '이 칸은 켠 채로 다른 위치를 켜고 저장한 뒤 여기서 옮기기' 로, 서버 거부와 한 함수(stockedHideDenied). 적용취소는 이관 뒤 이 품목에 점검이 하나라도 서면 거부. 그물 ⓘ 에 상세 모달의 hiddenLocationIds 전달. 기록만 둔 두 가지는 context-notes.
-
