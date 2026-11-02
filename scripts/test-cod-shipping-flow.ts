@@ -165,7 +165,11 @@ async function main() {
     const ship = await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-28T00:00:00Z'), amount: 4000, category: '소모품비', orderId: COD_ORDER, isShipping: true, excludeFromInventory: true } })
     const guard = await prisma.$transaction([...sp2.codShipGuardOps(P1, COD_ORDER, [COD_ITEM]), prisma.expense.count({ where: { id: COD_ITEM } })]).then(() => 'passed', e => sp2.isCodShipGuardError(e) ? 'guarded' : String(e))
     eq('R5b 줄이 이미 있으면 관문이 막는다', guard, 'guarded')
-    await prisma.expense.delete({ where: { id: ship.id } })
+    // PGlite 하네스(한 연결)는 관문이 0 나누기로 끊은 트랜잭션 직후 다음 문장이 늦게 보일 때가 있다(아래 동시 수령과 같은 사정).
+    // delete 가 '없음'으로 튀면 시험이 흔들리므로 deleteMany 로 지우고, 지워진 결과를 따로 단언한다.
+    await new Promise(r => setTimeout(r, 100))
+    await prisma.expense.deleteMany({ where: { id: ship.id } })
+    eq('R5b 줄을 지운 뒤 남은 줄 없음', await prisma.expense.count({ where: { id: ship.id } }), 0)
     const guard2 = await prisma.$transaction([...sp2.codShipGuardOps(P1, COD_ORDER, [COD_ITEM]), prisma.expense.count({ where: { id: COD_ITEM } })]).then(() => 'passed', e => String(e))
     eq('R5b 줄이 없으면 관문 통과', guard2, 'passed')
     // 동시에 두 번 받기(같은 주문 두 행): 줄은 하나만 생긴다
