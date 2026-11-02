@@ -121,7 +121,7 @@ async function main() {
 
   // ── 1. 조회·추가·못 넣는 이름 ───────────────────────────────────────────────
   {
-    eq('칸이 비면 기본값(종전 상수 - 기타)', await settings.getCancelReasons(), ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '연락 두절', '일정 변경'])
+    eq('칸이 비면 기본값(종전 상수 - 기타 + 다른 고객 계약 완료)', await settings.getCancelReasons(), ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '다른 고객 계약 완료', '연락 두절', '일정 변경'])
     eq('기타는 목록에 못 넣는다', (await settings.addCancelReason('기타')).ok, false)
     eq('기타 · 글 꼴도 못 넣는다', (await settings.addCancelReason('기타 · 공실')).ok, false)
     eq('시스템 라벨도 못 넣는다', (await settings.addCheckoutReason('단기 자동 전환')).ok, false)
@@ -139,7 +139,7 @@ async function main() {
     const r1 = await rooms.updateStatusLogReason(A, '기타 · 선예약자 계약')
     eq('체크 안 하면 기타 · 글', [r1.ok, await reasonOf(A), await listOf(P1, 'cancelReasons')], [true, '기타 · 선예약자 계약', null])
     const r2 = await rooms.updateStatusLogReason(A, '기타 · 공실 없음', { addToList: true })
-    eq('체크하면 맨 글자 + 목록 끝', [r2.ok, await reasonOf(A), await listOf(P1, 'cancelReasons')], [true, '공실 없음', '변심,가격부담,호실 사이즈,다른 곳으로 결정,연락 두절,일정 변경,공실 없음'])
+    eq('체크하면 맨 글자 + 목록 끝', [r2.ok, await reasonOf(A), await listOf(P1, 'cancelReasons')], [true, '공실 없음', '변심,가격부담,호실 사이즈,다른 곳으로 결정,다른 고객 계약 완료,연락 두절,일정 변경,공실 없음'])
     eq('결과가 저장 글자를 돌려준다', r2.ok && r2.reason, '공실 없음')
     const r3 = await rooms.updateStatusLogReason(A, '목록에 없는 맨 글자')
     eq('목록 밖 맨 글자(위조)는 기타 · 글', [r3.ok, await reasonOf(A)], [true, '기타 · 목록에 없는 맨 글자'])

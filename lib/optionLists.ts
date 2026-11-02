@@ -55,7 +55,9 @@ export const OPTION_LIST_DEFAULTS: Record<OptionListField, readonly string[]> = 
   // 사유 목록 셋(2026-10-22 운영자 승인). 종전 코드 상수(lib/statusReasons·lib/depositWithholdReasons)에서 '기타'만 뺀 것이다.
   // '기타'는 목록 항목이 아니다. 고르는 자리 맨 끝에 늘 붙고 그 저장 규약은 lib/reasonLists 가 쥔다(목록에 넣지 못한다).
   // 퇴실 사유 뒤쪽 셋(계약 위반·요금 미납·무단 퇴실)은 내보낸 퇴실이다(2026-08-31, 통계에서 갈라져야 한다).
-  cancelReasons:     ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '연락 두절', '일정 변경'],
+  // '다른 고객 계약 완료'(2026-11-02 운영자 승인, 신고 918c9308)는 투어 중 그 방이 다른 고객과 계약돼 취소되는 갈래다.
+  // 새 영업장에만 선다(칸이 null 일 때만 기본값). 기존 영업장은 백필하지 않고, 창을 열 때 미리 고르지도 않는다.
+  cancelReasons:     ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '다른 고객 계약 완료', '연락 두절', '일정 변경'],
   checkoutReasons:   ['계약 만료', '직장·학교 이동', '더 넓은 곳으로', 'LH선정', '가격 부담', '시설·환경 불만', '개인 사정', '계약 위반', '요금 미납', '무단 퇴실'],
   // 미반환 사유. '미납 충당' 은 일부러 없다(세법상 임대수입이라 몰취로 분류하면 틀린다, lib/depositWithholdReasons 머리말).
   withholdReasons:   [CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON, '원상복구비', '계약 위반'],

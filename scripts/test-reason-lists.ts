@@ -30,7 +30,11 @@ function eq(name: string, got: unknown, want: unknown) {
 const OLD_CANCEL = ['변심', '가격부담', '호실 사이즈', '다른 곳으로 결정', '연락 두절', '일정 변경', '기타']
 const OLD_CHECKOUT = ['계약 만료', '직장·학교 이동', '더 넓은 곳으로', 'LH선정', '가격 부담', '시설·환경 불만', '개인 사정', '계약 위반', '요금 미납', '무단 퇴실', '기타']
 const OLD_WITHHOLD = ['인수 승계 보증금', '청소비', '원상복구비', '계약 위반', '기타']
-eq('입실 취소 기본값 = 종전 상수 - 기타', parseOptionList('cancelReasons', null), OLD_CANCEL.filter(v => v !== '기타'))
+// 2026-11-02 '다른 곳으로 결정' 바로 뒤에 '다른 고객 계약 완료' 가 섰다(신고 918c9308, 새 영업장만, 백필 없음).
+const NEW_CANCEL = OLD_CANCEL.filter(v => v !== '기타').flatMap(v => (v === '다른 곳으로 결정' ? [v, '다른 고객 계약 완료'] : [v]))
+eq('입실 취소 기본값 = 종전 상수 - 기타 + 다른 고객 계약 완료', parseOptionList('cancelReasons', null), NEW_CANCEL)
+eq('다른 고객 계약 완료는 다른 곳으로 결정 바로 뒤', NEW_CANCEL.indexOf('다른 고객 계약 완료') - NEW_CANCEL.indexOf('다른 곳으로 결정'), 1)
+eq('저장해 둔 영업장 목록은 기본값을 안 섞는다(백필 없음)', parseOptionList('cancelReasons', '변심,타고객 계약 완료'), ['변심', '타고객 계약 완료'])
 eq('퇴실 기본값 = 종전 상수 - 기타', parseOptionList('checkoutReasons', null), OLD_CHECKOUT.filter(v => v !== '기타'))
 eq('미반환 기본값 = 종전 상수 - 기타', parseOptionList('withholdReasons', null), OLD_WITHHOLD.filter(v => v !== '기타'))
 for (const f of REASON_LIST_FIELDS) {
