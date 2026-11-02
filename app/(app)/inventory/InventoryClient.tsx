@@ -1626,20 +1626,22 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
               return q % 1 === 0 ? q.toString() : q.toFixed(1)
             }
             const lastIdx = row.monthlyConsumption.length - 1
+            // 축 라벨은 막대와 다른 행이다(신고 9c41d8ad). 종전에는 칸마다 값·막대·라벨·꼬리를 한 세로 묶음에 쌓고 바깥을
+            // items-end 로 맞춰, 둘째 줄 꼬리('28일까지')가 붙은 끝 칸만 막대가 솟았다. 정본은 품목 상세 '소모 추이'의
+            // grid 2행(1행 값·막대, 2행 self-start 라벨·꼬리, 끝 칸은 두 줄 함께 오른쪽 맞춤)이다.
             return (
-              <div className="flex items-end gap-1">
+              <div className="grid items-end gap-x-1 gap-y-0.5" style={{ gridTemplateColumns: `repeat(${row.monthlyConsumption.length}, minmax(0, 1fr))` }}>
                 {row.monthlyConsumption.map((m, i) => {
                   // 이번 달 판정은 시계가 아니라 '마지막 슬롯'(구조적) — 클라 new Date()로 월을 비교하면
                   // 브라우저 TZ 에 따라 월 경계에서 어긋난다(서버가 kstDay 를 쓰는 이유와 동일).
                   const isCurrent = i === lastIdx
                   const monthNum = Number(m.month.slice(5))
-                  // 진행 중인 달은 축 라벨 둘째 줄에 'N일까지' 를 글자로 단다(신고 9d26a7ee). hover 툴팁은 터치 화면에 없다.
                   const tail = partialMonthTail(m, isCurrent)
                   const tip = m.qty == null
                     ? `${monthNum}월 · 점검 기록 없음`
                     : `${monthNum}월 · ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '사용 없음'}${tail ? ` (${tail})` : isCurrent ? ' (진행 중)' : ''}`
                   return (
-                    <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                    <div key={m.month} className="flex flex-col items-center gap-0.5 min-w-0" style={{ gridColumn: i + 1, gridRow: 1 }}>
                       {/* 숫자 글자는 --tc-text(라이트는 코랄 그대로, 다크는 밝힌 값). --coral 글자는 다크 카드 위 2.78:1 로 미달이다(§12·§28, 웹디자이너 패스). */}
                       <span className="text-[0.65625rem] font-medium leading-none tabular-nums"
                         style={{ color: m.qty == null ? 'var(--warm-muted)' : 'var(--tc-text)' }}>
@@ -1659,15 +1661,24 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                             }} />
                         )}
                       </div>
-                      <span className="text-[0.65625rem] leading-none"
+                    </div>
+                  )
+                })}
+                {row.monthlyConsumption.map((m, i) => {
+                  const isCurrent = i === lastIdx
+                  // 진행 중인 달은 축 라벨 둘째 줄에 'N일까지' 를 글자로 단다(신고 9d26a7ee). hover 툴팁은 터치 화면에 없다.
+                  const tail = partialMonthTail(m, isCurrent)
+                  return (
+                    // 끝 칸은 두 줄 함께 오른쪽 맞춤(꼬리가 칸보다 넓어도 카드 안쪽 여백 밖으로 안 나가게).
+                    <div key={`l-${m.month}`} className={`self-start flex flex-col min-w-0 ${tail ? 'items-end' : 'items-center'}`} style={{ gridColumn: i + 1, gridRow: 2 }}>
+                      <span className="text-[0.65625rem] leading-none whitespace-nowrap"
                         style={{
                           color: isCurrent ? 'var(--inspect-fg)' : 'var(--warm-muted)',
                           fontWeight: isCurrent ? 500 : undefined,
                           opacity: m.qty == null ? 0.6 : undefined,
-                        }}>{monthNum}</span>
+                        }}>{Number(m.month.slice(5))}</span>
                       {tail && (
-                        // 꼬리는 끝 슬롯 오른쪽에 붙인다(슬롯보다 넓어도 카드 안쪽 여백 밖으로 안 나가게, 웹디자이너 패스).
-                        <span className="self-end text-[0.65625rem] leading-none whitespace-nowrap font-medium" style={{ color: 'var(--inspect-fg)' }}>{tail}</span>
+                        <span className="mt-0.5 text-[0.65625rem] leading-none whitespace-nowrap font-medium" style={{ color: 'var(--inspect-fg)' }}>{tail}</span>
                       )}
                     </div>
                   )
@@ -2632,9 +2643,9 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
           {w.buckets.map((b, i) => (
             // 끝 칸은 오른쪽 정렬(꼬리 'N일까지' 가 칸보다 넓을 때 상자 밖으로 안 나가게).
             <div key={`l-${b.key}`} className={`self-start flex flex-col min-w-0 ${i === w.buckets.length - 1 && b.tail ? 'items-end' : 'items-center'}`} style={{ gridColumn: i + 1, gridRow: 2 }}>
-              <span className="text-[0.625rem] leading-none whitespace-nowrap" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)', fontWeight: b.current ? 500 : undefined, opacity: b.qty == null && !covered.has(i) ? 0.6 : undefined }}>{b.label}</span>
+              <span className="text-[0.65625rem] leading-none whitespace-nowrap" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)', fontWeight: b.current ? 500 : undefined, opacity: b.qty == null && !covered.has(i) ? 0.6 : undefined }}>{b.label}</span>
               {/* 둘째 줄. 진행 중 꼬리는 --inspect-fg, 해가 바뀌는 칸의 연도는 칸 이름과 같은 --warm-muted. */}
-              {b.tail && <span className="mt-0.5 text-[0.625rem] leading-none whitespace-nowrap font-medium" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)' }}>{b.tail}</span>}
+              {b.tail && <span className="mt-0.5 text-[0.65625rem] leading-none whitespace-nowrap font-medium" style={{ color: b.current ? 'var(--inspect-fg)' : 'var(--warm-muted)' }}>{b.tail}</span>}
             </div>
           ))}
         </div>
