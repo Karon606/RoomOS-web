@@ -299,7 +299,7 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     'portal 패널이라 포커스를 옮기지 않으면 키보드 사용자는 메뉴에 닿지 못하고, 닫은 뒤 포커스가 문서 끝으로 샌다')
   need("위치 관리 메뉴도 파괴 항목이 구분선 아래고 높이 예측이 실측이다",
     /<div className="my-1 border-t border-\[var\(--warm-border\)\]" \/>\s*<button type="button" disabled=\{pending\}\s*className=\{MENU_ROW_DANGER\}/.test(locset) &&
-    /usePopoverAnchor<HTMLElement>\(\{ minWidth: 208, estimatedHeight: LOC_MENU_EST_H \}\)/.test(locset) && /const LOC_MENU_EST_H = 362/.test(client),
+    /usePopoverAnchor<HTMLElement>\(\{ minWidth: 208, estimatedHeight: LOC_MENU_EST_H \}\)/.test(locset) && /const LOC_MENU_EST_H = 406/.test(client),
     '가이드 §13 과 한 문법 · 예측이 내용보다 작으면 위로 뒤집힐 때 메뉴 끝이 트리거를 덮는다')
   need('관리 메뉴가 정본 자리 산수·portal 로 위로 먼저 뜬다',
     /usePopoverAnchor<HTMLSpanElement>\(\{[^}]*placement: 'above'[^}]*\}\)/.test(menu) && /createPortal\(/.test(menu) && /fixed inset-0 z-\[var\(--z-lightbox\)\]/.test(menu),

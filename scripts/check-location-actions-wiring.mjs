@@ -1,4 +1,4 @@
-// 보관 위치 트리 쓰기 액션의 배선 감지망 — 아홉 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
+// 보관 위치 트리 쓰기 액션의 배선 감지망 — 열한 축이 살아 있는가. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 소스 가드인가. 이동·생성·삭제·순서의 거부 규칙은 DB 가 있어야 실행되는 서버 액션이라
 // 순수 진리표(scripts/test-location-tree.ts)로 덮을 수 없다. 순수 판정 함수는 이미 그 진리표가
@@ -28,6 +28,13 @@
 //     같은 트랜잭션 배열 안에서 선다(종전엔 따로 만들어 뒤가 실패하면 재고만 옮겨진 반쪽이 남았다). (2) 창고 승격 값이
 //     정본 hubAfterClose 를 지난다(새 창고가 영업장 기본 창고면 null). (3) 적용취소가 이관 점검의 기대값(만든 시각·행 수·
 //     보충 마커)을 대조해 얹힌 점검을 지우지 않는다. (4) 화면이 그 두 액션을 부르고, 수령 위치 고르기가 숨긴 위치를 거른다.
+//   ⓙ 위치 사용 중지(2026-10-28 2단계)가 **원자**이고 되돌림이 안전한가. 미리보기와 쓰기가 같은 계획 함수(planLocationClose)를
+//     부르고, 서브트리·새 기본 창고는 정본(closeTargetIds·newDefaultProblem)을 지나며, 쓰기는 한 인터랙티브 트랜잭션이다.
+//     적용취소는 closedAt 시각·기본 창고 집합·품목 창고·이관 기대값·보관 비품을 대조해 하나라도 어긋나면 전체를 거부한다.
+//     다시 사용은 조상이 열려 있을 때만(closedAncestorOf). 화면 메뉴가 두 동작을 부르고, 창이 같은 쓰기를 부른다.
+//   ⓚ 열린 술어를 **정본으로만** 쓰는가. 허브 리졸버·수령·창고 지정이 OPEN_LINK_WHERE, 화면 쌍둥이(overview)가 isOpenLink,
+//     getStockAsOf 가 셋째 정의 대신 리졸버를 부른다. 새 값을 쓰는 자리(입수·폐기·일괄·생성·옮기기·기본 창고)가 사용 중지한
+//     위치를 거부하고, 고르는 화면(점검 패널·일괄 추가·품목 칩·입수·폐기·수령)이 locationClosedAt 을 거른다.
 //
 // 실행: node scripts/check-location-actions-wiring.mjs
 import { readFileSync } from 'node:fs'
@@ -252,9 +259,12 @@ for (const fn of [
 // ⓘ 품목 위치 숨김 — 원자 · 허브 승격 정본 · 적용취소 기대값 · 화면 배선.
 {
   const b = block('export async function closeItemLocation', 'export async function reopenItemLocation')
-  must(b, '숨김', /ops\.push\(prisma\.stockCheck\.create\(/, '이관 점검이 트랜잭션 배열(ops) 안에서 서지 않는다')
+  must(b, '숨김', /tx\.stockCheck\.create\(\{ data: transferCheckCreateData\(/, '이관 점검이 트랜잭션 안에서 서지 않는다')
   mustNot(b, '숨김', /await prisma\.stockCheck\.create\(/, '이관 점검을 트랜잭션 밖에서 따로 만든다 — 뒤 쓰기가 실패하면 재고만 옮겨진 반쪽이 남는다')
-  must(b, '숨김', /await prisma\.\$transaction\(ops\)/, '이관·숨김·창고 승격이 한 트랜잭션이 아니다')
+  must(b, '숨김', /await prisma\.\$transaction\(async tx =>/, '이관·숨김·창고 승격이 한 트랜잭션이 아니다')
+  // 계획(잔량)은 트랜잭션 밖에서 세우므로 안에서 재고 기록 열쇠를 다시 대조하고, 숨김은 closedAt: null 조건으로 정확히 한 행(독립 검수 권고 2).
+  must(b, '숨김', /if \(\(await stockSnapshotKey\(tx, data\.trackedItemId\)\) !== snap\) throw new Error\(STOCK_CHANGED_RETRY\)/, '트랜잭션 안에서 재고 기록 열쇠를 다시 대조하지 않는다 — 같은 날 수령이 끼면 낡은 잔량으로 옮긴다')
+  must(b, '숨김', /storageLocationId: data\.storageLocationId, closedAt: null \},[\s\S]{0,80}if \(hid\.count !== 1\) throw new Error\(STOCK_CHANGED_RETRY\)/, '숨김이 closedAt: null 조건 한 행 대조를 안 한다')
   must(b, '숨김', /hubAfterClose\(newHub, /, '창고 승격 값이 정본(hubAfterClose)을 안 지난다 — 기본 창고를 따르던 품목이 명시값에 묶인다')
   must(b, '숨김', /transferExpect: created \?/, '적용취소 기대값(transferExpect)을 안 돌려준다')
   must(b, '숨김', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
@@ -265,6 +275,8 @@ for (const fn of [
   must(u, '숨김 적용취소', /stockCheck\.count\(\{ where: \{ trackedItemId: undo\.trackedItemId, id: \{ not: undo\.transferCheckId \}, createdAt: \{ gt: c\.createdAt \} \} \}\)/, '이관 뒤에 선 점검을 세지 않는다 — 같은 날 절대값 점검 뒤 되돌리면 숨기기 전으로 복귀가 거짓이 된다')
   must(u, '숨김 적용취소', /if \(!same \|\| later > 0\)/, '이관 뒤 점검이 있어도 되돌린다')
   must(u, '숨김 적용취소', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  must(u, '숨김 적용취소', /if \(!isOpenLocation\(closedLoc\)\) return \{ ok: false, error: LOCATION_CLOSED_DENIED \}/, '사용 중지한 위치의 링크를 다시 연다(독립 검수 권고 4)')
+  must(block('export async function reopenItemLocation', 'export async function undoCloseItemLocation'), '다시 표시', /if \(!isOpenLocation\(loc\)\) return \{ ok: false, error: LOCATION_CLOSED_DENIED \}/, '사용 중지한 위치의 링크를 다시 표시한다(독립 검수 권고 4)')
   const modal = block('function HideLocationModal(', 'function DisposalForm(', ui)
   must(modal, '숨김 창', /closeItemLocation\(\{/, '옮기고 숨기기 창이 서버 액션을 안 부른다')
   must(modal, '숨김 창', /undoCloseItemLocation\(undo\)/, '토스트 적용취소가 숨김 적용취소 액션을 안 부른다')
@@ -280,9 +292,95 @@ for (const fn of [
   must(ui, '수령 위치', /itemLocations\.filter\(loc => !\(hiddenLocationIds \?\? \[\]\)\.includes\(loc\.id\)/, '수령 위치 고르기가 숨긴 위치를 안 거른다')
 }
 
+// ⓙ 위치 사용 중지 — 같은 계획 · 정본 경유 · 한 트랜잭션 · 적용취소 대조 · 화면 배선.
+{
+  const imp = block('export async function getLocationCloseImpact', 'export type CloseStorageLocationUndo')
+  must(imp, '사용 중지 미리보기', /await planLocationClose\(propertyId, id\)/, '미리보기가 쓰기와 같은 계획 함수를 안 부른다 — 화면이 묻는 품목과 서버가 요구하는 품목이 갈린다')
+  const plan = block('async function planLocationClose', 'export type LocationCloseImpact')
+  must(plan, '사용 중지 계획', /closeTargetIds\(rows, id\)/, '서브트리 닫기 정본(closeTargetIds)을 안 부른다')
+  must(plan, '사용 중지 계획', /needsDest: qty >= 0\.001 \|\| \(hadOpenLink && openLinkIds\.length === 0\)/, '재고 남은 품목·유일한 열린 링크가 닫히는 품목(결정 9)을 묻지 않는다')
+  const close = block('export async function closeStorageLocation', 'export async function undoCloseStorageLocation')
+  must(close, '사용 중지', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  must(close, '사용 중지', /const propertyId = await getPropertyId\(\)/, '영업장을 안 집는다')
+  must(close, '사용 중지', /await planLocationClose\(propertyId, data\.id\)/, '쓰기가 미리보기와 같은 계획 함수를 안 부른다')
+  must(close, '사용 중지', /newDefaultProblem\(rows, closingIds, data\.newDefaultId\)/, '기본 창고를 닫을 때 새 기본 창고 필수(결정 4)를 정본으로 안 본다')
+  must(close, '사용 중지', /prisma\.\$transaction\(async tx =>/, '인터랙티브 한 트랜잭션이 아니다 — 위치만 닫히고 재고는 안 옮겨진 반쪽이 남는다')
+  must(close, '사용 중지', /tx\.stockCheck\.create\(\{ data: transferCheckCreateData\(/, '이관 점검이 트랜잭션 안에서 정본 조립(transferCheckCreateData)으로 서지 않는다')
+  must(close, '사용 중지', /위치 사용 중지: \$\{fromPath\}에서/, '이관 메모가 정한 꼴(위치 사용 중지: A에서 B로 N 이관)이 아니다')
+  must(close, '사용 중지', /hubAfterClose\(newHub, defaultAfter\)/, '품목 창고 승격 값이 정본(hubAfterClose)을 안 지난다')
+  must(close, '사용 중지', /if \(draftRows\.length\) await tx\.stockCheckDraft\.deleteMany\(/, '닫는 위치의 임시저장을 안 지운다')
+  must(close, '사용 중지', /if \(storedRows\.length\) await tx\.expense\.updateMany\(\{ where: \{ propertyId, id: \{ in: storedRows\.map\(r => r\.id\) \} \}, data: \{ storedLocationId: data\.storedToId \} \}\)/, '보관 비품을 고른 곳으로 옮기지 않는다(결정 10)')
+  must(close, '사용 중지', /tx\.storageLocation\.updateMany\(\{ where: \{ propertyId, id: \{ in: closingIds \}, closedAt: null \}, data: \{ closedAt: now \} \}\)/, '서브트리 closedAt 을 영업장 범위·closedAt: null 조건으로 한 시각에 쓰지 않는다')
+  must(close, '사용 중지', /if \(shut\.count !== closingIds\.length\) throw new Error\(STOCK_CHANGED_RETRY\)/, '닫은 행 수를 대조하지 않는다(독립 검수 권고 2)')
+  must(close, '사용 중지', /if \(\(await stockSnapshotKey\(tx, itemId\)\) !== p\.i\.snapshot\) throw new Error\(STOCK_CHANGED_RETRY\)/, '품목마다 재고 기록 열쇠를 트랜잭션 안에서 다시 대조하지 않는다(독립 검수 권고 2)')
+  mustNot(plan, '사용 중지 계획', /qty: Math\.round\(qty \* 1000\) \/ 1000/, '이관 수량을 반올림한다 — 옮긴 양과 남은 양이 어긋난다(독립 검수 권고 3)')
+  const undo = block('export async function undoCloseStorageLocation', 'export async function reopenStorageLocation')
+  must(undo, '사용 중지 적용취소', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  must(undo, '사용 중지 적용취소', /locationsInProperty\(propertyId, locIds\)/, '토큰의 위치 id 를 영업장 범위로 안 본다')
+  // 품목 창고 원복 값(hubBefore)도 영업장 범위 검사에 든다(독립 검수 차단). 빠지면 조작한 토큰이 남의 영업장 위치를 창고 칸에 넣는다.
+  must(undo, '사용 중지 적용취소', /const locIds = \[[^\n]*undo\.items\.flatMap\(i => \[i\.destLocationId, i\.hubBefore, i\.hubAfter, \.\.\.i\.closedLinkIds\]\)/, '토큰의 품목 창고 원복 값(hubBefore)을 영업장 범위로 안 본다')
+  // 바꾼 품목마다 사용 중지 뒤 점검·입수·폐기를 본다(이관 없는 재고 0 품목 포함, 독립 검수 권고 1).
+  must(undo, '사용 중지 적용취소', /stockAddition\.count\(\{ where: \{ trackedItemId: i\.trackedItemId, createdAt: \{ gt: after \} \} \}\)/, '사용 중지 뒤 입수를 보지 않는다')
+  must(undo, '사용 중지 적용취소', /stockDisposal\.count\(\{ where: \{ trackedItemId: i\.trackedItemId, createdAt: \{ gt: after \} \} \}\)/, '사용 중지 뒤 폐기를 보지 않는다')
+  must(undo, '사용 중지 적용취소', /if \(checks \+ adds \+ disps > 0\) return \{ ok: false, error: AFTER_CLOSE_ACTIVITY \}/, '사용 중지 뒤 활동이 있어도 되돌린다')
+  must(undo, '사용 중지 적용취소', /const touched = !!i\.transferCheckId \|\| i\.closedLinkIds\.length > 0 \|\| i\.destLink === 'created' \|\| i\.destLink === 'reopened' \|\| i\.hubAfter !== i\.hubBefore/, '활동 검사가 이관 있는 품목에만 걸린다 — 재고 0 품목·새 링크·창고만 바꾼 품목이 빠진다')
+  must(undo, '사용 중지 적용취소', /c\.closedAt\?\.getTime\(\) !== undo\.closedAtMs/, 'closedAt 시각 CAS 가 없다 — 그새 다시 사용·다시 닫은 위치를 되돌린다')
+  must(undo, '사용 중지 적용취소', /JSON\.stringify\(hubsNow\) !== JSON\.stringify\(\[\.\.\.undo\.hubIdsAfter\]\.sort\(\)\)/, '기본 창고 집합을 대조하지 않는다')
+  must(undo, '사용 중지 적용취소', /hubLocationId !== i\.hubAfter/, '품목 창고를 대조하지 않는다')
+  must(undo, '사용 중지 적용취소', /c\.locationBreakdown\.length !== exp\.rowCount/, '이관 점검 기대값을 대조하지 않는다 — 얹힌 실측을 지운다')
+  must(undo, '사용 중지 적용취소', /storedLocationId: undo\.storedToId \} \}\)/, '보관 비품이 그 자리에 그대로인지 대조하지 않는다')
+  must(undo, '사용 중지 적용취소', /prisma\.\$transaction\(async tx =>/, '되돌리기가 한 트랜잭션이 아니다')
+  const reopen = block('export async function reopenStorageLocation', 'export async function undoReopenStorageLocation')
+  must(reopen, '다시 사용', /closedAncestorOf\(rows, id\)/, '조상이 닫혀 있으면 거부하지 않는다(결정 5)')
+  must(reopen, '다시 사용', /await requireEdit\(\)/, '쓰기 권한 게이트가 없다')
+  const ureopen = block('export async function undoReopenStorageLocation', 'export async function setItemLocations')
+  must(ureopen, '다시 사용 적용취소', /if \(loc\.isHub \|\| links > 0 \|\| stored > 0 \|\| openKids > 0\)/, '그새 쓰기 시작한 위치를 다시 닫는다')
+  const menu = block('function LocationSettingsModal(', 'function CloseLocationModal(', ui)
+  must(menu, '위치 관리 메뉴', /void handleCloseLoc\(menuNode\)/, "'사용 중지' 메뉴가 없다")
+  must(menu, '위치 관리 메뉴', /void handleReopenLoc\(menuNode\)/, "'다시 사용' 메뉴가 없다")
+  must(menu, '위치 관리 메뉴', /undoCloseStorageLocation\(undo\)/, '사용 중지 토스트에 적용취소가 없다')
+  must(menu, '위치 관리 메뉴', /undoReopenStorageLocation\(undo\)/, '다시 사용 토스트에 적용취소가 없다')
+  must(menu, '위치 관리 행', /<Badge tone="neutral" className="shrink-0">사용 중지<\/Badge>/, "사용 중지 행 배지가 solid neutral '사용 중지' 가 아니다(§11 --canvas 면, 낱말 하나)")
+  mustNot(ui, '낱말 하나', /사용 안 함<\/Badge>|숨김 처리됩니다/, "위치 사용 중지 낱말이 둘로 갈렸다('사용 안 함'·'숨김 처리'). 동작·배지는 '사용 중지', 품목 쪽은 '숨겨집니다'(독립 검수 권고 6)")
+  const modal = block('function CloseLocationModal(', 'function LocationMoveModal(', ui)
+  must(modal, '사용 중지 창', /await closeStorageLocation\(\{/, '사용 중지 창이 서버 쓰기를 안 부른다')
+  must(modal, '사용 중지 창', /defaultDestinationId\(closable, impact\.closingIds, newDefault \|\| null\)/, '목적지 기본값이 정본(defaultDestinationId)이 아니다')
+  must(modal, '사용 중지 창', /reason=\{blocked \? reasonId : undefined\}/, '빈 행이 있을 때 주 버튼을 이유와 함께 막지 않는다(§27.8 ③)')
+}
+
+// ⓚ 열린 술어 정본 경유 — 서버 셋 · 화면 쌍둥이 · 쓰기 거부 · 고르는 화면.
+{
+  let shift = ''
+  try { shift = stripComments(readFileSync('app/(app)/inventory/ledgerShift.ts', 'utf8')) } catch { violations.push('ledgerShift.ts 를 못 읽었다') }
+  let ov = ''
+  try { ov = stripComments(readFileSync('app/(app)/inventory/overview.ts', 'utf8')) } catch { violations.push('overview.ts 를 못 읽었다') }
+  must(block('export async function resolveItemHubLocationId(', 'export async function loadLedgerChecks', shift), '허브 리졸버', /where: \{ trackedItemId, \.\.\.OPEN_LINK_WHERE \}/, '열린 링크 조건 정본(OPEN_LINK_WHERE)을 안 쓴다 — 사용 중지한 창고가 미지정 입수의 귀속처가 된다')
+  must(ov, '화면 허브 쌍둥이', /itemLinks\.filter\(l => isOpenLink\(l, l\.storageLocation\)\)/, '화면 쌍둥이가 열린 링크 판정 정본(isOpenLink)을 안 쓴다 — 카드와 서버의 창고가 갈린다')
+  must(block('export async function confirmReceipt', 'export async function', src), '수령', /locations: \{ where: OPEN_LINK_WHERE,/, '수령 위치 후보가 열린 링크 정본을 안 쓴다')
+  must(block('export async function setItemHub', 'export type ItemLocationStock'), '품목 창고 지정', /\.\.\.OPEN_LINK_WHERE \}/, '창고 지정이 열린 링크 정본을 안 쓴다')
+  const asof = block('export async function getStockAsOf', 'export async function setItemHub')
+  must(asof, '시점 잔량', /await resolveItemHubLocationId\(trackedItemId, it\.hubLocationId, propertyId\)/, '셋째 허브 정의가 되살아났다 — 정본 리졸버를 불러야 한다')
+  mustNot(asof, '시점 잔량', /\?\? locs\[0\]/, '첫 링크 폴백이 되살아났다 — 닫힌 위치에 델타를 얹는다')
+  for (const [fn, end] of [['createStockAddition', 'export async function'], ['createStockDisposal', 'export async function'], ['batchSetItemLocations', 'export async function confirmReceipt'], ['toggleStorageLocationHub', 'export async function restoreStorageHubs'], ['restoreStorageHubs', 'export async function createStorageLocation'], ['setItemLocations', 'export async function batchSetItemLocations']]) {
+    must(block(`export async function ${fn}`, end), fn, /LOCATION_CLOSED_DENIED/, '사용 중지한 위치를 거부하지 않는다')
+  }
+  must(block('export async function updateStockAddition', 'export async function'), 'updateStockAddition', /!isOpenLocation\(loc\) && data\.storageLocationId !== a\.storageLocationId/, '새로 고른 사용 중지 위치를 거부하지 않는다(이미 적힌 값은 이력이라 지나가야 한다)')
+  for (const [fn, end] of [['createStorageLocation', 'export async function updateStorageLocation'], ['moveStorageLocation', 'export async function placeStorageLocation'], ['placeStorageLocation', 'export async function restoreStorageLocation']]) {
+    must(block(`export async function ${fn}`, end), fn, /PARENT_CLOSED_DENIED/, '사용 중지한 위치 아래로 넣는 것을 거부하지 않는다')
+  }
+  must(block('export async function transferLocationStock', 'export type CloseLocationUndo'), '옮기기', /LOCATION_CLOSED_DENIED/, '도착지가 사용 중지한 위치여도 옮긴다')
+  must(block('export async function getItemLocationStock', 'export async function transferLocationStock'), '옮기기 후보', /allLocs\.filter\(l => !isOpenLocation\(l\)\)/, '사용 중지한 위치를 목적지 후보에서 빼지 않는다')
+  must(ui, '점검 패널', /getStorageLocations\(\)\.then\(r => setLocs\(r\.filter\(l => !l\.locationClosedAt\)\)\)/, '점검 위치 선택기가 사용 중지한 위치를 거르지 않는다')
+  must(block('function BatchLocationModal(', 'function LocationAssignSection(', ui), '일괄 추가', /setAllLocs\(r\.filter\(l => !l\.locationClosedAt\)\)/, '일괄 추가 후보가 사용 중지한 위치를 거르지 않는다')
+  must(block('function LocationAssignSection(', 'function HideLocationModal(', ui), '품목 칩', /!closedIds\.has\(loc\.id\) && !loc\.locationClosedAt/, '품목 설정 칩이 사용 중지한 위치를 거르지 않는다')
+  must(block('function DisposalForm(', 'function ', ui), '폐기', /const pickLocs = item\.locations\.filter\(l => !l\.locationClosedAt\)/, '폐기 위치 select 가 사용 중지한 위치를 거르지 않는다')
+  must(ui, '수령 위치', /!\(hiddenLocationIds \?\? \[\]\)\.includes\(loc\.id\) && !loc\.locationClosedAt/, '수령 위치 고르기가 사용 중지한 위치를 거르지 않는다')
+  must(block('function reasonOf(', 'const locPreserveDefault', ui), '옮기기 판정', /ctx\.all\.find\(n => n\.id === parentId\)\?\.locationClosedAt\) return \{ text: '사용 중지한 위치입니다'/, '드래그·옮기기 판정이 사용 중지한 부모를 막지 않는다(서버와 갈린다)')
+}
+
 if (violations.length > 0) {
   for (const v of violations) console.error(`FAIL  ${v}`)
   console.error(`\n위치 트리 쓰기 배선 위반 ${violations.length}건. 판정 정본은 lib/locationTree, 진리표는 scripts/test-location-tree.ts.`)
   process.exit(1)
 }
-console.log('OK    위치 트리 쓰기 아홉 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치·원자 적용취소·품목 위치 숨김)이 배선돼 있다.')
+console.log('OK    위치 트리 쓰기 열한 축(순환·깊이·형제 중복·하위 거부·형제 전체성·전체 이름 유일·원자 배치·원자 적용취소·품목 위치 숨김·위치 사용 중지·열린 술어)이 배선돼 있다.')

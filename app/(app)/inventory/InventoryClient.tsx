@@ -41,6 +41,9 @@ import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
 // 수량 뒤 조사('20kg이')는 단위 읽기로 고른다(정본 lib/locationClose).
 import { withQtyParticle, stockedHideDenied } from '@/lib/locationClose'
+// 위치 사용 중지 창의 목적지 기본값(정본 lib/locationOpen, 서버 closeStorageLocation 과 같은 규칙).
+import { defaultDestinationId, type ClosableRow } from '@/lib/locationOpen'
+import { STORE_UNKNOWN_OPTION } from './assets/storagePlace'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { classifyChecks, checkMemoText, type CheckKind } from '@/lib/stockCheckKind'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias, CHECK_GUIDE_PANEL, LOC_PANEL_EMPTY_HINT } from './constants'
@@ -88,6 +91,13 @@ import {
   closeItemLocation,
   undoCloseItemLocation,
   getHiddenLocationMoves,
+  getLocationCloseImpact,
+  closeStorageLocation,
+  undoCloseStorageLocation,
+  reopenStorageLocation,
+  undoReopenStorageLocation,
+  type LocationCloseImpact,
+  type CloseStorageLocationUndo,
   batchSetItemLocations,
   saveStockCheckDraft,
   deleteStockCheckDraft,
@@ -318,6 +328,8 @@ function reasonOf(
 ): { text: string; clash: string | null } | null {
   if (samePlace) return { text: '지금 있는 자리입니다', clash: null }
   if (parentId != null && ctx.blocked.has(parentId)) return { text: '지금 옮기는 위치이거나 그 아래 위치입니다', clash: null }
+  // 사용 중지한 위치 아래로는 못 넣는다 — 서버(move·place) 거부와 같은 자리, 같은 차례(2026-10-28).
+  if (parentId != null && ctx.all.find(n => n.id === parentId)?.locationClosedAt) return { text: '사용 중지한 위치입니다', clash: null }
   const parentDepth = parentId === null ? 0 : depthOf(ctx.all, parentId)
   if (parentDepth + 1 + ctx.span > MAX_DEPTH) return { text: `${MAX_DEPTH}단계를 넘습니다`, clash: null }
   // 이름 **뒤에 조사를 붙이지 않는다** — 받침에 따라 `'창고' 이` 가 된다. 따옴표 이름은 값으로
@@ -1365,7 +1377,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       )}
 
       {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); refreshArchivedCount(); router.refresh() }} />}
-      {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} onChanged={() => router.refresh()} />}
+      {showLocations && <LocationSettingsModal rows={rows} onClose={() => { setShowLocations(false); router.refresh() }} onChanged={() => router.refresh()} />}
       {mergeDecisions.length > 0 && (
         <MergeDecisionModal
           decisions={mergeDecisions}
@@ -1995,7 +2007,8 @@ function ItemHubPicker({ locations, hubLocationId, disabled, onPick }: {
   locations: StorageLocationItem[]; hubLocationId: string | null; disabled?: boolean; onPick: (locId: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
-  const candidates = locations.filter(l => l.closedAt == null)
+  // 열린 링크만(품목이 숨긴 위치·사용 중지한 위치 제외, 서버 setItemHub 와 같은 술어 lib/locationOpen isOpenLink).
+  const candidates = locations.filter(l => l.closedAt == null && !l.locationClosedAt)
   // 높이 예측 = 테두리 2 + p-2 16 + 머리글 27 + 행 44·n + 구분선 9 + 따르기 행 44(최대 320, 넘치면 패널 안 스크롤)
   // 오른쪽 끝을 '변경' 에 맞춘다 — 왼쪽 정렬로 열면 넓은 화면에서 모달 오른쪽 밖으로 삐져나간다.
   const { pos, triggerRef, measure } = usePopoverAnchor<HTMLSpanElement>({ minWidth: 240, estimatedHeight: Math.min(320, 98 + 44 * candidates.length), align: 'end' })
@@ -2059,10 +2072,10 @@ function ItemHubPicker({ locations, hubLocationId, disabled, onPick }: {
 const MENU_ROW_BOX = 'w-full flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg text-left text-sm disabled:opacity-40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]'
 const MENU_ROW = `${MENU_ROW_BOX} text-[var(--warm-dark)] hover:bg-[var(--cream-soft)]`
 const MENU_ROW_DANGER = `${MENU_ROW_BOX} text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`
-// 위치 관리 '관리' 메뉴 높이 예측 — 테두리 2 + p-2 16 + 머리글(경로) 27 + 행 44·6 + 구분선 9 + 삭제 44 = 362(320·360·402·768
-// 실측 361.5). 종전 340 은 내용보다 작아 위로 뒤집힐 때 메뉴 끝이 '관리' 를 덮었다. 깊이 상한 칸은 안내 한 줄(약 22px)이 더
+// 위치 관리 '관리' 메뉴 높이 예측 — 테두리 2 + p-2 16 + 머리글(경로) 27 + 행 44·7 + 구분선 9 + 삭제 44 = 406(2026-10-28 '사용 중지'
+// 행을 더해 44 늘렸다. 종전 행 여섯일 때 362, 320·360·402·768 실측 361.5). 종전 340 은 내용보다 작아 위로 뒤집힐 때 메뉴 끝이 '관리' 를 덮었다. 깊이 상한 칸은 안내 한 줄(약 22px)이 더
 // 서지만, 높이 예측은 여는 순간(행을 고르기 전)에 정해져 그 칸만 따로 잴 수 없다 — 흔한 경우에 맞춘다.
-const LOC_MENU_EST_H = 362
+const LOC_MENU_EST_H = 406
 
 // 상세 발끝 윗줄 버튼 넷(폐기·무상 입수·위치 이동·관리)이 함께 쓰는 좁은 폭 보정 — 높이는 md(44px) 그대로다.
 //  · 640px 미만은 좌우 여백만 줄인다(px-1.5). md 여백(px-4)이면 320px 에서 넷이 한 줄에 안 선다.
@@ -3312,7 +3325,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
             {/* 위치는 정본 행 버튼이고 창고는 낱말(Badge '창고')로 가른다 — 종전 honey 면만으로 가르면 색을 못 보는 사람에게는
                 어느 칸이 창고인지 단서가 없다(WCAG 1.4.1). 줄 사이 gap-y-3 — 행 버튼 히트(44px)가 윗줄과 덜 겹치게. */}
             <div className="flex flex-wrap gap-x-1.5 gap-y-3">
-              {itemLocations.filter(loc => !(hiddenLocationIds ?? []).includes(loc.id)).map(loc => (
+              {itemLocations.filter(loc => !(hiddenLocationIds ?? []).includes(loc.id) && !loc.locationClosedAt).map(loc => (
                 <RowActionBtn key={loc.id} disabled={pending} onClick={() => confirmAt(loc.id)}>
                   {loc.pathName}{loc.isHub && <Badge tone="pale-amber" className="ml-1 leading-none">창고</Badge>}
                 </RowActionBtn>
@@ -4242,7 +4255,8 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
           <p className={EDIT_LABEL_CLS}>입수 위치</p>
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={checkTextInputCls}>
             <option value="">위치 없이 기록</option>
-            {itemLocations.map(loc => (
+            {/* 사용 중지한 위치는 새로 고를 수 없다. 이 기록에 이미 적힌 위치면 그대로 둔다(이력 고치기). */}
+            {itemLocations.filter(loc => !loc.locationClosedAt || loc.id === entry.storageLocationId).map(loc => (
               <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
             ))}
           </select>
@@ -5767,7 +5781,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
   const rowDraftsRef = useRef(rowDrafts)
   rowDraftsRef.current = rowDrafts
 
-  useEffect(() => { getStorageLocations().then(setLocs) }, [])
+  // 사용 중지한 위치는 점검 대상에서 뺀다('전체' 범위·서브트리 포함, 2026-10-28). 지난 점검 기록은 이력에서 그대로 보인다.
+  useEffect(() => { getStorageLocations().then(r => setLocs(r.filter(l => !l.locationClosedAt))) }, [])
   // 위치 미선택 상태로 돌아올 때마다 갱신 — 임시저장 직후 재진입도 최신으로
   useEffect(() => { if (!locId) getDraftLocationSummary().then(setDraftLocs).catch(() => {}) }, [locId])
 
@@ -7274,7 +7289,9 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
 // 순서 편집은 **형제 안에서만** 이다. 목록이 DFS 라 화면상 이웃 행이 형제가 아닐 수 있으므로,
 // ▲▼도 드래그도 형제 집합 위에서 자리를 센다. 부모를 바꾸는 일은 '옮기기' 모달이 맡는다 —
 // 402px 에서 드래그로 부모까지 바꾸면 오조작이 잦다(설계 결정 2026-09-14).
-function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
+function LocationSettingsModal({ rows, onClose, onChanged }: { rows: InventoryRow[]; onClose: () => void; onChanged?: () => void }) {
+  // 사용 중지 창에 실을 계획(서버 getLocationCloseImpact). 창은 위치 관리의 형제로 띄운다(check-no-nested-overlay).
+  const [closeImpact, setCloseImpact] = useState<LocationCloseImpact | null>(null)
   const [locs, setLocs]           = useState<StorageLocationNode[]>([])
   const [newName, setNewName]     = useState('')
   const [editId, setEditId]       = useState<string | null>(null)
@@ -7660,6 +7677,60 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     reload()
   }
 
+  // 사용 중지(2026-10-28). 재고·보관 비품이 없고 기본 창고가 아니면 §14 주의 확인창 한 번, 그 밖은 사용 중지 창.
+  const closeToast = (pathName: string, res: { undo: CloseStorageLocationUndo; movedCount: number; defaultPathName: string | null }, defaultChanged: boolean) => {
+    const parts = [
+      res.movedCount > 0 ? `재고 ${res.movedCount}건 옮김` : null,
+      defaultChanged && res.defaultPathName ? `기본 창고 '${res.defaultPathName}'` : null,
+    ].filter(Boolean)
+    const undo = res.undo
+    pushToast('success', `'${pathName}' 위치 사용 중지됨`, {
+      ...(parts.length ? { detail: parts.join(' · ') } : {}),
+      action: { label: '적용취소', run: () => { void undoCloseStorageLocation(undo).then(r => {
+        if (!r.ok) { pushToast('error', r.error); return }
+        reload(); onChanged?.()
+        pushToast('info', '위치 사용 중지를 적용취소했습니다 · 사용 중지 전으로 복귀')
+      }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+    })
+  }
+  const handleCloseLoc = async (node: StorageLocationNode) => {
+    setPending(true); setError('')
+    const res = await getLocationCloseImpact(node.id)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    const im = res.impact
+    if (im.items.length > 0 || im.storedCount > 0 || im.isDefaultClosing) { setCloseImpact(im); return }
+    const kids = im.childNames.length ? `아래 칸 ${im.childNames.map(n => `'${n}'`).join('·')}도 함께 사용 중지됩니다. ` : ''
+    const items = im.hiddenItemCount > 0 ? `${im.hiddenItemCount}개 품목의 보관 위치에서 숨겨지고, 위치를 고르는 자리에서 빠집니다. ` : '위치를 고르는 자리에서 빠집니다. '
+    if (!(await confirmDialog({
+      title: `'${im.pathName}' 위치 사용을 중지할까요?`,
+      message: `${kids}${items}지난 점검·입수 기록은 그대로 남습니다.`,
+      level: 'caution', confirmLabel: '사용 중지',
+    }))) return
+    setPending(true)
+    const r = await closeStorageLocation({ id: node.id, newDefaultId: null, moves: [], storedToId: null })
+    setPending(false)
+    if (!r.ok) { setError(r.error); return }
+    reload(); onChanged?.()
+    closeToast(im.pathName, r, false)
+  }
+  // 다시 사용 — 그 위치 하나만 연다(조상이 열려 있을 때만, 서버가 거부 문장을 준다). 품목의 숨김은 품목 설정에서 다시 표시.
+  const handleReopenLoc = async (node: StorageLocationNode) => {
+    setPending(true); setError('')
+    const res = await reopenStorageLocation(node.id)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    reload(); onChanged?.()
+    const undo = res.undo
+    pushToast('success', `'${node.pathName}' 위치를 다시 사용합니다`, undo ? {
+      action: { label: '적용취소', run: () => { void undoReopenStorageLocation(undo).then(r => {
+        if (!r.ok) { pushToast('error', r.error); return }
+        reload(); onChanged?.()
+        pushToast('info', '다시 사용을 적용취소했습니다 · 사용 중지로 복귀')
+      }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+    } : undefined)
+  }
+
   const menuNode = menuId ? locs.find(n => n.id === menuId) ?? null : null
   const menuSibs = menuNode ? siblingsOf(menuNode.parentId) : []
   const menuIdx  = menuNode ? menuSibs.findIndex(s => s.id === menuNode.id) : -1
@@ -7764,7 +7835,21 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
                       <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
                     </svg>
                   </button>
-                  <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{node.name}</span>
+                  {node.locationClosedAt ? (
+                    // 사용 중지한 위치는 제자리에 남는다(이력·이름 점유). 배지는 행 바탕이 --canvas 라 solid neutral(§11 2026-10-26).
+                    // 배지 낱말도 동작과 같은 '사용 중지' 다(독립 검수 권고 6, 한 개념 한 낱말).
+                    // 배지는 이름 줄에, 날짜 캡션은 그 아래 줄에 선다. 배지를 오른쪽 끝에 두면 320px 에서 이름 칸이 좁아
+                    // '10월 28일부터' 가 꺾이거나 배지와 겹쳤다(스크린샷 확인). 날짜는 한 줄(nowrap)로 이름 칸 전폭을 쓴다.
+                    <span className="flex-1 min-w-0">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="min-w-0 truncate text-sm text-[var(--warm-muted)]">{node.name}</span>
+                        <Badge tone="neutral" className="shrink-0">사용 중지</Badge>
+                      </span>
+                      <span className="block whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">{fmtMonthDayKor(node.locationClosedAt)}부터</span>
+                    </span>
+                  ) : (
+                    <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{node.name}</span>
+                  )}
                   {node.isHub && <Badge tone="pale-amber" className="shrink-0">기본 창고</Badge>}
                   {/* 메뉴가 뜰 자리의 기준점 — RowActionBtn 은 히트영역과 크롬을 나눈 정본이라
                       이벤트를 내주지 않는다. 행마다 감싼 span 을 앵커로 쓴다. */}
@@ -7827,6 +7912,13 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
             className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2"
             style={{ top: menuPos.top, left: menuPos.left, width: menuPos.width, maxHeight: '70vh', overflowY: 'auto' }}>
             <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{menuNode.pathName}</p>
+            {/* 사용 중지한 위치의 메뉴는 '다시 사용'·'삭제' 둘뿐이다(쓸 수 없는 동작은 숨긴다, §13). */}
+            {menuNode.locationClosedAt ? (
+              <button type="button" className={MENU_ROW} disabled={pending}
+                onClick={() => { closeMenu(); void handleReopenLoc(menuNode) }}>
+                다시 사용
+              </button>
+            ) : (<>
             <button type="button" className={MENU_ROW} disabled={menuNode.depth >= MAX_DEPTH}
               onClick={() => { setChildOf(menuNode.id); setChildName(''); closeMenu() }}>
               아래 칸 추가
@@ -7879,6 +7971,11 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
               }}>
               {menuNode.isHub ? '기본 창고 해제' : '기본 창고로 지정'}
             </button>
+            <button type="button" className={MENU_ROW} disabled={pending}
+              onClick={() => { closeMenu(); void handleCloseLoc(menuNode) }}>
+              사용 중지
+            </button>
+            </>)}
             {/* 파괴 항목은 맨 끝 구분선 아래다(가이드 §13 모달 발끝 관리 메뉴와 한 문법, 검수). */}
             <div className="my-1 border-t border-[var(--warm-border)]" />
             <button type="button" disabled={pending}
@@ -7941,7 +8038,150 @@ function LocationSettingsModal({ onClose, onChanged }: { onClose: () => void; on
     {moveNode && (
       <LocationMoveModal all={locs} node={moveNode} onClose={() => setMoveId(null)} onDone={onMoved} />
     )}
+    {closeImpact && (
+      <CloseLocationModal impact={closeImpact} all={locs} rows={rows} onClose={() => setCloseImpact(null)}
+        onDone={res => {
+          const im = closeImpact
+          setCloseImpact(null); reload(); onChanged?.()
+          closeToast(im.pathName, res, im.isDefaultClosing)
+        }} />
+    )}
     </>
+  )
+}
+
+// ── 위치 사용 중지 창(2026-10-28 운영자 승인 '보관 위치 닫기' 2단계). 재고·보관 비품이 남았거나 기본 창고를 닫을 때 연다.
+//    재고도 보관 비품도 없고 기본 창고가 아니면 위치 관리가 §14 주의 확인창 한 번으로 끝낸다(이 창을 안 띄운다).
+//    묻는 품목은 서버 계획(getLocationCloseImpact)이 고른 그대로다. 쓰기(closeStorageLocation)가 같은 계획 함수라 갈리지 않는다.
+//    목적지 select 는 열린 위치만 DFS 차례(표기 경로)로 싣고, 그 품목에 아직 안 이어진 곳은 '(새로 연결)' 을 붙인다.
+//    '모두 같은 곳으로' 는 손대지 않은 행만 따라간다. 빈 행이 있으면 주 버튼을 막고 이유 한 줄을 말한다(§27.8 ③).
+function CloseLocationModal({ impact, all, rows, onClose, onDone }: {
+  impact: LocationCloseImpact
+  all: StorageLocationNode[]
+  rows: InventoryRow[]
+  onClose: () => void
+  onDone: (res: { undo: CloseStorageLocationUndo; movedCount: number; defaultPathName: string | null }) => void
+}) {
+  const closing = new Set(impact.closingIds)
+  const openLocs = all.filter(n => !n.locationClosedAt && !closing.has(n.id))
+  const closable: ClosableRow[] = all.map(n => ({ id: n.id, parentId: n.parentId, name: n.name, sortOrder: n.sortOrder, isHub: n.isHub, closedAt: n.locationClosedAt ?? null }))
+  const [newDefault, setNewDefault] = useState('')
+  const [bulk, setBulk] = useState<string | null>(null)           // null = 기본값(새 기본 창고 또는 지금 기본 창고)을 따른다
+  const [rowSel, setRowSel] = useState<Record<string, string>>({}) // 손댄 행만
+  const [storeSel, setStoreSel] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const reasonId = useId()
+  const defDest = defaultDestinationId(closable, impact.closingIds, newDefault || null)
+  const bulkVal = bulk ?? defDest
+  const valueOf = (itemId: string) => rowSel[itemId] ?? bulkVal
+  const storeVal = storeSel ?? defDest
+  const today = kstYmdStr()
+  const daysAgo = (ymd: string) => Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(ymd + 'T00:00:00Z')) / 86400000)
+  const moves = impact.items.length > 0 || impact.storedCount > 0   // 옮길 재고·보관 비품이 있는가(버튼·부제 낱말)
+  const missingDefault = impact.isDefaultClosing && !newDefault
+  const missingRow = impact.items.some(i => !valueOf(i.trackedItemId))
+  const blocked = missingDefault || missingRow
+  const SEL = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)]'
+
+  const submit = async () => {
+    if (blocked || busy) return
+    setBusy(true)
+    const release = trackSave()
+    try {
+      const res = await closeStorageLocation({
+        id: impact.locationId,
+        newDefaultId: impact.isDefaultClosing ? newDefault : null,
+        moves: impact.items.map(i => ({ trackedItemId: i.trackedItemId, toLocationId: valueOf(i.trackedItemId) })),
+        storedToId: storeVal || null,
+      })
+      if (!res.ok) { pushToast('error', res.error); return }
+      onDone(res)
+    } finally { release(); setBusy(false) }
+  }
+
+  return (
+    // 제목·부제는 낱말 단위로 접는다(웹디자이너 패스). 문자열 제목은 공용 Modal 이 truncate 해 320px 에서 '사용 중지' 가 잘렸다.
+    <Modal open onClose={onClose} title={<h2 className="text-base font-bold text-[var(--warm-dark)] break-keep">{impact.pathName} 사용 중지</h2>}
+      // 옮길 재고·보관 비품이 없으면(기본 창고만 바꾸는 경우) '옮기고' 를 말하지 않는다. 사실과 어긋난 부제를 두지 않는다.
+      subtitle={moves ? <span className="break-keep">남은 재고를 옮기고 사용 중지합니다</span> : undefined} width="sm" z={260}
+      dirty={!!newDefault || bulk != null || Object.keys(rowSel).length > 0 || storeSel != null}
+      footer={
+        <ModalFooterActions onCancel={onClose}>
+          <Btn variant="primary" onClick={() => { void submit() }} disabled={busy} reason={blocked ? reasonId : undefined}>
+            {busy ? '처리 중…' : moves ? '옮기고 사용 중지' : '사용 중지'}
+          </Btn>
+        </ModalFooterActions>
+      }>
+      <div className="space-y-4">
+        {impact.childNames.length > 0 && (
+          <p className="text-xs text-[var(--warm-mid)]">아래 칸 {impact.childNames.map(n => `'${n}'`).join('·')}도 함께 사용 중지됩니다</p>
+        )}
+        {impact.isDefaultClosing && (
+          <div className="space-y-1.5">
+            <label htmlFor={`${reasonId}-def`} className="text-xs font-medium text-[var(--warm-mid)]">새 기본 창고</label>
+            <select id={`${reasonId}-def`} value={newDefault} onChange={e => setNewDefault(e.target.value)} className={SEL}>
+              <option value="">고르세요</option>
+              {openLocs.map(n => <option key={n.id} value={n.id}>{n.pathName}</option>)}
+            </select>
+          </div>
+        )}
+        {impact.items.length > 0 && (
+          <>
+            {impact.items.length > 1 && (
+              <div className="space-y-1.5">
+                <label htmlFor={`${reasonId}-bulk`} className="text-xs font-medium text-[var(--warm-mid)]">모두 같은 곳으로</label>
+                <select id={`${reasonId}-bulk`} value={bulkVal} onChange={e => setBulk(e.target.value)} className={SEL}>
+                  <option value="">고르세요</option>
+                  {openLocs.map(n => <option key={n.id} value={n.id}>{n.pathName}</option>)}
+                </select>
+              </div>
+            )}
+            {/* 품목별 행은 일괄 칸과 구분선으로 가른다. 붙여 두면 굵은 품목 이름이 일괄 칸 라벨보다 앞서 위계가 뒤집혀 보인다. */}
+            <ul className="space-y-3 border-t border-[var(--warm-border)] pt-3">
+              {impact.items.map(i => {
+                const row = rows.find(r => r.id === i.trackedItemId)
+                const unit = row ? rowUnit(row) : null
+                const d = i.lastCheckDate ? daysAgo(i.lastCheckDate) : null
+                const caption = d == null ? '점검 기록 없음' : d <= 0 ? '마지막 점검 오늘' : `마지막 점검 ${d}일 전`
+                return (
+                  <li key={i.trackedItemId} className="space-y-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">{row?.label ?? i.label}</span>
+                      <span className="shrink-0 text-sm tabular-nums text-[var(--warm-mid)]">{fmtQty(i.qty, unit)}</span>
+                    </div>
+                    <select aria-label={`${row?.label ?? i.label} 옮길 곳`} value={valueOf(i.trackedItemId)}
+                      onChange={e => setRowSel(s => ({ ...s, [i.trackedItemId]: e.target.value }))} className={SEL}>
+                      <option value="">고르세요</option>
+                      {openLocs.map(n => <option key={n.id} value={n.id}>{n.pathName}{i.openLinkIds.includes(n.id) ? '' : ' (새로 연결)'}</option>)}
+                    </select>
+                    {/* 색은 형제 화면의 '최근 점검' 캡션(재고 카드·점검 폼·위치 패널)과 같은 --warm-muted 하나다(독립 검수 권고 7).
+                        점검 경과에 경고색을 매기는 정본이 앱에 없어 이 자리에서만 새 기준을 세우지 않는다(context-notes). */}
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{caption}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
+        )}
+        {impact.storedCount > 0 && (
+          <div className="space-y-1.5">
+            <label htmlFor={`${reasonId}-store`} className="text-xs font-medium text-[var(--warm-mid)]">여분 보관 비품 {impact.storedCount}건</label>
+            <select id={`${reasonId}-store`} value={storeVal} onChange={e => setStoreSel(e.target.value)} className={SEL}>
+              {openLocs.map(n => <option key={n.id} value={n.id}>{n.pathName}</option>)}
+              <option value="">{STORE_UNKNOWN_OPTION}</option>
+            </select>
+          </div>
+        )}
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
+          {[impact.zeroItemCount > 0 ? `재고 없는 품목 ${impact.zeroItemCount}개는 보관 위치에서 바로 숨겨집니다` : null, impact.items.length > 0 ? '옮긴 양은 위치 이동 기록으로 남습니다' : null].filter(Boolean).join(' · ')}
+        </p>
+        {blocked && (
+          <WhyCaption id={reasonId}>
+            {missingDefault ? '새 기본 창고를 고르지 않아 사용 중지할 수 없습니다 · 새 기본 창고를 고르면 됩니다' : '옮길 곳을 고르지 않은 품목이 있어 사용 중지할 수 없습니다 · 빈 칸을 고르면 됩니다'}
+          </WhyCaption>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -8071,7 +8311,8 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
   const [pending, setPending]   = useState(false)
   const [error, setError]       = useState('')
 
-  useEffect(() => { getStorageLocations().then(setAllLocs) }, [])
+  // 사용 중지한 위치는 일괄 추가 후보에서 뺀다(서버 batchSetItemLocations 도 거부, 2026-10-28).
+  useEffect(() => { getStorageLocations().then(r => setAllLocs(r.filter(l => !l.locationClosedAt))) }, [])
 
   const toggle = (id: string) => setChosen(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
@@ -8171,7 +8412,7 @@ function LocationAssignSection({ row, onHideLocation }: {
   // 칩을 끈 위치 중 재고가 남은 곳 — 저장하면 서버가 거부하므로 그 자리에서 '옮기고 숨기기' 로 잇는다(결정 13).
   // 저장 버튼은 늘 저장만 한다(§27.1 혼용 회피). 옮길 열린 위치가 없으면 링크 대신 푸는 법을 말한다(§27.8 ⑤).
   const stocked = initialLocations.filter(l => l.closedAt == null && !selected.has(l.id) && qtyAt(l.id) >= 0.001)
-  const moveTargets = (id: string) => initialLocations.filter(l => l.closedAt == null && l.id !== id)
+  const moveTargets = (id: string) => initialLocations.filter(l => l.closedAt == null && !l.locationClosedAt && l.id !== id)
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -8215,7 +8456,7 @@ function LocationAssignSection({ row, onHideLocation }: {
         {saved && <span className="text-[0.65625rem] text-[var(--success-fg)]">저장됨</span>}
       </div>
       <div className="flex flex-wrap gap-2">
-        {allLocs.filter(loc => !closedIds.has(loc.id)).map(loc => (
+        {allLocs.filter(loc => !closedIds.has(loc.id) && !loc.locationClosedAt).map(loc => (
           <button
             key={loc.id}
             type="button"
@@ -8266,13 +8507,18 @@ function LocationAssignSection({ row, onHideLocation }: {
               <div key={loc.id} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <span className="block text-xs text-[var(--warm-muted)]">{loc.pathName}</span>
-                  {/* 낱말 단위로 꺾는다(break-keep). 320px 에서 '옮겨/짐' 처럼 한 낱말이 두 줄로 갈렸다(스크린샷 확인). */}
+                  {/* 낱말 단위로 꺾는다(break-keep). 320px 에서 '옮겨/짐' 처럼 한 낱말이 두 줄로 갈렸다(스크린샷 확인).
+                      위치 자체를 사용 중지했으면 품목에서 다시 표시할 수 없다(서버도 거부). 버튼을 숨기고 그 자리를 캡션이 말한다(§22 ②). */}
                   <span className="block text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
-                    {fmtMonthDayKor(loc.closedAt)} 숨김{mv && <> · {withQtyParticle(fmtQty(mv.qty, unit), '은/는')} {withParticle(mv.toPathName, '으로/로')} 옮겨짐</>}
+                    {loc.locationClosedAt
+                      ? '위치 사용 중지 · 보관 위치 관리에서 다시 사용'
+                      : <>{fmtMonthDayKor(loc.closedAt)} 숨김{mv && <> · {withQtyParticle(fmtQty(mv.qty, unit), '은/는')} {withParticle(mv.toPathName, '으로/로')} 옮겨짐</>}</>}
                   </span>
                 </div>
-                <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
-                  className="shrink-0 text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
+                {!loc.locationClosedAt && (
+                  <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
+                    className="shrink-0 text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
+                )}
               </div>
             )
           })}
@@ -8296,7 +8542,7 @@ function HideLocationModal({ row, locationId, onClose, onDone }: {
   const unit = rowUnit(row)
   const qtyAt = (id: string) => Math.max(0, row.currentLocationBreakdown.find(b => b.locationId === id)?.qty ?? 0)
   const target = row.locations.find(l => l.id === locationId) ?? null
-  const targets = row.locations.filter(l => l.closedAt == null && l.id !== locationId)
+  const targets = row.locations.filter(l => l.closedAt == null && !l.locationClosedAt && l.id !== locationId)
   const [toId, setToId] = useState(targets.length === 1 ? targets[0].id : '')
   const [busy, setBusy] = useState(false)
   const reasonId = useId()
@@ -8380,7 +8626,9 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
   const reason = pickedReason ?? reasonOptions[0] ?? ''
   const [reasonToList, setReasonToList] = useState(false)
   const [memo, setMemo] = useState('')
-  const defaultLocId = item.locations.length === 1 ? item.locations[0].id : ''
+  // 사용 중지한 위치는 고르는 자리에서 뺀다(2026-10-28, 서버 createStockDisposal 도 거부).
+  const pickLocs = item.locations.filter(l => !l.locationClosedAt)
+  const defaultLocId = pickLocs.length === 1 ? pickLocs[0].id : ''
   const [storageLocationId, setStorageLocationId] = useState<string>(defaultLocId)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -8434,13 +8682,13 @@ function DisposalForm({ item, onCancel, onDone, onUndone, onDirty }: {
           addToList={reasonToList} onAddToListChange={setReasonToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
       </div>
-      {item.locations.length > 0 && (
+      {pickLocs.length > 0 && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">위치 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
             <option value="">위치 없음 (전체에서 차감)</option>
-            {item.locations.map(l => <option key={l.id} value={l.id}>{l.pathName}</option>)}
+            {pickLocs.map(l => <option key={l.id} value={l.id}>{l.pathName}</option>)}
           </select>
         </div>
       )}
@@ -8484,9 +8732,11 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
   const [sourceToList, setSourceToList] = useState(false)
   const [memo, setMemo]     = useState('')
   // 입고 위치 — 위치가 1개뿐이면(허브든 일반이든) 기본 선택, 아니면 허브 우선 기본
-  const defaultLocId = item.locations.length === 1
-    ? item.locations[0].id
-    : item.locations.find(l => l.isHub)?.id ?? ''
+  // 사용 중지한 위치는 고르는 자리에서 뺀다(2026-10-28, 서버 createStockAddition 도 거부).
+  const pickLocs = item.locations.filter(l => !l.locationClosedAt)
+  const defaultLocId = pickLocs.length === 1
+    ? pickLocs[0].id
+    : pickLocs.find(l => l.isHub)?.id ?? ''
   const [storageLocationId, setStorageLocationId] = useState<string>(defaultLocId)
   const [pending, startTransition] = useTransition()
   const [error, setError]   = useState('')
@@ -8589,13 +8839,13 @@ function AdditionForm({ item, onCancel, onDone, onUndone, onDirty }: {
           addToList={sourceToList} onAddToListChange={setSourceToList}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
-      {item.locations.length > 0 && (
+      {pickLocs.length > 0 && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">입수 위치</label>
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
-            {item.locations.map(loc => (
+            {pickLocs.map(loc => (
               <option key={loc.id} value={loc.id}>{loc.pathName}{loc.isHub ? ' (창고)' : ''}</option>
             ))}
           </select>

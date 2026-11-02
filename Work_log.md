@@ -6943,3 +6943,11 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 서버 closeItemLocation: 이관 점검을 트랜잭션 안으로, 창고 승격 값 정본(lib/locationClose hubAfterClose, 기본 창고면 null), 적용취소 기대값(transferExpect) 대조. getHiddenLocationMoves 신설(읽기).
 - 감지망 check-location-actions-wiring ⓘ, 진리표 test-location-close, 통합 test-location-close-flow H 절(verify:fast). 가이드 §22, knowledge/domain-inventory '옮기고 숨기기' 절(백업 누락 메모 해소 확인).
 - 독립 검수 반영(같은 날): 옮길 위치가 없을 때 캡션이 '끈 채로 저장' 을 안내해 그대로 하면 거부되던 것을 '이 칸은 켠 채로 다른 위치를 켜고 저장한 뒤 여기서 옮기기' 로, 서버 거부와 한 함수(stockedHideDenied). 적용취소는 이관 뒤 이 품목에 점검이 하나라도 서면 거부. 그물 ⓘ 에 상세 모달의 hiddenLocationIds 전달. 기록만 둔 두 가지는 context-notes.
+
+## 2026-10-28 보관 위치 닫기 2단계 · 위치 사용 중지 (운영자 승인 '추천대로', 스키마 StorageLocation.closedAt)
+- 스키마 칸 closedAt + prisma/migrate_storage_location_closed.sql(멱등, 되돌리기 문구, 운영 적용은 운영자 확인 뒤). 열림 정본 lib/locationOpen(isOpenLink·closeTargetIds·closedAncestorOf·newDefaultProblem·defaultDestinationId) + 조건 정본 inventory/openLink.ts.
+- 서버: getLocationCloseImpact·closeStorageLocation·undoCloseStorageLocation·reopenStorageLocation·undoReopenStorageLocation(계획 밖, 적용취소 원칙). 허브 리졸버 쌍둥이·getStockAsOf 를 열린 링크 정본으로. 새 값 쓰기 자리 전수 거부, 비품 후보·재무 복원 보관 위치.
+- 화면: 위치 관리 '관리' 메뉴 '사용 중지'·'다시 사용', 행 배지 '사용 안 함'(solid neutral) + '10월 28일부터', 확인창 또는 사용 중지 창, 토스트 [적용취소]. 고르는 자리 필터(점검 패널·일괄 추가·품목 칩·입수·폐기·수령·품목 창고·옮기기 판정·비품 select).
+- 감지망 ⓙⓚ·tree-drift ⓖ~ⓚ·ledger-parity 쌍둥이·draft ⑬·seg-ink ⓗ·property-scope, 진리표 test-location-open, 통합 S 절. 가이드 §22·§11·§29, decisions 명명, knowledge/domain-inventory '위치 사용 중지' 절.
+- 독립 검수 반영(같은 날): [차단] 사용 중지 적용취소 토큰의 hubBefore 를 영업장 범위 검사에 넣음. 바꾼 품목마다 사용 중지 뒤 점검·입수·폐기가 있으면 적용취소 거부(재고 0 품목 포함). 계획 뒤 재고 기록 열쇠를 트랜잭션 안에서 다시 대조하고 closedAt: null 조건 행 수 대조(1단계 숨김도 같은 구조로). 이관 수량 원값. 사용 중지한 위치의 품목 링크는 다시 표시·숨김 적용취소로 못 엶. 비품 적용취소 세 곳도 닫힌 보관 위치를 되살리지 않음(restorableStoreIds, 재무와 같은 규칙, 그물로 고정). 배지 낱말 '사용 중지' 하나, 재고 0 품목 캡션 '숨겨집니다', 옮길 것 없으면 버튼 '사용 중지', 점검 경과 캡션은 형제 화면처럼 --warm-muted.
+- 운영자 확인 대기: 마이그레이션 SQL 운영 적용(코드 배포 전에).

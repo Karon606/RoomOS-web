@@ -52,8 +52,18 @@ must(A, a, 'targetData', [
   [/if \(t\.kind === 'location'\) return \{ roomId: null, assignedLocationId: t\.id, storedLocationId: null \}/, '공용부로 옮길 때 보관 위치를 비우지 않는다'],
   [/if \(t\.kind === 'storage'\) return \{ roomId: null, assignedLocationId: null, storedLocationId: t\.id \}/, '보관 대상이 보관 위치를 적지 않는다'],
 ])
-must(A, a, 'validateTarget', [[/t\.kind === 'storage'\) \{\s*if \(!\(await storageInProperty\(propertyId, t\.id\)\)\) return STORE_NOT_FOUND/, '보관 대상 위치를 영업장 범위로 보지 않는다(남의 영업장 위치 FK)']])
-must(A, a, 'storageInProperty', [[/storageLocation\.findFirst\(\{ where: \{ id, propertyId \}/, '보관 위치 확인이 영업장 범위가 아니다']])
+must(A, a, 'validateTarget', [[/t\.kind === 'storage'\) \{\s*const err = await openStorageError\(propertyId, t\.id\)\s*if \(err\) return err/, '보관 대상 위치를 영업장 범위로 보지 않는다(남의 영업장 위치 FK)']])
+// 보관 위치 두 헬퍼(2026-10-28 위치 사용 중지). 새로 적는 값은 영업장 범위·사용 중을 보고 거부하고(openStorageError),
+// 적용취소가 되살리는 값은 영업장 범위·사용 중일 때만 되살리고 아니면 비운다(restorableStoreIds, 재무 삭제 복원과 같은 규칙).
+must(A, a, 'openStorageError', [
+  [/storageLocation\.findFirst\(\{ where: \{ id, propertyId \}, select: \{ closedAt: true \} \}\)/, '새 보관 위치를 영업장 범위로 안 본다'],
+  [/return loc\.closedAt \? LOCATION_CLOSED_DENIED : null/, '사용 중지한 보관 위치를 거부하지 않는다'],
+])
+must(A, a, 'restorableStoreIds', [[/where: \{ id: \{ in: want \}, propertyId, \.\.\.OPEN_LOCATION_WHERE \}/, '적용취소가 되살리는 보관 위치를 영업장 범위·사용 중으로 거르지 않는다(닫힌 창고에 비품이 다시 매달린다)']])
+must(A, a, 'undoAssetUnreceive', [[/const storeOk = await restorableStoreIds\(propertyId, /, '수령 대기로 적용취소가 보관 위치를 정본(restorableStoreIds)으로 거르지 않는다']])
+must(A, a, 'undoSetCommonAsset', [[/const okStores = await restorableStoreIds\(propertyId, /, '공용 자재 적용취소가 보관 위치를 정본(restorableStoreIds)으로 거르지 않는다']])
+must(A, a, 'applyAssetUndo', [[/const okStores = await restorableStoreIds\(propertyId, /, '배정 적용취소가 보관 위치를 정본(restorableStoreIds)으로 거르지 않는다']])
+if (/function storageInProperty\(/.test(a)) violations.push(`${A} storageInProperty. 사용 중지를 모르는 옛 헬퍼가 되살아났다(영업장 범위만 본다)`)
 must(A, a, 'assignAggregateToTarget', [
   [/const isNone = target\.kind === 'none' \|\| target\.kind === 'storage'/, '보관 대상이 미배정 복귀(배정일 비움·묶음 접기)로 안 간다'],
   [/placeLabel\(propertyId, rep0\.roomId, rep0\.assignedLocationId, rep0\.isCommonAsset, rep0\.storedLocationId\)/, '이력 출발이 보관 위치를 모른다(되돌리기가 창고로 못 돌아간다)'],
@@ -66,7 +76,7 @@ must(A, a, 'revertAssignmentLog', [
   [/storedLocationId: from\.storedId \}/, '되돌리기가 출발 보관 위치를 되살리지 않거나, 방 출발이면 비우지 않는다'],
 ])
 must(A, a, 'setAssetReceived', [
-  [/if \(!\(await storageInProperty\(propertyId, storeId\)\)\) return \{ ok: false, error: STORE_NOT_FOUND \}/, '수령 창 보관 위치를 영업장 범위로 보지 않는다'],
+  [/const storeErr = await openStorageError\(propertyId, storeId\)\n\s*if \(storeErr\) return \{ ok: false, error: storeErr \}/, '수령 창 보관 위치를 영업장 범위로 보지 않는다(사용 중인 위치만, 2026-10-28)'],
   [/assignedAt: assignDay, storedLocationId: null \}/, '수령하며 방에 배정한 몫의 보관 위치를 비우지 않는다'],
   [/data: \{ receivedAt: null, storedLocationId: null \}/, '수령 대기로 돌리면서 보관 위치를 비우지 않는다(수령 전 행은 늘 비어 있다)'],
   [/signUndoBody\(ASSET_UNRECEIVE_UNDO_DOMAIN, propertyId, canonicalAssetUnreceiveUndo\(ub\)\)/, '수령 대기로의 적용취소 토큰에 서명이 없다'],
@@ -81,10 +91,10 @@ must(A, a, 'undoAssetUnreceive', [
   [/requireEdit\(\)/, '적용취소가 편집 권한 관문을 안 지난다'],
   [/verifyUndoBody\(ASSET_UNRECEIVE_UNDO_DOMAIN, propertyId, canonicalAssetUnreceiveUndo\(undo\), undo\.sig\)/, '수령 대기로 적용취소가 서명을 확인하지 않는다'],
   [/where: \{ id: r\.id, propertyId, receivedAt: null, storedLocationId: null, roomId: null, assignedLocationId: null, isCommonAsset: false, disposedAt: null \}/, '수령 대기로 적용취소 CAS 가 빠졌다(다시 받은 행을 덮는다)'],
-  [/storeOk\.get\(r\.storedLocationId\)/, '되살리는 보관 위치를 영업장 범위로 보지 않는다'],
+  [/storeOk\.has\(r\.storedLocationId\)/, '되살리는 보관 위치를 영업장 범위·사용 중으로 보지 않는다'],
 ])
 must(A, a, 'addFreeAsset', [
-  [/if \(!\(await storageInProperty\(propertyId, input\.storedLocationId\)\)\) return \{ ok: false, error: STORE_NOT_FOUND \}/, '무상 입수 보관 위치를 영업장 범위로 보지 않는다'],
+  [/const freeStoreErr = await openStorageError\(propertyId, input\.storedLocationId\)\n\s*if \(freeStoreErr\) return \{ ok: false, error: freeStoreErr \}/, '무상 입수 보관 위치를 영업장 범위로 보지 않는다(사용 중인 위치만, 2026-10-28)'],
   [/signUndoBody\(ASSET_FREE_UNDO_DOMAIN, propertyId, canonicalAssetFreeUndo\(body\)\)/, '무상 입수 적용취소 토큰에 서명이 없다'],
 ])
 must(A, a, 'undoAddFreeAsset', [
@@ -103,7 +113,7 @@ must(A, a, 'undoSetCommonAsset', [
   [/requireEdit\(\)/, '공용 자재 적용취소가 편집 권한 관문을 안 지난다'],
   [/where: \{ id: \{ in: targetIds \}, propertyId, isCommonAsset: true \}, data: \{ isCommonAsset: false \}/, '공용 표시 적용취소가 반대 값 되돌리기(그 직후 상태 CAS)가 아니다(검수 F1)'],
   [/where: \{ id: r\.id, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null, receivedAt: \{ not: null \} \}/, '보관 위치 되살리기에 CAS 가 없다'],
-  [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '되살리는 보관 위치를 영업장 범위로 보지 않는다'],
+  [/okStores = await restorableStoreIds\(propertyId, /, '되살리는 보관 위치를 영업장 범위·사용 중으로 보지 않는다'],
   [/where: \{ id: \{ in: targetIds \}, propertyId, isCommonAsset: false, roomId: null, assignedLocationId: null, storedLocationId: null \}/, '해제 적용취소의 직후 상태 조건에 보관 위치가 없다(창고에 보관한 행을 공용으로 되돌린다, 재검수 X4e)'],
   [/if \(flipped\.count === 0\) throw new Error\(ASSET_COMMON_UNDO_STALE\)/, '바뀐 행이 0건인데 성공으로 돌려준다(재검수 X4c)'],
 ])
@@ -122,12 +132,12 @@ for (const fn of ['assignAggregateToTarget', 'batchAssignAssets', 'disposeAssets
 }
 must(A, a, 'snapshotRow', [[/storedLocationId: e\.storedLocationId/, '적용취소 스냅샷에 보관 위치가 없다']])
 must(A, a, 'applyAssetUndo', [
-  [/storageLocation\.findMany\(\{ where: \{ id: \{ in: storeIds \}, propertyId \}/, '적용취소가 되살리는 보관 위치를 영업장 범위로 보지 않는다(토큰 위조로 남의 영업장 위치 FK)'],
+  [/okStores = await restorableStoreIds\(propertyId, /, '적용취소가 되살리는 보관 위치를 영업장 범위·사용 중으로 보지 않는다(토큰 위조로 남의 영업장 위치 FK)'],
   [/storedLocationId: r\.storedLocationId && okStores\.has\(r\.storedLocationId\) \? r\.storedLocationId : null/, '범위 밖 보관 위치를 비우지 않는다'],
 ])
 must(A, a, 'getStorageLocations', [[/storageCandidates\(/, '보관 후보가 정본 순서(기본 창고 먼저)를 안 탄다']])
 mustNot(A, a, 'getStorageLocations', [[/filter\(r => !hubIds\.has/, '보관 후보에서 기본 창고를 뺐다(신고 195e05c8 의 원인)']])
-must(A, a, 'getAssignableLocations', [[/filter\(r => !hubIds\.has\(r\.id\)\)/, '공용부 배정 후보에 기본 창고가 들어갔다(미배정 뜻이 깨진다, 승인안 (a) 기각)']])
+must(A, a, 'getAssignableLocations', [[/filter\(r => !hubIds\.has\(r\.id\)( && !closedIds\.has\(r\.id\))?\)/, '공용부 배정 후보에 기본 창고가 들어갔다(미배정 뜻이 깨진다, 승인안 (a) 기각)']])
 must(A, a, 'getDurableItems', [[/storedLocationId: true,/, '비품 화면이 보관 위치를 안 읽는다'], [/storedLocationName: locPaths\.pathName\(r\.storedLocationId\)/, '보관 위치 이름이 표기 경로가 아니다'],
   [/r\.storedLocationId && r\.receivedAt && !r\.roomId && !r\.assignedLocationId && !r\.isCommonAsset && !r\.excludeFromInventory/, '표시 관문이 받은 + 안 놓인 비품 물품만 보지 않는다(검수 R3)']])
 must(A, a, 'withDisposedSiblings', [[/storedLocationId: true,/, '카드 정체성(집계 키)에 보관 위치가 빠졌다. 다른 창고 카드의 폐기 행을 끌어온다']])
@@ -141,7 +151,8 @@ must(F, f, 'updateExpense', [
   [/storedLocationId: storedForSave\(\{/, '재무 수정이 보관 위치 저장 규칙(storedForSave)을 안 탄다(방을 고른 뒤에도 창고에 보관이 남는다)'],
   [/assignedLocationId: null, isCommonAsset: false, storedLocationId: null \}/, '비품 전환(F3) 배정이 보관 위치를 비우지 않는다'],
 ])
-must(F, f, 'undoDeleteExpense', [[/storedLocationId: \(fk: string\) => prisma\.storageLocation\.findFirst\(\{ where: \{ id: fk, propertyId \}/, '삭제 복원이 보관 위치 FK 를 영업장 범위로 강등하지 않는다']])
+// 재무 삭제 복원의 보관 위치는 영업장 범위·사용 중일 때만 되살린다(2026-10-28 위치 사용 중지, 비품 적용취소와 같은 규칙).
+must(F, f, 'undoDeleteExpense', [[/storedLocationId: \(fk: string\) => prisma\.storageLocation\.findFirst\(\{ where: \{ id: fk, propertyId, closedAt: null \}/, '삭제 복원이 보관 위치 FK 를 영업장 범위·사용 중으로 강등하지 않는다(닫힌 창고를 되살린다)']])
 must(F, f, 'getExpenses', [[/storedLocationName: r\.storedLocationId && r\.receivedAt && !r\.roomId && !r\.assignedLocationId && !r\.isCommonAsset && !r\.excludeFromInventory\s*\? \(locPaths\?\.pathName\(r\.storedLocationId\)/, '재무 목록이 보관 위치 이름을 불변식 관문 없이(또는 표기 경로가 아니게) 싣는다']])
 
 // ── 위치(inventory/actions) ────────────────────────────────────────

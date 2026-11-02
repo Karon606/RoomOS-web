@@ -28,6 +28,8 @@
 //   ⑪ (2026-10-20 신고 5efc8a12) 창고 행이 두 화면에서 같은 Badge·같은 규칙 문장이고, 패널 비창고 행 캡션이 '창고(경로) 남음'
 //      이며, 패널 이름 줄이 배지 때문에 자라지 않는다. 창고 행에는 '다른 곳으로' 가 없다(검토 후 기각, 비창고 가지 안에만).
 //      창고 '그대로'(canKeep)는 같은 품목의 다른 행이 '채우기 전'을 묻는 동안에도 숨는다(hubQuiet, 두 화면).
+//   ⑬ (2026-10-28 위치 사용 중지) 닫는 위치의 위치별 임시저장을 사용 중지 트랜잭션 안에서 지우고, 적용취소가 그 내용을
+//      그대로 되살린다. 남기면 점검 패널에 없는 위치의 '임시저장 남음' 이 영원히 뜬다.
 //   ⑫ (2026-10-21 운영자 요청) '옮김 없음' 복원 — '채우기 전'만 적은 비창고 행에서 '채운 후'를 같은 값으로. 한 상수·한 판정
 //      함수(canNoMove 진리표), 두 화면 같은 행 머리 자리.
 //   ⑬ (2026-10-21 운영자 요청) 채움 수량은 --tc-text — 한 상수 FILL_QTY_CLS, 점검 두 화면·이력 수정 폼(적는 화면), 라벨은 강조 안 함, 읽기 전용 이력 카드는 제외.
@@ -1065,6 +1067,18 @@ need("'+N' 채움 수 strong 이 전부 FILL_QTY_CLS 다(7곳)",
 need('채움 라벨은 --warm-muted/--warm-mid 다(숫자만 강조)',
   !/text-\[var\(--tc-text\)\][^"\n]*">\s*(이번 채움|저장된 채움|채움 합계)/.test(client) &&
   (client.match(/<span className="shrink-0 text-xs text-\[var\(--warm-muted\)\]">이번 채움 <strong className=\{FILL_QTY_CLS\}>/g) ?? []).length === 3)
+
+// ── ⑬ 위치 사용 중지와 임시저장 ─────────────────────────────────────
+{
+  const close = actions.slice(actions.indexOf('export async function closeStorageLocation'), actions.indexOf('export async function undoCloseStorageLocation'))
+  const undo = actions.slice(actions.indexOf('export async function undoCloseStorageLocation'), actions.indexOf('export async function reopenStorageLocation'))
+  need('⑬ 사용 중지가 닫는 위치의 임시저장을 트랜잭션 안에서 지운다',
+    /stockCheckDraft\.findMany\(\{ where: \{ locationId: \{ in: closingIds \}, trackedItem: \{ propertyId \} \}/.test(close) && /if \(draftRows\.length\) await tx\.stockCheckDraft\.deleteMany\(\{ where: \{ id: \{ in: draftRows\.map\(d => d\.id\) \} \} \}\)/.test(close),
+    "남기면 점검 패널에 없는 위치의 '임시저장 남음' 이 영원히 뜬다")
+  need('⑬ 적용취소가 지운 임시저장을 되살린다',
+    /tx\.stockCheckDraft\.createMany\(\{ data: undo\.drafts\.map\(/.test(undo),
+    '되돌린 뒤 운영자가 적던 값이 사라진다')
+}
 
 console.log(`\n[점검 임시저장 수명주기 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)

@@ -122,6 +122,9 @@ export type StorageLocationItem = {
   // null/미정의 = 표시(열림). 값 = 이 품목에서 이 위치를 숨긴 시점.
   // 영업장 위치 목록(getStorageLocations)에선 항상 미정의 — 숨김은 (품목,위치) 쌍의 속성이라 영업장 위치엔 없다.
   closedAt?: string | null
+  // 위치 자체를 사용 중지한 시점(2026-10-28, StorageLocation.closedAt). null/미정의 = 사용 중. 두 목록 모두에 실린다.
+  // 고르는 자리는 이 값이 있는 위치를 뺀다. 위치 관리·이력은 그대로 보인다.
+  locationClosedAt?: string | null
 }
 
 // 위치 관리·할당 화면이 쓰는 트리 행 — 목록 순서가 DFS 이고 들여쓰기 단계를 depth 가 말한다.

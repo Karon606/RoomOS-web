@@ -155,13 +155,13 @@ const AXES = [
   {
     file: 'app/(app)/inventory/assets/actions.ts',
     fn: 'setAssetReceived',
-    must: [[/storageInProperty\(propertyId,\s*storeId\)/, '수령 창 보관 위치를 영업장 위치로 보지 않는다(남의 영업장 위치 FK)']],
+    must: [[/openStorageError\(propertyId,\s*storeId\)/, '수령 창 보관 위치를 영업장 위치로 보지 않는다(남의 영업장 위치 FK)']],
     mustNot: [],
   },
   {
     file: 'app/(app)/inventory/assets/actions.ts',
     fn: 'addFreeAsset',
-    must: [[/storageInProperty\(propertyId,\s*input\.storedLocationId\)/, '무상 입수 보관 위치를 영업장 위치로 보지 않는다']],
+    must: [[/openStorageError\(propertyId,\s*input\.storedLocationId\)/, '무상 입수 보관 위치를 영업장 위치로 보지 않는다']],
     mustNot: [],
   },
   {
@@ -512,6 +512,33 @@ const AXES = [
     fn: 'undoSplitCardMove',
     must: [[/const t = readCardSplit\(propertyId, token\)\n\s*if \(!t\) return \{ ok: false/, '갈라 만든 카드 되돌림 토큰을 이 영업장 서명으로 확인하지 않는다']],
     mustNot: [[/trackedItem\.delete\(\{\s*where:\s*\{\s*id:\s*t\.cardId\s*\}/, '카드를 id 만으로 지운다']],
+  },
+  // 위치 사용 중지 셋(2026-10-28 보관 위치 닫기 2단계). 위치·품목·지출·임시저장을 전부 세션 영업장 범위로만 읽고 쓴다.
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'closeStorageLocation',
+    must: [
+      [/const plan = await planLocationClose\(propertyId, data\.id\)/, '닫을 위치를 세션 영업장 행 목록에서 찾지 않는다'],
+      [/tx\.storageLocation\.updateMany\(\{ where: \{ propertyId, id: \{ in: closingIds \}, closedAt: null \}/, '위치 닫기를 영업장 범위로 쓰지 않는다'],
+      [/expense\.findMany\(\{ where: \{ propertyId, storedLocationId: \{ in: closingIds \} \}/, '보관 비품을 영업장 범위로 읽지 않는다'],
+    ],
+    mustNot: [[/storageLocation\.update\(\{\s*where:\s*\{\s*id\s*\}/, '위치를 id 만으로 쓴다']],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'undoCloseStorageLocation',
+    must: [
+      [/locationsInProperty\(propertyId, locIds\)/, '토큰의 위치 id 를 영업장 범위로 확인하지 않는다'],
+      [/trackedItem\.findMany\(\{ where: \{ id: \{ in: itemIds \}, propertyId \}/, '토큰의 품목 id 를 영업장 범위로 확인하지 않는다'],
+      [/expense\.count\(\{ where: \{ propertyId, id: \{ in: undo\.stored\.map/, '토큰의 지출 id 를 영업장 범위로 확인하지 않는다'],
+    ],
+    mustNot: [[/undo\.propertyId/, '토큰의 영업장 값을 쓴다']],
+  },
+  {
+    file: 'app/(app)/inventory/actions.ts',
+    fn: 'reopenStorageLocation',
+    must: [[/const rows = await loadLocationRows\(propertyId\)\n\s*const self = rows\.find\(r => r\.id === id\)/, '위치를 세션 영업장 행 목록에서 찾지 않는다']],
+    mustNot: [],
   },
   ...['retireCardAfterExpenseCategoryChange', 'syncTrackedItemCategory'].map(fn => ({
     file: 'app/(app)/inventory/actions.ts',

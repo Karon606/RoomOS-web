@@ -2197,7 +2197,9 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
       receivedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
       assignedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
       // 보관 위치도 같은 클래스다. 삭제 사이 위치를 지웠으면(또는 남의 영업장 위치면) 비워서 복원한다.
-      storedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      // 사용 중지한 위치면 비워서 복원한다(2026-10-28). 보관 위치는 '지금 어디 있나' 라 닫힌 창고를 되살리지 않는다.
+      // 수령 위치(과거 사실)·공용부 배정(결정 10, 사용 중지가 건드리지 않는다)은 그대로 되살린다.
+      storedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId, closedAt: null }, select: { id: true } }),
       // 작업 연결도 같은 클래스다(2026-10-23). 남의 영업장 작업이면 비워서 복원한다.
       roomWorkId: (fk: string) => prisma.roomWork.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
     } as const

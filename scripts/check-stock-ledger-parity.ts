@@ -83,8 +83,22 @@ function sourceGuards() {
   if (!/resolveHubSync\(it\.hubLocationId, openLinkIds, locations, defaultHubId\)/.test(overview)) {
     violations.push('overview 가 허브 판정에 DFS 순 locations 를 안 넘긴다 — sortOrder 사본을 다시 세우면 쌍둥이가 갈린다')
   }
+  // 열린 링크도 두 축이다(2026-10-28 위치 사용 중지). 쌍둥이가 한쪽만 위치 closedAt 을 보면 사용 중지한 창고가
+  // 화면에선 빠지고 서버에선 미지정 입수의 귀속처로 남는다. 셋째 정의(getStockAsOf)는 리졸버를 불러야 한다.
+  if (!/itemLinks\.filter\(l => isOpenLink\(l, l\.storageLocation\)\)/.test(overview)) {
+    violations.push('overview 의 열린 링크가 정본(isOpenLink)이 아니다 — 사용 중지한 위치를 화면 쌍둥이가 허브 후보로 센다')
+  }
+  {
+    const asOf = block(actions, 'export async function getStockAsOf(', 'export async function setItemHub', 'getStockAsOf')
+    if (asOf && (!/await resolveItemHubLocationId\(trackedItemId, it\.hubLocationId, propertyId\)/.test(asOf) || /\?\? locs\[0\]/.test(asOf))) {
+      violations.push('getStockAsOf 가 허브 정본 리졸버 대신 셋째 정의(isHub 직접 비교·첫 링크 폴백)를 쓴다')
+    }
+  }
   const hubResolver = block(shiftDb, 'export async function resolveItemHubLocationId(', '\n}\n', 'resolveItemHubLocationId')
   if (hubResolver) {
+    if (!/where: \{ trackedItemId, \.\.\.OPEN_LINK_WHERE \}/.test(hubResolver)) {
+      violations.push('resolveItemHubLocationId 가 열린 링크 정본(OPEN_LINK_WHERE)을 안 쓴다 — 화면 쌍둥이와 갈린다')
+    }
     if (!/indexLocations\(locs\)\.rows\.find\(r => ids\.has\(r\.id\)\)/.test(hubResolver)) {
       violations.push('resolveItemHubLocationId 의 3순위가 DFS 랭크 첫 열린 링크가 아니다 — 화면 쪽 정의와 갈린다')
     }

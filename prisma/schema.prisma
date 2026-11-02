@@ -1919,6 +1919,10 @@ model StorageLocation {
   parentId   String?  @db.Uuid
   parent     StorageLocation?  @relation("StorageLocationTree", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children   StorageLocation[] @relation("StorageLocationTree")
+  // 위치 사용 중지(2026-10-28 운영자 승인 '보관 위치 닫기' 2단계). null = 사용 중. 값 = 그날부터 창고로 안 쓴다.
+  // 행은 지우지 않는다(지난 점검·입수 기록과 이름이 그대로 남는다). 고르는 자리에서만 빠지고, 서브트리는 함께 닫힌다.
+  // 열림 판정 정본 lib/locationOpen(isOpenLink), Prisma 조건 정본 app/(app)/inventory/openLink.ts.
+  closedAt   DateTime?
 
   trackedItems        TrackedItemLocation[]
   stockCheckLocations StockCheckLocation[]

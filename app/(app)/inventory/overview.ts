@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
 import { indexLocations } from './locationPaths'
+// 열린 링크 판정 정본(품목 숨김 + 위치 사용 중지 두 축).
+import { isOpenLink } from '@/lib/locationOpen'
 import { specMultiplier, convertUnit } from '@/lib/units'
 import { kstMonthStr, monthDbRange } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -243,7 +245,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 위치 정보 일괄 조회 — 루프 내 N+1 방지. closedAt 실어 숨김 판정에 사용.
     prisma.trackedItemLocation.findMany({
       where: { trackedItemId: { in: itemIds } },
-      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true, closedAt: true } } },
     }),
     // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
     // qtyValue 조건 없음. 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준, 세탁조크리너 케이스).
@@ -606,6 +608,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         sortOrder: l.storageLocation.sortOrder,
         isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub,
         closedAt: l.closedAt ? l.closedAt.toISOString() : null,
+        // 위치 자체의 사용 중지(2026-10-28). 고르는 자리(무상 입수·폐기·창고 select)가 이것으로 거른다. locations 자체는 안 거른다.
+        locationClosedAt: l.storageLocation.closedAt ? l.storageLocation.closedAt.toISOString() : null,
       }))
       .sort((a, b) => locIndex.rank(a.id) - locIndex.rank(b.id) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
@@ -614,7 +618,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 허브 폴백은 열린 링크만 — 숨긴 위치는 미지정 입수 귀속처가 될 수 없다, F3).
     // 종전엔 숨김 판정용으로만 계산해 화면(위치 칩·점검 폼 기준선)이 점검 시점 값에 머물렀다 —
     // 입수 직후 위치 잔량이 0 으로 보이던 신고 e48ca8ac(김치 20kg)의 원인. 전 품목 산출로 승격.
-    const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
+    // 열린 링크 = 품목이 안 숨겼고 위치도 사용 중(lib/locationOpen isOpenLink, 서버 쌍둥이는 OPEN_LINK_WHERE).
+    const openLinkIds = itemLinks.filter(l => isOpenLink(l, l.storageLocation)).map(l => l.storageLocation.id)
     // ⚠️ 허브 폴백 3순위는 **화면 순서(DFS) 첫 열린 링크**다(머리말 참조). locations 가 이미 DFS 라
     //    그대로 넘긴다 — 사본을 sortOrder 로 다시 세우면 다른 부모의 값끼리 비교해 뜻을 잃는다.
     //    쌍둥이 정의(ledgerShift.resolveItemHubLocationId)와 갈리면 미지정 입수 귀속이 화면과 서버에서 달라진다.

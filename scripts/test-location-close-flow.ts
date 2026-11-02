@@ -47,6 +47,7 @@ async function main() {
   const inv = await import('@/app/(app)/inventory/actions')
   const { computeInventoryOverview } = await import('@/app/(app)/inventory/overview')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
+  const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
   await prisma.property.create({ data: { id: P1, name: '하네스 1', ownerId: OWNER } })
@@ -168,6 +169,143 @@ async function main() {
     eq('H10 남의 영업장 캡션 읽기 거부', (await inv.getHiddenLocationMoves(RICE)).ok, false)
     g.__CR_FLOW_PID = P1
     eq('H10 아무것도 안 바뀜', await bytes(RICE), before)
+  }
+
+  // ── S 위치 사용 중지(2단계) ───────────────────────────────────────────────
+  // 415(기본 창고) 아래 '상단' 을 두고, 상단에만 이어진 품목(행주)을 더한다. 415 를 닫으면 상단도 함께 닫힌다.
+  const LTOP = await loc(P1, '상단', 0, false, L415)
+  const RAMEN2 = (await prisma.trackedItem.findFirst({ where: { propertyId: P1, label: '라면' } }))!.id as string
+  const TOWEL = await item('행주', null, [LTOP])
+  await check(TOWEL, [[LTOP, 2.0005]])
+  // 재고 0 인 품목(수세미): 415 에 열린 링크가 있고 주방에도 이어져 묻지 않고 바로 숨겨진다. 이관이 없다.
+  const SPONGE = await item('수세미', null, [L415, LKIT])
+  await check(SPONGE, [[L415, 0], [LKIT, 1]])
+  const LFOREIGN = await loc(P2, '남의 창고', 0)
+  const STORED = (await prisma.expense.create({ data: { propertyId: P1, date: new Date('2026-10-20T00:00:00.000Z'), amount: 5000, category: '비품', itemLabel: '여분 의자', qtyValue: 1, qtyUnit: '개', receivedAt: new Date('2026-10-21T00:00:00.000Z'), storedLocationId: L415, vendor: '쿠팡(주)' } })).id as string
+  await prisma.stockCheckDraft.create({ data: { trackedItemId: RICE, locationId: L415, data: { mode: 'loc', afterQtys: { [L415]: '7' } } } })
+  const ITEMS = [RICE, RAMEN2, TOWEL, SPONGE]
+  const world = async () => JSON.stringify({
+    items: await Promise.all(ITEMS.map(bytes)),
+    locs: await prisma.storageLocation.findMany({ where: { propertyId: P1 }, orderBy: { id: 'asc' } }),
+    stored: await prisma.expense.findUnique({ where: { id: STORED } }).then((r: Record<string, unknown> | null) => { if (!r) return null; const { updatedAt: _u, ...rest } = r; void _u; return rest }),
+    drafts: (await prisma.stockCheckDraft.findMany({ where: { trackedItem: { propertyId: P1 } }, orderBy: { locationId: 'asc' } })).map((d: { trackedItemId: string; locationId: string | null; data: unknown }) => [d.trackedItemId, d.locationId, d.data]),
+  })
+  const totals = async () => Promise.all(ITEMS.map(totalOf))
+  const beforeTotals = await totals()
+  {
+    const im = await inv.getLocationCloseImpact(L415)
+    if (!im.ok) throw new Error(im.error)
+    eq('S1 서브트리 함께(415·상단)', [...im.impact.closingIds].sort(), [L415, LTOP].sort())
+    eq('S1 아래 칸 이름', im.impact.childNames, ['상단'])
+    eq('S1 기본 창고를 닫는다', im.impact.isDefaultClosing, true)
+    eq('S1 묻는 품목: 쌀·라면(재고)·행주(유일한 열린 링크)', im.impact.items.map(i => i.label).sort(), ['라면', '쌀', '행주'])
+    eq('S1 보관 비품 1건', im.impact.storedCount, 1)
+    eq('S1 재고 0 품목은 묻지 않고 바로 숨김(수세미)', im.impact.zeroItemCount, 1)
+    eq('S1 화면 수량은 둘째 자리 반올림', im.impact.items.find(i => i.label === '행주')?.qty, 2)
+    const w0 = await world()
+    const base = { id: L415, storedToId: L603, moves: [{ trackedItemId: RICE, toLocationId: L603 }, { trackedItemId: RAMEN2, toLocationId: LOFF }, { trackedItemId: TOWEL, toLocationId: LKIT }] }
+    eq('S2 새 기본 창고 없으면 거부', (await inv.closeStorageLocation({ ...base, newDefaultId: null })).ok, false)
+    eq('S2 닫는 서브트리 안 새 기본 창고 거부', (await inv.closeStorageLocation({ ...base, newDefaultId: LTOP })).ok, false)
+    eq('S2 옮길 곳 빠진 품목 거부', (await inv.closeStorageLocation({ ...base, newDefaultId: L603, moves: base.moves.slice(0, 2) })).ok, false)
+    eq('S2 닫는 위치로 옮기기 거부', (await inv.closeStorageLocation({ ...base, newDefaultId: L603, moves: [...base.moves.slice(0, 2), { trackedItemId: TOWEL, toLocationId: LTOP }] })).ok, false)
+    eq('S2 거부는 아무것도 안 바꾼다', await world(), w0)
+
+    const r = await inv.closeStorageLocation({ ...base, newDefaultId: L603 })
+    if (!r.ok) throw new Error(r.error)
+    eq('S3 이관 3건 · 새 기본 창고 이름', [r.movedCount, r.defaultPathName], [3, '603호 창고'])
+    const ls = await prisma.storageLocation.findMany({ where: { id: { in: [L415, LTOP, L603] } }, select: { id: true, closedAt: true, isHub: true } })
+    const byId = new Map(ls.map((l: { id: string; closedAt: Date | null; isHub: boolean }) => [l.id, l]))
+    eq('S3 415·상단 닫힘, 603 열림', [!!byId.get(L415)?.closedAt, !!byId.get(LTOP)?.closedAt, !!byId.get(L603)?.closedAt], [true, true, false])
+    eq('S3 기본 창고가 603 으로', [byId.get(L415)?.isHub, byId.get(L603)?.isHub], [false, true])
+    eq('S3 총량 그대로(쌀·라면·행주)', await totals(), beforeTotals)
+    eq('S3 쌀은 기본 창고 603 을 따른다(null 유지)', (await prisma.trackedItem.findUnique({ where: { id: RICE } }))?.hubLocationId, null)
+    eq('S3 행주는 주방을 명시 창고로', (await prisma.trackedItem.findUnique({ where: { id: TOWEL } }))?.hubLocationId, LKIT)
+    eq('S3 행주는 주방에 새로 이어짐', !!(await prisma.trackedItemLocation.findFirst({ where: { trackedItemId: TOWEL, storageLocationId: LKIT, closedAt: null } })), true)
+    eq('S3 닫힌 위치의 품목 링크는 숨김', await prisma.trackedItemLocation.count({ where: { storageLocationId: { in: [L415, LTOP] }, closedAt: null } }), 0)
+    eq('S3 보관 비품은 603 으로', (await prisma.expense.findUnique({ where: { id: STORED } }))?.storedLocationId, L603)
+    eq('S3 415 임시저장 지움', await prisma.stockCheckDraft.count({ where: { locationId: L415 } }), 0)
+    const last = await prisma.stockCheck.findFirst({ where: { trackedItemId: RICE }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] })
+    eq('S3 이관 메모', last?.memo, '위치 사용 중지: 4층 415호 창고에서 603호 창고로 20 이관')
+    const towelLast = await prisma.stockCheck.findFirst({ where: { trackedItemId: TOWEL }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] })
+    eq('S3 이관 수량은 원값(반올림 안 함)', towelLast?.memo, '위치 사용 중지: 4층 415호 창고에서 4층 주방으로 2.0005 이관')
+    eq('S3 수세미 415 링크는 숨김, 이관 없음', [!!(await prisma.trackedItemLocation.findFirst({ where: { trackedItemId: SPONGE, storageLocationId: L415 } }))?.closedAt, r.undo.items.find(i => i.trackedItemId === SPONGE)?.transferCheckId], [true, null])
+    const row = await rowOf(RICE)
+    eq('S3 화면 창고는 603(카드 쌍둥이)', row.locations.find((l: { isHub: boolean }) => l.isHub)?.id, L603)
+    eq('S3 415 는 숨긴 빈 위치', row.hiddenLocationIds.includes(L415), true)
+    const { resolveItemHubLocationId } = await import('@/app/(app)/inventory/ledgerShift')
+    eq('S3 서버 리졸버도 603(폴백이 닫힌 415 로 안 간다)', await resolveItemHubLocationId(RICE, null, P1), L603)
+    const asOf = await inv.getStockAsOf(RICE, kstToday())
+    eq('S3 시점 잔량의 창고 표시도 603', asOf?.byLoc.find(b => b.isHub)?.locationId, L603)
+    // 고르는 자리·쓰기 거부
+    eq('S4 닫힌 위치로 입수 거부', (await inv.createStockAddition({ trackedItemId: RICE, date: kstToday(), addedQty: 1, storageLocationId: L415 })).ok, false)
+    eq('S4 닫힌 위치 품목 연결 거부', (await inv.setItemLocations(RICE, [L603, LKIT, L415])).ok, false)
+    eq('S4 닫힌 위치 일괄 추가 거부', (await inv.batchSetItemLocations([RAMEN2], [LTOP])).ok, false)
+    eq('S4 닫힌 위치 기본 창고 지정 거부', (await inv.toggleStorageLocationHub(L415, true)).ok, false)
+    eq('S4 닫힌 위치 아래 칸 만들기 거부', (await inv.createStorageLocation('하단', L415)).ok, false)
+    eq('S4 닫힌 위치로 옮기기 거부', (await inv.transferLocationStock({ trackedItemId: RICE, fromLocationId: L603, toLocationId: L415, qty: 1 })).ok, false)
+    const ls2 = await inv.getItemLocationStock(RICE)
+    eq('S4 옮기기 목적지 후보에서 닫힌 위치 표시', ls2.ok ? ls2.locations.filter(l => l.closed).map(l => l.id).sort() : null, [L415, LTOP].sort())
+    eq('S5 닫힌 부모 아래 칸은 다시 사용 불가', (await inv.reopenStorageLocation(LTOP)).ok, false)
+    // 사용 중지한 위치의 품목 링크는 품목 쪽에서 다시 열지 않는다(독립 검수 권고 4).
+    eq('S5b 다시 표시 거부', (await inv.reopenItemLocation(RICE, L415)).ok, false)
+    eq('S5b 숨김 적용취소로도 못 연다', (await inv.undoCloseItemLocation({ trackedItemId: RICE, storageLocationId: L415, transferCheckId: null, transferExpect: null, hubLocationIdBefore: null, hubChanged: false })).ok, false)
+    eq('S5b 링크는 숨긴 채', !!(await prisma.trackedItemLocation.findFirst({ where: { trackedItemId: RICE, storageLocationId: L415 } }))?.closedAt, true)
+    // [차단] 토큰의 품목 창고 원복 값(hubBefore)에 남의 영업장 위치를 넣으면 거부한다.
+    const forged = J(r.undo)
+    forged.items = forged.items.map(i => i.trackedItemId === TOWEL ? { ...i, hubBefore: LFOREIGN } : i)
+    const wForged = await world()
+    eq('S5c 조작한 hubBefore(남의 영업장 위치) 거부', await inv.undoCloseStorageLocation(forged), { ok: false, error: '적용취소 정보가 유효하지 않습니다.' })
+    eq('S5c 아무것도 안 바뀜', await world(), wForged)
+    eq('S5c 행주 창고 칸에 남의 위치가 안 들어감', (await prisma.trackedItem.findUnique({ where: { id: TOWEL } }))?.hubLocationId, LKIT)
+
+    // 다른 영업장 사용자로는 아무것도 못 한다.
+    const wMid = await world()
+    g.__CR_FLOW_PID = P2
+    eq('S9 남의 영업장 사용 중지 거부', (await inv.closeStorageLocation({ id: L603, newDefaultId: null, moves: [], storedToId: null })).ok, false)
+    eq('S9 남의 영업장 적용취소 거부', (await inv.undoCloseStorageLocation(J(r.undo))).ok, false)
+    eq('S9 남의 영업장 다시 사용 거부', (await inv.reopenStorageLocation(L415)).ok, false)
+    g.__CR_FLOW_PID = P1
+    eq('S9 아무것도 안 바뀜', await world(), wMid)
+
+    const u = await inv.undoCloseStorageLocation(J(r.undo))
+    eq('S6 적용취소 ok', u, { ok: true })
+    eq('S6 적용취소 바이트 동일(품목·링크·점검·위치·보관 비품·임시저장)', await world(), w0)
+    eq('S6 총량 그대로', await totals(), beforeTotals)
+  }
+  // 이관 점검 위에 점검이 얹히거나, 그새 다시 사용했으면 적용취소는 전체를 거부한다.
+  {
+    const base = { id: L415, newDefaultId: L603, storedToId: L603, moves: [{ trackedItemId: RICE, toLocationId: L603 }, { trackedItemId: RAMEN2, toLocationId: LOFF }, { trackedItemId: TOWEL, toLocationId: LKIT }] }
+    const r = await inv.closeStorageLocation(base)
+    if (!r.ok) throw new Error(r.error)
+    const tid = r.undo.items.find(i => i.trackedItemId === RICE)!.transferCheckId!
+    await prisma.stockCheckLocation.updateMany({ where: { stockCheckId: tid, storageLocationId: LKIT }, data: { restockedQty: 2 } })
+    const mid = await world()
+    eq('S7 얹힌 점검이 있으면 적용취소 거부', (await inv.undoCloseStorageLocation(J(r.undo))).ok, false)
+    eq('S7 거부는 아무것도 안 바꾼다(반쪽 없음)', await world(), mid)
+    await prisma.stockCheckLocation.updateMany({ where: { stockCheckId: tid, storageLocationId: LKIT }, data: { restockedQty: null } })
+    // 이관 뒤 다른 점검(같은 날 절대값 점검)이 서도 거부한다(1단계와 같은 규칙).
+    const later = await prisma.stockCheck.create({ data: { trackedItemId: RAMEN2, date: new Date(`${kstToday()}T00:00:00.000Z`), remainingQty: 40, locationBreakdown: { create: [{ storageLocationId: LOFF, remainingQty: 40 }] } } })
+    const mid2 = await world()
+    eq('S7c 뒤에 점검이 서면 적용취소 거부', await inv.undoCloseStorageLocation(J(r.undo)), { ok: false, error: '사용 중지 뒤 재고 기록이 있어 되돌릴 수 없습니다.' })
+    eq('S7c 거부는 아무것도 안 바꾼다', await world(), mid2)
+    await prisma.stockCheck.delete({ where: { id: later.id } })
+    // 이관이 없는 재고 0 품목(수세미)에 사용 중지 뒤 입수가 들어와도 거부한다(독립 검수 권고 1). 되돌리면 숨김이 풀린 링크와
+    // 그 뒤 기록이 엇갈린다.
+    const add = await prisma.stockAddition.create({ data: { trackedItemId: SPONGE, date: new Date(`${kstToday()}T00:00:00.000Z`), addedQty: 2, storageLocationId: LKIT } })
+    const mid3 = await world()
+    eq('S7d 재고 0 품목에 뒤 입수가 있으면 적용취소 거부', await inv.undoCloseStorageLocation(J(r.undo)), { ok: false, error: '사용 중지 뒤 재고 기록이 있어 되돌릴 수 없습니다.' })
+    eq('S7d 거부는 아무것도 안 바꾼다', await world(), mid3)
+    await prisma.stockAddition.delete({ where: { id: add.id } })
+    // 다시 사용 — 그 위치 하나만 열고, 자식·품목 숨김·이관 기록은 그대로다.
+    const ro = await inv.reopenStorageLocation(L415)
+    if (!ro.ok) throw new Error(ro.error)
+    eq('S8 415 다시 사용, 상단은 닫힌 채', [!!(await prisma.storageLocation.findUnique({ where: { id: L415 } }))?.closedAt, !!(await prisma.storageLocation.findUnique({ where: { id: LTOP } }))?.closedAt], [false, true])
+    eq('S8 품목 링크 숨김은 그대로', !!(await prisma.trackedItemLocation.findFirst({ where: { trackedItemId: RICE, storageLocationId: L415 } }))?.closedAt, true)
+    eq('S8 이관 기록은 그대로', !!(await prisma.stockCheck.findUnique({ where: { id: tid } })), true)
+    eq('S7b 다시 사용 뒤 사용 중지 적용취소는 거부(closedAt CAS)', (await inv.undoCloseStorageLocation(J(r.undo))).ok, false)
+    eq('S8 다시 사용 적용취소 ok', await inv.undoReopenStorageLocation(J(ro.undo!)), { ok: true })
+    eq('S8 그 시각 그대로 다시 닫힘', (await prisma.storageLocation.findUnique({ where: { id: L415 } }))?.closedAt?.getTime(), r.undo.closedAtMs)
+    eq('S8 이제 사용 중지 적용취소 ok', (await inv.undoCloseStorageLocation(J(r.undo))).ok, true)
   }
 
   console.log(`[보관 위치 닫기 통합] 통과 ${pass} / 실패 ${fail}`)

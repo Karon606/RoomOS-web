@@ -50,6 +50,20 @@
 - 화면 선택 state 는 서버에서 다시 열린 위치(적용취소·다시 표시)를 받아 넣는다. 안 넣으면 다음 `위치 저장` 이 조용히 다시 숨긴다(17aebf8 클래스).
 - 감지망 check-location-actions-wiring ⓘ(원자·정본 경유·기대값 대조·화면 배선·수령 필터), 진리표 test-location-close(허브 승격 값·수량 조사·메모 읽기), 통합 test-location-close-flow H 절(PGlite: 옮길 곳 필수·총량 불변·이관 행·창고 명시와 null·화면 술어·캡션 재료·적용취소 바이트 동일·얹힌 점검 거부·뒤 점검 거부·빈 위치 숨김·남의 영업장 거부). 그물 ⓘ 는 캡션·서버 문장 한 벌과 상세 모달의 hiddenLocationIds 전달까지 본다. 역주입 12종 잡힘. undo 페이로드는 클라이언트발 값 — **각 필드를 품목 스코프로 검증**할 것(B1 선례).
 
+
+## 위치 사용 중지 = StorageLocation.closedAt (2026-10-28, 운영자 승인 '추천대로' 2단계)
+운영자 원문 요지: 415호 창고를 창고로 아예 안 쓰게 되면 이력은 남기고 닫는다. 품목별 숨김(위 절)은 한 품목의 한 위치이고, 이것은 위치 자체다.
+- **두 축의 열림**: 열린 링크 = 링크 closedAt null **그리고** 위치 closedAt null. 판정 정본 `lib/locationOpen` isOpenLink, Prisma 조건 정본 `app/(app)/inventory/openLink.ts`(OPEN_LINK_WHERE·OPEN_LOCATION_WHERE). 허브 리졸버 쌍둥이(ledgerShift·overview)와 getStockAsOf(셋째 정의를 걷고 리졸버를 부른다)가 이 정본만 쓴다. 한쪽만 보면 사용 중지한 창고가 미지정 입수의 귀속처로 남는다.
+- **닫기(closeStorageLocation)**: 한 인터랙티브 트랜잭션. 잔량 계획은 트랜잭션 밖에서 세우므로 안에서 품목마다 재고 기록 열쇠(마지막 점검 id·입수·폐기 건수)를 다시 대조하고, 위치는 closedAt: null 조건으로 닫아 바뀐 행 수가 닫을 위치 수와 같아야 한다(같은 날 수령·동시 닫기가 끼면 '그사이 재고 기록이 바뀌었습니다' 로 멈춤, 1단계 숨김도 같은 구조). 이관 수량은 원값(반올림 안 함). 서브트리 closedAt(같은 시각, 이미 닫힌 자손은 날짜 유지) · 품목마다 고른 목적지로 링크(없으면 생성, 숨김이면 다시 표시) + 이관 점검(memo `위치 사용 중지: A에서 B로 N 이관`, A = 닫은 서브트리 루트 경로) · 닫는 위치의 열린 링크 숨김 · 품목 창고 승격(hubAfterClose, 새 창고가 새 기본 창고면 null) · 기본 창고를 닫으면 새 기본 창고 필수(결정 4) · 위치별 임시저장 삭제 · 여분 보관 비품 storedLocationId 를 고른 곳(또는 '보관 위치 모름')으로. 묻는 품목은 재고가 남았거나 유일한 열린 링크가 닫히는 품목(결정 9). 창 미리보기(getLocationCloseImpact)와 쓰기가 **같은 계획 함수**(planLocationClose)다.
+- **안 건드리는 것(결정 10)**: 공용부 배정 비품(assignedLocationId)·과거 수령 위치(receivedLocationId)·수령 대기·지난 점검과 입수 기록. 닫힌 위치도 이름을 점유한다(결정 8, 판정 행에서 안 뺀다).
+- **적용취소(undoCloseStorageLocation)**: 토큰 칸마다 영업장 범위·지금 모습을 대조한다. 토큰의 위치 id 는 품목 창고 원복 값(hubBefore)까지 전부 이 영업장 위치여야 한다(빠지면 조작한 토큰이 남의 영업장 위치를 창고 칸에 넣는다, 독립 검수 차단). closedAt 시각 CAS, 기본 창고 집합, 품목 창고(hubAfter), 이관 점검 기대값(시각·행 수·보충 마커), 보관 비품 자리, 그리고 이 동작이 바꾼 품목마다(이관 없는 재고 0 품목 포함) 사용 중지 뒤 점검·입수·폐기 없음. 하나라도 어긋나면 전체 거부(반쪽 없음, '사용 중지 뒤 재고 기록이 있어 되돌릴 수 없습니다'). 임시저장은 내용 그대로 되살린다.
+- **다시 사용(reopenStorageLocation)**: 그 위치 하나만, 조상이 열려 있을 때만(결정 5). 자식은 닫힌 채, 품목 링크 숨김도 그대로(품목 설정 '다시 표시'). 이관 기록도 그대로. 적용취소(undoReopenStorageLocation)는 그새 그 위치를 쓰기 시작했으면(열린 링크·기본 창고·보관 비품·열린 아래 칸) 거부한다. 계획 밖에서 더한 액션이다(적용취소 원칙).
+- **다시 표시·숨김 적용취소도 막는다**: 사용 중지한 위치의 품목 링크는 품목 쪽에서 다시 열지 않는다(reopenItemLocation·undoCloseItemLocation 거부, 독립 검수 권고 4).
+- **적용취소가 되살리는 보관 위치**: 재무 삭제 복원과 비품 적용취소 세 곳(수령 대기로·공용 자재·배정/폐기)은 영업장 범위·사용 중일 때만 되살리고 아니면 비운다(assets restorableStoreIds, 독립 검수 권고 5).
+- **쓰기 거부**: 새 값만 막는다(입수·폐기·일괄 추가·품목 연결·창고 지정·기본 창고·아래 칸 생성·옮기기·끌어 놓기·옮기기 도착지·비품 보관·공용부 배정). 지난 입수 기록 고치기는 이미 적힌 닫힌 위치를 그대로 둔다. 재무 삭제 복원은 보관 위치만 닫힌 곳이면 비운다(수령 위치·공용부 배정은 그대로).
+- **배포 순서**: `prisma/migrate_storage_location_closed.sql`(멱등, 되돌리기 문구) 을 운영 DB 에 먼저, 그다음 코드. 칸 없이 배포하면 위치를 읽는 조회가 실패한다. verify:db 의 check-location-tree-drift ⓖ~ⓚ 는 칸이 없으면 건너뛰고 말한다.
+- 감지망 check-location-actions-wiring ⓙ(원자·같은 계획·적용취소 대조·화면 배선)ⓚ(열린 술어 정본 경유·쓰기 거부·고르는 화면), check-stock-ledger-parity(쌍둥이 열린 링크·getStockAsOf), check-location-tree-drift ⓖ~ⓚ(닫힌 기본 창고·닫힌 부모 아래 열린 칸·닫힌 위치의 열린 링크·닫힌 품목 창고·닫힌 보관 위치), check-action-property-scope(세 함수), check-seg-ink-off ⓗ 고정 자리, check-draft-lifecycle ⑬, 진리표 test-location-open, 통합 test-location-close-flow S 절.
+
 ## 불변식: 재고가 들어간 위치엔 반드시 링크가 있다 (2026-07-17, 67ccfa3·06585a5)
 **모든 (품목 T, 위치 L)에 대해, T 의 재고가 지금 L 에 들어가 있다면 `TrackedItemLocation(T,L)` 이 존재한다.** 현재시제 판정 기준 = T 의 마지막 점검 `StockCheckLocation` 중 `remainingQty > 0` 인 행.
 - **왜 치명적인가**: 위치별 재고확인 탭(`InventoryClient.tsx` `row.locations.some(...)`)과 보정 폼이 **링크로 필터**한다. 링크 없는 위치의 재고는 화면에서 통째로 사라진다(오류신고 601303c5 — 김치 20kg 중 15kg). 총량에는 잡히는데 위치 어디에도 안 보인다.

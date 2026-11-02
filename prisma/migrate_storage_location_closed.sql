@@ -1,0 +1,13 @@
+-- 보관 위치 사용 중지 — storage_locations 에 closedAt 칸 추가 (2026-10-28 운영자 승인 '보관 위치 닫기' 2단계).
+--
+-- null = 사용 중(기존 행 전부). 값 = 그날부터 창고로 쓰지 않는다. 행을 지우지 않으므로 지난 점검·입수·비품 기록과 이름이
+-- 그대로 남고, 고르는 자리(점검 위치·수령 위치·옮기기 목적지·비품 보관 후보 등)에서만 빠진다. 백필 없음.
+-- 물리 테이블명은 storage_locations(@@map). 멱등(IF NOT EXISTS)이라 두 번 실행해도 같다.
+--
+-- 적용 순서: 운영자 확인 뒤 이 SQL 을 운영 DB 에 먼저 적용하고 그다음 코드를 배포한다. 새 코드의 Prisma 클라이언트는 위치를
+-- 읽을 때 이 칸을 함께 고르므로, 칸 없이 배포하면 재고 화면이 'column does not exist' 로 실패한다. 칸만 먼저 생기는 것은
+-- 옛 코드에 무해하다(옛 코드는 칸을 모른다).
+--
+-- 되돌리기(코드를 먼저 되돌린 뒤. 사용 중지한 위치가 있었다면 그 표시가 함께 사라진다):
+--   ALTER TABLE "storage_locations" DROP COLUMN IF EXISTS "closedAt";
+ALTER TABLE "storage_locations" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3);

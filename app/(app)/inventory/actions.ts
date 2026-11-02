@@ -32,7 +32,7 @@ import { assertNotFuture } from '@/lib/completionDate'
 import { reasonForSave } from '@/lib/reasonListSave'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
-import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, ITEM_MERGED_UNDO_DENIED, type LedgerShiftUndo } from './ledgerShift'
+import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, ITEM_MERGED_UNDO_DENIED, type LedgerShiftUndo, type InventoryTx } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
@@ -40,6 +40,9 @@ import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { withParticle } from '@/lib/koParticle'
 // 위치 숨김 허브 승격 값·이관 메모 읽기 정본(순수, 진리표 scripts/test-location-close.ts).
 import { hubAfterClose, parseHideTransferMemo, HIDE_MEMO_PREFIX, stockedHideDenied } from '@/lib/locationClose'
+// 위치 열림 두 축(사용 중지·품목 숨김)의 판정 정본과 그 Prisma 조건 사본(2026-10-28 보관 위치 닫기 2단계).
+import { isOpenLink, isOpenLocation, closeTargetIds, closedAncestorOf, newDefaultProblem, LOCATION_CLOSED_DENIED, PARENT_CLOSED_DENIED, type ClosableRow } from '@/lib/locationOpen'
+import { OPEN_LINK_WHERE, OPEN_LOCATION_WHERE } from './openLink'
 // 수령 수량 관문 정본(순수). 수량이 빈 추적 구매는 채운 뒤에만 받는다(2026-10-15 냉장고 유령수령 봉합).
 import {
   receiptNeedsQty, normalizeFillQty, fillQtyUnit, fillDetail, RECEIPT_QTY_REQUIRED, receiptQtyRequiredMany, type ReceiptQtyFill,
@@ -240,7 +243,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     where: { id: trackedItemId, propertyId },
     include: {
       locations: {
-        include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+        include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true, closedAt: true } } },
         orderBy: { storageLocation: { sortOrder: 'asc' } },
       },
     },
@@ -372,6 +375,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
           pathName: locPaths.pathName(l.storageLocation.id) ?? l.storageLocation.name,
           sortOrder: l.storageLocation.sortOrder,
           isHub: item.hubLocationId ? l.storageLocation.id === item.hubLocationId : l.storageLocation.isHub,
+          // 위치 사용 중지(2026-10-28). 무상 입수·폐기·수령 위치 고르기가 이것으로 거른다(지난 기록 고치기는 그대로).
+          locationClosedAt: l.storageLocation.closedAt ? l.storageLocation.closedAt.toISOString() : null,
         }))
         .sort((a, b) => locPaths.rank(a.id) - locPaths.rank(b.id) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
     },
@@ -2023,6 +2028,7 @@ export async function createStockAddition(data: {
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+      if (!isOpenLocation(loc)) return { ok: false, error: LOCATION_CLOSED_DENIED }
     }
     const createdAt = new Date()
     let rows: ShiftRow[] = []
@@ -2155,6 +2161,8 @@ export async function updateStockAddition(id: string, data: {
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+      // 새로 고른 값만 막는다. 이미 그 위치로 적힌 지난 기록(이력)은 사용 중지 뒤에도 그대로 고칠 수 있어야 한다.
+      if (!isOpenLocation(loc) && data.storageLocationId !== a.storageLocationId) return { ok: false, error: LOCATION_CLOSED_DENIED }
     }
     const nextDateMs = data.date ? new Date(data.date).getTime() : a.date.getTime()
     const nextQty = data.addedQty !== undefined ? data.addedQty : a.addedQty
@@ -2244,6 +2252,7 @@ export async function createStockDisposal(data: {
     if (data.storageLocationId) {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+      if (!isOpenLocation(loc)) return { ok: false, error: LOCATION_CLOSED_DENIED }
     }
     // 이중 차감 방어 — 폐기 후 잔량을 이미 반영한 점검이 있으면 별도 기록 시 두 번 빠진다.
     //
@@ -3052,15 +3061,18 @@ export async function getStorageLocations(): Promise<StorageLocationNode[]> {
   const locs = await prisma.storageLocation.findMany({
     where: { propertyId },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
+    select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true, closedAt: true },
   })
   const hubOf = new Map(locs.map(l => [l.id, l.isHub]))
+  // 사용 중지한 위치도 목록에 남는다(위치 관리·이력). 고르는 자리가 locationClosedAt 으로 거른다(2026-10-28).
+  const closedOf = new Map(locs.map(l => [l.id, l.closedAt]))
   return indexLocations(locs).rows.map(r => ({
     id: r.id,
     name: r.name,
     pathName: r.pathName,
     sortOrder: r.sortOrder,
     isHub: hubOf.get(r.id) ?? false,
+    locationClosedAt: closedOf.get(r.id)?.toISOString() ?? null,
     parentId: r.parentId,
     depth: r.depth,
   }))
@@ -3068,11 +3080,12 @@ export async function getStorageLocations(): Promise<StorageLocationNode[]> {
 
 // ── 트리 쓰기의 공통 전제 — 이 영업장 위치 전체 행(순수 판정 함수의 첫 인자).
 //   소속 영업장 검사를 여기서 한 번에 한다: 목록에 없는 id 는 남의 영업장이거나 없는 위치다.
-async function loadLocationRows(propertyId: string): Promise<LocationRow[]> {
+//   사용 중지 칸(closedAt)·기본 창고(isHub)도 싣는다. 닫힌 위치도 이름을 점유하므로(결정 8) 판정 행에서 빼지 않는다.
+async function loadLocationRows(propertyId: string): Promise<(LocationRow & ClosableRow)[]> {
   return prisma.storageLocation.findMany({
     where: { propertyId },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, parentId: true, name: true, sortOrder: true },
+    select: { id: true, parentId: true, name: true, sortOrder: true, closedAt: true, isHub: true },
   })
 }
 
@@ -3164,6 +3177,7 @@ export async function moveStorageLocation(id: string, parentId: string | null, s
     const parent = parentId === null ? null : rows.find(r => r.id === parentId)
     // 목록에 없는 부모 = 다른 영업장이거나 삭제된 위치. 소속이 다르면 여기서 걸린다.
     if (parentId !== null && !parent) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    if (parent && !isOpenLocation(parent)) return { ok: false, error: PARENT_CLOSED_DENIED }
     if (self.parentId === parentId) return { ok: false, error: '이미 그 위치 아래에 있습니다.' }
 
     if (wouldCycle(rows, id, parentId)) return { ok: false, error: '자기 자신이나 하위 위치 아래로는 옮길 수 없습니다.' }
@@ -3236,6 +3250,7 @@ export async function placeStorageLocation(id: string, parentId: string | null, 
     const parent = parentId === null ? null : rows.find(r => r.id === parentId)
     // 목록에 없는 부모 = 다른 영업장이거나 삭제된 위치. 소속이 다르면 여기서 걸린다.
     if (parentId !== null && !parent) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    if (parent && !isOpenLocation(parent)) return { ok: false, error: PARENT_CLOSED_DENIED }
     if (self.parentId === parentId) return { ok: false, error: '이미 그 위치 아래에 있습니다.' }
     if (!Number.isInteger(index) || index < 0) return { ok: false, error: '놓을 자리가 올바르지 않습니다.' }
 
@@ -3396,6 +3411,8 @@ export async function toggleStorageLocationHub(id: string, isHub: boolean): Prom
     const propertyId = await getPropertyId()
     const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
     if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    // 사용 중지한 위치는 기본 창고가 될 수 없다(미지정 입수가 닫힌 창고로 들어간다). 해제는 막지 않는다.
+    if (isHub && !isOpenLocation(loc)) return { ok: false, error: LOCATION_CLOSED_DENIED }
     const prevHubIds = (await prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } })).map(l => l.id)
     await prisma.$transaction([
       ...(isHub ? [prisma.storageLocation.updateMany({ where: { propertyId, isHub: true, NOT: { id } }, data: { isHub: false } })] : []),
@@ -3417,6 +3434,10 @@ export async function restoreStorageHubs(hubIds: string[]): Promise<{ ok: true }
     const ids = [...new Set(hubIds)]
     if (ids.length && (await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId } })) !== ids.length) {
       return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    }
+    // 되살릴 기본 창고가 그새 사용 중지됐으면 거부한다(닫힌 창고를 기본 창고로 되살리지 않는다).
+    if (ids.length && (await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId, ...OPEN_LOCATION_WHERE } })) !== ids.length) {
+      return { ok: false, error: LOCATION_CLOSED_DENIED }
     }
     await prisma.$transaction([
       prisma.storageLocation.updateMany({ where: { propertyId, isHub: true, id: { notIn: ids } }, data: { isHub: false } }),
@@ -3442,6 +3463,7 @@ export async function createStorageLocation(name: string, parentId: string | nul
     const rows = await loadLocationRows(propertyId)
     // 목록에 없는 부모 = 다른 영업장이거나 없는 위치.
     if (parentId !== null && !rows.some(r => r.id === parentId)) return { ok: false, error: '상위 위치를 찾을 수 없습니다.' }
+    if (parentId !== null && !isOpenLocation(rows.find(r => r.id === parentId)!)) return { ok: false, error: PARENT_CLOSED_DENIED }
     const parentDepth = parentId === null ? 0 : depthOf(rows, parentId)
     if (parentId !== null && parentDepth === 0) return { ok: false, error: '상위 위치의 단계를 읽을 수 없습니다.' }
     if (parentDepth + 1 > MAX_DEPTH) return { ok: false, error: `위치는 ${MAX_DEPTH}단계까지만 만들 수 있습니다.` }
@@ -3557,6 +3579,372 @@ export async function deleteStorageLocation(id: string, force = false): Promise<
   }
 }
 
+// ── 위치 사용 중지(2026-10-28 운영자 승인 '보관 위치 닫기' 2단계) ─────────────────────────────
+// 위치 자체를 창고로 더 안 쓴다. 행은 지우지 않는다(지난 점검·입수·비품 기록과 이름이 그대로 남는다, 결정 8은 닫힌 이름도 점유).
+// 서브트리를 함께 닫고(결정 5), 품목마다 남은 재고를 고른 곳으로 옮기며(결정 3), 기본 창고면 새 기본 창고가 필수다(결정 4).
+// 판정 정본 lib/locationOpen, 조건 정본 ./openLink. 창 미리보기(getLocationCloseImpact)와 쓰기(closeStorageLocation)가
+// **같은 계획 함수**(planLocationClose)를 써서 화면이 묻는 품목과 서버가 요구하는 품목이 갈리지 않는다.
+type LocationClosePlanItem = {
+  trackedItemId: string
+  label: string
+  hubLocationId: string | null
+  qty: number                 // 닫는 서브트리 안 현재 잔량 합
+  needsDest: boolean          // 재고가 남았거나(결정 3) 유일한 열린 링크가 닫히는(결정 9) 품목
+  hadOpenLink: boolean        // 닫는 서브트리에 열린 링크가 있었나(= 보관 위치에서 숨겨지는 품목)
+  openLinkIds: string[]       // 닫은 뒤에도 열린 링크(화면이 '(새로 연결)' 을 가른다)
+  breakdown: Map<string, number>
+  lastCheckDate: string | null
+  snapshot: string            // 재고 기록 열쇠(stockSnapshotKey). 트랜잭션 안에서 다시 대조한다
+}
+
+async function planLocationClose(propertyId: string, id: string) {
+  const rows = await loadLocationRows(propertyId)
+  const target = rows.find(r => r.id === id)
+  if (!target) return { ok: false as const, error: '위치를 찾을 수 없습니다.' }
+  if (!isOpenLocation(target)) return { ok: false as const, error: '이미 사용 중지한 위치입니다.' }
+  const closingIds = closeTargetIds(rows, id)
+  const closing = new Set(closingIds)
+  const links = await prisma.trackedItemLocation.findMany({
+    where: { storageLocationId: { in: closingIds }, trackedItem: { propertyId } },
+    select: { trackedItemId: true },
+  })
+  const itemIds = [...new Set(links.map(l => l.trackedItemId))]
+  const items: LocationClosePlanItem[] = []
+  for (const itemId of itemIds) {
+    const it = await prisma.trackedItem.findFirst({
+      where: { id: itemId, propertyId },
+      select: { id: true, label: true, hubLocationId: true, locations: { select: { storageLocationId: true, closedAt: true, storageLocation: { select: { closedAt: true } } } } },
+    })
+    if (!it) continue
+    const snapshot = await stockSnapshotKey(prisma, it.id)
+    const breakdown = await currentLocationBreakdown(it.id, propertyId, it.hubLocationId)
+    const qty = closingIds.reduce((s, l) => s + Math.max(0, breakdown.get(l) ?? 0), 0)
+    const open = it.locations.filter(l => isOpenLink(l, l.storageLocation))
+    const hadOpenLink = open.some(l => closing.has(l.storageLocationId))
+    const openLinkIds = open.filter(l => !closing.has(l.storageLocationId)).map(l => l.storageLocationId)
+    const last = await prisma.stockCheck.findFirst({ where: { trackedItemId: it.id }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], select: { date: true } })
+    items.push({
+      trackedItemId: it.id, label: it.label, hubLocationId: it.hubLocationId,
+      // 원값이다(독립 검수 권고 3). 반올림하면 이관 점검이 옮긴 양과 닫는 위치에 남은 양이 어긋난다(1단계와 같은 규칙).
+      qty,
+      needsDest: qty >= 0.001 || (hadOpenLink && openLinkIds.length === 0),
+      hadOpenLink, openLinkIds, breakdown,
+      lastCheckDate: last ? last.date.toISOString().slice(0, 10) : null,
+      snapshot,
+    })
+  }
+  const storedCount = await prisma.expense.count({ where: { propertyId, storedLocationId: { in: closingIds } } })
+  return { ok: true as const, rows, target, closingIds, items, storedCount }
+}
+
+export type LocationCloseImpact = {
+  locationId: string
+  pathName: string
+  closingIds: string[]
+  childNames: string[]          // 함께 닫히는 아래 칸 이름(그 노드 한 칸 이름, 확인창 문장용)
+  isDefaultClosing: boolean     // 닫는 서브트리에 영업장 기본 창고가 있다(새 기본 창고 필수)
+  hiddenItemCount: number       // 보관 위치에서 숨겨지는 품목 수(N)
+  zeroItemCount: number         // 목적지를 묻지 않고 바로 숨기는 품목 수(M)
+  items: { trackedItemId: string; label: string; qty: number; openLinkIds: string[]; lastCheckDate: string | null }[]
+  storedCount: number           // 여기 보관 중인 여분 비품 구매 행 수
+}
+
+export async function getLocationCloseImpact(id: string): Promise<{ ok: true; impact: LocationCloseImpact } | { ok: false; error: string }> {
+  try {
+    const propertyId = await getPropertyId()
+    const plan = await planLocationClose(propertyId, id)
+    if (!plan.ok) return plan
+    const locPaths = indexLocations(plan.rows)
+    const closing = new Set(plan.closingIds)
+    return {
+      ok: true,
+      impact: {
+        locationId: id,
+        pathName: locPaths.pathName(id) ?? plan.target.name,
+        closingIds: plan.closingIds,
+        childNames: locPaths.rows.filter(r => r.id !== id && closing.has(r.id)).map(r => r.name),
+        isDefaultClosing: plan.rows.some(r => r.isHub && closing.has(r.id)),
+        hiddenItemCount: plan.items.filter(i => i.hadOpenLink).length,
+        zeroItemCount: plan.items.filter(i => i.hadOpenLink && !i.needsDest).length,
+        // 화면 표시용으로만 둘째 자리 반올림(쓰기는 원값을 다시 계산한다).
+        items: plan.items.filter(i => i.needsDest).map(i => ({ trackedItemId: i.trackedItemId, label: i.label, qty: Math.round(i.qty * 100) / 100, openLinkIds: i.openLinkIds, lastCheckDate: i.lastCheckDate })),
+        storedCount: plan.storedCount,
+      },
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export type CloseStorageLocationUndo = {
+  locationId: string
+  closedIds: string[]
+  closedAtMs: number
+  prevHubIds: string[]
+  hubIdsAfter: string[]
+  items: {
+    trackedItemId: string
+    transferCheckId: string | null
+    transferExpect: DeleteCheckExpect | null
+    destLocationId: string | null
+    destLink: 'created' | 'reopened' | 'kept' | null
+    destLinkPrevClosedAtMs: number | null
+    closedLinkIds: string[]           // 이 동작이 숨긴 링크의 위치 id
+    hubBefore: string | null
+    hubAfter: string | null
+  }[]
+  stored: { expenseId: string; prevLocationId: string }[]
+  storedToId: string | null
+  drafts: { trackedItemId: string; locationId: string; data: Prisma.JsonValue }[]
+}
+
+export async function closeStorageLocation(data: {
+  id: string
+  newDefaultId: string | null
+  moves: { trackedItemId: string; toLocationId: string }[]
+  storedToId: string | null       // null = 보관 위치 모름
+}): Promise<{ ok: true; undo: CloseStorageLocationUndo; movedCount: number; defaultPathName: string | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const plan = await planLocationClose(propertyId, data.id)
+    if (!plan.ok) return plan
+    const { rows, closingIds, items } = plan
+    const closing = new Set(closingIds)
+    const prob = newDefaultProblem(rows, closingIds, data.newDefaultId)
+    if (prob === 'required') return { ok: false, error: '기본 창고를 사용 중지하려면 새 기본 창고를 고르세요.' }
+    if (prob === 'invalid') return { ok: false, error: '새 기본 창고로 고를 수 없는 위치입니다.' }
+    const usable = (lid: string | null | undefined) => {
+      const r = lid ? rows.find(x => x.id === lid) : undefined
+      return !!r && isOpenLocation(r) && !closing.has(r.id)
+    }
+    if (data.storedToId != null && !usable(data.storedToId)) return { ok: false, error: '보관 비품을 옮길 위치로 고를 수 없는 곳입니다.' }
+    const moveOf = new Map(data.moves.map(m => [m.trackedItemId, m.toLocationId]))
+    for (const i of items) {
+      if (!i.needsDest) continue
+      const to = moveOf.get(i.trackedItemId)
+      if (!to) return { ok: false, error: '옮길 곳을 고르지 않은 품목이 있습니다.' }
+      if (!usable(to)) return { ok: false, error: `'${i.label}' 품목을 옮길 위치로 고를 수 없는 곳입니다.` }
+    }
+    const locPaths = indexLocations(rows)
+    const fromPath = locPaths.pathName(data.id) ?? plan.target.name
+    const prevHubIds = rows.filter(r => r.isHub).map(r => r.id)
+    const defaultClosing = rows.some(r => r.isHub && closing.has(r.id))
+    const defaultAfter = defaultClosing || data.newDefaultId ? (data.newDefaultId ?? null) : (prevHubIds[0] ?? null)
+    const hubIdsAfter = data.newDefaultId ? [data.newDefaultId] : prevHubIds.filter(h => !closing.has(h))
+
+    // 품목마다 창고 승격 값을 트랜잭션 전에 정한다(리졸버는 읽기라 트랜잭션 밖에서 돌려도 같은 값이다).
+    const now = new Date()
+    type Prep = { i: LocationClosePlanItem; dest: string | null; hubAfter: string | null; hubChanged: boolean }
+    const preps: Prep[] = []
+    for (const i of items) {
+      const dest = i.needsDest ? moveOf.get(i.trackedItemId)! : null
+      // 실효 창고는 정본 리졸버로 본다(지금 열린 링크 = 두 축 열림).
+      const linkRows = await prisma.trackedItemLocation.findMany({ where: { trackedItemId: i.trackedItemId, ...OPEN_LINK_WHERE }, select: { storageLocationId: true } })
+      const openBefore = new Set(linkRows.map(l => l.storageLocationId))
+      const effHub = await resolveItemHubLocationId(i.trackedItemId, i.hubLocationId, propertyId, openBefore)
+      let hubAfter = i.hubLocationId
+      if ((effHub && closing.has(effHub)) || (i.hubLocationId && closing.has(i.hubLocationId))) {
+        const remain = new Set([...openBefore].filter(l => !closing.has(l)))
+        if (dest) remain.add(dest)
+        const newHub = dest
+          ?? (defaultAfter && remain.has(defaultAfter) ? defaultAfter : await resolveItemHubLocationId(i.trackedItemId, null, propertyId, remain))
+        hubAfter = newHub ? hubAfterClose(newHub, defaultAfter) : null
+      }
+      preps.push({ i, dest, hubAfter, hubChanged: hubAfter !== i.hubLocationId })
+    }
+    const storedRows = await prisma.expense.findMany({ where: { propertyId, storedLocationId: { in: closingIds } }, select: { id: true, storedLocationId: true } })
+    const draftRows = await prisma.stockCheckDraft.findMany({ where: { locationId: { in: closingIds }, trackedItem: { propertyId } }, select: { id: true, trackedItemId: true, locationId: true, data: true } })
+
+    // 한 인터랙티브 트랜잭션 — 위치 닫기·이관·링크·창고·기본 창고·보관 비품·드래프트가 함께 서거나 함께 안 선다.
+    const undoItems = await prisma.$transaction(async tx => {
+      const out: CloseStorageLocationUndo['items'] = []
+      for (const p of preps) {
+        const itemId = p.i.trackedItemId
+        // 계획 뒤 같은 날 수령·입수·폐기가 끼었으면 낡은 잔량으로 옮기게 된다. 멈추고 다시 시도하게 한다(권고 2).
+        if ((await stockSnapshotKey(tx, itemId)) !== p.i.snapshot) throw new Error(STOCK_CHANGED_RETRY)
+        let transferCheckId: string | null = null
+        let transferExpect: DeleteCheckExpect | null = null
+        let destLink: CloseStorageLocationUndo['items'][number]['destLink'] = null
+        let destLinkPrevClosedAtMs: number | null = null
+        if (p.dest) {
+          const existing = await tx.trackedItemLocation.findUnique({ where: { trackedItemId_storageLocationId: { trackedItemId: itemId, storageLocationId: p.dest } }, select: { closedAt: true } })
+          if (!existing) {
+            await tx.trackedItemLocation.create({ data: { trackedItemId: itemId, storageLocationId: p.dest } })
+            destLink = 'created'
+          } else if (existing.closedAt) {
+            await tx.trackedItemLocation.update({ where: { trackedItemId_storageLocationId: { trackedItemId: itemId, storageLocationId: p.dest } }, data: { closedAt: null } })
+            destLink = 'reopened'; destLinkPrevClosedAtMs = existing.closedAt.getTime()
+          } else destLink = 'kept'
+          if (p.i.qty >= 0.001) {
+            const bd = new Map(p.i.breakdown)
+            for (const l of closingIds) if (bd.has(l)) bd.set(l, 0)
+            bd.set(p.dest, (bd.get(p.dest) ?? 0) + p.i.qty)
+            const memo = `위치 사용 중지: ${fromPath}에서 ${withParticle(locPaths.pathName(p.dest) ?? '', '으로/로')} ${p.i.qty} 이관`
+            const c = await tx.stockCheck.create({ data: transferCheckCreateData(itemId, bd, memo), select: { id: true, createdAt: true } })
+            transferCheckId = c.id
+            transferExpect = { createdAtMs: c.createdAt.getTime(), rowCount: bd.size, markerSum: 0 }
+          }
+        }
+        const toClose = (await tx.trackedItemLocation.findMany({ where: { trackedItemId: itemId, storageLocationId: { in: closingIds }, closedAt: null }, select: { storageLocationId: true } })).map(l => l.storageLocationId)
+        if (toClose.length) await tx.trackedItemLocation.updateMany({ where: { trackedItemId: itemId, storageLocationId: { in: toClose } }, data: { closedAt: now } })
+        if (p.hubChanged) await tx.trackedItem.update({ where: { id: itemId }, data: { hubLocationId: p.hubAfter } })
+        out.push({ trackedItemId: itemId, transferCheckId, transferExpect, destLocationId: p.dest, destLink, destLinkPrevClosedAtMs, closedLinkIds: toClose, hubBefore: p.i.hubLocationId, hubAfter: p.hubAfter })
+      }
+      if (prevHubIds.some(h => !hubIdsAfter.includes(h)) || hubIdsAfter.some(h => !prevHubIds.includes(h))) {
+        await tx.storageLocation.updateMany({ where: { propertyId, isHub: true }, data: { isHub: false } })
+        if (hubIdsAfter.length) await tx.storageLocation.updateMany({ where: { propertyId, id: { in: hubIdsAfter } }, data: { isHub: true } })
+      }
+      if (storedRows.length) await tx.expense.updateMany({ where: { propertyId, id: { in: storedRows.map(r => r.id) } }, data: { storedLocationId: data.storedToId } })
+      if (draftRows.length) await tx.stockCheckDraft.deleteMany({ where: { id: { in: draftRows.map(d => d.id) } } })
+      // closedAt: null 조건으로 닫고 바뀐 행 수를 대조한다(권고 2). 그사이 다른 화면이 같은 서브트리를 닫았으면 멈춘다.
+      const shut = await tx.storageLocation.updateMany({ where: { propertyId, id: { in: closingIds }, closedAt: null }, data: { closedAt: now } })
+      if (shut.count !== closingIds.length) throw new Error(STOCK_CHANGED_RETRY)
+      return out
+    })
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return {
+      ok: true,
+      movedCount: undoItems.filter(u => u.transferCheckId).length,
+      defaultPathName: hubIdsAfter[0] ? (locPaths.pathName(hubIdsAfter[0]) ?? null) : null,
+      undo: {
+        locationId: data.id, closedIds: closingIds, closedAtMs: now.getTime(), prevHubIds, hubIdsAfter,
+        items: undoItems,
+        stored: storedRows.map(r => ({ expenseId: r.id, prevLocationId: r.storedLocationId! })),
+        storedToId: data.storedToId,
+        drafts: draftRows.map(d => ({ trackedItemId: d.trackedItemId, locationId: d.locationId!, data: d.data })),
+      },
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '위치 사용 중지에 실패했습니다.' }
+  }
+}
+
+// 사용 중지 적용취소 — 방금 한 사용 중지가 실수였다. 토큰은 화면이 들고 온 값이라 칸마다 이 영업장 범위와 지금 모습을 대조하고,
+// 하나라도 어긋나면(그새 다시 사용·점검이 얹힘·창고나 기본 창고가 바뀜·보관 비품을 옮김) 전체를 거부한다.
+export async function undoCloseStorageLocation(undo: CloseStorageLocationUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  const STALE = '사용 중지 뒤 바뀐 것이 있어 적용취소할 수 없습니다.'
+  const AFTER_CLOSE_ACTIVITY = '사용 중지 뒤 재고 기록이 있어 되돌릴 수 없습니다.'
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    // 토큰이 실어 온 위치 id 는 전부 이 영업장 위치여야 한다. 품목 창고 원복 값(hubBefore)도 포함이다. 빠지면 조작한 토큰으로
+    // 남의 영업장 위치를 품목 창고 칸에 넣을 수 있다(독립 검수 차단 2026-10-28).
+    const locIds = [...new Set([...undo.closedIds, ...undo.prevHubIds, ...undo.hubIdsAfter, ...undo.items.flatMap(i => [i.destLocationId, i.hubBefore, i.hubAfter, ...i.closedLinkIds]), ...undo.stored.map(s => s.prevLocationId), undo.storedToId, ...undo.drafts.map(d => d.locationId)].filter((v): v is string => !!v))]
+    if (!(await locationsInProperty(propertyId, locIds))) return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    const closed = await prisma.storageLocation.findMany({ where: { propertyId, id: { in: undo.closedIds } }, select: { closedAt: true } })
+    if (closed.length !== undo.closedIds.length || closed.some(c => c.closedAt?.getTime() !== undo.closedAtMs)) return { ok: false, error: STALE }
+    const hubsNow = (await prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } })).map(h => h.id).sort()
+    if (JSON.stringify(hubsNow) !== JSON.stringify([...undo.hubIdsAfter].sort())) return { ok: false, error: STALE }
+    const itemIds = undo.items.map(i => i.trackedItemId)
+    const owned = await prisma.trackedItem.findMany({ where: { id: { in: itemIds }, propertyId }, select: { id: true, hubLocationId: true } })
+    if (owned.length !== new Set(itemIds).size) return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    for (const i of undo.items) {
+      if (owned.find(o => o.id === i.trackedItemId)?.hubLocationId !== i.hubAfter) return { ok: false, error: STALE }
+      if (i.transferCheckId) {
+        const c = await prisma.stockCheck.findFirst({ where: { id: i.transferCheckId, trackedItemId: i.trackedItemId }, select: { createdAt: true, locationBreakdown: { select: { restockedQty: true } } } })
+        const exp = i.transferExpect
+        const markerSum = c ? c.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0) : 0
+        if (!c || !exp || c.createdAt.getTime() !== exp.createdAtMs || c.locationBreakdown.length !== exp.rowCount || Math.abs(markerSum - exp.markerSum) >= 1e-6) {
+          return { ok: false, error: AFTER_CLOSE_ACTIVITY }
+        }
+      }
+      // 이 동작이 바꾼 품목이면(이관·링크 숨김·새 링크·창고) 사용 중지 뒤 그 품목의 점검·입수·폐기를 본다(독립 검수 권고 1).
+      // 이관 점검이 없는 재고 0 품목도 포함이다. 새로 만든 링크를 지우기 전에 그 링크로 들어온 기록이 있는지 여기서 걸린다.
+      const touched = !!i.transferCheckId || i.closedLinkIds.length > 0 || i.destLink === 'created' || i.destLink === 'reopened' || i.hubAfter !== i.hubBefore
+      if (touched) {
+        const after = new Date(undo.closedAtMs)
+        const [checks, adds, disps] = await Promise.all([
+          prisma.stockCheck.count({ where: { trackedItemId: i.trackedItemId, createdAt: { gt: after }, ...(i.transferCheckId ? { id: { not: i.transferCheckId } } : {}) } }),
+          prisma.stockAddition.count({ where: { trackedItemId: i.trackedItemId, createdAt: { gt: after } } }),
+          prisma.stockDisposal.count({ where: { trackedItemId: i.trackedItemId, createdAt: { gt: after } } }),
+        ])
+        if (checks + adds + disps > 0) return { ok: false, error: AFTER_CLOSE_ACTIVITY }
+      }
+    }
+    if (undo.stored.length) {
+      const n = await prisma.expense.count({ where: { propertyId, id: { in: undo.stored.map(s => s.expenseId) }, storedLocationId: undo.storedToId } })
+      if (n !== undo.stored.length) return { ok: false, error: STALE }
+    }
+    if (undo.drafts.length && (await prisma.trackedItem.count({ where: { id: { in: [...new Set(undo.drafts.map(d => d.trackedItemId))] }, propertyId } })) !== new Set(undo.drafts.map(d => d.trackedItemId)).size) {
+      return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    }
+    await prisma.$transaction(async tx => {
+      await tx.storageLocation.updateMany({ where: { propertyId, id: { in: undo.closedIds } }, data: { closedAt: null } })
+      await tx.storageLocation.updateMany({ where: { propertyId, isHub: true }, data: { isHub: false } })
+      if (undo.prevHubIds.length) await tx.storageLocation.updateMany({ where: { propertyId, id: { in: undo.prevHubIds } }, data: { isHub: true } })
+      for (const i of undo.items) {
+        if (i.transferCheckId) await tx.stockCheck.deleteMany({ where: { id: i.transferCheckId, trackedItemId: i.trackedItemId } })
+        if (i.closedLinkIds.length) await tx.trackedItemLocation.updateMany({ where: { trackedItemId: i.trackedItemId, storageLocationId: { in: i.closedLinkIds } }, data: { closedAt: null } })
+        if (i.destLocationId && i.destLink === 'created') await tx.trackedItemLocation.deleteMany({ where: { trackedItemId: i.trackedItemId, storageLocationId: i.destLocationId } })
+        if (i.destLocationId && i.destLink === 'reopened' && i.destLinkPrevClosedAtMs != null) {
+          await tx.trackedItemLocation.updateMany({ where: { trackedItemId: i.trackedItemId, storageLocationId: i.destLocationId }, data: { closedAt: new Date(i.destLinkPrevClosedAtMs) } })
+        }
+        if (i.hubAfter !== i.hubBefore) await tx.trackedItem.update({ where: { id: i.trackedItemId }, data: { hubLocationId: i.hubBefore } })
+      }
+      for (const s of undo.stored) await tx.expense.updateMany({ where: { propertyId, id: s.expenseId }, data: { storedLocationId: s.prevLocationId } })
+      if (undo.drafts.length) {
+        await tx.stockCheckDraft.createMany({ data: undo.drafts.map(d => ({ trackedItemId: d.trackedItemId, locationId: d.locationId, data: d.data as Prisma.InputJsonValue })), skipDuplicates: true })
+      }
+    })
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
+// 다시 사용 — 그 위치 하나만 연다(결정 5: 조상이 열려 있을 때만, 자식은 닫힌 채). 품목 링크의 숨김은 그대로다(품목 설정에서 다시 표시).
+export async function reopenStorageLocation(id: string): Promise<{ ok: true; undo: { id: string; closedAtMs: number } | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rows = await loadLocationRows(propertyId)
+    const self = rows.find(r => r.id === id)
+    if (!self) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    if (isOpenLocation(self)) return { ok: true, undo: null }
+    const anc = closedAncestorOf(rows, id)
+    if (anc) {
+      const locPaths = indexLocations(rows)
+      return { ok: false, error: `상위 '${locPaths.pathName(anc) ?? ''}' 위치가 사용 중지 상태라서 다시 사용할 수 없습니다. 상위 위치를 먼저 다시 사용하면 됩니다.` }
+    }
+    const closedAtMs = new Date(self.closedAt as Date).getTime()
+    await prisma.storageLocation.update({ where: { id }, data: { closedAt: null } })
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return { ok: true, undo: { id, closedAtMs } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 다시 사용 적용취소 — 그새 그 위치를 쓰기 시작했으면(열린 링크·기본 창고·보관 비품·열린 아래 칸) 거부한다. 닫힌 위치에 열린 것이
+// 매달린 모양을 만들지 않는다.
+export async function undoReopenStorageLocation(undo: { id: string; closedAtMs: number }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const loc = await prisma.storageLocation.findFirst({ where: { id: undo.id, propertyId }, select: { closedAt: true, isHub: true } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    if (loc.closedAt != null) return { ok: true }
+    const [links, stored, openKids] = await Promise.all([
+      prisma.trackedItemLocation.count({ where: { storageLocationId: undo.id, closedAt: null } }),
+      prisma.expense.count({ where: { propertyId, storedLocationId: undo.id } }),
+      prisma.storageLocation.count({ where: { propertyId, parentId: undo.id, ...OPEN_LOCATION_WHERE } }),
+    ])
+    if (loc.isHub || links > 0 || stored > 0 || openKids > 0) return { ok: false, error: '다시 사용한 뒤 이 위치를 쓰기 시작해 적용취소할 수 없습니다.' }
+    await prisma.storageLocation.update({ where: { id: undo.id }, data: { closedAt: new Date(undo.closedAtMs) } })
+    revalidatePath('/inventory'); revalidatePath('/inventory/assets')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
 // 품목에 위치 할당 (전체 교체)
 export async function setItemLocations(trackedItemId: string, locationIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -3568,16 +3956,19 @@ export async function setItemLocations(trackedItemId: string, locationIds: strin
     // 빠진 id: 재고 있으면 거부 / 비었고 이력 없으면 삭제 / 비었고 이력 있으면 숨김(closedAt).
     // 선택 id: 미링크면 생성 / 숨김이면 다시 표시(closedAt=null) / 열림이면 무변경.
     const selected = locationIds.length > 0
-      ? await prisma.storageLocation.findMany({ where: { id: { in: locationIds }, propertyId }, select: { id: true } })
+      ? await prisma.storageLocation.findMany({ where: { id: { in: locationIds }, propertyId }, select: { id: true, closedAt: true } })
       : []
     const selectedIds = new Set(selected.map(l => l.id))
     if (selectedIds.size !== locationIds.length) return { ok: false, error: '일부 위치를 찾을 수 없습니다.' }
 
-    const links = await prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true } })
+    const links = await prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true, storageLocation: { select: { closedAt: true } } } })
+    // 사용 중지한 위치는 새로 잇거나 다시 표시할 수 없다. 이미 열린 링크로 남아 있는 것(있을 수 없지만)은 그대로 둔다.
+    const openLinked = new Set(links.filter(l => isOpenLink(l, l.storageLocation)).map(l => l.storageLocationId))
+    if (selected.some(l => !isOpenLocation(l) && !openLinked.has(l.id))) return { ok: false, error: LOCATION_CLOSED_DENIED }
     const missing = links.filter(l => !selectedIds.has(l.storageLocationId))
 
     // 실효 허브가 빠진 id 에 있으면 거부 — 허브 승격은 숨김(closeItemLocation)의 책임이다.
-    const openIds = new Set(links.filter(l => l.closedAt == null).map(l => l.storageLocationId))
+    const openIds = openLinked
     const effHub = await resolveItemHubLocationId(trackedItemId, it.hubLocationId, propertyId, openIds)
     const breakdown = await currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId)
     // 안내 문구의 위치 이름도 표기 경로(pathName) — `상단에 재고가 남아 있어` 로는 어느 칸인지 모른다.
@@ -3641,6 +4032,9 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
     // 위치 소유 검증
     const locCount = await prisma.storageLocation.count({ where: { id: { in: locationIds }, propertyId } })
     if (locCount !== locationIds.length) return { ok: false, error: '일부 위치를 찾을 수 없습니다.' }
+    // 사용 중지한 위치는 일괄 추가로도 못 잇는다.
+    const openCount = await prisma.storageLocation.count({ where: { id: { in: locationIds }, propertyId, ...OPEN_LOCATION_WHERE } })
+    if (openCount !== locationIds.length) return { ok: false, error: LOCATION_CLOSED_DENIED }
 
     // 가산 전용(union) — 종전 deleteMany 전체교체는 빈 선택 적용 시 전 품목 링크·closedAt 을 통째로 날렸다(2단계 F7).
     // BatchLocationModal 은 현재 상태를 안 읽고 빈 Set 으로 시작하므로 '교체' 개념이 성립하지 않는다.
@@ -3705,7 +4099,8 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
           id: true, trackUnit: true, specUnit: true, qtyUnit: true, hubLocationId: true,
           // sortOrder 정렬 — '첫 위치' 폴백을 결정화(getStockAsOf 와 동일 기준)
           // 열린 링크만 — 숨긴 위치는 자동 배치·지정 위치 후보가 될 수 없다(2단계 F3)
-          locations: { where: { closedAt: null }, select: { storageLocationId: true }, orderBy: { storageLocation: { sortOrder: 'asc' } } },
+          // 사용 중지한 위치도 뺀다(열린 링크 정본 OPEN_LINK_WHERE, 2026-10-28).
+          locations: { where: OPEN_LINK_WHERE, select: { storageLocationId: true }, orderBy: { storageLocation: { sortOrder: 'asc' } } },
         },
       })
     }
@@ -4141,14 +4536,15 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   const expectedTotal = baseTotal + purchaseTotal + additionTotal - disposalTotal
 
   const baseByLoc = new Map((baseline?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty]))
-  // 품목별 허브 — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
-  const isItemHub = (locId: string, globalHub: boolean) => it.hubLocationId ? locId === it.hubLocationId : globalHub
-  const hub = locs.find(l => isItemHub(l.storageLocation.id, l.storageLocation.isHub)) ?? locs[0]
+  // 품목 허브는 정본 리졸버 하나다(ledgerShift.resolveItemHubLocationId, 화면 쌍둥이 overview.resolveHubSync).
+  // 종전 셋째 정의(isHub 직접 비교 + 첫 링크 폴백)는 숨긴 위치·사용 중지한 위치를 몰라 닫힌 창고에 델타를 얹었다
+  // (2026-10-28 보관 위치 닫기 패널 지적). 열린 링크가 없으면 델타를 얹을 칸이 없다(카드 잔량과 같은 규칙).
+  const hubId = await resolveItemHubLocationId(trackedItemId, it.hubLocationId, propertyId)
   const sinceDelta = expectedTotal - baseTotal
   const byLoc = locs.map(l => {
     let qty = baseByLoc.get(l.storageLocation.id) ?? 0
-    if (hub && l.storageLocation.id === hub.storageLocation.id) qty = Math.max(0, qty + sinceDelta)
-    return { locationId: l.storageLocation.id, locationName: l.storageLocation.name, isHub: isItemHub(l.storageLocation.id, l.storageLocation.isHub), qty: Math.round(qty * 100) / 100 }
+    if (hubId && l.storageLocation.id === hubId) qty = Math.max(0, qty + sinceDelta)
+    return { locationId: l.storageLocation.id, locationName: l.storageLocation.name, isHub: l.storageLocation.id === hubId, qty: Math.round(qty * 100) / 100 }
   })
   return { total: Math.round(expectedTotal * 100) / 100, byLoc }
 }
@@ -4163,7 +4559,8 @@ export async function setItemHub(trackedItemId: string, locationId: string | nul
     if (locationId) {
       // 이 품목에 연결된 '열린' 위치만 허브로 지정 가능 — 숨긴 위치를 허브로 두면 보충 차감이
       // 잔량 0 인 숨긴 허브에서 0 클램프되어 총량이 부풀어난다(숨김 뒷문, Fable 검증 B2).
-      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId, storageLocationId: locationId, closedAt: null } })
+      // 사용 중지한 위치도 창고가 될 수 없다(열린 링크 정본, 2026-10-28).
+      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId, storageLocationId: locationId, ...OPEN_LINK_WHERE } })
       if (!link) return { ok: false, error: '이 품목의 표시 중인 보관 위치에서만 창고를 지정할 수 있습니다.' }
     }
     await prisma.trackedItem.update({ where: { id: trackedItemId }, data: { hubLocationId: locationId } })
@@ -4209,13 +4606,16 @@ export async function getItemLocationStock(trackedItemId: string): Promise<{ ok:
       prisma.storageLocation.findMany({
         where: { propertyId },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true },
+        select: { id: true, parentId: true, name: true, sortOrder: true, isHub: true, closedAt: true },
       }),
       currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId),
       prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true } }),
     ])
-    // closed = 이 품목에서 숨긴 위치. 이동 모달에서 목적지 후보 제외에 쓴다(출발지는 재고 있으면 보여야 함).
-    const closedIds = new Set(links.filter(l => l.closedAt != null).map(l => l.storageLocationId))
+    // closed = 이 품목에서 숨긴 위치 + 사용 중지한 위치. 이동 모달에서 목적지 후보 제외에 쓴다(출발지는 재고 있으면 보여야 함).
+    const closedIds = new Set([
+      ...links.filter(l => l.closedAt != null).map(l => l.storageLocationId),
+      ...allLocs.filter(l => !isOpenLocation(l)).map(l => l.id),
+    ])
     // 칩 이름은 표기 경로, 차례는 DFS — 부모 밑에 자식이 붙어야 어느 냉장고의 상단인지 보인다.
     const locPaths = indexLocations(allLocs)
     const hubOf = new Map(allLocs.map(l => [l.id, l.isHub]))
@@ -4261,6 +4661,9 @@ export async function transferLocationStock(data: {
     const fromLoc = locPaths.pathName(data.fromLocationId)
     const toLoc = locPaths.pathName(data.toLocationId)
     if (!fromLoc || !toLoc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    // 도착지는 사용 중인 위치만(출발지는 사용 중지 뒤 남은 재고를 빼낼 수 있게 막지 않는다). 맞바꿈은 양쪽에 넣으므로 둘 다 본다.
+    const closedEnds = await prisma.storageLocation.count({ where: { id: { in: data.swap ? [data.toLocationId, data.fromLocationId] : [data.toLocationId] }, propertyId, closedAt: { not: null } } })
+    if (closedEnds > 0) return { ok: false, error: LOCATION_CLOSED_DENIED }
 
     const breakdown = await currentLocationBreakdown(data.trackedItemId, propertyId, it.hubLocationId)
     const fromQty = Math.max(0, breakdown.get(data.fromLocationId) ?? 0)
@@ -4327,6 +4730,17 @@ export async function transferLocationStock(data: {
 // ── 보관위치 숨김(2단계) ─────────────────────────────────────────────
 // 품목별로 특정 위치를 화면에서 가린다. StorageLocation 은 영업장 공용이라 안 지운다 — closedAt 만 세운다.
 // 표시 술어는 overview: closedAt != null 이고 현재 잔량 < 0.001. 재고가 들어오면 자동으로 다시 보인다.
+// 재고 기록 스냅샷 열쇠 — 마지막 점검 id 와 입수·폐기 건수. 숨김·사용 중지는 잔량 계획(옮길 양)을 트랜잭션 밖에서 세우므로,
+// 트랜잭션 안에서 같은 열쇠를 다시 읽어 다르면 멈춘다(독립 검수 권고 2). 같은 날 수령(자동 점검)·입수·폐기가 끼면 열쇠가
+// 바뀐다. 그대로 쓰면 낡은 잔량으로 이관 점검을 세워 끼어든 수량이 증발하거나 두 번 잡힌다.
+async function stockSnapshotKey(db: Pick<InventoryTx, 'stockCheck' | 'stockAddition' | 'stockDisposal'>, trackedItemId: string): Promise<string> {
+  const last = await db.stockCheck.findFirst({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], select: { id: true } })
+  const adds = await db.stockAddition.count({ where: { trackedItemId } })
+  const disps = await db.stockDisposal.count({ where: { trackedItemId } })
+  return `${last?.id ?? '-'}:${adds}:${disps}`
+}
+const STOCK_CHANGED_RETRY = '그사이 재고 기록이 바뀌었습니다. 창을 닫고 다시 시도해 주세요.'
+
 export type CloseLocationUndo = {
   trackedItemId: string
   storageLocationId: string
@@ -4350,7 +4764,7 @@ export async function closeItemLocation(data: {
     if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const links = await prisma.trackedItemLocation.findMany({
       where: { trackedItemId: data.trackedItemId },
-      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true, closedAt: true } } },
       orderBy: { storageLocation: { sortOrder: 'asc' } },
     })
     // 이관 메모·안내에 찍는 이름은 표기 경로(pathName) — 장부에 남는 문자열이라 더더욱 경로여야 한다.
@@ -4358,17 +4772,19 @@ export async function closeItemLocation(data: {
     const target = links.find(l => l.storageLocationId === data.storageLocationId)
     if (!target) return { ok: false, error: '이 품목의 보관 위치가 아닙니다.' }
     if (target.closedAt != null) return { ok: true, undo: null, moved: null }   // 멱등 — 이미 숨김
-    const openLinks = links.filter(l => l.closedAt == null)
+    // 열린 링크 = 품목이 안 숨겼고 위치도 사용 중(lib/locationOpen 정본). 사용 중지한 위치는 목적지도 창고도 못 된다.
+    const openLinks = links.filter(l => isOpenLink(l, l.storageLocation))
     if (openLinks.length <= 1) return { ok: false, error: '마지막 남은 보관 위치는 숨길 수 없습니다.' }
 
-    // 잔량 — (B) 계열. 잔량 있으면 옮길 위치 필수(증발 금지).
+    // 잔량 — (B) 계열. 잔량 있으면 옮길 위치 필수(증발 금지). 열쇠는 잔량을 읽기 직전에 잡는다(트랜잭션 안에서 다시 대조).
+    const snap = await stockSnapshotKey(prisma, data.trackedItemId)
     const breakdown = await currentLocationBreakdown(data.trackedItemId, propertyId, item.hubLocationId)
     const qty = Math.max(0, breakdown.get(data.storageLocationId) ?? 0)
     let dest: (typeof links)[number] | undefined
     if (qty >= 0.001) {
       if (!data.moveToLocationId) return { ok: false, error: `${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에 남은 재고가 있습니다. 옮길 위치를 선택해주세요.` }
       if (data.moveToLocationId === data.storageLocationId) return { ok: false, error: '같은 위치로는 옮길 수 없습니다.' }
-      dest = links.find(l => l.storageLocationId === data.moveToLocationId && l.closedAt == null)
+      dest = links.find(l => l.storageLocationId === data.moveToLocationId && isOpenLink(l, l.storageLocation))
       if (!dest) return { ok: false, error: '옮길 위치를 찾을 수 없습니다.' }
     }
 
@@ -4389,23 +4805,28 @@ export async function closeItemLocation(data: {
 
     // 이관 점검·숨김·허브 승격은 **한 트랜잭션**이다. 종전에는 이관 점검을 먼저 따로 만들어, 뒤 쓰기가 실패하면
     // 재고는 옮겨졌는데 위치는 그대로 보이고 창고도 안 바뀐 반쪽이 남았다(패널 지적 2026-10-28).
+    // 잔량 계획은 트랜잭션 밖에서 세웠으므로 안에서 재고 기록 열쇠를 다시 대조하고, 숨김은 closedAt: null 조건으로 정확히 한 행만
+    // 바꾼다(독립 검수 권고 2). 어긋나면 아무것도 안 쓰고 다시 시도하라고 말한다.
     let moved: { qty: number; toPathName: string } | null = null
-    const ops: Prisma.PrismaPromise<unknown>[] = []
+    let memo: string | null = null
     if (qty >= 0.001 && dest) {
       breakdown.set(data.storageLocationId, 0)
       breakdown.set(data.moveToLocationId!, (breakdown.get(data.moveToLocationId!) ?? 0) + qty)
       const toPathName = locPaths.pathName(dest.storageLocationId) ?? dest.storageLocation.name
-      const memo = `위치 숨김: ${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에서 ${withParticle(toPathName, '으로/로')} ${qty} 이관`
-      ops.push(prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo), select: { id: true, createdAt: true } }))
+      memo = `위치 숨김: ${locPaths.pathName(target.storageLocationId) ?? target.storageLocation.name}에서 ${withParticle(toPathName, '으로/로')} ${qty} 이관`
       moved = { qty: Math.round(qty * 100) / 100, toPathName }
     }
-    ops.push(prisma.trackedItemLocation.update({
-      where: { trackedItemId_storageLocationId: { trackedItemId: data.trackedItemId, storageLocationId: data.storageLocationId } },
-      data: { closedAt: new Date() },
-    }))
-    if (hubChanged) ops.push(prisma.trackedItem.update({ where: { id: data.trackedItemId }, data: { hubLocationId: hubAfter } }))
-    const results = await prisma.$transaction(ops)
-    const created = moved ? results[0] as { id: string; createdAt: Date } : null
+    const created = await prisma.$transaction(async tx => {
+      if ((await stockSnapshotKey(tx, data.trackedItemId)) !== snap) throw new Error(STOCK_CHANGED_RETRY)
+      const c = memo ? await tx.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo), select: { id: true, createdAt: true } }) : null
+      const hid = await tx.trackedItemLocation.updateMany({
+        where: { trackedItemId: data.trackedItemId, storageLocationId: data.storageLocationId, closedAt: null },
+        data: { closedAt: new Date() },
+      })
+      if (hid.count !== 1) throw new Error(STOCK_CHANGED_RETRY)
+      if (hubChanged) await tx.trackedItem.update({ where: { id: data.trackedItemId }, data: { hubLocationId: hubAfter } })
+      return c
+    })
     revalidatePath('/inventory')
     return {
       ok: true,
@@ -4431,6 +4852,10 @@ export async function reopenItemLocation(trackedItemId: string, storageLocationI
     const propertyId = await getPropertyId()
     const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { id: true } })
     if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    // 위치 자체를 사용 중지했으면 품목에서 다시 표시할 수 없다(독립 검수 권고 4). 화면도 이 자리에 버튼을 두지 않는다.
+    const loc = await prisma.storageLocation.findFirst({ where: { id: storageLocationId, propertyId }, select: { closedAt: true } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    if (!isOpenLocation(loc)) return { ok: false, error: LOCATION_CLOSED_DENIED }
     await prisma.trackedItemLocation.updateMany({ where: { trackedItemId, storageLocationId }, data: { closedAt: null } })
     revalidatePath('/inventory')
     return { ok: true }
@@ -4447,6 +4872,10 @@ export async function undoCloseItemLocation(undo: CloseLocationUndo): Promise<{ 
     const propertyId = await getPropertyId()
     const item = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } })
     if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    // 숨긴 뒤 그 위치를 사용 중지했으면 링크를 다시 열지 않는다(독립 검수 권고 4). 닫힌 위치에 열린 링크가 매달린다.
+    const closedLoc = await prisma.storageLocation.findFirst({ where: { id: undo.storageLocationId, propertyId }, select: { closedAt: true } })
+    if (!closedLoc) return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    if (!isOpenLocation(closedLoc)) return { ok: false, error: LOCATION_CLOSED_DENIED }
     // undo 페이로드는 클라이언트가 보내는 값 — 각 필드를 이 품목 스코프로 검증한다(Fable 검증 B1).
     // hubLocationIdBefore 는 null 이거나 이 품목의 링크여야 한다(조작 호출로 타 영업장 위치를 허브로 박는 것 방지).
     if (undo.hubChanged && undo.hubLocationIdBefore) {

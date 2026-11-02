@@ -103,12 +103,14 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   // pathName = 표기 경로(트리) — select·라벨에 찍는 이름은 전부 이것이다. name 은 트리 원본 한 칸.
   locations: { id: string; name: string; pathName: string }[]
   // 보관 위치 후보(그 영업장 위치 전부, 기본 창고 먼저, 서버 getStorageLocations). 0곳이면 보관 위치 UI 를 숨긴다.
-  storages?: { id: string; pathName: string; isHub: boolean }[]
+  storages?: { id: string; pathName: string; isHub: boolean; closed?: boolean }[]
 }) {
   const canEditUi = useCanEditScope('inventory')   // 재고 편집 — OWNER·MANAGER + 제한 스태프(재고 쓰기). 서버가 최종 방어
   const router = useRouter()
   // 보관 위치. 위치가 0곳이면 묻지 않고 숨긴다. 미리 고르는 것은 기본 창고가 정확히 한 곳일 때만(정본 defaultStorageId).
-  const hasStores = storages.length > 0
+  // 고르는 자리는 사용 중인 위치만(2026-10-28 위치 사용 중지). 이름 찾기(storeNameOf)·묶음 차례는 전부를 쓴다.
+  const pickStores = storages.filter(st => !st.closed)
+  const hasStores = pickStores.length > 0
   const defStore = defaultStorageId(storages)
   const storeNameOf = (id: string | null | undefined) => (id ? storages.find(s => s.id === id)?.pathName ?? null : null)
   // 옮기기 목적지 기본값. 위치가 있으면 기본 창고(없으면 '보관 위치 모름'), 위치가 없으면 종전 '미배정(여분)으로'.
@@ -1411,7 +1413,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
             <DestinationPicker label="어디로 옮길까요?" value={batchAssign.to} disabled={pending}
               onChange={v => setBatchAssign(b => b ? { ...b, to: v } : b)}
               groups={['store', 'room', 'loc']} initialGroup={batchAssign.group0}
-              rooms={rooms} locations={locations} storages={storages} storeDefault={defaultMoveTo()}
+              rooms={rooms} locations={locations} storages={pickStores} storeDefault={defaultMoveTo()}
               emptyLabel={g => g === 'room' ? '방을 고르세요' : '공용부를 고르세요'} />
             {/* 막힌 주 버튼의 이유(§27.8 ③). 단건 옮기기 모달의 미리보기와 같은 문장이다. 머리(부제)는 칸을 바꿔도 같은 한 줄로 둔다(320px 머리 높이가 안 뛰게). */}
             {!picked && <p className="text-xs text-[var(--warm-muted)]">옮길 곳을 고르세요.</p>}
@@ -1510,7 +1512,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
               <DestinationPicker label="방·공용부 추가" value="" disabled={pending}
                 onChange={v => { if (v) addRow(v) }}
                 groups={['room', 'loc']} initialGroup="room"
-                rooms={rooms} locations={locations} storages={storages} storeDefault=""
+                rooms={rooms} locations={locations} storages={pickStores} storeDefault=""
                 excludeKeys={used}
                 emptyLabel={() => '고르면 아래 목록에 추가됩니다'} />
               {dist.rows.length > 0 && (
@@ -1605,7 +1607,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   <select value={rcv.store} disabled={pending}
                     onChange={e => setRcv(r => r ? { ...r, store: e.target.value } : r)}
                     className={SELECT_CLS}>
-                    {storages.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
+                    {pickStores.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
                     <option value="">{STORE_UNKNOWN_OPTION}</option>
                   </select>
                   {/* 배정 물음이 이어질 때만 말한다(그 몫은 방에 서서 보관 위치가 없다). 아니면 캡션을 두지 않는다(웹디자이너 패스). */}
@@ -1684,7 +1686,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                 <select value={freeForm.store} disabled={pending}
                   onChange={e => setFreeForm(f => f ? { ...f, store: e.target.value } : f)}
                   className={SELECT_CLS}>
-                  {storages.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
+                  {pickStores.map(s => <option key={s.id} value={s.id}>{s.pathName}{s.isHub ? ' (기본 창고)' : ''}</option>)}
                   <option value="">{STORE_UNKNOWN_OPTION}</option>
                 </select>
               </label>
@@ -2258,7 +2260,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                 onChange={v => setMove(m => m ? { ...m, to: v, replace: '' } : m)}
                 groups={['store', 'room', 'loc']}
                 initialGroup={defaultDestGroup(isUnplaced(it.roomId ?? null, it.locationId ?? null, !!it.isCommon))}
-                rooms={rooms} locations={locations} storages={storages} storeDefault={defaultMoveTo()}
+                rooms={rooms} locations={locations} storages={pickStores} storeDefault={defaultMoveTo()}
                 emptyLabel={g => g === 'room' ? '방을 고르세요' : '공용부를 고르세요'} />
               {buyDates.length > 1 && (
                 <label className="block">

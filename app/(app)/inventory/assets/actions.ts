@@ -18,6 +18,9 @@ import { canonicalUnit } from '@/lib/units'
 import { fmtRoomNo } from '@/lib/roomNo'
 // 공용부(위치) 이름은 재고와 같은 표기 경로(pathName)를 쓴다 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '../locationPaths'
+// 사용 중인 위치 조건 정본(2026-10-28 위치 사용 중지). 새로 고르는 후보·쓰기만 거르고, 적용취소 토큰의 옛 값은 그대로 받는다.
+import { OPEN_LOCATION_WHERE } from '../openLink'
+import { LOCATION_CLOSED_DENIED } from '@/lib/locationOpen'
 // 배정일(@db.Date)은 KST 오늘로. 정본 날짜 헬퍼.
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { reasonForSave } from '@/lib/reasonListSave'
@@ -74,10 +77,20 @@ async function withDisposedSiblings(propertyId: string, expenseIds: string[], hi
   return [...new Set([...expenseIds, ...dead.map(r => r.id), ...hintedOk])]
 }
 
-// 보관 위치 id 가 이 영업장 위치인가. FK 는 영업장을 모른다. 화면·토큰에서 온 id 는 여기를 지나야 쓴다.
-async function storageInProperty(propertyId: string, id: string | null | undefined): Promise<boolean> {
-  if (!id) return true
-  return !!(await prisma.storageLocation.findFirst({ where: { id, propertyId }, select: { id: true } }))
+// 적용취소가 되살리는 보관 위치. 이 영업장 위치이면서 사용 중일 때만 되살리고 그 밖은 비운다(재무 삭제 복원과 같은 규칙,
+// 독립 검수 권고 5). 보관 위치는 '지금 어디 있나' 라 사용 중지한 창고로 되돌리면 닫힌 위치에 비품이 매달린다.
+async function restorableStoreIds(propertyId: string, ids: (string | null | undefined)[]): Promise<Set<string>> {
+  const want = [...new Set(ids.filter((v): v is string => !!v))]
+  if (!want.length) return new Set()
+  return new Set((await prisma.storageLocation.findMany({ where: { id: { in: want }, propertyId, ...OPEN_LOCATION_WHERE }, select: { id: true } })).map(l => l.id))
+}
+
+// 새로 적는 보관 위치. 이 영업장 위치이면서 사용 중이어야 한다. 없으면 STORE_NOT_FOUND, 사용 중지면 그 거부 문장.
+async function openStorageError(propertyId: string, id: string | null | undefined): Promise<string | null> {
+  if (!id) return null
+  const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId }, select: { closedAt: true } })
+  if (!loc) return STORE_NOT_FOUND
+  return loc.closedAt ? LOCATION_CLOSED_DENIED : null
 }
 
 export type AssetsData = {
@@ -345,7 +358,8 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     }
     // 보관 위치. 화면이 고른 id 가 이 영업장 위치가 아니면 거부한다(쓰기 전에).
     const storeId = opts?.storedLocationId ?? null
-    if (!(await storageInProperty(propertyId, storeId))) return { ok: false, error: STORE_NOT_FOUND }
+    const storeErr = await openStorageError(propertyId, storeId)
+    if (storeErr) return { ok: false, error: storeErr }
 
     // ── 받기. 이미 받은 행은 건드리지 않는다(멱등. 응답 유실 뒤 재클릭이 수령 시각을 덮지 않게).
     const exps = (await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })).filter(e => !e.receivedAt)
@@ -531,13 +545,12 @@ export async function undoAssetUnreceive(undoRaw: AssetUnreceiveUndo): Promise<{
     const ids = undo.rows.map(r => r.id)
     const trackedCats = await getTrackedCategories(propertyId)
     if ((await prisma.expense.count({ where: { ...durableExpenseWhere(propertyId, trackedCats), id: { in: ids } } })) !== ids.length) return { ok: false, error: ASSET_RECEIPT_UNDO_INVALID }
-    const storeOk = new Map<string, boolean>()
-    for (const r of undo.rows) if (r.storedLocationId && !storeOk.has(r.storedLocationId)) storeOk.set(r.storedLocationId, await storageInProperty(propertyId, r.storedLocationId))
+    const storeOk = await restorableStoreIds(propertyId, undo.rows.map(r => r.storedLocationId))
     await prisma.$transaction(async tx => {
       for (const r of undo.rows) {
         const res = await tx.expense.updateMany({
           where: { id: r.id, propertyId, receivedAt: null, storedLocationId: null, roomId: null, assignedLocationId: null, isCommonAsset: false, disposedAt: null },
-          data: { receivedAt: new Date(r.receivedAt), storedLocationId: r.storedLocationId && storeOk.get(r.storedLocationId) ? r.storedLocationId : null },
+          data: { receivedAt: new Date(r.receivedAt), storedLocationId: r.storedLocationId && storeOk.has(r.storedLocationId) ? r.storedLocationId : null },
         })
         if (res.count !== 1) throw new Error(ASSET_UNRECEIVE_UNDO_STALE)
       }
@@ -709,7 +722,8 @@ export async function addFreeAsset(input: {
     const propertyId = await getPropertyId()
     const label = input.itemLabel.trim()
     if (!label) return { ok: false, error: '품목명을 입력하세요.' }
-    if (!(await storageInProperty(propertyId, input.storedLocationId))) return { ok: false, error: STORE_NOT_FOUND }
+    const freeStoreErr = await openStorageError(propertyId, input.storedLocationId)
+    if (freeStoreErr) return { ok: false, error: freeStoreErr }
     const cat = (input.category || '').trim() || '비품'
     const trackedCats = await getTrackedCategories(propertyId)
     if (trackedCats.includes(cat)) return { ok: false, error: '소모품(재고추적) 분류는 무상 비품에 쓸 수 없습니다.' }
@@ -824,10 +838,7 @@ export async function undoSetCommonAsset(changedIds: string[], value: boolean, r
     const propertyId = await getPropertyId()
     if (!changedIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
     const targetIds = [...new Set(changedIds)]
-    const storeIds = [...new Set(restoreStored.map(r => r.storedLocationId).filter(Boolean))]
-    const okStores = new Set(storeIds.length
-      ? (await prisma.storageLocation.findMany({ where: { id: { in: storeIds }, propertyId }, select: { id: true } })).map(l => l.id)
-      : [])
+    const okStores = await restorableStoreIds(propertyId, restoreStored.map(r => r.storedLocationId))
     await prisma.$transaction(async tx => {
       const flipped = value
         ? await tx.expense.updateMany({ where: { id: { in: targetIds }, propertyId, isCommonAsset: true }, data: { isCommonAsset: false } })
@@ -944,21 +955,26 @@ export async function getAssignableLocations(): Promise<{ id: string; name: stri
     prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } }),
   ])
   const hubIds = new Set(hubs.map(h => h.id))
+  // 사용 중지한 위치는 배정 후보에서 뺀다(2026-10-28). 이미 배정된 비품은 그대로 둔다(결정 10).
+  const closedIds = new Set((await prisma.storageLocation.findMany({ where: { propertyId, closedAt: { not: null } }, select: { id: true } })).map(l => l.id))
   return locPaths.rows
-    .filter(r => !hubIds.has(r.id))
+    .filter(r => !hubIds.has(r.id) && !closedIds.has(r.id))
     .map(r => ({ id: r.id, name: r.name, pathName: r.pathName }))
 }
 
 // 보관 위치 후보(2026-10-19) = 그 영업장 위치 **전부**(기본 창고 포함, 하드코딩 없음). 기본 창고 먼저, 나머지는 트리 DFS 차례.
 // 공용부 배정 후보(위)와 다른 목록이다. 창고를 배정 목록에 넣으면 미배정의 뜻이 깨진다(운영자 승인안, (a) 기각).
-export async function getStorageLocations(): Promise<{ id: string; pathName: string; isHub: boolean }[]> {
+export async function getStorageLocations(): Promise<{ id: string; pathName: string; isHub: boolean; closed: boolean }[]> {
   const propertyId = await getPropertyId()
   const [locPaths, hubs] = await Promise.all([
     loadLocationPaths(propertyId),
     prisma.storageLocation.findMany({ where: { propertyId, isHub: true }, select: { id: true } }),
   ])
   const hubIds = new Set(hubs.map(h => h.id))
-  return storageCandidates(locPaths.rows.map(r => ({ id: r.id, pathName: r.pathName, isHub: hubIds.has(r.id) })))
+  // 사용 중지한 위치도 목록에 남기고 closed 로 알린다(2026-10-28). 화면의 이름 찾기·묶음 차례는 전부를 쓰고,
+  // 고르는 select(수령 창·무상 입수·옮기기 목적지)만 closed 를 뺀다.
+  const openIds = new Set((await prisma.storageLocation.findMany({ where: { propertyId, ...OPEN_LOCATION_WHERE }, select: { id: true } })).map(l => l.id))
+  return storageCandidates(locPaths.rows.map(r => ({ id: r.id, pathName: r.pathName, isHub: hubIds.has(r.id), closed: !openIds.has(r.id) })))
 }
 
 // 배정 대상 — 방 / 공용부(위치) / 해제(none) / 여분으로 보관(storage, id null = 보관 위치 모름).
@@ -982,10 +998,12 @@ async function validateTarget(t: AssignTarget, propertyId: string): Promise<stri
     const room = await prisma.room.findFirst({ where: { id: t.id, propertyId }, select: { id: true } })
     if (!room) return '호실을 찾을 수 없습니다.'
   } else if (t.kind === 'location') {
-    const loc = await prisma.storageLocation.findFirst({ where: { id: t.id, propertyId }, select: { id: true } })
+    const loc = await prisma.storageLocation.findFirst({ where: { id: t.id, propertyId }, select: { id: true, closedAt: true } })
     if (!loc) return '위치(공용부)를 찾을 수 없습니다.'
+    if (loc.closedAt) return LOCATION_CLOSED_DENIED
   } else if (t.kind === 'storage') {
-    if (!(await storageInProperty(propertyId, t.id))) return STORE_NOT_FOUND
+    const err = await openStorageError(propertyId, t.id)
+    if (err) return err
   }
   return null
 }
@@ -1513,10 +1531,7 @@ function snapshotRow(e: ExpRow): AssetAssignUndo['restore'][number] {
 async function applyAssetUndo(propertyId: string, undo: AssetAssignUndo): Promise<void> {
   // 보관 위치는 FK 라 남의 영업장 위치 id 도 들어간다. 토큰은 클라가 돌려보내는 값이므로 이 영업장 위치만 되살리고 그 밖은 비운다
   // (그 사이 지운 위치도 비운다. 위치를 지우면 FK 가 어차피 비웠을 칸이다).
-  const storeIds = [...new Set(undo.restore.map(r => r.storedLocationId).filter((v): v is string => !!v))]
-  const okStores = new Set(storeIds.length
-    ? (await prisma.storageLocation.findMany({ where: { id: { in: storeIds }, propertyId }, select: { id: true } })).map(l => l.id)
-    : [])
+  const okStores = await restorableStoreIds(propertyId, undo.restore.map(r => r.storedLocationId))
   // 직후 모양 CAS(재검수 X8). 복원할 행과 지울 조각 전부가 모양 그대로여야 하고, 하나라도 어긋나면 아무것도 안 쓰고 거부한다.
   const expect = Array.isArray(undo.expect) ? undo.expect : null
   const touched = [...new Set([...undo.restore.map(r => r.id), ...undo.deleteIds])]

@@ -239,6 +239,10 @@ for (const f of walk('app', walk('components', []))) {
     }
   }
   if (paleSeen < 3) violations.push(`pale-neutral 배지 자리가 ${paleSeen}곳뿐이다. Badge 이름이나 tone 문법을 바꿨다면 ⓗ 를 옮긴다.`)
+  // 고정 자리(2026-10-28 위치 사용 중지). 위치 관리 행은 bg-[var(--canvas)] 라 '사용 중지' 배지는 solid neutral 이어야 한다.
+  // 위 탐색은 pale-neutral 만 보므로, 이 자리가 다른 pale 톤(pale-amber 등)으로 바뀌어도 잡히게 글자 그대로 본다.
+  const inv = strip(readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8'))
+  if (!/<Badge tone="neutral" className="shrink-0">사용 중지<\/Badge>/.test(inv)) violations.push("위치 관리 행의 '사용 중지' 배지가 solid neutral 이 아니다(--canvas 행, 가이드 §11).")
 }
 
 // ⓓ ViewTabs 비활성

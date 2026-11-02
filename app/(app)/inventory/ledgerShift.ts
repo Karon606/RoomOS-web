@@ -11,6 +11,8 @@
 import prisma, { type PrismaDb } from '@/lib/prisma'
 // 허브 3순위의 '화면 순서'는 표기 경로 색인(DFS 랭크)이 정한다 — 순수, 쿼리 0.
 import { indexLocations } from '@/lib/locationPaths'
+// 열린 링크 = 품목이 안 숨겼고 위치도 사용 중(조건 정본 ./openLink, 판정 정본 lib/locationOpen).
+import { OPEN_LINK_WHERE } from './openLink'
 import {
   planStockShift, planCheckPropagation,
   type LedgerCheck, type LedgerDelta, type PurchaseDelta, type ShiftRow,
@@ -49,12 +51,13 @@ export async function resolveItemHubLocationId(
   propertyId: string,
   linkedIds?: Set<string>,   // 호출부가 이미 갖고 있으면 재조회 생략
 ): Promise<string | null> {
-  // 숨긴 위치(closedAt != null)는 허브 후보에서 제외 — 미지정 입수가 숨긴 위치로 귀속되면 안 된다(2단계 F3).
-  // 호출부가 linkedIds 를 넘길 땐 열린 링크만 담아야 한다(confirmReceipt 등).
+  // 숨긴 위치(링크 closedAt)와 사용 중지한 위치(위치 closedAt)는 허브 후보에서 제외 — 미지정 입수가 닫힌 곳으로
+  // 귀속되면 안 된다(2단계 F3, 2026-10-28 위치 사용 중지). 호출부가 linkedIds 를 넘길 땐 열린 링크만 담아야 한다
+  // (lib/locationOpen isOpenLink, confirmReceipt 는 OPEN_LINK_WHERE).
   let ids = linkedIds
   if (!ids) {
     const links = await prisma.trackedItemLocation.findMany({
-      where: { trackedItemId, closedAt: null },
+      where: { trackedItemId, ...OPEN_LINK_WHERE },
       select: { storageLocationId: true },
     })
     ids = new Set(links.map(l => l.storageLocationId))
