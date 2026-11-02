@@ -56,6 +56,7 @@ import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import {
   getEffectiveDueInfo, isDeferredNow, unpaidBadgeLabel, checkedOutSub, paidBadgeDate, paidSubText, noBillBadgeSub,
   paymentBadgeKind, sortRowsByPaymentStatus, STATUS_GROUP_LABEL, statusGroupOrderText, type StatusGroup,
+  isBodyGroup, statusGroupFlipLabel, parseGroupFlips, type GroupFlips, type BodyGroup,
 } from '@/lib/roomsStatusSort'
 import { fmtRoomNo } from '@/lib/roomNo'
 
@@ -159,6 +160,8 @@ const COL_WIDTHS_KEY = 'stayeum_rooms_col_widths'
 const FILTER_KEY   = 'stayeum_rooms_filter'
 const SORTKEY_KEY  = 'stayeum_rooms_sortkey'
 const SORTDIR_KEY  = 'stayeum_rooms_sortdir'
+// 묶음 머리에서 뒤집은 묶음(신고 89dd37e8). 화살표(묶음 순서)와 따로 기억한다. URL 에 넣지 않는다.
+const GROUPDIR_KEY = 'stayeum_rooms_groupdir'
 const FILTER_VALUES = ['all', 'unpaid', 'checkout', 'awaiting', 'paid', 'adjusted', 'vacant'] as const
 type RoomFilter = typeof FILTER_VALUES[number]
 
@@ -417,7 +420,15 @@ export default function RoomsClient({
     if (k && SORTKEY_VALUES.includes(k as SortKey)) setSortKey(k as SortKey)
     const d = localStorage.getItem(SORTDIR_KEY)
     if (d === 'asc' || d === 'desc') setSortDir(d)
+    try { setGroupFlips(parseGroupFlips(localStorage.getItem(GROUPDIR_KEY))) } catch {}
   }, [])
+  // 묶음 머리 순서 글자로 뒤집은 묶음. 하이드레이션을 위해 빈 값으로 시작해 마운트 뒤 복원한다(위 두 값과 같은 문법).
+  const [groupFlips, setGroupFlips] = useState<GroupFlips>({})
+  const toggleGroupFlip = (g: BodyGroup) => setGroupFlips(prev => {
+    const next = { ...prev, [g]: !prev[g] }
+    try { localStorage.setItem(GROUPDIR_KEY, JSON.stringify(next)) } catch {}
+    return next
+  })
   const [search, setSearch] = useUrlState('q', '')
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
@@ -562,7 +573,7 @@ export default function RoomsClient({
   // 가장 급한 행을 따르고 키도 그 행에서 읽는다. 기본(desc)은 미납·납부 예정·완납, 반대(asc)는 그 셋을 정확히 뒤집고
   // 꼬리(퇴실 예정·청구 없음·입실 예약)는 방향과 무관하게 맨 아래다. 저장값·첫 화면(desc)은 그대로다.
   const statusSorted = sortKey === 'status'
-    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', targetMonth })
+    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', groupFlips, targetMonth })
     : null
   const roomFirstIndex = new Map<string, number>()
   const roomLeadRow    = new Map<string, RoomStatus>()
@@ -606,7 +617,22 @@ export default function RoomsClient({
     const prev = idx > 0 ? statusSorted.roomGroup.get(displayed[idx - 1].roomId) ?? null : null
     return g !== prev ? g : null
   }
-  const groupOrderText = (g: StatusGroup) => statusGroupOrderText(g, sortDir === 'asc')
+  // 묶음 머리 오른쪽 순서 글자(카드 SectionHeader 와 표 머리 행 쌍둥이가 이 한 함수를 쓴다). 본 묶음은 누르면 그 묶음 안 순서만
+  // 뒤집히는 글자 버튼이다(신고 89dd37e8). 11px 글자 + 정렬 글리프, 바탕·테두리 없음(코랄 채움·칩 아님). 누르는 자리 44px 는
+  // 음수 여백으로 머리 줄 높이 안에 접는다(분류 관리 '맨 위로' 글자 링크와 같은 문법). 꼬리는 늘 같은 순서라 글자만 선다.
+  const groupOrderControl = (g: StatusGroup) => {
+    if (!isBodyGroup(g)) return <span className="text-[0.6875rem] text-[var(--warm-muted)]">{statusGroupOrderText(g, false)}</span>
+    const flipped = !!groupFlips[g]
+    return (
+      <button type="button" onClick={() => toggleGroupFlip(g)} aria-label={statusGroupFlipLabel(g, flipped)}
+        className="-my-3.5 min-h-[44px] min-w-[44px] px-1 -mx-1 shrink-0 inline-flex items-center justify-end gap-1 rounded-sm text-[0.6875rem] font-medium text-[var(--warm-mid)] hover:text-[var(--warm-dark)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
+        {statusGroupOrderText(g, flipped)}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+          <path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4" />
+        </svg>
+      </button>
+    )
+  }
   const tableColCount = 2 + COL_DEFS.filter(c => colVis[c.key]).length
 
   // Phase 2.4c (2026-05-30): 자체 수납 모달 제거. 카드 클릭/URL 진입 → 전역 Prism 셸 사용.
@@ -1155,7 +1181,7 @@ export default function RoomsClient({
             {/* 묶음 경계 머리(§22 SectionHeader, 마커·숫자 없음). 오른쪽은 그 묶음의 순서 설명 */}
             {head && (
               <SectionHeader first={idx === 0} name={STATUS_GROUP_LABEL[head]}
-                trailing={<span className="text-[0.6875rem] text-[var(--warm-muted)]">{groupOrderText(head)}</span>} />
+                trailing={groupOrderControl(head)} />
             )}
             <RoomCard
               kind="neutral"
@@ -1371,7 +1397,7 @@ export default function RoomsClient({
                     <td colSpan={tableColCount} className="px-4 py-1.5">
                       <div className="sticky left-4 inline-flex items-center gap-2">
                         <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{STATUS_GROUP_LABEL[head]}</span>
-                        <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{groupOrderText(head)}</span>
+                        {groupOrderControl(head)}
                       </div>
                     </td>
                   </tr>

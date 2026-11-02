@@ -165,23 +165,55 @@ export const STATUS_GROUP_LABEL: Record<StatusGroup, string> = {
   checkout: '퇴실 예정', noBill: '청구 없음', reserved: '입실 예약',
 }
 
-/** 묶음 머리 오른쪽의 순서 설명. 꼬리는 방향과 무관하게 같은 순서라 같은 말이다. */
-export function statusGroupOrderText(group: StatusGroup, reversed: boolean): string {
+// 묶음 머리에서 순서를 뒤집을 수 있는 묶음(본 묶음 셋). 꼬리는 늘 같은 순서라 뒤집지 않는다.
+export type BodyGroup = 'unpaid' | 'awaiting' | 'paid'
+export const BODY_GROUPS: readonly BodyGroup[] = BODY as BodyGroup[]
+export function isBodyGroup(g: StatusGroup): g is BodyGroup {
+  return (BODY as StatusGroup[]).includes(g)
+}
+/** 묶음마다 머리에서 뒤집었는가(true = 뒤집음). 없으면 기본 순서다. 화면은 stayeum_rooms_groupdir 에 기억한다. */
+export type GroupFlips = Partial<Record<BodyGroup, boolean>>
+
+/**
+ * 묶음 안 기본 순서(2026-11-02 운영자 승인, 신고 89dd37e8). 완납은 **최근 납부 순**이 기본이다. 방금 낸 사람을 찾는 일이
+ * 잦아서다. 미납은 오래된 순, 납부 예정은 납부일 가까운 순 그대로다. 묶음 머리의 순서 글자를 누르면 그 묶음만 뒤집힌다.
+ * 종전(10-19)에는 정렬 화살표 하나가 묶음 순서와 세 묶음 안 순서를 한꺼번에 뒤집었다. 이제 화살표는 묶음 순서만 맡는다.
+ */
+const BODY_KEY_DESC: Record<BodyGroup, boolean> = { unpaid: false, awaiting: false, paid: true }
+
+/** 묶음 머리 오른쪽의 순서 설명. flipped = 그 묶음을 머리에서 뒤집었는가. 꼬리는 늘 같은 순서라 같은 말이다. */
+export function statusGroupOrderText(group: StatusGroup, flipped: boolean): string {
   switch (group) {
-    case 'unpaid':   return reversed ? '최근 미납 순' : '오래된 순'
-    case 'awaiting': return reversed ? '납부일 먼 순' : '납부일 가까운 순'
-    case 'paid':     return reversed ? '최근 납부 순' : '납부 오래된 순'
+    case 'unpaid':   return flipped ? '최근 미납 순' : '오래된 순'
+    case 'awaiting': return flipped ? '납부일 먼 순' : '납부일 가까운 순'
+    case 'paid':     return flipped ? '납부 오래된 순' : '최근 납부 순'
     case 'checkout': return '퇴실일 가까운 순'
     case 'noBill':   return '호실순'
     case 'reserved': return '입주일 가까운 순'
   }
 }
 
+/** 묶음 머리 순서 버튼의 접근 이름. '완납 순서 최근 납부 순, 누르면 납부 오래된 순'. */
+export function statusGroupFlipLabel(group: BodyGroup, flipped: boolean): string {
+  return `${STATUS_GROUP_LABEL[group]} 순서 ${statusGroupOrderText(group, flipped)}, 누르면 ${statusGroupOrderText(group, !flipped)}`
+}
+
+/** 기억해 둔 뒤집기(localStorage 글자)를 읽는다. 모르는 칸·깨진 값은 버리고 기본 순서다. */
+export function parseGroupFlips(raw: string | null): GroupFlips {
+  if (!raw) return {}
+  try {
+    const v = JSON.parse(raw) as Record<string, unknown>
+    const out: GroupFlips = {}
+    for (const g of BODY_GROUPS) if (v && v[g] === true) out[g] = true
+    return out
+  } catch { return {} }
+}
+
 /**
- * 묶음 안 정렬 키('YYYY-MM-DD', 없으면 null). 기본 방향은 모두 오름차순이다.
+ * 묶음 안 정렬 키('YYYY-MM-DD', 없으면 null). 기본 순서는 BODY_KEY_DESC 가 정한다.
  *   미납      첫 미납월의 약정일(그 달 조정 반영), 오래된 기한이 앞(가장 많이 밀린 사람이 맨 위)
  *   납부 예정  nextDueDate(서버가 조정일을 반영해 준 그 달 기한), 가까운 날이 앞
- *   완납      viewMonthPaidAt(그 달 몫을 받은 날), 일찍 낸 사람이 앞, 날짜가 없으면 묶음 끝
+ *   완납      viewMonthPaidAt(그 달 몫을 받은 날), 최근에 낸 사람이 앞, 날짜가 없으면 묶음 끝
  *   퇴실 예정  퇴실 예정일 / 청구 없음 키 없음(호실순) / 입실 예약 입주일
  */
 export function statusSortKey(room: PaymentStatusRow, group: StatusGroup, targetMonth: string): string | null {
@@ -211,12 +243,14 @@ export type PaymentStatusSort<T> = {
 
 /**
  * 수납 상태 정렬. rows 는 서버 순서(방 안 순서 = roomLeaseRowOrder)를 그대로 받는다.
- * reversed=false 가 기본(화면 sortDir 'desc', 저장값·첫 화면 불변)이다.
+ * reversed 는 **본 묶음의 순서만** 뒤집는다(미납·납부 예정·완납 ↔ 완납·납부 예정·미납, 화면 sortDir 'asc').
+ * 묶음 안 순서는 groupFlips 가 묶음마다 뒤집는다(묶음 머리의 순서 글자). 둘은 서로를 건드리지 않는다.
  */
 export function sortRowsByPaymentStatus<T extends PaymentStatusRow>(
-  rows: readonly T[], opts: { reversed: boolean; targetMonth: string; today?: string },
+  rows: readonly T[], opts: { reversed: boolean; groupFlips?: GroupFlips; targetMonth: string; today?: string },
 ): PaymentStatusSort<T> {
   const { reversed, targetMonth } = opts
+  const flips = opts.groupFlips ?? {}
   const today = opts.today ?? kstYmdStr()
   type Room = { id: string; roomNo: string; first: number; rows: T[]; group: StatusGroup; key: string | null }
   const rooms = new Map<string, Room>()
@@ -226,8 +260,8 @@ export function sortRowsByPaymentStatus<T extends PaymentStatusRow>(
     else rooms.set(r.roomId, { id: r.roomId, roomNo: r.roomNo, first: i, rows: [r], group: 'reserved', key: null })
   })
   for (const room of rooms.values()) {
-    // 가장 급한 묶음의 행 중 기본 방향 키가 가장 앞선 행이 그 방을 대표한다(같으면 서버 순서 앞쪽).
-    // 대표를 방향과 무관하게 고르므로 반대 방향은 기본 방향을 정확히 뒤집은 것이 된다.
+    // 가장 급한 묶음의 행 중 키가 가장 이른 행이 그 방을 대표한다(같으면 서버 순서 앞쪽).
+    // 대표를 순서와 무관하게 고르므로 머리에서 뒤집은 묶음은 기본 순서를 정확히 뒤집은 것이 된다.
     let best: { rank: number; key: string | null } | null = null
     for (const r of room.rows) {
       const g = GROUP_OF_KIND[paymentBadgeKind(r, targetMonth, today)]
@@ -247,7 +281,7 @@ export function sortRowsByPaymentStatus<T extends PaymentStatusRow>(
     if (ra !== rb) return ra - rb
     let c = 0
     if (a.key == null || b.key == null) c = cmpKeyNullLast(a.key, b.key)          // 키 없는 행은 양방향 모두 끝
-    else { c = cmpKeyNullLast(a.key, b.key); if (reversed && BODY.includes(a.group)) c = -c }
+    else { c = cmpKeyNullLast(a.key, b.key); if (isBodyGroup(a.group) && BODY_KEY_DESC[a.group] !== !!flips[a.group]) c = -c }
     if (c === 0) c = a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })     // 동률은 방향 무관 호실 오름차순
     if (c === 0) c = a.first - b.first
     return c

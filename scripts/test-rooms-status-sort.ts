@@ -3,8 +3,9 @@
 // 고정하는 것(신고 db65cce9, 2026-10-19 운영자 '추천대로' 승인).
 //   · 묶음은 배지에서 파생: 미납(연체·미납·납부일·납부일 전·지난달분 유예) / 납부 예정(이번 달분 유예 포함) / 완납,
 //     꼬리 퇴실 예정(완납이면서 그 달 퇴실) / 청구 없음 / 입실 예약. 보조 배지(단기 퇴실 예정·퇴실 완료·비거주)는 주 배지를 따른다.
-//   · 기본(desc): 미납 기한 오래된 순, 납부 예정 nextDueDate 가까운 순, 완납 그 달 몫 받은 날 오래된 순.
-//     반대(asc): 본 묶음 셋을 묶음 순서와 묶음 안 키 모두 뒤집는다. 꼬리는 방향과 무관하게 맨 아래 고정.
+//   · 묶음 안 기본: 미납 기한 오래된 순, 납부 예정 nextDueDate 가까운 순, 완납 그 달 몫 받은 날 **최근 순**(2026-11-02 개정, 신고 89dd37e8).
+//     정렬 화살표(asc)는 본 묶음 셋의 **묶음 순서만** 뒤집는다. 묶음 안 순서는 묶음 머리 순서 글자(groupFlips)가 묶음마다 뒤집는다.
+//     꼬리는 어느 쪽과도 무관하게 맨 아래 고정. (10-19 규칙은 화살표 하나가 묶음 순서와 묶음 안 순서를 함께 뒤집었다.)
 //   · 동률은 방향과 무관하게 호실 오름차순, 키 없는 행은 양방향 모두 묶음 끝.
 //   · 같은 호실 행은 붙어 있고(서버 순서 그대로), 방의 묶음은 가장 급한 행을 따르며 키도 그 행에서 읽는다.
 //   · 소스: 카드·표 배지 쌍둥이와 정렬·완납 칩이 paymentBadgeKind 를 부른다, 옛 분기 조건이 남지 않았다,
@@ -13,6 +14,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   paymentBadgeKind, paymentStatusGroup, sortRowsByPaymentStatus, statusSortKey, statusGroupOrderText,
+  statusGroupFlipLabel, parseGroupFlips, type GroupFlips,
   STATUS_GROUP_LABEL, getDueInfo, type PaymentStatusRow, type StatusGroup,
   paidSubText, noBillBadgeSub, checkedOutSub, type BadgeSubRow,
 } from '../lib/roomsStatusSort'
@@ -47,10 +49,11 @@ const awaiting = (roomNo: string, nextDueDate: string, p: Partial<Row> = {}) =>
   R(roomNo, { nextDueDate, nextDueAmount: 400000, dueDay: String(Number(nextDueDate.slice(8))), ...p })
 const paid = (roomNo: string, viewMonthPaidAt: string | null, p: Partial<Row> = {}) => R(roomNo, { viewMonthPaidAt, ...p })
 
-function run(rows: Row[], reversed: boolean, targetMonth = '2026-10') {
-  return sortRowsByPaymentStatus(rows, { reversed, targetMonth, today: TODAY })
+function run(rows: Row[], reversed: boolean, targetMonth = '2026-10', groupFlips: GroupFlips = {}) {
+  return sortRowsByPaymentStatus(rows, { reversed, groupFlips, targetMonth, today: TODAY })
 }
-const order = (rows: Row[], reversed: boolean, targetMonth = '2026-10') => run(rows, reversed, targetMonth).rows.map(r => r.id)
+const order = (rows: Row[], reversed: boolean, targetMonth = '2026-10', groupFlips: GroupFlips = {}) => run(rows, reversed, targetMonth, groupFlips).rows.map(r => r.id)
+const ALL_FLIPPED: GroupFlips = { unpaid: true, awaiting: true, paid: true }
 const shuffle = <T,>(xs: T[], seed: number): T[] => {
   const a = [...xs]; let s = seed
   for (let i = a.length - 1; i > 0; i--) { s = (s * 1103515245 + 12345) % 2147483648; const j = s % (i + 1); [a[i], a[j]] = [a[j], a[i]] }
@@ -68,7 +71,9 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
 {
   const a = unpaid('409', '8', '2026-10', { id: '409' }), b = unpaid('501', '18', '2026-10', { id: '501' }), c = unpaid('406', '19', '2026-10', { id: '406' })
   eq('미납 셋 기본(오래된 순)', order([c, a, b], false), ['409', '501', '406'])
-  eq('미납 셋 반대(최근 미납 순)', order([c, a, b], true), ['406', '501', '409'])
+  eq('미납 셋 머리 뒤집기(최근 미납 순)', order([c, a, b], false, '2026-10', { unpaid: true }), ['406', '501', '409'])
+  eq('화살표는 묶음 안 순서를 안 건드린다', order([c, a, b], true), ['409', '501', '406'])
+  eq('다른 묶음 뒤집기는 미납에 무관', order([c, a, b], false, '2026-10', { paid: true, awaiting: true }), ['409', '501', '406'])
   eq('미납 배지 종류', [a, b, c].map(r => paymentBadgeKind(r, '2026-10', TODAY)), ['unpaid', 'unpaid', 'unpaid'])
 }
 
@@ -80,7 +85,7 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   eq('지난달분 유예 키', statusSortKey(deferred, 'unpaid', '2026-10'), '2026-10-25')
   const today = unpaid('406', '19', '2026-10', { id: '406' })
   eq('유예는 미납 묶음 끝(기본)', order([deferred, today], false), ['406', '405'])
-  eq('유예는 미납 묶음 앞(반대)', order([deferred, today], true), ['405', '406'])
+  eq('유예는 미납 묶음 앞(머리 뒤집기)', order([deferred, today], false, '2026-10', { unpaid: true }), ['405', '406'])
 }
 
 // ── 3. 여러 달 밀림: 첫 미납월 약정일이 키 ──
@@ -97,7 +102,7 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   const rows = [awaiting('520', '2026-10-20', { id: '520' }), awaiting('516', '2026-10-20', { id: '516' }), awaiting('521', '2026-10-22', { id: '521' }),
     awaiting('511', '2026-10-20', { id: '511' }), awaiting('515', '2026-10-20', { id: '515' }), awaiting('418', '2026-10-22', { id: '418' })]
   eq('납부 예정 기본(가까운 순, 동률 호실 오름)', order(rows, false), ['511', '515', '516', '520', '418', '521'])
-  eq('납부 예정 반대(먼 순, 동률 호실 오름)', order(rows, true), ['418', '521', '511', '515', '516', '520'])
+  eq('납부 예정 머리 뒤집기(먼 순, 동률 호실 오름)', order(rows, false, '2026-10', { awaiting: true }), ['418', '521', '511', '515', '516', '520'])
   eq('호실 숫자 비교(9 < 10)', order([awaiting('1001', '2026-10-20', { id: '1001' }), awaiting('901', '2026-10-20', { id: '901' })], false), ['901', '1001'])
 }
 
@@ -114,8 +119,9 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
 {
   const rows = [paid('518', '2026-10-02', { id: '518' }), paid('402', '2026-10-10', { id: '402' }), paid('420', '2026-09-30', { id: '420' }),
     paid('408', '2026-10-09', { id: '408' }), paid('517', '2026-10-12', { id: '517' }), paid('412', null, { id: '412' }), paid('401', null, { id: '401' })]
-  eq('완납 기본(선납 9/30 맨 앞, 날짜 없음 끝)', order(rows, false), ['420', '518', '408', '402', '517', '401', '412'])
-  eq('완납 반대(최근 납부 순, 날짜 없음 그래도 끝)', order(rows, true), ['517', '402', '408', '518', '420', '401', '412'])
+  eq('완납 기본(최근 납부 순, 날짜 없음 끝)', order(rows, false), ['517', '402', '408', '518', '420', '401', '412'])
+  eq('완납 머리 뒤집기(납부 오래된 순, 선납 9/30 맨 앞, 날짜 없음 그래도 끝)', order(rows, false, '2026-10', { paid: true }), ['420', '518', '408', '402', '517', '401', '412'])
+  eq('완납 화살표는 묶음 안 순서 그대로', order(rows, true), ['517', '402', '408', '518', '420', '401', '412'])
   // 402호 11월 보기: 10/14 에 받은 11월분이 그 달 몫 받은 날이다. 다른 완납은 아직 날짜가 없다.
   const nov = [paid('402', '2026-10-14', { id: '402' }), paid('401', null, { id: '401' }), paid('403', null, { id: '403' })]
   eq('402형 다음 달(11월) 선납이 맨 앞', order(nov, false, '2026-11'), ['402', '401', '403'])
@@ -140,7 +146,7 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   eq('다음 달 퇴실 예정은 완납', paymentBadgeKind(cpNext, '2026-10', TODAY), 'paid')
   const cp2 = R('406', { id: '406c', status: 'CHECKOUT_PENDING', expectedMoveOut: '2026-10-21' })
   eq('퇴실 예정 꼬리는 퇴실일 가까운 순(양방향)', [order([cp, shortExit, cpNext, cp2], false), order([cp, shortExit, cpNext, cp2], true)],
-    [['503', '508', '406c', '507'], ['508', '503', '406c', '507']])
+    [['508', '503', '406c', '507'], ['508', '503', '406c', '507']])
   eq('퇴실 예정 미납이면 미납', paymentBadgeKind(R('410', { status: 'CHECKOUT_PENDING', expectedMoveOut: '2026-10-28', isPaid: false }), '2026-10', TODAY), 'unpaid')
   eq('이월 미수가 있으면 청구 없음보다 미납이 먼저', paymentBadgeKind(R('411', { status: 'CHECKOUT_PENDING', expectedMoveOut: '2026-10-03', noBillReason: 'checkoutNoBilling', isPaid: false, firstUnpaidMonth: '2026-09' }), '2026-10', TODAY), 'unpaid')
 }
@@ -161,7 +167,8 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   const s = run([lead, sub, other, other2], false)
   eq('418형 기본', s.rows.map(r => r.id), ['521', '418a', '418b', '412'])
   eq('418형 방 묶음', s.roomGroup.get('room-418'), 'awaiting')
-  eq('418형 반대(완납 묶음으로 안 건너간다)', order([lead, sub, other, other2], true), ['412', '418a', '418b', '521'])
+  eq('418형 화살표(완납 묶음으로 안 건너간다, 묶음 안 순서 그대로)', order([lead, sub, other, other2], true), ['412', '521', '418a', '418b'])
+  eq('418형 납부 예정 머리 뒤집기', order([lead, sub, other, other2], false, '2026-10', { awaiting: true }), ['418a', '418b', '521', '412'])
 }
 
 // ── 13. 대표 행 + 미납 동행: 첫 행이 완납이어도 방은 미납, 키는 미납 행에서 ──
@@ -172,11 +179,11 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   const s = run([first, late, a, b], false)
   eq('대표 행 묶음은 미납', s.roomGroup.get('room-415'), 'unpaid')
   eq('키 출처는 미납 행(9/5): 8/20 뒤, 10/8 앞', s.rows.map(r => r.id), ['523', '415a', '415b', '409'])
-  eq('반대도 같은 키', order([first, late, a, b], true), ['409', '415a', '415b', '523'])
+  eq('머리 뒤집기도 같은 키', order([first, late, a, b], false, '2026-10', { unpaid: true }), ['409', '415a', '415b', '523'])
   // 같은 묶음 행이 둘이면 기본 방향 키가 앞선 행이 대표다(방향과 무관)
   const two = [unpaid('416', '25', '2026-10', { id: '416a' }), unpaid('416', '2', '2026-10', { id: '416b' }), unpaid('409', '8', '2026-10', { id: '409' })]
   eq('같은 묶음 둘이면 더 오래된 키', order(two, false), ['416a', '416b', '409'])
-  eq('같은 묶음 둘 반대', order(two, true), ['409', '416a', '416b'])
+  eq('같은 묶음 둘 머리 뒤집기', order(two, false, '2026-10', { unpaid: true }), ['409', '416a', '416b'])
 }
 
 // ── 14. 519형: 퇴실 완료 청구 없음 + 입실 예약이면 청구 없음 꼬리, 서버 순서 그대로 ──
@@ -203,7 +210,8 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   const past = [unpaid('405', '말일', '2026-09', { id: '405' }), unpaid('409', '8', '2026-09', { id: '409' }),
     R('513', { id: '513', status: 'CHECKOUT_PENDING', expectedMoveOut: '2026-09-30' }), paid('520', '2026-09-03', { id: '520', status: 'CHECKED_OUT', expectedMoveOut: '2026-09-20' })]
   eq('지난 달 기본', order(past, false, '2026-09'), ['409', '405', '520', '513'])
-  eq('지난 달 반대', order(past, true, '2026-09'), ['520', '405', '409', '513'])
+  eq('지난 달 화살표(묶음 순서만)', order(past, true, '2026-09'), ['520', '409', '405', '513'])
+  eq('지난 달 화살표 + 미납 뒤집기', order(past, true, '2026-09', { unpaid: true }), ['520', '405', '409', '513'])
 }
 
 // ── 배지 보조줄 문장: 날짜에는 명사, 같은 날짜는 한 번(검수·웹디자이너 패스 2026-10-19) ──
@@ -227,9 +235,13 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
 // ── 머리 문구 ──
 eq('묶음 이름', STATUS_GROUP_LABEL, { unpaid: '미납', awaiting: '납부 예정', paid: '완납', checkout: '퇴실 예정', noBill: '청구 없음', reserved: '입실 예약' })
 eq('순서 설명 기본', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill', 'reserved'] as StatusGroup[]).map(g => statusGroupOrderText(g, false)),
-  ['오래된 순', '납부일 가까운 순', '납부 오래된 순', '퇴실일 가까운 순', '호실순', '입주일 가까운 순'])
-eq('순서 설명 반대', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill', 'reserved'] as StatusGroup[]).map(g => statusGroupOrderText(g, true)),
-  ['최근 미납 순', '납부일 먼 순', '최근 납부 순', '퇴실일 가까운 순', '호실순', '입주일 가까운 순'])
+  ['오래된 순', '납부일 가까운 순', '최근 납부 순', '퇴실일 가까운 순', '호실순', '입주일 가까운 순'])
+eq('순서 설명 뒤집음', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill', 'reserved'] as StatusGroup[]).map(g => statusGroupOrderText(g, true)),
+  ['최근 미납 순', '납부일 먼 순', '납부 오래된 순', '퇴실일 가까운 순', '호실순', '입주일 가까운 순'])
+eq('순서 버튼 접근 이름', statusGroupFlipLabel('paid', false), '완납 순서 최근 납부 순, 누르면 납부 오래된 순')
+eq('순서 버튼 접근 이름 뒤집음', statusGroupFlipLabel('unpaid', true), '미납 순서 최근 미납 순, 누르면 오래된 순')
+eq('기억 읽기', parseGroupFlips('{"paid":true,"unpaid":false,"checkout":true,"x":1}'), { paid: true })
+eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips('not json'), parseGroupFlips('null')], [{}, {}, {}])
 
 // ── 15. 성질: 무작위 행에서 반대의 본 묶음 = 기본 본 묶음 역순, 꼬리는 같다, 같은 호실은 붙는다 ──
 {
@@ -266,7 +278,7 @@ eq('순서 설명 반대', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill',
     const byRoom = new Map<string, Row[]>()
     for (const r of input) byRoom.set(r.roomId, [...(byRoom.get(r.roomId) ?? []), r])
     const serverOrder = [...byRoom.values()].flat()
-    const A = run(serverOrder, false), B = run(serverOrder, true)
+    const A = run(serverOrder, false), B = run(serverOrder, true), C = run(serverOrder, false, '2026-10', ALL_FLIPPED)
     const blocks = (res: typeof A) => {
       const seen: { id: string; g: StatusGroup; key: string | null; roomNo: string }[] = []
       let prev = ''
@@ -281,35 +293,42 @@ eq('순서 설명 반대', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill',
       }
       return seen
     }
-    const a = blocks(A), b = blocks(B)
-    const body = (xs: typeof a) => xs.filter(x => BODY.includes(x.g))
-    const tail = (xs: typeof a) => xs.filter(x => TAIL.includes(x.g))
-    // 꼬리는 같다
-    if (JSON.stringify(tail(a).map(x => x.id)) !== JSON.stringify(tail(b).map(x => x.id))) violations++
-    // 본 묶음: 키 있는 방의 (묶음, 키) 수열이 정확히 역순이고, 같은 (묶음, 키) 안은 양쪽 모두 호실 오름차순
-    const keyed = (xs: typeof a) => body(xs).filter(x => x.key != null)
-    const sigA = keyed(a).map(x => `${x.g}|${x.key}`), sigB = keyed(b).map(x => `${x.g}|${x.key}`)
-    if (JSON.stringify([...sigA].reverse()) !== JSON.stringify(sigB)) violations++
-    for (const xs of [keyed(a), keyed(b)]) {
-      for (let i = 1; i < xs.length; i++) {
-        if (xs[i].g === xs[i - 1].g && xs[i].key === xs[i - 1].key && xs[i - 1].roomNo.localeCompare(xs[i].roomNo, 'ko', { numeric: true }) > 0) violations++
-      }
-    }
-    // 키 없는 방은 양쪽 모두 자기 묶음 끝에 같은 순서로
+    const a = blocks(A), b = blocks(B), c = blocks(C)
+    const tail = (xs: typeof a) => xs.filter(x => TAIL.includes(x.g)).map(x => x.id)
+    const inGroup = (xs: typeof a, g: StatusGroup) => xs.filter(x => x.g === g)
+    // 꼬리는 셋 다 같다
+    if (JSON.stringify(tail(a)) !== JSON.stringify(tail(b)) || JSON.stringify(tail(a)) !== JSON.stringify(tail(c))) violations++
     for (const g of BODY) {
-      const ga = body(a).filter(x => x.g === g), gb = body(b).filter(x => x.g === g)
-      const nullsA = ga.filter(x => x.key == null), nullsB = gb.filter(x => x.key == null)
-      if (JSON.stringify(nullsA.map(x => x.id)) !== JSON.stringify(nullsB.map(x => x.id))) violations++
-      if (ga.slice(ga.length - nullsA.length).some(x => x.key != null)) violations++
-      if (gb.slice(gb.length - nullsB.length).some(x => x.key != null)) violations++
+      const ga = inGroup(a, g), gb = inGroup(b, g), gc = inGroup(c, g)
+      // 화살표는 묶음 안 순서를 안 건드린다
+      if (JSON.stringify(ga.map(x => x.id)) !== JSON.stringify(gb.map(x => x.id))) violations++
+      // 기본 묶음 안 방향: 완납은 키 내림, 미납·납부 예정은 키 오름. 동률은 호실 오름
+      const keyedA = ga.filter(x => x.key != null)
+      for (let i = 1; i < keyedA.length; i++) {
+        const p = keyedA[i - 1], q = keyedA[i]
+        const wrong = g === 'paid' ? p.key! < q.key! : p.key! > q.key!
+        if (wrong) violations++
+        if (p.key === q.key && p.roomNo.localeCompare(q.roomNo, 'ko', { numeric: true }) > 0) violations++
+      }
+      // 머리 뒤집기는 키 있는 방의 키 수열을 정확히 뒤집고, 동률은 여전히 호실 오름
+      const keyedC = gc.filter(x => x.key != null)
+      if (JSON.stringify(keyedA.map(x => x.key).reverse()) !== JSON.stringify(keyedC.map(x => x.key))) violations++
+      for (let i = 1; i < keyedC.length; i++) {
+        if (keyedC[i].key === keyedC[i - 1].key && keyedC[i - 1].roomNo.localeCompare(keyedC[i].roomNo, 'ko', { numeric: true }) > 0) violations++
+      }
+      // 키 없는 방은 셋 다 자기 묶음 끝에 같은 순서로
+      const nullsA = ga.filter(x => x.key == null), nullsC = gc.filter(x => x.key == null)
+      if (JSON.stringify(nullsA.map(x => x.id)) !== JSON.stringify(nullsC.map(x => x.id))) violations++
+      for (const gx of [ga, gb, gc]) if (gx.slice(gx.length - gx.filter(x => x.key == null).length).some(x => x.key != null)) violations++
     }
-    // 묶음 순서
+    // 묶음 순서: 기본·머리 뒤집기는 미납·납부 예정·완납, 화살표는 그 셋만 거꾸로
     const groupsSeq = (xs: typeof a) => [...new Set(xs.map(x => x.g))]
     const okSeq = (seq: StatusGroup[], want: StatusGroup[]) => JSON.stringify(seq) === JSON.stringify(want.filter(g => seq.includes(g)))
     if (!okSeq(groupsSeq(a), [...BODY, ...TAIL])) violations++
+    if (!okSeq(groupsSeq(c), [...BODY, ...TAIL])) violations++
     if (!okSeq(groupsSeq(b), [...[...BODY].reverse(), ...TAIL])) violations++
     // 같은 방 행은 붙어 있고 서버 순서 그대로, 행 수 보존
-    for (const res of [A, B]) {
+    for (const res of [A, B, C]) {
       if (res.rows.length !== serverOrder.length) violations++
       const firstAt = new Map<string, number>(), lastAt = new Map<string, number>()
       res.rows.forEach((r, i) => { if (!firstAt.has(r.roomId)) firstAt.set(r.roomId, i); lastAt.set(r.roomId, i) })
@@ -344,11 +363,24 @@ eq('순서 설명 반대', (['unpaid', 'awaiting', 'paid', 'checkout', 'noBill',
     ok(`${name} 퇴실 완료 날짜 절은 다른 절 뒤에서 늘 '퇴실'을 단다`, !part.includes('checkedOutSub(room)') && count(part, 'checkedOutSub(room, true)') === 3)
     ok(`${name} 옛 분기 조건이 없다(showCheckout·isAwaiting·isPaid 분기·noBillReason 분기·유예 재판정)`,
       !/showCheckout|const isAwaiting =|if \(!room\.isPaid\) \{|if \(room\.noBillReason\) \{|if \(isDeferredNow\(room, targetMonth\)\)|room\.status === 'RESERVED' \?/.test(part))
-    ok(`${name} 묶음 머리를 그린다`, part.includes('statusGroupHead(idx)') && part.includes('STATUS_GROUP_LABEL[head]') && part.includes('groupOrderText(head)'))
+    ok(`${name} 묶음 머리를 그린다(순서 글자는 한 함수)`, part.includes('statusGroupHead(idx)') && part.includes('STATUS_GROUP_LABEL[head]') && part.includes('groupOrderControl(head)'))
   }
   ok('표 머리 행은 colSpan 한 칸(지출 표 날짜 머리 문법)', table.includes('colSpan={tableColCount}') && table.includes('bg-[var(--canvas)]/50 border-b border-[var(--warm-border)]'))
   ok('카드 머리는 §22 SectionHeader(숫자 없음)', /<SectionHeader first=\{idx === 0\} name=\{STATUS_GROUP_LABEL\[head\]\}\s+trailing=/.test(card) && !/<SectionHeader[^>]*count=/.test(card))
-  ok('정렬은 sortRowsByPaymentStatus 정본', rc.includes("sortKey === 'status'\n    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', targetMonth })"))
+  ok('정렬은 sortRowsByPaymentStatus 정본(화살표는 묶음 순서, 머리는 묶음 안 순서)', rc.includes("sortKey === 'status'\n    ? sortRowsByPaymentStatus(filtered, { reversed: sortDir === 'asc', groupFlips, targetMonth })"))
+  {
+    const i = rc.indexOf('const groupOrderControl = (g: StatusGroup) => {')
+    const ctl = i < 0 ? '' : rc.slice(i, rc.indexOf('\n  }\n', i))
+    ok('순서 글자 버튼을 찾았다', ctl.length > 0)
+    ok('본 묶음만 버튼, 꼬리는 글자', ctl.includes('if (!isBodyGroup(g)) return <span') && ctl.includes('<button type="button" onClick={() => toggleGroupFlip(g)}'))
+    ok('버튼 접근 이름은 정본 문장', ctl.includes('aria-label={statusGroupFlipLabel(g, flipped)}'))
+    ok('버튼은 11px 글자 + 누르는 자리 44px(음수 여백)', ctl.includes('min-h-[44px]') && ctl.includes('-my-3.5') && ctl.includes('text-[0.6875rem]'))
+    ok('버튼에 코랄 채움·칩 테두리 없음, 포커스 링 --tc-text', !/bg-\[var\(--(coral|persimmon)|border border|ring-1/.test(ctl) && ctl.includes('focus-visible:outline-[var(--tc-text)]'))
+    ok('카드·표 둘 다 같은 함수', count(rc, 'groupOrderControl(head)') === 2)
+  }
+  ok('묶음 뒤집기 기억 새 키·try/catch', rc.includes("const GROUPDIR_KEY = 'stayeum_rooms_groupdir'")
+    && rc.includes('try { setGroupFlips(parseGroupFlips(localStorage.getItem(GROUPDIR_KEY))) } catch {}')
+    && rc.includes('try { localStorage.setItem(GROUPDIR_KEY, JSON.stringify(next)) } catch {}'))
   ok('옛 정렬 묶음(statusGrpOf·roomStatusGrp·getDueSortValue)이 없다', !/statusGrpOf|roomStatusGrp|getDueSortValue/.test(rc))
   ok('완납 칩은 종전 조건에서 입실 예약만 뺀다(승인 범위, 청구 없음은 칩에 남는다)',
     rc.includes("r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r) && paymentBadgeKind(r, targetMonth) !== 'reserved'")
