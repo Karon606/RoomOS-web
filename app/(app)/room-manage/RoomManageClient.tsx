@@ -53,6 +53,8 @@ import { fmtRoomNo } from '@/lib/roomNo'
 
 // 공용·외관 사진 관리 모달 — 열기 전까지 내려받지 않게 지연 로드. 환경설정 웹사이트 탭도 같은 모달을 연다.
 const PropertyPhotosManager = dynamic(() => import('./PropertyPhotosManager'), { ssr: false })
+// 관리 메모 창도 눌러야 열리는 창이라 같은 방식으로 늦게 싣는다.
+const PropertyNotesManager = dynamic(() => import('./PropertyNotes').then(m => m.PropertyNotesManager), { ssr: false })
 
 // 사진 평균 밝기(0~255) — 어두운 사진 재촬영 경고용(막지 않고 안내만). 48x48 축소로 빠르게, 실패 시 255(경고 안 함).
 async function avgBrightness(file: File): Promise<number> {
@@ -611,6 +613,7 @@ export default function RoomManageClient({
   const [showOnSitePending, setShowOnSitePending] = useState(false)
   const [photosDirty, setPhotosDirty]         = useState(false)               // 편집 세션 중 사진 변경 여부 — 모달 닫을 때 재배포 1회 트리거용
   const [showPropPhotos, setShowPropPhotos]   = useState(false)               // 공용·외관 사진 관리 모달
+  const [showNotes, setShowNotes]             = useState(false)               // 영업장 관리 메모 창(신고 d1e5fecc)
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
@@ -1372,13 +1375,24 @@ export default function RoomManageClient({
         {/* 호실 뷰에서만 — 둘 다 호실에 대한 동작이라 청소 뷰에서는 할 일이 아니고, 청소 뷰의
             '+ 청소 예정 등록'까지 서면 헤더 CTA 가 셋이 된다(§23 은 1~2개). 형제(수납 관리)도
             탭별 CTA 를 섹션 안에 둔다. */}
-        {canEditUi && viewTab === 'rooms' && (
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
-          <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
-            공용·외관 사진
-          </Btn>
-          <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
-            + 호실 등록
+        {/* '관리 메모'(신고 d1e5fecc)는 읽기라 STAFF 에게도 선다. 쓰기 둘만 canEditUi 로 가린다.
+            §23 헤더 CTA 1~2개의 예외다(운영자 승인 2026-11-02). 셋이 한 줄에 안 들어가는 320px 에서는 flex-wrap 으로
+            두 줄에 접히고 오른쪽 정렬을 지킨다(max-w-full 이 없으면 버튼군이 안 접히고 화면 밖으로 밀린다).
+            '관리 메모'를 맨 뒤에 둔다. 접힐 때 주 동작 '+ 호실 등록'이 첫 줄에 남고 읽기 버튼이 둘째 줄로 내려간다(독립 검수). */}
+        {viewTab === 'rooms' && (
+        <div className="flex flex-wrap items-center justify-end gap-2 ml-auto max-w-full">
+          {canEditUi && (
+            <>
+              <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
+                공용·외관 사진
+              </Btn>
+              <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
+                + 호실 등록
+              </Btn>
+            </>
+          )}
+          <Btn variant="secondary" size="md" onClick={() => setShowNotes(true)}>
+            관리 메모
           </Btn>
         </div>
         )}
@@ -2104,6 +2118,7 @@ export default function RoomManageClient({
       )}
 
       {showPropPhotos && <PropertyPhotosManager onClose={() => setShowPropPhotos(false)} />}
+      {showNotes && <PropertyNotesManager canEdit={canEditUi} onClose={() => setShowNotes(false)} />}
 
     </div>
   )

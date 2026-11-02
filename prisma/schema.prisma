@@ -341,6 +341,7 @@ model Property {
   cleanings          RoomCleaning[]
   roomInspections     RoomInspection[]
   roomInspectionItems RoomInspectionItem[]
+  propertyNotes       PropertyNote[]
   documentFieldOverrides DocumentFieldOverride[]
   foreignRegNoViews  ForeignRegNoView[]
   roomMasterKeyViews RoomMasterKeyView[]
@@ -713,6 +714,30 @@ model RoomInspectionItem {
 
   @@index([inspectionId, sortOrder])
   @@map("room_inspection_items")
+}
+
+// ============================================================
+// [4-a] PropertyNote. 영업장 관리 메모 (신고 d1e5fecc, 2026-11-02 운영자 승인)
+// ============================================================
+// 계절마다 바꾸는 설정처럼 때가 지나면 잊는 내용을 영업장 단위로 적어 둔다. 호실 관리 헤더 '관리 메모' 가 연다.
+// Room.memo(호실 메모)와 다른 축이다. 그것은 방 하나에 붙고 이것은 영업장 전체에 붙는다.
+// tag 는 분류 한 개(자유 글, 없으면 null). 화면은 메타 칩으로만 그린다.
+// 삭제는 deletedAt 도장(적용취소가 되살린다). 소프트삭제 익스텐션 대상이 아니라 조회마다 deletedAt: null 을 손으로 건다.
+model PropertyNote {
+  id         String    @id @default(uuid()) @db.Uuid
+  propertyId String    @db.Uuid
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title      String
+  body       String    @default("")
+  tag        String?
+  sortOrder  Int       @default(0)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  @@index([propertyId, sortOrder])
+  @@map("property_notes")
 }
 
 // ============================================================

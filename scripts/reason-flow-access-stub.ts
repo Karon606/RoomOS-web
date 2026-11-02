@@ -4,12 +4,13 @@ import type { Role } from '@/lib/role-types'
 
 export type PropertyAccess = { userId: string; email: string | null; propertyId: string; role: Role; isSuperAdmin: boolean }
 
-const g = globalThis as unknown as { __CR_FLOW_PID?: string }
+// __CR_FLOW_ROLE 을 두면 그 역할로 선다(관리 메모 하네스가 STAFF 열람·쓰기 거부를 본다). 안 두면 종전대로 OWNER.
+const g = globalThis as unknown as { __CR_FLOW_PID?: string; __CR_FLOW_ROLE?: Role }
 const HARNESS_USER = '00000000-0000-4000-8000-00000000f10e'
 
 export async function requirePropertyAccess(): Promise<PropertyAccess> {
   if (!g.__CR_FLOW_PID) throw new Error('reason-flow: 영업장을 고르지 않았습니다')
-  return { userId: HARNESS_USER, email: null, propertyId: g.__CR_FLOW_PID, role: 'OWNER' as Role, isSuperAdmin: false }
+  return { userId: HARNESS_USER, email: null, propertyId: g.__CR_FLOW_PID, role: g.__CR_FLOW_ROLE ?? ('OWNER' as Role), isSuperAdmin: false }
 }
 
 export async function getPropertyAccess(): Promise<PropertyAccess | null> {
