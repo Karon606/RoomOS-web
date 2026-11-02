@@ -59,7 +59,8 @@ import { useCanEdit } from '@/components/RoleContext'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
-import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import { SpecWizard, pickChip, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import { holdFor, contextFor, type Held } from '@/lib/heldContext'
 import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
 import { specSetCount, durableSetCount } from '@/lib/setStructure'
@@ -274,13 +275,16 @@ export type ItemPickState = {
 // 따옴표로 감싼 값 뒤 조사만(값의 받침으로 고른다, lib/koParticle).
 const josaOf = (w: string, pair: Parameters<typeof withParticle>[1]) => withParticle(w, pair).slice(w.length)
 
+// 직전 구매 맥락(지난 제품 칩·세부스펙 칩·단위 안내·카테고리 경고). 품명과 함께 쥐고 지금 품명과 같을 때만 읽는다(lib/heldContext).
+type LastCtx = NonNullable<Awaited<ReturnType<typeof getLastItemUnits>>>
+
 // 품목 고르기 칸들의 한 순간 모습 — 이력 제안 패널 '되살리기' 가 고르기 직전 모습 전체를 돌려놓는다(§27.8 ①).
 type PickerSnapshot = {
   customLabel: string; specValue: string; specUnit: string; qtyValue: string; qtyUnit: string
   amountStr: string; unitStr: string; priceMode: 'amount' | 'unit'; unitBasis: UnitBasis; basisTouched: boolean
   noSpec: boolean; specTextMode: boolean; specText: string
   brand: string; productName: string; brandFromLast: boolean; brandOpen: boolean
-  prevUnits: Awaited<ReturnType<typeof getLastItemUnits>>
+  prevHeld: Held<LastCtx>
 }
 
 // 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
@@ -345,10 +349,13 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
 // 지난 제품 칩(가이드 §22 제품 표기). 그 품목에서 산 제품을 입력칸 위 토글 칩으로 세운다. 누르면 브랜드·제품명 두 칸을 함께 채우고,
 // 눌린 칩을 다시 누르면 두 칸을 비운다. 문법은 세부스펙 칩(§23 토글 칩, aria-pressed, 켜짐 = --neutral-bg)이고 누르는 자리는 40px 이다.
 // 단일 품목 고르기와 다품목 카드가 이 한 컴포넌트를 쓰고, 안내 문장도 칩 바로 아래 같은 자리에 함께 그린다(독립 웹디자이너 패스).
+// 칩 모양은 세부스펙 칩과 한 클래스(SpecWizard pickChip, 40px)다. 안내는 guide 가 참일 때만 선다(지난번 값 캡션과 겹치지 않게,
+// 다품목은 첫 칩 카드에만).
 export const PRODUCT_CHIP_GUIDE = '지난 구매 제품입니다. 같은 제품이면 눌러 주세요.'
-function ProductChips({ chips, brand, productName, onPick }: {
+function ProductChips({ chips, brand, productName, onPick, guide = true }: {
   chips: ProductChip[]; brand: string; productName: string
   onPick: (next: { brand: string; productName: string }) => void
+  guide?: boolean
 }) {
   if (chips.length === 0) return null
   const now = [brand.trim(), productName.trim()].filter(Boolean).join(' ')
@@ -360,16 +367,13 @@ function ProductChips({ chips, brand, productName, onPick }: {
         return (
           <button key={c.text} type="button" aria-pressed={on}
             onClick={() => onPick(on ? { brand: '', productName: '' } : { brand: c.brand ?? '', productName: c.productName ?? '' })}
-            className={`min-h-[40px] px-2.5 py-1 text-left text-[0.65625rem] font-medium rounded-sm ring-1 break-keep [overflow-wrap:anywhere] transition-colors ${
-              on
-                ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
-                : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
+            className={`${pickChip(on)} py-1 text-left break-keep [overflow-wrap:anywhere]`}>
             {c.text}
           </button>
         )
       })}
     </div>
-    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{PRODUCT_CHIP_GUIDE}</p>
+    {guide && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{PRODUCT_CHIP_GUIDE}</p>}
     </div>
   )
 }
@@ -535,6 +539,8 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     }, 300)
     return () => { alive = false; clearTimeout(t) }
   }, [itemLabelsKey, productsByLabel])
+  // 안내 문장은 칩이 선 첫 카드에만 둔다. 품목마다 같은 문장이 되풀이되지 않게(2026-11-03 독립 검수).
+  const firstChipIdx = allowMulti ? items.findIndex(it => (productsByLabel[it.label.trim()]?.length ?? 0) > 0) : -1
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
   const [specUnit, setSpecUnit]       = useState('')
@@ -549,7 +555,10 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   const [basisTouched, setBasisTouched] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
-  const [prevUnits, setPrevUnits]     = useState<Awaited<ReturnType<typeof getLastItemUnits>>>(null)
+  // 직전 구매 맥락은 품명과 함께 쥔다. 읽는 자리는 아래 prevUnits(지금 품명과 같을 때만)다. 품명을 바꾸면 옛 칩이 남지 않는다(독립 검수 차단 2).
+  const [prevHeld, setPrevHeld]       = useState<Held<LastCtx>>(null)
+  // 지난 기록 행을 고른 뒤 늦게 온 맥락 응답이 그 사이의 되살리기·다른 선택을 덮지 않게 하는 차례 번호.
+  const pickSeq = useRef(0)
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
   const [specTextMode, setSpecTextMode] = useState(false)  // 서술형 규격(사이즈 등) — 계산 비관여, 개당 단가 강제
   const [specText, setSpecText]       = useState('')
@@ -562,6 +571,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   const [brandFromLast, setBrandFromLast] = useState(false)
   // 자동완성 후보 — 그 품목에서 산 브랜드·제품명만. 라면 칸에 모니터 브랜드가 뜨면 안 된다.
   const [brandOptions, setBrandOptions] = useState<{ brands: string[]; products: string[] }>({ brands: [], products: [] })
+  const prevUnits = contextFor(prevHeld, activeLabel === '__custom__' ? customLabel : activeLabel)
   // 규격 단계별 입력(위저드) — 새 품목(과거 단위·프리셋 기본값 없음)이면 자동, 버튼으로 상시 호출
   const [wizardOpen, setWizardOpen]   = useState(false)
   // 이력 제안 패널(2026-10-27 4단계, 가이드 §12). 품명 칸에 적는 동안 비슷한 기존 품명의 지난 기록 변형을 보인다.
@@ -595,7 +605,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
+    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel(''); setPrevHeld(null); pickSeq.current++; setNoSpec(false); setSpecTextMode(false); setSpecText('')
     setHistVariants([]); setPicked(null); setNewChosen(null); loadedSpecRef.current = null
   }, [category])
 
@@ -634,8 +644,8 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   // 직전 구매 컨텍스트 프리필(운영자 요청 2026-07-06) — 규격·수량·단가 기준·단가까지, 전 품목 공통.
   // 규격이 품명에 섞여 '라면 20개 (박스)' 같은 별도 품목이 생기는 것을 없애는 장치:
   // 품목만 고르면 지난번 규격이 따라온다. 값은 전부 수정 가능.
-  function applyLastContext(last: NonNullable<Awaited<ReturnType<typeof getLastItemUnits>>>) {
-    setPrevUnits(last)
+  function applyLastContext(label: string, last: LastCtx) {
+    setPrevHeld(holdFor(label, last))
     if (last.specText) { setSpecTextMode(true); setSpecText(last.specText) }
     else if (last.specValue) setSpecValue(last.specValue)
     if (last.specUnit) setSpecUnit(last.specUnit)
@@ -660,13 +670,14 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   // 직전 모습 전체 — 지난번 값으로 채우기 전 폼 칸들. 되살리기가 이것을 그대로 돌려놓는다.
   const snapshot = (): PickerSnapshot => ({
     customLabel, specValue, specUnit, qtyValue, qtyUnit, amountStr, unitStr, priceMode, unitBasis, basisTouched,
-    noSpec, specTextMode, specText, brand, productName, brandFromLast, brandOpen, prevUnits,
+    noSpec, specTextMode, specText, brand, productName, brandFromLast, brandOpen, prevHeld,
   })
   const restoreSnapshot = (r: PickerSnapshot) => {
     setCustomLabel(r.customLabel); setSpecValue(r.specValue); setSpecUnit(r.specUnit); setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
     setAmountStr(r.amountStr); setUnitStr(r.unitStr); setPriceMode(r.priceMode); setUnitBasis(r.unitBasis); setBasisTouched(r.basisTouched)
     setNoSpec(r.noSpec); setSpecTextMode(r.specTextMode); setSpecText(r.specText)
-    setBrand(r.brand); setProductName(r.productName); setBrandFromLast(r.brandFromLast); setBrandOpen(r.brandOpen); setPrevUnits(r.prevUnits)
+    setBrand(r.brand); setProductName(r.productName); setBrandFromLast(r.brandFromLast); setBrandOpen(r.brandOpen); setPrevHeld(r.prevHeld)
+    pickSeq.current++   // 되살린 뒤 늦게 온 지난 기록 행 응답이 다시 채우지 않게
     lastFetchedRef.current = r.customLabel.trim()
     loadedSpecRef.current = null
     setPicked(null)
@@ -677,6 +688,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
   // 이력 제안 패널의 행 하나로 채운다 — 그 행 전체(규격·단위·단가 기준·단가·브랜드). 금액은 수량을 넣으면 단가로 다시 낸다.
   function applyVariant(v: ItemVariant) {
     const before = snapshot()
+    const seq = ++pickSeq.current
     lastFetchedRef.current = v.itemLabel
     setCustomLabel(v.itemLabel)
     if (v.specText) { setSpecTextMode(true); setNoSpec(false); setSpecText(v.specText); setSpecValue(''); setSpecUnit('') }
@@ -690,12 +702,14 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     loadedSpecRef.current = { label: v.itemLabel, spec: v.specText ? { specValue: '', specUnit: '', specText: v.specText } : { specValue: v.specValue, specUnit: v.specUnit } }
     setPicked({ text: pickedText(specDisplay(v), v.lastDate), restore: before })
     // 카테고리 경고·세부스펙 칩·단위 안내는 지난 기록 맥락(prevUnits)이 낸다 — 칸은 이미 채웠으니 맥락만 받는다.
+    // 응답이 늦게 와도 그 사이 되살리기·다른 행 선택·품목 고르기가 있었으면(차례 번호가 바뀜) 아무것도 덮지 않는다.
+    // 조회가 실패하면 섞였는지 모르므로 종전처럼 그 행의 브랜드로 채우고 '지난번 값' 이라고 말한다.
+    const fillBrand = () => { if (v.brand || v.productName) { setBrand(v.brand ?? ''); setProductName(v.productName ?? ''); setBrandFromLast(true); setBrandOpen(true) } }
     getLastItemUnits(v.itemLabel).then(last => {
-      setPrevUnits(last)
-      if ((last?.products.length ?? 0) < 2 && (v.brand || v.productName)) {
-        setBrand(v.brand ?? ''); setProductName(v.productName ?? ''); setBrandFromLast(true); setBrandOpen(true)
-      }
-    }).catch(() => {})
+      if (pickSeq.current !== seq) return
+      setPrevHeld(holdFor(v.itemLabel, last))
+      if ((last?.products.length ?? 0) < 2) fillBrand()
+    }).catch(() => { if (pickSeq.current === seq) fillBrand() })
     getBrandSuggestions(v.itemLabel).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 */ })
   }
 
@@ -708,13 +722,14 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     if (!label || lastFetchedRef.current === label) return
     if (!detailSuggestions.includes(label)) return   // 기존 품목일 때만 (새 품명 타이핑 중 오발동 방지)
     lastFetchedRef.current = label
+    pickSeq.current++
     const before = snapshot()
     const [last, vars] = await Promise.all([getLastItemUnits(label), getItemVariants([label]).catch(() => [] as ItemVariant[])])
     if (last && vars.length <= 1) {
-      applyLastContext(last)
+      applyLastContext(label, last)
       loadedSpecRef.current = { label, spec: last.specText ? { specValue: '', specUnit: '', specText: last.specText } : { specValue: last.specValue ?? '', specUnit: last.specValue ? (last.specUnit ?? '') : '' } }
       setPicked({ text: pickedText(specDisplay({ specValue: last.specText ? null : last.specValue, specUnit: last.specUnit, specText: last.specText }), vars[0]?.lastDate ?? null), restore: before })
-    } else if (last) setPrevUnits(last)
+    } else if (last) setPrevHeld(holdFor(label, last))
     getBrandSuggestions(label).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 — 못 받아도 입력은 된다 */ })
   }
   // 품명 칸에 적는 동안 비슷한 기존 품명의 변형을 불러온다(200ms 쉼 뒤 한 번). 채운 뒤·새 품목으로 고른 뒤에는 멈춘다.
@@ -736,12 +751,12 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
     const def = itemDefaultsFor(label)
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
-    setPrevUnits(null); setPicked(null); loadedSpecRef.current = null
+    setPrevHeld(null); pickSeq.current++; setPicked(null); loadedSpecRef.current = null
     setFetching(true)
     try {
       const last = await getLastItemUnits(label)
       if (last) {
-        applyLastContext(last)
+        applyLastContext(label, last)
         // 직전 구매로 채운 규격도 '불러온 값' 이다 — 고쳐서 저장하면 저장 게이트가 견준다.
         loadedSpecRef.current = { label, spec: last.specText ? { specValue: '', specUnit: '', specText: last.specText } : { specValue: last.specValue ?? '', specUnit: last.specValue ? (last.specUnit ?? '') : '' } }
       }
@@ -808,7 +823,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
       ...(loadedSpecRef.current && loadedSpecRef.current.label === finalLabel ? { specLoaded: loadedSpecRef.current.spec } : {}),
     }
     onChange([...items, data])
-    loadedSpecRef.current = null; setPicked(null); setNewChosen(null); setHistVariants([])
+    loadedSpecRef.current = null; setPicked(null); setNewChosen(null); setHistVariants([]); setPrevHeld(null); pickSeq.current++
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis(inferUnitBasis({})); setBasisTouched(false); setCustomLabel('')
     // 다음 품목으로 브랜드가 넘어가면 안 된다 — 진라면 담고 휴지 담는데 '오뚜기'가 남는다.
@@ -1043,11 +1058,9 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
             <div className="flex flex-wrap gap-1">
               {prevUnits!.specOptions.map(o => (
                 // 고른 세부스펙 칩. 켜짐을 코랄 채움으로 말하지 않는다(§03·§23). '긴급만'·점검 토글 칩과 같은 문법이다.
+                // 지난 제품 칩과 한 클래스(SpecWizard pickChip, 40px). 같은 폼에 칩 높이가 둘이면 이질감이다(2026-11-03 독립 검수).
                 <button key={o} type="button" aria-pressed={specText === o} onClick={() => setSpecText(specText === o ? '' : o)}
-                  className={`px-2 py-1 text-[0.65625rem] font-medium rounded-sm ring-1 transition-colors ${
-                    specText === o
-                      ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
-                      : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
+                  className={`${pickChip(specText === o)} py-1 text-left break-keep`}>
                   {o}
                 </button>
               ))}
@@ -1074,7 +1087,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
             )}
           </div>
           {/* 지난 제품 칩(가이드 §22). 입력칸 위. 고르면 두 칸을 함께 채우고 '지난번 값' 표시는 걷는다(사람이 고른 값이다). */}
-          <ProductChips chips={prevUnits?.products ?? []} brand={brand} productName={productName}
+          <ProductChips chips={prevUnits?.products ?? []} brand={brand} productName={productName} guide={!brandFromLast}
             onPick={n => { setBrand(n.brand); setProductName(n.productName); setBrandFromLast(false) }} />
           <div className="grid grid-cols-2 gap-2">
             <input type="text" placeholder="브랜드 (예: 오뚜기)" value={brand}
@@ -1178,8 +1191,8 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
             const vendorAllowed = allowMulti && items.length >= 2
             const vendorOpen = vendorAllowed && it.vendor !== undefined
             const chips = allowMulti ? (productsByLabel[it.label.trim()] ?? []) : []
-            // 지난 제품이 있으면 줄을 펴 둔다. 칩이 접힌 버튼 뒤에 숨으면 고를 수 없다(가이드 §22).
-            const brandOpen = it.brand != null || it.productName != null || chips.length > 0
+            // 칩 상자는 줄과 따로 늘 선다. 줄은 형제(구매처·규격 직접)처럼 값이 있을 때만 펴고 '지우기' 가 접는다(2026-11-03 독립 검수).
+            const brandOpen = it.brand != null || it.productName != null
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -1338,7 +1351,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
                 {/* 지난 제품 칩(가이드 §22). 카드 바탕(--coral-pale)은 다크에서 보조 잉크가 모자라 위 규격 캡션처럼 --cream 상자에 앉힌다. */}
                 {allowMulti && chips.length > 0 && (
                   <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">
-                    <ProductChips chips={chips} brand={it.brand ?? ''} productName={it.productName ?? ''}
+                    <ProductChips chips={chips} brand={it.brand ?? ''} productName={it.productName ?? ''} guide={idx === firstChipIdx}
                       onPick={n => patchItem(idx, { brand: n.brand, productName: n.productName })} />
                   </div>
                 )}

@@ -56,6 +56,9 @@ eq('원문 공백 연결 브랜드 먼저', productText('오뚜기', '진라면 
   eq('김치 kg당 단가', m.history[0].unitPrice, 60)
   const twice = groupProducts([{ brand: '남도청년', productName: 'B' }, { brand: '남도청년', productName: 'A' }, { brand: '남도청년', productName: 'A' }])
   eq('대표 최빈 원문', twice[0].text, '남도청년 A')
+  // 같은 원문이 groupBy 행 여럿으로 나뉘어 와도(n) 합산한다. B 2 대 A 1+2 = 3 이면 A.
+  const weighted = groupProducts([{ brand: '남도청년', productName: 'B', n: 2 }, { brand: '남도청년', productName: 'A', n: 1 }, { brand: '남도청년', productName: 'A', n: 2 }])
+  eq('조합별 건수(n)로 센 최빈', weighted[0].text, '남도청년 A')
 }
 // ── 잔량 null 이면 추정 없음, 0 도 없음 ──
 {

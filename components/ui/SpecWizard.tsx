@@ -42,6 +42,8 @@ const chip = (on: boolean) =>
   `min-h-[40px] px-3.5 rounded-sm ring-1 text-sm font-medium transition-colors ${
     on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
        : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
+// 지출 폼의 세부스펙 칩·지난 제품 칩도 이 한 클래스다(가이드 §22 제품 표기, 2026-11-03 독립 검수: 같은 폼에 칩 높이가 둘이면 이질감).
+export const pickChip = chip
 const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
 export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = false, z = 260 }: {

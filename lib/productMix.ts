@@ -60,8 +60,9 @@ const kstYmd = (d: Date) => new Date(d.getTime() + 9 * 3600000).toISOString().sl
 /**
  * 같은 키끼리 묶고 대표 표기를 고른다. rows 는 최근 순이어야 한다(대표 동률은 앞의 것, 결과 순서도 처음 나온 차례).
  * 지출 입력의 지난 제품 칩도 이 함수 하나로 묶는다(화면마다 묶는 규칙이 갈리면 칩과 카드가 다른 묶음을 말한다).
+ * 행에 n(같은 원문이 몇 번 나왔나)이 있으면 그만큼 센다. 장부를 (품명·브랜드·제품명)으로 groupBy 한 행을 그대로 받으려고 둔다.
  */
-export function groupProducts<T extends { brand: string | null; productName: string | null }>(rows: readonly T[]): (ProductGroup & { rows: T[] })[] {
+export function groupProducts<T extends { brand: string | null; productName: string | null; n?: number }>(rows: readonly T[]): (ProductGroup & { rows: T[] })[] {
   type Combo = { brand: string | null; productName: string | null; count: number }
   const groups = new Map<string, { rows: T[]; combos: Map<string, Combo> }>()
   for (const r of rows) {
@@ -72,7 +73,8 @@ export function groupProducts<T extends { brand: string | null; productName: str
     const b = clean(r.brand) || null, p = clean(r.productName) || null
     const ck = `${b ?? ''}␟${p ?? ''}`
     const c = g.combos.get(ck)
-    if (c) c.count++; else g.combos.set(ck, { brand: b, productName: p, count: 1 })
+    const w = r.n ?? 1
+    if (c) c.count += w; else g.combos.set(ck, { brand: b, productName: p, count: w })
     groups.set(key, g)
   }
   return [...groups.entries()].map(([key, g]) => {

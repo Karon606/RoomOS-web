@@ -56,11 +56,40 @@ need('지난 제품 묶음이 정본(groupProducts)', /groupProducts\(rows\.filt
 need('다품목 칩 일괄 조회', /export async function getItemProducts\(labels: string\[\]\)/.test(actions))
 need('섞인 품목은 직전값을 안 채운다(품목 고르기)', client.includes('if (last.products.length < 2 && (last.brand || last.productName)) {'),
   '브랜드 둘 이상이면 칩으로 고르게 한다')
-need('섞인 품목은 직전값을 안 채운다(지난 기록 행)', client.includes('if ((last?.products.length ?? 0) < 2 && (v.brand || v.productName)) {'))
+need('섞인 품목은 직전값을 안 채운다(지난 기록 행)', client.includes('if ((last?.products.length ?? 0) < 2) fillBrand()'))
 need('칩 두 자리(품목 고르기 · 다품목 카드)', count(client, /<ProductChips chips=/g) === 2, `실제 ${count(client, /<ProductChips chips=/g)}`)
-need('칩 40px · aria-pressed', /function ProductChips\([\s\S]{0,900}aria-pressed=\{on\}[\s\S]{0,400}min-h-\[40px\]/.test(client))
+// 칩 모양은 한 클래스(SpecWizard pickChip, 40px)다. 세부스펙 칩과 지난 제품 칩이 같은 폼에서 높이가 갈리면 이질감이다(2026-11-03 독립 검수).
+const wizard = readFileSync('components/ui/SpecWizard.tsx', 'utf8')
+need('칩 정본 40px', /const chip = \(on: boolean\) =>\s*`min-h-\[40px\]/.test(wizard) && wizard.includes('export const pickChip = chip'))
+need('지난 제품 칩 · 세부스펙 칩이 같은 클래스', /function ProductChips\([\s\S]{0,1200}aria-pressed=\{on\}[\s\S]{0,300}className=\{`\$\{pickChip\(on\)\}/.test(client) &&
+  /aria-pressed=\{specText === o\}[\s\S]{0,200}className=\{`\$\{pickChip\(specText === o\)\}/.test(client), '칩 높이가 둘이면 이질감')
 need('칩 안내 문장', client.includes("'지난 구매 제품입니다. 같은 제품이면 눌러 주세요.'"))
-need('칩이 있으면 줄을 편다(다품목)', client.includes('const brandOpen = it.brand != null || it.productName != null || chips.length > 0'))
+need("칩 안내는 '지난번 값' 일 때 숨고, 다품목은 첫 칩 카드에만", client.includes('guide={!brandFromLast}') && client.includes('guide={idx === firstChipIdx}') &&
+  client.includes('{guide && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{PRODUCT_CHIP_GUIDE}</p>}'))
+// 다품목 칩이 실제로 그려지는 조건까지 본다(칩 블록을 꺼도 지나가던 구멍, 2026-11-03 독립 검수).
+need('다품목 칩이 그 품명의 지난 제품으로 그려진다',
+  client.includes("const chips = allowMulti ? (productsByLabel[it.label.trim()] ?? []) : []") &&
+  /\{allowMulti && chips\.length > 0 && \(\s*<div className="rounded-lg bg-\[var\(--cream\)\] ring-1 ring-\[var\(--warm-border\)\] px-2 py-1\.5">\s*<ProductChips chips=\{chips\}/.test(client) &&
+  /getItemProducts\(need\)\.then\(r => \{ if \(alive\) setProductsByLabel/.test(client))
+need("다품목 브랜드 줄은 값이 있을 때만 펴고 '지우기' 가 접는다(형제 줄과 같은 동작)",
+  client.includes('const brandOpen = it.brand != null || it.productName != null\n') &&
+  /onClick=\{\(\) => patchItem\(idx, \{ brand: undefined, productName: undefined \}\)\}/.test(client))
+// 지난 기록 맥락은 품명과 함께 쥐고 지금 품명과 같을 때만 읽는다(lib/heldContext, 독립 검수 차단 2: '라면' 칩이 '라면 컵' 에 남던 결함 클래스).
+need('지난 기록 맥락을 품명과 함께 쥔다', client.includes("const prevUnits = contextFor(prevHeld, activeLabel === '__custom__' ? customLabel : activeLabel)") &&
+  !/setPrevUnits\(/.test(client) && !/useState<Awaited<ReturnType<typeof getLastItemUnits>>>/.test(client),
+  '맥락을 품명 없이 상태 하나에 담으면 다음 품목에 옛 칩·세부스펙 칩·단위 안내가 남는다')
+{
+  const sets = [...client.matchAll(/setPrevHeld\(([^)]*\)?)\)/g)].map(m => m[1])
+  need('맥락을 쥐는 자리는 holdFor(품명, 맥락)·null·되살리기뿐', sets.length > 0 && sets.every(a => /^holdFor\(/.test(a) || a === 'null' || a === 'r.prevHeld'), `실제 ${JSON.stringify(sets)}`)
+}
+need('품목을 담으면 맥락을 비운다', /onChange\(\[\.\.\.items, data\]\)\n[^\n]*setPrevHeld\(null\)/.test(client))
+// 지난 기록 행의 늦은 응답이 되살리기·다른 선택을 덮지 않는다(차례 번호). 조회 실패면 종전처럼 그 행의 브랜드로 채운다.
+need('지난 기록 행 늦은 응답 가드', /const seq = \+\+pickSeq\.current/.test(client) && /if \(pickSeq\.current !== seq\) return/.test(client) &&
+  /\.catch\(\(\) => \{ if \(pickSeq\.current === seq\) fillBrand\(\) \}\)/.test(client) &&
+  /setPrevHeld\(r\.prevHeld\)\n\s*pickSeq\.current\+\+/.test(client))
+// 지난 제품 조회는 행 수 상한 없이 조합별로 센다(take 상한이면 많이 산 품명이 다른 품명 칩을 밀어낸다).
+need('지난 제품 조회가 조합별 groupBy', /async function loadItemProducts[\s\S]{0,900}prisma\.expense\.groupBy\(\{\s*by: \['itemLabel', 'brand', 'productName'\]/.test(actions) &&
+  !/async function loadItemProducts[\s\S]{0,900}take:/.test(actions.slice(actions.indexOf('async function loadItemProducts'), actions.indexOf('export async function getItemProducts'))))
 // 지출 목록 검색. 서버 검색 축과 같은 칸을 화면 거름에도.
 need('목록 검색 거름에 brand·productName', /const hay = `[^`]*\$\{e\.brand \?\? ''\} \$\{e\.productName \?\? ''\}`/.test(client))
 

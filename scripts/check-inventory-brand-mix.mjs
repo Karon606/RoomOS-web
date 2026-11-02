@@ -11,6 +11,7 @@
 //   ⓔ 점검 폼 두 곳(CheckForm · LocationBatchCheckModal)에 브랜드가 없다(점검은 품명 하나로 센다).
 //   ⓕ 골격과 실제의 줄 수가 같다. 제품 줄은 DetailViewSummary 안에 있고 글자를 g() 로 감싸 골격이 같은 줄을 투명하게 그린다.
 //   ⓖ 정본 lib/productMix 는 순수층이다(DB 를 부르지 않는다).
+//   ⓗ 한 카드 안에서 단가·날짜 꼴이 하나다(구매한 제품 = 평균 단가 `590원/봉`, 날짜 = 최근 점검 fmtDate).
 // 한계. 소스 가드라 '존재'만 본다. 계산의 뜻은 진리표 scripts/test-product-mix.ts 가 진다.
 import { readFileSync } from 'node:fs'
 
@@ -95,6 +96,17 @@ for (const h of ['function CheckForm(', 'function LocationBatchCheckModal(']) {
 const skel = fnBody(client, 'function DetailModalSkeleton(')
 need('ⓕ 골격이 요약을 ghost 로 그린다', /<DetailViewSummary row=\{row\} ghost \/>/.test(skel))
 need('ⓕ 제품 줄 글자를 g() 로 감싼다', /\{g\('제품'\)\}/.test(summary) && /\{g\(row\.productMix\.last\.text\)\}/.test(summary) && /\{g\(est\)\}/.test(summary))
+
+// ⓗ 한 카드 안 단가·날짜 꼴 하나(2026-11-03 독립 검수 차단 1). '구매한 제품' 은 형제 '평균 단가' 의 `금액/단위` 와 '최근 점검' 의 fmtDate 를 쓴다.
+{
+  const at = client.indexOf('구매한 제품 (최근 12개월)')
+  const block = at < 0 ? '' : client.slice(at, client.indexOf('</ul>', at))
+  need('ⓗ 구매한 제품 단가가 평균 단가와 같은 꼴', /`\$\{fmtUnitPrice\(h\.unitPrice\)\}\$\{priceUnit \? `\/\$\{priceUnit\}` : ''\}`/.test(block) && !/당 /.test(block) &&
+    /\$\{fmtUnitPrice\(row\.avgUnitPrice\)\}\$\{priceUnit \? `\/\$\{priceUnit\}` : ''\}/.test(client),
+    "한 카드 안에서 '590원/봉' 과 '봉당 590원' 이 같이 서면 이질감이다")
+  need("ⓗ 구매한 제품 날짜가 '최근 점검' 과 같은 정본", /`마지막 \$\{fmtDate\(h\.lastDate\)\}`/.test(block) && /최근 점검 \{fmtDate\(row\.lastCheckDate\)\}/.test(client) &&
+    /fmtDate\(row\.productMix\.last\.receivedOn\)/.test(summary) && !/fmtMixDate/.test(client))
+}
 
 // ⓖ 순수층
 need('ⓖ lib/productMix 는 DB 를 부르지 않는다', !/prisma/.test(mix) && /export function resolveMadeMix\(/.test(mix))

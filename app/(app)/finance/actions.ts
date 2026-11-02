@@ -379,12 +379,17 @@ export type ProductChip = { brand: string | null; productName: string | null; te
 async function loadItemProducts(propertyId: string, labels: string[]): Promise<Map<string, ProductChip[]>> {
   const out = new Map<string, ProductChip[]>()
   if (!labels.length) return out
-  const rows = await prisma.expense.findMany({
+  // 원문 조합별로 묶어 센다(상한 없이 품명마다 전부, 2026-11-03 독립 검수). 행 수 상한을 두면 많이 산 품명이 다른 품명의 칩을 밀어낸다.
+  // 최근 순은 조합의 마지막 기록 시각이다. groupProducts 가 n 만큼 세어 최빈 대표 표기를 고른다.
+  const groups = await prisma.expense.groupBy({
+    by: ['itemLabel', 'brand', 'productName'],
     where: { propertyId, itemLabel: { in: labels }, isShipping: false, OR: [{ brand: { not: null } }, { productName: { not: null } }] },
-    select: { itemLabel: true, brand: true, productName: true },
-    orderBy: { createdAt: 'desc' },
-    take: 800,
+    _count: { _all: true },
+    _max: { createdAt: true },
   })
+  const rows = groups
+    .map(g => ({ itemLabel: g.itemLabel, brand: g.brand, productName: g.productName, n: g._count._all, at: g._max.createdAt?.getTime() ?? 0 }))
+    .sort((a, b) => b.at - a.at)
   for (const label of labels) {
     out.set(label, groupProducts(rows.filter(r => r.itemLabel === label)).map(g => ({ brand: g.brand, productName: g.productName, text: g.text })))
   }

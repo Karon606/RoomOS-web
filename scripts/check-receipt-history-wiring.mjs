@@ -146,7 +146,7 @@ const fin = read(FIN), pr = read(PR), fc = read(FC), prs = read(PRS), ocr = read
 {
   need(`ⓚ ${FC}: 직접 입력 품명 칸에 datalist 가 남았다(메타 있는 변형은 이력 제안 패널로)`, !/list="item-detail-suggestions"/.test(fc))
   need(`ⓚ ${FC}: 직접 입력 품명 칸 아래 이력 제안 패널이 없다`, /<ItemHistoryPanel idPrefix="item-custom"[\s\S]{0,200}?onPick=\{applyVariant\}[\s\S]{0,120}?onNew=/.test(fc))
-  need(`ⓚ ${FC}: 변형이 둘 이상인데도 직전 구매로 채운다`, /if \(last && vars\.length <= 1\) \{\s*applyLastContext\(last\)/.test(fc))
+  need(`ⓚ ${FC}: 변형이 둘 이상인데도 직전 구매로 채운다`, /if \(last && vars\.length <= 1\) \{\s*applyLastContext\(label, last\)/.test(fc))
   need(`ⓚ ${FC}: 지난번 값 캡션에 되살리기(고르기 직전 모습 전체)가 없다`, /<WhyCaption id="item-picked-why" action=\{\{ label: '되살리기', onClick: \(\) => restoreSnapshot\(picked\.restore\) \}\}>/.test(fc))
   need(`ⓚ ${FC}: 영수증 품목의 변형 고르기(OcrVariantRows)가 없다(홈 '지출 등록에서 고르기' 가 갈 곳)`, /<OcrVariantRows idPrefix=\{`ocr-item-\$\{idx\}`\} label=\{it\.label\} onPick=\{v => pickVariantForItem\(idx, v\)\} caption=\{caption\} \/>/.test(fc))
 }
