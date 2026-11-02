@@ -149,7 +149,8 @@ must(RC, rc, 'applyReceiptCancel', [
 mustNot(RC, rc, 'applyReceiptCancel', [[/detail: fillBack\.prevDetail/, 'N-1 채움 조각의 세부 글자를 그대로 쓴다']])
 must(I, inv, 'cancelReceiptCore', [
   [/const p = await planReceiptCancel\(expenseId, propertyId, opts\)/, '수령 취소가 정본 판정(planReceiptCancel)을 안 탄다'],
-  [/prisma\.\$transaction\(tx => applyReceiptCancel\(tx, plan\)\)/, '수령 취소가 정본 쓰기(applyReceiptCancel)를 안 탄다'],
+  // 착불 배송비 줄 조각을 함께 지우는 꼴(2026-11-02)도 같은 정본 쓰기다.
+  [/prisma\.\$transaction\(tx => applyReceiptCancel\(tx, plan\)\)|prisma\.\$transaction\(async tx => \{\s*const u = await applyReceiptCancel\(tx, plan\)/, '수령 취소가 정본 쓰기(applyReceiptCancel)를 안 탄다'],
 ])
 must(I, inv, 'setExpenseInventoryExclusion', [
   [/placementForSave\(\{/, 'R-1 제외·포함이 자리 두 칸을 저장 규칙 정본으로 정하지 않는다(방에 걸린 서비스를 포함하면 자리 있는 수령 전 비품)'],
@@ -189,10 +190,10 @@ must(AC, ac, null, [
   [/receiptPlacementPlan\(rows, qty \?\? null\)/, 'S5 받을 때 배정 판정을 서버와 같은 순수 함수로 하지 않는다'],
   [/choiceDialog\(\{ \.\.\.copy, level: 'normal' \}\)/, 'S5 정본 확인창(choiceDialog normal)을 쓰지 않는다'],
   [/if \(choice === null \|\| choice === 'back'\) return/, 'S5 취소가 무변경이 아니다(§27.5)'],
-  [/undoAssetReceipt\(undo\)/, 'S5 수령 토스트가 서버 토큰으로 되돌리지 않는다'],
+  [/undoAssetReceipt\(undo(, codShip \?\? null)?\)/, 'S5 수령 토스트가 서버 토큰으로 되돌리지 않는다'],
   [/assign = choice === 'confirm'\s*\n/, "R-4 확인창 선택과 배정의 대응이 '배정'(confirm) 하나가 아니다('수령만'도 배정한다)"],
-  [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}, storeId \?\? null\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다(보관 위치도 같이 싣는다)'],
-  [/\.\.\.\(how\?\.assign \? \{ assign: true, expect: how\.expect \} : \{\}\), storedLocationId: storeId \}/, 'N-4 배정 요청에 본 계획이 안 실린다(수령 창의 보관 위치도 함께)'],
+  [/markReceived\(it, true, qty, \{ assign, plan, expect: planExpectOf\(rows\) \}, storeId \?\? null(, cod \?\? null)?\)/, 'N-4 화면이 창에 띄운 계획을 서버에 같이 보내지 않는다(보관 위치도 같이 싣는다)'],
+  [/\.\.\.\(how\?\.assign \? \{ assign: true, expect: how\.expect \} : \{\}\), storedLocationId: storeId[ ,]/, 'N-4 배정 요청에 본 계획이 안 실린다(수령 창의 보관 위치도 함께)'],
   [/receiptAssignCopy\(plan, it\.itemLabel, unit, storeNameOf\(storeId\)\)/, '보관 위치 축 F2 창 문구가 고른 보관 위치를 말하지 않는다(미배정에 둔다고 거짓말)'],
   [/withAssign \? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE/, 'R-5 수령 적용취소 결과 토스트가 정본 문장(§16 형식)을 안 쓴다'],
   [/`이동을 적용취소했습니다\$\{SEP\}이\\u00a0이력은\\u00a0지워짐`/, "후속 검수 권장 2 이동 적용취소 결과의 구분점이 SEP 가 아니다(접히면 둘째 줄이 '·' 로 시작한다)"],
@@ -210,10 +211,10 @@ const IC = 'app/(app)/inventory/InventoryClient.tsx'
 const ic = read(IC)
 must(IC, ic, null, [
   [/const missing = g\.items\.filter\(f => qtyMissing\(f\.p\.qtyValue\)\)/, 'S3 재고 수령 대기가 수량 빈 구매를 정본(qtyMissing)으로 가리지 않는다'],
-  [/confirmReceipt\(id, undefined, undefined, fills\?\.\[id\]\)/, 'S3 재고 수령 대기가 도착 수량을 서버에 넘기지 않는다'],
+  [/confirmReceipt\(id, undefined, undefined, fills\?\.\[id\][,)]/, 'S3 재고 수령 대기가 도착 수량을 서버에 넘기지 않는다'],
   [/const noQty = qtyMissing\(entry\.qtyValue\)/, 'S3 품목 상세 구매 수령이 수량 빈 구매를 가리지 않는다'],
   [/const askQty = entry\.receivedAt === null && qtyMissing\(entry\.qtyValue\)/, 'S3 구매 수정 수령일이 수량 빈 구매를 가리지 않는다'],
-  [/undoConfirmReceipt\(id, f \? \{ qtyFill: f \} : undefined\)/, 'S3 수령 취소가 채운 수량을 함께 돌리지 않는다'],
+  [/undoConfirmReceipt\(id, f \? \{ qtyFill: f \} : undefined\)|undoConfirmReceipt\(id, \(f \|\| cs\) \? \{ \.\.\.\(f \? \{ qtyFill: f \} : \{\}\)/, 'S3 수령 취소가 채운 수량을 함께 돌리지 않는다'],
 ])
 // 웹디자이너 2차 R2. A 카드 칸별 오류는 칸과 오류 문장을 잇고(aria-describedby), 보더가 위험색으로 선다
 must(IC, ic, null, [

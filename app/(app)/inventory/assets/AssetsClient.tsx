@@ -47,6 +47,9 @@ import {
 } from './storagePlace'
 // 옮기기 목적지 고르기 정본(세그먼트 여분 보관 / 방 / 공용부 + 그 무리만 담은 select, 신고 0c37bc53).
 import { DestinationPicker } from './DestinationPicker'
+import { CodShipField, codShipInitial, type CodShipValue } from '@/components/finance/CodShipField'
+import { COD_SHIP_KEPT } from '@/lib/codShipping'
+import type { CodShipUndo } from '@/app/(app)/finance/shipPay'
 
 // 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -136,7 +139,8 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   // 수령 창 — 몇 개 왔는지(수량 2 이상)와 어디에 보관하는지(위치가 있을 때)를 한 창에서 묻는다(2026-10-19 보관 위치 축).
   // store = 보관 위치 id, '' = 보관 위치 모름. 기본 창고를 미리 골라 둔다(바꿀 수 있다). 잔여는 수령 대기 유지.
   // qty0·store0 = 연 순간 값(§12 dirty 판정. 바꾼 뒤에는 배경 누름을 무시하고 닫기를 확인한다).
-  const [rcv, setRcv] = useState<{ it: AssetItem; qty: string; store: string; qty0: string; store0: string } | null>(null)
+  // cod 는 착불 배송비(그 주문의 첫 수령에서만, it.codAsk). 금액이 비면 아무것도 안 만든다.
+  const [rcv, setRcv] = useState<{ it: AssetItem; qty: string; store: string; qty0: string; store0: string; cod: CodShipValue } | null>(null)
   const [pending, startTransition] = useTransition()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())   // 합산 펼친 항목 id
   const toggleExpand = (id: string) => setExpanded(prev => {
@@ -863,8 +867,8 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   // 수령 적용취소. 서버가 준 토큰(수령 전 원상태·분할 조각·배정 이력 줄)으로 정확히 되돌린다.
   // 전량·부분·배정·수령만 모든 갈래가 같은 토큰이다(종전에는 부분 수령에 되돌리기가 없었다). 배정 예정 호실은 남는다.
   // 결과 문장은 형제(재고 수령 취소)와 같은 말이고, 배정까지 함께 무를 때만 '수령과 배정'이라 한다(UX 패널 F2).
-  const undoReceive = (undo: AssetReceiptUndo, withAssign: boolean) => startTransition(async () => {
-    const res = await undoAssetReceipt(undo)
+  const undoReceive = (undo: AssetReceiptUndo, withAssign: boolean, codShip?: CodShipUndo | null) => startTransition(async () => {
+    const res = await undoAssetReceipt(undo, codShip ?? null)
     if (!res.ok) { pushToast('error', res.error); return }
     pushToast('info', withAssign ? ASSET_RECEIPT_ASSIGN_UNDONE : ASSET_RECEIPT_UNDONE)
     router.refresh()
@@ -874,7 +878,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   // 창은 정본 ConfirmDialog 의 choiceDialog(normal) [취소][수령만][519호에 배정]. 취소·Esc·배경은 무변경(§27.5).
   // 물을지·문구·토스트는 서버와 같은 순수 판정(receiptPlacement)이다. 부분 도착이면 인라인 '몇 개 도착?' 다음에 묻는다.
   // storeId 는 수령 창에서 고른 보관 위치(null = 모름). 배정 안 한 몫에만 선다(서버 setAssetReceived 와 같은 규칙).
-  const receiveWithPlan = async (it: AssetItem, qty?: number, storeId?: string | null) => {
+  const receiveWithPlan = async (it: AssetItem, qty?: number, storeId?: string | null, cod?: CodShipValue | null) => {
     const unit = it.qtyUnit ?? '개'
     const idSet = new Set(it.ids)
     const rows = it.breakdown.filter(b => idSet.has(b.id) && !b.disposed)
@@ -888,13 +892,13 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       assign = choice === 'confirm'
     }
     // 배정을 고르면 창에 띄운 계획(행별 놓을 방)을 같이 보낸다. 그 사이 예정 호실이 바뀌면 서버가 거부한다(검수 N-4).
-    markReceived(it, true, qty, { assign, plan, expect: planExpectOf(rows) }, storeId ?? null)
+    markReceived(it, true, qty, { assign, plan, expect: planExpectOf(rows) }, storeId ?? null, cod ?? null)
   }
-  // '수령 완료'. 수량이 2 이상이거나 보관 위치가 있으면 수령 창을 연다. 둘 다 아니면 종전대로 바로 받는다(묻는 것이 없다).
+  // '수령 완료'. 수량이 2 이상이거나 보관 위치가 있거나 착불 배송비를 물을 주문이면 수령 창을 연다. 셋 다 아니면 종전대로 바로 받는다(묻는 것이 없다).
   const startReceive = (it: AssetItem) => {
-    if ((it.qtyValue != null && it.qtyValue > 1) || hasStores) {
+    if ((it.qtyValue != null && it.qtyValue > 1) || hasStores || it.codAsk) {
       const q0 = it.qtyValue != null && it.qtyValue > 1 ? fmtQty(it.qtyValue) : ''
-      setRcv({ it, qty: q0, store: defStore ?? '', qty0: q0, store0: defStore ?? '' })
+      setRcv({ it, qty: q0, store: defStore ?? '', qty0: q0, store0: defStore ?? '', cod: codShipInitial() })
     }
     else void receiveWithPlan(it)
   }
@@ -905,8 +909,9 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
     const total = it.qtyValue ?? 1
     const qty = it.qtyValue != null && it.qtyValue > 1 ? Math.min(Number(rcv.qty) || total, total) : undefined
     const storeId = hasStores ? (rcv.store || null) : null
+    const cod = it.codAsk && (rcv.cod.amount ?? 0) > 0 ? rcv.cod : null
     setRcv(null)
-    void receiveWithPlan(it, qty, storeId)
+    void receiveWithPlan(it, qty, storeId, cod)
   }
   const undoUnreceive = (undo: AssetUnreceiveUndo) => startTransition(async () => {
     const res = await undoAssetUnreceive(undo)
@@ -916,14 +921,21 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
   })
 
   // 수령 상태 토글 (수령 완료 / 수령 대기로). qty 지정 시 부분 수령(행 분할).
-  const markReceived = (it: AssetItem, value: boolean, qty?: number, how?: { assign: boolean; plan: ReceiptPlan; expect: ReceiptPlanExpect }, storeId: string | null = null) => {
+  const markReceived = (it: AssetItem, value: boolean, qty?: number, how?: { assign: boolean; plan: ReceiptPlan; expect: ReceiptPlanExpect }, storeId: string | null = null, cod: CodShipValue | null = null) => {
     startTransition(async () => {
-      const res = await setAssetReceived(it.ids, value, qty ?? null, { ...(how?.assign ? { assign: true, expect: how.expect } : {}), storedLocationId: storeId })
+      const res = await setAssetReceived(it.ids, value, qty ?? null, {
+        ...(how?.assign ? { assign: true, expect: how.expect } : {}), storedLocationId: storeId,
+        ...(cod && (cod.amount ?? 0) > 0 ? { codShip: { amount: cod.amount!, payMethod: cod.payMethod, accountId: cod.accountId || null } } : {}),
+      })
       if (!res.ok) { pushToast('error', res.error); return }
       if (!value) {
         // 수령 대기로 돌리면 보관 위치도 비운다. 적용취소가 수령 시각과 보관 위치를 함께 되돌린다.
+        // 착불 배송비 줄은 지우지 않는다(돈은 이미 냈을 수 있다). 남았으면 그 사실을 둘째 줄로 말한다.
         const uu = res.unreceiveUndo
-        pushToast('success', '수령 대기로 변경됨', uu ? { action: { label: '적용취소', run: () => undoUnreceive(uu) } } : undefined)
+        pushToast('success', '수령 대기로 변경됨', {
+          ...(res.codShipKept ? { detail: COD_SHIP_KEPT } : {}),
+          ...(uu ? { action: { label: '적용취소', run: () => undoUnreceive(uu) } } : {}),
+        })
         router.refresh(); return
       }
       const unit = it.qtyUnit ?? '개'
@@ -935,9 +947,11 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
       const t = (how ? receiptToast(how.plan, how.assign ? 'assign' : 'receive', unit, sName) : null)
         ?? (isPartial ? partialReceiveToast(qty!, it.qtyValue! - qty!, unit, sName) : null)
       const text = t?.text ?? plainReceiveToast(sName)
+      const codUndo = res.codShipUndo ?? null
+      const detail = [t?.detail, codUndo ? '착불 배송비 1건도 지출에 기록했습니다.' : null].filter(Boolean).join(' ')
       pushToast('success', text, {
-        ...(t?.detail ? { detail: t.detail } : {}),
-        ...(undo ? { action: { label: (t && 'actionLabel' in t ? t.actionLabel : null) ?? '수령 취소', run: () => undoReceive(undo, !!how?.assign) } } : {}),
+        ...(detail ? { detail } : {}),
+        ...(undo ? { action: { label: (t && 'actionLabel' in t ? t.actionLabel : null) ?? '수령 취소', run: () => undoReceive(undo, !!how?.assign, codUndo) } } : {}),
       })
       router.refresh()
     })
@@ -1575,7 +1589,7 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
           : plan.kind === 'multi' ? plan.rooms.map(r => fmtRoomNo(r.roomNo, '')).join(DOT) : null
         return (
           <Modal open onClose={() => setRcv(null)} z={260} width="xs"
-            dirty={rcv.qty !== rcv.qty0 || rcv.store !== rcv.store0}
+            dirty={rcv.qty !== rcv.qty0 || rcv.store !== rcv.store0 || (rcv.cod.amount ?? 0) > 0}
             title={`수령 · ${it.itemLabel}`}
             subtitle={`수령 대기 ${fmtQty(total)}${unit}${planned ? ` · ${planned}` : ''}`}
             footer={
@@ -1613,6 +1627,11 @@ export default function AssetsClient({ data, rooms, locations, storages = [], ta
                   {/* 배정 물음이 이어질 때만 말한다(그 몫은 방에 서서 보관 위치가 없다). 아니면 캡션을 두지 않는다(웹디자이너 패스). */}
                   {askRooms && <p className="mt-1 break-keep text-[0.65625rem] text-[var(--warm-muted)]">{askRooms}에 배정하는 몫은 보관 위치를 적지 않습니다</p>}
                 </label>
+              )}
+              {/* 착불 배송비(선택). 그 주문의 첫 수령에서만 선다. 소모품 수령 자리와 같은 칸·같은 문장(CodShipField). */}
+              {it.codAsk && (
+                <CodShipField labelClassName="block text-xs font-medium text-[var(--warm-mid)]" disabled={pending}
+                  value={rcv.cod} onChange={v => setRcv(r => r ? { ...r, cod: v } : r)} />
               )}
             </div>
           </Modal>

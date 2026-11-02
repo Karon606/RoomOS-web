@@ -18,6 +18,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { settleStatusForEdit, settleStatusForNew, isDeferredRow } from '@/lib/settleStatus'
+import { shipPayForSave, shipSettle } from './shipPay'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
@@ -169,7 +170,8 @@ export async function getExpenses(targetMonth: string) {
       financialAccount: { select: { brand: true, alias: true } },
       room: { select: { id: true, roomNo: true } },
       recurringExpense: { select: { isVariable: true } },
-      order: { select: { id: true, code: true, externalOrderNo: true, shippingType: true, shippingMemo: true } },
+      // 배송비 줄 수. 착불인데 0 이면 '배송비 미기록' 이다(lib/codShipping). 배송비 줄이 다른 달 목록에 있어도 맞게 센다.
+      order: { select: { id: true, code: true, externalOrderNo: true, shippingType: true, shippingMemo: true, _count: { select: { expenses: { where: { isShipping: true } } } } } },
     },
   })
   // 공용부(assignedLocationId)에 배정한 행의 자리 이름. 방별 분배 라벨이 방 축만 알아 이 행을 '미배정'으로
@@ -179,6 +181,7 @@ export async function getExpenses(targetMonth: string) {
   const locPaths = rows.some(r => r.assignedLocationId || r.storedLocationId) ? await loadLocationPaths(propertyId) : null
   return rows.map(r => ({
     ...r,
+    order: r.order ? { id: r.order.id, code: r.order.code, externalOrderNo: r.order.externalOrderNo, shippingType: r.order.shippingType, shippingMemo: r.order.shippingMemo, shipCount: r.order._count.expenses } : null,
     assignedLocationName: r.assignedLocationId ? (locPaths?.pathName(r.assignedLocationId) ?? null) : null,
     // 불변식 관문(받은 + 안 놓인 비품 물품만, 비품 화면 getDurableItems 와 같은 판정). 어긋난 행의 남은 값을 라벨에 싣지 않는다.
     storedLocationName: r.storedLocationId && r.receivedAt && !r.roomId && !r.assignedLocationId && !r.isCommonAsset && !r.excludeFromInventory
@@ -834,10 +837,15 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const orderShipping     = parseAmount(formData.get('orderShipping'))
     const orderShippingType = (formData.get('orderShippingType') as string) || null
     const orderShippingMemo = (formData.get('orderShippingMemo') as string) || null
+    // 배송비 행 자신의 결제수단(신고 6ab4f868). 비었거나 '같은 수단' 이면 본품과 같다(옛 화면도 이 갈래).
+    const orderShipPay = { payMethod: formData.get('orderShipPayMethod') as string | null, accountId: formData.get('orderShipAccountId') as string | null }
     const externalOrderNo   = ((formData.get('externalOrderNo') as string) || '').trim() || null
     // 같은 쇼핑몰 주문번호의 기존 주문에 합류(클라이언트에서 확인 후 전달) — 오류신고 4f9fb398
     const attachOrderId     = ((formData.get('attachOrderId') as string) || '').trim() || null
-    const isOrderMode       = !!orderShipping && orderShipping > 0
+    // 착불은 금액을 몰라도 주문을 세운다(받을 때 안다, 신고 a016642e). 배송비 행은 금액이 있을 때만 만든다(0원 행 금지).
+    // 품목이 하나여도 주문을 세운다. '착불' 이라는 사실이 주문 칸에만 산다.
+    const codPending        = orderShippingType === '착불' && !(orderShipping > 0)
+    const isOrderMode       = (!!orderShipping && orderShipping > 0) || codPending
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨. 품목합 검증 시 이만큼 차감.
     // (이전엔 이 필드가 없어 '품목 2개+ + 배송비 포함' 조합이 합계 불일치로 항상 저장 실패)
     const shippingIncluded  = parseAmount(formData.get('shippingIncluded')) || 0
@@ -859,6 +867,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     if (financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: financialAccountId, propertyId }, select: { id: true } }))) {
       return { ok: false, error: '결제 계정을 찾을 수 없습니다.' }
     }
+    // 배송비 행의 결제수단(계정은 이 영업장 것이고 그 수단이 묻는 종류여야 한다). 쓰기 전에 본다.
+    const shipPayR = orderShipping > 0
+      ? await shipPayForSave(propertyId, { payMethod: payMethod || '계좌이체', financialAccountId: financialAccountId || null, financeName: financeName || null }, orderShipPay)
+      : null
+    if (shipPayR && !shipPayR.ok) return { ok: false, error: shipPayR.error }
     // 수령 전 비품 물품의 자리는 배정할 호실(targetRoomId) 하나뿐이다. roomId 는 비운다(판정 정본 receiptPlacement).
     // 등록하는 지출은 늘 수령 전이다. 비품 물품이 아니면 targetRoomId 를 비운다.
     const saveTrackedCats = (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
@@ -995,13 +1008,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     }
 
     // 배송비 별도 지출 라인(합배송) — 주문에 연결, 재고 계산 제외.
-    //   카드결제(신용카드)면 본 지출과 동일하게 미정산, 배송비 자체가 후불('신용')이어도 미정산.
-    //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그) 판정은 정본 lib/settleStatus 하나다.
-    const shippingSettle: SettleStatus = settleStatusForNew(payMethod || '계좌이체', {
-      isShipping: true,
-      shippingType: orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType) ? orderShippingType : null,
-    })
-    const shippingCreate = isOrderMode
+    //   결제수단은 배송비 행 자신의 것이다(착불은 받을 때 따로 낸다, 신고 6ab4f868). 고르지 않으면 본품과 같다.
+    //   정산상태는 그 수단과 배송비 결제구분으로 정본 lib/settleStatus 가 정한다(신용카드거나 후불 '신용' 이면 미정산).
+    const shipPay = shipPayR?.ok ? shipPayR.pay : null
+    const shippingCreate = shipPay && orderShipping > 0
       ? prisma.expense.create({
           data: {
             propertyId,
@@ -1013,10 +1023,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
             vendorBizNo:        vendorBizNo,
             channel:            rowChannel(channel, vendor || null),   // 배송비 행도 같은 결제라 같은 쇼핑몰(머리 구매처 기준)
             memo:               orderShippingMemo || null,
-            payMethod:          payMethod || '계좌이체',
-            financialAccountId: financialAccountId || null,
-            financeName:        financeName || null,
-            settleStatus:       shippingSettle,
+            payMethod:          shipPay.payMethod,
+            financialAccountId: shipPay.financialAccountId,
+            financeName:        shipPay.financeName,
+            settleStatus:       shipSettle(shipPay, orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType) ? orderShippingType : null),
             orderId,
             isShipping:         true,
             excludeFromInventory: true,
@@ -2479,12 +2489,23 @@ export async function undoMergeExpensesIntoOrder(raw: unknown): Promise<{ ok: tr
 // ── 합배송 Phase 2: 기존 지출(들)에 배송비를 묶기 ──
 //  주문(ExpenseOrder)을 만들거나 기존 주문을 재사용해 expenseIds 를 묶고,
 //  배송비 별도 지출 라인을 생성(또는 그 주문에 이미 있으면 갱신).
+// shipPay 는 배송비 행 자신의 결제수단(신고 6ab4f868). 없으면(옛 화면) 새 행은 대표 지출과 같고 이미 있는 행은 그대로다.
+// '같은 수단'(SHIP_PAY_SAME)이면 대표 지출 값으로 맞춘다. 착불 행은 날짜·귀속월을 대표 지출 값으로 덮지 않는다(받을 때 낸 돈이다).
+// shipUndo 는 이번 호출이 배송비 줄과 주문 배송 정보에 한 일의 되돌림 조각이다(적용취소, 그 사이 바뀌면 거부).
+export type ShipAttachUndo = {
+  orderId: string
+  order: { shippingType: string | null; shippingMemo: string | null }
+  // created 면 만든 줄을 지운다. 아니면 prev 로 되돌린다. now 는 이번 쓰기 직후 값(CAS).
+  ship: { id: string; created: boolean; now: { amount: number; payMethod: string | null; financialAccountId: string | null; updatedAt: string }
+    prev: { amount: number; detail: string | null; payMethod: string | null; financialAccountId: string | null; financeName: string | null; settleStatus: string; memo: string | null; category: string; date: string; targetMonth: string | null; channel: string | null; createdAt: string } | null } | null
+}
 export async function attachShippingToOrder(input: {
   expenseIds: string[]
   amount: number
   shippingType: '선불' | '착불' | '신용' | null
   shippingMemo?: string | null
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  shipPay?: { payMethod: string; accountId: string | null } | null
+}): Promise<{ ok: true; shipUndo?: ShipAttachUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2515,9 +2536,17 @@ export async function attachShippingToOrder(input: {
     const orderChannel = commonChannel([...expenses, ...orderRows])
     let orderId: string
     // 이미 있는 배송비 행의 정산상태를 고칠 때 '직전 결제구분'과 비교한다(lib/settleStatus settleStatusForEdit).
-    const prevShipType = existingOrderId
-      ? (await prisma.expenseOrder.findFirst({ where: { id: existingOrderId, propertyId }, select: { shippingType: true } }))?.shippingType ?? null
+    const prevOrder = existingOrderId
+      ? await prisma.expenseOrder.findFirst({ where: { id: existingOrderId, propertyId }, select: { shippingType: true, shippingMemo: true } })
       : null
+    const prevShipType = prevOrder?.shippingType ?? null
+    // 배송비 줄의 결제수단(있으면). 계정은 이 영업장 것이고 수단이 묻는 종류여야 한다. 쓰기 전에 본다.
+    const rep0 = expenses[0]
+    const shipPayR = amount > 0 && input.shipPay
+      ? await shipPayForSave(propertyId, { payMethod: rep0.payMethod || '계좌이체', financialAccountId: rep0.financialAccountId, financeName: rep0.financeName }, input.shipPay)
+      : null
+    if (shipPayR && !shipPayR.ok) return { ok: false, error: shipPayR.error }
+    let shipUndo: ShipAttachUndo | undefined
     if (existingOrderId) {
       orderId = existingOrderId
       // 배송비가 있을 때만 배송 메타 갱신(0=묶기만이면 기존 배송정보 보존)
@@ -2552,8 +2581,6 @@ export async function attachShippingToOrder(input: {
       const shipData = {
         amount,
         detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
-        // 새 배송비 행은 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산(정본 lib/settleStatus).
-        settleStatus:       settleStatusForNew(rep.payMethod || '계좌이체', { isShipping: true, shippingType: shipType }) as SettleStatus,
         shippingMemo:       input.shippingMemo || null,
       }
       // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성. 주문 묶기로 배송비 줄이 둘 이상 모인 주문은 어느 줄을 고칠지
@@ -2561,21 +2588,47 @@ export async function attachShippingToOrder(input: {
       const shipRows = await prisma.expense.findMany({ where: { orderId, isShipping: true, propertyId }, take: 2 })
       if (shipRows.length > 1) return { ok: false, error: '이 주문에는 배송비 줄이 둘 이상 있어 어느 줄을 고칠지 정할 수 없습니다. 지출 관리에서 배송비 줄을 하나로 정리한 뒤 다시 묶어 주세요.' }
       const existingShip = shipRows[0] ?? null
+      // 고른 결제수단(없으면 null). 이미 있는 행에 화면이 수단을 안 보냈으면 그 행 수단을 지킨다(종전 동작).
+      const pickedPay = shipPayR?.ok ? shipPayR.pay : null
       if (existingShip) {
-        // 이미 있는 배송비 행은 결제수단을 안 바꾼다. 정산상태도 그 행의 결제수단과 결제구분 전후로 고치는 규칙을 탄다
-        // (갈래가 그대로면 정산완료를 지킨다, 갚을 것이 아니게 되면 정산완료). 종전에는 대표 지출 결제수단으로 새로 계산했다.
-        const shipSettle = settleStatusForEdit({
-          prevPayMethod: existingShip.payMethod, nextPayMethod: existingShip.payMethod,
+        // 정산상태는 그 행의 결제수단과 결제구분 전후로 고치는 규칙을 탄다(갈래가 그대로면 정산완료를 지킨다,
+        // 갚을 것이 아니게 되면 정산완료). 종전에는 대표 지출 결제수단으로 새로 계산했다.
+        const nextPay = pickedPay ?? { payMethod: existingShip.payMethod ?? '계좌이체', financialAccountId: existingShip.financialAccountId, financeName: existingShip.financeName }
+        const shipSettleNext = settleStatusForEdit({
+          prevPayMethod: existingShip.payMethod, nextPayMethod: nextPay.payMethod,
           current: existingShip.settleStatus as SettleStatus,
           isShipping: true, prevShippingType: prevShipType, nextShippingType: shipType,
         }) as SettleStatus
-        await prisma.expense.update({
+        // 착불 줄은 받을 때 낸 돈이라 날짜·귀속월이 그 줄의 사실이다. 대표 지출 값으로 덮지 않는다(신고 a016642e 잠복 결함).
+        const keepDates = shipType === '착불'
+        const updated = await prisma.expense.update({
           where: { id: existingShip.id },
           // 쇼핑몰은 정해졌을 때만 적는다. 미기록 주문이면 배송비 행의 값을 그대로 둔다(null 로 덮지 않는다).
-          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipSettle, memo: shipData.shippingMemo, category: rep.category, date: rep.date, targetMonth: rep.targetMonth, ...(orderChannel ? { channel: rowChannel(orderChannel, existingShip.vendor) } : {}), createdAt: shipCreatedAt },
+          data: {
+            amount: shipData.amount, detail: shipData.detail, settleStatus: shipSettleNext, memo: shipData.shippingMemo, category: rep.category,
+            ...(keepDates ? {} : { date: rep.date, targetMonth: rep.targetMonth, createdAt: shipCreatedAt }),
+            ...(pickedPay ? { payMethod: pickedPay.payMethod, financialAccountId: pickedPay.financialAccountId, financeName: pickedPay.financeName } : {}),
+            ...(orderChannel ? { channel: rowChannel(orderChannel, existingShip.vendor) } : {}),
+          },
         })
+        // 금액·결제수단·계정·결제구분 중 무엇이 바뀌었을 때만 되돌림 조각을 낸다(수정 폼은 묶인 주문을 저장할 때마다 이 길을 탄다).
+        const changed = existingShip.amount !== updated.amount || existingShip.payMethod !== updated.payMethod
+          || existingShip.financialAccountId !== updated.financialAccountId || prevShipType !== shipType
+        if (changed) shipUndo = {
+          orderId, order: { shippingType: prevOrder?.shippingType ?? null, shippingMemo: prevOrder?.shippingMemo ?? null },
+          ship: {
+            id: existingShip.id, created: false,
+            now: { amount: updated.amount, payMethod: updated.payMethod, financialAccountId: updated.financialAccountId, updatedAt: updated.updatedAt.toISOString() },
+            prev: {
+              amount: existingShip.amount, detail: existingShip.detail, payMethod: existingShip.payMethod, financialAccountId: existingShip.financialAccountId,
+              financeName: existingShip.financeName, settleStatus: existingShip.settleStatus, memo: existingShip.memo, category: existingShip.category,
+              date: existingShip.date.toISOString(), targetMonth: existingShip.targetMonth, channel: existingShip.channel, createdAt: existingShip.createdAt.toISOString(),
+            },
+          },
+        }
       } else {
-        await prisma.expense.create({
+        const pay = pickedPay ?? { payMethod: rep.payMethod || '계좌이체', financialAccountId: rep.financialAccountId, financeName: rep.financeName }
+        const made = await prisma.expense.create({
           data: {
             propertyId,
             date:               rep.date,
@@ -2586,25 +2639,68 @@ export async function attachShippingToOrder(input: {
             vendor:             rep.vendor,
             channel:            rowChannel(orderChannel, rep.vendor),   // 같은 결제라 그 주문의 쇼핑몰(구매처와 같은 이름이면 비움, 결정 A)
             memo:               shipData.shippingMemo,
-            payMethod:          rep.payMethod || '계좌이체',
-            financialAccountId: rep.financialAccountId,
-            financeName:        rep.financeName,
-            settleStatus:       shipData.settleStatus,
+            payMethod:          pay.payMethod,
+            financialAccountId: pay.financialAccountId,
+            financeName:        pay.financeName,
+            settleStatus:       shipSettle(pay, shipType),
             orderId,
             isShipping:         true,
             excludeFromInventory: true,
             createdAt:          shipCreatedAt,
           },
         })
+        shipUndo = {
+          orderId, order: { shippingType: prevOrder ? prevOrder.shippingType : null, shippingMemo: prevOrder ? prevOrder.shippingMemo : null },
+          ship: { id: made.id, created: true, now: { amount: made.amount, payMethod: made.payMethod, financialAccountId: made.financialAccountId, updatedAt: made.updatedAt.toISOString() }, prev: null },
+        }
       }
     }
 
     revalidatePath('/finance')
     revalidatePath('/inventory')
-    return { ok: true }
+    return shipUndo ? { ok: true, shipUndo } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 주문 묶기의 배송비 줄 적용취소. 이번 호출이 만든 줄은 지우고, 고친 줄은 직전 값으로 되돌리고, 주문 배송 정보도 직전 값으로.
+// 그 줄이 이번 쓰기 직후 값 그대로일 때만(금액·결제수단·계정·갱신 시각, CAS). 주문 묶기 자체(어느 지출이 묶였나)는 그대로 둔다.
+// 조각은 화면이 들고 온 값이라 그 줄이 이 영업장 배송비 줄이고 그 주문 것인지 다시 본다.
+export async function undoAttachShipping(u: ShipAttachUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const STALE = '그 사이 배송비 줄이 바뀌어 되돌리지 않았습니다. 지출 상세에서 지금 값을 확인해 주세요.'
+    if (!u?.ship || typeof u.orderId !== 'string') return { ok: false, error: STALE }
+    const order = await prisma.expenseOrder.findFirst({ where: { id: u.orderId, propertyId }, select: { id: true } })
+    if (!order) return { ok: false, error: STALE }
+    const okTypes = (v: string | null) => v === null || (SHIPPING_TYPES as readonly string[]).includes(v)
+    if (!okTypes(u.order.shippingType)) return { ok: false, error: STALE }
+    const s = u.ship
+    const where = {
+      id: s.id, propertyId, isShipping: true, orderId: u.orderId, amount: s.now.amount,
+      payMethod: s.now.payMethod, financialAccountId: s.now.financialAccountId, updatedAt: new Date(s.now.updatedAt),
+    }
+    const p = s.prev
+    if (p && p.financialAccountId && !(await prisma.financialAccount.findFirst({ where: { id: p.financialAccountId, propertyId }, select: { id: true } }))) return { ok: false, error: STALE }
+    await prisma.$transaction(async tx => {
+      const r = s.created
+        ? await tx.expense.deleteMany({ where })
+        : await tx.expense.updateMany({ where, data: {
+            amount: p!.amount, detail: p!.detail, payMethod: p!.payMethod, financialAccountId: p!.financialAccountId, financeName: p!.financeName,
+            settleStatus: p!.settleStatus === 'UNSETTLED' ? 'UNSETTLED' : 'SETTLED', memo: p!.memo, category: p!.category,
+            date: new Date(p!.date), targetMonth: p!.targetMonth, channel: p!.channel, createdAt: new Date(p!.createdAt),
+          } })
+      if (r.count !== 1) throw new Error(STALE)
+      await tx.expenseOrder.update({ where: { id: u.orderId }, data: { shippingType: u.order.shippingType, shippingMemo: u.order.shippingMemo } })
+    })
+    revalidatePath('/finance'); revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 

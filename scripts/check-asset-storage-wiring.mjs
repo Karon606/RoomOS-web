@@ -197,7 +197,7 @@ must(AC, ac, null, [
   [/hasStores \? \(/, '위치가 0곳일 때 보관 위치 UI 를 숨기는 갈래가 없다'],
   [/const defStore = defaultStorageId\(storages\)/, '미리 고르기가 정본(기본 창고 하나일 때만)이 아니다'],
   [/setRcv\(\{ it, qty: q0, store: defStore \?\? ''/, '수령 창이 기본 창고를 미리 골라 두지 않는다'],
-  [/void receiveWithPlan\(it, qty, storeId\)/, '수령 창 보관 위치가 수령에 안 실린다'],
+  [/void receiveWithPlan\(it, qty, storeId(, cod)?\)/, '수령 창 보관 위치가 수령에 안 실린다'],
   [/storedLocationId: freeForm\.store \|\| null/, '무상 입수가 보관 위치를 안 싣는다'],
   [/target: \{ kind: 'storage', id: st\.id \}/, '선택 알약 보관 위치 지정이 서버 보관 대상을 안 쓴다'],
   [/<SectionHeader marker=\{g\.name \? <PinMarker \/> : undefined\}\s*name=\{g\.name \? <span className="break-keep">\{g\.name\}<\/span> : STORE_UNKNOWN_HEAD\}/, "보관 위치 묶음 머리가 정본 SectionHeader 가 아니거나 '보관 위치 미정' 머리에 마커·낮춘 색이 남았다(웹디자이너 패스)"],

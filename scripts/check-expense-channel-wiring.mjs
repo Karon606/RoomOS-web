@@ -58,7 +58,8 @@ must(FA, fa, 'addExpense', [
 {
   // 별도 배송비 행(합배송)도 같은 결제라 같은 쇼핑몰이다. 그 create 블록 안에 쇼핑몰 칸이 있어야 한다.
   const b = region(fa, 'addExpense') ?? ''
-  const at = b.indexOf('const shippingCreate = isOrderMode')
+  // 배송비 줄은 금액이 있을 때만 만든다(착불 미기록, 2026-11-02). 선언 머리만 찾는다.
+  const at = b.indexOf('const shippingCreate =')
   const sc = at < 0 ? '' : b.slice(at, b.indexOf('if (multiItems) {', at))
   if (!/\n\s+channel:\s+rowChannel\(channel, vendor \|\| null\),/.test(sc)) violations.push(`${FA} addExpense. 별도 배송비 행이 쇼핑몰을 안 싣는다(구매처와 같은 이름이면 비움까지)`)
 }

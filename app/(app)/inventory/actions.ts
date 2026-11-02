@@ -54,6 +54,7 @@ import {
 import { trackedItemDeleteSnapshot, restoreTrackedItemTx, includedExpenseWhere, retireTrackedItemIfOrphan, readCategoryMove, categoryMoveSigningAvailable, CARD_MOVE_STALE, signCardSplit, readCardSplit, type CategoryMoveToken, type CardSplitUndo, RESTORE_TRACKED_ITEM_FOREIGN, RESTORE_TRACKED_ITEM_CLASH, type TrackedItemDeleteUndo } from './trackedItemSnapshot'
 // 소모품 수령 취소 정본(판정·쓰기). 비품 전환도 같은 정본을 탄다.
 import { planReceiptCancel, applyReceiptCancel, type ReceiptCancelUndo } from './receiptCancel'
+import { codAskOrderIds, codShipCreateData, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
 // 적용취소 토큰 서명 정본(현금영수증과 한 벌, 용도 domain 으로 가른다). 검수 N-1.
 import { signUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 저장 규칙 정본(받기 전 비품의 자리는 배정 예정 호실뿐). 재고 제외·포함이 비품 여부를 뒤집을 때 쓴다(검수 R-1).
@@ -283,7 +284,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, channel: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocationId: true, receivedLocation: { select: { name: true } } },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, channel: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocationId: true, receivedLocation: { select: { name: true } }, orderId: true },
     }),
     // 목록(overview)과 같은 헬퍼 한 벌 — 카드와 상세의 단위 표시가 갈라지지 않게.
     resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
@@ -292,6 +293,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     itemRecordCounts(propertyId, item),
   ])
 
+  // 받기 전 구매 중 착불 배송비를 물을 주문(미기록 착불 · 첫 수령, lib/codShipping). 수령 확인 창이 한 번 묻는다.
+  const codAsk = await codAskOrderIds(propertyId, purchases.filter(p => !p.receivedAt).map(p => p.orderId))
   const timeline: TimelineEntry[] = [
     ...checks.map(c => ({
       type: 'check' as const,
@@ -334,6 +337,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       amount: p.amount, vendor: p.vendor, channel: p.channel, memo: p.memo, receivedAt: p.receivedAt,
       brand: p.brand, productName: p.productName,
       receivedLocationName: p.receivedLocationId ? (locPaths.pathName(p.receivedLocationId) ?? p.receivedLocation?.name ?? null) : null,
+      codAsk: !p.receivedAt && !!p.orderId && codAsk.has(p.orderId),
     })),
   ].sort((a, b) => {
     // 모든 entry 를 '실제 발생 시각'(시:분 포함) 단일 기준으로 정렬한다.
@@ -2369,7 +2373,7 @@ export async function updateExpenseFromInventory(id: string, data: {
   // 수량이 빈 추적 구매에 수령일을 넣을 때의 도착 수량(confirmReceipt fillQty 로 그대로 간다).
   qtyValue?: number
 }): Promise<
-  | { ok: true; cancelUndo?: ReceiptCancelUndo; received?: { qtyFill?: ReceiptQtyFill }; channelUndo?: ExpenseFieldUndo }
+  | { ok: true; cancelUndo?: ReceiptCancelUndo; received?: { qtyFill?: ReceiptQtyFill }; channelUndo?: ExpenseFieldUndo; codShipKept?: boolean }
   // orderSplit: 이 저장이 한 주문 안 쇼핑몰을 가른다. 화면이 [주문 전체에 적용 / 취소] 로 묻고 channelToOrder 로 다시 보낸다.
   | { ok: false; error: string; orderSplit?: { count: number; names: string[]; unset: number } }
 > {
@@ -2447,7 +2451,9 @@ export async function updateExpenseFromInventory(id: string, data: {
 
     revalidatePath('/inventory')
     revalidatePath('/finance')   // 지출 페이지 경로는 /finance ('/expenses' 는 존재하지 않는 경로였음)
-    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}), ...(received ? { received } : {}), ...(channelUndo ? { channelUndo } : {}) }
+    // 수령을 무른 착불 주문에 배송비 줄이 남았으면 그 사실을 화면이 말한다(지우지 않는다, 돈은 이미 냈을 수 있다).
+    const codShipKept = cancelUndo ? await codShipKeptAfterCancel(propertyId, (await prisma.expense.findFirst({ where: { id, propertyId }, select: { orderId: true } }))?.orderId ?? null) : false
+    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}), ...(received ? { received } : {}), ...(channelUndo ? { channelUndo } : {}), ...(codShipKept ? { codShipKept } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4212,7 +4218,9 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 // 지출 행을 [수령분]+[대기 잔여]로 분할(금액 비례, allocationGroupId로 지출목록 한 줄 유지 — 배정 분할과 동일 선례).
 // fillQty. 구매 수량이 빈 추적 구매의 도착 수량. 그 값이 곧 구매 수량이 되어 수령과 한 트랜잭션에 적힌다.
 //   수량이 끝내 비면 거부한다(유령수령 봉합, 판정 정본 ./receiptQtyGate). 적용취소 조각(qtyFill)을 돌려준다.
-export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number, fillQty?: number): Promise<{ ok: true; undo?: PartialReceiptUndo; qtyFill?: ReceiptQtyFill } | { ok: false; error: string }> {
+// codShip. 그 주문의 첫 수령에서 적은 착불 배송비(신고 a016642e). 금액이 있으면 배송비 줄을 수령과 한 트랜잭션에 만들고
+//   그 줄을 함께 지우는 조각(codShipUndo)을 돌려준다. 물을 주문이 아니면(이미 적혔거나 착불이 아니면) 거부한다(./finance/shipPay).
+export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number, fillQty?: number, codShip?: CodShipInput | null): Promise<{ ok: true; undo?: PartialReceiptUndo; qtyFill?: ReceiptQtyFill; codShipUndo?: CodShipUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -4263,6 +4271,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     if (locationId && item && !linkedIds.has(locationId)) {
       return { ok: false, error: '이 품목의 보관 위치가 아닙니다. 화면을 새로고침한 뒤 다시 선택해 주세요.' }
     }
+
+    // 착불 배송비 줄. 부분 수령 분할보다 먼저 본다(거부될 때 쪼개진 지출 행만 남으면 안 된다). 분할 조각도 같은 주문·같은 머리 값이다.
+    const codMade = codShip ? await codShipCreateData(propertyId, expense, codShip, new Date()) : null
+    if (codMade && !codMade.ok) return codMade
+    const codCreate = codMade?.ok ? codMade.data : null
 
     // 채울 수량의 단위·세부. 단위는 구매에 적힌 것이 먼저, 없으면 품목 카드 단위(지어내지 않는다).
     let qtyFill: ReceiptQtyFill | null = null
@@ -4426,7 +4439,7 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       }
     }
 
-    await prisma.$transaction([
+    const rcvTx = await prisma.$transaction([
       prisma.expense.update({
         where: { id: expense.id },
         data: {
@@ -4436,7 +4449,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         },
       }),
       ...(autoCheck ? [prisma.stockCheck.create({ data: autoCheck })] : []),
+      // 착불 배송비 줄도 같은 트랜잭션(수령만 되고 배송비가 빠지거나 그 반대가 없다).
+      ...(codCreate ? [prisma.expense.create({ data: codCreate })] : []),
     ])
+    const codShipUndo = codCreate ? codShipUndoOf(rcvTx[rcvTx.length - 1] as { id: string; orderId: string | null; amount: number; updatedAt: Date }) : null
+    if (codCreate) revalidatePath('/finance')
 
     if (partialUndo) {
       partialUndo.receivedAtMs = receivedAt.getTime()
@@ -4449,7 +4466,8 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     // (그때 수령 취소는 수령만 무르고 채운 수량은 남는다. 위조 조각으로 수량·세부를 쓰는 길보다 낫다).
     const fillSig = qtyFill ? signUndoBody(QTY_FILL_DOMAIN, propertyId, canonicalQtyFill(qtyFill)) : null
     const fillOut = qtyFill && fillSig !== null ? { ...qtyFill, ...(fillSig ? { sig: fillSig } : {}) } : null
-    return partialUndo ? { ok: true, undo: partialUndo } : fillOut ? { ok: true, qtyFill: fillOut } : { ok: true }
+    const codOut = codShipUndo ? { codShipUndo } : {}
+    return partialUndo ? { ok: true, undo: partialUndo, ...codOut } : fillOut ? { ok: true, qtyFill: fillOut, ...codOut } : { ok: true, ...codOut }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -4474,7 +4492,8 @@ export type PartialReceiptUndo = {
 
 // 부분 수령 적용취소 — 수령 분할행과 자동 점검을 지우고 원본 행을 분할 직전 상태로 복원.
 // 그 사이 후속 기록(점검·재수령·자산 배정·행 수정)이 끼면 장부 왜곡을 막기 위해 거부한다(§4 설계+적대검증 2026-07-14).
-export async function undoPartialReceipt(undo: PartialReceiptUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+// codShip 은 그 수령이 만든 착불 배송비 줄 조각이다. 있으면 같은 트랜잭션에서 지운다(그 사이 바뀌었으면 전체 거부).
+export async function undoPartialReceipt(undo: PartialReceiptUndo, codShip?: CodShipUndo | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -4515,6 +4534,7 @@ export async function undoPartialReceipt(undo: PartialReceiptUndo): Promise<{ ok
       if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
     }
     await prisma.$transaction(async tx => {
+      if (codShip) await deleteCodShipTx(tx, propertyId, codShip, recv.orderId)
       await tx.stockCheck.deleteMany({ where: { sourceExpenseId: undo.receivedId } })
       await tx.expense.delete({ where: { id: undo.receivedId } })
       // 기대값 포함 조건부 복원(CAS) — 가드 조회와 커밋 사이의 경합 봉합(적대검증 권고 4)
@@ -5301,26 +5321,38 @@ export type { ReceiptCancelUndo } from './receiptCancel'
 // 수령 취소 핵심 — undoConfirmReceipt(수령 취소 버튼)와 updateExpenseFromInventory(수령일 비움)가
 // 같은 가드·같은 조정을 타야 한다. 한쪽만 막으면 다른 쪽이 뒷문이 된다(클래스 봉합).
 // 가드(실측 머지·이후 점검·조정 adjustFollowing·채운 수량 서명)는 planReceiptCancel, 쓰기는 applyReceiptCancel 이다.
+// codShip 은 수령 직후 토스트가 들고 있는 착불 배송비 줄 조각이다. 있으면 수령 취소와 한 트랜잭션에서 그 줄을 지운다.
 async function cancelReceiptCore(
-  expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill },
+  expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill; codShip?: CodShipUndo | null },
 ): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
   const p = await planReceiptCancel(expenseId, propertyId, opts)
   if (!p.ok) return p
   if (!p.plan) return { ok: true }
   const plan = p.plan
-  const undo = await prisma.$transaction(tx => applyReceiptCancel(tx, plan))
+  const codShip = opts?.codShip ?? null
+  const orderId = codShip ? (await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { orderId: true } }))?.orderId ?? null : null
+  const undo = await prisma.$transaction(async tx => {
+    const u = await applyReceiptCancel(tx, plan)
+    if (codShip) await deleteCodShipTx(tx, propertyId, codShip, orderId)
+    return u
+  })
   return { ok: true, undo }
 }
 
+// codShipKept. 배송비 줄 조각 없이(토스트가 지난 뒤) 수령을 무른 착불 주문에 배송비 줄이 남았으면 참. 화면은 남았다고 말한다(지우지 않는다).
 export async function undoConfirmReceipt(
-  expenseId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill },
-): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
+  expenseId: string, opts?: { adjustFollowing?: boolean; qtyFill?: ReceiptQtyFill; codShip?: CodShipUndo | null },
+): Promise<{ ok: true; undo?: ReceiptCancelUndo; codShipKept?: boolean } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const r = await cancelReceiptCore(expenseId, propertyId, opts)
     if (!r.ok) return r
     revalidatePath('/inventory'); revalidatePath('/finance')
+    if (!opts?.codShip) {
+      const oid = (await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { orderId: true } }))?.orderId ?? null
+      if (await codShipKeptAfterCancel(propertyId, oid)) return { ...r, codShipKept: true }
+    }
     return r
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

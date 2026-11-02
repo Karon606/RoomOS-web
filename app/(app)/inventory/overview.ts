@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
+import { codAskOrderIds } from '@/app/(app)/finance/shipPay'
 import { indexLocations } from './locationPaths'
 // 열린 링크 판정 정본(품목 숨김 + 위치 사용 중지 두 축).
 import { isOpenLink } from '@/lib/locationOpen'
@@ -258,7 +259,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         receivedAt: null,
         excludeFromInventory: false,
       },
-      select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
+      select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true, orderId: true },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     }),
     // 숨김 판정용 배치 입수·폐기 — 마지막 점검 이후 위치별 잔량 변화를 N+1 없이 계산.
@@ -292,6 +293,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       orderBy: { date: 'desc' },
     }),
   ])
+  // 수령 대기 구매 중 받을 때 착불 배송비를 물을 주문(미기록 착불 · 첫 수령, lib/codShipping). 대기 구매가 주문에 묶였을 때만 한 번 읽는다.
+  const codAsk = await codAskOrderIds(propertyId, allPending.map(p => p.orderId))
   const addsByItem = new Map<string, typeof allAdditions>()
   for (const a of allAdditions) { const arr = addsByItem.get(a.trackedItemId) ?? []; arr.push(a); addsByItem.set(a.trackedItemId, arr) }
   const dispByItem = new Map<string, typeof allDisposals>()
@@ -691,6 +694,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         amount: p.amount,
         vendor: p.vendor,
         memo: p.memo,
+        orderId: p.orderId,
+        codAsk: !!p.orderId && codAsk.has(p.orderId),
       }))
 
     return {

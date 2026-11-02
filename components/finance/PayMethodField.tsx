@@ -8,14 +8,15 @@
 // 지금 값이 목록에 없으면(목록에서 뺀 옛 수단) 그 글자를 맨 앞에 세운다. 안 세우면 select 가 첫 항목을 보여 주는데 저장은 옛 값이라
 // 화면과 저장이 갈린다.
 
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { accName, accountTypesFor } from '@/lib/payMethodOptions'
+import { SHIP_PAY_SAME } from '@/lib/codShipping'
 
 export type PayAccount = { id: string; type: string; brand: string; alias: string | null }
 
 const ACCOUNT_LABEL: Record<string, string> = { BANK_ACCOUNT: '이체 계좌', CREDIT_CARD: '카드 선택', PREPAID: '선불 계정' }
 
-export function PayMethodField({ methods, accounts, payMethod, accountId, onChange, dense = false, disabled = false }: {
+export function PayMethodField({ methods, accounts, payMethod, accountId, onChange, dense = false, disabled = false, label = '결제수단', sameLabel, methodCaption }: {
   methods: string[]
   accounts: PayAccount[]
   payMethod: string
@@ -24,12 +25,18 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
   /** 행 안 촘촘한 폼(완료 처리). 라벨이 칸 왼쪽에 서고 글자가 12px 다. */
   dense?: boolean
   disabled?: boolean
+  /** 수단 칸 라벨. 배송비 행은 '배송비 결제수단'(lib/codShipping SHIP_PAY_LABEL). */
+  label?: string
+  /** 있으면 첫 선택지로 '구매와 같은 결제수단 (…)' 을 세운다. 값은 SHIP_PAY_SAME 이고 계정 칸은 서지 않는다(머리 계정을 쓴다). */
+  sameLabel?: string
+  /** 결제수단 칸 바로 아래 한 줄(기본값을 왜 그렇게 뒀는지 등). 칸이 aria-describedby 로 가리킨다(§27.8). 기본형만. */
+  methodCaption?: ReactNode
 }) {
   const uid = useId()
-  const options = payMethod && !methods.includes(payMethod) ? [payMethod, ...methods] : methods
+  const options = payMethod && payMethod !== SHIP_PAY_SAME && !methods.includes(payMethod) ? [payMethod, ...methods] : methods
   // 이미 있는 지출의 결제수단이 비어 있으면 빈 칸으로 보인다(고르기 전에는 아무것도 저장하지 않는다, 독립 검수 B1).
   const blank = payMethod === ''
-  const types = payMethod ? accountTypesFor(payMethod, accounts) : null
+  const types = payMethod && payMethod !== SHIP_PAY_SAME ? accountTypesFor(payMethod, accounts) : null
   const pickable = types ? accounts.filter(a => types.includes(a.type)) : []
   const accLabel = types ? ACCOUNT_LABEL[types[0]] : ''
 
@@ -38,10 +45,11 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-          <label htmlFor={`${uid}-m`} className="w-14 shrink-0">결제수단</label>
+          <label htmlFor={`${uid}-m`} className="w-14 shrink-0">{label}</label>
           <select id={`${uid}-m`} value={payMethod} disabled={disabled}
             onChange={e => onChange(e.target.value, '')} className={cls}>
             {blank && <option value="">비어 있음</option>}
+            {sameLabel && <option value={SHIP_PAY_SAME}>{sameLabel}</option>}
             {options.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
@@ -63,12 +71,14 @@ export function PayMethodField({ methods, accounts, payMethod, accountId, onChan
   return (
     <>
       <div className="space-y-1.5">
-        <label htmlFor={`${uid}-m`} className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
-        <select id={`${uid}-m`} value={payMethod} disabled={disabled}
+        <label htmlFor={`${uid}-m`} className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+        <select id={`${uid}-m`} value={payMethod} disabled={disabled} aria-describedby={methodCaption ? `${uid}-mc` : undefined}
           onChange={e => onChange(e.target.value, '')} className={cls}>
           {blank && <option value="">비어 있음</option>}
+          {sameLabel && <option value={SHIP_PAY_SAME}>{sameLabel}</option>}
           {options.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
+        {methodCaption && <p id={`${uid}-mc`} className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{methodCaption}</p>}
       </div>
       {pickable.length > 0 && (
         <div className="space-y-1.5">

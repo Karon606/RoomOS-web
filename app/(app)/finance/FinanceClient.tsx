@@ -19,7 +19,7 @@ import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, undoMergeExpensesIntoOrder, findOrderByExternalNo,
+  addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, undoAttachShipping, detachShippingFromOrder, mergeExpensesIntoOrder, undoMergeExpensesIntoOrder, findOrderByExternalNo,
   batchUpdateExpenses, undoBatchUpdateExpenses, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -83,6 +83,12 @@ import { roomChipText, roomsLabel } from './allocPlaceLabel'
 import { plannedRoomsMeta, SEP } from '@/app/(app)/inventory/assets/receiptPlacement'
 import { storedPlaceLabel } from '@/app/(app)/inventory/assets/storagePlace'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { PayMethodField } from '@/components/finance/PayMethodField'
+import {
+  SHIP_PAY_SAME, SHIP_PAY_LABEL, SHIP_PAY_COD_CAPTION, COD_AMOUNT_PLACEHOLDER, COD_AMOUNT_CAPTION, COD_UNRECORDED,
+  defaultShipPay, sameShipPayLabel, isCodShipPending, type ShipPayChoice,
+} from '@/lib/codShipping'
+import { closeCodShipping, undoCloseCodShipping } from './shipPayActions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
 import { trackSave, pushToast, withSave, humanError } from '@/lib/saveStatus'
@@ -141,7 +147,8 @@ type Expense = {
   allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
   excludeFromInventory: boolean   // 재고 계산 제외 — 상세에서 '다시 포함' 제공
   receivedAt: Date | null   // 수령완료 여부 — 수량 정정·삭제의 재고 전파 물음 대상 판정(점보롤 백로그 1번)
-  order: { id: string; code: string; externalOrderNo?: string | null; shippingType: string | null; shippingMemo: string | null } | null
+  // shipCount 는 그 주문의 배송비 줄 수(서버가 센다). 착불인데 0 이면 '배송비 미기록'(lib/codShipping).
+  order: { id: string; code: string; externalOrderNo?: string | null; shippingType: string | null; shippingMemo: string | null; shipCount?: number } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
 
@@ -2092,6 +2099,8 @@ export default function FinanceClient({
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('선불')
   const [attachShipMemo, setAttachShipMemo] = useState('')
   const [attachShipSiblings, setAttachShipSiblings] = useState<string[]>([])  // 함께 묶을 다른 지출 id
+  // 배송비 줄 자신의 결제수단(신고 6ab4f868). 기본값은 결제구분이 정한다(착불 = 계좌이체, 그 밖 = 구매와 같은 수단).
+  const [attachShipPay, setAttachShipPay] = useState<ShipPayChoice>(defaultShipPay('선불'))
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
   const [addExpAccId, setAddExpAccId]     = useState('')
   const [addExpAccName, setAddExpAccName] = useState('')
@@ -2137,6 +2146,7 @@ export default function FinanceClient({
   const [addOrderShipping, setAddOrderShipping] = useState<number | undefined>(undefined)
   const [addOrderShipType, setAddOrderShipType] = useState<'선불' | '착불' | '신용'>('선불')
   const [addOrderShipMemo, setAddOrderShipMemo] = useState('')
+  const [addShipPay, setAddShipPay] = useState<ShipPayChoice>(defaultShipPay('선불'))
   const [scanBitmap, setScanBitmap]           = useState<ImageBitmap | null>(null)
   const [scanCropped, setScanCropped]         = useState<{ dataUrl: string; base64: string } | null>(null)
   const [scanOcrPending, setScanOcrPending]   = useState(false)
@@ -2558,7 +2568,7 @@ export default function FinanceClient({
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   // 로컬 미리보기도 함께 비운다. 안 비우면 같은 세션에서 다음 폼을 열었을 때 직전 영수증 이미지가 새 주소를 덮는다.
-  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; userPickedPayRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpChannel(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setAddCardCleared(null); setAddCardSuggest(null); setError('') }
+  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; userPickedPayRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpChannel(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setAddOrderShipType('선불'); setAddShipPay(defaultShipPay('선불')); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setAddCardHint(null); setAddCardCleared(null); setAddCardSuggest(null); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -3276,7 +3286,7 @@ export default function FinanceClient({
         const res = await addExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
         // 로컬 미리보기도 함께 비운다 — 다음 폼에서 직전 영수증 이미지가 새 주소를 덮는 것을 막는다.
-        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpChannel(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpChannel(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setAddOrderShipType('선불'); setAddShipPay(defaultShipPay('선불')); router.refresh()
         if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
         // 귀속월이 날짜의 달과 다를 때만 그 달을 덧붙인다 — 지금 보는 목록에 안 보이는 이유가 된다.
         const savedTm = String(fd.get('targetMonth') ?? '')
@@ -3519,8 +3529,16 @@ export default function FinanceClient({
         if (detailExp && !detailExp.isShipping) {
           if (editShipSeparate) {
             // 배송비 0이면 '주문으로만 묶기'(2건 이상 선택 필요), 0 초과면 배송비 라인도 생성.
-            const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount ?? 0, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
+            const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount ?? 0, shippingType: attachShipType, shippingMemo: attachShipMemo || null, shipPay: attachShipPay })
             if (!sres.ok) { setError(sres.error); pushToast('error', sres.error); return }
+            // 배송비 줄을 만들었거나 금액·결제수단이 바뀌었으면 그 부분만 되돌리는 길(지출 수정은 유지, §16).
+            const su = sres.shipUndo
+            if (su) pushToast('info', su.ship?.created ? '배송비 1건을 기록했습니다' : '배송비 줄을 고쳤습니다', {
+              action: { label: '적용취소', run: () => { void undoAttachShipping(su).then(r => {
+                if (r.ok) { pushToast('info', '배송비 줄을 되돌렸습니다. 지출 수정은 유지됩니다.'); router.refresh() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+            })
           } else if (!editShipSeparate && detailExp.orderId) {
             // 체크 해제 = 묶기 해제(적용취소) — 이전엔 조용한 무동작이라 풀린 줄 알게 만들던 문제
             const dres = await detachShippingFromOrder(detailExp.id)
@@ -3661,6 +3679,24 @@ export default function FinanceClient({
       if (!res.ok) { setAssetError(res.error); return }
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
+  }
+
+  // ── 착불 배송비 미기록(신고 a016642e) ─────────────────────────
+  // 서버가 센 배송비 줄 수가 있을 때만 판정한다(없는 자리에서 '미기록' 이라 말하지 않는다).
+  const codPendingOf = (e: Expense) => !!e.order && typeof e.order.shipCount === 'number' && isCodShipPending(e.order, e.order.shipCount)
+  // '배송비 없었음'. 착불 결제구분을 비워 닫는다. 토스트 [적용취소] 가 다시 '착불 · 배송비 미기록' 으로 돌린다.
+  const closeCodOrder = (orderId: string) => {
+    const release = trackSave()
+    void closeCodShipping(orderId).then(r => {
+      if (!r.ok) { pushToast('error', r.error); return }
+      setDetailExp(null); router.refresh()
+      pushToast('success', '배송비 없음으로 닫았습니다', {
+        action: { label: '적용취소', run: () => { void undoCloseCodShipping(orderId).then(u => {
+          if (u.ok) { pushToast('info', '배송비 미기록으로 되돌렸습니다'); router.refresh() }
+          else pushToast('error', u.error)
+        }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+      })
+    }).catch(() => pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.')).finally(release)
   }
 
   // ── 공통 카드/계정 선택 핸들러 ───────────────────────────────
@@ -4458,7 +4494,7 @@ export default function FinanceClient({
                                   {grp && (item.groupKind === 'order'
                                     ? <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{orderChipText(e, grp)}</span>
                                     : <span className="text-[0.65625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0 whitespace-nowrap">{roomChipText(withPlan(grp))}</span>)}
-                                  {isUnsettled && <span className="text-[0.65625rem] text-[var(--danger-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
+                                  {isUnsettled && <span className="text-[0.65625rem] text-[var(--warning-fg)] font-medium shrink-0 whitespace-nowrap">· 미정산</span>}
                                 </div>
                                 {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능.
                                     고정지출 행만 예외로 작은 캡션을 붙인다(신고 5fa9cf43 결정 E, fixedVendorCaption). */}
@@ -4600,7 +4636,7 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm font-semibold text-[var(--danger-fg)] overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   {e.settleStatus === 'UNSETTLED'
-                                    ? <span className="text-xs text-[var(--danger-fg)] font-medium">미정산</span>
+                                    ? <span className="text-xs text-[var(--warning-fg)] font-medium">미정산</span>
                                     : <span className="text-xs text-[var(--warm-muted)]">정산완료</span>}
                                 </td>
                               </tr>
@@ -5123,7 +5159,7 @@ export default function FinanceClient({
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   {detailExp.vendorBizNo && <DetailRow label="사업자등록번호" value={detailExp.vendorBizNo} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
-                  <DetailRow label="금액"        value={<span className="text-[var(--danger-fg)] font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
+                  <DetailRow label="금액"        value={<span className="text-[var(--danger-fg)] font-semibold"><MoneyDisplay amount={detailExp.amount} prefix={'\u2212'} /></span>} />
                   {/* #1 관리비 묶음: 세부 내역(breakdownJson)이 있으면 펼쳐 표시 */}
                   {detailExp.breakdownJson && (() => {
                     let bd: { name: string; amount: number; isVariable: boolean }[] = []
@@ -5153,7 +5189,8 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)]'}`}>
+                    // 미정산은 오류가 아니라 '아직 갚을 것' 이다. 경고(warning) 트라이어드로 말한다(§04, danger 는 삭제·에러·미수 몫).
+                    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--warning-bg)] text-[var(--warning-fg)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)]'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
@@ -5163,9 +5200,18 @@ export default function FinanceClient({
                       <span className="text-[var(--warm-dark)]">
                         {(() => { const s = orderSummaries.get(detailExp.order!.id); return s ? s.label : detailExp.order!.code })()}
                         {detailExp.order.shippingType && <span className="ml-1 text-[var(--warm-muted)]">· 배송 {detailExp.order.shippingType}</span>}
-                        <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">({detailExp.order.code})</span>
+                        {/* 착불인데 배송비 줄이 없다(받을 때 비워 뒀다). 사실만 말하고 아래 줄에서 닫는 길을 준다(신고 a016642e). */}
+                        <span className="ml-1 whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)]">({detailExp.order.code})</span>
                         {/* 쇼핑몰 주문번호. 낱말 '쇼핑몰' 자리에 그 주문의 쇼핑몰 이름(하나로 모일 때만, lib/expenseChannel externalOrderCaption). */}
                         {(() => { const c = externalOrderCaption(detailExp.order!.externalOrderNo, expenses.filter(x => x.orderId === detailExp.order!.id)); return c ? <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">· {c}</span> : null })()}
+                        {/* 착불인데 배송비 줄이 없다(받을 때 비워 뒀다). 둘째 줄에 사실과 닫는 길을 함께 둔다(320 에서 낱말이 안 쪼개지게, 웹디자이너 패스).
+                            금액을 알면 아래 [수정] 의 주문 묶음에서 적고, 배송비가 없었으면 여기서 닫는다(적용취소 있음). */}
+                        {codPendingOf(detailExp) && (
+                          <span className="mt-1 flex items-center justify-end gap-2 whitespace-nowrap text-[0.65625rem] text-[var(--warm-muted)]">
+                            {COD_UNRECORDED}
+                            {canEditUi && <RowActionBtn onClick={() => closeCodOrder(detailExp.order!.id)}>배송비 없었음</RowActionBtn>}
+                          </span>
+                        )}
                       </span>
                     } />
                   )}
@@ -5298,7 +5344,14 @@ export default function FinanceClient({
                       const shipRow = expenses.find(x => x.orderId === detailExp.order!.id && x.isShipping)
                       setEditShipSeparate(true)
                       setAttachShipAmount(shipRow?.amount)
-                      setAttachShipType((detailExp.order.shippingType as '선불' | '착불' | '신용') ?? '선불')
+                      const st = (detailExp.order.shippingType as '선불' | '착불' | '신용') ?? '선불'
+                      setAttachShipType(st)
+                      // 배송비 줄이 있으면 그 줄의 결제수단(본품과 같으면 '같은 수단'), 없으면 결제구분 기본값.
+                      setAttachShipPay(shipRow
+                        ? ((shipRow.payMethod ?? '') === (detailExp.payMethod ?? '') && (shipRow.financialAccountId ?? '') === (detailExp.financialAccountId ?? '')
+                            ? { payMethod: SHIP_PAY_SAME, accountId: '' }
+                            : { payMethod: shipRow.payMethod ?? '계좌이체', accountId: shipRow.financialAccountId ?? '' })
+                        : defaultShipPay(st))
                       setAttachShipMemo(detailExp.order.shippingMemo ?? '')
                       setAttachShipSiblings([])
                     } else {
@@ -5439,14 +5492,14 @@ export default function FinanceClient({
                   <>
                   <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                     <p className="text-xs font-semibold text-[var(--warm-mid)]">주문 묶음 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
-                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
+                    <label className="flex items-center gap-2 min-h-[44px] -my-2 text-xs text-[var(--warm-dark)] cursor-pointer">
                       <input type="checkbox" checked={editShipSeparate}
                         onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
-                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                        className="w-[22px] h-[22px] shrink-0 accent-[var(--coral)]" />
                       <span><strong>다른 지출과 한 주문으로 묶기</strong> · 같은 날 항목을 골라 한 주문번호로</span>
                     </label>
                     {editShipSeparate && detailExp && (
-                      <div className="pl-5 space-y-2">
+                      <div className="pl-[30px] space-y-2">
                         {/* **고를 항목이 먼저다.** 이게 이 기능의 본체이고 배송비는 딸린 선택지다. */}
                         {(() => {
                           const sibs = expenses.filter(e =>
@@ -5468,9 +5521,9 @@ export default function FinanceClient({
                               </p>
                               <div className="space-y-1 max-h-48 overflow-auto overscroll-contain rounded-lg border border-[var(--warm-border)] bg-[var(--cream-2)] p-1">
                                 {sibs.map(s => (
-                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-[var(--cream)]">
+                                  <label key={s.id} className="flex items-center gap-2 min-h-[44px] text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 rounded-md hover:bg-[var(--cream)]">
                                     <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
-                                      className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
+                                      className="w-[22px] h-[22px] accent-[var(--coral)] shrink-0" />
                                     <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
                                     <span className="text-[var(--warm-muted)] shrink-0">{fmtWon(s.amount)}</span>
                                   </label>
@@ -5479,31 +5532,38 @@ export default function FinanceClient({
                             </div>
                           )
                         })()}
-                        <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">이 주문의 배송비 (없으면 비워두기)</p>
-                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원 (없으면 비워두기)" />
-                        {/* 배송비 결제 방식. 셋 중 하나를 고르는 자리라 세그먼트 정본이다(코랄 채움 금지, §03·§23). */}
+                        {/* 라벨 문법은 바로 아래 '배송비 결제수단' 과 같은 12px/500(§12, 웹디자이너 패스). */}
+                        <p className="text-xs font-medium text-[var(--warm-mid)]">이 주문의 배송비</p>
+                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder={attachShipType === '착불' ? COD_AMOUNT_PLACEHOLDER : '배송비 (없으면 비워 두기)'} />
+                        {/* 배송비 결제 방식. 셋 중 하나를 고르는 자리라 세그먼트 정본이다(코랄 채움 금지, §03·§23). 바꾸면 결제수단 기본값도 따라간다. */}
                         <SegmentedControl<typeof attachShipType> size="sm" ariaLabel="배송비 결제 방식" value={attachShipType}
-                          onChange={setAttachShipType} options={SHIP_TYPE_OPTIONS} />
+                          onChange={t => { setAttachShipType(t); setAttachShipPay(defaultShipPay(t)) }} options={SHIP_TYPE_OPTIONS} />
+                        {/* 배송비 줄 자신의 결제수단(등록 폼과 같은 칸, 신고 6ab4f868). 배송비를 적을 때만 쓰인다. */}
+                        <PayMethodField label={SHIP_PAY_LABEL} methods={effectivePaymentMethods} accounts={financialAccounts}
+                          sameLabel={sameShipPayLabel({ payMethod: editExpMethod, financeName: editExpAccName })}
+                          methodCaption={attachShipType === '착불' && attachShipPay.payMethod === '계좌이체' ? SHIP_PAY_COD_CAPTION : undefined}
+                          payMethod={attachShipPay.payMethod} accountId={attachShipPay.accountId}
+                          onChange={(m, a) => setAttachShipPay({ payMethod: m, accountId: a })} />
                         <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
-                          placeholder="배송 메모 (선택)"
-                          className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+                          placeholder="배송 메모 (선택)" aria-label="배송 메모"
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                         {/* 방향을 가리키는 말('아래에서')을 뺀다 — 목록이 위로 올라와 문장이 틀렸었다. */}
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">고른 항목이 같은 주문번호로 묶입니다. 배송비를 입력하면 배송비 1건도 함께 기록되고(신용은 미정산), 비워두면 묶기만 됩니다. 체크를 풀고 저장하면 묶음이 해제됩니다.</p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">고른 항목이 같은 주문번호로 묶입니다. 배송비를 적으면 배송비 1건도 함께 기록되고, 비워 두면 묶기만 됩니다. 체크를 풀고 저장하면 묶음이 해제됩니다.</p>
                       </div>
                     )}
                   </div>
                   <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                     <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
-                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
+                    <label className="flex items-center gap-2 min-h-[44px] -my-2 text-xs text-[var(--warm-dark)] cursor-pointer">
                       <input type="checkbox" checked={editHasShipping}
                         onChange={e => { setEditHasShipping(e.target.checked); if (e.target.checked) setEditShipSeparate(false); else setEditShipping(undefined) }}
-                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                      <span><strong>이 지출 금액에 합산</strong> · 별도 줄 없이 총액에만 더함</span>
+                        className="w-[22px] h-[22px] shrink-0 accent-[var(--coral)]" />
+                      <span><strong>이 지출 금액에 합산</strong></span>
                     </label>
                     {editHasShipping && (
-                      <div className="pl-5">
-                        <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비 0원" />
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">품목 단가엔 미포함, 총액에만 더해집니다.</p>
+                      <div className="pl-[30px] space-y-1">
+                        <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비" />
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">총액에만 더하고 품목 단가에는 넣지 않습니다.</p>
                       </div>
                     )}
                   </div>
@@ -5816,49 +5876,61 @@ export default function FinanceClient({
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   )}
                 </div>
-                {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일. 서비스·무형이면 숨김 */}
-                {!addIsService && (
+                {/* 배송비. 셋 중 하나를 고르는 자리라 세그먼트 정본이다(§12 상호배타는 체크박스 금지, 종전 체크박스 둘). 서비스·무형이면 숨김.
+                    '별도 지출로' 는 결제구분 다음 줄에 배송비 줄 자신의 결제수단을 묻는다(신고 6ab4f868). 착불은 받을 때 따로 내는 돈이라
+                    기본이 계좌이체이고, 금액을 몰라도 된다(받을 때 묻는다, 신고 a016642e). */}
+                {!addIsService && (() => {
+                  const mode: 'none' | 'include' | 'separate' = addHasShipping ? 'include' : addOrderMode ? 'separate' : 'none'
+                  const pickMode = (m: typeof mode) => {
+                    setAddHasShipping(m === 'include'); setAddOrderMode(m === 'separate')
+                    if (m !== 'include') setAddShipping(undefined)
+                    if (m !== 'separate') setAddOrderShipping(undefined)
+                  }
+                  const cod = addOrderShipType === '착불'
+                  const sendOrder = (addOrderShipping ?? 0) > 0 || cod
+                  return (
                 <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                   <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
-                  <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
-                    <input type="checkbox" checked={addHasShipping}
-                      onChange={e => { setAddHasShipping(e.target.checked); if (e.target.checked) setAddOrderMode(false); else setAddShipping(undefined) }}
-                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    <span><strong>이 지출 금액에 합산</strong> · 별도 줄 없이 총액에만 더함</span>
-                  </label>
-                  {addHasShipping && (
-                    <div className="pl-5">
-                      <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">품목 단가엔 미포함, 총액에만 더해집니다.</p>
+                  <SegmentedControl<typeof mode> size="sm" ariaLabel="배송비 기록 방식" value={mode} onChange={pickMode}
+                    options={[{ value: 'none', label: '없음' }, { value: 'include', label: '금액에 합산' }, { value: 'separate', label: '별도 지출로' }]} />
+                  {mode === 'include' && (
+                    <div className="space-y-1">
+                      <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비" />
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">총액에만 더하고 품목 단가에는 넣지 않습니다.</p>
                     </div>
                   )}
-                  <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
-                    <input type="checkbox" checked={addOrderMode}
-                      onChange={e => { setAddOrderMode(e.target.checked); if (e.target.checked) { setAddHasShipping(false); setAddShipping(undefined) } else setAddOrderShipping(undefined) }}
-                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비가 지출 1건으로 따로 생기고 이 품목들과 주문번호로 묶입니다 (위 &lsquo;배송비&rsquo;는 품목 금액에 합산)</span>
-                  </label>
-                  {addOrderMode && (
-                    <div className="pl-5 space-y-2">
-                      <MoneyInput value={addOrderShipping} onChange={setAddOrderShipping} placeholder="배송비 0원" />
-                      {/* 배송비 결제 방식. 위 주문 묶기 창과 같은 세그먼트 정본(코랄 채움 금지, §03·§23). */}
+                  {mode === 'separate' && (
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <MoneyInput value={addOrderShipping} onChange={v => setAddOrderShipping(v || undefined)} placeholder={cod ? COD_AMOUNT_PLACEHOLDER : '배송비'} />
+                        {cod && <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{COD_AMOUNT_CAPTION}</p>}
+                      </div>
+                      {/* 배송비 결제 방식. 위 주문 묶기 창과 같은 세그먼트 정본(코랄 채움 금지, §03·§23). 바꾸면 결제수단 기본값도 따라간다. */}
                       <SegmentedControl<typeof addOrderShipType> size="sm" ariaLabel="배송비 결제 방식" value={addOrderShipType}
-                        onChange={setAddOrderShipType} options={SHIP_TYPE_OPTIONS} />
+                        onChange={t => { setAddOrderShipType(t); setAddShipPay(defaultShipPay(t)) }} options={SHIP_TYPE_OPTIONS} />
+                      <PayMethodField label={SHIP_PAY_LABEL} methods={effectivePaymentMethods} accounts={financialAccounts}
+                        sameLabel={sameShipPayLabel({ payMethod: addExpMethod, financeName: addExpAccName })}
+                        methodCaption={cod && addShipPay.payMethod === '계좌이체' ? SHIP_PAY_COD_CAPTION : undefined}
+                        payMethod={addShipPay.payMethod} accountId={addShipPay.accountId}
+                        onChange={(m, a) => setAddShipPay({ payMethod: m, accountId: a })} />
                       <input type="text" value={addOrderShipMemo} onChange={e => setAddOrderShipMemo(e.target.value)}
-                        placeholder="배송 메모 (선택)"
-                        className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">배송비가 별도 지출로 기록되고 품목들과 같은 주문번호로 묶입니다. 신용(후불)은 미정산.</p>
-                      {(addOrderShipping ?? 0) > 0 && (
+                        placeholder="배송 메모 (선택)" aria-label="배송 메모"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">배송비가 지출 1건으로 따로 생기고 품목들과 한 주문으로 묶입니다.</p>
+                      {sendOrder && (
                         <>
                           <input type="hidden" name="orderShipping" value={addOrderShipping ?? 0} />
                           <input type="hidden" name="orderShippingType" value={addOrderShipType} />
                           <input type="hidden" name="orderShippingMemo" value={addOrderShipMemo} />
+                          <input type="hidden" name="orderShipPayMethod" value={addShipPay.payMethod} />
+                          <input type="hidden" name="orderShipAccountId" value={addShipPay.payMethod === SHIP_PAY_SAME ? '' : addShipPay.accountId} />
                         </>
                       )}
                     </div>
                   )}
                 </div>
-                )}
+                  )
+                })()}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   {addItems.length > 0

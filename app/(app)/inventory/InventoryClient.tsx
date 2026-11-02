@@ -6,6 +6,8 @@ import { getChannelOptions } from '@/app/(app)/settings/actions'
 import { createPortal } from 'react-dom'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
+import { CodShipField, codShipInitial, type CodShipValue } from '@/components/finance/CodShipField'
+import { COD_SHIP_KEPT } from '@/lib/codShipping'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -121,6 +123,7 @@ import {
 } from './actions'
 // 수령 수량 관문 정본(순수). 화면이 '수량을 물을 구매'를 서버와 같은 셈으로 가린다.
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
+import type { CodShipUndo } from '@/app/(app)/finance/shipPay'
 import { type StorageLocationItem, type StorageLocationNode, type LocationQtyEntry, type MergeDecision, type MergeDecisionRow, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 // 소모 추이 표기 순수층. 진행 중인 달 'N일까지' 와 하루당 비교 캡션(신고 9d26a7ee).
 import { partialMonthTail, perDayCaption, trendWindow, windowSummary, trendCompare, dayViewNote, showsBarValues, bucketReadout, barHeightValue, GRAN_LABEL, type Gran, type SeriesInterval } from './consumptionSeries'
@@ -744,21 +747,23 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   // 용량을 모르는 채로 수령하면 재고에 총량이 아니라 **개수**가 들어간다(주방세제 8,400ml 대신 4).
   // 잔량과 평균 단가가 한꺼번에 틀어지고 소진 예측이 무너진다. 차단이 아니라 되묻는다 —
   // 장부와 실물이 어긋나는 상황은 상시 조건이라 막으면 운영이 멈춘다(HubShortDialog 와 같은 문법).
-  const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string, fills?: Record<string, number>) => {
+  const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string, fills?: Record<string, number>, cods?: Record<string, CodShipValue>) => {
     const ok = await confirmDialog({
       title: '낱개 용량이 비어 있습니다. 그대로 수령할까요?',
       message: `${label}의 낱개 용량을 몰라 재고에는 ${withParticle(qtyText, '으로/로')} 들어갑니다.\n지출에서 용량을 넣으면 총량이 다시 계산됩니다.`,
       level: 'caution', confirmLabel: '그대로 수령',
     })
-    if (ok) handleQuickReceive(key, expenseIds, fills)
+    if (ok) handleQuickReceive(key, expenseIds, fills, cods)
   }
 
   // 구매 수량이 빈 구매가 섞인 묶음. 카드 안에서 도착 수량을 먼저 받는다(형제 문법: 비품 수령 대기의 '몇 개 도착?',
   // 품목 상세 구매 카드의 '도착 수량'). 수량 없이 받으면 자동 점검이 안 생겨 유령수령이 된다(서버도 거부한다).
   // vals 는 구매 id 별 입력 글자, bad 는 빈 칸 id(그 칸 바로 아래 인라인 오류, §27.2 검증=인라인, 웹디자이너 패스 D14).
-  const [qtyAsk, setQtyAsk] = useState<{ key: string; vals: Record<string, string>; bad: string[] } | null>(null)
+  // cod 는 그 묶음에서 착불 배송비를 물을 주문별 입력(주문 id 별, lib/codShipping). 수량을 안 물어도 이 칸 때문에 같은 자리가 열린다.
+  const [qtyAsk, setQtyAsk] = useState<{ key: string; vals: Record<string, string>; bad: string[]; cod: Record<string, CodShipValue> } | null>(null)
 
-  const handleQuickReceive = (key: string, expenseIds: string[], fills?: Record<string, number>) => {
+  // cods 는 구매 id 별 착불 배송비(그 주문의 첫 구매에만 싣는다). 금액이 빈 칸은 싣지 않는다.
+  const handleQuickReceive = (key: string, expenseIds: string[], fills?: Record<string, number>, cods?: Record<string, CodShipValue>) => {
     setReceivingKey(key)
     const release = trackSave()
     // 같은 품목 다건은 순차 처리 — 각 수령이 허브에 자동 배치(점검 생성)되므로 동시 실행하면
@@ -767,10 +772,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       let bad: { ok: false; error: string } | undefined
       // 채운 수량의 적용취소 조각. 수령 취소가 수량도 원래 빈 값으로 함께 돌린다.
       const qtyFills = new Map<string, ReceiptQtyFill>()
+      // 착불 배송비 줄 조각. 수령 취소가 그 줄을 같은 트랜잭션에서 함께 지운다.
+      const codUndos = new Map<string, CodShipUndo>()
       for (const id of expenseIds) {
-        const r = await confirmReceipt(id, undefined, undefined, fills?.[id])
+        const c = cods?.[id]
+        const r = await confirmReceipt(id, undefined, undefined, fills?.[id], c && (c.amount ?? 0) > 0 ? { amount: c.amount!, payMethod: c.payMethod, accountId: c.accountId || null } : null)
         if (!r.ok) { bad = r as { ok: false; error: string }; break }
         if (r.qtyFill) qtyFills.set(id, r.qtyFill)
+        if (r.codShipUndo) codUndos.set(id, r.codShipUndo)
       }
       if (bad) pushToast('error', bad.error)
       else {
@@ -778,8 +787,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         setReceivedIds(prev => new Set([...prev, ...expenseIds]))   // 즉시 숨김 — refresh 대기 없이
         router.refresh()
         pushToast('success', '수령 확인 완료', {
+          ...(codUndos.size ? { detail: '착불 배송비 1건도 지출에 기록했습니다.' } : {}),
           action: { label: '수령 취소', run: () => { void (async () => {
-            for (const id of [...expenseIds].reverse()) { const f = qtyFills.get(id); const r = await undoConfirmReceipt(id, f ? { qtyFill: f } : undefined); if (!r.ok) { pushToast('error', r.error); return } }
+            for (const id of [...expenseIds].reverse()) { const f = qtyFills.get(id); const cs = codUndos.get(id); const r = await undoConfirmReceipt(id, (f || cs) ? { ...(f ? { qtyFill: f } : {}), ...(cs ? { codShip: cs } : {}) } : undefined); if (!r.ok) { pushToast('error', r.error); return } }
             setReceivedIds(prev => { const n = new Set(prev); for (const id of expenseIds) n.delete(id); return n })
             pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
             router.refresh()
@@ -1135,6 +1145,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               {groups.map(g => {
                 // 구매 수량이 빈 구매. 받기 전에 도착 수량을 묻는다(판정 정본 receiptQtyGate.qtyMissing, 서버와 같은 셈).
                 const missing = g.items.filter(f => qtyMissing(f.p.qtyValue))
+                // 착불 배송비를 물을 주문(미기록 착불 · 첫 수령). 주문마다 한 칸이고, 받을 때 그 주문의 첫 구매에 싣는다.
+                const codOrders = [...new Set(g.items.filter(f => f.p.codAsk && f.p.orderId).map(f => f.p.orderId!))]
+                const codFirst = (oid: string) => g.items.find(f => f.p.orderId === oid)!
                 // 채운 수량을 넣은 수량. 용량 확인창 문장이 '0개로 들어갑니다'라고 거짓말하지 않게 같은 셈으로 다시 센다.
                 const qtyOf = (f: (typeof g.items)[number], fills?: Record<string, number>) => fills?.[f.p.id] ?? (f.p.qtyValue || 0)
                 // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
@@ -1163,9 +1176,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 const expanded = pendExpanded.has(g.key)
                 const asking = qtyAsk?.key === g.key
                 // 받기. 용량이 빈 묶음은 종전처럼 '그대로 수령' 확인창을 거친다(채운 수량을 넣어 센 문장으로).
-                const receive = (fills?: Record<string, number>) => {
-                  if (specMissing) void confirmQuickReceive(g.key, ids, g.label, qtyLabelWith(fills), fills)
-                  else handleQuickReceive(g.key, ids, fills)
+                const receive = (fills?: Record<string, number>, cods?: Record<string, CodShipValue>) => {
+                  if (specMissing) void confirmQuickReceive(g.key, ids, g.label, qtyLabelWith(fills), fills, cods)
+                  else handleQuickReceive(g.key, ids, fills, cods)
                 }
                 const submitQty = () => {
                   const fills: Record<string, number> = {}
@@ -1177,7 +1190,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   }
                   // 빈 칸마다 그 칸 아래 오류를 세우고 첫 빈 칸으로 포커스를 옮긴다(여러 칸이면 어느 칸인지 말해야 한다).
                   if (bad.length) { setQtyAsk(q => q && { ...q, bad }); document.getElementById(`rcvqty-${bad[0]}`)?.focus(); return }
-                  receive(fills)
+                  const cods: Record<string, CodShipValue> = {}
+                  for (const oid of codOrders) { const v = qtyAsk?.cod[oid]; if (v && (v.amount ?? 0) > 0) cods[codFirst(oid).p.id] = v }
+                  receive(fills, cods)
                 }
                 return (
                   <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
@@ -1210,7 +1225,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         {/* 수량을 묻는 중에는 아래 줄의 '수령 확인'이 주 동작이다. 같은 버튼을 둘 세우지 않되 **자리는 남긴다**
                             (웹디자이너 패스 1). 머리 버튼이 사라지면 '합치기'가 오른쪽으로 밀려 막 누른 손가락 밑에 온다.
                             보이지도 눌리지도 읽히지도 않게 하고(invisible·disabled·tabIndex -1·aria-hidden) 폭만 지킨다. */}
-                        <button type="button" onClick={() => { if (missing.length > 0) setQtyAsk({ key: g.key, vals: {}, bad: [] }); else receive() }} disabled={asking || receivingKey === g.key}
+                        <button type="button" onClick={() => { if (missing.length > 0 || codOrders.length > 0) setQtyAsk({ key: g.key, vals: {}, bad: [], cod: Object.fromEntries(codOrders.map(o => [o, codShipInitial()])) }); else receive() }} disabled={asking || receivingKey === g.key}
                           aria-hidden={asking || undefined} tabIndex={asking ? -1 : undefined}
                           className={`min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40${asking ? ' invisible' : ''}`}>
                           {receivingKey === g.key ? '처리 중' : '수령 확인'}
@@ -1222,7 +1237,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         묶음 안 빈 구매만 칸을 세운다. 적은 수량이 곧 그 구매의 수량이 되어 지출에도 남는다. */}
                     {asking && (
                       <div className="mt-2 pt-2 border-t border-[var(--warm-border)]">
-                        <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">수량 미기록 구매입니다. 적은 수량이 구매 수량이 됩니다.</p>
+                        {missing.length > 0 && <p className="text-[0.6875rem] text-[var(--warm-muted)] mb-1.5">수량 미기록 구매입니다. 적은 수량이 구매 수량이 됩니다.</p>}
                         {missing.map(f => (
                           <div key={f.p.id} className="mb-2">
                             <p className={EDIT_LABEL_CLS}>도착 수량{missing.length > 1 && <span className="font-normal text-[var(--warm-muted)]"> {fmtMDYearIfOther(f.p.date)}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>}</p>
@@ -1238,6 +1253,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             {qtyAsk?.bad.includes(f.p.id) && <p id={`rcvqty-err-${f.p.id}`} className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">도착 수량을 적어 주세요.</p>}
                           </div>
                         ))}
+                        {/* 착불 배송비(선택). 그 주문의 첫 수령에서만 선다. 비품 수령 창·품목 상세 구매 카드와 같은 칸·같은 문장(CodShipField). */}
+                        {codOrders.map(oid => {
+                          const f = codFirst(oid)
+                          return (
+                            <div key={oid} className="mb-2">
+                              <CodShipField labelClassName={EDIT_LABEL_CLS} disabled={receivingKey === g.key}
+                                suffix={codOrders.length > 1 ? `${fmtMDYearIfOther(f.p.date)}${f.p.vendor ? ` · ${f.p.vendor}` : ''}` : undefined}
+                                value={qtyAsk?.cod[oid] ?? codShipInitial()}
+                                onChange={v => setQtyAsk(q => q && { ...q, cod: { ...q.cod, [oid]: v } })} />
+                            </div>
+                          )
+                        })}
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-3">
                           {/* 제출은 머리의 '수령 확인'과 같은 코랄 솔리드(웹디자이너 패스 D13). 같은 동작이 두 모양이면 다른 일로 읽힌다. */}
                           <button type="button" onClick={submitQty} disabled={receivingKey === g.key}
@@ -2326,15 +2353,17 @@ function DetailModal({ row, onClose, onChange, onDraftChange, onArchivedChange, 
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
-  const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number, fillQty?: number) => {
+  const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number, fillQty?: number, codShip?: CodShipValue) => {
     setLoadingId(expenseId)
     const release = trackSave()
-    confirmReceipt(expenseId, locationId, qty, fillQty).then(res => {
+    const cod = codShip && (codShip.amount ?? 0) > 0 ? { amount: codShip.amount!, payMethod: codShip.payMethod, accountId: codShip.accountId || null } : null
+    confirmReceipt(expenseId, locationId, qty, fillQty, cod).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료', {
+        ...(res.codShipUndo ? { detail: '착불 배송비 1건도 지출에 기록했습니다.' } : {}),
         // 부분 수령이면 분할 원복(undoPartialReceipt), 전량이면 기존 수령 취소 — 상세 모달 경로 undo 공백 해소(§4 2026-07-14)
-        // 수량을 채운 수령이면 수령 취소가 그 수량도 원래 빈 값으로 함께 돌린다(qtyFill).
-        action: { label: '수령 취소', run: () => { void (res.undo ? undoPartialReceipt(res.undo) : undoConfirmReceipt(expenseId, res.qtyFill ? { qtyFill: res.qtyFill } : undefined)).then(r => {
-          if (r.ok) { pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
+        // 수량을 채운 수령이면 수령 취소가 그 수량도 원래 빈 값으로 함께 돌린다(qtyFill). 착불 배송비 줄도 함께 지운다(codShip).
+        action: { label: '수령 취소', run: () => { void (res.undo ? undoPartialReceipt(res.undo, res.codShipUndo ?? null) : undoConfirmReceipt(expenseId, (res.qtyFill || res.codShipUndo) ? { ...(res.qtyFill ? { qtyFill: res.qtyFill } : {}), ...(res.codShipUndo ? { codShip: res.codShipUndo } : {}) } : undefined)).then(r => {
+          if (r.ok) { pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다', 'codShipKept' in r && r.codShipKept ? { detail: COD_SHIP_KEPT } : undefined); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
           else pushToast('error', r.error)
         }).catch(() => pushToast('error', '수령 취소 중 통신 오류가 발생했습니다')) } },
       }) }).finally(release) }
@@ -3010,7 +3039,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   onDeleteDisposal: (id: string) => void
-  onConfirmReceipt?: (id: string, locationId?: string, qty?: number, fillQty?: number) => void
+  onConfirmReceipt?: (id: string, locationId?: string, qty?: number, fillQty?: number, codShip?: CodShipValue) => void
   onChanged: () => void
   // 이 행의 쓰기로 품목 카드 자체가 정리됐을 때(재고 제외로 고아가 된 카드, 신고 f3866bca). 모달을 닫고 목록만 다시 읽는다.
   onGone?: () => void
@@ -3025,6 +3054,8 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
   const [rcvQtyStr, setRcvQtyStr] = useState('')
   // 구매 수량이 빈 구매의 도착 수량 칸 오류(§27.2 검증=인라인)
   const [rcvQtyErr, setRcvQtyErr] = useState('')
+  // 착불 배송비(선택). 그 주문의 첫 수령에서만 묻는다(entry.codAsk, lib/codShipping).
+  const [rcvCod, setRcvCod] = useState<CodShipValue>(codShipInitial())
 
   // ── 점검
   if (entry.type === 'check') {
@@ -3133,11 +3164,11 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
         const n = normalizeFillQty(rcvQtyStr)
         if (n == null) { setRcvQtyErr('도착 수량을 적어 주세요.'); return }
         setShowLocationPicker(false)
-        onConfirmReceipt(entry.id, locationId, undefined, n)
+        onConfirmReceipt(entry.id, locationId, undefined, n, entry.codAsk ? rcvCod : undefined)
         return
       }
       setShowLocationPicker(false)
-      onConfirmReceipt(entry.id, locationId, (Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined)
+      onConfirmReceipt(entry.id, locationId, (Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined, undefined, entry.codAsk ? rcvCod : undefined)
     }
 
     if (editing) {
@@ -3199,7 +3230,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
           const cancelUndo = res.cancelUndo
           if (cancelUndo) {
             pushToast('success', '수령을 취소했습니다', {
-              ...(cancelUndo.shift ? { detail: `점검 ${cancelUndo.shift.checks.length}건의 잔량도 함께 뺐습니다.` } : {}),
+              ...((cancelUndo.shift || res.codShipKept) ? { detail: [cancelUndo.shift ? `점검 ${cancelUndo.shift.checks.length}건의 잔량도 함께 뺐습니다.` : '', res.codShipKept ? COD_SHIP_KEPT : ''].filter(Boolean).join(' ') } : {}),
               action: { label: '적용취소', run: () => { void undoCancelReceipt(cancelUndo).then(r => {
                 if (r.ok) { pushToast('info', '수령 상태를 복원했습니다'); onChanged() }
                 else pushToast('error', r.error)
@@ -3288,7 +3319,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
               <p className="text-[0.6875rem] text-[var(--warning-fg)]">수령 대기 중</p>
               {onConfirmReceipt && !showLocationPicker && (
                 <RowActionBtn tone="success" className="shrink-0" disabled={pending}
-                  onClick={() => { setShowLocationPicker(true); setRcvQtyErr(''); setRcvQtyStr(noQty ? '' : String(entry.qtyValue)) }}>
+                  onClick={() => { setShowLocationPicker(true); setRcvQtyErr(''); setRcvQtyStr(noQty ? '' : String(entry.qtyValue)); setRcvCod(codShipInitial()) }}>
                   수령 확인
                 </RowActionBtn>
               )}
@@ -3325,6 +3356,12 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
                   <QtyField unit={entry.qtyUnit ?? '개'} aria-label="도착 수량" value={rcvQtyStr} disabled={pending}
                     onChange={e => setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, ''))} />
                 </div>
+              </div>
+            )}
+            {/* 착불 배송비(선택). 그 주문의 첫 수령에서만 선다. 수령 대기 묶음·비품 수령 창과 같은 칸·같은 문장(CodShipField). */}
+            {entry.codAsk && (
+              <div className="mb-2">
+                <CodShipField labelClassName={EDIT_LABEL_CLS} disabled={pending} value={rcvCod} onChange={setRcvCod} />
               </div>
             )}
             {/* 위치는 정본 행 버튼이고 창고는 낱말(Badge '창고')로 가른다 — 종전 honey 면만으로 가르면 색을 못 보는 사람에게는

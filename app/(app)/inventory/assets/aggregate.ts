@@ -112,6 +112,8 @@ export type AssetItem = {
   // 그 조각이 그 자리에 간 날이 실려야 한다. 카드 단위 assignedAt(대표=최근)으로는 짝마다 날이 갈린다.
   // targetRoomId·targetRoomNo·unplaced 는 수령 대기 카드가 받을 때 배정을 물을지 가르는 데 쓴다(receiptPlacement).
   // unplaced = 방·공용부·공용 자재 어디에도 안 놓인 행.
+  // 수령 대기 카드에만 선다. 묶인 행이 미기록 착불 주문의 첫 수령이면 수령 창이 착불 배송비를 묻는다(lib/codShipping).
+  codAsk?: boolean
 }
 
 export type RawAsset = {

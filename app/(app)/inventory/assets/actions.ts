@@ -47,6 +47,7 @@ import { storageCandidates, STORE_NOT_FOUND } from './storagePlace'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 // 분할 복제 목록 정본(스키마 대조 그물 check-asset-disposal-wiring). 소모품 부분 수령도 같은 함수를 부른다.
 import { cloneExpenseScalars } from '../expenseClone'
+import { codAskOrderIds, codShipCreateData, codShipUndoOf, deleteCodShipTx, codShipKeptAfterCancel, type CodShipInput, type CodShipUndo } from '@/app/(app)/finance/shipPay'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -149,6 +150,8 @@ export async function getDurableItems(): Promise<AssetsData> {
       targetRoomId: true,
       // 보관 위치(./storagePlace). 미배정 카드의 묶음 머리·메타·상세 배지가 쓴다.
       storedLocationId: true,
+      // 주문. 받기 전 행이 미기록 착불 주문의 첫 수령이면 수령 창이 착불 배송비를 한 번 묻는다(lib/codShipping).
+      orderId: true,
     },
   })
 
@@ -224,7 +227,10 @@ export async function getDurableItems(): Promise<AssetsData> {
     locPaths.rank(a.locationId) - locPaths.rank(b.locationId)
     || a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
-  const pending = aggregateAssets(pendingRaw, orderMaps)
+  // 착불 배송비를 물을 주문(미기록 착불 · 첫 수령). 카드의 행 중 하나라도 그 주문이면 수령 창이 묻는다.
+  const askOrders = await codAskOrderIds(propertyId, rows.filter(r => !r.receivedAt && !r.excludeFromInventory).map(r => r.orderId))
+  const askIds = new Set(rows.filter(r => r.orderId && askOrders.has(r.orderId)).map(r => r.id))
+  const pending = aggregateAssets(pendingRaw, orderMaps).map(it => it.ids.some(id => askIds.has(id)) ? { ...it, codAsk: true } : it)
   const common = aggregateAssets(commonRaw, orderMaps)
   const unassigned = aggregateAssets(unassignedRaw, orderMaps)
   return {
@@ -319,7 +325,9 @@ export type { AssetReceiptUndo } from './receiptPlacement'
 // opts.storedLocationId 는 수령 창에서 고른 보관 위치(2026-10-19 보관 위치 축)다. 배정 안 한 몫(수령만·묻지 않음·배정 안 된 나머지)에만
 // 둔다. 배정한 몫은 비운다(배정과 보관은 다른 축). 이 영업장 위치가 아니면 거부한다. 수령 대기로 돌리면 보관 위치도 비우고
 // 그 둘을 되돌리는 토큰(unreceiveUndo)을 준다.
-export async function setAssetReceived(expenseIds: string[], received: boolean, qty?: number | null, opts?: { assign?: boolean; expect?: ReceiptPlanExpect; storedLocationId?: string | null }): Promise<{ ok: true; undo?: AssetReceiptUndo; unreceiveUndo?: AssetUnreceiveUndo } | { ok: false; error: string }> {
+// opts.codShip 은 그 주문의 첫 수령에서 적은 착불 배송비(신고 a016642e). 금액이 있으면 배송비 줄을 수령과 한 트랜잭션에 만들고
+// 그 줄을 함께 지우는 조각(codShipUndo)을 돌려준다. 물을 주문이 아니면 거부한다(../../finance/shipPay).
+export async function setAssetReceived(expenseIds: string[], received: boolean, qty?: number | null, opts?: { assign?: boolean; expect?: ReceiptPlanExpect; storedLocationId?: string | null; codShip?: CodShipInput | null }): Promise<{ ok: true; undo?: AssetReceiptUndo; unreceiveUndo?: AssetUnreceiveUndo; codShipUndo?: CodShipUndo; codShipKept?: boolean } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -351,10 +359,15 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
         data: { receivedAt: null, storedLocationId: null },
       })
       revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-      if (!prevRows.length) return { ok: true }
+      // 수령을 무른 착불 주문에 배송비 줄이 남았으면 화면이 그 사실을 말한다(지우지 않는다, 돈은 이미 냈을 수 있다).
+      const oids = [...new Set((await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId }, select: { orderId: true } })).map(r => r.orderId))]
+      let kept = false
+      for (const oid of oids) if (await codShipKeptAfterCancel(propertyId, oid)) kept = true
+      const keptOut = kept ? { codShipKept: true } : {}
+      if (!prevRows.length) return { ok: true, ...keptOut }
       const ub: AssetUnreceiveUndo = { v: 1, rows: prevRows.map(r => ({ id: r.id, receivedAt: r.receivedAt!.toISOString(), storedLocationId: r.storedLocationId })) }
       const usig = signUndoBody(ASSET_UNRECEIVE_UNDO_DOMAIN, propertyId, canonicalAssetUnreceiveUndo(ub))
-      return usig === null ? { ok: true } : { ok: true, unreceiveUndo: usig ? { ...ub, sig: usig } : ub }
+      return usig === null ? { ok: true, ...keptOut } : { ok: true, unreceiveUndo: usig ? { ...ub, sig: usig } : ub, ...keptOut }
     }
     // 보관 위치. 화면이 고른 id 가 이 영업장 위치가 아니면 거부한다(쓰기 전에).
     const storeId = opts?.storedLocationId ?? null
@@ -377,6 +390,14 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     const plan = receiptPlacementPlan(planRows, qty ?? null)
     if (opts?.assign && (!planAsks(plan) || planExpectMismatch(planRows, opts.expect))) return { ok: false, error: ASSET_RECEIPT_PLAN_STALE }
     const now = new Date()
+    // 착불 배송비 줄. 받는 행 중 물을 주문(미기록 착불 · 첫 수령)의 행이 머리다. 쓰기 전에 본다(거부면 아무것도 안 바뀐다).
+    let codCreate: Awaited<ReturnType<typeof codShipCreateData>> | null = null
+    if (opts?.codShip && (Number(opts.codShip.amount) || 0) > 0) {
+      const ask = await codAskOrderIds(propertyId, exps.map(e => e.orderId))
+      const head = exps.find(e => e.orderId && ask.has(e.orderId)) ?? exps[0]
+      codCreate = await codShipCreateData(propertyId, head, opts.codShip, now)
+      if (!codCreate.ok) return codCreate
+    }
     // 배정일 = KST 오늘. assignedAt 은 @db.Date 라 `new Date()` 를 그대로 넣으면 KST 00~09시(냉장고는 06:05 수령)에
     // 어제(UTC 날짜)로 박힌다. 화면이 배정일 칸에 넣는 값(kstYmdStr 를 new Date(ymd) 로 바꾼 값)과 같은 셈이다. 이력의 배정일도 같은 값.
     const assignDay = ymdToDbDate(kstYmdStr(now))
@@ -446,7 +467,10 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
           Math.round(units * 1000) / 1000, assignDay) }))
       }
     }
+    const codIdx = codCreate?.ok && codCreate.data ? ops.length : -1
+    if (codCreate?.ok && codCreate.data) ops.push(prisma.expense.create({ data: codCreate.data }))
     const results = await prisma.$transaction(ops)
+    const codShipUndo = codIdx >= 0 ? codShipUndoOf(results[codIdx] as { id: string; orderId: string | null; amount: number; updatedAt: Date }) : null
     const body: AssetReceiptUndo = {
       v: 1,
       at: now.toISOString(),
@@ -458,7 +482,8 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
     // 서명(현금영수증 적용취소와 같은 정본). 운영에서 키가 없으면 토큰을 내지 않는다(화면은 적용취소를 숨긴다).
     const sig = signUndoBody(ASSET_RECEIPT_UNDO_DOMAIN, propertyId, canonicalAssetReceiptUndo(body))
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return sig === null ? { ok: true } : { ok: true, undo: sig ? { ...body, sig } : body }
+    const codOut = codShipUndo ? { codShipUndo } : {}
+    return sig === null ? { ok: true, ...codOut } : { ok: true, undo: sig ? { ...body, sig } : body, ...codOut }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -470,7 +495,8 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
 // 조건으로 건다(CAS). 그 사이 옮기기·공용 표식·폐기·분할·수정·개명이 끼었으면 아무것도 안 바꾸고 거부한다.
 // 위조 토큰(검수 N-1)은 셋으로 막는다. 서명 대조, 대상이 그 영업장 비품 모집단 안인지 서버가 다시 조회,
 // 되돌리는 칸은 이번 동작이 바꾼 칸뿐(수량·금액은 서버가 원행과 조각에서 다시 더한다). 모든 조건에 propertyId 를 건다.
-export async function undoAssetReceipt(undoRaw: AssetReceiptUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+// codShip 은 그 수령이 만든 착불 배송비 줄 조각이다. 있으면 같은 트랜잭션에서 지운다(그 사이 바뀌었으면 전체 거부).
+export async function undoAssetReceipt(undoRaw: AssetReceiptUndo, codShip?: CodShipUndo | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -486,7 +512,10 @@ export async function undoAssetReceipt(undoRaw: AssetReceiptUndo): Promise<{ ok:
     if (inPop !== ids.length) return { ok: false, error: ASSET_RECEIPT_UNDO_INVALID }
     // 거부 문장은 누른 버튼의 동사를 따른다(배정까지 무르면 '적용취소할 수 없습니다', 수령만이면 '되돌릴 수 없습니다').
     const STALE = new Error(assetReceiptUndoAssigned(undo) ? ASSET_RECEIPT_UNDO_STALE : ASSET_RECEIPT_UNDO_STALE_RECEIVE)
+    // 배송비 줄 조각은 무르는 수령 행과 같은 주문이어야 지운다.
+    const rcvOrders = codShip ? new Set((await prisma.expense.findMany({ where: { id: { in: ids }, propertyId }, select: { orderId: true } })).map(r => r.orderId)) : null
     await prisma.$transaction(async tx => {
+      if (codShip) await deleteCodShipTx(tx, propertyId, codShip, rcvOrders?.has(codShip.orderId) ? codShip.orderId : null)
       // 분할 원행. 조각을 지우고 수량·금액을 원행 + 조각으로 다시 더한다(토큰 값을 안 쓴다).
       for (const s of undo.split) {
         const pieces = undo.created.filter(c => c.fromId === s.id)
