@@ -476,6 +476,18 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     '브랜드 줄만 말줄임이면 이력 공통 줄바꿈과 갈리고 터치 화면에서 뒤를 읽을 길이 없다')
 }
 
+// ── ⑩ 카드 메타 꼴(가이드 §22 제품 표기, 2026-11). `분류 · 브랜드`, 분류는 남고 브랜드 토막만 말줄임, 맨 글자 ──
+{
+  const at = client.indexOf('meta={(() => {')
+  const meta = at < 0 ? '' : client.slice(at, client.indexOf('})()}', at))
+  need('⑩ 카드 메타가 분류 · 브랜드 꼴이다',
+    /const made = shelfBrandsText\(row\.productMix\.onShelf\)/.test(meta) &&
+    /if \(!made\) return <span style=\{\{ color: tint\?\.fg \}\}>\{row\.category\}<\/span>/.test(meta) &&
+    /<span className="shrink-0" style=\{\{ color: tint\?\.fg \}\}>\{row\.category\}<\/span>/.test(meta) &&
+    /<span className="min-w-0 truncate text-\[var\(--ink-m\)\]">\{made\}<\/span>/.test(meta) && !/<Badge/.test(meta) && !/미입력/.test(meta),
+    '좁은 폭에서 분류가 먼저 잘리거나 브랜드가 배지가 되면 §22 와 어긋난다')
+}
+
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

@@ -20,6 +20,7 @@
 //      '같은 품목' 은 불러온 값으로 되돌린다. 표기만 다르면 묻지 않고 맞춘다.
 //   ⓚ 직접 입력 품명 칸은 이력 제안 패널이다(datalist 아님). 변형이 하나면 채우고 캡션·되살리기, 둘 이상이면 채우지 않는다.
 //   ⓛ 불러온 규격(specLoaded)은 화면 전용이라 저장에 안 싣는다.
+//   ⓜ 재고 이력 구매 카드의 제품 원문은 '브랜드 제품명' 공백 연결 정본(lib/productMix productText)이다(가이드 §22, 2026-11). 종전 ' · '.
 //
 // 실행: node scripts/check-receipt-history-wiring.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -152,6 +153,15 @@ const fin = read(FIN), pr = read(PR), fc = read(FC), prs = read(PRS), ocr = read
 // ⓛ
 need(`ⓛ ${FC}: 불러온 규격(specLoaded)이 저장으로 샌다`, /specRevert: undefined, (?:specOffer: undefined, )?specLoaded: undefined/.test(body(fc, 'function itemsForSave(')))
 
-console.log(`[영수증 지난 기록 배선] 축 ⓐ~ⓛ / 위반 ${fails.length}건`)
+// ⓜ
+{
+  const inv = read('app/(app)/inventory/InventoryClient.tsx')
+  const pm = read('lib/productMix.ts')
+  need("ⓜ 재고 이력 구매 카드 제품 원문이 정본 productText(공백 연결)", /\{productText\(entry\.brand, entry\.productName\)\}/.test(inv) &&
+    !/\[entry\.brand, entry\.productName\]\.filter\(Boolean\)\.join\(' · '\)/.test(inv) &&
+    /return \[clean\(brand\), clean\(productName\)\]\.filter\(Boolean\)\.join\(' '\)/.test(pm))
+}
+
+console.log(`[영수증 지난 기록 배선] 축 ⓐ~ⓜ / 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length) process.exit(1)

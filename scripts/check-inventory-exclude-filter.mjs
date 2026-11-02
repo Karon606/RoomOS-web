@@ -57,6 +57,19 @@ if (touched === 0) {
   violations.push(`${FILE} — expense 를 조회하는 함수를 하나도 못 찾았다. 잔량 정본이 옮겨갔다면 이 가드의 대상도 함께 옮겨라.`)
 }
 
+// 제품 표기 정본(가이드 §22, 2026-11)도 같은 규칙이다. DB 를 안 부르는 순수층이라 위 함수 판정에 안 걸리므로 따로 본다.
+// 개요가 이미 거른 행을 받지만, 다른 호출부가 생겨도 재고 제외 지출이 '남아 있을 제품' 에 섞이지 않게 본문에서 한 번 더 거른다.
+{
+  const MIX = 'lib/productMix.ts'
+  const mixSrc = stripComments(readFileSync(MIX, 'utf8'))
+  const at = mixSrc.indexOf('export function resolveMadeMix(')
+  const end = mixSrc.indexOf('\nexport function', at + 10)
+  const body = at < 0 ? '' : mixSrc.slice(at, end < 0 ? mixSrc.length : end)
+  if (!/excludeFromInventory !== true/.test(body)) {
+    violations.push(`${MIX}. resolveMadeMix() 가 ${FLAG} 를 거르지 않는다. 재고 제외 지출이 카드 메타·상세 추정에 섞인다.`)
+  }
+}
+
 if (violations.length > 0) {
   console.error(`[재고 제외 필터] 위반 ${violations.length}건`)
   for (const v of violations) console.error(`  - ${v}`)

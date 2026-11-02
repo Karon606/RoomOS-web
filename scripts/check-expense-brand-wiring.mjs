@@ -50,6 +50,20 @@ need('OCR 파싱에 brand', ocr.includes('brand:       typeof it.brand'))
 need('OCR 프롬프트 추측 금지', ocr.includes('절대 추측해서 만들지 마세요'))
 need('OCR 프롬프트 label 복사 금지', ocr.includes('label과 같은 값을 productName에 복사하지 마세요'))
 
+// 지난 제품 칩과 섞인 품목의 직전값 끔(가이드 §22 제품 표기, 2026-11 운영자 승인 · 8-27 확정 개정).
+need('직전값에 지난 제품 목록', /products: productsOf\.get\(itemLabel\) \?\? \[\]/.test(actions) && /loadItemProducts\(propertyId, \[itemLabel\]\)/.test(actions))
+need('지난 제품 묶음이 정본(groupProducts)', /groupProducts\(rows\.filter\(r => r\.itemLabel === label\)\)/.test(actions) && /isShipping: false, OR: \[\{ brand: \{ not: null \} \}, \{ productName: \{ not: null \} \}\]/.test(actions))
+need('다품목 칩 일괄 조회', /export async function getItemProducts\(labels: string\[\]\)/.test(actions))
+need('섞인 품목은 직전값을 안 채운다(품목 고르기)', client.includes('if (last.products.length < 2 && (last.brand || last.productName)) {'),
+  '브랜드 둘 이상이면 칩으로 고르게 한다')
+need('섞인 품목은 직전값을 안 채운다(지난 기록 행)', client.includes('if ((last?.products.length ?? 0) < 2 && (v.brand || v.productName)) {'))
+need('칩 두 자리(품목 고르기 · 다품목 카드)', count(client, /<ProductChips chips=/g) === 2, `실제 ${count(client, /<ProductChips chips=/g)}`)
+need('칩 40px · aria-pressed', /function ProductChips\([\s\S]{0,900}aria-pressed=\{on\}[\s\S]{0,400}min-h-\[40px\]/.test(client))
+need('칩 안내 문장', client.includes("'지난 구매 제품입니다. 같은 제품이면 눌러 주세요.'"))
+need('칩이 있으면 줄을 편다(다품목)', client.includes('const brandOpen = it.brand != null || it.productName != null || chips.length > 0'))
+// 지출 목록 검색. 서버 검색 축과 같은 칸을 화면 거름에도.
+need('목록 검색 거름에 brand·productName', /const hay = `[^`]*\$\{e\.brand \?\? ''\} \$\{e\.productName \?\? ''\}`/.test(client))
+
 console.log(`\n[지출 브랜드 배선] 위반 ${fails.length}건`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)
