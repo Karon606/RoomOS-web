@@ -11,6 +11,7 @@ import { specMultiplier, convertUnit } from '@/lib/units'
 import { kstMonthStr, monthDbRange } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { dedupSameDay, effTime, kstDay, dbDateMs, unitMatches, sumPurchasesMem, sumLedgerMem, intervalConsumption } from './consumptionSeries'
+import { resolveMadeMix } from '@/lib/productMix'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -259,7 +260,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         receivedAt: null,
         excludeFromInventory: false,
       },
-      select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true, orderId: true },
+      // brand·productName 은 표시 전용(제품 표기, 가이드 §22). 잔량·수령 판정에 안 쓴다.
+      select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true, orderId: true, brand: true, productName: true },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     }),
     // 숨김 판정용 배치 입수·폐기 — 마지막 점검 이후 위치별 잔량 변화를 N+1 없이 계산.
@@ -289,7 +291,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         itemLabel: { in: itemLabels },
         excludeFromInventory: false,
       },
-      select: { category: true, itemLabel: true, qtyUnit: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true, date: true, amount: true },
+      // brand·productName 은 제품 표기(lib/productMix resolveMadeMix) 전용. 잔량·소모·단가 셈은 이 두 칸을 읽지 않는다.
+      select: { category: true, itemLabel: true, qtyUnit: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true, date: true, amount: true, brand: true, productName: true },
       orderBy: { date: 'desc' },
     }),
   ])
@@ -696,7 +699,13 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         memo: p.memo,
         orderId: p.orderId,
         codAsk: !!p.orderId && codAsk.has(p.orderId),
+        brand: p.brand,
+        productName: p.productName,
       }))
+
+    // 제품 표기(가이드 §22, 2026-11 운영자 승인). 마지막 받은 제품 · 남아 있을 제품(선입선출 추정) · 최근 12개월 구매한 제품.
+    // 표시 전용이다. currentStock 은 위에서 이미 확정됐고 이 셈은 그 값을 읽기만 한다(추정을 카드 수치 자리에 쓰지 않는다).
+    const productMix = resolveMadeMix(itemPurchases, currentStock, { qtyUnit: it.qtyUnit, useSpec, specUnit: it.specUnit })
 
     return {
       id: it.id,
@@ -737,6 +746,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         qty: lb.remainingQty,
       })) satisfies LocationQtyEntry[],
       monthlyConsumption,
+      productMix,
     }
   })
   return rows

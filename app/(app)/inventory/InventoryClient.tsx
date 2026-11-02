@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState, useTransition, useRef } from 'react'
+import { Fragment, useEffect, useId, useState, useTransition, useRef } from 'react'
 import { channelVendorLabel, channelSameAsVendor, splitSiblingsText, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL } from '@/lib/expenseChannel'
 import { getChannelOptions } from '@/app/(app)/settings/actions'
 import { createPortal } from 'react-dom'
@@ -41,6 +41,7 @@ import { WhyCaption } from '@/components/ui/WhyCaption'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
+import { shelfBrandsText, productText, type MadeMix } from '@/lib/productMix'
 // 수량 뒤 조사('20kg이')는 단위 읽기로 고른다(정본 lib/locationClose).
 import { withQtyParticle, stockedHideDenied } from '@/lib/locationClose'
 // 위치 사용 중지 창의 목적지 기본값(정본 lib/locationOpen, 서버 closeStorageLocation 과 같은 규칙).
@@ -626,6 +627,16 @@ function fmtUnitPrice(v: number): string {
   if (v >= 100) return fmtWon(Math.round(v))
   if (v >= 10) return `${(Math.round(v * 10) / 10).toLocaleString()}원`
   return `${(Math.round(v * 100) / 100).toLocaleString()}원`
+}
+
+// 제품 표기 날짜(가이드 §22). 'YYYY-MM-DD' 를 올해면 'MM.DD', 해가 다르면 'YYYY.MM.DD'. 점으로 잇는 것만 fmtDateDot 과 같고, 올해면 연도를 뺀다.
+function fmtMixDate(ymd: string): string {
+  return ymd.slice(0, 4) === kstYmdStr().slice(0, 4) ? ymd.slice(5).replace('-', '.') : ymd.replace(/-/g, '.')
+}
+// 섞였을 때 상세 추정 한 줄(가이드 §22). 남아 있을 제품이 둘 이상일 때만 선다. 수량 표기는 카드와 같은 fmtQty 다.
+function shelfEstimateText(mix: MadeMix, unit: string | null): string | null {
+  if (mix.onShelf.length < 2) return null
+  return `먼저 산 것부터 썼다면 ${mix.onShelf.map(g => `${g.short} ${fmtQty(g.qty, unit)}`).join(' · ')}쯤 남아 있습니다.`
 }
 
 export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
@@ -1519,7 +1530,19 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
         ].filter(Boolean)
         return <>{list.slice(0, 2)}{list.length > 2 && <Badge tone="neutral">+{list.length - 2}</Badge>}</>
       })()}
-      meta={<span style={{ color: tint?.fg }}>{row.category}</span>}
+      // 메타 = `분류 · 브랜드`(가이드 §22 제품 표기). 브랜드는 지금 남아 있을 것으로 추정되는 제품이고 Badge 가 아닌 맨 글자다.
+      // 좁으면 브랜드 토막만 말줄임되고 분류는 남는다(shrink-0). 기록이 없으면 아무것도 붙이지 않는다('미입력' 금지).
+      meta={(() => {
+        const made = shelfBrandsText(row.productMix.onShelf)
+        if (!made) return <span style={{ color: tint?.fg }}>{row.category}</span>
+        return (
+          <span className="flex min-w-0">
+            <span className="shrink-0" style={{ color: tint?.fg }}>{row.category}</span>
+            <span className="shrink-0 whitespace-pre text-[var(--ink-m)]"> · </span>
+            <span className="min-w-0 truncate text-[var(--ink-m)]">{made}</span>
+          </span>
+        )
+      })()}
       value={fmtQty(row.currentStock, stockUnit)}
       valueDanger={lowStock}
       // 예측 불가를 침묵시키지 않는다(신고 edffb4a7) — 왜 알림이 없는지 접힌 카드에서도 보이게
@@ -1588,6 +1611,25 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           )}
         </div>
       </div>
+      {/* 구매한 제품(가이드 §22 제품 표기). 최근 12개월, 많이 산 순 최대 3줄 + '외 N종'. 브랜드별 단가는 이 자리에만 둔다(결정 D).
+          단가 단위는 위 '평균 단가' 와 같은 priceUnit 이다. 원문은 자르지 않고 낱말 단위로 줄을 바꾼다. */}
+      {row.productMix.history.length > 0 && (
+        <div className="pt-1.5 border-t border-[var(--warm-border)]/60">
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">구매한 제품 (최근 12개월)</p>
+          <ul className="space-y-0.5">
+            {row.productMix.history.slice(0, 3).map(h => (
+              <li key={h.key} className="text-[0.6875rem] text-[var(--warm-mid)] tabular-nums break-keep [overflow-wrap:anywhere]">
+                {/* 토막(횟수·마지막·단가)은 덩이째 줄을 바꾼다. '봉당' 과 '590원' 이 갈라지지 않게. 원문만 낱말 단위로 접힌다. */}
+                {[h.text, `${h.count}회`, `마지막 ${fmtMixDate(h.lastDate)}`, h.unitPrice != null ? `${priceUnit ? `${priceUnit}당 ` : ''}${fmtUnitPrice(h.unitPrice)}` : '']
+                  .filter(Boolean).map((t, i) => <Fragment key={i}>{i > 0 && ' · '}{i === 0 ? t : <span className="whitespace-nowrap">{t}</span>}</Fragment>)}
+              </li>
+            ))}
+            {row.productMix.history.length > 3 && (
+              <li className="text-[0.65625rem] text-[var(--warm-muted)]">외 {row.productMix.history.length - 3}종</li>
+            )}
+          </ul>
+        </div>
+      )}
       {row.memo && (
         <p className="text-[0.65625rem] text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-2 py-1.5 leading-relaxed whitespace-pre-wrap">
           메모 · {row.memo}
@@ -1998,6 +2040,21 @@ function DetailViewSummary({ row, hubPicker, lastKind, ghost = false }: {
         <span className={label}>{g('지금')}</span>
         <span className={`${value} ${row.currentStock == null ? 'text-[var(--warm-muted)]' : 'font-semibold'}`}>{g(nowText)}</span>
       </div>
+      {/* 제품(가이드 §22 제품 표기). 마지막으로 받은 제품 원문 + 흐린 받은 날. 브랜드가 섞였을 때만 아래 추정 한 줄(12px --warm-mid).
+          추정은 이 줄에만 쓰고 '지금' 수치 자리에는 쓰지 않는다. 골격도 같은 row 로 그려 줄 수가 같다. */}
+      {row.productMix.last && (() => {
+        const est = shelfEstimateText(row.productMix, unit)
+        return (
+          <div className="flex items-baseline gap-3">
+            <span className={label}>{g('제품')}</span>
+            <span className={`${value} [overflow-wrap:anywhere]`}>
+              {/* 줄이 바뀌면 날짜 덩이만 내려간다. 가운뎃점은 앞 제품명에 붙는다(줄이 점으로 시작하지 않게, 독립 웹디자이너 패스). */}
+              {g(row.productMix.last.text)}<span className="text-[var(--warm-muted)]">{g(' · ')}</span><span className="whitespace-nowrap text-[var(--warm-muted)]">{g(`${fmtMixDate(row.productMix.last.receivedOn)} 수령`)}</span>
+              {est && <span className="mt-0.5 block text-xs text-[var(--warm-mid)]">{g(est)}</span>}
+            </span>
+          </div>
+        )
+      })()}
       <div className="flex items-baseline gap-3">
         <span className={label}>{g('최근 점검')}</span>
         <span className={`${value} ${created == null ? 'text-[var(--warm-muted)]' : ''}`}>{g(lastText)}{kindTag && <>{' '}<span className="whitespace-nowrap text-[var(--warm-muted)]">{g(kindTag)}</span></>}</span>
@@ -3338,13 +3395,13 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, cardQtyUnit, 
         </TimelineHead>
         <div className="space-y-0.5">
           <p className="text-sm font-medium tabular-nums text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${fmtWon(entry.amount)})` : ''}</p>
-          {/* 무엇을 샀나 — 재고 잔량은 브랜드로 안 갈린다(창고에 섞어 쌓으므로 셀 수가 없다).
+          {/* 무엇을 샀나. 잔량은 안 갈리고 표시·추정만 한다(가이드 §22 제품 표기, 창고에 섞어 쌓으므로 제품별로 셀 수가 없다).
               대신 **언제 바뀌었나**는 여기서 읽힌다. 라면을 오뚜기에서 삼양으로 바꿔 사도
               그 사실이 재고 화면 어디에도 안 뜨던 것을 메운다(운영자 2026-08-28).
               업체(어디서 샀나)보다 한 단 진하다 — 물건이 곳보다 앞선다. 캡션 크기는 이력 공통(TL_CAPTION 11px)이고 자르지 않는다. */}
           {(entry.brand || entry.productName) && (
             <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)] break-keep [overflow-wrap:anywhere]">
-              {[entry.brand, entry.productName].filter(Boolean).join(' · ')}
+              {productText(entry.brand, entry.productName)}
             </p>
           )}
           {isPendingReceipt ? (

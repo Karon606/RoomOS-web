@@ -1,3 +1,5 @@
+import type { MadeMix } from '@/lib/productMix'
+
 export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
 
 // 위치별 점검 패널 머리 문장(2026-10-19 신고 1daf641c). 아이템별 폼 안내문(CHECK_GUIDE_RESTOCK)과 같은 규칙을 패널의
@@ -45,6 +47,9 @@ export type PendingPurchase = {
   // 묶인 주문. codAsk 면 그 주문이 미기록 착불이고 첫 수령이라 받을 때 착불 배송비를 한 번 묻는다(lib/codShipping asksCodAtReceipt).
   orderId: string | null
   codAsk: boolean
+  // 브랜드·제품명. 표시 전용(가이드 §22 제품 표기). 수령·잔량 판정에 안 쓴다.
+  brand: string | null
+  productName: string | null
 }
 
 export type InventoryRow = {
@@ -96,6 +101,9 @@ export type InventoryRow = {
   // qty: 0 = 점검했으나 안 씀, null = 그 달엔 점검 자체가 없음(미관측). 둘을 뭉개면 추적 시작 전 달이 '사용량 0' 으로 보인다.
   // days = 그 달에 귀속된 점검 구간 일수의 합(하루당 분모), lastDate = 그 달 마지막 점검일 'YYYY-MM-DD'. 미관측(null)이면 둘 다 null.
   monthlyConsumption: { month: string; qty: number | null; days: number | null; lastDate: string | null }[]
+  // 제품 표기(가이드 §22, lib/productMix). 표시 전용. 카드 메타·상세 제품 줄·카드 펼침 '구매한 제품' 이 이 한 값을 읽는다.
+  // 골격(DetailModalSkeleton)도 같은 row 로 그려 로딩 점프가 없다. onShelf 는 추정이라 카드 수치 자리에 쓰지 않는다.
+  productMix: MadeMix
 }
 
 export type PricePoint = {
