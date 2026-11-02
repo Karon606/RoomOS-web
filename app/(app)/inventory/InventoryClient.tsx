@@ -120,6 +120,7 @@ import {
   previewStockCheckPropagation, undoUpdateStockCheck,
   previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
+  previewTrackUnitSwitch, switchTrackUnit, undoSwitchTrackUnit,
 } from './actions'
 // 수령 수량 관문 정본(순수). 화면이 '수량을 물을 구매'를 서버와 같은 셈으로 가린다.
 import { normalizeFillQty, qtyMissing, type ReceiptQtyFill } from './receiptQtyGate'
@@ -2817,6 +2818,18 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty, onHideLocation }
   const [purchaseUrl, setPurchaseUrl]     = useState(row.purchaseUrl ?? '')
   const [memo, setMemo]                   = useState(row.memo ?? '')
   const [trackUnit, setTrackUnit]         = useState<'spec' | 'qty'>(row.trackUnit)
+  // 추적 단위 전환 미리보기(2026-11-02 운영자 승인). 바꾸면 지난 점검·입수·폐기 값을 그 품명 구매 규격의 배수로 함께 바꾼다.
+  // 규격이 섞였거나 이력이 없으면 서버가 거부 문장을 주고, 토글은 지금 단위에 머문 채 그 까닭을 칸 아래 한 줄로 말한다.
+  const [unitAsk, setUnitAsk] = useState<{ ok: true; to: 'spec' | 'qty'; factor: number; multiplier: number | null; count: number } | { ok: false; error: string } | null>(null)
+  const [unitAskPending, setUnitAskPending] = useState(false)
+  const pickTrackUnit = (v: 'spec' | 'qty') => {
+    if (v === row.trackUnit) { setTrackUnit(v); setUnitAsk(null); return }
+    setUnitAskPending(true)
+    void previewTrackUnitSwitch(row.id, v).then(r => {
+      if (!r.ok) { setTrackUnit(row.trackUnit); setUnitAsk({ ok: false, error: r.error }); return }
+      setTrackUnit(v); setUnitAsk({ ok: true, to: v, factor: r.factor, multiplier: r.multiplier, count: r.checks + r.additions + r.disposals }); onDirty?.()
+    }).catch(() => setUnitAsk({ ok: false, error: '통신 오류로 확인하지 못했습니다. 다시 눌러 주세요.' })).finally(() => setUnitAskPending(false))
+  }
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
@@ -2850,13 +2863,25 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty, onHideLocation }
     if (isNaN(n) || n < 0) { setError('알림 기준은 0 이상이어야 합니다.'); return }
     if (!labelEdit.trim()) { setError('품목명은 필수입니다.'); return }
     startTransition(async () => {
+      // 추적 단위를 바꿨으면 먼저 전환한다(지난 기록 환산과 카드 갱신이 한 트랜잭션). 나머지 설정은 그다음 저장이다.
+      if (trackUnit !== row.trackUnit) {
+        const sw = await switchTrackUnit(row.id, trackUnit, { from: row.trackUnit })
+        if (!sw.ok) { setError(sw.error); return }
+        const undo = sw.undo
+        pushToast('success', '재고 추적 단위를 바꿨습니다', {
+          ...(sw.converted > 0 ? { detail: `지난 점검·입수·폐기 ${sw.converted}건의 값도 함께 바꿨습니다.` } : {}),
+          action: { label: '적용취소', run: () => { void undoSwitchTrackUnit(undo).then(r => {
+            if (r.ok) { pushToast('info', '재고 추적 단위를 되돌렸습니다'); onDone() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
+        })
+      }
       const res = await updateTrackedItem(row.id, {
         label: labelEdit.trim(),
         alertThresholdDays: n,
         reorderMemo: reorderMemo.trim() || null,
         purchaseUrl: purchaseUrl.trim() || null,
         memo: memo.trim() || null,
-        trackUnit,
       })
       if (!res.ok) { setError(res.error); return }
       onDone()
@@ -2887,11 +2912,18 @@ function SettingsForm({ row, onCancel, onDone, onGone, onDirty, onHideLocation }
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
         {/* 둘 중 하나를 고르는 자리라 세그먼트 정본을 쓴다. 고른 칸을 코랄로 채우지 않는다(§03 코랄 채움은 CTA 몫, §23). */}
         <SegmentedControl<'spec' | 'qty'> size="sm" ariaLabel="재고 추적 단위" value={trackUnit}
-          onChange={v => { setTrackUnit(v); onDirty?.() }}
+          onChange={v => { if (!unitAskPending) pickTrackUnit(v) }}
           options={[
             { value: 'spec', label: `규격 단위${row.specUnit ? ` (${row.specUnit})` : ''}` },
             { value: 'qty', label: `수량 단위${row.qtyUnit ? ` (${row.qtyUnit})` : ''}` },
           ]} />
+        {/* 바꿀 수 없으면 그 까닭을, 바꾸면 지난 기록을 어떻게 바꾸는지를 한 줄로(§27.8). 거부 문장은 서버와 한 벌(lib/trackUnitSwitch). */}
+        {unitAsk && !unitAsk.ok && <WhyCaption id={`track-unit-why-${row.id}`}>{unitAsk.error}</WhyCaption>}
+        {unitAsk?.ok && unitAsk.to === trackUnit && unitAsk.factor !== 1 && unitAsk.multiplier != null && (
+          <WhyCaption id={`track-unit-why-${row.id}`}>
+            저장하면 지난 점검·입수·폐기 {unitAsk.count}건의 값을 {trackUnit === 'qty' ? (row.qtyUnit ?? '개') : row.specUnit} 기준으로 바꿉니다(1{row.qtyUnit ?? '개'} = {Number(unitAsk.multiplier.toFixed(6))}{row.specUnit}).
+          </WhyCaption>
+        )}
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
           잘라서 쓰는 품목인지로 갈립니다. 장판은 잘라 쓰니 m 로 세고, 빨래줄 10m 한 세트는 통으로 쓰니 세트로 셉니다.<br/>
           규격 단위: 쌀 1포대(20kg) 같이 규격으로 환산해서 추적 (kg, 매, ml).<br/>

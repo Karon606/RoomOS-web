@@ -34,6 +34,7 @@ import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, buildCheckPropagationPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, ITEM_MERGED_UNDO_DENIED, type LedgerShiftUndo, type InventoryTx } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
+import { planTrackUnitSwitch, rescaleReceiptMemo, type TrackUnit } from '@/lib/trackUnitSwitch'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { normalizeLabel, sizeConflicts, muteApplies, attachedToCard, planSubLabels } from './seedLabel'
@@ -475,6 +476,9 @@ export async function updateTrackedItem(id: string, data: {
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    // 추적 단위는 이 저장으로 안 바꾼다. 지난 점검·입수·폐기 값을 함께 바꾸는 전환 동작(switchTrackUnit)이 따로 있다.
+    // 종전에는 여기서 trackUnit 만 바꿔 옛 단위 점검 위에 새 단위 구매가 더해졌다(2026-11-02 운영자 승인).
+    if (data.trackUnit && data.trackUnit !== it.trackUnit) return { ok: false, error: TRACK_UNIT_VIA_SWITCH }
 
     // 라벨 변경 처리
     const newLabel = data.label?.trim()
@@ -511,7 +515,6 @@ export async function updateTrackedItem(id: string, data: {
         alertThresholdDays: data.alertThresholdDays ?? it.alertThresholdDays,
         reorderMemo:        data.reorderMemo        ?? it.reorderMemo,
         purchaseUrl:        data.purchaseUrl        ?? it.purchaseUrl,
-        trackUnit:          data.trackUnit          ?? it.trackUnit,
       },
     })
     revalidatePath('/inventory')
@@ -600,19 +603,20 @@ export async function getSameCategoryItems(excludeId: string): Promise<{ id: str
 // 저장된 점검 잔량·위치별 잔량·무상입수량에 배율(factor)을 곱한다.
 //  단위 변경(L→ml) 또는 단위 다른 품목 병합 시, 품목 단위로 통일하기 위해 사용.
 //  checkIds/additionIds 로 범위를 한정(병합 시 '이전된 것만' 환산, target 기존값 보호).
-async function scaleStockValues(checkIds: string[], additionIds: string[], disposalIds: string[], factor: number): Promise<void> {
+// db 는 쓰는 자리다(추적 단위 전환은 카드 갱신과 한 트랜잭션이라 그 트랜잭션을 넘긴다). 안 주면 종전대로 전역 클라이언트.
+async function scaleStockValues(checkIds: string[], additionIds: string[], disposalIds: string[], factor: number, db: InventoryTx = prisma): Promise<void> {
   if (factor === 1 || !isFinite(factor) || factor <= 0) return
   for (const id of checkIds) {
-    const c = await prisma.stockCheck.findUnique({ where: { id }, select: { remainingQty: true } })
-    if (c) await prisma.stockCheck.update({ where: { id }, data: { remainingQty: c.remainingQty * factor } })
+    const c = await db.stockCheck.findUnique({ where: { id }, select: { remainingQty: true } })
+    if (c) await db.stockCheck.update({ where: { id }, data: { remainingQty: c.remainingQty * factor } })
   }
   if (checkIds.length > 0) {
-    const locs = await prisma.stockCheckLocation.findMany({
+    const locs = await db.stockCheckLocation.findMany({
       where: { stockCheckId: { in: checkIds } },
       select: { id: true, remainingQty: true, restockedQty: true, fromHubQty: true },
     })
     for (const l of locs) {
-      await prisma.stockCheckLocation.update({
+      await db.stockCheckLocation.update({
         where: { id: l.id },
         data: {
           remainingQty: l.remainingQty * factor,
@@ -623,12 +627,158 @@ async function scaleStockValues(checkIds: string[], additionIds: string[], dispo
     }
   }
   for (const id of additionIds) {
-    const a = await prisma.stockAddition.findUnique({ where: { id }, select: { addedQty: true } })
-    if (a) await prisma.stockAddition.update({ where: { id }, data: { addedQty: a.addedQty * factor } })
+    const a = await db.stockAddition.findUnique({ where: { id }, select: { addedQty: true } })
+    if (a) await db.stockAddition.update({ where: { id }, data: { addedQty: a.addedQty * factor } })
   }
   for (const id of disposalIds) {
-    const d = await prisma.stockDisposal.findUnique({ where: { id }, select: { disposedQty: true } })
-    if (d) await prisma.stockDisposal.update({ where: { id }, data: { disposedQty: d.disposedQty * factor } })
+    const d = await db.stockDisposal.findUnique({ where: { id }, select: { disposedQty: true } })
+    if (d) await db.stockDisposal.update({ where: { id }, data: { disposedQty: d.disposedQty * factor } })
+  }
+}
+
+// ── 재고 추적 단위 전환(규격 단위 대 수량 단위, 운영자 승인 2026-11-02 '응 진행해') ─────────────────────────
+// changeTrackedItemUnit(L 를 ml 로) 과 같은 문법이다. 지난 점검·입수·폐기 값을 그 품명 구매 규격의 배수로 바꾸고 카드 trackUnit 을
+// 한 트랜잭션에서 고친다. 배수는 정본 lib/trackUnitSwitch 가 정한다(규격이 섞였거나 이력이 없으면 기록이 있을 때 거부).
+// 수령 자동 점검 메모(`[수령 자동] +4500ml`)도 새 단위로 다시 적는다. 메모 단위가 그 점검 값의 단위를 말하는 유일한 흔적이라
+// 감지망(check-track-unit-dimension)이 이것으로 '최근 점검 값의 차원' 을 본다. 적용취소는 원래 메모를 그대로 되살린다.
+const TRACK_UNIT_VIA_SWITCH = '재고 추적 단위는 품목 설정의 단위 전환으로만 바꿉니다. 화면을 새로고침한 뒤 다시 시도해 주세요.'
+const TRACK_UNIT_UNDO_STALE = '전환 뒤 점검·입수·폐기가 기록되었거나 값이 바뀌어 되돌리지 않았습니다. 품목 설정에서 지금 단위를 확인해 주세요.'
+export type TrackUnitSwitchUndo = {
+  itemId: string; from: TrackUnit; to: TrackUnit; factor: number; atMs: number
+  // 전환 직후 합계(CAS). 그 사이 값이 바뀌었으면 되돌리지 않는다.
+  sums: { checks: number; additions: number; disposals: number }
+  memos: { id: string; before: string; after: string }[]
+}
+type SwitchDb = InventoryTx
+const stockUnitOf = (trackUnit: string, it: { specUnit: string | null; qtyUnit: string | null }) => trackUnit === 'qty' ? (it.qtyUnit ?? '') : (it.specUnit ?? '')
+async function trackUnitFacts(db: SwitchDb, propertyId: string, it: { id: string; category: string; label: string; qtyUnit: string | null; specUnit: string | null }) {
+  const [checks, additions, disposals, purchases] = await Promise.all([
+    db.stockCheck.findMany({ where: { trackedItemId: it.id }, select: { id: true, remainingQty: true, memo: true, createdAt: true } }),
+    db.stockAddition.findMany({ where: { trackedItemId: it.id }, select: { id: true, addedQty: true, createdAt: true } }),
+    db.stockDisposal.findMany({ where: { trackedItemId: it.id }, select: { id: true, disposedQty: true, createdAt: true } }),
+    // 그 품명 구매 전부(받기 전 포함). 잔량 산식과 같은 매칭(카테고리·품명·수량 단위 느슨, 재고 제외·배송비 아님).
+    db.expense.findMany({
+      where: {
+        propertyId, category: it.category, itemLabel: it.label, excludeFromInventory: false, isShipping: false,
+        ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
+      },
+      select: { specValue: true, specUnit: true },
+    }),
+  ])
+  return { checks, additions, disposals, purchases }
+}
+const sumsOf = (f: Awaited<ReturnType<typeof trackUnitFacts>>) => ({
+  checks: f.checks.reduce((s, c) => s + c.remainingQty, 0),
+  additions: f.additions.reduce((s, a) => s + a.addedQty, 0),
+  disposals: f.disposals.reduce((s, d) => s + d.disposedQty, 0),
+})
+const isTrackUnit = (v: unknown): v is TrackUnit => v === 'spec' || v === 'qty'
+
+/** 전환 미리보기. 화면이 토글을 바꾸는 순간 부른다(거부면 까닭을 칸 아래 한 줄로, 통과면 몇 건을 몇 배로 바꾸는지). */
+export async function previewTrackUnitSwitch(id: string, to: TrackUnit): Promise<
+  { ok: true; factor: number; multiplier: number | null; checks: number; additions: number; disposals: number } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!isTrackUnit(to)) return { ok: false, error: '추적 단위가 올바르지 않습니다.' }
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const f = await trackUnitFacts(prisma, propertyId, it)
+    const plan = planTrackUnitSwitch({
+      from: isTrackUnit(it.trackUnit) ? it.trackUnit : 'spec', to, cardSpecUnit: it.specUnit, purchases: f.purchases,
+      hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0,
+    })
+    if (!plan.ok) return { ok: false, error: plan.message }
+    return { ok: true, factor: plan.factor, multiplier: plan.multiplier, checks: f.checks.length, additions: f.additions.length, disposals: f.disposals.length }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 추적 단위 전환. expect.from 은 화면이 본 지금 단위다(그 사이 다른 화면이 바꿨으면 거부). 읽기·판정·쓰기를 한 트랜잭션에서 한다.
+ * 적용취소 토큰을 돌려준다(전환 뒤 점검·입수·폐기가 생겼거나 값이 바뀌었으면 거부).
+ */
+export async function switchTrackUnit(id: string, to: TrackUnit, expect: { from: TrackUnit }): Promise<
+  { ok: true; factor: number; converted: number; undo: TrackUnitSwitchUndo } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!isTrackUnit(to) || !isTrackUnit(expect?.from) || to === expect.from) return { ok: false, error: '추적 단위가 올바르지 않습니다.' }
+    const r = await prisma.$transaction(async tx => {
+      const it = await tx.trackedItem.findFirst({ where: { id, propertyId } })
+      if (!it) throw new Error('품목을 찾을 수 없습니다.')
+      if (it.trackUnit !== expect.from) throw new Error('그 사이 추적 단위가 바뀌었습니다. 화면을 새로고침해 주세요.')
+      const f = await trackUnitFacts(tx, propertyId, it)
+      const plan = planTrackUnitSwitch({
+        from: expect.from, to, cardSpecUnit: it.specUnit, purchases: f.purchases,
+        hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0,
+      })
+      if (!plan.ok) throw new Error(plan.message)
+      const moved = await tx.trackedItem.updateMany({ where: { id, propertyId, trackUnit: expect.from }, data: { trackUnit: to } })
+      if (moved.count !== 1) throw new Error('그 사이 추적 단위가 바뀌었습니다. 화면을 새로고침해 주세요.')
+      const memos: TrackUnitSwitchUndo['memos'] = []
+      if (plan.factor !== 1) {
+        await scaleStockValues(f.checks.map(c => c.id), f.additions.map(a => a.id), f.disposals.map(d => d.id), plan.factor, tx)
+        const unit = stockUnitOf(to, it)
+        for (const c of f.checks) {
+          const after = rescaleReceiptMemo(c.memo, plan.factor, unit)
+          if (after == null || after === c.memo) continue
+          await tx.stockCheck.update({ where: { id: c.id }, data: { memo: after } })
+          memos.push({ id: c.id, before: c.memo!, after })
+        }
+      }
+      const now = await trackUnitFacts(tx, propertyId, it)
+      const atMs = Math.max(Date.now(), ...now.checks.map(c => c.createdAt.getTime()), ...now.additions.map(a => a.createdAt.getTime()), ...now.disposals.map(d => d.createdAt.getTime()))
+      const undo: TrackUnitSwitchUndo = { itemId: id, from: expect.from, to, factor: plan.factor, atMs, sums: sumsOf(now), memos }
+      return { factor: plan.factor, converted: plan.factor === 1 ? 0 : f.checks.length + f.additions.length + f.disposals.length, undo }
+    })
+    revalidatePath('/inventory'); revalidatePath('/dashboard')
+    return { ok: true, ...r }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 추적 단위 전환의 적용취소. 카드가 아직 전환한 단위이고, 전환 뒤 점검·입수·폐기가 없고, 값 합계가 전환 직후 그대로일 때만(CAS).
+ * 배수는 토큰을 믿지 않고 지금 구매 규격으로 거꾸로 다시 세어 토큰과 맞는지 본다(그 사이 구매 규격이 바뀌었으면 거부).
+ */
+export async function undoSwitchTrackUnit(u: TrackUnitSwitchUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!u || typeof u.itemId !== 'string' || !isTrackUnit(u.from) || !isTrackUnit(u.to) || !(u.factor > 0) || !Array.isArray(u.memos)) return { ok: false, error: TRACK_UNIT_UNDO_STALE }
+    await prisma.$transaction(async tx => {
+      const it = await tx.trackedItem.findFirst({ where: { id: u.itemId, propertyId } })
+      if (!it || it.trackUnit !== u.to) throw new Error(TRACK_UNIT_UNDO_STALE)
+      const f = await trackUnitFacts(tx, propertyId, it)
+      const at = new Date(u.atMs)
+      if ([...f.checks, ...f.additions, ...f.disposals].some(r => r.createdAt > at)) throw new Error(TRACK_UNIT_UNDO_STALE)
+      const sums = sumsOf(f)
+      const close = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
+      if (!close(sums.checks, u.sums.checks) || !close(sums.additions, u.sums.additions) || !close(sums.disposals, u.sums.disposals)) throw new Error(TRACK_UNIT_UNDO_STALE)
+      const back = planTrackUnitSwitch({ from: u.to, to: u.from, cardSpecUnit: it.specUnit, purchases: f.purchases, hasRecords: f.checks.length + f.additions.length + f.disposals.length > 0 })
+      if (!back.ok || !close(back.factor * u.factor, 1)) throw new Error(TRACK_UNIT_UNDO_STALE)
+      const moved = await tx.trackedItem.updateMany({ where: { id: it.id, propertyId, trackUnit: u.to }, data: { trackUnit: u.from } })
+      if (moved.count !== 1) throw new Error(TRACK_UNIT_UNDO_STALE)
+      if (back.factor !== 1) await scaleStockValues(f.checks.map(c => c.id), f.additions.map(a => a.id), f.disposals.map(d => d.id), back.factor, tx)
+      const ownChecks = new Set(f.checks.map(c => c.id))
+      for (const m of u.memos) {
+        if (!ownChecks.has(m.id) || typeof m.before !== 'string' || typeof m.after !== 'string') throw new Error(TRACK_UNIT_UNDO_STALE)
+        const r = await tx.stockCheck.updateMany({ where: { id: m.id, trackedItemId: it.id, memo: m.after }, data: { memo: m.before } })
+        if (r.count !== 1) throw new Error(TRACK_UNIT_UNDO_STALE)
+      }
+    })
+    revalidatePath('/inventory'); revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 
