@@ -23,7 +23,8 @@ import {
   batchUpdateExpenses, undoBatchUpdateExpenses, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
-  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks, getBrandSuggestions,
+  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks, getBrandSuggestions, getItemProducts,
+  type ProductChip,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   getVendorUsage, renameVendor, undoExpenseFieldChange, moveVendorToChannel, setChannelForVendor, applyChannelToSameOrders,
@@ -341,6 +342,38 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
+// 지난 제품 칩(가이드 §22 제품 표기). 그 품목에서 산 제품을 입력칸 위 토글 칩으로 세운다. 누르면 브랜드·제품명 두 칸을 함께 채우고,
+// 눌린 칩을 다시 누르면 두 칸을 비운다. 문법은 세부스펙 칩(§23 토글 칩, aria-pressed, 켜짐 = --neutral-bg)이고 누르는 자리는 40px 이다.
+// 단일 품목 고르기와 다품목 카드가 이 한 컴포넌트를 쓰고, 안내 문장도 칩 바로 아래 같은 자리에 함께 그린다(독립 웹디자이너 패스).
+export const PRODUCT_CHIP_GUIDE = '지난 구매 제품입니다. 같은 제품이면 눌러 주세요.'
+function ProductChips({ chips, brand, productName, onPick }: {
+  chips: ProductChip[]; brand: string; productName: string
+  onPick: (next: { brand: string; productName: string }) => void
+}) {
+  if (chips.length === 0) return null
+  const now = [brand.trim(), productName.trim()].filter(Boolean).join(' ')
+  return (
+    <div className="space-y-1">
+    <div className="flex flex-wrap gap-1" role="group" aria-label="지난 구매 제품">
+      {chips.map(c => {
+        const on = now !== '' && now === c.text
+        return (
+          <button key={c.text} type="button" aria-pressed={on}
+            onClick={() => onPick(on ? { brand: '', productName: '' } : { brand: c.brand ?? '', productName: c.productName ?? '' })}
+            className={`min-h-[40px] px-2.5 py-1 text-left text-[0.65625rem] font-medium rounded-sm ring-1 break-keep [overflow-wrap:anywhere] transition-colors ${
+              on
+                ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
+                : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`}>
+            {c.text}
+          </button>
+        )
+      })}
+    </div>
+    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{PRODUCT_CHIP_GUIDE}</p>
+    </div>
+  )
+}
+
 // 품명 유사도 (B) — 신규 입력 시 비슷한 기존 품명이 있으면 확인받기. 문자열 기반(공백 제거·소문자).
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length
@@ -490,6 +523,18 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     return () => { alive = false }
   }, [category, isService])
   const items = value
+  // 다품목 카드의 지난 제품 칩(가이드 §22). 담긴 품명마다 한 번에 받아 둔다. 품명이 바뀌면 그 품명만 새로 받는다.
+  const [productsByLabel, setProductsByLabel] = useState<Record<string, ProductChip[]>>({})
+  const itemLabelsKey = allowMulti ? [...new Set(items.map(it => it.label.trim()).filter(Boolean))].sort().join('␟') : ''
+  useEffect(() => {
+    const need = itemLabelsKey ? itemLabelsKey.split('␟').filter(l => !(l in productsByLabel)) : []
+    if (!need.length) return
+    let alive = true
+    const t = setTimeout(() => {
+      getItemProducts(need).then(r => { if (alive) setProductsByLabel(prev => ({ ...prev, ...Object.fromEntries(need.map(l => [l, r[l] ?? []])) })) }).catch(() => { /* 칩은 부가 정보 */ })
+    }, 300)
+    return () => { alive = false; clearTimeout(t) }
+  }, [itemLabelsKey, productsByLabel])
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
   const [specUnit, setSpecUnit]       = useState('')
@@ -602,7 +647,9 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     if (last.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(last.unitPrice)) }
     // 브랜드·제품명도 따라오되 **'지난번 값'이라고 말한다**. 규격·수량은 틀리면 눈에 띄지만
     // 브랜드는 조용히 틀린 채로 저장된다(운영자 확정 2026-08-27 — 채우되 표시를 남긴다).
-    if (last.brand || last.productName) {
+    // 브랜드가 둘 이상 섞인 품목은 채우지 않고 칩으로 고르게 한다(2026-11 운영자 승인, 8-27 확정 개정, 가이드 §22).
+    // 라면처럼 오뚜기·삼양을 번갈아 사는 품목에서 직전값은 맞을 확률이 반이고, 틀려도 눈에 안 띈다.
+    if (last.products.length < 2 && (last.brand || last.productName)) {
       setBrand(last.brand ?? '')
       setProductName(last.productName ?? '')
       setBrandFromLast(true)
@@ -638,12 +685,17 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
     // 단가 기준은 그 변형에 기록된 것만 고정한다(기록이 없으면 정본 규칙, lib/unitBasis — 날조 금지)
     if (v.unitBasis) { setUnitBasis(v.unitBasis); setBasisTouched(true) } else setBasisTouched(false)
     if (v.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(v.unitPrice)) }
-    setBrand(v.brand ?? ''); setProductName(v.productName ?? '')
-    setBrandFromLast(!!(v.brand || v.productName)); setBrandOpen(!!(v.brand || v.productName))
+    // 브랜드·제품명은 그 품목의 지난 제품이 하나뿐일 때만 채운다(섞인 품목은 칩으로, 가이드 §22). 섞였는지는 아래 맥락 조회가 안다.
+    setBrand(''); setProductName(''); setBrandFromLast(false); setBrandOpen(false)
     loadedSpecRef.current = { label: v.itemLabel, spec: v.specText ? { specValue: '', specUnit: '', specText: v.specText } : { specValue: v.specValue, specUnit: v.specUnit } }
     setPicked({ text: pickedText(specDisplay(v), v.lastDate), restore: before })
     // 카테고리 경고·세부스펙 칩·단위 안내는 지난 기록 맥락(prevUnits)이 낸다 — 칸은 이미 채웠으니 맥락만 받는다.
-    getLastItemUnits(v.itemLabel).then(last => setPrevUnits(last)).catch(() => {})
+    getLastItemUnits(v.itemLabel).then(last => {
+      setPrevUnits(last)
+      if ((last?.products.length ?? 0) < 2 && (v.brand || v.productName)) {
+        setBrand(v.brand ?? ''); setProductName(v.productName ?? ''); setBrandFromLast(true); setBrandOpen(true)
+      }
+    }).catch(() => {})
     getBrandSuggestions(v.itemLabel).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 */ })
   }
 
@@ -1008,7 +1060,7 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
         )}
         {/* 브랜드·제품명 — 접힌 한 줄. 폼이 이미 길어 항상 펴 두면 매번 스크롤이 는다.
             영수증 인식이 채우거나 직전값이 따라오면 저절로 펴진다(그때 값이 보여야 한다). */}
-        {!brandOpen && !brand && !productName ? (
+        {!brandOpen && !brand && !productName && !(prevUnits?.products.length) ? (
           <button type="button" onClick={() => setBrandOpen(true)}
             className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
             브랜드·제품명 입력
@@ -1021,6 +1073,9 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
               <span className="text-[0.65625rem] text-[var(--tc-text)]">지난번 값</span>
             )}
           </div>
+          {/* 지난 제품 칩(가이드 §22). 입력칸 위. 고르면 두 칸을 함께 채우고 '지난번 값' 표시는 걷는다(사람이 고른 값이다). */}
+          <ProductChips chips={prevUnits?.products ?? []} brand={brand} productName={productName}
+            onPick={n => { setBrand(n.brand); setProductName(n.productName); setBrandFromLast(false) }} />
           <div className="grid grid-cols-2 gap-2">
             <input type="text" placeholder="브랜드 (예: 오뚜기)" value={brand}
               onChange={e => { setBrand(e.target.value); setBrandFromLast(false) }}
@@ -1035,11 +1090,14 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
           {brandOptions.products.length > 0 && (
             <datalist id="item-product-suggestions">{brandOptions.products.map(b => <option key={b} value={b} />)}</datalist>
           )}
+          {/* 칩이 서면 그 아래 안내가 이 자리를 대신한다(같은 말을 두 번 하지 않는다). 지난번 값으로 채운 때만 그 사실을 따로 말한다. */}
+          {(brandFromLast || !(prevUnits?.products.length)) && (
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
             {brandFromLast
               ? '지난번 구매에서 가져온 값입니다. 다르면 고쳐 주세요.'
               : '비워도 됩니다. 규격은 위 칸에 그대로 적습니다.'}
           </p>
+          )}
         </div>
         )}
         {!noSpec && !specTextMode && (
@@ -1119,7 +1177,9 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
             // 열면 한 줄('구매처 [입력] 지우기'), 비우면 머리 구매처를 따른다. 사업자번호 칸은 없다(서버가 과거 기록에서 찾는다).
             const vendorAllowed = allowMulti && items.length >= 2
             const vendorOpen = vendorAllowed && it.vendor !== undefined
-            const brandOpen = it.brand != null || it.productName != null
+            const chips = allowMulti ? (productsByLabel[it.label.trim()] ?? []) : []
+            // 지난 제품이 있으면 줄을 펴 둔다. 칩이 접힌 버튼 뒤에 숨으면 고를 수 없다(가이드 §22).
+            const brandOpen = it.brand != null || it.productName != null || chips.length > 0
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -1273,6 +1333,13 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
                       className={`flex-1 min-w-0 ${smallText}`} />
                     <button type="button" onClick={() => patchItem(idx, { vendor: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
+                  </div>
+                )}
+                {/* 지난 제품 칩(가이드 §22). 카드 바탕(--coral-pale)은 다크에서 보조 잉크가 모자라 위 규격 캡션처럼 --cream 상자에 앉힌다. */}
+                {allowMulti && chips.length > 0 && (
+                  <div className="rounded-lg bg-[var(--cream)] ring-1 ring-[var(--warm-border)] px-2 py-1.5">
+                    <ProductChips chips={chips} brand={it.brand ?? ''} productName={it.productName ?? ''}
+                      onPick={n => patchItem(idx, { brand: n.brand, productName: n.productName })} />
                   </div>
                 )}
                 {allowMulti && brandOpen && (
@@ -2870,7 +2937,8 @@ export default function FinanceClient({
     if (expAmountMax != null && e.amount > expAmountMax) return false
     if (expListSearch.trim()) {
       const q   = expListSearch.trim().toLowerCase()
-      const hay = `${e.itemLabel ?? ''} ${e.detail ?? ''} ${e.vendor ?? ''} ${e.channel ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
+      // 브랜드·제품명도 찾는다(가이드 §22 별건). '오뚜기' 로 지난 라면 구매가 걸린다. 서버 검색 축(searchExpenses)과 같은 칸이다.
+      const hay = `${e.itemLabel ?? ''} ${e.detail ?? ''} ${e.vendor ?? ''} ${e.channel ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''} ${e.brand ?? ''} ${e.productName ?? ''}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
     return true

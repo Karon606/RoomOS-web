@@ -12,6 +12,7 @@ import { storedUnitBasis, resolveUnitBasis, type UnitBasis } from '@/lib/unitBas
 import { dominantUnit, type UnitSource } from '@/lib/unitMismatch'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { splitQuickPickRows } from '@/lib/itemQuickPicks'
+import { groupProducts } from '@/lib/productMix'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -367,12 +368,41 @@ export type LastItemContext = {
   qtyValue: string | null             // 직전 수량
   unitPrice: number | null            // 직전 단가 (금액 ÷ 기준수량 역산)
   trackedCategories: string[]         // 이 품목명이 재고 품목으로 등록된 카테고리들 — 착오 등록 경고용(신고 1f99d83c)
+  // 그 품목의 지난 제품(가이드 §22 제품 표기). 입력칸 위 칩이다. 묶음 키는 브랜드(없으면 제품명), 표기는 그 묶음 최빈 원문(lib/productMix).
+  // 둘 이상이면 브랜드가 섞인 품목이라 직전 브랜드·제품명을 자동으로 채우지 않는다(2026-11 운영자 승인, 8-27 확정 개정).
+  products: ProductChip[]
+}
+
+export type ProductChip = { brand: string | null; productName: string | null; text: string }
+
+// 품명별 지난 제품 칩. 최근 기록 순, 키는 품명 원문. 배송비 줄(isShipping)은 물건이 아니라 뺀다(지난 기록 변형과 같은 거름).
+async function loadItemProducts(propertyId: string, labels: string[]): Promise<Map<string, ProductChip[]>> {
+  const out = new Map<string, ProductChip[]>()
+  if (!labels.length) return out
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, itemLabel: { in: labels }, isShipping: false, OR: [{ brand: { not: null } }, { productName: { not: null } }] },
+    select: { itemLabel: true, brand: true, productName: true },
+    orderBy: { createdAt: 'desc' },
+    take: 800,
+  })
+  for (const label of labels) {
+    out.set(label, groupProducts(rows.filter(r => r.itemLabel === label)).map(g => ({ brand: g.brand, productName: g.productName, text: g.text })))
+  }
+  return out
+}
+
+// 다품목 카드의 지난 제품 칩(가이드 §22). 한 번에 여러 품명을 받는다(카드마다 왕복하지 않는다).
+export async function getItemProducts(labels: string[]): Promise<Record<string, ProductChip[]>> {
+  const { propertyId } = await requirePropertyAccess()
+  if (!Array.isArray(labels)) return {}
+  const names = [...new Set(labels.filter(l => typeof l === 'string').map(l => l.trim()).filter(Boolean))].slice(0, 30)
+  return Object.fromEntries(await loadItemProducts(propertyId, names))
 }
 
 export async function getLastItemUnits(itemLabel: string): Promise<LastItemContext | null> {
   const propertyId = await getPropertyId()
   const sel = { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true, brand: true, productName: true } as const
-  const [row, priceRow, tracked] = await Promise.all([
+  const [row, priceRow, tracked, productsOf] = await Promise.all([
     prisma.expense.findFirst({
       where: { propertyId, itemLabel },
       select: sel,
@@ -387,6 +417,8 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
     // 카테고리 목록 포함 — 다른 카테고리로 잘못 등록하면 같은 품목이 하나 더 생기므로 폼에서 경고
     prisma.trackedItem.findMany({ where: { propertyId, label: itemLabel, isArchived: false }, select: { trackUnit: true, category: true } }),
+    // 지난 제품 칩(가이드 §22). 위 세 조회와 같은 왕복에 싣는다.
+    loadItemProducts(propertyId, [itemLabel]),
   ])
   // 세부스펙 칩 — 장부에서 파생한다(2026-10-27). 표기만 다른 같은 규격은 한 칩(그 묶음에서 가장 많이 쓴 표기)이고,
   // 많이 쓴 순이다. 사전(ItemSpecOption)은 읽기 소스로만 남아 장부의 어느 표기와도 동치가 아닌 것만 뒤에 붙는다.
@@ -440,6 +472,7 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     qtyValue: row?.qtyValue != null ? String(row.qtyValue) : null,
     unitPrice,
     trackedCategories: tracked.map(t => t.category),
+    products: productsOf.get(itemLabel) ?? [],
   }
 }
 
