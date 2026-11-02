@@ -56,6 +56,26 @@ const client = readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8')
 need('ⓑ9 병합 확인 창이 지출마다 화면이 본 이름을 보낸다', /const expenses = d\.rows\.map\(r => \(\{ id: r\.id, fromLabel: r\.fromLabel \}\)\)/.test(client))
 need('ⓑ10 병합 확인 결과 토스트에 적용취소가 있다', /run: undoAll\(undoIds\)/.test(client))
 
+// ⓑ11~ 크기가 다른 새 구매(신고 573b2e06 독립 검수, 운영자 결정 '다른 제품은 따로 둔다, 묻는 기능은 남긴다')
+const fin = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+const addExp = body(fin, 'export async function addExpense(')
+need('ⓑ11 지출 등록은 시드 전에 크기 다른 새 구매를 나눈다(두 자리)',
+  (addExp.match(/await splitSizeNewPurchases\(propertyId,/g) ?? []).length === 2 && /const sizeKeep = parseSizeKeep\(formData\.get\('sizeKeepJson'\)\)/.test(addExp),
+  '답 없이 온 450ml 이 원래 카드에 붙는다')
+const pend = readFileSync('app/(app)/dashboard/pendingReceipt.ts', 'utf8')
+const approve = body(pend, 'export async function approvePendingReceipt(')
+need('ⓑ12 대기 영수증 승인은 지출을 만든 뒤 나누고 시드한다',
+  /if \(!exp\) return[\s\S]{0,800}splitSizeNewPurchases\(propertyId, \[exp\.id\][\s\S]{0,200}seedTrackedItemsFromExpenses\(/.test(approve) &&
+  approve.indexOf('seedTrackedItemsFromExpenses(') > approve.indexOf('tx.expense.create('),
+  '시드가 지출보다 먼저 불리면 새 구매를 못 본다')
+const finClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
+const pendClient = readFileSync('components/dashboard/PendingReceiptSection.tsx', 'utf8')
+need('ⓑ13 지출 등록·지출 수정·대기 영수증 승인이 같은 물음을 탄다',
+  (finClient.match(/await askSizeIdentity\(/g) ?? []).length === 2 && /getSizeIdentityInfo\(cat, \[label\], detailExp\.id\)/.test(finClient) &&
+  /await askSizeIdentity\(\{ label, specValue, specUnit, qtyUnit \}, info\[label\], \{ renameOld: false \}\)/.test(pendClient) && /sizeKeep,/.test(pendClient),
+  '한 경로만 물으면 다른 경로로 크기 다른 구매가 섞인다')
+need("ⓑ14 병합 확인 창은 크기가 다르면 '새 품목으로 등록' 이 기본", /first && !differsBySize\(d\.newLabel, first\.label, d\.rows\) \? first\.itemId : '__new__'/.test(client))
+
 // ── ⓐ 운영 데이터 흔적 ───────────────────────────────────────────────
 async function db() {
   if (!process.env.DATABASE_URL) { console.log('  (DATABASE_URL 없음, ⓐ 건너뜀)'); return }

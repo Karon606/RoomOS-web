@@ -80,3 +80,15 @@ export function planSubLabels<G extends SeedGroup>(list: G[], attached: (g: G) =
   }
   return out
 }
+
+// 병합 확인 창의 기본 선택. 새 이름이 후보 카드와 크기(이름의 크기 표시 또는 그 구매의 규격 글자)로 다르면 다른 물건일 가능성이
+// 커서 기본은 '새 품목으로 등록' 이다(운영자 결정 2026-11-02 '다른 제품은 따로 둔다'). 수량 단위만 다른 경우(키친타월 (롤)/(팩))는
+// 종전대로 첫 후보에 합치기가 기본이다.
+export function differsBySize(newLabel: string, candidateLabel: string, rows: { specValue: number | null; specUnit: string | null }[]): boolean {
+  if (sizeConflicts(newLabel, candidateLabel)) return true
+  return rows.some(r => {
+    if (!(r.specValue != null && r.specValue > 0) || !r.specUnit) return false
+    const t = `${Number(r.specValue.toFixed(6))}${r.specUnit.trim()}`
+    return newLabel.includes(t) && !candidateLabel.includes(t)
+  })
+}

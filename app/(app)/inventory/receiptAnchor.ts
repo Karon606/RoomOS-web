@@ -46,8 +46,9 @@ export async function ensureReceiptAnchor(
       trackedItemId: item.id,
       date: anchor.receivedAt!,
       remainingQty: total,
-      // 백필과 같은 메모다. '[수령 자동] ' 접두는 이력 카드가 한 구매의 수령 반영(읽기 전용)으로 읽으므로 쓰지 않는다(lib/stockCheckKind).
-      memo: `[수령 자동·백필] 수령 ${purchases.length}건 합산`,
+      // '[수령 자동] ' 접두는 이력 카드가 한 구매의 수령 반영(읽기 전용)으로 읽으므로 쓰지 않는다. 백필 꼬리표('자동 백필')와도 낱말을
+      // 나눈다(이건 그때 만든 기록이다). 화면은 '수령 N건 합산 · 자동 반영'(lib/stockCheckKind ANCHOR_RE).
+      memo: `[수령 자동·합산] 수령 ${purchases.length}건 합산`,
       sourceExpenseId: anchor.id,
     },
     select: { id: true },

@@ -26,6 +26,7 @@ import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
+import { splitSizeNewPurchases, parseSizeKeep } from '@/app/(app)/inventory/sizeSplit'
 // 공용부 이름은 비품 화면과 같은 표기 경로(pathName) 정본 — 같은 위치가 두 화면에서 다른 이름이면 안 된다.
 import { loadLocationPaths } from '@/app/(app)/inventory/locationPaths'
 // 비품의 배정 예정 호실(targetRoomId) 저장 규칙 정본(순수). 수령 전 비품의 자리는 예정 호실 하나뿐이다.
@@ -815,6 +816,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     })()
     // 재단 여부 물음(FinanceClient 저장 직전 게이트)의 답 — { 품명: 'spec'|'qty' }.
     // 새 재고 카드의 trackUnit 을 이 값으로 만든다. 답이 없으면 종전 규칙대로 정해진다.
+    // 규격이 다른 구매에 '같은 품목으로' 라고 답한 품명(./sizeIdentityAsk). 답이 없는 품명은 서버가 나눈다.
+    const sizeKeep = parseSizeKeep(formData.get('sizeKeepJson'))
     const cutAxisRaw = formData.get('cutAxisJson') as string
     const declaredTrackUnit: Record<string, 'spec' | 'qty'> = (() => {
       if (!cutAxisRaw) return {}
@@ -1068,7 +1071,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
       // 비품으로 바꾼 등록은 카테고리가 추적 밖이라 시드가 카드를 만들지 않는다(seed 가 추적 카테고리만 본다).
-      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean), { declaredTrackUnit }).catch(() => {})
+      // 크기가 다른 새 구매는 '같은 품목으로' 답이 없으면 하위 이름으로 나눠 결정 대기로 세운다(./inventory/sizeSplit, 신고 573b2e06).
+      const sizeSplit = await splitSizeNewPurchases(propertyId, (made as { id: string }[]).slice(0, itemCreates.length).map(m => m.id), sizeKeep).catch(() => [] as string[])
+      await seedTrackedItemsFromExpenses([...ocrCaptureItems.map(it => it.label).filter(Boolean), ...sizeSplit], { declaredTrackUnit }).catch(() => {})
       const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
       const durableUndo = durableUndoOf(made.slice(0, itemCreates.length) as (RowNow & { id: string; isShipping: boolean; targetRoomId: string | null })[])
@@ -1100,7 +1105,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
-    if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel], { declaredTrackUnit }).catch(() => {})
+    const sizeSplit = itemLabel ? await splitSizeNewPurchases(propertyId, [(made[0] as { id: string }).id], sizeKeep).catch(() => [] as string[]) : []
+    if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel, ...sizeSplit], { declaredTrackUnit }).catch(() => {})
     await noteUnits([specUnit], [qtyUnit])
     const bf = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
@@ -4334,7 +4340,7 @@ export async function getTrackedCardLabels(category: string, labels: string[]): 
 // 시스템은 그것으로 카드를 나누지 않으므로, 10L 와 20L 이 한 카드에 섞이는 일이 조용히 일어난다.
 // 화면이 저장 직전에 "나눌까요" 를 물으려면 '지금까지 쓴 규격의 종류'가 필요해서 여기서 집계한다.
 // distinct 원값 그대로 돌려준다 — 물리 동치(2.1L=2100ml) 판정은 호출부가 lib/units 로 한다.
-export async function getSizeIdentityInfo(category: string, labels: string[]): Promise<Record<string, {
+export async function getSizeIdentityInfo(category: string, labels: string[], excludeExpenseId?: string): Promise<Record<string, {
   cardId: string
   trackUnit: string
   specUnit: string | null
@@ -4360,6 +4366,8 @@ export async function getSizeIdentityInfo(category: string, labels: string[]): P
       excludeFromInventory: false,
       specValue: { not: null, gt: 0 },
       specUnit: { not: null },
+      // 지출 수정의 물음은 고치는 그 행의 옛 규격을 이력으로 세지 않는다
+      ...(excludeExpenseId ? { id: { not: excludeExpenseId } } : {}),
     },
     _count: { _all: true },
   })

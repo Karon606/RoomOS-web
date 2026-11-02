@@ -45,7 +45,8 @@ need('단일 저장이 정본 단위를 쓴다', /qtyUnit:\s+cleanUnit\(qtyUnit\
 need('단일 저장이 정본 규격단위를 쓴다', /specUnit:\s+cleanUnit\(specUnit\)/.test(addExpense))
 // 두 번째 인자(재단 여부 답)는 뒤에 붙을 수 있다 — 여기서 고정하는 것은 **품명의 출처**다.
 need('재고 시드가 정본 품명을 쓴다',
-  /if \(itemLabel\) await seedTrackedItemsFromExpenses\(\[itemLabel\][,)]/.test(addExpense))
+  // 크기가 다른 새 구매를 나눈 하위 이름이 뒤에 붙을 수 있다(2026-11-02 sizeSplit). 첫 품명은 정본 itemLabel 이다.
+  /if \(itemLabel\) await seedTrackedItemsFromExpenses\(\[itemLabel[,\]]/.test(addExpense))
 need('단위 목록 적립이 정본 단위를 쓴다', /noteUnits\(\[specUnit\], \[qtyUnit\]\)/.test(addExpense))
 
 // ── ①-B 수정 저장도 같은 정본 ─────────────────────────────────────

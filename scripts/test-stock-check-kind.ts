@@ -128,6 +128,9 @@ const kimchi = [c1608, c1600, c1522, c1009]
   eq('④ 위치별 점검 접두가 아닌 괄호 메모는 그대로', checkMemoText('위치별 점검 (4층) 재확인', { kind: 'check' }), '위치별 점검 (4층) 재확인')
   eq('④ 시작 재고 꼬리표', checkMemoText('[시작 재고]', { kind: 'check' }), '시작 재고')
   eq('④ 수령 백필 꼬리표', checkMemoText('[수령 자동·백필] 수령 2건 합산', { kind: 'check' }), '수령 2건 합산 · 자동 백필')
+  eq('④ 카드 생길 때 앉힌 첫 점검은 백필이라 말하지 않는다', checkMemoText('[수령 자동·합산] 수령 2건 합산', { kind: 'check' }), '수령 2건 합산 · 자동 반영')
+  eq('④ 첫 점검 메모는 수령 반영 접두가 아니다', classifyCheck(chk('r4', '[수령 자동·합산] 수령 2건 합산', 3, []), null).kind, 'check')
+  eq('④ 첫 점검 메모 템플릿이 receiptAnchor 와 같다', readFileSync('app/(app)/inventory/receiptAnchor.ts', 'utf8').includes('memo: `[수령 자동·합산] 수령 ${purchases.length}건 합산`'), true)
   eq('④ 직전에만 있던 칸은 0 으로 바뀐 것', changedLocs(chk('p', null, 3, [loc('a', 'A', 3)]), chk('c', null, 0, [])), [{ locationId: 'a', locationName: 'A', from: 3, to: 0 }])
   eq('④ 없는 행과 0 행은 같다', changedLocs(chk('p', null, 0, [loc('a', 'A', 0)]), chk('c', null, 0, [])), [])
 }

@@ -131,6 +131,7 @@ import { conflictingPathName } from '@/lib/locationPaths'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { useReasonOptions, useReasonOptionList } from '@/components/ui/useReasonOptions'
 import { restoreRetiredCardFirst, retiredCardLine } from './retiredCardToast'
+import { differsBySize } from './seedLabel'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
 const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
@@ -7057,15 +7058,19 @@ function mergeRowLines(r: MergeDecisionRow): [string, string, string] {
 function MergeDecisionModal({ decisions, onClose, onDone }: {
   decisions: MergeDecision[]; onClose: () => void; onDone: () => void
 }) {
-  // 결정별 선택값: 대상 itemId 또는 '__new__'. 기본은 첫 후보(합치기)에 둠 — 사용자가 확인.
+  // 결정별 선택값: 대상 itemId 또는 '__new__'. 기본은 첫 후보(합치기)이고, 크기나 규격이 다르면 '새 품목으로 등록' 이다
+  // (seedLabel.differsBySize, 운영자 결정 2026-11-02 '다른 제품은 따로 둔다'). 사용자가 확인한다.
   const [choices, setChoices] = useState<Record<number, string>>(
-    () => Object.fromEntries(decisions.map((d, i) => [i, d.candidates[0]?.itemId ?? '__new__'])),
+    () => Object.fromEntries(decisions.map((d, i) => {
+      const first = d.candidates[0]
+      return [i, first && !differsBySize(d.newLabel, first.label, d.rows) ? first.itemId : '__new__']
+    })),
   )
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
   const chip = (on: boolean) =>
-    `min-h-11 px-3 rounded-sm ring-1 text-sm font-medium text-left transition-colors ${
+    `min-h-[40px] px-3 rounded-sm ring-1 text-sm font-medium text-left transition-colors ${
       on ? 'bg-[var(--neutral-bg)] text-[var(--warm-dark)] ring-[var(--warm-border)]'
          : 'bg-transparent ring-[var(--warm-border)] text-[var(--seg-ink-off)] hover:text-[var(--warm-dark)]'}`
 
@@ -7076,7 +7081,7 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
         const u = await unmergeTrackedItem(id).catch(() => ({ ok: false as const, error: '적용취소 중 통신 오류가 발생했습니다' }))
         if (!u.ok) { pushToast('error', u.error); onDone(); return }
       }
-      pushToast('info', '병합 확인을 적용취소했습니다 · 재고에 못 붙은 구매로 복귀')
+      pushToast('info', '병합 확인을 적용취소했습니다 · 재고에 못 붙은 구매로 돌아갔습니다')
       onDone()
     })()
   }
@@ -7157,7 +7162,8 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
               {d.rows.map(r => {
                 const [head, body, now] = mergeRowLines(r)
                 return (
-                  <li key={r.id} className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]/60 px-3 py-2 text-xs leading-relaxed">
+                  // 바탕은 투명이다. 모달 안의 --canvas 면은 다크에서 검은 덩어리가 된다(§22 토글 칩 문단과 같은 까닭).
+                  <li key={r.id} className="rounded-lg border border-[var(--warm-border)] px-3 py-2 text-xs leading-relaxed">
                     <p className="text-[var(--warm-dark)] tabular-nums break-keep">{head}</p>
                     {body && <p className="text-[var(--warm-mid)] tabular-nums break-keep">{body}</p>}
                     <p className="text-[var(--warm-muted)]">{now}</p>
@@ -7207,20 +7213,23 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
     })
   }
 
-  const undo = async (id: string, kind: MergeUndoRow['kind']) => {
+  const undo = async (u: MergeUndoRow) => {
+    const back = "구매가 원래 이름으로 돌아가 '재고에 못 붙은 구매'에 다시 섭니다."
     const ok = await confirmDialog({
       title: '이 병합을 적용취소할까요?',
-      // 병합 확인 창에서 고른 것(IMPORT·NEW)은 구매가 원래 이름으로 돌아가 다시 확인 대기에 선다(2026-11-02 부터 기록).
-      message: kind === 'CARD'
+      // 기록마다 실제로 하는 일을 말한다(독립 검수). 병합 확인 창에서 고른 것은 2026-11-02 부터 구매가 원래 이름으로 돌아간다.
+      message: u.kind === 'CARD'
         ? '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n위치별 재고 연결·창고 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.'
-        : kind === 'NEW'
-          ? "그 구매가 원래 이름으로 돌아가 '재고에 못 붙은 구매'에 다시 섭니다. 이때 새로 만든 품목은 지워집니다."
-          : "합쳤던 구매가 원래 이름으로 돌아가 '재고에 못 붙은 구매'에 다시 섭니다.",
+        : u.kind === 'NEW'
+          ? `${back} ${u.cardAction === 'created' ? '이때 새로 만든 품목은 지워집니다.' : u.cardAction === 'unarchived' ? '숨김을 풀었던 품목은 다시 숨겨집니다.' : '품목은 그대로 둡니다.'}`
+          : u.legacy
+            ? `합쳐졌던 구매가 '${u.origLabel ?? '원래 이름'}' 품목으로 분리되고, 그 품목 카드가 다시 생깁니다.`
+            : `합쳤던 ${back}`,
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
-    setPendingId(id)
-    unmergeTrackedItem(id).then(res => {
+    setPendingId(u.id)
+    unmergeTrackedItem(u.id).then(res => {
       setPendingId(null)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '병합을 적용취소했습니다')
@@ -7247,7 +7256,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                 {undos.map(u => (
                   <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
-                    <button type="button" onClick={() => undo(u.id, u.kind)} disabled={pendingId === u.id}
+                    <button type="button" onClick={() => undo(u)} disabled={pendingId === u.id}
                       className="text-[0.6875rem] font-medium text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">적용취소</button>
                   </div>
                 ))}

@@ -8,7 +8,8 @@
 //
 // 바꾸는 것(영업장 c74fd998 범위, 한 인터랙티브 트랜잭션, 모든 쓰기는 지금 값 대조 updateMany count === 1)
 //   1. 지출 fe71f7c2: 품명 '세탁조크리너'(원래 카드로), 규격 530ml, 브랜드 '홈워시'. 수량 6개·제품명은 그대로.
-//   2. 카드 87b7e636 숨김 해제. 이름 그대로, 시작 점검은 만들지 않는다(10/16 의 0 이 유효하다).
+//   2. 카드 87b7e636 숨김 해제, 개수로 세기(trackUnit qty). 점검 값이 이미 개수라 환산하지 않는다. 이름 그대로, 시작 점검은 만들지 않는다
+//      (10/16 의 0 이 유효하다). 규격 단위 '개' 로 세던 카드에 530ml 지출이 붙으면 규격 곱셈이 안 걸려도 명부에 오르므로 개수 카드로 둔다.
 //   3. 카드 3346fd7c 삭제. 지출·점검·입수·폐기·위치·임시저장·규칙·병합 기록이 0 인지 트랜잭션 안에서 다시 보고 행을 남긴다.
 //   4. 거절 규칙 cde22147 삭제(행을 남긴다).
 //   5. 450ml 카드 bfefb4ce: 이름 '세탁조크리너 450ml'(지출 5f9db967 품명도 함께), 병(개)으로 세기. 앱의 추적 단위 전환
@@ -16,7 +17,8 @@
 //      10개로 고친다(되돌림 기록에 싣는다). 위치 '4층 사무실'(87b7 에 연결된 그 위치) 연결 + 이 품목 창고로 지정.
 //      위치별 잔량은 운영자가 다음 점검에서 정한다(총량 점검은 다음 위치 점검 때 창고로 보존된다).
 //   6. 사후 검사: 87b7 에 붙은 지출이 fe71 하나, '1개 (개)' 카드·지출 0.
-// 되돌림: 한 트랜잭션. 적용 뒤 87b7·bfef 에 점검·입수·폐기가 생겼거나 '세탁조크리너 1개 (개)' 이름이 다시 나타났으면 전체 거부.
+// 되돌림: 한 트랜잭션. 적용 뒤 87b7·bfef 에 점검·입수·폐기·임시저장이 생겼거나 위치 링크가 바뀌었거나, '세탁조크리너 1개 (개)'
+// 이름이 다시 나타났거나, '세탁조크리너 450ml' 이름으로 새 지출이 붙었으면 전체 거부.
 // 지운 행은 원래 id·시각으로 다시 넣는다.
 //
 // 실행: npx tsx --env-file=.env.local scripts/fix-washer-cleaner-split-1101.ts [--apply | --revert <undo.json>]
@@ -45,7 +47,7 @@ const NEW_450 = '세탁조크리너 450ml'
 // 손대기 전 값(2026-11-02 운영 DB 실측). 이 값과 하나라도 다르면 아무것도 안 바꾼다.
 export const BEFORE = {
   fe71: { itemLabel: SPLIT_LABEL, specValue: 1, specUnit: '개', qtyValue: 6, qtyUnit: '개', brand: null as string | null, productName: null as string | null, updatedAt: '2026-11-01T09:21:10.382Z' },
-  card87: { label: BASE, isArchived: true, updatedAt: '2026-11-02T05:29:25.021Z' },
+  card87: { label: BASE, isArchived: true, trackUnit: 'spec', specUnit: '개', updatedAt: '2026-11-02T05:29:25.021Z' },
   mute: { kind: 'MUTE', normLabel: BASE, targetItemId: IDS.card87, updatedAt: '2026-11-01T09:21:11.092Z' },
   cardBf: { label: OLD_450, trackUnit: 'spec', specUnit: 'ml', qtyUnit: '개', hubLocationId: null as string | null, updatedAt: '2026-11-01T09:21:11.072Z' },
   exp5f: { itemLabel: OLD_450, specValue: 450, specUnit: 'ml', qtyValue: 10, qtyUnit: '개', updatedAt: '2026-11-02T04:50:02.141Z' },
@@ -80,9 +82,9 @@ async function body(tx: Tx, write: boolean, log: (s: string) => void): Promise<W
     ? tx.expense.updateMany({ where: fe71Where, data: AFTER_FE71 }).then(r => r.count)
     : tx.expense.count({ where: fe71Where }))
   // 2) 카드 87b7 숨김 해제
-  const c87Where = { id: IDS.card87, propertyId: PROPERTY, category: CATEGORY, label: b.card87.label, isArchived: true, updatedAt: at(b.card87.updatedAt) }
-  await cas(`2. 카드 87b7e636 '${BASE}' 숨김 해제`, write
-    ? tx.trackedItem.updateMany({ where: c87Where, data: { isArchived: false } }).then(r => r.count)
+  const c87Where = { id: IDS.card87, propertyId: PROPERTY, category: CATEGORY, label: b.card87.label, isArchived: true, trackUnit: b.card87.trackUnit, specUnit: b.card87.specUnit, updatedAt: at(b.card87.updatedAt) }
+  await cas(`2. 카드 87b7e636 '${BASE}' 숨김 해제 · 개수로 세기(점검 값은 이미 개수)`, write
+    ? tx.trackedItem.updateMany({ where: c87Where, data: { isArchived: false, trackUnit: 'qty' } }).then(r => r.count)
     : tx.trackedItem.count({ where: c87Where }))
   // 3) 카드 3346 삭제 — 비어 있는지 다시 본다(fe71 은 1 에서 옮겼다)
   const card33 = await tx.trackedItem.findFirst({ where: { id: IDS.card33, propertyId: PROPERTY, category: CATEGORY, label: SPLIT_LABEL, isArchived: false } })
@@ -194,7 +196,12 @@ export async function revertWasherFix(db: PrismaClient, u: WasherUndo, log: (s: 
           tx.stockDisposal.count({ where: { trackedItemId: id, createdAt: { gt: after } } }),
         ])
         if (c + a + d > 0) throw new Stop(`적용 뒤 카드 ${id.slice(0, 8)} 에 점검·입수·폐기가 생겨 되돌리지 않는다`)
+        if (await tx.stockCheckDraft.count({ where: { trackedItemId: id } }) > 0) throw new Stop(`카드 ${id.slice(0, 8)} 에 점검 임시저장이 있어 되돌리지 않는다`)
+        const links = (await tx.trackedItemLocation.findMany({ where: { trackedItemId: id }, select: { storageLocationId: true, closedAt: true } }))
+        if (links.length !== 1 || links[0].storageLocationId !== IDS.office || links[0].closedAt) throw new Stop(`카드 ${id.slice(0, 8)} 의 위치 연결이 적용 뒤 바뀌어 되돌리지 않는다`)
       }
+      const on450 = await tx.expense.count({ where: { propertyId: PROPERTY, itemLabel: NEW_450, id: { not: IDS.exp5f } } })
+      if (on450 > 0) throw new Stop(`적용 뒤 '${NEW_450}' 이름으로 새 지출 ${on450}건이 붙어 되돌리지 않는다`)
       const again = await Promise.all([
         tx.trackedItem.count({ where: { propertyId: PROPERTY, label: SPLIT_LABEL } }),
         tx.expense.count({ where: { propertyId: PROPERTY, itemLabel: SPLIT_LABEL } }),
@@ -223,8 +230,8 @@ export async function revertWasherFix(db: PrismaClient, u: WasherUndo, log: (s: 
       log('  ok 3. 카드 3346fd7c 다시 넣음')
       // 2·1
       await cas('2. 카드 87b7e636 다시 숨김', tx.trackedItem.updateMany({
-        where: { id: IDS.card87, propertyId: PROPERTY, isArchived: false, updatedAt: at(u.after.card87UpdatedAt) },
-        data: { isArchived: true, updatedAt: at(b.card87.updatedAt) },
+        where: { id: IDS.card87, propertyId: PROPERTY, isArchived: false, trackUnit: 'qty', updatedAt: at(u.after.card87UpdatedAt) },
+        data: { isArchived: true, trackUnit: b.card87.trackUnit, updatedAt: at(b.card87.updatedAt) },
       }))
       await cas('1. 지출 fe71f7c2', tx.expense.updateMany({
         where: { id: IDS.fe71, propertyId: PROPERTY, ...AFTER_FE71, updatedAt: at(u.after.fe71UpdatedAt) },

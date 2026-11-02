@@ -18,6 +18,7 @@ import { cleanUnit } from '@/lib/receiptOcr'
 import { isMonthKey, targetMonthForSave } from '@/lib/expenseTargetMonth'
 import { autoOptionForSave } from '@/lib/reasonListSave'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
+import { splitSizeNewPurchases } from '@/app/(app)/inventory/sizeSplit'
 import prisma from '@/lib/prisma'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { reconcileOcrItemsWithHistory } from '@/lib/itemVariants'
@@ -282,6 +283,8 @@ export async function approvePendingReceipt(
     specValue?: string; specUnit?: string
     specText?: string          // 치수·용도 서술(계산 비관여)
     qtyValue?: string;  qtyUnit?: string
+    // 규격이 다른 구매에 '같은 품목으로' 라고 답했다(카드의 물음, ../finance/sizeIdentityAsk). 없으면 서버가 크기 다른 새 구매를 나눈다.
+    sizeKeep?: boolean
     // 지출로 등록할 때 목록 밖 새 카테고리를 지출 카테고리 목록에 더할지(2026-10-22 2차, 화면 체크 기본 켜짐). 재고 보충에는 없다.
     addCategoryToList?: boolean
   },
@@ -305,9 +308,6 @@ export async function approvePendingReceipt(
     if (final.itemLabel && inferredLabel) {
       await captureItemNameAliasPairs(propertyId, [{ raw: inferredLabel, label: final.itemLabel }]).catch(() => {})
     }
-    // 재고 카드 자동 생성 — 승인 즉시 재고에 잡히게(신고 269baf9f)
-    if (final.itemLabel) await seedTrackedItemsFromExpenses([final.itemLabel]).catch(() => {})
-
     // ⚠️ 상태 전이를 조건부로 '선점'한 뒤 지출을 만든다.
     //   종전엔 위 findFirst 로 pending 을 확인하고 그 뒤에 expense.create 를 해서, 동시 요청 2건이
     //   모두 검사를 통과한 뒤 지출을 2건 만들 수 있었다(TOCTOU). 그 달 지출이 이중 계상된다.
@@ -360,6 +360,13 @@ export async function approvePendingReceipt(
       return e
     })
     if (!exp) return { ok: false, error: '이미 처리된 영수증입니다.' }
+    // 재고 카드 자동 생성 — 승인 즉시 재고에 잡히게(신고 269baf9f). **지출을 만든 뒤에** 돈다. 종전에는 지출보다 먼저 불러
+    // 시드가 새 구매를 못 보고 지나갔다(신고 573b2e06 독립 검수). 크기가 다른 새 구매는 카드의 '같은 품목으로' 답이 없으면
+    // 하위 이름으로 나눠 결정 대기로 세운다(../inventory/sizeSplit, 판정 정본 lib/sizeIdentity).
+    if (final.itemLabel) {
+      const sizeSplit = await splitSizeNewPurchases(propertyId, [exp.id], final.sizeKeep ? [final.itemLabel] : []).catch(() => [] as string[])
+      await seedTrackedItemsFromExpenses([final.itemLabel, ...sizeSplit]).catch(() => {})
+    }
     await categorySave?.commit()
     // 처음 보는 쇼핑몰이면 영업장 쇼핑몰 목록에 쌓는다(지출 등록과 같은 흐름, 정규화·중복 거르기는 그 액션이 한다).
     if (channel) await addChannelOption(channel).catch(() => {})

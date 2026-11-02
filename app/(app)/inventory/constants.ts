@@ -190,6 +190,11 @@ export type MergeUndoRow = {
   targetLabel: string | null
   kind: 'IMPORT' | 'CARD' | 'NEW'   // NEW = 병합 확인의 '새 품목으로 등록'
   createdAt: string            // ISO
+  // 적용취소 확인창이 실제 동작을 말하는 근거. legacy = 지출별 이름이 없는 옛 IMPORT(원래 이름 카드를 다시 세운다),
+  // cardAction = NEW 가 카드를 만들었는지·숨김을 풀었는지·있던 카드였는지.
+  legacy?: boolean
+  origLabel?: string | null
+  cardAction?: 'created' | 'unarchived' | 'existing'
 }
 
 // ── 보정 저장 시 '차이'를 무엇으로 볼 것인가 (운영자 승인 2026-08-19) ─────────────

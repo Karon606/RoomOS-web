@@ -31,6 +31,8 @@ import { ExpenseTargetMonthField } from '@/components/ui/ExpenseTargetMonthField
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories, getChannelOptions } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
+import { getSizeIdentityInfo } from '@/app/(app)/finance/actions'
+import { askSizeIdentity, type SizeCardInfo } from '@/app/(app)/finance/sizeIdentityAsk'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { ocrFallbackAllowed } from '@/lib/ocrImage'
 import { OPTION_LIST_DEFAULTS } from '@/lib/optionLists'
@@ -313,6 +315,17 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
       if (!(amount > 0)) { pushToast('error', '금액을 입력하세요'); return }
     }
     startTransition(async () => {
+      // 규격이 다른 구매면 지출 등록과 같은 물음을 한 번(판정 정본 lib/sizeIdentity, 신고 573b2e06). 나누면 품명에 규격을 붙이고,
+      // 같은 품목이면 그 답을 싣는다. 옛 카드 개명은 하지 않는다(이 자리는 이번 구매만 나눈다).
+      let label = itemLabel.trim()
+      let sizeKeep = false
+      if (isInventory && label) {
+        const info = await getSizeIdentityInfo(category, [label]).catch(() => ({} as Record<string, SizeCardInfo>))
+        const ans = await askSizeIdentity({ label, specValue, specUnit, qtyUnit }, info[label], { renameOld: false })
+        if (ans === null) return
+        if (ans.kind === 'split') label = ans.label
+        if (ans.kind === 'keep') sizeKeep = true
+      }
       const res = await approvePendingReceipt(row.id, {
         date,
         targetMonth: targetMonth ?? undefined,
@@ -325,7 +338,8 @@ export function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApp
         memo: memo || undefined,
         ...(isInventory ? {} : { addCategoryToList: categoryToList }),
         ...(isInventory ? {
-          itemLabel: itemLabel.trim(),
+          itemLabel: label,
+          sizeKeep,
           specValue: specValue || undefined,
           specUnit:  specUnit  || undefined,
           specText:  specText.trim() || undefined,

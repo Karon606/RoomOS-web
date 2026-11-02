@@ -7,7 +7,8 @@ import {
   conversionPlan, conversionPrecheck, conversionCopy, conversionToast, conversionUndoneText, convertItemsFrom, itemFacets,
   CONVERT_UNDO_LABEL, type ConvertPlan, type DurableConvertUndo,
 } from '@/app/(app)/inventory/assets/conversionPlan'
-import { specMultiplier, splitSizeLabel, isConvertibleUnit } from '@/lib/units'
+import { splitSizeLabel } from '@/lib/units'
+import { askSizeIdentity, type SizeCardInfo } from './sizeIdentityAsk'
 import { inferUnitBasis, resolveUnitBasis, storedUnitBasis, type UnitBasis } from '@/lib/unitBasis'
 import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { groupUnitMismatches, type UnitSource } from '@/lib/unitMismatch'
@@ -3079,71 +3080,29 @@ export default function FinanceClient({
         // 하나라도 어긋나면 침묵한다(보수 편향 — 실지출 전수 재생에서 충돌형 발동 0건).
         let finalItems = addItems
         {
+          // 판정과 창은 한 벌이다(lib/sizeIdentity · ./sizeIdentityAsk). 지출 수정·대기 영수증 승인도 같은 창을 탄다.
+          // '같은 품목으로' 답은 sizeKeepJson 으로 싣는다. 답이 없으면 서버가 크기 다른 새 구매를 하위 이름으로 나눠
+          // 결정 대기('재고에 못 붙은 구매')로 세운다(신고 573b2e06, 운영자 결정 '다른 제품은 따로 둔다').
           const cat = (fd.get('category') as string) || addExpCategory
-          const sizeText = (v: number, u: string) => `${Number(v.toFixed(6))}${u}`
-          // 물리 동치 — 2.1L 과 2100ml 은 같은 규격이다. 판정은 정본 classifySpecChoice 하나(lib/specNotation, 2026-10-27
-          // 서술 규격 게이트와 한 벌). 'new' 가 아니면(글자까지 같거나 표기만 다르면) 같은 규격이다.
-          const sameSize = (a: { value: number; unit: string }, b: { value: number; unit: string }) =>
-            classifySpecChoice({ specValue: a.value, specUnit: a.unit }, [{ specValue: b.value, specUnit: b.unit }]) !== 'new'
-          const cands = finalItems.filter(it => {
-            const label = (it.label ?? '').trim()
-            if (!label || /\d/.test(label)) return false          // 규격이 이미 이름에 있으면 침묵
-            const v = Number(it.specValue)
-            const u = (it.specUnit ?? '').trim()
-            if (!(v > 0) || !u) return false
-            return specMultiplier(v, u, it.qtyUnit) == null       // 규격이 수량 계산에 참여하면 그건 양이다
-          })
-          const info = cands.length
-            ? await getSizeIdentityInfo(cat, cands.map(it => it.label.trim()))
-                .catch(() => ({} as Awaited<ReturnType<typeof getSizeIdentityInfo>>))
+          const labels = [...new Set(finalItems.map(it => (it.label ?? '').trim()).filter(Boolean))]
+          const info: Record<string, SizeCardInfo> = labels.length
+            ? await getSizeIdentityInfo(cat, labels).catch(() => ({} as Record<string, SizeCardInfo>))
             : {}
           let split = false
+          const keep: string[] = []
           for (let i = 0; i < finalItems.length; i++) {
             const it = finalItems[i]
-            if (!cands.includes(it)) continue
-            const label = it.label.trim()
+            const label = (it.label ?? '').trim()
             const card = info[label]
-            if (!card) continue                                   // 카드가 없으면 나눌 것도 없다(침묵)
-            const now = { value: Number(it.specValue), unit: (it.specUnit ?? '').trim() }
-            // 개수로 세는 카드이거나, 규격으로 세는데 새 규격이 카드 단위로 환산되지 않으면 묻는다(신고 573b2e06).
-            // 종전에는 규격으로 세는 카드면 늘 침묵해, 카드 단위가 '개'인 세탁조크리너에 450ml 을 적어도 묻지 않고 저장했다.
-            // 그 구매는 수량만 더해져 같은 물건으로 섞이거나, 시드가 이름을 갈라 원래 카드의 지출까지 옮겼다.
-            if (card.trackUnit !== 'qty' && specMultiplier(now.value, now.unit, card.specUnit) != null) continue
-            // 이력 규격을 물리 동치로 묶는다 — 2.1L·2100ml 두 표기가 '혼재'로 읽히지 않게.
-            const sizes: { value: number; unit: string; count: number }[] = []
-            for (const h of card.specHistory) {
-              const hit = sizes.find(s => sameSize(h, s))
-              if (hit) hit.count += h.count
-              else sizes.push({ ...h })
-            }
-            if (!sizes.length) continue
-            if (classifySpecChoice({ specValue: now.value, specUnit: now.unit }, sizes.map(x => ({ specValue: x.value, specUnit: x.unit }))) !== 'new') continue   // 써 본 규격이면 침묵 — 이력이 곧 기억이다
-            const nowText = sizeText(now.value, now.unit)
-            // 옛 규격이 수량 단위('1개')면 그것은 크기가 아니다. 옛 카드를 '세탁조크리너 1개' 로 개명하지 않고 이번 구매만 나눈다.
-            const single = sizes.length === 1 ? sizes[0] : null
-            const only = single && isConvertibleUnit(single.unit) ? single : null
-            const oldText = only ? sizeText(only.value, only.unit) : ''
-            const choice = await choiceDialog({
-              title: `'${label}' 를 ${nowText} 규격으로 저장할까요?`,
-              message: only
-                ? `지금까지 이 품목은 ${oldText} 규격으로만 등록했습니다. 서로 다른 품목으로 관리하려면 구분을 품명에 표시합니다. `
-                  + `나누면 이번 구매는 '${label} ${nowText}' 로, 기존 품목과 지출은 '${label} ${oldText}' 로 나뉩니다.`
-                : single
-                  ? `지금까지 이 품목은 개수로만 등록했습니다. 나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`
-                  : `이 품목은 여러 규격(${sizes.map(s => sizeText(s.value, s.unit)).join(', ')})을 같은 품목으로 관리하고 있습니다. `
-                    + `나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`,
-              confirmLabel: only ? '규격별로 나누기' : `'${label} ${nowText}' 로 분리`,
-              altLabel: '같은 품목으로',
-              level: 'caution',
-            })
-            if (choice === null) return                            // 취소·X = 저장 중단(무변경)
-            if (choice !== 'confirm') continue                     // 같은 품목으로 — 다음 같은 규격 구매는 이력에 잡혀 침묵
-            // 나누기 — 이번 구매는 새 품명으로. 이력이 단일이면 구 카드도 규격을 붙여 개명한다.
-            // 안 붙이면 옛 규격 지출이 규격 없는 품명 아래 남아 어느 쪽 물건인지 알 수 없게 된다.
+            const ans = await askSizeIdentity(it, card, { renameOld: true })
+            if (ans === null) return                               // 취소·X = 저장 중단(무변경)
+            if (ans.kind === 'silent') continue
+            if (ans.kind === 'keep') { keep.push(label); continue } // 같은 품목으로 — 다음 같은 규격 구매는 이력에 잡혀 침묵
+            // 나누기 — 이번 구매는 새 품명으로. 이력이 물리 단위 한 규격뿐이면 옛 카드도 규격을 붙여 개명한다.
             // 옛 카드 개명은 적용취소가 남는 액션이다(2026-10-27 D5, splitTrackedItemLabel → 품명 병합 기록). 토스트는 저장 결과 다음
             // 둘째 줄로 띄운다(저장이 뒤 게이트에서 멈춰도 개명은 이미 됐으니 그때도 띄운다, finally).
-            if (only) {
-              const renamed = `${label} ${oldText}`
+            if (ans.renameOldTo && card) {
+              const renamed = ans.renameOldTo
               const r = await splitTrackedItemLabel(card.cardId, renamed)
                 .catch(() => ({ ok: false as const, error: '기존 품목 이름을 바꾸지 못했습니다.' }))
               if (!r.ok) pushToast('error', r.error)               // 동명 카드 충돌 등 — 새 품명 저장은 그대로 진행
@@ -3153,11 +3112,12 @@ export default function FinanceClient({
                 }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다')) } },
               }))
             }
-            finalItems = finalItems.map((x, xi) => xi === i ? { ...x, label: `${label} ${nowText}` } : x)
+            finalItems = finalItems.map((x, xi) => xi === i ? { ...x, label: ans.label } : x)
             split = true
           }
           // 바꾼 품명이 후속 게이트·저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 품명이다.
           if (split) fd.set('itemsJson', JSON.stringify(itemsForSave(finalItems, addIsDurable)))
+          if (keep.length) fd.set('sizeKeepJson', JSON.stringify(keep))
         }
         // 비품·자재 서술 규격 게이트(2026-10-27 운영자 승인, 4단계). 비품은 서술 규격이 카드를 가른다(knowledge/domain-inventory).
         // 지난 기록에서 불러온 규격을 고쳤고, 고친 값이 그 품명의 어느 지난 기록 표기와도 동치가 아닐 때만 한 번 묻는다.
@@ -3420,6 +3380,24 @@ export default function FinanceClient({
           if (converted) {
             fd.set('itemsJson', JSON.stringify(itemsForSave(converted, true)))
             savedItems = converted   // 아래 재고 미리보기도 환산 후 수량으로 물어야 한다(서버가 그 값으로 저장한다)
+          }
+        }
+        // 규격을 바꾼 수정도 등록과 같은 물음을 한 번(신고 573b2e06 독립 검수). 크기가 다른 물건이면 품명에 규격을 붙여 나눈다.
+        // 이력은 고치는 이 행의 옛 규격을 빼고 센다. 옛 카드 개명은 하지 않는다(이 행 이름과 엇갈린다). 나누면 이름이 바뀌므로
+        // 받은 구매의 원장 조정은 서버의 이름 변경 경로가 맡는다.
+        if (!durableConv && detailExp && savedItems.length === 1) {
+          const it = savedItems[0]
+          const label = (it.label ?? '').trim()
+          const specChanged = (it.specValue ? parseFloat(it.specValue) : null) !== (detailExp.specValue ?? null) || ((it.specUnit ?? '').trim() || null) !== (detailExp.specUnit ?? null)
+          if (label && label === (detailExp.itemLabel ?? '') && specChanged) {
+            const cat = String(fd.get('category') ?? '') || editExpCategory
+            const info = await getSizeIdentityInfo(cat, [label], detailExp.id).catch(() => ({} as Record<string, SizeCardInfo>))
+            const ans = await askSizeIdentity(it, info[label], { renameOld: false })
+            if (ans === null) return
+            if (ans.kind === 'split') {
+              savedItems = [{ ...it, label: ans.label }]
+              fd.set('itemsJson', JSON.stringify(itemsForSave(savedItems, editIsDurable)))
+            }
           }
         }
         // 수령완료 구매의 수량·규격 정정 — 이 수량을 이미 반영한 점검이 있으면 함께 조정할지 묻는다

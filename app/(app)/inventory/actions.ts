@@ -2972,13 +2972,16 @@ export async function getMergeUndos(): Promise<MergeUndoRow[]> {
     ? await prisma.trackedItem.findMany({ where: { id: { in: targetIds } }, select: { id: true, label: true } })
     : []
   const labelById = new Map(targets.map(t => [t.id, t.label]))
-  return undos.map(u => ({
+  return undos.map(u => { const pl = (u.payload ?? {}) as { kind?: string; expenses?: unknown; origLabel?: string; cardAction?: 'created' | 'unarchived' | 'existing' }; return {
     id: u.id,
     label: u.label,
     targetLabel: labelById.get(u.targetItemId) ?? null,
-    kind: (() => { const k = (u.payload as any)?.kind; return k === 'CARD' || k === 'NEW' ? k : 'IMPORT' })() as 'IMPORT' | 'CARD' | 'NEW',
+    kind: (pl.kind === 'CARD' || pl.kind === 'NEW' ? pl.kind : 'IMPORT') as 'IMPORT' | 'CARD' | 'NEW',
     createdAt: u.createdAt.toISOString(),
-  }))
+    legacy: pl.kind !== 'CARD' && pl.kind !== 'NEW' && !Array.isArray(pl.expenses),
+    origLabel: pl.origLabel ?? null,
+    cardAction: pl.kind === 'NEW' ? pl.cardAction : undefined,
+  } })
 }
 
 const MERGE_UNDO_STALE = '그 뒤 구매 이름이 바뀌어 되돌릴 수 없습니다.'
@@ -3049,6 +3052,7 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
     if (!undo) return { ok: false, error: '되돌릴 병합 정보를 찾을 수 없습니다.' }
     const p = undo.payload as any
 
+    let cardMovedLabel: string | null = null
     if (p?.kind === 'NEW') {
       // 병합 확인의 '새 품목으로 등록' 적용취소(신고 573b2e06). 토큰과 지금 행이 하나라도 어긋나면 전체 거부.
       await prisma.$transaction(tx => undoNewMergeDecisionTx(tx, propertyId, undo.id, p))
@@ -3063,11 +3067,10 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
             const c = await tx.expense.updateMany({ where: { id: m.id, propertyId, category, itemLabel: m.next }, data: { itemLabel: m.prev } })
             if (c.count !== 1) throw new MergeDecisionDenied(MERGE_UNDO_STALE)
           }
-          // 2) 합칠 때 앉힌 첫 점검(앵커)은 그 뒤 기록이 없을 때만 걷는다.
-          if (p.anchorCheckId) {
-            if (await laterLedgerCount(tx, undo.targetItemId, p.appliedAtMs, p.anchorCheckId) > 0) throw new MergeDecisionDenied(MERGE_UNDO_LATER)
-            await tx.stockCheck.deleteMany({ where: { id: p.anchorCheckId, trackedItemId: undo.targetItemId } })
-          }
+          // 2) 합친 뒤 그 카드에 점검·입수·폐기가 생겼으면 거부한다(새 품목 등록 적용취소와 같은 문법). 그 기록이 합친 구매를
+          //    이미 셌을 수 있어 이름만 되돌리면 잔량이 어긋난다. 합칠 때 앉힌 첫 점검(앵커)은 이 셈에서 빼고 함께 걷는다.
+          if (await laterLedgerCount(tx, undo.targetItemId, p.appliedAtMs, p.anchorCheckId ?? null) > 0) throw new MergeDecisionDenied(MERGE_UNDO_LATER)
+          if (p.anchorCheckId) await tx.stockCheck.deleteMany({ where: { id: p.anchorCheckId, trackedItemId: undo.targetItemId } })
         } else {
           // 옛 기록: 원래 라벨 카드 보장 (없으면 생성, 숨김이면 복구) 뒤 지출을 그 라벨로
           const existing = await tx.trackedItem.findUnique({
@@ -3082,8 +3085,12 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
           } else if (existing.isArchived) {
             await tx.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
           }
+          // 대상 카드 이름인 지출만 되돌린다(CAS). 그 사이 다른 이름으로 옮겨진 지출이 있으면 전체 거부(독립 검수, 운영 옛 기록 8건).
           if (Array.isArray(expenseIds) && expenseIds.length > 0) {
-            await tx.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: origLabel } })
+            const target = await tx.trackedItem.findFirst({ where: { id: undo.targetItemId, propertyId }, select: { label: true } })
+            if (!target) throw new MergeDecisionDenied('합친 품목을 찾을 수 없습니다.')
+            const c = await tx.expense.updateMany({ where: { id: { in: expenseIds }, propertyId, itemLabel: target.label }, data: { itemLabel: origLabel } })
+            if (c.count !== new Set(expenseIds).size) throw new MergeDecisionDenied(MERGE_UNDO_STALE)
           }
         }
         // 2.5) 대상 카드 qtyUnit 원복 (부착시키려고 looseMatch 로 null 됐던 경우) — 카드 병합 원복과 동형.
@@ -3102,6 +3109,14 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
     } else {
       // kind === 'CARD'
       const s = p.source ?? {}
+      // 옮긴 지출이 지금도 대상 카드 이름일 때만 되돌린다(CAS, 독립 검수). 이 갈래는 여러 쓰기라 쓰기 전에 먼저 본다.
+      if (Array.isArray(p.movedExpenseIds) && p.movedExpenseIds.length > 0) {
+        const target = await prisma.trackedItem.findFirst({ where: { id: undo.targetItemId, propertyId }, select: { label: true } })
+        if (!target) return { ok: false, error: '합친 품목을 찾을 수 없습니다.' }
+        const still = await prisma.expense.count({ where: { id: { in: p.movedExpenseIds }, propertyId, itemLabel: target.label } })
+        if (still !== new Set(p.movedExpenseIds as string[]).size) return { ok: false, error: MERGE_UNDO_STALE }
+        cardMovedLabel = target.label
+      }
       // 1) source 카드 재생성(또는 숨김 복구)
       let sourceId: string
       const existing = await prisma.trackedItem.findUnique({
@@ -3138,7 +3153,7 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       }
       // 2) 지출 라벨 원복 + 점검·입수 이전 원복
       if (Array.isArray(p.movedExpenseIds) && p.movedExpenseIds.length > 0) {
-        await prisma.expense.updateMany({ where: { id: { in: p.movedExpenseIds }, propertyId }, data: { itemLabel: s.label } })
+        await prisma.expense.updateMany({ where: { id: { in: p.movedExpenseIds }, propertyId, itemLabel: cardMovedLabel ?? undefined }, data: { itemLabel: s.label } })
       }
       // 병합 때 단위 환산했으면(unitFactor≠1) 원복하며 역배율로 되돌림
       const mf = typeof p.unitFactor === 'number' && p.unitFactor > 0 ? p.unitFactor : 1

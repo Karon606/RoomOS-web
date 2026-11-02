@@ -123,7 +123,10 @@ const fin = read(FIN), pr = read(PR), fc = read(FC), prs = read(PRS), ocr = read
 }
 // ⓘ
 {
-  need(`ⓘ ${FC}: 소모품 크기 게이트가 classifySpecChoice 를 쓰지 않는다`, /classifySpecChoice\(\{ specValue: now\.value, specUnit: now\.unit \}, sizes\.map/.test(fc))
+  // 2026-11-02(신고 573b2e06 독립 검수) 소모품 크기 판정은 lib/sizeIdentity 한 벌로 옮겼고, 지출 등록·수정·대기 영수증 승인이 그 창(sizeIdentityAsk)을 탄다.
+  const sizeId = read('lib/sizeIdentity.ts')
+  need(`ⓘ ${FC}: 소모품 크기 게이트가 정본(lib/sizeIdentity → classifySpecChoice)을 쓰지 않는다`,
+    /classifySpecChoice\(\{ specValue: v, specUnit: u \}, history\.map/.test(sizeId) && /await askSizeIdentity\(it, card, \{ renameOld: true \}\)/.test(fc))
   need(`ⓘ ${FC}: 크기 동치를 손으로 환산해 비교한다(정본 밖)`, !/convertUnit\(a\.value, a\.unit, b\.unit\)/.test(fc))
 }
 // ⓙ

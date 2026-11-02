@@ -38,6 +38,9 @@ const PANEL_RE = /^위치별 점검 \((.+)\)$/
 // 품목 등록의 시작 수량 점검(actions createTrackedItem) · 2026-08-05 수령 백필 점검(`[수령 자동·백필] 수령 N건 합산`).
 const START_MEMO = '[시작 재고]'
 const BACKFILL_RE = /^\[수령 자동·백필\] (.+)$/
+// 카드가 생기는 자리(시드 새 카드·병합 확인의 새 품목·점검 0 카드로 합치기)가 받은 몫을 앉힌 첫 점검(inventory/receiptAnchor, 2026-11-02).
+// 백필이 아니라 그때 만든 기록이라 화면 낱말을 나눈다(독립 검수).
+const ANCHOR_RE = /^\[수령 자동·합산\] (.+)$/
 
 const same = (a: number, b: number) => Math.abs(a - b) < 1e-6
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -127,6 +130,8 @@ export function checkMemoText(memo: string | null, kind: CheckKind): string | nu
   if (memo === START_MEMO) return '시작 재고'
   const b = BACKFILL_RE.exec(memo)
   if (b) return `${b[1]} · 자동 백필`
+  const an = ANCHOR_RE.exec(memo)
+  if (an) return `${an[1]} · 자동 반영`
   // 수령 자동 꼬리표가 남았는데 '점검' 으로 가린 기록(손 실측이 합쳐졌거나 구매가 이력에 없다) — 꼬리표만 낱말로 읽는다.
   if (memo.startsWith(RECEIPT_PREFIX)) return `수령 ${memo.slice(RECEIPT_PREFIX.length)} · 자동 반영`
   return memo

@@ -45,6 +45,7 @@ async function main() {
 
   const prisma = (await import('@/lib/prisma')).default
   const inv = await import('@/app/(app)/inventory/actions')
+  const dash = await import('@/app/(app)/dashboard/pendingReceipt')
   const { computeInventoryOverview } = await import('@/app/(app)/inventory/overview')
   const fix = await import('./fix-washer-cleaner-split-1101')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
@@ -78,11 +79,30 @@ async function main() {
   const MAY = await exp(P1, '세탁조크리너', { date: new Date('2026-05-31T00:00:00Z'), qtyValue: 6, specValue: 1, specUnit: '개', receivedAt: new Date('2026-05-31T00:00:00Z') })
   await prisma.stockCheck.create({ data: { trackedItemId: WASH, date: new Date('2026-06-02T00:00:00Z'), remainingQty: 5 } })
   {
-    const NOV = await exp(P1, '세탁조크리너', { qtyValue: 10, specValue: 450, specUnit: 'ml' })
-    const s = await inv.seedTrackedItemsFromExpenses(['세탁조크리너'])
-    eq('M1 붙은 구매 둘 다 이름 그대로', [await labelOf(MAY), await labelOf(NOV)], ['세탁조크리너', '세탁조크리너'])
-    eq('M1 새 카드·결정 대기 없음', [s.ok && s.created, s.ok && s.decisions.length], [0, 0])
-    await prisma.expense.delete({ where: { id: NOV } })
+    // 크기가 다른 새 구매(450ml, '개')는 원래 카드에 붙이지 않는다(운영자 결정 '다른 제품은 따로 둔다'). 대기 영수증 승인은 물을 자리가
+    // 없으면 하위 이름으로 나눠 결정 대기로 세운다. 시드는 지출을 만든 **뒤에** 돈다(종전에는 먼저 불려 새 구매를 못 봤다).
+    const before = await prisma.trackedItem.count({ where: { propertyId: P1 } })
+    const pr = async () => (await prisma.pendingReceipt.create({ data: { propertyId: P1, uploaderId: OWNER, imageUrl: 'https://example.com/r.jpg' } })).id as string
+    const final = { date: '2026-11-01', amount: 28200, category: '소모품비', itemLabel: '세탁조크리너', specValue: '450', specUnit: 'ml', qtyValue: '10', qtyUnit: '개' }
+    const r1 = await dash.approvePendingReceipt(await pr(), final)
+    eq('M1 대기 영수증 승인 ok', r1, { ok: true })
+    const NOV = (await prisma.expense.findFirst({ where: { propertyId: P1, specValue: 450, qtyUnit: '개' }, orderBy: { createdAt: 'desc' } }))!
+    eq('M1 450ml 새 구매는 하위 이름으로(원래 카드에 안 붙음)', NOV.itemLabel, '세탁조크리너 450ml')
+    eq('M1 5월 구매는 그대로', await labelOf(MAY), '세탁조크리너')
+    eq('M1 새 카드는 서지 않고 결정 대기(후보 원래 카드)', [await prisma.trackedItem.count({ where: { propertyId: P1 } }) - before,
+      (await inv.getPendingMergeDecisions()).find(x => x.expenseIds.includes(NOV.id))?.candidates.map(c => c.itemId)], [0, [WASH]])
+    await prisma.expense.delete({ where: { id: NOV.id } })
+    // 카드에서 '같은 품목으로' 라고 답했으면 나누지 않는다
+    const r2 = await dash.approvePendingReceipt(await pr(), { ...final, sizeKeep: true })
+    eq('M1c 같은 품목 답 승인 ok', r2, { ok: true })
+    const KEPT = (await prisma.expense.findFirst({ where: { propertyId: P1, specValue: 450, qtyUnit: '개' }, orderBy: { createdAt: 'desc' } }))!
+    eq('M1c 같은 품목으로 답하면 원래 카드 이름 그대로', KEPT.itemLabel, '세탁조크리너')
+    await prisma.expense.delete({ where: { id: KEPT.id } })
+    // 이미 붙어 있던 구매는 시드가 옮기지 않는다(전체 스캔에도 없다)
+    eq('M1d 이미 붙은 5월 구매는 결정 대기에 없다', (await inv.getPendingMergeDecisions()).some(x => x.expenseIds.includes(MAY)), false)
+    // 처음 보는 품명은 승인 즉시 카드가 선다(시드가 새 지출을 본다)
+    eq('M1e 새 품명 승인 ok', await dash.approvePendingReceipt(await pr(), { ...final, itemLabel: '빨래집게', specValue: undefined, specUnit: undefined }), { ok: true })
+    eq('M1e 새 품명은 승인 즉시 카드가 선다', await prisma.trackedItem.count({ where: { propertyId: P1, label: '빨래집게' } }), 1)
   }
   // 붙지 않는 450ml(단위 '병')은 결정 대기로, 5월 구매는 그대로
   const BOTTLE = await exp(P1, '세탁조크리너', { qtyValue: 10, qtyUnit: '병', specValue: 450, specUnit: 'ml', amount: 28200, vendor: '쿠팡', brand: '홈스타', receivedAt: new Date('2026-11-02T04:50:00Z') })
@@ -135,13 +155,32 @@ async function main() {
   // ── M4 합치기와 적용취소: 지출은 원래 이름으로(결정 대기로 돌아간다) ─────────────────────
   {
     const before = await bytes(P1)
+    const checksBefore = await prisma.stockCheck.count({ where: { trackedItemId: WASH } })
     const r = await inv.applyMergeDecision({ category: d1.category, newLabel: d1.newLabel, expenses: d1.rows.map(x => ({ id: x.id, fromLabel: x.fromLabel })), specUnit: d1.specUnit, qtyUnit: d1.qtyUnit, choice: { kind: 'merge', targetItemId: WASH } })
     if (!r.ok) throw new Error(r.error)
     eq('M4 합친 구매는 대상 카드 이름', await labelOf(BOTTLE), '세탁조크리너')
+    eq('M4 점검 있는 카드로 합치면 첫 점검(앵커)을 만들지 않는다', await prisma.stockCheck.count({ where: { trackedItemId: WASH } }), checksBefore)
     eq('M4 대상 카드는 단위 무시로', (await prisma.trackedItem.findUnique({ where: { id: WASH } }))?.qtyUnit, null)
     eq('M4 적용취소 ok', await inv.unmergeTrackedItem(r.undoId!), { ok: true })
     eq('M4 원래 이름(세탁조크리너)·단위·규칙 그대로', await bytes(P1), before)
     eq('M4 다시 결정 대기', (await inv.getPendingMergeDecisions()).some(x => x.expenseIds.includes(BOTTLE)), true)
+    // 합친 뒤 그 카드에 점검이 생기면 합치기 적용취소도 거부한다(새 품목 등록과 같은 문법)
+    const r2 = await inv.applyMergeDecision({ category: d1.category, newLabel: d1.newLabel, expenses: d1.rows.map(x => ({ id: x.id, fromLabel: x.fromLabel })), specUnit: d1.specUnit, qtyUnit: d1.qtyUnit, choice: { kind: 'merge', targetItemId: WASH } })
+    if (!r2.ok) throw new Error(r2.error)
+    await new Promise(res => setTimeout(res, 5))
+    const later = await prisma.stockCheck.create({ data: { trackedItemId: WASH, date: new Date('2026-11-03T00:00:00Z'), remainingQty: 9 } })
+    const mid = await bytes(P1)
+    eq('M4b 합친 뒤 점검이 있으면 적용취소 거부', (await inv.unmergeTrackedItem(r2.undoId!)).ok, false)
+    eq('M4b 거부는 아무것도 안 바꾼다', await bytes(P1), mid)
+    await prisma.stockCheck.delete({ where: { id: later.id } })
+    eq('M4c 점검을 지우면 적용취소 ok', (await inv.unmergeTrackedItem(r2.undoId!)).ok, true)
+    // 옛 합치기 기록(origLabel 만 실림)도 지금 대상 카드 이름인 지출만 되돌린다
+    const legacyExp = await exp(P1, '세탁조크리너', { qtyUnit: '개' })
+    const legacy = await prisma.trackedItemMergeUndo.create({ data: { propertyId: P1, targetItemId: WASH, label: '옛 기록', payload: { kind: 'IMPORT', origLabel: '세탁조 옛이름', category: '소모품비', expenseIds: [legacyExp] } } })
+    await prisma.expense.update({ where: { id: legacyExp }, data: { itemLabel: '다른 데로 옮김' } })
+    eq('M4d 옛 기록: 그 사이 옮겨진 지출이면 거부', (await inv.unmergeTrackedItem(legacy.id)).ok, false)
+    eq('M4d 거부면 옛 이름 카드도 안 선다', await prisma.trackedItem.count({ where: { propertyId: P1, label: '세탁조 옛이름' } }), 0)
+    await prisma.expense.delete({ where: { id: legacyExp } }); await prisma.trackedItemMergeUndo.delete({ where: { id: legacy.id } })
   }
 
   // ── M5 450ml 거절이 있어도 530ml 은 자동 카드가 아니라 결정 대기 ─────────────────────
@@ -218,13 +257,29 @@ async function main() {
     if (!ap.ok) throw new Error(ap.error)
     g.__CR_FLOW_PID = PID
     const rows = await computeInventoryOverview(PID)
-    eq('M7 원래 카드에 5월 구매가 돌아와 숨김 해제', [await labelOf(I.fe71), (await prisma.trackedItem.findUnique({ where: { id: I.card87 } }))?.isArchived], ['세탁조크리너', false])
+    eq('M7 원래 카드에 5월 구매가 돌아와 숨김 해제·개수로 세기', [await labelOf(I.fe71), (await prisma.trackedItem.findUnique({ where: { id: I.card87 } }))?.isArchived, (await prisma.trackedItem.findUnique({ where: { id: I.card87 } }))?.trackUnit], ['세탁조크리너', false, 'qty'])
+    eq('M7 원래 카드 잔량은 마지막 점검 0 그대로', rows.find((r: { id: string }) => r.id === I.card87)?.currentStock, 0)
     eq('M7 450ml 카드 이름·개수·위치·창고', await prisma.trackedItem.findUnique({ where: { id: I.cardBf }, select: { label: true, trackUnit: true, hubLocationId: true } }), { label: '세탁조크리너 450ml', trackUnit: 'qty', hubLocationId: I.office })
     eq('M7 450ml 잔량 10개', rows.find((r: { id: string }) => r.id === I.cardBf)?.currentStock, 10)
     eq('M7 빈 카드·거절 규칙 삭제', [await prisma.trackedItem.count({ where: { id: I.card33 } }), await prisma.trackedItemMergeRule.count({ where: { id: I.mute } })], [0, 0])
     eq('M7 다시 적용하면 거부(CAS)', (await fix.runWasherFix(prisma as never, true, quiet)).ok, false)
     eq('M7 되돌림 ok', await fix.revertWasherFix(prisma as never, J(ap.undo!), quiet), { ok: true })
     eq('M7 되돌림 바이트 동일', await full(), before)
+    // 적용 뒤 '세탁조크리너 450ml' 이름으로 새 지출이 붙거나 임시저장이 생기면 되돌림 거부
+    {
+      const ap3 = await fix.runWasherFix(prisma as never, true, quiet)
+      if (!ap3.ok) throw new Error(ap3.error)
+      const extra = await prisma.expense.create({ data: { propertyId: PID, date: new Date('2026-11-03T00:00:00Z'), amount: 1000, category: '소모품비', itemLabel: '세탁조크리너 450ml', qtyValue: 1, qtyUnit: '개' } })
+      const m1 = await full()
+      eq('M7c 450ml 이름으로 새 지출이 붙으면 되돌림 거부', (await fix.revertWasherFix(prisma as never, J(ap3.undo!), quiet)).ok, false)
+      eq('M7c 거부는 아무것도 안 바꾼다', await full(), m1)
+      await prisma.expense.delete({ where: { id: extra.id } })
+      const dr = await prisma.stockCheckDraft.create({ data: { trackedItemId: I.card87, locationId: I.office, data: {} } as never })
+      eq('M7d 임시저장이 생기면 되돌림 거부', (await fix.revertWasherFix(prisma as never, J(ap3.undo!), quiet)).ok, false)
+      await prisma.stockCheckDraft.delete({ where: { id: (dr as { id: string }).id } })
+      eq('M7e 정리 되돌림 ok', await fix.revertWasherFix(prisma as never, J(ap3.undo!), quiet), { ok: true })
+      eq('M7e 되돌림 바이트 동일', await full(), before)
+    }
     // 적용 뒤 점검이 생기면 되돌림 거부
     const ap2 = await fix.runWasherFix(prisma as never, true, quiet)
     if (!ap2.ok) throw new Error(ap2.error)
