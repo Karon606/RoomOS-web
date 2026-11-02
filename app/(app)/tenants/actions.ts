@@ -4208,7 +4208,12 @@ export async function applyStatusTransition(input: {
     if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE') await reanchorReservationPrepaid(input.leaseTermId)
 
     // 호실 공실 처리
+    // 점유(입실 예약·거주중·퇴실 예정)에서 투어 단계로 물리면 그 방을 놓는다(2026-11-02, 신고 507e1a0d 적용취소 왕복에서 발견).
+    // 수정 폼(updateTenant)은 '점유에서 비점유로' 를 이미 공실로 되돌리는데 이 경로만 투어 단계를 '변경 없음' 으로 읽어,
+    // 예약을 투어로 되돌린 방(운영 이력 입실 예약에서 투어 대기 4건·투어 완료 1건, 2026-11-02 읽기)이 아무도 안 잡았는데도
+    // 공실이 아닌 채로 남을 수 있었다. 공실 쓰기는 아래 점유 확인 뒤다.
     const vac = roomVacantForStatus(input.toStatus)
+      ?? (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(lease.status) && ['WAITING_TOUR', 'TOUR_DONE'].includes(input.toStatus) ? true : null)
     if (lease.roomId && vac !== null) {
       if (input.toStatus === 'CHECKED_OUT') {
         // 공실·예약가·청소·구간은 부수 처리 정본 한 자리를 지난다(2026-08-30 경로 통합).
