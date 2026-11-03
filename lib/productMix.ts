@@ -184,3 +184,110 @@ export function shelfProductsText(onShelf: readonly { brand: string | null; prod
   if (names.length <= 2) return names.join(', ')
   return `${names.slice(0, 2).join(', ')} 외 ${names.length - 2}`
 }
+
+// ── 제품별 보기(가이드 §22, 2026-11 등재, 운영자 승인 '추천대로' 해석 A) ──
+// 품목 상세 '월별 입수'·'단가 추이' 를 제품 묶음으로 나눠 보여 준다. 보기만 나누고 실사·잔량·소모·알림은 늘 합계다.
+// 입수·단가처럼 구매(지출)에서 나온 사실만 나눈다. 묶는 키·대표 표기는 위 groupProducts 하나다(카드 메타·펼침과 같은 묶음).
+// 한 지출은 한 묶음에만 들어가고, 이름 없는 구매와 무상 입수는 '제품 기록 없음' 나머지로 합을 맞춘다(제품별 합 + 나머지 = 통합).
+
+/** 제품 줄·선의 상한. 넘는 묶음은 '외 N종'(입수) 또는 선 밖(단가)이다. */
+export const PRODUCT_LINES_MAX = 3
+
+/**
+ * 보기 토글 판정 재료. 금액이 있는 이름 있는 구매의 묶음 키(중복 없음). 두 탭(월별 입수·단가 추이)이 같은 재료로 판정하게
+ * 단가 표본(금액 > 0)과 같은 거름을 쓴다. 0원 구매는 단가에 안 서므로 월별에서도 묶음 수에 넣지 않는다.
+ */
+export function productViewKeys(rows: readonly { brand: string | null; productName: string | null; amount: number }[]): string[] {
+  const keys = new Set<string>()
+  for (const r of rows) { if (!(r.amount > 0)) continue; const k = productKeyOf(r.brand, r.productName); if (k) keys.add(k) }
+  return [...keys]
+}
+/** 보기 토글을 세우는가. 묶음이 둘 미만이면 나눠 볼 것이 없다. 두 탭이 이 함수 하나로 판정한다. */
+export function showsProductView(keys: Iterable<string>): boolean {
+  return new Set(keys).size >= 2
+}
+
+export type InflowPurchase = { date: Date; month: string; brand: string | null; productName: string | null; qty: number; amount: number }
+export type InflowLine = { key: string; text: string; qty: number; amount: number }
+export type InflowSplit = {
+  /** 그 달 많이 들어온 순(같으면 최근 묶음 먼저) 최대 PRODUCT_LINES_MAX 줄. */
+  lines: InflowLine[]
+  /** 줄에 못 든 묶음('외 N종'). keys.length = N. */
+  more: { keys: string[]; qty: number; amount: number } | null
+  /** 이름 없는 구매 + 무상 입수('제품 기록 없음'). */
+  unrecorded: { qty: number; amount: number } | null
+  /** 그 달 보기 토글 판정 재료(productViewKeys). 화면은 달들을 합쳐 showsProductView 로 판정한다. */
+  viewKeys: string[]
+}
+
+/**
+ * 달별 입수를 제품 묶음으로 나눈다. 수량은 호출부가 카드 단위로 바꿔 넘긴다(getMonthlyInflow 와 같은 환산).
+ * 묶음(키)은 전 기간 groupProducts 하나로 정하고, 줄 이름은 그 달에 실제로 산 구매의 최빈 원문(같으면 최근)이다.
+ * 전 기간 대표 표기를 쓰면 10월에 산 '스파크 스마트 클린 분말세제' 가 11월에 많이 산 '…리필' 로 서서 그 달 사실과 갈린다(독립 검수).
+ */
+export function splitInflowByProduct(
+  purchases: readonly InflowPurchase[],
+  additions: readonly { month: string; qty: number }[],
+): Map<string, InflowSplit> {
+  const recent = [...purchases].sort((a, b) => b.date.getTime() - a.date.getTime())
+  const groups = groupProducts(recent)
+  const groupOf = new Map<InflowPurchase, ProductGroup>()
+  const order = new Map<string, number>()
+  groups.forEach((g, i) => { order.set(g.key, i); for (const r of g.rows) groupOf.set(r, g) })
+
+  const months = new Map<string, { byKey: Map<string, InflowLine & { rows: InflowPurchase[] }>; rest: { qty: number; amount: number }; all: InflowPurchase[] }>()
+  const monthOf = (m: string) => {
+    let v = months.get(m)
+    if (!v) { v = { byKey: new Map(), rest: { qty: 0, amount: 0 }, all: [] }; months.set(m, v) }
+    return v
+  }
+  for (const p of recent) {
+    const m = monthOf(p.month)
+    m.all.push(p)
+    const g = groupOf.get(p)
+    if (!g) { m.rest.qty += p.qty; m.rest.amount += p.amount; continue }
+    const cur = m.byKey.get(g.key)
+    if (cur) { cur.qty += p.qty; cur.amount += p.amount; cur.rows.push(p) }
+    else m.byKey.set(g.key, { key: g.key, text: g.text, qty: p.qty, amount: p.amount, rows: [p] })
+  }
+  // 줄 이름 = 그 달 그 묶음 구매의 최빈 원문(rows 는 최근 순이라 동률이면 최근). 한 묶음 안이라 groupProducts 결과는 하나다.
+  for (const m of months.values()) for (const l of m.byKey.values()) l.text = groupProducts(l.rows)[0].text
+  for (const a of additions) monthOf(a.month).rest.qty += a.qty
+
+  const out = new Map<string, InflowSplit>()
+  for (const [month, m] of months) {
+    const sorted = [...m.byKey.values()].map(({ key, text, qty, amount }) => ({ key, text, qty, amount }))
+      .sort((a, b) => b.qty - a.qty || order.get(a.key)! - order.get(b.key)!)
+    const lines = sorted.slice(0, PRODUCT_LINES_MAX)
+    const tail = sorted.slice(PRODUCT_LINES_MAX)
+    out.set(month, {
+      lines,
+      more: tail.length > 0 ? { keys: tail.map(l => l.key), qty: tail.reduce((s, l) => s + l.qty, 0), amount: tail.reduce((s, l) => s + l.amount, 0) } : null,
+      unrecorded: m.rest.qty > 0 || m.rest.amount > 0 ? m.rest : null,
+      viewKeys: productViewKeys(m.all),
+    })
+  }
+  return out
+}
+
+export type PriceSeries<T> = ProductGroup & { points: T[] }
+
+/**
+ * 단가 점을 제품 묶음별 선으로 나눈다. 점은 날짜 오름차순으로 받고 선 안에서도 그 차례다.
+ * 선은 점이 많은 묶음부터(같으면 최근에 산 묶음 먼저) 최대 PRODUCT_LINES_MAX 개다.
+ * more = 선에 못 든 묶음 수, unrecorded = 이름 없는 점 수(선을 긋지 않는다).
+ */
+export function splitPriceByProduct<T extends { date: Date; brand: string | null; productName: string | null }>(
+  points: readonly T[],
+): { series: PriceSeries<T>[]; more: number; unrecorded: number } {
+  const recent = [...points].sort((a, b) => b.date.getTime() - a.date.getTime())
+  const groups = groupProducts(recent)
+  const all = groups.map((g, i) => ({ i, key: g.key, brand: g.brand, productName: g.productName, text: g.text, points: [...g.rows].sort((a, b) => a.date.getTime() - b.date.getTime()) }))
+    .sort((a, b) => b.points.length - a.points.length || a.i - b.i)
+  const named = all.reduce((s, g) => s + g.points.length, 0)
+  return {
+    series: all.slice(0, PRODUCT_LINES_MAX).map(({ key, brand, productName, text, points }) => ({ key, brand, productName, text, points })),
+    more: Math.max(0, all.length - PRODUCT_LINES_MAX),
+    unrecorded: points.length - named,
+  }
+}

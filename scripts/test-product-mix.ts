@@ -5,8 +5,11 @@
 //   · 한 브랜드뿐이면 한 토막. 김치 남도청년 표기 넷은 한 묶음이고 대표는 가장 많이 쓴 원문(같으면 최근).
 //   · 잔량을 모르면(null) 추정하지 않는다. 브랜드 없이 제품명만 있으면 제품명이 짧은 이름이다.
 //   · 재고 제외 지출과 단위가 안 맞는 구매는 어느 셈에도 안 들어간다.
+//   · 제품별 보기(2026-11 등재). 제품 줄 합 + 외 N종 + '제품 기록 없음' = 통합, 한 지출은 한 묶음, 줄·선은 3까지, 묶음 둘 미만이면 토글 없음.
+//     달 줄 이름은 그 달 최빈 원문(단가 선 이름은 전 기간 최빈), 토글 판정은 두 탭이 한 함수(0원 구매는 재료 밖).
+//     남아 있을 제품도 같은 셈이다. 이름 있는 묶음 합 + 이름 없는 구매가 차지한 자리 = 잔량.
 //   · 카드 메타 표기(2026-11-03 운영자 지시). full = '브랜드 제품명'(기록된 원문 그대로, 제품명이 브랜드로 시작해도 줄이지 않는다), name = 제품명만(없으면 브랜드). 묶음 전체가 한 표기다.
-import { resolveMadeMix, groupProducts, productKeyOf, productText, shelfName, shelfProductsText, type MixPurchase } from '../lib/productMix'
+import { resolveMadeMix, groupProducts, productKeyOf, productText, shelfName, shelfProductsText, splitInflowByProduct, splitPriceByProduct, productViewKeys, showsProductView, PRODUCT_LINES_MAX, type MixPurchase, type InflowPurchase, type InflowSplit } from '../lib/productMix'
 
 let pass = 0
 const fails: string[] = []
@@ -124,6 +127,76 @@ eq('원문 공백 연결 브랜드 먼저', productText('오뚜기', '진라면 
 {
   const m = resolveMadeMix([buy('삼양', 'x', '2025-10-01', 10), buy('오뚜기', 'y', '2026-10-01', 10)], 5, U, NOW)
   eq('12개월 밖 구매는 구매한 제품에서 빠짐', m.history.map(h => h.brand), ['오뚜기'])
+}
+
+// ── 제품별 보기: 남아 있을 제품도 묶음 합 + 이름 없는 자리 = 잔량 ──
+{
+  const rows = [buy('삼양', 'x', '2026-06-25', 50), buy(null, null, '2026-07-10', 30), buy('오뚜기', 'y', '2026-07-20', 40)]
+  const m = resolveMadeMix(rows, 100, U, NOW)
+  eq('남은 제품 합 + 이름 없는 자리 = 잔량', m.onShelf.reduce((s, g) => s + g.qty, 0) + 30, 100)
+}
+// ── 제품별 보기: 달별 입수 ──
+{
+  const ip = (brand: string | null, productName: string | null, ymd: string, qty: number, amount = qty * 600): InflowPurchase =>
+    ({ date: d(ymd), month: ymd.slice(0, 7), brand, productName, qty, amount })
+  const sumSplit = (s: InflowSplit) => s.lines.reduce((t, l) => t + l.qty, 0) + (s.more?.qty ?? 0) + (s.unrecorded?.qty ?? 0)
+  const purchases = [
+    ip('삼양', '삼양라면', '2026-07-02', 40), ip('오뚜기', '진라면 매운맛', '2026-07-20', 100), ip(' 오뚜기 ', '진라면 순한맛', '2026-07-25', 20),
+    ip('농심', '신라면', '2026-07-10', 10), ip('팔도', '비빔면', '2026-07-11', 5), ip(null, null, '2026-07-12', 7, 4200),
+    ip('삼양', '삼양라면', '2026-08-03', 30),
+  ]
+  const additions = [{ month: '2026-07', qty: 3 }, { month: '2026-09', qty: 6 }]
+  const split = splitInflowByProduct(purchases, additions)
+  const jul = split.get('2026-07')!
+  // 통합(합계)은 구매 182 + 무상 3 = 185. 제품별 합 + 외 N종 + 나머지가 같은 값이어야 한다.
+  eq('7월 제품별 합 = 통합', sumSplit(jul), 40 + 100 + 20 + 10 + 5 + 7 + 3)
+  eq('7월 금액 합 = 통합', jul.lines.reduce((t, l) => t + l.amount, 0) + (jul.more?.amount ?? 0) + (jul.unrecorded?.amount ?? 0), (40 + 100 + 20 + 10 + 5) * 600 + 4200)
+  eq('7월 줄은 많이 들어온 순 3줄', jul.lines.map(l => [l.text, l.qty]), [['오뚜기 진라면 순한맛', 120], ['삼양 삼양라면', 40], ['농심 신라면', 10]])
+  eq('한 지출 한 묶음(오뚜기 둘이 한 줄)', jul.lines.filter(l => l.key === 'b:오뚜기').length, 1)
+  eq('7월 외 1종', [jul.more?.keys.length, jul.more?.qty], [1, 5])
+  eq('7월 제품 기록 없음 = 이름 없는 구매 + 무상', [jul.unrecorded?.qty, jul.unrecorded?.amount], [10, 4200])
+  eq('줄 상한 3', jul.lines.length <= PRODUCT_LINES_MAX && PRODUCT_LINES_MAX === 3, true)
+  const aug = split.get('2026-08')!
+  eq('8월 한 줄, 대표 표기는 전 기간 묶음', [aug.lines.map(l => l.text), aug.more, aug.unrecorded], [['삼양 삼양라면'], null, null])
+  const sep = split.get('2026-09')!
+  eq('무상만 있는 달은 제품 기록 없음 한 줄', [sep.lines.length, sep.unrecorded?.qty], [0, 6])
+  eq('묶음 수(브랜드 키)', productViewKeys(purchases).length, 4)
+  eq('묶음 하나면 1', productViewKeys([ip('오뚜기', 'a', '2026-07-01', 1), ip('오뚜기', 'b', '2026-07-02', 1), ip(null, null, '2026-07-03', 1)]).length, 1)
+  // 골든. 김치 남도청년 표기 넷은 한 묶음, 스파크 본품·리필도 한 묶음(브랜드 키).
+  const kimchi = ['땅끝해남 국내산 100% 전라도식 맛김치', '국내산 전라도 썰은배추김치', '100% 국내산 전라도 맛김치 썰은배추김치', '국내산 전라도 맛김치']
+    .map((p, i) => ip('남도청년', p, `2026-10-0${i + 1}`, 10))
+  const ks = splitInflowByProduct(kimchi, []).get('2026-10')!
+  eq('김치 표기 넷 한 줄', [ks.lines.length, ks.lines[0].qty, productViewKeys(kimchi).length], [1, 40, 1])
+  const spark = [ip('스파크', '스파크 본품 2.5kg', '2026-10-01', 1), ip('스파크', '스파크 리필 2kg', '2026-10-15', 2)]
+  eq('스파크 본품·리필 한 줄', [splitInflowByProduct(spark, []).get('2026-10')!.lines.length, productViewKeys(spark).length], [1, 1])
+  // 줄 이름은 그 달에 실제로 산 최빈 원문(묶음은 전 기간 하나). 세탁세제 모양. 10월 분말세제 1, 11월 리필 2.
+  const det = [ip('스파크', '스마트 클린 분말세제', '2026-10-10', 1), ip('스파크', '스마트 클린 분말세제 리필', '2026-11-02', 1), ip('스파크', '스마트 클린 분말세제 리필', '2026-11-20', 1)]
+  const ds = splitInflowByProduct(det, [])
+  eq('달 줄 이름은 그 달 원문', [ds.get('2026-10')!.lines[0].text, ds.get('2026-11')!.lines[0].text], ['스파크 스마트 클린 분말세제', '스파크 스마트 클린 분말세제 리필'])
+  eq('단가 선 이름은 전 기간 최빈', splitPriceByProduct(det).series[0].text, '스파크 스마트 클린 분말세제 리필')
+  eq('한 묶음 키는 그대로 하나', [ds.get('2026-10')!.lines[0].key, ds.get('2026-11')!.lines[0].key], ['b:스파크', 'b:스파크'])
+  // 토글 판정은 두 탭이 한 함수. 0원 구매는 단가에 안 서므로 월별 판정 재료에서도 빠진다.
+  const zero = [ip('오뚜기', 'a', '2026-07-01', 10), ip('삼양', 'b', '2026-07-02', 10, 0)]
+  eq('0원 구매는 판정 재료 밖', [productViewKeys(zero), splitInflowByProduct(zero, []).get('2026-07')!.viewKeys], [['b:오뚜기'], ['b:오뚜기']])
+  eq('묶음 하나면 토글 없음, 둘이면 있음', [showsProductView(productViewKeys(zero)), showsProductView(['b:a', 'b:b', 'b:a'])], [false, true])
+  const months2 = splitInflowByProduct([ip('오뚜기', 'a', '2026-07-01', 1), ip('삼양', 'b', '2026-08-01', 1)], [])
+  eq('달마다 하나씩이어도 합치면 둘', showsProductView([...months2.values()].flatMap(v => v.viewKeys)), true)
+  eq('월별·단가 판정이 같다', showsProductView([...months2.values()].flatMap(v => v.viewKeys)), showsProductView(productViewKeys([ip('오뚜기', 'a', '2026-07-01', 1), ip('삼양', 'b', '2026-08-01', 1)])))
+}
+// ── 제품별 보기: 단가 선 ──
+{
+  const pp = (brand: string | null, productName: string | null, ymd: string, unitPrice: number) => ({ date: d(ymd), brand, productName, unitPrice })
+  const pts = [
+    pp('삼양', 'x', '2026-06-01', 600), pp('오뚜기', 'y', '2026-06-10', 590), pp('삼양', 'x', '2026-07-01', 620), pp(null, null, '2026-07-05', 700),
+    pp('농심', 'z', '2026-07-10', 650), pp('팔도', 'w', '2026-07-20', 640), pp('오뚜기', 'y2', '2026-08-01', 580), pp('농심', 'z', '2026-08-02', 660),
+  ]
+  const r = splitPriceByProduct(pts)
+  eq('선 3개 상한', r.series.length, 3)
+  eq('선 순서 점 많은 순, 같으면 최근', r.series.map(s => s.key), ['b:농심', 'b:오뚜기', 'b:삼양'])
+  eq('선 이름은 대표 표기(브랜드·제품명)', [r.series[2].brand, r.series[2].productName, r.series[2].text], ['삼양', 'x', '삼양 x'])
+  eq('선 안 점은 날짜 오름차순', r.series[1].points.map(p => p.unitPrice), [590, 580])
+  eq('선 밖 묶음 수·이름 없는 점 수', [r.more, r.unrecorded], [1, 1])
+  eq('선 점 + 선 밖 + 이름 없음 = 전체 점', r.series.reduce((s, x) => s + x.points.length, 0) + 1 + r.unrecorded, pts.length)
 }
 
 console.log(`\n[제품 표기 진리표] 통과 ${pass} · 실패 ${fails.length}`)
