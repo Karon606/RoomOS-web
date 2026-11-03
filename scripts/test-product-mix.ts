@@ -5,7 +5,7 @@
 //   · 한 브랜드뿐이면 한 토막. 김치 남도청년 표기 넷은 한 묶음이고 대표는 가장 많이 쓴 원문(같으면 최근).
 //   · 잔량을 모르면(null) 추정하지 않는다. 브랜드 없이 제품명만 있으면 제품명이 짧은 이름이다.
 //   · 재고 제외 지출과 단위가 안 맞는 구매는 어느 셈에도 안 들어간다.
-//   · 카드 메타 표기(2026-11-03 운영자 지시). full = '브랜드 제품명'(제품명이 브랜드로 시작하면 제품명), name = 제품명만(없으면 브랜드). 묶음 전체가 한 표기다.
+//   · 카드 메타 표기(2026-11-03 운영자 지시). full = '브랜드 제품명'(기록된 원문 그대로, 제품명이 브랜드로 시작해도 줄이지 않는다), name = 제품명만(없으면 브랜드). 묶음 전체가 한 표기다.
 import { resolveMadeMix, groupProducts, productKeyOf, productText, shelfName, shelfProductsText, type MixPurchase } from '../lib/productMix'
 
 let pass = 0
@@ -33,7 +33,7 @@ eq('원문 공백 연결 브랜드 먼저', productText('오뚜기', '진라면 
   const rows = [buy('삼양', '삼양라면 깔끔한 감칠맛', '2026-06-25', 120), buy('오뚜기', '진라면 매운맛', '2026-07-20', 100)]
   const m = resolveMadeMix(rows, 128, U, NOW)
   eq('라면 남은 제품', m.onShelf.map(g => [g.brand, g.qty]), [['오뚜기', 100], ['삼양', 28]])
-  eq('라면 메타 브랜드 제품명', shelfProductsText(m.onShelf, 'full'), '오뚜기 진라면 매운맛, 삼양라면 깔끔한 감칠맛')
+  eq('라면 메타 브랜드 제품명', shelfProductsText(m.onShelf, 'full'), '오뚜기 진라면 매운맛, 삼양 삼양라면 깔끔한 감칠맛')
   eq('라면 메타 제품명만(둘 다 같이)', shelfProductsText(m.onShelf, 'name'), '진라면 매운맛, 삼양라면 깔끔한 감칠맛')
   eq('라면 마지막 받은 제품', [m.last?.text, m.last?.receivedOn], ['오뚜기 진라면 매운맛', '2026-07-20'])
   eq('라면 구매한 제품(같은 횟수면 최근 먼저)', m.history.map(h => [h.text, h.count]), [['오뚜기 진라면 매운맛', 1], ['삼양 삼양라면 깔끔한 감칠맛', 1]])
@@ -88,7 +88,7 @@ eq('원문 공백 연결 브랜드 먼저', productText('오뚜기', '진라면 
 {
   const p = (brand: string | null, productName: string | null) => ({ brand, productName })
   const three = [p('오뚜기', '진라면 매운맛'), p('삼양', '삼양라면'), p('농심', '신라면')]
-  eq('셋 외 1', shelfProductsText(three, 'full'), '오뚜기 진라면 매운맛, 삼양라면 외 1')
+  eq('셋 외 1', shelfProductsText(three, 'full'), '오뚜기 진라면 매운맛, 삼양 삼양라면 외 1')
   eq('셋 외 1 제품명만', shelfProductsText(three, 'name'), '진라면 매운맛, 삼양라면 외 1')
   eq('넷 외 2', shelfProductsText([p('a', null), p('b', null), p('c', null), p('d', null)], 'full'), 'a, b 외 2')
   eq('없으면 빈 글자', shelfProductsText([], 'full'), '')
@@ -97,9 +97,10 @@ eq('원문 공백 연결 브랜드 먼저', productText('오뚜기', '진라면 
   eq('토막 좁으면 제품명', shelfName(p('스파크', '스마트 클린'), 'name'), '스마트 클린')
   eq('토막 제품명 없으면 브랜드', [shelfName(p('스파크', null), 'full'), shelfName(p('스파크', ' '), 'name')], ['스파크', '스파크'])
   eq('토막 브랜드 없으면 제품명', [shelfName(p(null, '청결미'), 'full'), shelfName(p('', '청결미'), 'name')], ['청결미', '청결미'])
-  // 제품명이 브랜드로 시작하면 브랜드를 한 번만(표시 토막만, 원문 text 는 그대로).
-  eq('토막 브랜드 겹침', [shelfName(p('삼양', '삼양라면 깔끔한 감칠맛'), 'full'), shelfName(p('CJ', 'cj 햇반'), 'full'), shelfName(p('오뚜기', '진라면'), 'full')],
-    ['삼양라면 깔끔한 감칠맛', 'cj 햇반', '오뚜기 진라면'])
+  // 제품명이 브랜드로 시작해도 기록된 원문 그대로(2026-11-03 운영자 지시로 겹침 처리를 걷었다). 좁으면 제품명만은 그대로.
+  eq('토막 브랜드 겹쳐도 원문', [shelfName(p('삼양', '삼양라면 깔끔한 감칠맛'), 'full'), shelfName(p('CJ', 'cj 햇반'), 'full'), shelfName(p('오뚜기', '진라면'), 'full')],
+    ['삼양 삼양라면 깔끔한 감칠맛', 'CJ cj 햇반', '오뚜기 진라면'])
+  eq('토막 브랜드 겹쳐도 좁으면 제품명', shelfName(p('삼양', '삼양라면 깔끔한 감칠맛'), 'name'), '삼양라면 깔끔한 감칠맛')
   eq('원문은 겹쳐도 그대로', productText('삼양', '삼양라면'), '삼양 삼양라면')
   // 섞인 묶음에서 한쪽만 브랜드가 없어도 표기는 묶음 전체에 하나다.
   eq('섞인 묶음 한 표기', [shelfProductsText([p('스파크', '스마트 클린'), p(null, '세탁세제')], 'full'), shelfProductsText([p('스파크', '스마트 클린'), p(null, '세탁세제')], 'name')],

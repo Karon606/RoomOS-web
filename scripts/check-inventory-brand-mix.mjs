@@ -13,7 +13,7 @@
 //   ⓕ 골격과 실제의 줄 수가 같다. 제품 줄은 DetailViewSummary 안에 있고 글자를 g() 로 감싸 골격이 같은 줄을 투명하게 그린다.
 //   ⓖ 정본 lib/productMix 는 순수층이다(DB 를 부르지 않는다).
 //   ⓗ 한 카드 안에서 단가·날짜 꼴이 하나다(구매한 제품 = 평균 단가 `590원/봉`, 날짜 = 최근 점검 fmtDate).
-//   ⓘ 카드 메타는 '브랜드 제품명' 이고 자리가 모자라면 묶음 전체가 제품명만이 된다(2026-11-03 운영자 지시). 판정은 폭 실측이다.
+//   ⓘ 카드 메타는 '브랜드 제품명'(기록된 원문 그대로, 브랜드가 겹쳐도 줄이지 않는다)이고 자리가 모자라면 묶음 전체가 제품명만이 된다(2026-11-03 운영자 지시). 판정은 폭 실측이다.
 //     ShelfMeta 가 full·name 두 표기를 정본 shelfProductsText 로 만들고, 숨은 탐침(full)과 자리의 폭을 ResizeObserver 로 견준다.
 //     글자 수로 자르는 꼼수(slice·substring·length 비교)가 없고, 분류는 shrink-0, 자리는 flex-1 말줄임이다.
 //     재기 전엔 제품 토막만 투명, 스크린리더는 늘 전체(sr-only). 상세 추정 한 줄도 같은 토막 정본(shelfName full)을 쓰고
@@ -145,8 +145,10 @@ need('ⓕ 제품 줄 글자를 g() 로 감싼다', /\{g\('제품'\)\}/.test(summ
   need('ⓘ 상세 추정도 같은 토막 정본(브랜드 제품명)', /\$\{shelfName\(g, 'full'\)\}\\u00a0\$\{fmtQty\(g\.qty, unit\)\}/.test(est) && /\.join\(', '\)/.test(est),
     "이름과 수량은 줄바꿈 없는 공백으로 한 덩이, 제품 사이는 카드와 같은 ', '")
   need('ⓘ 브랜드만 쓰던 종전 토막이 없다', !/shelfBrandsText|\.short\b/.test(client) && !/shelfBrandsText|\bshort:/.test(mix))
-  need('ⓘ 정본 토막 규칙', /if \(mode === 'name' \|\| \(b && p\.toLowerCase\(\)\.startsWith\(b\.toLowerCase\(\)\)\)\) return p \|\| b\n\s*return productText\(b, p\)/.test(mix) &&
+  need('ⓘ 정본 토막 규칙', /if \(mode === 'name'\) return p \|\| b\n\s*return productText\(b, p\)/.test(mix) &&
     /const names = onShelf\.map\(g => shelfName\(g, mode\)\)/.test(mix), '자리가 모자랄 때 버리는 쪽은 브랜드다')
+  need('ⓘ 브랜드 겹침을 줄이지 않는다(원문 그대로)', !/startsWith/.test(fnBody(mix, 'export function shelfName(')),
+    "'삼양 삼양라면' 을 '삼양라면' 으로 줄이면 기록된 원문과 갈린다(2026-11-03 운영자 지시)")
 }
 
 // ⓖ 순수층

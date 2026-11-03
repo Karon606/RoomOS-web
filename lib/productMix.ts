@@ -165,12 +165,12 @@ export function resolveMadeMix(
 /**
  * 제품 이름 한 토막(2026-11-03 운영자 지시 '브랜드와 제품명 둘 다'). full = '브랜드 제품명', name = 제품명만(없으면 브랜드).
  * 오뚜기 라면이 수백 가지라 브랜드만으로는 무엇인지 모른다. 자리가 모자랄 때 버리는 쪽은 브랜드다.
+ * full 은 기록된 원문 그대로다. 제품명이 브랜드로 시작해도 줄이지 않는다('삼양 삼양라면 깔끔한 감칠맛', 같은 날 운영자 지시).
  */
 export type ShelfNameMode = 'full' | 'name'
 export function shelfName(g: { brand: string | null; productName: string | null }, mode: ShelfNameMode): string {
   const b = clean(g.brand), p = clean(g.productName)
-  // 제품명이 브랜드로 시작하면(삼양 '삼양라면') 브랜드를 한 번만 쓴다. 표시용 토막에만 쓰고 원문(text)은 그대로 둔다.
-  if (mode === 'name' || (b && p.toLowerCase().startsWith(b.toLowerCase()))) return p || b
+  if (mode === 'name') return p || b
   return productText(b, p)
 }
 
