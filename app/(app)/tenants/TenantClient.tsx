@@ -1919,7 +1919,7 @@ export default function TenantClient({
 
   return (
     <div className="space-y-4">
-      {showNoticeSms && <NoticeSmsModal onClose={() => setShowNoticeSms(false)} />}
+      {canEdit && showNoticeSms && <NoticeSmsModal onClose={() => setShowNoticeSms(false)} />}
 
       {/* 헤더 — §23 정본(호실 관리 3140975)과 같은 구조. 제목 + 우측 CTA 둘.
           shrink-0 이 없으면 360dp 이하에서 flex 가 버튼을 압축해 글자가 낱자로 쪼개진다(신고 aea83d6b 클래스).

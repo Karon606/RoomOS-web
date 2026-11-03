@@ -7,6 +7,7 @@
 // 연다(투어 단계 계약에는 뽑을 종이가 없다). 파일은 종류마다 최신순으로 넘기고 정본이 계약별 최신을 고른다.
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { requireEdit } from '@/lib/role'
 import prisma from '@/lib/prisma'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { rentPaidWhere, rentPaidAnyMonthWhere } from '@/lib/rentPaid'
@@ -592,6 +593,8 @@ export async function logDocSmsAttempt(input: {
   renderedBody: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 형제 logNoticeSmsAttempt 와 같은 문.
+    await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
     // 영업장 소속 검증 — 다른 영업장 사람 혼입 방지(형제 logNoticeSmsAttempt 와 같은 꼴). 아니면 남기지 않는다.

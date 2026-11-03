@@ -102,7 +102,12 @@ export default async function AppLayout({
   // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
   const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)
 
+  // 역할 컨텍스트는 셸 전체를 감싼다 — 뷰어(STAFF·제한 스태프) 편집·문자 입구 숨김 가드(감사 D3, 2026-11-03).
+  // 종전에는 {children} 만 감싸 Prism 모달(EntityModalProvider 가 그린다)·전역 검색·신고 버튼이 밖에 있었고,
+  // 그 안의 useCanEdit 는 기본값 OWNER 를 읽어 열람 직원에게도 문자·메모 편집 같은 입구를 세웠다.
+  // access 없으면 OWNER 폴백(서버가 최종 방어). 순서는 check-sms-role-gate ⓔ 가 본다.
   return (
+    <RoleProvider role={access?.role ?? 'OWNER'}>
     <AppShell
       user={{ email: claims.email, user_metadata: claims.user_metadata }}
       properties={properties}
@@ -117,14 +122,12 @@ export default async function AppLayout({
       <NewVersionNotice />
       <BreadcrumbTracker />
       <EntityModalProvider>
-        {/* 역할 컨텍스트 — 뷰어(STAFF) 편집 버튼 숨김 가드(감사 D3). access 없으면 OWNER 폴백(서버가 최종 방어) */}
-        <RoleProvider role={access?.role ?? 'OWNER'}>
-          {children}
-        </RoleProvider>
+        {children}
         {/* 전역 통합 검색 — Prism(entityModal) 착지를 위해 Provider 안쪽에 마운트 */}
         <GlobalSearchHost propertyId={currentPropertyId} />
       </EntityModalProvider>
       <ErrorReportButton />
     </AppShell>
+    </RoleProvider>
   )
 }

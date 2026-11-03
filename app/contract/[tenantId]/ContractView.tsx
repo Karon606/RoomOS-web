@@ -208,7 +208,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
 }
 
 
-export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [] }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [], canSendSms = true }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
@@ -223,6 +223,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
    * 셀렉트가 아예 안 서고, 그때 이 화면은 이 기능 전과 문자 단위로 같다.
    */
   translationLangs?: TranslationLang[]
+  /**
+   * 서명 요청(문자앱을 연다)을 세울 수 있는가 — 운영자 페이지가 역할(lib/role canEdit)로 넘긴다.
+   * 이 화면은 (app) 레이아웃 밖이라 RoleProvider 가 없어 useCanEdit 를 못 쓴다(2026-11-03 운영자 지시,
+   * 열람 직원은 고객에게 문자를 못 보낸다). 안 넘기면 종전 그대로다. 서버 발급 requireEdit 가 최종 방어다.
+   */
+  canSendSms?: boolean
 }) {
   const remote = mode === 'remote'
   const router = useRouter()
@@ -1852,11 +1858,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
                 {contractSaving ? '발급 중… (5~15초)' : '발급'}
               </button>
-            ) : (
+            ) : canSendSms ? (
               <button onClick={handleSignRequest} disabled={signReqPending} className="toolbar-print">
                 {signReqPending ? '준비 중…' : '서명 요청'}
               </button>
-            )}
+            ) : null}
           </>
         )}
         {editing && (

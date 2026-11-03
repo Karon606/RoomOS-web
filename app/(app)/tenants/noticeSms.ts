@@ -69,6 +69,8 @@ function stayBucketOf(moveInDate: Date | null): string | null {
 // 필터 칩(층·창·단계 등)은 클라이언트가 이 데이터에서 도출한다. 그룹 판정 정본은 lib/noticeTargets.
 export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: NoticeSmsTarget[] } | { ok: false; error: string }> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 수신자 목록은 단체 문자를 짜는 데만 쓴다.
+    await requireEdit()
     const propertyId = await getPropertyId()
     const leases = await prisma.leaseTerm.findMany({
       where: {

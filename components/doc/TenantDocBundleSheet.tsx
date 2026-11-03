@@ -41,6 +41,7 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { getTenantDocBundle, type TenantDocBundleMail, type TenantDocBundleSms } from '@/app/(app)/tenants/docBundle'
 import { TenantDocMailComposeSheet } from '@/components/doc/TenantDocMailComposeSheet'
 import { TenantDocSmsComposeSheet } from '@/components/doc/TenantDocSmsComposeSheet'
+import { useCanEdit } from '@/components/RoleContext'
 import { docMimeLabel } from '@/lib/docMime'
 import {
   DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE, DOC_WRITE_NEW_LABEL, DOC_WRITE_MANY_LABEL,
@@ -135,6 +136,9 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const [versionRow, setVersionRow] = useState<DocBundleRow | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
   const [smsOpen, setSmsOpen] = useState(false)
+  // 문자 갈래는 열람 전용(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
+  // 저장·공유·메일은 그대로다. 갈래가 없으면 effDest 가 'sms' 가 될 수 없어 알약·쓰기 시트도 안 선다.
+  const canEditUi = useCanEdit()
 
   // 이 화면은 통째로 선택 모드다 — 열리자마자 변환기를 데운다(첫 탭의 제스처 만료 방어).
   useEffect(() => { prewarmPdfToPng() }, [])
@@ -219,7 +223,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     ...(shareSupported ? [{ value: 'share' as const, label: '공유' }] : []),
     // 문자는 폰에서만 선다. 데스크톱은 sms: 를 열 앱이 없어 멀쩡한 갈래 옆에 죽은 갈래가 된다.
     // 판정은 공유 가능 여부를 대신 쓴다 — 이 앱이 폰인지 아는 유일한 실측 신호다.
-    ...(shareSupported ? [{ value: 'sms' as const, label: '문자' }] : []),
+    ...(shareSupported && canEditUi ? [{ value: 'sms' as const, label: '문자' }] : []),
     ...(mailOn ? [{ value: 'mail' as const, label: '메일' }] : []),
   ]
   const effDest: Dest = destOptions.some(o => o.value === dest)
@@ -476,7 +480,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     {/* 문자·메일 확인 시트는 이 시트의 형제다 — 자식이면 이 패널 모션이 굳을 때 그 상자에 갇힌다
         (check-no-nested-overlay). 층은 이 시트와 같은 280 이라 뒤에 마운트되는 이쪽이 위다 — 이
         순서를 바꾸지 말 것. */}
-    {smsOpen && smsTo && bundle && (
+    {canEditUi && smsOpen && smsTo && bundle && (
       <TenantDocSmsComposeSheet
         tenantId={tenantId}
         tenantName={bundle.tenantName}

@@ -9,6 +9,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { TenantSmsModal } from '@/components/TenantSmsModal'
 import { UnpaidSmsModal } from '@/components/UnpaidSmsModal'
 import { getTenantUnpaidTarget, type TenantUnpaidTarget } from '@/app/(app)/dashboard/actions'
+import { useCanEdit } from '@/components/RoleContext'
 import { Section, Grid, Item } from './Section'
 
 type Contact = {
@@ -25,6 +26,9 @@ type Contact = {
 const telDigits = (v: string) => v.replace(/[^0-9+]/g, '')
 
 export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: string; contacts: Contact[]; email?: string | null }) {
+  // 문자 두 문(문자·독촉 문자)은 열람 전용(STAFF·제한 스태프)에게 숨긴다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
+  // 전화·메일은 그대로다. 서버 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
   const [smsOpen, setSmsOpen] = useState(false)
   // 납부일 경과 미납이면 독촉 대상 조회(정본 computeUnpaidStatus 필터). 미납 아니면 null → 독촉 버튼 미노출.
   const [unpaidTarget, setUnpaidTarget] = useState<TenantUnpaidTarget | null>(null)
@@ -44,19 +48,21 @@ export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: str
       {/* 바로 연결 — 모바일에서 탭하면 전화/문자/메일 앱 */}
       <div className="flex items-center gap-1.5 mb-2">
         <a href={phone ? `tel:${phone}` : undefined} className={`${linkCls} ${phone ? onCls : offCls}`}>전화</a>
-        <button type="button" onClick={() => setSmsOpen(true)} disabled={!phone}
-          className={`${linkCls} ${phone ? onCls : offCls}`}>문자</button>
+        {canEditUi && (
+          <button type="button" onClick={() => setSmsOpen(true)} disabled={!phone}
+            className={`${linkCls} ${phone ? onCls : offCls}`}>문자</button>
+        )}
         <a href={email ? `mailto:${email}` : undefined} className={`${linkCls} ${email ? onCls : offCls}`}>메일</a>
       </div>
       {/* 납부일 경과 미납일 때만 — 독촉 문자(정본 UnpaidSmsModal, 미납액·경과일 자동 치환·입금확인 스텝) */}
-      {unpaidTarget && phone && (
+      {canEditUi && unpaidTarget && phone && (
         <button type="button" onClick={() => setUnpaidOpen(true)}
           className="w-full text-center text-xs font-semibold px-3 py-2 rounded-lg border border-[var(--danger-fg)]/45 text-[var(--danger-fg)] hover:bg-[var(--danger-fg)]/10 transition-colors mb-2">
           독촉 문자 · 미납 {fmtWon(unpaidTarget.unpaidAmount)}{unpaidTarget.daysOverdue != null ? ` · ${unpaidTarget.daysOverdue}일 경과` : ''}
         </button>
       )}
-      {smsOpen && <TenantSmsModal tenantId={tenantId} onClose={() => setSmsOpen(false)} />}
-      {unpaidOpen && unpaidTarget && <UnpaidSmsModal target={unpaidTarget} z={260} onClose={() => setUnpaidOpen(false)} />}
+      {canEditUi && smsOpen && <TenantSmsModal tenantId={tenantId} onClose={() => setSmsOpen(false)} />}
+      {canEditUi && unpaidOpen && unpaidTarget && <UnpaidSmsModal target={unpaidTarget} z={260} onClose={() => setUnpaidOpen(false)} />}
       <Grid>
         <Item label="주 연락처" value={primary?.contactValue ? formatPhone(primary.contactValue) : '—'} />
         {email && <Item label="이메일" value={email} />}

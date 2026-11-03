@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { getContractData, getContractTranslationLangs } from './actions'
 import { getSignedSnapshot } from '@/app/(app)/tenants/contractShare'
 import ContractView from './ContractView'
+import { getMyRole, canEdit } from '@/lib/role'
 
 // ?share=<linkId> 로 열면 **입주자가 서명한 시점의 스냅샷**으로 렌더한다.
 // 서명은 A 에 했는데 B 짜리 계약서가 나가는 것을 막는다(운영자 확인 2026-08-03 — 각각 남는 구조).
@@ -31,10 +32,12 @@ export default async function ContractPage({
   }
   // 셀렉트가 세울 언어 목록은 ContractData 에 안 싣는다 — 그 값은 링크 발급 스냅샷으로 그대로
   // 흘러가므로, 번역본과 무관한 링크의 박제 바이트가 달라진다(조건부 담기 규칙과 같은 자리).
-  const [data, translationLangs] = await Promise.all([
+  const [data, translationLangs, role] = await Promise.all([
     getContractData(tenantId, leaseTermId ?? null, lang ?? null),
     getContractTranslationLangs(),
+    getMyRole(),
   ])
   if (!data) notFound()
-  return <ContractView data={data} translationLangs={translationLangs} />
+  // 서명 요청은 문자앱을 연다 — 열람 직원(STAFF·제한 스태프)에게는 세우지 않는다(2026-11-03 운영자 지시).
+  return <ContractView data={data} translationLangs={translationLangs} canSendSms={canEdit(role)} />
 }

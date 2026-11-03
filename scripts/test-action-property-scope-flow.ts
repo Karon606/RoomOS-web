@@ -60,7 +60,7 @@ async function main() {
   const dashboard = await import('@/app/(app)/dashboard/actions')
   const docBundle = await import('@/app/(app)/tenants/docBundle')
   const noticeSms = await import('@/app/(app)/tenants/noticeSms')
-  const g = globalThis as unknown as { __CR_FLOW_PID?: string }
+  const g = globalThis as unknown as { __CR_FLOW_PID?: string; __CR_FLOW_ROLE?: 'OWNER' | 'MANAGER' | 'STAFF' | 'LIMITED_STAFF' }
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
   await prisma.property.create({ data: { id: P1, name: '하네스 1', ownerId: OWNER } })
@@ -455,6 +455,31 @@ async function main() {
     const mine = await prisma.smsLog.findMany({ where: { propertyId: P1 }, select: { tenantId: true, kind: true }, orderBy: { kind: 'asc' } })
     eq('대조군 이력 5줄이 제 영업장 사람으로 남는다', [mine.length, mine.every(r => r.tenantId === T1), mine.map(r => r.kind).sort()], [5, true, ['doc', 'notice', 'personal', 'unpaid', 'unpaid']])
     eq('남의 영업장 이력은 없다', await prisma.smsLog.count({ where: { OR: [{ propertyId: P2 }, { tenantId: T2 }] } }), 0)
+
+    // ── 열람 역할(2026-11-03 운영자 지시) ── 열람만 하는 직원(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다.
+    // 제 영업장의 맞는 사람·계약·템플릿으로 불러도 거부하고 sms_logs 는 한 줄도 안 늘며, 문자를 짜는 조회(번호·템플릿·수신자)도 거부한다.
+    const DENY = { ok: false, error: '수정 권한이 없습니다.' }
+    for (const role of ['STAFF', 'LIMITED_STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const before = await logs()
+      eq(`${role} 서류 문자 이력 거부`, await docBundle.logDocSmsAttempt({ tenantId: T1, renderedBody: '서류' }), DENY)
+      eq(`${role} 입주자 문자 이력 거부`, await dashboard.logPersonalSmsAttempt({ tenantId: T1, renderedBody: '안내', templateId: TP1 }), DENY)
+      eq(`${role} 미납 문자 이력 거부`, await unpaid({ templateId: TP1 }), DENY)
+      eq(`${role} 단체 공지 이력 거부`, await noticeSms.logNoticeSmsAttempt({ recipients: [{ tenantId: T1, leaseTermId: L1 }], body: '공지', filterLabel: '입주자' }), DENY)
+      eq(`${role} 거부 뒤 문자 이력 무변경`, await logs(), before)
+      eq(`${role} 입주자 문자 조회 거부`, await dashboard.getPersonalSmsContext(T1), DENY)
+      eq(`${role} 미납 문자 조회 거부`, await dashboard.getUnpaidSmsContext(L1), DENY)
+      eq(`${role} 단체 공지 수신자 조회 거부`, await noticeSms.getNoticeSmsTargets(), DENY)
+    }
+    // 대조군: 그 위 권한(관리자)부터는 그대로 남는다.
+    g.__CR_FLOW_ROLE = 'MANAGER'
+    const beforeMgr = await logs()
+    eq('MANAGER 서류 문자 이력 통과', await docBundle.logDocSmsAttempt({ tenantId: T1, renderedBody: '서류' }), { ok: true })
+    eq('MANAGER 입주자 문자 이력 통과', await dashboard.logPersonalSmsAttempt({ tenantId: T1, renderedBody: '안내' }), { ok: true })
+    eq('MANAGER 미납 문자 이력 통과', await unpaid({}), { ok: true })
+    eq('MANAGER 이력 3줄 늘어남', await logs(), beforeMgr + 3)
+    eq('MANAGER 입주자 문자 조회 통과', (await dashboard.getPersonalSmsContext(T1)).ok, true)
+    g.__CR_FLOW_ROLE = undefined
   }
 
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)

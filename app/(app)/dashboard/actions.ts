@@ -1,6 +1,7 @@
 'use server'
 
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
+import { requireEdit } from '@/lib/role'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -240,6 +241,8 @@ export type UnpaidSmsContext = {
 
 export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsContext> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 형제 logNoticeSmsAttempt 와 같은 문.
+    await requireEdit()
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     const propertyId = access.propertyId
@@ -329,6 +332,8 @@ export type PersonalSmsContext = {
 
 export async function getPersonalSmsContext(tenantId: string): Promise<PersonalSmsContext> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 형제 logNoticeSmsAttempt 와 같은 문.
+    await requireEdit()
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     const propertyId = access.propertyId
@@ -383,6 +388,8 @@ export async function logPersonalSmsAttempt(input: {
   templateId?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 형제 logNoticeSmsAttempt 와 같은 문.
+    await requireEdit()
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
@@ -414,6 +421,8 @@ export async function logSmsAttempt(input: {
   paymentCheckConfirmedAt: string   // ISO — 기능1 확인 다이얼로그 통과 시각
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    // 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 지시). 형제 logNoticeSmsAttempt 와 같은 문.
+    await requireEdit()
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }

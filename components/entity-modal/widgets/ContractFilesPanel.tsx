@@ -50,6 +50,7 @@ import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
+import { useCanEdit } from '@/components/RoleContext'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
 // closable: 닫기(=서명 완료 알림 해제) 가능 여부. 만료·잠김이어도 닫혀 있지만 않으면 닫을 수 있어야 한다 —
@@ -93,7 +94,7 @@ const purposeLabel = (f: { issuePurpose: string | null }) => contractPurposeLabe
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
 // 배지와 닫기는 이 플래그와 무관하게 항상 렌더한다 — 알림 해제 경로가 사라지면 503호 건이 재발한다.
-export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false, leaseTermId, extraLeases }: {
+export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hideSignRequestProp = false, leaseTermId, extraLeases }: {
   tenantId: string
   tenantName: string
   hideSignRequest?: boolean
@@ -108,6 +109,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 주 버튼(계약서 작성·서명)은 지목 없이 종전 URL 을 유지한다 — 추론이 고르는 계약이 곧 메인이다.
   extraLeases?: { id: string; roomNo: string | null }[]
 }) {
+  // 서명 요청은 문자앱을 연다. 열람 전용(STAFF·제한 스태프)에게는 문을 숨기고 안내 문구도 같은 갈래로 걷는다
+  // (2026-11-03 운영자 지시, 감사 D3 숨김 문법). 서버 issueContractShareLink 의 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
+  const hideSignRequest = hideSignRequestProp || !canEditUi
   const [files, setFiles]   = useState<ContractFileRow[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -133,6 +138,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     finally { setLoading(false) }
   }
   const reloadShare = async () => {
+    // 열람 전용은 부르지 않는다 — 서버가 requireEdit 로 거절해 모달을 열 때마다 '수정 권한이 없습니다.' 토스트가 떴다.
+    if (!canEditUi) { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false, defaultSignLang: 'ko', foreignForDocuments: false }); return }
     const res = await getContractShareState(tenantId)
     if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue, hasForeignRegNo: res.hasForeignRegNo, defaultSignLang: res.defaultSignLang, foreignForDocuments: res.foreignForDocuments })
     // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
@@ -468,7 +475,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 되돌렸다 — 그 링크는 입력 화면으로 가고 발급은 거기서 한 단계 더 들어가야 일어난다. 이 파일이
   // 정한 동사 정의(작성 = 입력 화면 진입 / 발급 = 공식본 생성·보관)를 라벨이 스스로 어기는 셈이고,
   // 누르면 발급될 줄 알았다가 폼이 나오는 배신이 된다. 단계 구분은 안내 문구가 한다(디자이너 패스).
-  const stage: { primary: 'write' | 'issue' | 'resend' | null; hint: string | null } = (() => {
+  const stageByState: { primary: 'write' | 'issue' | 'resend' | null; hint: string | null } = (() => {
     // 조회 실패(share === null)여도 화면이 회색으로 굳지 않게 S0 으로 떨어뜨린다
     if (loading) return { primary: null, hint: null }
     if (share?.needsIssue) {
@@ -501,6 +508,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     }
     return { primary: 'write', hint: null }
   })()
+  // 열람 전용(STAFF·제한 스태프)은 작성·발급·다시 보내기를 할 수 없다. 할 수 없는 문을 주 버튼으로 올리지 않는다(독립 검수 R2).
+  // 링크 상태(getContractShareState)는 토큰을 주므로 서버가 열람 역할에게 주지 않는다. 그래서 서명 대기 안내도 이 역할에게는 서지 않는다.
+  const stage = canEditUi ? stageByState : { ...stageByState, primary: null }
 
   return (
     <div className="space-y-2">

@@ -49,6 +49,7 @@ import { muteHomeAlert, unmuteHomeAlert, setAlertCutoff } from '@/app/(app)/room
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
+import { useCanEdit } from '@/components/RoleContext'
 import { isUnpaidSmsTarget } from '@/lib/unpaidSmsTarget'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
@@ -530,6 +531,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
   // 알림이 가리키는 계약 행으로 좁힌다. undefined = 판정 중, null = 대상 아님(유예 중·납부일 전).
   const [unpaidSmsTarget, setUnpaidSmsTarget] = useState<TenantUnpaidTarget | null | undefined>(undefined)
   const [unpaidSmsOpen, setUnpaidSmsOpen]     = useState(false)
+  // 독촉 문자는 열람 전용(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
+  const canEditUi = useCanEdit()
   useEffect(() => {
     if (alert.category !== 'unpaid' || !alert.tenantId || !alert.leaseTermId) return
     let alive = true
@@ -753,7 +756,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
           {/* 독촉 문자 — 납부일 경과 미납일 때만 선다(정본 판정, 유예 중·납부일 전 제외).
               판정 중에는 버튼 높이(Btn md min-h 44px)만큼 자리를 비워 둬 아래 링크가 뛰지 않게 한다. 대부분은 대상이라
               그대로 버튼이 들어서고, 대상이 아닐 때만 자리가 접힌다. */}
-          {alert.category === 'unpaid' && alert.tenantId && alert.leaseTermId && (
+          {canEditUi && alert.category === 'unpaid' && alert.tenantId && alert.leaseTermId && (
             unpaidSmsTarget === undefined ? <div aria-hidden className="min-h-[44px]" />
             : unpaidSmsTarget ? (
               <Btn variant="secondary" size="md" fullWidth onClick={() => setUnpaidSmsOpen(true)}>
@@ -854,7 +857,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoff
       />
     )}
     {/* 알림 상세 위에 겹쳐 연다(z 260, 퇴실 미니폼·입주자 상세 독촉과 같은 층). 닫으면 알림 상세로 돌아온다. */}
-    {unpaidSmsOpen && unpaidSmsTarget && (
+    {canEditUi && unpaidSmsOpen && unpaidSmsTarget && (
       <UnpaidSmsModal target={unpaidSmsTarget} z={260} onClose={() => setUnpaidSmsOpen(false)} />
     )}
     </>
@@ -2483,6 +2486,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   // 미납 안내 문자 — 입금확인 스텝 + 템플릿 발송 (/docs/stayeum_payment_spec.md Phase 1)
   const [smsTarget, setSmsTarget] = useState<UnpaidSmsTarget | null>(null)
+  // 안내문자 행 버튼은 열람 전용(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
+  const canEditUi = useCanEdit()
   const [activityExpanded, setActivityExpanded]   = useState(false)
 
   // 방 현황 차원 그룹화 — 사용자가 차원을 다중·순서대로 골라 호실 카드 묶음 단위가 바뀜.
@@ -2529,7 +2534,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
 
   return (
     <div className="space-y-3.5">
-      {smsTarget && <UnpaidSmsModal target={smsTarget} onClose={() => setSmsTarget(null)} />}
+      {canEditUi && smsTarget && <UnpaidSmsModal target={smsTarget} onClose={() => setSmsTarget(null)} />}
 
       {/* ── 시작 체크리스트(온보딩) — 신규 영업장: 무엇부터 할지 3단계 안내 ── */}
       {data.onboarding && (() => {
@@ -3219,7 +3224,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                 {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지).
                                     납부일 경과 미납 행에만 선다(정본 isUnpaidSmsTarget). 유예 중·납부일 전 행에
                                     서면 유예해 준 사람에게 독촉 문구가 나간다(2026-08-02 405호 사건 클래스). */}
-                                {isUnpaidSmsTarget(l) && (
+                                {canEditUi && isUnpaidSmsTarget(l) && (
                                   <RowActionBtn tone="accent" className="shrink-0"
                                     onClick={() => setSmsTarget({ leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue })}>
                                     안내문자
