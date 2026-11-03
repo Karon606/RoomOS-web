@@ -24,6 +24,15 @@ type Settlement = {
 
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 
+// 배치는 칸 폭이 정한다(컨테이너 쿼리, 2026-11-04 운영자 승인 '추천대로'). 3열은 카드 한 칸이 8자리 미수(−11,100,000원, 고정폭 숫자로 약 95px)를
+// 여백 8px 를 두고 담는 폭(22rem 이상)에서만 선다. 그보다 좁으면 한 상자 안의 구분선 행(라벨 왼쪽 · 금액 오른쪽)으로 내려간다.
+// 행 셋을 따로 채운 상자로 두면 바로 아래 버튼과 같은 채움이라 눌리는 것처럼 읽혀서, 형제 PaymentBody Row 처럼 구분선으로 나눈다(독립 디자이너 패스).
+// 종전에는 3열 고정이라 320px 모달에서 '지난달 미수' 값이 카드 밖으로 14~36px 삐져나갔다. 금액은 자르거나 줄이지 않는다(§06).
+const GRID = 'grid grid-cols-1 rounded-xl bg-[var(--canvas)] divide-y divide-[var(--warm-border)] @min-[22rem]:grid-cols-3 @min-[22rem]:gap-2 @min-[22rem]:rounded-none @min-[22rem]:bg-transparent @min-[22rem]:divide-y-0'
+const CARD = 'px-3 py-2 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 @min-[22rem]:block @min-[22rem]:rounded-xl @min-[22rem]:bg-[var(--canvas)] @min-[22rem]:px-2 @min-[22rem]:py-3 @min-[22rem]:text-center'
+const VALUE = 'text-sm font-bold tnum text-right @min-[22rem]:text-center @min-[22rem]:mt-0.5'
+const CAPTION = 'col-span-2 text-right @min-[22rem]:text-center text-[0.65625rem] text-[var(--warm-muted)] mt-0.5'
+
 export function PaymentSummaryCards({ settlement, month }: { settlement: Settlement; month?: string }) {
   // 예약 단계는 청구·잔액이 0으로 잠겨 있어(미납 집계 제외 정본) 실수납·입주 시 낼 금액을 따로 보여준다.
   const resv = settlement.status === 'RESERVED' ? (settlement.reservationPaid ?? null) : null
@@ -71,54 +80,56 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
           </div>
         </InfoHint>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+      <div className="@container">
+      <div className={GRID}>
+        <div className={CARD}>
           <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={resv ? resvPaid : settlement.totalPaid} /></p>
-          {resv && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">예약금 {fmtWon(resvPaid)} 포함</p>}
-          {coveredCaption && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{coveredCaption}</p>}
+          <p className={`${VALUE} text-[var(--warm-dark)]`}><MoneyDisplay amount={resv ? resvPaid : settlement.totalPaid} /></p>
+          {resv && <p className={CAPTION}>예약금 {fmtWon(resvPaid)} 포함</p>}
+          {coveredCaption && <p className={CAPTION}>{coveredCaption}</p>}
         </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+        <div className={CARD}>
           {/* 값 자리에 '청구 없음'이 들어가면 '잔액' 라벨과 답이 어긋난다 — 라벨을 값에 맞춘다. */}
           <p className="text-xs text-[var(--warm-muted)] leading-tight">{resv ? '입주 시 납부 예정' : noBill ? '이 달 청구' : '잔액'}</p>
           {noBill ? (
             <>
-              <p className="text-sm font-bold mt-0.5 text-[var(--warm-muted)]">청구 없음</p>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{noBillWhy}</p>
+              <p className={`${VALUE} text-[var(--warm-muted)]`}>청구 없음</p>
+              <p className={CAPTION}>{noBillWhy}</p>
             </>
           ) : resv ? (
             // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
             // 아직 안 받은 돈이라 예정 톤(info) — 중립 짙은 색이면 수납 완료 금액과 같은 문법이 된다(신고 d9e6ecd2).
             <>
-              <p className="text-sm font-bold mt-0.5 text-[var(--info-fg)]">{fmtWon(resvDue)}</p>
+              <p className={`${VALUE} text-[var(--info-fg)]`}>{fmtWon(resvDue)}</p>
               {beforeMoveIn && moveInMonth && (
-                <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">이번 달 청구 없음 · {Number(moveInMonth.slice(5))}월 입주 예정</p>
+                <p className={CAPTION}>이번 달 청구 없음 · {Number(moveInMonth.slice(5))}월 입주 예정</p>
               )}
             </>
           ) : (
-            <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
+            <p className={`${VALUE} whitespace-nowrap ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
               {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `−${fmtWon(Math.abs(settlement.balance))}` : '0원'}
             </p>
           )}
         </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+        <div className={CARD}>
           <p className="text-xs text-[var(--warm-muted)] leading-tight">{pastUnpaid ? '지난달 미수' : '다음 달로'}</p>
-          {/* 큰 숫자는 한 줄 — 320px 3열에서 '원'만 아랫줄로 떨어지지 않게. 색은 §06 +/− 정본. */}
+          {/* 큰 숫자는 한 줄 — '원'만 아랫줄로 떨어지지 않게. 3열은 그 한 줄이 들어가는 폭에서만 선다(위 CARD). 색은 §06 +/− 정본. */}
           {pastUnpaid ? (
-            <p className="text-sm font-bold mt-0.5 whitespace-nowrap text-[var(--danger-fg)]">−{fmtWon(Math.abs(settlement.carryOver))}</p>
+            <p className={`${VALUE} whitespace-nowrap text-[var(--danger-fg)]`}>−{fmtWon(Math.abs(settlement.carryOver))}</p>
           ) : (
-            <p className="text-sm font-bold mt-0.5 whitespace-nowrap text-[var(--success-fg)]">{prepaidOut > 0 ? `+${fmtWon(prepaidOut)}` : '0원'}</p>
+            <p className={`${VALUE} whitespace-nowrap text-[var(--success-fg)]`}>{prepaidOut > 0 ? `+${fmtWon(prepaidOut)}` : '0원'}</p>
           )}
           {!pastUnpaid && prepaidOut > 0 && settlement.status === 'CHECKED_OUT' && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">퇴실 정산 대상</p>
+            <p className={`${CAPTION} break-keep`}>퇴실 정산 대상</p>
           )}
           {pastOverpaid > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">지난달 과납 {fmtWon(pastOverpaid)}</p>
+            <p className={`${CAPTION} break-keep`}>지난달 과납 {fmtWon(pastOverpaid)}</p>
           )}
           {prepaidIn > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">지난달 이월 {fmtWon(prepaidIn)}</p>
+            <p className={`${CAPTION} break-keep`}>지난달 이월 {fmtWon(prepaidIn)}</p>
           )}
         </div>
+      </div>
       </div>
     </div>
   )
