@@ -622,6 +622,6 @@ A~E 는 해당 없다. 서명 PNG·박제·printedFacts·링크·알림·성명 
 A1 예(새 조회가 badgeOf 로 leaseSignSlots 를 부른다) · A2 예(signStageSlots·badgeSignSummary 정본, shareBadge 본문 무변경) ·
 A3 예(새 ContractShareLink 조회는 링크 시각 signedAt·disposalSignedAt 으로 진행을 세지 않는다. where 는 tenantId·propertyId 뿐이고 진행은 계약 축 badgeOf 가 lease 서명 칸으로 판정해 동의서만 서명도 반쪽으로 잡는다) ·
 A4 해당 없음 · A5 예(동의서 cage 분기 그대로, 렌더 갈래만 바뀜) · A6 예, 넓어짐(열람 역할도 배지로 반쪽을 본다) · B1 해당 없음 ·
-B2 해당 없음(열람 역할 화면에는 표기를 고르는 입구가 없고, 이름은 서버가 정한 nameStyle 값 그대로 그린다. 화면이 이름을 다시 조립하지 않는다) ·
+B2 해당 없음(열람 역할 화면에는 표기를 고르는 입구가 없고, 화면이 서버 nameStyle 값으로 이름을 조립하고(ContractView documentName), 열람 역할에게는 그 값을 바꾸는 입구가 없다) ·
 B3 무변경 · B4 해당 없음 · C1·C2 해당 없음·무변경 · D1·D2 해당 없음 · E1·E2 해당 없음(새 값·박제 없음) ·
 F1 예(check-sms-role-gate ⓙⓚⓜ·test-action-property-scope-flow 서명 상태 절, 둘 다 verify:fast) · F2 예(역주입에 import 남기고 requirePropertyAccess 호출 삭제, viewOnly 정의 남기고 사용 삭제 포함).
