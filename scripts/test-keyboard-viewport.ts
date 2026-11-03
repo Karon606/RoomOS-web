@@ -398,16 +398,33 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   eq('앵커 · NaN 앵커는 무시', revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: NaN }), revealDelta({ ...B, fieldTop: 360, fieldBottom: 400 }))
   // 머리가 이미 띠 위로 나가 있어도 앵커가 칸을 아래로 끌어내리지는 않는다(공짜 모션 없음, 음수는 칸 기준 1회뿐).
   eq('앵커 · 머리가 이미 잘렸어도 아래로 끌어내리지 않는다', revealDelta({ ...B, fieldTop: 100, fieldBottom: 140, anchorTop: -40 }), 0)
-  // 앵커가 없으면 종전과 한 조합도 안 다르다(동치 전수).
-  let diff = 0, n = 0
-  for (const ft of [-30, 0, 10, 40, 100, 145, 188, 200, 300, 380, 500]) for (const h of [20, 40, 300, 660]) for (const al of [false, true]) {
-    for (const bb of [300, 416, 538]) {
-      n++
-      const base = { bandTop: 0, bandBottom: bb, fieldTop: ft, fieldBottom: ft + h, aligned: al }
-      if (revealDelta(base) !== revealDelta({ ...base, anchorTop: undefined })) diff++
-    }
+  // 앵커가 없거나 쓸 수 없으면(NaN·무한·칸보다 아래·칸과 같은 높이) 종전 식과 한 조합도 안 다르다. 종전 식은 사본으로
+  // 대조한다(독립 검수 2026-11-03, 종전 동치표는 같은 함수끼리 견줘 늘 초록이었다).
+  const oldRevealDelta = (q: { bandTop: number; bandBottom: number; fieldTop: number; fieldBottom: number; aligned: boolean }) => {
+    const targetY = q.bandTop + TARGET_RATIO * (q.bandBottom - q.bandTop)
+    const rise = Math.min(Math.max(q.fieldTop - targetY, q.fieldBottom + REVEAL_GAP - q.bandBottom), q.fieldTop - (q.bandTop + REVEAL_GAP))
+    if (rise > 0) return rise
+    if (!q.aligned && q.fieldTop < q.bandTop + REVEAL_GAP) return q.fieldTop - (q.bandTop + REVEAL_GAP)
+    return 0
   }
-  eq(`앵커 없음 동치 ${n} 조합 · 종전 revealDelta 와 같다`, diff, 0)
+  let diff = 0, n = 0
+  for (let bt = -50; bt <= 120; bt += 17) for (let bb = bt + 50; bb <= bt + 700; bb += 37) for (let ft = -200; ft <= 900; ft += 13)
+    for (const h of [0, 1, 20, 44, 120, 400]) for (const al of [false, true]) for (const anc of [undefined, NaN, Infinity, -Infinity, ft + 1, ft + 0.5, ft]) {
+      n++
+      const q = { bandTop: bt, bandBottom: bb, fieldTop: ft, fieldBottom: ft + h, aligned: al }
+      if (oldRevealDelta(q) !== revealDelta({ ...q, anchorTop: anc })) diff++
+    }
+  eq(`앵커 없음·무효·칸 높이 동치 ${n} 조합 · 종전 식 사본과 같다`, diff, 0)
+  // 앵커를 써도 종전보다 더 올리지 않고, 종전이 띠 안에 넣던 칸을 다시 가리지 않는다.
+  let bad = 0, n3 = 0
+  for (let ft = 0; ft < 900; ft += 11) for (const h of [20, 44]) for (const bb of [250, 416]) for (let gap = 0; gap < 500; gap += 23) {
+    n3++
+    const q = { bandTop: 0, bandBottom: bb, fieldTop: ft, fieldBottom: ft + h, aligned: false }
+    const d = revealDelta({ ...q, anchorTop: ft - gap }), o = oldRevealDelta(q)
+    if (d > o + 1e-9) bad++
+    if (d > 0 && ft + h - d + REVEAL_GAP > bb + 1e-9 && o > 0 && ft + h - o + REVEAL_GAP <= bb + 1e-9) bad++
+  }
+  eq(`앵커 ${n3} 조합 · 종전보다 더 올리지 않고 칸을 다시 가리지 않는다`, bad, 0)
 }
 
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).
