@@ -96,6 +96,9 @@ export default function ViewportOffsetGuard() {
     // React flush 라 첫 resize 뒤에 온다. 원샷은 마지막 기하를 못 보고 소진돼 버렸다.
     // 스크롤 전쟁은 안 난다 — 재시도는 resize 에서만 하고(vv.scroll 에서는 안 한다),
     // 재시도 구간은 양수 델타만 스크롤하므로 수렴형이다(음수 정렬은 포커스당 1회 래치라 첫 회뿐이다).
+    // 계측 전용. 가드가 마지막으로 적은 스크롤러 scrollTop 과, 이번 포커스에서 가드 밖 스크롤을 이미 적었는가.
+    let guardTop = NaN
+    let foreignLogged = false
     const reveal = () => {
       const p = pending.current
       if (!p) return
@@ -114,13 +117,24 @@ export default function ViewportOffsetGuard() {
       const boxRect = box.getBoundingClientRect()
       const band = visibleBand(snapNow())
       const r = p.el.getBoundingClientRect()
+      const bandTop = Math.max(boxRect.top, band.top)
+      const bandBottom = Math.min(band.bottom, boxRect.bottom)
       const delta = revealDelta({
-        bandTop: Math.max(boxRect.top, band.top),
-        bandBottom: Math.min(band.bottom, boxRect.bottom),
+        bandTop,
+        bandBottom,
         fieldTop: r.top, fieldBottom: r.bottom,
         aligned: p.aligned,
       })
+      const s0 = box.scrollTop
       if (delta !== 0) box.scrollTop += delta
+      // 0단계 계측(키보드 칸 이동 튐 패널 2026-11-03). 무엇을 재고 얼마를 움직였는지 숫자로만 남긴다.
+      // 칸 위 끝을 움직인 뒤 한 번 더 읽고(f1), 두 프레임 뒤에 또 읽는다(rv2). iOS 의 제 팬이 겹치면 f1 과 f2 가 갈린다.
+      guardTop = box.scrollTop
+      kbdTrace('rv', delta > 0 ? 'rise' : delta < 0 ? 'neg' : 'none', undefined, undefined, {
+        bt: bandTop, bb: bandBottom, f0: r.top, f1: p.el.getBoundingClientRect().top, d: delta, a: p.aligned ? 1 : 0, s0, s1: guardTop,
+      })
+      const el = p.el
+      requestAnimationFrame(() => requestAnimationFrame(() => { if (alive && el.isConnected) { kbdTrace('rv2', '·', undefined, undefined, { f2: el.getBoundingClientRect().top }) } }))
       p.aligned = true
     }
 
@@ -207,9 +221,22 @@ export default function ViewportOffsetGuard() {
     }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
+    // 0단계 계측. 키보드가 선 동안 포커스 칸을 감싼 스크롤러가 가드 밖에서 움직이면(손 스크롤·브라우저 자체 스크롤) 포커스당
+    // 한 줄만 적는다. 가드가 적은 값과 같은 scrollTop 이면 가드 자신의 스크롤이다. 판정·쓰기와 무관하다.
+    const onAnyScroll = (e: Event) => {
+      const p = pending.current
+      const t = e.target
+      if (foreignLogged || !p || !(t instanceof HTMLElement) || !root.hasAttribute(KBD_OPEN_ATTR)) return
+      if (!t.contains(p.el) || t.scrollTop === guardTop) return
+      foreignLogged = true
+      kbdTrace('ss', '·', undefined, undefined, { s: t.scrollTop })
+    }
+
     const onFocusIn = (e: FocusEvent) => {
       kbdTrace('fi', keyboardOpen(snapNow()) ? 'open' : 'shut', snapNow())
       if (!isEditableTarget(e.target)) return
+      foreignLogged = false
+      guardTop = NaN
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }
       // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다.
@@ -224,6 +251,7 @@ export default function ViewportOffsetGuard() {
     vv.addEventListener('scroll', onScroll)
     document.addEventListener('focusin', onFocusIn, true)
     document.addEventListener('focusout', onFocusOut, true)
+    document.addEventListener('scroll', onAnyScroll, { capture: true, passive: true })
     window.addEventListener('pageshow', resync)
     window.addEventListener('resize', onWindowResize)
     window.addEventListener('orientationchange', resync)
@@ -234,6 +262,7 @@ export default function ViewportOffsetGuard() {
       vv.removeEventListener('scroll', onScroll)
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('focusout', onFocusOut, true)
+      document.removeEventListener('scroll', onAnyScroll, { capture: true })
       window.removeEventListener('pageshow', resync)
       window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('orientationchange', resync)

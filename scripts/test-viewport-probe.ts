@@ -332,6 +332,23 @@ eq('얼린 적이 없으면 빈 문자열', kbdTraceTable(null), '')
   eq('판정이 뒤집힌 vs shut 이 남는다', fl.some(l => /^-?\d+\s+vs\s+shut\b/.test(l)), true)
   eq('팬 묶음을 접어 한도 안에 든다', flood.length <= 2400 && /팬 \d+건 접음/.test(flood), true)
 
+  // 재노출 줄(2026-11-03, 키보드 칸 이동 튐 패널 0단계). 숫자 묶음만 x 열에 싣고, 그 줄이 있을 때만 x 열과 범례 한 줄이 붙는다.
+  {
+    kbdTrace('fi', 'open')
+    kbdTrace('rv', 'rise', undefined, undefined, { bt: 0, bb: 416, f0: 205.4, f1: 146, d: 59.4, a: 0, s0: 120, s1: 179.4 })
+    kbdTrace('rv2', '·', undefined, undefined, { f2: NaN })
+    const fz = kbdTraceFreeze()
+    const rvRow = fz.rows.find(x => x.ev === 'rv')
+    eq('rv 줄은 숫자 묶음을 k=v 로 담는다', rvRow?.x, 'bt=0 bb=416 f0=205.4 f1=146 d=59.4 a=0 s0=120 s1=179.4')
+    eq('유한하지 않은 값은 - 로 적는다', fz.rows.find(x => x.ev === 'rv2')?.x, 'f2=-')
+    eq('다른 줄에는 숫자 묶음이 없다', fz.rows.find(x => x.ev === 'fi')?.x, undefined)
+    const t = kbdTraceTable({ at: fz.at, rows: fz.rows.slice(-4) })
+    eq('재노출 줄이 실리면 표에 x 열이 붙는다', t.split('\n').find(l => l.startsWith('t '))?.trim().endsWith(' x'), true)
+    eq('재노출 줄이 실리면 범례에 rv 한 줄이 붙는다', t.includes('rv=재노출('), true)
+    eq('재노출 줄 x 열 값이 표에 그대로 선다', t.includes('d=59.4'), true)
+    eq('재노출 줄이 없는 표는 x 열이 없다(종전 모양)', kbdTraceTable(FROZEN).includes(' x\n'), false)
+  }
+
   // 읽다가 터져도 가드로 새지 않는다.
   g.document = { get documentElement(): never { throw new Error('boom') }, activeElement: null }
   let threw = false

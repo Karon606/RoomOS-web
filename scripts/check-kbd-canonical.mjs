@@ -400,6 +400,29 @@ need('components/layout/ViewportOffsetGuard.tsx', [
   const used = /(=|\(|,|&&|\|\||\?|:|!|return)\s*kbdTrace\(/.exec(src)
   if (used) violations.push(`components/layout/ViewportOffsetGuard.tsx — kbdTrace 의 결과를 식 안에서 쓴다('${used[0]}'). 관찰 호출은 홀로 선 문장이어야 한다`)
 }
+// 5-b) 재노출 계측(2026-11-03, 키보드 칸 이동 튐 패널 0단계). 재노출이 무엇을 재고 얼마를 움직였는지(rv), 두 프레임
+// 뒤 칸이 어디 있었는지(rv2), 가드 밖 스크롤(ss)을 숫자로만 남긴다. 신고 하나로 이중 이동인지 가를 자리다.
+need('lib/kbdTrace.ts', [
+  [/export function kbdTrace\([^)]*nums\?: Readonly<Record<string, number>>\)\s*:\s*void/, '재노출 숫자 묶음(nums)을 number 로만 받지 않는다. 글자가 실릴 자리가 열린다'],
+  [/function numsCell\(nums: Readonly<Record<string, number>>\): string \{[\s\S]{0,200}?Number\.isFinite\(/, '숫자 묶음이 유한한 숫자만 거르지 않는다'],
+  [/x: numsCell\(nums\)/, '숫자 묶음이 numsCell 을 안 지난다'],
+])
+need('components/layout/ViewportOffsetGuard.tsx', [
+  [/kbdTrace\('rv', delta > 0 \? 'rise' : delta < 0 \? 'neg' : 'none', undefined, undefined, \{/, '재노출(rv)을 갈래(rise·neg·none)와 함께 적지 않는다'],
+  [/bt: bandTop, bb: bandBottom, f0: r\.top, f1: [^,]+, d: delta, a: p\.aligned \? 1 : 0, s0, s1: /, 'rv 줄이 띠 위·아래·칸 위 전후·델타·래치·scrollTop 전후를 다 싣지 않는다'],
+  [/kbdTrace\('rv2', '·', undefined, undefined, \{ f2: /, '두 프레임 뒤 칸 위(rv2)를 안 적는다. 이중 이동이 남지 않는다'],
+  [/kbdTrace\('ss', '·', undefined, undefined, \{ s: /, '가드 밖 스크롤러 scroll(ss)을 안 적는다'],
+  [/document\.addEventListener\('scroll', onAnyScroll, \{ capture: true, passive: true \}\)/, '가드 밖 스크롤 관찰이 수동(passive) 캡처가 아니다'],
+])
+{
+  let src = ''
+  try { src = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const body = src ? sliceBody(src, 'const onAnyScroll = (') : null
+  if (body == null) violations.push('components/layout/ViewportOffsetGuard.tsx: 가드 밖 스크롤 관찰(onAnyScroll)을 찾을 수 없다')
+  else if (/scrollTop\s*[+-]?=(?!=)|scrollTo\(|setProperty\(|setAttribute\(|removeAttribute\(|preventDefault\(|pending\.current\s*=(?!=)/.test(body)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx: 가드 밖 스크롤 관찰이 무언가를 쓴다. 0단계 계측은 동작을 바꾸지 않는다')
+  }
+}
 need('components/ErrorReportButton.tsx', [
   [/kbdTraceFreeze\(sentinelRect\(\)\)/, '누른 순간 센티널을 재서 링버퍼를 얼리지 않는다. 신고창 메모 칸의 키보드가 직전 세션을 밀어내고, 셸 폼에서 팬하던 때의 H·T0 가 0건이 된다'],
   [/kbdTraceTable\(/, '직전 키보드 세션 표를 신고에 안 싣는다'],
@@ -461,7 +484,9 @@ need('app/(app)/errorReports.ts', [
     const rev = sliceBody(guard, 'const reveal = (')
     if (rev == null || !/const band = visibleBand\(snapNow\(\)\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 띠가 정본 visibleBand 를 안 쓴다. 팬한 iOS 에서 띠를 offsetTop 만큼 아래로 본다')
     // 띠를 만들고도 안 쓰는 되돌림까지 잡는다(검수 역주입 2026-10-20, visibleBand 줄을 남기고 bandTop 만 offsetTop 으로).
-    else if (!/bandTop: Math\.max\(boxRect\.top, band\.top\)/.test(rev) || !/bandBottom: Math\.min\(band\.bottom, boxRect\.bottom\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 인자가 band.top·band.bottom 이 아니다. 띠를 재고도 다른 틀로 견준다')
+    // 2026-11-03 부터 띠 두 값은 계측(rv)과 함께 쓰려고 이름을 받는다. 이름에 담는 식과 재노출에 넘기는 이름을 둘 다 본다.
+    else if (!/const bandTop = Math\.max\(boxRect\.top, band\.top\)/.test(rev) || !/const bandBottom = Math\.min\(band\.bottom, boxRect\.bottom\)/.test(rev)
+      || !/revealDelta\(\{\s*bandTop,\s*bandBottom,/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출 인자가 band.top·band.bottom 이 아니다. 띠를 재고도 다른 틀로 견준다')
   }
   // 훅은 기준틀을 그대로 넘긴다(검수 역주입 2026-10-20, frameH 자리에 다른 식을 넣어도 초록이었다).
   // 오버레이 인셋은 상자 좌표라 T0 가 필요 없다(위 = offsetTop, 아래 = H − offsetTop − vv.h). 그래서 훅은 frameTop 을 안 쓴다.

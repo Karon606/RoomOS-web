@@ -12,7 +12,8 @@
 // 호출만 지우면 종전 가드와 같은 일을 한다. 계측이 가드를 멈추게 하면 안 되므로 전부 try 안이다.
 //
 // **개인정보 경계.** 담는 것은 숫자(innerHeight·vv 높이·위치·배율, 화면 고정 상자의 높이·top,
-// 문서 scrollTop)와 루트 표식 두 개(data-kbd-open, 인라인 --kbd-inset), 포커스 요소의 태그·type 뿐이다.
+// 문서 scrollTop, 재노출 줄의 띠·칸 위치·스크롤러 scrollTop)와 루트 표식 두 개(data-kbd-open, 인라인 --kbd-inset),
+// 포커스 요소의 태그·type 뿐이다.
 // 입력값·placeholder·본문 텍스트·속성값은 안 읽는다. scripts/check-kbd-canonical.mjs 가 이 경계와
 // '쓰지 않는다'를 지킨다.
 //
@@ -47,6 +48,7 @@ export type KbdTraceRow = {
   open: boolean        // html[data-kbd-open] — 기록 순간
   inset: string        // html 인라인 --kbd-inset — 기록 순간('' 이면 미기입)
   focus: string        // 포커스 요소 태그(+type)
+  x?: string           // 재노출 줄(rv·rv2·ss)의 숫자 묶음 'k=v'. 숫자만 담는다(numsCell). 다른 줄은 없다
 }
 
 /**
@@ -84,11 +86,20 @@ function overlayBox(): FrameBox | null {
 }
 
 /**
+ * 재노출 줄의 숫자 묶음(2026-11-03, 키보드 칸 이동 튐 패널 0단계). 'k=v' 를 공백으로 잇는다. 값은 number 만 받고
+ * 유한하지 않으면 '-' 다. 글자·속성값이 들어올 자리가 없다(개인정보 경계, scripts/check-kbd-canonical.mjs 5).
+ */
+function numsCell(nums: Readonly<Record<string, number>>): string {
+  return Object.keys(nums).map(k => `${k}=${num(Number.isFinite(nums[k]) ? nums[k] : null)}`).join(' ')
+}
+
+/**
  * 한 줄 기록. 가드가 판정을 마친 자리에서 부른다 — 반환값이 없고, 실패해도 조용히 지나간다.
  * s 를 주면 가드가 판정에 쓴 바로 그 스냅샷을 적고, 안 주면 지금 값을 읽는다(같은 순간이다).
  * box 는 rep 줄에만 넘어온다(누른 순간의 센티널). 없으면 열린 모달 오버레이를 읽는다.
+ * nums 는 재노출 줄(rv·rv2·ss)의 숫자 묶음이다. 띠 위·아래, 칸 위 전후, 델타, 래치, 스크롤러 scrollTop 전후.
  */
-export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: FrameBox | null): void {
+export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: FrameBox | null, nums?: Readonly<Record<string, number>>): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
   try {
     const vv = window.visualViewport
@@ -114,6 +125,7 @@ export function kbdTrace(ev: string, verdict: string, s?: KbdSnapshot, box?: Fra
       open: root.hasAttribute('data-kbd-open'),
       inset: root.style.getPropertyValue('--kbd-inset').trim(),
       focus: focusKind(),
+      ...(nums ? { x: numsCell(nums) } : {}),
     })
     if (rows.length > KBD_TRACE_CAP) rows.splice(0, rows.length - KBD_TRACE_CAP)
   } catch { /* 계측 실패는 가드 동작과 무관하다 */ }
@@ -151,17 +163,22 @@ function num(v: number | null): string {
 }
 
 const COLS = ['t', 'ev', 'verdict', 'inner', 'vvh', 'top', 'H', 'T0', 'sy', 'kbd', 'inset', 'focus'] as const
+/** 재노출 숫자 묶음 열. 그 줄이 하나라도 실릴 때만 붙인다(없으면 종전 표와 한 글자도 안 다르다). */
+const X_COL = 'x'
 const LEGEND = [
   'ev vr=vv resize · vs=vv scroll · wr=키보드가 선 동안의 window resize(팬으로 받음) · fi/fo=focus in/out · rs=복귀 재동기 · rst=복원(맨 위로 되감기) · rep=신고창 열림 · verdict=가드 판정',
   'vs×n=판정·표식이 같은 팬(vs·wr) n건을 첫 줄과 끝 줄로 접음 · rs 바로 뒤 같은 t 의 vr 은 재동기가 부른 판정'
     + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
+/** 재노출 줄이 실릴 때만 붙는 범례 한 줄(없으면 종전 범례 그대로). */
+const LEGEND_X = 'rv=재노출(verdict rise·neg·none, x 의 bt·bb=띠 위·아래, f0·f1=칸 위 전후, d=델타, a=음수 래치, s0·s1=스크롤러 scrollTop 전후, w=기다린 프레임)'
+  + ' · rv2=두 프레임 뒤 칸 위 f2 · ss=가드가 일으키지 않은 스크롤러 scroll(s=그때 scrollTop) · rvx=정착 대기 취소'
 
 // 덜기 차례. 큰 수부터 덜고, 같은 수 안에서는 오래된 줄부터 덜어낸다. 범례는 RESTORE 와 FLIP 사이에서
 // 덜어낸다(읽는 법은 이 파일에 남지만 판정이 바뀐 줄은 다시 못 얻는다).
 const PLAIN = 4     // 판정·표식이 앞 줄 그대로인 vs·vr
 const CONTEXT = 3   // 포커스 드나듦(fi·fo)·재동기(rs)·앞서 연 rep·접힌 묶음의 끝 줄
-const RESTORE = 2   // 복원 발동(rst)
+const RESTORE = 2   // 복원 발동(rst)·재노출(rv·rv2·rvx). 화면을 실제로 움직인 줄이다
 const FLIP = 1      // 판정 꼬리표나 표식(kbd·inset)이 앞과 달라진 줄. 첫 줄도 여기다
 const LAST = 0      // 마지막 줄(신고창을 연 순간). 덜지 않는다
 /** 판정이 바뀐 줄 중 맨 나중까지 남기는 세션 첫 줄 수. */
@@ -174,6 +191,8 @@ const JUDGED = new Set(['vr', 'vs', 'wr', 'fi'])
  * 내므로(2026-10-20, 신고 be5316e8) 둘이 번갈아 와도 한 묶음으로 접는다. 안 그러면 큰 팬 한 번이 다시 수십 줄을 먹는다.
  */
 const PAN_LIKE = new Set(['vs', 'wr'])
+/** 화면을 실제로 움직였거나 움직임을 거둔 줄. 복원과 같은 차례로 오래 남긴다. */
+const MOVED = new Set(['rst', 'rv', 'rv2', 'rvx'])
 
 /** 표 한 줄. 링버퍼 한 건이거나, 접힌 팬 묶음의 끝 줄(fold=묶음 건수)이다. */
 type Line = { r: KbdTraceRow; fold: number; rank: number }
@@ -202,7 +221,7 @@ function toLines(all: KbdTraceRow[]): Line[] {
   for (let i = 0; i < all.length; i++) {
     const r = all[i]
     const flip = !prev || prev.open !== r.open || prev.inset !== r.inset || (JUDGED.has(r.ev) && r.verdict !== judged)
-    const rank = flip ? FLIP : r.ev === 'rst' ? RESTORE : PAN_LIKE.has(r.ev) || r.ev === 'vr' ? PLAIN : CONTEXT
+    const rank = flip ? FLIP : MOVED.has(r.ev) ? RESTORE : PAN_LIKE.has(r.ev) || r.ev === 'vr' ? PLAIN : CONTEXT
     if (JUDGED.has(r.ev)) judged = r.verdict
     prev = r
     out.push({ r, fold: 0, rank })
@@ -219,6 +238,7 @@ function toLines(all: KbdTraceRow[]): Line[] {
 }
 
 function render(frozen: KbdTraceFrozen, shown: Line[], title: string, legend: boolean): string {
+  const withX = shown.some(l => !!l.r.x)
   let prevFocus = ''
   const cells = shown.map(({ r, fold }) => {
     // 포커스는 바뀔 때만 적는다 — 대부분의 줄이 같은 칸이라 매번 적으면 자리만 먹는다.
@@ -228,13 +248,15 @@ function render(frozen: KbdTraceFrozen, shown: Line[], title: string, legend: bo
       String(Math.round(r.t - frozen.at)), fold > 0 ? `${r.ev}×${fold}` : r.ev, r.verdict, String(r.inner),
       num(r.vvh), num(r.top), num(r.H), num(r.T0), num(r.sy),
       r.open ? 'y' : 'n', r.inset ? r.inset.replace(/px$/, '') : '-', focus,
+      ...(withX ? [r.x ?? ''] : []),
     ]
   })
-  const table = [[...COLS] as string[], ...cells]
-  const widths = COLS.map((_, i) => Math.max(...table.map(c => c[i].length)))
+  const head = withX ? [...COLS, X_COL] : [...COLS]
+  const table = [head as string[], ...cells]
+  const widths = head.map((_, i) => Math.max(...table.map(c => c[i].length)))
   const lines = table.map(c => c.map((v, i) => (i === c.length - 1 ? v : v.padEnd(widths[i]))).join(' ').trimEnd())
   // 화면 방식 줄은 제목 바로 아래 둔다. 덜기 대상이 아니다(짧고, 이 줄이 없으면 표를 읽는 틀이 갈린다).
-  return [title, ...(frozen.mode ? [frozen.mode] : []), ...(legend ? [LEGEND] : []), ...lines].join('\n')
+  return [title, ...(frozen.mode ? [frozen.mode] : []), ...(legend ? [withX ? `${LEGEND}\n${LEGEND_X}` : LEGEND] : []), ...lines].join('\n')
 }
 
 /**
