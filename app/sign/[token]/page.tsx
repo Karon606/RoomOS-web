@@ -98,5 +98,5 @@ export default async function SignPage({
     }
   }
   // 입주자 원격 서명 화면 — 운영자 동작(문자·본문 편집)은 이 화면의 몫이 아니다. 필수 prop 이라 명시로 닫는다.
-  return <ContractView data={data} mode="remote" shareToken={token} signLang={lang} canSendSms={false} canEditBody={false} />
+  return <ContractView data={data} mode="remote" shareToken={token} signLang={lang} canSendSms={false} canEdit={false} />
 }

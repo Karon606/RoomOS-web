@@ -235,9 +235,10 @@ console.log('\n⑧ 배선 그물 — 잠금·조판·스냅샷')
   const rc = code('app/residence-cert/[tenantId]/ResidenceCertView.tsx')
   const share = code('app/(app)/tenants/contractShare.ts')
 
-  ok('잠기면 되돌리기 자리를 안 넘긴다', /onUndo=\{bodyLocked \? undefined :/.test(cv))
+  // 열람 역할(viewOnly)도 되돌리기 자리가 없고 잠김 문장도 안 받는다(2026-11-04, 그물 check-sms-role-gate ⓚ).
+  ok('잠기면 되돌리기 자리를 안 넘긴다', /onUndo=\{viewOnly \|\| bodyLocked \? undefined :/.test(cv))
   ok('잠금 문장은 칸 토스트와 같은 정본이다',
-    /lockMessage=\{bodyLocked \? fieldLockMessage\([^)]*'here'\)/.test(cv))
+    /lockMessage=\{!viewOnly && bodyLocked \? fieldLockMessage\([^)]*'here'\)/.test(cv))
   ok('확인서에는 잠금이 없어 문장을 안 넘긴다', !rc.includes('lockMessage'))
 
   // §07 r-pill 금지 · §11 ring 없음 — 되살아나면 여기서 붉게 선다.

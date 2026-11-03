@@ -32,6 +32,7 @@
 
 배지는 서버가 판정한다. 서명이 dataURL 이라 **클라이언트로 내려보내지 않는다.**
 `ContractShareLinkInfo.signStage` · `signSummary` 가 그 결과다.
+열람 역할용 `getContractSignBadge`(2026-11-04)도 같은 결과를 준다. 두 조회는 내부 판정 함수 `badgeOf` 한 벌을 부른다.
 
 `serializeLink` 는 계약 서명 칸을 **기본값 없는 필수 인자**로 받는다. 타입이 호출부를
 강제해 "어느 호출부는 계약을 읽고 어느 호출부는 안 읽는" 갈림이 다시 안 생긴다.

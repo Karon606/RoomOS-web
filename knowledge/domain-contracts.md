@@ -599,3 +599,29 @@ A~E 는 해당 없다. 서명 PNG·박제·printedFacts·링크·알림·성명 
   원격 병기 모달이 화면보다 길면 확인 버튼이 갇혀서, 오버레이를 overflow-y auto 로 스크롤되게 하고 높이 560px 미만에서는 패드를 16/7 로 되돌린다.
   패드(캔버스·틀)는 그대로 none. 계측 '밖' 수는 버튼 누름을 뺀다. 대기 문구는 운영자 결정으로 '이 칸에 성함을 써 주세요'(펜·마우스에도 맞게).
 - 2단계 검토 거리(독립 검수 R5): 서버(submitRemoteSignature·발급)도 서명 PNG 의 잉크 양을 다시 볼지. 지금 바닥 판정은 화면 정본(lib/signatureInk)뿐이다.
+
+## 열람 역할과 계약서 화면 (2026-11-04, 운영자 승인 '추천대로')
+
+열람 전용 STAFF 는 계약서 화면을 **읽기 전용**으로 연다. 제한 스태프는 금액을 못 읽어 404 다(page 가 역할을 데이터보다 먼저 읽는다).
+서버 권한은 하나도 넓히지 않았다(갈림길 G1). 미리보기(preview)는 클라이언트가 보낸 서명 이미지·값으로 종이를 찍으므로
+읽기 권한에 열면 근거 없는 서명 종이를 만들 수 있다. 열람 직원이 종이를 밖으로 낼 때는 발급본 [보기]·[보내기]를 쓴다.
+
+- **읽기 전용 정본 = 원격 갈래.** ContractView 의 `viewOnly = !remote && !canEdit` 하나로 fieldCell·흡연·비상연락처가 원격과 같은 글자다.
+  fieldCell 은 viewOnly 를 잠김 갈래보다 먼저 본다. 잠김 안내는 열람 역할에게 없는 '이 계약서 폐기'·'새 버전 작성'을 가리킨다.
+- **서명칸에서 받는 입구를 모두 걷는다**('여기를 눌러 서명'·저장된 서명 눌러 다시 서명·서명 지우기). 대면 서명은 발급 때 저장되므로
+  열람 직원이 서명을 받으면 발급 거절과 함께 서명이 사라진다. 입주자는 서명했다고 믿고 떠난다(2026-09-03 서명 반쪽 사고와 같은 클래스).
+  빈 칸은 종이와 같은 '(서명)'·'(서명 또는 인)' 글자를 화면에도 그린다.
+- 납부일 창·내보내기·발급·서명 요청·성명 표기·직접 입력 되돌리기도 세우지 않는다. '직접 입력 N칸' 목록과 번역본 셀렉트(보기 상태)는 남는다(G4).
+- 서명본(`?share=`) 화면은 발급용 문이라 편집 역할 전용이다. 열람 역할은 같은 계약의 일반 화면으로 보낸다(G2).
+- 열람 역할의 '서명 대기' 배지는 새 조회 `getContractSignBadge`(app/(app)/tenants/contractShare.ts)가 준다. 영업장 문만 지나고(requireEdit 없음),
+  응답은 배지 여섯 칸(expiresAt·closedAt·lockedAt·submittedAt·signStage·signSummary)뿐이다. 토큰·URL·링크 id·연락처·신원 파생값은 읽지도 싣지 않는다.
+  진행 판정은 getContractShareState 와 같은 내부 함수 `badgeOf`(계약 축)다.
+- 계약서 칸(ContractFilesPanel) 입구는 STAFF 에게 '계약서 보기'(보기 = 만들지 않는다), 제한 스태프에게는 없다. 열람 역할에게 단계 안내(hint)는 서지 않는다.
+
+### 체크리스트 A~F 대조
+A1 예(새 조회가 badgeOf 로 leaseSignSlots 를 부른다) · A2 예(signStageSlots·badgeSignSummary 정본, shareBadge 본문 무변경) ·
+A3 예(새 ContractShareLink 조회는 링크 시각 signedAt·disposalSignedAt 으로 진행을 세지 않는다. where 는 tenantId·propertyId 뿐이고 진행은 계약 축 badgeOf 가 lease 서명 칸으로 판정해 동의서만 서명도 반쪽으로 잡는다) ·
+A4 해당 없음 · A5 예(동의서 cage 분기 그대로, 렌더 갈래만 바뀜) · A6 예, 넓어짐(열람 역할도 배지로 반쪽을 본다) · B1 해당 없음 ·
+B2 해당 없음(열람 역할 화면에는 표기를 고르는 입구가 없고, 이름은 서버가 정한 nameStyle 값 그대로 그린다. 화면이 이름을 다시 조립하지 않는다) ·
+B3 무변경 · B4 해당 없음 · C1·C2 해당 없음·무변경 · D1·D2 해당 없음 · E1·E2 해당 없음(새 값·박제 없음) ·
+F1 예(check-sms-role-gate ⓙⓚⓜ·test-action-property-scope-flow 서명 상태 절, 둘 다 verify:fast) · F2 예(역주입에 import 남기고 requirePropertyAccess 호출 삭제, viewOnly 정의 남기고 사용 삭제 포함).

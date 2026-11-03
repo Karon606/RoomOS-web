@@ -27,6 +27,9 @@
 //      같은 손(핸들러)이 가드 밖에 또 생기지 않게 개수를 고정한다.
 //   ⓘ 쓰기 행을 세우는 조회(getRoomScheduleState·getRoomBusyNotice, 서버 requireEdit)는 열람 역할에게 부르지 않는다(모달마다 500).
 //      서버 문은 낮추지 않는다. 부르는 자리가 입주자 상세(가드)와 수정 폼(편집자만 연다) 밖으로 늘면 붉다.
+//   ⓚ 계약서 화면 읽기 전용(2026-11-04 운영자 승인 '추천대로'). page 가 역할을 데이터보다 먼저 읽어 제한 스태프는 404, 서명본(?share=)은
+//      열람 역할을 일반 화면으로 보낸다. ContractView 는 viewOnly 하나로 쓰기 입구(납부일 창·칸 입력·흡연·비상연락처·성명 표기·서명 받기·
+//      서명 지우기·재서명·내보내기·발급·직접 입력 되돌리기)를 세우지 않고, 칸은 원격과 같은 글자 갈래를 잠김 갈래보다 먼저 탄다.
 //   ⓜ 계약서 칸의 계약서 화면 입구(2026-11-04 운영자 승인 '추천대로'). STAFF 에게는 '계약서 보기'(읽기 전용 화면), 제한 스태프는 money 를 못 읽어
 //      서버가 거절하므로 문이 없다. 판정은 useCanEdit() 와 useCanReadScope('money') 이고, 서명본 문(signedViewLinkId)은 편집 갈래의 shareLink 에서만 나온다.
 //   ⓙ 열람 역할용 서명 상태 조회(2026-11-04 운영자 승인 '추천대로'). getContractSignBadge 는 requireEdit 없이 영업장 문(requirePropertyAccess)을
@@ -201,7 +204,7 @@ for (const [f, re, n] of OPENERS) {
     && /<ContractView data=\{data\} translationLangs=\{translationLangs\} canSendSms=\{canEdit\(role\)\}[^/]*\/>/.test(page),
     `app/contract/[tenantId]/page.tsx: 계약서 화면에 canSendSms={canEdit(role)} 를 넘기지 않는다(열람 직원에게 '서명 요청' 이 선다).`)
   const v = read('app/contract/[tenantId]/ContractView.tsx')
-  need(/canSendSms, canEditBody \}: \{/.test(v) && /\n {2}canSendSms: boolean\n/.test(v) && /\n {2}canEditBody: boolean\n/.test(v) && !/canSendSms = |canEditBody = /.test(v) && /\) : canSendSms \? \(\s*<button onClick=\{handleSignRequest\}/.test(v) && (v.match(/onClick=\{handleSignRequest\}/g) ?? []).length === 1,
+  need(/canSendSms, canEdit \}: \{/.test(v) && /\n {2}canSendSms: boolean\n/.test(v) && /\n {2}canEdit: boolean\n/.test(v) && !/canSendSms = |canEdit = /.test(v) && /\) : canSendSms \? \(\s*<button onClick=\{handleSignRequest\}/.test(v) && (v.match(/onClick=\{handleSignRequest\}/g) ?? []).length === 1,
     `ContractView: '서명 요청' 버튼이 canSendSms 가드 밖에 있다.`)
 }
 {
@@ -360,13 +363,13 @@ for (const [f, re, n] of OPENERS) {
     ['components/entity-modal/bodies/PaymentBody.tsx', /\{canEdit && <DueDayPermanentChangeWidget\b/, "'납입일 영구 변경'"],
     ['components/entity-modal/widgets/DiscountWidget.tsx', /\{canEdit && !showForm && \(\s*<button onClick=\{\(\) => \{ setStart/, "'+ 할인 추가'"],
     ['components/entity-modal/widgets/DiscountWidget.tsx', /\{canEdit && <button onClick=\{\(\) => handleDelete\(d\)\}/, "할인 '삭제'"],
-    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && \(\s*<button onClick=\{handleResetAuto\}/, "계약서 화면 '전체 적용취소'"],
-    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && \(\s*<button onClick=\{bodyLocked \? notifyBodyLocked : \(\) => setEditing\(true\)\}/, "계약서 화면 '본문 편집'"],
-    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && data\.hasOverride && \(/, "계약서 화면 '공통 템플릿으로'"],
-    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && bodyLocked && \(\s*<button onClick=\{handleVoidVersion\}/, "계약서 화면 '이 계약서 폐기'"],
-    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && bodyLocked && versionCtx\?\.multiVersion/, "계약서 화면 '새 버전 작성'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEdit && \(\s*<button onClick=\{handleResetAuto\}/, "계약서 화면 '전체 적용취소'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEdit && \(\s*<button onClick=\{bodyLocked \? notifyBodyLocked : \(\) => setEditing\(true\)\}/, "계약서 화면 '본문 편집'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEdit && data\.hasOverride && \(/, "계약서 화면 '공통 템플릿으로'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEdit && bodyLocked && \(\s*<button onClick=\{handleVoidVersion\}/, "계약서 화면 '이 계약서 폐기'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEdit && bodyLocked && versionCtx\?\.multiVersion/, "계약서 화면 '새 버전 작성'"],
     ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{stage\.hint \|\| !canEditUi \? '등록된 계약서가 없습니다\.' :/, "계약서 칸 빈 상태 안내가 열람 역할에게 작성·스캔본을 시킨다"],
-    ['app/contract/[tenantId]/page.tsx', /canEditBody=\{canEdit\(role\)\}/, '계약서 page 가 canEditBody 를 넘긴다'],
+    ['app/contract/[tenantId]/page.tsx', /canEdit=\{canEdit\(role\)\}/, '계약서 page 가 canEdit 을 넘긴다'],
     ['app/(app)/contracts/ContractsClient.tsx', /\{canEditUi && \(\s*<BtnLink href=\{p\.signatureLive/, "계약서 목록 발급 대기 '발급'"],
     ['app/(app)/contracts/ContractsClient.tsx', /\) : selectMode \|\| !canEditUi \? \(/, '계약서 목록 계약번호(발급 기록) 글자 대체'],
     ['app/(app)/contracts/ContractsClient.tsx', /c\.contractNo && canEditUi \? \(\s*<button type="button" onClick=\{\(\) => setDetailId/, '계약서 목록 폐기본 계약번호 글자 대체'],
@@ -436,11 +439,11 @@ for (const [f, re, n] of OPENERS) {
 
   // ContractView 를 그리는 자리는 전부 두 prop 을 넘긴다(기본값 없음). 운영자 화면은 역할로, 입주자 원격 서명은 false 로.
   const CV_RENDERS = {
-    'app/contract/[tenantId]/page.tsx': [/canSendSms=\{canEdit\(role\)\} canEditBody=\{canEdit\(role\)\}/, 2],
-    'app/sign/[token]/page.tsx': [/canSendSms=\{false\} canEditBody=\{false\}/, 1],
+    'app/contract/[tenantId]/page.tsx': [/canSendSms=\{canEdit\(role\)\} canEdit=\{canEdit\(role\)\}/, 2],
+    'app/sign/[token]/page.tsx': [/canSendSms=\{false\} canEdit=\{false\}/, 1],
   }
   const cvUsers = ['app', 'components'].flatMap(walk).filter(f => /<ContractView\b/.test(read(f)))
-  for (const f of cvUsers) need(f in CV_RENDERS, `${f}: ContractView 를 그리는 자리가 새로 생겼다. canSendSms·canEditBody 를 역할로 넘기고 CV_RENDERS 표에 등록할 것.`)
+  for (const f of cvUsers) need(f in CV_RENDERS, `${f}: ContractView 를 그리는 자리가 새로 생겼다. canSendSms·canEdit 을 역할로 넘기고 CV_RENDERS 표에 등록할 것.`)
   for (const [f, [re, n]] of Object.entries(CV_RENDERS)) {
     const tags = [...read(f).matchAll(/<ContractView\b[^>]*\/>/g)].map(m => m[0])
     need(tags.length === n && tags.every(t => re.test(t)), `${f}: ContractView 렌더 ${tags.length}곳 중 두 prop 을 정해 넘기지 않는 자리가 있다(기대 ${n}곳).`)
@@ -474,6 +477,69 @@ for (const [f, re, n] of OPENERS) {
     `${B}: 열람 역할에게도 호실 일정·막힘 조회를 부른다(서버 requireEdit 거부가 모달마다 난다).`)
   const callers = ['app', 'components'].flatMap(walk).filter(f => /\bgetRoom(ScheduleState|BusyNotice)\(/.test(read(f)) && f !== A)
   need(callers.sort().join(',') === ['app/(app)/tenants/TenantClient.tsx', B].sort().join(','), `호실 일정·막힘 조회를 부르는 자리가 늘었다: ${callers.join(', ')}`)
+}
+
+// ⓚ 계약서 화면 읽기 전용
+{
+  const F = 'app/contract/[tenantId]/ContractView.tsx'
+  const v = read(F)
+  const has = (re, what) => need(re.test(v), `${F}: ${what}`)
+  need((v.match(/const viewOnly = /g) ?? []).length === 1 && /const viewOnly = !remote && !canEdit\n/.test(v), `${F}: viewOnly 판정이 '!remote && !canEdit' 한 곳이 아니다.`)
+  const ndf = v.slice(v.indexOf('const needsDueDayFill = () =>'), v.indexOf('const askDueDayFill'))
+  need(/!viewOnly/.test(ndf), `${F}: 납부일 채움 창(needsDueDayFill)이 열람 역할에게도 선다(저장이 requireEdit 로 거절된다).`)
+  // 창을 여는 호출은 전부 needsDueDayFill() 판정 뒤이거나, 서버가 납부일 없음으로 거절한 서명 요청 갈래(편집 역할 전용) 안이다.
+  // 판정을 우회해 askDueDayFill() 을 바로 부르면 열람 역할에게 창이 다시 선다(독립 검수 2026-11-04).
+  {
+    const lines = v.split('\n')
+    const calls = lines.map((l, i) => [l, i]).filter(([l]) => /\baskDueDayFill\(/.test(l) && !/const askDueDayFill =/.test(l))
+    need(calls.length === 4, `${F}: 납부일 창을 여는 자리가 ${calls.length}곳이다(기대 4). 새 자리면 needsDueDayFill() 판정 뒤에 둔다.`)
+    for (const [l, i] of calls) {
+      const gated = /needsDueDayFill\(\)[^\n]*askDueDayFill\(/.test(l) || (/res\.code === 'DUE_DAY_REQUIRED'/.test(lines[i - 1] ?? '') && /askDueDayFill\(res\.leaseTermId, res\.defaultDay\)/.test(l))
+      need(gated, `${F}:${i + 1}: 납부일 창을 needsDueDayFill() 판정 없이 연다(열람 역할에게 창이 선다).`)
+    }
+    need(/useEffect\(\(\) => \{\s*if \(needsDueDayFill\(\)\) void askDueDayFill\(\)\s*\}, \[\]\)/.test(v), `${F}: 진입 때 납부일 창이 needsDueDayFill() 판정을 지나지 않는다.`)
+  }
+  const fc = v.slice(v.indexOf('const fieldCell = ('), v.indexOf('const fieldInput = ('))
+  const ro = fc.indexOf('if (remote || viewOnly) return <span>{printText}</span>'), lk = fc.indexOf('if (bodyLocked)')
+  need(ro >= 0 && lk > ro, `${F}: fieldCell 이 열람 역할을 글자 갈래로 먼저 보내지 않는다(입력칸이 서거나 잠김 안내가 폐기·새 버전을 시킨다).`)
+  has(/\{remote \|\| viewOnly \? \(\s*<span>\{smoking\}<\/span>/, `흡연 칸이 열람 역할에게 select 로 선다(setTenantSmoking requireEdit).`)
+  has(/\{remote \|\| viewOnly \? \(\s*<span>\{emergencyContactText\}<\/span>/, `비상연락처가 열람 역할에게 입력칸으로 선다.`)
+  need((v.match(/handleSmokingChange\(e\.target\.value\)/g) ?? []).length === 1, `${F}: 흡연 select 가 늘었다.`)
+  has(/const nameStylePicker = !remote && !viewOnly && /, `성명 표기 select 가 열람 역할에게 선다.`)
+  has(/if \(remote \|\| viewOnly \|\| !bodyLocked \|\| !leaseIdForCtx\) return/, `열람 역할에게도 판본 조회(getIssuePurposeContext)를 부른다.`)
+  // 서명칸 셋(계약서·동의서·추가 서류)
+  need((v.match(/className="sign-img"/g) ?? []).length === 3, `${F}: 서명 이미지 자리가 셋이 아니다.`)
+  need((v.match(/className="sign-img"[^>]*onClick=\{viewOnly \? undefined : \(\) => openSign\('(contract|disposal)'\)\}/g) ?? []).length === 2
+    && /className="sign-img"[^>]*onClick=\{readOnly \? undefined : onSign\}/.test(v),
+    `${F}: 저장된 서명 이미지를 눌러 다시 서명하는 길이 열람 역할에게 열린다.`)
+  need((v.match(/className="signature-clear no-print"/g) ?? []).length === 3
+    && (v.match(/\{!remote && !viewOnly && \(\s*<button type="button" onClick=\{\(\) => handleClearSignature\('(contract|disposal)'\)\}/g) ?? []).length === 2
+    && /\{!remote && !readOnly && \(\s*<button type="button" onClick=\{onClear\}/.test(v),
+    `${F}: '서명 지우기'(clearContractSignature requireEdit)가 열람 역할에게 선다.`)
+  need((v.match(/sign-cta\$\{/g) ?? []).length === 3
+    && /\) : viewOnly \? \(\s*<span className="seal-mark">\(서명\)<\/span>\s*\) : \(\s*<>\s*<button type="button" ref=\{contractSignRef/.test(v.replace(/\n\s*\/\/[^\n]*/g, ''))
+    && /\) : viewOnly \? \(\s*<span>\(서명 또는 인\)<\/span>\s*\) : \(\s*<>\s*<button type="button" ref=\{disposalSignRef/.test(v)
+    && /\) : readOnly \? \(\s*<span>\(서명 또는 인\)<\/span>\s*\) : \(\s*<>\s*<button type="button" ref=\{setRef\}/.test(v)
+    && /\n {12}readOnly=\{viewOnly\}\n/.test(v),
+    `${F}: '여기를 눌러 서명'이 열람 역할에게 선다(대면 서명은 발급 때 저장돼, 받게 두면 발급 거절과 함께 서명이 사라진다).`)
+  // 툴바 끝자리
+  has(/\{!viewOnly && \(\s*<SendDocButton getPdfBytes=\{fetchPreviewPdfBytes\}/, `내보내기(서버 미리보기 requireEdit)가 열람 역할에게 선다.`)
+  has(/\{viewOnly \? null : signatureDataUrl \? \(\s*<button onClick=\{handleContractSave\}/, `'발급' 이 열람 역할에게 선다.`)
+  need((v.match(/onClick=\{handleContractSave\}/g) ?? []).length === 1 && (v.match(/<SendDocButton\b/g) ?? []).length === 1, `${F}: 발급·내보내기 자리가 늘었다.`)
+  has(/\{viewOnly \? \(\s*<span className="toolbar-static">\s*<span>계약일<\/span>/, `계약일이 열람 역할에게 입력칸이나 잠김 버튼(폐기·새 버전 안내)으로 선다.`)
+  has(/onUndo=\{viewOnly \|\| bodyLocked \? undefined : undoField\}/, `'직접 입력' 목록의 되돌리기(saveContractFieldOverride requireEdit)가 열람 역할에게 선다.`)
+  has(/lockMessage=\{!viewOnly && bodyLocked \?/, `'직접 입력' 목록의 잠김 안내(폐기·새 버전)가 열람 역할에게 선다.`)
+  // page: 역할이 데이터보다 먼저, 제한 스태프 404, 서명본은 편집 역할만
+  const P = 'app/contract/[tenantId]/page.tsx'
+  const pg = read(P)
+  const iRole = pg.indexOf('const role = await getMyRole()'), iData = pg.indexOf('getContractData('), iSnap = pg.indexOf('getSignedSnapshot(tenantId')
+  need((pg.match(/getMyRole\(\)/g) ?? []).length === 1 && iRole >= 0 && iData > iRole && iSnap > iRole, `${P}: 역할을 데이터(getContractData·getSignedSnapshot)보다 먼저 읽지 않는다.`)
+  need(/const role = await getMyRole\(\)\n\s*if \(!canReadScope\(role, 'money'\)\) notFound\(\)\n/.test(pg), `${P}: 금액을 못 읽는 제한 스태프가 오류 화면을 만난다(404 분기가 없다).`)
+  const iShareGate = pg.search(/if \(!canEdit\(role\)\) \{[\s\S]{0,400}?redirect\(`\/contract\/\$\{encodeURIComponent\(tenantId\)\}/)
+  need(iShareGate > 0 && iShareGate < iSnap, `${P}: 서명본(?share=)이 열람 역할을 일반 화면으로 보내지 않는다(getSignedSnapshot requireEdit 가 던져 오류 화면).`)
+  const gateBody = iShareGate > 0 ? pg.slice(iShareGate, pg.indexOf('redirect(', iShareGate) + 120) : ''
+  need(/keep\.set\('leaseTermId', leaseTermId\)/.test(gateBody) && /keep\.set\('lang', lang\)/.test(gateBody) && !/share/.test(gateBody.replace(/\/\/[^\n]*/g, '')),
+    `${P}: 열람 역할 서명본 이동이 계약 지목(leaseTermId)·번역본(lang)을 버리거나 share 를 다시 싣는다(부계약이 주계약 화면으로 가거나 이동이 돈다).`)
 }
 
 // ⓜ 계약서 칸의 계약서 화면 입구

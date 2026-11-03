@@ -122,7 +122,7 @@ function renderClauseItem(text: string): React.ReactNode {
  * --paper-h 로 세워야 하는데(동의서와 같은 방식), 서류가 N개라 훅을 반복문 안에 둘 수 없다.
  * 수신인 줄("○○ 대표 귀하")은 임의처분 서식 고유라 여기는 없다 — 인쇄(companionPage)와 같은 규칙.
  */
-function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, dateLabel, signatureDataUrl, remote, attn, isLast, sigClearing, signCtaLabel, onSign, onClear, setRef }: {
+function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, dateLabel, signatureDataUrl, remote, readOnly, attn, isLast, sigClearing, signCtaLabel, onSign, onClear, setRef }: {
   doc: { key: string; title: string; body: string }
   scale: number
   printedName: string
@@ -132,6 +132,8 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
   dateLabel: string
   signatureDataUrl: string | null
   remote: boolean
+  /** 열람 역할의 읽기 전용 화면 — 서명을 받거나 지우는 입구를 세우지 않고, 빈 서명칸은 종이와 같은 글자로 그린다. */
+  readOnly: boolean
   attn: boolean
   isLast: boolean
   sigClearing: boolean
@@ -182,13 +184,15 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
               <>
                 {/* 서명은 dataURL 이라 next/image 최적화 대상이 아니다(형제 서명란 넷과 같은 자리). */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="sign-img" src={signatureDataUrl} alt={`${doc.title} 서명`} onClick={onSign} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
-                {!remote && (
+                <img className="sign-img" src={signatureDataUrl} alt={`${doc.title} 서명`} onClick={readOnly ? undefined : onSign} style={{ cursor: readOnly ? 'default' : 'pointer', height: '11mm', maxWidth: '38mm' }} title={readOnly ? undefined : '다시 서명하려면 클릭'} />
+                {!remote && !readOnly && (
                   <button type="button" onClick={onClear} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
                   </button>
                 )}
               </>
+            ) : readOnly ? (
+              <span>(서명 또는 인)</span>
             ) : (
               <>
                 <button type="button" ref={setRef} onClick={onSign}
@@ -208,7 +212,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
 }
 
 
-export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [], canSendSms, canEditBody }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [], canSendSms, canEdit }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
@@ -229,10 +233,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
    * 열람 직원은 고객에게 문자를 못 보낸다). 기본값이 없다 — 렌더하는 자리마다 역할로 정해 넘긴다(독립 검수 B1, ?share= 서명본 분기가 빠져 열람 직원에게 열렸다). 서버 발급 requireEdit 가 최종 방어다.
    */
   canSendSms: boolean
-  /** 본문 편집·전체 적용취소·공통 템플릿으로·이 계약서 폐기·새 버전 작성을 세울 수 있는가 — 열람 직원에게는 숨긴다(2026-11-03 운영자 승인, 서버 requireEdit). 기본값이 없다(필수). */
-  canEditBody: boolean
+  /**
+   * 이 화면의 쓰기 입구를 세울 수 있는가 — 운영자 페이지가 역할(lib/role canEdit)로 넘긴다. 기본값이 없다(필수).
+   * 거짓이면(열람 직원) 쓰기 입구 전부를 세우지 않는 읽기 전용이다(2026-11-04 운영자 승인 '추천대로', 서버 requireEdit 와 한 벌).
+   * 칸은 원격 서명 화면과 같은 글자 렌더로 그리고, 서명칸은 받는 입구 없이 저장된 서명 이미지 또는 종이와 같은 '(서명)' 글자다.
+   * 내보내기(preview)·발급·납부일 창·본문 편집·폐기·칸 저장·흡연·성명 표기·서명 받기·지우기가 빠진다.
+   */
+  canEdit: boolean
 }) {
   const remote = mode === 'remote'
+  // 열람 역할의 읽기 전용 판정 하나. 원격(입주자) 화면은 제 갈래가 따로 있어 여기서 빼낸다.
+  const viewOnly = !remote && !canEdit
   const router = useRouter()
   const today = kstYmdStr()
   // 계약일. 서명 전에는 오늘이 맞지만, 서명이 끝난 계약서는 **실제로 서명한 날**이어야 한다.
@@ -293,8 +304,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const [dueDayFill, setDueDayFill] = useState<{ leaseTermId: string; defaultDay: string; resolve: (v: boolean) => void } | null>(null)
   // 방금 채웠다는 표시 — router.refresh() 가 서버 값을 다시 실어 오기 전에 연타해도 재차 안 묻는다.
   const dueDayFilledRef = useRef(false)
+  // 열람 역할은 묻지 않는다 — 저장(setDueDayForContract)이 requireEdit 라 창을 세우면 저장에서 거절된다.
   const needsDueDayFill = () =>
-    !remote && !!data.lease && !data.lease.isShortTerm && !data.lease.dueDaySource
+    !remote && !viewOnly && !!data.lease && !data.lease.isShortTerm && !data.lease.dueDaySource
     && !data.lease.signatureSignedDate && !dueDayFilledRef.current
   const askDueDayFill = (leaseTermId?: string, defaultDay?: string) => {
     const id = leaseTermId ?? data.lease?.id
@@ -545,13 +557,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const [versionCtx, setVersionCtx] = useState<{ multiVersion: boolean; hasRealContract: boolean } | null>(null)
   const leaseIdForCtx = data.lease?.id ?? null
   useEffect(() => {
-    if (remote || !bodyLocked || !leaseIdForCtx) return
+    // 열람 역할에게는 이 값으로 그릴 버튼(폐기·새 버전 작성)과 잠김 안내가 없다. 부르지 않는다.
+    if (remote || viewOnly || !bodyLocked || !leaseIdForCtx) return
     let alive = true
     void getIssuePurposeContext(data.tenant.id, leaseIdForCtx).then(r => {
       if (alive && r.ok) setVersionCtx({ multiVersion: r.multiVersion, hasRealContract: r.hasRealContract })
     })
     return () => { alive = false }
-  }, [remote, bodyLocked, leaseIdForCtx, data.tenant.id])
+  }, [remote, viewOnly, bodyLocked, leaseIdForCtx, data.tenant.id])
 
   // 정보 표 값 커밋 — 블러·선택 변경 시 즉시 저장한다. 표시값 전용 칸에만 쓰고,
   // 임대료·보증금 같은 원천 값은 손대지 않는다(수납·청구와 무접점).
@@ -914,8 +927,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   // 정보 표 한 칸 — 원격은 텍스트 그대로, 서명 확정본은 텍스트에 이유만 달고,
   // 그 외에는 입력칸(화면) + 텍스트(인쇄) 쌍이다. 인쇄에는 입력칸이 절대 나가지 않는다(§26).
+  // 열람 역할도 원격과 같은 글자다. 잠김 갈래(cell-locked + 폐기·새 버전 안내 토스트)보다 먼저 판정한다.
+  // 그 안내는 열람 역할에게 없는 버튼을 가리키고, 역할 막힘은 캡션 없이 숨긴다(가이드 §27.8 ②).
   const fieldCell = (printText: React.ReactNode, input: React.ReactNode) => {
-    if (remote) return <span>{printText}</span>
+    if (remote || viewOnly) return <span>{printText}</span>
     if (bodyLocked) return (
       <>
         <button type="button" className="no-print cell-locked" onClick={notifyFieldsLocked}>{printText}</button>
@@ -947,7 +962,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 표기 셀렉트는 서명본 화면(?share=)에 서면 안 된다. 거기서 고르면 commitField 가
   // isSignatureLocked 로 거절하는데 로컬 state 는 이미 움직여 **화면의 이름만 바뀐다** —
   // 고를 수 있는 것처럼 보이는데 저장은 안 되는 자리다(2026-09-04).
-  const nameStylePicker = !remote && !signedSnapshot && canPickName ? (
+  const nameStylePicker = !remote && !viewOnly && !signedSnapshot && canPickName ? (
     bodyLocked ? (
       <button type="button" className="no-print cell-locked th-picker" onClick={notifyFieldsLocked}>
         {DOC_NAME_STYLE_LABEL[asDocNameStyle(fields.nameStyle) ?? DEFAULT_DOC_NAME_STYLE]}
@@ -1775,7 +1790,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         <div className="toolbar-spacer" />
         {!editing && (
           <>
-            {signDateLocked ? (
+            {viewOnly ? (
+              // 열람 역할은 고칠 수도, 풀 수도 없다. 누를 이유가 없으니 버튼이 아닌 정적 값이다(잠김 문구는 폐기·새 버전을 가리킨다).
+              <span className="toolbar-static">
+                <span>계약일</span>
+                <strong className="num">{signDateEffective}</strong>
+              </span>
+            ) : signDateLocked ? (
               // 잠긴 값은 입력칸 모양을 벗는다. disabled input 은 눌러도 아무 일이 없고 이유도 안 말한다.
               // 왜 잠겼는지는 눌렀을 때 말해준다 — 길 없이 막기만 하면 고장으로 읽힌다.
               <button type="button" className="toolbar-locked" onClick={() => pushToast(
@@ -1792,7 +1813,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             {/* 참고용 번역본 — 대면 서명에서는 이 화면이 곧 입주자가 읽는 화면이다.
                 건네기 전에 맞춰 두는 자리라 서명란이 아니라 툴바에 선다(계약일과 같은 문법). */}
             {canPickTranslation && (
-              translationLocked ? (
+              translationLocked && viewOnly ? (
+                // 보기 상태 전환이라 열람 역할에게도 셀렉트를 남긴다. 잠겼을 때만 이유 토스트 없는 정적 값이다.
+                <span className="toolbar-static">
+                  <span>번역본</span>
+                  <strong>{translationLangNow === 'ko' ? '없음(한국어)' : SIGN_LANG_LABEL[translationLangNow]}</strong>
+                </span>
+              ) : translationLocked ? (
                 // 잠긴 값은 입력칸 모양을 벗는다 — disabled select 는 눌러도 아무 일이 없고
                 // 이유도 안 말한다(바로 위 계약일과 같은 규칙).
                 <button type="button" className="toolbar-locked" onClick={() => pushToast(
@@ -1814,20 +1841,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
             {/* §16 라벨 '적용취소' 단일. 칸 하나씩 되돌리는 목록 행과 같은 동작이라 명사로만 가른다 —
                 한쪽이 '자동값 복원' 이면 같은 동작에 두 이름이 서고, 운영자는 둘을 다른 기능으로 읽는다. */}
-            {canEditBody && (
+            {canEdit && (
               <button onClick={handleResetAuto} className="toolbar-btn-secondary">
                 전체 적용취소
               </button>
             )}
             {/* 잠겨도 버튼을 없애지 않는다. 없애면 왜 없는지 아무도 모르고 다음 세션이
                 '버튼이 사라졌다'를 새 결함으로 신고한다. 누르면 이유와 길을 말한다. */}
-            {canEditBody && (
+            {canEdit && (
               <button onClick={bodyLocked ? notifyBodyLocked : () => setEditing(true)}
                 className={`toolbar-btn-secondary${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
                 본문 편집
               </button>
             )}
-            {canEditBody && data.hasOverride && (
+            {canEdit && data.hasOverride && (
               <button onClick={bodyLocked ? notifyBodyLocked : handleResetOverride} disabled={pending}
                 className={`toolbar-btn-secondary toolbar-btn-warn${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
                 공통 템플릿으로
@@ -1835,7 +1862,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             )}
             {/* 잠긴 계약서에만 세운다 — 풀려 있는 계약서에는 폐기할 버전 자체가 없다.
                 잠금 안내 세 곳이 전부 이 버튼을 가리키므로 안내와 길이 같은 화면에 있다. */}
-            {canEditBody && bodyLocked && (
+            {canEdit && bodyLocked && (
               <button onClick={handleVoidVersion} disabled={sigClearing}
                 className="toolbar-btn-secondary toolbar-btn-warn">
                 {sigClearing ? '폐기 중…' : '이 계약서 폐기'}
@@ -1843,7 +1870,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             )}
             {/* 여러 판본 만들기가 켜진 영업장에서, 살아 있는 실계약본이 있을 때만 선다.
                 폐기 버튼은 자리도 라벨도 그대로 둔다 — 잠금 안내 문구들이 그 이름을 지목하는 앵커다. */}
-            {canEditBody && bodyLocked && versionCtx?.multiVersion && versionCtx.hasRealContract && (
+            {canEdit && bodyLocked && versionCtx?.multiVersion && versionCtx.hasRealContract && (
               <button onClick={handleSupersede} disabled={superseding}
                 className="toolbar-btn-secondary">
                 {superseding ? '여는 중…' : '새 버전 작성'}
@@ -1854,13 +1881,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                 공유 시트·새 탭이라 모바일에서 '인쇄'가 거짓이다(운영자 실기). 발급 전 확인은
                 이 화면이 종이 실물로 이미 하고, 인쇄는 뷰어 한 곳에만 있다.
                 사진 저장은 '내보내기'가 흡수했다 — 그쪽은 전 페이지를 그려 임의처분 동의서가 안 빠진다. */}
-            <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()} canSendSms={canSendSms}
-              className="toolbar-btn-secondary" />
+            {/* 내보내기는 서버 미리보기(requireEdit)로 종이를 찍는다. 열람 역할에게는 세우지 않는다. 종이를 밖으로 낼 때는
+                서류 시트·계약서 칸의 발급본 [보기]·[보내기]가 맡는다(2026-11-04 운영자 승인, 갈림길 G1 '미리보기 권한은 열지 않는다'). */}
+            {!viewOnly && (
+              <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()} canSendSms={canSendSms}
+                className="toolbar-btn-secondary" />
+            )}
             {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도).
                 **서명 전에는 발급이 아예 없다**(운영자 규칙 6). 비활성으로 세워두면 눌러도 아무 일이
                 없고 화면은 왜 안 되는지 끝내 말하지 못한다. 그 자리는 [서명 요청]이 차지한다.
                 '발급' = 공식본 생성 + 보관 + 이력. 확인서·영수증과 같은 동작이라 같은 동사를 쓴다. */}
-            {signatureDataUrl ? (
+            {/* 열람 역할은 발급(requireEdit)도 서명 요청도 없다. 끝자리 주 CTA 가 비는 것이 맞다(§27.8 ② 숨김, 캡션 없음). */}
+            {viewOnly ? null : signatureDataUrl ? (
               <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
                 {contractSaving ? '발급 중… (5~15초)' : '발급'}
               </button>
@@ -1891,9 +1923,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         rows={fieldRows}
         // 잠긴 계약서는 되돌리기 자리 자체가 없다. 아래 한 문장이 이유를 맡으므로 '버튼을 없애지
         // 말라'(위 본문 편집 주석)와 어긋나지 않는다 — 이유가 같은 창 안에 있다.
-        onUndo={bodyLocked ? undefined : undoField}
+        // 열람 역할은 목록만 본다(어느 칸이 손으로 고쳐졌는지는 읽을 사실이다, 갈림길 G4). 되돌리기(saveContractFieldOverride requireEdit)와
+        // 잠김 안내(폐기·새 버전을 가리킨다)는 세우지 않는다.
+        onUndo={viewOnly || bodyLocked ? undefined : undoField}
         undoingKey={undoingKey}
-        lockMessage={bodyLocked ? fieldLockMessage(versionCtx?.multiVersion === true, 'here') : undefined}
+        lockMessage={!viewOnly && bodyLocked ? fieldLockMessage(versionCtx?.multiVersion === true, 'here') : undefined}
       />
 
       {/* 참고용 번역본 — 계약서 종이 **위**에 선다. 입주자가 종이를 읽기 전에 만나야 한다.
@@ -1980,7 +2014,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             <tr>
               <th>흡연 여부<span className="en">Smoking</span></th>
               <td>
-                {remote ? (
+                {remote || viewOnly ? (
                   <span>{smoking}</span>
                 ) : (
                   <>
@@ -2065,7 +2099,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             <tr>
               <th>비상연락처<span className="en">Emergency Contact</span></th>
               <td>
-                {remote ? (
+                {remote || viewOnly ? (
                   <span>{emergencyContactText}</span>
                 ) : (
                   <>
@@ -2178,13 +2212,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                 <span className="seal-wrap">
                   {signatureDataUrl ? (
                     <>
-                      <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => openSign('contract')} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
-                      {!remote && (
+                      <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={viewOnly ? undefined : () => openSign('contract')} style={{ cursor: viewOnly ? 'default' : 'pointer' }} title={viewOnly ? undefined : '다시 서명하려면 클릭'} />
+                      {!remote && !viewOnly && (
                         <button type="button" onClick={() => handleClearSignature('contract')} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
                         </button>
                       )}
                     </>
+                  ) : viewOnly ? (
+                    // 열람 역할은 서명을 받을 수단이 없다. 대면 서명은 발급 때 저장돼, 받게 두면 발급 거절과 함께 서명이 사라진다
+                    // (서명 반쪽 사고 클래스, 2026-09-03). 빈 칸은 종이와 같은 글자를 화면에도 그린다.
+                    <span className="seal-mark">(서명)</span>
                   ) : (
                     <>
                       {/* 펜은 "여기 쓰라"는 전 세계 공용 픽토그램이다. 한국어를 못 읽는 서명자가
@@ -2285,13 +2323,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             <span className="dc-sign-seal">
               {disposalSignatureDataUrl ? (
                 <>
-                  <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={() => openSign('disposal')} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
-                  {!remote && (
+                  <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={viewOnly ? undefined : () => openSign('disposal')} style={{ cursor: viewOnly ? 'default' : 'pointer', height: '11mm', maxWidth: '38mm' }} title={viewOnly ? undefined : '다시 서명하려면 클릭'} />
+                  {!remote && !viewOnly && (
                     <button type="button" onClick={() => handleClearSignature('disposal')} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
                     </button>
                   )}
                 </>
+              ) : viewOnly ? (
+                <span>(서명 또는 인)</span>
               ) : (
                 <>
                   <button type="button" ref={disposalSignRef as never} onClick={() => openSign('disposal')}
@@ -2326,6 +2366,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             dateLabel={customCapturedAt[sd.key] ? ymdLabel(kstYmdStr(new Date(customCapturedAt[sd.key]))) : signDateLabel}
             signatureDataUrl={customSigs[sd.key] ?? null}
             remote={remote}
+            readOnly={viewOnly}
             attn={attn === sd.key}
             isLast={remote && remaining.length === 1 && remaining[0]?.key === sd.key}
             sigClearing={sigClearing}
@@ -2477,12 +2518,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; min-width: 0; max-width: 100%; }
         /* 잠긴 계약일 — 입력칸 모양을 벗는다(§12 '고칠 수 없는 값' 문법). 테두리 없음, 포커스 링 없음.
            disabled input 으로 두면 눌러도 아무 일이 없고 화면이 이유를 안 말한다(§27.2). */
-        .toolbar-locked {
+        .toolbar-locked, .toolbar-static {
           display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
           padding: 4px 10px; border: 0; border-radius: 6px; background: var(--sand-s);
           font-size: 12px; color: var(--ink-s); cursor: pointer; text-align: left;
         }
-        .toolbar-locked strong { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+        .toolbar-locked strong, .toolbar-static strong { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+        /* 열람 역할의 정적 값 — 잠김 값과 같은 모양이고 누를 이유가 없어 커서만 다르다. */
+        .toolbar-static { cursor: default; }
         /* 잠긴 동작 — 눌리기는 하되 실행되지 않고 이유를 말한다. disabled 로 두면 클릭이 안 잡혀
            아무 반응이 없고, 화면은 왜 안 되는지 끝내 말하지 못한다(§27.2). */
         .toolbar-btn-locked { opacity: 0.55; }
