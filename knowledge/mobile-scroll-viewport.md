@@ -365,3 +365,7 @@ d0833496 까지의 정책은 **가려짐의 부정**이었다. 칸 아래 REVEAL
 `lib/useVisibleBand.ts` 훅이 정본이다. fixed inset-0 오버레이는 공용 Modal 을 쓰거나 이 훅을
 불러야 하고, `scripts/check-kbd-canonical.mjs` 가 지킨다. 서술 정본은 브랜드 가이드 §30,
 경위는 [[open-keyboard-field-visibility]].
+
+## 칸 이동 재노출은 iOS 자체 팬이 멈춘 뒤에 (2026-11-03)
+
+키보드가 선 채 칸을 옮기면 iOS 는 제 포커스 팬을 돌린다. 그 도중에 재노출이 기하를 재면 두 이동이 겹쳐 칸이 띠 위 +16 에 붙는다. 그래서 그 경로는 정착 관문(lib/keyboardViewport revealGate)을 지난다. 하단 내비는 키보드 동안 접는다(iOS 는 layout viewport 를 안 줄여 fixed bottom 이 띠 가운데에 뜬다). 경위·실측·그물은 [[open-keyboard-field-visibility]] 같은 날짜 절.
