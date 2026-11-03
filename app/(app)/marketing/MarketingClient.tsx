@@ -567,9 +567,10 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
           </div>
           {/* v2.0 §28: --ink-2 배경은 다크에서 크림으로 뒤집혀 밝은 글자 대비 붕괴 →
-              페어 토큰 --np-card-bg(라이트 ink·다크 d-card, 양 모드 어두움)로 sand 글자 가독성 유지 */}
+              페어 토큰 --np-card-bg(라이트 ink·다크 d-card, 양 모드 어두움)로 sand 글자 가독성 유지.
+              글자는 --on-solid-accent(모드 불변 #F2D9B8). --sand 는 다크에서 hover 표면으로 뒤집혀 1.25:1 이었다(2026-11-03, 다크 13.46). */}
           <div className="rounded-xl p-4"
-            style={{ background: 'var(--np-card-bg)', color: 'var(--sand)' }}>
+            style={{ background: 'var(--np-card-bg)', color: 'var(--on-solid-accent)' }}>
             <p className="text-[11px] opacity-80">유니크 방문자 (추정)</p>
             <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeVisitors)}</p>
           </div>

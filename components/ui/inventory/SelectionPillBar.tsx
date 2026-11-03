@@ -25,11 +25,13 @@ export function SelectionPillBar({
   // 서 있는 동안 제 높이 + 12px 을 스크롤 끝에 예약한다(--pill-reserve, 신고 e791b6f7). 더하는 곳은 globals.css 한 곳이다.
   // 바닥(--pill-floor)도 거기 한 벌이다. 모달 본문 끝 예약이 이 바닥과 모달 바닥의 차이를 함께 더한다.
   usePillReserve(barRef)
+  // 카운트 숫자는 --on-solid-accent(#F2D9B8 모드 불변)다. --sand 는 다크에서 hover 표면(#332619)으로 뒤집혀 알약 위 1.11:1 로 사라졌다
+  // (2026-11-03, 라이트 10.51 · 다크 11.89).
   return (
     <div ref={barRef} data-pill-bar="" className={`kbd-float pointer-events-none fixed inset-x-0 bottom-[var(--pill-floor)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center`}>
       <div className="pointer-events-auto mx-3.5 flex max-w-[calc(100vw-28px)] items-center gap-2 rounded-[15px] bg-[var(--pill-bg)] px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,.45)]">
         <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-white">
-          <span className="mono tnum text-[var(--sand)]">{count}</span><span className={compactNarrow ? 'max-[359px]:hidden' : undefined}>{unit} {label}</span>
+          <span className="mono tnum text-[var(--on-solid-accent)]">{count}</span><span className={compactNarrow ? 'max-[359px]:hidden' : undefined}>{unit} {label}</span>
         </span>
         <span className="h-4 w-px bg-white/20" />
         {children}
