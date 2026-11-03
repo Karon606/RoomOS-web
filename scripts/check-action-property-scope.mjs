@@ -546,6 +546,39 @@ const AXES = [
     must: [[/const m = await readMoveForExpense\(propertyId, token\)\n\s*if \(!m\.ok\) return m/, '카테고리 이동 토큰을 공용 관문으로 확인하지 않는다(날값으로 카드를 옮기거나 지운다)']],
     mustNot: [[/\(label: string, fromCategory: string, toCategory: string/, '날값(품명·카테고리)을 받는다']],
   })),
+  // 문자 발송 이력(2026-11-03 운영자 승인 '추천대로'). 화면의 사람 id 로 sms_logs 를 남기던 셋이 소속을 안 봐서 남의 영업장
+  // 입주자 이력에 행이 섞일 수 있었다. 정본은 단체 공지 형제(logNoticeSmsAttempt)다. 소속이 아니면 남기지 않고 '수신자를 찾을 수 없습니다.'
+  {
+    file: 'app/(app)/tenants/noticeSms.ts',
+    fn: 'logNoticeSmsAttempt',
+    must: [
+      [/leaseTerm\.findMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*input\.recipients\.map\(r => r\.leaseTermId\)\s*\},\s*propertyId\s*\}/, '수신자 계약을 영업장 범위로 읽지 않는다'],
+      [/const valid = input\.recipients\.filter\(r => tenantOfLease\.get\(r\.leaseTermId\) === r\.tenantId\)\n\s*if \(valid\.length === 0\) return \{ ok: false, error: '수신자를 찾을 수 없습니다\.' \}/, '계약·사람 짝을 거르고 없으면 닫지 않는다'],
+      [/smsLog\.createMany\(\{\s*data:\s*valid\.map\(/, '거른 수신자가 아닌 화면 목록으로 쓴다'],
+    ],
+    mustNot: [[/data:\s*input\.recipients\.map\(/, '화면 수신자 목록을 그대로 쓴다']],
+  },
+  ...[['app/(app)/tenants/docBundle.ts', 'logDocSmsAttempt'], ['app/(app)/dashboard/actions.ts', 'logPersonalSmsAttempt'], ['app/(app)/dashboard/actions.ts', 'logSmsAttempt']].map(([file, fn]) => ({
+    file,
+    fn,
+    must: [
+      [/const owned = await prisma\.tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.tenantId,\s*propertyId\s*\}[^\n]*\n\s*if \(!owned\) return \{ ok: false, error: '수신자를 찾을 수 없습니다\.' \}/, '화면의 입주자 id 를 영업장 사람으로 보고 아니면 닫지 않는다(남의 영업장 입주자 이력에 행이 섞인다)'],
+      [/smsLog\.create\(\{\s*data:\s*\{[^}]*tenantId:\s*owned\.id,/, '확인한 사람이 아닌 화면 id 로 쓴다'],
+    ],
+    mustNot: [[/tenantId:\s*input\.tenantId,/, '화면의 입주자 id 를 그대로 싣는다']],
+  })),
+  ...['logPersonalSmsAttempt', 'logSmsAttempt'].map(fn => ({
+    file: 'app/(app)/dashboard/actions.ts',
+    fn,
+    must: [[/if \(input\.templateId && !\(await prisma\.smsTemplate\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.templateId,\s*propertyId\s*\}/, '화면의 템플릿 id 를 영업장 범위로 보지 않는다']],
+    mustNot: [],
+  })),
+  {
+    file: 'app/(app)/dashboard/actions.ts',
+    fn: 'logSmsAttempt',
+    must: [[/if \(input\.leaseTermId\) \{\s*const lease = await prisma\.leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*input\.leaseTermId,\s*propertyId\s*\}[^\n]*\n\s*if \(lease\?\.tenantId !== owned\.id\) return \{ ok: false, error: '수신자를 찾을 수 없습니다\.' \}/, '화면의 계약 id 를 영업장 범위·사람 짝으로 보지 않는다']],
+    mustNot: [],
+  },
 ]
 // 표식 뒤 축에 순서 검사를 켠다.
 {

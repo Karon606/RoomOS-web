@@ -386,9 +386,16 @@ export async function logPersonalSmsAttempt(input: {
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    const propertyId = access.propertyId
+    // 영업장 소속 검증 — 다른 영업장 사람·템플릿 혼입 방지(형제 logNoticeSmsAttempt 와 같은 꼴). 아니면 남기지 않는다.
+    const owned = await prisma.tenant.findFirst({ where: { id: input.tenantId, propertyId }, select: { id: true } })
+    if (!owned) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
+    if (input.templateId && !(await prisma.smsTemplate.findFirst({ where: { id: input.templateId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '템플릿을 찾을 수 없습니다.' }
+    }
     await prisma.smsLog.create({ data: {
-      propertyId: access.propertyId,
-      tenantId: input.tenantId,
+      propertyId,
+      tenantId: owned.id,
       templateId: input.templateId ?? null,
       renderedBody: input.renderedBody,
       sentVia: 'manual_sms',
@@ -410,9 +417,20 @@ export async function logSmsAttempt(input: {
     const access = await getPropertyAccess()
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    const propertyId = access.propertyId
+    // 영업장 소속 검증 — 다른 영업장 사람·계약·템플릿 혼입 방지(형제 logNoticeSmsAttempt 와 같은 꼴). 계약과 사람의 짝도 맞아야 한다.
+    const owned = await prisma.tenant.findFirst({ where: { id: input.tenantId, propertyId }, select: { id: true } })
+    if (!owned) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
+    if (input.leaseTermId) {
+      const lease = await prisma.leaseTerm.findFirst({ where: { id: input.leaseTermId, propertyId }, select: { tenantId: true } })
+      if (lease?.tenantId !== owned.id) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
+    }
+    if (input.templateId && !(await prisma.smsTemplate.findFirst({ where: { id: input.templateId, propertyId }, select: { id: true } }))) {
+      return { ok: false, error: '템플릿을 찾을 수 없습니다.' }
+    }
     await prisma.smsLog.create({ data: {
-      propertyId: access.propertyId,
-      tenantId: input.tenantId,
+      propertyId,
+      tenantId: owned.id,
       leaseTermId: input.leaseTermId,
       templateId: input.templateId,
       renderedBody: input.renderedBody,

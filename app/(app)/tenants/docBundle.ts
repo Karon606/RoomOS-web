@@ -594,10 +594,13 @@ export async function logDocSmsAttempt(input: {
   try {
     const { propertyId } = await requirePropertyAccess()
     if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    // 영업장 소속 검증 — 다른 영업장 사람 혼입 방지(형제 logNoticeSmsAttempt 와 같은 꼴). 아니면 남기지 않는다.
+    const owned = await prisma.tenant.findFirst({ where: { id: input.tenantId, propertyId }, select: { id: true } })
+    if (!owned) return { ok: false, error: '수신자를 찾을 수 없습니다.' }
     await prisma.smsLog.create({
       data: {
         propertyId,
-        tenantId: input.tenantId,
+        tenantId: owned.id,
         renderedBody: input.renderedBody,
         sentVia: 'manual_sms',
         kind: 'doc',

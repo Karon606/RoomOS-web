@@ -57,6 +57,9 @@ async function main() {
   const inventory = await import('@/app/(app)/inventory/actions')
   const { revertShiftRows } = await import('@/app/(app)/inventory/ledgerShift')
   const cleaning = await import('@/app/(app)/room-manage/cleaningActions')
+  const dashboard = await import('@/app/(app)/dashboard/actions')
+  const docBundle = await import('@/app/(app)/tenants/docBundle')
+  const noticeSms = await import('@/app/(app)/tenants/noticeSms')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
@@ -411,6 +414,47 @@ async function main() {
     eq('수령 취소 적용취소: 남의 영업장 품목은 여전히 거절(트랜잭션째)', await inventory.undoCancelReceipt({ ...rcUndo, expenseId: E3, receivedLocationId: LOC1, shift: { trackedItemId: I2, checks: [], createdLinks: [] } }),
       { ok: false, error: '다른 영업장의 기록입니다.' })
     eq('남의 품목 거절 뒤 수령 안 됨', (await prisma.expense.findUnique({ where: { id: E3 } }))?.receivedAt, null)
+  }
+
+  // ── 문자 발송 이력(2026-11-03) ── 남의 영업장 사람·계약·템플릿 id 로 부르면 거절하고 sms_logs 에 한 줄도 안 생긴다.
+  {
+    g.__CR_FLOW_PID = P1
+    const GONE = '수신자를 찾을 수 없습니다.'
+    const T1 = await tenantIn(P1, '문자 내'), T2 = await tenantIn(P2, '문자 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    const tpl = async (pid: string) => (await prisma.smsTemplate.create({ data: { propertyId: pid, name: '안내', body: '본문' } })).id as string
+    const TP1 = await tpl(P1), TP2 = await tpl(P2)
+    const logs = async () => prisma.smsLog.count()
+    const at = new Date().toISOString()
+    const unpaid = (o: Partial<{ tenantId: string; leaseTermId: string | null; templateId: string | null }>) => dashboard.logSmsAttempt({
+      tenantId: T1, leaseTermId: L1, templateId: null, renderedBody: '미납 안내', overdueAmount: 1000, overdueDays: 3, paymentCheckConfirmedAt: at, ...o,
+    })
+    const n0 = await logs()
+
+    eq('서류 문자 이력: 남의 영업장 입주자 거절', await docBundle.logDocSmsAttempt({ tenantId: T2, renderedBody: '서류' }), { ok: false, error: GONE })
+    eq('입주자 문자 이력: 남의 영업장 입주자 거절', await dashboard.logPersonalSmsAttempt({ tenantId: T2, renderedBody: '안내' }), { ok: false, error: GONE })
+    eq('입주자 문자 이력: 남의 영업장 템플릿 거절', await dashboard.logPersonalSmsAttempt({ tenantId: T1, renderedBody: '안내', templateId: TP2 }), { ok: false, error: '템플릿을 찾을 수 없습니다.' })
+    eq('미납 문자 이력: 남의 영업장 입주자 거절', await unpaid({ tenantId: T2, leaseTermId: null }), { ok: false, error: GONE })
+    eq('미납 문자 이력: 남의 영업장 계약 거절', await unpaid({ leaseTermId: L2 }), { ok: false, error: GONE })
+    eq('미납 문자 이력: 남의 영업장 사람·계약 짝 거절', await unpaid({ tenantId: T2, leaseTermId: L2 }), { ok: false, error: GONE })
+    eq('미납 문자 이력: 남의 영업장 템플릿 거절', await unpaid({ templateId: TP2 }), { ok: false, error: '템플릿을 찾을 수 없습니다.' })
+    eq('단체 공지 이력: 남의 영업장 수신자 거절', await noticeSms.logNoticeSmsAttempt({ recipients: [{ tenantId: T2, leaseTermId: L2 }], body: '공지', filterLabel: '입주자' }), { ok: false, error: GONE })
+    eq('거절 뒤 문자 이력이 한 줄도 안 생긴다', await logs(), n0)
+
+    // 같은 영업장 안에서도 계약과 사람이 엇갈리면 거절한다.
+    const T1b = await tenantIn(P1, '문자 내 2')
+    eq('미납 문자 이력: 제 영업장이어도 계약·사람 짝이 다르면 거절', await unpaid({ tenantId: T1b }), { ok: false, error: GONE })
+    eq('짝 거절 뒤에도 이력 없음', await logs(), n0)
+
+    // 대조군: 제 영업장 사람·계약·템플릿은 그대로 남는다.
+    eq('서류 문자 이력: 제 영업장 통과', await docBundle.logDocSmsAttempt({ tenantId: T1, renderedBody: '서류' }), { ok: true })
+    eq('입주자 문자 이력: 제 영업장 통과', await dashboard.logPersonalSmsAttempt({ tenantId: T1, renderedBody: '안내', templateId: TP1 }), { ok: true })
+    eq('미납 문자 이력: 제 영업장 통과', await unpaid({ templateId: TP1 }), { ok: true })
+    eq('미납 문자 이력: 계약 없이도 제 영업장 사람이면 통과', await unpaid({ leaseTermId: null }), { ok: true })
+    eq('단체 공지 이력: 제 영업장 통과', await noticeSms.logNoticeSmsAttempt({ recipients: [{ tenantId: T1, leaseTermId: L1 }], body: '공지', filterLabel: '입주자' }), { ok: true, count: 1 })
+    const mine = await prisma.smsLog.findMany({ where: { propertyId: P1 }, select: { tenantId: true, kind: true }, orderBy: { kind: 'asc' } })
+    eq('대조군 이력 5줄이 제 영업장 사람으로 남는다', [mine.length, mine.every(r => r.tenantId === T1), mine.map(r => r.kind).sort()], [5, true, ['doc', 'notice', 'personal', 'unpaid', 'unpaid']])
+    eq('남의 영업장 이력은 없다', await prisma.smsLog.count({ where: { OR: [{ propertyId: P2 }, { tenantId: T2 }] } }), 0)
   }
 
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
