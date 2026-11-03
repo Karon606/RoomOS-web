@@ -11,7 +11,9 @@
 import {
   fileToUploadPdf, fileToUploadImage, imageToSinglePagePdf, uploadPdfPageSize, swapExt,
   UPLOAD_DECODE_FAIL, UPLOAD_DOC_MAX_EDGE, UPLOAD_IMAGE_MAX_EDGE,
+  fileToUploadPhoto, UPLOAD_PHOTO_MAX_EDGE, UPLOAD_PHOTO_QUALITY, withPhotoType, isUploadablePhoto, PHOTO_TYPE_FAIL,
 } from '../lib/uploadImage'
+import { pinPickedFile, PICK_READ_FAIL } from '../lib/pickedFile'
 import { PDFDocument } from 'pdf-lib'
 
 let pass = 0
@@ -118,7 +120,51 @@ eq('종이용 최대 변은 2048', UPLOAD_DOC_MAX_EDGE, 2048)
 eq('그림용 최대 변은 1024', UPLOAD_IMAGE_MAX_EDGE, 1024)
 eq('그림용이 종이용보다 작다', UPLOAD_IMAGE_MAX_EDGE < UPLOAD_DOC_MAX_EDGE, true)
 
+// ── 보관 사진(신고 첨부, 2026-11-03 신고 4·7) ─────────────────────────
+// 위 둘과 반대로 디코드 실패는 원본 통과다(운영자가 보기만 하는 사진, 막으면 신고 증거를 잃는다).
+// node 엔 createImageBitmap 이 없어 여기 오면 언제나 원본이 돌아와야 한다.
+eq('보관 사진 최대 변 2048', UPLOAD_PHOTO_MAX_EDGE, 2048)
+eq('보관 사진 품질 0.85', UPLOAD_PHOTO_QUALITY, 0.85)
+async function photoPins() {
+  const heic = new File([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])], 'IMG_0042.HEIC', { type: 'image/heic' })
+  const out = await fileToUploadPhoto(heic)
+  eq('보관 사진은 못 줄이면 원본 그대로', [out.converted, out.file === heic], [false, true])
+
+  // 형식이 빈 파일은 확장자로 채운다(서버 image/* 문에서 걸리지 않게). 모르는 확장자는 비운 채 두고 고르는 자리에서 거절한다.
+  const noType = await fileToUploadPhoto(new File([heic], 'IMG_0042.HEIC', { type: '' }))
+  eq('형식 빈 HEIC 는 확장자로 image/heic', [noType.file.type, isUploadablePhoto(noType.file)], ['image/heic', true])
+  eq('heif 도', withPhotoType(new File([heic], 'a.heif', { type: '' })).type, 'image/heif')
+  eq('있는 형식은 건드리지 않는다', withPhotoType(new File([heic], 'a.heic', { type: 'image/x-custom' })).type, 'image/x-custom')
+  const txt = await fileToUploadPhoto(new File([new Uint8Array([1, 2, 3])], 'memo.txt', { type: '' }))
+  eq('모르는 확장자는 올릴 수 없다', isUploadablePhoto(txt.file), false)
+  eq('PDF 도 보관 사진이 아니다', isUploadablePhoto(pdfFile()), false)
+  eq('거절 문구는 한국어', /[가-힣]/.test(PHOTO_TYPE_FAIL), true)
+}
+
+// ── 고르는 순간 메모리 사본(lib/pickedFile) ──────────────────────────
+// 안드로이드 File 은 content URI 손잡이라 늦게 읽으면 깨진다. 사본은 같은 바이트·이름·형식이고 원본과 다른 객체다.
+async function pinPins() {
+  const src = new File([TINY_JPEG], 'shot.jpg', { type: 'image/jpeg', lastModified: 1700000000000 })
+  const pinned = await pinPickedFile(src)
+  eq('사본은 새 객체', pinned === src, false)
+  eq('사본 이름·형식·시각 그대로', [pinned.name, pinned.type, pinned.lastModified], ['shot.jpg', 'image/jpeg', 1700000000000])
+  eq('사본 바이트 그대로', Buffer.from(await pinned.arrayBuffer()).equals(Buffer.from(TINY_JPEG)), true)
+
+  let threw = ''
+  try { await pinPickedFile(new File([], 'empty.jpg', { type: 'image/jpeg' })) } catch (e) { threw = (e as Error).message }
+  eq('빈 파일은 그 자리에서 던진다', threw, PICK_READ_FAIL)
+
+  // 읽기가 깨지는 손잡이(ERR_UPLOAD_FILE_CHANGED 흉내). 원래 오류 대신 사람 말로 던진다.
+  const broken = { name: 'x.jpg', type: 'image/jpeg', lastModified: 0, arrayBuffer: () => Promise.reject(new Error('NotReadableError')) } as unknown as File
+  threw = ''
+  try { await pinPickedFile(broken) } catch (e) { threw = (e as Error).message }
+  eq('읽기 실패는 다시 고르라는 말로', threw, PICK_READ_FAIL)
+  eq('읽기 실패 안내는 한국어', /[가-힣]/.test(PICK_READ_FAIL), true)
+}
+
 void (async () => {
+  await photoPins()
+  await pinPins()
   await pdfPins()
   await throwPins()
   await passThroughPins()

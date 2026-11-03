@@ -34,6 +34,16 @@
 //   ⓙ 그 세션을 받는 서버 액션은 mime 화이트리스트를 지난다(HEIC 가 저장되는 길 차단).
 //   ⓚ 저장된 도장이 깨져도 서류 발급은 산다(embed 가 try 안에 있다).
 //
+// 2026-11-03 에 둘이 더 늘었다(신고 4·7, 갤럭시 PWA 에서 신고 사진이 올라가지 않음).
+//
+//   ⓛ 보관만 되는 사진용 fileToUploadPhoto(디코드 실패 = 원본 통과)는 업로드 세션 입구(ⓖ 화면)에서 쓰지 않는다.
+//      ⓘ 는 그 함수 본문만 빼고 본다. 원본 통과가 저장 입구로 새면 HEIC 도장 사고가 되돌아온다.
+//   ⓜ 고른 뒤 한참 있다 올리는 자리는 고르는 그 순간 lib/pickedFile 의 pinPickedFile 로 메모리 사본을 만든다.
+//      안드로이드 File 은 content URI 손잡이라 PUT 때 읽다가 깨진다(ERR_UPLOAD_FILE_CHANGED, 크기 0).
+//   ⓝ 사본을 만드는 동안(비동기) 생기는 경합을 막는다(같은 날 독립 검수 차단). 호실 추가는 그 사이 저장하면
+//      사진이 빠진 채 저장됐고, 닫았다 열면 늦은 결과가 다음 창에 남았으며, 두 번 고르면 10장 상한을 넘겼다.
+//      준비 중엔 저장을 막고 이유(WhyCaption)를 말하며, 창 차례(addGenRef)로 늦은 결과를 버리고, 상한은 함수형 갱신 안에서 다시 잰다.
+//
 // ⓚ 가 이 그물에 있는 이유: 사진이 들어오는 문과 그 사진이 쓰이는 문은 같은 사고의 양쪽 끝이다.
 // HEIC 도장 하나가 실거주 확인서 발급을 통째로 실패시켰고, 그건 입구를 막아도 이미 저장된
 // 파일에는 소용이 없다. 두 문을 같은 자리에서 본다.
@@ -53,7 +63,9 @@ const walk = (dir, out) => {
   }
   return out
 }
+// accept="image/*" 의 '/*' 가 주석 시작으로 먹혀 뒤 수백 줄이 사라지지 않게 먼저 바꿔 둔다(2026-11-03 ⓝ 시공 중 발견).
 const strip = s => s
+  .replace(/image\/\*/g, 'image/STAR')
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
   .replace(/^[^\S\n]*\/\/.*$/gm, '')
 
@@ -98,6 +110,10 @@ for (const f of files) {
     if (RAW_IN_SESSION.test(src)) {
       violations.push(`${f} 고른 파일 원본을 그대로 업로드 세션에 싣는다. fileToUploadPdf·fileToUploadImage 가 돌려준 File 을 써야 한다.`)
     }
+    // ⓛ 원본 통과 함수가 저장 입구로 새지 않는다.
+    if (/\bfileToUploadPhoto\b/.test(src)) {
+      violations.push(`${f} 업로드 세션 입구에서 fileToUploadPhoto 를 쓴다. 디코드 실패에 원본이 통과해 HEIC 가 저장된다(ⓛ).`)
+    }
   }
 
   if (!AI_CALLS.test(src)) continue
@@ -134,7 +150,12 @@ for (const f of files) {
   //    lib/ocrImage 는 실패해도 원본을 그대로 보내는 것이 옳다(Gemini 가 HEIC 를 읽는다).
   //    여기는 반대다 — 그 바이트가 **저장**되면 첨부·발급이 깨지므로 던져야 한다.
   if (f === 'lib/uploadImage.ts') {
-    if (/catch\s*(?:\([^)]*\))?\s*\{[^}]*return/.test(src)) {
+    // 보관 사진용 fileToUploadPhoto 본문만 뺀다(원본 통과가 그 함수의 뜻이다, ⓛ 가 쓰는 자리를 묶는다).
+    const at = src.indexOf('export async function fileToUploadPhoto(')
+    const rest = at < 0 ? '' : src.slice(at + 1)
+    const nx = rest.search(/\nexport\s/)
+    const guarded = at < 0 ? src : src.slice(0, at) + (nx < 0 ? '' : rest.slice(nx))
+    if (/catch\s*(?:\([^)]*\))?\s*\{[^}]*return/.test(guarded)) {
       violations.push(`${f} 디코드 실패 분기에서 원본을 돌려준다. 저장되는 파일이라 실패는 던져야 한다.`)
     }
     if (!/throw new Error\(UPLOAD_DECODE_FAIL\)/.test(src)) {
@@ -214,6 +235,45 @@ for (const file of ['lib/residenceCertOverlay.ts', 'lib/rentReceiptPdf.ts']) {
   if (!/try\s*\{[^}]*embed(?:Png|Jpg)\s*\(/.test(src)) {
     violations.push(`${file} 도장 임베드가 try 밖에 있다. 도장 하나가 깨지면 서류 발급 전체가 실패한다.`)
   }
+}
+
+// ⓜ 고른 뒤 한참 있다 올리는 자리. 고르는 그 핸들러 안에서 pinPickedFile 을 부른다.
+//    신고창(글을 쓰고 보낸다)·호실 추가(폼을 채우고 저장한다)·도장·로고(세션을 받은 뒤 PUT)가 그 모양이다.
+{
+  const PIN_SITES = [
+    ['app/(app)/room-manage/RoomManageClient.tsx', 'const handleAddPhotoSelect = async'],
+    ['app/(app)/settings/SettingsForm.tsx', 'const handleStampSelect = async'],
+    ['app/(app)/settings/SettingsForm.tsx', 'const handleLogoSelect = async'],
+  ]
+  for (const [file, head] of PIN_SITES) {
+    let src
+    try { src = strip(readFileSync(file, 'utf8')) } catch { violations.push(`${file} 를 못 읽는다(ⓜ 대상 파일이 옮겨졌나).`); continue }
+    const at = src.indexOf(head)
+    if (at < 0) { violations.push(`${file} '${head}' 핸들러가 없다(ⓜ). 고르는 자리가 async 가 아니면 그 자리에서 읽을 수 없다.`); continue }
+    const rest = src.slice(at + 1)
+    const nx = rest.search(/\n  const \w+ = /)
+    const body = src.slice(at, nx < 0 ? at + 3000 : at + 1 + nx)
+    if (!/await pinPickedFile\(/.test(body) || !/from '@\/lib\/pickedFile'/.test(src)) {
+      violations.push(`${file} '${head}' 가 고르는 순간 pinPickedFile 로 메모리 사본을 만들지 않는다. 안드로이드에서 PUT 때 읽기가 깨진다(ⓜ).`)
+    }
+  }
+}
+
+// ⓝ 호실 추가 사본 경합(신고창은 check-report-photo-upload 가 같은 축을 본다).
+{
+  const file = 'app/(app)/room-manage/RoomManageClient.tsx'
+  const src = strip(readFileSync(file, 'utf8'))
+  const cut = (head) => { const at = src.indexOf(head); if (at < 0) return ''; const rest = src.slice(at + 1); const nx = rest.search(/\n  const \w+ = /); return src.slice(at, nx < 0 ? at + 3000 : at + 1 + nx) }
+  const pick = cut('const handleAddPhotoSelect = async')
+  const add = cut('const handleAdd = async')
+  const close = cut('const closeAddModal = ')
+  const nn = (name, cond) => { if (!cond) violations.push(`${file} ${name}(ⓝ).`) }
+  nn('사본을 만드는 동안 준비 중 표시', /setAddPreparing\(true\)/.test(pick) && /finally \{\s*if \(gen === addGenRef\.current\) setAddPreparing\(false\)/.test(pick))
+  nn('창을 닫았으면 늦은 결과를 버린다', /const gen = addGenRef\.current/.test(pick) && /if \(gen !== addGenRef\.current\) return/.test(pick) && /addGenRef\.current\+\+/.test(close))
+  nn('상한을 함수형 갱신 안에서 다시 잰다', /setAddPhotoPreviews\(prev => \{\s*const room = Math\.max\(0, MAX_PHOTOS - prev\.length\)/.test(pick))
+  nn('준비 중 저장(엔터 제출 포함)을 막는다', /if \(addPreparing\) return/.test(add))
+  nn('준비 중 저장 버튼이 이유를 가리킨다', /reason=\{addPreparing && 'add-photo-preparing'\}/.test(src) && /<WhyCaption id="add-photo-preparing"/.test(src))
+  nn("준비 중 '+ 사진 선택' 을 막는다", /onClick=\{\(\) => addPhotoInputRef\.current\?\.click\(\)\} disabled=\{addPreparing\}/.test(src))
 }
 
 console.log(`[사진 업로드 위생] ${files.length}파일 검사 / 위반 ${violations.length}건`)

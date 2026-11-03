@@ -45,6 +45,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { PhotoLightbox, uploadFileToDriveSession, type Photo } from '@/components/room-manage/PhotoViewer'
 import { looksLike360 } from '@/lib/driveImage'
+import { pinPickedFile, PICK_READ_FAIL } from '@/lib/pickedFile'
 import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, reservationSubText, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
@@ -615,6 +616,10 @@ export default function RoomManageClient({
   const [showPropPhotos, setShowPropPhotos]   = useState(false)               // 공용·외관 사진 관리 모달
   const [showNotes, setShowNotes]             = useState(false)               // 영업장 관리 메모 창(신고 d1e5fecc)
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
+  // 고른 사진을 메모리 사본으로 옮기는 동안(정본 lib/pickedFile). 그 사이 저장을 막고 이유를 말한다(신고창과 한 문법).
+  const [addPreparing, setAddPreparing] = useState(false)
+  // 창을 닫을 때 올린다. 사본을 만드는 사이 창을 닫았다 다시 열면 늦게 끝난 결과를 버린다.
+  const addGenRef = useRef(0)
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
 
@@ -838,6 +843,8 @@ export default function RoomManageClient({
   }
 
   const closeAddModal = () => {
+    addGenRef.current++
+    setAddPreparing(false)
     addPhotoPreviews.forEach(p => URL.revokeObjectURL(p.previewUrl))
     setAddPhotoPreviews([])
     setAddNrEnabled(false)
@@ -866,12 +873,29 @@ export default function RoomManageClient({
 
   const MAX_PHOTOS = 10
 
-  const handleAddPhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
     const files = Array.from(e.target.files)
+    e.target.value = ''
     const remaining = MAX_PHOTOS - addPhotoPreviews.length
-    if (remaining <= 0) { setError(`사진은 최대 ${MAX_PHOTOS}장까지 추가할 수 있습니다.`); e.target.value = ''; return }
-    const picked = files.slice(0, remaining)
+    if (remaining <= 0) { setError(`사진은 최대 ${MAX_PHOTOS}장까지 추가할 수 있습니다.`); return }
+    // 고르는 그 순간 메모리 사본으로 옮긴다(정본 lib/pickedFile). 이 사진은 폼을 다 채우고 저장할 때 올라가서,
+    // 그 사이 안드로이드가 원본 손잡이를 놓으면 PUT 이 깨졌다(신고 4·7 과 같은 클래스, 2026-11-03).
+    // 옮기는 동안은 저장과 '+ 사진 선택' 을 막는다. 끝나기 전에 창을 닫았으면 결과를 버린다(addGenRef).
+    const gen = addGenRef.current
+    setAddPreparing(true)
+    const picked: File[] = []
+    let unreadable = 0
+    try {
+      for (const f of files.slice(0, remaining)) {
+        try { picked.push(await pinPickedFile(f)) } catch { unreadable++ }
+      }
+    } finally {
+      if (gen === addGenRef.current) setAddPreparing(false)
+    }
+    if (gen !== addGenRef.current) return
+    if (unreadable > 0) pushToast('error', unreadable === 1 ? PICK_READ_FAIL : `사진 ${unreadable}장을 읽지 못했어요. 다시 골라 주세요.`)
+    if (picked.length === 0) return
     // 어두운 사진 경고(막지 않고 안내만)
     void Promise.all(picked.map(avgBrightness)).then(bs => {
       const dark = bs.filter(b => b < DARK_THRESHOLD).length
@@ -880,8 +904,12 @@ export default function RoomManageClient({
     const newPreviews = picked.map(file => ({
       file, previewUrl: URL.createObjectURL(file),
     }))
-    setAddPhotoPreviews(prev => [...prev, ...newPreviews])
-    e.target.value = ''
+    // 상한은 넣는 그 순간 다시 잰다(고르는 동안 다른 사진이 들어왔을 수 있다). 넘치는 몫은 미리보기 주소를 돌려준다.
+    setAddPhotoPreviews(prev => {
+      const room = Math.max(0, MAX_PHOTOS - prev.length)
+      newPreviews.slice(room).forEach(p => URL.revokeObjectURL(p.previewUrl))
+      return [...prev, ...newPreviews.slice(0, room)]
+    })
   }
 
   const removeAddPhoto = (index: number) => {
@@ -893,6 +921,7 @@ export default function RoomManageClient({
 
   const handleAdd = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
+    if (addPreparing) return   // 사진 사본을 만드는 중(엔터 제출도 막는다). 이유는 저장 버튼 아래 캡션이 말한다.
     const formData = new FormData(e.currentTarget)
     startTransition(async () => {
       const release = trackSave()
@@ -1786,9 +1815,9 @@ export default function RoomManageClient({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">사진</label>
-                <button type="button" onClick={() => addPhotoInputRef.current?.click()}
-                  className="text-xs text-[var(--tc-text)] hover:text-[var(--tc-text)] transition-colors">
-                  + 사진 선택
+                <button type="button" onClick={() => addPhotoInputRef.current?.click()} disabled={addPreparing}
+                  className="text-xs text-[var(--tc-text)] hover:text-[var(--tc-text)] transition-colors disabled:opacity-50">
+                  {addPreparing ? '사진 준비 중…' : '+ 사진 선택'}
                 </button>
                 <input ref={addPhotoInputRef} type="file" accept="image/*" multiple className="hidden"
                   onChange={handleAddPhotoSelect} />
@@ -1816,10 +1845,11 @@ export default function RoomManageClient({
             {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <Btn type="button" variant="secondary" onClick={closeAddModal} fullWidth>취소</Btn>
-              <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
+              <Btn type="submit" variant="primary" disabled={isPending} reason={addPreparing && 'add-photo-preparing'} fullWidth>
                 {isPending ? '저장 중…' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
               </Btn>
             </div>
+            {addPreparing && <WhyCaption id="add-photo-preparing" className="-mt-2">고른 사진을 준비하고 있어서 아직 저장할 수 없습니다 · 잠시 뒤 저장하면 됩니다.</WhyCaption>}
           </form>
         </Modal>
       )}

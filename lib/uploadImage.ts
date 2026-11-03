@@ -14,7 +14,13 @@
 // 디코드 문법은 lib/ocrImage 의 fileToOcrImage 정본을 그대로 쓴다(EXIF 회전을 픽셀에 박고,
 // 비트맵·캔버스를 즉시 반납). 다른 점은 **실패했을 때**다. AI 인식은 원본을 그대로 보내도
 // Gemini 가 HEIC 를 읽어 주지만, 여기서 원본이 통과하면 그 바이트가 그대로 저장돼 위 세 자리가
-// 다시 깨진다. 그래서 **디코드 실패는 던진다** — 조용한 원본 통과는 이 파일의 금지 사항이다.
+// 다시 깨진다. 그래서 **디코드 실패는 던진다**. 종이·그림 갈래(fileToUploadPdf·fileToUploadImage)에서
+// 조용한 원본 통과는 금지다.
+//
+// 셋째 갈래인 보관 사진(fileToUploadPhoto, 2026-11-03 신고 4·7)만 예외다. 오류신고 첨부는 다른 문서에
+// 얹혀 쓰이지 않고 운영자가 내려받아 보기만 해서, 못 줄였다고 막으면 신고의 화면 증거를 잃는다.
+// 그 대신 형식이 비면 확장자로 채우고, 이미지가 아니면 부르는 쪽이 고르는 자리에서 거절한다
+// (isUploadablePhoto). 이 함수는 업로드 세션 입구에서 쓰지 않는다(감지망 check-upload-hygiene ⓛ).
 //
 // 어느 형식으로 바꾸는가는 그 파일이 무엇이 되는가로 갈린다.
 //   · 종이가 되는 것(사업자등록증·스캔 계약서) = PDF 한 장. 소비처 전부가 PDF 를 다룰 줄 안다.
@@ -165,4 +171,63 @@ export async function fileToUploadImage(file: File): Promise<UploadFile> {
   }
   const { blob } = await reencode(file, UPLOAD_IMAGE_MAX_EDGE, 'image/png')
   return { file: new File([blob], swapExt(file.name, 'png'), { type: 'image/png' }), converted: true }
+}
+
+/**
+ * 사진으로 보관만 되는 첨부(오류신고 사진)의 최대 변(px)과 품질.
+ *
+ * 2048 은 종이 프리셋과 같은 값이다(화면 캡처의 잔글자가 읽히는 선). 품질은 0.85 로 한 단계 낮춘다.
+ * 종이처럼 인쇄되지 않고 운영자가 화면으로 보기만 하며, 갤럭시 원본 사진(4000px, 5~10MB)이 0.5MB 안팎이
+ * 되어 느린 망에서도 한 번에 올라간다(2026-11-03 신고 4·7).
+ */
+export const UPLOAD_PHOTO_MAX_EDGE = 2048
+export const UPLOAD_PHOTO_QUALITY = 0.85
+
+/**
+ * 보관만 되는 사진을 줄여 JPEG 로 다시 굽는다.
+ *
+ * 위 둘과 달리 **디코드 실패는 원본 통과**다. 이 사진은 종이·도장처럼 다른 문서에 얹혀 쓰이지 않고
+ * 운영자가 내려받아 보기만 한다(scripts/check-error-reports.mjs). 못 줄였다고 첨부를 막으면 신고에서
+ * 정작 화면 증거를 잃는다. 그래서 이 함수는 업로드 세션 입구(도장·로고·등록증·스캔 계약서)에서
+ * 쓰지 않는다(감지망 check-upload-hygiene ⓛ).
+ *
+ * 다시 구운 쪽이 원본보다 크면(이미 작은 JPEG·PNG 캡처) 원본을 그대로 둔다. 읽기 지연 문제는 여기서
+ * 다루지 않는다. 부르는 쪽이 먼저 lib/pickedFile 의 pinPickedFile 로 메모리 사본을 만든다.
+ */
+export async function fileToUploadPhoto(file: File): Promise<UploadFile> {
+  let out: { blob: Blob; w: number; h: number }
+  try {
+    out = await reencode(file, UPLOAD_PHOTO_MAX_EDGE, 'image/jpeg', UPLOAD_PHOTO_QUALITY)
+  } catch {
+    return { file: withPhotoType(file), converted: false }
+  }
+  if (out.blob.size >= file.size) {
+    const mime = sniffDocMime(new Uint8Array(await file.slice(0, 16).arrayBuffer()))
+    if (mime === 'image/jpeg' || mime === 'image/png') {
+      return { file: file.type === mime ? file : new File([file], file.name, { type: mime }), converted: false }
+    }
+  }
+  return { file: new File([out.blob], swapExt(file.name, 'jpg'), { type: 'image/jpeg' }), converted: true }
+}
+
+/** 보관 사진을 올릴 수 없을 때(이미지가 아닌 파일) 사람에게 할 말. 고르는 그 자리에서 쓴다. */
+export const PHOTO_TYPE_FAIL = '이 형식의 파일은 올릴 수 없어요. JPG 나 PNG 사진으로 골라 주세요.'
+
+// 형식(type)이 빈 파일은 확장자로 형식을 정한다. 파일 앱·일부 갤러리가 type 을 비워 주면 서버의 이미지 형식 문에서 걸렸다.
+const PHOTO_EXT_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+  heic: 'image/heic', heif: 'image/heif', avif: 'image/avif',
+}
+
+/** type 이 비었으면 확장자로 채운다. 모르는 확장자면 그대로(빈 type) 둔다. */
+export function withPhotoType(file: File): File {
+  if (file.type) return file
+  const ext = (/\.([^.\\/]+)$/.exec(file.name)?.[1] ?? '').toLowerCase()
+  const mime = PHOTO_EXT_MIME[ext]
+  return mime ? new File([file], file.name, { type: mime, lastModified: file.lastModified }) : file
+}
+
+/** 보관 사진으로 올릴 수 있는가. 서버 문(createErrorReportImageSession)과 같은 'image/' 접두 판정이다. */
+export function isUploadablePhoto(file: File): boolean {
+  return file.type.startsWith('image/')
 }

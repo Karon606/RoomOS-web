@@ -61,6 +61,7 @@ import type { ContractTemplate, ContractSection, BusinessInfo, SubLeaseAddendum 
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { fileToUploadImage } from '@/lib/uploadImage'
+import { pinPickedFile } from '@/lib/pickedFile'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import {
@@ -219,12 +220,15 @@ export default function SettingsForm({
 
   // 계약서용 로고 — 도장과 같은 자리다(종이에 그림으로 얹힌다). PNG·JPEG 가 아니면 PNG 로 바꿔 올린다.
   const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const picked = e.target.files?.[0]
     e.target.value = ''
-    if (!file) return
+    if (!picked) return
     setLogoUploading(true)
     const release = trackSave()
     try {
+      // 고르는 그 순간 메모리 사본(정본 lib/pickedFile). PNG·JPEG 는 변환 없이 원본 손잡이가 그대로 PUT 까지 가서
+      // 안드로이드에서 세션을 받는 사이 읽기가 깨질 수 있었다(2026-11-03, 신고 4·7 과 같은 클래스).
+      const file = await pinPickedFile(picked)
       const { file: upFile, converted } = await fileToUploadImage(file)
       const session = await createLogoUploadSession({
         fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
@@ -2914,12 +2918,15 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
   // 여기는 종이가 아니라 **그림으로 얹히는 자리**라 PDF 가 아니라 이미지여야 한다. HEIC 도장을
   // 그대로 저장하면 실거주 확인서 발급이 통째로 실패하고(pdf-lib embed), 계약서는 도장 없이 나간다.
   const handleStampSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const picked = e.target.files?.[0]
     e.target.value = ''
-    if (!file) return
+    if (!picked) return
     setStampUploading(true)
     const release = trackSave()
     try {
+      // 고르는 그 순간 메모리 사본(정본 lib/pickedFile). PNG·JPEG 는 변환 없이 원본 손잡이가 그대로 PUT 까지 가서
+      // 안드로이드에서 세션을 받는 사이 읽기가 깨질 수 있었다(2026-11-03, 신고 4·7 과 같은 클래스).
+      const file = await pinPickedFile(picked)
       const { file: upFile, converted } = await fileToUploadImage(file)
       const session = await createStampUploadSession({
         fileName: upFile.name, mimeType: upFile.type, fileSize: upFile.size,
