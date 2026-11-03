@@ -470,6 +470,13 @@ async function main() {
       eq(`${role} 입주자 문자 조회 거부`, await dashboard.getPersonalSmsContext(T1), DENY)
       eq(`${role} 미납 문자 조회 거부`, await dashboard.getUnpaidSmsContext(L1), DENY)
       eq(`${role} 단체 공지 수신자 조회 거부`, await noticeSms.getNoticeSmsTargets(), DENY)
+      // 메일(2026-11-03 운영자 승인) — 초안·미리보기·발송 모두 첫 줄에서 던지고 mail_logs 는 안 는다.
+      const thrown = (p: Promise<unknown>) => p.then(() => '통과', (e: Error) => e.message)
+      const mails = await prisma.mailLog.count()
+      eq(`${role} 메일 초안 거부`, await thrown(docBundle.getTenantDocMailDraft(T1, ['x'])), DENY.error)
+      eq(`${role} 메일 미리보기 거부`, await thrown(docBundle.previewTenantDocMail(T1, ['x'], { subject: '제목', bodyText: '본문' })), DENY.error)
+      eq(`${role} 메일 발송 거부`, await thrown(docBundle.sendTenantDocBundleMail(T1, ['x'])), DENY.error)
+      eq(`${role} 메일 거부 뒤 mail_logs 무변경`, await prisma.mailLog.count(), mails)
     }
     // 대조군: 그 위 권한(관리자)부터는 그대로 남는다.
     g.__CR_FLOW_ROLE = 'MANAGER'
@@ -479,6 +486,8 @@ async function main() {
     eq('MANAGER 미납 문자 이력 통과', await unpaid({}), { ok: true })
     eq('MANAGER 이력 3줄 늘어남', await logs(), beforeMgr + 3)
     eq('MANAGER 입주자 문자 조회 통과', (await dashboard.getPersonalSmsContext(T1)).ok, true)
+    // 대조군: 관리자는 권한 문을 지나 다음 단계(메일 켜짐 확인)에서 멈춘다 — 권한 거부가 아니다.
+    eq('MANAGER 메일 발송은 권한 문 통과', await docBundle.sendTenantDocBundleMail(T1, ['x']).then(r => r.ok ? '보냄' : r.error, (e: Error) => e.message), '메일 보내기가 켜져 있지 않습니다.')
     g.__CR_FLOW_ROLE = undefined
   }
 

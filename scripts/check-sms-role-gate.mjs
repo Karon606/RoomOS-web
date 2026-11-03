@@ -1,10 +1,12 @@
-// 고객 문자 권한 감지망. 열람 전용 직원(STAFF·제한 스태프)이 고객에게 문자를 보낼 길이 다시 열리면 붉게 선다. 읽기 전용, 위반 시 exit 1.
+// 고객 문자·메일 권한 감지망. 열람 전용 직원(STAFF·제한 스태프)이 고객에게 문자·메일을 보낼 길이 다시 열리면 붉게 선다. 읽기 전용, 위반 시 exit 1.
 //
 // 왜 필요한가(2026-11-03 운영자 지시). 원문 "열람만 할 수 있는 직원은 고객에게 문자를 보낼 수 없고 그 위 권한부터 가능하도록해줘".
 // 문자는 서버가 보내지 않는다. sms: 링크로 누른 사람 폰의 문자앱을 여는 구조라 **화면에서 막는 것이 실제 차단**이고,
 // 서버는 문자를 짜는 조회(번호·템플릿·수신자)와 발송 시도 기록을 거부한다. 한쪽만 남으면 다른 쪽이 새 길이 된다.
 //
-// 축 다섯.
+// 메일(2026-11-03 운영자 승인 '추천대로')은 서버가 보내므로 서버 문이 실제 차단이고, 화면은 입구를 숨긴다.
+//
+// 축 여섯.
 //   ⓐ 서버 문. 문자를 짜거나 기록하거나 서명 요청 링크(문자로 나간다)를 만드는 액션은 첫 DB 호출 전에 무조건 `await requireEdit()` 를 부른다.
 //   ⓑ 입구 전수. app·components·lib 에서 문자앱을 여는 자리(sms: 리터럴, singleSmsHref, sendWithText)와 문자 창 렌더를 모두 찾아
 //      SINKS 표와 대조한다. 표에 없는 새 자리는 붉다(등록하고 canEditUi 로 막을 것).
@@ -16,6 +18,8 @@
 //      말없이 '편집 가능'을 답한다. Prism 모달(EntityModalProvider 가 그린다)·전역 검색·신고 버튼이 그 밖에 있어
 //      열람 직원에게 문자·메모 편집이 섰다. (app) 레이아웃에서 RoleProvider 가 AppShell 을 통째로 감싸는지,
 //      (app) 밖 라우트(app/contract·app/sign 등)가 역할 훅을 직접 쓰거나 역할 훅을 쓰는 컴포넌트를 직접 import 하지 않는지 본다.
+//   ⓕ 메일. 서류 메일의 초안·미리보기·발송은 ⓐ 의 서버 문을 지나고, 메일 입구(mailto: 링크·서류 시트 '메일' 갈래·메일 쓰기 시트·
+//      메일 액션 호출)는 MAIL_SINKS 표 안에서만 서며 열람 역할에게 canEditUi 로 숨는다.
 //
 // 실행: node scripts/check-sms-role-gate.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -34,7 +38,7 @@ const need = (ok, msg) => { if (!ok) violations.push(msg) }
 // ⓐ 서버 문
 const SERVER = {
   'app/(app)/dashboard/actions.ts': ['getUnpaidSmsContext', 'getPersonalSmsContext', 'logPersonalSmsAttempt', 'logSmsAttempt'],
-  'app/(app)/tenants/docBundle.ts': ['logDocSmsAttempt'],
+  'app/(app)/tenants/docBundle.ts': ['logDocSmsAttempt', 'getTenantDocMailDraft', 'previewTenantDocMail', 'sendTenantDocBundleMail'],
   'app/(app)/tenants/noticeSms.ts': ['getNoticeSmsTargets', 'logNoticeSmsAttempt', 'polishNoticeText', 'saveNoticeTemplateAuto'],
   'app/(app)/tenants/contractShare.ts': ['issueContractShareLink', 'renewContractShareLink'],
 }
@@ -46,9 +50,13 @@ for (const [f, fns] of Object.entries(SERVER)) {
     if (start < 0) { violations.push(`${f}: ${fn} 가 없다(이름이 바뀌었으면 이 표도 고친다).`); continue }
     const next = s.indexOf('\nexport ', start + 1)
     const body = s.slice(start, next < 0 ? s.length : next)
-    // 무조건 실행되는 자리만 센다 — try 바로 안 첫머리 들여쓰기(4칸)의 단독 문장.
-    const gate = body.search(/\n {4}await requireEdit\(\)\n/)
-    need(gate >= 0, `${f}: ${fn} 가 무조건 실행되는 'await requireEdit()' 를 갖지 않는다(열람 역할이 문자를 짜거나 남긴다).`)
+    // 무조건 실행되는 자리만 센다 — 함수 맨 위(2칸) 또는 try 바로 안 첫머리(4칸)의 단독 문장이고, 다른 await 보다 먼저다.
+    const gate = body.search(/\n( {2}| {4})await requireEdit\(\)\n/)
+    const firstAwait = body.search(/\bawait (?!requireEdit\(\))/)
+    need(gate >= 0 && (firstAwait < 0 || gate < firstAwait), `${f}: ${fn} 의 requireEdit 가 다른 await(조회·발송 준비)보다 뒤에 있다.`)
+    // 무엇이 새는지 함수 축으로 갈라 말한다 — 메일 액션은 고객에게 메일이 나가고, 나머지는 문자를 짜거나 남긴다.
+    const leak = /Mail/.test(fn) ? '열람 역할이 고객에게 메일을 보낸다' : '열람 역할이 문자를 짜거나 남긴다'
+    need(gate >= 0, `${f}: ${fn} 가 무조건 실행되는 'await requireEdit()' 를 갖지 않는다(${leak}).`)
     const firstDb = body.search(/\bprisma\.|\btx\./)
     need(gate >= 0 && (firstDb < 0 || gate < firstDb), `${f}: ${fn} 의 requireEdit 가 첫 DB 호출보다 뒤에 있다.`)
   }
@@ -208,6 +216,46 @@ for (const [f, re, n] of OPENERS) {
       if (hit) violations.push(`${f}: (app) 레이아웃 밖에서 역할 훅을 쓰는 ${hit} 를 그린다(RoleProvider 가 없어 늘 OWNER).`)
     }
   }
+}
+
+// ⓕ 메일 입구
+{
+  // kind: 'entry' = 열람 역할에게 canEditUi 로 숨는 입구, 'parent' = 부모가 canEditUi 로 렌더를 막는 창, 'public' = 고객이 아니라 회사 문의 주소.
+  const MAIL_SINKS = {
+    'components/entity-modal/widgets/TenantContactInfo.tsx': 'entry',
+    'components/doc/TenantDocBundleSheet.tsx': 'entry',
+    'components/doc/TenantDocMailComposeSheet.tsx': 'parent',
+    'app/(portal)/page.tsx': 'public',
+    'lib/pushSend.ts': 'public',   // 웹 푸시 VAPID subject(발신자 표기), 고객에게 가는 메일이 아니다
+  }
+  const MAIL_RE = [
+    [/[`'"]mailto:/, 'mailto: 링크'],
+    [/<TenantDocMailComposeSheet\b/, '메일 쓰기 시트 렌더'],
+    [/\b(getTenantDocMailDraft|previewTenantDocMail|sendTenantDocBundleMail)\(/, '메일 액션 호출'],
+  ]
+  const seen = new Set()
+  for (const f of ['app', 'components', 'lib'].flatMap(walk)) {
+    if (f === 'app/(app)/tenants/docBundle.ts') continue
+    const s = read(f)
+    for (const [re, what] of MAIL_RE) {
+      if (!re.test(s)) continue
+      seen.add(f)
+      need(f in MAIL_SINKS, `${f}: 메일 입구(${what})가 새로 생겼다. 열람 역할(STAFF·제한 스태프)에게 막고 MAIL_SINKS 표에 등록할 것.`)
+    }
+  }
+  for (const f of Object.keys(MAIL_SINKS)) need(seen.has(f), `${f}: MAIL_SINKS 표에 있는데 메일 입구가 안 보인다(정규식이 낡았거나 자리가 옮겨 갔다).`)
+  const contact = read('components/entity-modal/widgets/TenantContactInfo.tsx')
+  need(/\{canEditUi && \(\s*<a href=\{email \? `mailto:/.test(contact) && (contact.match(/[`'"]mailto:/g) ?? []).length === 1,
+    `TenantContactInfo: 연락처 '메일'(mailto:) 이 열람 역할에게 선다.`)
+  const sheet = read('components/doc/TenantDocBundleSheet.tsx')
+  need(/\.\.\.\(mailOn && canEditUi \? \[\{ value: 'mail' as const/.test(sheet), `TenantDocBundleSheet: '메일' 갈래가 열람 역할에게 선다.`)
+  need(/\{canEditUi && composeOpen && \(\s*<TenantDocMailComposeSheet/.test(sheet) && (sheet.match(/<TenantDocMailComposeSheet\b/g) ?? []).length === 1,
+    `TenantDocBundleSheet: 메일 쓰기 시트를 canEditUi 없이 그린다.`)
+  need(!/mailOn \? 'mail'/.test(sheet), `TenantDocBundleSheet: 갈래 대체 규칙이 열람 역할을 '메일' 로 보낸다.`)
+  need(/^\s*process\.env\.VAPID_SUBJECT \|\| 'mailto:no-reply@stayeum\.com',$/m.test(read('lib/pushSend.ts')) && (read('lib/pushSend.ts').match(/mailto:/g) ?? []).length === 1,
+    `lib/pushSend.ts: VAPID subject 말고 mailto: 가 생겼다.`)
+  const portal = read('app/(portal)/page.tsx')
+  need(!/mailto:\$\{(?!CONTACT_EMAIL\})/.test(portal), `app/(portal)/page.tsx: 회사 문의 주소가 아닌 mailto: 가 생겼다.`)
 }
 
 if (violations.length) {

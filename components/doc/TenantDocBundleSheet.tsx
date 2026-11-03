@@ -136,8 +136,8 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const [versionRow, setVersionRow] = useState<DocBundleRow | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
   const [smsOpen, setSmsOpen] = useState(false)
-  // 문자 갈래는 열람 전용(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
-  // 저장·공유·메일은 그대로다. 갈래가 없으면 effDest 가 'sms' 가 될 수 없어 알약·쓰기 시트도 안 선다.
+  // 문자·메일 갈래는 열람 전용(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 지시·승인, 감사 D3 숨김 문법).
+  // 저장·공유는 그대로다. 갈래가 없으면 effDest 가 'sms' 가 될 수 없어 알약·쓰기 시트도 안 선다.
   const canEditUi = useCanEdit()
 
   // 이 화면은 통째로 선택 모드다 — 열리자마자 변환기를 데운다(첫 탭의 제스처 만료 방어).
@@ -224,11 +224,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     // 문자는 폰에서만 선다. 데스크톱은 sms: 를 열 앱이 없어 멀쩡한 갈래 옆에 죽은 갈래가 된다.
     // 판정은 공유 가능 여부를 대신 쓴다 — 이 앱이 폰인지 아는 유일한 실측 신호다.
     ...(shareSupported && canEditUi ? [{ value: 'sms' as const, label: '문자' }] : []),
-    ...(mailOn ? [{ value: 'mail' as const, label: '메일' }] : []),
+    ...(mailOn && canEditUi ? [{ value: 'mail' as const, label: '메일' }] : []),
   ]
   const effDest: Dest = destOptions.some(o => o.value === dest)
     ? dest
-    : (shareSupported ? 'share' : mailOn ? 'mail' : 'save')
+    : (shareSupported ? 'share' : mailOn && canEditUi ? 'mail' : 'save')
   const showDestPicker = destOptions.length > 1
   const isFileDest = effDest === 'save' || effDest === 'share'
   // 문자 갈래는 사진 고정이다 — 문자앱의 첨부가 사진첩에서 고르는 구조라 PDF 는 길이 더 길다.
@@ -491,7 +491,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         onClose={() => setSmsOpen(false)}
       />
     )}
-    {composeOpen && (
+    {canEditUi && composeOpen && (
       <TenantDocMailComposeSheet
         tenantId={tenantId}
         keys={[...selected]}

@@ -390,6 +390,8 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
 export async function getTenantDocMailDraft(
   tenantId: string, keys: string[],
 ): Promise<{ ok: true; draft: TenantDocMailDraftInfo } | { ok: false; error: string }> {
+  // 열람 전용(STAFF·제한 스태프)은 고객에게 메일을 못 보낸다(2026-11-03 운영자 승인). 초안·미리보기도 보내기의 한 단계라 같은 문이다.
+  await requireEdit()
   const ctx = await resolveDocMailContext(tenantId, keys)
   if (!ctx.ok) return ctx
 
@@ -437,6 +439,8 @@ export async function getTenantDocMailDraft(
 export async function previewTenantDocMail(
   tenantId: string, keys: string[], edit: { subject: string; bodyText: string },
 ): Promise<{ ok: true; subject: string; html: string } | { ok: false; error: string }> {
+  // 열람 전용(STAFF·제한 스태프)은 고객에게 메일을 못 보낸다(2026-11-03 운영자 승인). 초안·미리보기도 보내기의 한 단계라 같은 문이다.
+  await requireEdit()
   const ctx = await resolveDocMailContext(tenantId, keys)
   if (!ctx.ok) return ctx
   const tpl = applyDraftToTemplate(ctx.tpl, edit)
@@ -483,6 +487,8 @@ export async function sendTenantDocBundleMail(
   tenantId: string, keys: string[],
   draft?: { subject: string; bodyText: string; replyTo: string },
 ): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  // 열람 전용(STAFF·제한 스태프)은 고객에게 메일을 못 보낸다(2026-11-03 운영자 승인). 초안·미리보기도 보내기의 한 단계라 같은 문이다.
+  await requireEdit()
   const ctx = await resolveDocMailContext(tenantId, keys)
   if (!ctx.ok) return ctx
 

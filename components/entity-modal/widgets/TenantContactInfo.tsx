@@ -26,8 +26,8 @@ type Contact = {
 const telDigits = (v: string) => v.replace(/[^0-9+]/g, '')
 
 export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: string; contacts: Contact[]; email?: string | null }) {
-  // 문자 두 문(문자·독촉 문자)은 열람 전용(STAFF·제한 스태프)에게 숨긴다(2026-11-03 운영자 지시, 감사 D3 숨김 문법).
-  // 전화·메일은 그대로다. 서버 requireEdit 가 최종 방어다.
+  // 문자 두 문(문자·독촉 문자)과 메일은 열람 전용(STAFF·제한 스태프)에게 숨긴다(2026-11-03 운영자 지시·승인, 감사 D3 숨김 문법).
+  // 전화는 그대로다. 서버 requireEdit 가 최종 방어다.
   const canEditUi = useCanEdit()
   const [smsOpen, setSmsOpen] = useState(false)
   // 납부일 경과 미납이면 독촉 대상 조회(정본 computeUnpaidStatus 필터). 미납 아니면 null → 독촉 버튼 미노출.
@@ -52,7 +52,9 @@ export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: str
           <button type="button" onClick={() => setSmsOpen(true)} disabled={!phone}
             className={`${linkCls} ${phone ? onCls : offCls}`}>문자</button>
         )}
-        <a href={email ? `mailto:${email}` : undefined} className={`${linkCls} ${email ? onCls : offCls}`}>메일</a>
+        {canEditUi && (
+          <a href={email ? `mailto:${email}` : undefined} className={`${linkCls} ${email ? onCls : offCls}`}>메일</a>
+        )}
       </div>
       {/* 납부일 경과 미납일 때만 — 독촉 문자(정본 UnpaidSmsModal, 미납액·경과일 자동 치환·입금확인 스텝) */}
       {canEditUi && unpaidTarget && phone && (
