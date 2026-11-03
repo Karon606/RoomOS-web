@@ -1,4 +1,4 @@
-import type { MadeMix } from '@/lib/productMix'
+import type { MadeMix, InflowSplit } from '@/lib/productMix'
 
 export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
 
@@ -111,6 +111,9 @@ export type PricePoint = {
   unitPrice: number    // amount / qtyValue
   qty: number
   amount: number
+  // 제품별 보기(가이드 §22) 전용. 단가 셈은 이 두 칸을 읽지 않는다.
+  brand: string | null
+  productName: string | null
 }
 
 export type MonthlyInflowRow = {
@@ -119,6 +122,8 @@ export type MonthlyInflowRow = {
   additionQty: number
   totalQty: number
   purchaseAmount: number
+  // 제품별 보기(가이드 §22, lib/productMix splitInflowByProduct). 제품 줄 + 외 N종 + 제품 기록 없음 = totalQty.
+  byProduct: InflowSplit
 }
 
 export type StorageLocationItem = {

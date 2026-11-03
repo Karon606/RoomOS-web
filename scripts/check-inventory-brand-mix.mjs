@@ -6,6 +6,8 @@
 // 잡는 것.
 //   ⓐ 개요의 두 구매 조회(수령 대기·구매 일괄)가 brand·productName 을 싣는다. 빠지면 카드 메타가 조용히 빈다.
 //   ⓑ computeInventoryOverview 의 조회 수가 그대로다(제품 표기는 이미 받은 구매 위에서 메모리로만 센다).
+//      상세 '월별 입수'·'단가 추이'(getMonthlyInflow·getPriceHistory)도 조회 수가 그대로이고(3·2), 구매 select 에 brand·productName 을 싣되
+//      붙는 판정(where)은 두 칸을 읽지 않는다(제품별 보기, 2026-11 운영자 승인 '추천대로' 해석 A. 보기만 나누고 붙음은 품명 하나).
 //   ⓒ 추정을 카드 수치 자리에 쓰지 않는다. 카드 value·valueSub 와 상세 '지금' 은 productMix 를 읽지 않는다.
 //   ⓓ 카드 메타와 상세 제품 줄이 같은 row.productMix 를 읽고, 개요는 그 값을 확정된 currentStock 으로 낸다.
 //   ⓔ 점검 폼 두 곳(CheckForm · LocationBatchCheckModal)은 브랜드를 입력·저장하지 않는다(점검은 품명 하나로 센다).
@@ -59,6 +61,7 @@ function propBody(src, from, name) {
 }
 
 const overview = stripComments(readFileSync('app/(app)/inventory/overview.ts', 'utf8'))
+const actions = stripComments(readFileSync('app/(app)/inventory/actions.ts', 'utf8'))
 const client = stripComments(readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8'))
 const mix = stripComments(readFileSync('lib/productMix.ts', 'utf8'))
 
@@ -77,6 +80,15 @@ for (const [i, sel] of expenseSelects.entries()) {
 // ⓑ 조회 수 불변. 2026-11 시공 시점 8회(trackedItem·stockCheck·trackedItemLocation·expense 둘·stockAddition·stockDisposal·storageLocation).
 const queries = (comp.match(/prisma\.\w+\.(findMany|findFirst|findUnique|count|groupBy|aggregate)\(/g) ?? []).length
 need('ⓑ computeInventoryOverview 조회 수 8', queries === 8, `실제 ${queries}. 제품 표기는 이미 받은 구매 위에서 센다`)
+for (const [fn, want] of [['getMonthlyInflow', 3], ['getPriceHistory', 2]]) {
+  const body = fnBody(actions, `export async function ${fn}(`)
+  need(`ⓑ ${fn} 본문 확보`, body.length > 0)
+  const n = (body.match(/prisma\.\w+\.(findMany|findFirst|findUnique|count|groupBy|aggregate)\(/g) ?? []).length
+  need(`ⓑ ${fn} 조회 수 ${want}`, n === want, `실제 ${n}. 제품별 나눔은 이미 받은 구매 위에서 센다`)
+  const ex = /prisma\.expense\.findMany\(\{\s*where: \{([\s\S]*?)\},\s*select: \{([^}]*)\}/.exec(body)
+  need(`ⓑ ${fn} 구매 조회에 brand·productName`, !!ex && /brand: true/.test(ex[2]) && /productName: true/.test(ex[2]), '빠지면 제품별 보기가 조용히 전부 제품 기록 없음이 된다')
+  need(`ⓑ ${fn} 붙는 판정(where)에 brand·productName 없음`, !!ex && !/brand|productName/.test(ex[1]), '보기만 나눈다(해석 A). 붙음을 브랜드로 가르면 통합 합계가 달라진다')
+}
 
 // ⓒ 추정은 수치 자리에 안 쓴다
 const cardAt = client.indexOf('<InvCard')

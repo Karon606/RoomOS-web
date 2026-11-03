@@ -63,6 +63,8 @@ import { isDurableGoods, placementForSave } from './assets/receiptPlacement'
 import { storedForSave } from './assets/storagePlace'
 // 분할 복제 정본(비품 분할과 한 벌). 부분 수령의 받은 조각이 원행 스칼라 전부를 물려받는다.
 import { cloneExpenseScalars } from './expenseClone'
+// 제품별 보기 나눔 정본(표시 전용, 가이드 §22). 잔량·소모 셈은 이 모듈을 읽지 않는다.
+import { splitInflowByProduct, type InflowPurchase } from '@/lib/productMix'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -118,7 +120,8 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         receivedAt: { not: null },
         excludeFromInventory: false,
       },
-      select: { date: true, qtyValue: true, specValue: true, specUnit: true, amount: true },
+      // brand·productName 은 제품별 보기(가이드 §22) 전용. 붙는 판정(where)과 합계 셈은 이 두 칸을 읽지 않는다.
+      select: { date: true, qtyValue: true, specValue: true, specUnit: true, amount: true, brand: true, productName: true },
     }),
     prisma.stockAddition.findMany({
       where: { trackedItemId },
@@ -126,29 +129,30 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
     }),
   ])
 
-  const map = new Map<string, MonthlyInflowRow>()
+  const map = new Map<string, Omit<MonthlyInflowRow, 'byProduct'>>()
   const upsert = (m: string) => {
     if (!map.has(m)) map.set(m, { month: m, purchaseQty: 0, additionQty: 0, totalQty: 0, purchaseAmount: 0 })
     return map.get(m)!
   }
+  const monthKey = (v: Date) => { const d = new Date(v); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+  const mixRows: InflowPurchase[] = []
   for (const p of purchases) {
-    const d = new Date(p.date)
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const m = monthKey(p.date)
     const r = upsert(m)
     const q = p.qtyValue ?? 0
     const spec = useSpec ? specMultiplier(p.specValue, p.specUnit, item.specUnit) : null
     const contrib = spec != null ? q * spec : q
     r.purchaseQty    += contrib
     r.purchaseAmount += p.amount
+    mixRows.push({ date: p.date, month: m, brand: p.brand, productName: p.productName, qty: contrib, amount: p.amount })
   }
-  for (const a of additions) {
-    const d = new Date(a.date)
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    upsert(m).additionQty += a.addedQty
-  }
+  const addRows = additions.map(a => ({ month: monthKey(a.date), qty: a.addedQty }))
+  for (const a of addRows) upsert(a.month).additionQty += a.qty
   for (const r of map.values()) r.totalQty = r.purchaseQty + r.additionQty
+  // 제품별 나눔은 위에서 이미 받은 행 위에서 메모리로만 센다(조회 수 불변).
+  const split = splitInflowByProduct(mixRows, addRows)
 
-  return Array.from(map.values()).sort((a, b) => b.month.localeCompare(a.month))
+  return Array.from(map.values(), r => ({ ...r, byProduct: split.get(r.month)! })).sort((a, b) => b.month.localeCompare(a.month))
 }
 
 // ── 단가 추이 (구매 시점별 unit price) — 규격 기준 우선
@@ -169,7 +173,8 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       receivedAt: { not: null },
       excludeFromInventory: false,
     },
-    select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
+    // brand·productName 은 제품별 보기(가이드 §22) 전용. 붙는 판정(where)과 단가 셈은 이 두 칸을 읽지 않는다.
+    select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true, brand: true, productName: true },
     orderBy: { date: 'asc' },
   })
   const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
@@ -184,6 +189,8 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
         qty,
         amount: r.amount,
         unitPrice: base > 0 ? r.amount / base : 0,
+        brand: r.brand,
+        productName: r.productName,
       }
     })
 }
