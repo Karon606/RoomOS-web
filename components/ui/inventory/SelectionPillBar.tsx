@@ -3,7 +3,8 @@
 // v2.0 §22 SelectionPillBar — 선택 모드 하단 floating 다크 알약.
 // 탭별 가능한 액션만 children 으로 노출하되 셸(컨테이너·카운트·닫기)은 동일.
 // 합치기는 양 탭 공통 승격. 불가능한 액션은 숨김(비활성 아님).
-import React from 'react'
+import React, { useRef } from 'react'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 export function SelectionPillBar({
   count, onClose, children, label = '선택', unit = '개', aboveModal = false, compactNarrow = false,
@@ -16,8 +17,12 @@ export function SelectionPillBar({
   aboveModal?: boolean           // 모달 안 선택 모드용 — 알약을 모달 위층(--z-modal-2)으로
   compactNarrow?: boolean        // 버튼이 둘 이상이라 좁은 폭(360px 미만)에서 넘칠 때만, 그 폭에서 카운트를 숫자로 줄인다
 }) {
+  // 키보드가 선 동안은 하단 내비가 접히므로 내비 위 자리 대신 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03 가이드 §19).
+  // 그 자리(--vv-bottom)는 정본 훅이 이 상자에 적는다.
+  const barRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: true, overlayRef: barRef })
   return (
-    <div className={`pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center md:bottom-4`}>
+    <div ref={barRef} className={`kbd-float pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center md:bottom-4`}>
       <div className="pointer-events-auto mx-3.5 flex max-w-[calc(100vw-28px)] items-center gap-2 rounded-[15px] bg-[var(--pill-bg)] px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,.45)]">
         <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-white">
           <span className="mono tnum text-[var(--sand)]">{count}</span><span className={compactNarrow ? 'max-[359px]:hidden' : undefined}>{unit} {label}</span>

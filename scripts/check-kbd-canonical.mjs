@@ -640,6 +640,35 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
   if (rb == null || !/const sy = document\.scrollingElement\?\.scrollTop/.test(rb) || !/\$\{inner\}\|\$\{sy\}`/.test(rb)) violations.push('lib/viewportFrame.ts: 스냅샷 기억 열쇠에 문서 scrollTop 이 없다. 같은 프레임에 문서가 밀려도 옛 기준틀을 돌려준다')
 }
 
+// 11) 키보드가 선 동안 하단 내비 접기(2026-11-03, 키보드 칸 이동 튐 패널 결정 2, 가이드 §19). iOS 는 키보드가 서도 layout
+// viewport 를 안 줄여 fixed bottom 탭 바가 보이는 띠 한가운데에 떠 입력 칸을 가렸다. 접힘은 가드 표식 하나로 읽고(옵트인
+// .kbd-collapse), 표식은 vv resize·복귀 재동기에서만 바뀐다(팬·칸 이동 중 깜빡임 없음). 떠 있는 층(토스트·선택 알약)은 그
+// 동안 보이는 띠 아래 끝(--vv-bottom) 위에 앉고, 오류신고 버튼은 접지 않는다.
+{
+  const read = f => { try { return strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f}: 읽을 수 없음`); return '' } }
+  const nav = read('components/layout/BottomNav.tsx')
+  const navTag = /<nav\b[^>]*>/.exec(nav)
+  if (!navTag || !/className="[^"]*\bkbd-collapse\b/.test(navTag[0])) violations.push('components/layout/BottomNav.tsx: 하단 내비에 kbd-collapse 가 없다. 키보드가 선 동안 탭 바가 보이는 띠 한가운데에 떠 칸을 가린다')
+  const css = readFileSync('app/globals.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  if (!/html\[data-kbd-open\] \.kbd-collapse \{ display: none; \}/.test(css)) violations.push('app/globals.css: 키보드 접힘 규칙(html[data-kbd-open] .kbd-collapse)이 사라짐')
+  if (!/html\[data-kbd-open\] \.kbd-float \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ var\(--kbd-float-gap, 1rem\)\); \}/.test(css)) violations.push('app/globals.css: 떠 있는 층의 키보드 자리(.kbd-float)가 --vv-bottom 기준이 아니다')
+  for (const f of ['components/feedback/SaveFeedback.tsx', 'components/ui/inventory/SelectionPillBar.tsx']) {
+    const src = read(f)
+    // 주석이 아니라 className 에 서야 한다(역주입 2026-11-03, 주석의 같은 낱말에 속아 초록이었다).
+    if (!/className=(?:"[^"]*|\{`[^`]*)\bkbd-float\b/.test(src)) violations.push(`${f}: 키보드가 선 동안 내비가 접힌 자리에 그대로 떠 있다(.kbd-float 없음)`)
+    if (!/useVisibleBand\(/.test(src)) violations.push(`${f}: --vv-bottom 을 적을 정본 훅(useVisibleBand)을 안 부른다. 자리가 0 으로 떨어져 키보드 뒤에 깔린다`)
+  }
+  // 토스트 바닥이 인라인 style 로 돌아가면 키보드 자리 규칙이 못 이긴다.
+  if (/bottom:\s*'calc\(var\(--toast-offset-bottom\)/.test(read('components/feedback/SaveFeedback.tsx'))) violations.push('components/feedback/SaveFeedback.tsx: 토스트 바닥이 인라인 style 이다. .kbd-float 가 못 이긴다(.toast-floor 를 쓸 것)')
+  if (/\bkbd-collapse\b/.test(read('components/ErrorReportButton.tsx'))) violations.push('components/ErrorReportButton.tsx: 오류신고 버튼을 접는다. 키보드가 선 채 신고해야 그 세션이 남는다')
+  // 표식을 쓰는 자리는 vv resize(onResize)·복귀 재동기(resyncPass)·정리(cleanup)뿐이다. 팬 경로가 쓰면 내비가 깜빡인다.
+  const guard = read('components/layout/ViewportOffsetGuard.tsx')
+  const writers = [...guard.matchAll(/(setAttribute|removeAttribute)\(KBD_OPEN_ATTR/g)].length
+  const inResize = [...(sliceBody(guard, 'const onResize = (') ?? '').matchAll(/(setAttribute|removeAttribute)\(KBD_OPEN_ATTR/g)].length
+  const inResync = [...(sliceBody(guard, 'const resyncPass = (') ?? '').matchAll(/(setAttribute|removeAttribute)\(KBD_OPEN_ATTR/g)].length
+  if (inResize !== 2 || inResync !== 1 || writers !== inResize + inResync + 1) violations.push(`components/layout/ViewportOffsetGuard.tsx: 키보드 표식을 vv resize·복귀 재동기·정리 밖에서 쓴다(전체 ${writers}, resize ${inResize}, 재동기 ${inResync}). 팬이나 칸 이동 중에 바뀌면 하단 내비가 깜빡인다`)
+}
+
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exit(1)

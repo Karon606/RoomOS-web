@@ -47,6 +47,16 @@ for (const root of ROOTS) {
   }
 }
 
+// 하단 내비는 접는다, 오류신고 버튼은 접지 않는다(2026-11-03, 키보드 칸 이동 튐 패널 결정 2, 가이드 §19).
+// 내비는 이동 표면이라 접어도 커밋 수단을 안 삼킨다. 키보드가 선 동안 iOS 에서 보이는 띠 한가운데에 떠 칸을 가렸다.
+// 오류신고 버튼은 키보드가 선 채 눌러야 그 세션의 계측이 남아 늘 보인다.
+{
+  const nav = readFileSync('components/layout/BottomNav.tsx', 'utf8')
+  const tag = /<nav\b[^>]*>/.exec(nav)
+  if (!tag || !/\bkbd-collapse\b/.test(tag[0])) violations.push('components/layout/BottomNav.tsx: 하단 내비가 키보드 동안 안 접힌다(kbd-collapse 없음)')
+  if (/\bkbd-collapse\b/.test(readFileSync('components/ErrorReportButton.tsx', 'utf8'))) violations.push('components/ErrorReportButton.tsx: 오류신고 버튼을 키보드 동안 접는다')
+}
+
 console.log(`[키보드 접힘 옵트인] 켠 곳 ${found}개 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')

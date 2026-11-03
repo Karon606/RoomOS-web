@@ -98,11 +98,14 @@ export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?:
     : navItems.findIndex(i => i.href === pathname)
 
   return (
-    /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
+    /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치.
+       키보드가 선 동안은 접는다(kbd-collapse, 2026-11-03 키보드 칸 이동 튐 패널 결정 2, 가이드 §19). iOS 는 키보드가 서도
+       layout viewport 를 안 줄여 fixed bottom 인 이 탭 바가 보이는 띠 한가운데에 떠서 입력 칸을 가렸다. 표식(data-kbd-open)은
+       가드가 키보드가 서고 내리는 순간에만 바꾸고 팬·칸 이동 중에는 안 바꾸므로 깜빡이지 않는다. 오류신고 버튼은 접지 않는다. */
     <nav
       data-peek-hide
       data-bottom-nav
-      className="fixed bottom-0 left-0 right-0 z-[var(--z-sticky)] md:hidden flex safe-b"
+      className="kbd-collapse fixed bottom-0 left-0 right-0 z-[var(--z-sticky)] md:hidden flex safe-b"
       style={{ background: 'var(--cream)', borderTop: '1px solid var(--warm-border)' }}
     >
       {activeIdx >= 0 && (

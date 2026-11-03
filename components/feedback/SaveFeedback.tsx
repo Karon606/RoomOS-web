@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { subscribePending, subscribeToast, type Toast, type ToastKind } from '@/lib/saveStatus'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 type Live = Toast & { count: number }
 
@@ -33,6 +34,10 @@ export default function SaveFeedback() {
   const [toasts, setToasts] = useState<Live[]>([])
   // 타이머 관리 — hover 일시정지(v2.0 §15)를 위해 잔여 시간 추적
   const timers = useRef<Map<number, { handle: ReturnType<typeof setTimeout>; expiresAt: number; remaining: number }>>(new Map())
+  // 키보드가 선 동안 토스트는 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03). 그 자리(--vv-bottom)는 정본 훅이
+  // 스택 상자에 적는다. 토스트가 떠 있을 때만 구독한다.
+  const stackRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: toasts.length > 0, overlayRef: stackRef })
 
   const remove = (id: number) => {
     const t = timers.current.get(id)
@@ -107,10 +112,11 @@ export default function SaveFeedback() {
       )}
 
       {/* 토스트 스택 — 하단 중앙, 신규가 아래 (v2.0 §15·11.5. 정중앙 폐지 — 콘텐츠·마우스 동선 가림) */}
-      <div className="fixed left-1/2 z-[var(--z-toast)] flex flex-col items-center pointer-events-none"
+      <div ref={stackRef} className="toast-floor kbd-float fixed left-1/2 z-[var(--z-toast)] flex flex-col items-center pointer-events-none"
         style={{
           transform: 'translateX(-50%)',
-          bottom: 'calc(var(--toast-offset-bottom) + env(safe-area-inset-bottom))',
+          // 키보드가 선 동안의 간격(.kbd-float). 내비 없는 정본 토스트 바닥 24px(§15)과 같다.
+          ['--kbd-float-gap' as string]: '24px',
           gap: 'var(--toast-gap)',
           maxWidth: 'min(var(--toast-w-max), calc(100vw - 32px))',
           width: 'max-content',

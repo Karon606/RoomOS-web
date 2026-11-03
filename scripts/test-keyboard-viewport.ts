@@ -9,6 +9,7 @@ import {
   type KbdSnapshot, type SettleSample,
 } from '../lib/keyboardViewport'
 import { readKbdSnapshot, frameBoxRect } from '../lib/viewportFrame'
+import { phantomKeyboardGap } from '../lib/modalViewport'
 
 let pass = 0
 const fails: string[] = []
@@ -304,6 +305,35 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   const still = run([S(B0), S(B0), S(B0)])
   const d2 = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: still.at.fieldTop, fieldBottom: still.at.fieldBottom, aligned: false })
   eq('팬 없는 칸 이동 · 세 표본 뒤 목표선까지 한 번', [still.verdict, Math.round(B0 - d2)], ['go', Math.round(target)])
+}
+
+// ── 하단 내비 접힘 표식(2026-11-03, 키보드 칸 이동 튐 패널 결정 2) ─────────────────────────
+// BottomNav 는 html[data-kbd-open] 으로 접힌다. 표식은 가드가 vv resize(와 복귀 재동기)에서만 쓰고, 그 값은
+// keyboardOpen(s) && !phantomKeyboardGap(...) 이다(가드의 `if (!keyboardOpen(s) || phantom)` 의 부정). vv scroll·
+// window resize 팬은 표식을 안 쓴다(check-kbd-canonical 11). 여기서는 그 식이 팬·칸 이동 동안 한 번도 안 뒤집히고
+// 열림·닫힘 순간에만 바뀌는지 본다. 깜빡임이 곧 '내비가 보였다 사라졌다'다.
+{
+  const stampOf = (s: KbdSnapshot, editing: boolean) =>
+    keyboardOpen(s) && !phantomKeyboardGap({ height: s.vvHeight, frameH: s.frameH, scale: s.scale, editing })
+  const openAt = (top: number): KbdSnapshot => ({ frameH: IPH, frameTop: -top, vvHeight: KB_VV, offsetTop: top, scale: 1 })
+  const shut: KbdSnapshot = { frameH: IPH, frameTop: 0, vvHeight: IPH, offsetTop: 0, scale: 1 }
+  // 한 세션. 닫힘, 키보드 섬, 팬(b) 여러 프레임, (c) 상태, 위아래 화살표로 칸 이동 넷(포커스는 늘 칸), 내려감 차례다.
+  const seq: [string, KbdSnapshot, boolean][] = [
+    ['닫힘', shut, false],
+    ['키보드 섬', openAt(0), true],
+    ...[17, 60, 120, 190, 250, 336].map(t => [`팬 ${t}`, openAt(t), true] as [string, KbdSnapshot, boolean]),
+    ['(c) 상태', STATES[2].s, true],
+    ...[0, 1, 2, 3].map(i => [`화살표 칸 이동 ${i + 1}`, openAt(40 * i), true] as [string, KbdSnapshot, boolean]),
+    ['내려감', shut, false],
+  ]
+  const stamps = seq.map(([, s, e]) => stampOf(s, e))
+  const flips = stamps.filter((v, i) => i > 0 && v !== stamps[i - 1]).length
+  eq('내비 표식 · 서는 순간과 내리는 순간 두 번만 바뀐다(팬·칸 이동 중 깜빡임 없음)', flips, 2)
+  eq('내비 표식 · 키보드가 선 동안 내내 접힘', stamps.slice(1, -1).every(Boolean), true)
+  eq('내비 표식 · 닫힘이면 펼침', [stamps[0], stamps[stamps.length - 1]], [false, false])
+  eq('내비 표식 · 칸 없는 키보드 높이(유령)면 접지 않는다', stampOf(openAt(0), false), false)
+  eq('내비 표식 · 핀치 줌이면 접지 않는다', stampOf({ frameH: IPH, frameTop: 0, vvHeight: 600, offsetTop: 40, scale: 1.4 }, true), false)
+  eq('내비 표식 · 외장 키보드 단축바(55 가림)면 접지 않는다', stampOf({ frameH: IPH, frameTop: 0, vvHeight: IPH - 55, offsetTop: 0, scale: 1 }, true), false)
 }
 
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).
