@@ -1825,11 +1825,14 @@ export default function RoomManageClient({
               {addPhotoPreviews.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {addPhotoPreviews.map((p, i) => (
-                    <div key={p.previewUrl} className="relative group aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
+                    <div key={p.previewUrl} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
+                      {/* 삭제는 상시 노출, 누르는 자리 44px · 보이는 원 24px(§09, 오류신고 창과 한 문법). 종전 hover 에만 보이던 20px 원은 터치 기기에서 안 보였다. */}
                       <button type="button" onClick={() => removeAddPhoto(i)} aria-label="사진 삭제"
-                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                        className="absolute top-0 right-0 w-11 h-11 flex items-start justify-end p-1 text-[var(--on-solid)]">
+                        <span className="w-6 h-6 bg-black/70 rounded-full flex items-center justify-center">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                        </span>
                       </button>
                     </div>
                   ))}
@@ -2067,9 +2070,12 @@ export default function RoomManageClient({
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a15 15 0 0 1-3.3 3.9M6.1 6.1A15 15 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 4-.9M3 3l18 18"/></svg>
                         )}
                       </button>
+                      {/* 삭제는 누르는 자리 44px · 보이는 원 24px(§09, 오류신고 창·호실 추가 미리보기와 한 문법). 종전 24px 원 그대로가 누르는 자리였다. */}
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)} aria-label="사진 삭제"
-                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-white transition-colors flex items-center justify-center">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                        className="group/del absolute top-0 right-0 w-11 h-11 flex items-start justify-end p-1 text-[var(--on-solid)]">
+                        <span className="w-6 h-6 bg-black/70 group-hover/del:bg-[var(--danger-solid)]/80 rounded-full transition-colors flex items-center justify-center">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                        </span>
                       </button>
                     </div>
                     )

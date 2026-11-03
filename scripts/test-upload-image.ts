@@ -14,6 +14,7 @@ import {
   fileToUploadPhoto, UPLOAD_PHOTO_MAX_EDGE, UPLOAD_PHOTO_QUALITY, withPhotoType, isUploadablePhoto, PHOTO_TYPE_FAIL,
 } from '../lib/uploadImage'
 import { pinPickedFile, PICK_READ_FAIL } from '../lib/pickedFile'
+import { drivePutTimeoutMs, DRIVE_PUT_TIMEOUT_MS } from '../lib/driveUpload'
 import { PDFDocument } from 'pdf-lib'
 
 let pass = 0
@@ -161,6 +162,12 @@ async function pinPins() {
   eq('읽기 실패는 다시 고르라는 말로', threw, PICK_READ_FAIL)
   eq('읽기 실패 안내는 한국어', /[가-힣]/.test(PICK_READ_FAIL), true)
 }
+
+// ── PUT 상한(lib/driveUpload) ────────────────────────────────────────
+// 망이 멈추면 XHR 이 끝나지 않아 '올리는 중' 이 영원히 돈다. 바닥 60초, 큰 파일은 100KB 마다 1초.
+eq('PUT 상한 바닥 60초', [DRIVE_PUT_TIMEOUT_MS, drivePutTimeoutMs(500_000)], [60_000, 60_000])
+eq('10MB 는 105초', drivePutTimeoutMs(10 * 1024 * 1024), 105_000)
+eq('스캔 계약서 25MB 는 263초', drivePutTimeoutMs(25 * 1024 * 1024), 263_000)
 
 void (async () => {
   await photoPins()

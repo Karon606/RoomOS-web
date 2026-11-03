@@ -6,13 +6,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { submitErrorReport, createErrorReportImageSession } from '@/app/(app)/errorReports'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { pinPickedFile, PICK_READ_FAIL } from '@/lib/pickedFile'
+import { fileToUploadPhoto, isUploadablePhoto, PHOTO_TYPE_FAIL } from '@/lib/uploadImage'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
 import { viewportProbe, probeAfterEntrance, probeReport, sentinelRect } from '@/lib/viewportProbe'
 import { kbdTraceFreeze, kbdTraceTable, REPORT_NOTE_MAX, type KbdTraceFrozen } from '@/lib/kbdTrace'
 import { readPadTrace, padTraceText } from '@/lib/signPadTrace'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 
 const STORAGE_KEY = 'errorReportBtnPos'
 const BTN_SIZE = 48          // w-12 h-12
@@ -20,16 +22,59 @@ const EDGE = 8               // 화면 가장자리 최소 여백
 const LONG_PRESS_MS = 350    // 이 시간 이상 누르면 '이동 모드'
 const MOVE_CANCEL = 8        // 이동 모드 진입 전 이만큼 움직이면(스크롤 등) 취소
 const MAX_IMAGES = 3         // 첨부 사진 최대 장수
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024   // 장당 10MB
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024   // 장당 10MB(줄인 뒤 크기로 잰다)
+const FAIL_LINE_MAX = 300                  // 실패 원인 한 줄 상한(Drive 응답 본문이 길다)
+
+// 첨부 사진 한 장. file 은 고르는 순간 만든 메모리 사본을 줄인 것이다(정본 lib/pickedFile, lib/uploadImage).
+// 업로드가 실패해도 신고창은 닫지 않고 글·사진을 그대로 둔다. 실패 기록(fails)은 [사진 첨부] 블록으로 신고에 실린다.
+type Shot = {
+  id: string
+  file: File
+  url: string
+  pickedAt: number
+  orig: { type: string; size: number; ext: string }
+  converted: boolean
+  status: 'ready' | 'uploading' | 'done' | 'failed'
+  fileId?: string
+  fails: string[]
+}
+
+const kb = (n: number) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`
+const extOf = (name: string) => (/\.([^.\\/]+)$/.exec(name)?.[1] ?? '').toLowerCase()
+
+/**
+ * [사진 첨부] 계측 블록(2026-11-03, 신고 4·7). 실패가 하나라도 있었을 때만 싣는다.
+ * 한 장에 한 줄(결과 · 보낸 형식·크기·확장자 · 원본 · 고른 뒤 초)과 실패마다 단계(session|put)와 원인 한 줄.
+ * 값만 담고 사진 내용은 담지 않는다.
+ */
+function shotsReport(shots: readonly Shot[], dropped: readonly Shot[], now: number): string {
+  const all = [...shots.map(s => ({ s, dropped: false })), ...dropped.map(s => ({ s, dropped: true }))]
+  if (!all.some(({ s }) => s.fails.length > 0)) return ''
+  return all.map(({ s, dropped: d }, i) => {
+    const head = `${i + 1}. ${d ? '뺌' : s.status === 'done' ? '올림' : '못 올림'} ${s.file.type || '(형식 없음)'} ${kb(s.file.size)} .${extOf(s.file.name) || '?'}` +
+      ` (원본 ${s.orig.type || '(형식 없음)'} ${kb(s.orig.size)} .${s.orig.ext || '?'}${s.converted ? ', 줄임' : ''}) 고른 뒤 ${Math.round((now - s.pickedAt) / 1000)}초`
+    return [head, ...s.fails.map(f => `   실패 ${f}`)].join('\n')
+  }).join('\n')
+}
 
 export default function ErrorReportButton() {
   const [open, setOpen] = useState(false)
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
-  // 첨부 사진 — 업로드는 '신고 보내기' 시점에 수행(선택 시점 업로드는 취소 시 고아 파일이 남는다)
-  const [images, setImages] = useState<{ file: File; url: string }[]>([])
+  // 첨부 사진. 업로드는 '신고 보내기' 시점에 수행(선택 시점 업로드는 취소 시 고아 파일이 남는다).
+  // 바이트는 고르는 순간 메모리로 옮겨 둔다. 안드로이드 File 은 사진 앱 손잡이라 보낼 때 읽으면 깨졌다(신고 4·7).
+  const [images, setImages] = useState<Shot[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const imagesRef = useRef<{ file: File; url: string }[]>([])
+  const imagesRef = useRef<Shot[]>([])
+  const droppedRef = useRef<Shot[]>([])        // 실패 기록을 남긴 채 뺀 사진(계측 블록에만 쓴다)
+  const [preparing, setPreparing] = useState(false)
+  const [pickNote, setPickNote] = useState('')  // 그 자리 안내(읽기 실패는 다시 고르라고)
+  const [progress, setProgress] = useState<{ cur: number; total: number } | null>(null)
+  // 실패 발끝 틀을 세웠는가. 다시 올리거나 빼고 보내는 동안에도 내리지 않는다(발끝 모양이 오가며 창이 뛰지 않게,
+  // 독립 디자이너 검수). 장수는 이 값이 아니라 그때그때 images 에서 센다(failedCount).
+  const [failFrame, setFailFrame] = useState(false)
+  // 열기·닫기마다 올린다. 업로드 도중 닫았거나 다시 열었으면 그 차례의 신고는 저장하지 않는다.
+  const genRef = useRef(0)
   const [snapshot, setSnapshot] = useState<{ url: string; err: string | null; crumbs: { t: string; type: string; detail: string }[] }>({ url: '', err: null, crumbs: [] })
 
   // 이동(드래그) 상태 — pos=null 이면 기본 위치(우하단). 저장된 위치 있으면 그 좌표 사용.
@@ -151,70 +196,146 @@ export default function ErrorReportButton() {
     })
     setNote('')
     clearImages()
+    genRef.current++
     setOpen(true)
   }
 
-  const clearImages = () => setImages(prev => { prev.forEach(im => URL.revokeObjectURL(im.url)); return [] })
+  const clearImages = () => {
+    droppedRef.current = []
+    setPickNote('')
+    setFailFrame(false)
+    setImages(prev => { prev.forEach(im => URL.revokeObjectURL(im.url)); return [] })
+  }
 
-  const closeModal = () => { clearImages(); setOpen(false) }
+  // 닫으면 진행 상태도 비운다. 도중에 닫은 업로드는 gen 이 달라 결과를 버리고, 그 finally 는 새 창의 상태를 건드리지 않는다.
+  const closeModal = () => { genRef.current++; clearImages(); setPending(false); setProgress(null); setOpen(false) }
 
-  const onPickImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 고르는 그 순간 메모리 사본(정본 lib/pickedFile)을 만들고 줄여 둔다(lib/uploadImage fileToUploadPhoto, 긴 변 2048 · 0.85).
+  // 읽기가 깨지면 그 자리에서 다시 고르라고 말한다. 보낼 때까지 미루면 이미 쓴 글과 함께 할 일이 늘어난다.
+  const onPickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? [])
     e.target.value = ''   // 같은 파일 재선택도 change 가 발생하도록
     if (picked.length === 0) return
-    const added: { file: File; url: string }[] = []
-    let overSize = 0
-    let overCount = false
-    for (const f of picked) {
-      if (images.length + added.length >= MAX_IMAGES) { overCount = true; break }
-      if (f.size > MAX_IMAGE_BYTES) { overSize++; continue }
-      added.push({ file: f, url: URL.createObjectURL(f) })
-    }
-    if (added.length > 0) setImages(prev => [...prev, ...added])
-    if (overSize > 0) pushToast('info', `사진 ${overSize}장은 10MB를 넘어 제외했어요.`)
-    if (overCount) pushToast('info', `사진은 최대 ${MAX_IMAGES}장까지 첨부할 수 있어요.`)
+    const gen = genRef.current
+    setPickNote('')
+    setPreparing(true)
+    try {
+      const added: Shot[] = []
+      let overSize = 0
+      let overCount = false
+      let unreadable = 0
+      let unsupported = 0
+      for (const f of picked) {
+        if (imagesRef.current.length + added.length >= MAX_IMAGES) { overCount = true; break }
+        let pinned: File
+        try { pinned = await pinPickedFile(f) } catch { unreadable++; continue }
+        const { file, converted } = await fileToUploadPhoto(pinned)
+        // 형식이 비면 확장자로 채운 뒤에도 이미지가 아니면 고르는 자리에서 거절한다(서버의 이미지 형식 문에서 걸릴 파일).
+        if (!isUploadablePhoto(file)) { unsupported++; continue }
+        if (file.size > MAX_IMAGE_BYTES) { overSize++; continue }
+        added.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          file, url: URL.createObjectURL(file), pickedAt: Date.now(),
+          orig: { type: f.type, size: pinned.size, ext: extOf(f.name) },
+          converted, status: 'ready', fails: [],
+        })
+      }
+      // 고르는 사이 창을 닫았으면 담지 않는다(닫힌 창에 사진이 남는다).
+      if (gen !== genRef.current) { added.forEach(a => URL.revokeObjectURL(a.url)); return }
+      if (added.length > 0) setImages(prev => [...prev, ...added])
+      setPickNote([
+        unreadable > 0 ? (unreadable === 1 ? PICK_READ_FAIL : `사진 ${unreadable}장을 읽지 못했어요. 다시 골라 주세요.`) : '',
+        unsupported > 0 ? PHOTO_TYPE_FAIL : '',
+      ].filter(Boolean).join(' '))
+      if (overSize > 0) pushToast('info', `사진 ${overSize}장은 10MB를 넘어 제외했어요.`)
+      if (overCount) pushToast('info', `사진은 최대 ${MAX_IMAGES}장까지 첨부할 수 있어요.`)
+    } finally { setPreparing(false) }
   }
 
-  const removeImage = (idx: number) => setImages(prev => {
-    const target = prev[idx]
-    if (target) URL.revokeObjectURL(target.url)
-    return prev.filter((_, i) => i !== idx)
+  const removeImage = (id: string) => setImages(prev => {
+    const target = prev.find(im => im.id === id)
+    if (target) {
+      URL.revokeObjectURL(target.url)
+      // 실패 기록이 있는 사진은 빼도 계측에는 남긴다(왜 못 올렸는지가 이 신고의 증거일 수 있다).
+      if (target.fails.length > 0) droppedRef.current = [...droppedRef.current, target]
+    }
+    return prev.filter(im => im.id !== id)
   })
 
-  const submit = async () => {
+  // 한 장 올리기. 세션 또는 PUT 이 깨지면 한 번 더 시도한다(새 세션부터, 끊긴 세션 주소는 다시 못 쓴다).
+  // 실패마다 단계와 원인을 남긴다. 종전에는 catch 가 원인을 버려 신고 4·7 이 '몇 장 실패' 말고는 아무것도 남기지 못했다.
+  const uploadShot = async (im: Shot): Promise<{ id: string } | { fails: string[] }> => {
+    const fails: string[] = []
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let stage: 'session' | 'put' = 'session'
+      try {
+        const session = await createErrorReportImageSession({
+          fileName: im.file.name,
+          mimeType: im.file.type || 'application/octet-stream',
+          fileSize: im.file.size,
+          origin: window.location.origin,
+        })
+        if (!session.ok) { fails.push(`session ${session.error}`.slice(0, FAIL_LINE_MAX)); continue }
+        stage = 'put'
+        return { id: await uploadFileToDriveSession(session.uploadUrl, im.file) }
+      } catch (err) {
+        fails.push(`${stage} ${(err as Error)?.message ?? String(err)}`.slice(0, FAIL_LINE_MAX))
+      }
+    }
+    return { fails }
+  }
+
+  // 보내기. 사진이 전부 올라가거나(또는 실패한 사진을 빼고 보내기로 했을 때)만 신고를 저장한다.
+  // 실패하면 창을 닫지 않고 글·사진을 그대로 둔 채 [사진 다시 올리기]·[사진 빼고 보내기] 를 세운다.
+  // 사진 일부만 붙은 신고가 먼저 저장되고 다시 보내면 같은 신고가 둘이 되던 길을 막는다.
+  const submit = async (dropFailed = false) => {
+    if (pending) return
+    const gen = genRef.current
     setPending(true)
     // 화면 기하는 **첫 await 전에** 잰다. 사진 업로드는 초 단위라 그 사이 키보드가 닫히면
     // 정작 알고 싶은 그 순간의 기하가 아니라 업로드가 끝난 뒤의 기하가 담긴다.
     // 열었을 때의 스냅샷과 나란히 적는다 — 둘이 다르면 정본 probeReport 가 달라진 줄을 짚는다.
     const probe = probeReport(openedProbeRef.current, viewportProbe())
-    // 키보드 세션 표는 계측 덩이 맨 끝에 붙는다. 서버가 메모를 REPORT_NOTE_MAX 에서 자르므로 메모·
-    // 계측이 쓰고 남은 자리만큼만 싣는다(넘치면 정본이 판정이 그대로인 줄부터 덜어낸다).
     // 서명 패드 계측(신고 c6eb427d). 이 탭에서 최근 6시간 안에 연 패드 세션의 수만 담는다(좌표·이미지 없음, lib/signPadTrace 머리말).
     // 대면 서명은 계약서 화면(앱 셸 밖이라 신고 버튼이 없다)에서 받고, 돌아와 입주자 화면에서 신고하므로 탭 저장소로 넘긴다.
     const padText = padTraceText(readPadTrace(), Date.now())
     const pad = padText ? `[서명 패드]\n${padText}` : ''
-    const trace = probe ? kbdTraceTable(traceRef.current, REPORT_NOTE_MAX - note.trim().length - probe.length - pad.length - 18) : ''
     try {
-      // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
-      const imageFileIds: string[] = []
-      let failedImages = 0
-      for (const im of images) {
-        try {
-          const session = await createErrorReportImageSession({
-            fileName: im.file.name,
-            mimeType: im.file.type || 'application/octet-stream',
-            fileSize: im.file.size,
-            origin: window.location.origin,
-          })
-          if (!session.ok) { failedImages++; continue }
-          imageFileIds.push(await uploadFileToDriveSession(session.uploadUrl, im.file))
-        } catch { failedImages++ }
+      // 빼고 보내기면 실패한 사진을 내려놓되 실패 기록은 계측에 남긴다.
+      let shots = imagesRef.current.map(im => ({ ...im }))
+      if (dropFailed) {
+        const out = shots.filter(im => im.status === 'failed')
+        out.forEach(im => URL.revokeObjectURL(im.url))
+        droppedRef.current = [...droppedRef.current, ...out]
+        shots = shots.filter(im => im.status !== 'failed')
+        setImages(shots)
       }
+      const todo = shots.filter(im => im.status !== 'done')
+      for (const [i, im] of todo.entries()) {
+        setProgress({ cur: i + 1, total: todo.length })
+        im.status = 'uploading'
+        setImages(shots.map(x => ({ ...x })))
+        const r = await uploadShot(im)
+        if (gen !== genRef.current) return
+        if ('id' in r) { im.status = 'done'; im.fileId = r.id }
+        else { im.status = 'failed'; im.fails = [...im.fails, ...r.fails].slice(-4) }
+        setImages(shots.map(x => ({ ...x })))
+      }
+      setProgress(null)
+      const failedNow = shots.filter(im => im.status === 'failed').length
+      if (failedNow > 0) { setFailFrame(true); return }   // 창은 그대로, 발끝이 다시 올리기·빼고 보내기로 바뀐다
 
       // 계측을 메모 **뒤에** 덧붙인다(2026-09-08). 운영자가 읽는 문장이 먼저고 계측은 뒤다 —
       // 메모가 길어 서버에서 잘리더라도 밀려나는 것은 계측 쪽이다.
       // 담는 것과 안 담는 것(개인정보 경계)은 lib/viewportProbe 머리말에 있다. 값은 안 담는다.
-      const noteWithProbe = [note.trim(), probe && `[화면 계측]\n${[probe, trace].filter(Boolean).join('\n')}`, pad].filter(Boolean).join('\n\n')
+      // [사진 첨부] 는 메모 바로 뒤다(이 신고 클래스의 증거라 화면 계측보다 앞에 둔다).
+      const photo = shotsReport(shots, droppedRef.current, Date.now())
+      const photoBlock = photo ? `[사진 첨부]\n${photo}` : ''
+      // 키보드 세션 표는 계측 덩이 맨 끝에 붙는다. 서버가 메모를 REPORT_NOTE_MAX 에서 자르므로 메모·
+      // 계측이 쓰고 남은 자리만큼만 싣는다(넘치면 정본이 판정이 그대로인 줄부터 덜어낸다).
+      const trace = probe ? kbdTraceTable(traceRef.current, REPORT_NOTE_MAX - note.trim().length - probe.length - pad.length - photoBlock.length - 20) : ''
+      const noteWithProbe = [note.trim(), photoBlock, probe && `[화면 계측]\n${[probe, trace].filter(Boolean).join('\n')}`, pad].filter(Boolean).join('\n\n')
+      const imageFileIds = shots.flatMap(im => im.fileId ? [im.fileId] : [])
 
       const res = await submitErrorReport({
         url: snapshot.url,
@@ -224,14 +345,25 @@ export default function ErrorReportButton() {
         userNote: noteWithProbe || undefined,
         imageFileIds: imageFileIds.length > 0 ? imageFileIds : undefined,
       })
+      if (gen !== genRef.current) return
       if (res.ok) {
         pushToast('success', '신고가 접수되었습니다. 확인 후 처리할게요.')
-        if (failedImages > 0) pushToast('info', `사진 ${failedImages}장은 업로드하지 못했어요.`)
         closeModal()
       }
-      else pushToast('error', res.error)
-    } finally { setPending(false) }
+      else { setFailFrame(false); pushToast('error', res.error) }
+    } catch (err) {
+      // 서버 액션이 망 오류로 던져도 글과 사진은 그대로 두고 알린다(올린 사진은 done 이라 다시 보내도 안 올린다).
+      if (gen === genRef.current) pushToast('error', humanError(err, '신고를 보내지 못했어요. 잠시 뒤 다시 보내 주세요.'))
+    } finally {
+      // 도중에 닫았거나 다시 열었으면 새 창의 상태를 건드리지 않는다(closeModal 이 이미 비웠다).
+      if (gen === genRef.current) { setPending(false); setProgress(null) }
+    }
   }
+
+  const failedCount = images.filter(im => im.status === 'failed').length
+  // 진행 라벨은 짧게 둔다. 기본 발끝은 형제 모달처럼 나란히라 320px 에서 버튼 글자 자리가 87px 남짓이다.
+  // 실측(320px, 버튼 119px): '올리는 중… 1/3'·'올리는 중… (1/3)' 은 두 줄(62px)로 접히고 '올리는 중 1/3' 만 한 줄(44px)이다.
+  const sendLabel = progress ? `올리는 중 ${progress.cur}/${progress.total}` : pending ? '신고 중…' : '신고 보내기'
 
   return (
     <>
@@ -266,7 +398,29 @@ export default function ErrorReportButton() {
       </button>
 
       <Modal open={open} onClose={closeModal} title="오류·개선 신고" subtitle="문제도, 개선 아이디어도 좋아요."
-        z={380} dirty={!!note.trim() || images.length > 0}>   {/* 프리즘(z 320) 등 어떤 화면 위에서도 최상단(신고 e781fcdf) + 작성 중 보호 */}
+        z={380} dirty={!!note.trim() || images.length > 0}   /* 프리즘(z 320) 등 어떤 화면 위에서도 최상단(신고 e781fcdf) + 작성 중 보호 */
+        // 취소·보내기는 발끝(§13 푸터 취소 좌·확인 우)이다. 키보드가 떠도 접지 않는다(푸터 접힘 옵트인을 켜지 않는다).
+        // 보내기가 이 창의 저장 버튼이라 글을 쓰는 동안에도 보여야 한다(§27.1).
+        // 실패 발끝만 400px 미만에서 위아래로 선다(주 동작이 위). '사진 빼고 보내기' 가 320px 에서 두 줄로 접혔다(스크린샷 확인).
+        // 다시 올리거나 빼고 보내는 동안에도 실패 발끝 틀을 지키고, 실패 장수가 0 이 되면 안내 줄은 자리만 지킨다.
+        footer={failFrame ? (
+          <div className="space-y-2">
+            <p role="alert" className={`text-xs text-[var(--danger-fg)] break-keep${failedCount === 0 ? ' invisible' : ''}`}>
+              사진 {failedCount}장을 올리지 못했어요. 다시 올리거나 빼고 보내 주세요.
+            </p>
+            <div className="flex flex-col-reverse gap-2 min-[400px]:flex-row">
+              <Btn type="button" variant="secondary" onClick={() => void submit(true)} disabled={pending || preparing} fullWidth>사진 빼고 보내기</Btn>
+              <Btn type="button" variant="primary" onClick={() => void submit()} disabled={pending || preparing} fullWidth>{pending ? sendLabel : '사진 다시 올리기'}</Btn>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Btn type="button" variant="secondary" onClick={closeModal} disabled={pending} fullWidth>취소</Btn>
+            <Btn type="button" variant="primary" onClick={() => void submit()} disabled={pending || preparing} fullWidth>
+              {sendLabel}
+            </Btn>
+          </div>
+        )}>
         <div className="space-y-3">
           <p className="text-xs text-[var(--warm-muted)]">
             현재 화면과 직전 동작 자취가 자동으로 함께 전송됩니다. 어떤 동작에서 문제가 생겼는지 적어주시면 더 빨리 고칠 수 있어요.
@@ -290,27 +444,44 @@ export default function ErrorReportButton() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-[var(--warm-mid)]">사진 첨부 (선택)</span>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs text-[var(--tc-text)]">
-                + 사진 선택
+              {/* 누르는 자리 44px(§09). 글자 크기는 그대로 두고 높이와 좌우 여백만 넓힌다. */}
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={preparing || pending}
+                className="-mr-2 inline-flex min-h-11 items-center px-2 text-xs text-[var(--tc-text)] disabled:opacity-50">
+                {preparing ? '사진 준비 중…' : '+ 사진 선택'}
               </button>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={onPickImages} className="hidden" />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={e => void onPickImages(e)} className="hidden" />
+            {pickNote && <p role="alert" className="text-xs text-[var(--danger-fg)] break-keep">{pickNote}</p>}
             {images.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
-                {images.map((im, i) => (
-                  <div key={im.url} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
+                {images.map(im => (
+                  <div key={im.id} className={`relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]${im.status === 'failed' ? ' outline-2 -outline-offset-2 outline-[var(--danger-solid)]' : ''}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={im.url} alt="" className="w-full h-full object-cover" />
-                    {/* 모바일 사용이 많아 삭제 버튼은 상시 노출(hover 로 숨기지 않음) */}
+                    {/* 올리는 중은 덮개 스피너만(퍼센트 막대 없음). 진행 장수는 보내기 버튼이 말한다. */}
+                    {im.status === 'uploading' && (
+                      <div className="absolute inset-0 grid place-items-center bg-black/40" aria-hidden="true">
+                        <svg className="animate-spin [animation-duration:0.8s]" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                          stroke="var(--on-solid)" strokeWidth="2.5" strokeLinecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+                      </div>
+                    )}
+                    {/* 실패 테두리는 안쪽 outline(본문 정렬선을 넘지 않는다)이고 아래 띠와 같은 --danger-solid 다(다크에서 두 빨강이 갈리지 않게). */}
+                    {im.status === 'failed' && (
+                      <span className="absolute inset-x-0 bottom-0 bg-[var(--danger-solid)] py-0.5 text-center text-[0.6875rem] font-medium text-[var(--on-solid)]">올리지 못함</span>
+                    )}
+                    {/* 모바일 사용이 많아 삭제 버튼은 상시 노출(hover 로 숨기지 않음). 누르는 자리는 44px(§09), 보이는 원은 24px. */}
                     <button
                       type="button"
-                      onClick={() => removeImage(i)}
+                      onClick={() => removeImage(im.id)}
+                      disabled={pending}
                       aria-label="사진 삭제"
-                      className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white flex items-center justify-center"
+                      className="absolute top-0 right-0 w-11 h-11 flex items-start justify-end p-1 text-[var(--on-solid)] disabled:opacity-50"
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M18 6 6 18M6 6l12 12" />
-                      </svg>
+                      <span className="w-6 h-6 bg-black/70 rounded-full flex items-center justify-center">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 ))}
@@ -332,13 +503,6 @@ export default function ErrorReportButton() {
               </ul>
             </div>
           </details>
-
-          <div className="flex gap-2 pt-1">
-            <Btn type="button" variant="secondary" onClick={closeModal} fullWidth>취소</Btn>
-            <Btn type="button" variant="primary" onClick={submit} disabled={pending} fullWidth>
-              {pending ? '신고 중…' : '신고 보내기'}
-            </Btn>
-          </div>
         </div>
       </Modal>
     </>

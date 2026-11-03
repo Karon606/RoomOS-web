@@ -152,8 +152,11 @@ export default function PropertyPhotosManager({ onClose }: { onClose: () => void
                             className={`absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${shown ? 'bg-[var(--coral)]/85 text-[var(--on-solid)]' : 'bg-black/60 text-white/80'}`}>
                             {shown ? <EyeIcon /> : <EyeOffIcon />}
                           </button>
+                          {/* 삭제는 누르는 자리 44px · 보이는 원 24px(§09, 오류신고 창·호실 사진과 한 문법). */}
                           <button type="button" onClick={() => removePhoto(cat.id, photo.id)} aria-label="사진 삭제"
-                            className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-white transition-colors flex items-center justify-center"><XIcon /></button>
+                            className="group/del absolute top-0 right-0 w-11 h-11 flex items-start justify-end p-1 text-[var(--on-solid)]">
+                            <span className="w-6 h-6 bg-black/70 group-hover/del:bg-[var(--danger-solid)]/80 rounded-full transition-colors flex items-center justify-center"><XIcon /></span>
+                          </button>
                         </div>
                       )
                     })}

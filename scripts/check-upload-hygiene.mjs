@@ -241,6 +241,7 @@ for (const file of ['lib/residenceCertOverlay.ts', 'lib/rentReceiptPdf.ts']) {
 //    신고창(글을 쓰고 보낸다)·호실 추가(폼을 채우고 저장한다)·도장·로고(세션을 받은 뒤 PUT)가 그 모양이다.
 {
   const PIN_SITES = [
+    ['components/ErrorReportButton.tsx', 'const onPickImages = async'],
     ['app/(app)/room-manage/RoomManageClient.tsx', 'const handleAddPhotoSelect = async'],
     ['app/(app)/settings/SettingsForm.tsx', 'const handleStampSelect = async'],
     ['app/(app)/settings/SettingsForm.tsx', 'const handleLogoSelect = async'],
