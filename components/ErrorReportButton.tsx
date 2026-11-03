@@ -15,6 +15,7 @@ import { readPadTrace, padTraceText } from '@/lib/signPadTrace'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast, humanError } from '@/lib/saveStatus'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 const STORAGE_KEY = 'errorReportBtnPos'
 const BTN_SIZE = 48          // w-12 h-12
@@ -81,6 +82,11 @@ export default function ErrorReportButton() {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [grabbing, setGrabbing] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
+  // 기본 자리(끌어 옮기지 않은 우하단)는 키보드가 선 동안 **셸 화면에서만** 보이는 띠 아래 끝 위에 앉는다(2026-11-03 가이드 §19).
+  // 모달·시트가 열려 있으면 종전처럼 키보드 뒤에 둔다. 띠 위로 오르면 발끝 주 버튼을 덮는다(독립 검수 29x40px).
+  // 판정은 루트 표식 둘(data-kbd-open, data-overlay-open)을 CSS 한 곳(.report-floor)이 읽는다. 그 자리(--vv-bottom)는 정본 훅이 적는다.
+  // 끌어 옮긴 자리는 사용자가 고른 좌표라 그대로 둔다(훅도 안 돈다).
+  useVisibleBand({ active: pos == null, overlayRef: btnRef, floating: true })
   const draggingRef = useRef(false)        // 이동 모드 진입 여부
   const movedRef = useRef(false)           // 실제로 옮겼는지
   const suppressClickRef = useRef(false)   // 이동 직후 뒤따르는 click(모달 열기) 억제
@@ -379,7 +385,7 @@ export default function ErrorReportButton() {
         onContextMenu={e => e.preventDefault()}
         aria-label="오류·개선 신고 (길게 눌러 위치 이동)"
         title="오류·개선 신고. 길게 눌러 끌면 위치를 옮길 수 있어요"
-        className={`fixed z-[var(--z-report)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'right-4'}`}
+        className={`fixed z-[var(--z-report)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'right-4 report-floor'}`}
         style={{
           background: 'var(--coral)',
           color: 'var(--on-solid)',
@@ -387,8 +393,9 @@ export default function ErrorReportButton() {
           userSelect: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
-          // 기본 위치 — 토스트와 같은 회피 계산식(모바일 4.5rem = 하단 내비 위, 데스크톱 24px)
-          ...(pos ? { left: pos.x, top: pos.y } : { bottom: 'calc(var(--toast-offset-bottom, 24px) + env(safe-area-inset-bottom))' }),
+          // 기본 위치는 클래스(.report-floor, globals.css)다. 토스트 바닥에서 시작해 모바일은 알약·토스트 위로 쌓이고,
+          // 키보드가 선 셸 화면에서는 띠 위로 오른다. 인라인 bottom 이면 그 규칙들이 못 이긴다.
+          ...(pos ? { left: pos.x, top: pos.y } : {}),
         }}
       >
         {/* 버그/경고 아이콘 */}

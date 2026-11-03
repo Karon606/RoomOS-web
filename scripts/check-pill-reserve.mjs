@@ -12,13 +12,14 @@ const violations = []
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 const read = f => { try { return readFileSync(f, 'utf8') } catch { violations.push(`${f}: 읽을 수 없음`); return '' } }
 
-// ⓐ 정본 훅. 실측(ResizeObserver · offsetHeight), 간격 12, 루트에 쓰고 마지막이 내려가면 지운다.
+// ⓐ 정본 훅. 실측(ResizeObserver · offsetHeight), 알약 간격 12 · 토스트 간격 8, 루트에 쓰고 마지막이 내려가면 지운다.
 {
   const src = strip(read('lib/usePillReserve.ts'))
-  if (!/new ResizeObserver\(/.test(src) || !/\.offsetHeight/.test(src)) violations.push('lib/usePillReserve.ts: 알약 높이를 재지 않는다(ResizeObserver · offsetHeight)')
-  if (!/PILL_RESERVE_GAP = 12\b/.test(src) || !/Math\.ceil\(max\) \+ PILL_RESERVE_GAP/.test(src)) violations.push('lib/usePillReserve.ts: 예약값이 실측 높이 + 12px 이 아니다')
+  if (!/new ResizeObserver\(/.test(src) || !/\.offsetHeight/.test(src)) violations.push('lib/usePillReserve.ts: 층 높이를 재지 않는다(ResizeObserver · offsetHeight)')
+  if (!/PILL_RESERVE_GAP = 12\b/.test(src) || !/Math\.ceil\(max\) \+ gap/.test(src) || !/useHeightReserve\(ref, PILL_RESERVE_VAR, PILL_RESERVE_GAP, active\)/.test(src)) violations.push('lib/usePillReserve.ts: 알약 예약값이 실측 높이 + 12px 이 아니다')
   if (!/PILL_RESERVE_VAR = '--pill-reserve'/.test(src) || !/document\.documentElement/.test(src)) violations.push('lib/usePillReserve.ts: 루트 --pill-reserve 에 쓰지 않는다')
-  if (!/removeProperty\(PILL_RESERVE_VAR\)/.test(src) || !/live\.delete\(key\)/.test(src)) violations.push('lib/usePillReserve.ts: 알약이 내려가도 예약을 안 지운다. 선택을 끝낸 화면 끝에 빈 자리가 남는다')
+  if (!/TOAST_RESERVE_VAR = '--toast-reserve'/.test(src) || !/TOAST_RESERVE_GAP = 8\b/.test(src)) violations.push('lib/usePillReserve.ts: 토스트 예약(--toast-reserve, 간격 8)이 없다')
+  if (!/removeProperty\(name\)/.test(src) || !/bag\.delete\(key\)/.test(src)) violations.push('lib/usePillReserve.ts: 층이 내려가도 예약을 안 지운다. 선택을 끝낸 화면 끝에 빈 자리가 남는다')
 }
 
 // ⓑ 알약 셸. 훅을 부르고, 모달 본문 규칙이 찾을 손잡이(data-pill-bar)와 바닥 변수(--pill-floor)를 쓴다.

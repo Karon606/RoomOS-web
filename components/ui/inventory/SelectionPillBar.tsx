@@ -21,7 +21,7 @@ export function SelectionPillBar({
   // 키보드가 선 동안은 하단 내비가 접히므로 내비 위 자리 대신 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03 가이드 §19).
   // 그 자리(--vv-bottom)는 정본 훅이 이 상자에 적는다.
   const barRef = useRef<HTMLDivElement>(null)
-  useVisibleBand({ active: true, overlayRef: barRef })
+  useVisibleBand({ active: true, overlayRef: barRef, floating: true })
   // 서 있는 동안 제 높이 + 12px 을 스크롤 끝에 예약한다(--pill-reserve, 신고 e791b6f7). 더하는 곳은 globals.css 한 곳이다.
   // 바닥(--pill-floor)도 거기 한 벌이다. 모달 본문 끝 예약이 이 바닥과 모달 바닥의 차이를 함께 더한다.
   usePillReserve(barRef)

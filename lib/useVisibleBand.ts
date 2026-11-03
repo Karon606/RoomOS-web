@@ -26,6 +26,7 @@ import { overlayInsets, bandHeight, insetBand, resumeAllowsShrink, type VvReadin
 import { editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { windowResizeIsPan, resyncAfterPan } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
+import { overlayOpened } from '@/lib/overlayPresence'
 
 export function useVisibleBand(opts: {
   active: boolean
@@ -35,8 +36,17 @@ export function useVisibleBand(opts: {
   panelRef?: RefObject<HTMLElement | null>
   /** CSS 변수 이름 — Modal 은 제 기존 이름을 물려 픽셀 무변화로 갈아탄다. */
   vars?: { top?: string; bottom?: string; height?: string }
+  /** 떠 있는 층(선택 알약·토스트·오류신고 버튼)이면 true. 오버레이가 아니라 열린 오버레이 수(lib/overlayPresence)에 안 센다. */
+  floating?: boolean
 }): void {
   const { active, overlayRef, panelRef } = opts
+  const floating = opts.floating ?? false
+  // 열린 오버레이를 센다(2026-11-03). 키보드를 받는 오버레이는 전부 이 훅을 지나므로(§30) 여기 한 곳에서 센다.
+  // 오류신고 버튼이 이 표식으로 '셸 화면에서만' 키보드 위로 오른다(모달 발끝 주 버튼을 덮지 않게).
+  useEffect(() => {
+    if (!active || floating) return
+    return overlayOpened()
+  }, [active, floating])
   const varTop = opts.vars?.top ?? '--vv-top'
   const varBottom = opts.vars?.bottom ?? '--vv-bottom'
   const varHeight = opts.vars?.height ?? '--vv-h'

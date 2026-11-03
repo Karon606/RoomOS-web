@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { subscribePending, subscribeToast, type Toast, type ToastKind } from '@/lib/saveStatus'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { useHeightReserve, TOAST_RESERVE_VAR, TOAST_RESERVE_GAP } from '@/lib/usePillReserve'
 
 type Live = Toast & { count: number }
 
@@ -37,7 +38,9 @@ export default function SaveFeedback() {
   // 키보드가 선 동안 토스트는 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03). 그 자리(--vv-bottom)는 정본 훅이
   // 스택 상자에 적는다. 토스트가 떠 있을 때만 구독한다.
   const stackRef = useRef<HTMLDivElement>(null)
-  useVisibleBand({ active: toasts.length > 0, overlayRef: stackRef })
+  useVisibleBand({ active: toasts.length > 0, overlayRef: stackRef, floating: true })
+  // 떠 있는 동안 스택 높이 + 8 을 --toast-reserve 에 적는다. 모바일 오류신고 버튼 기본 자리가 그만큼 위로 올라 토스트에 안 가린다(2026-11-03, §15).
+  useHeightReserve(stackRef, TOAST_RESERVE_VAR, TOAST_RESERVE_GAP, toasts.length > 0)
 
   const remove = (id: number) => {
     const t = timers.current.get(id)
@@ -115,8 +118,8 @@ export default function SaveFeedback() {
       <div ref={stackRef} className="toast-floor kbd-float fixed left-1/2 z-[var(--z-toast)] flex flex-col items-center pointer-events-none"
         style={{
           transform: 'translateX(-50%)',
-          // 키보드가 선 동안의 간격(.kbd-float). 내비 없는 정본 토스트 바닥 24px(§15)과 같다.
-          ['--kbd-float-gap' as string]: '24px',
+          // 키보드가 선 동안의 간격(.kbd-float). 내비 없는 정본 토스트 바닥 24px(§15)에 선택 알약 예약값을 더해 알약 위에 앉는다.
+          ['--kbd-float-gap' as string]: 'calc(24px + var(--pill-reserve, 0px))',
           gap: 'var(--toast-gap)',
           maxWidth: 'min(var(--toast-w-max), calc(100vw - 32px))',
           width: 'max-content',
