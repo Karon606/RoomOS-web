@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useId, useState, useTransition, useRef } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useState, useTransition, useRef } from 'react'
 import { channelVendorLabel, channelSameAsVendor, splitSiblingsText, CHANNEL_SAME_AS_VENDOR_HINT, ORDER_CHANNEL_SPLIT_TAIL } from '@/lib/expenseChannel'
 import { getChannelOptions } from '@/app/(app)/settings/actions'
 import { createPortal } from 'react-dom'
@@ -41,7 +41,7 @@ import { WhyCaption } from '@/components/ui/WhyCaption'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
-import { shelfBrandsText, productText, type MadeMix } from '@/lib/productMix'
+import { shelfProductsText, shelfName, productText, type MadeMix } from '@/lib/productMix'
 // 수량 뒤 조사('20kg이')는 단위 읽기로 고른다(정본 lib/locationClose).
 import { withQtyParticle, stockedHideDenied } from '@/lib/locationClose'
 // 위치 사용 중지 창의 목적지 기본값(정본 lib/locationOpen, 서버 closeStorageLocation 과 같은 규칙).
@@ -630,9 +630,47 @@ function fmtUnitPrice(v: number): string {
 }
 
 // 섞였을 때 상세 추정 한 줄(가이드 §22). 남아 있을 제품이 둘 이상일 때만 선다. 수량 표기는 카드와 같은 fmtQty 다.
+// 이름은 '브랜드 제품명' 전체다. 상세는 줄을 바꿀 수 있어 자리가 모자라지 않고, 바로 위 '제품' 줄과 맞춰 읽힌다.
+// 이름 끝 낱말과 수량은 줄바꿈 없는 공백(U+00A0)으로 붙인다(수량만 다음 줄로 떨어지지 않게). 제품 사이는 카드 메타와 같은 ', ' 이고,
+// ' · ' 는 바로 위 '제품' 줄에서 '제품 · 수령일' 뜻이라 쓰지 않는다(독립 웹디자이너 패스).
 function shelfEstimateText(mix: MadeMix, unit: string | null): string | null {
   if (mix.onShelf.length < 2) return null
-  return `먼저 산 것부터 썼다면 ${mix.onShelf.map(g => `${g.short} ${fmtQty(g.qty, unit)}`).join(' · ')}쯤 남아 있습니다.`
+  return `먼저 산 것부터 썼다면 ${mix.onShelf.map(g => `${shelfName(g, 'full')}\u00a0${fmtQty(g.qty, unit)}`).join(', ')}쯤 남아 있습니다.`
+}
+
+// 카드 메타 `분류 · 제품`(가이드 §22 제품 표기). 제품 토막은 '브랜드 제품명' 이 남은 폭에 다 들어가면 그대로 쓰고,
+// 안 들어가면 묶음 전체를 제품명만으로 바꾼 뒤 그래도 길면 끝을 말줄임한다. 분류는 shrink-0 이라 늘 남는다.
+// 판정은 폭 실측이다(글자 수로 자르지 않는다). 숨은 탐침이 '브랜드 제품명' 의 실제 폭을 재고, 자리(flex-1)의 폭과 견준다.
+// 탐침도 지켜보는 것은 글꼴이 늦게 들어와 글자 폭이 바뀌는 경우다. 재기 전(서버 그림·하이드레이션 전)에는 제품 토막만 투명하게 두어
+// 전체 표기가 보였다가 제품명만으로 바뀌는 깜빡임 대신 한 번 나타나게 한다(자리는 flex-1 이라 폭은 그대로다).
+// 화면에서 브랜드가 빠져도 스크린리더는 늘 '브랜드 제품명' 전체를 읽는다(sr-only).
+function ShelfMeta({ category, color, onShelf }: { category: string; color?: string; onShelf: MadeMix['onShelf'] }) {
+  const full = shelfProductsText(onShelf, 'full')
+  const name = shelfProductsText(onShelf, 'name')
+  const slotRef = useRef<HTMLSpanElement>(null)
+  const probeRef = useRef<HTMLSpanElement>(null)
+  const [fits, setFits] = useState<boolean | null>(null)
+  useLayoutEffect(() => {
+    const slot = slotRef.current, probe = probeRef.current
+    if (!slot || !probe || full === name) return
+    const measure = () => setFits(probe.getBoundingClientRect().width <= slot.getBoundingClientRect().width + 0.5)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(slot); ro.observe(probe)
+    return () => ro.disconnect()
+  }, [full, name])
+  if (!full) return <span style={{ color }}>{category}</span>
+  return (
+    <span className="flex min-w-0">
+      <span className="shrink-0" style={{ color }}>{category}</span>
+      <span className="shrink-0 whitespace-pre text-[var(--ink-m)]"> · </span>
+      <span ref={slotRef} className={`relative min-w-0 flex-1 truncate text-[var(--ink-m)]${fits == null && full !== name ? ' opacity-0' : ''}`}>
+        <span aria-hidden>{fits === false ? name : full}</span>
+        <span className="sr-only">{full}</span>
+        <span ref={probeRef} aria-hidden className="pointer-events-none invisible absolute left-0 top-0 whitespace-pre">{full}</span>
+      </span>
+    </span>
+  )
 }
 
 export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
@@ -1526,19 +1564,9 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
         ].filter(Boolean)
         return <>{list.slice(0, 2)}{list.length > 2 && <Badge tone="neutral">+{list.length - 2}</Badge>}</>
       })()}
-      // 메타 = `분류 · 브랜드`(가이드 §22 제품 표기). 브랜드는 지금 남아 있을 것으로 추정되는 제품이고 Badge 가 아닌 맨 글자다.
-      // 좁으면 브랜드 토막만 말줄임되고 분류는 남는다(shrink-0). 기록이 없으면 아무것도 붙이지 않는다('미입력' 금지).
-      meta={(() => {
-        const made = shelfBrandsText(row.productMix.onShelf)
-        if (!made) return <span style={{ color: tint?.fg }}>{row.category}</span>
-        return (
-          <span className="flex min-w-0">
-            <span className="shrink-0" style={{ color: tint?.fg }}>{row.category}</span>
-            <span className="shrink-0 whitespace-pre text-[var(--ink-m)]"> · </span>
-            <span className="min-w-0 truncate text-[var(--ink-m)]">{made}</span>
-          </span>
-        )
-      })()}
+      // 메타 = `분류 · 브랜드 제품명`(가이드 §22 제품 표기, 2026-11-03 운영자 지시). 지금 남아 있을 것으로 추정되는 제품이고 Badge 가 아닌 맨 글자다.
+      // 자리가 모자라면 브랜드를 먼저 버리고 제품명만, 그래도 길면 말줄임이며 분류는 남는다(ShelfMeta). 기록이 없으면 아무것도 붙이지 않는다('미입력' 금지).
+      meta={<ShelfMeta category={row.category} color={tint?.fg} onShelf={row.productMix.onShelf} />}
       value={fmtQty(row.currentStock, stockUnit)}
       valueDanger={lowStock}
       // 예측 불가를 침묵시키지 않는다(신고 edffb4a7) — 왜 알림이 없는지 접힌 카드에서도 보이게

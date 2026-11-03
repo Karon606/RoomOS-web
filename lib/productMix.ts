@@ -28,7 +28,6 @@ export type ProductGroup = {
   brand: string | null         // 대표 표기의 브랜드
   productName: string | null   // 대표 표기의 제품명
   text: string                 // 대표 원문 '브랜드 제품명'(공백 연결, 브랜드 먼저)
-  short: string                // 짧은 이름(브랜드, 없으면 제품명). 카드 메타·추정 한 줄
 }
 
 export type MadeMix = {
@@ -82,7 +81,7 @@ export function groupProducts<T extends { brand: string | null; productName: str
     let rep: Combo | null = null
     for (const c of g.combos.values()) if (!rep || c.count > rep.count) rep = c
     const brand = rep!.brand, productName = rep!.productName
-    return { key, brand, productName, text: productText(brand, productName), short: brand ?? productName ?? '', rows: g.rows }
+    return { key, brand, productName, text: productText(brand, productName), rows: g.rows }
   })
 }
 
@@ -115,7 +114,7 @@ export function resolveMadeMix(
     const g = groupProducts(received).find(x => x.key === productKeyOf(lastRow.brand, lastRow.productName))!
     // 제품 줄은 그 구매의 원문을 그대로 말한다(대표 표기로 바꾸면 '이번에 받은 것' 이 아니게 된다).
     const brand = clean(lastRow.brand) || null, productName = clean(lastRow.productName) || null
-    last = { key: g.key, brand, productName, text: productText(brand, productName), short: g.short, receivedOn: kstYmd(lastRow.receivedAt!) }
+    last = { key: g.key, brand, productName, text: productText(brand, productName), receivedOn: kstYmd(lastRow.receivedAt!) }
   }
 
   // 남아 있을 제품. 받은 날 최신순으로 지금 잔량을 채운다. 이름 없는 구매도 자리는 차지한다.
@@ -136,7 +135,7 @@ export function resolveMadeMix(
       if (!g) continue
       const cur = byKey.get(g.key)
       if (cur) cur.qty += take
-      else byKey.set(g.key, { key: g.key, brand: g.brand, productName: g.productName, text: g.text, short: g.short, qty: take })
+      else byKey.set(g.key, { key: g.key, brand: g.brand, productName: g.productName, text: g.text, qty: take })
     }
     onShelf.push(...byKey.values())
   }
@@ -154,7 +153,7 @@ export function resolveMadeMix(
       if (b > 0) { amt += r.amount; base += b }
     }
     return {
-      key: g.key, brand: g.brand, productName: g.productName, text: g.text, short: g.short,
+      key: g.key, brand: g.brand, productName: g.productName, text: g.text,
       count: g.rows.length, lastDate: g.rows[0].date.toISOString().slice(0, 10),
       unitPrice: base > 0 ? amt / base : null,
     }
@@ -163,10 +162,25 @@ export function resolveMadeMix(
   return { last, onShelf, history }
 }
 
-/** 카드 메타 브랜드 토막. 하나면 그 이름, 둘이면 '·' 로 붙이고, 셋부터 '앞 둘 외 N'. 없으면 ''. */
-export function shelfBrandsText(onShelf: readonly { short: string }[]): string {
-  const names = onShelf.map(g => g.short).filter(Boolean)
+/**
+ * 제품 이름 한 토막(2026-11-03 운영자 지시 '브랜드와 제품명 둘 다'). full = '브랜드 제품명', name = 제품명만(없으면 브랜드).
+ * 오뚜기 라면이 수백 가지라 브랜드만으로는 무엇인지 모른다. 자리가 모자랄 때 버리는 쪽은 브랜드다.
+ */
+export type ShelfNameMode = 'full' | 'name'
+export function shelfName(g: { brand: string | null; productName: string | null }, mode: ShelfNameMode): string {
+  const b = clean(g.brand), p = clean(g.productName)
+  // 제품명이 브랜드로 시작하면(삼양 '삼양라면') 브랜드를 한 번만 쓴다. 표시용 토막에만 쓰고 원문(text)은 그대로 둔다.
+  if (mode === 'name' || (b && p.toLowerCase().startsWith(b.toLowerCase()))) return p || b
+  return productText(b, p)
+}
+
+/**
+ * 카드 메타 제품 토막. 묶음 전체에 한 표기(mode)를 쓴다(하나만 브랜드가 빠지면 둘이 다른 급으로 읽힌다).
+ * 하나면 그 이름, 둘이면 ', ' 로 잇고, 셋부터 '앞 둘 외 N'. 없으면 ''. 어느 표기를 쓸지는 화면이 폭을 재서 고른다.
+ */
+export function shelfProductsText(onShelf: readonly { brand: string | null; productName: string | null }[], mode: ShelfNameMode): string {
+  const names = onShelf.map(g => shelfName(g, mode)).filter(Boolean)
   if (names.length === 0) return ''
-  if (names.length <= 2) return names.join('·')
-  return `${names.slice(0, 2).join('·')} 외 ${names.length - 2}`
+  if (names.length <= 2) return names.join(', ')
+  return `${names.slice(0, 2).join(', ')} 외 ${names.length - 2}`
 }

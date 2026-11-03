@@ -12,6 +12,11 @@
 //   ⓕ 골격과 실제의 줄 수가 같다. 제품 줄은 DetailViewSummary 안에 있고 글자를 g() 로 감싸 골격이 같은 줄을 투명하게 그린다.
 //   ⓖ 정본 lib/productMix 는 순수층이다(DB 를 부르지 않는다).
 //   ⓗ 한 카드 안에서 단가·날짜 꼴이 하나다(구매한 제품 = 평균 단가 `590원/봉`, 날짜 = 최근 점검 fmtDate).
+//   ⓘ 카드 메타는 '브랜드 제품명' 이고 자리가 모자라면 묶음 전체가 제품명만이 된다(2026-11-03 운영자 지시). 판정은 폭 실측이다.
+//     ShelfMeta 가 full·name 두 표기를 정본 shelfProductsText 로 만들고, 숨은 탐침(full)과 자리의 폭을 ResizeObserver 로 견준다.
+//     글자 수로 자르는 꼼수(slice·substring·length 비교)가 없고, 분류는 shrink-0, 자리는 flex-1 말줄임이다.
+//     재기 전엔 제품 토막만 투명, 스크린리더는 늘 전체(sr-only). 상세 추정 한 줄도 같은 토막 정본(shelfName full)을 쓰고
+//     이름과 수량을 줄바꿈 없는 공백으로 붙이며 제품 사이는 ', ' 다. 브랜드만 쓰던 종전 토막(shelfBrandsText·short)은 돌아오지 않는다.
 // 한계. 소스 가드라 '존재'만 본다. 계산의 뜻은 진리표 scripts/test-product-mix.ts 가 진다.
 import { readFileSync } from 'node:fs'
 
@@ -81,7 +86,7 @@ need("ⓒ 상세 '지금' 은 잔량 그대로", /const nowText = row\.currentSt
 
 // ⓓ 같은 출처
 const metaProp = propBody(client, cardAt, 'meta')
-need('ⓓ 카드 메타가 row.productMix.onShelf', /shelfBrandsText\(row\.productMix\.onShelf\)/.test(metaProp))
+need('ⓓ 카드 메타가 row.productMix.onShelf', /<ShelfMeta category=\{row\.category\} color=\{tint\?\.fg\} onShelf=\{row\.productMix\.onShelf\} \/>/.test(metaProp))
 need('ⓓ 상세 제품 줄이 row.productMix', /row\.productMix\.last/.test(summary) && /shelfEstimateText\(row\.productMix, unit\)/.test(summary))
 need('ⓓ 개요가 확정 잔량으로 제품 표기를 낸다', /resolveMadeMix\(itemPurchases, currentStock, \{ qtyUnit: it\.qtyUnit, useSpec, specUnit: it\.specUnit \}\)/.test(comp) && /\n\s*productMix,\n/.test(comp))
 
@@ -106,6 +111,29 @@ need('ⓕ 제품 줄 글자를 g() 로 감싼다', /\{g\('제품'\)\}/.test(summ
     "한 카드 안에서 '590원/봉' 과 '봉당 590원' 이 같이 서면 이질감이다")
   need("ⓗ 구매한 제품 날짜가 '최근 점검' 과 같은 정본", /`마지막 \$\{fmtDate\(h\.lastDate\)\}`/.test(block) && /최근 점검 \{fmtDate\(row\.lastCheckDate\)\}/.test(client) &&
     /fmtDate\(row\.productMix\.last\.receivedOn\)/.test(summary) && !/fmtMixDate/.test(client))
+}
+
+// ⓘ 카드 메타 '브랜드 제품명', 자리가 모자라면 묶음 전체가 제품명만(폭 실측)
+{
+  const sm = fnBody(client, 'function ShelfMeta(')
+  need('ⓘ ShelfMeta 본문 확보', sm.length > 0)
+  need('ⓘ 두 표기를 정본으로 만든다', /const full = shelfProductsText\(onShelf, 'full'\)/.test(sm) && /const name = shelfProductsText\(onShelf, 'name'\)/.test(sm),
+    '토막마다 따로 고르면 한쪽만 브랜드가 빠져 둘이 다른 급으로 읽힌다')
+  need('ⓘ 폭 실측(ResizeObserver)으로 고른다', /new ResizeObserver\(measure\)/.test(sm) && /ro\.observe\(slot\)/.test(sm) && /ro\.observe\(probe\)/.test(sm) &&
+    /probe\.getBoundingClientRect\(\)\.width <= slot\.getBoundingClientRect\(\)\.width/.test(sm) && /<span aria-hidden>\{fits === false \? name : full\}<\/span>/.test(sm))
+  need('ⓘ 재기 전엔 제품 토막만 투명(깜빡임 대신 한 번 나타남)', /useState<boolean \| null>\(null\)/.test(sm) && /fits == null && full !== name \? ' opacity-0' : ''/.test(sm))
+  need('ⓘ 스크린리더는 늘 브랜드 제품명 전체', /<span className="sr-only">\{full\}<\/span>/.test(sm), '화면에서 브랜드가 빠져도 듣는 사람은 잃지 않는다')
+  need('ⓘ 숨은 탐침이 full 을 잰다', /<span ref=\{probeRef\} aria-hidden className="[^"]*invisible absolute[^"]*whitespace-pre[^"]*">\{full\}<\/span>/.test(sm),
+    '탐침이 보이거나 줄을 바꾸면 폭이 틀린다')
+  need('ⓘ 글자 수로 자르지 않는다', !/\.slice\(|\.substring\(|\.substr\(|\.length\s*[<>]=?|maxLength|\d+ch\b/.test(sm), '폭은 글꼴·화면마다 다르다')
+  need('ⓘ 분류는 남고 자리만 말줄임', /<span className="shrink-0" style=\{\{ color \}\}>\{category\}<\/span>/.test(sm) &&
+    /<span ref=\{slotRef\} className=\{`relative min-w-0 flex-1 truncate text-\[var\(--ink-m\)\]\$\{/.test(sm) && /if \(!full\) return <span style=\{\{ color \}\}>\{category\}<\/span>/.test(sm) && !/<Badge|미입력/.test(sm))
+  const est = fnBody(client, 'function shelfEstimateText(')
+  need('ⓘ 상세 추정도 같은 토막 정본(브랜드 제품명)', /\$\{shelfName\(g, 'full'\)\}\\u00a0\$\{fmtQty\(g\.qty, unit\)\}/.test(est) && /\.join\(', '\)/.test(est),
+    "이름과 수량은 줄바꿈 없는 공백으로 한 덩이, 제품 사이는 카드와 같은 ', '")
+  need('ⓘ 브랜드만 쓰던 종전 토막이 없다', !/shelfBrandsText|\.short\b/.test(client) && !/shelfBrandsText|\bshort:/.test(mix))
+  need('ⓘ 정본 토막 규칙', /if \(mode === 'name' \|\| \(b && p\.toLowerCase\(\)\.startsWith\(b\.toLowerCase\(\)\)\)\) return p \|\| b\n\s*return productText\(b, p\)/.test(mix) &&
+    /const names = onShelf\.map\(g => shelfName\(g, mode\)\)/.test(mix), '자리가 모자랄 때 버리는 쪽은 브랜드다')
 }
 
 // ⓖ 순수층

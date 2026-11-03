@@ -476,16 +476,15 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     '브랜드 줄만 말줄임이면 이력 공통 줄바꿈과 갈리고 터치 화면에서 뒤를 읽을 길이 없다')
 }
 
-// ── ⑩ 카드 메타 꼴(가이드 §22 제품 표기, 2026-11). `분류 · 브랜드`, 분류는 남고 브랜드 토막만 말줄임, 맨 글자 ──
+// ── ⑩ 카드 메타 꼴(가이드 §22 제품 표기, 2026-11, 11-03 개정). `분류 · 브랜드 제품명`, 분류는 남고 제품 토막만 줄어든다, 맨 글자 ──
+// 자리 판정(브랜드를 먼저 버림)의 배선은 check-inventory-brand-mix ⓘ 가 본다. 여기서는 카드가 그 한 컴포넌트로 그리는지만 본다.
 {
-  const at = client.indexOf('meta={(() => {')
-  const meta = at < 0 ? '' : client.slice(at, client.indexOf('})()}', at))
-  need('⑩ 카드 메타가 분류 · 브랜드 꼴이다',
-    /const made = shelfBrandsText\(row\.productMix\.onShelf\)/.test(meta) &&
-    /if \(!made\) return <span style=\{\{ color: tint\?\.fg \}\}>\{row\.category\}<\/span>/.test(meta) &&
-    /<span className="shrink-0" style=\{\{ color: tint\?\.fg \}\}>\{row\.category\}<\/span>/.test(meta) &&
-    /<span className="min-w-0 truncate text-\[var\(--ink-m\)\]">\{made\}<\/span>/.test(meta) && !/<Badge/.test(meta) && !/미입력/.test(meta),
-    '좁은 폭에서 분류가 먼저 잘리거나 브랜드가 배지가 되면 §22 와 어긋난다')
+  const at = client.indexOf('<InvCard')
+  const metaAt = client.indexOf('meta={', at)
+  const meta = metaAt < 0 ? '' : client.slice(metaAt, client.indexOf('\n', metaAt))
+  need('⑩ 카드 메타가 분류 · 제품 꼴이다',
+    /meta=\{<ShelfMeta category=\{row\.category\} color=\{tint\?\.fg\} onShelf=\{row\.productMix\.onShelf\} \/>\}/.test(meta) && !/<Badge/.test(meta) && !/미입력/.test(meta),
+    '좁은 폭에서 분류가 먼저 잘리거나 제품이 배지가 되면 §22 와 어긋난다')
 }
 
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)
