@@ -9,6 +9,7 @@
 // 종전 '출력 / 서명 받기'는 인쇄를 하지 않아 오해를 샀고, '계약서 보내기'는 서류가 아니라 서명 요청
 // 링크가 나가는 동작이라 목적어를 붙여 '서명 요청 보내기'로 바꿨다. 스캔본 올리기는 앱 안으로 들어오는
 // 유일한 방향이라 다섯 동사 밖 예외로 둔다.
+// 열람 전용 STAFF 에게는 같은 문이 '계약서 보기' 다(2026-11-04). 그 화면이 읽기 전용이라 정의(보기 = 열람만)에 맞는다.
 
 import { useEffect, useMemo, useState } from 'react'
 import { docFileLabel } from '@/lib/docBundle'
@@ -29,9 +30,9 @@ import {
   type ContractPurpose,
 } from '@/lib/contractPurpose'
 import {
-  issueContractShareLink, renewContractShareLink, getContractShareState,
+  issueContractShareLink, renewContractShareLink, getContractShareState, getContractSignBadge,
   closeContractShareLink, reopenContractShareLink,
-  type ContractShareLinkInfo,
+  type ContractShareLinkInfo, type ContractSignBadgeInfo,
 } from '@/app/(app)/tenants/contractShare'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { fileToUploadPdf } from '@/lib/uploadImage'
@@ -50,13 +51,13 @@ import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
-import { useCanEdit } from '@/components/RoleContext'
+import { useCanEdit, useCanReadScope } from '@/components/RoleContext'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
 // closable: 닫기(=서명 완료 알림 해제) 가능 여부. 만료·잠김이어도 닫혀 있지만 않으면 닫을 수 있어야 한다 —
 // 종전에는 active(만료 전)일 때만 닫기 버튼이 떠서, 만료된 링크는 '계약서 발급 필요' 알림을
 // 끌 방법이 사라졌다(503호 송호준: 서명 완료·링크 만료·발급 전 상태로 알림 영구 잔존).
-function shareBadge(link: ContractShareLinkInfo): { label: string; active: boolean; closable: boolean } {
+function shareBadge(link: ContractSignBadgeInfo): { label: string; active: boolean; closable: boolean } {
   // 횟수를 적지 않는다 — 한도가 계약서마다 다르다(외국인등록번호가 실린 계약은 3회, 그 외 5회).
   if (link.lockedAt) return { label: '링크 잠김 (생년월일 오류 한도 초과)', active: false, closable: !link.closedAt }
   // 제출 판정이 닫힘보다 먼저다. 제출은 서버가 이미 막는데(getActiveLink) 배지가 그걸 모르면
@@ -113,11 +114,17 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
   // (2026-11-03 운영자 지시, 감사 D3 숨김 문법). 서버 issueContractShareLink 의 requireEdit 가 최종 방어다.
   const canEditUi = useCanEdit()
   const hideSignRequest = hideSignRequestProp || !canEditUi
+  // 계약서 화면은 금액을 그린다. 제한 스태프(money 읽기 없음)에게는 서버 getContractData 가 거절하므로 그 화면으로 가는 문을 세우지 않는다.
+  // STAFF 는 같은 화면을 읽기 전용으로 연다(2026-11-04 운영자 승인 '추천대로'). 라벨은 '계약서 보기'(보기 = 열어서 확인, 만들지 않는다).
+  const canReadMoney = useCanReadScope('money')
+  const canOpenContract = canEditUi || canReadMoney
   const [files, setFiles]   = useState<ContractFileRow[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
   const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean; defaultSignLang: SignLang; foreignForDocuments: boolean } | null>(null)
+  // 열람 역할의 배지 — 토큰·링크 id 가 없는 서명 상태만 받는다(getContractSignBadge). 편집 갈래의 share 와 섞지 않는다.
+  const [badgeLink, setBadgeLink] = useState<ContractSignBadgeInfo | null>(null)
   // 여러 판본 만들기 토글 — 안내 문구가 가리킬 길이 하나인지 둘인지 가른다.
   // 게이트가 아니라 문구용이다(진짜 게이트는 서버가 다시 본다). 못 읽으면 꺼진 것으로 본다.
   const [multiVersion, setMultiVersion] = useState(false)
@@ -138,8 +145,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
     finally { setLoading(false) }
   }
   const reloadShare = async () => {
-    // 열람 전용은 부르지 않는다 — 서버가 requireEdit 로 거절해 모달을 열 때마다 '수정 권한이 없습니다.' 토스트가 떴다.
-    if (!canEditUi) { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false, defaultSignLang: 'ko', foreignForDocuments: false }); return }
+    // 열람 전용에게는 토큰을 주는 링크 상태 조회(서버 requireEdit)를 부르지 않고, 배지 여섯 칸만 주는 서명 상태 조회를 부른다(2026-11-04 운영자 승인).
+    if (!canEditUi) {
+      setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false, defaultSignLang: 'ko', foreignForDocuments: false })
+      const r = await getContractSignBadge(tenantId)
+      setBadgeLink(r.ok ? r.link : null)
+      if (!r.ok) pushToast('error', r.error)
+      return
+    }
     const res = await getContractShareState(tenantId)
     if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue, hasForeignRegNo: res.hasForeignRegNo, defaultSignLang: res.defaultSignLang, foreignForDocuments: res.foreignForDocuments })
     // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
@@ -460,7 +473,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
   const currentIds = useMemo(() => new Set(currentIssueIds(files ?? []).values()), [files])
 
   const shareLink = share?.link ?? null
-  const badge = shareLink ? shareBadge(shareLink) : null
+  // 배지는 두 역할 모두 같은 판정 함수(shareBadge)로 그린다. 서명본 문(signedViewLinkId)·대기 안내는 편집 갈래의 shareLink 만 읽는다.
+  const badgeSource = canEditUi ? shareLink : badgeLink
+  const badge = badgeSource ? shareBadge(badgeSource) : null
   // 서명본으로 열 것인가 — signedAt(과거 사실)만으로는 부족하다. 서명을 지운 뒤에도 그 값은 남아서
   // 깨끗한 계약이 옛 스냅샷 화면에 영구히 갇혔다(502호 2026-08-10). 지금 서명이 있어야 서명본이다.
   const signedViewLinkId = shareLink?.signedAt && shareLink.signatureLive ? shareLink.id : null
@@ -509,8 +524,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
     return { primary: 'write', hint: null }
   })()
   // 열람 전용(STAFF·제한 스태프)은 작성·발급·다시 보내기를 할 수 없다. 할 수 없는 문을 주 버튼으로 올리지 않는다(독립 검수 R2).
-  // 링크 상태(getContractShareState)는 토큰을 주므로 서버가 열람 역할에게 주지 않는다. 그래서 서명 대기 안내도 이 역할에게는 서지 않는다.
-  const stage = canEditUi ? stageByState : { ...stageByState, primary: null }
+  // 안내도 걷는다. 발급본이 있으면 '이 계약서 폐기를 눌러 주세요'(issuedNextStepMessage)가 서는데 그 버튼은 열람 역할에게 없다.
+  // 서명 상태는 배지 라벨(서명 대기·계약서만 서명됨 등)이 말한다(2026-11-04 운영자 승인).
+  const stage = canEditUi ? stageByState : { primary: null, hint: null }
 
   return (
     <div className="space-y-2">
@@ -531,12 +547,12 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
             박제**이고 스스로 "지금 계약을 고치거나 서명을 다시 받으려면 일반 화면에서 하세요" 라고
             말한다(ContractView.tsx:941). 그 문으로 보내면서 '작성' 이라 부르면 배신의 방향만 바뀐다.
             그래서 작성 문은 항상 같은 자리에 같은 이름으로 서고, 서명본 발급은 있을 때만 옆에 선다. */}
-        {/* 계약서 화면(작성·발급·서명)으로 가는 문은 열람 전용(STAFF·제한 스태프)에게 숨긴다(2026-11-04 운영자 결정, 그 화면의 쓰기가 서버 requireEdit).
-            다음 단계에서 계약서 화면이 읽기 전용이 되면 STAFF 에게만 '계약서 보기' 로 다시 연다. */}
-        {canEditUi && (
+        {/* 열람 전용 STAFF 에게는 같은 화면을 읽기 전용으로 여는 '계약서 보기'(2026-11-04 운영자 승인 '추천대로'). 그 화면은 쓰기 입구를 세우지 않는다.
+            제한 스태프는 금액을 못 읽어 서버(getContractData)가 거절하므로 문 자체를 세우지 않는다. */}
+        {canOpenContract && (
           <BtnLink href={`/contract/${tenantId}`}
             variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-            계약서 작성·서명
+            {canEditUi ? '계약서 작성·서명' : '계약서 보기'}
           </BtnLink>
         )}
         {canEditUi && signedViewLinkId && (
@@ -547,7 +563,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
         )}
         {/* 부계약 계약서 — 종전에는 이 문이 없어 창고 계약서를 뽑을 길 자체가 없었다.
             발급 화면이 어느 계약을 그릴지 URL 로 지목한다(?leaseTermId=). 본문 문안은 별건이다. */}
-        {canEditUi && extraLeases?.map(l => (
+        {canOpenContract && extraLeases?.map(l => (
           <BtnLink key={l.id} href={`/contract/${tenantId}?leaseTermId=${l.id}`} variant="ghost" size="sm">
             {fmtRoomNo(l.roomNo, '호실 미지정')} 계약서
           </BtnLink>

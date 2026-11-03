@@ -6,7 +6,7 @@
 //
 // 메일(2026-11-03 운영자 승인 '추천대로')은 서버가 보내므로 서버 문이 실제 차단이고, 화면은 입구를 숨긴다.
 //
-// 축은 ⓐ~ⓙ 열이다.
+// 축은 ⓐ~ⓜ 열둘이다(ⓚ·ⓛ 은 계약서·확인서 화면).
 //   ⓐ 서버 문. 문자를 짜거나 기록하거나 서명 요청 링크(문자로 나간다)를 만드는 액션은 첫 DB 호출 전에 무조건 `await requireEdit()` 를 부른다.
 //   ⓑ 입구 전수. app·components·lib 에서 문자앱을 여는 자리(sms: 리터럴, singleSmsHref, sendWithText)와 문자 창 렌더를 모두 찾아
 //      SINKS 표와 대조한다. 표에 없는 새 자리는 붉다(등록하고 canEditUi 로 막을 것).
@@ -27,6 +27,8 @@
 //      같은 손(핸들러)이 가드 밖에 또 생기지 않게 개수를 고정한다.
 //   ⓘ 쓰기 행을 세우는 조회(getRoomScheduleState·getRoomBusyNotice, 서버 requireEdit)는 열람 역할에게 부르지 않는다(모달마다 500).
 //      서버 문은 낮추지 않는다. 부르는 자리가 입주자 상세(가드)와 수정 폼(편집자만 연다) 밖으로 늘면 붉다.
+//   ⓜ 계약서 칸의 계약서 화면 입구(2026-11-04 운영자 승인 '추천대로'). STAFF 에게는 '계약서 보기'(읽기 전용 화면), 제한 스태프는 money 를 못 읽어
+//      서버가 거절하므로 문이 없다. 판정은 useCanEdit() 와 useCanReadScope('money') 이고, 서명본 문(signedViewLinkId)은 편집 갈래의 shareLink 에서만 나온다.
 //   ⓙ 열람 역할용 서명 상태 조회(2026-11-04 운영자 승인 '추천대로'). getContractSignBadge 는 requireEdit 없이 영업장 문(requirePropertyAccess)을
 //      첫 DB 호출보다 먼저 지나고, 토큰·URL·연락처·신원 칸을 읽지도 싣지도 않으며(select 만, include 금지), 진행은 계약 축 판정 badgeOf 를 부른다.
 //      응답 타입 ContractSignBadgeInfo 의 칸은 배지 여섯(expiresAt·closedAt·lockedAt·submittedAt·signStage·signSummary)뿐이다.
@@ -167,10 +169,15 @@ for (const [f, re, what] of BUTTONS) need(re.test(read(f)), `${f}: ${what} 가 �
 // 열람 역할에게는 할 수 없는 문(작성·발급·다시 보내기)을 주 버튼으로 올리지 않고, 거절될 링크 상태 조회도 부르지 않는다(독립 검수 R2).
 {
   const s = read('components/entity-modal/widgets/ContractFilesPanel.tsx')
-  need(/const stage = canEditUi \? stageByState : \{ \.\.\.stageByState, primary: null \}/.test(s),
-    `ContractFilesPanel: 열람 역할에게 주 버튼(작성·발급·다시 보내기)을 올린다.`)
-  need(/const reloadShare = async \(\) => \{\s*if \(!canEditUi\) \{[^\n]*return \}\s*const res = await getContractShareState\(/.test(s),
-    `ContractFilesPanel: 열람 역할에게도 링크 상태를 조회한다(서버 거절 토스트가 모달마다 뜬다).`)
+  need(/const stage = canEditUi \? stageByState : \{ primary: null, hint: null \}/.test(s),
+    `ContractFilesPanel: 열람 역할에게 주 버튼(작성·발급·다시 보내기)이나 안내(폐기·발급을 시키는 문장)를 올린다.`)
+  // 열람 갈래는 토큰 없는 서명 상태 조회(ⓙ)만 부르고 return 한다. 토큰을 주는 링크 상태 조회는 그 뒤 편집 갈래에만 있다.
+  need(/const reloadShare = async \(\) => \{\s*if \(!canEditUi\) \{\s*setShare\([^\n]*\)\s*const r = await getContractSignBadge\(tenantId\)\s*setBadgeLink\(r\.ok \? r\.link : null\)\s*if \(!r\.ok\) pushToast\('error', r\.error\)\s*return\s*\}\s*const res = await getContractShareState\(/.test(s),
+    `ContractFilesPanel: 열람 갈래가 서명 상태 조회(getContractSignBadge)만 부르고 끝나지 않는다(토큰을 주는 링크 상태 조회가 열람 역할에게 불리거나 배지가 사라진다).`)
+  need((s.match(/\bgetContractShareState\(/g) ?? []).length === 1 && (s.match(/\bgetContractSignBadge\(/g) ?? []).length === 1,
+    `ContractFilesPanel: 링크 상태 조회·서명 상태 조회를 부르는 자리가 하나씩이 아니다.`)
+  const callers = ['app', 'components'].flatMap(walk).filter(f => /\bgetContractShareState\(/.test(read(f)) && f !== 'app/(app)/tenants/contractShare.ts')
+  need(callers.join(',') === 'components/entity-modal/widgets/ContractFilesPanel.tsx', `링크 상태 조회(토큰)를 부르는 자리가 계약서 칸 밖으로 늘었다: ${callers.join(', ')}`)
 }
 // 같은 여는 손이 가드 밖에 또 생기지 않게 — 여는 호출 개수를 고정한다.
 const OPENERS = [
@@ -409,7 +416,8 @@ for (const [f, re, n] of OPENERS) {
     'app/(app)/contracts/ContractsClient.tsx': [1, [/\{canEditUi && \(\s*<BtnLink href=\{p\.signatureLive \? `\/contract\//]],
     'app/(app)/rent-receipts/RentReceiptsClient.tsx': [2, [/\{canEditUi && \(\s*<section className="space-y-2">[\s\S]*?<a href=\{`\/rent-receipt\/\$\{t\.tenantId\}\$\{monthQuery\}`\}[\s\S]*?<\/section>\s*\)\}/, /\{canEditUi && \(\s*<a href=\{`\/rent-receipt\/\$\{c\.tenantId\}/]],
     'app/(app)/residence-certs/ResidenceCertClient.tsx': [2, [/\{canEditUi && \(\s*<section className="space-y-2">[\s\S]*?href=\{`\/residence-cert\/\$\{t\.tenantId\}`\}[\s\S]*?<\/section>\s*\)\}/, /\{canEditUi && \(\s*<a href=\{`\/residence-cert\/\$\{c\.tenantId\}/]],
-    'components/entity-modal/widgets/ContractFilesPanel.tsx': [3, [/\{canEditUi && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}`\}/, /\{canEditUi && signedViewLinkId && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}\?share=/, /\{canEditUi && extraLeases\?\.map\(l => \(\s*<BtnLink key=\{l\.id\} href=\{`\/contract\/\$\{tenantId\}\?leaseTermId=/]],
+    // 계약서 화면은 2026-11-04 부터 STAFF 에게 읽기 전용으로 열린다(ⓜ). 서명본(?share=)은 편집 역할 전용 그대로다.
+    'components/entity-modal/widgets/ContractFilesPanel.tsx': [3, [/\{canOpenContract && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}`\}/, /\{canEditUi && signedViewLinkId && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}\?share=/, /\{canOpenContract && extraLeases\?\.map\(l => \(\s*<BtnLink key=\{l\.id\} href=\{`\/contract\/\$\{tenantId\}\?leaseTermId=/]],
     'components/doc/TenantDocBundleSheet.tsx': [4, []],
   }
   const doorFiles = ['app', 'components', 'lib'].flatMap(walk).filter(f => !/^app\/(api|contract|rent-receipt|residence-cert|sign)\//.test(f) && f !== 'app/robots.ts')
@@ -466,6 +474,21 @@ for (const [f, re, n] of OPENERS) {
     `${B}: 열람 역할에게도 호실 일정·막힘 조회를 부른다(서버 requireEdit 거부가 모달마다 난다).`)
   const callers = ['app', 'components'].flatMap(walk).filter(f => /\bgetRoom(ScheduleState|BusyNotice)\(/.test(read(f)) && f !== A)
   need(callers.sort().join(',') === ['app/(app)/tenants/TenantClient.tsx', B].sort().join(','), `호실 일정·막힘 조회를 부르는 자리가 늘었다: ${callers.join(', ')}`)
+}
+
+// ⓜ 계약서 칸의 계약서 화면 입구
+{
+  const f = 'components/entity-modal/widgets/ContractFilesPanel.tsx'
+  const s = read(f)
+  need(/const canReadMoney = useCanReadScope\('money'\)\s*const canOpenContract = canEditUi \|\| canReadMoney\n/.test(s),
+    `${f}: 계약서 화면 입구 판정이 편집 역할 또는 금액 읽기(useCanReadScope('money'))가 아니다(제한 스태프에게 서버가 거절하는 문이 선다).`)
+  need(/\{canOpenContract && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}`\}\s*variant=\{[^}]*\} size="sm">\s*\{canEditUi \? '계약서 작성·서명' : '계약서 보기'\}\s*<\/BtnLink>/.test(s),
+    `${f}: 계약서 화면 입구 라벨이 역할로 갈리지 않는다(열람 역할에게 '계약서 작성·서명' 이 서거나 문이 사라졌다).`)
+  need((s.match(/계약서 작성·서명'/g) ?? []).length === 1 && (s.match(/'계약서 보기'/g) ?? []).length === 1, `${f}: 계약서 화면 입구 라벨 글자가 다른 자리에 또 생겼다.`)
+  need(/const signedViewLinkId = shareLink\?\.signedAt && shareLink\.signatureLive \? shareLink\.id : null/.test(s) && /const shareLink = share\?\.link \?\? null/.test(s),
+    `${f}: 서명본 문(signedViewLinkId)이 편집 갈래의 shareLink 밖에서 나온다.`)
+  need(/const badgeSource = canEditUi \? shareLink : badgeLink\s*const badge = badgeSource \? shareBadge\(badgeSource\) : null/.test(s) && /function shareBadge\(link: ContractSignBadgeInfo\)/.test(s),
+    `${f}: 배지가 역할 갈래(편집 shareLink · 열람 badgeLink)를 한 판정 함수로 그리지 않는다.`)
 }
 
 // ⓙ 열람 역할용 서명 상태 조회
