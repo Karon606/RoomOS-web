@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getResidenceCertData } from './actions'
 import ResidenceCertView from './ResidenceCertView'
 import { resolveDocBack } from '@/lib/docNav'
@@ -17,6 +17,10 @@ export default async function ResidenceCertPage({
 }) {
   const { tenantId } = await params
   const { leaseTermId, from, tenantId: backTenantId } = await searchParams
+  // 이 화면은 서류를 만드는 도구다(칸 저장·적용취소·내보내기·발급이 전부 서버 requireEdit). 열람 직원은 데이터를 읽기 전에
+  // 돌아갈 곳으로 보낸다(2026-11-04 운영자 승인 '추천대로', 갈림길 G3).
+  const role = await getMyRole()
+  if (!canEdit(role)) redirect(resolveDocBack(from, backTenantId).href)
   const data = await getResidenceCertData(tenantId, leaseTermId ?? null)
   if (!data) notFound()
   // 지자체별 서식 상이 — 현재 서울형만 지원, 그 외 지역은 발급 차단 안내(운영자 정정 2026-07-10)
@@ -33,7 +37,6 @@ export default async function ResidenceCertPage({
       </div>
     )
   }
-  // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인). 데이터 조회가 이미 같은 관문을 지났다.
-  const role = await getMyRole()
+  // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인). 위 문에서 열람 역할은 이미 돌아갔다.
   return <ResidenceCertView data={data} back={resolveDocBack(from, backTenantId)} canSendSms={canEdit(role)} />
 }

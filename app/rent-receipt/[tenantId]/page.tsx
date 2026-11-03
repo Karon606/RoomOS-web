@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getRentReceiptData } from './actions'
 import RentReceiptView from './RentReceiptView'
 import { resolveDocBack } from '@/lib/docNav'
@@ -21,10 +21,12 @@ export default async function RentReceiptPage({
   const { month, kind, leaseTermId, from, tenantId: backTenantId, mode } = await searchParams
   // kind='deposit' 이면 보증금 영수증. 미지정·오타는 기존 입실료 확인서로 폴백(무회귀).
   const receiptKind = kind === 'deposit' ? 'deposit' : 'rent'
+  // 이 화면은 서류를 만드는 도구다(칸 편집·내보내기·발급이 전부 서버 requireEdit). 열람 직원에게 남는 일이 없어
+  // 데이터를 읽기 전에 돌아갈 곳으로 보낸다(2026-11-04 운영자 승인 '추천대로', 갈림길 G3). 발급본 보기·보내기는 그 목록·서류 시트가 맡는다.
+  const role = await getMyRole()
+  if (!canEdit(role)) redirect(resolveDocBack(from, backTenantId).href)
   const data = await getRentReceiptData(tenantId, month, receiptKind, leaseTermId ?? null)
   if (!data) notFound()
-  // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인). 데이터 조회가 이미 같은 관문을 지났다.
-  const role = await getMyRole()
   // key — 월·종류·계약을 바꾸면 폼 useState 초기값이 새 자동값으로 다시 잡히도록 리마운트.
   // from 은 열거 키만 넘긴다(lib/docNav) — 발급 뒤 [보기]가 연 뷰어가 같은 곳으로 돌아간다.
   const docFrom = (['contracts', 'rent-receipts', 'residence-certs', 'tenant'] as const).find(k => k === from)

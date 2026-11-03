@@ -6,7 +6,7 @@
 //
 // 메일(2026-11-03 운영자 승인 '추천대로')은 서버가 보내므로 서버 문이 실제 차단이고, 화면은 입구를 숨긴다.
 //
-// 축은 ⓐ~ⓜ 열둘이다(ⓚ·ⓛ 은 계약서·확인서 화면).
+// 축은 ⓐ~ⓜ 열셋이다(ⓚ·ⓛ 은 계약서·확인서 화면).
 //   ⓐ 서버 문. 문자를 짜거나 기록하거나 서명 요청 링크(문자로 나간다)를 만드는 액션은 첫 DB 호출 전에 무조건 `await requireEdit()` 를 부른다.
 //   ⓑ 입구 전수. app·components·lib 에서 문자앱을 여는 자리(sms: 리터럴, singleSmsHref, sendWithText)와 문자 창 렌더를 모두 찾아
 //      SINKS 표와 대조한다. 표에 없는 새 자리는 붉다(등록하고 canEditUi 로 막을 것).
@@ -30,6 +30,7 @@
 //   ⓚ 계약서 화면 읽기 전용(2026-11-04 운영자 승인 '추천대로'). page 가 역할을 데이터보다 먼저 읽어 제한 스태프는 404, 서명본(?share=)은
 //      열람 역할을 일반 화면으로 보낸다. ContractView 는 viewOnly 하나로 쓰기 입구(납부일 창·칸 입력·흡연·비상연락처·성명 표기·서명 받기·
 //      서명 지우기·재서명·내보내기·발급·직접 입력 되돌리기)를 세우지 않고, 칸은 원격과 같은 글자 갈래를 잠김 갈래보다 먼저 탄다.
+//   ⓛ 납부·실거주 확인서 화면 문(2026-11-04 운영자 승인 '추천대로'). 만드는 도구라 page 가 데이터 조회보다 먼저 역할을 읽어 열람 역할을 돌아갈 곳(lib/docNav)으로 보낸다.
 //   ⓜ 계약서 칸의 계약서 화면 입구(2026-11-04 운영자 승인 '추천대로'). STAFF 에게는 '계약서 보기'(읽기 전용 화면), 제한 스태프는 money 를 못 읽어
 //      서버가 거절하므로 문이 없다. 판정은 useCanEdit() 와 useCanReadScope('money') 이고, 서명본 문(signedViewLinkId)은 편집 갈래의 shareLink 에서만 나온다.
 //   ⓙ 열람 역할용 서명 상태 조회(2026-11-04 운영자 승인 '추천대로'). getContractSignBadge 는 requireEdit 없이 영업장 문(requirePropertyAccess)을
@@ -540,6 +541,15 @@ for (const [f, re, n] of OPENERS) {
   const gateBody = iShareGate > 0 ? pg.slice(iShareGate, pg.indexOf('redirect(', iShareGate) + 120) : ''
   need(/keep\.set\('leaseTermId', leaseTermId\)/.test(gateBody) && /keep\.set\('lang', lang\)/.test(gateBody) && !/share/.test(gateBody.replace(/\/\/[^\n]*/g, '')),
     `${P}: 열람 역할 서명본 이동이 계약 지목(leaseTermId)·번역본(lang)을 버리거나 share 를 다시 싣는다(부계약이 주계약 화면으로 가거나 이동이 돈다).`)
+}
+
+// ⓛ 확인서 화면 문
+for (const [f, getter] of [['app/rent-receipt/[tenantId]/page.tsx', 'getRentReceiptData('], ['app/residence-cert/[tenantId]/page.tsx', 'getResidenceCertData(']]) {
+  const s = read(f)
+  const gate = s.search(/const role = await getMyRole\(\)\n\s*if \(!canEdit\(role\)\) redirect\(resolveDocBack\(from, backTenantId\)\.href\)\n/)
+  const data = s.indexOf(getter)
+  need(gate >= 0 && data > gate && (s.match(/getMyRole\(\)/g) ?? []).length === 1,
+    `${f}: 열람 역할을 데이터 조회(${getter.slice(0, -1)})보다 먼저 돌아갈 곳으로 보내지 않는다(만드는 도구라 서버가 거절하는 입구만 남는다).`)
 }
 
 // ⓜ 계약서 칸의 계약서 화면 입구
