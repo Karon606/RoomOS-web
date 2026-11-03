@@ -3,6 +3,7 @@
 // 고객 요청·컴플레인 CRUD. 자체 fetch (getTenantRequests).
 // 등록(생성) + 완료 처리 + 완료 적용취소 + 삭제 + 처리 이력 펼침/접힘.
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useState, useTransition } from 'react'
 // 두 포맷터를 나눠 쓴다. 목록 행은 그 입주자의 요청을 훑는 짧은 인라인이라 fmtMD('7/10')가 맞고,
 // 완료 토스트는 **방금 저장한 값을 확인하는 자리**라 연도가 붙는 fmtDateDot 이다 — 완료일은 최대
@@ -32,6 +33,8 @@ const DENSE_DATE_CLS =
 
 
 export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
+  // 열람 전용(STAFF·제한 스태프)에게는 쓰기 입구를 숨긴다(2026-11-03 운영자 승인, 감사 D3 숨김 문법). 서버 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
   const [requests, setRequests] = useState<Request[] | null>(null)
   // 카테고리 목록은 설정에서 관리 — 요청 목록과 같은 왕복으로 실려 온다.
   const [categories, setCategories] = useState<string[]>([])
@@ -130,6 +133,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
         {/* 새 요청 등록 — **접어 둔다.** 이 면을 여는 대부분의 이유는 '이 사람이 뭘 요청했나'를
             보는 것이고, 등록은 가끔이다. 펼쳐 두면 폼 여섯 칸이 목록을 화면 밖으로 밀어낸다.
             형제 위젯(RoomRequests·처리 이력)이 이미 같은 문법으로 접혀 있어 손놀림도 같다. */}
+        {canEditUi && (
         <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
           <button type="button" onClick={() => setShowNewForm(v => !v)}
             className="w-full text-xs font-semibold flex items-center justify-between gap-1"
@@ -181,6 +185,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
           </Btn>
           </>)}
         </div>
+        )}
 
         {/* 미처리 목록 */}
         {unresolved.length === 0 ? (
@@ -194,13 +199,13 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                     <span>요청 {fmtDate(r.requestDate)}</span>
                     {r.targetDate && <span className="font-medium" style={{ color: 'var(--warning-fg)' }}>목표 {fmtDate(r.targetDate)}</span>}
                   </div>
-                  <button onClick={() => handleDelete(r.id)} disabled={pending}
+                  {canEditUi && <button onClick={() => handleDelete(r.id)} disabled={pending}
                     className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
                     style={{ color: 'var(--warm-muted)' }} title="삭제">
                     <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3" />
                     </svg>
-                  </button>
+                  </button>}
                 </div>
                 <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
                 {doneAskId === r.id ? (
@@ -216,7 +221,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                       <RowActionBtn onClick={() => setDoneAskId(null)}>취소</RowActionBtn>
                     </div>
                   </div>
-                ) : (
+                ) : canEditUi && (
                   <button onClick={() => { setDoneAskId(r.id); setDoneDate(kstYmdStr()) }} disabled={pending}
                     className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
                     style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1.5px solid var(--success-ring)' }}>
@@ -254,7 +259,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                       {/* §16 진입점 2 원위치 — 토스트가 사라진 뒤에도 되돌릴 자리가 있어야 한다.
                           삭제와 나란히 서므로 '적용취소' 단독으로는 무엇을 취소하는지 갈린다
                           (삭제 취소로 읽힌다). §16 "모호하면 명사 보강"에 따라 명사를 붙인다. */}
-                      <div className="shrink-0 flex items-center gap-1">
+                      {canEditUi && <div className="shrink-0 flex items-center gap-1">
                         <Btn variant="subtle" size="sm" disabled={pending} onClick={() => handleUnresolve(r.id)}>
                           <RotateCcw />
                           완료 적용취소
@@ -268,7 +273,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                             <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3" />
                           </svg>
                         </button>
-                      </div>
+                      </div>}
                     </div>
                     <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
                   </div>

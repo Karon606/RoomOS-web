@@ -16,8 +16,10 @@ import { Btn } from '@/components/ui/Btn'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 
-export function DiscountWidget({ leaseTermId, onChange }: {
+export function DiscountWidget({ leaseTermId, canEdit, onChange }: {
   leaseTermId: string
+  /** 추가·삭제를 세울 수 있는가 — 열람 전용은 목록만 본다(2026-11-03 운영자 승인, 서버 requireEdit). */
+  canEdit: boolean
   /** 추가·삭제 후 호출 — 부모가 settlement/balance 를 재조회하도록. */
   onChange?: () => void
 }) {
@@ -144,7 +146,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
     <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-[var(--success-fg)]">월 이용료 할인</p>
-        {!showForm && (
+        {canEdit && !showForm && (
           <button onClick={() => { setStart(kstMonthStr()); setShowForm(true) }}
             className="text-xs px-2.5 py-1 rounded-lg border border-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] transition-colors">+ 할인 추가</button>
         )}
@@ -155,8 +157,8 @@ export function DiscountWidget({ leaseTermId, onChange }: {
       {discs.map(d => (
         <div key={d.id} className="flex items-center gap-2 text-xs">
           <span className="flex-1 text-[var(--warm-dark)]">{discountLabel(d)}</span>
-          <button onClick={() => handleDelete(d)} disabled={pending}
-            className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors disabled:opacity-40">삭제</button>
+          {canEdit && <button onClick={() => handleDelete(d)} disabled={pending}
+            className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors disabled:opacity-40">삭제</button>}
         </div>
       ))}
       {showForm && (

@@ -28,7 +28,10 @@ export default async function ContractPage({
     // 배너 문구와 본문 잠금이 '기록 보기'로 갈리게 한다(502호 2026-08-10).
     const snap = await getSignedSnapshot(tenantId, share)
     if (!snap) notFound()
-    return <ContractView data={snap.data} signedSnapshot signatureErased={!snap.signatureLive} />
+    // 서명본 화면도 같은 역할 판정이다 — 종전에는 이 분기가 두 값을 안 넘겨 기본값(true)으로 열람 직원에게
+    // 문자 갈래·본문 편집·폐기·발급이 섰다(독립 검수 B1, 2026-11-03). 두 prop 은 이제 필수다.
+    const role = await getMyRole()
+    return <ContractView data={snap.data} signedSnapshot signatureErased={!snap.signatureLive} canSendSms={canEdit(role)} canEditBody={canEdit(role)} />
   }
   // 셀렉트가 세울 언어 목록은 ContractData 에 안 싣는다 — 그 값은 링크 발급 스냅샷으로 그대로
   // 흘러가므로, 번역본과 무관한 링크의 박제 바이트가 달라진다(조건부 담기 규칙과 같은 자리).
@@ -39,5 +42,5 @@ export default async function ContractPage({
   ])
   if (!data) notFound()
   // 서명 요청은 문자앱을 연다 — 열람 직원(STAFF·제한 스태프)에게는 세우지 않는다(2026-11-03 운영자 지시).
-  return <ContractView data={data} translationLangs={translationLangs} canSendSms={canEdit(role)} />
+  return <ContractView data={data} translationLangs={translationLangs} canSendSms={canEdit(role)} canEditBody={canEdit(role)} />
 }

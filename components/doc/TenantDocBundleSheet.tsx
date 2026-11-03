@@ -521,6 +521,8 @@ function DocRow({ row, tenantId, past = false, propertyName, picked, selected, o
   onToggle: () => void
   onChangeVersion: () => void
 }) {
+  // 작성(발급 화면으로 가는 문)은 열람 전용에게 세우지 않는다 — 발급 API 가 requireEdit 다(2026-11-03 운영자 승인).
+  const canEditUi = useCanEdit()
   const issued = !!picked.driveFileId
   const versions = row.versions ?? []
   // 대표가 없어도 판본이 있으면 **고를 수 있는 행이다.** 종전에는 issued 만 보고 행 탭을 죽여,
@@ -583,7 +585,8 @@ function DocRow({ row, tenantId, past = false, propertyName, picked, selected, o
               가운뎃점으로 잇지 않는 것은 §29 다(완결 문장 둘은 마침표 두 문장). */}
           {row.canWriteNew === false && (
             <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              {DOC_STALE_NOTE}. 납부가 확인되면 새로 작성할 수 있습니다.
+              {/* 열람 전용은 새로 작성할 수 없으니 뒷문장을 뺀다(계약서 칸 빈 안내와 같은 문법). */}
+              {DOC_STALE_NOTE}.{canEditUi && ' 납부가 확인되면 새로 작성할 수 있습니다.'}
             </p>
           )}
           {/* 지금 사실로 다시 만드는 문 — 발급본이 있으면 행이 '발급됨'이라 [보기]만 서고 새로
@@ -599,7 +602,7 @@ function DocRow({ row, tenantId, past = false, propertyName, picked, selected, o
           {/* '여러 달 작성'은 같은 링크 줄에 선다(2026-10-20). 두 링크는 한 줄을 나눠 쓰고 좁으면 아랫줄로 흐른다
               (flex-wrap, 판본 줄과 같은 문법). 문이 닫혀 있어도 이 링크는 선다 — 지난 달들의 납부는 이번 달 납부와
               무관한 사실이고, 고를 수 있는 달은 도착 화면이 실입금 달로 거른다. */}
-          {((row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType]) || row.writeMany) && (
+          {canEditUi && ((row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType]) || row.writeMany) && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3">
               {row.canWriteNew === true && DOC_WRITE_NEW_LABEL[row.docType] && (
                 <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
@@ -636,7 +639,7 @@ function DocRow({ row, tenantId, past = false, propertyName, picked, selected, o
       <div className="flex shrink-0 items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
         {issued
           ? <ViewDocButton driveFileId={picked.driveFileId as string} from="tenant" tenantId={tenantId} />
-          : <BtnLink href={writeHref(row, tenantId, past)} variant="secondary" size="sm">작성</BtnLink>}
+          : canEditUi && <BtnLink href={writeHref(row, tenantId, past)} variant="secondary" size="sm">작성</BtnLink>}
       </div>
     </li>
   )

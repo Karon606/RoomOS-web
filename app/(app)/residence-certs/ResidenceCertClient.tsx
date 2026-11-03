@@ -36,7 +36,8 @@ import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 export default function ResidenceCertClient({ files, tenants }: { files: ResidenceCertListRow[]; tenants: IssuableTenant[] }) {
-  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
+  // 열람 전용(STAFF·제한 스태프)에게 삭제·발급·다시 작성·계약번호(발급 기록)와 내보내기의 문자 갈래를 숨긴다(2026-11-03 운영자 승인, 서버 requireEdit). 한 번만 읽는다.
+  const canEditUi = useCanEdit()
   const router = useRouter()
   const entityModal = useEntityModal()
   const [tenantQuery, setTenantQuery] = useState('')
@@ -122,11 +123,14 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">실거주 확인서
-          <InfoHint title="실거주 확인서란?">거주중·퇴실 예정·비거주 계약의 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
+          <InfoHint title="실거주 확인서란?">{canEditUi
+            ? '거주중·퇴실 예정·비거주 계약의 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. '
+            : '거주중·퇴실 예정·비거주 계약의 입실자에게 영업장 주소·면적·임대료·도장을 채워 발급하는 서류입니다. '}발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
         </h1>
       </div>
 
-      {/* 새 확인서 작성 — 거주중 입실자 선택(발급은 작성 화면의 확정 버튼에서) */}
+      {/* 새 확인서 작성 — 거주중 입실자 선택(발급은 작성 화면의 확정 버튼에서). 열람 전용에게는 세우지 않는다(발급 API requireEdit). */}
+      {canEditUi && (
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 작성</h2>
         <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
@@ -158,6 +162,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
           </ul>
         )}
       </section>
+      )}
 
       {/* 발급 이력 */}
       <section className="space-y-2">
@@ -192,7 +197,8 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
         {fileRows.length === 0 ? (
           <EmptyState
             title={files.length === 0 ? '발급한 확인서가 아직 없습니다' : '조건에 맞는 확인서가 없습니다'}
-            description={files.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
+            // 열람 전용에게는 '새 발급' 칸이 없으니 그 칸을 가리키는 설명을 빼고 제목만 둔다.
+            description={files.length === 0 ? (canEditUi ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : undefined) : '검색어를 조정해 보세요.'}
           />
         ) : (
           <ul className="space-y-2">
@@ -243,7 +249,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                   <ViewDocButton driveFileId={c.driveFileId} from="residence-certs" />
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
-                  <SendDocButton canSendSms={canSendSms} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('residence', c.nameStyle ?? 'ko')}`}
+                  <SendDocButton canSendSms={canEditUi} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('residence', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                   {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                       뷰어와 같은 순서로 둔다 — 두 화면에서 '내보내기 다음이 인쇄'가 같아야 손이 기억한다. */}
@@ -251,14 +257,18 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     from="residence-certs" />
                   {/* 계약도 그 행을 따른다(?leaseTermId=) — 다른 계약이 채워지면 종이와 기록이 갈린다.
                       계약이 끊긴 옛 발급본은 지목 없이 종전 추론으로 연다(무회귀). */}
-                  <a href={`/residence-cert/${c.tenantId}${c.leaseTermId ? `?leaseTermId=${encodeURIComponent(c.leaseTermId)}` : ''}`}
-                    className={btnClass('secondary', 'sm')}>
-                    다시 작성
-                  </a>
-                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
-                    disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
-                    {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                  </Btn>
+                  {canEditUi && (
+                    <a href={`/residence-cert/${c.tenantId}${c.leaseTermId ? `?leaseTermId=${encodeURIComponent(c.leaseTermId)}` : ''}`}
+                      className={btnClass('secondary', 'sm')}>
+                      다시 작성
+                    </a>
+                  )}
+                  {canEditUi && (
+                    <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                      disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
+                      {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
+                    </Btn>
+                  )}
                 </div>
                 )}
               </li>

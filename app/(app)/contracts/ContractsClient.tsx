@@ -50,7 +50,8 @@ const matchesQuery = (c: ContractListRow, q: string) => !q || (
 
 // pending prop 은 pendingIssues 로 받는다 — 아래 useTransition 의 pending 과 이름이 겹친다.
 export default function ContractsClient({ contracts, pending: pendingIssues }: { contracts: ContractListRow[]; pending: PendingIssueRow[] }) {
-  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
+  // 열람 전용(STAFF·제한 스태프)에게 삭제·발급·다시 작성·계약번호(발급 기록)와 내보내기의 문자 갈래를 숨긴다(2026-11-03 운영자 승인, 서버 requireEdit). 한 번만 읽는다.
+  const canEditUi = useCanEdit()
   const router = useRouter()
   const entityModal = useEntityModal()
   const searchParams = useSearchParams()
@@ -300,11 +301,13 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                           <span className="block text-xs text-[var(--warm-dark)] truncate line-through">
                             {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName} · {fmtDate(c.signedAt)}
                           </span>
-                          {c.contractNo ? (
+                          {c.contractNo && canEditUi ? (
                             <button type="button" onClick={() => setDetailId(c.id)}
                               className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
                               계약번호 {c.contractNo}
                             </button>
+                          ) : c.contractNo ? (
+                            <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">계약번호 {c.contractNo}</p>
                           ) : (
                             <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{c.fileName}</p>
                           )}
@@ -314,10 +317,12 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                           열람과 파일 정리는 남긴다(형제 화면과 같은 구성). */}
                       <div className="flex items-center gap-2 shrink-0">
                         <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
-                        <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
-                          disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
-                          {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                        </Btn>
+                        {canEditUi && (
+                          <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                            disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
+                            {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
+                          </Btn>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -339,7 +344,8 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
           />
           {/* 발급본을 지워도 서명은 남아 여기 다시 선다 — 그때 '발급'을 누르면 같은 내용이 또 나간다.
               내용을 바꾸려면 폐기가 먼저라는 사실을 대기 줄에서 말해 준다(신고 63cd1049). */}
-          <p className="text-[0.6875rem] text-[var(--warm-muted)] pb-2">서명은 받았고 계약서 파일이 아직 없습니다. 발급을 누르면 서명 당시 내용으로 계약서 화면이 열립니다. 내용을 바꿔야 하면 그 화면에서 이 계약서를 폐기하고 서명을 다시 받으세요.</p>
+          {/* 열람 전용에게는 '발급'·폐기 문이 없으니 사실 문장만 남긴다(독립 디자이너 패스 2026-11-04). */}
+          <p className="text-[0.6875rem] text-[var(--warm-muted)] pb-2">서명은 받았고 계약서 파일이 아직 없습니다.{canEditUi && ' 발급을 누르면 서명 당시 내용으로 계약서 화면이 열립니다. 내용을 바꿔야 하면 그 화면에서 이 계약서를 폐기하고 서명을 다시 받으세요.'}</p>
           <ul className="space-y-2">
             {pendingRows.map(p => (
               <li key={p.linkId}
@@ -361,10 +367,12 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 {/* 보기·보내기·삭제는 두지 않는다 — 아직 대상 파일이 없어 셋 다 거짓 약속이 된다. */}
                 {/* 서명이 지워진 계약은 일반 화면으로 보낸다. 링크의 signedAt 은 과거 사실이라 서명을
                     지워도 남는데, 그것만 보고 ?share= 로 보내면 옛 스냅샷에 갇힌다(502호 2026-08-10). */}
-                <BtnLink href={p.signatureLive ? `/contract/${p.tenantId}?share=${p.linkId}` : `/contract/${p.tenantId}?leaseTermId=${p.leaseTermId}`}
-                  variant="primary" size="sm" className="shrink-0">
-                  발급
-                </BtnLink>
+                {canEditUi && (
+                  <BtnLink href={p.signatureLive ? `/contract/${p.tenantId}?share=${p.linkId}` : `/contract/${p.tenantId}?leaseTermId=${p.leaseTermId}`}
+                    variant="primary" size="sm" className="shrink-0">
+                    발급
+                  </BtnLink>
+                )}
               </li>
             ))}
           </ul>
@@ -437,8 +445,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 <p className="mt-0.5 flex max-w-full items-baseline gap-1 text-[0.6875rem] text-[var(--warm-muted)]">
                   {!c.contractNo ? (
                     <span className="max-w-full truncate">{c.fileName}</span>
-                  ) : selectMode ? (
-                    // 선택 모드에선 행 전체가 체크박스라 안쪽 버튼이 클릭을 가로채면 안 된다(이름 칸과 같은 규칙)
+                  ) : selectMode || !canEditUi ? (
+                    // 선택 모드에선 행 전체가 체크박스라 안쪽 버튼이 클릭을 가로채면 안 된다(이름 칸과 같은 규칙).
+                    // 열람 전용은 발급 기록(서버 requireEdit)을 못 여니 글자로 둔다(계약서 칸과 같은 대체).
                     <span className="max-w-full truncate">계약번호 {c.contractNo}</span>
                   ) : (
                     <button type="button" onClick={() => setDetailId(c.id)}
@@ -464,7 +473,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     보내기는 그 밖에서는 조건 없이 띄운다(형제 2화면과 같게). canShare 로 숨기면 기기마다
                     행이 달라져 학습이 안 되고, 데스크톱에도 다운로드 폴백과 안내 토스트가 있다. */}
                 {!c.voidedAt && (
-                  <SendDocButton canSendSms={canSendSms} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`}
+                  <SendDocButton canSendSms={canEditUi} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                 )}
                 {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
@@ -472,10 +481,12 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 {!c.voidedAt && (
                   <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.docName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`} from="contracts" />
                 )}
-                <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
-                  disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
-                  {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                </Btn>
+                {canEditUi && (
+                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                    disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
+                    {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
+                  </Btn>
+                )}
               </div>
               )}
             </li>

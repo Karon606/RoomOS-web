@@ -39,7 +39,8 @@ import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 export default function RentReceiptsClient({ files, tenants, month, kind = 'rent' }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string; kind?: 'rent' | 'deposit' }) {
-  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
+  // 열람 전용(STAFF·제한 스태프)에게 삭제·발급·다시 작성·계약번호(발급 기록)와 내보내기의 문자 갈래를 숨긴다(2026-11-03 운영자 승인, 서버 requireEdit). 한 번만 읽는다.
+  const canEditUi = useCanEdit()
   // 서류 종류 — 보증금은 귀속 월이 없어 월 쿼리를 넘기지 않는다(신고 d68220bd)
   const isDeposit = kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
@@ -134,7 +135,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">납부 확인서 · 영수증
             <InfoHint title="어떤 서류인가요?">
               입실료 납부 확인서는 입실자(비거주 계약 포함)의 그 달 이용료 납부 사실을, 보증금 영수증은 계약 보증금의 수령 사실을 증명합니다.
-              입실자를 선택하면 이름·호실·거주기간·금액·수령인·도장이 자동으로 채워집니다.
+              {canEditUi && '입실자를 선택하면 이름·호실·거주기간·금액·수령인·도장이 자동으로 채워집니다. '}
               금액은 실제 받은 기록에서 가져오므로, 받지 않은 돈이 서류에 적히지 않습니다.
               발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.
             </InfoHint>
@@ -150,6 +151,8 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
           : <MonthSelector />}
       </div>
 
+      {/* 새 발급은 발급 화면으로 가는 문이다(발급 API requireEdit) — 열람 전용에게는 이 칸을 세우지 않는다. */}
+      {canEditUi && (
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 {docLabel} 발급</h2>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
@@ -183,6 +186,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
           </ul>
         )}
       </section>
+      )}
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
@@ -216,7 +220,8 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
         {fileRows.length === 0 ? (
           <EmptyState
             title={kindFiles.length === 0 ? `발급한 ${withParticle(docLabel, '이/가')} 아직 없습니다` : `조건에 맞는 ${withParticle(docLabel, '이/가')} 없습니다`}
-            description={kindFiles.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
+            // 열람 전용에게는 '새 발급' 칸이 없으니 그 칸을 가리키는 설명을 빼고 제목만 둔다.
+            description={kindFiles.length === 0 ? (canEditUi ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : undefined) : '검색어를 조정해 보세요.'}
           />
         ) : (
           <ul className="space-y-2">
@@ -273,7 +278,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   <ViewDocButton driveFileId={c.driveFileId} from="rent-receipts" />
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
-                  <SendDocButton canSendSms={canSendSms} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel(isDeposit ? 'deposit' : 'rent', c.nameStyle ?? 'ko')}`}
+                  <SendDocButton canSendSms={canEditUi} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel(isDeposit ? 'deposit' : 'rent', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                   {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                       파일명은 탭이 아니라 그 행의 종류를 따른다 — '다시 작성'과 같은 이유다. */}
@@ -285,12 +290,16 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   {/* 계약도 그 행을 따른다(?leaseTermId=) — 601호 창고 몫 확인서를 다시 열었는데
                       509호 거주 계약이 채워지면 종이와 기록이 갈린다. 계약이 끊긴 옛 발급본은
                       지목 없이 종전 추론으로 연다(무회귀). */}
-                  <a href={`/rent-receipt/${c.tenantId}${reissueQuery ? `?${reissueQuery}` : ''}`}
-                    className={btnClass('secondary', 'sm')}>다시 작성</a>
-                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
-                    disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
-                    {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                  </Btn>
+                  {canEditUi && (
+                    <a href={`/rent-receipt/${c.tenantId}${reissueQuery ? `?${reissueQuery}` : ''}`}
+                      className={btnClass('secondary', 'sm')}>다시 작성</a>
+                  )}
+                  {canEditUi && (
+                    <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                      disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
+                      {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
+                    </Btn>
+                  )}
                 </div>
                 )}
               </li>

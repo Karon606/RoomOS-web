@@ -7,6 +7,7 @@
 // Phase 2.2 (2026-05-30): kind='room' body 를 RoomBody 위젯 조합으로. 액션 행([삭제][수정])을 셸이 직접 처리.
 // Phase 2.3 = kind='tenant' 위젯화 (TenantView 미니 잔존), Phase 2.4 = kind='payment' 요약 위젯화.
 
+import { useCanEdit } from '@/components/RoleContext'
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
@@ -192,6 +193,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   onBack?: () => void
   onClose: () => void
 }) {
+  // 열람 전용(STAFF·제한 스태프)에게는 쓰기 입구를 숨긴다(2026-11-03 운영자 승인, 감사 D3 숨김 문법). 서버 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
   const router = useRouter()
   // 페이지 이동 전용 — refresh(7곳)까지 진행바를 태우면 모달 안 저장마다 막대가 떠 소음이 된다
   const navRouter = useNavRouter()
@@ -470,7 +473,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
 
               라벨이 '서류 보내기'가 아니라 '서류'인 이유. 이제 그 문 뒤에서 만들기도 하므로
               '보내기'는 절반만 말한다. '서류함'은 보관만 뜻해 작성을 감춘다. */}
-          {kind === 'room' && hasRoom && !opening && (
+          {kind === 'room' && hasRoom && !opening && canEditUi && (
             <div className="flex gap-2 items-center">
               {/* 형제 면과 같은 문법으로 — 종전에는 raw button 에 py-2 text-xs 라 실높이가 34px 이었다
                   (§09 터치 타겟 44px, §10 raw button 금지 양쪽에 걸렸다). */}
@@ -486,10 +489,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           )}
           {kind === 'tenant' && hasTenant && !opening && (
             <div className="flex gap-2 items-center">
-              <Btn variant="ghost" size="md" onClick={handleDeleteTenant} disabled={isPending}
-                className="text-[var(--danger-fg)]">
-                삭제
-              </Btn>
+              {canEditUi && (
+                <Btn variant="ghost" size="md" onClick={handleDeleteTenant} disabled={isPending}
+                  className="text-[var(--danger-fg)]">
+                  삭제
+                </Btn>
+              )}
               <div className="flex-1" />
               {/* null = 계약 지목 없는 사람 단위 진입. 시트가 그 사람의 계약을 전부 세운다. */}
               {links?.tenantId && (
@@ -497,9 +502,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
                   서류
                 </Btn>
               )}
-              <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
-                수정
-              </Btn>
+              {canEditUi && (
+                <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
+                  수정
+                </Btn>
+              )}
             </div>
           )}
           {/* 수납 면 — 이 면이 열어 둔 계약(shownLeaseId)을 서류와 수정 양쪽에 실어 보낸다.
@@ -548,10 +555,10 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               <MonthSelector />
             </div>
           )}
-          {kind === 'room'    && (hasRoom   ? <RoomBody roomId={shownRoomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow}
+          {kind === 'room'    && (hasRoom   ? <RoomBody roomId={shownRoomId!} month={roomStatusMonth} onApplyScheduledNow={canEditUi ? handleApplyScheduledNow : undefined}
                                                 rooms={roomOptions} onSelectRoom={setRoomSel} subLeaseNote={subLeaseNote} /> : <Empty label="연결된 호실이 없습니다." />)}
           {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 입주자가 없습니다." />)}
-          {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit roomNo={shownLeaseRoomNo}
+          {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit={canEditUi} roomNo={shownLeaseRoomNo}
                                                 leases={leaseOptions} onSelectLease={setLeaseSel} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}
       </div>

@@ -386,7 +386,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
             )
           )}
 
-          <DiscountWidget leaseTermId={leaseTermId} onChange={refresh} />
+          <DiscountWidget leaseTermId={leaseTermId} canEdit={canEdit} onChange={refresh} />
 
           {/* 납부일 조정·변경은 반복 납부일이 있는 계약만 — 단기는 바꿀 '매월 N일'이 없다. */}
           {!settlement.isShortTerm && (
@@ -405,7 +405,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                 onChange={refresh}
               />
 
-              <DueDayPermanentChangeWidget
+              {canEdit && <DueDayPermanentChangeWidget
                 leaseTermId={leaseTermId}
                 targetMonth={month}
                 // 일할 기준액은 서버 재계산과 같은 정본(RoomRow.rentBasis = viewExpectedForMonth)이다. settlement.expected 는 그 달 청구
@@ -415,7 +415,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                 currentDueDay={settlement.baseDueDay}
                 cycleDay={settlement.cycleDay}
                 onChange={refresh}
-              />
+              />}
             </>
           )}
 

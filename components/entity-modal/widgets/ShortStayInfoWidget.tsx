@@ -5,6 +5,7 @@
 // 희망 방이 있으면 그 방들의 컨디션만, 없으면 영업장 전체 컨디션을 모두 보여준다(문의 전화 대응용).
 // 계산은 홈 '단기 요금 계산'과 동일(calcShortStay) — 금액이 항상 일치.
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useState } from 'react'
 import { getRoomsForQuote, undoShortStayExtension } from '@/app/(app)/tenants/actions'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
@@ -56,6 +57,8 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
   tenantName: string
   onChange?: () => void
 }) {
+  // 열람 전용(STAFF·제한 스태프)에게는 쓰기 입구를 숨긴다(2026-11-03 운영자 승인, 감사 D3 숨김 문법). 서버 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
   useEffect(() => { getRoomsForQuote().then(setData).catch(() => setData(null)) }, [])
 
@@ -172,7 +175,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
                           <span className="tabular-nums">{e.prevRentAmount.toLocaleString()} → <span className={undone ? '' : 'text-[var(--warm-dark)]'}>{e.newRentAmount.toLocaleString()}</span></span>
                           <span className="text-[var(--warm-muted)]"> (퇴실 {fmtMD(e.prevExpectedMoveOut)}→{fmtMD(e.newExpectedMoveOut)})</span>
                         </p>
-                        {e === lastActive && (
+                        {canEditUi && e === lastActive && (
                           <button type="button" onClick={handleUndo} disabled={undoing}
                             className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
                             {undoing ? '취소 중…' : '적용취소'}
@@ -184,7 +187,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
                 </ul>
               </div>
             )}
-            {canExtend && (
+            {canEditUi && canExtend && (
               <div className="flex gap-2 items-center">
                 <Btn variant="subtle" size="sm" onClick={() => setExtOpen(true)} className="font-semibold">단기 연장</Btn>
                 {/* 눌러앉는 사람의 문 — 종전에는 수정 폼의 체크박스를 끄는 것이 전부였고 그 한 번이

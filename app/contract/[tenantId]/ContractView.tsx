@@ -208,7 +208,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
 }
 
 
-export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [], canSendSms = true }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko', translationLangs = [], canSendSms, canEditBody }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
@@ -226,9 +226,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   /**
    * 서명 요청(문자앱을 연다)을 세울 수 있는가 — 운영자 페이지가 역할(lib/role canEdit)로 넘긴다.
    * 이 화면은 (app) 레이아웃 밖이라 RoleProvider 가 없어 useCanEdit 를 못 쓴다(2026-11-03 운영자 지시,
-   * 열람 직원은 고객에게 문자를 못 보낸다). 안 넘기면 종전 그대로다. 서버 발급 requireEdit 가 최종 방어다.
+   * 열람 직원은 고객에게 문자를 못 보낸다). 기본값이 없다 — 렌더하는 자리마다 역할로 정해 넘긴다(독립 검수 B1, ?share= 서명본 분기가 빠져 열람 직원에게 열렸다). 서버 발급 requireEdit 가 최종 방어다.
    */
-  canSendSms?: boolean
+  canSendSms: boolean
+  /** 본문 편집·전체 적용취소·공통 템플릿으로·이 계약서 폐기·새 버전 작성을 세울 수 있는가 — 열람 직원에게는 숨긴다(2026-11-03 운영자 승인, 서버 requireEdit). 기본값이 없다(필수). */
+  canEditBody: boolean
 }) {
   const remote = mode === 'remote'
   const router = useRouter()
@@ -1812,16 +1814,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
             {/* §16 라벨 '적용취소' 단일. 칸 하나씩 되돌리는 목록 행과 같은 동작이라 명사로만 가른다 —
                 한쪽이 '자동값 복원' 이면 같은 동작에 두 이름이 서고, 운영자는 둘을 다른 기능으로 읽는다. */}
-            <button onClick={handleResetAuto} className="toolbar-btn-secondary">
-              전체 적용취소
-            </button>
+            {canEditBody && (
+              <button onClick={handleResetAuto} className="toolbar-btn-secondary">
+                전체 적용취소
+              </button>
+            )}
             {/* 잠겨도 버튼을 없애지 않는다. 없애면 왜 없는지 아무도 모르고 다음 세션이
                 '버튼이 사라졌다'를 새 결함으로 신고한다. 누르면 이유와 길을 말한다. */}
-            <button onClick={bodyLocked ? notifyBodyLocked : () => setEditing(true)}
-              className={`toolbar-btn-secondary${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
-              본문 편집
-            </button>
-            {data.hasOverride && (
+            {canEditBody && (
+              <button onClick={bodyLocked ? notifyBodyLocked : () => setEditing(true)}
+                className={`toolbar-btn-secondary${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
+                본문 편집
+              </button>
+            )}
+            {canEditBody && data.hasOverride && (
               <button onClick={bodyLocked ? notifyBodyLocked : handleResetOverride} disabled={pending}
                 className={`toolbar-btn-secondary toolbar-btn-warn${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
                 공통 템플릿으로
@@ -1829,7 +1835,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             )}
             {/* 잠긴 계약서에만 세운다 — 풀려 있는 계약서에는 폐기할 버전 자체가 없다.
                 잠금 안내 세 곳이 전부 이 버튼을 가리키므로 안내와 길이 같은 화면에 있다. */}
-            {bodyLocked && (
+            {canEditBody && bodyLocked && (
               <button onClick={handleVoidVersion} disabled={sigClearing}
                 className="toolbar-btn-secondary toolbar-btn-warn">
                 {sigClearing ? '폐기 중…' : '이 계약서 폐기'}
@@ -1837,7 +1843,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             )}
             {/* 여러 판본 만들기가 켜진 영업장에서, 살아 있는 실계약본이 있을 때만 선다.
                 폐기 버튼은 자리도 라벨도 그대로 둔다 — 잠금 안내 문구들이 그 이름을 지목하는 앵커다. */}
-            {bodyLocked && versionCtx?.multiVersion && versionCtx.hasRealContract && (
+            {canEditBody && bodyLocked && versionCtx?.multiVersion && versionCtx.hasRealContract && (
               <button onClick={handleSupersede} disabled={superseding}
                 className="toolbar-btn-secondary">
                 {superseding ? '여는 중…' : '새 버전 작성'}

@@ -4,6 +4,7 @@
 // applyStatusTransition·recordDepositReturn 서버액션 그대로 호출. 추출은 UI/state 만 이동.
 // transitionsFor() 정의 그대로 이주.
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useId, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -230,6 +231,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   /** 전환 성공 후 부모가 settlement/tenant 재조회. */
   onChange?: () => void
 }) {
+  // 열람 전용(STAFF·제한 스태프)에게는 쓰기 입구를 숨긴다(2026-11-03 운영자 승인, 감사 D3 숨김 문법). 서버 requireEdit 가 최종 방어다.
+  const canEditUi = useCanEdit()
   const entityModal = useEntityModal()
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -732,6 +735,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
   return (
     <>
+      {canEditUi && (
       <div className="flex flex-wrap gap-2 py-2">
         {transitions.map(def => (
           <Btn key={def.key} type="button" variant={def.tone ?? 'secondary'} size="sm"
@@ -744,6 +748,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           </Btn>
         ))}
       </div>
+      )}
 
       {/* 입실 전 점검이 남은 방 — 막지 않고 이유 한 마디와 '점검 열기'(그 호실 모달의 작업 이력)를 둔다(§27.8 WhyCaption 문형). */}
       {lease.status === 'RESERVED' && lease.roomId && moveInInsp && (
@@ -764,6 +769,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       {lease.status === 'CHECKOUT_PENDING' && lease.autoCheckoutAt && (
         <p className="-mt-1 pb-1 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-[var(--warm-muted)]">
           <span>{fmtDate(lease.autoCheckoutAt)}에 앱이 퇴실 예정으로 바꿨습니다.</span>
+          {canEditUi && (
           <button type="button" disabled={pending}
             className="font-semibold text-[var(--tc-text)] underline underline-offset-2 disabled:opacity-50"
             onClick={() => startTransition(async () => {
@@ -777,6 +783,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             })}>
             거주중으로 되돌리기
           </button>
+          )}
         </p>
       )}
 

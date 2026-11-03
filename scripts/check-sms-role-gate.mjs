@@ -22,6 +22,9 @@
 //      메일 액션 호출)는 MAIL_SINKS 표 안에서만 서며 열람 역할에게 canEditUi 로 숨는다.
 //   ⓖ 내보내기의 '문자로 보내기'(2026-11-03 운영자 승인). SendDocButton 은 canSendSms 를 필수로 받아 그 값이 거짓이면 그 갈래를 세우지 않는다.
 //      모든 사용처가 값을 넘기고, (app) 안은 useCanEdit(), 밖 화면은 page 가 lib/role canEdit 로 넘긴 prop 이다. 공유 창(일반 '공유')은 그대로다.
+//   ⓗ 고객·호실 상세(Prism)와 계약서 화면의 쓰기 입구(2026-11-03 운영자 승인). 서버가 requireEdit 로 거절하는 동작은 열람 역할에게
+//      화면도 세우지 않는다(캡션 없이 숨김, 가이드 §27.8 ②). EDIT_GATES 표의 각 입구가 canEditUi(useCanEdit) 또는 page 가 넘긴 prop 아래에 있고,
+//      같은 손(핸들러)이 가드 밖에 또 생기지 않게 개수를 고정한다.
 //
 // 실행: node scripts/check-sms-role-gate.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -182,10 +185,10 @@ for (const [f, re, n] of OPENERS) {
 {
   const page = read('app/contract/[tenantId]/page.tsx')
   need(/import \{[^}]*\bgetMyRole\b[^}]*\bcanEdit\b[^}]*\} from '@\/lib\/role'|import \{[^}]*\bcanEdit\b[^}]*\bgetMyRole\b[^}]*\} from '@\/lib\/role'/.test(page)
-    && /<ContractView data=\{data\} translationLangs=\{translationLangs\} canSendSms=\{canEdit\(role\)\} \/>/.test(page),
+    && /<ContractView data=\{data\} translationLangs=\{translationLangs\} canSendSms=\{canEdit\(role\)\}[^/]*\/>/.test(page),
     `app/contract/[tenantId]/page.tsx: 계약서 화면에 canSendSms={canEdit(role)} 를 넘기지 않는다(열람 직원에게 '서명 요청' 이 선다).`)
   const v = read('app/contract/[tenantId]/ContractView.tsx')
-  need(/canSendSms = true \}/.test(v) && /\) : canSendSms \? \(\s*<button onClick=\{handleSignRequest\}/.test(v) && (v.match(/onClick=\{handleSignRequest\}/g) ?? []).length === 1,
+  need(/canSendSms, canEditBody \}: \{/.test(v) && /\n {2}canSendSms: boolean\n/.test(v) && /\n {2}canEditBody: boolean\n/.test(v) && !/canSendSms = |canEditBody = /.test(v) && /\) : canSendSms \? \(\s*<button onClick=\{handleSignRequest\}/.test(v) && (v.match(/onClick=\{handleSignRequest\}/g) ?? []).length === 1,
     `ContractView: '서명 요청' 버튼이 canSendSms 가드 밖에 있다.`)
 }
 {
@@ -290,9 +293,9 @@ for (const [f, re, n] of OPENERS) {
   // 사용처 표 — (app) 안은 useCanEdit() 값, 밖은 page 가 넘긴 prop. 개수를 고정한다.
   const USES = {
     'app/(app)/settings/SettingsForm.tsx': ['canSendSms', 2],
-    'app/(app)/contracts/ContractsClient.tsx': ['canSendSms', 1],
-    'app/(app)/rent-receipts/RentReceiptsClient.tsx': ['canSendSms', 1],
-    'app/(app)/residence-certs/ResidenceCertClient.tsx': ['canSendSms', 1],
+    'app/(app)/contracts/ContractsClient.tsx': ['canEditUi', 1],
+    'app/(app)/rent-receipts/RentReceiptsClient.tsx': ['canEditUi', 1],
+    'app/(app)/residence-certs/ResidenceCertClient.tsx': ['canEditUi', 1],
     'components/entity-modal/widgets/ContractFilesPanel.tsx': ['canEditUi', 1],
     'app/contract/[tenantId]/ContractView.tsx': ['prop', 1],
     'app/rent-receipt/[tenantId]/RentReceiptView.tsx': ['prop', 2],
@@ -316,6 +319,130 @@ for (const [f, re, n] of OPENERS) {
     'app/doc/[fileId]/page.tsx': /canSendSms=\{canEdit\(access\.role\)\}/,
   }
   for (const [f, re] of Object.entries(PAGES)) need(re.test(read(f)), `${f}: (app) 밖 화면에 역할로 정한 canSendSms 를 넘기지 않는다.`)
+}
+
+// ⓗ 상세·계약서 화면 쓰기 입구
+{
+  const EDIT_GATES = [
+    ['components/entity-modal/EntityModal.tsx', /\{kind === 'room' && hasRoom && !opening && canEditUi && \(/, "호실 면 '삭제'·'수정'"],
+    ['components/entity-modal/EntityModal.tsx', /\{canEditUi && \(\s*<Btn variant="ghost" size="md" onClick=\{handleDeleteTenant\}/, "입주자 면 '삭제'"],
+    ['components/entity-modal/EntityModal.tsx', /\{canEditUi && \(\s*<Btn variant="primary" size="md" onClick=\{handleEditTenant\}/, "입주자 면 '수정'"],
+    ['components/entity-modal/EntityModal.tsx', /onApplyScheduledNow=\{canEditUi \? handleApplyScheduledNow : undefined\}/, "호실 '예정 가격 즉시 적용'"],
+    ['components/entity-modal/EntityModal.tsx', /<PaymentBody [^>]*canEdit=\{canEditUi\}/, '수납 면 canEdit(종전 true 고정)'],
+    ['components/entity-modal/widgets/TenantStatusTransitions.tsx', /\{canEditUi && \(\s*<div className="flex flex-wrap gap-2 py-2">\s*\{transitions\.map/, "상태 전환 버튼 줄(퇴실 예정 처리·비거주 전환·입실 적용취소 등)"],
+    ['components/entity-modal/widgets/TenantStatusTransitions.tsx', /\{canEditUi && \(\s*<button type="button" disabled=\{pending\}[\s\S]{0,700}?거주중으로 되돌리기/, "'거주중으로 되돌리기'"],
+    ['components/entity-modal/widgets/ShortStayInfoWidget.tsx', /\{canEditUi && e === lastActive && \(/, "단기 연장 '적용취소'"],
+    ['components/entity-modal/widgets/ShortStayInfoWidget.tsx', /\{canEditUi && canExtend && \(/, "'단기 연장'·'월 계약 전환'"],
+    ['components/entity-modal/widgets/TenantRequestsTab.tsx', /\{canEditUi && \(\s*<div className="rounded-xl p-4 space-y-3"[^>]*>\s*<button type="button" onClick=\{\(\) => setShowNewForm/, "'새 요청 등록'"],
+    ['components/entity-modal/widgets/TenantRequestsTab.tsx', /\) : canEditUi && \(\s*<button onClick=\{\(\) => \{ setDoneAskId\(r\.id\)/, "'완료로 처리하기'"],
+    ['components/entity-modal/widgets/TenantRequestsTab.tsx', /\{canEditUi && <div className="shrink-0 flex items-center gap-1">\s*<Btn [^>]*onClick=\{\(\) => handleUnresolve/, "'완료 적용취소'·처리 이력 삭제"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{canEditUi && \(\s*<label className=\{btnClass\('ghost', 'sm'[^\n]*\n\s*\{uploading \? '올리는 중…' : '스캔본 올리기'\}/, "'스캔본 올리기'"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{canEditUi && multiVersion && \(/, "'용도'"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{canEditUi && <Btn [^>]*onClick=\{\(\) => void handleRestoreFile\(f\.id\)\}>삭제 적용취소/, "'삭제 적용취소'"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{canEditUi && voidedLeaseIds\.map\(/, "'폐기 적용취소'"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{canEditUi && badge\.closable && \(/, "'링크 닫기'·'알림 해제'"],
+    ['components/doc/TenantDocBundleSheet.tsx', /\{canEditUi && \(\(row\.canWriteNew === true/, "서류 행 '새로 작성'·'여러 달 작성'"],
+    ['components/doc/TenantDocBundleSheet.tsx', /: canEditUi && <BtnLink href=\{writeHref\(row, tenantId, past\)\}[^>]*>작성<\/BtnLink>/, "서류 행 '작성'"],
+    ['components/entity-modal/bodies/PaymentBody.tsx', /<DiscountWidget [^>]*canEdit=\{canEdit\}/, '할인 위젯 canEdit'],
+    ['components/entity-modal/bodies/PaymentBody.tsx', /\{canEdit && <DueDayPermanentChangeWidget\b/, "'납입일 영구 변경'"],
+    ['components/entity-modal/widgets/DiscountWidget.tsx', /\{canEdit && !showForm && \(\s*<button onClick=\{\(\) => \{ setStart/, "'+ 할인 추가'"],
+    ['components/entity-modal/widgets/DiscountWidget.tsx', /\{canEdit && <button onClick=\{\(\) => handleDelete\(d\)\}/, "할인 '삭제'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && \(\s*<button onClick=\{handleResetAuto\}/, "계약서 화면 '전체 적용취소'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && \(\s*<button onClick=\{bodyLocked \? notifyBodyLocked : \(\) => setEditing\(true\)\}/, "계약서 화면 '본문 편집'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && data\.hasOverride && \(/, "계약서 화면 '공통 템플릿으로'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && bodyLocked && \(\s*<button onClick=\{handleVoidVersion\}/, "계약서 화면 '이 계약서 폐기'"],
+    ['app/contract/[tenantId]/ContractView.tsx', /\{canEditBody && bodyLocked && versionCtx\?\.multiVersion/, "계약서 화면 '새 버전 작성'"],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /\{stage\.hint \|\| !canEditUi \? '등록된 계약서가 없습니다\.' :/, "계약서 칸 빈 상태 안내가 열람 역할에게 작성·스캔본을 시킨다"],
+    ['app/contract/[tenantId]/page.tsx', /canEditBody=\{canEdit\(role\)\}/, '계약서 page 가 canEditBody 를 넘긴다'],
+    ['app/(app)/contracts/ContractsClient.tsx', /\{canEditUi && \(\s*<BtnLink href=\{p\.signatureLive/, "계약서 목록 발급 대기 '발급'"],
+    ['app/(app)/contracts/ContractsClient.tsx', /\) : selectMode \|\| !canEditUi \? \(/, '계약서 목록 계약번호(발급 기록) 글자 대체'],
+    ['app/(app)/contracts/ContractsClient.tsx', /c\.contractNo && canEditUi \? \(\s*<button type="button" onClick=\{\(\) => setDetailId/, '계약서 목록 폐기본 계약번호 글자 대체'],
+    ['app/(app)/rent-receipts/RentReceiptsClient.tsx', /\{canEditUi && \(\s*<section className="space-y-2">\s*<h2[^>]*>새 \{docLabel\} 발급<\/h2>/, "납부 확인서 목록 '새 발급'"],
+    ['app/(app)/rent-receipts/RentReceiptsClient.tsx', /\{canEditUi && \(\s*<a href=\{`\/rent-receipt\/\$\{c\.tenantId\}\$\{reissueQuery/, "납부 확인서 목록 '다시 작성'"],
+    ['app/(app)/residence-certs/ResidenceCertClient.tsx', /\{canEditUi && \(\s*<section className="space-y-2">\s*<h2[^>]*>새 확인서 작성<\/h2>/, "실거주 확인서 목록 '새 확인서 작성'"],
+    ['app/(app)/residence-certs/ResidenceCertClient.tsx', /\{canEditUi && \(\s*<a href=\{`\/residence-cert\/\$\{c\.tenantId\}/, "실거주 확인서 목록 '다시 작성'"],
+    ['components/doc/TenantDocBundleSheet.tsx', /\{DOC_STALE_NOTE\}\.\{canEditUi && ' 납부가 확인되면 새로 작성할 수 있습니다\.'\}/, '서류 행 지난 납부 안내가 열람 역할에게 작성을 시킨다'],
+    ['app/(app)/contracts/ContractsClient.tsx', /서명은 받았고 계약서 파일이 아직 없습니다\.\{canEditUi && ' 발급을 누르면/, '발급 대기 안내가 열람 역할에게 발급·폐기를 시킨다'],
+    ['app/(app)/rent-receipts/RentReceiptsClient.tsx', /\(canEditUi \? '위에서 입실자를 선택해 발급하면 여기에 모입니다\.' : undefined\)/, '빈 목록 설명이 열람 역할에게 없는 새 발급 칸을 가리킨다'],
+    ['app/(app)/residence-certs/ResidenceCertClient.tsx', /\(canEditUi \? '위에서 입실자를 선택해 발급하면 여기에 모입니다\.' : undefined\)/, '빈 목록 설명이 열람 역할에게 없는 새 확인서 칸을 가리킨다'],
+  ]
+  for (const [f, re, what] of EDIT_GATES) need(re.test(read(f)), `${f}: ${what} 가 열람 역할에게 선다(가드가 없거나 모양이 바뀌었다).`)
+  // 손 개수 — 가드 밖에 같은 동작이 하나 더 생기면 붉다.
+  const HANDS = [
+    ['components/entity-modal/EntityModal.tsx', /onClick=\{handleDeleteTenant\}/g, 1],
+    ['components/entity-modal/EntityModal.tsx', /onClick=\{handleEditTenant\}/g, 1],
+    ['components/entity-modal/EntityModal.tsx', /onClick=\{handleDeleteRoom\}/g, 1],
+    ['components/entity-modal/EntityModal.tsx', /onClick=\{handleEditRoom\}/g, 1],
+    ['components/entity-modal/EntityModal.tsx', /<PaymentBody\b/g, 1],
+    ['components/entity-modal/widgets/TenantRequestsTab.tsx', /handleDelete\(r\.id\)/g, 2],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /onClick=\{\(\) => handleDelete\(f\.id\)\}/g, 2],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /onClick=\{\(\) => setDetailId\(f\.id\)\}/g, 2],
+    ['components/entity-modal/widgets/ContractFilesPanel.tsx', /onChange=\{handleUpload\}/g, 1],
+    ['app/contract/[tenantId]/ContractView.tsx', /onClick=\{handleResetAuto\}/g, 1],
+    ['app/contract/[tenantId]/ContractView.tsx', /onClick=\{handleVoidVersion\}/g, 1],
+    ['app/(app)/contracts/ContractsClient.tsx', /onClick=\{\(\) => handleDelete\(c\.id, c\.tenantName\)\}/g, 2],
+    ['app/(app)/contracts/ContractsClient.tsx', /onClick=\{\(\) => setDetailId\(c\.id\)\}/g, 2],
+    ['app/(app)/rent-receipts/RentReceiptsClient.tsx', /onClick=\{\(\) => handleDelete\(c\.id, c\.tenantName\)\}/g, 1],
+    ['app/(app)/residence-certs/ResidenceCertClient.tsx', /onClick=\{\(\) => handleDelete\(c\.id, c\.tenantName\)\}/g, 1],
+    ['app/contract/[tenantId]/ContractView.tsx', /onClick=\{handleSupersede\}/g, 1],
+  ]
+  for (const [f, re, n] of HANDS) {
+    const c = (read(f).match(re) ?? []).length
+    need(c === n, `${f}: ${re.source} 이 ${c}곳이다(기대 ${n}). 새 자리면 열람 역할에게 막고 이 표를 고친다.`)
+  }
+  // 서류 목록 세 곳의 삭제는 모두 canEditUi 아래다(서버 deleteContractFile·deleteRentReceiptFile·deleteResidenceCertFile requireEdit).
+  for (const [f, n] of [['app/(app)/contracts/ContractsClient.tsx', 2], ['app/(app)/rent-receipts/RentReceiptsClient.tsx', 1], ['app/(app)/residence-certs/ResidenceCertClient.tsx', 1]]) {
+    const s2 = read(f)
+    need((s2.match(/\{canEditUi && \(\s*<Btn variant="ghost" size="sm" onClick=\{\(\) => handleDelete\(c\.id, c\.tenantName\)\}/g) ?? []).length === n, `${f}: 서류 '삭제' 가 열람 역할에게 선다.`)
+    need(/const canEditUi = useCanEdit\(\)/.test(s2), `${f}: canEditUi 가 useCanEdit() 에서 오지 않는다.`)
+  }
+  // (app) 밖 서류 화면(계약서·납부 확인서·실거주 확인서)으로 가는 문 표 — 열람 역할에게는 0 이다(2026-11-04 운영자 결정).
+  // 문 글자가 새 자리에 생기거나 가드 꼴이 바뀌면 붉다. 서류 시트의 문은 writeHref·writeManyHref 를 거치고 그 호출은 위 표가 본다.
+  const DOOR = /[`'"]\/(contract|rent-receipt|residence-cert)\//
+  const DOORS = {
+    'app/(app)/contracts/ContractsClient.tsx': [1, [/\{canEditUi && \(\s*<BtnLink href=\{p\.signatureLive \? `\/contract\//]],
+    'app/(app)/rent-receipts/RentReceiptsClient.tsx': [2, [/\{canEditUi && \(\s*<section className="space-y-2">[\s\S]*?<a href=\{`\/rent-receipt\/\$\{t\.tenantId\}\$\{monthQuery\}`\}[\s\S]*?<\/section>\s*\)\}/, /\{canEditUi && \(\s*<a href=\{`\/rent-receipt\/\$\{c\.tenantId\}/]],
+    'app/(app)/residence-certs/ResidenceCertClient.tsx': [2, [/\{canEditUi && \(\s*<section className="space-y-2">[\s\S]*?href=\{`\/residence-cert\/\$\{t\.tenantId\}`\}[\s\S]*?<\/section>\s*\)\}/, /\{canEditUi && \(\s*<a href=\{`\/residence-cert\/\$\{c\.tenantId\}/]],
+    'components/entity-modal/widgets/ContractFilesPanel.tsx': [3, [/\{canEditUi && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}`\}/, /\{canEditUi && signedViewLinkId && \(\s*<BtnLink href=\{`\/contract\/\$\{tenantId\}\?share=/, /\{canEditUi && extraLeases\?\.map\(l => \(\s*<BtnLink key=\{l\.id\} href=\{`\/contract\/\$\{tenantId\}\?leaseTermId=/]],
+    'components/doc/TenantDocBundleSheet.tsx': [4, []],
+  }
+  const doorFiles = ['app', 'components', 'lib'].flatMap(walk).filter(f => !/^app\/(api|contract|rent-receipt|residence-cert|sign)\//.test(f) && f !== 'app/robots.ts')
+    .filter(f => read(f).split('\n').some(l => DOOR.test(l)))
+  for (const f of doorFiles) need(f in DOORS, `${f}: (app) 밖 서류 화면으로 가는 문이 새로 생겼다. 열람 역할에게 막고 DOORS 표에 등록할 것.`)
+  for (const [f, [n, guards]] of Object.entries(DOORS)) {
+    const s2 = read(f)
+    const c = s2.split('\n').filter(l => DOOR.test(l)).length
+    need(c === n, `${f}: 서류 화면으로 가는 문이 ${c}줄이다(기대 ${n}). 새 자리면 열람 역할에게 막고 이 표를 고친다.`)
+    for (const g of guards) need(g.test(s2), `${f}: 서류 화면으로 가는 문이 열람 역할에게 선다(가드 ${g.source.slice(0, 40)}…).`)
+  }
+  {
+    const s2 = read('components/doc/TenantDocBundleSheet.tsx')
+    need((s2.match(/\bwriteHref\(/g) ?? []).length === 3 && (s2.match(/\bwriteManyHref\(/g) ?? []).length === 2, `TenantDocBundleSheet: 서류 화면으로 가는 문(writeHref·writeManyHref) 호출이 늘었다.`)
+  }
+
+  // ContractView 를 그리는 자리는 전부 두 prop 을 넘긴다(기본값 없음). 운영자 화면은 역할로, 입주자 원격 서명은 false 로.
+  const CV_RENDERS = {
+    'app/contract/[tenantId]/page.tsx': [/canSendSms=\{canEdit\(role\)\} canEditBody=\{canEdit\(role\)\}/, 2],
+    'app/sign/[token]/page.tsx': [/canSendSms=\{false\} canEditBody=\{false\}/, 1],
+  }
+  const cvUsers = ['app', 'components'].flatMap(walk).filter(f => /<ContractView\b/.test(read(f)))
+  for (const f of cvUsers) need(f in CV_RENDERS, `${f}: ContractView 를 그리는 자리가 새로 생겼다. canSendSms·canEditBody 를 역할로 넘기고 CV_RENDERS 표에 등록할 것.`)
+  for (const [f, [re, n]] of Object.entries(CV_RENDERS)) {
+    const tags = [...read(f).matchAll(/<ContractView\b[^>]*\/>/g)].map(m => m[0])
+    need(tags.length === n && tags.every(t => re.test(t)), `${f}: ContractView 렌더 ${tags.length}곳 중 두 prop 을 정해 넘기지 않는 자리가 있다(기대 ${n}곳).`)
+  }
+  // 처리 이력 삭제·계약번호(발급 기록, 서버 requireEdit) 는 줄 단위로 가드를 본다.
+  const req = read('components/entity-modal/widgets/TenantRequestsTab.tsx')
+  need(/\{canEditUi && <button onClick=\{\(\) => handleDelete\(r\.id\)\}/.test(req), `TenantRequestsTab: 미처리 요청 '삭제' 가 열람 역할에게 선다.`)
+  const cfp = read('components/entity-modal/widgets/ContractFilesPanel.tsx')
+  need((cfp.match(/f\.contractNo && canEditUi \? \(\s*<button type="button" onClick=\{\(\) => setDetailId/g) ?? []).length === 2,
+    `ContractFilesPanel: 계약번호(발급 기록 열기, 서버 requireEdit) 가 열람 역할에게 눌린다.`)
+  need((cfp.match(/\{canEditUi && \(\s*<Btn variant="ghost" size="sm" onClick=\{\(\) => handleDelete\(f\.id\)\}/g) ?? []).length === 2,
+    `ContractFilesPanel: 계약서 '삭제' 가 열람 역할에게 선다.`)
+  for (const f of ['components/entity-modal/EntityModal.tsx', 'components/entity-modal/widgets/TenantStatusTransitions.tsx', 'components/entity-modal/widgets/ShortStayInfoWidget.tsx',
+    'components/entity-modal/widgets/TenantRequestsTab.tsx', 'components/doc/TenantDocBundleSheet.tsx']) {
+    need(/const canEditUi = useCanEdit\(\)/.test(read(f)), `${f}: canEditUi 가 useCanEdit() 에서 오지 않는다.`)
+  }
 }
 
 if (violations.length) {

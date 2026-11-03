@@ -531,11 +531,15 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
             박제**이고 스스로 "지금 계약을 고치거나 서명을 다시 받으려면 일반 화면에서 하세요" 라고
             말한다(ContractView.tsx:941). 그 문으로 보내면서 '작성' 이라 부르면 배신의 방향만 바뀐다.
             그래서 작성 문은 항상 같은 자리에 같은 이름으로 서고, 서명본 발급은 있을 때만 옆에 선다. */}
-        <BtnLink href={`/contract/${tenantId}`}
-          variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-          계약서 작성·서명
-        </BtnLink>
-        {signedViewLinkId && (
+        {/* 계약서 화면(작성·발급·서명)으로 가는 문은 열람 전용(STAFF·제한 스태프)에게 숨긴다(2026-11-04 운영자 결정, 그 화면의 쓰기가 서버 requireEdit).
+            다음 단계에서 계약서 화면이 읽기 전용이 되면 STAFF 에게만 '계약서 보기' 로 다시 연다. */}
+        {canEditUi && (
+          <BtnLink href={`/contract/${tenantId}`}
+            variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
+            계약서 작성·서명
+          </BtnLink>
+        )}
+        {canEditUi && signedViewLinkId && (
           <BtnLink href={`/contract/${tenantId}?share=${signedViewLinkId}`}
             variant={stage.primary === 'issue' ? 'primary' : 'secondary'} size="sm">
             서명본 계약서 발급
@@ -543,7 +547,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
         )}
         {/* 부계약 계약서 — 종전에는 이 문이 없어 창고 계약서를 뽑을 길 자체가 없었다.
             발급 화면이 어느 계약을 그릴지 URL 로 지목한다(?leaseTermId=). 본문 문안은 별건이다. */}
-        {extraLeases?.map(l => (
+        {canEditUi && extraLeases?.map(l => (
           <BtnLink key={l.id} href={`/contract/${tenantId}?leaseTermId=${l.id}`} variant="ghost" size="sm">
             {fmtRoomNo(l.roomNo, '호실 미지정')} 계약서
           </BtnLink>
@@ -555,18 +559,20 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
           </Btn>
         )}
         {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다.
-            스캔본 올리기도 홈 알림을 해소한다(종이 계약 운영) — 감추지 않는다. */}
-        <label className={btnClass('ghost', 'sm', `cursor-pointer ${uploading ? 'opacity-60' : ''}`)}>
-          {uploading ? '올리는 중…' : '스캔본 올리기'}
-          <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+            스캔본 올리기도 홈 알림을 해소한다(종이 계약 운영) — 상태로는 감추지 않는다. 열람 역할에게만 숨긴다(서버 requireEdit). */}
+        {canEditUi && (
+          <label className={btnClass('ghost', 'sm', `cursor-pointer ${uploading ? 'opacity-60' : ''}`)}>
+            {uploading ? '올리는 중…' : '스캔본 올리기'}
+            <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+        )}
       </div>
       {badge && (
         <div className="flex items-center gap-2">
           <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${badge.active ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)]'}`}>
             {badge.label}
           </span>
-          {badge.closable && (
+          {canEditUi && badge.closable && (
             <button type="button" onClick={handleShareClose} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
               {share?.needsIssue ? '알림 해제' : '링크 닫기'}
             </button>
@@ -580,7 +586,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
           '없습니다' 도 못 띄우고 빈 자리만 그린다(폐기본은 아래 접힘 칸으로 내려갔다). */}
       {!loading && files && liveFiles.length === 0 && (
         <p className="text-xs text-[var(--warm-muted)]">
-          {stage.hint ? '등록된 계약서가 없습니다.' : '등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.'}
+          {/* 열람 전용은 작성·스캔본 올리기를 못 하므로 할 일을 시키는 뒷마디를 뺀다(독립 디자이너 패스 2026-11-03). */}
+          {stage.hint || !canEditUi ? '등록된 계약서가 없습니다.' : '등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.'}
         </p>
       )}
       {/* 같은 계약에 2부 이상일 때만 머리를 세운다. 1부뿐인 계약에서는 이 줄이 없어 종전 골격 그대로다. */}
@@ -625,11 +632,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                         2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
                     {(needsName || purposeLabel(f)) && (
                       <p className="num mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
-                        {f.contractNo ? (
+                        {f.contractNo && canEditUi ? (
                           <button type="button" onClick={() => setDetailId(f.id)}
                             className="max-w-full truncate hover:text-[var(--tc-text)] transition-colors">
                             계약번호 {f.contractNo}
                           </button>
+                        ) : f.contractNo ? (
+                          <span className="max-w-full truncate">계약번호 {f.contractNo}</span>
                         ) : (
                           <span className="max-w-full truncate">{f.fileName}</span>
                         )}
@@ -648,14 +657,16 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                     className={btnClass('secondary', 'sm')} />
                   {/* 용도 바꾸기 — 여러 판본 만들기가 켜진 영업장만. 꺼져 있으면 파생 개념 자체가 없다.
                       발급 때 잘못 고른 목적을 되돌리는 유일한 문이다(2026-08-26 규약 개정). */}
-                  {multiVersion && (
+                  {canEditUi && multiVersion && (
                     <Btn variant="ghost" size="sm"
                       onClick={() => setPurposeFile({ id: f.id, issuePurpose: f.issuePurpose, leaseTermId: f.leaseTermId ?? null })}>용도</Btn>
                   )}
-                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
-                    className="text-[var(--danger-fg)]">
-                    삭제
-                  </Btn>
+                  {canEditUi && (
+                    <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
+                      className="text-[var(--danger-fg)]">
+                      삭제
+                    </Btn>
+                  )}
                 </div>
               </li>
             )
@@ -693,7 +704,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {/* 라벨은 §16 정본 '적용취소' 한 벌이다 — 형제(폐기 적용취소)와 같은 문형으로 맞춘다. */}
-                        <Btn variant="secondary" size="sm" onClick={() => void handleRestoreFile(f.id)}>삭제 적용취소</Btn>
+                        {canEditUi && <Btn variant="secondary" size="sm" onClick={() => void handleRestoreFile(f.id)}>삭제 적용취소</Btn>}
                       </div>
                     </li>
                   )
@@ -781,11 +792,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                           <span className="block text-xs text-[var(--warm-dark)] truncate line-through">
                             {tenantName} · {dateLabel}
                           </span>
-                          {f.contractNo ? (
+                          {f.contractNo && canEditUi ? (
                             <button type="button" onClick={() => setDetailId(f.id)}
                               className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--tc-text)] transition-colors">
                               계약번호 {f.contractNo}
                             </button>
+                          ) : f.contractNo ? (
+                            <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">계약번호 {f.contractNo}</p>
                           ) : (
                             <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{f.fileName}</p>
                           )}
@@ -795,16 +808,18 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                           열람과 파일 정리는 남긴다(§30 행 액션 상한 안이다). */}
                       <div className="flex items-center gap-2 shrink-0">
                         <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
-                        <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
-                          className="text-[var(--danger-fg)]">
-                          삭제
-                        </Btn>
+                        {canEditUi && (
+                          <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
+                            className="text-[var(--danger-fg)]">
+                            삭제
+                          </Btn>
+                        )}
                       </div>
                     </li>
                   )
                 })}
               </ul>
-              {voidedLeaseIds.map(id => (
+              {canEditUi && voidedLeaseIds.map(id => (
                 // 히트영역만 44px 로 넓힌다 — 보이는 크기는 그대로 두는 정본 수법(RowActionBtn).
                 <button key={id} type="button" onClick={() => handleRestoreVersion(id)} disabled={restoring}
                   className="mt-2 -my-1 min-h-[44px] inline-flex items-center text-xs font-medium text-[var(--tc-text)] disabled:opacity-60">
