@@ -260,13 +260,22 @@ function stageOf(snapshot: {
  */
 type LeaseSignCols = LeaseSigCols & { documentSignatures?: unknown }
 
+/**
+ * 배지의 서명 진행 — 계약 축 판정 한 벌. 링크 상태 조회(편집 역할)와 서명 상태 조회(열람 역할)가
+ * 함께 부른다. 두 조회가 제 판정을 따로 두면 같은 계약을 두 역할이 다른 말로 부른다(체크리스트 A).
+ */
+function badgeOf(templateSnapshot: unknown, lease: LeaseSignCols): { signStage: SignStage; signSummary: string | null } {
+  const slots = leaseSignSlots(paperDocsOf(templateSnapshot), lease)
+  return { signStage: signStageSlots({ slots }), signSummary: badgeSignSummary(slots) }
+}
+
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
   disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
   templateSnapshot?: unknown
 }, url: string, signatureLive: boolean, lease: LeaseSignCols): ContractShareLinkInfo {
   const snapDc = (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)?.disposalConsent
-  const slots = leaseSignSlots(paperDocsOf(link.templateSnapshot), lease)
+  const { signStage, signSummary } = badgeOf(link.templateSnapshot, lease)
   return {
     id: link.id,
     url,
@@ -278,8 +287,8 @@ function serializeLink(link: {
     // 제출 시각을 안 내려보내서 운영자 배지가 죽은 링크를 '서명 완료 · 남은 시간'으로 표시했다
     submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
     disposalEnabled: snapDc?.enabled === true,
-    signStage: signStageSlots({ slots }),
-    signSummary: badgeSignSummary(slots),
+    signStage,
+    signSummary,
     lang: asSignLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang) ?? 'ko',
     signatureLive,
   }
@@ -549,6 +558,54 @@ export async function getContractShareState(tenantId: string): Promise<
       hasForeignRegNo: !!tenant.foreignRegNoEnc,
       defaultSignLang: signLangForNationality(tenant.nationality),
       foreignForDocuments: isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoEnc }),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '상태 조회에 실패했습니다.' }
+  }
+}
+
+// 서명 상태 조회 — 열람 역할(STAFF·제한 스태프)도 계약서 칸의 '서명 대기' 배지를 보게 한다(2026-11-04 운영자 승인 '추천대로').
+// 위 getContractShareState 는 토큰(URL)·링크 id·주 연락처·신원 파생값을 주므로 편집 역할 전용으로 그대로 둔다.
+// 여기는 배지가 그리는 여섯 칸만 싣는다. 진행은 계약 축(badgeOf)으로 서버가 판정한다. 서명 이미지는 판정 재료로만 읽고 응답에 싣지 않는다.
+// 금액·신원번호가 없어 읽기 스코프를 걸지 않는다. 같은 칸의 계약서 목록(getContractFiles)과 같은 문이다.
+export type ContractSignBadgeInfo = Pick<ContractShareLinkInfo,
+  'expiresAt' | 'closedAt' | 'lockedAt' | 'submittedAt' | 'signStage' | 'signSummary'>
+
+export async function getContractSignBadge(tenantId: string): Promise<
+  | { ok: true; link: ContractSignBadgeInfo | null }
+  | { ok: false; error: string }
+> {
+  try {
+    const { propertyId } = await requirePropertyAccess()
+    const tenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } })
+    if (!tenant) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
+    // select 만 쓴다(include 금지). 토큰 칸은 DB 에서 읽지도 않는다.
+    const link = await prisma.contractShareLink.findFirst({
+      where: { tenantId, propertyId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        expiresAt: true, closedAt: true, lockedAt: true, submittedAt: true, templateSnapshot: true,
+        leaseTerm: {
+          select: {
+            signatureImageUrl: true, signatureSignedAt: true,
+            disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+          },
+        },
+      },
+    })
+    if (!link) return { ok: true, link: null }
+    const { signStage, signSummary } = badgeOf(link.templateSnapshot, link.leaseTerm ?? EMPTY_LEASE_SIG)
+    return {
+      ok: true,
+      link: {
+        expiresAt: link.expiresAt.toISOString(),
+        closedAt: link.closedAt ? link.closedAt.toISOString() : null,
+        lockedAt: link.lockedAt ? link.lockedAt.toISOString() : null,
+        submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
+        signStage,
+        signSummary,
+      },
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

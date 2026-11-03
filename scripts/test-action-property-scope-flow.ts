@@ -60,6 +60,7 @@ async function main() {
   const dashboard = await import('@/app/(app)/dashboard/actions')
   const docBundle = await import('@/app/(app)/tenants/docBundle')
   const noticeSms = await import('@/app/(app)/tenants/noticeSms')
+  const share = await import('@/app/(app)/tenants/contractShare')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string; __CR_FLOW_ROLE?: 'OWNER' | 'MANAGER' | 'STAFF' | 'LIMITED_STAFF' }
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
@@ -488,6 +489,53 @@ async function main() {
     eq('MANAGER 입주자 문자 조회 통과', (await dashboard.getPersonalSmsContext(T1)).ok, true)
     // 대조군: 관리자는 권한 문을 지나 다음 단계(메일 켜짐 확인)에서 멈춘다 — 권한 거부가 아니다.
     eq('MANAGER 메일 발송은 권한 문 통과', await docBundle.sendTenantDocBundleMail(T1, ['x']).then(r => r.ok ? '보냄' : r.error, (e: Error) => e.message), '메일 보내기가 켜져 있지 않습니다.')
+    g.__CR_FLOW_ROLE = undefined
+  }
+
+  // ── 서명 상태 조회(2026-11-04 운영자 승인 '추천대로') ── 열람 역할도 계약서 칸의 '서명 대기' 배지를 본다.
+  // getContractSignBadge 는 모든 역할에게 열리지만 영업장 문(requirePropertyAccess)은 지나고, 배지 여섯 칸 말고는 싣지 않는다.
+  // 토큰·URL·링크 id·연락처가 새면 열람 직원이 /sign 스냅샷의 금액을 열거나 링크를 닫는 열쇠를 얻는다.
+  {
+    const KEYS = ['closedAt', 'expiresAt', 'lockedAt', 'signStage', 'signSummary', 'submittedAt']
+    const GONE = { ok: false, error: '입실자를 찾을 수 없습니다.' }
+    const future = new Date(Date.now() + 60 * 60 * 1000)
+    const T1 = await tenantIn(P1, '서명 내'), T2 = await tenantIn(P2, '서명 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    const TOKEN1 = `tok-${randomUUID()}`, TOKEN2 = `tok-${randomUUID()}`
+    await prisma.tenantContact.create({ data: { tenantId: T1, contactType: 'PHONE', contactValue: '010-1234-5678', isPrimary: true } })
+    await prisma.contractShareLink.create({ data: { token: TOKEN1, templateSnapshot: {}, expiresAt: future, propertyId: P1, tenantId: T1, leaseTermId: L1, createdAt: new Date(Date.now() - 60_000) } })
+    await prisma.contractShareLink.create({ data: { token: TOKEN2, templateSnapshot: {}, expiresAt: future, propertyId: P2, tenantId: T2, leaseTermId: L2 } })
+    // 엇갈린 행: 사람은 T1 인데 영업장이 P2 인 더 새 링크(잠김). P1 조회가 이 행을 집으면 안 된다.
+    const TOKEN3 = `tok-${randomUUID()}`
+    await prisma.contractShareLink.create({ data: { token: TOKEN3, templateSnapshot: {}, expiresAt: future, lockedAt: new Date(), propertyId: P2, tenantId: T1, leaseTermId: L2 } })
+
+    for (const role of ['STAFF', 'LIMITED_STAFF', 'MANAGER', 'OWNER'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const res = await share.getContractSignBadge(T1)
+      eq(`${role} 서명 상태 조회 통과·서명 대기`, res.ok && res.link ? [res.ok, res.link.signStage, res.link.signSummary] : res, [true, 'none', null])
+      eq(`${role} 서명 상태 응답 칸은 배지 여섯뿐`, res.ok && res.link ? Object.keys(res.link).sort() : [], KEYS)
+      eq(`${role} 서명 상태 응답 바깥 칸은 ok·link 뿐`, Object.keys(res).sort(), ['link', 'ok'])
+      const body = JSON.stringify(res)
+      eq(`${role} 서명 상태 응답에 토큰·url·id·연락처 없음`, [TOKEN1, TOKEN3, '"token"', '"url"', '"id"', '"phone"', '010-1234-5678'].filter(x => body.includes(x)), [])
+      eq(`${role} 서명 상태: 엇갈린 행(남의 영업장 잠김 링크)을 안 집는다`, res.ok && res.link ? res.link.lockedAt : 'x', null)
+      eq(`${role} 서명 상태: 남의 영업장 입실자 거절`, await share.getContractSignBadge(T2), GONE)
+    }
+    // 반쪽 표본 — 동의서를 쓰는 종이에 계약서만 서명. 판정이 계약 축(leaseSignSlots)에 붙었는지 본다.
+    const T3 = await tenantIn(P1, '반쪽'), L3 = await leaseIn(P1, T3, null)
+    await prisma.leaseTerm.update({ where: { id: L3 }, data: { signatureImageUrl: 'data:image/png;base64,AAAA', signatureSignedAt: new Date() } })
+    await prisma.contractShareLink.create({ data: { token: `tok-${randomUUID()}`, templateSnapshot: { disposalConsent: { enabled: true } }, expiresAt: future, propertyId: P1, tenantId: T3, leaseTermId: L3 } })
+    g.__CR_FLOW_ROLE = 'STAFF'
+    const half = await share.getContractSignBadge(T3)
+    eq('STAFF 반쪽 서명은 partial · 계약서만 서명됨', half.ok && half.link ? [half.link.signStage, half.link.signSummary] : half, ['partial', '계약서만 서명됨'])
+    eq('반쪽 응답에 서명 이미지 없음', JSON.stringify(half).includes('data:image'), false)
+    // 링크가 없는 입실자는 배지 없음.
+    const T4 = await tenantIn(P1, '링크 없음')
+    eq('STAFF 링크 없는 입실자는 link null', await share.getContractSignBadge(T4), { ok: true, link: null })
+    // 대조: 토큰을 주는 링크 상태 조회는 열람 역할에게 여전히 닫혀 있다.
+    for (const role of ['STAFF', 'LIMITED_STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 링크 상태 조회(토큰) 거부`, await share.getContractShareState(T1), { ok: false, error: '수정 권한이 없습니다.' })
+    }
     g.__CR_FLOW_ROLE = undefined
   }
 

@@ -6,7 +6,7 @@
 //
 // 메일(2026-11-03 운영자 승인 '추천대로')은 서버가 보내므로 서버 문이 실제 차단이고, 화면은 입구를 숨긴다.
 //
-// 축 여섯.
+// 축은 ⓐ~ⓙ 열이다.
 //   ⓐ 서버 문. 문자를 짜거나 기록하거나 서명 요청 링크(문자로 나간다)를 만드는 액션은 첫 DB 호출 전에 무조건 `await requireEdit()` 를 부른다.
 //   ⓑ 입구 전수. app·components·lib 에서 문자앱을 여는 자리(sms: 리터럴, singleSmsHref, sendWithText)와 문자 창 렌더를 모두 찾아
 //      SINKS 표와 대조한다. 표에 없는 새 자리는 붉다(등록하고 canEditUi 로 막을 것).
@@ -27,6 +27,9 @@
 //      같은 손(핸들러)이 가드 밖에 또 생기지 않게 개수를 고정한다.
 //   ⓘ 쓰기 행을 세우는 조회(getRoomScheduleState·getRoomBusyNotice, 서버 requireEdit)는 열람 역할에게 부르지 않는다(모달마다 500).
 //      서버 문은 낮추지 않는다. 부르는 자리가 입주자 상세(가드)와 수정 폼(편집자만 연다) 밖으로 늘면 붉다.
+//   ⓙ 열람 역할용 서명 상태 조회(2026-11-04 운영자 승인 '추천대로'). getContractSignBadge 는 requireEdit 없이 영업장 문(requirePropertyAccess)을
+//      첫 DB 호출보다 먼저 지나고, 토큰·URL·연락처·신원 칸을 읽지도 싣지도 않으며(select 만, include 금지), 진행은 계약 축 판정 badgeOf 를 부른다.
+//      응답 타입 ContractSignBadgeInfo 의 칸은 배지 여섯(expiresAt·closedAt·lockedAt·submittedAt·signStage·signSummary)뿐이다.
 //
 // 실행: node scripts/check-sms-role-gate.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -47,7 +50,8 @@ const SERVER = {
   'app/(app)/dashboard/actions.ts': ['getUnpaidSmsContext', 'getPersonalSmsContext', 'logPersonalSmsAttempt', 'logSmsAttempt'],
   'app/(app)/tenants/docBundle.ts': ['logDocSmsAttempt', 'getTenantDocMailDraft', 'previewTenantDocMail', 'sendTenantDocBundleMail'],
   'app/(app)/tenants/noticeSms.ts': ['getNoticeSmsTargets', 'logNoticeSmsAttempt', 'polishNoticeText', 'saveNoticeTemplateAuto'],
-  'app/(app)/tenants/contractShare.ts': ['issueContractShareLink', 'renewContractShareLink'],
+  // getContractShareState 는 토큰(URL)·링크 id·주 연락처를 준다. 열람 역할의 배지는 ⓙ 의 getContractSignBadge 가 맡는다.
+  'app/(app)/tenants/contractShare.ts': ['issueContractShareLink', 'renewContractShareLink', 'getContractShareState'],
 }
 for (const [f, fns] of Object.entries(SERVER)) {
   const s = read(f)
@@ -462,6 +466,36 @@ for (const [f, re, n] of OPENERS) {
     `${B}: 열람 역할에게도 호실 일정·막힘 조회를 부른다(서버 requireEdit 거부가 모달마다 난다).`)
   const callers = ['app', 'components'].flatMap(walk).filter(f => /\bgetRoom(ScheduleState|BusyNotice)\(/.test(read(f)) && f !== A)
   need(callers.sort().join(',') === ['app/(app)/tenants/TenantClient.tsx', B].sort().join(','), `호실 일정·막힘 조회를 부르는 자리가 늘었다: ${callers.join(', ')}`)
+}
+
+// ⓙ 열람 역할용 서명 상태 조회
+{
+  const f = 'app/(app)/tenants/contractShare.ts'
+  const s = read(f)
+  const start = s.indexOf('export async function getContractSignBadge(')
+  const body = start < 0 ? '' : s.slice(start, s.indexOf('\nexport ', start + 1))
+  need(start >= 0, `${f}: getContractSignBadge 가 없다(열람 역할 배지가 사라졌거나 이름이 바뀌었다).`)
+  if (start >= 0) {
+    const gate = body.search(/\n {4}const \{ propertyId \} = await requirePropertyAccess\(\)\n/)
+    const firstDb = body.search(/\bprisma\./)
+    need(gate >= 0 && firstDb > gate, `${f}: getContractSignBadge 가 영업장 문(requirePropertyAccess)을 첫 DB 호출보다 먼저 무조건 지나지 않는다.`)
+    need(!/\brequireEdit\(/.test(body), `${f}: getContractSignBadge 에 requireEdit 가 붙었다(열람 역할의 '서명 대기' 배지가 사라진다).`)
+    for (const [re, what] of [[/\btoken\b/, 'token'], [/\bbuildShareUrl\b/, 'buildShareUrl'], [/\bheaders\(/, 'headers()'], [/\bserializeLink\(/, 'serializeLink(토큰·URL·id 를 싣는다)'],
+      [/\bcontacts\b/, 'contacts'], [/\bphone\b/, 'phone'], [/\bforeignRegNo/, 'foreignRegNo'], [/\bnationality\b/, 'nationality'], [/\binclude:/, 'include(select 만 쓴다)'], [/\burl\b/, 'url']]) {
+      need(!re.test(body), `${f}: getContractSignBadge 가 ${what} 를 읽거나 싣는다(열람 역할에게 토큰·연락처·신원이 샌다).`)
+    }
+    need(/\bbadgeOf\(/.test(body), `${f}: getContractSignBadge 가 계약 축 판정 badgeOf 를 안 부른다(손셈은 반쪽 서명을 잘못 부른다).`)
+    const bo = s.indexOf('function badgeOf(')
+    const boBody = bo < 0 ? '' : s.slice(bo, s.indexOf('\n}\n', bo))
+    need(/\bleaseSignSlots\(/.test(boBody) && /\bsignStageSlots\(/.test(boBody) && /\bbadgeSignSummary\(/.test(boBody),
+      `${f}: badgeOf 가 계약 축 정본(leaseSignSlots·signStageSlots·badgeSignSummary)을 부르지 않는다.`)
+    const ser = s.indexOf('function serializeLink(')
+    need(ser >= 0 && /\bbadgeOf\(/.test(s.slice(ser, s.indexOf('\n}\n', ser))), `${f}: serializeLink 가 badgeOf 를 안 부른다(두 조회의 판정이 두 벌로 갈린다).`)
+    const t = s.match(/export type ContractSignBadgeInfo = Pick<ContractShareLinkInfo,\s*([^>]*)>/)
+    const keys = t ? [...t[1].matchAll(/'(\w+)'/g)].map(m => m[1]).sort().join(',') : ''
+    need(keys === 'closedAt,expiresAt,lockedAt,signStage,signSummary,submittedAt',
+      `${f}: ContractSignBadgeInfo 의 칸이 배지 여섯이 아니다(${keys || '타입 없음'}).`)
+  }
 }
 
 if (violations.length) {
