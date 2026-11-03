@@ -253,7 +253,8 @@ export function Modal({
             ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
         )}
-        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain ${bodyClassName}`}>
+        {/* data-modal-body 는 선택 알약 끝 예약(globals.css, 알약을 품은 본문에만 선다)의 손잡이다. */}
+        <div ref={bodyRef} className={`flex-1 overflow-y-auto overscroll-contain ${bodyClassName}`} data-modal-body="">
           {children}
         </div>
         {footer && (

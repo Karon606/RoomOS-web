@@ -24,6 +24,7 @@ import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useSettleEntrance } from '@/lib/useSettleEntrance'
+import { usePillReserve } from '@/lib/usePillReserve'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
@@ -1331,6 +1332,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 그것이 506호가 제출 없이 나간 사고와 같은 결말이다. 정본 한 벌로 마감한다.
   const remotePillRef = useRef<HTMLDivElement>(null)
   useSettleEntrance({ active: remote && canSubmit && !signOpen, panelRef: remotePillRef })
+  // 서 있는 동안 제 높이 + 12px 을 --pill-reserve 에 적는다(선택 알약과 한 정본, 신고 e791b6f7). 아래 .has-pill 이 그 값을 더한다.
+  usePillReserve(remotePillRef, remote && canSubmit && !signOpen)
 
   // 원어 성명 칸 — 마지막 서명이 끝나면 한 번 데려간다(운영자 오더 2026-09-07 "어디에서 뭘
   // 입력해야 하는지 인지되게"). 문장 신설 대신 이동이다 — 제출 확인창은 이미 세 문장이고,
@@ -2438,8 +2441,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           align-items: center;
           padding: 16px 0 40px;
         }
-        /* 하단 알약 상주 중 마지막 콘텐츠가 가리지 않도록 여유 (알약 높이 64 + 하단 16 + 간격 16) */
-        .contract-shell.has-pill { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+        /* 하단 알약 상주 중 마지막 콘텐츠가 가리지 않도록 여유. 알약 바닥 16 + 실측 높이와 간격 12(--pill-reserve, lib/usePillReserve).
+           재기 전(첫 페인트)·서명 오버레이로 알약이 내려간 동안의 폴백 80 은 종전 합계 96 과 같다. */
+        .contract-shell.has-pill { padding-bottom: calc(16px + env(safe-area-inset-bottom) + var(--pill-reserve, 80px)); }
 
         /* 툴바 — 화면 전용. 문서 흐름 안에 둔다.
            이 화면은 핀치줌이 열려 있어 sticky 는 확대 시 layout viewport 상단에 못 박힌 채

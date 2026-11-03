@@ -5,6 +5,7 @@
 // 합치기는 양 탭 공통 승격. 불가능한 액션은 숨김(비활성 아님).
 import React, { useRef } from 'react'
 import { useVisibleBand } from '@/lib/useVisibleBand'
+import { usePillReserve } from '@/lib/usePillReserve'
 
 export function SelectionPillBar({
   count, onClose, children, label = '선택', unit = '개', aboveModal = false, compactNarrow = false,
@@ -21,8 +22,11 @@ export function SelectionPillBar({
   // 그 자리(--vv-bottom)는 정본 훅이 이 상자에 적는다.
   const barRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: true, overlayRef: barRef })
+  // 서 있는 동안 제 높이 + 12px 을 스크롤 끝에 예약한다(--pill-reserve, 신고 e791b6f7). 더하는 곳은 globals.css 한 곳이다.
+  // 바닥(--pill-floor)도 거기 한 벌이다. 모달 본문 끝 예약이 이 바닥과 모달 바닥의 차이를 함께 더한다.
+  usePillReserve(barRef)
   return (
-    <div ref={barRef} className={`kbd-float pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center md:bottom-4`}>
+    <div ref={barRef} data-pill-bar="" className={`kbd-float pointer-events-none fixed inset-x-0 bottom-[var(--pill-floor)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center`}>
       <div className="pointer-events-auto mx-3.5 flex max-w-[calc(100vw-28px)] items-center gap-2 rounded-[15px] bg-[var(--pill-bg)] px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,.45)]">
         <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-white">
           <span className="mono tnum text-[var(--sand)]">{count}</span><span className={compactNarrow ? 'max-[359px]:hidden' : undefined}>{unit} {label}</span>

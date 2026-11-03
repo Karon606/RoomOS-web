@@ -736,13 +736,13 @@ html[data-kbd-open] .kbd-float { bottom: calc(var(--vv-bottom, 0px) + var(--kbd-
    **두 규칙 양쪽에 더해야 한다.** 한쪽만 더하면 그 화면 폭에서만 되살아난다.
    요소 인라인 style 로 넣지 말 것 — md 분기(1.5rem)를 덮어써 데스크탑 여백이 바뀐다. */
 .app-main {
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + var(--kbd-inset, 0px));
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + var(--kbd-inset, 0px) + var(--pill-reserve, 0px));
   overscroll-behavior: none;
 }
 @media (min-width: 768px) {
   /* 태블릿/데스크탑: BottomNav 없으므로 p-6 하단 패딩과 동일 */
   .app-main {
-    padding-bottom: calc(1.5rem + var(--kbd-inset, 0px));
+    padding-bottom: calc(1.5rem + var(--kbd-inset, 0px) + var(--pill-reserve, 0px));
   }
 }
 /* 모바일(< md)에서는 하단 탭바(BottomNav ≈60px)가 있어 토스트를 그 위로 띄운다.
@@ -750,6 +750,24 @@ html[data-kbd-open] .kbd-float { bottom: calc(var(--vv-bottom, 0px) + var(--kbd-
 @media (max-width: 767px) {
   :root { --toast-offset-bottom: 4.5rem; }
 }
+
+/* 선택 알약의 바닥과 스크롤 끝 예약(2026-11-03, 신고 e791b6f7, 가이드 §22).
+   --pill-floor 는 알약 바닥이다. 모바일은 하단 내비 위(안전영역 + 56px), md 이상은 16px. 키보드가 선 동안은 .kbd-float 가 이긴다.
+   --pill-reserve 는 알약이 서 있는 동안 lib/usePillReserve 가 루트에 적는 '실측 높이 + 12px' 이고, 내려가면 지운다(폴백 0).
+   --kbd-inset 과는 다른 변수다. 위 .app-main 두 규칙은 둘을 더하기만 한다(셸 내비 몫 4rem 은 알약 바닥 56px 을 이미 덮는다).
+   모달 안 알약(aboveModal)은 그 모달 본문 끝에 자리를 만든다. 모달 바닥(max(1rem, 안전영역))이 알약 바닥보다 낮은 만큼을 더하고,
+   키보드가 선 동안은 둘이 같은 띠 아래 끝을 따라가므로 예약값만 둔다. 알약을 품은 본문에만 서고 다른 모달에는 안 선다. */
+:root { --pill-floor: 1rem; }
+@media (max-width: 767px) {
+  :root { --pill-floor: calc(env(safe-area-inset-bottom, 0px) + 56px); }
+}
+[data-modal-body]:has([data-pill-bar])::after {
+  content: '';
+  display: block;
+  grid-column: 1 / -1;
+  height: calc(var(--pill-reserve, 0px) + var(--pill-floor) - max(1rem, env(safe-area-inset-bottom, 0px)));
+}
+html[data-kbd-open] [data-modal-body]:has([data-pill-bar])::after { height: var(--pill-reserve, 0px); }
 
 /* ── 스크롤바 (macOS / iPadOS 네이티브 느낌) ─────────────────── */
 ::-webkit-scrollbar          { width: 5px; height: 5px; }
