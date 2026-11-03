@@ -215,6 +215,14 @@
 - **8-27 '지난번 값' 확정 개정(결정 C).** 브랜드가 둘 이상 섞인 품목(지난 제품 묶음 2개 이상)은 품목을 골라도 직전 브랜드·제품명을 자동으로 채우지 않는다. 대신 입력칸 위 지난 제품 칩(40px, aria-pressed)으로 고른다. 라면처럼 번갈아 사는 품목에서 직전값은 반쯤 틀리고, 틀려도 눈에 안 띈다. 하나뿐이면 종전대로 채우고 '지난번 값'.
 - 감지망 `check-inventory-brand-mix`, 진리표 `test-product-mix`, 갱신 `check-expense-brand-wiring`(칩·직전값 끔·검색)·`check-inventory-view-default` ⑩(메타 꼴)·`check-receipt-history-wiring` ⓜ(이력 구분자 공백)·`check-inventory-exclude-filter`(정본도 재고 제외 거름).
 
+- **제품별 보기(2026-11 운영자 승인 '추천대로', 해석 A 1단계).** 품목 상세 `월별 입수`·`단가 추이` 맨 위 `보기` 토글(`통합`·`제품별`, 기본 통합, 기기 localStorage 전역 키 `stayeum-inventory-product-view`, 마운트 뒤 복원)로 **보기만** 나눈다. 실사·잔량·소모·알림·소진 예상은 늘 합계다.
+  나눔 정본은 `lib/productMix` splitInflowByProduct(달마다 제품 줄 최대 3 + 외 N종 + '제품 기록 없음' = 이름 없는 구매 + 무상 입수, 합 = 통합)·splitPriceByProduct(점 많은 묶음부터 선 최대 3). 대표 표기는 전 기간 구매로 한 번 고른다.
+  서버는 getMonthlyInflow·getPriceHistory 의 기존 구매 select 에 brand·productName 두 칸만 실었다(조회 수 불변, 붙는 판정 where 에 두 칸 없음). 제품 묶음이 둘 미만이면 토글이 없다(2026-11-03 실데이터로 라면·세탁세제 둘).
+  달 줄 이름은 그 달에 실제로 산 구매의 최빈 원문이다(묶음은 전 기간 하나, 독립 검수: 세탁세제 10월은 분말세제를 샀는데 전 기간 대표 '…리필' 로 서던 것). 토글 판정은 두 탭이 `showsProductView` 하나이고 재료는 금액 있는 구매(`productViewKeys`)라 같은 품목이면 노출이 같다.
+  단가 추이 통합의 최저·최고·구매별 목록도 정본 fmtUnitPrice 로 맞췄다(계산 무변경). 단가 제품별 이름 칸은 overflow-hidden(숨은 폭 탐침이 모달 본문을 가로로 넘쳤다, 320px 121px).
+  **팔레트 숙제(기록만, 2026-11 독립 검수).** 라이트 --canvas 위 viz 선 대비가 모자라다(--viz-2 1.79:1, --viz-3 2.39:1, 그래픽 기준 3:1 미달). 지금은 2px 굵기로 보탠다. 또 --viz-1 은 #A03C2E 로 --coral(--tc) 과 같은 값이라 '코랄 0' 그물은 토큰 이름만 가른다. 팔레트 차원(§04)에서 다룰 일이라 이번엔 고치지 않았다.
+  보기 전환은 데이터 무변경이라 적용취소 토스트가 없다(근거: §16 은 기록을 바꾸는 조작 대상). **2단계(소모 추이 제품별 추정, 선입선출 로트 배분)는 보류**다.
+
 ### 2·3단계 (승인 전)
 - **2단계 재고 제품 분리.** `TrackedItem` 에 `variantKey`(브랜드·제품명 정규화 키, '' = 미지정)를
   두고 유니크를 (propertyId, category, label, variantKey) 로 교체. 품명은 그룹 키로 남는다.

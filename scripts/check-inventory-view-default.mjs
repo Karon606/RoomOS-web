@@ -14,6 +14,7 @@
 //      (2026-10-12 재고 정비 2단계) 안내문·폐기 안내는 실제와 같은 문장으로 높이를 맞추고, 발끝 고정에 맞춰
 //      골격 발끝(DetailCheckFooterSkeleton)도 둔다.
 //   ⑧ (2026-10-12 재고 정비 3단계) 상세 보기 — 탭 위 요약 블록(골격과 한 함수)·창고 패널·발끝 두 줄·'관리' 메뉴·낱말.
+//   ⑪ (2026-11 제품별 보기) 상세 '월별 입수'·'단가 추이' 맨 위 `보기` 줄. 라벨은 형제 '소모 추이' `기간` 과 같은 꼴, 첫 칸(기본)이 통합.
 //   ⑨ (2026-10-13 재고 정비 4단계) 이력 카드 — 머리 한 줄 행 액션·삭제는 수정 폼 안(확인창 경로 유지)·종류 판별 한 곳·
 //      수령 반영 읽기 전용·창고 실측 표식·위치 묶음·CheckEditForm 문법·요약의 최근 점검.
 //
@@ -487,6 +488,23 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
     '좁은 폭에서 분류가 먼저 잘리거나 제품이 배지가 되면 §22 와 어긋난다')
   // 위치별 패널 행 머리도 같은 한 컴포넌트다(2026-11-03 신고 ee46d0c1, '카드와 똑같이'). 배선 축은 brand-mix ⓙ.
   need('⑩ 위치별 행 머리도 ShelfMeta 로 그린다', /<ShelfMeta category=\{r\.category\} onShelf=\{r\.productMix\.onShelf\} \/>/.test(client))
+}
+
+// ── ⑪ 제품별 보기 골격(가이드 §22 제품별 보기, 2026-11). 두 탭 맨 위 한 줄, 첫 칸 = 기본 = 통합, 라벨 꼴은 형제 '기간' 과 같다 ──
+// 배선(묶음<2 미렌더·마운트 뒤 복원·정본 나눔)은 check-inventory-brand-mix ⓚ 가 본다. 여기서는 모양과 기본값만 본다.
+{
+  // 최상위 함수 하나를 다음 맨 앞 `}` 줄까지 자른다(위 fnBody 는 매개변수 구조 분해의 첫 중괄호에서 멈춘다).
+  const topFn = (src, header) => { const at = src.indexOf(header); if (at < 0) return ''; const end = src.indexOf('\n}\n', at); return end < 0 ? '' : src.slice(at, end + 2) }
+  const toggle = topFn(client, 'function ProductViewToggle(')
+  const trend = topFn(client, 'function ConsumptionTrend(')
+  const LABEL = '<span className="block text-xs font-medium text-[var(--warm-mid)]">'
+  need('⑪ 보기 라벨이 형제 기간 라벨과 같은 꼴', toggle.includes(`${LABEL}보기</span>`) && trend.includes(`${LABEL}기간</span>`) && /<div className="space-y-1\.5">/.test(toggle))
+  need("⑪ 첫 칸(기본)이 통합, '전체' 없음", /options=\{\[\{ value: 'merged', label: '통합' \}, \{ value: 'product', label: '제품별' \}\]\}/.test(toggle) && !/전체/.test(toggle))
+  for (const h of ['function MonthlyInflowList(', 'function PriceChart(']) {
+    const b = topFn(client, h)
+    // 함수 몸통의 반환(들여쓰기 2칸)만 본다. 목록 안 map 의 반환은 더 깊다.
+    need(`⑪ ${h.slice(9, -1)} 맨 위가 보기 줄`, /\n {2}return \(\s*<div className="space-y-3">\s*\{showToggle && <ProductViewToggle /.test(b))
+  }
 }
 
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)

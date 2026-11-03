@@ -41,7 +41,7 @@ import { WhyCaption } from '@/components/ui/WhyCaption'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { withParticle } from '@/lib/koParticle'
-import { shelfProductsText, shelfName, productText, type MadeMix } from '@/lib/productMix'
+import { shelfProductsText, shelfName, productText, productViewKeys, showsProductView, splitPriceByProduct, type MadeMix } from '@/lib/productMix'
 // 수량 뒤 조사('20kg이')는 단위 읽기로 고른다(정본 lib/locationClose).
 import { withQtyParticle, stockedHideDenied } from '@/lib/locationClose'
 // 위치 사용 중지 창의 목적지 기본값(정본 lib/locationOpen, 서버 closeStorageLocation 과 같은 규칙).
@@ -2775,7 +2775,41 @@ function ConsumptionTrend({ trackedItemId, stockUnit }: { trackedItemId: string;
   )
 }
 
+// 제품별 보기(가이드 §22, 2026-11 등재, 운영자 승인 '추천대로' 해석 A). 품목 상세 '월별 입수'·'단가 추이' 맨 위 `보기` 토글.
+// 보기만 나눈다. 실사·잔량·소모·알림은 늘 합계이고, 이 값은 데이터를 바꾸지 않아 적용취소 토스트를 두지 않는다(§16 대상 아님).
+// 기억은 기기 하나에 전역 키 하나(두 탭이 같은 값을 읽는다). useState 초기화에서 localStorage 를 읽지 않는다(서버 HTML 과 첫 렌더가
+// 갈리면 하이드레이션 #418, 오류신고 5489fac1). 되살리기는 그리기 전(useLayoutEffect)이라 통합이 한 프레임 비쳤다가 바뀌지 않는다.
+// 이 탭은 상세 모달이 클라이언트에서 데이터를 받은 뒤에야 서므로 서버 HTML 과 맞출 첫 렌더가 없다(독립 검수).
+const PRODUCT_VIEW_KEY = 'stayeum-inventory-product-view'
+type ProductView = 'merged' | 'product'
+function useProductView(): [ProductView, (v: ProductView) => void] {
+  const [view, setView] = useState<ProductView>('merged')
+  useLayoutEffect(() => {
+    let v: string | null = null
+    try { v = localStorage.getItem(PRODUCT_VIEW_KEY) } catch { /* 무시 */ }
+    // 마운트 직후 그리기 전 1회 복원 · 의도된 setState(연쇄 렌더 아님)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (v === 'product') setView('product')
+  }, [])
+  const change = (v: ProductView) => {
+    setView(v)
+    try { localStorage.setItem(PRODUCT_VIEW_KEY, v) } catch { /* 무시 */ }
+  }
+  return [view, change]
+}
+// 정본 SegmentedControl sm 과 그 위 라벨(형제 '소모 추이' 의 `기간` 과 같은 꼴). '전체' 칸은 없고 기본(첫 칸)은 통합이다.
+function ProductViewToggle({ value, onChange }: { value: ProductView; onChange: (v: ProductView) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-[var(--warm-mid)]">보기</span>
+      <SegmentedControl<ProductView> size="sm" ariaLabel="보기" value={value} onChange={onChange}
+        options={[{ value: 'merged', label: '통합' }, { value: 'product', label: '제품별' }]} />
+    </div>
+  )
+}
+
 function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stockUnit: string | null }) {
+  const [view, setView] = useProductView()
   if (rows.length === 0) {
     return <p className="text-sm text-[var(--warm-muted)] text-center py-8">아직 입수 기록이 없습니다. 지출 등록 또는 무상 입수 추가 시 자동으로 집계됩니다.</p>
   }
@@ -2783,8 +2817,13 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
   const maxQty = Math.max(...rows.map(r => r.totalQty), 1)
   const totalAll  = rows.reduce((s, r) => s + r.totalQty, 0)
   const totalAmt  = rows.reduce((s, r) => s + r.purchaseAmount, 0)
+  // 제품 묶음이 둘 미만이면 나눠 볼 것이 없어 토글을 세우지 않고 늘 통합이다. 판정은 단가 추이와 한 함수(showsProductView)·한 재료(금액 있는 구매)다.
+  const showToggle = showsProductView(rows.flatMap(r => r.byProduct.viewKeys))
+  const byProduct = showToggle && view === 'product'
+  const q = (v: number) => `${Math.round(v * 100) / 100}${u}`
   return (
     <div className="space-y-3">
+      {showToggle && <ProductViewToggle value={view} onChange={setView} />}
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-[var(--canvas)] rounded-xl p-3">
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">전체 입수량</p>
@@ -2807,6 +2846,30 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                   {Math.round(r.totalQty * 100) / 100}{u}
                 </span>
               </div>
+              {byProduct ? (
+                // 제품 줄은 많이 들어온 순 최대 3줄 + `외 N종`, 이름 없는 구매·무상 입수는 흐린 `제품 기록 없음` 줄로 합을 맞춘다.
+                // 이름은 '브랜드 제품명' 원문 전체이고 자르지 않는다(줄을 바꾼다). 위 달 합계는 통합과 같은 값이다.
+                <ul className="space-y-1 text-[0.65625rem]">
+                  {r.byProduct.lines.map(l => (
+                    <li key={l.key} className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 break-keep text-[var(--warm-dark)]">{l.text}</span>
+                      <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">{q(l.qty)} · {fmtWon(l.amount)}</span>
+                    </li>
+                  ))}
+                  {r.byProduct.more && (
+                    <li className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 text-[var(--warm-dark)]">외 {r.byProduct.more.keys.length}종</span>
+                      <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">{q(r.byProduct.more.qty)} · {fmtWon(r.byProduct.more.amount)}</span>
+                    </li>
+                  )}
+                  {r.byProduct.unrecorded && (
+                    <li className="flex items-baseline gap-2 text-[var(--warm-muted)]">
+                      <span className="min-w-0 flex-1">제품 기록 없음</span>
+                      <span className="shrink-0 tabular-nums">{q(r.byProduct.unrecorded.qty)}{r.byProduct.unrecorded.amount > 0 ? ` · ${fmtWon(r.byProduct.unrecorded.amount)}` : ''}</span>
+                    </li>
+                  )}
+                </ul>
+              ) : (
               <div className="space-y-1">
                 {r.purchaseQty > 0 && (
                   <div className="flex items-center gap-2">
@@ -2831,6 +2894,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                   </div>
                 )}
               </div>
+              )}
             </li>
           )
         })}
@@ -2840,6 +2904,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
 }
 
 function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unitLabel: string | null; qtyUnit: string | null }) {
+  const [view, setView] = useProductView()
   if (points.length === 0) {
     return <p className="text-sm text-[var(--warm-muted)] text-center py-8">단가 데이터가 없습니다. 지출 등록 시 금액과 수량이 함께 입력되면 단가가 자동 계산됩니다.</p>
   }
@@ -2856,31 +2921,118 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
     : xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${ys[i].toFixed(2)}`).join(' ')
 
   const unitSuffix = unitLabel ? `/${unitLabel}` : ''
+  // 제품 묶음이 둘 미만이면 토글을 세우지 않고 늘 통합이다. 아래 구매별 목록은 두 보기 모두 그대로다.
+  const showToggle = showsProductView(productViewKeys(points))
   return (
     <div className="space-y-3">
+      {showToggle && <ProductViewToggle value={view} onChange={setView} />}
+      {showToggle && view === 'product' ? <ProductPriceChart points={points} unitSuffix={unitSuffix} /> : (
       <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
-        <div className="flex items-center justify-between text-[0.65625rem] text-[var(--warm-muted)]">
-          <span>최저 {fmtWon(Math.round(minP))}{unitSuffix}</span>
-          <span>최고 {fmtWon(Math.round(maxP))}{unitSuffix}</span>
+        {/* 단가 꼴은 제품별·카드 펼침과 같은 정본 fmtUnitPrice(1원 미만 품목도 유효숫자가 남는다). 계산은 그대로다. */}
+        <div className="flex items-center justify-between text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">
+          <span>최저 {fmtUnitPrice(minP)}{unitSuffix}</span>
+          <span>최고 {fmtUnitPrice(maxP)}{unitSuffix}</span>
         </div>
         <svg viewBox={`0 0 ${W} ${H + 4}`} preserveAspectRatio="none" className="w-full h-32">
           <path d={path} fill="none" stroke="var(--coral)" strokeWidth="0.8" strokeLinejoin="round" strokeLinecap="round" />
           {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="0.9" fill="var(--coral)" />)}
         </svg>
       </div>
+      )}
       <ul className="space-y-1.5">
         {[...points].reverse().map((p, i) => (
           <li key={i} className="flex items-center justify-between text-xs px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl">
-            <span className="text-[var(--warm-muted)]">{fmtDate(p.date)}</span>
-            <span className="text-[var(--warm-dark)] font-medium">
-              {fmtWon(Math.round(p.unitPrice))}{unitSuffix}
+            <span className="text-[var(--warm-muted)] tabular-nums">{fmtDate(p.date)}</span>
+            <span className="text-[var(--warm-dark)] font-medium tabular-nums">
+              {fmtUnitPrice(p.unitPrice)}{unitSuffix}
             </span>
-            <span className="text-[0.65625rem] text-[var(--warm-muted)]">
+            <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">
               {p.qty}{qtyUnit ?? ''} · {fmtWon(p.amount)}
             </span>
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+// 단가 추이 제품별(가이드 §22 제품별 보기). 자주 산(점이 많은) 묶음부터 선 최대 3개, 색은 §04 viz 1·2·3 차례(코랄 아님. 선 색이 제품을 가른다).
+// 가로축은 날짜 비례다(선마다 산 날이 달라 통합 보기의 '차례' 축으로는 한 그림에 못 얹는다). 선 끝 이름은 오른쪽 이름 칸에
+// 그 선 마지막 점 높이로 서고, 겹치면 아래로 민다. 최저·최고는 카드 펼침과 같은 `590원/봉` 꼴, 날짜는 정본 fmtDateDot 이다.
+// 선에 못 든 묶음·이름 없는 구매는 한 줄로 말한다(아래 구매별 목록에는 늘 다 있다).
+// 이름 칸은 카드 메타(ShelfMeta)와 같은 규칙이다. '브랜드 제품명' 이 칸에 다 들어가면 그대로, 하나라도 안 들어가면 세 줄을 함께
+// 제품명만으로 바꾸고 그래도 길면 말줄임한다. 판정은 숨은 탐침의 폭 실측이고, 재기 전엔 이름만 투명하다.
+// 선은 축척이 갈려도 굵기가 같게(non-scaling-stroke) 2px 로 긋는다(라이트 --canvas 위 viz 2·3 의 낮은 대비를 굵기로 보탠다, 웹디자이너 패스).
+const PRICE_SERIES_COLORS = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)'] as const
+function ProductPriceChart({ points, unitSuffix }: { points: PricePoint[]; unitSuffix: string }) {
+  const { series, more, unrecorded } = splitPriceByProduct(points)
+  const colRef = useRef<HTMLUListElement>(null)
+  const probeRef = useRef<HTMLLIElement>(null)
+  const [fits, setFits] = useState<boolean | null>(null)
+  const fullKey = series.map(s => shelfName(s, 'full')).join('\n')
+  useLayoutEffect(() => {
+    const col = colRef.current, probe = probeRef.current
+    if (!col || !probe) return
+    // 탐침의 줄마다 '색 막대 + 간격'(18px)을 더한 폭이 칸 폭 안에 드는가.
+    const measure = () => setFits([...probe.children].every(c => c.getBoundingClientRect().width + 18 <= col.getBoundingClientRect().width + 0.5))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(col); ro.observe(probe)
+    return () => ro.disconnect()
+  }, [fullKey])
+  const shown = series.flatMap(s => s.points)
+  const minP = Math.min(...shown.map(p => p.unitPrice))
+  const maxP = Math.max(...shown.map(p => p.unitPrice))
+  const range = Math.max(1, maxP - minP)
+  const times = shown.map(p => new Date(p.date).getTime())
+  const t0 = Math.min(...times), t1 = Math.max(...times)
+  const W = 100, H = 40, PAD = 2, BOX = 128, LABEL_H = 14
+  // 양 끝 점이 반쯤 잘리지 않게 가로도 PAD 만큼 안쪽에서 그린다.
+  const xOf = (d: Date) => t1 === t0 ? W / 2 : PAD + ((new Date(d).getTime() - t0) / (t1 - t0)) * (W - PAD * 2)
+  const yOf = (v: number) => PAD + H - ((v - minP) / range) * H
+  // 이름 칸 자리. 선 마지막 점 높이(px)에 가운데를 맞추고, 겹치면 아래로 민 뒤 칸 밖으로 나가면 위로 되민다.
+  const labels = series.map((s, i) => ({ i, top: (yOf(s.points[s.points.length - 1].unitPrice) / (H + PAD * 2)) * BOX - LABEL_H / 2 }))
+    .sort((a, b) => a.top - b.top)
+  labels.forEach((l, k) => { l.top = Math.max(k === 0 ? 0 : labels[k - 1].top + LABEL_H, l.top) })
+  for (let k = labels.length - 1; k >= 0; k--) labels[k].top = Math.min(labels[k].top, (k === labels.length - 1 ? BOX : labels[k + 1].top) - LABEL_H)
+  const note = [more > 0 ? '자주 산 제품 3종만 선으로 그립니다.' : '', unrecorded > 0 ? `제품 기록이 없는 구매 ${unrecorded}건은 선에서 뺐습니다.` : ''].filter(Boolean).join(' ')
+  return (
+    <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">
+        <span>최저 {fmtUnitPrice(minP)}{unitSuffix}</span>
+        <span>최고 {fmtUnitPrice(maxP)}{unitSuffix}</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_38%] gap-x-2 gap-y-1">
+        <svg viewBox={`0 0 ${W} ${H + PAD * 2}`} preserveAspectRatio="none" className="w-full h-32" role="img" aria-label={`제품별 단가 추이 ${series.map(s => s.text).join(', ')}`}>
+          {series.map((s, i) => {
+            const color = PRICE_SERIES_COLORS[i]
+            const d = s.points.map((p, k) => `${k === 0 ? 'M' : 'L'} ${xOf(p.date).toFixed(2)} ${yOf(p.unitPrice).toFixed(2)}`).join(' ')
+            return (
+              <g key={s.key}>
+                {s.points.length > 1 && <path d={d} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />}
+                {s.points.map((p, k) => <circle key={k} cx={xOf(p.date)} cy={yOf(p.unitPrice)} r="0.9" fill={color} />)}
+              </g>
+            )
+          })}
+        </svg>
+        {/* overflow-hidden 필수. 숨은 탐침(긴 '브랜드 제품명')도 scrollWidth 에 들어가 모달 본문이 가로로 넘쳤다(320px 121px, 독립 검수 차단). */}
+        <ul ref={colRef} className="relative h-32 overflow-hidden" aria-hidden>
+          {labels.map(l => (
+            <li key={series[l.i].key} className="absolute inset-x-0 flex items-center gap-1.5 text-[0.65625rem] leading-[14px] text-[var(--warm-dark)]" style={{ top: `${l.top}px` }}>
+              <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: PRICE_SERIES_COLORS[l.i] }} />
+              <span className={`min-w-0 truncate${fits == null ? ' opacity-0' : ''}`}>{shelfName(series[l.i], fits === false ? 'name' : 'full')}</span>
+            </li>
+          ))}
+          <li ref={probeRef} className="pointer-events-none invisible absolute left-0 top-0 flex flex-col text-[0.65625rem] whitespace-pre">
+            {series.map(s => <span key={s.key} className="w-max">{shelfName(s, 'full')}</span>)}
+          </li>
+        </ul>
+        <div className="flex justify-between text-[0.65625rem] text-[var(--warm-muted)] tabular-nums">
+          <span>{fmtDate(new Date(t0))}</span>
+          {t1 !== t0 && <span>{fmtDate(new Date(t1))}</span>}
+        </div>
+      </div>
+      {note && <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">{note}</p>}
     </div>
   )
 }

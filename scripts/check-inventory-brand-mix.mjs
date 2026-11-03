@@ -23,6 +23,12 @@
 //   ⓙ 위치별 패널 행 머리 분류 줄이 카드 메타와 같은 정본 ShelfMeta 로 같은 row.productMix.onShelf 를 그린다
 //      (2026-11-03 운영자 승인 '카드와 똑같이'). 글자 크기는 행 머리 10.5px 그대로, 색 prop 없음(분류는 행 머리 회색).
 //      추정은 품목 전체 몫이고 이 위치 몫이 아니다(§22). 한 패널에 ShelfMeta 는 그 한 자리뿐이다.
+//   ⓚ 제품별 보기(2026-11 등재, 운영자 승인 '추천대로' 해석 A). 품목 상세 '월별 입수'·'단가 추이' 맨 위 `보기` 토글로만 나눠 본다.
+//      잔량·소모 셈(ledgerShift·consumptionSeries·seedLabel·lib/stockLedger)은 productMix 를 읽지 않고, 지출 화면(finance)은 칩 묶음(groupProducts)만 쓴다.
+//      카드 수치와 소모 추이 막대값은 나눔을 읽지 않는다. 토글은 정본 SegmentedControl 하나(role=switch 0, 손수 버튼 0)이고,
+//      제품 묶음이 둘 미만이면 그리지 않으며, 기억은 마운트 뒤에만 되살린다(useState 초기화에서 localStorage 를 읽지 않는다).
+//      줄·선 상한은 정본 PRODUCT_LINES_MAX(3) 하나이고, 선 색은 §04 viz 1·2·3 차례이며 코랄을 쓰지 않는다.
+//      (독립 검수 반영) 두 탭 판정은 showsProductView 하나, 이름 칸은 overflow-hidden, 안내 '자주 산 제품', 통합 단가 꼴도 fmtUnitPrice.
 // 한계. 소스 가드라 '존재'만 본다. 계산의 뜻은 진리표 scripts/test-product-mix.ts 가 진다.
 import { readFileSync } from 'node:fs'
 
@@ -161,6 +167,51 @@ need('ⓕ 제품 줄 글자를 g() 로 감싼다', /\{g\('제품'\)\}/.test(summ
     /const names = onShelf\.map\(g => shelfName\(g, mode\)\)/.test(mix), '자리가 모자랄 때 버리는 쪽은 브랜드다')
   need('ⓘ 브랜드 겹침을 줄이지 않는다(원문 그대로)', !/startsWith/.test(fnBody(mix, 'export function shelfName(')),
     "'삼양 삼양라면' 을 '삼양라면' 으로 줄이면 기록된 원문과 갈린다(2026-11-03 운영자 지시)")
+}
+
+// ⓚ 제품별 보기
+{
+  // 최상위 함수 하나를 다음 맨 앞 `}` 줄까지 자른다(반환 타입에 쉼표·괄호가 있어 fnBody 의 머리 규칙이 못 잡는 함수용).
+  const topFn = (src, header) => { const at = src.indexOf(header); if (at < 0) return ''; const end = src.indexOf('\n}\n', at); return end < 0 ? '' : src.slice(at, end + 2) }
+  for (const f of ['app/(app)/inventory/ledgerShift.ts', 'app/(app)/inventory/consumptionSeries.ts', 'app/(app)/inventory/seedLabel.ts', 'lib/stockLedger.ts']) {
+    need(`ⓚ ${f} 는 productMix 를 읽지 않는다`, !/productMix/.test(stripComments(readFileSync(f, 'utf8'))), '잔량·소모 셈은 늘 합계다(보기만 나눈다)')
+  }
+  const fin = stripComments(readFileSync('app/(app)/finance/actions.ts', 'utf8'))
+  const finImport = /import \{([^}]*)\} from '@\/lib\/productMix'/.exec(fin)
+  need('ⓚ 지출 화면은 칩 묶음(groupProducts)만 쓴다', !finImport || finImport[1].trim() === 'groupProducts')
+  const cardAt2 = client.indexOf('<InvCard')
+  for (const name of ['value', 'valueSub']) need(`ⓚ 카드 ${name} 가 나눔을 읽지 않는다`, !/byProduct|splitInflowByProduct|splitPriceByProduct/.test(propBody(client, cardAt2, name)))
+  need('ⓚ 소모 추이 막대값이 나눔을 읽지 않는다', !/productMix|byProduct|splitInflowByProduct|splitPriceByProduct|useProductView/.test(fnBody(client, 'function ConsumptionTrend(')))
+  const hook = topFn(client, 'function useProductView(')
+  need('ⓚ 기억은 마운트 뒤 복원(useState 초기화에서 읽지 않는다)', /useState<ProductView>\('merged'\)/.test(hook) && /use(?:Layout)?Effect\(\(\) => \{[\s\S]*localStorage\.getItem\(PRODUCT_VIEW_KEY\)[\s\S]*\}, \[\]\)/.test(hook) &&
+    !/useState(<[^>]*>)?\(\(\) =>[^)]*localStorage/.test(hook), '첫 렌더에서 읽으면 하이드레이션 #418(오류신고 5489fac1)')
+  need('ⓚ 기억 키는 기기 전역 하나', (client.match(/PRODUCT_VIEW_KEY = '/g) ?? []).length === 1 && /const PRODUCT_VIEW_KEY = 'stayeum-inventory-product-view'/.test(client))
+  const toggle = fnBody(client, 'function ProductViewToggle(')
+  need('ⓚ 토글은 정본 SegmentedControl', /<SegmentedControl<ProductView> size="sm" ariaLabel="보기"/.test(toggle) && !/<button|role="switch"/.test(toggle))
+  const monthly = fnBody(client, 'function MonthlyInflowList(')
+  const price = fnBody(client, 'function PriceChart(')
+  const pchart = fnBody(client, 'function ProductPriceChart(')
+  for (const [n, b] of [['월별 입수', monthly], ['단가 추이', price], ['단가 제품별', pchart]]) need(`ⓚ ${n} 본문 확보`, b.length > 0)
+  need('ⓚ role=switch 0', !/role="switch"/.test(monthly + price + pchart + toggle))
+  need('ⓚ 묶음 둘 미만이면 토글을 그리지 않는다',
+    /const showToggle = showsProductView\(rows\.flatMap\(r => r\.byProduct\.viewKeys\)\)/.test(monthly) && /\{showToggle && <ProductViewToggle value=\{view\} onChange=\{setView\} \/>\}/.test(monthly) && /const byProduct = showToggle && view === 'product'/.test(monthly) &&
+    /const showToggle = showsProductView\(productViewKeys\(points\)\)/.test(price) && /\{showToggle && <ProductViewToggle value=\{view\} onChange=\{setView\} \/>\}/.test(price) && /\{showToggle && view === 'product' \? <ProductPriceChart /.test(price),
+    '나눌 것이 없는 품목에 토글이 서면 누를 이유가 없는 컨트롤이다')
+  need('ⓚ 월별 입수 달 합계는 통합 값', /\{Math\.round\(r\.totalQty \* 100\) \/ 100\}\{u\}/.test(monthly) && !/byProduct[\s\S]{0,40}totalQty/.test(monthly))
+  need('ⓚ 제품 줄은 정본 나눔 그대로(손수 자르지 않는다)', /r\.byProduct\.lines\.map\(/.test(monthly) && !/lines\.slice\(/.test(monthly) && /제품 기록 없음/.test(monthly) && /외 \{r\.byProduct\.more\.keys\.length\}종/.test(monthly))
+  need('ⓚ 단가 선은 정본 나눔(최대 3)', /splitPriceByProduct\(points\)/.test(pchart) && !/series\.slice\(/.test(pchart))
+  need('ⓚ 선 색 viz 1·2·3 차례, 코랄 0', /const PRICE_SERIES_COLORS = \['var\(--viz-1\)', 'var\(--viz-2\)', 'var\(--viz-3\)'\] as const/.test(client) && !/--coral|--tc\b/.test(pchart))
+  need('ⓚ 단가 제품별 최저·최고는 카드 펼침과 같은 꼴, 날짜는 fmtDateDot',
+    /최저 \{fmtUnitPrice\(minP\)\}\{unitSuffix\}/.test(pchart) && /최고 \{fmtUnitPrice\(maxP\)\}\{unitSuffix\}/.test(pchart) && /fmtDate\(new Date\(t0\)\)/.test(pchart))
+  need('ⓚ 단가 선 이름 칸은 카드 메타와 같은 토막 규칙(폭 실측, 세 줄 함께)', /new ResizeObserver\(measure\)/.test(pchart) && /shelfName\(series\[l\.i\], fits === false \? 'name' : 'full'\)/.test(pchart) &&
+    /\.every\(c => c\.getBoundingClientRect\(\)\.width/.test(pchart) && !/\.slice\(|\.substring\(|maxLength/.test(pchart), '브랜드만 남고 제품명이 잘리면 같은 브랜드 두 선이 같은 이름이 된다')
+  need('ⓚ 두 탭 토글 판정이 한 함수(같은 품목이면 같은 노출)', (client.match(/showsProductView\(/g) ?? []).length === 2 && /export function showsProductView\(/.test(mix) &&
+    /if \(!\(r\.amount > 0\)\) continue/.test(topFn(mix, 'export function productViewKeys(')) && /viewKeys: productViewKeys\(m\.all\)/.test(mix), '월별이 0원 구매를 세고 단가가 빼면 같은 품목에서 한 탭에만 토글이 선다')
+  need('ⓚ 이름 칸이 모달을 가로로 넘치지 않는다(overflow-hidden)', /<ul ref=\{colRef\} className="[^"]*\boverflow-(?:hidden|clip)\b[^"]*"/.test(pchart), '숨은 탐침도 scrollWidth 에 들어간다(320px 121px 넘침, 독립 검수 차단)')
+  need("ⓚ 선 밖 안내는 '자주 산 제품'(기준이 구매 건수)", /'자주 산 제품 3종만 선으로 그립니다\.'/.test(pchart) && !/많이 산 제품 3종/.test(pchart))
+  need('ⓚ 단가 추이 통합도 정본 단가 꼴(fmtUnitPrice·tnum)', /최저 \{fmtUnitPrice\(minP\)\}\{unitSuffix\}/.test(price) && /\{fmtUnitPrice\(p\.unitPrice\)\}\{unitSuffix\}/.test(price) &&
+    !/fmtWon\(Math\.round\((minP|maxP|p\.unitPrice)\)\)/.test(price) && /text-\[var\(--warm-muted\)\] tabular-nums">\s*<span>최저/.test(price), "토글하면 '2원/ml' 이 '2.15원/ml' 로 바뀌던 것")
+  need('ⓚ 줄·선 상한 정본 3', /export const PRODUCT_LINES_MAX = 3\n/.test(mix) && /slice\(0, PRODUCT_LINES_MAX\)/.test(topFn(mix, 'export function splitInflowByProduct(')) && /slice\(0, PRODUCT_LINES_MAX\)/.test(topFn(mix, 'export function splitPriceByProduct<')))
 }
 
 // ⓖ 순수층
