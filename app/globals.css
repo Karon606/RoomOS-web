@@ -734,24 +734,32 @@ html[data-kbd-open] .kbd-float { bottom: calc(var(--vv-bottom, 0px) + var(--kbd-
 /* 오류신고 버튼 기본 자리(끌어 옮기지 않았을 때, 2026-11-03 가이드 §19). 쌓는 차례는 아래부터 알약, 토스트, 신고 버튼이다.
    모바일은 토스트 바닥에서 시작해 알약 예약값과 토스트 예약값(--toast-reserve, 스택 높이 + 8)을 더한다. 토스트는 §15 자리를 지키고
    (정본 위치), 정본 자리가 없는 신고 버튼이 비킨다. 반대로 하면 버튼이 토스트 오른쪽 끝 적용취소를 덮는다.
-   키보드가 선 동안은 **열린 오버레이가 없을 때만**(셸 화면) 보이는 띠 아래 끝 위 24px 에서 같은 차례로 쌓는다. 모달·시트가 열려 있으면
-   종전 자리(키보드 뒤)에 둔다. 띠 위로 오르면 발끝 주 버튼을 덮는다. 표식은 ViewportOffsetGuard(data-kbd-open)와 lib/overlayPresence
-   (data-overlay-open) 단일 소유다.
+   키보드 자리로 오르는 것은 **셸 안 편집 칸에 포커스가 있고 열린 오버레이가 없을 때만**이다. 모달·시트가 열려 있으면 종전 자리(키보드 뒤)에
+   둔다(띠 위로 오르면 발끝 주 버튼을 덮는다). 포커스 조건이 있는 까닭: 키보드가 선 채 모달을 저장·닫으면 오버레이 표식은 정리에서 곧바로
+   빠지는데 키보드 표식은 vv resize 까지 남는다. 그 사이 버튼이 띠 위로 수백 px 튀었다가 내려왔다(독립 검수 B1). 모달이 닫히면 포커스가
+   셸 칸으로 돌아오지 않으니 오르지 않고, 셸 칸이 blur 되면 내려가기만 한다.
+   오버레이가 열려 있고 토스트나 선택 알약이 떠 있는 동안에는 모바일에서 버튼을 숨긴다. 쌓으면 발끝 주 버튼에 닿고, 그대로 두면 토스트가 버튼을
+   가리거나 버튼이 모달 안 알약의 '선택 취소' X 를 덮는다(운영자 승인 B2·R1). 셸 화면은 숨기지 않고 비켜 오른다.
+   표식은 ViewportOffsetGuard(data-kbd-open), lib/overlayPresence(data-overlay-open, data-toast-open, data-pill-open) 단일 소유다.
    md 이상은 토스트(최대 420)·알약이 가운데라 우하단 버튼과 가로로 안 겹친다. 그래서 올리지 않는다(선택마다 72px 순간 이동 방지). */
 .report-floor { bottom: calc(var(--toast-offset-bottom, 24px) + env(safe-area-inset-bottom) + var(--pill-reserve, 0px) + var(--toast-reserve, 0px)); }
-html[data-kbd-open]:not([data-overlay-open]) .report-floor { bottom: calc(var(--vv-bottom, 0px) + 24px + var(--pill-reserve, 0px) + var(--toast-reserve, 0px)); }
-/* 오버레이가 열려 있으면 쌓지 않고 종전 바닥에 둔다. 토스트 예약만큼 오르면 모달 발끝 주 버튼에 닿는다(실측 320px 1134px²). 그 동안 토스트가 버튼을 덮는 것은
-   종전과 같다(토스트가 위라 토스트 글자·적용취소는 가리지 않는다). */
+html[data-kbd-open]:not([data-overlay-open]):has(.app-main :is(input, textarea, select, [contenteditable="true"]):focus) .report-floor { bottom: calc(var(--vv-bottom, 0px) + 24px + var(--pill-reserve, 0px) + var(--toast-reserve, 0px)); }
+/* 오버레이가 열려 있으면 쌓지 않고 종전 바닥에 둔다. 토스트 예약만큼 오르면 모달 발끝 주 버튼에 닿는다(실측 320px 1134px²). */
 html[data-overlay-open] .report-floor { bottom: calc(var(--toast-offset-bottom, 24px) + env(safe-area-inset-bottom)); }
+/* md 이상은 토스트·알약이 가운데라 버튼과 안 겹쳐 숨기지 않는다. */
+@media (max-width: 767px) {
+  html[data-overlay-open][data-toast-open] .report-floor,
+  html[data-overlay-open][data-pill-open] .report-floor { visibility: hidden; pointer-events: none; }
+}
 /* 토스트·알약이 서고 내릴 때 버튼이 비키는 움직임은 토스트 등장과 같은 200ms 로 잇는다(독립 웹디자이너 차단, 종전 한 프레임에 66~72px 튐).
-   누르는 축소(transform)는 종전 그대로 함께 둔다. 키보드가 선 동안은 끈다. 팬마다 --vv-bottom 을 따라가야 하는데 모션이 끼면 늦게 붙는다. */
+   bottom 만 잇는다. 누르는 축소(transform)는 즉시다. 키보드가 선 동안은 끈다. 팬마다 --vv-bottom 을 따라가야 하는데 모션이 끼면 늦게 붙는다. */
 @media (prefers-reduced-motion: no-preference) {
-  .report-floor { transition-property: transform, bottom; transition-duration: var(--dur-base), 200ms; transition-timing-function: var(--ease-sharp), var(--ease-sharp); }
-  html[data-kbd-open] .report-floor { transition-property: transform; }
+  .report-floor { transition-property: bottom; transition-duration: 200ms; transition-timing-function: var(--ease-sharp); }
+  html[data-kbd-open] .report-floor { transition-property: none; }
 }
 @media (min-width: 768px) {
   .report-floor { bottom: calc(var(--toast-offset-bottom, 24px) + env(safe-area-inset-bottom)); }
-  html[data-kbd-open]:not([data-overlay-open]) .report-floor { bottom: calc(var(--vv-bottom, 0px) + 24px); }
+  html[data-kbd-open]:not([data-overlay-open]):has(.app-main :is(input, textarea, select, [contenteditable="true"]):focus) .report-floor { bottom: calc(var(--vv-bottom, 0px) + 24px); }
 }
 
 /* --kbd-inset 은 ViewportOffsetGuard 가 키보드 겹침만큼 넣는 값(기본 0px).

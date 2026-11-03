@@ -3,9 +3,10 @@
 // v2.0 §22 SelectionPillBar — 선택 모드 하단 floating 다크 알약.
 // 탭별 가능한 액션만 children 으로 노출하되 셸(컨테이너·카운트·닫기)은 동일.
 // 합치기는 양 탭 공통 승격. 불가능한 액션은 숨김(비활성 아님).
-import React, { useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { usePillReserve } from '@/lib/usePillReserve'
+import { pillShown } from '@/lib/overlayPresence'
 
 export function SelectionPillBar({
   count, onClose, children, label = '선택', unit = '개', aboveModal = false, compactNarrow = false,
@@ -25,6 +26,10 @@ export function SelectionPillBar({
   // 서 있는 동안 제 높이 + 12px 을 스크롤 끝에 예약한다(--pill-reserve, 신고 e791b6f7). 더하는 곳은 globals.css 한 곳이다.
   // 바닥(--pill-floor)도 거기 한 벌이다. 모달 본문 끝 예약이 이 바닥과 모달 바닥의 차이를 함께 더한다.
   usePillReserve(barRef)
+  // 모달 안 알약(aboveModal)이 서 있는 동안만 루트 알약 표식(data-pill-open)을 연다. 오버레이가 열린 채 그 알약이 서 있으면 모바일 신고 버튼이
+  // 숨는다(globals.css, 모달 안 알약 X 보호). 셸 알약은 모달 막 뒤(z 120)라 버튼과 안 겹치므로 열지 않는다. 셸 선택 중 '일괄 편집' 같은
+  // 모달을 열면 그 내내 버튼이 숨던 것을 막는다(재검수). prop 이 바뀌면 의존성으로 닫고 다시 연다.
+  useEffect(() => (aboveModal ? pillShown() : undefined), [aboveModal])
   // 카운트 숫자는 --on-solid-accent(#F2D9B8 모드 불변)다. --sand 는 다크에서 hover 표면(#332619)으로 뒤집혀 알약 위 1.11:1 로 사라졌다
   // (2026-11-03, 라이트 10.51 · 다크 11.89).
   return (

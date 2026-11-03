@@ -680,13 +680,19 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
     if (!/useVisibleBand\(\{ active: pos == null, overlayRef: btnRef, floating: true \}\)/.test(rb)) violations.push('components/ErrorReportButton.tsx: 기본 자리에 --vv-bottom 을 적을 정본 훅을 안 부르거나 떠 있는 층(floating)으로 빠지지 않는다')
     if (/bottom:\s*'calc\(var\(--toast-offset-bottom/.test(rb)) violations.push('components/ErrorReportButton.tsx: 기본 자리 바닥이 인라인 style 이다. 쌓임·키보드 규칙이 못 이긴다(.report-floor 를 쓸 것)')
     if (!/\.report-floor \{ bottom: calc\(var\(--toast-offset-bottom, 24px\) \+ env\(safe-area-inset-bottom\) \+ var\(--pill-reserve, 0px\) \+ var\(--toast-reserve, 0px\)\); \}/.test(css)) violations.push('app/globals.css: 모바일 신고 버튼 기본 바닥이 토스트 바닥 + 알약 예약 + 토스트 예약이 아니다(알약·토스트와 겹친다)')
-    if (!/html\[data-kbd-open\]:not\(\[data-overlay-open\]\) \.report-floor \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ 24px \+ var\(--pill-reserve, 0px\) \+ var\(--toast-reserve, 0px\)\); \}/.test(css)) violations.push('app/globals.css: 신고 버튼 키보드 자리가 셸 화면 한정(:not([data-overlay-open]))이 아니거나 알약·토스트 위가 아니다')
+    if (!/html\[data-kbd-open\]:not\(\[data-overlay-open\]\):has\(\.app-main :is\(input, textarea, select, \[contenteditable=\"true\"\]\):focus\) \.report-floor \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ 24px \+ var\(--pill-reserve, 0px\) \+ var\(--toast-reserve, 0px\)\); \}/.test(css)) violations.push('app/globals.css: 신고 버튼 키보드 자리가 셸 편집 칸 포커스·오버레이 없음 한정이 아니거나 알약·토스트 위가 아니다. 모달을 닫는 순간 키보드 잔존 프레임에 수백 px 튄다(독립 검수 B1)')
     if (!/html\[data-overlay-open\] \.report-floor \{ bottom: calc\(var\(--toast-offset-bottom, 24px\) \+ env\(safe-area-inset-bottom\)\); \}/.test(css)) violations.push('app/globals.css: 오버레이가 열린 동안에도 신고 버튼이 알약·토스트 예약만큼 오른다. 모달 발끝 주 버튼에 닿는다')
     if (/html\[data-kbd-open\] \.report-floor \{ bottom/.test(css)) violations.push('app/globals.css: 신고 버튼 키보드 자리에 오버레이 조건이 빠졌다. 모달 발끝 주 버튼을 덮는다')
-    const md = /@media \(min-width: 768px\) \{\s*\.report-floor \{ bottom: calc\(var\(--toast-offset-bottom, 24px\) \+ env\(safe-area-inset-bottom\)\); \}\s*html\[data-kbd-open\]:not\(\[data-overlay-open\]\) \.report-floor \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ 24px\); \}\s*\}/.test(css)
+    const md = /@media \(min-width: 768px\) \{\s*\.report-floor \{ bottom: calc\(var\(--toast-offset-bottom, 24px\) \+ env\(safe-area-inset-bottom\)\); \}\s*html\[data-kbd-open\]:not\(\[data-overlay-open\]\):has\(\.app-main :is\(input, textarea, select, \[contenteditable=\"true\"\]\):focus\) \.report-floor \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ 24px\); \}\s*\}/.test(css)
     if (!md) violations.push('app/globals.css: md 이상 신고 버튼이 알약·토스트 예약만큼 올라간다(가로로 안 겹치는데 선택마다 순간 이동)')
     // 비키는 움직임은 200ms 로 잇고(한 프레임 66~72px 튐 금지) 키보드 동안은 끈다(팬을 늦게 따라가면 안 된다).
-    if (!/\.report-floor \{ transition-property: transform, bottom; transition-duration: var\(--dur-base\), 200ms;/.test(css) || !/html\[data-kbd-open\] \.report-floor \{ transition-property: transform; \}/.test(css)) violations.push('app/globals.css: 신고 버튼이 비킬 때 모션이 없거나(순간 이동) 키보드 동안에도 bottom 모션이 남는다')
+    if (!/\.report-floor \{ transition-property: bottom; transition-duration: 200ms;/.test(css) || !/html\[data-kbd-open\] \.report-floor \{ transition-property: none; \}/.test(css)) violations.push('app/globals.css: 신고 버튼이 비킬 때 모션이 없거나(순간 이동) 키보드 동안에도 모션이 남거나 눌림 축소까지 늦춘다')
+    // 키보드 표식만 보고 오르는 규칙이 어디에도 없어야 한다(포커스 조건 없는 :not([data-overlay-open]) 단독 포함).
+    if (/:not\(\[data-overlay-open\]\) \.report-floor/.test(css)) violations.push('app/globals.css: 신고 버튼 키보드 자리에 셸 편집 칸 포커스 조건이 빠졌다(모달 닫힘 직후 튐, 독립 검수 B1)')
+    // 오버레이가 열린 채 토스트가 떠 있으면 버튼을 숨긴다(독립 검수 B2). 모바일만(md 이상은 가로로 안 겹친다).
+    if (!/@media \(max-width: 767px\) \{\s*html\[data-overlay-open\]\[data-toast-open\] \.report-floor,\s*html\[data-overlay-open\]\[data-pill-open\] \.report-floor \{ visibility: hidden; pointer-events: none; \}\s*\}/.test(css)) violations.push('app/globals.css: 오버레이가 열린 채 토스트나 알약이 서면 신고 버튼이 숨지 않는다. 토스트가 버튼을 덮거나 버튼이 모달 안 알약 X 를 덮는다')
+    if (!/useEffect\(\(\) => \(aboveModal \? pillShown\(\) : undefined\), \[aboveModal\]\)/.test(read('components/ui/inventory/SelectionPillBar.tsx'))) violations.push('components/ui/inventory/SelectionPillBar.tsx: 알약 표식(pillShown)이 모달 안 알약(aboveModal)일 때만 열리지 않는다. 안 열면 모달 안 알약 X 를 신고 버튼이 덮고, 셸 알약까지 열면 셸 선택 중 연 모달 내내 버튼이 숨는다')
+    if ((read('components/ui/inventory/SelectionPillBar.tsx').match(/pillShown\(/g) ?? []).length !== 1) violations.push('components/ui/inventory/SelectionPillBar.tsx: 알약 표식을 여는 자리가 하나가 아니다')
     // 토스트는 §15 자리에서 알약 위로만 비킨다.
     if (!/\.toast-floor \{ bottom: calc\(var\(--toast-offset-bottom\) \+ env\(safe-area-inset-bottom\) \+ var\(--pill-reserve, 0px\)\); \}/.test(css)) violations.push('app/globals.css: 토스트 바닥이 알약 예약값을 안 더한다. 토스트가 알약을 덮는다')
     const sf = read('components/feedback/SaveFeedback.tsx')
@@ -695,6 +701,16 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
     // 떠 있는 층은 오버레이로 세지 않는다. 세면 알약·토스트가 서 있는 셸 화면에서 신고 버튼이 키보드 뒤로 숨는다.
     for (const f of ['components/feedback/SaveFeedback.tsx', 'components/ui/inventory/SelectionPillBar.tsx']) {
       if (!/useVisibleBand\(\{[^}]*floating: true[^}]*\}\)/.test(read(f))) violations.push(`${f}: 떠 있는 층인데 floating 으로 빠지지 않아 열린 오버레이로 세어진다`)
+    }
+    if (!/useEffect\(\(\) => \(toastUp \? toastShown\(\) : undefined\), \[toastUp\]\)/.test(sf)) violations.push('components/feedback/SaveFeedback.tsx: 토스트가 떠 있는 동안 루트 토스트 표식(toastShown)을 안 연다. 모달 위 토스트가 신고 버튼을 덮는다')
+    // floating 은 떠 있는 층 셋만 쓴다(독립 검수 R2). 모달·확인창이 쓰면 세어지지 않아 키보드 동안 신고 버튼이 발끝 위로 오른다.
+    {
+      const FLOAT_OK = new Set(['components/ui/inventory/SelectionPillBar.tsx', 'components/feedback/SaveFeedback.tsx', 'components/ErrorReportButton.tsx'])
+      const walkF = d => readdirSync(d).flatMap(n => { const f = join(d, n); return statSync(f).isDirectory() ? walkF(f) : /\.(tsx|ts)$/.test(f) ? [f] : [] })
+      for (const f of [...walkF('app'), ...walkF('components'), ...walkF('lib')]) {
+        if (FLOAT_OK.has(f) || f === 'lib/useVisibleBand.ts') continue
+        if (/\bfloating:\s*(true|!|[a-zA-Z_])/.test(strip(readFileSync(f, 'utf8'))) && /useVisibleBand\(/.test(readFileSync(f, 'utf8'))) violations.push(`${f}: 떠 있는 층 셋(알약·토스트·신고 버튼) 밖에서 useVisibleBand floating 을 쓴다. 오버레이가 세어지지 않는다`)
+      }
     }
     const vb = read('lib/useVisibleBand.ts')
     if (!/if \(!active \|\| floating\) return\s*return overlayOpened\(\)/.test(vb)) violations.push('lib/useVisibleBand.ts: 열린 오버레이를 세지 않는다(overlayOpened). 모달이 열린 채 신고 버튼이 키보드 위로 오른다')

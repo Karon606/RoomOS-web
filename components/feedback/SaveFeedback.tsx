@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { subscribePending, subscribeToast, type Toast, type ToastKind } from '@/lib/saveStatus'
 import { useVisibleBand } from '@/lib/useVisibleBand'
 import { useHeightReserve, TOAST_RESERVE_VAR, TOAST_RESERVE_GAP } from '@/lib/usePillReserve'
+import { toastShown } from '@/lib/overlayPresence'
 
 type Live = Toast & { count: number }
 
@@ -41,6 +42,9 @@ export default function SaveFeedback() {
   useVisibleBand({ active: toasts.length > 0, overlayRef: stackRef, floating: true })
   // 떠 있는 동안 스택 높이 + 8 을 --toast-reserve 에 적는다. 모바일 오류신고 버튼 기본 자리가 그만큼 위로 올라 토스트에 안 가린다(2026-11-03, §15).
   useHeightReserve(stackRef, TOAST_RESERVE_VAR, TOAST_RESERVE_GAP, toasts.length > 0)
+  // 떠 있는 동안 루트 토스트 표식(data-toast-open)을 연다. 오버레이가 열린 채 토스트가 뜨면 신고 버튼이 숨는다(globals.css .report-floor, 독립 검수 B2).
+  const toastUp = toasts.length > 0
+  useEffect(() => (toastUp ? toastShown() : undefined), [toastUp])
 
   const remove = (id: number) => {
     const t = timers.current.get(id)

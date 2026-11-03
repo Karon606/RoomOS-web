@@ -18,7 +18,7 @@ const read = f => { try { return readFileSync(f, 'utf8') } catch { violations.pu
   if (!/new ResizeObserver\(/.test(src) || !/\.offsetHeight/.test(src)) violations.push('lib/usePillReserve.ts: 층 높이를 재지 않는다(ResizeObserver · offsetHeight)')
   if (!/PILL_RESERVE_GAP = 12\b/.test(src) || !/Math\.ceil\(max\) \+ gap/.test(src) || !/useHeightReserve\(ref, PILL_RESERVE_VAR, PILL_RESERVE_GAP, active\)/.test(src)) violations.push('lib/usePillReserve.ts: 알약 예약값이 실측 높이 + 12px 이 아니다')
   if (!/PILL_RESERVE_VAR = '--pill-reserve'/.test(src) || !/document\.documentElement/.test(src)) violations.push('lib/usePillReserve.ts: 루트 --pill-reserve 에 쓰지 않는다')
-  if (!/TOAST_RESERVE_VAR = '--toast-reserve'/.test(src) || !/TOAST_RESERVE_GAP = 8\b/.test(src)) violations.push('lib/usePillReserve.ts: 토스트 예약(--toast-reserve, 간격 8)이 없다')
+  if (!/TOAST_RESERVE_VAR = '--toast-reserve'/.test(src) || !/TOAST_RESERVE_GAP = 'var\(--toast-gap\)'/.test(src)) violations.push('lib/usePillReserve.ts: 토스트 예약(--toast-reserve)이 없거나 간격이 §15 토큰 --toast-gap 이 아니다')
   if (!/removeProperty\(name\)/.test(src) || !/bag\.delete\(key\)/.test(src)) violations.push('lib/usePillReserve.ts: 층이 내려가도 예약을 안 지운다. 선택을 끝낸 화면 끝에 빈 자리가 남는다')
 }
 

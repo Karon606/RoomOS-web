@@ -196,10 +196,10 @@ check-kbd-canonical 5-b(rv·rv2·ss 계측 숫자만, 관찰은 쓰지 않음)·
 
 첫 시공(a안, 기본 자리면 늘 .kbd-float)은 독립 검수에서 막혔다. 모달이 열린 채 키보드가 서면 띠 위로 오른 버튼(z 380)이 발끝 주 버튼을 29x40px 덮었고, 390px 이상에서는 그 자리를 누르면 신고가 열렸다(발끝 있는 모달 44곳).
 
-- 셸 화면에서만 오른다. 판정은 루트 표식 둘이다. data-kbd-open(ViewportOffsetGuard)과 data-overlay-open(lib/overlayPresence). CSS 한 곳 `html[data-kbd-open]:not([data-overlay-open]) .report-floor` 가 읽는다.
+- 셸 화면에서만 오른다. 판정은 루트 표식 둘(data-kbd-open, data-overlay-open)과 셸 편집 칸 포커스다. CSS 한 곳 `html[data-kbd-open]:not([data-overlay-open]):has(.app-main :is(input, textarea, select, [contenteditable="true"]):focus) .report-floor` 가 읽는다. 포커스 조건은 독립 검수 B1 에서 들어왔다. 키보드가 선 채 모달을 저장·닫으면 오버레이 표식은 정리에서 바로 빠지는데 키보드 표식은 vv resize 까지 남아, 그 사이 버튼이 띠 위로 수백 px 튀었다가 내려왔다. 모달이 닫히면 포커스가 셸 칸으로 돌아오지 않으니 오르지 않고, 셸 칸이 blur 되면 내려가기만 한다.
 - 열린 오버레이 신호는 저장소에 없었다(Modal escStack 은 Modal 만, aria-modal 은 셋뿐). 그래서 useVisibleBand 에서 센다. §30 이 키보드를 받는 fixed 오버레이는 Modal 이나 이 훅을 쓰라고 하고 check-kbd-canonical 이 지키므로, 새 오버레이도 저절로 세어진다. 떠 있는 층(알약·토스트·신고 버튼)은 floating: true 로 빠진다. 키보드를 못 띄우는 오버레이(사진 확대·날짜 고르기·사이드 메뉴)는 안 세도 표식의 뜻에 무관하다.
-- 쌓는 차례는 아래부터 알약, 토스트, 신고 버튼. 토스트는 §15 자리에 알약 예약값만 더하고(.toast-floor, 키보드 간격 24 + 예약값), 신고 버튼은 거기에 토스트 예약값(--toast-reserve = 스택 높이 + 8, SaveFeedback 이 lib/usePillReserve 의 useHeightReserve 로 적는다)을 더한다. 토스트가 정본 자리를 지키고 정본 자리가 없는 버튼이 비키는 쪽이다. 반대로 하면 버튼(z 380)이 토스트(z 400) 오른쪽 끝 적용취소를 덮거나, 토스트가 버튼을 가린다.
-- 오버레이가 열려 있으면 쌓지 않고 종전 바닥(토스트 바닥)에 둔다. 토스트 예약만큼 오르면 모달 발끝 주 버튼에 닿았다(하네스 실측 320px 1134px², 390 945, 412 459). 그 동안 토스트가 버튼을 덮는 것은 종전과 같다.
+- 쌓는 차례는 아래부터 알약, 토스트, 신고 버튼. 토스트는 §15 자리에 알약 예약값만 더하고(.toast-floor, 키보드 간격 24 + 예약값), 신고 버튼은 거기에 토스트 예약값(--toast-reserve = 스택 높이 + --toast-gap, SaveFeedback 이 lib/usePillReserve 의 useHeightReserve 로 적는다)을 더한다. 토스트가 정본 자리를 지키고 정본 자리가 없는 버튼이 비키는 쪽이다. 반대로 하면 버튼(z 380)이 토스트(z 400) 오른쪽 끝 적용취소를 덮거나, 토스트가 버튼을 가린다.
+- 오버레이가 열려 있으면 쌓지 않고 종전 바닥(토스트 바닥)에 둔다. 토스트 예약만큼 오르면 모달 발끝 주 버튼에 닿았다(하네스 실측 320px 1134px², 390 945, 412 459). 그 동안 토스트가 떠 있으면 모바일에서 버튼을 숨긴다(visibility hidden + pointer-events none, 토스트 표식 data-toast-open 은 SaveFeedback 이 연다). 첫 판은 '토스트가 버튼을 덮는 것은 종전과 같다' 로 두었는데 운영자 승인('토스트가 신고 버튼을 가리지 않게') 밖이라 독립 검수 B2 에서 고쳤다. 같은 규칙으로 오버레이가 열린 채 모달 안 선택 알약(aboveModal, 서류 시트·구매처 관리)이 서 있어도 숨긴다. 셸 알약은 모달 막 뒤(z 120)라 버튼과 안 겹쳐 표식을 열지 않는다(재검수: 셸 선택 중 '일괄 편집' 모달을 열면 그 내내 버튼이 숨던 것). 버튼이 모달 안 알약의 '선택 취소' X 를 덮었다(검수 R1, 320px 9x44). 알약 표식 data-pill-open 은 SelectionPillBar 가 aboveModal 일 때만 연다.
 - md 이상은 토스트(최대 420)·알약이 가운데라 우하단 버튼과 가로로 안 겹친다. 버튼을 올리지 않는다(선택마다 72px 순간 이동이 있었다).
 - 끌어 옮긴 자리는 따라 오르지 않는다(훅도 안 돈다).
-- 비키는 움직임(토스트·알약이 서고 내릴 때)은 bottom 200ms(토스트 등장과 같은 길이, motion-safe)로 잇는다. 첫 판은 한 프레임에 66~72px 튀어 독립 웹디자이너가 막았다. 키보드가 선 동안은 끈다(팬마다 --vv-bottom 을 늦게 따라가면 안 된다).
+- 비키는 움직임(토스트·알약이 서고 내릴 때)은 bottom 만 200ms(토스트 등장과 같은 길이, motion-safe)로 잇고 눌림 축소(transform)는 즉시다. 첫 판은 한 프레임에 66~72px 튀어 독립 웹디자이너가 막았다. 키보드가 선 동안은 끈다(팬마다 --vv-bottom 을 늦게 따라가면 안 된다).

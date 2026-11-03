@@ -13,8 +13,8 @@ const violations = []
 for (const f of [...walk('app'), ...walk('components')]) {
   const lines = readFileSync(f, 'utf8').split('\n')
   lines.forEach((l, i) => {
-    // 글자색 자리만: Tailwind text-[var(--sand)] · text-[color:var(--sand)], 인라인 color: 'var(--sand)', CSS color: var(--sand)
-    if (/\btext-\[(?:color:)?var\(--sand\)\]|(?<![-\w])color:\s*['"]?var\(--sand\)/.test(l)) violations.push(`${f}:${i + 1}: --sand 를 글자색으로 쓴다. 다크에서 #332619 로 뒤집혀 사라진다(--on-solid-accent 를 쓸 것)`)
+    // 글자·선 자리만: Tailwind text-[var(--sand)] · text-[color:var(--sand)] · text-sand · fill-sand · stroke-sand(뒤에 -2 같은 꼬리가 없는 낱말), 인라인 color: 'var(--sand)', CSS color: var(--sand)
+    if (/\btext-\[(?:color:)?var\(--sand\)\]|\b(?:text|fill|stroke)-sand(?![-\w])|(?<![-\w])color:\s*['"]?var\(--sand\)/.test(l)) violations.push(`${f}:${i + 1}: --sand 를 글자색으로 쓴다. 다크에서 #332619 로 뒤집혀 사라진다(--on-solid-accent 를 쓸 것)`)
   })
 }
 console.log(`[--sand 글자색] 위반 ${violations.length}건`)
