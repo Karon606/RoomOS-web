@@ -8,7 +8,8 @@
 //   ⓑ computeInventoryOverview 의 조회 수가 그대로다(제품 표기는 이미 받은 구매 위에서 메모리로만 센다).
 //   ⓒ 추정을 카드 수치 자리에 쓰지 않는다. 카드 value·valueSub 와 상세 '지금' 은 productMix 를 읽지 않는다.
 //   ⓓ 카드 메타와 상세 제품 줄이 같은 row.productMix 를 읽고, 개요는 그 값을 확정된 currentStock 으로 낸다.
-//   ⓔ 점검 폼 두 곳(CheckForm · LocationBatchCheckModal)에 브랜드가 없다(점검은 품명 하나로 센다).
+//   ⓔ 점검 폼 두 곳(CheckForm · LocationBatchCheckModal)은 브랜드를 입력·저장하지 않는다(점검은 품명 하나로 센다).
+//      표시는 허용한다(2026-11-03 신고 ee46d0c1). 위치별 패널 행 머리의 ShelfMeta 한 자리만 빼고 본다(ⓙ).
 //   ⓕ 골격과 실제의 줄 수가 같다. 제품 줄은 DetailViewSummary 안에 있고 글자를 g() 로 감싸 골격이 같은 줄을 투명하게 그린다.
 //   ⓖ 정본 lib/productMix 는 순수층이다(DB 를 부르지 않는다).
 //   ⓗ 한 카드 안에서 단가·날짜 꼴이 하나다(구매한 제품 = 평균 단가 `590원/봉`, 날짜 = 최근 점검 fmtDate).
@@ -17,6 +18,9 @@
 //     글자 수로 자르는 꼼수(slice·substring·length 비교)가 없고, 분류는 shrink-0, 자리는 flex-1 말줄임이다.
 //     재기 전엔 제품 토막만 투명, 스크린리더는 늘 전체(sr-only). 상세 추정 한 줄도 같은 토막 정본(shelfName full)을 쓰고
 //     이름과 수량을 줄바꿈 없는 공백으로 붙이며 제품 사이는 ', ' 다. 브랜드만 쓰던 종전 토막(shelfBrandsText·short)은 돌아오지 않는다.
+//   ⓙ 위치별 패널 행 머리 분류 줄이 카드 메타와 같은 정본 ShelfMeta 로 같은 row.productMix.onShelf 를 그린다
+//      (2026-11-03 운영자 승인 '카드와 똑같이'). 글자 크기는 행 머리 10.5px 그대로, 색 prop 없음(분류는 행 머리 회색).
+//      추정은 품목 전체 몫이고 이 위치 몫이 아니다(§22). 한 패널에 ShelfMeta 는 그 한 자리뿐이다.
 // 한계. 소스 가드라 '존재'만 본다. 계산의 뜻은 진리표 scripts/test-product-mix.ts 가 진다.
 import { readFileSync } from 'node:fs'
 
@@ -90,11 +94,20 @@ need('ⓓ 카드 메타가 row.productMix.onShelf', /<ShelfMeta category=\{row\.
 need('ⓓ 상세 제품 줄이 row.productMix', /row\.productMix\.last/.test(summary) && /shelfEstimateText\(row\.productMix, unit\)/.test(summary))
 need('ⓓ 개요가 확정 잔량으로 제품 표기를 낸다', /resolveMadeMix\(itemPurchases, currentStock, \{ qtyUnit: it\.qtyUnit, useSpec, specUnit: it\.specUnit \}\)/.test(comp) && /\n\s*productMix,\n/.test(comp))
 
-// ⓔ 점검 폼엔 브랜드가 없다
+// ⓔ 점검 폼은 브랜드를 입력·저장하지 않는다(표시 한 자리 ⓙ 는 빼고 본다)
+const LOC_META = '<ShelfMeta category={r.category} onShelf={r.productMix.onShelf} />'
 for (const h of ['function CheckForm(', 'function LocationBatchCheckModal(']) {
-  const b = fnBody(client, h)
+  const b = fnBody(client, h).split(LOC_META).join('')
   need(`ⓔ ${h.slice(9, -1)} 본문 확보`, b.length > 0)
-  need(`ⓔ ${h.slice(9, -1)} 에 브랜드 없음`, !/productMix|\bbrand\b|productName/.test(b), '점검은 품명 하나로 센다(제품별 분리는 보류)')
+  need(`ⓔ ${h.slice(9, -1)} 에 브랜드 입력·저장 없음`, !/productMix|\bbrand\b|productName/.test(b), '점검은 품명 하나로 센다(제품별 분리는 보류)')
+}
+
+// ⓙ 위치별 패널 행 머리는 카드와 같은 정본으로 그린다
+{
+  const loc = fnBody(client, 'function LocationBatchCheckModal(')
+  need('ⓙ 위치별 행 머리 분류 줄이 ShelfMeta', loc.includes(`<p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]">${LOC_META}</p>`),
+    '분류만 서면 카드에서 본 제품을 점검 화면에서 못 본다(신고 ee46d0c1)')
+  need('ⓙ 위치별 패널 ShelfMeta 한 자리', loc.split('<ShelfMeta').length === 2)
 }
 
 // ⓕ 골격과 실제가 한 함수

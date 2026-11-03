@@ -6789,8 +6789,9 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                               <p className="min-w-0 truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{r.label}</p>
                               {rowIsHub && <Badge tone="pale-amber" className="shrink-0">창고</Badge>}
                             </div>
+                            {/* 분류 뒤 제품 토막은 카드 메타와 같은 정본 ShelfMeta 다(§22, 2026-11-03 신고 ee46d0c1). 추정은 품목 전체 몫이고 이 위치 몫이 아니다. */}
                             <div className={ROW_HEAD_CLS}>
-                              <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
+                              <p className="min-w-0 flex-1 truncate text-[0.65625rem] text-[var(--warm-muted)]"><ShelfMeta category={r.category} onShelf={r.productMix.onShelf} /></p>
                               <div className={ROW_HEAD_CLUSTER_CLS}>
                               {prev != null && <span className="shrink-0 text-xs text-[var(--warm-muted)]">저장값 <strong className="font-semibold tabular-nums text-[var(--warm-dark)]">{Math.round(prev.qty * 100) / 100}{stockUnit ?? ''}</strong></span>}
                               <div className={ROW_HEAD_ACT_CLS}>

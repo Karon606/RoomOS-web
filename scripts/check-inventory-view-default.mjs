@@ -485,6 +485,8 @@ need('골격 막대가 loading.tsx 와 같은 색이다',
   need('⑩ 카드 메타가 분류 · 제품 꼴이다',
     /meta=\{<ShelfMeta category=\{row\.category\} color=\{tint\?\.fg\} onShelf=\{row\.productMix\.onShelf\} \/>\}/.test(meta) && !/<Badge/.test(meta) && !/미입력/.test(meta),
     '좁은 폭에서 분류가 먼저 잘리거나 제품이 배지가 되면 §22 와 어긋난다')
+  // 위치별 패널 행 머리도 같은 한 컴포넌트다(2026-11-03 신고 ee46d0c1, '카드와 똑같이'). 배선 축은 brand-mix ⓙ.
+  need('⑩ 위치별 행 머리도 ShelfMeta 로 그린다', /<ShelfMeta category=\{r\.category\} onShelf=\{r\.productMix\.onShelf\} \/>/.test(client))
 }
 
 console.log(`\n[재고 기본 보기(위치별) 배선] 위반 ${fails.length}건`)
