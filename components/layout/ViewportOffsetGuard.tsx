@@ -36,7 +36,7 @@
 // B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 와 app/admin/layout.tsx
 // (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
-import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, windowResizeIsPan, resyncAfterPan, type KbdSnapshot } from '@/lib/keyboardViewport'
+import { keyboardOpen, overlapInset, shouldRestore, revealDelta, visibleBand, windowResizeIsPan, resyncAfterPan, revealGate, type KbdSnapshot, type SettleSample } from '@/lib/keyboardViewport'
 import { readKbdSnapshot } from '@/lib/viewportFrame'
 import { isEditableTarget, editableFocused, keyboardCapableFocus } from '@/lib/editableTarget'
 import { phantomKeyboardGap } from '@/lib/modalViewport'
@@ -99,7 +99,8 @@ export default function ViewportOffsetGuard() {
     // 계측 전용. 가드가 마지막으로 적은 스크롤러 scrollTop 과, 이번 포커스에서 가드 밖 스크롤을 이미 적었는가.
     let guardTop = NaN
     let foreignLogged = false
-    const reveal = () => {
+    // w 는 정착 관문이 기다린 프레임 수다(계측용, 관문을 안 거친 재노출은 0).
+    const reveal = (w = 0) => {
       const p = pending.current
       if (!p) return
       if (!p.el.isConnected || document.activeElement !== p.el) { pending.current = null; return }
@@ -131,15 +132,57 @@ export default function ViewportOffsetGuard() {
       // 칸 위 끝을 움직인 뒤 한 번 더 읽고(f1), 두 프레임 뒤에 또 읽는다(rv2). iOS 의 제 팬이 겹치면 f1 과 f2 가 갈린다.
       guardTop = box.scrollTop
       kbdTrace('rv', delta > 0 ? 'rise' : delta < 0 ? 'neg' : 'none', undefined, undefined, {
-        bt: bandTop, bb: bandBottom, f0: r.top, f1: p.el.getBoundingClientRect().top, d: delta, a: p.aligned ? 1 : 0, s0, s1: guardTop,
+        bt: bandTop, bb: bandBottom, f0: r.top, f1: p.el.getBoundingClientRect().top, d: delta, a: p.aligned ? 1 : 0, s0, s1: guardTop, w,
       })
       const el = p.el
       requestAnimationFrame(() => requestAnimationFrame(() => { if (alive && el.isConnected) { kbdTrace('rv2', '·', undefined, undefined, { f2: el.getBoundingClientRect().top }) } }))
       p.aligned = true
     }
 
+    // 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안). 판정은 정본 revealGate 가 하고
+    // 여기서는 매 프레임 재고 그 답대로 할 뿐이다. 경위는 lib/keyboardViewport 정착 관문 절.
+    // 관문이 열려 있는 동안 vv resize 가 와도 따로 재노출하지 않는다(아래 scheduleReveal). 띠가 움직이니 관문이 기다리고,
+    // 멈추면 한 번 재노출한다. 관문 밖(키보드가 서는 순간)의 resize 재시도는 종전 그대로다.
+    let settle: { el: HTMLElement; box: HTMLElement; frame: number; still: number; prev: SettleSample | null; startTop: number } | null = null
+    const settleSample = (box: HTMLElement, el: HTMLElement): SettleSample => {
+      const boxRect = box.getBoundingClientRect()
+      const band = visibleBand(snapNow())
+      const r = el.getBoundingClientRect()
+      return {
+        fieldTop: r.top, fieldBottom: r.bottom,
+        bandTop: Math.max(boxRect.top, band.top), bandBottom: Math.min(band.bottom, boxRect.bottom),
+        scrollTop: box.scrollTop,
+      }
+    }
+    const settleStep = (st: NonNullable<typeof settle>) => {
+      if (!alive || settle !== st) return
+      const p = pending.current
+      if (!p || p.el !== st.el || !st.el.isConnected || document.activeElement !== st.el) { settle = null; return }
+      st.frame++
+      const cur = settleSample(st.box, st.el)
+      const g = revealGate({ prev: st.prev, cur, still: st.still, frame: st.frame, guardScrollTop: st.startTop })
+      st.still = g.still
+      st.prev = cur
+      if (g.verdict === 'wait') { requestAnimationFrame(() => settleStep(st)); return }
+      settle = null
+      if (g.verdict === 'abort') { kbdTrace('rvx', 'abort', undefined, undefined, { w: st.frame, s0: st.startTop, s1: cur.scrollTop }); return }
+      if (g.verdict === 'stay') {
+        kbdTrace('rv', 'stay', undefined, undefined, { bt: cur.bandTop, bb: cur.bandBottom, f0: cur.fieldTop, d: 0, a: p.aligned ? 1 : 0, s0: cur.scrollTop, w: st.frame })
+        p.aligned = true
+        return
+      }
+      reveal(st.frame)
+    }
+    const startSettle = (el: HTMLElement) => {
+      const box = scrollParent(el)
+      if (!box) return
+      const st = { el, box, frame: 0, still: 0, prev: null, startTop: box.scrollTop }
+      settle = st
+      requestAnimationFrame(() => settleStep(st))
+    }
+
     // 패딩이 실제로 반영된 다음 프레임에 잰다 — 그 전에는 스크롤 범위가 부족해 클램프된다
-    const scheduleReveal = () => { if (pending.current) requestAnimationFrame(reveal) }
+    const scheduleReveal = () => { if (pending.current && !settle) requestAnimationFrame(() => reveal(0)) }
 
     // 복원은 정본 판정을 지난다 — 진짜 닫힘(엡실론)일 때만. 외장 바·줌 팬은 되감지 않는다.
     const restore = () => {
@@ -243,9 +286,12 @@ export default function ViewportOffsetGuard() {
       // **여기 물음은 "열렸나"라 판정 함수를 쓴다(신고 716e7b0c).** 크기 함수를 쓰면 iOS 가
       // 팬한 만큼 값이 줄어 0까지 떨어지므로, 팬이 끝난 뒤의 칸-대-칸 이동에서 조용히
       // 아무 일도 안 하게 된다.
-      if (keyboardOpen(snapNow())) scheduleReveal()
+      // **바로 재지 않고 정착 관문을 지난다(2026-11-03).** 이 순간 iOS 자체 포커스 팬이 진행 중이라, 다음 프레임에 재면
+      // 팬 도중의 기하를 확정해 이중 이동이 됐다(칸이 띠 위 +16 에 붙음). 관문은 멈출 때까지(상한 약 20프레임) 기다린다.
+      settle = null
+      if (keyboardOpen(snapNow())) startSettle(e.target)
     }
-    const onFocusOut = () => { pending.current = null; kbdTrace('fo', '·') }
+    const onFocusOut = () => { pending.current = null; settle = null; kbdTrace('fo', '·') }
 
     vv.addEventListener('resize', onResize)
     vv.addEventListener('scroll', onScroll)

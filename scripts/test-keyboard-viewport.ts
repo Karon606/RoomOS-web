@@ -5,7 +5,8 @@
 import {
   keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand, windowResizeIsPan, resyncAfterPan,
   KBD_OPEN_PX, KBD_MAX_RATIO, TARGET_RATIO, REVEAL_GAP, ZOOM_NEUTRAL_SCALE, RESTORE_EPS,
-  type KbdSnapshot,
+  revealGate, restsNearTarget, SETTLE_MAX_FRAMES, SETTLE_STILL_FRAMES, SETTLE_EPS,
+  type KbdSnapshot, type SettleSample,
 } from '../lib/keyboardViewport'
 import { readKbdSnapshot, frameBoxRect } from '../lib/viewportFrame'
 
@@ -211,6 +212,17 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   rect = { top: -100, height: 812, width: 402 }
   const s3 = readKbdSnapshot({ height: 416, offsetTop: 100, scale: 1, width: 402 } as unknown as VisualViewport)
   eq('정본 · vv 가 바뀌면 같은 프레임에도 다시 잰다', [s3.frameH, s3.frameTop], [812, -100])
+  // 문서 scrollTop 이 바뀌면 vv 가 같아도 같은 프레임에 다시 잰다(2026-11-03, 정착 관문이 매 프레임 띠를 잰다).
+  {
+    const vv3 = { height: 416, offsetTop: 100, scale: 1, width: 402 } as unknown as VisualViewport
+    const before = rectReads
+    readKbdSnapshot(vv3)
+    eq('정본 · 같은 vv·같은 문서 scrollTop 이면 다시 안 잰다', rectReads, before)
+    ;(g.document as Record<string, unknown>).scrollingElement = { scrollTop: 50 }
+    rect = { top: -150, height: 812, width: 402 }
+    eq('정본 · 문서 scrollTop 이 바뀌면 같은 프레임에도 다시 잰다', [readKbdSnapshot(vv3).frameTop, rectReads], [-150, before + 1])
+    delete (g.document as Record<string, unknown>).scrollingElement
+  }
   // 상자가 이상하면(폭이 문서 폭과 다름 = transform 조상) 종전 틀로 답한다.
   flush()
   docW = 360
@@ -230,6 +242,68 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   delete g.window
   delete g.document
   delete g.requestAnimationFrame
+}
+
+// ── 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안) ─────────────
+// 가드는 키보드가 선 채 들어온 focusin 에서 매 프레임 표본 하나를 재 revealGate 에 넘기고, 그 답대로만 한다.
+{
+  const S = (fieldTop: number, o: Partial<SettleSample> = {}): SettleSample =>
+    ({ fieldTop, fieldBottom: fieldTop + 40, bandTop: 0, bandBottom: 416, scrollTop: 120, ...o })
+  // 표본 줄을 차례로 넘겨 처음으로 wait 가 아닌 답과 그 프레임을 돌려준다. 끝까지 wait 면 'wait'.
+  const run = (samples: SettleSample[], startTop = 120) => {
+    let prev: SettleSample | null = null, still = 0
+    for (let i = 0; i < samples.length; i++) {
+      const g = revealGate({ prev, cur: samples[i], still, frame: i + 1, guardScrollTop: startTop })
+      if (g.verdict !== 'wait') return { verdict: g.verdict, frame: i + 1, at: samples[i] }
+      prev = samples[i]; still = g.still
+    }
+    return { verdict: 'wait' as const, frame: samples.length, at: samples[samples.length - 1] }
+  }
+  eq('관문 · 첫 표본은 견줄 것이 없어 기다린다', run([S(205)]).verdict, 'wait')
+  eq('관문 · 한 번만 멈춰선 아직 기다린다', run([S(205), S(205)]).verdict, 'wait')
+  eq('관문 · 두 프레임 연속 멈추면 진행(세 번째 표본)', [run([S(205), S(205), S(205)]).verdict, run([S(205), S(205), S(205)]).frame].join(' '), 'go 3')
+  eq('관문 · 팬이 진행 중이면 기다린다', run([S(205), S(180), S(150), S(120)]).verdict, 'wait')
+  eq('관문 · 1px 미만 흔들림은 멈춘 것으로 본다', run([S(205), S(205.6), S(205.2)]).verdict, 'go')
+  eq('관문 · 정확히 1px 움직이면 움직인 것이다', run([S(205), S(206), S(207)]).verdict, 'wait')
+  eq('관문 · 키보드 resize 로 띠 아래가 움직이는 중이면 기다린다',
+    run([S(205), S(205, { bandBottom: 466 }), S(205, { bandBottom: 416 })]).verdict, 'wait')
+  eq('관문 · 띠 위가 움직이는 중이면 기다린다', run([S(205), S(205, { bandTop: 30 }), S(205, { bandTop: 0 })]).verdict, 'wait')
+  const endless = Array.from({ length: 40 }, (_, i) => S(400 - i * 3))
+  eq('관문 · 안 멈춰도 상한에서 진행', [run(endless).verdict, run(endless).frame].join(' '), `go ${SETTLE_MAX_FRAMES}`)
+  eq('관문 · 기다리는 동안 스크롤러가 가드 밖에서 움직이면 취소(손 스크롤)', run([S(205), S(205, { scrollTop: 160 })]).verdict, 'abort')
+  eq('관문 · 손 스크롤 취소는 정지보다 먼저 본다', run([S(205), S(205), S(205, { scrollTop: 121.5 })]).verdict, 'abort')
+  eq('관문 · 1px 미만 scrollTop 차는 손 스크롤이 아니다', run([S(205), S(205), S(205, { scrollTop: 120.4 })]).verdict, 'go')
+  // 허용 구간. 띠 0~416 의 목표선은 145.6, 그 아래 16 까지는 이미 읽기 편한 자리다.
+  eq('관문 · 멈춘 자리가 목표선 근처면 움직이지 않는다(stay)', run([S(150), S(150), S(150)]).verdict, 'stay')
+  eq('관문 · 목표선보다 위(띠 위 여백 아래)도 stay(공짜 모션 없음)', run([S(60), S(60), S(60)]).verdict, 'stay')
+  eq('관문 · 목표선 아래 16 을 넘으면 go', run([S(170), S(170), S(170)]).verdict, 'go')
+  eq('관문 · 띠 위로 잘린 칸은 go(음수 1회는 revealDelta 가 정한다)', run([S(5), S(5), S(5)]).verdict, 'go')
+  eq('관문 · 상한 진행은 허용 구간이어도 go(멈춘 적이 없어 확정하지 않는다)', run(Array.from({ length: 25 }, (_, i) => S(150 + (i % 2) * 3))).verdict, 'go')
+  eq('허용 구간 · 아래 여백이 모자라면 아니다', restsNearTarget({ fieldTop: 140, fieldBottom: 405, bandTop: 0, bandBottom: 416 }), false)
+  eq('허용 구간 · 위 여백 안쪽이면 아니다', restsNearTarget({ fieldTop: 10, fieldBottom: 50, bandTop: 0, bandBottom: 416 }), false)
+  eq('정착 상수 · 1px · 두 프레임 · 20프레임', [SETTLE_EPS, SETTLE_STILL_FRAMES, SETTLE_MAX_FRAMES], [1, 2, 20])
+
+  // 신고 재현표. 띠 0~416, A 칸 145(목표선 145.6 근처), 아래 B 칸 205. B 를 누르면 iOS 자체 팬이 6프레임에 걸쳐 칸을
+  // 130 올린다(스크롤러 scrollTop 은 안 건드린다). 종전 가드는 첫 프레임 기하(205)로 59.4 를 올렸고, 팬이 그 위에 130 을
+  // 더해 띠 위 +16 에 붙었다. 관문은 팬이 멈춘 뒤 한 번만 잰다.
+  const B0 = 205, IOS_PAN = 130
+  const target = 0 + TARGET_RATIO * 416
+  const oldDelta = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: B0, fieldBottom: B0 + 40, aligned: false })
+  eq('신고 재현 · 종전은 첫 프레임 기하로 목표선까지 올렸다', Math.round(oldDelta * 10) / 10, Math.round((B0 - target) * 10) / 10)
+  eq('신고 재현 · 종전 착지 = 띠 위 +16 (이중 이동의 지문)', Math.round(B0 - oldDelta - IOS_PAN), REVEAL_GAP)
+  const panFrames = [0, 20, 50, 85, 110, 125, 130, 130, 130].map(d => S(B0 - d))
+  const g = run(panFrames)
+  const newDelta = g.verdict === 'go'
+    ? revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: g.at.fieldTop, fieldBottom: g.at.fieldBottom, aligned: false }) : 0
+  const landed = g.at.fieldTop - newDelta
+  eq('신고 재현 · 관문은 팬이 멈춘 뒤(아홉째 표본)에야 답한다', g.frame, 9)
+  eq('신고 재현 · B 가 띠 위 +16 에 착지하지 않는다', Math.abs(landed - REVEAL_GAP) > 2, true)
+  eq('신고 재현 · B 는 띠 안 읽기 편한 자리(위 여백 아래 · 목표선 + 16 이내)', landed >= REVEAL_GAP && landed <= target + 16, true)
+  eq('신고 재현 · 이동은 한 번(iOS 팬 뒤에 가드가 다시 밀지 않는다)', g.verdict, 'stay')
+  // iOS 팬이 없으면(B 가 그 자리) 관문은 세 표본 뒤 한 번, 목표선까지 올린다. 종전과 같은 자리다.
+  const still = run([S(B0), S(B0), S(B0)])
+  const d2 = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: still.at.fieldTop, fieldBottom: still.at.fieldBottom, aligned: false })
+  eq('팬 없는 칸 이동 · 세 표본 뒤 목표선까지 한 번', [still.verdict, Math.round(B0 - d2)], ['go', Math.round(target)])
 }
 
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).

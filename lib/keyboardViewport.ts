@@ -140,3 +140,70 @@ export function revealDelta(a: {
   if (!a.aligned && a.fieldTop < a.bandTop + REVEAL_GAP) return a.fieldTop - (a.bandTop + REVEAL_GAP)
   return 0
 }
+
+// ── 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안 · 운영자 승인) ─────────
+//
+// 신고. 아이폰 홈화면 앱, 재고 '위치별' 인라인 점검에서 키친타월 '채운 후' 다음 물티슈 '채우기 전' 을 누르면 칸이
+// 276pt 튀어 띠 위 +16 에 붙었다(35% 목표선보다 약 130pt 더). 처음 한 번만이고, 손으로 한 번 스크롤한 뒤엔 없었다.
+//
+// 원인. 키보드가 선 채 칸을 옮기면 focusin 이 바로 재노출을 예약하고 다음 프레임에 스크롤러 scrollTop 에 델타를 더한
+// 뒤 음수 래치를 잠근다. 같은 순간 iOS 자체 포커스 팬(문서·visual viewport 이동)이 진행 중이라 재노출이 팬 도중의
+// 기하를 읽고 확정했다. 둘이 겹쳐 이중 이동이 됐다. 착지 '띠 위 +16' 은 revealDelta 의 상단 보호 클램프나 첫 회 음수
+// 정렬에서만 나오는 값이라 찢어진 기하의 지문이다(목표선까지 59 올린 뒤 iOS 가 130 을 더 밀면 205 − 189 = 16).
+//
+// 처방. 키보드가 이미 선 채 들어온 focusin 에만, 칸 위 끝과 띠 위·아래가 두 프레임 연속 1px 미만으로 멈췄을 때
+// 한 번 재노출한다. 상한(약 20프레임, 60Hz 에서 약 350ms)을 넘으면 그 기하로 진행한다. 기다리는 동안 스크롤러
+// scrollTop 이 가드 밖에서 바뀌면 손 스크롤로 보고 취소한다. 멈춘 자리가 이미 목표선 근처(허용 구간)면 움직이지
+// 않는다. 이 관문은 이동을 늦출 뿐 방향·크기는 그대로 revealDelta 가 정한다(35% 목표선·즉시 이동·음수 1회 래치).
+// vv resize 의 재시도 경로(키보드가 서는 순간)는 종전 그대로다.
+
+/** 이 차이 미만이면 '안 움직였다'로 본다(px). */
+export const SETTLE_EPS = 1
+/** 연속으로 멈춰 있어야 하는 프레임 수. 두 번 견줘 두 번 다 멈췄으면 정착이다. */
+export const SETTLE_STILL_FRAMES = 2
+/** 이만큼 기다려도 안 멈추면 그 기하로 진행한다(약 20프레임 ≈ 350ms, 운영자 승인 '두 박자' 상한). */
+export const SETTLE_MAX_FRAMES = 20
+/** 목표선 아래로 이만큼까지는 이미 읽기 편한 자리로 보고 움직이지 않는다(허용 구간). */
+export const SETTLE_REST_PX = REVEAL_GAP
+
+/** 한 프레임에 잰 정착 재료. 띠는 재노출과 같은 띠(스크롤러 rect 와 겹친 보이는 띠)다. */
+export type SettleSample = { fieldTop: number; fieldBottom: number; bandTop: number; bandBottom: number; scrollTop: number }
+
+/**
+ * 정착 관문 한 걸음. 매 프레임 지금 표본(cur)과 직전 표본(prev)을 견줘 다음 할 일을 정한다.
+ *   abort  기다리는 동안 스크롤러가 가드 밖에서 움직였다(손 스크롤). 재노출하지 않는다.
+ *   wait   아직 움직인다. 한 프레임 더 본다.
+ *   stay   멈췄고 칸이 이미 허용 구간이다. 움직이지 않는다.
+ *   go     멈췄거나(두 프레임 연속 1px 미만) 상한에 닿았다. 지금 기하로 한 번 재노출한다.
+ * frame 은 이번이 몇 번째 표본인가(1부터), still 은 지금까지 연속으로 멈춘 견줌 수다. 돌려준 still 을 다음 걸음에 넘긴다.
+ * guardScrollTop 은 관문을 열 때의 스크롤러 scrollTop 이다. 관문은 기다리는 동안 아무것도 안 쓰므로 그 값이 바뀌었다면 가드 밖이다.
+ */
+export function revealGate(a: {
+  prev: SettleSample | null
+  cur: SettleSample
+  still: number
+  frame: number
+  guardScrollTop: number
+}): { verdict: 'abort' | 'wait' | 'stay' | 'go'; still: number } {
+  const { prev, cur } = a
+  if (Math.abs(cur.scrollTop - a.guardScrollTop) >= SETTLE_EPS) return { verdict: 'abort', still: 0 }
+  const moved = !prev
+    || Math.abs(cur.fieldTop - prev.fieldTop) >= SETTLE_EPS
+    || Math.abs(cur.bandTop - prev.bandTop) >= SETTLE_EPS
+    || Math.abs(cur.bandBottom - prev.bandBottom) >= SETTLE_EPS
+  const still = moved ? 0 : a.still + 1
+  const settled = still >= SETTLE_STILL_FRAMES
+  if (!settled && a.frame < SETTLE_MAX_FRAMES) return { verdict: 'wait', still }
+  return { verdict: settled && restsNearTarget(cur) ? 'stay' : 'go', still }
+}
+
+/**
+ * 칸이 이미 읽기 편한 자리인가. 위는 띠 위 여백(REVEAL_GAP) 아래, 위 끝이 목표선에서 SETTLE_REST_PX 안쪽 아래까지,
+ * 아래 끝은 띠 아래 여백 위. 목표선 위로 올라가 있는 칸은 revealDelta 가 원래 안 움직이므로(공짜 모션 없음) 여기서도 참이다.
+ */
+export function restsNearTarget(s: Pick<SettleSample, 'fieldTop' | 'fieldBottom' | 'bandTop' | 'bandBottom'>): boolean {
+  const targetY = s.bandTop + TARGET_RATIO * (s.bandBottom - s.bandTop)
+  return s.fieldTop >= s.bandTop + REVEAL_GAP
+    && s.fieldTop <= targetY + SETTLE_REST_PX
+    && s.fieldBottom + REVEAL_GAP <= s.bandBottom
+}

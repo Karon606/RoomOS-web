@@ -66,7 +66,10 @@ export function frameBoxRect(): DOMRect | null {
  */
 export function readKbdSnapshot(vv: VisualViewport): KbdSnapshot {
   const inner = window.innerHeight
-  const key = `${vv.height}|${vv.offsetTop}|${vv.scale}|${vv.width}|${inner}`
+  // 문서 scrollTop 도 열쇠에 싣는다(2026-11-03, 키보드 칸 이동 튐 패널). iOS 포커스 팬은 vv 값이 그대로인 채 문서를 밀
+  // 수 있어, 같은 프레임 안에서 상자 위 끝(T0)이 바뀌었는데 기억한 값을 돌려줄 수 있었다. 정착 관문이 매 프레임 이 값으로 띠를 잰다.
+  const sy = document.scrollingElement?.scrollTop ?? 0
+  const key = `${vv.height}|${vv.offsetTop}|${vv.scale}|${vv.width}|${inner}|${sy}`
   if (memo && memo.key === key) return memo.snap
   let frameH = inner
   let frameTop = 0

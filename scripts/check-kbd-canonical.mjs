@@ -390,7 +390,8 @@ need('components/layout/ViewportOffsetGuard.tsx', [
   [/kbdTrace\('wr',\s*'open',\s*s\)/, '키보드가 선 동안의 window resize(팬으로 받음)를 링버퍼에 안 적는다'],
   // 판정 문장이 관찰 호출과 섞여 바뀌지 않았는지 — 0단계는 동작 무변화가 조건이다.
   [/if \(!keyboardOpen\(snapNow\(\)\)\) restore\(\)/, '팬 판정 문장이 바뀌었다. 0단계 계측은 판정을 건드리지 않는다'],
-  [/if \(keyboardOpen\(snapNow\(\)\)\) scheduleReveal\(\)/, '칸-대-칸 재노출 판정 문장이 바뀌었다'],
+  // 2026-11-03 부터 칸-대-칸 이동은 정착 관문을 지난다(아래 10). 열림 판정 문장 자체는 그대로다.
+  [/if \(keyboardOpen\(snapNow\(\)\)\) startSettle\(e\.target\)/, '칸-대-칸 재노출 판정 문장이 바뀌었다'],
   [/if \(shouldRestore\(snapNow\(\), scrolled\)\)/, '복원 판정 문장이 바뀌었다'],
 ])
 {
@@ -586,6 +587,57 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
   let src = ''
   try { src = strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f}: 읽을 수 없음`); continue }
   if (/window\.innerHeight/.test(src)) violations.push(`${f}: window.innerHeight 로 팝업 공간을 센다. 키보드가 선 iOS 는 그 값을 줄여 보고하고 키보드도 안 잡는다. 정본 visibleBottomNow 를 쓸 것`)
+}
+
+// 10) 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안). 키보드가 선 채 들어온 focusin 이
+// 바로 재노출하면 iOS 자체 포커스 팬 도중의 기하를 확정해 이중 이동이 됐다(칸이 띠 위 +16 에 붙음). 관문 판정은 정본
+// revealGate 한 곳이고 가드는 배선만 한다. 지난 실패(scrollIntoView·smooth·vv scroll 재시도)도 여기서 다시 막는다.
+{
+  let kv = ''
+  try { kv = strip(readFileSync('lib/keyboardViewport.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  // 반환 타입의 중괄호 때문에 sliceBody 가 본문을 못 자른다. 선언부터 다음 정본(restsNearTarget) 선언 앞까지를 본다.
+  const gAt = kv.indexOf('export function revealGate(')
+  const gEnd = kv.indexOf('export function restsNearTarget(')
+  const gate = gAt < 0 || gEnd < gAt ? null : kv.slice(gAt, gEnd)
+  if (gate == null) violations.push('lib/keyboardViewport.ts: 정본 revealGate 가 사라짐. 칸 이동 재노출이 다시 팬 도중 기하를 확정한다')
+  else {
+    if (!/'abort'/.test(gate) || !/guardScrollTop/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 손 스크롤(가드 밖 scrollTop 변화)로 취소하지 않는다')
+    if (!/SETTLE_MAX_FRAMES/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 에 상한(SETTLE_MAX_FRAMES)이 없다. 멈추지 않는 화면에서 재노출이 영영 안 돈다')
+    if (!/SETTLE_STILL_FRAMES/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 연속 정지 프레임을 안 센다')
+    for (const k of ['fieldTop', 'bandTop', 'bandBottom']) if (!new RegExp(`cur\\.${k} - prev\\.${k}`).test(gate)) violations.push(`lib/keyboardViewport.ts: revealGate 가 ${k} 의 정지를 안 본다`)
+    if (!/restsNearTarget\(cur\)/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 허용 구간(restsNearTarget)을 안 본다')
+  }
+  if (!/export const SETTLE_MAX_FRAMES = 20\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 정착 상한이 20프레임이 아니다(운영자 승인 약 350ms)')
+
+  let guard = ''
+  try { guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  if (guard) {
+    const fin = sliceBody(guard, 'const onFocusIn = (')
+    if (fin == null || !/startSettle\(e\.target\)/.test(fin)) violations.push('components/layout/ViewportOffsetGuard.tsx: focusin 이 정착 관문(startSettle)을 안 지난다')
+    else if (/\b(scheduleReveal|reveal)\(/.test(fin)) violations.push('components/layout/ViewportOffsetGuard.tsx: focusin 이 관문을 건너 재노출을 바로 부른다. 팬 도중 기하를 확정한다')
+    const step = sliceBody(guard, 'const settleStep = (')
+    if (step == null || !/revealGate\(/.test(step)) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 걸음이 정본 revealGate 를 안 부른다')
+    // 관문 사본 금지. 정지·상한·취소 판정을 가드가 손으로 다시 세우면 두 벌이 갈린다.
+    if (/Math\.abs\(|SETTLE_(EPS|STILL_FRAMES|MAX_FRAMES|REST_PX)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 판정 사본이 있다(Math.abs·SETTLE_ 상수). 판정은 정본 revealGate 하나다')
+    // 재노출을 부르는 자리는 둘뿐이다. 관문이 정착을 판정한 뒤(settleStep)와 vv resize 재시도(scheduleReveal). 관문을 여는 자리
+    // (startSettle)가 바로 부르면 관문이 있어도 없는 것과 같다(역주입 2026-11-03 에서 이 우회가 처음엔 초록이었다).
+    const calls = [...guard.matchAll(/(?<![\w.])reveal\(/g)].length
+    const okCalls = (/reveal\(st\.frame\)/.test(step ?? '') ? 1 : 0) + (/reveal\(0\)/.test(sliceBody(guard, 'const scheduleReveal = (') ?? '') ? 1 : 0)
+    if (calls !== 2 || okCalls !== 2) violations.push(`components/layout/ViewportOffsetGuard.tsx: 재노출 호출 자리가 정착 뒤·resize 재시도 둘이 아니다(호출 ${calls}곳). 관문을 건너 팬 도중 기하를 확정한다`)
+    const ss = sliceBody(guard, 'const startSettle = (')
+    if (ss == null || !/requestAnimationFrame\(\(\) => settleStep\(st\)\)/.test(ss)) violations.push('components/layout/ViewportOffsetGuard.tsx: 관문을 연 뒤 다음 프레임 정착 걸음을 예약하지 않는다')
+    const sched = sliceBody(guard, 'const scheduleReveal = (')
+    if (sched == null || !/!settle/.test(sched)) violations.push('components/layout/ViewportOffsetGuard.tsx: 관문이 열린 동안 vv resize 가 따로 재노출한다. 띠가 움직이는 중간 기하를 확정한다')
+    // 팬(vv scroll · window resize 팬 분기)에서는 재노출을 부르지 않는다. scroll 은 '아직 움직인다'는 신호일 뿐이다(그 신호는 관문이 매 프레임 직접 잰다).
+    const sc = sliceBody(guard, 'const onScroll = (')
+    if (sc == null || /\b(scheduleReveal|reveal|startSettle|settleStep)\(/.test(sc)) violations.push('components/layout/ViewportOffsetGuard.tsx: vv scroll 에서 재노출을 부른다. 팬 프레임마다 다시 움직여 스크롤 전쟁이 난다(원샷 래치 규칙)')
+    if (/scrollIntoView\(|['"]smooth['"]/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: scrollIntoView 나 smooth 를 쓴다. 겹친 기하 위에서 재노출이 어긋난다(§30)')
+    if (/vv\.addEventListener\(['"]scroll['"],\s*(reveal|scheduleReveal|startSettle)\)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: vv scroll 이 재노출을 직접 받는다')
+  }
+  let fsrc = ''
+  try { fsrc = strip(readFileSync('lib/viewportFrame.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const rb = fsrc ? sliceBody(fsrc, 'export function readKbdSnapshot(') : null
+  if (rb == null || !/const sy = document\.scrollingElement\?\.scrollTop/.test(rb) || !/\$\{inner\}\|\$\{sy\}`/.test(rb)) violations.push('lib/viewportFrame.ts: 스냅샷 기억 열쇠에 문서 scrollTop 이 없다. 같은 프레임에 문서가 밀려도 옛 기준틀을 돌려준다')
 }
 
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
