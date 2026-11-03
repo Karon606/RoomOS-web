@@ -28,6 +28,15 @@
 - `supabase.auth.getSession()` 은 서버에서 쓰지 않는다(쿠키 서명을 검증하지 않는다). 그물 check-server-auth-gate 가 지킨다.
 - 실패를 catch 로 삼키는 헬퍼 금지. lib/geminiKey 가 관문 redirect 를 '세션 밖(크론)'으로 읽어 공용 키를 내줬다. 세션이 필요한 헬퍼는 예외를 그대로 올리고, 크론은 라우트가 CRON_SECRET 을 확인한 뒤 부르는 별도 경로만 쓴다(지금 AI 를 부르는 크론은 없다).
 
+## 열람 전용 역할의 화면 숨김 (2026-11-03, 운영자 지시·승인)
+- 역할은 넷이다. OWNER·MANAGER 는 편집(`canEdit`), STAFF·LIMITED_STAFF 는 열람 전용이다. 서버 쓰기 문은 `requireEdit` 이고 화면 판정은 `useCanEdit()` 로 같은 집합이다. `useCanEditScope` 는 제한 스태프에게 재고 쓰기를 주므로 고객 쪽 입구에는 쓰지 않는다.
+- **서버가 거절하는 동작은 화면에도 세우지 않는다.** 비활성 + 캡션이 아니라 숨김이다(가이드 §27.8 ②). 열람 직원은 그 자리에서 풀 수 없고 모든 행에 같은 막힘이라 캡션은 되풀이가 된다.
+- 고객에게 나가는 길은 역할로 막는다. 문자(sms 링크·문자 창·서류 시트 '문자' 갈래·서명 요청)와 메일(서류 메일·연락처 mailto), 내보내기의 '문자로 보내기' 갈래. 문자는 서버가 보내지 않아 화면 숨김이 실제 차단이고, 메일은 서버 문(requireEdit)이 실제 차단이다. 일반 '공유'(OS 공유 창)와 저장은 열람 직원에게도 남는다.
+- RoleProvider 는 (app) 레이아웃에서 AppShell 을 통째로 감싼다. 종전에는 children 만 감싸 Prism 모달·전역 검색·신고 버튼이 밖에 있었고, 그 안의 역할 훅은 기본값 OWNER 를 읽어 열람 직원에게 쓰기 입구가 섰다.
+- (app) 밖 화면(계약서·납부 확인서·실거주 확인서·서류 뷰어)은 RoleProvider 가 없다. 역할 훅을 쓰지 않고 page 가 lib/role `canEdit` 로 정한 값을 필수 prop 으로 넘긴다(ContractView `canSendSms`·`canEditBody`, SendDocButton `canSendSms`). 기본값을 두지 않는다. ?share= 서명본 분기가 값을 안 넘겨 기본값 true 로 열렸던 일이 있다.
+- 쓰기 행만 세우는 조회(getRoomScheduleState·getRoomBusyNotice)는 서버 문을 낮추지 않고 열람 역할에게 부르지 않는다. 링크 상태 조회(getContractShareState)는 토큰을 주므로 열람 역할에게 열지 않는다(서명 대기 상태를 열람 직원에게 보일지는 운영자 결정 대기).
+- 감지망 `scripts/check-sms-role-gate.mjs`(서버 문·입구 전수·창 렌더·버튼·Provider 트리·메일·내보내기·편집 입구 표·쓰기용 조회), 통합 `scripts/test-action-property-scope-flow.ts` 열람 역할 절.
+
 ## 공용(인증 불필요) 라우트
 `/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/sign/[token]`(계약서 원격 서명 — 토큰+생년월일+HMAC 쿠키가 자격, 2026-07-18 신설) · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
 정정(2026-07-18): `/contract/[tenantId]` 는 공용이 아니라 **운영자 인증 필요**(getContractData 가 requirePropertyAccess 경유). 입주자 원격 서명은 `/sign/[token]` 이 담당.

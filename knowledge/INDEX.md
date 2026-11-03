@@ -62,7 +62,7 @@
 - [[open-keyboard-field-visibility]]. 키보드가 뜰 때 입력 칸이 가려지는 문제(2026-08-30 신고, 2026-09-02 시공 완료, 판정 정본 lib/keyboardViewport·띠 훅 useVisibleBand·가이드 §30). 2026-10-20 기준틀 교체(innerHeight 대신 화면 고정 상자 H·T0, lib/viewportFrame) · 키보드가 선 동안의 window resize 는 팬(신고 be5316e8) · 2026-11-03 칸 이동 정착 관문(revealGate)·키보드 동안 하단 내비 접기·반복 행 머리 보존
 - [[domain-modal-shell]] — 모달 껍데기(등장 모션·막·띠 기하): 조각 다섯과 쓰는 이 여덟·같은 병 네 번의 이력·bf0a6fff 두 경로(굳은 모션은 "안 돌고 있다는 사실"로 걷는다·보호가 한쪽에만 걸린 값 쌍은 갈린다)·벽시계 금지·계측이 눈 감았던 이유·그물 넷
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)
-- [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어) · 역할 판정 정본 resolvePropertyRole(관문과 크론 푸시가 같은 함수)
+- [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어) · 역할 판정 정본 resolvePropertyRole(관문과 크론 푸시가 같은 함수) · 열람 전용 역할 화면 숨김(서버 requireEdit 와 한 벌, 문자·메일·편집 입구, RoleProvider 트리, (app) 밖은 page prop)
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)
 - [[form-clear-vs-absent]] — "폼이 비운 칸은 서버가 비운다, 부재만 보존" 규약(formData.has)·두 조각(서버 가드+폼 상시 렌더)·전례 넷(c4b74c7d 퇴실일·aed91367 본국 연락처·슬러그 사고·c120bd32 호실)
 - [[regression-nets]] — 회귀 감지망 목록·자동 실행 배치(커밋 전 빠른 6종·푸시 전 타입체크+DB 4종)·훅 우회법
