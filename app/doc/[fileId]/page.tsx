@@ -4,6 +4,7 @@
 // 그것만 믿으면 남의 파일 id 로도 껍데기 화면은 뜬다. 없는 서류처럼 보이는 편이 맞다.
 import { notFound } from 'next/navigation'
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
+import { canEdit } from '@/lib/role'
 import prisma from '@/lib/prisma'
 import { docFileLabel } from '@/lib/docBundle'
 import DocViewer from './DocViewer'
@@ -46,5 +47,7 @@ export default async function DocPage({
   if (!owned) notFound()
 
   return <DocViewer fileId={fileId} from={from} tenantId={tenantId} autoPrint={print === '1'}
-    fileName={owned.fileName.replace(/\.pdf$/i, '')} />
+    fileName={owned.fileName.replace(/\.pdf$/i, '')}
+    // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인).
+    canSendSms={canEdit(access.role)} />
 }

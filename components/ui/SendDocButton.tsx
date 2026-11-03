@@ -32,8 +32,14 @@ function pdfBlobOf(bytes: ArrayBuffer): Blob {
   return new Blob([bytes], { type: 'application/pdf' })
 }
 
-export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', className }: {
+export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', className, canSendSms }: {
   getPdfBytes: () => Promise<ArrayBuffer>
+  /**
+   * 목적지 '문자로 보내기' 를 세울 수 있는가 — 열람 전용(STAFF·제한 스태프)은 고객에게 문자를 못 보낸다(2026-11-03 운영자 승인).
+   * 판정은 부르는 쪽이 넘긴다. (app) 안은 useCanEdit(), 밖(계약서·확인서·뷰어 화면)은 page 가 lib/role canEdit 로 넘긴다.
+   * 이 컴포넌트가 역할 훅을 직접 쓰면 RoleProvider 밖 화면에서 늘 OWNER 로 읽힌다. false 면 목적지 창 없이 형식만 고르고 바로 기기에 저장한다.
+   */
+  canSendSms: boolean
   fileName: string   // 확장자 없이 — 형식에 따라 .png/.pdf 부여
   label?: string
   className?: string
@@ -53,6 +59,35 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
   // isImage 면 형식 질문을 건너뛴다 — 스캔 사진은 이미 사진이고, 여기서 PDF 를 고르게 하면
   // 앱이 없는 종이를 지어내야 한다(419호 사고 계열: 이미지를 PDF 로 싸면 깨진 파일이 나간다).
   const ask = async (isImage: boolean): Promise<{ asPng: boolean; toPhone: boolean } | null> => {
+    // 아이폰 계열에서 '기기에 저장'은 공유 창을 거친다. 시트만 덜렁 열면 어느 항목이 저장인지 못 찾으므로
+    // (운영자 실기) 고르기 전에 미리 알려준다 — 선택창은 사용자가 읽을 때까지 떠 있다.
+    const viaSheet = photoSaveNeedsShareSheet() && canShareFiles()
+    // 열람 전용(STAFF·제한 스태프)은 갈 곳이 기기 저장 하나다. 목적지 창을 아예 띄우지 않는다 — 답이 하나뿐인
+    // 질문 창은 문자 갈래의 흔적이다(2026-11-03 운영자 지적). 형식만 고르고 바로 저장하며, 아이폰 공유 창 안내는
+    // 형식 창이 대신 말한다. 형식 창 취소는 흐름 전체 취소다(되짚을 앞 단계가 없다).
+    if (!canSendSms) {
+      if (isImage) {
+        // 이미지는 형식 질문이 없어 안내를 실을 창이 없다. 아이폰 계열이면 같은 파일의 '서류가 준비되었습니다' 와 같은
+        // 안내형 확인 창(사실을 말하는 제목 + '공유 창 열기')으로 말한다. 고를 것을 묻는 창이 아니고, 그 확인 탭이
+        // 새 제스처가 되어 공유 창이 허용 시간 만료 없이 바로 열린다(토스트는 공유 창에 가려 읽히지 않는다). 취소는 무변경.
+        if (viaSheet && !(await confirmDialog({
+          title: '공유 창에서 저장합니다',
+          message: '공유 창에서 [이미지 저장]을 누르면 사진첩에 저장됩니다.',
+          confirmLabel: '공유 창 열기',
+        }))) return null
+        return { asPng: false, toPhone: false }
+      }
+      const format = await choiceDialog({
+        title: '어떤 형식으로 저장할까요?',
+        message: viaSheet
+          ? '고르면 공유 창이 열립니다. 공유 창에서 사진은 [이미지 저장]을 누르면 사진첩에, PDF는 [파일에 저장]을 누르면 원하는 위치에 저장됩니다. 서류가 여러 장이면 사진도 장수만큼 만들어집니다.'
+          : '서류가 여러 장이면 사진도 장수만큼 만들어집니다.',
+        confirmLabel: '사진으로',
+        altLabel: 'PDF로',
+      })
+      if (!format || format === 'back') return null
+      return { asPng: format === 'confirm', toPhone: false }
+    }
     for (;;) {
       const format = isImage ? 'confirm' as const : await choiceDialog({
         title: '어떤 형식으로 만들까요?',
@@ -61,9 +96,6 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
         altLabel: 'PDF로',
       })
       if (!format || format === 'back') return null
-      // 아이폰 계열에서 '기기에 저장'은 공유 창을 거친다. 시트만 덜렁 열면 어느 항목이 저장인지 못 찾으므로
-      // (운영자 실기) 고르기 전에 여기서 미리 알려준다 — 선택창은 사용자가 읽을 때까지 떠 있다.
-      const viaSheet = photoSaveNeedsShareSheet() && canShareFiles()
       const dest = await choiceDialog({
         title: '만든 서류를 어떻게 할까요?',
         ...(viaSheet ? {
@@ -121,7 +153,7 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
 
       // 기기에 저장 — 아이폰 계열만 시트를 거친다. 다운로드가 '파일' 앱으로만 가서 사진첩에 못 넣고,
       // PDF 도 시트의 [파일에 저장]을 눌러야 원하는 곳에 들어가기 때문이다. 어느 항목을 눌러야 하는지는
-      // ask() 의 목적지 선택창 문구가 이미 알려줬다.
+      // ask() 가 이미 알려줬다(편집 역할은 목적지 창, 열람 역할은 형식 창이나 이미지의 안내형 확인 창).
       // 아이폰이 아니면 공유를 아예 시도하지 않고 바로 다운로드한다 — 갤럭시에서 '기기에 저장'이
       // 공유 시트로 새던 것을 막는다(신고 5c99b5c8). 안드로이드는 a[download] 가 확실히 동작한다.
       const saveViaSheet = photoSaveNeedsShareSheet() && canShareFiles()

@@ -72,8 +72,10 @@ const Z_STEPS = [1, 1.5, 2, 3, 4]
 
 const clampZ = (z: number) => Math.min(Z_MAX, Math.max(Z_MIN, z))
 
-export default function DocViewer({ fileId, from, tenantId, fileName, autoPrint }: {
+export default function DocViewer({ fileId, from, tenantId, fileName, autoPrint, canSendSms }: {
   fileId: string
+  /** '문자로 보내기' 를 세울 수 있는가 — (app) 밖 화면이라 page 가 역할로 넘긴다(2026-11-03 운영자 승인). */
+  canSendSms: boolean
   from?: string
   tenantId?: string
   fileName: string
@@ -274,7 +276,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName, autoPrint 
           <div style={{ flex: 1 }} />
           {pages && (
             <>
-              <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
+              <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName} canSendSms={canSendSms}
                 className={btnClass('secondary', 'md')} />
               <Btn variant="primary" size="md" onClick={() => { void handlePrint() }}>인쇄</Btn>
             </>

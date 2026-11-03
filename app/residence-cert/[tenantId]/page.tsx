@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { getResidenceCertData } from './actions'
 import ResidenceCertView from './ResidenceCertView'
 import { resolveDocBack } from '@/lib/docNav'
+import { getMyRole, canEdit } from '@/lib/role'
 
 // ?leaseTermId=<id> 는 계약 지목이다(2026-08-13, 다호실 마무리 — /contract/[tenantId] 와 같은 문법).
 // 없으면 종전 추론 그대로라 기존 링크·발급 이력의 '다시 작성'은 불변이다.
@@ -32,5 +33,7 @@ export default async function ResidenceCertPage({
       </div>
     )
   }
-  return <ResidenceCertView data={data} back={resolveDocBack(from, backTenantId)} />
+  // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인). 데이터 조회가 이미 같은 관문을 지났다.
+  const role = await getMyRole()
+  return <ResidenceCertView data={data} back={resolveDocBack(from, backTenantId)} canSendSms={canEdit(role)} />
 }

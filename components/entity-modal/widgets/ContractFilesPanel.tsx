@@ -644,7 +644,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest: hide
                     형제 화면이 같은 4액션에서 이미 겪고 풀어 둔 클래스다(신고 71753b36). */}
                 <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
                   <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
-                  <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_${docFileLabel('contract', asDocNameStyle(f.nameStyle) ?? 'ko')}_${dateLabel}`}
+                  <SendDocButton canSendSms={canEditUi} getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_${docFileLabel('contract', asDocNameStyle(f.nameStyle) ?? 'ko')}_${dateLabel}`}
                     className={btnClass('secondary', 'sm')} />
                   {/* 용도 바꾸기 — 여러 판본 만들기가 켜진 영업장만. 꺼져 있으면 파생 개념 자체가 없다.
                       발급 때 잘못 고른 목적을 되돌리는 유일한 문이다(2026-08-26 규약 개정). */}

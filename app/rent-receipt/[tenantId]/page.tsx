@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { getRentReceiptData } from './actions'
 import RentReceiptView from './RentReceiptView'
 import { resolveDocBack } from '@/lib/docNav'
+import { getMyRole, canEdit } from '@/lib/role'
 
 // ?leaseTermId=<id> 는 계약 지목이다(2026-08-13, 다호실 마무리 — /contract/[tenantId] 와 같은 문법).
 // 한 사람이 방을 둘 쓰면 종전 추론은 늘 거주 계약을 골라 601호 창고 몫 확인서를 뽑을 길이 없었다.
@@ -22,9 +23,11 @@ export default async function RentReceiptPage({
   const receiptKind = kind === 'deposit' ? 'deposit' : 'rent'
   const data = await getRentReceiptData(tenantId, month, receiptKind, leaseTermId ?? null)
   if (!data) notFound()
+  // '문자로 보내기' 는 열람 직원(STAFF·제한 스태프)에게 세우지 않는다(2026-11-03 운영자 승인). 데이터 조회가 이미 같은 관문을 지났다.
+  const role = await getMyRole()
   // key — 월·종류·계약을 바꾸면 폼 useState 초기값이 새 자동값으로 다시 잡히도록 리마운트.
   // from 은 열거 키만 넘긴다(lib/docNav) — 발급 뒤 [보기]가 연 뷰어가 같은 곳으로 돌아간다.
   const docFrom = (['contracts', 'rent-receipts', 'residence-certs', 'tenant'] as const).find(k => k === from)
   return <RentReceiptView key={`${receiptKind}-${data.anchorMonth}-${data.leaseTermId ?? ''}`} data={data} back={resolveDocBack(from, backTenantId)}
-    from={docFrom} backTenantId={docFrom === 'tenant' ? backTenantId : undefined} initialMode={mode === 'many' ? 'many' : 'one'} />
+    from={docFrom} backTenantId={docFrom === 'tenant' ? backTenantId : undefined} initialMode={mode === 'many' ? 'many' : 'one'} canSendSms={canEdit(role)} />
 }

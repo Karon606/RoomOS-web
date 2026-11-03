@@ -113,7 +113,8 @@ function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
 // PDF baseline(원점 좌하단) → CSS top(원점 좌상단, 디자인 단위 = pt). 베이스라인 근사 보정.
 const topOf = (y: number, size: number) => (RC_PAGE.h - y) - size * 1.04
 
-export default function ResidenceCertView({ data, back }: { data: ResidenceCertData; back: { label: string; href: string } }) {
+// canSendSms — '문자로 보내기' 를 세울 수 있는가. 이 화면은 (app) 밖이라 page 가 lib/role canEdit 로 넘긴다(2026-11-03 운영자 승인).
+export default function ResidenceCertView({ data, back, canSendSms }: { data: ResidenceCertData; back: { label: string; href: string }; canSendSms: boolean }) {
   const router = useRouter()
   const [f, setF] = useState<Fields>(() => buildInitial(data))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
@@ -394,7 +395,7 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
         {/* §16 라벨 '적용취소' 단일. 모달 행이 '적용취소' 인데 여기만 '자동값으로' 이면
             같은 동작에 두 이름이 선다. 범위 차이는 명사('전체')가 진다. */}
         <Btn variant="secondary" size="md" onClick={reset}>전체 적용취소</Btn>
-        <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={docFileName} className={btnClass('secondary', 'md')} />
+        <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={docFileName} canSendSms={canSendSms} className={btnClass('secondary', 'md')} />
         <Btn variant="primary" size="md" onClick={handleIssue} disabled={issuing}>
           {issuing ? '발급 중…' : '발급'}
         </Btn>

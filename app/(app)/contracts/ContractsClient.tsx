@@ -1,5 +1,6 @@
 'use client'
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { docFileLabel } from '@/lib/docBundle'
 import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
@@ -49,6 +50,7 @@ const matchesQuery = (c: ContractListRow, q: string) => !q || (
 
 // pending prop 은 pendingIssues 로 받는다 — 아래 useTransition 의 pending 과 이름이 겹친다.
 export default function ContractsClient({ contracts, pending: pendingIssues }: { contracts: ContractListRow[]; pending: PendingIssueRow[] }) {
+  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
   const router = useRouter()
   const entityModal = useEntityModal()
   const searchParams = useSearchParams()
@@ -462,7 +464,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     보내기는 그 밖에서는 조건 없이 띄운다(형제 2화면과 같게). canShare 로 숨기면 기기마다
                     행이 달라져 학습이 안 되고, 데스크톱에도 다운로드 폴백과 안내 토스트가 있다. */}
                 {!c.voidedAt && (
-                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`}
+                  <SendDocButton canSendSms={canSendSms} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                 )}
                 {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).

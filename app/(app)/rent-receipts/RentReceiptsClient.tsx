@@ -1,5 +1,6 @@
 'use client'
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { docFileLabel } from '@/lib/docBundle'
 import { withParticle } from '@/lib/koParticle'
@@ -38,6 +39,7 @@ import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 export default function RentReceiptsClient({ files, tenants, month, kind = 'rent' }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string; kind?: 'rent' | 'deposit' }) {
+  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
   // 서류 종류 — 보증금은 귀속 월이 없어 월 쿼리를 넘기지 않는다(신고 d68220bd)
   const isDeposit = kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
@@ -271,7 +273,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   <ViewDocButton driveFileId={c.driveFileId} from="rent-receipts" />
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
-                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel(isDeposit ? 'deposit' : 'rent', c.nameStyle ?? 'ko')}`}
+                  <SendDocButton canSendSms={canSendSms} getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.docName}_${docFileLabel(isDeposit ? 'deposit' : 'rent', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                   {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                       파일명은 탭이 아니라 그 행의 종류를 따른다 — '다시 작성'과 같은 이유다. */}

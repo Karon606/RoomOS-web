@@ -20,6 +20,8 @@
 //      (app) 밖 라우트(app/contract·app/sign 등)가 역할 훅을 직접 쓰거나 역할 훅을 쓰는 컴포넌트를 직접 import 하지 않는지 본다.
 //   ⓕ 메일. 서류 메일의 초안·미리보기·발송은 ⓐ 의 서버 문을 지나고, 메일 입구(mailto: 링크·서류 시트 '메일' 갈래·메일 쓰기 시트·
 //      메일 액션 호출)는 MAIL_SINKS 표 안에서만 서며 열람 역할에게 canEditUi 로 숨는다.
+//   ⓖ 내보내기의 '문자로 보내기'(2026-11-03 운영자 승인). SendDocButton 은 canSendSms 를 필수로 받아 그 값이 거짓이면 그 갈래를 세우지 않는다.
+//      모든 사용처가 값을 넘기고, (app) 안은 useCanEdit(), 밖 화면은 page 가 lib/role canEdit 로 넘긴 prop 이다. 공유 창(일반 '공유')은 그대로다.
 //
 // 실행: node scripts/check-sms-role-gate.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -256,6 +258,64 @@ for (const [f, re, n] of OPENERS) {
     `lib/pushSend.ts: VAPID subject 말고 mailto: 가 생겼다.`)
   const portal = read('app/(portal)/page.tsx')
   need(!/mailto:\$\{(?!CONTACT_EMAIL\})/.test(portal), `app/(portal)/page.tsx: 회사 문의 주소가 아닌 mailto: 가 생겼다.`)
+}
+
+// ⓖ 내보내기 '문자로 보내기'
+{
+  const B = 'components/ui/SendDocButton.tsx'
+  const b = read(B)
+  need(/className, canSendSms \}: \{/.test(b) && /\n {2}canSendSms: boolean\n/.test(b) && !/canSendSms = true/.test(b),
+    `${B}: canSendSms 가 필수 prop 이 아니다(넘기지 않은 자리가 '문자로 보내기' 를 연다).`)
+  // 열람 역할 분기 — 목적지 창 없이 형식만 고르고 바로 저장한다. 답이 하나뿐인 질문 창을 두지 않는다(2026-11-03 운영자 지적).
+  const askStart = b.indexOf('const ask = async (isImage: boolean)')
+  const viewer = askStart < 0 ? '' : b.slice(b.indexOf('if (!canSendSms) {', askStart), b.indexOf('for (;;) {', askStart))
+  need(viewer.length > 0 && b.indexOf('if (!canSendSms) {', askStart) < b.indexOf('for (;;) {', askStart),
+    `${B}: 열람 역할 분기(if (!canSendSms))가 목적지 창 고리보다 먼저 끝나지 않는다.`)
+  need((viewer.match(/choiceDialog\(/g) ?? []).length === 1 && /title: '어떤 형식으로 저장할까요\?'/.test(viewer) && !/backLabel/.test(viewer),
+    `${B}: 열람 역할 분기가 형식 창 하나만 띄우지 않는다(목적지 창·되짚기 길이 남았다).`)
+  need(/if \(isImage\) \{[\s\S]*?return \{ asPng: false, toPhone: false \}\s*\}/.test(viewer) && (viewer.match(/toPhone: false/g) ?? []).length === 2 && !/toPhone: (true|dest|format)/.test(viewer),
+    `${B}: 열람 역할 분기가 바로 기기 저장으로 가지 않는다.`)
+  need(!/문자/.test(viewer), `${B}: 열람 역할 분기에 문자 이야기가 남았다.`)
+  need(/viaSheet\s*\?\s*'[^']*\[이미지 저장\][^']*\[파일에 저장\][^']*'/.test(viewer), `${B}: 열람 역할 형식 창이 아이폰 공유 창 안내를 잃었다.`)
+  // 이미지(형식 질문 없음) + 아이폰 + 열람 역할은 안내형 확인 창(사실 제목 + '공유 창 열기')으로 말한다. 토스트는 공유 창에 가린다.
+  need(/if \(viaSheet && !\(await confirmDialog\(\{\s*title: '공유 창에서 저장합니다',\s*message: '공유 창에서 \[이미지 저장\]을 누르면 사진첩에 저장됩니다\.',\s*confirmLabel: '공유 창 열기',/.test(viewer)
+    && (viewer.match(/confirmDialog\(/g) ?? []).length === 1 && !/pushToast/.test(viewer) && !/공유 창에서 \[이미지 저장\]을 누르면 사진첩에 저장됩니다\.'\)/.test(b.slice(b.indexOf('const handleSend'))),
+    `${B}: 열람 역할 + 이미지 + 아이폰 경로가 안내형 확인 창으로 공유 창 안내를 하지 않는다(토스트는 공유 창에 가린다).`)
+  need((b.slice(askStart, b.indexOf('const handleSend', askStart)).match(/choiceDialog\(/g) ?? []).length === 3 && (b.slice(askStart, b.indexOf('const handleSend', askStart)).match(/confirmDialog\(/g) ?? []).length === 1,
+    `${B}: 묻는 창 개수가 바뀌었다(열람 형식 1 · 편집 형식 1 · 편집 목적지 1).`)
+  const oneAnswer = ['app', 'components', 'lib'].flatMap(walk).filter(f => /기기에 저장할까요/.test(read(f)))
+  need(oneAnswer.length === 0, `답이 하나뿐인 '기기에 저장할까요' 창이 남았다: ${oneAnswer.join(', ')}`)
+  const literal = ['app', 'components', 'lib'].flatMap(walk).filter(f => /'문자로 보내기'/.test(read(f)))
+  need(literal.length === 1 && literal[0] === B, `'문자로 보내기' 갈래가 SendDocButton 밖에 생겼다: ${literal.join(', ')}`)
+  // 사용처 표 — (app) 안은 useCanEdit() 값, 밖은 page 가 넘긴 prop. 개수를 고정한다.
+  const USES = {
+    'app/(app)/settings/SettingsForm.tsx': ['canSendSms', 2],
+    'app/(app)/contracts/ContractsClient.tsx': ['canSendSms', 1],
+    'app/(app)/rent-receipts/RentReceiptsClient.tsx': ['canSendSms', 1],
+    'app/(app)/residence-certs/ResidenceCertClient.tsx': ['canSendSms', 1],
+    'components/entity-modal/widgets/ContractFilesPanel.tsx': ['canEditUi', 1],
+    'app/contract/[tenantId]/ContractView.tsx': ['prop', 1],
+    'app/rent-receipt/[tenantId]/RentReceiptView.tsx': ['prop', 2],
+    'app/residence-cert/[tenantId]/ResidenceCertView.tsx': ['prop', 1],
+    'app/doc/[fileId]/DocViewer.tsx': ['prop', 1],
+  }
+  const users = ['app', 'components'].flatMap(walk).filter(f => /<SendDocButton\b/.test(read(f)))
+  for (const f of users) need(f in USES, `${f}: SendDocButton 사용처가 새로 생겼다. canSendSms 를 역할로 넘기고 USES 표에 등록할 것.`)
+  for (const [f, [v, n]] of Object.entries(USES)) {
+    const s = read(f)
+    const tags = [...s.matchAll(/<SendDocButton\b[^>]*?\/>/g)].map(m => m[0])
+    need(tags.length === n, `${f}: SendDocButton 이 ${tags.length}곳이다(기대 ${n}).`)
+    const name = v === 'prop' ? 'canSendSms' : v
+    for (const t of tags) need(new RegExp(`canSendSms=\\{${name}\\}`).test(t), `${f}: SendDocButton 에 canSendSms={${name}} 가 없다.`)
+    if (v !== 'prop') need(new RegExp(`const ${name} = useCanEdit\\(\\)`).test(s), `${f}: ${name} 가 useCanEdit() 에서 오지 않는다.`)
+  }
+  const PAGES = {
+    'app/contract/[tenantId]/page.tsx': /canSendSms=\{canEdit\(role\)\}/,
+    'app/rent-receipt/[tenantId]/page.tsx': /canSendSms=\{canEdit\(role\)\}/,
+    'app/residence-cert/[tenantId]/page.tsx': /canSendSms=\{canEdit\(role\)\}/,
+    'app/doc/[fileId]/page.tsx': /canSendSms=\{canEdit\(access\.role\)\}/,
+  }
+  for (const [f, re] of Object.entries(PAGES)) need(re.test(read(f)), `${f}: (app) 밖 화면에 역할로 정한 canSendSms 를 넘기지 않는다.`)
 }
 
 if (violations.length) {

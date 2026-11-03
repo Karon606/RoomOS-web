@@ -1848,7 +1848,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                 공유 시트·새 탭이라 모바일에서 '인쇄'가 거짓이다(운영자 실기). 발급 전 확인은
                 이 화면이 종이 실물로 이미 하고, 인쇄는 뷰어 한 곳에만 있다.
                 사진 저장은 '내보내기'가 흡수했다 — 그쪽은 전 페이지를 그려 임의처분 동의서가 안 빠진다. */}
-            <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()}
+            <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()} canSendSms={canSendSms}
               className="toolbar-btn-secondary" />
             {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도).
                 **서명 전에는 발급이 아예 없다**(운영자 규칙 6). 비활성으로 세워두면 눌러도 아무 일이

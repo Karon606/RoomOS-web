@@ -1,5 +1,6 @@
 'use client'
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useState, useTransition, useEffect, useRef, useMemo, useCallback, useId } from 'react'
 import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
@@ -4117,6 +4118,7 @@ function translationVarLabel(l: { kind: TranslationLineKind }, spec: Translation
  *   (lib/contractFilesBus)까지 갈 것 없이 부모가 값 하나를 내린다.
  */
 function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
+  const canSendSms = useCanEdit()   // 열람 전용은 내보내기에서 문자 갈래 없이 저장만(2026-11-03 운영자 승인)
   const [loaded, setLoaded] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [template, setTemplate] = useState<ContractTemplate | null>(null)
@@ -4497,7 +4499,7 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
                           언어를 그대로 따라간다. 미리보기는 창을 끄면 사라지지만 이 종이는 남아
                           읽을 줄 아는 사람에게 보낼 수 있다(운영자 오더 2026-09-17).
                           라벨을 넘기지 않는다 — 이름 정의처는 컴포넌트 하나다(doc-vocabulary). */}
-                      <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
+                      <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName} canSendSms={canSendSms}
                         className={btnClass('subtle', 'sm', 'flex-1')} />
                     </div>
                   </div>
@@ -4640,7 +4642,7 @@ function ContractTranslationCard({ reloadKey = 0 }: { reloadKey?: number }) {
              함수·같은 파일 이름**이라 어디서 눌러도 같은 종이가 나온다. */
           footer={(
             <ModalFooterActions onCancel={() => setPreviewOpen(false)} cancelLabel="닫기">
-              <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName}
+              <SendDocButton getPdfBytes={getTranslationPdfBytes} fileName={pdfFileName} canSendSms={canSendSms}
                 className={btnClass('primary', 'md')} />
             </ModalFooterActions>
           )}>

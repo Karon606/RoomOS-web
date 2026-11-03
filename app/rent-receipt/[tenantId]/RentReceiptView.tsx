@@ -83,8 +83,10 @@ const mdKor = (ymd: string) => { const [, m, d] = ymd.split('-').map(Number); re
 type IssuedFile = { id: string; driveFileId: string; fileName: string; issuedAt: string; targetMonth: string | null; receiptNo: string | null }
 type IssuedResult = { files: IssuedFile[]; undo: RentReceiptIssueUndo | null }
 
-export default function RentReceiptView({ data, back, from, backTenantId, initialMode = 'one' }: {
+export default function RentReceiptView({ data, back, from, backTenantId, initialMode = 'one', canSendSms }: {
   data: RentReceiptData
+  /** '문자로 보내기' 를 세울 수 있는가 — (app) 밖 화면이라 page 가 lib/role canEdit 로 넘긴다(2026-11-03 운영자 승인). */
+  canSendSms: boolean
   back: { label: string; href: string }
   /** 들어온 곳(열거 키) — 발급 뒤 [보기]가 연 뷰어가 같은 곳으로 돌아가게 넘긴다. */
   from?: DocFrom
@@ -413,7 +415,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
 
         {result ? (
           <IssuedPanel docLabel={docLabel} result={result} undoing={undoing} isDeposit={isDeposit}
-            fileBase={f.name} nameStyle={nameStyle} from={from} backTenantId={backTenantId}
+            fileBase={f.name} nameStyle={nameStyle} from={from} backTenantId={backTenantId} canSendSms={canSendSms}
             onUndo={() => result.undo && void runUndo(result.undo)}
             onAgain={() => setResult(null)} />
         ) : (
@@ -540,7 +542,7 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
             <Btn variant="secondary" className="flex-1 whitespace-nowrap" onClick={handlePreview} disabled={previewing}>
               {previewing ? '여는 중…' : '미리보기'}
             </Btn>
-            <SendDocButton fileName={docFileName} className={`flex-1 whitespace-nowrap ${btnClass('secondary', 'md')}`}
+            <SendDocButton fileName={docFileName} canSendSms={canSendSms} className={`flex-1 whitespace-nowrap ${btnClass('secondary', 'md')}`}
               getPdfBytes={previewBytes} />
           </div>
           <Btn variant="primary" className="w-full" onClick={handleIssue} disabled={issuing}>
@@ -632,8 +634,9 @@ export default function RentReceiptView({ data, back, from, backTenantId, initia
 // 발급 결과 칸 — 'N건 발급됨'과 장마다 [보기]·[내보내기], 그리고 원위치 적용취소(§16 2순위 진입점).
 // 행 문법은 전역 발급 이력과 같다(보기 primary sm + 내보내기 secondary sm). 여러 장을 한 번에 보내는 길은
 // 서류 시트(입실자 정보 › 서류)가 이미 갖고 있어 여기서는 장마다 보낸다.
-function IssuedPanel({ docLabel, result, undoing, isDeposit, fileBase, nameStyle, from, backTenantId, onUndo, onAgain }: {
+function IssuedPanel({ docLabel, result, undoing, isDeposit, fileBase, nameStyle, from, backTenantId, onUndo, onAgain, canSendSms }: {
   docLabel: string
+  canSendSms: boolean
   result: IssuedResult
   undoing: boolean
   isDeposit: boolean
@@ -658,7 +661,7 @@ function IssuedPanel({ docLabel, result, undoing, isDeposit, fileBase, nameStyle
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <ViewDocButton driveFileId={file.driveFileId} from={from} tenantId={backTenantId} />
-              <SendDocButton getPdfBytes={fetchDocBytes(file.driveFileId)}
+              <SendDocButton getPdfBytes={fetchDocBytes(file.driveFileId)} canSendSms={canSendSms}
                 fileName={`${fileBase}_${docFileLabel(isDeposit ? 'deposit' : 'rent', nameStyle)}`}
                 className={btnClass('secondary', 'sm')} />
             </div>
