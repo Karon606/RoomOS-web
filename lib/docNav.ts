@@ -16,12 +16,17 @@ const BACK: Record<Exclude<DocFrom, 'tenant'>, { label: string; href: string }> 
 }
 const HOME = { label: '홈', href: '/dashboard' }
 
-/** from 열거 키를 돌아갈 라벨·경로로 옮긴다. 모르는 키는 홈이다. */
+/**
+ * from 열거 키를 돌아갈 라벨·경로로 옮긴다. 모르는 키는 홈이다.
+ *
+ * 표에 제 키로 있는 것만 읽는다(Object.hasOwn). from 은 URL 에서 오는 글자라 constructor·toString·__proto__ 같은 이름이
+ * 들어오면 BACK[from] 이 프로토타입 값(함수·객체)을 돌려 href 가 undefined 가 됐다(독립 검수 2026-11-04, 확인서 화면의 열람 역할 redirect 가 그 값을 쓴다).
+ */
 export function resolveDocBack(from?: string, tenantId?: string): { label: string; href: string } {
   if (from === 'tenant' && tenantId) {
     return { label: '입실자 정보', href: `/tenants?tenantId=${encodeURIComponent(tenantId)}` }
   }
-  return (from && from !== 'tenant' ? BACK[from as Exclude<DocFrom, 'tenant'>] : undefined) ?? HOME
+  return (from && from !== 'tenant' && Object.hasOwn(BACK, from) ? BACK[from as Exclude<DocFrom, 'tenant'>] : undefined) ?? HOME
 }
 
 /** 서류 라우트로 갈 때 붙일 질의문자열. 진입점이 이걸 써야 돌아가기가 제 목적지를 안다. */
