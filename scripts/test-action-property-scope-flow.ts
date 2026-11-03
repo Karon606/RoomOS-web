@@ -61,6 +61,7 @@ async function main() {
   const docBundle = await import('@/app/(app)/tenants/docBundle')
   const noticeSms = await import('@/app/(app)/tenants/noticeSms')
   const share = await import('@/app/(app)/tenants/contractShare')
+  const docNameStyle = await import('@/app/(app)/tenants/docNameStyle')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string; __CR_FLOW_ROLE?: 'OWNER' | 'MANAGER' | 'STAFF' | 'LIMITED_STAFF' }
 
   const P1 = randomUUID(), P2 = randomUUID(), OWNER = randomUUID()
@@ -536,6 +537,21 @@ async function main() {
       g.__CR_FLOW_ROLE = role
       eq(`${role} 링크 상태 조회(토큰) 거부`, await share.getContractShareState(T1), { ok: false, error: '수정 권한이 없습니다.' })
     }
+    g.__CR_FLOW_ROLE = undefined
+  }
+
+  // ── 서류 성명 표기 힌트(2026-11-04 운영자 승인 G6) ── 열람 역할은 계약 행을 못 쓴다. 관리자는 쓴다.
+  {
+    const T = await tenantIn(P1, '표기'), L = await leaseIn(P1, T, null)
+    const style = async () => (await prisma.leaseTerm.findUnique({ where: { id: L }, select: { lastDocNameStyle: true } }))?.lastDocNameStyle ?? null
+    for (const role of ['STAFF', 'LIMITED_STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      await docNameStyle.noteDocNameStyle(L, 'en')
+      eq(`${role} 성명 표기 힌트 쓰기 거부(계약 행 무변경)`, await style(), null)
+    }
+    g.__CR_FLOW_ROLE = 'MANAGER'
+    await docNameStyle.noteDocNameStyle(L, 'en')
+    eq('MANAGER 성명 표기 힌트 쓰기 통과', await style(), 'en')
     g.__CR_FLOW_ROLE = undefined
   }
 

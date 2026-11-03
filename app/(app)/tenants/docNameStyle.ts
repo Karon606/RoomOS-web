@@ -13,6 +13,7 @@
 
 import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { requireEdit } from '@/lib/role'
 import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 
 /**
@@ -35,9 +36,14 @@ export async function getLastDocNameStyle(leaseTermId: string): Promise<DocNameS
  *
  * **실패해도 조용히 넘긴다.** 이 값은 다음 서류를 편하게 열려는 힌트이지 서류의 사실이 아니다.
  * 힌트를 못 남겼다고 방금 발급한 서류를 무르는 것이 훨씬 나쁘다.
+ *
+ * 계약 행을 쓰므로 쓰기 문(requireEdit)을 지난다(2026-11-04 운영자 승인 '추천대로', 갈림길 G6). 부르는 자리는 계약서·납부 확인서의
+ * 발급 성공 뒤와 실거주 확인서 칸 저장(saveResidenceCertFieldOverride, 그 자신이 requireEdit) 안이라 화면 경로로는 열람 역할이 닿지 않지만,
+ * 서버 액션은 id 로 직접 부를 수 있어 문이 짝을 이뤄야 한다. 거절도 조용히 넘긴다.
  */
 export async function noteDocNameStyle(leaseTermId: string, style: DocNameStyle): Promise<void> {
   try {
+    await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const s = asDocNameStyle(style)
     if (!s) return

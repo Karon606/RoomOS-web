@@ -36,6 +36,7 @@
 - (app) 밖 화면(계약서·납부 확인서·실거주 확인서·서류 뷰어)은 RoleProvider 가 없다. 역할 훅을 쓰지 않고 page 가 lib/role `canEdit` 로 정한 값을 필수 prop 으로 넘긴다(ContractView `canSendSms`·`canEdit`, SendDocButton `canSendSms`). 기본값을 두지 않는다. ?share= 서명본 분기가 값을 안 넘겨 기본값 true 로 열렸던 일이 있다.
 - 쓰기 행만 세우는 조회(getRoomScheduleState·getRoomBusyNotice)는 서버 문을 낮추지 않고 열람 역할에게 부르지 않는다. 링크 상태 조회(getContractShareState)는 토큰을 주므로 열람 역할에게 열지 않는다. 열람 직원의 서명 대기 배지는 배지 여섯 칸만 주는 getContractSignBadge 가 맡는다(2026-11-04 운영자 승인).
 - 계약서 화면은 STAFF 에게 읽기 전용으로 열리고(ContractView `canEdit` 거짓 = 쓰기 입구 없음), 제한 스태프는 404, 서명본 `?share=` 는 편집 역할 전용이다. page 가 역할을 데이터보다 먼저 읽는다([[domain-contracts]] '열람 역할과 계약서 화면').
+- 서류 성명 표기 힌트 쓰기(noteDocNameStyle)도 계약 행을 쓰므로 requireEdit 를 지난다(2026-11-04 운영자 승인 G6). 화면 경로로는 계약서·납부 확인서 발급 성공 뒤와 실거주 확인서 칸 저장(그 자신이 requireEdit) 안에서만 불러 열람 역할이 닿지 않았지만, 서버 액션은 직접 부를 수 있다.
 - 감지망 `scripts/check-sms-role-gate.mjs`(서버 문·입구 전수·창 렌더·버튼·Provider 트리·메일·내보내기·편집 입구 표·쓰기용 조회), 통합 `scripts/test-action-property-scope-flow.ts` 열람 역할 절.
 
 ## 공용(인증 불필요) 라우트

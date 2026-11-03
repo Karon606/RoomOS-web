@@ -79,6 +79,17 @@ for (const [f, fns] of Object.entries(SERVER)) {
   }
 }
 
+// ⓐ-2 서류 성명 표기 힌트 쓰기(2026-11-04 운영자 승인 G6). 계약 행을 쓰는 서버 함수라 첫 DB 호출 전에 requireEdit 를 지난다.
+{
+  const f = 'app/(app)/tenants/docNameStyle.ts'
+  const s = read(f)
+  const start = s.indexOf('export async function noteDocNameStyle(')
+  const body = start < 0 ? '' : s.slice(start, s.indexOf('\nexport ', start + 1) < 0 ? s.length : s.indexOf('\nexport ', start + 1))
+  const gate = body.search(/\n {4}await requireEdit\(\)\n/), firstAwait = body.search(/\bawait (?!requireEdit\(\))/), firstDb = body.search(/\bprisma\./)
+  need(/import \{[^}]*\brequireEdit\b[^}]*\} from '@\/lib\/role'/.test(s) && gate >= 0 && gate < firstAwait && gate < firstDb,
+    `${f}: noteDocNameStyle 가 계약 행을 쓰기 전에 requireEdit 를 지나지 않는다(열람 역할이 서버 액션으로 계약 행을 고친다).`)
+}
+
 // ⓑ 입구 전수
 // kind: 'helper' = 링크 조립 정본, 'ctx' = 문자 창 안(번호·수신자가 ⓐ 의 조회에서만 온다), 'parent' = 부모가 canEditUi 로 렌더를 막는 창,
 //       'entry' = 문자 창을 그리는 입구(ⓒ·ⓓ), 'server' = 서명 요청 링크 발급(ⓐ requireEdit) 성공 뒤에만 문자앱을 연다.
