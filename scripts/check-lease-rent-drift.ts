@@ -16,11 +16,8 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { kstMonthStr } from '@/lib/kstDate'
 
 /** 기준선(계약 id 와 신호). 2026-10-28 운영 DB 읽기 전용 조회 결과. */
-const BASELINE: Record<string, 'a' | 'b'> = {
-  // 사건 당사자. 602호 홍은주 비거주 3만 원(602호 비거주 이용료 15만 원). 고칠지는 운영자가 정한다. 배포 뒤 호실 수정 폼 비거주 이용료 칸 아래
-  // '계약 1건이 이 금액과 다릅니다 · 계약에 적용' 을 눌러 저장하면 기록 없는 달부터 15만 원이 되고 이 줄은 풀린다(적용취소 가능).
-  '6a4cb349-365a-4aa8-b6e1-f15e8d437ac7': 'a',
-}
+// 2026-11-03 운영자 지시로 602호 홍은주 비거주 계약을 15만 원으로 정정해 마지막 기준선이 풀렸다. 새 어긋남은 곧바로 실패한다.
+const BASELINE: Record<string, 'a' | 'b'> = {}
 
 const RESIDENT = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] as const
 
