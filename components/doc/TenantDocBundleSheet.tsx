@@ -11,7 +11,7 @@
 // 키가 없으면 이 화면은 1단계와 픽셀이 같다. 받는 주소는 저장된 이 사람의 주소 하나뿐이고
 // 여기서 고칠 수 없다. 오타 한 글자가 곧 남의 사서함에 신원번호를 배달하는 길이라서다.
 //
-// 메일은 여기서 바로 나가지 않는다 — '메일 쓰기'가 확인 화면(TenantDocMailComposeSheet)을 열고,
+// 메일은 여기서 바로 나가지 않는다 — '메일 작성'이 확인 화면(TenantDocMailComposeSheet)을 열고,
 // 제목·본문·답장 주소·첨부·미리보기를 모두 확인한 뒤에야 발송된다(운영자 요구 2026-08-25).
 //
 // **아무것도 발급하지 않는다.** 미발급 칸은 체크할 수 없고 '작성'이 기존 왕복(from=tenant)으로 보낸다.
@@ -264,7 +264,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     <>
     {/* z 280 인 이유. 이 시트는 프리즘 셸(z 280)의 **형제**로 뜬다(2026-10-03). 종전 260 은 셸 패널
         안에 그려져 셸의 층 안에서 위에 올라갔는데, 형제가 되면 260 은 셸 아래로 깔린다. 같은 층이면
-        뒤에 마운트되는 이쪽이 위다(셸 → 이 시트 → 문자·메일 쓰기 순). 이 시트를 여는 곳은 셸뿐이다. */}
+        뒤에 마운트되는 이쪽이 위다(셸 → 이 시트 → 문자·메일 확인 순). 이 시트를 여는 곳은 셸뿐이다. */}
     <Modal open onClose={onClose} z={280} width="md"
       title={bundle ? `서류 · ${bundle.tenantName}` : '서류'}>
       <div className="space-y-3">
@@ -426,21 +426,21 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         )}
         {selected.size > 0 && effDest === 'sms' && (
           <SelectionPillBar aboveModal count={selected.size} unit="건" onClose={() => setSelected(new Set())}>
-            {/* 메일과 같은 이유로 '보내기'가 아니라 '쓰기'다 — 누르는 순간 나가는 버튼이 아니다.
-                번호 없음은 위 안내 줄이 이미 말한다. */}
+            {/* 메일과 같은 이유로 '보내기'가 아니라 '작성'이다(서류 동사 정본, knowledge/doc-vocabulary). 누르는 순간 나가는
+                버튼이 아니라 내용을 채우는 화면을 연다. 번호 없음은 위 안내 줄이 이미 말한다. */}
             <PillButton primary disabled={!smsTo} onClick={() => setSmsOpen(true)}>
-              문자 쓰기
+              문자 작성
             </PillButton>
           </SelectionPillBar>
         )}
         {selected.size > 0 && effDest === 'mail' && (
           <SelectionPillBar aboveModal count={selected.size} unit="건" onClose={() => setSelected(new Set())}>
-            {/* 버튼은 발송이 아니라 확인 화면 열기다 — 그래서 '보내기'가 아니라 '쓰기'다(누르는 순간
+            {/* 버튼은 발송이 아니라 확인 화면 열기다 — 그래서 '보내기'가 아니라 '작성'이다(누르는 순간
                 나가는 버튼이 아니라는 것을 이름이 말해야 한다). §22 는 불가능한 액션을 숨기라고
                 하지만 여기서 숨기면 알약에 건수와 닫기만 남아 '왜 못 보내는지'를 말할 자리가
                 사라진다. 주소 없음은 위 안내 줄이 이미 말한다. */}
             <PillButton primary disabled={!mailTo} onClick={() => setComposeOpen(true)}>
-              메일 쓰기
+              메일 작성
             </PillButton>
           </SelectionPillBar>
         )}
@@ -473,7 +473,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         )}
       </div>
     </Modal>
-    {/* 문자·메일 쓰기 시트는 이 시트의 형제다 — 자식이면 이 패널 모션이 굳을 때 그 상자에 갇힌다
+    {/* 문자·메일 확인 시트는 이 시트의 형제다 — 자식이면 이 패널 모션이 굳을 때 그 상자에 갇힌다
         (check-no-nested-overlay). 층은 이 시트와 같은 280 이라 뒤에 마운트되는 이쪽이 위다 — 이
         순서를 바꾸지 말 것. */}
     {smsOpen && smsTo && bundle && (
