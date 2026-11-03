@@ -25,6 +25,8 @@
 //   ⓗ 고객·호실 상세(Prism)와 계약서 화면의 쓰기 입구(2026-11-03 운영자 승인). 서버가 requireEdit 로 거절하는 동작은 열람 역할에게
 //      화면도 세우지 않는다(캡션 없이 숨김, 가이드 §27.8 ②). EDIT_GATES 표의 각 입구가 canEditUi(useCanEdit) 또는 page 가 넘긴 prop 아래에 있고,
 //      같은 손(핸들러)이 가드 밖에 또 생기지 않게 개수를 고정한다.
+//   ⓘ 쓰기 행을 세우는 조회(getRoomScheduleState·getRoomBusyNotice, 서버 requireEdit)는 열람 역할에게 부르지 않는다(모달마다 500).
+//      서버 문은 낮추지 않는다. 부르는 자리가 입주자 상세(가드)와 수정 폼(편집자만 연다) 밖으로 늘면 붉다.
 //
 // 실행: node scripts/check-sms-role-gate.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -443,6 +445,23 @@ for (const [f, re, n] of OPENERS) {
     'components/entity-modal/widgets/TenantRequestsTab.tsx', 'components/doc/TenantDocBundleSheet.tsx']) {
     need(/const canEditUi = useCanEdit\(\)/.test(read(f)), `${f}: canEditUi 가 useCanEdit() 에서 오지 않는다.`)
   }
+}
+
+// ⓘ 열람 역할에게 부르지 않는 쓰기용 조회
+{
+  const A = 'app/(app)/tenants/actions.ts'
+  const a = read(A)
+  for (const fn of ['getRoomScheduleState', 'getRoomBusyNotice']) {
+    const i = a.indexOf(`export async function ${fn}(`)
+    const body = a.slice(i, a.indexOf('\nexport ', i + 1))
+    need(i >= 0 && /\n {2}await requireEdit\(\)\n/.test(body), `${A}: ${fn} 의 requireEdit 가 없다(서버 문을 낮췄다면 이 축과 보고를 함께 고친다).`)
+  }
+  const B = 'components/entity-modal/bodies/TenantBody.tsx'
+  const b = read(B)
+  need(/const canEditUi = useCanEdit\(\)\s*useEffect\(\(\) => \{\s*if \(!leaseIdForRefund \|\| !canEditUi\) return\s*let active = true\s*getRoomScheduleState\(leaseIdForRefund\)[^\n]*\n\s*getRoomBusyNotice\(leaseIdForRefund\)/.test(b),
+    `${B}: 열람 역할에게도 호실 일정·막힘 조회를 부른다(서버 requireEdit 거부가 모달마다 난다).`)
+  const callers = ['app', 'components'].flatMap(walk).filter(f => /\bgetRoom(ScheduleState|BusyNotice)\(/.test(read(f)) && f !== A)
+  need(callers.sort().join(',') === ['app/(app)/tenants/TenantClient.tsx', B].sort().join(','), `호실 일정·막힘 조회를 부르는 자리가 늘었다: ${callers.join(', ')}`)
 }
 
 if (violations.length) {

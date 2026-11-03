@@ -4,6 +4,7 @@
 // Phase 2.3b: 표시 위주 (기본·연락처·계약·추가·메모·계약서 파일 + 수납 요약 + AI 분석).
 // 상태 전환 / 납입일 변경 / 편집 / 요청·컴플레인 CRUD 는 /tenants?tenantId=X 로 딥링크.
 
+import { useCanEdit } from '@/components/RoleContext'
 import { useEffect, useState, useTransition } from 'react'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -65,13 +66,17 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
     return () => { active = false }
   }, [tenantId, reloadKey])
   const leaseIdForRefund = (tenant ? primaryTenantLease(tenant.leaseTerms) : undefined)?.id ?? null
+  // 호실 일정·호실 막힘 조회는 열람 전용(STAFF·제한 스태프)에게 부르지 않는다. 두 조회의 결과는 오직 쓰기 행
+  // (오늘 이사 처리·이사일 바꾸기·임시 호실 정하기·적용취소)을 세우는 데 쓰이고, 서버가 requireEdit 로 거절해
+  // 모달을 열 때마다 처리 안 된 거부(500)가 났다(2026-11-03 운영자 승인). 서버 문은 낮추지 않는다.
+  const canEditUi = useCanEdit()
   useEffect(() => {
-    if (!leaseIdForRefund) return
+    if (!leaseIdForRefund || !canEditUi) return
     let active = true
     getRoomScheduleState(leaseIdForRefund).then(r => { if (active) setSchedule(r) })
     getRoomBusyNotice(leaseIdForRefund).then(r => { if (active) setRoomBusy(r) })
     return () => { active = false }
-  }, [leaseIdForRefund, reloadKey])
+  }, [leaseIdForRefund, reloadKey, canEditUi])
   const refresh = () => setReloadKey(k => k + 1)
 
   if (!tenant) return <SkeletonRows rows={5} className="py-4" />
