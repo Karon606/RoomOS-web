@@ -233,7 +233,7 @@ export function Modal({
                 {typeof title === 'string'
                   ? <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{title}</h2>
                   : title}
-                {subtitle && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 line-clamp-2">{subtitle}</p>}   {/* truncate는 긴 안내가 잘림(신고 e32c60ab) — 2줄까지 표시 */}
+                {subtitle && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 line-clamp-2 break-keep [overflow-wrap:anywhere]">{subtitle}</p>}   {/* truncate는 긴 안내가 잘림(신고 e32c60ab) — 2줄까지 표시. 줄바꿈은 낱말 단위(형제 ConfirmDialog 와 같다, 2026-11-03) */}
               </div>
               {headerExtra}
             </div>

@@ -54,6 +54,15 @@ for (const [f, anchor, label] of TARGETS) {
   }
 }
 
-console.log(`[긴 값 줄바꿈] 정본 ${TARGETS.length}곳·토스트 두 줄 / 위반 ${violations.length}건`)
+// 모달 부제(2026-11-03). 부제는 두 줄까지 서고(line-clamp-2) 쓰는 곳이 쉰 곳이 넘는다. 낱말 단위 줄바꿈과 긴 토큰 끊기를
+// 형제 확인창(ConfirmDialog)과 같게 단다. 종전에는 낱말 중간에서 끊겼다.
+{
+  const f = 'components/ui/Modal.tsx'
+  const m = /\{subtitle && <p className="([^"]*)"/.exec(read(f))
+  if (!m) violations.push(`${f}. 모달 부제를 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+  else if (!/\bbreak-keep\b/.test(m[1]) || !/overflow-wrap:anywhere/.test(m[1])) violations.push(`${f}. 모달 부제에 break-keep·overflow-wrap:anywhere 가 없다. 낱말 중간에서 끊긴다.`)
+}
+
+console.log(`[긴 값 줄바꿈] 정본 ${TARGETS.length}곳·토스트 두 줄·모달 부제 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 10)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
