@@ -336,6 +336,39 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   eq('내비 표식 · 외장 키보드 단축바(55 가림)면 접지 않는다', stampOf({ frameH: IPH, frameTop: 0, vvHeight: IPH - 55, offsetTop: 0, scale: 1 }, true), false)
 }
 
+// ── 행 머리 보존(2026-11-03, 키보드 칸 이동 튐 패널 결정 3, 가이드 §30) ─────────────────────
+// 반복 행 폼은 칸 위 라벨만 남으면 어느 행의 칸인지 모른다. 행 머리(data-reveal-anchor) 위 끝을 띠 위 여백 아래에 지킨다.
+{
+  const B = { bandTop: 0, bandBottom: 416, aligned: false }
+  const target = 416 * TARGET_RATIO
+  // 칸 360~400, 행 머리는 칸보다 300 위(60). 목표선까지 올리면(214) 머리가 −154 로 나간다. 머리가 이겨 44 만 올린다.
+  eq('앵커 · 머리가 띠 위 여백 아래에 남을 만큼만 올린다',
+    revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: 60 }), 60 - REVEAL_GAP)
+  eq('앵커 · 그 뒤 머리 위 끝은 띠 위 +16', 60 - revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: 60 }), REVEAL_GAP)
+  // 머리가 칸 가까이(90 위)면 목표선까지 그대로 올라간다(클램프가 안 걸린다).
+  eq('앵커 · 머리가 가까우면 종전처럼 목표선까지',
+    Math.round(revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: 270 })), Math.round(360 - target))
+  // 띠가 좁아 머리와 칸을 함께 못 담으면 칸이 이긴다(종전 클램프).
+  eq('앵커 · 함께 못 담으면 칸이 이긴다',
+    revealDelta({ ...B, fieldTop: 500, fieldBottom: 540, anchorTop: 60 }),
+    revealDelta({ ...B, fieldTop: 500, fieldBottom: 540 }))
+  eq('앵커 · 함께 못 담는 경우 칸은 띠 안에 든다', 540 - revealDelta({ ...B, fieldTop: 500, fieldBottom: 540, anchorTop: 60 }) <= 416, true)
+  eq('앵커 · 칸보다 아래 있는 앵커는 무시', revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: 380 }), revealDelta({ ...B, fieldTop: 360, fieldBottom: 400 }))
+  eq('앵커 · NaN 앵커는 무시', revealDelta({ ...B, fieldTop: 360, fieldBottom: 400, anchorTop: NaN }), revealDelta({ ...B, fieldTop: 360, fieldBottom: 400 }))
+  // 머리가 이미 띠 위로 나가 있어도 앵커가 칸을 아래로 끌어내리지는 않는다(공짜 모션 없음, 음수는 칸 기준 1회뿐).
+  eq('앵커 · 머리가 이미 잘렸어도 아래로 끌어내리지 않는다', revealDelta({ ...B, fieldTop: 100, fieldBottom: 140, anchorTop: -40 }), 0)
+  // 앵커가 없으면 종전과 한 조합도 안 다르다(동치 전수).
+  let diff = 0, n = 0
+  for (const ft of [-30, 0, 10, 40, 100, 145, 188, 200, 300, 380, 500]) for (const h of [20, 40, 300, 660]) for (const al of [false, true]) {
+    for (const bb of [300, 416, 538]) {
+      n++
+      const base = { bandTop: 0, bandBottom: bb, fieldTop: ft, fieldBottom: ft + h, aligned: al }
+      if (revealDelta(base) !== revealDelta({ ...base, anchorTop: undefined })) diff++
+    }
+  }
+  eq(`앵커 없음 동치 ${n} 조합 · 종전 revealDelta 와 같다`, diff, 0)
+}
+
 // 상수 자체도 고정 — 수치 합의(35%·60px)가 말없이 바뀌면 잡는다(운영자 승인 2026-09-02).
 eq('문턱 60px', KBD_OPEN_PX, 60)
 eq('목표선 35%', TARGET_RATIO, 0.35)

@@ -119,6 +119,21 @@ export function shouldRestore(s: KbdSnapshot, scrolled: boolean): boolean {
 }
 
 /**
+ * 올림의 상단 보호 클램프. 이만큼 넘게 올리면 지켜야 할 위 끝이 띠 위 여백 위로 나간다.
+ *
+ * **반복 행 폼은 칸이 아니라 행 머리를 지킨다(2026-11-03, 키보드 칸 이동 튐 패널 결정 3, 가이드 §30).** 재고 위치별 점검처럼
+ * '채우기 전'·'채운 후' 같은 라벨이 행마다 되풀이되는 폼은 칸 위 라벨만 남아서는 어느 품목의 칸인지 모른다. 그래서 행 머리
+ * (품목 이름 줄)에 data-reveal-anchor 를 달고, 그 위 끝이 띠 위 여백 아래에 남도록 클램프한다. 띠가 좁아 행 머리와 칸을
+ * 함께 담을 수 없으면 칸이 이긴다(종전 클램프). 목표선 35%·즉시 이동은 그대로다.
+ */
+function topClamp(a: { bandTop: number; bandBottom: number; fieldTop: number; fieldBottom: number; anchorTop?: number }): number {
+  const fieldClamp = a.fieldTop - (a.bandTop + REVEAL_GAP)
+  if (a.anchorTop == null || !Number.isFinite(a.anchorTop) || a.anchorTop > a.fieldTop) return fieldClamp
+  const fits = a.fieldBottom - a.anchorTop + 2 * REVEAL_GAP <= a.bandBottom - a.bandTop
+  return fits ? a.anchorTop - (a.bandTop + REVEAL_GAP) : fieldClamp
+}
+
+/**
  * 포커스한 칸을 얼마나 스크롤할까 — 양수는 위로 올림, 음수는 아래로 내림, 0 은 무동작.
  *
  * 올림은 두 요구의 큰 쪽(목표선까지 / 칸 아래 여백 확보)이되 상단 보호 클램프를 넘지 않는다 —
@@ -130,11 +145,13 @@ export function revealDelta(a: {
   bandTop: number; bandBottom: number
   fieldTop: number; fieldBottom: number
   aligned: boolean
+  /** 반복 행 폼의 행 머리 위 끝(data-reveal-anchor). 없으면 종전과 같다. */
+  anchorTop?: number
 }): number {
   const targetY = a.bandTop + TARGET_RATIO * (a.bandBottom - a.bandTop)
   const rise = Math.min(
     Math.max(a.fieldTop - targetY, a.fieldBottom + REVEAL_GAP - a.bandBottom),
-    a.fieldTop - (a.bandTop + REVEAL_GAP),
+    topClamp(a),
   )
   if (rise > 0) return rise
   if (!a.aligned && a.fieldTop < a.bandTop + REVEAL_GAP) return a.fieldTop - (a.bandTop + REVEAL_GAP)

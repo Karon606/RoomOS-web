@@ -120,11 +120,15 @@ export default function ViewportOffsetGuard() {
       const r = p.el.getBoundingClientRect()
       const bandTop = Math.max(boxRect.top, band.top)
       const bandBottom = Math.min(band.bottom, boxRect.bottom)
+      // 반복 행 폼의 행 머리(data-reveal-anchor). 같은 스크롤러 안에 있을 때만 쓴다. 클램프 규칙은 정본 revealDelta 가 정한다.
+      const anchor = p.el.closest('[data-reveal-anchor]')
+      const anchorTop = anchor && box.contains(anchor) ? anchor.getBoundingClientRect().top : undefined
       const delta = revealDelta({
         bandTop,
         bandBottom,
         fieldTop: r.top, fieldBottom: r.bottom,
         aligned: p.aligned,
+        anchorTop,
       })
       const s0 = box.scrollTop
       if (delta !== 0) box.scrollTop += delta
@@ -132,7 +136,7 @@ export default function ViewportOffsetGuard() {
       // 칸 위 끝을 움직인 뒤 한 번 더 읽고(f1), 두 프레임 뒤에 또 읽는다(rv2). iOS 의 제 팬이 겹치면 f1 과 f2 가 갈린다.
       guardTop = box.scrollTop
       kbdTrace('rv', delta > 0 ? 'rise' : delta < 0 ? 'neg' : 'none', undefined, undefined, {
-        bt: bandTop, bb: bandBottom, f0: r.top, f1: p.el.getBoundingClientRect().top, d: delta, a: p.aligned ? 1 : 0, s0, s1: guardTop, w,
+        bt: bandTop, bb: bandBottom, f0: r.top, f1: p.el.getBoundingClientRect().top, d: delta, a: p.aligned ? 1 : 0, s0, s1: guardTop, w, h: anchorTop ?? NaN,
       })
       const el = p.el
       requestAnimationFrame(() => requestAnimationFrame(() => { if (alive && el.isConnected) { kbdTrace('rv2', '·', undefined, undefined, { f2: el.getBoundingClientRect().top }) } }))

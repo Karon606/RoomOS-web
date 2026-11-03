@@ -171,7 +171,7 @@ const LEGEND = [
     + ' · H·T0=fixed 상자 높이·client top(가드 판정 줄은 판정에 쓴 기준틀, fo·rs 는 모달 오버레이, rep 줄은 누른 순간의 센티널) · sy=문서 scrollTop',
 ].join('\n')
 /** 재노출 줄이 실릴 때만 붙는 범례 한 줄(없으면 종전 범례 그대로). */
-const LEGEND_X = 'rv=재노출(verdict rise·neg·none, x 의 bt·bb=띠 위·아래, f0·f1=칸 위 전후, d=델타, a=음수 래치, s0·s1=스크롤러 scrollTop 전후, w=기다린 프레임)'
+const LEGEND_X = 'rv=재노출(verdict rise·neg·none·stay, x 의 bt·bb=띠 위·아래, f0·f1=칸 위 전후, d=델타, a=음수 래치, s0·s1=스크롤러 scrollTop 전후, w=기다린 프레임, h=행 머리 위)'
   + ' · rv2=두 프레임 뒤 칸 위 f2 · ss=가드가 일으키지 않은 스크롤러 scroll(s=그때 scrollTop) · rvx=정착 대기 취소'
 
 // 덜기 차례. 큰 수부터 덜고, 같은 수 안에서는 오래된 줄부터 덜어낸다. 범례는 RESTORE 와 FLIP 사이에서

@@ -1194,7 +1194,8 @@ export function ItemSelector({ category, value, onChange, allowMulti = true, roo
             // 칩 상자는 줄과 따로 늘 선다. 줄은 형제(구매처·규격 직접)처럼 값이 있을 때만 펴고 '지우기' 가 접는다(2026-11-03 독립 검수).
             const brandOpen = it.brand != null || it.productName != null
             return (
-              <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
+              <div key={idx} data-reveal-anchor className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
+                {/* data-reveal-anchor = 행 머리 보존(가이드 §30, 2026-11-03). 다품목 카드는 수량·단가 칸이 카드마다 되풀이되어, 키보드 재노출이 이 카드 위 끝(품명 줄)까지 띠 안에 남긴다. */}
                 <div className="flex items-center gap-2">
                   {/* 품명 수정 가능 — 영수증 OCR이 뽑은 긴 쇼핑몰 품명을 등록 상태에서 바로 다듬게(운영자 지시 2026-07-13).
                       스타일은 이 카드의 조밀 입력 문법(smallNum: cream bg+coral/30 보더)과 동일 — 형제 입력(수량·규격·단가)과 한 문법. */}

@@ -4253,7 +4253,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
               const userVal = afterQtys[l.id]
               const displayAfter = hubTouched && userVal !== undefined ? userVal : String(Math.round(hubAutoAfter * 100) / 100)
               return (
-                <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                <div key={l.id} data-reveal-anchor className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                  {/* data-reveal-anchor = 행 머리 보존(가이드 §30, 2026-11-03). 같은 라벨이 행마다 되풀이되어, 키보드 재노출이 칸만이 아니라 이 행의 위 끝(머리)까지 띠 안에 남긴다. */}
                   <div className="flex min-h-7 items-center gap-2">
                     <Badge tone="pale-amber" className="shrink-0">창고</Badge>
                     <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
@@ -4282,7 +4283,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDe
             const { restocked, pending: movePending } = moveOf(l)
             const savedBefore = savedBeforeOf(l.id)
             return (
-              <div key={l.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+              <div key={l.id} data-reveal-anchor className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                {/* data-reveal-anchor = 행 머리 보존(가이드 §30, 2026-11-03). 같은 라벨이 행마다 되풀이되어, 키보드 재노출이 칸만이 아니라 이 행의 위 끝(머리)까지 띠 안에 남긴다. */}
                 <div className="flex min-h-7 items-center gap-2">
                   <p className="min-w-0 break-keep text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{l.pathName}</p>
                   <span className="flex-1" />
@@ -5216,7 +5218,8 @@ function CheckForm({ item, lastCheckBreakdown, lastCheckCreatedAt, hiddenLocatio
                 // 미결 행(pendingLocCount)도 막는다 — 고르는 순간 채움이 되어 위치 패널 hubQuiet 와 같은 구멍이 된다(독립 검수 2026-10-20).
                 const canKeep = prevQty !== undefined && beforeStr === '' && afterStr === '' && !(rowIsHub && (restockSum > 0 || pendingLocCount > 0))
                 return (
-                  <div key={loc.id} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                  <div key={loc.id} data-reveal-anchor className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                    {/* data-reveal-anchor = 행 머리 보존(가이드 §30, 2026-11-03). 같은 라벨이 행마다 되풀이되어, 키보드 재노출이 칸만이 아니라 이 행의 위 끝(머리)까지 띠 안에 남긴다. */}
                     {/* 행 머리 — 끝 칸 이름(13/600) + 창고 Badge, 오른쪽에 '저장 N'(12px tnum)과 '그대로'/'이번 채움'.
                         '그대로' 는 빈 행에만, '이번 채움' 은 채움이 계산될 때만 서서 한 자리를 번갈아 쓴다. 머리 높이는
                         버튼 높이(28px)로 고정이다 — 적기 시작해 버튼이 사라질 때 아래 입력칸이 손가락 밑에서 뜨지 않게.
@@ -6770,7 +6773,8 @@ function LocationBatchCheckModal({ rows, onClose = () => {}, onDone, inline = fa
                       // 아이템별 폼과 같은 규칙이다(그 주석이 정본, 도메인 P1-1 유령 재고). 글자는 이 한 자리뿐이다.
                       const canKeep = prev != null && beforeStr === '' && afterStr === '' && hubQuiet
                       return (
-                        <div key={k} style={{ marginLeft: indent }} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                        <div key={k} data-reveal-anchor style={{ marginLeft: indent }} className="space-y-1.5 border-b border-[var(--warm-border)]/40 pb-3 last:border-0">
+                          {/* data-reveal-anchor = 행 머리 보존(가이드 §30, 2026-11-03). 같은 라벨이 행마다 되풀이되어, 키보드 재노출이 칸만이 아니라 이 행의 위 끝(머리)까지 띠 안에 남긴다. */}
                           {/* 행 머리 — 품목 이름(13/600)과 분류. 오른쪽 묶음('저장 N' · '그대로'/'이번 채움')은 아이템별 폼 행
                               머리와 한 벌이고, 이 패널은 머리가 두 줄이라 분류 줄 오른쪽에 선다(이름 줄에 두면 좁은 폭에서
                               품목 이름이 먼저 잘린다). 그 줄 높이는 버튼 높이(28px)로 고정이다 — 적기 시작해 버튼이 사라질 때

@@ -669,6 +669,30 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
   if (inResize !== 2 || inResync !== 1 || writers !== inResize + inResync + 1) violations.push(`components/layout/ViewportOffsetGuard.tsx: 키보드 표식을 vv resize·복귀 재동기·정리 밖에서 쓴다(전체 ${writers}, resize ${inResize}, 재동기 ${inResync}). 팬이나 칸 이동 중에 바뀌면 하단 내비가 깜빡인다`)
 }
 
+// 12) 반복 행 폼의 행 머리 보존(2026-11-03, 키보드 칸 이동 튐 패널 결정 3, 가이드 §30). 같은 라벨('채우기 전'·'채운 후')이
+// 행마다 되풀이되는 폼은 칸 위 라벨만 남으면 어느 행인지 모른다. 행 머리에 data-reveal-anchor 를 달고, 상단 클램프는 정본
+// revealDelta(topClamp) 가 그 위 끝으로 정한다. 가드는 찾아 넘기기만 한다.
+{
+  let kv = ''
+  try { kv = strip(readFileSync('lib/keyboardViewport.ts', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const tc = kv ? sliceBody(kv, 'function topClamp(') : null
+  if (tc == null || !/a\.anchorTop - \(a\.bandTop \+ REVEAL_GAP\)/.test(tc) || !/fits\s*\?/.test(tc)) violations.push('lib/keyboardViewport.ts: 상단 클램프(topClamp)가 행 머리 위 끝으로 정해지지 않거나, 함께 못 담을 때 칸이 이기는 갈래가 없다')
+  if (!/anchorTop\?: number/.test(kv) || !/topClamp\(a\)/.test(kv)) violations.push('lib/keyboardViewport.ts: revealDelta 가 행 머리(anchorTop)를 받아 정본 클램프에 넘기지 않는다')
+  let guard = ''
+  try { guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
+  const rev = guard ? sliceBody(guard, 'const reveal = (') : null
+  if (rev == null || !/closest\('\[data-reveal-anchor\]'\)/.test(rev) || !/revealDelta\(\{[^}]*\banchorTop,?\s*\}\)/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 재노출이 행 머리(data-reveal-anchor)를 찾아 정본에 넘기지 않는다')
+  // 클램프 사본 금지. 가드가 앵커로 델타를 손수 고치면 두 벌이 갈린다.
+  if (rev && /anchorTop\s*-|-\s*anchorTop|Math\.min\(delta/.test(rev)) violations.push('components/layout/ViewportOffsetGuard.tsx: 행 머리 클램프를 가드가 손수 계산한다. 정본 revealDelta 하나다')
+  // 부착 대상(같은 라벨 반복 행). 위치별 점검(인라인·모달 한 컴포넌트), 아이템별 점검 위치 행, 이력 수정 위치 행(창고·일반), 지출 다품목 카드.
+  const anchors = f => { try { return [...strip(readFileSync(f, 'utf8')).matchAll(/<div key=\{[^}]+\} data-reveal-anchor\b/g)].length } catch { return -1 } }
+  const need12 = [['app/(app)/inventory/InventoryClient.tsx', 4], ['app/(app)/finance/FinanceClient.tsx', 1]]
+  for (const [f, n] of need12) {
+    const got = anchors(f)
+    if (got !== n) violations.push(`${f}: 반복 행 머리(data-reveal-anchor)가 ${got}곳이다(기대 ${n}). 같은 라벨 반복 행에서 키보드가 행 머리를 띠 위로 밀어낸다`)
+  }
+}
+
 console.log(`\n[키보드 오버레이 정본] 선언 ${declaring.size}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exit(1)
