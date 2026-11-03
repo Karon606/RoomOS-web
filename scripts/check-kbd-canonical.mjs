@@ -601,13 +601,20 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
   const gate = gAt < 0 || gEnd < gAt ? null : kv.slice(gAt, gEnd)
   if (gate == null) violations.push('lib/keyboardViewport.ts: 정본 revealGate 가 사라짐. 칸 이동 재노출이 다시 팬 도중 기하를 확정한다')
   else {
-    if (!/'abort'/.test(gate) || !/guardScrollTop/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 손 스크롤(가드 밖 scrollTop 변화)로 취소하지 않는다')
-    if (!/SETTLE_MAX_FRAMES/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 에 상한(SETTLE_MAX_FRAMES)이 없다. 멈추지 않는 화면에서 재노출이 영영 안 돈다')
+    // 취소 경로는 낱말이 아니라 문장으로 본다(검수 2026-11-03, 반환 타입의 'abort' 낱말에 속아 그 줄을 지워도 초록이었다).
+    if (!/if \(Math\.abs\(cur\.scrollTop - base\) >= SETTLE_EPS\) \{/.test(gate) || !/if \(!clamped\) return \{ verdict: 'abort'/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 손 스크롤(기준 scrollTop 변화)로 취소하지 않는다')
+    if (!/const clamped = cur\.scrollTop < base && cur\.scrollTop >= cur\.maxScrollTop - SETTLE_EPS/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 여백이 줄어 잘린 scrollTop 을 손 스크롤과 가르지 않는다')
+    if (!/let base = prev \? a\.base : cur\.scrollTop/.test(gate)) violations.push('lib/keyboardViewport.ts: 손 스크롤 기준을 첫 표본에서 잡지 않는다. focus 직후 브라우저 스크롤을 손 스크롤로 오판한다')
+    if (!/a\.elapsedMs < SETTLE_MAX_MS/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 에 시간 상한(SETTLE_MAX_MS)이 없다. 멈추지 않는 화면에서 재노출이 영영 안 돈다')
+    // 늦게 시작하는 iOS 팬(검수 차단 1). 최소 대기 전에는 정지만으로 진행하지 않는다.
+    if (!/still >= SETTLE_STILL_FRAMES && a\.elapsedMs >= SETTLE_MIN_MS && a\.frame > SETTLE_MIN_FRAMES/.test(gate)) violations.push('lib/keyboardViewport.ts: 정착 판정에 최소 대기(SETTLE_MIN_MS)가 없다. 늦게 시작하는 팬 전에 진행해 이중 이동이 된다')
     if (!/SETTLE_STILL_FRAMES/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 연속 정지 프레임을 안 센다')
     for (const k of ['fieldTop', 'bandTop', 'bandBottom']) if (!new RegExp(`cur\\.${k} - prev\\.${k}`).test(gate)) violations.push(`lib/keyboardViewport.ts: revealGate 가 ${k} 의 정지를 안 본다`)
     if (!/restsNearTarget\(cur\)/.test(gate)) violations.push('lib/keyboardViewport.ts: revealGate 가 허용 구간(restsNearTarget)을 안 본다')
   }
-  if (!/export const SETTLE_MAX_FRAMES = 20\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 정착 상한이 20프레임이 아니다(운영자 승인 약 350ms)')
+  if (!/export const SETTLE_MAX_MS = 350\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 정착 상한이 350ms 가 아니다(운영자 승인 약 20프레임)')
+  if (!/export const SETTLE_MIN_FRAMES = [6-8]\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 정착 최소 대기 프레임이 6~8 이 아니다(검수 차단 1, 30Hz 늦은 팬)')
+  if (!/export const SETTLE_MIN_MS = (1[0-9]{2})\b/.test(kv)) violations.push('lib/keyboardViewport.ts: 정착 최소 대기가 100~199ms 가 아니다(검수 차단 1, 60Hz 6~8프레임)')
 
   let guard = ''
   try { guard = strip(readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')) } catch { /* 위에서 이미 신고됨 */ }
@@ -618,14 +625,16 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
     const step = sliceBody(guard, 'const settleStep = (')
     if (step == null || !/revealGate\(/.test(step)) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 걸음이 정본 revealGate 를 안 부른다')
     // 관문 사본 금지. 정지·상한·취소 판정을 가드가 손으로 다시 세우면 두 벌이 갈린다.
-    if (/Math\.abs\(|SETTLE_(EPS|STILL_FRAMES|MAX_FRAMES|REST_PX)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 판정 사본이 있다(Math.abs·SETTLE_ 상수). 판정은 정본 revealGate 하나다')
+    if (/Math\.abs\(|SETTLE_(EPS|STILL_FRAMES|MIN_MS|MIN_FRAMES|MAX_MS|REST_PX)/.test(guard)) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 판정 사본이 있다(Math.abs·SETTLE_ 상수). 판정은 정본 revealGate 하나다')
     // 재노출을 부르는 자리는 둘뿐이다. 관문이 정착을 판정한 뒤(settleStep)와 vv resize 재시도(scheduleReveal). 관문을 여는 자리
     // (startSettle)가 바로 부르면 관문이 있어도 없는 것과 같다(역주입 2026-11-03 에서 이 우회가 처음엔 초록이었다).
     const calls = [...guard.matchAll(/(?<![\w.])reveal\(/g)].length
     const okCalls = (/reveal\(st\.frame\)/.test(step ?? '') ? 1 : 0) + (/reveal\(0\)/.test(sliceBody(guard, 'const scheduleReveal = (') ?? '') ? 1 : 0)
     if (calls !== 2 || okCalls !== 2) violations.push(`components/layout/ViewportOffsetGuard.tsx: 재노출 호출 자리가 정착 뒤·resize 재시도 둘이 아니다(호출 ${calls}곳). 관문을 건너 팬 도중 기하를 확정한다`)
     const ss = sliceBody(guard, 'const startSettle = (')
-    if (ss == null || !/requestAnimationFrame\(\(\) => settleStep\(st\)\)/.test(ss)) violations.push('components/layout/ViewportOffsetGuard.tsx: 관문을 연 뒤 다음 프레임 정착 걸음을 예약하지 않는다')
+    if (ss == null || !/requestAnimationFrame\(t => settleStep\(st, t\)\)/.test(ss)) violations.push('components/layout/ViewportOffsetGuard.tsx: 관문을 연 뒤 다음 프레임 정착 걸음을 예약하지 않는다')
+    // 기다림은 rAF 타임스탬프로 잰다. 벽시계(setTimeout·Date.now·performance.now)로 마감하지 않는다(2026-09-08 결정).
+    if (step && (/setTimeout\(|setInterval\(|Date\.now\(|performance\.now\(/.test(step) || !/elapsedMs: now - st\.t0/.test(step))) violations.push('components/layout/ViewportOffsetGuard.tsx: 정착 대기를 rAF 타임스탬프가 아닌 것으로 잰다')
     const sched = sliceBody(guard, 'const scheduleReveal = (')
     if (sched == null || !/!settle/.test(sched)) violations.push('components/layout/ViewportOffsetGuard.tsx: 관문이 열린 동안 vv resize 가 따로 재노출한다. 띠가 움직이는 중간 기하를 확정한다')
     // 팬(vv scroll · window resize 팬 분기)에서는 재노출을 부르지 않는다. scroll 은 '아직 움직인다'는 신호일 뿐이다(그 신호는 관문이 매 프레임 직접 잰다).

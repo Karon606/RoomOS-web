@@ -169,8 +169,12 @@ export function revealDelta(a: {
 // 정렬에서만 나오는 값이라 찢어진 기하의 지문이다(목표선까지 59 올린 뒤 iOS 가 130 을 더 밀면 205 − 189 = 16).
 //
 // 처방. 키보드가 이미 선 채 들어온 focusin 에만, 칸 위 끝과 띠 위·아래가 두 프레임 연속 1px 미만으로 멈췄을 때
-// 한 번 재노출한다. 상한(약 20프레임, 60Hz 에서 약 350ms)을 넘으면 그 기하로 진행한다. 기다리는 동안 스크롤러
-// scrollTop 이 가드 밖에서 바뀌면 손 스크롤로 보고 취소한다. 멈춘 자리가 이미 목표선 근처(허용 구간)면 움직이지
+// 한 번 재노출한다. 다만 첫 표본부터 SETTLE_MIN_MS(130ms) 안에는 멈춰 있어도 진행하지 않는다(독립 검수 2026-11-03 차단 1).
+// iOS 포커스 팬이 focusin 뒤 몇 프레임 늦게 시작하면, 시작 전 정지 두 프레임만으로 진행해 종전과 같은 이중 이동이 났다.
+// 상한은 SETTLE_MAX_MS(350ms)다. 둘 다 프레임 수가 아니라 rAF 타임스탬프로 잰다. 저전력 30Hz 에서 20프레임 상한은
+// 0.67초로 늘어나서다(벽시계 setTimeout 은 안 쓴다). 기다리는 동안 스크롤러
+// scrollTop 이 가드 밖에서 바뀌면 손 스크롤로 보고 취소한다. 기준은 첫 rAF 표본의 scrollTop 이고(focus 직후 브라우저가
+// 스크롤러를 직접 민 몫은 손 스크롤이 아니다), 셸 여백이 줄어 scrollTop 이 최대값으로 잘린 것도 손 스크롤이 아니다. 멈춘 자리가 이미 목표선 근처(허용 구간)면 움직이지
 // 않는다. 이 관문은 이동을 늦출 뿐 방향·크기는 그대로 revealDelta 가 정한다(35% 목표선·즉시 이동·음수 1회 래치).
 // vv resize 의 재시도 경로(키보드가 서는 순간)는 종전 그대로다.
 
@@ -178,13 +182,29 @@ export function revealDelta(a: {
 export const SETTLE_EPS = 1
 /** 연속으로 멈춰 있어야 하는 프레임 수. 두 번 견줘 두 번 다 멈췄으면 정착이다. */
 export const SETTLE_STILL_FRAMES = 2
-/** 이만큼 기다려도 안 멈추면 그 기하로 진행한다(약 20프레임 ≈ 350ms, 운영자 승인 '두 박자' 상한). */
-export const SETTLE_MAX_FRAMES = 20
+/**
+ * 첫 표본부터 이만큼은 멈춰 있어도 진행하지 않는다(ms, rAF 타임스탬프). iOS 포커스 팬이 늦게 시작해도 그 전 정지로
+ * 진행하지 않게 하는 최소 대기다. 60Hz 8프레임, 30Hz 4프레임쯤이다. '칸이 한 번 움직인 걸 본 뒤에만' 으로 여는 길은
+ * 버렸다. iOS 가 팬하지 않는 이동(칸이 이미 보임)은 매번 상한까지 기다리게 되고, 1px 미만으로만 움직인 팬도 그렇다.
+ */
+export const SETTLE_MIN_MS = 130
+/**
+ * 최소 대기는 프레임 수로도 지킨다(첫 표본 뒤 이만큼의 프레임). 늦은 팬의 지연이 시간이 아니라 프레임 단위로 오면 저전력
+ * 30Hz 에서 130ms 는 4프레임뿐이라 '4프레임 늦은 팬' 을 놓친다. 둘 중 늦은 쪽까지 기다린다(30Hz 에서 약 267ms, 상한 350ms 안).
+ */
+export const SETTLE_MIN_FRAMES = 8
+/** 이만큼 기다려도 안 멈추면 그 기하로 진행한다(ms, rAF 타임스탬프. 60Hz 약 20프레임, 운영자 승인 '두 박자' 상한). */
+export const SETTLE_MAX_MS = 350
 /** 목표선 아래로 이만큼까지는 이미 읽기 편한 자리로 보고 움직이지 않는다(허용 구간). */
 export const SETTLE_REST_PX = REVEAL_GAP
 
 /** 한 프레임에 잰 정착 재료. 띠는 재노출과 같은 띠(스크롤러 rect 와 겹친 보이는 띠)다. */
-export type SettleSample = { fieldTop: number; fieldBottom: number; bandTop: number; bandBottom: number; scrollTop: number }
+export type SettleSample = {
+  fieldTop: number; fieldBottom: number; bandTop: number; bandBottom: number
+  scrollTop: number
+  /** 스크롤러가 갈 수 있는 최대 scrollTop(scrollHeight − clientHeight). 여백이 줄어 잘린 것을 손 스크롤과 가른다. */
+  maxScrollTop: number
+}
 
 /**
  * 정착 관문 한 걸음. 매 프레임 지금 표본(cur)과 직전 표본(prev)을 견줘 다음 할 일을 정한다.
@@ -192,26 +212,35 @@ export type SettleSample = { fieldTop: number; fieldBottom: number; bandTop: num
  *   wait   아직 움직인다. 한 프레임 더 본다.
  *   stay   멈췄고 칸이 이미 허용 구간이다. 움직이지 않는다.
  *   go     멈췄거나(두 프레임 연속 1px 미만) 상한에 닿았다. 지금 기하로 한 번 재노출한다.
- * frame 은 이번이 몇 번째 표본인가(1부터), still 은 지금까지 연속으로 멈춘 견줌 수다. 돌려준 still 을 다음 걸음에 넘긴다.
- * guardScrollTop 은 관문을 열 때의 스크롤러 scrollTop 이다. 관문은 기다리는 동안 아무것도 안 쓰므로 그 값이 바뀌었다면 가드 밖이다.
+ * elapsedMs 는 첫 표본부터 지난 시간(rAF 타임스탬프 차, 첫 표본은 0), frame 은 몇 번째 표본인가(1부터), still 은 지금까지 연속으로 멈춘 견줌 수다.
+ * base 는 손 스크롤을 가를 기준 scrollTop 이다(첫 표본에서 받는다, prev 가 없으면 cur 로 연다). 돌려준 still·base 를 다음 걸음에 넘긴다.
+ * 관문은 기다리는 동안 아무것도 안 쓰므로 scrollTop 이 base 와 달라졌다면 가드 밖이다. 다만 줄어든 값이 지금 최대 scrollTop 에
+ * 붙어 있으면 셸 여백(--kbd-inset)이 줄어 잘린 것이라 손 스크롤이 아니고, 기준을 그 값으로 옮긴다.
  */
 export function revealGate(a: {
   prev: SettleSample | null
   cur: SettleSample
   still: number
+  elapsedMs: number
   frame: number
-  guardScrollTop: number
-}): { verdict: 'abort' | 'wait' | 'stay' | 'go'; still: number } {
+  base: number
+}): { verdict: 'abort' | 'wait' | 'stay' | 'go'; still: number; base: number } {
   const { prev, cur } = a
-  if (Math.abs(cur.scrollTop - a.guardScrollTop) >= SETTLE_EPS) return { verdict: 'abort', still: 0 }
+  // 첫 표본이 기준을 연다(focus 직후 브라우저가 민 몫을 손 스크롤로 안 본다).
+  let base = prev ? a.base : cur.scrollTop
+  if (Math.abs(cur.scrollTop - base) >= SETTLE_EPS) {
+    const clamped = cur.scrollTop < base && cur.scrollTop >= cur.maxScrollTop - SETTLE_EPS
+    if (!clamped) return { verdict: 'abort', still: 0, base }
+    base = cur.scrollTop
+  }
   const moved = !prev
     || Math.abs(cur.fieldTop - prev.fieldTop) >= SETTLE_EPS
     || Math.abs(cur.bandTop - prev.bandTop) >= SETTLE_EPS
     || Math.abs(cur.bandBottom - prev.bandBottom) >= SETTLE_EPS
   const still = moved ? 0 : a.still + 1
-  const settled = still >= SETTLE_STILL_FRAMES
-  if (!settled && a.frame < SETTLE_MAX_FRAMES) return { verdict: 'wait', still }
-  return { verdict: settled && restsNearTarget(cur) ? 'stay' : 'go', still }
+  const settled = still >= SETTLE_STILL_FRAMES && a.elapsedMs >= SETTLE_MIN_MS && a.frame > SETTLE_MIN_FRAMES
+  if (!settled && a.elapsedMs < SETTLE_MAX_MS) return { verdict: 'wait', still, base }
+  return { verdict: settled && restsNearTarget(cur) ? 'stay' : 'go', still, base }
 }
 
 /**

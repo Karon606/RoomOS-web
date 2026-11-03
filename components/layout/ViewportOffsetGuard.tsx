@@ -147,7 +147,9 @@ export default function ViewportOffsetGuard() {
     // 여기서는 매 프레임 재고 그 답대로 할 뿐이다. 경위는 lib/keyboardViewport 정착 관문 절.
     // 관문이 열려 있는 동안 vv resize 가 와도 따로 재노출하지 않는다(아래 scheduleReveal). 띠가 움직이니 관문이 기다리고,
     // 멈추면 한 번 재노출한다. 관문 밖(키보드가 서는 순간)의 resize 재시도는 종전 그대로다.
-    let settle: { el: HTMLElement; box: HTMLElement; frame: number; still: number; prev: SettleSample | null; startTop: number } | null = null
+    // 기다림은 rAF 타임스탬프(t0 부터)로 잰다. 프레임 수로 재면 저전력 30Hz 에서 상한이 두 배가 된다. base 는 손 스크롤을 가를
+    // 기준 scrollTop 이고 첫 표본에서 정본이 잡는다(focusin 순간에 잡으면 focus 직후 브라우저 스크롤을 손 스크롤로 오판한다).
+    let settle: { el: HTMLElement; box: HTMLElement; frame: number; still: number; prev: SettleSample | null; base: number; t0: number } | null = null
     const settleSample = (box: HTMLElement, el: HTMLElement): SettleSample => {
       const boxRect = box.getBoundingClientRect()
       const band = visibleBand(snapNow())
@@ -155,21 +157,23 @@ export default function ViewportOffsetGuard() {
       return {
         fieldTop: r.top, fieldBottom: r.bottom,
         bandTop: Math.max(boxRect.top, band.top), bandBottom: Math.min(band.bottom, boxRect.bottom),
-        scrollTop: box.scrollTop,
+        scrollTop: box.scrollTop, maxScrollTop: box.scrollHeight - box.clientHeight,
       }
     }
-    const settleStep = (st: NonNullable<typeof settle>) => {
+    const settleStep = (st: NonNullable<typeof settle>, now: number) => {
       if (!alive || settle !== st) return
       const p = pending.current
       if (!p || p.el !== st.el || !st.el.isConnected || document.activeElement !== st.el) { settle = null; return }
       st.frame++
+      if (st.frame === 1) st.t0 = now
       const cur = settleSample(st.box, st.el)
-      const g = revealGate({ prev: st.prev, cur, still: st.still, frame: st.frame, guardScrollTop: st.startTop })
+      const g = revealGate({ prev: st.prev, cur, still: st.still, elapsedMs: now - st.t0, frame: st.frame, base: st.base })
       st.still = g.still
+      st.base = g.base
       st.prev = cur
-      if (g.verdict === 'wait') { requestAnimationFrame(() => settleStep(st)); return }
+      if (g.verdict === 'wait') { requestAnimationFrame(t => settleStep(st, t)); return }
       settle = null
-      if (g.verdict === 'abort') { kbdTrace('rvx', 'abort', undefined, undefined, { w: st.frame, s0: st.startTop, s1: cur.scrollTop }); return }
+      if (g.verdict === 'abort') { kbdTrace('rvx', 'abort', undefined, undefined, { w: st.frame, ms: now - st.t0, s0: st.base, s1: cur.scrollTop }); return }
       if (g.verdict === 'stay') {
         kbdTrace('rv', 'stay', undefined, undefined, { bt: cur.bandTop, bb: cur.bandBottom, f0: cur.fieldTop, d: 0, a: p.aligned ? 1 : 0, s0: cur.scrollTop, w: st.frame })
         p.aligned = true
@@ -180,9 +184,9 @@ export default function ViewportOffsetGuard() {
     const startSettle = (el: HTMLElement) => {
       const box = scrollParent(el)
       if (!box) return
-      const st = { el, box, frame: 0, still: 0, prev: null, startTop: box.scrollTop }
+      const st = { el, box, frame: 0, still: 0, prev: null, base: NaN, t0: 0 }
       settle = st
-      requestAnimationFrame(() => settleStep(st))
+      requestAnimationFrame(t => settleStep(st, t))
     }
 
     // 패딩이 실제로 반영된 다음 프레임에 잰다 — 그 전에는 스크롤 범위가 부족해 클램프된다

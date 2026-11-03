@@ -5,7 +5,7 @@
 import {
   keyboardOpen, overlapInset, shouldRestore, revealDelta, zoomNeutral, visibleBand, windowResizeIsPan, resyncAfterPan,
   KBD_OPEN_PX, KBD_MAX_RATIO, TARGET_RATIO, REVEAL_GAP, ZOOM_NEUTRAL_SCALE, RESTORE_EPS,
-  revealGate, restsNearTarget, SETTLE_MAX_FRAMES, SETTLE_STILL_FRAMES, SETTLE_EPS,
+  revealGate, restsNearTarget, SETTLE_MIN_MS, SETTLE_MIN_FRAMES, SETTLE_MAX_MS, SETTLE_STILL_FRAMES, SETTLE_EPS,
   type KbdSnapshot, type SettleSample,
 } from '../lib/keyboardViewport'
 import { readKbdSnapshot, frameBoxRect } from '../lib/viewportFrame'
@@ -245,66 +245,107 @@ eq('닫힘 · 흔적 있으면 복원', shouldRestore({ frameH: IPH, frameTop: 0
   delete g.requestAnimationFrame
 }
 
-// ── 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안) ─────────────
-// 가드는 키보드가 선 채 들어온 focusin 에서 매 프레임 표본 하나를 재 revealGate 에 넘기고, 그 답대로만 한다.
+// ── 칸에서 칸으로 옮길 때의 정착 관문(2026-11-03, 키보드 칸 이동 튐 패널 1단계 A안 · 독립 검수 반영) ─────────────
+// 가드는 키보드가 선 채 들어온 focusin 에서 매 rAF 표본 하나를 재 revealGate 에 넘기고, 그 답대로만 한다.
+// 기다림은 rAF 타임스탬프로 잰다(첫 표본 0ms). 아래 run 은 hz 로 표본 사이 간격을 정한다.
 {
   const S = (fieldTop: number, o: Partial<SettleSample> = {}): SettleSample =>
-    ({ fieldTop, fieldBottom: fieldTop + 40, bandTop: 0, bandBottom: 416, scrollTop: 120, ...o })
-  // 표본 줄을 차례로 넘겨 처음으로 wait 가 아닌 답과 그 프레임을 돌려준다. 끝까지 wait 면 'wait'.
-  const run = (samples: SettleSample[], startTop = 120) => {
-    let prev: SettleSample | null = null, still = 0
+    ({ fieldTop, fieldBottom: fieldTop + 40, bandTop: 0, bandBottom: 416, scrollTop: 120, maxScrollTop: 2000, ...o })
+  // 표본 줄을 차례로 넘겨 처음으로 wait 가 아닌 답과 그 표본 번호(1부터)를 돌려준다. 끝까지 wait 면 'wait'.
+  const run = (samples: SettleSample[], hz = 60) => {
+    let prev: SettleSample | null = null, still = 0, base = NaN
     for (let i = 0; i < samples.length; i++) {
-      const g = revealGate({ prev, cur: samples[i], still, frame: i + 1, guardScrollTop: startTop })
+      const g = revealGate({ prev, cur: samples[i], still, elapsedMs: i * 1000 / hz, frame: i + 1, base })
       if (g.verdict !== 'wait') return { verdict: g.verdict, frame: i + 1, at: samples[i] }
-      prev = samples[i]; still = g.still
+      prev = samples[i]; still = g.still; base = g.base
     }
     return { verdict: 'wait' as const, frame: samples.length, at: samples[samples.length - 1] }
   }
-  eq('관문 · 첫 표본은 견줄 것이 없어 기다린다', run([S(205)]).verdict, 'wait')
-  eq('관문 · 한 번만 멈춰선 아직 기다린다', run([S(205), S(205)]).verdict, 'wait')
-  eq('관문 · 두 프레임 연속 멈추면 진행(세 번째 표본)', [run([S(205), S(205), S(205)]).verdict, run([S(205), S(205), S(205)]).frame].join(' '), 'go 3')
-  eq('관문 · 팬이 진행 중이면 기다린다', run([S(205), S(180), S(150), S(120)]).verdict, 'wait')
-  eq('관문 · 1px 미만 흔들림은 멈춘 것으로 본다', run([S(205), S(205.6), S(205.2)]).verdict, 'go')
-  eq('관문 · 정확히 1px 움직이면 움직인 것이다', run([S(205), S(206), S(207)]).verdict, 'wait')
+  const rep = (f: number, n: number, o: Partial<SettleSample> = {}) => Array.from({ length: n }, () => S(f, o))
+  // 최소 대기 130ms 와 8프레임 중 늦은 쪽. 60Hz 에서는 둘 다 아홉째 표본(133.3ms)에서 선다.
+  const minSample = (hz: number) => Math.max(Math.ceil(SETTLE_MIN_MS / (1000 / hz)) + 1, SETTLE_MIN_FRAMES + 1)
+  const MIN_FRAME_60 = minSample(60)
+  eq('관문 · 최소 대기 안에서는 멈춰 있어도 기다린다', run(rep(205, MIN_FRAME_60 - 1)).verdict, 'wait')
+  eq('관문 · 멈춘 채 최소 대기가 지나면 진행', [run(rep(205, 12)).verdict, run(rep(205, 12)).frame].join(' '), `go ${MIN_FRAME_60}`)
+  eq('관문 · 팬이 진행 중이면 기다린다', run([205, 180, 150, 120].map(f => S(f))).verdict, 'wait')
+  eq('관문 · 1px 미만 흔들림은 멈춘 것으로 본다', run(Array.from({ length: 12 }, (_, i) => S(205 + (i % 2) * 0.6))).verdict, 'go')
+  eq('관문 · 정확히 1px 씩 움직이면 상한까지 기다린다', run(Array.from({ length: 30 }, (_, i) => S(205 + i))).frame, Math.ceil(SETTLE_MAX_MS / (1000 / 60)) + 1)
   eq('관문 · 키보드 resize 로 띠 아래가 움직이는 중이면 기다린다',
-    run([S(205), S(205, { bandBottom: 466 }), S(205, { bandBottom: 416 })]).verdict, 'wait')
-  eq('관문 · 띠 위가 움직이는 중이면 기다린다', run([S(205), S(205, { bandTop: 30 }), S(205, { bandTop: 0 })]).verdict, 'wait')
-  const endless = Array.from({ length: 40 }, (_, i) => S(400 - i * 3))
-  eq('관문 · 안 멈춰도 상한에서 진행', [run(endless).verdict, run(endless).frame].join(' '), `go ${SETTLE_MAX_FRAMES}`)
+    run([...rep(205, 3), S(205, { bandBottom: 466 }), S(205, { bandBottom: 416 })]).verdict, 'wait')
+  eq('관문 · 띠 위가 움직이는 중이면 기다린다', run([...rep(205, 3), S(205, { bandTop: 30 }), S(205, { bandTop: 0 })]).verdict, 'wait')
+  eq('관문 · 최소 대기 끝 무렵 resize 로 띠가 움직이면 다시 두 프레임을 기다린다',
+    run([...rep(205, 8), S(205, { bandBottom: 466 }), S(205, { bandBottom: 466 }), S(205, { bandBottom: 466 })]).frame, 11)
+  const endless = Array.from({ length: 60 }, (_, i) => S(400 - i * 3))
+  eq('관문 · 안 멈춰도 60Hz 상한(350ms)에서 진행', [run(endless).verdict, run(endless).frame].join(' '), `go ${Math.ceil(SETTLE_MAX_MS / (1000 / 60)) + 1}`)
+  // 저전력 30Hz. 상한이 프레임 수였다면 20프레임 = 0.67초였다. 시간으로 재므로 30Hz 에서도 350ms 안팎이다.
+  const r30 = run(endless, 30)
+  eq('관문 · 30Hz 에서도 상한은 시간(350ms)이라 0.67초까지 늘지 않는다', [r30.verdict, (r30.frame - 1) * 1000 / 30 < 400], ['go', true])
+  eq('관문 · 30Hz 최소 대기는 8프레임 쪽이 늦어 아홉째 표본(약 267ms)', run(rep(205, 12), 30).frame, minSample(30))
+  // 손 스크롤. 기준은 첫 표본의 scrollTop 이다.
   eq('관문 · 기다리는 동안 스크롤러가 가드 밖에서 움직이면 취소(손 스크롤)', run([S(205), S(205, { scrollTop: 160 })]).verdict, 'abort')
-  eq('관문 · 손 스크롤 취소는 정지보다 먼저 본다', run([S(205), S(205), S(205, { scrollTop: 121.5 })]).verdict, 'abort')
-  eq('관문 · 1px 미만 scrollTop 차는 손 스크롤이 아니다', run([S(205), S(205), S(205, { scrollTop: 120.4 })]).verdict, 'go')
-  // 허용 구간. 띠 0~416 의 목표선은 145.6, 그 아래 16 까지는 이미 읽기 편한 자리다.
-  eq('관문 · 멈춘 자리가 목표선 근처면 움직이지 않는다(stay)', run([S(150), S(150), S(150)]).verdict, 'stay')
-  eq('관문 · 목표선보다 위(띠 위 여백 아래)도 stay(공짜 모션 없음)', run([S(60), S(60), S(60)]).verdict, 'stay')
-  eq('관문 · 목표선 아래 16 을 넘으면 go', run([S(170), S(170), S(170)]).verdict, 'go')
-  eq('관문 · 띠 위로 잘린 칸은 go(음수 1회는 revealDelta 가 정한다)', run([S(5), S(5), S(5)]).verdict, 'go')
-  eq('관문 · 상한 진행은 허용 구간이어도 go(멈춘 적이 없어 확정하지 않는다)', run(Array.from({ length: 25 }, (_, i) => S(150 + (i % 2) * 3))).verdict, 'go')
+  eq('관문 · 손으로 위로 올려도 최대값에 안 붙었으면 취소', run([S(205), S(205, { scrollTop: 80 })]).verdict, 'abort')
+  eq('관문 · 1px 미만 scrollTop 차는 손 스크롤이 아니다', run([...rep(205, 3), ...rep(205, 9, { scrollTop: 120.4 })]).verdict, 'go')
+  // 권고 1-a. focusin 순간 120 이던 scrollTop 을 브라우저가 focus 직후 150 으로 밀었다. 첫 표본(150)이 기준이라 취소가 아니다.
+  eq('관문 · focus 직후 브라우저가 민 scrollTop 은 손 스크롤이 아니다(첫 표본이 기준)', run(rep(205, 12, { scrollTop: 150 })).verdict, 'go')
+  // 권고 1-b. 관문 도중 vv resize 로 --kbd-inset 이 줄어 최대 scrollTop 이 400 에서 300 으로 내려가 scrollTop 이 그 끝에 잘렸다.
+  const clampSeq = [...rep(205, 3, { scrollTop: 400, maxScrollTop: 400 }), ...rep(205, 10, { scrollTop: 300, maxScrollTop: 300 })]
+  eq('관문 · 여백이 줄어 최대값에 잘린 scrollTop 은 손 스크롤이 아니다', run(clampSeq).verdict, 'go')
+  eq('관문 · 잘린 뒤에는 그 값이 새 기준이라 이어서 손으로 밀면 취소',
+    run([...clampSeq.slice(0, 5), S(205, { scrollTop: 340, maxScrollTop: 300 })]).verdict, 'abort')
+  eq('관문 · 줄었지만 최대값보다 아래면(손으로 올림) 취소', run([...rep(205, 3, { scrollTop: 400, maxScrollTop: 400 }), S(205, { scrollTop: 250, maxScrollTop: 300 })]).verdict, 'abort')
+  // 허용 구간. 띠 0~416 의 목표선은 145.6. 띠 위 여백(16) 아래부터 목표선 +16 까지, 아래 끝은 띠 아래 여백 위.
+  eq('관문 · 멈춘 자리가 목표선 근처면 움직이지 않는다(stay)', run(rep(150, 12)).verdict, 'stay')
+  eq('관문 · 목표선보다 위(띠 위 여백 아래)도 stay(공짜 모션 없음)', run(rep(60, 12)).verdict, 'stay')
+  eq('관문 · 목표선 아래 16 을 넘으면 go', run(rep(170, 12)).verdict, 'go')
+  eq('관문 · 띠 위로 잘린 칸은 go(음수 1회는 revealDelta 가 정한다)', run(rep(5, 12)).verdict, 'go')
+  eq('관문 · 상한 진행은 허용 구간이어도 go(멈춘 적이 없어 확정하지 않는다)', run(Array.from({ length: 30 }, (_, i) => S(150 + (i % 2) * 3))).verdict, 'go')
   eq('허용 구간 · 아래 여백이 모자라면 아니다', restsNearTarget({ fieldTop: 140, fieldBottom: 405, bandTop: 0, bandBottom: 416 }), false)
   eq('허용 구간 · 위 여백 안쪽이면 아니다', restsNearTarget({ fieldTop: 10, fieldBottom: 50, bandTop: 0, bandBottom: 416 }), false)
-  eq('정착 상수 · 1px · 두 프레임 · 20프레임', [SETTLE_EPS, SETTLE_STILL_FRAMES, SETTLE_MAX_FRAMES], [1, 2, 20])
+  eq('정착 상수 · 1px · 두 프레임 · 최소 130ms·8프레임 · 상한 350ms', [SETTLE_EPS, SETTLE_STILL_FRAMES, SETTLE_MIN_MS, SETTLE_MIN_FRAMES, SETTLE_MAX_MS], [1, 2, 130, 8, 350])
 
-  // 신고 재현표. 띠 0~416, A 칸 145(목표선 145.6 근처), 아래 B 칸 205. B 를 누르면 iOS 자체 팬이 6프레임에 걸쳐 칸을
-  // 130 올린다(스크롤러 scrollTop 은 안 건드린다). 종전 가드는 첫 프레임 기하(205)로 59.4 를 올렸고, 팬이 그 위에 130 을
-  // 더해 띠 위 +16 에 붙었다. 관문은 팬이 멈춘 뒤 한 번만 잰다.
+  // 신고 재현표. 띠 0~416, 아래 B 칸 205. B 를 누르면 iOS 자체 팬이 6프레임에 걸쳐 칸을 130 올린다(scrollTop 은 안 건드린다).
+  // 종전 가드는 첫 프레임 기하(205)로 59.4 를 올렸고, 팬이 그 위에 130 을 더해 띠 위 +16 에 붙었다.
   const B0 = 205, IOS_PAN = 130
   const target = 0 + TARGET_RATIO * 416
   const oldDelta = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: B0, fieldBottom: B0 + 40, aligned: false })
   eq('신고 재현 · 종전은 첫 프레임 기하로 목표선까지 올렸다', Math.round(oldDelta * 10) / 10, Math.round((B0 - target) * 10) / 10)
   eq('신고 재현 · 종전 착지 = 띠 위 +16 (이중 이동의 지문)', Math.round(B0 - oldDelta - IOS_PAN), REVEAL_GAP)
-  const panFrames = [0, 20, 50, 85, 110, 125, 130, 130, 130].map(d => S(B0 - d))
-  const g = run(panFrames)
-  const newDelta = g.verdict === 'go'
-    ? revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: g.at.fieldTop, fieldBottom: g.at.fieldBottom, aligned: false }) : 0
-  const landed = g.at.fieldTop - newDelta
-  eq('신고 재현 · 관문은 팬이 멈춘 뒤(아홉째 표본)에야 답한다', g.frame, 9)
-  eq('신고 재현 · B 가 띠 위 +16 에 착지하지 않는다', Math.abs(landed - REVEAL_GAP) > 2, true)
-  eq('신고 재현 · B 는 띠 안 읽기 편한 자리(위 여백 아래 · 목표선 + 16 이내)', landed >= REVEAL_GAP && landed <= target + 16, true)
-  eq('신고 재현 · 이동은 한 번(iOS 팬 뒤에 가드가 다시 밀지 않는다)', g.verdict, 'stay')
-  // iOS 팬이 없으면(B 가 그 자리) 관문은 세 표본 뒤 한 번, 목표선까지 올린다. 종전과 같은 자리다.
-  const still = run([S(B0), S(B0), S(B0)])
+  const landing = (seq: SettleSample[], hz = 60) => {
+    const g = run(seq, hz)
+    const d = g.verdict === 'go' ? revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: g.at.fieldTop, fieldBottom: g.at.fieldBottom, aligned: false }) : 0
+    // 관문이 팬 도중(마지막 표본 전)에 답했다면 남은 팬이 그 위에 더해진다.
+    const rest = g.at.fieldTop - seq[seq.length - 1].fieldTop
+    return { ...g, landed: g.at.fieldTop - d - rest }
+  }
+  const PAN = [185, 155, 120, 95, 80, 75]
+  // 늦게 시작하는 팬(검수 차단 1). 정지 k 프레임 뒤 205 에서 75 로. 뒤에 정지 표본을 넉넉히 붙인다.
+  for (const hz of [60, 30]) for (const k of [0, 1, 2, 3, 4]) {
+    const seq = [...rep(B0, k + 1), ...PAN.map(f => S(f)), ...rep(75, 20)]
+    const L = landing(seq, hz)
+    eq(`늦은 팬 ${hz}Hz · 정지 ${k}프레임 뒤 시작 · 팬 도중에 답하지 않는다`, L.at.fieldTop, 75)
+    eq(`늦은 팬 ${hz}Hz · 정지 ${k}프레임 뒤 시작 · 띠 위 +16 에 착지하지 않는다`, Math.abs(L.landed - REVEAL_GAP) > 2, true)
+    // 30Hz 정지 4프레임이면 팬이 끝나는 순간 상한(350ms)에 닿아 go 가 나지만, 그때 칸(75)은 목표선 위라 델타 0 이다.
+    eq(`늦은 팬 ${hz}Hz · 정지 ${k}프레임 뒤 시작 · 가드가 더 밀지 않는다(iOS 팬 한 번만)`, [L.landed, L.verdict === 'stay' || L.verdict === 'go'], [75, true])
+  }
+  // 최소 대기가 없던 판(두 프레임 정지만 보던 관문)이면 정지 2프레임 뒤 시작하는 팬에서 종전 결함이 그대로였다.
+  {
+    const seq = [...rep(B0, 3), ...PAN.map(f => S(f))]
+    let prev: SettleSample | null = null, still = 0, answeredAt = -1
+    for (let i = 0; i < seq.length; i++) {
+      const moved = !prev || Math.abs(seq[i].fieldTop - prev.fieldTop) >= SETTLE_EPS
+      still = moved ? 0 : still + 1
+      if (still >= SETTLE_STILL_FRAMES) { answeredAt = i; break }
+      prev = seq[i]
+    }
+    const d = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: seq[answeredAt].fieldTop, fieldBottom: seq[answeredAt].fieldBottom, aligned: false })
+    eq('늦은 팬 · 최소 대기 없는 관문은 팬 전 기하(205)로 답해 +16 에 붙었다', [seq[answeredAt].fieldTop, Math.round(B0 - d - IOS_PAN)], [205, REVEAL_GAP])
+  }
+  const g = run([...[0, 20, 50, 85, 110, 125, 130].map(d => S(B0 - d)), ...rep(75, 12)])
+  eq('신고 재현 · 바로 시작하는 팬도 멈춘 뒤 한 번(stay at 75)', [g.verdict, g.at.fieldTop], ['stay', 75])
+  // iOS 팬이 없으면(B 가 그 자리) 관문은 최소 대기 뒤 한 번, 목표선까지 올린다. 종전과 같은 자리다.
+  const still = run(rep(B0, 12))
   const d2 = revealDelta({ bandTop: 0, bandBottom: 416, fieldTop: still.at.fieldTop, fieldBottom: still.at.fieldBottom, aligned: false })
-  eq('팬 없는 칸 이동 · 세 표본 뒤 목표선까지 한 번', [still.verdict, Math.round(B0 - d2)], ['go', Math.round(target)])
+  eq('팬 없는 칸 이동 · 최소 대기 뒤 목표선까지 한 번', [still.verdict, Math.round(B0 - d2)], ['go', Math.round(target)])
 }
 
 // ── 하단 내비 접힘 표식(2026-11-03, 키보드 칸 이동 튐 패널 결정 2) ─────────────────────────
