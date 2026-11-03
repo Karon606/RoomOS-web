@@ -57,7 +57,10 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     ? [...st.blobs.values()].flat().reduce((s, b) => s + b.size, 0)
     : undefined
 
-  const send = useCallback(async () => {
+  // 공유 결과를 돌려준다 — 문자 시트가 '공유가 실제로 열려 앱을 골랐다'(shared)일 때만 이력을 남긴다.
+  // 'not-ready' 는 준비 중·실패로 공유 창을 아예 안 연 경우다.
+  type DeliverResult = Awaited<ReturnType<typeof shareFiles>> | 'not-ready'
+  const deliver = useCallback(async (text: string | undefined): Promise<DeliverResult> => {
     const es = entriesRef.current
     const s = queue.state(es.map(e => e.id))
     // all-or-nothing: 하나라도 실패면 시트를 열지 않고 재시도 + 이름 특정 토스트.
@@ -65,9 +68,9 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
       queue.enqueue(toItems(), onChange)
       const name = es.find(e => e.id === s.failed[0])?.personName ?? ''
       pushToast('error', `${name}님 서류 변환에 실패했습니다. 다시 시도해 주세요.`)
-      return
+      return 'not-ready'
     }
-    if (s.done < es.length) return   // 아직 준비 중(버튼 비활성이지만 방어)
+    if (s.done < es.length) return 'not-ready'   // 아직 준비 중(버튼 비활성이지만 방어)
 
     // 첨부 순서 = 표시 순서 고정. 파일명 규칙은 shareFileNames 정본(한 장짜리는 종전과 같은 이름).
     // **형식은 준비된 Blob 이 말한다** — mode 로 고정하면 스캔 이미지가 .pdf 로 나간다(419호 사고).
@@ -82,7 +85,6 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     // 채우지만 첨부를 못 붙인다. 둘을 동시에 하는 길이 없어, 붙여넣기 한 번으로 줄인다.
     // 복사는 share() 앞에 둔다 — 뒤에 두면 시트가 제스처를 소비해 권한이 막힌다.
     let copied = false
-    const text = shareTextRef.current
     if (text) {
       try { await navigator.clipboard.writeText(text); copied = true } catch { /* 막히면 조용히 넘어간다 */ }
     }
@@ -100,7 +102,14 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
       // 취소는 무반응(§27.5). 복사가 막혔을 때만 말한다 — 캡션이 한 약속이 거짓이 되는 자리라서다.
       else if (result === 'shared' && text && !copied) pushToast('info', '함께 보낼 문구를 복사하지 못했습니다.')
     }
+    return result
   }, [mode, queue, onChange, toItems])
+
+  // 공유 갈래의 '공유' — 문구는 훅을 부를 때 받은 shareText 다. 인자를 받지 않는 이유는 알약이
+  // onClick={onSend} 로 넘겨 클릭 이벤트가 첫 인자로 들어오기 때문이다.
+  const send = useCallback(() => deliver(shareTextRef.current), [deliver])
+  // 문자 시트(안드로이드)의 '문자 보내기' — 문구는 시트에서 고친 본문이다. 공유 결과를 돌려준다.
+  const sendWithText = useCallback((text: string) => deliver(text), [deliver])
 
   /**
    * 이 기기에 저장 — '보내기'(상대에게)와 목적이 다른 별개의 문이다.
@@ -134,5 +143,5 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     }
   }, [mode, queue, onChange, toItems])
 
-  return { done: st.done, failedCount: st.failed.length, totalBytes, fileCount: st.fileCount, send, save }
+  return { done: st.done, failedCount: st.failed.length, totalBytes, fileCount: st.fileCount, send, sendWithText, save }
 }
