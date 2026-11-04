@@ -13,6 +13,7 @@
 //   ⓕ 입주자 수납 모달 '수납 등록' 버튼은 canEdit 아래에 서고, 투어 단계 계약은 버튼 대신 캡션이다.
 //   ⓖ 인수월(양도인 자동 처리) 판정은 한 함수다. 저장 FIFO(findFirstUnpaidMonth)와 귀속월 목록(getTargetMonthOptions,
 //      기본값의 입력)이 lib/targetMonthOptions 의 acqMonthSettledByFifo·buildTargetMonthOptions 를 부른다(독립 검수 B1, 412호).
+//   ⓗ 0원 저장 거절이 두 겹이다. 정본 폼 제출(handleSubmit)과 서버 savePayment 가 금액 0 이하를 거절한다(독립 검수 R2).
 //
 // 실행: node scripts/check-pay-entry-single-form.mjs
 import { readFileSync } from 'node:fs'
@@ -84,6 +85,17 @@ need(/WAITING_TOUR[^\n]*TOUR_DONE[\s\S]*?<WhyCaption[^>]*>투어 단계 계약�
   need(/ms === acqMonth[\s\S]{0,400}acqMonthSettledByFifo\(\{/.test(bt), `${TMO}: ⓖ 귀속월 목록이 인수월을 FIFO 와 같은 판정으로 넘기지 않는다(412호 기본값에 한 달치가 더 든다).`)
 }
 
-console.log(`[수납 등록 폼 한 벌] ⓐ 저장부 · ⓑ 기본값 정본 · ⓒ 정산 room · ⓓ 로딩 · ⓔ 결제 수단 · ⓕ 권한·투어 · ⓖ 인수월 판정 / 위반 ${v.length}건`)
+// ⓗ
+{
+  const RA = 'app/(app)/rooms/actions.ts'
+  const ra = read(RA)
+  const sp = ra.slice(ra.indexOf('export async function savePayment('), ra.indexOf('// 수납 등록 시 사용자가 명시 선택할 수 있는 귀속월 후보'))
+  const head = sp.slice(0, sp.indexOf('const propertyId'))
+  need(/if \(!\(data\.actualAmount > 0\)\) return \{ ok: false, error:/.test(head), `${RA}: ⓗ savePayment 가 금액 0 이하를 거절하지 않는다(화면 버튼만 막으면 직접 호출로 0원 기록이 생긴다).`)
+  const hs = form.slice(form.indexOf('const handleSubmit = async'), form.indexOf('startTransition(async () => {', form.indexOf('const handleSubmit = async')))
+  need(/if \(!\(payAmount > 0\)\) \{ setError\(/.test(hs), `${FORM}: ⓗ 정본 폼 제출(handleSubmit)이 금액 0 이하를 막지 않는다(엔터 제출은 버튼 비활성을 우회한다).`)
+}
+
+console.log(`[수납 등록 폼 한 벌] ⓐ 저장부 · ⓑ 기본값 정본 · ⓒ 정산 room · ⓓ 로딩 · ⓔ 결제 수단 · ⓕ 권한·투어 · ⓖ 인수월 판정 · ⓗ 0원 거절 / 위반 ${v.length}건`)
 for (const m of v) console.log('  - ' + m)
 if (v.length > 0) process.exit(1)

@@ -138,6 +138,17 @@ async function main() {
     g.__CR_FLOW_PID = P
   }
 
+  // ── F5 0원 저장 거절(독립 검수 R2) — 서버가 막고 record 가 생기지 않는다 ─────────────
+  {
+    const L = await lease(m(-3), m(-1))
+    const before = await prisma.paymentRecord.count({ where: { leaseTermId: L.id } })
+    const z = await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: thisM, expectedAmount: 470000, actualAmount: 0, payDate: today, payMethod: '계좌이체' })
+    eq('F5 0원 저장 거절', z.ok ? 'ok' : z.error, '받은 금액이 0원이라 저장할 수 없습니다 · 금액을 입력하면 됩니다')
+    const neg = await rooms.savePayment({ leaseTermId: L.id, tenantId: L.tenantId, targetMonth: thisM, expectedAmount: 470000, actualAmount: -1000, payDate: today, payMethod: '계좌이체' })
+    eq('F5 음수 저장 거절', neg.ok, false)
+    eq('F5 record 0건 그대로', await prisma.paymentRecord.count({ where: { leaseTermId: L.id } }), before)
+  }
+
   console.log(`[수납 등록 기본값 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

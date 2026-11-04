@@ -916,6 +916,9 @@ export async function savePayment(data: {
   cashReceiptIssuedDate?: string | null
 }): Promise<SavePaymentOutcome> {
   await requireEdit()
+  // 0원 이하 입력은 거절한다(독립 검수 R2). 화면 저장 버튼만 막으면 서버 액션 직접 호출·다른 화면에서 0원 흔적 record 가 생긴다.
+  // 정상 경로에 0원 저장은 없다(예약 선납·일괄 수납은 0 초과일 때만 부른다). 원본 월 0원 흔적은 이 안의 FIFO 가 따로 만든다.
+  if (!(data.actualAmount > 0)) return { ok: false, error: '받은 금액이 0원이라 저장할 수 없습니다 · 금액을 입력하면 됩니다' }
   { const memoErr = paymentMemoGuard(data.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
   { const scopeErr = await leaseTenantScopeDenial(propertyId, data.leaseTermId, data.tenantId); if (scopeErr) return { ok: false, error: scopeErr } }

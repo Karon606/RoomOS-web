@@ -279,6 +279,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
     e.preventDefault()
     if (!room.tenantId) { setError('입주자 정보가 없습니다.'); return }
     if (splitBlocked) return
+    // 0원 저장은 버튼만이 아니라 제출에서도 막는다(엔터 제출·버튼 우회, 독립 검수 R2). 서버 savePayment 도 같은 문장으로 거절한다.
+    if (!(payAmount > 0)) { setError('받은 금액이 0원이라 저장할 수 없습니다 · 금액을 입력하면 됩니다'); return }
     setError('')
     // 자릿수 오입력 확인 — 보증금/청소비 합산은 정상적으로 커지므로 제외. 기준값(추천액) 없으면 생략.
     // 초과분 처리 — 놓치기 쉬운 폼 안 체크박스를 확인창으로 올렸다(운영자 오더 2026-08-03).
