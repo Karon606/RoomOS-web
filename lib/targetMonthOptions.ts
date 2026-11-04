@@ -6,16 +6,16 @@
 // acqMonthSettledByFifo 하나로 두고 FIFO 와 목록이 같이 부른다.
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, type BillingLeaseFields } from './billing'
 import { leaseBillingEnd } from './leaseStatus'
-import { effDueDateForMonth, monthDuePassed } from './roomMonth'
+import { leaseMonthDueState, type DueState } from './dueState'
 
 export type TargetMonthOptionRow = {
   month: string                                      // 'YYYY-MM'
   status: 'unpaid' | 'partial' | 'paid' | 'future'
   paidAmount: number
   expectedAmount: number
-  // 그 달 기한이 오늘로 도래했나(lib/roomMonth monthDuePassed, 수납 관리 목록과 같은 식). 수납 등록 기본값이
-  // 도래한 미완납 달만 합친다. 아직 기한 전인 이번 달 청구가 지난달 미납분 기본값에 섞이지 않게 한다(404호 2026-11-01).
-  duePassed: boolean
+  // 그 달 기한 상태(lib/dueState, 수납 관리 목록·홈과 같은 정본). 수납 등록 기본값이 기한이 지난(overdue) 미완납 달만
+  // 합친다. 기한 전이거나 납부일 당일인 이번 달 청구는 지난달 미납분 기본값에 섞지 않는다(404호 2026-11-01, 2026-11-04 승인).
+  dueState: DueState
 }
 
 type PayRec = { targetMonth: string; actualAmount: number; expectedAmount: number; payDate: Date | string; isPrevOwner: boolean }
@@ -53,7 +53,7 @@ export function buildTargetMonthOptions(i: {
   cutoffDate: Date | null
   baseDueDayNum: number
   viewMonth: string
-  today: { year: number; month: number; day: number }
+  todayYmd: string
 }): TargetMonthOptionRow[] {
   const { lease, records, cutoffDate, viewMonth } = i
   const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
@@ -97,8 +97,8 @@ export function buildTargetMonthOptions(i: {
       if (acqMonthSettledByFifo({ cutoffDate, baseDueDayNum: i.baseDueDayNum, monthRecords, monthBill })) paid = Math.max(paid, expected)
     }
     const status: TargetMonthOptionRow['status'] = ms > viewMonth ? 'future' : paid >= expected ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
-    const duePassed = monthDuePassed(ms, effDueDateForMonth({ dueDay: lease.dueDay, overrideDueDay: lease.overrideDueDay, overrideDueDayMonth: lease.overrideDueDayMonth }, ms), i.today)
-    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected, duePassed })
+    const dueState = leaseMonthDueState(lease, ms, i.todayYmd)
+    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected, dueState })
   }
   return out
 }

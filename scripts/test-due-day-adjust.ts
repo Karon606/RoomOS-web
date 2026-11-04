@@ -12,7 +12,8 @@ import {
   dueDayAdjustsFrom, withDueDayAdjusts, type BillingDueDayAdjust,
   dueDayAdjustDisplayMemo, dueDayAdjustMonthStatus, dueDayAdjustMonthSums, dueDayAdjustStatusChip,
 } from '../lib/dueDayAdjust'
-import { roomMonthBill, effDueDateForMonth, acqMonthStateOf, originalDueDayOf, lockedExpectedMapOf } from '../lib/roomMonth'
+import { roomMonthBill, acqMonthStateOf, originalDueDayOf, lockedExpectedMapOf } from '../lib/roomMonth'
+import { dueYmdOfLeaseMonth } from '../lib/dueState'
 import { billForLeaseMonth, firstMonthRule, firstMonthRuleDueDay, firstMonthAdjustExposure, type BillingLeaseFields } from '../lib/billing'
 
 let pass = 0
@@ -233,15 +234,12 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
   const row = (targetMonth: string, actualAmount: number, memo: string | null = null, payDate = '2026-10-07', isPrevOwner = false) =>
     ({ targetMonth, actualAmount, memo, isPrevOwner, payDate: D(payDate) })
   const A513 = '[납입일변경] 9일→20 변경, 일할 128,333원, 협의 130,000원 (추가납부)'
-  // 기한 도래는 호실 목록과 같은 정본(roomMonthBill)에서 받는다. dueYmd 는 그 달 기한(끝 시각), todayYmd 는 오늘(KST).
-  const passed = (month: string, dueYmd: string | null, todayYmd: string) => {
-    const [y, m, d] = todayYmd.split('-').map(Number)
-    const due = dueYmd ? new Date(Number(dueYmd.slice(0, 4)), Number(dueYmd.slice(5, 7)) - 1, Number(dueYmd.slice(8, 10)), 23, 59, 59, 999) : null
-    return roomMonthBill({ ms: month, bill: () => 0, acqMonthStr: '2000-01', acqMonthPrePaid: false, prevOwnerMonths: new Set(), skipByMoveOut: () => false, dueDate: due, today: { year: y, month: m, day: d } }).duePassed
-  }
+  // 기한 상태는 호실 목록과 같은 정본(roomMonthBill, lib/dueState)에서 받는다. dueYmd 는 그 달 기한, todayYmd 는 오늘(KST).
+  const stateOf = (month: string, dueYmd: string | null, todayYmd: string) =>
+    roomMonthBill({ ms: month, bill: () => 0, acqMonthStr: '2000-01', acqMonthPrePaid: false, prevOwnerMonths: new Set(), skipByMoveOut: () => false, dueYmd, todayYmd }).dueState
   const st = (rows: ReturnType<typeof row>[], bill: number, month: string, dueYmd: string | null, todayYmd: string, cutoff: Date | null = null) => {
     const s = dueDayAdjustMonthSums(rows, cutoff).get(month)
-    return s ? dueDayAdjustMonthStatus({ bill, monthTotal: s.total, extraTotal: s.extra, duePassed: passed(month, dueYmd, todayYmd) }) : null
+    return s ? dueDayAdjustMonthStatus({ bill, monthTotal: s.total, extraTotal: s.extra, dueState: stateOf(month, dueYmd, todayYmd) }) : null
   }
   // 513호 10월 운영 DB 실측(2026-10-21 읽기). 청구 350,000, 350,000(10-07) + 조정 −130,000 + 130,000(10-20). 조정 행 isPaid=false 였다.
   const r513 = [row('2026-10', 350000), row('2026-10', -130000, A513, '2026-10-20'), row('2026-10', 130000, '2026년 10월분', '2026-10-20')]
@@ -253,8 +251,8 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
   // 받은 돈 350,000 만(조정분 하나도 안 받음). 납부일 지남이면 미수납, 안 지났으면 수납 전.
   const r350 = [row('2026-10', 350000), row('2026-10', -130000, A513, '2026-10-20')]
   eq('상태 350k 납부일 지남 = 미수납', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-21'), { kind: 'unpaid' })
-  // 납부일 당일부터 미수납이다(호실 목록 viewDueDate <= todayKstEnd, 당일부터 미납 묶음과 같다. 독립 검수 2026-10-21).
-  eq('상태 350k 납부일 당일 = 미수납(목록과 같다)', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-20'), { kind: 'unpaid' })
+  // 납부일 당일은 수납 전이고 다음 날부터 미수납이다(호실 목록과 같은 정본 lib/dueState, 운영자 승인 2026-11-04. 새 종류 없음, 독립 검토 M5).
+  eq('상태 350k 납부일 당일 = 수납 전(목록과 같다)', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-20'), { kind: 'before' })
   eq('상태 350k 납부일 전날 = 수납 전', st(r350, 350000, '2026-10', '2026-10-20', '2026-10-19'), { kind: 'before' })
   // 400,000 받음: 조정분 중 50,000 만 받음, 80,000 부족.
   const r400 = [row('2026-10', 400000), row('2026-10', -130000, A513, '2026-10-20')]
@@ -300,45 +298,47 @@ eq('방향 글자 없는 조정 메모는 판정 안 함', dueDayAdjustSignMisma
   const rec = (targetMonth: string, actualAmount: number, payDate: string, memo: string | null = null, isPrevOwner = false, expectedAmount = 350000): R =>
     ({ targetMonth, actualAmount, expectedAmount, payDate: D(payDate), isPrevOwner, memo })
   // 목록이 내는 그 달 판정을 목록과 같은 함수로 만들고, 같은 입력으로 칩 상태를 잰다.
-  const both = (c: { ms: string; rows: R[]; due: Date | null; today: [number, number, number]; cutoff?: Date | null; acqMonthStr?: string; skipByMoveOut?: (m: string) => boolean; acqPrePaid?: boolean }) => {
+  const both = (c: { ms: string; rows: R[]; due: string | null; today: string; cutoff?: Date | null; acqMonthStr?: string; skipByMoveOut?: (m: string) => boolean; acqPrePaid?: boolean }) => {
     const cutoff = c.cutoff ?? null
     const prevOwnerMonths = new Set(c.rows.filter(p => p.isPrevOwner).map(p => p.targetMonth))
     const post = c.rows.filter(p => !p.isPrevOwner && (!cutoff || p.payDate >= cutoff))
     const locked = lockedExpectedMapOf(post)
     const facts = roomMonthBill({ ms: c.ms, bill: m => locked.get(m) ?? 350000, acqMonthStr: c.acqMonthStr ?? '2000-01', acqMonthPrePaid: !!c.acqPrePaid,
-      prevOwnerMonths, skipByMoveOut: c.skipByMoveOut ?? (() => false), dueDate: c.due, today: { year: c.today[0], month: c.today[1], day: c.today[2] } })
+      prevOwnerMonths, skipByMoveOut: c.skipByMoveOut ?? (() => false), dueYmd: c.due, todayYmd: c.today })
     const received = post.filter(p => p.targetMonth === c.ms).reduce((s, p) => s + p.actualAmount, 0)
     const listSettled = facts.skipped || received >= facts.billed
     const s = dueDayAdjustMonthSums(c.rows, cutoff).get(c.ms)!
-    const chip = dueDayAdjustMonthStatus({ bill: facts.billed, monthTotal: s.total, extraTotal: s.extra, duePassed: facts.duePassed })
-    return { listSettled, listDuePassed: facts.duePassed, chip: chip?.kind }
+    const chip = dueDayAdjustMonthStatus({ bill: facts.billed, monthTotal: s.total, extraTotal: s.extra, dueState: facts.dueState })
+    return { listSettled, listOverdue: facts.dueState === 'overdue', chip: chip?.kind }
   }
-  const end = (y: number, m: number, d: number) => new Date(y, m - 1, d, 23, 59, 59, 999)
   const base = [rec('2026-10', 350000, '2026-10-07'), rec('2026-10', -130000, '2026-10-20', A)]
   const cases: [string, Parameters<typeof both>[0], string][] = [
-    ['513 완납', { ms: '2026-10', rows: [...base, rec('2026-10', 130000, '2026-10-20')], due: end(2026, 10, 20), today: [2026, 10, 21] }, 'paid'],
-    ['납부일 당일 미수', { ms: '2026-10', rows: base, due: end(2026, 10, 20), today: [2026, 10, 20] }, 'unpaid'],
-    ['납부일 전날', { ms: '2026-10', rows: base, due: end(2026, 10, 20), today: [2026, 10, 19] }, 'before'],
-    ['일부', { ms: '2026-10', rows: [...base, rec('2026-10', 50000, '2026-10-20')], due: end(2026, 10, 20), today: [2026, 10, 21] }, 'short'],
-    ['퇴실 무청구 달', { ms: '2026-10', rows: base, due: end(2026, 10, 20), today: [2026, 10, 21], skipByMoveOut: m => m === '2026-10' }, 'paid'],
-    ['양도인 달', { ms: '2026-10', rows: [...base, rec('2026-10', 350000, '2026-10-01', null, true)], due: end(2026, 10, 20), today: [2026, 10, 21] }, 'paid'],
-    ['인수 선납 달', { ms: '2026-10', rows: base, due: end(2026, 10, 20), today: [2026, 10, 21], acqMonthStr: '2026-10', acqPrePaid: true }, 'paid'],
+    ['513 완납', { ms: '2026-10', rows: [...base, rec('2026-10', 130000, '2026-10-20')], due: '2026-10-20', today: '2026-10-21' }, 'paid'],
+    ['납부일 당일 수납 전', { ms: '2026-10', rows: base, due: '2026-10-20', today: '2026-10-20' }, 'before'],
+    ['납부일 다음 날 미수', { ms: '2026-10', rows: base, due: '2026-10-20', today: '2026-10-21' }, 'unpaid'],
+    ['납부일 전날', { ms: '2026-10', rows: base, due: '2026-10-20', today: '2026-10-19' }, 'before'],
+    ['일부', { ms: '2026-10', rows: [...base, rec('2026-10', 50000, '2026-10-20')], due: '2026-10-20', today: '2026-10-21' }, 'short'],
+    ['퇴실 무청구 달', { ms: '2026-10', rows: base, due: '2026-10-20', today: '2026-10-21', skipByMoveOut: m => m === '2026-10' }, 'paid'],
+    ['양도인 달', { ms: '2026-10', rows: [...base, rec('2026-10', 350000, '2026-10-01', null, true)], due: '2026-10-20', today: '2026-10-21' }, 'paid'],
+    ['인수 선납 달', { ms: '2026-10', rows: base, due: '2026-10-20', today: '2026-10-21', acqMonthStr: '2026-10', acqPrePaid: true }, 'paid'],
   ]
   for (const [name, c, want] of cases) {
     const r = both(c)
     eq(`목록·칩 일치 ${name}: 칩`, r.chip, want)
     eq(`목록·칩 일치 ${name}: 목록 완납이면 칩 수납 완료`, r.listSettled, r.chip === 'paid')
-    if (!r.listSettled) eq(`목록·칩 일치 ${name}: 기한 도래와 미수납/수납 전`, r.listDuePassed, r.chip !== 'before')
+    if (!r.listSettled) eq(`목록·칩 일치 ${name}: 기한 지남과 미수납/수납 전`, r.listOverdue, r.chip !== 'before')
   }
-  // 기한 정본: 다음 달에 걸린 늦은 임시조정은 이 달 기한을 그날로 미룬다(목록 effDueDateForMonth 그대로).
+  // 기한 정본(lib/dueState dueYmdOfLeaseMonth, 목록과 같은 함수): 다음 달에 걸린 늦은 임시조정은 이 달 기한을 그날로 미룬다.
   const L = { dueDay: '20', overrideDueDay: '2026-11-05', overrideDueDayMonth: '2026-11' }
-  eq('기한 늦은 유예가 이 달 기한을 미룬다', effDueDateForMonth(L, '2026-10')?.getTime(), new Date(2026, 10, 5, 23, 59, 59, 999).getTime())
-  eq('기한 그 달 직접 임시조정', effDueDateForMonth({ dueDay: '20', overrideDueDay: '25', overrideDueDayMonth: '2026-10' }, '2026-10')?.getTime(), end(2026, 10, 25).getTime())
-  eq('기한 이른 유예는 무시(원래 납부일)', effDueDateForMonth({ dueDay: '20', overrideDueDay: '2026-10-15', overrideDueDayMonth: '2026-11' }, '2026-10')?.getTime(), end(2026, 10, 20).getTime())
-  eq('기한 말일', effDueDateForMonth({ dueDay: '말일' }, '2026-02')?.getTime(), end(2026, 2, 28).getTime())
-  // 유예로 미뤄진 달: 원래 납부일이 지나도 유예일 전이면 수납 전(목록도 미납 아님).
-  const deferred = both({ ms: '2026-10', rows: base, due: effDueDateForMonth(L, '2026-10'), today: [2026, 10, 25] })
-  eq('유예 중 칩 수납 전 · 목록 기한 안 옴', [deferred.chip, deferred.listDuePassed], ['before', false])
+  eq('기한 늦은 유예가 이 달 기한을 미룬다', dueYmdOfLeaseMonth(L, '2026-10'), '2026-11-05')
+  eq('기한 그 달 직접 임시조정', dueYmdOfLeaseMonth({ dueDay: '20', overrideDueDay: '25', overrideDueDayMonth: '2026-10' }, '2026-10'), '2026-10-25')
+  eq('기한 이른 유예는 무시(원래 납부일)', dueYmdOfLeaseMonth({ dueDay: '20', overrideDueDay: '2026-10-15', overrideDueDayMonth: '2026-11' }, '2026-10'), '2026-10-20')
+  eq('기한 말일', dueYmdOfLeaseMonth({ dueDay: '말일' }, '2026-02'), '2026-02-28')
+  // 유예로 미뤄진 달: 원래 납부일이 지나도 유예일 전이면 수납 전(목록도 미납 아님). 유예일 당일도 수납 전이다.
+  const deferred = both({ ms: '2026-10', rows: base, due: dueYmdOfLeaseMonth(L, '2026-10'), today: '2026-10-25' })
+  eq('유예 중 칩 수납 전 · 목록 기한 안 지남', [deferred.chip, deferred.listOverdue], ['before', false])
+  const deferredDay = both({ ms: '2026-10', rows: base, due: dueYmdOfLeaseMonth(L, '2026-10'), today: '2026-11-05' })
+  eq('유예일 당일 칩 수납 전 · 목록 기한 안 지남', [deferredDay.chip, deferredDay.listOverdue], ['before', false])
   // 인수월 양도인 처리 정본(목록과 같은 식).
   const acqRows = [rec('2026-04', 350000, '2026-04-02')]
   eq('인수월 양도인이 받았으면 선납', acqMonthStateOf({ allLeaseRecords: acqRows, postCutoffRecords: [], cutoffDate: D('2026-04-10'), acqMonthStr: '2026-04', cutoffMonthStr: '2026-04', expected: 350000, originalDueDay: 2 }).prePaid, true)

@@ -21,7 +21,8 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
-import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, firstMonthDueYmd } from '@/lib/billing'
+import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth } from '@/lib/billing'
+import { daysPastDue, deferredDueYmd, dueYmdOfLeaseMonth, monthDueState } from '@/lib/dueState'
 import { BILLABLE_STATUSES, checkedOutInMonthWhere, getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, leaseBillingEnd, leaseStayEnd, residedInMonth, roomAvailability, roomLeaseRowOrder, primaryRoomLease, OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
@@ -685,19 +686,6 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     return l.dueDay
   }
 
-  // 특정 월의 dueDay(override 적용)를 반환
-  function effectiveDueDayForMonth(
-    l: { dueDay: string | null; cycleDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
-    monthStr: string,
-  ): string | null {
-    if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return l.overrideDueDay
-    // 입주달 첫 달 규칙이 발동하면 기한은 입주일이다(운영자 승인 2026-09-07, 선납 모델).
-    // 안 두면 9/25 입주·납부일 5일 계약이 입주 첫날부터 '20일 연체'로 뜬다.
-    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null; cycleDay: string | null }, monthStr)
-    if (fm) return fm
-    return l.dueDay
-  }
-
   function calcDaysOverdue(dueDay: string | null): number | null {
     if (!dueDay) return null
     // KST 기준 오늘 (서버 UTC와 시간대 차이로 연체일이 하루 어긋나는 것 방지 — 형제 calcDaysOverdueForMonth 와 같은 문법)
@@ -723,78 +711,20 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
   }
 
-  // 특정 월의 dueDay 기준 today와의 일수 차이 (KST 기준)
-  function calcDaysOverdueForMonth(dueDay: string | null, monthStr: string): number | null {
-    if (!dueDay) return null
-    // KST 기준 오늘 (서버 UTC와 시간대 차이로 today가 하루 어긋나는 것 방지)
-    const { year: ty, month: tm, day: td } = kstYmd()
-    const todayCopy = new Date(ty, tm - 1, td)
-    if (dueDay.includes('-')) {
-      const [yy, mm, dd] = dueDay.split('-').map(Number)
-      const dueDate = new Date(yy, mm - 1, dd)
-      return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
-    }
-    const [y, m] = monthStr.split('-').map(Number)
-    let dayNum: number
-    if (dueDay.includes('말')) {
-      dayNum = new Date(y, m, 0).getDate()
-    } else {
-      dayNum = parseInt(dueDay, 10)
-      if (isNaN(dayNum) || dayNum < 1) return null
-    }
-    const dueDate = new Date(y, m - 1, dayNum)
-    return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
+  // 기한 날짜 고르기와 상태는 lib/dueState 정본이다(수납 관리 목록·unpaid.ts·수납 등록 기본값과 같은 함수, 2026-11-04).
+  // 그 달 임시조정 · 다음 달에 걸린 늦은 유예(2026-06-02) · 첫 달 입주일(2026-09-07) · 말일 클램프가 한 함수 안에 있다.
+  // 오늘은 이 요청에서 한 번만 잰다(두 번 재면 자정에 갈린다).
+  const dueTodayYmd = kstYmdStr()
+  type DueL = Parameters<typeof dueYmdOfLeaseMonth>[0]
+  // 그 달 경과일(오늘 − 기한, 음수 = 남은 날). 기한을 못 읽으면 null.
+  function daysOverdueForMonth(l: DueL, monthStr: string): number | null {
+    const due = dueYmdOfLeaseMonth(l, monthStr)
+    return due ? daysPastDue(due, dueTodayYmd) : null
   }
-
-  // 납부일 임시조정(override)을 절대 날짜로 해석 (unpaid.ts 와 동기화 — 한쪽 수정 시 양쪽).
-  function overrideAbsDate(
-    l: { overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
-  ): Date | null {
-    if (!l.overrideDueDay || !l.overrideDueDayMonth) return null
-    if (l.overrideDueDay.includes('-')) {
-      const [yy, mm, dd] = l.overrideDueDay.split('-').map(Number)
-      return new Date(yy, mm - 1, dd)
-    }
-    const [yy, mm] = l.overrideDueDayMonth.split('-').map(Number)
-    const day = l.overrideDueDay.includes('말') ? new Date(yy, mm, 0).getDate() : parseInt(l.overrideDueDay, 10)
-    if (isNaN(day) || day < 1) return null
-    return new Date(yy, mm - 1, day)
-  }
-
-  // 기한을 미뤄준 상태인가 — 맞으면 그 날짜를 'M/D' 로 (unpaid.ts deferredDueForMonth 와 동일 규칙).
-  function deferredDueForMonth(
-    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
-    monthStr: string,
-  ): string | null {
-    if (!(l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr)) return null
-    const abs = overrideAbsDate(l)
-    if (!abs) return null
-    const { year: ty, month: tm, day: td } = kstYmd()
-    const days = Math.round((new Date(ty, tm - 1, td).getTime() - abs.getTime()) / 86400000)
-    if (days >= 0) return null                                   // 그 날짜도 지남 — 유예가 아니라 연체
-    const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
-    if (orig != null && days >= orig) return null                // 뒤로 미룬 경우만
-    return `${abs.getMonth() + 1}/${abs.getDate()}`
-  }
-
-  // 특정 미납 월의 경과일 — 납부일 유예 반영 (unpaid.ts daysOverdueForMonth 와 동일 규칙).
-  // override 가 이 월(또는 이후)에 걸려 있고 유예 날짜가 원래 납부일보다 늦으면 유예 날짜 기준.
-  // 경과일은 기한(dueDay·임시 조정·첫 달 기한)으로 잰다. 입력 모양은 effectiveDueDayForMonth 와 같은 한 벌이다(첫 달 기한이 기간 칸을 읽는다).
-  function daysOverdueForMonth(
-    l: Parameters<typeof effectiveDueDayForMonth>[0],
-    monthStr: string,
-  ): number | null {
-    if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {
-      const abs = overrideAbsDate(l)
-      const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
-      if (abs) {
-        const { year: ty, month: tm, day: td } = kstYmd()
-        const today = new Date(ty, tm - 1, td)
-        const days = Math.round((today.getTime() - abs.getTime()) / 86400000)
-        if (orig == null || days <= orig) return days
-      }
-    }
-    return calcDaysOverdueForMonth(effectiveDueDayForMonth(l, monthStr), monthStr)
+  // 기한을 미뤄준 상태면 그 날짜를 'M/D' 로(유예 날짜 당일은 유예가 아니라 납부일 당일, unpaid.ts 와 같은 정본).
+  function deferredDueForMonth(l: DueL, monthStr: string): string | null {
+    const d = deferredDueYmd(l, monthStr, dueTodayYmd)
+    return d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : null
   }
 
   // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월. 판정은 residedInMonth 정본이다.
@@ -1098,10 +1028,11 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       received -= allocThis
       const monthUnpaid = monthBill - allocThis
       if (monthUnpaid <= 0) continue
-      const days = daysOverdueForMonth(l, mon)
-      // days >= 0 (도래) 또는 알 수 없음 → 미수, days < 0 (미도래) → 납부 예정
+      // 기한 상태(lib/dueState): 미납(기한 다음 날부터) → 미수, 납부일 당일·납부일 전 → 납부 예정.
+      // 납부일 당일은 미납이 아니다(운영자 승인 2026-11-04). KPI 누적 미납·에이징에서 빠지고 납부 예정·도넛 수납예정으로 간다.
       // 에이징은 이 분기의 부산물이다 — 같은 조건 안에서 같은 값을 달별로 모으기만 한다.
-      if (days == null || days >= 0) { leaseOverdue += monthUnpaid; addAging(agingOverdue, mon, l.id, monthUnpaid) }
+      const state = monthDueState(mon, dueYmdOfLeaseMonth(l, mon), dueTodayYmd)
+      if (state === 'overdue') { leaseOverdue += monthUnpaid; addAging(agingOverdue, mon, l.id, monthUnpaid) }
       else leaseUpcoming += monthUnpaid
     }
     overdueByLease[l.id] = leaseOverdue
@@ -1741,9 +1672,10 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     })
   }
 
-  // 미수/도래임박 알림 — 정책:
-  //  · 도래·미회수 portion 있음(overduePortion > 0) → 누적 미수 카테고리 (오래 경과한 순)
-  //  · 미도래·미회수만 + days >= -7 → 납부 예정 카테고리 (가까운 순)
+  // 미수/납부일 임박 알림 — 정책:
+  //  · 기한 지남·미회수 portion 있음(overduePortion > 0, 1일 경과부터) → 누적 미수 카테고리 (오래 경과한 순)
+  //  · 기한 안 지난 미회수만 + D-7 ~ D-0 → 납부 예정 카테고리 (가까운 순). D-0 은 '오늘 납부일'(2026-11-04 승인),
+  //    끄기 키는 종전 그대로 upcoming:{계약}:{기한}(회차 단위)이다.
   //  · 8일 이상 여유 → 알림 X
   for (const l of unpaidCandidates) {
     const days = l.daysOverdue
@@ -1761,7 +1693,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         detail:    `미수금 ${fmtWon(l.overduePortion)}이 ${days}일 동안 회수되지 않고 있습니다.`,
         sortKey:   -days,
       })
-    } else if (l.upcomingPortion > 0 && days < 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
+    } else if (l.upcomingPortion > 0 && days <= 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
       // 도래 임박 — '납부 예정' 카테고리. 가까운 순(D-1 → D-7)으로 정렬되도록 sortKey는 절댓값.
       // days = today - dueDate (음수=미래). 미래 dueDate 복원은 today - days, 즉 today + |days|.
       const daysLeft = -days
@@ -1769,7 +1701,7 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       const timeLabel = daysLeft === 0 ? '오늘 납부일' : `${daysLeft}일 남음`
       alertItems.push({
         category:  'upcoming',
-        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} 납부 예정`,
+        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} ${daysLeft === 0 ? '오늘 납부일' : '납부 예정'}`,
         link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  'var(--inspect-fg)',
         timeLabel,
@@ -1780,20 +1712,6 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
         detail:    `청구 예정액 ${fmtWon(l.upcomingPortion)}${daysLeft === 0 ? '. 오늘이 납부일입니다.' : `. ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
-      })
-    } else if (l.overduePortion > 0 && days === 0) {
-      // 오늘 도래·미회수 (드문 케이스)
-      alertItems.push({
-        category:  'unpaid',
-        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} 오늘 납부일`,
-        link:      `/tenants?tenantId=${l.tenantId}`,
-        dotColor:  'var(--danger-fg)',
-        timeLabel: '오늘',
-        tenantId:  l.tenantId,
-        leaseTermId: l.leaseId,
-        roomId:    l.roomId,
-        detail:    `미수금 ${fmtWon(l.overduePortion)}이 오늘 도래입니다.`,
-        sortKey:   0,
       })
     }
   }

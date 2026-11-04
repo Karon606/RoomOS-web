@@ -16,7 +16,7 @@ import {
   paymentBadgeKind, paymentStatusGroup, sortRowsByPaymentStatus, statusSortKey, statusGroupOrderText,
   statusGroupFlipLabel, parseGroupFlips, type GroupFlips,
   STATUS_GROUP_LABEL, getDueInfo, type PaymentStatusRow, type StatusGroup,
-  paidSubText, noBillBadgeSub, checkedOutSub, type BadgeSubRow,
+  paidSubText, noBillBadgeSub, checkedOutSub, type BadgeSubRow, dueTodaySubText, unpaidBadgeLabel,
 } from '../lib/roomsStatusSort'
 
 let pass = 0
@@ -64,12 +64,14 @@ const shuffle = <T,>(xs: T[], seed: number): T[] => {
 eq('getDueInfo 말일', getDueInfo('말일', '2026-09', TODAY), { days: 19, overdue: true })
 eq('getDueInfo 전체 날짜', getDueInfo('2026-10-25', '2026-09', TODAY), { days: 6, overdue: false })
 eq('getDueInfo 당일', getDueInfo('19', '2026-10', TODAY), { days: 0, overdue: false })
-eq('getDueInfo 2월 31일 넘침(3/3)', getDueInfo('31', '2026-02', '2026-03-03'), { days: 0, overdue: false })
+// 기한은 말일로 접는다(lib/dueState 정본, 2026-11-04). 종전 넘침(2월 31일 → 3/3)은 홈과 날을 갈라 걷었다.
+eq('getDueInfo 2월 31일은 2/28(넘침 없음)', getDueInfo('31', '2026-02', '2026-02-28'), { days: 0, overdue: false })
+eq('getDueInfo 2월 31일 기한의 3/3 은 3일 경과', getDueInfo('31', '2026-02', '2026-03-03'), { days: 3, overdue: true })
 eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
 
 // ── 1. 미납 셋 양방향 ──
 {
-  const a = unpaid('409', '8', '2026-10', { id: '409' }), b = unpaid('501', '18', '2026-10', { id: '501' }), c = unpaid('406', '19', '2026-10', { id: '406' })
+  const a = unpaid('409', '8', '2026-10', { id: '409' }), b = unpaid('501', '15', '2026-10', { id: '501' }), c = unpaid('406', '17', '2026-10', { id: '406' })
   eq('미납 셋 기본(오래된 순)', order([c, a, b], false), ['409', '501', '406'])
   eq('미납 셋 머리 뒤집기(최근 미납 순)', order([c, a, b], false, '2026-10', { unpaid: true }), ['406', '501', '409'])
   eq('화살표는 묶음 안 순서를 안 건드린다', order([c, a, b], true), ['409', '501', '406'])
@@ -83,7 +85,7 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   eq('지난달분 유예 종류', paymentBadgeKind(deferred, '2026-10', TODAY), 'deferredUnpaid')
   eq('지난달분 유예 묶음', paymentStatusGroup(deferred, '2026-10', TODAY), 'unpaid')
   eq('지난달분 유예 키', statusSortKey(deferred, 'unpaid', '2026-10'), '2026-10-25')
-  const today = unpaid('406', '19', '2026-10', { id: '406' })
+  const today = unpaid('406', '17', '2026-10', { id: '406' })
   eq('유예는 미납 묶음 끝(기본)', order([deferred, today], false), ['406', '405'])
   eq('유예는 미납 묶음 앞(머리 뒤집기)', order([deferred, today], false, '2026-10', { unpaid: true }), ['405', '406'])
 }
@@ -93,8 +95,34 @@ eq('getDueInfo 빈 납부일', getDueInfo(null, '2026-10', TODAY), null)
   const old = unpaid('523', '20', '2026-08', { id: '523' }), cur = unpaid('409', '8', '2026-10', { id: '409' })
   eq('여러 달 밀림 키', statusSortKey(old, 'unpaid', '2026-10'), '2026-08-20')
   eq('여러 달 밀림이 맨 위', order([cur, old], false), ['523', '409'])
-  eq('조정은 첫 미납월에 걸릴 때만', statusSortKey(unpaid('410', '20', '2026-08', { overrideDueDay: '5', overrideDueDayMonth: '2026-10' }), 'unpaid', '2026-10'), '2026-08-20')
+  // 이후 달 조정이 첫 미납월 기한 이상이면 그 달 채무를 미룬 늦은 유예다(lib/dueState, 서버 목록·홈과 같은 정본, 2026-11-04 통일).
+  eq('이후 달의 늦은 조정은 첫 미납월 기한을 미룬다', statusSortKey(unpaid('410', '20', '2026-08', { overrideDueDay: '5', overrideDueDayMonth: '2026-10' }), 'unpaid', '2026-10'), '2026-10-05')
+  eq('이후 달 조정이 첫 미납월 기한보다 이르면 안 바꾼다', statusSortKey(unpaid('410', '20', '2026-08', { overrideDueDay: '2026-08-10', overrideDueDayMonth: '2026-10' }), 'unpaid', '2026-10'), '2026-08-20')
   eq('첫 미납월 조정 반영', statusSortKey(unpaid('410', '20', '2026-08', { overrideDueDay: '25', overrideDueDayMonth: '2026-08' }), 'unpaid', '2026-10'), '2026-08-25')
+}
+
+// ── 3-1. 납부일 당일(2026-11-04 운영자 정정 "납기 전도 아니고 미납도 아니고") ──
+{
+  const dueTodayPaid = awaiting('414', TODAY, { id: '414' })
+  const later = awaiting('520', '2026-10-20', { id: '520' })
+  eq('당일 납부 예정 행 종류', paymentBadgeKind(dueTodayPaid, '2026-10', TODAY), 'dueToday')
+  eq('당일 묶음은 납부 예정', paymentStatusGroup(dueTodayPaid, '2026-10', TODAY), 'awaiting')
+  eq('당일이 납부 예정 묶음 맨 위', order([later, dueTodayPaid], false), ['414', '520'])
+  eq('전날은 납부 예정', paymentBadgeKind(dueTodayPaid, '2026-10', '2026-10-18'), 'awaiting')
+  // 지난달분을 오늘로 미룬 행(isPaid=false, 이월 미수라 nextDueDate 없음). 그날은 유예가 아니라 납부일 당일이다(독립 검토 M2).
+  const movedToToday = unpaid('405', '말일', '2026-09', { id: '405', overrideDueDay: TODAY, overrideDueDayMonth: '2026-09' })
+  eq('지난달분 오늘 유예일 종류', paymentBadgeKind(movedToToday, '2026-10', TODAY), 'dueToday')
+  eq('지난달분 오늘 유예일 묶음', paymentStatusGroup(movedToToday, '2026-10', TODAY), 'awaiting')
+  eq('그 행 정렬 키는 그 기한(오늘)', statusSortKey(movedToToday, 'awaiting', '2026-10'), TODAY)
+  eq('그 전날은 유예', paymentBadgeKind(movedToToday, '2026-10', '2026-10-18'), 'deferredUnpaid')
+  eq('그 다음 날은 미납', paymentBadgeKind(movedToToday, '2026-10', '2026-10-20'), 'unpaid')
+  eq('당일 보조줄(이번 달분)', dueTodaySubText({ ...dueTodayPaid }, '2026-10', null), '오늘 10/19')
+  eq('당일 보조줄(지난달분)', dueTodaySubText(movedToToday, '2026-10', null), '9월분 오늘 10/19')
+  eq('당일 보조줄 퇴실 절이 붙으면 달 접두를 뺀다', dueTodaySubText(movedToToday, '2026-10', '10/30 퇴실'), '오늘 10/19 · 10/30 퇴실')
+  eq('라벨 days 0 은 납부일 당일', unpaidBadgeLabel(0, false), '납부일 당일')
+  // 서버 행의 dueDay 는 조회 달 임시조정이 덮어 쓴 값이다. 원래 납부일(baseDueDay)로 유예를 잰다(416호 2 → 7).
+  const r416 = awaiting('416', '2026-10-24', { id: '416', dueDay: '24', baseDueDay: '2', overrideDueDay: '24', overrideDueDayMonth: '2026-10' })
+  eq('같은 달 늦춘 조정은 원래 납부일 대비 유예', paymentBadgeKind(r416, '2026-10', TODAY), 'deferredAwait')
 }
 
 // ── 4. 납부 예정 동률은 양방향 모두 호실 오름차순 ──
@@ -385,7 +413,7 @@ eq('기억 읽기 빈 값·깨진 값', [parseGroupFlips(null), parseGroupFlips(
     }
     ok(`${name} 완납 보조줄이 paidSubText 정본`, part.includes('sub={paidSubText(room, targetMonth)}'))
     ok(`${name} 청구 없음 보조줄이 noBillBadgeSub 정본`, part.includes('sub={noBillBadgeSub(room, targetMonth)}'))
-    ok(`${name} 퇴실 완료 날짜 절은 다른 절 뒤에서 늘 '퇴실'을 단다`, !part.includes('checkedOutSub(room)') && count(part, 'checkedOutSub(room, true)') === 3)
+    ok(`${name} 퇴실 완료 날짜 절은 다른 절 뒤에서 늘 '퇴실'을 단다`, !part.includes('checkedOutSub(room)') && count(part, 'checkedOutSub(room, true)') === 4)
     ok(`${name} 옛 분기 조건이 없다(showCheckout·isAwaiting·isPaid 분기·noBillReason 분기·유예 재판정)`,
       !/showCheckout|const isAwaiting =|if \(!room\.isPaid\) \{|if \(room\.noBillReason\) \{|if \(isDeferredNow\(room, targetMonth\)\)|room\.status === 'RESERVED' \?/.test(part))
     ok(`${name} 묶음 머리를 그린다(순서 글자는 한 함수)`, part.includes('statusGroupHead(idx)') && part.includes('STATUS_GROUP_LABEL[head]') && part.includes('groupOrderControl(head'))

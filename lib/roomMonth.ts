@@ -3,42 +3,13 @@
 // 왜 꺼냈나(2026-10-21 독립 검수, 운영자 요청 '통일감'). 조정 칩이 기한·청구를 따로 재면 같은 달에 목록은 완납인데
 // 칩은 미수납이라 말할 수 있다(납부일 당일, 다음 달에 걸린 늦은 임시조정 유예, 퇴실 무청구·양도인·인수 선납 달).
 // 그래서 목록 함수 안의 지역 함수였던 것을 식 그대로 옮겨 두 자리가 같이 부른다. 식은 바꾸지 않았다.
+// 2026-11-04 기한 날짜 고르기와 기한 상태는 lib/dueState 정본으로 옮겼다(납부일 당일은 미납이 아니라 납부일 당일, 운영자 승인 '추천대로').
 import { discountedRent } from './rentDiscount'
 import { effectiveBaseRent, type BillingLeaseFields } from './billing'
 import { dueDayBeforeChange, isDueDayAdjust } from './dueDayAdjust'
+import { monthDueState, type DueState } from './dueState'
 
-type DueLeaseFull = { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null }
 type Rec = { targetMonth: string; actualAmount: number; expectedAmount: number; payDate: Date | string; isPrevOwner: boolean; memo: string | null; isDeposit?: boolean }
-
-/** dueDay 원문을 그 달의 끝 시각(23:59:59.999)으로. override·말일·'YYYY-MM-DD' 모두 처리. */
-export function resolveDueRawEnd(raw: string | null | undefined, ry: number, rm: number): Date | null {
-  if (!raw) return null
-  if (raw.includes('-')) {
-    const [fy, fm, fd] = raw.split('-').map(Number)
-    return new Date(fy, fm - 1, fd, 23, 59, 59, 999)
-  }
-  const last = new Date(ry, rm, 0).getDate()
-  let day: number
-  if (raw.includes('말')) day = last
-  else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, last) }
-  return new Date(ry, rm - 1, day, 23, 59, 59, 999)
-}
-
-/**
- * 그 달의 기한. 그 달에 직접 건 임시조정은 그대로, 이후 달에 건 임시조정이 원래 납부일보다 늦으면
- * (이 달 채무를 뒤로 미룬 유예) 그 날짜다(2026-06-02 5월 미납 6/1 유예). unpaid.ts·dashboard daysOverdueForMonth 와 같은 규칙.
- */
-export function effDueDateForMonth(l: DueLeaseFull, monthStr: string): Date | null {
-  const [my, mn] = monthStr.split('-').map(Number)
-  if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return resolveDueRawEnd(l.overrideDueDay, my, mn)
-  if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth > monthStr) {
-    const [oy, om] = l.overrideDueDayMonth.split('-').map(Number)
-    const overrideDate = resolveDueRawEnd(l.overrideDueDay, oy, om)
-    const origDate = resolveDueRawEnd(l.dueDay, my, mn)
-    if (overrideDate && (!origDate || overrideDate.getTime() >= origDate.getTime())) return overrideDate
-  }
-  return resolveDueRawEnd(l.dueDay, my, mn)
-}
 
 /**
  * 인수 시점 기간 시작일. 첫 납입일 변경 조정 행의 '바꾸기 전' 값, 없으면 지금 이용 기간 시작일(말일 31).
@@ -95,19 +66,10 @@ export function acqMonthStateOf(i: {
 }
 
 /**
- * 그 달 기한이 도래했나. 지난 달이거나 기한이 오늘 끝 시각 이하(납부일 당일부터 지났다고 본다).
- * 목록 행(roomMonthBill)과 수납 등록 기본값(귀속월 목록 getTargetMonthOptions 의 duePassed)이 같은 식을 쓴다.
- */
-export function monthDuePassed(ms: string, dueDate: Date | null, today: { year: number; month: number; day: number }): boolean {
-  const todayMonth = `${today.year}-${String(today.month).padStart(2, '0')}`
-  const todayEnd = new Date(today.year, today.month - 1, today.day, 23, 59, 59, 999)
-  return ms < todayMonth || (dueDate ? dueDate <= todayEnd : false)
-}
-
-/**
- * 그 달 청구와 기한 도래. 목록 행(rowExpected·viewMonthDuePassed)과 조정 칩이 같은 판정이다.
- *   skipped  인수 선납 달 · 양도인 달 · 퇴실 무청구(퇴실월 초과 포함) 달. 청구 0.
- *   duePassed 지난 달이거나 기한(effDueDateForMonth)이 오늘 끝 시각 이하. 납부일 당일부터 지났다고 본다(목록 미납 묶음과 같다).
+ * 그 달 청구와 기한 상태. 목록 행(rowExpected·viewDueState)과 조정 칩이 같은 판정이다.
+ *   skipped   인수 선납 달 · 양도인 달 · 퇴실 무청구(퇴실월 초과 포함) 달. 청구 0.
+ *   dueState  그 달 기한(lib/dueState dueYmdOfLeaseMonth)과 오늘로 낸 상태(before · today · overdue). 기한을 못 읽으면
+ *             지난 달은 overdue, 이번 달·앞 달은 before(monthDueState 한 규칙). 납부일 당일은 미납이 아니다(2026-11-04).
  */
 export function roomMonthBill(i: {
   ms: string
@@ -116,10 +78,10 @@ export function roomMonthBill(i: {
   acqMonthPrePaid: boolean
   prevOwnerMonths: ReadonlySet<string>
   skipByMoveOut: (ms: string) => boolean
-  dueDate: Date | null
-  today: { year: number; month: number; day: number }
-}): { skipped: boolean; billed: number; duePassed: boolean } {
+  dueYmd: string | null
+  todayYmd: string
+}): { skipped: boolean; billed: number; dueState: DueState } {
   const skipped = (i.ms === i.acqMonthStr && i.acqMonthPrePaid) || i.prevOwnerMonths.has(i.ms) || i.skipByMoveOut(i.ms)
-  const duePassed = monthDuePassed(i.ms, i.dueDate, i.today)
-  return { skipped, billed: skipped ? 0 : i.bill(i.ms), duePassed }
+  const dueState = monthDueState(i.ms, i.dueYmd, i.todayYmd)
+  return { skipped, billed: skipped ? 0 : i.bill(i.ms), dueState }
 }

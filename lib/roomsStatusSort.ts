@@ -11,7 +11,8 @@
 //   · 꼬리(퇴실 예정·청구 없음·입실 예약)는 방향과 무관하게 맨 아래 고정이다.
 //   · 동률은 방향과 무관하게 호실 오름차순(localeCompare ko numeric), 키가 없는 행은 양방향 모두 묶음 끝.
 //   · 같은 호실 행은 붙여 둔다(2026-08-11 결정). 방의 묶음은 가장 급한 행을 따르고 정렬 키도 그 행에서 읽는다.
-import { kstDaysUntil, kstYmdStr } from './kstDate'
+import { kstYmdStr } from './kstDate'
+import { daysPastDue, deferredDueYmd, dueStateOf, dueYmdForMonth, dueYmdOfLeaseMonth, type DueLease } from './dueState'
 import { fmtMD } from './fmtDate'
 import { checkoutSubText, checkoutDateLabel, isShortTermCheckoutDue } from './leaseStatus'
 
@@ -31,69 +32,74 @@ export type PaymentStatusRow = {
   expectedMoveOut: string | null
   moveInDate: string | null
   viewMonthPaidAt?: string | null
+  // 계약 원래 납부일(임시조정 전)과 이용 기간 시작일. 기한 고르기(lib/dueState)가 쓴다. 서버 행은 늘 싣는다.
+  // dueDay 칸은 조회 달 임시조정이 덮어 쓴 값일 수 있어 원래 납부일로 쓰면 유예를 못 알아본다(416·516호 11월).
+  baseDueDay?: string | null
+  cycleDay?: string | null
 }
 
-type DueFields = Pick<PaymentStatusRow, 'dueDay' | 'overrideDueDay' | 'overrideDueDayMonth' | 'firstUnpaidMonth'>
+type DueFields = Pick<PaymentStatusRow, 'dueDay' | 'overrideDueDay' | 'overrideDueDayMonth' | 'firstUnpaidMonth' | 'moveInDate' | 'baseDueDay' | 'cycleDay'>
 
-// 약정일(또는 조정일)을 그 달의 'YYYY-MM-DD' 로. 전체 날짜형('2026-08-09')은 그대로, 말일은 그 달 마지막 날.
-// Date.UTC 는 로컬 생성자와 같은 자릿수 넘침 규칙을 쓴다(2월 31일 -> 3월 3일). 종전 동작 유지.
-function dueYmdOf(dueDay: string | null, month: string): string | null {
-  if (!dueDay) return null
-  if (dueDay.includes('-')) return dueDay.slice(0, 10)
-  const [yyyy, mm] = month.split('-').map(Number)
-  const dayNum = dueDay.includes('말') ? new Date(yyyy, mm, 0).getDate() : parseInt(dueDay)
-  if (isNaN(dayNum)) return null
-  return new Date(Date.UTC(yyyy, mm - 1, dayNum)).toISOString().slice(0, 10)
+// 행의 계약 칸을 기한 고르기 입력으로. 원래 납부일은 baseDueDay(없으면 dueDay, 진리표 고정물 호환).
+function dueLeaseOf(room: DueFields): DueLease {
+  return {
+    dueDay: room.baseDueDay !== undefined ? room.baseDueDay : room.dueDay,
+    overrideDueDay: room.overrideDueDay, overrideDueDayMonth: room.overrideDueDayMonth,
+    moveInDate: room.moveInDate ?? null, cycleDay: room.cycleDay ?? null,
+  }
 }
 
-// 납부일 경과/잔여일 계산
-// 오늘은 반드시 KST 기준(kstDaysUntil)이어야 한다. new Date() 로 재면 서버(UTC)와 기기(KST)가
-// KST 00~09시에 하루 다른 경과일을 내고, 그 숫자가 뱃지 문구로 렌더돼 하이드레이션이 갈린다.
-export function getDueInfo(dueDay: string | null, targetMonth: string, today: string = kstYmdStr()): { days: number; overdue: boolean } | null {
-  const due = dueYmdOf(dueDay, targetMonth)
+/**
+ * 배지가 말하는 달(첫 미납월, 없으면 조회 달)의 기한 'YYYY-MM-DD'. 기한 날짜 고르기는 lib/dueState 정본이다
+ * (그 달 임시조정·늦은 유예·첫 달 입주일·말일 클램프). 서버 수납 관리·홈·종과 같은 함수라 같은 날을 가리킨다.
+ */
+export function badgeDueYmd(room: DueFields, targetMonth: string): string | null {
+  return dueYmdOfLeaseMonth(dueLeaseOf(room), room.firstUnpaidMonth ?? targetMonth)
+}
+
+// 납부일 경과/잔여일 계산(days 는 절댓값, overdue 는 기한 다음 날부터). 기한은 말일로 접는다(2월 31일은 2/28, 넘침 없음).
+// 오늘은 반드시 KST 기준이어야 한다. new Date() 로 재면 서버(UTC)와 기기(KST)가 KST 00~09시에 하루 다른 경과일을 내고,
+// 그 숫자가 뱃지 문구로 렌더돼 하이드레이션이 갈린다.
+function dueInfoOf(due: string | null, today: string): { days: number; overdue: boolean } | null {
   if (!due) return null
-  const diff = -kstDaysUntil(due, today)
+  const diff = daysPastDue(due, today)
   return { days: Math.abs(diff), overdue: diff > 0 }
 }
-
-// 누적 미납자는 첫 미납월의 dueDay 기준으로 경과일 표시.
-// override는 그 override가 지정된 월(overrideDueDayMonth)에만 적용한다. 미납월이
-// 그 달이면 어느 화면에서 보든 override를 사용해야 함.
-function effectiveDueDayOf(room: DueFields, targetMonth: string): { day: string | null; month: string } {
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  const isOverrideActive = room.overrideDueDayMonth === dueMonth && !!room.overrideDueDay
-  return { day: isOverrideActive ? room.overrideDueDay : room.dueDay, month: dueMonth }
+export function getDueInfo(dueDay: string | null, targetMonth: string, today: string = kstYmdStr()): { days: number; overdue: boolean } | null {
+  return dueInfoOf(dueYmdForMonth(dueDay, targetMonth), today)
 }
+
+// 누적 미납자는 첫 미납월 기한 기준으로 경과일 표시(badgeDueYmd 정본).
 export function getEffectiveDueInfo(room: DueFields, targetMonth: string, today: string = kstYmdStr()): ReturnType<typeof getDueInfo> {
-  const { day, month } = effectiveDueDayOf(room, targetMonth)
-  return getDueInfo(day, month, today)
+  return dueInfoOf(badgeDueYmd(room, targetMonth), today)
 }
 
-// 납부 기한을 미뤄준 상태인가. 유예 판정 정본이다.
+// 납부 기한을 미뤄준 상태인가. 유예 판정 정본(lib/dueState deferredDueYmd)을 부른다.
 //
 // 뱃지·독촉·홈 위젯이 각자 판정하면 화면마다 다른 말을 한다. 한 곳에서만 정한다.
-// 조건 넷을 모두 만족해야 유예다.
-//   ① 임시조정이 그 미납월에 걸려 있다  ② 원래 납부일보다 **뒤로** 미룬 것이다
-//   ③ 그 날짜가 아직 안 지났다          ④ 아직 낼 게 남아 있다
-// ②가 없으면 앞당긴 조정까지 유예가 되고, ④가 없으면 이미 다 낸 사람에게 유예 표시가 샌다.
+// 조건 셋을 모두 만족해야 유예다.
+//   ① 그 달 기한이 원래 기한보다 **뒤로** 옮겨졌다(그 달 임시조정 또는 다음 달에 건 늦은 유예)
+//   ② 그 날짜가 아직 안 왔다. 유예한 날짜 당일은 유예가 아니라 납부일 당일이다(운영자 승인 2026-11-04)
+//   ③ 아직 낼 게 남아 있다
+// ①이 없으면 앞당긴 조정까지 유예가 되고, ③이 없으면 이미 다 낸 사람에게 유예 표시가 샌다.
 export function isDeferredNow(
   room: DueFields & Pick<PaymentStatusRow, 'isPaid' | 'nextDueDate' | 'nextDueAmount'>,
   targetMonth: string, today: string = kstYmdStr(),
 ): boolean {
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  if (room.isPaid && !(room.nextDueDate && room.nextDueAmount > 0)) return false   // ④ 낼 게 없으면 유예가 아니다
-  if (!room.overrideDueDay || room.overrideDueDayMonth !== dueMonth) return false
-  const eff = getDueInfo(room.overrideDueDay, dueMonth, today)
-  const base = getDueInfo(room.dueDay, dueMonth, today)
-  if (!eff || !base) return false
-  if (eff.overdue) return false                      // 조정일도 이미 지남. 유예가 아니라 연체
-  const effSigned = eff.overdue ? eff.days : -eff.days
-  const baseSigned = base.overdue ? base.days : -base.days
-  return effSigned < baseSigned                       // 원래보다 뒤로 미룬 경우만
+  if (room.isPaid && !(room.nextDueDate && room.nextDueAmount > 0)) return false   // ③ 낼 게 없으면 유예가 아니다
+  return deferredDueYmd(dueLeaseOf(room), room.firstUnpaidMonth ?? targetMonth, today) != null
 }
 
-// 미납 배지 문구. 납부일 당일은 아직 늦은 게 아니라 '납부일'로 표기한다(운영자 지시 2026-08-01).
-// 톤은 unpaid 를 유지한다. 오늘 받아야 할 건이라 시야에서 사라지면 안 된다. 계산·집계는 손대지 않고 표시만 바꾼다.
+/** 납부일 당일인가. 배지 달의 기한(받을 돈이 남은 행만)이 오늘이다. 납부 예정 행은 서버가 내린 nextDueDate 로 본다. */
+function isDueTodayRow(room: PaymentStatusRow, targetMonth: string, today: string): boolean {
+  if (room.isPaid) return !!room.nextDueDate && room.nextDueAmount > 0 && dueStateOf(room.nextDueDate, today) === 'today'
+  const due = badgeDueYmd(room, targetMonth)
+  return !!due && dueStateOf(due, today) === 'today'
+}
+
+// 미납 배지 문구. 납부일 당일은 아직 늦은 게 아니라 '납부일 당일'이다(2026-08-01 '납부일' 라벨에서 2026-11-04 운영자 정정
+// "납기 전도 아니고 미납도 아니고"로 바꿨다). 당일 행은 paymentBadgeKind 가 dueToday 로 갈라 납부 예정 톤(await)·납부 예정 묶음에
+// 세운다. 종전 '톤은 unpaid 유지'(08-01)는 대체됐다. 지난달분을 오늘로 미룬 행(isPaid=false, days 0)도 이 라벨이다(독립 검토 M2).
 // days: 납부일로부터 경과일(0=오늘). 7일 초과면 연체.
 // days 는 **절댓값**이라 방향(overdue)을 함께 봐야 한다. 405호 심원재가 7월분 납부 기한을 8/7 로 유예받았는데
 // 8/2 에 '미납 5일 초과'로 뜬 것이 발단이다(운영자 지적 2026-08-02). 실제로는 5일 '남은' 상태다.
@@ -109,9 +115,9 @@ export function isDeferredNow(
 // '납부 유예'는 여기서 빼고 호출부로 올렸다(2026-08-02). 이 분기에서만 붙이면 405호(미납 분기)만 유예로
 // 보이고 516호(납부 예정 분기)는 그냥 '납부 예정'으로 남아 같은 사정이 화면에서 다른 말을 한다(운영자 지적
 // "일관성이 없어"). 유예 판정은 isDeferredNow 정본이 하고, 이 함수는 유예가 아닌 경우만 맡는다.
-export function unpaidBadgeLabel(days: number | null | undefined, overdue?: boolean): '납부일' | '납부일 전' | '미납' | '연체' {
+export function unpaidBadgeLabel(days: number | null | undefined, overdue?: boolean): '납부일 당일' | '납부일 전' | '미납' | '연체' {
   if (days == null) return '미납'
-  if (days === 0) return '납부일'
+  if (days === 0) return '납부일 당일'
   if (!overdue) return '납부일 전'   // 기한 전인데 유예도 아님(앞당긴 조정 등). '미납 · 5일 남음'은 자기모순이다
   return days > 7 ? '연체' : '미납'
 }
@@ -121,23 +127,27 @@ export function unpaidBadgeLabel(days: number | null | undefined, overdue?: bool
  * 순서가 곧 규칙이다(앞의 분기가 이긴다). 보조 배지(퇴실 예정·퇴실 완료·비거주)는 이 값을 바꾸지 않는다.
  *   reserved        입실 예약·예약 확정
  *   deferredUnpaid  납부 유예(지난달분을 미룸, 미납 분기)
- *   unpaid          미납·연체·납부일·납부일 전
+ *   dueToday        납부일 당일(이번 달분 기한이 오늘이거나 지난달분을 오늘로 미룸). 납부 예정 묶음, await 톤(2026-11-04)
+ *   unpaid          미납·연체·납부일 전
  *   noBill          청구 없음(이월 미수가 있으면 미납이 먼저다)
  *   checkout        퇴실 예정(완납이면서 그 달 퇴실, 퇴실 예정 상태)
  *   deferredAwait   납부 유예(이번 달분을 미룸, 납부 예정 분기)
  *   awaiting        납부 예정
  *   paid            완납(단기 퇴실 예정·퇴실 완료가 보조 배지로 붙어도 완납)
  */
-export type PaymentBadgeKind = 'reserved' | 'deferredUnpaid' | 'unpaid' | 'noBill' | 'checkout' | 'deferredAwait' | 'awaiting' | 'paid'
+export type PaymentBadgeKind = 'reserved' | 'deferredUnpaid' | 'dueToday' | 'unpaid' | 'noBill' | 'checkout' | 'deferredAwait' | 'awaiting' | 'paid'
 
 export function paymentBadgeKind(room: PaymentStatusRow, targetMonth: string, today: string = kstYmdStr()): PaymentBadgeKind {
   if (room.status === 'RESERVED') return 'reserved'
-  if (!room.isPaid) return isDeferredNow(room, targetMonth, today) ? 'deferredUnpaid' : 'unpaid'
+  if (!room.isPaid) return isDeferredNow(room, targetMonth, today) ? 'deferredUnpaid' : isDueTodayRow(room, targetMonth, today) ? 'dueToday' : 'unpaid'
   if (room.noBillReason) return 'noBill'
   // 퇴실 예정 배지는 expectedMoveOut 이 조회 달 안(또는 그 이전)일 때만
   const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
   if (room.status === 'CHECKOUT_PENDING' && !!checkoutMonth && checkoutMonth <= targetMonth) return 'checkout'
-  if (room.nextDueDate && room.nextDueAmount > 0) return isDeferredNow(room, targetMonth, today) ? 'deferredAwait' : 'awaiting'
+  if (room.nextDueDate && room.nextDueAmount > 0) {
+    if (isDueTodayRow(room, targetMonth, today)) return 'dueToday'
+    return isDeferredNow(room, targetMonth, today) ? 'deferredAwait' : 'awaiting'
+  }
   return 'paid'
 }
 
@@ -145,7 +155,7 @@ export function paymentBadgeKind(room: PaymentStatusRow, targetMonth: string, to
 export type StatusGroup = 'unpaid' | 'awaiting' | 'paid' | 'checkout' | 'noBill' | 'reserved'
 
 const GROUP_OF_KIND: Record<PaymentBadgeKind, StatusGroup> = {
-  reserved: 'reserved', deferredUnpaid: 'unpaid', unpaid: 'unpaid', noBill: 'noBill',
+  reserved: 'reserved', deferredUnpaid: 'unpaid', dueToday: 'awaiting', unpaid: 'unpaid', noBill: 'noBill',
   checkout: 'checkout', deferredAwait: 'awaiting', awaiting: 'awaiting', paid: 'paid',
 }
 export function statusGroupOfKind(kind: PaymentBadgeKind): StatusGroup {
@@ -211,15 +221,16 @@ export function parseGroupFlips(raw: string | null): GroupFlips {
 
 /**
  * 묶음 안 정렬 키('YYYY-MM-DD', 없으면 null). 기본 순서는 BODY_KEY_DESC 가 정한다.
- *   미납      첫 미납월의 약정일(그 달 조정 반영), 오래된 기한이 앞(가장 많이 밀린 사람이 맨 위)
- *   납부 예정  nextDueDate(서버가 조정일을 반영해 준 그 달 기한), 가까운 날이 앞
+ *   미납      첫 미납월의 기한(badgeDueYmd), 오래된 기한이 앞(가장 많이 밀린 사람이 맨 위)
+ *   납부 예정  nextDueDate(서버가 조정일을 반영해 준 그 달 기한), 가까운 날이 앞. 납부일 당일이 맨 위에 선다
  *   완납      viewMonthPaidAt(그 달 몫을 받은 날), 최근에 낸 사람이 앞, 날짜가 없으면 묶음 끝
  *   퇴실 예정  퇴실 예정일 / 청구 없음 키 없음(호실순) / 입실 예약 입주일
  */
 export function statusSortKey(room: PaymentStatusRow, group: StatusGroup, targetMonth: string): string | null {
   switch (group) {
-    case 'unpaid': { const { day, month } = effectiveDueDayOf(room, targetMonth); return dueYmdOf(day, month) }
-    case 'awaiting': return room.nextDueDate
+    case 'unpaid': return badgeDueYmd(room, targetMonth)
+    // 납부 예정 묶음의 당일 행 중 지난달분을 오늘로 미룬 행은 nextDueDate 가 없다(이월 미수). 그 행의 기한(오늘)으로 선다.
+    case 'awaiting': return room.nextDueDate ?? badgeDueYmd(room, targetMonth)
     case 'paid':     return room.viewMonthPaidAt ?? null
     case 'checkout': return room.expectedMoveOut
     case 'noBill':   return null
@@ -346,4 +357,14 @@ export function noBillBadgeSub(room: BadgeSubRow, targetMonth: string): string {
   const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null
   const out = room.noBillReason === 'checkoutNoBilling' ? null : checkedOutSub(room, true)
   return [noBillSubText(room), shortExit, out].filter(Boolean).join(' · ')
+}
+
+// 납부일 당일 배지 보조줄 정본(카드·표 쌍둥이 공용). '오늘 11/4'. 지난달분을 오늘로 미룬 행은 대상월이 다르니 '10월분 오늘 11/4'.
+// 절은 둘까지다(360px, unpaidSubText 와 같은 규칙). 퇴실 절(extra)이 붙으면 달 접두를 뺀다. 배지가 이미 '납부일 당일'이라
+// '납부일'을 또 적지 않는다.
+export function dueTodaySubText(room: PaymentStatusRow, targetMonth: string, extra: string | null): string {
+  const due = room.isPaid ? room.nextDueDate : badgeDueYmd(room, targetMonth)
+  const dueMonth = room.firstUnpaidMonth ?? targetMonth
+  const prefix = !room.isPaid && !!due && due.slice(0, 7) !== dueMonth && !extra ? `${Number(dueMonth.slice(5))}월분 ` : ''
+  return [due ? `${prefix}오늘 ${fmtMD(due)}` : '오늘', extra].filter(Boolean).join(' · ')
 }

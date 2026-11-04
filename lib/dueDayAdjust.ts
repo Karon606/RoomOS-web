@@ -16,6 +16,7 @@ import type { Prisma } from '@prisma/client'
 import type { DueDayDb } from './dueDay'
 import { fmtWon } from './fmtMoney'
 import { withParticle } from './koParticle'
+import type { DueState } from './dueState'
 
 export const DUE_DAY_ADJUST_PREFIX = '[납입일변경]'
 
@@ -193,25 +194,26 @@ export function dueDayAdjustDisplayMemo(memo: string | null | undefined): string
 export type DueDayAdjustStatus =
   | { kind: 'paid' }                        // 남은 조정분 0
   | { kind: 'before' }                      // 다 남음, 기한 안 옴(미래 달 포함)
-  | { kind: 'unpaid' }                      // 다 남음, 기한 옴(납부일 당일부터, 호실 목록 미납 묶음과 같다)
+  | { kind: 'unpaid' }                      // 다 남음, 기한 지남(기한 다음 날부터, 호실 목록 미납과 같다. 납부일 당일은 before)
   | { kind: 'short'; remaining: number }    // 일부 남음
 
 /**
  * 그 달 상태. extraTotal 이 0 이면(추가로 받을 금액이 없는 달) null.
- * bill·duePassed 는 호실 목록과 같은 판정(lib/roomMonth roomMonthBill)에서 온다. 그래서 목록이 그 달을 완납
- * (청구 없는 달이거나 받은 돈 ≥ 청구)으로 보면 칩도 수납 완료다. 기한은 납부일 당일부터 옴이다(목록 미납 묶음과 같다).
+ * bill·dueState 는 호실 목록과 같은 판정(lib/roomMonth roomMonthBill, 기한 상태는 lib/dueState)에서 온다. 그래서 목록이 그 달을 완납
+ * (청구 없는 달이거나 받은 돈 ≥ 청구)으로 보면 칩도 수납 완료다. 납부일 당일은 '수납 전'이고 다음 날부터 '미수납'이다
+ * (운영자 승인 2026-11-04, 새 종류를 만들지 않는다. 독립 검토 M5).
  */
 export function dueDayAdjustMonthStatus(input: {
   bill: number
   monthTotal: number
   extraTotal: number
-  duePassed: boolean
+  dueState: DueState
 }): DueDayAdjustStatus | null {
   if (input.extraTotal <= 0) return null
   const remaining = Math.min(Math.max(0, input.bill - input.monthTotal), input.extraTotal)
   if (remaining <= 0) return { kind: 'paid' }
   if (remaining < input.extraTotal) return { kind: 'short', remaining }
-  return input.duePassed ? { kind: 'unpaid' } : { kind: 'before' }
+  return input.dueState === 'overdue' ? { kind: 'unpaid' } : { kind: 'before' }
 }
 
 /**

@@ -50,7 +50,7 @@ need(!/rentAmount|balance/.test(lib), `${LIB}: ⓑ 기본값 정본이 원가(re
 need(/export function suggestPayAmount\(/.test(lib), `${LIB}: ⓑ 정본 suggestPayAmount 가 없다.`)
 need(/suggestPayAmount\(\{/.test(form), `${FORM}: ⓑ 추천 납입액이 정본(suggestPayAmount)을 부르지 않는다.`)
 need(!/-room\.balance/.test(form), `${FORM}: ⓑ 추천 납입액을 조회월 잔액(-room.balance)으로 낸다. 정본은 lib/paymentSuggest 다.`)
-need(/o\.duePassed/.test(lib), `${LIB}: ⓑ 자동 기본값이 기한 도래(duePassed)를 보지 않는다. 기한 전 이번 달 청구가 지난달 미납분에 섞인다.`)
+need(/o\.dueState === 'overdue'/.test(lib), `${LIB}: ⓑ 자동 기본값이 기한 상태(dueState === 'overdue')를 보지 않는다. 기한 전·납부일 당일인 이번 달 청구가 지난달 미납분에 섞인다.`)
 
 // ⓒ
 const forms = tc.split('<PaymentEntryForm').length - 1

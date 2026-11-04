@@ -54,7 +54,7 @@ import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import {
-  getEffectiveDueInfo, isDeferredNow, unpaidBadgeLabel, checkedOutSub, paidBadgeDate, paidSubText, noBillBadgeSub,
+  getEffectiveDueInfo, isDeferredNow, unpaidBadgeLabel, badgeDueYmd, dueTodaySubText, checkedOutSub, paidBadgeDate, paidSubText, noBillBadgeSub,
   paymentBadgeKind, sortRowsByPaymentStatus, STATUS_GROUP_LABEL, statusGroupOrderText, type StatusGroup,
   isBodyGroup, statusGroupFlipLabel, parseGroupFlips, type GroupFlips, type BodyGroup,
 } from '@/lib/roomsStatusSort'
@@ -214,8 +214,11 @@ function dueDayCellText(room: RoomStatus, targetMonth: string): string | null {
 
 // 호실 수납 상태 → 배지/팁 톤. 수납(미납·연체)이 비거주보다 우선 —
 // 비거주여도 미납이면 미납/연체 색으로 표시(회색으로 묻히지 않도록).
+// 납부일 당일(dueToday)은 입실 예약 다음, 미납·비거주·퇴실 예정보다 앞에서 await 로 정한다. 배지 분기(paymentBadgeKind)가 이미
+// 청구 없음·퇴실 예정을 앞에서 걸러 낸 뒤의 당일이라 배지와 팁이 같은 말을 한다. 수납 상태가 비거주보다 우선인 규칙도 그대로다.
 function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
   if (room.status === 'RESERVED') return 'movein'
+  if (paymentBadgeKind(room, targetMonth) === 'dueToday') return 'await'
   if (!room.isPaid) {
     const info = getEffectiveDueInfo(room, targetMonth)
     return info && info.overdue && info.days > 7 ? 'overdue' : 'unpaid'
@@ -243,17 +246,9 @@ function getTotalUnpaid(room: RoomStatus): number {
 // 독촉 문구 — 미납 방/세입자/대상월/미수액을 채운 표준 안내. 멀티테넌트 공용(지점·세입자 하드코딩 금지).
 // 유예된 기한을 'M월 D일' 로 — 독촉 문구·보조 텍스트 공용
 function deferredDueLabel(room: RoomStatus, targetMonth: string): string | null {
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  const raw = room.overrideDueDayMonth === dueMonth ? room.overrideDueDay : null
-  if (!raw) return null
-  if (raw.includes('-')) {
-    const d = new Date(raw + 'T00:00:00')
-    return `${d.getMonth() + 1}월 ${d.getDate()}일`
-  }
-  const [y, m] = dueMonth.split('-').map(Number)
-  const last = new Date(y, m, 0).getDate()
-  const day = raw.includes('말') ? last : Math.min(parseInt(raw, 10), last)
-  return `${m}월 ${day}일`
+  // 날짜는 배지 달 기한 정본(badgeDueYmd, lib/dueState)이다. 늦은 유예·첫 달 기한도 같은 날을 말한다.
+  const due = badgeDueYmd(room, targetMonth)
+  return due ? `${Number(due.slice(5, 7))}월 ${Number(due.slice(8, 10))}일` : null
 }
 
 // 캡션은 lib/fmtMoney 의 fmtNoBillCovered 정본을 쓴다(네 화면 공용).
@@ -264,18 +259,8 @@ function noBillCoveredText(room: RoomStatus): string | null {
 // 유효 납부일을 'M/D' 로 — 뱃지 보조줄 전용 짧은 표기.
 // 독촉 문자는 문장체라 'M월 D일'(deferredDueLabel)을 쓰고, 뱃지는 형제 문구(퇴실 '8/2')와 맞춰 슬래시형을 쓴다.
 function effDueShort(room: RoomStatus, targetMonth: string): string | null {
-  const dueMonth = room.firstUnpaidMonth ?? targetMonth
-  const raw = (room.overrideDueDayMonth === dueMonth && room.overrideDueDay) ? room.overrideDueDay : room.dueDay
-  if (!raw) return null
-  if (raw.includes('-')) {
-    const d = new Date(raw + 'T00:00:00')
-    return `${d.getMonth() + 1}/${d.getDate()}`
-  }
-  const [y, m] = dueMonth.split('-').map(Number)
-  const last = new Date(y, m, 0).getDate()
-  const day = raw.includes('말') ? last : Math.min(parseInt(raw, 10), last)
-  if (isNaN(day)) return null
-  return `${m}/${day}`
+  const due = badgeDueYmd(room, targetMonth)
+  return due ? `${Number(due.slice(5, 7))}/${Number(due.slice(8, 10))}` : null
 }
 
 // 미납·유예 뱃지 보조줄 정본 — 카드와 표가 같은 문장을 쓰게 한다(쌍둥이 구조라 한쪽만 고치면 또 어긋난다).
@@ -578,9 +563,11 @@ export default function RoomsClient({
   })
   // 상태 칩 판정 한 벌 — 목록 거름과 칩 숫자가 같은 함수를 부른다.
   const matchesStatus = (r: RoomStatus, f: RoomFilter): boolean => {
-    if (f === 'unpaid')   return !r.isPaid
+    // 납부일 당일은 미납이 아니라 납부 예정 칩에 든다(배지·정렬 묶음과 같은 판정 paymentBadgeKind). 지난달분을 오늘로 미룬
+    // 행(isPaid=false)도 그날은 납부일 당일이다(2026-11-04).
+    if (f === 'unpaid')   return !r.isPaid && paymentBadgeKind(r, targetMonth) !== 'dueToday'
     if (f === 'checkout') return isCheckoutRoom(r)
-    if (f === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
+    if (f === 'awaiting') return (isAwaitingRoom(r) || paymentBadgeKind(r, targetMonth) === 'dueToday') && !isCheckoutRoom(r)
     if (f === 'paid')     return isPaidRoom(r)
     if (f === 'adjusted') return isAdjustedRoom(r)
     return true
@@ -1275,8 +1262,13 @@ export default function RoomsClient({
                     return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                   })() : (() => {
                     // 미납 / 연체 — 7일 초과면 연체(Terracotta 솔리드), 그 외 미납(Amber)
+                    // 납부일 당일. 미납도 납부일 전도 아닌 세 번째 상태(2026-11-04 운영자 정정). 톤은 납부 예정 계열(await), 묶음도 납부 예정.
+                    if (kind === 'dueToday') {
+                      const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room, true)
+                      return <StatusBadge tone="await" sub={dueTodaySubText(room, targetMonth, exitSub)}
+                        secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>납부일 당일</StatusBadge>
+                    }
                     if (kind === 'unpaid' || kind === 'deferredUnpaid') {
-                      // 라벨이 '납부일'이면 보조줄의 '오늘'은 중복이라 생략
                       const deferred = kind === 'deferredUnpaid'
                       // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
                       const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room, true)
@@ -1309,7 +1301,7 @@ export default function RoomsClient({
                       if (kind === 'deferredAwait') return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room, true))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                       const [, mm, dd] = room.nextDueDate!.split('-')
                       const days = kstDaysUntil(room.nextDueDate!)
-                      const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
+                      const sub = `D-${days} (${Number(mm)}/${Number(dd)})`   // 당일은 위 dueToday 분기가 맡는다
                       return <StatusBadge tone="await" sub={[sub, checkedOutSub(room, true)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                     }
                     // 완납(Olive 뱃지). 보조줄에 그 달 몫을 받은 날을 상시로 적는다(paidSubText 정본, 표와 같은 문장)
@@ -1576,6 +1568,12 @@ export default function RoomsClient({
                           }
                           return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                         })() : (() => {
+                          // 납부일 당일. 미납도 납부일 전도 아닌 세 번째 상태(2026-11-04 운영자 정정). 톤은 납부 예정 계열(await), 묶음도 납부 예정.
+                          if (kind === 'dueToday') {
+                            const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : checkedOutSub(room, true)
+                            return <StatusBadge tone="await" sub={dueTodaySubText(room, targetMonth, exitSub)}
+                              secondary={checkedOutBadge(room) ?? (exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined)}>납부일 당일</StatusBadge>
+                          }
                           if (kind === 'unpaid' || kind === 'deferredUnpaid') {
                             const info = getEffectiveDueInfo(room, targetMonth)
                             // 카드(위)와 같은 규칙 — days 는 절댓값이라 방향(overdue)을 함께 봐야 한다.
@@ -1607,7 +1605,7 @@ export default function RoomsClient({
                             if (kind === 'deferredAwait') return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, checkedOutSub(room, true))} secondary={checkedOutBadge(room)}>납부 유예</StatusBadge>
                             const [, mm, dd] = room.nextDueDate!.split('-')
                             const days = kstDaysUntil(room.nextDueDate!)
-                            const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
+                            const sub = `D-${days} (${Number(mm)}/${Number(dd)})`   // 당일은 위 dueToday 분기가 맡는다
                             return <StatusBadge tone="await" sub={[sub, checkedOutSub(room, true)].filter(Boolean).join(' · ')} secondary={checkedOutBadge(room)}>납부 예정</StatusBadge>
                           }
                           const shortExit = isShortTermCheckoutDue(room, targetMonth) ? checkoutSubText(room.expectedMoveOut) : null

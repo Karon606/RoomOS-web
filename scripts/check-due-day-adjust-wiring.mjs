@@ -94,14 +94,14 @@ need('조정 묶음 행 아래 표시가 정본 표시 메모(dueDayAdjustDispla
 // ── ③-2 받았는지 상태(2026-10-21 운영자 '받을 금액 자리에 받았다는 표시가 없다') ─────────────
 const stBody = body(rooms, 'async function dueDayAdjustStatusByMonth(')
 need('상태 헬퍼가 조정 행 없는 계약에 쿼리를 안 더한다(months.length === 0 이면 바로 돌아감)', /if \(months\.length === 0\) return out/.test(stBody))
-need('상태 헬퍼가 목록과 같은 정본(roomMonthBill·acqMonthStateOf·effDueDateForMonth·lockedExpectedMapOf·originalDueDayOf)으로 청구·기한을 잰다',
-  /roomMonthBill\(\{ ms: m, bill,/.test(stBody) && /acqMonthStateOf\(\{/.test(stBody) && /effDueDateOf\(lease, ms\)/.test(stBody) && /lockedExpectedMapOf\(postCutoffRecords\)/.test(stBody) && /originalDueDayOf\(cycleDayOf\(lease\), allLeaseRecords\)/.test(stBody)
-  && /dueDayAdjustMonthStatus\(\{ bill: billed, monthTotal: s\.total, extraTotal: s\.extra, duePassed: facts\.duePassed \}\)/.test(stBody) && !/serverBillForMonth/.test(stBody))
+need('상태 헬퍼가 목록과 같은 정본(roomMonthBill·acqMonthStateOf·dueYmdOfLeaseMonth·lockedExpectedMapOf·originalDueDayOf)으로 청구·기한을 잰다',
+  /roomMonthBill\(\{ ms: m, bill,/.test(stBody) && /acqMonthStateOf\(\{/.test(stBody) && /dueYmdOfLeaseMonth\(lease, ms\)/.test(stBody) && /lockedExpectedMapOf\(postCutoffRecords\)/.test(stBody) && /originalDueDayOf\(cycleDayOf\(lease\), allLeaseRecords\)/.test(stBody)
+  && /dueDayAdjustMonthStatus\(\{ bill: billed, monthTotal: s\.total, extraTotal: s\.extra, dueState: facts\.dueState \}\)/.test(stBody) && !/serverBillForMonth/.test(stBody))
 need('상태 헬퍼가 영업장 범위를 건다', /where: \{ leaseTermId, propertyId, isDeposit: false \}/.test(stBody) && /where: \{ id: leaseTermId, propertyId \}/.test(stBody))
 const grs = body(rooms, 'export async function getRoomPaymentStatus(')
-need('호실 목록이 같은 정본으로 그 달 청구·기한을 잰다(roomMonthBill·effDueDateOf·acqMonthStateOf)',
-  /const viewFacts = roomMonthBill\(\{ ms: targetMonth, bill: billForMonth,/.test(grs) && /const rowExpected = viewFacts\.billed/.test(grs) && /const viewMonthDuePassed = viewFacts\.duePassed/.test(grs)
-  && /effDueDateOf\(\{ dueDay: lease\.dueDay, overrideDueDay: l\.overrideDueDay, overrideDueDayMonth: l\.overrideDueDayMonth \}, monthStr\)/.test(grs) && /acqMonthStateOf\(\{/.test(grs) && !/const resolveDueRaw = /.test(grs))
+need('호실 목록이 같은 정본으로 그 달 청구·기한을 잰다(roomMonthBill·dueYmdOfLeaseMonth·acqMonthStateOf)',
+  /const viewFacts = roomMonthBill\(\{ ms: targetMonth, bill: billForMonth,/.test(grs) && /const rowExpected = viewFacts\.billed/.test(grs) && /const viewOverdue = viewFacts\.dueState === 'overdue'/.test(grs)
+  && /dueYmdOfLeaseMonth\(\{ dueDay: lease\.dueDay, overrideDueDay: l\.overrideDueDay, overrideDueDayMonth: l\.overrideDueDayMonth, moveInDate: lease\.moveInDate, cycleDay: lease\.cycleDay \?\? null \}, monthStr\)/.test(grs) && /acqMonthStateOf\(\{/.test(grs) && !/const resolveDueRaw = /.test(grs))
 const gpl = body(rooms, 'export async function getPaymentsByLease(')
 need('getPaymentsByLease 가 조정 행마다 adjustStatus 를 실어 보낸다(records·windowRecords 둘 다)', /dueDayAdjustStatusByMonth\(leaseTermId, propertyId, \[\.\.\.rawRecords, \.\.\.rawWindowRecords\], property\)/.test(gpl) && /adjustStatus: isDueDayAdjust\(r\.memo\) && r\.actualAmount < 0/.test(gpl) && /rawRecords\.map\(withKey\)\.map\(withAdjust\)/.test(gpl) && /rawWindowRecords\.map\(withKey\)\.map\(withAdjust\)/.test(gpl))
 need('수납 전 칩이 형제에 없는 neutral 틴트를 쓰지 않는다', !/neutral-bg|neutral-fg/.test(read('components/entity-modal/widgets/paymentRowChip.ts')) && /case 'before': return \{ label: '수납 전', tone: 'month' \}/.test(read('lib/dueDayAdjust.ts')))
