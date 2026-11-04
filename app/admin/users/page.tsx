@@ -1,10 +1,12 @@
 import { getSignups } from '../actions'
+import { requireSuperAdmin } from '@/lib/auth/access'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import UsersClient from './UsersClient'
 
 
 export default async function AdminUsersPage() {
-  const users = await getSignups()
+  const me = await requireSuperAdmin()
+  const { users, propertyCount } = await getSignups()
 
   const rows = users.map((u) => ({
     id: u.id,
@@ -14,6 +16,8 @@ export default async function AdminUsersPage() {
     address: u.address || '',
     status: u.status as 'PENDING' | 'APPROVED' | 'REJECTED',
     isSuperAdmin: u.isSuperAdmin,
+    envAdmin: u.envAdmin,
+    isSelf: u.id === me.userId,
     inviteCode: u.inviteCode || '',
     createdAtLabel: fmtDate(u.createdAt),
     ownedCount: u._count.ownedProperties,
@@ -22,5 +26,5 @@ export default async function AdminUsersPage() {
 
   const pendingCount = rows.filter((r) => r.status === 'PENDING').length
 
-  return <UsersClient rows={rows} pendingCount={pendingCount} />
+  return <UsersClient rows={rows} pendingCount={pendingCount} propertyCount={propertyCount} />
 }

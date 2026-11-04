@@ -8,7 +8,7 @@ import DocumentScroll from '@/components/layout/DocumentScroll'
 export default async function PendingPage() {
   const ctx = await getAccessContext()
   if (!ctx) redirect('/login')
-  // 운영자는 운영자 페이지로(영업장 없을 수 있음), 일반 승인 사용자는 앱으로
+  // 스테이음 관리자는 관리자 페이지로(영업장 없을 수 있음), 일반 승인 사용자는 앱으로
   if (ctx.isSuperAdmin) redirect('/admin')
   if (ctx.status === 'APPROVED') redirect('/dashboard')
 
@@ -38,13 +38,13 @@ export default async function PendingPage() {
               <>
                 현재 계정은 서비스 이용이 제한되어 있습니다.
                 <br />
-                문의가 필요하시면 운영자에게 연락해주세요.
+                문의가 필요하시면 스테이음 팀에 연락해 주세요.
               </>
             ) : (
               <>
                 스테이음은 현재 <b style={{ color: 'var(--tc-text)' }}>베타 운영 중</b>입니다.
                 <br />
-                운영자 승인 후 모든 기능을 이용하실 수 있어요.
+                스테이음 팀 승인 후 모든 기능을 이용하실 수 있어요.
                 <br />
                 승인되면 다시 로그인해주세요.
               </>

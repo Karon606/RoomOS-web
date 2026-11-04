@@ -20,6 +20,8 @@ export type ConfirmOptions = {
   cancelLabel?: string
   // danger 전용 — 영향 목록 (건수는 반드시 실데이터)
   impact?: { label: string; count?: number | string }[]
+  // 영향 목록 머리. 기본 '함께 삭제되는 항목'. 지우지 않고 무엇이 열리는지 알리는 확인창(권한 주기)이 바꾼다.
+  impactTitle?: string
   irreversibleNote?: string     // danger 기본: '이 동작은 되돌릴 수 없습니다.'
   // v2.0 §27 — 제3의 동작 버튼(choiceDialog 전용). 취소는 항상 무변경이어야 하므로
   // '취소에 실 동작을 싣던' 자리를 이 버튼이 대체한다.
@@ -170,7 +172,7 @@ export function ConfirmHost() {
         {isDanger && opts.impact && opts.impact.length > 0 && (
           <div className="mt-3 rounded-lg px-3.5 py-3"
             style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
-            <p className="text-xs font-semibold text-[var(--ink)] mb-1.5">함께 삭제되는 항목</p>
+            <p className="text-xs font-semibold text-[var(--ink)] mb-1.5">{opts.impactTitle ?? '함께 삭제되는 항목'}</p>
             <ul className="space-y-0.5">
               {opts.impact.map((it, i) => (
                 <li key={i} className="text-[12.5px] text-[var(--ink-s)]">

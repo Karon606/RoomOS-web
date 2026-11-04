@@ -310,11 +310,11 @@ function NavContent({
           </span>
         </div>
 
-        {/* 운영자(슈퍼관리자) 전용 */}
+        {/* 스테이음 관리자(슈퍼관리자) 전용. 이 앱의 사용자 자신이 고시원 '운영자'라 플랫폼 쪽은 '스테이음 관리자'로 부른다(2026-11-04). */}
         {isSuperAdmin && (
           <Link href="/admin" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--tc-text)' }}>
             <svg {...ico}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
-            <span className={acctLabel}>운영자</span>
+            <span className={acctLabel}>스테이음 관리자</span>
           </Link>
         )}
 
@@ -486,7 +486,7 @@ function MobileMenu({
           <Link href="/admin" onClick={onClose} prefetch={false}
             className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--tc-text)' }}>
             <svg {...ico} width={16} height={16}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
-            운영자
+            스테이음 관리자
           </Link>
         )}
         <Link href="/property-select" onClick={onClose} prefetch={false}

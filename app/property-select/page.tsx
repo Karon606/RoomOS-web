@@ -17,7 +17,7 @@ export default async function PropertySelectPage() {
   if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') redirect('/pending')
 
   const properties = await getMyProperties()
-  // 운영자인데 소속 영업장이 없으면 운영자 페이지로 바로 이동
+  // 스테이음 관리자인데 소속 영업장이 없으면 관리자 페이지로 바로 이동
   if (ctx.isSuperAdmin && properties.length === 0) redirect('/admin')
 
   return (
@@ -40,7 +40,7 @@ export default async function PropertySelectPage() {
         {ctx.isSuperAdmin && (
           <div className="text-center">
             <Link href="/admin" className="text-sm font-medium" style={{ color: 'var(--tc-text)' }}>
-              운영자 페이지 ›
+              스테이음 관리자 ›
             </Link>
           </div>
         )}

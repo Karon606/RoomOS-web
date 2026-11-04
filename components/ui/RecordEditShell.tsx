@@ -69,13 +69,19 @@ function menuKeyNav(e: React.KeyboardEvent<HTMLElement>, onTab: () => void) {
   items[next]?.focus()
 }
 
-function ManageMenu({ items, disabled, dirty }: { items: RecordManageItem[]; disabled?: boolean; dirty: boolean }) {
+/**
+ * 발끝·카드 `관리` 메뉴(§13). 이 껍데기 밖에서도 쓴다(스테이음 관리자 가입자 카드, 2026-11-04). 카드처럼 위가 비어 있지 않은
+ * 자리는 placement 'auto'(아래 먼저), 버튼 크기는 그 줄의 형제 버튼에 맞춘다(size). 기본값이면 종전과 같다.
+ */
+export function ManageMenu({ items, disabled, dirty = false, placement = 'above', size = 'md' }: {
+  items: RecordManageItem[]; disabled?: boolean; dirty?: boolean; placement?: 'auto' | 'above'; size?: 'sm' | 'md'
+}) {
   const [open, setOpen] = useState(false)
   const plain = items.filter(i => !i.danger)
   const danger = items.filter(i => i.danger)
   // 높이 예측 = 테두리 2 + p-2 16 + 행 44·n (+ 구분선 9). 위로 뜰 자리를 이 값으로 정한다.
   const { pos, triggerRef, measure } = usePopoverAnchor<HTMLSpanElement>({
-    minWidth: 208, estimatedHeight: 18 + 44 * items.length + (plain.length && danger.length ? 9 : 0), placement: 'above', align: 'end',
+    minWidth: 208, estimatedHeight: 18 + 44 * items.length + (plain.length && danger.length ? 9 : 0), placement, align: 'end',
   })
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -93,7 +99,7 @@ function ManageMenu({ items, disabled, dirty }: { items: RecordManageItem[]; dis
   return (
     <>
       <span ref={triggerRef} className="shrink-0">
-        <Btn variant="secondary" size="md" className="min-w-11 whitespace-nowrap" aria-expanded={open} disabled={disabled}
+        <Btn variant="secondary" size={size} className="min-w-11 whitespace-nowrap" aria-expanded={open} disabled={disabled}
           onClick={() => { if (!open) measure(); setOpen(v => !v) }}>관리</Btn>
       </span>
       {open && typeof window !== 'undefined' && createPortal(

@@ -7,7 +7,7 @@ import ViewportOffsetGuard from '@/components/layout/ViewportOffsetGuard'
 import AdminNav from './AdminNav'
 import AdminProfile from './AdminProfile'
 
-// 운영자(슈퍼관리자) 전용 영역. (app) 셸 게이트 밖 — 자체 가드.
+// 스테이음 관리자(슈퍼관리자) 전용 영역. (app) 셸 게이트 밖이라 자체 가드.
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireSuperAdmin()
   // 관리할 영업장이 있는 운영자에게만 '앱으로' 표시 (영업장 없는 순수 운영자는 갈 곳 없음)

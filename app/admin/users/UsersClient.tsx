@@ -4,7 +4,11 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { pushToast } from '@/lib/saveStatus'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { setUserStatus, setSuperAdmin } from '../actions'
+import { Btn } from '@/components/ui/Btn'
+import { ManageMenu } from '@/components/ui/RecordEditShell'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { setUserStatus, setSuperAdmin, undoAdminUserChange } from '../actions'
+import { ACTION_LABEL, PLATFORM_ADMIN_LABEL, cardActions, grantImpact, type AdminUserUndo, type CardActionKey } from '@/lib/adminAccess'
 
 type Row = {
   id: string
@@ -14,6 +18,8 @@ type Row = {
   address: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   isSuperAdmin: boolean
+  envAdmin: boolean
+  isSelf: boolean
   inviteCode: string
   createdAtLabel: string
   ownedCount: number
@@ -33,7 +39,22 @@ const FILTERS = [
   { key: 'ALL', label: '전체' },
 ] as const
 
-export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendingCount: number }) {
+type ActionResult = { ok: true; undo: AdminUserUndo | null } | { ok: false; error: string }
+
+/** 권한·상태를 바꾼 뒤의 토스트 문장. 적용취소도 같은 대상 이름으로 말한다. */
+const DONE_MSG: Record<CardActionKey, string> = {
+  approve: '승인했습니다',
+  reapprove: '다시 승인했습니다',
+  reject: '거절했습니다',
+  toPending: '대기로 되돌렸습니다',
+  revokeApproval: '승인을 취소했습니다',
+  grantAdmin: `${PLATFORM_ADMIN_LABEL} 권한을 줬습니다`,
+  revokeAdmin: `${PLATFORM_ADMIN_LABEL} 권한을 회수했습니다`,
+}
+
+const UNDO_REVERSIBLE = '실행 뒤 토스트의 적용취소로 되돌릴 수 있습니다.'
+
+export default function UsersClient({ rows, pendingCount, propertyCount }: { rows: Row[]; pendingCount: number; propertyCount: number }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>(pendingCount > 0 ? 'PENDING' : 'ALL')
@@ -41,14 +62,66 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
 
   const visible = filter === 'ALL' ? rows : rows.filter((r) => r.status === filter)
 
-  function run(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
+  function run(id: string, fn: () => Promise<ActionResult>, done: string, undoneMsg: string) {
     setBusyId(id)
     startTransition(async () => {
-      const res = await fn()
-      if (!res.ok) pushToast('error', res.error ?? '처리에 실패했습니다.')
-      else router.refresh()
-      setBusyId(null)
+      try {
+        const res = await fn()
+        if (!res.ok) { pushToast('error', res.error ?? '처리에 실패했습니다.'); return }
+        const undo = res.undo
+        pushToast('success', done, undo ? { action: { label: '적용취소', run: () => { void undoAdminUserChange(undo).then(r => {
+          if (r.ok) { pushToast('info', undoneMsg); router.refresh() }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } } } : undefined)
+        router.refresh()
+      } catch {
+        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+      } finally {
+        setBusyId(null)
+      }
     })
+  }
+
+  /** 카드 동작 하나. 위험한 것만 확인창을 거친다(권한 주기는 파괴 단계 + 볼 수 있게 되는 것 목록). */
+  async function act(u: Row, key: CardActionKey) {
+    const who = `${u.name === '—' ? u.email : u.name} 님`
+    const done = `${who} ${DONE_MSG[key]}`
+    const undone = `적용취소했습니다 · ${who} ${ACTION_LABEL[key]}`
+    if (key === 'grantAdmin') {
+      const ok = await confirmDialog({
+        title: `${who}에게 ${PLATFORM_ADMIN_LABEL} 권한을 줄까요?`,
+        level: 'danger',
+        confirmLabel: '권한 주기',
+        impactTitle: '이 사람이 볼 수 있게 되는 것',
+        impact: grantImpact({ propertyCount, signupCount: rows.length }),
+        irreversibleNote: UNDO_REVERSIBLE,
+      })
+      if (ok) run(u.id, () => setSuperAdmin(u.id, true), done, undone)
+      return
+    }
+    if (key === 'revokeAdmin') {
+      const ok = await confirmDialog({
+        title: `${who}의 ${PLATFORM_ADMIN_LABEL} 권한을 회수할까요?`,
+        message: '스테이음 관리자 화면과 모든 영업장 소유자 접근이 끊깁니다. 참여한 영업장의 역할은 그대로입니다.',
+        level: 'caution',
+        confirmLabel: '권한 회수',
+      })
+      if (ok) run(u.id, () => setSuperAdmin(u.id, false), done, undone)
+      return
+    }
+    if (key === 'revokeApproval' || (key === 'toPending' && u.status === 'APPROVED')) {
+      const ok = await confirmDialog({
+        title: key === 'revokeApproval' ? `${who}의 승인을 취소할까요?` : `${who}의 상태를 대기로 되돌릴까요?`,
+        level: 'danger',
+        confirmLabel: key === 'revokeApproval' ? '승인 취소' : '대기로 되돌리기',
+        impactTitle: '바로 일어나는 일',
+        impact: [{ label: `참여한 영업장 ${u.ownedCount + u.roleCount}곳에 들어갈 수 없게 됩니다.` }],
+        irreversibleNote: UNDO_REVERSIBLE,
+      })
+      if (!ok) return
+    }
+    const status = key === 'approve' || key === 'reapprove' ? 'APPROVED' : key === 'toPending' ? 'PENDING' : 'REJECTED'
+    run(u.id, () => setUserStatus(u.id, status), done, undone)
   }
 
   return (
@@ -121,7 +194,23 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
                           className="text-[11px] font-semibold px-1.5 py-0.5 rounded"
                           style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon-d)' }}
                         >
-                          운영자
+                          {PLATFORM_ADMIN_LABEL}
+                        </span>
+                      )}
+                      {(u.envAdmin && !u.isSuperAdmin) && (
+                        <span
+                          className="text-[11px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon-d)' }}
+                        >
+                          {PLATFORM_ADMIN_LABEL}
+                        </span>
+                      )}
+                      {u.isSelf && (
+                        <span
+                          className="text-[11px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: 'var(--cream-3)', color: 'var(--ink-3)' }}
+                        >
+                          나
                         </span>
                       )}
                     </div>
@@ -138,46 +227,24 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
                   </div>
                 </div>
 
-                <div className="flex gap-2 mt-3 flex-wrap">
-                  {u.status !== 'APPROVED' && (
-                    <button
-                      disabled={rowBusy}
-                      onClick={() => run(u.id, () => setUserStatus(u.id, 'APPROVED'))}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
-                      style={{ background: 'var(--persimmon)' }}
-                    >
-                      승인
-                    </button>
-                  )}
-                  {u.status !== 'REJECTED' && (
-                    <button
-                      disabled={rowBusy}
-                      onClick={() => run(u.id, () => setUserStatus(u.id, 'REJECTED'))}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-50"
-                      style={{ background: 'var(--cream-soft)', color: 'var(--ink-3)', border: '1px solid var(--cream-3)' }}
-                    >
-                      거절
-                    </button>
-                  )}
-                  {u.status !== 'PENDING' && (
-                    <button
-                      disabled={rowBusy}
-                      onClick={() => run(u.id, () => setUserStatus(u.id, 'PENDING'))}
-                      className="px-3 py-1.5 text-sm rounded-lg disabled:opacity-50"
-                      style={{ background: 'transparent', color: 'var(--ink-mute)', border: '1px solid var(--cream-3)' }}
-                    >
-                      대기로
-                    </button>
-                  )}
-                  <button
-                    disabled={rowBusy}
-                    onClick={() => run(u.id, () => setSuperAdmin(u.id, !u.isSuperAdmin))}
-                    className="px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ml-auto"
-                    style={{ background: 'transparent', color: 'var(--persimmon-d)', border: '1px solid var(--persimmon-l)' }}
-                  >
-                    {u.isSuperAdmin ? '운영자 해제' : '운영자 지정'}
-                  </button>
-                </div>
+                {(() => {
+                  const acts = cardActions({ status: u.status, dbAdmin: u.isSuperAdmin, envAdmin: u.envAdmin, isSelf: u.isSelf })
+                  const menu = [...acts.manage, ...acts.danger].map(k => ({
+                    key: k, label: ACTION_LABEL[k], danger: acts.danger.includes(k), onSelect: () => { void act(u, k) },
+                  }))
+                  if (acts.primary.length === 0 && menu.length === 0) return null
+                  return (
+                    <div className="flex items-center justify-end gap-2 mt-3">
+                      {acts.primary.map(k => (
+                        <Btn key={k} size="sm" variant={k === 'reject' || k === 'reapprove' ? 'secondary' : 'primary'}
+                          disabled={rowBusy} onClick={() => { void act(u, k) }}>
+                          {ACTION_LABEL[k]}
+                        </Btn>
+                      ))}
+                      {menu.length > 0 && <ManageMenu items={menu} disabled={rowBusy} placement="auto" size="sm" />}
+                    </div>
+                  )
+                })()}
               </li>
             )
           })}

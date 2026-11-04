@@ -240,7 +240,7 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
               style={inputStyle}
             />
             <p className="text-[11px] mt-1 px-1" style={{ color: 'var(--warm-muted)' }}>
-              초대코드가 있으면 가입 즉시 이용할 수 있어요. 없으면 운영자 승인 후 이용 가능합니다.
+              초대코드가 있으면 가입 즉시 이용할 수 있어요. 없으면 스테이음 팀 승인 후 이용할 수 있습니다.
             </p>
           </div>
           <div className="h-px" style={{ background: 'var(--warm-border)' }} />

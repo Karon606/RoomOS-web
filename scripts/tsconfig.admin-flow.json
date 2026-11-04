@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/lib/prisma": ["./cr-flow-prisma-stub.ts"],
+      "@/lib/supabase/server": ["./admin-flow-supabase-stub.ts"],
+      "next/cache": ["./cr-flow-next-stub.ts"],
+      "next/headers": ["./cr-flow-next-stub.ts"],
+      "next/navigation": ["./cr-flow-next-stub.ts"],
+      "server-only": ["./server-only-stub.ts"],
+      "@/*": ["../*"]
+    }
+  }
+}

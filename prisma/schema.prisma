@@ -2268,6 +2268,36 @@ model RentReceiptFile {
 }
 
 // ============================================================
+// [13b] 스테이음 관리자 감사 기록 · 가입자 정리 (2026-11-04 운영자 승인 '추천대로', 갈림길 C·F)
+// ============================================================
+
+// 플랫폼 권한·가입 상태를 바꾼 기록. 누가(actorId)·누구를(targetUserId)·무엇을(action)·전후 값(before/after).
+// 쓰는 곳은 app/admin/actions.ts 하나이고 바꾸는 쓰기와 같은 트랜잭션이다(기록 없이 권한만 바뀌는 일이 없다).
+// action: GRANT_SUPER_ADMIN · REVOKE_SUPER_ADMIN · SET_STATUS · APPROVE · ARCHIVE · UNARCHIVE · UNDO
+model AdminAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String   @db.Uuid
+  targetUserId String   @db.Uuid
+  action       String
+  before       Json?
+  after        Json?
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
+}
+
+// 관리자가 '오래된 계정 정리'로 목록에서 걷은 가입자. 행이 있으면 정리됨, 지우면 되살림(삭제가 아니다, 계정·로그인은 그대로).
+model UserArchive {
+  userId     String   @id @db.Uuid
+  archivedAt DateTime @default(now())
+  archivedBy String   @db.Uuid
+
+  @@map("user_archives")
+}
+
+// ============================================================
 // [14] InviteCode — 초대코드/쿠폰 (선착순 N명 무료 베타)
 // ============================================================
 

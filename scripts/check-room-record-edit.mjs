@@ -78,7 +78,8 @@ for (const r of Object.values(ROWS)) {
   need(/<div className="flex gap-2">\s*<Btn variant="secondary" size="md" onClick=\{onClose\}[^>]*>취소<\/Btn>\s*\{manage\.length > 0 && <ManageMenu /.test(s), `ⓓ ${SHELL} · 발끝 윗줄이 [취소] + 관리 가 아니다(§13).`)
   need(/<Btn variant="primary" size="md" fullWidth onClick=\{onSave\}/.test(s), `ⓓ ${SHELL} · 발끝 아랫줄 [저장] primary 풀폭이 아니다.`)
   need(!/flex-wrap/.test(s.slice(s.indexOf('footer='))), `ⓓ ${SHELL} · 발끝이 접힌다(flex-wrap). 두 줄 고정이다(§13).`)
-  need(/placement: 'above', align: 'end'/.test(s), `ⓓ ${SHELL} · 관리 메뉴가 위로 먼저·오른쪽 맞춤이 아니다(§13).`)
+  // ManageMenu 는 껍데기 밖(가입자 카드)에서도 쓰여 placement 를 받는다. 기본값이 'above' 이고 껍데기는 그 기본값으로 부른다(2026-11-04).
+  need(/placement: 'above', align: 'end'/.test(s) || (/placement = 'above'/.test(s) && /placement, align: 'end'/.test(s) && /<ManageMenu items=\{manage\} disabled=\{pending\} dirty=\{dirty\} \/>/.test(s)), `ⓓ ${SHELL} · 관리 메뉴가 위로 먼저·오른쪽 맞춤이 아니다(§13).`)
   need(/className=\{MENU_ROW_DANGER\}/.test(s) && /border-t border-\[var\(--warm-border\)\]/.test(s), `ⓓ ${SHELL} · 파괴 항목이 구분선 아래 --danger-fg 행이 아니다.`)
   need(/aria-expanded=\{open\}/.test(s) && /menuKeyNav\(e, close\)/.test(s), `ⓓ ${SHELL} · 관리 메뉴 키보드 문법(aria-expanded·↑↓·Tab 닫기)을 잃었다.`)
   need(/saveReason && <WhyCaption id=\{reasonId\}>/.test(s) && /reason=\{saveReason \? reasonId : undefined\}/.test(s), `ⓓ ${SHELL} · 저장이 막힐 때 이유 한 줄(§27.8 ③)이 없다.`)
