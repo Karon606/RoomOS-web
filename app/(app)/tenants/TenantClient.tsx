@@ -3260,6 +3260,7 @@ export default function TenantClient({
                   ) : paySettlement && paySettlement.leaseTermId && paySettlement.tenantId ? (
                     <PaymentEntryForm
                       key={paySettlement.leaseTermId}
+                      divided={false}
                       depositPaidTotal={paySettlement.reservationPaid?.deposit ?? 0}
                       room={{
                         leaseTermId: paySettlement.leaseTermId,

@@ -26,7 +26,7 @@ import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
-import { PAYMENT_METHODS } from '@/lib/paymentMethods'
+import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, depositModeSplit, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 
@@ -69,7 +69,11 @@ type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 const monthsLabel = (allocs: { targetMonth: string }[]) =>
   `${allocs.map(a => Number(a.targetMonth.slice(5))).join('·')}월분`
 
-export function PaymentEntryForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
+// 폼 머리 구분선. 수납 관리(PaymentBody)에서는 위 수납 내역과 폼을 가르는 선이다. 폼이 화면을 통째로
+// 대신하는 자리(입주자 상세 수납 모달)에서는 모달 헤더 선 바로 아래 선이 하나 더 서므로 끈다(§12).
+const formCls = (divided: boolean) => `space-y-3${divided ? ' border-t border-[var(--warm-border)] pt-3 mt-1' : ''}`
+
+export function PaymentEntryForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel, divided = true }: {
   room: Room
   targetMonth: string
   /** lease 전체 보증금 실수납 합(조회월 무관) — 예약금 폼의 잔여 프리필·기수납 안내용. */
@@ -77,19 +81,22 @@ export function PaymentEntryForm({ room, targetMonth, depositPaidTotal, onSaved,
   /** 저장 성공 후 호출 — 부모가 settlement/records 재조회. */
   onSaved?: () => void
   onCancel?: () => void
+  /** 폼 머리 구분선(기본 켬). 폼만 단독으로 품는 자리는 false. */
+  divided?: boolean
 }) {
   // 예약(RESERVED) 단계는 예약금 모드(보증금 대체·이용료 선납·안 받음) 전용 폼으로 분기.
   if (room.status === 'RESERVED') {
-    return <ReservationDepositForm room={room} targetMonth={targetMonth} depositPaidTotal={depositPaidTotal ?? 0} onSaved={onSaved} onCancel={onCancel} />
+    return <ReservationDepositForm room={room} targetMonth={targetMonth} depositPaidTotal={depositPaidTotal ?? 0} onSaved={onSaved} onCancel={onCancel} divided={divided} />
   }
-  return <PaymentEntryFormInner room={room} targetMonth={targetMonth} onSaved={onSaved} onCancel={onCancel} />
+  return <PaymentEntryFormInner room={room} targetMonth={targetMonth} onSaved={onSaved} onCancel={onCancel} divided={divided} />
 }
 
-function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
+function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }: {
   room: Room
   targetMonth: string
   onSaved?: () => void
   onCancel?: () => void
+  divided: boolean
 }) {
   const [pending, startTransition] = useTransition()
   // 몫 칸 라벨 결선용 — 고정 문자열이면 같은 화면에 폼이 둘 설 때 id 가 겹친다.
@@ -173,12 +180,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
 
   // 결제수단 프리필 — 이 고객의 직전 방식 우선(고객마다 계좌/카드/현금이 고정적, 운영자 요청 2026-07-06).
   // 첫 수납(기록 없음)만 기기 최근 방식으로 폴백.
+  // 사람이 고르는 목록(MANUAL_PAY_METHODS)에 있는 값만 받는다. 직전 기록이 퇴실 정산의 '보유 보증금'이면
+  // 고를 수 없는 값이 select 에 들어가 화면은 첫 항목을 보이고 저장은 그 표식으로 나간다.
   useEffect(() => {
     let active = true
     const deviceLast = typeof window !== 'undefined' ? localStorage.getItem('stayeum-last-pay-method') : null
-    if (deviceLast) setPayMethod(deviceLast)
+    if (deviceLast && MANUAL_PAY_METHODS.includes(deviceLast)) setPayMethod(deviceLast)
     if (!room.tenantId) return
-    getTenantLastPayMethod(room.tenantId).then(m => { if (active && m) setPayMethod(m) }).catch(() => {})
+    getTenantLastPayMethod(room.tenantId).then(m => { if (active && m && MANUAL_PAY_METHODS.includes(m)) setPayMethod(m) }).catch(() => {})
     return () => { active = false }
   }, [room.tenantId])
 
@@ -681,7 +690,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   )
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
+    <form onSubmit={handleSubmit} className={formCls(divided)}>
       <p className="text-xs font-semibold text-[var(--tc-text)]">수납 등록</p>
       {/* 보증금 미수납 사실은 금액을 치기 **전에** 보여야 한다. 금액부터 채우는 동선에서 아래쪽
           진입점은 안 보이고, 그래서 보증금이 일반 수납으로 들어가 이용료 record 가 됐다(신고 00c39371).
@@ -863,7 +872,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
         <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
-          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+          {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       {/* 카드 계열은 매출전표가 증빙을 대신하므로 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
@@ -1006,12 +1015,13 @@ const RESV_MODE_LABEL: Record<ResvMode, string> = {
 
 
 
-function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
+function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel, divided }: {
   room: Room
   targetMonth: string
   depositPaidTotal: number
   onSaved?: () => void
   onCancel?: () => void
+  divided: boolean
 }) {
   const [pending, startTransition] = useTransition()
   const initial = (['deposit', 'prepaid', 'none'] as const).includes(room.reservationDepositMode as ResvMode)
@@ -1122,7 +1132,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
+    <form onSubmit={handleSubmit} className={formCls(divided)}>
       <p className="text-xs font-semibold text-[var(--tc-text)]">예약금 수납</p>
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">처리 방식</label>
@@ -1189,7 +1199,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
             <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
             <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           {/* 카드는 현금영수증 대상이 아니다 — 정본 폼과 **같은 분기·같은 문구**를 쓴다.
