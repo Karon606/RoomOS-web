@@ -1332,6 +1332,11 @@ export default function RoomsClient({
                   const viewUnpaid  = (!room.isPaid && room.carryOver === 0 && !room.nextDueDate && room.balance < 0)
                                        ? -room.balance : 0
                   const totalUnpaid = carryUnpaid + viewUnpaid
+                  // 납부일 당일 행(지난달분을 오늘로 미룸)은 남은 돈이 아직 미납이 아니다. 배지가 '납부일 당일'인데 금액 줄이
+                  // 미수(붉은 음수)면 한 카드가 두 말을 한다(디자이너 패스 2026-11-04). 형제 당일 행과 같은 '예정' 문법으로 적는다.
+                  if (totalUnpaid > 0 && kind === 'dueToday') {
+                    return <span className="text-[var(--warm-mid)]">예정 <MoneyDisplay amount={totalUnpaid} /></span>
+                  }
                   if (totalUnpaid > 0) {
                     return <span className="font-medium text-[var(--tc-text)]">미수 −<MoneyDisplay amount={totalUnpaid} /></span>
                   }
@@ -1371,8 +1376,8 @@ export default function RoomsClient({
               {activeMethod && methodPayLine(room.methodPays, activeMethod, targetMonth) && (
                 <p className="mt-1.5 text-[0.6875rem] text-[var(--warm-muted)] num break-keep">{methodPayLine(room.methodPays, activeMethod, targetMonth)}</p>
               )}
-              {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
-              {!selectMode && totalUnpaid > 0 && (
+              {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만). 납부일 당일 행은 아직 미납이 아니라 숨긴다(독촉은 다음 날부터, isUnpaidSmsTarget 과 같은 선) */}
+              {!selectMode && totalUnpaid > 0 && kind !== 'dueToday' && (
                 <div className="mt-2.5 flex justify-end">
                   <Btn variant="ghost" size="sm"
                     onClick={e => { e.stopPropagation(); copyReminder(room, totalUnpaid) }}>
@@ -1612,8 +1617,8 @@ export default function RoomsClient({
                           return <StatusBadge tone="paid" sub={paidSubText(room, targetMonth)}
                             secondary={shortExit ? { tone: 'exit', label: '퇴실 예정' } : checkedOutBadge(room)}>완납</StatusBadge>
                         })()}
-                        {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
-                        {!selectMode && totalUnpaid > 0 && (
+                        {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만). 납부일 당일 행은 아직 미납이 아니라 숨긴다(독촉은 다음 날부터, isUnpaidSmsTarget 과 같은 선) */}
+                        {!selectMode && totalUnpaid > 0 && kind !== 'dueToday' && (
                           <Btn variant="ghost" size="sm"
                             onClick={e => { e.stopPropagation(); copyReminder(room, totalUnpaid) }}>
                             독촉 문구 복사

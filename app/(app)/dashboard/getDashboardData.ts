@@ -1673,7 +1673,8 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
       // days = today - dueDate (음수=미래). 미래 dueDate 복원은 today - days, 즉 today + |days|.
       const daysLeft = -days
       const dueDate = new Date(today.getTime() + daysLeft * 86400000)
-      const timeLabel = daysLeft === 0 ? '오늘 납부일' : `${daysLeft}일 남음`
+      // 본문이 이미 '오늘 납부일'이라 아랫줄은 정본 dayLabel 의 '오늘'만(같은 말 두 번 금지, 디자이너 패스 2026-11-04)
+      const timeLabel = daysLeft === 0 ? '오늘' : `${daysLeft}일 남음`
       alertItems.push({
         category:  'upcoming',
         text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} ${daysLeft === 0 ? '오늘 납부일' : '납부 예정'}`,

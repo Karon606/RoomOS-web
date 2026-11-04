@@ -18,8 +18,9 @@ import { kstYmdStr } from '@/lib/kstDate'
 // 카테고리별 점 색 (대시보드 알림 톤과 맞춤)
 const DOT: Record<AlertCategory, string> = {
   unpaid:   'var(--tc)',
-  // 오늘 납부일 — 홈 알림 목록의 같은 건(납부 예정 D-0) 점과 같은 색이다. 미납(테라코타)과 갈린다.
-  dueday:   'var(--inspect-fg)',
+  // 오늘 납부일 — 받을 돈의 납부일 당일은 상태 5단계의 AWAIT(파랑, §03)다. 미납(테라코타)과 갈린다.
+  // 직접 납부(manualpay)와 점 색은 같지만 낱말('오늘 납부일' 대 '오늘 납부')이 받을 돈과 나갈 돈을 가른다(§29).
+  dueday:   'var(--info-fg)',
   contact:  'var(--coral)',
   checkout: 'var(--viz-4)',
   movein:   'var(--success)',

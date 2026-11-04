@@ -85,8 +85,10 @@ need(/dueToday: 'awaiting'/.test(rs), "roomsStatusSort: ⓖ dueToday 가 납부 
 need(/if \(days === 0\) return '납부일 당일'/.test(rs), "roomsStatusSort: ⓖ unpaidBadgeLabel 의 당일 가지가 '납부일 당일'이 아니다(지우지 말 것, M2).")
 need(/'dueToday'/.test(rs) && /isDueTodayRow\(room, targetMonth, today\) \? 'dueToday'/.test(rs), 'roomsStatusSort: ⓖ 미납 분기(isPaid=false)의 당일 행이 dueToday 로 가지 않는다.')
 const rc = read('app/(app)/rooms/RoomsClient.tsx')
-need((rc.match(/kind === 'dueToday'\) \{/g) ?? []).length === 2, "RoomsClient: ⓖ 카드·표 쌍둥이가 둘 다 납부일 당일 배지를 그리지 않는다.")
+need((rc.match(/if \(kind === 'dueToday'\) \{/g) ?? []).length === 2, "RoomsClient: ⓖ 카드·표 쌍둥이가 둘 다 납부일 당일 배지를 그리지 않는다.")
 need(/if \(paymentBadgeKind\(room, targetMonth\) === 'dueToday'\) return 'await'/.test(rc), 'RoomsClient: ⓖ roomStatusTone 이 당일을 await 로 두지 않는다.')
+need((rc.match(/totalUnpaid > 0 && kind !== 'dueToday' && \(/g) ?? []).length === 2, "RoomsClient: ⓖ 납부일 당일 행에 독촉 문구 복사가 선다(카드·표 둘 다 숨겨야 한다. 독촉은 다음 날부터).")
+need(/totalUnpaid > 0 && kind === 'dueToday'\) \{\s*return <span className="text-\[var\(--warm-mid\)\]">예정 /.test(rc), "RoomsClient: ⓖ 납부일 당일 행 금액 줄이 미수(붉은 음수)로 선다. '예정'으로 적는다.")
 
 if (fails.length) {
   console.log(`[기한 상태 정본] 위반 ${fails.length}건`)
