@@ -29,9 +29,10 @@ export function Grid({ children }: { children: React.ReactNode }) {
 // 그려진다 — 실측에서 'caocuong2007cc@gmail.com' 이 오른쪽 성별 칸을 덮었다.
 // min-w-0 이 트랙 안에서 줄어들게 하고, anywhere 가 넘칠 때만 끊는다.
 // break-all 은 쓰지 않는다 — 일반 문장까지 아무 데서나 쪼갠다.
-export function Item({ label, value }: { label: string; value: React.ReactNode }) {
+// wide — 격자 한 줄 전폭(col-span-2). 앞 칸이 역할로 빠져 뒤 칸의 좌우 짝이 밀릴 때 짝을 되맞추는 데만 쓴다(2026-11-04).
+export function Item({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="min-w-0">
+    <div className={wide ? 'min-w-0 col-span-2' : 'min-w-0'}>
       <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">{label}</p>
       <div className="text-sm text-[var(--warm-dark)] [overflow-wrap:anywhere]">{value}</div>
     </div>

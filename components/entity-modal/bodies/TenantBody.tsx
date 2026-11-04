@@ -99,8 +99,10 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && (
         <TenantStatusTransitions
           lease={{
-            id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
-            moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
+            // 금액 세 칸은 금액 스코프가 없으면 서버가 null 로 내린다. 그런 역할(제한 스태프)은 편집 역할이 아니라
+            // 이 위젯이 아무 버튼도 세우지 않으므로 0 은 쓰이지 않는다(편집 역할 OWNER·MANAGER 는 늘 금액을 읽는다).
+            id: lease.id, status: lease.status, depositAmount: lease.depositAmount ?? 0, cleaningFee: lease.cleaningFee ?? 0,
+            moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount ?? 0,
             dueDay: lease.dueDay, cycleDay: lease.cycleDay, isShortTerm: lease.isShortTerm,
             reservationConfirmedAt: lease.reservationConfirmedAt, autoCheckoutAt: lease.autoCheckoutAt ?? null,
             moveInFlexible: lease.moveInFlexible ?? null,

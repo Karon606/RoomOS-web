@@ -13,9 +13,11 @@ type Lease = {
   status: string
   registrationStatus: string
   isShortTerm?: boolean   // 단기 — rentAmount가 월액이 아니라 체류 전체 사용료
-  rentAmount: number
-  depositAmount: number
-  cleaningFee: number
+  // 금액 세 칸은 금액 스코프가 없는 역할(제한 스태프)에게 서버가 null 로 내린다(getTenantDetail, 2026-11-04).
+  // null 이면 그 칸을 그리지 않는다. 비활성·캡션 없이 숨긴다(가이드 §27.8 ②).
+  rentAmount: number | null
+  depositAmount: number | null
+  cleaningFee: number | null
   dueDay: string | null
   // 이용 기간 시작일(null 이면 납부일과 같다). 납부일만 옮긴 계약이면 '이용 기간' 을 함께 적는다(2026-10-21).
   cycleDay?: string | null
@@ -87,9 +89,9 @@ export function TenantContractInfo({ lease, foreign = false, registrationNote = 
     <Section title="계약 정보">
       <Grid>
         {/* 좌우상하 순서: 금액류 → 납부방식·문의 일시 → 입주 희망일·퇴실 예정일(나란히) → 연락 알림일 (운영자 확정 2026-07-10) */}
-        <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<MoneyDisplay amount={lease.rentAmount} />} />
-        <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />
-        <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />
+        {lease.rentAmount != null && <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<MoneyDisplay amount={lease.rentAmount} />} />}
+        {lease.depositAmount != null && <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />}
+        {lease.cleaningFee != null && <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />}
         {/* 거주 전 상태는 납부일 항목 숨김 — 아직 정해지지 않은 값(운영자 지적 2026-07-30).
             단기도 숨김 — 입주월 1회 전액 청구라 '매월 N일'이 성립하지 않는다. */}
         {!isPending && !lease.isShortTerm && <Item label="납부일" value={hasSplitCycle({ cycleDay: lease.cycleDay ?? null, dueDay: lease.dueDay })
@@ -97,7 +99,10 @@ export function TenantContractInfo({ lease, foreign = false, registrationNote = 
           // nowrap 이 아니라 inline-block 이다. 칸보다 길면(320px·글자 125%) 조각 안에서 꺾여 칸 밖으로 넘치지 않는다.
           ? <>{fmtDueDay(lease.dueDay)} · <span className="inline-block break-keep">이용 기간 {cyclePeriodParts(lease.cycleDay ?? null).map((p, i) => <span key={i} className="whitespace-nowrap">{p}</span>)}</span></>
           : fmtDueDay(lease.dueDay)} />}
-        <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
+        {/* 금액 세 칸(홀수)이 빠지고 납부일도 없으면(거주 전·단기) 납부방식을 전폭으로 둔다. 그래야 뒤 칸이 금액이 보이는
+            화면과 같은 좌우 짝(입주 희망일과 일정 조절, 입주일과 거주기간)을 지킨다. 편집 역할 화면에는 조건이 거짓이라 그대로다. */}
+        <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming}
+          wide={lease.rentAmount == null && (isPending || !!lease.isShortTerm)} />
         {/* 문의 일시 · 투어 예정일 · 입주 희망일 — 리드가 걸어온 순서 그대로 선다.
             종전에는 문의 일시와 입주일이 삼항 한 벌로 얽혀 사이에 줄을 넣을 자리가 없었다.
             조건을 쪼개기만 한 것이라 그려지는 항목은 종전과 같다(입주일 줄은 늘 선다).

@@ -2325,11 +2325,14 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                   <span className="text-[var(--warm-muted)]">상태</span>
                   <span className="text-[var(--warm-dark)]">{LEASE_STATUS_LABEL[lease.status] ?? lease.status}</span>
                 </div>
-                <div className="flex justify-between mb-1">
-                  <span className="text-[var(--warm-muted)]">이용료</span>
-                  <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(lease.rentAmount)}</span>
-                </div>
-                {lease.depositAmount > 0 && (
+                {/* 금액은 서버가 금액 스코프 없는 역할에게 null 로 내린다(getTenantQuickInfo). null 이면 줄을 세우지 않는다. */}
+                {lease.rentAmount != null && (
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[var(--warm-muted)]">이용료</span>
+                    <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(lease.rentAmount)}</span>
+                  </div>
+                )}
+                {lease.depositAmount != null && lease.depositAmount > 0 && (
                   <div className="flex justify-between mb-1">
                     <span className="text-[var(--warm-muted)]">보증금</span>
                     <span className="text-[var(--warm-dark)]">{fmtWon(lease.depositAmount)}</span>

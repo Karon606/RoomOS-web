@@ -5,7 +5,7 @@
 // 희망 방이 있으면 그 방들의 컨디션만, 없으면 영업장 전체 컨디션을 모두 보여준다(문의 전화 대응용).
 // 계산은 홈 '단기 요금 계산'과 동일(calcShortStay) — 금액이 항상 일치.
 
-import { useCanEdit } from '@/components/RoleContext'
+import { useCanEdit, useCanReadScope } from '@/components/RoleContext'
 import { useEffect, useState } from 'react'
 import { getRoomsForQuote, undoShortStayExtension } from '@/app/(app)/tenants/actions'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
@@ -59,8 +59,14 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
 }) {
   // 열람 전용(STAFF·제한 스태프)에게는 쓰기 입구를 숨긴다(2026-11-03 운영자 승인, 감사 D3 숨김 문법). 서버 requireEdit 가 최종 방어다.
   const canEditUi = useCanEdit()
+  // 금액을 못 읽는 역할(제한 스태프)에게는 예상 요금 구획을 세우지 않고 요금표도 부르지 않는다(2026-11-04 운영자 승인
+  // '추천대로', §27.8 ② 숨김). 청구 이력은 서버(getTenantDetail)가 그 역할에게 비워 내려 저절로 안 선다.
+  const canReadMoney = useCanReadScope('money')
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
-  useEffect(() => { getRoomsForQuote().then(setData).catch(() => setData(null)) }, [])
+  useEffect(() => {
+    if (!canReadMoney) return
+    getRoomsForQuote().then(setData).catch(() => setData(null))
+  }, [canReadMoney])
 
   // 연장 진입점(거주 중·퇴실 예정) + 마지막 미취소 연장 이력(상시 적용취소 진입점, v2.0 §16).
   const [extOpen, setExtOpen] = useState(false)
@@ -117,14 +123,15 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
           입주 희망 <span className="font-semibold">{fmtMD(lease.moveInDate)}</span>
           <span className="text-[var(--warm-muted)]"> ~ </span>
           퇴실 <span className="font-semibold">{fmtMD(lease.expectedMoveOut)}</span>
-          {days != null && data && (() => {
-            const s = calcShortStay(data.shortStay, 100, days, leaseDates)
+          {/* 체류 일수는 금액이 아니라 요금표 없이도 선다(금액을 못 읽는 역할에게도). '(N주 계약)' 만 요금 정책이 있을 때 붙는다. */}
+          {days != null && (() => {
+            const s = data ? calcShortStay(data.shortStay, 100, days, leaseDates) : null
             return (
-              <span className="text-xs text-[var(--warm-mid)]"> · {days}일{s ? ` (${s.units}${data.shortStay.unitDays === 7 ? '주' : `×${data.shortStay.unitDays}일`} 계약)` : ''}</span>
+              <span className="text-xs text-[var(--warm-mid)]"> · {days}일{s && data ? ` (${s.units}${data.shortStay.unitDays === 7 ? '주' : `×${data.shortStay.unitDays}일`} 계약)` : ''}</span>
             )
           })()}
         </p>
-        {days == null ? (
+        {!canReadMoney ? null : days == null ? (
           <p className="text-xs text-[var(--warm-muted)]">입주 희망일과 퇴실 예정일을 입력하면 방 컨디션별 요금이 자동 계산됩니다.</p>
         ) : !data ? (
           <p className="text-xs text-[var(--warm-muted)]">요금 계산 중…</p>
@@ -159,7 +166,8 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
 
         {/* 청구 이력(연장·감액 전체, 시간순) + 상시 적용취소 진입점, 그리고 연장 버튼(거주 중·퇴실 예정).
             취소분은 취소선으로 남긴다 — 이력은 append-only 스택이고 적용취소는 마지막 미취소 항목만(LIFO). */}
-        {(canExtend || exts.length > 0) && (
+        {/* 연장 버튼은 편집 역할에게만 서므로 구분선도 그때만 세운다. 열람 역할에게 이력이 없으면 빈 구분선만 남았다. */}
+        {((canEditUi && canExtend) || exts.length > 0) && (
           <div className="mt-1 pt-3 border-t border-[var(--warm-border)] space-y-2">
             {exts.length > 0 && (
               <div>

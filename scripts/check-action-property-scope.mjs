@@ -323,6 +323,32 @@ const AXES = [
     ],
     mustNot: [[/rentDiscount\.findMany\(\{\s*where:\s*\{\s*leaseTermId\s*\}/, '할인을 계약 id 만으로 읽는다']],
   },
+  // 입주자 상세·간단 정보의 금액(2026-11-04 운영자 승인 '추천대로'). /tenants 는 제한 스태프 허용 라우트라 상세가 그 역할에게도 열린다.
+  // 금액 스코프가 없으면 계약 금액 칸·납부 기록·금액 스냅샷을 비워 내린다. 호출을 지우고 import 만 남겨도 이 축이 운다.
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'getTenantDetail',
+    noOrder: true,
+    must: [
+      [/tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*tenantId,\s*propertyId:\s*access\.propertyId\s*\}/, '입주자를 영업장 범위로 읽지 않는다'],
+      [/const canMoney = canReadScope\(access\.role, 'money'\)/, '금액 스코프(canReadScope money)를 보지 않는다(제한 스태프가 계약 금액·납부 기록을 받는다)'],
+      ...['rentAmount', 'depositAmount', 'cleaningFee', 'shortStayExtensions', 'checkoutProrationUndo'].map(k => [new RegExp(`\\b${k}: canMoney \\? l\\.${k} : null,`), `금액 칸 ${k} 를 금액 스코프 없이 내린다`]),
+      [/\bpaymentRecords: canMoney \? l\.paymentRecords : \[\],/, '납부 기록을 금액 스코프 없이 내린다'],
+      [/return \{\n\s*\.\.\.tenant,\n\s*leaseTerms,\n/, '응답이 거른 계약(leaseTerms)이 아니라 원본을 싣는다'],
+    ],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'getTenantQuickInfo',
+    noOrder: true,
+    must: [
+      [/const canMoney = canReadScope\(access\.role, 'money'\)/, '금액 스코프(canReadScope money)를 보지 않는다'],
+      ...['rentAmount', 'depositAmount'].map(k => [new RegExp(`\\b${k}: canMoney \\? l\\.${k} : null,`), `금액 칸 ${k} 를 금액 스코프 없이 내린다`]),
+      [/leaseTerms: mainLeaseOnly\(leaseTerms\)/, '응답이 거른 계약이 아니라 원본을 싣는다'],
+    ],
+    mustNot: [[/mainLeaseOnly\(row\.leaseTerms\)/, '원본 계약(금액 포함)을 그대로 싣는다']],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
@@ -1017,6 +1043,18 @@ for (const [model, c] of Object.entries(count2)) {
   if (c.where !== e.where || c.data !== e.data) violations.push(`${model} 쓰기가 where ${c.where}·data ${c.data}곳이다(고정 where ${e.where}·data ${e.data}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED2 를 함께 고친다`)
 }
 if (revertCalls < 7) violations.push(`revertShiftRows 호출이 ${revertCalls}곳만 보인다(7곳 이상). 정규식이 낡았다`)
+
+// 입주자 상세 화면의 금액 칸(2026-11-04 운영자 승인 '추천대로'). 서버가 null 로 내린 칸은 그리지 않는다(§27.8 ② 숨김, 캡션 없음).
+// 가드를 지우면 MoneyDisplay 가 null 을 받아 '0원' 이나 빈 금액이 선다.
+for (const [file, pats] of [
+  ['components/entity-modal/widgets/TenantContractInfo.tsx', [/\{lease\.rentAmount != null && <Item /, /\{lease\.depositAmount != null && <Item /, /\{lease\.cleaningFee != null && <Item /, /wide=\{lease\.rentAmount == null && \(isPending \|\| !!lease\.isShortTerm\)\}/]],
+  ['components/entity-modal/widgets/TenantBasicInfo.tsx', [/\{x\.rentAmount != null && <MoneyDisplay /]],
+  ['components/entity-modal/widgets/ShortStayInfoWidget.tsx', [/const canReadMoney = useCanReadScope\('money'\)/, /if \(!canReadMoney\) return\n\s*getRoomsForQuote\(\)/, /\{!canReadMoney \? null : days == null/, /\(\(canEditUi && canExtend\) \|\| exts\.length > 0\)/]],
+]) {
+  let src = ''
+  try { src = readFileSync(file, 'utf8') } catch { violations.push(`${file} — 파일을 못 읽었다`); continue }
+  for (const re of pats) if (!re.test(src)) violations.push(`${file} — 금액 칸 숨김 가드(${re.source.slice(0, 40)})가 없다. 금액을 못 읽는 역할에게 빈 금액 칸이나 요금이 선다`)
+}
 
 if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)
 if (dataCount !== EXPECTED.data) violations.push(`data 를 싣는 쓰기가 ${dataCount}곳이다(고정 ${EXPECTED.data}). 새 쓰기를 더했거나 정규식이 낡았다. 펼침을 확인하고 EXPECTED 를 함께 고친다`)

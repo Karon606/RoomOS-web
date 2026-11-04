@@ -18,7 +18,8 @@ type Lease = {
   id: string
   status: string
   moveInDate: Date | string | null
-  rentAmount: number
+  // 금액 스코프가 없는 역할(제한 스태프)에게는 서버가 null 로 내린다(getTenantDetail). null 이면 금액을 그리지 않는다.
+  rentAmount: number | null
   room: { id: string; roomNo: string } | null
 }
 
@@ -99,7 +100,7 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
                     : <span className="font-medium text-[var(--warm-dark)]">호실 미지정</span>}
                   <span className="text-[var(--warm-muted)]"> {STATUS_LABEL[x.status] ?? x.status}</span>
                 </span>
-                <MoneyDisplay amount={x.rentAmount} className="shrink-0 text-[var(--warm-muted)]" />
+                {x.rentAmount != null && <MoneyDisplay amount={x.rentAmount} className="shrink-0 text-[var(--warm-muted)]" />}
               </li>
             ))}
           </ul>

@@ -596,6 +596,34 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 입주자 상세의 금액(2026-11-04 운영자 승인 '추천대로') ── 금액을 못 읽는 제한 스태프에게는 계약 금액 칸·납부 기록이 비어 내려간다.
+  {
+    const T1 = await tenantIn(P1, '상세 내'), T2 = await tenantIn(P2, '상세 남')
+    const L1 = await leaseIn(P1, T1, null)
+    await leaseIn(P2, T2, null)
+    await prisma.leaseTerm.update({ where: { id: L1 }, data: { cleaningFee: 30000, shortStayExtensions: [{ prevRentAmount: 300000, newRentAmount: 350000 }] } })
+    await prisma.paymentRecord.create({ data: { leaseTermId: L1, tenantId: T1, propertyId: P1, targetMonth: '2026-10', expectedAmount: 300000, actualAmount: 300000, payDate: new Date('2026-10-10T00:00:00Z'), seqNo: 1, isPaid: true } })
+    const money = (d: Awaited<ReturnType<typeof rooms.getTenantDetail>>) => {
+      const l = d?.leaseTerms[0]
+      return l ? [l.rentAmount, l.depositAmount, l.cleaningFee, l.paymentRecords.length, l.shortStayExtensions == null] : null
+    }
+    const quick = async () => { const l = (await rooms.getTenantQuickInfo(T1))?.leaseTerms[0]; return l ? [l.rentAmount, l.depositAmount] : null }
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    eq('LIMITED_STAFF 입주자 상세: 금액 칸 null · 납부 기록 빈 배열 · 단기 청구 이력 비움', money(await rooms.getTenantDetail(T1)), [null, null, null, 0, true])
+    const body = JSON.stringify(await rooms.getTenantDetail(T1))
+    eq('LIMITED_STAFF 입주자 상세 응답에 금액 숫자가 없다', ['300000', '50000', '30000', '350000'].filter(x => body.includes(x)), [])
+    eq('LIMITED_STAFF 입주자 상세: 이름 등 금액 아닌 칸은 그대로', (await rooms.getTenantDetail(T1))?.name, '상세 내')
+    eq('LIMITED_STAFF 입주자 간단 정보: 금액 칸 null', await quick(), [null, null])
+    eq('LIMITED_STAFF 입주자 상세: 남의 영업장 입주자는 null', await rooms.getTenantDetail(T2), null)
+    for (const role of ['STAFF', 'MANAGER', 'OWNER'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 입주자 상세: 금액 칸·납부 기록 그대로`, money(await rooms.getTenantDetail(T1)), [300000, 50000, 30000, 1, false])
+      eq(`${role} 입주자 간단 정보: 금액 칸 그대로`, await quick(), [300000, 50000])
+      eq(`${role} 입주자 상세: 남의 영업장 입주자는 null`, await rooms.getTenantDetail(T2), null)
+    }
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()
