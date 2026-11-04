@@ -599,12 +599,17 @@ async function main() {
   // ── 입주자 상세의 금액(2026-11-04 운영자 승인 '추천대로') ── 금액을 못 읽는 제한 스태프에게는 계약 금액 칸·납부 기록이 비어 내려간다.
   {
     const T1 = await tenantIn(P1, '상세 내'), T2 = await tenantIn(P2, '상세 남')
-    const L1 = await leaseIn(P1, T1, null)
+    // 방에 먼 미래 예약 인상(313,131)을 걸어 둔다. 기준액은 그대로이고, 응답에서 그 칸이 걷히는지 본다(lib/rentView 재료).
+    const R1 = await roomIn(P1, '상세호')
+    await prisma.room.update({ where: { id: R1 }, data: { scheduledRent: 313131, rentUpdateDate: new Date('2099-01-01T00:00:00Z') } })
+    const L1 = await leaseIn(P1, T1, R1)
     await leaseIn(P2, T2, null)
     await prisma.leaseTerm.update({ where: { id: L1 }, data: { cleaningFee: 30000, shortStayExtensions: [{ prevRentAmount: 300000, newRentAmount: 350000 }] } })
     // 정책 금액까지 넣어 응답 전체에서 찾는다(독립 검수 R2). 다른 픽스처와 겹치지 않는 값이다.
     await prisma.property.update({ where: { id: P1 }, data: { shortStayPolicy: { enabled: true, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 23331, roundTo: 1000, deposit: 87777, reservationMode: null } } })
-    const DETAIL_MONEY = ['300000', '50000', '30000', '350000', '23331', '87777']
+    // 할인 후 금액(2026-11-04, lib/rentView). 영구 할인 2만 1건이라 그 계약의 할인 후는 280,000 이다.
+    await prisma.rentDiscount.create({ data: { leaseTermId: L1, discountType: 'amount', value: 20000, scope: 'permanent' } })
+    const DETAIL_MONEY = ['300000', '50000', '30000', '350000', '23331', '87777', '280000', '313131']
     await prisma.paymentRecord.create({ data: { leaseTermId: L1, tenantId: T1, propertyId: P1, targetMonth: '2026-10', expectedAmount: 300000, actualAmount: 300000, payDate: new Date('2026-10-10T00:00:00Z'), seqNo: 1, isPaid: true } })
     const money = (d: Awaited<ReturnType<typeof rooms.getTenantDetail>>) => {
       const l = d?.leaseTerms[0]
@@ -615,6 +620,8 @@ async function main() {
     eq('LIMITED_STAFF 입주자 상세: 금액 칸 null · 납부 기록 빈 배열 · 단기 청구 이력 비움', money(await rooms.getTenantDetail(T1)), [null, null, null, 0, true])
     const body = JSON.stringify(await rooms.getTenantDetail(T1))
     eq('LIMITED_STAFF 입주자 상세 응답에 금액 숫자가 없다(계약·스냅샷·정책 금액)', DETAIL_MONEY.filter(x => body.includes(x)), [])
+    eq('LIMITED_STAFF 입주자 상세: 할인 후 금액 null', (await rooms.getTenantDetail(T1))?.leaseTerms[0]?.rentAfterDiscount ?? null, null)
+    eq('LIMITED_STAFF 입주자 상세: 할인 원시 배열·방 예약 인상 칸을 싣지 않는다', ['"discounts"', '"scheduledRent"', '"nonResidentScheduled"'].filter(k => body.includes(k)), [])
     eq('LIMITED_STAFF 입주자 상세: 영업장 단기 정책 null', (await rooms.getTenantDetail(T1))?.leaseTerms[0]?.property?.shortStayPolicy ?? null, null)
     eq('LIMITED_STAFF 입주자 상세: 이름 등 금액 아닌 칸은 그대로', (await rooms.getTenantDetail(T1))?.name, '상세 내')
     eq('LIMITED_STAFF 입주자 간단 정보: 금액 칸 null', await quick(), [null, null])
@@ -622,6 +629,9 @@ async function main() {
     for (const role of ['STAFF', 'MANAGER', 'OWNER'] as const) {
       g.__CR_FLOW_ROLE = role
       eq(`${role} 입주자 상세: 금액 칸·납부 기록 그대로`, money(await rooms.getTenantDetail(T1)), [300000, 50000, 30000, 1, false])
+      eq(`${role} 입주자 상세: 할인 후 금액(계약 30만 · 영구 할인 2만)`, (await rooms.getTenantDetail(T1))?.leaseTerms[0]?.rentAfterDiscount, 280000)
+      const roleBody = JSON.stringify(await rooms.getTenantDetail(T1))
+      eq(`${role} 입주자 상세: 할인 원시 배열·방 예약 인상 칸을 싣지 않는다`, ['"discounts"', '"scheduledRent"', '"nonResidentScheduled"'].filter(k => roleBody.includes(k)), [])
       eq(`${role} 입주자 상세: 영업장 단기 정책 그대로`, ((await rooms.getTenantDetail(T1))?.leaseTerms[0]?.property?.shortStayPolicy as { deposit?: number } | null)?.deposit, 87777)
       eq(`${role} 입주자 간단 정보: 금액 칸 그대로`, await quick(), [300000, 50000])
       eq(`${role} 입주자 상세: 남의 영업장 입주자는 null`, await rooms.getTenantDetail(T2), null)

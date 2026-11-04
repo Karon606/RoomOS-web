@@ -8,7 +8,8 @@ import { revalidatePath } from 'next/cache'
 import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
-import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { kstDateTimeToUtc, kstMonthStr, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { rentAfterDiscountFor } from '@/lib/rentView'
 import {
   cashReceiptMonth, isCashReceiptEligible, resolveCashReceiptIssuedAt, cashReceiptIssuableAmount, isCashReceiptCandidate,
   cashReceiptKey, cashReceiptLineView, planCashReceiptEdit, planCashReceiptEntry, planCashReceiptOn, planCashReceiptRemoval,
@@ -3458,7 +3459,11 @@ export async function getTenantDetail(tenantId: string) {
               where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
               select: { id: true, status: true, registrationStatus: true, tenant: { select: { name: true } } },
             },
+            // 예약 인상 두 축. '할인 후' 기준액(effectiveBaseRent) 재료. 계산에만 쓰고 응답에서는 걷는다(아래 map).
+            scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true,
           } },
+          // 할인. '할인 후' 금액 재료(lib/rentView). 원시 배열은 응답에 싣지 않는다(화면 재계산 여지를 없앤다).
+          discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           // 퇴실 예정 때 고른 사유를 퇴실 처리 미니폼이 이어받을 근거(lib/checkoutReason 정본이 고른다).
           // 최신 몇 행이면 된다 — 예정 구간 밖의 전이를 만나면 판정이 멈춘다. deletedAt 은 손수 적는다
           // (중첩 관계 조회는 소프트삭제 자동필터가 안 걸린다).
@@ -3495,8 +3500,13 @@ export async function getTenantDetail(tenantId: string) {
   // 같은 역할에게 금액·스냅샷 칸과 납부 기록을 걷는다. 금액을 담은 스냅샷 둘(단기 청구 이력·환불 적용취소)도 함께 비운다.
   // 화면은 null 인 칸을 그리지 않고, 납부 기록이 비면 수납 분석 구획이 서지 않는다(가이드 §27.8 ② 숨김, 캡션 없음).
   const canMoney = canReadScope(access.role, 'money')
-  const leaseTerms = row.leaseTerms.map(l => ({
+  // 계약 정보 '월 이용료' 칸 아래 '할인 후 N'(2026-11-04 운영자 승인 '추천대로'). 값은 여기서 정본(lib/rentView)으로 한 번 내고
+  // 화면은 그리기만 한다. 이번 달 할인이 걸리지 않으면 null 이라 칸은 지금과 같다. 금액 스코프가 없으면 null.
+  const todayMonth = kstMonthStr()
+  const leaseTerms = row.leaseTerms.map(({ discounts, room, ...l }) => ({
     ...l,
+    room: room ? stripRoomRentAxes(room) : room,
+    rentAfterDiscount: canMoney ? rentAfterDiscountFor({ ...l, discounts, room }, todayMonth) : null,
     rentAmount: canMoney ? l.rentAmount : null,
     depositAmount: canMoney ? l.depositAmount : null,
     cleaningFee: canMoney ? l.cleaningFee : null,
@@ -3512,6 +3522,12 @@ export async function getTenantDetail(tenantId: string) {
     foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null,
     monthlyBilling: await tenantMonthlyBilling(row.leaseTerms),
   }
+}
+
+// 상세 응답의 방에서 예약 인상 칸을 걷는다. 기준액 계산에만 읽었고 화면은 쓰지 않는다(금액이라 제한 스태프에게도 안 간다).
+function stripRoomRentAxes<T extends { scheduledRent: unknown; rentUpdateDate: unknown; nonResidentScheduled: unknown; nonResidentRentDate: unknown }>(room: T) {
+  const { scheduledRent: _s, rentUpdateDate: _d, nonResidentScheduled: _ns, nonResidentRentDate: _nd, ...rest } = room
+  return rest
 }
 
 /**

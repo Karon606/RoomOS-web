@@ -18,6 +18,9 @@ type Lease = {
   rentAmount: number | null
   depositAmount: number | null
   cleaningFee: number | null
+  // 이번 달 할인이 걸린 계약의 할인 후 금액(그 달 요율). 서버가 정본(lib/rentView)으로 내리고 여기는 그리기만 한다.
+  // 할인이 없거나 금액 스코프가 없으면 null 이고, 그러면 '월 이용료' 칸은 종전 그대로다(2026-11-04 운영자 승인 '추천대로').
+  rentAfterDiscount?: number | null
   dueDay: string | null
   // 이용 기간 시작일(null 이면 납부일과 같다). 납부일만 옮긴 계약이면 '이용 기간' 을 함께 적는다(2026-10-21).
   cycleDay?: string | null
@@ -89,7 +92,15 @@ export function TenantContractInfo({ lease, foreign = false, registrationNote = 
     <Section title="계약 정보">
       <Grid>
         {/* 좌우상하 순서: 금액류 → 납부방식·문의 일시 → 입주 희망일·퇴실 예정일(나란히) → 연락 알림일 (운영자 확정 2026-07-10) */}
-        {lease.rentAmount != null && <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<MoneyDisplay amount={lease.rentAmount} />} />}
+        {/* 주 값은 계약 금액 그대로다(계약서=정가). 할인이 이번 달에 걸리면 그 아래 한 줄로 할인 후 금액을 함께 보인다.
+            두 값은 전환이 아니라 동시에 참인 사실이라 화살표·취소선을 쓰지 않는다(가이드 §06·§29).
+            보조 줄은 같은 모달 형제(기본 정보 '이번 달 청구 합계' 아래 등식, 수납 정보 예약금 구성)와 같은 10.5px 캡션이다. */}
+        {lease.rentAmount != null && <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<>
+          <MoneyDisplay amount={lease.rentAmount} />
+          {lease.rentAfterDiscount != null && (
+            <p className="mt-0.5 text-[0.65625rem] leading-relaxed text-[var(--warm-muted)]">할인 후 <MoneyDisplay amount={lease.rentAfterDiscount} /></p>
+          )}
+        </>} />}
         {lease.depositAmount != null && <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />}
         {lease.cleaningFee != null && <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />}
         {/* 거주 전 상태는 납부일 항목 숨김 — 아직 정해지지 않은 값(운영자 지적 2026-07-30).
