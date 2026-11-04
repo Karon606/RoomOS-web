@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { signOut } from '@/app/property-select/actions'
 
-// 운영자 헤더 우측 프로필 드롭다운 — 로그인 계정 표시 + 앱으로 + 로그아웃.
+// 스테이음 관리자 헤더 우측 프로필 드롭다운. 로그인 계정 표시 + 앱으로 + 로그아웃.
 export default function AdminProfile({
   email,
   hasProperties,
@@ -74,7 +74,7 @@ export default function AdminProfile({
             <button
               type="submit"
               className="w-full text-left px-4 py-2.5 text-sm hover:bg-[var(--cream-soft)] transition-colors"
-              style={{ color: 'var(--persimmon-d)' }}
+              style={{ color: 'var(--warm-dark)' }}
             >
               로그아웃
             </button>

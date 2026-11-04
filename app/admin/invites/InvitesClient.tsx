@@ -1,14 +1,22 @@
 'use client'
 
+// 스테이음 관리자 초대코드 탭. 발급 폼 + 코드 목록. 2026-11-04 가이드 정합(운영자 승인 '추천대로', 5단계).
+//   · 버튼은 정본 Btn(raw button 걷음), 상태는 정본 Badge(비활성·만료·소진), 자동·수동 승인은 속성이라 §11 메타 칩이다.
+//   · 쓰기 셋에 토스트 [적용취소]: 발급(아무도 안 썼을 때만 지움)·켜고 끄기(직전 값)·삭제(지운 행 그대로 되살림, §14 파괴 확인창).
+//   · 다크에서 안 보이던 --persimmon-d 글자를 걷었다(§28).
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
+import { withParticle } from '@/lib/koParticle'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
+import {
+  createInviteCode, toggleInviteCode, deleteInviteCode, restoreInviteCode, undoCreateInviteCode,
+} from '../actions'
 
 type Row = {
   id: string
@@ -23,12 +31,12 @@ type Row = {
   createdAtLabel: string
 }
 
-const inputCls = 'w-full px-3 py-2 rounded-sm text-sm outline-none transition-shadow focus:shadow-[var(--input-ring-focus)]'
-const inputStyle: React.CSSProperties = {
-  background: 'var(--canvas)',
-  border: '1px solid var(--cream-3)',
-  color: 'var(--ink)',
-}
+// 폼 입력 정본 값(§12): 높이 40/모바일 44, r-sm, --cream-2 바탕, 1.5px --border-s, 포커스 --tc 보더.
+const inputCls = 'w-full h-[var(--input-h-touch)] sm:h-[var(--input-h)] px-3 rounded-sm text-sm outline-none bg-[var(--cream-2)] border-[1.5px] border-[var(--border-s)] text-[var(--ink)] placeholder:text-[var(--ink-m)] focus:border-[var(--tc)] focus:shadow-[var(--input-ring-focus)]'
+const labelCls = 'block text-xs font-medium text-[var(--ink-s)] mb-1.5'
+// §11 메타 칩 정본(속성 표시): bg --canvas · --warm-muted · ring 1px --warm-border · r-sm · 10.5px
+const META_CHIP = 'shrink-0 rounded-sm bg-[var(--canvas)] px-1.5 py-0.5 text-[0.65625rem] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]'
+const NET_ERR = '처리 중 통신 오류가 발생했습니다'
 
 export default function InvitesClient({ rows }: { rows: Row[] }) {
   const router = useRouter()
@@ -43,117 +51,117 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
   const [autoApprove, setAutoApprove] = useState(true)
   const [expiresAt, setExpiresAt] = useState('')
 
+  const undoToast = (label: string, run: () => Promise<{ ok: boolean; error?: string }>, doneMsg: string) => ({
+    action: { label, run: () => { void run().then(r => {
+      if (r.ok) { pushToast('info', doneMsg); router.refresh() } else pushToast('error', r.error ?? '되돌리지 못했습니다.')
+    }).catch(() => pushToast('error', NET_ERR)) } },
+  })
+
   function submit() {
     setErr(null)
     startTransition(async () => {
-      const res = await createInviteCode({
-        code: code || undefined,
-        note: note || undefined,
-        maxUses: Number(maxUses) || 0,
-        autoApprove,
-        expiresAt: expiresAt || null,
-      })
-      if (!res.ok) {
-        setErr(res.error ?? '생성 실패')
-        return
+      try {
+        const res = await createInviteCode({
+          code: code || undefined,
+          note: note || undefined,
+          maxUses: Number(maxUses) || 0,
+          autoApprove,
+          expiresAt: expiresAt || null,
+        })
+        if (!res.ok) { setErr(res.error ?? '발급하지 못했습니다.'); return }
+        setCode('')
+        setNote('')
+        setMaxUses('1')
+        setExpiresAt('')
+        const made = res.code
+        pushToast('success', `코드 ${made} 발급했습니다`, undoToast('적용취소', () => undoCreateInviteCode(made), `적용취소했습니다 · 코드 ${made} 발급`))
+        router.refresh()
+      } catch {
+        setErr(NET_ERR)
       }
-      setCode('')
-      setNote('')
-      setMaxUses('1')
-      setExpiresAt('')
-      router.refresh()
     })
   }
 
-  function act(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
-    setBusyId(id)
+  function toggle(c: Row) {
+    const next = !c.isActive
+    setBusyId(c.id)
     startTransition(async () => {
-      const res = await fn()
-      // 리스트 액션(토글·삭제)은 호출 지점이 페이지 곳곳이라 토스트로 — 인라인 에러는 발급 폼 전용.
-      if (!res.ok) pushToast('error', res.error ?? '처리 실패')
-      else router.refresh()
-      setBusyId(null)
+      try {
+        const res = await toggleInviteCode(c.id, next)
+        if (!res.ok) { pushToast('error', '처리하지 못했습니다.'); return }
+        pushToast('success', `코드 ${c.code} ${next ? '활성화' : '비활성화'}했습니다`,
+          undoToast('적용취소', () => toggleInviteCode(c.id, c.isActive), `적용취소했습니다 · 코드 ${c.code} ${next ? '활성화' : '비활성화'}`))
+        router.refresh()
+      } catch {
+        pushToast('error', NET_ERR)
+      } finally {
+        setBusyId(null)
+      }
+    })
+  }
+
+  async function remove(c: Row) {
+    const ok = await confirmDialog({
+      title: `코드 ${withParticle(c.code, '을/를')} 삭제할까요?`,
+      level: 'danger',
+      confirmLabel: '삭제',
+      impact: [{ label: `이 코드로 가입한 ${c.usedCount}명의 계정은 그대로이고, 이 코드로는 더 가입할 수 없습니다.` }],
+      impactTitle: '바로 일어나는 일',
+      irreversibleNote: '실행 뒤 토스트의 적용취소로 되살릴 수 있습니다.',
+    })
+    if (!ok) return
+    setBusyId(c.id)
+    startTransition(async () => {
+      try {
+        const res = await deleteInviteCode(c.id)
+        if (!res.ok) { pushToast('error', res.error); return }
+        const snap = res.snap
+        pushToast('success', `코드 ${c.code} 삭제했습니다`, undoToast('적용취소', () => restoreInviteCode(snap), `적용취소했습니다 · 코드 ${c.code} 삭제`))
+        router.refresh()
+      } catch {
+        pushToast('error', NET_ERR)
+      } finally {
+        setBusyId(null)
+      }
     })
   }
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>
-        초대코드 / 쿠폰
-      </h1>
+    <div className="space-y-3">
+      <h1 className="text-xl font-bold text-[var(--ink)]">초대코드</h1>
 
       {/* 생성 폼 */}
-      <div
-        className="rounded-xl p-4 space-y-3"
-        style={{ background: 'var(--cream)', border: '1px solid var(--cream-3)' }}
-      >
-        <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
-          새 코드 발급
-        </p>
+      <div className="rounded-xl p-4 space-y-3 bg-[var(--cream)] border border-[var(--warm-border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">새 코드 발급</p>
         <div className="grid grid-cols-2 gap-2.5">
           <div className="col-span-2">
-            <label className="text-xs" style={{ color: 'var(--ink-mute)' }}>
-              코드 (비우면 자동 생성)
-            </label>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="STAY-XXXXXX"
-              className={inputCls}
-              style={inputStyle}
-            />
+            <label htmlFor="inv-code" className={labelCls}>코드 (비우면 자동 생성)</label>
+            <input id="inv-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="STAY-XXXXXX" className={inputCls} autoComplete="off" />
           </div>
           <div className="col-span-2">
-            <label className="text-xs" style={{ color: 'var(--ink-mute)' }}>
-              메모 (용도)
-            </label>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="예: 1차 베타 테스터"
-              className={inputCls}
-              style={inputStyle}
-            />
+            <label htmlFor="inv-note" className={labelCls}>메모 (용도)</label>
+            <input id="inv-note" value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="예: 1차 베타 테스터" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs" style={{ color: 'var(--ink-mute)' }}>
-              사용 가능 인원 (0=무제한)
-            </label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={maxUses}
-              onChange={(e) => setMaxUses(e.target.value)}
-              min={0}
-              className={inputCls}
-              style={inputStyle}
-            />
+            <label htmlFor="inv-max" className={labelCls}>사용 가능 인원 (0=무제한)</label>
+            <input id="inv-max" type="number" inputMode="numeric" value={maxUses} onChange={(e) => setMaxUses(e.target.value)}
+              min={0} className={`${inputCls} num`} />
           </div>
           <div>
-            <label className="text-xs" style={{ color: 'var(--ink-mute)' }}>
-              만료일 (선택)
-            </label>
-            <DatePicker
-              value={expiresAt}
-              onChange={setExpiresAt}
-              minDate={kstYmdStr()}
-              placeholder="만료일 선택"
-              className={inputCls}
-              style={inputStyle}
-            />
+            <label className={labelCls}>만료일 (선택)</label>
+            <DatePicker value={expiresAt} onChange={setExpiresAt} minDate={kstYmdStr()} placeholder="만료일 선택" className={inputCls} />
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-3)' }}>
-          <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)} />
+        <label className="flex items-center gap-2 text-sm text-[var(--warm-dark)] cursor-pointer min-h-[44px]">
+          <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}
+            className="w-4 h-4 accent-[var(--coral)] shrink-0" />
           이 코드로 가입하면 자동 승인 (선착순 무료)
         </label>
-        {err && (
-          <p className="text-sm" style={{ color: 'var(--persimmon-d)' }}>
-            {err}
-          </p>
-        )}
+        {err && <p className="text-xs text-[var(--danger-fg)]" role="alert">{err}</p>}
         <Btn variant="primary" size="md" onClick={submit} disabled={pending}>
-          코드 발급
+          {pending && !busyId ? '발급 중…' : '코드 발급'}
         </Btn>
       </div>
 
@@ -169,58 +177,25 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
           {rows.map((c) => {
             const exhausted = c.maxUses > 0 && c.usedCount >= c.maxUses
             const rowBusy = pending && busyId === c.id
-            const disabled = !c.isActive || c.expired || exhausted
             return (
-              <li
-                key={c.id}
-                className="rounded-xl p-4"
-                style={{
-                  background: 'var(--cream)',
-                  border: '1px solid var(--cream-3)',
-                  opacity: rowBusy ? 0.6 : disabled ? 0.7 : 1,
-                }}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="num font-semibold" style={{ color: 'var(--ink)' }}>
-                    {c.code}
-                  </span>
-                  {!c.isActive && <Tag bg="var(--cream-3)" fg="var(--ink-3)">비활성</Tag>}
-                  {c.expired && <Tag bg="var(--cream-3)" fg="var(--ink-3)">만료</Tag>}
-                  {exhausted && <Tag bg="var(--cream-3)" fg="var(--ink-3)">소진</Tag>}
-                  {c.autoApprove ? (
-                    <Tag bg="var(--sand)" fg="var(--ink)">자동승인</Tag>
-                  ) : (
-                    <Tag bg="var(--cream-soft)" fg="var(--ink-3)">수동승인</Tag>
-                  )}
+              <li key={c.id} className="rounded-xl p-4 bg-[var(--cream)] border border-[var(--warm-border)]" style={{ opacity: rowBusy ? 0.6 : 1 }}>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="num font-semibold text-[var(--ink)] mr-1">{c.code}</span>
+                  {!c.isActive && <Badge tone="pale-neutral">비활성</Badge>}
+                  {c.expired && <Badge tone="pale-neutral">만료</Badge>}
+                  {exhausted && <Badge tone="pale-neutral">소진</Badge>}
+                  <span className={META_CHIP}>{c.autoApprove ? '자동 승인' : '수동 승인'}</span>
                 </div>
-                {c.note && (
-                  <p className="text-sm mt-1" style={{ color: 'var(--ink-3)' }}>
-                    {c.note}
-                  </p>
-                )}
-                <p className="text-xs mt-1" style={{ color: 'var(--ink-mute)' }}>
-                  사용 {c.usedCount}/{c.maxUses > 0 ? c.maxUses : '∞'} · 발급 {c.createdAtLabel}
+                {c.note && <p className="text-sm text-[var(--ink-s)] mt-1 break-keep">{c.note}</p>}
+                <p className="text-xs text-[var(--ink-m)] mt-1 num">
+                  사용 {c.usedCount}/{c.maxUses > 0 ? c.maxUses : '무제한'} · 발급 {c.createdAtLabel}
                   {c.expiresAtLabel ? ` · 만료 ${c.expiresAtLabel}` : ''}
                 </p>
-                <div className="flex gap-2 mt-3">
-                  <button
-                    disabled={rowBusy}
-                    onClick={() => act(c.id, () => toggleInviteCode(c.id, !c.isActive))}
-                    className="px-3 py-1.5 text-sm rounded-lg disabled:opacity-50"
-                    style={{ background: 'var(--cream-soft)', color: 'var(--ink-3)', border: '1px solid var(--cream-3)' }}
-                  >
+                <div className="flex justify-end gap-2 mt-3">
+                  <Btn variant="danger" size="sm" disabled={rowBusy} onClick={() => { void remove(c) }}>삭제</Btn>
+                  <Btn variant="secondary" size="sm" disabled={rowBusy} onClick={() => toggle(c)}>
                     {c.isActive ? '비활성화' : '활성화'}
-                  </button>
-                  <button
-                    disabled={rowBusy}
-                    onClick={async () => {
-                      if (await confirmDialog({ title: `코드 ${c.code} 를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' })) act(c.id, () => deleteInviteCode(c.id))
-                    }}
-                    className="px-3 py-1.5 text-sm rounded-lg disabled:opacity-50"
-                    style={{ background: 'transparent', color: 'var(--persimmon-d)', border: '1px solid var(--persimmon-l)' }}
-                  >
-                    삭제
-                  </button>
+                  </Btn>
                 </div>
               </li>
             )
@@ -228,13 +203,5 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
         </ul>
       )}
     </div>
-  )
-}
-
-function Tag({ children, bg, fg }: { children: React.ReactNode; bg: string; fg: string }) {
-  return (
-    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: bg, color: fg }}>
-      {children}
-    </span>
   )
 }

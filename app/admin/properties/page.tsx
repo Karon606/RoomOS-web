@@ -2,6 +2,7 @@ import { getPropertiesOverview, enterPropertyAsAdmin } from '../actions'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import EnterButton from './EnterButton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Badge } from '@/components/ui/Badge'
 
 
 export default async function AdminPropertiesPage() {
@@ -11,12 +12,12 @@ export default async function AdminPropertiesPage() {
   const totalTenants = properties.reduce((s, p) => s + p._count.tenants, 0)
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>
-          영업장 <span style={{ color: 'var(--ink-mute)' }}>({properties.length})</span>
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <h1 className="text-xl font-bold text-[var(--ink)]">
+          영업장 <span className="num text-[var(--ink-m)] font-semibold">({properties.length})</span>
         </h1>
-        <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>
+        <p className="text-xs text-[var(--ink-m)] num">
           총 방 {totalRooms} · 입주자 {totalTenants}
         </p>
       </div>
@@ -29,32 +30,18 @@ export default async function AdminPropertiesPage() {
       ) : (
         <ul className="space-y-2.5">
           {properties.map((p) => (
-            <li
-              key={p.id}
-              className="rounded-xl p-4"
-              style={{ background: 'var(--cream)', border: '1px solid var(--cream-3)' }}
-            >
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                  {p.name}
-                </span>
-                {!p.isActive && (
-                  <span
-                    className="text-[11px] font-semibold px-1.5 py-0.5 rounded"
-                    style={{ background: 'var(--cream-3)', color: 'var(--ink-3)' }}
-                  >
-                    비활성
-                  </span>
-                )}
+            <li key={p.id} className="rounded-xl p-4 bg-[var(--cream)] border border-[var(--warm-border)]">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="font-semibold text-[var(--ink)] truncate mr-1">{p.name}</span>
+                {!p.isActive && <Badge tone="pale-neutral">운영 종료</Badge>}
               </div>
-              <p className="text-sm mt-0.5 truncate" style={{ color: 'var(--ink-3)' }}>
-                {p.address || '주소 미입력'}
-              </p>
-              <p className="text-xs mt-1" style={{ color: 'var(--ink-mute)' }}>
+              {/* 주소는 있을 때만(빈 값을 '미입력'으로 채우면 본인이 빠뜨린 것처럼 읽힌다, §29) */}
+              {p.address && <p className="text-sm text-[var(--ink-s)] mt-0.5 truncate">{p.address}</p>}
+              <p className="text-xs text-[var(--ink-m)] mt-1 num">
                 소유자 {p.owner.realName || p.owner.name || p.owner.email} · 방 {p._count.rooms} · 입주자{' '}
                 {p._count.tenants} · 구성원 {p._count.userRoles} · 개설 {fmtDate(p.createdAt)}
               </p>
-              <form action={enterPropertyAsAdmin} className="mt-3">
+              <form action={enterPropertyAsAdmin} className="mt-3 flex justify-end">
                 <input type="hidden" name="propertyId" value={p.id} />
                 <EnterButton />
               </form>

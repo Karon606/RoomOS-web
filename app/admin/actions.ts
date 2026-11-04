@@ -261,6 +261,7 @@ export async function createInviteCode(input: {
   return { ok: false as const, error: '코드 생성 실패.' }
 }
 
+// 켜고 끄기. 토스트 [적용취소]는 같은 함수로 직전 값을 다시 쓴다(값을 지정해 쓰므로 두 번 눌러도 같다).
 export async function toggleInviteCode(id: string, isActive: boolean) {
   await requireSuperAdmin()
   await prisma.inviteCode.update({ where: { id }, data: { isActive } })
@@ -268,11 +269,49 @@ export async function toggleInviteCode(id: string, isActive: boolean) {
   return { ok: true as const }
 }
 
-export async function deleteInviteCode(id: string) {
+// 발급 적용취소. 아직 아무도 안 쓴 코드만 지운다(누가 이미 썼으면 거부, 그 가입의 근거가 사라지면 안 된다).
+export async function undoCreateInviteCode(code: string): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireSuperAdmin()
+  const n = await prisma.inviteCode.deleteMany({ where: { code, usedCount: 0 } })
+  revalidatePath('/admin/invites')
+  return n.count === 1 ? { ok: true } : { ok: false, error: '그사이 이 코드로 가입한 사람이 있어 지우지 않았습니다.' }
+}
+
+export type InviteCodeSnap = {
+  id: string; code: string; note: string | null; maxUses: number; usedCount: number; autoApprove: boolean
+  isActive: boolean; expiresAt: string | null; createdAt: string; createdBy: string | null
+}
+
+// 삭제. 지운 행 전체를 돌려주어 토스트 [적용취소]가 그대로 되살린다(restoreInviteCode).
+export async function deleteInviteCode(id: string): Promise<{ ok: true; snap: InviteCodeSnap } | { ok: false; error: string }> {
+  await requireSuperAdmin()
+  const row = await prisma.inviteCode.findUnique({ where: { id } })
+  if (!row) return { ok: false, error: '코드를 찾지 못했습니다. 새로고침 후 다시 확인해 주세요.' }
   await prisma.inviteCode.delete({ where: { id } })
   revalidatePath('/admin/invites')
-  return { ok: true as const }
+  return {
+    ok: true,
+    snap: {
+      id: row.id, code: row.code, note: row.note, maxUses: row.maxUses, usedCount: row.usedCount, autoApprove: row.autoApprove,
+      isActive: row.isActive, expiresAt: row.expiresAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(), createdBy: row.createdBy,
+    },
+  }
+}
+
+// 삭제 적용취소. 같은 코드가 그사이 다시 생겼으면 거부한다(덮지 않는다).
+export async function restoreInviteCode(snap: InviteCodeSnap): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireSuperAdmin()
+  if (await prisma.inviteCode.findFirst({ where: { OR: [{ id: snap.id }, { code: snap.code }] }, select: { id: true } })) {
+    return { ok: false, error: '같은 코드가 이미 있어 되살리지 않았습니다.' }
+  }
+  await prisma.inviteCode.create({
+    data: {
+      id: snap.id, code: snap.code, note: snap.note, maxUses: snap.maxUses, usedCount: snap.usedCount, autoApprove: snap.autoApprove,
+      isActive: snap.isActive, expiresAt: snap.expiresAt ? new Date(snap.expiresAt) : null, createdAt: new Date(snap.createdAt), createdBy: snap.createdBy,
+    },
+  })
+  revalidatePath('/admin/invites')
+  return { ok: true }
 }
 
 // ── 영업장 현황 ──

@@ -17,6 +17,9 @@
 //      대기 건수는 정본 countPendingSignups 하나를 사이드바·관리자 탭이 같이 쓴다.
 //   ⓛ 직원 들이기: 승인 창의 '내 영업장 직원으로도 추가'는 기본 꺼짐, 켜면 승인·역할 줄·감사 기록이 한 트랜잭션, 토큰에 역할 줄.
 //      넣을 수 있는 곳은 내가 소유한 영업장, 역할은 소유자 제외. 멤버 초대는 같은 판정(memberJoinState)으로 대기 계정을 알리고 거절 계정은 막는다.
+//   ⓜ 가이드 정합(관리자 세 탭): raw <button>·--persimmon 글자·수제 배지 span 없음, 상태는 Badge(승인됨은 배지 없음), 1차 필터는
+//      SegmentedControl('전체' 먼저), 탭은 ViewTabs, 빈 상태에 '검색어·필터를 조정' 없음, 이름 자리 '—'·'미입력' 채움 없음.
+//      초대코드 쓰기 셋(발급·켜고 끄기·삭제)에 토스트 적용취소, 삭제는 §14 파괴 확인창.
 import { readFileSync } from 'node:fs'
 
 let fail = 0
@@ -80,7 +83,7 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓓ 관리 메뉴로 묶는다', /<ManageMenu items=\{menu\}/.test(ui) && /danger: acts\.danger\.includes\(k\)/.test(ui))
   ok('ⓓ setSuperAdmin(…, true) 는 확인창을 지난 뒤에만', /if \(key === 'grantAdmin'\) \{\s*const ok = await confirmDialog\(\{[\s\S]*?level: 'danger'[\s\S]*?impactTitle: '이 사람이 볼 수 있게 되는 것'[\s\S]*?impact: grantImpact\(/.test(ui)
     && /if \(ok\) run\(u\.id, \(\) => setSuperAdmin\(u\.id, true\)/.test(ui) && (ui.match(/setSuperAdmin\(u\.id, true\)/g) ?? []).length === 1)
-  const row = ui.slice(ui.indexOf('const acts = cardActions('), ui.indexOf('})()}', ui.indexOf('const acts = cardActions(')))
+  const row = ui.slice(ui.indexOf('const acts = cardActions('), ui.indexOf('</li>', ui.indexOf('const acts = cardActions(')))
   ok('ⓓ 카드 발끝은 Btn·ManageMenu 뿐(raw <button> 없음)', row.length > 0 && !/<button\b/.test(row) && /<Btn key=\{k\} size="sm"/.test(row))
   ok('ⓓ 확인창 영향 목록 머리를 바꿀 수 있다', /impactTitle\?: string/.test(read('components/ui/ConfirmDialog.tsx')))
 }
@@ -167,6 +170,30 @@ const act = strip(read('app/admin/actions.ts'))
   const sf = read('app/(app)/settings/SettingsForm.tsx')   // 주석 걷기를 하지 않는다(accept="image/*" 같은 글자가 주석 걷기를 넘긴다)
   ok('ⓛ 초대 토스트·안내문·제한 스태프', /showToast\(memberInviteToast\(result\.joinState\)\)/.test(sf) && !/Google로 로그인/.test(sf) && /<option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김<\/option>\s*<\/select>\s*<Btn variant="primary" size="md" onClick=\{handleInvite\}>/.test(sf))
   ok('ⓛ 대기 화면이 초대받은 영업장을 보인다', /직원으로 초대했습니다\. 스테이음 팀 승인 뒤 바로 들어갑니다/.test(strip(read('app/pending/page.tsx'))))
+}
+
+// ⓜ 가이드 정합
+{
+  const SCREENS = ['app/admin/users/UsersClient.tsx', 'app/admin/invites/InvitesClient.tsx', 'app/admin/properties/page.tsx', 'app/admin/properties/EnterButton.tsx', 'app/admin/AdminNav.tsx', 'app/pending/page.tsx']
+  for (const f of SCREENS) {
+    const s = strip(read(f))
+    ok(`ⓜ ${f}: raw <button> 없음`, !/<button\b/.test(s))
+    ok(`ⓜ ${f}: --persimmon 글자·채움 없음`, !/--persimmon/.test(s))
+    ok(`ⓜ ${f}: 수제 배지 span 없음`, !/<span\s+className="text-\[11px\] font-semibold px-1\.5 py-0\.5 rounded"/.test(s))
+    ok(`ⓜ ${f}: '—'·'미입력' 채움 없음`, !/'—'|미입력/.test(s))
+  }
+  const ui = strip(read('app/admin/users/UsersClient.tsx'))
+  ok("ⓜ 상태 배지: 승인됨은 없음·대기 info·거절 neutral", /PENDING: \{ label: '승인 대기', tone: 'pale-blue' \},\s*APPROVED: null,\s*REJECTED: \{ label: '거절', tone: 'pale-neutral' \}/.test(ui) && /<Badge tone=\{badge\.tone\}>/.test(ui))
+  ok("ⓜ 1차 필터 SegmentedControl, '전체' 먼저", /const FILTERS = \[\s*\{ value: 'ALL', label: '전체' \}/.test(ui) && /<SegmentedControl options=\{FILTERS\}/.test(ui))
+  ok('ⓜ 빈 상태 문구', !/검색어나 필터/.test(ui) && /' 가입자가 없습니다`/.test(ui))
+  ok('ⓜ 이름이 없으면 이메일이 식별자', /\{u\.name \|\| u\.email\}/.test(ui) && /name: u\.realName \|\| u\.name \|\| '',/.test(read('app/admin/users/page.tsx')))
+  ok('ⓜ 연락처·주소는 있을 때만', /\{contact && <p/.test(ui))
+  const inv = strip(read('app/admin/invites/InvitesClient.tsx'))
+  ok('ⓜ 초대코드 발급·켜고 끄기·삭제 적용취소', /undoCreateInviteCode\(made\)/.test(inv) && /toggleInviteCode\(c\.id, c\.isActive\)/.test(inv) && /restoreInviteCode\(snap\)/.test(inv))
+  ok('ⓜ 초대코드 삭제는 파괴 확인창', /level: 'danger',\s*confirmLabel: '삭제'/.test(inv))
+  const ia = act.slice(act.indexOf('export async function undoCreateInviteCode('), act.indexOf('// ── 영업장 현황'))
+  ok('ⓜ 발급 적용취소는 아무도 안 쓴 코드만', /deleteMany\(\{ where: \{ code, usedCount: 0 \} \}\)/.test(ia))
+  ok('ⓜ 되살림은 같은 코드가 있으면 거부', /OR: \[\{ id: snap\.id \}, \{ code: snap\.code \}\]/.test(ia))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

@@ -295,6 +295,28 @@ async function main() {
   eq('이미 구성원: 역할 그대로, 토큰에 역할 없음', [ap4.ok, await roleOf(W2, PADM), ap4.ok ? ap4.undo?.role ?? null : 'x'], [true, 'MANAGER', null])
   eq('거절 계정 다시 승인 적용취소는 거절로', [(await A.undoAdminUserChange(J(ap4.ok ? ap4.undo! : null)!)).ok, (await snap(W2)).status, await roleOf(W2, PADM)], [true, 'REJECTED', 'MANAGER'])
 
+  // ── 5단계: 초대코드 쓰기 셋의 적용취소 ──
+  as(ADMIN, 'admin@example.test')
+  const ic = await A.createInviteCode({ code: 'undo-me', maxUses: 3 })
+  eq('발급', ic, { ok: true, code: 'UNDO-ME' })
+  eq('발급 적용취소: 안 쓴 코드는 지운다', [await A.undoCreateInviteCode('UNDO-ME'), await prisma.inviteCode.count({ where: { code: 'UNDO-ME' } })], [{ ok: true }, 0])
+  await A.createInviteCode({ code: 'USED-ONE', maxUses: 3 })
+  await prisma.inviteCode.update({ where: { code: 'USED-ONE' }, data: { usedCount: 1 } })
+  eq('누가 쓴 코드는 발급 적용취소 거부', [(await A.undoCreateInviteCode('USED-ONE')).ok, await prisma.inviteCode.count({ where: { code: 'USED-ONE' } })], [false, 1])
+  const used = await prisma.inviteCode.findUniqueOrThrow({ where: { code: 'USED-ONE' } })
+  await A.toggleInviteCode(used.id, false)
+  eq('켜고 끄기 적용취소(직전 값)', [(await prisma.inviteCode.findUniqueOrThrow({ where: { id: used.id } })).isActive, (await A.toggleInviteCode(used.id, true)).ok, (await prisma.inviteCode.findUniqueOrThrow({ where: { id: used.id } })).isActive], [false, true, true])
+  const del = await A.deleteInviteCode(used.id)
+  eq('삭제', [del.ok, await prisma.inviteCode.count({ where: { code: 'USED-ONE' } })], [true, 0])
+  const rs = await A.restoreInviteCode(J(del.ok ? del.snap : null)!)
+  const back = await prisma.inviteCode.findUnique({ where: { code: 'USED-ONE' } })
+  eq('삭제 적용취소: 같은 id·사용 수 그대로 되살림', [rs.ok, back?.id, back?.usedCount, back?.maxUses], [true, used.id, 1, 3])
+  eq('같은 코드가 있으면 되살림 거부', (await A.restoreInviteCode(J(del.ok ? del.snap : null)!)).ok, false)
+  as(OUT, 'out@example.test')
+  threw = ''
+  try { await A.restoreInviteCode(J(del.ok ? del.snap : null)!) } catch (e) { threw = String((e as Error).message) }
+  eq('관리자 아니면 되살림도 관문이 막는다', threw, 'cr-flow redirect /dashboard')
+
   // ── 3단계: 알림(가입 대기 → 스테이음 관리자, 참여 요청 → 소유자) · 대기 건수 ──
   const webpush = (await import('web-push')).default
   const vk = webpush.generateVAPIDKeys()

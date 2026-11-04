@@ -11,7 +11,7 @@ export default async function AdminUsersPage() {
   const rows = users.map((u) => ({
     id: u.id,
     email: u.email,
-    name: u.realName || u.name || '—',
+    name: u.realName || u.name || '',   // 비면 화면이 이메일을 식별자로 올린다('—' 금지, §29)
     phone: u.phone || '',
     address: u.address || '',
     status: u.status as 'PENDING' | 'APPROVED' | 'REJECTED',
