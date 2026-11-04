@@ -6959,3 +6959,12 @@ CODEF 계좌연동이 오면 '지급일' 축을 따로 연다). maxRecordable �
 - 감지망 ⓙⓚ·tree-drift ⓖ~ⓚ·ledger-parity 쌍둥이·draft ⑬·seg-ink ⓗ·property-scope, 진리표 test-location-open, 통합 S 절. 가이드 §22·§11·§29, decisions 명명, knowledge/domain-inventory '위치 사용 중지' 절.
 - 독립 검수 반영(같은 날): [차단] 사용 중지 적용취소 토큰의 hubBefore 를 영업장 범위 검사에 넣음. 바꾼 품목마다 사용 중지 뒤 점검·입수·폐기가 있으면 적용취소 거부(재고 0 품목 포함). 계획 뒤 재고 기록 열쇠를 트랜잭션 안에서 다시 대조하고 closedAt: null 조건 행 수 대조(1단계 숨김도 같은 구조로). 이관 수량 원값. 사용 중지한 위치의 품목 링크는 다시 표시·숨김 적용취소로 못 엶. 비품 적용취소 세 곳도 닫힌 보관 위치를 되살리지 않음(restorableStoreIds, 재무와 같은 규칙, 그물로 고정). 배지 낱말 '사용 중지' 하나, 재고 0 품목 캡션 '숨겨집니다', 옮길 것 없으면 버튼 '사용 중지', 점검 경과 캡션은 형제 화면처럼 --warm-muted.
 - 운영자 확인 대기: 마이그레이션 SQL 운영 적용(코드 배포 전에).
+
+## 2026-11-04 스테이음 관리자 페이지(가입자·승인·권한) 6단계 (운영자 승인 '추천대로', 계획서 plan-admin-page)
+- 1단계 권한 오부여 막기: 낱말 '스테이음 관리자' 통일, 권한 주기는 카드 '관리' 메뉴 구분선 아래 + 파괴 확인창(볼 수 있게 되는 것), 토스트 적용취소(서명 토큰), 본인 카드 버튼 없음. 감사 기록 표 admin_audit_logs + 정리 표 user_archives(prisma/migrate_admin_audit.sql, 운영 적용은 운영자 확인 뒤, 코드 배포 전에).
+- 2단계 승인 흐름: 행 보장 정본 lib/auth/ensureAppUser(콜백·동기화·관문), proxy 진입 리디렉트 GET·HEAD 한정(syncUserToDB 미실행 원인, 로컬 재현 확정), signUp emailRedirectTo /callback, 콜백 교환 먼저, 대기 화면 자동 재확인, verify:db check-auth-user-orphans.
+- 3단계 알림: 새 대기는 스테이음 관리자 푸시, 참여 요청은 소유자 푸시, 대기 건수 '(대기 N)' 사이드바·관리자 탭.
+- 4단계 직원 들이기: 승인 창 '내 영업장 직원으로도 추가'(기본 꺼짐, 한 트랜잭션·한 적용취소), 멤버 초대 memberJoinState(대기 알림·거절 거부), 초대 안내문·제한 스태프.
+- 5단계 화면 정합: Badge·Btn·SegmentedControl·ViewTabs, 상태별 버튼, '—'·'미입력' 제거, 초대코드 적용취소 셋, 영업장 탭.
+- 6단계 스팸: 가입 경로·최근 접속 메타(auth.users 읽기), 오래된 대기·거절 정리(삭제 아님, 확인창·적용취소).
+- 독립 디자이너 패스 반영. 운영자 확인 대기: 마이그레이션 적용, 고아 이메일 계정(ef2df750) 처리, Btn danger 다크 대비(공용 9곳).

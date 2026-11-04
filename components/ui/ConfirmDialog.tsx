@@ -185,7 +185,8 @@ export function ConfirmHost() {
           </div>
         )}
 
-        {isDanger && (
+        {/* 되돌릴 수 있는 파괴 단계(토스트 적용취소)는 irreversibleNote '' 로 이 경고 줄을 걷고 본문에 그 사실을 적는다(§14·§27.4). */}
+        {isDanger && opts.irreversibleNote !== '' && (
           <p className="mt-3 text-xs font-semibold text-[var(--tc-d)]">
             {opts.irreversibleNote ?? '이 동작은 되돌릴 수 없습니다.'}
           </p>

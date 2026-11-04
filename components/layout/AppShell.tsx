@@ -50,7 +50,7 @@ export default function AppShell({
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
             <path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/>
           </svg>
-          스테이음 관리자 뷰 · 클릭해서 관리자 페이지로 돌아가기
+          스테이음 관리자로 보는 중 · 관리자 페이지로 돌아가기
         </Link>
       )}
       <Sidebar user={user} isSuperAdmin={isSuperAdmin} adminPendingCount={adminPendingCount} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />

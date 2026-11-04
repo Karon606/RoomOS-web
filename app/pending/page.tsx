@@ -37,11 +37,11 @@ export default async function PendingPage() {
           className="rounded-xl p-7 space-y-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--cream-3)' }}
         >
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>
             {rejected ? '가입이 승인되지 않았습니다' : '승인 대기 중입니다'}
           </h1>
 
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+          <p className="text-sm leading-relaxed break-keep" style={{ color: 'var(--ink-3)' }}>
             {rejected ? (
               <>
                 현재 계정은 서비스 이용이 제한되어 있습니다.
@@ -52,7 +52,7 @@ export default async function PendingPage() {
               <>
                 스테이음은 현재 <b style={{ color: 'var(--tc-text)' }}>베타 운영 중</b>입니다.
                 <br />
-                스테이음 팀 승인 후 모든 기능을 이용하실 수 있어요.
+                스테이음 팀 승인 후 모든 기능을 이용하실 수 있습니다.
                 <br />
                 승인되면 이 화면이 자동으로 넘어갑니다.
               </>
@@ -67,18 +67,19 @@ export default async function PendingPage() {
               {ctx.email}
             </div>
             {!rejected && invitedTo.length === 0 && (
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
+              <p className="text-xs leading-relaxed break-keep" style={{ color: 'var(--warm-muted)' }}>
                 고시원 직원으로 합류하신다면 사장님께 위 이메일을 알려 주세요.
               </p>
             )}
             {invitedTo.length > 0 && (
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+              <p className="text-xs leading-relaxed break-keep" style={{ color: 'var(--ink-3)' }}>
                 {invitedTo.map(r => r.property.name).join(', ')}에서 직원으로 초대했습니다. 스테이음 팀 승인 뒤 바로 들어갑니다.
               </p>
             )}
           </div>
 
-          <PendingAutoCheck initial={rejected ? 'REJECTED' : 'PENDING'} />
+          {/* 거절 상태에는 재확인 버튼을 두지 않는다(누를 이유가 없다). 자동 재확인은 대기일 때만 */}
+          {!rejected && <PendingAutoCheck initial="PENDING" />}
         </div>
 
         <form action={signOut}>

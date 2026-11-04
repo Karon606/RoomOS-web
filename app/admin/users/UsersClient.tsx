@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { pushToast } from '@/lib/saveStatus'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { RotateCcw } from '@/components/ui/RotateCcw'
 import { Btn } from '@/components/ui/Btn'
 import { ManageMenu } from '@/components/ui/RecordEditShell'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -13,7 +14,7 @@ import { withParticle } from '@/lib/koParticle'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { setUserStatus, setSuperAdmin, approveUser, undoAdminUserChange, archiveStaleSignups, unarchiveSignups } from '../actions'
 import {
-  ACTION_LABEL, PLATFORM_ADMIN_LABEL, STAFF_ROLE_LABEL, STALE_DAYS, cardActions, grantImpact,
+  ACTION_LABEL, GRANT_MESSAGE, PLATFORM_ADMIN_LABEL, STAFF_ROLE_HINT, STAFF_ROLE_LABEL, STALE_DAYS, cardActions, grantImpact,
   type AdminUserUndo, type CardActionKey,
 } from '@/lib/adminAccess'
 
@@ -71,12 +72,16 @@ const DONE_MSG: Record<CardActionKey, string> = {
   reapprove: '다시 승인했습니다',
   reject: '거절했습니다',
   toPending: '대기로 되돌렸습니다',
-  revokeApproval: '승인을 취소했습니다',
+  revokeApproval: '승인을 철회했습니다',
   grantAdmin: `${PLATFORM_ADMIN_LABEL} 권한을 줬습니다`,
   revokeAdmin: `${PLATFORM_ADMIN_LABEL} 권한을 회수했습니다`,
 }
 
 const UNDO_REVERSIBLE = '실행 뒤 토스트의 적용취소로 되돌릴 수 있습니다.'
+const NET_ERR = '처리 중 통신 오류가 발생했습니다.'
+/** 스테이음 관리자 계정은 게이트가 늘 승인으로 본다. 상태 배지·'승인 대기' 칸·대기 건수에서 빠진다(countPendingSignups 와 같은 판정). */
+const isAdminRow = (r: Row) => r.isSuperAdmin || r.envAdmin
+const inFilter = (r: Row, f: FilterKey) => f === 'ALL' || (f === 'PENDING' ? r.status === 'PENDING' && !isAdminRow(r) : r.status === f)
 
 type MyProperty = { id: string; name: string }
 type StaffRole = keyof typeof STAFF_ROLE_LABEL
@@ -93,23 +98,25 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
   const archivedCount = rows.filter(r => r.archived).length
   const filters = FILTERS.filter(f => f.value !== 'ARCHIVED' || archivedCount > 0)
   const visible = filter === 'ARCHIVED' ? rows.filter(r => r.archived)
-    : rows.filter(r => !r.archived && (filter === 'ALL' || r.status === filter))
+    : rows.filter(r => !r.archived && inFilter(r, filter))
   const staleRows = rows.filter(r => r.stale)
+  // '정리됨' 칸이 사라지면(전부 되살림) 고른 칸이 없는 채로 남지 않게 '전체'로 돌린다
+  useEffect(() => { if (filter === 'ARCHIVED' && archivedCount === 0) setFilter('ALL') }, [filter, archivedCount])
 
   function run(id: string, fn: () => Promise<ActionResult>, done: string, undoneMsg: string) {
     setBusyId(id)
     startTransition(async () => {
       try {
         const res = await fn()
-        if (!res.ok) { pushToast('error', res.error ?? '처리에 실패했습니다.'); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         const undo = res.undo
         pushToast('success', done, undo ? { action: { label: '적용취소', run: () => { void undoAdminUserChange(undo).then(r => {
           if (r.ok) { pushToast('info', undoneMsg); router.refresh() }
           else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } } } : undefined)
+        }).catch(() => pushToast('error', NET_ERR)) } } } : undefined)
         router.refresh()
       } catch {
-        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+        pushToast('error', NET_ERR)
       } finally {
         setBusyId(null)
       }
@@ -120,13 +127,13 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
   async function archiveStale() {
     const names = staleRows.map(r => r.name || r.email)
     const ok = await confirmDialog({
-      title: `오래된 대기·거절 계정 ${staleRows.length}개를 정리할까요?`,
-      message: `${STALE_DAYS}일 넘게 접속이 없고 영업장이 없는 대기·거절 계정입니다. 계정을 지우지 않고 목록에서만 걷습니다. '정리됨' 칸에서 다시 볼 수 있습니다.`,
+      title: `오래된 대기·거절 계정 ${staleRows.length}명을 정리할까요?`,
+      message: `${STALE_DAYS}일 넘게 접속이 없고 영업장이 없는 대기·거절 계정입니다. 계정을 지우지 않고 목록에서만 뺍니다. '정리됨' 칸에서 다시 볼 수 있고, ${UNDO_REVERSIBLE}`,
       level: 'danger',
       confirmLabel: '정리',
       impactTitle: '정리할 계정',
       impact: [...names.slice(0, 5).map(label => ({ label })), ...(names.length > 5 ? [{ label: `외 ${names.length - 5}명` }] : [])],
-      irreversibleNote: UNDO_REVERSIBLE,
+      irreversibleNote: '',
     })
     if (!ok) return
     startTransition(async () => {
@@ -134,12 +141,12 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
         const res = await archiveStaleSignups(staleRows.map(r => r.id))
         if (!res.ok) { pushToast('error', res.error); return }
         const undo = res.undo
-        pushToast('success', `계정 ${res.count}개를 정리했습니다`, { action: { label: '적용취소', run: () => { void unarchiveSignups(undo.ids, undo.at).then(r => {
-          if (r.ok) { pushToast('info', `적용취소했습니다 · 계정 ${r.count}개 정리`); router.refresh() } else pushToast('error', r.error)
-        }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } } })
+        pushToast('success', `계정 ${res.count}명을 정리했습니다`, { action: { label: '적용취소', run: () => { void unarchiveSignups(undo.ids, undo.at).then(r => {
+          if (r.ok) { pushToast('info', `적용취소했습니다 · 계정 ${r.count}명 정리`); router.refresh() } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', NET_ERR)) } } })
         router.refresh()
       } catch {
-        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+        pushToast('error', NET_ERR)
       }
     })
   }
@@ -150,10 +157,13 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
       try {
         const res = await unarchiveSignups([u.id])
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `${displayName(u)} 되살렸습니다`)
+        // 정리 적용취소의 적용취소 = 다시 정리(서버가 지금도 정리 후보인지 다시 센다)
+        pushToast('success', `정리를 적용취소했습니다 · ${displayName(u)}`, { action: { label: '적용취소', run: () => { void archiveStaleSignups([u.id]).then(r => {
+          if (r.ok) { pushToast('info', `다시 정리했습니다 · ${displayName(u)}`); router.refresh() } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', NET_ERR)) } } })
         router.refresh()
       } catch {
-        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+        pushToast('error', NET_ERR)
       } finally {
         setBusyId(null)
       }
@@ -163,16 +173,17 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
   /** 카드 동작 하나. 위험한 것만 확인창을 거친다(권한 주기는 파괴 단계 + 볼 수 있게 되는 것 목록). */
   async function act(u: Row, key: CardActionKey) {
     const who = displayName(u)
-    const done = `${who} ${DONE_MSG[key]}`
+    const done = `${DONE_MSG[key]} · ${who}`
     const undone = `적용취소했습니다 · ${who} ${ACTION_LABEL[key]}`
     if (key === 'grantAdmin') {
       const ok = await confirmDialog({
         title: `${who}에게 ${PLATFORM_ADMIN_LABEL} 권한을 줄까요?`,
         level: 'danger',
         confirmLabel: '권한 주기',
+        message: GRANT_MESSAGE,
         impactTitle: '이 사람이 볼 수 있게 되는 것',
         impact: grantImpact({ propertyCount, signupCount: rows.length }),
-        irreversibleNote: UNDO_REVERSIBLE,
+        irreversibleNote: '',
       })
       if (ok) run(u.id, () => setSuperAdmin(u.id, true), done, undone)
       return
@@ -190,12 +201,16 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
     if (key === 'approve' || key === 'reapprove') { setApproving(u); return }
     if (key === 'revokeApproval' || (key === 'toPending' && u.status === 'APPROVED')) {
       const ok = await confirmDialog({
-        title: key === 'revokeApproval' ? `${who}의 승인을 취소할까요?` : `${who}의 상태를 대기로 되돌릴까요?`,
+        title: key === 'revokeApproval' ? `${who}의 승인을 철회할까요?` : `${who}의 상태를 대기로 되돌릴까요?`,
+        message: UNDO_REVERSIBLE,
         level: 'danger',
-        confirmLabel: key === 'revokeApproval' ? '승인 취소' : '대기로 되돌리기',
+        confirmLabel: key === 'revokeApproval' ? '승인 철회' : '대기로 되돌리기',
         impactTitle: '바로 일어나는 일',
-        impact: [{ label: `참여한 영업장 ${u.ownedCount + u.roleCount}곳에 들어갈 수 없게 됩니다.` }],
-        irreversibleNote: UNDO_REVERSIBLE,
+        impact: [
+          { label: key === 'revokeApproval' ? '스테이음을 쓸 수 없게 되고 거절 안내 화면으로 갑니다.' : '스테이음을 쓸 수 없게 되고 승인 대기 화면으로 갑니다.' },
+          ...(u.ownedCount + u.roleCount > 0 ? [{ label: `소유·참여한 영업장 ${u.ownedCount + u.roleCount}곳에도 들어갈 수 없습니다.` }] : []),
+        ],
+        irreversibleNote: '',
       })
       if (!ok) return
     }
@@ -207,7 +222,7 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--ink)]">
-          가입자 <span className="num text-[var(--ink-m)] font-semibold">({rows.length - archivedCount})</span>
+          가입자 <span className="num text-[var(--ink-m)] font-semibold">({visible.length})</span>
         </h1>
         {staleRows.length > 0 && (
           <Btn variant="secondary" size="sm" disabled={pending} onClick={() => { void archiveStale() }}>
@@ -226,8 +241,8 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
       ) : (
         <ul className="space-y-2.5">
           {visible.map((u) => {
-            const badge = STATUS_BADGE[u.status]
-            const isAdmin = u.isSuperAdmin || u.envAdmin
+            const isAdmin = isAdminRow(u)
+            const badge = isAdmin ? null : STATUS_BADGE[u.status]
             const rowBusy = pending && busyId === u.id
             const contact = [u.phone, u.address].filter(Boolean).join(' · ')
             const meta = [
@@ -251,21 +266,23 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 flex-wrap">
                     {/* 이름이 없으면(이메일 가입·실명 칸 없던 때) 이메일이 식별자다. '—' 를 찍지 않는다. */}
-                    <span className="font-semibold text-[var(--ink)] truncate mr-1 [overflow-wrap:anywhere]">{u.name || u.email}</span>
+                    <span className="font-semibold text-[var(--ink)] mr-1 [overflow-wrap:anywhere]">{u.name || u.email}</span>
                     {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
                     {isAdmin && <Badge tone="pale-neutral">{PLATFORM_ADMIN_LABEL}</Badge>}
                     {u.isSelf && <Badge tone="pale-neutral">나</Badge>}
                     {u.archived && <Badge tone="pale-neutral">정리됨</Badge>}
                     {u.providerLabel && <span className={META_CHIP}>{u.providerLabel}</span>}
                   </div>
-                  {u.name && <p className="text-sm text-[var(--ink-s)] truncate mt-0.5">{u.email}</p>}
+                  {u.name && <p className="text-sm text-[var(--ink-s)] mt-0.5 break-all">{u.email}</p>}
                   {contact && <p className="text-xs text-[var(--ink-m)] mt-1 break-keep [overflow-wrap:anywhere]">{contact}</p>}
-                  <p className="text-xs text-[var(--ink-m)] mt-1 num">{meta}</p>
+                  <p className="text-xs text-[var(--ink-m)] mt-1 num break-keep">{meta}</p>
                 </div>
 
                 {u.archived && (
                   <div className="flex items-center justify-end gap-2 mt-3">
-                    <Btn size="sm" variant="secondary" disabled={rowBusy} onClick={() => unarchive(u)}>되살리기</Btn>
+                    <Btn size="sm" variant="subtle" disabled={rowBusy} onClick={() => unarchive(u)}>
+                      <span className="inline-flex items-center gap-1.5"><RotateCcw />정리 적용취소</span>
+                    </Btn>
                   </div>
                 )}
                 {(acts.primary.length > 0 || menu.length > 0) && (
@@ -296,7 +313,7 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
             const who = displayName(u)
             setApproving(null)
             const staff = addMember ? ` · ${myProperties.find(p => p.id === addMember.propertyId)?.name ?? ''} ${withParticle(STAFF_ROLE_LABEL[addMember.role], '으로/로')} 추가` : ''
-            run(u.id, () => approveUser(u.id, addMember), `${who} 승인했습니다${staff}`, `적용취소했습니다 · ${who} 승인${addMember ? '·직원 추가' : ''}`)
+            run(u.id, () => approveUser(u.id, addMember), `승인했습니다 · ${who}${staff}`, `적용취소했습니다 · ${who} 승인${addMember ? '·직원 추가' : ''}`)
           }}
         />
       )}
@@ -304,9 +321,13 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
   )
 }
 
+/** 사람을 부르는 말. 이름이 있으면 '이름 님', 없으면 이메일 그대로('님'을 붙이지 않는다). */
 function displayName(u: Row) {
-  return `${u.name || u.email} 님`
+  return u.name ? `${u.name} 님` : u.email
 }
+
+// 폼 셀렉트 정본 값(§12, 형제 멤버 초대와 같은 칸): 높이 44, r-sm, --cream-2, 1.5px --border-s, 포커스 --tc.
+const SELECT_CLS = 'w-full h-[var(--input-h-touch)] bg-[var(--cream-2)] border-[1.5px] border-[var(--border-s)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--tc)]'
 
 /**
  * 승인 확인창(Modal sm). '내 영업장 직원으로도 추가'는 기본 꺼짐이다(갈림길 E). 자기 영업장을 따로 만들어 운영할 사람은 그대로 승인하고,
@@ -321,7 +342,6 @@ function ApproveModal({ row, myProperties, onClose, onApprove }: {
   const [addStaff, setAddStaff] = useState(false)
   const [propertyId, setPropertyId] = useState(myProperties[0]?.id ?? '')
   const [role, setRole] = useState<StaffRole>('STAFF')
-  const roleOptions = (Object.keys(STAFF_ROLE_LABEL) as StaffRole[]).map(k => ({ value: k, label: STAFF_ROLE_LABEL[k] }))
   return (
     <Modal
       open
@@ -339,7 +359,7 @@ function ApproveModal({ row, myProperties, onClose, onApprove }: {
     >
       <div className="space-y-4">
         <p className="text-[13px] leading-relaxed text-[var(--ink-s)] break-keep">
-          승인하면 이 계정이 스테이음을 쓸 수 있습니다. 자기 영업장을 따로 만들어 운영할 사람이면 그대로 승인합니다.
+          승인하면 이 계정이 스테이음을 쓸 수 있습니다.{myProperties.length > 0 && ' 자기 영업장을 따로 만들어 운영할 사람이면 그대로 승인합니다.'}
         </p>
         {myProperties.length > 0 && (
           <div className="space-y-3">
@@ -350,20 +370,17 @@ function ApproveModal({ row, myProperties, onClose, onApprove }: {
             </label>
             {addStaff && (
               <div className="space-y-3 pl-6">
-                {myProperties.length > 1 ? (
-                  <div className="space-y-1.5">
-                    <label htmlFor="approve-property" className="block text-xs font-medium text-[var(--ink-s)]">영업장</label>
-                    <select id="approve-property" value={propertyId} onChange={e => setPropertyId(e.target.value)}
-                      className="w-full h-[var(--input-h-touch)] bg-[var(--cream-2)] border-[1.5px] border-[var(--border-s)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--tc)]">
-                      {myProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                ) : (
-                  <p className="text-xs text-[var(--ink-s)]">영업장 · {myProperties[0].name}</p>
-                )}
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-[var(--ink-s)]">역할</p>
-                  <SegmentedControl options={roleOptions} value={role} onChange={setRole} ariaLabel="직원 역할" />
+                  <label htmlFor="approve-property" className="block text-xs font-medium text-[var(--ink-s)]">영업장</label>
+                  <select id="approve-property" value={propertyId} onChange={e => setPropertyId(e.target.value)} className={SELECT_CLS}>
+                    {myProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="approve-role" className="block text-xs font-medium text-[var(--ink-s)]">역할</label>
+                  <select id="approve-role" value={role} onChange={e => setRole(e.target.value as StaffRole)} className={SELECT_CLS}>
+                    {(Object.keys(STAFF_ROLE_LABEL) as StaffRole[]).map(k => <option key={k} value={k}>{STAFF_ROLE_LABEL[k]} · {STAFF_ROLE_HINT[k]}</option>)}
+                  </select>
                 </div>
               </div>
             )}

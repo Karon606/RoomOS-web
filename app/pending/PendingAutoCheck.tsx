@@ -22,7 +22,7 @@ export default function PendingAutoCheck({ initial }: { initial: 'PENDING' | 'RE
       if (s === 'APPROVED') { window.location.replace('/dashboard'); return }
       if (s === 'SIGNED_OUT') { window.location.replace('/login'); return }
       if (s !== last.current) { last.current = s; router.refresh() }
-      if (manual) setNote(s === 'REJECTED' ? '승인되지 않은 계정입니다.' : '아직 승인 전입니다. 승인되면 이 화면이 저절로 넘어갑니다.')
+      if (manual) setNote(s === 'REJECTED' ? null : '아직 승인 전입니다.')
     } catch {
       if (manual) setNote('상태를 확인하지 못했습니다. 잠시 후 다시 눌러 주세요.')
     } finally {
@@ -40,7 +40,7 @@ export default function PendingAutoCheck({ initial }: { initial: 'PENDING' | 'RE
   return (
     <div className="space-y-2">
       <Btn variant="secondary" size="md" fullWidth disabled={busy} onClick={() => { void check(true) }}>
-        {busy ? '확인 중…' : '승인 확인'}
+        {busy ? '확인 중…' : '상태 다시 확인'}
       </Btn>
       <p className="text-xs min-h-[1.25rem]" style={{ color: 'var(--warm-muted)' }} aria-live="polite">{note}</p>
     </div>

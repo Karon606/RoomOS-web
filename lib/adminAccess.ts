@@ -8,7 +8,7 @@
 //   · 본인 카드는 버튼이 없다(서버도 본인 변경을 거부한다).
 // 카드에 서는 버튼은 cardActions 한 함수가 정하고, 서버가 거부하는 동작은 화면에 세우지 않는다(같은 판정 adminChangeBlock).
 
-import type { Role } from '@/lib/role-types'
+import { ROLE_LABEL, type Role } from '@/lib/role-types'
 
 export const PLATFORM_ADMIN_LABEL = '스테이음 관리자'
 
@@ -142,7 +142,7 @@ export const ACTION_LABEL: Record<CardActionKey, string> = {
   reject: '거절',
   reapprove: '다시 승인',
   toPending: '대기로 되돌리기',
-  revokeApproval: '승인 취소',
+  revokeApproval: '승인 철회',
   grantAdmin: `${PLATFORM_ADMIN_LABEL} 권한 주기`,
   revokeAdmin: `${PLATFORM_ADMIN_LABEL} 권한 회수`,
 }
@@ -152,13 +152,19 @@ export function grantImpact(c: { propertyCount: number; signupCount: number }): 
   return [
     { label: `모든 영업장 ${c.propertyCount}곳에 소유자로 들어갑니다. 입주자 개인정보와 돈 기록을 보고 고칠 수 있습니다.` },
     { label: `스테이음 관리자 화면이 열립니다. 가입자 ${c.signupCount}명의 이메일·연락처를 보고 권한을 바꿀 수 있습니다.` },
-    { label: '직원 권한만 줄 거라면 이 권한이 아니라 환경설정 > 멤버 관리에서 초대합니다.' },
   ]
 }
 
+/** 권한 주기 확인창 본문(영향이 아니라 안내). 되돌릴 수 있다는 사실도 여기 적는다(경고 줄은 '되돌릴 수 없음' 전용). */
+export const GRANT_MESSAGE = '직원 권한만 줄 거라면 이 권한이 아니라 환경설정 > 멤버 관리에서 초대합니다. 실행 뒤 토스트의 적용취소로 되돌릴 수 있습니다.'
+
 /** 승인과 함께 넣을 수 있는 직원 역할(소유자는 넣지 않는다). 멤버 초대와 같은 목록·라벨. */
 export const STAFF_ROLES: readonly Role[] = ['MANAGER', 'STAFF', 'LIMITED_STAFF']
-export const STAFF_ROLE_LABEL: Record<'MANAGER' | 'STAFF' | 'LIMITED_STAFF', string> = { MANAGER: '관리자', STAFF: '스태프', LIMITED_STAFF: '제한 스태프' }
+export const STAFF_ROLE_LABEL: Record<'MANAGER' | 'STAFF' | 'LIMITED_STAFF', string> = { MANAGER: ROLE_LABEL.MANAGER, STAFF: ROLE_LABEL.STAFF, LIMITED_STAFF: ROLE_LABEL.LIMITED_STAFF }
+/** 역할 한 줄 설명. 환경설정 멤버 초대 선택지와 같은 문장. */
+export const STAFF_ROLE_HINT: Record<'MANAGER' | 'STAFF' | 'LIMITED_STAFF', string> = {
+  MANAGER: '등록·수정·삭제 가능', STAFF: '조회만 가능', LIMITED_STAFF: '재고 입력 담당, 금액 숨김',
+}
 
 /**
  * 영업장에 들어가는 길과 계정 승인의 관계(4단계 '같은 판정'). 역할 줄이 있어도 계정이 승인 전이면 그 사람은 대기 화면에 선다.
@@ -176,11 +182,11 @@ export function memberInvitePendingPush(who: string, propertyName: string) {
   return { title: '가입 승인 요청', body: `${propertyName}에서 ${who} 님을 직원으로 초대했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
 }
 
-/** 멤버 초대 뒤 토스트 문장(화면). 대기 계정이면 들어오는 때를 알린다. */
+/** 멤버 초대 뒤 토스트 문장(화면). 두 갈래 같은 문형이고 대기 계정이면 들어오는 때를 덧붙인다. */
 export function memberInviteToast(joinState: 'ready' | 'waiting'): string {
   return joinState === 'waiting'
-    ? '멤버로 추가했습니다 · 아직 스테이음 팀 승인 전 계정이라 승인되면 바로 들어옵니다'
-    : '멤버가 추가되었습니다.'
+    ? '멤버로 추가했습니다. 스테이음 팀 승인 전 계정이라 승인되면 바로 들어옵니다.'
+    : '멤버로 추가했습니다.'
 }
 
 // ── 6단계: 가입 경로 메타 · 오래된 계정 정리 (갈림길 F, 2026-11-04 운영자 승인 '추천대로') ──

@@ -44,7 +44,7 @@ for (const f of LABEL_FILES) {
   const links = sb.match(/<Link href="\/admin"[\s\S]*?<\/Link>/g) ?? []
   ok('ⓐ 사이드바 관리자 링크 둘', links.length === 2)
   ok("ⓐ 사이드바 관리자 링크는 '스테이음 관리자'", links.every(l => l.includes('adminLinkLabel(adminPendingCount)') && !/운영자/.test(l))
-    && /return pending > 0 \? `스테이음 관리자 \(\$\{pending\}\)` : '스테이음 관리자'/.test(sb))
+    && /return pending > 0 \? `스테이음 관리자 \(대기 \$\{pending\}\)` : '스테이음 관리자'/.test(sb))
   ok("ⓐ 영업장 선택의 관리자 링크는 '스테이음 관리자 ›'", strip(read('app/property-select/page.tsx')).includes('스테이음 관리자 ›'))
   ok("ⓐ 정본 낱말 상수", read('lib/adminAccess.ts').includes("export const PLATFORM_ADMIN_LABEL = '스테이음 관리자'"))
 }
@@ -83,6 +83,7 @@ const act = strip(read('app/admin/actions.ts'))
   const ui = strip(read('app/admin/users/UsersClient.tsx'))
   ok('ⓓ 카드는 진리표로 버튼을 세운다', /cardActions\(\{ status: u\.status, dbAdmin: u\.isSuperAdmin, envAdmin: u\.envAdmin, isSelf: u\.isSelf \}\)/.test(ui))
   ok('ⓓ 관리 메뉴로 묶는다', /<ManageMenu items=\{menu\}/.test(ui) && /danger: acts\.danger\.includes\(k\)/.test(ui))
+  ok('ⓓ 권한 주기 확인창 본문에 멤버 관리 안내', /export const GRANT_MESSAGE = '직원 권한만 줄 거라면 이 권한이 아니라 환경설정 > 멤버 관리에서 초대합니다\./.test(read('lib/adminAccess.ts')) && /message: GRANT_MESSAGE,/.test(ui))
   ok('ⓓ setSuperAdmin(…, true) 는 확인창을 지난 뒤에만', /if \(key === 'grantAdmin'\) \{\s*const ok = await confirmDialog\(\{[\s\S]*?level: 'danger'[\s\S]*?impactTitle: '이 사람이 볼 수 있게 되는 것'[\s\S]*?impact: grantImpact\(/.test(ui)
     && /if \(ok\) run\(u\.id, \(\) => setSuperAdmin\(u\.id, true\)/.test(ui) && (ui.match(/setSuperAdmin\(u\.id, true\)/g) ?? []).length === 1)
   const at = ui.indexOf('cardActions({ status: u.status')
@@ -135,7 +136,7 @@ const act = strip(read('app/admin/actions.ts'))
 {
   const pa = strip(read('app/pending/page.tsx')), pc = strip(read('app/pending/PendingAutoCheck.tsx'))
   ok('ⓙ 대기 화면이 자동 재확인을 품는다', /<PendingAutoCheck initial=/.test(pa) && /승인되면 이 화면이 자동으로 넘어갑니다/.test(pa) && !/다시 로그인/.test(pa))
-  ok('ⓙ 30초·탭 복귀·버튼', /PENDING_RECHECK_MS = 30_000/.test(pc) && /addEventListener\('visibilitychange', onVisible\)/.test(pc) && /setInterval\(/.test(pc) && /승인 확인/.test(pc))
+  ok('ⓙ 30초·탭 복귀·버튼', /PENDING_RECHECK_MS = 30_000/.test(pc) && /addEventListener\('visibilitychange', onVisible\)/.test(pc) && /setInterval\(/.test(pc) && /상태 다시 확인/.test(pc))
   ok("ⓙ 승인이면 앱으로", /if \(s === 'APPROVED'\) \{ window\.location\.replace\('\/dashboard'\); return \}/.test(pc))
   ok('ⓙ 재확인 액션은 본인 상태만', /export async function checkMyAccess\(\): Promise<MyAccessStatus> \{\s*const ctx = await getAccessContext\(\)/.test(strip(read('app/pending/actions.ts'))))
 }

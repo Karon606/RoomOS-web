@@ -40,7 +40,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </div>
           <AdminProfile email={ctx.email} hasProperties={myPropertyCount > 0} />
         </div>
-        <div className="max-w-5xl mx-auto px-4">
+        {/* -mb-px: 탭 행 밑선이 헤더 아랫선과 같은 줄에 겹쳐 선이 하나로 보인다 */}
+        <div className="max-w-5xl mx-auto px-4 -mb-px">
           <AdminNav pendingCount={pendingCount} />
         </div>
       </header>

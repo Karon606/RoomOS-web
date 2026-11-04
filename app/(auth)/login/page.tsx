@@ -51,7 +51,7 @@ export default async function LoginPage({
           {error && (
             <div className="rounded-xl p-3"
                  style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
-              <p className="text-[var(--danger-fg)] text-sm">로그인 링크를 처리하지 못했습니다. 이메일 인증을 마쳤다면 아래에서 로그인해 주세요.</p>
+              <p className="text-[var(--danger-fg)] text-sm">로그인을 마치지 못했습니다. 다시 로그인해 주세요. 이메일 인증 링크를 눌렀다면 인증은 끝났으니 아래에서 이메일로 로그인하면 됩니다.</p>
             </div>
           )}
 

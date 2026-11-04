@@ -65,7 +65,7 @@ function schemaSql(): string {
   }
   ok("권한 낱말은 '스테이음 관리자'", ACTION_LABEL.grantAdmin === '스테이음 관리자 권한 주기' && ACTION_LABEL.revokeAdmin === '스테이음 관리자 권한 회수')
   const imp = grantImpact({ propertyCount: 3, signupCount: 8 }).map(i => i.label).join('|')
-  ok('영향 목록에 실제 건수와 멤버 관리 안내', /영업장 3곳/.test(imp) && /가입자 8명/.test(imp) && /환경설정 > 멤버 관리/.test(imp))
+  ok('영향 목록에 실제 건수(안내 문장은 본문 GRANT_MESSAGE)', /영업장 3곳/.test(imp) && /가입자 8명/.test(imp) && !/멤버 관리/.test(imp))
   eq('꼴이 틀린 토큰은 null', parseAdminUserUndo({ v: 1, userId: 'x' }), null)
   // 4단계 같은 판정: 승인된 계정은 바로, 대기는 승인 뒤, 거절은 못 들어온다
   eq('멤버 판정 진리표', [memberJoinState('APPROVED'), memberJoinState('PENDING'), memberJoinState('REJECTED'), memberJoinState('PENDING', true)], ['ready', 'waiting', 'blocked', 'ready'])
@@ -79,7 +79,7 @@ function schemaSql(): string {
     isStaleSignup({ ...base, isSelf: true }, NOW),
   ], [true, true, false, false, false, false, false, false, false, false])
   eq('가입 경로 칩', [providerLabel('google'), providerLabel('email'), providerLabel(null)], ['구글 가입', '이메일 가입', null])
-  ok('대기 계정 초대 토스트는 들어오는 때를 말한다', /승인 전 계정이라 승인되면 바로 들어옵니다/.test(memberInviteToast('waiting')) && memberInviteToast('ready') === '멤버가 추가되었습니다.')
+  ok('대기 계정 초대 토스트는 들어오는 때를 말한다(두 갈래 같은 문형)', /승인 전 계정이라 승인되면 바로 들어옵니다\./.test(memberInviteToast('waiting')) && memberInviteToast('ready') === '멤버로 추가했습니다.')
 }
 
 // ── 2. 통합(PGlite) ───────────────────────────────────────────

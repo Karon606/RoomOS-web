@@ -52,6 +52,15 @@
 - 입주자 상세 수납 모달의 발끝 '수납 등록'도 canEdit 아래다(2026-11-04 운영자 승인 '추천대로' G5, 서버 savePayment 가 requireEdit). 감지망 `scripts/check-pay-entry-single-form.mjs` ⓕ.
 - 감지망 `scripts/check-sms-role-gate.mjs`(서버 문·입구 전수·창 렌더·버튼·Provider 트리·메일·내보내기·편집 입구 표·쓰기용 조회), 통합 `scripts/test-action-property-scope-flow.ts` 열람 역할 절.
 
+## 앱 users 행 보장과 승인 흐름 (2026-11-04, 운영자 승인 '추천대로')
+- 로그인한 사람의 앱 users 행은 정본 `lib/auth/ensureAppUser` 하나가 만든다. 콜백·로그인 동기화(syncUserToDB)·계정 관문(`getAccessContext`, 행이 없을 때)이 부른다. 없으면 대기로 만들고, 있으면 상태·관리자 표식은 절대 안 덮는다(refreshProfile 일 때 이름·사진·넘긴 칸만). 같은 이메일의 다른 행이 있으면 만들지 않는다. 초대코드(메타데이터 invite_code)는 대기·미사용일 때 한 번. 새 대기 행이면 스테이음 관리자에게 푸시(notifySuperAdmins).
+- 원인 확정(로컬 재현): proxy.ts 의 '/'·'/login' 진입 307 이 그 페이지 위 서버 액션 POST 까지 보내, 비밀번호 로그인 직후 syncUserToDB 가 /property-select 로 튕겨 실행되지 않았다(200 application/json, 클라이언트 'unexpected response', 가입 폼 일반 오류). 이제 진입 리디렉트는 GET·HEAD 만. 행동 그물 scripts/test-proxy-entry-redirect.ts.
+- 이메일 인증 링크는 signUp·resend 의 emailRedirectTo 로 /callback 에 돌아온다(종전에는 Site URL '/' 로 와서 코드가 교환되지 않았다). Supabase 대시보드 Redirect URLs 에 /callback 이 있어야 한다.
+- 콜백은 코드를 먼저 교환한다. 교환이 실패했을 때만 기존 세션으로 통과(뒤로가기 재진입 보호). 종전 '이미 로그인이면 통과' 지름길은 다른 계정 세션으로 Google 코드를 버렸다. 교환 실패는 세션을 지우지 않는다(auth-js).
+- 대기 화면은 탭 복귀·30초·[상태 다시 확인]에 checkMyAccess(본인 상태만)로 재확인하고 승인되면 /dashboard 로 넘어간다. 승인 전에 직원으로 초대받았으면 영업장 이름을 보인다.
+- 멤버 초대·승인과 계정 승인의 관계는 `memberJoinState` 한 판정이다. 승인 계정 ready, 대기 waiting(역할 줄은 서고 승인되면 들어온다, 초대한 쪽 토스트 + 관리자 푸시), 거절 blocked(초대 거부).
+- 스테이음 관리자 권한(DB isSuperAdmin)·가입 상태 변경은 app/admin/actions.ts 한 곳에서 감사 기록(admin_audit_logs)과 같은 트랜잭션이고, 서명 토큰 적용취소(admin-user-access-v1)가 있다. env SUPER_ADMIN_EMAILS 관리자는 화면에서 못 바꾼다. 고아 계정(auth.users 에만 있음)은 verify:db check-auth-user-orphans 가 본다.
+
 ## 공용(인증 불필요) 라우트
 `/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/sign/[token]`(계약서 원격 서명 — 토큰+생년월일+HMAC 쿠키가 자격, 2026-07-18 신설) · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
 정정(2026-07-18): `/contract/[tenantId]` 는 공용이 아니라 **운영자 인증 필요**(getContractData 가 requirePropertyAccess 경유). 입주자 원격 서명은 `/sign/[token]` 이 담당.

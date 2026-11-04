@@ -8,7 +8,7 @@ export default function EnterButton() {
   const { pending } = useFormStatus()
   return (
     <Btn type="submit" variant="secondary" size="sm" disabled={pending}>
-      {pending ? '진입 중…' : '관리자 권한으로 진입 ›'}
+      {pending ? '들어가는 중…' : '들어가기 ›'}
     </Btn>
   )
 }

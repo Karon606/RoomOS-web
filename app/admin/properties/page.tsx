@@ -32,12 +32,12 @@ export default async function AdminPropertiesPage() {
           {properties.map((p) => (
             <li key={p.id} className="rounded-xl p-4 bg-[var(--cream)] border border-[var(--warm-border)]">
               <div className="flex items-center gap-1 flex-wrap">
-                <span className="font-semibold text-[var(--ink)] truncate mr-1">{p.name}</span>
+                <span className="font-semibold text-[var(--ink)] mr-1 [overflow-wrap:anywhere]">{p.name}</span>
                 {!p.isActive && <Badge tone="pale-neutral">운영 종료</Badge>}
               </div>
               {/* 주소는 있을 때만(빈 값을 '미입력'으로 채우면 본인이 빠뜨린 것처럼 읽힌다, §29) */}
-              {p.address && <p className="text-sm text-[var(--ink-s)] mt-0.5 truncate">{p.address}</p>}
-              <p className="text-xs text-[var(--ink-m)] mt-1 num">
+              {p.address && <p className="text-sm text-[var(--ink-s)] mt-0.5 break-keep [overflow-wrap:anywhere]">{p.address}</p>}
+              <p className="text-xs text-[var(--ink-m)] mt-1 num break-keep">
                 소유자 {p.owner.realName || p.owner.name || p.owner.email} · 방 {p._count.rooms} · 입주자{' '}
                 {p._count.tenants} · 구성원 {p._count.userRoles} · 개설 {fmtDate(p.createdAt)}
               </p>

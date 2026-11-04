@@ -3,13 +3,14 @@
 // 스테이음 관리자 초대코드 탭. 발급 폼 + 코드 목록. 2026-11-04 가이드 정합(운영자 승인 '추천대로', 5단계).
 //   · 버튼은 정본 Btn(raw button 걷음), 상태는 정본 Badge(비활성·만료·소진), 자동·수동 승인은 속성이라 §11 메타 칩이다.
 //   · 쓰기 셋에 토스트 [적용취소]: 발급(아무도 안 썼을 때만 지움)·켜고 끄기(직전 값)·삭제(지운 행 그대로 되살림, §14 파괴 확인창).
-//   · 다크에서 안 보이던 --persimmon-d 글자를 걷었다(§28).
+//   · 다크에서 안 보이던 --persimmon-d 글자를 걷었다(§28). 삭제는 카드 '관리' 메뉴 구분선 아래(가입자 카드와 같은 문법).
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
+import { ManageMenu } from '@/components/ui/RecordEditShell'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { withParticle } from '@/lib/koParticle'
@@ -36,7 +37,7 @@ const inputCls = 'w-full h-[var(--input-h-touch)] sm:h-[var(--input-h)] px-3 rou
 const labelCls = 'block text-xs font-medium text-[var(--ink-s)] mb-1.5'
 // §11 메타 칩 정본(속성 표시): bg --canvas · --warm-muted · ring 1px --warm-border · r-sm · 10.5px
 const META_CHIP = 'shrink-0 rounded-sm bg-[var(--canvas)] px-1.5 py-0.5 text-[0.65625rem] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]'
-const NET_ERR = '처리 중 통신 오류가 발생했습니다'
+const NET_ERR = '처리 중 통신 오류가 발생했습니다.'
 
 export default function InvitesClient({ rows }: { rows: Row[] }) {
   const router = useRouter()
@@ -88,7 +89,7 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
     startTransition(async () => {
       try {
         const res = await toggleInviteCode(c.id, next)
-        if (!res.ok) { pushToast('error', '처리하지 못했습니다.'); return }
+        if (!res.ok) { pushToast('error', '처리하지 못했습니다. 새로고침 후 다시 확인해 주세요.'); return }
         pushToast('success', `코드 ${c.code} ${next ? '활성화' : '비활성화'}했습니다`,
           undoToast('적용취소', () => toggleInviteCode(c.id, c.isActive), `적용취소했습니다 · 코드 ${c.code} ${next ? '활성화' : '비활성화'}`))
         router.refresh()
@@ -105,9 +106,10 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
       title: `코드 ${withParticle(c.code, '을/를')} 삭제할까요?`,
       level: 'danger',
       confirmLabel: '삭제',
+      message: '실행 뒤 토스트의 적용취소로 되살릴 수 있습니다(토스트가 사라지면 되돌릴 수 없음).',
       impact: [{ label: `이 코드로 가입한 ${c.usedCount}명의 계정은 그대로이고, 이 코드로는 더 가입할 수 없습니다.` }],
       impactTitle: '바로 일어나는 일',
-      irreversibleNote: '실행 뒤 토스트의 적용취소로 되살릴 수 있습니다.',
+      irreversibleNote: '',
     })
     if (!ok) return
     setBusyId(c.id)
@@ -128,12 +130,14 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-[var(--ink)]">초대코드</h1>
+      <h1 className="text-xl font-bold text-[var(--ink)]">
+        초대코드 <span className="num text-[var(--ink-m)] font-semibold">({rows.length})</span>
+      </h1>
 
       {/* 생성 폼 */}
       <div className="rounded-xl p-4 space-y-3 bg-[var(--cream)] border border-[var(--warm-border)]">
         <p className="text-sm font-semibold text-[var(--ink)]">새 코드 발급</p>
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5 items-start">
           <div className="col-span-2">
             <label htmlFor="inv-code" className={labelCls}>코드 (비우면 자동 생성)</label>
             <input id="inv-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -145,19 +149,20 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
               placeholder="예: 1차 베타 테스터" className={inputCls} />
           </div>
           <div>
-            <label htmlFor="inv-max" className={labelCls}>사용 가능 인원 (0=무제한)</label>
+            <label htmlFor="inv-max" className={labelCls}>사용 인원</label>
             <input id="inv-max" type="number" inputMode="numeric" value={maxUses} onChange={(e) => setMaxUses(e.target.value)}
-              min={0} className={`${inputCls} num`} />
+              min={0} className={`${inputCls} num`} aria-describedby="inv-max-hint" />
+            <p id="inv-max-hint" className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">0 이면 무제한</p>
           </div>
           <div>
-            <label className={labelCls}>만료일 (선택)</label>
+            <p className={labelCls}>만료일 (선택)</p>
             <DatePicker value={expiresAt} onChange={setExpiresAt} minDate={kstYmdStr()} placeholder="만료일 선택" className={inputCls} />
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm text-[var(--warm-dark)] cursor-pointer min-h-[44px]">
           <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)}
             className="w-4 h-4 accent-[var(--coral)] shrink-0" />
-          이 코드로 가입하면 자동 승인 (선착순 무료)
+          <span className="break-keep">이 코드로 가입하면 자동 승인 (선착순 무료)</span>
         </label>
         {err && <p className="text-xs text-[var(--danger-fg)]" role="alert">{err}</p>}
         <Btn variant="primary" size="md" onClick={submit} disabled={pending}>
@@ -170,7 +175,7 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
         <EmptyState
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7 h16 a1 1 0 0 1 1 1 v3 a2 2 0 0 0 0 4 v3 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 v-3 a2 2 0 0 0 0-4 V8 a1 1 0 0 1 1-1 Z M12 7 v12" /></svg>}
           title="발급한 코드가 없습니다"
-          description="새 초대 코드를 발급하면 여기에 표시됩니다."
+          description="새 초대코드를 발급하면 여기에 표시됩니다."
         />
       ) : (
         <ul className="space-y-2.5">
@@ -191,11 +196,12 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
                   사용 {c.usedCount}/{c.maxUses > 0 ? c.maxUses : '무제한'} · 발급 {c.createdAtLabel}
                   {c.expiresAtLabel ? ` · 만료 ${c.expiresAtLabel}` : ''}
                 </p>
+                {/* 카드 발끝 문법은 가입자 카드와 같다. 자주 쓰는 동작 + '관리'(파괴 동작은 구분선 아래) */}
                 <div className="flex justify-end gap-2 mt-3">
-                  <Btn variant="danger" size="sm" disabled={rowBusy} onClick={() => { void remove(c) }}>삭제</Btn>
                   <Btn variant="secondary" size="sm" disabled={rowBusy} onClick={() => toggle(c)}>
                     {c.isActive ? '비활성화' : '활성화'}
                   </Btn>
+                  <ManageMenu items={[{ key: 'delete', label: '삭제', danger: true, onSelect: () => { void remove(c) } }]} disabled={rowBusy} placement="auto" size="sm" />
                 </div>
               </li>
             )
