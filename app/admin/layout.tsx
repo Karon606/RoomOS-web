@@ -6,12 +6,16 @@ import { ConfirmHost } from '@/components/ui/ConfirmDialog'
 import ViewportOffsetGuard from '@/components/layout/ViewportOffsetGuard'
 import AdminNav from './AdminNav'
 import AdminProfile from './AdminProfile'
+import { countPendingSignups } from '@/lib/adminSignups'
 
 // 스테이음 관리자(슈퍼관리자) 전용 영역. (app) 셸 게이트 밖이라 자체 가드.
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireSuperAdmin()
   // 관리할 영업장이 있는 운영자에게만 '앱으로' 표시 (영업장 없는 순수 운영자는 갈 곳 없음)
-  const myPropertyCount = await prisma.userPropertyRole.count({ where: { userId: ctx.userId } })
+  const [myPropertyCount, pendingCount] = await Promise.all([
+    prisma.userPropertyRole.count({ where: { userId: ctx.userId } }),
+    countPendingSignups(),
+  ])
 
   // 루트 html/body가 overflow:hidden(iOS 헤더 보호용)이라 페이지 자체 스크롤 불가 →
   // (app) 셸과 같은 패턴: 전체 h-dvh + 헤더 shrink-0 + main 자체에 overflow-y-auto.
@@ -36,8 +40,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </div>
           <AdminProfile email={ctx.email} hasProperties={myPropertyCount > 0} />
         </div>
-        <div className="max-w-5xl mx-auto px-4 pb-2">
-          <AdminNav />
+        <div className="max-w-5xl mx-auto px-4">
+          <AdminNav pendingCount={pendingCount} />
         </div>
       </header>
 

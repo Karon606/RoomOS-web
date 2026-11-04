@@ -13,6 +13,8 @@
 //   ⓗ proxy: 진입 리디렉트는 문서 요청(GET·HEAD)만. 행동은 scripts/test-proxy-entry-redirect.ts.
 //   ⓘ 행 보장: 계정 관문(getAccessContext)이 행이 없으면 ensureAppUser, 로그인 동기화도 같은 정본, 인증 쪽에 손수 upsert 없음.
 //   ⓙ 대기 화면: 탭 복귀·30초 재확인·[승인 확인], 승인되면 넘어간다. '다시 로그인' 안내 없음.
+//   ⓚ 알림: 새 대기 계정 → 스테이음 관리자 푸시(정본 ensureAppUser), 참여 요청 → 소유자 푸시, 거름은 sendToUsers 한 곳.
+//      대기 건수는 정본 countPendingSignups 하나를 사이드바·관리자 탭이 같이 쓴다.
 import { readFileSync } from 'node:fs'
 
 let fail = 0
@@ -34,7 +36,8 @@ for (const f of LABEL_FILES) {
   const sb = strip(read('components/layout/Sidebar.tsx'))
   const links = sb.match(/<Link href="\/admin"[\s\S]*?<\/Link>/g) ?? []
   ok('ⓐ 사이드바 관리자 링크 둘', links.length === 2)
-  ok("ⓐ 사이드바 관리자 링크는 '스테이음 관리자'", links.every(l => l.includes('스테이음 관리자') && !/>\s*운영자\s*</.test(l) && !/>운영자</.test(l)))
+  ok("ⓐ 사이드바 관리자 링크는 '스테이음 관리자'", links.every(l => l.includes('adminLinkLabel(adminPendingCount)') && !/운영자/.test(l))
+    && /return pending > 0 \? `스테이음 관리자 \(\$\{pending\}\)` : '스테이음 관리자'/.test(sb))
   ok("ⓐ 영업장 선택의 관리자 링크는 '스테이음 관리자 ›'", strip(read('app/property-select/page.tsx')).includes('스테이음 관리자 ›'))
   ok("ⓐ 정본 낱말 상수", read('lib/adminAccess.ts').includes("export const PLATFORM_ADMIN_LABEL = '스테이음 관리자'"))
 }
@@ -127,6 +130,22 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓙ 30초·탭 복귀·버튼', /PENDING_RECHECK_MS = 30_000/.test(pc) && /addEventListener\('visibilitychange', onVisible\)/.test(pc) && /setInterval\(/.test(pc) && /승인 확인/.test(pc))
   ok("ⓙ 승인이면 앱으로", /if \(s === 'APPROVED'\) \{ window\.location\.replace\('\/dashboard'\); return \}/.test(pc))
   ok('ⓙ 재확인 액션은 본인 상태만', /export async function checkMyAccess\(\): Promise<MyAccessStatus> \{\s*const ctx = await getAccessContext\(\)/.test(strip(read('app/pending/actions.ts'))))
+}
+
+// ⓚ 알림·대기 건수
+{
+  const e = strip(read('lib/auth/ensureAppUser.ts'))
+  ok('ⓚ 새 대기 계정이면 스테이음 관리자에게 푸시', /if \(created && status === 'PENDING'\) \{\s*const \{ notifySuperAdmins \} = await import\('@\/lib\/pushSend'\)\s*await notifySuperAdmins\(signupPendingPush\(/.test(e))
+  const ps = strip(read('lib/pushSend.ts'))
+  ok('ⓚ 발송 거름은 sendToUsers 한 곳(승인·관리자만)', /async function sendToUsers\(candidates: string\[\], payload: OperatorPushPayload\): Promise<void> \{\s*const approved = await approvedPushRecipients\(candidates\)\s*const userIds = candidates\.filter\(id => approved\.has\(id\)\)/.test(ps))
+  ok('ⓚ 스테이음 관리자 수신자는 DB 표식 또는 env', /export async function notifySuperAdmins\(/.test(ps) && /OR: \[\{ isSuperAdmin: true \}/.test(ps))
+  const pa = strip(read('app/property-select/actions.ts'))
+  ok('ⓚ 참여 요청은 소유자에게만', /await notifyPropertyOperators\(property\.id, joinRequestPush\([\s\S]*?\), \{ ownersOnly: true \}\)/.test(pa))
+  ok('ⓚ 대기 건수 정본', /export async function countPendingSignups\(\)/.test(read('lib/adminSignups.ts')))
+  ok('ⓚ 사이드바 링크 접미', (strip(read('components/layout/Sidebar.tsx')).match(/adminLinkLabel\(adminPendingCount\)/g) ?? []).length === 2
+    && /const adminPendingCount = isSuperAdmin \? await countPendingSignups\(\) : 0/.test(strip(read('app/(app)/layout.tsx'))))
+  ok('ⓚ 관리자 탭은 ViewTabs 링크 탭 + 가입자 접미', /<ViewTabs/.test(read('app/admin/AdminNav.tsx')) && /t\.id === 'users' && pendingCount > 0/.test(read('app/admin/AdminNav.tsx'))
+    && /countPendingSignups\(\)/.test(read('app/admin/layout.tsx')) && !/--persimmon/.test(read('app/admin/AdminNav.tsx')))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

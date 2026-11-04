@@ -254,6 +254,47 @@ async function main() {
   g.__AF.claims = null
   eq('로그아웃 상태 재확인', await checkMyAccess(), 'SIGNED_OUT')
 
+  // ── 3단계: 알림(가입 대기 → 스테이음 관리자, 참여 요청 → 소유자) · 대기 건수 ──
+  const webpush = (await import('web-push')).default
+  const vk = webpush.generateVAPIDKeys()
+  process.env.VAPID_PRIVATE_KEY = vk.privateKey
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = vk.publicKey   // 하네스는 운영 아님 → sendToSubscriptions 가 실제로 안 보내고 내역만 남는다
+  const STAFF = randomUUID(), JOINER = randomUUID()
+  await prisma.user.createMany({ data: [
+    { id: STAFF, email: 'staff@example.test', status: 'APPROVED' },
+    { id: JOINER, email: 'joiner@example.test', realName: '참여자', status: 'APPROVED' },
+  ] })
+  const sub = (userId: string) => ({ userId, endpoint: `https://push.example.test/${userId}`, p256dh: 'k', auth: 'a' })
+  await prisma.pushSubscription.createMany({ data: [ADMIN, ENVA, OUT, STAFF, GU, P1].map(sub) })
+  const pushedTo = async (title: string) => (await prisma.pushHistory.findMany({ where: { title }, select: { userId: true, url: true, body: true } }))
+  const NEWU = randomUUID()
+  g.__AF.claims = { sub: NEWU, email: 'newbie@example.test', user_metadata: { real_name: '새 가입자' } }
+  await getAccessContext()
+  const sp = await pushedTo('가입 승인 요청')
+  eq('가입 대기 푸시는 스테이음 관리자(DB·env)에게만', sp.map(x => x.userId).sort(), [ADMIN, ENVA].sort())
+  eq('푸시 문장·이동', [sp[0]?.body, sp[0]?.url], ['새 가입자 님이 가입했습니다 · 승인 대기', '/admin/users'])
+  await getAccessContext()
+  eq('이미 있는 행이면 다시 안 보낸다', (await pushedTo('가입 승인 요청')).length, 2)
+  const AUTO = randomUUID()
+  g.__AF.claims = { sub: AUTO, email: 'auto@example.test', user_metadata: { invite_code: 'STAYEXT09' } }
+  await getAccessContext()
+  eq('초대코드로 바로 승인된 가입은 안 보낸다', (await pushedTo('가입 승인 요청')).length, 2)
+  // 참여 요청: GU 의 영업장(구관기 하우스)에 STAFF 역할 하나를 두고, 참여자가 코드로 요청
+  const gp = cp.ok ? cp.propertyId : ''
+  await prisma.property.update({ where: { id: gp }, data: { joinCode: 'JOIN01' } })
+  await prisma.userPropertyRole.create({ data: { userId: STAFF, propertyId: gp, role: 'STAFF' } })
+  await prisma.userPropertyRole.create({ data: { userId: P1, propertyId: gp, role: 'OWNER' } })   // 대기 계정 소유자 역할(받으면 안 된다)
+  const { requestJoinByCode } = await import('@/app/property-select/actions')
+  g.__AF.claims = { sub: JOINER, email: 'joiner@example.test' }
+  eq('참여 요청 통과', (await requestJoinByCode('join01')).ok, true)
+  const jp = await pushedTo('영업장 참여 요청')
+  eq('참여 요청 푸시는 승인된 소유자에게만(스태프·대기 계정 제외)', jp.map(x => x.userId), [GU])
+  eq('참여 요청 문장·이동', [jp[0]?.body, jp[0]?.url], ['참여자 님이 구관기 하우스 참여를 요청했습니다', '/settings?tab=members'])
+  // 대기 건수 정본: 대기이고 관리자 아님(관리자는 상태가 뜻이 없다)
+  const { countPendingSignups } = await import('@/lib/adminSignups')
+  const pend = await prisma.user.findMany({ where: { status: 'PENDING', isSuperAdmin: false }, select: { email: true } })
+  eq('대기 건수 = 대기·관리자 아님·env 관리자 아님', await countPendingSignups(), pend.filter(p => p.email !== 'env-admin@example.test').length)
+
   await server.stop()
   await pg.close()
   console.log(`\n관리자 접근 흐름: 통과 ${pass} · 실패 ${fail}`)

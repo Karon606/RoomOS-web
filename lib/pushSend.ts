@@ -2,7 +2,7 @@
 // VAPID 설정·구독 발송·만료 구독 정리·발송 내역 기록을 한 곳에 모아 문법을 통일한다.
 
 import webpush from 'web-push'
-import prisma from './prisma'
+import prisma from '@/lib/prisma'   // 별칭으로 부른다(하네스가 '@/lib/prisma' 를 메모리 DB 대역으로 갈아끼운다)
 import { isStagingEnv } from './env'
 import { isSuperAdminEmail } from './auth/access'
 
@@ -60,45 +60,62 @@ export type OperatorPushPayload = {
 }
 
 // 특정 영업장의 운영자(소유자 + 역할 보유자) 전원의 구독 기기로 발송. best-effort — 실패해도 던지지 않는다.
-// 크론과 동일하게 사용자별로 발송·내역 기록한다.
-export async function notifyPropertyOperators(propertyId: string, payload: OperatorPushPayload): Promise<void> {
+// 크론과 동일하게 사용자별로 발송·내역 기록한다. ownersOnly 면 소유주와 OWNER 역할만(참여 요청 승인처럼 소유자만 할 수 있는 일).
+export async function notifyPropertyOperators(propertyId: string, payload: OperatorPushPayload, opts?: { ownersOnly?: boolean }): Promise<void> {
   try {
     if (!ensureWebPushConfigured()) return
     const [prop, roles] = await Promise.all([
       prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } }),
-      prisma.userPropertyRole.findMany({ where: { propertyId }, select: { userId: true } }),
+      prisma.userPropertyRole.findMany({ where: { propertyId, ...(opts?.ownersOnly ? { role: 'OWNER' as const } : {}) }, select: { userId: true } }),
     ])
-    const candidates = Array.from(new Set([...(prop?.ownerId ? [prop.ownerId] : []), ...roles.map(r => r.userId)]))
-    const approved = await approvedPushRecipients(candidates)
-    const userIds = candidates.filter(id => approved.has(id))
-    if (userIds.length === 0) return
-
-    const json = JSON.stringify({
-      title: payload.title,
-      body: payload.body,
-      url: payload.url,
-      badge: payload.badge,
-      tag: payload.tag,
-    })
-    for (const userId of userIds) {
-      const subs = await prisma.pushSubscription.findMany({ where: { userId } })
-      if (subs.length === 0) continue
-      const success = await sendToSubscriptions(subs, json)
-      try {
-        await prisma.pushHistory.create({
-          data: {
-            userId,
-            source: payload.source ?? 'event',
-            title: payload.title,
-            body: payload.body,
-            url: payload.url,
-            badge: payload.badge ?? null,
-            tag: payload.tag ?? null,
-            endpointCount: subs.length,
-            successCount: success,
-          },
-        })
-      } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
-    }
+    await sendToUsers(Array.from(new Set([...(prop?.ownerId ? [prop.ownerId] : []), ...roles.map(r => r.userId)])), payload)
   } catch { /* best-effort — 알림 실패는 호출부 흐름을 막지 않는다 */ }
+}
+
+// 스테이음 관리자(env SUPER_ADMIN_EMAILS 또는 DB 표식) 전원의 기기로 발송(2026-11-04 운영자 승인 '추천대로', 갈림길 D).
+// 가입 승인 대기가 생길 때 부른다. 종전에는 관리자 페이지에 들어가야만 대기를 알았다. best-effort.
+export async function notifySuperAdmins(payload: OperatorPushPayload): Promise<void> {
+  try {
+    if (!ensureWebPushConfigured()) return
+    const env = (process.env.SUPER_ADMIN_EMAILS ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    const admins = await prisma.user.findMany({
+      where: { OR: [{ isSuperAdmin: true }, ...(env.length ? [{ email: { in: env, mode: 'insensitive' as const } }] : [])] },
+      select: { id: true },
+    })
+    await sendToUsers(admins.map(a => a.id), payload)
+  } catch { /* best-effort */ }
+}
+
+// 사용자별 구독 기기로 보내고 발송 내역을 남긴다(크론과 같은 문법). 승인 계정·스테이음 관리자만 남기는 거름은 여기 한 곳이다.
+async function sendToUsers(candidates: string[], payload: OperatorPushPayload): Promise<void> {
+  const approved = await approvedPushRecipients(candidates)
+  const userIds = candidates.filter(id => approved.has(id))
+  if (userIds.length === 0) return
+  const json = JSON.stringify({
+    title: payload.title,
+    body: payload.body,
+    url: payload.url,
+    badge: payload.badge,
+    tag: payload.tag,
+  })
+  for (const userId of userIds) {
+    const subs = await prisma.pushSubscription.findMany({ where: { userId } })
+    if (subs.length === 0) continue
+    const success = await sendToSubscriptions(subs, json)
+    try {
+      await prisma.pushHistory.create({
+        data: {
+          userId,
+          source: payload.source ?? 'event',
+          title: payload.title,
+          body: payload.body,
+          url: payload.url,
+          badge: payload.badge ?? null,
+          tag: payload.tag ?? null,
+          endpointCount: subs.length,
+          successCount: success,
+        },
+      })
+    } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
+  }
 }

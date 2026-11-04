@@ -1,34 +1,29 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 
+// 관리자 페이지 링크 탭(§25 링크 탭 = ViewTabs 외형 + href). 종전 코랄 채움 알약은 §25·§03 위반이라 걷었다(2026-11-04).
+// '가입자' 접미는 승인 대기 건수(0이면 붙이지 않는다, 빈 괄호 금지). 수는 레이아웃이 정본 countPendingSignups 로 센다.
 const TABS = [
-  { href: '/admin/users', label: '가입자' },
-  { href: '/admin/properties', label: '영업장' },
-  { href: '/admin/invites', label: '초대코드' },
-]
+  { id: 'users', href: '/admin/users', label: '가입자' },
+  { id: 'properties', href: '/admin/properties', label: '영업장' },
+  { id: 'invites', href: '/admin/invites', label: '초대코드' },
+] as const
 
-export default function AdminNav() {
+export default function AdminNav({ pendingCount }: { pendingCount: number }) {
   const pathname = usePathname()
+  const active = TABS.find(t => pathname === t.href || pathname.startsWith(t.href + '/'))?.id ?? 'users'
   return (
-    <nav className="flex gap-1 overflow-x-auto">
-      {TABS.map((t) => {
-        const active = pathname === t.href || pathname.startsWith(t.href + '/')
-        return (
-          <Link
-            key={t.href}
-            href={t.href}
-            className="px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors"
-            style={{
-              background: active ? 'var(--persimmon)' : 'transparent',
-              color: active ? 'var(--on-solid)' : 'var(--ink-3)',
-            }}
-          >
-            {t.label}
-          </Link>
-        )
-      })}
-    </nav>
+    <ViewTabs
+      ariaLabel="스테이음 관리자 화면"
+      activeId={active}
+      tabs={TABS.map(t => ({
+        id: t.id,
+        href: t.href,
+        label: t.label,
+        ...(t.id === 'users' && pendingCount > 0 ? { suffix: String(pendingCount) } : {}),
+      }))}
+    />
   )
 }

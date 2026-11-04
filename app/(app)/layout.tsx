@@ -15,6 +15,7 @@ import NewVersionNotice from '@/components/NewVersionNotice'
 import BreadcrumbTracker from '@/components/BreadcrumbTracker'
 import ErrorReportButton from '@/components/ErrorReportButton'
 import { isSuperAdminEmail } from '@/lib/auth/access'
+import { countPendingSignups } from '@/lib/adminSignups'
 import { GlobalSearchHost } from '@/components/search/GlobalSearchHost'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
@@ -101,6 +102,8 @@ export default async function AppLayout({
 
   // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
   const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)
+  // 스테이음 관리자에게만 세는 가입 승인 대기 건수(사이드바 링크 접미). 들어가야만 보이던 수를 앱 어디서든 보이게 한다.
+  const adminPendingCount = isSuperAdmin ? await countPendingSignups() : 0
 
   // 역할 컨텍스트는 셸 전체를 감싼다 — 뷰어(STAFF·제한 스태프) 편집·문자 입구 숨김 가드(감사 D3, 2026-11-03).
   // 종전에는 {children} 만 감싸 Prism 모달(EntityModalProvider 가 그린다)·전역 검색·신고 버튼이 밖에 있었고,
@@ -113,6 +116,7 @@ export default async function AppLayout({
       properties={properties}
       currentPropertyId={currentPropertyId}
       isSuperAdmin={isSuperAdmin}
+      adminPendingCount={adminPendingCount}
       isAdminView={isAdminView}
       role={access?.role ?? 'OWNER'}
     >

@@ -93,7 +93,18 @@ export async function ensureAppUser(idn: AuthIdentity, opts?: { extra?: SignupEx
   if (inviteCode && status === 'PENDING' && !row.inviteCode) {
     status = await redeemInviteCode(idn.id, inviteCode)
   }
+  // 새 대기 계정이 생기면 스테이음 관리자 기기로 알린다(갈림길 D). 누르면 가입자 화면. best-effort 라 실패해도 로그인은 이어진다.
+  // pushSend 는 관문(lib/auth/access)을 거꾸로 import 하므로 여기서는 동적 import 로 순환을 끊는다.
+  if (created && status === 'PENDING') {
+    const { notifySuperAdmins } = await import('@/lib/pushSend')
+    await notifySuperAdmins(signupPendingPush({ realName, name, email: idn.email }))
+  }
   return { created, status }
+}
+
+/** 가입 승인 요청 푸시 문장. 이름이 있으면 이름, 없으면 이메일. */
+export function signupPendingPush(u: { realName?: string | null; name?: string | null; email: string }) {
+  return { title: '가입 승인 요청', body: `${u.realName || u.name || u.email} 님이 가입했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
 }
 
 // 초대코드 적용(선착순). autoApprove 코드면 status=APPROVED. 적용 뒤 상태를 돌려준다.

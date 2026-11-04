@@ -188,6 +188,7 @@ function NavContent({
   month,
   user,
   isSuperAdmin,
+  adminPendingCount = 0,
   role,
   onClose,
 }: {
@@ -196,6 +197,7 @@ function NavContent({
   month: string | null
   user: AppUser
   isSuperAdmin?: boolean
+  adminPendingCount?: number
   role: Role
   onClose?: () => void
 }) {
@@ -314,7 +316,7 @@ function NavContent({
         {isSuperAdmin && (
           <Link href="/admin" onClick={onClose} prefetch={false} className={acctRow} style={{ color: 'var(--tc-text)' }}>
             <svg {...ico}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
-            <span className={acctLabel}>스테이음 관리자</span>
+            <span className={acctLabel}>{adminLinkLabel(adminPendingCount)}</span>
           </Link>
         )}
 
@@ -336,16 +338,23 @@ function NavContent({
   )
 }
 
+/** 스테이음 관리자 링크 글자. 가입 승인 대기가 있으면 '(N)' 접미(§25 라벨 접미 문법, 빈 괄호 금지). */
+function adminLinkLabel(pending: number) {
+  return pending > 0 ? `스테이음 관리자 (${pending})` : '스테이음 관리자'
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────
 export default function Sidebar({
   user,
   isSuperAdmin = false,
+  adminPendingCount = 0,
   role = 'OWNER',
   isOpen = false,
   onClose,
 }: {
   user: AppUser
   isSuperAdmin?: boolean
+  adminPendingCount?: number
   role?: Role
   isOpen?: boolean
   onClose?: () => void
@@ -367,12 +376,12 @@ export default function Sidebar({
         className="hidden md:flex md:w-16 lg:w-[220px] flex-col shrink-0"
         style={style}
       >
-        <NavContent variant="sidebar" pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} role={role} />
+        <NavContent variant="sidebar" pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} adminPendingCount={adminPendingCount} role={role} />
       </aside>
 
       {/* ── 모바일: 전체화면 메뉴 (배경 페이지가 의미 없으므로 풀스크린 + 그리드로 한 화면에) ── */}
       {isOpen && (
-        <MobileMenu pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} role={role} onClose={onClose} />
+        <MobileMenu pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} adminPendingCount={adminPendingCount} role={role} onClose={onClose} />
       )}
     </>
   )
@@ -380,9 +389,9 @@ export default function Sidebar({
 
 // ── 모바일 전체화면 메뉴 — 모든 메뉴를 스크롤 없이 한 화면에 (그리드 타일) ──
 function MobileMenu({
-  pathname, month, user, isSuperAdmin, role, onClose,
+  pathname, month, user, isSuperAdmin, adminPendingCount = 0, role, onClose,
 }: {
-  pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; role: Role; onClose?: () => void
+  pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; adminPendingCount?: number; role: Role; onClose?: () => void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
   const [toolsOpen, setToolsOpen] = useState(false)   // 상담 도구(도구 타일 — 홈이 아닌 화면에서도 열리게, 오류신고 ce05bb74)
@@ -486,7 +495,7 @@ function MobileMenu({
           <Link href="/admin" onClick={onClose} prefetch={false}
             className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--tc-text)' }}>
             <svg {...ico} width={16} height={16}><path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/></svg>
-            스테이음 관리자
+            {adminLinkLabel(adminPendingCount)}
           </Link>
         )}
         <Link href="/property-select" onClick={onClose} prefetch={false}

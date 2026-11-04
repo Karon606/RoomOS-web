@@ -19,6 +19,7 @@ export default function AppShell({
   properties,
   currentPropertyId,
   isSuperAdmin = false,
+  adminPendingCount = 0,
   isAdminView = false,
   role = 'OWNER',
   children,
@@ -27,6 +28,8 @@ export default function AppShell({
   properties: SwitchProperty[]
   currentPropertyId: string | null
   isSuperAdmin?: boolean
+  /** 스테이음 관리자에게만. 가입 승인 대기 건수(사이드바 링크 접미) */
+  adminPendingCount?: number
   isAdminView?: boolean
   role?: Role
   children: React.ReactNode
@@ -50,7 +53,7 @@ export default function AppShell({
           스테이음 관리자 뷰 · 클릭해서 관리자 페이지로 돌아가기
         </Link>
       )}
-      <Sidebar user={user} isSuperAdmin={isSuperAdmin} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar user={user} isSuperAdmin={isSuperAdmin} adminPendingCount={adminPendingCount} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
