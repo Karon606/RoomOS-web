@@ -20,6 +20,8 @@
 //   ⓜ 가이드 정합(관리자 세 탭): raw <button>·--persimmon 글자·수제 배지 span 없음, 상태는 Badge(승인됨은 배지 없음), 1차 필터는
 //      SegmentedControl('전체' 먼저), 탭은 ViewTabs, 빈 상태에 '검색어·필터를 조정' 없음, 이름 자리 '—'·'미입력' 채움 없음.
 //      초대코드 쓰기 셋(발급·켜고 끄기·삭제)에 토스트 적용취소, 삭제는 §14 파괴 확인창.
+//   ⓝ 스팸 대책: 가입 경로·최근 접속은 auth.users 읽기(실패해도 목록은 선다). 오래된 계정 정리는 자동 삭제가 아니라 누르는 정리이고
+//      계정을 지우지 않는다(user_archives). 서버가 같은 정본(isStaleSignup)으로 다시 세고, 감사 기록·같은 시각 도장 적용취소가 있다.
 import { readFileSync } from 'node:fs'
 
 let fail = 0
@@ -83,7 +85,8 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓓ 관리 메뉴로 묶는다', /<ManageMenu items=\{menu\}/.test(ui) && /danger: acts\.danger\.includes\(k\)/.test(ui))
   ok('ⓓ setSuperAdmin(…, true) 는 확인창을 지난 뒤에만', /if \(key === 'grantAdmin'\) \{\s*const ok = await confirmDialog\(\{[\s\S]*?level: 'danger'[\s\S]*?impactTitle: '이 사람이 볼 수 있게 되는 것'[\s\S]*?impact: grantImpact\(/.test(ui)
     && /if \(ok\) run\(u\.id, \(\) => setSuperAdmin\(u\.id, true\)/.test(ui) && (ui.match(/setSuperAdmin\(u\.id, true\)/g) ?? []).length === 1)
-  const row = ui.slice(ui.indexOf('const acts = cardActions('), ui.indexOf('</li>', ui.indexOf('const acts = cardActions(')))
+  const at = ui.indexOf('cardActions({ status: u.status')
+  const row = at < 0 ? '' : ui.slice(at, ui.indexOf('</li>', at))
   ok('ⓓ 카드 발끝은 Btn·ManageMenu 뿐(raw <button> 없음)', row.length > 0 && !/<button\b/.test(row) && /<Btn key=\{k\} size="sm"/.test(row))
   ok('ⓓ 확인창 영향 목록 머리를 바꿀 수 있다', /impactTitle\?: string/.test(read('components/ui/ConfirmDialog.tsx')))
 }
@@ -184,7 +187,7 @@ const act = strip(read('app/admin/actions.ts'))
   }
   const ui = strip(read('app/admin/users/UsersClient.tsx'))
   ok("ⓜ 상태 배지: 승인됨은 없음·대기 info·거절 neutral", /PENDING: \{ label: '승인 대기', tone: 'pale-blue' \},\s*APPROVED: null,\s*REJECTED: \{ label: '거절', tone: 'pale-neutral' \}/.test(ui) && /<Badge tone=\{badge\.tone\}>/.test(ui))
-  ok("ⓜ 1차 필터 SegmentedControl, '전체' 먼저", /const FILTERS = \[\s*\{ value: 'ALL', label: '전체' \}/.test(ui) && /<SegmentedControl options=\{FILTERS\}/.test(ui))
+  ok("ⓜ 1차 필터 SegmentedControl, '전체' 먼저", /const FILTERS = \[\s*\{ value: 'ALL', label: '전체' \}/.test(ui) && /<SegmentedControl options=\{filters\}/.test(ui))
   ok('ⓜ 빈 상태 문구', !/검색어나 필터/.test(ui) && /' 가입자가 없습니다`/.test(ui))
   ok('ⓜ 이름이 없으면 이메일이 식별자', /\{u\.name \|\| u\.email\}/.test(ui) && /name: u\.realName \|\| u\.name \|\| '',/.test(read('app/admin/users/page.tsx')))
   ok('ⓜ 연락처·주소는 있을 때만', /\{contact && <p/.test(ui))
@@ -194,6 +197,24 @@ const act = strip(read('app/admin/actions.ts'))
   const ia = act.slice(act.indexOf('export async function undoCreateInviteCode('), act.indexOf('// ── 영업장 현황'))
   ok('ⓜ 발급 적용취소는 아무도 안 쓴 코드만', /deleteMany\(\{ where: \{ code, usedCount: 0 \} \}\)/.test(ia))
   ok('ⓜ 되살림은 같은 코드가 있으면 거부', /OR: \[\{ id: snap\.id \}, \{ code: snap\.code \}\]/.test(ia))
+}
+
+// ⓝ 스팸 대책
+{
+  const ar = act.slice(act.indexOf('async function staleCandidateIds('), act.indexOf('// ── 초대코드/쿠폰 ──'))
+  ok('ⓝ 정리는 계정을 지우지 않는다', !/user\.delete|user\.deleteMany|auth\.admin/.test(act) && /tx\.userArchive\.createMany/.test(ar))
+  ok('ⓝ 서버가 같은 정본으로 다시 센다', /isStaleSignup\(\{/.test(ar) && /\(await staleCandidateIds\(admin\.userId, now\)\)\.filter\(id => want\.has\(id\)\)/.test(ar))
+  ok('ⓝ 정리·되살림 감사 기록', /action: 'ARCHIVE'/.test(ar) && /action: 'UNARCHIVE'/.test(ar))
+  ok('ⓝ 적용취소는 같은 시각 도장만', /\.\.\.\(stamp \? \{ archivedAt: stamp \} : \{\}\)/.test(ar))
+  const lib = strip(read('lib/adminSignups.ts'))
+  ok('ⓝ 가입 경로는 auth.users 읽기, 실패해도 빈 지도', /FROM auth\.users/.test(lib) && /catch \{\s*return new Map\(\)/.test(lib) && !/INSERT|UPDATE|DELETE/i.test(lib.replace(/deleted/gi, '')))
+  ok('ⓝ 대기 건수는 정리한 계정을 빼고 센다', /!archived\.has\(r\.id\)/.test(lib))
+  const ui = strip(read('app/admin/users/UsersClient.tsx'))
+  ok('ⓝ 정리 버튼은 후보가 있을 때만, 파괴 확인창 + 토스트 적용취소', /\{staleRows\.length > 0 && \(/.test(ui) && /async function archiveStale\(\) \{[\s\S]*?level: 'danger',[\s\S]*?archiveStaleSignups\(staleRows\.map\(r => r\.id\)\)[\s\S]*?unarchiveSignups\(undo\.ids, undo\.at\)/.test(ui))
+  ok("ⓝ '정리됨' 칸은 정리한 계정이 있을 때만", /const filters = FILTERS\.filter\(f => f\.value !== 'ARCHIVED' \|\| archivedCount > 0\)/.test(ui))
+  ok('ⓝ 가입 경로는 메타 칩', /\{u\.providerLabel && <span className=\{META_CHIP\}>/.test(ui))
+  ok('ⓝ 후보 판정은 화면도 같은 정본', /stale: isStaleSignup\(\{/.test(read('app/admin/users/page.tsx')))
+  ok('ⓝ 정리 표는 같은 마이그레이션', /CREATE TABLE IF NOT EXISTS "user_archives"/.test(read('prisma/migrate_admin_audit.sql')))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

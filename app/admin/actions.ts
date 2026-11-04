@@ -4,16 +4,17 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma, { type PrismaDb } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { requireSuperAdmin, isSuperAdminEmail } from '@/lib/auth/access'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import {
   ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID,
   adminChangeBlock, canonicalAdminUserUndo, parseAdminUserUndo, sameSnap, snapOf,
-  STAFF_ROLES,
+  STAFF_ROLES, isStaleSignup,
   type AccessStatus, type AdminUserUndo, type RoleChange, type UserAccessSnap,
 } from '@/lib/adminAccess'
 import type { Role } from '@/lib/role-types'
+import { readAuthMeta } from '@/lib/adminSignups'
 
 // 슈퍼관리자가 임의 영업장에 진입 (가입 여부 무관). 쿠키 설정 + /dashboard 이동.
 export async function enterPropertyAsAdmin(formData: FormData) {
@@ -36,7 +37,7 @@ export async function enterPropertyAsAdmin(formData: FormData) {
 // ── 가입자 목록 ──
 export async function getSignups() {
   const admin = await requireSuperAdmin()
-  const [users, propertyCount, myProperties] = await Promise.all([
+  const [users, propertyCount, myProperties, authMeta, archives] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -56,8 +57,21 @@ export async function getSignups() {
     }),
     prisma.property.count(),
     myOwnedProperties(admin.userId),
+    readAuthMeta(),
+    prisma.userArchive.findMany({ select: { userId: true, archivedAt: true } }),
   ])
-  return { users: users.map(u => ({ ...u, envAdmin: isSuperAdminEmail(u.email) })), propertyCount, myProperties }
+  const archivedAt = new Map(archives.map(a => [a.userId, a.archivedAt]))
+  return {
+    users: users.map(u => ({
+      ...u,
+      envAdmin: isSuperAdminEmail(u.email),
+      provider: authMeta.get(u.id)?.provider ?? null,
+      lastSignInAt: authMeta.get(u.id)?.lastSignInAt ?? null,
+      archivedAt: archivedAt.get(u.id) ?? null,
+    })),
+    propertyCount,
+    myProperties,
+  }
 }
 
 // ── 권한·상태 변경 공용 ──
@@ -211,6 +225,58 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
   })
   revalidatePath('/admin/users')
   return res
+}
+
+// ── 오래된 계정 정리 (갈림길 F, 2026-11-04 운영자 승인 '추천대로') ──
+// 자동 삭제가 아니라 관리자가 누르는 정리다. 계정·로그인은 그대로 두고 목록에서만 걷는다(user_archives 행). 대기·거절 계정은
+// 이미 게이트에서 막히므로 피해가 없고, 정리는 목록을 읽기 쉽게 하는 일이다. 후보 판정은 화면과 같은 정본 isStaleSignup 이고
+// 서버가 다시 센다. 화면이 넘긴 id 중 지금도 후보인 것만 걷는다. 적용취소는 그때 걷은 행만(같은 시각 도장) 되살린다.
+async function staleCandidateIds(adminId: string, now: Date): Promise<string[]> {
+  const [users, authMeta, archives] = await Promise.all([
+    prisma.user.findMany({
+      where: { status: { in: ['PENDING', 'REJECTED'] }, isSuperAdmin: false },
+      select: { id: true, email: true, status: true, createdAt: true, _count: { select: { ownedProperties: true, propertyRoles: true } } },
+    }),
+    readAuthMeta(),
+    prisma.userArchive.findMany({ select: { userId: true } }),
+  ])
+  const archived = new Set(archives.map(a => a.userId))
+  return users.filter(u => isStaleSignup({
+    status: u.status as AccessStatus, dbAdmin: false, envAdmin: isSuperAdminEmail(u.email), isSelf: u.id === adminId,
+    ownedCount: u._count.ownedProperties, roleCount: u._count.propertyRoles, archived: archived.has(u.id),
+    lastActiveAt: authMeta.get(u.id)?.lastSignInAt ?? u.createdAt,
+  }, now)).map(u => u.id)
+}
+
+export async function archiveStaleSignups(ids: string[]): Promise<{ ok: true; count: number; undo: { ids: string[]; at: string } } | { ok: false; error: string }> {
+  const admin = await requireSuperAdmin()
+  const now = new Date()
+  const want = new Set(Array.isArray(ids) ? ids.filter(x => typeof x === 'string') : [])
+  const target = (await staleCandidateIds(admin.userId, now)).filter(id => want.has(id))
+  if (target.length === 0) return { ok: false, error: '정리할 계정이 없습니다. 새로고침 후 다시 확인해 주세요.' }
+  await prisma.$transaction(async (tx) => {
+    await tx.userArchive.createMany({ data: target.map(userId => ({ userId, archivedAt: now, archivedBy: admin.userId })), skipDuplicates: true })
+    await tx.adminAuditLog.createMany({ data: target.map(targetUserId => ({ actorId: admin.userId, targetUserId, action: 'ARCHIVE', before: Prisma.DbNull, after: { archivedAt: now.toISOString() } })) })
+  })
+  revalidatePath('/admin/users')
+  return { ok: true, count: target.length, undo: { ids: target, at: now.toISOString() } }
+}
+
+// 정리 적용취소(토스트) 와 한 계정 되살리기(정리됨 카드)가 같은 길이다. at 을 주면 그 시각에 걷은 행만 되살린다.
+export async function unarchiveSignups(ids: string[], at?: string | null): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  const admin = await requireSuperAdmin()
+  const list = Array.isArray(ids) ? ids.filter(x => typeof x === 'string').slice(0, 500) : []
+  const stamp = at ? new Date(at) : null
+  if (stamp && Number.isNaN(stamp.getTime())) return { ok: false, error: ADMIN_UNDO_INVALID }
+  const count = await prisma.$transaction(async (tx) => {
+    const rows = await tx.userArchive.findMany({ where: { userId: { in: list }, ...(stamp ? { archivedAt: stamp } : {}) }, select: { userId: true, archivedAt: true } })
+    if (rows.length === 0) return 0
+    await tx.userArchive.deleteMany({ where: { userId: { in: rows.map(r => r.userId) } } })
+    await tx.adminAuditLog.createMany({ data: rows.map(r => ({ actorId: admin.userId, targetUserId: r.userId, action: 'UNARCHIVE', before: { archivedAt: r.archivedAt.toISOString() }, after: Prisma.DbNull })) })
+    return rows.length
+  })
+  revalidatePath('/admin/users')
+  return count > 0 ? { ok: true, count } : { ok: false, error: '그사이 이미 되살렸거나 다시 정리돼 되돌리지 않았습니다.' }
 }
 
 // ── 초대코드/쿠폰 ──

@@ -9,7 +9,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID, randomBytes } from 'node:crypto'
 import path from 'node:path'
-import { cardActions, adminChangeBlock, parseAdminUserUndo, grantImpact, ACTION_LABEL, memberJoinState, memberInviteToast } from '../lib/adminAccess'
+import { cardActions, adminChangeBlock, parseAdminUserUndo, grantImpact, ACTION_LABEL, memberJoinState, memberInviteToast, isStaleSignup, providerLabel } from '../lib/adminAccess'
 
 const ROOT = path.resolve(__dirname, '..')
 const PORT = 57000 + Math.floor(Math.random() * 900)
@@ -69,6 +69,16 @@ function schemaSql(): string {
   eq('꼴이 틀린 토큰은 null', parseAdminUserUndo({ v: 1, userId: 'x' }), null)
   // 4단계 같은 판정: 승인된 계정은 바로, 대기는 승인 뒤, 거절은 못 들어온다
   eq('멤버 판정 진리표', [memberJoinState('APPROVED'), memberJoinState('PENDING'), memberJoinState('REJECTED'), memberJoinState('PENDING', true)], ['ready', 'waiting', 'blocked', 'ready'])
+  // 6단계 정리 후보 진리표
+  const NOW = new Date('2026-11-04T00:00:00Z'), OLD = new Date('2026-09-01T00:00:00Z'), NEW = new Date('2026-10-20T00:00:00Z')
+  const base = { status: 'PENDING' as const, dbAdmin: false, envAdmin: false, ownedCount: 0, roleCount: 0, archived: false, lastActiveAt: OLD }
+  eq('정리 후보: 오래된 대기·거절만', [
+    isStaleSignup(base, NOW), isStaleSignup({ ...base, status: 'REJECTED' }, NOW), isStaleSignup({ ...base, status: 'APPROVED' }, NOW),
+    isStaleSignup({ ...base, lastActiveAt: NEW }, NOW), isStaleSignup({ ...base, roleCount: 1 }, NOW), isStaleSignup({ ...base, ownedCount: 1 }, NOW),
+    isStaleSignup({ ...base, dbAdmin: true }, NOW), isStaleSignup({ ...base, envAdmin: true }, NOW), isStaleSignup({ ...base, archived: true }, NOW),
+    isStaleSignup({ ...base, isSelf: true }, NOW),
+  ], [true, true, false, false, false, false, false, false, false, false])
+  eq('가입 경로 칩', [providerLabel('google'), providerLabel('email'), providerLabel(null)], ['구글 가입', '이메일 가입', null])
   ok('대기 계정 초대 토스트는 들어오는 때를 말한다', /승인 전 계정이라 승인되면 바로 들어옵니다/.test(memberInviteToast('waiting')) && memberInviteToast('ready') === '멤버가 추가되었습니다.')
 }
 
@@ -100,6 +110,7 @@ async function main() {
     const u = await prisma.user.findUniqueOrThrow({ where: { id }, select: { status: true, isSuperAdmin: true, approvedAt: true, approvedBy: true } })
     return { ...u, approvedAt: u.approvedAt?.toISOString() ?? null }
   }
+  const countPendingSignups0 = async () => (await import('@/lib/adminSignups')).countPendingSignups()
   const audits = async (id: string) => (await prisma.adminAuditLog.findMany({ where: { targetUserId: id }, orderBy: { createdAt: 'asc' } })).map(a => a.action)
 
   // 관리자가 아니면 액션이 막힌다(관문이 첫 DB 호출 전)
@@ -316,6 +327,42 @@ async function main() {
   threw = ''
   try { await A.restoreInviteCode(J(del.ok ? del.snap : null)!) } catch (e) { threw = String((e as Error).message) }
   eq('관리자 아니면 되살림도 관문이 막는다', threw, 'cr-flow redirect /dashboard')
+
+  // ── 6단계: 가입 경로 메타 · 오래된 계정 정리 ──
+  await pg.exec(`CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, raw_app_meta_data jsonb, last_sign_in_at timestamptz)`)
+  const S1 = randomUUID(), S2 = randomUUID(), S3 = randomUUID(), S4 = randomUUID()
+  const long = new Date(Date.now() - 45 * 86_400_000), recent = new Date(Date.now() - 2 * 86_400_000)
+  await prisma.user.createMany({ data: [
+    { id: S1, email: 'bot1@example.test', status: 'PENDING', createdAt: long },                 // 오래된 대기, 접속 기록 없음 → 후보
+    { id: S2, email: 'bot2@example.test', status: 'REJECTED', createdAt: long },                // 오래된 거절, 마지막 접속도 오래 → 후보
+    { id: S3, email: 'fresh@example.test', status: 'PENDING', createdAt: long },                // 가입은 오래지만 최근 접속 → 아님
+    { id: S4, email: 'member@example.test', status: 'REJECTED', createdAt: long },              // 오래된 거절이지만 영업장 역할 → 아님
+  ] })
+  await prisma.userPropertyRole.create({ data: { userId: S4, propertyId: PADM, role: 'STAFF' } })
+  await pg.query(`INSERT INTO auth.users (id, raw_app_meta_data, last_sign_in_at) VALUES ($1, '{"provider":"google"}', NULL), ($2, '{"provider":"email"}', $5), ($3, '{"provider":"email"}', $6), ($4, '{"provider":"google"}', NULL)`,
+    [S1, S2, S3, S4, long.toISOString(), recent.toISOString()])
+  as(ADMIN, 'admin@example.test')
+  const l6 = await A.getSignups()
+  const by = (id: string) => l6.users.find(u => u.id === id)!
+  eq('가입 경로·최근 접속 메타', [by(S1).provider, by(S2).provider, !!by(S3).lastSignInAt, by(S1).lastSignInAt], ['google', 'email', true, null])
+  const pendBefore = await countPendingSignups0()
+  const ar = await A.archiveStaleSignups([S1, S2, S3, S4, ADMIN])
+  eq('정리: 서버가 다시 센 후보만(S1·S2)', ar.ok ? [ar.count, [...ar.undo.ids].sort()] : ar, [2, [S1, S2].sort()])
+  eq('정리 감사 ARCHIVE', [await audits(S1), await audits(S2)], [['ARCHIVE'], ['ARCHIVE']])
+  eq('정리는 삭제가 아니다(행·상태 그대로)', [(await snap(S1)).status, (await snap(S2)).status], ['PENDING', 'REJECTED'])
+  eq('대기 건수에서 빠진다', await countPendingSignups0(), pendBefore - 1)
+  eq('목록에 정리 시각', [!!(await A.getSignups()).users.find(u => u.id === S1)?.archivedAt, (await A.getSignups()).users.find(u => u.id === S3)?.archivedAt], [true, null])
+  eq('다시 정리하면 후보 없음', (await A.archiveStaleSignups([S1, S2])).ok, false)
+  eq('다른 시각 도장으로는 되살리지 않는다', (await A.unarchiveSignups([S1, S2], '2026-01-01T00:00:00.000Z')).ok, false)
+  eq('정리 적용취소: 그때 걷은 행만 되살린다', await A.unarchiveSignups(ar.ok ? ar.undo.ids : [], ar.ok ? ar.undo.at : null), { ok: true, count: 2 })
+  eq('되살림 감사 UNARCHIVE · 대기 건수 복귀', [await audits(S1), await countPendingSignups0()], [['ARCHIVE', 'UNARCHIVE'], pendBefore])
+  eq('두 번 누르면 거부', (await A.unarchiveSignups(ar.ok ? ar.undo.ids : [], ar.ok ? ar.undo.at : null)).ok, false)
+  const ar2 = await A.archiveStaleSignups([S1])
+  eq('한 계정 되살리기(도장 없이)', [ar2.ok, (await A.unarchiveSignups([S1])).ok, await prisma.userArchive.count({ where: { userId: S1 } })], [true, true, 0])
+  as(OUT, 'out@example.test')
+  threw = ''
+  try { await A.archiveStaleSignups([S1]) } catch (e) { threw = String((e as Error).message) }
+  eq('관리자 아니면 정리도 관문이 막는다', [threw, await prisma.userArchive.count()], ['cr-flow redirect /dashboard', 0])
 
   // ── 3단계: 알림(가입 대기 → 스테이음 관리자, 참여 요청 → 소유자) · 대기 건수 ──
   const webpush = (await import('web-push')).default

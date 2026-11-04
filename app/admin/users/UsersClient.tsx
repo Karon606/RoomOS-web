@@ -11,9 +11,9 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { withParticle } from '@/lib/koParticle'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { setUserStatus, setSuperAdmin, approveUser, undoAdminUserChange } from '../actions'
+import { setUserStatus, setSuperAdmin, approveUser, undoAdminUserChange, archiveStaleSignups, unarchiveSignups } from '../actions'
 import {
-  ACTION_LABEL, PLATFORM_ADMIN_LABEL, STAFF_ROLE_LABEL, cardActions, grantImpact,
+  ACTION_LABEL, PLATFORM_ADMIN_LABEL, STAFF_ROLE_LABEL, STALE_DAYS, cardActions, grantImpact,
   type AdminUserUndo, type CardActionKey,
 } from '@/lib/adminAccess'
 
@@ -31,6 +31,10 @@ type Row = {
   createdAtLabel: string
   ownedCount: number
   roleCount: number
+  providerLabel: string | null
+  lastSignInLabel: string
+  archived: boolean
+  stale: boolean
 }
 
 // 상태 배지(§11 정본 Badge). 승인됨은 정상 상태라 배지가 없다(립·배지는 예외 상태 전용, §18). 대기는 info, 거절은 neutral.
@@ -41,13 +45,18 @@ const STATUS_BADGE: Record<Row['status'], { label: string; tone: 'pale-blue' | '
 }
 
 // 1차 필터(§23 SegmentedControl, '전체'가 먼저). 코랄 채움 알약은 §23·§25 위반이라 걷었다.
+// '정리됨'은 정리한 계정이 있을 때만 끝에 선다(나머지 칸에서는 정리한 계정이 빠진다).
 const FILTERS = [
   { value: 'ALL', label: '전체' },
   { value: 'PENDING', label: '승인 대기' },
   { value: 'APPROVED', label: '승인됨' },
   { value: 'REJECTED', label: '거절' },
+  { value: 'ARCHIVED', label: '정리됨' },
 ] as const
 type FilterKey = (typeof FILTERS)[number]['value']
+
+// §11 메타 칩 정본(가입 경로): bg --canvas · --warm-muted · ring 1px --warm-border · r-sm · 10.5px
+const META_CHIP = 'shrink-0 rounded-sm bg-[var(--canvas)] px-1.5 py-0.5 text-[0.65625rem] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]'
 
 /** 빈 상태 제목(§29). 검색창이 없으니 '검색어를 조정해 보세요' 같은 안내를 하지 않는다. */
 function emptyTitle(f: FilterKey) {
@@ -81,7 +90,11 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
   const [busyId, setBusyId] = useState<string | null>(null)
   const [approving, setApproving] = useState<Row | null>(null)
 
-  const visible = filter === 'ALL' ? rows : rows.filter((r) => r.status === filter)
+  const archivedCount = rows.filter(r => r.archived).length
+  const filters = FILTERS.filter(f => f.value !== 'ARCHIVED' || archivedCount > 0)
+  const visible = filter === 'ARCHIVED' ? rows.filter(r => r.archived)
+    : rows.filter(r => !r.archived && (filter === 'ALL' || r.status === filter))
+  const staleRows = rows.filter(r => r.stale)
 
   function run(id: string, fn: () => Promise<ActionResult>, done: string, undoneMsg: string) {
     setBusyId(id)
@@ -94,6 +107,50 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
           if (r.ok) { pushToast('info', undoneMsg); router.refresh() }
           else pushToast('error', r.error)
         }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } } } : undefined)
+        router.refresh()
+      } catch {
+        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+      } finally {
+        setBusyId(null)
+      }
+    })
+  }
+
+  /** 오래된 계정 정리(§14 파괴 확인창 + 토스트 적용취소). 지우지 않고 목록에서만 걷는다. */
+  async function archiveStale() {
+    const names = staleRows.map(r => r.name || r.email)
+    const ok = await confirmDialog({
+      title: `오래된 대기·거절 계정 ${staleRows.length}개를 정리할까요?`,
+      message: `${STALE_DAYS}일 넘게 접속이 없고 영업장이 없는 대기·거절 계정입니다. 계정을 지우지 않고 목록에서만 걷습니다. '정리됨' 칸에서 다시 볼 수 있습니다.`,
+      level: 'danger',
+      confirmLabel: '정리',
+      impactTitle: '정리할 계정',
+      impact: [...names.slice(0, 5).map(label => ({ label })), ...(names.length > 5 ? [{ label: `외 ${names.length - 5}명` }] : [])],
+      irreversibleNote: UNDO_REVERSIBLE,
+    })
+    if (!ok) return
+    startTransition(async () => {
+      try {
+        const res = await archiveStaleSignups(staleRows.map(r => r.id))
+        if (!res.ok) { pushToast('error', res.error); return }
+        const undo = res.undo
+        pushToast('success', `계정 ${res.count}개를 정리했습니다`, { action: { label: '적용취소', run: () => { void unarchiveSignups(undo.ids, undo.at).then(r => {
+          if (r.ok) { pushToast('info', `적용취소했습니다 · 계정 ${r.count}개 정리`); router.refresh() } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } } })
+        router.refresh()
+      } catch {
+        pushToast('error', '처리 중 통신 오류가 발생했습니다')
+      }
+    })
+  }
+
+  function unarchive(u: Row) {
+    setBusyId(u.id)
+    startTransition(async () => {
+      try {
+        const res = await unarchiveSignups([u.id])
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('success', `${displayName(u)} 되살렸습니다`)
         router.refresh()
       } catch {
         pushToast('error', '처리 중 통신 오류가 발생했습니다')
@@ -148,11 +205,18 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-[var(--ink)]">
-        가입자 <span className="num text-[var(--ink-m)] font-semibold">({rows.length})</span>
-      </h1>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h1 className="text-xl font-bold text-[var(--ink)]">
+          가입자 <span className="num text-[var(--ink-m)] font-semibold">({rows.length - archivedCount})</span>
+        </h1>
+        {staleRows.length > 0 && (
+          <Btn variant="secondary" size="sm" disabled={pending} onClick={() => { void archiveStale() }}>
+            오래된 계정 정리 ({staleRows.length})
+          </Btn>
+        )}
+      </div>
 
-      <SegmentedControl options={FILTERS} value={filter} onChange={setFilter} size="sm" ariaLabel="가입 상태" />
+      <SegmentedControl options={filters} value={filter} onChange={setFilter} size="sm" ariaLabel="가입 상태" scroll />
 
       {visible.length === 0 ? (
         <EmptyState
@@ -168,11 +232,13 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
             const contact = [u.phone, u.address].filter(Boolean).join(' · ')
             const meta = [
               `가입 ${u.createdAtLabel}`,
+              u.lastSignInLabel ? `최근 접속 ${u.lastSignInLabel}` : '',
               u.ownedCount > 0 ? `소유 영업장 ${u.ownedCount}` : '',
               u.roleCount > 0 ? `참여 영업장 ${u.roleCount}` : '',
               u.inviteCode ? `코드 ${u.inviteCode}` : '',
             ].filter(Boolean).join(' · ')
-            const acts = cardActions({ status: u.status, dbAdmin: u.isSuperAdmin, envAdmin: u.envAdmin, isSelf: u.isSelf })
+            // 정리한 계정은 되살리기 하나만 선다(상태 동작은 되살린 뒤)
+            const acts = u.archived ? { primary: [], manage: [], danger: [] } : cardActions({ status: u.status, dbAdmin: u.isSuperAdmin, envAdmin: u.envAdmin, isSelf: u.isSelf })
             const menu = [...acts.manage, ...acts.danger].map(k => ({
               key: k, label: ACTION_LABEL[k], danger: acts.danger.includes(k), onSelect: () => { void act(u, k) },
             }))
@@ -189,12 +255,19 @@ export default function UsersClient({ rows, pendingCount, propertyCount, myPrope
                     {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
                     {isAdmin && <Badge tone="pale-neutral">{PLATFORM_ADMIN_LABEL}</Badge>}
                     {u.isSelf && <Badge tone="pale-neutral">나</Badge>}
+                    {u.archived && <Badge tone="pale-neutral">정리됨</Badge>}
+                    {u.providerLabel && <span className={META_CHIP}>{u.providerLabel}</span>}
                   </div>
                   {u.name && <p className="text-sm text-[var(--ink-s)] truncate mt-0.5">{u.email}</p>}
                   {contact && <p className="text-xs text-[var(--ink-m)] mt-1 break-keep [overflow-wrap:anywhere]">{contact}</p>}
                   <p className="text-xs text-[var(--ink-m)] mt-1 num">{meta}</p>
                 </div>
 
+                {u.archived && (
+                  <div className="flex items-center justify-end gap-2 mt-3">
+                    <Btn size="sm" variant="secondary" disabled={rowBusy} onClick={() => unarchive(u)}>되살리기</Btn>
+                  </div>
+                )}
                 {(acts.primary.length > 0 || menu.length > 0) && (
                   <div className="flex items-center justify-end gap-2 mt-3">
                     {acts.primary.map(k => (

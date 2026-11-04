@@ -183,5 +183,31 @@ export function memberInviteToast(joinState: 'ready' | 'waiting'): string {
     : '멤버가 추가되었습니다.'
 }
 
+// ── 6단계: 가입 경로 메타 · 오래된 계정 정리 (갈림길 F, 2026-11-04 운영자 승인 '추천대로') ──
+
+/** 가입 경로 칩 글자(auth.users app_metadata.provider). 모르면 null(칩 없음). */
+export function providerLabel(provider: string | null | undefined): string | null {
+  if (provider === 'google') return '구글 가입'
+  if (provider === 'email') return '이메일 가입'
+  return provider ? `${provider} 가입` : null
+}
+
+/** 정리 기준 일수. 마지막 활동(최근 접속, 없으면 가입일)이 이보다 오래된 계정만. */
+export const STALE_DAYS = 30
+
+/**
+ * 오래된 계정 정리 후보 판정(화면 버튼·확인창 건수와 서버 쓰기가 같은 함수). 대기·거절이고, 스테이음 관리자가 아니고,
+ * 소유·참여 영업장이 없고, 아직 정리 안 했고, 마지막 활동이 STALE_DAYS 일보다 오래됐다. 정리는 삭제가 아니라 목록에서 걷기다.
+ */
+export function isStaleSignup(u: {
+  status: AccessStatus; dbAdmin: boolean; envAdmin: boolean; ownedCount: number; roleCount: number; archived: boolean
+  lastActiveAt: Date | string; isSelf?: boolean
+}, now: Date = new Date()): boolean {
+  if (u.isSelf || u.archived || u.dbAdmin || u.envAdmin) return false
+  if (u.status === 'APPROVED') return false
+  if (u.ownedCount > 0 || u.roleCount > 0) return false
+  return now.getTime() - new Date(u.lastActiveAt).getTime() > STALE_DAYS * 86_400_000
+}
+
 export const ADMIN_UNDO_INVALID = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 export const ADMIN_UNDO_CONFLICT = '그사이 이 계정의 권한이나 상태가 다시 바뀌어 되돌리지 않았습니다. 지금 상태를 확인해 주세요.'
