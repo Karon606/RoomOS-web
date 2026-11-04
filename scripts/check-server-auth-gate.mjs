@@ -96,6 +96,7 @@ const IDENTITY_ONLY = {
   'app/(app)/settings/pushActions.ts|deletePushSubscription': '본인 기기 구독을 지우기만 한다',
   'app/(app)/settings/pushActions.ts|sendTestPush': '본인 기기로만 시험 알림을 보낸다(영업장 데이터 없음)',
   'app/(auth)/callback/route.ts|GET': 'OAuth 콜백. 코드를 세션으로 바꾼 뒤 본인 확인만 한다. 승인 게이트는 그다음 화면(레이아웃)이 본다',
+  'app/pending/actions.ts|checkMyAccess': '승인 대기 화면의 본인 상태 재확인. 대기 계정도 지나야 하는 문이다(본인 상태만 읽는다)',
 }
 
 // 축 ⓓ 본인 기기 시험 발송. 'file|함수' : '사유'.

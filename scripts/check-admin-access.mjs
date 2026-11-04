@@ -8,6 +8,11 @@
 //   ⓒ 감사 기록: 권한·상태 쓰기는 changeAccess 를 거치고, 그 안에서 같은 트랜잭션으로 writeAudit. 적용취소도 기록한다.
 //   ⓓ 권한 주기는 카드 '관리' 메뉴 구분선 아래(바로 누를 수 없다), 파괴 단계 확인창 + '이 사람이 볼 수 있게 되는 것' 목록.
 //   ⓔ 본인 카드는 버튼 없음(진리표 isSelf), 화면이 isSelf 를 넘긴다. 토스트 적용취소가 undoAdminUserChange 를 부른다.
+//   ⓕ 가입: signUp·인증 메일 다시 보내기는 emailRedirectTo 로 /callback 에 돌아온다(코드를 교환하는 자리는 콜백뿐).
+//   ⓖ 콜백: 코드를 먼저 교환하고, 교환이 실패했을 때만 기존 세션으로 통과한다. 행은 정본 ensureAppUser.
+//   ⓗ proxy: 진입 리디렉트는 문서 요청(GET·HEAD)만. 행동은 scripts/test-proxy-entry-redirect.ts.
+//   ⓘ 행 보장: 계정 관문(getAccessContext)이 행이 없으면 ensureAppUser, 로그인 동기화도 같은 정본, 인증 쪽에 손수 upsert 없음.
+//   ⓙ 대기 화면: 탭 복귀·30초 재확인·[승인 확인], 승인되면 넘어간다. '다시 로그인' 안내 없음.
 import { readFileSync } from 'node:fs'
 
 let fail = 0
@@ -81,6 +86,47 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓔ 진리표: 본인이면 아무것도 없다', /if \(r\.isSelf\) return none/.test(lib))
   ok('ⓔ 화면이 본인 여부를 서버에서 받아 넘긴다', /isSelf: u\.id === me\.userId/.test(read('app/admin/users/page.tsx')))
   ok('ⓔ 토스트 적용취소', /undoAdminUserChange\(undo\)/.test(read('app/admin/users/UsersClient.tsx')))
+}
+
+// ⓕ 가입 인증 링크
+{
+  const f = strip(read('app/(auth)/login/EmailLoginForm.tsx'))
+  ok('ⓕ 콜백 주소 정본', /function emailCallbackUrl\(returnTo\?: string\) \{\s*return `\$\{window\.location\.origin\}\/callback\?returnTo=\$\{encodeURIComponent\(safeReturnTo\(returnTo\)\)\}`/.test(f))
+  const su = f.slice(f.indexOf('supabase.auth.signUp({'), f.indexOf('if (error) throw error', f.indexOf('supabase.auth.signUp({')))
+  ok('ⓕ signUp 은 emailRedirectTo 로 콜백', su.length > 0 && /emailRedirectTo: emailCallbackUrl\(returnTo\)/.test(su))
+  ok('ⓕ 인증 메일 다시 보내기도 콜백', /supabase\.auth\.resend\(\{ type: 'signup', email, options: \{ emailRedirectTo: emailCallbackUrl\(returnTo\) \} \}\)/.test(f))
+  ok('ⓕ 로그인 뒤 동기화 실패가 로그인을 막지 않는다', /try \{ await syncUserToDB\(\) \} catch/.test(f))
+}
+// ⓖ 콜백
+{
+  const c = strip(read('app/(auth)/callback/route.ts'))
+  const iEx = c.indexOf('exchangeCodeForSession(code)'), iPass = c.indexOf('if (existingUser) return toApp()')
+  ok('ⓖ 교환이 먼저, 기존 세션 통과는 그 뒤', iEx > 0 && iPass > iEx && (c.match(/existingUser\)/g) ?? []).length === 1)
+  ok('ⓖ 교환 성공이면 행 보장 뒤 앱으로', /if \(!error && data\.user\) \{\s*await ensureAppUser\(identityFromAuthUser\(data\.user\), \{ refreshProfile: true \}\)\s*return toApp\(\)/.test(c))
+  ok('ⓖ 손수 upsert 없음', !/prisma\./.test(c))
+}
+// ⓗ proxy
+{
+  const p = strip(read('proxy.ts'))
+  ok('ⓗ 진입 리디렉트는 GET·HEAD 만', /const isDocumentRequest = request\.method === 'GET' \|\| request\.method === 'HEAD'/.test(p) && /if \(isDocumentRequest && \(pathname === '\/' \|\| pathname === '\/login'\)\)/.test(p))
+}
+// ⓘ 행 보장 정본
+{
+  const a = strip(read('lib/auth/access.ts'))
+  ok('ⓘ 관문은 행이 없을 때 정본으로 만든다', /const ensured = user \? null : await ensureAppUser\(identityFromClaims\(claims as Record<string, unknown>\)\)/.test(a) && /\?\? ensured\?\.status \?\? 'PENDING'/.test(a))
+  const sy = strip(read('app/(auth)/login/actions.ts'))
+  ok('ⓘ 로그인 동기화도 정본', /await ensureAppUser\(identityFromAuthUser\(user\), \{ extra, refreshProfile: true \}\)/.test(sy) && !/prisma\./.test(sy))
+  const e = strip(read('lib/auth/ensureAppUser.ts'))
+  ok('ⓘ 정본은 있는 행의 상태·관리자 표식을 안 덮는다', !/isSuperAdmin/.test(e) && !/status: 'PENDING'/.test(e.slice(e.indexOf('prisma.user.create'), e.indexOf('created = true'))))
+  ok('ⓘ 같은 이메일 다른 행은 안 만든다', /const sameEmail = await prisma\.user\.findUnique\(\{ where: \{ email: idn\.email \}/.test(e))
+}
+// ⓙ 대기 화면
+{
+  const pa = strip(read('app/pending/page.tsx')), pc = strip(read('app/pending/PendingAutoCheck.tsx'))
+  ok('ⓙ 대기 화면이 자동 재확인을 품는다', /<PendingAutoCheck initial=/.test(pa) && /승인되면 이 화면이 자동으로 넘어갑니다/.test(pa) && !/다시 로그인/.test(pa))
+  ok('ⓙ 30초·탭 복귀·버튼', /PENDING_RECHECK_MS = 30_000/.test(pc) && /addEventListener\('visibilitychange', onVisible\)/.test(pc) && /setInterval\(/.test(pc) && /승인 확인/.test(pc))
+  ok("ⓙ 승인이면 앱으로", /if \(s === 'APPROVED'\) \{ window\.location\.replace\('\/dashboard'\); return \}/.test(pc))
+  ok('ⓙ 재확인 액션은 본인 상태만', /export async function checkMyAccess\(\): Promise<MyAccessStatus> \{\s*const ctx = await getAccessContext\(\)/.test(strip(read('app/pending/actions.ts'))))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

@@ -2,6 +2,7 @@ import 'server-only'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
+import { ensureAppUser, identityFromClaims } from '@/lib/auth/ensureAppUser'
 
 /**
  * 앱 접근 제어 (베타 게이팅 + 운영자).
@@ -46,9 +47,12 @@ export async function getAccessContext(): Promise<AccessContext | null> {
     where: { id: userId },
     select: { status: true, isSuperAdmin: true, email: true },
   })
+  // 로그인은 됐는데 앱 행이 없다(인증 링크가 콜백을 안 거쳤거나 로그인 직후 동기화가 빠졌다). 여기서 만든다.
+  // 그래야 이 사람이 대기 화면에 서는 동시에 관리자 목록에도 선다(정본 lib/auth/ensureAppUser, 2026-11-04).
+  const ensured = user ? null : await ensureAppUser(identityFromClaims(claims as Record<string, unknown>))
 
   const isSuperAdmin = isSuperAdminEmail(claimEmail ?? user?.email) || (user?.isSuperAdmin ?? false)
-  const status: AccessStatus = isSuperAdmin ? 'APPROVED' : ((user?.status as AccessStatus | undefined) ?? 'PENDING')
+  const status: AccessStatus = isSuperAdmin ? 'APPROVED' : ((user?.status as AccessStatus | undefined) ?? ensured?.status ?? 'PENDING')
 
   return { userId, email: claimEmail ?? user?.email ?? null, status, isSuperAdmin }
 }

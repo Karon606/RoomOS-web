@@ -3,8 +3,11 @@ import { getAccessContext } from '@/lib/auth/access'
 import { signOut } from '@/app/property-select/actions'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import DocumentScroll from '@/components/layout/DocumentScroll'
+import { Btn } from '@/components/ui/Btn'
+import PendingAutoCheck from './PendingAutoCheck'
 
 // 베타 승인 대기 / 거절 안내. (app) 레이아웃 게이트가 미승인 사용자를 여기로 보냄.
+// 승인되면 화면이 스스로 넘어간다(PendingAutoCheck). 행이 없던 신원은 getAccessContext 가 여기서 행을 만든다(관리자 목록에 선다).
 export default async function PendingPage() {
   const ctx = await getAccessContext()
   if (!ctx) redirect('/login')
@@ -46,27 +49,30 @@ export default async function PendingPage() {
                 <br />
                 스테이음 팀 승인 후 모든 기능을 이용하실 수 있어요.
                 <br />
-                승인되면 다시 로그인해주세요.
+                승인되면 이 화면이 자동으로 넘어갑니다.
               </>
             )}
           </p>
 
-          <div
-            className="text-xs rounded-lg px-3 py-2"
-            style={{ background: 'var(--cream-soft)', color: 'var(--ink-mute)' }}
-          >
-            {ctx.email}
+          <div className="space-y-1.5">
+            <div
+              className="text-xs rounded-lg px-3 py-2 break-all"
+              style={{ background: 'var(--cream-soft)', color: 'var(--ink-mute)' }}
+            >
+              {ctx.email}
+            </div>
+            {!rejected && (
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
+                고시원 직원으로 합류하신다면 사장님께 위 이메일을 알려 주세요.
+              </p>
+            )}
           </div>
+
+          <PendingAutoCheck initial={rejected ? 'REJECTED' : 'PENDING'} />
         </div>
 
         <form action={signOut}>
-          <button
-            type="submit"
-            className="text-sm underline underline-offset-2"
-            style={{ color: 'var(--ink-3)' }}
-          >
-            로그아웃
-          </button>
+          <Btn type="submit" variant="ghost" size="sm">로그아웃</Btn>
         </form>
       </div>
     </main>

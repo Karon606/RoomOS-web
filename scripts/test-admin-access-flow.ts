@@ -160,6 +160,100 @@ async function main() {
   const forged = { ...J(st1.ok ? st1.undo! : null)!, userId: ADMIN }
   eq('본인 행 토큰 거부', (await A.undoAdminUserChange(forged)).ok, false)
 
+  // ── 2단계: 앱 users 행 보장 · 콜백 · 대기 화면 재확인 · 자기 영업장 만들기 ──
+  const { getAccessContext } = await import('@/lib/auth/access')
+  const { GET: callback } = await import('@/app/(auth)/callback/route')
+  const { syncUserToDB } = await import('@/app/(auth)/login/actions')
+  const { checkMyAccess } = await import('@/app/pending/actions')
+  const { createProperty } = await import('@/app/property-select/actions')
+  const { NextRequest } = await import('next/server')
+  const cb = async (q: string) => {
+    const res = await callback(new NextRequest(`http://localhost:3000/callback?${q}`))
+    return (res.headers.get('location') ?? '').replace('http://localhost:3000', '')
+  }
+
+  // 행 없는 이메일 신원이 관문에 오면 행이 생기고(대기) 관리자 목록에 선다. 메타데이터의 실명·연락처를 회수한다.
+  const ORPH = randomUUID()
+  g.__AF.claims = { sub: ORPH, email: 'orphan@example.test', app_metadata: { provider: 'email' }, user_metadata: { real_name: '구관기 사례', phone: '010-0000-0000' } }
+  const ctxO = await getAccessContext()
+  eq('행 없는 신원: 관문이 대기로 본다', ctxO?.status, 'PENDING')
+  const rowO = await prisma.user.findUnique({ where: { id: ORPH } })
+  eq('행 없는 신원: 관문이 행을 만든다(대기·실명·연락처)', [rowO?.status, rowO?.realName, rowO?.phone, rowO?.isSuperAdmin], ['PENDING', '구관기 사례', '010-0000-0000', false])
+  as(ADMIN, 'admin@example.test')
+  ok('관리자 목록에 선다', (await A.getSignups()).users.some(u => u.id === ORPH))
+  // 이미 있는 행은 덮지 않는다(상태·관리자 표식·실명 불변)
+  await prisma.user.update({ where: { id: ORPH }, data: { status: 'REJECTED' } })
+  g.__AF.claims = { sub: ORPH, email: 'orphan@example.test', user_metadata: { real_name: '다른 이름' } }
+  await getAccessContext()
+  const rowO2 = await prisma.user.findUniqueOrThrow({ where: { id: ORPH } })
+  eq('관문은 있는 행을 안 덮는다', [rowO2.status, rowO2.realName], ['REJECTED', '구관기 사례'])
+  // 같은 이메일의 다른 행이 있으면 만들지 않고 대기로 본다
+  g.__AF.claims = { sub: randomUUID(), email: 'p1@example.test' }
+  eq('같은 이메일 다른 id 는 행 없이 대기', (await getAccessContext())?.status, 'PENDING')
+  eq('같은 이메일 행은 하나', await prisma.user.count({ where: { email: 'p1@example.test' } }), 1)
+
+  // 초대코드(메타데이터) 자동 승인은 관문에서도 한 번만
+  await prisma.inviteCode.create({ data: { code: 'STAYEXT09', maxUses: 5, autoApprove: true } })
+  const INV = randomUUID()
+  g.__AF.claims = { sub: INV, email: 'inv@example.test', user_metadata: { invite_code: 'stayext09' } }
+  eq('초대코드 메타데이터: 관문에서 바로 승인', (await getAccessContext())?.status, 'APPROVED')
+  await getAccessContext()
+  eq('초대코드는 한 번만 센다', (await prisma.inviteCode.findUniqueOrThrow({ where: { code: 'STAYEXT09' } })).usedCount, 1)
+
+  // 로그인 직후 동기화도 같은 정본(넘긴 칸 반영)
+  const SYN = randomUUID()
+  g.__AF.claims = { sub: SYN, email: 'syn@example.test', user_metadata: { full_name: 'Syn G' } }
+  await syncUserToDB({ realName: '동기화', address: '서울' })
+  const rowS = await prisma.user.findUniqueOrThrow({ where: { id: SYN } })
+  eq('동기화: 행 생성·이름·넘긴 칸', [rowS.status, rowS.name, rowS.realName, rowS.address], ['PENDING', 'Syn G', '동기화', '서울'])
+
+  // 콜백: 코드를 먼저 교환한다
+  const GU = randomUUID()
+  g.__AF.claims = null
+  g.__AF.codes = { c1: { id: GU, email: 'google@example.test', user_metadata: { full_name: '구글 사람', avatar_url: 'https://x/a.png' }, app_metadata: { provider: 'google' } } }
+  eq('세션 없음 + 코드: 교환하고 앱으로', await cb('code=c1&returnTo=%2Fproperty-select'), '/property-select?_fa=1')
+  eq('교환한 계정의 행(대기·구글 이름)', (await prisma.user.findUnique({ where: { id: GU } }))?.name, '구글 사람')
+  eq('같은 세션 + 이미 쓴 코드: 교환 실패지만 세션으로 통과(뒤로가기)', await cb('code=c1'), '/property-select?_fa=1')
+  eq('그 세션은 그대로', g.__AF.claims?.sub, GU)
+  const GU2 = randomUUID()
+  g.__AF.codes = { c2: { id: GU2, email: 'google2@example.test', user_metadata: { full_name: '다른 구글' } } }
+  eq('다른 계정 세션 + 새 코드: 교환해서 갈아끼운다', await cb('code=c2'), '/property-select?_fa=1')
+  eq('세션이 새 계정으로 바뀌고 행이 생긴다', [g.__AF.claims?.sub, !!(await prisma.user.findUnique({ where: { id: GU2 } }))], [GU2, true])
+  g.__AF.claims = null
+  eq('세션 없음 + 틀린 코드: 로그인으로', await cb('code=nope'), '/login?error=callback_failed')
+  eq('오픈 리다이렉트 방어', (await cb('code=zzz&returnTo=%2F%2Fevil.com')), '/login?error=callback_failed')
+
+  // 대기 화면 재확인 → 승인 → 앱 → 자기 영업장 만들기(구관기 님 사례: 직원이 아니라 따로 운영할 사람)
+  g.__AF.claims = { sub: GU, email: 'google@example.test' }
+  eq('대기 화면 재확인: 대기', await checkMyAccess(), 'PENDING')
+  // (createProperty 는 오류를 결과로 돌려준다. 하네스 redirect 대역은 digest 가 없어 결과 문장으로 온다)
+  eq('승인 전에는 영업장 개설이 대기 화면으로', await createProperty('구관기 하우스'), { ok: false, error: 'cr-flow redirect /pending' })
+  eq('막힌 개설은 영업장을 안 만든다', await prisma.property.count({ where: { ownerId: GU } }), 0)
+  as(ADMIN, 'admin@example.test')
+  const apGU = await A.setUserStatus(GU, 'APPROVED')
+  ok('관리자 승인', apGU.ok)
+  g.__AF.claims = { sub: GU, email: 'google@example.test' }
+  eq('대기 화면 재확인: 승인(화면이 넘어간다)', await checkMyAccess(), 'APPROVED')
+  const cp = await createProperty('구관기 하우스')
+  ok('승인된 신규 사용자는 자기 영업장을 만든다', cp.ok)
+  const own = cp.ok ? await prisma.property.findUnique({ where: { id: cp.propertyId }, select: { ownerId: true } }) : null
+  const ownRole = cp.ok ? await prisma.userPropertyRole.findUnique({ where: { userId_propertyId: { userId: GU, propertyId: cp.propertyId } } }) : null
+  eq('그 영업장의 소유자·OWNER 역할', [own?.ownerId, ownRole?.role], [GU, 'OWNER'])
+  // 이미 있는 행을 로그인 동기화·콜백이 다시 지나도 상태·관리자 표식·승인 칸은 그대로(이름·사진만 고친다)
+  const before = await snap(GU)
+  g.__AF.claims = { sub: GU, email: 'google@example.test', user_metadata: { full_name: '구글 사람2' } }
+  await syncUserToDB()
+  g.__AF.codes = { c3: { id: GU, email: 'google@example.test', user_metadata: { full_name: '구글 사람3' } } }
+  await cb('code=c3')
+  eq('다시 로그인해도 승인 상태 그대로', await snap(GU), before)
+  eq('이름은 고친다', (await prisma.user.findUniqueOrThrow({ where: { id: GU } })).name, '구글 사람3')
+  await prisma.user.update({ where: { id: GU }, data: { isSuperAdmin: true } })
+  await syncUserToDB()
+  eq('관리자 표식도 안 덮는다', (await prisma.user.findUniqueOrThrow({ where: { id: GU } })).isSuperAdmin, true)
+  await prisma.user.update({ where: { id: GU }, data: { isSuperAdmin: false } })
+  g.__AF.claims = null
+  eq('로그아웃 상태 재확인', await checkMyAccess(), 'SIGNED_OUT')
+
   await server.stop()
   await pg.close()
   console.log(`\n관리자 접근 흐름: 통과 ${pass} · 실패 ${fail}`)

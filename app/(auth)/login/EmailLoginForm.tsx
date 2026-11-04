@@ -36,6 +36,11 @@ const PW_RULES: { label: string; test: (p: string) => boolean }[] = [
 ]
 const isPasswordValid = (p: string) => PW_RULES.every(r => r.test(p))
 
+/** 인증 메일 링크가 돌아올 콜백 주소. 코드를 교환하는 자리는 /callback 뿐이다. returnTo 는 내부 경로만 싣는다. */
+function emailCallbackUrl(returnTo?: string) {
+  return `${window.location.origin}/callback?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`
+}
+
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
     <label className="block text-xs font-medium mb-1 px-1" style={{ color: 'var(--warm-dark)' }}>
@@ -101,10 +106,13 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
         const invite = inviteCode.trim().toUpperCase()
         // 이메일 인증이 켜져 있으면 signUp 직후 세션이 없어 syncUserToDB가 no-op이므로,
         // 실명·연락처·초대코드를 user_metadata에 실어 첫 로그인 시 회수·적용한다.
-        const { error } = await supabase.auth.signUp({
+        // 인증 메일 링크는 콜백으로 돌아와 코드를 교환한다. 종전에는 이 값이 없어 Supabase Site URL(첫 화면 '/')로 ?code= 가
+        // 돌아왔고, '/' 는 코드를 교환하지 않아 '인증했는데 로그인이 안 된 첫 화면'이 떴다(2026-11-04).
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
+            emailRedirectTo: emailCallbackUrl(returnTo),
             data: {
               real_name: realName || undefined,
               phone: phone || undefined,
@@ -114,16 +122,21 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
           },
         })
         if (error) throw error
-        // 세션이 즉시 생기는 환경(인증 비활성)에서는 바로 반영
-        await syncUserToDB({ realName, phone, address, inviteCode: invite })
-        setSuccess('가입이 완료됐습니다. 이메일로 로그인해주세요.')
+        // 세션이 즉시 생기는 환경(인증 비활성)에서는 바로 반영하고 들어간다
+        if (signUpData.session) {
+          await syncUserToDB({ realName, phone, address, inviteCode: invite })
+          window.location.replace(safeReturnTo(returnTo))
+          return
+        }
         reset('login')
+        setSuccess('인증 메일을 보냈습니다. 메일의 링크를 누르면 바로 로그인됩니다.')
         return
       }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      await syncUserToDB()
+      // 로그인은 이미 됐다. 동기화가 실패해도(통신 등) 들어가게 둔다. 행은 계정 관문이 같은 정본으로 보장한다.
+      try { await syncUserToDB() } catch { /* 관문 getAccessContext 가 행을 만든다 */ }
       // #18 replace 사용 — /login이 히스토리에 남지 않아 뒤로가기로 로그인 화면 재진입(→로그아웃 체감) 방지
       // 오픈 리다이렉트 방어 — returnTo 는 내부 상대경로만 허용
       window.location.replace(safeReturnTo(returnTo))
@@ -142,7 +155,7 @@ export default function EmailLoginForm({ returnTo, initialMode = 'login' }: { re
     setSuccess(null)
     setLoading(true)
     try {
-      const { error } = await supabase.auth.resend({ type: 'signup', email })
+      const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: emailCallbackUrl(returnTo) } })
       if (error) throw error
       setNeedsConfirm(false)
       setSuccess('인증 메일을 다시 보냈습니다. 메일함을 확인해주세요.')

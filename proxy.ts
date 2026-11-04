@@ -46,7 +46,13 @@ export async function proxy(request: NextRequest) {
     supabaseResponse.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value, c))
     return res
   }
-  if (pathname === '/' || pathname === '/login') {
+  // 문서 요청(GET·HEAD)에만 한다. 그 페이지 위에서 부른 서버 액션(POST + Next-Action)까지 보내면, 로그인 직후
+  // 같은 페이지에서 부른 액션이 307 로 /property-select 에 가서 실행되지 않는다. 클라이언트는 'unexpected response' 를
+  // 던지고 가입 폼은 일반 오류를 띄웠다. 이메일 로그인 직후 syncUserToDB 가 그렇게 빠져 앱 users 행이 안 생겼다
+  // (2026-11-04 구관기 님, 로컬 재현 확정: 로그인 쿠키 + Next-Action POST /login → 307 → POST /property-select 200 application/json,
+  // 액션 미실행). 화면 이동은 클라이언트가 그다음에 스스로 한다.
+  const isDocumentRequest = request.method === 'GET' || request.method === 'HEAD'
+  if (isDocumentRequest && (pathname === '/' || pathname === '/login')) {
     if (user) {
       const raw = searchParams.get('returnTo')
       // 내부 경로만 허용 — 절대 URL·'//host'·'/\\'·제어문자는 오픈 리디렉트라 무시(lib/auth/returnTo)
