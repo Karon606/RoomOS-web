@@ -3238,13 +3238,25 @@ export default function TenantClient({
                     )
                   })()}
 
-                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <div className="flex-1" />
-                    <Btn variant="primary" size="md"
-                      onClick={() => { setShowPayForm(true); setError('') }}>
-                      수납 등록
-                    </Btn>
-                  </div>
+                  {/* 발끝 '수납 등록'. 열람 역할(STAFF·제한 스태프)에게는 세우지 않는다. 서버 savePayment 가
+                      requireEdit 로 거절하는 동작이라 화면도 같은 판정으로 숨기고 캡션을 달지 않는다(§27.8 ②,
+                      형제 수납 관리 PaymentBody 와 같은 canEdit). 투어 단계 계약은 정산이 없어(정본 기본값을
+                      만들 수 없다) 등록 문 대신 그 자리에 이유와 푸는 법 한 줄을 둔다(§27.8 ⑤). */}
+                  {canEdit && (
+                    <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
+                      {lease.status === 'WAITING_TOUR' || lease.status === 'TOUR_DONE' ? (
+                        <WhyCaption id="pay-tour-stage" className="flex-1">투어 단계 계약이라서 수납을 등록할 수 없습니다 · 예약으로 바꾸면 됩니다</WhyCaption>
+                      ) : (
+                        <>
+                          <div className="flex-1" />
+                          <Btn variant="primary" size="md"
+                            onClick={() => { setShowPayForm(true); setError('') }}>
+                            수납 등록
+                          </Btn>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
