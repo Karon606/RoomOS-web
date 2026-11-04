@@ -3081,6 +3081,16 @@ async function reservationRoomBusy(propertyId: string, leaseTermId: string): Pro
  *
  * 미리 잡기와 실제 처리가 같은 함수를 쓴다 — 두 벌이면 한쪽만 느슨해진다.
  */
+// 거주 호실 일정에 적힌 방이 전부 이 영업장 방인가(2026-11-04 독립 검수 뒤 전수, 운영자 승인 '추천대로').
+// 일정은 화면·적용취소 토큰이 들고 오는 값이다. 겹침 판정(roomScheduleClash)은 이 영업장의 점유만 보므로 남의 영업장 방 id 는
+// '안 겹침'으로 통과했고, 입실 처리가 그 방을 사용 중으로 바꾸고 거주 구간을 만들었다. 저장·입실·되돌림 전에 본다.
+const SCHEDULE_ROOM_GONE = '일정에 적힌 호실을 찾을 수 없습니다.'
+async function scheduleRoomsInProperty(propertyId: string, schedule: readonly { roomId: string }[]): Promise<boolean> {
+  const ids = [...new Set(schedule.map(e => e.roomId))]
+  if (ids.length === 0) return true
+  return (await prisma.room.count({ where: { id: { in: ids }, propertyId } })) === ids.length
+}
+
 async function roomScheduleClash(
   propertyId: string,
   exceptLeaseId: string,
@@ -3242,6 +3252,7 @@ export async function startLeaseWithRoomSchedule(input: {
     if (!hasRoomSchedule(schedule)) return { ok: false, error: '방을 둘 이상 정해야 일정이 됩니다.' }
     const bad = validateRoomSchedule(schedule, { moveInYmd: input.moveInDate, mainRoomId: lease.roomId })
     if (bad) return { ok: false, error: bad }
+    if (!(await scheduleRoomsInProperty(propertyId, schedule))) return { ok: false, error: SCHEDULE_ROOM_GONE }
 
     // 일정에 적힌 방이 그 기간에 실제로 비는가 — 화면이 이미 걸렀지만 서버가 다시 본다.
     const clash = await roomScheduleClash(propertyId, lease.id, schedule)
@@ -3333,6 +3344,7 @@ export async function saveRoomSchedulePlan(input: {
 
     const schedule = parseRoomSchedule(input.schedule)
     if (schedule.length !== input.schedule.length) return { ok: false, error: '일정 형식이 올바르지 않습니다.' }
+    if (!(await scheduleRoomsInProperty(propertyId, schedule))) return { ok: false, error: SCHEDULE_ROOM_GONE }
     const direct = schedule.length === 0
     const mainNo = fmtRoomNo(lease.room?.roomNo ?? '', '')
 
@@ -3461,6 +3473,7 @@ export async function undoSaveRoomSchedulePlan(undo: RoomSchedulePlanUndo): Prom
 
     const prevSchedule = parseRoomSchedule(undo.prevSchedule)
     const restorePlan = hasRoomSchedule(prevSchedule)
+    if (!(await scheduleRoomsInProperty(propertyId, prevSchedule))) return { ok: false, error: SCHEDULE_ROOM_GONE }
     if (restorePlan) {
       const clash = await roomScheduleClash(propertyId, lease.id, prevSchedule)
       if (clash) return { ok: false, error: `되돌리면 겹칩니다. ${clash}` }
@@ -3602,6 +3615,12 @@ export async function undoChangeRoomMoveDate(undo: { leaseTermId: string; prevSc
       select: { id: true },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 토큰의 일정은 화면이 들고 오는 값이라 꼴과 방을 다시 본다. 종전에는 아무 JSON 이나 그대로 계약에 썼다.
+    if (undo.prevSchedule != null) {
+      const prev = parseRoomSchedule(undo.prevSchedule)
+      if (!Array.isArray(undo.prevSchedule) || prev.length !== undo.prevSchedule.length) return { ok: false, error: '일정 형식이 올바르지 않습니다.' }
+      if (!(await scheduleRoomsInProperty(propertyId, prev))) return { ok: false, error: SCHEDULE_ROOM_GONE }
+    }
     await prisma.leaseTerm.update({
       where: { id: lease.id },
       data: { roomSchedule: (undo.prevSchedule ?? null) as Prisma.InputJsonValue },

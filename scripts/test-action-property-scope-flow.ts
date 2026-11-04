@@ -670,6 +670,29 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 거주 호실 일정의 방(2026-11-04 독립 검수 뒤 전수) ── 남의 영업장 방 id 를 일정에 넣으면 저장·입실·되돌림이 거절되고 그 방도 계약도 안 바뀐다.
+  {
+    const GONE = { ok: false, error: '일정에 적힌 호실을 찾을 수 없습니다.' }
+    const RA = await roomIn(P1, '일정A'), RB = await roomIn(P1, '일정B'), RX = await roomIn(P2, '남일정')
+    await prisma.room.update({ where: { id: RX }, data: { isVacant: true } })
+    const T = await tenantIn(P1, '일정 내')
+    const L = await leaseIn(P1, T, RA, 'RESERVED')
+    const today = new Date().toISOString().slice(0, 10)
+    const ahead = (d: number) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10)
+    const rowL = async () => snap(await prisma.leaseTerm.findUnique({ where: { id: L } }))
+    const rowX = async () => snap(await prisma.room.findUnique({ where: { id: RX } }))
+    const [l0, x0] = [await rowL(), await rowX()]
+    const stays0 = await prisma.roomStay.count({ where: { roomId: RX } })
+    eq('일정 저장: 남의 영업장 방 거절', await tenants.saveRoomSchedulePlan({ leaseTermId: L, moveInDate: ahead(3), schedule: [{ roomId: RX, from: ahead(3), to: ahead(10) }, { roomId: RA, from: ahead(10), to: null }] }), GONE)
+    eq('일정 입실: 남의 영업장 방 거절', await tenants.startLeaseWithRoomSchedule({ leaseTermId: L, moveInDate: today, schedule: [{ roomId: RX, from: today, to: ahead(5) }, { roomId: RA, from: ahead(5), to: null }] }), GONE)
+    eq('이사일 되돌림: 남의 영업장 방 거절', await tenants.undoChangeRoomMoveDate({ leaseTermId: L, prevSchedule: [{ roomId: RX, from: today, to: ahead(5) }, { roomId: RA, from: ahead(5), to: null }] }), GONE)
+    eq('이사일 되돌림: 꼴이 아닌 일정 거절', await tenants.undoChangeRoomMoveDate({ leaseTermId: L, prevSchedule: [{ hack: 1 }] }), { ok: false, error: '일정 형식이 올바르지 않습니다.' })
+    eq('거절 뒤 계약·남의 방·거주 구간 무변경', [await rowL() === l0, await rowX() === x0, await prisma.roomStay.count({ where: { roomId: RX } })], [true, true, stays0])
+    // 대조군: 제 영업장 방 일정은 되돌림이 그대로 쓴다.
+    eq('이사일 되돌림: 제 영업장 방 통과', await tenants.undoChangeRoomMoveDate({ leaseTermId: L, prevSchedule: [{ roomId: RB, from: today, to: ahead(5) }, { roomId: RA, from: ahead(5), to: null }] }), { ok: true })
+    eq('제 영업장 일정 반영', ((await prisma.leaseTerm.findUnique({ where: { id: L } }))?.roomSchedule as { roomId: string }[] | null)?.map(e => e.roomId), [RB, RA])
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

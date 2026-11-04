@@ -384,6 +384,13 @@ const AXES = [
     mustNot: [],
     everyWhere: ['paymentRecord', 'cashReceipt'],
   },
+  // 거주 호실 일정의 방(2026-11-04 독립 검수 뒤 전수). 일정은 화면·토큰 값이라 저장·입실·되돌림 전에 방이 이 영업장 것인지 본다.
+  ...[['startLeaseWithRoomSchedule', 'schedule'], ['saveRoomSchedulePlan', 'schedule'], ['undoSaveRoomSchedulePlan', 'prevSchedule'], ['undoChangeRoomMoveDate', 'prev']].map(([fn, v]) => ({
+    file: 'app/(app)/tenants/actions.ts',
+    fn,
+    must: [[new RegExp(`if \\(!\\(await scheduleRoomsInProperty\\(propertyId, ${v}\\)\\)\\) return \\{ ok: false, error: SCHEDULE_ROOM_GONE \\}`), '일정의 방을 영업장 방으로 보지 않는다(남의 영업장 방이 사용 중으로 바뀐다)']],
+    mustNot: [],
+  })),
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
@@ -1105,6 +1112,14 @@ for (const [file, pats] of [
   let src = ''
   try { src = readFileSync(file, 'utf8') } catch { violations.push(`${file} — 파일을 못 읽었다`); continue }
   for (const re of pats) if (!re.test(src)) violations.push(`${file} — 금액 칸 숨김 가드(${re.source.slice(0, 40)})가 없다. 금액을 못 읽는 역할에게 빈 금액 칸이나 요금이 선다`)
+}
+
+// 일정 방 관문 정본(2026-11-04). 방 수를 영업장 범위로 세어 일정의 고유 방 수와 같아야 통과한다.
+{
+  const f = 'app/(app)/tenants/actions.ts'
+  const src = readFileSync(f, 'utf8')
+  const m = src.match(/async function scheduleRoomsInProperty\([\s\S]*?\n\}/)
+  if (!m || !/room\.count\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*ids\s*\},\s*propertyId\s*\}\s*\}\)\)\s*===\s*ids\.length/.test(m[0])) violations.push(`${f} · scheduleRoomsInProperty 가 일정의 방을 영업장 범위로 세지 않는다`)
 }
 
 if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)
