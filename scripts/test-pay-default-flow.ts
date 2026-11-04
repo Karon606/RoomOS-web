@@ -5,7 +5,8 @@
 // 선납으로 적혔다(404호). 운영자 규칙 "10월 미납분이면 11월로 넘어와도 미리 표시되는 금액이 10월 기준이 뜨는게 맞는 것 같아".
 //   · 지난달(할인) 미납을 이번 달에 받으면 기본값은 지난달 할인 청구이고, 그대로 저장하면 지난달만 완납·이번 달 행 0
 //   · 도래 미납 두 달이면 두 달 청구 합이고, 그대로 저장하면 두 달 완납·넘침 0
-// 날짜는 오늘(KST) 기준 상대 달로 만든다. 이번 달 기한(말일)이 오늘이면 그 달도 도래라 기대값에 더한다(목록 미납 판정과 같다).
+// 날짜는 오늘(KST) 기준 상대 달로 만든다. 이번 달 기한(말일)은 오늘이어도 납부일 당일이라 미납이 아니고 합에 안 든다
+// (lib/dueState, 2026-11-04 승인). 그래서 말일에 돌려도 기대값이 같다(종전에는 말일에만 이번 달을 더했다).
 //
 // 운영 DB 에는 절대 붙지 않는다(scripts/cr-flow-prisma-stub.ts 가 하네스 주소가 아니면 거부한다).
 import { execFileSync } from 'node:child_process'
@@ -57,7 +58,6 @@ async function main() {
   const t = kstYmd()
   const today = kstYmdStr()
   const thisM = `${t.year}-${String(t.month).padStart(2, '0')}`
-  const lastDay = t.day === new Date(t.year, t.month, 0).getDate()   // 이번 달 기한(말일) 당일이면 이번 달도 도래
   const m = (k: number) => shiftMonth(thisM, k)
 
   const P = randomUUID()
@@ -93,11 +93,11 @@ async function main() {
     const L = await lease(m(-3), m(-1))
     for (const k of [-4, -3, -2]) await paid(L, m(k), k === -4 ? 470000 : 440000)
     const r = await openAndSave(L)
-    const want = 440000 + (lastDay ? 470000 : 0)
+    const want = 440000
     eq('F1 기본값 = 지난달 할인 청구 440,000(이번 달 정가 미포함)', r.amount, want)
-    eq('F1 그대로 저장하면 지난달만 채운다', r.allocs, lastDay ? [[m(-1), 440000], [thisM, 470000]] : [[m(-1), 440000]])
+    eq('F1 그대로 저장하면 지난달만 채운다', r.allocs, [[m(-1), 440000]])
     eq('F1 지난달 완납', await monthPaid(L.id, m(-1)), 440000)
-    if (!lastDay) eq('F1 이번 달 선납 행 0(할인액이 넘어가지 않는다)', await monthPaid(L.id, thisM), 0)
+    eq('F1 이번 달 선납 행 0(할인액이 넘어가지 않는다)', await monthPaid(L.id, thisM), 0)
   }
 
   // ── F2 도래 미납 두 달(둘 다 할인 440,000) → 880,000, 저장하면 두 달 완납·넘침 0 ───────────────
@@ -105,9 +105,9 @@ async function main() {
     const L = await lease(m(-3), m(-1))
     for (const k of [-4, -3]) await paid(L, m(k), k === -4 ? 470000 : 440000)
     const r = await openAndSave(L)
-    eq('F2 기본값 = 두 달 청구 합 880,000', r.amount, 880000 + (lastDay ? 470000 : 0))
+    eq('F2 기본값 = 두 달 청구 합 880,000', r.amount, 880000)
     eq('F2 두 달 완납', [await monthPaid(L.id, m(-2)), await monthPaid(L.id, m(-1))], [440000, 440000])
-    if (!lastDay) eq('F2 이번 달로 넘친 돈 0', await monthPaid(L.id, thisM), 0)
+    eq('F2 이번 달로 넘친 돈 0', await monthPaid(L.id, thisM), 0)
   }
 
   // ── F3 밀린 달 없음 → 이번 달 청구(선납, 할인 끝난 정가 470,000) ───────────────────────

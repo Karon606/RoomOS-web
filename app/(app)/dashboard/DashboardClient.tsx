@@ -282,7 +282,8 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
   if (deferredDue) return { text: `${deferredDue}까지${daysOverdue != null && daysOverdue < 0 ? ` · ${Math.abs(daysOverdue)}일 남음` : ''}`, color: 'var(--info-fg)' }
   if (daysOverdue == null) return { text: '—', color: 'var(--warm-muted)' }
   if (daysOverdue > 0)  return { text: `${daysOverdue}일 경과`, color: 'var(--tc)' }
-  if (daysOverdue === 0) return { text: '오늘 납부일', color: 'var(--viz-4)' }
+  // 납부일 당일은 납부 예정 계열(info) 글자다. 종전 --viz-4 는 KPI·상태에 시각화 팔레트를 쓴 §04 위반이었다(2026-11-04).
+  if (daysOverdue === 0) return { text: '오늘 납부일', color: 'var(--info-fg)' }
   return { text: `D${daysOverdue} (${Math.abs(daysOverdue)}일 남음)`, color: 'var(--viz-4)' }
 }
 
@@ -3160,7 +3161,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.65625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부일 전 인원 포함</span></h3>
+                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.65625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부 유예 포함</span></h3>
                         <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
@@ -3204,6 +3205,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                     ) : l.daysOverdue != null && l.daysOverdue >= 7 ? (
                                       <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
                                         연체 D+{l.daysOverdue}
+                                      </span>
+                                    ) : l.daysOverdue === 0 ? (
+                                      // 첫 미납월이 오늘 기한이고 다른 달 미납이 있는 드문 행. 상태 이름은 세 짝(납부일 전·납부일 당일·미납)의 정본 낱말.
+                                      <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-await-bg)', color: 'var(--badge-await-fg)' }}>
+                                        납부일 당일
                                       </span>
                                     ) : l.daysOverdue != null && l.daysOverdue >= 1 ? (
                                       <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>

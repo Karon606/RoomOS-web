@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   }
   const { data, targetMonth } = body
 
-  // 도래·미회수와 미도래·미회수 분리 — overdueAmount가 진짜 회수 지연 채권
+  // 기한 지남·미회수와 기한 안 지남(납부일 당일 포함)·미회수 분리 — overdueAmount가 진짜 회수 지연 채권
   const overdueAmount = data.overdueAmount ?? data.unpaidAmount
   const upcomingAmount = data.upcomingAmount ?? 0
   const upcomingCount = data.upcomingCount ?? 0
@@ -62,15 +62,15 @@ export async function POST(req: Request) {
     system: `당신은 한국 임대업 재무 분석가입니다. 반드시 순수 한국어 일반 텍스트로만 답변하세요. #, ##, ###, **, *, -, \` 등 마크다운 기호를 절대로 사용하지 마세요.
 
 이 시스템은 발생주의(accrual basis) 회계를 사용하며 미수령 금액을 두 분류로 구분합니다:
-- 누적 미납(overdue): dueDay가 이미 도래했는데 받지 못한 회수 지연 채권. 운영 리스크.
-- 납부 예정(upcoming): dueDay가 아직 도래하지 않은 정상 청구분. 곧 들어올 정상 매출.
+- 누적 미납(overdue): 납부일(dueDay)이 이미 지났는데 받지 못한 회수 지연 채권. 납부일 다음 날부터 셉니다. 운영 리스크.
+- 납부 예정(upcoming): 납부일이 아직 지나지 않은 정상 청구분(납부일 당일 포함). 곧 들어올 정상 매출.
 
 분석 시 두 항목을 절대 합쳐 부르지 말고, '회수 지연'은 누적 미납만을 의미하도록 작성하세요.`,
     prompt: `${targetMonth} 운영 데이터 (발생주의 기준):
 매출 ${(data.totalRevenue / 10000).toFixed(0)}만원, 지출 ${(data.totalExpense / 10000).toFixed(0)}만원, 순이익 ${(data.netProfit / 10000).toFixed(0)}만원
 ${paymentLine}
 누적 미납(회수 지연): ${(overdueAmount / 10000).toFixed(0)}만원 (${data.unpaidCount}건)
-납부 예정(미도래·정상): ${(upcomingAmount / 10000).toFixed(0)}만원 (${upcomingCount}건)
+납부 예정(납부일 전·당일, 정상): ${(upcomingAmount / 10000).toFixed(0)}만원 (${upcomingCount}건)
 입주율 ${occupancyRate}% (${data.occupiedRooms}/${data.totalRooms}실)
 주요 지출 (예상 지출 기준): ${topCategories || '없음'}
 최근 3개월 추이: ${recentTrend || '데이터 없음'}

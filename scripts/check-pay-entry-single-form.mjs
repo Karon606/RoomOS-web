@@ -47,8 +47,9 @@ for (const [f, s] of [[TC, tc], [FORM, form], [BODY, body]]) {
 // 같은 되살림은 room 블록 밖이라 ⓒ 가 못 본다. 정산이 없을 때 원가를 '예정'으로 말하는 자리가 다시 생긴다.
 need(!/(\?\?|\|\|)\s*[\w.?!]*rentAmount\b/.test(tc), `${TC}: ⓑ 계약 이용료(rentAmount)로 폴백하는 식이 있다(?? / || rentAmount). 돈 표시·기본값은 정산 값만 쓴다.`)
 need(!/rentAmount|balance/.test(lib), `${LIB}: ⓑ 기본값 정본이 원가(rentAmount)나 조회월 잔액(balance)을 읽는다. 지난달 미납분 자리에 이번 달 정가가 뜬다(404호).`)
-need(/export function suggestPayAmount\(/.test(lib), `${LIB}: ⓑ 정본 suggestPayAmount 가 없다.`)
-need(/suggestPayAmount\(\{/.test(form), `${FORM}: ⓑ 추천 납입액이 정본(suggestPayAmount)을 부르지 않는다.`)
+need(/export function suggestPay\(/.test(lib), `${LIB}: ⓑ 정본 suggestPay 가 없다.`)
+need(/suggestPay\(\{/.test(form), `${FORM}: ⓑ 추천 납입액이 정본(suggestPay)을 부르지 않는다.`)
+need(/excludedTodayCaption\(suggestion\.excludedToday\)/.test(form), `${FORM}: ⓑ 자동 합에서 뺀 납부일 당일 달을 정본 캡션(excludedTodayCaption)으로 알리지 않는다.`)
 need(!/-room\.balance/.test(form), `${FORM}: ⓑ 추천 납입액을 조회월 잔액(-room.balance)으로 낸다. 정본은 lib/paymentSuggest 다.`)
 need(/o\.dueState === 'overdue'/.test(lib), `${LIB}: ⓑ 자동 기본값이 기한 상태(dueState === 'overdue')를 보지 않는다. 기한 전·납부일 당일인 이번 달 청구가 지난달 미납분에 섞인다.`)
 

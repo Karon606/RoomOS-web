@@ -27,7 +27,7 @@ import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
-import { suggestPayAmount } from '@/lib/paymentSuggest'
+import { suggestPay, excludedTodayCaption } from '@/lib/paymentSuggest'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, depositModeSplit, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 
@@ -114,9 +114,12 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
   //  - 사용자가 직접 바꾸면 그대로 유지(추천값 변할 때만 갱신).
   // 저장 전 '기록될 달' 표시는 아래 fifoStart(서버 findFirstUnpaidMonth 그대로)를 쓴다 — 인수월 양도인 자동 처리에서
   // 귀속월 목록과 갈릴 수 있다.
-  const suggestedAmount = useMemo(() => suggestPayAmount({
+  //  - 납부일 당일인 달은 자동 합에 넣지 않고(미납이 아니다, 2026-11-04 승인) 금액 칸 아래 캡션 한 줄로 알린다.
+  const suggestion = useMemo(() => suggestPay({
     forcedMonth: forcedTm, months: tmOptions, viewMonth: targetMonth, expected: room.expected,
   }), [forcedTm, tmOptions, targetMonth, room.expected])
+  const suggestedAmount = suggestion.amount
+  const todayCaption = excludedTodayCaption(suggestion.excludedToday)
   // savePayment 가 FIFO 로 시작할 달 — 서버의 같은 함수 값(getFifoStartMonth). 로딩 전엔 null(숫자 없는 문구).
   const [fifoStart, setFifoStart] = useState<string | null>(null)
   // 이용료가 기록될 달(저장 전 표시용) — 고른 달, 아니면 FIFO 시작 달. 실제 배분은 서버가 정하고 토스트가 말한다.
@@ -676,9 +679,11 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
         <option value="auto">{!splitMode && autoStartMonth ? `자동 · ${Number(autoStartMonth.slice(5))}월분부터 채움` : '자동 · 오래 밀린 달부터 채움'}</option>
         {tmList.map(o => {
           const [y, m] = o.month.split('-')
+          // 미완납 달은 기한 상태로 부른다(lib/dueState 세 짝). 종전에는 기한 전인 이번 달도 '미수'라 적었다.
           const tag = o.status === 'paid' ? '완납'
             : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
-            : o.status === 'future' ? '향후' : '미수'
+            : o.status === 'future' ? '향후'
+            : o.dueState === 'overdue' ? '미수' : o.dueState === 'today' ? '납부일 당일' : '납부일 전'
           return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
         })}
       </select>
@@ -732,6 +737,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
           <MoneyInput value={payAmount} onChange={setPayAmount} placeholder="0원" />
         </div>
       </div>
+      {/* 자동 기본값에서 뺀 납부일 당일 달. 할 일이 아니라 사실이라 이유·방법(WhyCaption)이 아닌 보조 캡션 한 줄이다(§27·§29). */}
+      {!isDepositMode && !isCleaningFeeMode && forcedTm === 'auto' && todayCaption && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{todayCaption}</p>
+      )}
 
       {/* 분해 블록 — 앱이 제안하고 사람이 확정한다. 세로 스택인 이유는 320px 에서 3열이 성립하지
           않기 때문이다(칸당 글자 자리 54px, '350,000'이 약 60px). 이용료 몫은 §12 '자동 합산
