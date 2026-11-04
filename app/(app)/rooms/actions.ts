@@ -1785,8 +1785,10 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   await requireEdit()
   { const memoErr = paymentMemoGuard(opts?.memo); if (memoErr) return { ok: false, error: memoErr } }   // 기계 키 메모 거절(lib/dueDayAdjust paymentMemoGuard)
   const propertyId = await getPropertyId()
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: leaseTermId },
+  // 계약은 영업장 범위로 읽는다(2026-11-04 운영자 승인 '추천대로'). 종전에는 id 만으로 읽어, 남의 영업장 계약 id 를
+  // 넣으면 그 계약의 입주자·보증금으로 내 영업장 장부에 보증금 수납 행이 섰다. 못 찾으면 아무것도 쓰지 않고 닫는다.
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
     select: { id: true, tenantId: true, depositAmount: true, moveInDate: true },
   })
   if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }

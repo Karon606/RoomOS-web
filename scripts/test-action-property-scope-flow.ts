@@ -555,6 +555,30 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 보증금 소급 기록(2026-11-04 운영자 승인 '추천대로') ── 남의 영업장 계약 id 로는 수납 행이 한 줄도 안 선다.
+  {
+    const T1 = await tenantIn(P1, '보증 내'), T2 = await tenantIn(P2, '보증 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    const records = () => prisma.paymentRecord.count()
+    const n0 = await records()
+    eq('보증금 소급 기록: 남의 영업장 계약 거절', await rooms.recordDepositReceived(L2, { payDate: '2026-10-01' }), { ok: false, error: '계약을 찾을 수 없습니다.' })
+    eq('보증금 거절 뒤 수납 행 무변경(어느 영업장에도 안 선다)', await records(), n0)
+    for (const role of ['STAFF', 'LIMITED_STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 보증금 소급 기록 거부`, await thrown(() => rooms.recordDepositReceived(L1, { payDate: '2026-10-01' })), '수정 권한이 없습니다.')
+    }
+    eq('열람 역할 거부 뒤 수납 행 무변경', await records(), n0)
+    for (const role of ['MANAGER', 'OWNER'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const T = await tenantIn(P1, `보증 ${role}`), L = await leaseIn(P1, T, null)
+      const r = await rooms.recordDepositReceived(L, { payDate: '2026-10-01' })
+      eq(`${role} 보증금 소급 기록: 제 영업장 통과`, r.ok ? [r.ok, r.amount] : r, [true, 50000])
+      const row = r.ok ? await prisma.paymentRecord.findUnique({ where: { id: r.id }, select: { propertyId: true, tenantId: true, isDeposit: true } }) : null
+      eq(`${role} 보증금 행은 제 영업장·그 계약의 입주자`, row, { propertyId: P1, tenantId: T, isDeposit: true })
+    }
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

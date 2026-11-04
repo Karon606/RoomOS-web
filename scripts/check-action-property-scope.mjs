@@ -303,6 +303,16 @@ const AXES = [
     must: [[/const scopeErr = await leaseTenantScopeDenial\(propertyId, data\.leaseTermId, data\.tenantId\); if \(scopeErr\) return/, '수납의 계약·입주자 id 를 영업장 범위로 보지 않는다(남의 계약 미납·이월이 다시 계산된다)']],
     mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*data\.leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
   })),
+  // 보증금 소급 기록(2026-11-04 운영자 승인 '추천대로'). 계약을 id 만으로 읽어 남의 계약 입주자·보증금으로 내 장부에 행을 세웠다.
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'recordDepositReceived',
+    must: [
+      [/await requireEdit\(\)[\s\S]*?leaseTerm\.findFirst\(/, '계약을 읽기 전에 쓰기 권한 문(requireEdit)을 지나지 않는다'],
+      [/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}[^}]*\}[^\n]*\n\s*\}\)\n\s*if \(!lease\) return \{ ok: false/, '계약을 영업장 범위로 먼저 읽고 없으면 닫지 않는다(남의 계약으로 보증금 행이 선다)'],
+    ],
+    mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
