@@ -379,10 +379,10 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   // 0 원. 보증금만 받은 입금. 켤 수 없다(none). 종전 토글은 이때 도리어 있던 줄을 지웠다.
   eq('보증금만이면 none', planCashReceiptOn(null, summarizeCashReceiptKey([R(50000, null, true)]), D('2026-10-06')).kind, 'none')
 
-  // D8 등록 폼 세 벌의 같은 규칙(독립 검수 F4). 이번 입금의 발행 금액(폼 값, 없으면 이번 입금의 이용료 몫)을
+  // D8 등록 폼(정본 폼·예약금 폼)의 같은 규칙(독립 검수 F4). 이번 입금의 발행 금액(폼 값, 없으면 이번 입금의 이용료 몫)을
   // 살아 있는 줄이 있으면 **더하고**(수정 폼 합치기 T14 와 같은 덧셈) 앞 발행일을 지킨다. 없으면 이번 몫만 세운다.
   eq('D8 홀로 선 입금: 폼 금액이 이긴다', amt(planCashReceiptEntry(null, 450000, D('2026-10-06'), { amount: 300000 })), 300000)
-  eq('D8 홀로 선 입금: 금액 없으면 이번 입금의 이용료 몫(입주자 상세 경로)', amt(planCashReceiptEntry(null, 450000, D('2026-10-06'), {})), 450000)
+  eq('D8 홀로 선 입금: 금액 없으면 이번 입금의 이용료 몫(서버 기본, 예약금 폼 경로)', amt(planCashReceiptEntry(null, 450000, D('2026-10-06'), {})), 450000)
   const merge1 = planCashReceiptEntry(L(410000, '2026-10-06'), 10000, D('2026-10-07'), { amount: 10000 })
   eq('D8 살아 있는 줄이 있는 키에 두 번째 발행: merge', merge1.kind, 'merge')
   eq('D8 merge 금액은 줄 금액 + 이번 금액 = 420,000', amt(merge1), 420000)

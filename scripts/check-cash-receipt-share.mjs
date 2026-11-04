@@ -541,18 +541,19 @@ for (const kind of ['deposit', 'cleaning']) {
       if ((form.match(/crDeleteToastDetail\(r\.cashReceipt\)/g) ?? []).length < 3) violations.push(`${FORM}: 등록 적용취소가 함께 지운 발행 기록을 말하지 않는 갈래가 있다(검수 R-4).`)
     }
     for (const c of calls) if (!/crUndo|, cr\b/.test(c[1])) violations.push(`${FORM}: 등록 적용취소가 발행 기록 토큰을 안 넘긴다: undoOverpayExtraIncome(${c[1]}) (검수 F2).`)
-    // 운영자 원칙(모든 쓰기에 적용취소): 등록 폼 일반 갈래와 입주자 상세 수납 등록 토스트에 적용취소가 있다.
+    // 운영자 원칙(모든 쓰기에 적용취소): 등록 폼 일반 갈래 토스트에 적용취소가 있다.
     const gen = form.slice(form.indexOf('} else if (!splitDone) {'), form.indexOf('setPayAmount(0); setForcedTm'))
     if (!/label: '적용취소'[\s\S]{0,400}undoOverpayExtraIncome\(ids, incomeId, cr\)/.test(gen)) violations.push(`${FORM}: 수납 등록 일반 갈래 토스트에 적용취소가 없다(운영자 원칙: 모든 쓰기에 적용취소).`)
     // 조건만 꺼도 위 글자는 남는다(역주입 X14). 액션이 서는 조건이 '이번 저장이 만든 것이 있으면'인지 본다.
     if (!/\.\.\.\(\(?ids\.length > 0 \|\| incomeId\)?( && !crUndoLost)? \? \{ action: \{/.test(gen)) violations.push(`${FORM}: 수납 등록 일반 갈래 적용취소가 서는 조건이 '이번 저장이 만든 record·부가수익이 있으면'이 아니다(역주입 X14).`)
+    // 입주자 상세 수납 모달은 저장부를 따로 두지 않는다(2026-11-04, 정본 폼 한 벌). 종전 handleSavePayment 는
+    // 금액을 계약 이용료로 채운 따로 만든 폼이라, 적용취소·발행 결과를 여기서 따로 지켜야 했다. 지금은 이 폼(FORM)을
+    // 품으므로 위 FORM 검사가 그 자리까지 덮는다. 저장부가 되살아나면 그 검사가 비는 자리가 생긴다.
     const tcl0 = read('app/(app)/tenants/TenantClient.tsx')
-    const tSave = tcl0.slice(tcl0.indexOf('const handleSavePayment = async'), tcl0.indexOf('const handleDeletePayRecord = async'))
-    if (!/label: '적용취소'[\s\S]{0,300}undoOverpayExtraIncome\(ids, undefined, crUndo\)/.test(tSave)) violations.push(`app/(app)/tenants/TenantClient.tsx handleSavePayment: 입주자 상세 수납 등록 토스트에 적용취소가 없거나 발행 기록 토큰을 안 넘긴다(운영자 원칙·검수 F2).`)
-    // 독립 검수 R-3: 등록 폼이 발행 기록 결과(merged·uncovered)를 버리지 않는다. 세 폼 넷 자리.
+    if (tcl0.includes('const handleSavePayment = async') || !tcl0.includes('<PaymentEntryForm')) violations.push(`app/(app)/tenants/TenantClient.tsx: 입주자 상세 수납 등록이 정본 폼(PaymentEntryForm)이 아니라 따로 만든 저장부다. 적용취소·발행 결과 검사가 그 자리를 못 덮는다(scripts/check-pay-entry-single-form ⓐ).`)
+    // 독립 검수 R-3: 등록 폼이 발행 기록 결과(merged·uncovered)를 버리지 않는다. 두 폼 세 자리(일반 등록 분해·일반, 예약금).
     const crCalls = (form.match(/crEntryResultLines\(crRes\)/g) ?? []).length
     if (crCalls < 3) violations.push(`${FORM}: 발행 기록 결과(crEntryResultLines)를 말하는 자리가 ${crCalls}곳이다(기대 3, 분해·일반·예약금). 서버가 합친 사실을 버린다(검수 R-3).`)
-    if (!/crLines = crEntryResultLines\(crRes\)/.test(tSave) || !tSave.includes('crLines.slice(1)')) violations.push(`app/(app)/tenants/TenantClient.tsx handleSavePayment: 발행 기록 결과(crEntryResultLines)를 버리거나 둘째 사실을 안 띄운다(검수 R-3).`)
   }
 }
 

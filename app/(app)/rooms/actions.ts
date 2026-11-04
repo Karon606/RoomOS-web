@@ -2627,7 +2627,7 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
 /**
  * 이 결제의 발행을 기록한다. 수납 등록 직후(entry)와 살아 있는 줄의 '발행 금액' 문(edit) 두 자리.
  *
- * **entry**(수납 등록 폼 세 벌, PaymentEntryForm, 입주자 상세, 예약 선납)는 같은 규칙을 쓴다
+ * **entry**(수납 등록 정본 폼 PaymentEntryForm 의 일반 등록과 예약 선납, 입주자 상세도 이 폼을 품는다)는 같은 규칙을 쓴다
  * (결함 D8, lib/cashReceipt planCashReceiptEntry). 이번 입금의 발행 금액은 화면이 보낸 값이고, 안
  * 보냈으면 이번 저장이 만든 record(recordIds)의 이용료 몫이다. 같은 날 같은 수단의 살아 있는 줄이
  * 있으면 한 장 규칙이라 **그 줄에 이번 금액을 더하고 앞 발행일을 지킨다**(독립 검수 F4, 앞 금액을 키 몫

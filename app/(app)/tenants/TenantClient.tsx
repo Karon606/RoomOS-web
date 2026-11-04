@@ -34,7 +34,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
-import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, undoOverpayExtraIncome, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
@@ -48,9 +48,8 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { confirmDeletePayment, previewWithin } from '@/lib/paymentConfirm'
-import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crEntryResultLines, ENTRY_UNDONE, crUndoMismatchDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
+import { CR_DELETE_UNDONE, crDeleteToastDetail, crRestoreDetail, crEditToastDetail, cashReceiptRowCaption, crUndoMismatchDetail, type CashReceiptKeyView } from '@/lib/cashReceiptCopy'
 import { CashReceiptCaption } from '@/components/entity-modal/widgets/CashReceiptCaption'
-import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
@@ -72,10 +71,10 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
-import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible, type CashReceiptUndo } from '@/lib/cashReceipt'
+import { isCashReceiptEligible } from '@/lib/cashReceipt'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
-import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
+import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -813,30 +812,12 @@ export default function TenantClient({
   const [depoCleaningPaid, setDepoCleaningPaid] = useState(0)
   // 미반환 사유는 저장 글자다('기타 · 글', lib/reasonLists). '기타' 로 적은 글을 목록에 넣을지는 따로 쥔다(2026-10-22).
   const [depoWithholdAdd, setDepoWithholdAdd] = useState(false)
-  const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   // 수납 모달 청구·잔액 정본 — 클라 재계산(할인·인상 미반영) 대신 서버 settlement 사용(신고 50a2a69b)
   // 세 상태다(수납 관리 PaymentBody 와 같은 문법). undefined = 읽는 중, null = 없음(투어 단계 계약·조회 실패), 값 = 정상.
   // 실패도 null 로 떨어져야 뼈대가 영원히 남지 않는다. 수납 등록 폼은 값일 때만 선다(정본 기본값이 이 값을 쓴다).
   const [paySettlement, setPaySettlement] = useState<PaySettlement | null | undefined>(undefined)
   const [showPayForm, setShowPayForm] = useState(false)
-  const [payAmount, setPayAmount]   = useState(0)
-  const [payDateVal, setPayDateVal] = useState(kstYmdStr())
-  // 현금영수증 발행 표시와 **발행일**. 종전에는 체크박스가 비제어라 FormData 로만 읽었는데,
-  // 발행일 칸이 체크에 따라 열리고 닫히므로 상태를 쥔다(운영자 확정 2026-08-24, 신고 8b9b6c43).
-  // 합계가 발행일의 달로 잡힌다 — 지연 발행이면 이 값이 곧 세무 숫자의 축이다.
-  const [cashReceiptOn, setCashReceiptOn] = useState(false)
-  const [cashReceiptDateVal, setCashReceiptDateVal] = useState(kstYmdStr())
-  // 결제 수단 — 종전에는 비제어라 제출 때 FormData 로만 읽었는데, 발행일 기본값이 이 값을
-  // 따라가야 해서(카드=수납일) 상태로 쥔다. 제출은 여전히 name='payMethod' 로 읽는다.
-  const [payMethodVal, setPayMethodVal] = useState('계좌이체')
-  // 카드로 바꾸면 발행 표시를 끈다 — 형제 폼(PaymentEntryForm)과 같은 처방이다.
-  // 카드는 현금이 아니라 현금영수증 대상 자체가 아니고, 그 금액은 카드 합계로 넘어간다
-  // (운영자 확정 2026-08-24).
-  useEffect(() => {
-    if (!isCashReceiptEligible(payMethodVal)) setCashReceiptOn(false)
-  }, [payMethodVal])
-  const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
@@ -1571,12 +1552,8 @@ export default function TenantClient({
 
   const openPayModal = async (tenant: Tenant, lease: LeaseTerm) => {
     setPayTarget({ tenant, lease })
-    setPayAmount(lease.rentAmount)
-    setPayDateVal(kstYmdStr())
-    setIsDepositMode(false)
     setShowPayForm(false)
     setError('')
-    setDistNotice(null)
     // 계약을 바꿔 열면 읽는 중으로 돌아간다. 앞 계약의 정산이 새 계약 폼의 기본값이 되면 안 된다.
     setPaySettlement(undefined)
     const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
@@ -1607,124 +1584,8 @@ export default function TenantClient({
   }, [payLeaseId, targetMonth, payHistory])
 
   const closePayModal = () => {
-    setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(undefined)
+    setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setPaySettlement(undefined)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
-    setIsDepositMode(false); setPayDateVal(kstYmdStr())
-    setCashReceiptOn(false); setCashReceiptDateVal(kstYmdStr())
-    // 다음에 열 때 수단이 남아 있으면 카드 안내가 그대로 서 있다 — 기본으로 되돌린다.
-    setPayMethodVal('계좌이체')
-  }
-
-  const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault(); setError('')
-    if (!payTarget) return
-    const fd = new FormData(e.currentTarget)
-    const payMethod = fd.get('payMethod') as string
-    const memo = fd.get('memo') as string
-    const cashReceiptIssued = cashReceiptOn   // 현금영수증 발행 표시(오류신고 2bd8befa) — 제어 상태가 정본
-    const cashReceiptIssuedDate = cashReceiptDateVal   // 발행일(KST). 값 결정은 서버의 lib/cashReceipt 정본.
-    // 보증금 수납 전 청소비 중복 확인 — 정본 lib/depositEntryGuard(신고 a5edc93e 후속, 두 폼 공용)
-    if (isDepositMode && !(await confirmDepositCleaningOverlap({
-      leaseTermId: payTarget.lease.id, depositAmount: payTarget.lease.depositAmount, payAmount, cleaningFee: payTarget.lease.cleaningFee,
-    }))) return
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        // 이번 저장이 만든 수납 record. 발행 기록이 '이번 입금의 몫'을 이것으로 센다(2026-10-14 F4).
-        let createdIds: string[] = []
-        if (isDepositMode) {
-          const depRes = await saveDepositPayment({
-            leaseTermId:   payTarget.lease.id,
-            tenantId:      payTarget.tenant.id,
-            targetMonth,
-            depositAmount: payTarget.lease.depositAmount,
-            rentAmount:    payTarget.lease.rentAmount,
-            totalPaid:     payAmount,
-            payDate:       payDateVal,
-            payMethod,
-            memo:          memo || undefined,
-            cashReceiptIssued,
-            cashReceiptIssuedDate,
-          })
-          // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
-          if (!depRes.ok) { pushToast('error', depRes.error); return }
-          createdIds = depRes.createdIds
-        } else {
-          const result = await savePayment({
-            leaseTermId:    payTarget.lease.id,
-            tenantId:       payTarget.tenant.id,
-            targetMonth,
-            expectedAmount: payTarget.lease.rentAmount,
-            actualAmount:   payAmount,
-            payDate:        payDateVal,
-            payMethod,
-            memo,
-            cashReceiptIssued,
-            cashReceiptIssuedDate,
-          })
-          // 거절(기계 키 메모 등)은 문구로 돌아온다. 형제 보증금 갈래와 같은 문법이다.
-          if (!result.ok) { pushToast('error', result.error); return }
-          createdIds = result.createdIds
-          const otherMonths = result.allocations.length > 0
-            ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)
-            : []
-          if (otherMonths.length > 0) {
-            const summary = otherMonths
-              .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
-              .join(', ')
-            setDistNotice(`이번 입력은 ${withParticle(summary, '으로/로')} 나뉘어 반영되었습니다. 미수가 가장 오래된 월부터 충당됩니다.`)
-          } else {
-            setDistNotice(null)
-          }
-        }
-        // 발행은 저장 뒤 한 번 — 형제 폼(PaymentEntryForm)과 같은 문(2026-08-25).
-        // 종전에는 저장부가 각자 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다.
-        // 결과(앞 발행에 합쳤나, 먼저 받은 돈이 발행 없이 남았나)와 적용취소 재료를 버리지 않는다(검수 R-3·F2).
-        let crUndo: CashReceiptUndo | null = null
-        let crLines: string[] = []
-        // 발행 기록은 썼는데 서버가 적용취소 토큰을 못 냈다(운영에서 서명 키 없음, 검수 R-7). 등록 적용취소가 발행 줄을
-        // 되돌리지 못하는 반쪽이 되므로 그때는 등록 적용취소를 숨긴다.
-        let crUndoLost = false
-        if (cashReceiptIssued) {
-          const crRes = await setPaymentCashReceipt({
-            leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
-            payDate: payDateVal, payMethod,
-            issued: true, issuedDate: cashReceiptIssuedDate, via: 'entry', recordIds: createdIds,
-          })
-          if (!crRes.ok) pushToast('error', crRes.error)
-          else { crUndo = crRes.undo; crUndoLost = !crRes.undo; crLines = crEntryResultLines(crRes) }
-        }
-
-        setShowPayForm(false)
-        const leaseId = payTarget.lease.id
-        const { records, windowRecords } = await getPaymentsByLease(leaseId, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
-        refresh()
-        // 등록에도 적용취소가 있다(운영자 원칙: 모든 쓰기에 적용취소). 수납 등록 폼(PaymentEntryForm)과 같은 등록 적용취소
-        // 정본(undoOverpayExtraIncome)이다. 이번 저장이 만든 record 를 지우고 발행 기록은 등록 직전 스냅샷으로 되돌린다.
-        const ids = createdIds
-        let undone = false   // 연타 방지. 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
-        pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨', {
-          ...(crLines[0] ? { detail: crLines[0] } : {}),
-          ...(ids.length > 0 && !crUndoLost ? { action: { label: '적용취소', run: () => {
-            if (undone) return
-            undone = true
-            void undoOverpayExtraIncome(ids, undefined, crUndo).then(async r => {
-              if (!r.ok) { pushToast('error', r.error, { detail: r.intact ? '수납 기록은 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요' }); return }
-              const d = crDeleteToastDetail(r.cashReceipt)
-              pushToast('info', ENTRY_UNDONE, d ? { detail: d } : undefined)
-              const after = await getPaymentsByLease(leaseId, targetMonth)
-              setPayHistory(after.records.filter(x => !x.isBillingAdjust) as PayRecord[]); setPayWindow(after.windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
-              refresh()
-            }).catch(() => pushToast('error', '적용취소 중 통신 오류가 발생했습니다'))
-          } } } : {}),
-        })
-        for (const line of crLines.slice(1)) pushToast('info', line)   // 사실 하나에 한 줄(§15 3줄 상한)
-      } catch (err: unknown) {
-        const msg = humanError(err, '수납 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
-        setError(msg); pushToast('error', msg)
-      } finally { release() }
-    })
   }
 
   // 어느 달 매출이 얼마 바뀌는지 알려준다 — 종전에는 '이 수납 기록을 삭제할까요?' 한 줄뿐이었다(A페이즈).
@@ -3038,13 +2899,6 @@ export default function TenantClient({
                       <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
                         <p className="text-xs text-[var(--info-fg)]">양도인 귀속 (인수일 이전 납부)</p>
                         <p className="text-xs font-semibold text-[var(--info-fg)]">{fmtWon(prevOwnerPaid)}</p>
-                      </div>
-                    )}
-
-                    {/* 자동 분배 요약 — 저장 후 모달 안에 지속 표시(닫을 때까지). 여러 달에 걸쳐 충당·이월된 내역 확인용 */}
-                    {distNotice && (
-                      <div className="flex items-start gap-2 bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2.5">
-                        <p className="text-xs font-medium text-[var(--info-fg)] leading-relaxed">{distNotice}</p>
                       </div>
                     )}
 

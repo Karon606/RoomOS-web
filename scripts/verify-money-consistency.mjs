@@ -1858,7 +1858,9 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     violations.push('[소스] lib/completionDate 의 미래 비교가 사라졌다 — 현금영수증·요청 완료·점검 완료가 함께 기대는 판정이다')
   }
   // 발행일 입력칸은 정본 DatePicker 여야 한다(네이티브 date 는 iOS 에서 형제와 다른 껍데기가 된다).
-  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/widgets/PaymentRecordList.tsx']) {
+  // 입주자 상세 수납 모달은 2026-11-04 부터 따로 만든 폼 없이 정본 PaymentEntryForm 을 품는다(그 파일 검사가 덮는다,
+  // 저장부가 되살아나면 scripts/check-pay-entry-single-form ⓐ 가 잡는다).
+  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'components/entity-modal/widgets/PaymentRecordList.tsx']) {
     const src = readFileSync(f, 'utf8')
     if (!src.includes('cashReceiptIssuedDate')) {
       violations.push(`[소스] ${f} 에 현금영수증 발행일 입력이 없다 — 체크만 하면 클릭한 날이 박히고 지연 발행이 다시 어긋난다`)
@@ -1887,7 +1889,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   // 네 화면이 전부 같은 판정을 지나는가. 이름만 보면 한 곳만 고치고 나머지가 새는 것을 못 잡는다.
   const SEAL_FORMS = [
     ['components/entity-modal/widgets/PaymentEntryForm.tsx', 4],   // 수납 등록 · 예약금 각각 (분기 + 끄기)
-    ['app/(app)/tenants/TenantClient.tsx', 2],                      // 입주자 상세 수납 (분기 + 끄기)
+    // 입주자 상세 수납은 정본 폼(PaymentEntryForm)을 품는다(2026-11-04). 따로 셀 자리가 없다.
     ['components/entity-modal/widgets/PaymentRecordList.tsx', 2],   // 수납 내역 수정 (분기 + 끄기)
   ]
   for (const [f, want] of SEAL_FORMS) {
