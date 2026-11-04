@@ -287,6 +287,15 @@ async function ensureCheckoutCleaning(
   }
 }
 
+// 금액 스코프 없는 역할에게 목록 조회가 비워 내리는 계약 칸(2026-11-04 독립 검수 B2). 금액 넷, 금액·조건을 담은 스냅샷, 서명·계약서 원본.
+// 납부 기록(paymentRecords)은 따로 빈 배열로 내린다. 통합 테스트가 응답 JSON 에 이 이름들의 값이 없는지 고정한다.
+const TENANT_LIST_MONEY_NULL_KEYS = [
+  'rentAmount', 'depositAmount', 'cleaningFee', 'checkoutProratedAmount',
+  'checkoutProrationUndo', 'shortStayExtensions', 'contractOverride', 'contractFieldOverrides',
+  'signedContractSnapshot', 'contractVersionArchive', 'documentSignatures',
+  'signatureImageUrl', 'disposalSignatureImageUrl', 'contractUrl',
+] as const
+
 export async function getTenants() {
   const { propertyId, role } = await getPropertyId()
 
@@ -352,13 +361,16 @@ export async function getTenants() {
     orderBy: { createdAt: 'desc' },
   })
 
-  // 금액 읽기 차단(제한 스태프) — 응답 payload에서 이용료·보증금·청소비 제거. 조회 전용 경로라 결제 수식 무관.
+  // 금액 읽기 차단(제한 스태프) — 응답 payload에서 금액과 계약 스냅샷을 걷는다. 조회 전용 경로라 결제 수식 무관.
+  // 종전에는 세 칸만 지웠다. 계약은 include 라 맨 칸이 전부 딸려 나와, /tenants 만 열어도 전 입주자의 납부 기록 60행·정산액·
+  // 환불 스냅샷·계약서 덮어쓰기·서명 이미지·서명본 스냅샷이 내려갔다(2026-11-04 독립 검수 B2, 운영자 승인 '추천대로').
+  // 목록 화면은 이 칸들을 쓰지 않는다(미납 표시는 납부 기록이 아니라 서버 미납 정본을 본다). 편집 역할 응답은 그대로다.
   if (!canReadScope(role, 'money')) {
     for (const t of tenants) {
       for (const lt of t.leaseTerms) {
-        ;(lt as { rentAmount: number | null }).rentAmount = null
-        ;(lt as { depositAmount: number | null }).depositAmount = null
-        ;(lt as { cleaningFee: number | null }).cleaningFee = null
+        const o = lt as unknown as Record<string, unknown>
+        for (const k of TENANT_LIST_MONEY_NULL_KEYS) o[k] = null
+        o.paymentRecords = []
       }
     }
   }

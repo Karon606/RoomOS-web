@@ -391,6 +391,14 @@ const AXES = [
     must: [[new RegExp(`if \\(!\\(await scheduleRoomsInProperty\\(propertyId, ${v}\\)\\)\\) return \\{ ok: false, error: SCHEDULE_ROOM_GONE \\}`), '일정의 방을 영업장 방으로 보지 않는다(남의 영업장 방이 사용 중으로 바뀐다)']],
     mustNot: [],
   })),
+  // 입주자 목록의 금액·계약 스냅샷(2026-11-04 독립 검수 B2). 계약이 include 라 맨 칸이 전부 딸려 나온다. 금액 스코프가 없으면 걷는다.
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'getTenants',
+    noOrder: true,
+    must: [[/if \(!canReadScope\(role, 'money'\)\) \{\n\s*for \(const t of tenants\) \{\n\s*for \(const lt of t\.leaseTerms\) \{\n\s*const o = lt as unknown as Record<string, unknown>\n\s*for \(const k of TENANT_LIST_MONEY_NULL_KEYS\) o\[k\] = null\n\s*o\.paymentRecords = \[\]/, '금액 스코프가 없을 때 금액·스냅샷 칸과 납부 기록을 걷지 않는다']],
+    mustNot: [],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
@@ -686,7 +694,7 @@ for (const ax of AXES) {
   if (body == null) { violations.push(`${ax.file} — ${ax.fn} 를 못 찾았다. 이름이 바뀌었으면 이 축도 함께 고친다`); continue }
   for (const [re, msg] of ax.must) {
     const m = body.match(re)
-    if (!m) { violations.push(`${ax.file} ${ax.fn} — ${msg}. 다른 영업장 id 로 그 행을 읽거나 바꿀 수 있다`); continue }
+    if (!m) { violations.push(`${ax.file} ${ax.fn} — ${msg}. ${/금액|납부 기록/.test(msg) ? '금액을 못 읽는 역할에게 금액이 내려간다' : '다른 영업장 id 로 그 행을 읽거나 바꿀 수 있다'}`); continue }
     // 순서 축: 관문(읽기·확인)보다 앞선 쓰기를 막는다. 축 자체가 쓰기 문장이면(where 범위를 보는 축) 순서는 안 본다.
     if (ax.order && !WRITE_STMT.test(m[0])) {
       const w = body.slice(0, m.index).match(WRITE_CALL)
@@ -1120,6 +1128,20 @@ for (const [file, pats] of [
   const src = readFileSync(f, 'utf8')
   const m = src.match(/async function scheduleRoomsInProperty\([\s\S]*?\n\}/)
   if (!m || !/room\.count\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*ids\s*\},\s*propertyId\s*\}\s*\}\)\)\s*===\s*ids\.length/.test(m[0])) violations.push(`${f} · scheduleRoomsInProperty 가 일정의 방을 영업장 범위로 세지 않는다`)
+}
+
+// 목록이 걷는 칸 표는 LeaseTerm 의 금액(Int) 칸과 Json 칸(일정 roomSchedule 제외)을 전부 담는다. 스키마에 새 금액·스냅샷 칸이 생기면 여기서 운다.
+{
+  const f = 'app/(app)/tenants/actions.ts'
+  const src = readFileSync(f, 'utf8')
+  const tbl = src.match(/const TENANT_LIST_MONEY_NULL_KEYS = \[([\s\S]*?)\] as const/)
+  const block = schema.match(/model LeaseTerm \{([\s\S]*?)\n\}/)
+  if (!tbl || !block) violations.push(`${f} · TENANT_LIST_MONEY_NULL_KEYS 표나 LeaseTerm 모델을 못 찾았다`)
+  else {
+    const keys = new Set([...tbl[1].matchAll(/'(\w+)'/g)].map(m => m[1]))
+    const need = [...block[1].matchAll(/^\s+(\w+)\s+(Int|Json)\??(\s|$)/gm)].map(m => m[1]).filter(k => k !== 'roomSchedule')
+    for (const k of [...need, 'signatureImageUrl', 'disposalSignatureImageUrl', 'contractUrl']) if (!keys.has(k)) violations.push(`${f} · 목록이 금액 스코프 없는 역할에게 ${k} 를 걷지 않는다(TENANT_LIST_MONEY_NULL_KEYS)`)
+  }
 }
 
 if (whereCount !== EXPECTED.where) violations.push(`where 를 거는 쓰기가 ${whereCount}곳이다(고정 ${EXPECTED.where}). 새 쓰기를 더했거나 정규식이 낡았다. 범위를 확인하고 EXPECTED 를 함께 고친다`)

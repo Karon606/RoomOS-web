@@ -693,6 +693,41 @@ async function main() {
     eq('제 영업장 일정 반영', ((await prisma.leaseTerm.findUnique({ where: { id: L } }))?.roomSchedule as { roomId: string }[] | null)?.map(e => e.roomId), [RB, RA])
   }
 
+  // ── 입주자 목록의 금액·계약 스냅샷(2026-11-04 독립 검수 B2) ── 제한 스태프 응답에는 이 이름들의 값이 없고 납부 기록은 빈 배열이다.
+  {
+    const KEYS = ['rentAmount', 'depositAmount', 'cleaningFee', 'checkoutProratedAmount', 'checkoutProrationUndo', 'shortStayExtensions',
+      'contractOverride', 'contractFieldOverrides', 'signedContractSnapshot', 'contractVersionArchive', 'documentSignatures',
+      'signatureImageUrl', 'disposalSignatureImageUrl', 'contractUrl']
+    const MONEY = ['471113', '52229', '33317', '12347', '98761', '45673', '61129']
+    const T = await tenantIn(P1, '목록 금액')
+    const L = await leaseIn(P1, T, null)
+    await prisma.leaseTerm.update({ where: { id: L }, data: {
+      rentAmount: 471113, depositAmount: 52229, cleaningFee: 33317, checkoutProratedAmount: 12347,
+      checkoutProrationUndo: { refund: { refunded: 98761 } }, shortStayExtensions: [{ newRentAmount: 45673 }],
+      contractOverride: { rent: 61129 }, contractFieldOverrides: { deposit: 61129 }, signedContractSnapshot: { rent: 61129 },
+      contractVersionArchive: [{ rent: 61129 }], documentSignatures: { contract: 'data:image/png;base64,SIG' },
+      signatureImageUrl: 'data:image/png;base64,SIG', disposalSignatureImageUrl: 'data:image/png;base64,SIG', contractUrl: 'https://drive.example/contract',
+    } })
+    await prisma.paymentRecord.create({ data: { leaseTermId: L, tenantId: T, propertyId: P1, targetMonth: '2026-10', expectedAmount: 471113, actualAmount: 471113, payDate: new Date('2026-10-10T00:00:00Z'), seqNo: 1, isPaid: true, payMethod: '계좌이체', memo: '목록 메모' } })
+    const leaseOf = async () => {
+      const t = (await tenants.getTenants()).find(x => x.id === T)
+      return t?.leaseTerms.find(l => l.id === L) as unknown as Record<string, unknown> | undefined
+    }
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    const lim = await leaseOf()
+    eq('LIMITED_STAFF 입주자 목록: 금액·스냅샷 칸이 전부 null', KEYS.filter(k => lim?.[k] != null), [])
+    eq('LIMITED_STAFF 입주자 목록: 납부 기록 빈 배열', (lim?.paymentRecords as unknown[] | undefined)?.length, 0)
+    const body = JSON.stringify(await tenants.getTenants())
+    eq('LIMITED_STAFF 입주자 목록 응답에 금액·서명·메모 값이 없다', [...MONEY, 'base64,SIG', 'drive.example', '목록 메모'].filter(x => body.includes(x)), [])
+    for (const role of ['STAFF', 'MANAGER', 'OWNER'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const l = await leaseOf()
+      eq(`${role} 입주자 목록: 금액·스냅샷 칸 그대로`, KEYS.filter(k => l?.[k] == null), [])
+      eq(`${role} 입주자 목록: 납부 기록 그대로`, (l?.paymentRecords as unknown[] | undefined)?.length, 1)
+    }
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()
