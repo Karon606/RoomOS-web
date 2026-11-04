@@ -36,6 +36,7 @@ import { confirmRentSettlement } from '@/components/checkout/confirmRentSettleme
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
 import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, undoOverpayExtraIncome, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { WhyCaption } from '@/components/ui/WhyCaption'
@@ -2915,7 +2916,8 @@ export default function TenantClient({
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
         const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
         // 청구·잔액은 서버 정본 — 클라에서 lease.rentAmount(원가)로 빼면 할인·인상이 빠진다(신고 50a2a69b).
-        const expected = paySettlement?.expected ?? lease.rentAmount
+        // 계약 이용료(원가)로 폴백하지 않는다. 정산이 없으면 아래 예약 줄도 서지 않는다(resvPaid null).
+        const expected = paySettlement?.expected ?? 0
         const balance = paySettlement?.balance ?? null
         // 예약 단계는 잔액이 0으로 잠겨 있어 '입주 시 낼 금액'(할인 반영 이용료 − 선납)으로 대신 보여준다.
         const resvPaid = lease.status === 'RESERVED' ? (paySettlement?.reservationPaid ?? null) : null
@@ -3392,137 +3394,47 @@ export default function TenantClient({
                 </>
               )}
 
-              {/* ── 예약자 수납 — 예약금 모드(3택) 정본 폼 재사용 ── */}
-              {showPayForm && lease.status === 'RESERVED' && (
-                <div className="flex-1 overflow-y-auto p-6">
-                  <PaymentEntryForm
-                    depositPaidTotal={paySettlement?.reservationPaid?.deposit ?? 0}
-                    room={{
-                      leaseTermId: lease.id,
-                      tenantId: tenant.id,
-                      expected,
-                      balance: 0,
-                      depositAmount: lease.depositAmount,
-                      cleaningFee: lease.cleaningFee,
-                      moveInDate: lease.moveInDate ? kstYmdStr(new Date(lease.moveInDate)) : null,
-                      roomNo: lease.room?.roomNo ?? null,
-                      status: 'RESERVED',
-                      reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm, shortStayReservationMode),
-                      isShortTerm: lease.isShortTerm,
-                      shortStayReservationMode,
-                      shortStayDeposit,
-                      // 영업장 기본 예약금·이미 받은 예약금 — 예약금 폼 프리필(수납 화면과 같은 행에서 읽는다).
-                      defaultReservationFee: paySettlement?.defaultReservationFee ?? null,
-                      reservationPaid: paySettlement?.reservationPaid ?? null,
-                    }}
-                    targetMonth={targetMonth}
-                    onSaved={async () => { setShowPayForm(false); const { records, windowRecords } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}
-                    onCancel={() => setShowPayForm(false)}
-                  />
+              {/* ── 수납 등록 — 정본 폼 한 벌(수납 관리 PaymentBody 와 같은 컴포넌트·같은 기본값) ──
+                  예약 단계는 폼 안에서 예약금 폼으로 갈린다. room 은 전부 서버 정산(settlement)에서 만든다.
+                  종전 비예약 갈래는 이 화면이 따로 만든 폼이라 금액을 계약 이용료(원가)로 채웠고,
+                  할인 달에 그대로 저장하면 할인액만큼이 다음 달 선납으로 적혔다(404·514·509호, 2026-11-04).
+                  정산을 읽는 동안은 폼을 세우지 않는다. 읽기 전 값으로 세우면 기본값이 한 박자 뒤 바뀐다. */}
+              {showPayForm && (
+                <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4">
+                  {paySettlement === undefined ? (
+                    <SkeletonRows rows={4} />
+                  ) : paySettlement && paySettlement.leaseTermId && paySettlement.tenantId ? (
+                    <PaymentEntryForm
+                      key={paySettlement.leaseTermId}
+                      depositPaidTotal={paySettlement.reservationPaid?.deposit ?? 0}
+                      room={{
+                        leaseTermId: paySettlement.leaseTermId,
+                        tenantId: paySettlement.tenantId,
+                        expected: paySettlement.expected,
+                        balance: paySettlement.balance,
+                        depositAmount: paySettlement.depositAmount,
+                        cleaningFee: paySettlement.cleaningFee,
+                        moveInDate: paySettlement.moveInDate,
+                        roomNo: lease.room?.roomNo ?? null,
+                        status: paySettlement.status,
+                        // 서버가 영업장 기본값·단기 정책까지 풀어 둔 값(resolveReservationDepositMode 같은 함수)이다.
+                        reservationDepositMode: paySettlement.reservationDepositMode,
+                        isShortTerm: paySettlement.isShortTerm,
+                        shortStayReservationMode: paySettlement.shortStayReservationMode,
+                        shortStayDeposit: paySettlement.shortStayDeposit,
+                        // 영업장 기본 예약금·이미 받은 예약금 — 예약금 폼 프리필(수납 화면과 같은 행에서 읽는다).
+                        defaultReservationFee: paySettlement.defaultReservationFee,
+                        reservationPaid: paySettlement.reservationPaid,
+                      }}
+                      targetMonth={targetMonth}
+                      // 저장·적용취소 뒤 한 곳에서 다시 읽는다(수납 내역·3개월 창·보증금 패널 신호·목록).
+                      onSaved={async () => { setShowPayForm(false); await reloadPay() }}
+                      onCancel={() => setShowPayForm(false)}
+                    />
+                  ) : (
+                    <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 입주자는 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+                  )}
                 </div>
-              )}
-
-              {/* ── 수납 등록 폼 ── */}
-              {showPayForm && lease.status !== 'RESERVED' && (
-                <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
-                  <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                    {!isDepositMode && (
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
-                        미수가 있는 가장 오래된 월부터 자동으로 충당됩니다 (발생주의). 입력 금액이 한 달 이용료를 초과하면 다음 달로 이월됩니다.
-                      </p>
-                    )}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                        <DatePicker name="payDate" value={payDateVal} onChange={setPayDateVal}
-                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-[var(--warm-muted)]">금액</label>
-                        <MoneyInput name="amount" value={payAmount} onChange={setPayAmount} placeholder="0원" />
-                      </div>
-                    </div>
-                    {lease.depositAmount > 0 && (
-                      <div className="space-y-1">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isDepositMode}
-                            onChange={e => {
-                              const checked = e.target.checked
-                              setIsDepositMode(checked)
-                              if (checked) {
-                                setPayAmount(lease.depositAmount)
-                                const mi = lease.moveInDate ? kstYmdStr(new Date(lease.moveInDate)) : null
-                                setPayDateVal(mi ?? kstYmdStr())
-                              } else {
-                                setPayDateVal(kstYmdStr())
-                              }
-                            }}
-                            className="w-4 h-4 accent-[var(--coral)]"
-                          />
-                          <span className="text-xs text-[var(--warm-mid)]">
-                            보증금 수납 ({fmtWon(lease.depositAmount)})
-                          </span>
-                        </label>
-                        {isDepositMode && payAmount > lease.depositAmount && (
-                          <p className="text-xs text-[var(--success-fg)]">
-                            초과금 {fmtWon((payAmount - lease.depositAmount))} → {targetMonth} 이용료 처리
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
-                      <select name="payMethod" value={payMethodVal} onChange={e => setPayMethodVal(e.target.value)}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                        <option value="계좌이체">계좌이체</option>
-                        <option value="현금">현금</option>
-                        <option value="신용카드">신용카드</option>
-                        <option value="결제선생">결제선생</option>
-                        <option value="기타">기타</option>
-                      </select>
-                    </div>
-                    {/* 카드는 현금영수증 대상이 아니다 — 형제 폼과 같은 분기·같은 문구(정본). */}
-                    {!isCashReceiptEligible(payMethodVal) ? (
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-                        {CARD_NOT_CASH_RECEIPT_NOTE}
-                      </p>
-                    ) : (
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" name="cashReceipt" checked={cashReceiptOn} onChange={e => setCashReceiptOn(e.target.checked)}
-                          className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                        <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
-                      </label>
-                    )}
-                    {/* 발행일 — 형제 폼(PaymentEntryForm)과 같은 처방이다. 체크했을 때만 서고,
-                        pl-6 로 체크박스의 하위 항목임을 말하고, 껍데기는 위 '날짜' 칸과 같다.
-                        합계가 이 날짜의 달로 잡히므로 지연 발행이면 여기를 고쳐야 홈택스와 맞는다. */}
-                    {cashReceiptOn && (
-                      <div className="space-y-1 pl-6">
-                        <label className="text-xs text-[var(--warm-muted)]">발행일</label>
-                        <DatePicker value={cashReceiptDateVal} onChange={setCashReceiptDateVal} maxDate={kstYmdStr()}
-                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <label className="text-xs text-[var(--warm-muted)]">메모</label>
-                      <input type="text" name="memo" placeholder="메모 (선택)"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
-                    </div>
-                    {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
-                  </div>
-                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <Btn type="button" variant="secondary" size="md" onClick={() => { setShowPayForm(false); setError('') }}
-                      className="flex-1">
-                      취소
-                    </Btn>
-                    <Btn type="submit" variant="primary" size="md" disabled={isPending}
-                      className="flex-1">
-                      {isPending ? '저장 중…' : '저장'}
-                    </Btn>
-                  </div>
-                </form>
               )}
           </Modal>
         )
