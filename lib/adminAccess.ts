@@ -47,6 +47,8 @@ export type AdminUserUndo = {
 export const ADMIN_UNDO_TTL_MS = 24 * 60 * 60 * 1000
 export const ADMIN_UNDO_EXPIRED = '적용취소할 수 있는 시간(24시간)이 지났습니다. 지금 상태에서 다시 바꿔 주세요.'
 export const ADMIN_UNDO_USED = '이미 적용취소한 변경입니다.'
+/** 조건부 쓰기가 0행이었을 때(읽은 뒤 다른 관리자의 변경이나 다른 적용취소가 먼저 반영됨). 트랜잭션째 되감는다. */
+export const ADMIN_UNDO_RACE = '다른 변경이 먼저 반영돼 적용취소하지 않았습니다. 지금 상태를 확인해 주세요.'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STATUSES: readonly AccessStatus[] = ['PENDING', 'APPROVED', 'REJECTED']

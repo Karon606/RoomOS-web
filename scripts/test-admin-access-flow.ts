@@ -363,6 +363,22 @@ async function main() {
   eq('삭제 적용취소: 서버 보관 값으로 같은 id·사용 수 그대로', [rs.ok, back?.id, back?.usedCount, back?.maxUses], [true, used.id, 1, 3])
   eq('같은 열쇠로 두 번 되살림 거부', await A.restoreInviteCode(rid), { ok: false, error: '이미 적용취소한 변경입니다.' })
   eq('꾸민 열쇠 거부', (await A.restoreInviteCode(randomUUID())).ok, false)
+  // 남의 계정 감사 기록 id 를 단 토큰은 거부(origin 은 같은 대상 계정 조건, 재검수 Y5)
+  const r1Audit = await prisma.adminAuditLog.findFirstOrThrow({ where: { targetUserId: R1, action: 'SET_STATUS' }, orderBy: { createdAt: 'desc' } })
+  const a1Snap = await snap(A1)
+  const crossTok = signTok({ v: 1, userId: A1, at: new Date().toISOString(), auditId: r1Audit.id, before: { ...a1Snap, status: 'PENDING' }, after: a1Snap })
+  eq('남의 계정 감사 기록 id 토큰 거부·무변경', [(await A.undoAdminUserChange(crossTok)).ok, await snap(A1)], [false, a1Snap])
+  // 동시 두 번 되살림(같은 열쇠): 하나만 되살리고 다른 하나는 '이미 적용취소'(재검수 P2)
+  const del3 = await A.deleteInviteCode((await prisma.inviteCode.findFirstOrThrow({ where: { code: 'USED-ONE' } })).id)
+  const k3 = del3.ok ? del3.restoreId : ''
+  const both = await Promise.all([A.restoreInviteCode(k3), A.restoreInviteCode(k3)])
+  eq('동시 두 번 되살림: 하나만 통과·하나는 이미 적용취소', [both.filter(x => x.ok).length, both.find(x => !x.ok)], [1, { ok: false, error: '이미 적용취소한 변경입니다.' }])
+  eq('되살린 코드는 하나', await prisma.inviteCode.count({ where: { code: 'USED-ONE' } }), 1)
+  // 동시 두 번 적용취소(같은 토큰): 하나만 통과
+  const st3 = await A.setUserStatus(R1, 'APPROVED')
+  const t3 = J(st3.ok ? st3.undo! : null)!
+  const both2 = await Promise.all([A.undoAdminUserChange(t3), A.undoAdminUserChange(t3)])
+  eq('동시 두 번 적용취소: 하나만 통과', [both2.filter(x => x.ok).length, (await snap(R1)).status], [1, 'REJECTED'])
   const del2 = await A.deleteInviteCode(used.id)
   await A.createInviteCode({ code: 'USED-ONE', maxUses: 1 })
   eq('같은 코드가 다시 생겼으면 되살림 거부', (await A.restoreInviteCode(del2.ok ? del2.restoreId : '')).ok, false)

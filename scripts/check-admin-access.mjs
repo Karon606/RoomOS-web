@@ -23,6 +23,8 @@
 //   ⓞ 독립 검수 반영(2026-11-04): 대기 건수는 실패해도 0(B1)·마이그레이션 머리말 배포 절차, 적용취소 본인 대상 거부(R1)·24시간 만료와
 //      감사 기록 id 일회성(R2), 접속 기록을 못 읽으면 정리 거부(R3), 초대코드 조건부 쓰기(R4), 푸시 본문에 이메일 없음(R5),
 //      멤버 초대 푸시는 새 역할 줄일 때만(R6)·역할 화이트리스트, 초대코드 되살림은 서버 보관 값.
+//      재검수: 적용취소 쓰기는 조건부(사용자 행·역할 줄·정리 행, 0행이면 되감기), 초대코드 동시 되살림 P2002 는 '이미 적용취소',
+//      origin 감사 기록 조회는 targetUserId 조건(남의 계정 기록 id 로 일회성 우회 금지).
 //   ⓝ 스팸 대책: 가입 경로·최근 접속은 auth.users 읽기(실패해도 목록은 선다). 오래된 계정 정리는 자동 삭제가 아니라 누르는 정리이고
 //      계정을 지우지 않는다(user_archives). 서버가 같은 정본(isStaleSignup)으로 다시 세고, 감사 기록·같은 시각 도장 적용취소가 있다.
 import { readFileSync } from 'node:fs'
@@ -244,6 +246,20 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓞ 멤버 초대 역할 화이트리스트(첫 DB 전)', inv.indexOf('if (!STAFF_ROLES.includes(role)) return') > 0 && inv.indexOf('if (!STAFF_ROLES.includes(role)) return') < inv.indexOf('prisma.'))
   const ri = act.slice(act.indexOf('export async function restoreInviteCode('), act.indexOf('// ── 영업장 현황'))
   ok('ⓞ 초대코드 되살림은 서버 보관 값', /restoreInviteCode\(restoreId: string\)/.test(ri) && /action: 'INVITE_CODE_DELETE'/.test(ri) && /path: \['undoOf'\], equals: restoreId/.test(ri) && !/snap: InviteCodeSnap/.test(act))
+}
+
+// ⓟ 재검수
+{
+  const ud = act.slice(act.indexOf('export async function undoAdminUserChange('), act.indexOf('\nexport ', act.indexOf('export async function undoAdminUserChange(') + 1))
+  ok('ⓟ Y5 origin 감사 기록은 같은 대상 계정 조건', /tx\.adminAuditLog\.findFirst\(\{ where: \{ id: u\.auditId, targetUserId: u\.userId \}/.test(ud))
+  ok('ⓟ P1 사용자 행은 쓴 직후 모습 조건부 쓰기, 0행이면 되감기', /tx\.user\.updateMany\(\{\s*where: \{\s*id: u\.userId,\s*status: u\.after\.status,\s*isSuperAdmin: u\.after\.isSuperAdmin,\s*approvedAt: [^\n]*u\.after\.approvedAt[^\n]*\n\s*approvedBy: u\.after\.approvedBy,/.test(ud)
+    && /if \(w\.count !== 1\) throw new UndoRace\(\)/.test(ud) && !/tx\.user\.update\(/.test(ud))
+  ok('ⓟ P1 역할 줄도 조건부', /const roleWhere = \{ userId: u\.userId, propertyId: u\.role\.propertyId, role: u\.role\.after \}/.test(ud) && /if \(r\.count !== 1\) throw new UndoRace\(\)/.test(ud) && !/userPropertyRole\.(delete|update)\(/.test(ud))
+  ok('ⓟ P1 경합은 되감기 문구로', /if \(e instanceof UndoRace \|\| isUniqueViolation\(e\)\) return \{ ok: false as const, error: ADMIN_UNDO_RACE \}/.test(ud))
+  const un = act.slice(act.indexOf('export async function unarchiveSignups('), act.indexOf('\nexport ', act.indexOf('export async function unarchiveSignups(') + 1))
+  ok('ⓟ 정리 되살림도 읽은 조건 그대로 지우고 수 대조', /if \(del\.count !== rows\.length\) throw new UndoRace\(\)/.test(un))
+  const ri = act.slice(act.indexOf('export async function restoreInviteCode('), act.indexOf('// ── 영업장 현황'))
+  ok('ⓟ P2 초대코드 동시 되살림 P2002 는 이미 적용취소', /if \(isUniqueViolation\(e\)\) return \{ ok: false as const, error: ADMIN_UNDO_USED \}/.test(ri))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

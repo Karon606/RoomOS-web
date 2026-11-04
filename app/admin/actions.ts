@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client'
 import { requireSuperAdmin, isSuperAdminEmail } from '@/lib/auth/access'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import {
-  ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID, ADMIN_UNDO_EXPIRED, ADMIN_UNDO_USED, ADMIN_UNDO_TTL_MS,
+  ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID, ADMIN_UNDO_EXPIRED, ADMIN_UNDO_USED, ADMIN_UNDO_TTL_MS, ADMIN_UNDO_RACE,
   adminChangeBlock, canonicalAdminUserUndo, parseAdminUserUndo, sameSnap, snapOf,
   STAFF_ROLES, isStaleSignup,
   type AccessStatus, type AdminUserUndo, type RoleChange, type UserAccessSnap,
@@ -204,6 +204,10 @@ export async function setSuperAdmin(userId: string, value: boolean): Promise<Adm
 
 // ── 적용취소 ──
 // 지금이 '쓴 직후' 모습 그대로일 때만 '쓰기 전' 으로 돌린다. 승인과 함께 넣은 역할 줄은 그 역할 그대로일 때만 되돌린다.
+/** 조건부 쓰기가 0행이면 던져서 트랜잭션(앞서 쓴 역할 줄 포함)을 되감는다. */
+class UndoRace extends Error {}
+const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === 'P2002'
+
 export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = await requireSuperAdmin()
   const u = parseAdminUserUndo(raw)
@@ -224,11 +228,23 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
         where: { userId_propertyId: { userId: u.userId, propertyId: u.role.propertyId } }, select: { role: true },
       })
       if (role?.role !== u.role.after) return { ok: false as const, error: ADMIN_UNDO_CONFLICT }
-      if (u.role.before === null) await tx.userPropertyRole.delete({ where: { userId_propertyId: { userId: u.userId, propertyId: u.role.propertyId } } })
-      else await tx.userPropertyRole.update({ where: { userId_propertyId: { userId: u.userId, propertyId: u.role.propertyId } }, data: { role: u.role.before } })
+      // 역할 줄도 조건부 쓰기다. 읽은 뒤 그사이 역할이 바뀌었으면 0행이고 트랜잭션째 되감는다(재검수 P1).
+      const roleWhere = { userId: u.userId, propertyId: u.role.propertyId, role: u.role.after }
+      const r = u.role.before === null
+        ? await tx.userPropertyRole.deleteMany({ where: roleWhere })
+        : await tx.userPropertyRole.updateMany({ where: roleWhere, data: { role: u.role.before } })
+      if (r.count !== 1) throw new UndoRace()
     }
-    await tx.user.update({
-      where: { id: u.userId },
+    // 사용자 행도 '쓴 직후' 모습 그대로일 때만 쓴다(조건부 쓰기). 읽은 뒤 다른 관리자의 변경이 끼었거나 동시에 두 번 눌렀으면
+    // 0행이고 덮어쓰지 않는다(lost update 방지, 재검수 P1).
+    const w = await tx.user.updateMany({
+      where: {
+        id: u.userId,
+        status: u.after.status,
+        isSuperAdmin: u.after.isSuperAdmin,
+        approvedAt: u.after.approvedAt ? new Date(u.after.approvedAt) : null,
+        approvedBy: u.after.approvedBy,
+      },
       data: {
         status: u.before.status,
         isSuperAdmin: u.before.isSuperAdmin,
@@ -236,8 +252,12 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
         approvedBy: u.before.approvedBy,
       },
     })
+    if (w.count !== 1) throw new UndoRace()
     await writeAudit(tx, admin.userId, u.userId, 'UNDO', { ...u.after, role: u.role?.after ?? null }, { ...u.before, role: u.role ? u.role.before : null, undoOf: u.auditId })
     return { ok: true as const }
+  }).catch((e: unknown) => {
+    if (e instanceof UndoRace || isUniqueViolation(e)) return { ok: false as const, error: ADMIN_UNDO_RACE }
+    throw e
   })
   revalidatePath('/admin/users')
   return res
@@ -291,11 +311,14 @@ export async function unarchiveSignups(ids: string[], at?: string | null): Promi
   const count = await prisma.$transaction(async (tx) => {
     const rows = await tx.userArchive.findMany({ where: { userId: { in: list }, ...(stamp ? { archivedAt: stamp } : {}) }, select: { userId: true, archivedAt: true } })
     if (rows.length === 0) return 0
-    await tx.userArchive.deleteMany({ where: { userId: { in: rows.map(r => r.userId) } } })
+    // 읽은 그 행만 같은 조건으로 지운다. 그사이 다시 정리돼 도장이 바뀐 행은 지우지 않는다(재검수 P1과 같은 모양)
+    const del = await tx.userArchive.deleteMany({ where: { userId: { in: rows.map(r => r.userId) }, ...(stamp ? { archivedAt: stamp } : {}) } })
+    if (del.count !== rows.length) throw new UndoRace()
     await tx.adminAuditLog.createMany({ data: rows.map(r => ({ actorId: admin.userId, targetUserId: r.userId, action: 'UNARCHIVE', before: { archivedAt: r.archivedAt.toISOString() }, after: Prisma.DbNull })) })
     return rows.length
-  })
+  }).catch((e: unknown) => { if (e instanceof UndoRace) return -1; throw e })
   revalidatePath('/admin/users')
+  if (count < 0) return { ok: false, error: ADMIN_UNDO_RACE }
   return count > 0 ? { ok: true, count } : { ok: false, error: '그사이 이미 되살렸거나 다시 정리돼 되돌리지 않았습니다.' }
 }
 
@@ -401,6 +424,10 @@ export async function restoreInviteCode(restoreId: string): Promise<{ ok: true }
     })
     await writeAudit(tx, admin.userId, admin.userId, 'INVITE_CODE_RESTORE', null, { undoOf: restoreId, code: snap.code })
     return { ok: true as const }
+  }).catch((e: unknown) => {
+    // 같은 열쇠로 동시에 두 번: 둘 다 '아직 안 되살림'을 읽고 만들기에서 하나가 같은 id·코드로 막힌다(재검수 P2)
+    if (isUniqueViolation(e)) return { ok: false as const, error: ADMIN_UNDO_USED }
+    throw e
   })
   revalidatePath('/admin/invites')
   return res
