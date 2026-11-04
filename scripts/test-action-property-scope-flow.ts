@@ -624,6 +624,32 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 같은 클래스 전수(2026-11-04 운영자 승인 '추천대로') ── id 하나로 읽던 읽기 셋. 남의 영업장 id 는 안 보이고, 금액 읽기는 금액 스코프가 있어야 한다.
+  {
+    const T1 = await tenantIn(P1, '전수 내'), T2 = await tenantIn(P2, '전수 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    await prisma.leaseTerm.update({ where: { id: L1 }, data: { moveInDate: new Date('2026-09-01T00:00:00Z') } })
+    await prisma.leaseTerm.update({ where: { id: L2 }, data: { moveInDate: new Date('2026-09-01T00:00:00Z') } })
+    await prisma.tenantRequest.create({ data: { propertyId: P1, tenantId: T1, content: '내 요청' } })
+    await prisma.tenantRequest.create({ data: { propertyId: P2, tenantId: T2, content: '남 요청' } })
+    const GONE_LEASE = { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    for (const role of ['MANAGER', 'OWNER', 'STAFF', 'LIMITED_STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 요청 목록: 남의 영업장 입주자는 빈 목록`, (await tenants.getTenantRequests(T2)).requests.length, 0)
+      eq(`${role} 요청 목록: 제 영업장 통과`, (await tenants.getTenantRequests(T1)).requests.map(r => r.content), ['내 요청'])
+    }
+    for (const role of ['MANAGER', 'OWNER', 'STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 퇴실 일할 미리보기: 남의 영업장 계약 거절`, await tenants.previewCheckoutProration(L2, '2026-11-20'), GONE_LEASE)
+      eq(`${role} 퇴실 일할 미리보기: 제 영업장 통과`, (await tenants.previewCheckoutProration(L1, '2026-11-20')).ok, true)
+      eq(`${role} 수납 분석: 남의 영업장 입주자 거절`, await tenants.analyzeTenantWithGemini(T2), '[오류] 입주자를 찾을 수 없습니다.')
+    }
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    eq('LIMITED_STAFF 퇴실 일할 미리보기: 금액이라 거절', await tenants.previewCheckoutProration(L1, '2026-11-20'), { ok: false, error: '권한이 없습니다.' })
+    eq('LIMITED_STAFF 수납 분석: 금액이라 거절', await tenants.analyzeTenantWithGemini(T1), '[오류] 권한이 없습니다.')
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

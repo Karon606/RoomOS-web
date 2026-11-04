@@ -4362,10 +4362,13 @@ export async function applyStatusTransition(input: {
 
 // Gemini 수납 분석
 export async function analyzeTenantWithGemini(tenantId: string): Promise<string> {
-  await getPropertyId()
+  // 입주자를 영업장 범위로 읽고 금액 스코프를 본다(2026-11-04 운영자 승인 '추천대로', 같은 클래스 전수). 종전에는 id 만으로
+  // 읽어 남의 영업장 입주자의 납부 기록 전체가 AI 문장으로 돌아왔고, 금액을 못 읽는 제한 스태프도 부를 수 있었다.
+  const { propertyId, role } = await getPropertyId()
+  if (!canReadScope(role, 'money')) return '[오류] 권한이 없습니다.'
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
+  const tenant = await prisma.tenant.findFirst({
+    where: { id: tenantId, propertyId },
     include: {
       leaseTerms: {
         // 메인 계약 하나를 분석한다. 잘라 읽으면 정렬이 고르므로 전부 읽고 정본이 고른다.
@@ -4698,8 +4701,9 @@ export async function deleteTenant(tenantId: string, opts?: { force?: boolean })
 export async function getTenantRequests(tenantId: string) {
   const { propertyId } = await getPropertyId()
   const [requests, property] = await Promise.all([
+    // 영업장 조건을 건다(2026-11-04 운영자 승인 '추천대로', 같은 클래스 전수). 종전에는 입주자 id 만으로 읽어 남의 영업장 요청이 보였다.
     prisma.tenantRequest.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId, propertyId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, content: true, requestDate: true,
@@ -5251,9 +5255,12 @@ export async function previewCheckoutProration(
   expectedMoveOut: string,  // 'YYYY-MM-DD'
 ): Promise<CheckoutProrationPreview> {
   try {
-    await getPropertyId()
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: leaseTermId },
+    // 계약을 영업장 범위로 읽고 금액 스코프를 본다(2026-11-04 운영자 승인 '추천대로', 같은 클래스 전수). 종전에는 id 만으로 읽어
+    // 남의 영업장 계약의 이용료·할인이 정산 금액으로 돌아왔다.
+    const { propertyId, role } = await getPropertyId()
+    if (!canReadScope(role, 'money')) return { ok: false, error: '권한이 없습니다.' }
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
       select: {
         dueDay: true, cycleDay: true, rentAmount: true, moveInDate: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },

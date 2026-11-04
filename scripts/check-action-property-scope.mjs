@@ -349,6 +349,31 @@ const AXES = [
     ],
     mustNot: [[/mainLeaseOnly\(row\.leaseTerms\)/, '원본 계약(금액 포함)을 그대로 싣는다']],
   },
+  // 같은 클래스 전수(2026-11-04 운영자 승인 '추천대로'). rooms·tenants 의 export 액션 중 id 하나로 읽고 영업장 조건이 없던 읽기 셋.
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'analyzeTenantWithGemini',
+    must: [
+      [/const \{ propertyId, role \} = await getPropertyId\(\)\n\s*if \(!canReadScope\(role, 'money'\)\) return/, '금액 스코프(canReadScope money)를 읽기 전에 보지 않는다'],
+      [/tenant\.findFirst\(\{\s*where:\s*\{\s*id:\s*tenantId,\s*propertyId\s*\}/, '입주자를 영업장 범위로 읽지 않는다'],
+    ],
+    mustNot: [[/tenant\.findUnique\(\{\s*where:\s*\{\s*id:\s*tenantId\s*\}/, '입주자를 화면 id 만으로 읽는다']],
+  },
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'getTenantRequests',
+    must: [[/tenantRequest\.findMany\(\{\s*where:\s*\{\s*tenantId,\s*propertyId,/, '요청을 영업장 범위로 읽지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'previewCheckoutProration',
+    must: [
+      [/const \{ propertyId, role \} = await getPropertyId\(\)\n\s*if \(!canReadScope\(role, 'money'\)\) return \{ ok: false/, '금액 스코프(canReadScope money)를 읽기 전에 보지 않는다'],
+      [/leaseTerm\.findFirst\(\{\s*where:\s*\{\s*id:\s*leaseTermId,\s*propertyId\s*\}/, '계약을 영업장 범위로 읽지 않는다'],
+    ],
+    mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
