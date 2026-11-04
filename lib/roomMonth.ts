@@ -95,6 +95,16 @@ export function acqMonthStateOf(i: {
 }
 
 /**
+ * 그 달 기한이 도래했나. 지난 달이거나 기한이 오늘 끝 시각 이하(납부일 당일부터 지났다고 본다).
+ * 목록 행(roomMonthBill)과 수납 등록 기본값(귀속월 목록 getTargetMonthOptions 의 duePassed)이 같은 식을 쓴다.
+ */
+export function monthDuePassed(ms: string, dueDate: Date | null, today: { year: number; month: number; day: number }): boolean {
+  const todayMonth = `${today.year}-${String(today.month).padStart(2, '0')}`
+  const todayEnd = new Date(today.year, today.month - 1, today.day, 23, 59, 59, 999)
+  return ms < todayMonth || (dueDate ? dueDate <= todayEnd : false)
+}
+
+/**
  * 그 달 청구와 기한 도래. 목록 행(rowExpected·viewMonthDuePassed)과 조정 칩이 같은 판정이다.
  *   skipped  인수 선납 달 · 양도인 달 · 퇴실 무청구(퇴실월 초과 포함) 달. 청구 0.
  *   duePassed 지난 달이거나 기한(effDueDateForMonth)이 오늘 끝 시각 이하. 납부일 당일부터 지났다고 본다(목록 미납 묶음과 같다).
@@ -110,8 +120,6 @@ export function roomMonthBill(i: {
   today: { year: number; month: number; day: number }
 }): { skipped: boolean; billed: number; duePassed: boolean } {
   const skipped = (i.ms === i.acqMonthStr && i.acqMonthPrePaid) || i.prevOwnerMonths.has(i.ms) || i.skipByMoveOut(i.ms)
-  const todayMonth = `${i.today.year}-${String(i.today.month).padStart(2, '0')}`
-  const todayEnd = new Date(i.today.year, i.today.month - 1, i.today.day, 23, 59, 59, 999)
-  const duePassed = i.ms < todayMonth || (i.dueDate ? i.dueDate <= todayEnd : false)
+  const duePassed = monthDuePassed(i.ms, i.dueDate, i.today)
   return { skipped, billed: skipped ? 0 : i.bill(i.ms), duePassed }
 }

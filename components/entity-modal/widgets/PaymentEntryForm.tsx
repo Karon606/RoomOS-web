@@ -27,6 +27,7 @@ import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
+import { suggestPayAmount } from '@/lib/paymentSuggest'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, depositModeSplit, depositModeCompositionLabel, depositModeSplitPartsLabel } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 
@@ -101,25 +102,21 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
   const [pending, startTransition] = useTransition()
   // 몫 칸 라벨 결선용 — 고정 문자열이면 같은 화면에 폼이 둘 설 때 id 가 겹친다.
   const uid = useId()
-  const [tmOptions, setTmOptions] = useState<TmOption[]>([])
+  // null = 아직 못 읽음. 기본값이 이 목록을 기다린다(읽기 전 값으로 칸을 채웠다가 바꾸지 않는다).
+  const [tmOptions, setTmOptions] = useState<TmOption[] | null>(null)
+  const tmList = tmOptions ?? []
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
-  // 추천 납입액:
+  // 추천 납입액 — 정본 lib/paymentSuggest(진리표 scripts/test-money 'SG'). 화면은 서버 값을 넘기기만 한다.
   //  - 귀속월을 특정 월로 고르면 그 달의 남은 청구액(인상 반영).
-  //  - 자동(FIFO)일 때 미수가 있으면(balance<0) 그 절댓값(누적 미수 보충),
-  //    미수가 없으면 '앞으로 낼 가장 이른 안 낸 달'의 청구액 → 인상 전 달이 완납되면 자동으로 인상가가 추천됨.
+  //  - 자동(FIFO)이면 기한이 도래한 미완납 달의 그 달 남은 청구 합(운영자 승인 G1 2026-11-04). 기한 전인
+  //    이번 달 청구는 섞지 않는다(10월 미납분을 11/1 에 받으면 10월 할인 청구 440,000, 404호).
+  //    도래한 미납이 없으면 앞으로 낼 가장 이른 미완납 달 → 인상 전 달이 완납되면 자동으로 인상가가 추천됨.
   //  - 사용자가 직접 바꾸면 그대로 유지(추천값 변할 때만 갱신).
-  // 추천액이 쓰는 가장 이른 미완납 달(인상 반영). 저장 전 '기록될 달' 표시는 이 값이 아니라 아래
-  // fifoStart(서버 findFirstUnpaidMonth 그대로)를 쓴다 — 인수월 양도인 자동 처리에서 둘이 갈릴 수 있다.
-  const fifoNext = useMemo(() => tmOptions.find(o => o.paidAmount < o.expectedAmount), [tmOptions])
-  const suggestedAmount = useMemo(() => {
-    if (forcedTm !== 'auto') {
-      const o = tmOptions.find(t => t.month === forcedTm)
-      if (o) { const rem = o.expectedAmount - o.paidAmount; return rem > 0 ? rem : o.expectedAmount }
-      return room.expected
-    }
-    if (room.balance < 0) return -room.balance
-    return fifoNext ? (fifoNext.expectedAmount - fifoNext.paidAmount) : room.expected
-  }, [forcedTm, tmOptions, fifoNext, room.balance, room.expected])
+  // 저장 전 '기록될 달' 표시는 아래 fifoStart(서버 findFirstUnpaidMonth 그대로)를 쓴다 — 인수월 양도인 자동 처리에서
+  // 귀속월 목록과 갈릴 수 있다.
+  const suggestedAmount = useMemo(() => suggestPayAmount({
+    forcedMonth: forcedTm, months: tmOptions, viewMonth: targetMonth, expected: room.expected,
+  }), [forcedTm, tmOptions, targetMonth, room.expected])
   // savePayment 가 FIFO 로 시작할 달 — 서버의 같은 함수 값(getFifoStartMonth). 로딩 전엔 null(숫자 없는 문구).
   const [fifoStart, setFifoStart] = useState<string | null>(null)
   // 이용료가 기록될 달(저장 전 표시용) — 고른 달, 아니면 FIFO 시작 달. 실제 배분은 서버가 정하고 토스트가 말한다.
@@ -127,10 +124,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
   // 입주자의 선납(흔한 경우)에서 "9월분부터"라고 말하고 10월에 적는 갈림을 막으려고, 시작 달부터 첫 미완납 달을 말한다.
   const startOrForced = forcedTm !== 'auto' ? forcedTm : fifoStart
   const rentStartMonth = startOrForced
-    ? (tmOptions.find(o => o.month >= startOrForced && o.paidAmount < o.expectedAmount)?.month ?? startOrForced)
+    ? (tmList.find(o => o.month >= startOrForced && o.paidAmount < o.expectedAmount)?.month ?? startOrForced)
     : null
   const autoStartMonth = fifoStart
-    ? (tmOptions.find(o => o.month >= fifoStart && o.paidAmount < o.expectedAmount)?.month ?? fifoStart)
+    ? (tmList.find(o => o.month >= fifoStart && o.paidAmount < o.expectedAmount)?.month ?? fifoStart)
     : null
   const [payAmount, setPayAmount] = useState<number>(suggestedAmount)
   useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
@@ -195,7 +192,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
   useEffect(() => {
     let active = true
     setFifoStart(null)
-    getTargetMonthOptions(room.leaseTermId, targetMonth).then(opts => { if (active) setTmOptions(opts) })
+    getTargetMonthOptions(room.leaseTermId, targetMonth)
+      .then(opts => { if (active) setTmOptions(opts) })
+      // 못 읽으면 빈 목록으로 내린다(기본값은 조회월 청구). null 로 두면 칸이 영영 비어 있다.
+      .catch(() => { if (active) setTmOptions([]) })
     getFifoStartMonth(room.leaseTermId, targetMonth)
       .then(m => { if (active) setFifoStart(m) })
       .catch(() => { /* 표시용이라 실패해도 저장은 막지 않는다 — 숫자 없는 문구로 남는다 */ })
@@ -297,7 +297,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
       const suspicious = payAmount >= suggestedAmount * SUSPICIOUS_MULTIPLIER
       const choice = await choiceDialog({
         title: `${room.roomNo ? room.roomNo + ' ' : ''}초과분 ${fmtWon(excess)}을 어떻게 할까요?`,
-        // suggestedAmount 는 미수가 있으면 누적 미수 총액이라 '이용료'가 아니다. '청구액'으로 부른다.
+        // suggestedAmount 는 자동이면 조회월까지 미완납 달 남은 청구 합이라 '이용료'가 아니다. '청구액'으로 부른다.
+        // 그 합을 넘는 돈만 여기 오므로 이월은 정말 다음 달 선납이다(G1).
         message: (suspicious ? `${fmtWon(payAmount)}이 맞나요? 0을 하나 더 누르지 않았는지 확인하세요.\n\n` : '')
           + `청구액 ${fmtWon(suggestedAmount)}보다 ${fmtWon(excess)} 더 받았습니다.\n이월하면 다음 달 이용료에 먼저 충당됩니다.`,
         ...(suspicious ? { level: 'caution' as const } : {}),
@@ -671,7 +672,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel, divided }
       <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
         <option value="auto">{!splitMode && autoStartMonth ? `자동 · ${Number(autoStartMonth.slice(5))}월분부터 채움` : '자동 · 오래 밀린 달부터 채움'}</option>
-        {tmOptions.map(o => {
+        {tmList.map(o => {
           const [y, m] = o.month.split('-')
           const tag = o.status === 'paid' ? '완납'
             : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`

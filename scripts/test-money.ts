@@ -31,6 +31,8 @@ import { withParticle } from '../lib/koParticle'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
+import { suggestPayAmount, type SuggestMonth } from '../lib/paymentSuggest'
+import { monthDuePassed, effDueDateForMonth } from '../lib/roomMonth'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
 let pass = 0
@@ -1236,6 +1238,55 @@ const RENT = 300000
     eq('월세 변경 뒤 락이 옛 금액(450,000)인 달도 기준액은 지금 이용료 470,000', [billForLeaseMonth(firstMonth, '2026-12', 450000), viewExpectedForMonth(firstMonth, '2026-12')], [450000, 470000])
     eq('기준액으로 잰 일할(6일에서 10일, 4일)', calcProRata(viewExpectedForMonth(firstMonth, '2026-12'), '6', '10', '2026-12'), { days: 4, amount: 62666, type: 'extra' })
   }
+}
+
+// ── 수납 등록 금액 기본값 정본 suggestPayAmount (운영자 승인 '추천대로' G1, 2026-11-04) ──
+// 입력은 서버 정본(귀속월 목록·조회월 청구)이다. 달 청구는 billForLeaseMonth, 기한 도래는 monthDuePassed(effDueDateForMonth)
+// 로 만들어 엔진·수납 관리 목록과 묶는다. 운영자 규칙 원문 "10월 미납분이면 11월로 넘어와도 미리 표시되는 금액이
+// 10월 기준이 뜨는게 맞는 것 같아". 404호 모양: 계약 470,000 · 8~10월 할인 30,000 · 납부일 말일.
+{
+  const D = { discountType: 'amount', value: 30_000, scope: 'temporary', startMonth: '2026-08', endMonth: '2026-10' }
+  const lease = (dueDay: string) => ({ dueDayAdjusts: [], rentAmount: 470_000, status: 'ACTIVE', dueDay, moveInDate: new Date('2026-06-01T00:00:00Z'), discounts: [D] })
+  const T = (ymd: string) => { const [year, month, day] = ymd.split('-').map(Number); return { year, month, day } }
+  // 서버 getTargetMonthOptions 와 같은 조립(청구·수납·기한 도래).
+  const months = (dueDay: string, today: string, paid: Record<string, number>, list: string[]): SuggestMonth[] =>
+    list.map(m => ({ month: m, expectedAmount: billForLeaseMonth(lease(dueDay), m, null), paidAmount: paid[m] ?? 0,
+      duePassed: monthDuePassed(m, effDueDateForMonth({ dueDay }, m), T(today)) }))
+  const auto = (ms: SuggestMonth[] | null, view: string, expected = 470_000) => suggestPayAmount({ forcedMonth: 'auto', months: ms, viewMonth: view, expected })
+  const W = ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02']
+  eq('SG 엔진: 10월 할인 청구 440,000 · 11월 정가 470,000', [billForLeaseMonth(lease('말일'), '2026-10', null), billForLeaseMonth(lease('말일'), '2026-11', null)], [440_000, 470_000])
+  // 운영자 실례 그대로. 10월 미납 상태로 11월 1일 수납 열기(조회월 기본 = 이번 달 11월) → 10월 할인 청구.
+  eq('SG 실례 404: 할인 8~10월 30,000 · 정가 470,000 · 10월 미납 · 11/1 수납 → 440,000',
+    auto(months('말일', '2026-11-01', { '2026-09': 440_000 }, W), '2026-11'), 440_000)
+  eq('SG 실례 404: 조회월을 10월로 봐도 440,000', auto(months('말일', '2026-11-01', { '2026-09': 440_000 }, W), '2026-10'), 440_000)
+  // T8 두 달 이상 도래 미납이면 그 달들의 청구 합. 11월 기한(말일)이 지난 12/1 이면 10월 440,000 + 11월 470,000.
+  eq('SG T8 도래 미납 두 달이면 그 달 청구 합 910,000', auto(months('말일', '2026-12-01', { '2026-09': 440_000 }, W), '2026-12'), 910_000)
+  // 납부일 1일이면 11/1 이 11월 기한 당일이라 도래(목록 미납 판정과 같다) → 두 달 합.
+  eq('SG T8 납부일 1일이면 11/1 은 11월 기한 당일이라 합 910,000', auto(months('1', '2026-11-01', { '2026-09': 440_000 }, W), '2026-11'), 910_000)
+  eq('SG T8 일부 낸 지난달은 남은 몫만', auto(months('말일', '2026-12-01', { '2026-09': 440_000, '2026-10': 400_000 }, W), '2026-12'), 40_000 + 470_000)
+  // T1·T7 할인 달 미납 한 달 → 그 달 할인 청구
+  eq('SG T1 할인 달 미납이면 할인 청구 440,000(정가 아님)', auto(months('1', '2026-10-05', { '2026-09': 440_000 }, W), '2026-10'), 440_000)
+  // T9 조회월 완납 · 지난달 일부 미납
+  eq('SG T9 지난달 일부 미납만 남으면 그 남은 몫', auto(months('1', '2026-11-05', { '2026-09': 440_000, '2026-10': 400_000, '2026-11': 470_000 }, W), '2026-11'), 40_000)
+  // T10 도래 미납 없음 → 다음 미완납 달 청구(선납). 기한 전 이번 달이면 이번 달 청구가 맞다.
+  eq('SG T10 밀린 달 없고 이번 달 기한 전이면 이번 달 청구(선납)', auto(months('말일', '2026-11-01', { '2026-09': 440_000, '2026-10': 440_000 }, W), '2026-11'), 470_000)
+  eq('SG T10 모두 완납이면 다음 미완납 달 청구', auto(months('1', '2026-11-05', { '2026-09': 440_000, '2026-10': 440_000, '2026-11': 470_000 }, W), '2026-11'), 470_000)
+  // T11 선납으로 이번 달 일부 차 있음 → 남은 몫
+  eq('SG T11 이번 달 일부 선납이면 남은 몫', auto(months('1', '2026-11-05', { '2026-09': 440_000, '2026-10': 440_000, '2026-11': 30_000 }, W), '2026-11'), 440_000)
+  // T4 인상 전 달 완납이면 인상가 달(목록의 달 청구가 이미 엔진 인상가다)
+  eq('SG T4 인상 전 달 완납이면 인상가 달', auto([{ month: '2026-11', expectedAmount: 470_000, paidAmount: 470_000, duePassed: true }, { month: '2026-12', expectedAmount: 500_000, paidAmount: 0, duePassed: false }], '2026-11'), 500_000)
+  // T5 퇴실 일할 달 → 일할액 · T2 입주달 합산 청구 그대로
+  eq('SG T5 퇴실 일할 달은 일할액', auto([{ month: '2026-11', expectedAmount: 156_666, paidAmount: 0, duePassed: true }], '2026-11', 156_666), 156_666)
+  eq('SG T2 입주달 합산 청구 그대로', auto([{ month: '2026-09', expectedAmount: 750_000, paidAmount: 0, duePassed: true }], '2026-09', 750_000), 750_000)
+  // T6 무청구 퇴실월(목록에서 빠짐)이고 앞 달 완납 · T15 퇴실 계약 대체 행(조회월 청구 0)
+  eq('SG T6 무청구 퇴실월이고 앞 달 완납이면 조회월 청구 0(저장 버튼이 막힌다)', auto([{ month: '2026-10', expectedAmount: 440_000, paidAmount: 440_000, duePassed: true }], '2026-11', 0), 0)
+  eq('SG T15 퇴실 계약 대체 행은 남은 미납 달', auto([{ month: '2026-09', expectedAmount: 440_000, paidAmount: 300_000, duePassed: true }], '2026-11', 0), 140_000)
+  // 귀속월 직접 선택
+  eq('SG 직접 고른 달은 그 달 남은 청구', suggestPayAmount({ forcedMonth: '2026-10', months: months('1', '2026-11-05', { '2026-10': 100_000 }, W), viewMonth: '2026-11', expected: 470_000 }), 340_000)
+  eq('SG 직접 고른 달이 완납이면 그 달 청구', suggestPayAmount({ forcedMonth: '2026-10', months: months('1', '2026-11-05', { '2026-10': 440_000 }, W), viewMonth: '2026-11', expected: 470_000 }), 440_000)
+  // 목록을 읽기 전에는 칸을 채우지 않는다(원가·조회월 잔액으로 먼저 채웠다 바꾸지 않는다). 못 읽어 빈 목록이면 조회월 청구.
+  eq('SG 목록 전에는 0(빈 칸)', auto(null, '2026-11'), 0)
+  eq('SG 빈 목록이면 조회월 청구', auto([], '2026-11', 440_000), 440_000)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

@@ -49,7 +49,7 @@ import {
   DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind, type DueDayAdjustStatus,
 } from '@/lib/dueDayAdjust'
 import {
-  acqMonthStateOf, effDueDateForMonth as effDueDateOf, lockedExpectedMapOf, originalDueDayOf, roomMonthBill, viewExpectedForMonth,
+  acqMonthStateOf, effDueDateForMonth as effDueDateOf, lockedExpectedMapOf, monthDuePassed, originalDueDayOf, roomMonthBill, viewExpectedForMonth,
 } from '@/lib/roomMonth'
 
 async function getPropertyId() {
@@ -1049,6 +1049,9 @@ export type TargetMonthOption = {
   status: 'unpaid' | 'partial' | 'paid' | 'future'
   paidAmount: number
   expectedAmount: number
+  // 그 달 기한이 오늘로 도래했나(lib/roomMonth monthDuePassed, 수납 관리 목록과 같은 식). 수납 등록 기본값이
+  // 도래한 미완납 달만 합친다. 아직 기한 전인 이번 달 청구가 지난달 미납분 기본값에 섞이지 않게 한다(404호 2026-11-01).
+  duePassed: boolean
 }
 
 export async function getTargetMonthOptions(
@@ -1111,6 +1114,7 @@ export async function getTargetMonthOptions(
   }
 
   const out: TargetMonthOption[] = []
+  const today = kstYmd()
   let cy = startY, cmn = startM
   while (cy < endY || (cy === endY && cmn <= endM)) {
     const ms = `${cy}-${String(cmn).padStart(2, '0')}`
@@ -1133,7 +1137,8 @@ export async function getTargetMonthOptions(
     else if (paid >= expected) status = 'paid'
     else if (paid > 0) status = 'partial'
     else status = 'unpaid'
-    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected })
+    const duePassed = monthDuePassed(ms, effDueDateOf({ dueDay: lease.dueDay, overrideDueDay: lease.overrideDueDay, overrideDueDayMonth: lease.overrideDueDayMonth }, ms), today)
+    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected, duePassed })
     cmn++; if (cmn > 12) { cmn = 1; cy++ }
   }
   return out
