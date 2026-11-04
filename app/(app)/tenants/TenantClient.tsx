@@ -815,7 +815,9 @@ export default function TenantClient({
   const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   // 수납 모달 청구·잔액 정본 — 클라 재계산(할인·인상 미반영) 대신 서버 settlement 사용(신고 50a2a69b)
-  const [paySettlement, setPaySettlement] = useState<PaySettlement | null>(null)
+  // 세 상태다(수납 관리 PaymentBody 와 같은 문법). undefined = 읽는 중, null = 없음(투어 단계 계약·조회 실패), 값 = 정상.
+  // 실패도 null 로 떨어져야 뼈대가 영원히 남지 않는다. 수납 등록 폼은 값일 때만 선다(정본 기본값이 이 값을 쓴다).
+  const [paySettlement, setPaySettlement] = useState<PaySettlement | null | undefined>(undefined)
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
@@ -1574,7 +1576,8 @@ export default function TenantClient({
     setShowPayForm(false)
     setError('')
     setDistNotice(null)
-    setPaySettlement(null)
+    // 계약을 바꿔 열면 읽는 중으로 돌아간다. 앞 계약의 정산이 새 계약 폼의 기본값이 되면 안 된다.
+    setPaySettlement(undefined)
     const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 그리지 않는다.
     setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
@@ -1593,16 +1596,17 @@ export default function TenantClient({
     refresh()
   }
   useEffect(() => {
-    if (!payLeaseId) { setPaySettlement(null); return }
+    if (!payLeaseId) { setPaySettlement(undefined); return }
     let active = true
     getLeaseSettlementInfo(payLeaseId, targetMonth)
-      .then(d => { if (active) setPaySettlement(d) })
+      // 지금 연 계약의 응답만 쓴다(계약 전환 중 늦게 온 앞 계약 응답 차단).
+      .then(d => { if (active) setPaySettlement(d && d.leaseTermId === payLeaseId ? d : null) })
       .catch(() => { if (active) setPaySettlement(null) })
     return () => { active = false }
   }, [payLeaseId, targetMonth, payHistory])
 
   const closePayModal = () => {
-    setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(null)
+    setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(undefined)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
     setCashReceiptOn(false); setCashReceiptDateVal(kstYmdStr())
@@ -2926,7 +2930,8 @@ export default function TenantClient({
             // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
             bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
-            subtitle={`${targetMonth} · ${paySettlement?.noBillReason ? '청구 없음' : `예정 ${fmtWon(expected)}`}`}>
+            // 예정액은 정산이 온 뒤에만 말한다. 읽는 중·투어 단계에 계약 이용료(원가)를 '예정'으로 적지 않는다.
+            subtitle={paySettlement ? `${targetMonth} · ${paySettlement.noBillReason ? '청구 없음' : `예정 ${fmtWon(paySettlement.expected)}`}` : targetMonth}>
 
               {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다. 계약이 하나면 세그먼트가 없다(픽셀 무변동). */}
               {payableLeases.length > 1 && (
