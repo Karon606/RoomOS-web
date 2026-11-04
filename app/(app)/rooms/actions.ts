@@ -31,6 +31,7 @@ import { reasonForSave } from '@/lib/reasonListSave'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, checkedOutInMonthWhere, leaseBillingEnd, leaseStayEnd, primaryRoomLease, residedInMonth, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { cycleDayOf } from '@/lib/dueDay'
+import { acqMonthSettledByFifo, buildTargetMonthOptions, type TargetMonthOptionRow } from '@/lib/targetMonthOptions'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
@@ -49,7 +50,7 @@ import {
   DUE_DAY_ADJUST_CR_REFUSED, DUE_DAY_ADJUST_NOT_ADJUST, type DueDayAdjustKind, type DueDayAdjustStatus,
 } from '@/lib/dueDayAdjust'
 import {
-  acqMonthStateOf, effDueDateForMonth as effDueDateOf, lockedExpectedMapOf, monthDuePassed, originalDueDayOf, roomMonthBill, viewExpectedForMonth,
+  acqMonthStateOf, effDueDateForMonth as effDueDateOf, lockedExpectedMapOf, originalDueDayOf, roomMonthBill, viewExpectedForMonth,
 } from '@/lib/roomMonth'
 
 async function getPropertyId() {
@@ -781,6 +782,27 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   })
 }
 
+// 인수 시점의 기간 시작일(말일 31). 납입일변경 이력이 있으면 첫 변경 전 값이다(buildLeaseRow 와 같은 이유).
+// lease.dueDay 는 변경 후 값일 수 있으므로 [납입일변경] 메모에서 원본을 꺼낸다. FIFO 와 귀속월 목록이 같이 쓴다(검수 B1).
+async function acqBaseDueDayNum(
+  leaseTermId: string,
+  lease: { dueDay: string | null; cycleDay: string | null },
+  cutoffDate: Date | null,
+): Promise<number> {
+  const baseCycle = cycleDayOf(lease)
+  let baseDueDayNum = baseCycle?.includes('말') ? 31 : parseInt(baseCycle ?? '99', 10)
+  if (cutoffDate) {
+    const firstChangeMemo = await prisma.paymentRecord.findFirst({
+      where: { leaseTermId, ...dueDayAdjustWhere() },
+      orderBy: { payDate: 'asc' },
+      select: { memo: true },
+    })
+    const parsed = dueDayBeforeChange(firstChangeMemo?.memo)
+    if (parsed !== null) baseDueDayNum = parsed
+  }
+  return baseDueDayNum
+}
+
 // 발생주의 FIFO: lease의 가장 오래된 미수월을 찾는다 (없으면 viewMonth 반환)
 // 양도인 record(payDate < cutoff)도 그 월 매출로 인식 — 양도인이 받았으면 그 월은 완납
 async function findFirstUnpaidMonth(
@@ -822,20 +844,7 @@ async function findFirstUnpaidMonth(
     ? { y: cutoffDate.getFullYear(), m: cutoffDate.getMonth() + 1 }
     : null
 
-  // 납입일변경 이력에서 인수 시점의 원본 납부일 복원 (buildLeaseRow와 동일 로직)
-  // lease.dueDay는 변경 후 값일 수 있으므로 [납입일변경] 메모에서 원본을 추출
-  // 기간 시작으로 본다(buildLeaseRow 와 같은 이유, 이용 기간 시작일 cycleDayOf).
-  const baseCycle = cycleDayOf(lease)
-  let baseDueDayNum = baseCycle?.includes('말') ? 31 : parseInt(baseCycle ?? '99', 10)
-  if (cutoffDate) {
-    const firstChangeMemo = await prisma.paymentRecord.findFirst({
-      where: { leaseTermId, ...dueDayAdjustWhere() },
-      orderBy: { payDate: 'asc' },
-      select: { memo: true },
-    })
-    const parsed = dueDayBeforeChange(firstChangeMemo?.memo)
-    if (parsed !== null) baseDueDayNum = parsed
-  }
+  const baseDueDayNum = await acqBaseDueDayNum(leaseTermId, lease, cutoffDate)
 
   while (cy < vy || (cy === vy && cmn <= vm)) {
     const ms = `${cy}-${String(cmn).padStart(2, '0')}`
@@ -859,19 +868,13 @@ async function findFirstUnpaidMonth(
 
     // 인수월(cutoffDate가 속한 달): 양도인 자동 처리 검사
     if (cutoffDate && acqYearMonth && cy === acqYearMonth.y && cmn === acqYearMonth.m) {
-      const cutoffDay = cutoffDate.getDate()
-      const opPaid = records
-        .filter(r => new Date(r.payDate) >= cutoffDate)
-        .reduce((s, r) => s + r.actualAmount, 0)
-      const totalPaid = records.reduce((s, r) => s + r.actualAmount, 0)
-      const dueBeforeCutoff = !isNaN(baseDueDayNum) && baseDueDayNum < cutoffDay
-      const acqMonthAutoPaid = dueBeforeCutoff && opPaid === 0
-      // 양도인이 받았거나(record 합으로 expected 충족) 자동 처리 조건이면 완납으로 본다
-      if (totalPaid >= monthBill || acqMonthAutoPaid) {
+      // 양도인이 받았거나(record 합으로 expected 충족) 자동 처리 조건이면 완납으로 본다.
+      // 판정은 귀속월 목록(수납 등록 기본값)과 같은 함수 하나다(lib/targetMonthOptions, 검수 B1).
+      if (acqMonthSettledByFifo({ cutoffDate, baseDueDayNum, monthRecords: records, monthBill })) {
         cmn++; if (cmn > 12) { cmn = 1; cy++ }
         continue
       }
-      if (totalPaid < monthBill) return ms
+      return ms
     } else {
       // 일반 월: 모든 record 합산 (양도인 record는 인수월에만 발생하므로 여긴 영향 없음)
       const received = records.reduce((s, r) => s + r.actualAmount, 0)
@@ -1044,15 +1047,7 @@ export async function savePayment(data: {
 
 // 수납 등록 시 사용자가 명시 선택할 수 있는 귀속월 후보 — 전체 미수월 + viewMonth ± 향후 3개월
 // 자동(FIFO) 옵션은 클라이언트에서 별도 추가
-export type TargetMonthOption = {
-  month: string                                      // 'YYYY-MM'
-  status: 'unpaid' | 'partial' | 'paid' | 'future'
-  paidAmount: number
-  expectedAmount: number
-  // 그 달 기한이 오늘로 도래했나(lib/roomMonth monthDuePassed, 수납 관리 목록과 같은 식). 수납 등록 기본값이
-  // 도래한 미완납 달만 합친다. 아직 기한 전인 이번 달 청구가 지난달 미납분 기본값에 섞이지 않게 한다(404호 2026-11-01).
-  duePassed: boolean
-}
+export type TargetMonthOption = TargetMonthOptionRow
 
 export async function getTargetMonthOptions(
   leaseTermId: string,
@@ -1086,62 +1081,15 @@ export async function getTargetMonthOptions(
 
   const cutoffRaw = lease.property.prevOwnerCutoffDate ?? lease.property.acquisitionDate
   const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
-  const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
-  // 시작점: 인수일과 입주일 중 더 늦은 쪽
-  const startDate = moveIn && cutoffDate && moveIn > cutoffDate ? moveIn : (cutoffDate ?? moveIn ?? new Date())
-  const startY = startDate.getFullYear()
-  const startM = startDate.getMonth() + 1
-
-  const [vy, vm] = viewMonth.split('-').map(Number)
-  // viewMonth + 3개월까지
-  const endDate = new Date(vy, vm - 1 + 3, 1)
-  const endY = endDate.getFullYear()
-  const endM = endDate.getMonth() + 1
-
-  // 모든 record 합산 by targetMonth (+ 그 달 락인 expectedAmount 최대)
+  // 모든 record(양도인 행·인수 전 입금 포함). 목록 조립·인수월 판정은 정본 lib/targetMonthOptions 가 한다(FIFO 와 같은 판정, 검수 B1).
   const records = await prisma.paymentRecord.findMany({
     where: { leaseTermId, isDeposit: false },
     select: { targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, isPrevOwner: true },
   })
-  const prevOwnerMonths = new Set(records.filter(r => r.isPrevOwner).map(r => r.targetMonth))
-  const paidByMonth: Record<string, number> = {}
-  const lockedByMonth: Record<string, number> = {}
-  for (const r of records) {
-    if (r.isPrevOwner) continue
-    if (cutoffDate && new Date(r.payDate) < cutoffDate) continue
-    paidByMonth[r.targetMonth] = (paidByMonth[r.targetMonth] ?? 0) + r.actualAmount
-    if (r.expectedAmount > (lockedByMonth[r.targetMonth] ?? 0)) lockedByMonth[r.targetMonth] = r.expectedAmount
-  }
-
-  const out: TargetMonthOption[] = []
-  const today = kstYmd()
-  let cy = startY, cmn = startM
-  while (cy < endY || (cy === endY && cmn <= endM)) {
-    const ms = `${cy}-${String(cmn).padStart(2, '0')}`
-    if (prevOwnerMonths.has(ms)) { cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue }
-    // 퇴실월 이후는 청구 대상 아님 — findFirstUnpaidMonth 와 동일 규칙(추천이 퇴실 후 달을 잡지 않게).
-    if (isAfterMoveOutMonth(lease.expectedMoveOut, ms)) { cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue }
-    const paid = paidByMonth[ms] ?? 0
-    // 그 달 청구액 — 읽기 엔진 3곳·savePayment 과 동일한 단일 규칙(일할→락인→예약인상→할인).
-    const locked = lockedByMonth[ms]
-    const expected = billForLeaseMonth(lease, ms, locked && locked > 0 ? locked : null)
-    // 청구가 없는 달은 선택지에서 뺀다 — 무청구 퇴실월(퇴실일이 그 달 납부일 이전)과
-    // 단기 비청구월(입주월 외)이 여기 해당한다. 종전에는 무청구 퇴실월이 '미납 470,000원'
-    // 선택지로 떠서 청구가 0인 달에 수납을 넣도록 유도했다(운영자 지적 2026-08-02, A-findings P2).
-    // 판정은 읽기 화면과 같은 정본(lib/billing)을 쓴다 — 여기서 다시 짜면 또 갈린다.
-    if (isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms) || expected <= 0) {
-      cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue
-    }
-    let status: TargetMonthOption['status']
-    if (ms > viewMonth) status = 'future'
-    else if (paid >= expected) status = 'paid'
-    else if (paid > 0) status = 'partial'
-    else status = 'unpaid'
-    const duePassed = monthDuePassed(ms, effDueDateOf({ dueDay: lease.dueDay, overrideDueDay: lease.overrideDueDay, overrideDueDayMonth: lease.overrideDueDayMonth }, ms), today)
-    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected, duePassed })
-    cmn++; if (cmn > 12) { cmn = 1; cy++ }
-  }
-  return out
+  return buildTargetMonthOptions({
+    lease, records, cutoffDate, viewMonth, today: kstYmd(),
+    baseDueDayNum: await acqBaseDueDayNum(leaseTermId, lease, cutoffDate),
+  })
 }
 
 // 수납 폼의 "N월분부터 기록" 표시용 — savePayment 가 FIFO 로 시작할 달을 **같은 함수로** 돌려준다(읽기 전용).

@@ -11,6 +11,8 @@
 //   ⓓ 정산을 읽는 동안(paySettlement === undefined)에는 폼을 세우지 않는다.
 //   ⓔ 정본 폼의 결제 수단 목록은 사람이 고르는 목록(MANUAL_PAY_METHODS)이다('보유 보증금' 제외).
 //   ⓕ 입주자 수납 모달 '수납 등록' 버튼은 canEdit 아래에 서고, 투어 단계 계약은 버튼 대신 캡션이다.
+//   ⓖ 인수월(양도인 자동 처리) 판정은 한 함수다. 저장 FIFO(findFirstUnpaidMonth)와 귀속월 목록(getTargetMonthOptions,
+//      기본값의 입력)이 lib/targetMonthOptions 의 acqMonthSettledByFifo·buildTargetMonthOptions 를 부른다(독립 검수 B1, 412호).
 //
 // 실행: node scripts/check-pay-entry-single-form.mjs
 import { readFileSync } from 'node:fs'
@@ -69,6 +71,19 @@ need(lab >= 0, `${TC}: ⓕ '수납 등록' 버튼을 못 찾았다(침묵 통과
 need(/\{canEdit && \(\s*<div className="border-t/.test(foot), `${TC}: ⓕ '수납 등록' 발끝이 canEdit 아래가 아니다(열람 역할에게 서버가 거절할 문이 선다, §27.8 ②).`)
 need(/WAITING_TOUR[^\n]*TOUR_DONE[\s\S]*?<WhyCaption[^>]*>투어 단계 계약이라서 수납을 등록할 수 없습니다 · 예약으로 바꾸면 됩니다</.test(foot), `${TC}: ⓕ 투어 단계 계약에 등록 문 대신 캡션이 서지 않는다(G6).`)
 
-console.log(`[수납 등록 폼 한 벌] ⓐ 저장부 · ⓑ 기본값 정본 · ⓒ 정산 room · ⓓ 로딩 · ⓔ 결제 수단 · ⓕ 권한·투어 / 위반 ${v.length}건`)
+// ⓖ
+{
+  const RA = 'app/(app)/rooms/actions.ts', TMO = 'lib/targetMonthOptions.ts'
+  const ra = read(RA), tmo = read(TMO)
+  const fifo = ra.slice(ra.indexOf('async function findFirstUnpaidMonth('), ra.indexOf('export type SavePaymentResult'))
+  need(/acqMonthSettledByFifo\(\{/.test(fifo), `${RA}: ⓖ FIFO(findFirstUnpaidMonth)가 인수월 판정 정본(acqMonthSettledByFifo)을 부르지 않는다.`)
+  need(!/acqMonthAutoPaid|dueBeforeCutoff/.test(fifo), `${RA}: ⓖ FIFO 에 인수월 판정 사본이 있다. 정본은 lib/targetMonthOptions 하나다.`)
+  const opt = ra.slice(ra.indexOf('export async function getTargetMonthOptions('), ra.indexOf('export async function getFifoStartMonth('))
+  need(/return buildTargetMonthOptions\(\{/.test(opt) && /acqBaseDueDayNum\(/.test(opt), `${RA}: ⓖ 귀속월 목록이 정본 buildTargetMonthOptions(FIFO 와 같은 인수 시점 납부일)로 만들어지지 않는다.`)
+  const bt = tmo.slice(tmo.indexOf('export function buildTargetMonthOptions('))
+  need(/ms === acqMonth[\s\S]{0,400}acqMonthSettledByFifo\(\{/.test(bt), `${TMO}: ⓖ 귀속월 목록이 인수월을 FIFO 와 같은 판정으로 넘기지 않는다(412호 기본값에 한 달치가 더 든다).`)
+}
+
+console.log(`[수납 등록 폼 한 벌] ⓐ 저장부 · ⓑ 기본값 정본 · ⓒ 정산 room · ⓓ 로딩 · ⓔ 결제 수단 · ⓕ 권한·투어 · ⓖ 인수월 판정 / 위반 ${v.length}건`)
 for (const m of v) console.log('  - ' + m)
 if (v.length > 0) process.exit(1)

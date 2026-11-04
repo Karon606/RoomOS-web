@@ -118,6 +118,26 @@ async function main() {
     eq('F3 밀린 달 없으면 이번 달 청구 470,000', suggestPayAmount({ forcedMonth: 'auto', months, viewMonth: thisM, expected: 470000 }), 470000)
   }
 
+  // ── F4 인수월 양도인 자동 처리(412호 모양, 독립 검수 B1) → 인수월은 기본값에 안 든다 ─────────────
+  //   인수일 = 석 달 전 15일 · 납부일 2일(인수일 앞) · 인수 뒤 그 달 수납 0 → FIFO 가 넘기는 달이다. 목록도 넘겨야 한다.
+  {
+    const P2 = randomUUID()
+    const acq = new Date(Date.UTC(Number(m(-3).slice(0, 4)), Number(m(-3).slice(5)) - 1, 15))
+    await prisma.property.create({ data: { id: P2, name: '하네스 인수', ownerId: randomUUID(), acquisitionDate: acq } as never })
+    g.__CR_FLOW_PID = P2
+    const tn = await prisma.tenant.create({ data: { name: '승계', propertyId: P2 } })
+    const room = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P2 } })
+    const l = await prisma.leaseTerm.create({ data: { tenantId: tn.id, propertyId: P2, roomId: room.id, rentAmount: 350000, dueDay: '2', moveInDate: day(`${m(-8)}-02`), status: 'ACTIVE' } })
+    const L = { id: l.id as string, tenantId: tn.id as string }
+    for (const k of [-2, -1]) await prisma.paymentRecord.create({ data: { leaseTermId: L.id, tenantId: L.tenantId, propertyId: P2, targetMonth: m(k), expectedAmount: 350000, actualAmount: 350000, payDate: day(`${m(k)}-02`), payMethod: '계좌이체', seqNo: ++seq, isPaid: true } })
+    const months = await rooms.getTargetMonthOptions(L.id, thisM)
+    eq('F4 인수월은 목록에서 완납(FIFO 와 같은 판정)', months.find(o => o.month === m(-3))?.status, 'paid')
+    const r = await openAndSave(L)
+    eq('F4 기본값 350,000(인수월 미포함)', r.amount, 350000)
+    eq('F4 그대로 저장하면 이번 달만 채운다(선납 0)', r.allocs, [[thisM, 350000]])
+    g.__CR_FLOW_PID = P
+  }
+
   console.log(`[수납 등록 기본값 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

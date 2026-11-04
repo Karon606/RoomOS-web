@@ -33,6 +33,7 @@ import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
 import { suggestPayAmount, type SuggestMonth } from '../lib/paymentSuggest'
 import { monthDuePassed, effDueDateForMonth } from '../lib/roomMonth'
+import { buildTargetMonthOptions, acqMonthSettledByFifo } from '../lib/targetMonthOptions'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
 let pass = 0
@@ -1287,6 +1288,25 @@ const RENT = 300000
   // 목록을 읽기 전에는 칸을 채우지 않는다(원가·조회월 잔액으로 먼저 채웠다 바꾸지 않는다). 못 읽어 빈 목록이면 조회월 청구.
   eq('SG 목록 전에는 0(빈 칸)', auto(null, '2026-11'), 0)
   eq('SG 빈 목록이면 조회월 청구', auto([], '2026-11', 440_000), 440_000)
+}
+
+// ── 귀속월 목록 인수월 판정 = FIFO 와 같은 함수 (독립 검수 B1, 2026-11-04) ──
+// 412호 모양: 인수일 4/15 · 납부일 2일 · 계약 350,000 · 4월은 인수 시점 납부일(2)이 인수일 앞이고 인수 뒤 수납 0 → 양도인 자동 처리.
+// 5~11월 완납, 12/2 수납 열기 → 기본값 350,000(종전 목록은 4월을 미납·도래로 남겨 700,000).
+{
+  const cutoff = new Date(2026, 3, 15)
+  const L412 = { dueDayAdjusts: [], rentAmount: 350_000, status: 'ACTIVE', dueDay: '2', cycleDay: null, moveInDate: new Date('2025-12-02T00:00:00Z'), discounts: [] }
+  const recs = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11']
+    .map(m => ({ targetMonth: m, actualAmount: 350_000, expectedAmount: 350_000, payDate: `${m}-02T00:00:00.000Z`, isPrevOwner: false }))
+  const build = (records: typeof recs, base = 2) => buildTargetMonthOptions({ lease: L412, records, cutoffDate: cutoff, baseDueDayNum: base, viewMonth: '2026-12', today: { year: 2026, month: 12, day: 2 } })
+  const opts = build(recs)
+  eq('SG-B1 412 인수월(4월)은 목록에서 완납', opts.find(o => o.month === '2026-04')?.status, 'paid')
+  eq('SG-B1 412 12/2 기본값 350,000(인수월 미포함)', suggestPayAmount({ forcedMonth: 'auto', months: opts, viewMonth: '2026-12', expected: 350_000 }), 350_000)
+  // 인수 시점 납부일이 인수일 뒤(20일)면 자동 처리가 아니다 → 4월은 받아야 할 달(FIFO 와 같다)
+  eq('SG-B1 인수 시점 납부일이 인수일 뒤면 인수월은 미납으로 남는다', suggestPayAmount({ forcedMonth: 'auto', months: build(recs, 20), viewMonth: '2026-12', expected: 350_000 }), 700_000)
+  // FIFO 판정 함수 진리표(같은 함수를 findFirstUnpaidMonth 가 부른다)
+  eq('SG-B1 판정: 인수 전 양도인 입금으로 청구 충족이면 넘어감', acqMonthSettledByFifo({ cutoffDate: cutoff, baseDueDayNum: 20, monthRecords: [{ actualAmount: 350_000, payDate: '2026-04-03T00:00:00.000Z' }], monthBill: 350_000 }), true)
+  eq('SG-B1 판정: 인수 뒤 운영자 수납이 있으면 자동 처리 아님', acqMonthSettledByFifo({ cutoffDate: cutoff, baseDueDayNum: 2, monthRecords: [{ actualAmount: 100_000, payDate: '2026-04-20T00:00:00.000Z' }], monthBill: 350_000 }), false)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
