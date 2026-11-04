@@ -50,7 +50,7 @@ async function main() {
 
   const prisma = (await import('@/lib/prisma')).default
   const rooms = await import('@/app/(app)/rooms/actions')
-  const { suggestPayAmount } = await import('@/lib/paymentSuggest')
+  const { suggestPay, suggestPayAmount } = await import('@/lib/paymentSuggest')
   const { kstYmd, kstYmdStr } = await import('@/lib/kstDate')
   const { shiftMonth } = await import('@/lib/moveCalendar')
   const g = globalThis as unknown as { __CR_FLOW_PID?: string }
@@ -116,6 +116,29 @@ async function main() {
     for (const k of [-4, -3, -2, -1]) await paid(L, m(k), k === -4 ? 470000 : 440000)
     const months = await rooms.getTargetMonthOptions(L.id, thisM)
     eq('F3 밀린 달 없으면 이번 달 청구 470,000', suggestPayAmount({ forcedMonth: 'auto', months, viewMonth: thisM, expected: 470000 }), 470000)
+  }
+
+  // ── F6 지난달 미납 + 이번 달 납부일 당일(납부일 = 오늘의 일) → 기본값은 지난달분만, 이번 달은 캡션 몫(2026-11-04 승인) ─────
+  //   '기본값 합에 당일 포함' 역주입(lib/paymentSuggest overdue 대신 !== 'before')이 여기서 잡힌다.
+  {
+    const tn = await prisma.tenant.create({ data: { name: '당일', propertyId: P } })
+    const room = await prisma.room.create({ data: { roomNo: `${++roomSeq}`, propertyId: P } })
+    const l = await prisma.leaseTerm.create({
+      data: { tenantId: tn.id, propertyId: P, roomId: room.id, rentAmount: 470000, dueDay: String(t.day), moveInDate: day(`${m(-4)}-01`), status: 'ACTIVE' },
+    })
+    const L = { id: l.id as string, tenantId: tn.id as string }
+    // 앞 석 달은 그 달 청구(첫 달 일할 포함) 그대로 낸다. 지난달(m(-1))은 미납, 이번 달은 오늘이 납부일이다.
+    const opts0 = await rooms.getTargetMonthOptions(L.id, thisM)
+    for (const k of [-4, -3, -2]) { const o = opts0.find(x => x.month === m(k)); if (o) await paid(L, m(k), o.expectedAmount) }
+    const months = await rooms.getTargetMonthOptions(L.id, thisM)
+    eq('F6 이번 달 꼬리표 상태는 납부일 당일', months.find(o => o.month === thisM)?.dueState, 'today')
+    const lastBill = months.find(o => o.month === m(-1))?.expectedAmount
+    const sug = suggestPay({ forcedMonth: 'auto', months, viewMonth: thisM, expected: 470000 })
+    eq('F6 기본값 = 지난달분만(당일 달 미포함)', sug.amount, lastBill)
+    eq('F6 뺀 달 = 이번 달 470,000(캡션)', sug.excludedToday, [{ month: thisM, amount: 470000 }])
+    const r = await openAndSave(L)
+    eq('F6 그대로 저장하면 지난달만 채운다', r.allocs, [[m(-1), lastBill]])
+    eq('F6 이번 달 행 0', await monthPaid(L.id, thisM), 0)
   }
 
   // ── F4 인수월 양도인 자동 처리(412호 모양, 독립 검수 B1) → 인수월은 기본값에 안 든다 ─────────────

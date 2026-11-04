@@ -77,7 +77,8 @@ for (const f of SCAN.flatMap(walk)) {
 // ⓕ 홈 '이달 미수납' 건수 칩은 미납만(unpaidCount) 센다
 const dc = read('app/(app)/dashboard/DashboardClient.tsx')
 need(/\{data\.unpaidCount\}건/.test(dc) && !/unpaidCount\s*\+/.test(dc), "DashboardClient: ⓕ '이달 미수납' 칩이 unpaidCount 만 읽지 않는다(납부일 당일을 미납으로 센다).")
-need(/납부 유예 포함/.test(dc) && !/납부일 전 인원 포함/.test(dc), "DashboardClient: ⓕ 카드 부제가 실제 뜻('납부 유예 포함')이 아니다.")
+// 카드 목록은 미납 몫(overduePortion > 0)이 있는 계약뿐이라 '납부일 전 인원 포함'·'납부 유예 포함' 부제는 사실과 안 맞는다(독립 검수 권고 2). 부제를 두지 않는다.
+need(!/납부일 전 인원 포함|납부 유예 포함/.test(dc), "DashboardClient: ⓕ '이달 미수납' 카드에 목록과 안 맞는 부제가 있다.")
 
 // ⓖ 수납 관리 배지: 당일은 dueToday 종류(납부 예정 묶음), 지난달분 오늘 유예 행 라벨도 '납부일 당일'(독립 검토 M2)
 const rs = code(read('lib/roomsStatusSort.ts'))
@@ -87,6 +88,9 @@ need(/'dueToday'/.test(rs) && /isDueTodayRow\(room, targetMonth, today\) \? 'due
 const rc = read('app/(app)/rooms/RoomsClient.tsx')
 need((rc.match(/if \(kind === 'dueToday'\) \{/g) ?? []).length === 2, "RoomsClient: ⓖ 카드·표 쌍둥이가 둘 다 납부일 당일 배지를 그리지 않는다.")
 need(/if \(paymentBadgeKind\(room, targetMonth\) === 'dueToday'\) return 'await'/.test(rc), 'RoomsClient: ⓖ roomStatusTone 이 당일을 await 로 두지 않는다.')
+// 칩은 배지·묶음과 같은 판정이다. 당일 행(지난달분을 오늘로 미룬 isPaid=false 행 포함)은 미납 칩에서 빠지고 납부 예정 칩에 든다(독립 검수 권고 1).
+need(/if \(f === 'unpaid'\)\s+return !r\.isPaid && paymentBadgeKind\(r, targetMonth\) !== 'dueToday'/.test(code(rc)), "RoomsClient: ⓖ 미납 칩이 납부일 당일 행을 뺀 꼴(!r.isPaid && paymentBadgeKind(r, targetMonth) !== 'dueToday')이 아니다.")
+need(/if \(f === 'awaiting'\) return \(isAwaitingRoom\(r\) \|\| paymentBadgeKind\(r, targetMonth\) === 'dueToday'\) && !isCheckoutRoom\(r\)/.test(code(rc)), 'RoomsClient: ⓖ 납부 예정 칩이 납부일 당일 행을 품지 않는다.')
 need((rc.match(/totalUnpaid > 0 && kind !== 'dueToday' && \(/g) ?? []).length === 2, "RoomsClient: ⓖ 납부일 당일 행에 독촉 문구 복사가 선다(카드·표 둘 다 숨겨야 한다. 독촉은 다음 날부터).")
 need(/totalUnpaid > 0 && kind === 'dueToday'\) \{\s*return <span className="text-\[var\(--warm-mid\)\]">예정 /.test(rc), "RoomsClient: ⓖ 납부일 당일 행 금액 줄이 미수(붉은 음수)로 선다. '예정'으로 적는다.")
 

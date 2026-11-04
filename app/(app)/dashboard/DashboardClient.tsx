@@ -3162,7 +3162,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.65625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부 유예 포함</span></h3>
+                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납</h3>
                         <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (

@@ -55,7 +55,7 @@
 
 ### 기한 상태 세 짝: 납부일 전 · 납부일 당일 · 미납 (2026-11-04, 운영자 승인 '추천대로')
 - 정본 `lib/dueState`. **기한 날짜 고르기** `dueYmdOfLeaseMonth`(① 그 달에 건 임시조정 ② 이후 달에 건 임시조정이 그 달 원래 기한 이상이면 그 날(늦은 유예) ③ 원래 기한 = 첫 달이면 입주일(firstMonthDueYmd), 아니면 납부일. 일이 말일보다 크면 말일로 접는다)와 **비교** `dueStateOf(dueYmd, todayYmd)`(before · today · overdue). 날짜는 'YYYY-MM-DD' 문자열, 오늘은 한 요청에서 KST 로 한 번 잰다.
-- 기한을 못 읽으면(null) 한 규칙이다. 지난 달은 미납, 이번 달·앞 달은 납부일 전(monthDueState).
+- 기한을 못 읽으면(null) 한 규칙이다. 지난 달은 미납, 이번 달·앞 달은 납부일 전(monthDueState, 수납 관리 목록의 종전 규칙). **변경 사실**: 종전 홈·종·푸시(dashboard/unpaid·getDashboardData `days == null` 이면 미납)는 이번 달도 미납으로 셌다. 2026-11-04 부터 이번 달은 납부일 전이다. 운영 해당 계약 0건(2026-11-04 조회, 거주 계약에 납부일 빈 값·읽을 수 없는 값 없음).
 - 유예(deferredDueYmd)는 기한이 원래 기한보다 뒤이고 그 날이 아직 안 온 것이다. **유예한 날짜 당일은 유예가 아니라 납부일 당일**이다.
 - 부르는 자리: 수납 관리 행 isPaid·nextDueDate(rooms/actions viewOverdue)·첫 미납 달 루프·납입일 변경 조정 칩(당일은 '수납 전', 새 종류 없음)·귀속월 목록(lib/targetMonthOptions)·기본값(lib/paymentSuggest)·홈 미수(dashboard/unpaid, getDashboardData)·종·푸시. 클라이언트 배지(lib/roomsStatusSort badgeDueYmd)도 같은 함수를 행 칸(baseDueDay·임시조정·입주일·cycleDay)으로 부른다.
 - 결과: 당일 몫은 미납·에이징·홈 '이달 미수납' 건수에서 빠지고 납부 예정·도넛 수납예정으로 간다. 합계(미수 = 미납 + 예정)는 그대로다. 청구·락·저장 FIFO·일괄 수납은 안 바뀐다(판정 분류만).
