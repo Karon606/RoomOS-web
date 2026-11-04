@@ -1501,8 +1501,10 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   const dash = readFileSync('app/(app)/dashboard/getDashboardData.ts', 'utf8')
   const unpaidSrc = readFileSync('app/(app)/dashboard/unpaid.ts', 'utf8')
 
-  // (a) 부산물이 도래 분기 안에 있는가. 밖으로 나가면 미도래분까지 버킷에 담겨 항등이 깨진다.
-  if (!/if \(days == null \|\| days >= 0\) \{ leaseOverdue \+= monthUnpaid; addAging\(agingOverdue, mon, l\.id, monthUnpaid\) \}/.test(dash)) {
+  // (a) 부산물이 미납(기한 지남) 분기 안에 있는가. 밖으로 나가면 납부일 전·당일분까지 버킷에 담겨 항등이 깨진다.
+  //   2026-11-04 부터 분기는 정본 lib/dueState 의 상태(state === 'overdue')다. 납부일 당일은 미납이 아니라 이 분기 밖이다.
+  //   상태는 그 달 기한(dueYmdOfLeaseMonth)과 정본 monthDueState 로만 나와야 한다(사본 판정이면 버킷과 누적 미납이 다른 날을 본다).
+  if (!/const state = monthDueState\(mon, dueYmdOfLeaseMonth\(l, mon\), \w+\)\s*\n(?:\s*\/\/[^\n]*\n)*\s*if \(state === 'overdue'\) \{ leaseOverdue \+= monthUnpaid; addAging\(agingOverdue, mon, l\.id, monthUnpaid\) \}/.test(dash)) {
     violations.push('[소스] 홈 미수 에이징이 도래 분기 밖으로 나갔다 — 버킷 합이 누적 미납과 갈린다')
   }
   // (b)(c) 두 벌 사본의 청구 가능 월 게이트와 FIFO 충당 규칙이 같은가. 주석·공백만 정규화해 글자로 대조한다.
@@ -1518,7 +1520,8 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   const LOOP_BLOCKS = [
     ['청구 가능 월 게이트', 'const billableMonthList: string[] = []', 'billableMonthList.push(mon)',
       '홈 미수납 건수와 푸시 알림 건수가 어긋난다'],
-    ['FIFO 충당 규칙', 'for (const mon of billableMonthList) {\n      const monthBill = billForMonth(mon)', 'const days = daysOverdueForMonth(l, mon)',
+    // 끝 표지는 기한 상태 판정 머리(정본 lib/dueState, 2026-11-04). 두 파일의 오늘 변수 이름은 달라도 되므로 인자 앞까지만 자른다.
+    ['FIFO 충당 규칙', 'for (const mon of billableMonthList) {\n      const monthBill = billForMonth(mon)', 'const state = monthDueState(mon, dueYmdOfLeaseMonth(l, mon),',
       '같은 사람의 미납액이 화면과 알림에서 달라진다'],
   ]
   for (const [name, from, to, harm] of LOOP_BLOCKS) {
