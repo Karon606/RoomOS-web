@@ -5,7 +5,8 @@
 // 바꾸고 기본값을 lib/paymentSuggest 하나로 모았다. 따로 만든 저장부나 원가 기본값이 되살아나면 붉게 선다.
 //
 //   ⓐ TenantClient 에 수납 등록 저장 호출(savePayment·saveDepositPayment·setPaymentCashReceipt)이 없다.
-//   ⓑ 돈 칸 기본값에 rentAmount 를 쓰지 않는다(TenantClient·PaymentEntryForm·PaymentBody·lib/paymentSuggest).
+//   ⓑ 돈 칸 기본값에 rentAmount 를 쓰지 않는다(TenantClient·PaymentEntryForm·PaymentBody·lib/paymentSuggest). TenantClient 는
+//      어디서든 rentAmount 폴백(?? / ||)을 쓰지 않는다(독립 검수 R4, 모달 표시용 expected 되살림).
 //      정본 식은 lib 하나이고 폼은 그것을 부른다(조회월 잔액 -balance 를 기본값으로 쓰지 않는다).
 //   ⓒ TenantClient 의 <PaymentEntryForm 은 한 곳이고 room 의 expected·balance 가 정산(paySettlement)에서 온다.
 //   ⓓ 정산을 읽는 동안(paySettlement === undefined)에는 폼을 세우지 않는다.
@@ -42,6 +43,9 @@ for (const [f, s] of [[TC, tc], [FORM, form], [BODY, body]]) {
   // 수납 금액 상태(pay*)만 본다. 계약 편집 폼의 이용료 칸(rentAmount 상태)은 원가가 정본인 자리다.
   need(!/\[\s*pay\w*,[^\]\n]*\]\s*=\s*useState[^\n]*rentAmount/.test(s), `${f}: ⓑ 수납 금액 상태 초깃값이 rentAmount(원가)다.`)
 }
+// TenantClient 전체에서 계약 이용료 폴백 금지(독립 검수 R4). 모달 표시용 `expected = paySettlement?.expected ?? lease.rentAmount`
+// 같은 되살림은 room 블록 밖이라 ⓒ 가 못 본다. 정산이 없을 때 원가를 '예정'으로 말하는 자리가 다시 생긴다.
+need(!/(\?\?|\|\|)\s*[\w.?!]*rentAmount\b/.test(tc), `${TC}: ⓑ 계약 이용료(rentAmount)로 폴백하는 식이 있다(?? / || rentAmount). 돈 표시·기본값은 정산 값만 쓴다.`)
 need(!/rentAmount|balance/.test(lib), `${LIB}: ⓑ 기본값 정본이 원가(rentAmount)나 조회월 잔액(balance)을 읽는다. 지난달 미납분 자리에 이번 달 정가가 뜬다(404호).`)
 need(/export function suggestPayAmount\(/.test(lib), `${LIB}: ⓑ 정본 suggestPayAmount 가 없다.`)
 need(/suggestPayAmount\(\{/.test(form), `${FORM}: ⓑ 추천 납입액이 정본(suggestPayAmount)을 부르지 않는다.`)
