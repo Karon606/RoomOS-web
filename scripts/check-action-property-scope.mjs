@@ -313,6 +313,16 @@ const AXES = [
     ],
     mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
   },
+  // 할인 목록 조회(2026-11-04 운영자 승인 '추천대로'). 계약 id 만으로 읽어 남의 영업장 할인이 보였고 금액 스코프도 안 봤다.
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'getRentDiscounts',
+    must: [
+      [/const \{ propertyId, role \} = await requirePropertyAccess\(\)\n\s*if \(!canReadScope\(role, 'money'\)\) return \[\]/, '금액 스코프(canReadScope money)를 읽기 전에 보지 않는다(제한 스태프가 할인 금액을 받는다)'],
+      [/rentDiscount\.findMany\(\{\s*where:\s*\{\s*leaseTermId,\s*leaseTerm:\s*\{\s*propertyId\s*\}\s*\}/, '할인을 계약의 영업장 범위로 거르지 않는다'],
+    ],
+    mustNot: [[/rentDiscount\.findMany\(\{\s*where:\s*\{\s*leaseTermId\s*\}/, '할인을 계약 id 만으로 읽는다']],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',

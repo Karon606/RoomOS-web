@@ -4149,9 +4149,13 @@ export type RentDiscountRow = {
 }
 
 export async function getRentDiscounts(leaseTermId: string): Promise<RentDiscountRow[]> {
-  await getPropertyId()
+  // 할인은 금액이고 계약은 영업장 것이어야 한다(2026-11-04 운영자 승인 '추천대로'). 종전에는 관문만 지나고 where 가
+  // 계약 id 뿐이라 남의 영업장 계약 id 로 그 할인이 읽혔고, 금액을 못 읽는 제한 스태프도 받았다. 형제 미리보기·중단·삭제가
+  // leaseTerm.propertyId 를 대조하는 것과 같은 축으로, 할인 행을 계약의 영업장으로 거른다. 금액 스코프가 없으면 빈 목록이다.
+  const { propertyId, role } = await requirePropertyAccess()
+  if (!canReadScope(role, 'money')) return []
   const rows = await prisma.rentDiscount.findMany({
-    where: { leaseTermId },
+    where: { leaseTermId, leaseTerm: { propertyId } },
     orderBy: { createdAt: 'asc' },
     select: { id: true, discountType: true, value: true, scope: true, startMonth: true, endMonth: true, memo: true },
   })

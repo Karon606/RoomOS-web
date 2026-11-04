@@ -579,6 +579,23 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 할인 목록 조회(2026-11-04 운영자 승인 '추천대로') ── 남의 영업장 계약 할인은 안 보이고, 금액을 못 읽는 역할은 빈 목록이다.
+  {
+    const T1 = await tenantIn(P1, '할인 내'), T2 = await tenantIn(P2, '할인 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    await prisma.rentDiscount.create({ data: { leaseTermId: L1, discountType: 'amount', value: 10000, scope: 'permanent', memo: '내 할인' } })
+    await prisma.rentDiscount.create({ data: { leaseTermId: L2, discountType: 'amount', value: 20000, scope: 'permanent', memo: '남 할인' } })
+    const values = (rows: { value: number }[]) => rows.map(r => r.value)
+    for (const role of ['MANAGER', 'OWNER', 'STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      eq(`${role} 할인 목록: 남의 영업장 계약은 빈 목록`, await rooms.getRentDiscounts(L2), [])
+      eq(`${role} 할인 목록: 제 영업장 통과`, values(await rooms.getRentDiscounts(L1)), [10000])
+    }
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    eq('LIMITED_STAFF 할인 목록: 제 영업장이어도 금액이라 빈 목록', await rooms.getRentDiscounts(L1), [])
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()
