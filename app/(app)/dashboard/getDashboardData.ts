@@ -686,31 +686,6 @@ export async function getDashboardData(propertyId: string, targetMonth: string) 
     return l.dueDay
   }
 
-  function calcDaysOverdue(dueDay: string | null): number | null {
-    if (!dueDay) return null
-    // KST 기준 오늘 (서버 UTC와 시간대 차이로 연체일이 하루 어긋나는 것 방지 — 형제 calcDaysOverdueForMonth 와 같은 문법)
-    const { year: ty, month: tm, day: td } = kstYmd()
-    const todayCopy = new Date(ty, tm - 1, td)
-    if (dueDay.includes('-')) {
-      // 다음달 지정 전체 날짜 (YYYY-MM-DD)
-      const dueDate = new Date(dueDay + 'T00:00:00')
-      dueDate.setHours(0, 0, 0, 0)
-      return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
-    }
-    const y = todayCopy.getFullYear()
-    const m = todayCopy.getMonth() + 1
-    let dayNum: number
-    if (dueDay.includes('말')) {
-      dayNum = new Date(y, m, 0).getDate()
-    } else {
-      dayNum = parseInt(dueDay, 10)
-      if (isNaN(dayNum) || dayNum < 1) return null
-    }
-    const dueDate = new Date(y, m - 1, dayNum)
-    dueDate.setHours(0, 0, 0, 0)
-    return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
-  }
-
   // 기한 날짜 고르기와 상태는 lib/dueState 정본이다(수납 관리 목록·unpaid.ts·수납 등록 기본값과 같은 함수, 2026-11-04).
   // 그 달 임시조정 · 다음 달에 걸린 늦은 유예(2026-06-02) · 첫 달 입주일(2026-09-07) · 말일 클램프가 한 함수 안에 있다.
   // 오늘은 이 요청에서 한 번만 잰다(두 번 재면 자정에 갈린다).

@@ -2410,6 +2410,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
     ] },
     overdue: { title: '누적 미납 (현 입주자)', body: [
       '납부일이 지났는데 아직 받지 못한 금액의 합계입니다.',
+      '납부일 당일인 금액은 아직 미납이 아니라 납부 예정에 들어갑니다. 다음 날부터 여기에 셉니다.',
       '지난달 이전에 밀린 금액(이월 미수)도 포함됩니다.',
       '카드를 누르면 수납 관리로 이동합니다.',
       '퇴실한 입주자의 남은 미납은 여기 포함되지 않습니다. 전체 채권은 결산 보고서의 월말 미수 잔액에서 확인하실 수 있습니다.',
@@ -2727,7 +2728,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
-            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--danger-fg)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 도래·미회수
+            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--danger-fg)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 납부일 지남·미회수
           </p>
         </Link>
 

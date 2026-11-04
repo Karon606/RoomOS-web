@@ -47,11 +47,6 @@ const ALLOW = [
     why: '납부 예정일·요청 기한·소진 예상일의 in-JS 일수 계산 전용(전부 로컬 자정끼리). DB 창은 같은 k 에서 뽑은 todayDb 가 따로 맡는다',
   },
   {
-    file: 'app/(app)/dashboard/getDashboardData.ts',
-    code: 'const todayCopy = new Date(ty, tm - 1, td)',
-    why: '연체일 계산 — 같은 함수 안에서 로컬 자정으로 만든 dueDate 와만 뺀다',
-  },
-  {
     file: 'app/(app)/rooms/actions.ts',
     code: '{ payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },',
     why: "끝 경계만 있는 창 — KST·UTC 어느 쪽이든 그날 23:59 은 그날 안이라 날짜부가 안 밀린다",
