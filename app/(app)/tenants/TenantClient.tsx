@@ -36,7 +36,7 @@ import { confirmRentSettlement } from '@/components/checkout/confirmRentSettleme
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
 import { deletePayment, restorePayment, previewPaymentDelete, updatePayment, undoPaymentEdit, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
-import { SkeletonRows } from '@/components/ui/Skeleton'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { WhyCaption } from '@/components/ui/WhyCaption'
@@ -2790,7 +2790,9 @@ export default function TenantClient({
         }
         return (
           <Modal open width="md" onClose={closePayModal} dirty={showPayForm}
-            // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+            // 풀블리드 — 계약 전환 세그먼트·스크롤 본문·폭 전체 구분선 읽기 화면 발끝 바를 children 이 직접 구성한다.
+            // 좌우 여백은 Modal 기본(px-5 sm:px-6)과 같게 맞춰 읽기·폼을 오가도 정렬선이 안 움직인다(§13).
+            // 수납 등록 폼의 취소·저장은 폼 끝 인라인이다(정본 폼 PaymentEntryForm 문법, 수납 관리 PaymentBody 와 같다).
             bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
             // 예정액은 정산이 온 뒤에만 말한다. 읽는 중·투어 단계에 계약 이용료(원가)를 '예정'으로 적지 않는다.
@@ -2798,7 +2800,7 @@ export default function TenantClient({
 
               {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다. 계약이 하나면 세그먼트가 없다(픽셀 무변동). */}
               {payableLeases.length > 1 && (
-                <div className="px-6 pt-4">
+                <div className="px-5 sm:px-6 pt-4">
                   <SegmentedControl
                     ariaLabel="수납할 계약"
                     size="sm"
@@ -2813,7 +2815,7 @@ export default function TenantClient({
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
                 <>
-                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                  <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-6 space-y-5">
                     {/* 요약 */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
@@ -3042,7 +3044,7 @@ export default function TenantClient({
                       return v.includes('말') ? '말일' : `${v}일`
                     }
                     return (
-                      <div className="border-t border-[var(--warning-ring)] bg-[var(--warning-solid)]/5 px-6 py-3 space-y-2 shrink-0">
+                      <div className="border-t border-[var(--warning-ring)] bg-[var(--warning-solid)]/5 px-5 sm:px-6 py-3 space-y-2 shrink-0">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-semibold text-[var(--warning-fg)]">납부일 임시 조정</span>
@@ -3243,7 +3245,7 @@ export default function TenantClient({
                       형제 수납 관리 PaymentBody 와 같은 canEdit). 투어 단계 계약은 정산이 없어(정본 기본값을
                       만들 수 없다) 등록 문 대신 그 자리에 이유와 푸는 법 한 줄을 둔다(§27.8 ⑤). */}
                   {canEdit && (
-                    <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
+                    <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-4 flex gap-2 shrink-0">
                       {lease.status === 'WAITING_TOUR' || lease.status === 'TOUR_DONE' ? (
                         <WhyCaption id="pay-tour-stage" className="flex-1">투어 단계 계약이라서 수납을 등록할 수 없습니다 · 예약으로 바꾸면 됩니다</WhyCaption>
                       ) : (
@@ -3268,7 +3270,15 @@ export default function TenantClient({
               {showPayForm && (
                 <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4">
                   {paySettlement === undefined ? (
-                    <SkeletonRows rows={4} />
+                    // 폼 모양 뼈대(머리·안내·칸 넷·발끝). 목록형 네 줄이면 정산이 온 순간 모달이 세 배로 자란다(§17·§21).
+                    <div className="space-y-3" aria-busy="true" aria-label="불러오는 중">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-12 w-full" />
+                      {[0, 1, 2, 3].map(i => (
+                        <div key={i} className="space-y-1"><Skeleton className="h-3 w-12" /><Skeleton className="h-[42px] w-full" /></div>
+                      ))}
+                      <Skeleton className="h-11 w-full" />
+                    </div>
                   ) : paySettlement && paySettlement.leaseTermId && paySettlement.tenantId ? (
                     <PaymentEntryForm
                       key={paySettlement.leaseTermId}
@@ -3299,7 +3309,8 @@ export default function TenantClient({
                       onCancel={() => setShowPayForm(false)}
                     />
                   ) : (
-                    <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 입주자는 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+                    // 투어 단계는 발끝에서 이미 막으므로 여기 닿는 길은 정산 조회 실패다. 원인을 사실대로 말한다(§27.8 ⑤).
+                    <WhyCaption id="pay-settlement-missing">수납 정보를 불러오지 못해 등록할 수 없습니다 · 창을 닫고 다시 열면 됩니다</WhyCaption>
                   )}
                 </div>
               )}

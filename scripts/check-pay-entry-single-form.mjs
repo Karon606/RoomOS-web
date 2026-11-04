@@ -54,8 +54,8 @@ need(/expected: paySettlement\.expected/.test(blk) && /balance: paySettlement\.b
 need(!/rentAmount/.test(blk), `${TC}: ⓒ 수납 폼 room 에 계약 이용료(rentAmount)가 들어간다.`)
 
 // ⓓ
-const before = at < 0 ? '' : tc.slice(Math.max(0, at - 400), at)
-need(/paySettlement === undefined \?/.test(before) && /<SkeletonRows/.test(before), `${TC}: ⓓ 정산을 읽는 동안에도 수납 폼이 선다(읽기 전 값으로 기본값을 만든다).`)
+const before = at < 0 ? '' : tc.slice(Math.max(0, at - 900), at)
+need(/paySettlement === undefined \?/.test(before) && /aria-busy="true"/.test(before), `${TC}: ⓓ 정산을 읽는 동안에도 수납 폼이 선다(읽기 전 값으로 기본값을 만든다).`)
 need(/useState<PaySettlement \| null \| undefined>\(undefined\)/.test(tc), `${TC}: ⓓ 정산이 세 상태(읽는 중·없음·값)가 아니다.`)
 
 // ⓔ
