@@ -3532,7 +3532,8 @@ export default function TenantClient({
               {room ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.currentLeaseStatus === 'NON_RESIDENT' && !room.nonResidentVacant ? '비거주 점유' : room.isVacant ? '공실' : '거주중'}</span></div>
-                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>
+                  {/* 제한 스태프에게는 서버가 이용료를 null 로 내린다(getRoomsForSelect). 줄째로 숨긴다(§27.8 ②). */}
+                  {!hideMoney && <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>}
                 </div>
               ) : (
                 <p className="text-[var(--warm-muted)] text-sm">호실 정보를 찾을 수 없습니다.</p>

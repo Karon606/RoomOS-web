@@ -3546,6 +3546,8 @@ export async function getTenantDetail(tenantId: string) {
     paymentRecords: canMoney ? l.paymentRecords : [],
     shortStayExtensions: canMoney ? l.shortStayExtensions : null,
     checkoutProrationUndo: canMoney ? l.checkoutProrationUndo : null,
+    // 영업장 단기 정책은 예약금·청소비·요금 단가를 담는다. 읽는 자리(상태 전환의 예약금 처리)는 편집 역할 전용이다(R2).
+    property: l.property ? { ...l.property, shortStayPolicy: canMoney ? l.property.shortStayPolicy : null } : l.property,
   }))
   return {
     ...tenant,

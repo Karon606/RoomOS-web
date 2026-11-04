@@ -4,6 +4,7 @@ import { getPropertySettings, getMyRole, getShortStayPolicy } from '@/app/(app)/
 import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import { kstYmdStr } from '@/lib/kstDate'
 import { resolveMonthParam } from '@/lib/monthParam'
+import { canReadScope } from '@/lib/auth/routeScope'
 import TenantClient from './TenantClient'
 
 export default async function TenantsPage({
@@ -27,20 +28,22 @@ export default async function TenantsPage({
     getShortStayPolicy(),   // 단기 카드 '(N주)' 표기용 계약 단위(unitDays) + 단기 예약금 처리(reservationMode)
     getWishDateNotices(),   // 희망한 방이 전부 날짜에서 빠진 계약 — 카드에 사유를 붙일 대상(홈 알림과 같은 판정)
   ])
+  // 금액 기본값 셋(보증금·청소비·단기 예약금)은 금액을 못 읽는 역할에게 싣지 않는다(2026-11-04 독립 검수 R1). 그 역할은 폼을 못 열어 쓰이지 않는다.
+  const canMoney = canReadScope(myRole, 'money')
   return (
     <TenantClient
       initialTenants={tenants}
       rooms={rooms}
       targetMonth={targetMonth}
       today={kstYmdStr()}
-      defaultDeposit={settings?.defaultDeposit ?? null}
-      defaultCleaningFee={settings?.defaultCleaningFee ?? null}
+      defaultDeposit={canMoney ? settings?.defaultDeposit ?? null : null}
+      defaultCleaningFee={canMoney ? settings?.defaultCleaningFee ?? null : null}
       contactLeadDays={settings?.contactLeadDays ?? 14}
       propertyReservationDepositMode={settings?.reservationDepositMode ?? null}
       myRole={myRole}
       shortStayUnitDays={shortStay.unitDays}
       shortStayReservationMode={shortStay.reservationMode}
-      shortStayDeposit={shortStay.deposit}
+      shortStayDeposit={canMoney ? shortStay.deposit : 0}
       wishDateNoticeLeaseIds={wishDateNoticeLeaseIds}
     />
   )

@@ -527,7 +527,7 @@ function nonResidentOccupiedRoom(room: { nonResidentVacant: boolean } | null): b
 
 // 호실 목록 (입주자 등록/수정 시 선택용)
 export async function getRoomsForSelect() {
-  const { propertyId } = await getPropertyId()
+  const { propertyId, role } = await getPropertyId()
   const rooms = await prisma.room.findMany({
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
@@ -545,6 +545,15 @@ export async function getRoomsForSelect() {
       },
     },
   })
+  // 금액 읽기 차단(제한 스태프) — 기준·예정·비거주 이용료를 응답에서 제거(2026-11-04 독립 검수 R1, 운영자 승인 '추천대로').
+  // 호실 관리 목록(room-manage getRooms)이 같은 세 칸을 지우는 것과 같은 문법이다. 조회 전용, 결제 수식 무관.
+  if (!canReadScope(role, 'money')) {
+    for (const r of rooms) {
+      ;(r as { baseRent: number | null }).baseRent = null
+      ;(r as { scheduledRent: number | null }).scheduledRent = null
+      ;(r as { nonResidentRent: number | null }).nonResidentRent = null
+    }
+  }
   const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
   // 남이 임시 거처로 잡아 둔 구간 — 방으로 역조회가 안 되는 Json 이라 한 번에 읽어 방별로 묶는다.
   // 화면 캡션이 서버 가드(plannedStayDenial)와 **같은 재료·같은 함수**를 쓰게 하는 자리다.
@@ -6988,7 +6997,10 @@ export async function getRoomsForQuote(): Promise<{
   rooms: { id: string; roomNo: string; baseRent: number; type: string | null; windowType: string | null; tier: string | null; occupied: boolean }[]
   shortStay: ShortStayPolicy   // 단기 입실 정책 — 시뮬이 이 수치로 계산(영업장별 템플릿)
 }> {
-  const { propertyId } = await getPropertyId()
+  // 방 이용료와 정책 금액만 내는 요금표다. 금액을 못 읽는 역할(제한 스태프)에게는 열지 않는다(2026-11-04 독립 검수 R2).
+  // 그 역할에게는 입구가 없다(사이드바 도구 isLimited 숨김, 상세 단기 위젯은 부르지 않음, 수정 폼은 편집 역할 전용).
+  const { propertyId, role } = await getPropertyId()
+  if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
   const [rooms, prop] = await Promise.all([
     prisma.room.findMany({
       where: { propertyId },

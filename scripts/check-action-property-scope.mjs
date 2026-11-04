@@ -399,6 +399,28 @@ const AXES = [
     must: [[/if \(!canReadScope\(role, 'money'\)\) \{\n\s*for \(const t of tenants\) \{\n\s*for \(const lt of t\.leaseTerms\) \{\n\s*const o = lt as unknown as Record<string, unknown>\n\s*for \(const k of TENANT_LIST_MONEY_NULL_KEYS\) o\[k\] = null\n\s*o\.paymentRecords = \[\]/, '금액 스코프가 없을 때 금액·스냅샷 칸과 납부 기록을 걷지 않는다']],
     mustNot: [],
   },
+  // 입주자 화면의 호실·요금표 금액(2026-11-04 독립 검수 R1·R2). 호실 관리 목록(room-manage getRooms)과 같은 지우기 문법.
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'getRoomsForSelect',
+    noOrder: true,
+    must: [[/if \(!canReadScope\(role, 'money'\)\) \{\n\s*for \(const r of rooms\) \{\n\s*;\(r as \{ baseRent: number \| null \}\)\.baseRent = null\n\s*;\(r as \{ scheduledRent: number \| null \}\)\.scheduledRent = null\n\s*;\(r as \{ nonResidentRent: number \| null \}\)\.nonResidentRent = null/, '금액 스코프 없을 때 방 이용료 세 칸을 지우지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/tenants/actions.ts',
+    fn: 'getRoomsForQuote',
+    noOrder: true,
+    must: [[/const \{ propertyId, role \} = await getPropertyId\(\)\n\s*if \(!canReadScope\(role, 'money'\)\) throw/, '요금표가 금액 스코프를 읽기 전에 보지 않는다']],
+    mustNot: [],
+  },
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'getTenantDetail',
+    noOrder: true,
+    must: [[/property: l\.property \? \{ \.\.\.l\.property, shortStayPolicy: canMoney \? l\.property\.shortStayPolicy : null \}/, '영업장 단기 정책(정책 금액)을 금액 스코프 없이 내린다']],
+    mustNot: [],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
@@ -1115,6 +1137,8 @@ if (revertCalls < 7) violations.push(`revertShiftRows 호출이 ${revertCalls}�
 for (const [file, pats] of [
   ['components/entity-modal/widgets/TenantContractInfo.tsx', [/\{lease\.rentAmount != null && <Item /, /\{lease\.depositAmount != null && <Item /, /\{lease\.cleaningFee != null && <Item /, /wide=\{lease\.rentAmount == null && \(isPending \|\| !!lease\.isShortTerm\)\}/]],
   ['components/entity-modal/widgets/TenantBasicInfo.tsx', [/\{x\.rentAmount != null && <MoneyDisplay /]],
+  ['app/(app)/tenants/page.tsx', [/const canMoney = canReadScope\(myRole, 'money'\)/, /defaultDeposit=\{canMoney \? /, /defaultCleaningFee=\{canMoney \? /, /shortStayDeposit=\{canMoney \? shortStay\.deposit : 0\}/]],
+  ['app/(app)/tenants/TenantClient.tsx', [/\{!hideMoney && <div className="flex justify-between"><span className="text-\[var\(--warm-muted\)\]">기본 이용료/]],
   ['components/entity-modal/widgets/ShortStayInfoWidget.tsx', [/const canReadMoney = useCanReadScope\('money'\)/, /if \(!canReadMoney\) return\n\s*getRoomsForQuote\(\)/, /\{!canReadMoney \? null : days == null/, /\(\(canEditUi && canExtend\) \|\| exts\.length > 0\)/]],
 ]) {
   let src = ''

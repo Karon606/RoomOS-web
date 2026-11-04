@@ -602,6 +602,9 @@ async function main() {
     const L1 = await leaseIn(P1, T1, null)
     await leaseIn(P2, T2, null)
     await prisma.leaseTerm.update({ where: { id: L1 }, data: { cleaningFee: 30000, shortStayExtensions: [{ prevRentAmount: 300000, newRentAmount: 350000 }] } })
+    // 정책 금액까지 넣어 응답 전체에서 찾는다(독립 검수 R2). 다른 픽스처와 겹치지 않는 값이다.
+    await prisma.property.update({ where: { id: P1 }, data: { shortStayPolicy: { enabled: true, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 23331, roundTo: 1000, deposit: 87777, reservationMode: null } } })
+    const DETAIL_MONEY = ['300000', '50000', '30000', '350000', '23331', '87777']
     await prisma.paymentRecord.create({ data: { leaseTermId: L1, tenantId: T1, propertyId: P1, targetMonth: '2026-10', expectedAmount: 300000, actualAmount: 300000, payDate: new Date('2026-10-10T00:00:00Z'), seqNo: 1, isPaid: true } })
     const money = (d: Awaited<ReturnType<typeof rooms.getTenantDetail>>) => {
       const l = d?.leaseTerms[0]
@@ -611,13 +614,15 @@ async function main() {
     g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
     eq('LIMITED_STAFF 입주자 상세: 금액 칸 null · 납부 기록 빈 배열 · 단기 청구 이력 비움', money(await rooms.getTenantDetail(T1)), [null, null, null, 0, true])
     const body = JSON.stringify(await rooms.getTenantDetail(T1))
-    eq('LIMITED_STAFF 입주자 상세 응답에 금액 숫자가 없다', ['300000', '50000', '30000', '350000'].filter(x => body.includes(x)), [])
+    eq('LIMITED_STAFF 입주자 상세 응답에 금액 숫자가 없다(계약·스냅샷·정책 금액)', DETAIL_MONEY.filter(x => body.includes(x)), [])
+    eq('LIMITED_STAFF 입주자 상세: 영업장 단기 정책 null', (await rooms.getTenantDetail(T1))?.leaseTerms[0]?.property?.shortStayPolicy ?? null, null)
     eq('LIMITED_STAFF 입주자 상세: 이름 등 금액 아닌 칸은 그대로', (await rooms.getTenantDetail(T1))?.name, '상세 내')
     eq('LIMITED_STAFF 입주자 간단 정보: 금액 칸 null', await quick(), [null, null])
     eq('LIMITED_STAFF 입주자 상세: 남의 영업장 입주자는 null', await rooms.getTenantDetail(T2), null)
     for (const role of ['STAFF', 'MANAGER', 'OWNER'] as const) {
       g.__CR_FLOW_ROLE = role
       eq(`${role} 입주자 상세: 금액 칸·납부 기록 그대로`, money(await rooms.getTenantDetail(T1)), [300000, 50000, 30000, 1, false])
+      eq(`${role} 입주자 상세: 영업장 단기 정책 그대로`, ((await rooms.getTenantDetail(T1))?.leaseTerms[0]?.property?.shortStayPolicy as { deposit?: number } | null)?.deposit, 87777)
       eq(`${role} 입주자 간단 정보: 금액 칸 그대로`, await quick(), [300000, 50000])
       eq(`${role} 입주자 상세: 남의 영업장 입주자는 null`, await rooms.getTenantDetail(T2), null)
     }
@@ -724,6 +729,28 @@ async function main() {
       const l = await leaseOf()
       eq(`${role} 입주자 목록: 금액·스냅샷 칸 그대로`, KEYS.filter(k => l?.[k] == null), [])
       eq(`${role} 입주자 목록: 납부 기록 그대로`, (l?.paymentRecords as unknown[] | undefined)?.length, 1)
+    }
+    g.__CR_FLOW_ROLE = undefined
+  }
+
+  // ── 입주자 화면의 호실·요금표 금액(2026-11-04 독립 검수 R1·R2) ── 금액을 못 읽는 역할에게 방 이용료가 null 이고 요금표는 닫힌다.
+  {
+    const R = await roomIn(P1, '요금방')
+    await prisma.room.update({ where: { id: R }, data: { baseRent: 389111, scheduledRent: 391223, nonResidentRent: 155337 } })
+    const ROOM_MONEY = ['389111', '391223', '155337']
+    const roomOf = async () => (await tenants.getRoomsForSelect()).find(r => r.id === R) as unknown as Record<string, unknown> | undefined
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    const r = await roomOf()
+    eq('LIMITED_STAFF 호실 고르기: 이용료 세 칸 null', [r?.baseRent, r?.scheduledRent, r?.nonResidentRent], [null, null, null])
+    const body = JSON.stringify(await tenants.getRoomsForSelect())
+    eq('LIMITED_STAFF 호실 고르기 응답에 이용료 숫자가 없다', ROOM_MONEY.filter(x => body.includes(x)), [])
+    eq('LIMITED_STAFF 요금표 거부', await thrown(() => tenants.getRoomsForQuote()), '권한이 없습니다.')
+    for (const role of ['STAFF', 'MANAGER', 'OWNER'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const x = await roomOf()
+      eq(`${role} 호실 고르기: 이용료 그대로`, [x?.baseRent, x?.scheduledRent, x?.nonResidentRent], [389111, 391223, 155337])
+      const q = await tenants.getRoomsForQuote()
+      eq(`${role} 요금표 통과(방 이용료·정책 예약금)`, [q.rooms.find(y => y.id === R)?.baseRent, q.shortStay.deposit], [389111, 87777])
     }
     g.__CR_FLOW_ROLE = undefined
   }
