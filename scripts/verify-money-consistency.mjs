@@ -9,6 +9,8 @@ import { PrismaPg } from '@prisma/adapter-pg'
 // 첫 스크립트가 exit 1 로 죽으면 verify:db 의 나머지 검사가 아예 안 도는 자리라, 사본을 지운다.
 // (이 import 때문에 실행기가 node 에서 tsx 로 바뀌었다 — package.json verify:db 참고.)
 import { discountedRent } from '../lib/rentDiscount'
+// 정가 기본값 이월 의심 판정(20-5 나열). 진리표 scripts/test-pay-default-drift 와 같은 함수.
+import { bundlePayments, isListPriceCarry, overLockMonths } from '../lib/payDefaultDrift'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 const violations = []
@@ -2142,6 +2144,38 @@ const PREACQ_WITH_RECORD_BASELINE = 3   // 2026-08-24 실측(405·418·519호)
   }
   console.log(`\n[보증금 미기록 의심] 검사 ${examined}건 중 ${rows.length}건 (위반 아님 — 운영자 확인 대기)`)
   for (const r of rows) console.log(r)
+}
+
+// 20-5. 나열 — 정가 기본값이 남긴 수납 모양(위반 아님, 운영자 확인 대기). 2026-11-04 입주자 상세 수납 모달이
+// 금액을 계약 이용료(정가)로 채워 할인 달 입금의 할인액이 다음 달 선납으로 적혔다(404·514·509호). 생성 경로는 정본 폼
+// 한 벌로 막았다(scripts/check-pay-entry-single-form). 출처 표식이 없어 모양으로 센다. 판정 정본 lib/payDefaultDrift
+// (진리표 scripts/test-pay-default-drift). 정상 선납·운영자 결정 건은 첫 행 id 를 허용 목록에 적어 넘긴다.
+//   (가)(나) 한 결제가 여러 달로 쪼개졌고 마지막 달이 끝전(그 달 청구 30% 미만)이며 총액 = 정가 ≠ 첫 달 청구
+//   (다)     한 달 수납 합 > 그 달 락(거주·퇴실 계약 모두)
+{
+  // 운영자 확인 끝난 묶음(첫 행 id). 514호 9/24 350,000 은 실입금 그대로(2026-11-04 운영자 확인).
+  const ALLOW_BUNDLES = new Set(['488a8e01-9946-4661-b522-3e2ddc3c1d57'])
+  const ALLOW_OVERLOCK = new Set([])   // 'leaseTermId|YYYY-MM'
+  const recs = await prisma.paymentRecord.findMany({
+    where: { deletedAt: null, isDeposit: false, isPrevOwner: false, isBillingAdjust: false },
+    select: { id: true, leaseTermId: true, targetMonth: true, expectedAmount: true, actualAmount: true, payDate: true, payMethod: true, createdAt: true,
+      leaseTerm: { select: { rentAmount: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } } } },
+  })
+  const info = new Map(recs.map(r => [r.leaseTermId, r.leaseTerm]))
+  const rows = recs.map(r => ({ id: r.id, leaseTermId: r.leaseTermId, targetMonth: r.targetMonth, expectedAmount: r.expectedAmount, actualAmount: r.actualAmount,
+    payDate: new Date(r.payDate).toISOString().slice(0, 10), payMethod: r.payMethod, createdAt: new Date(r.createdAt).getTime() }))
+  const carry = bundlePayments(rows).filter(b => isListPriceCarry(b, info.get(b[0].leaseTermId)?.rentAmount ?? -1) && !ALLOW_BUNDLES.has(b[0].id))
+  const over = overLockMonths(rows).filter(o => !ALLOW_OVERLOCK.has(`${o.leaseTermId}|${o.targetMonth}`))
+  console.log(`\n[정가 기본값 이월 의심] 결제 묶음 ${carry.length}건 · 한 달 수납 > 락 ${over.length}건 (위반 아님 — 운영자 확인 대기)`)
+  for (const b of carry) {
+    const l = info.get(b[0].leaseTermId)
+    console.log(`  ${l?.room?.roomNo ?? '-'}호 ${l?.tenant?.name ?? ''} ${b[0].payDate} ${b.reduce((s, r) => s + r.actualAmount, 0).toLocaleString()}원 = `
+      + b.map(r => `${r.targetMonth} ${r.actualAmount.toLocaleString()}`).join(' + ') + ` (첫 행 ${b[0].id})`)
+  }
+  for (const o of over) {
+    const l = info.get(o.leaseTermId)
+    console.log(`  ${l?.room?.roomNo ?? '-'}호 ${l?.tenant?.name ?? ''} ${o.targetMonth} 수납 ${o.paid.toLocaleString()} > 락 ${o.lock.toLocaleString()} (${o.leaseTermId}|${o.targetMonth})`)
+  }
 }
 
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
