@@ -652,7 +652,7 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
 // 11) 키보드가 선 동안 하단 내비 접기(2026-11-03, 키보드 칸 이동 튐 패널 결정 2, 가이드 §19). iOS 는 키보드가 서도 layout
 // viewport 를 안 줄여 fixed bottom 탭 바가 보이는 띠 한가운데에 떠 입력 칸을 가렸다. 접힘은 가드 표식 하나로 읽고(옵트인
 // .kbd-collapse), 표식은 vv resize·복귀 재동기에서만 바뀐다(팬·칸 이동 중 깜빡임 없음). 떠 있는 층(토스트·선택 알약)은 그
-// 동안 보이는 띠 아래 끝(--vv-bottom) 위에 앉고, 오류신고 버튼은 접지 않는다.
+// 동안 보이는 띠 아래 끝(--vv-bottom) 위에 앉고(열린 오버레이가 없고 편집 칸에 포커스가 있을 때만, 2026-11-04 임시 규칙), 오류신고 버튼은 접지 않는다.
 {
   const read = f => { try { return strip(readFileSync(f, 'utf8')) } catch { violations.push(`${f}: 읽을 수 없음`); return '' } }
   const nav = read('components/layout/BottomNav.tsx')
@@ -660,7 +660,36 @@ for (const f of ['components/ui/usePopoverAnchor.ts', 'app/(app)/inventory/Inven
   if (!navTag || !/className="[^"]*\bkbd-collapse\b/.test(navTag[0])) violations.push('components/layout/BottomNav.tsx: 하단 내비에 kbd-collapse 가 없다. 키보드가 선 동안 탭 바가 보이는 띠 한가운데에 떠 칸을 가린다')
   const css = readFileSync('app/globals.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
   if (!/html\[data-kbd-open\] \.kbd-collapse \{ display: none; \}/.test(css)) violations.push('app/globals.css: 키보드 접힘 규칙(html[data-kbd-open] .kbd-collapse)이 사라짐')
-  if (!/html\[data-kbd-open\] \.kbd-float \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ var\(--kbd-float-gap, 1rem\)\); \}/.test(css)) violations.push('app/globals.css: 떠 있는 층의 키보드 자리(.kbd-float)가 --vv-bottom 기준이 아니다')
+  // 키보드 자리는 열린 오버레이가 없고 편집 칸에 포커스가 있을 때만 선다(2026-11-04 임시 규칙, 0d1653c6 회귀). 모달이 열린 채 띠 위에 앉으면
+  // 토스트가 발끝 주 버튼을 덮고, 오버레이 표식 단독이면 키보드가 선 채 모달을 저장하며 닫는 프레임에 띠 위로 튄다(신고 버튼 B1 과 같은 클래스).
+  if (!/html\[data-kbd-open\]:not\(\[data-overlay-open\]\):has\(:is\(input, textarea, select, \[contenteditable="true"\]\):focus\) \.kbd-float \{ bottom: calc\(var\(--vv-bottom, 0px\) \+ var\(--kbd-float-gap, 1rem\)\); \}/.test(css)) violations.push('app/globals.css: 떠 있는 층의 키보드 자리(.kbd-float)가 --vv-bottom 기준이 아니거나 오버레이 없음·편집 칸 포커스 한정이 아니다. 모달이 열린 채 토스트가 발끝 주 버튼을 덮는다')
+  {
+    // 같은 bottom 을 쓰는 다른 .kbd-float 규칙이 있으면 위 한정이 무너진다(표식만 보는 규칙, 오버레이 조건만 있는 규칙).
+    const floatRules = [...css.matchAll(/([^{}]*\.kbd-float[^{}]*)\{([^}]*)\}/g)].filter(m => /\bbottom\s*:/.test(m[2]))
+    if (floatRules.length !== 1) violations.push(`app/globals.css: .kbd-float 의 bottom 규칙이 ${floatRules.length}개다. 키보드 자리는 오버레이 없음·편집 칸 포커스 한정 한 규칙뿐이어야 한다`)
+    // .kbd-float 를 비켜 토스트·알약을 키보드 표식으로 직접 옮기는 옆문도 막는다. 겨냥 대상은 두 스택 상자의 className 에서 읽은
+    // 클래스 전부와 data-pill-bar 이고(새 클래스를 붙여 비켜 가는 길 포함), 자리를 바꾸는 속성(bottom·top·inset 계열·transform·translate)이면 빨강이다.
+    // 정본 한 규칙(.kbd-float bottom, 위에서 한정을 따로 본다)만 뺀다.
+    {
+      const stackClasses = (src, ref) => {
+        const tag = new RegExp(`ref=\\{${ref}\\}[^>]*?className=(?:"([^"]*)"|\\{\`([^\`]*)\`\\})`).exec(src)
+        return tag ? (tag[1] ?? tag[2]).replace(/\$\{[^}]*\}/g, ' ').split(/\s+/).filter(Boolean) : []
+      }
+      const targets = [
+        ...stackClasses(read('components/feedback/SaveFeedback.tsx'), 'stackRef'),
+        ...stackClasses(read('components/ui/inventory/SelectionPillBar.tsx'), 'barRef'),
+      ]
+      if (!targets.includes('toast-floor') || !targets.includes('kbd-float')) violations.push('scripts/check-kbd-canonical.mjs: 토스트·알약 스택 상자의 className 을 못 읽었다(옆문 검사가 비었다)')
+      const esc = c => c.replace(/[.*+?^${}()|[\]\\/:!%]/g, ch => '\\\\?\\' + ch)
+      const hits = sel => targets.some(c => new RegExp(`\\.${esc(c)}(?![\\w-])`).test(sel)) || /data-pill-bar/.test(sel)
+      const CANON = /^html\[data-kbd-open\]:not\(\[data-overlay-open\]\):has\(:is\(input, textarea, select, \[contenteditable="true"\]\):focus\) \.kbd-float$/
+      for (const m of css.matchAll(/([^{}]*data-kbd-open[^{}]*)\{([^}]*)\}/g)) {
+        const sel = m[1].trim()
+        if (CANON.test(sel)) continue
+        if (hits(sel) && /(^|;|\s)(bottom|top|inset|inset-block|inset-block-end|transform|translate)\s*:/.test(m[2])) violations.push(`app/globals.css: 키보드 표식으로 토스트·알약 스택 자리를 직접 옮기는 규칙이 있다(${sel.slice(0, 80)}). .kbd-float 한 규칙의 한정을 비켜 간다`)
+      }
+    }
+  }
   for (const f of ['components/feedback/SaveFeedback.tsx', 'components/ui/inventory/SelectionPillBar.tsx']) {
     const src = read(f)
     // 주석이 아니라 className 에 서야 한다(역주입 2026-11-03, 주석의 같은 낱말에 속아 초록이었다).

@@ -36,8 +36,8 @@ export default function SaveFeedback() {
   const [toasts, setToasts] = useState<Live[]>([])
   // 타이머 관리 — hover 일시정지(v2.0 §15)를 위해 잔여 시간 추적
   const timers = useRef<Map<number, { handle: ReturnType<typeof setTimeout>; expiresAt: number; remaining: number }>>(new Map())
-  // 키보드가 선 동안 토스트는 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03). 그 자리(--vv-bottom)는 정본 훅이
-  // 스택 상자에 적는다. 토스트가 떠 있을 때만 구독한다.
+  // 키보드가 선 동안 토스트는 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03). 단, 오버레이가 열린 채면 종전 바닥(키보드 뒤)이다
+  // (2026-11-04 임시 규칙, globals.css). 그 자리(--vv-bottom)는 정본 훅이 스택 상자에 적는다. 토스트가 떠 있을 때만 구독한다.
   const stackRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: toasts.length > 0, overlayRef: stackRef, floating: true })
   // 떠 있는 동안 스택 높이 + 8 을 --toast-reserve 에 적는다. 모바일 오류신고 버튼 기본 자리가 그만큼 위로 올라 토스트에 안 가린다(2026-11-03, §15).

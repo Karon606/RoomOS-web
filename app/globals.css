@@ -725,8 +725,13 @@ html[data-kbd-open] .kbd-collapse { display: none; }
    접히므로(BottomNav .kbd-collapse) 내비 위 여백 대신 보이는 띠 아래 끝 위에 앉는다. 간격은 각자 내비 없는 정본 값이다
    (--kbd-float-gap: 기본 1rem = §22 알약 bottom 16, 토스트는 24px = §15 bottom 24 를 요소에 준다). --vv-bottom 은 그 요소에
    useVisibleBand 가 적는 상자 좌표의 겹침이고 팬마다 갱신된다. --kbd-inset 은 셸 스크롤 여유라 위치로 쓰지 않는다.
-   표식은 가드가 키보드가 서고 내리는 순간에만 바꾸므로 팬 중에 자리가 튀지 않는다. 데스크톱은 표식이 안 서서 무관하다. */
-html[data-kbd-open] .kbd-float { bottom: calc(var(--vv-bottom, 0px) + var(--kbd-float-gap, 1rem)); }
+   표식은 가드가 키보드가 서고 내리는 순간에만 바꾸므로 팬 중에 자리가 튀지 않는다. 데스크톱은 표식이 안 서서 무관하다.
+   임시 규칙(2026-11-04, 최종 자리는 운영자 결정 대기, 가이드 §19). 띠 위로 오르는 것은 **열린 오버레이가 없고 편집 칸에 포커스가 있을 때만**이다.
+   모달·시트·확인창이 열린 채 키보드가 서 있으면 0d1653c6 이전 자리(종전 바닥, 키보드 뒤)에 둔다. 띠 위에 앉으면 토스트가 발끝 주 버튼을
+   덮어 다음 저장·닫기를 막았고(회귀), 모달 안 선택 알약(aboveModal)도 같은 클래스다. 포커스 조건은 신고 버튼(.report-floor)과 같은 까닭이다.
+   키보드가 선 채 모달을 저장하며 닫으면 오버레이 표식은 곧바로 빠지는데 키보드 표식은 vv resize 까지 남아, 표식만 보면 그 사이 한 프레임 띠 위로
+   튀었다가 내려온다. 모달이 닫히면 포커스가 편집 칸에 남지 않으니 오르지 않는다. 셸 밖 공개 화면에는 가드가 없어 표식이 안 선다. */
+html[data-kbd-open]:not([data-overlay-open]):has(:is(input, textarea, select, [contenteditable="true"]):focus) .kbd-float { bottom: calc(var(--vv-bottom, 0px) + var(--kbd-float-gap, 1rem)); }
 /* 토스트 바닥. 인라인 style 이면 위 키보드 자리 규칙이 못 이겨 클래스로 둔다. 선택 알약이 서 있으면 그 예약값(--pill-reserve)만큼
    올라 알약 위에 앉는다(2026-11-03, §15). 키보드 동안의 간격도 SaveFeedback 이 같은 값을 더한다. */
 .toast-floor { bottom: calc(var(--toast-offset-bottom) + env(safe-area-inset-bottom) + var(--pill-reserve, 0px)); }
@@ -784,11 +789,11 @@ html[data-overlay-open] .report-floor { bottom: calc(var(--toast-offset-bottom, 
 }
 
 /* 선택 알약의 바닥과 스크롤 끝 예약(2026-11-03, 신고 e791b6f7, 가이드 §22).
-   --pill-floor 는 알약 바닥이다. 모바일은 하단 내비 위(안전영역 + 56px), md 이상은 16px. 키보드가 선 동안은 .kbd-float 가 이긴다.
+   --pill-floor 는 알약 바닥이다. 모바일은 하단 내비 위(안전영역 + 56px), md 이상은 16px. 키보드가 선 동안은 .kbd-float 가 이긴다(오버레이가 없고 편집 칸에 포커스가 있을 때만, 2026-11-04 임시 규칙).
    --pill-reserve 는 알약이 서 있는 동안 lib/usePillReserve 가 루트에 적는 '실측 높이 + 12px' 이고, 내려가면 지운다(폴백 0).
    --kbd-inset 과는 다른 변수다. 위 .app-main 두 규칙은 둘을 더하기만 한다(셸 내비 몫 4rem 은 알약 바닥 56px 을 이미 덮는다).
    모달 안 알약(aboveModal)은 그 모달 본문 끝에 자리를 만든다. 모달 바닥(max(1rem, 안전영역))이 알약 바닥보다 낮은 만큼을 더하고,
-   키보드가 선 동안은 둘이 같은 띠 아래 끝을 따라가므로 예약값만 둔다. 알약을 품은 본문에만 서고 다른 모달에는 안 선다. */
+   키보드가 선 동안은 둘이 같은 띠 아래 끝을 따라가므로 예약값만 둔다(임시 규칙 동안은 모달 안 알약이 키보드 뒤라 여백만 남는다). 알약을 품은 본문에만 서고 다른 모달에는 안 선다. */
 :root { --pill-floor: 1rem; }
 @media (max-width: 767px) {
   :root { --pill-floor: calc(env(safe-area-inset-bottom, 0px) + 56px); }

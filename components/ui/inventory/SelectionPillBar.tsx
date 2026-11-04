@@ -20,6 +20,7 @@ export function SelectionPillBar({
   compactNarrow?: boolean        // 버튼이 둘 이상이라 좁은 폭(360px 미만)에서 넘칠 때만, 그 폭에서 카운트를 숫자로 줄인다
 }) {
   // 키보드가 선 동안은 하단 내비가 접히므로 내비 위 자리 대신 보이는 띠 아래 끝 위에 앉는다(.kbd-float, 2026-11-03 가이드 §19).
+  // 모달 안 알약(aboveModal)은 오버레이가 열린 채라 종전 바닥(키보드 뒤)에 둔다(2026-11-04 임시 규칙, globals.css).
   // 그 자리(--vv-bottom)는 정본 훅이 이 상자에 적는다.
   const barRef = useRef<HTMLDivElement>(null)
   useVisibleBand({ active: true, overlayRef: barRef, floating: true })
