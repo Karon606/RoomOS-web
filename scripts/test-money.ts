@@ -1309,5 +1309,16 @@ const RENT = 300000
   eq('SG-B1 판정: 인수 뒤 운영자 수납이 있으면 자동 처리 아님', acqMonthSettledByFifo({ cutoffDate: cutoff, baseDueDayNum: 2, monthRecords: [{ actualAmount: 100_000, payDate: '2026-04-20T00:00:00.000Z' }], monthBill: 350_000 }), false)
 }
 
+// ── 귀속월 목록 청구 끝 = leaseBillingEnd (독립 검수 R1) ──
+// 예정일 없이 실제 퇴실일만 있는 퇴실 계약(422호 모양): 퇴실 뒤 달이 목록에 들어오면 기본값이 수백만 원이 된다.
+{
+  const Lco = { dueDayAdjusts: [], rentAmount: 400_000, status: 'CHECKED_OUT', dueDay: '10', cycleDay: null, moveInDate: new Date('2026-05-10T00:00:00Z'), discounts: [],
+    expectedMoveOut: null, moveOutDate: new Date('2026-07-05T00:00:00Z') }
+  const recs = ['2026-05', '2026-06'].map(m => ({ targetMonth: m, actualAmount: 400_000, expectedAmount: 400_000, payDate: `${m}-10T00:00:00.000Z`, isPrevOwner: false }))
+  const opts = buildTargetMonthOptions({ lease: Lco, records: recs, cutoffDate: null, baseDueDayNum: 10, viewMonth: '2026-11', today: { year: 2026, month: 11, day: 4 } })
+  eq('SG-R1 예정일 없는 퇴실 계약은 실제 퇴실월(7월, 납부일 전 퇴실 무청구) 뒤가 목록에 없다', opts.map(o => o.month), ['2026-05', '2026-06'])
+  eq('SG-R1 그 계약의 기본값은 퇴실 뒤 달을 합치지 않는다(다 냈으면 조회월 청구 0)', suggestPayAmount({ forcedMonth: 'auto', months: opts, viewMonth: '2026-11', expected: 0 }), 0)
+}
+
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

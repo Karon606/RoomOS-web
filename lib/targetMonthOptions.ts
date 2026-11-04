@@ -5,6 +5,7 @@
 // 그 달을 건너뛰므로 그대로 저장하면 한 달치가 선납으로 적히고 초과분 확인창도 안 뜬다. 인수월 판정을 사본이 아니라 이 파일의
 // acqMonthSettledByFifo 하나로 두고 FIFO 와 목록이 같이 부른다.
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, type BillingLeaseFields } from './billing'
+import { leaseBillingEnd } from './leaseStatus'
 import { effDueDateForMonth, monthDuePassed } from './roomMonth'
 
 export type TargetMonthOptionRow = {
@@ -37,7 +38,8 @@ export function acqMonthSettledByFifo(i: {
 }
 
 /**
- * 귀속월 목록. 시작은 인수일과 입주일 중 늦은 쪽, 끝은 조회월 + 3달. 청구 끝은 퇴실 예정일이다. 양도인 정산 달·청구 없는 달은 뺀다. 인수 전 입금은 수납 합에서 빼되,
+ * 귀속월 목록. 시작은 인수일과 입주일 중 늦은 쪽, 끝은 조회월 + 3달. 청구 끝은 leaseBillingEnd(예정일 ?? 실제 퇴실일, 수납 관리 목록 정본)다.
+ * 양도인 정산 달·청구 없는 달은 뺀다. 인수 전 입금은 수납 합에서 빼되,
  * 인수월은 FIFO 와 같은 판정(acqMonthSettledByFifo)으로 넘어가면 완납으로 적는다.
  */
 export function buildTargetMonthOptions(i: {
@@ -59,7 +61,9 @@ export function buildTargetMonthOptions(i: {
   const [vy, vm] = viewMonth.split('-').map(Number)
   const endDate = new Date(vy, vm - 1 + 3, 1)
   const endY = endDate.getFullYear(), endM = endDate.getMonth() + 1
-  const billingEnd = lease.expectedMoveOut ?? null
+  // 청구 끝 = 예정일 ?? 실제 퇴실일(수납 관리 목록 정본). 예정일 없이 퇴실 처리된 계약(408·422·507호)이 퇴실 뒤 달을
+  // 미납으로 끌고 와 기본값이 수백만 원이 되던 자리다(독립 검수 R1). 저장 FIFO 는 아직 예정일만 본다(별건, 보고).
+  const billingEnd = leaseBillingEnd(lease)
   const acqMonth = cutoffDate ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}` : null
 
   const prevOwnerMonths = new Set(records.filter(r => r.isPrevOwner).map(r => r.targetMonth))

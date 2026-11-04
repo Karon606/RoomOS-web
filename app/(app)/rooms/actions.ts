@@ -1066,6 +1066,7 @@ export async function getTargetMonthOptions(
       status: true,        // 비거주 축 분기(lib/billing effectiveBaseRent)
       isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
       expectedMoveOut: true,
+      moveOutDate: true,   // 청구 끝 leaseBillingEnd(예정일 없이 퇴실 처리된 계약, 검수 R1)
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
       // 무청구 퇴실월 판정용 — 그 달 만기를 알아야 한다(임시조정 포함)
