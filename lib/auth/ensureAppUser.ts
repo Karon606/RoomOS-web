@@ -12,8 +12,10 @@
 //   · 초대코드는 아직 대기이고 코드를 안 쓴 계정에만 한 번 적용한다(자동 승인 코드면 승인).
 //   · 같은 이메일의 다른 행이 이미 있으면(지워졌다 다시 만든 인증 계정 등) 만들지 않고 null 을 준다. 관문은 대기로 본다.
 import 'server-only'
+import { after } from 'next/server'
 import prisma from '@/lib/prisma'
-import type { AccessStatus } from '@/lib/adminAccess'
+import { pushName, type AccessStatus } from '@/lib/adminAccess'
+import { withParticle } from '@/lib/koParticle'
 
 export type AuthIdentity = {
   id: string
@@ -95,31 +97,49 @@ export async function ensureAppUser(idn: AuthIdentity, opts?: { extra?: SignupEx
   }
   // 새 대기 계정이 생기면 스테이음 관리자 기기로 알린다(갈림길 D). 누르면 가입자 화면. best-effort 라 실패해도 로그인은 이어진다.
   // pushSend 는 관문(lib/auth/access)을 거꾸로 import 하므로 여기서는 동적 import 로 순환을 끊는다.
+  // 관문(화면 렌더) 안에서 부르므로 기다리지 않는다. 요청 안이면 응답 뒤(after), 밖이면 그냥 띄운다. 실패는 무시(독립 검수 R7).
   if (created && status === 'PENDING') {
-    const { notifySuperAdmins } = await import('@/lib/pushSend')
-    await notifySuperAdmins(signupPendingPush({ realName, name, email: idn.email }))
+    const push = signupPendingPush({ realName, name })
+    const send = () => import('@/lib/pushSend').then(m => m.notifySuperAdmins(push)).catch(() => {})
+    try { after(send) } catch { void send() }
   }
   return { created, status }
 }
 
-/** 가입 승인 요청 푸시 문장. 이름이 있으면 이름, 없으면 이메일. */
-export function signupPendingPush(u: { realName?: string | null; name?: string | null; email: string }) {
-  return { title: '가입 승인 요청', body: `${u.realName || u.name || u.email} 님이 가입했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
+/** 가입 승인 요청 푸시 문장. 잠금 화면에 뜨므로 이메일은 쓰지 않는다(이름이 없으면 '새 가입자', 독립 검수 R5). */
+export function signupPendingPush(u: { realName?: string | null; name?: string | null }) {
+  return { title: '가입 승인 요청', body: `${withParticle(pushName(u, '새 가입자'), '이/가')} 가입했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
 }
 
+class CodeExhausted extends Error {}
+
 // 초대코드 적용(선착순). autoApprove 코드면 status=APPROVED. 적용 뒤 상태를 돌려준다.
+// 조건부 쓰기다(독립 검수 R4). 관문·콜백·동기화가 같은 사람으로 동시에 들어와도 '아직 코드를 안 쓴 대기 계정' 조건을 단 한 번의
+// 쓰기만 지나가고, 사용 수 증가도 '자리가 남았을 때'만 지나간다(자리가 없으면 트랜잭션째 되감고 대기).
 async function redeemInviteCode(userId: string, codeStr: string): Promise<AccessStatus> {
-  return prisma.$transaction(async (tx) => {
-    const code = await tx.inviteCode.findUnique({ where: { code: codeStr } })
-    const usable = !!code && code.isActive && !(code.expiresAt && code.expiresAt < new Date()) && !(code.maxUses > 0 && code.usedCount >= code.maxUses)
-    if (!code || !usable) return 'PENDING' as const
-    if (!code.autoApprove) {
-      // 코드 기록만 — 승인은 스테이음 관리자가 손으로
-      await tx.user.update({ where: { id: userId }, data: { inviteCode: codeStr } })
-      return 'PENDING' as const
-    }
-    await tx.inviteCode.update({ where: { id: code.id }, data: { usedCount: { increment: 1 } } })
-    await tx.user.update({ where: { id: userId }, data: { status: 'APPROVED', approvedAt: new Date(), inviteCode: codeStr } })
-    return 'APPROVED' as const
-  })
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const code = await tx.inviteCode.findUnique({ where: { code: codeStr } })
+      const usable = !!code && code.isActive && !(code.expiresAt && code.expiresAt < new Date()) && !(code.maxUses > 0 && code.usedCount >= code.maxUses)
+      if (!code || !usable) return 'PENDING' as const
+      const claim = await tx.user.updateMany({
+        where: { id: userId, status: 'PENDING', inviteCode: null },
+        data: code.autoApprove ? { status: 'APPROVED', approvedAt: new Date(), inviteCode: codeStr } : { inviteCode: codeStr },
+      })
+      if (claim.count === 0) {
+        // 다른 요청이 먼저 적용했다. 지금 상태를 그대로 돌려준다(사용 수는 안 센다).
+        return ((await tx.user.findUnique({ where: { id: userId }, select: { status: true } }))?.status ?? 'PENDING') as AccessStatus
+      }
+      if (!code.autoApprove) return 'PENDING' as const   // 코드 기록만, 승인은 스테이음 관리자가 손으로
+      const inc = await tx.inviteCode.updateMany({
+        where: { id: code.id, isActive: true, ...(code.maxUses > 0 ? { usedCount: { lt: code.maxUses } } : {}) },
+        data: { usedCount: { increment: 1 } },
+      })
+      if (inc.count === 0) throw new CodeExhausted()
+      return 'APPROVED' as const
+    })
+  } catch (e) {
+    if (e instanceof CodeExhausted) return 'PENDING'
+    throw e
+  }
 }

@@ -110,6 +110,7 @@ async function main() {
     const u = await prisma.user.findUniqueOrThrow({ where: { id }, select: { status: true, isSuperAdmin: true, approvedAt: true, approvedBy: true } })
     return { ...u, approvedAt: u.approvedAt?.toISOString() ?? null }
   }
+  const settle = () => new Promise(r => setTimeout(r, 400))
   const countPendingSignups0 = async () => (await import('@/lib/adminSignups')).countPendingSignups()
   const audits = async (id: string) => (await prisma.adminAuditLog.findMany({ where: { targetUserId: id }, orderBy: { createdAt: 'asc' } })).map(a => a.action)
 
@@ -152,7 +153,7 @@ async function main() {
   eq('적용취소 통과', await A.undoAdminUserChange(J(undo1!)), { ok: true })
   eq('쓰기 전 전부로(대기·승인 칸 비움·관리자 아님)', await snap(P1), { status: 'PENDING', isSuperAdmin: false, approvedAt: null, approvedBy: null })
   eq('감사 기록 UNDO', await audits(P1), ['GRANT_SUPER_ADMIN', 'UNDO'])
-  eq('두 번 누르면 거부', await A.undoAdminUserChange(J(undo1!)), { ok: false, error: '그사이 이 계정의 권한이나 상태가 다시 바뀌어 되돌리지 않았습니다. 지금 상태를 확인해 주세요.' })
+  eq('두 번 누르면 거부(일회성)', await A.undoAdminUserChange(J(undo1!)), { ok: false, error: '이미 적용취소한 변경입니다.' })
 
   // 승인됨 계정: 주고 회수, 그사이 바뀌면 거부
   const g2 = await A.setSuperAdmin(A1, true)
@@ -172,7 +173,24 @@ async function main() {
   eq('알 수 없는 상태 거부', (await A.setUserStatus(R1, 'NOPE' as never)).ok, false)
   // 남의 토큰을 본인에게 쓰는 것도 거부(관리자 본인 행)
   const forged = { ...J(st1.ok ? st1.undo! : null)!, userId: ADMIN }
-  eq('본인 행 토큰 거부', (await A.undoAdminUserChange(forged)).ok, false)
+  eq('본인 행 토큰 거부(서명 불일치)', (await A.undoAdminUserChange(forged)).ok, false)
+  // 서버 키로 바르게 서명한 본인 대상 토큰도 거부한다(독립 검수 R1). 서명 대조가 아니라 본인 규칙이 막는지 본다.
+  const { signUndoBody } = await import('@/app/(app)/rooms/cashReceiptLine')
+  const { canonicalAdminUserUndo, ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE } = await import('@/lib/adminAccess')
+  const signTok = (t: Record<string, unknown>) => ({ ...t, sig: signUndoBody(ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, canonicalAdminUserUndo(t as never)) as string })
+  const adminSnap = await snap(ADMIN)
+  const lastAdminAudit = await prisma.adminAuditLog.findFirstOrThrow({ orderBy: { createdAt: 'desc' } })
+  const selfTok = signTok({ v: 1, userId: ADMIN, at: new Date().toISOString(), auditId: lastAdminAudit.id,
+    before: { ...adminSnap, isSuperAdmin: false, status: 'PENDING' }, after: adminSnap })
+  eq('바르게 서명한 본인 대상 토큰 거부', await A.undoAdminUserChange(selfTok), { ok: false, error: '본인 계정은 여기서 바꿀 수 없습니다.' })
+  eq('본인 행 그대로', await snap(ADMIN), adminSnap)
+  // 만료(24시간): 서명은 맞지만 시각이 지난 토큰
+  const st2 = await A.setUserStatus(R1, 'APPROVED')
+  const old = { ...J(st2.ok ? st2.undo! : null)! } as unknown as Record<string, unknown>
+  const expired = signTok({ ...old, sig: undefined, at: new Date(Date.now() - 25 * 3600_000).toISOString() })
+  eq('24시간 지난 토큰 거부', await A.undoAdminUserChange(expired), { ok: false, error: '적용취소할 수 있는 시간(24시간)이 지났습니다. 지금 상태에서 다시 바꿔 주세요.' })
+  eq('없는 감사 기록 id 의 토큰 거부', (await A.undoAdminUserChange(signTok({ ...old, sig: undefined, auditId: randomUUID() }))).ok, false)
+  eq('제때 토큰은 통과', [(await A.undoAdminUserChange(J(st2.ok ? st2.undo! : null)!)).ok, (await snap(R1)).status], [true, 'REJECTED'])
 
   // ── 2단계: 앱 users 행 보장 · 콜백 · 대기 화면 재확인 · 자기 영업장 만들기 ──
   const { getAccessContext } = await import('@/lib/auth/access')
@@ -213,6 +231,25 @@ async function main() {
   eq('초대코드 메타데이터: 관문에서 바로 승인', (await getAccessContext())?.status, 'APPROVED')
   await getAccessContext()
   eq('초대코드는 한 번만 센다', (await prisma.inviteCode.findUniqueOrThrow({ where: { code: 'STAYEXT09' } })).usedCount, 1)
+
+  // 초대코드 조건부 쓰기(독립 검수 R4). 같은 사람이 동시에 두 번 들어와도 사용 수는 한 번, 자리 하나 코드는 한 사람만.
+  await prisma.inviteCode.create({ data: { code: 'RACE01', maxUses: 5, autoApprove: true } })
+  const RC = randomUUID()
+  await prisma.user.create({ data: { id: RC, email: 'race@example.test', status: 'PENDING' } })
+  const { ensureAppUser } = await import('@/lib/auth/ensureAppUser')
+  const idn = (id: string, email: string) => ({ id, email, userMeta: {}, provider: 'email' })
+  await Promise.all([ensureAppUser(idn(RC, 'race@example.test'), { extra: { inviteCode: 'RACE01' } }), ensureAppUser(idn(RC, 'race@example.test'), { extra: { inviteCode: 'RACE01' } })])
+  eq('동시 두 번: 승인 한 번·사용 수 1', [(await snap(RC)).status, (await prisma.inviteCode.findUniqueOrThrow({ where: { code: 'RACE01' } })).usedCount], ['APPROVED', 1])
+  await prisma.inviteCode.create({ data: { code: 'ONESEAT', maxUses: 1, autoApprove: true } })
+  const RA = randomUUID(), RB = randomUUID()
+  await prisma.user.createMany({ data: [{ id: RA, email: 'ra@example.test', status: 'PENDING' }, { id: RB, email: 'rb@example.test', status: 'PENDING' }] })
+  await Promise.all([ensureAppUser(idn(RA, 'ra@example.test'), { extra: { inviteCode: 'ONESEAT' } }), ensureAppUser(idn(RB, 'rb@example.test'), { extra: { inviteCode: 'ONESEAT' } })])
+  const seats = [(await snap(RA)).status, (await snap(RB)).status].filter(x => x === 'APPROVED').length
+  eq('자리 하나 코드는 한 사람만 승인·사용 수 1', [seats, (await prisma.inviteCode.findUniqueOrThrow({ where: { code: 'ONESEAT' } })).usedCount], [1, 1])
+  // 대기 건수는 표가 없어도 던지지 않고 0(앱 셸을 지킨다, 독립 검수 B1)
+  await pg.exec('ALTER TABLE user_archives RENAME TO user_archives_tmp')
+  eq('정리 표가 없으면 대기 건수 0(던지지 않음)', await countPendingSignups0(), 0)
+  await pg.exec('ALTER TABLE user_archives_tmp RENAME TO user_archives')
 
   // 로그인 직후 동기화도 같은 정본(넘긴 칸 반영)
   const SYN = randomUUID()
@@ -319,17 +356,22 @@ async function main() {
   eq('켜고 끄기 적용취소(직전 값)', [(await prisma.inviteCode.findUniqueOrThrow({ where: { id: used.id } })).isActive, (await A.toggleInviteCode(used.id, true)).ok, (await prisma.inviteCode.findUniqueOrThrow({ where: { id: used.id } })).isActive], [false, true, true])
   const del = await A.deleteInviteCode(used.id)
   eq('삭제', [del.ok, await prisma.inviteCode.count({ where: { code: 'USED-ONE' } })], [true, 0])
-  const rs = await A.restoreInviteCode(J(del.ok ? del.snap : null)!)
+  const rid = del.ok ? del.restoreId : ''
+  eq('화면에는 되살림 열쇠(감사 기록 id)만 간다', Object.keys(del).sort(), ['ok', 'restoreId'])
+  const rs = await A.restoreInviteCode(rid)
   const back = await prisma.inviteCode.findUnique({ where: { code: 'USED-ONE' } })
-  eq('삭제 적용취소: 같은 id·사용 수 그대로 되살림', [rs.ok, back?.id, back?.usedCount, back?.maxUses], [true, used.id, 1, 3])
-  eq('같은 코드가 있으면 되살림 거부', (await A.restoreInviteCode(J(del.ok ? del.snap : null)!)).ok, false)
+  eq('삭제 적용취소: 서버 보관 값으로 같은 id·사용 수 그대로', [rs.ok, back?.id, back?.usedCount, back?.maxUses], [true, used.id, 1, 3])
+  eq('같은 열쇠로 두 번 되살림 거부', await A.restoreInviteCode(rid), { ok: false, error: '이미 적용취소한 변경입니다.' })
+  eq('꾸민 열쇠 거부', (await A.restoreInviteCode(randomUUID())).ok, false)
+  const del2 = await A.deleteInviteCode(used.id)
+  await A.createInviteCode({ code: 'USED-ONE', maxUses: 1 })
+  eq('같은 코드가 다시 생겼으면 되살림 거부', (await A.restoreInviteCode(del2.ok ? del2.restoreId : '')).ok, false)
   as(OUT, 'out@example.test')
   threw = ''
-  try { await A.restoreInviteCode(J(del.ok ? del.snap : null)!) } catch (e) { threw = String((e as Error).message) }
+  try { await A.restoreInviteCode(rid) } catch (e) { threw = String((e as Error).message) }
   eq('관리자 아니면 되살림도 관문이 막는다', threw, 'cr-flow redirect /dashboard')
 
   // ── 6단계: 가입 경로 메타 · 오래된 계정 정리 ──
-  await pg.exec(`CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, raw_app_meta_data jsonb, last_sign_in_at timestamptz)`)
   const S1 = randomUUID(), S2 = randomUUID(), S3 = randomUUID(), S4 = randomUUID()
   const long = new Date(Date.now() - 45 * 86_400_000), recent = new Date(Date.now() - 2 * 86_400_000)
   await prisma.user.createMany({ data: [
@@ -339,6 +381,12 @@ async function main() {
     { id: S4, email: 'member@example.test', status: 'REJECTED', createdAt: long },              // 오래된 거절이지만 영업장 역할 → 아님
   ] })
   await prisma.userPropertyRole.create({ data: { userId: S4, propertyId: PADM, role: 'STAFF' } })
+  // 최근 접속(auth.users)을 못 읽으면 목록은 서되 정리 후보를 세지 않고 서버도 정리를 거부한다(독립 검수 R3)
+  as(ADMIN, 'admin@example.test')
+  eq('접속 기록 못 읽음: 목록은 선다(메타 없음 표시)', (await A.getSignups()).authMetaOk, false)
+  eq('접속 기록 못 읽음: 정리 거부·무변경', [await A.archiveStaleSignups([S1, S2]), await prisma.userArchive.count()],
+    [{ ok: false, error: '최근 접속 기록을 읽지 못해 정리하지 않았습니다. 잠시 후 다시 해 주세요.' }, 0])
+  await pg.exec(`CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, raw_app_meta_data jsonb, last_sign_in_at timestamptz)`)
   await pg.query(`INSERT INTO auth.users (id, raw_app_meta_data, last_sign_in_at) VALUES ($1, '{"provider":"google"}', NULL), ($2, '{"provider":"email"}', $5), ($3, '{"provider":"email"}', $6), ($4, '{"provider":"google"}', NULL)`,
     [S1, S2, S3, S4, long.toISOString(), recent.toISOString()])
   as(ADMIN, 'admin@example.test')
@@ -380,15 +428,24 @@ async function main() {
   const NEWU = randomUUID()
   g.__AF.claims = { sub: NEWU, email: 'newbie@example.test', user_metadata: { real_name: '새 가입자' } }
   await getAccessContext()
+  await settle()   // 관문은 푸시를 기다리지 않는다(응답 뒤, 독립 검수 R7)
   const sp = await pushedTo('가입 승인 요청')
   eq('가입 대기 푸시는 스테이음 관리자(DB·env)에게만', sp.map(x => x.userId).sort(), [ADMIN, ENVA].sort())
   eq('푸시 문장·이동', [sp[0]?.body, sp[0]?.url], ['새 가입자 님이 가입했습니다 · 승인 대기', '/admin/users'])
   await getAccessContext()
+  await settle()
   eq('이미 있는 행이면 다시 안 보낸다', (await pushedTo('가입 승인 요청')).length, 2)
   const AUTO = randomUUID()
   g.__AF.claims = { sub: AUTO, email: 'auto@example.test', user_metadata: { invite_code: 'STAYEXT09' } }
   await getAccessContext()
+  await settle()
   eq('초대코드로 바로 승인된 가입은 안 보낸다', (await pushedTo('가입 승인 요청')).length, 2)
+  const NONAME = randomUUID()
+  g.__AF.claims = { sub: NONAME, email: 'secret.person@example.test', user_metadata: {} }
+  await getAccessContext()
+  await settle()
+  const np = (await pushedTo('가입 승인 요청')).find(x => !x.body.includes(' 님'))
+  eq('이름 없는 가입자 푸시는 이메일 없이', [np?.body, (await pushedTo('가입 승인 요청')).some(x => x.body.includes('@'))], ['새 가입자가 가입했습니다 · 승인 대기', false])
   // 참여 요청: GU 의 영업장(구관기 하우스)에 STAFF 역할 하나를 두고, 참여자가 코드로 요청
   const gp = cp.ok ? cp.propertyId : ''
   await prisma.property.update({ where: { id: gp }, data: { joinCode: 'JOIN01' } })

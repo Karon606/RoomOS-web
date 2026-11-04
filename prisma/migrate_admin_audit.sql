@@ -8,8 +8,14 @@
 -- 멱등(IF NOT EXISTS)이라 두 번 실행해도 같다. 물리 테이블명은 @@map, 칸 이름은 camelCase 그대로다.
 -- 보안: RLS 를 켠다(정책 없음 = anon 전부 차단, 앱은 postgres 롤 Prisma 로 우회. migrate_property_notes.sql 과 같은 관례).
 --
--- 적용 순서: 이 SQL 을 운영 DB 에 먼저 적용한 뒤 코드를 배포한다. 표 없이 배포하면 관리자 페이지의 쓰기(권한 주기·회수, 승인·거절·대기,
---   정리)와 가입자 목록 읽기가 'relation does not exist' 로 실패한다. 앱 화면과 로그인은 이 표를 읽지 않아 영향이 없다.
+-- 배포 절차(이 순서를 지킨다):
+--   1. 이 SQL 을 운영 DB 에 적용한다(멱등).
+--   2. 확인: SELECT to_regclass('public.admin_audit_logs'), to_regclass('public.user_archives');  둘 다 이름이 나와야 한다.
+--   3. 그다음에 코드를 배포한다.
+-- 표 없이 코드가 먼저 나가면: 관리자 페이지의 가입자 목록 읽기와 쓰기 전부(권한 주기·회수, 승인·거절·대기, 정리, 초대코드 삭제·되살림)가
+--   'relation does not exist' 로 실패한다. 스테이음 관리자 계정의 앱 셸(사이드바 대기 건수)과 관리자 레이아웃(탭 대기 건수)도
+--   user_archives 를 읽는다. 이 둘은 실패하면 0 으로 보이게 감쌌지만(lib/adminSignups countPendingSignups) 건수가 틀린다.
+--   일반 사용자의 앱 화면과 로그인은 이 표를 읽지 않는다.
 -- 잠금은 짧게: lock_timeout 5초, 걸려서 실패하면 그대로 다시 돌린다.
 --
 -- 되돌리기(코드를 먼저 되돌린 뒤. 감사 기록이 함께 사라진다):

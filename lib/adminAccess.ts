@@ -9,6 +9,7 @@
 // 카드에 서는 버튼은 cardActions 한 함수가 정하고, 서버가 거부하는 동작은 화면에 세우지 않는다(같은 판정 adminChangeBlock).
 
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import { withParticle } from '@/lib/koParticle'
 
 export const PLATFORM_ADMIN_LABEL = '스테이음 관리자'
 
@@ -35,8 +36,17 @@ export type AdminUserUndo = {
   before: UserAccessSnap
   after: UserAccessSnap
   role?: RoleChange
+  /** 쓴 시각(ISO). ADMIN_UNDO_TTL_MS 가 지나면 적용취소하지 않는다(독립 검수 R2). */
+  at: string
+  /** 이 쓰기의 감사 기록 id. 같은 기록을 두 번 되돌리지 않는다(일회성, 독립 검수 R2). */
+  auditId: string
   sig?: string
 }
+
+/** 적용취소 유효 시간. 토스트(6초)·화면을 오래 열어 둔 경우까지 넉넉히 하루. */
+export const ADMIN_UNDO_TTL_MS = 24 * 60 * 60 * 1000
+export const ADMIN_UNDO_EXPIRED = '적용취소할 수 있는 시간(24시간)이 지났습니다. 지금 상태에서 다시 바꿔 주세요.'
+export const ADMIN_UNDO_USED = '이미 적용취소한 변경입니다.'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STATUSES: readonly AccessStatus[] = ['PENDING', 'APPROVED', 'REJECTED']
@@ -58,7 +68,7 @@ export function sameSnap(a: UserAccessSnap, b: UserAccessSnap): boolean {
 export function canonicalAdminUserUndo(u: Omit<AdminUserUndo, 'sig'>): string {
   const s = (x: UserAccessSnap) => ({ status: x.status, isSuperAdmin: x.isSuperAdmin, approvedAt: x.approvedAt, approvedBy: x.approvedBy })
   return JSON.stringify({
-    v: 1, userId: u.userId, before: s(u.before), after: s(u.after),
+    v: 1, userId: u.userId, at: u.at, auditId: u.auditId, before: s(u.before), after: s(u.after),
     role: u.role ? { propertyId: u.role.propertyId, before: u.role.before, after: u.role.after } : null,
   })
 }
@@ -78,6 +88,8 @@ export function parseAdminUserUndo(raw: unknown): AdminUserUndo | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const u = raw as Record<string, unknown>
   if (u.v !== 1 || typeof u.userId !== 'string' || !UUID.test(u.userId)) return null
+  if (typeof u.at !== 'string' || Number.isNaN(new Date(u.at).getTime())) return null
+  if (typeof u.auditId !== 'string' || !UUID.test(u.auditId)) return null
   const before = parseSnap(u.before), after = parseSnap(u.after)
   if (!before || !after) return null
   let role: RoleChange | undefined
@@ -87,7 +99,7 @@ export function parseAdminUserUndo(raw: unknown): AdminUserUndo | null {
     if (!(r.before === null || ROLES.includes(r.before as Role)) || !ROLES.includes(r.after as Role)) return null
     role = { propertyId: r.propertyId, before: r.before as Role | null, after: r.after as Role }
   }
-  return { v: 1, userId: u.userId, before, after, ...(role ? { role } : {}), ...(typeof u.sig === 'string' ? { sig: u.sig } : {}) }
+  return { v: 1, userId: u.userId, at: u.at, auditId: u.auditId, before, after, ...(role ? { role } : {}), ...(typeof u.sig === 'string' ? { sig: u.sig } : {}) }
 }
 
 // ── 카드 버튼 진리표 ─────────────────────────────────────────────
@@ -177,9 +189,17 @@ export function memberJoinState(status: AccessStatus, isSuperAdmin = false): 're
   return status === 'PENDING' ? 'waiting' : 'blocked'
 }
 
+/**
+ * 푸시 본문에 쓰는 사람 이름. 잠금 화면에 뜨므로 이메일은 쓰지 않고 이름이 없으면 대신 말을 쓴다(독립 검수 R5).
+ */
+export function pushName(u: { realName?: string | null; name?: string | null }, fallback: string): string {
+  const n = (u.realName || u.name || '').trim()
+  return n ? `${n} 님` : fallback
+}
+
 /** 대기 계정을 멤버로 초대했을 때 스테이음 관리자에게 가는 푸시 문장. */
 export function memberInvitePendingPush(who: string, propertyName: string) {
-  return { title: '가입 승인 요청', body: `${propertyName}에서 ${who} 님을 직원으로 초대했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
+  return { title: '가입 승인 요청', body: `${propertyName}에서 ${withParticle(who, '을/를')} 직원으로 초대했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
 }
 
 /** 멤버 초대 뒤 토스트 문장(화면). 두 갈래 같은 문형이고 대기 계정이면 들어오는 때를 덧붙인다. */

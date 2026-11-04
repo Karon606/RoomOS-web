@@ -117,8 +117,8 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
       try {
         const res = await deleteInviteCode(c.id)
         if (!res.ok) { pushToast('error', res.error); return }
-        const snap = res.snap
-        pushToast('success', `코드 ${c.code} 삭제했습니다`, undoToast('적용취소', () => restoreInviteCode(snap), `적용취소했습니다 · 코드 ${c.code} 삭제`))
+        const rid = res.restoreId
+        pushToast('success', `코드 ${c.code} 삭제했습니다`, undoToast('적용취소', () => restoreInviteCode(rid), `적용취소했습니다 · 코드 ${c.code} 삭제`))
         router.refresh()
       } catch {
         pushToast('error', NET_ERR)

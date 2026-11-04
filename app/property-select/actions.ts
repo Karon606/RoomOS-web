@@ -6,6 +6,8 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { requireApprovedAccount } from '@/lib/auth/access'
 import { notifyPropertyOperators } from '@/lib/pushSend'
+import { pushName } from '@/lib/adminAccess'
+import { withParticle } from '@/lib/koParticle'
 
 export async function getMyProperties() {
   const supabase = await createClient()
@@ -110,8 +112,9 @@ export async function signOut() {
 }
 
 /** 영업장 참여 요청 푸시 문장. 누르면 환경설정 멤버 관리. */
+// 잠금 화면에 뜨므로 이메일은 쓰지 않는다(이름이 없으면 '새 사용자', 독립 검수 R5).
 function joinRequestPush(who: string, propertyName: string) {
-  return { title: '영업장 참여 요청', body: `${who} 님이 ${propertyName} 참여를 요청했습니다`, url: '/settings?tab=members', tag: 'join-request' }
+  return { title: '영업장 참여 요청', body: `${withParticle(who, '이/가')} ${propertyName} 참여를 요청했습니다`, url: '/settings?tab=members', tag: 'join-request' }
 }
 
 // D — 사용자가 영업장 참여 코드를 입력해서 참여 요청을 보냄.
@@ -159,8 +162,8 @@ export async function requestJoinByCode(code: string, message?: string): Promise
     })
 
     // 소유자에게 알린다(2026-11-04 운영자 승인 '추천대로'). 종전에는 환경설정 멤버 관리에 들어가야만 요청을 알았다.
-    const me = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { realName: true, name: true, email: true } })
-    await notifyPropertyOperators(property.id, joinRequestPush(me?.realName || me?.name || me?.email || ctx.email || '', property.name), { ownersOnly: true })
+    const me = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { realName: true, name: true } })
+    await notifyPropertyOperators(property.id, joinRequestPush(pushName(me ?? {}, '새 사용자'), property.name), { ownersOnly: true })
 
     return { ok: true, propertyName: property.name }
   } catch (err) {

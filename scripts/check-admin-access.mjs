@@ -20,6 +20,9 @@
 //   ⓜ 가이드 정합(관리자 세 탭): raw <button>·--persimmon 글자·수제 배지 span 없음, 상태는 Badge(승인됨은 배지 없음), 1차 필터는
 //      SegmentedControl('전체' 먼저), 탭은 ViewTabs, 빈 상태에 '검색어·필터를 조정' 없음, 이름 자리 '—'·'미입력' 채움 없음.
 //      초대코드 쓰기 셋(발급·켜고 끄기·삭제)에 토스트 적용취소, 삭제는 §14 파괴 확인창.
+//   ⓞ 독립 검수 반영(2026-11-04): 대기 건수는 실패해도 0(B1)·마이그레이션 머리말 배포 절차, 적용취소 본인 대상 거부(R1)·24시간 만료와
+//      감사 기록 id 일회성(R2), 접속 기록을 못 읽으면 정리 거부(R3), 초대코드 조건부 쓰기(R4), 푸시 본문에 이메일 없음(R5),
+//      멤버 초대 푸시는 새 역할 줄일 때만(R6)·역할 화이트리스트, 초대코드 되살림은 서버 보관 값.
 //   ⓝ 스팸 대책: 가입 경로·최근 접속은 auth.users 읽기(실패해도 목록은 선다). 오래된 계정 정리는 자동 삭제가 아니라 누르는 정리이고
 //      계정을 지우지 않는다(user_archives). 서버가 같은 정본(isStaleSignup)으로 다시 세고, 감사 기록·같은 시각 도장 적용취소가 있다.
 import { readFileSync } from 'node:fs'
@@ -125,7 +128,7 @@ const act = strip(read('app/admin/actions.ts'))
 // ⓘ 행 보장 정본
 {
   const a = strip(read('lib/auth/access.ts'))
-  ok('ⓘ 관문은 행이 없을 때 정본으로 만든다', /const ensured = user \? null : await ensureAppUser\(identityFromClaims\(claims as Record<string, unknown>\)\)/.test(a) && /\?\? ensured\?\.status \?\? 'PENDING'/.test(a))
+  ok('ⓘ 관문은 행이 없을 때 정본으로 만든다(실패해도 대기)', /if \(!user\) \{\s*try \{ ensured = await ensureAppUser\(identityFromClaims\(claims as Record<string, unknown>\)\) \}\s*catch \(e\)/.test(a) && /\?\? ensured\?\.status \?\? 'PENDING'/.test(a))
   const sy = strip(read('app/(auth)/login/actions.ts'))
   ok('ⓘ 로그인 동기화도 정본', /await ensureAppUser\(identityFromAuthUser\(user\), \{ extra, refreshProfile: true \}\)/.test(sy) && !/prisma\./.test(sy))
   const e = strip(read('lib/auth/ensureAppUser.ts'))
@@ -144,7 +147,7 @@ const act = strip(read('app/admin/actions.ts'))
 // ⓚ 알림·대기 건수
 {
   const e = strip(read('lib/auth/ensureAppUser.ts'))
-  ok('ⓚ 새 대기 계정이면 스테이음 관리자에게 푸시', /if \(created && status === 'PENDING'\) \{\s*const \{ notifySuperAdmins \} = await import\('@\/lib\/pushSend'\)\s*await notifySuperAdmins\(signupPendingPush\(/.test(e))
+  ok('ⓚ 새 대기 계정이면 스테이음 관리자에게 푸시(응답 뒤, 기다리지 않음)', /if \(created && status === 'PENDING'\) \{\s*const push = signupPendingPush\(\{ realName, name \}\)\s*const send = \(\) => import\('@\/lib\/pushSend'\)\.then\(m => m\.notifySuperAdmins\(push\)\)\.catch\(\(\) => \{\}\)\s*try \{ after\(send\) \} catch \{ void send\(\) \}/.test(e) && !/await notifySuperAdmins/.test(e))
   const ps = strip(read('lib/pushSend.ts'))
   ok('ⓚ 발송 거름은 sendToUsers 한 곳(승인·관리자만)', /async function sendToUsers\(candidates: string\[\], payload: OperatorPushPayload\): Promise<void> \{\s*const approved = await approvedPushRecipients\(candidates\)\s*const userIds = candidates\.filter\(id => approved\.has\(id\)\)/.test(ps))
   ok('ⓚ 스테이음 관리자 수신자는 DB 표식 또는 env', /export async function notifySuperAdmins\(/.test(ps) && /OR: \[\{ isSuperAdmin: true \}/.test(ps))
@@ -162,7 +165,7 @@ const act = strip(read('app/admin/actions.ts'))
   const ap = act.slice(act.indexOf('export async function approveUser('), act.indexOf('\nexport ', act.indexOf('export async function approveUser(') + 1))
   ok('ⓛ 승인은 역할·소유 확인 뒤 한 트랜잭션', /if \(!STAFF_ROLES\.includes\(addMember\.role\)\)/.test(ap) && /myOwnedProperties\(admin\.userId\)\)\.some\(p => p\.id === addMember\.propertyId\)/.test(ap)
     && /const res = await prisma\.\$transaction\(async \(tx\) => \{/.test(ap) && /tx\.userPropertyRole\.create/.test(ap) && /await writeAudit\(tx, admin\.userId, userId, 'APPROVE'/.test(ap)
-    && /signAdminUndo\(\{ userId, before, after, \.\.\.\(role \? \{ role \} : \{\}\) \}\)/.test(ap))
+    && /signAdminUndo\(\{ userId, before, after, auditId, \.\.\.\(role \? \{ role \} : \{\}\) \}\)/.test(ap))
   ok("ⓛ 직원 역할 목록에 소유자 없음", /export const STAFF_ROLES: readonly Role\[\] = \['MANAGER', 'STAFF', 'LIMITED_STAFF'\]/.test(read('lib/adminAccess.ts')))
   const ui = strip(read('app/admin/users/UsersClient.tsx'))
   ok('ⓛ 승인·다시 승인은 승인 창으로', /if \(key === 'approve' \|\| key === 'reapprove'\) \{ setApproving\(u\); return \}/.test(ui) && /approveUser\(u\.id, addMember\)/.test(ui))
@@ -170,7 +173,7 @@ const act = strip(read('app/admin/actions.ts'))
   const st = strip(read('app/(app)/settings/actions.ts'))
   const inv = st.slice(st.indexOf('export async function inviteMember('), st.indexOf('\nexport ', st.indexOf('export async function inviteMember(') + 1))
   ok('ⓛ 멤버 초대는 같은 판정, 거절 계정은 역할 줄 전에 막는다', /const joinState = memberJoinState\(/.test(inv) && inv.indexOf("if (joinState === 'blocked') return") > 0
-    && inv.indexOf("if (joinState === 'blocked') return") < inv.indexOf('prisma.userPropertyRole.upsert') && /if \(joinState === 'waiting'\) \{[\s\S]*?notifySuperAdmins\(memberInvitePendingPush\(/.test(inv))
+    && inv.indexOf("if (joinState === 'blocked') return") < inv.indexOf('prisma.userPropertyRole.upsert') && /if \(joinState === 'waiting' && !existed\) \{[\s\S]*?notifySuperAdmins\(memberInvitePendingPush\(pushName\(targetUser, '새 직원'\)/.test(inv))
   const sf = read('app/(app)/settings/SettingsForm.tsx')   // 주석 걷기를 하지 않는다(accept="image/*" 같은 글자가 주석 걷기를 넘긴다)
   ok('ⓛ 초대 토스트·안내문·제한 스태프', /showToast\(memberInviteToast\(result\.joinState\)\)/.test(sf) && !/Google로 로그인/.test(sf) && /<option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김<\/option>\s*<\/select>\s*<Btn variant="primary" size="md" onClick=\{handleInvite\}>/.test(sf))
   ok('ⓛ 대기 화면이 초대받은 영업장을 보인다', /직원으로 초대했습니다\. 스테이음 팀 승인 뒤 바로 들어갑니다/.test(strip(read('app/pending/page.tsx'))))
@@ -193,7 +196,7 @@ const act = strip(read('app/admin/actions.ts'))
   ok('ⓜ 이름이 없으면 이메일이 식별자', /\{u\.name \|\| u\.email\}/.test(ui) && /name: u\.realName \|\| u\.name \|\| '',/.test(read('app/admin/users/page.tsx')))
   ok('ⓜ 연락처·주소는 있을 때만', /\{contact && <p/.test(ui))
   const inv = strip(read('app/admin/invites/InvitesClient.tsx'))
-  ok('ⓜ 초대코드 발급·켜고 끄기·삭제 적용취소', /undoCreateInviteCode\(made\)/.test(inv) && /toggleInviteCode\(c\.id, c\.isActive\)/.test(inv) && /restoreInviteCode\(snap\)/.test(inv))
+  ok('ⓜ 초대코드 발급·켜고 끄기·삭제 적용취소', /undoCreateInviteCode\(made\)/.test(inv) && /toggleInviteCode\(c\.id, c\.isActive\)/.test(inv) && /restoreInviteCode\(rid\)/.test(inv))
   ok('ⓜ 초대코드 삭제는 파괴 확인창', /level: 'danger',\s*confirmLabel: '삭제'/.test(inv))
   const ia = act.slice(act.indexOf('export async function undoCreateInviteCode('), act.indexOf('// ── 영업장 현황'))
   ok('ⓜ 발급 적용취소는 아무도 안 쓴 코드만', /deleteMany\(\{ where: \{ code, usedCount: 0 \} \}\)/.test(ia))
@@ -204,18 +207,43 @@ const act = strip(read('app/admin/actions.ts'))
 {
   const ar = act.slice(act.indexOf('async function staleCandidateIds('), act.indexOf('// ── 초대코드/쿠폰 ──'))
   ok('ⓝ 정리는 계정을 지우지 않는다', !/user\.delete|user\.deleteMany|auth\.admin/.test(act) && /tx\.userArchive\.createMany/.test(ar))
-  ok('ⓝ 서버가 같은 정본으로 다시 센다', /isStaleSignup\(\{/.test(ar) && /\(await staleCandidateIds\(admin\.userId, now\)\)\.filter\(id => want\.has\(id\)\)/.test(ar))
+  ok('ⓝ 서버가 같은 정본으로 다시 센다', /isStaleSignup\(\{/.test(ar) && /const candidates = await staleCandidateIds\(admin\.userId, now\)/.test(ar) && /const target = candidates\.filter\(id => want\.has\(id\)\)/.test(ar))
   ok('ⓝ 정리·되살림 감사 기록', /action: 'ARCHIVE'/.test(ar) && /action: 'UNARCHIVE'/.test(ar))
   ok('ⓝ 적용취소는 같은 시각 도장만', /\.\.\.\(stamp \? \{ archivedAt: stamp \} : \{\}\)/.test(ar))
   const lib = strip(read('lib/adminSignups.ts'))
-  ok('ⓝ 가입 경로는 auth.users 읽기, 실패해도 빈 지도', /FROM auth\.users/.test(lib) && /catch \{\s*return new Map\(\)/.test(lib) && !/INSERT|UPDATE|DELETE/i.test(lib.replace(/deleted/gi, '')))
+  ok('ⓝ 가입 경로는 auth.users 읽기, 실패하면 null(목록은 빈 메타로 선다)', /FROM auth\.users/.test(lib) && /return null\s*\}/.test(lib) && /const meta = authMeta \?\? new Map\(\)/.test(act) && !/INSERT|UPDATE|DELETE/i.test(lib.replace(/deleted/gi, '')))
   ok('ⓝ 대기 건수는 정리한 계정을 빼고 센다', /!archived\.has\(r\.id\)/.test(lib))
   const ui = strip(read('app/admin/users/UsersClient.tsx'))
   ok('ⓝ 정리 버튼은 후보가 있을 때만, 파괴 확인창 + 토스트 적용취소', /\{staleRows\.length > 0 && \(/.test(ui) && /async function archiveStale\(\) \{[\s\S]*?level: 'danger',[\s\S]*?archiveStaleSignups\(staleRows\.map\(r => r\.id\)\)[\s\S]*?unarchiveSignups\(undo\.ids, undo\.at\)/.test(ui))
   ok("ⓝ '정리됨' 칸은 정리한 계정이 있을 때만", /const filters = FILTERS\.filter\(f => f\.value !== 'ARCHIVED' \|\| archivedCount > 0\)/.test(ui))
   ok('ⓝ 가입 경로는 메타 칩', /\{u\.providerLabel && <span className=\{META_CHIP\}>/.test(ui))
-  ok('ⓝ 후보 판정은 화면도 같은 정본', /stale: isStaleSignup\(\{/.test(read('app/admin/users/page.tsx')))
+  ok('ⓝ 후보 판정은 화면도 같은 정본(접속 기록을 읽었을 때만)', /stale: authMetaOk && isStaleSignup\(\{/.test(read('app/admin/users/page.tsx')))
   ok('ⓝ 정리 표는 같은 마이그레이션', /CREATE TABLE IF NOT EXISTS "user_archives"/.test(read('prisma/migrate_admin_audit.sql')))
+}
+
+// ⓞ 독립 검수 반영
+{
+  const sg = strip(read('lib/adminSignups.ts'))
+  const cps = sg.slice(sg.indexOf('export async function countPendingSignups('), sg.indexOf('export type AuthMeta'))
+  ok('ⓞ B1 대기 건수는 실패해도 0', /try \{[\s\S]*?\} catch \(e\) \{[\s\S]*?return 0\s*\}/.test(cps))
+  const mig = read('prisma/migrate_admin_audit.sql')
+  ok('ⓞ B1 마이그레이션 머리말: 배포 절차·사실', /-- 배포 절차/.test(mig) && /1\. 이 SQL 을 운영 DB 에 적용한다/.test(mig) && /3\. 그다음에 코드를 배포한다/.test(mig) && !/앱 화면과 로그인은 이 표를 읽지 않아 영향이 없다/.test(mig))
+  const ud = act.slice(act.indexOf('export async function undoAdminUserChange('), act.indexOf('\nexport ', act.indexOf('export async function undoAdminUserChange(') + 1))
+  const iSelf = ud.indexOf("if (u.userId === admin.userId) return { ok: false, error: '본인 계정은 여기서 바꿀 수 없습니다.' }")
+  ok('ⓞ R1 적용취소 본인 대상 거부(트랜잭션 전)', iSelf > 0 && iSelf < ud.indexOf('prisma.$transaction'))
+  ok('ⓞ R2 만료·일회성', /if \(Date\.now\(\) - new Date\(u\.at\)\.getTime\(\) > ADMIN_UNDO_TTL_MS\) return/.test(ud) && /after: \{ path: \['undoOf'\], equals: u\.auditId \}/.test(ud) && /undoOf: u\.auditId \}\)/.test(ud)
+    && /export const ADMIN_UNDO_TTL_MS = 24 \* 60 \* 60 \* 1000/.test(read('lib/adminAccess.ts')) && /at: u\.at, auditId: u\.auditId/.test(read('lib/adminAccess.ts')))
+  const sc = act.slice(act.indexOf('async function staleCandidateIds('), act.indexOf('export async function archiveStaleSignups('))
+  ok('ⓞ R3 접속 기록 못 읽으면 정리 거부', /if \(authMeta === null\) return null/.test(sc) && /if \(candidates === null\) return \{ ok: false/.test(act))
+  const en = strip(read('lib/auth/ensureAppUser.ts'))
+  ok('ⓞ R4 초대코드 조건부 쓰기', /tx\.user\.updateMany\(\{\s*where: \{ id: userId, status: 'PENDING', inviteCode: null \}/.test(en) && /usedCount: \{ lt: code\.maxUses \}/.test(en) && !/tx\.inviteCode\.update\(/.test(en))
+  ok('ⓞ R5 푸시 본문에 이메일 없음', /export function signupPendingPush\(u: \{ realName\?: string \| null; name\?: string \| null \}\)/.test(en) && /pushName\(u, '새 가입자'\)/.test(en)
+    && /joinRequestPush\(pushName\(me \?\? \{\}, '새 사용자'\)/.test(strip(read('app/property-select/actions.ts'))) && !/select: \{ realName: true, name: true, email: true \}/.test(read('app/property-select/actions.ts')))
+  const st = strip(read('app/(app)/settings/actions.ts'))
+  const inv = st.slice(st.indexOf('export async function inviteMember('), st.indexOf('\nexport ', st.indexOf('export async function inviteMember(') + 1))
+  ok('ⓞ 멤버 초대 역할 화이트리스트(첫 DB 전)', inv.indexOf('if (!STAFF_ROLES.includes(role)) return') > 0 && inv.indexOf('if (!STAFF_ROLES.includes(role)) return') < inv.indexOf('prisma.'))
+  const ri = act.slice(act.indexOf('export async function restoreInviteCode('), act.indexOf('// ── 영업장 현황'))
+  ok('ⓞ 초대코드 되살림은 서버 보관 값', /restoreInviteCode\(restoreId: string\)/.test(ri) && /action: 'INVITE_CODE_DELETE'/.test(ri) && /path: \['undoOf'\], equals: restoreId/.test(ri) && !/snap: InviteCodeSnap/.test(act))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

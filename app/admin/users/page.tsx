@@ -7,7 +7,7 @@ import UsersClient from './UsersClient'
 
 export default async function AdminUsersPage() {
   const me = await requireSuperAdmin()
-  const { users, propertyCount, myProperties } = await getSignups()
+  const { users, propertyCount, myProperties, authMetaOk } = await getSignups()
   const now = new Date()
 
   const rows = users.map((u) => ({
@@ -28,7 +28,8 @@ export default async function AdminUsersPage() {
     lastSignInLabel: u.lastSignInAt ? fmtDate(u.lastSignInAt) : '',
     archived: !!u.archivedAt,
     // 오래된 계정 정리 후보(화면 버튼·확인창 건수). 서버가 쓸 때 같은 정본으로 다시 센다.
-    stale: isStaleSignup({
+    // 최근 접속을 못 읽었으면 후보를 세우지 않는다(서버도 정리를 거부한다, 독립 검수 R3)
+    stale: authMetaOk && isStaleSignup({
       status: u.status as AccessStatus, dbAdmin: u.isSuperAdmin, envAdmin: u.envAdmin, isSelf: u.id === me.userId,
       ownedCount: u._count.ownedProperties, roleCount: u._count.propertyRoles, archived: !!u.archivedAt,
       lastActiveAt: u.lastSignInAt ?? u.createdAt,

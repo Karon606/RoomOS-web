@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client'
 import { requireSuperAdmin, isSuperAdminEmail } from '@/lib/auth/access'
 import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import {
-  ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID,
+  ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID, ADMIN_UNDO_EXPIRED, ADMIN_UNDO_USED, ADMIN_UNDO_TTL_MS,
   adminChangeBlock, canonicalAdminUserUndo, parseAdminUserUndo, sameSnap, snapOf,
   STAFF_ROLES, isStaleSignup,
   type AccessStatus, type AdminUserUndo, type RoleChange, type UserAccessSnap,
@@ -61,12 +61,14 @@ export async function getSignups() {
     prisma.userArchive.findMany({ select: { userId: true, archivedAt: true } }),
   ])
   const archivedAt = new Map(archives.map(a => [a.userId, a.archivedAt]))
+  const meta = authMeta ?? new Map()
   return {
+    authMetaOk: authMeta !== null,
     users: users.map(u => ({
       ...u,
       envAdmin: isSuperAdminEmail(u.email),
-      provider: authMeta.get(u.id)?.provider ?? null,
-      lastSignInAt: authMeta.get(u.id)?.lastSignInAt ?? null,
+      provider: meta.get(u.id)?.provider ?? null,
+      lastSignInAt: meta.get(u.id)?.lastSignInAt ?? null,
       archivedAt: archivedAt.get(u.id) ?? null,
     })),
     propertyCount,
@@ -83,17 +85,24 @@ type Tx = Pick<PrismaDb, 'adminAuditLog'>
 
 const ACCESS_SELECT = { id: true, email: true, status: true, isSuperAdmin: true, approvedAt: true, approvedBy: true } as const
 
-function signAdminUndo(u: Omit<AdminUserUndo, 'sig' | 'v'>): AdminUserUndo | null {
-  const body: Omit<AdminUserUndo, 'sig'> = { v: 1, ...u }
+function signAdminUndo(u: Omit<AdminUserUndo, 'sig' | 'v' | 'at'>): AdminUserUndo | null {
+  const body: Omit<AdminUserUndo, 'sig'> = { v: 1, ...u, at: new Date().toISOString() }
   const sig = signUndoBody(ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, canonicalAdminUserUndo(body))
   if (sig === null) return null
   return { ...body, ...(sig ? { sig } : {}) }
 }
 
-async function writeAudit(tx: Tx, actorId: string, targetUserId: string, action: string, before: unknown, after: unknown) {
-  await tx.adminAuditLog.create({
-    data: { actorId, targetUserId, action, before: before as Prisma.InputJsonValue, after: after as Prisma.InputJsonValue },
+/** 감사 기록 한 줄. 그 id 를 돌려준다(적용취소 토큰이 이 id 로 일회성을 지킨다). */
+async function writeAudit(tx: Tx, actorId: string, targetUserId: string, action: string, before: unknown, after: unknown): Promise<string> {
+  const row = await tx.adminAuditLog.create({
+    data: {
+      actorId, targetUserId, action,
+      before: before == null ? Prisma.DbNull : before as Prisma.InputJsonValue,
+      after: after == null ? Prisma.DbNull : after as Prisma.InputJsonValue,
+    },
+    select: { id: true },
   })
+  return row.id
 }
 
 /** 대상 행을 읽고 막힘을 판정한 뒤 patch 를 쓴다. 감사 기록과 토큰까지 한 트랜잭션. */
@@ -113,8 +122,8 @@ async function changeAccess(
     const data = patch(before)
     const upd = await tx.user.update({ where: { id: userId }, data, select: ACCESS_SELECT })
     const after = snapOf(upd)
-    await writeAudit(tx, adminId, userId, action, before, after)
-    return { ok: true as const, undo: signAdminUndo({ userId, before, after }) }
+    const auditId = await writeAudit(tx, adminId, userId, action, before, after)
+    return { ok: true as const, undo: signAdminUndo({ userId, before, after, auditId }) }
   })
 }
 
@@ -172,8 +181,8 @@ export async function approveUser(userId: string, addMember?: { propertyId: stri
         role = { propertyId: addMember.propertyId, before: null, after: addMember.role }
       }
     }
-    await writeAudit(tx, admin.userId, userId, 'APPROVE', before, { ...after, role: role ?? null })
-    return { ok: true as const, undo: signAdminUndo({ userId, before, after, ...(role ? { role } : {}) }) }
+    const auditId = await writeAudit(tx, admin.userId, userId, 'APPROVE', before, { ...after, role: role ?? null })
+    return { ok: true as const, undo: signAdminUndo({ userId, before, after, auditId, ...(role ? { role } : {}) }) }
   })
   revalidatePath('/admin/users')
   return res
@@ -199,8 +208,15 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
   const admin = await requireSuperAdmin()
   const u = parseAdminUserUndo(raw)
   if (!u || !verifyUndoBody(ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, canonicalAdminUserUndo(u), u.sig)) return { ok: false, error: ADMIN_UNDO_INVALID }
-  if (u.userId === admin.userId) return { ok: false, error: ADMIN_UNDO_INVALID }
+  // 본인 계정 대상 토큰은 거부한다(서버가 본인 변경을 막는 것과 같은 규칙, 독립 검수 R1)
+  if (u.userId === admin.userId) return { ok: false, error: '본인 계정은 여기서 바꿀 수 없습니다.' }
+  // 만료(24시간)와 일회성(그 감사 기록을 이미 되돌렸으면 거부, 독립 검수 R2)
+  if (Date.now() - new Date(u.at).getTime() > ADMIN_UNDO_TTL_MS) return { ok: false, error: ADMIN_UNDO_EXPIRED }
   const res = await prisma.$transaction(async (tx) => {
+    const origin = await tx.adminAuditLog.findFirst({ where: { id: u.auditId, targetUserId: u.userId }, select: { id: true } })
+    if (!origin) return { ok: false as const, error: ADMIN_UNDO_INVALID }
+    const used = await tx.adminAuditLog.findFirst({ where: { action: 'UNDO', targetUserId: u.userId, after: { path: ['undoOf'], equals: u.auditId } }, select: { id: true } })
+    if (used) return { ok: false as const, error: ADMIN_UNDO_USED }
     const cur = await tx.user.findUnique({ where: { id: u.userId }, select: ACCESS_SELECT })
     if (!cur || !sameSnap(snapOf(cur), u.after)) return { ok: false as const, error: ADMIN_UNDO_CONFLICT }
     if (u.role) {
@@ -220,7 +236,7 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
         approvedBy: u.before.approvedBy,
       },
     })
-    await writeAudit(tx, admin.userId, u.userId, 'UNDO', { ...u.after, role: u.role?.after ?? null }, { ...u.before, role: u.role ? u.role.before : null })
+    await writeAudit(tx, admin.userId, u.userId, 'UNDO', { ...u.after, role: u.role?.after ?? null }, { ...u.before, role: u.role ? u.role.before : null, undoOf: u.auditId })
     return { ok: true as const }
   })
   revalidatePath('/admin/users')
@@ -231,7 +247,7 @@ export async function undoAdminUserChange(raw: unknown): Promise<{ ok: true } | 
 // 자동 삭제가 아니라 관리자가 누르는 정리다. 계정·로그인은 그대로 두고 목록에서만 걷는다(user_archives 행). 대기·거절 계정은
 // 이미 게이트에서 막히므로 피해가 없고, 정리는 목록을 읽기 쉽게 하는 일이다. 후보 판정은 화면과 같은 정본 isStaleSignup 이고
 // 서버가 다시 센다. 화면이 넘긴 id 중 지금도 후보인 것만 걷는다. 적용취소는 그때 걷은 행만(같은 시각 도장) 되살린다.
-async function staleCandidateIds(adminId: string, now: Date): Promise<string[]> {
+async function staleCandidateIds(adminId: string, now: Date): Promise<string[] | null> {
   const [users, authMeta, archives] = await Promise.all([
     prisma.user.findMany({
       where: { status: { in: ['PENDING', 'REJECTED'] }, isSuperAdmin: false },
@@ -240,6 +256,8 @@ async function staleCandidateIds(adminId: string, now: Date): Promise<string[]> 
     readAuthMeta(),
     prisma.userArchive.findMany({ select: { userId: true } }),
   ])
+  // 최근 접속을 못 읽으면 가입일만으로 '오래됨'을 판정하게 되어 최근에 쓰던 사람까지 걷을 수 있다. 세지 않는다(독립 검수 R3).
+  if (authMeta === null) return null
   const archived = new Set(archives.map(a => a.userId))
   return users.filter(u => isStaleSignup({
     status: u.status as AccessStatus, dbAdmin: false, envAdmin: isSuperAdminEmail(u.email), isSelf: u.id === adminId,
@@ -252,7 +270,9 @@ export async function archiveStaleSignups(ids: string[]): Promise<{ ok: true; co
   const admin = await requireSuperAdmin()
   const now = new Date()
   const want = new Set(Array.isArray(ids) ? ids.filter(x => typeof x === 'string') : [])
-  const target = (await staleCandidateIds(admin.userId, now)).filter(id => want.has(id))
+  const candidates = await staleCandidateIds(admin.userId, now)
+  if (candidates === null) return { ok: false, error: '최근 접속 기록을 읽지 못해 정리하지 않았습니다. 잠시 후 다시 해 주세요.' }
+  const target = candidates.filter(id => want.has(id))
   if (target.length === 0) return { ok: false, error: '정리할 계정이 없습니다. 새로고침 후 다시 확인해 주세요.' }
   await prisma.$transaction(async (tx) => {
     await tx.userArchive.createMany({ data: target.map(userId => ({ userId, archivedAt: now, archivedBy: admin.userId })), skipDuplicates: true })
@@ -343,41 +363,47 @@ export async function undoCreateInviteCode(code: string): Promise<{ ok: true } |
   return n.count === 1 ? { ok: true } : { ok: false, error: '그사이 이 코드로 가입한 사람이 있어 지우지 않았습니다.' }
 }
 
-export type InviteCodeSnap = {
-  id: string; code: string; note: string | null; maxUses: number; usedCount: number; autoApprove: boolean
-  isActive: boolean; expiresAt: string | null; createdAt: string; createdBy: string | null
-}
-
-// 삭제. 지운 행 전체를 돌려주어 토스트 [적용취소]가 그대로 되살린다(restoreInviteCode).
-export async function deleteInviteCode(id: string): Promise<{ ok: true; snap: InviteCodeSnap } | { ok: false; error: string }> {
-  await requireSuperAdmin()
-  const row = await prisma.inviteCode.findUnique({ where: { id } })
-  if (!row) return { ok: false, error: '코드를 찾지 못했습니다. 새로고침 후 다시 확인해 주세요.' }
-  await prisma.inviteCode.delete({ where: { id } })
-  revalidatePath('/admin/invites')
-  return {
-    ok: true,
-    snap: {
+// 삭제. 지운 행 전체를 감사 기록(INVITE_CODE_DELETE, before)에 보관하고 그 id 만 화면에 준다.
+// 되살림은 화면이 보낸 값이 아니라 이 보관 값으로 한다(클라이언트가 사용 수·자동 승인을 꾸며 되살리지 못한다).
+export async function deleteInviteCode(id: string): Promise<{ ok: true; restoreId: string } | { ok: false; error: string }> {
+  const admin = await requireSuperAdmin()
+  const restoreId = await prisma.$transaction(async (tx) => {
+    const row = await tx.inviteCode.findUnique({ where: { id } })
+    if (!row) return null
+    await tx.inviteCode.delete({ where: { id } })
+    return writeAudit(tx, admin.userId, admin.userId, 'INVITE_CODE_DELETE', {
       id: row.id, code: row.code, note: row.note, maxUses: row.maxUses, usedCount: row.usedCount, autoApprove: row.autoApprove,
       isActive: row.isActive, expiresAt: row.expiresAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(), createdBy: row.createdBy,
-    },
-  }
-}
-
-// 삭제 적용취소. 같은 코드가 그사이 다시 생겼으면 거부한다(덮지 않는다).
-export async function restoreInviteCode(snap: InviteCodeSnap): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireSuperAdmin()
-  if (await prisma.inviteCode.findFirst({ where: { OR: [{ id: snap.id }, { code: snap.code }] }, select: { id: true } })) {
-    return { ok: false, error: '같은 코드가 이미 있어 되살리지 않았습니다.' }
-  }
-  await prisma.inviteCode.create({
-    data: {
-      id: snap.id, code: snap.code, note: snap.note, maxUses: snap.maxUses, usedCount: snap.usedCount, autoApprove: snap.autoApprove,
-      isActive: snap.isActive, expiresAt: snap.expiresAt ? new Date(snap.expiresAt) : null, createdAt: new Date(snap.createdAt), createdBy: snap.createdBy,
-    },
+    }, null)
   })
   revalidatePath('/admin/invites')
-  return { ok: true }
+  return restoreId ? { ok: true, restoreId } : { ok: false, error: '코드를 찾지 못했습니다. 새로고침 후 다시 확인해 주세요.' }
+}
+
+// 삭제 적용취소. 보관한 행 그대로 되살린다. 같은 코드가 그사이 다시 생겼거나 이미 되살렸으면 거부한다.
+export async function restoreInviteCode(restoreId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = await requireSuperAdmin()
+  if (typeof restoreId !== 'string' || !/^[0-9a-f-]{36}$/i.test(restoreId)) return { ok: false, error: ADMIN_UNDO_INVALID }
+  const res = await prisma.$transaction(async (tx) => {
+    const log = await tx.adminAuditLog.findFirst({ where: { id: restoreId, action: 'INVITE_CODE_DELETE' }, select: { before: true } })
+    const snap = log?.before as { id: string; code: string; note: string | null; maxUses: number; usedCount: number; autoApprove: boolean; isActive: boolean; expiresAt: string | null; createdAt: string; createdBy: string | null } | null | undefined
+    if (!snap) return { ok: false as const, error: ADMIN_UNDO_INVALID }
+    const used = await tx.adminAuditLog.findFirst({ where: { action: 'INVITE_CODE_RESTORE', after: { path: ['undoOf'], equals: restoreId } }, select: { id: true } })
+    if (used) return { ok: false as const, error: ADMIN_UNDO_USED }
+    if (await tx.inviteCode.findFirst({ where: { OR: [{ id: snap.id }, { code: snap.code }] }, select: { id: true } })) {
+      return { ok: false as const, error: '같은 코드가 이미 있어 되살리지 않았습니다.' }
+    }
+    await tx.inviteCode.create({
+      data: {
+        id: snap.id, code: snap.code, note: snap.note, maxUses: snap.maxUses, usedCount: snap.usedCount, autoApprove: snap.autoApprove,
+        isActive: snap.isActive, expiresAt: snap.expiresAt ? new Date(snap.expiresAt) : null, createdAt: new Date(snap.createdAt), createdBy: snap.createdBy,
+      },
+    })
+    await writeAudit(tx, admin.userId, admin.userId, 'INVITE_CODE_RESTORE', null, { undoOf: restoreId, code: snap.code })
+    return { ok: true as const }
+  })
+  revalidatePath('/admin/invites')
+  return res
 }
 
 // ── 영업장 현황 ──

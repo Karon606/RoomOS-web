@@ -2274,6 +2274,7 @@ model RentReceiptFile {
 // 플랫폼 권한·가입 상태를 바꾼 기록. 누가(actorId)·누구를(targetUserId)·무엇을(action)·전후 값(before/after).
 // 쓰는 곳은 app/admin/actions.ts 하나이고 바꾸는 쓰기와 같은 트랜잭션이다(기록 없이 권한만 바뀌는 일이 없다).
 // action: GRANT_SUPER_ADMIN · REVOKE_SUPER_ADMIN · SET_STATUS · APPROVE · ARCHIVE · UNARCHIVE · UNDO
+// 초대코드 삭제·되살림(INVITE_CODE_DELETE·INVITE_CODE_RESTORE)도 여기 남긴다. 그때 targetUserId 는 지운 관리자 본인이고 before 가 되살릴 행이다.
 model AdminAuditLog {
   id           String   @id @default(uuid()) @db.Uuid
   actorId      String   @db.Uuid

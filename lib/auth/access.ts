@@ -49,7 +49,12 @@ export async function getAccessContext(): Promise<AccessContext | null> {
   })
   // 로그인은 됐는데 앱 행이 없다(인증 링크가 콜백을 안 거쳤거나 로그인 직후 동기화가 빠졌다). 여기서 만든다.
   // 그래야 이 사람이 대기 화면에 서는 동시에 관리자 목록에도 선다(정본 lib/auth/ensureAppUser, 2026-11-04).
-  const ensured = user ? null : await ensureAppUser(identityFromClaims(claims as Record<string, unknown>))
+  // 행 보장이 DB 오류로 실패해도 관문은 종전처럼 대기로 본다(로그만, 독립 검수 R7). 화면이 500 이 되지 않는다.
+  let ensured: Awaited<ReturnType<typeof ensureAppUser>> | null = null
+  if (!user) {
+    try { ensured = await ensureAppUser(identityFromClaims(claims as Record<string, unknown>)) }
+    catch (e) { console.error('[access] 앱 사용자 행 보장 실패', (e as Error)?.message) }
+  }
 
   const isSuperAdmin = isSuperAdminEmail(claimEmail ?? user?.email) || (user?.isSuperAdmin ?? false)
   const status: AccessStatus = isSuperAdmin ? 'APPROVED' : ((user?.status as AccessStatus | undefined) ?? ensured?.status ?? 'PENDING')

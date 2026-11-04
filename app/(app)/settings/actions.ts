@@ -28,7 +28,7 @@ import {
   DOC_MAIL_LIMITS, DOC_MAIL_DEFAULT_SUBJECT, DOC_MAIL_DEFAULT_BODY, type DocMailTemplate,
 } from '@/lib/docMail'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
-import { memberJoinState, memberInvitePendingPush, type AccessStatus } from '@/lib/adminAccess'
+import { STAFF_ROLES, memberJoinState, memberInvitePendingPush, pushName, type AccessStatus } from '@/lib/adminAccess'
 import { isSuperAdminEmail } from '@/lib/auth/access'
 import { notifySuperAdmins } from '@/lib/pushSend'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -1405,6 +1405,8 @@ export async function inviteMember(email: string, role: Role): Promise<{ ok: tru
   try {
     const myRole = await getMyRole()
     if (myRole !== 'OWNER') return { ok: false, error: '소유자만 초대할 수 있습니다.' }
+    // 초대로 줄 수 있는 역할은 직원 셋뿐이다(소유자 초대 불가). 화면 선택지와 같은 목록이고 서버가 다시 막는다.
+    if (!STAFF_ROLES.includes(role)) return { ok: false, error: '초대할 수 없는 역할입니다.' }
     const propertyId = await getPropertyId()
 
     // 가입 이메일은 소문자로 저장된다(Supabase). 대소문자·앞뒤 공백 때문에 '가입된 계정이 없습니다'가 나지 않게 맞춘다.
@@ -1417,14 +1419,18 @@ export async function inviteMember(email: string, role: Role): Promise<{ ok: tru
     const joinState = memberJoinState(targetUser.status as AccessStatus, targetUser.isSuperAdmin || isSuperAdminEmail(targetUser.email))
     if (joinState === 'blocked') return { ok: false, error: '스테이음 팀이 승인하지 않은 계정이라 초대할 수 없습니다.' }
 
+    const existed = await prisma.userPropertyRole.findUnique({
+      where: { userId_propertyId: { userId: targetUser.id, propertyId } }, select: { role: true },
+    })
     await prisma.userPropertyRole.upsert({
       where: { userId_propertyId: { userId: targetUser.id, propertyId } },
       create: { userId: targetUser.id, propertyId, role },
       update: { role },
     })
-    if (joinState === 'waiting') {
+    // 승인 요청 푸시는 새 역할 줄이 생길 때만(같은 사람을 다시 초대·역할만 바꾸면 보내지 않는다, 독립 검수 R6)
+    if (joinState === 'waiting' && !existed) {
       const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
-      await notifySuperAdmins(memberInvitePendingPush(targetUser.realName || targetUser.name || targetUser.email, prop?.name ?? ''))
+      await notifySuperAdmins(memberInvitePendingPush(pushName(targetUser, '새 직원'), prop?.name ?? ''))
     }
     return { ok: true, joinState }
   } catch (err) {

@@ -59,7 +59,9 @@
 - 콜백은 코드를 먼저 교환한다. 교환이 실패했을 때만 기존 세션으로 통과(뒤로가기 재진입 보호). 종전 '이미 로그인이면 통과' 지름길은 다른 계정 세션으로 Google 코드를 버렸다. 교환 실패는 세션을 지우지 않는다(auth-js).
 - 대기 화면은 탭 복귀·30초·[상태 다시 확인]에 checkMyAccess(본인 상태만)로 재확인하고 승인되면 /dashboard 로 넘어간다. 승인 전에 직원으로 초대받았으면 영업장 이름을 보인다.
 - 멤버 초대·승인과 계정 승인의 관계는 `memberJoinState` 한 판정이다. 승인 계정 ready, 대기 waiting(역할 줄은 서고 승인되면 들어온다, 초대한 쪽 토스트 + 관리자 푸시), 거절 blocked(초대 거부).
-- 스테이음 관리자 권한(DB isSuperAdmin)·가입 상태 변경은 app/admin/actions.ts 한 곳에서 감사 기록(admin_audit_logs)과 같은 트랜잭션이고, 서명 토큰 적용취소(admin-user-access-v1)가 있다. env SUPER_ADMIN_EMAILS 관리자는 화면에서 못 바꾼다. 고아 계정(auth.users 에만 있음)은 verify:db check-auth-user-orphans 가 본다.
+- 스테이음 관리자 권한(DB isSuperAdmin)·가입 상태 변경은 app/admin/actions.ts 한 곳에서 감사 기록(admin_audit_logs)과 같은 트랜잭션이고, 서명 토큰 적용취소(admin-user-access-v1)가 있다. 토큰은 24시간 만료이고 그 쓰기의 감사 기록 id 로 한 번만 쓰인다(UNDO 기록의 undoOf), 본인 대상 토큰은 거부(독립 검수 반영).
+- 관문 안의 행 보장은 실패해도(DB 오류) 대기로 보고 화면을 500 으로 만들지 않는다. 새 가입 푸시는 응답 뒤(after)이고 본문에 이메일을 쓰지 않는다. 초대코드 적용은 조건부 쓰기(아직 코드를 안 쓴 대기 계정 + 자리가 남은 코드)라 동시 요청에도 한 번만 센다.
+- 대기 건수(countPendingSignups)는 앱 셸이 기다리는 값이라 실패해도 0. 마이그레이션 migrate_admin_audit.sql 은 코드보다 먼저 적용한다(머리말 배포 절차). env SUPER_ADMIN_EMAILS 관리자는 화면에서 못 바꾼다. 고아 계정(auth.users 에만 있음)은 verify:db check-auth-user-orphans 가 본다.
 
 ## 공용(인증 불필요) 라우트
 `/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/sign/[token]`(계약서 원격 서명 — 토큰+생년월일+HMAC 쿠키가 자격, 2026-07-18 신설) · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
