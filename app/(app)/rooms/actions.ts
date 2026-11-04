@@ -3534,8 +3534,8 @@ export async function getTenantDetail(tenantId: string) {
   const { foreignRegNoEnc, ...tenant } = row
   const canIdentity = canReadScope(access.role, 'identity')
   // 금액은 금액 스코프가 있는 역할에게만 내린다(2026-11-04 운영자 승인 '추천대로'). /tenants 는 제한 스태프 허용 라우트라
-  // 이 상세가 그 역할에게도 열리는데, 종전에는 계약 금액 세 칸과 납부 기록 60행을 그대로 내렸다. 형제 목록 조회(getTenants)가
-  // 같은 세 칸을 null 로 지우는 것과 같은 축이다. 금액을 담은 스냅샷 둘(단기 청구 이력·환불 적용취소)도 함께 비운다.
+  // 이 상세가 그 역할에게도 열리는데, 종전에는 계약 금액 세 칸과 납부 기록 60행을 그대로 내렸다. 형제 목록 조회(getTenants)도
+  // 같은 역할에게 금액·스냅샷 칸과 납부 기록을 걷는다. 금액을 담은 스냅샷 둘(단기 청구 이력·환불 적용취소)도 함께 비운다.
   // 화면은 null 인 칸을 그리지 않고, 납부 기록이 비면 수납 분석 구획이 서지 않는다(가이드 §27.8 ② 숨김, 캡션 없음).
   const canMoney = canReadScope(access.role, 'money')
   const leaseTerms = row.leaseTerms.map(l => ({

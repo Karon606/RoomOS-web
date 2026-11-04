@@ -30,10 +30,15 @@
 
 ## 화면 id 의 영업장 범위와 금액 스코프 (2026-11-04, 운영자 승인 '추천대로')
 - 관문(requirePropertyAccess)을 지나도 그 뒤 조회의 where 에 영업장이 없으면 남의 영업장 행이 읽히고 쓰인다. 화면에서 온 id 로 행을 읽는 서버 액션은 `findFirst({ where: { id, propertyId } })`(자식 모델은 부모 관계 필터 `leaseTerm: { propertyId }`)로 읽고, 못 찾으면 아무것도 쓰지 않고 닫는다. findUnique({ id }) 는 쓰지 않는다.
-- 봉합한 자리. 쓰기 recordDepositReceived(보증금 소급 기록, 남의 계약 입주자·보증금으로 내 장부에 행이 섰다). 읽기 getRentDiscounts·analyzeTenantWithGemini·getTenantRequests·previewCheckoutProration.
-- 금액(canReadScope 'money')은 영업장과 별개의 축이다. 제한 스태프(LIMITED_STAFF)는 /tenants 가 허용 라우트라 입주자 상세(getTenantDetail)가 열린다. 그 역할에게 서버는 계약 금액 세 칸(rentAmount·depositAmount·cleaningFee)을 null, 납부 기록을 빈 배열, 금액을 담은 스냅샷(shortStayExtensions·checkoutProrationUndo)을 null 로 내린다. getTenantQuickInfo 도 금액 두 칸을 null 로 내린다. 금액만 내는 조회(할인 목록·퇴실 일할 미리보기·AI 수납 분석)는 빈 목록이거나 거절이다. 형제 목록 조회 getTenants 가 세 칸을 null 로 지우는 것과 같은 축이다.
-- 화면은 null 인 칸을 그리지 않는다(가이드 §27.8 ② 숨김, 캡션 없음). 계약 정보 격자는 금액 세 칸(홀수)이 빠지고 납부일도 없으면(거주 전·단기) 납부방식을 전폭(Item wide)으로 두어 뒤 칸의 좌우 짝을 금액이 보이는 화면과 같게 지킨다. 단기 입실 정보는 그 역할에게 요금표를 부르지 않고 예상 요금 구획을 세우지 않는다(체류 일수는 남는다).
-- 그물 `scripts/check-action-property-scope.mjs`(함수 축 + 화면 가드), 통합 `scripts/test-action-property-scope-flow.ts` 의 보증금·할인·입주자 상세 금액·같은 클래스 전수 절.
+- 봉합한 자리. 쓰기 recordDepositReceived(보증금 소급 기록, 남의 계약 입주자·보증금으로 내 장부에 행이 섰다)와 거주 호실 일정 넷(startLeaseWithRoomSchedule·saveRoomSchedulePlan·undoSaveRoomSchedulePlan·undoChangeRoomMoveDate, 일정의 방을 `scheduleRoomsInProperty` 로 본다. 종전에는 남의 영업장 방이 겹침 판정을 '안 겹침'으로 지나 사용 중으로 바뀌고 거주 구간이 섰다). 읽기 getRentDiscounts·getPaymentsByLease(마지막 결제 수단·보증금 합계)·analyzeTenantWithGemini·getTenantRequests·previewCheckoutProration.
+- 1차 읽기만 영업장으로 걸고 2차 조회(합계·마지막 값)를 계약 id 만으로 두면 같은 구멍이다(getPaymentsByLease). 2차 조회는 where 에 propertyId 를 걸거나, 같은 함수에서 영업장 범위로 확인한 1차 결과의 id 만 쓴다.
+- 금액(canReadScope 'money')은 영업장과 별개의 축이다. 제한 스태프(LIMITED_STAFF)는 /tenants 가 허용 라우트라 입주자 목록·상세가 열린다. 그 역할에게 서버가 걷는 칸은 이렇다.
+  - 입주자 상세(getTenantDetail): 계약 금액 세 칸(rentAmount·depositAmount·cleaningFee) null, 납부 기록 빈 배열, 금액을 담은 스냅샷(shortStayExtensions·checkoutProrationUndo)과 영업장 단기 정책(property.shortStayPolicy) null. getTenantQuickInfo 는 금액 두 칸 null.
+  - 입주자 목록(getTenants): 계약이 include 라 맨 칸이 전부 딸려 나온다. 금액 넷과 Json 스냅샷 전부(일정 roomSchedule 제외), 서명 이미지·계약서 링크를 null(표 TENANT_LIST_MONEY_NULL_KEYS), 납부 기록을 빈 배열로 내린다. 종전에는 세 칸만 지워 나머지가 그대로 내려갔다(2026-11-04 독립 검수 B2). 목록 화면은 이 칸들을 쓰지 않는다.
+  - 호실 고르기(getRoomsForSelect): 이용료 세 칸 null(호실 관리 목록 getRooms 와 같은 문법). 단기 요금표(getRoomsForQuote)는 거절이다. 그 역할에게는 입구가 없다. 입주자 화면 페이지는 금액 기본값 셋(보증금·청소비·단기 예약금)을 싣지 않는다.
+  - 금액만 내는 조회(할인 목록·퇴실 일할 미리보기·AI 수납 분석·수납 내역)는 빈 목록이거나 거절이다.
+- 화면은 null 인 칸을 그리지 않는다(가이드 §27.8 ② 숨김, 캡션 없음). 입주자 화면 호실 미니 창의 기본 이용료 줄도 숨긴다. 계약 정보 격자는 금액 세 칸(홀수)이 빠지고 납부일도 없으면(거주 전·단기) 납부방식을 전폭(Item wide)으로 두어 뒤 칸의 좌우 짝을 금액이 보이는 화면과 같게 지킨다. 단기 입실 정보는 그 역할에게 요금표를 부르지 않고 예상 요금 구획을 세우지 않는다(체류 일수는 남는다).
+- 그물 `scripts/check-action-property-scope.mjs`(함수 축, getPaymentsByLease 의 everyWhere, 일정 방 관문 정본, 목록 걷는 칸 표와 스키마 대조, 화면 가드), 통합 `scripts/test-action-property-scope-flow.ts` 의 보증금·할인·입주자 상세 금액·같은 클래스 전수·수납 내역·일정 방·입주자 목록·호실과 요금표 절.
 
 ## 열람 전용 역할의 화면 숨김 (2026-11-03, 운영자 지시·승인)
 - 역할은 넷이다. OWNER·MANAGER 는 편집(`canEdit`), STAFF·LIMITED_STAFF 는 열람 전용이다. 서버 쓰기 문은 `requireEdit` 이고 화면 판정은 `useCanEdit()` 로 같은 집합이다. `useCanEditScope` 는 제한 스태프에게 재고 쓰기를 주므로 고객 쪽 입구에는 쓰지 않는다.
