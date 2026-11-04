@@ -6,6 +6,7 @@
 // 정책(2026-05-24 푸시 정책과 동일):
 //   · 일정 기반(퇴실·투어·입주·고정지출 출금/납부) → "당일에 있을 일"만 (경과·예정은 제외).
 //   · 진행 중(미납·재고 소진 임박·수령 대기) → 해소될 때까지 매일.
+//   · 오늘 납부일(받을 돈의 납부일 당일, 2026-11-04 운영자 승인) → 그날만, 받으면 사라진다. 미납은 다음 날부터다.
 // 대시보드의 넓은 AlertsStrip(납부예정·위시·요청·고정지출 포함)과는 의도적으로 별개 — 종은 푸시와 동일 범위.
 //   ※ 고정지출은 두 곳에 다 서지만 창이 다르다 — AlertsStrip 은 D-N 임박(alertDaysBefore)까지 미리 알리고,
 //     여기(종·푸시)는 **오늘 실제로 돈이 나가는 건**만 센다(운영자 신고 568633fb: "출금되는 내용도 알림에
@@ -29,7 +30,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import type { Role } from '@/lib/role-types'
 import { paperDocsOf, leaseSignSlots, linkSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
 
-export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
+export type AlertCategory = 'unpaid' | 'dueday' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
 
 export type AlertItem = {
   id: string            // 목록 key (고유)
@@ -47,7 +48,8 @@ export type AlertItem = {
 }
 
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
-  unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
+  // 받을 돈의 납부일 당일은 '오늘 납부일', 나갈 돈(고정지출 직접 납부)은 '오늘 납부'다. 낱말을 섞지 않는다(가이드 §29, 2026-11-04).
+  unpaid: '미납', dueday: '오늘 납부일', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
   contact: '연락할 때', signed: '서명 받음', signpartial: '서명 미완',
   // 운영자 어휘 그대로 — 자동이체는 계좌에서 '출금'되고, 직접 내는 건은 '납부'한다(신고 568633fb 원문).
@@ -188,7 +190,7 @@ export async function computeAlerts(propertyId: string, viewerRole?: Role): Prom
     const overdueLabel = l.deferredDue
       ? `유예 ${l.deferredDue}까지`
       : l.daysOverdue != null
-        ? (l.daysOverdue > 0 ? `${l.daysOverdue}일 경과` : l.daysOverdue === 0 ? '오늘 도래' : '')
+        ? (l.daysOverdue > 0 ? `${l.daysOverdue}일 경과` : '')   // 미납은 기한 다음 날부터라 당일(0)은 여기 안 온다
         : ''
     items.push({
       id: `unpaid-${l.leaseId}`,
@@ -201,6 +203,24 @@ export async function computeAlerts(propertyId: string, viewerRole?: Role): Prom
       roomNo: l.roomNo,
       tenantName: l.tenantName,
       urgency: 1000 + Math.max(0, l.daysOverdue ?? 0),
+    })
+  }
+
+  // 오늘 납부일 — 미납 몫 없이 오늘이 기한인 몫만 남은 계약(computeUnpaidStatus dueTodayLeases, 홈 미수와 같은 정본 판정).
+  // 그날만 서고 받으면 사라진다. 미납이 함께 있는 계약은 위 미납 하나만 선다. 종에는 끄기가 없어 끄기 키를 만들지 않는다(독립 검토 F3).
+  // 순위는 사람이 확인할 일이라 직접 납부(680) 아래, 자동이체(660) 위.
+  for (const l of unpaidStatus.dueTodayLeases) {
+    items.push({
+      id: `dueday-${l.leaseId}`,
+      category: 'dueday',
+      title: roomName(l.roomNo, l.tenantName),
+      subtitle: `${l.isShortTerm ? '이용료' : '월이용료'} ${fmtWon(l.dueTodayAmount)} · 오늘 납부일`,
+      tenantId: l.tenantId,
+      leaseTermId: l.leaseId,
+      roomId: l.roomId,
+      roomNo: l.roomNo,
+      tenantName: l.tenantName,
+      urgency: 670,
     })
   }
 
@@ -394,12 +414,12 @@ export function summarizeAlerts(items: AlertItem[]): { total: number; parts: str
   // contact 가 빠져 있었다(2026-09-04 새 그물이 발견). `as` 캐스트가 타입 검사를 우회해
   // byCategory['contact']++ 가 undefined++ = NaN 이 되던 자리다. 화면에는 order 에도 없어
   // 안 드러났지만, byCategory 를 소비하는 다른 자리가 생기면 NaN 이 샌다.
-  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, contact: 0, signed: 0, signpartial: 0, autodebit: 0, manualpay: 0 } as Record<AlertCategory, number>
+  const byCategory = { unpaid: 0, dueday: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, contact: 0, signed: 0, signpartial: 0, autodebit: 0, manualpay: 0 } as Record<AlertCategory, number>
   for (const it of items) byCategory[it.category]++
-  // 푸시 메시지 순서: 미납 → 퇴실 → 서명 완료 → 투어 → 입주 → 오늘 출금 → 오늘 납부 → 재고 → 수령
+  // 푸시 메시지 순서: 미납 → 오늘 납부일 → 퇴실 → 서명 완료 → 투어 → 입주 → 오늘 출금 → 오늘 납부 → 재고 → 수령
   // **이 배열은 타입 검사에 안 걸린다.** 카테고리를 더하고 여기를 빠뜨리면 종은 울리는데
   // 푸시 요약에서만 침묵한다. 새 그물(check-sign-progress-axis ⓔ)이 길이를 대조해 지킨다.
-  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'signpartial', 'tour', 'movein', 'autodebit', 'manualpay', 'lowstock', 'receipt']
+  const order: AlertCategory[] = ['unpaid', 'dueday', 'checkout', 'signed', 'signpartial', 'tour', 'movein', 'autodebit', 'manualpay', 'lowstock', 'receipt']
   const parts = order.filter(c => byCategory[c] > 0).map(c => `${CATEGORY_LABEL[c]} ${byCategory[c]}`)
   return { total: items.length, parts, byCategory }
 }
