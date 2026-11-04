@@ -4072,8 +4072,9 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
       select: { acquisitionDate: true, prevOwnerCutoffDate: true },
     }),
     // #5: 이 입주자(lease)의 가장 최근 납부방법 — 수납 모달 기본값(입주자별). 보증금 제외.
+    // 영업장을 건다(2026-11-04 독립 검수 B1). 계약 id 만으로 읽으면 남의 계약의 마지막 결제 수단이 기본값으로 왔다.
     prisma.paymentRecord.findFirst({
-      where: { leaseTermId, isDeposit: false, payMethod: { not: null } },
+      where: { leaseTermId, propertyId, isDeposit: false, payMethod: { not: null } },
       orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
       select: { payMethod: true },
     }),
@@ -4100,8 +4101,9 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   const records = rawRecords.map(withKey).map(withAdjust)
   const windowRecords = rawWindowRecords.map(withKey).map(withAdjust)
   // 보증금 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 현황 줄·수납 모달 표시용.
+  // 영업장을 건다(2026-11-04 독립 검수 B1). 계약 id 만으로 모으면 남의 계약 보증금 합계가 돌아왔다.
   const depositAgg = await prisma.paymentRecord.aggregate({
-    where: { leaseTermId, isDeposit: true, deletedAt: null },
+    where: { leaseTermId, propertyId, isDeposit: true, deletedAt: null },
     _sum: { actualAmount: true },
   })
   return { records, windowRecords, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0, receipts }

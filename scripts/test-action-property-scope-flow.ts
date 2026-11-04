@@ -650,6 +650,26 @@ async function main() {
     g.__CR_FLOW_ROLE = undefined
   }
 
+  // ── 계약 단위 수납 내역(2026-11-04 독립 검수 B1) ── 남의 영업장 계약 id 로 부르면 보증금 합계·마지막 결제 수단이 섞이지 않는다.
+  {
+    const T1 = await tenantIn(P1, '내역 내'), T2 = await tenantIn(P2, '내역 남')
+    const L1 = await leaseIn(P1, T1, null), L2 = await leaseIn(P2, T2, null)
+    const pay = (leaseTermId: string, tenantId: string, propertyId: string, isDeposit: boolean, actualAmount: number, payMethod: string) =>
+      prisma.paymentRecord.create({ data: { leaseTermId, tenantId, propertyId, targetMonth: '2026-10', expectedAmount: actualAmount, actualAmount, payDate: new Date('2026-10-05T00:00:00Z'), seqNo: isDeposit ? 1 : 2, isPaid: true, isDeposit, payMethod } })
+    await pay(L2, T2, P2, true, 77000, '현금'); await pay(L2, T2, P2, false, 300000, '카드')
+    await pay(L1, T1, P1, true, 50000, '계좌이체'); await pay(L1, T1, P1, false, 300000, '계좌이체')
+    for (const role of ['MANAGER', 'OWNER', 'STAFF'] as const) {
+      g.__CR_FLOW_ROLE = role
+      const other = await rooms.getPaymentsByLease(L2, '2026-10')
+      eq(`${role} 수납 내역: 남의 영업장 계약은 기록·보증금 합계·결제 수단이 비었다`, [other.records.length, other.windowRecords.length, other.depositPaidTotal, other.lastPayMethod], [0, 0, 0, null])
+      const mine = await rooms.getPaymentsByLease(L1, '2026-10')
+      eq(`${role} 수납 내역: 제 영업장 통과`, [mine.depositPaidTotal, mine.lastPayMethod], [50000, '계좌이체'])
+    }
+    g.__CR_FLOW_ROLE = 'LIMITED_STAFF'
+    eq('LIMITED_STAFF 수납 내역 거부', await thrown(() => rooms.getPaymentsByLease(L1, '2026-10')), '권한이 없습니다.')
+    g.__CR_FLOW_ROLE = undefined
+  }
+
   console.log(`[영업장 범위 2차 묶음 통합] 통과 ${pass} / 실패 ${fail}`)
   await prisma.$disconnect()
   await server.stop()

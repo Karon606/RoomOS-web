@@ -374,6 +374,16 @@ const AXES = [
     ],
     mustNot: [[/leaseTerm\.findUnique\(\{\s*where:\s*\{\s*id:\s*leaseTermId\s*\}/, '계약을 화면 id 만으로 읽는다']],
   },
+  // 계약 단위 수납 내역(2026-11-04 독립 검수 B1). 기록 둘은 영업장을 걸었는데 마지막 결제 수단·보증금 합계만 계약 id 뿐이었다.
+  // 함수 안 수납 행 읽기는 하나도 빠짐없이 where 에 propertyId 를 건다(everyWhere).
+  {
+    file: 'app/(app)/rooms/actions.ts',
+    fn: 'getPaymentsByLease',
+    noOrder: true,
+    must: [[/if \(!canReadScope\(await getMyRole\(\), 'money'\)\) throw/, '금액 스코프를 보지 않는다']],
+    mustNot: [],
+    everyWhere: ['paymentRecord', 'cashReceipt'],
+  },
   {
     file: 'app/(app)/rooms/actions.ts',
     fn: 'saveReservationDeposit',
@@ -677,6 +687,22 @@ for (const ax of AXES) {
     }
   }
   for (const [re, msg] of ax.mustNot) if (re.test(body)) violations.push(`${ax.file} ${ax.fn} — ${msg}. 영업장 범위를 지나야 한다`)
+  // everyWhere: 함수 안 그 모델 호출은 전부 where 에 propertyId 를 건다. 한 줄만 빠져도 남의 행이 섞인다.
+  for (const model of ax.everyWhere ?? []) {
+    let n = 0
+    for (const m of body.matchAll(new RegExp(`\\.\\s*${model}\\s*\\.\\s*\\w+\\s*\\(`, 'g'))) {
+      n++
+      const open = m.index + m[0].length - 1
+      let d = 0, k = open
+      for (; k < body.length; k++) { if ('({['.includes(body[k])) d++; else if (')}]'.includes(body[k]) && --d === 0) break }
+      const arg = body.slice(open, k + 1)
+      const wi = arg.search(/\bwhere\s*:\s*\{/)
+      let where = ''
+      if (wi >= 0) { const bs = arg.indexOf('{', wi); let e = bs, dd = 0; for (; e < arg.length; e++) { if (arg[e] === '{') dd++; else if (arg[e] === '}' && --dd === 0) break } where = arg.slice(bs, e + 1) }
+      if (!/\bpropertyId\b/.test(where)) violations.push(`${ax.file} ${ax.fn} — ${model} 호출 ${n}번째의 where 에 propertyId 가 없다. 남의 영업장 계약 행이 섞인다`)
+    }
+    if (n === 0) violations.push(`${ax.file} ${ax.fn} — ${model} 호출을 못 찾았다. 정규식이 낡았다`)
+  }
 }
 
 // ── 모델 전수 축: 기타수익·고정지출(+세부항목) 쓰기는 where 에 영업장을 건다 (2026-10-23 운영자 승인) ──
