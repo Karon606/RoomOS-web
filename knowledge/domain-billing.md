@@ -43,6 +43,11 @@
 - **버그(해결)**: `updateRoom`이 두 필드를 독립 저장(검증 없음) + 일괄편집(batch)엔 적용일 필드 자체가 없어 → '금액만 있고 적용일 없는 고아' 발생(502·522호). 7월 인상 선납이 옛 금액 처리돼 과납(오류신고 ede8e3f8). **수정**: 두 경로 모두 예약금액↔적용일 동시입력 강제(XOR 차단, 예약삭제 시 적용일도 제거) + batch 모달 적용일 DatePicker 추가. 데이터 보정: 502·522 rentUpdateDate=2026-07-01, 522 7월 470,000 완납·8월 과납기록 삭제. [[rent-increase-month-based]]
 - ⚠️ 또 의심되면: `scheduledRent != null && rentUpdateDate == null` 인 방(고아)을 찾아라.
 - **추천 납입액/귀속월 금액도 인상 반영(2026-06-30)**: `getTargetMonthOptions`(귀속월 드롭다운)는 옛날 `lease.rentAmount` 평면값 대신 **`billForLeaseMonth`**(일할→락인→예약인상→할인) + 퇴실월 이후 제외로 계산. 수납폼(`PaymentEntryForm`) 추천액은 자동(FIFO)일 때 '가장 이른 미완납 달' 기준 → **인상 전 달이 완납되면 다음 납입부터 인상가가 자동 추천**. savePayment는 원래부터 서버에서 월별 재계산(무변경)이라 추천=저장 일치.
+- **추천 납입액 자동 갈래 = 기한이 도래한 미완납 달의 그 달 남은 청구 합(2026-11-04, 운영자 승인 '추천대로' G1)**. 운영자 원문 "10월 미납분이면 11월로 넘어와도 미리 표시되는 금액이 10월 기준이 뜨는게 맞는 것 같아." 정본 `lib/paymentSuggest` suggestPayAmount(진리표 `scripts/test-money` 'SG', 통합 `scripts/test-pay-default-flow`).
+  - 달마다 그 달 청구(billForLeaseMonth, 할인·일할·인상 반영)라 다음 달 청구가 섞이지 않는다. 기한 도래는 수납 관리 목록과 같은 식 `lib/roomMonth` monthDuePassed(지난 달이거나 기한이 오늘 끝 이하, 납부일 당일부터 도래)이고 `getTargetMonthOptions` 가 달마다 `duePassed` 로 내려 준다. 404호(말일 납부·8~10월 할인 30,000)가 10월 미납인 채 11/1 에 열면 440,000 이다(11월은 기한 전). 납부일 1일 계약이면 11/1 이 11월 기한 당일이라 두 달 합이다.
+  - 도래한 미납이 없으면 앞으로 낼 가장 이른 미완납 달(선납), 그것도 없으면 조회월 청구. 귀속월 목록을 읽기 전에는 0(빈 칸)이다.
+  - 종전 '미수가 있으면 -balance' 는 틀린 전제였다. `room.balance`(settlement.balance)는 **조회월만**의 정산(그 달 받은 돈 - 그 달 청구, rooms/actions viewBalance)이지 누적 미수가 아니다. 그래서 미수 두 달이면 한 달치만 나왔고, 지난달 미납분을 받는 자리에 이번 달 정가가 떴다.
+  - 알려진 차이. 귀속월 선택지 꼬리표('미수')는 조회월 기준이라 기한 전인 이번 달도 '미수' 로 적힌다(기본값은 기한 기준). 첫 달 기한(firstMonthDueYmd)은 목록 식과 같이 보지 않는다(홈 미납 판정 dashboard/unpaid 는 본다).
 
 ### 두 개의 '월 이용료' 소스 — effective vs lease.rentAmount (2026-06-30)
 - **청구·매출·미납·수납추천**: `billForLeaseMonth`(effective, room.scheduledRent+rentUpdateDate 직접 읽음) → **7/1부터 자동 정확**(스케줄러 무관).

@@ -242,7 +242,7 @@ WCAG 1.4.11(비-텍스트 3:1) 미달이다. 캡션 글자 자체는 5.12:1 로 
 - 입주자 수정 폼의 '보증금 실제로 받음' 체크 경로 존폐.
 
 **별건 시공 대기.**
-- **`/tenants` 의 수제 수납 폼**(`TenantClient.tsx` `handleSavePayment` 경로)이 정본
+- ~~**`/tenants` 의 수제 수납 폼**~~(2026-11-04 닫음, 정본 폼 한 벌로 교체 · [[money-display-feedback]] '입력 기본값도 정본이다') (`TenantClient.tsx` `handleSavePayment` 경로)이 정본
   `PaymentEntryForm` 이 아니다. 초과분 3지선다·청소비 모드·귀속월 선택·자릿수 확인이 없고
   3단 분해도 안 닿는다. **신고 98fb6fce 가 난 화면이 거기다**(1단 CTA 는 `DepositStatusPanel`
   이라 닿는다). 정본 수렴이 loop.md 1번 ① 의 정면 사례다.

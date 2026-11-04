@@ -302,6 +302,14 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 검사는 `verify:fast` 에서 한 번도 안 돈다. 새 그물은 그보다 앞에 뒀다. **안 도는 자리에 선
 그물은 그물이 아니다.**
 
+## 수납 등록 폼 한 벌·기본값 정본 (2026-11-04, 운영자 승인 '추천대로')
+
+- `scripts/check-pay-entry-single-form.mjs`(verify:fast). ⓐ TenantClient 에 수납 저장 호출 없음 ⓑ 금액 기본값에 rentAmount 금지, 정본 lib/paymentSuggest 를 부르고 -room.balance 금지, 정본이 기한 도래(duePassed)를 본다 ⓒ `<PaymentEntryForm` 한 곳·room 은 정산에서 ⓓ 정산을 읽는 동안 폼을 세우지 않음 ⓔ 결제 수단 MANUAL_PAY_METHODS ⓕ '수납 등록' canEdit·투어 단계 캡션.
+- 진리표 `scripts/test-money` 'SG'(운영자 실례 404호 11/1 440,000 한 줄 포함), `scripts/test-pay-default-drift.ts`(404·514·509 모양), 통합 `scripts/test-pay-default-flow.ts`(PGlite, 기본값 그대로 저장하면 밀린 달만 완납·넘침 0).
+- 데이터 나열 `verify-money-consistency` 20-5(위반 아님). 정가 끝전 이월 묶음·한 달 수납 > 락. 확인 끝난 건은 허용 목록(514호 9/24 묶음).
+- 같이 고친 그물: check-cash-receipt-share(입주자 상세 저장부 검사를 정본 폼 품기 검사로), verify-money-consistency 20-b·20-c(입주자 상세 자리 제외), check-local-midnight-boundary 허용 목록(monthDuePassed 로 옮긴 줄).
+- 역주입 X1~X8·정본 식 우회 2종 모두 잡힘(2026-11-04).
+
 ## 2026-09-17 추가 — 오류신고 시공에서 네 벌
 
 - `test-viewport-probe`(verify:fast) — 오류신고 계측 두 스냅샷 조립. 열었을 때가 없으면 종전과 같은
