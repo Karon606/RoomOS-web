@@ -47,6 +47,10 @@
   - 달마다 그 달 청구(billForLeaseMonth, 할인·일할·인상 반영)라 다음 달 청구가 섞이지 않는다. 기한 도래는 수납 관리 목록과 같은 식 `lib/roomMonth` monthDuePassed(지난 달이거나 기한이 오늘 끝 이하, 납부일 당일부터 도래)이고 `getTargetMonthOptions` 가 달마다 `duePassed` 로 내려 준다. 404호(말일 납부·8~10월 할인 30,000)가 10월 미납인 채 11/1 에 열면 440,000 이다(11월은 기한 전). 납부일 1일 계약이면 11/1 이 11월 기한 당일이라 두 달 합이다.
   - 도래한 미납이 없으면 앞으로 낼 가장 이른 미완납 달(선납), 그것도 없으면 조회월 청구. 귀속월 목록을 읽기 전에는 0(빈 칸)이다.
   - 종전 '미수가 있으면 -balance' 는 틀린 전제였다. `room.balance`(settlement.balance)는 **조회월만**의 정산(그 달 받은 돈 - 그 달 청구, rooms/actions viewBalance)이지 누적 미수가 아니다. 그래서 미수 두 달이면 한 달치만 나왔고, 지난달 미납분을 받는 자리에 이번 달 정가가 떴다.
+  - **귀속월 목록은 정본 `lib/targetMonthOptions` buildTargetMonthOptions 하나가 만든다**(2026-11-04 독립 검수 B1). 인수월(양도인 자동 처리 달)은 저장 FIFO(findFirstUnpaidMonth)와 **같은 함수** acqMonthSettledByFifo 로 넘긴다(그 달 수납 합이 청구 이상이거나, 인수 시점 기간 시작일이 인수일 앞이고 인수 뒤 수납 0). 인수 시점 기간 시작일은 rooms/actions acqBaseDueDayNum 하나다. 종전 목록은 이 달을 미납·도래로 남겨 기본값에 한 달치가 더 들었다(운영 재현 412호 12/2 700,000, 맞는 값 350,000 · 518호 12/1 940,000 · 516호). 그대로 저장하면 FIFO 가 그 달을 건너뛰어 한 달치가 선납으로 적히고 초과분 확인창도 안 떴다. 수납 관리 목록 행의 인수월 판정(lib/roomMonth acqMonthStateOf)은 아직 별도 식이다(양도인 몫을 인수 전 입금 합으로, 운영자 몫을 청구 이상 행으로 센다).
+  - **목록의 청구 끝은 leaseBillingEnd(예정일 ?? 실제 퇴실일)**(2026-11-04 독립 검수 R1). 예정일 없이 퇴실 처리된 계약(408·422·507호)은 퇴실 뒤 달이 목록에 들어와 기본값이 200만 원대였다. **저장 FIFO 는 아직 expectedMoveOut 만 본다**(돈 엔진 변경이라 별건). 그 계약에 손으로 금액을 넣으면 FIFO 는 퇴실 뒤 달부터 채운다.
+  - **0원 저장은 두 겹으로 거절한다**(2026-11-04 독립 검수 R2). 정본 폼 제출(handleSubmit)과 서버 savePayment 가 금액 0 이하를 '받은 금액이 0원이라 저장할 수 없습니다 · 금액을 입력하면 됩니다' 로 거절한다. 정상 경로의 0원 저장은 없다(예약 선납·일괄 수납은 0 초과일 때만 부른다). FIFO 안의 원본 월 0원 흔적은 그대로다.
+  - 납부일 당일을 도래로 보는 판정은 `lib/roomMonth` monthDuePassed 한 함수가 목록 행(roomMonthBill)과 귀속월 목록에 같이 쓴다. 다만 수납 관리 목록의 firstUnpaidMonth 루프(rooms/actions `dueDate <= todayKstEnd`)와 홈 미납(dashboard/unpaid `days >= 0`)은 같은 뜻의 별도 식이다(운영자 질의 중, R3).
   - 알려진 차이. 귀속월 선택지 꼬리표('미수')는 조회월 기준이라 기한 전인 이번 달도 '미수' 로 적힌다(기본값은 기한 기준). 첫 달 기한(firstMonthDueYmd)은 목록 식과 같이 보지 않는다(홈 미납 판정 dashboard/unpaid 는 본다).
 
 ### 두 개의 '월 이용료' 소스 — effective vs lease.rentAmount (2026-06-30)

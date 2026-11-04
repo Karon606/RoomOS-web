@@ -309,6 +309,7 @@ outline 유틸 덧붙임 · `suppressesTap` 무력화 · coarse 최소 높이 �
 - 데이터 나열 `verify-money-consistency` 20-5(위반 아님). 정가 끝전 이월 묶음·한 달 수납 > 락. 확인 끝난 건은 허용 목록(514호 9/24 묶음).
 - 같이 고친 그물: check-cash-receipt-share(입주자 상세 저장부 검사를 정본 폼 품기 검사로), verify-money-consistency 20-b·20-c(입주자 상세 자리 제외), check-local-midnight-boundary 허용 목록(monthDuePassed 로 옮긴 줄).
 - 역주입 X1~X8·정본 식 우회 2종 모두 잡힘(2026-11-04).
+- 독립 검수 뒤 축 둘을 더했다. ⓖ 인수월 판정 한 함수(FIFO 와 귀속월 목록이 lib/targetMonthOptions acqMonthSettledByFifo·buildTargetMonthOptions 를 부르고 FIFO 에 사본이 없다) ⓗ 0원 거절 두 겹(폼 제출·서버 savePayment). ⓑ 는 TenantClient 전체의 rentAmount 폴백(?? / ||) 금지로 넓혔다(R4). 진리표 SG-B1(412호 모양)·SG-R1(예정일 없는 퇴실), 통합 F4(인수월)·F5(0원 거절). 역주입 XB1·XB1b·XB1c·XR1·XR2a·XR2b·XR4·XR4b 모두 잡힘.
 
 ## 2026-09-17 추가 — 오류신고 시공에서 네 벌
 
