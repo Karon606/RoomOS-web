@@ -9,7 +9,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID, randomBytes } from 'node:crypto'
 import path from 'node:path'
-import { cardActions, adminChangeBlock, parseAdminUserUndo, grantImpact, ACTION_LABEL } from '../lib/adminAccess'
+import { cardActions, adminChangeBlock, parseAdminUserUndo, grantImpact, ACTION_LABEL, memberJoinState, memberInviteToast } from '../lib/adminAccess'
 
 const ROOT = path.resolve(__dirname, '..')
 const PORT = 57000 + Math.floor(Math.random() * 900)
@@ -67,6 +67,9 @@ function schemaSql(): string {
   const imp = grantImpact({ propertyCount: 3, signupCount: 8 }).map(i => i.label).join('|')
   ok('영향 목록에 실제 건수와 멤버 관리 안내', /영업장 3곳/.test(imp) && /가입자 8명/.test(imp) && /환경설정 > 멤버 관리/.test(imp))
   eq('꼴이 틀린 토큰은 null', parseAdminUserUndo({ v: 1, userId: 'x' }), null)
+  // 4단계 같은 판정: 승인된 계정은 바로, 대기는 승인 뒤, 거절은 못 들어온다
+  eq('멤버 판정 진리표', [memberJoinState('APPROVED'), memberJoinState('PENDING'), memberJoinState('REJECTED'), memberJoinState('PENDING', true)], ['ready', 'waiting', 'blocked', 'ready'])
+  ok('대기 계정 초대 토스트는 들어오는 때를 말한다', /승인 전 계정이라 승인되면 바로 들어옵니다/.test(memberInviteToast('waiting')) && memberInviteToast('ready') === '멤버가 추가되었습니다.')
 }
 
 // ── 2. 통합(PGlite) ───────────────────────────────────────────
@@ -253,6 +256,44 @@ async function main() {
   await prisma.user.update({ where: { id: GU }, data: { isSuperAdmin: false } })
   g.__AF.claims = null
   eq('로그아웃 상태 재확인', await checkMyAccess(), 'SIGNED_OUT')
+
+  // ── 4단계: 승인 + 내 영업장 직원으로도 추가 ──
+  as(ADMIN, 'admin@example.test')
+  const PADM = randomUUID(), POTHER = randomUUID()
+  await prisma.property.create({ data: { id: PADM, name: '제기 하우스', ownerId: ADMIN } })
+  await prisma.property.create({ data: { id: POTHER, name: '남의 하우스', ownerId: OUT } })
+  eq('승인 창에 내가 소유한 영업장만', (await A.getSignups()).myProperties.map(p => p.name), ['제기 하우스'])
+  const W1 = randomUUID(), W2 = randomUUID()
+  await prisma.user.createMany({ data: [
+    { id: W1, email: 'w1@example.test', status: 'PENDING' },
+    { id: W2, email: 'w2@example.test', status: 'REJECTED' },
+  ] })
+  const roleOf = async (uid: string, pid: string) => (await prisma.userPropertyRole.findUnique({ where: { userId_propertyId: { userId: uid, propertyId: pid } } }))?.role ?? null
+  // 기본(끔): 승인만
+  const ap1 = await A.approveUser(W1, null)
+  eq('끈 채 승인: 승인만, 역할 줄 없음', [ap1.ok, (await snap(W1)).status, await roleOf(W1, PADM)], [true, 'APPROVED', null])
+  eq('감사 APPROVE', await audits(W1), ['APPROVE'])
+  eq('승인 적용취소: 대기로', [(await A.undoAdminUserChange(J(ap1.ok ? ap1.undo! : null)!)).ok, (await snap(W1)).status], [true, 'PENDING'])
+  // 켬: 승인 + 직원 추가 한 트랜잭션, 적용취소 한 벌
+  const ap2 = await A.approveUser(W1, { propertyId: PADM, role: 'STAFF' })
+  eq('켠 채 승인: 승인 + 스태프 역할', [ap2.ok, (await snap(W1)).status, await roleOf(W1, PADM)], [true, 'APPROVED', 'STAFF'])
+  eq('토큰에 역할 줄', ap2.ok ? ap2.undo?.role : null, { propertyId: PADM, before: null, after: 'STAFF' })
+  eq('함께 적용취소: 역할 줄도 걷힌다', [(await A.undoAdminUserChange(J(ap2.ok ? ap2.undo! : null)!)).ok, (await snap(W1)).status, await roleOf(W1, PADM)], [true, 'PENDING', null])
+  // 그사이 역할이 바뀌면 거부
+  const ap3 = await A.approveUser(W1, { propertyId: PADM, role: 'MANAGER' })
+  await prisma.userPropertyRole.update({ where: { userId_propertyId: { userId: W1, propertyId: PADM } }, data: { role: 'STAFF' } })
+  eq('그사이 역할이 바뀌면 적용취소 거부(무변경)', [(await A.undoAdminUserChange(J(ap3.ok ? ap3.undo! : null)!)).ok, (await snap(W1)).status, await roleOf(W1, PADM)], [false, 'APPROVED', 'STAFF'])
+  // 막힘
+  eq('이미 승인된 계정 승인 거부', (await A.approveUser(W1, null)).ok, false)
+  const beforeW2 = await snap(W2)
+  eq('남의 영업장에는 못 넣는다', await A.approveUser(W2, { propertyId: POTHER, role: 'STAFF' }), { ok: false, error: '내가 소유한 영업장에만 직원으로 넣을 수 있습니다.' })
+  eq('소유자 역할은 못 넣는다', await A.approveUser(W2, { propertyId: PADM, role: 'OWNER' }), { ok: false, error: '넣을 수 없는 역할입니다.' })
+  eq('막힌 승인은 무변경', [await snap(W2), await roleOf(W2, PADM), await roleOf(W2, POTHER)], [beforeW2, null, null])
+  // 이미 구성원이면 역할은 그대로(승인만)
+  await prisma.userPropertyRole.create({ data: { userId: W2, propertyId: PADM, role: 'MANAGER' } })
+  const ap4 = await A.approveUser(W2, { propertyId: PADM, role: 'STAFF' })
+  eq('이미 구성원: 역할 그대로, 토큰에 역할 없음', [ap4.ok, await roleOf(W2, PADM), ap4.ok ? ap4.undo?.role ?? null : 'x'], [true, 'MANAGER', null])
+  eq('거절 계정 다시 승인 적용취소는 거절로', [(await A.undoAdminUserChange(J(ap4.ok ? ap4.undo! : null)!)).ok, (await snap(W2)).status, await roleOf(W2, PADM)], [true, 'REJECTED', 'MANAGER'])
 
   // ── 3단계: 알림(가입 대기 → 스테이음 관리자, 참여 요청 → 소유자) · 대기 건수 ──
   const webpush = (await import('web-push')).default

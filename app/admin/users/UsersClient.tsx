@@ -7,8 +7,14 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { ManageMenu } from '@/components/ui/RecordEditShell'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { setUserStatus, setSuperAdmin, undoAdminUserChange } from '../actions'
-import { ACTION_LABEL, PLATFORM_ADMIN_LABEL, cardActions, grantImpact, type AdminUserUndo, type CardActionKey } from '@/lib/adminAccess'
+import { Modal } from '@/components/ui/Modal'
+import { withParticle } from '@/lib/koParticle'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { setUserStatus, setSuperAdmin, approveUser, undoAdminUserChange } from '../actions'
+import {
+  ACTION_LABEL, PLATFORM_ADMIN_LABEL, STAFF_ROLE_LABEL, cardActions, grantImpact,
+  type AdminUserUndo, type CardActionKey,
+} from '@/lib/adminAccess'
 
 type Row = {
   id: string
@@ -54,11 +60,17 @@ const DONE_MSG: Record<CardActionKey, string> = {
 
 const UNDO_REVERSIBLE = '실행 뒤 토스트의 적용취소로 되돌릴 수 있습니다.'
 
-export default function UsersClient({ rows, pendingCount, propertyCount }: { rows: Row[]; pendingCount: number; propertyCount: number }) {
+type MyProperty = { id: string; name: string }
+type StaffRole = keyof typeof STAFF_ROLE_LABEL
+
+export default function UsersClient({ rows, pendingCount, propertyCount, myProperties }: {
+  rows: Row[]; pendingCount: number; propertyCount: number; myProperties: MyProperty[]
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>(pendingCount > 0 ? 'PENDING' : 'ALL')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [approving, setApproving] = useState<Row | null>(null)
 
   const visible = filter === 'ALL' ? rows : rows.filter((r) => r.status === filter)
 
@@ -84,7 +96,7 @@ export default function UsersClient({ rows, pendingCount, propertyCount }: { row
 
   /** 카드 동작 하나. 위험한 것만 확인창을 거친다(권한 주기는 파괴 단계 + 볼 수 있게 되는 것 목록). */
   async function act(u: Row, key: CardActionKey) {
-    const who = `${u.name === '—' ? u.email : u.name} 님`
+    const who = displayName(u)
     const done = `${who} ${DONE_MSG[key]}`
     const undone = `적용취소했습니다 · ${who} ${ACTION_LABEL[key]}`
     if (key === 'grantAdmin') {
@@ -109,6 +121,7 @@ export default function UsersClient({ rows, pendingCount, propertyCount }: { row
       if (ok) run(u.id, () => setSuperAdmin(u.id, false), done, undone)
       return
     }
+    if (key === 'approve' || key === 'reapprove') { setApproving(u); return }
     if (key === 'revokeApproval' || (key === 'toPending' && u.status === 'APPROVED')) {
       const ok = await confirmDialog({
         title: key === 'revokeApproval' ? `${who}의 승인을 취소할까요?` : `${who}의 상태를 대기로 되돌릴까요?`,
@@ -120,7 +133,7 @@ export default function UsersClient({ rows, pendingCount, propertyCount }: { row
       })
       if (!ok) return
     }
-    const status = key === 'approve' || key === 'reapprove' ? 'APPROVED' : key === 'toPending' ? 'PENDING' : 'REJECTED'
+    const status = key === 'toPending' ? 'PENDING' : 'REJECTED'
     run(u.id, () => setUserStatus(u.id, status), done, undone)
   }
 
@@ -250,6 +263,91 @@ export default function UsersClient({ rows, pendingCount, propertyCount }: { row
           })}
         </ul>
       )}
+      {approving && (
+        <ApproveModal
+          key={approving.id}
+          row={approving}
+          myProperties={myProperties}
+          onClose={() => setApproving(null)}
+          onApprove={(addMember) => {
+            const u = approving
+            const who = displayName(u)
+            setApproving(null)
+            const staff = addMember ? ` · ${myProperties.find(p => p.id === addMember.propertyId)?.name ?? ''} ${withParticle(STAFF_ROLE_LABEL[addMember.role], '으로/로')} 추가` : ''
+            run(u.id, () => approveUser(u.id, addMember), `${who} 승인했습니다${staff}`, `적용취소했습니다 · ${who} 승인${addMember ? '·직원 추가' : ''}`)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function displayName(u: Row) {
+  return `${u.name === '—' ? u.email : u.name} 님`
+}
+
+/**
+ * 승인 확인창(Modal sm). '내 영업장 직원으로도 추가'는 기본 꺼짐이다(갈림길 E). 자기 영업장을 따로 만들어 운영할 사람은 그대로 승인하고,
+ * 내 고시원 직원으로 들일 사람만 켠다. 켜면 영업장(내가 소유한 곳)과 역할(관리자·스태프·제한 스태프)을 고른다. 소유한 영업장이 없으면 칸이 없다.
+ */
+function ApproveModal({ row, myProperties, onClose, onApprove }: {
+  row: Row
+  myProperties: MyProperty[]
+  onClose: () => void
+  onApprove: (addMember: { propertyId: string; role: StaffRole } | null) => void
+}) {
+  const [addStaff, setAddStaff] = useState(false)
+  const [propertyId, setPropertyId] = useState(myProperties[0]?.id ?? '')
+  const [role, setRole] = useState<StaffRole>('STAFF')
+  const roleOptions = (Object.keys(STAFF_ROLE_LABEL) as StaffRole[]).map(k => ({ value: k, label: STAFF_ROLE_LABEL[k] }))
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`${displayName(row)} 승인`}
+      subtitle={row.email}
+      width="sm"
+      dirty={addStaff}
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          <Btn variant="secondary" size="md" onClick={onClose}>취소</Btn>
+          <Btn variant="primary" size="md" onClick={() => onApprove(addStaff && propertyId ? { propertyId, role } : null)}>승인</Btn>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-[13px] leading-relaxed text-[var(--ink-s)] break-keep">
+          승인하면 이 계정이 스테이음을 쓸 수 있습니다. 자기 영업장을 따로 만들어 운영할 사람이면 그대로 승인합니다.
+        </p>
+        {myProperties.length > 0 && (
+          <div className="space-y-3">
+            <label className="flex items-start gap-2 text-sm text-[var(--warm-dark)] cursor-pointer min-h-[44px] py-2">
+              <input type="checkbox" checked={addStaff} onChange={e => setAddStaff(e.target.checked)}
+                className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+              <span className="break-keep">내 영업장 직원으로도 추가</span>
+            </label>
+            {addStaff && (
+              <div className="space-y-3 pl-6">
+                {myProperties.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <label htmlFor="approve-property" className="block text-xs font-medium text-[var(--ink-s)]">영업장</label>
+                    <select id="approve-property" value={propertyId} onChange={e => setPropertyId(e.target.value)}
+                      className="w-full h-[var(--input-h-touch)] bg-[var(--cream-2)] border-[1.5px] border-[var(--border-s)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--tc)]">
+                      {myProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--ink-s)]">영업장 · {myProperties[0].name}</p>
+                )}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-[var(--ink-s)]">역할</p>
+                  <SegmentedControl options={roleOptions} value={role} onChange={setRole} ariaLabel="직원 역할" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }

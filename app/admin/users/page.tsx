@@ -6,7 +6,7 @@ import UsersClient from './UsersClient'
 
 export default async function AdminUsersPage() {
   const me = await requireSuperAdmin()
-  const { users, propertyCount } = await getSignups()
+  const { users, propertyCount, myProperties } = await getSignups()
 
   const rows = users.map((u) => ({
     id: u.id,
@@ -26,5 +26,5 @@ export default async function AdminUsersPage() {
 
   const pendingCount = rows.filter((r) => r.status === 'PENDING').length
 
-  return <UsersClient rows={rows} pendingCount={pendingCount} propertyCount={propertyCount} />
+  return <UsersClient rows={rows} pendingCount={pendingCount} propertyCount={propertyCount} myProperties={myProperties} />
 }

@@ -28,6 +28,9 @@ import {
   DOC_MAIL_LIMITS, DOC_MAIL_DEFAULT_SUBJECT, DOC_MAIL_DEFAULT_BODY, type DocMailTemplate,
 } from '@/lib/docMail'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import { memberJoinState, memberInvitePendingPush, type AccessStatus } from '@/lib/adminAccess'
+import { isSuperAdminEmail } from '@/lib/auth/access'
+import { notifySuperAdmins } from '@/lib/pushSend'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, untrashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
@@ -1393,24 +1396,37 @@ export async function getMembers(): Promise<MemberWithUser[]> {
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 
-export async function inviteMember(email: string, role: Role): Promise<ActionResult> {
+// 멤버 초대. 계정 승인과의 관계는 정본 memberJoinState 한 판정이다(2026-11-04 운영자 승인 '추천대로', 4단계).
+// 종전에는 승인 전(대기) 계정에도 말없이 역할 줄을 세워, 상대는 대기 화면에 갇히고 초대한 사람은 이유를 몰랐다.
+//   ready   승인된 계정: 종전대로
+//   waiting 대기 계정: 역할 줄은 세우고(승인되면 바로 들어온다) 화면에 그 사실을 알리고, 스테이음 관리자에게 승인 요청 푸시
+//   blocked 거절된 계정: 세우지 않는다(세워도 못 들어온다)
+export async function inviteMember(email: string, role: Role): Promise<{ ok: true; joinState: 'ready' | 'waiting' } | { ok: false; error: string }> {
   try {
     const myRole = await getMyRole()
     if (myRole !== 'OWNER') return { ok: false, error: '소유자만 초대할 수 있습니다.' }
     const propertyId = await getPropertyId()
 
-    const targetUser = await prisma.user.findUnique({ where: { email } })
+    // 가입 이메일은 소문자로 저장된다(Supabase). 대소문자·앞뒤 공백 때문에 '가입된 계정이 없습니다'가 나지 않게 맞춘다.
+    const targetUser = await prisma.user.findFirst({ where: { email: { equals: email.trim(), mode: 'insensitive' } } })
     if (!targetUser) return { ok: false, error: '해당 이메일로 가입된 계정이 없습니다.' }
 
     const myId = await getMyUserId()
     if (targetUser.id === myId) return { ok: false, error: '자기 자신은 초대할 수 없습니다.' }
+
+    const joinState = memberJoinState(targetUser.status as AccessStatus, targetUser.isSuperAdmin || isSuperAdminEmail(targetUser.email))
+    if (joinState === 'blocked') return { ok: false, error: '스테이음 팀이 승인하지 않은 계정이라 초대할 수 없습니다.' }
 
     await prisma.userPropertyRole.upsert({
       where: { userId_propertyId: { userId: targetUser.id, propertyId } },
       create: { userId: targetUser.id, propertyId, role },
       update: { role },
     })
-    return { ok: true }
+    if (joinState === 'waiting') {
+      const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
+      await notifySuperAdmins(memberInvitePendingPush(targetUser.realName || targetUser.name || targetUser.email, prop?.name ?? ''))
+    }
+    return { ok: true, joinState }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '초대 중 오류가 발생했습니다.' }

@@ -156,5 +156,32 @@ export function grantImpact(c: { propertyCount: number; signupCount: number }): 
   ]
 }
 
+/** 승인과 함께 넣을 수 있는 직원 역할(소유자는 넣지 않는다). 멤버 초대와 같은 목록·라벨. */
+export const STAFF_ROLES: readonly Role[] = ['MANAGER', 'STAFF', 'LIMITED_STAFF']
+export const STAFF_ROLE_LABEL: Record<'MANAGER' | 'STAFF' | 'LIMITED_STAFF', string> = { MANAGER: '관리자', STAFF: '스태프', LIMITED_STAFF: '제한 스태프' }
+
+/**
+ * 영업장에 들어가는 길과 계정 승인의 관계(4단계 '같은 판정'). 역할 줄이 있어도 계정이 승인 전이면 그 사람은 대기 화면에 선다.
+ *   ready    승인된 계정 → 역할 줄이 서면 바로 들어온다
+ *   waiting  승인 전 계정 → 역할 줄은 서지만 스테이음 팀 승인 뒤에 들어온다(멤버 초대가 알리고, 대기 화면이 영업장 이름을 보인다)
+ *   blocked  거절된 계정 → 역할 줄을 세워도 못 들어온다
+ */
+export function memberJoinState(status: AccessStatus, isSuperAdmin = false): 'ready' | 'waiting' | 'blocked' {
+  if (isSuperAdmin || status === 'APPROVED') return 'ready'
+  return status === 'PENDING' ? 'waiting' : 'blocked'
+}
+
+/** 대기 계정을 멤버로 초대했을 때 스테이음 관리자에게 가는 푸시 문장. */
+export function memberInvitePendingPush(who: string, propertyName: string) {
+  return { title: '가입 승인 요청', body: `${propertyName}에서 ${who} 님을 직원으로 초대했습니다 · 승인 대기`, url: '/admin/users', tag: 'signup-pending' }
+}
+
+/** 멤버 초대 뒤 토스트 문장(화면). 대기 계정이면 들어오는 때를 알린다. */
+export function memberInviteToast(joinState: 'ready' | 'waiting'): string {
+  return joinState === 'waiting'
+    ? '멤버로 추가했습니다 · 아직 스테이음 팀 승인 전 계정이라 승인되면 바로 들어옵니다'
+    : '멤버가 추가되었습니다.'
+}
+
 export const ADMIN_UNDO_INVALID = '적용취소 정보가 올바르지 않습니다. 새로고침 후 다시 확인해 주세요.'
 export const ADMIN_UNDO_CONFLICT = '그사이 이 계정의 권한이나 상태가 다시 바뀌어 되돌리지 않았습니다. 지금 상태를 확인해 주세요.'

@@ -91,6 +91,7 @@ import { deactivateProperty, deletePropertyPermanently, getPropertyDeletionImpac
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { DocVariablesOverviewCard } from './DocVariablesPanel'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import { memberInviteToast } from '@/lib/adminAccess'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -927,7 +928,7 @@ export default function SettingsForm({
     const result = await inviteMember(email, inviteRole)
     if (!result.ok) { showToast(result.error); return }
     setInviteEmail('')
-    showToast('멤버가 추가되었습니다.')
+    showToast(memberInviteToast(result.joinState))
     router.refresh()
   }
 
@@ -2717,7 +2718,7 @@ export default function SettingsForm({
           {isOwner && (
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
               <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">멤버 초대</h2>
-              <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 <a href="/login" className="underline">스테이음에 Google로 로그인</a>한 후 이메일을 입력해주세요.</p>
+              <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 스테이음에 가입한 뒤 그 이메일을 입력해 주세요. 아직 스테이음 팀 승인 전인 계정이면 승인되는 대로 들어옵니다.</p>
               <div className="space-y-3">
                 <input
                   type="email"
@@ -2734,6 +2735,7 @@ export default function SettingsForm({
                   >
                     <option value="MANAGER">관리자 · 등록·수정·삭제 가능</option>
                     <option value="STAFF">스태프 · 조회만 가능</option>
+                    <option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김</option>
                   </select>
                   <Btn variant="primary" size="md" onClick={handleInvite}>
                     초대

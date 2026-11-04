@@ -15,6 +15,8 @@
 //   ⓙ 대기 화면: 탭 복귀·30초 재확인·[승인 확인], 승인되면 넘어간다. '다시 로그인' 안내 없음.
 //   ⓚ 알림: 새 대기 계정 → 스테이음 관리자 푸시(정본 ensureAppUser), 참여 요청 → 소유자 푸시, 거름은 sendToUsers 한 곳.
 //      대기 건수는 정본 countPendingSignups 하나를 사이드바·관리자 탭이 같이 쓴다.
+//   ⓛ 직원 들이기: 승인 창의 '내 영업장 직원으로도 추가'는 기본 꺼짐, 켜면 승인·역할 줄·감사 기록이 한 트랜잭션, 토큰에 역할 줄.
+//      넣을 수 있는 곳은 내가 소유한 영업장, 역할은 소유자 제외. 멤버 초대는 같은 판정(memberJoinState)으로 대기 계정을 알리고 거절 계정은 막는다.
 import { readFileSync } from 'node:fs'
 
 let fail = 0
@@ -146,6 +148,25 @@ const act = strip(read('app/admin/actions.ts'))
     && /const adminPendingCount = isSuperAdmin \? await countPendingSignups\(\) : 0/.test(strip(read('app/(app)/layout.tsx'))))
   ok('ⓚ 관리자 탭은 ViewTabs 링크 탭 + 가입자 접미', /<ViewTabs/.test(read('app/admin/AdminNav.tsx')) && /t\.id === 'users' && pendingCount > 0/.test(read('app/admin/AdminNav.tsx'))
     && /countPendingSignups\(\)/.test(read('app/admin/layout.tsx')) && !/--persimmon/.test(read('app/admin/AdminNav.tsx')))
+}
+
+// ⓛ 직원 들이기
+{
+  const ap = act.slice(act.indexOf('export async function approveUser('), act.indexOf('\nexport ', act.indexOf('export async function approveUser(') + 1))
+  ok('ⓛ 승인은 역할·소유 확인 뒤 한 트랜잭션', /if \(!STAFF_ROLES\.includes\(addMember\.role\)\)/.test(ap) && /myOwnedProperties\(admin\.userId\)\)\.some\(p => p\.id === addMember\.propertyId\)/.test(ap)
+    && /const res = await prisma\.\$transaction\(async \(tx\) => \{/.test(ap) && /tx\.userPropertyRole\.create/.test(ap) && /await writeAudit\(tx, admin\.userId, userId, 'APPROVE'/.test(ap)
+    && /signAdminUndo\(\{ userId, before, after, \.\.\.\(role \? \{ role \} : \{\}\) \}\)/.test(ap))
+  ok("ⓛ 직원 역할 목록에 소유자 없음", /export const STAFF_ROLES: readonly Role\[\] = \['MANAGER', 'STAFF', 'LIMITED_STAFF'\]/.test(read('lib/adminAccess.ts')))
+  const ui = strip(read('app/admin/users/UsersClient.tsx'))
+  ok('ⓛ 승인·다시 승인은 승인 창으로', /if \(key === 'approve' \|\| key === 'reapprove'\) \{ setApproving\(u\); return \}/.test(ui) && /approveUser\(u\.id, addMember\)/.test(ui))
+  ok("ⓛ '내 영업장 직원으로도 추가'는 기본 꺼짐·소유 영업장 있을 때만", /const \[addStaff, setAddStaff\] = useState\(false\)/.test(ui) && /\{myProperties\.length > 0 && \(/.test(ui) && /내 영업장 직원으로도 추가/.test(ui))
+  const st = strip(read('app/(app)/settings/actions.ts'))
+  const inv = st.slice(st.indexOf('export async function inviteMember('), st.indexOf('\nexport ', st.indexOf('export async function inviteMember(') + 1))
+  ok('ⓛ 멤버 초대는 같은 판정, 거절 계정은 역할 줄 전에 막는다', /const joinState = memberJoinState\(/.test(inv) && inv.indexOf("if (joinState === 'blocked') return") > 0
+    && inv.indexOf("if (joinState === 'blocked') return") < inv.indexOf('prisma.userPropertyRole.upsert') && /if \(joinState === 'waiting'\) \{[\s\S]*?notifySuperAdmins\(memberInvitePendingPush\(/.test(inv))
+  const sf = read('app/(app)/settings/SettingsForm.tsx')   // 주석 걷기를 하지 않는다(accept="image/*" 같은 글자가 주석 걷기를 넘긴다)
+  ok('ⓛ 초대 토스트·안내문·제한 스태프', /showToast\(memberInviteToast\(result\.joinState\)\)/.test(sf) && !/Google로 로그인/.test(sf) && /<option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김<\/option>\s*<\/select>\s*<Btn variant="primary" size="md" onClick=\{handleInvite\}>/.test(sf))
+  ok('ⓛ 대기 화면이 초대받은 영업장을 보인다', /직원으로 초대했습니다\. 스테이음 팀 승인 뒤 바로 들어갑니다/.test(strip(read('app/pending/page.tsx'))))
 }
 
 if (fail) { console.log(`\ncheck-admin-access: 실패 ${fail}`); process.exit(1) }

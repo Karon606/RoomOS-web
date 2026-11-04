@@ -10,8 +10,10 @@ import { signUndoBody, verifyUndoBody } from '@/app/(app)/rooms/cashReceiptLine'
 import {
   ADMIN_USER_UNDO_DOMAIN, ADMIN_UNDO_SCOPE, ADMIN_UNDO_CONFLICT, ADMIN_UNDO_INVALID,
   adminChangeBlock, canonicalAdminUserUndo, parseAdminUserUndo, sameSnap, snapOf,
-  type AccessStatus, type AdminUserUndo, type UserAccessSnap,
+  STAFF_ROLES,
+  type AccessStatus, type AdminUserUndo, type RoleChange, type UserAccessSnap,
 } from '@/lib/adminAccess'
+import type { Role } from '@/lib/role-types'
 
 // 슈퍼관리자가 임의 영업장에 진입 (가입 여부 무관). 쿠키 설정 + /dashboard 이동.
 export async function enterPropertyAsAdmin(formData: FormData) {
@@ -33,8 +35,8 @@ export async function enterPropertyAsAdmin(formData: FormData) {
 
 // ── 가입자 목록 ──
 export async function getSignups() {
-  await requireSuperAdmin()
-  const [users, propertyCount] = await Promise.all([
+  const admin = await requireSuperAdmin()
+  const [users, propertyCount, myProperties] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -53,8 +55,9 @@ export async function getSignups() {
       },
     }),
     prisma.property.count(),
+    myOwnedProperties(admin.userId),
   ])
-  return { users: users.map(u => ({ ...u, envAdmin: isSuperAdminEmail(u.email) })), propertyCount }
+  return { users: users.map(u => ({ ...u, envAdmin: isSuperAdminEmail(u.email) })), propertyCount, myProperties }
 }
 
 // ── 권한·상태 변경 공용 ──
@@ -110,6 +113,54 @@ export async function setUserStatus(userId: string, status: AccessStatus): Promi
     approvedAt: status === 'APPROVED' ? new Date() : null,
     approvedBy: admin.userId,
   }))
+  revalidatePath('/admin/users')
+  return res
+}
+
+// ── 승인 + 내 영업장 직원으로도 추가 (갈림길 E, 2026-11-04 운영자 승인 '추천대로') ──
+// 승인 확인창의 '내 영업장 직원으로도 추가'(기본 꺼짐). 켜면 승인과 역할 줄을 한 트랜잭션에 쓰고 적용취소도 한 벌이다.
+// 자기 영업장을 따로 만들어 운영할 사람(구관기 님 사례)은 끈 채로 승인한다. 넣을 수 있는 영업장은 관리자 본인이 소유한 활성 영업장뿐이다.
+async function myOwnedProperties(adminId: string) {
+  return prisma.property.findMany({
+    where: { isActive: true, OR: [{ ownerId: adminId }, { userRoles: { some: { userId: adminId, role: 'OWNER' } } }] },
+    select: { id: true, name: true },
+    orderBy: { createdAt: 'asc' },
+  })
+}
+
+export async function approveUser(userId: string, addMember?: { propertyId: string; role: Role } | null): Promise<AdminResult> {
+  const admin = await requireSuperAdmin()
+  if (addMember) {
+    if (!STAFF_ROLES.includes(addMember.role)) return { ok: false, error: '넣을 수 없는 역할입니다.' }
+    if (!(await myOwnedProperties(admin.userId)).some(p => p.id === addMember.propertyId)) {
+      return { ok: false, error: '내가 소유한 영업장에만 직원으로 넣을 수 있습니다.' }
+    }
+  }
+  const res = await prisma.$transaction(async (tx) => {
+    const cur = await tx.user.findUnique({ where: { id: userId }, select: ACCESS_SELECT })
+    if (!cur) return { ok: false as const, error: '가입자를 찾지 못했습니다. 새로고침 후 다시 확인해 주세요.' }
+    const block = adminChangeBlock('status', { isSelf: userId === admin.userId, dbAdmin: cur.isSuperAdmin, envAdmin: isSuperAdminEmail(cur.email) })
+    if (block) return { ok: false as const, error: block }
+    if (cur.status === 'APPROVED') return { ok: false as const, error: '이미 승인된 계정입니다.' }
+    const before = snapOf(cur)
+    const upd = await tx.user.update({
+      where: { id: userId }, data: { status: 'APPROVED', approvedAt: new Date(), approvedBy: admin.userId }, select: ACCESS_SELECT,
+    })
+    const after = snapOf(upd)
+    let role: RoleChange | undefined
+    if (addMember) {
+      const existing = await tx.userPropertyRole.findUnique({
+        where: { userId_propertyId: { userId, propertyId: addMember.propertyId } }, select: { role: true },
+      })
+      // 이미 그 영업장 구성원이면 역할을 바꾸지 않는다(승인만). 역할 변경은 멤버 관리의 몫이다.
+      if (!existing) {
+        await tx.userPropertyRole.create({ data: { userId, propertyId: addMember.propertyId, role: addMember.role } })
+        role = { propertyId: addMember.propertyId, before: null, after: addMember.role }
+      }
+    }
+    await writeAudit(tx, admin.userId, userId, 'APPROVE', before, { ...after, role: role ?? null })
+    return { ok: true as const, undo: signAdminUndo({ userId, before, after, ...(role ? { role } : {}) }) }
+  })
   revalidatePath('/admin/users')
   return res
 }

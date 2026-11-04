@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getAccessContext } from '@/lib/auth/access'
+import prisma from '@/lib/prisma'
 import { signOut } from '@/app/property-select/actions'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import DocumentScroll from '@/components/layout/DocumentScroll'
@@ -16,6 +17,10 @@ export default async function PendingPage() {
   if (ctx.status === 'APPROVED') redirect('/dashboard')
 
   const rejected = ctx.status === 'REJECTED'
+  // 승인 전에 영업장 직원으로 초대받았으면 그 사실을 보인다(4단계). 종전에는 초대를 받아도 이 화면에 갇힌 이유를 몰랐다.
+  const invitedTo = rejected ? [] : await prisma.userPropertyRole.findMany({
+    where: { userId: ctx.userId }, select: { property: { select: { name: true } } }, orderBy: { createdAt: 'asc' },
+  })
 
   return (
     <main
@@ -61,9 +66,14 @@ export default async function PendingPage() {
             >
               {ctx.email}
             </div>
-            {!rejected && (
+            {!rejected && invitedTo.length === 0 && (
               <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
                 고시원 직원으로 합류하신다면 사장님께 위 이메일을 알려 주세요.
+              </p>
+            )}
+            {invitedTo.length > 0 && (
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+                {invitedTo.map(r => r.property.name).join(', ')}에서 직원으로 초대했습니다. 스테이음 팀 승인 뒤 바로 들어갑니다.
               </p>
             )}
           </div>
